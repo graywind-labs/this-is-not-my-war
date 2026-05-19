@@ -1,0 +1,12 @@
+[
+  {
+    "id": "short_sword",
+    "name": "短剑",
+    "type": "melee",
+    "range": 1.5,
+    "damage": 12,
+    "attack_interval": 1.2,
+    "required_skill": "剑盾",
+    "tags": ["one_handed"]
+  }
+]

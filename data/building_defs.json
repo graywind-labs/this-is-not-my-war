@@ -1,0 +1,19 @@
+[
+  {
+    "id": "main_hall",
+    "name": "主厅",
+    "level": 1,
+    "hp": 180,
+    "max_hp": 180,
+    "tags": ["command", "failure_target"],
+    "workstations": [
+      {
+        "id": "command_table_01",
+        "type": "command",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {}
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "wave_01",
+    "wave_number": 1,
+    "trigger_day": 3,
+    "trigger_hour": 18,
+    "spawn_point": "front_gate",
+    "enemies": [
+      {
+        "enemy_id": "raider_basic",
+        "count": 3
+      }
+    ],
+    "notes": "第一波用于验证最小战斗闭环。"
+  }
+]

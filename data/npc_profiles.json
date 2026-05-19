@@ -1,0 +1,32 @@
+[
+  {
+    "id": "veteran_deputy_01",
+    "name": "待定",
+    "background_job": "老兵副官",
+    "personality": ["沉稳", "疲惫", "守规矩"],
+    "desires": ["守住主厅", "让其他人活下来"],
+    "fears": ["防线过早崩溃"],
+    "boundaries": ["不接受无意义处决"],
+    "stats": {
+      "strength": 7,
+      "intelligence": 6
+    },
+    "states": {
+      "hp": 100,
+      "max_hp": 100,
+      "satiety": 80,
+      "fatigue": 20,
+      "money": 2,
+      "unconscious": false
+    },
+    "skills": {
+      "剑盾": 55,
+      "弓": 20,
+      "指挥": 45
+    },
+    "recruited": true,
+    "equipment": {},
+    "knowledge_graph": {},
+    "diary": []
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "work_repair_wall",
+    "name": "修补围墙",
+    "type": "work",
+    "location_required": "front_wall",
+    "skill": "工匠",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "wood": 1,
+      "stone": 1
+    },
+    "output_resources": {},
+    "fatigue_delta": 8,
+    "satiety_delta": -4
+  }
+]

@@ -1,5 +1,18 @@
 # DATA_SCHEMA.md
 
+## Resource Definition
+
+```json
+{
+  "id": "money",
+  "name": "第纳尔",
+  "category": "currency",
+  "initial_amount": 30,
+  "min_amount": 0,
+  "ui_order": 1
+}
+```
+
 ## NPC Profile
 
 ```json
@@ -41,24 +54,21 @@
 
 ```json
 {
-  "id": "canteen",
-  "name": "食堂",
+  "id": "main_hall",
+  "name": "主厅",
   "level": 1,
-  "hp": 100,
-  "max_hp": 100,
+  "hp": 180,
+  "max_hp": 180,
+  "tags": ["command", "failure_target"],
   "workstations": [
     {
-      "id": "kitchen_01",
-      "type": "cooking",
+      "id": "command_table_01",
+      "type": "command",
       "occupied_by": null
     }
   ],
-  "inputs": {
-    "粮食": 1
-  },
-  "outputs": {
-    "餐食": 1
-  }
+  "inputs": {},
+  "outputs": {}
 }
 ```
 
@@ -66,20 +76,53 @@
 
 ```json
 {
-  "id": "work_cooking",
-  "name": "在食堂做饭",
+  "id": "work_repair_wall",
+  "name": "修补围墙",
   "type": "work",
-  "location_required": "canteen",
-  "skill": "厨艺",
+  "location_required": "front_wall",
+  "skill": "工匠",
   "base_duration_hours": 1,
   "input_resources": {
-    "粮食": 1
+    "wood": 1,
+    "stone": 1
   },
-  "output_resources": {
-    "餐食": 1
-  },
-  "fatigue_delta": 5,
-  "satiety_delta": -5
+  "output_resources": {},
+  "fatigue_delta": 8,
+  "satiety_delta": -4
+}
+```
+
+## Weapon Definition
+
+```json
+{
+  "id": "short_sword",
+  "name": "短剑",
+  "type": "melee",
+  "range": 1.5,
+  "damage": 12,
+  "attack_interval": 1.2,
+  "required_skill": "剑盾",
+  "tags": ["one_handed"]
+}
+```
+
+## Enemy Wave
+
+```json
+{
+  "id": "wave_01",
+  "wave_number": 1,
+  "trigger_day": 3,
+  "trigger_hour": 18,
+  "spawn_point": "front_gate",
+  "enemies": [
+    {
+      "enemy_id": "raider_basic",
+      "count": 3
+    }
+  ],
+  "notes": "第一波用于验证最小战斗闭环。"
 }
 ```
 

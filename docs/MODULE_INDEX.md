@@ -49,9 +49,9 @@
 当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`  
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位。  
-依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统占位脚本。  
-当前状态：T0103 已完成低模驿站 Blockout；HUD 标题和建筑调试标签可见，未实现 NPC、建筑交互、资源、时间推进或战斗。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、小时/阶段、资源占位、加速/警铃按钮占位和后端状态占位；`CameraRig` 已挂载基础俯视摄像机控制。  
+依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统占位脚本，绑定 `res://scripts/ui/HUD.gd` 作为 HUD 展示脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。  
+当前状态：T0105 已完成基础摄像机控制；低模驿站、HUD 信息和建筑调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站，未实现 NPC、建筑交互、真实资源变化、时间推进或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`  
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。  
@@ -118,6 +118,16 @@
 依赖：暂无。  
 当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；尚未实现对话逻辑。
 
+路径：`res://scripts/ui/HUD.gd`  
+用途：HUD 展示脚本，刷新标题区下方的天数、小时/阶段、资源占位、后端状态占位。  
+依赖：读取 `/root/GameState`，监听 `/root/EventBus.hour_started`。  
+当前状态：T0104 已创建并绑定到 `Main/UI/HUD`；仅展示占位，不实现真实资源变化、加速、警铃或后端连接。
+
+路径：`res://scripts/camera/CameraRig.gd`  
+用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。  
+依赖：绑定到 `res://scenes/main/Main.tscn` 的 `CameraRig`，读取键盘 WASD、鼠标中键拖拽和滚轮输入。  
+当前状态：T0105 已创建并绑定；支持 X/Z 边界限制、缩放距离限制，并保持高机位俯视角，不实现角色控制或第一人称自由视角。
+
 ## Godot 脚本规划
 
 | 模块 | 推荐路径 | 说明 |
@@ -136,17 +146,52 @@
 | 战斗系统 | `res://scripts/systems/CombatSystem.gd` | 攻击、策略、波次 |
 | 昏迷系统 | `res://scripts/systems/UnconsciousSystem.gd` | 昏迷、治疗、复苏 |
 | LLM 桥接 | `res://scripts/systems/LLMBridge.gd` | HTTP 请求后端 |
+| HUD 展示 | `res://scripts/ui/HUD.gd` | 时间、资源、按钮和后端状态占位 |
+| 摄像机控制 | `res://scripts/camera/CameraRig.gd` | 俯视平移、缩放和边界限制 |
 
 ## 数据文件规划
 
 | 内容 | 推荐路径 | 说明 |
 |---|---|---|
+| 资源定义 | `data/resource_defs.json` | 初始资源、显示顺序和基础分类 |
 | NPC 档案 | `data/npc_profiles.json` | 8 个初始 NPC |
 | 建筑定义 | `data/building_defs.json` | 建筑 HP、等级、工作位 |
 | 行动定义 | `data/action_defs.json` | 工作、吃饭、睡觉等 |
 | 武器定义 | `data/weapon_defs.json` | 剑盾、长杆、弓、弩 |
 | 敌人波次 | `data/enemy_waves.json` | 5 波 Demo |
 | Prompt 模板 | `data/prompts/*.txt` | 计划、对话、判定、总结 |
+
+## 数据文件当前已创建
+
+路径：`data/resource_defs.json`  
+用途：资源配置，记录资源 id、显示名、分类、初始数量、最小值和 HUD 顺序。  
+依赖：后续由 `ResourceSystem` 通过 `ConfigLoader.load_data_file("resource_defs.json")` 读取。  
+当前状态：T0201 已创建最小样例，包含第纳尔、粮食、木材、石料、铁。
+
+路径：`data/building_defs.json`  
+用途：建筑配置，记录建筑 id、等级、HP、标签、工作位和输入输出。  
+依赖：后续由 `BuildingSystem` 读取并绑定到低模建筑实体。  
+当前状态：T0201 已创建最小样例，包含主厅配置；尚未接入场景节点。
+
+路径：`data/action_defs.json`  
+用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出和状态变化。  
+依赖：后续由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。  
+当前状态：T0201 已创建最小样例，包含修补围墙行动。
+
+路径：`data/weapon_defs.json`  
+用途：武器配置，记录武器类型、射程、伤害、攻击间隔和技能需求。  
+依赖：后续由装备、征召和战斗系统读取。  
+当前状态：T0201 已创建最小样例，包含短剑。
+
+路径：`data/enemy_waves.json`  
+用途：敌人波次配置，记录波次编号、触发时间、生成点和敌人数量。  
+依赖：后续由 `CombatSystem` 或波次系统读取。  
+当前状态：T0201 已创建最小样例，包含第一波敌人占位。
+
+路径：`data/npc_profiles.json`  
+用途：NPC 档案配置，记录身份、性格、欲望、恐惧、底线、基础数值、状态、技能、入伍状态、装备、知识图谱和日记。  
+依赖：后续由 `NPCSystem` 读取并生成 NPC 实体。  
+当前状态：T0201 已创建最小样例，包含老兵副官占位档案；完整 8 名 NPC 留给后续 NPC 任务。
 
 ## 后端模块规划
 

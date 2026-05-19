@@ -151,3 +151,55 @@
 
 未做：
 - 未实现建筑数据、建筑点击、生产、NPC、导航或战斗逻辑。
+
+### T0104 建立 HUD 基础界面
+
+完成：
+- 在 `res://scenes/main/Main.tscn` 的 `Main/UI/HUD` 下补齐标题、天数、小时/阶段、资源占位、加速按钮、警铃按钮和后端状态占位。
+- 新增 `res://scripts/ui/HUD.gd`，从 `GameState` 读取当前天数和小时，并根据小时显示清晨/白昼/黄昏/夜间阶段。
+- 资源显示保持占位值 `--`，后端状态固定为未连接占位；加速和警铃按钮不触发真实逻辑。
+
+验证：
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`。
+- 游戏日志无报错。
+- 截图确认 HUD 可见，并且没有遮挡主要驿站视角。
+
+未做：
+- 未实现真实资源变化、时间推进、警铃逻辑、后端连接或对话 UI。
+
+### T0201 创建基础数据文件
+
+完成：
+- 新增 `data/resource_defs.json`，包含第纳尔、粮食、木材、石料、铁五类基础资源的最小配置。
+- 新增 `data/building_defs.json`，包含主厅建筑的最小配置。
+- 新增 `data/action_defs.json`，包含修补围墙行动的最小配置。
+- 新增 `data/weapon_defs.json`，包含短剑武器的最小配置。
+- 新增 `data/enemy_waves.json`，包含第一波敌人占位配置。
+- 新增 `data/npc_profiles.json`，包含老兵副官占位档案。
+- 更新 `DATA_SCHEMA.md`，补齐资源、武器、敌人波次 schema，并让已有示例与实际 JSON 字段一致。
+- 更新 `MODULE_INDEX.md`，记录新增数据文件的用途、依赖和当前状态。
+
+验证：
+- 使用 PowerShell `ConvertFrom-Json` 验证 6 个 JSON 文件格式合法，且均为非空数组。
+- 通过临时 Godot 脚本调用 `ConfigLoader.load_data_file(...)` 读取 6 个文件，确认每个文件均返回数组数据。
+- 通过 Godot MCP 自检确认连接正常。
+
+未做：
+- 未实现资源系统、建筑系统、NPC 生成、战斗波次生成或 LLM 接入。
+
+### T0105 实现基础摄像机控制
+
+完成：
+- 新增 `res://scripts/camera/CameraRig.gd`，绑定到 `Main/CameraRig`。
+- 支持 WASD 键盘平移、鼠标中键拖拽平移、鼠标滚轮缩放。
+- 通过 X/Z 边界和缩放距离限制，避免摄像机离开驿站太远。
+- 保留当前高机位俯视角，只移动 `CameraRig` 和调整 `Camera3D` 本地距离。
+
+验证：
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`。
+- 游戏日志无报错。
+- Godot MCP 确认 `/root/Main/CameraRig` 已挂载 `res://scripts/camera/CameraRig.gd`，并暴露平移、缩放和边界参数。
+- 使用 `godot --headless --path . --quit-after 1` 验证项目加载无错误。
+
+未做：
+- 未实现角色控制、镜头旋转或自由第一人称视角。

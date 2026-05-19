@@ -1,0 +1,42 @@
+[
+  {
+    "id": "money",
+    "name": "第纳尔",
+    "category": "currency",
+    "initial_amount": 30,
+    "min_amount": 0,
+    "ui_order": 1
+  },
+  {
+    "id": "grain",
+    "name": "粮食",
+    "category": "supply",
+    "initial_amount": 18,
+    "min_amount": 0,
+    "ui_order": 2
+  },
+  {
+    "id": "wood",
+    "name": "木材",
+    "category": "material",
+    "initial_amount": 12,
+    "min_amount": 0,
+    "ui_order": 3
+  },
+  {
+    "id": "stone",
+    "name": "石料",
+    "category": "material",
+    "initial_amount": 8,
+    "min_amount": 0,
+    "ui_order": 4
+  },
+  {
+    "id": "iron",
+    "name": "铁",
+    "category": "material",
+    "initial_amount": 5,
+    "min_amount": 0,
+    "ui_order": 5
+  }
+]

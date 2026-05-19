@@ -332,7 +332,7 @@ Main
 
 ## T0104 建立 HUD 基础界面
 
-状态：Todo  
+状态：Done  
 优先级：P0  
 前置任务：T0102  
 涉及文档：`UI_UX.md`, `MODULE_INDEX.md`
@@ -365,11 +365,18 @@ Main
 - HUD 节点路径记录在 `MODULE_INDEX.md`。
 - `UI_UX.md` 同步当前 HUD 结构。
 
+验收结果（2026-05-19）：
+
+- 已在 `res://scenes/main/Main.tscn` 的 `Main/UI/HUD` 下补齐标题、天数、小时/阶段、金钱、粮食、木材、石料、铁、加速按钮、警铃按钮和后端状态占位。
+- 新增 `res://scripts/ui/HUD.gd`，仅负责读取 `GameState` 当前天数/小时并刷新 HUD 占位文本；资源、警铃和后端连接仍为占位，不执行真实逻辑。
+- HUD 以左上角小面积信息块显示，Godot MCP 截图确认没有遮挡主要驿站视角。
+- 已通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
 ---
 
 ## T0105 实现基础摄像机控制
 
-状态：Todo  
+状态：Done  
 优先级：P1  
 前置任务：T0103  
 涉及文档：`GODOT_ARCHITECTURE.md`, `UI_UX.md`
@@ -397,6 +404,15 @@ Main
 - 不会移出场景太远。
 - 操作手感基本可用。
 
+验收结果（2026-05-19）：
+
+- 已新增 `res://scripts/camera/CameraRig.gd` 并绑定到 `Main/CameraRig`。
+- 支持 WASD 键盘平移、鼠标中键拖拽平移、鼠标滚轮缩放。
+- 摄像机保持现有高机位俯视角，只调整 `CameraRig` 的 X/Z 位置和 `Camera3D` 的本地距离。
+- 已设置 X/Z 边界和缩放距离限制，避免视角移出场景太远。
+- 已通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错；MCP 可确认 `CameraRig` 挂载脚本和导出参数。
+- 已使用 `godot --headless --path . --quit-after 1` 验证项目加载无错误。
+
 ---
 
 # M2：配置化数据与建筑/资源基础
@@ -407,7 +423,7 @@ Main
 
 ## T0201 创建基础数据文件
 
-状态：Todo  
+状态：Done  
 优先级：P0  
 前置任务：T0101  
 涉及文档：`DATA_SCHEMA.md`, `MODULE_INDEX.md`
@@ -438,6 +454,14 @@ Main
 - 每个文件至少有 1 条示例数据。
 - `DATA_SCHEMA.md` 与实际字段一致。
 - `MODULE_INDEX.md` 记录数据文件。
+
+验收结果（2026-05-19）：
+
+- 已新增 `data/resource_defs.json`、`data/building_defs.json`、`data/action_defs.json`、`data/weapon_defs.json`、`data/enemy_waves.json`、`data/npc_profiles.json`。
+- 每个文件均为合法 JSON 数组，且至少包含 1 条最小样例数据；`resource_defs.json` 包含 HUD 规划中的五类基础资源。
+- 已用 `ConfigLoader.load_data_file(...)` 读取 6 个文件并确认返回数组数据。
+- 已同步更新 `DATA_SCHEMA.md` 和 `MODULE_INDEX.md`。
+- 本任务仅建立配置数据，不实现资源系统、建筑系统、NPC 生成、战斗或 LLM 接入。
 
 ---
 

@@ -4,12 +4,26 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0102）：
+当前实现（T0104）：
 
 - `Main/UI` 使用 `CanvasLayer`。
-- `Main/UI/HUD` 保留最小标题 `TitleLabel`，用于确认主场景启动。
+- `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
+- `Main/UI/HUD/TitleLabel` 显示游戏标题。
+- `Main/UI/HUD/DayLabel`、`TimeLabel`、`PhaseLabel` 显示当前天数、小时和阶段；当前从 `GameState` 读取初始时间。
+- `Main/UI/HUD/ResourceStrip` 下的 `GoldLabel`、`FoodLabel`、`WoodLabel`、`StoneLabel`、`IronLabel` 显示资源占位，当前值为 `--`，不代表真实资源系统。
+- `Main/UI/HUD/SpeedButton` 和 `AlarmButton` 是加速与警铃按钮占位，当前不触发真实逻辑。
+- `Main/UI/HUD/BackendStatusLabel` 显示后端连接状态占位，当前固定为未连接。
 - `Main/UI/NPCPanel`、`Main/UI/BuildingPanel`、`Main/UI/DialogPanel` 已作为隐藏占位节点存在。
-- 暂未实现资源栏、按钮、面板内容或交互逻辑。
+- 暂未实现真实资源变化、加速、警铃、后端连接、面板内容或交互逻辑。
+
+当前摄像机操作（T0105）：
+
+- `Main/CameraRig` 绑定 `res://scripts/camera/CameraRig.gd`。
+- WASD 用于俯视平移。
+- 鼠标中键拖拽用于俯视平移。
+- 鼠标滚轮用于缩放。
+- 摄像机移动和缩放有边界限制，始终保持高机位俯视管理视角。
+- 暂不支持角色控制、自由第一人称视角或镜头旋转。
 
 需要显示：
 
