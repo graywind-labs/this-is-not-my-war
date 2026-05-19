@@ -38,6 +38,32 @@
 - 围墙
 - 公告牌
 
+## 当前低模占位（T0103）
+
+当前 `res://scenes/main/Main.tscn` 已用简单几何体放置以下 P0 空间占位：
+
+- `MainHall`：主厅，驿站指挥中枢占位。
+- `Dormitory`：宿舍。
+- `DiningHall`：食堂。
+- `Warehouse`：仓库。
+- `Tavern`：酒窖。
+- `Garden`：菜园。
+- `Blacksmith`：铁匠铺。
+- `TrainingGround`：训练场。
+- `Stable`：马厩。
+- `Chapel`：小教堂。
+- `Clinic`：小诊所。
+- `Workshop`：工械坊。
+- `NoticeBoard`：公告牌。
+- `FrontWall` / `BackWall` / `LeftWall` / `RightWall`：围墙边界。
+- `FrontGate`：正门 / 城门。
+- `Plaza`：广场，公共信息中枢占位。
+- `BackGate` 与 `MerchantEntranceMarker`：后门和商人入口占位。
+
+这些节点目前只用于视觉和空间布局，不包含建筑数据、HP、工作位、点击交互、生产或修复逻辑。后续 T0201/T0203 会把建筑定义迁移到配置数据和建筑系统中。
+
+2026-05-19 追加调整：低模驿站已扩大整体地面和围墙尺度，并将建筑按中央广场、生活区、生产区、防务区、后门入口等功能区域拉开，避免占位建筑过小过密。围墙四角已闭合，公告牌已缩小并移动到主厅正面。
+
 ## 建筑通用属性
 
 | 属性 | 说明 |

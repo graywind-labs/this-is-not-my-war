@@ -14,6 +14,13 @@ Model Adapter
 DeepSeek / MiniMax / Qwen / Zhipu 等模型
 ```
 
+当前后端实现状态：
+
+- 使用 Flask 作为 Python Backend 的最小 Web 框架。
+- `backend/app.py` 提供 `GET /health`，用于 Godot 或开发者确认本地服务可用。
+- `backend/services/model_adapter.py` 是模型供应商隔离层的最小占位，只读取环境配置，不执行真实 LLM 调用。
+- 真实 API Key 必须通过本地 `backend/.env` 或环境变量提供；仓库只保留 `.env.example` 模板。
+
 ## 职责划分
 
 ### Godot 负责

@@ -5,19 +5,21 @@
 
 ## 当前版本
 
-版本：`0.0.1-main-scene`  
-状态：已完成 Godot 项目入口与最小可运行 Main 场景，尚未实现 NPC、建筑交互、资源、时间和战斗。
+版本：`0.0.5-station-blockout`  
+状态：已完成 Godot 项目入口、可扩展 Main 场景节点结构、低模驿站 Blockout、核心 Autoload 骨架，以及 Flask 后端骨架和 `/health` 健康检查；尚未实现 NPC、建筑交互、资源变化、时间推进、战斗和 AI 对话。
 
 ## 当前已实现内容
 
 - [x] Godot 项目初始化
-- [ ] 基础地图
+- [x] 核心 Autoload 骨架
+- [x] Main 标准节点结构
+- [x] 基础地图
 - [ ] NPC 基础实体
 - [ ] 建筑基础实体
 - [ ] 时间系统
 - [ ] 资源系统
 - [ ] 对话系统
-- [ ] LLM 后端
+- [x] LLM 后端骨架
 - [ ] 征召系统
 - [ ] 战斗系统
 - [ ] 昏迷/治疗/复苏
@@ -29,14 +31,32 @@
 ```text
 启动 Godot
   ↓
+加载 EventBus / GameState / ConfigLoader Autoload
+  ↓
 进入 Main 场景
   ↓
-显示一个基础 3D 地面、俯视相机、方向光
+加载 WorldRoot / Station / Systems / UI / CameraRig 标准节点结构
+  ↓
+显示低模驿站 Blockout、俯视相机、方向光
   ↓
 显示最小 HUD 标题
 ```
 
-尚未实现 NPC、建筑点击、资源栏、时间系统、后端或战斗。
+低模驿站当前包含主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌占位和调试标签。2026-05-19 已扩大地面与围墙范围，并重新拉开建筑间距，让中央广场、生活区、生产区、防务区和后门入口更易辨认；随后补齐围墙四角闭合，并把公告牌缩小移动到主厅正面。尚未实现 NPC、建筑点击、资源栏、时间推进、AI 对话或战斗。当前系统脚本只提供占位骨架。
+
+后端当前稳定流程：
+
+```text
+进入 backend
+  ↓
+安装 requirements.txt
+  ↓
+启动 Flask app.py
+  ↓
+访问 GET /health
+  ↓
+返回 {"ok": true, "service": "war-not-mine-backend"}
+```
 
 后续预期稳定流程：
 
@@ -64,11 +84,17 @@ godot --path .
 res://scenes/main/Main.tscn
 ```
 
-后端尚未初始化，以下方式暂不可用：
+后端已初始化，可用以下方式启动：
 
 ```bash
 cd backend
 python app.py
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:5000/health
 ```
 
 ## 当前主要文件
@@ -78,8 +104,15 @@ python app.py
 - `docs/PROJECT_BRIEF.md`：项目简报
 - `docs/TASKS.md`：任务列表
 - `docs/MODULE_INDEX.md`：模块索引
+- `backend/app.py`：Flask 后端入口，提供 `GET /health`
+- `backend/services/model_adapter.py`：模型适配器最小边界，占位后续 LLM 调用
+- `backend/requirements.txt`：Python 后端依赖
 - `project.godot`：Godot 项目配置，当前入口为 `res://scenes/main/Main.tscn`
-- `scenes/main/Main.tscn`：最小可运行主场景
+- `scenes/main/Main.tscn`：最小可运行主场景，包含标准 WorldRoot、Systems、UI、CameraRig 节点结构，以及低模驿站 Blockout
+- `scripts/core/EventBus.gd`：全局事件总线，声明基础跨系统信号
+- `scripts/core/GameState.gd`：全局运行状态，保存天数、小时和战斗状态
+- `scripts/core/ConfigLoader.gd`：JSON 配置读取入口，提供缺失/解析错误提示
+- `scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd`：后续系统的空脚本占位
 
 ## 当前风险
 
@@ -89,7 +122,7 @@ python app.py
 
 ## 最近一次变更
 
-- T0001 初始化 Godot 项目结构：创建最小可运行 Main 场景，并设置项目启动入口。
+- T0103 创建低模驿站 Blockout：在 Main 场景中补齐主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌等几何占位和 `Label3D` 调试标签；随后扩大驿站尺度、拉开建筑间距、闭合围墙四角，并将公告牌调整到主厅正面，通过 Godot MCP 验证主场景运行无报错。
 
 ## Godot MCP
 
@@ -103,3 +136,6 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 
 - 当前验证结果：脚本可正常返回 `Godot MCP connected`。
 - 2026-05-19 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图可见标题与基础地面。
+- 2026-05-19 T0101 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，Autoload 加载正常，游戏日志无报错。
+- 2026-05-19 T0102 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 标题与基础地面仍可见。
+- 2026-05-19 T0103 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认低模驿站、HUD 标题和调试标签可见。

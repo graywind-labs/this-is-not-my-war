@@ -18,6 +18,9 @@ config/icon="res://icon.svg"
 [autoload]
 
 MCPGameBridge="res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd"
+EventBus="*res://scripts/core/EventBus.gd"
+GameState="*res://scripts/core/GameState.gd"
+ConfigLoader="*res://scripts/core/ConfigLoader.gd"
 
 [editor_plugins]
 

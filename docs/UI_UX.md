@@ -4,6 +4,13 @@
 
 俯视 3D 驿站地图。
 
+当前实现（T0102）：
+
+- `Main/UI` 使用 `CanvasLayer`。
+- `Main/UI/HUD` 保留最小标题 `TitleLabel`，用于确认主场景启动。
+- `Main/UI/NPCPanel`、`Main/UI/BuildingPanel`、`Main/UI/DialogPanel` 已作为隐藏占位节点存在。
+- 暂未实现资源栏、按钮、面板内容或交互逻辑。
+
 需要显示：
 
 - 时间与天数

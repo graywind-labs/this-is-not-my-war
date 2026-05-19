@@ -44,14 +44,14 @@
 ## Godot 当前已创建
 
 路径：`project.godot`  
-用途：Godot 项目配置，当前启动场景为 `res://scenes/main/Main.tscn`。  
+用途：Godot 项目配置，当前启动场景为 `res://scenes/main/Main.tscn`，并注册 `MCPGameBridge`、`EventBus`、`GameState`、`ConfigLoader` Autoload。  
 依赖：Godot 4.6，`addons/godot_mcp` 自动加载配置。  
-当前状态：T0001 已验证可打开并运行。
+当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`  
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`Systems`、`UI/HUD`、`CameraRig/Camera3D`、`SunLight`。  
-依赖：无脚本依赖。  
-当前状态：T0001 占位场景；只用于项目入口验证，未实现 NPC、建筑交互、资源、时间或战斗。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位。  
+依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统占位脚本。  
+当前状态：T0103 已完成低模驿站 Blockout；HUD 标题和建筑调试标签可见，未实现 NPC、建筑交互、资源、时间推进或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`  
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。  
@@ -61,7 +61,62 @@
 路径：`res://scripts/core/`, `res://scripts/systems/`  
 用途：后续核心单例与系统脚本目录。  
 依赖：暂无。  
-当前状态：目录已创建，具体脚本待后续任务实现。
+当前状态：T0101 已创建核心 Autoload 脚本与部分系统占位脚本。
+
+路径：`res://scripts/core/EventBus.gd`  
+用途：全局事件总线，声明基础跨系统信号。  
+依赖：作为 Autoload 注册于 `project.godot`。  
+当前状态：T0101 已创建；包含 `resource_changed`、`hour_started`、`building_clicked`、`npc_clicked`、`public_event_added`。
+
+路径：`res://scripts/core/GameState.gd`  
+用途：全局运行状态，保存当前天数、小时和是否处于战斗中。  
+依赖：作为 Autoload 注册于 `project.godot`；需要广播时通过 `/root/EventBus` 查找事件总线。  
+当前状态：T0101 已创建；仅提供最小状态字段和设置接口。
+
+路径：`res://scripts/core/ConfigLoader.gd`  
+用途：统一 JSON 配置读取入口。  
+依赖：作为 Autoload 注册于 `project.godot`；使用 Godot `FileAccess` 和 `JSON`。  
+当前状态：T0101 已创建；文件缺失、打开失败、解析失败时会 `push_error` 并返回默认值。
+
+路径：`res://scripts/systems/TimeSystem.gd`  
+用途：时间系统占位脚本。  
+依赖：暂无。  
+当前状态：T0101 已创建；尚未实现时间推进。
+
+路径：`res://scripts/systems/ResourceSystem.gd`  
+用途：资源系统占位脚本。  
+依赖：暂无。  
+当前状态：T0101 已创建；尚未实现资源读写。
+
+路径：`res://scripts/systems/BuildingSystem.gd`  
+用途：建筑系统占位脚本。  
+依赖：暂无。  
+当前状态：T0101 已创建；尚未实现建筑点击或数据绑定。
+
+路径：`res://scripts/systems/NPCSystem.gd`  
+用途：NPC 系统占位脚本。  
+依赖：暂无。  
+当前状态：T0101 已创建；尚未实现 NPC 生成或行为。
+
+路径：`res://scripts/systems/MemorySystem.gd`  
+用途：记忆与公开见闻系统占位脚本。  
+依赖：暂无。  
+当前状态：T0101 已创建；尚未实现事件记录。
+
+路径：`res://scripts/systems/ActionSystem.gd`  
+用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。  
+依赖：暂无。  
+当前状态：T0102 已创建并绑定到 `Main/Systems/ActionSystem`；尚未实现行动逻辑。
+
+路径：`res://scripts/systems/CombatSystem.gd`  
+用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。  
+依赖：暂无。  
+当前状态：T0102 已创建并绑定到 `Main/Systems/CombatSystem`；尚未实现战斗逻辑。
+
+路径：`res://scripts/systems/DialogSystem.gd`  
+用途：对话系统占位脚本，后续用于 NPC 对话和后端请求。  
+依赖：暂无。  
+当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；尚未实现对话逻辑。
 
 ## Godot 脚本规划
 
@@ -105,6 +160,33 @@
 | 记忆服务 | `backend/services/memory_service.py` | 总结、知识图谱 |
 | 成本统计 | `backend/services/budget_service.py` | token 与费用 |
 | 数据模型 | `backend/schemas/*.py` | Pydantic 或 dataclass |
+
+## 后端当前已创建
+
+路径：`backend/app.py`  
+用途：Flask 后端入口，当前提供 `GET /health` 健康检查。  
+依赖：`flask`, `python-dotenv`。  
+当前状态：T0002 已完成；尚未实现 NPC 对话、计划、判定或真实 LLM 调用。
+
+路径：`backend/requirements.txt`  
+用途：记录 Python 后端依赖。  
+依赖：至少包含 `flask`, `python-dotenv`, `pydantic`, `requests`。  
+当前状态：T0002 已确认可用于安装后端最小依赖。
+
+路径：`backend/.env.example`  
+用途：本地 `.env` 配置模板。  
+依赖：无。  
+当前状态：仅包含变量名和占位值；真实 API Key 必须放入本地 `backend/.env`，不得提交仓库。
+
+路径：`backend/services/model_adapter.py`  
+用途：模型供应商适配器的最小边界，后续由对话、计划、判定服务复用。  
+依赖：环境变量 `LLM_PROVIDER`, `LLM_API_KEY`。  
+当前状态：仅读取配置并提供 `is_configured()`，不发起 LLM 请求。
+
+路径：`backend/schemas/`, `backend/services/`, `backend/data/`  
+用途：后端数据模型、服务层和后端本地数据目录。  
+依赖：暂时无。  
+当前状态：T0002 创建目录骨架，用 `.gitkeep` 保留空目录。
 
 ## 更新规则
 

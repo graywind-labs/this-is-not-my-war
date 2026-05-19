@@ -48,6 +48,73 @@ Main
 | GameState | `res://scripts/core/GameState.gd` | 全局运行状态 |
 | ConfigLoader | `res://scripts/core/ConfigLoader.gd` | 加载配置 |
 
+## 当前 Autoload 实现
+
+T0101 已在 `project.godot` 注册以下 Autoload：
+
+| 名称 | 路径 | 当前状态 |
+|---|---|---|
+| MCPGameBridge | `res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd` | Godot MCP 运行桥接 |
+| EventBus | `res://scripts/core/EventBus.gd` | 已声明基础事件信号 |
+| GameState | `res://scripts/core/GameState.gd` | 已保存天数、小时、战斗状态 |
+| ConfigLoader | `res://scripts/core/ConfigLoader.gd` | 已支持 JSON 读取和错误提示 |
+
+T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统脚本占位绑定到 Main 场景的 `Systems` 节点下。当前仅提供结构占位，不实现点击、NPC、资源数值、战斗或对话逻辑。
+
+`UnconsciousSystem` 仍保留为后续昏迷/治疗/复苏模块规划，T0102 未创建该节点或脚本。
+
+## 当前 Main 场景结构
+
+```text
+Main
+├─ WorldRoot
+│  └─ Station
+│     ├─ Ground
+│     ├─ Buildings
+│     │  ├─ MainHall
+│     │  ├─ Dormitory
+│     │  ├─ DiningHall
+│     │  ├─ Warehouse
+│     │  ├─ Tavern
+│     │  ├─ Garden
+│     │  ├─ Blacksmith
+│     │  ├─ TrainingGround
+│     │  ├─ Stable
+│     │  ├─ Chapel
+│     │  ├─ Clinic
+│     │  ├─ Workshop
+│     │  ├─ NoticeBoard
+│     │  ├─ FrontWall / BackWall / LeftWall / RightWall
+│     │  ├─ FrontGate
+│     │  └─ BackGate
+│     ├─ NPCs
+│     ├─ Enemies
+│     └─ Props
+│        ├─ Plaza
+│        ├─ FrontRoad
+│        ├─ BackRoad
+│        └─ MerchantEntranceMarker
+├─ Systems
+│  ├─ TimeSystem
+│  ├─ ResourceSystem
+│  ├─ BuildingSystem
+│  ├─ NPCSystem
+│  ├─ ActionSystem
+│  ├─ MemorySystem
+│  ├─ CombatSystem
+│  └─ DialogSystem
+├─ UI
+│  ├─ HUD
+│  ├─ NPCPanel
+│  ├─ BuildingPanel
+│  └─ DialogPanel
+├─ CameraRig
+│  └─ Camera3D
+└─ SunLight
+```
+
+T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该阶段只提供空间占位和可辨认视觉结构，不实现建筑数据、点击、生产、导航或战斗。
+
 ## 重要信号建议
 
 ```gdscript

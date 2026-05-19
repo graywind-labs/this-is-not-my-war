@@ -1,10 +1,133 @@
-[gd_scene load_steps=3 format=3 uid="uid://gqvi00hixoiv"]
+[gd_scene format=3 uid="uid://gqvi00hixoiv"]
+
+[ext_resource type="Script" uid="uid://om7sbri3mgrg" path="res://scripts/systems/TimeSystem.gd" id="1_time"]
+[ext_resource type="Script" uid="uid://cgrpt01r17602" path="res://scripts/systems/ResourceSystem.gd" id="2_resource"]
+[ext_resource type="Script" uid="uid://w81fvmel4281" path="res://scripts/systems/BuildingSystem.gd" id="3_building"]
+[ext_resource type="Script" uid="uid://d3rpn1tqiekyq" path="res://scripts/systems/NPCSystem.gd" id="4_npc"]
+[ext_resource type="Script" uid="uid://df2dufyyr3i71" path="res://scripts/systems/ActionSystem.gd" id="5_action"]
+[ext_resource type="Script" uid="uid://cvivi1v1r7xgt" path="res://scripts/systems/MemorySystem.gd" id="6_memory"]
+[ext_resource type="Script" uid="uid://d3sypfb48oyeq" path="res://scripts/systems/CombatSystem.gd" id="7_combat"]
+[ext_resource type="Script" uid="uid://deyr4bg8at4je" path="res://scripts/systems/DialogSystem.gd" id="8_dialog"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(24, 16)
+size = Vector2(54, 38)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
 albedo_color = Color(0.28, 0.35, 0.26, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_main_hall"]
+size = Vector3(4, 2.4, 3)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_main_hall"]
+albedo_color = Color(0.55, 0.43, 0.32, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dormitory"]
+size = Vector3(4.5, 1.5, 2.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dormitory"]
+albedo_color = Color(0.37, 0.42, 0.48, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_dining_hall"]
+size = Vector3(3.8, 1.4, 2.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dining_hall"]
+albedo_color = Color(0.61, 0.46, 0.27, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_warehouse"]
+size = Vector3(3.4, 1.8, 2.6)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_warehouse"]
+albedo_color = Color(0.34, 0.31, 0.25, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tavern"]
+size = Vector3(2.8, 1.2, 2.1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tavern"]
+albedo_color = Color(0.44, 0.22, 0.18, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_garden"]
+size = Vector3(3.4, 0.12, 2.4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_garden"]
+albedo_color = Color(0.19, 0.43, 0.22, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_blacksmith"]
+size = Vector3(2.8, 1.35, 2.1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_blacksmith"]
+albedo_color = Color(0.28, 0.27, 0.29, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_training_ground"]
+size = Vector3(3.7, 0.08, 2.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_training_ground"]
+albedo_color = Color(0.45, 0.36, 0.24, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_stable"]
+size = Vector3(3.2, 1.25, 2.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_stable"]
+albedo_color = Color(0.39, 0.29, 0.2, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_chapel"]
+size = Vector3(2.5, 1.55, 2.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_chapel"]
+albedo_color = Color(0.57, 0.55, 0.49, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_clinic"]
+size = Vector3(2.7, 1.25, 2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_clinic"]
+albedo_color = Color(0.47, 0.56, 0.53, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_workshop"]
+size = Vector3(3.1, 1.35, 2.1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_workshop"]
+albedo_color = Color(0.31, 0.33, 0.39, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_notice_board"]
+size = Vector3(1.35, 0.8, 0.14)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_notice_board"]
+albedo_color = Color(0.31, 0.2, 0.11, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wall"]
+size = Vector3(1, 1.6, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_wall"]
+albedo_color = Color(0.42, 0.4, 0.36, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_gate"]
+size = Vector3(3, 2.2, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gate"]
+albedo_color = Color(0.29, 0.2, 0.14, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_back_gate"]
+size = Vector3(2, 1.8, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_back_gate"]
+albedo_color = Color(0.25, 0.17, 0.12, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_plaza"]
+size = Vector3(5, 0.06, 4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_plaza"]
+albedo_color = Color(0.5, 0.48, 0.41, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_path"]
+size = Vector3(2.2, 0.04, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_path"]
+albedo_color = Color(0.47, 0.39, 0.29, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_marker"]
+size = Vector3(1.8, 0.25, 1.8)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_marker"]
+albedo_color = Color(0.23, 0.38, 0.36, 1)
 
 [node name="Main" type="Node3D" unique_id=986039696]
 
@@ -18,13 +141,260 @@ surface_material_override/0 = SubResource("StandardMaterial3D_ground")
 
 [node name="Buildings" type="Node3D" parent="WorldRoot/Station" unique_id=115591047]
 
+[node name="MainHall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=321891562]
+transform = Transform3D(1.18, 0, 0, 0, 1, 0, 0, 0, 1.1, 0, 1.2, -7)
+mesh = SubResource("BoxMesh_main_hall")
+surface_material_override/0 = SubResource("StandardMaterial3D_main_hall")
+
+[node name="MainHallLabel" type="Label3D" parent="WorldRoot/Station/Buildings/MainHall" unique_id=1210300513]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.7, 0)
+pixel_size = 0.015
+billboard = 1
+text = "主厅"
+
+[node name="Dormitory" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1668805884]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, -9, 0.75, -3.6)
+mesh = SubResource("BoxMesh_dormitory")
+surface_material_override/0 = SubResource("StandardMaterial3D_dormitory")
+
+[node name="DormitoryLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Dormitory" unique_id=1624364953]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.2, 0)
+pixel_size = 0.015
+billboard = 1
+text = "宿舍"
+
+[node name="DiningHall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=354664282]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, 8.7, 0.7, -3.5)
+mesh = SubResource("BoxMesh_dining_hall")
+surface_material_override/0 = SubResource("StandardMaterial3D_dining_hall")
+
+[node name="DiningHallLabel" type="Label3D" parent="WorldRoot/Station/Buildings/DiningHall" unique_id=506798457]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.2, 0)
+pixel_size = 0.015
+billboard = 1
+text = "食堂"
+
+[node name="Warehouse" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1632649567]
+transform = Transform3D(1.08, 0, 0, 0, 1, 0, 0, 0, 1.05, 10.2, 0.9, 5.8)
+mesh = SubResource("BoxMesh_warehouse")
+surface_material_override/0 = SubResource("StandardMaterial3D_warehouse")
+
+[node name="WarehouseLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Warehouse" unique_id=218203184]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.35, 0)
+pixel_size = 0.015
+billboard = 1
+text = "仓库"
+
+[node name="Tavern" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, -10.2, 0.6, 5.9)
+mesh = SubResource("BoxMesh_tavern")
+surface_material_override/0 = SubResource("StandardMaterial3D_tavern")
+
+[node name="TavernLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Tavern"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.05, 0)
+pixel_size = 0.015
+billboard = 1
+text = "酒窖"
+
+[node name="Garden" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.35, 0, 0, 0, 1, 0, 0, 0, 1.35, -12.5, 0.08, 1.1)
+mesh = SubResource("BoxMesh_garden")
+surface_material_override/0 = SubResource("StandardMaterial3D_garden")
+
+[node name="GardenLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Garden"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.85, 0)
+pixel_size = 0.015
+billboard = 1
+text = "菜园"
+
+[node name="Blacksmith" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, 0.675, 8.4)
+mesh = SubResource("BoxMesh_blacksmith")
+surface_material_override/0 = SubResource("StandardMaterial3D_blacksmith")
+
+[node name="BlacksmithLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Blacksmith"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.15, 0)
+pixel_size = 0.015
+billboard = 1
+text = "铁匠铺"
+
+[node name="TrainingGround" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.45, 0, 0, 0, 1, 0, 0, 0, 1.35, -4.8, 0.05, 8.6)
+mesh = SubResource("BoxMesh_training_ground")
+surface_material_override/0 = SubResource("StandardMaterial3D_training_ground")
+
+[node name="TrainingGroundLabel" type="Label3D" parent="WorldRoot/Station/Buildings/TrainingGround"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.85, 0)
+pixel_size = 0.015
+billboard = 1
+text = "训练场"
+
+[node name="Stable" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.08, 0, 0, 0, 1, 0, 0, 0, 1.08, 12.4, 0.625, -8.6)
+mesh = SubResource("BoxMesh_stable")
+surface_material_override/0 = SubResource("StandardMaterial3D_stable")
+
+[node name="StableLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Stable"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.1, 0)
+pixel_size = 0.015
+billboard = 1
+text = "马厩"
+
+[node name="Chapel" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1.05, -4.4, 0.775, -11)
+mesh = SubResource("BoxMesh_chapel")
+surface_material_override/0 = SubResource("StandardMaterial3D_chapel")
+
+[node name="ChapelLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Chapel"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.25, 0)
+pixel_size = 0.015
+billboard = 1
+text = "小教堂"
+
+[node name="Clinic" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1.05, 4.5, 0.625, -11)
+mesh = SubResource("BoxMesh_clinic")
+surface_material_override/0 = SubResource("StandardMaterial3D_clinic")
+
+[node name="ClinicLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Clinic"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.1, 0)
+pixel_size = 0.015
+billboard = 1
+text = "小诊所"
+
+[node name="Workshop" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, -12.5, 0.675, -8.6)
+mesh = SubResource("BoxMesh_workshop")
+surface_material_override/0 = SubResource("StandardMaterial3D_workshop")
+
+[node name="WorkshopLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Workshop"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.15, 0)
+pixel_size = 0.015
+billboard = 1
+text = "工械坊"
+
+[node name="NoticeBoard" type="MeshInstance3D" parent="WorldRoot/Station/Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, -5.28)
+mesh = SubResource("BoxMesh_notice_board")
+surface_material_override/0 = SubResource("StandardMaterial3D_notice_board")
+
+[node name="NoticeBoardLabel" type="Label3D" parent="WorldRoot/Station/Buildings/NoticeBoard"]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.62, 0)
+pixel_size = 0.015
+billboard = 1
+text = "公告牌"
+
+[node name="FrontWall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1749815533]
+transform = Transform3D(28.5, 0, 0, 0, 1, 0, 0, 0, 0.45, 0, 0.8, 12)
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("StandardMaterial3D_wall")
+
+[node name="BackWall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1200039917]
+transform = Transform3D(28.5, 0, 0, 0, 1, 0, 0, 0, 0.45, 0, 0.8, -14)
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("StandardMaterial3D_wall")
+
+[node name="LeftWall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=889884524]
+transform = Transform3D(0.45, 0, 0, 0, 1, 0, 0, 0, 26, -14, 0.8, -1)
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("StandardMaterial3D_wall")
+
+[node name="RightWall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=2055212024]
+transform = Transform3D(0.45, 0, 0, 0, 1, 0, 0, 0, 26, 14, 0.8, -1)
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("StandardMaterial3D_wall")
+
+[node name="WallLabel" type="Label3D" parent="WorldRoot/Station/Buildings" unique_id=2114938806]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, -11.8, 2.3, 11.8)
+pixel_size = 0.015
+billboard = 1
+text = "围墙 / 城门"
+
+[node name="FrontGate" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=970916221]
+transform = Transform3D(1.25, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.1, 12.15)
+mesh = SubResource("BoxMesh_gate")
+surface_material_override/0 = SubResource("StandardMaterial3D_gate")
+
+[node name="FrontGateLabel" type="Label3D" parent="WorldRoot/Station/Buildings/FrontGate" unique_id=2141763561]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.55, 0)
+pixel_size = 0.015
+billboard = 1
+text = "城门"
+
+[node name="BackGate" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=662925037]
+transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1, -10, 0.9, -14.15)
+mesh = SubResource("BoxMesh_back_gate")
+surface_material_override/0 = SubResource("StandardMaterial3D_back_gate")
+
+[node name="BackGateLabel" type="Label3D" parent="WorldRoot/Station/Buildings/BackGate" unique_id=1075672637]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, -1.35, 1.35, 0.2)
+pixel_size = 0.015
+billboard = 1
+text = "后门"
+
 [node name="NPCs" type="Node3D" parent="WorldRoot/Station" unique_id=1980242254]
 
 [node name="Enemies" type="Node3D" parent="WorldRoot/Station" unique_id=1853672627]
 
 [node name="Props" type="Node3D" parent="WorldRoot/Station" unique_id=52937998]
 
+[node name="Plaza" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=2127136059]
+transform = Transform3D(1.45, 0, 0, 0, 1, 0, 0, 0, 1.35, 0, 0.04, 1.3)
+mesh = SubResource("BoxMesh_plaza")
+surface_material_override/0 = SubResource("StandardMaterial3D_plaza")
+
+[node name="PlazaLabel" type="Label3D" parent="WorldRoot/Station/Props/Plaza" unique_id=1887492751]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.9, 0)
+pixel_size = 0.015
+billboard = 1
+text = "广场"
+
+[node name="FrontRoad" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=1901118691]
+transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.6, 0, 0.03, 18)
+mesh = SubResource("BoxMesh_path")
+surface_material_override/0 = SubResource("StandardMaterial3D_path")
+
+[node name="BackRoad" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=393494044]
+transform = Transform3D(0.9, 0, 0, 0, 1, 0, 0, 0, 1.05, -10, 0.03, -18.6)
+mesh = SubResource("BoxMesh_path")
+surface_material_override/0 = SubResource("StandardMaterial3D_path")
+
+[node name="MerchantEntranceMarker" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=1934859186]
+transform = Transform3D(1.15, 0, 0, 0, 1, 0, 0, 0, 1.15, -10, 0.13, -18.2)
+mesh = SubResource("BoxMesh_marker")
+surface_material_override/0 = SubResource("StandardMaterial3D_marker")
+
+[node name="MerchantEntranceLabel" type="Label3D" parent="WorldRoot/Station/Props/MerchantEntranceMarker" unique_id=1148294524]
+transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.75, 0)
+pixel_size = 0.015
+billboard = 1
+text = "商人入口"
+
 [node name="Systems" type="Node" parent="." unique_id=1899792392]
+
+[node name="TimeSystem" type="Node" parent="Systems" unique_id=737958791]
+script = ExtResource("1_time")
+
+[node name="ResourceSystem" type="Node" parent="Systems" unique_id=1659604559]
+script = ExtResource("2_resource")
+
+[node name="BuildingSystem" type="Node" parent="Systems" unique_id=1869605880]
+script = ExtResource("3_building")
+
+[node name="NPCSystem" type="Node" parent="Systems" unique_id=1544998544]
+script = ExtResource("4_npc")
+
+[node name="ActionSystem" type="Node" parent="Systems" unique_id=1444450010]
+script = ExtResource("5_action")
+
+[node name="MemorySystem" type="Node" parent="Systems" unique_id=104922409]
+script = ExtResource("6_memory")
+
+[node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
+script = ExtResource("7_combat")
+
+[node name="DialogSystem" type="Node" parent="Systems" unique_id=538485406]
+script = ExtResource("8_dialog")
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
 
@@ -41,10 +411,25 @@ offset_bottom = 54.0
 theme_override_font_sizes/font_size = 24
 text = "这不是我的战争 - Main"
 
+[node name="NPCPanel" type="Control" parent="UI" unique_id=915808336]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+
+[node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+
+[node name="DialogPanel" type="Control" parent="UI" unique_id=278786319]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+
 [node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
 
 [node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=1742634412]
-transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 0, 8, 10)
+transform = Transform3D(1, 0, 0, 0, 0.57357645, 0.81915206, 0, -0.81915206, 0.57357645, 0, 22, 24)
 current = true
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1889464672]
