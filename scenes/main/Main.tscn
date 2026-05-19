@@ -1,0 +1,52 @@
+[gd_scene load_steps=3 format=3 uid="uid://gqvi00hixoiv"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+size = Vector2(24, 16)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
+albedo_color = Color(0.28, 0.35, 0.26, 1)
+
+[node name="Main" type="Node3D" unique_id=986039696]
+
+[node name="WorldRoot" type="Node3D" parent="." unique_id=1522394943]
+
+[node name="Station" type="Node3D" parent="WorldRoot" unique_id=393297649]
+
+[node name="Ground" type="MeshInstance3D" parent="WorldRoot/Station" unique_id=1346800099]
+mesh = SubResource("PlaneMesh_ground")
+surface_material_override/0 = SubResource("StandardMaterial3D_ground")
+
+[node name="Buildings" type="Node3D" parent="WorldRoot/Station" unique_id=115591047]
+
+[node name="NPCs" type="Node3D" parent="WorldRoot/Station" unique_id=1980242254]
+
+[node name="Enemies" type="Node3D" parent="WorldRoot/Station" unique_id=1853672627]
+
+[node name="Props" type="Node3D" parent="WorldRoot/Station" unique_id=52937998]
+
+[node name="Systems" type="Node" parent="." unique_id=1899792392]
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
+
+[node name="HUD" type="Control" parent="UI" unique_id=1288116016]
+layout_mode = 3
+anchors_preset = 0
+
+[node name="TitleLabel" type="Label" parent="UI/HUD" unique_id=1305608878]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 420.0
+offset_bottom = 54.0
+theme_override_font_sizes/font_size = 24
+text = "这不是我的战争 - Main"
+
+[node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=1742634412]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 0, 8, 10)
+current = true
+
+[node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1889464672]
+transform = Transform3D(0.81915206, -0.4055798, 0.4055798, 0, 0.70710677, 0.70710677, -0.57357645, -0.579228, 0.579228, 0, 0, 0)
+light_energy = 2.0

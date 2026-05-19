@@ -41,6 +41,28 @@
 | NPC 面板 | `res://scenes/ui/NPCPanel.tscn` | 状态、装备、按钮 |
 | 建筑面板 | `res://scenes/ui/BuildingPanel.tscn` | 建筑信息 |
 
+## Godot 当前已创建
+
+路径：`project.godot`  
+用途：Godot 项目配置，当前启动场景为 `res://scenes/main/Main.tscn`。  
+依赖：Godot 4.6，`addons/godot_mcp` 自动加载配置。  
+当前状态：T0001 已验证可打开并运行。
+
+路径：`res://scenes/main/Main.tscn`  
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`Systems`、`UI/HUD`、`CameraRig/Camera3D`、`SunLight`。  
+依赖：无脚本依赖。  
+当前状态：T0001 占位场景；只用于项目入口验证，未实现 NPC、建筑交互、资源、时间或战斗。
+
+路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`  
+用途：后续世界、NPC、敌人、建筑和 UI 场景目录。  
+依赖：暂无。  
+当前状态：目录已创建，具体场景待后续任务实现。
+
+路径：`res://scripts/core/`, `res://scripts/systems/`  
+用途：后续核心单例与系统脚本目录。  
+依赖：暂无。  
+当前状态：目录已创建，具体脚本待后续任务实现。
+
 ## Godot 脚本规划
 
 | 模块 | 推荐路径 | 说明 |
@@ -94,3 +116,8 @@
 依赖：
 当前状态：
 ```
+## Tools
+
+| 内容 | 文件 |
+|---|---|
+| Godot MCP 连接自检 | `tools/check_godot_mcp.ps1` |

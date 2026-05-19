@@ -22,7 +22,7 @@
 
 ### T0001 初始化 Godot 项目结构
 
-状态：Todo  
+状态：Done  
 优先级：P0  
 涉及文档：`GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`
 
@@ -33,6 +33,13 @@
 - 存在基础目录：`scenes/`, `scripts/`, `ui/`, `assets/`, `data/`。
 - `CURRENT_STATE.md` 记录运行方式。
 - `MODULE_INDEX.md` 记录新增路径。
+
+验收结果（2026-05-19）：
+
+- 已创建并设置启动场景 `res://scenes/main/Main.tscn`。
+- 已确认基础目录 `scenes/`, `scripts/`, `ui/`, `assets/`, `data/` 存在，并补齐 `scenes/main/`, `scenes/world/`, `scenes/npc/`, `scenes/enemy/`, `scenes/buildings/`, `scenes/ui/`, `scripts/core/`, `scripts/systems/`；空目录用 `.gitkeep` 保留。
+- 已通过 Godot MCP 运行 `Main.tscn`，无游戏日志报错，截图可见最小 HUD 标题和基础 3D 地面。
+- 本任务只完成项目入口和 Main 场景占位，不实现 NPC、建筑交互、资源、时间或战斗。
 
 ### T0002 初始化后端目录
 
@@ -225,6 +232,17 @@
 优先级：P0
 
 ---
+
+### T0004 Stabilize Godot MCP startup
+
+状态：Done  
+优先级：P0  
+涉及文档：`CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`, `CHANGELOG.md`
+
+验收标准：
+- Codex 的 `godot-mcp` 启动入口改为单实例包装脚本，新的启动会清理旧实例。
+- 只保留 1 条有效的 Godot MCP 客户端连接到 Godot 编辑器。
+- `tools/check_godot_mcp.ps1` 可以正常报告连接状态，不再出现脚本解析错误。
 
 # Backlog
 

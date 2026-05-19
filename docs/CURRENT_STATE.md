@@ -5,12 +5,12 @@
 
 ## 当前版本
 
-版本：`0.0.0-seed`  
-状态：文档初始化，尚未实现稳定可运行版本。
+版本：`0.0.1-main-scene`  
+状态：已完成 Godot 项目入口与最小可运行 Main 场景，尚未实现 NPC、建筑交互、资源、时间和战斗。
 
 ## 当前已实现内容
 
-- [ ] Godot 项目初始化
+- [x] Godot 项目初始化
 - [ ] 基础地图
 - [ ] NPC 基础实体
 - [ ] 建筑基础实体
@@ -26,9 +26,19 @@
 
 ## 当前稳定运行流程
 
-暂无。
+```text
+启动 Godot
+  ↓
+进入 Main 场景
+  ↓
+显示一个基础 3D 地面、俯视相机、方向光
+  ↓
+显示最小 HUD 标题
+```
 
-预期第一个稳定流程：
+尚未实现 NPC、建筑点击、资源栏、时间系统、后端或战斗。
+
+后续预期稳定流程：
 
 ```text
 启动 Godot
@@ -44,15 +54,17 @@ NPC 可移动到建筑并执行简单工作
 
 ## 当前运行方式
 
-待补充。
-
-建议未来写明：
-
 ```bash
 godot --path .
 ```
 
-以及后端运行方式：
+或在 Godot 编辑器中打开 `project.godot` 后运行项目。当前启动场景为：
+
+```text
+res://scenes/main/Main.tscn
+```
+
+后端尚未初始化，以下方式暂不可用：
 
 ```bash
 cd backend
@@ -66,6 +78,8 @@ python app.py
 - `docs/PROJECT_BRIEF.md`：项目简报
 - `docs/TASKS.md`：任务列表
 - `docs/MODULE_INDEX.md`：模块索引
+- `project.godot`：Godot 项目配置，当前入口为 `res://scenes/main/Main.tscn`
+- `scenes/main/Main.tscn`：最小可运行主场景
 
 ## 当前风险
 
@@ -75,4 +89,17 @@ python app.py
 
 ## 最近一次变更
 
-- 初始化文档结构。
+- T0001 初始化 Godot 项目结构：创建最小可运行 Main 场景，并设置项目启动入口。
+
+## Godot MCP
+
+- 项目内已安装并启用 `addons/godot_mcp`。
+- Codex 端改为 `proxy -> broker -> Godot` 结构，避免多个 Codex 会话直接争抢 Godot 连接。
+- 连接自检命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
+```
+
+- 当前验证结果：脚本可正常返回 `Godot MCP connected`。
+- 2026-05-19 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图可见标题与基础地面。
