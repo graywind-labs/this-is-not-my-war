@@ -4,17 +4,21 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0104）：
+当前实现（T0104 / T0202 / T0204 / T0205）：
 
 - `Main/UI` 使用 `CanvasLayer`。
 - `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
+- `HUD.gd` 会把 HUD 根节点设为鼠标忽略，避免全屏 HUD 背板拦截 3D 建筑点击；具体按钮仍保留自身交互能力。
 - `Main/UI/HUD/TitleLabel` 显示游戏标题。
 - `Main/UI/HUD/DayLabel`、`TimeLabel`、`PhaseLabel` 显示当前天数、小时和阶段；当前从 `GameState` 读取初始时间。
-- `Main/UI/HUD/ResourceStrip` 下的 `GoldLabel`、`FoodLabel`、`WoodLabel`、`StoneLabel`、`IronLabel` 显示资源占位，当前值为 `--`，不代表真实资源系统。
+- `Main/UI/HUD/ResourceStrip` 下的 `GoldLabel`、`FoodLabel`、`WoodLabel`、`StoneLabel`、`IronLabel` 显示 `ResourceSystem` 的当前资源数值。
+- `HUD.gd` 监听 `EventBus.resource_changed`，资源变化后自动刷新资源栏。
 - `Main/UI/HUD/SpeedButton` 和 `AlarmButton` 是加速与警铃按钮占位，当前不触发真实逻辑。
 - `Main/UI/HUD/BackendStatusLabel` 显示后端连接状态占位，当前固定为未连接。
-- `Main/UI/NPCPanel`、`Main/UI/BuildingPanel`、`Main/UI/DialogPanel` 已作为隐藏占位节点存在。
-- 暂未实现真实资源变化、加速、警铃、后端连接、面板内容或交互逻辑。
+- `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位、地点信息占位，以及修复/升级消耗摘要。
+- `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置和资源是否足够自动启用或禁用。
+- `Main/UI/NPCPanel`、`Main/UI/DialogPanel` 已作为隐藏占位节点存在。
+- 暂未实现加速、警铃、后端连接、NPC 面板、对话面板或生产细节。
 
 当前摄像机操作（T0105）：
 
@@ -60,13 +64,27 @@
 
 点击建筑显示：
 
+- 建筑名称
 - 等级
 - HP
 - 当前工作位
+- 当前地点信息占位
+- 修复按钮，资源足够且建筑受损时可用
+- 升级按钮，资源足够且未达最高等级时可用
+
+当前实现（T0204 / T0205）：
+
+- 点击 `BuildingSystem` 绑定过的低模建筑后，`EventBus.building_clicked` 会驱动 `BuildingPanel` 显示对应建筑信息。
+- 面板位于屏幕右上角，可通过关闭按钮隐藏。
+- 2026-05-20 已修正真实鼠标点击无法打开面板的问题：HUD 根节点不再吃掉地图点击，`BuildingSystem` 也会在 `_unhandled_input` 中用相机射线拾取建筑点击区。
+- 当前显示修复/升级石料消耗摘要，并可触发最小修复/升级结算；资源不足或条件不满足时按钮禁用。
+- 当前不显示真实产出、储存或完整升级树。
+
+后续需要补充：
+
 - 当前产出
 - 储存或消耗
 - 升级条件
-- 修复按钮
 - 当前地点信息
 
 ## 对话界面

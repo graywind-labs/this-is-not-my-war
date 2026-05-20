@@ -60,6 +60,7 @@
   "hp": 180,
   "max_hp": 180,
   "tags": ["command", "failure_target"],
+  "scene_nodes": ["MainHall"],
   "workstations": [
     {
       "id": "command_table_01",
@@ -68,9 +69,22 @@
     }
   ],
   "inputs": {},
-  "outputs": {}
+  "outputs": {},
+  "repair": {
+    "cost": {"stone": 1},
+    "hp_restore": 25
+  },
+  "upgrade": {
+    "cost": {"stone": 4},
+    "max_level": 3,
+    "max_hp_bonus": 30,
+    "workstation_bonus": 0,
+    "workstation_type": "command"
+  }
 }
 ```
+
+`repair` / `upgrade` 为 T0205 起使用的可选字段。未配置时建筑面板会禁用对应按钮；已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。
 
 ## Action Definition
 

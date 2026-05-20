@@ -203,3 +203,85 @@
 
 未做：
 - 未实现角色控制、镜头旋转或自由第一人称视角。
+
+### T0202 实现 ResourceSystem
+
+完成：
+- 在 `scripts/systems/ResourceSystem.gd` 中实现基础资源初始化和读写接口。
+- 启动时通过 `ConfigLoader.load_data_file("resource_defs.json")` 读取第纳尔、粮食、木材、石料、铁的初始值和下限。
+- 提供 `get_resource(id)`、`add_resource(id, amount)`、`can_afford(cost_dict)`、`spend_resources(cost_dict)`。
+- 提供 `debug_add_resource(...)` 和 `debug_spend_resources(...)` 作为临时测试入口。
+- 资源变化通过 `EventBus.resource_changed` 发出，`scripts/ui/HUD.gd` 监听信号并显示真实资源数值。
+
+验证：
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- 通过临时测试场景验证：初始金钱 30；调试增加 5 后扣除 10 成功；粮食扣除 2 成功；超额扣除 9999 金钱失败且没有产生负数。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 显示 `金钱 30`、`粮食 18`、`木材 12`、`石料 8`、`铁 5`。
+
+未做：
+- 未实现商人交易、建筑生产或工作产出。
+
+### T0203 实现 BuildingSystem 与建筑实体
+
+完成：
+- 扩展 `data/building_defs.json`，覆盖 16 个建筑/门墙实体：主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊和公告牌。
+- 在 `scripts/systems/BuildingSystem.gd` 中实现建筑配置读取、基础状态保存、`get_building(...)` / `get_building_ids()` / `get_building_snapshot()` 查询接口。
+- 通过 `scene_nodes` 将配置绑定到 `Main/WorldRoot/Station/Buildings` 下的低模节点。
+- 为绑定建筑运行时创建 `Area3D/CollisionShape3D` 点击区，左键点击后发出 `EventBus.building_clicked(building_id)`。
+- 将建筑调试标签更新为名称、等级和 HP，便于确认基础状态。
+
+验证：
+- `data/building_defs.json` 可被 PowerShell `ConvertFrom-Json` 解析，包含 16 条建筑定义。
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- 使用临时 Godot 验证脚本确认 `BuildingSystem` 加载 16 个建筑定义、主厅数据可查询、仓库可选中、主厅 ClickArea 已创建。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认建筑标签显示名称、等级和 HP。
+- Godot MCP 查找确认运行时创建了 19 个 `ClickArea` 节点，覆盖多段围墙、城门和主要建筑。
+
+未做：
+- 未实现建筑面板、升级、修复、生产、敌人攻击或建筑 HP 扣除。
+
+### T0204 实现建筑面板
+
+完成：
+- 新增 `scripts/ui/BuildingPanel.gd`，监听 `EventBus.building_clicked` 并从 `BuildingSystem` 读取建筑基础状态。
+- 扩展 `Main/UI/BuildingPanel`，显示建筑名称、等级、HP / Max HP、当前工作位和地点信息占位。
+- 修复、升级按钮保持禁用，仅作为后续 T0205 的 UI 占位。
+- 面板右上角关闭按钮可隐藏面板；未知建筑或无建筑时面板保持隐藏。
+
+验证：
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- 使用临时 Godot 验证脚本确认选择主厅会打开面板、切换仓库会刷新数据、关闭按钮会隐藏面板。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 与低模驿站仍正常显示。
+
+未做：
+- 未实现建筑修复、升级、生产、储存/消耗展示或敌人攻击。
+
+### T0204 建筑面板真实点击修正
+
+完成：
+- 修正点击建筑时不能显示面板的问题。
+- 在 `scripts/ui/HUD.gd` 中让 HUD 根节点忽略鼠标，避免全屏 Control 背板拦截 3D 建筑点击。
+- 在 `scripts/systems/BuildingSystem.gd` 中增加 `_unhandled_input` 射线拾取，从当前相机向鼠标位置投射并识别带有 `building_id` 的点击区。
+
+验证：
+- 使用临时 Godot 验证脚本模拟真实鼠标点击主厅，确认 `BuildingPanel` 打开且显示“主厅”。
+- 使用 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 验证项目加载无错误。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+### T0205 建立建筑修复与升级占位逻辑
+
+完成：
+- 在 `scripts/systems/BuildingSystem.gd` 中实现建筑修复、升级、可用性检查和临时受损调试入口。
+- 修复/升级统一通过 `ResourceSystem.spend_resources` 扣除石料；资源不足时不扣资源、不改变建筑状态。
+- 在 `scripts/ui/BuildingPanel.gd` 中接通修复/升级按钮，并根据建筑 HP、等级、配置和资源状态自动启用或禁用。
+- 在 `data/building_defs.json` 为主厅、宿舍、食堂、仓库、围墙加入 `repair` / `upgrade` 配置；围墙升级会提升等级、Max HP，并增加 1 个修复工作位。
+- 新增 `tools/verify_building_repair_upgrade.gd`，覆盖 T0205 的最小验收路径。
+
+验证：
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 通过，项目加载无错误。
+- `tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现复杂升级树、美术变化、生产结算、敌人攻击或战斗系统联动。

@@ -24,3 +24,8 @@
 - 完成 T0104：建立基础 HUD，显示标题、天数、小时/阶段、五类资源占位、加速/警铃按钮占位和后端状态占位，并新增 `scripts/ui/HUD.gd`。
 - 完成 T0201：新增基础 JSON 数据文件，覆盖资源、建筑、行动、武器、敌人波次和 NPC 档案最小样例，并同步 `DATA_SCHEMA.md` 与 `MODULE_INDEX.md`。
 - 完成 T0105：新增并绑定 `scripts/camera/CameraRig.gd`，支持 WASD/鼠标中键平移、滚轮缩放、边界限制和高机位俯视相机控制。
+- 完成 T0202：实现 `scripts/systems/ResourceSystem.gd` 基础资源读写，HUD 接入真实资源数值并随 `resource_changed` 信号刷新。
+- 完成 T0203：实现 `scripts/systems/BuildingSystem.gd` 基础建筑系统，`data/building_defs.json` 扩展为 16 个建筑/门墙实体，低模建筑可显示名称、等级、HP 并发出 `building_clicked` 点击事件。
+- 完成 T0204：新增 `scripts/ui/BuildingPanel.gd` 并接入 `Main/UI/BuildingPanel`，点击建筑可显示名称、等级、HP、工作位和地点信息占位，修复/升级按钮保持禁用。
+- 修正 T0204：真实鼠标点击建筑现在会通过 HUD 鼠标穿透和 `BuildingSystem` 相机射线拾取打开建筑面板。
+- 完成 T0205：建筑面板修复/升级按钮接入 `BuildingSystem`，修复/升级消耗石料并由 `ResourceSystem` 结算；围墙升级可提升等级、Max HP 并增加修复工作位。

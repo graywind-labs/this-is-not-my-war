@@ -1,8 +1,8 @@
 # TASKS.md
 
-> 本文件是 Agent 开发入口，也是项目从零推进到 Demo 完成的任务路线图。  
-> 每次开始实现前，必须确认任务在本文件中有明确条目。  
-> 每次完成后，必须更新状态、验收结果和后续任务。  
+> 本文件是 Agent 开发入口，也是项目从零推进到 Demo 完成的任务路线图。
+> 每次开始实现前，必须确认任务在本文件中有明确条目。
+> 每次完成后，必须更新状态、验收结果和后续任务。
 > 原“建立文档回写流程”的 T0003 已取消；文档回写规则以 `AGENTS.md` 为准。当前 T0003 用于记录 Godot MCP 启动稳定化任务。
 
 ---
@@ -76,8 +76,8 @@
 
 ## T0001 初始化 Godot 项目结构
 
-状态：Done  
-优先级：P0  
+状态：Done
+优先级：P0
 涉及文档：`GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`
 
 验收标准：
@@ -99,8 +99,8 @@
 
 ## T0002 初始化后端目录
 
-状态：Done  
-优先级：P0  
+状态：Done
+优先级：P0
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `MODULE_INDEX.md`
 
 验收标准：
@@ -125,8 +125,8 @@
 
 ## T0003 Stabilize Godot MCP startup
 
-状态：Done  
-优先级：P0  
+状态：Done
+优先级：P0
 涉及文档：`CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`, `CHANGELOG.md`
 
 验收标准：
@@ -139,16 +139,16 @@
 
 # M1：Godot 核心骨架与最小驿站
 
-目标：进入 Godot 后能看到一个结构清楚的低模驿站场景，具备基础系统节点、资源栏、时间显示和可扩展 UI 骨架。  
+目标：进入 Godot 后能看到一个结构清楚的低模驿站场景，具备基础系统节点、资源栏、时间显示和可扩展 UI 骨架。
 本阶段不实现 NPC AI、不实现真实战斗、不接 LLM。
 
 ---
 
 ## T0101 建立核心 Autoload 与系统骨架
 
-状态：Done  
-优先级：P0  
-前置任务：T0001  
+状态：Done
+优先级：P0
+前置任务：T0001
 涉及文档：`GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CODING_RULES.md`
 
 任务目标：
@@ -203,9 +203,9 @@
 
 ## T0102 扩展 Main 场景节点结构
 
-状态：Done  
-优先级：P0  
-前置任务：T0101  
+状态：Done
+优先级：P0
+前置任务：T0101
 涉及文档：`GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -267,9 +267,9 @@ Main
 
 ## T0103 创建低模驿站 Blockout
 
-状态：Done  
-优先级：P0  
-前置任务：T0102  
+状态：Done
+优先级：P0
+前置任务：T0102
 涉及文档：`GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -332,9 +332,9 @@ Main
 
 ## T0104 建立 HUD 基础界面
 
-状态：Done  
-优先级：P0  
-前置任务：T0102  
+状态：Done
+优先级：P0
+前置任务：T0102
 涉及文档：`UI_UX.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -376,9 +376,9 @@ Main
 
 ## T0105 实现基础摄像机控制
 
-状态：Done  
-优先级：P1  
-前置任务：T0103  
+状态：Done
+优先级：P1
+前置任务：T0103
 涉及文档：`GODOT_ARCHITECTURE.md`, `UI_UX.md`
 
 任务目标：
@@ -423,9 +423,9 @@ Main
 
 ## T0201 创建基础数据文件
 
-状态：Done  
-优先级：P0  
-前置任务：T0101  
+状态：Done
+优先级：P0
+前置任务：T0101
 涉及文档：`DATA_SCHEMA.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -467,9 +467,9 @@ Main
 
 ## T0202 实现 ResourceSystem
 
-状态：Todo  
-优先级：P0  
-前置任务：T0201, T0104  
+状态：Done
+优先级：P0
+前置任务：T0201, T0104
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -507,13 +507,21 @@ Main
 - 资源不足时扣除失败且不产生负数。
 - 文档回写完成。
 
+验收结果（2026-05-19）：
+
+- 已实现 `scripts/systems/ResourceSystem.gd`，启动时从 `data/resource_defs.json` 初始化第纳尔、粮食、木材、石料、铁。
+- 已提供 `get_resource(id)`、`add_resource(id, amount)`、`can_afford(cost_dict)`、`spend_resources(cost_dict)`，并保留 `debug_add_resource(...)` 与 `debug_spend_resources(...)` 作为临时测试入口。
+- 资源变化会通过 `EventBus.resource_changed` 发出信号，`scripts/ui/HUD.gd` 监听后自动刷新。
+- 通过临时测试场景验证：初始金钱为 30；增加 5 后扣除 10 成功；粮食扣除 2 成功；超额扣除 9999 金钱失败且资源不变为负数。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 显示 `金钱 30`、`粮食 18`、`木材 12`、`石料 8`、`铁 5`。
+
 ---
 
 ## T0203 实现 BuildingSystem 与建筑实体
 
-状态：Todo  
-优先级：P0  
-前置任务：T0103, T0201  
+状态：Done
+优先级：P0
+前置任务：T0103, T0201
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -561,13 +569,21 @@ Main
 - 至少 5 个 P0 建筑能显示基础状态。
 - 不把建筑数值写死在场景脚本中。
 
+验收结果（2026-05-19）：
+
+- 已扩展 `data/building_defs.json`，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌 16 个建筑/门墙实体。
+- 已实现 `scripts/systems/BuildingSystem.gd`：读取建筑配置，按 `scene_nodes` 绑定低模建筑节点，保存 `id`、名称、等级、HP / Max HP、工作位等基础状态。
+- 已为绑定到 MeshInstance3D 的建筑运行时创建 `Area3D/CollisionShape3D` 点击区；点击后通过 `EventBus.building_clicked(building_id)` 发出建筑 ID。
+- 已将建筑调试标签更新为名称、等级和 HP；主场景中超过 5 个 P0 建筑可见基础状态。
+- 已通过 `godot --headless --path . --quit-after 1`、临时 Godot 验证脚本和 Godot MCP 主场景运行验证；游戏日志无报错。
+
 ---
 
 ## T0204 实现建筑面板
 
-状态：Todo  
-优先级：P0  
-前置任务：T0203  
+状态：Done
+优先级：P0
+前置任务：T0203
 涉及文档：`UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -597,13 +613,28 @@ Main
 - 没有建筑时不显示错误信息。
 - UI 文档更新。
 
+验收结果（2026-05-19）：
+
+- 已新增 `scripts/ui/BuildingPanel.gd` 并绑定到 `Main/UI/BuildingPanel`。
+- 点击建筑后，面板通过 `EventBus.building_clicked(building_id)` 从 `BuildingSystem` 读取建筑名称、等级、HP / Max HP、工作位和地点信息占位。
+- 修复与升级按钮已显示但保持禁用，占位后续 T0205，不执行真实修复、升级或生产逻辑。
+- 面板右上角关闭按钮可隐藏面板；无建筑或未知建筑 ID 时面板保持隐藏且不报错。
+- 已通过 `godot --headless --path . --quit-after 1`、临时 Godot 验证脚本和 Godot MCP 主场景运行验证；游戏日志无报错。
+
+修正记录（2026-05-20）：
+
+- 修正真实鼠标点击建筑无法打开面板的问题。
+- `HUD.gd` 让全屏 HUD 根节点忽略鼠标，避免背板拦截 3D 地图点击。
+- `BuildingSystem.gd` 增加 `_unhandled_input` 相机射线拾取点击区，真实左键点击建筑会稳定触发 `building_clicked`。
+- 已用临时 Godot 验证脚本覆盖真实鼠标点击路径：点击主厅后面板打开并显示“主厅”。
+
 ---
 
 ## T0205 建立建筑修复与升级占位逻辑
 
-状态：Todo  
-优先级：P1  
-前置任务：T0202, T0204  
+状态：Done
+优先级：P1
+前置任务：T0202, T0204
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
 
 任务目标：
@@ -629,6 +660,15 @@ Main
 - 资源不足时无法修复/升级。
 - 升级至少能影响一个数值。
 
+验收结果（2026-05-20）：
+
+- 已在 `BuildingSystem.gd` 中实现 `can_repair_building`、`repair_building`、`can_upgrade_building`、`upgrade_building` 和临时验证用 `debug_damage_building`。
+- 修复/升级消耗由 `ResourceSystem.spend_resources` 权威结算；资源不足时返回失败，不扣除资源，不改变建筑状态。
+- 已在 `data/building_defs.json` 为主厅、宿舍、食堂、仓库、围墙加入 `repair` / `upgrade` 配置；围墙升级会提升等级、Max HP 并增加 1 个修复工作位。
+- `BuildingPanel.gd` 的修复/升级按钮现在会触发系统接口，并根据当前 HP、等级和资源是否足够自动启用/禁用。
+- 已新增 `tools/verify_building_repair_upgrade.gd` 验证：围墙受损后可用石料修复，升级消耗石料并改变等级、Max HP、工作位，石料不足时升级失败且资源不变。
+- 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`--quit-after 1` 和 Godot MCP 主场景运行验证；游戏日志无报错。
+
 ---
 
 # M3：NPC 数据、状态与基础行动
@@ -639,9 +679,9 @@ Main
 
 ## T0301 完成 8 个初始 NPC 数据草案
 
-状态：Todo  
-优先级：P0  
-前置任务：T0201  
+状态：Todo
+优先级：P0
+前置任务：T0201
 涉及文档：`AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -663,16 +703,19 @@ Main
 
 - id
 - name
-- background_job
+- gender
+- appearance
+- background_story
 - personality
 - desires
 - fears
-- boundaries
-- stats
+- abilities
 - states
 - skills
 - recruited
 - equipment
+- plan
+- short_term_memory
 - knowledge_graph
 - diary
 
@@ -694,9 +737,9 @@ Main
 
 ## T0302 创建 NPC 场景与 NPCSystem
 
-状态：Todo  
-优先级：P0  
-前置任务：T0301, T0102  
+状态：Todo
+优先级：P0
+前置任务：T0301, T0102
 涉及文档：`AI_NPC_SYSTEM.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -730,9 +773,9 @@ Main
 
 ## T0303 实现 NPC 基础状态与 NPC 面板
 
-状态：Todo  
-优先级：P0  
-前置任务：T0302  
+状态：Todo
+优先级：P0
+前置任务：T0302
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`, `DATA_SCHEMA.md`
 
 任务目标：
@@ -767,9 +810,9 @@ Main
 
 ## T0304 实现基础移动与地点进入
 
-状态：Todo  
-优先级：P0  
-前置任务：T0203, T0302  
+状态：Todo
+优先级：P0
+前置任务：T0203, T0302
 涉及文档：`GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -799,9 +842,9 @@ Main
 
 ## T0305 实现简单行动系统：工作 / 吃饭 / 睡觉
 
-状态：Todo  
-优先级：P0  
-前置任务：T0202, T0203, T0304  
+状态：Todo
+优先级：P0
+前置任务：T0202, T0203, T0304
 涉及文档：`AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `DATA_SCHEMA.md`
 
 任务目标：
@@ -838,9 +881,9 @@ Main
 
 ## T0401 实现 TimeSystem
 
-状态：Todo  
-优先级：P0  
-前置任务：T0101, T0104  
+状态：Todo
+优先级：P0
+前置任务：T0101, T0104
 涉及文档：`GODOT_ARCHITECTURE.md`, `UI_UX.md`
 
 任务目标：
@@ -874,9 +917,9 @@ Main
 
 ## T0402 实现 EventLog
 
-状态：Todo  
-优先级：P0  
-前置任务：T0101  
+状态：Todo
+优先级：P0
+前置任务：T0101
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `DATA_SCHEMA.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -917,9 +960,9 @@ Main
 
 ## T0403 实现 Location Info Space
 
-状态：Todo  
-优先级：P0  
-前置任务：T0203, T0402  
+状态：Todo
+优先级：P0
+前置任务：T0203, T0402
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`
 
 任务目标：
@@ -948,9 +991,9 @@ Main
 
 ## T0404 实现广场公开见闻
 
-状态：Todo  
-优先级：P0  
-前置任务：T0402, T0403  
+状态：Todo
+优先级：P0
+前置任务：T0402, T0403
 涉及文档：`MEMORY_AND_INFO_SPACE.md`
 
 任务目标：
@@ -982,9 +1025,9 @@ Main
 
 ## T0405 实现 NPC 短期记忆容器
 
-状态：Todo  
-优先级：P0  
-前置任务：T0402, T0403  
+状态：Todo
+优先级：P0
+前置任务：T0402, T0403
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -1019,9 +1062,9 @@ Main
 
 ## T0501 实现 HP 扣除与昏迷状态
 
-状态：Todo  
-优先级：P0  
-前置任务：T0303, T0402  
+状态：Todo
+优先级：P0
+前置任务：T0303, T0402
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`
 
 任务目标：
@@ -1053,9 +1096,9 @@ Main
 
 ## T0502 实现昏迷自然恢复
 
-状态：Todo  
-优先级：P0  
-前置任务：T0501, T0401  
+状态：Todo
+优先级：P0
+前置任务：T0501, T0401
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -1085,9 +1128,9 @@ Main
 
 ## T0503 实现医生治疗昏迷 NPC
 
-状态：Todo  
-优先级：P0  
-前置任务：T0502, T0305  
+状态：Todo
+优先级：P0
+前置任务：T0502, T0305
 涉及文档：`AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
 
 任务目标：
@@ -1125,9 +1168,9 @@ Main
 
 ## T0601 创建后端 Schema
 
-状态：Todo  
-优先级：P0  
-前置任务：T0002  
+状态：Todo
+优先级：P0
+前置任务：T0002
 涉及文档：`TECH_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `PROMPTS.md`
 
 任务目标：
@@ -1157,9 +1200,9 @@ Main
 
 ## T0602 实现 Mock Model Adapter
 
-状态：Todo  
-优先级：P0  
-前置任务：T0601  
+状态：Todo
+优先级：P0
+前置任务：T0601
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`
 
 任务目标：
@@ -1188,9 +1231,9 @@ Main
 
 ## T0603 实现 `/npc/dialogue` Mock 接口
 
-状态：Todo  
-优先级：P0  
-前置任务：T0601, T0602  
+状态：Todo
+优先级：P0
+前置任务：T0601, T0602
 涉及文档：`TECH_ARCHITECTURE.md`, `PROMPTS.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -1230,9 +1273,9 @@ Main
 
 ## T0604 实现 Godot LLMBridge
 
-状态：Todo  
-优先级：P0  
-前置任务：T0603, T0101  
+状态：Todo
+优先级：P0
+前置任务：T0603, T0101
 涉及文档：`TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
 
 任务目标：
@@ -1269,9 +1312,9 @@ Main
 
 ## T0701 实现对话 UI
 
-状态：Todo  
-优先级：P0  
-前置任务：T0303, T0604  
+状态：Todo
+优先级：P0
+前置任务：T0303, T0604
 涉及文档：`UI_UX.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -1304,9 +1347,9 @@ Main
 
 ## T0702 实现“提出应征”按钮与征召结果
 
-状态：Todo  
-优先级：P0  
-前置任务：T0701  
+状态：Todo
+优先级：P0
+前置任务：T0701
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -1337,9 +1380,9 @@ Main
 
 ## T0703 实现入伍 NPC 指派入口
 
-状态：Todo  
-优先级：P0  
-前置任务：T0702, T0305  
+状态：Todo
+优先级：P0
+前置任务：T0702, T0305
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -1372,9 +1415,9 @@ Main
 
 ## T0704 实现玩家非对话交互记忆
 
-状态：Todo  
-优先级：P0  
-前置任务：T0405, T0702  
+状态：Todo
+优先级：P0
+前置任务：T0405, T0702
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -1405,9 +1448,9 @@ Main
 
 ## T0705 实现 NPC 主动找玩家交涉
 
-状态：Todo  
-优先级：P1  
-前置任务：T0701, T0405  
+状态：Todo
+优先级：P1
+前置任务：T0701, T0405
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -1443,9 +1486,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0801 实现职业工作产出框架
 
-状态：Todo  
-优先级：P0  
-前置任务：T0305, T0202, T0203  
+状态：Todo
+优先级：P0
+前置任务：T0305, T0202, T0203
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`
 
 任务目标：
@@ -1478,9 +1521,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0802 实现食堂：粮食加工餐食
 
-状态：Todo  
-优先级：P0  
-前置任务：T0801  
+状态：Todo
+优先级：P0
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -1494,9 +1537,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0803 实现菜园：产出粮食
 
-状态：Todo  
-优先级：P0  
-前置任务：T0801  
+状态：Todo
+优先级：P0
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -1510,9 +1553,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0804 实现铁匠铺：制造金属武器和盔甲
 
-状态：Todo  
-优先级：P0  
-前置任务：T0801  
+状态：Todo
+优先级：P0
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
@@ -1526,9 +1569,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0805 实现工械坊：制造弓弩与防御器械
 
-状态：Todo  
-优先级：P1  
-前置任务：T0801  
+状态：Todo
+优先级：P1
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
@@ -1541,9 +1584,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0806 实现马厩：马匹喂养和恢复
 
-状态：Todo  
-优先级：P1  
-前置任务：T0801  
+状态：Todo
+优先级：P1
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
@@ -1557,9 +1600,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0807 实现酒窖：酿酒与出售
 
-状态：Todo  
-优先级：P1  
-前置任务：T0801  
+状态：Todo
+优先级：P1
+前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -1573,9 +1616,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0808 实现小诊所：治疗行动完善
 
-状态：Todo  
-优先级：P0  
-前置任务：T0503, T0801  
+状态：Todo
+优先级：P0
+前置任务：T0503, T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
@@ -1595,9 +1638,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0901 实现库存与装备系统
 
-状态：Todo  
-优先级：P0  
-前置任务：T0804  
+状态：Todo
+优先级：P0
+前置任务：T0804
 涉及文档：`COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`, `UI_UX.md`
 
 任务目标：
@@ -1629,9 +1672,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0902 实现兵种判定
 
-状态：Todo  
-优先级：P0  
-前置任务：T0901  
+状态：Todo
+优先级：P0
+前置任务：T0901
 涉及文档：`COMBAT_SYSTEM.md`
 
 验收标准：
@@ -1648,9 +1691,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0903 实现训练场与武器熟练度提升
 
-状态：Todo  
-优先级：P0  
-前置任务：T0703, T0901  
+状态：Todo
+优先级：P0
+前置任务：T0703, T0901
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
@@ -1665,9 +1708,9 @@ NPC 可主动请求与玩家对话。
 
 ## T0904 实现职业熟练度与经验升级
 
-状态：Todo  
-优先级：P1  
-前置任务：T0801, T0903  
+状态：Todo
+优先级：P1
+前置任务：T0801, T0903
 涉及文档：`AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`
 
 验收标准：
@@ -1688,9 +1731,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1001 实现规则版每日计划
 
-状态：Todo  
-优先级：P0  
-前置任务：T0401, T0305, T0801  
+状态：Todo
+优先级：P0
+前置任务：T0401, T0305, T0801
 涉及文档：`AI_NPC_SYSTEM.md`
 
 任务目标：
@@ -1722,9 +1765,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1002 实现行动异常与计划重评估
 
-状态：Todo  
-优先级：P0  
-前置任务：T1001  
+状态：Todo
+优先级：P0
+前置任务：T1001
 涉及文档：`AI_NPC_SYSTEM.md`
 
 触发异常：
@@ -1749,9 +1792,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1003 实现 LLM / Mock 版每日计划接口
 
-状态：Todo  
-优先级：P1  
-前置任务：T0602, T1001  
+状态：Todo
+优先级：P1
+前置任务：T0602, T1001
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`, `API_BUDGET.md`
 
 验收标准：
@@ -1765,9 +1808,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1004 实现睡前总结与短期记忆清空
 
-状态：Todo  
-优先级：P1  
-前置任务：T0405, T0602  
+状态：Todo
+优先级：P1
+前置任务：T0405, T0602
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `PROMPTS.md`
 
 验收标准：
@@ -1788,9 +1831,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1101 实现敌人配置与敌人生成
 
-状态：Todo  
-优先级：P0  
-前置任务：T0201  
+状态：Todo
+优先级：P0
+前置任务：T0201
 涉及文档：`COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`
 
 任务目标：
@@ -1808,9 +1851,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1102 实现敌人目标优先级
 
-状态：Todo  
-优先级：P0  
-前置任务：T1101, T0203  
+状态：Todo
+优先级：P0
+前置任务：T1101, T0203
 涉及文档：`COMBAT_SYSTEM.md`
 
 规则：
@@ -1831,9 +1874,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1103 实现警铃与集结
 
-状态：Todo  
-优先级：P0  
-前置任务：T0703, T0902  
+状态：Todo
+优先级：P0
+前置任务：T0703, T0902
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -1858,9 +1901,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1104 实现基础攻击与伤害
 
-状态：Todo  
-优先级：P0  
-前置任务：T0902, T1102, T1103  
+状态：Todo
+优先级：P0
+前置任务：T0902, T1102, T1103
 涉及文档：`COMBAT_SYSTEM.md`
 
 任务目标：
@@ -1894,9 +1937,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1105 实现战斗策略
 
-状态：Todo  
-优先级：P0  
-前置任务：T1104  
+状态：Todo
+优先级：P0
+前置任务：T1104
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 策略：
@@ -1934,9 +1977,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1106 实现战斗开始/结束流程
 
-状态：Todo  
-优先级：P0  
-前置任务：T1101, T1104  
+状态：Todo
+优先级：P0
+前置任务：T1101, T1104
 涉及文档：`COMBAT_SYSTEM.md`, `CURRENT_STATE.md`
 
 验收标准：
@@ -1956,9 +1999,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1201 实现战斗前 Mock 心理判定
 
-状态：Todo  
-优先级：P0  
-前置任务：T0602, T1106  
+状态：Todo
+优先级：P0
+前置任务：T0602, T1106
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`
 
 任务目标：
@@ -1992,9 +2035,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1202 实现 HP 低于 30% 心理判定
 
-状态：Todo  
-优先级：P0  
-前置任务：T1104, T1201  
+状态：Todo
+优先级：P0
+前置任务：T1104, T1201
 涉及文档：`COMBAT_SYSTEM.md`
 
 验收标准：
@@ -2008,9 +2051,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1203 实现逃离驿站行为
 
-状态：Todo  
-优先级：P0  
-前置任务：T0304, T1201  
+状态：Todo
+优先级：P0
+前置任务：T0304, T1201
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
 
 规则：
@@ -2031,9 +2074,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1204 实现逃离挽留五轮对话
 
-状态：Todo  
-优先级：P1  
-前置任务：T0701, T1203  
+状态：Todo
+优先级：P1
+前置任务：T0701, T1203
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`, `PROMPTS.md`
 
 规则：
@@ -2053,9 +2096,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1205 完善战场公开信息
 
-状态：Todo  
-优先级：P0  
-前置任务：T0404, T1106, T1202  
+状态：Todo
+优先级：P0
+前置任务：T0404, T1106, T1202
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `COMBAT_SYSTEM.md`
 
 公开内容：
@@ -2085,9 +2128,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1301 实现波次倒计时与自动来袭
 
-状态：Todo  
-优先级：P0  
-前置任务：T0401, T1101  
+状态：Todo
+优先级：P0
+前置任务：T0401, T1101
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 验收标准：
@@ -2101,9 +2144,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1302 实现主厅失败条件
 
-状态：Todo  
-优先级：P0  
-前置任务：T1102, T1104  
+状态：Todo
+优先级：P0
+前置任务：T1102, T1104
 涉及文档：`COMBAT_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -2117,9 +2160,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1303 实现无可战斗人员失败条件
 
-状态：Todo  
-优先级：P1  
-前置任务：T0501, T1203  
+状态：Todo
+优先级：P1
+前置任务：T0501, T1203
 涉及文档：`COMBAT_SYSTEM.md`
 
 验收标准：
@@ -2132,9 +2175,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1304 实现 5 波胜利条件
 
-状态：Todo  
-优先级：P0  
-前置任务：T1301, T1106  
+状态：Todo
+优先级：P0
+前置任务：T1301, T1106
 涉及文档：`COMBAT_SYSTEM.md`, `CURRENT_STATE.md`
 
 验收标准：
@@ -2148,9 +2191,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1305 实现 NPC 结局总结页面
 
-状态：Todo  
-优先级：P0  
-前置任务：T1302, T1304, T1004  
+状态：Todo
+优先级：P0
+前置任务：T1302, T1304, T1004
 涉及文档：`UI_UX.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`
 
 显示内容：
@@ -2177,9 +2220,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1401 接入真实 Model Adapter
 
-状态：Todo  
-优先级：P1  
-前置任务：T0602, T0701  
+状态：Todo
+优先级：P1
+前置任务：T0602, T0701
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `PROMPTS.md`
 
 任务目标：
@@ -2211,9 +2254,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1402 打磨 NPC 对话 Prompt
 
-状态：Todo  
-优先级：P1  
-前置任务：T1401, T0702  
+状态：Todo
+优先级：P1
+前置任务：T1401, T0702
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
@@ -2228,9 +2271,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1403 打磨每日计划 Prompt
 
-状态：Todo  
-优先级：P1  
-前置任务：T1003, T1401  
+状态：Todo
+优先级：P1
+前置任务：T1003, T1401
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
@@ -2244,9 +2287,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1404 打磨战斗判定 Prompt
 
-状态：Todo  
-优先级：P1  
-前置任务：T1201, T1401  
+状态：Todo
+优先级：P1
+前置任务：T1201, T1401
 涉及文档：`PROMPTS.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
@@ -2260,9 +2303,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1405 打磨睡前总结 Prompt
 
-状态：Todo  
-优先级：P1  
-前置任务：T1004, T1401  
+状态：Todo
+优先级：P1
+前置任务：T1004, T1401
 涉及文档：`PROMPTS.md`, `MEMORY_AND_INFO_SPACE.md`
 
 验收标准：
@@ -2276,9 +2319,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1406 实现 API 额度面板 / 调试信息
 
-状态：Todo  
-优先级：P1  
-前置任务：T1401  
+状态：Todo
+优先级：P1
+前置任务：T1401
 涉及文档：`API_BUDGET.md`, `UI_UX.md`
 
 验收标准：
@@ -2297,9 +2340,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1501 补全 8 名 NPC 的具体姓名与个性台词
 
-状态：Todo  
-优先级：P1  
-前置任务：T1402  
+状态：Todo
+优先级：P1
+前置任务：T1402
 涉及文档：`AI_NPC_SYSTEM.md`, `game_design.md`
 
 验收标准：
@@ -2313,9 +2356,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1502 补全建筑低模表现
 
-状态：Todo  
-优先级：P1  
-前置任务：T0103, T0203  
+状态：Todo
+优先级：P1
+前置任务：T0103, T0203
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -2329,9 +2372,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1503 补全战斗反馈
 
-状态：Todo  
-优先级：P1  
-前置任务：T1104, T1205  
+状态：Todo
+优先级：P1
+前置任务：T1104, T1205
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 验收标准：
@@ -2345,9 +2388,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1504 平衡 5 波敌人和资源压力
 
-状态：Todo  
-优先级：P1  
-前置任务：T1304  
+状态：Todo
+优先级：P1
+前置任务：T1304
 涉及文档：`COMBAT_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -2361,9 +2404,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1505 制作新手引导
 
-状态：Todo  
-优先级：P1  
-前置任务：T1304  
+状态：Todo
+优先级：P1
+前置任务：T1304
 涉及文档：`UI_UX.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
@@ -2377,9 +2420,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1506 增加黑色幽默事件与公告牌
 
-状态：Todo  
-优先级：P2  
-前置任务：T0404, T0701  
+状态：Todo
+优先级：P2
+前置任务：T0404, T0701
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`
 
 验收标准：
@@ -2393,9 +2436,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1507 商人交易系统
 
-状态：Todo  
-优先级：P2  
-前置任务：T0202, T0401  
+状态：Todo
+优先级：P2
+前置任务：T0202, T0401
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`
 
 验收标准：
@@ -2409,9 +2452,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1508 工程器械部署
 
-状态：Todo  
-优先级：P2  
-前置任务：T0805, T1104  
+状态：Todo
+优先级：P2
+前置任务：T0805, T1104
 涉及文档：`COMBAT_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`
 
 验收标准：
@@ -2431,9 +2474,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1601 玩家语音输入
 
-状态：Todo  
-优先级：P2  
-前置任务：T0701  
+状态：Todo
+优先级：P2
+前置任务：T0701
 涉及文档：`UI_UX.md`, `PROMPTS.md`
 
 验收标准：
@@ -2446,9 +2489,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1602 玩家语音情绪识别
 
-状态：Todo  
-优先级：P2  
-前置任务：T1601, T1402  
+状态：Todo
+优先级：P2
+前置任务：T1601, T1402
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
@@ -2468,9 +2511,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1701 Demo 稳定性测试
 
-状态：Todo  
-优先级：P0  
-前置任务：T1305  
+状态：Todo
+优先级：P0
+前置任务：T1305
 涉及文档：`CURRENT_STATE.md`, `DEV_LOG.md`
 
 验收标准：
@@ -2484,9 +2527,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1702 整理参赛演示流程
 
-状态：Todo  
-优先级：P1  
-前置任务：T1701  
+状态：Todo
+优先级：P1
+前置任务：T1701
 涉及文档：`PROJECT_BRIEF.md`, `game_design.md`
 
 验收标准：
@@ -2500,9 +2543,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1703 打包导出
 
-状态：Todo  
-优先级：P1  
-前置任务：T1701  
+状态：Todo
+优先级：P1
+前置任务：T1701
 涉及文档：`CURRENT_STATE.md`
 
 验收标准：
@@ -2517,9 +2560,9 @@ NPC 可主动请求与玩家对话。
 
 ## T1704 项目说明与提交材料
 
-状态：Todo  
-优先级：P1  
-前置任务：T1702  
+状态：Todo
+优先级：P1
+前置任务：T1702
 涉及文档：`PROJECT_BRIEF.md`, `CHANGELOG.md`
 
 验收标准：

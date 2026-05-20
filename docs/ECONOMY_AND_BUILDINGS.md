@@ -10,6 +10,52 @@
 | 石料 | 石料 | 商人购买、初始补给 | 修复和升级建筑 |
 | 铁 | 铁 | 商人购买、初始补给 | 铁匠铺制作武器盔甲 |
 
+## 当前资源系统实现（T0202）
+
+`res://scripts/systems/ResourceSystem.gd` 当前从 `data/resource_defs.json` 初始化基础资源，并提供最小读写接口：
+
+- `get_resource(id)`：读取当前资源数量。
+- `add_resource(id, amount)`：增加或减少指定资源，结果不会低于配置的 `min_amount`。
+- `can_afford(cost_dict)`：检查是否能支付一组资源成本。
+- `spend_resources(cost_dict)`：资源足够时一次性扣除；任一资源不足时返回失败，不产生负数。
+
+资源变化通过 `EventBus.resource_changed` 发出，`HUD.gd` 会自动刷新显示。当前只实现库存数值读写，不实现商人交易、建筑生产或工作产出。
+
+## 当前建筑系统实现（T0203）
+
+`res://scripts/systems/BuildingSystem.gd` 当前从 `data/building_defs.json` 初始化建筑基础状态，并绑定到 `Main.tscn` 中已有的低模建筑节点。
+
+当前支持：
+
+- 读取建筑 `id`、名称、等级、HP / Max HP、标签、工作位、资源输入输出和 `scene_nodes` 绑定。
+- 为每个绑定的低模建筑运行时创建 `Area3D` 点击区，点击后记录当前选中建筑并发出 `EventBus.building_clicked(building_id)`。
+- 将建筑调试标签更新为名称、等级和 HP，用于 T0203 阶段确认基础状态。
+- 提供 `get_building(id)`、`get_building_ids()`、`get_building_snapshot()` 和 `debug_select_building(id)` 供后续 UI/测试使用。
+
+T0205 后，`BuildingSystem.gd` 增加建筑修复与升级的最小闭环：
+
+- `can_repair_building(id)` / `repair_building(id)`：仅当建筑 HP 低于 Max HP、存在 `repair.cost` 配置且资源足够时可执行；当前配置消耗石料并恢复固定 HP。
+- `can_upgrade_building(id)` / `upgrade_building(id)`：仅当建筑未达到 `upgrade.max_level`、存在 `upgrade.cost` 且资源足够时可执行；升级会提升等级，并按配置增加 Max HP 和可选工作位。
+- `debug_damage_building(id, amount)`：临时验证入口，用于在战斗系统未实现前模拟建筑受损。
+- 修复/升级资源扣除统一调用 `ResourceSystem.spend_resources`；资源不足时不会扣资源，也不会改变建筑 HP、等级或工作位。
+- 建筑调试标签会在修复/升级后刷新 HP 和等级。
+
+当前 `data/building_defs.json` 已为主厅、宿舍、食堂、仓库、围墙加入 `repair` / `upgrade` 配置；围墙升级会增加 1 个修复工作位，用于验证升级至少影响一个非 HP 数值。其余建筑可在后续平衡任务中逐步补齐配置。当前仍不实现生产、敌人攻击或美术变化。
+
+## 当前建筑面板实现（T0204）
+
+`res://scripts/ui/BuildingPanel.gd` 当前绑定到 `Main/UI/BuildingPanel`，监听 `EventBus.building_clicked(building_id)` 并从 `BuildingSystem` 读取建筑状态。
+
+当前支持：
+
+- 显示建筑名称、等级、HP / Max HP。
+- 显示当前工作位数量和每个工作位的空闲/占用占位状态。
+- 显示地点信息占位，当前仅展示建筑标签，后续再接入见闻、生产和地点状态。
+- 显示修复、升级按钮；T0205 后按钮会调用 `BuildingSystem` 的修复/升级接口，并根据 HP、等级和资源是否足够自动启用或禁用。
+- 关闭按钮可隐藏面板；未知建筑或无建筑时面板保持隐藏。
+
+当前不实现生产结算、储存消耗展示或敌人攻击；修复与升级已经具备最小可用逻辑，后续仍需补齐更多建筑的配置和平衡数值。
+
 ## 派生资源
 
 | 派生资源 | 来源 | 用途 |
@@ -60,7 +106,7 @@
 - `Plaza`：广场，公共信息中枢占位。
 - `BackGate` 与 `MerchantEntranceMarker`：后门和商人入口占位。
 
-这些节点目前只用于视觉和空间布局，不包含建筑数据、HP、工作位、点击交互、生产或修复逻辑。后续 T0201/T0203 会把建筑定义迁移到配置数据和建筑系统中。
+这些节点最初只用于视觉和空间布局。T0203 后，低模建筑已通过 `data/building_defs.json` 绑定基础建筑数据、HP、工作位和点击识别；仍不包含生产、修复、升级或敌人攻击逻辑。
 
 2026-05-19 追加调整：低模驿站已扩大整体地面和围墙尺度，并将建筑按中央广场、生活区、生产区、防务区、后门入口等功能区域拉开，避免占位建筑过小过密。围墙四角已闭合，公告牌已缩小并移动到主厅正面。
 

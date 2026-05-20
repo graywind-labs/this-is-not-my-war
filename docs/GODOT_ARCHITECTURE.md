@@ -59,7 +59,7 @@ T0101 已在 `project.godot` 注册以下 Autoload：
 | GameState | `res://scripts/core/GameState.gd` | 已保存天数、小时、战斗状态 |
 | ConfigLoader | `res://scripts/core/ConfigLoader.gd` | 已支持 JSON 读取和错误提示 |
 
-T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统脚本占位绑定到 Main 场景的 `Systems` 节点下。当前仅提供结构占位，不实现点击、NPC、资源数值、战斗或对话逻辑。
+T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 绑定到 Main 场景的 `Systems` 节点下。T0202 已实现 `ResourceSystem.gd` 的基础资源读写和 HUD 同步；T0205 已实现 `BuildingSystem.gd` 的配置读取、低模建筑绑定、运行时点击区、`building_clicked` 事件，以及最小建筑修复/升级逻辑；其余系统当前仍为结构占位，不实现 NPC、战斗或对话逻辑。
 
 `UnconsciousSystem` 仍保留为后续昏迷/治疗/复苏模块规划，T0102 未创建该节点或脚本。
 
@@ -115,9 +115,13 @@ Main
 
 T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该阶段只提供空间占位和可辨认视觉结构，不实现建筑数据、点击、生产、导航或战斗。
 
-T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、小时/阶段、五类资源占位、加速按钮占位、警铃按钮占位和后端状态占位。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，仅负责显示和从 `GameState` 读取当前时间，不实现真实资源变化、警铃、加速或后端连接。
+T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、小时/阶段、五类资源、加速按钮占位、警铃按钮占位和后端状态占位。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。不实现警铃、加速或后端连接。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked`，从 `BuildingSystem` 读取被点击建筑的名称、等级、HP、工作位和地点信息占位，显示修复/升级消耗摘要，并通过按钮触发 `BuildingSystem` 的修复/升级接口。
 
 T0105 已将 `res://scripts/camera/CameraRig.gd` 绑定到 `Main/CameraRig`：玩家可用 WASD 平移、鼠标中键拖拽平移、滚轮缩放；脚本只移动 `CameraRig` 的 X/Z 位置和 `Camera3D` 的本地距离，保留高机位俯视角，并通过导出参数限制移动边界和缩放距离。该阶段不实现角色控制或自由第一人称视角。
+
+T0202 已在 `res://scripts/systems/ResourceSystem.gd` 中实现基础资源系统：启动时读取 `data/resource_defs.json` 初始化第纳尔、粮食、木材、石料、铁，提供 `get_resource`、`add_resource`、`can_afford`、`spend_resources` 与临时调试接口。所有资源变化通过 `EventBus.resource_changed` 通知 UI；资源不足时 `spend_resources` 返回 `false`，不扣除也不产生负数。
+
+T0205 已在 `res://scripts/systems/BuildingSystem.gd` 中实现基础建筑系统：启动时读取 `data/building_defs.json`，按 `scene_nodes` 绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，为绑定节点创建运行时 `Area3D/CollisionShape3D` 点击区，并在左键点击时发出 `EventBus.building_clicked(building_id)`。建筑调试标签会显示名称、等级和 HP，并在修复/升级后刷新。2026-05-20 修正后，建筑点击同时通过 `_unhandled_input` 的相机射线拾取点击区，避免全屏 UI 背板或项目拾取设置导致真实鼠标点击失效。修复/升级由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 结算；资源不足时不会改变建筑状态。建筑系统仍不实现生产、敌人攻击或战斗系统造成的建筑 HP 扣除。
 
 ## 重要信号建议
 

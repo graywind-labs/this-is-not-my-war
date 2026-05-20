@@ -6,10 +6,335 @@
     "hp": 180,
     "max_hp": 180,
     "tags": ["command", "failure_target"],
+    "scene_nodes": ["MainHall"],
     "workstations": [
       {
         "id": "command_table_01",
         "type": "command",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 1},
+      "hp_restore": 25
+    },
+    "upgrade": {
+      "cost": {"stone": 4},
+      "max_level": 3,
+      "max_hp_bonus": 30,
+      "workstation_bonus": 0,
+      "workstation_type": "command"
+    }
+  },
+  {
+    "id": "dormitory",
+    "name": "宿舍",
+    "level": 1,
+    "hp": 120,
+    "max_hp": 120,
+    "tags": ["living", "rest"],
+    "scene_nodes": ["Dormitory"],
+    "workstations": [
+      {
+        "id": "bed_01",
+        "type": "rest",
+        "occupied_by": null
+      },
+      {
+        "id": "bed_02",
+        "type": "rest",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 1},
+      "hp_restore": 25
+    },
+    "upgrade": {
+      "cost": {"stone": 3},
+      "max_level": 2,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 1,
+      "workstation_type": "rest"
+    }
+  },
+  {
+    "id": "dining_hall",
+    "name": "食堂",
+    "level": 1,
+    "hp": 110,
+    "max_hp": 110,
+    "tags": ["living", "food"],
+    "scene_nodes": ["DiningHall"],
+    "workstations": [
+      {
+        "id": "kitchen_01",
+        "type": "cook",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"grain": 1},
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 1},
+      "hp_restore": 30
+    },
+    "upgrade": {
+      "cost": {"stone": 4},
+      "max_level": 3,
+      "max_hp_bonus": 40,
+      "workstation_bonus": 1,
+      "workstation_type": "cook"
+    }
+  },
+  {
+    "id": "warehouse",
+    "name": "仓库",
+    "level": 1,
+    "hp": 150,
+    "max_hp": 150,
+    "tags": ["storage", "raid_target"],
+    "scene_nodes": ["Warehouse"],
+    "workstations": [
+      {
+        "id": "storage_ledger_01",
+        "type": "storage",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 1},
+      "hp_restore": 25
+    },
+    "upgrade": {
+      "cost": {"stone": 4},
+      "max_level": 3,
+      "max_hp_bonus": 35,
+      "workstation_bonus": 1,
+      "workstation_type": "storage"
+    }
+  },
+  {
+    "id": "wall",
+    "name": "围墙",
+    "level": 1,
+    "hp": 240,
+    "max_hp": 240,
+    "tags": ["defense", "outer_barrier"],
+    "scene_nodes": ["FrontWall", "BackWall", "LeftWall", "RightWall"],
+    "workstations": [
+      {
+        "id": "wall_repair_01",
+        "type": "repair",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"wood": 1, "stone": 1},
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 1},
+      "hp_restore": 20
+    },
+    "upgrade": {
+      "cost": {"stone": 3},
+      "max_level": 2,
+      "max_hp_bonus": 25,
+      "workstation_bonus": 1,
+      "workstation_type": "repair"
+    }
+  },
+  {
+    "id": "front_gate",
+    "name": "城门",
+    "level": 1,
+    "hp": 160,
+    "max_hp": 160,
+    "tags": ["defense", "gate", "outer_barrier"],
+    "scene_nodes": ["FrontGate"],
+    "workstations": [
+      {
+        "id": "gate_watch_01",
+        "type": "guard",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "back_gate",
+    "name": "后门",
+    "level": 1,
+    "hp": 90,
+    "max_hp": 90,
+    "tags": ["gate", "escape_route", "merchant_route"],
+    "scene_nodes": ["BackGate"],
+    "workstations": [],
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "tavern",
+    "name": "酒窖",
+    "level": 1,
+    "hp": 100,
+    "max_hp": 100,
+    "tags": ["production", "morale"],
+    "scene_nodes": ["Tavern"],
+    "workstations": [
+      {
+        "id": "cellar_01",
+        "type": "brew",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"grain": 1},
+    "outputs": {}
+  },
+  {
+    "id": "garden",
+    "name": "菜园",
+    "level": 1,
+    "hp": 80,
+    "max_hp": 80,
+    "tags": ["production", "food"],
+    "scene_nodes": ["Garden"],
+    "workstations": [
+      {
+        "id": "garden_plot_01",
+        "type": "farm",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {"grain": 1}
+  },
+  {
+    "id": "blacksmith",
+    "name": "铁匠铺",
+    "level": 1,
+    "hp": 120,
+    "max_hp": 120,
+    "tags": ["production", "weapons"],
+    "scene_nodes": ["Blacksmith"],
+    "workstations": [
+      {
+        "id": "forge_01",
+        "type": "forge",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"iron": 1, "wood": 1},
+    "outputs": {}
+  },
+  {
+    "id": "training_ground",
+    "name": "训练场",
+    "level": 1,
+    "hp": 90,
+    "max_hp": 90,
+    "tags": ["training", "combat"],
+    "scene_nodes": ["TrainingGround"],
+    "workstations": [
+      {
+        "id": "training_lane_01",
+        "type": "training",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "stable",
+    "name": "马厩",
+    "level": 1,
+    "hp": 110,
+    "max_hp": 110,
+    "tags": ["living", "horses"],
+    "scene_nodes": ["Stable"],
+    "workstations": [
+      {
+        "id": "stall_01",
+        "type": "horse_care",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"grain": 1},
+    "outputs": {}
+  },
+  {
+    "id": "chapel",
+    "name": "小教堂",
+    "level": 1,
+    "hp": 100,
+    "max_hp": 100,
+    "tags": ["faith", "morale"],
+    "scene_nodes": ["Chapel"],
+    "workstations": [
+      {
+        "id": "altar_01",
+        "type": "pray",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "clinic",
+    "name": "小诊所",
+    "level": 1,
+    "hp": 100,
+    "max_hp": 100,
+    "tags": ["medical", "recovery"],
+    "scene_nodes": ["Clinic"],
+    "workstations": [
+      {
+        "id": "treatment_bed_01",
+        "type": "heal",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"money": 1},
+    "outputs": {}
+  },
+  {
+    "id": "workshop",
+    "name": "工械坊",
+    "level": 1,
+    "hp": 120,
+    "max_hp": 120,
+    "tags": ["production", "engineering"],
+    "scene_nodes": ["Workshop"],
+    "workstations": [
+      {
+        "id": "workbench_01",
+        "type": "engineering",
+        "occupied_by": null
+      }
+    ],
+    "inputs": {"wood": 1, "iron": 1},
+    "outputs": {}
+  },
+  {
+    "id": "notice_board",
+    "name": "公告牌",
+    "level": 1,
+    "hp": 60,
+    "max_hp": 60,
+    "tags": ["public_info", "square"],
+    "scene_nodes": ["NoticeBoard"],
+    "workstations": [
+      {
+        "id": "notice_pin_01",
+        "type": "notice",
         "occupied_by": null
       }
     ],

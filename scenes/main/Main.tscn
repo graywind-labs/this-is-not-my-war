@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://deyr4bg8at4je" path="res://scripts/systems/DialogSystem.gd" id="8_dialog"]
 [ext_resource type="Script" uid="uid://dmtbwgiqpnspe" path="res://scripts/ui/HUD.gd" id="9_hud"]
 [ext_resource type="Script" uid="uid://5kk1bplcpkwg" path="res://scripts/camera/CameraRig.gd" id="10_3km4f"]
+[ext_resource type="Script" path="res://scripts/ui/BuildingPanel.gd" id="11_building_panel"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -511,7 +512,89 @@ anchors_preset = 0
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -344.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 332.0
+grow_horizontal = 0
+script = ExtResource("11_building_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/BuildingPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/BuildingPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="UI/BuildingPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+
+[node name="BuildingNameLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "建筑"
+
+[node name="BuildingPanelCloseButton" type="Button" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "×"
+
+[node name="BuildingLevelLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "等级：--"
+
+[node name="BuildingHPLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "HP：-- / --"
+
+[node name="BuildingWorkstationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "当前工作位：--"
+autowrap_mode = 3
+
+[node name="BuildingLocationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "地点信息：占位"
+autowrap_mode = 3
+
+[node name="ButtonRow" type="HBoxContainer" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RepairButton" type="Button" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "修复"
+
+[node name="UpgradeButton" type="Button" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "升级"
 
 [node name="DialogPanel" type="Control" parent="UI" unique_id=278786319]
 visible = false
