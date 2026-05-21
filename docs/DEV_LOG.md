@@ -3,6 +3,129 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-21
+
+### NPC 面板属性显示修正
+
+完成：
+- `NPCPanel` 新增属性行，显示 `stats.strength` / 力量和 `stats.intelligence` / 智力。
+- 面板显示顺序调整为：姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度、武器熟练度。
+- `tools/verify_npc_panel_state.gd` 增加属性文本与 HP/属性/专长顺序验证。
+
+验证：
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 通过。
+- Godot MCP 本次连接失败：`ECONNREFUSED 127.0.0.1:8765`，未作为本次验证项。
+
+### T0305 资源消耗与生产对齐修正
+
+完成：
+- 修正 `ActionSystem._execute_work(...)`：无 `output_resources` 的工作现在也会正确结算饱食/疲劳、写入 EventLog 并返回成功。
+- `BuildingSystem` 新增 `restore_building_hp(...)`，支持工作行动恢复建筑 HP。
+- `data/action_defs.json` 按 `game_design.md` 补齐酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。
+- `data/resource_defs.json` 新增酒、武器、盔甲、工程器械、马匹整备派生资源。
+- 扩展 `tools/verify_action_system_basic.gd`，覆盖派生资源生产、无普通产出工作和围墙修补 HP 变化。
+
+验证：
+- PowerShell `ConvertFrom-Json` 验证 `data/resource_defs.json` 和 `data/action_defs.json` 合法。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_movement_location.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 派生资源仍是库存占位，不实现装备分配、器械部署、马匹实体、出售酒或复杂熟练度效率。
+
+### T0305 实现简单行动系统
+
+完成：
+- `ActionSystem` 接入 `data/action_defs.json`，提供调试指派工作、吃饭、睡觉和指定行动的接口。
+- 行动指派会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后自动结算。
+- 菜园工作产出粮食，食堂工作消耗粮食产出餐食；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
+- `MemorySystem` 新增最小 EventLog 占位，行动成功或失败会记录事件。
+- `data/resource_defs.json` 新增餐食资源，`data/action_defs.json` 扩展工作 / 吃饭 / 睡觉行动配置。
+- 新增 `tools/verify_action_system_basic.gd` 验证最小行动闭环。
+
+验证：
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_movement_location.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现 LLM 日程、训练、战斗、工作位占用或复杂职业产出。
+
+### 熟练度架构修正
+
+完成：
+- 按 `game_design.md` 8.4 固定 NPC 熟练度全集：职业熟练度 `养马`、`厨艺`、`耕种`、`打铁`、`教练`、`酿酒`、`医术`、`工程`；武器熟练度 `剑盾`、`长杆`、`弓`、`弩`、`骑术`。
+- `data/npc_profiles.json` 中每名 NPC 均补齐 13 个熟练度维度，并移除 `搬运`、`草药`、`护甲制作`、`指挥`、`祈祷`、`劝解`、`木工` 等非设计源技能。
+- `NPCSystem` 新增固定熟练度枚举、`normalize_skills(...)` 和 `get_npc_specialties(...)`，职业倾向由高熟练度推导，不再依赖硬职业字段。
+- `NPCPanel` 改为显示“专长”，并分组显示职业熟练度与武器熟练度。
+- 新增 `tools/verify_npc_skill_schema.gd` 验证每名 NPC 的技能全集。
+
+验证：
+- PowerShell `ConvertFrom-Json` 验证 `data/npc_profiles.json` 合法，且每名 NPC 刚好 13 个固定熟练度。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_skill_schema.gd` 通过。
+
+### NPC 主界面标签与短名修正
+
+完成：
+- 将 `data/npc_profiles.json` 中 8 名 NPC 的显示名改为短名：托马、布鲁诺、伊沃、格伦、艾达、马塞尔、莉娜、欧文。
+- 简化 `NPC.gd` 头顶标签，主场景只显示姓名、HP 和当前行动。
+- 职业、是否入伍等详细信息仍保留在 `NPCPanel` 中显示。
+
+验证：
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 通过。
+- `verify_npc_generation_click.gd`、`verify_npc_panel_state.gd`、`verify_npc_movement_location.gd` 均通过。
+
+### T0304 实现基础移动与地点进入
+
+完成：
+- `BuildingSystem` 新增 `get_building_entry_position(...)`，为 NPC 移动提供建筑入口目标点。
+- `BuildingSystem` 新增 `get_building_location_context(...)`，返回地点信息读取占位。
+- `NPC.gd` 新增 `move_to_location(...)` 和 `movement_arrived`，支持简单直线移动。
+- `NPCSystem` 新增 `move_npc_to_building(...)`、`debug_move_npc_to_building(...)` 和 `debug_move_selected_npc_to_building(...)`。
+- NPC 到达建筑后写回 `current_location`、`current_location_name`、`location_context`，并发出 `npc_state_changed`。
+- 新增 `tools/verify_npc_movement_location.gd`，覆盖调试移动到食堂、宿舍、仓库和地点状态更新。
+
+验证：
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --quit-after 1` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_movement_location.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- 通过 Godot MCP 打开并运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现复杂避障、真实日程计划、工作/吃饭/睡觉行动结算、对话、征召、战斗或 LLM。
+
+## 2026-05-20
+
+### T0303 实现 NPC 基础状态与 NPC 面板
+
+完成：
+- 新增 `scripts/ui/NPCPanel.gd` 并接入 `Main/UI/NPCPanel`。
+- NPC 面板当时显示姓名、职业、HP、饱食度、疲劳度、金钱、昏迷、入伍、当前行动和技能熟练度；2026-05-21 已改为显示由固定熟练度推导的专长。
+- `EventBus` 新增 `npc_state_changed(npc_id)`。
+- `NPCSystem` 新增 `get_npc_state(...)`、`update_npc_state(...)`、`set_npc_state_value(...)`，状态变化后会刷新 NPC 标签并通知 UI。
+- `NPC.gd` 头顶调试标签在当时补充了入伍状态、昏迷和 HP 摘要；2026-05-21 已按主界面降噪要求改为短姓名、HP 和当前行动。
+- `BuildingPanel` 与 `NPCPanel` 支持点击对象互斥切换。
+- 新增 `tools/verify_npc_panel_state.gd` 覆盖面板打开、状态刷新、面板切换和关闭。
+
+验证：
+- `godot --headless --path . --quit-after 1` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，并确认 `Main/UI` 下存在 `NPCPanel`、`BuildingPanel`、`DialogPanel`。
+
+未做：
+- 未实现 NPC 状态自然变化、治疗、对话、移动、征召或战斗。
+
 ## 2026-05-18
 
 ### 初始化文档结构
@@ -285,3 +408,43 @@
 
 未做：
 - 未实现复杂升级树、美术变化、生产结算、敌人攻击或战斗系统联动。
+
+## 2026-05-20
+
+### T0301 完成 8 个初始 NPC 数据草案
+
+完成：
+- 将 `data/npc_profiles.json` 从老兵副官占位档案扩展为 8 名初始 NPC：马夫、厨子、园丁、铁匠、老兵副官、神父、医生、工程师。
+- 每名 NPC 均补齐 `id`、`name`、`gender`、`appearance`、`background_story`、`personality`、`desires`、`fears`、`abilities`、`states`、`skills`、`recruited`、`equipment`、`plan`、`short_term_memory`、`knowledge_graph`、`diary` 等字段。
+- 老兵副官 `veteran_deputy_01` 设为女性且 `recruited=true`；医生 `doctor_01` 设为女性；其他 NPC 初始 `recruited=false`。
+- 更新 `AI_NPC_SYSTEM.md`、`DATA_SCHEMA.md`、`MODULE_INDEX.md`、`CURRENT_STATE.md`、`TASKS.md` 和 `CHANGELOG.md`，让文档中的 NPC 列表与数据一致。
+
+验证：
+- 使用 PowerShell `ConvertFrom-Json` 验证 `data/npc_profiles.json` 格式合法。
+- 确认 NPC 数量为 8，且只有老兵副官 `recruited=true`。
+- 使用 `godot --headless --path . --quit-after 1` 验证项目加载无错误。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现 NPC 场景、NPCSystem 生成、点击、移动、对话、征召或 LLM 接入。
+
+### T0302 创建 NPC 场景与 NPCSystem
+
+完成：
+- 新增 `scenes/npc/NPC.tscn`，作为通用 NPC 低模占位场景。
+- 新增 `scripts/npc/NPC.gd`，保存唯一 `npc_id`，显示 NPC 调试标签，并在点击时发出 `EventBus.npc_clicked`。
+- 扩展 `scripts/systems/NPCSystem.gd`，启动时读取 `data/npc_profiles.json` 并在 `Main/WorldRoot/Station/NPCs` 下生成 8 个 NPC。
+- 提供 `get_npc(...)`、`get_npc_ids()`、`get_npc_count()` 和 `debug_select_npc(...)`，便于后续面板和验证脚本接入。
+- 新增 `tools/verify_npc_generation_click.gd`，验证 NPC 生成数量和点击事件。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_generation_click.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+- Godot MCP 查找确认 `Main/WorldRoot/Station/NPCs` 下生成 8 个 NPC `Area3D` 节点。
+
+未做：
+- 未实现 NPC 移动、状态面板、行动计划、对话、征召、战斗或 LLM 接入。
+
+备注：
+- 本次排查到一次 MCP 断连原因：Godot 插件仍在 `127.0.0.1:6550` 监听，但 `godot-mcp-broker.mjs` 未在 `127.0.0.1:8765` 监听，只剩 proxy 进程。手动启动 broker 后恢复，`tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。

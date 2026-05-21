@@ -16,12 +16,60 @@
     "ui_order": 2
   },
   {
+    "id": "meal",
+    "name": "餐食",
+    "category": "supply",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 3
+  },
+  {
+    "id": "wine",
+    "name": "酒",
+    "category": "derived",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 4
+  },
+  {
+    "id": "weapons",
+    "name": "武器",
+    "category": "derived",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 5
+  },
+  {
+    "id": "armor",
+    "name": "盔甲",
+    "category": "derived",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 6
+  },
+  {
+    "id": "defense_devices",
+    "name": "工程器械",
+    "category": "derived",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 7
+  },
+  {
+    "id": "horse_readiness",
+    "name": "马匹整备",
+    "category": "derived",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 8
+  },
+  {
     "id": "wood",
     "name": "木材",
     "category": "material",
     "initial_amount": 12,
     "min_amount": 0,
-    "ui_order": 3
+    "ui_order": 9
   },
   {
     "id": "stone",
@@ -29,7 +77,7 @@
     "category": "material",
     "initial_amount": 8,
     "min_amount": 0,
-    "ui_order": 4
+    "ui_order": 10
   },
   {
     "id": "iron",
@@ -37,6 +85,6 @@
     "category": "material",
     "initial_amount": 5,
     "min_amount": 0,
-    "ui_order": 5
+    "ui_order": 11
   }
 ]

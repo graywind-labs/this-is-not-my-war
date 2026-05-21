@@ -13,11 +13,8 @@
 
 每次让 Agent 继续开发时，可以直接使用以下指令：
 
-```text
-请先阅读 AGENTS.md、docs/PROJECT_BRIEF.md、docs/CURRENT_STATE.md、docs/TASKS.md、docs/MODULE_INDEX.md。
-然后执行 TASKS.md 中第一个状态为 Todo 且优先级为 P0 的任务。
-执行前只阅读与该任务相关的模块文档，不要全文读取 game_design.md。
-完成后必须按 AGENTS.md 的要求回写 CURRENT_STATE.md、TASKS.md、MODULE_INDEX.md、DEV_LOG.md、CHANGELOG.md，以及受影响的模块文档。
+```
+执行 TASKS.md 中的Txxxx
 ```
 
 ## 0.2 任务状态
@@ -42,7 +39,6 @@
 - `docs/TASKS.md`
 - `docs/MODULE_INDEX.md`
 - `docs/DEV_LOG.md`
-- `docs/CHANGELOG.md`
 - 对应模块文档，例如：
   - Godot 架构：`docs/GODOT_ARCHITECTURE.md`
   - 后端架构：`docs/TECH_ARCHITECTURE.md`
@@ -60,7 +56,6 @@
 
 - 不要修改无关模块。
 - 不要实现下一个任务的内容。
-- 不要引入真实 LLM API Key。
 - 不要把 NPC 档案、建筑数值、Prompt 写死在 GDScript 中。
 - 不要让 LLM 决定 HP、资源、伤害、建筑摧毁等权威数值。
 - 不要一次性大规模重构。
@@ -127,7 +122,7 @@
 
 状态：Done
 优先级：P0
-涉及文档：`CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`, `CHANGELOG.md`
+涉及文档：`CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
 验收标准：
 
@@ -679,7 +674,7 @@ Main
 
 ## T0301 完成 8 个初始 NPC 数据草案
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0201
 涉及文档：`AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`, `MODULE_INDEX.md`
@@ -722,22 +717,28 @@ Main
 禁止事项：
 
 - 不写成长篇小说。
-- 不写复杂剧情。
 - 不接 LLM。
 - 不实现 NPC 行为。
 
 验收标准：
 
 - 8 个 NPC 数据格式合法。
-- 副官 `recruited=true` 或有开局可控标记。
+- 副官 `recruited=true` 
 - 其他 NPC 初始不可指派。
 - 文档中的 NPC 列表与数据一致。
+
+验收结果（2026-05-20）：
+
+- `data/npc_profiles.json` 已补齐 8 名初始 NPC：马夫、厨子、园丁、铁匠、老兵副官、神父、医生、工程师。
+- 每名 NPC 均包含 T0301 要求的基础字段：`id`、`name`、`gender`、`appearance`、`background_story`、`personality`、`desires`、`fears`、`abilities`、`states`、`skills`、`recruited`、`equipment`、`plan`、`short_term_memory`、`knowledge_graph`、`diary`。
+- 老兵副官 `veteran_deputy_01` 为女性且 `recruited=true`；其他 7 名 NPC `recruited=false`。
+- 已通过 PowerShell `ConvertFrom-Json` 验证 JSON 格式合法并确认数量为 8。
 
 ---
 
 ## T0302 创建 NPC 场景与 NPCSystem
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0301, T0102
 涉及文档：`AI_NPC_SYSTEM.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
@@ -769,11 +770,19 @@ Main
 - NPC 数据来自 JSON。
 - `MODULE_INDEX.md` 更新路径。
 
+验收结果（2026-05-20）：
+
+- 已新增通用 `res://scenes/npc/NPC.tscn` 和 `res://scripts/npc/NPC.gd`，NPC 为可点击 `Area3D`，带低模胶囊占位和 `Label3D` 短姓名/HP/当前行动标签。
+- `res://scripts/systems/NPCSystem.gd` 启动时读取 `data/npc_profiles.json`，在 `Main/WorldRoot/Station/NPCs` 下生成 8 个 NPC，并保存唯一 `npc_id`。
+- 点击 NPC 或调用 `debug_select_npc(npc_id)` 会打印对应 ID，并通过 `EventBus.npc_clicked` 发出事件。
+- 已通过 `godot --headless --path . --script res://tools/verify_npc_generation_click.gd` 验证 8 个 NPC 生成和 `npc_clicked` 信号。
+- 已通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，MCP 查找确认 8 个 NPC `Area3D` 节点存在。
+
 ---
 
 ## T0303 实现 NPC 基础状态与 NPC 面板
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0302
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`, `DATA_SCHEMA.md`
@@ -791,7 +800,7 @@ Main
 - 是否昏迷
 - 是否已入伍
 - 当前行动占位
-- 主要熟练度
+- 技能熟练度
 
 禁止事项：
 
@@ -801,16 +810,25 @@ Main
 
 验收标准：
 
-- 点击 NPC 打开 NPC 面板。
+- 点击 NPC 打开 NPC 面板。如果建筑面板打开着，关闭建筑面板然后切换到NPC面板，点击建筑则又能切换到建筑面板。
 - 面板显示正确数据。
 - 面板可关闭。
 - NPC 状态修改后面板可刷新。
+
+验收结果（2026-05-20）：
+
+- 已新增 `res://scripts/ui/NPCPanel.gd` 并接入 `Main/UI/NPCPanel`，点击 NPC 后按“姓名 → HP → 属性 → 专长 → 饱食度 → 疲劳度 → 金钱 → 昏迷 → 入伍 → 当前行动 → 职业熟练度 / 武器熟练度”的顺序显示数据；属性当前展示 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由熟练度推导。
+- `NPCSystem` 现在提供 `get_npc_state(...)`、`update_npc_state(...)`、`set_npc_state_value(...)`，状态更新后发出 `npc_state_changed`，NPC 面板会自动刷新。
+- `NPC.gd` 的头顶调试标签显示短姓名、HP 和当前行动摘要；职业与入伍状态保留在 NPC 面板。
+- `NPCPanel` 和 `BuildingPanel` 已通过 `npc_clicked` / `building_clicked` 互斥切换；NPC 面板可用关闭按钮隐藏。
+- 已通过 `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 验证 NPC 面板打开、HP/属性/专长顺序、状态刷新、建筑/NPC 面板切换和关闭按钮。
+- 已通过 `godot --headless --path . --script res://tools/verify_npc_generation_click.gd` 回归验证 T0302；通过 Godot MCP 运行主场景，游戏日志无报错。
 
 ---
 
 ## T0304 实现基础移动与地点进入
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0203, T0302
 涉及文档：`GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`
@@ -838,11 +856,19 @@ Main
 - 到达后 NPC 当前地点更新。
 - 移动过程中无报错。
 
+验收结果（2026-05-21）：
+
+- `NPCSystem.debug_move_npc_to_building(npc_id, building_id)` 可让 NPC 前往 `dining_hall`、`dormitory`、`warehouse`。
+- `NPC.gd` 使用直线移动，到达后通过 `movement_arrived` 回调 `NPCSystem`。
+- `BuildingSystem.get_building_entry_position(...)` 提供建筑入口坐标，`get_building_location_context(...)` 提供地点信息读取占位。
+- 到达后 NPC 状态更新 `current_location`、`current_location_name`、`location_context`，并发出 `npc_state_changed`。
+- 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_movement_location.gd` 验证；并回归通过 `verify_npc_generation_click.gd`、`verify_npc_panel_state.gd`。
+
 ---
 
 ## T0305 实现简单行动系统：工作 / 吃饭 / 睡觉
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0202, T0203, T0304
 涉及文档：`AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `DATA_SCHEMA.md`
@@ -853,8 +879,8 @@ Main
 
 行动包括：
 
-- 工作：产生或消耗资源的占位逻辑
-- 吃饭：消耗粮食或餐食，恢复饱食度
+- 工作：产生、消耗资源的占位逻辑（哪个建筑工位产生什么消耗什么，在game_design对应处有写）
+- 吃饭：消耗粮食或餐食，恢复饱食度，粮食做成餐食后恢复的更多
 - 睡觉：恢复疲劳度
 
 禁止事项：
@@ -870,6 +896,15 @@ Main
 - 吃饭能恢复饱食度并消耗资源。
 - 睡觉能降低疲劳度。
 - 行动结束后写入 EventLog 占位。
+
+验收结果（2026-05-21）：
+
+- `ActionSystem` 已读取 `data/action_defs.json`，提供 `debug_assign_work(npc_id, building_id)`、`debug_assign_eat(npc_id)`、`debug_assign_sleep(npc_id)` 和 `debug_assign_action(npc_id, action_id)`。
+- 调试指派会复用 `NPCSystem.move_npc_to_building(...)`，NPC 到达目标建筑后自动结算行动。
+- 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁和木材产出武器/盔甲；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；围墙修补可消耗石料恢复围墙 HP；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
+- 已修正无产出工作不会结算饱食/疲劳和 EventLog 的问题。
+- `MemorySystem` 已提供最小 EventLog 占位，行动成功/失败会写入事件。
+- 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证吃饭、睡觉、基础生产、派生资源生产和围墙修补；并回归通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`；通过 Godot MCP 运行主场景，游戏日志无报错。
 
 ---
 
@@ -2563,7 +2598,7 @@ NPC 可主动请求与玩家对话。
 状态：Todo
 优先级：P1
 前置任务：T1702
-涉及文档：`PROJECT_BRIEF.md`, `CHANGELOG.md`
+涉及文档：`PROJECT_BRIEF.md`
 
 验收标准：
 

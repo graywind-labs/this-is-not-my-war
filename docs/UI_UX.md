@@ -4,7 +4,7 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0104 / T0202 / T0204 / T0205）：
+当前实现（T0104 / T0202 / T0204 / T0205 / T0303）：
 
 - `Main/UI` 使用 `CanvasLayer`。
 - `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
@@ -17,8 +17,10 @@
 - `Main/UI/HUD/BackendStatusLabel` 显示后端连接状态占位，当前固定为未连接。
 - `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位、地点信息占位，以及修复/升级消耗摘要。
 - `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置和资源是否足够自动启用或禁用。
-- `Main/UI/NPCPanel`、`Main/UI/DialogPanel` 已作为隐藏占位节点存在。
-- 暂未实现加速、警铃、后端连接、NPC 面板、对话面板或生产细节。
+- `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性和专长；状态变化会随 `npc_state_changed` 刷新。
+- `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板。
+- `Main/UI/DialogPanel` 已作为隐藏占位节点存在。
+- 暂未实现加速、警铃、后端连接、对话面板或生产细节。
 
 当前摄像机操作（T0105）：
 
@@ -46,11 +48,13 @@
 点击 NPC 显示：
 
 - 姓名
-- 职业背景
+- HP
+- 属性：力量、智力
+- 专长，由最高熟练度推导
 - 当前行动
-- HP、饱食、疲劳、士气
+- 饱食、疲劳、士气
 - 是否昏迷
-- 主要熟练度
+- 职业熟练度与武器熟练度
 - 当前装备
 - 当前记忆摘要
 - 对玩家态度
@@ -59,6 +63,16 @@
 - 给予/更换装备按钮
 - 攻击按钮
 - 指派按钮，若已入伍
+
+当前实现（T0303）：
+
+- 点击 NPC 会打开右上角 `NPCPanel`。
+- 当前按姓名、HP / Max HP、属性、专长、饱食度、疲劳度、金钱、是否昏迷、是否已入伍、当前行动占位、职业熟练度和武器熟练度显示。
+- 属性显示力量和智力，对应 `game_design.md` 中体力相关产出/生命/移动/载重，以及智力相关产出/熟练度成长系数。
+- 专长不是写死职业，而是从 NPC 最高的固定熟练度维度推导。
+- 面板可通过关闭按钮隐藏。
+- `NPCSystem.update_npc_state(...)` 修改状态后会发出 `npc_state_changed`，打开中的 NPC 面板会刷新。
+- 当前不实现对话、赠予金钱、装备、攻击、指派按钮或记忆摘要。
 
 ## 建筑面板
 

@@ -6,14 +6,62 @@ AI NPC 系统负责让 NPC 看起来像有职业、有记忆、有意图的人�
 
 ## NPC 初始名单
 
-1. 马夫
-2. 厨子
-3. 园丁
-4. 铁匠
-5. 老兵副官，女性，开局可指派
-6. 神父
-7. 医生，女性
-8. 工程师
+T0301 已在 `data/npc_profiles.json` 补齐 8 名初始 NPC 档案：
+
+| 职业 | id | 姓名 | 性别 | 初始是否可指派 |
+|---|---|---|---|---|
+| 马夫 | `stableman_01` | 托马 | male | 否 |
+| 厨子 | `cook_01` | 布鲁诺 | male | 否 |
+| 园丁 | `gardener_01` | 伊沃 | male | 否 |
+| 铁匠 | `blacksmith_01` | 格伦 | male | 否 |
+| 老兵副官 | `veteran_deputy_01` | 艾达 | female | 是 |
+| 神父 | `priest_01` | 马塞尔 | male | 否 |
+| 医生 | `doctor_01` | 莉娜 | female | 否 |
+| 工程师 | `engineer_01` | 欧文 | male | 否 |
+
+开局仍只有老兵副官 `veteran_deputy_01` 可被玩家指派；其他 NPC 必须通过后续征召/对话流程同意后才会变成可指派单位。
+
+## 熟练度架构
+
+NPC 没有写死的程序职业。`background_job` 只记录叙事出身，工作效率、训练倾向、装备表现和后续 AI 判断都应优先读取固定熟练度维度。
+
+每名 NPC 都必须拥有且只能拥有以下 13 个熟练度：
+
+| 类型 | 熟练度 |
+|---|---|
+| 职业熟练度 | 养马、厨艺、耕种、打铁、教练、酿酒、医术、工程 |
+| 武器熟练度 | 剑盾、长杆、弓、弩、骑术 |
+
+职业倾向由高熟练度推导。例如养马高的人可被看作马厩专家，医术高的人可被看作医生，但系统不应把“马夫 / 医生 / 工程师”等作为权威职业枚举。
+
+## 当前运行时实现
+
+T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和直线移动闭环：
+
+- `NPCSystem` 从 `data/npc_profiles.json` 读取 8 名初始 NPC 档案。
+- 通用 `res://scenes/npc/NPC.tscn` 由 `NPCSystem` 实例化到 `Main/WorldRoot/Station/NPCs`。
+- 每个 NPC 保存唯一 `npc_id`，主场景头顶调试标签只显示姓名、HP 和当前行动，职业与入伍状态保留在 NPC 面板中。
+- 点击 NPC 会打印对应 ID，并通过 `EventBus.npc_clicked(npc_id)` 广播，打开 `Main/UI/NPCPanel`。
+- `NPCSystem` 提供 `get_npc(...)`、`get_npc_state(...)`、`update_npc_state(...)` 和 `set_npc_state_value(...)`，后续系统可通过这些接口读取或修改 NPC 基础状态。
+- `NPCSystem` 提供固定熟练度枚举与 `normalize_skills(...)`，确保每名 NPC 都拥有完整 13 维熟练度，且不会保留未定义技能。
+- NPC 状态修改后会通过 `EventBus.npc_state_changed(npc_id)` 通知 UI 刷新。
+- `NPCSystem.move_npc_to_building(...)` / `debug_move_npc_to_building(...)` 可让 NPC 前往指定建筑入口；当前用于调试验证和后续行动系统接入。
+- `NPC.gd` 负责简单直线移动，到达目标后发出 `movement_arrived`，由 `NPCSystem` 写回 `current_location`、`current_location_name` 和 `location_context` 地点信息占位。
+
+T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由程序结算资源、饱食度、疲劳度，并写入 `MemorySystem` 的 EventLog 占位。当前行动仍是最小闭环，不代表 NPC 已有真实每日计划或 LLM 自主决策。
+
+当前阶段不实现复杂避障、真实日程计划、复杂自然状态变化、对话、征召、战斗心理判定或 LLM 调用。
+
+## 当前地点状态
+
+T0304 起，NPC 运行时 `states` 会补齐以下地点字段：
+
+- `current_location`：当前地点 id，默认 `plaza`，到达建筑后更新为建筑 id。
+- `current_location_name`：当前地点显示名，到达建筑后由 `BuildingSystem` 填入。
+- `movement_target` / `movement_target_name`：移动中的目标地点；到达后清空。
+- `location_context`：地点信息读取占位，当前包含建筑 id、名称、等级、HP、标签、工作位数量、空的最近事件和公开备注。
+
+这些字段先服务于最小行动闭环与后续见闻系统，不接 LLM，也不代表 NPC 已有真实日程计划。
 
 ## NPC 行为层级
 
@@ -84,4 +132,4 @@ NPC 入伍后仍然保留人格和记忆。
 
 ## 关键原则
 
-> NPC 的“职业身份”必须持续影响其行为。  
+> NPC 的职业经历、熟练度倾向与记忆必须持续影响其行为。  

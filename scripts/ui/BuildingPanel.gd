@@ -23,10 +23,15 @@ func _ready() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_clicked.connect(_on_building_clicked)
+		event_bus.npc_clicked.connect(_on_npc_clicked)
 
 
 func _on_building_clicked(building_id: String) -> void:
 	show_building(building_id)
+
+
+func _on_npc_clicked(_npc_id: String) -> void:
+	visible = false
 
 
 func show_building(building_id: String) -> void:

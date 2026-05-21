@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://dmtbwgiqpnspe" path="res://scripts/ui/HUD.gd" id="9_hud"]
 [ext_resource type="Script" uid="uid://5kk1bplcpkwg" path="res://scripts/camera/CameraRig.gd" id="10_3km4f"]
 [ext_resource type="Script" path="res://scripts/ui/BuildingPanel.gd" id="11_building_panel"]
+[ext_resource type="Script" path="res://scripts/ui/NPCPanel.gd" id="12_npc_panel"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -507,7 +508,100 @@ text = "警铃"
 [node name="NPCPanel" type="Control" parent="UI" unique_id=915808336]
 visible = false
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -384.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = 420.0
+grow_horizontal = 0
+script = ExtResource("12_npc_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/NPCPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/NPCPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Header" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+
+[node name="NPCNameLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "NPC"
+
+[node name="NPCPanelCloseButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "×"
+
+[node name="NPCHPLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "HP：-- / --"
+
+[node name="NPCAttributesLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "属性：力量 --，智力 --"
+
+[node name="NPCJobLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "专长：--"
+
+[node name="NPCSatietyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "饱食度：--"
+
+[node name="NPCFatigueLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "疲劳度：--"
+
+[node name="NPCMoneyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "金钱：--"
+
+[node name="NPCUnconsciousLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "昏迷：--"
+
+[node name="NPCRecruitedLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "已入伍：--"
+
+[node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "当前行动：--"
+
+[node name="NPCSkillsLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "技能熟练度：--"
+autowrap_mode = 3
 
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false

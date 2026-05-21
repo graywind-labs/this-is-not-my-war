@@ -82,6 +82,53 @@ func get_selected_building_id() -> String:
 	return _selected_building_id
 
 
+func get_building_entry_position(building_id: String) -> Variant:
+	if not _buildings.has(building_id):
+		push_warning("Cannot get entry position for unknown building: %s" % building_id)
+		return null
+	if not _building_scene_nodes.has(building_id):
+		push_warning("Building has no bound scene nodes: %s" % building_id)
+		return null
+
+	var node_paths: Array = _building_scene_nodes.get(building_id, [])
+	for raw_path in node_paths:
+		var building_node := get_node_or_null(NodePath(str(raw_path))) as Node3D
+		if building_node == null:
+			continue
+
+		var entry_position := building_node.global_position
+		var entry_offset := Vector3(0.0, 0.0, 1.2)
+		if building_node is MeshInstance3D:
+			var mesh_instance := building_node as MeshInstance3D
+			if mesh_instance.mesh != null:
+				var mesh_size := mesh_instance.mesh.get_aabb().size
+				entry_offset.z = maxf(1.2, mesh_size.z * 0.5 + 0.8)
+		entry_position += entry_offset
+		entry_position.y = 0.0
+		return entry_position
+
+	return null
+
+
+func get_building_location_context(building_id: String) -> Dictionary:
+	var building := get_building(building_id)
+	if building.is_empty():
+		return {}
+
+	var workstations: Array = building.get("workstations", [])
+	return {
+		"id": building_id,
+		"name": str(building.get("name", building_id)),
+		"level": int(building.get("level", 1)),
+		"hp": int(building.get("hp", 0)),
+		"max_hp": int(building.get("max_hp", 0)),
+		"tags": building.get("tags", []),
+		"workstation_count": workstations.size(),
+		"recent_events": [],
+		"public_notes": []
+	}
+
+
 func can_repair_building(building_id: String) -> bool:
 	if not _buildings.has(building_id):
 		return false
@@ -168,6 +215,23 @@ func debug_damage_building(building_id: String, amount: int) -> bool:
 
 	var building: Dictionary = _buildings[building_id]
 	building["hp"] = maxi(0, int(building.get("hp", 0)) - amount)
+	_buildings[building_id] = building
+	_refresh_bound_scene_nodes(building_id)
+	_emit_building_clicked_if_selected(building_id)
+	return true
+
+
+func restore_building_hp(building_id: String, amount: int) -> bool:
+	if amount <= 0 or not _buildings.has(building_id):
+		return false
+
+	var building: Dictionary = _buildings[building_id]
+	var max_hp := int(building.get("max_hp", 0))
+	var current_hp := int(building.get("hp", 0))
+	if current_hp >= max_hp:
+		return true
+
+	building["hp"] = mini(max_hp, current_hp + amount)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)

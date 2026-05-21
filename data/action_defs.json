@@ -1,17 +1,141 @@
 [
   {
+    "id": "work_garden",
+    "name": "照料菜园",
+    "type": "work",
+    "location_required": "garden",
+    "skill": "耕种",
+    "base_duration_hours": 1,
+    "input_resources": {},
+    "output_resources": {
+      "grain": 2
+    },
+    "fatigue_delta": 8,
+    "satiety_delta": -4
+  },
+  {
+    "id": "work_dining_hall",
+    "name": "加工餐食",
+    "type": "work",
+    "location_required": "dining_hall",
+    "skill": "厨艺",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "grain": 1
+    },
+    "output_resources": {
+      "meal": 1
+    },
+    "fatigue_delta": 6,
+    "satiety_delta": -3
+  },
+  {
     "id": "work_repair_wall",
     "name": "修补围墙",
     "type": "work",
-    "location_required": "front_wall",
-    "skill": "工匠",
+    "location_required": "wall",
+    "skill": "工程",
     "base_duration_hours": 1,
     "input_resources": {
-      "wood": 1,
       "stone": 1
     },
     "output_resources": {},
+    "building_hp_restore": 20,
     "fatigue_delta": 8,
     "satiety_delta": -4
+  },
+  {
+    "id": "work_stable",
+    "name": "照料马厩",
+    "type": "work",
+    "location_required": "stable",
+    "skill": "养马",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "grain": 1
+    },
+    "output_resources": {
+      "horse_readiness": 1
+    },
+    "fatigue_delta": 6,
+    "satiety_delta": -3
+  },
+  {
+    "id": "work_tavern",
+    "name": "酿造酒",
+    "type": "work",
+    "location_required": "tavern",
+    "skill": "酿酒",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "grain": 1
+    },
+    "output_resources": {
+      "wine": 1
+    },
+    "fatigue_delta": 6,
+    "satiety_delta": -3
+  },
+  {
+    "id": "work_blacksmith",
+    "name": "打造武器与盔甲",
+    "type": "work",
+    "location_required": "blacksmith",
+    "skill": "打铁",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "iron": 1,
+      "wood": 1
+    },
+    "output_resources": {
+      "weapons": 1,
+      "armor": 1
+    },
+    "fatigue_delta": 8,
+    "satiety_delta": -4
+  },
+  {
+    "id": "work_workshop",
+    "name": "制造工程器械",
+    "type": "work",
+    "location_required": "workshop",
+    "skill": "工程",
+    "base_duration_hours": 1,
+    "input_resources": {
+      "wood": 2
+    },
+    "output_resources": {
+      "defense_devices": 1
+    },
+    "fatigue_delta": 8,
+    "satiety_delta": -4
+  },
+  {
+    "id": "eat_at_dining_hall",
+    "name": "吃饭",
+    "type": "eat",
+    "location_required": "dining_hall",
+    "base_duration_hours": 1,
+    "food_options": [
+      {
+        "resource": "meal",
+        "amount": 1,
+        "satiety_restore": 45
+      },
+      {
+        "resource": "grain",
+        "amount": 1,
+        "satiety_restore": 25
+      }
+    ]
+  },
+  {
+    "id": "sleep_in_dormitory",
+    "name": "睡觉",
+    "type": "sleep",
+    "location_required": "dormitory",
+    "base_duration_hours": 1,
+    "fatigue_delta": -35,
+    "satiety_delta": -2
   }
 ]

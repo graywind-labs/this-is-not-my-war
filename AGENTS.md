@@ -23,7 +23,7 @@
 2. `docs/PROJECT_BRIEF.md`
 3. `docs/CURRENT_STATE.md`
 4. `docs/TASKS.md`
-5. 如果任务涉及设计内容，阅读 `game_design.md` 的相关章节；不要默认全文读取。
+5. 如果任务涉及设计内容，须阅读 `game_design.md` 的相关章节；不要默认全文读取。
 6. 如果任务涉及架构或代码位置，阅读：
    - `docs/TECH_ARCHITECTURE.md`
    - `docs/GODOT_ARCHITECTURE.md`
@@ -130,7 +130,6 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 │  ├─ CURRENT_DECISIONS.md
 │  ├─ LONG_TERM_MEMORY.md
 │  ├─ DEV_LOG.md
-│  └─ CHANGELOG.md
 ├─ backend/
 │  ├─ README.md
 │  ├─ app.py
@@ -180,9 +179,7 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
    - 架构相关 → `docs/TECH_ARCHITECTURE.md` / `docs/GODOT_ARCHITECTURE.md`
 5. `docs/DEV_LOG.md`
    - 用日期记录本次修改。
-6. `docs/CHANGELOG.md`
-   - 面向版本变化做简短记录。
-7. 如有长期决策或踩坑，更新 `docs/LONG_TERM_MEMORY.md`。
+6. 如有长期决策或踩坑，更新 `docs/LONG_TERM_MEMORY.md`。
 
 ---
 
@@ -199,8 +196,7 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 - docs/xxx.md：更新了什么
 
 ## 验证方式
-- 如何运行
-- 如何确认功能生效
+- 用户如何确认功能生效
 
 ## 文档回写
 - CURRENT_STATE.md：已更新/无需更新，原因

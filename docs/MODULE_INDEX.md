@@ -49,9 +49,9 @@
 当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、小时/阶段、资源占位、加速/警铃按钮占位和后端状态占位；`CameraRig` 已挂载基础俯视摄像机控制。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、小时/阶段、资源占位、加速/警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`CameraRig` 已挂载基础俯视摄像机控制。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统占位脚本，绑定 `res://scripts/ui/HUD.gd` 作为 HUD 展示脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
-当前状态：T0205 已完成基础建筑修复与升级；低模驿站、HUD 信息和建筑调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑标签显示名称、等级和 HP，建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级。未实现 NPC、生产、时间推进或战斗。
+当前状态：T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和围墙修补的最小资源/HP 效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、吃饭、睡觉，到达后结算资源/状态并写入 EventLog 占位。未实现真实日程、复杂生产效率、时间推进或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -66,7 +66,7 @@
 路径：`res://scripts/core/EventBus.gd`
 用途：全局事件总线，声明基础跨系统信号。
 依赖：作为 Autoload 注册于 `project.godot`。
-当前状态：T0101 已创建；包含 `resource_changed`、`hour_started`、`building_clicked`、`npc_clicked`、`public_event_added`。
+当前状态：T0303 已包含 `resource_changed`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`public_event_added`。
 
 路径：`res://scripts/core/GameState.gd`
 用途：全局运行状态，保存当前天数、小时和是否处于战斗中。
@@ -91,22 +91,32 @@
 路径：`res://scripts/systems/BuildingSystem.gd`
 用途：基础建筑系统，负责建筑配置读取、场景节点绑定、点击识别和基础状态查询。
 依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击事件。
-当前状态：T0205 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；仍不实现生产或敌人攻击。
+当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点信息占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；仍不实现生产或敌人攻击。
 
 路径：`res://scripts/systems/NPCSystem.gd`
-用途：NPC 系统占位脚本。
-依赖：暂无。
-当前状态：T0101 已创建；尚未实现 NPC 生成或行为。
+用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
+依赖：通过 `/root/ConfigLoader` 读取 `data/npc_profiles.json`，实例化 `res://scenes/npc/NPC.tscn` 到 `Main/WorldRoot/Station/NPCs`，并通过 `/root/EventBus.npc_clicked` 广播点击事件。
+当前状态：T0304 已实现 8 名初始 NPC 生成、唯一 ID 保存、`get_npc(...)` / `get_npc_state(...)` / `get_npc_ids()` / `get_npc_count()` 查询接口、`update_npc_state(...)` / `set_npc_state_value(...)` 状态修改接口、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`debug_select_npc(...)` 调试选择，以及 `move_npc_to_building(...)` / `debug_move_npc_to_building(...)` / `debug_move_selected_npc_to_building(...)` 基础移动接口；状态修改和移动到达都会发出 `npc_state_changed`；仍不实现复杂避障、自然状态变化、对话、征召、战斗或 LLM。
+
+路径：`res://scripts/npc/NPC.gd`
+用途：通用 NPC 占位实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，并处理点击。
+依赖：绑定到 `res://scenes/npc/NPC.tscn`，通过 `/root/EventBus.npc_clicked` 发出点击事件。
+当前状态：T0304 已创建；点击 NPC 会打印 ID 并发出 `npc_clicked(npc_id)`；头顶标签只显示短姓名、HP 和当前行动摘要；支持 `move_to_location(...)` 直线移动，到达后发出 `movement_arrived` 给 `NPCSystem` 写回地点状态。
+
+路径：`res://scenes/npc/NPC.tscn`
+用途：通用 NPC 低模占位场景。
+依赖：绑定 `res://scripts/npc/NPC.gd`，由 `NPCSystem` 实例化。
+当前状态：T0303 已创建；当前包含 `Area3D` 点击区、低模胶囊身体、头部和 `Label3D` 短姓名/HP/当前行动调试标签。
 
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：记忆与公开见闻系统占位脚本。
-依赖：暂无。
-当前状态：T0101 已创建；尚未实现事件记录。
+依赖：可通过 `/root/EventBus.public_event_added` 广播公开事件。
+当前状态：T0305 已提供最小 EventLog 占位；支持 `add_event(...)`、`get_event_log()`、`get_event_count()` 和 `clear_event_log()`，用于记录行动完成/失败事件。尚未实现短期记忆、地点见闻、广场信息聚合或睡前总结。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
-依赖：暂无。
-当前状态：T0102 已创建并绑定到 `Main/Systems/ActionSystem`；尚未实现行动逻辑。
+依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` EventLog 占位。
+当前状态：T0305 已实现工作 / 吃饭 / 睡觉最小行动闭环；提供 `debug_assign_work(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。未实现 LLM 日程、训练、战斗或复杂职业效率。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。
@@ -126,7 +136,12 @@
 路径：`res://scripts/ui/BuildingPanel.gd`
 用途：建筑信息面板脚本，监听建筑点击并展示建筑名称、等级、HP、工作位和地点信息占位。
 依赖：监听 `/root/EventBus.building_clicked`，从 `Main/Systems/BuildingSystem` 读取建筑状态。
-当前状态：T0205 已接入 `Main/UI/BuildingPanel`；修复和升级按钮会调用 `BuildingSystem`，并根据 HP、等级、配置和资源是否足够自动启用或禁用。
+当前状态：T0303 已接入 `Main/UI/BuildingPanel`；修复和升级按钮会调用 `BuildingSystem`，并根据 HP、等级、配置和资源是否足够自动启用或禁用；点击 NPC 时会隐藏建筑面板。
+
+路径：`res://scripts/ui/NPCPanel.gd`
+用途：NPC 信息面板脚本，监听 NPC 点击和状态变化并展示 NPC 基础状态。
+依赖：监听 `/root/EventBus.npc_clicked`、`/root/EventBus.npc_state_changed` 和 `/root/EventBus.building_clicked`，从 `Main/Systems/NPCSystem` 读取 NPC 档案与状态。
+当前状态：T0303 已接入 `Main/UI/NPCPanel`；按姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度显示 NPC 数据；属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由熟练度推导；点击建筑时会隐藏 NPC 面板。
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
@@ -144,6 +159,7 @@
 | 资源系统 | `res://scripts/systems/ResourceSystem.gd` | 金钱、粮食等 |
 | 建筑系统 | `res://scripts/systems/BuildingSystem.gd` | 建筑 HP、等级、工作位 |
 | NPC 系统 | `res://scripts/systems/NPCSystem.gd` | NPC 生成与管理 |
+| NPC 展示脚本 | `res://scripts/npc/NPC.gd` | NPC 占位实体、标签和点击事件 |
 | 行动系统 | `res://scripts/systems/ActionSystem.gd` | 工作、吃饭、睡觉、训练 |
 | 对话系统 | `res://scripts/systems/DialogSystem.gd` | 与后端对话 |
 | 征召系统 | `res://scripts/systems/RecruitmentSystem.gd` | 入伍状态 |
@@ -153,6 +169,7 @@
 | LLM 桥接 | `res://scripts/systems/LLMBridge.gd` | HTTP 请求后端 |
 | HUD 展示 | `res://scripts/ui/HUD.gd` | 时间、资源、按钮和后端状态占位 |
 | 建筑面板 | `res://scripts/ui/BuildingPanel.gd` | 建筑信息展示、修复/升级按钮 |
+| NPC 面板 | `res://scripts/ui/NPCPanel.gd` | NPC 基础状态展示与刷新 |
 | 摄像机控制 | `res://scripts/camera/CameraRig.gd` | 俯视平移、缩放和边界限制 |
 
 ## 数据文件规划
@@ -172,7 +189,7 @@
 路径：`data/resource_defs.json`
 用途：资源配置，记录资源 id、显示名、分类、初始数量、最小值和 HUD 顺序。
 依赖：由 `ResourceSystem` 通过 `ConfigLoader.load_data_file("resource_defs.json")` 读取。
-当前状态：T0202 已接入运行时资源初始化，包含第纳尔、粮食、木材、石料、铁。
+当前状态：T0305 已接入运行时资源初始化，包含第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁；HUD 仍只显示五类基础资源，派生资源当前用于行动系统内部结算。
 
 路径：`data/building_defs.json`
 用途：建筑配置，记录建筑 id、等级、HP、标签、工作位、输入输出、修复和升级规则。
@@ -181,8 +198,8 @@
 
 路径：`data/action_defs.json`
 用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出和状态变化。
-依赖：后续由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
-当前状态：T0201 已创建最小样例，包含修补围墙行动。
+依赖：由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
+当前状态：T0305 已由 `ActionSystem` 读取；包含菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、修补围墙、马厩照料、吃饭和睡觉等最小行动定义。
 
 路径：`data/weapon_defs.json`
 用途：武器配置，记录武器类型、射程、伤害、攻击间隔和技能需求。
@@ -196,8 +213,8 @@
 
 路径：`data/npc_profiles.json`
 用途：NPC 档案配置，记录身份、性格、欲望、恐惧、底线、基础数值、状态、技能、入伍状态、装备、知识图谱和日记。
-依赖：后续由 `NPCSystem` 读取并生成 NPC 实体。
-当前状态：T0201 已创建最小样例，包含老兵副官占位档案；完整 8 名 NPC 留给后续 NPC 任务。
+依赖：由 `NPCSystem` 通过 `ConfigLoader.load_data_file("npc_profiles.json")` 读取并生成 NPC 实体。
+当前状态：T0302 已接入运行时 NPC 生成；包含 8 名初始 NPC 档案：马夫 `stableman_01`、厨子 `cook_01`、园丁 `gardener_01`、铁匠 `blacksmith_01`、老兵副官 `veteran_deputy_01`、神父 `priest_01`、医生 `doctor_01`、工程师 `engineer_01`。每名 NPC 包含基础外观、背景、性格、欲望、恐惧、能力、状态、技能、装备、计划、短期记忆、知识图谱和日记字段。
 
 ## 后端模块规划
 
@@ -255,3 +272,7 @@
 |---|---|
 | Godot MCP 连接自检 | `tools/check_godot_mcp.ps1` |
 | 建筑修复/升级验证 | `tools/verify_building_repair_upgrade.gd` |
+| NPC 面板与状态验证 | `tools/verify_npc_panel_state.gd` |
+| NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |
+| NPC 熟练度 schema 验证 | `tools/verify_npc_skill_schema.gd` |
+| 简单行动系统验证 | `tools/verify_action_system_basic.gd` |
