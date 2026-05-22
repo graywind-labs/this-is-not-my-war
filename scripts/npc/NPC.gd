@@ -52,6 +52,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _is_moving:
 		return
+	if _is_gameplay_paused():
+		return
 
 	var next_position := global_position.move_toward(_movement_target_position, move_speed * delta)
 	global_position = next_position
@@ -108,3 +110,8 @@ func _make_node_name(id_value: String) -> String:
 			continue
 		result += part.substr(0, 1).to_upper() + part.substr(1).to_lower()
 	return result
+
+
+func _is_gameplay_paused() -> bool:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	return time_system != null and time_system.is_gameplay_paused()

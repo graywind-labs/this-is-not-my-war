@@ -10,17 +10,20 @@
 - `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
 - `HUD.gd` 会把 HUD 根节点设为鼠标忽略，避免全屏 HUD 背板拦截 3D 建筑点击；具体按钮仍保留自身交互能力。
 - `Main/UI/HUD/TitleLabel` 显示游戏标题。
-- `Main/UI/HUD/DayLabel`、`TimeLabel`、`PhaseLabel` 显示当前天数、小时和阶段；当前从 `GameState` 读取初始时间。
+- `Main/UI/HUD/DayLabel`、`TimeLabel`、`PhaseLabel` 显示当前天数、`HH:MM:SS` 时间和阶段；当前随 `TimeSystem` 推进并监听 `EventBus.time_changed` / `hour_started` / `day_started` 刷新。
 - `Main/UI/HUD/ResourceStrip` 下的 `GoldLabel`、`FoodLabel`、`WoodLabel`、`StoneLabel`、`IronLabel` 显示 `ResourceSystem` 的当前资源数值。
 - `HUD.gd` 监听 `EventBus.resource_changed`，资源变化后自动刷新资源栏。
-- `Main/UI/HUD/SpeedButton` 和 `AlarmButton` 是加速与警铃按钮占位，当前不触发真实逻辑。
+- `Main/UI/HUD/SpeedButton` 已接入 `TimeSystem`，点击后按 `x1` / `x2` / `x4` 循环切换流速。
+- `Main/UI/HUD/PauseButton` 控制暂停/继续，空格键绑定到同一套暂停/继续逻辑；空格不触发速度切换。
+- `AlarmButton` 仍是警铃占位，当前不触发真实逻辑。
 - `Main/UI/HUD/BackendStatusLabel` 显示后端连接状态占位，当前固定为未连接。
+- 后续 API / 调试面板需要显示当前模型调用状态、等待中的 LLM 请求数量、TimeSystem 有效逻辑倍率和最近一次慢速原因；当前 HUD 只显示玩家设定的速度倍率。
 - `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位、地点信息占位，以及修复/升级消耗摘要。
 - `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置和资源是否足够自动启用或禁用。
 - `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性和专长；状态变化会随 `npc_state_changed` 刷新。
 - `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板。
 - `Main/UI/DialogPanel` 已作为隐藏占位节点存在。
-- 暂未实现加速、警铃、后端连接、对话面板或生产细节。
+- 暂未实现警铃、后端连接、对话面板或生产细节。
 
 当前摄像机操作（T0105）：
 
@@ -56,7 +59,7 @@
 - 是否昏迷
 - 职业熟练度与武器熟练度
 - 当前装备
-- 当前记忆摘要
+- 当前记忆摘要，后续应区分亲历事件库和见闻库
 - 对玩家态度
 - 对话按钮
 - 赠予金钱按钮
@@ -101,6 +104,8 @@
 - 升级条件
 - 当前地点信息
 
+地点信息后续应来自 `MemorySystem` 的地点信息空间，而不是 UI 自行拼接。建筑面板需要显示当前人员、工位/床位占用、近期公开事件；广场面板或调试信息需要额外显示主厅、围墙、城门等不可进入实体状态。
+
 ## 对话界面
 
 对话界面突出：
@@ -137,3 +142,5 @@
 - 关键战场公开事件
 - 昏迷 NPC 提示
 - 建筑受损提示
+
+战斗信息中的公开事件应来自广场信息空间。UI 只展示事件摘要，不决定事件是否公开。

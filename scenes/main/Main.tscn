@@ -434,16 +434,16 @@ unique_name_in_owner = true
 layout_mode = 0
 offset_left = 132.0
 offset_top = 52.0
-offset_right = 220.0
+offset_right = 230.0
 offset_bottom = 76.0
-text = "06:00"
+text = "06:00:00"
 
 [node name="PhaseLabel" type="Label" parent="UI/HUD" unique_id=1272901177]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 232.0
+offset_left = 242.0
 offset_top = 52.0
-offset_right = 340.0
+offset_right = 350.0
 offset_bottom = 76.0
 text = "阶段：清晨"
 
@@ -490,18 +490,30 @@ offset_bottom = 142.0
 text = "后端：未连接（占位）"
 
 [node name="SpeedButton" type="Button" parent="UI/HUD" unique_id=102724923]
+focus_mode = 0
 layout_mode = 0
 offset_left = 24.0
 offset_top = 152.0
 offset_right = 118.0
 offset_bottom = 184.0
-text = "加速 x1"
+text = "速度 x1"
 
-[node name="AlarmButton" type="Button" parent="UI/HUD" unique_id=988415891]
+[node name="PauseButton" type="Button" parent="UI/HUD"]
+unique_name_in_owner = true
+focus_mode = 0
 layout_mode = 0
 offset_left = 130.0
 offset_top = 152.0
 offset_right = 224.0
+offset_bottom = 184.0
+text = "暂停"
+
+[node name="AlarmButton" type="Button" parent="UI/HUD" unique_id=988415891]
+focus_mode = 0
+layout_mode = 0
+offset_left = 236.0
+offset_top = 152.0
+offset_right = 330.0
 offset_bottom = 184.0
 text = "警铃"
 

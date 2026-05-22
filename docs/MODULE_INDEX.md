@@ -49,9 +49,9 @@
 当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、小时/阶段、资源占位、加速/警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`CameraRig` 已挂载基础俯视摄像机控制。
-依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为空系统占位脚本，绑定 `res://scripts/ui/HUD.gd` 作为 HUD 展示脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
-当前状态：T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和围墙修补的最小资源/HP 效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、吃饭、睡觉，到达后结算资源/状态并写入 EventLog 占位。未实现真实日程、复杂生产效率、时间推进或战斗。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`CameraRig` 已挂载基础俯视摄像机控制。
+依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 作为 HUD 展示脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
+当前状态：T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和围墙修补的最小资源/HP 效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、吃饭、睡觉，到达后结算资源/状态并写入 EventLog 占位。暂停期间 NPC 移动与行动结算停止，行动保持 pending，恢复后再结算。未实现真实日程、复杂生产效率或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -66,10 +66,10 @@
 路径：`res://scripts/core/EventBus.gd`
 用途：全局事件总线，声明基础跨系统信号。
 依赖：作为 Autoload 注册于 `project.godot`。
-当前状态：T0303 已包含 `resource_changed`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`public_event_added`。
+当前状态：T0401 已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`day_started`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`public_event_added`。
 
 路径：`res://scripts/core/GameState.gd`
-用途：全局运行状态，保存当前天数、小时和是否处于战斗中。
+用途：全局运行状态，保存当前天数、小时、分钟、秒和是否处于战斗中。
 依赖：作为 Autoload 注册于 `project.godot`；需要广播时通过 `/root/EventBus` 查找事件总线。
 当前状态：T0101 已创建；仅提供最小状态字段和设置接口。
 
@@ -79,9 +79,9 @@
 当前状态：T0101 已创建；文件缺失、打开失败、解析失败时会 `push_error` 并返回默认值。
 
 路径：`res://scripts/systems/TimeSystem.gd`
-用途：时间系统占位脚本。
-依赖：暂无。
-当前状态：T0101 已创建；尚未实现时间推进。
+用途：基础逻辑时间系统，负责 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速和数值倍率出口。
+依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；后续 LLMBridge / DialogSystem 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
+当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；尚未把战斗、每日计划或真实 LLM 请求接入该倍率。
 
 路径：`res://scripts/systems/ResourceSystem.gd`
 用途：资源系统占位脚本。
@@ -109,14 +109,14 @@
 当前状态：T0303 已创建；当前包含 `Area3D` 点击区、低模胶囊身体、头部和 `Label3D` 短姓名/HP/当前行动调试标签。
 
 路径：`res://scripts/systems/MemorySystem.gd`
-用途：记忆与公开见闻系统占位脚本。
-依赖：可通过 `/root/EventBus.public_event_added` 广播公开事件。
-当前状态：T0305 已提供最小 EventLog 占位；支持 `add_event(...)`、`get_event_log()`、`get_event_count()` 和 `clear_event_log()`，用于记录行动完成/失败事件。尚未实现短期记忆、地点见闻、广场信息聚合或睡前总结。
+用途：事件、见闻与地点信息空间系统。
+依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
+当前状态：T0305 已提供最小 EventLog 占位；支持 `add_event(...)`、`get_event_log()`、`get_event_count()` 和 `clear_event_log()`，用于记录行动完成/失败事件。T0402 需要升级为结构化事件系统：事件必须包含 `subject_npc_id`、`location_id`、`visibility` 和 `payload`；事件首先写入对应 NPC 事件库，再按可见性写入地点信息空间或广场信息空间；NPC 进入地点时把地点可继承信息写入该 NPC 见闻库。尚未实现睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
 依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` EventLog 占位。
-当前状态：T0305 已实现工作 / 吃饭 / 睡觉最小行动闭环；提供 `debug_assign_work(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。未实现 LLM 日程、训练、战斗或复杂职业效率。
+当前状态：T0305 已实现工作 / 吃饭 / 睡觉最小行动闭环；提供 `debug_assign_work(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。T0401 暂停语义修正后，暂停期间不会执行行动结算，行动保持 pending 并在恢复后继续。未实现 LLM 日程、训练、战斗或复杂职业效率。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。
@@ -129,9 +129,9 @@
 当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；尚未实现对话逻辑。
 
 路径：`res://scripts/ui/HUD.gd`
-用途：HUD 展示脚本，刷新标题区下方的天数、小时/阶段、资源占位、后端状态占位。
-依赖：读取 `/root/GameState`，监听 `/root/EventBus.hour_started` 和 `/root/EventBus.resource_changed`，从 `Main/Systems/ResourceSystem` 读取当前资源。
-当前状态：T0202 已接入真实基础资源显示；2026-05-20 已让 HUD 根节点忽略鼠标，避免全屏背板拦截建筑点击；加速、警铃和后端连接仍为占位。
+用途：HUD 展示脚本，刷新标题区下方的天数、`HH:MM:SS` 时间/阶段、资源占位、速度/暂停按钮和后端状态占位。
+依赖：读取 `/root/GameState`，监听 `/root/EventBus.time_changed`、`hour_started`、`day_started` 和 `resource_changed`，从 `Main/Systems/ResourceSystem` 读取当前资源。
+当前状态：T0401 已接入真实时间推进、秒级时间显示、速度按钮、暂停按钮和空格暂停；速度按钮显示玩家设定倍率，空格只触发暂停/继续，不触发速度切换；LLM 等待造成的有效逻辑倍率由 TimeSystem 提供给后续调试 UI；T0202 已接入真实基础资源显示；2026-05-20 已让 HUD 根节点忽略鼠标，避免全屏背板拦截建筑点击；警铃和后端连接仍为占位。
 
 路径：`res://scripts/ui/BuildingPanel.gd`
 用途：建筑信息面板脚本，监听建筑点击并展示建筑名称、等级、HP、工作位和地点信息占位。
@@ -276,3 +276,4 @@
 | NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |
 | NPC 熟练度 schema 验证 | `tools/verify_npc_skill_schema.gd` |
 | 简单行动系统验证 | `tools/verify_action_system_basic.gd` |
+| 时间系统验证 | `tools/verify_time_system.gd` |

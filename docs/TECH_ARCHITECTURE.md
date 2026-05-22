@@ -30,12 +30,13 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 建筑点击
 - UI 展示
 - 资源数值
-- 时间流逝
+- 逻辑时间流逝与倍率
+- LLM 等待期间的 TimeSystem 慢速请求注册/释放
 - 工作产出
 - 战斗执行
 - HP 扣除
 - 昏迷、治疗、复苏状态
-- 事件写入
+- 事件权威写入、地点信息空间维护、NPC 事件库与见闻库维护
 - 与后端通信
 
 ### Python 后端负责
@@ -59,6 +60,26 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - NPC 是否想参战、逃离、斗志激昂
 - NPC 是否主动找玩家交涉
 - NPC 的主观日记与反思
+
+### 事件与记忆边界
+
+Godot 是事件事实源。资源、HP、建筑、移动、战斗、工作、对话收发等权威结果先由 Godot 侧系统结算，再写入 `MemorySystem`：
+
+```text
+程序系统结算权威结果
+  ↓
+MemorySystem.add_event(...)
+  ↓
+写入 subject_npc_id 的 NPC 事件库
+  ↓
+按 visibility 写入地点信息空间或广场信息空间
+  ↓
+NPC 进入地点时，把地点可继承信息写入该 NPC 见闻库
+  ↓
+LLM 调用前从事件库 + 见闻库生成摘要
+```
+
+后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱增量，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
 
 ### LLM 不负责
 
@@ -132,6 +153,8 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
   ↓
 Godot 收集 NPC 当前状态、地点信息、短期记忆摘要
   ↓
+Godot 通过 TimeSystem 注册 LLM 等待慢速请求
+  ↓
 发送到后端
   ↓
 后端拼装 Prompt 并调用模型
@@ -140,14 +163,20 @@ Godot 收集 NPC 当前状态、地点信息、短期记忆摘要
   ↓
 后端校验 JSON
   ↓
+Godot 释放 TimeSystem 慢速请求
+  ↓
 Godot 执行合法结果
   ↓
-事件写入 MemorySystem
+权威结果写入 MemorySystem 事件系统，并按可见性传播到地点/广场信息空间
 ```
 
 ## 失败降级
 
-如果 LLM 请求失败，尝试重连
+如果 LLM 请求失败，Godot 必须释放 TimeSystem 慢速请求，并使用 Mock / 规则 / 模板结果降级，不能让游戏长期停留在慢速逻辑时间。
+
+## 时间倍率边界
+
+Godot 不使用后端结果直接决定时间倍率。后端只返回业务 JSON；是否申请慢速、慢速 request id、超时释放和恢复玩家速度，由 Godot 的 LLMBridge / DialogSystem / 计划系统负责。
 
 ## API Key
 

@@ -1,6 +1,11 @@
 extends Node
 
 signal resource_changed(resource_id: String, amount: int)
+signal time_changed(day: int, hour: int, minute: int, second: int)
+signal time_scale_changed(player_scale: float, effective_scale: float, numeric_multiplier: float, reason: String)
+signal logical_time_tick(game_delta_seconds: float, numeric_multiplier: float)
+signal gameplay_pause_changed(paused: bool)
+signal day_started(day: int)
 signal hour_started(day: int, hour: int)
 signal building_clicked(building_id: String)
 signal npc_clicked(npc_id: String)

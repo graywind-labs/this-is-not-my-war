@@ -72,6 +72,8 @@ T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。当前不实现自然变化、治疗结算、真实日程或 LLM 地点解读。
 
+T0402 设计更新后，运行时短期记忆不再建议只用一个扁平 `short_term_memory` 数组表达。后续应拆分为当天 `event_log` 与 `witness_log`：前者记录发生在该 NPC 身上的事件 ID，后者记录该 NPC 通过地点信息空间、广场公开信息或公告继承到的见闻事件 ID。`data/npc_profiles.json` 可继续保留 `short_term_memory` 作为初始空字段兼容占位，但运行时 MemorySystem 应以 NPC 事件库和见闻库为准。
+
 T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有以下 13 个熟练度维度，取值范围 0-100：
 
 - 职业熟练度：`养马`、`厨艺`、`耕种`、`打铁`、`教练`、`酿酒`、`医术`、`工程`
@@ -174,19 +176,85 @@ T0305 起，行动定义支持三类最小行动：
 }
 ```
 
-## Event Log
+## Event Record
 
 ```json
 {
-  "time": "Day3 09:00",
-  "type": "battle_public_info",
-  "location": "广场",
-  "actors": ["doctor_01", "enemy_03"],
-  "content": "医生在战斗中被敌人击倒，HP 清零后进入昏迷状态。",
+  "event_id": "evt_day03_090000_doctor_01_unconscious",
+  "day": 3,
+  "time": "09:00:00",
+  "type": "unconscious_started",
+  "subject_npc_id": "doctor_01",
+  "actor_ids": ["enemy_03"],
+  "target_ids": ["doctor_01"],
+  "location_id": "plaza",
+  "visibility": "plaza_public",
   "importance": 85,
-  "visible_to_public_square": true
+  "summary": "莉娜在广场战斗中被敌人击倒并昏迷。",
+  "payload": {
+    "hp_before": 18,
+    "hp_after": 0,
+    "damage": 18,
+    "weapon_id": "raider_axe"
+  }
 }
 ```
+
+事件通用字段：
+
+- `event_id`：唯一事件 ID，建议包含日期、时间、主体 NPC 和类型，便于调试。
+- `day` / `time`：权威游戏时间，来自 TimeSystem / GameState。
+- `type`：事件类型，详见 `MEMORY_AND_INFO_SPACE.md`。
+- `subject_npc_id`：事件所属 NPC，必填；事件首先写入该 NPC 的事件库。
+- `actor_ids`：主动参与者，可包含 NPC、玩家、敌人或系统 ID。
+- `target_ids`：事件关联目标索引，可包含 NPC ID、地点 ID、建筑 ID、行动 ID、资源 ID、敌人 ID 等；它不是自然语言“宾语”，而是查询索引。
+- `location_id`：事件发生地点；室外事件统一为 `plaza`。
+- `visibility`：`private`、`local_public`、`plaza_public`。
+- `importance`：用于 LLM 摘要、见闻裁剪和睡前总结。
+- `summary`：短文本摘要。
+- `payload`：事件类型专属属性。对话全文、地点状态快照、战斗伤害数值、建筑状态等都放在这里。
+
+`summary` 不由 LLM 生成，也不由通用主语/宾语规则自动推断。每个 `type` 必须有确定性 summary 模板和对应 payload schema：
+
+```json
+{
+  "type": "work_completed",
+  "summary_template": "{actor}完成了{action}，消耗{inputs}，产出{outputs}。",
+  "required_payload_fields": ["action_id", "input_resources", "output_resources"]
+}
+```
+
+格式化器负责把 ID 展开成显示名，例如 `blacksmith_01` 展开为格伦，`work_make_weapons` 展开为打造武器，`iron` 展开为铁。底层事件继续保存稳定 ID。
+
+必备事件类型方向：
+
+- 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
+- 移动与地点：`location_entered`、`location_exited`
+- 工作与生活：`work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`
+- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`
+- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
+- 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
+- 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
+- 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
+
+## NPC Daily Memory
+
+```json
+{
+  "npc_id": "doctor_01",
+  "day": 3,
+  "event_log": [
+    "evt_day03_083000_doctor_01_location_entered",
+    "evt_day03_090000_doctor_01_unconscious"
+  ],
+  "witness_log": [
+    "evt_day03_084500_stableman_01_escape_started"
+  ],
+  "daily_summary": ""
+}
+```
+
+`event_log` 和 `witness_log` 都保存事件 ID，具体事件内容由 MemorySystem 的事件存储查询。这样可以避免重复复制大 payload，也能区分亲历与听闻。
 
 ## Location Info Space
 
@@ -194,6 +262,7 @@ T0305 起，行动定义支持三类最小行动：
 {
   "id": "chapel",
   "name": "小教堂",
+  "kind": "enterable_building",
   "building_hp": 100,
   "level": 1,
   "people_present": ["priest_01", "doctor_01"],
@@ -203,10 +272,34 @@ T0305 起，行动定义支持三类最小行动：
       "occupied_by": "priest_01"
     }
   ],
-  "recent_events": [],
-  "public_notes": []
+  "recent_public_event_ids": [],
+  "public_notes": [],
+  "state_snapshot": {
+    "available_workstations": 0,
+    "occupied_workstations": 1
+  }
 }
 ```
+
+广场是特殊地点：
+
+```json
+{
+  "id": "plaza",
+  "name": "广场",
+  "kind": "plaza",
+  "people_present": ["stableman_01", "veteran_deputy_01"],
+  "recent_public_event_ids": [],
+  "public_notes": [],
+  "state_snapshot": {
+    "main_hall_hp": 180,
+    "front_gate_hp": 120,
+    "wall_hp": 150
+  }
+}
+```
+
+主厅、围墙、城门等不可进入实体不作为 NPC 常规进入地点；它们的 HP、可用性和受损信息进入广场 `state_snapshot` 或广场公开事件。NPC 进入广场时，`location_entered.payload.location_snapshot` 应包含这些状态。
 
 ## LLM Dialogue Response
 

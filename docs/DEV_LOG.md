@@ -3,7 +3,79 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-22
+
+### T0401 暂停输入与暂停结算语义修正
+
+完成：
+- 确认 `SpeedButton` 只调用 `TimeSystem.cycle_speed()`，空格和 `PauseButton` 只调用 `TimeSystem.toggle_paused()`，空格不会改变 `x1` / `x2` / `x4` 速度倍率。
+- `ActionSystem` 监听 `gameplay_pause_changed`；暂停期间已到位行动只保留 pending，不执行资源消耗/产出、饱食/疲劳变化或 EventLog 结算，恢复后再结算。
+- `game_design.md` 补充暂停设计：暂停停止逻辑时间、NPC 移动、战斗和资源/状态结算，但不冻结 UI、后端请求或 LLM 对话/判定等待。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_time_system.gd` 通过，覆盖空格不改速度、NPC 暂停移动、暂停期间行动不结算且恢复后结算。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志无报错。
+
+未做：
+- 当前仍未实现真实 LLM 对话、NPC-NPC 对话、战斗系统或真实时间驱动生产；本次只补齐暂停底层语义和已接入行动结算的暂停保护。
+
 ## 2026-05-21
+
+### T0401 逻辑时间倍率与 LLM 等待减速架构
+
+完成：
+- `TimeSystem` 增加 LLM 等待减速请求接口：`request_time_slowdown(...)`、`release_time_slowdown(...)`、`clear_time_slowdowns()`。
+- 新增有效逻辑倍率读取接口：`get_effective_time_scale()`、`get_numeric_delta_multiplier()`、`get_game_delta_seconds(...)`。
+- `EventBus` 新增 `time_scale_changed(...)` 与 `logical_time_tick(...)`，用于后续资源、计划、战斗数值按逻辑时间倍率结算。
+- 默认 LLM 等待倍率为 `1/60`，即默认速度下现实 1 秒 = 游戏 1 秒；该机制不修改 `Engine.time_scale`，不改变 NPC 移动或动画速度。
+- 更新 `game_design.md`、架构、AI、经济、战斗、Prompt、API 预算和任务路线图中的相关说明。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_time_system.gd` 通过，覆盖 LLM 等待减速、释放后恢复玩家倍率和数值倍率接口。
+- `godot --headless --path . --quit-after 1` 通过。
+- `verify_action_system_basic.gd`、`verify_npc_panel_state.gd` 回归通过。
+
+未做：
+- 未将真实 LLMBridge、资源产出、计划调度或战斗数值实际接入逻辑倍率；已在后续任务中补充要求。
+
+### T0401 秒级时间显示与控制修正
+
+完成：
+- `GameState` 增加 `current_minute` / `current_second`，`TimeSystem` 改为按游戏秒推进并写回 `HH:MM:SS`。
+- `EventBus` 增加 `time_changed(day, hour, minute, second)`，HUD 使用该信号连续刷新时间显示。
+- `HUD` 的 `SpeedButton` 改为只循环 `x1` / `x2` / `x4` 流速。
+- `Main/UI/HUD` 新增 `PauseButton`，用于暂停/继续；空格键绑定到同一暂停/继续逻辑。
+- `tools/verify_time_system.gd` 补充秒级流逝、速度按钮、暂停按钮和空格暂停验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_time_system.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现每日计划、战斗倒计时或 LLM 时间减速。
+
+### T0401 实现 TimeSystem
+
+完成：
+- 在 `scripts/systems/TimeSystem.gd` 中实现基础时间推进：一天 24 小时，默认现实 1 秒 = 游戏内 1 分钟，每 60 游戏分钟推进 1 小时。
+- 增加暂停与 `x1` / `x2` / `x4` 加速切换接口，并将 `HUD` 的时间按钮接到 `TimeSystem.cycle_speed()`。
+- 在 `EventBus.gd` 中补充 `day_started(day)`；`GameState.set_time(...)` 会在跨天时发出 `day_started`，并继续发出 `hour_started(day, hour)`。
+- `HUD.gd` 监听 `hour_started` / `day_started` 刷新天数、小时和阶段文本。
+- 新增 `tools/verify_time_system.gd`，覆盖时间推进、暂停、加速、跨天信号和 HUD 刷新。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_time_system.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- `godot --headless --path . --script res://tools/verify_npc_generation_click.gd`、`verify_npc_panel_state.gd`、`verify_action_system_basic.gd` 回归通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现 LLM 时间减速、每日计划或战斗倒计时。
 
 ### NPC 面板属性显示修正
 

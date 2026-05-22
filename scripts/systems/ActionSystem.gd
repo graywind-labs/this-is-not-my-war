@@ -51,6 +51,7 @@ func _ready() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.npc_state_changed.connect(_on_npc_state_changed)
+		event_bus.gameplay_pause_changed.connect(_on_gameplay_pause_changed)
 
 
 func get_action(action_id: String) -> Dictionary:
@@ -103,6 +104,10 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 			_pending_actions[npc_id] = action_id
 			return npc_system.move_npc_to_building(npc_id, location_id)
 
+	if _is_gameplay_paused():
+		_pending_actions[npc_id] = action_id
+		return true
+
 	return _execute_action(npc_id, action_id)
 
 
@@ -111,6 +116,20 @@ func has_pending_action(npc_id: String) -> bool:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
+	if _is_gameplay_paused():
+		return
+	_try_execute_pending_action(npc_id)
+
+
+func _on_gameplay_pause_changed(paused: bool) -> void:
+	if paused:
+		return
+
+	for npc_id in _pending_actions.keys():
+		_try_execute_pending_action(str(npc_id))
+
+
+func _try_execute_pending_action(npc_id: String) -> void:
 	if not _pending_actions.has(npc_id):
 		return
 
@@ -126,7 +145,10 @@ func _on_npc_state_changed(npc_id: String) -> void:
 	var action: Dictionary = _actions[action_id]
 	var location_id := str(action.get("location_required", ""))
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) == location_id and str(state.get("current_action", "")) == "idle":
+	if (
+		(location_id.is_empty() or str(state.get("current_location", "")) == location_id)
+		and str(state.get("current_action", "")) == "idle"
+	):
 		_pending_actions.erase(npc_id)
 		_execute_action(npc_id, action_id)
 
@@ -321,3 +343,8 @@ func _get_resource_system() -> Node:
 	if resource_system == null:
 		push_warning("ActionSystem requires ResourceSystem.")
 	return resource_system
+
+
+func _is_gameplay_paused() -> bool:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	return time_system != null and time_system.is_gameplay_paused()
