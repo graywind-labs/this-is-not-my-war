@@ -3,6 +3,27 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-23
+
+### T0402 实现结构化事件底座
+
+完成：
+- `MemorySystem` 从最小 EventLog 占位升级为结构化事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位，并支持按地点和广场公开规则查询事件；地点/广场节点不作为事件历史存储。
+- 结构化事件统一包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload`。
+- 已预留 T0402 要求的事件类型，并为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。
+- `ActionSystem` 工作/吃饭/睡觉/失败路径已迁移到结构化事件；`NPCSystem` 到达地点时写入 `location_entered`。
+- `EventBus` 增加 `event_recorded`、`npc_memory_changed`、`location_info_changed` 信号。
+- 新增 `tools/verify_structured_memory_events.gd`，覆盖结构化字段、NPC 事件库、全局索引、地点查询、广场公开查询和 payload schema。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- Godot MCP `get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+
+未做：
+- 未实现地点/广场即时广播、知识图谱、日记、LLM 记忆摘要、对话或战斗。
+
 ## 2026-05-22
 
 ### T0401 暂停输入与暂停结算语义修正
@@ -279,6 +300,12 @@
 - 将 Codex 全局 `godot-mcp` 启动命令改为 `node C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`。
 - 新增 `godot-mcp-broker.mjs`，由单例 broker 负责唯一的 Godot WebSocket 连接；多个 Codex 会话只连接本机 proxy。
 - 本机验证 broker 可正常健康检查，并能成功调用 `editor.get_state` 读取 Godot 编辑器状态。
+
+换机补充：
+- 新环境若仍配置为 `npx.cmd -y @satelliteoflove/godot-mcp`，切换 Codex 会话仍会重复直连 Godot `6550`，需要改为 `node %USERPROFILE%\.codex\scripts\godot-mcp-proxy.mjs`。
+- Windows 下 broker 直接 `spawn("npx.cmd")` 可能报 `spawn EINVAL`；更稳妥的方式是直接启动 npm cache 中的 `@satelliteoflove/godot-mcp/dist/cli.js`。
+- `tools/check_godot_mcp.ps1` 自检不要用 TCP 主动探测 Godot `6550`，裸 TCP 连接会被 Godot MCP 插件当作新客户端并顶掉 broker；只检查监听状态，真实验证走 proxy 调用 `editor.get_state`。
+- 修复后应只看到 broker 与其唯一 `godot-mcp` 子进程，Godot `6550` 只有 1 条有效客户端连接；本机 broker 默认监听 `127.0.0.1:6551`。
 
 影响文件：
 - `tools/check_godot_mcp.ps1`

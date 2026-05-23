@@ -174,10 +174,21 @@ func _execute_work(npc_id: String, action: Dictionary) -> bool:
 	if resource_system == null or npc_system == null:
 		return false
 
+	_log_structured_action_event(npc_id, action, "work_started", {
+		"action_id": str(action.get("id", "")),
+		"workstation_id": str(action.get("location_required", "")),
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
+
 	var input_resources: Dictionary = action.get("input_resources", {})
 	if not resource_system.spend_resources(input_resources):
 		_update_action_failure(npc_id, "work_failed_no_resources")
-		_log_action_event(npc_id, action, false, "资源不足，工作未能完成。")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", "")),
+			"reason": "资源不足",
+			"input_resources": input_resources,
+			"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+		})
 		return false
 
 	var output_resources: Dictionary = action.get("output_resources", {})
@@ -187,7 +198,15 @@ func _execute_work(npc_id: String, action: Dictionary) -> bool:
 	_apply_building_effects(action)
 	_apply_state_deltas(npc_id, action)
 	_set_action_idle(npc_id, "completed_%s" % str(action.get("id", "work")))
-	_log_action_event(npc_id, action, true, "完成工作：%s。" % str(action.get("name", "工作")))
+	_log_structured_action_event(npc_id, action, "work_completed", {
+		"action_id": str(action.get("id", "")),
+		"input_resources": input_resources,
+		"output_resources": output_resources,
+		"building_hp_restore": int(action.get("building_hp_restore", 0)),
+		"satiety_delta": int(action.get("satiety_delta", 0)),
+		"fatigue_delta": int(action.get("fatigue_delta", 0)),
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
 	return true
 
 
@@ -195,6 +214,11 @@ func _execute_eat(npc_id: String, action: Dictionary) -> bool:
 	var resource_system := _get_resource_system()
 	if resource_system == null:
 		return false
+
+	_log_structured_action_event(npc_id, action, "eat_started", {
+		"action_id": str(action.get("id", "")),
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
 
 	var food_options: Array = action.get("food_options", [])
 	for raw_option in food_options:
@@ -208,18 +232,37 @@ func _execute_eat(npc_id: String, action: Dictionary) -> bool:
 				return false
 			_apply_single_state_delta(npc_id, "satiety", int(option.get("satiety_restore", 0)))
 			_set_action_idle(npc_id, "completed_eat")
-			_log_action_event(npc_id, action, true, "吃饭恢复了饱食度，消耗了%s。" % resource_system.get_resource_name(resource_id))
+			_log_structured_action_event(npc_id, action, "eat_completed", {
+				"action_id": str(action.get("id", "")),
+				"resource_id": resource_id,
+				"amount": cost,
+				"satiety_restore": int(option.get("satiety_restore", 0)),
+				"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+			})
 			return true
 
 	_update_action_failure(npc_id, "eat_failed_no_food")
-	_log_action_event(npc_id, action, false, "没有可用食物，吃饭失败。")
+	_log_structured_action_event(npc_id, action, "work_failed", {
+		"action_id": str(action.get("id", "")),
+		"reason": "没有可用食物",
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
 	return false
 
 
 func _execute_sleep(npc_id: String, action: Dictionary) -> bool:
+	_log_structured_action_event(npc_id, action, "sleep_started", {
+		"action_id": str(action.get("id", "")),
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
 	_apply_state_deltas(npc_id, action)
 	_set_action_idle(npc_id, "completed_sleep")
-	_log_action_event(npc_id, action, true, "睡觉降低了疲劳。")
+	_log_structured_action_event(npc_id, action, "sleep_ended", {
+		"action_id": str(action.get("id", "")),
+		"satiety_delta": int(action.get("satiety_delta", 0)),
+		"fatigue_delta": int(action.get("fatigue_delta", 0)),
+		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS))
+	})
 	return true
 
 
@@ -273,22 +316,34 @@ func _update_action_failure(npc_id: String, failure_id: String) -> void:
 		})
 
 
-func _log_action_event(npc_id: String, action: Dictionary, succeeded: bool, content: String) -> void:
+func _log_structured_action_event(npc_id: String, action: Dictionary, event_type: String, payload: Dictionary) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return
 
-	var building_name := _get_location_name(str(action.get("location_required", "")))
+	var location_id := str(action.get("location_required", ""))
+	if location_id.is_empty():
+		location_id = "plaza"
+	var target_ids: Array[String] = [location_id, str(action.get("id", ""))]
+	if payload.has("resource_id"):
+		target_ids.append(str(payload["resource_id"]))
+	for key in ["input_resources", "output_resources"]:
+		if payload.has(key) and payload[key] is Dictionary:
+			for resource_id in (payload[key] as Dictionary).keys():
+				var resource_text := str(resource_id)
+				if not target_ids.has(resource_text):
+					target_ids.append(resource_text)
+
 	memory_system.add_event({
-		"type": "npc_action",
-		"location": building_name,
-		"actors": [npc_id],
-		"content": content,
-		"action_id": str(action.get("id", "")),
-		"succeeded": succeeded,
+		"type": event_type,
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": target_ids,
+		"location_id": location_id,
+		"visibility": "private",
 		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS)),
 		"importance": 25,
-		"visible_to_public_square": false
+		"payload": payload
 	})
 
 

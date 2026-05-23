@@ -72,7 +72,7 @@ T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。当前不实现自然变化、治疗结算、真实日程或 LLM 地点解读。
 
-T0402 设计更新后，运行时短期记忆不再建议只用一个扁平 `short_term_memory` 数组表达。后续应拆分为当天 `event_log` 与 `witness_log`：前者记录发生在该 NPC 身上的事件 ID，后者记录该 NPC 通过地点信息空间、广场公开信息或公告继承到的见闻事件 ID。`data/npc_profiles.json` 可继续保留 `short_term_memory` 作为初始空字段兼容占位，但运行时 MemorySystem 应以 NPC 事件库和见闻库为准。
+T0402 设计更新后，运行时短期记忆不再建议只用一个扁平 `short_term_memory` 数组表达。后续应拆分为当天 `event_log` 与 `witness_log`：前者记录发生在该 NPC 身上的事件 ID，后者记录该 NPC 通过地点/广场即时广播、状态广播或公告获得的见闻事件 ID。NPC 不会因为进入地点而继承该地点过去发生的事件。`data/npc_profiles.json` 可继续保留 `short_term_memory` 作为初始空字段兼容占位，但运行时 MemorySystem 应以 NPC 事件库和见闻库为准。
 
 T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有以下 13 个熟练度维度，取值范围 0-100：
 
@@ -237,6 +237,32 @@ T0305 起，行动定义支持三类最小行动：
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 
+T0402 当前运行时查询接口：
+
+- `get_all_events()` / `get_event_log()`：返回当天全局事件索引中的事件副本。
+- `get_npc_daily_events(npc_id)`：返回某 NPC 当天亲历事件。
+- `get_npc_witness_events(npc_id)`：返回某 NPC 当天见闻事件，当前为后续即时广播接收预留。
+- `get_location_events(location_id)`：从全局事件索引中返回某地点相关事件，用于调试和摘要；地点节点本身不保存事件历史。
+- `get_plaza_public_events()`：返回 `visibility == "plaza_public"` 的广场公开事件。
+- `get_required_payload_fields(type)`：返回指定事件类型的必需 payload 字段声明。
+
+T0402 已接入的行动事件 payload：
+
+```json
+{
+  "type": "work_completed",
+  "payload": {
+    "action_id": "work_garden",
+    "input_resources": {},
+    "output_resources": {"grain": 2},
+    "building_hp_restore": 0,
+    "satiety_delta": -4,
+    "fatigue_delta": 8,
+    "duration_hours": 1
+  }
+}
+```
+
 ## NPC Daily Memory
 
 ```json
@@ -256,7 +282,9 @@ T0305 起，行动定义支持三类最小行动：
 
 `event_log` 和 `witness_log` 都保存事件 ID，具体事件内容由 MemorySystem 的事件存储查询。这样可以避免重复复制大 payload，也能区分亲历与听闻。
 
-## Location Info Space
+## Location / Building Info Node
+
+地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。
 
 ```json
 {
@@ -272,7 +300,7 @@ T0305 起，行动定义支持三类最小行动：
       "occupied_by": "priest_01"
     }
   ],
-  "recent_public_event_ids": [],
+  "current_public_note_ids": [],
   "public_notes": [],
   "state_snapshot": {
     "available_workstations": 0,
@@ -289,7 +317,7 @@ T0305 起，行动定义支持三类最小行动：
   "name": "广场",
   "kind": "plaza",
   "people_present": ["stableman_01", "veteran_deputy_01"],
-  "recent_public_event_ids": [],
+  "current_public_note_ids": [],
   "public_notes": [],
   "state_snapshot": {
     "main_hall_hp": 180,
@@ -299,7 +327,7 @@ T0305 起，行动定义支持三类最小行动：
 }
 ```
 
-主厅、围墙、城门等不可进入实体不作为 NPC 常规进入地点；它们的 HP、可用性和受损信息进入广场 `state_snapshot` 或广场公开事件。NPC 进入广场时，`location_entered.payload.location_snapshot` 应包含这些状态。
+主厅、围墙、城门、仓库等不可进入实体不作为 NPC 常规进入地点；它们的 HP、可用性等当前状态进入广场 `state_snapshot`。受损等公开事件通过广场节点即时广播给当时在场的 NPC。NPC 进入广场时，`location_entered.payload.location_snapshot` 应包含这些当前状态，但不会包含过去事件历史。
 
 ## LLM Dialogue Response
 

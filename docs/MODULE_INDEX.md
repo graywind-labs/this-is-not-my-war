@@ -17,7 +17,7 @@
 | 代码规范 | `docs/CODING_RULES.md` |
 | 数据结构 | `docs/DATA_SCHEMA.md` |
 | AI NPC 系统 | `docs/AI_NPC_SYSTEM.md` |
-| 记忆与信息空间 | `docs/MEMORY_AND_INFO_SPACE.md` |
+| 记忆与信息节点 | `docs/MEMORY_AND_INFO_SPACE.md` |
 | 经济与建筑 | `docs/ECONOMY_AND_BUILDINGS.md` |
 | 战斗系统 | `docs/COMBAT_SYSTEM.md` |
 | UI | `docs/UI_UX.md` |
@@ -66,7 +66,7 @@
 路径：`res://scripts/core/EventBus.gd`
 用途：全局事件总线，声明基础跨系统信号。
 依赖：作为 Autoload 注册于 `project.godot`。
-当前状态：T0401 已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`day_started`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`public_event_added`。
+当前状态：T0402 已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`gameplay_pause_changed`、`day_started`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`event_recorded`、`npc_memory_changed`、`location_info_changed`、`public_event_added`。
 
 路径：`res://scripts/core/GameState.gd`
 用途：全局运行状态，保存当前天数、小时、分钟、秒和是否处于战斗中。
@@ -91,7 +91,7 @@
 路径：`res://scripts/systems/BuildingSystem.gd`
 用途：基础建筑系统，负责建筑配置读取、场景节点绑定、点击识别和基础状态查询。
 依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击事件。
-当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点信息占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；仍不实现生产或敌人攻击。
+当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史；仍不实现生产或敌人攻击。
 
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
@@ -109,14 +109,14 @@
 当前状态：T0303 已创建；当前包含 `Area3D` 点击区、低模胶囊身体、头部和 `Label3D` 短姓名/HP/当前行动调试标签。
 
 路径：`res://scripts/systems/MemorySystem.gd`
-用途：事件、见闻与地点信息空间系统。
+用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0305 已提供最小 EventLog 占位；支持 `add_event(...)`、`get_event_log()`、`get_event_count()` 和 `clear_event_log()`，用于记录行动完成/失败事件。T0402 需要升级为结构化事件系统：事件必须包含 `subject_npc_id`、`location_id`、`visibility` 和 `payload`；事件首先写入对应 NPC 事件库，再按可见性写入地点信息空间或广场信息空间；NPC 进入地点时把地点可继承信息写入该 NPC 见闻库。尚未实现睡前总结或知识图谱更新。
+当前状态：T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_location_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；地点查询按 `location_id` 从全局事件索引获取相关事件，`plaza_public` 事件可被广场公开查询返回。地点/广场节点不保存事件历史，后续公开事件应由节点即时广播给当前在场 NPC 并写入接收者见闻库。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现地点/广场即时广播、睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
-依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` EventLog 占位。
-当前状态：T0305 已实现工作 / 吃饭 / 睡觉最小行动闭环；提供 `debug_assign_work(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。T0401 暂停语义修正后，暂停期间不会执行行动结算，行动保持 pending 并在恢复后继续。未实现 LLM 日程、训练、战斗或复杂职业效率。
+依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` 结构化事件。
+当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位，以及围墙修补恢复 HP。行动开始、完成或失败会写入 `work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 等事件。T0401 暂停语义修正后，暂停期间不会执行行动结算，行动保持 pending 并在恢复后继续。未实现 LLM 日程、训练、战斗或复杂职业效率。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。
@@ -277,3 +277,4 @@
 | NPC 熟练度 schema 验证 | `tools/verify_npc_skill_schema.gd` |
 | 简单行动系统验证 | `tools/verify_action_system_basic.gd` |
 | 时间系统验证 | `tools/verify_time_system.gd` |
+| 结构化事件底座验证 | `tools/verify_structured_memory_events.gd` |

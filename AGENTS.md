@@ -29,13 +29,12 @@
    - `docs/GODOT_ARCHITECTURE.md`
    - `docs/MODULE_INDEX.md`
    - `docs/CODING_RULES.md`
-7. 如果任务涉及 AI、NPC、记忆、Prompt、API，阅读：
+7. 如果任务涉及 AI、NPC、事件系统、记忆、Prompt、API，阅读：
    - `docs/AI_NPC_SYSTEM.md`
    - `docs/MEMORY_AND_INFO_SPACE.md`
    - `docs/PROMPTS.md`
    - `docs/API_BUDGET.md`
 8. 如果任务涉及历史决策、稳定规则、已知坑，阅读：
-   - `docs/LONG_TERM_MEMORY.md`
    - `docs/DEV_LOG.md`
 
 ---
@@ -127,8 +126,6 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 │  ├─ UI_UX.md
 │  ├─ PROMPTS.md
 │  ├─ API_BUDGET.md
-│  ├─ CURRENT_DECISIONS.md
-│  ├─ LONG_TERM_MEMORY.md
 │  ├─ DEV_LOG.md
 ├─ backend/
 │  ├─ README.md
@@ -172,14 +169,13 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
    - 如果新增/移动文件，更新模块索引。
 4. 对应模块文档：
    - NPC 相关 → `docs/AI_NPC_SYSTEM.md`
-   - 记忆相关 → `docs/MEMORY_AND_INFO_SPACE.md`
-   - 建筑资源 → `docs/ECONOMY_AND_BUILDINGS.md`
+   - 事件/记忆相关 → `docs/MEMORY_AND_INFO_SPACE.md`
+   - 模拟经营/建筑资源 → `docs/ECONOMY_AND_BUILDINGS.md`
    - 战斗相关 → `docs/COMBAT_SYSTEM.md`
    - UI 相关 → `docs/UI_UX.md`
    - 架构相关 → `docs/TECH_ARCHITECTURE.md` / `docs/GODOT_ARCHITECTURE.md`
 5. `docs/DEV_LOG.md`
    - 用日期记录本次修改。
-6. 如有长期决策或踩坑，更新 `docs/LONG_TERM_MEMORY.md`。
 
 ---
 
@@ -226,14 +222,14 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 
 # 10. 禁止行为
 
-- 不要把完整 `game_design.md` 复制进代码或 Prompt。
-- 不要把 API Key 写入仓库。
-- 不要把 NPC 设定写死在 GDScript 中。
-- 不要让 LLM 直接决定资源扣除、伤害、建筑摧毁等权威结果。
-- 不要在没有任务条目的情况下随意重构。
-- 不要一次性实现多个大型系统。
-- 不要删除文档中的稳定决策，除非用户明确要求。
-- 不要引入没有必要的复杂框架。
-- 不要让“模拟小镇”压过“边境驿站压力锅”的核心体验。
+- 不要把完整 `game_design.md` 复制进代码或 Prompt
+- 不要上传api KEY
+- 不要把 NPC 设定写死在 GDScript 中
+- 不要让 LLM 直接决定资源扣除、伤害、建筑摧毁等权威结果
+- 不要在没有任务条目的情况下随意重构
+- 不要一次性实现多个大型系统
+- 不要删除文档中的稳定决策，除非用户明确要求
+- 不要引入没有必要的复杂框架
+- 不要让“模拟小镇”压过“边境驿站压力锅”的核心体验
 
 ---

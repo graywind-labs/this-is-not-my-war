@@ -5,6 +5,7 @@ const NPC_SCENE_PATH := "res://scenes/npc/NPC.tscn"
 const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const PICK_RAY_LENGTH := 1000.0
 const PROFESSIONAL_SKILLS: Array[String] = ["养马", "厨艺", "耕种", "打铁", "教练", "酿酒", "医术", "工程"]
 const WEAPON_SKILLS: Array[String] = ["剑盾", "长杆", "弓", "弩", "骑术"]
@@ -330,6 +331,8 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	var location_context: Dictionary = {}
 	var building_name := building_id
+	var previous_state: Dictionary = get_npc_state(npc_id)
+	var previous_location_id := str(previous_state.get("current_location", "plaza"))
 	if building_system != null:
 		location_context = building_system.get_building_location_context(building_id)
 		building_name = str(location_context.get("name", building_id))
@@ -343,4 +346,26 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		"location_context": location_context
 	})
 	_refresh_npc_node(npc_id)
+	_log_location_entered(npc_id, previous_location_id, building_id, location_context)
 	_emit_npc_state_changed(npc_id)
+
+
+func _log_location_entered(npc_id: String, from_location_id: String, to_location_id: String, location_context: Dictionary) -> void:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return
+
+	memory_system.add_event({
+		"type": "location_entered",
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": [to_location_id],
+		"location_id": to_location_id,
+		"visibility": "private",
+		"importance": 20,
+		"payload": {
+			"from_location_id": from_location_id,
+			"to_location_id": to_location_id,
+			"location_snapshot": location_context
+		}
+	})
