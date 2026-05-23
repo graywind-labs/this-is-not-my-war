@@ -5,15 +5,29 @@
 
 ## 2026-05-23
 
+### T0402 架构适配检查
+
+完成：
+- 检查 T0403 前已完成代码是否仍隐含旧的“地点/建筑保存事件历史并供后来 NPC 继承”模型。
+- `BuildingSystem.get_building_location_context(...)` 删除 `recent_events` 占位，改为 `current_public_note_ids` / `public_notes` 当前状态占位。
+- 删除 `MemorySystem` 的按地点查询事件 API 与内部索引，避免继续暗示地点/建筑保存事件历史。
+- `BuildingPanel` 和验证脚本中的旧措辞同步为“地点状态 / 结构化事件日志”。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_movement_location.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
 ### T0402 实现结构化事件底座
 
 完成：
-- `MemorySystem` 从最小 EventLog 占位升级为结构化事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位，并支持按地点和广场公开规则查询事件；地点/广场节点不作为事件历史存储。
+- `MemorySystem` 从最小 EventLog 占位升级为结构化事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询；地点/广场节点不作为事件历史存储。
 - 结构化事件统一包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload`。
 - 已预留 T0402 要求的事件类型，并为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。
 - `ActionSystem` 工作/吃饭/睡觉/失败路径已迁移到结构化事件；`NPCSystem` 到达地点时写入 `location_entered`。
 - `EventBus` 增加 `event_recorded`、`npc_memory_changed`、`location_info_changed` 信号。
-- 新增 `tools/verify_structured_memory_events.gd`，覆盖结构化字段、NPC 事件库、全局索引、地点查询、广场公开查询和 payload schema。
+- 新增 `tools/verify_structured_memory_events.gd`，覆盖结构化字段、NPC 事件库、全局索引、广场公开查询和 payload schema。
 
 验证：
 - `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。

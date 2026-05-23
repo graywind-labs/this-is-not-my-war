@@ -33,8 +33,7 @@ var _events_by_id: Dictionary = {}
 var _global_event_ids: Array[String] = []
 var _npc_daily_event_ids: Dictionary = {}
 var _npc_daily_witness_ids: Dictionary = {}
-var _location_event_ids: Dictionary = {}
-var _plaza_public_event_ids: Array[String] = []
+var _plaza_public_query_event_ids: Array[String] = []
 var _event_counter := 0
 
 
@@ -43,8 +42,7 @@ func initialize() -> void:
 	_global_event_ids.clear()
 	_npc_daily_event_ids.clear()
 	_npc_daily_witness_ids.clear()
-	_location_event_ids.clear()
-	_plaza_public_event_ids.clear()
+	_plaza_public_query_event_ids.clear()
 	_event_counter = 0
 
 
@@ -69,22 +67,13 @@ func add_event(event: Dictionary) -> Dictionary:
 		_npc_daily_event_ids[subject_npc_id] = []
 	_npc_daily_event_ids[subject_npc_id].append(event_id)
 
-	var location_id := str(normalized.get("location_id", DEFAULT_LOCATION_ID))
-	if not _location_event_ids.has(location_id):
-		_location_event_ids[location_id] = []
-	_location_event_ids[location_id].append(event_id)
-
 	var visibility := str(normalized.get("visibility", DEFAULT_VISIBILITY))
 	if visibility == LOCAL_PUBLIC_VISIBILITY or visibility == PUBLIC_VISIBILITY:
+		var location_id := str(normalized.get("location_id", DEFAULT_LOCATION_ID))
 		_emit_location_info_changed(location_id)
 
 	if visibility == PUBLIC_VISIBILITY:
-		_plaza_public_event_ids.append(event_id)
-		if location_id != DEFAULT_LOCATION_ID:
-			if not _location_event_ids.has(DEFAULT_LOCATION_ID):
-				_location_event_ids[DEFAULT_LOCATION_ID] = []
-			_location_event_ids[DEFAULT_LOCATION_ID].append(event_id)
-			_emit_location_info_changed(DEFAULT_LOCATION_ID)
+		_plaza_public_query_event_ids.append(event_id)
 		_emit_public_event_added(normalized)
 
 	_emit_event_recorded(normalized)
@@ -133,12 +122,8 @@ func get_npc_witness_events(npc_id: String) -> Array[Dictionary]:
 	return _events_from_ids(_npc_daily_witness_ids.get(npc_id, []))
 
 
-func get_location_events(location_id: String) -> Array[Dictionary]:
-	return _events_from_ids(_location_event_ids.get(location_id, []))
-
-
 func get_plaza_public_events() -> Array[Dictionary]:
-	return _events_from_ids(_plaza_public_event_ids)
+	return _events_from_ids(_plaza_public_query_event_ids)
 
 
 func get_supported_event_types() -> Array[String]:
@@ -159,10 +144,6 @@ func debug_get_all_events() -> Array[Dictionary]:
 
 func debug_get_npc_events(npc_id: String) -> Array[Dictionary]:
 	return get_npc_daily_events(npc_id)
-
-
-func debug_get_location_events(location_id: String) -> Array[Dictionary]:
-	return get_location_events(location_id)
 
 
 func debug_get_plaza_public_events() -> Array[Dictionary]:

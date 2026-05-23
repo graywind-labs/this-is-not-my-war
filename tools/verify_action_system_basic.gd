@@ -179,7 +179,7 @@ func _init() -> void:
 		return
 
 	if memory_system.get_event_count() < 8:
-		push_error("Action events were not written to EventLog placeholder")
+		push_error("Action events were not written to structured event log")
 		quit(1)
 		return
 

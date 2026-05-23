@@ -242,7 +242,6 @@ T0402 当前运行时查询接口：
 - `get_all_events()` / `get_event_log()`：返回当天全局事件索引中的事件副本。
 - `get_npc_daily_events(npc_id)`：返回某 NPC 当天亲历事件。
 - `get_npc_witness_events(npc_id)`：返回某 NPC 当天见闻事件，当前为后续即时广播接收预留。
-- `get_location_events(location_id)`：从全局事件索引中返回某地点相关事件，用于调试和摘要；地点节点本身不保存事件历史。
 - `get_plaza_public_events()`：返回 `visibility == "plaza_public"` 的广场公开事件。
 - `get_required_payload_fields(type)`：返回指定事件类型的必需 payload 字段声明。
 

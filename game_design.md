@@ -632,7 +632,7 @@ LLM 不直接创造权威事件结果。LLM 可以生成话语、意向、反思
 
 事件一旦生成，不应被当作可随意改写的状态缓存。后续知识图谱、日记、见闻摘要可以更新，但原始事件应尽量保持可追溯。
 
-`summary` 不能依赖通用主语/宾语关系自动生成。每种事件类型必须定义自己的 summary 模板和 payload schema，由确定性格式化器生成可读文本。例如 `location_entered` 使用“{actor}进入了{to_location}”，`work_completed` 使用“{actor}完成了{action}，消耗{inputs}，产出{outputs}”。`actor_ids`、`target_ids` 和 `location_id` 负责索引与查询；summary 模板负责展示与 prompt 摘要，不能做成一个万能句子生成器。
+`summary` 不能依赖通用主语/宾语关系自动生成。每种事件类型必须定义自己的 summary 模板和 payload schema，由确定性格式化器生成可读文本。例如 `location_entered` 使用“{actor}进入了{to_location}”，`work_completed` 使用“{actor}完成了{action}，消耗{inputs}，产出{outputs}”。`actor_ids`、`target_ids` 和 `location_id` 负责保留稳定事实属性；summary 模板负责展示与 prompt 摘要，不能做成一个万能句子生成器。
 
 ## 11.3 NPC 事件库与见闻库
 

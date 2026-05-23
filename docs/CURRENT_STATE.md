@@ -156,7 +156,7 @@ curl http://127.0.0.1:5000/health
 - `scripts/systems/BuildingSystem.gd`：基础建筑系统，从 `data/building_defs.json` 初始化建筑状态，绑定低模建筑节点，创建运行时点击区，发出 `building_clicked`，并提供修复/升级、建筑入口坐标和地点信息占位接口
 - `scripts/systems/NPCSystem.gd`：基础 NPC 系统，从 `data/npc_profiles.json` 生成 8 个 NPC 占位实体，并提供查询、状态更新、调试选择和调试移动接口
 - `scripts/systems/ActionSystem.gd`：简单行动系统，读取 `data/action_defs.json`，支持调试指派工作、吃饭、睡觉；暂停时行动保持 pending，恢复后再结算资源/状态/围墙 HP，并写入结构化行动事件
-- `scripts/systems/MemorySystem.gd`：结构化事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位，并支持按地点和广场公开规则查询；地点/广场节点不保存事件历史
+- `scripts/systems/MemorySystem.gd`：结构化事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询；不提供按地点查询事件的长期接口，地点/广场节点不保存事件历史
 - `scripts/systems/TimeSystem.gd`：基础逻辑时间系统，支持 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速请求、`logical_time_tick` 和 `time_changed` / `time_scale_changed` / `hour_started` / `day_started` 信号
 - `scripts/systems/CombatSystem.gd`、`DialogSystem.gd`：后续系统的空脚本占位
 - `data/resource_defs.json`：资源定义，包含第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁
@@ -174,7 +174,7 @@ curl http://127.0.0.1:5000/health
 
 ## 最近一次变更
 
-- T0402 结构化事件底座：`MemorySystem` 已升级为事件事实源，ActionSystem 工作/吃饭/睡觉/失败路径和 NPC 地点到达会写入结构化事件；`verify_structured_memory_events.gd` 已覆盖全局索引、NPC 当天事件库、地点查询、广场公开查询和 payload schema。
+- T0402 架构适配检查：已确认 T0403 前 Done 代码不再把地点/建筑当事件历史仓库；`BuildingSystem.get_building_location_context(...)` 只返回当前状态占位，`MemorySystem` 已删除按地点查询事件的 API 和内部索引，只保留 NPC 事件库、NPC 见闻库、全局事件索引和广场公开事件查询。
 
 ## Godot MCP
 
@@ -202,5 +202,5 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 - 2026-05-20 T0303 验证：通过 `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 验证 NPC 面板打开、状态修改后刷新、NPC/建筑面板互斥切换和关闭按钮；通过 `godot --headless --path . --script res://tools/verify_npc_generation_click.gd` 回归验证 NPC 生成与点击；通过 Godot MCP 运行主场景，游戏日志无报错，并确认 `Main/UI` 下存在 `NPCPanel`、`BuildingPanel`、`DialogPanel`。
 - 2026-05-21 T0304 验证：通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_npc_movement_location.gd` 验证 NPC 可通过调试接口依次前往食堂、宿舍、仓库，并在到达后更新地点和地点信息占位；通过 `verify_npc_generation_click.gd`、`verify_npc_panel_state.gd` 回归验证；通过 Godot MCP 运行主场景，游戏日志无报错。
 - 2026-05-21 T0305 验证：通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证 NPC 可被调试安排吃饭、睡觉、菜园工作、酒窖酿酒、铁匠铺制造、工械坊制造、围墙修补，资源/派生资源/围墙 HP 与饱食/疲劳会正确结算，行动事件写入 EventLog 占位；通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd` 回归验证；通过 Godot MCP 运行主场景，游戏日志无报错。
-- 2026-05-23 T0402 验证：通过 `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 验证结构化事件字段、NPC 当天事件库、全局事件索引、地点查询、广场公开查询和 payload schema；通过 `verify_action_system_basic.gd` 回归行动闭环；通过 `godot --headless --path . --quit-after 1` 验证项目加载无错误；Godot MCP `get_state` 正常返回。
+- 2026-05-23 T0402 验证：通过 `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 验证结构化事件字段、NPC 当天事件库、全局事件索引、广场公开查询和 payload schema；通过 `verify_action_system_basic.gd` 回归行动闭环；通过 `godot --headless --path . --quit-after 1` 验证项目加载无错误；Godot MCP `get_state` 正常返回。
 

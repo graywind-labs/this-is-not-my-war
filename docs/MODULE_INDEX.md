@@ -111,7 +111,7 @@
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_location_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；地点查询按 `location_id` 从全局事件索引获取相关事件，`plaza_public` 事件可被广场公开查询返回。地点/广场节点不保存事件历史，后续公开事件应由节点即时广播给当前在场 NPC 并写入接收者见闻库。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现地点/广场即时广播、睡前总结或知识图谱更新。
+当前状态：T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`plaza_public` 事件可被广场公开查询返回。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。后续公开事件应由节点即时广播给当前在场 NPC 并写入接收者见闻库。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现地点/广场即时广播、睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。

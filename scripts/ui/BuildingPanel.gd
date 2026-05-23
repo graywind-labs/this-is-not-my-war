@@ -97,12 +97,12 @@ func _format_location_placeholder(building: Dictionary) -> String:
 	var upgrade_config: Dictionary = building.get("upgrade", {})
 	var lines: Array[String] = []
 	if tags.is_empty():
-		lines.append("地点信息：占位，后续接入见闻与生产状态")
+		lines.append("地点状态：占位，后续接入人员、工位和公告状态")
 	else:
 		var tag_labels: Array[String] = []
 		for tag in tags:
 			tag_labels.append(str(tag))
-		lines.append("地点信息：占位，标签 %s" % ", ".join(tag_labels))
+		lines.append("地点状态：占位，标签 %s" % ", ".join(tag_labels))
 
 	if not repair_config.is_empty():
 		lines.append("修复：%s，恢复 %d HP" % [

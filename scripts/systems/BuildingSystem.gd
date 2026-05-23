@@ -124,7 +124,7 @@ func get_building_location_context(building_id: String) -> Dictionary:
 		"max_hp": int(building.get("max_hp", 0)),
 		"tags": building.get("tags", []),
 		"workstation_count": workstations.size(),
-		"recent_events": [],
+		"current_public_note_ids": [],
 		"public_notes": []
 	}
 

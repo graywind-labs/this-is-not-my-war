@@ -61,7 +61,7 @@
 | `dialogue_turn` | `{speaker}对{listener}说：{text}` | `speaker_id`, `listener_id`, `text` |
 | `damage_taken` | `{target}受到{actor}造成的{damage}点伤害。` | `damage`, `hp_before`, `hp_after` |
 
-`actor_ids`、`target_ids` 和 `location_id` 负责索引与查询；summary 模板负责 UI、调试日志和 prompt 摘要。不要把事件系统做成试图从任意主宾关系自动生成句子的万能事件句子生成器。
+`actor_ids`、`target_ids` 和 `location_id` 负责保留稳定事实属性；summary 模板负责 UI、调试日志和 prompt 摘要。不要把事件系统做成试图从任意主宾关系自动生成句子的万能事件句子生成器。
 
 ## 必备事件类型
 
@@ -82,11 +82,11 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 
 T0402 已实现结构化事件底座：
 
-- `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位，并可按 `location_id` 或 `visibility` 从全局索引查询事件。地点/广场节点不应成为事件历史存储。
+- `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 和 `plaza_public` 后续应触发地点/广场节点即时广播，接收者写入见闻库。当前 T0402 只完成底座与查询索引，完整广播与见闻写入由 T0403/T0404/T0405 推进。
 - 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended`；`NPCSystem` 到达地点时写入 `location_entered`。
-- 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_location_events(location_id)`、`get_plaza_public_events()` 和对应调试接口。
+- 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_plaza_public_events()` 和对应调试接口。
 
 T0402 不实现地点/广场即时广播、睡前总结、日记、知识图谱或 LLM 记忆摘要；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
 

@@ -1025,8 +1025,7 @@ Main
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库。
 - 查询当天全部事件。
 - 查询某 NPC 的当天事件库。
-- 查询某地点相关事件。
-- 查询 `visibility == plaza_public` 或按 `location_id` 关联到广场的事件；广场节点本身不保存事件历史。
+- 查询 `visibility == plaza_public` 的公开事件；广场节点本身不保存事件历史。
 - 对现有 ActionSystem 行动完成/失败事件做兼容迁移。
 - `target_ids` 支持 NPC、地点、建筑、行动、资源、敌人等不同 ID，不把它当成单一自然语言宾语。
 - 每种事件类型定义确定性 summary 模板和 payload schema；summary 不使用 LLM 生成，也不依赖通用主宾语自动拼句。
@@ -1050,10 +1049,10 @@ Main
 
 验收结果（2026-05-23）：
 
-- `MemorySystem` 已升级为结构化事件事实源，支持全局事件索引、NPC 当天事件库、NPC 见闻库占位、按地点查询和广场公开事件查询；地点/广场节点不作为事件历史存储。
+- `MemorySystem` 已升级为结构化事件事实源，支持全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询；地点/广场节点不作为事件历史存储，不提供按地点查询事件接口。
 - 已预留 T0402 要求的事件类型，并为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板与必需 payload 字段声明。
 - `ActionSystem` 的工作、吃饭、睡觉和失败路径已迁移为结构化事件；`NPCSystem` 到达地点时会写入 `location_entered` 事件。
-- 已新增 `tools/verify_structured_memory_events.gd`，验证结构化字段、NPC 事件库、全局索引、地点查询、广场公开查询和 payload schema；同时回归 `tools/verify_action_system_basic.gd`。
+- 已新增 `tools/verify_structured_memory_events.gd`，验证结构化字段、NPC 事件库、全局索引、广场公开查询和 payload schema；同时回归 `tools/verify_action_system_basic.gd`。
 
 ---
 

@@ -98,12 +98,6 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var garden_events: Array = memory_system.debug_get_location_events("garden")
-	if not _has_event(garden_events, "work_completed"):
-		push_error("Location event query missing garden work_completed event")
-		quit(1)
-		return
-
 	var public_event: Dictionary = memory_system.add_event({
 		"type": "combat_started",
 		"subject_npc_id": npc_id,
@@ -116,6 +110,21 @@ func _init() -> void:
 	})
 	if public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != 1:
 		push_error("Plaza public event query failed")
+		quit(1)
+		return
+
+	var indoor_public_event: Dictionary = memory_system.add_event({
+		"type": "combat_started",
+		"subject_npc_id": npc_id,
+		"actor_ids": ["system"],
+		"target_ids": ["chapel"],
+		"location_id": "chapel",
+		"visibility": "plaza_public",
+		"importance": 70,
+		"payload": {"wave_id": "debug_indoor_wave"}
+	})
+	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != 2:
+		push_error("Plaza public query should include public events without using plaza as storage")
 		quit(1)
 		return
 
