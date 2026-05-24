@@ -12,6 +12,7 @@
 [ext_resource type="Script" uid="uid://5kk1bplcpkwg" path="res://scripts/camera/CameraRig.gd" id="10_3km4f"]
 [ext_resource type="Script" path="res://scripts/ui/BuildingPanel.gd" id="11_building_panel"]
 [ext_resource type="Script" path="res://scripts/ui/NPCPanel.gd" id="12_npc_panel"]
+[ext_resource type="Script" path="res://scripts/ui/GMPanel.gd" id="13_gm_panel"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -718,6 +719,15 @@ text = "升级"
 visible = false
 layout_mode = 3
 anchors_preset = 0
+
+[node name="GMPanel" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("13_gm_panel")
 
 [node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
 script = ExtResource("10_3km4f")

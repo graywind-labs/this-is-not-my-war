@@ -23,18 +23,19 @@
 2. `docs/PROJECT_BRIEF.md`
 3. `docs/CURRENT_STATE.md`
 4. `docs/TASKS.md`
-5. 如果任务涉及设计内容，须阅读 `game_design.md` 的相关章节；不要默认全文读取。
-6. 如果任务涉及架构或代码位置，阅读：
+5. 如果任务涉及 GM 调试面板、前端不可见功能验证或调试入口，须阅读 `docs/GM_PANEL.md`。
+6. 如果任务涉及设计内容，须阅读 `game_design.md` 的相关章节；不要默认全文读取。
+7. 如果任务涉及架构或代码位置，阅读：
    - `docs/TECH_ARCHITECTURE.md`
    - `docs/GODOT_ARCHITECTURE.md`
    - `docs/MODULE_INDEX.md`
    - `docs/CODING_RULES.md`
-7. 如果任务涉及 AI、NPC、事件系统、记忆、Prompt、API，阅读：
+8. 如果任务涉及 AI、NPC、事件系统、记忆、Prompt、API，阅读：
    - `docs/AI_NPC_SYSTEM.md`
    - `docs/MEMORY_AND_INFO_SPACE.md`
    - `docs/PROMPTS.md`
    - `docs/API_BUDGET.md`
-8. 如果任务涉及历史决策、稳定规则、已知坑，阅读：
+9. 如果任务涉及历史决策、稳定规则、已知坑，阅读：
    - `docs/DEV_LOG.md`
 
 ---
@@ -66,6 +67,18 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 - 是否需要同步更新文档。
 
 如果任务未登记，先在 `docs/TASKS.md` 中追加任务，再开始实现。
+
+---
+
+# 3.1 GM 面板验证入口规则
+
+每次完成任务验证时，必须判断本次新增或修改的功能是否能由用户直接在 `Main.tscn` 前端看见并手动验证。
+
+- 如果功能无法直接在前端看见，但对玩法、状态、数据、事件、记忆、AI、时间、资源、建筑、战斗或后端调试很关键，必须在 GM 面板中新增可触发、可观察的调试入口。
+- 如果本次改动覆盖了旧调试入口，必须用新的 GM 入口替换旧入口，不要堆叠过期按钮或命令。
+- GM 面板只暴露已有系统接口或 `debug_*` 接口，不新增权威结算系统，不让 UI 自行决定资源、HP、战斗或记忆事实。
+- 每次新增、删除或替换 GM 入口，必须同步更新 `docs/GM_PANEL.md`。
+- 上线或演示不需要 GM 时，优先通过 `res://scripts/ui/GMPanel.gd` 顶部的 `GM_ENABLED` 常量切换，不删除面板代码和文档。
 
 ---
 
@@ -124,6 +137,7 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 │  ├─ ECONOMY_AND_BUILDINGS.md
 │  ├─ COMBAT_SYSTEM.md
 │  ├─ UI_UX.md
+│  ├─ GM_PANEL.md
 │  ├─ PROMPTS.md
 │  ├─ API_BUDGET.md
 │  ├─ DEV_LOG.md
@@ -174,6 +188,7 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
    - 战斗相关 → `docs/COMBAT_SYSTEM.md`
    - UI 相关 → `docs/UI_UX.md`
    - 架构相关 → `docs/TECH_ARCHITECTURE.md` / `docs/GODOT_ARCHITECTURE.md`
+   - GM 调试面板相关 → `docs/GM_PANEL.md`
 5. `docs/DEV_LOG.md`
    - 用日期记录本次修改。
 

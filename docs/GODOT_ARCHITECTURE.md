@@ -36,6 +36,7 @@ Main
 │  ├─ HUD
 │  ├─ NPCPanel
 │  ├─ BuildingPanel
+│  ├─ GMPanel
 │  └─ DialogPanel
 └─ CameraRig
 ```
@@ -123,6 +124,7 @@ Main
 │  ├─ HUD
 │  ├─ NPCPanel
 │  ├─ BuildingPanel
+│  ├─ GMPanel
 │  └─ DialogPanel
 ├─ CameraRig
 │  └─ Camera3D
@@ -144,6 +146,8 @@ T0304 已新增 `res://scenes/npc/NPC.tscn` 和 `res://scripts/npc/NPC.gd`，并
 T0402 后，`res://scripts/systems/ActionSystem.gd` 的简单行动系统会在行动开始、完成或失败时写入结构化事件：工作路径写入 `work_started`、`work_completed`、`work_failed`，吃饭路径写入 `eat_started`、`eat_completed`，睡觉路径写入 `sleep_started`、`sleep_ended`。行动仍会先检查 NPC 是否可行动，必要时调用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由 `ActionSystem` 结算资源输入/输出、可选建筑 HP 恢复、饱食度和疲劳度。若游戏处于暂停，行动会保留在 pending 队列中，不在暂停期间执行资源消耗/产出或状态变化；恢复后再尝试结算。当前已按 `game_design.md` 覆盖菜园、食堂、酒窖、铁匠铺、工械坊、马厩、围墙修补、吃饭和睡觉的最小效果；不实现 LLM 日程、训练、战斗、工作位占用或复杂职业效率。
 
 T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 `npc_clicked` 显示姓名、专长、HP、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度；监听 `npc_state_changed` 刷新当前 NPC 数据；监听 `building_clicked` 时隐藏自身。`BuildingPanel` 也会在 `npc_clicked` 时隐藏，确保 NPC/建筑面板互斥切换。
+
+T0004 已将 `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`：开发模式下显示半透明可拖动 `GM` 按钮，点击后打开 GM 调试面板。面板只调用已有系统接口或 `debug_*` 接口，覆盖资源、时间、建筑、NPC、行动、地点信息、广场公告和短期记忆等 M1-M4 关键调试入口；顶部 `GM_ENABLED` 常量可在开发/上线模式间切换显示。
 
 ## 重要信号建议
 

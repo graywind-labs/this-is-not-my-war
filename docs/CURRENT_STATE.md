@@ -5,8 +5,8 @@
 
 ## 当前版本
 
-版本：`0.0.26-npc-short-term-memory`
-状态：已完成 Godot 项目入口、可扩展 Main 场景节点结构、低模驿站 Blockout、基础 HUD、基础摄像机控制、核心 Autoload 骨架、基础 JSON 数据文件、8 名初始 NPC 数据草案、基础 NPC 生成与点击、NPC 基础状态读取/更新、NPC 面板、基础 NPC 直线移动与地点进入、地点信息节点与进入快照、广场公开信息即时广播、NPC 当天短期记忆容器、按 `game_design.md` 对齐的工作/吃饭/睡觉最小行动闭环、基础 ResourceSystem、基础 BuildingSystem、基础建筑面板、建筑修复/升级最小闭环、结构化事件底座、精确到秒且支持独立暂停/加速与 LLM 等待减速请求的基础 TimeSystem，以及 Flask 后端骨架和 `/health` 健康检查；尚未实现真实每日计划、复杂生产效率、战斗和 AI 对话。
+版本：`0.0.27-gm-debug-panel`
+状态：已完成 Godot 项目入口、可扩展 Main 场景节点结构、低模驿站 Blockout、基础 HUD、可拖动 GM 调试面板、基础摄像机控制、核心 Autoload 骨架、基础 JSON 数据文件、8 名初始 NPC 数据草案、基础 NPC 生成与点击、NPC 基础状态读取/更新、NPC 面板、基础 NPC 直线移动与地点进入、地点信息节点与进入快照、广场公开信息即时广播、NPC 当天短期记忆容器、按 `game_design.md` 对齐的工作/吃饭/睡觉最小行动闭环、基础 ResourceSystem、基础 BuildingSystem、基础建筑面板、建筑修复/升级最小闭环、结构化事件底座、精确到秒且支持独立暂停/加速与 LLM 等待减速请求的基础 TimeSystem，以及 Flask 后端骨架和 `/health` 健康检查；尚未实现真实每日计划、复杂生产效率、战斗和 AI 对话。
 
 ## 当前已实现内容
 
@@ -15,6 +15,7 @@
 - [x] Main 标准节点结构
 - [x] 基础地图
 - [x] HUD 基础界面
+- [x] GM 调试面板
 - [x] 基础摄像机控制
 - [x] NPC 基础实体
 - [x] NPC 基础状态与面板
@@ -65,6 +66,8 @@ ActionSystem 可通过调试接口安排 NPC 去工作、吃饭或睡觉；若�
 行动结算由程序执行：工作可消耗/产出资源或修复围墙，吃饭消耗粮食或餐食恢复饱食度，睡觉降低疲劳，并写入 MemorySystem 的结构化事件库
   ↓
 显示 HUD 标题、天数、`HH:MM:SS` 时间/阶段、真实资源数值、独立速度按钮、独立暂停/继续按钮、警铃按钮占位和后端状态占位
+  ↓
+开发模式下显示半透明可拖动 GM 按钮；点击可打开 GM 面板，通过按钮或命令调试资源、时间、建筑、NPC、行动、地点快照、广场公告和短期记忆
   ↓
 建筑调试标签显示名称、等级和 HP，真实鼠标点击建筑可发出 building_clicked(building_id)
   ↓
@@ -149,6 +152,7 @@ curl http://127.0.0.1:5000/health
 - `scripts/ui/HUD.gd`：HUD 展示脚本，读取 `GameState` 的天/时/分/秒，监听 `time_changed` / `resource_changed` 并刷新时间、资源显示、速度/暂停按钮和后端状态占位
 - `scripts/ui/BuildingPanel.gd`：建筑面板脚本，监听 `building_clicked` 并展示建筑基础信息，可触发建筑修复/升级
 - `scripts/ui/NPCPanel.gd`：NPC 面板脚本，监听 `npc_clicked`、`npc_state_changed` 和 `npc_memory_changed`，按姓名/HP/属性/专长/基础状态/熟练度/事件库/见闻库顺序展示 NPC 数据，并与建筑面板互斥切换
+- `scripts/ui/GMPanel.gd`：GM 调试面板脚本，提供可拖动半透明 GM 按钮、命令输入框和资源/时间/建筑/NPC/行动/记忆调试入口；顶部 `GM_ENABLED` 常量可切换开发/上线显示
 - `scenes/npc/NPC.tscn`：通用 NPC 占位场景，当前为可点击低模实体和短姓名/HP/当前行动标签
 - `scripts/npc/NPC.gd`：NPC 展示脚本，保存唯一 ID，刷新调试标签，在点击时发出 `npc_clicked`，并支持直线移动到指定地点
 - `scripts/camera/CameraRig.gd`：基础俯视摄像机控制，支持 WASD/鼠标中键平移、滚轮缩放和边界限制
@@ -177,7 +181,7 @@ curl http://127.0.0.1:5000/health
 
 ## 最近一次变更
 
-- T0405 NPC 短期记忆容器：`MemorySystem` 已提供 `get_npc_short_term_memory(...)` / `get_npc_short_term_memory_ids(...)`，将当天亲历 `event_log` 与听闻 `witness_log` 分开查询；玩家非对话交互可通过 `record_player_interaction(...)` 和调试接口写入目标 NPC 事件库，并按地点/广场可见性即时广播；`NPCPanel` 已显示事件库与见闻库最近摘要；新增 `tools/verify_npc_short_term_memory_container.gd` 覆盖工作/吃饭/睡觉、给钱、攻击、广播见闻和面板显示。
+- T0004 GM 调试面板：新增 `Main/UI/GMPanel` 和 `scripts/ui/GMPanel.gd`，把 M1-M4 已完成但前端不易直接验证的资源、时间、建筑、NPC、行动、记忆/见闻和广场公告能力暴露到可拖动 GM 面板；新增 `docs/GM_PANEL.md` 和 `tools/verify_gm_panel.gd`，并将“不可见功能需补 GM 入口”的规则写入 `AGENTS.md` 工作流。
 
 ## Godot MCP
 
@@ -209,4 +213,5 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 - 2026-05-24 T0403 验证：通过 `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 验证地点 `people_present` 进出更新、`location_entered` 进入快照、广场主厅/围墙/城门/仓库状态聚合和 `local_public` 见闻广播；通过 `verify_structured_memory_events.gd`、`verify_action_system_basic.gd` 和 `godot --headless --path . --quit-after 1` 回归；通过 Godot MCP 运行主场景，游戏日志无报错。
 - 2026-05-24 T0404 验证：通过 `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 验证 `plaza_public` 广场广播、室外事件默认归入广场、公告变更广播、关键实体状态变更广播和广场快照字段；通过 `verify_location_info_nodes.gd`、`verify_structured_memory_events.gd`、`verify_action_system_basic.gd` 和 `godot --headless --path . --quit-after 1` 回归；Godot MCP 自检返回 `Godot MCP connected`。
 - 2026-05-24 T0405 验证：通过 `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 验证 NPC 当天 `event_log` / `witness_log` 短期记忆容器、玩家给钱/攻击调试交互的事件写入和广播，以及 NPC 面板区分显示事件库与见闻库；通过 `verify_structured_memory_events.gd`、`verify_plaza_public_broadcast.gd`、`verify_npc_panel_state.gd` 和 `godot --headless --path . --quit-after 1` 回归；Godot MCP 自检返回 `Godot MCP connected`。
+- 2026-05-24 T0004 验证：通过 `godot --headless --path . --script res://tools/verify_gm_panel.gd` 验证 GM 面板加载、窗口打开、资源命令、建筑受损、设置时间、NPC 进入地点、给钱事件、广场公告和结果输出；通过 `verify_time_system.gd`、`verify_building_repair_upgrade.gd`、`verify_action_system_basic.gd`、`verify_npc_short_term_memory_container.gd`、`verify_structured_memory_events.gd` 和 `godot --headless --path . --quit-after 1` 回归；通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，清空旧日志后游戏日志无报错，截图可见 GM 按钮与面板。
 

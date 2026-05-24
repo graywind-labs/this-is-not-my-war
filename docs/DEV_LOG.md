@@ -5,6 +5,29 @@
 
 ## 2026-05-24
 
+### T0004 建立 GM 调试面板与验证工作流
+完成：
+- 新增 `scripts/ui/GMPanel.gd`，在 `Main/UI/GMPanel` 下提供可拖动半透明 `GM` 按钮、GM 面板窗口、命令输入框、执行结果区和分组调试按钮。
+- GM 面板顶部 `GM_ENABLED` 常量可用 `true` / `false` 切换开发/上线显示。
+- GM 面板当前覆盖资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等 M1-M4 已完成但前端不易直接验证的关键能力。
+- 新增 `docs/GM_PANEL.md`，记录开关、分组、命令、维护规则和验证方式。
+- 更新 `AGENTS.md`：每次任务完成时若新增功能无法直接在前端验证，必须给 GM 面板新增或替换调试入口，并同步更新 GM 文档。
+- 新增 `tools/verify_gm_panel.gd`，覆盖 GM 面板加载、打开、资源命令、建筑受损、时间设置、NPC 地点进入、给钱事件、广场公告和结果输出。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- `godot --headless --path . --script res://tools/verify_time_system.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，清空旧日志后游戏日志无报错，截图可见 GM 按钮与面板。
+
+未做：
+- 未新增新的权威结算系统；GM 面板只调用已有系统接口或 `debug_*` 接口。
+- 未实现真实对话、征召、战斗、昏迷/治疗/复苏或后端 LLM 调用。
+
 ### T0405 实现 NPC 短期记忆容器
 完成：
 - `MemorySystem` 新增 `get_npc_short_term_memory(...)` / `get_npc_short_term_memory_ids(...)`，将当天 `event_log` 与 `witness_log` 作为独立容器暴露给后续 LLM 输入。

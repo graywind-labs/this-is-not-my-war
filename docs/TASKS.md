@@ -132,6 +132,48 @@
 
 ---
 
+## T0004 建立 GM 调试面板与验证工作流
+
+状态：Done
+优先级：P0
+涉及文档：`AGENTS.md`, `GM_PANEL.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`
+
+任务目标：
+
+把 M1 到 M4 已完成但难以直接在主界面验证的关键能力，集中暴露到可拖动的半透明 GM 调试入口中，方便用户在 `Main.tscn` 内直接触发和观察。
+
+实现范围：
+
+- 新增可通过代码常量开关的 GM 调试 UI。
+- GM 按钮可拖动、半透明，点击后打开 GM 面板。
+- GM 面板提供命令输入框、执行按钮和结果输出区。
+- GM 面板提供资源、时间、建筑、NPC、行动、记忆/见闻等 M1-M4 关键调试入口。
+- GM 调试入口只调用已有系统接口，不引入新的权威结算系统。
+- 新增 `docs/GM_PANEL.md`，记录使用说明、命令和维护规则。
+- 在 `AGENTS.md` 工作流中加入规则：若当次实现的功能无法直接在前端验证，则同步给 GM 面板添加或替换调试入口，并更新 GM 文档。
+
+验收标准：
+
+- 启动 `Main.tscn` 后能看到 GM 按钮；代码中可用 true/false 切换显示。
+- GM 按钮可拖动；点击可打开/关闭面板。
+- 命令输入框可执行常用 GM 命令并显示结果。
+- 面板按钮可触发现有资源、时间、建筑、NPC、行动、记忆/见闻调试接口。
+- 项目加载无报错，已有 M1-M4 验证脚本回归通过。
+- `AGENTS.md`、`docs/GM_PANEL.md`、`docs/MODULE_INDEX.md` 和相关模块文档已回写。
+
+验收结果（2026-05-24）：
+
+- 已新增 `res://scripts/ui/GMPanel.gd`，顶部 `GM_ENABLED` 常量可用 `true` / `false` 切换开发/上线显示。
+- 已在 `res://scenes/main/Main.tscn` 的 `Main/UI/GMPanel` 接入 GM 调试面板；启动后显示半透明可拖动 `GM` 按钮，点击可打开面板。
+- 面板顶部命令输入框支持 `help`、`add_resource`、`set_time`、`damage_building`、`enter_location`、`work`、`give_money`、`memory`、`location`、`events` 等命令。
+- 面板按钮已覆盖资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等 M1-M4 关键调试入口，只调用现有系统接口或 `debug_*` 接口。
+- 已新增 `docs/GM_PANEL.md`，记录开关、界面、分组、命令、维护规则和验证方式。
+- 已将“前端不可直接验证的关键功能需要加入或替换 GM 面板入口，并同步更新 GM 文档”写入 `AGENTS.md` 工作流。
+- 已新增 `tools/verify_gm_panel.gd`，验证 GM 面板加载、窗口打开、资源命令、建筑受损、设置时间、NPC 进入地点、给钱事件、广场公告和结果输出。
+- 已通过 `godot --headless --path . --script res://tools/verify_gm_panel.gd` 和 `godot --headless --path . --quit-after 1` 验证；回归验证见 `DEV_LOG.md`。
+
+---
+
 # M1：Godot 核心骨架与最小驿站
 
 目标：进入 Godot 后能看到一个结构清楚的低模驿站场景，具备基础系统节点、资源栏、时间显示和可扩展 UI 骨架。

@@ -4,7 +4,7 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0104 / T0202 / T0204 / T0205 / T0303）：
+当前实现（T0104 / T0202 / T0204 / T0205 / T0303 / T0004）：
 
 - `Main/UI` 使用 `CanvasLayer`。
 - `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
@@ -23,6 +23,8 @@
 - `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性、专长、事件库和见闻库最近摘要；状态变化会随 `npc_state_changed` 刷新，记忆变化会随 `npc_memory_changed` 刷新。
 - `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板。
 - `Main/UI/DialogPanel` 已作为隐藏占位节点存在。
+- `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`，开发模式下显示半透明可拖动 `GM` 按钮；点击后打开 GM 调试面板，提供命令输入框、执行结果区，以及资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口。
+- GM 面板顶部 `GM_ENABLED` 常量可用于开发/上线显示切换；GM 只调用现有系统接口或 `debug_*` 接口，不承担资源、HP、事件或行动的权威结算。
 - 暂未实现警铃、后端连接、对话面板或生产细节。
 
 当前摄像机操作（T0105）：
