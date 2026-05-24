@@ -18,7 +18,9 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 1},
-      "hp_restore": 25
+      "hp_restore": 25,
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.35
     },
     "upgrade": {
       "cost": {"stone": 4},
@@ -52,7 +54,9 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 1},
-      "hp_restore": 25
+      "hp_restore": 25,
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.35
     },
     "upgrade": {
       "cost": {"stone": 3},
@@ -81,7 +85,9 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 1},
-      "hp_restore": 30
+      "hp_restore": 30,
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.35
     },
     "upgrade": {
       "cost": {"stone": 4},
@@ -110,7 +116,9 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 1},
-      "hp_restore": 25
+      "hp_restore": 25,
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.35
     },
     "upgrade": {
       "cost": {"stone": 4},
@@ -139,7 +147,9 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 1},
-      "hp_restore": 20
+      "hp_restore": 20,
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.35
     },
     "upgrade": {
       "cost": {"stone": 3},
@@ -321,24 +331,6 @@
       }
     ],
     "inputs": {"wood": 1, "iron": 1},
-    "outputs": {}
-  },
-  {
-    "id": "notice_board",
-    "name": "公告牌",
-    "level": 1,
-    "hp": 60,
-    "max_hp": 60,
-    "tags": ["public_info", "square"],
-    "scene_nodes": ["NoticeBoard"],
-    "workstations": [
-      {
-        "id": "notice_pin_01",
-        "type": "notice",
-        "occupied_by": null
-      }
-    ],
-    "inputs": {},
     "outputs": {}
   }
 ]

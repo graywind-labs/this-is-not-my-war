@@ -159,22 +159,57 @@ func _init() -> void:
 	var wall_max_hp := int(wall_before.get("max_hp", 0))
 	building_system.debug_damage_building("wall", 30)
 	var stone_before_wall: int = resource_system.get_resource("stone")
-	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if not action_system.debug_assign_work(engineer_id, "wall"):
-		push_error("Failed to assign wall repair work")
+	if not building_system.repair_building("wall"):
+		push_error("Failed to start wall repair")
 		quit(1)
 		return
-	if not await _wait_until_action_result(npc_system, engineer_id, "completed_work_repair_wall"):
-		push_error("Wall repair work did not complete")
-		quit(1)
-		return
-	var wall_after: Dictionary = building_system.get_building("wall")
 	if resource_system.get_resource("stone") != stone_before_wall - 1:
-		push_error("Wall repair did not spend stone")
+		push_error("Wall repair did not spend stone up front")
 		quit(1)
 		return
-	if int(wall_after.get("hp", 0)) != wall_max_hp - 10:
-		push_error("Wall repair HP result mismatch")
+	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
+	if not action_system.debug_assign_repair_assist(engineer_id, "wall"):
+		push_error("Failed to assign wall repair assist")
+		quit(1)
+		return
+	if not await _wait_until_action_result(npc_system, engineer_id, "assist_repair_started_wall"):
+		push_error("Wall repair assist did not start")
+		quit(1)
+		return
+	var repair_status: Dictionary = building_system.get_repair_status("wall")
+	if int(repair_status.get("helper_count", 0)) != 1 or float(repair_status.get("speed_multiplier", 1.0)) <= 1.0:
+		push_error("Wall repair assist did not speed up repair")
+		quit(1)
+		return
+
+	if not npc_system.debug_enter_location_immediately(engineer_id, "garden"):
+		push_error("Failed to move repair helper away from wall")
+		quit(1)
+		return
+	repair_status = building_system.get_repair_status("wall")
+	if int(repair_status.get("helper_count", 0)) != 0 or float(repair_status.get("speed_multiplier", 1.0)) != 1.0:
+		push_error("Repair helper speed bonus remained after NPC left the assisted building")
+		quit(1)
+		return
+
+	npc_system.update_npc_state(engineer_id, {"last_action_result": ""})
+	if not action_system.debug_assign_repair_assist(engineer_id, "wall"):
+		push_error("Failed to reassign wall repair assist")
+		quit(1)
+		return
+	if not await _wait_until_action_result(npc_system, engineer_id, "assist_repair_started_wall"):
+		push_error("Wall repair assist did not restart")
+		quit(1)
+		return
+	building_system._on_logical_time_tick(900.0, 1.0)
+	var wall_after: Dictionary = building_system.get_building("wall")
+	if int(wall_after.get("hp", 0)) != wall_max_hp:
+		push_error("Wall repair did not finish with assisted time progress")
+		quit(1)
+		return
+	var engineer_after_repair: Dictionary = npc_system.get_npc_state(engineer_id)
+	if str(engineer_after_repair.get("last_action_result", "")) != "completed_assist_repair_wall":
+		push_error("Repair helper NPC was not released after repair")
 		quit(1)
 		return
 

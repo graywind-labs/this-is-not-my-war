@@ -7,18 +7,26 @@ const CLICK_AREA_NAME := "ClickArea"
 const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const PLAZA_PUBLIC_STATUS_BUILDINGS: Array[String] = ["main_hall", "wall", "front_gate", "warehouse"]
+const DEFAULT_REPAIR_SECONDS_PER_HP := 30.0
+const DEFAULT_REPAIR_LEVEL_TIME_FACTOR := 0.35
+const DEFAULT_REPAIR_HELPER_BASE_BONUS := 0.10
+const DEFAULT_REPAIR_HELPER_SKILL_SCALE := 0.005
+const DEFAULT_REPAIR_HELPER_MAX_BONUS := 0.50
 
 var _buildings: Dictionary = {}
 var _building_order: Array[String] = []
 var _selected_building_id: String = ""
 var _building_scene_nodes: Dictionary = {}
+var _active_repairs: Dictionary = {}
 
 
 func initialize() -> void:
 	_buildings.clear()
 	_building_order.clear()
 	_building_scene_nodes.clear()
+	_active_repairs.clear()
 	_selected_building_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -55,6 +63,10 @@ func initialize() -> void:
 
 func _ready() -> void:
 	initialize()
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null:
+		event_bus.logical_time_tick.connect(_on_logical_time_tick)
+		event_bus.npc_state_changed.connect(_on_npc_state_changed)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -69,7 +81,10 @@ func get_building(building_id: String) -> Dictionary:
 	if not _buildings.has(building_id):
 		push_warning("Unknown building id: %s" % building_id)
 		return {}
-	return _buildings[building_id].duplicate(true)
+	var building: Dictionary = _buildings[building_id].duplicate(true)
+	if _active_repairs.has(building_id):
+		building["repair_status"] = _get_repair_status(building_id)
+	return building
 
 
 func get_building_ids() -> Array[String]:
@@ -158,6 +173,8 @@ func get_building_location_context(building_id: String) -> Dictionary:
 func can_repair_building(building_id: String) -> bool:
 	if not _buildings.has(building_id):
 		return false
+	if _active_repairs.has(building_id):
+		return false
 
 	var building: Dictionary = _buildings[building_id]
 	if int(building.get("hp", 0)) >= int(building.get("max_hp", 0)):
@@ -184,12 +201,60 @@ func repair_building(building_id: String) -> bool:
 		return false
 
 	var max_hp := int(building.get("max_hp", 0))
-	var restore_amount: int = maxi(1, int(repair_config.get("hp_restore", 1)))
-	building["hp"] = mini(max_hp, int(building.get("hp", 0)) + restore_amount)
+	var current_hp := int(building.get("hp", 0))
+	var missing_hp := maxi(1, max_hp - current_hp)
+	var duration_seconds := _calculate_repair_duration_seconds(building, repair_config, missing_hp)
+	_active_repairs[building_id] = {
+		"building_id": building_id,
+		"duration_seconds": duration_seconds,
+		"remaining_seconds": duration_seconds,
+		"start_hp": current_hp,
+		"target_hp": max_hp,
+		"helpers": {}
+	}
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
-	_notify_plaza_key_entity_changed(building_id, "building_repaired")
+	return true
+
+
+func is_repair_in_progress(building_id: String) -> bool:
+	return _active_repairs.has(building_id)
+
+
+func get_repair_status(building_id: String) -> Dictionary:
+	_prune_invalid_repair_helpers(building_id)
+	return _get_repair_status(building_id)
+
+
+func add_repair_helper(building_id: String, npc_id: String, engineering_skill: int) -> bool:
+	if not _active_repairs.has(building_id) or npc_id.is_empty():
+		return false
+
+	var job: Dictionary = _active_repairs[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	var bonus := _calculate_repair_helper_bonus(engineering_skill)
+	helpers[npc_id] = {
+		"engineering_skill": clampi(engineering_skill, 0, 100),
+		"speed_bonus": bonus
+	}
+	job["helpers"] = helpers
+	_active_repairs[building_id] = job
+	_emit_building_clicked_if_selected(building_id)
+	return true
+
+
+func remove_repair_helper(building_id: String, npc_id: String) -> bool:
+	if not _active_repairs.has(building_id):
+		return false
+	var job: Dictionary = _active_repairs[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	if not helpers.has(npc_id):
+		return false
+	helpers.erase(npc_id)
+	job["helpers"] = helpers
+	_active_repairs[building_id] = job
+	_emit_building_clicked_if_selected(building_id)
 	return true
 
 
@@ -243,6 +308,9 @@ func debug_damage_building(building_id: String, amount: int) -> bool:
 
 	var building: Dictionary = _buildings[building_id]
 	building["hp"] = maxi(0, int(building.get("hp", 0)) - amount)
+	if _active_repairs.has(building_id):
+		_release_repair_helpers(_active_repairs[building_id], building_id)
+		_active_repairs.erase(building_id)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
@@ -266,6 +334,166 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	_emit_building_clicked_if_selected(building_id)
 	_notify_plaza_key_entity_changed(building_id, "building_repaired")
 	return true
+
+
+func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
+	if game_delta_seconds <= 0.0 or _active_repairs.is_empty():
+		return
+
+	var finished_buildings: Array[String] = []
+	for raw_building_id in _active_repairs.keys():
+		var building_id := str(raw_building_id)
+		_prune_invalid_repair_helpers(building_id)
+		var job: Dictionary = _active_repairs[building_id]
+		var speed_multiplier := _get_repair_speed_multiplier(job)
+		job["remaining_seconds"] = maxf(0.0, float(job.get("remaining_seconds", 0.0)) - game_delta_seconds * speed_multiplier)
+		_active_repairs[building_id] = job
+		_apply_repair_progress(building_id)
+		if float(job.get("remaining_seconds", 0.0)) <= 0.0:
+			finished_buildings.append(building_id)
+
+	for building_id in finished_buildings:
+		_finish_repair(building_id)
+
+
+func _on_npc_state_changed(npc_id: String) -> void:
+	if _active_repairs.is_empty():
+		return
+
+	for raw_building_id in _active_repairs.keys():
+		var building_id := str(raw_building_id)
+		var job: Dictionary = _active_repairs[building_id]
+		var helpers: Dictionary = job.get("helpers", {})
+		if helpers.has(npc_id) and not _is_repair_helper_still_valid(building_id, npc_id):
+			helpers.erase(npc_id)
+			job["helpers"] = helpers
+			_active_repairs[building_id] = job
+			_emit_building_clicked_if_selected(building_id)
+
+
+func _calculate_repair_duration_seconds(building: Dictionary, repair_config: Dictionary, missing_hp: int) -> float:
+	var seconds_per_hp := maxf(1.0, float(repair_config.get("seconds_per_missing_hp", DEFAULT_REPAIR_SECONDS_PER_HP)))
+	var level_factor := maxf(0.0, float(repair_config.get("level_time_factor", DEFAULT_REPAIR_LEVEL_TIME_FACTOR)))
+	var level := maxi(1, int(building.get("level", 1)))
+	var duration := float(missing_hp) * seconds_per_hp * (1.0 + float(level - 1) * level_factor)
+	return maxf(60.0, duration)
+
+
+func _calculate_repair_helper_bonus(engineering_skill: int) -> float:
+	var skill := clampi(engineering_skill, 0, 100)
+	return minf(
+		DEFAULT_REPAIR_HELPER_MAX_BONUS,
+		DEFAULT_REPAIR_HELPER_BASE_BONUS + float(skill) * DEFAULT_REPAIR_HELPER_SKILL_SCALE
+	)
+
+
+func _get_repair_speed_multiplier(job: Dictionary) -> float:
+	var multiplier := 1.0
+	var helpers: Dictionary = job.get("helpers", {})
+	for helper in helpers.values():
+		if helper is Dictionary:
+			multiplier += float((helper as Dictionary).get("speed_bonus", 0.0))
+	return multiplier
+
+
+func _apply_repair_progress(building_id: String) -> void:
+	if not _buildings.has(building_id) or not _active_repairs.has(building_id):
+		return
+
+	var building: Dictionary = _buildings[building_id]
+	var job: Dictionary = _active_repairs[building_id]
+	var duration := maxf(0.001, float(job.get("duration_seconds", 1.0)))
+	var remaining := clampf(float(job.get("remaining_seconds", duration)), 0.0, duration)
+	var progress := clampf((duration - remaining) / duration, 0.0, 1.0)
+	var start_hp := int(job.get("start_hp", int(building.get("hp", 0))))
+	var target_hp := int(job.get("target_hp", int(building.get("max_hp", 0))))
+	var next_hp := mini(target_hp, int(floor(lerpf(float(start_hp), float(target_hp), progress))))
+	if next_hp > int(building.get("hp", 0)):
+		building["hp"] = next_hp
+		_buildings[building_id] = building
+		_refresh_bound_scene_nodes(building_id)
+		_emit_building_clicked_if_selected(building_id)
+
+
+func _finish_repair(building_id: String) -> void:
+	if not _buildings.has(building_id) or not _active_repairs.has(building_id):
+		return
+
+	var job: Dictionary = _active_repairs[building_id]
+	var building: Dictionary = _buildings[building_id]
+	building["hp"] = int(job.get("target_hp", building.get("max_hp", 0)))
+	_buildings[building_id] = building
+	_active_repairs.erase(building_id)
+	_release_repair_helpers(job, building_id)
+	_refresh_bound_scene_nodes(building_id)
+	_emit_building_clicked_if_selected(building_id)
+	_notify_plaza_key_entity_changed(building_id, "building_repaired")
+
+
+func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return
+	var helpers: Dictionary = job.get("helpers", {})
+	for raw_npc_id in helpers.keys():
+		var npc_id := str(raw_npc_id)
+		npc_system.update_npc_state(npc_id, {
+			"current_action": "idle",
+			"last_action_result": "completed_assist_repair_%s" % building_id
+		})
+
+
+func _get_repair_status(building_id: String) -> Dictionary:
+	if not _active_repairs.has(building_id):
+		return {}
+	var job: Dictionary = _active_repairs[building_id]
+	var duration := maxf(0.001, float(job.get("duration_seconds", 1.0)))
+	var remaining := clampf(float(job.get("remaining_seconds", duration)), 0.0, duration)
+	var helpers: Dictionary = job.get("helpers", {})
+	return {
+		"active": true,
+		"duration_seconds": duration,
+		"remaining_seconds": remaining,
+		"progress": clampf((duration - remaining) / duration, 0.0, 1.0),
+		"speed_multiplier": _get_repair_speed_multiplier(job),
+		"helper_count": helpers.size(),
+		"helpers": helpers.duplicate(true),
+		"target_hp": int(job.get("target_hp", 0))
+	}
+
+
+func _prune_invalid_repair_helpers(building_id: String) -> void:
+	if not _active_repairs.has(building_id):
+		return
+
+	var job: Dictionary = _active_repairs[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	var removed_any := false
+	for raw_npc_id in helpers.keys():
+		var npc_id := str(raw_npc_id)
+		if not _is_repair_helper_still_valid(building_id, npc_id):
+			helpers.erase(npc_id)
+			removed_any = true
+	if not removed_any:
+		return
+
+	job["helpers"] = helpers
+	_active_repairs[building_id] = job
+	_emit_building_clicked_if_selected(building_id)
+
+
+func _is_repair_helper_still_valid(building_id: String, npc_id: String) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return false
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if state.is_empty():
+		return false
+	return (
+		str(state.get("current_action", "")) == "assist_repair_%s" % building_id
+		and str(state.get("current_location", "")) == building_id
+	)
 
 
 func debug_select_building(building_id: String) -> bool:

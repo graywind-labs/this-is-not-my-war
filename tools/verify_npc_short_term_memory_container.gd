@@ -50,6 +50,18 @@ func _init() -> void:
 		push_error("Failed to record money_given interaction")
 		quit(1)
 		return
+	if not str(money_event.get("summary", "")).contains("守备官"):
+		push_error("money_given summary should use in-world player title")
+		quit(1)
+		return
+	if str(money_event.get("summary", "")).contains("玩家"):
+		push_error("money_given summary should not expose player wording")
+		quit(1)
+		return
+	if not (money_event.get("actor_ids", []) as Array).has("guard_officer"):
+		push_error("money_given actor id should use guard_officer")
+		quit(1)
+		return
 	if memory_system.get_npc_daily_events(target_id).size() <= target_events_before:
 		push_error("money_given did not enter target event_log")
 		quit(1)
@@ -68,6 +80,14 @@ func _init() -> void:
 	var attack_event: Dictionary = memory_system.debug_record_player_attack_npc(target_id, 5, "plaza_public")
 	if attack_event.is_empty():
 		push_error("Failed to record npc_attacked_by_player interaction")
+		quit(1)
+		return
+	if not str(attack_event.get("summary", "")).contains("守备官"):
+		push_error("Attack summary should use in-world player title")
+		quit(1)
+		return
+	if str(attack_event.get("summary", "")).contains("玩家"):
+		push_error("Attack summary should not expose player wording")
 		quit(1)
 		return
 	if not _has_event(memory_system.get_npc_daily_events(target_id), "npc_attacked_by_player"):

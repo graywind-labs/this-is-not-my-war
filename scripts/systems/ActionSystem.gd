@@ -10,12 +10,14 @@ const DEFAULT_WORK_DURATION_HOURS := 1
 var _actions: Dictionary = {}
 var _actions_by_location: Dictionary = {}
 var _pending_actions: Dictionary = {}
+var _pending_action_targets: Dictionary = {}
 
 
 func initialize() -> void:
 	_actions.clear()
 	_actions_by_location.clear()
 	_pending_actions.clear()
+	_pending_action_targets.clear()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
@@ -102,13 +104,44 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_location", "")) != location_id:
 			_pending_actions[npc_id] = action_id
+			_pending_action_targets.erase(npc_id)
 			return npc_system.move_npc_to_building(npc_id, location_id)
 
 	if _is_gameplay_paused():
 		_pending_actions[npc_id] = action_id
+		_pending_action_targets.erase(npc_id)
 		return true
 
 	return _execute_action(npc_id, action_id)
+
+
+func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
+	if building_id.is_empty() or not _can_npc_act(npc_id):
+		return false
+
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("is_repair_in_progress"):
+		return false
+	if not building_system.is_repair_in_progress(building_id):
+		push_warning("Cannot assist repair because no repair is active: %s" % building_id)
+		return false
+
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(state.get("current_location", "")) != building_id:
+		_pending_actions[npc_id] = "assist_repair"
+		_pending_action_targets[npc_id] = building_id
+		return npc_system.move_npc_to_building(npc_id, building_id)
+
+	if _is_gameplay_paused():
+		_pending_actions[npc_id] = "assist_repair"
+		_pending_action_targets[npc_id] = building_id
+		return true
+
+	return _execute_repair_assist(npc_id, building_id)
 
 
 func has_pending_action(npc_id: String) -> bool:
@@ -134,8 +167,13 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		return
 
 	var action_id := str(_pending_actions[npc_id])
+	if action_id == "assist_repair":
+		_try_execute_pending_repair_assist(npc_id)
+		return
+
 	if not _actions.has(action_id):
 		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
 		return
 
 	var npc_system := _get_npc_system()
@@ -150,7 +188,26 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		and str(state.get("current_action", "")) == "idle"
 	):
 		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
 		_execute_action(npc_id, action_id)
+
+
+func _try_execute_pending_repair_assist(npc_id: String) -> void:
+	var building_id := str(_pending_action_targets.get(npc_id, ""))
+	if building_id.is_empty():
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		return
+
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(state.get("current_location", "")) == building_id and str(state.get("current_action", "")) == "idle":
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_execute_repair_assist(npc_id, building_id)
 
 
 func _execute_action(npc_id: String, action_id: String) -> bool:
@@ -166,6 +223,40 @@ func _execute_action(npc_id: String, action_id: String) -> bool:
 		_:
 			push_warning("Unsupported action type: %s" % action_type)
 			return false
+
+
+func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null or building_system == null:
+		return false
+	if not building_system.has_method("add_repair_helper") or not building_system.is_repair_in_progress(building_id):
+		_update_action_failure(npc_id, "assist_repair_failed_no_active_repair")
+		return false
+
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	var skills: Dictionary = npc.get("skills", {})
+	var engineering_skill := int(skills.get("工程", skills.get("宸ョ▼", 0)))
+	var ok: bool = building_system.add_repair_helper(building_id, npc_id, engineering_skill)
+	if not ok:
+		_update_action_failure(npc_id, "assist_repair_failed")
+		return false
+
+	npc_system.update_npc_state(npc_id, {
+		"current_action": "assist_repair_%s" % building_id,
+		"last_action_result": "assist_repair_started_%s" % building_id
+	})
+
+	_log_structured_action_event(npc_id, {
+		"id": "assist_repair",
+		"location_required": building_id,
+		"base_duration_hours": 0
+	}, "repair_assist_started", {
+		"action_id": "assist_repair",
+		"building_id": building_id,
+		"engineering_skill": engineering_skill
+	})
+	return true
 
 
 func _execute_work(npc_id: String, action: Dictionary) -> bool:
@@ -340,7 +431,7 @@ func _log_structured_action_event(npc_id: String, action: Dictionary, event_type
 		"actor_ids": [npc_id],
 		"target_ids": target_ids,
 		"location_id": location_id,
-		"visibility": "private",
+		"visibility": "local_public",
 		"duration_hours": int(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS)),
 		"importance": 25,
 		"payload": payload

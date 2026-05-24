@@ -5,6 +5,92 @@
 
 ## 2026-05-24
 
+### T0205/T0305 建筑修复 UI 与协助行为清理
+完成：
+- `BuildingPanel` 不再把修复/升级消耗常驻显示在面板正文；悬停修复/升级按钮时，在按钮旁显示资源消耗和条件提示框。
+- `BuildingSystem` 会在 NPC 状态变化和修复推进前清理无效协助者；NPC 离开对应建筑或被改派后，协助人数和速度加成立即移除。
+- `ActionSystem` 的协助修复保留为 `debug_assign_repair_assist(npc_id, building_id)` 这一套带建筑参数的统一行为；移除 `data/action_defs.json` 中固定“修补围墙”行动，避免 GM 行动下拉与协助修复按钮表达重复。
+- `GMPanel` 行动分组新增“修复目标”建筑下拉，让“协助修复”按钮可直接选择目标建筑。
+- 建筑操作提示框增加屏幕边界夹取；靠近右侧等边缘时会翻到按钮内侧或保持在可视区域内。
+- `tools/verify_action_system_basic.gd` 增加“协助者离开后移除加成”的回归检查。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- Godot MCP `editor.get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+
+未做：
+- 未实现真实每日计划自动挑选修复目标；仍保留在 T1001 TODO。
+
+### T0205/T0305 建筑修复倒计时与 NPC 协助修复
+完成：
+- `BuildingSystem.repair_building(...)` 改为点击时一次性扣除资源并创建修复作业；HP 随 `logical_time_tick` 按进度逐步恢复，不再瞬间修复。
+- 修复时长由缺失 HP、建筑等级和 `data/building_defs.json` 中的 `repair.seconds_per_missing_hp` / `repair.level_time_factor` 计算。
+- 新增修复状态查询与 NPC 协助接口：`get_repair_status(...)`、`is_repair_in_progress(...)`、`add_repair_helper(...)`、`remove_repair_helper(...)`。
+- `ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`；NPC 到达正在修复的建筑后按工程熟练度加速倒计时，多个 NPC 可叠加，修复完成后回到 idle。
+- `GMPanel` 新增 `assist_repair <npc_id> <building_id>` 命令，并在建筑快照中可观察修复状态。
+- `MemorySystem` 预留并格式化 `repair_assist_started` 事件。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- Godot MCP `editor.get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+
+未做：
+- 未实现真实每日计划自动选择协助修复；已把“规则计划可把协助修复作为候选行为并选择目标”加入 T1001 TODO。
+
+### T0403 修复行动事件 local_public 广播
+完成：
+- 修复 `ActionSystem` 行动事件可见性：工作、吃饭、睡觉开始/完成/失败事件不再以 `private` 写入，而是以 `local_public` 写入 `MemorySystem`。
+- 同地点当前在场 NPC 会收到这些活动/工作事件并写入见闻库；行动者本人仍只保留亲历事件，不重复写入自己的见闻库。
+- 新增 `tools/verify_action_local_public_broadcast.gd`，覆盖工作、吃饭、睡觉三类行动事件的本地公开广播。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- Godot MCP `editor.get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+
+未做：
+- 未新增 GM 面板入口；现有行动指派和记忆查询入口已经可以手动验证该修复。
+
+### T0406 统一玩家交互事件世界内称呼
+完成：
+- `MemorySystem.record_player_interaction(...)` 将玩家相关 actor id 写为 `guard_officer`，并在 payload 中补充 `actor_display_name = "守备官"`。
+- 玩家非对话交互 summary 模板改为“守备官给了/守备官攻击了/守备官指派了”等世界内称呼，不再把“玩家”写入 NPC 记忆文本。
+- `tools/verify_npc_short_term_memory_container.gd` 增加给钱与攻击事件 summary 检查，确保包含“守备官”、不包含“玩家”，且 actor id 为 `guard_officer`。
+- 更新设计源、NPC、记忆、Prompt、数据结构、GM、模块索引、当前状态和任务文档中的称呼规则。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+未做：
+- 未重命名现有 `record_player_interaction(...)` / `npc_attacked_by_player` 等开发接口和事件类型，避免破坏当前任务、验证脚本和后续模块引用；世界内文本已统一为“守备官”。
+
+### T0206 将公告牌移出建筑数据结构
+完成：
+- 从 `data/building_defs.json` 删除 `notice_board` 建筑定义，建筑定义数量由 16 调整为 15。
+- 保留 `Main.tscn` 中主厅前 `NoticeBoard` 视觉占位；它不再绑定 `BuildingSystem`，不拥有 HP、等级、工作位、修复或升级。
+- 明确公告文本的权威状态仍由广场信息节点保存，公告变更继续生成 `plaza_notice_changed` 并广播给当前在广场的 NPC。
+- 更新建筑、数据结构、记忆信息、Godot 架构、模块索引、当前状态、任务列表和设计源中的相关说明。
+
+验证：
+- PowerShell `ConvertFrom-Json` 验证 `data/building_defs.json` 合法，且不包含 `notice_board`。
+- `godot --headless --path . --quit-after 1` 通过。
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+
+未做：
+- 未新增公告编辑 UI；现有 GM 广场公告入口继续作为验证入口。
+
 ### T0004 建立 GM 调试面板与验证工作流
 完成：
 - 新增 `scripts/ui/GMPanel.gd`，在 `Main/UI/GMPanel` 下提供可拖动半透明 `GM` 按钮、GM 面板窗口、命令输入框、执行结果区和分组调试按钮。
@@ -52,7 +138,7 @@
 - `MemorySystem` 将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；事件若原本发生在其他可进入地点，也会同步广播给该地点在场 NPC。
 - 室外或不可进入实体来源的公开事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
 - 广场快照明确没有自身建筑 HP，并提供主厅、围墙、城门、仓库 `key_entities`、当前在场 NPC 数和敌人数。
-- 公告牌内容变更会生成 `plaza_notice_changed` 广场公开事件；关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件。
+- 广场公告文本变更会生成 `plaza_notice_changed` 广场公开事件；关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件。
 - `BuildingSystem` 在关键目标受损、修复或升级时通知 `MemorySystem` 进行广场状态广播。
 - 新增 `tools/verify_plaza_public_broadcast.gd`，覆盖广场公开事件、公告、关键实体状态、广场快照字段和见闻库写入。
 验证：
@@ -63,7 +149,7 @@
 - `godot --headless --path . --quit-after 1` 通过。
 - `tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。
 未做：
-- 未实现战斗本体、昏迷/复苏系统、逃离行为、公告牌编辑 UI 或 LLM 解读。
+- 未实现战斗本体、昏迷/复苏系统、逃离行为、公告输入 UI 或 LLM 解读。
 
 ### T0403 实现地点信息节点与进入快照
 
@@ -83,7 +169,7 @@
 - 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
 
 未做：
-- 未实现完整广场公开信息规则、战斗公开事件、公告牌编辑 UI、睡前总结或 LLM 记忆摘要。
+- 未实现完整广场公开信息规则、战斗公开事件、公告输入 UI、睡前总结或 LLM 记忆摘要。
 
 ## 2026-05-23
 
@@ -448,7 +534,7 @@
 - 在 `res://scenes/main/Main.tscn` 中扩展低模驿站空间占位。
 - 在 `WorldRoot/Station/Buildings` 下新增主厅、宿舍、食堂、仓库、围墙、城门、后门等几何体占位。
 - 在 `WorldRoot/Station/Props` 下新增广场、正门道路、后门道路和商人入口占位。
-- 补齐酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌等 T0103 要求的剩余占位区域。
+- 补齐酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、主厅前公告牌视觉占位等 T0103 要求的剩余占位区域。
 - 为 P0 占位区域添加 `Label3D` 调试标签，便于后续建筑系统和导航接入。
 - 扩大地面尺寸并调整俯视相机，让启动后可看到完整驿站布局。
 
@@ -542,16 +628,16 @@
 ### T0203 实现 BuildingSystem 与建筑实体
 
 完成：
-- 扩展 `data/building_defs.json`，覆盖 16 个建筑/门墙实体：主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊和公告牌。
+- 扩展 `data/building_defs.json`，当时覆盖 16 个建筑/门墙实体；2026-05-24 T0206 已将公告牌移出建筑定义，当前为 15 个建筑/门墙实体。
 - 在 `scripts/systems/BuildingSystem.gd` 中实现建筑配置读取、基础状态保存、`get_building(...)` / `get_building_ids()` / `get_building_snapshot()` 查询接口。
 - 通过 `scene_nodes` 将配置绑定到 `Main/WorldRoot/Station/Buildings` 下的低模节点。
 - 为绑定建筑运行时创建 `Area3D/CollisionShape3D` 点击区，左键点击后发出 `EventBus.building_clicked(building_id)`。
 - 将建筑调试标签更新为名称、等级和 HP，便于确认基础状态。
 
 验证：
-- `data/building_defs.json` 可被 PowerShell `ConvertFrom-Json` 解析，包含 16 条建筑定义。
+- `data/building_defs.json` 可被 PowerShell `ConvertFrom-Json` 解析；当时包含 16 条建筑定义，2026-05-24 T0206 后当前为 15 条。
 - `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
-- 使用临时 Godot 验证脚本确认 `BuildingSystem` 加载 16 个建筑定义、主厅数据可查询、仓库可选中、主厅 ClickArea 已创建。
+- 使用临时 Godot 验证脚本确认当时 `BuildingSystem` 加载 16 个建筑定义、主厅数据可查询、仓库可选中、主厅 ClickArea 已创建；2026-05-24 T0206 后公告牌不再加载为建筑。
 - 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认建筑标签显示名称、等级和 HP。
 - Godot MCP 查找确认运行时创建了 19 个 `ClickArea` 节点，覆盖多段围墙、城门和主要建筑。
 

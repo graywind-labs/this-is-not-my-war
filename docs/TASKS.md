@@ -330,7 +330,7 @@ Main
 - 小教堂
 - 小诊所
 - 工械坊
-- 公告牌
+- 主厅前公告牌视觉占位（非建筑）
 
 禁止事项：
 
@@ -348,7 +348,7 @@ Main
 
 验收结果（2026-05-19）：
 
-- 已在 `res://scenes/main/Main.tscn` 中补齐 T0103 所列低模空间占位：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌。
+- 已在 `res://scenes/main/Main.tscn` 中补齐 T0103 所列低模空间占位：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、主厅前公告牌视觉占位。
 - 每个占位区域均使用简单几何体和 `Label3D` 调试标签表示，保持 Blockout 阶段边界。
 - 已通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD、低模驿站和调试标签可见。
 - 未实现建筑数据、建筑点击、生产、NPC、导航或战斗逻辑。
@@ -580,7 +580,6 @@ Main
 - 小教堂
 - 小诊所
 - 工械坊
-- 公告牌
 
 实现范围：
 
@@ -608,7 +607,7 @@ Main
 
 验收结果（2026-05-19）：
 
-- 已扩展 `data/building_defs.json`，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌 16 个建筑/门墙实体。
+- 已扩展 `data/building_defs.json`，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊 15 个建筑/门墙实体。T0206 已将公告牌移出建筑定义。
 - 已实现 `scripts/systems/BuildingSystem.gd`：读取建筑配置，按 `scene_nodes` 绑定低模建筑节点，保存 `id`、名称、等级、HP / Max HP、工作位等基础状态。
 - 已为绑定到 MeshInstance3D 的建筑运行时创建 `Area3D/CollisionShape3D` 点击区；点击后通过 `EventBus.building_clicked(building_id)` 发出建筑 ID。
 - 已将建筑调试标签更新为名称、等级和 HP；主场景中超过 5 个 P0 建筑可见基础状态。
@@ -705,6 +704,34 @@ Main
 - `BuildingPanel.gd` 的修复/升级按钮现在会触发系统接口，并根据当前 HP、等级和资源是否足够自动启用/禁用。
 - 已新增 `tools/verify_building_repair_upgrade.gd` 验证：围墙受损后可用石料修复，升级消耗石料并改变等级、Max HP、工作位，石料不足时升级失败且资源不变。
 - 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`--quit-after 1` 和 Godot MCP 主场景运行验证；游戏日志无报错。
+
+修订结果（2026-05-24）：
+
+- 修复从“点击后瞬间恢复 HP”改为“点击时一次性扣除资源并创建倒计时修复作业”；修复中 HP 随 TimeSystem 逻辑时间逐步提高。
+- 修复时长按缺失 HP、建筑等级和 `repair.seconds_per_missing_hp` / `repair.level_time_factor` 计算；缺失 HP 越多、等级越高，耗时越长。
+- `get_building(...)` 会返回 `repair_status`，包含进度、剩余时间、目标 HP、协助人数和当前速度倍率。
+- NPC 可通过 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 协助正在修复的建筑；每名协助者按工程熟练度提供小额加速，多个 NPC 可叠加。
+- 已更新 `tools/verify_building_repair_upgrade.gd`，验证修复不再瞬间恢复、资源预付、HP 随时间推进并最终回满。
+
+---
+
+## T0206 将公告牌移出建筑数据结构
+
+状态：Done
+优先级：P0
+前置任务：T0203, T0404
+涉及文档：`ECONOMY_AND_BUILDINGS.md`, `DATA_SCHEMA.md`, `MEMORY_AND_INFO_SPACE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`
+
+任务目标：
+
+明确公告牌不是建筑，避免在建筑系统、建筑数据结构和文档中误导为具备 HP / 等级 / 工作位 / 修复 / 升级的实体。
+
+验收结果（2026-05-24）：
+
+- 已从 `data/building_defs.json` 删除 `notice_board` 建筑定义，建筑定义数量调整为 15。
+- `Main.tscn` 中的 `NoticeBoard` 模型保留为主厅前视觉占位和后续公告输入/显示接口，不再由 `BuildingSystem` 绑定点击区、HP 标签或建筑面板。
+- 公告文本继续由广场状态保存，写入后通过 `MemorySystem` 生成 `plaza_notice_changed` 并广播给当前在广场的 NPC。
+- 已同步更新建筑、数据结构、记忆信息、Godot 架构、模块索引、当前状态和任务文档。
 
 ---
 
@@ -943,10 +970,24 @@ Main
 
 - `ActionSystem` 已读取 `data/action_defs.json`，提供 `debug_assign_work(npc_id, building_id)`、`debug_assign_eat(npc_id)`、`debug_assign_sleep(npc_id)` 和 `debug_assign_action(npc_id, action_id)`。
 - 调试指派会复用 `NPCSystem.move_npc_to_building(...)`，NPC 到达目标建筑后自动结算行动。
-- 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁和木材产出武器/盔甲；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；围墙修补可消耗石料恢复围墙 HP；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
+- 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁和木材产出武器/盔甲；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
 - 已修正无产出工作不会结算饱食/疲劳和 EventLog 的问题。
 - `MemorySystem` 已提供最小 EventLog 占位，行动成功/失败会写入事件。
-- 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证吃饭、睡觉、基础生产、派生资源生产和围墙修补；并回归通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`；通过 Godot MCP 运行主场景，游戏日志无报错。
+- 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证吃饭、睡觉、基础生产、派生资源生产和建筑协助修复；并回归通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`；通过 Godot MCP 运行主场景，游戏日志无报错。
+
+修订结果（2026-05-24）：
+
+- 围墙修补行动不再直接恢复建筑 HP，改为协助已有修复作业；修复资源由 `BuildingSystem.repair_building(...)` 在开始修复时一次性扣除。
+- `ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`；协助修复是一个带建筑参数的统一行为，不再在 `data/action_defs.json` 中保留按建筑写死的“修补围墙”行动。
+- 协助修复开始会写入 `repair_assist_started` 本地公开事件。
+- 已更新 `tools/verify_action_system_basic.gd`，验证 NPC 协助修复可提高速度倍率、离开建筑会移除协助人数和加成、重新协助可推进修复完成并在完成后回到 idle。
+
+修订结果（2026-05-24 UI/GM 清理）：
+
+- `BuildingPanel` 不再把修复/升级资源消耗常驻显示在面板正文中；悬停修复/升级按钮时才在按钮旁显示消耗和条件提示。
+- `GMPanel` 的行动下拉不再出现固定“修补围墙”行动；行动分组新增“修复目标”建筑下拉，协助修复统一通过 `assist_repair <npc_id> <building_id>` 命令或“协助修复”按钮携带该建筑参数。
+- 建筑操作提示框会在靠近屏幕边缘时自动保持在可视区域内，避免升级/修复按钮靠边时提示框跑出屏幕。
+- 已把“资源/条件提示默认放在操作入口悬浮提示框，不堆在信息面板正文”的 UI 原则写入 `docs/UI_UX.md` 和 `game_design.md`。
 
 ---
 
@@ -1113,7 +1154,7 @@ Main
 
 - 可进入地点拥有信息节点：广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊。
 - 不可进入实体不建常规进入空间：主厅、围墙、城门、仓库。
-- 地点信息节点记录 `people_present`、建筑 HP、等级、可用状态、工作位/床位占用和当前公告（公告只有广场（包含一个公告牌）有）。
+- 地点信息节点记录 `people_present`、建筑 HP、等级、可用状态、工作位/床位占用和当前公告；公告文本只保存在广场状态中，公告牌只是主厅前输入/显示接口。
 - NPC 进入地点时写入 `location_entered` 事件。
 - `location_entered.payload.location_snapshot` 包含进入时地点状态。
 - 主厅、围墙、城门、仓库的 HP 和状态归入广场状态快照。
@@ -1142,6 +1183,11 @@ Main
 - `local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；地点信息节点不保存事件历史。
 - 新增 `tools/verify_location_info_nodes.gd` 验证地点人数进出、进入快照、广场关键实体状态和 `local_public` 见闻转发，并回归 T0402 结构化事件与 T0305 行动闭环。
 
+修复记录（2026-05-24）：
+
+- 修复行动事件可见性漏设问题：`ActionSystem` 写入的工作、吃饭、睡觉开始/完成/失败事件从 `private` 改为 `local_public`，因此同一地点当前在场 NPC 会把这些活动/工作事件写入见闻库。
+- 新增 `tools/verify_action_local_public_broadcast.gd`，验证 NPC 在同一地点目击工作、吃饭、睡觉事件时能收到 `work_started` / `work_completed`、`eat_started` / `eat_completed`、`sleep_started` / `sleep_ended` 见闻，且行动者不会把自己的事件重复写为见闻。
+
 ---
 
 ## T0404 实现广场公开信息即时广播
@@ -1160,12 +1206,12 @@ Main
 - NPC 昏迷
 - NPC 复苏
 - NPC 逃离或试图逃离
-- 玩家攻击 NPC
+- 守备官攻击 NPC
 - 战斗触发/结束
 
 
 场景/建筑状态包括：
-- 公告牌内容，以及每次状态变更时的信息传递
+- 广场当前公告文本，以及每次状态变更时的信息传递
 - 主厅、围墙、城门、仓库等关键目标的状态，以及每次状态变更时的信息传递
 - 当前的NPC人数，敌人人数，以及每次状态变更时的信息传递
 
@@ -1187,7 +1233,7 @@ Main
 - `MemorySystem` 已将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；若公开事件原本发生在其他可进入地点，也会同步广播给该地点当时在场 NPC。
 - 室外或不可进入实体来源的 `plaza_public` 事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
 - 广场快照明确没有自身建筑 HP，并提供主厅、围墙、城门、仓库 `key_entities`，以及当前在场 NPC 数和敌人数。
-- 公告牌内容变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件广播给当时在广场的 NPC。
+- 广场公告文本变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件广播给当时在广场的 NPC；公告牌不作为建筑参与该流程。
 - `BuildingSystem` 的关键目标受损、修复或升级会通知 `MemorySystem` 生成 `plaza_status_changed` 广场公开状态事件。
 - 新增 `tools/verify_plaza_public_broadcast.gd` 验证广场公开事件、公告变更、关键实体状态变更、广场快照字段和见闻库写入。
 
@@ -1231,6 +1277,33 @@ Main
 - `local_public` / `plaza_public` 玩家交互会通过地点/广场当前在场人员即时广播，接收 NPC 写入见闻库；地点/广场节点仍不保存事件历史。
 - `NPCPanel` 新增事件库和见闻库最近摘要显示，并监听 `npc_memory_changed` 刷新。
 - 新增 `tools/verify_npc_short_term_memory_container.gd`，已验证事件库、见闻库、玩家交互和 NPC 面板区分显示；每天结束暂不清空。
+
+---
+
+## T0406 统一玩家交互事件世界内称呼
+
+状态：Done
+优先级：P0
+前置任务：T0405
+涉及文档：`game_design.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `DATA_SCHEMA.md`, `GM_PANEL.md`
+
+任务目标：
+
+避免 NPC 记忆、见闻、Prompt 摘要和后续教学/信件中把玩家写成世界外称呼“玩家”。所有 NPC 会看到或 LLM 会当作世界内事实理解的文本，统一把玩家称为“守备官”。
+
+验收标准：
+
+- `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player` 等玩家交互 summary 使用“守备官”。
+- 玩家交互事件的 actor id 使用稳定世界内 ID，不把 `player` 写入 NPC 事件 payload。
+- 验证脚本覆盖给钱与攻击事件 summary 不包含“玩家”。
+- 相关设计、记忆、NPC、Prompt、数据结构和 GM 文档确定该称呼规则。
+
+验收结果（2026-05-24）：
+
+- `MemorySystem.record_player_interaction(...)` 已将玩家交互 actor id 写为 `guard_officer`，payload 中写入 `actor_display_name = "守备官"`。
+- `money_given`、装备/指派、攻击相关 summary 模板已从“玩家……”改为“守备官……”。
+- `tools/verify_npc_short_term_memory_container.gd` 已补充给钱和攻击 summary 检查，确保包含“守备官”且不包含“玩家”。
+- 已在设计源和相关模块文档中写入“NPC/LLM 世界内文本统一称呼守备官”的规则。
 
 ---
 
@@ -1933,6 +2006,7 @@ NPC 可主动请求与玩家对话。
 - 饱食低则吃饭
 - 疲劳高则睡觉
 - 职业倾向影响工作选择
+- 若存在正在修复且仍受损的建筑，规则计划可把协助修复作为候选行为，并按工程熟练度和建筑重要性选择目标
 - 副官可优先训练或巡逻
 
 禁止事项：
@@ -1947,6 +2021,7 @@ NPC 可主动请求与玩家对话。
 - 计划执行结果写入记忆。
 - 玩家指派可覆盖入伍 NPC 的计划。
 - 阶段开始、计划执行和计划重估以 `TimeSystem` 的逻辑时间打点为准。
+- NPC 自动计划能在有正在修复的建筑时选择协助修复；修复目标必须来自 `BuildingSystem` 当前状态，不由 LLM 或 UI 自行决定。
 
 ---
 
@@ -2615,7 +2690,7 @@ NPC 可主动请求与玩家对话。
 
 ---
 
-## T1506 增加黑色幽默事件与公告牌
+## T1506 增加黑色幽默事件与公告输入
 
 状态：Todo
 优先级：P2
@@ -2624,8 +2699,8 @@ NPC 可主动请求与玩家对话。
 
 验收标准：
 
-- 玩家可在公告牌写公告。
-- 公告更新为公告牌/广场当前状态，并即时广播给当前在广场的 NPC。
+- 玩家可通过主厅前公告牌界面写公告。
+- 公告更新为广场当前状态，并即时广播给当前在广场的 NPC；公告牌不作为建筑保存状态。
 - NPC 后续对话可引用公告内容。
 - 至少有 3 个可触发的黑色幽默反馈。
 

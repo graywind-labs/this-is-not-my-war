@@ -103,7 +103,9 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
   "outputs": {},
   "repair": {
     "cost": {"stone": 1},
-    "hp_restore": 25
+    "hp_restore": 25,
+    "seconds_per_missing_hp": 30,
+    "level_time_factor": 0.35
   },
   "upgrade": {
     "cost": {"stone": 4},
@@ -115,7 +117,9 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 }
 ```
 
-`repair` / `upgrade` 为 T0205 起使用的可选字段。未配置时建筑面板会禁用对应按钮；已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。
+`repair` / `upgrade` 为 T0205 起使用的可选字段。未配置时建筑面板会禁用对应按钮；已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。
+
+公告牌不使用 Building Definition。主厅前的 `NoticeBoard` 节点只是视觉占位和后续公告输入接口，不能配置 `hp`、`max_hp`、`workstations`、`repair` 或 `upgrade`；公告文本应写入广场 Location Info Node 的当前状态。
 
 ## Action Definition
 
@@ -136,11 +140,13 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 }
 ```
 
-T0305 起，行动定义支持三类最小行动：
+T0305 起，行动定义支持三类 JSON 最小行动；协助修复是运行时参数化行为，不作为每个建筑一条固定 JSON 行动：
 
-- `work`：读取 `location_required`、`input_resources`、`output_resources`、`building_hp_restore`、`fatigue_delta`、`satiety_delta` 后由程序结算。
+- `work`：读取 `location_required`、`input_resources`、`output_resources`、`fatigue_delta`、`satiety_delta` 后由程序结算。
 - `eat`：使用 `food_options` 数组定义可消耗食物及饱食度恢复量，当前餐食优先于粮食。
 - `sleep`：通过 `fatigue_delta` 和 `satiety_delta` 调整 NPC 状态。
+
+`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”的固定建筑修复行动；建筑 HP、资源预付、修复倒计时和协助者加成都由 `BuildingSystem` 结算。
 
 ## Weapon Definition
 
@@ -206,7 +212,7 @@ T0305 起，行动定义支持三类最小行动：
 - `day` / `time`：权威游戏时间，来自 TimeSystem / GameState。
 - `type`：事件类型，详见 `MEMORY_AND_INFO_SPACE.md`。
 - `subject_npc_id`：事件所属 NPC，必填；事件首先写入该 NPC 的事件库。
-- `actor_ids`：主动参与者，可包含 NPC、玩家、敌人或系统 ID。
+- `actor_ids`：主动参与者，可包含 NPC、守备官、敌人或系统 ID；玩家身份的世界内 actor id 使用 `guard_officer`，面向 NPC / LLM 的显示文本称为“守备官”。
 - `target_ids`：事件关联目标索引，可包含 NPC ID、地点 ID、建筑 ID、行动 ID、资源 ID、敌人 ID 等；它不是自然语言“宾语”，而是查询索引。
 - `location_id`：事件发生地点；室外事件统一为 `plaza`。
 - `visibility`：`private`、`local_public`、`plaza_public`。
@@ -226,11 +232,13 @@ T0305 起，行动定义支持三类最小行动：
 
 格式化器负责把 ID 展开成显示名，例如 `blacksmith_01` 展开为格伦，`work_make_weapons` 展开为打造武器，`iron` 展开为铁。底层事件继续保存稳定 ID。
 
+玩家相关事件的 summary 必须使用世界内称呼“守备官”，例如“守备官给了布鲁诺3枚第纳尔。”；不要在 NPC 记忆、见闻或 Prompt 摘要里输出以“玩家”为主语的旧式表述。
+
 必备事件类型方向：
 
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
 - 移动与地点：`location_entered`、`location_exited`
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`
+- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`eat_started`、`eat_completed`
 - 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
@@ -285,7 +293,7 @@ T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_sta
 
 ## Location / Building Info Node
 
-地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。
+地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；普通建筑不拥有公告牌字段，当前公告文本只保存在广场状态中。公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。
 
 ```json
 {

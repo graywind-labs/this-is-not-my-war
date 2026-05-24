@@ -48,7 +48,7 @@ T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和�
 - `NPCSystem.move_npc_to_building(...)` / `debug_move_npc_to_building(...)` 可让 NPC 前往指定建筑入口；当前用于调试验证和后续行动系统接入。
 - `NPC.gd` 负责简单直线移动，到达目标后发出 `movement_arrived`，由 `NPCSystem` 写回 `current_location`、`current_location_name` 和 `location_context` 地点信息占位。
 
-T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由程序结算资源、饱食度、疲劳度，并写入 `MemorySystem` 的 EventLog 占位。当前行动仍是最小闭环，不代表 NPC 已有真实每日计划或 LLM 自主决策。
+T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由程序结算资源、饱食度、疲劳度，并写入 `MemorySystem` 的 EventLog 占位。2026-05-24 起新增协助修复行为：`debug_assign_repair_assist(npc_id, building_id)` 是带建筑参数的独立行为，可让 NPC 前往正在修复的建筑并按工程熟练度加速修复倒计时；如果 NPC 离开该建筑或被改派其他行动，`BuildingSystem` 会移除其协助人数和速度加成。当前行动仍是最小闭环，不代表 NPC 已有真实每日计划或 LLM 自主决策。
 
 当前阶段不实现复杂避障、真实日程计划、复杂自然状态变化、对话、征召、战斗心理判定或 LLM 调用。
 
@@ -74,7 +74,9 @@ NPC 进入地点时，系统应生成 `location_entered` 事件并记录进入�
 
 对 LLM 来说，亲历事件和见闻必须分开摘要：亲历对情绪和判断权重更高，见闻则代表当场听到/看到的信息、公共压力和场景认知。
 
-当前运行时可通过 `MemorySystem.get_npc_short_term_memory(npc_id)` 获取 `{ event_log, witness_log }` 两个容器，也可通过 `get_npc_short_term_memory_ids(...)` 获取事件 ID 版本。`NPCPanel` 已显示事件库和见闻库最近摘要；玩家给钱、攻击等非对话交互目前提供调试写入口，真实按钮和对话请求注入由后续任务接入。
+面向 NPC 的所有玩家相关事件摘要、见闻摘要、对话上下文和后续日记/反思输入，必须把玩家称为“守备官”。“玩家”只作为开发文档里的外部说明词使用，不进入 NPC 可见文本或 LLM 世界内上下文。
+
+当前运行时可通过 `MemorySystem.get_npc_short_term_memory(npc_id)` 获取 `{ event_log, witness_log }` 两个容器，也可通过 `get_npc_short_term_memory_ids(...)` 获取事件 ID 版本。`NPCPanel` 已显示事件库和见闻库最近摘要；守备官给钱、攻击等非对话交互目前提供调试写入口，真实按钮和对话请求注入由后续任务接入。
 
 ## NPC 行为层级
 

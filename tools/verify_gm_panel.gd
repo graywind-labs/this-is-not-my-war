@@ -19,6 +19,7 @@ func _init() -> void:
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
+	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
@@ -28,6 +29,7 @@ func _init() -> void:
 		or resource_system == null
 		or building_system == null
 		or npc_system == null
+		or action_system == null
 		or memory_system == null
 		or game_state == null
 	):
@@ -53,6 +55,16 @@ func _init() -> void:
 		push_error("GM button did not open the GM window")
 		quit(1)
 		return
+	var repair_building_select := gm_window.find_child("RepairBuildingSelect", true, false) as OptionButton
+	var assist_repair_button := gm_window.find_child("AssistRepairButton", true, false) as Button
+	if repair_building_select == null or assist_repair_button == null:
+		push_error("GM assist repair controls should include a target building selector and button")
+		quit(1)
+		return
+	if not _select_option_by_id(repair_building_select, "wall"):
+		push_error("GM repair target selector should include wall")
+		quit(1)
+		return
 
 	var money_before := int(resource_system.get_resource("money"))
 	gm_panel._execute_command("add_resource money 3")
@@ -65,6 +77,23 @@ func _init() -> void:
 	gm_panel._execute_command("damage_building wall 5")
 	if int(building_system.get_building("wall").get("hp", 0)) != maxi(0, wall_before - 5):
 		push_error("GM damage_building command failed")
+		quit(1)
+		return
+	if not building_system.repair_building("wall"):
+		push_error("Failed to start wall repair for GM assist test")
+		quit(1)
+		return
+	if not _select_option_by_id(gm_panel._npc_select, "engineer_01"):
+		push_error("GM NPC selector should include engineer_01")
+		quit(1)
+		return
+	if not npc_system.debug_enter_location_immediately("engineer_01", "wall"):
+		push_error("Failed to place engineer at wall for GM assist test")
+		quit(1)
+		return
+	assist_repair_button.pressed.emit()
+	if not await _wait_until_action_result(npc_system, "engineer_01", "assist_repair_started_wall"):
+		push_error("GM assist repair button did not use the selected repair target building")
 		quit(1)
 		return
 
@@ -104,5 +133,29 @@ func _init() -> void:
 	gm_panel._execute_command("location plaza")
 	gm_panel._execute_command("events")
 
+	if action_system.get_action_ids().has("work_repair_wall"):
+		push_error("GM action list should not expose fixed wall repair action")
+		quit(1)
+		return
+
 	print("GM panel verification passed.")
 	quit(0)
+
+
+func _select_option_by_id(select: OptionButton, expected_id: String) -> bool:
+	if select == null:
+		return false
+	for index in range(select.get_item_count()):
+		if str(select.get_item_metadata(index)) == expected_id:
+			select.select(index)
+			return true
+	return false
+
+
+func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result: String) -> bool:
+	for frame in range(600):
+		await process_frame
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if str(state.get("last_action_result", "")) == expected_result:
+			return true
+	return false

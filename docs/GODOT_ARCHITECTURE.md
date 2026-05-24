@@ -92,7 +92,7 @@ Main
 │     │  ├─ Chapel
 │     │  ├─ Clinic
 │     │  ├─ Workshop
-│     │  ├─ NoticeBoard
+│     │  ├─ NoticeBoard （主厅前公告牌视觉占位，非建筑数据）
 │     │  ├─ FrontWall / BackWall / LeftWall / RightWall
 │     │  ├─ FrontGate
 │     │  └─ BackGate
@@ -131,19 +131,19 @@ Main
 └─ SunLight
 ```
 
-T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该阶段只提供空间占位和可辨认视觉结构，不实现建筑数据、点击、生产、导航或战斗。
+T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊，以及主厅前公告牌视觉占位均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该视觉占位不绑定 `data/building_defs.json`，不拥有 HP、等级、工作位、修复或升级；公告文本归广场状态保存。该阶段只提供空间占位和可辨认视觉结构，不实现生产、导航或战斗。
 
-T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态占位。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。不实现警铃或后端连接。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked`，从 `BuildingSystem` 读取被点击建筑的名称、等级、HP、工作位和地点信息占位，显示修复/升级消耗摘要，并通过按钮触发 `BuildingSystem` 的修复/升级接口。
+T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态占位。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。不实现警铃或后端连接。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked`，从 `BuildingSystem` 读取被点击建筑的名称、等级、HP、工作位和地点信息占位，并通过按钮触发 `BuildingSystem` 的修复/升级接口；修复/升级消耗和条件只在按钮悬停提示框中显示。
 
 T0105 已将 `res://scripts/camera/CameraRig.gd` 绑定到 `Main/CameraRig`：玩家可用 WASD 平移、鼠标中键拖拽平移、滚轮缩放；脚本只移动 `CameraRig` 的 X/Z 位置和 `Camera3D` 的本地距离，保留高机位俯视角，并通过导出参数限制移动边界和缩放距离。该阶段不实现角色控制或自由第一人称视角。
 
 T0202 已在 `res://scripts/systems/ResourceSystem.gd` 中实现基础资源系统：启动时读取 `data/resource_defs.json` 初始化第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁，提供 `get_resource`、`add_resource`、`can_afford`、`spend_resources` 与临时调试接口。所有资源变化通过 `EventBus.resource_changed` 通知 UI；资源不足时 `spend_resources` 返回 `false`，不扣除也不产生负数。HUD 当前只显示基础五类资源，派生资源作为内部库存占位。
 
-T0205 已在 `res://scripts/systems/BuildingSystem.gd` 中实现基础建筑系统：启动时读取 `data/building_defs.json`，按 `scene_nodes` 绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，为绑定节点创建运行时 `Area3D/CollisionShape3D` 点击区，并在左键点击时发出 `EventBus.building_clicked(building_id)`。建筑调试标签会显示名称、等级和 HP，并在修复/升级后刷新。2026-05-20 修正后，建筑点击同时通过 `_unhandled_input` 的相机射线拾取点击区，避免全屏 UI 背板或项目拾取设置导致真实鼠标点击失效。T0304 起，建筑系统提供 `get_building_entry_position(...)` 和 `get_building_location_context(...)`，分别用于 NPC 移动目标点与地点当前状态读取占位；该占位不应包含建筑过去事件。修复/升级由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 结算；资源不足时不会改变建筑状态。建筑系统仍不实现生产、敌人攻击或战斗系统造成的建筑 HP 扣除。
+T0205 已在 `res://scripts/systems/BuildingSystem.gd` 中实现基础建筑系统：启动时读取 `data/building_defs.json`，按 `scene_nodes` 绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，为绑定节点创建运行时 `Area3D/CollisionShape3D` 点击区，并在左键点击时发出 `EventBus.building_clicked(building_id)`。建筑调试标签会显示名称、等级和 HP，并在修复/升级后刷新。2026-05-24 起，`NoticeBoard` 从建筑定义中移除，只作为主厅前公告牌视觉占位和公告输入/显示接口，公告文本由广场状态保存。2026-05-20 修正后，建筑点击同时通过 `_unhandled_input` 的相机射线拾取点击区，避免全屏 UI 背板或项目拾取设置导致真实鼠标点击失效。T0304 起，建筑系统提供 `get_building_entry_position(...)` 和 `get_building_location_context(...)`，分别用于 NPC 移动目标点与地点当前状态读取占位；该占位不应包含建筑过去事件。修复/升级由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 结算；资源不足时不会改变建筑状态。建筑系统仍不实现生产、敌人攻击或战斗系统造成的建筑 HP 扣除。
 
 T0304 已新增 `res://scenes/npc/NPC.tscn` 和 `res://scripts/npc/NPC.gd`，并在 `res://scripts/systems/NPCSystem.gd` 中实现基础 NPC 生成、状态接口和直线移动占位：启动时读取 `data/npc_profiles.json`，实例化 8 个 NPC 到 `Main/WorldRoot/Station/NPCs`，每个 NPC 保存唯一 `npc_id`，主场景 `Label3D` 调试标签只显示短姓名、HP 和当前行动。NPC 点击会打印 ID 并通过 `EventBus.npc_clicked(npc_id)` 广播；`NPCSystem` 同时提供 `get_npc(...)`、`get_npc_state(...)`、`get_npc_ids()`、`get_npc_count()`、`update_npc_state(...)`、`set_npc_state_value(...)`、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`debug_select_npc(...)`、`move_npc_to_building(...)`、`debug_move_npc_to_building(...)`、`debug_move_selected_npc_to_building(...)` 和 `debug_enter_location_immediately(...)`。每名 NPC 的技能会归一化为 8 个职业熟练度加 5 个武器熟练度，专长由高熟练度推导，不使用硬职业枚举。移动开始时 NPC 状态进入 `moving_to_<building_id>`；到达后通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present`，写入 `current_location`、`current_location_name` 和 `location_context`，并发出 `EventBus.npc_state_changed(npc_id)`。进入地点只读取当前地点状态快照，不继承该地点过去事件。该阶段不实现复杂避障、自然状态变化、真实日程计划、对话、征召、战斗或 LLM。
 
-T0402 后，`res://scripts/systems/ActionSystem.gd` 的简单行动系统会在行动开始、完成或失败时写入结构化事件：工作路径写入 `work_started`、`work_completed`、`work_failed`，吃饭路径写入 `eat_started`、`eat_completed`，睡觉路径写入 `sleep_started`、`sleep_ended`。行动仍会先检查 NPC 是否可行动，必要时调用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由 `ActionSystem` 结算资源输入/输出、可选建筑 HP 恢复、饱食度和疲劳度。若游戏处于暂停，行动会保留在 pending 队列中，不在暂停期间执行资源消耗/产出或状态变化；恢复后再尝试结算。当前已按 `game_design.md` 覆盖菜园、食堂、酒窖、铁匠铺、工械坊、马厩、围墙修补、吃饭和睡觉的最小效果；不实现 LLM 日程、训练、战斗、工作位占用或复杂职业效率。
+T0402 后，`res://scripts/systems/ActionSystem.gd` 的简单行动系统会在行动开始、完成或失败时写入结构化事件：工作路径写入 `work_started`、`work_completed`、`work_failed`，协助修复写入 `repair_assist_started`，吃饭路径写入 `eat_started`、`eat_completed`，睡觉路径写入 `sleep_started`、`sleep_ended`。行动仍会先检查 NPC 是否可行动，必要时调用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后由 `ActionSystem` 结算资源输入/输出、饱食度和疲劳度；协助修复是带 `building_id` 参数的运行时行为，建筑 HP、资源预付和倒计时由 `BuildingSystem` 结算。若游戏处于暂停，行动会保留在 pending 队列中，不在暂停期间执行资源消耗/产出或状态变化；恢复后再尝试结算。当前已按 `game_design.md` 覆盖菜园、食堂、酒窖、铁匠铺、工械坊、马厩、协助修复、吃饭和睡觉的最小效果；不实现 LLM 日程、训练、战斗、工作位占用或复杂职业效率。
 
 T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 `npc_clicked` 显示姓名、专长、HP、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度；监听 `npc_state_changed` 刷新当前 NPC 数据；监听 `building_clicked` 时隐藏自身。`BuildingPanel` 也会在 `npc_clicked` 时隐藏，确保 NPC/建筑面板互斥切换。
 

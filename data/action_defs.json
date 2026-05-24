@@ -30,21 +30,6 @@
     "satiety_delta": -3
   },
   {
-    "id": "work_repair_wall",
-    "name": "修补围墙",
-    "type": "work",
-    "location_required": "wall",
-    "skill": "工程",
-    "base_duration_hours": 1,
-    "input_resources": {
-      "stone": 1
-    },
-    "output_resources": {},
-    "building_hp_restore": 20,
-    "fatigue_delta": 8,
-    "satiety_delta": -4
-  },
-  {
     "id": "work_stable",
     "name": "照料马厩",
     "type": "work",

@@ -8,6 +8,8 @@ const DEFAULT_LOCATION_ID := "plaza"
 const DEFAULT_VISIBILITY := "private"
 const PUBLIC_VISIBILITY := "plaza_public"
 const LOCAL_PUBLIC_VISIBILITY := "local_public"
+const PLAYER_ACTOR_ID := "guard_officer"
+const PLAYER_DISPLAY_NAME := "守备官"
 const ENTERABLE_LOCATION_IDS: Array[String] = [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
 	"training_ground", "stable", "chapel", "clinic", "workshop"
@@ -18,7 +20,7 @@ const PLAZA_STATE_SUBJECT_ID := "system"
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
-	"work_started", "work_completed", "work_failed", "eat_started", "eat_completed",
+	"work_started", "work_completed", "work_failed", "repair_assist_started", "eat_started", "eat_completed",
 	"dialogue_started", "dialogue_turn", "dialogue_ended",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "npc_recruited", "npc_left_recruited_state",
@@ -248,14 +250,15 @@ func record_player_interaction(
 
 	var location_id := _get_npc_current_info_location(npc_id)
 	var interaction_payload := payload.duplicate(true)
-	interaction_payload["player_actor_id"] = "player"
+	interaction_payload["player_actor_id"] = PLAYER_ACTOR_ID
+	interaction_payload["actor_display_name"] = PLAYER_DISPLAY_NAME
 	if not interaction_payload.has("target_npc_id"):
 		interaction_payload["target_npc_id"] = npc_id
 
 	return add_event({
 		"type": event_type,
 		"subject_npc_id": npc_id,
-		"actor_ids": ["player"],
+		"actor_ids": [PLAYER_ACTOR_ID],
 		"target_ids": [npc_id, location_id],
 		"location_id": location_id,
 		"visibility": visibility,
@@ -646,6 +649,8 @@ func _format_summary(event: Dictionary) -> String:
 				_get_action_name(str(payload.get("action_id", ""))),
 				str(payload.get("reason", "原因不明"))
 			]
+		"repair_assist_started":
+			return "%s开始协助修复%s。" % [actor, location]
 		"eat_started":
 			return "%s开始在%s吃饭。" % [actor, location]
 		"eat_completed":
@@ -655,15 +660,15 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("satiety_restore", 0))
 			]
 		"money_given":
-			return "玩家给了%s%d枚第纳尔。" % [actor, int(payload.get("amount", 0))]
+			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"equipment_given":
-			return "玩家把%s交给了%s。" % [str(payload.get("equipment_name", "装备")), actor]
+			return "%s把%s交给了%s。" % [PLAYER_DISPLAY_NAME, str(payload.get("equipment_name", "装备")), actor]
 		"equipment_changed":
-			return "玩家为%s更换了%s。" % [actor, str(payload.get("equipment_name", "装备"))]
+			return "%s为%s更换了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("equipment_name", "装备"))]
 		"order_assigned":
-			return "玩家给%s指派了%s。" % [actor, str(payload.get("order_name", "任务"))]
+			return "%s给%s指派了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("order_name", "任务"))]
 		"npc_attacked_by_player":
-			return "玩家攻击了%s，造成%d点伤害。" % [actor, int(payload.get("damage", 0))]
+			return "%s攻击了%s，造成%d点伤害。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("damage", 0))]
 		"sleep_started":
 			return "%s开始在%s休息。" % [actor, location]
 		"sleep_ended":
