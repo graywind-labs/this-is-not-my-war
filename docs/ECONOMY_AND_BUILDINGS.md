@@ -108,6 +108,15 @@ T0205 后，`BuildingSystem.gd` 增加建筑修复与升级的最小闭环：
 
 广场是特殊地点，没有建筑 HP；所有室外事件默认归入广场。广场信息节点聚合室外人员、公告牌当前内容、当前战斗状态，以及不可进入实体的关键当前状态。公开事件发生时通过广场节点即时广播给当时在场的 NPC，广播后广场不保存该事件。
 
+当前 T0403 已在 `MemorySystem` 中实现地点信息节点的数据闭环：
+
+- 可进入地点的信息节点维护 `people_present`、当前公告/命令和进入快照。
+- NPC 到达可进入地点时，旧地点移除该 NPC，新地点加入该 NPC，并将当前地点状态写入 `location_entered.payload.location_snapshot`。
+- 进入快照包含人数、建筑 HP/等级/可用状态、工位/床位占用字段和当前公告/命令；进入广场时额外包含主厅、围墙、城门、仓库的关键状态。
+- `BuildingSystem.get_building_location_context(...)` 当前优先读取 `MemorySystem.get_location_snapshot(...)`，因此 UI 和 NPC 状态看到的是同一套当前状态快照。
+- 主厅、围墙、城门、仓库仍不作为常规进入地点；其状态归入广场信息节点。
+- 地点信息节点只保存当前状态，不保存事件历史；`local_public` 事件由 `MemorySystem` 即时转发给当前在场 NPC 的见闻库。
+
 ## 当前低模占位（T0103）
 
 当前 `res://scenes/main/Main.tscn` 已用简单几何体放置以下 P0 空间占位：

@@ -262,6 +262,8 @@ T0402 已接入的行动事件 payload：
 }
 ```
 
+T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_status_changed`. Plaza snapshots use `key_entities` for `main_hall`, `wall`, `front_gate`, and `warehouse`; the plaza itself has no building HP and exposes `has_building_hp == false`, `current_npc_count`, and `current_enemy_count`.
+
 ## NPC Daily Memory
 
 ```json

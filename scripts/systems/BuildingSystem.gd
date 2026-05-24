@@ -6,6 +6,8 @@ const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const CLICK_AREA_NAME := "ClickArea"
 const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
+const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const PLAZA_PUBLIC_STATUS_BUILDINGS: Array[String] = ["main_hall", "wall", "front_gate", "warehouse"]
 
 var _buildings: Dictionary = {}
 var _building_order: Array[String] = []
@@ -111,6 +113,12 @@ func get_building_entry_position(building_id: String) -> Variant:
 
 
 func get_building_location_context(building_id: String) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system != null and memory_system.has_method("get_location_snapshot"):
+		var snapshot: Dictionary = memory_system.get_location_snapshot(building_id)
+		if not snapshot.is_empty():
+			return snapshot
+
 	var building := get_building(building_id)
 	if building.is_empty():
 		return {}
@@ -119,11 +127,29 @@ func get_building_location_context(building_id: String) -> Dictionary:
 	return {
 		"id": building_id,
 		"name": str(building.get("name", building_id)),
+		"is_enterable": true,
+		"people_present": [],
+		"people_count": 0,
 		"level": int(building.get("level", 1)),
 		"hp": int(building.get("hp", 0)),
 		"max_hp": int(building.get("max_hp", 0)),
+		"available": int(building.get("hp", 0)) > 0,
 		"tags": building.get("tags", []),
+		"building": {
+			"id": building_id,
+			"name": str(building.get("name", building_id)),
+			"level": int(building.get("level", 1)),
+			"hp": int(building.get("hp", 0)),
+			"max_hp": int(building.get("max_hp", 0)),
+			"available": int(building.get("hp", 0)) > 0,
+			"tags": building.get("tags", []),
+			"workstations": workstations.duplicate(true)
+		},
+		"workstations": workstations.duplicate(true),
 		"workstation_count": workstations.size(),
+		"occupied_workstation_count": 0,
+		"current_notice": "",
+		"current_orders": "",
 		"current_public_note_ids": [],
 		"public_notes": []
 	}
@@ -163,6 +189,7 @@ func repair_building(building_id: String) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
+	_notify_plaza_key_entity_changed(building_id, "building_repaired")
 	return true
 
 
@@ -206,6 +233,7 @@ func upgrade_building(building_id: String) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
+	_notify_plaza_key_entity_changed(building_id, "building_upgraded")
 	return true
 
 
@@ -218,6 +246,7 @@ func debug_damage_building(building_id: String, amount: int) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
+	_notify_plaza_key_entity_changed(building_id, "building_damaged")
 	return true
 
 
@@ -235,6 +264,7 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_clicked_if_selected(building_id)
+	_notify_plaza_key_entity_changed(building_id, "building_repaired")
 	return true
 
 
@@ -399,3 +429,11 @@ func _emit_building_clicked_if_selected(building_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_clicked.emit(building_id)
+
+
+func _notify_plaza_key_entity_changed(building_id: String, reason: String) -> void:
+	if not PLAZA_PUBLIC_STATUS_BUILDINGS.has(building_id):
+		return
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system != null and memory_system.has_method("notify_key_entity_state_changed"):
+		memory_system.notify_key_entity_state_changed(building_id, reason)

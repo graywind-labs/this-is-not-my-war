@@ -20,7 +20,7 @@
 - 后续 API / 调试面板需要显示当前模型调用状态、等待中的 LLM 请求数量、TimeSystem 有效逻辑倍率和最近一次慢速原因；当前 HUD 只显示玩家设定的速度倍率。
 - `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位、地点信息占位，以及修复/升级消耗摘要。
 - `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置和资源是否足够自动启用或禁用。
-- `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性和专长；状态变化会随 `npc_state_changed` 刷新。
+- `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性、专长、事件库和见闻库最近摘要；状态变化会随 `npc_state_changed` 刷新，记忆变化会随 `npc_memory_changed` 刷新。
 - `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板。
 - `Main/UI/DialogPanel` 已作为隐藏占位节点存在。
 - 暂未实现警铃、后端连接、对话面板或生产细节。
@@ -67,15 +67,16 @@
 - 攻击按钮
 - 指派按钮，若已入伍
 
-当前实现（T0303）：
+当前实现（T0303 / T0405）：
 
 - 点击 NPC 会打开右上角 `NPCPanel`。
-- 当前按姓名、HP / Max HP、属性、专长、饱食度、疲劳度、金钱、是否昏迷、是否已入伍、当前行动占位、职业熟练度和武器熟练度显示。
+- 当前按姓名、HP / Max HP、属性、专长、饱食度、疲劳度、金钱、是否昏迷、是否已入伍、当前行动占位、职业熟练度、武器熟练度、事件库最近摘要和见闻库最近摘要显示。
 - 属性显示力量和智力，对应 `game_design.md` 中体力相关产出/生命/移动/载重，以及智力相关产出/熟练度成长系数。
 - 专长不是写死职业，而是从 NPC 最高的固定熟练度维度推导。
 - 面板可通过关闭按钮隐藏。
 - `NPCSystem.update_npc_state(...)` 修改状态后会发出 `npc_state_changed`，打开中的 NPC 面板会刷新。
-- 当前不实现对话、赠予金钱、装备、攻击、指派按钮或记忆摘要。
+- `MemorySystem` 写入 NPC 事件库或见闻库后会发出 `npc_memory_changed`，打开中的 NPC 面板会刷新记忆摘要。
+- 当前不实现对话、赠予金钱、装备、攻击或指派按钮；给钱/攻击仅有调试写入口。
 
 ## 建筑面板
 

@@ -3,6 +3,65 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-24
+
+### T0405 实现 NPC 短期记忆容器
+完成：
+- `MemorySystem` 新增 `get_npc_short_term_memory(...)` / `get_npc_short_term_memory_ids(...)`，将当天 `event_log` 与 `witness_log` 作为独立容器暴露给后续 LLM 输入。
+- 新增 `record_player_interaction(...)`，玩家非对话交互会先进入目标 NPC 事件库，再按 `private` / `local_public` / `plaza_public` 可见性广播给地点或广场当时在场 NPC。
+- 新增 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)`，用于验证给钱和攻击事件写入；本次不实现真实按钮、HP 扣除或昏迷。
+- `NPCPanel` 新增事件库和见闻库最近摘要，监听 `npc_memory_changed` 自动刷新。
+- 新增 `tools/verify_npc_short_term_memory_container.gd`，覆盖短期记忆容器、给钱/攻击交互、见闻广播和面板区分显示。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- `tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。
+
+未做：
+- 未做睡前总结、知识图谱更新、LLM 接入、真实交互 UI、真实攻击扣血或昏迷。
+
+### T0404 实现广场公开信息即时广播
+完成：
+- `MemorySystem` 将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；事件若原本发生在其他可进入地点，也会同步广播给该地点在场 NPC。
+- 室外或不可进入实体来源的公开事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
+- 广场快照明确没有自身建筑 HP，并提供主厅、围墙、城门、仓库 `key_entities`、当前在场 NPC 数和敌人数。
+- 公告牌内容变更会生成 `plaza_notice_changed` 广场公开事件；关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件。
+- `BuildingSystem` 在关键目标受损、修复或升级时通知 `MemorySystem` 进行广场状态广播。
+- 新增 `tools/verify_plaza_public_broadcast.gd`，覆盖广场公开事件、公告、关键实体状态、广场快照字段和见闻库写入。
+验证：
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+- `tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。
+未做：
+- 未实现战斗本体、昏迷/复苏系统、逃离行为、公告牌编辑 UI 或 LLM 解读。
+
+### T0403 实现地点信息节点与进入快照
+
+完成：
+- 在 `scripts/systems/MemorySystem.gd` 中建立可进入地点信息节点，覆盖广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊。
+- 地点节点维护 `people_present`、当前公告/命令和进入快照；主厅、围墙、城门、仓库状态归入广场 `key_entities`。
+- `NPCSystem` 到达地点时会更新旧地点/新地点在场人员，并把 `location_entered.payload.location_snapshot` 写入事件库。
+- `local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；地点节点不保存事件历史。
+- `BuildingSystem.get_building_location_context(...)` 优先读取 `MemorySystem.get_location_snapshot(...)`，让 UI / NPC 状态使用同一套当前状态快照。
+- 新增 `tools/verify_location_info_nodes.gd`，覆盖地点人数进出、进入快照、广场关键实体状态和本地公开事件见闻转发。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过，项目加载无错误。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错。
+
+未做：
+- 未实现完整广场公开信息规则、战斗公开事件、公告牌编辑 UI、睡前总结或 LLM 记忆摘要。
+
 ## 2026-05-23
 
 ### T0402 架构适配检查

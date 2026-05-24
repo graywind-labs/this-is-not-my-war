@@ -329,12 +329,23 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		return
 
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var location_context: Dictionary = {}
 	var building_name := building_id
 	var previous_state: Dictionary = get_npc_state(npc_id)
 	var previous_location_id := str(previous_state.get("current_location", "plaza"))
-	if building_system != null:
+	var info_location_id := building_id
+	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		if not memory_system.is_enterable_location(building_id):
+			info_location_id = "plaza"
+		location_context = memory_system.move_npc_between_locations(npc_id, previous_location_id, info_location_id)
+	if location_context.is_empty() and building_system != null:
 		location_context = building_system.get_building_location_context(building_id)
+		building_name = str(location_context.get("name", building_id))
+	elif building_system != null:
+		var building: Dictionary = building_system.get_building(building_id)
+		building_name = str(building.get("name", location_context.get("name", building_id)))
+	else:
 		building_name = str(location_context.get("name", building_id))
 
 	_set_npc_state_without_signal(npc_id, {
@@ -346,11 +357,46 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		"location_context": location_context
 	})
 	_refresh_npc_node(npc_id)
-	_log_location_entered(npc_id, previous_location_id, building_id, location_context)
+	_log_location_entered(npc_id, previous_location_id, building_id, info_location_id, location_context)
 	_emit_npc_state_changed(npc_id)
 
 
-func _log_location_entered(npc_id: String, from_location_id: String, to_location_id: String, location_context: Dictionary) -> void:
+func debug_enter_location_immediately(npc_id: String, location_id: String) -> bool:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot set location for unknown NPC: %s" % npc_id)
+		return false
+
+	var previous_state: Dictionary = get_npc_state(npc_id)
+	var previous_location_id := str(previous_state.get("current_location", "plaza"))
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	var info_location_id := location_id
+	var location_context: Dictionary = {}
+	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		if not memory_system.is_enterable_location(location_id):
+			info_location_id = "plaza"
+		location_context = memory_system.move_npc_between_locations(npc_id, previous_location_id, info_location_id)
+
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"current_location": location_id,
+		"current_location_name": str(location_context.get("name", location_id)),
+		"movement_target": "",
+		"movement_target_name": "",
+		"location_context": location_context
+	})
+	_refresh_npc_node(npc_id)
+	_log_location_entered(npc_id, previous_location_id, location_id, info_location_id, location_context)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
+func _log_location_entered(
+	npc_id: String,
+	from_location_id: String,
+	to_location_id: String,
+	event_location_id: String,
+	location_context: Dictionary
+) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return
@@ -360,8 +406,8 @@ func _log_location_entered(npc_id: String, from_location_id: String, to_location
 		"subject_npc_id": npc_id,
 		"actor_ids": [npc_id],
 		"target_ids": [to_location_id],
-		"location_id": to_location_id,
-		"visibility": "private",
+		"location_id": event_location_id,
+		"visibility": "local_public",
 		"importance": 20,
 		"payload": {
 			"from_location_id": from_location_id,

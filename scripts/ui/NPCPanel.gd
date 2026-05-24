@@ -1,6 +1,8 @@
 extends Control
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const MAX_MEMORY_LINES := 4
 
 var _current_npc_id: String = ""
 
@@ -15,6 +17,8 @@ var _current_npc_id: String = ""
 @onready var recruited_label: Label = %NPCRecruitedLabel
 @onready var action_label: Label = %NPCActionLabel
 @onready var skills_label: Label = %NPCSkillsLabel
+@onready var event_log_label: Label = %NPCEventLogLabel
+@onready var witness_log_label: Label = %NPCWitnessLogLabel
 @onready var close_button: Button = %NPCPanelCloseButton
 
 
@@ -26,6 +30,7 @@ func _ready() -> void:
 	if event_bus != null:
 		event_bus.npc_clicked.connect(_on_npc_clicked)
 		event_bus.npc_state_changed.connect(_on_npc_state_changed)
+		event_bus.npc_memory_changed.connect(_on_npc_memory_changed)
 		event_bus.building_clicked.connect(_on_building_clicked)
 
 
@@ -64,6 +69,7 @@ func show_npc(npc_id: String) -> void:
 	recruited_label.text = "已入伍：%s" % _format_bool(npc.get("recruited", false))
 	action_label.text = "当前行动：%s" % _format_action(str(states.get("current_action", "idle")))
 	skills_label.text = _format_skills(npc_system, npc.get("skills", {}))
+	_update_memory_labels(npc_id)
 	visible = true
 
 
@@ -133,6 +139,34 @@ func _format_skill_group(skills: Dictionary, skill_names: Array) -> String:
 	return "，".join(parts)
 
 
+func _update_memory_labels(npc_id: String) -> void:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null:
+		event_log_label.text = "事件库：不可用"
+		witness_log_label.text = "见闻库：不可用"
+		return
+
+	var event_log: Array = memory_system.get_npc_daily_events(npc_id)
+	var witness_log: Array = memory_system.get_npc_witness_events(npc_id)
+	event_log_label.text = _format_memory_block("事件库", event_log)
+	witness_log_label.text = _format_memory_block("见闻库", witness_log)
+
+
+func _format_memory_block(title: String, events: Array) -> String:
+	if events.is_empty():
+		return "%s：暂无" % title
+
+	var lines: Array[String] = ["%s：%d 条" % [title, events.size()]]
+	var start_index := maxi(0, events.size() - MAX_MEMORY_LINES)
+	for index in range(start_index, events.size()):
+		var event: Dictionary = events[index] if events[index] is Dictionary else {}
+		var summary := str(event.get("summary", ""))
+		if summary.is_empty():
+			summary = str(event.get("type", "未命名事件"))
+		lines.append("- %s %s" % [str(event.get("time", "--:--:--")), summary])
+	return "\n".join(lines)
+
+
 func _on_npc_clicked(npc_id: String) -> void:
 	show_npc(npc_id)
 
@@ -140,6 +174,11 @@ func _on_npc_clicked(npc_id: String) -> void:
 func _on_npc_state_changed(npc_id: String) -> void:
 	if npc_id == _current_npc_id:
 		show_npc(npc_id)
+
+
+func _on_npc_memory_changed(npc_id: String) -> void:
+	if npc_id == _current_npc_id:
+		_update_memory_labels(npc_id)
 
 
 func _on_building_clicked(_building_id: String) -> void:

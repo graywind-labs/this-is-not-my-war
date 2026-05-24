@@ -80,15 +80,22 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 
 ## 当前实现状态
 
-T0402 已实现结构化事件底座：
+T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进入快照，T0404 已实现广场公开信息即时广播，T0405 已实现 NPC 短期记忆容器：
 
 - `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
-- 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 和 `plaza_public` 后续应触发地点/广场节点即时广播，接收者写入见闻库。当前 T0402 只完成底座与查询索引，完整广播与见闻写入由 T0403/T0404/T0405 推进。
+- 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；`plaza_public` 事件会即时广播给广场当前在场 NPC，并保留广场公开查询。
 - 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended`；`NPCSystem` 到达地点时写入 `location_entered`。
-- 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_plaza_public_events()` 和对应调试接口。
+- 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_public_events()` 和对应调试接口。
+- 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` / `plaza_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。
+- `NPCPanel` 会分开显示当前 NPC 的事件库和见闻库最近摘要，调试工具可通过 `debug_get_npc_short_term_memory(...)` 区分查看两类记录。
+- `MemorySystem` 当前维护广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，保存 `people_present`、当前公告/命令和进入快照所需的当前状态。
+- 广场快照没有自身建筑 HP，但提供主厅、围墙、城门、仓库 `key_entities`，以及当前在场 NPC 数和敌人数；室外或不可进入实体来源的 `plaza_public` 事件默认归入 `location_id == "plaza"`。
+- 公告牌内容变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件；关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件，当时在广场的 NPC 会把这些信息写入见闻库。
+- `NPCSystem` 到达地点时会更新旧地点与新地点的 `people_present`，并将 `location_entered.payload.location_snapshot` 写入事件库。快照包含当前人数、建筑 HP/等级/可用状态、工位/床位占用字段、当前公告/命令；进入广场时还包含主厅、围墙、城门、仓库的关键状态。
+- 主厅、围墙、城门、仓库不作为常规进入空间；NPC 移动到这类实体时，信息节点状态归入广场快照。
 
-T0402 不实现地点/广场即时广播、睡前总结、日记、知识图谱或 LLM 记忆摘要；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
+当前仍不实现睡前总结、日记、知识图谱、LLM 记忆摘要、战斗本体、真实玩家交互按钮或公告牌编辑 UI；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
 
 ## 三层信息结构
 

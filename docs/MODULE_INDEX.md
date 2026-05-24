@@ -51,7 +51,7 @@
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、公告牌、围墙、城门、后门等低模占位；`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`CameraRig` 已挂载基础俯视摄像机控制。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 作为 HUD 展示脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
-当前状态：T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和围墙修补的最小资源/HP 效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、吃饭、睡觉，到达后结算资源/状态并写入 EventLog 占位。暂停期间 NPC 移动与行动结算停止，行动保持 pending，恢复后再结算。未实现真实日程、复杂生产效率或战斗。
+当前状态：T0403 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和围墙修补的最小资源/HP 效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、吃饭、睡觉，到达后更新地点 `people_present`、写入带快照的 `location_entered`，再结算资源/状态并写入结构化事件。暂停期间 NPC 移动与行动结算停止，行动保持 pending，恢复后再结算。未实现真实日程、复杂生产效率或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -96,7 +96,7 @@
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
 依赖：通过 `/root/ConfigLoader` 读取 `data/npc_profiles.json`，实例化 `res://scenes/npc/NPC.tscn` 到 `Main/WorldRoot/Station/NPCs`，并通过 `/root/EventBus.npc_clicked` 广播点击事件。
-当前状态：T0304 已实现 8 名初始 NPC 生成、唯一 ID 保存、`get_npc(...)` / `get_npc_state(...)` / `get_npc_ids()` / `get_npc_count()` 查询接口、`update_npc_state(...)` / `set_npc_state_value(...)` 状态修改接口、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`debug_select_npc(...)` 调试选择，以及 `move_npc_to_building(...)` / `debug_move_npc_to_building(...)` / `debug_move_selected_npc_to_building(...)` 基础移动接口；状态修改和移动到达都会发出 `npc_state_changed`；仍不实现复杂避障、自然状态变化、对话、征召、战斗或 LLM。
+当前状态：T0403 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；T0304 已实现 8 名初始 NPC 生成、唯一 ID 保存、`get_npc(...)` / `get_npc_state(...)` / `get_npc_ids()` / `get_npc_count()` 查询接口、`update_npc_state(...)` / `set_npc_state_value(...)` 状态修改接口、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`debug_select_npc(...)` 调试选择，以及 `move_npc_to_building(...)` / `debug_move_npc_to_building(...)` / `debug_move_selected_npc_to_building(...)` 基础移动接口；新增 `debug_enter_location_immediately(...)` 用于验证地点信息节点；状态修改和移动到达都会发出 `npc_state_changed`；仍不实现复杂避障、自然状态变化、对话、征召、战斗或 LLM。
 
 路径：`res://scripts/npc/NPC.gd`
 用途：通用 NPC 占位实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，并处理点击。
@@ -111,7 +111,7 @@
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`plaza_public` 事件可被广场公开查询返回。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。后续公开事件应由节点即时广播给当前在场 NPC 并写入接收者见闻库。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现地点/广场即时广播、睡前总结或知识图谱更新。
+当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404 已实现广场公开信息即时广播；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_public_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场 NPC 的见闻库，`plaza_public` 会转发给广场当前在场 NPC 的见闻库并可被广场公开查询返回。公告变更写入 `plaza_notice_changed`，关键目标状态变更写入 `plaza_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed`、`money_given`、`npc_attacked_by_player` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
@@ -141,7 +141,7 @@
 路径：`res://scripts/ui/NPCPanel.gd`
 用途：NPC 信息面板脚本，监听 NPC 点击和状态变化并展示 NPC 基础状态。
 依赖：监听 `/root/EventBus.npc_clicked`、`/root/EventBus.npc_state_changed` 和 `/root/EventBus.building_clicked`，从 `Main/Systems/NPCSystem` 读取 NPC 档案与状态。
-当前状态：T0303 已接入 `Main/UI/NPCPanel`；按姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度显示 NPC 数据；属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由熟练度推导；点击建筑时会隐藏 NPC 面板。
+当前状态：T0405 后，`Main/UI/NPCPanel` 会显示 NPC 当天事件库和见闻库最近摘要，并监听 `npc_memory_changed` 刷新；基础状态仍按姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度显示；属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由熟练度推导；点击建筑时会隐藏 NPC 面板。
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
@@ -278,3 +278,6 @@
 | 简单行动系统验证 | `tools/verify_action_system_basic.gd` |
 | 时间系统验证 | `tools/verify_time_system.gd` |
 | 结构化事件底座验证 | `tools/verify_structured_memory_events.gd` |
+| 地点信息节点验证 | `tools/verify_location_info_nodes.gd` |
+| 广场公开信息广播验证 | `tools/verify_plaza_public_broadcast.gd` |
+| NPC 短期记忆容器验证 | `tools/verify_npc_short_term_memory_container.gd` |
