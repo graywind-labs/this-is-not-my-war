@@ -181,6 +181,7 @@ curl http://127.0.0.1:5000/health
 
 ## 最近一次变更
 
+- T0005 Godot MCP proxy 自恢复：给 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs` 增加同父进程旧 proxy 清理与 lock 文件接管逻辑，避免同一个 Codex 会话残留多个 proxy；`tools/check_godot_mcp.ps1` 同步增加“多 proxy / broker 缺失”提示。
 - T0205/T0305 建筑修复流程修订：`BuildingSystem.repair_building(...)` 现在在点击时一次性扣除资源并创建倒计时修复作业，HP 随 `TimeSystem.logical_time_tick` 逐步恢复；修复时长按缺失 HP、建筑等级和建筑配置计算。`ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`，NPC 可在修复期间按工程熟练度加速倒计时，多个 NPC 可叠加；若 NPC 离开对应建筑或被改派其他行动，协助人数和倍率会被移除。GM 命令新增 `assist_repair <npc_id> <building_id>`。
 - T0406 统一玩家交互事件世界内称呼：玩家非对话交互写入 NPC 事件库 / 见闻库时，actor id 使用 `guard_officer`，summary 使用“守备官”，避免 NPC 记忆和后续 LLM 输入出现以“玩家”为主语的出戏文本。
 - T0403 行动事件本地公开广播修复：`ActionSystem` 工作、吃饭、睡觉事件改为 `local_public`，同地点当前在场 NPC 会收到对应见闻；新增 `tools/verify_action_local_public_broadcast.gd` 回归验证。
@@ -191,6 +192,7 @@ curl http://127.0.0.1:5000/health
 
 - 项目内已安装并启用 `addons/godot_mcp`。
 - Codex 端改为 `proxy -> broker -> Godot` 结构，避免多个 Codex 会话直接争抢 Godot 连接。
+- `godot-mcp-proxy.mjs` 现已增加 `%USERPROFILE%\.codex\godot-mcp-proxy.lock` 接管逻辑：如果同一个 Codex 父进程下残留旧 proxy，新 proxy 会先清理旧实例再继续，减少“只剩孤立 proxy / MCP 间歇失联”的复发概率。
 - 连接自检命令：
 
 ```powershell
@@ -198,6 +200,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 ```
 
 - 当前验证结果：脚本可正常返回 `Godot MCP connected`。
+- 若再次异常，先看 `tools/check_godot_mcp.ps1` 输出：它现在会额外提示“multiple proxy processes are alive”或“Proxy is alive, but broker is missing”，优先按这个方向排查。
 - 2026-05-19 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图可见标题与基础地面。
 - 2026-05-19 T0101 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，Autoload 加载正常，游戏日志无报错。
 - 2026-05-19 T0102 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 标题与基础地面仍可见。
@@ -219,4 +222,3 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 - 2026-05-24 T0406 验证：通过 `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 验证给钱/攻击交互 summary 使用“守备官”且不包含“玩家”，actor id 使用 `guard_officer`；通过 `godot --headless --path . --script res://tools/verify_gm_panel.gd` 和 `godot --headless --path . --quit-after 1` 回归。
 - 2026-05-24 T0405 验证：通过 `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 验证 NPC 当天 `event_log` / `witness_log` 短期记忆容器、守备官给钱/攻击调试交互的事件写入和广播，以及 NPC 面板区分显示事件库与见闻库；通过 `verify_structured_memory_events.gd`、`verify_plaza_public_broadcast.gd`、`verify_npc_panel_state.gd` 和 `godot --headless --path . --quit-after 1` 回归；Godot MCP 自检返回 `Godot MCP connected`。
 - 2026-05-24 T0004 验证：通过 `godot --headless --path . --script res://tools/verify_gm_panel.gd` 验证 GM 面板加载、窗口打开、资源命令、建筑受损、设置时间、NPC 进入地点、给钱事件、广场公告和结果输出；通过 `verify_time_system.gd`、`verify_building_repair_upgrade.gd`、`verify_action_system_basic.gd`、`verify_npc_short_term_memory_container.gd`、`verify_structured_memory_events.gd` 和 `godot --headless --path . --quit-after 1` 回归；通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，清空旧日志后游戏日志无报错，截图可见 GM 按钮与面板。
-

@@ -8,6 +8,18 @@ $godotMcp = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         $_.CommandLine -and
         $_.CommandLine -match "@satelliteoflove/godot-mcp|godot-mcp\\dist\\cli\\.js|\bgodot-mcp\b"
     }
+$proxyProcesses = @(
+    $godotMcp | Where-Object {
+        $_.Name -eq "node.exe" -and
+        $_.CommandLine -match "godot-mcp-proxy\.mjs"
+    }
+)
+$brokerProcesses = @(
+    $godotMcp | Where-Object {
+        $_.Name -eq "node.exe" -and
+        $_.CommandLine -match "godot-mcp-broker\.mjs"
+    }
+)
 $godotMcpNodeCount = @(
     $godotMcp | Where-Object {
         $_.Name -eq "node.exe" -and
@@ -21,6 +33,13 @@ if ($conn) {
     if ($godotMcpNodeCount -gt 2) {
         Write-Host "Warning: multiple godot-mcp helper processes are still alive." -ForegroundColor Yellow
         $godotMcp |
+            Select-Object ProcessId, ParentProcessId, Name, CommandLine |
+            Format-Table -AutoSize
+    }
+
+    if ($proxyProcesses.Count -gt 1) {
+        Write-Host "Warning: multiple proxy processes are alive; they should self-clean after restart." -ForegroundColor Yellow
+        $proxyProcesses |
             Select-Object ProcessId, ParentProcessId, Name, CommandLine |
             Format-Table -AutoSize
     }
@@ -41,6 +60,15 @@ if ($listen) {
         Write-Host "Open Codex after Godot, or restart Codex once." -ForegroundColor Yellow
     }
 
+    exit 1
+}
+
+if ($proxyProcesses -and -not $brokerProcesses) {
+    Write-Host "Proxy is alive, but broker is missing" -ForegroundColor Yellow
+    Write-Host "Restart Codex once to let the proxy recreate the broker." -ForegroundColor Yellow
+    $proxyProcesses |
+        Select-Object ProcessId, ParentProcessId, Name, CommandLine |
+        Format-Table -AutoSize
     exit 1
 }
 

@@ -277,7 +277,7 @@
 
 | 内容 | 文件 |
 |---|---|
-| Godot MCP 连接自检 | `tools/check_godot_mcp.ps1` |
+| Godot MCP 连接自检与重复 proxy 检查 | `tools/check_godot_mcp.ps1` |
 | 建筑修复/升级验证 | `tools/verify_building_repair_upgrade.gd` |
 | NPC 面板与状态验证 | `tools/verify_npc_panel_state.gd` |
 | NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |

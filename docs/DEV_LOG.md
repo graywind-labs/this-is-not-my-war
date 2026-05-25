@@ -3,6 +3,21 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-25
+
+### T0005 加固 Godot MCP proxy 自恢复
+完成：
+- 排查到这次 MCP “又连不上”的直接原因不是 Godot 插件掉了，而是同一个 `codex` 父进程下残留了两个 `godot-mcp-proxy.mjs`；其中旧的那个没有 broker 子进程，属于孤立 proxy。
+- 更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，加入 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`。新 proxy 启动时会检查同父进程的旧 proxy，命中后先清理再接管，退出时再移除自己的 lock。
+- 更新 `tools/check_godot_mcp.ps1`，除了原来的连接判断外，额外提示“多 proxy”与“proxy 在但 broker 不在”两类故障。
+- 将这次经验精简回写到 `CURRENT_STATE.md` 和 `TASKS.md` 的 Godot MCP 相关位置，后续排查优先先看自检脚本和 proxy/broker 进程关系。
+
+验证：
+- `powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1` 返回 `Godot MCP connected`。
+- Godot MCP `project.addon_status` 返回 `connected: true`、`versions_match: true`。
+- Godot MCP `editor.get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+- 清理孤立 proxy 后，只剩 1 条有效的 `proxy -> broker` 链路。
+
 ## 2026-05-24
 
 ### T0205/T0305 建筑修复 UI 与协助行为清理

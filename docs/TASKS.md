@@ -174,6 +174,24 @@
 
 ---
 
+## T0005 Harden Godot MCP proxy restart
+
+状态：Done
+优先级：P0
+涉及文档：`CURRENT_STATE.md`, `DEV_LOG.md`
+
+验收标准：
+- `godot-mcp-proxy.mjs` 启动时会检查同一个 Codex 父进程下的旧 proxy 残留，并替换它，避免同一会话出现多个 proxy。
+- `tools/check_godot_mcp.ps1` 可以区分“多 proxy”“proxy 在但 broker 不在”和“正常连接”状态。
+- 保留 `proxy -> broker -> Godot` 结构，不回退到多会话直接连接 Godot `6550`。
+
+验收结果（2026-05-25）：
+- 本次排查确认真实问题是同一个 `codex` 父进程下残留 2 个 `godot-mcp-proxy.mjs`，其中 1 个没有对应 broker 子进程，属于孤立 proxy。
+- 已更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，启动时会读写 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`，发现同父进程的旧 proxy 时先清理再接管，并在退出时清理自己的 lock。
+- 已更新 `tools/check_godot_mcp.ps1`，新增“多 proxy”和“proxy 在但 broker 不在”的明确提示。
+- 最终验证：MCP 可正常响应 `project.addon_status` 和 `editor.get_state`，自检返回 `Godot MCP connected`，进程只剩 1 条有效的 `proxy -> broker` 链路。
+---
+
 # M1：Godot 核心骨架与最小驿站
 
 目标：进入 Godot 后能看到一个结构清楚的低模驿站场景，具备基础系统节点、资源栏、时间显示和可扩展 UI 骨架。
