@@ -148,7 +148,7 @@ T0305 起，行动定义支持三类 JSON 最小行动；2026-05-25 起，行动
 - `eat`：使用 `food_options` 数组定义可消耗食物及饱食度恢复量，当前餐食优先于粮食。标准餐食时长为 1200 秒，完整进餐恢复约 50 点饱食度。
 - `sleep`：通过 `duration_seconds`、`fatigue_delta` 和 `satiety_delta` 调整 NPC 状态。当前睡眠基准为 23400 秒降低 100 点疲劳，并按逻辑秒逐步结算。
 
-`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `plaza_public`，payload 通过 `building_id` 保留实际目标建筑。
+`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `local_public`，payload 通过 `building_id` 保留实际目标建筑。
 
 ## Weapon Definition
 
@@ -196,7 +196,7 @@ T0305 起，行动定义支持三类 JSON 最小行动；2026-05-25 起，行动
   "actor_ids": ["enemy_03"],
   "target_ids": ["doctor_01"],
   "location_id": "plaza",
-  "visibility": "plaza_public",
+  "visibility": "local_public",
   "importance": 85,
   "summary": "莉娜在广场战斗中被敌人击倒并昏迷。",
   "payload": {
@@ -217,7 +217,7 @@ T0305 起，行动定义支持三类 JSON 最小行动；2026-05-25 起，行动
 - `actor_ids`：主动参与者，可包含 NPC、守备官、敌人或系统 ID；玩家身份的世界内 actor id 使用 `guard_officer`，面向 NPC / LLM 的显示文本称为“守备官”。
 - `target_ids`：事件关联目标索引，可包含 NPC ID、地点 ID、建筑 ID、行动 ID、资源 ID、敌人 ID 等；它不是自然语言“宾语”，而是查询索引。
 - `location_id`：事件发生地点；室外事件统一为 `plaza`。
-- `visibility`：`private`、`local_public`、`plaza_public`。
+- `visibility`：`private`、`local_public`。广场公开事件使用 `location_id == "plaza"` 的 `local_public`。
 - `importance`：用于 LLM 摘要、见闻裁剪和睡前总结。
 - `summary`：短文本摘要。
 - `payload`：事件类型专属属性。对话全文、战斗伤害数值、建筑状态变化等都放在这里。完整地点状态快照不应放进 `location_entered` / `location_exited` 亲历事件；进入地点时的完整状态应作为进入者的见闻记录。
@@ -252,7 +252,7 @@ T0402 当前运行时查询接口：
 - `get_all_events()` / `get_event_log()`：返回当天全局事件索引中的事件副本。
 - `get_npc_daily_events(npc_id)`：返回某 NPC 当天亲历事件。
 - `get_npc_witness_events(npc_id)`：返回某 NPC 当天见闻事件，当前为后续即时广播接收预留。
-- `get_plaza_public_events()`：返回 `visibility == "plaza_public"` 的广场公开事件。
+- `get_plaza_events()`：返回 `location_id == "plaza"` 且 `visibility == "local_public"` 的广场事件。
 - `get_required_payload_fields(type)`：返回指定事件类型的必需 payload 字段声明。
 
 T0402 已接入的行动事件 payload：
@@ -272,7 +272,7 @@ T0402 已接入的行动事件 payload：
 }
 ```
 
-T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_status_changed`; T0403/T0405 now also use `location_status_changed` for current building-state broadcasts. Plaza snapshots use `building_external_states` for every building's propagatable external state; `key_entities` is kept as a compatibility alias for that same external-state dictionary. The plaza itself has no building HP and exposes `has_building_hp == false` and `current_enemy_count`. Status event summaries must name the specific building and concrete state that changed, without generic prefixes such as "建筑状态更新".
+T0404 adds plaza state event types: `plaza_notice_changed` and `plaza_status_changed`; T0403/T0405 now also use `location_status_changed` for current building-state broadcasts. Plaza snapshots use `building_external_states` for every building's propagatable external state; `key_entities` is kept as a compatibility alias for that same external-state dictionary. The plaza itself has no building HP and exposes `has_building_hp == false` and `current_enemy_count`. Status event summaries must name the specific building and concrete state that changed, without generic prefixes such as "建筑状态更新".
 
 Revised event payload rule: `location_entered` and `location_exited` only store movement facts such as `from_location_id` and `to_location_id`. They do not store full `location_snapshot` payloads. The entering NPC receives one separate witness entry containing the current location snapshot. NPCs already present receive only the local public enter/exit event; they do not receive a duplicate full `people_present` snapshot. Later state events should carry changed fields only, such as a changed building condition, a level change, a notice change, or one workstation occupancy change.
 

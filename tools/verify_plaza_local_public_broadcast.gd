@@ -69,24 +69,25 @@ func _init() -> void:
 		"subject_npc_id": indoor_npc_id,
 		"actor_ids": ["system"],
 		"target_ids": ["debug_wave"],
-		"visibility": "plaza_public",
+		"location_id": "plaza",
+		"visibility": "local_public",
 		"importance": 80,
 		"payload": {"wave_id": "debug_wave"}
 	})
 	if public_event.is_empty():
-		push_error("Failed to create plaza_public event")
+		push_error("Failed to create plaza local_public event")
 		quit(1)
 		return
 	if str(public_event.get("location_id", "")) != "plaza":
-		push_error("plaza_public event without location did not default to plaza")
+		push_error("Plaza event did not use plaza location")
 		quit(1)
 		return
 	if memory_system.get_npc_witness_events(plaza_npc_id).size() <= plaza_witness_before:
-		push_error("plaza_public event was not broadcast to plaza NPC")
+		push_error("Plaza local_public event was not broadcast to plaza NPC")
 		quit(1)
 		return
 	if memory_system.get_npc_witness_events(indoor_npc_id).size() != indoor_witness_before:
-		push_error("plaza_public event leaked to NPC outside plaza")
+		push_error("Plaza local_public event leaked to NPC outside plaza")
 		quit(1)
 		return
 
@@ -130,5 +131,5 @@ func _init() -> void:
 		quit(1)
 		return
 
-	print("T0404 plaza public broadcast verification passed.")
+	print("T0404 plaza local_public broadcast verification passed.")
 	quit(0)

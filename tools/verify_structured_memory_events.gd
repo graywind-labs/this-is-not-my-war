@@ -113,19 +113,19 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var plaza_public_before: int = memory_system.debug_get_plaza_public_events().size()
+	var plaza_events_before: int = memory_system.debug_get_plaza_events().size()
 	var public_event: Dictionary = memory_system.add_event({
 		"type": "combat_started",
 		"subject_npc_id": npc_id,
 		"actor_ids": ["system"],
 		"target_ids": ["plaza"],
 		"location_id": "plaza",
-		"visibility": "plaza_public",
+		"visibility": "local_public",
 		"importance": 70,
 		"payload": {"wave_id": "debug_wave"}
 	})
-	if public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != plaza_public_before + 1:
-		push_error("Plaza public event query failed")
+	if public_event.is_empty() or memory_system.debug_get_plaza_events().size() != plaza_events_before + 1:
+		push_error("Plaza local public event query failed")
 		quit(1)
 		return
 
@@ -135,12 +135,12 @@ func _init() -> void:
 		"actor_ids": ["system"],
 		"target_ids": ["chapel"],
 		"location_id": "chapel",
-		"visibility": "plaza_public",
+		"visibility": "local_public",
 		"importance": 70,
 		"payload": {"wave_id": "debug_indoor_wave"}
 	})
-	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != plaza_public_before + 2:
-		push_error("Plaza public query should include public events without using plaza as storage")
+	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_events().size() != plaza_events_before + 1:
+		push_error("Plaza event query should only include local public events at plaza")
 		quit(1)
 		return
 

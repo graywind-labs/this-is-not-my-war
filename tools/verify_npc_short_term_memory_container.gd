@@ -81,8 +81,12 @@ func _init() -> void:
 		push_error("Failed to move plaza witness")
 		quit(1)
 		return
+	if not npc_system.debug_enter_location_immediately(target_id, "plaza"):
+		push_error("Failed to move target NPC into plaza")
+		quit(1)
+		return
 	var plaza_witness_before: int = memory_system.get_npc_witness_events(plaza_witness_id).size()
-	var attack_event: Dictionary = memory_system.debug_record_player_attack_npc(target_id, 5, "plaza_public")
+	var attack_event: Dictionary = memory_system.debug_record_player_attack_npc(target_id, 5, "local_public")
 	if attack_event.is_empty():
 		push_error("Failed to record npc_attacked_by_player interaction")
 		quit(1)
@@ -100,7 +104,7 @@ func _init() -> void:
 		quit(1)
 		return
 	if memory_system.get_npc_witness_events(plaza_witness_id).size() <= plaza_witness_before:
-		push_error("plaza_public attack did not enter plaza witness_log")
+		push_error("Plaza local_public attack did not enter plaza witness_log")
 		quit(1)
 		return
 

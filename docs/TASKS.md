@@ -1034,14 +1034,14 @@ Main
 - 行动开始事件仍即时写入；完成事件只在持续时间结束后写入。暂停时 active 行动不推进，恢复后继续。
 - 已更新 `tools/verify_action_system_basic.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_action_local_public_broadcast.gd` 和 `tools/verify_npc_short_term_memory_container.gd`，验证持续行动和事件广播。
 - `ActionSystem` 新增 `debug_assign_upgrade_assist(npc_id, building_id)`；协助修复/协助升级都是带建筑参数的广场行为，NPC 在室内时会先前往广场，再按工程熟练度加速目标建筑倒计时。
-- 协助修复/协助升级开始会分别写入 `repair_assist_started` / `upgrade_assist_started` 广场公开事件，`location_id == "plaza"` 且 `visibility == "plaza_public"`；完成后协助 NPC 回到 idle，并写入 `completed_assist_*_<building_id>` 行动结果。
+- 协助修复/协助升级开始会分别写入 `repair_assist_started` / `upgrade_assist_started` 广场本地公开事件，`location_id == "plaza"` 且 `visibility == "local_public"`；完成后协助 NPC 回到 idle，并写入 `completed_assist_*_<building_id>` 行动结果。
 - 已更新 `tools/verify_action_system_basic.gd`，验证协助修复/协助升级发生在广场、事件为广场公开、可提高速度倍率并推进作业完成。
 
 修订结果（2026-05-24）：
 
 - 围墙修补行动不再直接恢复建筑 HP，改为协助已有修复作业；修复资源由 `BuildingSystem.repair_building(...)` 在开始修复时一次性扣除。
 - `ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`；协助修复是一个带建筑参数的统一行为，不再在 `data/action_defs.json` 中保留按建筑写死的“修补围墙”行动。
-- 协助修复开始事件已在 2026-05-25 修订为广场公开事件：`location_id == "plaza"`，`visibility == "plaza_public"`，目标建筑保存在 `payload.building_id`。
+- 协助修复开始事件已在 2026-05-26 修订为广场本地公开事件：`location_id == "plaza"`，`visibility == "local_public"`，目标建筑保存在 `payload.building_id`。
 - 已更新 `tools/verify_action_system_basic.gd`，验证 NPC 协助修复可提高速度倍率、离开广场会移除协助人数和加成、重新协助可推进修复完成并在完成后回到 idle。
 
 修订结果（2026-05-24 UI/GM 清理）：
@@ -1170,7 +1170,7 @@ Main
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库。
 - 查询当天全部事件。
 - 查询某 NPC 的当天事件库。
-- 查询 `visibility == plaza_public` 的公开事件；广场节点本身不保存事件历史。
+- 查询 `location_id == "plaza"` 且 `visibility == "local_public"` 的广场事件；广场节点本身不保存事件历史。
 - 对现有 ActionSystem 行动完成/失败事件做兼容迁移。
 - `target_ids` 支持 NPC、地点、建筑、行动、资源、敌人等不同 ID，不把它当成单一自然语言宾语。
 - 每种事件类型定义确定性 summary 模板和 payload schema；summary 不使用 LLM 生成，也不依赖通用主宾语自动拼句。
@@ -1300,19 +1300,19 @@ Main
 
 验收结果（2026-05-24）：
 
-- `MemorySystem` 已将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；若公开事件原本发生在其他可进入地点，也会同步广播给该地点当时在场 NPC。
-- 室外或不可进入实体来源的 `plaza_public` 事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
+- `MemorySystem` 已将广场公开事件统一为 `location_id == "plaza"` 的 `local_public`，当前在广场的 NPC 会把事件写入见闻库。
+- 室外或不可进入实体来源的本地公开事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
 - 广场快照明确没有自身建筑 HP，并提供所有建筑可传播外部状态 `building_external_states` / `key_entities`，以及当前敌人数。
 - 广场公告文本变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件广播给当时在广场的 NPC；公告牌不作为建筑参与该流程。
 - `BuildingSystem` 的任一建筑等级或完好/受损/正在修复/正在升级状态变化会经 `building_state_changed` 通知 `MemorySystem` 生成带具体建筑名的 `plaza_status_changed` 广场公开状态事件；HP 和剩余时间变化不触发广播。
-- 新增 `tools/verify_plaza_public_broadcast.gd` 验证广场公开事件、公告变更、关键实体状态变更、广场快照字段和见闻库写入。
+- 新增 `tools/verify_plaza_local_public_broadcast.gd` 验证广场本地公开事件、公告变更、关键实体状态变更、广场快照字段和见闻库写入。
 
 修复记录（2026-05-25）：
 
 - 广场状态从“只继承不可进入实体/关键目标”修正为“继承所有建筑外部状态”。
 - 建筑状态见闻 summary 不再只显示模糊的广场状态变化，而是写明具体建筑名、等级或完好/受损/正在修复/正在升级等实际信息，不加入“建筑状态更新”这类空泛前缀。
 - 不可进入建筑在广场外部状态中不暴露工位、床位、内部 NPC 等内部信息。
-- `tools/verify_plaza_public_broadcast.gd` 已补充全建筑外部状态、内部字段隔离和状态见闻命名验证。
+- `tools/verify_plaza_local_public_broadcast.gd` 已补充全建筑外部状态、内部字段隔离和状态见闻命名验证。
 
 ---
 
@@ -1351,7 +1351,7 @@ Main
 
 - `MemorySystem` 已提供 `get_npc_short_term_memory(...)` / `get_npc_short_term_memory_ids(...)`，运行时短期记忆明确拆分为当天 `event_log` 与 `witness_log`。
 - 工作、吃饭、睡觉继续由 `ActionSystem` 写入目标 NPC 事件库；新增玩家非对话交互入口 `record_player_interaction(...)`，并提供 `debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)` 验证给钱和攻击事件写入。
-- `local_public` / `plaza_public` 玩家交互会通过地点/广场当前在场人员即时广播，接收 NPC 写入见闻库；地点/广场节点仍不保存事件历史。
+- `local_public` 玩家交互会通过事件地点当前在场人员即时广播，接收 NPC 写入见闻库；广场交互使用 `location_id == "plaza"`，地点/广场节点仍不保存事件历史。
 - `NPCPanel` 新增事件库和见闻库最近摘要显示，并监听 `npc_memory_changed` 刷新。
 - 新增 `tools/verify_npc_short_term_memory_container.gd`，已验证事件库、见闻库、玩家交互和 NPC 面板区分显示；每天结束暂不清空。
 
@@ -1433,13 +1433,34 @@ Main
 - `NPCSystem` 到达或调试进入新信息地点时写入 `location_entered`；离开旧信息地点时写入 `location_exited`，且离开事件的 `location_id` 使用被离开的地点。
 - `location_entered` / `location_exited` payload 只保留进出地点 ID，不再携带 `location_snapshot`、完整 `people_present` 或工位状态。
 - 建筑状态变化广播改为 `changed_fields` / `changed_workstations` 字段级差量；广场建筑状态见闻不再复制 `plaza_snapshot`、`building_external_states` 或完整 `building_snapshot`。
-- `tools/verify_location_info_nodes.gd` 已升级为 T0407 验证；`tools/verify_plaza_public_broadcast.gd` 增加字段级状态见闻检查。
+- `tools/verify_location_info_nodes.gd` 已升级为 T0407 验证；`tools/verify_plaza_local_public_broadcast.gd` 增加字段级状态见闻检查。
+
+---
+
+## T0408 收敛广场公开事件可见性
+
+状态：Done
+优先级：P0
+前置任务：T0404, T0405, T0407
+涉及文档：`game_design.md`, `MEMORY_AND_INFO_SPACE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `GM_PANEL.md`
+
+任务目标：
+
+移除事件可见性的第三种公开类型，让广场作为普通地点使用 `local_public` 广播。事件可见性只保留 `private` 和 `local_public`；广场公开事件统一表达为 `location_id == "plaza"` 且 `visibility == "local_public"`。
+
+验收结果（2026-05-26）：
+
+- `MemorySystem` 移除旧的广场专用公开类型分支，广场公告、广场状态、手动广场广播和协助修复/升级事件都以 `local_public` 写入 `plaza`。
+- 广场事件查询接口改为 `get_plaza_events()` / `debug_get_plaza_events()`，筛选全局事件索引中的广场本地公开事件，不让广场信息节点保存事件历史。
+- `ActionSystem` 的 `repair_assist_started` / `upgrade_assist_started` 改为 `visibility == "local_public"` 且 `location_id == "plaza"`。
+- GM 面板可见性下拉只保留 `private` / `local_public`，攻击事件默认改为 `local_public`；广场广播按钮调用新的 `debug_broadcast_plaza_event(...)`。
+- 旧广场专用广播验证脚本已替换为 `tools/verify_plaza_local_public_broadcast.gd`，并同步更新结构化事件、短期记忆和行动系统验证脚本。
 
 ---
 
 # M5：昏迷、治疗与基础医疗闭环
 
-目标：实现 NPC 不死亡机制。HP 清零后昏迷，医生可治疗，HP 到 30% 后复苏。
+目标：实现 NPC 不死亡机制。HP 清零后昏迷，其他人可协助治疗，HP 到 30% 后复苏。
 
 ---
 
@@ -1460,12 +1481,12 @@ Main
 - HP 降到 0 时进入昏迷。
 - 昏迷 NPC 不能移动、工作、对话、战斗。
 - 昏迷事件写入 NPC 事件库。
-- 昏迷事件按 `plaza_public` 公开到广场。
+- 昏迷事件按 `location_id == "plaza"` 的 `local_public` 公开到广场。
 
 禁止事项：
 
 - 不实现敌人战斗。
-- 不实现医生治疗。
+- 不实现治疗。
 - 不实现自然恢复。
 
 验收标准：

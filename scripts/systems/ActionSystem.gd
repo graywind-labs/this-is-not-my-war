@@ -331,7 +331,7 @@ func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
 		"id": "assist_repair",
 		"location_required": PLAZA_LOCATION_ID,
 		"base_duration_hours": 0,
-		"visibility": "plaza_public"
+		"visibility": "local_public"
 	}, "repair_assist_started", {
 		"action_id": "assist_repair",
 		"building_id": building_id,
@@ -365,7 +365,7 @@ func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 		"id": "assist_upgrade",
 		"location_required": PLAZA_LOCATION_ID,
 		"base_duration_hours": 0,
-		"visibility": "plaza_public"
+		"visibility": "local_public"
 	}, "upgrade_assist_started", {
 		"action_id": "assist_upgrade",
 		"building_id": building_id,

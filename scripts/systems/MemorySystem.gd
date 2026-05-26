@@ -6,7 +6,6 @@ const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const DEFAULT_LOCATION_ID := "plaza"
 const DEFAULT_VISIBILITY := "private"
-const PUBLIC_VISIBILITY := "plaza_public"
 const LOCAL_PUBLIC_VISIBILITY := "local_public"
 const PLAYER_ACTOR_ID := "guard_officer"
 const PLAYER_DISPLAY_NAME := "守备官"
@@ -42,7 +41,7 @@ var _events_by_id: Dictionary = {}
 var _global_event_ids: Array[String] = []
 var _npc_daily_event_ids: Dictionary = {}
 var _npc_daily_witness_ids: Dictionary = {}
-var _plaza_public_query_event_ids: Array[String] = []
+var _plaza_event_ids: Array[String] = []
 var _location_info_nodes: Dictionary = {}
 var _last_location_state_keys: Dictionary = {}
 var _last_plaza_external_state_keys: Dictionary = {}
@@ -57,7 +56,7 @@ func initialize() -> void:
 	_global_event_ids.clear()
 	_npc_daily_event_ids.clear()
 	_npc_daily_witness_ids.clear()
-	_plaza_public_query_event_ids.clear()
+	_plaza_event_ids.clear()
 	_initialize_location_info_nodes()
 	_last_location_state_keys.clear()
 	_last_plaza_external_state_keys.clear()
@@ -97,17 +96,9 @@ func add_event(event: Dictionary) -> Dictionary:
 		var location_id := str(normalized.get("location_id", DEFAULT_LOCATION_ID))
 		_emit_location_info_changed(location_id)
 		_broadcast_public_event(normalized, location_id)
-
-	if visibility == PUBLIC_VISIBILITY:
-		_plaza_public_query_event_ids.append(event_id)
-		_emit_public_event_added(normalized)
-		_emit_location_info_changed(DEFAULT_LOCATION_ID)
-		_broadcast_public_event(normalized, DEFAULT_LOCATION_ID)
-
-		var event_location_id := str(normalized.get("location_id", DEFAULT_LOCATION_ID))
-		if event_location_id != DEFAULT_LOCATION_ID and is_enterable_location(event_location_id):
-			_emit_location_info_changed(event_location_id)
-			_broadcast_public_event(normalized, event_location_id)
+		if location_id == DEFAULT_LOCATION_ID:
+			_plaza_event_ids.append(event_id)
+			_emit_public_event_added(normalized)
 
 	_emit_event_recorded(normalized)
 	_emit_npc_memory_changed(subject_npc_id)
@@ -231,9 +222,9 @@ func set_plaza_notice(text: String, actor_id: String = PLAZA_STATE_SUBJECT_ID) -
 	_broadcast_plaza_state_changed("notice_changed", {"notice": text}, actor_id, "plaza_notice_changed")
 
 
-func broadcast_plaza_public_event(event: Dictionary) -> Dictionary:
+func broadcast_plaza_event(event: Dictionary) -> Dictionary:
 	var public_event := event.duplicate(true)
-	public_event["visibility"] = PUBLIC_VISIBILITY
+	public_event["visibility"] = LOCAL_PUBLIC_VISIBILITY
 	public_event["location_id"] = DEFAULT_LOCATION_ID
 	return add_event(public_event)
 
@@ -268,8 +259,8 @@ func debug_set_plaza_notice(text: String) -> void:
 	set_plaza_notice(text)
 
 
-func debug_broadcast_plaza_public_event(event_type: String, subject_npc_id: String, payload: Dictionary = {}) -> Dictionary:
-	return broadcast_plaza_public_event({
+func debug_broadcast_plaza_event(event_type: String, subject_npc_id: String, payload: Dictionary = {}) -> Dictionary:
+	return broadcast_plaza_event({
 		"type": event_type,
 		"subject_npc_id": subject_npc_id,
 		"actor_ids": [subject_npc_id],
@@ -334,7 +325,7 @@ func debug_record_player_money_given(npc_id: String, amount: int, visibility: St
 	}, visibility)
 
 
-func debug_record_player_attack_npc(npc_id: String, damage: int, visibility: String = PUBLIC_VISIBILITY) -> Dictionary:
+func debug_record_player_attack_npc(npc_id: String, damage: int, visibility: String = LOCAL_PUBLIC_VISIBILITY) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var hp_before := 0
 	if npc_system != null:
@@ -381,8 +372,8 @@ func get_npc_daily_witness_ids(npc_id: String) -> Array:
 	return _npc_daily_witness_ids.get(npc_id, []).duplicate()
 
 
-func get_plaza_public_events() -> Array[Dictionary]:
-	return _events_from_ids(_plaza_public_query_event_ids)
+func get_plaza_events() -> Array[Dictionary]:
+	return _events_from_ids(_plaza_event_ids)
 
 
 func get_supported_event_types() -> Array[String]:
@@ -398,7 +389,7 @@ func clear_event_log() -> void:
 	_global_event_ids.clear()
 	_npc_daily_event_ids.clear()
 	_npc_daily_witness_ids.clear()
-	_plaza_public_query_event_ids.clear()
+	_plaza_event_ids.clear()
 	_event_counter = 0
 
 
@@ -418,8 +409,8 @@ func debug_get_npc_short_term_memory(npc_id: String) -> Dictionary:
 	return get_npc_short_term_memory(npc_id)
 
 
-func debug_get_plaza_public_events() -> Array[Dictionary]:
-	return get_plaza_public_events()
+func debug_get_plaza_events() -> Array[Dictionary]:
+	return get_plaza_events()
 
 
 func _initialize_location_info_nodes() -> void:
@@ -585,7 +576,7 @@ func _broadcast_plaza_state_changed(
 		"actor_ids": [actor_id],
 		"target_ids": target_ids,
 		"location_id": DEFAULT_LOCATION_ID,
-		"visibility": PUBLIC_VISIBILITY,
+		"visibility": LOCAL_PUBLIC_VISIBILITY,
 		"importance": 40,
 		"payload": payload
 	})
@@ -775,8 +766,9 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 
 	var visibility := str(event.get("visibility", DEFAULT_VISIBILITY))
 	if bool(event.get("visible_to_public_square", false)):
-		visibility = PUBLIC_VISIBILITY
-	if not [DEFAULT_VISIBILITY, LOCAL_PUBLIC_VISIBILITY, PUBLIC_VISIBILITY].has(visibility):
+		visibility = LOCAL_PUBLIC_VISIBILITY
+		location_id = DEFAULT_LOCATION_ID
+	if not [DEFAULT_VISIBILITY, LOCAL_PUBLIC_VISIBILITY].has(visibility):
 		push_warning("MemorySystem changed invalid visibility '%s' to private." % visibility)
 		visibility = DEFAULT_VISIBILITY
 
@@ -784,7 +776,7 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 	if payload.is_empty():
 		payload = _legacy_payload_from_event(event)
 
-	if visibility == PUBLIC_VISIBILITY and not is_enterable_location(location_id):
+	if visibility == LOCAL_PUBLIC_VISIBILITY and not is_enterable_location(location_id):
 		if not payload.has("source_location_id"):
 			payload["source_location_id"] = location_id
 		location_id = DEFAULT_LOCATION_ID

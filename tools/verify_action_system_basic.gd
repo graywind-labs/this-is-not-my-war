@@ -229,8 +229,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var repair_event := _find_latest_event(memory_system.get_all_events(), "repair_assist_started")
-	if str(repair_event.get("location_id", "")) != "plaza" or str(repair_event.get("visibility", "")) != "plaza_public":
-		push_error("Repair assist event should be plaza_public at plaza")
+	if str(repair_event.get("location_id", "")) != "plaza" or str(repair_event.get("visibility", "")) != "local_public":
+		push_error("Repair assist event should be local_public at plaza")
 		quit(1)
 		return
 	var repair_status: Dictionary = building_system.get_repair_status("wall")
@@ -295,8 +295,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var upgrade_event := _find_latest_event(memory_system.get_all_events(), "upgrade_assist_started")
-	if str(upgrade_event.get("location_id", "")) != "plaza" or str(upgrade_event.get("visibility", "")) != "plaza_public":
-		push_error("Upgrade assist event should be plaza_public at plaza")
+	if str(upgrade_event.get("location_id", "")) != "plaza" or str(upgrade_event.get("visibility", "")) != "local_public":
+		push_error("Upgrade assist event should be local_public at plaza")
 		quit(1)
 		return
 	var upgrade_status: Dictionary = building_system.get_upgrade_status("wall")

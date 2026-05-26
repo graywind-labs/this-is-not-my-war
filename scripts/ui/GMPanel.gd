@@ -13,7 +13,7 @@ const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
 	"training_ground", "stable", "chapel", "clinic", "workshop"
 ]
-const DEFAULT_VISIBILITIES := ["private", "local_public", "plaza_public"]
+const DEFAULT_VISIBILITIES := ["private", "local_public"]
 const COMMAND_HISTORY_LIMIT := 40
 
 var _gm_button: Button
@@ -554,7 +554,7 @@ func _execute_command(command: String) -> void:
 				_run_give_money(str(parts[1]), int(parts[2]), visibility)
 		"attack_npc":
 			if _require_args(parts, 3, "attack_npc <npc_id> <damage> [visibility]"):
-				var visibility := str(parts[3]) if parts.size() >= 4 else "plaza_public"
+				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
 				_run_attack_npc(str(parts[1]), int(parts[2]), visibility)
 		"memory":
 			if _require_args(parts, 2, "memory <npc_id>"):
@@ -814,7 +814,7 @@ func _run_public_event(event_type: String, subject_npc_id: String) -> void:
 	if memory_system == null:
 		_log("MemorySystem 不可用。")
 		return
-	var event: Dictionary = memory_system.debug_broadcast_plaza_public_event(event_type, subject_npc_id, {"source": "gm_panel"})
+	var event: Dictionary = memory_system.debug_broadcast_plaza_event(event_type, subject_npc_id, {"source": "gm_panel"})
 	_log("广场广播：%s" % _compact(event))
 
 
@@ -848,8 +848,8 @@ func _show_plaza_events() -> void:
 	if memory_system == null:
 		_log("MemorySystem 不可用。")
 		return
-	var events: Array = memory_system.debug_get_plaza_public_events()
-	_log("广场公开事件 %d 条：%s" % [events.size(), _compact(_tail(events, 8))])
+	var events: Array = memory_system.debug_get_plaza_events()
+	_log("广场本地公开事件 %d 条：%s" % [events.size(), _compact(_tail(events, 8))])
 
 
 func _on_gm_button_pressed() -> void:

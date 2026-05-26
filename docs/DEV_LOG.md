@@ -5,17 +5,35 @@
 
 ## 2026-05-26
 
+### T0408 收敛广场公开事件可见性
+完成：
+- 事件可见性只保留 `private` 与 `local_public`；广场广播改为 `location_id == "plaza"` 的本地公开事件。
+- `MemorySystem` 将广场公告、广场状态、手动广场广播和协助修复/升级事件统一走地点广播路径，并将广场事件查询接口改为 `get_plaza_events()` / `debug_get_plaza_events()`。
+- `ActionSystem` 协助修复/协助升级开始事件改为广场本地公开事件。
+- `GMPanel` 可见性下拉移除旧广场专用公开项，攻击事件默认使用 `local_public`。
+- `tools/verify_plaza_local_public_broadcast.gd` 替换旧广场专用广播验证脚本，并同步更新结构化事件、短期记忆和行动验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
 ### T0407 精简地点事件与建筑状态见闻
 完成：
 - `location_entered` / `location_exited` 现在只记录进入/离开的行动事实，不再在事件 payload 或 summary 中携带完整地点状态。
 - NPC 进入新信息地点时，进入者会在见闻库获得一次 `location_entry_snapshot` 当前状态快照；已经在该地点的 NPC 只收到本地公开的进入/离开事件。
 - NPC 离开地点时生成 `location_exited`，事件 `location_id` 使用被离开的地点，并广播给仍在该地点的 NPC。
 - 建筑状态变化见闻改为字段级差量：外部状态使用 `changed_fields`，工位占用变化使用 `changed_workstations`，不再复制完整广场或建筑快照。
-- 更新 `tools/verify_location_info_nodes.gd` 与 `tools/verify_plaza_public_broadcast.gd` 覆盖 T0407 规则。
+- 更新 `tools/verify_location_info_nodes.gd` 与 `tools/verify_plaza_local_public_broadcast.gd` 覆盖 T0407 规则。
 
 验证：
 - `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
@@ -28,7 +46,7 @@
 完成：
 - `data/building_defs.json` 为城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊补齐 `repair` 配置，验证所有建筑都可修复。
 - NPC 进入可进入建筑时，`location_entered` 摘要和进入者收到的当前状态见闻会立即包含建筑外部状态、建筑内 NPC 和工位占用状态。
-- 协助修复/协助升级改为广场行为：NPC 在室内时先移动到广场；协助开始事件写入 `plaza_public`，`location_id == "plaza"`，目标建筑保留在 `payload.building_id`。
+- 协助修复/协助升级改为广场行为：NPC 在室内时先移动到广场；协助开始事件写入 `location_id == "plaza"` 的 `local_public`，目标建筑保留在 `payload.building_id`。
 - `BuildingSystem` 的协助者有效性改为要求 NPC 仍在广场且当前行动仍是协助对应建筑。
 
 验证：
@@ -50,7 +68,7 @@
 - `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
 
@@ -60,11 +78,11 @@
 - 可进入建筑状态变化会生成 `location_status_changed` 本地见闻；NPC 进入广场获得所有建筑外部状态，进入可进入建筑获得该建筑外部 + 内部状态。
 - 建筑状态快照拆分外部状态（HP、等级、完好/受损/正在修复、剩余修复时长）和内部状态（在场 NPC、工位数量、占用/空闲状态）；不可进入建筑不暴露内部 NPC 或工位。
 - `data/building_defs.json` 移除主厅、仓库、围墙、城门的旧内部工位占位；围墙升级不再增加内部工位。
-- 更新 `tools/verify_location_info_nodes.gd`、`tools/verify_plaza_public_broadcast.gd`、`tools/verify_building_repair_upgrade.gd` 覆盖全建筑外部状态、内部字段隔离、状态见闻命名和不可进入建筑无工位规则。
+- 更新 `tools/verify_location_info_nodes.gd`、`tools/verify_plaza_local_public_broadcast.gd`、`tools/verify_building_repair_upgrade.gd` 覆盖全建筑外部状态、内部字段隔离、状态见闻命名和不可进入建筑无工位规则。
 
 验证：
 - `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
@@ -192,7 +210,7 @@
 - PowerShell `ConvertFrom-Json` 验证 `data/building_defs.json` 合法，且不包含 `notice_board`。
 - `godot --headless --path . --quit-after 1` 通过。
 - `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 
 未做：
 - 未新增公告编辑 UI；现有 GM 广场公告入口继续作为验证入口。
@@ -223,7 +241,7 @@
 ### T0405 实现 NPC 短期记忆容器
 完成：
 - `MemorySystem` 新增 `get_npc_short_term_memory(...)` / `get_npc_short_term_memory_ids(...)`，将当天 `event_log` 与 `witness_log` 作为独立容器暴露给后续 LLM 输入。
-- 新增 `record_player_interaction(...)`，玩家非对话交互会先进入目标 NPC 事件库，再按 `private` / `local_public` / `plaza_public` 可见性广播给地点或广场当时在场 NPC。
+- 新增 `record_player_interaction(...)`，玩家非对话交互会先进入目标 NPC 事件库，再按 `private` / `local_public` 可见性广播给事件地点当时在场 NPC；广场交互使用 `location_id == "plaza"`。
 - 新增 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)`，用于验证给钱和攻击事件写入；本次不实现真实按钮、HP 扣除或昏迷。
 - `NPCPanel` 新增事件库和见闻库最近摘要，监听 `npc_memory_changed` 自动刷新。
 - 新增 `tools/verify_npc_short_term_memory_container.gd`，覆盖短期记忆容器、给钱/攻击交互、见闻广播和面板区分显示。
@@ -231,7 +249,7 @@
 验证：
 - `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
 - `godot --headless --path . --quit-after 1` 通过。
 - `tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`。
@@ -241,14 +259,14 @@
 
 ### T0404 实现广场公开信息即时广播
 完成：
-- `MemorySystem` 将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；事件若原本发生在其他可进入地点，也会同步广播给该地点在场 NPC。
+- `MemorySystem` 将广场事件统一为 `location_id == "plaza"` 的 `local_public`，当前在广场的 NPC 会把事件写入见闻库。
 - 室外或不可进入实体来源的公开事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
 - 广场快照明确没有自身建筑 HP，并提供主厅、围墙、城门、仓库 `key_entities`、当前在场 NPC 数和敌人数。
 - 广场公告文本变更会生成 `plaza_notice_changed` 广场公开事件；关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件。
 - `BuildingSystem` 在关键目标受损、修复或升级时通知 `MemorySystem` 进行广场状态广播。
-- 新增 `tools/verify_plaza_public_broadcast.gd`，覆盖广场公开事件、公告、关键实体状态、广场快照字段和见闻库写入。
+- 新增 `tools/verify_plaza_local_public_broadcast.gd`，覆盖广场本地公开事件、公告、关键实体状态、广场快照字段和见闻库写入。
 验证：
-- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
 - `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。

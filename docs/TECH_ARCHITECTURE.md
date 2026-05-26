@@ -72,7 +72,7 @@ MemorySystem.add_event(...)
   ↓
 写入 subject_npc_id 的 NPC 事件库
   ↓
-按 visibility 发送到地点/建筑信息节点或广场信息节点
+按 visibility 发送到对应地点/建筑信息节点；广场也是地点节点
   ↓
 信息节点即时广播给当前在场 NPC；接收者写入见闻库
   ↓
@@ -169,7 +169,7 @@ Godot 释放 TimeSystem 慢速请求
   ↓
 Godot 执行合法结果
   ↓
-权威结果写入 MemorySystem 事件系统，并按可见性通过地点/广场信息节点即时广播给当前在场 NPC
+权威结果写入 MemorySystem 事件系统，并按可见性通过对应地点信息节点即时广播给当前在场 NPC；广场公开信息使用 `location_id == "plaza"` 的本地公开事件
 ```
 
 ## 失败降级

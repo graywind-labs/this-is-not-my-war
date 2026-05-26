@@ -155,7 +155,7 @@ eat cook_01
 sleep priest_01
 plaza_notice 今晚所有人都必须留在广场附近。
 give_money cook_01 5 local_public
-attack_npc stableman_01 3 plaza_public
+attack_npc stableman_01 3 local_public
 memory cook_01
 location plaza
 events
