@@ -28,6 +28,17 @@ func _init() -> void:
 		push_error("Verify precondition failed.")
 		quit(1)
 		return
+	for raw_building_id in building_system.get_building_ids():
+		var current_id := str(raw_building_id)
+		var current_building: Dictionary = building_system.get_building(current_id)
+		if current_building.get("repair", {}).is_empty():
+			push_error("Every building should be repairable, missing: %s" % current_id)
+			quit(1)
+			return
+		if current_building.get("upgrade", {}).is_empty():
+			push_error("Every building should have upgrade potential, missing: %s" % current_id)
+			quit(1)
+			return
 
 	if not building_system.debug_damage_building(building_id, 40):
 		push_error("Failed to damage building.")
@@ -69,9 +80,17 @@ func _init() -> void:
 		push_error("Damaged building should be repairable.")
 		quit(1)
 		return
+	if building_system.can_upgrade_building(building_id):
+		push_error("Damaged building should not be upgradeable.")
+		quit(1)
+		return
 
 	if not building_system.repair_building(building_id):
 		push_error("Repair did not start.")
+		quit(1)
+		return
+	if building_system.can_upgrade_building(building_id):
+		push_error("Building under repair should not be upgradeable.")
 		quit(1)
 		return
 
@@ -113,27 +132,61 @@ func _init() -> void:
 
 	var before_upgrade_stone: int = resource_system.get_resource("stone")
 	var before_upgrade_workstations: Array = repaired.get("workstations", [])
+	if not before_upgrade_workstations.is_empty():
+		push_error("Non-enterable wall should not expose internal workstations.")
+		quit(1)
+		return
 	if not building_system.upgrade_building(building_id):
-		push_error("Upgrade failed.")
+		push_error("Upgrade did not start.")
 		quit(1)
 		return
 
+	var upgrade_started: Dictionary = building_system.get_building(building_id)
+	if int(upgrade_started.get("level", 0)) != int(repaired.get("level", 0)):
+		push_error("Upgrade should not increase level immediately.")
+		quit(1)
+		return
+	if not building_system.is_upgrade_in_progress(building_id):
+		push_error("Upgrade status was not created.")
+		quit(1)
+		return
+	if str(upgrade_started.get("condition", "")) != "upgrading":
+		push_error("Building condition should be upgrading during upgrade countdown.")
+		quit(1)
+		return
+	if resource_system.get_resource("stone") != before_upgrade_stone - 3:
+		push_error("Upgrade did not spend stone up front.")
+		quit(1)
+		return
+	if building_system.can_repair_building(building_id):
+		push_error("Building under upgrade should not be repairable.")
+		quit(1)
+		return
+
+	building_system._on_logical_time_tick(1800.0, 1.0)
+	var upgrade_halfway: Dictionary = building_system.get_building(building_id)
+	if int(upgrade_halfway.get("level", 0)) != int(repaired.get("level", 0)) or not building_system.is_upgrade_in_progress(building_id):
+		push_error("Upgrade should still be in progress halfway.")
+		quit(1)
+		return
+
+	building_system._on_logical_time_tick(1800.0, 1.0)
 	var upgraded: Dictionary = building_system.get_building(building_id)
 	var upgraded_workstations: Array = upgraded.get("workstations", [])
 	if int(upgraded.get("level", 0)) != int(repaired.get("level", 0)) + 1:
-		push_error("Upgrade did not increase level.")
+		push_error("Upgrade completion did not increase level.")
 		quit(1)
 		return
 	if int(upgraded.get("max_hp", 0)) <= int(repaired.get("max_hp", 0)):
 		push_error("Upgrade did not increase max HP.")
 		quit(1)
 		return
-	if upgraded_workstations.size() <= before_upgrade_workstations.size():
-		push_error("Upgrade did not add a workstation.")
+	if upgraded_workstations.size() != before_upgrade_workstations.size():
+		push_error("Non-enterable wall upgrade should not add internal workstations.")
 		quit(1)
 		return
-	if resource_system.get_resource("stone") != before_upgrade_stone - 3:
-		push_error("Upgrade did not spend stone.")
+	if building_system.is_upgrade_in_progress(building_id):
+		push_error("Upgrade status did not clear after completion.")
 		quit(1)
 		return
 

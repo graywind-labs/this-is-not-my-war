@@ -14,24 +14,24 @@ const ENTERABLE_LOCATION_IDS: Array[String] = [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
 	"training_ground", "stable", "chapel", "clinic", "workshop"
 ]
-const PLAZA_KEY_ENTITY_IDS: Array[String] = ["main_hall", "wall", "front_gate", "warehouse"]
 const PLAZA_STATE_SUBJECT_ID := "system"
 
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
-	"work_started", "work_completed", "work_failed", "repair_assist_started", "eat_started", "eat_completed",
+	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed",
 	"dialogue_started", "dialogue_turn", "dialogue_ended",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "npc_recruited", "npc_left_recruited_state",
 	"combat_started", "combat_ended", "attack_made", "damage_taken", "low_hp_triggered",
 	"unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
-	"plaza_notice_changed", "plaza_status_changed"
+	"plaza_notice_changed", "plaza_status_changed", "location_status_changed"
 ]
 
 const REQUIRED_PAYLOAD_FIELDS := {
-	"location_entered": ["to_location_id", "from_location_id", "location_snapshot"],
+	"location_entered": ["to_location_id", "from_location_id"],
+	"location_exited": ["from_location_id", "to_location_id"],
 	"work_started": ["action_id", "workstation_id"],
 	"work_completed": ["action_id", "input_resources", "output_resources"],
 	"work_failed": ["action_id", "reason"],
@@ -44,6 +44,11 @@ var _npc_daily_event_ids: Dictionary = {}
 var _npc_daily_witness_ids: Dictionary = {}
 var _plaza_public_query_event_ids: Array[String] = []
 var _location_info_nodes: Dictionary = {}
+var _last_location_state_keys: Dictionary = {}
+var _last_plaza_external_state_keys: Dictionary = {}
+var _last_plaza_external_states: Dictionary = {}
+var _last_location_external_states: Dictionary = {}
+var _last_location_workstation_states: Dictionary = {}
 var _event_counter := 0
 
 
@@ -54,12 +59,20 @@ func initialize() -> void:
 	_npc_daily_witness_ids.clear()
 	_plaza_public_query_event_ids.clear()
 	_initialize_location_info_nodes()
+	_last_location_state_keys.clear()
+	_last_plaza_external_state_keys.clear()
+	_last_plaza_external_states.clear()
+	_last_location_external_states.clear()
+	_last_location_workstation_states.clear()
 	_event_counter = 0
 
 
 func _ready() -> void:
 	initialize()
 	_sync_initial_people_present()
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and not event_bus.building_state_changed.is_connected(_on_building_state_changed):
+		event_bus.building_state_changed.connect(_on_building_state_changed)
 
 
 func add_event(event: Dictionary) -> Dictionary:
@@ -132,7 +145,37 @@ func move_npc_between_locations(npc_id: String, from_location_id: String, to_loc
 	_add_person_to_location(normalized_to_location, npc_id)
 	var snapshot := get_location_snapshot(normalized_to_location)
 	_emit_location_info_changed(normalized_to_location)
+	if normalized_from_location != normalized_to_location:
+		_record_location_entry_snapshot_witness(npc_id, normalized_to_location, snapshot)
 	return snapshot
+
+
+func _record_location_entry_snapshot_witness(npc_id: String, location_id: String, snapshot: Dictionary) -> void:
+	if npc_id.is_empty() or snapshot.is_empty():
+		return
+
+	var normalized_location_id := _normalize_location_id(location_id)
+	if not is_enterable_location(normalized_location_id):
+		normalized_location_id = DEFAULT_LOCATION_ID
+
+	var event := add_event({
+		"type": "location_status_changed",
+		"subject_npc_id": PLAZA_STATE_SUBJECT_ID,
+		"actor_ids": [PLAZA_STATE_SUBJECT_ID],
+		"target_ids": [normalized_location_id],
+		"location_id": normalized_location_id,
+		"visibility": DEFAULT_VISIBILITY,
+		"importance": 30,
+		"payload": {
+			"reason": "location_entry_snapshot",
+			"location_snapshot": snapshot.duplicate(true),
+			"building_id": normalized_location_id,
+			"building_name": _get_location_name(normalized_location_id),
+			"building_snapshot": snapshot.get("building", {})
+		}
+	})
+	if not event.is_empty():
+		add_witness_event(npc_id, str(event.get("event_id", "")))
 
 
 func get_location_snapshot(location_id: String) -> Dictionary:
@@ -148,25 +191,25 @@ func get_location_snapshot(location_id: String) -> Dictionary:
 		"name": _get_location_name(normalized_location_id),
 		"is_enterable": true,
 		"people_present": _normalize_string_array(node.get("people_present", [])),
-		"people_count": _normalize_string_array(node.get("people_present", [])).size(),
 		"current_notice": str(node.get("current_notice", "")),
 		"current_orders": str(node.get("current_orders", ""))
 	}
 
 	if normalized_location_id == DEFAULT_LOCATION_ID:
 		snapshot["building"] = {}
-		snapshot["key_entities"] = _get_plaza_key_entity_snapshots()
+		snapshot["building_external_states"] = _get_all_building_external_state_snapshots()
+		snapshot["key_entities"] = snapshot["building_external_states"]
 		snapshot["has_building_hp"] = false
-		snapshot["current_npc_count"] = int(snapshot.get("people_count", 0))
 		snapshot["current_enemy_count"] = _get_current_enemy_count()
 	else:
-		snapshot["building"] = _get_building_state_snapshot(normalized_location_id)
+		snapshot["building"] = _get_building_full_state_snapshot(normalized_location_id)
 		snapshot["key_entities"] = {}
-		snapshot["has_building_hp"] = true
+		snapshot["has_building_hp"] = false
 	var building_snapshot: Dictionary = snapshot.get("building", {})
-	snapshot["workstations"] = building_snapshot.get("workstations", [])
-	snapshot["workstation_count"] = snapshot.get("workstations", []).size()
-	snapshot["occupied_workstation_count"] = _count_occupied_workstations(snapshot.get("workstations", []))
+	var internal_state: Dictionary = building_snapshot.get("internal_state", {})
+	snapshot["external_state"] = building_snapshot.get("external_state", {})
+	snapshot["internal_state"] = internal_state
+	snapshot["workstations"] = internal_state.get("workstations", building_snapshot.get("workstations", []))
 	return snapshot.duplicate(true)
 
 
@@ -200,11 +243,10 @@ func broadcast_plaza_state_change(reason: String, payload: Dictionary = {}, acto
 
 
 func notify_key_entity_state_changed(building_id: String, reason: String = "key_entity_changed") -> Dictionary:
-	if not PLAZA_KEY_ENTITY_IDS.has(building_id):
-		return {}
-	var key_entities := _get_plaza_key_entity_snapshots()
+	var key_entities := _get_all_building_external_state_snapshots()
 	return _broadcast_plaza_state_changed(reason, {
 		"building_id": building_id,
+		"building_name": str(key_entities.get(building_id, {}).get("name", building_id)),
 		"building_snapshot": key_entities.get(building_id, {}),
 		"key_entities": key_entities
 	})
@@ -441,6 +483,68 @@ func _remove_person_from_location(location_id: String, npc_id: String, emit_chan
 			_emit_location_info_changed(location_id)
 
 
+func _on_building_state_changed(building_id: String) -> void:
+	if building_id.is_empty():
+		return
+
+	var external_snapshot := _get_building_external_state_snapshot(building_id)
+	if external_snapshot.is_empty():
+		return
+
+	var external_key := JSON.stringify(external_snapshot)
+	if str(_last_plaza_external_state_keys.get(building_id, "")) != external_key:
+		_last_plaza_external_state_keys[building_id] = external_key
+		var plaza_changed_fields := _diff_state_fields(
+			_last_plaza_external_states.get(building_id, {}),
+			external_snapshot,
+			["level", "condition"]
+		)
+		_last_plaza_external_states[building_id] = external_snapshot.duplicate(true)
+		_broadcast_plaza_state_changed("building_external_state_changed", {
+			"building_id": building_id,
+			"building_name": str(external_snapshot.get("name", building_id)),
+			"changed_fields": plaza_changed_fields
+		})
+
+	if not is_enterable_location(building_id):
+		return
+
+	var location_snapshot := get_location_snapshot(building_id)
+	var location_external_state: Dictionary = location_snapshot.get("external_state", {})
+	var location_external_key := JSON.stringify(location_external_state)
+	var location_external_cache_key := "%s:external" % building_id
+	if str(_last_location_state_keys.get(location_external_cache_key, "")) != location_external_key:
+		_last_location_state_keys[location_external_cache_key] = location_external_key
+		var location_changed_fields := _diff_state_fields(
+			_last_location_external_states.get(building_id, {}),
+			location_external_state,
+			["level", "condition"]
+		)
+		_last_location_external_states[building_id] = location_external_state.duplicate(true)
+		_broadcast_location_state_changed(building_id, "building_external_state_changed", {
+			"building_id": building_id,
+			"building_name": str(external_snapshot.get("name", building_id)),
+			"changed_fields": location_changed_fields
+		})
+
+	var workstations := _normalize_workstations_for_info(location_snapshot.get("workstations", []))
+	var workstation_state := _workstation_state_by_id(workstations)
+	var location_internal_key := JSON.stringify(workstation_state)
+	var location_internal_cache_key := "%s:internal" % building_id
+	if str(_last_location_state_keys.get(location_internal_cache_key, "")) != location_internal_key:
+		_last_location_state_keys[location_internal_cache_key] = location_internal_key
+		var changed_workstations := _diff_workstation_states(
+			_last_location_workstation_states.get(building_id, {}),
+			workstation_state
+		)
+		_last_location_workstation_states[building_id] = workstation_state.duplicate(true)
+		_broadcast_location_state_changed(building_id, "building_internal_state_changed", {
+			"building_id": building_id,
+			"building_name": str(external_snapshot.get("name", building_id)),
+			"changed_workstations": changed_workstations
+		})
+
+
 func _broadcast_public_event(event: Dictionary, location_id: String) -> void:
 	if not _events_by_id.has(str(event.get("event_id", ""))):
 		return
@@ -465,16 +569,21 @@ func _broadcast_plaza_state_changed(
 	var snapshot := get_location_snapshot(DEFAULT_LOCATION_ID)
 	var payload := extra_payload.duplicate(true)
 	payload["reason"] = reason
-	payload["plaza_snapshot"] = snapshot
-	payload["people_count"] = int(snapshot.get("people_count", 0))
-	payload["enemy_count"] = int(snapshot.get("current_enemy_count", 0))
-	payload["key_entities"] = snapshot.get("key_entities", {})
-	payload["current_notice"] = str(snapshot.get("current_notice", ""))
+	if reason == "notice_changed":
+		payload["current_notice"] = str(snapshot.get("current_notice", ""))
+	elif not payload.has("changed_fields"):
+		payload["enemy_count"] = int(snapshot.get("current_enemy_count", 0))
+		payload["key_entities"] = snapshot.get("key_entities", {})
+		payload["building_external_states"] = snapshot.get("building_external_states", {})
+		payload["current_notice"] = str(snapshot.get("current_notice", ""))
+	var target_ids: Array[String] = [DEFAULT_LOCATION_ID]
+	if payload.has("building_id"):
+		target_ids.append(str(payload["building_id"]))
 	return add_event({
 		"type": event_type,
 		"subject_npc_id": actor_id,
 		"actor_ids": [actor_id],
-		"target_ids": [DEFAULT_LOCATION_ID],
+		"target_ids": target_ids,
 		"location_id": DEFAULT_LOCATION_ID,
 		"visibility": PUBLIC_VISIBILITY,
 		"importance": 40,
@@ -482,7 +591,53 @@ func _broadcast_plaza_state_changed(
 	})
 
 
-func _get_building_state_snapshot(building_id: String) -> Dictionary:
+func _broadcast_location_state_changed(
+	location_id: String,
+	reason: String,
+	extra_payload: Dictionary = {}
+) -> Dictionary:
+	var normalized_location_id := _normalize_location_id(location_id)
+	if not is_enterable_location(normalized_location_id):
+		normalized_location_id = DEFAULT_LOCATION_ID
+	if normalized_location_id == DEFAULT_LOCATION_ID:
+		return _broadcast_plaza_state_changed(reason, extra_payload)
+
+	var snapshot := get_location_snapshot(normalized_location_id)
+	var payload := extra_payload.duplicate(true)
+	payload["reason"] = reason
+	payload["building_id"] = normalized_location_id
+	payload["building_name"] = _get_location_name(normalized_location_id)
+	if not payload.has("changed_fields") and not payload.has("changed_workstations"):
+		payload["location_snapshot"] = snapshot
+		payload["building_snapshot"] = snapshot.get("building", {})
+	return add_event({
+		"type": "location_status_changed",
+		"subject_npc_id": PLAZA_STATE_SUBJECT_ID,
+		"actor_ids": [PLAZA_STATE_SUBJECT_ID],
+		"target_ids": [normalized_location_id],
+		"location_id": normalized_location_id,
+		"visibility": LOCAL_PUBLIC_VISIBILITY,
+		"importance": 35,
+		"payload": payload
+	})
+
+
+func _get_building_external_state_snapshot(building_id: String) -> Dictionary:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null:
+		return {}
+	var building: Dictionary = building_system.get_building(building_id)
+	if building.is_empty():
+		return {}
+	return {
+		"id": building_id,
+		"name": str(building.get("name", building_id)),
+		"level": int(building.get("level", 1)),
+		"condition": str(building.get("condition", _derive_building_condition(building)))
+	}
+
+
+func _get_building_full_state_snapshot(building_id: String) -> Dictionary:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null:
 		return {}
@@ -490,25 +645,36 @@ func _get_building_state_snapshot(building_id: String) -> Dictionary:
 	if building.is_empty():
 		return {}
 	var workstations: Array = building.get("workstations", [])
-	return {
-		"id": building_id,
-		"name": str(building.get("name", building_id)),
-		"level": int(building.get("level", 1)),
-		"hp": int(building.get("hp", 0)),
-		"max_hp": int(building.get("max_hp", 0)),
-		"available": int(building.get("hp", 0)) > 0,
-		"tags": building.get("tags", []),
-		"workstations": workstations.duplicate(true),
-		"workstation_count": workstations.size(),
-		"occupied_workstation_count": _count_occupied_workstations(workstations)
+	var node: Dictionary = _location_info_nodes.get(building_id, {})
+	var people_present := _normalize_string_array(node.get("people_present", []))
+	var external_state := _get_building_external_state_snapshot(building_id)
+	var internal_state := {
+		"people_present": people_present,
+		"workstations": _normalize_workstations_for_info(workstations)
 	}
+	var snapshot := external_state.duplicate(true)
+	snapshot["external_state"] = external_state
+	snapshot["internal_state"] = internal_state
+	snapshot["people_present"] = people_present
+	snapshot["workstations"] = internal_state["workstations"]
+	return snapshot
 
 
-func _get_plaza_key_entity_snapshots() -> Dictionary:
+func _get_all_building_external_state_snapshots() -> Dictionary:
 	var snapshots := {}
-	for building_id in PLAZA_KEY_ENTITY_IDS:
-		snapshots[building_id] = _get_building_state_snapshot(building_id)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building_ids"):
+		return snapshots
+	for raw_building_id in building_system.get_building_ids():
+		var building_id := str(raw_building_id)
+		snapshots[building_id] = _get_building_external_state_snapshot(building_id)
 	return snapshots
+
+
+func _derive_building_condition(building: Dictionary) -> String:
+	if int(building.get("hp", 0)) >= int(building.get("max_hp", 0)):
+		return "intact"
+	return "damaged"
 
 
 func _get_current_enemy_count() -> int:
@@ -528,6 +694,60 @@ func _count_occupied_workstations(workstations: Array) -> int:
 		if not occupied_by.is_empty() and occupied_by != "<null>":
 			count += 1
 	return count
+
+
+func _normalize_workstations_for_info(workstations: Array) -> Array[Dictionary]:
+	var normalized: Array[Dictionary] = []
+	for raw_workstation in workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation: Dictionary = raw_workstation
+		var occupied_by := str(workstation.get("occupied_by", ""))
+		if occupied_by == "<null>":
+			occupied_by = ""
+		normalized.append({
+			"id": str(workstation.get("id", "")),
+			"type": str(workstation.get("type", "general")),
+			"occupied_by": occupied_by,
+			"status": "occupied" if not occupied_by.is_empty() else "free"
+		})
+	return normalized
+
+
+func _diff_state_fields(previous_state: Dictionary, current_state: Dictionary, field_names: Array[String]) -> Dictionary:
+	var changed := {}
+	for field_name in field_names:
+		if previous_state.get(field_name) != current_state.get(field_name):
+			changed[field_name] = current_state.get(field_name)
+	return changed
+
+
+func _workstation_state_by_id(workstations: Array) -> Dictionary:
+	var states := {}
+	for raw_workstation in workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation: Dictionary = raw_workstation
+		var workstation_id := str(workstation.get("id", workstation.get("type", "")))
+		if workstation_id.is_empty():
+			continue
+		states[workstation_id] = {
+			"id": workstation_id,
+			"type": str(workstation.get("type", "general")),
+			"occupied_by": str(workstation.get("occupied_by", "")),
+			"status": str(workstation.get("status", "free"))
+		}
+	return states
+
+
+func _diff_workstation_states(previous_states: Dictionary, current_states: Dictionary) -> Array[Dictionary]:
+	var changed: Array[Dictionary] = []
+	for workstation_id in current_states.keys():
+		var current_state: Dictionary = current_states[workstation_id]
+		var previous_state: Dictionary = previous_states.get(workstation_id, {})
+		if previous_state.get("occupied_by") != current_state.get("occupied_by") or previous_state.get("status") != current_state.get("status"):
+			changed.append(current_state.duplicate(true))
+	return changed
 
 
 func _normalize_event(event: Dictionary) -> Dictionary:
@@ -623,15 +843,17 @@ func _format_summary(event: Dictionary) -> String:
 	var event_type := str(event.get("type", ""))
 	var payload: Dictionary = event.get("payload", {})
 	if event_type == "plaza_notice_changed":
-		return "Plaza notice changed: %s" % str(payload.get("notice", ""))
+		return "广场公告更新：%s" % str(payload.get("notice", ""))
 	if event_type == "plaza_status_changed":
-		return "Plaza public state changed: %s" % str(payload.get("reason", "state_changed"))
+		return _format_building_or_plaza_state_summary(payload)
+	if event_type == "location_status_changed":
+		return _format_location_state_summary(payload)
 	var actor := _get_npc_display_name(str(event.get("subject_npc_id", "")))
 	var location := _get_location_name(str(event.get("location_id", DEFAULT_LOCATION_ID)))
 
 	match event_type:
 		"location_entered":
-			return "%s进入了%s。" % [actor, _get_location_name(str(payload.get("to_location_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+			return _format_location_entered_summary(actor, payload, event)
 		"location_exited":
 			return "%s离开了%s。" % [actor, _get_location_name(str(payload.get("from_location_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
 		"work_started":
@@ -650,7 +872,9 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("reason", "原因不明"))
 			]
 		"repair_assist_started":
-			return "%s开始协助修复%s。" % [actor, location]
+			return "%s开始协助修复%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+		"upgrade_assist_started":
+			return "%s开始协助升级%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
 		"eat_started":
 			return "%s开始在%s吃饭。" % [actor, location]
 		"eat_completed":
@@ -675,6 +899,140 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s在%s休息后恢复了些精神。" % [actor, location]
 		_:
 			return "%s发生了%s事件。" % [actor, event_type]
+
+
+func _format_building_or_plaza_state_summary(payload: Dictionary) -> String:
+	var building_snapshot: Dictionary = payload.get("building_snapshot", {})
+	var building_name := str(payload.get("building_name", building_snapshot.get("name", "")))
+	var changed_fields: Dictionary = payload.get("changed_fields", {})
+	if not building_name.is_empty() and not changed_fields.is_empty():
+		return _format_external_state_delta_sentence(building_name, changed_fields)
+	if not building_name.is_empty():
+		return _format_external_state_sentence(building_name, building_snapshot)
+	return "广场公告变为：%s。" % str(payload.get("current_notice", ""))
+
+
+func _format_location_entered_summary(actor: String, payload: Dictionary, event: Dictionary) -> String:
+	var location_id := str(payload.get("to_location_id", event.get("location_id", DEFAULT_LOCATION_ID)))
+	var location_name := _get_location_name(location_id)
+	return "%s进入了%s。" % [actor, location_name]
+
+
+func _format_location_state_summary(payload: Dictionary) -> String:
+	var building_snapshot: Dictionary = payload.get("building_snapshot", {})
+	var external_state: Dictionary = building_snapshot.get("external_state", building_snapshot)
+	var internal_state: Dictionary = building_snapshot.get("internal_state", {})
+	var building_name := str(payload.get("building_name", external_state.get("name", "该建筑")))
+	var reason := str(payload.get("reason", ""))
+	if reason == "location_entry_snapshot":
+		return _format_location_entry_snapshot_summary(payload)
+	if reason == "building_external_state_changed" and payload.has("changed_fields"):
+		return _format_external_state_delta_sentence(building_name, payload.get("changed_fields", {}))
+	if reason == "building_internal_state_changed" and payload.has("changed_workstations"):
+		return "%s里的工位状态：%s。" % [building_name, _format_workstation_states(payload.get("changed_workstations", []))]
+	if reason == "npc_entered_location":
+		return "%s %s内现在有%s。%s里的工位状态：%s。" % [
+			_format_external_state_sentence(building_name, external_state),
+			building_name,
+			_format_people_present(internal_state.get("people_present", [])),
+			building_name,
+			_format_workstation_states(internal_state.get("workstations", []))
+		]
+	if reason == "npc_left_location":
+		return "%s内现在有%s。" % [building_name, _format_people_present(internal_state.get("people_present", []))]
+	if reason == "building_internal_state_changed":
+		return "%s里的工位状态：%s。" % [building_name, _format_workstation_states(internal_state.get("workstations", []))]
+	if reason == "building_external_state_changed":
+		return _format_external_state_sentence(building_name, external_state)
+	return _format_external_state_sentence(building_name, external_state)
+
+
+func _format_location_entry_snapshot_summary(payload: Dictionary) -> String:
+	var snapshot: Dictionary = payload.get("location_snapshot", {})
+	var location_name := str(snapshot.get("name", payload.get("building_name", "")))
+	if location_name.is_empty():
+		location_name = _get_location_name(str(payload.get("building_id", DEFAULT_LOCATION_ID)))
+
+	var building_snapshot: Dictionary = snapshot.get("building", {})
+	if building_snapshot.is_empty():
+		var external_states: Dictionary = snapshot.get("building_external_states", {})
+		var plaza_parts: Array[String] = []
+		for building_id in external_states.keys():
+			var external_state: Dictionary = external_states[building_id]
+			plaza_parts.append(_format_external_state_sentence(str(external_state.get("name", building_id)), external_state))
+		if plaza_parts.is_empty():
+			return "%s当前没有可传播的建筑状态。" % location_name
+		return "%s当前可见建筑状态：%s" % [location_name, " ".join(plaza_parts)]
+
+	var external_state: Dictionary = building_snapshot.get("external_state", building_snapshot)
+	var internal_state: Dictionary = building_snapshot.get("internal_state", {})
+	var parts: Array[String] = [
+		_format_external_state_sentence(location_name, external_state),
+		"%s内现在有%s。" % [location_name, _format_people_present(internal_state.get("people_present", []))],
+		"%s里的工位状态：%s。" % [location_name, _format_workstation_states(internal_state.get("workstations", []))]
+	]
+	return " ".join(parts)
+
+
+func _format_external_state_delta_sentence(building_name: String, changed_fields: Dictionary) -> String:
+	if changed_fields.is_empty():
+		return "%s状态未变。" % building_name
+	if changed_fields.has("condition"):
+		return "%s%s。" % [building_name, _format_building_condition(str(changed_fields.get("condition", "unknown")))]
+	if changed_fields.has("level"):
+		return "%s等级变为%d级。" % [building_name, int(changed_fields.get("level", 1))]
+	return "%s状态发生变化。" % building_name
+
+
+func _format_external_state_sentence(building_name: String, external_state: Dictionary) -> String:
+	var level := int(external_state.get("level", 1))
+	var condition := str(external_state.get("condition", "unknown"))
+	if condition == "intact" and level > 1:
+		return "%s等级变为%d级。" % [building_name, level]
+	return "%s%s。" % [building_name, _format_building_condition(condition)]
+
+
+func _format_people_present(raw_people: Variant) -> String:
+	var people := _normalize_string_array(raw_people)
+	if people.is_empty():
+		return "没有人"
+	var names: Array[String] = []
+	for npc_id in people:
+		names.append(_get_npc_display_name(npc_id))
+	return "、".join(names)
+
+
+func _format_workstation_states(raw_workstations: Variant) -> String:
+	if not raw_workstations is Array or (raw_workstations as Array).is_empty():
+		return "没有工位"
+	var parts: Array[String] = []
+	for raw_workstation in raw_workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation: Dictionary = raw_workstation
+		var station_name := str(workstation.get("id", workstation.get("type", "工位")))
+		var occupied_by := str(workstation.get("occupied_by", ""))
+		if occupied_by.is_empty() or occupied_by == "<null>":
+			parts.append("%s空闲" % station_name)
+		else:
+			parts.append("%s被%s占用" % [station_name, _get_npc_display_name(occupied_by)])
+	if parts.is_empty():
+		return "没有工位"
+	return "，".join(parts)
+
+
+func _format_building_condition(condition: String) -> String:
+	match condition:
+		"intact":
+			return "完好"
+		"damaged":
+			return "受损"
+		"repairing":
+			return "正在修复"
+		"upgrading":
+			return "正在升级"
+		_:
+			return "状态未知"
 
 
 func _format_resource_delta(raw_delta: Variant) -> String:

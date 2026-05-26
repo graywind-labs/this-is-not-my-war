@@ -38,6 +38,11 @@ func _init() -> void:
 		push_error("Failed to assign eat action")
 		quit(1)
 		return
+	if not await _wait_until_current_action(npc_system, target_id, "eat_at_dining_hall"):
+		push_error("Eat action did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(1200.0, 1.0)
 	if not await _wait_until_action_result(npc_system, target_id, "completed_eat"):
 		push_error("Eat action did not complete")
 		quit(1)
@@ -138,6 +143,15 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 		await process_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("last_action_result", "")) == expected_result:
+			return true
+	return false
+
+
+func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
+	for frame in range(300):
+		await process_frame
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if str(state.get("current_action", "")) == expected_action:
 			return true
 	return false
 

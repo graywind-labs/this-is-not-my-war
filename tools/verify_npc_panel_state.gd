@@ -87,6 +87,42 @@ func _init() -> void:
 		quit(1)
 		return
 
+	building_system.debug_select_building("main_hall")
+	await process_frame
+	if not building_system.debug_damage_building("main_hall", 30):
+		push_error("Failed to damage selected building for repair panel switching check")
+		quit(1)
+		return
+	await process_frame
+	if not building_panel.visible:
+		push_error("BuildingPanel should remain visible after selected building state changes")
+		quit(1)
+		return
+	if not building_system.repair_building("main_hall"):
+		push_error("Failed to start selected building repair")
+		quit(1)
+		return
+	await process_frame
+
+	npc_system.debug_select_npc(npc_id)
+	await process_frame
+	if not npc_panel.visible or building_panel.visible:
+		push_error("NPCPanel should replace BuildingPanel while selected building is repairing")
+		quit(1)
+		return
+
+	var event_bus := root.get_node_or_null("EventBus")
+	if event_bus == null:
+		push_error("EventBus not found")
+		quit(1)
+		return
+	event_bus.logical_time_tick.emit(120.0, 1.0)
+	await process_frame
+	if not npc_panel.visible or building_panel.visible:
+		push_error("Building repair progress should not switch the right panel away from NPCPanel")
+		quit(1)
+		return
+
 	var close_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/Header/NPCPanelCloseButton") as Button
 	if close_button == null:
 		push_error("NPCPanel close button not found")

@@ -9,9 +9,9 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 当前重点覆盖 M1-M4 已完成内容中原本主要靠脚本验证的能力：
 
 - 资源增减、扣除失败和负数保护。
-- 建筑选中、受损、倒计时修复、升级和关键实体状态广播。
+- 建筑选中、受损、倒计时修复、倒计时升级和全建筑外部状态广播。
 - NPC 选中、状态修改、移动到建筑、立即进入地点。
-- 工作、协助修复、吃饭、睡觉等行动调试指派。
+- 工作、协助修复、协助升级、吃饭、睡觉等行动调试指派。
 - TimeSystem 设定时间、跳小时、LLM 等待减速请求。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
@@ -68,7 +68,7 @@ const GM_ENABLED := true
 - 打开建筑面板。
 - 造成建筑受损。
 - 调用修复；修复会先扣资源并创建倒计时作业，建筑快照可观察剩余时间、进度、协助人数和加速倍率。
-- 调用升级。
+- 调用升级；升级会先扣资源并创建倒计时作业，建筑快照可观察升级状态、进度、剩余时间、协助人数和加速倍率。
 - 查看建筑快照。
 
 NPC：
@@ -85,13 +85,14 @@ NPC：
 - 指派指定行动；该下拉只列出 `data/action_defs.json` 中的普通行动，不包含按建筑写死的“修补围墙”等固定修复行动。
 - 指派工作。
 - 通过行动分组内的“修复目标”建筑下拉选择目标，再指派 NPC 协助该建筑的修复；协助修复是一个统一行为，建筑由该下拉或命令参数决定。
+- 通过行动分组内的“升级目标”建筑下拉选择目标，再指派 NPC 协助该建筑的升级；协助升级同样是带建筑参数的统一行为。
 - 指派吃饭。
 - 指派睡觉。
 
 记忆 / 见闻 / 广场：
 
 - 写入广场公告。
-- 查看地点快照。
+- 查看地点快照；广场快照包含所有建筑外部状态，可进入建筑快照包含该建筑外部 + 内部状态。
 - 查看 NPC 短期记忆。
 - 写入守备官给钱事件。
 - 写入守备官攻击 NPC 事件。
@@ -125,6 +126,7 @@ set_npc_state <npc_id> <key> <value>
 assign_action <npc_id> <action_id>
 work <npc_id> <building_id>
 assist_repair <npc_id> <building_id>
+assist_upgrade <npc_id> <building_id>
 eat <npc_id>
 sleep <npc_id>
 damage_building <building_id> <amount>
@@ -144,6 +146,8 @@ add_resource money 20
 damage_building wall 15
 repair_building wall
 assist_repair engineer_01 wall
+upgrade_building garden
+assist_upgrade engineer_01 garden
 set_time 2 9 30 0
 enter_location cook_01 dining_hall
 work gardener_01 garden

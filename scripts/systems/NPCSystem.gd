@@ -6,6 +6,7 @@ const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const PLAZA_LOCATION_ID := "plaza"
 const PICK_RAY_LENGTH := 1000.0
 const PROFESSIONAL_SKILLS: Array[String] = ["养马", "厨艺", "耕种", "打铁", "教练", "酿酒", "医术", "工程"]
 const WEAPON_SKILLS: Array[String] = ["剑盾", "长杆", "弓", "弩", "骑术"]
@@ -193,8 +194,7 @@ func move_npc_to_building(npc_id: String, building_id: String) -> bool:
 		push_warning("Cannot move NPC because node has no movement API: %s" % npc_id)
 		return false
 
-	var building: Dictionary = building_system.get_building(building_id)
-	var building_name := str(building.get("name", building_id))
+	var building_name := "广场" if building_id == PLAZA_LOCATION_ID else str(building_system.get_building(building_id).get("name", building_id))
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "moving_to_%s" % building_id,
 		"movement_target": building_id,
@@ -335,14 +335,16 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 	var previous_state: Dictionary = get_npc_state(npc_id)
 	var previous_location_id := str(previous_state.get("current_location", "plaza"))
 	var info_location_id := building_id
+	var previous_info_location_id := previous_location_id
 	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		previous_info_location_id = _get_info_location_id(memory_system, previous_location_id)
 		if not memory_system.is_enterable_location(building_id):
 			info_location_id = "plaza"
 		location_context = memory_system.move_npc_between_locations(npc_id, previous_location_id, info_location_id)
 	if location_context.is_empty() and building_system != null:
 		location_context = building_system.get_building_location_context(building_id)
 		building_name = str(location_context.get("name", building_id))
-	elif building_system != null:
+	elif building_system != null and building_id != PLAZA_LOCATION_ID:
 		var building: Dictionary = building_system.get_building(building_id)
 		building_name = str(building.get("name", location_context.get("name", building_id)))
 	else:
@@ -357,7 +359,9 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		"location_context": location_context
 	})
 	_refresh_npc_node(npc_id)
-	_log_location_entered(npc_id, previous_location_id, building_id, info_location_id, location_context)
+	if previous_info_location_id != info_location_id:
+		_log_location_exited(npc_id, previous_info_location_id, info_location_id)
+		_log_location_entered(npc_id, previous_info_location_id, building_id, info_location_id)
 	_emit_npc_state_changed(npc_id)
 
 
@@ -370,8 +374,10 @@ func debug_enter_location_immediately(npc_id: String, location_id: String) -> bo
 	var previous_location_id := str(previous_state.get("current_location", "plaza"))
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var info_location_id := location_id
+	var previous_info_location_id := previous_location_id
 	var location_context: Dictionary = {}
 	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		previous_info_location_id = _get_info_location_id(memory_system, previous_location_id)
 		if not memory_system.is_enterable_location(location_id):
 			info_location_id = "plaza"
 		location_context = memory_system.move_npc_between_locations(npc_id, previous_location_id, info_location_id)
@@ -385,7 +391,9 @@ func debug_enter_location_immediately(npc_id: String, location_id: String) -> bo
 		"location_context": location_context
 	})
 	_refresh_npc_node(npc_id)
-	_log_location_entered(npc_id, previous_location_id, location_id, info_location_id, location_context)
+	if previous_info_location_id != info_location_id:
+		_log_location_exited(npc_id, previous_info_location_id, info_location_id)
+		_log_location_entered(npc_id, previous_info_location_id, location_id, info_location_id)
 	_emit_npc_state_changed(npc_id)
 	return true
 
@@ -395,7 +403,7 @@ func _log_location_entered(
 	from_location_id: String,
 	to_location_id: String,
 	event_location_id: String,
-	location_context: Dictionary
+	location_context: Dictionary = {}
 ) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -411,7 +419,34 @@ func _log_location_entered(
 		"importance": 20,
 		"payload": {
 			"from_location_id": from_location_id,
-			"to_location_id": to_location_id,
-			"location_snapshot": location_context
+			"to_location_id": to_location_id
 		}
 	})
+
+
+func _log_location_exited(npc_id: String, from_location_id: String, to_location_id: String) -> void:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return
+	if from_location_id.is_empty() or from_location_id == to_location_id:
+		return
+
+	memory_system.add_event({
+		"type": "location_exited",
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": [from_location_id, to_location_id],
+		"location_id": from_location_id,
+		"visibility": "local_public",
+		"importance": 20,
+		"payload": {
+			"from_location_id": from_location_id,
+			"to_location_id": to_location_id
+		}
+	})
+
+
+func _get_info_location_id(memory_system: Node, location_id: String) -> String:
+	if memory_system != null and memory_system.has_method("is_enterable_location") and memory_system.is_enterable_location(location_id):
+		return location_id
+	return PLAZA_LOCATION_ID

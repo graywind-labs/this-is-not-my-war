@@ -41,8 +41,24 @@ func _init() -> void:
 		push_error("Plaza snapshot missing main hall key entity")
 		quit(1)
 		return
-	if not plaza_snapshot.has("current_npc_count") or not plaza_snapshot.has("current_enemy_count"):
-		push_error("Plaza snapshot missing current NPC/enemy counts")
+	if not plaza_snapshot.get("building_external_states", {}).has("clinic"):
+		push_error("Plaza snapshot did not include all building external states")
+		quit(1)
+		return
+	if plaza_snapshot.get("building_external_states", {}).get("main_hall", {}).has("workstations"):
+		push_error("Plaza external building state leaked internal workstation fields")
+		quit(1)
+		return
+	if plaza_snapshot.get("building_external_states", {}).get("main_hall", {}).has("hp"):
+		push_error("Plaza external building state should not expose HP")
+		quit(1)
+		return
+	if plaza_snapshot.get("building_external_states", {}).get("main_hall", {}).has("repair_remaining_seconds"):
+		push_error("Plaza external building state should not expose remaining repair time")
+		quit(1)
+		return
+	if not plaza_snapshot.has("current_enemy_count"):
+		push_error("Plaza snapshot missing current enemy count")
 		quit(1)
 		return
 
@@ -92,6 +108,25 @@ func _init() -> void:
 		return
 	if memory_system.get_npc_witness_events(plaza_npc_id).size() <= status_witness_before:
 		push_error("Key entity state change was not broadcast to plaza NPC")
+		quit(1)
+		return
+	var plaza_witness_events: Array = memory_system.get_npc_witness_events(plaza_npc_id)
+	var latest_witness: Dictionary = plaza_witness_events[plaza_witness_events.size() - 1]
+	var latest_payload: Dictionary = latest_witness.get("payload", {})
+	if not latest_payload.has("changed_fields"):
+		push_error("Building state witness should carry only changed external fields")
+		quit(1)
+		return
+	if latest_payload.has("building_snapshot") or latest_payload.has("building_external_states") or latest_payload.has("plaza_snapshot"):
+		push_error("Building state witness should not duplicate full building or plaza state")
+		quit(1)
+		return
+	if not str(latest_witness.get("summary", "")).contains("围墙"):
+		push_error("Building state witness summary did not name the changed building")
+		quit(1)
+		return
+	if str(latest_witness.get("summary", "")).contains("状态更新") or str(latest_witness.get("summary", "")).contains("HP"):
+		push_error("Building state witness summary should keep only concrete propagated state")
 		quit(1)
 		return
 

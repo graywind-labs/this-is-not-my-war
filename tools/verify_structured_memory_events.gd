@@ -30,6 +30,11 @@ func _init() -> void:
 		push_error("Failed to assign garden work")
 		quit(1)
 		return
+	if not await _wait_until_current_action(npc_system, npc_id, "work_garden"):
+		push_error("Garden work did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(3600.0, 1.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_work_garden"):
 		push_error("Garden work did not complete")
 		quit(1)
@@ -46,6 +51,11 @@ func _init() -> void:
 		push_error("Failed to assign eat action")
 		quit(1)
 		return
+	if not await _wait_until_current_action(npc_system, eater_id, "eat_at_dining_hall"):
+		push_error("Eat action did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(1200.0, 1.0)
 	if not await _wait_until_action_result(npc_system, eater_id, "completed_eat"):
 		push_error("Eat action did not complete")
 		quit(1)
@@ -56,6 +66,11 @@ func _init() -> void:
 		push_error("Failed to assign sleep action")
 		quit(1)
 		return
+	if not await _wait_until_current_action(npc_system, eater_id, "sleep_in_dormitory"):
+		push_error("Sleep action did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(23400.0, 1.0)
 	if not await _wait_until_action_result(npc_system, eater_id, "completed_sleep"):
 		push_error("Sleep action did not complete")
 		quit(1)
@@ -98,6 +113,7 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var plaza_public_before: int = memory_system.debug_get_plaza_public_events().size()
 	var public_event: Dictionary = memory_system.add_event({
 		"type": "combat_started",
 		"subject_npc_id": npc_id,
@@ -108,7 +124,7 @@ func _init() -> void:
 		"importance": 70,
 		"payload": {"wave_id": "debug_wave"}
 	})
-	if public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != 1:
+	if public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != plaza_public_before + 1:
 		push_error("Plaza public event query failed")
 		quit(1)
 		return
@@ -123,7 +139,7 @@ func _init() -> void:
 		"importance": 70,
 		"payload": {"wave_id": "debug_indoor_wave"}
 	})
-	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != 2:
+	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_public_events().size() != plaza_public_before + 2:
 		push_error("Plaza public query should include public events without using plaza as storage")
 		quit(1)
 		return
@@ -176,6 +192,15 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 		await process_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("last_action_result", "")) == expected_result:
+			return true
+	return false
+
+
+func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
+	for frame in range(600):
+		await process_frame
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if str(state.get("current_action", "")) == expected_action:
 			return true
 	return false
 

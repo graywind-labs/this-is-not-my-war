@@ -85,17 +85,17 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 
 ```json
 {
-  "id": "main_hall",
-  "name": "主厅",
+  "id": "dormitory",
+  "name": "宿舍",
   "level": 1,
-  "hp": 180,
-  "max_hp": 180,
-  "tags": ["command", "failure_target"],
-  "scene_nodes": ["MainHall"],
+  "hp": 120,
+  "max_hp": 120,
+  "tags": ["living", "rest"],
+  "scene_nodes": ["Dormitory"],
   "workstations": [
     {
-      "id": "command_table_01",
-      "type": "command",
+      "id": "bed_01",
+      "type": "rest",
       "occupied_by": null
     }
   ],
@@ -108,16 +108,18 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
     "level_time_factor": 0.35
   },
   "upgrade": {
-    "cost": {"stone": 4},
-    "max_level": 3,
-    "max_hp_bonus": 30,
-    "workstation_bonus": 0,
-    "workstation_type": "command"
+    "cost": {"stone": 3},
+    "max_level": 2,
+    "max_hp_bonus": 20,
+    "workstation_bonus": 1,
+    "workstation_type": "rest"
   }
 }
 ```
 
-`repair` / `upgrade` 为 T0205 起使用的可选字段。未配置时建筑面板会禁用对应按钮；已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。
+`repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。2026-05-25 起，所有建筑都应具备 `upgrade` 最小配置；升级同样在开始时一次性扣除资源并创建倒计时升级作业，完成后才应用等级、Max HP 和工作位奖励。
+
+只有可进入建筑使用 `workstations` 表达内部状态。主厅、围墙、城门、后门、仓库等不可进入建筑应保留 HP、等级、修复/升级等权威状态，但 `workstations` 为空，且不会在广场外部状态中暴露内部 NPC 或工位。NPC 见闻传播使用的建筑外部状态只包含等级和完好/受损/正在修复/正在升级。
 
 公告牌不使用 Building Definition。主厅前的 `NoticeBoard` 节点只是视觉占位和后续公告输入接口，不能配置 `hp`、`max_hp`、`workstations`、`repair` 或 `upgrade`；公告文本应写入广场 Location Info Node 的当前状态。
 
@@ -130,7 +132,7 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
   "type": "work",
   "location_required": "garden",
   "skill": "耕种",
-  "base_duration_hours": 1,
+  "duration_seconds": 3600,
   "input_resources": {},
   "output_resources": {
     "grain": 2
@@ -140,13 +142,13 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 }
 ```
 
-T0305 起，行动定义支持三类 JSON 最小行动；协助修复是运行时参数化行为，不作为每个建筑一条固定 JSON 行动：
+T0305 起，行动定义支持三类 JSON 最小行动；2026-05-25 起，行动时长优先使用 `duration_seconds`，旧的 `base_duration_hours` 仅保留为兼容字段。行动抵达地点后按 TimeSystem 逻辑秒推进，不应在抵达瞬间完成。协助修复/协助升级是运行时参数化行为，不作为每个建筑一条固定 JSON 行动：
 
-- `work`：读取 `location_required`、`input_resources`、`output_resources`、`fatigue_delta`、`satiety_delta` 后由程序结算。
-- `eat`：使用 `food_options` 数组定义可消耗食物及饱食度恢复量，当前餐食优先于粮食。
-- `sleep`：通过 `fatigue_delta` 和 `satiety_delta` 调整 NPC 状态。
+- `work`：读取 `location_required`、`duration_seconds`、`input_resources`、`output_resources`、`fatigue_delta`、`satiety_delta` 后由程序结算。当前以 3600 秒作为最小工作批次，批次结束时结算输入、产出和状态变化。
+- `eat`：使用 `food_options` 数组定义可消耗食物及饱食度恢复量，当前餐食优先于粮食。标准餐食时长为 1200 秒，完整进餐恢复约 50 点饱食度。
+- `sleep`：通过 `duration_seconds`、`fatigue_delta` 和 `satiety_delta` 调整 NPC 状态。当前睡眠基准为 23400 秒降低 100 点疲劳，并按逻辑秒逐步结算。
 
-`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”的固定建筑修复行动；建筑 HP、资源预付、修复倒计时和协助者加成都由 `BuildingSystem` 结算。
+`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `plaza_public`，payload 通过 `building_id` 保留实际目标建筑。
 
 ## Weapon Definition
 
@@ -218,7 +220,7 @@ T0305 起，行动定义支持三类 JSON 最小行动；协助修复是运行�
 - `visibility`：`private`、`local_public`、`plaza_public`。
 - `importance`：用于 LLM 摘要、见闻裁剪和睡前总结。
 - `summary`：短文本摘要。
-- `payload`：事件类型专属属性。对话全文、地点状态快照、战斗伤害数值、建筑状态等都放在这里。
+- `payload`：事件类型专属属性。对话全文、战斗伤害数值、建筑状态变化等都放在这里。完整地点状态快照不应放进 `location_entered` / `location_exited` 亲历事件；进入地点时的完整状态应作为进入者的见闻记录。
 
 `summary` 不由 LLM 生成，也不由通用主语/宾语规则自动推断。每个 `type` 必须有确定性 summary 模板和对应 payload schema：
 
@@ -238,7 +240,7 @@ T0305 起，行动定义支持三类 JSON 最小行动；协助修复是运行�
 
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
 - 移动与地点：`location_entered`、`location_exited`
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`eat_started`、`eat_completed`
+- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`
 - 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
@@ -265,12 +267,14 @@ T0402 已接入的行动事件 payload：
     "building_hp_restore": 0,
     "satiety_delta": -4,
     "fatigue_delta": 8,
-    "duration_hours": 1
+    "duration_seconds": 3600
   }
 }
 ```
 
-T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_status_changed`. Plaza snapshots use `key_entities` for `main_hall`, `wall`, `front_gate`, and `warehouse`; the plaza itself has no building HP and exposes `has_building_hp == false`, `current_npc_count`, and `current_enemy_count`.
+T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_status_changed`; T0403/T0405 now also use `location_status_changed` for current building-state broadcasts. Plaza snapshots use `building_external_states` for every building's propagatable external state; `key_entities` is kept as a compatibility alias for that same external-state dictionary. The plaza itself has no building HP and exposes `has_building_hp == false` and `current_enemy_count`. Status event summaries must name the specific building and concrete state that changed, without generic prefixes such as "建筑状态更新".
+
+Revised event payload rule: `location_entered` and `location_exited` only store movement facts such as `from_location_id` and `to_location_id`. They do not store full `location_snapshot` payloads. The entering NPC receives one separate witness entry containing the current location snapshot. NPCs already present receive only the local public enter/exit event; they do not receive a duplicate full `people_present` snapshot. Later state events should carry changed fields only, such as a changed building condition, a level change, a notice change, or one workstation occupancy change.
 
 ## NPC Daily Memory
 
@@ -293,28 +297,29 @@ T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_sta
 
 ## Location / Building Info Node
 
-地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；普通建筑不拥有公告牌字段，当前公告文本只保存在广场状态中。公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。
+地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；普通建筑不拥有公告牌字段，当前公告文本只保存在广场状态中。公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。NPC 进入地点时，完整当前状态只写给进入者的见闻库；已经在场的 NPC 通过 `location_entered` / `location_exited` 事件得知人员变化，不再接收完整 `people_present` 状态。除进入者的一次性快照外，状态广播应使用字段级差量。
 
 ```json
 {
   "id": "chapel",
   "name": "小教堂",
   "kind": "enterable_building",
-  "building_hp": 100,
-  "level": 1,
-  "people_present": ["priest_01", "doctor_01"],
-  "workstations": [
-    {
-      "id": "altar",
-      "occupied_by": "priest_01"
-    }
-  ],
+  "external_state": {
+    "level": 1,
+    "condition": "intact"
+  },
+  "internal_state": {
+    "people_present": ["priest_01", "doctor_01"],
+    "workstations": [
+      {
+        "id": "altar",
+        "status": "occupied",
+        "occupied_by": "priest_01"
+      }
+    ]
+  },
   "current_public_note_ids": [],
-  "public_notes": [],
-  "state_snapshot": {
-    "available_workstations": 0,
-    "occupied_workstations": 1
-  }
+  "public_notes": []
 }
 ```
 
@@ -328,15 +333,20 @@ T0404 adds plaza public state event types: `plaza_notice_changed` and `plaza_sta
   "people_present": ["stableman_01", "veteran_deputy_01"],
   "current_public_note_ids": [],
   "public_notes": [],
-  "state_snapshot": {
-    "main_hall_hp": 180,
-    "front_gate_hp": 120,
-    "wall_hp": 150
+  "building_external_states": {
+    "main_hall": {
+      "level": 1,
+      "condition": "intact"
+    },
+    "chapel": {
+      "level": 1,
+      "condition": "intact"
+    }
   }
 }
 ```
 
-主厅、围墙、城门、仓库等不可进入实体不作为 NPC 常规进入地点；它们的 HP、可用性等当前状态进入广场 `state_snapshot`。受损等公开事件通过广场节点即时广播给当时在场的 NPC。NPC 进入广场时，`location_entered.payload.location_snapshot` 应包含这些当前状态，但不会包含过去事件历史。
+主厅、围墙、城门、后门、仓库等不可进入实体不作为 NPC 常规进入地点；它们只提供可传播外部状态，不暴露内部 NPC 或工位状态。所有建筑的可传播外部状态进入广场 `building_external_states`。受损、修复、升级和等级变化等公开状态变化通过广场节点即时广播给当时在场的 NPC。HP、Max HP、剩余修复/升级时长和工位数量不属于传播状态。NPC 进入广场时，应在进入者的见闻库写入这些当前状态，但 `location_entered` 事件本身只记录进入广场的行动事实，不包含过去事件历史。
 
 ## LLM Dialogue Response
 

@@ -91,6 +91,9 @@ func _verify_action_broadcast(
 		push_error("Failed to assign action %s to %s" % [action_id, actor_id])
 		return false
 	await process_frame
+	var duration_seconds := _duration_for_action(action_id)
+	action_system._on_logical_time_tick(duration_seconds, 1.0)
+	await process_frame
 
 	var witness_events: Array = memory_system.get_npc_witness_events(witness_id)
 	for event_type in expected_event_types:
@@ -107,6 +110,16 @@ func _verify_action_broadcast(
 				return false
 
 	return true
+
+
+func _duration_for_action(action_id: String) -> float:
+	match action_id:
+		"eat_at_dining_hall":
+			return 1200.0
+		"sleep_in_dormitory":
+			return 23400.0
+		_:
+			return 3600.0
 
 
 func _has_new_witness_event(

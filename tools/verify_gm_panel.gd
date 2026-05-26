@@ -61,8 +61,18 @@ func _init() -> void:
 		push_error("GM assist repair controls should include a target building selector and button")
 		quit(1)
 		return
+	var upgrade_building_select := gm_window.find_child("UpgradeBuildingSelect", true, false) as OptionButton
+	var assist_upgrade_button := gm_window.find_child("AssistUpgradeButton", true, false) as Button
+	if upgrade_building_select == null or assist_upgrade_button == null:
+		push_error("GM assist upgrade controls should include a target building selector and button")
+		quit(1)
+		return
 	if not _select_option_by_id(repair_building_select, "wall"):
 		push_error("GM repair target selector should include wall")
+		quit(1)
+		return
+	if not _select_option_by_id(upgrade_building_select, "garden"):
+		push_error("GM upgrade target selector should include garden")
 		quit(1)
 		return
 
@@ -87,13 +97,30 @@ func _init() -> void:
 		push_error("GM NPC selector should include engineer_01")
 		quit(1)
 		return
-	if not npc_system.debug_enter_location_immediately("engineer_01", "wall"):
-		push_error("Failed to place engineer at wall for GM assist test")
+	if not npc_system.debug_enter_location_immediately("engineer_01", "plaza"):
+		push_error("Failed to place engineer at plaza for GM assist test")
 		quit(1)
 		return
 	assist_repair_button.pressed.emit()
 	if not await _wait_until_action_result(npc_system, "engineer_01", "assist_repair_started_wall"):
 		push_error("GM assist repair button did not use the selected repair target building")
+		quit(1)
+		return
+	if not building_system.upgrade_building("garden"):
+		push_error("Failed to start garden upgrade for GM assist test")
+		quit(1)
+		return
+	if not _select_option_by_id(gm_panel._npc_select, "doctor_01"):
+		push_error("GM NPC selector should include doctor_01")
+		quit(1)
+		return
+	if not npc_system.debug_enter_location_immediately("doctor_01", "plaza"):
+		push_error("Failed to place doctor at plaza for GM assist upgrade test")
+		quit(1)
+		return
+	assist_upgrade_button.pressed.emit()
+	if not await _wait_until_action_result(npc_system, "doctor_01", "assist_upgrade_started_garden"):
+		push_error("GM assist upgrade button did not use the selected upgrade target building")
 		quit(1)
 		return
 

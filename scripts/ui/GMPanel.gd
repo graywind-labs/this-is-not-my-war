@@ -30,6 +30,7 @@ var _npc_state_value_input: LineEdit
 var _location_select: OptionButton
 var _action_select: OptionButton
 var _repair_building_select: OptionButton
+var _upgrade_building_select: OptionButton
 var _notice_input: LineEdit
 var _visibility_select: OptionButton
 var _memory_amount_input: LineEdit
@@ -270,6 +271,17 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	)
 	assist_button.name = "AssistRepairButton"
 
+	var upgrade_row := _make_row(parent)
+	var upgrade_target_label := Label.new()
+	upgrade_target_label.text = "升级目标"
+	upgrade_row.add_child(upgrade_target_label)
+	_upgrade_building_select = _make_select(upgrade_row)
+	_upgrade_building_select.name = "UpgradeBuildingSelect"
+	var assist_upgrade_button := _add_button(upgrade_row, "协助升级", func() -> void:
+		_run_assist_upgrade(_selected_id(_npc_select), _selected_id(_upgrade_building_select))
+	)
+	assist_upgrade_button.name = "AssistUpgradeButton"
+
 
 func _add_memory_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("记忆 / 见闻 / 广场"))
@@ -366,6 +378,7 @@ func _fill_resource_select() -> void:
 func _fill_building_select() -> void:
 	_fill_building_select_control(_building_select)
 	_fill_building_select_control(_repair_building_select)
+	_fill_building_select_control(_upgrade_building_select)
 
 
 func _fill_building_select_control(select: OptionButton) -> void:
@@ -515,6 +528,9 @@ func _execute_command(command: String) -> void:
 		"assist_repair":
 			if _require_args(parts, 3, "assist_repair <npc_id> <building_id>"):
 				_run_assist_repair(str(parts[1]), str(parts[2]))
+		"assist_upgrade":
+			if _require_args(parts, 3, "assist_upgrade <npc_id> <building_id>"):
+				_run_assist_upgrade(str(parts[1]), str(parts[2]))
 		"eat":
 			if _require_args(parts, 2, "eat <npc_id>"):
 				_run_eat(str(parts[1]))
@@ -742,6 +758,14 @@ func _run_assist_repair(npc_id: String, building_id: String) -> void:
 	_log("协助修复 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_repair_assist(npc_id, building_id))])
 
 
+func _run_assist_upgrade(npc_id: String, building_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null:
+		_log("ActionSystem 不可用。")
+		return
+	_log("协助升级 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_upgrade_assist(npc_id, building_id))])
+
+
 func _run_eat(npc_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -913,7 +937,7 @@ func _help_text() -> String:
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value>",
-		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | eat <npc_id> | sleep <npc_id>",
+		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | eat <npc_id> | sleep <npc_id>",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"memory <npc_id> | location <location_id>"

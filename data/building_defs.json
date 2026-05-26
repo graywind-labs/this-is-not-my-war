@@ -7,13 +7,7 @@
     "max_hp": 180,
     "tags": ["command", "failure_target"],
     "scene_nodes": ["MainHall"],
-    "workstations": [
-      {
-        "id": "command_table_01",
-        "type": "command",
-        "occupied_by": null
-      }
-    ],
+    "workstations": [],
     "inputs": {},
     "outputs": {},
     "repair": {
@@ -105,13 +99,7 @@
     "max_hp": 150,
     "tags": ["storage", "raid_target"],
     "scene_nodes": ["Warehouse"],
-    "workstations": [
-      {
-        "id": "storage_ledger_01",
-        "type": "storage",
-        "occupied_by": null
-      }
-    ],
+    "workstations": [],
     "inputs": {},
     "outputs": {},
     "repair": {
@@ -124,7 +112,7 @@
       "cost": {"stone": 4},
       "max_level": 3,
       "max_hp_bonus": 35,
-      "workstation_bonus": 1,
+      "workstation_bonus": 0,
       "workstation_type": "storage"
     }
   },
@@ -136,13 +124,7 @@
     "max_hp": 240,
     "tags": ["defense", "outer_barrier"],
     "scene_nodes": ["FrontWall", "BackWall", "LeftWall", "RightWall"],
-    "workstations": [
-      {
-        "id": "wall_repair_01",
-        "type": "repair",
-        "occupied_by": null
-      }
-    ],
+    "workstations": [],
     "inputs": {"wood": 1, "stone": 1},
     "outputs": {},
     "repair": {
@@ -155,7 +137,7 @@
       "cost": {"stone": 3},
       "max_level": 2,
       "max_hp_bonus": 25,
-      "workstation_bonus": 1,
+      "workstation_bonus": 0,
       "workstation_type": "repair"
     }
   },
@@ -167,15 +149,21 @@
     "max_hp": 160,
     "tags": ["defense", "gate", "outer_barrier"],
     "scene_nodes": ["FrontGate"],
-    "workstations": [
-      {
-        "id": "gate_watch_01",
-        "type": "guard",
-        "occupied_by": null
-      }
-    ],
+    "workstations": [],
     "inputs": {},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"stone": 2},
+      "seconds_per_missing_hp": 40,
+      "level_time_factor": 0.25
+    },
+    "upgrade": {
+      "cost": {"stone": 3},
+      "max_level": 2,
+      "max_hp_bonus": 25,
+      "workstation_bonus": 0,
+      "workstation_type": "gate"
+    }
   },
   {
     "id": "back_gate",
@@ -187,7 +175,19 @@
     "scene_nodes": ["BackGate"],
     "workstations": [],
     "inputs": {},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 35,
+      "level_time_factor": 0.2
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 1},
+      "max_level": 2,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 0,
+      "workstation_type": "gate"
+    }
   },
   {
     "id": "tavern",
@@ -205,7 +205,19 @@
       }
     ],
     "inputs": {"grain": 1},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.2
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 2},
+      "max_level": 3,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 1,
+      "workstation_type": "brew"
+    }
   },
   {
     "id": "garden",
@@ -223,7 +235,19 @@
       }
     ],
     "inputs": {},
-    "outputs": {"grain": 1}
+    "outputs": {"grain": 1},
+    "repair": {
+      "cost": {"wood": 1},
+      "seconds_per_missing_hp": 25,
+      "level_time_factor": 0.15
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 1},
+      "max_level": 3,
+      "max_hp_bonus": 15,
+      "workstation_bonus": 1,
+      "workstation_type": "farm"
+    }
   },
   {
     "id": "blacksmith",
@@ -241,7 +265,19 @@
       }
     ],
     "inputs": {"iron": 1, "wood": 1},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 35,
+      "level_time_factor": 0.25
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 2, "iron": 1},
+      "max_level": 3,
+      "max_hp_bonus": 25,
+      "workstation_bonus": 1,
+      "workstation_type": "forge"
+    }
   },
   {
     "id": "training_ground",
@@ -259,7 +295,19 @@
       }
     ],
     "inputs": {},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1},
+      "seconds_per_missing_hp": 25,
+      "level_time_factor": 0.15
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 1},
+      "max_level": 3,
+      "max_hp_bonus": 15,
+      "workstation_bonus": 1,
+      "workstation_type": "training"
+    }
   },
   {
     "id": "stable",
@@ -277,7 +325,19 @@
       }
     ],
     "inputs": {"grain": 1},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.2
+    },
+    "upgrade": {
+      "cost": {"wood": 3, "stone": 1},
+      "max_level": 3,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 1,
+      "workstation_type": "horse_care"
+    }
   },
   {
     "id": "chapel",
@@ -295,7 +355,19 @@
       }
     ],
     "inputs": {},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 25,
+      "level_time_factor": 0.15
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 2},
+      "max_level": 2,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 1,
+      "workstation_type": "pray"
+    }
   },
   {
     "id": "clinic",
@@ -313,7 +385,19 @@
       }
     ],
     "inputs": {"money": 1},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 30,
+      "level_time_factor": 0.2
+    },
+    "upgrade": {
+      "cost": {"wood": 2, "stone": 2},
+      "max_level": 3,
+      "max_hp_bonus": 20,
+      "workstation_bonus": 1,
+      "workstation_type": "heal"
+    }
   },
   {
     "id": "workshop",
@@ -331,6 +415,18 @@
       }
     ],
     "inputs": {"wood": 1, "iron": 1},
-    "outputs": {}
+    "outputs": {},
+    "repair": {
+      "cost": {"wood": 1, "stone": 1},
+      "seconds_per_missing_hp": 35,
+      "level_time_factor": 0.25
+    },
+    "upgrade": {
+      "cost": {"wood": 3, "stone": 2, "iron": 1},
+      "max_level": 3,
+      "max_hp_bonus": 25,
+      "workstation_bonus": 1,
+      "workstation_type": "engineering"
+    }
   }
 ]

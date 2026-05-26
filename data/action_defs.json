@@ -5,7 +5,7 @@
     "type": "work",
     "location_required": "garden",
     "skill": "耕种",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {},
     "output_resources": {
       "grain": 2
@@ -19,7 +19,7 @@
     "type": "work",
     "location_required": "dining_hall",
     "skill": "厨艺",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {
       "grain": 1
     },
@@ -35,7 +35,7 @@
     "type": "work",
     "location_required": "stable",
     "skill": "养马",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {
       "grain": 1
     },
@@ -51,7 +51,7 @@
     "type": "work",
     "location_required": "tavern",
     "skill": "酿酒",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {
       "grain": 1
     },
@@ -67,7 +67,7 @@
     "type": "work",
     "location_required": "blacksmith",
     "skill": "打铁",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {
       "iron": 1,
       "wood": 1
@@ -85,7 +85,7 @@
     "type": "work",
     "location_required": "workshop",
     "skill": "工程",
-    "base_duration_hours": 1,
+    "duration_seconds": 3600,
     "input_resources": {
       "wood": 2
     },
@@ -100,12 +100,12 @@
     "name": "吃饭",
     "type": "eat",
     "location_required": "dining_hall",
-    "base_duration_hours": 1,
+    "duration_seconds": 1200,
     "food_options": [
       {
         "resource": "meal",
         "amount": 1,
-        "satiety_restore": 45
+        "satiety_restore": 50
       },
       {
         "resource": "grain",
@@ -119,8 +119,8 @@
     "name": "睡觉",
     "type": "sleep",
     "location_required": "dormitory",
-    "base_duration_hours": 1,
-    "fatigue_delta": -35,
-    "satiety_delta": -2
+    "duration_seconds": 23400,
+    "fatigue_delta": -100,
+    "satiety_delta": -13
   }
 ]

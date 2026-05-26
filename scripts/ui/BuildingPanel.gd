@@ -32,11 +32,17 @@ func _ready() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_clicked.connect(_on_building_clicked)
+		event_bus.building_state_changed.connect(_on_building_state_changed)
 		event_bus.npc_clicked.connect(_on_npc_clicked)
 
 
 func _on_building_clicked(building_id: String) -> void:
 	show_building(building_id)
+
+
+func _on_building_state_changed(building_id: String) -> void:
+	if visible and building_id == _current_building_id:
+		show_building(building_id)
 
 
 func _on_npc_clicked(_npc_id: String) -> void:
@@ -111,6 +117,7 @@ func _format_workstations(raw_workstations: Variant) -> String:
 func _format_location_placeholder(building: Dictionary) -> String:
 	var tags: Array = building.get("tags", [])
 	var repair_status: Dictionary = building.get("repair_status", {})
+	var upgrade_status: Dictionary = building.get("upgrade_status", {})
 	var lines: Array[String] = []
 	if tags.is_empty():
 		lines.append("地点状态：占位")
@@ -126,6 +133,13 @@ func _format_location_placeholder(building: Dictionary) -> String:
 			float(repair_status.get("remaining_seconds", 0.0)),
 			float(repair_status.get("speed_multiplier", 1.0)),
 			int(repair_status.get("helper_count", 0))
+		])
+	if not upgrade_status.is_empty():
+		lines.append("升级中：%d%%，剩余 %.0f 秒，x%.2f，协助 %d 人" % [
+			int(round(float(upgrade_status.get("progress", 0.0)) * 100.0)),
+			float(upgrade_status.get("remaining_seconds", 0.0)),
+			float(upgrade_status.get("speed_multiplier", 1.0)),
+			int(upgrade_status.get("helper_count", 0))
 		])
 	return "\n".join(lines)
 
@@ -151,6 +165,7 @@ func _update_action_buttons(building_system: Node, building_id: String, building
 	var hp := int(building.get("hp", 0))
 	var max_hp := int(building.get("max_hp", 0))
 	var repair_status: Dictionary = building.get("repair_status", {})
+	var upgrade_status: Dictionary = building.get("upgrade_status", {})
 	var upgrade_config: Dictionary = building.get("upgrade", {})
 	var max_level := int(upgrade_config.get("max_level", int(building.get("level", 1))))
 
@@ -161,7 +176,10 @@ func _update_action_buttons(building_system: Node, building_id: String, building
 		repair_button.text = "修复" if hp < max_hp else "修复（已满）"
 
 	upgrade_button.disabled = not building_system.can_upgrade_building(building_id)
-	upgrade_button.text = "升级" if int(building.get("level", 1)) < max_level else "升级（已满）"
+	if not upgrade_status.is_empty():
+		upgrade_button.text = "升级中 %.0f 秒" % float(upgrade_status.get("remaining_seconds", 0.0))
+	else:
+		upgrade_button.text = "升级" if int(building.get("level", 1)) < max_level else "升级（已满）"
 
 
 func _build_action_hint() -> void:
@@ -242,6 +260,8 @@ func _format_repair_hint() -> String:
 	lines.append("消耗：%s" % _format_cost(cost))
 	if repair_config.is_empty() or cost.is_empty():
 		lines.append("条件：该建筑不可修复")
+	elif not _current_building.get("upgrade_status", {}).is_empty():
+		lines.append("条件：正在升级中")
 	elif not _current_building.get("repair_status", {}).is_empty():
 		lines.append("条件：正在修复中")
 	elif int(_current_building.get("hp", 0)) >= int(_current_building.get("max_hp", 0)):
@@ -264,6 +284,12 @@ func _format_upgrade_hint() -> String:
 	lines.append("消耗：%s" % _format_cost(cost))
 	if upgrade_config.is_empty() or cost.is_empty():
 		lines.append("条件：该建筑不可升级")
+	elif not _current_building.get("upgrade_status", {}).is_empty():
+		lines.append("条件：正在升级中")
+	elif not _current_building.get("repair_status", {}).is_empty():
+		lines.append("条件：正在修复中")
+	elif int(_current_building.get("hp", 0)) < int(_current_building.get("max_hp", 0)):
+		lines.append("条件：建筑受损，需先修复")
 	elif int(_current_building.get("level", 1)) >= max_level:
 		lines.append("条件：已达最高等级 Lv.%d" % max_level)
 	elif not _can_afford(cost):

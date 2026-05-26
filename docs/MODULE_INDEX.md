@@ -53,7 +53,7 @@
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 和 `res://scripts/ui/GMPanel.gd` 作为 UI 脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
-当前状态：T0403 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩和协助修复的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、协助修复、吃饭、睡觉，到达后更新地点 `people_present`、写入带快照的 `location_entered`，再结算资源/状态并写入结构化事件。暂停期间 NPC 移动与行动结算停止，行动保持 pending，恢复后再结算；建筑修复进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率或战斗。
+当前状态：T0403 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、协助修复、协助升级、吃饭、睡觉，到达后更新地点 `people_present`、写入带快照的 `location_entered`，再进入持续行动。吃饭、睡觉和工作通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率或战斗。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -68,7 +68,7 @@
 路径：`res://scripts/core/EventBus.gd`
 用途：全局事件总线，声明基础跨系统信号。
 依赖：作为 Autoload 注册于 `project.godot`。
-当前状态：T0402 已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`gameplay_pause_changed`、`day_started`、`hour_started`、`building_clicked`、`npc_clicked`、`npc_state_changed`、`event_recorded`、`npc_memory_changed`、`location_info_changed`、`public_event_added`。
+当前状态：T0006 后已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`gameplay_pause_changed`、`day_started`、`hour_started`、`building_clicked`、`building_state_changed`、`npc_clicked`、`npc_state_changed`、`event_recorded`、`npc_memory_changed`、`location_info_changed`、`public_event_added`。
 
 路径：`res://scripts/core/GameState.gd`
 用途：全局运行状态，保存当前天数、小时、分钟、秒和是否处于战斗中。
@@ -92,8 +92,8 @@
 
 路径：`res://scripts/systems/BuildingSystem.gd`
 用途：基础建筑系统，负责建筑配置读取、场景节点绑定、点击识别和基础状态查询。
-依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击事件。
-当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；2026-05-24 起修复会创建随 `logical_time_tick` 推进的倒计时作业，HP 按进度逐步恢复，并可被多个 NPC 按工程熟练度协助加速；协助者离开对应建筑或被改派时会从修复作业中移除；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史；仍不实现生产或敌人攻击。
+依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击选择、通过 `/root/EventBus.building_state_changed` 广播状态刷新。
+当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。T0006 后建筑受损、修复进度、协助者变化、修复完成和升级只触发 `building_state_changed`，不再伪装为建筑点击。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；修复和升级都会创建随 `logical_time_tick` 推进的倒计时作业，并可被多个 NPC 按工程熟练度协助加速；建筑受损、正在修复或正在升级时不能开始升级，只有完好建筑可升级；协助者离开对应建筑或被改派时会从作业中移除；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史；仍不实现生产或敌人攻击。
 
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
@@ -113,12 +113,12 @@
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404 已实现广场公开信息即时广播；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_public_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场 NPC 的见闻库，`plaza_public` 会转发给广场当前在场 NPC 的见闻库并可被广场公开查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。公告变更写入 `plaza_notice_changed`，关键目标状态变更写入 `plaza_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`eat_completed`、`money_given`、`npc_attacked_by_player` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
+当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404 已实现广场公开信息即时广播；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_public_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。2026-05-25 起，MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态当前会生成 `location_status_changed` 本地见闻。可传播外部状态只计算等级与完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发广播。可传播内部状态只计算当前在场 NPC 和每个工位占用/空闲，工位数量不触发广播。NPC 进入广场会获得所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已登记待修正：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_public_events(...)`、`add_witness_event(...)` 和调试查询接口。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场 NPC 的见闻库，`plaza_public` 会转发给广场当前在场 NPC 的见闻库并可被广场公开查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_completed`、`money_given`、`npc_attacked_by_player` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
 依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` 结构化事件。
-当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位；建筑修复由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责协助正在进行的修复并加速倒计时。行动开始、完成或失败会以 `local_public` 写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 等事件，让同地点当前在场 NPC 收到见闻。T0401 暂停语义修正后，暂停期间不会执行行动结算，行动保持 pending 并在恢复后继续。未实现 LLM 日程、训练、战斗或复杂职业效率。
+当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)` 和 `debug_assign_action(...)`。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲、工械坊制造工程器械、马厩产出马匹整备占位；建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。工作、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级会以 `plaza_public` 写入 `repair_assist_started` / `upgrade_assist_started`，广播给广场当前在场 NPC。T0401 暂停语义修正后，暂停期间不会执行行动结算；2026-05-25 起，吃饭、睡觉和工作到达地点后进入 active 行动并随 `logical_time_tick` 推进，吃饭 1200 秒、睡觉 23400 秒、工作 3600 秒为当前基准。未实现 LLM 日程、训练、战斗、工作位占用或复杂职业效率。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。
@@ -137,8 +137,8 @@
 
 路径：`res://scripts/ui/BuildingPanel.gd`
 用途：建筑信息面板脚本，监听建筑点击并展示建筑名称、等级、HP、工作位和地点信息占位。
-依赖：监听 `/root/EventBus.building_clicked`，从 `Main/Systems/BuildingSystem` 读取建筑状态。
-当前状态：T0303 已接入 `Main/UI/BuildingPanel`；修复和升级按钮会调用 `BuildingSystem`，并根据 HP、等级、配置、是否已有修复作业和资源是否足够自动启用或禁用；修复/升级的资源消耗和执行条件只在按钮悬停提示框中显示，不常驻写入面板正文；提示框靠近屏幕边缘时会保持在可视区域内；修复进行中会展示剩余时间、进度、速度倍率和协助人数；点击 NPC 时会隐藏建筑面板。
+依赖：监听 `/root/EventBus.building_clicked` 和 `/root/EventBus.building_state_changed`，从 `Main/Systems/BuildingSystem` 读取建筑状态。
+当前状态：T0303 已接入 `Main/UI/BuildingPanel`；修复和升级按钮会调用 `BuildingSystem`，并根据 HP、等级、配置、是否已有修复/升级作业和资源是否足够自动启用或禁用；建筑受损、正在修复或正在升级时不可升级；修复/升级的资源消耗和执行条件只在按钮悬停提示框中显示，不常驻写入面板正文；提示框靠近屏幕边缘时会保持在可视区域内；修复和升级进行中都会展示剩余时间、进度、速度倍率和协助人数；点击 NPC 时会隐藏建筑面板；T0006 后只有当前建筑面板仍可见时才响应建筑状态刷新，因此进度刷新不会抢占 NPC 面板。
 
 路径：`res://scripts/ui/NPCPanel.gd`
 用途：NPC 信息面板脚本，监听 NPC 点击和状态变化并展示 NPC 基础状态。
@@ -148,7 +148,7 @@
 路径：`res://scripts/ui/GMPanel.gd`
 用途：GM 调试面板脚本，为 M1-M4 已完成但前端不易直接验证的系统能力提供可拖动按钮、命令输入框、调试按钮和结果输出。
 依赖：挂载到 `Main/UI/GMPanel`；调用 `TimeSystem`、`ResourceSystem`、`BuildingSystem`、`NPCSystem`、`ActionSystem` 和 `MemorySystem` 的已有公开接口或 `debug_*` 接口；使用顶部 `GM_ENABLED` 常量控制开发/上线显示。
-当前状态：T0004 已实现；支持资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口，行动分组内提供“修复目标”建筑下拉用于测试参数化协助修复；支持 `help`、`add_resource`、`damage_building`、`repair_building`、`assist_repair`、`enter_location`、`give_money`、`memory`、`events` 等命令。GMPanel 不写入新的权威结算逻辑，只转发到已有系统。
+当前状态：T0004 已实现；支持资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口，行动分组内提供“修复目标”和“升级目标”建筑下拉用于测试参数化协助修复/协助升级；支持 `help`、`add_resource`、`damage_building`、`repair_building`、`upgrade_building`、`assist_repair`、`assist_upgrade`、`enter_location`、`give_money`、`memory`、`events` 等命令。GMPanel 不写入新的权威结算逻辑，只转发到已有系统。
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
@@ -201,12 +201,12 @@
 路径：`data/building_defs.json`
 用途：建筑配置，记录建筑 id、等级、HP、标签、工作位、输入输出、修复和升级规则。
 依赖：由 `BuildingSystem` 通过 `ConfigLoader.load_data_file("building_defs.json")` 读取，并通过 `scene_nodes` 绑定到低模建筑实体。
-当前状态：T0206 后为 15 条建筑/门墙定义，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊；主厅、宿舍、食堂、仓库、围墙包含 `repair` / `upgrade` 最小规则，`repair` 可配置每点缺失 HP 耗时和等级耗时系数。公告牌已从建筑定义中移除，作为主厅前视觉占位和广场公告输入/显示接口处理。
+当前状态：T0206 后为 15 条建筑/门墙定义，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊；所有建筑都有 `upgrade` 最小规则，既有关键建筑保留 `repair` 规则，`repair` 可配置每点缺失 HP 耗时和等级耗时系数。2026-05-25 起，不可进入建筑不保留内部工位占位；公告牌已从建筑定义中移除，作为主厅前视觉占位和广场公告输入/显示接口处理。
 
 路径：`data/action_defs.json`
 用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出和状态变化。
 依赖：由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
-当前状态：T0305 已由 `ActionSystem` 读取；包含菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、马厩照料、吃饭和睡觉等最小行动定义。协助修复不在该文件中按建筑写死，而由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 作为带建筑参数的运行时行为处理。
+当前状态：T0305 已由 `ActionSystem` 读取；包含菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、马厩照料、吃饭和睡觉等最小行动定义。2026-05-25 起优先使用 `duration_seconds` 表达持续时间：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。协助修复和协助升级不在该文件中按建筑写死，而由 `ActionSystem` 作为带建筑参数的运行时行为处理。
 
 路径：`data/weapon_defs.json`
 用途：武器配置，记录武器类型、射程、伤害、攻击间隔和技能需求。

@@ -2,24 +2,28 @@ extends Node
 
 const BUILDING_DEFS_FILE := "building_defs.json"
 const BUILDING_ROOT_PATH := "/root/Main/WorldRoot/Station/Buildings"
+const PROPS_ROOT_PATH := "/root/Main/WorldRoot/Station/Props"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const CLICK_AREA_NAME := "ClickArea"
 const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
-const PLAZA_PUBLIC_STATUS_BUILDINGS: Array[String] = ["main_hall", "wall", "front_gate", "warehouse"]
+const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_REPAIR_SECONDS_PER_HP := 30.0
 const DEFAULT_REPAIR_LEVEL_TIME_FACTOR := 0.35
 const DEFAULT_REPAIR_HELPER_BASE_BONUS := 0.10
 const DEFAULT_REPAIR_HELPER_SKILL_SCALE := 0.005
 const DEFAULT_REPAIR_HELPER_MAX_BONUS := 0.50
+const DEFAULT_UPGRADE_SECONDS_PER_LEVEL := 3600.0
+const DEFAULT_UPGRADE_LEVEL_TIME_FACTOR := 0.35
 
 var _buildings: Dictionary = {}
 var _building_order: Array[String] = []
 var _selected_building_id: String = ""
 var _building_scene_nodes: Dictionary = {}
 var _active_repairs: Dictionary = {}
+var _active_upgrades: Dictionary = {}
 
 
 func initialize() -> void:
@@ -27,6 +31,7 @@ func initialize() -> void:
 	_building_order.clear()
 	_building_scene_nodes.clear()
 	_active_repairs.clear()
+	_active_upgrades.clear()
 	_selected_building_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -82,8 +87,15 @@ func get_building(building_id: String) -> Dictionary:
 		push_warning("Unknown building id: %s" % building_id)
 		return {}
 	var building: Dictionary = _buildings[building_id].duplicate(true)
+	building["condition"] = _get_building_condition(building_id)
 	if _active_repairs.has(building_id):
 		building["repair_status"] = _get_repair_status(building_id)
+	else:
+		building["repair_status"] = {}
+	if _active_upgrades.has(building_id):
+		building["upgrade_status"] = _get_upgrade_status(building_id)
+	else:
+		building["upgrade_status"] = {}
 	return building
 
 
@@ -100,6 +112,15 @@ func get_selected_building_id() -> String:
 
 
 func get_building_entry_position(building_id: String) -> Variant:
+	if building_id == PLAZA_LOCATION_ID:
+		var plaza_node := get_node_or_null("%s/Plaza" % PROPS_ROOT_PATH) as Node3D
+		if plaza_node == null:
+			push_warning("Cannot get plaza entry position.")
+			return null
+		var plaza_position := plaza_node.global_position
+		plaza_position.y = 0.0
+		return plaza_position
+
 	if not _buildings.has(building_id):
 		push_warning("Cannot get entry position for unknown building: %s" % building_id)
 		return null
@@ -139,30 +160,46 @@ func get_building_location_context(building_id: String) -> Dictionary:
 		return {}
 
 	var workstations: Array = building.get("workstations", [])
+	var visible_workstations: Array = []
+	for raw_workstation in workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation: Dictionary = raw_workstation
+		var occupied_by := str(workstation.get("occupied_by", ""))
+		visible_workstations.append({
+			"id": str(workstation.get("id", "")),
+			"type": str(workstation.get("type", "")),
+			"occupied_by": occupied_by,
+			"status": "free" if occupied_by.is_empty() or occupied_by == "<null>" else "occupied"
+		})
+	var external_state := {
+		"id": building_id,
+		"name": str(building.get("name", building_id)),
+		"level": int(building.get("level", 1)),
+		"condition": _get_building_condition(building_id)
+	}
 	return {
 		"id": building_id,
 		"name": str(building.get("name", building_id)),
 		"is_enterable": true,
 		"people_present": [],
-		"people_count": 0,
-		"level": int(building.get("level", 1)),
-		"hp": int(building.get("hp", 0)),
-		"max_hp": int(building.get("max_hp", 0)),
-		"available": int(building.get("hp", 0)) > 0,
-		"tags": building.get("tags", []),
+		"level": int(external_state["level"]),
+		"condition": str(external_state["condition"]),
+		"external_state": external_state,
+		"internal_state": {
+			"people_present": [],
+			"workstations": visible_workstations.duplicate(true)
+		},
 		"building": {
 			"id": building_id,
 			"name": str(building.get("name", building_id)),
-			"level": int(building.get("level", 1)),
-			"hp": int(building.get("hp", 0)),
-			"max_hp": int(building.get("max_hp", 0)),
-			"available": int(building.get("hp", 0)) > 0,
-			"tags": building.get("tags", []),
-			"workstations": workstations.duplicate(true)
+			"external_state": external_state,
+			"internal_state": {
+				"people_present": [],
+				"workstations": visible_workstations.duplicate(true)
+			}
 		},
-		"workstations": workstations.duplicate(true),
-		"workstation_count": workstations.size(),
-		"occupied_workstation_count": 0,
+		"workstations": visible_workstations.duplicate(true),
 		"current_notice": "",
 		"current_orders": "",
 		"current_public_note_ids": [],
@@ -173,7 +210,7 @@ func get_building_location_context(building_id: String) -> Dictionary:
 func can_repair_building(building_id: String) -> bool:
 	if not _buildings.has(building_id):
 		return false
-	if _active_repairs.has(building_id):
+	if _active_repairs.has(building_id) or _active_upgrades.has(building_id):
 		return false
 
 	var building: Dictionary = _buildings[building_id]
@@ -214,7 +251,7 @@ func repair_building(building_id: String) -> bool:
 	}
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
-	_emit_building_clicked_if_selected(building_id)
+	_emit_building_state_changed(building_id)
 	return true
 
 
@@ -240,7 +277,7 @@ func add_repair_helper(building_id: String, npc_id: String, engineering_skill: i
 	}
 	job["helpers"] = helpers
 	_active_repairs[building_id] = job
-	_emit_building_clicked_if_selected(building_id)
+	_emit_building_state_changed(building_id)
 	return true
 
 
@@ -254,15 +291,20 @@ func remove_repair_helper(building_id: String, npc_id: String) -> bool:
 	helpers.erase(npc_id)
 	job["helpers"] = helpers
 	_active_repairs[building_id] = job
-	_emit_building_clicked_if_selected(building_id)
+	_emit_building_state_changed(building_id)
 	return true
 
 
 func can_upgrade_building(building_id: String) -> bool:
 	if not _buildings.has(building_id):
 		return false
+	if _active_repairs.has(building_id) or _active_upgrades.has(building_id):
+		return false
 
 	var building: Dictionary = _buildings[building_id]
+	if int(building.get("hp", 0)) < int(building.get("max_hp", 0)):
+		return false
+
 	var upgrade_config: Dictionary = building.get("upgrade", {})
 	if upgrade_config.is_empty():
 		return false
@@ -290,15 +332,59 @@ func upgrade_building(building_id: String) -> bool:
 	if resource_system == null or not resource_system.spend_resources(cost):
 		return false
 
-	var max_hp_bonus: int = maxi(0, int(upgrade_config.get("max_hp_bonus", 0)))
-	building["level"] = int(building.get("level", 1)) + 1
-	building["max_hp"] = int(building.get("max_hp", 0)) + max_hp_bonus
-	building["hp"] = mini(int(building.get("max_hp", 0)), int(building.get("hp", 0)) + max_hp_bonus)
-	_apply_workstation_upgrade(building, upgrade_config)
+	var duration_seconds := _calculate_upgrade_duration_seconds(building, upgrade_config)
+	_active_upgrades[building_id] = {
+		"building_id": building_id,
+		"duration_seconds": duration_seconds,
+		"remaining_seconds": duration_seconds,
+		"start_level": int(building.get("level", 1)),
+		"target_level": int(building.get("level", 1)) + 1,
+		"upgrade_config": upgrade_config.duplicate(true),
+		"helpers": {}
+	}
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
-	_emit_building_clicked_if_selected(building_id)
-	_notify_plaza_key_entity_changed(building_id, "building_upgraded")
+	_emit_building_state_changed(building_id)
+	return true
+
+
+func is_upgrade_in_progress(building_id: String) -> bool:
+	return _active_upgrades.has(building_id)
+
+
+func get_upgrade_status(building_id: String) -> Dictionary:
+	_prune_invalid_upgrade_helpers(building_id)
+	return _get_upgrade_status(building_id)
+
+
+func add_upgrade_helper(building_id: String, npc_id: String, engineering_skill: int) -> bool:
+	if not _active_upgrades.has(building_id) or npc_id.is_empty():
+		return false
+
+	var job: Dictionary = _active_upgrades[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	var bonus := _calculate_repair_helper_bonus(engineering_skill)
+	helpers[npc_id] = {
+		"engineering_skill": clampi(engineering_skill, 0, 100),
+		"speed_bonus": bonus
+	}
+	job["helpers"] = helpers
+	_active_upgrades[building_id] = job
+	_emit_building_state_changed(building_id)
+	return true
+
+
+func remove_upgrade_helper(building_id: String, npc_id: String) -> bool:
+	if not _active_upgrades.has(building_id):
+		return false
+	var job: Dictionary = _active_upgrades[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	if not helpers.has(npc_id):
+		return false
+	helpers.erase(npc_id)
+	job["helpers"] = helpers
+	_active_upgrades[building_id] = job
+	_emit_building_state_changed(building_id)
 	return true
 
 
@@ -311,10 +397,12 @@ func debug_damage_building(building_id: String, amount: int) -> bool:
 	if _active_repairs.has(building_id):
 		_release_repair_helpers(_active_repairs[building_id], building_id)
 		_active_repairs.erase(building_id)
+	if _active_upgrades.has(building_id):
+		_release_upgrade_helpers(_active_upgrades[building_id], building_id)
+		_active_upgrades.erase(building_id)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
-	_emit_building_clicked_if_selected(building_id)
-	_notify_plaza_key_entity_changed(building_id, "building_damaged")
+	_emit_building_state_changed(building_id)
 	return true
 
 
@@ -331,13 +419,12 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	building["hp"] = mini(max_hp, current_hp + amount)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
-	_emit_building_clicked_if_selected(building_id)
-	_notify_plaza_key_entity_changed(building_id, "building_repaired")
+	_emit_building_state_changed(building_id)
 	return true
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
-	if game_delta_seconds <= 0.0 or _active_repairs.is_empty():
+	if game_delta_seconds <= 0.0:
 		return
 
 	var finished_buildings: Array[String] = []
@@ -348,16 +435,32 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 		var speed_multiplier := _get_repair_speed_multiplier(job)
 		job["remaining_seconds"] = maxf(0.0, float(job.get("remaining_seconds", 0.0)) - game_delta_seconds * speed_multiplier)
 		_active_repairs[building_id] = job
-		_apply_repair_progress(building_id)
+		_apply_repair_progress(building_id, false)
+		_emit_building_state_changed(building_id)
 		if float(job.get("remaining_seconds", 0.0)) <= 0.0:
 			finished_buildings.append(building_id)
 
 	for building_id in finished_buildings:
 		_finish_repair(building_id)
 
+	var finished_upgrades: Array[String] = []
+	for raw_building_id in _active_upgrades.keys():
+		var building_id := str(raw_building_id)
+		_prune_invalid_upgrade_helpers(building_id)
+		var job: Dictionary = _active_upgrades[building_id]
+		var speed_multiplier := _get_upgrade_speed_multiplier(job)
+		job["remaining_seconds"] = maxf(0.0, float(job.get("remaining_seconds", 0.0)) - game_delta_seconds * speed_multiplier)
+		_active_upgrades[building_id] = job
+		_emit_building_state_changed(building_id)
+		if float(job.get("remaining_seconds", 0.0)) <= 0.0:
+			finished_upgrades.append(building_id)
+
+	for building_id in finished_upgrades:
+		_finish_upgrade(building_id)
+
 
 func _on_npc_state_changed(npc_id: String) -> void:
-	if _active_repairs.is_empty():
+	if _active_repairs.is_empty() and _active_upgrades.is_empty():
 		return
 
 	for raw_building_id in _active_repairs.keys():
@@ -368,7 +471,17 @@ func _on_npc_state_changed(npc_id: String) -> void:
 			helpers.erase(npc_id)
 			job["helpers"] = helpers
 			_active_repairs[building_id] = job
-			_emit_building_clicked_if_selected(building_id)
+			_emit_building_state_changed(building_id)
+
+	for raw_building_id in _active_upgrades.keys():
+		var building_id := str(raw_building_id)
+		var job: Dictionary = _active_upgrades[building_id]
+		var helpers: Dictionary = job.get("helpers", {})
+		if helpers.has(npc_id) and not _is_upgrade_helper_still_valid(building_id, npc_id):
+			helpers.erase(npc_id)
+			job["helpers"] = helpers
+			_active_upgrades[building_id] = job
+			_emit_building_state_changed(building_id)
 
 
 func _calculate_repair_duration_seconds(building: Dictionary, repair_config: Dictionary, missing_hp: int) -> float:
@@ -376,6 +489,16 @@ func _calculate_repair_duration_seconds(building: Dictionary, repair_config: Dic
 	var level_factor := maxf(0.0, float(repair_config.get("level_time_factor", DEFAULT_REPAIR_LEVEL_TIME_FACTOR)))
 	var level := maxi(1, int(building.get("level", 1)))
 	var duration := float(missing_hp) * seconds_per_hp * (1.0 + float(level - 1) * level_factor)
+	return maxf(60.0, duration)
+
+
+func _calculate_upgrade_duration_seconds(building: Dictionary, upgrade_config: Dictionary) -> float:
+	if upgrade_config.has("duration_seconds"):
+		return maxf(60.0, float(upgrade_config.get("duration_seconds", DEFAULT_UPGRADE_SECONDS_PER_LEVEL)))
+	var seconds_per_level := maxf(1.0, float(upgrade_config.get("seconds_per_current_level", DEFAULT_UPGRADE_SECONDS_PER_LEVEL)))
+	var level_factor := maxf(0.0, float(upgrade_config.get("level_time_factor", DEFAULT_UPGRADE_LEVEL_TIME_FACTOR)))
+	var level := maxi(1, int(building.get("level", 1)))
+	var duration := seconds_per_level * (1.0 + float(level - 1) * level_factor)
 	return maxf(60.0, duration)
 
 
@@ -396,7 +519,11 @@ func _get_repair_speed_multiplier(job: Dictionary) -> float:
 	return multiplier
 
 
-func _apply_repair_progress(building_id: String) -> void:
+func _get_upgrade_speed_multiplier(job: Dictionary) -> float:
+	return _get_repair_speed_multiplier(job)
+
+
+func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> void:
 	if not _buildings.has(building_id) or not _active_repairs.has(building_id):
 		return
 
@@ -412,7 +539,8 @@ func _apply_repair_progress(building_id: String) -> void:
 		building["hp"] = next_hp
 		_buildings[building_id] = building
 		_refresh_bound_scene_nodes(building_id)
-		_emit_building_clicked_if_selected(building_id)
+		if emit_changed:
+			_emit_building_state_changed(building_id)
 
 
 func _finish_repair(building_id: String) -> void:
@@ -426,8 +554,7 @@ func _finish_repair(building_id: String) -> void:
 	_active_repairs.erase(building_id)
 	_release_repair_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
-	_emit_building_clicked_if_selected(building_id)
-	_notify_plaza_key_entity_changed(building_id, "building_repaired")
+	_emit_building_state_changed(building_id)
 
 
 func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
@@ -440,6 +567,19 @@ func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
 		npc_system.update_npc_state(npc_id, {
 			"current_action": "idle",
 			"last_action_result": "completed_assist_repair_%s" % building_id
+		})
+
+
+func _release_upgrade_helpers(job: Dictionary, building_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return
+	var helpers: Dictionary = job.get("helpers", {})
+	for raw_npc_id in helpers.keys():
+		var npc_id := str(raw_npc_id)
+		npc_system.update_npc_state(npc_id, {
+			"current_action": "idle",
+			"last_action_result": "completed_assist_upgrade_%s" % building_id
 		})
 
 
@@ -462,6 +602,57 @@ func _get_repair_status(building_id: String) -> Dictionary:
 	}
 
 
+func _get_upgrade_status(building_id: String) -> Dictionary:
+	if not _active_upgrades.has(building_id):
+		return {}
+	var job: Dictionary = _active_upgrades[building_id]
+	var duration := maxf(0.001, float(job.get("duration_seconds", 1.0)))
+	var remaining := clampf(float(job.get("remaining_seconds", duration)), 0.0, duration)
+	var helpers: Dictionary = job.get("helpers", {})
+	return {
+		"active": true,
+		"duration_seconds": duration,
+		"remaining_seconds": remaining,
+		"progress": clampf((duration - remaining) / duration, 0.0, 1.0),
+		"speed_multiplier": _get_upgrade_speed_multiplier(job),
+		"helper_count": helpers.size(),
+		"helpers": helpers.duplicate(true),
+		"target_level": int(job.get("target_level", 0))
+	}
+
+
+func _get_building_condition(building_id: String) -> String:
+	if _active_upgrades.has(building_id):
+		return "upgrading"
+	if _active_repairs.has(building_id):
+		return "repairing"
+	if not _buildings.has(building_id):
+		return "unknown"
+	var building: Dictionary = _buildings[building_id]
+	if int(building.get("hp", 0)) >= int(building.get("max_hp", 0)):
+		return "intact"
+	return "damaged"
+
+
+func _finish_upgrade(building_id: String) -> void:
+	if not _buildings.has(building_id) or not _active_upgrades.has(building_id):
+		return
+
+	var job: Dictionary = _active_upgrades[building_id]
+	var building: Dictionary = _buildings[building_id]
+	var upgrade_config: Dictionary = job.get("upgrade_config", building.get("upgrade", {}))
+	var max_hp_bonus: int = maxi(0, int(upgrade_config.get("max_hp_bonus", 0)))
+	building["level"] = int(job.get("target_level", int(building.get("level", 1)) + 1))
+	building["max_hp"] = int(building.get("max_hp", 0)) + max_hp_bonus
+	building["hp"] = int(building.get("max_hp", building.get("hp", 0)))
+	_apply_workstation_upgrade(building, upgrade_config)
+	_buildings[building_id] = building
+	_active_upgrades.erase(building_id)
+	_release_upgrade_helpers(job, building_id)
+	_refresh_bound_scene_nodes(building_id)
+	_emit_building_state_changed(building_id)
+
+
 func _prune_invalid_repair_helpers(building_id: String) -> void:
 	if not _active_repairs.has(building_id):
 		return
@@ -479,7 +670,27 @@ func _prune_invalid_repair_helpers(building_id: String) -> void:
 
 	job["helpers"] = helpers
 	_active_repairs[building_id] = job
-	_emit_building_clicked_if_selected(building_id)
+	_emit_building_state_changed(building_id)
+
+
+func _prune_invalid_upgrade_helpers(building_id: String) -> void:
+	if not _active_upgrades.has(building_id):
+		return
+
+	var job: Dictionary = _active_upgrades[building_id]
+	var helpers: Dictionary = job.get("helpers", {})
+	var removed_any := false
+	for raw_npc_id in helpers.keys():
+		var npc_id := str(raw_npc_id)
+		if not _is_upgrade_helper_still_valid(building_id, npc_id):
+			helpers.erase(npc_id)
+			removed_any = true
+	if not removed_any:
+		return
+
+	job["helpers"] = helpers
+	_active_upgrades[building_id] = job
+	_emit_building_state_changed(building_id)
 
 
 func _is_repair_helper_still_valid(building_id: String, npc_id: String) -> bool:
@@ -492,7 +703,21 @@ func _is_repair_helper_still_valid(building_id: String, npc_id: String) -> bool:
 		return false
 	return (
 		str(state.get("current_action", "")) == "assist_repair_%s" % building_id
-		and str(state.get("current_location", "")) == building_id
+		and str(state.get("current_location", "")) == PLAZA_LOCATION_ID
+	)
+
+
+func _is_upgrade_helper_still_valid(building_id: String, npc_id: String) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return false
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if state.is_empty():
+		return false
+	return (
+		str(state.get("current_action", "")) == "assist_upgrade_%s" % building_id
+		and str(state.get("current_location", "")) == PLAZA_LOCATION_ID
 	)
 
 
@@ -659,9 +884,7 @@ func _emit_building_clicked_if_selected(building_id: String) -> void:
 		event_bus.building_clicked.emit(building_id)
 
 
-func _notify_plaza_key_entity_changed(building_id: String, reason: String) -> void:
-	if not PLAZA_PUBLIC_STATUS_BUILDINGS.has(building_id):
-		return
-	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
-	if memory_system != null and memory_system.has_method("notify_key_entity_state_changed"):
-		memory_system.notify_key_entity_state_changed(building_id, reason)
+func _emit_building_state_changed(building_id: String) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null:
+		event_bus.building_state_changed.emit(building_id)

@@ -3,7 +3,97 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-05-26
+
+### T0407 精简地点事件与建筑状态见闻
+完成：
+- `location_entered` / `location_exited` 现在只记录进入/离开的行动事实，不再在事件 payload 或 summary 中携带完整地点状态。
+- NPC 进入新信息地点时，进入者会在见闻库获得一次 `location_entry_snapshot` 当前状态快照；已经在该地点的 NPC 只收到本地公开的进入/离开事件。
+- NPC 离开地点时生成 `location_exited`，事件 `location_id` 使用被离开的地点，并广播给仍在该地点的 NPC。
+- 建筑状态变化见闻改为字段级差量：外部状态使用 `changed_fields`，工位占用变化使用 `changed_workstations`，不再复制完整广场或建筑快照。
+- 更新 `tools/verify_location_info_nodes.gd` 与 `tools/verify_plaza_public_broadcast.gd` 覆盖 T0407 规则。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
 ## 2026-05-25
+
+### 建筑修复覆盖、进入快照与协助事件位置修正
+完成：
+- `data/building_defs.json` 为城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊补齐 `repair` 配置，验证所有建筑都可修复。
+- NPC 进入可进入建筑时，`location_entered` 摘要和进入者收到的当前状态见闻会立即包含建筑外部状态、建筑内 NPC 和工位占用状态。
+- 协助修复/协助升级改为广场行为：NPC 在室内时先移动到广场；协助开始事件写入 `plaza_public`，`location_id == "plaza"`，目标建筑保留在 `payload.building_id`。
+- `BuildingSystem` 的协助者有效性改为要求 NPC 仍在广场且当前行动仍是协助对应建筑。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+
+### T0205/T0305/T0403/T0404/T0405 建筑升级倒计时与见闻降噪
+完成：
+- `BuildingSystem.upgrade_building(...)` 改为点击时一次性扣除资源并创建升级作业，随 `logical_time_tick` 推进；倒计时完成后才提升等级、Max HP 和可配置工作位奖励。
+- 建筑受损、正在修复或正在升级时不可开始升级；升级期间不可开始修复。所有建筑定义都补齐了 `upgrade` 最小配置。
+- `ActionSystem` 新增 `debug_assign_upgrade_assist(npc_id, building_id)`；NPC 可协助正在升级的建筑并按工程熟练度提供加速，升级完成后自动回到 idle。
+- `MemorySystem` 的建筑可传播外部状态收窄为等级和完好/受损/正在修复/正在升级；HP、Max HP、剩余修复/升级时长不再触发见闻传播。可传播内部状态收窄为在场 NPC 和每个工位的占用/空闲状态，工位数量不再触发传播。
+- 建筑状态见闻 summary 改为直接表达实际信息，不再使用“建筑状态更新”这类空泛前缀。
+- `BuildingPanel` 显示升级倒计时进度、剩余时间、速度倍率和协助人数；`GMPanel` 新增协助升级按钮与 `assist_upgrade <npc_id> <building_id>` 命令。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+
+### T0403/T0404/T0405 建筑状态与见闻广播修正
+完成：
+- `MemorySystem` 监听 `building_state_changed`，任一建筑外部状态变化都会同步到广场 `building_external_states` / `key_entities`，并生成带具体建筑名的 `plaza_status_changed` 见闻。
+- 可进入建筑状态变化会生成 `location_status_changed` 本地见闻；NPC 进入广场获得所有建筑外部状态，进入可进入建筑获得该建筑外部 + 内部状态。
+- 建筑状态快照拆分外部状态（HP、等级、完好/受损/正在修复、剩余修复时长）和内部状态（在场 NPC、工位数量、占用/空闲状态）；不可进入建筑不暴露内部 NPC 或工位。
+- `data/building_defs.json` 移除主厅、仓库、围墙、城门的旧内部工位占位；围墙升级不再增加内部工位。
+- 更新 `tools/verify_location_info_nodes.gd`、`tools/verify_plaza_public_broadcast.gd`、`tools/verify_building_repair_upgrade.gd` 覆盖全建筑外部状态、内部字段隔离、状态见闻命名和不可进入建筑无工位规则。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0006 修复建筑修复进度抢占右上角面板
+完成：
+- `EventBus` 新增 `building_state_changed(building_id)`，区分建筑状态刷新与玩家/调试选择建筑。
+- `BuildingSystem` 在建筑受损、开始修复、修复进度推进、协助者变化、修复完成和升级时发出 `building_state_changed`，不再复用 `building_clicked`。
+- `BuildingPanel` 仍通过 `building_clicked` 打开建筑，但只在自身可见且当前显示同一建筑时响应 `building_state_changed` 刷新。
+- `tools/verify_npc_panel_state.gd` 增加回归用例：开始修复受损建筑后点击 NPC，再推进修复时间，确认右上角保持 NPC 面板。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0305 行动系统持续时间修订
+完成：
+- `ActionSystem` 的工作、吃饭、睡觉改为到达地点后进入 active 行动，随 `TimeSystem.logical_time_tick` 推进，不再瞬时完成。
+- `data/action_defs.json` 改用 `duration_seconds`：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。
+- 吃饭按 20 分钟恢复约 50 点饱食度结算；睡觉按 6.5 小时降低 100 点疲劳结算；工作保留 1 小时最小批次，完成后结算当前占位投入/产出。
+- 更新行动验证脚本，使测试显式推进逻辑时间后再检查完成事件和数值变化。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
 
 ### T0005 加固 Godot MCP proxy 自恢复
 完成：
@@ -11,6 +101,7 @@
 - 更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，加入 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`。新 proxy 启动时会检查同父进程的旧 proxy，命中后先清理再接管，退出时再移除自己的 lock。
 - 更新 `tools/check_godot_mcp.ps1`，除了原来的连接判断外，额外提示“多 proxy”与“proxy 在但 broker 不在”两类故障。
 - 将这次经验精简回写到 `CURRENT_STATE.md` 和 `TASKS.md` 的 Godot MCP 相关位置，后续排查优先先看自检脚本和 proxy/broker 进程关系。
+- 追加修正：再次复发时确认旧逻辑只会清理 lock 指向的单个 proxy，连续多次拉起后更早的残留 proxy 仍会留下。已改为按同一个 `codex` 父进程枚举所有 `godot-mcp-proxy.mjs`，在启动时一次性清理其余旧实例。
 
 验证：
 - `powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1` 返回 `Godot MCP connected`。
@@ -334,8 +425,8 @@
 
 完成：
 - `ActionSystem` 接入 `data/action_defs.json`，提供调试指派工作、吃饭、睡觉和指定行动的接口。
-- 行动指派会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后自动结算。
-- 菜园工作产出粮食，食堂工作消耗粮食产出餐食；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
+- 行动指派会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑；2026-05-25 起，到达后进入持续行动并随逻辑时间结算。
+- 菜园工作产出粮食，食堂工作消耗粮食产出餐食；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。2026-05-25 起，吃饭和睡觉恢复/消耗按持续时间逐步发生。
 - `MemorySystem` 新增最小 EventLog 占位，行动成功或失败会记录事件。
 - `data/resource_defs.json` 新增餐食资源，`data/action_defs.json` 扩展工作 / 吃饭 / 睡觉行动配置。
 - 新增 `tools/verify_action_system_basic.gd` 验证最小行动闭环。

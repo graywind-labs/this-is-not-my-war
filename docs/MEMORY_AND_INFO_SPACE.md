@@ -13,6 +13,8 @@
 - 每个事件必须关联一个 `subject_npc_id`，并首先写入该 NPC 的事件库，表示“这件事发生在他身上”。
 - 每个事件必须有 `location_id`。室外事件统一归入 `plaza`。
 - 事件库和见闻库分开：事件库记录亲历，见闻库记录 NPC 当场接收到的公开事件广播、状态广播、公告和公开消息；NPC 不会因为进入地点而继承该地点过去发生的事件。
+- 进入/离开地点的事件库记录只表达行动事实；完整地点状态只作为进入者的一次性见闻，且不再重复写进进入事件。
+- 除进入者的一次性地点状态快照外，建筑和地点状态见闻只传递变化字段，不重复传递未变化的完整快照。
 - 当天事件库 + 当天见闻库共同构成 NPC 的短期记忆。
 - 对话全文作为对话事件的属性保存，不单独建立谈话库。
 - LLM 只解释和回应事件，不负责资源、HP、建筑、战斗等权威结算。
@@ -58,10 +60,12 @@
 
 | 事件类型 | 模板 | 关键 payload |
 |---|---|---|
-| `location_entered` | `{actor}进入了{to_location}。` | `to_location_id`, `from_location_id`, `location_snapshot` |
+| `location_entered` | `{actor}进入了{to_location}。` | `to_location_id`, `from_location_id` |
+| `location_exited` | `{actor}离开了{from_location}。` | `from_location_id`, `to_location_id` |
 | `work_started` | `{actor}开始在{location}进行{action}。` | `action_id`, `workstation_id` |
 | `work_completed` | `{actor}完成了{action}，消耗{inputs}，产出{outputs}。` | `action_id`, `input_resources`, `output_resources` |
 | `repair_assist_started` | `{actor}开始协助修复{location}。` | `action_id`, `building_id`, `engineering_skill` |
+| `upgrade_assist_started` | `{actor}开始协助升级{location}。` | `action_id`, `building_id`, `engineering_skill` |
 | `dialogue_turn` | `{speaker}对{listener}说：{text}` | `speaker_id`, `listener_id`, `text` |
 | `damage_taken` | `{target}受到{actor}造成的{damage}点伤害。` | `damage`, `hp_before`, `hp_after` |
 
@@ -73,7 +77,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`eat_started`、`eat_completed`。
+- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`。
 - 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`。每轮文本、说话者、听者、是否提出应征、是否承诺/威胁/欺骗等都写入 `payload`。
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`。
@@ -89,16 +93,18 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；`plaza_public` 事件会即时广播给广场当前在场 NPC，并保留广场公开查询。
-- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended`，这些工作/活动事件按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；`NPCSystem` 到达地点时写入 `location_entered`。
+- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended`。工作/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级按 `plaza_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。`NPCSystem` 到达地点时写入 `location_entered`。
 - 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_public_events()` 和对应调试接口。
 - 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` / `plaza_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
 - `NPCPanel` 会分开显示当前 NPC 的事件库和见闻库最近摘要，调试工具可通过 `debug_get_npc_short_term_memory(...)` 区分查看两类记录。
-- `MemorySystem` 当前维护广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，保存 `people_present`、当前公告/命令和进入快照所需的当前状态。
-- 广场快照没有自身建筑 HP，但提供主厅、围墙、城门、仓库 `key_entities`，以及当前在场 NPC 数和敌人数；室外或不可进入实体来源的 `plaza_public` 事件默认归入 `location_id == "plaza"`。
-- 广场公告文本变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件；公告牌只是主厅前的公告输入/显示接口，不是建筑信息节点。关键目标受损、修复或升级会生成 `plaza_status_changed` 广场公开状态事件，当时在广场的 NPC 会把这些信息写入见闻库。
-- `NPCSystem` 到达地点时会更新旧地点与新地点的 `people_present`，并将 `location_entered.payload.location_snapshot` 写入事件库。快照包含当前人数、建筑 HP/等级/可用状态、工位/床位占用字段、当前公告/命令；进入广场时还包含主厅、围墙、城门、仓库的关键状态。
-- 主厅、围墙、城门、仓库不作为常规进入空间；NPC 移动到这类实体时，信息节点状态归入广场快照。
+- `MemorySystem` 当前维护广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，保存 `people_present`、当前公告/命令和进入快照所需的当前状态；`move_npc_between_locations(...)` 只维护当前在场人员，并给进入者写入一次 `location_entry_snapshot` 见闻。
+- 所有建筑都有可传播外部状态：`level` 和 `condition`（`intact` / `damaged` / `repairing` / `upgrading`）。HP、Max HP、修复/升级剩余时长仍可由建筑系统和 UI 查询，但不参与信息节点状态比较，也不会因自身变化触发见闻传播。可进入建筑额外拥有可传播内部状态：当前在场 NPC 和每个工位的空闲/占用者；工位数量本身不参与状态比较。不可进入建筑不向地点快照暴露工位和内部 NPC。
+- 广场快照没有自身建筑 HP，但通过 `building_external_states` 继承所有建筑的可传播外部状态；`key_entities` 当前作为兼容别名指向同一组外部状态。室外或不可进入实体来源的 `plaza_public` 事件默认归入 `location_id == "plaza"`。
+- 广场公告文本变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件；公告牌只是主厅前的公告输入/显示接口，不是建筑信息节点。任一建筑的可传播外部状态变化都会生成带具体建筑名和具体状态的 `plaza_status_changed` 广场公开状态事件，当时在广场的 NPC 会把这些信息写入见闻库；summary 不使用“建筑状态更新”这类空泛前缀。
+- `location_entered` / `location_exited` 事件库记录只保留进入/离开的行动事实；完整地点状态不再重复塞入亲历事件。进入者通过见闻库获得一次当前状态快照：进入广场时接收所有建筑外部状态，进入可进入建筑时接收该建筑完整外部 + 内部状态，包括当前在场 NPC 和工位占用。已经在场的 NPC 只接收“某人进入/离开某地”的 `local_public` 事件，不再额外收到完整在场 NPC 列表。
+- 后续地点或建筑状态变化只写入变化字段对应的见闻，不重新广播完整地点快照。例如建筑受损只广播受损，升级只广播等级变化，单个工位占用变化只广播该工位变化；未变化的建筑等级、工位、公告和在场人员不重复进入见闻库。广场建筑状态见闻使用 `changed_fields`，可进入建筑内部工位变化使用 `changed_workstations`。
+- 主厅、围墙、城门、后门、仓库不作为常规进入空间；NPC 移动到这类实体时，信息节点状态归入广场快照。
 
 当前仍不实现睡前总结、日记、知识图谱、LLM 记忆摘要、战斗本体、真实玩家交互按钮或公告输入 UI；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
 
@@ -113,7 +119,8 @@ T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.
 示例：
 
 - 醒来并开始制定计划。
-- 进入食堂，看到几个人、工位是否空闲、食堂 HP。
+- 进入食堂。
+- 离开宿舍。
 - 与玩家对话，完整对话内容写入事件 `payload`。
 - 开始/结束工作，产出和消耗由程序结算后写入。
 - 被给予金钱、装备或任务。
@@ -126,20 +133,28 @@ T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.
 地点/建筑信息节点保存：
 
 - 当前有哪些 NPC 在场。
-- 建筑 HP、等级、是否可用。
-- 工作位/床位/功能位是否空闲，以及被谁占据。
+- 建筑外部状态：等级、完好/受损/正在修复/正在升级。HP 和剩余修复/升级时长不参与传播。
+- 可进入建筑的内部状态：每个工作位/床位/功能位的空闲/占用状态与占用者，以及当前在建筑内的 NPC。工位数量不参与传播。
 - 当前公告或公共命令；只有广场状态保存当前公告文本，公告牌只是输入/显示接口。
-- NPC 进入地点时应读取的状态快照。
+- NPC 进入地点时应写入进入者见闻库的一次性状态快照。
 
-NPC 进入地点时，系统生成 `location_entered` 事件；该事件的 `payload.location_snapshot` 保存进入时地点状态。地点节点随后向在场 NPC 广播当前状态。进入者只获得当前状态，不继承该地点过去发生的公开事件。
+NPC 进入地点时，系统生成 `location_entered` 事件；该事件写入进入者事件库，只表达“某人进入了某地”。进入者随后在见闻库获得一次当前地点状态快照：进入广场时获得当前公告与所有建筑外部状态；进入可进入建筑时获得该建筑外部状态、当前在场 NPC 与工位/床位占用。进入者不会继承该地点过去发生的公开事件。
+
+`location_entered` 是本地公开事件。地点节点会把进入事件转发给进入前已经在场的其他 NPC；他们只收到“某人进入了某地”这条事件见闻，不再额外收到完整建筑状态或在场人员列表。建筑内“现在有谁”由进入/离开事件自然表达。
+
+NPC 离开地点时，系统生成 `location_exited` 事件；事件 `location_id` 使用离开的地点，写入离开者事件库，并以 `local_public` 转发给该地点仍在场的 NPC。该事件只表达“某人离开了某地”，不附带完整地点状态，也不触发建筑内 NPC 列表广播。
 
 当地点内发生 `local_public` 事件时，事件先进入所属 NPC 的事件库，再发送到地点节点。地点节点把事件即时转发给当前在场 NPC，接收者写入自己的见闻库；转发完成后地点节点不保存该事件。
+
+当地点或建筑状态变化时，见闻库只接收变化字段，不接收完整状态快照。例如建筑受损、修复完成、升级完成、公告变化或某个工位占用变化分别生成对应的字段级见闻；未变化的建筑等级、在场人员、工位和公告不重复广播。人员进出不再作为“完整内部状态变化”广播，统一由 `location_entered` / `location_exited` 事件表达。
 
 ### 3. NPC Witness Log
 
 每个 NPC 拥有当天见闻库，记录自己通过地点/广场广播、公告、状态变化或公共事件获得的信息。
 
 见闻库不同于事件库：见闻不表示“这件事发生在我身上”，而表示“我知道了这件事”。后续对话和反思应能区分亲历与听闻。
+
+进入地点时的一次性地点状态快照也属于见闻库，不属于事件库。除这次进入快照外，后续地点/建筑状态见闻必须保持字段级增量，避免同一建筑状态在短期记忆里反复复制。
 
 ## 地点与建筑边界
 
@@ -163,11 +178,12 @@ NPC 进入地点时，系统生成 `location_entered` 事件；该事件的 `pay
 - 主厅
 - 围墙
 - 城门
+- 后门
 - 仓库
 
-不可进入实体不建立常规室内信息节点。它们的 HP、可用状态归入广场当前状态；受损事件如果公开，则通过广场节点即时广播。NPC 进入广场时，`location_entered.payload.location_snapshot` 应包含主厅、围墙、城门等关键实体当前状态。
+不可进入实体不建立常规室内信息节点。它们只有可传播外部状态，不暴露内部 NPC、工位或床位状态；受损、修复、升级等外部状态变化如果公开，则通过广场节点即时广播。NPC 进入广场时，进入者的见闻库应获得所有建筑的可传播外部状态；`location_entered` 事件本身只记录进入广场的行动事实。
 
-广场没有建筑 HP，但它是所有室外事件广播、公告当前内容、广场战斗状态、室外人员状态和不可进入实体状态的公共信息中枢。
+广场没有建筑 HP，但它是所有室外事件广播、公告当前内容、广场战斗状态、室外人员状态和全体建筑可传播外部状态的公共信息中枢。
 
 ## 广场公开见闻
 
@@ -176,14 +192,14 @@ NPC 进入地点时，系统生成 `location_entered` 事件；该事件的 `pay
 - 战斗开始与结束。
 - 敌我大致人数。
 - 广场或室外发生的公开事件。
-- 围墙、城门、主厅、仓库等关键目标受损。
+- 任一建筑的可传播外部状态变化，包括等级变化、受损、开始修复、修复完成、开始升级或升级完成。HP 变化和剩余修复/升级时长变化不广播。
 - 某 NPC HP 低于 30%。
 - 某 NPC 击倒或击杀敌人。
 - 某 NPC 昏迷、被治疗、复苏。
 - 某 NPC 逃离或试图逃离。
 - 玩家在公共场合攻击、威胁、赠予、承诺或公告。
 
-NPC 进入广场时只接收广场当前状态和当前公告文本；不会继承过去已经广播过的广场事件。
+NPC 进入广场时只接收广场当前状态、当前公告文本和所有建筑外部状态；不会继承过去已经广播过的广场事件。
 
 ## 短期记忆
 

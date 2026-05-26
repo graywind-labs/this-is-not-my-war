@@ -63,6 +63,29 @@
 
 ---
 
+## T0006 修复建筑修复进度抢占右上角面板
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+修复建筑正在修复时，玩家点击 NPC 后右上角面板被修复建筑自动切回的问题。
+
+验收标准：
+- 玩家点击正在修复的建筑并开始修复后，建筑面板能随修复进度刷新。
+- 修复过程中玩家点击 NPC，右上角应保持 NPC 面板，不被正在修复的建筑重新抢占。
+- 玩家再次点击建筑时，仍可正常切回建筑面板。
+- 现有建筑修复/升级与 NPC 面板回归验证通过。
+
+验收结果（2026-05-25）：
+- 已将建筑点击选择与建筑状态刷新拆分为 `building_clicked` / `building_state_changed`。
+- `BuildingPanel` 只在当前可见且正在显示对应建筑时响应建筑状态刷新；修复进度不会再抢占 NPC 面板。
+- `tools/verify_npc_panel_state.gd` 已覆盖“建筑修复中点击 NPC 后不自动切回建筑面板”的回归用例。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`godot --headless --path . --quit-after 1`。
+
+---
+
 # M0：项目骨架与工具稳定
 
 目标：让 Godot 项目、Python 后端、MCP 工具和项目文档结构可运行、可检查、可继续开发。
@@ -187,7 +210,7 @@
 
 验收结果（2026-05-25）：
 - 本次排查确认真实问题是同一个 `codex` 父进程下残留 2 个 `godot-mcp-proxy.mjs`，其中 1 个没有对应 broker 子进程，属于孤立 proxy。
-- 已更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，启动时会读写 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`，发现同父进程的旧 proxy 时先清理再接管，并在退出时清理自己的 lock。
+- 已更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，启动时会读写 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`，并按同一个 `codex` 父进程枚举所有旧 proxy；命中后先清理其余残留实例再接管，并在退出时清理自己的 lock。
 - 已更新 `tools/check_godot_mcp.ps1`，新增“多 proxy”和“proxy 在但 broker 不在”的明确提示。
 - 最终验证：MCP 可正常响应 `project.addon_status` 和 `editor.get_state`，自检返回 `Godot MCP connected`，进程只剩 1 条有效的 `proxy -> broker` 链路。
 ---
@@ -713,14 +736,16 @@ Main
 - 建筑 HP 受损后可修复。
 - 资源不足时无法修复/升级。
 - 升级至少能影响一个数值。
+- 建筑升级与修复一样是倒计时作业，不瞬间完成。
+- 受损、正在修复或正在升级的建筑不可开始升级。
 
 验收结果（2026-05-20）：
 
 - 已在 `BuildingSystem.gd` 中实现 `can_repair_building`、`repair_building`、`can_upgrade_building`、`upgrade_building` 和临时验证用 `debug_damage_building`。
 - 修复/升级消耗由 `ResourceSystem.spend_resources` 权威结算；资源不足时返回失败，不扣除资源，不改变建筑状态。
-- 已在 `data/building_defs.json` 为主厅、宿舍、食堂、仓库、围墙加入 `repair` / `upgrade` 配置；围墙升级会提升等级、Max HP 并增加 1 个修复工作位。
+- 已在 `data/building_defs.json` 为主厅、宿舍、食堂、仓库、围墙加入 `repair` / `upgrade` 配置；围墙升级会提升等级和 Max HP。不可进入建筑不再保留内部工位占位。
 - `BuildingPanel.gd` 的修复/升级按钮现在会触发系统接口，并根据当前 HP、等级和资源是否足够自动启用/禁用。
-- 已新增 `tools/verify_building_repair_upgrade.gd` 验证：围墙受损后可用石料修复，升级消耗石料并改变等级、Max HP、工作位，石料不足时升级失败且资源不变。
+- 已新增 `tools/verify_building_repair_upgrade.gd` 验证：围墙受损后可用石料修复，升级消耗石料并改变等级、Max HP，石料不足时升级失败且资源不变；不可进入围墙不会暴露内部工位。
 - 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`--quit-after 1` 和 Godot MCP 主场景运行验证；游戏日志无报错。
 
 修订结果（2026-05-24）：
@@ -730,6 +755,14 @@ Main
 - `get_building(...)` 会返回 `repair_status`，包含进度、剩余时间、目标 HP、协助人数和当前速度倍率。
 - NPC 可通过 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 协助正在修复的建筑；每名协助者按工程熟练度提供小额加速，多个 NPC 可叠加。
 - 已更新 `tools/verify_building_repair_upgrade.gd`，验证修复不再瞬间恢复、资源预付、HP 随时间推进并最终回满。
+
+修订结果（2026-05-25）：
+
+- 升级从“点击后瞬间提升等级”改为“点击时一次性扣除资源并创建倒计时升级作业”；倒计时完成后才提升等级、Max HP 和可配置的工作位奖励。
+- `can_upgrade_building(...)` 现在要求建筑完好，且不处于修复或升级作业中；受损、正在修复、正在升级或资源不足时都不可升级。
+- 所有建筑定义都具备 `repair` / `upgrade` 最小配置；不可进入建筑升级不再增加内部工位。
+- `get_building(...)` 会返回 `upgrade_status`，包含进度、剩余时间、协助人数和当前速度倍率。
+- 已更新 `tools/verify_building_repair_upgrade.gd`，验证所有建筑可修复且有升级潜力、受损/修复中不可升级、升级不会瞬时完成、升级期间不可修复，且完成后清除升级状态。
 
 ---
 
@@ -987,18 +1020,29 @@ Main
 验收结果（2026-05-21）：
 
 - `ActionSystem` 已读取 `data/action_defs.json`，提供 `debug_assign_work(npc_id, building_id)`、`debug_assign_eat(npc_id)`、`debug_assign_sleep(npc_id)` 和 `debug_assign_action(npc_id, action_id)`。
-- 调试指派会复用 `NPCSystem.move_npc_to_building(...)`，NPC 到达目标建筑后自动结算行动。
+- 调试指派会复用 `NPCSystem.move_npc_to_building(...)`；2026-05-25 起，NPC 到达目标建筑后进入持续行动，并随逻辑时间结算。
 - 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁和木材产出武器/盔甲；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
 - 已修正无产出工作不会结算饱食/疲劳和 EventLog 的问题。
 - `MemorySystem` 已提供最小 EventLog 占位，行动成功/失败会写入事件。
 - 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证吃饭、睡觉、基础生产、派生资源生产和建筑协助修复；并回归通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`；通过 Godot MCP 运行主场景，游戏日志无报错。
 
+修订结果（2026-05-25）：
+
+- `ActionSystem` 的工作 / 吃饭 / 睡觉不再在抵达地点后瞬时完成；抵达后会进入 active 行动，随 `TimeSystem.logical_time_tick` 推进。
+- `data/action_defs.json` 改用 `duration_seconds` 表达当前行动时长：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。
+- 吃饭当前以 20 分钟恢复约 50 点饱食度为基准；睡觉以 6.5 小时降低 100 点疲劳为基准；工作当前仍以 1 小时为最小工作批次，批次完成时结算投入、产出、饱食和疲劳。
+- 行动开始事件仍即时写入；完成事件只在持续时间结束后写入。暂停时 active 行动不推进，恢复后继续。
+- 已更新 `tools/verify_action_system_basic.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_action_local_public_broadcast.gd` 和 `tools/verify_npc_short_term_memory_container.gd`，验证持续行动和事件广播。
+- `ActionSystem` 新增 `debug_assign_upgrade_assist(npc_id, building_id)`；协助修复/协助升级都是带建筑参数的广场行为，NPC 在室内时会先前往广场，再按工程熟练度加速目标建筑倒计时。
+- 协助修复/协助升级开始会分别写入 `repair_assist_started` / `upgrade_assist_started` 广场公开事件，`location_id == "plaza"` 且 `visibility == "plaza_public"`；完成后协助 NPC 回到 idle，并写入 `completed_assist_*_<building_id>` 行动结果。
+- 已更新 `tools/verify_action_system_basic.gd`，验证协助修复/协助升级发生在广场、事件为广场公开、可提高速度倍率并推进作业完成。
+
 修订结果（2026-05-24）：
 
 - 围墙修补行动不再直接恢复建筑 HP，改为协助已有修复作业；修复资源由 `BuildingSystem.repair_building(...)` 在开始修复时一次性扣除。
 - `ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`；协助修复是一个带建筑参数的统一行为，不再在 `data/action_defs.json` 中保留按建筑写死的“修补围墙”行动。
-- 协助修复开始会写入 `repair_assist_started` 本地公开事件。
-- 已更新 `tools/verify_action_system_basic.gd`，验证 NPC 协助修复可提高速度倍率、离开建筑会移除协助人数和加成、重新协助可推进修复完成并在完成后回到 idle。
+- 协助修复开始事件已在 2026-05-25 修订为广场公开事件：`location_id == "plaza"`，`visibility == "plaza_public"`，目标建筑保存在 `payload.building_id`。
+- 已更新 `tools/verify_action_system_basic.gd`，验证 NPC 协助修复可提高速度倍率、离开广场会移除协助人数和加成、重新协助可推进修复完成并在完成后回到 idle。
 
 修订结果（2026-05-24 UI/GM 清理）：
 
@@ -1171,11 +1215,11 @@ Main
 实现范围：
 
 - 可进入地点拥有信息节点：广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊。
-- 不可进入实体不建常规进入空间：主厅、围墙、城门、仓库。
-- 地点信息节点记录 `people_present`、建筑 HP、等级、可用状态、工作位/床位占用和当前公告；公告文本只保存在广场状态中，公告牌只是主厅前输入/显示接口。
+- 不可进入实体不建常规进入空间：主厅、围墙、城门、后门、仓库。
+- 地点信息节点记录 `people_present`、建筑外部状态、可进入建筑内部状态、工作位/床位占用和当前公告；公告文本只保存在广场状态中，公告牌只是主厅前输入/显示接口。
 - NPC 进入地点时写入 `location_entered` 事件。
-- `location_entered.payload.location_snapshot` 包含进入时地点状态。
-- 主厅、围墙、城门、仓库的 HP 和状态归入广场状态快照。
+- `location_entered` 只记录进入行动；进入时地点状态应作为进入者的一次性见闻写入，完整状态不重复进入事件库。
+- 所有建筑的外部状态归入广场状态快照；不可进入实体不暴露工位和内部 NPC。
 - 地点状态发生变化时，向当前在场 NPC 广播状态变化；NPC 把收到的信息写入见闻库。
 - 建筑内发生 `local_public` 事件时，事件即时广播给当前在场 NPC，广播后建筑/地点节点不保存该事件。
 
@@ -1189,15 +1233,15 @@ Main
 
 - NPC 进入可进入地点后，地点 `people_present` 更新。
 - NPC 离开地点后，地点 `people_present` 更新。
-- `location_entered` 事件 payload 包含人数、工作位/床位占用、建筑 HP/等级和当前公告/命令。
-- NPC 进入广场时，payload 包含主厅、围墙、城门状态。
+- 进入者的见闻库包含当前在场 NPC、建筑等级、完好/受损/正在修复/正在升级、工作位/床位占用和当前公告/命令；建筑 HP、剩余修复/升级时长和工位数量不作为传播状态。
+- NPC 进入广场时，payload 包含所有建筑外部状态。
 - 建筑发生 `local_public` 事件后即时广播给该建筑内当前在场 NPC，并写入接收者见闻库；建筑节点不保存事件。
 
 验收结果（2026-05-24）：
 
 - `MemorySystem` 已建立广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，维护 `people_present`、当前公告/命令和进入快照。
-- `NPCSystem` 到达地点时会调用 `MemorySystem.move_npc_between_locations(...)` 更新离开/进入地点的在场人员，并把地点快照写入 `location_entered.payload.location_snapshot`。
-- 进入快照已包含人数、建筑 HP/等级/可用状态、工位/床位占用字段和当前公告/命令；进入广场时会聚合主厅、围墙、城门、仓库关键状态。
+- `NPCSystem` 到达地点时会调用 `MemorySystem.move_npc_between_locations(...)` 更新离开/进入地点的在场人员；T0407 后，地点快照只作为进入者的一次性见闻写入，不再复制到 `location_entered` 事件。
+- 进入快照已包含当前在场 NPC、建筑等级、完好/受损/正在修复/正在升级、工位/床位占用字段和当前公告/命令；进入广场时会聚合所有建筑可传播外部状态。
 - `local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；地点信息节点不保存事件历史。
 - 新增 `tools/verify_location_info_nodes.gd` 验证地点人数进出、进入快照、广场关键实体状态和 `local_public` 见闻转发，并回归 T0402 结构化事件与 T0305 行动闭环。
 
@@ -1205,6 +1249,14 @@ Main
 
 - 修复行动事件可见性漏设问题：`ActionSystem` 写入的工作、吃饭、睡觉开始/完成/失败事件从 `private` 改为 `local_public`，因此同一地点当前在场 NPC 会把这些活动/工作事件写入见闻库。
 - 新增 `tools/verify_action_local_public_broadcast.gd`，验证 NPC 在同一地点目击工作、吃饭、睡觉事件时能收到 `work_started` / `work_completed`、`eat_started` / `eat_completed`、`sleep_started` / `sleep_ended` 见闻，且行动者不会把自己的事件重复写为见闻。
+
+修复记录（2026-05-25）：
+
+- 地点进入时当前实现会额外生成一次当前状态见闻广播：进入广场获得所有建筑外部状态，进入可进入建筑获得该建筑外部 + 内部状态。新规则要求该完整状态只写给进入者的见闻库一次，不再重复写入 `location_entered` 事件 summary / payload。
+- 可进入建筑快照拆分为 `external_state` 与 `internal_state`；不可进入建筑只提供外部状态，不暴露工位和内部 NPC。
+- `tools/verify_location_info_nodes.gd` 已补充广场继承所有建筑外部状态、外部状态不泄漏内部工位字段的验证。
+- 建筑可传播外部状态只计算等级和完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发地点状态广播。可传播内部状态只计算在场 NPC 和每个工位占用/空闲，工位数量不触发广播。
+- T0407 已收敛：NPC 进入可进入建筑时，`location_entered` 只保留“进入某地”的行动事实；进入者收到的当前状态见闻包含该建筑外部状态、在场 NPC 和工位占用状态；已在建筑内的 NPC 只收到进入/离开事件，不再额外收到完整内部状态。
 
 ---
 
@@ -1217,7 +1269,7 @@ Main
 
 任务目标：
 
-实现广场作为室外事件和不可进入建筑的状态信息归属地和公共信息中枢的机制，并让广场公开事件/状态即时广播给当时已经在广场的 NPC。
+实现广场作为室外事件和所有建筑外部状态信息的公共信息中枢的机制，并让广场公开事件/状态即时广播给当时已经在广场的 NPC。
 公开事件包括：
 
 - 室外发生的公开事件
@@ -1230,7 +1282,7 @@ Main
 
 场景/建筑状态包括：
 - 广场当前公告文本，以及每次状态变更时的信息传递
-- 主厅、围墙、城门、仓库等关键目标的状态，以及每次状态变更时的信息传递
+- 所有建筑的外部状态，以及每次状态变更时的信息传递
 - 当前的NPC人数，敌人人数，以及每次状态变更时的信息传递
 
 禁止事项：
@@ -1243,17 +1295,24 @@ Main
 - 调试触发公开事件/状态变更后，广场节点能把事件/状态广播给当前在场 NPC。
 - 接收广播的 NPC 能把公开事件/状态变更写入见闻库。
 - 室外事件默认 `location_id == plaza`。
-- 广场没有建筑 HP，但能提供主厅、围墙、城门状态快照。
+- 广场没有建筑 HP，但能提供所有建筑外部状态快照。
 - `MEMORY_AND_INFO_SPACE.md` 更新当前实现范围。
 
 验收结果（2026-05-24）：
 
 - `MemorySystem` 已将 `plaza_public` 事件统一广播到广场信息节点，当前在广场的 NPC 会把事件写入见闻库；若公开事件原本发生在其他可进入地点，也会同步广播给该地点当时在场 NPC。
 - 室外或不可进入实体来源的 `plaza_public` 事件会规范化为 `location_id == "plaza"`，并在 payload 中保留 `source_location_id`。
-- 广场快照明确没有自身建筑 HP，并提供主厅、围墙、城门、仓库 `key_entities`，以及当前在场 NPC 数和敌人数。
+- 广场快照明确没有自身建筑 HP，并提供所有建筑可传播外部状态 `building_external_states` / `key_entities`，以及当前敌人数。
 - 广场公告文本变更会更新广场当前状态，并生成 `plaza_notice_changed` 广场公开事件广播给当时在广场的 NPC；公告牌不作为建筑参与该流程。
-- `BuildingSystem` 的关键目标受损、修复或升级会通知 `MemorySystem` 生成 `plaza_status_changed` 广场公开状态事件。
+- `BuildingSystem` 的任一建筑等级或完好/受损/正在修复/正在升级状态变化会经 `building_state_changed` 通知 `MemorySystem` 生成带具体建筑名的 `plaza_status_changed` 广场公开状态事件；HP 和剩余时间变化不触发广播。
 - 新增 `tools/verify_plaza_public_broadcast.gd` 验证广场公开事件、公告变更、关键实体状态变更、广场快照字段和见闻库写入。
+
+修复记录（2026-05-25）：
+
+- 广场状态从“只继承不可进入实体/关键目标”修正为“继承所有建筑外部状态”。
+- 建筑状态见闻 summary 不再只显示模糊的广场状态变化，而是写明具体建筑名、等级或完好/受损/正在修复/正在升级等实际信息，不加入“建筑状态更新”这类空泛前缀。
+- 不可进入建筑在广场外部状态中不暴露工位、床位、内部 NPC 等内部信息。
+- `tools/verify_plaza_public_broadcast.gd` 已补充全建筑外部状态、内部字段隔离和状态见闻命名验证。
 
 ---
 
@@ -1296,6 +1355,13 @@ Main
 - `NPCPanel` 新增事件库和见闻库最近摘要显示，并监听 `npc_memory_changed` 刷新。
 - 新增 `tools/verify_npc_short_term_memory_container.gd`，已验证事件库、见闻库、玩家交互和 NPC 面板区分显示；每天结束暂不清空。
 
+修复记录（2026-05-25）：
+
+- NPC 进入地点获得的当前地点状态会写入 `witness_log`；T0407 后不再同时保存在 `location_entered.payload.location_snapshot`。
+- NPC 在广场时会收到任一建筑外部状态变化；NPC 在某个可进入建筑内时会收到该建筑工位变化。T0407 已将这些见闻精简为字段级差量，不再广播完整建筑状态。
+- 建筑状态见闻会写明具体建筑，修复“广场上看到状态变化但不知道是哪座建筑受损/修复”的问题。
+- HP、剩余修复/升级时长和工位数量不进入见闻传播状态，避免修复/升级过程中因为进度变化制造过密的信息传递。
+
 ---
 
 ## T0406 统一玩家交互事件世界内称呼
@@ -1322,6 +1388,52 @@ Main
 - `money_given`、装备/指派、攻击相关 summary 模板已从“玩家……”改为“守备官……”。
 - `tools/verify_npc_short_term_memory_container.gd` 已补充给钱和攻击 summary 检查，确保包含“守备官”且不包含“玩家”。
 - 已在设计源和相关模块文档中写入“NPC/LLM 世界内文本统一称呼守备官”的规则。
+
+---
+
+## T0407 精简地点事件与建筑状态见闻
+
+状态：Done
+优先级：P0
+前置任务：T0403, T0405
+涉及文档：`MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `DATA_SCHEMA.md`
+
+任务目标：
+
+修正地点进入/离开和建筑状态传播的短期记忆冗余，让事件库只保存亲历行动事实，见闻库只保存必要信息。
+
+实现范围：
+
+- `location_entered` 事件只表达“某 NPC 进入了某地点”，写入进入者事件库；不再在 summary 或 payload 中携带完整建筑状态快照。
+- NPC 进入广场或可进入建筑时，进入者在 `witness_log` 中获得一次当前状态快照；进入可进入建筑时该快照包含建筑外部状态、当前在场 NPC 和工位/床位占用。
+- 已经在该地点的 NPC 只收到 `location_entered` 本地公开事件，不再额外收到完整建筑状态或完整 `people_present`。
+- NPC 离开地点时生成 `location_exited` 事件，`location_id` 为其离开的地点，写入离开者事件库，并以 `local_public` 广播给仍在该地点的 NPC。
+- `location_exited` 不携带完整地点状态，也不额外广播建筑内 NPC 列表；人员变化由进入/离开事件本身表达。
+- 建筑或地点状态变化时，只把变化字段写入见闻库，例如建筑受损、开始修复、修复完成、升级完成、公告变化或某个工位占用变化；未变化字段不随事件重复传递。
+- 更新验证脚本，覆盖进入者一次性状态见闻、在场者只收进入/离开事件、离开事件地点正确、状态变化为字段级差量。
+
+禁止事项：
+
+- 不新增长期地点事件历史。
+- 不让 UI 自行决定 NPC 见闻或建筑状态事实。
+- 不把 HP、Max HP、剩余修复/升级时长或工位数量重新纳入 NPC 见闻传播。
+
+验收标准：
+
+- 进入者的事件库中 `location_entered` summary 只包含进入行动，不包含建筑等级、状态、在场 NPC 或工位状态。
+- 进入者的见闻库中有且只有一次进入地点当前状态快照。
+- 进入前已经在建筑内的 NPC 收到“某人进入了某地”见闻，但没有收到完整建筑状态快照。
+- 离开者事件库中生成 `location_exited`，且事件 `location_id` 是离开的地点。
+- 留在建筑内的 NPC 收到“某人离开了某地”见闻，但没有收到完整 `people_present` 快照。
+- 建筑受损、修复、升级和工位占用变化只产生变化字段见闻，不复制完整建筑外部 + 内部状态。
+
+完成记录：
+
+- `MemorySystem.move_npc_between_locations(...)` 现在只维护地点 `people_present`，并给进入者写入一次 `location_entry_snapshot` 见闻；不再因人员进入/离开额外广播完整地点状态。
+- `NPCSystem` 到达或调试进入新信息地点时写入 `location_entered`；离开旧信息地点时写入 `location_exited`，且离开事件的 `location_id` 使用被离开的地点。
+- `location_entered` / `location_exited` payload 只保留进出地点 ID，不再携带 `location_snapshot`、完整 `people_present` 或工位状态。
+- 建筑状态变化广播改为 `changed_fields` / `changed_workstations` 字段级差量；广场建筑状态见闻不再复制 `plaza_snapshot`、`building_external_states` 或完整 `building_snapshot`。
+- `tools/verify_location_info_nodes.gd` 已升级为 T0407 验证；`tools/verify_plaza_public_broadcast.gd` 增加字段级状态见闻检查。
 
 ---
 
@@ -1776,6 +1888,7 @@ NPC 可主动请求与玩家对话。
 - NPC 对应熟练度
 - 力量或智力
 - 建筑等级
+- 可进入建筑的真实工位占用与释放
 - 工作时长
 - TimeSystem 有效逻辑时间倍率
 - 输入资源
@@ -1792,7 +1905,9 @@ NPC 可主动请求与玩家对话。
 - 同一工作由高熟练 NPC 执行，产出更高或耗时更短。
 - 资源不足时工作失败。
 - 工作完成写入结构化事件和 NPC 事件库。
+- 工作开始、取消、失败或完成时正确占用/释放可进入建筑工位，并让地点信息节点广播内部状态变化。
 - 资源产出/消耗、饱食和疲劳变化使用 `TimeSystem` 的逻辑时间倍率或 `logical_time_tick`，不依赖真实帧率或 NPC 移动速度。
+- 在 T0305 持续行动基座上细化工作连续结算：确定各工作是否按小时批次、按分钟消耗投入、按进度产出或支持中途取消返还/损耗，避免后续数值误以为工作是瞬时点击结果。
 
 ---
 
@@ -2025,6 +2140,7 @@ NPC 可主动请求与玩家对话。
 - 疲劳高则睡觉
 - 职业倾向影响工作选择
 - 若存在正在修复且仍受损的建筑，规则计划可把协助修复作为候选行为，并按工程熟练度和建筑重要性选择目标
+- 若存在正在升级的建筑，规则计划可把协助升级作为候选行为，并按工程熟练度和建筑重要性选择目标
 - 副官可优先训练或巡逻
 
 禁止事项：
@@ -2039,7 +2155,7 @@ NPC 可主动请求与玩家对话。
 - 计划执行结果写入记忆。
 - 玩家指派可覆盖入伍 NPC 的计划。
 - 阶段开始、计划执行和计划重估以 `TimeSystem` 的逻辑时间打点为准。
-- NPC 自动计划能在有正在修复的建筑时选择协助修复；修复目标必须来自 `BuildingSystem` 当前状态，不由 LLM 或 UI 自行决定。
+- NPC 自动计划能在有正在修复或正在升级的建筑时选择协助修复/协助升级；目标必须来自 `BuildingSystem` 当前状态，不由 LLM 或 UI 自行决定。
 
 ---
 
@@ -2771,7 +2887,7 @@ NPC 可主动请求与玩家对话。
 
 - 宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊可以拥有室内空间或更细的工位/床位模型。
 - 室内模型表现必须服从已经实现的地点信息节点数据；不要反过来把信息系统写死在模型节点里。
-- 主厅、围墙、城门、仓库仍不可进入，状态继续归入广场当前状态。
+- 主厅、围墙、城门、后门、仓库仍不可进入，状态继续归入广场当前状态，且只暴露外部状态。
 
 验收标准：
 
