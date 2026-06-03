@@ -149,6 +149,19 @@ func _init() -> void:
 		quit(1)
 		return
 
+	gm_panel._execute_command("attack_npc stableman_01 150 local_public")
+	var stableman_state: Dictionary = npc_system.get_npc_state("stableman_01")
+	if int(stableman_state.get("hp", -1)) != 0 or not bool(stableman_state.get("unconscious", false)):
+		push_error("GM attack_npc command should deduct HP and set unconscious")
+		quit(1)
+		return
+	gm_panel._execute_command("recover_npc stableman_01 54000")
+	stableman_state = npc_system.get_npc_state("stableman_01")
+	if int(stableman_state.get("hp", -1)) != 30 or bool(stableman_state.get("unconscious", true)):
+		push_error("GM recover_npc command should advance natural recovery and revive NPC")
+		quit(1)
+		return
+
 	gm_panel._execute_command("plaza_notice Verify GM panel")
 	var plaza_snapshot: Dictionary = memory_system.debug_get_location_snapshot("plaza")
 	if str(plaza_snapshot.get("current_notice", "")) != "Verify GM panel":

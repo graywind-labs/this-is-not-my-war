@@ -8,12 +8,18 @@ const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_WORK_DURATION_HOURS := 1
 const DEFAULT_WORK_DURATION_SECONDS := 3600.0
+const HEALING_ACTION_ID := "assist_heal"
+const HEALING_RESOURCE_ID := "money"
+const HEALING_INITIAL_COST := 1
+const HEALING_COST_INTERVAL_SECONDS := 1800.0
+const HEALING_MAX_HELPERS_PER_TARGET := 2
 
 var _actions: Dictionary = {}
 var _actions_by_location: Dictionary = {}
 var _pending_actions: Dictionary = {}
 var _pending_action_targets: Dictionary = {}
 var _active_actions: Dictionary = {}
+var _healing_helpers_by_target: Dictionary = {}
 
 
 func initialize() -> void:
@@ -22,6 +28,7 @@ func initialize() -> void:
 	_pending_actions.clear()
 	_pending_action_targets.clear()
 	_active_actions.clear()
+	_healing_helpers_by_target.clear()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
@@ -95,6 +102,9 @@ func debug_assign_sleep(npc_id: String) -> bool:
 func debug_assign_action(npc_id: String, action_id: String) -> bool:
 	if not _actions.has(action_id):
 		push_warning("Cannot assign unknown action: %s" % action_id)
+		return false
+	if action_id == HEALING_ACTION_ID:
+		push_warning("assist_heal requires a target NPC. Use debug_assign_heal_assist(healer_npc_id, target_npc_id).")
 		return false
 	if not _can_npc_act(npc_id):
 		return false
@@ -187,6 +197,46 @@ func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	return _execute_upgrade_assist(npc_id, building_id)
 
 
+func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
+	if healer_npc_id.is_empty() or target_npc_id.is_empty():
+		return false
+	if healer_npc_id == target_npc_id:
+		push_warning("NPC cannot assist healing themselves: %s" % healer_npc_id)
+		return false
+	if not _can_npc_act(healer_npc_id):
+		return false
+	if _active_actions.has(healer_npc_id):
+		push_warning("NPC is already performing an active action: %s" % healer_npc_id)
+		return false
+	if not _is_npc_unconscious(target_npc_id):
+		push_warning("Cannot assist healing because target is not unconscious: %s" % target_npc_id)
+		return false
+	if _get_healing_helper_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
+		push_warning("Cannot assist healing because target already has max helpers: %s" % target_npc_id)
+		return false
+	if not _can_pay_healing_cost():
+		_update_action_failure(healer_npc_id, "assist_heal_failed_no_money")
+		return false
+
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+
+	var target_location_id := _get_target_healing_location(target_npc_id)
+	var healer_state: Dictionary = npc_system.get_npc_state(healer_npc_id)
+	if str(healer_state.get("current_location", "")) != target_location_id:
+		_pending_actions[healer_npc_id] = HEALING_ACTION_ID
+		_pending_action_targets[healer_npc_id] = target_npc_id
+		return npc_system.move_npc_to_building(healer_npc_id, target_location_id)
+
+	if _is_gameplay_paused():
+		_pending_actions[healer_npc_id] = HEALING_ACTION_ID
+		_pending_action_targets[healer_npc_id] = target_npc_id
+		return true
+
+	return _execute_heal_assist(healer_npc_id, target_npc_id)
+
+
 func has_pending_action(npc_id: String) -> bool:
 	return _pending_actions.has(npc_id)
 
@@ -195,7 +245,22 @@ func has_active_action(npc_id: String) -> bool:
 	return _active_actions.has(npc_id)
 
 
+func get_healing_helpers_for_target(target_npc_id: String) -> Array[String]:
+	var result: Array[String] = []
+	var helpers: Array = _healing_helpers_by_target.get(target_npc_id, [])
+	for raw_helper_id in helpers:
+		var helper_id := str(raw_helper_id)
+		if not helper_id.is_empty() and not result.has(helper_id):
+			result.append(helper_id)
+	return result
+
+
 func _on_npc_state_changed(npc_id: String) -> void:
+	if _is_npc_unconscious_or_escaped(npc_id):
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_stop_active_action(npc_id, "")
+		return
 	if _is_gameplay_paused():
 		return
 	_try_execute_pending_action(npc_id)
@@ -224,6 +289,10 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 func _try_execute_pending_action(npc_id: String) -> void:
 	if not _pending_actions.has(npc_id):
 		return
+	if not _can_npc_act(npc_id):
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		return
 
 	var action_id := str(_pending_actions[npc_id])
 	if action_id == "assist_repair":
@@ -231,6 +300,9 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		return
 	if action_id == "assist_upgrade":
 		_try_execute_pending_upgrade_assist(npc_id)
+		return
+	if action_id == HEALING_ACTION_ID:
+		_try_execute_pending_heal_assist(npc_id)
 		return
 
 	if not _actions.has(action_id):
@@ -291,6 +363,25 @@ func _try_execute_pending_upgrade_assist(npc_id: String) -> void:
 		_execute_upgrade_assist(npc_id, building_id)
 
 
+func _try_execute_pending_heal_assist(npc_id: String) -> void:
+	var target_npc_id := str(_pending_action_targets.get(npc_id, ""))
+	if target_npc_id.is_empty():
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		return
+
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+
+	var target_location_id := _get_target_healing_location(target_npc_id)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(state.get("current_location", "")) == target_location_id and str(state.get("current_action", "")) == "idle":
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_execute_heal_assist(npc_id, target_npc_id)
+
+
 func _execute_action(npc_id: String, action_id: String) -> bool:
 	var action: Dictionary = _actions[action_id]
 	var action_type := str(action.get("type", ""))
@@ -301,6 +392,9 @@ func _execute_action(npc_id: String, action_id: String) -> bool:
 			return _start_eat(npc_id, action)
 		"sleep":
 			return _start_sleep(npc_id, action)
+		"targeted_heal":
+			push_warning("assist_heal requires a target NPC. Use debug_assign_heal_assist(healer_npc_id, target_npc_id).")
+			return false
 		_:
 			push_warning("Unsupported action type: %s" % action_type)
 			return false
@@ -370,6 +464,50 @@ func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 		"action_id": "assist_upgrade",
 		"building_id": building_id,
 		"engineering_skill": engineering_skill
+	})
+	return true
+
+
+func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+	if not _is_npc_unconscious(target_npc_id):
+		_update_action_failure(healer_npc_id, "assist_heal_failed_target_not_unconscious")
+		return false
+	if _get_healing_helper_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
+		_update_action_failure(healer_npc_id, "assist_heal_failed_target_helper_limit")
+		return false
+	if not _spend_healing_cost():
+		_update_action_failure(healer_npc_id, "assist_heal_failed_no_money")
+		_log_healing_event(healer_npc_id, target_npc_id, "healing_completed", {
+			"action_id": HEALING_ACTION_ID,
+			"healer_npc_id": healer_npc_id,
+			"target_npc_id": target_npc_id,
+			"money_spent": 0
+		})
+		return false
+
+	var healer: Dictionary = npc_system.get_npc(healer_npc_id)
+	var medical_skill := _get_medical_skill(healer)
+	_add_healing_helper(target_npc_id, healer_npc_id)
+	npc_system.update_npc_state(healer_npc_id, {
+		"current_action": "assist_heal_%s" % target_npc_id,
+		"last_action_result": "assist_heal_started_%s" % target_npc_id
+	})
+	_active_actions[healer_npc_id] = {
+		"kind": HEALING_ACTION_ID,
+		"target_npc_id": target_npc_id,
+		"medical_skill": medical_skill,
+		"cost_timer_seconds": 0.0,
+		"money_spent": HEALING_INITIAL_COST
+	}
+	_log_healing_event(healer_npc_id, target_npc_id, "healing_started", {
+		"action_id": HEALING_ACTION_ID,
+		"healer_npc_id": healer_npc_id,
+		"target_npc_id": target_npc_id,
+		"money_spent": HEALING_INITIAL_COST,
+		"max_helpers": HEALING_MAX_HELPERS_PER_TARGET
 	})
 	return true
 
@@ -535,7 +673,13 @@ func _create_active_action(action: Dictionary) -> Dictionary:
 
 
 func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
+	if _is_npc_unconscious_or_escaped(npc_id):
+		_stop_active_action(npc_id, "")
+		return
 	var active_action: Dictionary = _active_actions[npc_id]
+	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
+		_advance_healing_assist(npc_id, active_action, game_delta_seconds)
+		return
 	var duration := maxf(0.001, float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS)))
 	var elapsed := clampf(float(active_action.get("elapsed_seconds", 0.0)) + game_delta_seconds, 0.0, duration)
 	active_action["elapsed_seconds"] = elapsed
@@ -556,6 +700,45 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 			_complete_eat(npc_id, active_action)
 		"sleep":
 			_complete_sleep(npc_id, active_action)
+
+
+func _advance_healing_assist(healer_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		_stop_active_action(healer_npc_id, "assist_heal_failed_no_npc_system")
+		return
+
+	var target_npc_id := str(active_action.get("target_npc_id", ""))
+	if not _is_npc_unconscious(target_npc_id):
+		_finish_healing_assist(healer_npc_id, target_npc_id, "target_no_longer_unconscious")
+		return
+	if str(npc_system.get_npc_state(healer_npc_id).get("current_location", "")) != _get_target_healing_location(target_npc_id):
+		_finish_healing_assist(healer_npc_id, target_npc_id, "healer_left_location")
+		return
+
+	var cost_timer := float(active_action.get("cost_timer_seconds", 0.0)) + game_delta_seconds
+	var money_spent := int(active_action.get("money_spent", 0))
+	while cost_timer >= HEALING_COST_INTERVAL_SECONDS:
+		if not _spend_healing_cost():
+			active_action["cost_timer_seconds"] = cost_timer
+			active_action["money_spent"] = money_spent
+			_active_actions[healer_npc_id] = active_action
+			_finish_healing_assist(healer_npc_id, target_npc_id, "资源不足")
+			return
+		cost_timer -= HEALING_COST_INTERVAL_SECONDS
+		money_spent += 1
+
+	var recovery_result: Dictionary = npc_system.assist_unconscious_recovery(
+		target_npc_id,
+		game_delta_seconds,
+		healer_npc_id,
+		int(active_action.get("medical_skill", 0))
+	)
+	active_action["cost_timer_seconds"] = cost_timer
+	active_action["money_spent"] = money_spent
+	_active_actions[healer_npc_id] = active_action
+	if bool(recovery_result.get("revived", false)):
+		_finish_healing_assist(healer_npc_id, target_npc_id, "target_revived")
 
 
 func _apply_progress_state_deltas(npc_id: String, active_action: Dictionary) -> void:
@@ -611,6 +794,14 @@ func _get_engineering_skill(npc: Dictionary) -> int:
 	return 0
 
 
+func _get_medical_skill(npc: Dictionary) -> int:
+	var skills: Dictionary = npc.get("skills", {})
+	for skill_key in ["医术", "醫術", "鍖绘湳"]:
+		if skills.has(skill_key):
+			return int(skills.get(skill_key, 0))
+	return 0
+
+
 func _apply_state_deltas(npc_id: String, action: Dictionary) -> void:
 	if action.has("satiety_delta"):
 		_apply_single_state_delta(npc_id, "satiety", int(action.get("satiety_delta", 0)))
@@ -661,6 +852,32 @@ func _update_action_failure(npc_id: String, failure_id: String) -> void:
 		})
 
 
+func _stop_active_action(npc_id: String, last_result: String = "active_action_stopped") -> void:
+	if not _active_actions.has(npc_id):
+		return
+	var active_action: Dictionary = _active_actions[npc_id]
+	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
+		var target_npc_id := str(active_action.get("target_npc_id", ""))
+		_remove_healing_helper(target_npc_id, npc_id)
+	_active_actions.erase(npc_id)
+	if not last_result.is_empty():
+		_set_action_idle(npc_id, last_result)
+
+
+func _finish_healing_assist(healer_npc_id: String, target_npc_id: String, reason: String) -> void:
+	var active_action: Dictionary = _active_actions.get(healer_npc_id, {})
+	var money_spent := int(active_action.get("money_spent", 0))
+	_remove_healing_helper(target_npc_id, healer_npc_id)
+	_active_actions.erase(healer_npc_id)
+	_set_action_idle(healer_npc_id, "assist_heal_completed_%s" % target_npc_id)
+	_log_healing_event(healer_npc_id, target_npc_id, "healing_completed", {
+		"action_id": HEALING_ACTION_ID,
+		"healer_npc_id": healer_npc_id,
+		"target_npc_id": target_npc_id,
+		"money_spent": money_spent
+	})
+
+
 func _log_structured_action_event(npc_id: String, action: Dictionary, event_type: String, payload: Dictionary) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -696,6 +913,49 @@ func _log_structured_action_event(npc_id: String, action: Dictionary, event_type
 	})
 
 
+func _log_healing_event(healer_npc_id: String, target_npc_id: String, event_type: String, payload: Dictionary) -> void:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return
+
+	var location_id := _get_target_healing_location(target_npc_id)
+	var target_ids: Array[String] = [target_npc_id, healer_npc_id, location_id, HEALING_ACTION_ID, HEALING_RESOURCE_ID]
+	var event_payload := payload.duplicate(true)
+	event_payload["location_id"] = location_id
+	event_payload.erase("medical_skill")
+	for subject_id in [healer_npc_id, target_npc_id]:
+		memory_system.add_event({
+			"type": event_type,
+			"subject_npc_id": subject_id,
+			"actor_ids": [healer_npc_id],
+			"target_ids": target_ids,
+			"location_id": location_id,
+			"visibility": "private",
+			"importance": 55,
+			"payload": event_payload
+		})
+	var public_event: Dictionary = memory_system.add_event({
+		"type": event_type,
+		"subject_npc_id": "system",
+		"actor_ids": [healer_npc_id],
+		"target_ids": target_ids,
+		"location_id": location_id,
+		"visibility": "private",
+		"importance": 55,
+		"payload": event_payload
+	})
+	if public_event.is_empty() or not memory_system.has_method("add_witness_event"):
+		return
+
+	var people_present: Array[String] = []
+	if memory_system.has_method("get_location_people_present"):
+		people_present = memory_system.get_location_people_present(location_id)
+	for npc_id in people_present:
+		if npc_id == healer_npc_id or npc_id == target_npc_id:
+			continue
+		memory_system.add_witness_event(npc_id, str(public_event.get("event_id", "")))
+
+
 func _find_work_action_for_building(building_id: String) -> String:
 	var action_ids: Array = _actions_by_location.get(building_id, [])
 	for raw_action_id in action_ids:
@@ -723,6 +983,66 @@ func _can_npc_act(npc_id: String) -> bool:
 		push_warning("Escaped NPC cannot act: %s" % npc_id)
 		return false
 	return true
+
+
+func _is_npc_unconscious(npc_id: String) -> bool:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	return bool(state.get("unconscious", false)) and not bool(state.get("escaped", false))
+
+
+func _is_npc_unconscious_or_escaped(npc_id: String) -> bool:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return true
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	return bool(state.get("unconscious", false)) or bool(state.get("escaped", false))
+
+
+func _get_target_healing_location(target_npc_id: String) -> String:
+	var npc_system := _get_npc_system()
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if npc_system == null:
+		return PLAZA_LOCATION_ID
+	var state: Dictionary = npc_system.get_npc_state(target_npc_id)
+	var location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
+	if memory_system != null and memory_system.has_method("is_enterable_location") and memory_system.is_enterable_location(location_id):
+		return location_id
+	return PLAZA_LOCATION_ID
+
+
+func _get_healing_helper_count(target_npc_id: String) -> int:
+	return (_healing_helpers_by_target.get(target_npc_id, []) as Array).size()
+
+
+func _add_healing_helper(target_npc_id: String, healer_npc_id: String) -> void:
+	var helpers: Array = _healing_helpers_by_target.get(target_npc_id, [])
+	if not helpers.has(healer_npc_id):
+		helpers.append(healer_npc_id)
+	_healing_helpers_by_target[target_npc_id] = helpers
+
+
+func _remove_healing_helper(target_npc_id: String, healer_npc_id: String) -> void:
+	if not _healing_helpers_by_target.has(target_npc_id):
+		return
+	var helpers: Array = _healing_helpers_by_target[target_npc_id]
+	helpers.erase(healer_npc_id)
+	if helpers.is_empty():
+		_healing_helpers_by_target.erase(target_npc_id)
+	else:
+		_healing_helpers_by_target[target_npc_id] = helpers
+
+
+func _can_pay_healing_cost() -> bool:
+	var resource_system := _get_resource_system()
+	return resource_system != null and resource_system.can_afford({HEALING_RESOURCE_ID: HEALING_INITIAL_COST})
+
+
+func _spend_healing_cost() -> bool:
+	var resource_system := _get_resource_system()
+	return resource_system != null and resource_system.spend_resources({HEALING_RESOURCE_ID: HEALING_INITIAL_COST})
 
 
 func _get_location_name(location_id: String) -> String:

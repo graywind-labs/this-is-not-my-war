@@ -31,6 +31,7 @@ var _location_select: OptionButton
 var _action_select: OptionButton
 var _repair_building_select: OptionButton
 var _upgrade_building_select: OptionButton
+var _heal_target_select: OptionButton
 var _notice_input: LineEdit
 var _visibility_select: OptionButton
 var _memory_amount_input: LineEdit
@@ -282,6 +283,17 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	)
 	assist_upgrade_button.name = "AssistUpgradeButton"
 
+	var heal_row := _make_row(parent)
+	var heal_target_label := Label.new()
+	heal_target_label.text = "治疗目标"
+	heal_row.add_child(heal_target_label)
+	_heal_target_select = _make_select(heal_row)
+	_heal_target_select.name = "HealTargetSelect"
+	var assist_heal_button := _add_button(heal_row, "协助治疗", func() -> void:
+		_run_assist_heal(_selected_id(_npc_select), _selected_id(_heal_target_select))
+	)
+	assist_heal_button.name = "AssistHealButton"
+
 
 func _add_memory_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("记忆 / 见闻 / 广场"))
@@ -400,6 +412,12 @@ func _fill_npc_select() -> void:
 	if npc_system != null and npc_system.has_method("get_npc_ids"):
 		ids = npc_system.get_npc_ids()
 	_fill_select(_npc_select, ids, func(id: String) -> String:
+		if npc_system != null:
+			var npc: Dictionary = npc_system.get_npc(id)
+			return "%s | %s" % [id, str(npc.get("name", id))]
+		return id
+	)
+	_fill_select(_heal_target_select, ids, func(id: String) -> String:
 		if npc_system != null:
 			var npc: Dictionary = npc_system.get_npc(id)
 			return "%s | %s" % [id, str(npc.get("name", id))]
@@ -531,6 +549,9 @@ func _execute_command(command: String) -> void:
 		"assist_upgrade":
 			if _require_args(parts, 3, "assist_upgrade <npc_id> <building_id>"):
 				_run_assist_upgrade(str(parts[1]), str(parts[2]))
+		"assist_heal":
+			if _require_args(parts, 3, "assist_heal <healer_npc_id> <target_npc_id>"):
+				_run_assist_heal(str(parts[1]), str(parts[2]))
 		"eat":
 			if _require_args(parts, 2, "eat <npc_id>"):
 				_run_eat(str(parts[1]))
@@ -556,6 +577,13 @@ func _execute_command(command: String) -> void:
 			if _require_args(parts, 3, "attack_npc <npc_id> <damage> [visibility]"):
 				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
 				_run_attack_npc(str(parts[1]), int(parts[2]), visibility)
+		"damage_npc":
+			if _require_args(parts, 3, "damage_npc <npc_id> <damage> [visibility]"):
+				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
+				_run_attack_npc(str(parts[1]), int(parts[2]), visibility)
+		"recover_npc":
+			if _require_args(parts, 3, "recover_npc <npc_id> <game_seconds>"):
+				_run_recover_npc(str(parts[1]), float(parts[2]))
 		"memory":
 			if _require_args(parts, 2, "memory <npc_id>"):
 				_show_memory(str(parts[1]))
@@ -766,6 +794,14 @@ func _run_assist_upgrade(npc_id: String, building_id: String) -> void:
 	_log("协助升级 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_upgrade_assist(npc_id, building_id))])
 
 
+func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_heal_assist"):
+		_log("ActionSystem 协助治疗接口不可用。")
+		return
+	_log("协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))])
+
+
 func _run_eat(npc_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -801,12 +837,21 @@ func _run_give_money(npc_id: String, amount: int, visibility: String) -> void:
 
 
 func _run_attack_npc(npc_id: String, damage: int, visibility: String) -> void:
-	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
-	if memory_system == null:
-		_log("MemorySystem 不可用。")
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_damage_npc"):
+		_log("NPCSystem 扣血接口不可用。")
 		return
-	var event: Dictionary = memory_system.debug_record_player_attack_npc(npc_id, damage, visibility)
-	_log("攻击事件：%s" % _compact(event))
+	var result: Dictionary = npc_system.debug_damage_npc(npc_id, damage, visibility)
+	_log("NPC 扣血：%s" % _compact(result))
+
+
+func _run_recover_npc(npc_id: String, game_seconds: float) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_advance_unconscious_recovery"):
+		_log("NPCSystem 昏迷恢复接口不可用。")
+		return
+	var result: Dictionary = npc_system.debug_advance_unconscious_recovery(npc_id, game_seconds)
+	_log("NPC 昏迷恢复推进：%s" % _compact(result))
 
 
 func _run_public_event(event_type: String, subject_npc_id: String) -> void:
@@ -937,8 +982,10 @@ func _help_text() -> String:
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value>",
-		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | eat <npc_id> | sleep <npc_id>",
+		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
+		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",
+		"recover_npc <npc_id> <game_seconds> 会用自然恢复规则推进昏迷恢复。",
 		"memory <npc_id> | location <location_id>"
 	])

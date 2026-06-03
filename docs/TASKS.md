@@ -213,6 +213,11 @@
 - 已更新 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，启动时会读写 `%USERPROFILE%\.codex\godot-mcp-proxy.lock`，并按同一个 `codex` 父进程枚举所有旧 proxy；命中后先清理其余残留实例再接管，并在退出时清理自己的 lock。
 - 已更新 `tools/check_godot_mcp.ps1`，新增“多 proxy”和“proxy 在但 broker 不在”的明确提示。
 - 最终验证：MCP 可正常响应 `project.addon_status` 和 `editor.get_state`，自检返回 `Godot MCP connected`，进程只剩 1 条有效的 `proxy -> broker` 链路。
+
+复盘补充（2026-06-02）：
+- 这次故障表现为 Codex 内的 Godot MCP 工具返回 `Transport closed`；同时项目自检曾仍返回 `Godot MCP connected`，说明 Godot 插件和 broker 到 Godot 的连接不是第一故障点。
+- 清理残留 headless Godot 进程并重启 broker 后，broker health 和 listTools 均正常；但已关闭的 Codex stdio MCP transport 无法在同一会话中热恢复，需要重启/刷新 Codex 后重新建立。
+- 后续排查顺序：先运行 `tools/check_godot_mcp.ps1`，再区分 `Godot 插件监听`、`broker 健康`、`Codex MCP transport` 三层；不要把 `Transport closed` 直接等同于 Godot 插件掉线。
 ---
 
 # M1：Godot 核心骨架与最小驿站
@@ -1233,15 +1238,15 @@ Main
 
 - NPC 进入可进入地点后，地点 `people_present` 更新。
 - NPC 离开地点后，地点 `people_present` 更新。
-- 进入者的见闻库包含当前在场 NPC、建筑等级、完好/受损/正在修复/正在升级、工作位/床位占用和当前公告/命令；建筑 HP、剩余修复/升级时长和工位数量不作为传播状态。
-- NPC 进入广场时，payload 包含所有建筑外部状态。
+- 进入者的见闻库包含当前在场 NPC、这些 NPC 的生命状态/行动状态、建筑等级、完好/受损/正在修复/正在升级、工作位/床位占用和当前公告/命令；建筑 HP、剩余修复/升级时长和工位数量不作为传播状态。
+- NPC 进入广场时，payload 包含当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态。
 - 建筑发生 `local_public` 事件后即时广播给该建筑内当前在场 NPC，并写入接收者见闻库；建筑节点不保存事件。
 
 验收结果（2026-05-24）：
 
 - `MemorySystem` 已建立广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，维护 `people_present`、当前公告/命令和进入快照。
 - `NPCSystem` 到达地点时会调用 `MemorySystem.move_npc_between_locations(...)` 更新离开/进入地点的在场人员；T0407 后，地点快照只作为进入者的一次性见闻写入，不再复制到 `location_entered` 事件。
-- 进入快照已包含当前在场 NPC、建筑等级、完好/受损/正在修复/正在升级、工位/床位占用字段和当前公告/命令；进入广场时会聚合所有建筑可传播外部状态。
+- 进入快照已包含当前在场 NPC、这些 NPC 的生命状态/行动状态、建筑等级、完好/受损/正在修复/正在升级、工位/床位占用字段和当前公告/命令；进入广场时会聚合所有建筑可传播外部状态。
 - `local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库；地点信息节点不保存事件历史。
 - 新增 `tools/verify_location_info_nodes.gd` 验证地点人数进出、进入快照、广场关键实体状态和 `local_public` 见闻转发，并回归 T0402 结构化事件与 T0305 行动闭环。
 
@@ -1252,11 +1257,12 @@ Main
 
 修复记录（2026-05-25）：
 
-- 地点进入时当前实现会额外生成一次当前状态见闻广播：进入广场获得所有建筑外部状态，进入可进入建筑获得该建筑外部 + 内部状态。新规则要求该完整状态只写给进入者的见闻库一次，不再重复写入 `location_entered` 事件 summary / payload。
+- 地点进入时当前实现会额外生成一次当前状态见闻广播：进入广场获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑获得该建筑外部 + 内部状态。新规则要求该完整状态只写给进入者的见闻库一次，不再重复写入 `location_entered` 事件 summary / payload。
 - 可进入建筑快照拆分为 `external_state` 与 `internal_state`；不可进入建筑只提供外部状态，不暴露工位和内部 NPC。
 - `tools/verify_location_info_nodes.gd` 已补充广场继承所有建筑外部状态、外部状态不泄漏内部工位字段的验证。
 - 建筑可传播外部状态只计算等级和完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发地点状态广播。可传播内部状态只计算在场 NPC 和每个工位占用/空闲，工位数量不触发广播。
 - T0407 已收敛：NPC 进入可进入建筑时，`location_entered` 只保留“进入某地”的行动事实；进入者收到的当前状态见闻包含该建筑外部状态、在场 NPC 和工位占用状态；已在建筑内的 NPC 只收到进入/离开事件，不再额外收到完整内部状态。
+- 2026-06-02 补齐：进入可进入建筑的一次性状态见闻新增 `people_statuses`，用于表达建筑内 NPC 的生命状态（健康/受伤/昏迷，昏迷时可包含治疗者）与行动状态（由 `current_action` 翻译为精简中文）。2026-06-03 补齐：进入广场的一次性状态见闻也新增 `people_statuses`，用于表达广场当前在场 NPC 的生命状态与行动状态。已在地点内的 NPC 仍只收到进入/离开事件，不接收完整人员状态快照。
 
 ---
 
@@ -1405,8 +1411,8 @@ Main
 实现范围：
 
 - `location_entered` 事件只表达“某 NPC 进入了某地点”，写入进入者事件库；不再在 summary 或 payload 中携带完整建筑状态快照。
-- NPC 进入广场或可进入建筑时，进入者在 `witness_log` 中获得一次当前状态快照；进入可进入建筑时该快照包含建筑外部状态、当前在场 NPC 和工位/床位占用。
-- 已经在该地点的 NPC 只收到 `location_entered` 本地公开事件，不再额外收到完整建筑状态或完整 `people_present`。
+- NPC 进入广场或可进入建筑时，进入者在 `witness_log` 中获得一次当前状态快照；进入广场时该快照包含广场当前在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态；进入可进入建筑时该快照包含建筑外部状态、当前在场 NPC、建筑内 NPC 的生命状态/行动状态和工位/床位占用。
+- 已经在该地点的 NPC 只收到 `location_entered` 本地公开事件，不再额外收到完整建筑状态、完整 `people_present` 或完整 `people_statuses`。
 - NPC 离开地点时生成 `location_exited` 事件，`location_id` 为其离开的地点，写入离开者事件库，并以 `local_public` 广播给仍在该地点的 NPC。
 - `location_exited` 不携带完整地点状态，也不额外广播建筑内 NPC 列表；人员变化由进入/离开事件本身表达。
 - 建筑或地点状态变化时，只把变化字段写入见闻库，例如建筑受损、开始修复、修复完成、升级完成、公告变化或某个工位占用变化；未变化字段不随事件重复传递。
@@ -1434,6 +1440,8 @@ Main
 - `location_entered` / `location_exited` payload 只保留进出地点 ID，不再携带 `location_snapshot`、完整 `people_present` 或工位状态。
 - 建筑状态变化广播改为 `changed_fields` / `changed_workstations` 字段级差量；广场建筑状态见闻不再复制 `plaza_snapshot`、`building_external_states` 或完整 `building_snapshot`。
 - `tools/verify_location_info_nodes.gd` 已升级为 T0407 验证；`tools/verify_plaza_local_public_broadcast.gd` 增加字段级状态见闻检查。
+- 2026-06-02 补齐：`MemorySystem` 的可进入建筑快照新增 `people_statuses`，`location_entry_snapshot` summary 会写出“在场人员状态”；`tools/verify_location_info_nodes.gd` 已覆盖受伤 NPC 的生命状态和待命行动状态。
+- 2026-06-03 补齐：`MemorySystem` 的广场快照也新增 `people_statuses`，进入广场的 `location_entry_snapshot` summary 会写出广场在场 NPC 的生命状态/行动状态；`tools/verify_location_info_nodes.gd` 已覆盖广场健康 NPC 的待命状态。
 
 ---
 
@@ -1458,6 +1466,33 @@ Main
 
 ---
 
+## T0409 补齐广场进入快照与室内经由广场移动链
+
+状态：Done
+优先级：P0
+前置任务：T0403, T0407, T0408
+涉及文档：`MEMORY_AND_INFO_SPACE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`
+
+任务目标：
+
+补齐两个地点信息节点细节：NPC 进入广场时，进入者的一次性 `location_entry_snapshot` 见闻必须包含广场当前在场 NPC 与当前公告文本；NPC 从一个室内地点前往另一个室内地点时，逻辑事件链必须先离开原地点、进入广场、离开广场，再进入目标地点。
+
+验收标准：
+
+- 进入广场的快照 payload 与 summary 都能表达当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和建筑外部状态。
+- 室内到室内切换时，事件库按顺序出现 `location_exited(原地点 -> plaza)`、`location_entered(plaza)`、`location_exited(plaza -> 目标地点)`、`location_entered(目标地点)`。
+- 地点 `people_present` 最终只保留 NPC 所在的目标地点，广场不会残留错误在场人员。
+- 已有地点信息节点、短期记忆和行动系统回归验证通过。
+
+验收结果（2026-05-26）：
+
+- `MemorySystem` 的广场 `location_entry_snapshot` summary 现在会同时写出广场当前在场 NPC、这些 NPC 的生命状态/行动状态、当前公告牌文本和所有建筑可传播外部状态。
+- `NPCSystem` 在室内信息地点切换到另一个室内信息地点时，会先按逻辑事件链切到 `plaza`，再进入目标地点；当前物理移动仍保持低模直线占位。
+- `debug_enter_location_immediately(...)` 和正常移动到达回调共用同一套地点切换逻辑，避免调试路径与运行路径分叉。
+- `tools/verify_location_info_nodes.gd` 已覆盖广场进入快照和室内经由广场事件链；`tools/verify_npc_movement_location.gd` 已按不可进入仓库归入广场信息节点的当前架构更新。
+
+---
+
 # M5：昏迷、治疗与基础医疗闭环
 
 目标：实现 NPC 不死亡机制。HP 清零后昏迷，其他人可协助治疗，HP 到 30% 后复苏。
@@ -1466,7 +1501,7 @@ Main
 
 ## T0501 实现 HP 扣除与昏迷状态
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0303, T0402
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`
@@ -1481,7 +1516,7 @@ Main
 - HP 降到 0 时进入昏迷。
 - 昏迷 NPC 不能移动、工作、对话、战斗。
 - 昏迷事件写入 NPC 事件库。
-- 昏迷事件按 `location_id == "plaza"` 的 `local_public` 公开到广场。
+- 昏迷事件按照 `local_public` 公开到昏迷时所处的建筑节点并传播到同一个建筑内的NPC的见闻库。
 
 禁止事项：
 
@@ -1494,60 +1529,107 @@ Main
 - 使用调试扣血可让 NPC 昏迷。
 - 昏迷状态在 NPC 面板显示。
 - 昏迷 NPC 无法执行行动。
-- 广场公开事件可见。
+- 事件可见于同个建筑的其他NPC见闻库。
+
+验收结果（2026-05-26）：
+
+- `NPCSystem` 新增 `apply_damage_to_npc(...)` / `debug_damage_npc(...)`，权威扣除 NPC HP；HP 降到 0 后设置 `unconscious=true`、`current_action=unconscious` 并停止移动。
+- `ActionSystem` 会在 NPC 昏迷后清除 pending / active 行动，后续工作、吃饭、睡觉、协助修复/升级等调试指派都会被拒绝；`NPCSystem.move_npc_to_building(...)` 也拒绝移动昏迷 NPC。
+- 昏迷时写入 `damage_taken` 与 `unconscious_started` 结构化事件；昏迷事件使用 `local_public` 发送到 NPC 当前信息地点，同地点 NPC 会收到见闻。
+- `NPCPanel` 与 NPC 头顶标签会显示昏迷状态；`EventBus` 增加 `npc_hp_changed` / `npc_unconscious` 信号供后续战斗、治疗和 UI 扩展。
+- GM 面板 `attack_npc` / `damage_npc` 命令现在调用 NPC 扣血接口，而不是只写记忆事件；新增 `tools/verify_npc_damage_unconscious.gd` 覆盖扣血、昏迷、行动阻断和同地点见闻传播。
+- 验证通过：`verify_npc_damage_unconscious.gd`、`verify_gm_panel.gd`、`verify_action_system_basic.gd`、`verify_npc_short_term_memory_container.gd`、`verify_structured_memory_events.gd`、`verify_plaza_local_public_broadcast.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T0502 实现昏迷自然恢复
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0501, T0401
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
 
-让昏迷 NPC 随时间缓慢恢复 HP。
+让昏迷 NPC 随时间非常缓慢的恢复 HP。
 
 规则：
 
 - 昏迷状态下每小时恢复少量 HP。
 - HP 达到 Max HP 的 30% 后复苏。
 - 复苏后重新允许行动。
-- 复苏事件进入 NPC 事件库，并按规则公开到广场。
+- 复苏事件进入 NPC 事件库，并按规则公开到所在建筑（local public）。
 
 禁止事项：
 
-- 不实现医生加速治疗。
-- 不实现战斗中复苏判定。
+- 不实现治疗加速。
 
 验收标准：
 
 - 昏迷 NPC 随时间恢复。
 - 到 30% 后自动复苏。
 - 复苏后状态正确刷新。
-- 事件写入 NPC 事件库与广场公开信息。
+- 事件写入 NPC 事件库并公开信息。
+
+验收结果（2026-05-26）：
+
+- `NPCSystem` 监听 `TimeSystem.logical_time_tick`，昏迷 NPC 每游戏小时自然恢复 2 HP；暂停时没有逻辑 tick，因此不会恢复。
+- HP 达到 Max HP 的 30% 后，NPC 自动复苏，`unconscious=false`、`current_action=idle`，并重新允许移动和行动指派。
+- 复苏会写入 `revived` 结构化事件，事件按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。
+- `EventBus` 新增 `npc_revived(npc_id)` 信号；`MemorySystem` 增加 `revived` payload 校验与确定性 summary。
+- GM 面板新增 `recover_npc <npc_id> <game_seconds>` 命令，只调用 `NPCSystem.debug_advance_unconscious_recovery(...)`，用于前端快速验证自然恢复与复苏。
+- 新增 `tools/verify_npc_unconscious_natural_recovery.gd` 覆盖自然恢复、30% 自动复苏、事件/见闻写入和复苏后可行动。
+- 验证通过：`verify_npc_unconscious_natural_recovery.gd`、`verify_gm_panel.gd`、`verify_npc_damage_unconscious.gd`、`verify_action_system_basic.gd`、`verify_npc_short_term_memory_container.gd`、`verify_structured_memory_events.gd`、`verify_plaza_local_public_broadcast.gd`、`verify_location_info_nodes.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
-## T0503 实现医生治疗昏迷 NPC
+## T0502A 昏迷/睡觉期间停止接收见闻
 
-状态：Todo
+状态：Done
+优先级：P0
+前置任务：T0502
+涉及文档：`MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
+
+任务目标：
+
+补充不可接收现场信息状态的信息规则：昏迷 NPC 不接收地点/广场公开广播或进入快照，见闻库暂停更新，直到复苏；睡觉 NPC 也不接收同地点/同建筑公开广播、状态广播、公告或进入快照，直到睡醒。
+
+验收结果（2026-05-26）：
+
+- `MemorySystem.add_witness_event(...)` 在写入见闻前检查 NPC 状态；若 `unconscious=true`，直接拒收见闻。
+- 该规则覆盖地点 `local_public` 广播、广场公开广播、建筑/地点状态广播和进入快照等所有统一走 `add_witness_event(...)` 的见闻写入路径。
+- 昏迷 NPC 自己的亲历事件库不受影响，仍会记录 `damage_taken`、`unconscious_started` 和后续 `revived`。
+- 复苏后见闻接收自动恢复。
+- `tools/verify_npc_unconscious_natural_recovery.gd` 已补充昏迷期间拒收见闻、复苏后重新接收见闻的验证。
+
+补充验收结果（2026-06-03）：
+
+- `MemorySystem.add_witness_event(...)` 的接收判定扩展为：若 `current_action == "sleep_in_dormitory"`，同样拒收见闻。
+- 该规则覆盖睡觉者所在地点/建筑内发生的 `local_public` 事件、建筑/地点状态广播、公告和进入快照；睡醒后从后续广播开始恢复接收，不补收睡觉期间错过的信息。
+- 睡觉 NPC 自己的亲历事件库不受影响，仍记录 `sleep_started` / `sleep_ended`。
+- `tools/verify_action_local_public_broadcast.gd` 已补充睡觉期间拒收同建筑 public 见闻、睡醒后重新接收的验证。
+
+---
+
+## T0503 实现治疗昏迷 NPC
+
+状态：Done
 优先级：P0
 前置任务：T0502, T0305
 涉及文档：`AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
 
 任务目标：
 
-让医生能够更快治疗昏迷 NPC。
+让其他NPC能够治疗（根据协助治疗的NPC的医术技能点的大小加速其昏迷苏醒倒计时）昏迷 NPC。
 
 规则：
 
-- 医生职业 NPC 在小诊所或目标身边可执行治疗行动。
-- 治疗消耗金钱。
-- 医术熟练度影响恢复速度。
-- 治疗事件写入目标 NPC 和医生的结构化事件。
-- 被治疗和复苏事件公开到广场。
+- 其他NPC可对昏迷NPC进行治疗。
+- 治疗随时间消耗金钱。
+- 医术熟练度影响治疗加速苏醒的倍率。
+- 治疗事件写入目标 NPC 和医生的结构化事件（xx开始协助治疗xx，就像协助修复建筑一样），治疗是local public。
+- 治疗这个行为加入NPC们的可选行为列表，并且可以指定目标（只有在昏迷状态的目标可被治疗）（这种对昏迷者的治疗和后面要加的NPC主动去诊所治疗是不一样的两个功能）
+- 每个昏迷NPC最多有两个人可以参与治疗。
 
 禁止事项：
 
@@ -1557,10 +1639,23 @@ Main
 
 验收标准：
 
-- 医生能对昏迷 NPC 执行治疗。
-- 治疗比自然恢复更快。
-- 资源不足时治疗失败。
-- 事件记录完整。
+- 其他NPC能对昏迷 NPC 执行治疗
+- 治疗比自然恢复更快根据。治疗者的医术熟练度决定倍率大小（函数需要医术很低时几乎没有加成，只有医术达到一定水平（比如游戏内医生的技能点）才会有明显加成）
+- 资源不足时治疗失败
+- 事件记录和广播完整
+
+验收结果（2026-06-02）：
+
+- `ActionSystem` 新增 `debug_assign_heal_assist(healer_npc_id, target_npc_id)`，治疗者会前往昏迷目标所在信息地点后开始协助治疗；目标必须处于昏迷状态，且每个昏迷目标最多 2 名治疗者。
+- 治疗开始立即消耗 1 枚第纳尔，持续治疗期间每 1800 游戏秒继续消耗 1 枚第纳尔；第纳尔不足时治疗指派失败或治疗中止。
+- `NPCSystem.assist_unconscious_recovery(...)` 按医术熟练度为昏迷恢复增加额外 HP / 小时；低于阈值的医术几乎没有额外加成，医生 `doctor_01` 的高医术会明显快于自然恢复。
+- `MemorySystem` 增加 `healing_started` / `healing_completed` payload 校验与确定性 summary；治疗开始/完成会分别写入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；事件信息不暴露医术熟练度。
+- `ActionSystem` 提供只读 `get_healing_helpers_for_target(...)`，供 `MemorySystem` 在地点 NPC 状态快照中写明昏迷者当前是否有人治疗以及治疗者是谁。
+- `data/action_defs.json` 新增需要目标 NPC 的 `assist_heal` 行动定义；普通 `assign_action` 不直接执行该参数化行动，必须通过带目标的协助治疗接口。
+- GM 面板新增“治疗目标”NPC 下拉、协助治疗按钮和 `assist_heal <healer_npc_id> <target_npc_id>` 命令。
+- 新增 `tools/verify_npc_unconscious_healing.gd` 覆盖治疗开始、两人上限、持续扣钱、医术加速、复苏、资源不足失败、治疗事件归属和旁观者见闻。
+- 2026-06-02 补齐：`tools/verify_npc_unconscious_healing.gd` 已覆盖小诊所快照中昏迷目标的治疗者信息，以及治疗者 `current_action` 被翻译为“协助治疗某人”。
+- 验证通过：`verify_npc_unconscious_healing.gd`、`verify_gm_panel.gd`、`verify_npc_unconscious_natural_recovery.gd`、`verify_npc_damage_unconscious.gd`、`verify_action_system_basic.gd`、`verify_structured_memory_events.gd`、`verify_npc_short_term_memory_container.gd`、`verify_plaza_local_public_broadcast.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
@@ -1583,11 +1678,12 @@ Main
 
 需要覆盖：
 
-- NPC 对话请求/响应
+- NPC 对话（包括NPC之间对话以及玩家与NPC对话）请求/响应
 - 每日计划请求/响应
+- 计划执行失败/异常时对计划的重新评估和修订的请求/响应
 - 战斗判定请求/响应
 - 睡前总结请求/响应
-- 错误响应
+- 以及其他game_design.md里需调用LLM时的情形
 
 禁止事项：
 

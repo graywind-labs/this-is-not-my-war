@@ -122,5 +122,17 @@
     "duration_seconds": 23400,
     "fatigue_delta": -100,
     "satiety_delta": -13
+  },
+  {
+    "id": "assist_heal",
+    "name": "协助治疗昏迷者",
+    "type": "targeted_heal",
+    "requires_target": "unconscious_npc",
+    "target_limit_per_target": 2,
+    "resource_cost_interval_seconds": 1800,
+    "input_resources": {
+      "money": 1
+    },
+    "skill": "医术"
   }
 ]

@@ -64,6 +64,10 @@ func _init() -> void:
 		quit(1)
 		return
 
+	if not await _verify_sleep_blocks_witness_then_restores(action_system, npc_system, memory_system):
+		quit(1)
+		return
+
 	print("Action local_public broadcast verification passed.")
 	quit(0)
 
@@ -110,6 +114,68 @@ func _verify_action_broadcast(
 				return false
 
 	return true
+
+
+func _verify_sleep_blocks_witness_then_restores(
+	action_system: Node,
+	npc_system: Node,
+	memory_system: Node
+) -> bool:
+	var sleeper_id := "stableman_01"
+	var actor_id := "blacksmith_01"
+	var location_id := "dormitory"
+	if not npc_system.debug_enter_location_immediately(sleeper_id, location_id):
+		push_error("Failed to place sleeper in dormitory")
+		return false
+	if not npc_system.debug_enter_location_immediately(actor_id, location_id):
+		push_error("Failed to place dormitory actor")
+		return false
+	npc_system.update_npc_state(sleeper_id, {"fatigue": 70, "last_action_result": ""})
+
+	if not action_system.debug_assign_sleep(sleeper_id):
+		push_error("Failed to assign sleep action for witness blocking test")
+		return false
+	await process_frame
+
+	if str(npc_system.get_npc_state(sleeper_id).get("current_action", "")) != "sleep_in_dormitory":
+		push_error("Sleeper did not enter sleep action")
+		return false
+
+	var witness_before: int = memory_system.get_npc_witness_events(sleeper_id).size()
+	_emit_manual_public_work_event(memory_system, actor_id, location_id)
+	if memory_system.get_npc_witness_events(sleeper_id).size() != witness_before:
+		push_error("Sleeping NPC should not receive same-location local_public witness events")
+		return false
+
+	action_system._on_logical_time_tick(23400.0, 1.0)
+	await process_frame
+	if str(npc_system.get_npc_state(sleeper_id).get("current_action", "")) != "idle":
+		push_error("Sleeper should return to idle after sleep completes")
+		return false
+
+	witness_before = memory_system.get_npc_witness_events(sleeper_id).size()
+	_emit_manual_public_work_event(memory_system, actor_id, location_id)
+	if memory_system.get_npc_witness_events(sleeper_id).size() <= witness_before:
+		push_error("NPC should receive witness events again after waking")
+		return false
+
+	return true
+
+
+func _emit_manual_public_work_event(memory_system: Node, actor_id: String, location_id: String) -> void:
+	memory_system.add_event({
+		"type": "work_started",
+		"subject_npc_id": actor_id,
+		"actor_ids": [actor_id],
+		"target_ids": [location_id, "work_garden"],
+		"location_id": location_id,
+		"visibility": "local_public",
+		"importance": 20,
+		"payload": {
+			"action_id": "work_garden",
+			"workstation_id": location_id
+		}
+	})
 
 
 func _duration_for_action(action_id: String) -> float:

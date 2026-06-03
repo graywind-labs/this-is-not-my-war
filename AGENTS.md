@@ -106,7 +106,7 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
 - 其他 NPC 初始由自动计划 + LLM 控制
 - 玩家可通过对话让 NPC 同意应征入伍
 - 入伍后 NPC 是“可引导单位”，不是完全无人格的 RTS 单位
-- NPC 不死亡；HP 清零后原地昏迷，缓慢恢复；医生可加速治疗；恢复到 30% 后复苏
+- NPC 不死亡；HP 清零后原地昏迷，缓慢恢复；其他NPC可加速治疗；恢复到 30% 后复苏
 - 战斗事件、逃离事件、昏迷/复苏事件会进入见闻系统
 - 广场是公共信息中枢
 - Demo 目标是守住 5 波敌人
@@ -162,8 +162,8 @@ PROJECT_BRIEF.md → CURRENT_STATE.md → TASKS.md → MODULE_INDEX.md → 相�
    └─ assets/
 ```
 
-如果实际项目目录与此不同，必须先更新 `docs/GODOT_ARCHITECTURE.md` 和 `docs/MODULE_INDEX.md`。
-
+如果实际项目目录与此不同，必须先更新 `docs/GODOT_ARCHITECTURE.md` 和 `docs/MODULE_INDEX.md`
+ PowerShell默认编码会把中文显示成乱码，你需要用UTF-8读取相关段落和模块文档
 ---
 
 # 7. 每次实现后的文档回写要求

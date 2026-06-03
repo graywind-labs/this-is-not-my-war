@@ -25,6 +25,9 @@ func setup(npc_profile: Dictionary) -> void:
 
 func update_profile(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
+	var states: Dictionary = profile.get("states", {})
+	if bool(states.get("unconscious", false)):
+		stop_movement()
 	_refresh_label()
 
 
@@ -91,6 +94,8 @@ func _refresh_label() -> void:
 	var hp := int(states.get("hp", 0))
 	var max_hp := int(states.get("max_hp", 0))
 	var action_text := str(states.get("current_action", "idle"))
+	if bool(states.get("unconscious", false)):
+		action_text = "昏迷"
 	_name_label.text = "%s\nHP %d/%d · %s" % [
 		display_name,
 		hp,

@@ -3,7 +3,159 @@
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
 
+## 2026-06-03
+
+### T0502A 睡觉期间停止接收见闻
+完成：
+- `MemorySystem.add_witness_event(...)` 的见闻接收判定扩展为拒绝 `current_action == "sleep_in_dormitory"` 的 NPC。
+- 睡觉 NPC 不再接收同地点/同建筑 `local_public` 事件、地点/建筑状态广播、公告或进入快照；自己的 `sleep_started` / `sleep_ended` 仍写入事件库。
+- `tools/verify_action_local_public_broadcast.gd` 增加睡觉期间拒收 public 见闻、睡醒后恢复接收的回归断言。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+
+### T0409 广场 NPC 状态快照补齐
+完成：
+- `MemorySystem.get_location_snapshot(...)` 现在会为广场和可进入建筑统一生成 `people_statuses`；NPC 进入广场时，`location_context` 和一次性 `location_entry_snapshot` 见闻都能看到广场上 NPC 的生命状态与行动状态。
+- 广场进入快照 summary 新增“在场人员状态”段落，沿用健康/受伤/昏迷、治疗者和精简中文行动状态的同一套格式。
+- `tools/verify_location_info_nodes.gd` 增加广场 `people_statuses` 与 summary 断言。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+## 2026-06-02
+
+### T0005 Godot MCP transport 断开复盘
+完成：
+- 复盘本次连接异常：Godot MCP 工具返回 `Transport closed`，但 `tools/check_godot_mcp.ps1` 一度仍返回 `Godot MCP connected`，说明 Godot 插件和 `broker -> Godot` 链路未先断，当前 Codex 会话的 stdio MCP transport 已关闭。
+- 清理残留 headless Godot 验证进程后，重启 `godot-mcp-broker.mjs`，broker health 与 listTools 均可手动返回。
+- 重启/刷新 Codex 后，`project.addon_status` 和 `editor.get_state` 恢复正常。
+- 将本次教训回写到 `CURRENT_STATE.md` 的 Godot MCP 段落和 `TASKS.md` 的 T0005 复盘：后续排查要区分 Godot 插件监听、broker 健康、Codex MCP transport 三层；`Transport closed` 不一定表示 Godot 插件掉线。
+
+验证：
+- `powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1` 返回 `Godot MCP connected`。
+- Godot MCP `project.addon_status` 返回 `connected: true`、`versions_match: true`。
+- Godot MCP `editor.get_state` 正常返回，当前打开 `res://scenes/main/Main.tscn`。
+
+### T0407/T0503 建筑内 NPC 状态快照
+完成：
+- `MemorySystem` 的可进入建筑快照新增 `people_statuses`，进入者的 `location_entry_snapshot` 见闻会写出建筑内 NPC 的生命状态与行动状态。
+- 生命状态分为健康、受伤、昏迷；昏迷者如有治疗者，会在状态文本中写明治疗者。行动状态由 `current_action` 翻译成精简中文。
+- `ActionSystem` 新增只读 `get_healing_helpers_for_target(...)`，供信息节点查询当前治疗者，不参与权威结算。
+- `tools/verify_location_info_nodes.gd` 和 `tools/verify_npc_unconscious_healing.gd` 增加建筑内 NPC 状态断言。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0503 事件摘要降噪
+完成：
+- `revived` summary 改为只表达 NPC 苏醒，不再展示 HP 恢复到多少。
+- `healing_completed` payload 和 summary 不再包含原因字段。
+- `tools/verify_npc_unconscious_healing.gd` 增加复苏 HP 文本和治疗完成原因字段的隐藏验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_natural_recovery.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0503 治疗事件归属修正
+完成：
+- 修正协助治疗事件归属：治疗开始/完成进入治疗者和被治疗者事件库；同地点其他在场 NPC 获得见闻；治疗者不再把自己的治疗事件收到见闻库。
+- 治疗事件 payload 和 summary 不再暴露医术熟练度。
+- `tools/verify_npc_unconscious_healing.gd` 增加治疗事件归属与医术字段隐藏验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0503 治疗昏迷 NPC
+完成：
+- `NPCSystem` 新增 `assist_unconscious_recovery(...)`，按医术熟练度计算协助治疗恢复速度；低医术几乎没有额外加成，高医术会明显快于自然恢复。
+- `ActionSystem` 新增 `debug_assign_heal_assist(healer_npc_id, target_npc_id)`，治疗者会前往昏迷目标所在信息地点；目标必须昏迷，每个目标最多 2 名治疗者。
+- 治疗开始立即消耗 1 枚第纳尔，持续治疗期间每 1800 游戏秒继续消耗 1 枚第纳尔；资源不足时治疗指派失败或治疗中止。
+- `MemorySystem` 增加 `healing_started` / `healing_completed` payload 校验和确定性 summary；治疗事件写入治疗者和目标 NPC 事件库，并写入同地点其他在场 NPC 的见闻库。
+- `data/action_defs.json` 新增 `assist_heal` / `targeted_heal` 行动定义，普通 `assign_action` 不直接执行，必须通过带目标的协助治疗接口。
+- GM 面板新增治疗目标下拉、协助治疗按钮和 `assist_heal <healer_npc_id> <target_npc_id>` 命令。
+- 新增 `tools/verify_npc_unconscious_healing.gd` 覆盖 T0503 验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_natural_recovery.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
 ## 2026-05-26
+
+### T0502 昏迷自然恢复
+完成：
+- `NPCSystem` 监听 `TimeSystem.logical_time_tick`，让昏迷 NPC 按每游戏小时 2 HP 自然恢复；暂停时无逻辑 tick，因此恢复也暂停。
+- HP 达到 Max HP 30% 后自动复苏，设置 `unconscious=false`、`current_action=idle`，并发出 `npc_revived`。
+- `MemorySystem` 增加 `revived` payload 校验和确定性 summary；复苏事件按 NPC 当前信息地点 `local_public` 广播给同地点 NPC。
+- 追加 T0502A：`MemorySystem.add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，昏迷期间不接收地点/广场广播、状态广播、公告或进入快照；复苏后自动恢复接收。
+- GM 面板新增 `recover_npc <npc_id> <game_seconds>` 命令，调用 `NPCSystem.debug_advance_unconscious_recovery(...)`，便于快速验证自然恢复。
+- 新增 `tools/verify_npc_unconscious_natural_recovery.gd` 覆盖 T0502/T0502A 验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_unconscious_natural_recovery.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0409 广场进入快照与室内经由广场移动链
+完成：
+- `MemorySystem` 的广场 `location_entry_snapshot` summary 现在会写出广场当前在场 NPC、公告牌文本和所有建筑可传播外部状态；payload 继续保留 `people_present`、`current_notice`、`building_external_states` / `key_entities`。
+- `NPCSystem` 将地点切换和进出事件记录收敛为统一逻辑；室内信息地点切换到另一个室内信息地点时，会记录“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的事件链。
+- 正常移动到达和 `debug_enter_location_immediately(...)` 共用同一套地点切换路径；当前物理移动仍是低模直线占位。
+- `tools/verify_location_info_nodes.gd` 覆盖广场进入快照和室内经由广场事件链；`tools/verify_npc_movement_location.gd` 同步不可进入仓库归入广场信息节点的当前架构。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_location_info_nodes.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_movement_location.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0501 NPC HP 扣除与昏迷状态
+完成：
+- `NPCSystem` 新增 `apply_damage_to_npc(...)` / `debug_damage_npc(...)`，负责权威扣除 NPC HP；HP 降到 0 后设置 `unconscious=true`、`current_action=unconscious` 并停止移动。
+- `ActionSystem` 在 NPC 昏迷后清除 pending / active 行动，并拒绝继续指派工作、吃饭、睡觉、协助修复/升级；`NPCSystem.move_npc_to_building(...)` 同样拒绝移动昏迷 NPC。
+- `MemorySystem` 增加 `damage_taken` / `unconscious_started` payload 校验和确定性 summary；昏迷事件以 `local_public` 广播到 NPC 当前信息地点，让同地点 NPC 收到见闻。
+- `GMPanel` 的 `attack_npc` / 新增 `damage_npc` 命令改为调用 NPC 扣血接口；`verify_gm_panel.gd` 增加扣血昏迷检查。
+- 新增 `tools/verify_npc_damage_unconscious.gd` 覆盖 T0501 验证。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_action_system_basic.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_npc_short_term_memory_container.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_structured_memory_events.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
 
 ### T0408 收敛广场公开事件可见性
 完成：

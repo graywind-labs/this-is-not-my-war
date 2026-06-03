@@ -45,7 +45,10 @@ func _init() -> void:
 			push_error("NPC did not return to idle after arrival at %s" % building_id)
 			quit(1)
 			return
-		if str(location_context.get("id", "")) != building_id:
+		var expected_context_id: String = building_id
+		if building_id == "warehouse":
+			expected_context_id = "plaza"
+		if str(location_context.get("id", "")) != expected_context_id:
 			push_error("NPC location context missing for %s" % building_id)
 			quit(1)
 			return

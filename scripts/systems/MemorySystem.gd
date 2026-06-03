@@ -34,7 +34,12 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"work_started": ["action_id", "workstation_id"],
 	"work_completed": ["action_id", "input_resources", "output_resources"],
 	"work_failed": ["action_id", "reason"],
-	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"]
+	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"],
+	"damage_taken": ["damage", "hp_before", "hp_after"],
+	"unconscious_started": ["damage", "hp_before", "hp_after"],
+	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
+	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
+	"revived": ["hp_before", "hp_after", "recovery_source"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -108,6 +113,8 @@ func add_event(event: Dictionary) -> Dictionary:
 func add_witness_event(npc_id: String, event_id: String) -> bool:
 	if npc_id.is_empty() or not _events_by_id.has(event_id):
 		return false
+	if not _can_npc_receive_witness(npc_id):
+		return false
 	if not _npc_daily_witness_ids.has(npc_id):
 		_npc_daily_witness_ids[npc_id] = []
 	if not _npc_daily_witness_ids[npc_id].has(event_id):
@@ -177,11 +184,13 @@ func get_location_snapshot(location_id: String) -> Dictionary:
 		_ensure_location_info_node(normalized_location_id)
 
 	var node: Dictionary = _location_info_nodes.get(normalized_location_id, {})
+	var people_present := _normalize_string_array(node.get("people_present", []))
 	var snapshot := {
 		"id": normalized_location_id,
 		"name": _get_location_name(normalized_location_id),
 		"is_enterable": true,
-		"people_present": _normalize_string_array(node.get("people_present", [])),
+		"people_present": people_present,
+		"people_statuses": _get_people_status_snapshots(people_present),
 		"current_notice": str(node.get("current_notice", "")),
 		"current_orders": str(node.get("current_orders", ""))
 	}
@@ -638,15 +647,18 @@ func _get_building_full_state_snapshot(building_id: String) -> Dictionary:
 	var workstations: Array = building.get("workstations", [])
 	var node: Dictionary = _location_info_nodes.get(building_id, {})
 	var people_present := _normalize_string_array(node.get("people_present", []))
+	var people_statuses := _get_people_status_snapshots(people_present)
 	var external_state := _get_building_external_state_snapshot(building_id)
 	var internal_state := {
 		"people_present": people_present,
+		"people_statuses": people_statuses,
 		"workstations": _normalize_workstations_for_info(workstations)
 	}
 	var snapshot := external_state.duplicate(true)
 	snapshot["external_state"] = external_state
 	snapshot["internal_state"] = internal_state
 	snapshot["people_present"] = people_present
+	snapshot["people_statuses"] = people_statuses
 	snapshot["workstations"] = internal_state["workstations"]
 	return snapshot
 
@@ -703,6 +715,93 @@ func _normalize_workstations_for_info(workstations: Array) -> Array[Dictionary]:
 			"status": "occupied" if not occupied_by.is_empty() else "free"
 		})
 	return normalized
+
+
+func _get_people_status_snapshots(people: Array[String]) -> Array[Dictionary]:
+	var statuses: Array[Dictionary] = []
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return statuses
+
+	for npc_id in people:
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if state.is_empty():
+			continue
+		var hp := int(state.get("hp", 0))
+		var max_hp := maxi(1, int(state.get("max_hp", 100)))
+		var unconscious := bool(state.get("unconscious", false))
+		var healer_ids: Array[String] = []
+		if unconscious:
+			healer_ids = _get_healing_helpers_for_target(npc_id)
+		statuses.append({
+			"npc_id": npc_id,
+			"name": _get_npc_display_name(npc_id),
+			"life_status": _get_life_status_id(hp, max_hp, unconscious),
+			"life_status_text": _format_life_status(hp, max_hp, unconscious, healer_ids),
+			"healer_npc_ids": healer_ids,
+			"healer_names": _get_npc_names(healer_ids),
+			"action_status": _format_action_status(str(state.get("current_action", "idle")))
+		})
+	return statuses
+
+
+func _get_life_status_id(hp: int, max_hp: int, unconscious: bool) -> String:
+	if unconscious:
+		return "unconscious"
+	if hp >= max_hp:
+		return "healthy"
+	return "injured"
+
+
+func _format_life_status(hp: int, max_hp: int, unconscious: bool, healer_ids: Array[String] = []) -> String:
+	if unconscious:
+		if healer_ids.is_empty():
+			return "昏迷"
+		return "昏迷，%s正在治疗" % "、".join(_get_npc_names(healer_ids))
+	if hp >= max_hp:
+		return "健康"
+	return "受伤"
+
+
+func _get_healing_helpers_for_target(target_npc_id: String) -> Array[String]:
+	var result: Array[String] = []
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("get_healing_helpers_for_target"):
+		return result
+	for raw_helper_id in action_system.get_healing_helpers_for_target(target_npc_id):
+		var helper_id := str(raw_helper_id)
+		if not helper_id.is_empty() and not result.has(helper_id):
+			result.append(helper_id)
+	return result
+
+
+func _get_npc_names(npc_ids: Array[String]) -> Array[String]:
+	var names: Array[String] = []
+	for npc_id in npc_ids:
+		names.append(_get_npc_display_name(npc_id))
+	return names
+
+
+func _format_action_status(action_id: String) -> String:
+	if action_id.is_empty() or action_id == "idle":
+		return "待命"
+	if action_id == "unconscious":
+		return "昏迷"
+	if action_id.begins_with("moving_to_"):
+		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
+	if action_id.begins_with("assist_heal_"):
+		return "协助治疗%s" % _get_npc_display_name(action_id.trim_prefix("assist_heal_"))
+	if action_id.begins_with("assist_repair_"):
+		return "协助修复%s" % _get_location_name(action_id.trim_prefix("assist_repair_"))
+	if action_id.begins_with("assist_upgrade_"):
+		return "协助升级%s" % _get_location_name(action_id.trim_prefix("assist_upgrade_"))
+
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system != null and action_system.has_method("get_action"):
+		var action: Dictionary = action_system.get_action(action_id)
+		if not action.is_empty():
+			return str(action.get("name", action_id))
+	return action_id
 
 
 func _diff_state_fields(previous_state: Dictionary, current_state: Dictionary, field_names: Array[String]) -> Dictionary:
@@ -885,6 +984,32 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s给%s指派了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("order_name", "任务"))]
 		"npc_attacked_by_player":
 			return "%s攻击了%s，造成%d点伤害。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("damage", 0))]
+		"damage_taken":
+			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
+			var damage_actor_id := "" if damage_actor_ids.is_empty() else damage_actor_ids[0]
+			return "%s受到%s造成的%d点伤害，HP 从%d降到%d。" % [
+				actor,
+				_get_actor_display_name(damage_actor_id),
+				int(payload.get("damage", 0)),
+				int(payload.get("hp_before", 0)),
+				int(payload.get("hp_after", 0))
+			]
+		"unconscious_started":
+			return "%s在%s昏迷了。" % [actor, location]
+		"healing_started":
+			return "%s开始在%s协助治疗%s。" % [
+				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),
+				location,
+				_get_npc_display_name(str(payload.get("target_npc_id", "")))
+			]
+		"healing_completed":
+			return "%s结束了对%s的治疗，消耗%d枚第纳尔。" % [
+				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),
+				_get_npc_display_name(str(payload.get("target_npc_id", ""))),
+				int(payload.get("money_spent", 0))
+			]
+		"revived":
+			return "%s在%s苏醒了。" % [actor, location]
 		"sleep_started":
 			return "%s开始在%s休息。" % [actor, location]
 		"sleep_ended":
@@ -923,10 +1048,11 @@ func _format_location_state_summary(payload: Dictionary) -> String:
 	if reason == "building_internal_state_changed" and payload.has("changed_workstations"):
 		return "%s里的工位状态：%s。" % [building_name, _format_workstation_states(payload.get("changed_workstations", []))]
 	if reason == "npc_entered_location":
-		return "%s %s内现在有%s。%s里的工位状态：%s。" % [
+		return "%s %s内现在有%s。%s %s里的工位状态：%s。" % [
 			_format_external_state_sentence(building_name, external_state),
 			building_name,
 			_format_people_present(internal_state.get("people_present", [])),
+			_format_people_statuses(internal_state.get("people_statuses", [])),
 			building_name,
 			_format_workstation_states(internal_state.get("workstations", []))
 		]
@@ -949,18 +1075,28 @@ func _format_location_entry_snapshot_summary(payload: Dictionary) -> String:
 	if building_snapshot.is_empty():
 		var external_states: Dictionary = snapshot.get("building_external_states", {})
 		var plaza_parts: Array[String] = []
+		plaza_parts.append("%s现在有%s。" % [location_name, _format_people_present(snapshot.get("people_present", []))])
+		plaza_parts.append(_format_people_statuses(snapshot.get("people_statuses", [])))
+		var current_notice := str(snapshot.get("current_notice", ""))
+		if current_notice.is_empty():
+			plaza_parts.append("公告牌目前没有公告。")
+		else:
+			plaza_parts.append("公告牌写着：%s。" % current_notice)
 		for building_id in external_states.keys():
 			var external_state: Dictionary = external_states[building_id]
 			plaza_parts.append(_format_external_state_sentence(str(external_state.get("name", building_id)), external_state))
+		if external_states.is_empty():
+			plaza_parts.append("%s当前没有可传播的建筑状态。" % location_name)
 		if plaza_parts.is_empty():
 			return "%s当前没有可传播的建筑状态。" % location_name
-		return "%s当前可见建筑状态：%s" % [location_name, " ".join(plaza_parts)]
+		return "%s当前状态：%s" % [location_name, " ".join(plaza_parts)]
 
 	var external_state: Dictionary = building_snapshot.get("external_state", building_snapshot)
 	var internal_state: Dictionary = building_snapshot.get("internal_state", {})
 	var parts: Array[String] = [
 		_format_external_state_sentence(location_name, external_state),
 		"%s内现在有%s。" % [location_name, _format_people_present(internal_state.get("people_present", []))],
+		_format_people_statuses(internal_state.get("people_statuses", [])),
 		"%s里的工位状态：%s。" % [location_name, _format_workstation_states(internal_state.get("workstations", []))]
 	]
 	return " ".join(parts)
@@ -992,6 +1128,23 @@ func _format_people_present(raw_people: Variant) -> String:
 	for npc_id in people:
 		names.append(_get_npc_display_name(npc_id))
 	return "、".join(names)
+
+
+func _format_people_statuses(raw_statuses: Variant) -> String:
+	if not raw_statuses is Array or (raw_statuses as Array).is_empty():
+		return "在场人员状态：无。"
+	var parts: Array[String] = []
+	for raw_status in raw_statuses:
+		if not raw_status is Dictionary:
+			continue
+		var status: Dictionary = raw_status
+		var name := str(status.get("name", _get_npc_display_name(str(status.get("npc_id", "")))))
+		var life_status_text := str(status.get("life_status_text", "状态未知"))
+		var action_status := str(status.get("action_status", "待命"))
+		parts.append("%s%s，行动：%s" % [name, life_status_text, action_status])
+	if parts.is_empty():
+		return "在场人员状态：无。"
+	return "在场人员状态：%s。" % "；".join(parts)
 
 
 func _format_workstation_states(raw_workstations: Variant) -> String:
@@ -1052,6 +1205,10 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		target_ids.append(str(payload["resource_id"]))
 	if event_type.begins_with("building_") and payload.has("building_id"):
 		target_ids.append(str(payload["building_id"]))
+	if ["damage_taken", "unconscious_started", "healing_started", "healing_completed"].has(event_type) and payload.has("target_npc_id"):
+		target_ids.append(str(payload["target_npc_id"]))
+	if ["healing_started", "healing_completed"].has(event_type) and payload.has("healer_npc_id"):
+		target_ids.append(str(payload["healer_npc_id"]))
 	return target_ids
 
 
@@ -1064,6 +1221,16 @@ func _get_npc_current_info_location(npc_id: String) -> String:
 	if not is_enterable_location(location_id):
 		return DEFAULT_LOCATION_ID
 	return location_id
+
+
+func _can_npc_receive_witness(npc_id: String) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return true
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)):
+		return false
+	return str(state.get("current_action", "")) != "sleep_in_dormitory"
 
 
 func _events_from_ids(event_ids: Array) -> Array[Dictionary]:
@@ -1116,11 +1283,19 @@ func _get_time_label() -> String:
 func _get_npc_display_name(npc_id: String) -> String:
 	if npc_id.is_empty():
 		return "未知对象"
+	if npc_id == PLAZA_STATE_SUBJECT_ID:
+		return "系统"
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
 		return npc_id
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	return str(npc.get("name", npc_id))
+
+
+func _get_actor_display_name(actor_id: String) -> String:
+	if actor_id == PLAYER_ACTOR_ID:
+		return PLAYER_DISPLAY_NAME
+	return _get_npc_display_name(actor_id)
 
 
 func _get_location_name(location_id: String) -> String:

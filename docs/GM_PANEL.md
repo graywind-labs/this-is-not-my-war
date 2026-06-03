@@ -11,7 +11,9 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - 资源增减、扣除失败和负数保护。
 - 建筑选中、受损、倒计时修复、倒计时升级和全建筑外部状态广播。
 - NPC 选中、状态修改、移动到建筑、立即进入地点。
-- 工作、协助修复、协助升级、吃饭、睡觉等行动调试指派。
+- NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
+- 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
+- 工作、协助修复、协助升级、协助治疗昏迷者、吃饭、睡觉等行动调试指派。
 - TimeSystem 设定时间、跳小时、LLM 等待减速请求。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
@@ -78,6 +80,8 @@ NPC：
 - 移动到指定建筑入口。
 - 立即进入地点信息节点。
 - 设置 NPC 状态字段。
+- 扣除 NPC HP；HP 清零后由 `NPCSystem` 触发昏迷。
+- 用自然恢复规则推进指定 NPC 的昏迷恢复，便于快速验证复苏。
 - 查看 NPC 快照。
 
 行动：
@@ -86,13 +90,14 @@ NPC：
 - 指派工作。
 - 通过行动分组内的“修复目标”建筑下拉选择目标，再指派 NPC 协助该建筑的修复；协助修复是一个统一行为，建筑由该下拉或命令参数决定。
 - 通过行动分组内的“升级目标”建筑下拉选择目标，再指派 NPC 协助该建筑的升级；协助升级同样是带建筑参数的统一行为。
+- 通过行动分组内的“治疗目标”NPC 下拉选择昏迷目标，再指派当前选中 NPC 协助治疗；协助治疗是带目标 NPC 参数的统一行为，目标必须昏迷，每个昏迷目标最多 2 名治疗者。
 - 指派吃饭。
-- 指派睡觉。
+- 指派睡觉；可配合“查看 NPC 短期记忆”和同地点 public 事件验证睡觉期间见闻库不更新。
 
 记忆 / 见闻 / 广场：
 
 - 写入广场公告。
-- 查看地点快照；广场快照包含所有建筑外部状态，可进入建筑快照包含该建筑外部 + 内部状态。
+- 查看地点快照；广场快照包含当前在场 NPC 的 `people_statuses`、当前公告和所有建筑外部状态，可进入建筑快照包含该建筑外部 + 内部状态，`people_statuses` 可观察在场 NPC 的生命状态、行动状态和昏迷治疗者。
 - 查看 NPC 短期记忆。
 - 写入守备官给钱事件。
 - 写入守备官攻击 NPC 事件。
@@ -127,6 +132,7 @@ assign_action <npc_id> <action_id>
 work <npc_id> <building_id>
 assist_repair <npc_id> <building_id>
 assist_upgrade <npc_id> <building_id>
+assist_heal <healer_npc_id> <target_npc_id>
 eat <npc_id>
 sleep <npc_id>
 damage_building <building_id> <amount>
@@ -135,6 +141,8 @@ upgrade_building <building_id>
 plaza_notice <text>
 give_money <npc_id> <amount> [visibility]
 attack_npc <npc_id> <damage> [visibility]
+damage_npc <npc_id> <damage> [visibility]
+recover_npc <npc_id> <game_seconds>
 memory <npc_id>
 location <location_id>
 ```
@@ -148,6 +156,8 @@ repair_building wall
 assist_repair engineer_01 wall
 upgrade_building garden
 assist_upgrade engineer_01 garden
+damage_npc cook_01 150 local_public
+assist_heal doctor_01 cook_01
 set_time 2 9 30 0
 enter_location cook_01 dining_hall
 work gardener_01 garden
@@ -155,7 +165,7 @@ eat cook_01
 sleep priest_01
 plaza_notice 今晚所有人都必须留在广场附近。
 give_money cook_01 5 local_public
-attack_npc stableman_01 3 local_public
+recover_npc cook_01 54000
 memory cook_01
 location plaza
 events
