@@ -51,7 +51,7 @@
 当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态占位；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 和 `res://scripts/ui/GMPanel.gd` 作为 UI 脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
 当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、协助修复、协助升级、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉和工作通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率或战斗。
 
@@ -125,15 +125,20 @@
 依赖：暂无。
 当前状态：T0102 已创建并绑定到 `Main/Systems/CombatSystem`；尚未实现战斗逻辑。
 
+路径：`res://scripts/systems/LLMBridge.gd`
+用途：Godot 侧后端桥接脚本，负责请求 `/health` 与 `/npc/dialogue`，构造 T0603 对话 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
+依赖：挂载到 `Main/Systems/LLMBridge`；读取 `NPCSystem`、`MemorySystem`、`GameState` 和 `TimeSystem`；使用 Godot 原生 `HTTPClient` 请求游戏后端。
+当前状态：T0604 已创建，T0604A 已替换传输层；支持后端地址配置、health check、玩家-NPC / NPC-NPC 对话 payload 构造、`speaker_name == "守备官"`、短期记忆事件/见闻分离、地点快照注入、请求失败结果返回和成功/失败/超时后的慢速释放。不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。尚未写入对话事件、修改征召状态或调用真实 LLM；正式架构下 Godot 客户端只请求游戏后端，不保存供应商 API Key。
+
 路径：`res://scripts/systems/DialogSystem.gd`
 用途：对话系统占位脚本，后续用于 NPC 对话和后端请求。
 依赖：暂无。
-当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；尚未实现对话逻辑。
+当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；T0604 的后端请求由 `LLMBridge` 承担，DialogSystem 仍尚未实现对话 UI、事件入库或征召逻辑。
 
 路径：`res://scripts/ui/HUD.gd`
 用途：HUD 展示脚本，刷新标题区下方的天数、`HH:MM:SS` 时间/阶段、资源占位、速度/暂停按钮和后端状态占位。
 依赖：读取 `/root/GameState`，监听 `/root/EventBus.time_changed`、`hour_started`、`day_started` 和 `resource_changed`，从 `Main/Systems/ResourceSystem` 读取当前资源。
-当前状态：T0401 已接入真实时间推进、秒级时间显示、速度按钮、暂停按钮和空格暂停；速度按钮显示玩家设定倍率，空格只触发暂停/继续，不触发速度切换；LLM 等待造成的有效逻辑倍率由 TimeSystem 提供给后续调试 UI；T0202 已接入真实基础资源显示；2026-05-20 已让 HUD 根节点忽略鼠标，避免全屏背板拦截建筑点击；警铃和后端连接仍为占位。
+当前状态：T0604 后，HUD 后端状态会读取 `LLMBridge.get_last_backend_status()` 并监听 `backend_status_changed`；T0401 已接入真实时间推进、秒级时间显示、速度按钮、暂停按钮和空格暂停；速度按钮显示玩家设定倍率，空格只触发暂停/继续，不触发速度切换；LLM 等待造成的有效逻辑倍率由 TimeSystem 提供给后续调试 UI；T0202 已接入真实基础资源显示；2026-05-20 已让 HUD 根节点忽略鼠标，避免全屏背板拦截建筑点击；警铃仍为占位。
 
 路径：`res://scripts/ui/BuildingPanel.gd`
 用途：建筑信息面板脚本，监听建筑点击并展示建筑名称、等级、HP、工作位和地点信息占位。
@@ -254,9 +259,9 @@
 ## 后端当前已创建
 
 路径：`backend/app.py`
-用途：Flask 后端入口，当前提供 `GET /health` 健康检查。
+用途：Flask 后端入口，当前提供 `GET /health` 健康检查、`POST /mock/model` Mock Model 调试接口和 `POST /npc/dialogue` NPC 对话 Mock 业务接口。
 依赖：`flask`, `python-dotenv`。
-当前状态：T0002 已完成；尚未实现 NPC 对话、计划、判定或真实 LLM 调用。
+当前状态：T0603 后，`/npc/dialogue` 会校验 T0603 版 `NPCDialogueRequest`，调用默认 mock provider 的 `dialogue` 分支，并将输出校验为 `NPCDialogueResponse`；玩家-NPC 对话可返回 `recruitment_result=accept/reject`，NPC-NPC 对话在轮次接近上限时可返回 `should_end_dialogue=true`。T0602 的 `/mock/model` 仍可按 `call_type` 返回稳定 JSON 并附带伪 token / 用途记录；尚未实现正式计划、判定业务接口或真实 LLM 调用。
 
 路径：`backend/requirements.txt`
 用途：记录 Python 后端依赖。
@@ -269,12 +274,32 @@
 当前状态：仅包含变量名和占位值；真实 API Key 必须放入本地 `backend/.env`，不得提交仓库。
 
 路径：`backend/services/model_adapter.py`
-用途：模型供应商适配器的最小边界，后续由对话、计划、判定服务复用。
+用途：模型供应商适配器边界，后续由对话、计划、判定服务复用。
 依赖：环境变量 `LLM_PROVIDER`, `LLM_API_KEY`。
-当前状态：仅读取配置并提供 `is_configured()`，不发起 LLM 请求。
+当前状态：T0602 已实现默认 `mock` provider；`.env` 不存在或未设置 `LLM_PROVIDER` 时默认 mock，支持 `generate(call_type, payload)` 按调用类型返回稳定 JSON，并记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态；非 mock provider 未配置 `LLM_API_KEY` 时返回明确失败，不发起真实 LLM 请求。
 
-路径：`backend/schemas/`, `backend/services/`, `backend/data/`
-用途：后端数据模型、服务层和后端本地数据目录。
+路径：`backend/schemas/common.py`
+用途：后端 AI 接口共享 Schema，定义游戏时间、请求元信息、事件摘要、短期记忆、NPC 身份/状态/上下文、行动候选和通用错误响应。
+依赖：`pydantic`。
+当前状态：T0601 已创建；只提供数据模型，不调用 LLM，不改变游戏权威状态。
+
+路径：`backend/schemas/npc_ai.py`
+用途：NPC AI 请求/响应 Schema，覆盖玩家-NPC / NPC-NPC / 逃离挽留对话、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动交涉和玩家话术分类。
+依赖：`pydantic`，复用 `backend/schemas/common.py`。
+当前状态：T0603 后，对话 Schema 已按当前任务重整为显式 `npc_id`、`npc_name`、`npc_setting`、`speaker_name`、`speaker_text`、`speaker_context`、`is_recruitment_request`、轮次、`npc_state`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 输入；响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。每日计划、修订、战斗判定、睡前总结等 Schema 沿用 T0601 结构。
+
+路径：`backend/schemas/__init__.py`
+用途：统一导出后端 Schema 类型。
+依赖：`backend/schemas/common.py`、`backend/schemas/npc_ai.py`。
+当前状态：T0601 已创建。
+
+路径：`backend/schemas/README.md`
+用途：记录后端 Schema 分组和权威边界。
+依赖：无。
+当前状态：T0601 已创建。
+
+路径：`backend/services/`, `backend/data/`
+用途：后端服务层和后端本地数据目录。
 依赖：暂时无。
 当前状态：T0002 创建目录骨架，用 `.gitkeep` 保留空目录。
 
@@ -308,3 +333,7 @@
 | NPC 昏迷自然恢复验证 | `tools/verify_npc_unconscious_natural_recovery.gd` |
 | NPC 昏迷协助治疗验证 | `tools/verify_npc_unconscious_healing.gd` |
 | GM 调试面板验证 | `tools/verify_gm_panel.gd` |
+| 后端 Schema 验证 | `tools/verify_backend_schemas.py` |
+| Mock Model Adapter 验证 | `tools/verify_mock_model_adapter.py` |
+| `/npc/dialogue` Mock 接口验证 | `tools/verify_dialogue_mock_endpoint.py` |
+| Godot LLMBridge 验证 | `tools/verify_llm_bridge.gd`，T0604A 起包含不依赖 `curl.exe` / `OS.execute` 的静态检查 |

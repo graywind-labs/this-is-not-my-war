@@ -8,6 +8,7 @@ const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -32,6 +33,7 @@ var _action_select: OptionButton
 var _repair_building_select: OptionButton
 var _upgrade_building_select: OptionButton
 var _heal_target_select: OptionButton
+var _dialogue_text_input: LineEdit
 var _notice_input: LineEdit
 var _visibility_select: OptionButton
 var _memory_amount_input: LineEdit
@@ -146,6 +148,7 @@ func _build_ui() -> void:
 	_add_building_section(sections)
 	_add_npc_section(sections)
 	_add_action_section(sections)
+	_add_backend_section(sections)
 	_add_memory_section(sections)
 
 	_result_text = TextEdit.new()
@@ -293,6 +296,19 @@ func _add_action_section(parent: VBoxContainer) -> void:
 		_run_assist_heal(_selected_id(_npc_select), _selected_id(_heal_target_select))
 	)
 	assist_heal_button.name = "AssistHealButton"
+
+
+func _add_backend_section(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_title("后端 / LLMBridge"))
+	var row := _make_row(parent)
+	_dialogue_text_input = _make_input(row, "对话文本", "守备官需要你帮忙守住这里。", 300)
+	_add_button(row, "健康检查", _run_backend_health)
+	_add_button(row, "对话 Mock", func() -> void:
+		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, false)
+	)
+	_add_button(row, "应征 Mock", func() -> void:
+		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, true)
+	)
 
 
 func _add_memory_section(parent: VBoxContainer) -> void:
@@ -569,6 +585,14 @@ func _execute_command(command: String) -> void:
 				_run_upgrade_building(str(parts[1]))
 		"plaza_notice":
 			_run_plaza_notice(command.substr("plaza_notice".length()).strip_edges())
+		"backend_health":
+			_run_backend_health()
+		"dialogue_mock":
+			if _require_args(parts, 3, "dialogue_mock <npc_id> <text>"):
+				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_mock %s" % str(parts[1])).length()).strip_edges(), false)
+		"dialogue_recruit":
+			if _require_args(parts, 3, "dialogue_recruit <npc_id> <text>"):
+				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_recruit %s" % str(parts[1])).length()).strip_edges(), true)
 		"give_money":
 			if _require_args(parts, 3, "give_money <npc_id> <amount> [visibility]"):
 				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
@@ -802,6 +826,27 @@ func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
 	_log("协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))])
 
 
+func _run_backend_health() -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("debug_check_health"):
+		_log("LLMBridge 不可用。")
+		return
+	var result: Dictionary = llm_bridge.debug_check_health()
+	_log("后端健康检查：%s" % _compact(result))
+
+
+func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bool) -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("debug_request_dialogue"):
+		_log("LLMBridge 对话接口不可用。")
+		return
+	var clean_text := text.strip_edges()
+	if clean_text.is_empty():
+		clean_text = "守备官需要你帮忙守住这里。"
+	var result: Dictionary = llm_bridge.debug_request_dialogue(npc_id, clean_text, is_recruitment_request, "private")
+	_log("对话 Mock %s：%s" % [npc_id, _compact(result)])
+
+
 func _run_eat(npc_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -979,6 +1024,7 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
+		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text>",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value>",

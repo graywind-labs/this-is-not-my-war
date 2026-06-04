@@ -1,0 +1,156 @@
+extends SceneTree
+
+const MAIN_SCENE := "res://scenes/main/Main.tscn"
+const LLM_BRIDGE_SCRIPT := "res://scripts/systems/LLMBridge.gd"
+const BACKEND_URL := "http://127.0.0.1:5000"
+const CLOSED_BACKEND_URL := "http://127.0.0.1:5999"
+
+func _init() -> void:
+	var script_file := FileAccess.open(LLM_BRIDGE_SCRIPT, FileAccess.READ)
+	if script_file == null:
+		push_error("Failed to read LLMBridge.gd")
+		quit(1)
+		return
+	var script_source := script_file.get_as_text()
+	script_file.close()
+	for forbidden in ["curl.exe", "OS.execute", "llm_bridge_request_", "_write_request_body_file"]:
+		if script_source.contains(forbidden):
+			push_error("LLMBridge transport must not depend on %s" % forbidden)
+			quit(1)
+			return
+
+	var main_scene := load(MAIN_SCENE) as PackedScene
+	if main_scene == null:
+		push_error("Failed to load Main.tscn")
+		quit(1)
+		return
+
+	var main := main_scene.instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+
+	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var hud := root.get_node_or_null("Main/UI/HUD")
+	if llm_bridge == null or time_system == null or hud == null:
+		push_error("LLMBridge verification required nodes not found")
+		quit(1)
+		return
+
+	var payload: Dictionary = llm_bridge.build_npc_dialogue_payload("cook_01", "我们要一起守住这里。", {
+		"is_recruitment_request": true,
+		"dialogue_state": {
+			"visibility": "local_public"
+		},
+		"current_round": 1,
+		"max_rounds": 3
+	})
+	if payload.is_empty():
+		push_error("LLMBridge failed to build dialogue payload")
+		quit(1)
+		return
+	if str(payload.get("speaker_name", "")) != "守备官":
+		push_error("Player initiated dialogue must use speaker_name == 守备官")
+		quit(1)
+		return
+	if str(payload.get("npc_id", "")) != "cook_01":
+		push_error("Dialogue payload target npc_id mismatch")
+		quit(1)
+		return
+	if not bool(payload.get("is_recruitment_request", false)):
+		push_error("Dialogue payload recruitment flag was not preserved")
+		quit(1)
+		return
+	var dialogue_state: Dictionary = payload.get("dialogue_state", {})
+	if str(dialogue_state.get("visibility", "")) != "local_public":
+		push_error("Dialogue payload visibility mismatch")
+		quit(1)
+		return
+	var short_memory: Dictionary = payload.get("short_memory", {})
+	if not short_memory.has("experienced_events") or not short_memory.has("witnessed_events"):
+		push_error("Dialogue payload short memory must separate experienced_events and witnessed_events")
+		quit(1)
+		return
+	var speaker_context: Dictionary = payload.get("speaker_context", {})
+	if str(speaker_context.get("speaker_kind", "")) != "guard_officer":
+		push_error("Guard officer speaker_context was not generated")
+		quit(1)
+		return
+
+	print("LLMBridge verify: closed health")
+	llm_bridge.set_backend_base_url(CLOSED_BACKEND_URL)
+	llm_bridge.request_timeout_seconds = 0.5
+	var closed_result: Dictionary = llm_bridge.check_health()
+	if bool(closed_result.get("ok", false)):
+		push_error("Closed backend health check should fail without crashing")
+		quit(1)
+		return
+
+	print("LLMBridge verify: live health")
+	llm_bridge.set_backend_base_url(BACKEND_URL)
+	llm_bridge.request_timeout_seconds = 4.0
+	var health_result: Dictionary = llm_bridge.check_health()
+	if not bool(health_result.get("ok", false)):
+		push_error("Backend health check failed. Start backend/app.py before running this verification. Result: %s" % str(health_result))
+		quit(1)
+		return
+
+	var backend_label := hud.get_node_or_null("%BackendStatusLabel") as Label
+	if backend_label == null or not backend_label.text.begins_with("后端：已连接"):
+		push_error("HUD did not display connected backend status")
+		quit(1)
+		return
+
+	print("LLMBridge verify: live dialogue")
+	time_system.set_time_scale(4.0)
+	var dialogue_result: Dictionary = llm_bridge.request_npc_dialogue("cook_01", "守备官需要你一起保护大家。", {
+		"is_recruitment_request": true,
+		"current_round": 1,
+		"max_rounds": 3
+	})
+	if not bool(dialogue_result.get("ok", false)):
+		push_error("Dialogue mock request failed: %s" % str(dialogue_result))
+		quit(1)
+		return
+	var dialogue: Dictionary = dialogue_result.get("dialogue", {})
+	if str(dialogue.get("replyer_id", "")) != "cook_01":
+		push_error("Dialogue mock replyer_id mismatch")
+		quit(1)
+		return
+	if str(dialogue.get("recruitment_result", "")) != "accept":
+		push_error("Dialogue mock recruitment result should accept persuasive guard text")
+		quit(1)
+		return
+	if not llm_bridge.debug_was_slowdown_registered():
+		push_error("Dialogue request did not register an LLM slowdown")
+		quit(1)
+		return
+	if llm_bridge.get_pending_slowdown_count() != 0:
+		push_error("Dialogue request left pending LLM slowdown ids")
+		quit(1)
+		return
+	if absf(time_system.get_effective_time_scale() - 4.0) > 0.001:
+		push_error("Dialogue request did not restore player time scale")
+		quit(1)
+		return
+
+	print("LLMBridge verify: failed dialogue")
+	llm_bridge.set_backend_base_url(CLOSED_BACKEND_URL)
+	llm_bridge.request_timeout_seconds = 0.5
+	var failed_dialogue: Dictionary = llm_bridge.request_npc_dialogue("cook_01", "这次后端关着。", {})
+	if bool(failed_dialogue.get("ok", false)):
+		push_error("Dialogue request against closed backend should fail")
+		quit(1)
+		return
+	if llm_bridge.get_pending_slowdown_count() != 0:
+		push_error("Failed dialogue request left pending LLM slowdown ids")
+		quit(1)
+		return
+	if absf(time_system.get_effective_time_scale() - 4.0) > 0.001:
+		push_error("Failed dialogue request did not restore player time scale")
+		quit(1)
+		return
+
+	print("T0604A LLMBridge verification passed.")
+	quit(0)

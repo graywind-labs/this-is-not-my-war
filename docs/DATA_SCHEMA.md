@@ -250,6 +250,27 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 
+T0603 对话事件 payload 建议：
+
+```json
+{
+  "type": "dialogue_turn",
+  "payload": {
+    "speaker_id": "guard_officer",
+    "speaker_name": "守备官",
+    "listener_id": "cook_01",
+    "listener_name": "布鲁诺",
+    "text": "守备官请求你应征，帮忙守住驿站。",
+    "is_recruitment_request": true,
+    "recruitment_result": "accept",
+    "dialogue_round": 1,
+    "max_rounds": 5
+  }
+}
+```
+
+对话事件首先进入说话者与听者双方的事件库；如果事件 `visibility == "local_public"`，再由事件地点按公开规则广播给同地点第三者的见闻库。后端 `/npc/dialogue` 只返回回复文本与意向，不直接写入该 payload。
+
 T0402 当前运行时查询接口：
 
 - `get_all_events()` / `get_event_log()`：返回当天全局事件索引中的事件副本。
@@ -442,12 +463,33 @@ Revised event payload rule: `location_entered` and `location_exited` only store 
 
 ## LLM Dialogue Response
 
-```json
+T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义。Schema 是前后端数据合同，不调用真实模型，不执行 HP、资源、建筑、移动或战斗等权威结算。
 
-```
+共享上下文位于 `backend/schemas/common.py`：
+
+- `GameTime`：`day`、`time`、`hour`。
+- `ModelRequestMeta`：`request_id`、`call_type`、来源、是否需要 TimeSystem 慢速、关联事件 id。
+- `NPCContext`：NPC 身份、运行时状态、短期记忆摘要、知识图谱、当前地点上下文和广场上下文。
+- `ShortTermMemoryContext`：分开的 `experienced_events` 与 `witnessed_events`。
+- `ActionCandidate`：后续计划/修订可选择的行动候选。
+
+对话 Schema 位于 `backend/schemas/npc_ai.py`：
+
+- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。
+- `NPCDialogueResponse`：返回 `replyer_id`、`reply_text`、`response_kind`、`intent`、`emotion`、`recruitment_result`、`should_end_dialogue` 和建议事件类型。回复玩家时读取 `recruitment_result`；回复 NPC 时读取 `reply_text` 与 `should_end_dialogue`。它只表达 NPC 意向；征召状态变化和事件写入由 Godot 系统完成。
 
 ## LLM Battle Judgement Response
 
-```json
+战斗判定 Schema：
 
-```
+- `BattleJudgementRequest`：包含触发类型 `combat_started` / `low_hp` / `escape_check`、NPC 上下文、战斗上下文和允许判定结果。
+- `BattleJudgementResponse`：返回 `join_battle`、`avoid_battle`、`continue_fighting`、`escape_station` 或 `inspired` 等意向，以及情绪和调试原因。伤害、移动、逃离和状态仍由 Godot 结算。
+
+其他 T0601 后端 AI Schema：
+
+- `DailyPlanRequest` / `DailyPlanResponse`：每日计划；响应必须包含 24 条 `PlanItem`。
+- `PlanRevisionRequest` / `PlanRevisionResponse`：计划执行失败或异常后的计划修订。
+- `DailyReflectionRequest` / `DailyReflectionResponse`：睡前总结、日记和知识图谱增量。
+- `KnowledgeGraphUpdateRequest` / `KnowledgeGraphUpdateResponse`：独立知识图谱更新。
+- `ProactiveIntentionRequest` / `ProactiveIntentionResponse`：NPC 是否主动找守备官交涉。
+- `PlayerStrategyClassificationRequest` / `PlayerStrategyClassificationResponse`：把守备官话术分类为说服、利诱、威胁、欺骗、安抚、交易、命令或未知。

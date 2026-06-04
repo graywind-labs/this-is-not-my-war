@@ -30,6 +30,7 @@ Main
 │  ├─ ActionSystem
 │  ├─ MemorySystem
 │  ├─ CombatSystem
+│  ├─ LLMBridge
 │  ├─ UnconsciousSystem
 │  └─ DialogSystem
 ├─ UI
@@ -60,7 +61,7 @@ T0101 已在 `project.godot` 注册以下 Autoload：
 | GameState | `res://scripts/core/GameState.gd` | 已保存天数、小时、战斗状态 |
 | ConfigLoader | `res://scripts/core/ConfigLoader.gd` | 已支持 JSON 读取和错误提示 |
 
-T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 绑定到 Main 场景的 `Systems` 节点下。T0401 已实现 `TimeSystem.gd` 的基础时间推进、秒级显示、暂停、加速、跨天、逻辑时间倍率、LLM 等待减速请求，以及 `time_changed` / `time_scale_changed` / `logical_time_tick` / `hour_started` / `day_started` 信号；T0202 已实现 `ResourceSystem.gd` 的基础资源读写和 HUD 同步；T0205 已实现 `BuildingSystem.gd` 的配置读取、低模建筑绑定、运行时点击区、`building_clicked` 选择事件、`building_state_changed` 状态刷新事件，以及倒计时修复/升级逻辑；T0304/T0409 已实现 `NPCSystem.gd` 从 `data/npc_profiles.json` 生成 8 个 NPC 占位实体、发出 `npc_clicked`、读取/更新 NPC 基础状态、调试移动到建筑入口，并在到达后发出 `npc_state_changed`；室内信息地点切换到另一个室内信息地点时，事件和地点信息层会插入广场中转链。T0501/T0502/T0503 已实现 NPC HP 扣除、`npc_hp_changed`、`npc_unconscious`、昏迷阻断移动/行动、昏迷自然恢复、协助治疗、`npc_revived`、自动复苏和昏迷/治疗/复苏事件写入。T0402 已将 `MemorySystem.gd` 升级为事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场事件查询；T0403 已在 `MemorySystem.gd` 中实现可进入地点信息节点、`people_present` 维护、进入快照和 `local_public` 即时广播；T0404/T0408/T0409 已统一广场即时广播、公告变更广播、建筑可传播外部状态广播和广场建筑外部状态快照为 `location_id == "plaza"` 的 `local_public`，且 NPC 进入广场时会在进入快照中获得当前在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态；T0405 已提供 NPC 短期记忆容器查询和玩家非对话交互事件调试写入口，仍不提供按地点查询事件的长期接口，地点/建筑节点不作为事件历史存储。T0407 已实现记忆降噪规则：进入/离开事件只保留行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化只广播变化字段。`ActionSystem.gd` 的工作 / 协助修复 / 协助升级 / 协助治疗 / 吃饭 / 睡觉调试行动闭环已写入结构化事件。其余系统当前仍为结构占位，不实现敌人战斗、完整诊所治疗或对话逻辑。
+T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 绑定到 Main 场景的 `Systems` 节点下；T0604 新增 `LLMBridge.gd` 并绑定到 `Main/Systems/LLMBridge`，T0604A 已将其传输层替换为 Godot 原生 `HTTPClient`。T0401 已实现 `TimeSystem.gd` 的基础时间推进、秒级显示、暂停、加速、跨天、逻辑时间倍率、LLM 等待减速请求，以及 `time_changed` / `time_scale_changed` / `logical_time_tick` / `hour_started` / `day_started` 信号；T0604/T0604A 已让 `LLMBridge` 在请求 `/npc/dialogue` 前注册慢速请求，并在成功、失败或超时后释放。T0202 已实现 `ResourceSystem.gd` 的基础资源读写和 HUD 同步；T0205 已实现 `BuildingSystem.gd` 的配置读取、低模建筑绑定、运行时点击区、`building_clicked` 选择事件、`building_state_changed` 状态刷新事件，以及倒计时修复/升级逻辑；T0304/T0409 已实现 `NPCSystem.gd` 从 `data/npc_profiles.json` 生成 8 个 NPC 占位实体、发出 `npc_clicked`、读取/更新 NPC 基础状态、调试移动到建筑入口，并在到达后发出 `npc_state_changed`；室内信息地点切换到另一个室内信息地点时，事件和地点信息层会插入广场中转链。T0501/T0502/T0503 已实现 NPC HP 扣除、`npc_hp_changed`、`npc_unconscious`、昏迷阻断移动/行动、昏迷自然恢复、协助治疗、`npc_revived`、自动复苏和昏迷/治疗/复苏事件写入。T0402 已将 `MemorySystem.gd` 升级为事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场事件查询；T0403 已在 `MemorySystem.gd` 中实现可进入地点信息节点、`people_present` 维护、进入快照和 `local_public` 即时广播；T0404/T0408/T0409 已统一广场即时广播、公告变更广播、建筑可传播外部状态广播和广场建筑外部状态快照为 `location_id == "plaza"` 的 `local_public`，且 NPC 进入广场时会在进入快照中获得当前在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态；T0405 已提供 NPC 短期记忆容器查询和玩家非对话交互事件调试写入口，仍不提供按地点查询事件的长期接口，地点/建筑节点不作为事件历史存储。T0407 已实现记忆降噪规则：进入/离开事件只保留行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化只广播变化字段。`ActionSystem.gd` 的工作 / 协助修复 / 协助升级 / 协助治疗 / 吃饭 / 睡觉调试行动闭环已写入结构化事件。其余系统当前仍为结构占位，不实现敌人战斗、完整诊所治疗、对话 UI、对话事件入库或征召结算。
 
 ## 逻辑时间倍率原则
 
@@ -119,6 +120,7 @@ Main
 │  ├─ ActionSystem
 │  ├─ MemorySystem
 │  ├─ CombatSystem
+│  ├─ LLMBridge
 │  └─ DialogSystem
 ├─ UI
 │  ├─ HUD
@@ -133,7 +135,9 @@ Main
 
 T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊，以及主厅前公告牌视觉占位均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该视觉占位不绑定 `data/building_defs.json`，不拥有 HP、等级、工作位、修复或升级；公告文本归广场状态保存。该阶段只提供空间占位和可辨认视觉结构，不实现生产、导航或战斗。
 
-T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态占位。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。不实现警铃或后端连接。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、工作位和地点信息占位，并通过按钮触发 `BuildingSystem` 的修复/升级接口；修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。
+T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。T0604 后，HUD 读取 `Main/Systems/LLMBridge` 的后端状态，并监听 `backend_status_changed` 刷新 health check 结果。警铃仍不实现真实逻辑。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、工作位和地点信息占位，并通过按钮触发 `BuildingSystem` 的修复/升级接口；修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。
+
+T0604 已新增 `res://scripts/systems/LLMBridge.gd`，T0604A 已把请求传输层替换为 Godot 原生 `HTTPClient` 状态机：支持后端地址配置、`check_health()` 和 `request_npc_dialogue(...)`，不再依赖 Windows `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge.build_npc_dialogue_payload(...)` 会按 T0603 Schema 收集目标 NPC 设定、权威状态、短期记忆、长期记忆、地点快照、说话者上下文、对话公开性和轮次；守备官发起时 `speaker_name` 固定为“守备官”。该桥只返回后端 JSON 或错误字典，不写入 `MemorySystem` 对话事件，不修改入伍状态，也不调用真实 LLM。正式架构下 Godot 导出客户端只请求游戏服务器后端，不保存供应商 API Key，也不直连模型供应商。
 
 T0105 已将 `res://scripts/camera/CameraRig.gd` 绑定到 `Main/CameraRig`：玩家可用 WASD 平移、鼠标中键拖拽平移、滚轮缩放；脚本只移动 `CameraRig` 的 X/Z 位置和 `Camera3D` 的本地距离，保留高机位俯视角，并通过导出参数限制移动边界和缩放距离。该阶段不实现角色控制或自由第一人称视角。
 

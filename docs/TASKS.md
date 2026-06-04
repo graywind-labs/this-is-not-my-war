@@ -1667,7 +1667,7 @@ Main
 
 ## T0601 创建后端 Schema
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0002
 涉及文档：`TECH_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `PROMPTS.md`
@@ -1683,7 +1683,7 @@ Main
 - 计划执行失败/异常时对计划的重新评估和修订的请求/响应
 - 战斗判定请求/响应
 - 睡前总结请求/响应
-- 以及其他game_design.md里需调用LLM时的情形
+- 以及其他game_design.md里必须的前后端交互情形，尤其是所有需调用LLM的情形（大部分情形应该已经列出）。
 
 禁止事项：
 
@@ -1696,11 +1696,19 @@ Main
 - 后端启动无报错。
 - 文档与字段一致。
 
+验收结果（2026-06-03）：
+
+- 已新增 `backend/schemas/common.py`，定义 `GameTime`、`ModelRequestMeta`、NPC 上下文、短期记忆摘要、行动候选和通用错误响应。
+- 已新增 `backend/schemas/npc_ai.py`，覆盖 NPC 对话（玩家-NPC、NPC-NPC、逃离挽留）、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动找守备官交涉和玩家话术分类的请求/响应模型。
+- 已新增 `backend/schemas/__init__.py` 和 `backend/schemas/README.md`，提供统一导出和 schema 边界说明；schema 只表达意图、文本、主观判断和计划建议，不执行真实 LLM 调用，也不改变 HP、资源、建筑或战斗权威结果。
+- 已新增 `tools/verify_backend_schemas.py`，验证 schema 可导入、关键请求/响应可实例化、每日计划响应必须包含 24 条计划项。
+- 验证通过：`python tools/verify_backend_schemas.py`、`python -m py_compile backend/schemas/common.py backend/schemas/npc_ai.py backend/schemas/__init__.py tools/verify_backend_schemas.py`、Flask `create_app().test_client().get("/health")` 返回 200。
+
 ---
 
 ## T0602 实现 Mock Model Adapter
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0601
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`
@@ -1718,8 +1726,7 @@ Main
 
 禁止事项：
 
-- 不接真实 DeepSeek / MiniMax。
-- 不写真实 API Key。
+- 不接真实 DeepSeek
 
 验收标准：
 
@@ -1727,40 +1734,65 @@ Main
 - 调用后端接口返回合法 JSON。
 - 失败时返回明确错误，不让 Godot 卡死。
 
+验收结果（2026-06-03）：
+
+- `backend/services/model_adapter.py` 默认 provider 改为 `mock`；`.env` 不存在或未设置 `LLM_PROVIDER` 时可直接返回 Mock 结果。
+- `ModelAdapter.generate(call_type, payload)` 支持按调用类型返回不同稳定 JSON，当前覆盖 `dialogue`、`plan_day`、`revise_plan`、`battle_judgement`、`daily_reflection`、`knowledge_graph_update`、`proactive_intention`、`player_strategy_classification` 和通用兜底响应。
+- Mock 返回会记录调用用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用、成功/失败状态；mock 费用固定为 0。
+- `backend/app.py` 新增 `POST /mock/model` 调试接口；非法 JSON / 非对象 payload 返回 400，非 mock provider 且未配置 `LLM_API_KEY` 返回明确 503 错误。
+- 已新增 `tools/verify_mock_model_adapter.py`，验证默认 mock、schema 合法性、24 小时计划、伪 token 记录、非 mock 失败和 HTTP 调试接口。
+- 验证通过：`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py`。
+
 ---
 
 ## T0603 实现 `/npc/dialogue` Mock 接口
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0601, T0602
 涉及文档：`TECH_ARCHITECTURE.md`, `PROMPTS.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
 
-实现最小 NPC 对话接口。
+实现 NPC 对话（NPC之间的对话以及NPC和玩家的对话）接口。注意：这个任务我临时增改、具体设计了一下，所以如果有当前无法完成的部分，要按照这一版的T0603任务内容增改到后面的对话数据任务里，如有冲突以当前的T0603为准。
 
 输入：
 
 - npc_id
-- player_text
-- is_recruitment_request
-- npc_state
-- short_memory
-- knowledge_context
-- location_context
+- npc_name
+- npc_setting（目标NPC人设的各种设定）
+- speaker_name （说话者的名称，如果是玩家，名称为“守备官”）
+- player_text/说话的NPC text
+- speaker_context（如果发起的对话的是NPC/是NPC之间的对话，如果是NPC发起对话的话，发起者的健康/受伤状态和外表特征（储存在NPC信息库里）也会一并输入；如果是玩家（守备官）发起，守备官的外表特征也会一并输入）
+- is_recruitment_request（如果是player对话，玩家将会有一个可勾选的发起recruit选项）
+- 对话轮次
+- npc_state （包括目标NPC的各种属性（力量智力）、熟练度、健康/受伤、饱食度疲劳度、金钱、装备、是否已入伍等NPC信息系统里代表当前自身状态的东西）
+- dialogue_state (当前对话的公开性，对话可选local Public或private，前者会把对话结果作为事件暴露给所在建筑的其他人，按照事件逻辑；后者只会让对话结果进入两个人的事件库)
+- short_memory（NPC的事件库（事件库里既有自己的行动事件也有对话事件以及内容，要注意，A与B的对话都会进入A和B的事件库而非见闻库，只有A与B的公开对话才会进入同一建筑里的第三者见闻库）和见闻库里的信息）
+- long_memory （长期记忆，包括知识图谱和日记）
+- location_context （当前对话发生的地点快照，也就是当前所在建筑的状态，比如是否受损，建筑内部的工位状态，内部的NPC及其状态）
 
-输出：
 
-- dialogue
+输出分情况：
+如果是回复玩家：
+- replyer id
+- reply text
 - recruitment_result：none / accept / reject
-- npc_intent
-- memory_to_store
+
+如果是回复NPC（NPC之间的对话）：
+- reply text
+- 是否结束对话
+
+回复者的text要再次作为对另一个NPC对话的输入，按照输入格式拼起来输入给目标NPC。
+而且为了控制NPC之间对话的轮次，还需加一个最大轮次的设定以及当前对话的轮次，并且让NPC在轮次快要耗尽时更加输出倾向于结束对话的触发词。
+
+对话入库规则：
+对话内容、说话者名称与听者名称作为payload形成对话事件，首先进入对话者的事件库，然后按照正常规则如果是public就广播给在场NPC的见闻库。
+
 
 禁止事项：
 
 - 不接真实模型。
-- 不实现完整 Prompt。
 - 不改 Godot UI。
 
 验收标准：
@@ -1769,11 +1801,20 @@ Main
 - 请求“提出应征”时 Mock 可返回 accept 或 reject。
 - JSON 结构稳定。
 
+验收结果（2026-06-03）：
+
+- 已在 `backend/app.py` 新增正式 `POST /npc/dialogue` Mock 业务接口，请求体先校验为 `NPCDialogueRequest`，Mock 输出再校验为 `NPCDialogueResponse`，非法 JSON / schema 错误返回 400，模型输出不合法返回 502，非 mock provider 无 Key 返回 503。
+- 已按本任务临时增改版重整对话 Schema：输入包含目标 NPC `npc_id` / `npc_name` / `npc_setting`、`speaker_name` / `speaker_text` / `speaker_context`、`is_recruitment_request`、当前轮次 / 最大轮次、`npc_state`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context`。
+- Mock 玩家-NPC 对话会在“提出应征”请求中按关键词稳定返回 `recruitment_result=accept` 或 `reject`；NPC-NPC 对话会在轮次接近 `max_rounds` 时返回 `should_end_dialogue=true`。
+- 已新增 `tools/verify_dialogue_mock_endpoint.py`，覆盖 `/npc/dialogue` HTTP 路径、应征 accept/reject、NPC-NPC 结束倾向和非法请求 400。
+- 验证通过：`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、Python 编译检查。
+- 本任务未改 Godot UI，也未实现 Godot 侧对话事件入库；这些按下方 T0604/T0701/T0702 继续推进。
+
 ---
 
 ## T0604 实现 Godot LLMBridge
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0603, T0101
 涉及文档：`TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`
@@ -1788,9 +1829,10 @@ Main
 - 支持后端地址配置
 - 支持 health check
 - 支持发送 NPC 对话请求
-- 请求失败时返回降级结果
+- 按 T0603 Schema 从 Godot 收集并发送：目标 NPC 设定、说话者名称 / 文本 / 上下文、`is_recruitment_request`、当前轮次 / 最大轮次、NPC 状态、`dialogue_state`、短期记忆、长期记忆和地点快照等
+- 请求失败时返回报错结果
 - 发起会影响当前事态的 LLM 请求前，调用 `TimeSystem.request_time_slowdown(...)`
-- 请求成功、失败、超时或降级后，必须调用 `TimeSystem.release_time_slowdown(...)`
+- 请求成功、失败、超时后，必须调用 `TimeSystem.release_time_slowdown(...)`
 
 禁止事项：
 
@@ -1803,14 +1845,79 @@ Main
 - Godot 能显示后端连接状态。
 - 后端关闭时不会崩溃。
 - 请求 `/npc/dialogue` 可收到 Mock JSON。
+- Godot 发送的请求字段与 T0603 `NPCDialogueRequest` 对齐；玩家发起时 `speaker_name == "守备官"`。
 - LLM 请求等待期间有效逻辑时间倍率降为 `1/60`，请求结束后恢复玩家设定倍率。
 - 后端失败或超时时不会遗留慢速请求。
+
+验收结果（2026-06-03）：
+- 已新增 `res://scripts/systems/LLMBridge.gd` 并挂载到 `Main/Systems/LLMBridge`。
+- 支持后端地址配置、`GET /health`、`POST /npc/dialogue` 和 HUD 后端状态刷新；GM 面板新增 `backend_health`、`dialogue_mock <npc_id> <text>`、`dialogue_recruit <npc_id> <text>`。
+- Godot 侧会按 T0603 Schema 收集目标 NPC 设定、说话者名称/文本/上下文、应征标记、轮次、NPC 权威状态、对话公开性、短期记忆、长期记忆和地点快照；玩家发起时 `speaker_name == "守备官"`。
+- 对话请求期间注册 `TimeSystem.request_time_slowdown(...)`，成功、失败或超时后释放；验证覆盖后端关闭、health、dialogue Mock 和失败后慢速释放。
+- 当前只完成桥接与调试入口，不实现对话 UI、对话事件入库、真实 LLM 或征召状态变更。
+- 当前传输层使用本机 `curl.exe` 和临时 JSON 文件，是 T0604 为了先打通闭环的临时实现，不是正式客户端分发架构。
+- 验证通过：`godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`godot --headless --path . --quit-after 1`。
+
+---
+
+## T0604A 替换 LLMBridge 传输层并锁定正式前后端架构
+
+状态：Done
+优先级：P0
+前置任务：T0604
+涉及文档：`TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `API_BUDGET.md`
+
+任务目标：
+
+把 T0604 的临时 `curl.exe` 传输层替换为 Godot 原生 HTTP，并明确正式分发方向：玩家电脑只运行 Godot 客户端；客户端请求游戏服务器后端；服务器后端调用 LLM Provider、持有 API Key、做额度控制和并发治理。玩家自行配置 API Key 只能作为未来可选开发/BYOK 模式，Demo 阶段不是必需路径，也不能成为默认架构。
+
+实现范围：
+
+- `LLMBridge` 使用 Godot 原生 `HTTPRequest` 或 `HTTPClient` 发起 `/health` 与 `/npc/dialogue` 请求。
+- 保持 `LLMBridge` 对上层系统的公开职责稳定：payload 构造、错误字典、`backend_status_changed`、TimeSystem 慢速注册/释放都不因传输替换而改变。
+- 移除运行时对 `curl.exe`、命令行 JSON 转义和临时请求体文件的依赖。
+- 请求必须有超时、失败返回和慢速释放兜底。
+- 验证路径必须覆盖编辑器 / `Main.tscn` 运行、headless `--script`、后端关闭失败路径和 `/npc/dialogue` Mock 成功路径。
+- 文档中必须继续强调：Godot 导出客户端不保存真实供应商 API Key，不直接调用 DeepSeek / MiniMax / 通义千问 / 智谱等模型接口。
+
+禁止事项：
+
+- 不在 Godot 客户端写入真实 API Key。
+- 不让 Godot 直接调用 LLM Provider。
+- 不在本任务实现真实 LLM、对话 UI、征召结算或 API 额度面板。
+- 不把本地开发用 backend/mock 误写成玩家最终部署必须自行启动的组件。
+
+验收标准：
+
+- `LLMBridge.gd` 运行时不再调用 `curl.exe`。
+- `GET /health` 可刷新 HUD/GM 后端状态。
+- `POST /npc/dialogue` 可收到 T0603 Mock JSON，且字段仍与 `NPCDialogueRequest` 对齐。
+- 后端关闭、超时或返回非法 JSON 时不会崩溃，也不会遗留 TimeSystem 慢速请求。
+- `godot --headless --path . --script res://tools/verify_llm_bridge.gd` 通过，验证脚本不依赖 `curl.exe`。
+- 相关架构文档明确“客户端 -> 游戏后端 -> LLM Provider”的正式方向，以及 BYOK 仅为未来可选模式。
+
+验收结果（2026-06-03）：
+
+- `res://scripts/systems/LLMBridge.gd` 已用 Godot 原生 `HTTPClient` 状态机替换 T0604 的 `curl.exe` / 临时 JSON 文件传输层。
+- `LLMBridge` 对上层保持原接口与职责：继续负责 `/health`、`/npc/dialogue`、T0603 payload 构造、错误字典、`backend_status_changed` 和 TimeSystem 慢速注册/释放。
+- 请求路径已覆盖连接失败、请求失败、响应体读取失败、超时、非法 JSON、后端 `ok=false` 和成功 JSON；成功、失败、超时后都会释放慢速请求。
+- `tools/verify_llm_bridge.gd` 新增防回退静态检查，确认脚本不含 `curl.exe`、`OS.execute`、临时请求体文件名或旧写文件函数。
+- 文档已继续明确正式架构为 Godot 客户端请求游戏服务器后端，再由后端调用 LLM Provider；Godot 导出客户端不保存真实供应商 API Key，不直连 DeepSeek / MiniMax / 通义千问 / 智谱等模型接口，BYOK 仅为未来可选模式。
+- 验证通过：`godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`godot --headless --path . --quit-after 1`。
+
+备注（T0604 复盘）：
+
+- 第一次尝试 Godot 原生 HTTP 时，headless/脚本验证里的信号等待与节点生命周期没有处理好，导致请求路径反复卡住。
+- 同步等待异步 HTTP 返回会让验证脚本挂起，后续实现必须用明确请求状态机、超时和完成回调。
+- Windows 命令行传中文 JSON、引号和换行容易被转义破坏，T0604 才临时改为 `curl.exe` + 临时 JSON 文件。
+- 环境变量若残留 `LLM_PROVIDER=deepseek` 等非 mock 配置且无 Key，后端会按设计返回 provider unavailable；验证必须显式使用 mock 或隔离环境。
+- 这些都是传输层和验证环境问题，不是 NPC、记忆、LLM 架构方向的问题；不能据此改成 Godot 客户端直连真实模型。
 
 ---
 
 # M7：玩家对话、征召与非对话交互
 
-目标：玩家能够点击 NPC 对话，通过“提出应征”让 NPC 接受或拒绝；玩家可给钱、给装备、攻击，且这些行为进入结构化事件与 NPC 事件库。
+目标：玩家能够点击 NPC 对话，通过“提出征召”让 NPC 接受或拒绝；玩家可给钱、给装备、攻击NPC，且这些行为进入结构化事件与 NPC 事件库。
 
 ---
 
@@ -1818,12 +1925,12 @@ Main
 
 状态：Todo
 优先级：P0
-前置任务：T0303, T0604
+前置任务：T0303, T0604A
 涉及文档：`UI_UX.md`, `AI_NPC_SYSTEM.md`
 
 任务目标：
 
-点击 NPC 后可以打开对话窗口并输入文本。
+点击 NPC 面板上的“对话”后可以打开对话窗口并输入文本。
 
 功能：
 
@@ -1833,6 +1940,7 @@ Main
 - 发送到后端
 - 显示 NPC 回复
 - 结束对话按钮
+- 对话 UI 维护NPC-NPC 对话当前轮次与最大轮次（暂定5轮，两个npc都发言一次为一轮）；后续逃离挽留复用同一轮次限制语义（玩家与NPC对话不限轮次）
 
 禁止事项：
 
@@ -1845,7 +1953,8 @@ Main
 - 点击 NPC 可打开对话 UI。
 - 输入文本后能看到 Mock 回复。
 - 后端关闭时显示降级回复。
-- 对话事件写入 NPC 事件库；对话全文存入事件 `payload`。
+- 对话事件写入双方 NPC 事件库；对话全文、说话者名称、听者名称、公开性、当前轮次、最大轮次和征召标记存入事件 `payload`。
+- 若 `dialogue_state.visibility == "local_public"`，对话事件按地点规则广播给同地点第三者见闻库；`private` 只进入对话双方事件库。
 
 ---
 
@@ -1863,13 +1972,11 @@ Main
 规则：
 
 - 点击“提出应征”后，下次对话请求 `is_recruitment_request=true`
-- 后端返回 `accept` 后 NPC `recruited=true`
-- 返回 `reject` 后 NPC 保持自由行动
-- 征召结果写入结构化事件和 NPC 事件库
+- 后端返回 `recruitment_result=accept` 后 NPC `recruited=true`
+- 征召结果写入本次对话的结构化事件和 NPC 事件库
 
 禁止事项：
 
-- 不实现复杂条件接受。
 - 不实现真实 LLM 判断。
 - 不实现战斗指派。
 
@@ -1878,7 +1985,7 @@ Main
 - NPC 接受后面板显示已入伍。
 - 已入伍 NPC 可出现指派按钮占位。
 - 拒绝后不改变入伍状态。
-- 征召事件被记录。
+- 征召与否被记录在对话事件payload中。
 
 ---
 
@@ -2759,6 +2866,8 @@ NPC 可主动请求与玩家对话。
 规则：
 
 - API Key 只从环境变量读取。
+- 真实供应商 API Key 默认只存在于游戏服务器后端或开发者本地后端环境，Godot 导出客户端不保存、不上传、不直连模型供应商。
+- Demo 阶段正式方向是玩家客户端请求服务器后端，由服务器后端调用 LLM；玩家自行配置 API Key 只能作为未来可选 BYOK / 开发模式，不作为 Demo 必需路径。
 - 默认仍可切回 mock。
 - 请求失败自动降级。
 - 所有调用记录 token 和用途。
@@ -2852,6 +2961,55 @@ NPC 可主动请求与玩家对话。
 - Godot 或后端调试页面可查看累计消耗。
 - 超预算时可切换 Mock 或模板降级。
 - Godot 调试信息可查看当前等待中的 LLM 请求数量、有效逻辑倍率和最近一次 TimeSystem 慢速原因。
+
+---
+
+## T1407 部署游戏后端到服务器
+
+状态：Todo
+优先级：P0
+前置任务：T0604A, T1401, T1406
+涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `backend/README.md`, `CURRENT_STATE.md`
+
+任务目标：
+
+把当前本地调试用的 `backend/app.py` 整理为可部署到服务器的游戏后端服务，让玩家电脑上的 Godot 客户端可以请求公网/局域网后端，再由后端调用 LLM Provider。
+
+部署入口：
+
+- 服务器运行的 Python Web App 仍以 `backend/app.py` 为应用入口。
+- 本地开发可继续使用 `python backend/app.py`。
+- 正式部署不得依赖 Flask debug server；需要使用生产 WSGI/ASGI 服务，例如 Linux 下的 `gunicorn backend.app:app`，或 Windows 服务器下的 `waitress-serve --call backend.app:create_app`。
+
+实现范围：
+
+- 整理 `backend/app.py` 的应用工厂和生产入口，确保可被 WSGI 服务加载。
+- 补充生产依赖：根据部署方案在 `backend/requirements.txt` 中加入 `gunicorn` 或 `waitress`，不要同时引入不必要的大框架。
+- 新增或更新部署说明，至少写入 `backend/README.md`：服务器系统要求、安装依赖、环境变量、启动命令、健康检查、日志位置、重启方式和常见错误。
+- 明确服务器环境变量：`LLM_PROVIDER`、`LLM_API_KEY`、模型 base url / model name、超时、单用户/全局限流、预算上限、是否启用 mock fallback。
+- 后端必须继续提供 `GET /health`，并可被 Godot 客户端和运维人员用来确认服务可用。
+- 部署环境必须禁止提交真实 `.env`；只提交 `.env.example` 或部署文档。
+- Godot 侧后端地址必须可配置，导出客户端默认指向服务器后端地址或可由配置覆盖；不得把真实 LLM Key 放入客户端。
+- 需要考虑 CORS / Origin / 简单鉴权策略，至少避免完全裸露的无限制公开 LLM 调用接口。
+- 需要记录请求日志、错误日志、调用类型、NPC id、request id、token / 费用估算和失败原因。
+- 需要有基本限流、超时、并发队列或拒绝策略，避免多个玩家高并发时把 LLM 额度打穿。
+
+禁止事项：
+
+- 不把真实 API Key 写入仓库、Godot 工程或导出包。
+- 不让玩家电脑默认直接调用 LLM Provider。
+- 不把本地 `python backend/app.py` 当成正式生产启动方式。
+- 不在本任务重写 NPC、记忆、战斗或对话业务逻辑。
+
+验收标准：
+
+- 在一台干净服务器或本机模拟生产环境中，可以从仓库安装后端依赖并启动生产 WSGI 服务。
+- `GET /health` 可从 Godot 客户端所在机器访问。
+- Godot `LLMBridge` 可配置为请求服务器地址，并通过 `/health` 与 `/npc/dialogue`。
+- 后端能在无真实 Key 时使用 mock 或明确降级；有真实 Key 时通过 Model Adapter 调用真实模型。
+- 并发请求不会导致进程崩溃；超过限流或预算时返回可处理错误。
+- 日志中能定位 request id、调用类型、失败原因和预算信息。
+- `backend/README.md` 足够指导重新部署，不依赖口头记忆。
 
 ---
 

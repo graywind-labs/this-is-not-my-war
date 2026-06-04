@@ -28,6 +28,7 @@ func _ready() -> void:
 	_refresh_time_buttons()
 	_refresh_resources()
 	_refresh_backend_status()
+	_connect_llm_bridge()
 
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
@@ -113,7 +114,12 @@ func _refresh_resources() -> void:
 
 
 func _refresh_backend_status() -> void:
-	backend_status_label.text = "后端：未连接（占位）"
+	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
+	if llm_bridge == null or not llm_bridge.has_method("get_last_backend_status"):
+		backend_status_label.text = "后端：未检查"
+		return
+	var status: Dictionary = llm_bridge.get_last_backend_status()
+	backend_status_label.text = str(status.get("status_text", "后端：未检查"))
 
 
 func _refresh_time_buttons() -> void:
@@ -161,3 +167,15 @@ func _get_phase_label(hour: int) -> String:
 	if hour >= 18 and hour < 22:
 		return "阶段：黄昏"
 	return "阶段：夜间"
+
+
+func _connect_llm_bridge() -> void:
+	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
+	if llm_bridge == null or not llm_bridge.has_signal("backend_status_changed"):
+		return
+	if not llm_bridge.backend_status_changed.is_connected(_on_backend_status_changed):
+		llm_bridge.backend_status_changed.connect(_on_backend_status_changed)
+
+
+func _on_backend_status_changed(status_text: String, _ok: bool) -> void:
+	backend_status_label.text = status_text

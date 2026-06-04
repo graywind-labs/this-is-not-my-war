@@ -19,7 +19,7 @@
 - 进入地点时，进入者的一次性快照必须包含该地点当前在场 NPC 状态；广场也按地点处理。该状态分为生命状态和行动状态两个平行类别：生命状态只表达健康、受伤、昏迷；昏迷者如有治疗者，写明治疗者是谁。行动状态解析 `current_action` 并翻译成精简中文。
 - 除进入者的一次性地点状态快照外，建筑和地点状态见闻只传递变化字段，不重复传递未变化的完整快照。
 - 当天事件库 + 当天见闻库共同构成 NPC 的短期记忆。
-- 对话全文作为对话事件的属性保存，不单独建立谈话库。
+- 对话全文作为对话事件的属性保存，不单独建立谈话库；A 与 B 的对话轮次首先进入 A 和 B 的事件库，而不是彼此的见闻库。只有 `visibility == "local_public"` 的对话事件，才按地点公开规则广播给同一地点当前在场且可接收见闻的第三者。
 - LLM 只解释和回应事件，不负责资源、HP、建筑、战斗等权威结算。
 - 面向 NPC / LLM 的玩家相关事件摘要必须使用“守备官”作为称呼；底层可保留稳定技术 ID，但不把“玩家”作为世界内人物名输出。
 
@@ -68,7 +68,7 @@
 | `work_completed` | `{actor}完成了{action}，消耗{inputs}，产出{outputs}。` | `action_id`, `input_resources`, `output_resources` |
 | `repair_assist_started` | `{actor}开始协助修复{location}。` | `action_id`, `building_id`, `engineering_skill` |
 | `upgrade_assist_started` | `{actor}开始协助升级{location}。` | `action_id`, `building_id`, `engineering_skill` |
-| `dialogue_turn` | `{speaker}对{listener}说：{text}` | `speaker_id`, `listener_id`, `text` |
+| `dialogue_turn` | `{speaker}对{listener}说：{text}` | `speaker_id`, `speaker_name`, `listener_id`, `listener_name`, `text`, `is_recruitment_request`, `recruitment_result`, `dialogue_round`, `max_rounds` |
 | `damage_taken` | `{target}受到{actor}造成的{damage}点伤害。` | `damage`, `hp_before`, `hp_after` |
 | `healing_started` | `{healer}开始在{location}协助治疗{target}。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `healing_completed` | `{healer}结束了对{target}的治疗。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
@@ -83,7 +83,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`。
-- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`。每轮文本、说话者、听者、是否提出应征、是否承诺/威胁/欺骗等都写入 `payload`。
+- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`。每轮文本、说话者名称、听者名称、是否提出应征、征召结果、当前轮次、最大轮次、是否承诺/威胁/欺骗等都写入 `payload`。
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`。
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
@@ -104,6 +104,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503 起，协助治疗写入 `healing_started` / `healing_completed`，会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
 - T0502A 起，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，因此昏迷者不会收到地点/广场公开广播、状态广播、公告或进入快照；复苏后见闻接收自动恢复。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
+- T0603 后端对话 Mock 只返回对话意向与文本，不直接写入 Godot 事件库。后续 Godot DialogSystem 接入时，每个 `dialogue_turn` 必须分别写入说话者和听者的事件库；若该轮 `dialogue_state.visibility == "local_public"`，再由事件地点的信息节点广播给同地点第三者的见闻库。
 - `NPCPanel` 会分开显示当前 NPC 的事件库和见闻库最近摘要，调试工具可通过 `debug_get_npc_short_term_memory(...)` 区分查看两类记录。
 - `MemorySystem` 当前维护广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，保存 `people_present`、当前公告/命令和进入快照所需的当前状态；`move_npc_between_locations(...)` 只维护当前在场人员，并给进入者写入一次 `location_entry_snapshot` 见闻。进入广场时，这条见闻会同时表达广场当前在场 NPC、广场在场 NPC 的生命状态/行动状态、当前公告文本和所有建筑可传播外部状态。
 - 所有建筑都有可传播外部状态：`level` 和 `condition`（`intact` / `damaged` / `repairing` / `upgrading`）。HP、Max HP、修复/升级剩余时长仍可由建筑系统和 UI 查询，但不参与信息节点状态比较，也不会因自身变化触发见闻传播。广场和可进入建筑都会在进入快照中暴露当前在场 NPC 的生命状态/行动状态；可进入建筑额外拥有可传播内部状态：每个工位的空闲/占用者。工位数量本身不参与状态比较。不可进入建筑不向地点快照暴露工位或内部 NPC。
@@ -128,7 +129,7 @@ T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.
 - 醒来并开始制定计划。
 - 进入食堂。
 - 离开宿舍。
-- 与玩家对话，完整对话内容写入事件 `payload`。
+- 与守备官或其他 NPC 对话，完整对话内容、说话者名称、听者名称、公开性和轮次信息写入事件 `payload`。
 - 开始/结束工作，产出和消耗由程序结算后写入。
 - 被给予金钱、装备或任务。
 - 受击、昏迷、治疗、复苏、逃离。

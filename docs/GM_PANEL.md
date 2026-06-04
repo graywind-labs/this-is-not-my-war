@@ -15,6 +15,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
 - 工作、协助修复、协助升级、协助治疗昏迷者、吃饭、睡觉等行动调试指派。
 - TimeSystem 设定时间、跳小时、LLM 等待减速请求。
+- LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
 
@@ -94,6 +95,13 @@ NPC：
 - 指派吃饭。
 - 指派睡觉；可配合“查看 NPC 短期记忆”和同地点 public 事件验证睡觉期间见闻库不更新。
 
+后端 / LLMBridge：
+
+- 后端健康检查，调用 `LLMBridge.check_health()` 并刷新 HUD 后端状态。
+- 对当前选中 NPC 发送 `/npc/dialogue` Mock 请求。
+- 对当前选中 NPC 发送带 `is_recruitment_request=true` 的应征 Mock 请求。
+- 该分组只显示后端返回，不写入对话事件、不修改入伍状态。
+
 记忆 / 见闻 / 广场：
 
 - 写入广场公告。
@@ -143,6 +151,9 @@ give_money <npc_id> <amount> [visibility]
 attack_npc <npc_id> <damage> [visibility]
 damage_npc <npc_id> <damage> [visibility]
 recover_npc <npc_id> <game_seconds>
+backend_health
+dialogue_mock <npc_id> <text>
+dialogue_recruit <npc_id> <text>
 memory <npc_id>
 location <location_id>
 ```
@@ -166,6 +177,8 @@ sleep priest_01
 plaza_notice 今晚所有人都必须留在广场附近。
 give_money cook_01 5 local_public
 recover_npc cook_01 54000
+backend_health
+dialogue_recruit cook_01 守备官需要你一起保护大家。
 memory cook_01
 location plaza
 events

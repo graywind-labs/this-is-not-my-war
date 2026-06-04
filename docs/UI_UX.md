@@ -4,7 +4,7 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0104 / T0202 / T0204 / T0205 / T0303 / T0004）：
+当前实现（T0104 / T0202 / T0204 / T0205 / T0303 / T0004 / T0604）：
 
 - `Main/UI` 使用 `CanvasLayer`。
 - `Main/UI/HUD` 使用 `res://scripts/ui/HUD.gd`，在左上角显示基础信息，避免遮挡主要驿站视角。
@@ -16,16 +16,16 @@
 - `Main/UI/HUD/SpeedButton` 已接入 `TimeSystem`，点击后按 `x1` / `x2` / `x4` 循环切换流速。
 - `Main/UI/HUD/PauseButton` 控制暂停/继续，空格键绑定到同一套暂停/继续逻辑；空格不触发速度切换。
 - `AlarmButton` 仍是警铃占位，当前不触发真实逻辑。
-- `Main/UI/HUD/BackendStatusLabel` 显示后端连接状态占位，当前固定为未连接。
+- `Main/UI/HUD/BackendStatusLabel` 显示 LLMBridge 的后端 health check 状态；初始为未检查，调用 `LLMBridge.check_health()` 后显示已连接或未连接。
 - 后续 API / 调试面板需要显示当前模型调用状态、等待中的 LLM 请求数量、TimeSystem 有效逻辑倍率和最近一次慢速原因；当前 HUD 只显示玩家设定的速度倍率。
 - `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位和地点信息占位；修复/升级消耗与条件不常驻显示在面板正文中。
 - `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置、是否已有修复/升级作业和资源是否足够自动启用或禁用。建筑受损、正在修复或正在升级时不能开始升级，正在升级时也不能开始修复。光标悬停在修复/升级按钮上时，按钮旁边显示操作所需资源和条件提示框。修复或升级进行中会显示进度、剩余时间、速度倍率和协助人数；进度刷新通过 `building_state_changed` 更新当前可见建筑面板，不触发新的建筑点击选择。
 - `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性、专长、事件库和见闻库最近摘要；状态变化会随 `npc_state_changed` 刷新，记忆变化会随 `npc_memory_changed` 刷新。
 - `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板；建筑修复、受损或升级等状态刷新不会抢占玩家刚切到的 NPC 面板。
 - `Main/UI/DialogPanel` 已作为隐藏占位节点存在。
-- `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`，开发模式下显示半透明可拖动 `GM` 按钮；点击后打开 GM 调试面板，提供命令输入框、执行结果区，以及资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口。
+- `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`，开发模式下显示半透明可拖动 `GM` 按钮；点击后打开 GM 调试面板，提供命令输入框、执行结果区，以及资源、时间、建筑、NPC、行动、后端 / LLMBridge、记忆/见闻/广场公告等调试入口。
 - GM 面板顶部 `GM_ENABLED` 常量可用于开发/上线显示切换；GM 只调用现有系统接口或 `debug_*` 接口，不承担资源、HP、事件或行动的权威结算。
-- 暂未实现警铃、后端连接、对话面板或生产细节。
+- 暂未实现警铃、对话面板、对话事件入库、征召结算或生产细节；后端 health 和对话 Mock 已可通过 LLMBridge / GM 调试入口验证。
 
 当前摄像机操作（T0105）：
 

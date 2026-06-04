@@ -711,7 +711,7 @@ NPC 从一个可进入室内地点前往另一个可进入室内地点时，逻�
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`。
-- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`，对话全文存入事件 `payload`，不单独建立谈话库。
+- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`，对话全文、说话者名称、听者名称、对话公开性、轮次、是否提出应征和征召结果存入事件 `payload`，不单独建立谈话库。A 与 B 的对话首先进入 A 和 B 的事件库；只有公开对话才按地点规则广播给同地点第三者的见闻库。
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`。
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
@@ -805,6 +805,8 @@ NPC 当天的事件库和见闻库共同构成短期记忆。
 
 玩家与 NPC 对话时，可以通过语言提出应征要求。NPC 在对话期间可选择是否同意应征入伍。
 
+对话请求输入以目标 NPC 为中心：`npc_id`、`npc_name`、`npc_setting`、`npc_state`、`short_memory`、`long_memory` 和 `location_context` 描述目标 NPC 及其所知事实；`speaker_name`、`speaker_text` 和 `speaker_context` 描述本轮说话者。玩家说话者名称固定为“守备官”；NPC 作为说话者时，输入其健康/受伤状态和外表特征。`dialogue_state.visibility` 决定该轮对话后续入库时是 `private` 还是 `local_public`。
+
 NPC 根据以下因素决定是否同意：
 
 - 人设与职业
@@ -812,6 +814,8 @@ NPC 根据以下因素决定是否同意：
 - 与玩家互动形成的长期和短期记忆
 - 地点见闻与广场公开信息
 - 与其他 NPC 交流形成的长期和短期记忆
+
+NPC-NPC 对话由最大轮次控制：每一轮回复者的文本会作为下一轮输入给另一名 NPC；当当前轮次接近最大轮次时，NPC 应更倾向输出结束对话的回复或结束标记，避免低优先级闲聊无限延长。
 
 ## 12.3 征召结果
 
@@ -1112,6 +1116,8 @@ LLM 负责：
 ## 18.2 结构化输出要求
 
 所有关键 LLM 调用必须返回 JSON，不允许只返回自然语言。
+
+对话输出分两类：回复守备官时返回回复者 ID、回复文本和 `recruitment_result`（`none` / `accept` / `reject`）；回复 NPC 时返回回复文本和是否结束对话。LLM 输出只表达文本与意向，征召状态切换、事件入库、公开广播和任何资源/HP/建筑变化仍由程序执行。
 
 ## 18.3 模型选择原则
 

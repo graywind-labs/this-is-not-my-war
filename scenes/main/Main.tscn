@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/ui/BuildingPanel.gd" id="11_building_panel"]
 [ext_resource type="Script" path="res://scripts/ui/NPCPanel.gd" id="12_npc_panel"]
 [ext_resource type="Script" path="res://scripts/ui/GMPanel.gd" id="13_gm_panel"]
+[ext_resource type="Script" path="res://scripts/systems/LLMBridge.gd" id="14_llm_bridge"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -397,6 +398,9 @@ script = ExtResource("6_memory")
 
 [node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
 script = ExtResource("7_combat")
+
+[node name="LLMBridge" type="Node" parent="Systems"]
+script = ExtResource("14_llm_bridge")
 
 [node name="DialogSystem" type="Node" parent="Systems" unique_id=538485406]
 script = ExtResource("8_dialog")

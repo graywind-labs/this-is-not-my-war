@@ -5,6 +5,100 @@
 
 ## 2026-06-03
 
+### T0604A LLMBridge 原生 HTTP 传输层
+完成：
+- 将 `scripts/systems/LLMBridge.gd` 的传输层从 T0604 临时 `curl.exe` / 临时 JSON 请求体文件替换为 Godot 原生 `HTTPClient` 状态机。
+- 保持 LLMBridge 对上层接口稳定：`check_health()`、`request_npc_dialogue(...)`、T0603 payload 构造、错误字典、`backend_status_changed` 和 TimeSystem 慢速注册/释放语义不变。
+- 新实现覆盖连接、请求、响应体读取、HTTP 响应解析、非法 JSON、后端 `ok=false` 与超时错误；会影响当前事态的请求在成功、失败或超时后都会释放慢速请求。
+- `tools/verify_llm_bridge.gd` 新增静态防回退检查，确认 `LLMBridge.gd` 不含 `curl.exe`、`OS.execute`、临时请求体文件名或旧写文件函数。
+- 回写 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`TECH_ARCHITECTURE.md`、`GODOT_ARCHITECTURE.md`、`AI_NPC_SYSTEM.md` 和 `API_BUDGET.md`，继续明确正式架构为 Godot 客户端请求游戏服务器后端，再由后端调用 LLM Provider；Godot 客户端不保存供应商 API Key。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_llm_bridge.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `python tools/verify_dialogue_mock_endpoint.py` 通过。
+- `python tools/verify_backend_schemas.py` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T1407 后端服务器部署任务登记
+完成：
+- 在 `docs/TASKS.md` 的 M14 新增 P0 任务 T1407：部署游戏后端到服务器。
+- 明确服务器运行入口仍是 `backend/app.py`；本地开发可继续 `python backend/app.py`，正式部署不得使用 Flask debug server。
+- 任务要求后续补齐生产 WSGI 启动方式、生产依赖、`backend/README.md` 部署说明、环境变量、日志、健康检查、限流、预算、重启策略和 Godot 后端地址配置。
+- 同步更新 `TECH_ARCHITECTURE.md` 和 `CURRENT_STATE.md`，让后端部署方向从总览文档也能看到。
+
+### T0604A 任务登记与 T0604 踩坑复盘
+完成：
+- 在 `docs/TASKS.md` 新增 P0 任务 T0604A，要求把 `LLMBridge` 的临时 `curl.exe` 传输层替换为 Godot 原生 HTTP。
+- 将 T0701 对话 UI 的前置任务改为 T0604A，避免在临时传输层上继续叠加玩家对话与征召流程。
+- 在 `TECH_ARCHITECTURE.md`、`GODOT_ARCHITECTURE.md`、`MODULE_INDEX.md`、`API_BUDGET.md`、`AI_NPC_SYSTEM.md` 和 `CURRENT_STATE.md` 中明确正式方向：玩家电脑运行 Godot 客户端，请求游戏服务器后端；服务器后端调用 LLM Provider、持有 API Key、负责并发、限流、降级、成本统计和调用日志。玩家自行配置 API Key 仅作为未来可选 BYOK / 开发模式，不是 Demo 必需路径。
+
+T0604 踩坑归因：
+- 主要问题是 Godot HTTP 传输层和 headless 验证方式，没有暴露 NPC、记忆、Prompt 或前后端职责边界的整体架构问题。
+- Godot 原生 HTTP 首次尝试卡在信号等待、节点生命周期和异步请求验证方式上；后续 T0604A 需要显式请求状态机、完成回调和超时兜底。
+- 同步等待异步 HTTP 结果会让验证脚本挂起；所有成功、失败、超时和降级路径都必须释放 TimeSystem 慢速请求。
+- Windows 命令行传中文 JSON、引号和换行容易破坏请求体；T0604 使用 `curl.exe` + 临时 JSON 文件只是为了先保住最小闭环，不是分发方案。
+- 本机环境变量残留非 mock provider 且缺少 Key 时，后端会按设计返回 provider unavailable；后续验证应显式使用 mock 或隔离环境。
+
+后续避免：
+- 先完成 T0604A，再推进 T0701/T0702。
+- 任何真实 LLM 接入都必须走后端 Model Adapter，Godot 客户端不得保存真实供应商 API Key 或直连模型供应商。
+- 对会影响即时事态的 LLM 请求，验证必须覆盖成功、失败、超时、后端关闭和慢速释放。
+
+### T0604 Godot LLMBridge
+完成：
+- 新增 `scripts/systems/LLMBridge.gd` 并挂载到 `Main/Systems/LLMBridge`。
+- `LLMBridge` 支持后端地址配置、`GET /health`、`POST /npc/dialogue`、T0603 对话 payload 构造、后端失败/超时错误结果、TimeSystem 慢速请求注册与释放。
+- HUD 后端状态改为读取 `LLMBridge`，GM 面板新增后端健康检查、对话 Mock 和应征 Mock 调试入口。
+- 新增 `tools/verify_llm_bridge.gd`，覆盖 payload 字段对齐、后端关闭不崩、health、dialogue Mock、慢速注册与成功/失败后释放。
+- 回写 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`TECH_ARCHITECTURE.md`、`GODOT_ARCHITECTURE.md`、`AI_NPC_SYSTEM.md`、`API_BUDGET.md` 和 `GM_PANEL.md`。
+
+验证：
+- `godot --headless --path . --script res://tools/verify_llm_bridge.gd` 通过。
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd` 通过。
+- `python tools/verify_dialogue_mock_endpoint.py` 通过。
+- `python tools/verify_backend_schemas.py` 通过。
+- `godot --headless --path . --quit-after 1` 通过。
+
+### T0603 `/npc/dialogue` Mock 接口
+完成：
+- `backend/app.py` 新增 `POST /npc/dialogue`，请求体校验为 T0603 版 `NPCDialogueRequest`，Mock 输出校验为 `NPCDialogueResponse`。
+- `backend/schemas/npc_ai.py` 重整对话 Schema：输入覆盖目标 NPC 设定、说话者名称/文本/上下文、是否提出应征、当前轮次/最大轮次、NPC 状态、对话公开性、短期记忆、长期记忆和地点快照；输出使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。
+- `backend/services/model_adapter.py` 的 `dialogue` Mock 分支支持玩家-NPC 应征 `accept` / `reject`，并在 NPC-NPC 对话轮次接近上限时倾向结束对话。
+- 新增 `tools/verify_dialogue_mock_endpoint.py`，覆盖 `/npc/dialogue` HTTP 调用、应征 accept/reject、NPC-NPC 结束倾向和非法请求 400。
+- 回写 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`TECH_ARCHITECTURE.md`、`DATA_SCHEMA.md`、`AI_NPC_SYSTEM.md`、`MEMORY_AND_INFO_SPACE.md`、`PROMPTS.md`、`API_BUDGET.md`、`backend/README.md`、`backend/schemas/README.md` 和 `game_design.md`。
+
+验证：
+- `python tools/verify_dialogue_mock_endpoint.py` 通过。
+- `python tools/verify_mock_model_adapter.py` 通过。
+- `python tools/verify_backend_schemas.py` 通过。
+- Python 编译检查通过。
+
+### T0602 Mock Model Adapter
+完成：
+- `backend/services/model_adapter.py` 默认 provider 改为 `mock`，`.env` 不存在或未设置 `LLM_PROVIDER` 时可直接返回 Mock JSON。
+- 新增 `ModelAdapter.generate(...)`、`ModelAdapterResult` 和 `ModelUsageRecord`，按调用类型返回稳定内容，并记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用、成功/失败状态。
+- Mock 当前覆盖对话、每日计划、计划修订、战斗判定、睡前总结、知识图谱更新、主动交涉、玩家话术分类和通用兜底响应；每日计划固定返回 24 条计划项。
+- `backend/app.py` 新增 `POST /mock/model` 调试接口；非法 JSON / 非对象 payload 返回 400，非 mock provider 未配置 `LLM_API_KEY` 时返回明确错误。
+- 新增 `tools/verify_mock_model_adapter.py`，并回写 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`TECH_ARCHITECTURE.md`、`API_BUDGET.md` 和后端 README。
+
+验证：
+- `python tools/verify_mock_model_adapter.py` 通过。
+- `python tools/verify_backend_schemas.py` 通过。
+- `python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py` 通过。
+
+### T0601 后端 Schema
+完成：
+- 新增 `backend/schemas/common.py`，定义后端 AI 请求共享上下文：游戏时间、请求元信息、NPC 身份/状态、短期记忆摘要、行动候选和通用错误响应。
+- 新增 `backend/schemas/npc_ai.py`，覆盖 NPC 对话、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动找守备官交涉和玩家话术分类的请求/响应模型。
+- 新增 `backend/schemas/__init__.py`、`backend/schemas/README.md` 和 `tools/verify_backend_schemas.py`。
+- 回写 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`TECH_ARCHITECTURE.md`、`DATA_SCHEMA.md`、`PROMPTS.md` 和后端 README。
+
+验证：
+- `python tools/verify_backend_schemas.py` 通过。
+- `python -m py_compile backend/schemas/common.py backend/schemas/npc_ai.py backend/schemas/__init__.py tools/verify_backend_schemas.py` 通过。
+- Flask `create_app().test_client().get("/health")` 返回 200。
+
 ### T0502A 睡觉期间停止接收见闻
 完成：
 - `MemorySystem.add_witness_event(...)` 的见闻接收判定扩展为拒绝 `current_action == "sleep_in_dormitory"` 的 NPC。
