@@ -20,26 +20,32 @@ $brokerProcesses = @(
         $_.CommandLine -match "godot-mcp-broker\.mjs"
     }
 )
-$godotMcpNodeCount = @(
+$directGodotMcpProcesses = @(
     $godotMcp | Where-Object {
         $_.Name -eq "node.exe" -and
-        $_.CommandLine -match "@satelliteoflove/godot-mcp|godot-mcp\\dist\\cli\\.js"
+        $_.CommandLine -match "@satelliteoflove/godot-mcp|godot-mcp\\dist\\cli\\.js" -and
+        $_.CommandLine -notmatch "godot-mcp-(proxy|broker)\.mjs"
     }
-).Count
+)
+$brokerListen = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue
 
 if ($conn) {
     Write-Host "Godot MCP connected" -ForegroundColor Green
 
-    if ($godotMcpNodeCount -gt 2) {
-        Write-Host "Warning: multiple godot-mcp helper processes are still alive." -ForegroundColor Yellow
-        $godotMcp |
+    if ($brokerProcesses.Count -ne 1 -or -not $brokerListen) {
+        Write-Host "Warning: expected exactly one listening broker." -ForegroundColor Yellow
+        $brokerProcesses |
             Select-Object ProcessId, ParentProcessId, Name, CommandLine |
             Format-Table -AutoSize
     }
 
     if ($proxyProcesses.Count -gt 1) {
-        Write-Host "Warning: multiple proxy processes are alive; they should self-clean after restart." -ForegroundColor Yellow
-        $proxyProcesses |
+        Write-Host "Info: $($proxyProcesses.Count) session-local stdio proxies are alive; this is expected with multiple Codex sessions." -ForegroundColor Cyan
+    }
+
+    if ($directGodotMcpProcesses.Count -gt 0) {
+        Write-Host "Warning: direct godot-mcp clients bypassing the broker are alive." -ForegroundColor Yellow
+        $directGodotMcpProcesses |
             Select-Object ProcessId, ParentProcessId, Name, CommandLine |
             Format-Table -AutoSize
     }
@@ -63,7 +69,7 @@ if ($listen) {
     exit 1
 }
 
-if ($proxyProcesses -and -not $brokerProcesses) {
+if ($proxyProcesses -and (-not $brokerProcesses -or -not $brokerListen)) {
     Write-Host "Proxy is alive, but broker is missing" -ForegroundColor Yellow
     Write-Host "Restart Codex once to let the proxy recreate the broker." -ForegroundColor Yellow
     $proxyProcesses |

@@ -32,13 +32,20 @@ func _init() -> void:
 
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var hud := root.get_node_or_null("Main/UI/HUD")
-	if llm_bridge == null or time_system == null or hud == null:
+	if llm_bridge == null or time_system == null or npc_system == null or hud == null:
 		push_error("LLMBridge verification required nodes not found")
 		quit(1)
 		return
 
-	var payload: Dictionary = llm_bridge.build_npc_dialogue_payload("cook_01", "我们要一起守住这里。", {
+	var target_npc_id := "veteran_deputy_01"
+	var publish_result: Dictionary = npc_system.publish_npc_order(target_npc_id, "优先守住城门，但不要冒进。")
+	if not bool(publish_result.get("ok", false)):
+		push_error("Failed to publish order before LLMBridge payload verification")
+		quit(1)
+		return
+	var payload: Dictionary = llm_bridge.build_npc_dialogue_payload(target_npc_id, "我们要一起守住这里。", {
 		"is_recruitment_request": true,
 		"dialogue_state": {
 			"visibility": "local_public"
@@ -54,7 +61,7 @@ func _init() -> void:
 		push_error("Player initiated dialogue must use speaker_name == 守备官")
 		quit(1)
 		return
-	if str(payload.get("npc_id", "")) != "cook_01":
+	if str(payload.get("npc_id", "")) != target_npc_id:
 		push_error("Dialogue payload target npc_id mismatch")
 		quit(1)
 		return
@@ -75,6 +82,17 @@ func _init() -> void:
 	var speaker_context: Dictionary = payload.get("speaker_context", {})
 	if str(speaker_context.get("speaker_kind", "")) != "guard_officer":
 		push_error("Guard officer speaker_context was not generated")
+		quit(1)
+		return
+	var current_order: Dictionary = payload.get("current_order", {})
+	var target_npc: Dictionary = payload.get("target_npc", {})
+	if str(current_order.get("text", "")) != "优先守住城门，但不要冒进。" or target_npc.get("current_order", {}) != current_order:
+		push_error("Dialogue and shared NPC context must contain the latest current_order")
+		quit(1)
+		return
+	var injection: Dictionary = llm_bridge.get_last_npc_context_injection()
+	if str(injection.get("npc_id", "")) != target_npc_id or injection.get("current_order", {}) != current_order:
+		push_error("LLMBridge did not expose the latest current_order injection snapshot")
 		quit(1)
 		return
 

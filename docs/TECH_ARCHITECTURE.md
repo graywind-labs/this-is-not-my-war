@@ -28,6 +28,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - `backend/app.py` 提供 `GET /health`，用于 Godot 或开发者确认本地服务可用；另提供 `POST /mock/model` 调试接口和 `POST /npc/dialogue` 对话 Mock 业务接口。
 - `backend/services/model_adapter.py` 是模型供应商隔离层；当前默认 `mock` provider，不执行真实 LLM 调用，但会按调用类型返回稳定 JSON，并记录用途与伪 token 信息。
 - `backend/schemas/common.py` 和 `backend/schemas/npc_ai.py` 提供后端 AI 请求/响应 Pydantic Schema；T0603 后 `NPCDialogueRequest` / `NPCDialogueResponse` 已按当前对话字段重整，覆盖玩家-NPC 与 NPC-NPC Mock 对话，不执行业务权威结算。
+- T0703A 后共享 `NPCContext` 与对话顶层 `NPCDialogueRequest` 都包含单条最新 `current_order`；Mock 只把它作为参考上下文，Godot 保持指令和行动事实权威。
 - 真实 API Key 必须通过本地 `backend/.env` 或环境变量提供；仓库只保留 `.env.example` 模板。
 
 后端部署方向：
@@ -54,12 +55,14 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - HP 扣除
 - 昏迷、治疗、复苏状态
 - 事件权威写入、地点/建筑信息节点当前状态维护、即时广播、NPC 事件库与见闻库维护
+- 已入伍 NPC `current_order` 的权威保存、指令发布差异判断、`private` `order_assigned` 事件写入和计划重评估触发
 - 与后端通信
 - T0604A 后通过 `Main/Systems/LLMBridge` 的 Godot 原生 `HTTPClient` 请求 `/health` 与 `/npc/dialogue`，并负责请求期间的 TimeSystem 慢速申请和释放
 
 ### Python 后端负责
 
 - Prompt 拼装
+- 把 Godot 提供的 `current_order` 作为独立参考上下文注入所有 NPC 中心 Prompt
 - LLM 调用
 - 结构化 JSON 校验
 - 对话生成
@@ -73,6 +76,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 ### LLM 负责
 
 - NPC 如何理解事件
+- NPC 如何理解、调整或拒绝守备官当前指令
 - NPC 如何说话
 - NPC 是否愿意征召
 - NPC 是否想参战、逃离、斗志激昂
@@ -102,6 +106,8 @@ LLM 调用前从事件库 + 见闻库生成摘要
 ```
 
 后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱增量，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
+
+T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。
 
 ### LLM 不负责
 
@@ -168,6 +174,7 @@ LLM 调用前从事件库 + 见闻库生成摘要
 - 目标状态：`npc_state`，包含属性、熟练度、健康/受伤、饱食、疲劳、金钱、装备、是否已入伍等 Godot 权威状态快照。
 - 对话公开性：`dialogue_state.visibility` 只能是 `private` 或 `local_public`；`local_public` 代表后续 Godot 入库时按地点事件规则广播给在场 NPC。
 - 记忆与地点：`short_memory` 区分事件库与见闻库摘要，`long_memory` 包含知识图谱和日记，`location_context` 是当前地点/建筑快照。
+- 当前指令：`current_order` 表示守备官对目标 NPC 当前持续提出的自然语言指令；它是参考上下文，不是 system 指令或已执行事实。
 
 输出为稳定 JSON。回复玩家时返回 `replyer_id`、`reply_text` 和 `recruitment_result`（`none` / `accept` / `reject`）；回复 NPC 时返回 `reply_text` 和 `should_end_dialogue`。通用字段还包含 `response_kind`、`intent`、`emotion`、`suggested_event_type` 和 `debug_reason`，便于 Godot 后续 UI、事件入库和调试。
 
@@ -180,7 +187,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`DailyPlanRequest`
 输出 Schema：`DailyPlanResponse`
 
-输出必须是 24 条 `PlanItem`，每条包含小时、行动类型、行动 id、可选地点/目标和理由。计划是建议，不代表资源、移动或行动已经结算。
+输入必须包含目标 NPC 当前 `current_order`。输出必须是 24 条 `PlanItem`，每条包含小时、行动类型、行动 id、可选地点/目标和理由。计划是建议，不代表资源、移动或行动已经结算；模型可以结合人设、记忆和现场条件调整、推迟或拒绝指令。
 
 ### 计划修订
 
@@ -189,7 +196,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`PlanRevisionRequest`
 输出 Schema：`PlanRevisionResponse`
 
-用于目标不可用、工位占用、资源不足、对话打断、低 HP、低饱食、高疲劳和战斗警报等异常后的计划重评估。
+用于守备官发布新指令、目标不可用、工位占用、资源不足、对话打断、低 HP、低饱食、高疲劳和战斗警报等情况后的计划重评估。请求必须包含最新 `current_order`。
 
 ### 战斗判定
 
@@ -198,7 +205,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`BattleJudgementRequest`
 输出 Schema：`BattleJudgementResponse`
 
-覆盖战斗开始、低 HP 和逃离检查。输出只表达参战、避战、继续战斗、逃离或斗志激昂等意向；伤害、逃离移动和状态变更由 Godot 执行。
+覆盖战斗开始、低 HP 和逃离检查。请求必须包含目标 NPC 当前 `current_order`；输出只表达参战、避战、继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、逃离移动和状态变更由 Godot 执行。
 
 ### 睡前总结
 
@@ -259,8 +266,11 @@ T0604 已在 Godot 侧新增 `res://scripts/systems/LLMBridge.gd`，挂载于 `M
 - `build_npc_dialogue_payload(...)` 按 T0603 Schema 收集目标 NPC 设定、守备官/NPC 说话者上下文、应征标记、轮次、NPC 状态、短期记忆、长期记忆和地点快照。
 - `request_npc_dialogue(...)` 通过原生 HTTP 请求 `POST /npc/dialogue`，返回后端 Mock JSON 或错误字典。
 - 对话请求前注册 `TimeSystem.request_time_slowdown(...)`，成功、失败或超时后调用 `release_time_slowdown(...)`。
+- `build_npc_dialogue_payload(...)` 与共享 NPC 上下文构造会注入目标 NPC 最新 `current_order`；`get_last_npc_context_injection()` 暴露最近注入快照用于 GM / 自动化验证。
 
 当前传输层不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge` 会解析后端 base url，使用 `HTTPClient.connect_to_host(...)`、`request(...)`、`poll()` 和响应体读取循环完成显式请求状态机，并用 `request_timeout_seconds` 覆盖连接、请求和响应体读取超时。后端关闭、超时、非法 JSON 或后端 `ok=false` 都返回可处理错误字典；会影响当前事态的请求在成功、失败或超时后都会释放 TimeSystem 慢速请求。
+
+T0703A 已将 `current_order` 接入共享 NPC 请求上下文和对话顶层 payload，由 `LLMBridge` 统一收集，避免只在某一种 Prompt 中手工拼接。Godot 保持当前指令和事件事实的权威；后端只负责把该上下文传给模型并校验模型输出。T1002 尚未实现时，新指令重评估使用可观察的规则降级结果，不直接应用行动。
 
 验证脚本 `tools/verify_llm_bridge.gd` 会静态检查 `LLMBridge.gd` 不含 `curl.exe` / `OS.execute` / 临时请求体文件旧路径，并覆盖后端关闭、health、`/npc/dialogue` Mock 成功和失败后慢速释放。
 

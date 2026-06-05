@@ -60,6 +60,13 @@ T0305 起，`resource_defs.json` 增加派生资源 `meal` / 餐食、`wine` / �
     "骑术": 45
   },
   "recruited": false,
+  "current_order": {
+    "text": "",
+    "issued_by": "guard_officer",
+    "issued_day": 0,
+    "issued_time": "",
+    "revision": 0
+  },
   "equipment": {},
   "plan": [],
   "short_term_memory": [],
@@ -69,6 +76,8 @@ T0305 起，`resource_defs.json` 增加派生资源 `meal` / 餐食、`wine` / �
 ```
 
 T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。`gender`、`appearance`、`background_story`、`abilities`、`plan`、`short_term_memory` 为 NPC 档案必填基础字段；`background_job` 只保留叙事出身，`boundaries`、`stats` 继续供后续计划、征召、对话和战斗心理判定使用。开局只有 `veteran_deputy_01` 的 `recruited` 为 `true`，其他 NPC 均为 `false`。
+
+T0703 已为每名初始 NPC 配置并在运行时规范化 `current_order`。它保存守备官对该 NPC 当前持续提出的自然语言指令，而不是已执行行动：`text` 是当前文本，`issued_by` 固定为 `guard_officer`，`issued_day` / `issued_time` 记录最近一次变更时间，`revision` 在指令文本变化时递增。未入伍或尚无指令时 `text` 为空。发布相同文本或关闭指令面板不得修改该结构。
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。当前不实现真实日程、完整诊所治疗或 LLM 地点解读。
 
@@ -239,13 +248,33 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 
 玩家相关事件的 summary 必须使用世界内称呼“守备官”，例如“守备官给了布鲁诺3枚第纳尔。”；不要在 NPC 记忆、见闻或 Prompt 摘要里输出以“玩家”为主语的旧式表述。
 
+T0703 `order_assigned` 事件 payload：
+
+```json
+{
+  "type": "order_assigned",
+  "subject_npc_id": "veteran_deputy_01",
+  "actor_ids": ["guard_officer"],
+  "target_ids": ["veteran_deputy_01"],
+  "visibility": "private",
+  "summary": "守备官制定了新的指令。",
+  "payload": {
+    "previous_order_text": "留在广场观察情况。",
+    "new_order_text": "优先协助修复围墙，并留意敌袭。",
+    "order_revision": 2
+  }
+}
+```
+
+该事件只表示守备官改变了指令，不表示 NPC 已执行或同意执行。当前有效文本仍以 NPC 信息中的 `current_order` 为准。
+
 必备事件类型方向：
 
 - 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
 - 移动与地点：`location_entered`、`location_exited`
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`
-- 对话：`dialogue_started`、`dialogue_turn`、`dialogue_ended`
-- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
+- 对话：`dialogue_turn`；打开/关闭对话窗口不属于事件
+- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`；`order_assigned` 固定为 `private`
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
@@ -469,7 +498,7 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 
 - `GameTime`：`day`、`time`、`hour`。
 - `ModelRequestMeta`：`request_id`、`call_type`、来源、是否需要 TimeSystem 慢速、关联事件 id。
-- `NPCContext`：NPC 身份、运行时状态、短期记忆摘要、知识图谱、当前地点上下文和广场上下文。
+- `NPCContext`：NPC 身份、运行时状态、短期记忆摘要、知识图谱、当前地点上下文和广场上下文；T0703A 后还包含当前 `current_order`。
 - `ShortTermMemoryContext`：分开的 `experienced_events` 与 `witnessed_events`。
 - `ActionCandidate`：后续计划/修订可选择的行动候选。
 
@@ -477,6 +506,8 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 
 - `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。
 - `NPCDialogueResponse`：返回 `replyer_id`、`reply_text`、`response_kind`、`intent`、`emotion`、`recruitment_result`、`should_end_dialogue` 和建议事件类型。回复玩家时读取 `recruitment_result`；回复 NPC 时读取 `reply_text` 与 `should_end_dialogue`。它只表达 NPC 意向；征召状态变化和事件写入由 Godot 系统完成。
+
+T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、`BattleJudgementRequest`、主动交涉、逃离判断、睡前总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。
 
 ## LLM Battle Judgement Response
 

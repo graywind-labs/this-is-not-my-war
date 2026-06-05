@@ -49,6 +49,13 @@ def _base_payload(text: str, recruitment: bool = False) -> dict:
             "recruited": False,
             "equipment": {},
         },
+        "current_order": {
+            "text": "优先保证食堂运转。",
+            "issued_by": "guard_officer",
+            "issued_day": 1,
+            "issued_time": "07:30:00",
+            "revision": 1,
+        },
         "dialogue_state": {
             "visibility": "local_public",
             "location_id": "dining_hall",

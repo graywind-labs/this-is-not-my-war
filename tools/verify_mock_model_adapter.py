@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 from backend.app import create_app
 from backend.schemas import (
     BattleJudgementResponse,
+    CurrentOrderContext,
     DailyPlanResponse,
     GameTime,
     ModelRequestMeta,
@@ -38,6 +39,12 @@ def _make_npc_context() -> NPCContext:
             fatigue=20,
             current_location="plaza",
             current_location_name="广场",
+        ),
+        current_order=CurrentOrderContext(
+            text="先保护自己，再协助守门。",
+            issued_day=1,
+            issued_time="07:30:00",
+            revision=2,
         ),
     )
 
@@ -71,6 +78,7 @@ def _make_payload(call_type: str) -> dict:
             "current_round": 1,
             "max_rounds": 5,
             "npc_state": npc.state.model_dump(),
+            "current_order": npc.current_order.model_dump(),
             "dialogue_state": {
                 "visibility": "local_public",
                 "location_id": "plaza",
@@ -106,15 +114,18 @@ def main() -> None:
     dialogue_result = adapter.generate("dialogue", _make_payload("dialogue"))
     assert dialogue_result.ok
     NPCDialogueResponse(**dialogue_result.content)
+    assert "with_current_order_as_reference" in dialogue_result.content["debug_reason"]
 
     plan_result = adapter.generate("plan_day", _make_payload("plan_day"))
     assert plan_result.ok
     plan_response = DailyPlanResponse(**plan_result.content)
     assert len(plan_response.plan) == 24
+    assert "with_current_order_as_reference" in plan_result.content["debug_reason"]
 
     battle_result = adapter.generate("battle_judgement", _make_payload("battle_judgement"))
     assert battle_result.ok
     BattleJudgementResponse(**battle_result.content)
+    assert "with_current_order_as_reference" in battle_result.content["debug_reason"]
 
     records = adapter.get_usage_records()
     assert len(records) == 3

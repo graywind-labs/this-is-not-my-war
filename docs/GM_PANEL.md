@@ -18,6 +18,8 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
+- 已入伍 NPC 当前自然语言指令、修订号、最近计划重评估请求/降级结果和最近一次 NPC LLM 指令注入。
+- NPC 主动找守备官交涉的调试触发、问号气泡状态和超时 / 对话结束后的计划重评估请求。
 
 GM 命令仍可使用 `give_money` / `attack_npc` 这类开发语义；写入 NPC 事件库、见闻库和事件 summary 时，玩家身份必须显示为“守备官”。
 
@@ -84,6 +86,8 @@ NPC：
 - 扣除 NPC HP；HP 清零后由 `NPCSystem` 触发昏迷。
 - 用自然恢复规则推进指定 NPC 的昏迷恢复，便于快速验证复苏。
 - 查看 NPC 快照。
+- 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求及其降级结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
+- 触发当前选中 NPC 主动找守备官交涉，并查看该 NPC 的主动交涉状态；触发后 NPC 头顶出现 `?`，点击后进入既有对话面板。
 
 行动：
 
@@ -100,6 +104,7 @@ NPC：
 - 后端健康检查，调用 `LLMBridge.check_health()` 并刷新 HUD 后端状态。
 - 对当前选中 NPC 发送 `/npc/dialogue` Mock 请求。
 - 对当前选中 NPC 发送带 `is_recruitment_request=true` 的应征 Mock 请求。
+- 查看最近一次共享 NPC LLM 上下文注入的目标、调用类型和 `current_order`。
 - 该分组只显示后端返回，不写入对话事件、不修改入伍状态。
 
 记忆 / 见闻 / 广场：
@@ -136,6 +141,11 @@ select_building <building_id>
 move_npc <npc_id> <building_id>
 enter_location <npc_id> <location_id>
 set_npc_state <npc_id> <key> <value>
+publish_order <npc_id> <text>
+order <npc_id>
+plan_request
+start_proactive <npc_id> <text>
+proactive <npc_id>
 assign_action <npc_id> <action_id>
 work <npc_id> <building_id>
 assist_repair <npc_id> <building_id>
@@ -154,6 +164,7 @@ recover_npc <npc_id> <game_seconds>
 backend_health
 dialogue_mock <npc_id> <text>
 dialogue_recruit <npc_id> <text>
+last_order_injection
 memory <npc_id>
 location <location_id>
 ```
@@ -179,6 +190,11 @@ give_money cook_01 5 local_public
 recover_npc cook_01 54000
 backend_health
 dialogue_recruit cook_01 守备官需要你一起保护大家。
+publish_order veteran_deputy_01 守住城门，但先保证自己安全。
+order veteran_deputy_01
+plan_request
+start_proactive cook_01 守备官，我想知道我们还能不能守住这里。
+proactive cook_01
 memory cook_01
 location plaza
 events
@@ -202,4 +218,4 @@ GM 面板当前有专用验证脚本：
 godot --headless --path . --script res://tools/verify_gm_panel.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、记忆事件和广场公告。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、自然语言指令、计划重评估请求/结果、最近 LLM 指令注入、记忆事件和广场公告。

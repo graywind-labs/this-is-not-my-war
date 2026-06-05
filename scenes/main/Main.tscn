@@ -14,6 +14,9 @@
 [ext_resource type="Script" path="res://scripts/ui/NPCPanel.gd" id="12_npc_panel"]
 [ext_resource type="Script" path="res://scripts/ui/GMPanel.gd" id="13_gm_panel"]
 [ext_resource type="Script" path="res://scripts/systems/LLMBridge.gd" id="14_llm_bridge"]
+[ext_resource type="Script" path="res://scripts/ui/DialogPanel.gd" id="15_dialog_panel"]
+[ext_resource type="Script" path="res://scripts/ui/OrderPanel.gd" id="16_order_panel"]
+[ext_resource type="Script" path="res://scripts/ui/UIInputFocusManager.gd" id="17_ui_focus"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -406,6 +409,7 @@ script = ExtResource("14_llm_bridge")
 script = ExtResource("8_dialog")
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
+script = ExtResource("17_ui_focus")
 
 [node name="HUD" type="Control" parent="UI" unique_id=1288116016]
 layout_mode = 3
@@ -599,6 +603,12 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "金钱：--"
 
+[node name="NPCEquipmentLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "当前装备：--"
+autowrap_mode = 3
+
 [node name="NPCUnconsciousLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -631,6 +641,69 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "见闻库：暂无"
 autowrap_mode = 3
+
+[node name="NPCInteractionRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="NPCInteractionVisibilityLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
+layout_mode = 2
+text = "交互"
+
+[node name="NPCInteractionVisibilitySelect" type="OptionButton" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "选择本次非对话交互是否被同地点 NPC 听见或看见。"
+
+[node name="NPCInteractionButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="NPCGiftMoneyButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "给钱"
+tooltip_text = "从全局第纳尔中扣除输入数量，并写入目标 NPC 事件库。"
+
+[node name="NPCGiftMoneySpin" type="SpinBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+tooltip_text = "给钱数量"
+min_value = 1.0
+max_value = 20.0
+value = 5.0
+
+[node name="NPCGiveWeaponButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "给武器"
+tooltip_text = "消耗 1 个武器库存，给予一把占位短剑。正式装备系统由 T0901 实现。"
+
+[node name="NPCAttackButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "攻击"
+tooltip_text = "造成 10 点伤害；HP 清零时进入昏迷。"
+
+[node name="NPCInteractionResultLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = ""
+autowrap_mode = 3
+
+[node name="NPCDialogueButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "对话"
+
+[node name="NPCAssignButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。"
+text = "指令"
 
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false
@@ -722,7 +795,173 @@ text = "升级"
 [node name="DialogPanel" type="Control" parent="UI" unique_id=278786319]
 visible = false
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -270.0
+offset_right = 360.0
+offset_bottom = 270.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("15_dialog_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/DialogPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/DialogPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+
+[node name="DialogNPCNameLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "与 NPC 对话"
+
+[node name="DialogPublicToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "同地点公开"
+
+[node name="DialogStatusLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "私人对话"
+
+[node name="DialogRoundLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "轮次：不限"
+
+[node name="DialogHistoryText" type="RichTextLabel" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 370)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = false
+scroll_active = true
+
+[node name="InputRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DialogInputEdit" type="LineEdit" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "输入要对 NPC 说的话……"
+
+[node name="DialogSendButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "发送"
+
+[node name="DialogRecruitmentButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "提出应征"
+
+[node name="DialogEndButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "结束对话"
+
+[node name="OrderPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -330.0
+offset_top = -230.0
+offset_right = 330.0
+offset_bottom = 230.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("16_order_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/OrderPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/OrderPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="UI/OrderPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="OrderTitleLabel" type="Label" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "当前指令"
+
+[node name="OrderMetadataLabel" type="Label" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "尚未发布指令"
+
+[node name="OrderStatusLabel" type="Label" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "指令不会直接改变当前行动。"
+autowrap_mode = 3
+
+[node name="OrderTextEdit" type="TextEdit" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 290)
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "自由撰写守备官希望该 NPC 持续参考的指令……"
+wrap_mode = 1
+
+[node name="ButtonRow" type="HBoxContainer" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OrderPublishButton" type="Button" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "发布"
+
+[node name="OrderCloseButton" type="Button" parent="UI/OrderPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "关闭"
 
 [node name="GMPanel" type="Control" parent="UI"]
 layout_mode = 3

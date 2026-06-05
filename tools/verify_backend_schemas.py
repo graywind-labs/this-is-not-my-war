@@ -9,8 +9,12 @@ if str(REPO_ROOT) not in sys.path:
 
 from backend.schemas import (
     BattleJudgementRequest,
+    CurrentOrderContext,
+    DailyPlanRequest,
     DailyPlanResponse,
+    DailyReflectionRequest,
     GameTime,
+    KnowledgeGraphUpdateRequest,
     ModelRequestMeta,
     NPCContext,
     NPCDialogueRequest,
@@ -18,6 +22,9 @@ from backend.schemas import (
     NPCIdentity,
     NPCStateContext,
     PlanItem,
+    PlanRevisionRequest,
+    PlayerStrategyClassificationRequest,
+    ProactiveIntentionRequest,
     ShortTermMemoryContext,
     SpeakerContext,
 )
@@ -38,6 +45,12 @@ def _make_npc_context() -> NPCContext:
             fatigue=20,
             current_location="plaza",
             current_location_name="广场",
+        ),
+        current_order=CurrentOrderContext(
+            text="优先守住城门，但不要冒进。",
+            issued_day=1,
+            issued_time="07:30:00",
+            revision=1,
         ),
     )
 
@@ -68,10 +81,12 @@ def main() -> None:
         current_round=1,
         max_rounds=5,
         npc_state=npc.state.model_dump(),
+        current_order=npc.current_order,
         short_memory=ShortTermMemoryContext(),
         location_context={"location_id": "plaza"},
     )
     assert dialogue_request.npc_id == "cook_01"
+    assert dialogue_request.current_order.text == npc.current_order.text
     response = NPCDialogueResponse(
         replyer_id="cook_01",
         reply_text="守备官，我听见了。",
@@ -82,6 +97,26 @@ def main() -> None:
     plan = [PlanItem(hour=hour, action_kind="idle", action_id="idle") for hour in range(24)]
     plan_response = DailyPlanResponse(npc_id="cook_01", plan_day=1, plan=plan)
     assert len(plan_response.plan) == 24
+    plan_request = DailyPlanRequest(
+        meta=ModelRequestMeta(request_id="verify_plan", call_type="plan_day"),
+        game_time=game_time,
+        npc=npc,
+        allowed_actions=[],
+    )
+    assert plan_request.npc.current_order.revision == 1
+
+    failed_item = PlanItem(hour=8, action_kind="work", action_id="garden_work")
+    revision_request = PlanRevisionRequest(
+        meta=ModelRequestMeta(request_id="verify_revision", call_type="revise_plan"),
+        game_time=game_time,
+        npc=npc,
+        current_plan=[failed_item],
+        failed_plan_item=failed_item,
+        failure_type="order_changed",
+        failure_summary="守备官发布了新指令。",
+        allowed_actions=[],
+    )
+    assert revision_request.npc.current_order.text == npc.current_order.text
 
     battle_request = BattleJudgementRequest(
         meta=ModelRequestMeta(
@@ -95,6 +130,30 @@ def main() -> None:
         allowed_decisions=["join_battle", "avoid_battle", "escape_station", "inspired"],
     )
     assert "join_battle" in battle_request.allowed_decisions
+    reflection_request = DailyReflectionRequest(
+        meta=ModelRequestMeta(request_id="verify_reflection", call_type="daily_reflection"),
+        game_time=game_time,
+        npc=npc,
+    )
+    graph_request = KnowledgeGraphUpdateRequest(
+        meta=ModelRequestMeta(request_id="verify_graph", call_type="knowledge_graph_update"),
+        game_time=game_time,
+        npc=npc,
+        source_summaries=[],
+    )
+    proactive_request = ProactiveIntentionRequest(
+        meta=ModelRequestMeta(request_id="verify_proactive", call_type="proactive_intention"),
+        game_time=game_time,
+        npc=npc,
+    )
+    classification_request = PlayerStrategyClassificationRequest(
+        meta=ModelRequestMeta(request_id="verify_classify", call_type="player_strategy_classification"),
+        game_time=game_time,
+        npc=npc,
+        guard_officer_input="守住这里。",
+    )
+    for request_with_npc in [battle_request, reflection_request, graph_request, proactive_request, classification_request]:
+        assert request_with_npc.npc.current_order.text == npc.current_order.text
 
     print("verify_backend_schemas: ok")
 

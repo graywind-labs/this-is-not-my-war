@@ -38,7 +38,8 @@
 | 敌人场景 | `res://scenes/enemy/Enemy.tscn` | 通用敌人实体 |
 | 建筑场景 | `res://scenes/buildings/Building.tscn` | 通用建筑实体 |
 | UI 主界面 | `res://scenes/ui/HUD.tscn` | 资源、时间、按钮 |
-| 对话 UI | `res://scenes/ui/DialogPanel.tscn` | NPC 对话 |
+| 对话 UI | `res://scripts/ui/DialogPanel.gd`（节点内嵌于 `Main.tscn`） | NPC 对话 |
+| 指令 UI | `res://scripts/ui/OrderPanel.gd`（节点内嵌于 `Main.tscn`） | 已入伍 NPC 自然语言指令 |
 | NPC 面板 | `res://scenes/ui/NPCPanel.tscn` | 状态、装备、按钮 |
 | 建筑面板 | `res://scenes/ui/BuildingPanel.tscn` | 建筑信息 |
 | GM 调试面板 | `res://scripts/ui/GMPanel.gd` | 开发验证入口 |
@@ -51,7 +52,7 @@
 当前状态：T0101 已验证可打开并运行，核心 Autoload 加载无报错。
 
 路径：`res://scenes/main/Main.tscn`
-用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
+用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/OrderPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/OrderPanel` 已接入自然语言指令编辑；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 和 `res://scripts/ui/GMPanel.gd` 作为 UI 脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
 当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、协助修复、协助升级、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉和工作通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率或战斗。
 
@@ -68,7 +69,7 @@
 路径：`res://scripts/core/EventBus.gd`
 用途：全局事件总线，声明基础跨系统信号。
 依赖：作为 Autoload 注册于 `project.godot`。
-当前状态：T0502 后已包含 `resource_changed`、`time_changed`、`time_scale_changed`、`logical_time_tick`、`gameplay_pause_changed`、`day_started`、`hour_started`、`building_clicked`、`building_state_changed`、`npc_clicked`、`npc_state_changed`、`npc_hp_changed`、`npc_unconscious`、`npc_revived`、`event_recorded`、`npc_memory_changed`、`location_info_changed`、`public_event_added`。
+当前状态：T0703 后已包含资源、时间、建筑、NPC、记忆与地点信号，以及 `recruitment_changed`、`npc_order_changed`、`npc_plan_reevaluation_requested`；指令变化与计划重评估请求可由后续计划系统独立监听。
 
 路径：`res://scripts/core/GameState.gd`
 用途：全局运行状态，保存当前天数、小时、分钟、秒和是否处于战斗中。
@@ -98,22 +99,22 @@
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
 依赖：通过 `/root/ConfigLoader` 读取 `data/npc_profiles.json`，实例化 `res://scenes/npc/NPC.tscn` 到 `Main/WorldRoot/Station/NPCs`，并通过 `/root/EventBus.npc_clicked` 广播点击事件。
-当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0304 已实现 8 名初始 NPC 生成、唯一 ID 保存、`get_npc(...)` / `get_npc_state(...)` / `get_npc_ids()` / `get_npc_count()` 查询接口、`update_npc_state(...)` / `set_npc_state_value(...)` 状态修改接口、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`debug_select_npc(...)` 调试选择，以及 `move_npc_to_building(...)` / `debug_move_npc_to_building(...)` / `debug_move_selected_npc_to_building(...)` 基础移动接口；新增 `debug_enter_location_immediately(...)` 用于验证地点信息节点；状态修改和移动到达都会发出 `npc_state_changed`。T0501/T0502/T0503 已实现 `apply_damage_to_npc(...)`、`debug_damage_npc(...)`、`debug_advance_unconscious_recovery(...)` 和 `assist_unconscious_recovery(...)`；昏迷 NPC 随 `logical_time_tick` 自然恢复，达到 Max HP 30% 后复苏并发出 `npc_revived`，协助治疗可按医术熟练度加速恢复。仍不实现复杂避障、对话、征召、敌人战斗、完整诊所治疗或 LLM。
+当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0501/T0502/T0503 已实现 HP 扣除、昏迷恢复和协助治疗。T0702 新增征召权威更新入口；T0703 新增 `get_current_order(...)`、`publish_npc_order(...)` 和最近计划重评估请求快照，只有已入伍 NPC 的指令文本变化时才写入私有事件并发出请求。T0704 新增 `give_money_to_npc(...)` 和 `give_placeholder_weapon_to_npc(...)`，供 NPC 面板触发给钱和占位给武器并复用 MemorySystem 记录事件。T0705 新增 `debug_start_proactive_talk(...)`、`get_proactive_talk(...)` 和 `handle_npc_clicked(...)`，可让 NPC 进入主动找守备官交涉状态、显示问号气泡、点击后打开既有对话面板，并在超时或对话结束后请求计划重评估。仍不实现复杂避障、T0901 正式装备系统、真实计划重评估、敌人战斗、完整诊所治疗或真实 LLM。
 
 路径：`res://scripts/npc/NPC.gd`
 用途：通用 NPC 占位实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，并处理点击。
 依赖：绑定到 `res://scenes/npc/NPC.tscn`，通过 `/root/EventBus.npc_clicked` 发出点击事件。
-当前状态：T0304 已创建；点击 NPC 会打印 ID 并发出 `npc_clicked(npc_id)`；头顶标签只显示短姓名、HP 和当前行动摘要；支持 `move_to_location(...)` 直线移动，到达后发出 `movement_arrived` 给 `NPCSystem` 写回地点状态。
+当前状态：T0304 已创建；普通点击 NPC 会打印 ID 并发出 `npc_clicked(npc_id)`；头顶标签只显示短姓名、HP 和当前行动摘要；T0705 后若 NPC 有主动交涉状态，点击会优先交给 `NPCSystem.handle_npc_clicked(...)` 打开对话，不再先弹出 NPC 面板，并在运行时显示 `ProactiveTalkBubble` 问号气泡；支持 `move_to_location(...)` 直线移动，到达后发出 `movement_arrived` 给 `NPCSystem` 写回地点状态。
 
 路径：`res://scenes/npc/NPC.tscn`
 用途：通用 NPC 低模占位场景。
 依赖：绑定 `res://scripts/npc/NPC.gd`，由 `NPCSystem` 实例化。
-当前状态：T0303 已创建；当前包含 `Area3D` 点击区、低模胶囊身体、头部和 `Label3D` 短姓名/HP/当前行动调试标签。
+当前状态：T0303 已创建；当前包含 `Area3D` 点击区、低模胶囊身体、头部和 `Label3D` 短姓名/HP/当前行动调试标签。T0705 后问号气泡由 `NPC.gd` 运行时创建，不需要手改场景资源。
 
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。2026-05-25 起，MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态当前会生成 `location_status_changed` 本地见闻。可传播外部状态只计算等级与完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；可进入建筑还会提供每个工位占用/空闲，工位数量不触发广播。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_completed`、`money_given`、`npc_attacked_by_player`、`damage_taken`、`unconscious_started`、`healing_started`、`healing_completed`、`revived` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
+当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。2026-05-25 起，MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态当前会生成 `location_status_changed` 本地见闻。可传播外部状态只计算等级与完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；可进入建筑还会提供每个工位占用/空闲，工位数量不触发广播。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。T0705 新增 `proactive_talk_started` / `proactive_talk_message` 事件模板：主动交涉发起和 NPC 开场问题先进入发起者事件库；玩家后续回复仍走既有 `dialogue_turn`。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_completed`、`money_given`、`npc_attacked_by_player`、`damage_taken`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`proactive_talk_started`、`proactive_talk_message` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
@@ -128,17 +129,27 @@
 路径：`res://scripts/systems/LLMBridge.gd`
 用途：Godot 侧后端桥接脚本，负责请求 `/health` 与 `/npc/dialogue`，构造 T0603 对话 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
 依赖：挂载到 `Main/Systems/LLMBridge`；读取 `NPCSystem`、`MemorySystem`、`GameState` 和 `TimeSystem`；使用 Godot 原生 `HTTPClient` 请求游戏后端。
-当前状态：T0604 已创建，T0604A 已替换传输层；支持后端地址配置、health check、玩家-NPC / NPC-NPC 对话 payload 构造、`speaker_name == "守备官"`、短期记忆事件/见闻分离、地点快照注入、请求失败结果返回和成功/失败/超时后的慢速释放。不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。尚未写入对话事件、修改征召状态或调用真实 LLM；正式架构下 Godot 客户端只请求游戏后端，不保存供应商 API Key。
+当前状态：T0604/T0604A 已实现原生 HTTP 后端桥接；T0701 由 DialogSystem 调用该桥并将成功回复显示到对话 UI、写入对话事件。T0703A 后，LLMBridge 统一把最新 `current_order` 注入对话顶层 payload 与共享 NPC 上下文，并保存最近注入快照供 GM / 自动化观察。LLMBridge 本身仍不修改征召状态或权威数值。
 
 路径：`res://scripts/systems/DialogSystem.gd`
-用途：对话系统占位脚本，后续用于 NPC 对话和后端请求。
-依赖：暂无。
-当前状态：T0102 已创建并绑定到 `Main/Systems/DialogSystem`；T0604 的后端请求由 `LLMBridge` 承担，DialogSystem 仍尚未实现对话 UI、事件入库或征召逻辑。
+用途：Godot 侧对话会话权威入口，维护参与者、历史、公开性和轮次，调用 LLMBridge 并写入 MemorySystem。
+依赖：`NPCSystem`、`LLMBridge`、`MemorySystem`、`Main/UI/DialogPanel`。
+当前状态：T0701/T0702 已实现玩家-NPC 不限轮次对话与 NPC-NPC 默认 5 轮语义；支持开始、发送、结束、一次性应征请求标记、接受/拒绝结果应用和结构化对话事件。T0705 新增 `start_proactive_player_dialogue(...)`，复用玩家-NPC 对话面板，让 NPC 预先确定的开场问题作为第一条历史显示并先入库；对话结束后请求计划重评估。
+
+路径：`res://scripts/ui/DialogPanel.gd`
+用途：显示 NPC 名字、对话历史、公开性、轮次、输入框、发送和结束按钮。
+依赖：调用 `Main/Systems/DialogSystem`。
+当前状态：T0701/T0702 已创建并绑定到 `Main/UI/DialogPanel`；显示“提出应征”按钮及待发送/接受/拒绝状态。
 
 路径：`res://scripts/ui/HUD.gd`
 用途：HUD 展示脚本，刷新标题区下方的天数、`HH:MM:SS` 时间/阶段、资源占位、速度/暂停按钮和后端状态占位。
 依赖：读取 `/root/GameState`，监听 `/root/EventBus.time_changed`、`hour_started`、`day_started` 和 `resource_changed`，从 `Main/Systems/ResourceSystem` 读取当前资源。
 当前状态：T0604 后，HUD 后端状态会读取 `LLMBridge.get_last_backend_status()` 并监听 `backend_status_changed`；T0401 已接入真实时间推进、秒级时间显示、速度按钮、暂停按钮和空格暂停；速度按钮显示玩家设定倍率，空格只触发暂停/继续，不触发速度切换；LLM 等待造成的有效逻辑倍率由 TimeSystem 提供给后续调试 UI；T0202 已接入真实基础资源显示；2026-05-20 已让 HUD 根节点忽略鼠标，避免全屏背板拦截建筑点击；警铃仍为占位。
+
+路径：`res://scripts/ui/UIInputFocusManager.gd`
+用途：Main UI 层输入焦点管理脚本，统一处理 LineEdit / TextEdit 点击外部失焦。
+依赖：挂载到 `Main/UI`，读取当前 GUI 焦点和鼠标悬停 Control，不参与资源、HP、事件或行动结算。
+当前状态：T0704 反馈修正已创建；任意文本输入控件获得焦点后，点击输入框外任意位置会释放焦点，NPC 给钱数量框、对话输入框和指令 TextEdit 已纳入验证。
 
 路径：`res://scripts/ui/BuildingPanel.gd`
 用途：建筑信息面板脚本，监听建筑点击并展示建筑名称、等级、HP、工作位和地点信息占位。
@@ -148,7 +159,12 @@
 路径：`res://scripts/ui/NPCPanel.gd`
 用途：NPC 信息面板脚本，监听 NPC 点击和状态变化并展示 NPC 基础状态。
 依赖：监听 `/root/EventBus.npc_clicked`、`/root/EventBus.npc_state_changed` 和 `/root/EventBus.building_clicked`，从 `Main/Systems/NPCSystem` 读取 NPC 档案与状态。
-当前状态：T0405 后，`Main/UI/NPCPanel` 会显示 NPC 当天事件库和见闻库最近摘要，并监听 `npc_memory_changed` 刷新；基础状态仍按姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、职业熟练度和武器熟练度显示；属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由熟练度推导；点击建筑时会隐藏 NPC 面板。
+当前状态：T0405 后，`Main/UI/NPCPanel` 会显示 NPC 当天事件库和见闻库最近摘要，并监听 `npc_memory_changed` 刷新；T0703 后已入伍 NPC 显示可用“指令”按钮并打开 `OrderPanel`；T0704 后面板新增非对话交互区，可选择 `private` / `local_public` 可见性并给钱、给占位短剑或攻击，给钱数量输入框紧邻“给钱”按钮；点击建筑时会隐藏 NPC 面板。
+
+路径：`res://scripts/ui/OrderPanel.gd`
+用途：已入伍 NPC 自然语言指令撰写与发布面板。
+依赖：调用 `NPCSystem.get_current_order(...)` / `publish_npc_order(...)`；内嵌于 `Main/UI/OrderPanel`。
+当前状态：T0703 已实现；打开时预填当前指令，发布变化文本时显示修订结果，关闭或相同文本无副作用。
 
 路径：`tools/verify_npc_damage_unconscious.gd`
 用途：验证 T0501 NPC HP 扣除、昏迷状态、行动阻断和同地点见闻传播。
@@ -168,7 +184,7 @@
 路径：`res://scripts/ui/GMPanel.gd`
 用途：GM 调试面板脚本，为 M1-M4 已完成但前端不易直接验证的系统能力提供可拖动按钮、命令输入框、调试按钮和结果输出。
 依赖：挂载到 `Main/UI/GMPanel`；调用 `TimeSystem`、`ResourceSystem`、`BuildingSystem`、`NPCSystem`、`ActionSystem` 和 `MemorySystem` 的已有公开接口或 `debug_*` 接口；使用顶部 `GM_ENABLED` 常量控制开发/上线显示。
-当前状态：T0004 已实现；支持资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口，行动分组内提供“修复目标”“升级目标”和“治疗目标”下拉用于测试参数化协助修复/协助升级/协助治疗；支持 `help`、`add_resource`、`damage_building`、`repair_building`、`upgrade_building`、`assist_repair`、`assist_upgrade`、`assist_heal`、`enter_location`、`give_money`、`attack_npc` / `damage_npc`、`recover_npc`、`memory`、`events` 等命令。GMPanel 不写入新的权威结算逻辑，只转发到已有系统。
+当前状态：T0004 已实现；支持资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口。T0703 新增发布/查看指令和查看最近计划重评估请求入口；支持 `publish_order`、`order`、`plan_request`。T0705 新增主动交涉按钮和 `start_proactive` / `proactive` 命令，调用 `NPCSystem` 调试接口触发和查看问号气泡状态。GMPanel 不写入新的权威结算逻辑，只转发到已有系统。
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
@@ -281,12 +297,12 @@
 路径：`backend/schemas/common.py`
 用途：后端 AI 接口共享 Schema，定义游戏时间、请求元信息、事件摘要、短期记忆、NPC 身份/状态/上下文、行动候选和通用错误响应。
 依赖：`pydantic`。
-当前状态：T0601 已创建；只提供数据模型，不调用 LLM，不改变游戏权威状态。
+当前状态：T0601 已创建；T0703A 新增 `CurrentOrderContext` 并接入共享 `NPCContext`，让所有复用该上下文的 NPC 中心请求携带最新指令。只提供数据模型，不调用 LLM，不改变游戏权威状态。
 
 路径：`backend/schemas/npc_ai.py`
 用途：NPC AI 请求/响应 Schema，覆盖玩家-NPC / NPC-NPC / 逃离挽留对话、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动交涉和玩家话术分类。
 依赖：`pydantic`，复用 `backend/schemas/common.py`。
-当前状态：T0603 后，对话 Schema 已按当前任务重整为显式 `npc_id`、`npc_name`、`npc_setting`、`speaker_name`、`speaker_text`、`speaker_context`、`is_recruitment_request`、轮次、`npc_state`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 输入；响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。每日计划、修订、战斗判定、睡前总结等 Schema 沿用 T0601 结构。
+当前状态：T0603 后，对话 Schema 已按当前任务重整为显式输入；T0703A 新增对话顶层 `current_order`，并让每日计划、修订、战斗判定、睡前总结等通过共享 `NPCContext.current_order` 复用最新指令。响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。
 
 路径：`backend/schemas/__init__.py`
 用途：统一导出后端 Schema 类型。
@@ -317,7 +333,8 @@
 
 | 内容 | 文件 |
 |---|---|
-| Godot MCP 连接自检与重复 proxy 检查 | `tools/check_godot_mcp.ps1` |
+| Godot MCP 连接与拓扑自检 | `tools/check_godot_mcp.ps1` |
+| Godot MCP 多会话 proxy / 单 broker 拓扑验证 | `tools/verify_godot_mcp_topology.mjs` |
 | 建筑修复/升级验证 | `tools/verify_building_repair_upgrade.gd` |
 | NPC 面板与状态验证 | `tools/verify_npc_panel_state.gd` |
 | NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |
@@ -332,8 +349,12 @@
 | NPC 扣血与昏迷验证 | `tools/verify_npc_damage_unconscious.gd` |
 | NPC 昏迷自然恢复验证 | `tools/verify_npc_unconscious_natural_recovery.gd` |
 | NPC 昏迷协助治疗验证 | `tools/verify_npc_unconscious_healing.gd` |
+| NPC 面板非对话交互验证 | `tools/verify_npc_panel_interactions.gd` |
+| NPC 主动交涉验证 | `tools/verify_npc_proactive_talk.gd` |
 | GM 调试面板验证 | `tools/verify_gm_panel.gd` |
 | 后端 Schema 验证 | `tools/verify_backend_schemas.py` |
 | Mock Model Adapter 验证 | `tools/verify_mock_model_adapter.py` |
 | `/npc/dialogue` Mock 接口验证 | `tools/verify_dialogue_mock_endpoint.py` |
 | Godot LLMBridge 验证 | `tools/verify_llm_bridge.gd`，T0604A 起包含不依赖 `curl.exe` / `OS.execute` 的静态检查 |
+| 对话 UI、轮次与对话事件验证 | `tools/verify_dialogue_ui.gd` |
+| 入伍 NPC 自然语言指令验证 | `tools/verify_npc_order.gd` |

@@ -6,9 +6,16 @@ const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
+const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const PLAYER_ACTOR_ID := "guard_officer"
 const SYSTEM_ACTOR_ID := "system"
+const MONEY_RESOURCE_ID := "money"
+const PLACEHOLDER_WEAPON_RESOURCE_ID := "weapons"
+const PLACEHOLDER_WEAPON_ID := "short_sword"
+const PLACEHOLDER_WEAPON_NAME := "短剑"
+const EQUIPMENT_SLOT_MAIN_WEAPON := "main_weapon"
 const PICK_RAY_LENGTH := 1000.0
 const PROFESSIONAL_SKILLS: Array[String] = ["养马", "厨艺", "耕种", "打铁", "教练", "酿酒", "医术", "工程"]
 const WEAPON_SKILLS: Array[String] = ["剑盾", "长杆", "弓", "弩", "骑术"]
@@ -18,6 +25,7 @@ const UNCONSCIOUS_HEALING_BASE_HP_PER_HOUR := 2.0
 const UNCONSCIOUS_HEALING_MAX_BONUS_HP_PER_HOUR := 10.0
 const UNCONSCIOUS_HEALING_SKILL_THRESHOLD := 20.0
 const REVIVE_HP_RATIO := 0.3
+const PROACTIVE_TALK_DEFAULT_DURATION_SECONDS := 3600.0
 
 const SPAWN_POINTS: Array[Vector3] = [
 	Vector3(-8.0, 0.0, 2.5),
@@ -35,6 +43,7 @@ var _npc_order: Array[String] = []
 var _npc_nodes: Dictionary = {}
 var _selected_npc_id: String = ""
 var _unconscious_recovery_remainders: Dictionary = {}
+var _last_plan_reevaluation_request: Dictionary = {}
 
 
 func _ready() -> void:
@@ -50,6 +59,7 @@ func initialize() -> void:
 	_npc_order.clear()
 	_npc_nodes.clear()
 	_unconscious_recovery_remainders.clear()
+	_last_plan_reevaluation_request.clear()
 	_selected_npc_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -87,6 +97,7 @@ func initialize() -> void:
 			continue
 
 		profile["skills"] = normalize_skills(profile.get("skills", {}))
+		profile["current_order"] = _normalize_current_order(profile.get("current_order", {}))
 		var npc_node := npc_scene.instantiate()
 		npc_root.add_child(npc_node)
 		npc_node.global_position = _get_spawn_position(_npc_order.size())
@@ -249,6 +260,239 @@ func set_npc_state_value(npc_id: String, state_key: String, value: Variant) -> b
 	return update_npc_state(npc_id, {state_key: value})
 
 
+func set_npc_recruited(npc_id: String, recruited: bool) -> bool:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot update recruitment for unknown NPC: %s" % npc_id)
+		return false
+	var profile: Dictionary = _profiles[npc_id]
+	if bool(profile.get("recruited", false)) == recruited:
+		return true
+	profile["recruited"] = recruited
+	_profiles[npc_id] = profile
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("recruitment_changed"):
+		event_bus.recruitment_changed.emit(npc_id, recruited)
+	return true
+
+
+func get_current_order(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot get order for unknown NPC: %s" % npc_id)
+		return {}
+	return _normalize_current_order((_profiles[npc_id] as Dictionary).get("current_order", {}))
+
+
+func give_money_to_npc(
+	npc_id: String,
+	amount: int,
+	visibility: String = "local_public"
+) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	if amount <= 0:
+		return _interaction_failure("invalid_amount", "赠予金额必须大于 0。")
+
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null or not resource_system.has_method("spend_resources"):
+		return _interaction_failure("resource_system_missing", "资源系统不可用。")
+	if not resource_system.spend_resources({MONEY_RESOURCE_ID: amount}):
+		return _interaction_failure("not_enough_money", "第纳尔不足。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {})
+	var money_before := int(states.get("money", 0))
+	var money_after := money_before + amount
+	states["money"] = money_after
+	profile["states"] = states
+	_profiles[npc_id] = profile
+
+	var event := _log_player_interaction(npc_id, "money_given", {
+		"amount": amount,
+		"resource_id": MONEY_RESOURCE_ID,
+		"npc_money_before": money_before,
+		"npc_money_after": money_after
+	}, visibility)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"amount": amount,
+		"npc_money_before": money_before,
+		"npc_money_after": money_after,
+		"event": event
+	}
+
+
+func give_placeholder_weapon_to_npc(
+	npc_id: String,
+	visibility: String = "local_public"
+) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null or not resource_system.has_method("spend_resources"):
+		return _interaction_failure("resource_system_missing", "资源系统不可用。")
+	if not resource_system.spend_resources({PLACEHOLDER_WEAPON_RESOURCE_ID: 1}):
+		return _interaction_failure("not_enough_weapons", "武器库存不足。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	var equipment: Dictionary = profile.get("equipment", {})
+	var previous_weapon: Dictionary = equipment.get(EQUIPMENT_SLOT_MAIN_WEAPON, {})
+	equipment[EQUIPMENT_SLOT_MAIN_WEAPON] = {
+		"id": PLACEHOLDER_WEAPON_ID,
+		"name": PLACEHOLDER_WEAPON_NAME,
+		"type": "melee",
+		"placeholder": true
+	}
+	profile["equipment"] = equipment
+	_profiles[npc_id] = profile
+
+	var event_type := "equipment_changed" if not previous_weapon.is_empty() else "equipment_given"
+	var event := _log_player_interaction(npc_id, event_type, {
+		"slot": EQUIPMENT_SLOT_MAIN_WEAPON,
+		"equipment_id": PLACEHOLDER_WEAPON_ID,
+		"equipment_name": PLACEHOLDER_WEAPON_NAME,
+		"previous_equipment_id": str(previous_weapon.get("id", "")),
+		"previous_equipment_name": str(previous_weapon.get("name", "")),
+		"resource_id": PLACEHOLDER_WEAPON_RESOURCE_ID
+	}, visibility)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"equipment": equipment.duplicate(true),
+		"event": event
+	}
+
+
+func publish_npc_order(npc_id: String, text: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _order_failure("unknown_npc", "NPC 不存在。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	if not bool(profile.get("recruited", false)):
+		return _order_failure("npc_not_recruited", "未入伍 NPC 不能接收个人指令。")
+
+	var current_order := _normalize_current_order(profile.get("current_order", {}))
+	var old_text := str(current_order.get("text", ""))
+	var new_text := text.strip_edges()
+	if new_text == old_text:
+		return {
+			"ok": true,
+			"changed": false,
+			"npc_id": npc_id,
+			"current_order": current_order.duplicate(true)
+		}
+
+	var issued_at := _get_game_time_snapshot()
+	var revision := int(current_order.get("revision", 0)) + 1
+	var next_order := {
+		"text": new_text,
+		"issued_by": PLAYER_ACTOR_ID,
+		"issued_day": int(issued_at.get("day", 1)),
+		"issued_time": str(issued_at.get("time", "00:00:00")),
+		"revision": revision
+	}
+	profile["current_order"] = next_order
+	_profiles[npc_id] = profile
+
+	var event := _log_order_assigned(npc_id, old_text, new_text, revision)
+	_request_plan_reevaluation(npc_id, "order_changed")
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_order_changed"):
+		event_bus.npc_order_changed.emit(npc_id, next_order.duplicate(true))
+
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"current_order": next_order.duplicate(true),
+		"event": event
+	}
+
+
+func debug_publish_npc_order(npc_id: String, text: String) -> Dictionary:
+	return publish_npc_order(npc_id, text)
+
+
+func start_proactive_talk(npc_id: String, prompt_text: String, duration_seconds: float = PROACTIVE_TALK_DEFAULT_DURATION_SECONDS) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	if not can_npc_act(npc_id):
+		return _interaction_failure("npc_cannot_act", "NPC 当前无法主动交涉。")
+	var clean_text := prompt_text.strip_edges()
+	if clean_text.is_empty():
+		clean_text = "守备官，我有件事想问你。"
+	var duration := maxf(1.0, duration_seconds)
+	var proactive_state := {
+		"active": true,
+		"prompt_text": clean_text,
+		"remaining_seconds": duration,
+		"duration_seconds": duration
+	}
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "proactive_talk",
+		"proactive_talk": proactive_state
+	})
+	var event := _log_proactive_talk_started(npc_id, clean_text, duration)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	_emit_npc_proactive_talk_changed(npc_id, true)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"proactive_talk": proactive_state.duplicate(true),
+		"event": event
+	}
+
+
+func debug_start_proactive_talk(npc_id: String, prompt_text: String, duration_seconds: float = PROACTIVE_TALK_DEFAULT_DURATION_SECONDS) -> Dictionary:
+	return start_proactive_talk(npc_id, prompt_text, duration_seconds)
+
+
+func get_proactive_talk(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var state := get_npc_state(npc_id)
+	var proactive: Dictionary = state.get("proactive_talk", {})
+	return proactive.duplicate(true)
+
+
+func has_active_proactive_talk(npc_id: String) -> bool:
+	var proactive := get_proactive_talk(npc_id)
+	return bool(proactive.get("active", false))
+
+
+func handle_npc_clicked(npc_id: String) -> bool:
+	if not has_active_proactive_talk(npc_id):
+		return false
+	var proactive := get_proactive_talk(npc_id)
+	var prompt_text := str(proactive.get("prompt_text", "")).strip_edges()
+	_clear_proactive_talk(npc_id, "clicked")
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("start_proactive_player_dialogue"):
+		return false
+	var result: Dictionary = dialog_system.start_proactive_player_dialogue(npc_id, prompt_text)
+	return bool(result.get("ok", false))
+
+
+func get_last_plan_reevaluation_request() -> Dictionary:
+	return _last_plan_reevaluation_request.duplicate(true)
+
+
+func request_plan_reevaluation(npc_id: String, reason: String) -> void:
+	if not _profiles.has(npc_id):
+		return
+	_request_plan_reevaluation(npc_id, reason)
+
+
 func can_npc_act(npc_id: String) -> bool:
 	if not _profiles.has(npc_id):
 		return false
@@ -354,6 +598,7 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	if game_delta_seconds <= 0.0:
 		return
 	_advance_unconscious_recovery(game_delta_seconds)
+	_advance_proactive_talk_timers(game_delta_seconds)
 
 
 func _advance_unconscious_recovery(game_delta_seconds: float, only_npc_id: String = "") -> Dictionary:
@@ -515,13 +760,131 @@ func _stop_npc_movement(npc_id: String) -> void:
 
 func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	var profile: Dictionary = _profiles[npc_id]
+	profile["current_order"] = _normalize_current_order(profile.get("current_order", {}))
 	var states: Dictionary = profile.get("states", {})
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
 	if not states.has("location_context"):
 		states["location_context"] = {}
+	if not states.has("proactive_talk"):
+		states["proactive_talk"] = {}
 	profile["states"] = states
 	_profiles[npc_id] = profile
+
+
+func _normalize_current_order(raw_order: Variant) -> Dictionary:
+	var order: Dictionary = raw_order if raw_order is Dictionary else {}
+	return {
+		"text": str(order.get("text", "")),
+		"issued_by": str(order.get("issued_by", PLAYER_ACTOR_ID)),
+		"issued_day": maxi(0, int(order.get("issued_day", 0))),
+		"issued_time": str(order.get("issued_time", "")),
+		"revision": maxi(0, int(order.get("revision", 0)))
+	}
+
+
+func _get_game_time_snapshot() -> Dictionary:
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state == null:
+		return {"day": 1, "time": "00:00:00"}
+	return {
+		"day": int(game_state.current_day),
+		"time": "%02d:%02d:%02d" % [
+			int(game_state.current_hour),
+			int(game_state.current_minute),
+			int(game_state.current_second)
+		]
+	}
+
+
+func _log_order_assigned(npc_id: String, old_text: String, new_text: String, revision: int) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "order_assigned",
+		"subject_npc_id": npc_id,
+		"actor_ids": [PLAYER_ACTOR_ID],
+		"target_ids": [npc_id],
+		"location_id": _get_current_info_location(npc_id, memory_system),
+		"visibility": "private",
+		"importance": 65,
+		"payload": {
+			"previous_order_text": old_text,
+			"new_order_text": new_text,
+			"order_revision": revision
+		}
+	})
+
+
+func _log_player_interaction(npc_id: String, event_type: String, payload: Dictionary, visibility: String) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("record_player_interaction"):
+		return {}
+	var normalized_visibility := "private" if visibility == "private" else "local_public"
+	return memory_system.record_player_interaction(npc_id, event_type, payload, normalized_visibility)
+
+
+func _request_plan_reevaluation(npc_id: String, reason: String) -> void:
+	var issued_at := _get_game_time_snapshot()
+	_last_plan_reevaluation_request = {
+		"npc_id": npc_id,
+		"reason": reason,
+		"day": int(issued_at.get("day", 1)),
+		"time": str(issued_at.get("time", "00:00:00")),
+		"current_order": get_current_order(npc_id),
+		"result": {
+			"status": "rule_fallback_deferred",
+			"fallback_used": true,
+			"summary": "计划系统尚未实现；已保留最新指令，等待 T1002 统一重评估链路处理。"
+		}
+	}
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_plan_reevaluation_requested"):
+		event_bus.npc_plan_reevaluation_requested.emit(npc_id, reason)
+
+
+func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
+	for npc_id in _npc_order:
+		var proactive := get_proactive_talk(npc_id)
+		if not bool(proactive.get("active", false)):
+			continue
+		var remaining := float(proactive.get("remaining_seconds", 0.0)) - game_delta_seconds
+		if remaining <= 0.0:
+			_clear_proactive_talk(npc_id, "expired")
+			_request_plan_reevaluation(npc_id, "proactive_talk_expired")
+		else:
+			proactive["remaining_seconds"] = remaining
+			_set_npc_state_without_signal(npc_id, {"proactive_talk": proactive})
+			_refresh_npc_node(npc_id)
+			_emit_npc_state_changed(npc_id)
+
+
+func _clear_proactive_talk(npc_id: String, clear_reason: String) -> void:
+	if not _profiles.has(npc_id):
+		return
+	var state := get_npc_state(npc_id)
+	if not bool(state.get("proactive_talk", {}).get("active", false)):
+		return
+	var current_action := str(state.get("current_action", ""))
+	var changes := {
+		"proactive_talk": {},
+		"last_action_result": "proactive_talk_%s" % clear_reason
+	}
+	if current_action == "proactive_talk":
+		changes["current_action"] = "idle"
+	_set_npc_state_without_signal(npc_id, changes)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	_emit_npc_proactive_talk_changed(npc_id, false)
+
+
+func _order_failure(code: String, message: String) -> Dictionary:
+	return {"ok": false, "changed": false, "error": code, "message": message}
+
+
+func _interaction_failure(code: String, message: String) -> Dictionary:
+	return {"ok": false, "error": code, "message": message}
 
 
 func _clear_spawned_npcs() -> void:
@@ -571,6 +934,8 @@ func _pick_npc_at_screen_position(screen_position: Vector2) -> String:
 
 
 func _select_npc(npc_id: String) -> void:
+	if handle_npc_clicked(npc_id):
+		return
 	_selected_npc_id = npc_id
 	print("NPC selected: %s" % npc_id)
 	var event_bus := get_node_or_null("/root/EventBus")
@@ -609,6 +974,31 @@ func _emit_npc_revived(npc_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_revived"):
 		event_bus.npc_revived.emit(npc_id)
+
+
+func _emit_npc_proactive_talk_changed(npc_id: String, active: bool) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_proactive_talk_changed"):
+		event_bus.npc_proactive_talk_changed.emit(npc_id, active)
+
+
+func _log_proactive_talk_started(npc_id: String, prompt_text: String, duration_seconds: float) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "proactive_talk_started",
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": [npc_id, PLAYER_ACTOR_ID],
+		"location_id": _get_current_info_location(npc_id, memory_system),
+		"visibility": "private",
+		"importance": 55,
+		"payload": {
+			"prompt_text": prompt_text,
+			"duration_seconds": duration_seconds
+		}
+	})
 
 
 func _log_damage_taken(

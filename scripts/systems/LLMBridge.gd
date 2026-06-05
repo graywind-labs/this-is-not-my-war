@@ -22,6 +22,7 @@ var _last_backend_status := "后端：未检查"
 var _request_counter := 0
 var _pending_slowdown_request_ids: Array[String] = []
 var _debug_last_slowdown_registered := false
+var _last_npc_context_injection: Dictionary = {}
 
 
 func initialize() -> void:
@@ -57,6 +58,10 @@ func get_pending_slowdown_count() -> int:
 
 func debug_was_slowdown_registered() -> bool:
 	return _debug_last_slowdown_registered
+
+
+func get_last_npc_context_injection() -> Dictionary:
+	return _last_npc_context_injection.duplicate(true)
 
 
 func check_health() -> Dictionary:
@@ -132,6 +137,7 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	var participants := _normalize_string_array(dialogue_state.get("participants", [npc_id, GUARD_OFFICER_ID if speaker_kind == "guard_officer" else speaker_npc_id]))
 
 	var request_id := str(options.get("request_id", _make_request_id("dialogue")))
+	var current_order: Dictionary = npc_system.get_current_order(npc_id) if npc_system.has_method("get_current_order") else {}
 	var payload := {
 		"meta": {
 			"request_id": request_id,
@@ -152,6 +158,7 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"current_round": current_round,
 		"max_rounds": max_rounds,
 		"npc_state": _build_npc_state_context(npc, npc_state),
+		"current_order": current_order.duplicate(true),
 		"dialogue_state": {
 			"visibility": visibility,
 			"location_id": str(dialogue_state.get("location_id", location_id)),
@@ -170,6 +177,7 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	if speaker_kind == "npc" and not speaker_npc_id.is_empty():
 		payload["speaker_npc"] = _build_npc_context(speaker_npc_id, npc_system)
 	payload["target_npc"] = _build_npc_context(npc_id, npc_system)
+	_record_npc_context_injection(npc_id, "dialogue", current_order, request_id)
 	return payload
 
 
@@ -538,10 +546,30 @@ func _build_npc_context(npc_id: String, npc_system: Node) -> Dictionary:
 			"boundaries": npc.get("boundaries", npc.get("bottom_lines", []))
 		},
 		"state": _build_npc_state_context(npc, state),
+		"current_order": npc_system.get_current_order(npc_id) if npc_system.has_method("get_current_order") else {},
 		"short_term_memory": _build_short_memory_context(npc_id),
 		"knowledge_graph": npc.get("knowledge_graph", {}),
 		"location_context": _build_location_context(state),
 		"plaza_context": _get_plaza_context()
+	}
+
+
+func debug_build_npc_context(npc_id: String, call_type: String = "debug") -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return {}
+	var context := _build_npc_context(npc_id, npc_system)
+	if not context.is_empty():
+		_record_npc_context_injection(npc_id, call_type, context.get("current_order", {}), "")
+	return context
+
+
+func _record_npc_context_injection(npc_id: String, call_type: String, current_order: Dictionary, request_id: String) -> void:
+	_last_npc_context_injection = {
+		"npc_id": npc_id,
+		"call_type": call_type,
+		"request_id": request_id,
+		"current_order": current_order.duplicate(true)
 	}
 
 

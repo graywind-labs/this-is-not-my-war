@@ -61,9 +61,18 @@ class NPCStateContext(BaseModel):
     stats: dict[str, int] = Field(default_factory=dict)
 
 
+class CurrentOrderContext(BaseModel):
+    text: str = ""
+    issued_by: str = "guard_officer"
+    issued_day: int = Field(default=0, ge=0)
+    issued_time: str = ""
+    revision: int = Field(default=0, ge=0)
+
+
 class NPCContext(BaseModel):
     identity: NPCIdentity
     state: NPCStateContext
+    current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     short_term_memory: ShortTermMemoryContext = Field(default_factory=ShortTermMemoryContext)
     knowledge_graph: dict[str, Any] = Field(default_factory=dict)
     location_context: dict[str, Any] = Field(default_factory=dict)

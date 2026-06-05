@@ -5,8 +5,8 @@
 
 ## 当前版本
 
-版本：`0.0.39-godot-native-http-llm-bridge`
-状态：已完成 Godot 项目入口、可扩展 Main 场景节点结构、低模驿站 Blockout、基础 HUD、可拖动 GM 调试面板、基础摄像机控制、核心 Autoload 骨架、基础 JSON 数据文件、8 名初始 NPC 数据草案、基础 NPC 生成与点击、NPC 基础状态读取/更新、NPC HP 扣除与昏迷状态、NPC 昏迷自然恢复与自动复苏、其他 NPC 协助治疗昏迷者、昏迷/睡觉期间见闻暂停、NPC 面板、基础 NPC 直线移动与地点进入、地点信息节点与进入快照、进入广场和可进入建筑时的在场 NPC 生命/行动状态快照、广场进入快照当前公告/在场人员补齐、室内地点经由广场的逻辑事件链、广场公开信息即时广播、NPC 当天短期记忆容器、玩家交互事件“守备官”世界内称呼规则、按 `game_design.md` 对齐的工作/吃饭/睡觉最小行动闭环、基础 ResourceSystem、基础 BuildingSystem、基础建筑面板、建筑修复/升级倒计时闭环、建筑点击选择与状态刷新信号拆分、结构化事件底座、精确到秒且支持独立暂停/加速与 LLM 等待减速请求的基础 TimeSystem，Flask 后端骨架、`/health` 健康检查、后端 AI 请求/响应 Pydantic Schema、默认 `mock` provider 的 Model Adapter、`/mock/model` 调试接口、`/npc/dialogue` Mock 业务接口，以及 Godot 侧基于原生 `HTTPClient` 的 `LLMBridge` 请求 `/health` / `/npc/dialogue`、HUD 后端状态显示和 GM 对话 Mock 调试入口；尚未实现真实每日计划、复杂生产效率、敌人战斗、完整诊所治疗系统、Godot 前端对话 UI、对话事件入库和征召状态变更。
+版本：`0.0.45-npc-proactive-talk`
+状态：已完成 Godot 项目入口、低模驿站、基础经营/时间/地点/记忆/NPC 昏迷治疗闭环、Flask Mock 后端与原生 HTTP `LLMBridge`；T0701-T0705 已接通对话、征召、已入伍 NPC 自然语言指令编辑、最新指令向共享 NPC LLM / Mock 上下文的统一注入和计划重评估降级结果观察、NPC 面板给钱/占位给武器/攻击等非对话交互入口，以及 NPC 主动找守备官交涉的调试触发、问号气泡、点击进入对话和 1 小时超时消失闭环。尚未实现真实每日计划、T0901 正式装备系统、T1002 完整计划重评估应用、复杂生产效率、敌人战斗、完整诊所治疗或真实 LLM。
 
 ## 当前已实现内容
 
@@ -29,12 +29,15 @@
 - [x] 建筑修复与升级最小逻辑
 - [x] 时间系统
 - [x] 资源系统
-- [ ] 对话系统
+- [x] 对话系统
 - [x] LLM 后端骨架
 - [x] 后端 AI Schema
 - [x] 后端 NPC 对话 Mock 接口
 - [x] Godot LLMBridge
-- [ ] 征召系统
+- [x] 征召系统
+- [x] 入伍 NPC 自然语言指令入口与存储
+- [x] NPC 面板非对话交互入口
+- [x] NPC 主动找玩家交涉
 - [ ] 战斗系统
 - [x] 昏迷自然恢复/复苏
 - [x] 治疗昏迷 NPC
@@ -80,7 +83,9 @@ ActionSystem 可通过调试接口安排 NPC 去工作、吃饭、睡觉或协�
   ↓
 NPC 短姓名/HP/当前行动调试标签可见，点击 NPC 可打印并发出 npc_clicked(npc_id)
   ↓
-右上角 NPC 面板可显示被点击 NPC 的姓名、HP、力量/智力属性、由熟练度推导的专长、饱食、疲劳、金钱、昏迷、入伍、当前行动、职业熟练度、武器熟练度，以及分开的事件库/见闻库最近摘要；NPC 状态或记忆被系统修改后面板会刷新
+右上角 NPC 面板可显示被点击 NPC 的姓名、HP、力量/智力属性、由熟练度推导的专长、饱食、疲劳、金钱、当前装备、昏迷、入伍、当前行动、职业熟练度、武器熟练度，以及分开的事件库/见闻库最近摘要；NPC 状态或记忆被系统修改后面板会刷新；面板内可选择本次非对话交互可见性并直接给钱、给予占位短剑或攻击，给钱数量输入框紧邻“给钱”按钮且只保留数字；当前所有 LineEdit / TextEdit 输入框获得焦点后，点击输入框外任意位置都会退出输入状态
+  ↓
+GM 或调试接口可让某名可行动 NPC 进入主动找守备官交涉状态；NPC 头顶出现 `?` 气泡并写入私有 `proactive_talk_started` 事件，玩家点击该 NPC 时优先打开对话面板并显示 NPC 预先确定的开场问题，开场问题写入 `proactive_talk_message`；对话结束后请求计划重评估。若 1 游戏小时内未点击，气泡自动消失并请求计划重评估；当前重评估仍为 T0703A 的规则降级观察结果
   ↓
 右上角建筑面板显示被点击建筑的名称、等级、HP、工作位和地点信息占位，可关闭；修复/升级按钮按条件启用并调用 BuildingSystem，资源消耗和执行条件在按钮悬停提示框中显示；修复和升级都显示倒计时进度、剩余时间、速度倍率和协助人数；NPC 面板和建筑面板会随点击对象互斥切换；建筑修复/升级进度等状态刷新不会把已经切到 NPC 的右上角面板抢回建筑面板
   ↓
@@ -135,6 +140,12 @@ T0604A 已将 Godot `LLMBridge` 传输层替换为原生 `HTTPClient` 状态机�
 NPC 可移动到建筑并执行简单工作
 ```
 
+T0703/T0703A 更新：已入伍 NPC 面板显示可用“指令”按钮，可打开自由文本 `OrderPanel` 查看、修改并发布 `current_order`。只有文本变化时才更新结构化指令、递增修订号、写入目标 NPC 的 `private` `order_assigned` 事件并发出计划重评估请求；相同文本或关闭面板无副作用，发布不会直接改变 `current_action`。`LLMBridge` 会把单条最新指令注入对话顶层 payload 和共享 NPC 上下文，后端 `NPCContext` 让计划、修订、战斗判定、主动交涉、反思和知识图谱更新等请求复用同一字段。最近注入快照和重评估降级结果可由 GM 查看；T1002 尚未实现，因此当前重评估结果为保留最新指令的 `rule_fallback_deferred`，不直接应用计划。
+
+T0704 更新：NPC 面板已接入非对话交互入口。给钱会扣除全局第纳尔、增加目标 NPC 随身金钱，并写入 `money_given`；给武器会消耗 1 个全局 `weapons` 资源并给目标 NPC 一把占位短剑，写入 `equipment_given` / `equipment_changed`，正式装备系统仍归 T0901；攻击会通过 `NPCSystem.apply_damage_to_npc(...)` 扣除 10 HP 并写入 `damage_taken`，HP 清零后的昏迷、见闻暂停和复苏仍走既有系统。NPC 面板不提供“要求休息/请求治疗”按钮，这类意图由已入伍 NPC 的自然语言指令承担；GM 和调试系统仍保留既有睡觉/治疗入口。给钱数量输入框仅保留数字，WASD 等字母键不会写入金额；`Main/UI` 的统一输入焦点管理会在点击输入框外任意位置时释放当前 LineEdit / TextEdit 焦点。`LLMBridge` 的后续 NPC 对话上下文会通过既有短期记忆摘要携带这些亲历事件与见闻。
+
+T0705 更新：`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 主动找守备官交涉；触发后 NPC `current_action=proactive_talk`，头顶显示 `?` 气泡，写入 `private` `proactive_talk_started` 事件。点击气泡会清除状态并调用 `DialogSystem.start_proactive_player_dialogue(...)` 打开既有对话面板，把 NPC 预先确定的开场问题作为第一条历史显示，并写入 `proactive_talk_message`；玩家之后发送内容继续走既有 `/npc/dialogue` 和 `dialogue_turn` 入库逻辑。对话结束或 1 游戏小时超时都会触发计划重评估请求；T1002 尚未实现，因此结果仍为 `rule_fallback_deferred`。
+
 ## 当前运行方式
 
 ```bash
@@ -175,11 +186,13 @@ curl http://127.0.0.1:5000/health
 - `tools/verify_mock_model_adapter.py`：Mock Model Adapter 与 `/mock/model` HTTP 调试接口验证脚本
 - `tools/verify_dialogue_mock_endpoint.py`：`/npc/dialogue` Mock 业务接口验证脚本
 - `tools/verify_llm_bridge.gd`：Godot 侧 LLMBridge、HUD 后端状态、对话 Mock 和慢速释放验证脚本
+- `tools/verify_dialogue_ui.gd`：对话 UI、玩家/NPC 轮次、私人/公开传播和对话事件验证脚本
 - `backend/requirements.txt`：Python 后端依赖
 - `project.godot`：Godot 项目配置，当前入口为 `res://scenes/main/Main.tscn`
 - `scenes/main/Main.tscn`：最小可运行主场景，包含标准 WorldRoot、Systems、UI、CameraRig 节点结构、低模驿站 Blockout 和基础 HUD
 - `scripts/ui/HUD.gd`：HUD 展示脚本，读取 `GameState` 的天/时/分/秒，监听 `time_changed` / `resource_changed` 并刷新时间、资源显示、速度/暂停按钮和后端状态占位
 - `scripts/systems/LLMBridge.gd`：Godot 侧后端桥接，支持后端地址配置、`/health`、`/npc/dialogue` Mock 请求、T0603 对话 payload 构造和 LLM 等待慢速请求注册/释放
+- `scripts/systems/DialogSystem.gd`、`scripts/ui/DialogPanel.gd`：对话会话、后端请求编排、事件入库与对话 UI
 - `scripts/ui/BuildingPanel.gd`：建筑面板脚本，监听 `building_clicked` 打开建筑、监听 `building_state_changed` 刷新当前可见建筑，并展示建筑基础信息，可触发建筑修复/升级
 - `scripts/ui/NPCPanel.gd`：NPC 面板脚本，监听 `npc_clicked`、`npc_state_changed` 和 `npc_memory_changed`，按姓名/HP/属性/专长/基础状态/熟练度/事件库/见闻库顺序展示 NPC 数据，并与建筑面板互斥切换
 - `scripts/ui/GMPanel.gd`：GM 调试面板脚本，提供可拖动半透明 GM 按钮、命令输入框和资源/时间/建筑/NPC/行动/记忆调试入口；行动分组内有“修复目标”“升级目标”和“治疗目标”下拉用于测试协助修复/协助升级/协助治疗；顶部 `GM_ENABLED` 常量可切换开发/上线显示
@@ -195,25 +208,30 @@ curl http://127.0.0.1:5000/health
 - `scripts/systems/ActionSystem.gd`：简单行动系统，读取 `data/action_defs.json`，支持调试指派工作、协助修复、协助升级、协助治疗昏迷 NPC、吃饭、睡觉；行动到达地点后随 `logical_time_tick` 持续推进，暂停时 pending / active 行动都不继续结算，恢复后继续，并写入结构化行动事件
 - `scripts/systems/MemorySystem.gd`：结构化事件事实源与地点信息节点系统，维护全局事件索引、NPC 当天事件库、NPC 见闻库、短期记忆容器查询、地点当前在场人员/快照和广场事件查询；建筑可传播外部状态只包含等级和完好/受损/正在修复/正在升级，内部状态包含在场 NPC、在场 NPC 的生命/行动状态与工位占用；不提供按地点查询事件的长期接口，地点/广场节点不保存事件历史
 - `scripts/systems/TimeSystem.gd`：基础逻辑时间系统，支持 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速请求、`logical_time_tick` 和 `time_changed` / `time_scale_changed` / `hour_started` / `day_started` 信号
-- `scripts/systems/CombatSystem.gd`、`DialogSystem.gd`：后续系统的空脚本占位
+- `scripts/systems/CombatSystem.gd`：后续战斗系统空脚本占位
 - `data/resource_defs.json`：资源定义，包含第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁
 - `data/building_defs.json`：建筑定义，当前覆盖 15 个低模建筑/门墙实体，并包含等级、HP、标签、工作位、资源输入输出、场景节点绑定，以及所有建筑的修复/升级配置；公告牌不在建筑定义中
 - `data/action_defs.json`：行动定义，当前包含菜园、食堂、酒窖、铁匠铺、工械坊、马厩、吃饭、睡觉和需要目标 NPC 的协助治疗定义；协助修复/协助升级由 `ActionSystem` 作为带建筑参数的运行时行为处理，协助治疗由 `ActionSystem` 作为带昏迷 NPC 目标的运行时行为处理
 - `data/weapon_defs.json`：武器定义最小样例，当前包含短剑
 - `data/enemy_waves.json`：敌人波次最小样例，当前包含第一波占位
-- `data/npc_profiles.json`：NPC 档案配置，当前包含 8 名初始 NPC：托马、布鲁诺、伊沃、格伦、艾达、马塞尔、莉娜、欧文；老兵副官开局 `recruited=true`，其他 NPC 初始不可指派
+- `data/npc_profiles.json`：NPC 档案配置，当前包含 8 名初始 NPC：托马、布鲁诺、伊沃、格伦、艾达、马塞尔、莉娜、欧文；老兵副官开局 `recruited=true`，其他 NPC 初始未入伍且不能接收守备官个人指令
 
 ## 当前风险
 
 - 系统设计较大，需要严格按最小闭环推进。
 - NPC 自主计划、LLM 对话、战斗系统不能同时展开。
 - `game_design.md` 内容较长，Agent 必须按模块精确读取，避免上下文浪费。
-- Godot 侧 LLMBridge 已使用原生 HTTP；后续 M7 对话 UI 可以在该桥接层上推进，但仍不得让客户端保存供应商 API Key 或直连模型供应商。
+- Godot 侧 LLMBridge 已使用原生 HTTP，T0701 对话 UI 已在该桥接层上接通；仍不得让客户端保存供应商 API Key 或直连模型供应商。
 - 真实 LLM 并发、成本、限流和 API Key 管理必须放在后端；不要把客户端直连模型或玩家必须自带 Key 当作 Demo 默认方向。
 - 当前 `backend/app.py` 已是后端应用入口，但仍是本地开发形态；正式给玩家使用前需要执行 T1407，用生产 WSGI 服务、部署文档、环境变量、日志、限流和健康检查把后端部署到服务器。
 
 ## 最近一次变更
 
+- T0703 入伍 NPC 自然语言指令：新增 `OrderPanel`；`NPCSystem` 权威保存 `current_order`、写入私有 `order_assigned` 并发出计划重评估请求；GM 新增指令观察入口；新增 `tools/verify_npc_order.gd`。
+- T0701 对话 UI：NPC 面板新增对话按钮；新增 `scripts/ui/DialogPanel.gd`，`DialogSystem.gd` 接通玩家-NPC / NPC-NPC 会话、历史、轮次、LLMBridge 请求和结构化事件；`MemorySystem` 将对话事件写入所有参与 NPC 事件库，并确保 `local_public` 只广播给同地点第三者。新增 `tools/verify_dialogue_ui.gd`。验证通过相关 UI、LLMBridge、结构化事件、NPC 面板、GM、后端 Schema/接口与项目加载回归。
+- T0701 Toggle 修复：DialogPanel 的“同地点公开”开关可在首轮发送前切换并同步到 DialogSystem，首轮发送后锁定；专用验证覆盖私人/公开双向切换与第三者见闻传播。
+- T0701 对话事件降噪：打开/关闭对话窗口不再生成或广播事件，只在实际发送并收到回复后写入一条 `dialogue_turn`。
+- T0702 提出应征与征召结果：DialogPanel 新增一次性“提出应征”标记；Mock 返回 `accept` 后由 NPCSystem 权威更新入伍状态，`reject` 不改变状态；结果写入 `dialogue_turn.payload`，已入伍 NPC 面板显示待由 T0703 替换为自然语言“指令”入口的旧指派占位。
 - T0604A LLMBridge 原生 HTTP：`scripts/systems/LLMBridge.gd` 已用 Godot 原生 `HTTPClient` 状态机替换 T0604 的 `curl.exe` / 临时 JSON 文件传输层，保留 payload 构造、错误字典、`backend_status_changed` 和 TimeSystem 慢速注册/释放边界；`tools/verify_llm_bridge.gd` 新增防回退静态检查，确认脚本不含 `curl.exe` / `OS.execute`。验证通过：`godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`godot --headless --path . --quit-after 1`。
 - T1407 文档任务登记：新增“部署游戏后端到服务器”为 P0 任务，明确服务器运行入口仍是 `backend/app.py`，本地可用 `python backend/app.py`，正式部署必须使用生产 WSGI 服务并补齐 `backend/README.md`、环境变量、日志、限流、预算、健康检查和 Godot 后端地址配置说明。
 - T0604A 文档任务登记：新增“替换 LLMBridge 传输层并锁定正式前后端架构”为 P0 任务，明确 T0604 的 `curl.exe` 只是临时本地开发实现；正式方向是玩家电脑运行 Godot 客户端，请求游戏服务器后端，由后端调用 LLM Provider、持有 API Key、控制并发和成本；玩家自行配置 API Key 仅作为未来可选模式。同步把 T0701 前置改为 T0604A，并在架构/API/AI 文档记录 T0604 踩坑。
@@ -232,7 +250,7 @@ curl http://127.0.0.1:5000/health
 - T0408 广场公开类型收敛：事件可见性只保留 `private` / `local_public`；广场事件使用 `location_id == "plaza"` 的 `local_public`，协助修复/升级、公告和建筑外部状态广播都走同一地点广播路径。验证通过：`verify_plaza_local_public_broadcast.gd`、`verify_npc_short_term_memory_container.gd`、`verify_structured_memory_events.gd`、`verify_action_system_basic.gd` 和 `godot --headless --path . --quit-after 1`。
 - T0407 地点事件与建筑状态见闻精简：`location_entered` / `location_exited` 只保留进出行动事实，进入者获得一次 `location_entry_snapshot` 状态见闻，已在场 NPC 只收进出事件；建筑/地点状态变化改为 `changed_fields` / `changed_workstations` 字段级差量见闻。验证通过：`verify_location_info_nodes.gd`、`verify_plaza_local_public_broadcast.gd`、`verify_npc_short_term_memory_container.gd`、`verify_action_local_public_broadcast.gd`、`verify_structured_memory_events.gd`、`verify_action_system_basic.gd` 和 `godot --headless --path . --quit-after 1`。
 - T0006 建筑修复进度不再抢占右上角面板：`EventBus` 新增 `building_state_changed(building_id)`，`BuildingSystem` 把修复进度、协助者变化、受损、修复完成和升级改为发状态刷新信号，不再复用 `building_clicked`；`BuildingPanel` 只在当前可见且显示同一建筑时响应状态刷新，因此玩家在修复过程中点击 NPC 后会保持 NPC 面板。验证：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`godot --headless --path . --quit-after 1` 通过。
-- T0005 Godot MCP proxy 自恢复：给 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs` 增加同父进程旧 proxy 全量清理与 lock 文件接管逻辑，避免同一个 Codex 会话残留多个 proxy；`tools/check_godot_mcp.ps1` 同步增加“多 proxy / broker 缺失”提示。
+- T0005 Godot MCP 多会话拓扑修正：每个 Codex 会话保留独立 stdio proxy，单例约束只放在 broker；broker 先监听 `8765` 再连接 Godot `6550`，避免并发启动互相顶替。
 - T0205/T0305 建筑修复流程修订：`BuildingSystem.repair_building(...)` 现在在点击时一次性扣除资源并创建倒计时修复作业，HP 随 `TimeSystem.logical_time_tick` 逐步恢复；修复时长按缺失 HP、建筑等级和建筑配置计算。`ActionSystem` 新增 `debug_assign_repair_assist(npc_id, building_id)`，NPC 可在修复期间按工程熟练度加速倒计时，多个 NPC 可叠加；若 NPC 离开对应建筑或被改派其他行动，协助人数和倍率会被移除。GM 命令新增 `assist_repair <npc_id> <building_id>`。
 - T0406 统一玩家交互事件世界内称呼：玩家非对话交互写入 NPC 事件库 / 见闻库时，actor id 使用 `guard_officer`，summary 使用“守备官”，避免 NPC 记忆和后续 LLM 输入出现以“玩家”为主语的出戏文本。
 - T0403 行动事件本地公开广播修复：`ActionSystem` 工作、吃饭、睡觉事件改为 `local_public`，同地点当前在场 NPC 会收到对应见闻；新增 `tools/verify_action_local_public_broadcast.gd` 回归验证。
@@ -242,8 +260,8 @@ curl http://127.0.0.1:5000/health
 ## Godot MCP
 
 - 项目内已安装并启用 `addons/godot_mcp`。
-- Codex 端改为 `proxy -> broker -> Godot` 结构，避免多个 Codex 会话直接争抢 Godot 连接。
-- `godot-mcp-proxy.mjs` 现已增加 `%USERPROFILE%\.codex\godot-mcp-proxy.lock` 接管逻辑：如果同一个 Codex 父进程下残留旧 proxy，新 proxy 会枚举并清理其余旧实例后再继续，减少“只剩孤立 proxy / MCP 间歇失联”的复发概率。
+- Codex 端使用 `多个会话独立 proxy -> 单例 broker -> Godot` 结构。多个 proxy 是正常状态；只有 broker 和 `broker -> Godot` 连接必须各自保持单例。
+- `godot-mcp-proxy.mjs` 不再枚举或终止其他 proxy；它只在所属 Codex 会话关闭 stdin 时退出。`godot-mcp-broker.mjs` 会先抢占 `127.0.0.1:8765`，成功后才连接 Godot `6550`。
 - 连接自检命令：
 
 ```powershell
@@ -251,9 +269,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 ```
 
 - 当前验证结果：脚本可正常返回 `Godot MCP connected`。
-- 若再次异常，先看 `tools/check_godot_mcp.ps1` 输出：它现在会额外提示“multiple proxy processes are alive”或“Proxy is alive, but broker is missing”，优先按这个方向排查。
+- 多会话拓扑验证命令：`node .\tools\verify_godot_mcp_topology.mjs`。
+- 若再次异常，先看 `tools/check_godot_mcp.ps1` 输出：多个 session-local proxy 只会作为正常信息提示；broker 缺失、broker 非单例或绕过 broker 直连 Godot 才会警告。
 - 2026-06-02 复盘：这次 `godot_mcp` 工具返回 `Transport closed`，但 `tools/check_godot_mcp.ps1` 一度仍显示 `Godot MCP connected`，说明 Godot 插件和 `broker -> Godot` 连接没有先坏，坏的是当前 Codex 会话内已经关闭的 stdio MCP transport。清理残留 headless Godot 进程并重启 broker 后，外部自检可恢复；但已经关闭的 Codex MCP transport 不能在同一会话内热接回，需重启/刷新 Codex。重启后 `project.addon_status` 与 `editor.get_state` 均恢复正常。
-- 历史上已经出现过类似工具链问题：2026-05-19 记录过重复直连 Godot `6550` 导致连接互相顶替；2026-05-25 记录过同一 Codex 父进程下残留多个 proxy、其中孤立 proxy 无 broker 子进程。本次教训是先区分三层状态：Godot 插件是否监听、broker 是否能健康响应、Codex 暴露的 MCP 工具 transport 是否仍活着；不要只凭 `Transport closed` 判断 Godot 插件已掉线。
+- 历史上已经出现过类似工具链问题：2026-05-19 记录过重复直连 Godot `6550` 导致连接互相顶替；2026-05-25 曾误把多个 proxy 判断为故障并加入 sibling kill，随后确认该逻辑会主动关闭其他 Codex 会话的 transport。本次教训是先区分三层状态：Godot 插件是否监听、broker 是否能健康响应、Codex 暴露的 MCP 工具 transport 是否仍活着；不要只凭 `Transport closed` 判断 Godot 插件已掉线。
 - 2026-05-19 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图可见标题与基础地面。
 - 2026-05-19 T0101 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，Autoload 加载正常，游戏日志无报错。
 - 2026-05-19 T0102 验证：通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志无报错，截图确认 HUD 标题与基础地面仍可见。

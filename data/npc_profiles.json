@@ -41,6 +41,7 @@
       "骑术": 48
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -89,6 +90,7 @@
       "骑术": 4
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -137,6 +139,7 @@
       "骑术": 5
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -185,6 +188,7 @@
       "骑术": 4
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -233,6 +237,7 @@
       "骑术": 35
     },
     "recruited": true,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -281,6 +286,7 @@
       "骑术": 2
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -329,6 +335,7 @@
       "骑术": 2
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -377,6 +384,7 @@
       "骑术": 4
     },
     "recruited": false,
+    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
     "equipment": {},
     "plan": [],
     "short_term_memory": [],

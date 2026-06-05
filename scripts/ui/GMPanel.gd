@@ -28,6 +28,8 @@ var _building_amount_input: LineEdit
 var _npc_select: OptionButton
 var _npc_state_key_input: LineEdit
 var _npc_state_value_input: LineEdit
+var _order_text_input: LineEdit
+var _proactive_talk_input: LineEdit
 var _location_select: OptionButton
 var _action_select: OptionButton
 var _repair_building_select: OptionButton
@@ -246,6 +248,27 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 		_show_npc(_selected_id(_npc_select))
 	)
 
+	var order_row := _make_row(parent)
+	_order_text_input = _make_input(order_row, "自然语言指令", "守住城门，但先保证自己安全。", 300)
+	_order_text_input.name = "OrderTextInput"
+	_add_button(order_row, "发布指令", func() -> void:
+		_run_publish_order(_selected_id(_npc_select), _order_text_input.text)
+	)
+	_add_button(order_row, "查看指令", func() -> void:
+		_show_order(_selected_id(_npc_select))
+	)
+	_add_button(order_row, "重评估请求", _show_plan_reevaluation_request)
+
+	var proactive_row := _make_row(parent)
+	_proactive_talk_input = _make_input(proactive_row, "主动交涉开场", "守备官，我想问问我们到底还能守多久？", 340)
+	_proactive_talk_input.name = "ProactiveTalkInput"
+	_add_button(proactive_row, "主动交涉", func() -> void:
+		_run_start_proactive_talk(_selected_id(_npc_select), _proactive_talk_input.text)
+	)
+	_add_button(proactive_row, "交涉状态", func() -> void:
+		_show_proactive_talk(_selected_id(_npc_select))
+	)
+
 
 func _add_action_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("行动"))
@@ -309,6 +332,7 @@ func _add_backend_section(parent: VBoxContainer) -> void:
 	_add_button(row, "应征 Mock", func() -> void:
 		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, true)
 	)
+	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
 
 
 func _add_memory_section(parent: VBoxContainer) -> void:
@@ -553,6 +577,20 @@ func _execute_command(command: String) -> void:
 		"set_npc_state":
 			if _require_args(parts, 4, "set_npc_state <npc_id> <key> <value>"):
 				_run_set_npc_state(str(parts[1]), str(parts[2]), _parse_value(str(parts[3])))
+		"publish_order":
+			if _require_args(parts, 3, "publish_order <npc_id> <text>"):
+				_run_publish_order(str(parts[1]), command.substr(("publish_order %s" % str(parts[1])).length()).strip_edges())
+		"order":
+			if _require_args(parts, 2, "order <npc_id>"):
+				_show_order(str(parts[1]))
+		"plan_request":
+			_show_plan_reevaluation_request()
+		"start_proactive":
+			if _require_args(parts, 3, "start_proactive <npc_id> <text>"):
+				_run_start_proactive_talk(str(parts[1]), command.substr(("start_proactive %s" % str(parts[1])).length()).strip_edges())
+		"proactive":
+			if _require_args(parts, 2, "proactive <npc_id>"):
+				_show_proactive_talk(str(parts[1]))
 		"assign_action":
 			if _require_args(parts, 3, "assign_action <npc_id> <action_id>"):
 				_run_assign_action(str(parts[1]), str(parts[2]))
@@ -593,6 +631,8 @@ func _execute_command(command: String) -> void:
 		"dialogue_recruit":
 			if _require_args(parts, 3, "dialogue_recruit <npc_id> <text>"):
 				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_recruit %s" % str(parts[1])).length()).strip_edges(), true)
+		"last_order_injection":
+			_show_last_npc_context_injection()
 		"give_money":
 			if _require_args(parts, 3, "give_money <npc_id> <amount> [visibility]"):
 				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
@@ -786,6 +826,48 @@ func _show_npc(npc_id: String) -> void:
 	_log("NPC 快照 %s：%s" % [npc_id, _compact(npc_system.get_npc(npc_id))])
 
 
+func _run_publish_order(npc_id: String, text: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_publish_npc_order"):
+		_log("NPCSystem 指令接口不可用。")
+		return
+	var result: Dictionary = npc_system.debug_publish_npc_order(npc_id, text)
+	_log("发布指令 %s：%s" % [npc_id, _compact(result)])
+
+
+func _show_order(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_current_order"):
+		_log("NPCSystem 指令接口不可用。")
+		return
+	_log("当前指令 %s：%s" % [npc_id, _compact(npc_system.get_current_order(npc_id))])
+
+
+func _show_plan_reevaluation_request() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_last_plan_reevaluation_request"):
+		_log("NPCSystem 计划重评估请求接口不可用。")
+		return
+	_log("最近计划重评估请求：%s" % _compact(npc_system.get_last_plan_reevaluation_request()))
+
+
+func _run_start_proactive_talk(npc_id: String, text: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_start_proactive_talk"):
+		_log("NPCSystem 主动交涉接口不可用。")
+		return
+	var result: Dictionary = npc_system.debug_start_proactive_talk(npc_id, text)
+	_log("主动交涉 %s：%s" % [npc_id, _compact(result)])
+
+
+func _show_proactive_talk(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_proactive_talk"):
+		_log("NPCSystem 主动交涉状态不可用。")
+		return
+	_log("主动交涉状态 %s：%s" % [npc_id, _compact(npc_system.get_proactive_talk(npc_id))])
+
+
 func _run_assign_action(npc_id: String, action_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -845,6 +927,14 @@ func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bo
 		clean_text = "守备官需要你帮忙守住这里。"
 	var result: Dictionary = llm_bridge.debug_request_dialogue(npc_id, clean_text, is_recruitment_request, "private")
 	_log("对话 Mock %s：%s" % [npc_id, _compact(result)])
+
+
+func _show_last_npc_context_injection() -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("get_last_npc_context_injection"):
+		_log("LLMBridge 指令注入快照不可用。")
+		return
+	_log("最近 NPC LLM 指令注入：%s" % _compact(llm_bridge.get_last_npc_context_injection()))
 
 
 func _run_eat(npc_id: String) -> void:
@@ -1024,10 +1114,12 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text>",
+		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | last_order_injection",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value>",
+		"publish_order <npc_id> <text> | order <npc_id> | plan_request",
+		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",

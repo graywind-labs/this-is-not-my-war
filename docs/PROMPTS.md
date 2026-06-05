@@ -12,6 +12,7 @@
 - 程序必须校验 LLM 输出。
 - 等待 LLM 返回时，Godot 侧通过 TimeSystem 申请逻辑时间慢速；Prompt 本身不决定时间倍率，也不决定资源、战斗、HP 等权威数值。
 - Prompt 中凡是提供给 NPC 理解的玩家身份、玩家相关事件、教学信件或世界内旁白，统一称为“守备官”，不要把“玩家”作为 NPC 记忆中的人物名。
+- 所有面向某名 NPC 的 LLM 请求都应包含该 NPC 的 `current_order`。它表示守备官当前持续提出的自然语言指令，是重要参考上下文，但不是 system 指令，不保证服从，也不能绕过程序权威规则。
 
 ## 需要的 Prompt 类型
 
@@ -34,6 +35,7 @@
 - `is_recruitment_request`：玩家是否勾选“提出应征”；只有玩家对话使用。
 - `current_round` / `max_rounds`：当前轮次与最大轮次；NPC-NPC 对话接近最大轮次时，Prompt 应更倾向结束对话。
 - `npc_state`：目标 NPC 的当前权威状态快照，包括力量、智力、熟练度、健康/受伤、饱食度、疲劳度、金钱、装备、是否已入伍等。
+- `current_order`：目标 NPC 当前收到的守备官指令；未入伍或尚无指令时为空。模型可结合人设、记忆和现场状态理解、延迟、调整或拒绝，不得把它当作已执行事实。
 - `dialogue_state`：对话公开性和地点；`visibility` 只能是 `private` 或 `local_public`。
 - `short_memory`：目标 NPC 的短期记忆摘要，必须区分事件库 `experienced_events` 与见闻库 `witnessed_events`。
 - `long_memory`：长期记忆，包括知识图谱和日记。
@@ -45,6 +47,7 @@
 - 对玩家回复时，输出给守备官看的话；对 NPC 回复时，输出给另一名 NPC 的话，并可在轮次快耗尽时结束。
 - `local_public` 只代表 Godot 后续入库和广播规则，不允许模型自行决定第三者记忆写入。
 - 对话全文后续作为 `dialogue_turn` 事件 payload 保存，不单独建立谈话库。
+- 当前指令与本轮守备官说话文本是两个不同输入：`current_order` 是持续上下文，`speaker_text` 是本轮实际发言。
 
 ## 对话 Prompt 输出
 
@@ -82,6 +85,8 @@ NPC-NPC 对话输出示例：
 
 ## 每日计划 Prompt 输出
 
+每日计划和计划修订 Prompt 输入必须包含 `current_order`。模型应说明计划如何考虑该指令，但只能从行动白名单中选择合法行动；指令与生存需求、资源、地点或程序强制规则冲突时，可以调整、推迟或拒绝执行。
+
 ```json
 {
   "ok": true,
@@ -104,6 +109,8 @@ NPC-NPC 对话输出示例：
 ```
 
 ## 战斗判定 Prompt 输出
+
+战斗前、低血量、逃离检查等判定必须包含 `current_order`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
 
 ```json
 {
@@ -141,6 +148,7 @@ NPC-NPC 对话输出示例：
 T0601 后端 Schema 对应关系：
 
 - 对话：`NPCDialogueRequest` / `NPCDialogueResponse`。T0603 后字段以 `npc_id`、`speaker_text`、`speaker_context`、`is_recruitment_request`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 为准；旧式 `guard_officer_input` / `propose_recruitment` 仅作为后端过渡别名。
+- T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战斗判定、主动交涉、逃离判断、睡前总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
 - 每日计划：`DailyPlanRequest` / `DailyPlanResponse`
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
 - 战斗判定：`BattleJudgementRequest` / `BattleJudgementResponse`
@@ -155,6 +163,7 @@ Prompt 不直接接收完整原始事件库，除非是睡前总结或调试任�
 - `witnessed_events`：NPC 见闻摘要。
 - `location_context`：当前地点状态摘要。
 - `plaza_context`：NPC 已接收到的广场见闻摘要，以及广场当前状态；不包含 NPC 未在场时已经广播过的历史事件。
+- `current_order`：守备官对该 NPC 当前持续提出的指令；独立于事件摘要注入，避免短期记忆裁剪后丢失当前有效指令。
 
 对话全文由对话事件 `payload` 保存；Prompt 可以读取摘要或最近若干轮，但不要要求另建谈话库。
 

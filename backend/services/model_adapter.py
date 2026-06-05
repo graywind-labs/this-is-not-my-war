@@ -109,6 +109,7 @@ class ModelAdapter:
     def _mock_content(self, call_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         npc_id = self._read_npc_id(payload) or "unknown_npc"
         day = self._read_game_day(payload)
+        order_suffix = self._current_order_debug_suffix(payload)
 
         if call_type == "dialogue":
             text = self._read_dialogue_text(payload)
@@ -140,7 +141,7 @@ class ModelAdapter:
                 "recruitment_result": "accept" if accepts else "reject" if rejects else "none",
                 "should_end_dialogue": should_end,
                 "suggested_event_type": "dialogue_turn",
-                "debug_reason": "mock_dialogue_by_keywords_and_round_limit",
+                "debug_reason": f"mock_dialogue_by_keywords_and_round_limit{order_suffix}",
             }
 
         if call_type == "plan_day":
@@ -163,7 +164,7 @@ class ModelAdapter:
                 "plan_day": day,
                 "plan": plan,
                 "summary": "Mock 生成了 24 小时稳定日程。",
-                "debug_reason": "mock_24_hour_template",
+                "debug_reason": f"mock_24_hour_template{order_suffix}",
             }
 
         if call_type == "revise_plan":
@@ -180,7 +181,7 @@ class ModelAdapter:
                 "revised_plan": [immediate],
                 "immediate_action": immediate,
                 "summary": "Mock 将异常计划修订为等待状态。",
-                "debug_reason": "mock_safe_fallback_revision",
+                "debug_reason": f"mock_safe_fallback_revision{order_suffix}",
             }
 
         if call_type == "battle_judgement":
@@ -193,7 +194,7 @@ class ModelAdapter:
                 "emotion": "tense",
                 "morale_delta_intent": 0,
                 "should_start_escape": decision == "escape_station",
-                "debug_reason": "mock_first_safe_allowed_decision",
+                "debug_reason": f"mock_first_safe_allowed_decision{order_suffix}",
             }
 
         if call_type == "daily_reflection":
@@ -211,7 +212,7 @@ class ModelAdapter:
                         "confidence": 0.6,
                     }
                 ],
-                "debug_reason": "mock_reflection_template",
+                "debug_reason": f"mock_reflection_template{order_suffix}",
             }
 
         if call_type == "knowledge_graph_update":
@@ -219,7 +220,7 @@ class ModelAdapter:
                 "ok": True,
                 "npc_id": npc_id,
                 "updates": [],
-                "debug_reason": "mock_noop_knowledge_graph",
+                "debug_reason": f"mock_noop_knowledge_graph{order_suffix}",
             }
 
         if call_type == "proactive_intention":
@@ -229,7 +230,7 @@ class ModelAdapter:
                 "should_seek_guard_officer": False,
                 "topic": "",
                 "urgency": 0,
-                "debug_reason": "mock_no_proactive_interrupt",
+                "debug_reason": f"mock_no_proactive_interrupt{order_suffix}",
             }
 
         if call_type == "player_strategy_classification":
@@ -315,6 +316,15 @@ class ModelAdapter:
             current_round = current_round or dialogue_state.get("current_round")
             max_rounds = max_rounds or dialogue_state.get("max_rounds")
         return int(current_round or 1), int(max_rounds or 1)
+
+    def _current_order_debug_suffix(self, payload: dict[str, Any]) -> str:
+        current_order = payload.get("current_order", {})
+        if not isinstance(current_order, dict) or not str(current_order.get("text", "")).strip():
+            npc = payload.get("npc", {})
+            current_order = npc.get("current_order", {}) if isinstance(npc, dict) else {}
+        if isinstance(current_order, dict) and str(current_order.get("text", "")).strip():
+            return "_with_current_order_as_reference"
+        return "_without_current_order"
 
     def _read_game_day(self, payload: dict[str, Any]) -> int:
         game_time = payload.get("game_time", {})

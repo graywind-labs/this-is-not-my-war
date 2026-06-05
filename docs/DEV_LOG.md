@@ -1,7 +1,92 @@
 # DEV_LOG.md
 
+## 2026-06-05 T0705 NPC 主动找守备官交涉
+
+- `NPCSystem` 新增主动交涉状态与调试入口：可让 NPC 进入 `proactive_talk`，默认持续 1 游戏小时，触发时写入 `private` `proactive_talk_started`，超时或对话结束后请求计划重评估。
+- `NPC.gd` 运行时创建 `ProactiveTalkBubble` 问号气泡；点击有主动交涉状态的 NPC 会优先打开对话，不先弹出 NPC 面板。
+- `DialogSystem` 新增 `start_proactive_player_dialogue(...)`，复用既有玩家-NPC 对话面板，把 NPC 预先确定的开场问题作为第一条历史显示，并写入 `proactive_talk_message`。
+- `MemorySystem` 新增 `proactive_talk_started` / `proactive_talk_message` 事件类型、必需 payload 和确定性 summary；玩家后续回复继续走既有 `dialogue_turn`。
+- GM 面板新增主动交涉按钮、`start_proactive` 命令和 `proactive` 状态查询；新增 `tools/verify_npc_proactive_talk.gd`。
+- 验证通过：`verify_npc_proactive_talk.gd`、`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_order.gd`、`verify_npc_panel_interactions.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-05 T0704 反馈修正：移除 NPC 面板要求休息按钮
+
+- 移除 `NPCPanel` 的“要求休息/请求治疗”按钮及自动选择治疗者逻辑；休息、治疗这类意图由已入伍 NPC 的自然语言指令承担，既有 GM / ActionSystem 调试入口保留。
+- 将给钱数量 `SpinBox` 从交互可见性行移动到“给钱”按钮旁边，让金额输入与给钱动作直接关联。
+- 给钱数量输入框新增数字过滤，字母键不会写入金额文本；按 WASD 时会释放金额框焦点，让相机移动继续响应。
+- 新增 `UIInputFocusManager` 并挂载到 `Main/UI`，让任意 `LineEdit` / `TextEdit` 在点击输入框外时释放焦点；NPC 给钱金额框、对话输入框和指令 TextEdit 已加入回归验证。
+- 更新 `tools/verify_npc_panel_interactions.gd`，改为验证休息/治疗按钮不存在，并继续覆盖给钱、占位装备、攻击、公开见闻、LLM 短期记忆上下文和输入框点击外部失焦。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-05 T0704 NPC 面板非对话交互记忆
+
+- `NPCPanel` 新增非对话交互区：可选择私下 / 同地点公开，赠予第纳尔、给予占位短剑、攻击；给钱数量输入框紧邻“给钱”按钮。
+- `NPCSystem` 新增 `give_money_to_npc(...)` 和 `give_placeholder_weapon_to_npc(...)`：前者扣除全局第纳尔并增加目标 NPC 随身金钱，后者消耗 1 个全局 `weapons` 并写入占位短剑；二者都复用 `MemorySystem.record_player_interaction(...)`，不重做事件系统。
+- 攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)`，保持 HP、昏迷和恢复结算权威边界不变；NPC 面板不提供休息 / 治疗按钮。
+- 新增 `tools/verify_npc_panel_interactions.gd`，覆盖给钱事件、同地点见闻、占位装备、攻击扣血、广场公开事件、后续 LLMBridge 短期记忆上下文，并检查休息/治疗按钮不存在。
+- 验证通过：`verify_npc_panel_interactions.gd`、`verify_npc_panel_state.gd`、`verify_gm_panel.gd`、`verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。`verify_dialogue_ui.gd` 本次未通过的原因是本机 5000 端口由 deepseek provider 后端响应，非本次 Godot 改动导致。
+
+## 2026-06-04 T0703A 当前指令接入 NPC LLM 上下文与计划重评估
+
+- 后端新增 `CurrentOrderContext`，接入共享 `NPCContext` 和对话顶层 `NPCDialogueRequest`；计划、修订、战斗判定、主动交涉、反思和知识图谱更新等复用共享上下文时自动携带最新指令。
+- Godot `LLMBridge` 统一注入最新 `current_order`，保存最近注入快照；GM 新增“最近指令注入”按钮和 `last_order_injection` 命令。
+- 新指令重评估请求保存最新指令和 `rule_fallback_deferred` 结果；完整计划应用仍归尚未实现的 T1002，当前不直接修改行动或权威数值。
+- 验证通过：后端 Schema / Mock / 对话接口、Python 编译、LLMBridge HTTP、对话 UI、NPC 指令、GM 面板、结构化记忆与项目加载检查；Godot MCP 主场景运行无日志错误。
+
 > 按日期记录开发过程。  
 > 每次完成任务后追加，不要覆盖历史。
+
+## 2026-06-04
+
+### T0703 入伍 NPC 自然语言指令入口与存储
+完成：
+- 已入伍 NPC 的旧“指派（占位）”替换为可用“指令”按钮；新增 `Main/UI/OrderPanel` 多行自由文本编辑、预填、发布和关闭流程。
+- `NPCSystem` 权威保存结构化 `current_order`，仅在文本变化时递增修订号、写入 `private` `order_assigned` 并发出统一计划重评估请求；相同文本或关闭无副作用。
+- 8 名初始 NPC 配置补齐 `current_order`；MemorySystem 固定生成“守备官制定了新的指令。”摘要。
+- GM 新增发布/查看指令和查看最近计划重评估请求入口；新增 `tools/verify_npc_order.gd`。
+
+验证：
+- `verify_npc_order.gd`、`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`、`verify_structured_memory_events.gd`、`verify_npc_short_term_memory_container.gd` 与项目加载通过。
+- Godot MCP 连接正常，运行 `Main.tscn` 无游戏日志报错。
+
+### T0702 提出应征与征召结果
+完成：
+- `DialogPanel` 新增“提出应征”按钮，点击后把下一次玩家消息标记为应征请求，发送后自动清除。
+- `DialogSystem` 校验后端 `accept` / `reject`，接受时调用 `NPCSystem.set_npc_recruited(...)` 更新权威状态，拒绝时保持原状态。
+- 应征请求与结果写入该轮 `dialogue_turn.payload`；`MemorySystem` 将 `recruitment_result` 纳入对话事件必需字段。
+- NPC 面板会立即显示已入伍，并仅对已入伍 NPC 显示禁用的“指派（占位）”按钮；未提前实现 T0703。
+
+验证：
+- `tools/verify_dialogue_ui.gd` 覆盖应征按钮、一次性请求、接受、拒绝、NPC 状态、指派占位与事件 payload。
+- `verify_npc_panel_state.gd`、`verify_structured_memory_events.gd`、`verify_llm_bridge.gd`、`verify_gm_panel.gd`、后端 Schema/接口验证和项目加载通过。
+- Godot MCP 连接正常。
+
+### T0701 对话 UI
+完成：
+- NPC 面板新增“对话”按钮；`Main/UI/DialogPanel` 接入 NPC 名字、公开性、轮次、历史、自由文本输入、发送和结束按钮。
+- `DialogSystem` 接通 `LLMBridge`，维护玩家-NPC 不限轮次会话与 NPC-NPC 默认 5 轮会话。
+- `MemorySystem` 为对话事件增加 payload 校验与确定性摘要；对话事件进入所有参与 NPC 事件库，`local_public` 只广播给同地点第三者。
+- 新增 `tools/verify_dialogue_ui.gd`；未实现 T0702 征召状态切换。
+- 修复“同地点公开”开关被永久禁用：首轮发送前可切换并同步会话公开性，首轮发送后锁定。
+- 对话事件降噪：移除 `dialogue_started` / `dialogue_ended` 入库与广播，只保留实际发生的 `dialogue_turn`。
+
+验证：
+- `tools/verify_dialogue_ui.gd`、`tools/verify_llm_bridge.gd` 在隔离 `mock` 后端下通过。
+- `verify_structured_memory_events.gd`、`verify_npc_panel_state.gd`、`verify_gm_panel.gd`、后端 Schema/接口验证和项目加载通过。
+- Godot MCP 连接正常，运行主场景无游戏日志报错。
+
+### T0005 修正 Godot MCP 多会话单例边界
+完成：
+- 确认 Codex 每个会话都需要自己的 stdio proxy；此前 proxy 按同父进程清理 sibling 的逻辑会主动关闭旧会话，正是旧会话收到 `Transport closed` 的根因。
+- 移除 `godot-mcp-proxy.mjs` 的 proxy lock 与 sibling kill，proxy 现在只随所属会话 stdin 关闭而退出。
+- 调整 `godot-mcp-broker.mjs` 启动顺序：先监听单例端口 `8765`，再建立唯一的 Godot `6550` WebSocket 连接，消除并发首次启动 race。
+- 将旧 `start-godot-mcp.ps1` 改为只启动 broker，不再终止其他 MCP 进程，也不再绕过 broker 直连 Godot。
+- 更新 `tools/check_godot_mcp.ps1`，多个 session-local proxy 视为正常；新增 `tools/verify_godot_mcp_topology.mjs` 做可重复拓扑验证。
+
+验证：
+- `node tools/verify_godot_mcp_topology.mjs` 验证多个 proxy 可共存、只保留一个 broker / Godot 连接，并验证关闭一个 proxy 不影响另一个。
+- 冷启动并发验证通过；`start-godot-mcp.ps1` 重复运行后仍只保留一个 broker 和一条 Godot 连接。
+- `powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1` 返回 `Godot MCP connected`。
 
 ## 2026-06-03
 

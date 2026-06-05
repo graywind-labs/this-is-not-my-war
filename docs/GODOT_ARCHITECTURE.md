@@ -135,9 +135,13 @@ Main
 
 T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊，以及主厅前公告牌视觉占位均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。该视觉占位不绑定 `data/building_defs.json`，不拥有 HP、等级、工作位、修复或升级；公告文本归广场状态保存。该阶段只提供空间占位和可辨认视觉结构，不实现生产、导航或战斗。
 
-T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态。`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。T0604 后，HUD 读取 `Main/Systems/LLMBridge` 的后端状态，并监听 `backend_status_changed` 刷新 health check 结果。警铃仍不实现真实逻辑。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、工作位和地点信息占位，并通过按钮触发 `BuildingSystem` 的修复/升级接口；修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。
+T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、五类资源、速度按钮、暂停按钮、警铃按钮占位和后端状态。`Main/UI` 绑定 `res://scripts/ui/UIInputFocusManager.gd`，统一处理文本输入框点击外部失焦；`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0202 后会监听 `EventBus.resource_changed` 并从 `Main/Systems/ResourceSystem` 读取真实基础资源数值。T0604 后，HUD 读取 `Main/Systems/LLMBridge` 的后端状态，并监听 `backend_status_changed` 刷新 health check 结果。警铃仍不实现真实逻辑。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、工作位和地点信息占位，并通过按钮触发 `BuildingSystem` 的修复/升级接口；修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。
 
 T0604 已新增 `res://scripts/systems/LLMBridge.gd`，T0604A 已把请求传输层替换为 Godot 原生 `HTTPClient` 状态机：支持后端地址配置、`check_health()` 和 `request_npc_dialogue(...)`，不再依赖 Windows `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge.build_npc_dialogue_payload(...)` 会按 T0603 Schema 收集目标 NPC 设定、权威状态、短期记忆、长期记忆、地点快照、说话者上下文、对话公开性和轮次；守备官发起时 `speaker_name` 固定为“守备官”。该桥只返回后端 JSON 或错误字典，不写入 `MemorySystem` 对话事件，不修改入伍状态，也不调用真实 LLM。正式架构下 Godot 导出客户端只请求游戏服务器后端，不保存供应商 API Key，也不直连模型供应商。
+
+T0701/T0702 已将 `res://scripts/systems/DialogSystem.gd` 升级为 Godot 侧对话与征召结果权威入口，并新增 `res://scripts/ui/DialogPanel.gd`。DialogSystem 维护参与者、历史、公开性、轮次和一次性应征请求标记，调用 LLMBridge 后把对话事件写入 MemorySystem；合法 `accept` 结果通过 `NPCSystem.set_npc_recruited(...)` 更新入伍状态，`reject` 不改变状态。玩家-NPC 对话不限轮次，NPC-NPC 对话默认最多 5 轮。
+
+T0703 已把 NPCPanel 的已入伍占位按钮替换为独立 `OrderPanel` 自然语言指令面板；NPCSystem 权威保存 `current_order`，MemorySystem 写入 `private` `order_assigned`，并通过 `EventBus.npc_plan_reevaluation_requested` 发出统一重评估请求。UI 不直接调用 ActionSystem 启动具体行动，也不决定 NPC 是否服从。T0703A 再负责让 LLMBridge 和后续计划/判定请求统一收集当前指令并消费重评估请求。T0705 新增 NPC 主动找守备官交涉闭环：`NPCSystem` 保存 `proactive_talk` 状态并随 `logical_time_tick` 超时，`NPC.gd` 运行时显示问号气泡，点击时优先调用 `DialogSystem.start_proactive_player_dialogue(...)` 打开既有对话面板，`MemorySystem` 写入 `proactive_talk_started` / `proactive_talk_message`，对话结束或超时后继续走统一计划重评估请求。
 
 T0105 已将 `res://scripts/camera/CameraRig.gd` 绑定到 `Main/CameraRig`：玩家可用 WASD 平移、鼠标中键拖拽平移、滚轮缩放；脚本只移动 `CameraRig` 的 X/Z 位置和 `Camera3D` 的本地距离，保留高机位俯视角，并通过导出参数限制移动边界和缩放距离。该阶段不实现角色控制或自由第一人称视角。
 
@@ -163,6 +167,7 @@ signal logical_time_tick(game_delta_seconds: float, numeric_multiplier: float)
 signal hour_started(day: int, hour: int)
 signal resource_changed(resource_id: String, amount: int)
 signal npc_state_changed(npc_id: String)
+signal npc_proactive_talk_changed(npc_id: String, active: bool)
 signal npc_hp_changed(npc_id: String, hp: int, max_hp: int)
 signal npc_unconscious(npc_id: String)
 signal npc_clicked(npc_id: String)

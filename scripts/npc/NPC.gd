@@ -3,6 +3,7 @@ extends Area3D
 signal movement_arrived(npc_id: String, target_id: String)
 
 const LABEL_NODE_PATH := "NameLabel"
+const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 
 @export var move_speed := 5.0
 
@@ -13,6 +14,7 @@ var _movement_target_position := Vector3.ZERO
 var _is_moving := false
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
+var _proactive_bubble: Label3D
 
 
 func setup(npc_profile: Dictionary) -> void:
@@ -49,6 +51,7 @@ func _ready() -> void:
 	set_process(_is_moving)
 	if not input_event.is_connected(_on_input_event):
 		input_event.connect(_on_input_event)
+	_ensure_proactive_bubble()
 	_refresh_label()
 
 
@@ -80,9 +83,14 @@ func _on_input_event(
 
 func _emit_clicked() -> void:
 	print("NPC clicked: %s" % npc_id)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("handle_npc_clicked") and npc_system.handle_npc_clicked(npc_id):
+		get_viewport().set_input_as_handled()
+		return
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and not npc_id.is_empty():
 		event_bus.npc_clicked.emit(npc_id)
+		get_viewport().set_input_as_handled()
 
 
 func _refresh_label() -> void:
@@ -102,6 +110,25 @@ func _refresh_label() -> void:
 		max_hp,
 		action_text
 	]
+	_ensure_proactive_bubble()
+	var proactive: Dictionary = states.get("proactive_talk", {})
+	_proactive_bubble.visible = bool(proactive.get("active", false))
+
+
+func _ensure_proactive_bubble() -> void:
+	if _proactive_bubble != null:
+		return
+	_proactive_bubble = Label3D.new()
+	_proactive_bubble.name = "ProactiveTalkBubble"
+	_proactive_bubble.text = "?"
+	_proactive_bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_proactive_bubble.pixel_size = 0.032
+	_proactive_bubble.modulate = Color(1.0, 0.92, 0.24, 1.0)
+	_proactive_bubble.outline_size = 8
+	_proactive_bubble.outline_modulate = Color(0.08, 0.07, 0.02, 1.0)
+	_proactive_bubble.position = Vector3(0.0, 2.45, 0.0)
+	_proactive_bubble.visible = false
+	add_child(_proactive_bubble)
 
 
 func _make_node_name(id_value: String) -> String:

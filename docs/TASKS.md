@@ -201,11 +201,12 @@
 
 状态：Done
 优先级：P0
-涉及文档：`CURRENT_STATE.md`, `DEV_LOG.md`
+涉及文档：`CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
 验收标准：
-- `godot-mcp-proxy.mjs` 启动时会检查同一个 Codex 父进程下的旧 proxy 残留，并替换它，避免同一会话出现多个 proxy。
-- `tools/check_godot_mcp.ps1` 可以区分“多 proxy”“proxy 在但 broker 不在”和“正常连接”状态。
+- 每个 Codex 会话保留自己的 `godot-mcp-proxy.mjs`，关闭一个会话不会终止其他会话的 proxy。
+- 单例边界只放在 broker：任意并发启动最终只保留 1 个监听 `8765` 的 broker 和 1 条连接 Godot `6550` 的链路。
+- `tools/check_godot_mcp.ps1` 可以区分“多 proxy（正常）”“proxy 在但 broker 不在”“直连 Godot 客户端”和“正常连接”状态。
 - 保留 `proxy -> broker -> Godot` 结构，不回退到多会话直接连接 Godot `6550`。
 
 验收结果（2026-05-25）：
@@ -218,6 +219,13 @@
 - 这次故障表现为 Codex 内的 Godot MCP 工具返回 `Transport closed`；同时项目自检曾仍返回 `Godot MCP connected`，说明 Godot 插件和 broker 到 Godot 的连接不是第一故障点。
 - 清理残留 headless Godot 进程并重启 broker 后，broker health 和 listTools 均正常；但已关闭的 Codex stdio MCP transport 无法在同一会话中热恢复，需要重启/刷新 Codex 后重新建立。
 - 后续排查顺序：先运行 `tools/check_godot_mcp.ps1`，再区分 `Godot 插件监听`、`broker 健康`、`Codex MCP transport` 三层；不要把 `Transport closed` 直接等同于 Godot 插件掉线。
+
+架构修正（2026-06-04）：
+- 之前“同父进程只能保留一个 proxy”的判断不成立：Codex 每个会话都需要独立 stdio proxy；新 proxy 杀旧 proxy 会直接让旧会话收到 `Transport closed`。
+- 已移除 `godot-mcp-proxy.mjs` 的 sibling kill / proxy lock；每个 proxy 仅在自己的 stdin 关闭时退出。
+- `godot-mcp-broker.mjs` 改为先抢占单例端口 `8765`，再连接 Godot，避免两个首次启动的 broker 同时连接并互相替换。
+- 旧 `start-godot-mcp.ps1` 已移除清理进程和直连 Godot 的逻辑，只允许启动单例 broker。
+- 新增 `tools/verify_godot_mcp_topology.mjs`，验证多 proxy、单 broker、单 Godot 连接，以及关闭一个 proxy 不影响其余会话。
 ---
 
 # M1：Godot 核心骨架与最小驿站
@@ -849,7 +857,7 @@ Main
 
 - 8 个 NPC 数据格式合法。
 - 副官 `recruited=true` 
-- 其他 NPC 初始不可指派。
+- 其他 NPC 初始未入伍，不能接收守备官个人指令。
 - 文档中的 NPC 列表与数据一致。
 
 验收结果（2026-05-20）：
@@ -1163,7 +1171,7 @@ Main
 - `wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
 - `location_entered`、`location_exited`
 - `work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`
-- `dialogue_started`、`dialogue_turn`、`dialogue_ended`
+- `dialogue_turn`；打开/关闭对话窗口不属于事件
 - `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
 - `skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - `combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
@@ -1771,6 +1779,7 @@ Main
 - short_memory（NPC的事件库（事件库里既有自己的行动事件也有对话事件以及内容，要注意，A与B的对话都会进入A和B的事件库而非见闻库，只有A与B的公开对话才会进入同一建筑里的第三者见闻库）和见闻库里的信息）
 - long_memory （长期记忆，包括知识图谱和日记）
 - location_context （当前对话发生的地点快照，也就是当前所在建筑的状态，比如是否受损，建筑内部的工位状态，内部的NPC及其状态）
+- current_order（目标 NPC 当前收到的守备官自然语言指令；由 T0703A 扩展到对话和共享 NPC LLM 上下文，当前已完成的 T0603 程序合同尚未包含）
 
 
 输出分情况：
@@ -1809,6 +1818,7 @@ Main
 - 已新增 `tools/verify_dialogue_mock_endpoint.py`，覆盖 `/npc/dialogue` HTTP 路径、应征 accept/reject、NPC-NPC 结束倾向和非法请求 400。
 - 验证通过：`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、Python 编译检查。
 - 本任务未改 Godot UI，也未实现 Godot 侧对话事件入库；这些按下方 T0604/T0701/T0702 继续推进。
+- 后续设计扩展：T0703A 需要在不改变 T0603 既有对话职责的前提下，把 `current_order` 加入目标 NPC 输入；它是参考上下文，不是 system 指令或已执行行动。
 
 ---
 
@@ -1923,7 +1933,7 @@ Main
 
 ## T0701 实现对话 UI
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0303, T0604A
 涉及文档：`UI_UX.md`, `AI_NPC_SYSTEM.md`
@@ -1952,15 +1962,23 @@ Main
 
 - 点击 NPC 可打开对话 UI。
 - 输入文本后能看到 Mock 回复。
-- 后端关闭时显示降级回复。
 - 对话事件写入双方 NPC 事件库；对话全文、说话者名称、听者名称、公开性、当前轮次、最大轮次和征召标记存入事件 `payload`。
 - 若 `dialogue_state.visibility == "local_public"`，对话事件按地点规则广播给同地点第三者见闻库；`private` 只进入对话双方事件库。
+
+验收结果（2026-06-04）：
+- NPC 面板新增“对话”按钮，可打开 `Main/UI/DialogPanel`；窗口显示 NPC 名字、对话历史、轮次、输入框、发送按钮和结束按钮。
+- `DialogSystem` 负责玩家-NPC 会话状态、历史、后端请求和事件入库；玩家-NPC 对话不限轮次，NPC-NPC 对话默认最多 5 轮，双方各发言一次后当前轮次加一。
+- 仅实际发生的 `dialogue_turn` 写入参与 NPC 事件库；`dialogue_turn.payload` 保存对话全文、说话者/听者名称、公开性、当前/最大轮次和征召标记，但本任务不修改征召状态。打开或关闭对话窗口不入库、不广播。
+- `private` 对话不写入第三者见闻；`local_public` 对话只广播一次给同地点、非参与者且可接收见闻的 NPC。
+- 2026-06-04 修复 DialogPanel “同地点公开”开关被永久禁用的问题：首轮发送前可切换并同步到 DialogSystem，首轮发送后锁定。
+- 2026-06-04 对话事件降噪：移除 `dialogue_started` / `dialogue_ended` 入库和广播，只保留实际对话轮次 `dialogue_turn`。
+- 验证通过：`tools/verify_dialogue_ui.gd`、`tools/verify_llm_bridge.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_gm_panel.gd`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --quit-after 1`；Godot MCP 运行主场景无游戏日志报错。
 
 ---
 
 ## T0702 实现“提出应征”按钮与征召结果
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0701
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
@@ -1978,55 +1996,113 @@ Main
 禁止事项：
 
 - 不实现真实 LLM 判断。
-- 不实现战斗指派。
+- 不实现战斗指令或战斗策略。
 
 验收标准：
 
 - NPC 接受后面板显示已入伍。
-- 已入伍 NPC 可出现指派按钮占位。
+- 已入伍 NPC 可出现后续“指令”入口占位。
 - 拒绝后不改变入伍状态。
 - 征召与否被记录在对话事件payload中。
 
+验收结果（2026-06-04）：
+
+- `DialogPanel` 新增“提出应征”按钮；点击后只把下一次玩家对话请求标记为 `is_recruitment_request=true`，发送后自动清除待请求状态。
+- `DialogSystem` 只接受合法的 `accept` / `reject` 结果；`accept` 通过 `NPCSystem.set_npc_recruited(...)` 权威更新 NPC `recruited=true`，`reject` 不改变状态。
+- 应征请求与结果写入该轮 `dialogue_turn.payload.is_recruitment_request` / `recruitment_result`，并进入目标 NPC 事件库。
+- NPC 面板会立即显示已入伍，并仅对已入伍 NPC 显示禁用的“指派（占位）”按钮；T0703 将把该占位替换为自然语言“指令”入口。
+- 验证通过：`tools/verify_dialogue_ui.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_llm_bridge.gd`、`tools/verify_gm_panel.gd`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --quit-after 1`。
+
 ---
 
-## T0703 实现入伍 NPC 指派入口
+## T0703 实现入伍 NPC 自然语言指令入口与存储
 
-状态：Todo
+状态：Done
 优先级：P0
-前置任务：T0702, T0305
-涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
+前置任务：T0702
+涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`, `DATA_SCHEMA.md`, `MEMORY_AND_INFO_SPACE.md`
 
 任务目标：
 
-让已入伍 NPC 能被玩家指派基础行动。
+让玩家从已入伍 NPC 面板打开自由文本指令面板，查看、修改并发布该 NPC 的当前指令。正式指令不是行动选项下拉，也不直接调用 ActionSystem 启动工作、吃饭、睡觉、移动、训练或治疗。
 
-可指派：
+实现范围：
 
-- 工作
-- 吃饭
-- 睡觉
-- 前往建筑
-- 训练占位
-- 治疗/休息占位
+- 把当前禁用的“指派（占位）”按钮替换为已入伍 NPC 可用的“指令”按钮。
+- 新增指令撰写与发布面板，使用自由文本输入；打开时预填该 NPC 当前 `current_order.text`。
+- NPC 信息中保存结构化 `current_order`：当前文本、发布者、最近发布时间和修订号。
+- 点击“发布”时比较新旧文本；只有不同才覆盖旧指令并递增修订号。
+- 指令变化时写入目标 NPC 的 `private` `order_assigned` 事件，summary 为“守备官制定了新的指令。”，payload 保存新旧文本和修订号。
+- 指令变化时发出统一的“请求计划重评估”信号或接口，供 T0703A / T1002 接入真实重评估链路。
+- 点击“关闭”或发布相同文本时，不修改数据、不写事件、不触发计划重评估请求。
 
 禁止事项：
 
-- 未入伍 NPC 不能被直接指派。
-- 不实现完整训练系统。
-- 不实现战斗策略。
+- 未入伍 NPC 不能发布或修改个人指令。
+- 不把指令文本解析成硬性 ActionSystem 调用。
+- 不让 UI 直接修改计划、行动、资源、HP 或战斗结果。
+- 不把 `order_assigned` 广播到地点或广场。
 
 验收标准：
 
-- 副官开局可被指派。
-- 被征召 NPC 可被指派。
-- 未征召 NPC 指派按钮不可用或提示不能指派。
-- 指派事件写入目标 NPC 事件库。
+- 副官开局可打开指令面板；被征召 NPC 可在入伍状态更新后打开。
+- 未征召 NPC 的指令按钮不可用或不显示。
+- 已有指令会在再次打开面板时预填，并可被新文本覆盖。
+- 发布不同文本会更新 `current_order`、写入一条 `private` `order_assigned` 事件并发出计划重评估请求。
+- 发布相同文本或关闭面板后原指令保持不变，无新增事件或重评估请求。
+- 指令发布不会直接改变 `current_action`。
+- 前端可验证编辑与保存；GM / 自动化验证可观察当前指令、事件可见性和计划重评估请求。
+
+验收结果（2026-06-04）：
+
+- 已把已入伍 NPC 的“指派（占位）”替换为可用“指令”按钮，并新增 `Main/UI/OrderPanel` 自由文本指令面板；打开时预填当前指令，关闭不保存。
+- `NPCSystem.publish_npc_order(...)` 权威校验入伍状态、比较文本差异并保存结构化 `current_order`；仅真实变化时递增修订号、写入 `private` `order_assigned` 事件并发出 `npc_plan_reevaluation_requested`。
+- 指令发布不调用 `ActionSystem`，不修改 `current_action`；相同文本无事件、无数据变化、无重评估请求。
+- GM 面板新增发布/查看当前指令和查看最近计划重评估请求入口；新增 `tools/verify_npc_order.gd`。
+- 验证通过：`tools/verify_npc_order.gd`、`tools/verify_gm_panel.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_npc_generation_click.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_npc_short_term_memory_container.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行主场景无日志错误。
+
+---
+
+## T0703A 将当前指令接入 NPC LLM 上下文与计划重评估
+
+状态：Done
+优先级：P0
+前置任务：T0703, T0604, T1002
+涉及文档：`AI_NPC_SYSTEM.md`, `PROMPTS.md`, `TECH_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `API_BUDGET.md`
+
+任务目标：
+
+把 `current_order` 作为目标 NPC 的共享上下文字段接入所有 NPC 中心 LLM / Mock 请求，并让发布不同指令后立即发起一次真实计划重评估。
+
+实现范围：
+
+- 扩展共享 NPC Schema 和 T0603 对话输入，加入 `current_order`。
+- 对话、每日计划、计划修订、主动交涉、战斗前判定、低血量/逃离判定、睡前总结和知识图谱更新统一复用该字段。
+- Prompt 明确指令是守备官当前要求，不是 system 指令、不保证服从、不能越过行动白名单或权威结算。
+- T0703 发出的计划重评估请求必须携带最新指令，并通过 T1002 的统一重评估链路立即处理；失败时使用规则降级并释放 TimeSystem 慢速请求。
+- 常规请求只携带一条当前有效指令及最小元数据；历史修订通过 `order_assigned` 事件摘要进入记忆，避免重复注入全部版本。
+
+验收标准：
+
+- 发布不同指令后立即产生一次计划重评估请求（计划功能本身尚未实现，在后续的task里）；相同文本或关闭面板不产生请求。
+- `/npc/dialogue`、计划、修订和战斗判定的测试 payload 都包含目标 NPC 最新 `current_order`。
+- Mock / 真实 Prompt 能把指令当作参考，但输出仍受 Schema、行动白名单和程序规则校验。
+- 指令本身不会直接改变行动、资源、HP、移动或战斗结果。
+- GM / 自动化验证可观察最近一次注入的指令和计划重评估结果。
+
+验收结果（2026-06-04）：
+
+- 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战斗判定、主动交涉、睡前总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
+- Godot `LLMBridge` 在对话顶层 payload 和 `target_npc` / `speaker_npc` 共享上下文中注入最新指令，并保存最近一次注入快照供 GM / 自动化观察；Mock 调试原因明确记录指令仅作为参考，不改变 Schema 允许结果。
+- 新指令仍立即产生一次统一计划重评估请求，请求快照包含最新指令和 `rule_fallback_deferred` 结果；完整计划应用继续由尚未实现的 T1002 统一链路负责，当前降级不会直接修改行动、资源、HP、移动或战斗结果，也不会遗留 TimeSystem 慢速请求。
+- GM 面板后端分组新增“最近指令注入”入口和 `last_order_injection` 命令；最近计划重评估请求可同时观察降级结果。
+- 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、Python 编译检查、`verify_llm_bridge.gd`、`verify_dialogue_ui.gd`、`verify_npc_order.gd`、`verify_gm_panel.gd`、结构化记忆回归和项目加载检查；Godot MCP 连接正常，运行主场景无日志错误。
 
 ---
 
 ## T0704 实现玩家非对话交互记忆
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0405, T0702
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`
@@ -2039,46 +2115,56 @@ Main
 
 - 赠予金钱
 - 给予 / 更换装备
-- 指派任务
 - 攻击 NPC 造成伤害
-- 要求休息或治疗
 
 禁止事项：
 
 - 不实现完整装备系统也可先用占位装备。
 - 不实现复杂威胁 UI。
+- 不重复实现 T0703 已负责的 `order_assigned` 指令事件。
 
 验收标准：
 
 - 给钱事件写入目标 NPC 事件库，并按地点可见性通过地点/广场节点即时广播给当前在场 NPC。
 - 攻击事件写入目标 NPC 事件库与广场公开信息。
-- 指派事件写入目标 NPC 事件库。
 - 后续对话请求会带上这些记忆摘要。
+
+验收结果（2026-06-05）：
+
+- `NPCPanel` 新增非对话交互区：可选择 `private` / `local_public` 可见性，直接赠予第纳尔、给予占位短剑、攻击造成 10 点伤害；给钱数量输入框紧邻“给钱”按钮，并只保留数字输入，WASD 等字母键不会写入金额。
+- 新增 `UIInputFocusManager` 挂载到 `Main/UI`：任意 `LineEdit` / `TextEdit` 获得焦点后，点击输入框外任意位置都会释放焦点，后续新增输入框默认遵循同一交互规则。
+- 赠予第纳尔由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱，并复用 `MemorySystem.record_player_interaction(...)` 写入 `money_given`；公开时同地点 NPC 会收到见闻。
+- 给予装备仅做 T0704 范围内的占位短剑：消耗 1 个全局 `weapons` 资源，写入 `equipment_given` / `equipment_changed`，不实现 T0901 正式装备库存、兵种或战斗数值。
+- 攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 权威扣血入口，写入 `damage_taken`，HP 清零仍走既有昏迷/公开广播链路。
+- 已移除 NPC 面板里的“要求休息/请求治疗”入口；休息、治疗这类意图由 T0703 的自然语言指令承担，既有 GM / ActionSystem 调试入口不变。
+- 新增 `tools/verify_npc_panel_interactions.gd` 覆盖 NPC 面板给钱、公开见闻、占位装备、攻击扣血、广场公开事件、后续 NPC LLM 上下文短期记忆摘要，并检查休息/治疗按钮不存在；同时覆盖 NPC 给钱金额框、对话输入框和指令 TextEdit 点击外部失焦。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`verify_npc_panel_state.gd`、`verify_gm_panel.gd`、`verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。`verify_dialogue_ui.gd` 需要 5000 端口 mock 后端；本机当前端口被 deepseek provider 后端占用，因此未作为本次通过项。
 
 ---
 
 ## T0705 实现 NPC 主动找玩家交涉
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0701, T0405
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
 
-NPC 可主动请求与玩家对话。
+NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行为中，在制定计划的时候可以加入行为列表（连带着想和玩家说什么问什么的话）（计划功能尚未在本任务前的任务里实现，如有实现不了的，就加到后面的任务里）。
 
 实现范围：
 
-- NPC 进入“主动找玩家交涉”状态
+- 执行该行动后NPC 进入“主动找玩家交涉”状态
+- “发起主动交涉”这种行为作为private事件进入发起者的事件库。玩家点击了气泡则不需要变成事件。只按照对话逻辑，NPC对玩家说什么（不同的是，在NPC主动找玩家对话的这种情形里，NPC问的话会先入库），或者玩家如果和NPC说了什么，说的内容按照正常对话逻辑入库。
 - 头顶显示问号气泡
-- 玩家点击后打开对话
-- 对话结束后 NPC 重新评估或恢复原计划
+- 暂定持续1h，若1h后仍未被玩家点击，则视为该状态结束。
+- 玩家点击后打开对话（沿用玩家和NPC对话的面板），把NPC想问什么的话显示出来（这个话在计划阶段就已经确定了，而不是在点击气泡的时候调用LLM生成的），玩家可以回复，然后就进入正常的玩家和NPC对话的逻辑。
+- 对话结束后 NPC 重新评估计划。
 
 禁止事项：
 
 - 不接真实 LLM 主动意图也可以先用规则触发。
-- 不实现复杂情绪系统。
 
 验收标准：
 
@@ -2086,6 +2172,17 @@ NPC 可主动请求与玩家对话。
 - 问号气泡显示正确。
 - 点击后进入对话。
 - 对话结束后气泡消失。
+- 若1h后仍未被玩家点击，气泡消失。
+
+验收结果（2026-06-05）：
+
+- `NPCSystem` 新增主动交涉状态：`debug_start_proactive_talk(npc_id, text, duration_seconds)` 可触发 NPC 进入 `proactive_talk`，默认持续 3600 游戏秒；触发时写入 `private` 的 `proactive_talk_started` 事件，完整开场问题进入 payload。
+- `NPC.gd` 运行时生成头顶 `?` 气泡；玩家点击有主动交涉的 NPC 时优先打开 `DialogPanel`，不会先弹出 NPC 面板。
+- `DialogSystem.start_proactive_player_dialogue(...)` 复用玩家-NPC 对话面板，把 NPC 预先确定的开场问题作为第一条历史显示，并写入 `proactive_talk_message`；玩家后续回复继续走既有 `send_player_message(...)` / `/npc/dialogue` / `dialogue_turn` 逻辑。
+- 主动交涉被点击或超时后气泡消失；对话结束或 1 小时超时都会请求计划重评估，当前仍按 T0703A 的 `rule_fallback_deferred` 可观察降级结果处理，不直接修改行动计划。
+- GM 面板新增“主动交涉”按钮、`start_proactive <npc_id> <text>` 命令和 `proactive <npc_id>` 状态查询。
+- 新增 `tools/verify_npc_proactive_talk.gd`，覆盖调试触发、私有事件、问号气泡、点击进入对话、开场问题入库、对话结束重评估和超时消失。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_proactive_talk.gd`、`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_order.gd`、`verify_npc_panel_interactions.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
@@ -2108,16 +2205,16 @@ NPC 可主动请求与玩家对话。
 
 需要考虑：
 
-- 工作类型
-- NPC 对应熟练度
-- 力量或智力
+- 工种
+- NPC 对应熟练度加成
+- 工作对应力量或智力加成
 - 建筑等级
 - 可进入建筑的真实工位占用与释放
-- 工作时长
+- 产出/消耗一份资源的最小工作周期时长
 - TimeSystem 有效逻辑时间倍率
-- 输入资源
-- 输出资源
-- 疲劳与饱食消耗
+- 单位周期内消耗的资源（原料）
+- 单位周期内输出资源（产出）
+- 单位周期内疲劳与饱食消耗
 
 禁止事项：
 
@@ -2126,9 +2223,9 @@ NPC 可主动请求与玩家对话。
 
 验收标准：
 
-- 同一工作由高熟练 NPC 执行，产出更高或耗时更短。
+- 同一工作若由高熟练或高对应属性的 NPC 执行，产出更高或耗时更短。
 - 资源不足时工作失败。
-- 工作完成写入结构化事件和 NPC 事件库。
+- 工作开始和结束写入结构化事件和 NPC 事件库（为了降噪，连续的多个工作单位周期，只计入第一个周期的开始事件和最后一个周期的结束事件，也就是如果NPC按照计划终止工作或碰到异常中止工作时的结束工作）。
 - 工作开始、取消、失败或完成时正确占用/释放可进入建筑工位，并让地点信息节点广播内部状态变化。
 - 资源产出/消耗、饱食和疲劳变化使用 `TimeSystem` 的逻辑时间倍率或 `logical_time_tick`，不依赖真实帧率或 NPC 移动速度。
 - 在 T0305 持续行动基座上细化工作连续结算：确定各工作是否按小时批次、按分钟消耗投入、按进度产出或支持中途取消返还/损耗，避免后续数值误以为工作是瞬时点击结果。
@@ -2309,12 +2406,12 @@ NPC 可主动请求与玩家对话。
 
 状态：Todo
 优先级：P0
-前置任务：T0703, T0901
+前置任务：T0901, T1001
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
 
-- 入伍 NPC 可被指派去训练场训练。
+- 训练成为 NPC 自主计划可选择的合法行动；入伍 NPC 的 `current_order` 可表达训练要求并影响后续计划，但不直接强制启动训练。
 - 可选择剑盾、长杆、弓、弩、骑术。
 - 训练消耗疲劳和饱食。
 - 训练提升对应熟练度。
@@ -2377,7 +2474,7 @@ NPC 可主动请求与玩家对话。
 - 每个 NPC 每天有计划。
 - NPC 按计划执行行动。
 - 计划执行结果写入记忆。
-- 玩家指派可覆盖入伍 NPC 的计划。
+- 规则计划保留并读取入伍 NPC 的 `current_order`，但不得把自由文本指令直接当成硬性行动覆盖；无法理解时继续按规则计划，并把指令留给后续 Mock / LLM 重评估。
 - 阶段开始、计划执行和计划重估以 `TimeSystem` 的逻辑时间打点为准。
 - NPC 自动计划能在有正在修复或正在升级的建筑时选择协助修复/协助升级；目标必须来自 `BuildingSystem` 当前状态，不由 LLM 或 UI 自行决定。
 
@@ -2400,6 +2497,7 @@ NPC 可主动请求与玩家对话。
 - HP 过低
 - 饱食或疲劳过低
 - 战斗警报
+- 守备官发布了不同于原内容的新指令
 
 验收标准：
 
@@ -2408,6 +2506,7 @@ NPC 可主动请求与玩家对话。
 - 重评估后 NPC 不会卡死。
 - 异常事件写入记忆。
 - 需要 LLM / Mock 重评估时，通过 LLMBridge 申请 TimeSystem 慢速请求，返回或降级后释放。
+- 所有重评估请求必须携带该 NPC 最新 `current_order`；新指令触发的重评估使用与其他重大异常相同的统一入口。
 
 ---
 
@@ -2424,6 +2523,7 @@ NPC 可主动请求与玩家对话。
 - Mock 能返回 24 阶段计划。
 - Godot 可选择使用规则计划或 Mock 计划。
 - 输出 JSON 被校验，不合法则回退规则计划。
+- 每日计划请求包含目标 NPC 当前 `current_order`，Prompt 把它作为倾向参考而非强制行动。
 - 影响当前场景即时行动的计划请求必须申请 TimeSystem 慢速；后台批处理每日计划可不申请慢速，但必须记录调试状态。
 
 ---
@@ -2498,7 +2598,7 @@ NPC 可主动请求与玩家对话。
 
 状态：Todo
 优先级：P0
-前置任务：T0703, T0902
+前置任务：T0702, T0902
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
@@ -2563,8 +2663,8 @@ NPC 可主动请求与玩家对话。
 
 状态：Todo
 优先级：P0
-前置任务：T1104
-涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
+前置任务：T1104, T1201
+涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`
 
 策略：
 
@@ -2593,9 +2693,10 @@ NPC 可主动请求与玩家对话。
 
 验收标准：
 
-- 玩家可为入伍 NPC 设置策略。
+- 战斗判定或战斗计划只能从与当前装备匹配的策略集合中选择。
+- 入伍 NPC 的 `current_order` 可影响其策略判断，但玩家不能用 UI 直接硬设一个必然执行的策略。
 - 不同策略行为可明显区分。
-- 策略变化写入记忆。
+- 策略选择和变化写入 NPC 事件库。
 
 ---
 
@@ -2651,6 +2752,7 @@ NPC 可主动请求与玩家对话。
 验收标准：
 
 - 战斗开始时调用后端 Mock 判定。
+- 判定请求包含该 NPC 当前 `current_order`，但指令不能直接强制判定结果。
 - 结果影响 NPC 行为。
 - 判定结果写入 NPC 事件库。
 - 后端失败时使用规则判定。
@@ -2668,6 +2770,7 @@ NPC 可主动请求与玩家对话。
 验收标准：
 
 - NPC HP 首次低于 30% 时触发判定。
+- 判定请求继续包含该 NPC 最新 `current_order`。
 - 可能继续参战、逃离、斗志激昂。
 - 每个 NPC 每波最多触发一次。
 - 判定事件进入 NPC 事件库与广场公开信息。
@@ -2893,6 +2996,7 @@ NPC 可主动请求与玩家对话。
 验收标准：
 
 - NPC 回复符合职业、人设、记忆。
+- NPC 回复能参考当前 `current_order`，并可结合人格和现场状态表达服从、质疑、推迟或拒绝。
 - “提出应征”时能接受或拒绝。
 - 输出稳定 JSON。
 - 不越权决定程序数值。
@@ -2912,6 +3016,7 @@ NPC 可主动请求与玩家对话。
 - 能输出 24 阶段计划。
 - 至少 6 阶段工作。
 - 计划使用行动白名单。
+- 计划输入包含当前 `current_order`，但指令不得绕过行动白名单、资源或程序强制层。
 - 输出不合法时回退规则计划。
 
 ---
@@ -2928,6 +3033,7 @@ NPC 可主动请求与玩家对话。
 - 战斗前和低血量判定可用真实模型。
 - 输出只在允许结果中选择。
 - 能引用 NPC 记忆和公开见闻。
+- 能参考该 NPC 当前 `current_order`，但不把指令当成强制参战或强制逃离结果。
 - 成本可控。
 
 ---

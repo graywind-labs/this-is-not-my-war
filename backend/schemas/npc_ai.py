@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from .common import ActionCandidate, GameTime, ModelRequestMeta, NPCContext, ShortTermMemoryContext
+from .common import ActionCandidate, CurrentOrderContext, GameTime, ModelRequestMeta, NPCContext, ShortTermMemoryContext
 
 
 DialogueKind = Literal["player_npc", "npc_npc", "escape_intervention"]
@@ -78,6 +78,7 @@ class NPCDialogueRequest(BaseModel):
     current_round: int = Field(default=1, ge=1)
     max_rounds: int = Field(default=1, ge=1)
     npc_state: dict[str, Any] = Field(default_factory=dict)
+    current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     dialogue_state: DialogueState = Field(default_factory=DialogueState)
     short_memory: ShortTermMemoryContext = Field(default_factory=ShortTermMemoryContext)
     long_memory: dict[str, Any] = Field(default_factory=dict)
@@ -165,6 +166,7 @@ class PlanRevisionRequest(BaseModel):
         "low_satiety",
         "high_fatigue",
         "combat_alarm",
+        "order_changed",
         "unknown",
     ]
     failure_summary: str

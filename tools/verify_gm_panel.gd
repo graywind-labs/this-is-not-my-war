@@ -21,6 +21,7 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var game_state := root.get_node_or_null("GameState")
 	if (
 		gm_panel == null
@@ -31,6 +32,7 @@ func _init() -> void:
 		or npc_system == null
 		or action_system == null
 		or memory_system == null
+		or llm_bridge == null
 		or game_state == null
 	):
 		push_error("GM verification required nodes not found")
@@ -172,6 +174,20 @@ func _init() -> void:
 	gm_panel._execute_command("memory cook_01")
 	gm_panel._execute_command("location plaza")
 	gm_panel._execute_command("events")
+	gm_panel._execute_command("publish_order veteran_deputy_01 Hold the gate")
+	if str(npc_system.get_current_order("veteran_deputy_01").get("text", "")) != "Hold the gate":
+		push_error("GM publish_order command failed")
+		quit(1)
+		return
+	gm_panel._execute_command("order veteran_deputy_01")
+	gm_panel._execute_command("plan_request")
+	llm_bridge.debug_build_npc_context("veteran_deputy_01", "gm_verify")
+	gm_panel._execute_command("last_order_injection")
+	var injection: Dictionary = llm_bridge.get_last_npc_context_injection()
+	if str(injection.get("npc_id", "")) != "veteran_deputy_01" or str(injection.get("current_order", {}).get("text", "")) != "Hold the gate":
+		push_error("GM last_order_injection command did not expose the latest current_order")
+		quit(1)
+		return
 
 	if action_system.get_action_ids().has("work_repair_wall"):
 		push_error("GM action list should not expose fixed wall repair action")

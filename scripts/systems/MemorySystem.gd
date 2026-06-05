@@ -19,7 +19,7 @@ const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed",
-	"dialogue_started", "dialogue_turn", "dialogue_ended",
+	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "npc_recruited", "npc_left_recruited_state",
 	"combat_started", "combat_ended", "attack_made", "damage_taken", "low_hp_triggered",
@@ -29,6 +29,9 @@ const EVENT_TYPES: Array[String] = [
 ]
 
 const REQUIRED_PAYLOAD_FIELDS := {
+	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds", "is_recruitment_request", "recruitment_result"],
+	"proactive_talk_started": ["prompt_text", "duration_seconds"],
+	"proactive_talk_message": ["dialogue_id", "speaker_name", "listener_name", "speaker_text"],
 	"location_entered": ["to_location_id", "from_location_id"],
 	"location_exited": ["from_location_id", "to_location_id"],
 	"work_started": ["action_id", "workstation_id"],
@@ -39,7 +42,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
-	"revived": ["hp_before", "hp_after", "recovery_source"]
+	"revived": ["hp_before", "hp_after", "recovery_source"],
+	"order_assigned": ["previous_order_text", "new_order_text", "order_revision"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -91,10 +95,11 @@ func add_event(event: Dictionary) -> Dictionary:
 	_events_by_id[event_id] = normalized
 	_global_event_ids.append(event_id)
 
-	var subject_npc_id := str(normalized.get("subject_npc_id", ""))
-	if not _npc_daily_event_ids.has(subject_npc_id):
-		_npc_daily_event_ids[subject_npc_id] = []
-	_npc_daily_event_ids[subject_npc_id].append(event_id)
+	for npc_id in _get_experiencing_npc_ids(normalized):
+		if not _npc_daily_event_ids.has(npc_id):
+			_npc_daily_event_ids[npc_id] = []
+		if not _npc_daily_event_ids[npc_id].has(event_id):
+			_npc_daily_event_ids[npc_id].append(event_id)
 
 	var visibility := str(normalized.get("visibility", DEFAULT_VISIBILITY))
 	if visibility == LOCAL_PUBLIC_VISIBILITY:
@@ -106,7 +111,8 @@ func add_event(event: Dictionary) -> Dictionary:
 			_emit_public_event_added(normalized)
 
 	_emit_event_recorded(normalized)
-	_emit_npc_memory_changed(subject_npc_id)
+	for npc_id in _get_experiencing_npc_ids(normalized):
+		_emit_npc_memory_changed(npc_id)
 	return normalized.duplicate(true)
 
 
@@ -554,8 +560,9 @@ func _broadcast_public_event(event: Dictionary, location_id: String) -> void:
 
 	var recipient_ids := get_location_people_present(target_location_id)
 	var subject_npc_id := str(event.get("subject_npc_id", ""))
+	var participant_npc_ids := _normalize_string_array(event.get("payload", {}).get("participant_npc_ids", []))
 	for npc_id in recipient_ids:
-		if npc_id == subject_npc_id:
+		if npc_id == subject_npc_id or participant_npc_ids.has(npc_id):
 			continue
 		add_witness_event(npc_id, str(event.get("event_id", "")))
 
@@ -974,6 +981,18 @@ func _format_summary(event: Dictionary) -> String:
 				_get_resource_name(str(payload.get("resource_id", ""))),
 				int(payload.get("satiety_restore", 0))
 			]
+		"dialogue_turn":
+			return "%s对%s说：“%s” %s回答：“%s”" % [
+				str(payload.get("speaker_name", PLAYER_DISPLAY_NAME)),
+				str(payload.get("listener_name", actor)),
+				str(payload.get("speaker_text", "")),
+				str(payload.get("listener_name", actor)),
+				str(payload.get("reply_text", ""))
+			]
+		"proactive_talk_started":
+			return "%s想主动找守备官交涉。" % actor
+		"proactive_talk_message":
+			return "%s对守备官说：“%s”" % [actor, str(payload.get("speaker_text", ""))]
 		"money_given":
 			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"equipment_given":
@@ -981,7 +1000,7 @@ func _format_summary(event: Dictionary) -> String:
 		"equipment_changed":
 			return "%s为%s更换了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("equipment_name", "装备"))]
 		"order_assigned":
-			return "%s给%s指派了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("order_name", "任务"))]
+			return "守备官制定了新的指令。"
 		"npc_attacked_by_player":
 			return "%s攻击了%s，造成%d点伤害。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("damage", 0))]
 		"damage_taken":
@@ -1210,6 +1229,20 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 	if ["healing_started", "healing_completed"].has(event_type) and payload.has("healer_npc_id"):
 		target_ids.append(str(payload["healer_npc_id"]))
 	return target_ids
+
+
+func _get_experiencing_npc_ids(event: Dictionary) -> Array[String]:
+	var npc_ids: Array[String] = []
+	var subject_npc_id := str(event.get("subject_npc_id", ""))
+	if not subject_npc_id.is_empty() and subject_npc_id != PLAYER_ACTOR_ID:
+		npc_ids.append(subject_npc_id)
+	if str(event.get("type", "")) != "dialogue_turn":
+		return npc_ids
+	var payload: Dictionary = event.get("payload", {})
+	for participant_id in _normalize_string_array(payload.get("participant_npc_ids", [])):
+		if participant_id != PLAYER_ACTOR_ID and not npc_ids.has(participant_id):
+			npc_ids.append(participant_id)
+	return npc_ids
 
 
 func _get_npc_current_info_location(npc_id: String) -> String:
