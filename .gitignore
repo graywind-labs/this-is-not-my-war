@@ -8,3 +8,4 @@ backend/.env
 # Python cache
 __pycache__/
 *.py[cod]
+.venv/

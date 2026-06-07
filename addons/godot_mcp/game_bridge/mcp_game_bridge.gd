@@ -1,10 +1,13 @@
 extends Node
 class_name MCPGameBridge
 
-const DEFAULT_MAX_WIDTH := 1920
+const DEFAULT_MAX_WIDTH := 1024
+const DEFAULT_JPEG_QUALITY := 0.75
+const Onscreen := preload("onscreen.gd")
 
 var _logger: _MCPGameLogger
 var _profiler: MCPFrameProfiler
+var _sampler: MCPRuntimeStateSampler
 
 
 func _ready() -> void:
@@ -14,6 +17,8 @@ func _ready() -> void:
 	OS.add_logger(_logger)
 	_profiler = MCPFrameProfiler.new()
 	EngineDebugger.register_profiler("mcp_frame_profiler", _profiler)
+	_sampler = MCPRuntimeStateSampler.new()
+	add_child(_sampler)
 	EngineDebugger.register_message_capture("godot_mcp", _on_debugger_message)
 	MCPLog.info("Game bridge initialized")
 
@@ -89,16 +94,29 @@ func _on_debugger_message(message: String, data: Array) -> bool:
 		"get_signal_connections":
 			_handle_get_signal_connections(data)
 			return true
+		"get_runtime_state":
+			_handle_get_runtime_state(data)
+			return true
+		"watch_start":
+			_handle_watch_start(data)
+			return true
+		"watch_collect":
+			_handle_watch_collect()
+			return true
+		"watch_stop":
+			_handle_watch_stop()
+			return true
 	return false
 
 
 func _take_screenshot_deferred(data: Array) -> void:
 	var max_width: int = data[0] if data.size() > 0 else DEFAULT_MAX_WIDTH
+	var quality: float = data[1] if data.size() > 1 else DEFAULT_JPEG_QUALITY
 	await RenderingServer.frame_post_draw
-	_capture_and_send_screenshot(max_width)
+	_capture_and_send_screenshot(max_width, quality)
 
 
-func _capture_and_send_screenshot(max_width: int) -> void:
+func _capture_and_send_screenshot(max_width: int, quality: float = DEFAULT_JPEG_QUALITY) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
 		_send_screenshot_error("NO_VIEWPORT", "Could not get game viewport")
@@ -111,8 +129,8 @@ func _capture_and_send_screenshot(max_width: int) -> void:
 		var scale_factor := float(max_width) / float(image.get_width())
 		var new_height := int(image.get_height() * scale_factor)
 		image.resize(max_width, new_height, Image.INTERPOLATE_LANCZOS)
-	var png_buffer := image.save_png_to_buffer()
-	var base64 := Marshalls.raw_to_base64(png_buffer)
+	var jpg_buffer := image.save_jpg_to_buffer(quality)
+	var base64 := Marshalls.raw_to_base64(jpg_buffer)
 	EngineDebugger.send_message("godot_mcp:screenshot_result", [
 		true,
 		base64,
@@ -372,6 +390,416 @@ func _node_path_string(node: Node, scene_root: Node) -> String:
 	if relative != NodePath("."):
 		path += "/" + str(relative)
 	return path
+
+
+func _handle_get_runtime_state(data: Array) -> void:
+	var params: Dictionary = data[0] if data.size() > 0 and data[0] is Dictionary else {}
+
+	var tree := get_tree()
+	var scene_root := tree.current_scene if tree else null
+	if not scene_root:
+		EngineDebugger.send_message("godot_mcp:game_response", ["get_runtime_state", {
+			"scene": "",
+			"selection": "fallback",
+			"entity_count": 0,
+			"entities": [],
+			"hint": "No scene is currently running.",
+		}])
+		return
+
+	var select_mode: String = params.get("select", "auto")
+	var group_name: String = params.get("group", "mcp_watch")
+	var name_filter: String = params.get("name", "")
+	var type_filter: String = params.get("type", "")
+	var max_nodes: int = params.get("max_nodes", 40)
+	var include_fields: Array = params.get("include", [])
+	max_nodes = clampi(max_nodes, 1, 200)
+
+	# Resolve a 2D camera for the optional camera entity. On-screen checks no
+	# longer use this — they resolve the camera per-node from the node's own
+	# viewport (see Onscreen.compute), which is what makes SubViewport cameras
+	# work correctly.
+	var camera_2d: Camera2D = _find_camera_2d()
+
+	# Determine which selection tier to use
+	var actual_selection: String = select_mode
+	if select_mode == "auto":
+		if _has_group_members(scene_root, group_name):
+			actual_selection = "group"
+		elif _has_mcp_state_nodes(scene_root):
+			actual_selection = "method"
+		else:
+			actual_selection = "fallback"
+
+	# Collect entities (skipped entirely when select="none" — explicit paths only)
+	var entities: Array = []
+	if actual_selection != "none":
+		_collect_runtime_state(scene_root, scene_root, actual_selection, group_name,
+			name_filter, type_filter, include_fields,
+			max_nodes, entities)
+
+	# Explicit paths: include nodes the scene walk cannot reach (e.g. autoload
+	# singletons under /root). For each, return _mcp_state() if present, else a
+	# snapshot of the node's script variables (scalars/arrays, capped). Deduped
+	# against tier-selected entities and each other by absolute path.
+	var explicit_paths: Array = params.get("paths", [])
+	var unresolved_paths: Array = []
+	if not explicit_paths.is_empty():
+		var seen_paths := {}
+		for e in entities:
+			seen_paths[str(e.get("path", ""))] = true
+		for p in explicit_paths:
+			var pstr: String = str(p)
+			var n := _resolve_node_abs(pstr)
+			if n == null:
+				unresolved_paths.append(pstr)
+				continue
+			var abs_path := str(n.get_path())
+			if seen_paths.has(abs_path):
+				continue
+			seen_paths[abs_path] = true
+			var ent := _extract_node_state(n, scene_root, include_fields, true)
+			ent["path"] = abs_path
+			entities.append(ent)
+
+	# Extract camera entity separately if present
+	var camera_entity = null
+	if camera_2d:
+		camera_entity = {
+			"type": "Camera2D",
+			"pos": {"x": snapped(camera_2d.global_position.x, 0.01), "y": snapped(camera_2d.global_position.y, 0.01)},
+			"zoom": {"x": snapped(camera_2d.zoom.x, 0.01), "y": snapped(camera_2d.zoom.y, 0.01)},
+			"camera": true,
+		}
+
+	var autoloads := _list_autoload_paths(scene_root)
+
+	var hint := ""
+	if actual_selection == "fallback":
+		hint = ("No nodes found in group '%s' and no _mcp_state() methods detected. " +
+			"For richer data: add key nodes to the '%s' group, then implement " +
+			"`func _mcp_state() -> Dictionary` on them. " +
+			"In _mcp_state(), include both live runtime values (position, health, score) " +
+			"AND static definition context (puzzle clues, level config, item data) — " +
+			"an agent needs both to understand and verify game state.") % [group_name, group_name]
+		if not autoloads.is_empty():
+			hint += (" Global game state often lives in autoload singletons (see " +
+				"available_autoloads), which this scene walk does not reach — read them " +
+				"with select=\"none\" and paths: [...]; each returns _mcp_state() if " +
+				"present, else a snapshot of its script variables.")
+
+	var result: Dictionary = {
+		"scene": scene_root.scene_file_path,
+		"selection": actual_selection,
+		"entity_count": entities.size(),
+		"entities": entities,
+	}
+	if not autoloads.is_empty():
+		result["available_autoloads"] = autoloads
+	if camera_entity:
+		result["camera"] = camera_entity
+	if not hint.is_empty():
+		result["hint"] = hint
+	if not unresolved_paths.is_empty():
+		result["unresolved_paths"] = unresolved_paths
+
+	EngineDebugger.send_message("godot_mcp:game_response", ["get_runtime_state", result])
+
+
+func _has_group_members(scene_root: Node, group_name: String) -> bool:
+	var tree := get_tree()
+	if tree == null:
+		return false
+	return tree.get_nodes_in_group(group_name).size() > 0
+
+
+func _has_mcp_state_nodes(node: Node) -> bool:
+	if node.has_method("_mcp_state"):
+		return true
+	for child in node.get_children():
+		if _has_mcp_state_nodes(child):
+			return true
+	return false
+
+
+func _collect_runtime_state(node: Node, scene_root: Node, selection: String, group_name: String,
+		name_filter: String, type_filter: String, include_fields: Array,
+		max_nodes: int, results: Array) -> void:
+	if results.size() >= max_nodes:
+		return
+
+	var include_node := false
+	match selection:
+		"group":
+			include_node = node.is_in_group(group_name)
+		"method":
+			include_node = node.has_method("_mcp_state")
+		"fallback":
+			include_node = (node is CanvasItem and (node as CanvasItem).is_visible_in_tree())
+
+	if include_node:
+		if not name_filter.is_empty() and not node.name.matchn(name_filter):
+			include_node = false
+		if not type_filter.is_empty() and not node.is_class(type_filter):
+			include_node = false
+
+	if include_node:
+		var entity := _extract_node_state(node, scene_root, include_fields)
+		if entity != null:
+			results.append(entity)
+
+	for child in node.get_children():
+		if results.size() >= max_nodes:
+			return
+		_collect_runtime_state(child, scene_root, selection, group_name,
+			name_filter, type_filter, include_fields,
+			max_nodes, results)
+
+
+# _mcp_state() contract: return a Dictionary with two categories —
+#   (1) live runtime values that change during play (cursor pos, health, score, fill counts)
+#   (2) static definition context needed to interpret them (puzzle clues, level layout, config)
+# An agent can observe (1) without (2) but cannot verify correctness without both.
+# Optionally include layout geometry (bounds, sizes) to enable programmatic layout checks.
+# Error handling: _mcp_state() runtime errors are non-fatal in GDScript (Godot prints them
+# and the call returns null); the `is Dictionary` check below handles that silently.
+func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
+		allow_var_snapshot: bool = false) -> Dictionary:
+	var want := include_fields.is_empty()
+	var want_transform := want or include_fields.has("transform")
+	var want_velocity := want or include_fields.has("velocity")
+	var want_anim := want or include_fields.has("anim")
+	var want_groups := want or include_fields.has("groups")
+	var want_onscreen := want or include_fields.has("onscreen")
+	var want_state := want or include_fields.has("state")
+
+	var entity: Dictionary = {
+		"path": _node_path_string(node, scene_root),
+		"type": node.get_class(),
+	}
+
+	if want_groups:
+		var groups := node.get_groups().filter(func(g): return not g.begins_with("_"))
+		if not groups.is_empty():
+			entity["groups"] = groups
+
+	if want_transform and node is Node2D:
+		var n2d := node as Node2D
+		entity["pos"] = {"x": snapped(n2d.global_position.x, 0.01), "y": snapped(n2d.global_position.y, 0.01)}
+		entity["rot"] = snapped(rad_to_deg(n2d.global_rotation), 0.01)
+		if n2d.scale != Vector2.ONE:
+			entity["scale"] = {"x": snapped(n2d.scale.x, 0.01), "y": snapped(n2d.scale.y, 0.01)}
+
+	if want_transform and node is Node3D:
+		var n3d := node as Node3D
+		entity["pos"] = {
+			"x": snapped(n3d.global_position.x, 0.01),
+			"y": snapped(n3d.global_position.y, 0.01),
+			"z": snapped(n3d.global_position.z, 0.01),
+		}
+		entity["rot"] = {
+			"x": snapped(rad_to_deg(n3d.global_rotation.x), 0.01),
+			"y": snapped(rad_to_deg(n3d.global_rotation.y), 0.01),
+			"z": snapped(rad_to_deg(n3d.global_rotation.z), 0.01),
+		}
+
+	if want_velocity:
+		if node is CharacterBody2D:
+			var v := (node as CharacterBody2D).velocity
+			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01)}
+		elif node is RigidBody2D:
+			var v := (node as RigidBody2D).linear_velocity
+			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01)}
+			entity["angvel"] = snapped((node as RigidBody2D).angular_velocity, 0.01)
+		elif node is CharacterBody3D:
+			var v := (node as CharacterBody3D).velocity
+			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)}
+		elif node is RigidBody3D:
+			var v := (node as RigidBody3D).linear_velocity
+			entity["vel"] = {"x": snapped(v.x, 0.01), "y": snapped(v.y, 0.01), "z": snapped(v.z, 0.01)}
+			var av := (node as RigidBody3D).angular_velocity
+			entity["angvel"] = {"x": snapped(av.x, 0.01), "y": snapped(av.y, 0.01), "z": snapped(av.z, 0.01)}
+
+	if want_anim:
+		if node is AnimationPlayer:
+			var ap := node as AnimationPlayer
+			entity["anim"] = ap.current_animation
+			entity["anim_pos"] = snapped(ap.current_animation_position, 0.01)
+			entity["playing"] = ap.is_playing()
+		elif node is AnimatedSprite2D:
+			var asp := node as AnimatedSprite2D
+			entity["anim"] = asp.animation
+			entity["anim_frame"] = asp.frame
+
+	if want_onscreen:
+		# Resolve the camera from the node's own viewport (handles SubViewport
+		# cameras) and use the correct geometry per dimension — 3D frustum, 2D
+		# visible world rect. Returns null when undeterminable; omit the field.
+		var onscreen = Onscreen.compute(node)
+		if onscreen != null:
+			entity["onscreen"] = onscreen
+
+	if want_state:
+		if node.has_method("_mcp_state"):
+			var raw_state = node._mcp_state()
+			if raw_state is Dictionary:
+				var serialized := _serialize_mcp_state(raw_state)
+				if not serialized.is_empty():
+					entity["state"] = serialized
+		elif allow_var_snapshot:
+			var snap := _snapshot_script_vars(node)
+			if not snap.is_empty():
+				entity["state"] = snap
+
+	return entity
+
+
+const _MCP_STATE_MAX_BYTES := 1024
+
+
+func _serialize_mcp_state(state: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for key in state:
+		var val = state[key]
+		var serializable = null
+		match typeof(val):
+			TYPE_BOOL, TYPE_STRING:
+				serializable = val
+			TYPE_INT:
+				serializable = int(val)
+			TYPE_FLOAT:
+				serializable = snapped(float(val), 0.01)
+			TYPE_ARRAY:
+				serializable = val
+			TYPE_DICTIONARY:
+				serializable = val
+			# skip non-serializable types (Objects, NodePaths, RIDs, etc.)
+		if serializable == null:
+			continue
+		result[str(key)] = serializable
+		if JSON.stringify(result).length() > _MCP_STATE_MAX_BYTES:
+			result.erase(str(key))
+			result["_truncated"] = true
+			break
+	return result
+
+
+# Snapshot a node's own script variables (PROPERTY_USAGE_SCRIPT_VARIABLE) as
+# JSON-able scalars/arrays. Used for explicitly-requested nodes (e.g. autoload
+# singletons) that do not implement _mcp_state(). Private vars (leading "_") are
+# skipped; dictionaries/objects/non-serializable values are dropped; total size
+# is capped like _serialize_mcp_state.
+func _snapshot_script_vars(node: Node) -> Dictionary:
+	var result: Dictionary = {}
+	for prop in node.get_property_list():
+		if not (int(prop.get("usage", 0)) & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var key: String = str(prop.get("name", ""))
+		if key.is_empty() or key.begins_with("_"):
+			continue
+		var serializable = _to_serializable_scalar(node.get(key))
+		if serializable == null:
+			continue
+		result[key] = serializable
+		if JSON.stringify(result).length() > _MCP_STATE_MAX_BYTES:
+			result.erase(key)
+			result["_truncated"] = true
+			break
+	return result
+
+
+# Convert a value to a JSON-able scalar (or array of scalars). Returns null to
+# signal "skip" — dictionaries, objects, vectors, and arrays containing any of
+# those are intentionally dropped to keep the snapshot small and safe.
+func _to_serializable_scalar(val) -> Variant:
+	match typeof(val):
+		TYPE_BOOL, TYPE_STRING:
+			return val
+		TYPE_STRING_NAME:
+			return str(val)
+		TYPE_INT:
+			return int(val)
+		TYPE_FLOAT:
+			return snapped(float(val), 0.01)
+		TYPE_ARRAY:
+			var arr: Array = []
+			for e in val:
+				var s = _to_serializable_scalar(e)
+				if s == null:
+					return null
+				arr.append(s)
+			return arr
+	return null
+
+
+# Resolve an absolute ("/root/Name/...") or scene-relative node path. Unlike the
+# digest tree walk (rooted at current_scene), this reaches autoload singletons
+# and anything else under the SceneTree root.
+func _resolve_node_abs(path: String) -> Node:
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var root := tree.root
+	if root == null:
+		return null
+	if path == "/root" or path == "/root/":
+		return root
+	if path.begins_with("/root/"):
+		return root.get_node_or_null(path.substr(6))
+	if path.begins_with("/"):
+		return root.get_node_or_null(path.substr(1))
+	var scene_root := tree.current_scene
+	return scene_root.get_node_or_null(path) if scene_root else null
+
+
+# List autoload singleton paths (direct children of /root, excluding the current
+# scene and this bridge node). Used to guide callers to global state the scene
+# walk cannot reach.
+func _list_autoload_paths(scene_root: Node) -> Array:
+	var out: Array = []
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return out
+	for child in tree.root.get_children():
+		if child == scene_root or child == self:
+			continue
+		out.append("/root/" + str(child.name))
+	return out
+
+
+func _find_camera_2d() -> Camera2D:
+	var viewport := get_viewport()
+	if viewport == null:
+		return null
+	return viewport.get_camera_2d()
+
+
+func _handle_watch_start(data: Array) -> void:
+	if _sampler == null:
+		EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {"started": false, "error": "Sampler not initialized"}])
+		return
+	var specs: Array = data[0] if data.size() > 0 else []
+	var hz: int = data[1] if data.size() > 1 else 20
+	var duration_ms: int = data[2] if data.size() > 2 else 1000
+	var start_result := _sampler.start(specs, hz, duration_ms)
+	EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {
+		"started": true,
+		"resolved_fields": start_result.get("resolved_fields", 0),
+	}])
+
+
+func _handle_watch_collect() -> void:
+	if _sampler == null:
+		EngineDebugger.send_message("godot_mcp:game_response", ["watch_collect", {"window_ms": 0, "sample_count": 0, "fields": {}}])
+		return
+	EngineDebugger.send_message("godot_mcp:game_response", ["watch_collect", _sampler.collect()])
+
+
+func _handle_watch_stop() -> void:
+	if _sampler == null:
+		EngineDebugger.send_message("godot_mcp:game_response", ["watch_stop", {"window_ms": 0, "sample_count": 0, "fields": {}}])
+		return
+	EngineDebugger.send_message("godot_mcp:game_response", ["watch_stop", _sampler.stop()])
 
 
 class _MCPGameLogger extends Logger:

@@ -1,5 +1,19 @@
 # DEV_LOG.md
 
+## 2026-06-07 T0007 重装后本地依赖恢复
+
+- 安装并验证基础工具链：Python 3.12.10、Node.js 24.16.0 LTS、npm 11.13.0、Godot 4.6.3、`@satelliteoflove/godot-mcp` 3.7.0。
+- 创建项目 `.venv`，安装 `backend/requirements.txt`；`.gitignore` 新增 `.venv/`，避免本地依赖目录进入版本库。
+- VSCode 已安装 Godot Tools、Python、Pylance、debugpy 等扩展；`.vscode/settings.json` 改为当前机器可用的 winget Godot 命令别名。
+- Codex 用户配置新增 `mcp_servers.godot`，使用 `cmd /c godot-mcp.cmd`，避免 PowerShell 执行策略拦截 `.ps1` shim。
+- 验证通过：`tools/verify_backend_schemas.py`、`tools/verify_mock_model_adapter.py`、`tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --quit-after 1`、`tools/verify_gm_panel.gd`、`tools/verify_llm_bridge.gd`。
+- Godot MCP 插件当前监听 `6550`，但当前 Codex 会话未热加载新的 MCP 配置；`tools/check_godot_mcp.ps1` 返回“Godot plugin is running, but MCP is not connected”。需要重启/刷新 Codex 后复验 MCP 工具是否出现。
+- 追加修复：重启 Codex 后发现 MCP server `3.7.0` 已启动但未连接，项目 addon 仍是 `2.17.0`。已执行 `godot-mcp.cmd --install-addon . --force` 升级 addon 到 `3.7.0`，重启 Godot 编辑器后用外部 Node 握手验证 `serverVersion=3.7.0`、`addonVersion=3.7.0`、`versionsMatch=true`，并成功执行 `get_project_info`。当前 Codex 会话的 MCP transport 在清理旧子进程后关闭，需要再次重启/刷新 Codex 完成最后复验。
+- 再次复验：Godot 编辑器和 `6550` 监听正常，外部 Node 以 `127.0.0.1` / `localhost` 连接均成功，但 Codex 当前 MCP server 仍报告 `connected=false`。已把 `%USERPROFILE%\.codex\config.toml` 的 Godot MCP 启动命令改为显式设置 `GODOT_HOST=127.0.0.1` 与 `GODOT_PORT=6550`，等待下次 Codex 重启后复验。
+- 后续诊断：`editor.get_state` 返回 “Another MCP server connected and replaced this one”，说明当前 MCP server 已经被其他连接替换并停止重连。已把 Codex 配置从 `cmd /c set ...` 改为直接启动 `C:\Users\93741\AppData\Roaming\npm\godot-mcp.cmd`，并通过 TOML `env` 表设置 `GODOT_HOST` / `GODOT_PORT`，等待下一次 Codex 重启后复验。
+- 最终复验通过：重启 Codex 后 `godot_project.addon_status` 显示 `connected=true`、server/addon 均为 `3.7.0` 且版本匹配；`godot_editor.get_state` 正常返回当前场景 `res://scenes/main/Main.tscn`。
+- 经验固化：已在 `CURRENT_STATE.md` 写入换环境恢复 Godot MCP 清单，在 T0007 和 `MODULE_INDEX.md` 标出复用入口；下次重装时优先检查 `@satelliteoflove/godot-mcp@3.7.0`、项目 addon `plugin.cfg` 版本、Codex TOML `env` 配置和是否存在外部客户端顶掉 Codex 连接。
+
 ## 2026-06-05 T0705 NPC 主动找守备官交涉
 
 - `NPCSystem` 新增主动交涉状态与调试入口：可让 NPC 进入 `proactive_talk`，默认持续 1 游戏小时，触发时写入 `private` `proactive_talk_started`，超时或对话结束后请求计划重评估。

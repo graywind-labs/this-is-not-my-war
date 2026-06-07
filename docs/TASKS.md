@@ -228,6 +228,44 @@
 - 新增 `tools/verify_godot_mcp_topology.mjs`，验证多 proxy、单 broker、单 Godot 连接，以及关闭一个 proxy 不影响其余会话。
 ---
 
+## T0007 Restore local development dependencies after OS reinstall
+
+状态：Done
+优先级：P0
+涉及文档：`CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+在重装电脑后的干净环境中，恢复本项目开发与验证所需的基础工具链。
+
+验收标准：
+- `godot` 可从命令行运行，版本符合 Godot 4.6。
+- Python 可运行，并能在项目 `.venv` 中安装 `backend/requirements.txt`。
+- Node.js / npm 可运行，Godot MCP npm 包可用。
+- VSCode 已安装 Godot Tools 与 Python 扩展，项目 Godot 路径指向当前机器可用路径。
+- 后端 Schema / Mock / 对话接口验证通过。
+- Godot headless 项目加载与关键 GM / LLMBridge 验证通过。
+- Godot MCP 插件与 Codex 侧 MCP server 可连接。
+
+验收结果（2026-06-07）：
+- 已安装 Python 3.12.10、Node.js 24.16.0 LTS、npm 11.13.0、Godot 4.6.3、`@satelliteoflove/godot-mcp` 3.7.0。
+- 已创建 `.venv` 并安装 `backend/requirements.txt`；`.gitignore` 已忽略 `.venv/`。
+- 已安装 VSCode Python 扩展；Godot Tools 已存在；`.vscode/settings.json` 已指向 winget Godot 命令别名。
+- 验证通过：`tools/verify_backend_schemas.py`、`tools/verify_mock_model_adapter.py`、`tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --quit-after 1`、`tools/verify_gm_panel.gd`、`tools/verify_llm_bridge.gd`。
+- Godot MCP 插件当前监听 `6550`，`godot-mcp.cmd --version` 返回 `3.7.0`，并已在 `%USERPROFILE%\.codex\config.toml` 增加 `mcp_servers.godot` 入口；但当前 Codex 会话不会热加载新 MCP 配置，自检仍显示“Godot plugin is running, but MCP is not connected”。需要重启/刷新 Codex 后复验。
+- 当前 Codex MCP 配置使用 npm 包入口 `cmd /c godot-mcp.cmd`；历史 `proxy -> broker -> Godot` 自定义脚本在本机重装后缺失，后续若需要严格恢复多会话 broker 拓扑，应追加任务重建 `%USERPROFILE%\.codex\scripts\godot-mcp-proxy.mjs` 与 `godot-mcp-broker.mjs`。
+
+追加修复（2026-06-07）：
+- 重启 Codex 后，Codex 侧 `godot-mcp` server 已启动，但 `godot_project.addon_status` 返回 `connected=false`；排查发现项目内 `addons/godot_mcp` 仍为 `2.17.0`，与 npm server `3.7.0` 不匹配。
+- 已执行 `godot-mcp.cmd --install-addon . --force`，将项目内 Godot MCP addon 升级到 `3.7.0`，并重启 Godot 编辑器。
+- 外部 Node 握手验证通过：`serverVersion=3.7.0`、`addonVersion=3.7.0`、`versionsMatch=true`，`get_project_info` 可返回项目名和 `res://scenes/main/Main.tscn`。
+- 修复过程中清理了本会话的旧 MCP 子进程，导致当前 Codex MCP transport 返回 `Transport closed`；按历史经验该状态不能在同一会话热恢复，需要再次重启/刷新 Codex 后用 `godot_project.addon_status` 复验。
+- 再次重启后，确认 Godot 编辑器、插件端口 `6550` 和 Codex `godot-mcp` 进程都存在，但 Codex 工具仍显示 `connected=false`；外部 Node 分别使用 `127.0.0.1` 与 `localhost` 连接 `6550` 均成功，说明 Godot 侧与 addon 版本已正常。已将 `%USERPROFILE%\.codex\config.toml` 的 `mcp_servers.godot.args` 固定为 `set GODOT_HOST=127.0.0.1&& set GODOT_PORT=6550&& godot-mcp.cmd`，需要再重启 Codex 让新 server 进程读取该配置。
+- 继续复验时 `editor.get_state` 返回 “Another MCP server connected and replaced this one”，说明当前 Codex MCP server 已经被其他连接替换并停止重连。已将 `%USERPROFILE%\.codex\config.toml` 改为直接启动 `C:\Users\93741\AppData\Roaming\npm\godot-mcp.cmd`，并通过 `env = { GODOT_HOST = "127.0.0.1", GODOT_PORT = "6550" }` 设置环境变量，避免内联 `cmd /c set ...`。需要重启 Codex，让新的 server 进程以干净状态启动。
+- 最终复验通过：重启 Codex 后 `godot_project.addon_status` 返回 `connected=true`，server/addon 均为 `3.7.0` 且 `versions_match=true`；`godot_editor.get_state` 正常返回当前场景 `res://scenes/main/Main.tscn`。
+- 换环境复用清单已固化：下次迁移/重装时先锁定 `@satelliteoflove/godot-mcp@3.7.0`，确认 `addons/godot_mcp/plugin.cfg` 与 `godot-mcp.cmd --version` 一致；必要时运行 `godot-mcp.cmd --install-addon . --force` 并重启 Godot；Codex 配置使用直接 `godot-mcp.cmd` 命令和 TOML `env` 表设置 `GODOT_HOST=127.0.0.1`、`GODOT_PORT=6550`；修改 config 后重启 Codex；复验只用 `godot_project.addon_status` / `godot_editor.get_state`，不要在 Codex 已连接时用外部 WebSocket 客户端直连 `6550`。
+
+---
+
 # M1：Godot 核心骨架与最小驿站
 
 目标：进入 Godot 后能看到一个结构清楚的低模驿站场景，具备基础系统节点、资源栏、时间显示和可扩展 UI 骨架。
