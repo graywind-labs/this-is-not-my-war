@@ -129,6 +129,49 @@
 
 ---
 
+## T0009 修复 Godot MCP 运行桥接类缓存启动失败
+
+状态：Done
+优先级：P0
+涉及文档：`GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+修复换机 / Git 同步后项目启动时报 `Could not find type "MCPRuntimeStateSampler"`，导致 `MCPGameBridge` Autoload 解析失败、`Main.tscn` 跑不起来的问题。
+
+验收标准：
+- `godot --headless --path . --quit-after 1` 不再因 `MCPRuntimeStateSampler` 类型解析失败中断。
+- Godot MCP 自检仍可连接。
+- 通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 时游戏日志无报错。
+- 修复不改变游戏权威逻辑、资源、HP、事件、NPC 或 UI 结算。
+
+验收结果（2026-06-09）：
+- `addons/godot_mcp/game_bridge/mcp_game_bridge.gd` 改为直接 `preload("mcp_runtime_state_sampler.gd")` 创建运行态采样器，不再依赖 `.godot/global_script_class_cache.cfg` 中是否已经登记 `MCPRuntimeStateSampler`。
+- `_handle_watch_start(...)` 的 `start_result` 显式标注为 `Dictionary`，避免 sampler 动态实例化后类型推断失败。
+- 验证通过：`godot --headless --path . --quit-after 1`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`、Godot MCP 运行 `res://scenes/main/Main.tscn` 后读取游戏日志为空。
+
+---
+
+## T0010 忽略本机 VSCode Godot 路径配置
+
+状态：Done
+优先级：P0
+涉及文档：`CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+两台电脑的 Godot 可执行文件路径不同，避免 `.vscode/settings.json` 在 Git 同步时反复产生脏改动或冲突。
+
+验收标准：
+- `.gitignore` 忽略 `.vscode/settings.json`。
+- 已跟踪的 `.vscode/settings.json` 从 Git 索引移除，但本地文件保留。
+- 不影响 Godot 项目加载和 MCP 自检。
+
+验收结果（2026-06-09）：
+- `.gitignore` 新增 `.vscode/settings.json` 忽略规则。
+- 已执行 `git rm --cached .vscode/settings.json`，Git 后续不再跟踪该本机路径配置；确认本地 `.vscode/settings.json` 文件仍存在。
+- 验证通过：`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
+
+---
+
 # M0：项目骨架与工具稳定
 
 目标：让 Godot 项目、Python 后端、MCP 工具和项目文档结构可运行、可检查、可继续开发。

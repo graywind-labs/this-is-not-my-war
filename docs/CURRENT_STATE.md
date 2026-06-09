@@ -5,8 +5,8 @@
 
 ## 当前版本
 
-版本：`0.0.55-stable-npc-panel-growth`
-状态：已完成 Godot 项目入口、低模驿站、基础经营/时间/地点/记忆/NPC 昏迷治疗闭环、T0801 职业工作产出框架、T0802 食堂粮食加工餐食与餐食优先进食验证、T0803 菜园粮食产出与耕种/力量/建筑等级产出加成验证、T0804 铁匠铺消耗铁制造武器/盔甲库存验证、T0805 工械坊消耗木材制造弓弩/工程器械库存验证、T0806 马厩消耗粮食维护马匹整备验证、T0807 酒窖消耗粮食酿酒库存验证、T0808 小诊所医生工位/病床治疗与研读医术验证、工作中 NPC 状态刷新不再抢回右上角面板、NPC 面板内容增多时只向下延展、Flask Mock 后端与原生 HTTP `LLMBridge`；T0701-T0705 已接通对话、征召、已入伍 NPC 自然语言指令编辑、最新指令向共享 NPC LLM / Mock 上下文的统一注入和计划重评估降级结果观察、NPC 面板给钱/占位给武器/攻击等非对话交互入口，以及 NPC 主动找守备官交涉的调试触发、问号气泡、点击进入对话和 1 小时超时消失闭环。尚未实现真实每日计划、T0901 正式装备系统、T0904 通用职业熟练度/经验升级、T1002 完整计划重评估应用、坐骑装备槽、骑兵战斗策略、酒的商队出售交易、其他职业特殊生产平衡、敌人战斗、工程器械部署或真实 LLM。
+版本：`0.0.56-stable-mcp-bridge-cache-fix`
+状态：已完成 Godot 项目入口、低模驿站、基础经营/时间/地点/记忆/NPC 昏迷治疗闭环、T0801 职业工作产出框架、T0802 食堂粮食加工餐食与餐食优先进食验证、T0803 菜园粮食产出与耕种/力量/建筑等级产出加成验证、T0804 铁匠铺消耗铁制造武器/盔甲库存验证、T0805 工械坊消耗木材制造弓弩/工程器械库存验证、T0806 马厩消耗粮食维护马匹整备验证、T0807 酒窖消耗粮食酿酒库存验证、T0808 小诊所医生工位/病床治疗与研读医术验证、工作中 NPC 状态刷新不再抢回右上角面板、NPC 面板内容增多时只向下延展、Godot MCP 运行桥接不再依赖 sampler 全局类缓存、Flask Mock 后端与原生 HTTP `LLMBridge`；T0701-T0705 已接通对话、征召、已入伍 NPC 自然语言指令编辑、最新指令向共享 NPC LLM / Mock 上下文的统一注入和计划重评估降级结果观察、NPC 面板给钱/占位给武器/攻击等非对话交互入口，以及 NPC 主动找守备官交涉的调试触发、问号气泡、点击进入对话和 1 小时超时消失闭环。尚未实现真实每日计划、T0901 正式装备系统、T0904 通用职业熟练度/经验升级、T1002 完整计划重评估应用、坐骑装备槽、骑兵战斗策略、酒的商队出售交易、其他职业特殊生产平衡、敌人战斗、工程器械部署或真实 LLM。
 
 ## 当前已实现内容
 
@@ -326,6 +326,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1
 - 2026-06-07 再次复验：Godot 插件端口与外部握手均正常，但 Codex 当前 `godot-mcp` server 仍显示 `connected=false`。已将 Codex MCP 启动参数固定为 `GODOT_HOST=127.0.0.1`、`GODOT_PORT=6550`，避免默认 host 解析或环境差异；需要重启/刷新 Codex 后让新参数生效。
 - 2026-06-07 后续诊断：`editor.get_state` 明确返回 “Another MCP server connected and replaced this one”，当前 Codex MCP server 已停止重连。Codex 配置已改为直接运行 `C:\Users\93741\AppData\Roaming\npm\godot-mcp.cmd`，并使用 TOML `env` 表设置 `GODOT_HOST=127.0.0.1`、`GODOT_PORT=6550`；需要重启/刷新 Codex 才能生效。
 - 2026-06-07 最终复验：重启 Codex 后 Godot MCP 工具直连成功，`godot_project.addon_status` 返回 `connected=true`、server/addon 均为 `3.7.0`、`versions_match=true`；`godot_editor.get_state` 正常返回当前打开 `res://scenes/main/Main.tscn`。
+- 2026-06-09 启动修复：换机 / Git 同步后 `.godot/global_script_class_cache.cfg` 未登记 `MCPRuntimeStateSampler` 时，`MCPGameBridge` Autoload 会解析失败。`mcp_game_bridge.gd` 现已直接预加载 `mcp_runtime_state_sampler.gd` 创建 sampler，不再依赖全局类缓存；`godot --headless --path . --quit-after 1`、GM 面板验证、NPC 面板验证、MCP 自检和 MCP 运行主场景日志均通过。
+- 2026-06-09 本机编辑器路径配置处理：`.vscode/settings.json` 已加入 `.gitignore` 并从 Git 索引移除；两台电脑可各自保留本机 Godot 路径，不再通过 Git 同步该文件。
 - 多会话拓扑验证命令：`node .\tools\verify_godot_mcp_topology.mjs`。
 - 若再次异常，先看 `tools/check_godot_mcp.ps1` 输出：多个 session-local proxy 只会作为正常信息提示；broker 缺失、broker 非单例或绕过 broker 直连 Godot 才会警告。
 - 2026-06-02 复盘：这次 `godot_mcp` 工具返回 `Transport closed`，但 `tools/check_godot_mcp.ps1` 一度仍显示 `Godot MCP connected`，说明 Godot 插件和 `broker -> Godot` 连接没有先坏，坏的是当前 Codex 会话内已经关闭的 stdio MCP transport。清理残留 headless Godot 进程并重启 broker 后，外部自检可恢复；但已经关闭的 Codex MCP transport 不能在同一会话内热接回，需重启/刷新 Codex。重启后 `project.addon_status` 与 `editor.get_state` 均恢复正常。

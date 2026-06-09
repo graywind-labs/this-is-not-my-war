@@ -1,5 +1,19 @@
 # DEV_LOG.md
 
+## 2026-06-09 T0010 忽略本机 VSCode Godot 路径配置
+
+- `.gitignore` 新增 `.vscode/settings.json`，避免两台电脑不同 Godot 路径在 Git 同步时反复产生冲突或脏改动。
+- 执行 `git rm --cached .vscode/settings.json`，让 Git 停止跟踪该文件，但保留本机文件；已确认 `.vscode/settings.json` 仍存在。
+- 验证通过：`godot --headless --path . --quit-after 1`、`tools/check_godot_mcp.ps1`。
+
+## 2026-06-09 T0009 Godot MCP 运行桥接类缓存启动失败修复
+
+- 排查 Git 同步后项目跑不起来的问题，确认 `main` 已与 `origin/main` 对齐，仅 `.vscode/settings.json` 有本机 Godot 路径改动；A 电脑改动未显示为丢失或冲突。
+- 直接启动 `godot --headless --path . --quit-after 1` 时，`MCPGameBridge` Autoload 因找不到 `MCPRuntimeStateSampler` 类型解析失败；文件实际存在，问题来自 Godot 全局类缓存未登记该 `class_name`。
+- `addons/godot_mcp/game_bridge/mcp_game_bridge.gd` 改为 `preload("mcp_runtime_state_sampler.gd")` 并通过预加载脚本创建 sampler，不再依赖 `.godot/global_script_class_cache.cfg`。
+- `_handle_watch_start(...)` 的 `start_result` 显式标注为 `Dictionary`，避免动态 sampler 实例导致类型推断失败。
+- 验证通过：`godot --headless --path . --quit-after 1`、`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`tools/check_godot_mcp.ps1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
 ## 2026-06-09 T0008 NPC 面板内容增多时向上溢出修复
 
 - 修复 NPC 面板内容变多时向上下两个方向扩展，导致顶部越出屏幕的问题。

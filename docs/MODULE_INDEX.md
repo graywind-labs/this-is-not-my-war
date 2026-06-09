@@ -54,7 +54,7 @@
 路径：`addons/godot_mcp/`
 用途：Godot MCP 编辑器插件与运行桥接，供 Codex / MCP server 查看场景、节点、资源、截图、运行状态和编辑器状态。
 依赖：Node 侧 `@satelliteoflove/godot-mcp`；插件监听 `127.0.0.1:6550`。
-当前状态：2026-06-07 已从 `2.17.0` 升级到 `3.7.0`，与本机 npm server `3.7.0` 对齐；新增运行态采样相关脚本 `commands/runtime_state_commands.gd`、`game_bridge/mcp_runtime_state_sampler.gd`、`game_bridge/onscreen.gd`。Codex MCP 已通过 `godot_project.addon_status` / `godot_editor.get_state` 复验连接正常。换环境恢复时先按 `docs/CURRENT_STATE.md` 的“换环境恢复 Godot MCP 清单”和 `docs/TASKS.md` 的 T0007 记录检查 server/addon/config 版本一致性。
+当前状态：2026-06-07 已从 `2.17.0` 升级到 `3.7.0`，与本机 npm server `3.7.0` 对齐；新增运行态采样相关脚本 `commands/runtime_state_commands.gd`、`game_bridge/mcp_runtime_state_sampler.gd`、`game_bridge/onscreen.gd`。2026-06-09 修复 `MCPGameBridge` 对 `MCPRuntimeStateSampler` 全局类缓存的依赖，桥接脚本现在直接预加载 sampler，避免换机或 `.godot` 缓存未刷新时 Autoload 解析失败。Codex MCP 已通过 `godot_project.addon_status` / `godot_editor.get_state` 复验连接正常。换环境恢复时先按 `docs/CURRENT_STATE.md` 的“换环境恢复 Godot MCP 清单”和 `docs/TASKS.md` 的 T0007 / T0009 记录检查 server/addon/config 版本一致性和运行桥接脚本状态。
 
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/OrderPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/OrderPanel` 已接入自然语言指令编辑；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。

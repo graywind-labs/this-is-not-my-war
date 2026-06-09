@@ -4,10 +4,11 @@ class_name MCPGameBridge
 const DEFAULT_MAX_WIDTH := 1024
 const DEFAULT_JPEG_QUALITY := 0.75
 const Onscreen := preload("onscreen.gd")
+const RuntimeStateSampler := preload("mcp_runtime_state_sampler.gd")
 
 var _logger: _MCPGameLogger
 var _profiler: MCPFrameProfiler
-var _sampler: MCPRuntimeStateSampler
+var _sampler = null
 
 
 func _ready() -> void:
@@ -17,7 +18,7 @@ func _ready() -> void:
 	OS.add_logger(_logger)
 	_profiler = MCPFrameProfiler.new()
 	EngineDebugger.register_profiler("mcp_frame_profiler", _profiler)
-	_sampler = MCPRuntimeStateSampler.new()
+	_sampler = RuntimeStateSampler.new()
 	add_child(_sampler)
 	EngineDebugger.register_message_capture("godot_mcp", _on_debugger_message)
 	MCPLog.info("Game bridge initialized")
@@ -781,7 +782,7 @@ func _handle_watch_start(data: Array) -> void:
 	var specs: Array = data[0] if data.size() > 0 else []
 	var hz: int = data[1] if data.size() > 1 else 20
 	var duration_ms: int = data[2] if data.size() > 2 else 1000
-	var start_result := _sampler.start(specs, hz, duration_ms)
+	var start_result: Dictionary = _sampler.start(specs, hz, duration_ms)
 	EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {
 		"started": true,
 		"resolved_fields": start_result.get("resolved_fields", 0),

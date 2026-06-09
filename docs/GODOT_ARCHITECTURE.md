@@ -56,7 +56,7 @@ T0101 已在 `project.godot` 注册以下 Autoload：
 
 | 名称 | 路径 | 当前状态 |
 |---|---|---|
-| MCPGameBridge | `res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd` | Godot MCP 运行桥接 |
+| MCPGameBridge | `res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd` | Godot MCP 运行桥接；2026-06-09 起直接预加载 `mcp_runtime_state_sampler.gd`，避免 `.godot` 全局类缓存缺少 `MCPRuntimeStateSampler` 时启动失败 |
 | EventBus | `res://scripts/core/EventBus.gd` | 已声明基础事件信号 |
 | GameState | `res://scripts/core/GameState.gd` | 已保存天数、小时、战斗状态 |
 | ConfigLoader | `res://scripts/core/ConfigLoader.gd` | 已支持 JSON 读取和错误提示 |
