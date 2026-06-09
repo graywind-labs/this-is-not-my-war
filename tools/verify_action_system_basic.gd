@@ -103,6 +103,8 @@ func _init() -> void:
 	var worker_id := "gardener_01"
 	_set_debug_move_speed(worker_id, 80.0)
 	var grain_before_work: int = resource_system.get_resource("grain")
+	var garden_action: Dictionary = action_system.get_action("work_garden")
+	var expected_garden_output: int = int(action_system._get_work_output_resources(garden_action, worker_id).get("grain", 0))
 	npc_system.update_npc_state(worker_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(worker_id, "garden"):
 		push_error("Failed to assign garden work")
@@ -118,7 +120,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var after_work: Dictionary = npc_system.get_npc_state(worker_id)
-	if resource_system.get_resource("grain") != grain_before_work + 2:
+	if resource_system.get_resource("grain") != grain_before_work + expected_garden_output:
 		push_error("Garden work resource output mismatch")
 		quit(1)
 		return
@@ -170,7 +172,7 @@ func _init() -> void:
 		push_error("Blacksmith work did not complete")
 		quit(1)
 		return
-	if resource_system.get_resource("iron") != iron_before - 1 or resource_system.get_resource("wood") != wood_before_blacksmith - 1:
+	if resource_system.get_resource("iron") != iron_before - 2 or resource_system.get_resource("wood") != wood_before_blacksmith:
 		push_error("Blacksmith input resource mismatch")
 		quit(1)
 		return
@@ -182,6 +184,7 @@ func _init() -> void:
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(engineer_id, 80.0)
 	var wood_before_workshop: int = resource_system.get_resource("wood")
+	var weapons_before_workshop: int = resource_system.get_resource("weapons")
 	var devices_before: int = resource_system.get_resource("defense_devices")
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(engineer_id, "workshop"):
@@ -197,7 +200,11 @@ func _init() -> void:
 		push_error("Workshop work did not complete")
 		quit(1)
 		return
-	if resource_system.get_resource("wood") != wood_before_workshop - 2 or resource_system.get_resource("defense_devices") != devices_before + 1:
+	if resource_system.get_resource("wood") != wood_before_workshop - 2:
+		push_error("Workshop input resource mismatch")
+		quit(1)
+		return
+	if resource_system.get_resource("weapons") != weapons_before_workshop + 1 or resource_system.get_resource("defense_devices") != devices_before + 1:
 		push_error("Workshop resource result mismatch")
 		quit(1)
 		return

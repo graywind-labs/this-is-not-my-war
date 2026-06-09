@@ -594,6 +594,68 @@ func assist_unconscious_recovery(
 	)
 
 
+func restore_npc_hp(
+	npc_id: String,
+	amount: int,
+	recovery_source: String = "clinic_treatment",
+	healer_npc_id: String = ""
+) -> Dictionary:
+	if amount <= 0 or not _profiles.has(npc_id):
+		return {}
+
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {})
+	if bool(states.get("escaped", false)) or bool(states.get("unconscious", false)):
+		return {}
+
+	var max_hp := maxi(1, int(states.get("max_hp", 100)))
+	var hp_before := clampi(int(states.get("hp", max_hp)), 0, max_hp)
+	if hp_before >= max_hp:
+		return {}
+
+	var hp_after := mini(max_hp, hp_before + amount)
+	states["hp"] = hp_after
+	states["max_hp"] = max_hp
+	states["last_action_result"] = "%s_recovered" % recovery_source
+	profile["states"] = states
+	_profiles[npc_id] = profile
+	_refresh_npc_node(npc_id)
+	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"npc_id": npc_id,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"max_hp": max_hp,
+		"recovery_source": recovery_source,
+		"healer_npc_id": healer_npc_id
+	}
+
+
+func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dictionary:
+	if amount <= 0 or skill_name.is_empty() or not _profiles.has(npc_id):
+		return {}
+
+	var profile: Dictionary = _profiles[npc_id]
+	var skills: Dictionary = normalize_skills(profile.get("skills", {}))
+	var before := clampi(int(skills.get(skill_name, 0)), 0, 100)
+	var after := clampi(before + amount, 0, 100)
+	if after == before:
+		return {}
+
+	skills[skill_name] = after
+	profile["skills"] = skills
+	_profiles[npc_id] = profile
+	_emit_npc_state_changed(npc_id)
+	return {
+		"npc_id": npc_id,
+		"skill_name": skill_name,
+		"before": before,
+		"after": after,
+		"amount": after - before
+	}
+
+
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
 	if game_delta_seconds <= 0.0:
 		return

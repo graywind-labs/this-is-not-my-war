@@ -107,6 +107,71 @@ func get_building_snapshot() -> Dictionary:
 	return _buildings.duplicate(true)
 
 
+func claim_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return {"ok": false, "reason": "invalid_workstation_request"}
+
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var occupied_by := str(workstation.get("occupied_by", ""))
+		if occupied_by == "<null>":
+			occupied_by = ""
+		if not occupied_by.is_empty() and occupied_by != npc_id:
+			continue
+		var workstation_type := str(workstation.get("type", ""))
+		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		workstation["occupied_by"] = npc_id
+		workstations[index] = workstation
+		building["workstations"] = workstations
+		_buildings[building_id] = building
+		_emit_building_state_changed(building_id)
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"workstation_id": str(workstation.get("id", "")),
+			"workstation_type": workstation_type
+		}
+
+	return {"ok": false, "reason": "no_free_workstation"}
+
+
+func release_workstation(building_id: String, npc_id: String, workstation_id: String = "") -> bool:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return false
+
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	var changed := false
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var current_id := str(workstation.get("id", ""))
+		var occupied_by := str(workstation.get("occupied_by", ""))
+		if occupied_by != npc_id:
+			continue
+		if not workstation_id.is_empty() and current_id != workstation_id:
+			continue
+		workstation["occupied_by"] = null
+		workstations[index] = workstation
+		changed = true
+		if not workstation_id.is_empty():
+			break
+
+	if not changed:
+		return false
+
+	building["workstations"] = workstations
+	_buildings[building_id] = building
+	_emit_building_state_changed(building_id)
+	return true
+
+
 func get_selected_building_id() -> String:
 	return _selected_building_id
 

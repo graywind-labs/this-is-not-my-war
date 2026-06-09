@@ -13,6 +13,24 @@ const HEALING_RESOURCE_ID := "money"
 const HEALING_INITIAL_COST := 1
 const HEALING_COST_INTERVAL_SECONDS := 1800.0
 const HEALING_MAX_HELPERS_PER_TARGET := 2
+const CLINIC_LOCATION_ID := "clinic"
+const CLINIC_DOCTOR_ACTION_ID := "work_clinic_doctor"
+const CLINIC_PATIENT_ACTION_ID := "receive_clinic_treatment"
+const CLINIC_DOCTOR_WORKSTATION_TYPE := "clinic_doctor"
+const CLINIC_PATIENT_BED_TYPE := "patient_bed"
+const CLINIC_STUDY_SKILL_INTERVAL_SECONDS := 14400.0
+const CLINIC_TREATMENT_SKILL_INTERVAL_SECONDS := 3600.0
+const CLINIC_BASE_HP_PER_HOUR := 6.0
+const CLINIC_SKILL_HP_PER_HOUR := 0.10
+const CLINIC_INTELLIGENCE_HP_PER_HOUR := 0.45
+const CLINIC_LEVEL_HP_PER_HOUR := 3.0
+const WORK_SKILL_SPEED_SCALE := 0.50
+const WORK_ATTRIBUTE_SPEED_SCALE := 0.025
+const WORK_BUILDING_LEVEL_SPEED_SCALE := 0.15
+const WORK_MAX_SPEED_MULTIPLIER := 2.5
+const WORK_OUTPUT_DEFAULT_SKILL_PER_BONUS := 50
+const WORK_OUTPUT_DEFAULT_ATTRIBUTE_BASELINE := 5
+const WORK_OUTPUT_DEFAULT_ATTRIBUTE_PER_BONUS := 3
 
 var _actions: Dictionary = {}
 var _actions_by_location: Dictionary = {}
@@ -392,6 +410,10 @@ func _execute_action(npc_id: String, action_id: String) -> bool:
 			return _start_eat(npc_id, action)
 		"sleep":
 			return _start_sleep(npc_id, action)
+		"clinic_doctor":
+			return _start_clinic_doctor(npc_id, action)
+		"clinic_patient":
+			return _start_clinic_patient(npc_id, action)
 		"targeted_heal":
 			push_warning("assist_heal requires a target NPC. Use debug_assign_heal_assist(healer_npc_id, target_npc_id).")
 			return false
@@ -512,10 +534,104 @@ func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 	return true
 
 
+func _start_clinic_doctor(npc_id: String, action: Dictionary) -> bool:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null or building_system == null:
+		return false
+
+	var claim_result: Dictionary = building_system.claim_workstation(
+		CLINIC_LOCATION_ID,
+		npc_id,
+		str(action.get("workstation_type", CLINIC_DOCTOR_WORKSTATION_TYPE))
+	)
+	if not bool(claim_result.get("ok", false)):
+		_update_action_failure(npc_id, "clinic_doctor_failed_no_workstation")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
+			"reason": "没有空闲诊疗工位",
+			"building_id": CLINIC_LOCATION_ID
+		})
+		return false
+
+	var doctor: Dictionary = npc_system.get_npc(npc_id)
+	var medical_skill := _get_medical_skill(doctor)
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
+		"last_action_result": "started_%s" % str(action.get("id", CLINIC_DOCTOR_ACTION_ID))
+	})
+	_active_actions[npc_id] = {
+		"kind": "clinic_doctor",
+		"action": action.duplicate(true),
+		"building_id": CLINIC_LOCATION_ID,
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"medical_skill": medical_skill,
+		"money_spent": 0,
+		"cost_timer_seconds": 0.0,
+		"study_skill_timer_seconds": 0.0,
+		"treatment_skill_timer_seconds": 0.0,
+		"hp_recovery_remainders": {}
+	}
+	_log_structured_action_event(npc_id, action, "work_started", {
+		"action_id": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"building_id": CLINIC_LOCATION_ID
+	})
+	return true
+
+
+func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null or building_system == null:
+		return false
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var hp := int(state.get("hp", 0))
+	var max_hp := maxi(1, int(state.get("max_hp", 100)))
+	if hp >= max_hp:
+		_update_action_failure(npc_id, "clinic_patient_failed_not_injured")
+		return false
+
+	var claim_result: Dictionary = building_system.claim_workstation(
+		CLINIC_LOCATION_ID,
+		npc_id,
+		str(action.get("workstation_type", CLINIC_PATIENT_BED_TYPE))
+	)
+	if not bool(claim_result.get("ok", false)):
+		_update_action_failure(npc_id, "clinic_patient_failed_no_bed")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
+			"reason": "没有空闲病床",
+			"building_id": CLINIC_LOCATION_ID
+		})
+		return false
+
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
+		"last_action_result": "started_%s" % str(action.get("id", CLINIC_PATIENT_ACTION_ID))
+	})
+	_active_actions[npc_id] = {
+		"kind": "clinic_patient",
+		"action": action.duplicate(true),
+		"building_id": CLINIC_LOCATION_ID,
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"healer_npc_id": "",
+		"money_spent": 0
+	}
+	_log_structured_action_event(npc_id, action, "work_started", {
+		"action_id": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"building_id": CLINIC_LOCATION_ID
+	})
+	return true
+
+
 func _start_work(npc_id: String, action: Dictionary) -> bool:
 	var resource_system := _get_resource_system()
 	var npc_system := _get_npc_system()
-	if resource_system == null or npc_system == null:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if resource_system == null or npc_system == null or building_system == null:
 		return false
 
 	var input_resources: Dictionary = action.get("input_resources", {})
@@ -529,17 +645,41 @@ func _start_work(npc_id: String, action: Dictionary) -> bool:
 		})
 		return false
 
+	var building_id := str(action.get("location_required", ""))
+	var claim_result: Dictionary = {}
+	if building_system.has_method("claim_workstation"):
+		claim_result = building_system.claim_workstation(building_id, npc_id, str(action.get("workstation_type", "")))
+	if not bool(claim_result.get("ok", false)):
+		_update_action_failure(npc_id, "work_failed_no_workstation")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", "")),
+			"reason": "没有空闲工位",
+			"building_id": building_id,
+			"duration_seconds": _get_effective_action_duration_seconds(action, npc_id)
+		})
+		return false
+
+	var effective_duration := _get_effective_action_duration_seconds(action, npc_id)
+	var efficiency_multiplier := _get_work_efficiency_multiplier(npc_id, action)
+	var workstation_id := str(claim_result.get("workstation_id", ""))
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", "")),
-		"workstation_id": str(action.get("location_required", "")),
-		"duration_seconds": _get_action_duration_seconds(action)
+		"workstation_id": workstation_id,
+		"building_id": building_id,
+		"base_duration_seconds": _get_action_duration_seconds(action),
+		"duration_seconds": effective_duration,
+		"efficiency_multiplier": efficiency_multiplier
 	})
 
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", "work")),
 		"last_action_result": "started_%s" % str(action.get("id", "work"))
 	})
-	_active_actions[npc_id] = _create_active_action(action)
+	var active_action := _create_active_action(action, npc_id)
+	active_action["building_id"] = building_id
+	active_action["workstation_id"] = workstation_id
+	active_action["efficiency_multiplier"] = efficiency_multiplier
+	_active_actions[npc_id] = active_action
 	return true
 
 
@@ -547,26 +687,31 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 	var action: Dictionary = active_action.get("action", {})
 	var resource_system := _get_resource_system()
 	if resource_system == null:
+		_release_workstation_for_action(npc_id, active_action)
 		_update_action_failure(npc_id, "work_failed_no_resource_system")
 		return
 
 	var input_resources: Dictionary = action.get("input_resources", {})
 	if not resource_system.spend_resources(input_resources):
+		_release_workstation_for_action(npc_id, active_action)
 		_update_action_failure(npc_id, "work_failed_no_resources")
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", "")),
 			"reason": "资源不足",
 			"input_resources": input_resources,
-			"duration_seconds": _get_action_duration_seconds(action)
+			"workstation_id": str(active_action.get("workstation_id", "")),
+			"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
+			"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action)))
 		})
 		return
 
-	var output_resources: Dictionary = action.get("output_resources", {})
+	var output_resources: Dictionary = _get_work_output_resources(action, npc_id)
 	for resource_id in output_resources.keys():
 		resource_system.add_resource(str(resource_id), int(output_resources[resource_id]))
 
 	_apply_building_effects(action)
 	_apply_final_state_deltas(npc_id, active_action)
+	_release_workstation_for_action(npc_id, active_action)
 	_set_action_idle(npc_id, "completed_%s" % str(action.get("id", "work")))
 	_log_structured_action_event(npc_id, action, "work_completed", {
 		"action_id": str(action.get("id", "")),
@@ -575,7 +720,11 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		"building_hp_restore": int(action.get("building_hp_restore", 0)),
 		"satiety_delta": int(action.get("satiety_delta", 0)),
 		"fatigue_delta": int(action.get("fatigue_delta", 0)),
-		"duration_seconds": _get_action_duration_seconds(action)
+		"workstation_id": str(active_action.get("workstation_id", "")),
+		"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
+		"base_duration_seconds": _get_action_duration_seconds(action),
+		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action))),
+		"efficiency_multiplier": float(active_action.get("efficiency_multiplier", 1.0))
 	})
 
 
@@ -606,7 +755,7 @@ func _start_eat(npc_id: String, action: Dictionary) -> bool:
 					"current_action": str(action.get("id", "eat")),
 					"last_action_result": "started_eat"
 				})
-			var active_action := _create_active_action(action)
+			var active_action := _create_active_action(action, npc_id)
 			active_action["resource_id"] = resource_id
 			active_action["amount"] = cost
 			active_action["state_deltas"] = {"satiety": int(option.get("satiety_restore", 0))}
@@ -646,7 +795,7 @@ func _start_sleep(npc_id: String, action: Dictionary) -> bool:
 			"current_action": str(action.get("id", "sleep")),
 			"last_action_result": "started_sleep"
 		})
-	_active_actions[npc_id] = _create_active_action(action)
+	_active_actions[npc_id] = _create_active_action(action, npc_id)
 	return true
 
 
@@ -662,11 +811,11 @@ func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 	})
 
 
-func _create_active_action(action: Dictionary) -> Dictionary:
+func _create_active_action(action: Dictionary, npc_id: String = "") -> Dictionary:
 	return {
 		"action": action.duplicate(true),
 		"elapsed_seconds": 0.0,
-		"duration_seconds": _get_action_duration_seconds(action),
+		"duration_seconds": _get_effective_action_duration_seconds(action, npc_id),
 		"state_deltas": _get_action_state_deltas(action),
 		"applied_state_deltas": {}
 	}
@@ -679,6 +828,12 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 	var active_action: Dictionary = _active_actions[npc_id]
 	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
 		_advance_healing_assist(npc_id, active_action, game_delta_seconds)
+		return
+	if str(active_action.get("kind", "")) == "clinic_doctor":
+		_advance_clinic_doctor(npc_id, active_action, game_delta_seconds)
+		return
+	if str(active_action.get("kind", "")) == "clinic_patient":
+		_advance_clinic_patient(npc_id, active_action, game_delta_seconds)
 		return
 	var duration := maxf(0.001, float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS)))
 	var elapsed := clampf(float(active_action.get("elapsed_seconds", 0.0)) + game_delta_seconds, 0.0, duration)
@@ -700,6 +855,86 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 			_complete_eat(npc_id, active_action)
 		"sleep":
 			_complete_sleep(npc_id, active_action)
+
+
+func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		_stop_active_action(doctor_npc_id, "clinic_doctor_failed_no_npc_system")
+		return
+	if str(npc_system.get_npc_state(doctor_npc_id).get("current_location", "")) != CLINIC_LOCATION_ID:
+		_stop_active_action(doctor_npc_id, "clinic_doctor_left_clinic")
+		return
+
+	var patient_id := _find_active_clinic_patient_id()
+	if patient_id.is_empty():
+		_advance_clinic_study(doctor_npc_id, active_action, game_delta_seconds)
+		return
+
+	var resource_system := _get_resource_system()
+	var action: Dictionary = active_action.get("action", {})
+	var cost_interval := maxf(1.0, float(action.get("resource_cost_interval_seconds", HEALING_COST_INTERVAL_SECONDS)))
+	var cost_timer := float(active_action.get("cost_timer_seconds", 0.0)) + game_delta_seconds
+	var money_spent := int(active_action.get("money_spent", 0))
+	while cost_timer >= cost_interval:
+		if resource_system == null or not resource_system.spend_resources({HEALING_RESOURCE_ID: HEALING_INITIAL_COST}):
+			active_action["cost_timer_seconds"] = cost_timer
+			active_action["money_spent"] = money_spent
+			_active_actions[doctor_npc_id] = active_action
+			_finish_clinic_patient(patient_id, doctor_npc_id, "clinic_treatment_failed_no_money")
+			_stop_active_action(doctor_npc_id, "clinic_doctor_failed_no_money")
+			return
+		cost_timer -= cost_interval
+		money_spent += HEALING_INITIAL_COST
+
+	var hp_per_hour := _get_clinic_hp_per_hour(doctor_npc_id)
+	var remainders: Dictionary = active_action.get("hp_recovery_remainders", {})
+	var accumulated := float(remainders.get(patient_id, 0.0)) + hp_per_hour / 3600.0 * game_delta_seconds
+	var hp_to_restore := int(floor(accumulated))
+	if hp_to_restore > 0:
+		accumulated -= float(hp_to_restore)
+		var recovery_result: Dictionary = npc_system.restore_npc_hp(patient_id, hp_to_restore, "clinic_treatment", doctor_npc_id)
+		if not recovery_result.is_empty():
+			_update_active_clinic_patient_healer(patient_id, doctor_npc_id, money_spent)
+			var patient_state: Dictionary = npc_system.get_npc_state(patient_id)
+			if int(patient_state.get("hp", 0)) >= int(patient_state.get("max_hp", 100)):
+				_finish_clinic_patient(patient_id, doctor_npc_id, "clinic_treatment_completed", money_spent)
+	remainders[patient_id] = accumulated
+	active_action["hp_recovery_remainders"] = remainders
+	active_action["cost_timer_seconds"] = cost_timer
+	active_action["money_spent"] = money_spent
+
+	var skill_timer := float(active_action.get("treatment_skill_timer_seconds", 0.0)) + game_delta_seconds
+	var skill_interval := maxf(1.0, float(action.get("treatment_skill_interval_seconds", CLINIC_TREATMENT_SKILL_INTERVAL_SECONDS)))
+	while skill_timer >= skill_interval:
+		skill_timer -= skill_interval
+		_improve_medical_skill(doctor_npc_id, 1, "clinic_treatment")
+	active_action["treatment_skill_timer_seconds"] = skill_timer
+	_active_actions[doctor_npc_id] = active_action
+
+
+func _advance_clinic_study(doctor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
+	var action: Dictionary = active_action.get("action", {})
+	var skill_timer := float(active_action.get("study_skill_timer_seconds", 0.0)) + game_delta_seconds
+	var skill_interval := maxf(1.0, float(action.get("study_skill_interval_seconds", CLINIC_STUDY_SKILL_INTERVAL_SECONDS)))
+	while skill_timer >= skill_interval:
+		skill_timer -= skill_interval
+		_improve_medical_skill(doctor_npc_id, 1, "clinic_study")
+	active_action["study_skill_timer_seconds"] = skill_timer
+	_active_actions[doctor_npc_id] = active_action
+
+
+func _advance_clinic_patient(npc_id: String, _active_action: Dictionary, _game_delta_seconds: float) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		_stop_active_action(npc_id, "clinic_patient_failed_no_npc_system")
+		return
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(state.get("current_location", "")) != CLINIC_LOCATION_ID:
+		_finish_clinic_patient(npc_id, "", "clinic_patient_left_clinic")
+		return
+	if int(state.get("hp", 0)) >= int(state.get("max_hp", 100)):
+		_finish_clinic_patient(npc_id, str(_active_action.get("healer_npc_id", "")), "clinic_treatment_completed", int(_active_action.get("money_spent", 0)))
 
 
 func _advance_healing_assist(healer_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
@@ -786,6 +1021,108 @@ func _get_action_duration_seconds(action: Dictionary) -> float:
 	return maxf(1.0, float(action.get("base_duration_hours", DEFAULT_WORK_DURATION_HOURS)) * 3600.0)
 
 
+func _get_effective_action_duration_seconds(action: Dictionary, npc_id: String = "") -> float:
+	var base_duration := _get_action_duration_seconds(action)
+	if str(action.get("type", "")) != "work" or npc_id.is_empty():
+		return base_duration
+	var multiplier := _get_work_efficiency_multiplier(npc_id, action)
+	return maxf(60.0, base_duration / multiplier)
+
+
+func _get_work_efficiency_multiplier(npc_id: String, action: Dictionary) -> float:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null:
+		return 1.0
+
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	var skill_value := _get_action_skill_value(npc, str(action.get("skill", "")))
+	var attribute_value := _get_work_attribute_value(npc, action)
+	var building_level := 1
+	var building_id := str(action.get("location_required", ""))
+	if building_system != null and not building_id.is_empty():
+		var building: Dictionary = building_system.get_building(building_id)
+		building_level = maxi(1, int(building.get("level", 1)))
+
+	var skill_bonus := float(skill_value) / 100.0 * WORK_SKILL_SPEED_SCALE
+	var attribute_bonus := maxf(0.0, float(attribute_value - 5)) * WORK_ATTRIBUTE_SPEED_SCALE
+	var building_bonus := maxf(0.0, float(building_level - 1)) * WORK_BUILDING_LEVEL_SPEED_SCALE
+	return clampf(1.0 + skill_bonus + attribute_bonus + building_bonus, 1.0, WORK_MAX_SPEED_MULTIPLIER)
+
+
+func _get_work_output_resources(action: Dictionary, npc_id: String) -> Dictionary:
+	var output_resources: Dictionary = action.get("output_resources", {}).duplicate(true)
+	var scaling: Dictionary = action.get("output_scaling", {})
+	if scaling.is_empty() or npc_id.is_empty():
+		return output_resources
+
+	var resources: Array = scaling.get("resources", [])
+	if resources.is_empty():
+		resources = output_resources.keys()
+
+	var skill_bonus := 0
+	var skill_per_bonus := maxi(1, int(scaling.get("skill_per_bonus", WORK_OUTPUT_DEFAULT_SKILL_PER_BONUS)))
+	var npc_system := _get_npc_system()
+	if npc_system != null:
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		skill_bonus = int(floor(float(_get_action_skill_value(npc, str(action.get("skill", "")))) / float(skill_per_bonus)))
+
+	var attribute_bonus := 0
+	if npc_system != null:
+		var npc_for_attribute: Dictionary = npc_system.get_npc(npc_id)
+		var attribute_baseline := int(scaling.get("attribute_baseline", WORK_OUTPUT_DEFAULT_ATTRIBUTE_BASELINE))
+		var attribute_per_bonus := maxi(1, int(scaling.get("attribute_per_bonus", WORK_OUTPUT_DEFAULT_ATTRIBUTE_PER_BONUS)))
+		var attribute_value := _get_work_attribute_value(npc_for_attribute, action)
+		attribute_bonus = int(floor(float(maxi(0, attribute_value - attribute_baseline)) / float(attribute_per_bonus)))
+
+	var building_bonus := 0
+	if bool(scaling.get("building_level_bonus", true)):
+		var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+		var building_id := str(action.get("location_required", ""))
+		if building_system != null and not building_id.is_empty():
+			var building: Dictionary = building_system.get_building(building_id)
+			building_bonus = maxi(0, int(building.get("level", 1)) - 1)
+
+	var total_bonus := maxi(0, skill_bonus + attribute_bonus + building_bonus)
+	if total_bonus <= 0:
+		return output_resources
+
+	for raw_resource_id in resources:
+		var resource_id := str(raw_resource_id)
+		if output_resources.has(resource_id):
+			output_resources[resource_id] = maxi(0, int(output_resources.get(resource_id, 0)) + total_bonus)
+	return output_resources
+
+
+func _get_action_skill_value(npc: Dictionary, skill_name: String) -> int:
+	if skill_name.is_empty():
+		return 0
+	var skills: Dictionary = npc.get("skills", {})
+	return clampi(int(skills.get(skill_name, 0)), 0, 100)
+
+
+func _get_work_attribute_value(npc: Dictionary, action: Dictionary) -> int:
+	var stats: Dictionary = npc.get("stats", {})
+	var preferred_stat := str(action.get("stat", ""))
+	if preferred_stat.is_empty():
+		var skill_name := str(action.get("skill", ""))
+		if ["厨艺", "酿酒", "医术", "工程", "教练"].has(skill_name):
+			preferred_stat = "intelligence"
+		else:
+			preferred_stat = "strength"
+	return clampi(int(stats.get(preferred_stat, 5)), 0, 10)
+
+
+func _release_workstation_for_action(npc_id: String, active_action: Dictionary) -> void:
+	var building_id := str(active_action.get("building_id", active_action.get("action", {}).get("location_required", "")))
+	var workstation_id := str(active_action.get("workstation_id", ""))
+	if building_id.is_empty():
+		return
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null and building_system.has_method("release_workstation"):
+		building_system.release_workstation(building_id, npc_id, workstation_id)
+
+
 func _get_engineering_skill(npc: Dictionary) -> int:
 	var skills: Dictionary = npc.get("skills", {})
 	for skill_key in ["工程", "宸ョ▼"]:
@@ -859,6 +1196,17 @@ func _stop_active_action(npc_id: String, last_result: String = "active_action_st
 	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
 		var target_npc_id := str(active_action.get("target_npc_id", ""))
 		_remove_healing_helper(target_npc_id, npc_id)
+	elif ["clinic_doctor", "clinic_patient"].has(str(active_action.get("kind", ""))):
+		_release_workstation_for_action(npc_id, active_action)
+	elif str(active_action.get("action", {}).get("type", "")) == "work":
+		_release_workstation_for_action(npc_id, active_action)
+		_log_structured_action_event(npc_id, active_action.get("action", {}), "work_failed", {
+			"action_id": str(active_action.get("action", {}).get("id", "")),
+			"reason": "工作中断",
+			"workstation_id": str(active_action.get("workstation_id", "")),
+			"building_id": str(active_action.get("building_id", "")),
+			"duration_seconds": float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS))
+		})
 	_active_actions.erase(npc_id)
 	if not last_result.is_empty():
 		_set_action_idle(npc_id, last_result)
@@ -875,6 +1223,89 @@ func _finish_healing_assist(healer_npc_id: String, target_npc_id: String, reason
 		"healer_npc_id": healer_npc_id,
 		"target_npc_id": target_npc_id,
 		"money_spent": money_spent
+	})
+
+
+func _finish_clinic_patient(patient_npc_id: String, doctor_npc_id: String, last_result: String, money_spent: int = 0) -> void:
+	if not _active_actions.has(patient_npc_id):
+		return
+	var patient_action: Dictionary = _active_actions[patient_npc_id]
+	if str(patient_action.get("kind", "")) != "clinic_patient":
+		return
+	_release_workstation_for_action(patient_npc_id, patient_action)
+	_active_actions.erase(patient_npc_id)
+	_set_action_idle(patient_npc_id, last_result)
+	if not doctor_npc_id.is_empty():
+		_log_healing_event(doctor_npc_id, patient_npc_id, "healing_completed", {
+			"action_id": CLINIC_PATIENT_ACTION_ID,
+			"healer_npc_id": doctor_npc_id,
+			"target_npc_id": patient_npc_id,
+			"money_spent": money_spent
+		})
+
+
+func _find_active_clinic_patient_id() -> String:
+	for raw_npc_id in _active_actions.keys():
+		var npc_id := str(raw_npc_id)
+		var active_action: Dictionary = _active_actions.get(npc_id, {})
+		if str(active_action.get("kind", "")) == "clinic_patient":
+			return npc_id
+	return ""
+
+
+func _update_active_clinic_patient_healer(patient_npc_id: String, doctor_npc_id: String, money_spent: int) -> void:
+	if not _active_actions.has(patient_npc_id):
+		return
+	var patient_action: Dictionary = _active_actions[patient_npc_id]
+	patient_action["healer_npc_id"] = doctor_npc_id
+	patient_action["money_spent"] = money_spent
+	_active_actions[patient_npc_id] = patient_action
+
+
+func _get_clinic_hp_per_hour(doctor_npc_id: String) -> float:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null:
+		return CLINIC_BASE_HP_PER_HOUR
+	var doctor: Dictionary = npc_system.get_npc(doctor_npc_id)
+	var medical_skill := _get_medical_skill(doctor)
+	var stats: Dictionary = doctor.get("stats", {})
+	var intelligence := clampi(int(stats.get("intelligence", 5)), 0, 10)
+	var building_level := 1
+	if building_system != null:
+		var clinic: Dictionary = building_system.get_building(CLINIC_LOCATION_ID)
+		building_level = maxi(1, int(clinic.get("level", 1)))
+	return (
+		CLINIC_BASE_HP_PER_HOUR
+		+ float(medical_skill) * CLINIC_SKILL_HP_PER_HOUR
+		+ maxf(0.0, float(intelligence - 5)) * CLINIC_INTELLIGENCE_HP_PER_HOUR
+		+ maxf(0.0, float(building_level - 1)) * CLINIC_LEVEL_HP_PER_HOUR
+	)
+
+
+func _improve_medical_skill(npc_id: String, amount: int, reason: String) -> void:
+	var npc_system := _get_npc_system()
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("increase_npc_skill"):
+		return
+	var result: Dictionary = npc_system.increase_npc_skill(npc_id, "医术", amount)
+	if result.is_empty() or memory_system == null or not memory_system.has_method("add_event"):
+		return
+	memory_system.add_event({
+		"type": "skill_improved",
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": [CLINIC_LOCATION_ID, "医术"],
+		"location_id": CLINIC_LOCATION_ID,
+		"visibility": "private",
+		"importance": 20,
+		"payload": {
+			"skill_name": "医术",
+			"amount": int(result.get("amount", amount)),
+			"before": int(result.get("before", 0)),
+			"after": int(result.get("after", 0)),
+			"reason": reason
+		}
 	})
 
 
@@ -961,7 +1392,7 @@ func _find_work_action_for_building(building_id: String) -> String:
 	for raw_action_id in action_ids:
 		var action_id := str(raw_action_id)
 		var action: Dictionary = _actions.get(action_id, {})
-		if str(action.get("type", "")) == "work":
+		if ["work", "clinic_doctor"].has(str(action.get("type", ""))):
 			return action_id
 	return ""
 

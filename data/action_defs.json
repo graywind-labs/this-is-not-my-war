@@ -5,10 +5,18 @@
     "type": "work",
     "location_required": "garden",
     "skill": "耕种",
+    "stat": "strength",
     "duration_seconds": 3600,
     "input_resources": {},
     "output_resources": {
       "grain": 2
+    },
+    "output_scaling": {
+      "resources": ["grain"],
+      "skill_per_bonus": 50,
+      "attribute_baseline": 5,
+      "attribute_per_bonus": 3,
+      "building_level_bonus": true
     },
     "fatigue_delta": 8,
     "satiety_delta": -4
@@ -35,12 +43,20 @@
     "type": "work",
     "location_required": "stable",
     "skill": "养马",
+    "stat": "strength",
     "duration_seconds": 3600,
     "input_resources": {
       "grain": 1
     },
     "output_resources": {
       "horse_readiness": 1
+    },
+    "output_scaling": {
+      "resources": ["horse_readiness"],
+      "skill_per_bonus": 50,
+      "attribute_baseline": 5,
+      "attribute_per_bonus": 3,
+      "building_level_bonus": true
     },
     "fatigue_delta": 6,
     "satiety_delta": -3
@@ -51,12 +67,20 @@
     "type": "work",
     "location_required": "tavern",
     "skill": "酿酒",
+    "stat": "intelligence",
     "duration_seconds": 3600,
     "input_resources": {
       "grain": 1
     },
     "output_resources": {
       "wine": 1
+    },
+    "output_scaling": {
+      "resources": ["wine"],
+      "skill_per_bonus": 50,
+      "attribute_baseline": 5,
+      "attribute_per_bonus": 3,
+      "building_level_bonus": true
     },
     "fatigue_delta": 6,
     "satiety_delta": -3
@@ -67,10 +91,10 @@
     "type": "work",
     "location_required": "blacksmith",
     "skill": "打铁",
+    "stat": "strength",
     "duration_seconds": 3600,
     "input_resources": {
-      "iron": 1,
-      "wood": 1
+      "iron": 2
     },
     "output_resources": {
       "weapons": 1,
@@ -81,19 +105,45 @@
   },
   {
     "id": "work_workshop",
-    "name": "制造工程器械",
+    "name": "制造弓弩与工程器械",
     "type": "work",
     "location_required": "workshop",
     "skill": "工程",
+    "stat": "intelligence",
     "duration_seconds": 3600,
     "input_resources": {
       "wood": 2
     },
     "output_resources": {
+      "weapons": 1,
       "defense_devices": 1
     },
     "fatigue_delta": 8,
     "satiety_delta": -4
+  },
+  {
+    "id": "work_clinic_doctor",
+    "name": "坐诊或研读医学著作",
+    "type": "clinic_doctor",
+    "location_required": "clinic",
+    "skill": "医术",
+    "stat": "intelligence",
+    "workstation_type": "clinic_doctor",
+    "study_skill_interval_seconds": 14400,
+    "treatment_skill_interval_seconds": 3600,
+    "resource_cost_interval_seconds": 1800,
+    "input_resources": {
+      "money": 1
+    },
+    "fatigue_delta_per_hour": 3,
+    "satiety_delta_per_hour": 1
+  },
+  {
+    "id": "receive_clinic_treatment",
+    "name": "在诊所病床接受治疗",
+    "type": "clinic_patient",
+    "location_required": "clinic",
+    "workstation_type": "patient_bed"
   },
   {
     "id": "eat_at_dining_hall",

@@ -92,7 +92,8 @@ NPC：
 行动：
 
 - 指派指定行动；该下拉只列出 `data/action_defs.json` 中的普通行动，不包含按建筑写死的“修补围墙”等固定修复行动。
-- 指派工作。
+- 指派工作；T0801 起会占用目标可进入建筑的真实工位，并按 NPC 对应熟练度、力量/智力属性和建筑等级缩短单位周期。T0803 起，菜园工作还会按耕种熟练度、力量和菜园等级提高粮食产出。T0804 起，铁匠铺工作会消耗铁并产出武器/盔甲派生库存，打铁、力量和铁匠铺等级影响制作周期。T0805 起，工械坊工作会消耗木材并产出武器/工程器械派生库存，工程、智力和工械坊等级影响制作周期。T0806 起，马厩工作会消耗粮食并产出马匹整备派生库存，养马、力量和马厩等级影响制作周期与实际产出。T0807 起，酒窖工作会消耗粮食并产出酒库存，酿酒、智力和酒窖等级影响制作周期与实际产出；出售酒换钱仍归后续商人交易系统。工位占满或资源不足时会失败并写入对应结构化事件。
+- “指派行动”下拉可直接选择 `work_clinic_doctor` 和 `receive_clinic_treatment` 验证 T0808 小诊所：先让医生进入诊所医生工位，再让受伤且未昏迷 NPC 进入病床，治疗会随逻辑时间扣第纳尔并恢复 HP；若医生在岗但没有病人，会研读医学著作并缓慢提升医术。
 - 通过行动分组内的“修复目标”建筑下拉选择目标，再指派 NPC 协助该建筑的修复；协助修复是一个统一行为，建筑由该下拉或命令参数决定。
 - 通过行动分组内的“升级目标”建筑下拉选择目标，再指派 NPC 协助该建筑的升级；协助升级同样是带建筑参数的统一行为。
 - 通过行动分组内的“治疗目标”NPC 下拉选择昏迷目标，再指派当前选中 NPC 协助治疗；协助治疗是带目标 NPC 参数的统一行为，目标必须昏迷，每个昏迷目标最多 2 名治疗者。
@@ -183,6 +184,12 @@ assist_heal doctor_01 cook_01
 set_time 2 9 30 0
 enter_location cook_01 dining_hall
 work gardener_01 garden
+work blacksmith_01 blacksmith
+work engineer_01 workshop
+work stableman_01 stable
+work cook_01 tavern
+assign_action doctor_01 work_clinic_doctor
+assign_action cook_01 receive_clinic_treatment
 eat cook_01
 sleep priest_01
 plaza_notice 今晚所有人都必须留在广场附近。

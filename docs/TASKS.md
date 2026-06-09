@@ -86,6 +86,49 @@
 
 ---
 
+## T0007 修复工作中 NPC 状态刷新抢回右上角面板
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+修复 NPC 被指派工作后，玩家先点击该 NPC 打开 NPC 面板，再点击建筑切换到建筑面板时，工作中的 NPC 因持续状态刷新又自动弹出 NPC 面板，导致 UI 重叠的问题。
+
+验收标准：
+- 点击工作中的 NPC 后 NPC 面板正常显示。
+- 再点击建筑后应切换到建筑面板，NPC 面板保持隐藏。
+- 工作中的 NPC 后续 `npc_state_changed` 不会重新打开隐藏的 NPC 面板。
+- NPC 面板在自身可见时仍能响应当前 NPC 状态刷新。
+
+验收结果（2026-06-09）：
+- `NPCPanel._on_npc_state_changed(...)` 只在面板当前可见且刷新目标仍是当前 NPC 时调用 `show_npc(...)`。
+- 已在 `tools/verify_npc_panel_state.gd` 增加回归：NPC 面板切到建筑面板后，模拟同一 NPC 工作状态刷新，确认 NPC 面板不会重新显示。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`。
+
+---
+
+## T0008 修复 NPC 面板内容增多时向上溢出
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+修复 NPC 面板内容增多时，面板内容向上下两个方向延展，导致顶部超出屏幕的问题。
+
+验收标准：
+- NPC 面板打开后仍固定在右上角。
+- 事件库、见闻库等内容变长导致面板超过原始高度时，面板顶边保持在屏幕内，不向上扩出可视区域。
+- NPC 面板与建筑面板互斥、状态刷新不抢占等既有回归仍通过。
+
+验收结果（2026-06-09）：
+- 已将 `Main/UI/NPCPanel` 和内部 `PanelContainer` 的垂直增长方向调整为向下，内容超过原高度时不再以上下居中方式溢出。
+- `tools/verify_npc_panel_state.gd` 已增加长事件库/见闻库内容膨胀回归，确认面板内容不会向上越过 NPC 面板顶边。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --quit-after 1`。
+
+---
+
 # M0：项目骨架与工具稳定
 
 目标：让 Godot 项目、Python 后端、MCP 工具和项目文档结构可运行、可检查、可继续开发。
@@ -1072,7 +1115,7 @@ Main
 
 - `ActionSystem` 已读取 `data/action_defs.json`，提供 `debug_assign_work(npc_id, building_id)`、`debug_assign_eat(npc_id)`、`debug_assign_sleep(npc_id)` 和 `debug_assign_action(npc_id, action_id)`。
 - 调试指派会复用 `NPCSystem.move_npc_to_building(...)`；2026-05-25 起，NPC 到达目标建筑后进入持续行动，并随逻辑时间结算。
-- 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁和木材产出武器/盔甲；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
+- 菜园工作可产出粮食；食堂工作可消耗粮食产出餐食；酒窖可消耗粮食产出酒；铁匠铺可消耗铁产出武器/盔甲库存占位；工械坊可消耗木材产出工程器械；马厩可消耗粮食产出马匹整备占位；吃饭优先消耗餐食并恢复更多饱食度，没有餐食时消耗粮食；睡觉降低疲劳。
 - 已修正无产出工作不会结算饱食/疲劳和 EventLog 的问题。
 - `MemorySystem` 已提供最小 EventLog 占位，行动成功/失败会写入事件。
 - 已通过 `Godot_v4.6.2-stable_win64_console.exe --headless --path . --script res://tools/verify_action_system_basic.gd` 验证吃饭、睡觉、基础生产、派生资源生产和建筑协助修复；并回归通过 `verify_npc_movement_location.gd`、`verify_npc_panel_state.gd`、`verify_npc_generation_click.gd`；通过 Godot MCP 运行主场景，游戏日志无报错。
@@ -2232,7 +2275,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 ## T0801 实现职业工作产出框架
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0305, T0202, T0203
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`
@@ -2246,7 +2289,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 工种
 - NPC 对应熟练度加成
 - 工作对应力量或智力加成
-- 建筑等级
+- 建筑等级加成
 - 可进入建筑的真实工位占用与释放
 - 产出/消耗一份资源的最小工作周期时长
 - TimeSystem 有效逻辑时间倍率
@@ -2268,11 +2311,19 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 资源产出/消耗、饱食和疲劳变化使用 `TimeSystem` 的逻辑时间倍率或 `logical_time_tick`，不依赖真实帧率或 NPC 移动速度。
 - 在 T0305 持续行动基座上细化工作连续结算：确定各工作是否按小时批次、按分钟消耗投入、按进度产出或支持中途取消返还/损耗，避免后续数值误以为工作是瞬时点击结果。
 
+验收结果（2026-06-09）：
+- `BuildingSystem` 新增 `claim_workstation(...)` / `release_workstation(...)` 权威接口，工作开始占用可进入建筑工位，完成、资源失败或中断时释放；工位变化继续由 `MemorySystem` 通过建筑状态信号广播为地点内部状态变化。
+- `ActionSystem` 的工作行动新增统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；低熟练不会低于原始时长，高熟练 NPC 能更快完成同一单位产出。
+- 工作仍以 `data/action_defs.json` 的 `duration_seconds` 为单位周期基准，调试指派默认执行 1 个工作单位；投入资源在单位完成时扣除，资源不足会写入 `work_failed` 并释放工位，产出和饱食/疲劳仍随 `logical_time_tick` 推进。
+- `work_started` / `work_completed` payload 补充 `workstation_id`、`building_id`、`base_duration_seconds`、`duration_seconds` 和 `efficiency_multiplier`，为后续多周期计划工作保留事件降噪边界。
+- 新增 `tools/verify_work_output_framework.gd`，验证高熟练更快完成、工位占用/释放、占满工位拒绝第二名工人、资源不足失败不占工位、地点内部状态广播和事件写入。
+- 验证通过：`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_action_system_basic.gd`、`godot --headless --path . --script res://tools/verify_location_info_nodes.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
 ---
 
 ## T0802 实现食堂：粮食加工餐食
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
@@ -2280,15 +2331,22 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 食堂工作消耗粮食，产出餐食。
-- 厨艺影响效率。
-- NPC 吃餐食恢复更多饱食度。
+- 厨艺、厨房等级影响效率。
+- 如果有餐食的话，NPC 优先吃餐食恢复更多饱食度（比直接吃粮食性价比更高）。
 - 工作和吃饭事件进入结构化事件与 NPC 事件库。
+
+验收结果（2026-06-09）：
+- `data/action_defs.json` 中 `work_dining_hall` 已明确使用 `厨艺`，消耗 1 份粮食并产出 1 份餐食；食堂工位由 T0801 的 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 维护。
+- 食堂工作效率沿用统一公式：厨艺、智力和食堂建筑等级会缩短单位加工周期；食堂升级后同一厨子的加工时间会进一步缩短。
+- `eat_at_dining_hall.food_options` 按餐食优先于粮食排列；餐食恢复 50 点饱食度，粮食恢复 25 点饱食度。
+- 新增 `tools/verify_dining_hall_meals.gd`，验证粮食转餐食、厨艺/食堂等级效率、餐食优先吃、餐食性价比高于粮食，以及 `work_started` / `work_completed` / `eat_completed` 事件进入 NPC 事件库。
+- 验证通过：`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`。
 
 ---
 
 ## T0803 实现菜园：产出粮食
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
@@ -2296,15 +2354,20 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 菜园工作产出粮食。
-- 耕种影响产出。
+- 耕种熟练度、力量影响产出。
 - 建筑等级影响产出。
-- 园丁有明显优势。
+
+验收结果（2026-06-09）：
+- `data/action_defs.json` 中 `work_garden` 已明确使用 `耕种` 与 `strength`，基础产出 2 份粮食，并通过 `output_scaling` 让耕种熟练度、力量和菜园等级提高粮食产量。
+- `ActionSystem` 新增工作产出缩放计算，工作完成时按缩放后的 `output_resources` 增加资源，并把实际产出写入 `work_completed.payload.output_resources`；食堂等未配置 `output_scaling` 的工作仍保持固定产出。
+- 新增 `tools/verify_garden_grain_output.gd`，验证菜园产粮、耕种影响产出、力量影响产出、菜园升级影响产出，以及完成事件记录缩放后的粮食产出。
+- 验证通过：`godot --headless --path . --script res://tools/verify_garden_grain_output.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`。
 
 ---
 
 ## T0804 实现铁匠铺：制造金属武器和盔甲
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
@@ -2312,15 +2375,22 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 消耗铁制造基础武器或盔甲。
-- 打铁影响制作效率。
+- 打铁、力量影响制作效率。
 - 产物进入库存。
 - 不需要完整装备外观，但数据可用。
+
+验收结果（2026-06-09）：
+- `data/action_defs.json` 中 `work_blacksmith` 已明确使用 `打铁` 与 `strength`，消耗 2 份铁，产出 1 份武器库存与 1 份盔甲库存。
+- 铁匠铺工作沿用 T0801 统一效率公式：打铁熟练度、力量和铁匠铺建筑等级会缩短单位制作周期；铁匠铺升级后同一铁匠制作更快。
+- 产物进入当前派生资源库存 `weapons` / `armor`，供 T0901 正式库存与装备系统继续细分为主武器、头盔、胸甲、腕甲、腿甲等装备部位。
+- 新增 `tools/verify_blacksmith_metal_gear.gd`，验证铁匠铺行动配置、打铁/力量/建筑等级效率、铁消耗、武器/盔甲库存增加、完成事件 payload 和缺铁失败。
+- 验证通过：`godot --headless --path . --script res://tools/verify_blacksmith_metal_gear.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`、`godot --headless --path . --script res://tools/verify_garden_grain_output.gd`。
 
 ---
 
 ## T0805 实现工械坊：制造弓弩与防御器械
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
@@ -2328,14 +2398,21 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 消耗木材制造弓、弩或器械。
-- 工程影响制作效率。
+- 工程、智力影响制作效率。
 - 工程器械可先作为库存项，不必立即部署。
+
+验收结果（2026-06-09）：
+- `data/action_defs.json` 中 `work_workshop` 已明确使用 `工程` 与 `intelligence`，消耗 2 份木材，产出当前派生库存层面的 1 份 `weapons` 和 1 份 `defense_devices`。
+- 工械坊工作沿用 T0801 统一效率公式：工程熟练度、智力和工械坊建筑等级会缩短单位制作周期；工械坊升级后同一工程师制作更快。
+- 由于 T0901 正式装备系统尚未实现，弓/弩暂时进入通用 `weapons` 库存；由于 T1508 尚未实现，弩床、拒马等防御器械暂时进入 `defense_devices` 库存，不进行部署、自动攻击或阻挡结算。
+- 新增 `tools/verify_workshop_ranged_devices.gd`，验证工械坊行动配置、工程/智力/建筑等级效率、木材消耗、武器/工程器械库存增加、完成事件 payload 和缺木失败。
+- 验证通过：`godot --headless --path . --script res://tools/verify_workshop_ranged_devices.gd`、`godot --headless --path . --script res://tools/verify_action_system_basic.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_blacksmith_metal_gear.gd`、`godot --headless --path . --script res://tools/verify_garden_grain_output.gd`、`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T0806 实现马厩：马匹喂养和恢复
 
-状态：Todo
+状态：Partial
 优先级：P1
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`
@@ -2343,15 +2420,21 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 马厩消耗粮食维护马匹。
-- 养马影响马匹恢复。
-- 马匹可作为装备坐骑使用。
-- 再生产可先用低概率或暂不开放。
+- 养马影响马匹恢复和再生产。
+- 马匹可作为装备坐骑使用。装备的时候，进入战斗模式时，到NPC坐骑槽（表现是在NPC胯下骑着），加快移动速度并且换为骑兵战斗策略（参考战斗机制文档），卸下即回到马厩。日常工作模式不骑马
+
+验收结果（2026-06-09，Partial）：
+- 已实现当前可落地的马厩经营闭环：`data/action_defs.json` 中 `work_stable` 使用养马与力量，消耗 1 份粮食，产出 `horse_readiness` 马匹整备派生库存。
+- 马厩工作沿用 T0801 统一效率公式：养马熟练度、力量和马厩建筑等级会缩短单位照料周期；`output_scaling` 会让养马、力量和马厩等级提高实际马匹整备产出。
+- 新增 `tools/verify_stable_horse_care.gd`，验证马厩行动配置、养马/力量/建筑等级效率、粮食消耗、马匹整备库存增加、完成事件 payload 和缺粮失败。
+- 当前未实现坐骑装备槽、NPC 胯下骑乘表现、战斗移动速度加成、进入战斗时骑兵策略切换或卸下回马厩；这些依赖 T0901 正式装备系统、T0902 兵种判定、T1103 集结表现和 T1105 战斗策略。
+- 验证通过：`godot --headless --path . --script res://tools/verify_stable_horse_care.gd`。
 
 ---
 
 ## T0807 实现酒窖：酿酒与出售
 
-状态：Todo
+状态：Partial
 优先级：P1
 前置任务：T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`
@@ -2360,24 +2443,43 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 - 酒窖消耗粮食产出酒。
 - 酿酒影响效率。
-- 酒可出售换金钱。
-- 暂不实现饮酒副作用。
+- 酒可在商队处（参考文档中的交易部分）出售换金钱。
+- 暂不实现饮酒。
+
+验收结果（2026-06-09，Partial）：
+- 已实现当前可落地的酒窖经营闭环：`data/action_defs.json` 中 `work_tavern` 使用酿酒与智力，消耗 1 份粮食，产出 `wine` 酒派生库存。
+- 酒窖工作沿用 T0801 统一效率公式：酿酒熟练度、智力和酒窖建筑等级会缩短单位酿造周期；`output_scaling` 会让酿酒、智力和酒窖等级提高实际酒库存产出。
+- 厨子布鲁诺的酿酒熟练度从 38 调整为 58，使其符合 `game_design.md` 中“厨子初始优势包含酿酒”的定位，同时仍以厨艺作为主职业优势。
+- 新增 `tools/verify_tavern_wine_trade.gd`，验证酒窖行动配置、酿酒/智力/建筑等级效率、粮食消耗、酒库存增加、完成事件 payload、缺粮失败，以及酿酒不会在商人系统实现前自动把酒换成第纳尔。
+- 当前未实现商队出售酒换金钱；该部分依赖 T1507 商人交易系统，并已在 T1507 中明确接收 T0807 的 `wine` 库存。
+- 验证通过：`godot --headless --path . --script res://tools/verify_tavern_wine_trade.gd`、`godot --headless --path . --script res://tools/verify_action_system_basic.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`、`godot --headless --path . --script res://tools/verify_garden_grain_output.gd`、`godot --headless --path . --script res://tools/verify_workshop_ranged_devices.gd`、`godot --headless --path . --script res://tools/verify_stable_horse_care.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T0808 实现小诊所：治疗行动完善
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0503, T0801
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `AI_NPC_SYSTEM.md`
 
 验收标准：
 
-- 医术影响治疗速度。
-- 诊所等级或床位影响治疗效率。
+- 医术、智力影响治疗速度。
+- 诊所等级影响治疗效率。
 - 治疗消耗金钱。
-- 医生在治疗中获得医术经验。
+- 当医生在诊所工位，且受伤的NPC进入诊所床位接受治疗时，治疗才会开始。诊所不仅有工位也要有床位。
+- 医生在诊所工位而没有NPC进入床位时（没有治疗），医生以极慢的速度增加医术熟练度，事件判定为在研读医学著作。
+- 进入治疗/研读医术工位是一个行为选项，NPC进入病床参与治疗是另一个行为选项，两个都在后面的计划机制里可以安排。
+- 医生在治疗中获得少量医术熟练度（和所有在工作中增加对应熟练度的逻辑一样）。
+
+验收结果（2026-06-09）：
+- 已将 `data/building_defs.json` 中小诊所拆分为 `clinic_doctor` 医生工位和 `patient_bed` 病床；诊所升级当前增加病床。
+- 已新增 `data/action_defs.json` 的 `work_clinic_doctor` 与 `receive_clinic_treatment`：医生进入诊所工位坐诊/研读医术，受伤且未昏迷 NPC 进入病床接受治疗，二者是独立行动选项。
+- `ActionSystem` 已实现诊所治疗闭环：只有医生在诊所工位且病人占用诊所病床时才推进治疗；治疗随 `logical_time_tick` 消耗第纳尔并恢复 HP，医术、智力和诊所等级提高治疗速度；病人 HP 回满后释放病床。
+- 医生无病人时会以较慢节奏通过 `skill_improved` 事件记录“研读医学著作”并提升医术；治疗中也会以较小步进提升医术。当前只做 T0808 需要的医术最小增长，不实现 T0904 的通用经验、技能点和属性成长。
+- 新增 `tools/verify_clinic_treatment.gd`，验证诊所工位/病床、医生研读医术、病床治疗、金钱消耗、医术/智力/诊所等级效率和病床释放。
+- 验证通过：`godot --headless --path . --script res://tools/verify_clinic_treatment.gd`、`godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
@@ -2391,12 +2493,14 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 状态：Todo
 优先级：P0
-前置任务：T0804
+前置任务：T0804, T0805, T0806
 涉及文档：`COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`, `UI_UX.md`
 
 任务目标：
 
 支持 NPC 装备武器、盔甲和坐骑。
+
+T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前把工械坊制造的弓/弩也先并入通用 `weapons` 派生库存，T0806 当前把马厩维护/恢复产出并入 `horse_readiness` 马匹整备派生库存。本任务需要把这些库存消耗并映射到可装备数据。
 
 装备部位：
 
@@ -2418,6 +2522,9 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 装备后 NPC 面板显示更新。
 - 装备事件写入目标 NPC 事件库，并按地点可见性通过地点/广场节点即时广播给当前在场 NPC。
 - 兵种可根据装备组合判定。
+- 消耗 T0804 产出的 `weapons` / `armor` 派生库存时，不直接让 UI 决定战斗属性；装备数据、兵种和后续战斗数值仍由装备/战斗系统结算。
+- 需要接住 T0805 的木质远程武器占位，把可装备主武器区分为剑盾、长杆、弓、弩等类型；不能继续只用“占位短剑”代表所有武器。
+- 需要接住 T0806 的 `horse_readiness`，把它转换为可装备坐骑库存或坐骑槽数据；日常工作模式不显示骑乘，进入战斗/集结时再交给战斗表现层处理。
 
 ---
 
@@ -2437,6 +2544,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 近战武器 + 马 → 近战骑兵
 - 远程武器 + 马 → 骑射单位
 - 无武器 → 非战斗人员 / 避战单位
+- 坐骑来源必须来自 T0901 装备槽，不能直接读取 `horse_readiness` 库存当作 NPC 已骑乘。
 
 ---
 
@@ -2467,6 +2575,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 验收标准：
 
 - 工作提升职业熟练度。
+- 接入 T0808 已有的医术最小增长，统一为所有职业工作可复用的熟练度经验增长规则。
 - 战斗或训练提升武器熟练度。
 - 熟练度提升同步增加经验。
 - 经验达标获得技能点。
@@ -2654,6 +2763,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 - HUD 警铃按钮可触发集结。
 - 已入伍有武器 NPC 移动到防守位置。
+- 已装备坐骑的 NPC 只在战斗/集结模式表现为骑乘；日常工作模式不骑马。
 - 未入伍 NPC 不响应。
 - 集结事件写入结构化事件。
 
@@ -3263,7 +3373,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 状态：Todo
 优先级：P2
-前置任务：T0202, T0401
+前置任务：T0202, T0401, T0807
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`
 
 验收标准：
@@ -3272,6 +3382,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 玩家可买粮食、木材、石料、铁。
 - 玩家可卖酒。
 - 交易事件写入结构化事件。
+- 需要接住 T0807 的 `wine` 派生库存：出售酒时扣除 `wine`，增加 `money`，价格由交易系统配置决定，不能在酒窖工作完成时自动换钱。
 
 ---
 
@@ -3284,6 +3395,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 验收标准：
 
+- 消耗 T0805 产出的 `defense_devices` 工程器械库存。
 - 弩床或拒马可部署在围墙。
 - 自动攻击或阻挡敌人。
 - 工程技能影响制造效率。

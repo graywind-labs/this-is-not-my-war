@@ -41,8 +41,11 @@ func _init() -> void:
 		return
 
 	var content := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content")
+	var panel_container := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer") as Control
 	var attributes_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCAttributesLabel") as Label
 	var specialties_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCJobLabel") as Label
+	var event_log_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEventLogLabel") as Label
+	var witness_log_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCWitnessLogLabel") as Label
 	if attributes_label == null or attributes_label.text != "属性：力量 7，智力 6":
 		push_error("NPCPanel attributes text mismatch: %s" % (attributes_label.text if attributes_label != null else "<missing>"))
 		quit(1)
@@ -55,9 +58,28 @@ func _init() -> void:
 		push_error("NPCPanel content node not found")
 		quit(1)
 		return
+	if panel_container == null or event_log_label == null or witness_log_label == null:
+		push_error("NPCPanel growth verification nodes not found")
+		quit(1)
+		return
 	var hp_index := hp_label.get_index()
 	if attributes_label.get_index() != hp_index + 1 or specialties_label.get_index() != hp_index + 2:
 		push_error("NPCPanel order mismatch; expected HP, attributes, specialties")
+		quit(1)
+		return
+
+	var long_memory_lines: Array[String] = ["事件库：内容膨胀测试"]
+	for index in range(40):
+		long_memory_lines.append("- 08:%02d:00 测试事件摘要内容变长" % index)
+	event_log_label.text = "\n".join(long_memory_lines)
+	witness_log_label.text = "\n".join(long_memory_lines)
+	await process_frame
+	if npc_panel.global_position.y < -0.5:
+		push_error("NPCPanel grew upward outside the viewport: %.2f" % npc_panel.global_position.y)
+		quit(1)
+		return
+	if panel_container.global_position.y < npc_panel.global_position.y - 0.5:
+		push_error("NPCPanel content grew upward past the panel top: %.2f < %.2f" % [panel_container.global_position.y, npc_panel.global_position.y])
 		quit(1)
 		return
 
@@ -77,6 +99,15 @@ func _init() -> void:
 	await process_frame
 	if npc_panel.visible or not building_panel.visible:
 		push_error("Panel switching from NPC to building failed")
+		quit(1)
+		return
+	if not npc_system.update_npc_state(npc_id, {"satiety": 50, "fatigue": 34, "current_action": "work_garden"}):
+		push_error("Failed to update hidden NPC state")
+		quit(1)
+		return
+	await process_frame
+	if npc_panel.visible or not building_panel.visible:
+		push_error("Hidden NPCPanel should not reopen after the current NPC state changes")
 		quit(1)
 		return
 

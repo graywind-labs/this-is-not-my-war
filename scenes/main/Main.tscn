@@ -537,6 +537,7 @@ offset_top = 24.0
 offset_right = -24.0
 offset_bottom = 640.0
 grow_horizontal = 0
+grow_vertical = 1
 script = ExtResource("12_npc_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/NPCPanel"]
@@ -545,7 +546,7 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
-grow_vertical = 2
+grow_vertical = 1
 
 [node name="MarginContainer" type="MarginContainer" parent="UI/NPCPanel/PanelContainer"]
 layout_mode = 2

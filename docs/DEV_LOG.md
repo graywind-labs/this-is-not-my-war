@@ -1,18 +1,85 @@
 # DEV_LOG.md
 
-## 2026-06-07 T0007 重装后本地依赖恢复
+## 2026-06-09 T0008 NPC 面板内容增多时向上溢出修复
 
-- 安装并验证基础工具链：Python 3.12.10、Node.js 24.16.0 LTS、npm 11.13.0、Godot 4.6.3、`@satelliteoflove/godot-mcp` 3.7.0。
-- 创建项目 `.venv`，安装 `backend/requirements.txt`；`.gitignore` 新增 `.venv/`，避免本地依赖目录进入版本库。
-- VSCode 已安装 Godot Tools、Python、Pylance、debugpy 等扩展；`.vscode/settings.json` 改为当前机器可用的 winget Godot 命令别名。
-- Codex 用户配置新增 `mcp_servers.godot`，使用 `cmd /c godot-mcp.cmd`，避免 PowerShell 执行策略拦截 `.ps1` shim。
-- 验证通过：`tools/verify_backend_schemas.py`、`tools/verify_mock_model_adapter.py`、`tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --quit-after 1`、`tools/verify_gm_panel.gd`、`tools/verify_llm_bridge.gd`。
-- Godot MCP 插件当前监听 `6550`，但当前 Codex 会话未热加载新的 MCP 配置；`tools/check_godot_mcp.ps1` 返回“Godot plugin is running, but MCP is not connected”。需要重启/刷新 Codex 后复验 MCP 工具是否出现。
-- 追加修复：重启 Codex 后发现 MCP server `3.7.0` 已启动但未连接，项目 addon 仍是 `2.17.0`。已执行 `godot-mcp.cmd --install-addon . --force` 升级 addon 到 `3.7.0`，重启 Godot 编辑器后用外部 Node 握手验证 `serverVersion=3.7.0`、`addonVersion=3.7.0`、`versionsMatch=true`，并成功执行 `get_project_info`。当前 Codex 会话的 MCP transport 在清理旧子进程后关闭，需要再次重启/刷新 Codex 完成最后复验。
-- 再次复验：Godot 编辑器和 `6550` 监听正常，外部 Node 以 `127.0.0.1` / `localhost` 连接均成功，但 Codex 当前 MCP server 仍报告 `connected=false`。已把 `%USERPROFILE%\.codex\config.toml` 的 Godot MCP 启动命令改为显式设置 `GODOT_HOST=127.0.0.1` 与 `GODOT_PORT=6550`，等待下次 Codex 重启后复验。
-- 后续诊断：`editor.get_state` 返回 “Another MCP server connected and replaced this one”，说明当前 MCP server 已经被其他连接替换并停止重连。已把 Codex 配置从 `cmd /c set ...` 改为直接启动 `C:\Users\93741\AppData\Roaming\npm\godot-mcp.cmd`，并通过 TOML `env` 表设置 `GODOT_HOST` / `GODOT_PORT`，等待下一次 Codex 重启后复验。
-- 最终复验通过：重启 Codex 后 `godot_project.addon_status` 显示 `connected=true`、server/addon 均为 `3.7.0` 且版本匹配；`godot_editor.get_state` 正常返回当前场景 `res://scenes/main/Main.tscn`。
-- 经验固化：已在 `CURRENT_STATE.md` 写入换环境恢复 Godot MCP 清单，在 T0007 和 `MODULE_INDEX.md` 标出复用入口；下次重装时优先检查 `@satelliteoflove/godot-mcp@3.7.0`、项目 addon `plugin.cfg` 版本、Codex TOML `env` 配置和是否存在外部客户端顶掉 Codex 连接。
+- 修复 NPC 面板内容变多时向上下两个方向扩展，导致顶部越出屏幕的问题。
+- `Main.tscn` 中 `Main/UI/NPCPanel` 和内部 `PanelContainer` 的垂直增长方向改为向下，保留右上角顶边作为固定基准。
+- `tools/verify_npc_panel_state.gd` 增加长事件库/见闻库文本回归，确认内容膨胀时 `PanelContainer` 不会向上越过 NPC 面板顶边。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --quit-after 1`。
+- Godot MCP 自检通过：`addon_status` connected，当前打开场景为 `res://scenes/main/Main.tscn`。
+
+## 2026-06-09 T0808 小诊所治疗行动完善
+
+- `data/building_defs.json` 中小诊所拆分为 `clinic_doctor` 医生工位和 `patient_bed` 病床，诊所升级当前增加病床。
+- `data/action_defs.json` 新增 `work_clinic_doctor` 和 `receive_clinic_treatment`，让医生坐诊/研读医术和病人占床成为两个独立行动选项。
+- `ActionSystem` 新增诊所治疗逻辑：医生在岗且受伤未昏迷 NPC 占床时才推进治疗；治疗按逻辑时间消耗第纳尔并恢复 HP，医术、智力和诊所等级提高恢复速度；病人回满 HP 后释放病床。
+- 医生无病人时会以慢速研读医学著作并通过 `skill_improved` 事件提升医术，治疗中也会少量提升医术；通用经验、技能点和属性成长继续留给 T0904。
+- `NPCSystem` 新增 `restore_npc_hp(...)` 和 `increase_npc_skill(...)`，供诊所治疗与医术最小成长调用。
+- 新增 `tools/verify_clinic_treatment.gd`，验证诊所工位/病床、研读医术、病床治疗、金钱消耗、医术/智力/诊所等级效率、治疗完成事件和病床释放。
+- 验证通过：`verify_clinic_treatment.gd`、`verify_npc_unconscious_healing.gd`、`verify_work_output_framework.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-09 T0807 酒窖酿酒与出售边界
+
+- `data/action_defs.json` 的 `work_tavern` 明确使用 `stat="intelligence"`，消耗 1 份粮食，产出 `wine` 酒派生库存。
+- 酒窖工作沿用 T0801 统一效率公式：酿酒熟练度、智力和酒窖建筑等级会缩短单位酿造周期；`output_scaling` 会按酿酒、智力和酒窖等级提高实际酒库存产出。
+- 将厨子布鲁诺的酿酒熟练度从 38 调整为 58，以符合 `game_design.md` 中厨子具备酿酒优势的定位。
+- 新增 `tools/verify_tavern_wine_trade.gd`，验证酒窖配置、酿酒/智力/建筑等级效率、粮食消耗、酒库存产出、完成事件 payload、缺粮失败，以及酿酒完成不会在商人交易系统实现前自动增加第纳尔。
+- 当前不实现饮酒，也不实现商队出售酒换钱；出售部分已补到 T1507 商人交易系统，要求接住 T0807 的 `wine` 库存。
+- 验证通过：`verify_tavern_wine_trade.gd`、`verify_action_system_basic.gd`、`verify_work_output_framework.gd`、`verify_dining_hall_meals.gd`、`verify_garden_grain_output.gd`、`verify_workshop_ranged_devices.gd`、`verify_stable_horse_care.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-09 T0806 马厩马匹喂养与恢复
+
+- `data/action_defs.json` 的 `work_stable` 明确使用 `stat="strength"`，消耗 1 份粮食，产出 `horse_readiness` 马匹整备派生库存。
+- 马厩工作沿用 T0801 统一效率公式：养马熟练度、力量和马厩建筑等级会缩短单位照料周期；`output_scaling` 会按养马、力量和马厩等级提高实际马匹整备产出。
+- 新增 `tools/verify_stable_horse_care.gd`，验证马厩配置、养马/力量/建筑等级效率、粮食消耗、马匹整备库存产出、完成事件 payload 和缺粮失败。
+- 当前不实现坐骑装备槽、NPC 胯下骑乘表现、战斗移动速度加成、进入战斗时骑兵策略切换或卸下回马厩；这些已补到 T0901/T0902/T1103/T1105 的后续安排。
+- 验证通过：`verify_stable_horse_care.gd`。
+
+## 2026-06-09 T0805 工械坊弓弩与防御器械
+
+- `data/action_defs.json` 的 `work_workshop` 明确使用 `stat="intelligence"`，消耗 2 份木材，产出 1 份 `weapons` 和 1 份 `defense_devices` 派生库存。
+- 工械坊工作沿用 T0801 统一效率公式：工程熟练度、智力和工械坊建筑等级会缩短单位制作周期；本次不实现具体弓/弩装备条目、装备外观、弩床/拒马部署、自动攻击或阻挡结算。
+- 新增 `tools/verify_workshop_ranged_devices.gd`，验证工械坊配置、工程/智力/建筑等级效率、木材消耗、武器/工程器械库存产出、完成事件 payload 和缺木失败。
+- 更新 T0901 后续安排：正式库存与装备系统需要接住 T0805 进入 `weapons` 的木质远程武器占位，并把主武器区分为剑盾、长杆、弓、弩等类型；T1508 继续负责消耗 `defense_devices` 并部署工程器械。
+- 验证通过：`verify_workshop_ranged_devices.gd`、`verify_action_system_basic.gd`、`verify_work_output_framework.gd`、`verify_blacksmith_metal_gear.gd`、`verify_garden_grain_output.gd`、`verify_dining_hall_meals.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-09 T0804 铁匠铺金属武器和盔甲
+
+- `data/action_defs.json` 的 `work_blacksmith` 明确使用 `stat="strength"`，消耗 2 份铁，产出 1 份 `weapons` 和 1 份 `armor` 派生库存。
+- 铁匠铺工作沿用 T0801 统一效率公式：打铁熟练度、力量和铁匠铺建筑等级会缩短单位制作周期；本次不实现装备部位、品质、耐久或外观。
+- 新增 `tools/verify_blacksmith_metal_gear.gd`，验证铁匠铺配置、打铁/力量/建筑等级效率、铁消耗、武器/盔甲库存产出、完成事件 payload 和缺铁失败。
+- 在 T0901 任务中补充后续安排：正式库存与装备系统需要接住 T0804 的 `weapons` / `armor` 派生库存，再映射到主武器、头盔、胸甲、腕甲、腿甲等可装备数据。
+- 验证通过：`verify_blacksmith_metal_gear.gd`、`verify_work_output_framework.gd`、`verify_dining_hall_meals.gd`、`verify_garden_grain_output.gd`。
+
+## 2026-06-09 T0803 菜园粮食产出
+
+- `data/action_defs.json` 的 `work_garden` 增加 `stat="strength"` 与 `output_scaling`，菜园基础产出 2 份粮食，并由耕种熟练度、力量和菜园等级提高实际产出。
+- `ActionSystem` 新增配置化工作产出缩放计算；工作完成时按缩放后的 `output_resources` 增加资源，并把实际产出写入 `work_completed` 事件 payload。未配置缩放的工作保持固定产出。
+- 新增 `tools/verify_garden_grain_output.gd`，验证菜园产粮、耕种影响产出、力量影响产出、菜园等级影响产出，以及完成事件记录缩放后的粮食产出。
+- 更新 T0801 工作框架验证，避免继续假设菜园永远固定产出 2 粮食。
+- 验证通过：`verify_garden_grain_output.gd`、`verify_work_output_framework.gd`、`verify_dining_hall_meals.gd`。
+
+## 2026-06-09 T0802 食堂粮食加工餐食
+
+- 新增 `tools/verify_dining_hall_meals.gd`，把 T0802 从 T0801 框架中拆出为独立验收：验证 `work_dining_hall` 消耗粮食、产出餐食、使用厨艺，并验证厨艺和食堂等级会缩短加工周期。
+- 验证吃饭行动优先消耗餐食；餐食恢复 50 点饱食度，粮食恢复 25 点饱食度。
+- 验证食堂工作和吃饭完成事件写入 NPC 事件库，payload 保留资源输入、资源输出、食物资源和饱食恢复量。
+- 验证通过：`godot --headless --path . --script res://tools/verify_dining_hall_meals.gd`。
+
+## 2026-06-09 T0007 工作中 NPC 状态刷新抢回面板修复
+
+- 修复工作中 NPC 的 `npc_state_changed` 持续刷新会在玩家切到建筑面板后重新打开 NPC 面板的问题。
+- `NPCPanel` 现在只在自身可见且刷新目标仍是当前 NPC 时响应状态刷新；点击建筑隐藏 NPC 面板后，工作、饱食、疲劳等后续状态变化不会再把它弹出。
+- `tools/verify_npc_panel_state.gd` 增加回归用例：NPC 面板切到建筑面板后模拟同一 NPC 工作状态刷新，确认右上角保持建筑面板。
+- 验证通过：`verify_npc_panel_state.gd`、`verify_work_output_framework.gd`、`verify_gm_panel.gd`。
+
+## 2026-06-09 T0801 职业工作产出框架
+
+- `BuildingSystem` 新增 `claim_workstation(...)` / `release_workstation(...)`，工作位占用和释放由建筑系统权威维护，工位变化继续通过 `building_state_changed` 触发地点内部状态广播。
+- `ActionSystem` 的工作行动接入统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；低熟练不会慢于配置基准，高熟练 NPC 会更快完成同一单位产出。
+- 工作开始写入实际 `workstation_id`、`building_id`、基础时长、有效时长和效率倍率；完成、资源失败或中断会释放工位并写入结构化事件。
+- 新增 `tools/verify_work_output_framework.gd`，覆盖高熟练更快、工位占用/释放、占满拒绝第二名工人、资源不足失败不占工位、地点内部状态广播和事件写入。
+- 验证通过：`verify_work_output_framework.gd`、`verify_action_system_basic.gd`、`verify_location_info_nodes.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ## 2026-06-05 T0705 NPC 主动找守备官交涉
 

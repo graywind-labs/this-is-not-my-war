@@ -21,8 +21,9 @@
 - 后续 API / 调试面板需要显示当前模型调用状态、等待中的 LLM 请求数量、TimeSystem 有效逻辑倍率和最近一次慢速原因；当前 HUD 只显示玩家设定的速度倍率。
 - `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`，点击建筑后显示建筑名称、等级、HP / Max HP、工作位和地点信息占位；修复/升级消耗与条件不常驻显示在面板正文中。
 - `BuildingPanel` 内的修复、升级按钮会调用 `BuildingSystem`；按钮根据当前 HP、等级、配置、是否已有修复/升级作业和资源是否足够自动启用或禁用。建筑受损、正在修复或正在升级时不能开始升级，正在升级时也不能开始修复。光标悬停在修复/升级按钮上时，按钮旁边显示操作所需资源和条件提示框。修复或升级进行中会显示进度、剩余时间、速度倍率和协助人数；进度刷新通过 `building_state_changed` 更新当前可见建筑面板，不触发新的建筑点击选择。
-- `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性、专长、当前装备、事件库和见闻库最近摘要；状态变化会随 `npc_state_changed` 刷新，记忆变化会随 `npc_memory_changed` 刷新。
-- `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板；建筑修复、受损或升级等状态刷新不会抢占玩家刚切到的 NPC 面板。
+- `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`，点击 NPC 后显示 NPC 基础状态、力量/智力属性、专长、当前装备、事件库和见闻库最近摘要；面板可见时，当前 NPC 状态变化会随 `npc_state_changed` 刷新，记忆变化会随 `npc_memory_changed` 刷新。
+- `NPCPanel` 固定在右上角，面板内容增多时只向下延展；事件库、见闻库等文本变长不会让面板顶部向上越出可视区域。
+- `NPCPanel` 和 `BuildingPanel` 会随 `npc_clicked` / `building_clicked` 互斥切换，右上角只显示当前点击对象的面板；建筑修复、受损或升级等状态刷新不会抢占玩家刚切到的 NPC 面板，工作中 NPC 的持续状态刷新也不会重新打开已经切走或隐藏的 NPC 面板。
 - `Main/UI/DialogPanel` 已接入 `res://scripts/ui/DialogPanel.gd`：显示 NPC 名字、公开性、当前轮次、历史对话、自由文本输入、发送按钮和结束按钮。
 - T0705 后 NPC 主动交涉时会在头顶显示 `?` 气泡；玩家点击该 NPC 会优先打开对话面板并显示 NPC 预先确定的第一句话，不先打开 NPC 面板。
 - `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`，开发模式下显示半透明可拖动 `GM` 按钮；点击后打开 GM 调试面板，提供命令输入框、执行结果区，以及资源、时间、建筑、NPC、行动、后端 / LLMBridge、记忆/见闻/广场公告等调试入口。
@@ -75,10 +76,11 @@
 
 - 点击 NPC 会打开右上角 `NPCPanel`。
 - 当前按姓名、HP / Max HP、属性、专长、饱食度、疲劳度、金钱、当前装备、是否昏迷、是否已入伍、当前行动占位、职业熟练度、武器熟练度、事件库最近摘要和见闻库最近摘要显示。
+- 面板以顶部为固定基准，内容增多时向下延展，不再向上下两边同时增长。
 - 属性显示力量和智力，对应 `game_design.md` 中体力相关产出/生命/移动/载重，以及智力相关产出/熟练度成长系数。
 - 专长不是写死职业，而是从 NPC 最高的固定熟练度维度推导。
 - 面板可通过关闭按钮隐藏。
-- `NPCSystem.update_npc_state(...)` 修改状态后会发出 `npc_state_changed`，打开中的 NPC 面板会刷新。
+- `NPCSystem.update_npc_state(...)` 修改状态后会发出 `npc_state_changed`，打开中的 NPC 面板会刷新；如果 NPC 面板已经因点击建筑或关闭按钮隐藏，状态刷新不会重新打开它。
 - `MemorySystem` 写入 NPC 事件库或见闻库后会发出 `npc_memory_changed`，打开中的 NPC 面板会刷新记忆摘要。
 - 当前已实现对话按钮；已入伍 NPC 会显示可用“指令”按钮并打开独立自然语言指令面板，未入伍 NPC 不显示该按钮。
 - 面板已实现非对话交互区：可选择“同地点公开”或“私下”；“给钱”按钮旁的数字输入框用于调整赠予金额，该输入框只保留数字，WASD 等字母键不会写入金额，点击输入框外任意位置会退出输入状态；“给武器”会消耗 1 个全局 `weapons` 资源并给予占位短剑；“攻击”会造成 10 点伤害。NPC 面板不提供“要求休息/请求治疗”按钮，这类意图由已入伍 NPC 的自然语言指令承担。UI 只触发 `NPCSystem` 入口，不自行结算事件、HP 或装备结果。

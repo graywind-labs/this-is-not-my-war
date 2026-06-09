@@ -379,8 +379,13 @@
     "scene_nodes": ["Clinic"],
     "workstations": [
       {
+        "id": "doctor_desk_01",
+        "type": "clinic_doctor",
+        "occupied_by": null
+      },
+      {
         "id": "treatment_bed_01",
-        "type": "heal",
+        "type": "patient_bed",
         "occupied_by": null
       }
     ],
@@ -396,7 +401,7 @@
       "max_level": 3,
       "max_hp_bonus": 20,
       "workstation_bonus": 1,
-      "workstation_type": "heal"
+      "workstation_type": "patient_bed"
     }
   },
   {

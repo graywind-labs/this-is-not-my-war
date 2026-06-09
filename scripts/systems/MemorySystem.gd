@@ -969,6 +969,8 @@ func _format_summary(event: Dictionary) -> String:
 				_get_action_name(str(payload.get("action_id", ""))),
 				str(payload.get("reason", "原因不明"))
 			]
+		"skill_improved":
+			return _format_skill_improved_summary(actor, payload, location)
 		"repair_assist_started":
 			return "%s开始协助修复%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
 		"upgrade_assist_started":
@@ -1052,6 +1054,16 @@ func _format_location_entered_summary(actor: String, payload: Dictionary, event:
 	var location_id := str(payload.get("to_location_id", event.get("location_id", DEFAULT_LOCATION_ID)))
 	var location_name := _get_location_name(location_id)
 	return "%s进入了%s。" % [actor, location_name]
+
+
+func _format_skill_improved_summary(actor: String, payload: Dictionary, location: String) -> String:
+	var skill_name := str(payload.get("skill_name", "熟练度"))
+	var reason := str(payload.get("reason", ""))
+	if reason == "clinic_study":
+		return "%s在%s研读医学著作，%s略有长进。" % [actor, location, skill_name]
+	if reason == "clinic_treatment":
+		return "%s在%s治疗伤员，%s略有长进。" % [actor, location, skill_name]
+	return "%s的%s略有长进。" % [actor, skill_name]
 
 
 func _format_location_state_summary(payload: Dictionary) -> String:

@@ -258,7 +258,7 @@ func _on_npc_clicked(npc_id: String) -> void:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
-	if npc_id == _current_npc_id:
+	if visible and npc_id == _current_npc_id:
 		show_npc(npc_id)
 
 
