@@ -172,6 +172,169 @@
 
 ---
 
+## T0011 显示完整资源库存与装备器械详情
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+让左上角 HUD 不只显示基础五类资源，而是显示 `ResourceSystem` 中所有资源库存；装备、器械等聚合库存提供可点击详情入口，玩家能看到当前可用装备定义和器械库存状态。
+
+验收标准：
+- 左上角 HUD 按 `data/resource_defs.json` 的 `ui_order` 显示全部资源，包括餐食、酒、武器、盔甲、工程器械和马匹整备。
+- 资源变化后全部资源标签自动刷新。
+- HUD 提供“装备”和“器械”详情按钮，点击后显示对应库存与可用定义。
+- UI 只读取 `ResourceSystem` / `EquipmentSystem` / `NPCSystem`，不直接修改资源或装备权威状态。
+- 项目加载和相关 HUD 验证通过。
+
+验收结果（2026-06-09）：
+- `HUD.gd` 不再手写五个资源 Label，而是按 `ResourceSystem.get_resource_ids()` / `data/resource_defs.json.ui_order` 动态生成全部资源标签。
+- HUD 现在显示第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料和铁，资源变化会刷新全部标签。
+- 资源栏新增“装备”和“器械”按钮；装备详情显示武器 / 盔甲 / 马匹整备库存、可分配装备定义和已分配装备数量，器械详情显示工程器械库存与未部署边界说明。
+- `ResourceSystem` 新增 `get_resource_definition(...)`，供 UI/调试读取资源定义；`EquipmentSystem.get_armor_ids(...)` 修正为稳定返回 `Array[String]`。
+- 新增 `tools/verify_hud_resources.gd`，验证全量资源显示、派生资源刷新和装备/器械详情入口。
+- 验证通过：`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
+---
+
+## T0012 调整 HUD 详情面板与 GM 面板定位
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `GM_PANEL.md`, `ECONOMY_AND_BUILDINGS.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+修复 HUD 装备 / 器械详情面板和 GM 面板使用固定左上角坐标的问题，并去掉 HUD 主资源栏与详情面板之间的聚合资源重复显示。
+
+验收标准：
+- 装备详情面板点击后出现在“装备”按钮左下方，并保持在屏幕内。
+- 器械详情面板点击后出现在“器械”按钮左下方，并保持在屏幕内。
+- HUD 主资源栏不再重复显示装备 / 器械详情面板已有的聚合库存，例如武器、盔甲、马匹整备和工程器械。
+- GM 面板点击后跟随 GM 按钮位置打开，拖动 GM 按钮时已打开的 GM 面板同步重定位，并保持在屏幕内。
+- HUD、装备系统、GM 面板相关验证通过。
+
+验收结果（2026-06-09）：
+- HUD 主资源栏不再显示装备/器械详情中已有的聚合资源，保留第纳尔、粮食、餐食、酒、木材、石料和铁等直接资源。
+- “装备”和“器械”详情面板会分别贴近对应按钮左下方打开，并根据可用屏幕范围夹住位置。
+- GM 面板改为跟随 `GM` 按钮附近打开；拖动按钮时已打开面板会同步重定位并保持在可用屏幕范围内，同时压缩面板高度，避免默认覆盖左上角 HUD。
+- `tools/verify_hud_resources.gd` 已覆盖主栏去重、装备/器械详情内容和详情面板定位；`tools/verify_gm_panel.gd` 已覆盖 GM 面板跟随按钮和边界钳制。
+- 验证通过：`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
+---
+
+## T0013 移除短剑旧占位装备
+
+状态：Done
+优先级：P0
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `DATA_SCHEMA.md`, `DEV_LOG.md`
+
+任务目标：
+移除早期 T0704/T0901 遗留的 `short_sword` / 短剑占位装备，避免和 `game_design.md` 中的正式武器分类产生冲突。正式可装备主武器只保留剑盾、长杆、弓和弩。
+
+验收标准：
+- `data/weapon_defs.json` 不再包含 `short_sword` / 短剑。
+- NPC 面板、HUD 装备详情、GM 装备下拉和装备系统只暴露剑盾、长杆、弓、弩四类主武器。
+- 旧 `give_placeholder_weapon_to_npc(...)` 兼容入口不再保留，正式装备统一走 `EquipmentSystem`。
+- 装备系统、兵种判定、HUD 详情和 GM 面板验证通过。
+
+验收结果（2026-06-09）：
+- 已删除 `data/weapon_defs.json` 中的 `short_sword` 定义。
+- 已移除 `NPCSystem.gd` 的旧 `give_placeholder_weapon_to_npc(...)` 兼容入口。
+- `tools/verify_equipment_system.gd`、`tools/verify_hud_resources.gd` 和 `tools/verify_unit_type_classification.gd` 已增加短剑不可出现的回归断言。
+- 验证通过：`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --script res://tools/verify_unit_type_classification.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+---
+
+## T0014 优化 GM 行动入口、NPC 记忆滚动区与弹窗互斥
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `GM_PANEL.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+
+优化当前 UI 体验，减少 GM 面板行动区冗余按钮，避免 NPC 面板被事件库 / 见闻库无限撑高，并修正 NPC 面板、对话面板、指令面板之间的显示关系。
+
+验收标准：
+
+- GM 面板行动区保留“指定行动 + 行动下拉”作为普通行动入口，去掉旁边单独的工作、吃饭、睡觉、当教官、当受训者等按钮；协助修复、协助升级、协助治疗这类需要额外目标参数的入口可继续保留。
+- NPC 面板事件库和见闻库各自显示在固定高度滚动框内，面板不会因事件数量增加而被无限拉长。
+- 事件库和见闻库最新内容仍位于最下方，刷新后自动滚动到底部；用户可以手动向上滚动查看旧事件。
+- 点击 NPC 面板中的“对话”或“指令”不会自动关闭 NPC 面板。
+- 对话面板与指令面板互斥：打开对话会关闭指令，打开指令会结束 / 关闭当前对话；二者不会重叠显示。
+- NPC 面板与建筑面板既有互斥、状态刷新不抢占等回归仍通过。
+
+验收结果（2026-06-10）：
+
+- GM 面板行动区已去掉单独的工作、吃饭、睡觉、当教官和当受训者按钮，普通行动统一通过行动下拉和“指定行动”按钮触发；需要额外目标参数的协助修复、协助升级和协助治疗入口继续保留。
+- NPC 面板事件库和见闻库改为固定高度滚动框，内容完整保留，刷新后自动滚到底部，面板不会因大量事件继续变高。
+- NPC 面板点击“对话”或“指令”不再关闭 NPC 面板；`DialogPanel` 与 `OrderPanel` 互斥，打开其中一个会关闭另一个，避免中央弹窗重叠。
+- 已更新 `tools/verify_gm_panel.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_dialogue_ui.gd` 和 `tools/verify_npc_order.gd` 的验收断言。
+- 验证通过：`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --script res://tools/verify_npc_order.gd`、临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py` 后运行 `godot --headless --path . --script res://tools/verify_dialogue_ui.gd`、`godot --headless --path . --quit-after 1`。
+
+---
+
+## T0015 修正 NPC 成长 UI 与 GM 入伍入口
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `GM_PANEL.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+
+修正 T0904 后 NPC 面板成长信息的展示密度，并为 GM 面板补充“让选中 NPC 入伍”的调试入口。
+
+验收标准：
+
+- NPC 面板不再显示“成长：...”说明文本。
+- 经验显示为 `经验：当前/阈值`，格式类似 HP，并位于 HP 行右侧。
+- 力量和智力仍显示在属性行；只有存在未分配技能点时，才在对应属性旁显示可点击 `+1` 按钮。
+- 点击 `+1` 后消耗技能点并刷新面板；如果没有剩余技能点，按钮消失。
+- GM 面板 NPC 分组提供“设为入伍”按钮，调用 NPCSystem 入伍权威入口，使选中 NPC 变为可指派 / 可发布指令状态。
+- NPC 面板、T0904 成长、GM 面板和入伍指令相关验证通过。
+
+验收结果（2026-06-10）：
+
+- NPC 面板已移除独立“成长：...”说明文本，经验改为 HP 行右侧的 `经验：当前 / 阈值`。
+- 属性行改为内联显示“力量 X / 智力 Y”；只有有未分配技能点且对应属性未达上限时，才在该属性旁显示 `+1` 按钮。
+- 点击属性 `+1` 会调用 `NPCSystem.assign_npc_attribute_point(...)`，用完最后一个未分配技能点后按钮立即消失。
+- GM 面板 NPC 分组新增“设为入伍”按钮，并补充 `recruit_npc <npc_id>` 命令；二者都调用 `NPCSystem.set_npc_recruited(...)`，让选中 NPC 进入可发布指令状态。
+- 已更新 `tools/verify_skill_progression.gd`、`tools/verify_npc_panel_state.gd` 和 `tools/verify_gm_panel.gd`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_skill_progression.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_order.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --script res://tools/verify_dialogue_ui.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
+---
+
+## T0016 优化建筑面板工位显示
+
+状态：Doing
+优先级：P0
+涉及文档：`UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+
+去掉建筑面板中单独的“当前工作位 x/x”汇总行，把工位容量信息合并到具体工位 / 床位 / 训练位行内展示，减少重复信息。
+
+验收标准：
+
+- 建筑面板不再显示单独的“当前工作位 x/x”汇总行。
+- 每种工位按类型分别显示 `工位名 空闲数/总数：占用者`。
+- 无占用者时显示“空闲”；存在占用者时显示对应 NPC 名字，多个占用者用顿号分隔。
+- 诊所、训练场等多类型位置分别显示，例如医生、病床、教官、受训者各自有自己的空闲数 / 总数。
+- 空闲数与总数来自建筑真实工位数组，不能用旧汇总行或写死值代替。
+- 建筑面板和工位占用相关验证通过。
+
+验收结果（2026-06-10）：
+
+- `BuildingPanel` 已移除单独的“当前工作位 x/x”汇总行，场景默认占位也改为 `工位：--`。
+- 工位显示改为按 `type` 分组，格式为 `工位名 空闲数/总数：占用者`；无占用者显示“空闲”，多个占用者用顿号分隔。
+- 占用者由 `NPCSystem.get_npc(...)` 转换为 NPC 名字，不再直接显示 NPC id。
+- 小诊所的医生 / 病床、训练场的教官 / 受训者等多类型位置会分别显示，空闲数和总数来自传入的真实工位数组。
+- 新增 `tools/verify_building_panel_workstations.gd`，覆盖空闲工位、占用者名字、多类型分组和无工位建筑。
+- 验证通过：`godot --headless --path . --script res://tools/verify_building_panel_workstations.gd`、`godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`。
+
+---
+
 # M0：项目骨架与工具稳定
 
 目标：让 Godot 项目、Python 后端、MCP 工具和项目文档结构可运行、可检查、可继续开发。
@@ -809,7 +972,7 @@ Main
 - 建筑名称
 - 建筑等级
 - HP / Max HP
-- 当前工作位
+- 工位状态（T0016 后按类型显示空闲数 / 总数与占用者）
 - 当前地点信息占位
 - 修复按钮占位
 - 升级按钮占位
@@ -830,7 +993,7 @@ Main
 验收结果（2026-05-19）：
 
 - 已新增 `scripts/ui/BuildingPanel.gd` 并绑定到 `Main/UI/BuildingPanel`。
-- 点击建筑后，面板通过 `EventBus.building_clicked(building_id)` 从 `BuildingSystem` 读取建筑名称、等级、HP / Max HP、工作位和地点信息占位。
+- 点击建筑后，面板通过 `EventBus.building_clicked(building_id)` 从 `BuildingSystem` 读取建筑名称、等级、HP / Max HP、工作位和地点信息占位；T0016 后工位展示已调整为按类型显示空闲数 / 总数与占用者。
 - 修复与升级按钮已显示但保持禁用，占位后续 T0205，不执行真实修复、升级或生产逻辑。
 - 面板右上角关闭按钮可隐藏面板；无建筑或未知建筑 ID 时面板保持隐藏且不报错。
 - 已通过 `godot --headless --path . --quit-after 1`、临时 Godot 验证脚本和 Godot MCP 主场景运行验证；游戏日志无报错。
@@ -2255,10 +2418,10 @@ Main
 
 验收结果（2026-06-05）：
 
-- `NPCPanel` 新增非对话交互区：可选择 `private` / `local_public` 可见性，直接赠予第纳尔、给予占位短剑、攻击造成 10 点伤害；给钱数量输入框紧邻“给钱”按钮，并只保留数字输入，WASD 等字母键不会写入金额。
+- `NPCPanel` 新增非对话交互区：可选择 `private` / `local_public` 可见性，直接赠予第纳尔、给予旧占位武器、攻击造成 10 点伤害；给钱数量输入框紧邻“给钱”按钮，并只保留数字输入，WASD 等字母键不会写入金额。该旧占位武器入口已在 T0013 后移除，正式装备统一走 T0901 `EquipmentSystem`。
 - 新增 `UIInputFocusManager` 挂载到 `Main/UI`：任意 `LineEdit` / `TextEdit` 获得焦点后，点击输入框外任意位置都会释放焦点，后续新增输入框默认遵循同一交互规则。
 - 赠予第纳尔由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱，并复用 `MemorySystem.record_player_interaction(...)` 写入 `money_given`；公开时同地点 NPC 会收到见闻。
-- 给予装备仅做 T0704 范围内的占位短剑：消耗 1 个全局 `weapons` 资源，写入 `equipment_given` / `equipment_changed`，不实现 T0901 正式装备库存、兵种或战斗数值。
+- 给予装备仅做 T0704 范围内的旧占位武器：消耗 1 个全局 `weapons` 资源，写入 `equipment_given` / `equipment_changed`，不实现 T0901 正式装备库存、兵种或战斗数值。该入口已在 T0013 后移除。
 - 攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 权威扣血入口，写入 `damage_taken`，HP 清零仍走既有昏迷/公开广播链路。
 - 已移除 NPC 面板里的“要求休息/请求治疗”入口；休息、治疗这类意图由 T0703 的自然语言指令承担，既有 GM / ActionSystem 调试入口不变。
 - 新增 `tools/verify_npc_panel_interactions.gd` 覆盖 NPC 面板给钱、公开见闻、占位装备、攻击扣血、广场公开事件、后续 NPC LLM 上下文短期记忆摘要，并检查休息/治疗按钮不存在；同时覆盖 NPC 给钱金额框、对话输入框和指令 TextEdit 点击外部失焦。
@@ -2520,7 +2683,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 已将 `data/building_defs.json` 中小诊所拆分为 `clinic_doctor` 医生工位和 `patient_bed` 病床；诊所升级当前增加病床。
 - 已新增 `data/action_defs.json` 的 `work_clinic_doctor` 与 `receive_clinic_treatment`：医生进入诊所工位坐诊/研读医术，受伤且未昏迷 NPC 进入病床接受治疗，二者是独立行动选项。
 - `ActionSystem` 已实现诊所治疗闭环：只有医生在诊所工位且病人占用诊所病床时才推进治疗；治疗随 `logical_time_tick` 消耗第纳尔并恢复 HP，医术、智力和诊所等级提高治疗速度；病人 HP 回满后释放病床。
-- 医生无病人时会以较慢节奏通过 `skill_improved` 事件记录“研读医学著作”并提升医术；治疗中也会以较小步进提升医术。当前只做 T0808 需要的医术最小增长，不实现 T0904 的通用经验、技能点和属性成长。
+- 医生无病人时会以较慢节奏通过 `skill_improved` 事件记录“研读医学著作”并提升医术；治疗中也会以较小步进提升医术。T0904 完成后，这些医术增长已接入统一经验、未分配技能点与玩家属性分配规则。
 - 新增 `tools/verify_clinic_treatment.gd`，验证诊所工位/病床、医生研读医术、病床治疗、金钱消耗、医术/智力/诊所等级效率和病床释放。
 - 验证通过：`godot --headless --path . --script res://tools/verify_clinic_treatment.gd`、`godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
@@ -2528,13 +2691,13 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 
 # M9：装备、熟练度、训练与升级
 
-目标：让 NPC 能装备武器/盔甲/坐骑，通过工作、训练和战斗提升熟练度，并由 AI 或规则决定力量/智力成长。
+目标：让 NPC 能装备武器/盔甲/坐骑，通过工作、训练和战斗提升熟练度；经验达标获得技能点后，由玩家决定分配到力量或智力。
 
 ---
 
 ## T0901 实现库存与装备系统
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0804, T0805, T0806
 涉及文档：`COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`, `UI_UX.md`
@@ -2566,14 +2729,23 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 装备事件写入目标 NPC 事件库，并按地点可见性通过地点/广场节点即时广播给当前在场 NPC。
 - 兵种可根据装备组合判定。
 - 消耗 T0804 产出的 `weapons` / `armor` 派生库存时，不直接让 UI 决定战斗属性；装备数据、兵种和后续战斗数值仍由装备/战斗系统结算。
-- 需要接住 T0805 的木质远程武器占位，把可装备主武器区分为剑盾、长杆、弓、弩等类型；不能继续只用“占位短剑”代表所有武器。
+- 需要接住 T0805 的木质远程武器占位，把可装备主武器区分为剑盾、长杆、弓、弩等类型；不能继续只用早期占位武器代表所有武器。
 - 需要接住 T0806 的 `horse_readiness`，把它转换为可装备坐骑库存或坐骑槽数据；日常工作模式不显示骑乘，进入战斗/集结时再交给战斗表现层处理。
+
+验收结果（2026-06-09）：
+- 新增 `EquipmentSystem` 并挂载到 `Main/Systems/EquipmentSystem`，读取 `data/weapon_defs.json`、`data/armor_defs.json` 和 `data/mount_defs.json`；装备主武器消耗 `weapons`，装备盔甲消耗 `armor`，装备坐骑消耗 `horse_readiness`，换装会返还旧装备对应库存。
+- `data/weapon_defs.json` 已补齐剑盾、长杆、弓、弩等主武器类型；新增 `data/armor_defs.json` 和 `data/mount_defs.json`，覆盖头盔、胸甲、腕甲、腿甲和坐骑槽。T0013 后旧兼容武器定义已移除，不再作为正式装备数据。
+- 只有已入伍 NPC 可由守备官直接分配装备；NPC 面板新增主武器选择并调用 `EquipmentSystem`，GM 面板新增装备武器、装备盔甲、装备坐骑和兵种查看入口及命令。
+- 装备事件通过 `MemorySystem.record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`，按 `private` / `local_public` 可见性传播；同地点 NPC 可收到公开装备见闻。
+- `EquipmentSystem.determine_unit_type(...)` / `get_npc_unit_type(...)` 可根据主武器和坐骑槽返回非战斗人员、近战步兵、长杆步兵、弓箭兵、弩兵、近战骑兵或骑射单位；日常模式仍不显示骑乘外观，战斗/集结表现留给 T1103/T1105。
+- 新增 `tools/verify_equipment_system.gd`，验证已入伍限制、主武器/盔甲/坐骑库存消耗、换装返还、事件入库、公开见闻、兵种判定和 NPC 面板显示。
+- 验证通过：`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`verify_npc_panel_interactions.gd`、`verify_gm_panel.gd`、`verify_blacksmith_metal_gear.gd`、`verify_workshop_ranged_devices.gd`、`verify_stable_horse_care.gd`、`verify_npc_panel_state.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
 
 ---
 
 ## T0902 实现兵种判定
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0901
 涉及文档：`COMBAT_SYSTEM.md`
@@ -2589,40 +2761,69 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 无武器 → 非战斗人员 / 避战单位
 - 坐骑来源必须来自 T0901 装备槽，不能直接读取 `horse_readiness` 库存当作 NPC 已骑乘。
 
+验收结果（2026-06-09）：
+- `EquipmentSystem.determine_unit_type(...)` 已按主武器和 `equipment.mount` 槽判定：剑盾为近战步兵，长杆为长杆步兵，弓为弓箭兵，弩为弩兵，近战武器 + 坐骑为近战骑兵，远程武器 + 坐骑为骑射单位，无主武器为非战斗人员 / 避战单位。
+- 新增 `EquipmentSystem.get_unit_type_snapshot(npc_id)`，返回兵种标签、主武器类型、武器 class、是否有坐骑、坐骑 id 和装备快照，供 GM / 后续战斗系统只读使用。
+- GM `unit_type <npc_id>` 现在输出完整兵种快照，便于确认坐骑来源来自 NPC 装备槽而不是 `horse_readiness` 库存。
+- 新增 `tools/verify_unit_type_classification.gd`，覆盖全部兵种映射，并验证即使全局存在 `horse_readiness` 库存，NPC 未装备 `equipment.mount` 时也不会被判定为骑兵。
+- 验证通过：`godot --headless --path . --script res://tools/verify_unit_type_classification.gd`。
+
 ---
 
 ## T0903 实现训练场与武器熟练度提升
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0901, T1001
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
 
-- 训练成为 NPC 自主计划可选择的合法行动；入伍 NPC 的 `current_order` 可表达训练要求并影响后续计划，但不直接强制启动训练。
-- 可选择剑盾、长杆、弓、弩、骑术。
+- 训练机制。可参考诊所治疗机制，训练也是需要有教官和受训者。教官占据的是训练场的工位，然后受训者占据的是训练场的受训位（就像诊所的医生工位和病床的设计一样）。可选行动里有进入训练场当教官（换个更精炼的名字），和进入训练场当受训者。只有有教官，才能当受训者。没有教官则当受训者这个行为异常。当教官，如果没有受训者，则也会以极缓慢的速度增加教官的武器/骑术熟练度。如果有受训者，则增加受训者的受训项的熟练度和教官的“教练”熟练度（和其他工作加熟练度的逻辑一样）。
+- 受训项等同于该NPC当前所持有的武器/坐骑。如果教官没有受训者，那么教官增加自己当前所持有武器/坐骑的熟练度。如果有受训者，则受训者增加当前所持有武器/坐骑的熟练度。如果没有武器也没有坐骑，则无法受训和当教官。如果一个NPC既有武器又有坐骑，那么武器和坐骑熟练度都会增加。
 - 训练消耗疲劳和饱食。
-- 训练提升对应熟练度。
-- 教练熟练度可影响训练速度。
+- 升级训练场可增加受训位或工位
+- 训练也是分成单位时间来计算消耗和提升。
+- 教官的教练熟练度可影响训练速度。
+- 训练效率则受到当前训练项目对应的教官和受训者熟练度的差值影响。如果当前训练项目教官的熟练度低于受训者，则熟练度提升极小。教官持有什么武器/坐骑，只影响教官在没有受训者的情况下教官自己提升哪一项熟练度；在有受训者的情况下，受训者提升哪一项熟练度则取决于受训者当前持有的武器/坐骑（该情况下教官不再提升自己的武器熟练度，只提升教练熟练度）。比如NPC A是教官，持有剑盾，骑术和弓箭熟练度高；NPC B是受训者，持有弓箭和坐骑，骑术和弓箭熟练度低。在A单独当教练，B没有受训的情况下，A缓慢提升自己的剑盾熟练度；B参与受训后，A不再提升剑盾熟练度（不再是自己练习），而是B根据于A的骑术和弓箭熟练度的差值来更快的提升自己的骑术和弓箭熟练度。
+
+验收结果（2026-06-10）：
+- `data/building_defs.json` 已将训练场拆分为 `training_instructor` 教官工位和 `training_student` 受训位；训练场升级当前增加受训位。
+- `data/action_defs.json` 新增 `work_training_instructor` / `receive_weapon_training` 两个行动：教官占据教官工位，受训者占据受训位；无装备不能训练或执教，受训者无有效教官时会失败。
+- `ActionSystem` 已实现训练闭环：教官无受训者时极慢提升自己当前主武器 / 坐骑对应熟练度；有受训者时受训者按自己的当前主武器 / 坐骑提升武器熟练度或骑术，教官只提升“教练”；训练按单位时间消耗疲劳和饱食。
+- 训练速度会读取教官“教练”、训练场等级，以及教官和受训者在当前训练项目上的熟练度差；教官项目熟练度低于受训者时提升明显变慢。教官装备只决定独自训练项目，不决定受训者项目。
+- `MemorySystem` 已为 `skill_improved` 增加训练场独自练习、受训和指导训练 summary。
+- GM 面板可通过行动下拉指派 `work_training_instructor` / `receive_weapon_training`，并保留 `train_instructor <npc_id>` / `train_student <npc_id>` 命令。
+- 新增 `tools/verify_training_system.gd`，覆盖训练场工位、无装备失败、无教官失败、教官独自练习、受训者武器 + 骑术双项成长、教官教学时只涨教练、状态消耗和训练事件。
+- 验证通过：`godot --headless --path . --script res://tools/verify_training_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_action_system_basic.gd`、`godot --headless --path . --script res://tools/verify_work_output_framework.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --script res://tools/verify_unit_type_classification.gd`、`godot --headless --path . --script res://tools/verify_clinic_treatment.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T0904 实现职业熟练度与经验升级
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0801, T0903
 涉及文档：`AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`
 
 验收标准：
 
-- 工作提升职业熟练度。
+- 工作可以以很缓慢的速度提升职业熟练度。
 - 接入 T0808 已有的医术最小增长，统一为所有职业工作可复用的熟练度经验增长规则。
-- 战斗或训练提升武器熟练度。
+- 战斗或训练提升当前持有的武器/坐骑熟练度。
 - 熟练度提升同步增加经验。
 - 经验达标获得技能点。
-- 技能点可由规则或 Mock AI 分配到力量/智力。
+- 技能点可由玩家分配到力量/智力。
+
+验收结果（2026-06-10）：
+- `NPCSystem.increase_npc_skill(...)` 已成为统一成长入口：任何熟练度提升都会同步写入 `progression.skill_experience`、`total_experience`，每 5 点总经验获得 1 个未分配技能点。
+- 普通职业工作完成时会缓慢提升对应职业熟练度；T0808 诊所研读 / 治疗医术增长和 T0903 训练场武器 / 骑术 / 教练增长都接入同一套经验与技能点规则。
+- 新增 `NPCSystem.assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，技能点只能由玩家分配到力量或智力，AI 不再自动消耗技能点。
+- NPC 面板的成长入口后续已按 T0015 调整为：HP 行右侧显示 `经验：当前 / 阈值`，力量 / 智力数值旁仅在有未分配技能点且未达上限时显示 `+1`。
+- GM 面板新增属性分配按钮和 `assign_attribute <npc_id> <strength|intelligence>` 命令；属性分配写入 `attribute_improved` 事件，summary 使用“守备官”。
+- `game_design.md` 与 `AI_NPC_SYSTEM.md` 已同步为“玩家分配技能点，AI 只能建议倾向”的设计。
+- 新增 `tools/verify_skill_progression.gd`，覆盖工作、训练、诊所成长，经验达标获得技能点，玩家分配力量，NPC 面板入口和 GM 命令。
+- 验证通过：`godot --headless --path . --script res://tools/verify_skill_progression.gd`。
 
 ---
 

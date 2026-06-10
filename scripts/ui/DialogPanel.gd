@@ -1,6 +1,7 @@
 extends Control
 
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
+const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 
 @onready var npc_name_label: Label = %DialogNPCNameLabel
 @onready var status_label: Label = %DialogStatusLabel
@@ -28,6 +29,9 @@ func _ready() -> void:
 
 
 func _on_dialogue_started(state: Dictionary) -> void:
+	var order_panel := get_node_or_null(ORDER_PANEL_PATH)
+	if order_panel != null:
+		order_panel.visible = false
 	visible = true
 	_refresh(state)
 	input_edit.grab_focus()

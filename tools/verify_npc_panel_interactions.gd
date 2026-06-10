@@ -133,27 +133,43 @@ func _init() -> void:
 
 	resource_system.add_resource("weapons", 1)
 	await process_frame
+	if not weapon_button.disabled:
+		push_error("Weapon button should stay disabled for unrecruited NPC")
+		quit(1)
+		return
+
+	var recruited_target_id := "veteran_deputy_01"
+	npc_system.debug_select_npc(recruited_target_id)
+	await process_frame
 	if weapon_button.disabled:
-		push_error("Weapon button stayed disabled after adding weapon resource")
+		push_error("Weapon button stayed disabled for recruited NPC after adding weapon resource")
+		quit(1)
+		return
+	var weapon_select := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCWeaponSelect") as OptionButton
+	if weapon_select == null or not _select_option_by_id(weapon_select, "sword_shield"):
+		push_error("Formal weapon selector should include sword_shield")
 		quit(1)
 		return
 	weapon_button.pressed.emit()
 	await process_frame
-	var target_profile: Dictionary = npc_system.get_npc(target_id)
+	var target_profile: Dictionary = npc_system.get_npc(recruited_target_id)
 	var equipment: Dictionary = target_profile.get("equipment", {})
 	var main_weapon: Dictionary = equipment.get("main_weapon", {})
-	if str(main_weapon.get("id", "")) != "short_sword":
-		push_error("Weapon button did not assign placeholder short sword")
+	if str(main_weapon.get("id", "")) != "sword_shield":
+		push_error("Weapon button did not assign selected formal weapon")
 		quit(1)
 		return
-	if not equipment_label.text.contains("短剑"):
-		push_error("NPCPanel did not display placeholder weapon")
+	if not equipment_label.text.contains("剑盾"):
+		push_error("NPCPanel did not display formal weapon")
 		quit(1)
 		return
-	if not _has_event(memory_system.get_npc_daily_events(target_id), "equipment_given"):
+	if not _has_event(memory_system.get_npc_daily_events(recruited_target_id), "equipment_given"):
 		push_error("Weapon button did not write equipment event")
 		quit(1)
 		return
+
+	npc_system.debug_select_npc(target_id)
+	await process_frame
 
 	var hp_before: int = int(npc_system.get_npc_state(target_id).get("hp", 0))
 	attack_button.pressed.emit()
@@ -195,6 +211,14 @@ func _summaries_contain(events: Array, text: String) -> bool:
 	for raw_event in events:
 		var event: Dictionary = raw_event if raw_event is Dictionary else {}
 		if str(event.get("summary", "")).contains(text):
+			return true
+	return false
+
+
+func _select_option_by_id(select: OptionButton, expected_id: String) -> bool:
+	for index in range(select.get_item_count()):
+		if str(select.get_item_metadata(index)) == expected_id:
+			select.select(index)
 			return true
 	return false
 

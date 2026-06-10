@@ -75,6 +75,8 @@
 | `healing_started` | `{healer}开始在{location}协助治疗{target}。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `healing_completed` | `{healer}结束了对{target}的治疗。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `revived` | `{target}在{location}苏醒了。` | `hp_before`, `hp_after`, `recovery_source` |
+| `skill_improved` | `{actor}在{location}训练或工作，{skill}略有长进。` | `skill_name`, `amount`, `reason`；T0904 后 payload 还包含 `experience_gained`、`total_experience`、`skill_points_gained`、`unspent_skill_points` |
+| `attribute_improved` | `守备官为{target}分配了1点技能点，{attribute}从{before}提高到{after}。` | `attribute`, `attribute_label`, `before`, `after`, `assigned_by`；技能点由玩家分配，不由 AI 自动消耗 |
 
 `actor_ids`、`target_ids` 和 `location_id` 负责保留稳定事实属性；summary 模板负责 UI、调试日志和 prompt 摘要。不要把事件系统做成试图从任意主宾关系自动生成句子的万能事件句子生成器。
 
@@ -88,7 +90,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 - 对话只记录实际发生的 `dialogue_turn`。每轮文本、说话者名称、听者名称、是否提出应征、征召结果、当前轮次、最大轮次、是否承诺/威胁/欺骗等都写入 `payload`；打开或关闭对话窗口不入库、不广播。NPC 主动交涉的发起意图和预先确定的开场问题分别写入 `proactive_talk_started` / `proactive_talk_message`，玩家后续回复再走正常 `dialogue_turn`。
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。
 - 主动交涉：`proactive_talk_started`、`proactive_talk_message`。前者记录 NPC 发起主动交涉和计划中确定的问题，固定为 `private`；后者记录玩家点击气泡后 NPC 对守备官说出的开场问题。
-- 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`。
+- 成长与状态：`skill_improved`、`attribute_improved`、`npc_recruited`、`npc_left_recruited_state`。
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
 - 建筑与资源见闻：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`。
 
@@ -101,15 +103,15 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库。广场事件也走同一规则，地点为 `plaza`。
-- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended`。工作/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。`NPCSystem` 到达地点时写入 `location_entered`。
+- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。`NPCSystem` 到达地点时写入 `location_entered`。
 - 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_events()` 和对应调试接口。
-- 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，`NPCPanel` 已接入前端入口：给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`；占位给武器由 `NPCSystem.give_placeholder_weapon_to_npc(...)` 消耗 1 个 `weapons` 并写入 `equipment_given` / `equipment_changed`；攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`，不重做扣血和昏迷链路。
+- 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，`NPCPanel` 已接入前端入口：给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`；攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`，不重做扣血和昏迷链路。T0901 后，装备武器/盔甲/坐骑由 `EquipmentSystem` 结算库存与槽位，再复用 `record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`。
 - T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503 起，协助治疗写入 `healing_started` / `healing_completed`，会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
 - T0502A 起，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，因此昏迷者不会收到地点/广场公开广播、状态广播、公告或进入快照；复苏后见闻接收自动恢复。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
 - T0701 已由 Godot `DialogSystem` 接入后端对话文本并写入事件库。每个 `dialogue_turn` 作为一个事实事件进入所有参与 NPC 的事件库；若 `visibility == "local_public"`，事件地点只向同地点非参与者广播一次，避免双方各写一份事件造成第三者重复见闻。
 - T0705 已接入 NPC 主动交涉事件：触发主动交涉时，`proactive_talk_started` 以 `private` 写入发起者事件库，payload 保存 `prompt_text` 和持续时间；玩家点击气泡后，NPC 预先确定的开场问题以 `proactive_talk_message` 写入事件库，随后玩家回复继续走既有 `dialogue_turn`。
-- `NPCPanel` 会分开显示当前 NPC 的事件库和见闻库最近摘要，调试工具可通过 `debug_get_npc_short_term_memory(...)` 区分查看两类记录。
+- `NPCPanel` 会分开显示当前 NPC 的事件库和见闻库，并使用固定高度滚动区展示完整记录；调试工具可通过 `debug_get_npc_short_term_memory(...)` 区分查看两类记录。
 - `MemorySystem` 当前维护广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊的信息节点，保存 `people_present`、当前公告和进入快照所需的当前状态；`move_npc_between_locations(...)` 只维护当前在场人员，并给进入者写入一次 `location_entry_snapshot` 见闻。进入广场时，这条见闻会同时表达广场当前在场 NPC、广场在场 NPC 的生命状态/行动状态、当前公告文本和所有建筑可传播外部状态。面向单个 NPC 的 `current_order` 不进入地点信息节点。
 - 所有建筑都有可传播外部状态：`level` 和 `condition`（`intact` / `damaged` / `repairing` / `upgrading`）。HP、Max HP、修复/升级剩余时长仍可由建筑系统和 UI 查询，但不参与信息节点状态比较，也不会因自身变化触发见闻传播。广场和可进入建筑都会在进入快照中暴露当前在场 NPC 的生命状态/行动状态；可进入建筑额外拥有可传播内部状态：每个工位的空闲/占用者。工位数量本身不参与状态比较。不可进入建筑不向地点快照暴露工位或内部 NPC。
 - 广场快照没有自身建筑 HP，但通过 `building_external_states` 继承所有建筑的可传播外部状态；`key_entities` 当前作为兼容别名指向同一组外部状态。室外或不可进入实体来源的公开事件默认归入 `location_id == "plaza"` 并使用 `local_public`。
@@ -118,7 +120,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - 后续地点或建筑状态变化只写入变化字段对应的见闻，不重新广播完整地点快照。例如建筑受损只广播受损，升级只广播等级变化，单个工位占用变化只广播该工位变化；未变化的建筑等级、工位、公告和在场人员不重复进入见闻库。广场建筑状态见闻使用 `changed_fields`，可进入建筑内部工位变化使用 `changed_workstations`。
 - 主厅、围墙、城门、后门、仓库不作为常规进入空间；NPC 移动到这类实体时，信息节点状态归入广场快照。
 
-当前仍不实现睡前总结、日记、知识图谱、LLM 记忆摘要、战斗本体、正式装备系统或公告输入 UI；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
+当前仍不实现睡前总结、日记、知识图谱、LLM 记忆摘要、战斗本体或公告输入 UI；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
 
 T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.tscn` 前端验证此前主要依赖脚本的能力：查看地点快照、写入广场公告、广播广场公开事件、记录守备官给钱/攻击事件、查询 NPC 短期记忆和全局事件列表。GM 面板只调用 `MemorySystem` 现有接口或 `debug_*` 接口，不新增独立记忆事实源。
 

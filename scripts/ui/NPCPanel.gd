@@ -4,13 +4,24 @@ const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
+const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
-const MAX_MEMORY_LINES := 4
+const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
+const MEMORY_LOG_BOX_MIN_SIZE := Vector2(0, 132)
+const MEMORY_LOG_TEXT_MIN_HEIGHT := 92.0
 const DEFAULT_GIFT_MONEY_AMOUNT := 5
 const DEFAULT_ATTACK_DAMAGE := 10
 
 var _current_npc_id: String = ""
 var _is_sanitizing_gift_money_text := false
+var _weapon_select: OptionButton
+var _event_log_text: TextEdit
+var _witness_log_text: TextEdit
+var _experience_label: Label
+var _strength_value_label: Label
+var _intelligence_value_label: Label
+var _strength_point_button: Button
+var _intelligence_point_button: Button
 
 @onready var name_label: Label = %NPCNameLabel
 @onready var job_label: Label = %NPCJobLabel
@@ -39,7 +50,10 @@ var _is_sanitizing_gift_money_text := false
 
 func _ready() -> void:
 	visible = false
+	_setup_memory_log_boxes()
+	_setup_progression_controls()
 	_setup_interaction_controls()
+	_setup_equipment_controls()
 	close_button.pressed.connect(_on_close_pressed)
 	dialogue_button.pressed.connect(_on_dialogue_pressed)
 	assign_button.pressed.connect(_on_order_pressed)
@@ -77,6 +91,7 @@ func show_npc(npc_id: String) -> void:
 
 	_current_npc_id = npc_id
 	var states: Dictionary = npc.get("states", {})
+	_fill_weapon_select()
 
 	name_label.text = str(npc.get("name", npc_id))
 	job_label.text = _format_specialties(npc_system, npc_id)
@@ -84,7 +99,8 @@ func show_npc(npc_id: String) -> void:
 		int(states.get("hp", 0)),
 		int(states.get("max_hp", 0))
 	]
-	attributes_label.text = _format_attributes(npc.get("stats", {}))
+	attributes_label.text = "属性："
+	_update_progression_controls(npc_system, npc)
 	satiety_label.text = "饱食度：%d" % int(states.get("satiety", 0))
 	fatigue_label.text = "疲劳度：%d" % int(states.get("fatigue", 0))
 	money_label.text = "金钱：%d" % int(states.get("money", 0))
@@ -118,6 +134,91 @@ func _setup_interaction_controls() -> void:
 	interaction_result_label.text = ""
 
 
+func _setup_equipment_controls() -> void:
+	var button_row := give_weapon_button.get_parent() as HBoxContainer
+	if button_row == null:
+		return
+	_weapon_select = OptionButton.new()
+	_weapon_select.name = "NPCWeaponSelect"
+	_weapon_select.custom_minimum_size = Vector2(116, 30)
+	_weapon_select.focus_mode = Control.FOCUS_NONE
+	_weapon_select.tooltip_text = "选择要从武器库存转换并装备的主武器类型。"
+	button_row.add_child(_weapon_select)
+	button_row.move_child(_weapon_select, give_weapon_button.get_index())
+	give_weapon_button.text = "装备武器"
+	give_weapon_button.tooltip_text = "消耗 1 个武器库存，为已入伍 NPC 装备所选主武器。"
+
+
+func _setup_progression_controls() -> void:
+	var parent := attributes_label.get_parent() as VBoxContainer
+	if parent == null:
+		return
+
+	var hp_index := hp_label.get_index()
+	parent.remove_child(hp_label)
+	var hp_row := HBoxContainer.new()
+	hp_row.name = "NPCHPExperienceRow"
+	hp_row.add_theme_constant_override("separation", 12)
+	parent.add_child(hp_row)
+	parent.move_child(hp_row, hp_index)
+	hp_row.add_child(hp_label)
+
+	_experience_label = Label.new()
+	_experience_label.name = "NPCExperienceLabel"
+	_experience_label.text = "经验：0 / 5"
+	_experience_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hp_row.add_child(_experience_label)
+
+	var attributes_index := attributes_label.get_index()
+	parent.remove_child(attributes_label)
+	var row := HBoxContainer.new()
+	row.name = "NPCAttributePointRow"
+	row.add_theme_constant_override("separation", 4)
+	parent.add_child(row)
+	parent.move_child(row, attributes_index)
+
+	attributes_label.text = "属性："
+	row.add_child(attributes_label)
+
+	_strength_value_label = Label.new()
+	_strength_value_label.name = "NPCStrengthValueLabel"
+	_strength_value_label.text = "力量 0"
+	row.add_child(_strength_value_label)
+
+	_strength_point_button = Button.new()
+	_strength_point_button.name = "NPCStrengthPointButton"
+	_strength_point_button.text = "+1"
+	_strength_point_button.tooltip_text = "消耗 1 个未分配技能点，提高力量。"
+	_strength_point_button.focus_mode = Control.FOCUS_NONE
+	_strength_point_button.visible = false
+	_strength_point_button.custom_minimum_size = Vector2(34, 24)
+	_strength_point_button.pressed.connect(func() -> void:
+		_assign_attribute_point("strength")
+	)
+	row.add_child(_strength_point_button)
+
+	var separator := Label.new()
+	separator.text = "，"
+	row.add_child(separator)
+
+	_intelligence_value_label = Label.new()
+	_intelligence_value_label.name = "NPCIntelligenceValueLabel"
+	_intelligence_value_label.text = "智力 0"
+	row.add_child(_intelligence_value_label)
+
+	_intelligence_point_button = Button.new()
+	_intelligence_point_button.name = "NPCIntelligencePointButton"
+	_intelligence_point_button.text = "+1"
+	_intelligence_point_button.tooltip_text = "消耗 1 个未分配技能点，提高智力。"
+	_intelligence_point_button.focus_mode = Control.FOCUS_NONE
+	_intelligence_point_button.visible = false
+	_intelligence_point_button.custom_minimum_size = Vector2(34, 24)
+	_intelligence_point_button.pressed.connect(func() -> void:
+		_assign_attribute_point("intelligence")
+	)
+	row.add_child(_intelligence_point_button)
+
+
 func _format_bool(value: Variant) -> String:
 	return "是" if bool(value) else "否"
 
@@ -136,6 +237,30 @@ func _format_attributes(raw_stats: Variant) -> String:
 	]
 
 
+func _update_progression_controls(npc_system: Node, npc: Dictionary) -> void:
+	var progression: Dictionary = npc.get("progression", {})
+	if npc_system != null and npc_system.has_method("get_npc_progression"):
+		progression = npc_system.get_npc_progression(str(npc.get("id", _current_npc_id)))
+	var total_experience := int(progression.get("total_experience", 0))
+	var unspent_points := int(progression.get("unspent_skill_points", 0))
+	var next_point_xp := maxi(1, int(progression.get("next_skill_point_xp", 5)))
+	if _experience_label != null:
+		_experience_label.text = "经验：%d / %d" % [total_experience % next_point_xp, next_point_xp]
+	var stats: Dictionary = npc.get("stats", {})
+	var strength := int(stats.get("strength", 0))
+	var intelligence := int(stats.get("intelligence", 0))
+	if _strength_value_label != null:
+		_strength_value_label.text = "力量 %d" % strength
+	if _intelligence_value_label != null:
+		_intelligence_value_label.text = "智力 %d" % intelligence
+	if _strength_point_button != null:
+		_strength_point_button.visible = unspent_points > 0 and strength < 10
+		_strength_point_button.disabled = not _strength_point_button.visible
+	if _intelligence_point_button != null:
+		_intelligence_point_button.visible = unspent_points > 0 and intelligence < 10
+		_intelligence_point_button.disabled = not _intelligence_point_button.visible
+
+
 func _format_specialties(npc_system: Node, npc_id: String) -> String:
 	if npc_system == null or not npc_system.has_method("get_npc_specialties"):
 		return "专长：无"
@@ -152,9 +277,21 @@ func _format_equipment(raw_equipment: Variant) -> String:
 		return "无"
 
 	var parts: Array[String] = []
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	var main_weapon: Dictionary = equipment.get("main_weapon", {})
 	if not main_weapon.is_empty():
 		parts.append("主武器 %s" % str(main_weapon.get("name", main_weapon.get("id", "未知武器"))))
+	for slot in ["helmet", "chest", "bracers", "greaves", "mount"]:
+		var item: Dictionary = equipment.get(slot, {})
+		if item.is_empty():
+			continue
+		var slot_name: String = slot
+		if equipment_system != null and equipment_system.has_method("get_slot_label"):
+			slot_name = str(equipment_system.get_slot_label(slot))
+		parts.append("%s %s" % [slot_name, str(item.get("name", item.get("id", "未知装备")))])
+	if equipment_system != null and equipment_system.has_method("determine_unit_type") and equipment_system.has_method("get_unit_type_label"):
+		var unit_type := str(equipment_system.determine_unit_type(equipment))
+		parts.append("战斗定位 %s" % str(equipment_system.get_unit_type_label(unit_type)))
 	if parts.is_empty():
 		return "无"
 	return "，".join(parts)
@@ -201,25 +338,32 @@ func _format_skill_group(skills: Dictionary, skill_names: Array) -> String:
 func _update_memory_labels(npc_id: String) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null:
-		event_log_label.text = "事件库：不可用"
-		witness_log_label.text = "见闻库：不可用"
+		_set_memory_block_text(event_log_label, _event_log_text, "事件库", [])
+		if _event_log_text != null:
+			_event_log_text.text = "不可用"
+		_set_memory_block_text(witness_log_label, _witness_log_text, "见闻库", [])
+		if _witness_log_text != null:
+			_witness_log_text.text = "不可用"
+		_scroll_memory_logs_to_bottom_deferred()
 		return
 
 	var event_log: Array = memory_system.get_npc_daily_events(npc_id)
 	var witness_log: Array = memory_system.get_npc_witness_events(npc_id)
-	event_log_label.text = _format_memory_block("事件库", event_log)
-	witness_log_label.text = _format_memory_block("见闻库", witness_log)
+	_set_memory_block_text(event_log_label, _event_log_text, "事件库", event_log)
+	_set_memory_block_text(witness_log_label, _witness_log_text, "见闻库", witness_log)
+	_scroll_memory_logs_to_bottom_deferred()
 
 
 func _update_interaction_controls(npc: Dictionary) -> void:
 	var states: Dictionary = npc.get("states", {})
 	var is_escaped := bool(states.get("escaped", false))
+	var is_recruited := bool(npc.get("recruited", false))
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	var has_money := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("money")) >= int(gift_money_spin.value)
 	var has_weapon := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("weapons")) >= 1
 
 	gift_money_button.disabled = is_escaped or not has_money
-	give_weapon_button.disabled = is_escaped or not has_weapon
+	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
 	attack_button.disabled = is_escaped
 
 
@@ -231,6 +375,37 @@ func _get_selected_visibility() -> String:
 	return str(metadata) if metadata != null else "local_public"
 
 
+func _fill_weapon_select() -> void:
+	if _weapon_select == null:
+		return
+	var previous_id := _get_selected_weapon_id()
+	_weapon_select.clear()
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("get_weapon_ids"):
+		return
+	var selected_index := 0
+	var weapon_ids: Array = equipment_system.get_weapon_ids()
+	for raw_weapon_id in weapon_ids:
+		var weapon_id := str(raw_weapon_id)
+		var weapon_def: Dictionary = equipment_system.get_weapon_def(weapon_id) if equipment_system.has_method("get_weapon_def") else {}
+		var index := _weapon_select.get_item_count()
+		_weapon_select.add_item(str(weapon_def.get("name", weapon_id)))
+		_weapon_select.set_item_metadata(index, weapon_id)
+		if weapon_id == previous_id or (previous_id.is_empty() and weapon_id == "sword_shield"):
+			selected_index = index
+	if _weapon_select.get_item_count() > 0:
+		_weapon_select.select(selected_index)
+
+
+func _get_selected_weapon_id() -> String:
+	if _weapon_select == null or _weapon_select.get_item_count() <= 0:
+		return ""
+	var metadata: Variant = _weapon_select.get_item_metadata(_weapon_select.selected)
+	if metadata != null:
+		return str(metadata)
+	return ""
+
+
 func _show_interaction_result(result: Dictionary, success_text: String) -> void:
 	if bool(result.get("ok", false)):
 		interaction_result_label.text = success_text
@@ -238,19 +413,111 @@ func _show_interaction_result(result: Dictionary, success_text: String) -> void:
 		interaction_result_label.text = str(result.get("message", "操作失败。"))
 
 
-func _format_memory_block(title: String, events: Array) -> String:
-	if events.is_empty():
-		return "%s：暂无" % title
+func _assign_attribute_point(attribute_name: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or _current_npc_id.is_empty() or not npc_system.has_method("assign_npc_attribute_point"):
+		return
+	var result: Dictionary = npc_system.assign_npc_attribute_point(_current_npc_id, attribute_name)
+	if bool(result.get("ok", false)):
+		interaction_result_label.text = "已分配到%s。" % str(result.get("attribute_label", attribute_name))
+		show_npc(_current_npc_id)
+	else:
+		interaction_result_label.text = str(result.get("message", "无法分配技能点。"))
 
-	var lines: Array[String] = ["%s：%d 条" % [title, events.size()]]
-	var start_index := maxi(0, events.size() - MAX_MEMORY_LINES)
-	for index in range(start_index, events.size()):
+
+func _setup_memory_log_boxes() -> void:
+	_event_log_text = _wrap_memory_label(event_log_label, "NPCEventLogBox", "NPCEventLogText", "事件库")
+	_witness_log_text = _wrap_memory_label(witness_log_label, "NPCWitnessLogBox", "NPCWitnessLogText", "见闻库")
+
+
+func _wrap_memory_label(label: Label, box_name: String, text_name: String, title: String) -> TextEdit:
+	if label == null:
+		return null
+	var parent := label.get_parent() as VBoxContainer
+	if parent == null:
+		return null
+	var insert_index := label.get_index()
+	parent.remove_child(label)
+
+	var box := PanelContainer.new()
+	box.name = box_name
+	box.custom_minimum_size = MEMORY_LOG_BOX_MIN_SIZE
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	parent.add_child(box)
+	parent.move_child(box, insert_index)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	box.add_child(margin)
+
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	margin.add_child(content)
+
+	label.text = "%s：暂无" % title
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(label)
+
+	var text := TextEdit.new()
+	text.name = text_name
+	text.text = "暂无"
+	text.editable = false
+	text.custom_minimum_size = Vector2(0, MEMORY_LOG_TEXT_MIN_HEIGHT)
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	content.add_child(text)
+	return text
+
+
+func _set_memory_block_text(title_label: Label, body_text: TextEdit, title: String, events: Array) -> void:
+	if title_label != null:
+		title_label.text = "%s：%d 条" % [title, events.size()]
+	if body_text != null:
+		body_text.text = _format_memory_block(events)
+
+
+func _format_memory_block(events: Array) -> String:
+	if events.is_empty():
+		return "暂无"
+
+	var lines: Array[String] = []
+	for index in range(events.size()):
 		var event: Dictionary = events[index] if events[index] is Dictionary else {}
 		var summary := str(event.get("summary", ""))
 		if summary.is_empty():
 			summary = str(event.get("type", "未命名事件"))
 		lines.append("- %s %s" % [str(event.get("time", "--:--:--")), summary])
 	return "\n".join(lines)
+
+
+func _scroll_memory_logs_to_bottom_deferred() -> void:
+	call_deferred("_scroll_memory_logs_to_bottom")
+	call_deferred("_scroll_memory_logs_to_bottom_after_layout")
+
+
+func _scroll_memory_logs_to_bottom_after_layout() -> void:
+	await get_tree().process_frame
+	_scroll_memory_logs_to_bottom()
+
+
+func _scroll_memory_logs_to_bottom() -> void:
+	_scroll_to_bottom(_event_log_text)
+	_scroll_to_bottom(_witness_log_text)
+
+
+func _scroll_to_bottom(text: TextEdit) -> void:
+	if text == null:
+		return
+	text.scroll_vertical = text.get_line_count()
+	var scroll_bar := text.get_v_scroll_bar()
+	if scroll_bar != null:
+		scroll_bar.value = scroll_bar.max_value
 
 
 func _on_npc_clicked(npc_id: String) -> void:
@@ -290,9 +557,12 @@ func _on_dialogue_pressed() -> void:
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null or _current_npc_id.is_empty():
 		return
+	var order_panel := get_node_or_null(ORDER_PANEL_PATH)
+	if order_panel != null:
+		order_panel.visible = false
 	var result: Dictionary = dialog_system.start_player_dialogue(_current_npc_id)
-	if bool(result.get("ok", false)):
-		visible = false
+	if not bool(result.get("ok", false)):
+		interaction_result_label.text = str(result.get("message", "无法开始对话。"))
 
 
 func _on_order_pressed() -> void:
@@ -300,8 +570,8 @@ func _on_order_pressed() -> void:
 	if order_panel == null or _current_npc_id.is_empty() or not order_panel.has_method("show_order"):
 		return
 	var result: Dictionary = order_panel.show_order(_current_npc_id)
-	if bool(result.get("ok", false)):
-		visible = false
+	if not bool(result.get("ok", false)):
+		interaction_result_label.text = str(result.get("message", "无法打开指令。"))
 
 
 func _on_gift_money_value_changed(_value: float) -> void:
@@ -367,11 +637,11 @@ func _on_gift_money_pressed() -> void:
 
 
 func _on_give_weapon_pressed() -> void:
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if npc_system == null or _current_npc_id.is_empty() or not npc_system.has_method("give_placeholder_weapon_to_npc"):
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or _current_npc_id.is_empty() or not equipment_system.has_method("equip_npc_main_weapon"):
 		return
-	var result: Dictionary = npc_system.give_placeholder_weapon_to_npc(_current_npc_id, _get_selected_visibility())
-	_show_interaction_result(result, "已交给 NPC 一把短剑。")
+	var result: Dictionary = equipment_system.equip_npc_main_weapon(_current_npc_id, _get_selected_weapon_id(), _get_selected_visibility())
+	_show_interaction_result(result, "已装备武器：%s。" % str(result.get("unit_type_label", "")))
 	if bool(result.get("ok", false)):
 		show_npc(_current_npc_id)
 

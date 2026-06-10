@@ -1,6 +1,7 @@
 extends Control
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 
 var _current_npc_id := ""
 
@@ -28,6 +29,10 @@ func show_order(npc_id: String) -> Dictionary:
 		return _failure("unknown_npc", "NPC 不存在。")
 	if not bool(npc.get("recruited", false)):
 		return _failure("npc_not_recruited", "未入伍 NPC 不能接收个人指令。")
+
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system != null and dialog_system.has_method("is_dialogue_active") and bool(dialog_system.is_dialogue_active()):
+		dialog_system.end_dialogue()
 
 	_current_npc_id = npc_id
 	title_label.text = "给 %s 的当前指令" % str(npc.get("name", npc_id))

@@ -8,18 +8,19 @@ const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
+const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const PLAYER_ACTOR_ID := "guard_officer"
 const SYSTEM_ACTOR_ID := "system"
 const MONEY_RESOURCE_ID := "money"
-const PLACEHOLDER_WEAPON_RESOURCE_ID := "weapons"
-const PLACEHOLDER_WEAPON_ID := "short_sword"
-const PLACEHOLDER_WEAPON_NAME := "短剑"
-const EQUIPMENT_SLOT_MAIN_WEAPON := "main_weapon"
 const PICK_RAY_LENGTH := 1000.0
 const PROFESSIONAL_SKILLS: Array[String] = ["养马", "厨艺", "耕种", "打铁", "教练", "酿酒", "医术", "工程"]
 const WEAPON_SKILLS: Array[String] = ["剑盾", "长杆", "弓", "弩", "骑术"]
+const ATTRIBUTE_NAMES: Array[String] = ["strength", "intelligence"]
 const SPECIALTY_THRESHOLD := 25
+const SKILL_POINT_EXPERIENCE_THRESHOLD := 5
+const ATTRIBUTE_MIN_VALUE := 0
+const ATTRIBUTE_MAX_VALUE := 10
 const UNCONSCIOUS_NATURAL_RECOVERY_HP_PER_HOUR := 2.0
 const UNCONSCIOUS_HEALING_BASE_HP_PER_HOUR := 2.0
 const UNCONSCIOUS_HEALING_MAX_BONUS_HP_PER_HOUR := 10.0
@@ -277,6 +278,36 @@ func set_npc_recruited(npc_id: String, recruited: bool) -> bool:
 	return true
 
 
+func get_npc_equipment(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot get equipment for unknown NPC: %s" % npc_id)
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var equipment: Dictionary = profile.get("equipment", {})
+	return equipment.duplicate(true)
+
+
+func set_npc_equipment_slot(npc_id: String, slot: String, item: Dictionary) -> bool:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot set equipment for unknown NPC: %s" % npc_id)
+		return false
+	if slot.is_empty():
+		push_warning("Cannot set equipment with empty slot for NPC: %s" % npc_id)
+		return false
+
+	var profile: Dictionary = _profiles[npc_id]
+	var equipment: Dictionary = profile.get("equipment", {})
+	if item.is_empty():
+		equipment.erase(slot)
+	else:
+		equipment[slot] = item.duplicate(true)
+	profile["equipment"] = equipment
+	_profiles[npc_id] = profile
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
 func get_current_order(npc_id: String) -> Dictionary:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot get order for unknown NPC: %s" % npc_id)
@@ -322,50 +353,6 @@ func give_money_to_npc(
 		"amount": amount,
 		"npc_money_before": money_before,
 		"npc_money_after": money_after,
-		"event": event
-	}
-
-
-func give_placeholder_weapon_to_npc(
-	npc_id: String,
-	visibility: String = "local_public"
-) -> Dictionary:
-	if not _profiles.has(npc_id):
-		return _interaction_failure("unknown_npc", "NPC 不存在。")
-
-	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
-	if resource_system == null or not resource_system.has_method("spend_resources"):
-		return _interaction_failure("resource_system_missing", "资源系统不可用。")
-	if not resource_system.spend_resources({PLACEHOLDER_WEAPON_RESOURCE_ID: 1}):
-		return _interaction_failure("not_enough_weapons", "武器库存不足。")
-
-	var profile: Dictionary = _profiles[npc_id]
-	var equipment: Dictionary = profile.get("equipment", {})
-	var previous_weapon: Dictionary = equipment.get(EQUIPMENT_SLOT_MAIN_WEAPON, {})
-	equipment[EQUIPMENT_SLOT_MAIN_WEAPON] = {
-		"id": PLACEHOLDER_WEAPON_ID,
-		"name": PLACEHOLDER_WEAPON_NAME,
-		"type": "melee",
-		"placeholder": true
-	}
-	profile["equipment"] = equipment
-	_profiles[npc_id] = profile
-
-	var event_type := "equipment_changed" if not previous_weapon.is_empty() else "equipment_given"
-	var event := _log_player_interaction(npc_id, event_type, {
-		"slot": EQUIPMENT_SLOT_MAIN_WEAPON,
-		"equipment_id": PLACEHOLDER_WEAPON_ID,
-		"equipment_name": PLACEHOLDER_WEAPON_NAME,
-		"previous_equipment_id": str(previous_weapon.get("id", "")),
-		"previous_equipment_name": str(previous_weapon.get("name", "")),
-		"resource_id": PLACEHOLDER_WEAPON_RESOURCE_ID
-	}, visibility)
-	_refresh_npc_node(npc_id)
-	_emit_npc_state_changed(npc_id)
-	return {
-		"ok": true,
-		"npc_id": npc_id,
-		"equipment": equipment.duplicate(true),
 		"event": event
 	}
 
@@ -638,6 +625,8 @@ func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dict
 
 	var profile: Dictionary = _profiles[npc_id]
 	var skills: Dictionary = normalize_skills(profile.get("skills", {}))
+	if not skills.has(skill_name):
+		return {}
 	var before := clampi(int(skills.get(skill_name, 0)), 0, 100)
 	var after := clampi(before + amount, 0, 100)
 	if after == before:
@@ -645,6 +634,8 @@ func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dict
 
 	skills[skill_name] = after
 	profile["skills"] = skills
+	var progression_result := _add_growth_experience(profile, skill_name, after - before)
+	profile["progression"] = progression_result.get("progression", {})
 	_profiles[npc_id] = profile
 	_emit_npc_state_changed(npc_id)
 	return {
@@ -652,8 +643,69 @@ func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dict
 		"skill_name": skill_name,
 		"before": before,
 		"after": after,
-		"amount": after - before
+		"amount": after - before,
+		"experience_gained": int(progression_result.get("experience_gained", 0)),
+		"total_experience": int(progression_result.get("total_experience", 0)),
+		"skill_points_gained": int(progression_result.get("skill_points_gained", 0)),
+		"unspent_skill_points": int(progression_result.get("unspent_skill_points", 0)),
+		"skill_experience": int(progression_result.get("skill_experience", 0)),
+		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD
 	}
+
+
+func get_npc_progression(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var progression := _normalize_progression(profile.get("progression", {}))
+	profile["progression"] = progression
+	_profiles[npc_id] = profile
+	return progression.duplicate(true)
+
+
+func assign_npc_attribute_point(npc_id: String, attribute_name: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	var normalized_attribute := _normalize_attribute_name(attribute_name)
+	if normalized_attribute.is_empty():
+		return _interaction_failure("invalid_attribute", "只能分配到力量或智力。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	var progression := _normalize_progression(profile.get("progression", {}))
+	var unspent_points := int(progression.get("unspent_skill_points", 0))
+	if unspent_points <= 0:
+		return _interaction_failure("no_skill_points", "没有可分配技能点。")
+
+	var stats: Dictionary = profile.get("stats", {})
+	var before := clampi(int(stats.get(normalized_attribute, 0)), ATTRIBUTE_MIN_VALUE, ATTRIBUTE_MAX_VALUE)
+	if before >= ATTRIBUTE_MAX_VALUE:
+		return _interaction_failure("attribute_maxed", "该属性已达到上限。")
+
+	var after := clampi(before + 1, ATTRIBUTE_MIN_VALUE, ATTRIBUTE_MAX_VALUE)
+	stats[normalized_attribute] = after
+	progression["unspent_skill_points"] = unspent_points - 1
+	progression["spent_skill_points"] = int(progression.get("spent_skill_points", 0)) + 1
+	profile["stats"] = stats
+	profile["progression"] = progression
+	_profiles[npc_id] = profile
+
+	var event := _log_attribute_improved(npc_id, normalized_attribute, before, after)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"attribute": normalized_attribute,
+		"attribute_label": _get_attribute_label(normalized_attribute),
+		"before": before,
+		"after": after,
+		"unspent_skill_points": int(progression.get("unspent_skill_points", 0)),
+		"event": event
+	}
+
+
+func debug_assign_attribute_point(npc_id: String, attribute_name: String) -> Dictionary:
+	return assign_npc_attribute_point(npc_id, attribute_name)
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
@@ -822,7 +874,9 @@ func _stop_npc_movement(npc_id: String) -> void:
 
 func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	var profile: Dictionary = _profiles[npc_id]
+	profile["skills"] = normalize_skills(profile.get("skills", {}))
 	profile["current_order"] = _normalize_current_order(profile.get("current_order", {}))
+	profile["progression"] = _normalize_progression(profile.get("progression", {}))
 	var states: Dictionary = profile.get("states", {})
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
@@ -832,6 +886,78 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["proactive_talk"] = {}
 	profile["states"] = states
 	_profiles[npc_id] = profile
+
+
+func _normalize_progression(raw_progression: Variant) -> Dictionary:
+	var source: Dictionary = raw_progression if raw_progression is Dictionary else {}
+	var skill_experience: Dictionary = source.get("skill_experience", {})
+	var normalized_skill_experience := {}
+	for skill_name in PROFESSIONAL_SKILLS + WEAPON_SKILLS:
+		normalized_skill_experience[skill_name] = maxi(0, int(skill_experience.get(skill_name, 0)))
+
+	var total_experience := maxi(0, int(source.get("total_experience", 0)))
+	return {
+		"total_experience": total_experience,
+		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD,
+		"unspent_skill_points": maxi(0, int(source.get("unspent_skill_points", source.get("skill_points", 0)))),
+		"spent_skill_points": maxi(0, int(source.get("spent_skill_points", 0))),
+		"skill_experience": normalized_skill_experience
+	}
+
+
+func _add_growth_experience(profile: Dictionary, skill_name: String, experience_amount: int) -> Dictionary:
+	var progression := _normalize_progression(profile.get("progression", {}))
+	var gained := maxi(0, experience_amount)
+	if gained <= 0:
+		return {
+			"progression": progression,
+			"experience_gained": 0,
+			"total_experience": int(progression.get("total_experience", 0)),
+			"skill_points_gained": 0,
+			"unspent_skill_points": int(progression.get("unspent_skill_points", 0)),
+			"skill_experience": int((progression.get("skill_experience", {}) as Dictionary).get(skill_name, 0))
+		}
+
+	var skill_experience: Dictionary = progression.get("skill_experience", {})
+	skill_experience[skill_name] = maxi(0, int(skill_experience.get(skill_name, 0)) + gained)
+	var total_before := int(progression.get("total_experience", 0))
+	var total_after := total_before + gained
+	var points_before := int(floor(float(total_before) / float(SKILL_POINT_EXPERIENCE_THRESHOLD)))
+	var points_after := int(floor(float(total_after) / float(SKILL_POINT_EXPERIENCE_THRESHOLD)))
+	var points_gained := maxi(0, points_after - points_before)
+	progression["total_experience"] = total_after
+	progression["skill_experience"] = skill_experience
+	progression["unspent_skill_points"] = int(progression.get("unspent_skill_points", 0)) + points_gained
+	progression["next_skill_point_xp"] = SKILL_POINT_EXPERIENCE_THRESHOLD
+
+	return {
+		"progression": progression,
+		"experience_gained": gained,
+		"total_experience": total_after,
+		"skill_points_gained": points_gained,
+		"unspent_skill_points": int(progression.get("unspent_skill_points", 0)),
+		"skill_experience": int(skill_experience.get(skill_name, 0))
+	}
+
+
+func _normalize_attribute_name(attribute_name: String) -> String:
+	match attribute_name.strip_edges().to_lower():
+		"strength", "str", "力量":
+			return "strength"
+		"intelligence", "int", "智力":
+			return "intelligence"
+		_:
+			return ""
+
+
+func _get_attribute_label(attribute_name: String) -> String:
+	match attribute_name:
+		"strength":
+			return "力量"
+		"intelligence":
+			return "智力"
+		_:
+			return attribute_name
 
 
 func _normalize_current_order(raw_order: Variant) -> Dictionary:
@@ -875,6 +1001,28 @@ func _log_order_assigned(npc_id: String, old_text: String, new_text: String, rev
 			"previous_order_text": old_text,
 			"new_order_text": new_text,
 			"order_revision": revision
+		}
+	})
+
+
+func _log_attribute_improved(npc_id: String, attribute_name: String, before: int, after: int) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "attribute_improved",
+		"subject_npc_id": npc_id,
+		"actor_ids": [PLAYER_ACTOR_ID],
+		"target_ids": [npc_id, attribute_name],
+		"location_id": _get_current_info_location(npc_id, memory_system),
+		"visibility": "private",
+		"importance": 35,
+		"payload": {
+			"attribute": attribute_name,
+			"attribute_label": _get_attribute_label(attribute_name),
+			"before": before,
+			"after": after,
+			"assigned_by": PLAYER_ACTOR_ID
 		}
 	})
 

@@ -1,5 +1,87 @@
 # DEV_LOG.md
 
+## 2026-06-10 T0016 建筑面板工位显示优化
+
+- `BuildingPanel` 移除独立“当前工作位 x/x”汇总行，场景默认占位改为 `工位：--`。
+- 工位、床位和训练位改为按类型分组显示 `空闲数/总数：占用者`；空闲数和总数来自真实工位数组，占用者通过 `NPCSystem` 显示 NPC 名字。
+- 诊所、训练场等多类型建筑会分别显示医生 / 病床、教官 / 受训者等位置；无占用者显示“空闲”，多个占用者用顿号分隔。
+- 新增 `tools/verify_building_panel_workstations.gd`，覆盖新显示格式、占用者名字、多类型分组和无工位建筑。
+- 验证通过：`verify_building_panel_workstations.gd`、`verify_building_repair_upgrade.gd`、`verify_work_output_framework.gd`。
+
+## 2026-06-10 T0015 NPC 成长 UI 与 GM 入伍入口修正
+
+- NPC 面板移除独立“成长”说明文本，改为在 HP 行右侧显示 `经验：当前 / 阈值`。
+- 属性行改为内联显示力量和智力；只有存在未分配技能点且对应属性未达上限时，才在属性数值旁显示 `+1` 按钮，最后一个点用完后按钮自动消失。
+- GM 面板 NPC 分组新增“设为入伍”按钮和 `recruit_npc <npc_id>` 命令，调用 `NPCSystem.set_npc_recruited(...)`，让选中 NPC 进入可发布指令 / 可分配装备的入伍状态。
+- 更新 `tools/verify_skill_progression.gd`、`tools/verify_npc_panel_state.gd` 和 `tools/verify_gm_panel.gd`，覆盖新 UI 和 GM 入伍入口。
+- 验证通过：`verify_npc_panel_state.gd`、`verify_skill_progression.gd`、`verify_gm_panel.gd`、`verify_npc_order.gd`、`verify_npc_panel_interactions.gd`、`verify_dialogue_ui.gd`、`verify_equipment_system.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `Main.tscn` 后游戏日志为空。
+
+## 2026-06-10 T0904 职业熟练度与经验升级
+
+- `NPCSystem` 新增运行时 `progression` 成长结构，`increase_npc_skill(...)` 成为统一熟练度增长入口；工作、诊所和训练的熟练度提升会同步增加技能经验与总经验，每 5 点总经验产生 1 个未分配技能点。
+- 按当前设计改为玩家分配技能点：新增 `assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，只能把未分配技能点投入力量或智力，AI 只可在后续对话/计划中建议倾向，不能自行消耗技能点或改写属性。
+- `NPCPanel` 接入成长展示与玩家分配技能点入口；该入口后续已按 T0015 调整为 HP 行右侧经验与属性数值旁条件显示 `+1`。`GMPanel` 新增技能点分配入口和 `assign_attribute <npc_id> <strength|intelligence>` 命令。
+- `MemorySystem` 新增 `attribute_improved` 事件，并让 `skill_improved` payload 记录经验与技能点变化；新增 `tools/verify_skill_progression.gd` 覆盖工作、训练、诊所成长、技能点生成、玩家属性分配、NPC 面板和 GM 命令。
+- 同步更新 `game_design.md`、`AI_NPC_SYSTEM.md`、`DATA_SCHEMA.md`、`UI_UX.md`、`GM_PANEL.md`、`MEMORY_AND_INFO_SPACE.md`、`ECONOMY_AND_BUILDINGS.md`、`GODOT_ARCHITECTURE.md`、`MODULE_INDEX.md`、`CURRENT_STATE.md` 和 `TASKS.md`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_skill_progression.gd`。
+
+## 2026-06-10 T0014 GM 行动入口、NPC 记忆滚动区与弹窗互斥
+
+- GM 面板行动区去掉并列的工作、吃饭、睡觉、当教官和当受训者按钮；普通行动统一通过行动下拉和“指定行动”触发，协助修复、协助升级、协助治疗等带目标参数入口保留。
+- NPC 面板事件库和见闻库改为固定高度滚动区，完整显示当前 NPC 的事件 / 见闻内容，刷新后自动滚到底部，用户仍可手动上滑查看旧记录。
+- NPC 面板点击“对话”或“指令”不再自动关闭 NPC 面板；`DialogPanel` 与 `OrderPanel` 互斥，打开其中一个会关闭另一个，避免中央弹窗重叠。
+- 更新 `tools/verify_gm_panel.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_dialogue_ui.gd` 和 `tools/verify_npc_order.gd` 的断言，覆盖新 UI 行为。
+- 验证通过：`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_panel_interactions.gd`、`verify_npc_order.gd`、临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py` 后运行 `verify_dialogue_ui.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-10 T0903 训练场与武器熟练度提升
+
+- `data/building_defs.json` 将训练场拆分为 `training_instructor` 教官工位和 `training_student` 受训位，训练场升级当前增加受训位。
+- `data/action_defs.json` 新增 `work_training_instructor` 和 `receive_weapon_training`；无武器且无坐骑的 NPC 不能训练或执教，受训者需要训练场内已有有效教官。
+- `ActionSystem.gd` 实现教官独自练习、带受训者训练、受训者按当前主武器 / 坐骑提升武器熟练度或骑术、教官教学时提升“教练”、训练按单位时间消耗疲劳和饱食，以及教官/受训者项目熟练度差影响训练速度。
+- `MemorySystem.gd` 补充训练相关 `skill_improved` summary；GM 面板可通过行动下拉指派训练行动，并保留 `train_instructor` / `train_student` 命令。
+- 新增 `tools/verify_training_system.gd`，并扩展 `tools/verify_gm_panel.gd` 覆盖训练场 GM 入口和普通行动下拉；`tools/verify_action_system_basic.gd` 同步当前酒窖产出缩放断言。
+- 验证通过：`verify_training_system.gd`、`verify_gm_panel.gd`、`verify_action_system_basic.gd`、`verify_work_output_framework.gd`、`verify_equipment_system.gd`、`verify_unit_type_classification.gd`、`verify_clinic_treatment.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-09 T0902 兵种判定
+
+- `EquipmentSystem` 新增 `get_unit_type_snapshot(npc_id)`，返回兵种 id、中文标签、主武器类型、武器 class、是否有坐骑、坐骑 id 和完整装备槽快照，供 GM 面板和后续战斗系统只读使用。
+- GM `unit_type <npc_id>` 改为输出完整兵种快照，方便验证“马匹整备库存”与“NPC 已装备坐骑槽”不是同一件事。
+- 新增 `tools/verify_unit_type_classification.gd`，覆盖无武器、剑盾、长杆、弓、弩、近战武器 + 坐骑、远程武器 + 坐骑，以及“只有坐骑/只有库存不算骑兵”的边界。
+- 验证通过：`godot --headless --path . --script res://tools/verify_unit_type_classification.gd`。
+
+## 2026-06-09 T0013 移除短剑旧占位装备
+
+- 删除 `data/weapon_defs.json` 中的旧占位主武器定义；正式主武器只保留剑盾、长杆、弓和弩。
+- 移除 `NPCSystem.gd` 中旧占位武器兼容入口，正式装备统一通过 `EquipmentSystem` 选择具体主武器。
+- `tools/verify_equipment_system.gd`、`tools/verify_hud_resources.gd` 和 `tools/verify_unit_type_classification.gd` 增加回归断言，确认旧占位武器不会再进入装备系统、HUD 详情或兵种判定。
+- 验证通过：`verify_equipment_system.gd`、`verify_unit_type_classification.gd`、`verify_hud_resources.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-09 T0012 HUD 详情面板与 GM 面板定位修正
+
+- HUD 主资源栏去掉装备/器械详情中已有的聚合库存：武器、盔甲、马匹整备和工程器械，保留第纳尔、粮食、餐食、酒、木材、石料和铁。
+- “装备”和“器械”详情面板改为贴近各自按钮左下方打开，并根据可用屏幕范围夹住位置。
+- GM 面板改为跟随 `GM` 按钮附近打开；拖动按钮时已打开面板同步重定位并保持在可用屏幕范围内，面板高度收紧以减少遮挡 HUD。
+- 更新 `tools/verify_hud_resources.gd` 和 `tools/verify_gm_panel.gd`，覆盖 HUD 主栏去重、详情面板定位、GM 面板跟随按钮和边界钳制。
+- 验证通过：`verify_hud_resources.gd`、`verify_gm_panel.gd`、`verify_equipment_system.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
+## 2026-06-09 T0011 HUD 完整资源库存与装备器械详情
+
+- `scripts/ui/HUD.gd` 改为按 `ResourceSystem.get_resource_ids()` 动态生成资源栏，直接显示第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料和铁。
+- HUD 资源栏新增“装备”“器械”按钮；装备详情显示武器 / 盔甲 / 马匹整备库存、可分配装备定义和已分配数量，器械详情显示工程器械库存与当前未部署边界。
+- `ResourceSystem` 新增 `get_resource_definition(...)`，`EquipmentSystem.get_armor_ids(...)` 修正为稳定返回 `Array[String]`，避免详情读取盔甲槽位时触发类型错误。
+- 新增 `tools/verify_hud_resources.gd` 覆盖全量资源显示、派生库存刷新、装备详情和器械详情入口。
+- 验证通过：`verify_hud_resources.gd`、`verify_equipment_system.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
+## 2026-06-09 T0901 库存与装备系统
+
+- 新增 `res://scripts/systems/EquipmentSystem.gd` 并挂载到 `Main/Systems/EquipmentSystem`，作为装备库存、装备槽和兵种判定的权威入口。
+- `data/weapon_defs.json` 补齐剑盾、长杆、弓、弩等主武器类型；新增 `data/armor_defs.json` 和 `data/mount_defs.json`，覆盖头盔、胸甲、腕甲、腿甲和坐骑槽。
+- 装备主武器消耗 `weapons`，装备盔甲消耗 `armor`，装备坐骑消耗 `horse_readiness`；换装会返还旧装备对应库存。只有已入伍 NPC 可被守备官直接分配装备。
+- NPC 面板新增主武器选择，装备后显示当前装备和战斗定位；GM 面板新增装备武器、装备盔甲、装备坐骑和兵种查看入口及命令。
+- 装备事件复用 `MemorySystem.record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`，并按 `private` / `local_public` 传播给同地点见闻。
+- 新增 `tools/verify_equipment_system.gd`，并更新 `verify_npc_panel_interactions.gd`、`verify_gm_panel.gd`。
+- 验证通过：`verify_equipment_system.gd`、`verify_npc_panel_interactions.gd`、`verify_gm_panel.gd`、`verify_blacksmith_metal_gear.gd`、`verify_workshop_ranged_devices.gd`、`verify_stable_horse_care.gd`、`verify_npc_panel_state.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
+
 ## 2026-06-09 T0010 忽略本机 VSCode Godot 路径配置
 
 - `.gitignore` 新增 `.vscode/settings.json`，避免两台电脑不同 Godot 路径在 Git 同步时反复产生冲突或脏改动。
@@ -27,7 +109,7 @@
 - `data/building_defs.json` 中小诊所拆分为 `clinic_doctor` 医生工位和 `patient_bed` 病床，诊所升级当前增加病床。
 - `data/action_defs.json` 新增 `work_clinic_doctor` 和 `receive_clinic_treatment`，让医生坐诊/研读医术和病人占床成为两个独立行动选项。
 - `ActionSystem` 新增诊所治疗逻辑：医生在岗且受伤未昏迷 NPC 占床时才推进治疗；治疗按逻辑时间消耗第纳尔并恢复 HP，医术、智力和诊所等级提高恢复速度；病人回满 HP 后释放病床。
-- 医生无病人时会以慢速研读医学著作并通过 `skill_improved` 事件提升医术，治疗中也会少量提升医术；通用经验、技能点和属性成长继续留给 T0904。
+- 医生无病人时会以慢速研读医学著作并通过 `skill_improved` 事件提升医术，治疗中也会少量提升医术；T0808 阶段只处理医术最小增长，现已在 T0904 接入统一经验、技能点和玩家属性分配规则。
 - `NPCSystem` 新增 `restore_npc_hp(...)` 和 `increase_npc_skill(...)`，供诊所治疗与医术最小成长调用。
 - 新增 `tools/verify_clinic_treatment.gd`，验证诊所工位/病床、研读医术、病床治疗、金钱消耗、医术/智力/诊所等级效率、治疗完成事件和病床释放。
 - 验证通过：`verify_clinic_treatment.gd`、`verify_npc_unconscious_healing.gd`、`verify_work_output_framework.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
@@ -115,8 +197,8 @@
 
 ## 2026-06-05 T0704 NPC 面板非对话交互记忆
 
-- `NPCPanel` 新增非对话交互区：可选择私下 / 同地点公开，赠予第纳尔、给予占位短剑、攻击；给钱数量输入框紧邻“给钱”按钮。
-- `NPCSystem` 新增 `give_money_to_npc(...)` 和 `give_placeholder_weapon_to_npc(...)`：前者扣除全局第纳尔并增加目标 NPC 随身金钱，后者消耗 1 个全局 `weapons` 并写入占位短剑；二者都复用 `MemorySystem.record_player_interaction(...)`，不重做事件系统。
+- `NPCPanel` 新增非对话交互区：可选择私下 / 同地点公开，赠予第纳尔、给予旧占位武器、攻击；给钱数量输入框紧邻“给钱”按钮。
+- `NPCSystem` 新增 `give_money_to_npc(...)` 和旧占位武器入口：前者扣除全局第纳尔并增加目标 NPC 随身金钱，后者消耗 1 个全局 `weapons` 并写入装备事件；二者都复用 `MemorySystem.record_player_interaction(...)`，不重做事件系统。旧占位武器入口已在 T0013 后移除。
 - 攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)`，保持 HP、昏迷和恢复结算权威边界不变；NPC 面板不提供休息 / 治疗按钮。
 - 新增 `tools/verify_npc_panel_interactions.gd`，覆盖给钱事件、同地点见闻、占位装备、攻击扣血、广场公开事件、后续 LLMBridge 短期记忆上下文，并检查休息/治疗按钮不存在。
 - 验证通过：`verify_npc_panel_interactions.gd`、`verify_npc_panel_state.gd`、`verify_gm_panel.gd`、`verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。`verify_dialogue_ui.gd` 本次未通过的原因是本机 5000 端口由 deepseek provider 后端响应，非本次 Godot 改动导致。
@@ -1127,7 +1209,7 @@ T0604 踩坑归因：
 - 新增 `data/resource_defs.json`，包含第纳尔、粮食、木材、石料、铁五类基础资源的最小配置。
 - 新增 `data/building_defs.json`，包含主厅建筑的最小配置。
 - 新增 `data/action_defs.json`，包含修补围墙行动的最小配置。
-- 新增 `data/weapon_defs.json`，包含短剑武器的最小配置。
+- 新增 `data/weapon_defs.json`，包含早期武器最小配置；该旧占位武器已在 T0013 后移除，正式主武器只保留剑盾、长杆、弓和弩。
 - 新增 `data/enemy_waves.json`，包含第一波敌人占位配置。
 - 新增 `data/npc_profiles.json`，包含老兵副官占位档案。
 - 更新 `DATA_SCHEMA.md`，补齐资源、武器、敌人波次 schema，并让已有示例与实际 JSON 字段一致。
@@ -1198,7 +1280,7 @@ T0604 踩坑归因：
 
 完成：
 - 新增 `scripts/ui/BuildingPanel.gd`，监听 `EventBus.building_clicked` 并从 `BuildingSystem` 读取建筑基础状态。
-- 扩展 `Main/UI/BuildingPanel`，显示建筑名称、等级、HP / Max HP、当前工作位和地点信息占位。
+- 扩展 `Main/UI/BuildingPanel`，显示建筑名称、等级、HP / Max HP、工位状态和地点信息占位；工位展示后续已在 T0016 调整为按类型显示空闲数 / 总数与占用者。
 - 修复、升级按钮保持禁用，仅作为后续 T0205 的 UI 占位。
 - 面板右上角关闭按钮可隐藏面板；未知建筑或无建筑时面板保持隐藏。
 

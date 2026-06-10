@@ -17,6 +17,7 @@
 [ext_resource type="Script" path="res://scripts/ui/DialogPanel.gd" id="15_dialog_panel"]
 [ext_resource type="Script" path="res://scripts/ui/OrderPanel.gd" id="16_order_panel"]
 [ext_resource type="Script" path="res://scripts/ui/UIInputFocusManager.gd" id="17_ui_focus"]
+[ext_resource type="Script" path="res://scripts/systems/EquipmentSystem.gd" id="18_equipment"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -402,6 +403,9 @@ script = ExtResource("6_memory")
 [node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
 script = ExtResource("7_combat")
 
+[node name="EquipmentSystem" type="Node" parent="Systems"]
+script = ExtResource("18_equipment")
+
 [node name="LLMBridge" type="Node" parent="Systems"]
 script = ExtResource("14_llm_bridge")
 
@@ -679,8 +683,8 @@ value = 5.0
 [node name="NPCGiveWeaponButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "给武器"
-tooltip_text = "消耗 1 个武器库存，给予一把占位短剑。正式装备系统由 T0901 实现。"
+text = "装备武器"
+tooltip_text = "消耗 1 个武器库存，为已入伍 NPC 装备所选主武器。"
 
 [node name="NPCAttackButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
 unique_name_in_owner = true
@@ -766,7 +770,7 @@ text = "HP：-- / --"
 [node name="BuildingWorkstationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "当前工作位：--"
+text = "工位：--"
 autowrap_mode = 3
 
 [node name="BuildingLocationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]

@@ -133,6 +133,8 @@ func _init() -> void:
 	_set_debug_move_speed(cook_id, 80.0)
 	var grain_before_tavern: int = resource_system.get_resource("grain")
 	var wine_before: int = resource_system.get_resource("wine")
+	var tavern_action: Dictionary = action_system.get_action("work_tavern")
+	var expected_tavern_output: int = int(action_system._get_work_output_resources(tavern_action, cook_id).get("wine", 0))
 	npc_system.update_npc_state(cook_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(cook_id, "tavern"):
 		push_error("Failed to assign tavern work")
@@ -147,7 +149,7 @@ func _init() -> void:
 		push_error("Tavern work did not complete")
 		quit(1)
 		return
-	if resource_system.get_resource("grain") != grain_before_tavern - 1 or resource_system.get_resource("wine") != wine_before + 1:
+	if resource_system.get_resource("grain") != grain_before_tavern - 1 or resource_system.get_resource("wine") != wine_before + expected_tavern_output:
 		push_error("Tavern work resource result mismatch")
 		quit(1)
 		return

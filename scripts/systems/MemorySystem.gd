@@ -21,7 +21,7 @@ const EVENT_TYPES: Array[String] = [
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed",
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
-	"skill_improved", "npc_recruited", "npc_left_recruited_state",
+	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
 	"combat_started", "combat_ended", "attack_made", "damage_taken", "low_hp_triggered",
 	"unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
@@ -43,7 +43,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"revived": ["hp_before", "hp_after", "recovery_source"],
-	"order_assigned": ["previous_order_text", "new_order_text", "order_revision"]
+	"order_assigned": ["previous_order_text", "new_order_text", "order_revision"],
+	"attribute_improved": ["attribute", "before", "after", "assigned_by"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -971,6 +972,14 @@ func _format_summary(event: Dictionary) -> String:
 			]
 		"skill_improved":
 			return _format_skill_improved_summary(actor, payload, location)
+		"attribute_improved":
+			return "%s为%s分配了1点技能点，%s从%d提高到%d。" % [
+				PLAYER_DISPLAY_NAME,
+				actor,
+				str(payload.get("attribute_label", payload.get("attribute", "属性"))),
+				int(payload.get("before", 0)),
+				int(payload.get("after", 0))
+			]
 		"repair_assist_started":
 			return "%s开始协助修复%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
 		"upgrade_assist_started":
@@ -1063,6 +1072,14 @@ func _format_skill_improved_summary(actor: String, payload: Dictionary, location
 		return "%s在%s研读医学著作，%s略有长进。" % [actor, location, skill_name]
 	if reason == "clinic_treatment":
 		return "%s在%s治疗伤员，%s略有长进。" % [actor, location, skill_name]
+	if reason == "training_solo":
+		return "%s在%s独自练习，%s略有长进。" % [actor, location, skill_name]
+	if reason == "training_student":
+		return "%s在%s受训，%s略有长进。" % [actor, location, skill_name]
+	if reason == "training_coaching":
+		return "%s在%s指导训练，%s略有长进。" % [actor, location, skill_name]
+	if reason == "work_completed":
+		return "%s在%s工作后，%s略有长进。" % [actor, location, skill_name]
 	return "%s的%s略有长进。" % [actor, skill_name]
 
 

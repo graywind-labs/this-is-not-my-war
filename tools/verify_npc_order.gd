@@ -54,8 +54,8 @@ func _init() -> void:
 
 	order_button.pressed.emit()
 	await process_frame
-	if not order_panel.visible or npc_panel.visible:
-		push_error("Order button should open OrderPanel and hide NPCPanel")
+	if not order_panel.visible or not npc_panel.visible:
+		push_error("Order button should open OrderPanel without hiding NPCPanel")
 		quit(1)
 		return
 	if not text_edit.text.is_empty():

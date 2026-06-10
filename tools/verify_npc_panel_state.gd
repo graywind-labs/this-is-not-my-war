@@ -10,14 +10,19 @@ func _init() -> void:
 
 	var main := main_scene.instantiate()
 	root.add_child(main)
+	root.size = Vector2i(1280, 720)
+	DisplayServer.window_set_size(root.size)
 	await process_frame
 	await physics_frame
 
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
+	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var building_panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if npc_system == null or building_system == null or npc_panel == null or building_panel == null:
+	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel") as Control
+	var order_panel := root.get_node_or_null("Main/UI/OrderPanel") as Control
+	if npc_system == null or building_system == null or memory_system == null or npc_panel == null or building_panel == null or dialog_panel == null or order_panel == null:
 		push_error("Required systems or panels not found")
 		quit(1)
 		return
@@ -34,7 +39,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var hp_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCHPLabel") as Label
+	var hp_label := npc_panel.find_child("NPCHPLabel", true, false) as Label
 	if hp_label == null or hp_label.text != "HP：100 / 100":
 		push_error("NPCPanel HP text mismatch: %s" % (hp_label.text if hp_label != null else "<missing>"))
 		quit(1)
@@ -42,12 +47,43 @@ func _init() -> void:
 
 	var content := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content")
 	var panel_container := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer") as Control
-	var attributes_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCAttributesLabel") as Label
+	var hp_experience_row := npc_panel.find_child("NPCHPExperienceRow", true, false) as HBoxContainer
+	var experience_label := npc_panel.find_child("NPCExperienceLabel", true, false) as Label
+	var attributes_label := npc_panel.find_child("NPCAttributesLabel", true, false) as Label
+	var attribute_point_row := npc_panel.find_child("NPCAttributePointRow", true, false) as HBoxContainer
+	var strength_point_button := npc_panel.find_child("NPCStrengthPointButton", true, false) as Button
+	var intelligence_point_button := npc_panel.find_child("NPCIntelligencePointButton", true, false) as Button
+	var strength_value_label := npc_panel.find_child("NPCStrengthValueLabel", true, false) as Label
+	var intelligence_value_label := npc_panel.find_child("NPCIntelligenceValueLabel", true, false) as Label
 	var specialties_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCJobLabel") as Label
-	var event_log_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEventLogLabel") as Label
-	var witness_log_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCWitnessLogLabel") as Label
-	if attributes_label == null or attributes_label.text != "属性：力量 7，智力 6":
+	var event_log_label := npc_panel.find_child("NPCEventLogLabel", true, false) as Label
+	var witness_log_label := npc_panel.find_child("NPCWitnessLogLabel", true, false) as Label
+	var event_log_box := npc_panel.find_child("NPCEventLogBox", true, false) as PanelContainer
+	var witness_log_box := npc_panel.find_child("NPCWitnessLogBox", true, false) as PanelContainer
+	var event_log_text := npc_panel.find_child("NPCEventLogText", true, false) as TextEdit
+	var witness_log_text := npc_panel.find_child("NPCWitnessLogText", true, false) as TextEdit
+	if hp_experience_row == null or hp_label.get_parent() != hp_experience_row:
+		push_error("NPCPanel HP and experience should share one row")
+		quit(1)
+		return
+	if experience_label == null or not experience_label.text.begins_with("经验：") or not experience_label.text.contains(" / "):
+		push_error("NPCPanel experience text mismatch: %s" % (experience_label.text if experience_label != null else "<missing>"))
+		quit(1)
+		return
+	if attributes_label == null or attributes_label.text != "属性：":
 		push_error("NPCPanel attributes text mismatch: %s" % (attributes_label.text if attributes_label != null else "<missing>"))
+		quit(1)
+		return
+	if attribute_point_row == null or strength_point_button == null or intelligence_point_button == null:
+		push_error("NPCPanel attribute point controls not found")
+		quit(1)
+		return
+	if strength_value_label == null or strength_value_label.text != "力量 7":
+		push_error("NPCPanel strength inline text mismatch")
+		quit(1)
+		return
+	if intelligence_value_label == null or intelligence_value_label.text != "智力 6":
+		push_error("NPCPanel intelligence inline text mismatch")
 		quit(1)
 		return
 	if specialties_label == null or not specialties_label.text.begins_with("专长："):
@@ -58,21 +94,51 @@ func _init() -> void:
 		push_error("NPCPanel content node not found")
 		quit(1)
 		return
-	if panel_container == null or event_log_label == null or witness_log_label == null:
-		push_error("NPCPanel growth verification nodes not found")
+	if panel_container == null or event_log_label == null or witness_log_label == null or event_log_box == null or witness_log_box == null or event_log_text == null or witness_log_text == null:
+		push_error("NPCPanel memory scroll verification nodes not found")
 		quit(1)
 		return
-	var hp_index := hp_label.get_index()
-	if attributes_label.get_index() != hp_index + 1 or specialties_label.get_index() != hp_index + 2:
-		push_error("NPCPanel order mismatch; expected HP, attributes, specialties")
+	var hp_row_index := hp_experience_row.get_index()
+	if attribute_point_row.get_index() != hp_row_index + 1 or specialties_label.get_index() != hp_row_index + 2:
+		push_error("NPCPanel order mismatch; expected HP/experience, inline attributes, specialties")
 		quit(1)
 		return
 
-	var long_memory_lines: Array[String] = ["事件库：内容膨胀测试"]
+	var panel_height_before := panel_container.size.y
 	for index in range(40):
-		long_memory_lines.append("- 08:%02d:00 测试事件摘要内容变长" % index)
-	event_log_label.text = "\n".join(long_memory_lines)
-	witness_log_label.text = "\n".join(long_memory_lines)
+		memory_system.add_event({
+			"type": "work_started",
+			"subject_npc_id": npc_id,
+			"actor_ids": [npc_id],
+			"target_ids": ["test_memory_%02d" % index],
+			"location_id": "plaza",
+			"visibility": "private",
+			"importance": 10,
+			"summary": "测试事件摘要内容变长 %02d" % index,
+			"payload": {
+				"action_id": "verify_memory_scroll",
+				"building_id": "plaza",
+				"workstation_id": "verify_event_scroll"
+			}
+		})
+		var witness_event: Dictionary = memory_system.add_event({
+			"type": "work_started",
+			"subject_npc_id": "cook_01",
+			"actor_ids": ["cook_01"],
+			"target_ids": ["test_witness_%02d" % index],
+			"location_id": "plaza",
+			"visibility": "private",
+			"importance": 10,
+			"summary": "测试见闻摘要内容变长 %02d" % index,
+			"payload": {
+				"action_id": "verify_witness_scroll",
+				"building_id": "plaza",
+				"workstation_id": "verify_witness_scroll"
+			}
+		})
+		memory_system.add_witness_event(npc_id, str(witness_event.get("event_id", "")))
+	await process_frame
+	await process_frame
 	await process_frame
 	if npc_panel.global_position.y < -0.5:
 		push_error("NPCPanel grew upward outside the viewport: %.2f" % npc_panel.global_position.y)
@@ -80,6 +146,32 @@ func _init() -> void:
 		return
 	if panel_container.global_position.y < npc_panel.global_position.y - 0.5:
 		push_error("NPCPanel content grew upward past the panel top: %.2f < %.2f" % [panel_container.global_position.y, npc_panel.global_position.y])
+		quit(1)
+		return
+	if panel_container.size.y > panel_height_before + 4.0:
+		push_error("NPCPanel should not grow after many memory events: before=%.2f after=%.2f" % [panel_height_before, panel_container.size.y])
+		quit(1)
+		return
+	if event_log_box.size.y > 170.0 or witness_log_box.size.y > 170.0:
+		push_error("NPC memory boxes should stay compact. event=%.2f witness=%.2f" % [event_log_box.size.y, witness_log_box.size.y])
+		quit(1)
+		return
+	if not _is_text_edit_scrolled_near_bottom(event_log_text):
+		push_error("Event log should be scrollable and auto-scroll to the latest event. lines=%d scroll=%d max=%.2f size=%.2f" % [
+			event_log_text.get_line_count(),
+			event_log_text.scroll_vertical,
+			event_log_text.get_v_scroll_bar().max_value,
+			event_log_text.size.y
+		])
+		quit(1)
+		return
+	if not _is_text_edit_scrolled_near_bottom(witness_log_text):
+		push_error("Witness log should be scrollable and auto-scroll to the latest event. lines=%d scroll=%d max=%.2f size=%.2f" % [
+			witness_log_text.get_line_count(),
+			witness_log_text.scroll_vertical,
+			witness_log_text.get_v_scroll_bar().max_value,
+			witness_log_text.size.y
+		])
 		quit(1)
 		return
 
@@ -117,6 +209,32 @@ func _init() -> void:
 		push_error("Panel switching from building to NPC failed")
 		quit(1)
 		return
+
+	var dialogue_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButton") as Button
+	var order_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCAssignButton") as Button
+	if dialogue_button == null or order_button == null:
+		push_error("NPCPanel dialogue/order buttons not found")
+		quit(1)
+		return
+	order_button.pressed.emit()
+	await process_frame
+	if not npc_panel.visible or not order_panel.visible or dialog_panel.visible:
+		push_error("Opening order should keep NPCPanel visible and not show DialogPanel")
+		quit(1)
+		return
+	dialogue_button.pressed.emit()
+	await process_frame
+	if not npc_panel.visible or not dialog_panel.visible or order_panel.visible:
+		push_error("Opening dialogue should keep NPCPanel visible and close OrderPanel")
+		quit(1)
+		return
+	order_button.pressed.emit()
+	await process_frame
+	if not npc_panel.visible or dialog_panel.visible or not order_panel.visible:
+		push_error("Opening order should close active DialogPanel without hiding NPCPanel")
+		quit(1)
+		return
+	order_panel.visible = false
 
 	building_system.debug_select_building("main_hall")
 	await process_frame
@@ -168,3 +286,13 @@ func _init() -> void:
 
 	print("T0303 NPC panel and state verification passed.")
 	quit(0)
+
+
+func _is_text_edit_scrolled_near_bottom(text_edit: TextEdit) -> bool:
+	var scroll_bar := text_edit.get_v_scroll_bar()
+	if scroll_bar == null or scroll_bar.max_value <= 0.0:
+		return false
+	var font_size: float = maxf(1.0, float(text_edit.get_theme_font_size("font_size")))
+	var visible_line_estimate: int = ceili(text_edit.size.y / font_size) + 2
+	var minimum_bottom_scroll: int = maxi(1, text_edit.get_line_count() - visible_line_estimate)
+	return text_edit.scroll_vertical >= minimum_bottom_scroll

@@ -59,6 +59,12 @@ func get_resource_name(resource_id: String) -> String:
 	return str(_definitions[resource_id].get("name", resource_id))
 
 
+func get_resource_definition(resource_id: String) -> Dictionary:
+	if not _definitions.has(resource_id):
+		return {}
+	return _definitions[resource_id].duplicate(true)
+
+
 func get_resource_ids() -> Array[String]:
 	return _resource_order.duplicate()
 

@@ -18,12 +18,26 @@ const CLINIC_DOCTOR_ACTION_ID := "work_clinic_doctor"
 const CLINIC_PATIENT_ACTION_ID := "receive_clinic_treatment"
 const CLINIC_DOCTOR_WORKSTATION_TYPE := "clinic_doctor"
 const CLINIC_PATIENT_BED_TYPE := "patient_bed"
+const TRAINING_LOCATION_ID := "training_ground"
+const TRAINING_INSTRUCTOR_ACTION_ID := "work_training_instructor"
+const TRAINING_STUDENT_ACTION_ID := "receive_weapon_training"
+const TRAINING_INSTRUCTOR_WORKSTATION_TYPE := "training_instructor"
+const TRAINING_STUDENT_WORKSTATION_TYPE := "training_student"
 const CLINIC_STUDY_SKILL_INTERVAL_SECONDS := 14400.0
 const CLINIC_TREATMENT_SKILL_INTERVAL_SECONDS := 3600.0
 const CLINIC_BASE_HP_PER_HOUR := 6.0
 const CLINIC_SKILL_HP_PER_HOUR := 0.10
 const CLINIC_INTELLIGENCE_HP_PER_HOUR := 0.45
 const CLINIC_LEVEL_HP_PER_HOUR := 3.0
+const TRAINING_SOLO_SKILL_INTERVAL_SECONDS := 14400.0
+const TRAINING_COACHING_SKILL_INTERVAL_SECONDS := 3600.0
+const TRAINING_STUDENT_SKILL_INTERVAL_SECONDS := 3600.0
+const TRAINING_LOW_TEACHER_INTERVAL_MULTIPLIER := 6.0
+const TRAINING_GAP_SPEED_SCALE := 0.65
+const TRAINING_COACHING_SPEED_SCALE := 0.50
+const TRAINING_BUILDING_LEVEL_SPEED_SCALE := 0.15
+const TRAINING_MIN_STUDENT_SKILL_INTERVAL_SECONDS := 600.0
+const TRAINING_STATE_COST_INTERVAL_SECONDS := 3600.0
 const WORK_SKILL_SPEED_SCALE := 0.50
 const WORK_ATTRIBUTE_SPEED_SCALE := 0.025
 const WORK_BUILDING_LEVEL_SPEED_SCALE := 0.15
@@ -414,6 +428,10 @@ func _execute_action(npc_id: String, action_id: String) -> bool:
 			return _start_clinic_doctor(npc_id, action)
 		"clinic_patient":
 			return _start_clinic_patient(npc_id, action)
+		"training_instructor":
+			return _start_training_instructor(npc_id, action)
+		"training_student":
+			return _start_training_student(npc_id, action)
 		"targeted_heal":
 			push_warning("assist_heal requires a target NPC. Use debug_assign_heal_assist(healer_npc_id, target_npc_id).")
 			return false
@@ -627,6 +645,122 @@ func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
 	return true
 
 
+func _start_training_instructor(npc_id: String, action: Dictionary) -> bool:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null or building_system == null:
+		return false
+
+	var equipped_skills := _get_equipped_training_skills(npc_system.get_npc(npc_id))
+	if equipped_skills.is_empty():
+		_update_action_failure(npc_id, "training_instructor_failed_no_equipment")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
+			"reason": "没有可训练的武器或坐骑",
+			"building_id": TRAINING_LOCATION_ID
+		})
+		return false
+
+	var claim_result: Dictionary = building_system.claim_workstation(
+		TRAINING_LOCATION_ID,
+		npc_id,
+		str(action.get("workstation_type", TRAINING_INSTRUCTOR_WORKSTATION_TYPE))
+	)
+	if not bool(claim_result.get("ok", false)):
+		_update_action_failure(npc_id, "training_instructor_failed_no_workstation")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
+			"reason": "没有空闲教官工位",
+			"building_id": TRAINING_LOCATION_ID
+		})
+		return false
+
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
+		"last_action_result": "started_%s" % str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID))
+	})
+	_active_actions[npc_id] = {
+		"kind": "training_instructor",
+		"action": action.duplicate(true),
+		"building_id": TRAINING_LOCATION_ID,
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"solo_skill_timer_seconds": {},
+		"coaching_skill_timer_seconds": 0.0,
+		"state_cost_timer_seconds": 0.0
+	}
+	_log_structured_action_event(npc_id, action, "work_started", {
+		"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"building_id": TRAINING_LOCATION_ID,
+		"training_skills": equipped_skills
+	})
+	return true
+
+
+func _start_training_student(npc_id: String, action: Dictionary) -> bool:
+	var npc_system := _get_npc_system()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if npc_system == null or building_system == null:
+		return false
+
+	var equipped_skills := _get_equipped_training_skills(npc_system.get_npc(npc_id))
+	if equipped_skills.is_empty():
+		_update_action_failure(npc_id, "training_student_failed_no_equipment")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+			"reason": "没有可训练的武器或坐骑",
+			"building_id": TRAINING_LOCATION_ID
+		})
+		return false
+
+	var instructor_id := _find_active_training_instructor_id()
+	if instructor_id.is_empty():
+		_update_action_failure(npc_id, "training_student_failed_no_instructor")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+			"reason": "训练场没有教官",
+			"building_id": TRAINING_LOCATION_ID
+		})
+		return false
+
+	var claim_result: Dictionary = building_system.claim_workstation(
+		TRAINING_LOCATION_ID,
+		npc_id,
+		str(action.get("workstation_type", TRAINING_STUDENT_WORKSTATION_TYPE))
+	)
+	if not bool(claim_result.get("ok", false)):
+		_update_action_failure(npc_id, "training_student_failed_no_workstation")
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+			"reason": "没有空闲受训位",
+			"building_id": TRAINING_LOCATION_ID
+		})
+		return false
+
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+		"last_action_result": "started_%s" % str(action.get("id", TRAINING_STUDENT_ACTION_ID))
+	})
+	_active_actions[npc_id] = {
+		"kind": "training_student",
+		"action": action.duplicate(true),
+		"building_id": TRAINING_LOCATION_ID,
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"instructor_npc_id": instructor_id,
+		"training_skills": equipped_skills,
+		"skill_timers": {},
+		"state_cost_timer_seconds": 0.0
+	}
+	_log_structured_action_event(npc_id, action, "work_started", {
+		"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"building_id": TRAINING_LOCATION_ID,
+		"instructor_npc_id": instructor_id,
+		"training_skills": equipped_skills
+	})
+	return true
+
+
 func _start_work(npc_id: String, action: Dictionary) -> bool:
 	var resource_system := _get_resource_system()
 	var npc_system := _get_npc_system()
@@ -711,6 +845,7 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 
 	_apply_building_effects(action)
 	_apply_final_state_deltas(npc_id, active_action)
+	_improve_work_skill(npc_id, action)
 	_release_workstation_for_action(npc_id, active_action)
 	_set_action_idle(npc_id, "completed_%s" % str(action.get("id", "work")))
 	_log_structured_action_event(npc_id, action, "work_completed", {
@@ -835,6 +970,12 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 	if str(active_action.get("kind", "")) == "clinic_patient":
 		_advance_clinic_patient(npc_id, active_action, game_delta_seconds)
 		return
+	if str(active_action.get("kind", "")) == "training_instructor":
+		_advance_training_instructor(npc_id, active_action, game_delta_seconds)
+		return
+	if str(active_action.get("kind", "")) == "training_student":
+		_advance_training_student(npc_id, active_action, game_delta_seconds)
+		return
 	var duration := maxf(0.001, float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS)))
 	var elapsed := clampf(float(active_action.get("elapsed_seconds", 0.0)) + game_delta_seconds, 0.0, duration)
 	active_action["elapsed_seconds"] = elapsed
@@ -935,6 +1076,110 @@ func _advance_clinic_patient(npc_id: String, _active_action: Dictionary, _game_d
 		return
 	if int(state.get("hp", 0)) >= int(state.get("max_hp", 100)):
 		_finish_clinic_patient(npc_id, str(_active_action.get("healer_npc_id", "")), "clinic_treatment_completed", int(_active_action.get("money_spent", 0)))
+
+
+func _advance_training_instructor(instructor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		_stop_active_action(instructor_npc_id, "training_instructor_failed_no_npc_system")
+		return
+	if str(npc_system.get_npc_state(instructor_npc_id).get("current_location", "")) != TRAINING_LOCATION_ID:
+		_stop_active_action(instructor_npc_id, "training_instructor_left_training_ground")
+		return
+	if _get_equipped_training_skills(npc_system.get_npc(instructor_npc_id)).is_empty():
+		_stop_active_action(instructor_npc_id, "training_instructor_failed_no_equipment")
+		return
+
+	active_action = _apply_hourly_training_state_costs(instructor_npc_id, active_action, game_delta_seconds)
+	var student_ids := _find_active_training_students_for_instructor(instructor_npc_id)
+	if student_ids.is_empty():
+		active_action = _advance_solo_training(instructor_npc_id, active_action, game_delta_seconds)
+	else:
+		active_action = _advance_coaching_skill(instructor_npc_id, active_action, game_delta_seconds, student_ids.size())
+	if not _active_actions.has(instructor_npc_id):
+		return
+	_active_actions[instructor_npc_id] = active_action
+
+
+func _advance_training_student(student_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		_stop_active_action(student_npc_id, "training_student_failed_no_npc_system")
+		return
+	if str(npc_system.get_npc_state(student_npc_id).get("current_location", "")) != TRAINING_LOCATION_ID:
+		_stop_active_action(student_npc_id, "training_student_left_training_ground")
+		return
+
+	var instructor_id := str(active_action.get("instructor_npc_id", ""))
+	if instructor_id.is_empty() or not _is_training_instructor_active(instructor_id):
+		_stop_active_action(student_npc_id, "training_student_failed_no_instructor")
+		return
+
+	active_action = _apply_hourly_training_state_costs(student_npc_id, active_action, game_delta_seconds)
+	var current_skills := _get_equipped_training_skills(npc_system.get_npc(student_npc_id))
+	if current_skills.is_empty():
+		_stop_active_action(student_npc_id, "training_student_failed_no_equipment")
+		return
+	active_action["training_skills"] = current_skills
+
+	var skill_timers: Dictionary = active_action.get("skill_timers", {})
+	for skill_name in current_skills:
+		var interval := _get_training_student_skill_interval_seconds(instructor_id, student_npc_id, skill_name, active_action.get("action", {}))
+		var timer := float(skill_timers.get(skill_name, 0.0)) + game_delta_seconds
+		while timer >= interval:
+			timer -= interval
+			_improve_npc_skill(student_npc_id, skill_name, 1, "training_student")
+		skill_timers[skill_name] = timer
+	active_action["skill_timers"] = skill_timers
+	_active_actions[student_npc_id] = active_action
+
+
+func _advance_solo_training(instructor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> Dictionary:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return active_action
+	var action: Dictionary = active_action.get("action", {})
+	var interval := maxf(1.0, float(action.get("solo_skill_interval_seconds", TRAINING_SOLO_SKILL_INTERVAL_SECONDS)))
+	var equipped_skills := _get_equipped_training_skills(npc_system.get_npc(instructor_npc_id))
+	if equipped_skills.is_empty():
+		_stop_active_action(instructor_npc_id, "training_instructor_failed_no_equipment")
+		return active_action
+	var timers: Dictionary = active_action.get("solo_skill_timer_seconds", {})
+	for skill_name in equipped_skills:
+		var timer := float(timers.get(skill_name, 0.0)) + game_delta_seconds
+		while timer >= interval:
+			timer -= interval
+			_improve_npc_skill(instructor_npc_id, skill_name, 1, "training_solo")
+		timers[skill_name] = timer
+	active_action["solo_skill_timer_seconds"] = timers
+	return active_action
+
+
+func _advance_coaching_skill(instructor_npc_id: String, active_action: Dictionary, game_delta_seconds: float, student_count: int) -> Dictionary:
+	var action: Dictionary = active_action.get("action", {})
+	var base_interval := maxf(1.0, float(action.get("coaching_skill_interval_seconds", TRAINING_COACHING_SKILL_INTERVAL_SECONDS)))
+	var interval := maxf(600.0, base_interval / (1.0 + maxf(0.0, float(student_count - 1)) * 0.25))
+	var timer := float(active_action.get("coaching_skill_timer_seconds", 0.0)) + game_delta_seconds
+	while timer >= interval:
+		timer -= interval
+		_improve_npc_skill(instructor_npc_id, "教练", 1, "training_coaching")
+	active_action["coaching_skill_timer_seconds"] = timer
+	return active_action
+
+
+func _apply_hourly_training_state_costs(npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> Dictionary:
+	var action: Dictionary = active_action.get("action", {})
+	var timer := float(active_action.get("state_cost_timer_seconds", 0.0)) + game_delta_seconds
+	while timer >= TRAINING_STATE_COST_INTERVAL_SECONDS:
+		timer -= TRAINING_STATE_COST_INTERVAL_SECONDS
+		var fatigue_delta := int(action.get("fatigue_delta_per_hour", 0))
+		var satiety_delta := int(action.get("satiety_delta_per_hour", 0))
+		if fatigue_delta != 0:
+			_apply_single_state_delta(npc_id, "fatigue", fatigue_delta)
+		if satiety_delta != 0:
+			_apply_single_state_delta(npc_id, "satiety", satiety_delta)
+	active_action["state_cost_timer_seconds"] = timer
+	return active_action
 
 
 func _advance_healing_assist(healer_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
@@ -1196,7 +1441,7 @@ func _stop_active_action(npc_id: String, last_result: String = "active_action_st
 	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
 		var target_npc_id := str(active_action.get("target_npc_id", ""))
 		_remove_healing_helper(target_npc_id, npc_id)
-	elif ["clinic_doctor", "clinic_patient"].has(str(active_action.get("kind", ""))):
+	elif ["clinic_doctor", "clinic_patient", "training_instructor", "training_student"].has(str(active_action.get("kind", ""))):
 		_release_workstation_for_action(npc_id, active_action)
 	elif str(active_action.get("action", {}).get("type", "")) == "work":
 		_release_workstation_for_action(npc_id, active_action)
@@ -1284,29 +1529,128 @@ func _get_clinic_hp_per_hour(doctor_npc_id: String) -> float:
 
 
 func _improve_medical_skill(npc_id: String, amount: int, reason: String) -> void:
+	_improve_npc_skill_at_location(npc_id, "医术", amount, reason, CLINIC_LOCATION_ID)
+
+
+func _improve_npc_skill(npc_id: String, skill_name: String, amount: int, reason: String) -> void:
+	_improve_npc_skill_at_location(npc_id, skill_name, amount, reason, TRAINING_LOCATION_ID)
+
+
+func _improve_work_skill(npc_id: String, action: Dictionary) -> void:
+	var skill_name := str(action.get("skill", ""))
+	if skill_name.is_empty():
+		return
+	_improve_npc_skill_at_location(npc_id, skill_name, 1, "work_completed", str(action.get("location_required", PLAZA_LOCATION_ID)))
+
+
+func _improve_npc_skill_at_location(npc_id: String, skill_name: String, amount: int, reason: String, location_id: String) -> void:
 	var npc_system := _get_npc_system()
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("increase_npc_skill"):
 		return
-	var result: Dictionary = npc_system.increase_npc_skill(npc_id, "医术", amount)
+	var result: Dictionary = npc_system.increase_npc_skill(npc_id, skill_name, amount)
 	if result.is_empty() or memory_system == null or not memory_system.has_method("add_event"):
 		return
+	var event_location := location_id if not location_id.is_empty() else PLAZA_LOCATION_ID
 	memory_system.add_event({
 		"type": "skill_improved",
 		"subject_npc_id": npc_id,
 		"actor_ids": [npc_id],
-		"target_ids": [CLINIC_LOCATION_ID, "医术"],
-		"location_id": CLINIC_LOCATION_ID,
+		"target_ids": [event_location, skill_name],
+		"location_id": event_location,
 		"visibility": "private",
 		"importance": 20,
 		"payload": {
-			"skill_name": "医术",
+			"skill_name": skill_name,
 			"amount": int(result.get("amount", amount)),
 			"before": int(result.get("before", 0)),
 			"after": int(result.get("after", 0)),
-			"reason": reason
+			"reason": reason,
+			"experience_gained": int(result.get("experience_gained", 0)),
+			"total_experience": int(result.get("total_experience", 0)),
+			"skill_points_gained": int(result.get("skill_points_gained", 0)),
+			"unspent_skill_points": int(result.get("unspent_skill_points", 0)),
+			"skill_experience": int(result.get("skill_experience", 0)),
+			"next_skill_point_xp": int(result.get("next_skill_point_xp", 0))
 		}
 	})
+
+
+func _get_equipped_training_skills(npc: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var equipment: Dictionary = npc.get("equipment", {})
+	var main_weapon: Dictionary = equipment.get("main_weapon", {})
+	var weapon_skill := str(main_weapon.get("required_skill", ""))
+	if not weapon_skill.is_empty() and not result.has(weapon_skill):
+		result.append(weapon_skill)
+	var mount: Dictionary = equipment.get("mount", {})
+	var mount_skill := str(mount.get("required_skill", ""))
+	if not mount_skill.is_empty() and not result.has(mount_skill):
+		result.append(mount_skill)
+	return result
+
+
+func _find_active_training_instructor_id() -> String:
+	for raw_npc_id in _active_actions.keys():
+		var npc_id := str(raw_npc_id)
+		if _is_training_instructor_active(npc_id):
+			return npc_id
+	return ""
+
+
+func _is_training_instructor_active(npc_id: String) -> bool:
+	if not _active_actions.has(npc_id):
+		return false
+	var active_action: Dictionary = _active_actions.get(npc_id, {})
+	if str(active_action.get("kind", "")) != "training_instructor":
+		return false
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	return str(state.get("current_location", "")) == TRAINING_LOCATION_ID
+
+
+func _find_active_training_students_for_instructor(instructor_npc_id: String) -> Array[String]:
+	var result: Array[String] = []
+	for raw_npc_id in _active_actions.keys():
+		var npc_id := str(raw_npc_id)
+		var active_action: Dictionary = _active_actions.get(npc_id, {})
+		if (
+			str(active_action.get("kind", "")) == "training_student"
+			and str(active_action.get("instructor_npc_id", "")) == instructor_npc_id
+		):
+			result.append(npc_id)
+	return result
+
+
+func _get_training_student_skill_interval_seconds(instructor_id: String, student_id: String, skill_name: String, action: Dictionary) -> float:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return TRAINING_STUDENT_SKILL_INTERVAL_SECONDS * TRAINING_LOW_TEACHER_INTERVAL_MULTIPLIER
+	var instructor: Dictionary = npc_system.get_npc(instructor_id)
+	var student: Dictionary = npc_system.get_npc(student_id)
+	var instructor_skill := _get_action_skill_value(instructor, skill_name)
+	var student_skill := _get_action_skill_value(student, skill_name)
+	var base_interval := maxf(1.0, float(action.get("student_skill_interval_seconds", TRAINING_STUDENT_SKILL_INTERVAL_SECONDS)))
+	if instructor_skill < student_skill:
+		var coaching_value := _get_action_skill_value(instructor, "教练")
+		var weak_multiplier := 1.0 + float(coaching_value) / 100.0 * 0.20
+		return maxf(base_interval, base_interval * TRAINING_LOW_TEACHER_INTERVAL_MULTIPLIER / weak_multiplier)
+
+	var skill_gap_bonus := minf(1.0, float(instructor_skill - student_skill) / 100.0) * TRAINING_GAP_SPEED_SCALE
+	var coaching_bonus := float(_get_action_skill_value(instructor, "教练")) / 100.0 * TRAINING_COACHING_SPEED_SCALE
+	var building_bonus := maxf(0.0, float(_get_training_ground_level() - 1)) * TRAINING_BUILDING_LEVEL_SPEED_SCALE
+	var speed_multiplier := maxf(0.1, 1.0 + skill_gap_bonus + coaching_bonus + building_bonus)
+	return maxf(TRAINING_MIN_STUDENT_SKILL_INTERVAL_SECONDS, base_interval / speed_multiplier)
+
+
+func _get_training_ground_level() -> int:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null:
+		return 1
+	var building: Dictionary = building_system.get_building(TRAINING_LOCATION_ID)
+	return maxi(1, int(building.get("level", 1)))
 
 
 func _log_structured_action_event(npc_id: String, action: Dictionary, event_type: String, payload: Dictionary) -> void:
@@ -1392,7 +1736,7 @@ func _find_work_action_for_building(building_id: String) -> String:
 	for raw_action_id in action_ids:
 		var action_id := str(raw_action_id)
 		var action: Dictionary = _actions.get(action_id, {})
-		if ["work", "clinic_doctor"].has(str(action.get("type", ""))):
+		if ["work", "clinic_doctor", "training_instructor"].has(str(action.get("type", ""))):
 			return action_id
 	return ""
 

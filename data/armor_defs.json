@@ -1,0 +1,38 @@
+[
+  {
+    "id": "iron_helmet",
+    "name": "铁盔",
+    "slot": "helmet",
+    "source_resource_id": "armor",
+    "armor_value": 2,
+    "weight": 1,
+    "tags": ["metal", "head"]
+  },
+  {
+    "id": "mail_chest",
+    "name": "锁子甲",
+    "slot": "chest",
+    "source_resource_id": "armor",
+    "armor_value": 5,
+    "weight": 4,
+    "tags": ["metal", "body"]
+  },
+  {
+    "id": "iron_bracers",
+    "name": "铁护腕",
+    "slot": "bracers",
+    "source_resource_id": "armor",
+    "armor_value": 2,
+    "weight": 1,
+    "tags": ["metal", "arms"]
+  },
+  {
+    "id": "iron_greaves",
+    "name": "铁护腿",
+    "slot": "greaves",
+    "source_resource_id": "armor",
+    "armor_value": 3,
+    "weight": 2,
+    "tags": ["metal", "legs"]
+  }
+]

@@ -13,7 +13,7 @@
 }
 ```
 
-T0305 起，`resource_defs.json` 增加派生资源 `meal` / 餐食、`wine` / 酒、`weapons` / 武器、`armor` / 盔甲、`defense_devices` / 工程器械、`horse_readiness` / 马匹整备，用于行动系统内部结算。HUD 当前仍只展示基础资源。
+T0305 起，`resource_defs.json` 增加派生资源 `meal` / 餐食、`wine` / 酒、`weapons` / 武器、`armor` / 盔甲、`defense_devices` / 工程器械、`horse_readiness` / 马匹整备，用于行动系统内部结算。T0901 起，`weapons` / `armor` / `horse_readiness` 也会被 `EquipmentSystem` 消耗，转换为已入伍 NPC 的具体装备槽。T0012 起，HUD 主栏按 `ui_order` 展示非聚合资源，武器、盔甲、马匹整备和工程器械只在装备/器械详情中展示，避免主栏重复。
 
 ## NPC Profile
 
@@ -59,6 +59,27 @@ T0305 起，`resource_defs.json` 增加派生资源 `meal` / 餐食、`wine` / �
     "弩": 0,
     "骑术": 45
   },
+  "progression": {
+    "total_experience": 0,
+    "next_skill_point_xp": 5,
+    "unspent_skill_points": 0,
+    "spent_skill_points": 0,
+    "skill_experience": {
+      "养马": 0,
+      "厨艺": 0,
+      "耕种": 0,
+      "打铁": 0,
+      "教练": 0,
+      "酿酒": 0,
+      "医术": 0,
+      "工程": 0,
+      "剑盾": 0,
+      "长杆": 0,
+      "弓": 0,
+      "弩": 0,
+      "骑术": 0
+    }
+  },
   "recruited": false,
   "current_order": {
     "text": "",
@@ -79,7 +100,9 @@ T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。
 
 T0703 已为每名初始 NPC 配置并在运行时规范化 `current_order`。它保存守备官对该 NPC 当前持续提出的自然语言指令，而不是已执行行动：`text` 是当前文本，`issued_by` 固定为 `guard_officer`，`issued_day` / `issued_time` 记录最近一次变更时间，`revision` 在指令文本变化时递增。未入伍或尚无指令时 `text` 为空。发布相同文本或关闭指令面板不得修改该结构。
 
-T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术；当前不实现真实日程、通用职业经验升级或 LLM 地点解读。
+T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
+
+T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。
 
 T0501 起，`NPCSystem.apply_damage_to_npc(...)` 会扣除 `states.hp`，并在 HP 降到 0 时设置 `states.unconscious=true`、`states.current_action="unconscious"`、清空移动目标。T0502/T0503 起，昏迷 NPC 会自然恢复，也可被其他 NPC 协助治疗；HP 恢复到 Max HP 30% 后复苏。昏迷 NPC 不会死亡，也不能移动或执行行动。
 
@@ -91,6 +114,8 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 - 武器熟练度：`剑盾`、`长杆`、`弓`、`弩`、`骑术`
 
 `background_job` 只表示叙事背景，不作为权威职业分类。实际“职业倾向 / 专长”由这些熟练度的高低推导；运行时 `NPCSystem.normalize_skills(...)` 会按固定全集补齐缺失值并丢弃未定义技能。
+
+T0904 起，属性成长不由 AI 自动分配。玩家通过 `NPCSystem.assign_npc_attribute_point(npc_id, "strength"|"intelligence")` 消耗 1 个 `unspent_skill_points`，将 `stats.strength` 或 `stats.intelligence` 提高 1 点；属性当前上限为 10。AI 只能在对话或计划建议中表达倾向，不拥有消耗技能点或改写属性的权威入口。
 
 ## Building Definition
 
@@ -130,7 +155,7 @@ T0304 修正后，`skills` 是固定全集，每名 NPC 必须都有且只能有
 
 `repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。2026-05-25 起，所有建筑都应具备 `upgrade` 最小配置；升级同样在开始时一次性扣除资源并创建倒计时升级作业，完成后才应用等级、Max HP 和工作位奖励。
 
-只有可进入建筑使用 `workstations` 表达内部状态。T0801 起，运行时工位占用和释放由 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 修改 `occupied_by`；地点信息节点只读取该状态并广播变化字段，不自行决定工作位权威状态。T0808 起，小诊所使用 `clinic_doctor` 表达医生坐诊/研读医术工位，使用 `patient_bed` 表达治疗病床；二者必须是不同工位类型。主厅、围墙、城门、后门、仓库等不可进入建筑应保留 HP、等级、修复/升级等权威状态，但 `workstations` 为空，且不会在广场外部状态中暴露内部 NPC、NPC 状态或工位。NPC 见闻传播使用的建筑外部状态只包含等级和完好/受损/正在修复/正在升级。运行时地点快照会为广场和可进入建筑生成 `people_statuses`，用于表达当前在场 NPC 的生命状态和行动状态；它来自 NPC 运行时状态，不要求写入 `data/building_defs.json`。
+只有可进入建筑使用 `workstations` 表达内部状态。T0801 起，运行时工位占用和释放由 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 修改 `occupied_by`；地点信息节点只读取该状态并广播变化字段，不自行决定工作位权威状态。T0808 起，小诊所使用 `clinic_doctor` 表达医生坐诊/研读医术工位，使用 `patient_bed` 表达治疗病床；二者必须是不同工位类型。T0903 起，训练场使用 `training_instructor` 表达教官工位，使用 `training_student` 表达受训位；训练场升级可通过 `workstation_type="training_student"` 增加受训位。主厅、围墙、城门、后门、仓库等不可进入建筑应保留 HP、等级、修复/升级等权威状态，但 `workstations` 为空，且不会在广场外部状态中暴露内部 NPC、NPC 状态或工位。NPC 见闻传播使用的建筑外部状态只包含等级和完好/受损/正在修复/正在升级。运行时地点快照会为广场和可进入建筑生成 `people_statuses`，用于表达当前在场 NPC 的生命状态和行动状态；它来自 NPC 运行时状态，不要求写入 `data/building_defs.json`。
 
 公告牌不使用 Building Definition。主厅前的 `NoticeBoard` 节点只是视觉占位和后续公告输入接口，不能配置 `hp`、`max_hp`、`workstations`、`repair` 或 `upgrade`；公告文本应写入广场 Location Info Node 的当前状态。
 
@@ -169,6 +194,8 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 - `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money` 和 `skill="医术"` 作为行为声明；具体目标校验、费用扣除、医术加速和 HP 恢复由 `ActionSystem` / `NPCSystem` 结算。
 - `clinic_doctor`：T0808 新增，用于小诊所医生工位。读取 `location_required="clinic"`、`workstation_type="clinic_doctor"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `input_resources.money`。医生在岗且无病床病人时，按研读医学著作逻辑缓慢提升医术；有病人占床时推进治疗。
 - `clinic_patient`：T0808 新增，用于小诊所病床。读取 `location_required="clinic"` 与 `workstation_type="patient_bed"`。只有受伤且未昏迷 NPC 可通过普通 `assign_action` 执行；病人占床本身不恢复 HP，必须有 `clinic_doctor` 行动中的医生在岗才开始治疗。
+- `training_instructor`：T0903 新增，用于训练场教官工位。读取 `location_required="training_ground"`、`workstation_type="training_instructor"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时提升“教练”。
+- `training_student`：T0903 新增，用于训练场受训位。读取 `location_required="training_ground"`、`workstation_type="training_student"`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；训练项目由受训者自己的当前主武器 / 坐骑决定。训练速度由程序读取教官“教练”、训练场等级和双方对应项目熟练度差，不由 UI 或 LLM 结算。
 
 `assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `local_public`，payload 通过 `building_id` 保留实际目标建筑。
 
@@ -176,16 +203,54 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 
 ```json
 {
-  "id": "short_sword",
-  "name": "短剑",
-  "type": "melee",
-  "range": 1.5,
-  "damage": 12,
-  "attack_interval": 1.2,
-  "required_skill": "剑盾",
-  "tags": ["one_handed"]
+  "id": "bow",
+  "name": "弓",
+  "equipment_slot": "main_weapon",
+  "type": "ranged",
+  "weapon_class": "bow",
+  "combat_role": "archer",
+  "source_resource_id": "weapons",
+  "range": 12.0,
+  "damage": 10,
+  "attack_interval": 1.5,
+  "required_skill": "弓",
+  "tags": ["wooden", "ranged"]
 }
 ```
+
+T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等可装备主武器。`source_resource_id` 当前统一指向派生库存 `weapons`；装备系统消耗库存后把完整定义副本写入 NPC `equipment.main_weapon`。`range`、`damage`、`attack_interval` 当前只作为后续战斗系统可读取的数据，不在装备 UI 中结算伤害。
+
+## Armor Definition
+
+```json
+{
+  "id": "mail_chest",
+  "name": "锁子甲",
+  "slot": "chest",
+  "source_resource_id": "armor",
+  "armor_value": 5,
+  "weight": 4,
+  "tags": ["metal", "body"]
+}
+```
+
+T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`greaves` 四类盔甲槽。装备时消耗 1 个 `armor` 派生库存；`armor_value` 和 `weight` 当前只作为后续战斗/疲劳/负重系统的数据，不由 UI 直接结算。
+
+## Mount Definition
+
+```json
+{
+  "id": "riding_horse",
+  "name": "整备马匹",
+  "slot": "mount",
+  "source_resource_id": "horse_readiness",
+  "speed_bonus": 1.35,
+  "required_skill": "骑术",
+  "tags": ["horse"]
+}
+```
+
+T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` 映射到 NPC `equipment.mount` 槽。日常工作模式不显示骑乘；战斗/集结表现、速度加成和骑兵策略切换由后续战斗任务接入。
 
 ## Enemy Wave
 
@@ -286,6 +351,7 @@ T0703 `order_assigned` 事件 payload：
 - 对话：`dialogue_turn`；打开/关闭对话窗口不属于事件
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`；`order_assigned` 固定为 `private`
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
+- 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`assigned_by`
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 

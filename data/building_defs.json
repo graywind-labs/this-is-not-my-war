@@ -289,8 +289,13 @@
     "scene_nodes": ["TrainingGround"],
     "workstations": [
       {
-        "id": "training_lane_01",
-        "type": "training",
+        "id": "training_instructor_01",
+        "type": "training_instructor",
+        "occupied_by": null
+      },
+      {
+        "id": "training_student_01",
+        "type": "training_student",
         "occupied_by": null
       }
     ],
@@ -306,7 +311,7 @@
       "max_level": 3,
       "max_hp_bonus": 15,
       "workstation_bonus": 1,
-      "workstation_type": "training"
+      "workstation_type": "training_student"
     }
   },
   {

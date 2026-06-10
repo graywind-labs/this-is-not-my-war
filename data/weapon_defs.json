@@ -1,12 +1,58 @@
 [
   {
-    "id": "short_sword",
-    "name": "短剑",
+    "id": "sword_shield",
+    "name": "剑盾",
     "type": "melee",
-    "range": 1.5,
-    "damage": 12,
-    "attack_interval": 1.2,
+    "weapon_class": "sword_shield",
+    "combat_role": "melee_infantry",
+    "equipment_slot": "main_weapon",
+    "source_resource_id": "weapons",
+    "range": 1.6,
+    "damage": 13,
+    "attack_interval": 1.35,
     "required_skill": "剑盾",
-    "tags": ["one_handed"]
+    "tags": ["one_handed", "shield"]
+  },
+  {
+    "id": "polearm",
+    "name": "长杆武器",
+    "type": "melee",
+    "weapon_class": "polearm",
+    "combat_role": "polearm_infantry",
+    "equipment_slot": "main_weapon",
+    "source_resource_id": "weapons",
+    "range": 2.5,
+    "damage": 15,
+    "attack_interval": 1.65,
+    "required_skill": "长杆",
+    "tags": ["two_handed", "reach"]
+  },
+  {
+    "id": "bow",
+    "name": "弓",
+    "type": "ranged",
+    "weapon_class": "bow",
+    "combat_role": "archer",
+    "equipment_slot": "main_weapon",
+    "source_resource_id": "weapons",
+    "range": 12.0,
+    "damage": 10,
+    "attack_interval": 1.5,
+    "required_skill": "弓",
+    "tags": ["wooden", "ranged"]
+  },
+  {
+    "id": "crossbow",
+    "name": "弩",
+    "type": "ranged",
+    "weapon_class": "crossbow",
+    "combat_role": "crossbowman",
+    "equipment_slot": "main_weapon",
+    "source_resource_id": "weapons",
+    "range": 13.5,
+    "damage": 16,
+    "attack_interval": 2.4,
+    "required_skill": "弩",
+    "tags": ["wooden", "ranged"]
   }
 ]

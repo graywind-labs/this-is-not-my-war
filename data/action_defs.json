@@ -122,6 +122,30 @@
     "satiety_delta": -4
   },
   {
+    "id": "work_training_instructor",
+    "name": "指导训练",
+    "type": "training_instructor",
+    "location_required": "training_ground",
+    "skill": "教练",
+    "stat": "intelligence",
+    "workstation_type": "training_instructor",
+    "solo_skill_interval_seconds": 14400,
+    "coaching_skill_interval_seconds": 3600,
+    "student_skill_interval_seconds": 3600,
+    "fatigue_delta_per_hour": 4,
+    "satiety_delta_per_hour": -2
+  },
+  {
+    "id": "receive_weapon_training",
+    "name": "接受武器训练",
+    "type": "training_student",
+    "location_required": "training_ground",
+    "workstation_type": "training_student",
+    "student_skill_interval_seconds": 3600,
+    "fatigue_delta_per_hour": 8,
+    "satiety_delta_per_hour": -4
+  },
+  {
     "id": "work_clinic_doctor",
     "name": "坐诊或研读医学著作",
     "type": "clinic_doctor",

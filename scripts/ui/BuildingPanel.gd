@@ -2,6 +2,25 @@ extends Control
 
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
+const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const WORKSTATION_TYPE_LABELS := {
+	"rest": "床位",
+	"cook": "厨师",
+	"brew": "酿酒",
+	"farm": "耕种",
+	"forge": "锻造",
+	"training_instructor": "教官",
+	"training_student": "受训者",
+	"horse_care": "马匹照料",
+	"pray": "祈祷",
+	"clinic_doctor": "医生",
+	"patient_bed": "病床",
+	"engineering": "工程",
+	"command": "指挥",
+	"storage": "储存",
+	"repair": "修复",
+	"gate": "城门"
+}
 
 var _current_building_id: String = ""
 var _current_building: Dictionary = {}
@@ -90,28 +109,67 @@ func show_building(building_id: String) -> void:
 
 func _format_workstations(raw_workstations: Variant) -> String:
 	if not raw_workstations is Array or raw_workstations.is_empty():
-		return "当前工作位：无"
+		return "工位：无"
 
 	var workstations: Array = raw_workstations
-	var occupied_count := 0
-	var station_lines: Array[String] = []
+	var group_order: Array[String] = []
+	var groups := {}
 	for raw_station in workstations:
 		if not raw_station is Dictionary:
 			continue
 
 		var station: Dictionary = raw_station
 		var station_type := str(station.get("type", "unknown"))
+		if station_type.is_empty():
+			station_type = "unknown"
+		if not groups.has(station_type):
+			group_order.append(station_type)
+			groups[station_type] = {
+				"total": 0,
+				"free": 0,
+				"occupants": []
+			}
+
+		var group: Dictionary = groups[station_type]
+		group["total"] = int(group.get("total", 0)) + 1
 		var occupied_by := str(station.get("occupied_by", ""))
 		if occupied_by.is_empty() or occupied_by == "<null>":
-			occupied_by = "空闲"
+			group["free"] = int(group.get("free", 0)) + 1
 		else:
-			occupied_count += 1
-		station_lines.append("%s：%s" % [station_type, occupied_by])
+			var occupants: Array = group.get("occupants", [])
+			occupants.append(_format_npc_name(occupied_by))
+			group["occupants"] = occupants
+		groups[station_type] = group
 
-	var summary := "当前工作位：%d / %d 已占用" % [occupied_count, workstations.size()]
-	if station_lines.is_empty():
-		return summary
-	return "%s\n%s" % [summary, "\n".join(station_lines)]
+	var lines: Array[String] = []
+	for station_type in group_order:
+		var group: Dictionary = groups.get(station_type, {})
+		var occupants: Array = group.get("occupants", [])
+		var occupant_text := "空闲" if occupants.is_empty() else "、".join(occupants)
+		lines.append("%s %d/%d：%s" % [
+			_format_workstation_type_label(station_type),
+			int(group.get("free", 0)),
+			int(group.get("total", 0)),
+			occupant_text
+		])
+	if lines.is_empty():
+		return "工位：无"
+	return "\n".join(lines)
+
+
+func _format_workstation_type_label(station_type: String) -> String:
+	return str(WORKSTATION_TYPE_LABELS.get(station_type, station_type))
+
+
+func _format_npc_name(npc_id: String) -> String:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("get_npc"):
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		if not npc.is_empty():
+			var npc_name := str(npc.get("name", ""))
+			if not npc_name.is_empty():
+				return npc_name
+	return npc_id
 
 
 func _format_location_placeholder(building: Dictionary) -> String:

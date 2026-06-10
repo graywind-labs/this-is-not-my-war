@@ -32,8 +32,8 @@ func _init() -> void:
 	await process_frame
 	dialogue_button.pressed.emit()
 	await process_frame
-	if npc_panel.visible or not dialog_panel.visible:
-		push_error("NPC dialogue button did not switch from NPCPanel to DialogPanel")
+	if not npc_panel.visible or not dialog_panel.visible:
+		push_error("NPC dialogue button should open DialogPanel without hiding NPCPanel")
 		quit(1)
 		return
 	if dialog_panel.size.x < 600.0 or dialog_panel.size.y < 450.0:

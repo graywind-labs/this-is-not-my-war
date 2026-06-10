@@ -13,13 +13,16 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - NPC 选中、状态修改、移动到建筑、立即进入地点。
 - NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
-- 工作、协助修复、协助升级、协助治疗昏迷者、吃饭、睡觉等行动调试指派。
+- 通过“指定行动”下拉统一指派工作、训练场教官/受训者、吃饭、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
 - TimeSystem 设定时间、跳小时、LLM 等待减速请求。
 - LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
 - 已入伍 NPC 当前自然语言指令、修订号、最近计划重评估请求/降级结果和最近一次 NPC LLM 指令注入。
 - NPC 主动找守备官交涉的调试触发、问号气泡状态和超时 / 对话结束后的计划重评估请求。
+- 正式装备系统：为已入伍 NPC 装备主武器、盔甲和坐骑，并查看当前兵种判定快照。
+- T0904 成长系统：查看 NPC 总经验、未分配技能点，并由玩家把技能点分配到力量或智力。
+- T0015 调试征召：可将当前选中 NPC 设为入伍，便于验证指令、装备和训练入口。
 
 GM 命令仍可使用 `give_money` / `attack_npc` 这类开发语义；写入 NPC 事件库、见闻库和事件 summary 时，玩家身份必须显示为“守备官”。
 
@@ -46,7 +49,7 @@ const GM_ENABLED := true
 运行 `res://scenes/main/Main.tscn` 后，屏幕左侧会出现半透明 `GM` 按钮。
 
 - 拖动 `GM` 按钮可改变位置。
-- 点击 `GM` 按钮打开或关闭 GM 面板。
+- 点击 `GM` 按钮会在按钮附近打开或关闭 GM 面板；面板会随按钮位置重定位，并夹在可用屏幕范围内，避免固定覆盖左上角 HUD。
 - 面板顶部有命令输入框和执行按钮。
 - 面板中部分组提供常用按钮和输入框。
 - 面板底部显示最近执行结果。
@@ -87,18 +90,21 @@ NPC：
 - 用自然恢复规则推进指定 NPC 的昏迷恢复，便于快速验证复苏。
 - 查看 NPC 快照。
 - 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求及其降级结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
+- 将当前选中 NPC 设为入伍；该入口只调用 `NPCSystem.set_npc_recruited(...)`，用于调试验证，正式征召仍由对话同意结果驱动。
 - 触发当前选中 NPC 主动找守备官交涉，并查看该 NPC 的主动交涉状态；触发后 NPC 头顶出现 `?`，点击后进入既有对话面板。
+- 选择武器类型和盔甲部位，为当前选中且已入伍 NPC 装备武器、盔甲或坐骑；装备入口调用 `EquipmentSystem`，消耗 `weapons` / `armor` / `horse_readiness` 派生库存并写入装备事件。
+- 查看当前选中 NPC 的兵种判定快照，包括主武器类型、武器 class、是否有坐骑和装备槽内容。
+- 为当前选中 NPC 分配技能点到力量或智力；该入口只调用 `NPCSystem.assign_npc_attribute_point(...)`，无未分配技能点或属性已达上限时会失败。技能点由玩家分配，AI 只可作为后续建议来源。
 
 行动：
 
-- 指派指定行动；该下拉只列出 `data/action_defs.json` 中的普通行动，不包含按建筑写死的“修补围墙”等固定修复行动。
-- 指派工作；T0801 起会占用目标可进入建筑的真实工位，并按 NPC 对应熟练度、力量/智力属性和建筑等级缩短单位周期。T0803 起，菜园工作还会按耕种熟练度、力量和菜园等级提高粮食产出。T0804 起，铁匠铺工作会消耗铁并产出武器/盔甲派生库存，打铁、力量和铁匠铺等级影响制作周期。T0805 起，工械坊工作会消耗木材并产出武器/工程器械派生库存，工程、智力和工械坊等级影响制作周期。T0806 起，马厩工作会消耗粮食并产出马匹整备派生库存，养马、力量和马厩等级影响制作周期与实际产出。T0807 起，酒窖工作会消耗粮食并产出酒库存，酿酒、智力和酒窖等级影响制作周期与实际产出；出售酒换钱仍归后续商人交易系统。工位占满或资源不足时会失败并写入对应结构化事件。
+- 指派指定行动；该下拉列出 `data/action_defs.json` 中的普通行动，包括工作、诊所、训练、吃饭和睡觉等入口，不包含协助修复、协助升级、协助治疗这类需要额外目标参数的运行时行动。
+- 工作类行动会占用目标可进入建筑的真实工位，并按 NPC 对应熟练度、力量/智力属性和建筑等级缩短单位周期。T0803 起，菜园工作还会按耕种熟练度、力量和菜园等级提高粮食产出。T0804 起，铁匠铺工作会消耗铁并产出武器/盔甲派生库存，打铁、力量和铁匠铺等级影响制作周期。T0805 起，工械坊工作会消耗木材并产出武器/工程器械派生库存，工程、智力和工械坊等级影响制作周期。T0806 起，马厩工作会消耗粮食并产出马匹整备派生库存，养马、力量和马厩等级影响制作周期与实际产出。T0807 起，酒窖工作会消耗粮食并产出酒库存，酿酒、智力和酒窖等级影响制作周期与实际产出；出售酒换钱仍归后续商人交易系统。工位占满或资源不足时会失败并写入对应结构化事件。
 - “指派行动”下拉可直接选择 `work_clinic_doctor` 和 `receive_clinic_treatment` 验证 T0808 小诊所：先让医生进入诊所医生工位，再让受伤且未昏迷 NPC 进入病床，治疗会随逻辑时间扣第纳尔并恢复 HP；若医生在岗但没有病人，会研读医学著作并缓慢提升医术。
 - 通过行动分组内的“修复目标”建筑下拉选择目标，再指派 NPC 协助该建筑的修复；协助修复是一个统一行为，建筑由该下拉或命令参数决定。
 - 通过行动分组内的“升级目标”建筑下拉选择目标，再指派 NPC 协助该建筑的升级；协助升级同样是带建筑参数的统一行为。
 - 通过行动分组内的“治疗目标”NPC 下拉选择昏迷目标，再指派当前选中 NPC 协助治疗；协助治疗是带目标 NPC 参数的统一行为，目标必须昏迷，每个昏迷目标最多 2 名治疗者。
-- 指派吃饭。
-- 指派睡觉；可配合“查看 NPC 短期记忆”和同地点 public 事件验证睡觉期间见闻库不更新。
+- 训练、吃饭和睡觉在 UI 中都通过行动下拉指派；`train_instructor <npc_id>`、`train_student <npc_id>`、`eat <npc_id>`、`sleep <npc_id>` 等命令仍保留，便于自动化验证和快速调试。训练入口只调用 `ActionSystem`，无装备、无教官或工位占用等失败条件仍由行动系统结算并写入事件。
 
 后端 / LLMBridge：
 
@@ -142,13 +148,21 @@ select_building <building_id>
 move_npc <npc_id> <building_id>
 enter_location <npc_id> <location_id>
 set_npc_state <npc_id> <key> <value>
+recruit_npc <npc_id>
+assign_attribute <npc_id> <strength|intelligence>
 publish_order <npc_id> <text>
 order <npc_id>
 plan_request
 start_proactive <npc_id> <text>
 proactive <npc_id>
+equip_weapon <npc_id> <weapon_id> [visibility]
+equip_armor <npc_id> <slot> [visibility]
+equip_mount <npc_id> [visibility]
+unit_type <npc_id>
 assign_action <npc_id> <action_id>
 work <npc_id> <building_id>
+train_instructor <npc_id>
+train_student <npc_id>
 assist_repair <npc_id> <building_id>
 assist_upgrade <npc_id> <building_id>
 assist_heal <healer_npc_id> <target_npc_id>
@@ -190,6 +204,8 @@ work stableman_01 stable
 work cook_01 tavern
 assign_action doctor_01 work_clinic_doctor
 assign_action cook_01 receive_clinic_treatment
+train_instructor veteran_deputy_01
+train_student stableman_01
 eat cook_01
 sleep priest_01
 plaza_notice 今晚所有人都必须留在广场附近。
@@ -198,14 +214,25 @@ recover_npc cook_01 54000
 backend_health
 dialogue_recruit cook_01 守备官需要你一起保护大家。
 publish_order veteran_deputy_01 守住城门，但先保证自己安全。
+recruit_npc priest_01
 order veteran_deputy_01
 plan_request
 start_proactive cook_01 守备官，我想知道我们还能不能守住这里。
 proactive cook_01
+add_resource weapons 2
+add_resource armor 1
+add_resource horse_readiness 1
+equip_weapon veteran_deputy_01 bow local_public
+equip_armor veteran_deputy_01 chest local_public
+equip_mount veteran_deputy_01 local_public
+unit_type veteran_deputy_01
+assign_attribute cook_01 strength
 memory cook_01
 location plaza
 events
 ```
+
+`unit_type` 只读取 `EquipmentSystem.get_unit_type_snapshot(...)`。即使资源库存里存在 `horse_readiness`，NPC 未装备 `equipment.mount` 时也不会被判定为骑兵。
 
 ## 维护规则
 
@@ -225,4 +252,4 @@ GM 面板当前有专用验证脚本：
 godot --headless --path . --script res://tools/verify_gm_panel.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、自然语言指令、计划重评估请求/结果、最近 LLM 指令注入、记忆事件和广场公告。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、GM 入伍按钮、自然语言指令、计划重评估请求/结果、最近 LLM 指令注入、训练场教官/受训者入口、记忆事件和广场公告。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖。

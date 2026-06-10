@@ -9,6 +9,7 @@ const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
+const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -16,6 +17,9 @@ const DEFAULT_LOCATION_IDS := [
 ]
 const DEFAULT_VISIBILITIES := ["private", "local_public"]
 const COMMAND_HISTORY_LIMIT := 40
+const PANEL_BUTTON_GAP := 8.0
+const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
+const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
 
 var _gm_button: Button
 var _panel: PanelContainer
@@ -28,10 +32,13 @@ var _building_amount_input: LineEdit
 var _npc_select: OptionButton
 var _npc_state_key_input: LineEdit
 var _npc_state_value_input: LineEdit
+var _attribute_select: OptionButton
 var _order_text_input: LineEdit
 var _proactive_talk_input: LineEdit
 var _location_select: OptionButton
 var _action_select: OptionButton
+var _equipment_weapon_select: OptionButton
+var _equipment_armor_slot_select: OptionButton
 var _repair_building_select: OptionButton
 var _upgrade_building_select: OptionButton
 var _heal_target_select: OptionButton
@@ -62,6 +69,11 @@ func _ready() -> void:
 	call_deferred("_refresh_options")
 
 
+func _process(_delta: float) -> void:
+	if _panel != null and _panel.visible:
+		_position_panel_near_button()
+
+
 func _build_ui() -> void:
 	_gm_button = Button.new()
 	_gm_button.name = "GMButton"
@@ -79,7 +91,9 @@ func _build_ui() -> void:
 	_panel = PanelContainer.new()
 	_panel.name = "GMWindow"
 	_panel.visible = false
-	_panel.custom_minimum_size = Vector2(620, 620)
+	_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_panel.custom_minimum_size = Vector2(620, 440)
+	_panel.size = _panel.custom_minimum_size
 	_panel.position = Vector2(72, 72)
 	_panel.modulate = Color(1.0, 1.0, 1.0, 0.92)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -136,7 +150,7 @@ func _build_ui() -> void:
 	command_row.add_child(execute_button)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(596, 410)
+	scroll.custom_minimum_size = Vector2(596, 250)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(scroll)
 
@@ -155,7 +169,7 @@ func _build_ui() -> void:
 
 	_result_text = TextEdit.new()
 	_result_text.editable = false
-	_result_text.custom_minimum_size = Vector2(596, 130)
+	_result_text.custom_minimum_size = Vector2(596, 90)
 	_result_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(_result_text)
 	_log("GM 面板已就绪。输入 help 查看命令。")
@@ -247,6 +261,20 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 	_add_button(state_row, "NPC 快照", func() -> void:
 		_show_npc(_selected_id(_npc_select))
 	)
+	var recruit_button := _add_button(state_row, "设为入伍", func() -> void:
+		_run_recruit_npc(_selected_id(_npc_select))
+	)
+	recruit_button.name = "RecruitNpcButton"
+
+	var attribute_row := _make_row(parent)
+	var attribute_label := Label.new()
+	attribute_label.text = "技能点分配"
+	attribute_row.add_child(attribute_label)
+	_attribute_select = _make_select(attribute_row)
+	_attribute_select.name = "AttributeSelect"
+	_add_button(attribute_row, "分配属性", func() -> void:
+		_run_assign_attribute(_selected_id(_npc_select), _selected_id(_attribute_select))
+	)
 
 	var order_row := _make_row(parent)
 	_order_text_input = _make_input(order_row, "自然语言指令", "守住城门，但先保证自己安全。", 300)
@@ -269,23 +297,37 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 		_show_proactive_talk(_selected_id(_npc_select))
 	)
 
+	var equipment_row := _make_row(parent)
+	var weapon_label := Label.new()
+	weapon_label.text = "装备"
+	equipment_row.add_child(weapon_label)
+	_equipment_weapon_select = _make_select(equipment_row)
+	_equipment_weapon_select.name = "EquipmentWeaponSelect"
+	_equipment_armor_slot_select = _make_select(equipment_row)
+	_equipment_armor_slot_select.name = "EquipmentArmorSlotSelect"
+	_add_button(equipment_row, "装备武器", func() -> void:
+		_run_equip_weapon(_selected_id(_npc_select), _selected_id(_equipment_weapon_select), _selected_id(_visibility_select))
+	)
+	_add_button(equipment_row, "装备盔甲", func() -> void:
+		_run_equip_armor(_selected_id(_npc_select), _selected_id(_equipment_armor_slot_select), _selected_id(_visibility_select))
+	)
+	_add_button(equipment_row, "装备坐骑", func() -> void:
+		_run_equip_mount(_selected_id(_npc_select), _selected_id(_visibility_select))
+	)
+	_add_button(equipment_row, "兵种", func() -> void:
+		_show_unit_type(_selected_id(_npc_select))
+	)
+
 
 func _add_action_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("行动"))
 	var row := _make_row(parent)
 	_action_select = _make_select(row)
-	_add_button(row, "指定行动", func() -> void:
+	_action_select.name = "ActionSelect"
+	var assign_action_button := _add_button(row, "指定行动", func() -> void:
 		_run_assign_action(_selected_id(_npc_select), _selected_id(_action_select))
 	)
-	_add_button(row, "工作", func() -> void:
-		_run_work(_selected_id(_npc_select), _selected_id(_building_select))
-	)
-	_add_button(row, "吃饭", func() -> void:
-		_run_eat(_selected_id(_npc_select))
-	)
-	_add_button(row, "睡觉", func() -> void:
-		_run_sleep(_selected_id(_npc_select))
-	)
+	assign_action_button.name = "AssignActionButton"
 
 	var repair_row := _make_row(parent)
 	var repair_target_label := Label.new()
@@ -409,7 +451,9 @@ func _refresh_options() -> void:
 	_fill_resource_select()
 	_fill_building_select()
 	_fill_npc_select()
+	_fill_attribute_select()
 	_fill_action_select()
+	_fill_equipment_selects()
 	_fill_location_select()
 	_fill_visibility_select()
 	_log("GM 选项已刷新。")
@@ -465,6 +509,16 @@ func _fill_npc_select() -> void:
 	)
 
 
+func _fill_attribute_select() -> void:
+	_fill_select(_attribute_select, ["strength", "intelligence"], func(id: String) -> String:
+		if id == "strength":
+			return "strength | 力量"
+		if id == "intelligence":
+			return "intelligence | 智力"
+		return id
+	)
+
+
 func _fill_action_select() -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	var ids: Array = []
@@ -474,6 +528,28 @@ func _fill_action_select() -> void:
 		if action_system != null:
 			var action: Dictionary = action_system.get_action(id)
 			return "%s | %s" % [id, str(action.get("name", id))]
+		return id
+	)
+
+
+func _fill_equipment_selects() -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	var weapon_ids: Array = []
+	var armor_slots: Array = []
+	if equipment_system != null:
+		if equipment_system.has_method("get_weapon_ids"):
+			weapon_ids = equipment_system.get_weapon_ids()
+		if equipment_system.has_method("get_armor_slot_ids"):
+			armor_slots = equipment_system.get_armor_slot_ids()
+	_fill_select(_equipment_weapon_select, weapon_ids, func(id: String) -> String:
+		if equipment_system != null and equipment_system.has_method("get_weapon_def"):
+			var weapon: Dictionary = equipment_system.get_weapon_def(id)
+			return "%s | %s" % [id, str(weapon.get("name", id))]
+		return id
+	)
+	_fill_select(_equipment_armor_slot_select, armor_slots, func(id: String) -> String:
+		if equipment_system != null and equipment_system.has_method("get_slot_label"):
+			return "%s | %s" % [id, str(equipment_system.get_slot_label(id))]
 		return id
 	)
 
@@ -577,6 +653,12 @@ func _execute_command(command: String) -> void:
 		"set_npc_state":
 			if _require_args(parts, 4, "set_npc_state <npc_id> <key> <value>"):
 				_run_set_npc_state(str(parts[1]), str(parts[2]), _parse_value(str(parts[3])))
+		"recruit_npc":
+			if _require_args(parts, 2, "recruit_npc <npc_id>"):
+				_run_recruit_npc(str(parts[1]))
+		"assign_attribute":
+			if _require_args(parts, 3, "assign_attribute <npc_id> <strength|intelligence>"):
+				_run_assign_attribute(str(parts[1]), str(parts[2]))
 		"publish_order":
 			if _require_args(parts, 3, "publish_order <npc_id> <text>"):
 				_run_publish_order(str(parts[1]), command.substr(("publish_order %s" % str(parts[1])).length()).strip_edges())
@@ -591,12 +673,33 @@ func _execute_command(command: String) -> void:
 		"proactive":
 			if _require_args(parts, 2, "proactive <npc_id>"):
 				_show_proactive_talk(str(parts[1]))
+		"equip_weapon":
+			if _require_args(parts, 3, "equip_weapon <npc_id> <weapon_id> [visibility]"):
+				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
+				_run_equip_weapon(str(parts[1]), str(parts[2]), visibility)
+		"equip_armor":
+			if _require_args(parts, 3, "equip_armor <npc_id> <slot> [visibility]"):
+				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
+				_run_equip_armor(str(parts[1]), str(parts[2]), visibility)
+		"equip_mount":
+			if _require_args(parts, 2, "equip_mount <npc_id> [visibility]"):
+				var visibility := str(parts[2]) if parts.size() >= 3 else "local_public"
+				_run_equip_mount(str(parts[1]), visibility)
+		"unit_type":
+			if _require_args(parts, 2, "unit_type <npc_id>"):
+				_show_unit_type(str(parts[1]))
 		"assign_action":
 			if _require_args(parts, 3, "assign_action <npc_id> <action_id>"):
 				_run_assign_action(str(parts[1]), str(parts[2]))
 		"work":
 			if _require_args(parts, 3, "work <npc_id> <building_id>"):
 				_run_work(str(parts[1]), str(parts[2]))
+		"train_instructor":
+			if _require_args(parts, 2, "train_instructor <npc_id>"):
+				_run_training_instructor(str(parts[1]))
+		"train_student":
+			if _require_args(parts, 2, "train_student <npc_id>"):
+				_run_training_student(str(parts[1]))
 		"assist_repair":
 			if _require_args(parts, 3, "assist_repair <npc_id> <building_id>"):
 				_run_assist_repair(str(parts[1]), str(parts[2]))
@@ -826,6 +929,25 @@ func _show_npc(npc_id: String) -> void:
 	_log("NPC 快照 %s：%s" % [npc_id, _compact(npc_system.get_npc(npc_id))])
 
 
+func _run_recruit_npc(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("set_npc_recruited"):
+		_log("NPCSystem 入伍接口不可用。")
+		return
+	var ok: bool = npc_system.set_npc_recruited(npc_id, true)
+	_log("设为入伍 %s：%s" % [npc_id, _ok_text(ok)])
+	_show_npc(npc_id)
+
+
+func _run_assign_attribute(npc_id: String, attribute_name: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_assign_attribute_point"):
+		_log("NPCSystem 属性分配接口不可用。")
+		return
+	var result: Dictionary = npc_system.debug_assign_attribute_point(npc_id, attribute_name)
+	_log("分配技能点 %s -> %s：%s" % [npc_id, attribute_name, _compact(result)])
+
+
 func _run_publish_order(npc_id: String, text: String) -> void:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("debug_publish_npc_order"):
@@ -868,6 +990,48 @@ func _show_proactive_talk(npc_id: String) -> void:
 	_log("主动交涉状态 %s：%s" % [npc_id, _compact(npc_system.get_proactive_talk(npc_id))])
 
 
+func _run_equip_weapon(npc_id: String, weapon_id: String, visibility: String) -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("debug_equip_weapon"):
+		_log("EquipmentSystem 武器接口不可用。")
+		return
+	var result: Dictionary = equipment_system.debug_equip_weapon(npc_id, weapon_id, visibility)
+	_log("装备武器 %s -> %s：%s" % [npc_id, weapon_id, _compact(result)])
+
+
+func _run_equip_armor(npc_id: String, slot: String, visibility: String) -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("debug_equip_armor"):
+		_log("EquipmentSystem 盔甲接口不可用。")
+		return
+	var result: Dictionary = equipment_system.debug_equip_armor(npc_id, slot, visibility)
+	_log("装备盔甲 %s -> %s：%s" % [npc_id, slot, _compact(result)])
+
+
+func _run_equip_mount(npc_id: String, visibility: String) -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("debug_equip_mount"):
+		_log("EquipmentSystem 坐骑接口不可用。")
+		return
+	var result: Dictionary = equipment_system.debug_equip_mount(npc_id, visibility)
+	_log("装备坐骑 %s：%s" % [npc_id, _compact(result)])
+
+
+func _show_unit_type(npc_id: String) -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("get_npc_unit_type_label"):
+		_log("EquipmentSystem 兵种接口不可用。")
+		return
+	if equipment_system.has_method("get_unit_type_snapshot"):
+		_log("兵种 %s：%s" % [npc_id, _compact(equipment_system.get_unit_type_snapshot(npc_id))])
+		return
+	_log("兵种 %s：%s，装备=%s" % [
+		npc_id,
+		str(equipment_system.get_npc_unit_type_label(npc_id)),
+		_compact(equipment_system.get_equipment_snapshot(npc_id))
+	])
+
+
 func _run_assign_action(npc_id: String, action_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -882,6 +1046,22 @@ func _run_work(npc_id: String, building_id: String) -> void:
 		_log("ActionSystem 不可用。")
 		return
 	_log("指派工作 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_work(npc_id, building_id))])
+
+
+func _run_training_instructor(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null:
+		_log("ActionSystem 不可用。")
+		return
+	_log("指派训练教官 %s：%s" % [npc_id, _ok_text(action_system.debug_assign_action(npc_id, "work_training_instructor"))])
+
+
+func _run_training_student(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null:
+		_log("ActionSystem 不可用。")
+		return
+	_log("指派受训者 %s：%s" % [npc_id, _ok_text(action_system.debug_assign_action(npc_id, "receive_weapon_training"))])
 
 
 func _run_assist_repair(npc_id: String, building_id: String) -> void:
@@ -1038,6 +1218,7 @@ func _on_gm_button_pressed() -> void:
 		return
 	_panel.visible = not _panel.visible
 	if _panel.visible:
+		_position_panel_near_button()
 		_panel.move_to_front()
 
 
@@ -1053,11 +1234,53 @@ func _on_gm_button_gui_input(event: InputEvent) -> void:
 		var motion := event as InputEventMouseMotion
 		if motion.relative.length() > 1.0:
 			_button_dragged = true
-		var viewport_size := get_viewport_rect().size
+		var viewport_size := _get_usable_viewport_size()
 		var next_position := _gm_button.position + motion.relative
 		next_position.x = clampf(next_position.x, 0.0, viewport_size.x - _gm_button.size.x)
 		next_position.y = clampf(next_position.y, 0.0, viewport_size.y - _gm_button.size.y)
 		_gm_button.position = next_position
+		if _panel.visible:
+			_position_panel_near_button()
+
+
+func _position_panel_near_button() -> void:
+	if _panel == null or _gm_button == null:
+		return
+
+	var button_rect := _gm_button.get_global_rect()
+	var panel_size := _get_panel_size(_panel)
+	var viewport_size := _get_usable_viewport_size()
+	var desired_position := Vector2(
+		button_rect.position.x,
+		button_rect.position.y + button_rect.size.y + PANEL_BUTTON_GAP
+	)
+	if desired_position.y + panel_size.y > viewport_size.y:
+		desired_position.y = button_rect.position.y - panel_size.y - PANEL_BUTTON_GAP
+
+	_panel.global_position = _clamp_panel_position(desired_position, panel_size, viewport_size)
+
+
+func _get_panel_size(panel: Control) -> Vector2:
+	var panel_size := panel.size
+	if panel_size.x <= 0.0 or panel_size.y <= 0.0:
+		panel_size = panel.custom_minimum_size
+	return panel_size
+
+
+func _clamp_panel_position(desired_position: Vector2, panel_size: Vector2, viewport_size: Vector2) -> Vector2:
+	var max_x := maxf(0.0, viewport_size.x - panel_size.x)
+	var max_y := maxf(0.0, viewport_size.y - panel_size.y)
+	return Vector2(
+		clampf(desired_position.x, 0.0, max_x),
+		clampf(desired_position.y, 0.0, max_y)
+	)
+
+
+func _get_usable_viewport_size() -> Vector2:
+	var viewport_size := get_viewport().get_visible_rect().size
+	if viewport_size.x < MIN_USABLE_VIEWPORT_SIZE.x or viewport_size.y < MIN_USABLE_VIEWPORT_SIZE.y:
+		return FALLBACK_VIEWPORT_SIZE
+	return viewport_size
 
 
 func _int_from_input(input: LineEdit, fallback: int) -> int:
@@ -1117,10 +1340,11 @@ func _help_text() -> String:
 		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | last_order_injection",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
-		"set_npc_state <npc_id> <key> <value>",
+		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
 		"publish_order <npc_id> <text> | order <npc_id> | plan_request",
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
-		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
+		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | equip_mount <npc_id> [visibility] | unit_type <npc_id>",
+		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",

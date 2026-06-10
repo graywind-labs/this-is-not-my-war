@@ -5,8 +5,8 @@
 
 ## 当前版本
 
-版本：`0.0.56-stable-mcp-bridge-cache-fix`
-状态：已完成 Godot 项目入口、低模驿站、基础经营/时间/地点/记忆/NPC 昏迷治疗闭环、T0801 职业工作产出框架、T0802 食堂粮食加工餐食与餐食优先进食验证、T0803 菜园粮食产出与耕种/力量/建筑等级产出加成验证、T0804 铁匠铺消耗铁制造武器/盔甲库存验证、T0805 工械坊消耗木材制造弓弩/工程器械库存验证、T0806 马厩消耗粮食维护马匹整备验证、T0807 酒窖消耗粮食酿酒库存验证、T0808 小诊所医生工位/病床治疗与研读医术验证、工作中 NPC 状态刷新不再抢回右上角面板、NPC 面板内容增多时只向下延展、Godot MCP 运行桥接不再依赖 sampler 全局类缓存、Flask Mock 后端与原生 HTTP `LLMBridge`；T0701-T0705 已接通对话、征召、已入伍 NPC 自然语言指令编辑、最新指令向共享 NPC LLM / Mock 上下文的统一注入和计划重评估降级结果观察、NPC 面板给钱/占位给武器/攻击等非对话交互入口，以及 NPC 主动找守备官交涉的调试触发、问号气泡、点击进入对话和 1 小时超时消失闭环。尚未实现真实每日计划、T0901 正式装备系统、T0904 通用职业熟练度/经验升级、T1002 完整计划重评估应用、坐骑装备槽、骑兵战斗策略、酒的商队出售交易、其他职业特殊生产平衡、敌人战斗、工程器械部署或真实 LLM。
+版本：`0.0.66-building-workstation-ui`
+状态：已完成 Godot 项目入口、低模驿站、基础经营/时间/地点/记忆/NPC 昏迷治疗闭环、T0801-T0808 职业工作产出与诊所治疗闭环、T0901 正式库存与装备系统、T0902 独立兵种判定、T0903 训练场与武器/骑术熟练度提升、T0904 通用熟练度经验 / 技能点与玩家分配力量 / 智力、T0015 NPC 成长 UI 修正与 GM 入伍入口、T0016 建筑面板工位按类型显示空闲数 / 总数与占用者、T0011/T0012 HUD 资源库存与装备/器械详情入口及定位修正、T0013 移除旧占位主武器、T0014 GM 行动入口去冗余与 NPC 面板记忆滚动区 / 弹窗互斥修正、工作中 NPC 状态刷新不再抢回右上角面板、Godot MCP 运行桥接不再依赖 sampler 全局类缓存、Flask Mock 后端与原生 HTTP `LLMBridge`；T0701-T0705 已接通对话、征召、已入伍 NPC 自然语言指令编辑、最新指令向共享 NPC LLM / Mock 上下文的统一注入和计划重评估降级结果观察、NPC 面板给钱/正式装备武器/攻击等非对话交互入口，以及 NPC 主动找守备官交涉的调试触发、问号气泡、点击进入对话和 1 小时超时消失闭环。尚未实现真实每日计划、T1002 完整计划重评估应用、战斗/集结时坐骑外观表现、骑兵战斗策略、酒的商队出售交易、其他职业特殊生产平衡、敌人战斗、工程器械部署或真实 LLM。
 
 ## 当前已实现内容
 
@@ -29,6 +29,7 @@
 - [x] 建筑修复与升级最小逻辑
 - [x] 时间系统
 - [x] 资源系统
+- [x] HUD 资源库存显示与装备/器械详情入口
 - [x] 对话系统
 - [x] LLM 后端骨架
 - [x] 后端 AI Schema
@@ -37,6 +38,7 @@
 - [x] 征召系统
 - [x] 入伍 NPC 自然语言指令入口与存储
 - [x] NPC 面板非对话交互入口
+- [x] NPC 面板事件库 / 见闻库滚动区与对话 / 指令弹窗互斥
 - [x] NPC 主动找玩家交涉
 - [x] 职业工作产出框架
 - [x] 食堂粮食加工餐食
@@ -46,6 +48,10 @@
 - [x] 马厩马匹整备库存产出
 - [x] 酒窖酿酒库存产出
 - [x] 小诊所医生坐诊/研读医术与病床治疗
+- [x] 正式装备库存与装备槽系统
+- [x] 兵种判定
+- [x] 训练场与武器 / 骑术熟练度提升
+- [x] 通用熟练度经验、技能点与玩家属性分配
 - [ ] 战斗系统
 - [x] 昏迷自然恢复/复苏
 - [x] 治疗昏迷 NPC
@@ -71,6 +77,8 @@
   ↓
 ResourceSystem 从 data/resource_defs.json 初始化第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁
   ↓
+EquipmentSystem 从 data/weapon_defs.json、data/armor_defs.json 和 data/mount_defs.json 初始化主武器、盔甲和坐骑定义；装备时消耗 weapons / armor / horse_readiness 派生库存并写入 NPC 装备槽；兵种只由主武器与 NPC 的 equipment.mount 槽决定，horse_readiness 库存本身不等于已骑乘
+  ↓
 BuildingSystem 从 data/building_defs.json 初始化建筑基础状态并绑定低模建筑节点；主厅前公告牌不属于建筑定义
   ↓
 NPCSystem 从 data/npc_profiles.json 读取 8 名初始 NPC，并在 Station/NPCs 下生成占位实体
@@ -79,28 +87,28 @@ NPCSystem 可通过 `debug_damage_npc` / GM `attack_npc` 扣除 HP；HP 到 0 �
   ↓
 可通过调试接口让 NPC 前往指定建筑；NPC 实体直线移动，到达后写回 current_location 与 location_context 占位；室内到室内的地点信息与事件链会逻辑上经由广场
   ↓
-ActionSystem 可通过调试接口安排 NPC 去工作、吃饭、睡觉或协助治疗昏迷者；若目标建筑/地点不同，会先移动，到达后由 MemorySystem 更新地点 people_present，进入者获得一次地点状态见闻，NPCSystem 生成只记录行动事实的 location_entered / location_exited 事件；若从一个室内地点切到另一个室内地点，事件顺序会插入进入/离开广场，再进入持续行动
+ActionSystem 可通过调试接口安排 NPC 去工作、吃饭、睡觉、训练或协助治疗昏迷者；若目标建筑/地点不同，会先移动，到达后由 MemorySystem 更新地点 people_present，进入者获得一次地点状态见闻，NPCSystem 生成只记录行动事实的 location_entered / location_exited 事件；若从一个室内地点切到另一个室内地点，事件顺序会插入进入/离开广场，再进入持续行动
   ↓
-行动结算由程序随 TimeSystem 逻辑时间执行：工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用可进入建筑的真实工位，周期时长会按 NPC 对应熟练度、力量/智力属性和建筑等级缩短，单位完成时消耗/产出资源并结算饱食/疲劳，完成、失败或中断时释放工位并触发地点内部状态广播；菜园、食堂、铁匠铺、工械坊、马厩和酒窖已分别产出对应库存，其中酒窖消耗粮食产出酒，酿酒、智力和酒窖等级会提升效率并可提高实际产出；协助修复/协助升级在广场进行，可按工程熟练度加速正在进行的建筑修复/升级，事件以 `location_id == "plaza"` 的 `local_public` 写入；吃饭消耗粮食或餐食后在 20 分钟内逐步恢复饱食度；睡觉按 6.5 小时消耗 100 点疲劳的基准逐步降低疲劳；其他行动事件以 `local_public` 写入 MemorySystem 的结构化事件库，让同地点当前在场且未昏迷、未睡觉的 NPC 收到见闻
+行动结算由程序随 TimeSystem 逻辑时间执行：工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用可进入建筑的真实工位，周期时长会按 NPC 对应熟练度、力量/智力属性和建筑等级缩短，单位完成时消耗/产出资源并结算饱食/疲劳，完成、失败或中断时释放工位并触发地点内部状态广播；菜园、食堂、铁匠铺、工械坊、马厩和酒窖已分别产出对应库存，其中酒窖消耗粮食产出酒，酿酒、智力和酒窖等级会提升效率并可提高实际产出；训练场拥有教官工位和受训位，`work_training_instructor` 可让有武器或坐骑的 NPC 当教官，`receive_weapon_training` 可让有武器或坐骑的 NPC 在已有教官时受训，教官独处时极慢提升自己当前装备对应武器 / 骑术，有受训者时受训者按自己的装备提升对应熟练度且教官提升“教练”，训练按单位时间消耗疲劳和饱食；协助修复/协助升级在广场进行，可按工程熟练度加速正在进行的建筑修复/升级，事件以 `location_id == "plaza"` 的 `local_public` 写入；吃饭消耗粮食或餐食后在 20 分钟内逐步恢复饱食度；睡觉按 6.5 小时消耗 100 点疲劳的基准逐步降低疲劳；其他行动事件以 `local_public` 写入 MemorySystem 的结构化事件库，让同地点当前在场且未昏迷、未睡觉的 NPC 收到见闻
   ↓
-显示 HUD 标题、天数、`HH:MM:SS` 时间/阶段、真实资源数值、独立速度按钮、独立暂停/继续按钮、警铃按钮占位和由 LLMBridge health check 刷新的后端状态
+显示 HUD 标题、天数、`HH:MM:SS` 时间/阶段、按 `data/resource_defs.json` 顺序生成的非聚合资源数值、装备/器械详情按钮、独立速度按钮、独立暂停/继续按钮、警铃按钮占位和由 LLMBridge health check 刷新的后端状态；武器、盔甲、马匹整备和工程器械等聚合库存不在主资源栏重复显示，而是进入对应详情面板
   ↓
-开发模式下显示半透明可拖动 GM 按钮；点击可打开 GM 面板，通过按钮或命令调试资源、时间、建筑、NPC、NPC 扣血/昏迷/自然恢复、行动、地点快照、广场公告和短期记忆
+开发模式下显示半透明可拖动 GM 按钮；点击可在 GM 按钮附近打开 GM 面板，面板会随按钮位置重定位并保持在可用屏幕范围内；通过按钮或命令调试资源、时间、建筑、NPC、装备武器/盔甲/坐骑、兵种判定、NPC 扣血/昏迷/自然恢复、行动、地点快照、广场公告和短期记忆
   ↓
 建筑调试标签显示名称、等级和 HP，真实鼠标点击建筑可发出 building_clicked(building_id)
   ↓
 NPC 短姓名/HP/当前行动调试标签可见，点击 NPC 可打印并发出 npc_clicked(npc_id)
   ↓
-右上角 NPC 面板可显示被点击 NPC 的姓名、HP、力量/智力属性、由熟练度推导的专长、饱食、疲劳、金钱、当前装备、昏迷、入伍、当前行动、职业熟练度、武器熟练度，以及分开的事件库/见闻库最近摘要；NPC 状态或记忆被系统修改后，只有当前 NPC 面板仍可见时才刷新面板，不会在玩家已切到建筑面板或关闭面板后自动重新弹出；面板内容增多时以右上角顶边为固定基准向下延展，不会向上越出屏幕；面板内可选择本次非对话交互可见性并直接给钱、给予占位短剑或攻击，给钱数量输入框紧邻“给钱”按钮且只保留数字；当前所有 LineEdit / TextEdit 输入框获得焦点后，点击输入框外任意位置都会退出输入状态
+右上角 NPC 面板可显示被点击 NPC 的姓名、HP、HP 右侧的 `经验：当前 / 阈值`、力量/智力属性、由熟练度推导的专长、饱食、疲劳、金钱、当前装备与战斗定位、昏迷、入伍、当前行动、职业熟练度、武器熟练度，以及分开的事件库/见闻库滚动区；当存在未分配技能点且属性未达上限时，面板会在力量或智力数值旁显示 `+1` 按钮，玩家可把技能点分配到对应属性，用完后按钮消失，AI 不会自动消耗技能点；NPC 状态或记忆被系统修改后，只有当前 NPC 面板仍可见时才刷新面板，不会在玩家已切到建筑面板或关闭面板后自动重新弹出；事件库和见闻库保持固定高度，内容完整保留并在刷新后自动滚到底部，用户可手动上滑查看旧事件；面板内容增多时以右上角顶边为固定基准向下延展，不会向上越出屏幕；面板内可选择本次非对话交互可见性并直接给钱、为已入伍 NPC 选择并装备主武器或攻击，给钱数量输入框紧邻“给钱”按钮且只保留数字；点击“对话”或“指令”不会关闭 NPC 面板，`DialogPanel` 和 `OrderPanel` 彼此互斥，不会重叠在中央；当前所有 LineEdit / TextEdit 输入框获得焦点后，点击输入框外任意位置都会退出输入状态
   ↓
 GM 或调试接口可让某名可行动 NPC 进入主动找守备官交涉状态；NPC 头顶出现 `?` 气泡并写入私有 `proactive_talk_started` 事件，玩家点击该 NPC 时优先打开对话面板并显示 NPC 预先确定的开场问题，开场问题写入 `proactive_talk_message`；对话结束后请求计划重评估。若 1 游戏小时内未点击，气泡自动消失并请求计划重评估；当前重评估仍为 T0703A 的规则降级观察结果
   ↓
-右上角建筑面板显示被点击建筑的名称、等级、HP、工作位和地点信息占位，可关闭；修复/升级按钮按条件启用并调用 BuildingSystem，资源消耗和执行条件在按钮悬停提示框中显示；修复和升级都显示倒计时进度、剩余时间、速度倍率和协助人数；NPC 面板和建筑面板会随点击对象互斥切换；建筑修复/升级进度等状态刷新不会把已经切到 NPC 的右上角面板抢回建筑面板
+右上角建筑面板显示被点击建筑的名称、等级、HP、按类型分组的工位 / 床位 / 训练位空闲数与占用者、地点信息占位，可关闭；不再额外显示单独的“当前工作位 x/x”汇总行；修复/升级按钮按条件启用并调用 BuildingSystem，资源消耗和执行条件在按钮悬停提示框中显示；修复和升级都显示倒计时进度、剩余时间、速度倍率和协助人数；NPC 面板和建筑面板会随点击对象互斥切换；建筑修复/升级进度等状态刷新不会把已经切到 NPC 的右上角面板抢回建筑面板
   ↓
 玩家可用 WASD、鼠标中键拖拽和滚轮在受限边界内查看驿站
 ```
 
-低模驿站当前包含主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、主厅前公告牌视觉占位和调试标签。2026-05-19 已扩大地面与围墙范围，并重新拉开建筑间距，让中央广场、生活区、生产区、防务区和后门入口更易辨认；随后补齐围墙四角闭合，并把公告牌缩小移动到主厅正面。2026-05-24 起公告牌不再属于建筑数据，不具备 HP、等级、工作位、修复或升级；公告输入后的文本归广场当前状态保存并广播。HUD 当前显示 `ResourceSystem` 初始化后的五类基础资源数值：第纳尔、粮食、木材、石料、铁；餐食、酒、武器、盔甲、工程器械和马匹整备作为派生资源用于行动结算，暂不显示在 HUD 中；时间显示为 `HH:MM:SS`，会随 `TimeSystem` 每个游戏秒刷新；速度按钮只在 `x1`、`x2`、`x4` 之间循环，暂停/继续由独立按钮控制，也可按空格切换，空格不再触发加速；TimeSystem 当前不改变 Godot 全局速度或 NPC 移动速度，只提供逻辑时间倍率、`logical_time_tick`、`gameplay_pause_changed` 和 LLM 等待慢速请求接口。暂停时逻辑时间停止、NPC 移动停止，尚未到达目标地点的行动保持 pending，已经开始的工作/吃饭/睡觉保持 active，不会在暂停中继续消耗/产出资源或改变饱食/疲劳，恢复后继续按逻辑时间结算；建筑修复/升级倒计时也遵循同一逻辑时间与暂停语义。警铃按钮仍不触发真实逻辑；后端状态由 `LLMBridge` health check 刷新。建筑当前由 `BuildingSystem` 读取 `data/building_defs.json` 绑定到低模节点，标签显示名称、等级和 HP，运行时点击区可识别建筑 ID 并发出 `building_clicked`；`NoticeBoard` 不被 `BuildingSystem` 绑定。2026-05-20 已修正 HUD 背板拦截问题，真实鼠标点击建筑会通过相机射线拾取打开 `BuildingPanel`。`BuildingPanel` 监听该事件并显示建筑名称、等级、HP、工作位和地点信息占位；修复/升级按钮会调用 `BuildingSystem`，资源消耗和条件只在按钮悬停提示框中显示；升级与修复一样是倒计时作业，受损、正在修复或正在升级时不能开始升级。NPC 当前由 `NPCSystem` 读取 `data/npc_profiles.json`，在 `Main/WorldRoot/Station/NPCs` 下生成 8 个低模占位实体，主场景头顶标签只显示短姓名、HP 和当前行动；`NPCPanel` 按姓名、HP、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、熟练度的顺序展示，其中属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，专长由固定熟练度推导，熟练度按职业熟练度、武器熟练度两组展示完整 13 维。点击 NPC 会打印 ID、发出 `npc_clicked(npc_id)` 并打开 `NPCPanel`。`NPCSystem` 提供 NPC 状态读取、更新和调试移动接口，`debug_move_npc_to_building(npc_id, building_id)` 可让 NPC 直线移动到建筑入口；到达后会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点信息节点的 `people_present`，并写入 `current_location`、`current_location_name`、`location_context`，同时生成只保留行动事实的 `location_entered` / `location_exited`；进入者需要的完整地点状态只作为一次性 `location_entry_snapshot` 见闻写入。地点信息节点当前覆盖广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊；主厅、围墙、城门、后门、仓库不作为常规进入空间。所有建筑的可传播外部状态只包含等级和完好/受损/正在修复/正在升级；HP 与剩余修复/升级时长仍可在建筑系统和 UI 中查看，但不会作为信息节点传播条件。可进入建筑额外有内部状态（在场 NPC、每个工位占用/空闲状态），工位数量本身不作为传播条件；不可进入建筑不暴露内部 NPC 或工位。广场没有自身建筑 HP，但通过 `building_external_states` / `key_entities` 保存所有建筑可传播外部状态。`local_public` 事件会即时广播给该地点当前在场 NPC 并写入接收者见闻库，地点节点不保存事件历史；广场事件就是 `location_id == "plaza"` 的 `local_public`。`ActionSystem` 当前读取 `data/action_defs.json`，提供调试指派工作、协助修复、协助升级、吃饭和睡觉接口：菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺产出武器/盔甲、工械坊产出武器/工程器械、马厩产出马匹整备占位；协助修复和协助升级通过带建筑参数的调试接口加速已有作业；工作当前持续 1 小时后结算一批投入/产出，吃饭持续 20 分钟并逐步恢复饱食度，睡觉持续 6.5 小时并逐步降低疲劳；工作、吃饭、睡觉开始/完成/失败会以 `local_public` 写入 `MemorySystem` 的结构化事件库；协助修复/协助升级开始也以 `local_public` 写入广场，目标建筑保存在 `payload.building_id`；事件包含 `subject_npc_id`、`location_id`、`visibility`、`target_ids` 和类型化 `payload`，对应地点当前在场 NPC 会收到对应见闻。`LLMBridge` 当前可请求 `/npc/dialogue` Mock；尚未实现真实日程计划、复杂职业效率、对话 UI、对话事件入库、征召结算或战斗。
+低模驿站当前包含主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、主厅前公告牌视觉占位和调试标签。2026-05-19 已扩大地面与围墙范围，并重新拉开建筑间距，让中央广场、生活区、生产区、防务区和后门入口更易辨认；随后补齐围墙四角闭合，并把公告牌缩小移动到主厅正面。2026-05-24 起公告牌不再属于建筑数据，不具备 HP、等级、工作位、修复或升级；公告输入后的文本归广场当前状态保存并广播。HUD 当前按 `ResourceSystem.get_resource_ids()` / `data/resource_defs.json.ui_order` 动态显示非聚合资源数值：第纳尔、粮食、餐食、酒、木材、石料和铁；资源变化会刷新对应资源标签。资源栏右侧有“装备”和“器械”详情按钮，打开时面板出现在各自按钮左下方并夹在可用屏幕内；装备详情显示武器 / 盔甲 / 马匹整备库存、可分配主武器/盔甲/坐骑定义和已分配数量，器械详情显示工程器械库存与当前未部署说明。HUD 只读取 `ResourceSystem`、`EquipmentSystem` 和 `NPCSystem`，不直接修改资源或装备权威状态；时间显示为 `HH:MM:SS`，会随 `TimeSystem` 每个游戏秒刷新；速度按钮只在 `x1`、`x2`、`x4` 之间循环，暂停/继续由独立按钮控制，也可按空格切换，空格不再触发加速；TimeSystem 当前不改变 Godot 全局速度或 NPC 移动速度，只提供逻辑时间倍率、`logical_time_tick`、`gameplay_pause_changed` 和 LLM 等待慢速请求接口。暂停时逻辑时间停止、NPC 移动停止，尚未到达目标地点的行动保持 pending，已经开始的工作/吃饭/睡觉保持 active，不会在暂停中继续消耗/产出资源或改变饱食/疲劳，恢复后继续按逻辑时间结算；建筑修复/升级倒计时也遵循同一逻辑时间与暂停语义。警铃按钮仍不触发真实逻辑；后端状态由 `LLMBridge` health check 刷新。建筑当前由 `BuildingSystem` 读取 `data/building_defs.json` 绑定到低模节点，标签显示名称、等级和 HP，运行时点击区可识别建筑 ID 并发出 `building_clicked`；`NoticeBoard` 不被 `BuildingSystem` 绑定。2026-05-20 已修正 HUD 背板拦截问题，真实鼠标点击建筑会通过相机射线拾取打开 `BuildingPanel`。`BuildingPanel` 监听该事件并显示建筑名称、等级、HP、按工位类型分组的 `空闲数/总数：占用者` 和地点信息占位；无占用者显示“空闲”，诊所、训练场等多类型位置会分行显示；修复/升级按钮会调用 `BuildingSystem`，资源消耗和条件只在按钮悬停提示框中显示；升级与修复一样是倒计时作业，受损、正在修复或正在升级时不能开始升级。NPC 当前由 `NPCSystem` 读取 `data/npc_profiles.json`，在 `Main/WorldRoot/Station/NPCs` 下生成 8 个低模占位实体，主场景头顶标签只显示短姓名、HP 和当前行动；`NPCPanel` 按姓名、HP 与经验、属性、专长、饱食度、疲劳度、金钱、昏迷、入伍、当前行动、熟练度的顺序展示，其中属性来自 `stats.strength` / 力量和 `stats.intelligence` / 智力，经验来自 `progression.total_experience` 并按技能点阈值显示为 `经验：当前 / 阈值`，玩家可在有未分配技能点时通过属性旁 `+1` 分配到力量或智力，专长由固定熟练度推导，熟练度按职业熟练度、武器熟练度两组展示完整 13 维。点击 NPC 会打印 ID、发出 `npc_clicked(npc_id)` 并打开 `NPCPanel`。`NPCSystem` 提供 NPC 状态读取、更新、统一熟练度成长、玩家属性分配和调试移动接口，`debug_move_npc_to_building(npc_id, building_id)` 可让 NPC 直线移动到建筑入口；到达后会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点信息节点的 `people_present`，并写入 `current_location`、`current_location_name`、`location_context`，同时生成只保留行动事实的 `location_entered` / `location_exited`；进入者需要的完整地点状态只作为一次性 `location_entry_snapshot` 见闻写入。地点信息节点当前覆盖广场、宿舍、食堂、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊；主厅、围墙、城门、后门、仓库不作为常规进入空间。所有建筑的可传播外部状态只包含等级和完好/受损/正在修复/正在升级；HP 与剩余修复/升级时长仍可在建筑系统和 UI 中查看，但不会作为信息节点传播条件。可进入建筑额外有内部状态（在场 NPC、每个工位占用/空闲状态），工位数量本身不作为传播条件；不可进入建筑不暴露内部 NPC 或工位。广场没有自身建筑 HP，但通过 `building_external_states` / `key_entities` 保存所有建筑可传播外部状态。`local_public` 事件会即时广播给该地点当前在场 NPC 并写入接收者见闻库，地点节点不保存事件历史；广场事件就是 `location_id == "plaza"` 的 `local_public`。`ActionSystem` 当前读取 `data/action_defs.json`，提供调试指派工作、协助修复、协助升级、吃饭和睡觉接口：菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺产出武器/盔甲、工械坊产出武器/工程器械、马厩产出马匹整备占位；协助修复和协助升级通过带建筑参数的调试接口加速已有作业；工作当前持续 1 小时后结算一批投入/产出并提升对应职业熟练度和总经验，诊所研读/治疗与训练场成长也写入同一套经验和未分配技能点；吃饭持续 20 分钟并逐步恢复饱食度，睡觉持续 6.5 小时并逐步降低疲劳；工作、吃饭、睡觉开始/完成/失败会以 `local_public` 写入 `MemorySystem` 的结构化事件库；技能成长写入带经验字段的 `skill_improved`，玩家分配属性写入私有 `attribute_improved`；协助修复/协助升级开始也以 `local_public` 写入广场，目标建筑保存在 `payload.building_id`；事件包含 `subject_npc_id`、`location_id`、`visibility`、`target_ids` 和类型化 `payload`，对应地点当前在场 NPC 会收到对应见闻。`LLMBridge` 当前可请求 `/npc/dialogue` Mock；尚未实现真实日程计划、复杂职业效率、对话 UI、对话事件入库、征召结算或战斗。
 
 2026-05-25 起，地点/广场信息节点的建筑状态已经降噪到只计算可传播字段：所有建筑可传播外部状态只计算等级和完好/受损/正在修复/正在升级；HP、Max HP、剩余修复/升级时长不参与信息节点状态比较，也不会因自身变化触发传播。广场和可进入建筑的进入快照都会计算在场 NPC 的生命/行动状态；可进入建筑还计算每个工位的占用/空闲状态，工位数量不触发传播。NPC 生命状态分为健康、受伤、昏迷；昏迷者如有治疗者会写明治疗者。行动状态由 `current_action` 翻译为精简中文。广场没有自身建筑 HP，但通过 `building_external_states` / `key_entities` 保存所有建筑可传播外部状态；NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命/行动状态、当前公告文本和所有建筑外部状态见闻，进入某个可进入建筑会获得该建筑外部 + 内部状态见闻。任一建筑可传播外部状态变化会同步给广场并广播给当时在广场的 NPC；某个可进入建筑内部状态变化当前仍会广播给该建筑内 NPC。状态见闻 summary 会写明具体建筑名称和具体事实，不加“建筑状态更新”这类空泛前缀。
 
@@ -108,7 +116,9 @@ T0407/T0408/T0409 已实现：NPC 进入可进入建筑时，`location_entered` 
 
 T0501/T0502/T0502A/T0503 已实现：`NPCSystem.apply_damage_to_npc(...)` 是当前 NPC HP 扣除权威入口；GM `attack_npc` / `damage_npc` 命令调用该接口。HP 降到 0 后 NPC 设置为昏迷，不死亡，停止移动并显示 `current_action=unconscious`；`ActionSystem` 会清除该 NPC 的 pending / active 行动，后续行动指派和移动调试都会被拒绝。系统会写入 `damage_taken` 和 `unconscious_started` 事件，其中昏迷事件以 `local_public` 广播到 NPC 当前信息地点，同地点 NPC 会收到见闻。昏迷 NPC 会随 `TimeSystem.logical_time_tick` 以每游戏小时 2 HP 的速度自然恢复；HP 达到 Max HP 的 30% 后自动复苏、回到 `idle`、重新允许移动/行动，并写入 `revived` 本地公开事件。昏迷期间 `MemorySystem.add_witness_event(...)` 会拒绝给该 NPC 写入见闻，因此地点/广场广播、状态变化、公告和进入快照都不会进入其见闻库；复苏后自动恢复接收。2026-06-03 起，该接收规则也覆盖睡觉：`current_action == "sleep_in_dormitory"` 的 NPC 不接收同地点/同建筑 public 见闻，睡醒回到可行动状态后恢复接收，不补收睡觉期间错过的信息。GM `recover_npc <npc_id> <game_seconds>` 可用同一套自然恢复规则推进指定 NPC 的恢复。`ActionSystem.debug_assign_heal_assist(healer_npc_id, target_npc_id)` 可让可行动 NPC 前往昏迷目标所在信息地点协助治疗；每名昏迷目标最多 2 名治疗者，治疗开始和持续过程中消耗第纳尔，医术熟练度越高恢复越快，资源不足会失败或中止；治疗开始/完成写入治疗者和目标的结构化事件，并写入同地点其他在场、未昏迷且未睡觉 NPC 的见闻库，事件信息不暴露医术熟练度。当前仍不实现敌人战斗。
 
-T0808 已实现小诊所医生工位与病床治疗闭环：`data/building_defs.json` 中小诊所包含 `clinic_doctor` 医生工位和 `patient_bed` 病床；`work_clinic_doctor` 让 NPC 在诊所坐诊或研读医学著作，`receive_clinic_treatment` 让受伤且未昏迷 NPC 占用病床接受治疗。只有医生在诊所工位且病人占床时，诊所治疗才会随 `logical_time_tick` 推进；治疗消耗第纳尔，恢复速度受医术、智力和诊所等级影响。医生没有病人时会缓慢提升医术并写入 `skill_improved` 事件；治疗中也会少量提升医术。当前仍不实现 T0904 的通用职业经验、技能点和属性成长。
+T0808 已实现小诊所医生工位与病床治疗闭环：`data/building_defs.json` 中小诊所包含 `clinic_doctor` 医生工位和 `patient_bed` 病床；`work_clinic_doctor` 让 NPC 在诊所坐诊或研读医学著作，`receive_clinic_treatment` 让受伤且未昏迷 NPC 占用病床接受治疗。只有医生在诊所工位且病人占床时，诊所治疗才会随 `logical_time_tick` 推进；治疗消耗第纳尔，恢复速度受医术、智力和诊所等级影响。医生没有病人时会缓慢提升医术并写入 `skill_improved` 事件；治疗中也会少量提升医术。T0904 后，这些医术增长同步进入统一经验和技能点规则。
+
+T0903 已实现训练场教官工位与受训位闭环：`data/building_defs.json` 中训练场包含 `training_instructor` 教官工位和 `training_student` 受训位；`work_training_instructor` 让有主武器或坐骑的 NPC 占用教官工位，`receive_weapon_training` 让有主武器或坐骑的 NPC 在已有教官时占用受训位。无武器且无坐骑的 NPC 不能当教官或受训者；没有有效教官时，受训行为会失败并写入 `work_failed`。教官没有受训者时，会按较慢间隔提升自己当前装备对应的剑盾、长杆、弓、弩或骑术；有受训者时，受训者按自己的当前武器 / 坐骑提升对应熟练度，教官不再提升自己的武器 / 骑术，只提升“教练”。训练速度受教官“教练”、训练场等级、以及教官与受训者在当前训练项目上的熟练度差影响；训练按单位时间消耗疲劳和饱食，并通过 `skill_improved` 事件记录独自练习、受训或指导训练。T0904 后，训练成长同步增加总经验并可能产生未分配技能点。
 
 摄像机当前绑定 `res://scripts/camera/CameraRig.gd`，支持 WASD 平移、鼠标中键拖拽平移和滚轮缩放；移动限制在驿站地面附近，缩放保持现有高机位俯视角，不提供角色控制或第一人称自由视角。
 
@@ -150,9 +160,9 @@ T0604A 已将 Godot `LLMBridge` 传输层替换为原生 `HTTPClient` 状态机�
 NPC 可移动到建筑并执行简单工作
 ```
 
-T0703/T0703A 更新：已入伍 NPC 面板显示可用“指令”按钮，可打开自由文本 `OrderPanel` 查看、修改并发布 `current_order`。只有文本变化时才更新结构化指令、递增修订号、写入目标 NPC 的 `private` `order_assigned` 事件并发出计划重评估请求；相同文本或关闭面板无副作用，发布不会直接改变 `current_action`。`LLMBridge` 会把单条最新指令注入对话顶层 payload 和共享 NPC 上下文，后端 `NPCContext` 让计划、修订、战斗判定、主动交涉、反思和知识图谱更新等请求复用同一字段。最近注入快照和重评估降级结果可由 GM 查看；T1002 尚未实现，因此当前重评估结果为保留最新指令的 `rule_fallback_deferred`，不直接应用计划。
+T0703/T0703A/T0014 更新：已入伍 NPC 面板显示可用“指令”按钮，可打开自由文本 `OrderPanel` 查看、修改并发布 `current_order`。只有文本变化时才更新结构化指令、递增修订号、写入目标 NPC 的 `private` `order_assigned` 事件并发出计划重评估请求；相同文本或关闭面板无副作用，发布不会直接改变 `current_action`。打开指令面板不会关闭 NPC 面板，但会关闭当前 `DialogPanel`；打开对话也会关闭当前 `OrderPanel`，二者互斥不重叠。`LLMBridge` 会把单条最新指令注入对话顶层 payload 和共享 NPC 上下文，后端 `NPCContext` 让计划、修订、战斗判定、主动交涉、反思和知识图谱更新等请求复用同一字段。最近注入快照和重评估降级结果可由 GM 查看；T1002 尚未实现，因此当前重评估结果为保留最新指令的 `rule_fallback_deferred`，不直接应用计划。
 
-T0704 更新：NPC 面板已接入非对话交互入口。给钱会扣除全局第纳尔、增加目标 NPC 随身金钱，并写入 `money_given`；给武器会消耗 1 个全局 `weapons` 资源并给目标 NPC 一把占位短剑，写入 `equipment_given` / `equipment_changed`，正式装备系统仍归 T0901；攻击会通过 `NPCSystem.apply_damage_to_npc(...)` 扣除 10 HP 并写入 `damage_taken`，HP 清零后的昏迷、见闻暂停和复苏仍走既有系统。NPC 面板不提供“要求休息/请求治疗”按钮，这类意图由已入伍 NPC 的自然语言指令承担；GM 和调试系统仍保留既有睡觉/治疗入口。给钱数量输入框仅保留数字，WASD 等字母键不会写入金额；`Main/UI` 的统一输入焦点管理会在点击输入框外任意位置时释放当前 LineEdit / TextEdit 焦点。`LLMBridge` 的后续 NPC 对话上下文会通过既有短期记忆摘要携带这些亲历事件与见闻。
+T0704/T0901 更新：NPC 面板已接入非对话交互入口。给钱会扣除全局第纳尔、增加目标 NPC 随身金钱，并写入 `money_given`；装备武器会通过 `EquipmentSystem` 消耗 1 个全局 `weapons` 库存，为已入伍 NPC 装备所选主武器，并写入 `equipment_given` / `equipment_changed`；攻击会通过 `NPCSystem.apply_damage_to_npc(...)` 扣除 10 HP 并写入 `damage_taken`，HP 清零后的昏迷、见闻暂停和复苏仍走既有系统。NPC 面板不提供“要求休息/请求治疗”按钮，这类意图由已入伍 NPC 的自然语言指令承担；GM 和调试系统仍保留既有睡觉/治疗入口。给钱数量输入框仅保留数字，WASD 等字母键不会写入金额；`Main/UI` 的统一输入焦点管理会在点击输入框外任意位置时释放当前 LineEdit / TextEdit 焦点。`LLMBridge` 的后续 NPC 对话上下文会通过既有短期记忆摘要携带这些亲历事件与见闻。
 
 T0705 更新：`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 主动找守备官交涉；触发后 NPC `current_action=proactive_talk`，头顶显示 `?` 气泡，写入 `private` `proactive_talk_started` 事件。点击气泡会清除状态并调用 `DialogSystem.start_proactive_player_dialogue(...)` 打开既有对话面板，把 NPC 预先确定的开场问题作为第一条历史显示，并写入 `proactive_talk_message`；玩家之后发送内容继续走既有 `/npc/dialogue` 和 `dialogue_turn` 入库逻辑。对话结束或 1 游戏小时超时都会触发计划重评估请求；T1002 尚未实现，因此结果仍为 `rule_fallback_deferred`。
 
@@ -162,11 +172,13 @@ T0802 更新：食堂加工餐食已作为独立闭环验证。`work_dining_hall
 
 T0803 更新：菜园产粮已作为独立闭环验证。`work_garden` 使用耕种与力量，基础产出 2 份粮食；配置化 `output_scaling` 会让耕种熟练度、力量和菜园等级提高实际粮食产量。工作完成事件的 `payload.output_resources` 记录缩放后的实际产出；未配置产出缩放的食堂等工作保持固定产出。
 
-T0804 更新：铁匠铺金属装备制造已作为独立闭环验证。`work_blacksmith` 使用打铁与力量，消耗 2 份铁，产出当前派生库存层面的 1 份武器和 1 份盔甲；打铁熟练度、力量和铁匠铺建筑等级会缩短单位制作周期。当前不细分剑盾、长杆、头盔、胸甲、腕甲、腿甲，也不做装备外观；这些由 T0901 正式库存与装备系统继续实现。
+T0804 更新：铁匠铺金属装备制造已作为独立闭环验证。`work_blacksmith` 使用打铁与力量，消耗 2 份铁，产出当前派生库存层面的 1 份武器和 1 份盔甲；打铁熟练度、力量和铁匠铺建筑等级会缩短单位制作周期。T0901 后，`weapons` 可由装备系统转换为剑盾、长杆、弓或弩主武器，`armor` 可转换为头盔、胸甲、腕甲或腿甲装备槽；当前仍不做耐久或外观换装。
 
-T0805 更新：工械坊弓弩与防御器械制造已作为独立闭环验证。`work_workshop` 使用工程与智力，消耗 2 份木材，产出当前派生库存层面的 1 份武器和 1 份工程器械；工程熟练度、智力和工械坊建筑等级会缩短单位制作周期。当前 `weapons` 只代表可由后续装备系统细分为弓、弩等木质武器的库存占位，`defense_devices` 只代表可由 T1508 部署到围墙的器械库存占位，尚不实现具体器械部署、自动攻击或阻挡敌人。
+T0805 更新：工械坊弓弩与防御器械制造已作为独立闭环验证。`work_workshop` 使用工程与智力，消耗 2 份木材，产出当前派生库存层面的 1 份武器和 1 份工程器械；工程熟练度、智力和工械坊建筑等级会缩短单位制作周期。T0901 后，`weapons` 可转换为弓或弩等远程主武器；`defense_devices` 仍只代表可由 T1508 部署到围墙的器械库存占位，尚不实现具体器械部署、自动攻击或阻挡敌人。
 
-T0806 更新：马厩喂养和恢复的经营层已作为独立闭环验证。`work_stable` 使用养马与力量，消耗 1 份粮食，产出当前派生库存层面的 `horse_readiness`；养马熟练度、力量和马厩建筑等级会缩短单位照料周期，并通过 `output_scaling` 提高实际马匹整备产出。当前 `horse_readiness` 只代表后续可转换为坐骑装备或马匹状态的库存占位；T0901/T0902/T1103/T1105 尚未实现坐骑槽、战斗模式骑乘表现、移动速度加成或骑兵策略切换。
+T0806 更新：马厩喂养和恢复的经营层已作为独立闭环验证。`work_stable` 使用养马与力量，消耗 1 份粮食，产出当前派生库存层面的 `horse_readiness`；养马熟练度、力量和马厩建筑等级会缩短单位照料周期，并通过 `output_scaling` 提高实际马匹整备产出。T0901 后，`horse_readiness` 可转换为 NPC 坐骑槽中的 `riding_horse`；日常工作模式仍不显示骑乘，战斗/集结时的骑乘外观、移动速度加成和骑兵策略切换留给 T1103/T1105。
+
+T0901/T0902 更新：新增 `EquipmentSystem` 作为装备权威入口，读取 `data/weapon_defs.json`、`data/armor_defs.json` 与 `data/mount_defs.json`。装备主武器会消耗 `weapons`，装备盔甲会消耗 `armor`，装备坐骑会消耗 `horse_readiness`；换装会先消耗新库存，再把旧装备对应库存返还。只有已入伍 NPC 可由守备官直接分配装备；装备事件复用 `MemorySystem.record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 规则广播。当前可根据主武器与 NPC 装备槽返回非战斗人员、近战步兵、长杆步兵、弓箭兵、弩兵、近战骑兵或骑射单位；坐骑来源只看 `equipment.mount`，不读取 `horse_readiness` 库存当作已骑乘。GM `unit_type` 命令可查看兵种、武器类型和坐骑槽快照，供 T1103/T1105 后续战斗表现与策略继续接入。
 
 T0807 更新：酒窖酿酒经营层已作为独立闭环验证。`work_tavern` 使用酿酒与智力，消耗 1 份粮食，产出当前派生库存层面的 `wine`；酿酒熟练度、智力和酒窖建筑等级会缩短单位酿造周期，并通过 `output_scaling` 提高实际酒库存产出。当前不会饮酒，也不会在酿酒完成时自动换钱；酒在商队处出售换第纳尔留给 T1507 商人交易系统。
 
@@ -236,35 +248,38 @@ env = { GODOT_HOST = "127.0.0.1", GODOT_PORT = "6550" }
 - `backend/requirements.txt`：Python 后端依赖
 - `project.godot`：Godot 项目配置，当前入口为 `res://scenes/main/Main.tscn`
 - `scenes/main/Main.tscn`：最小可运行主场景，包含标准 WorldRoot、Systems、UI、CameraRig 节点结构、低模驿站 Blockout 和基础 HUD
-- `scripts/ui/HUD.gd`：HUD 展示脚本，读取 `GameState` 的天/时/分/秒，监听 `time_changed` / `resource_changed` 并刷新时间、资源显示、速度/暂停按钮和后端状态占位
+- `scripts/ui/HUD.gd`：HUD 展示脚本，读取 `GameState` 的天/时/分/秒，监听 `time_changed` / `resource_changed` 并按资源定义刷新非聚合资源主栏，提供装备/器械库存详情按钮并按按钮位置打开详情，同时刷新速度/暂停按钮和后端状态占位
 - `scripts/systems/LLMBridge.gd`：Godot 侧后端桥接，支持后端地址配置、`/health`、`/npc/dialogue` Mock 请求、T0603 对话 payload 构造和 LLM 等待慢速请求注册/释放
 - `scripts/systems/DialogSystem.gd`、`scripts/ui/DialogPanel.gd`：对话会话、后端请求编排、事件入库与对话 UI
-- `scripts/ui/BuildingPanel.gd`：建筑面板脚本，监听 `building_clicked` 打开建筑、监听 `building_state_changed` 刷新当前可见建筑，并展示建筑基础信息，可触发建筑修复/升级
-- `scripts/ui/NPCPanel.gd`：NPC 面板脚本，监听 `npc_clicked`、`npc_state_changed` 和 `npc_memory_changed`，按姓名/HP/属性/专长/基础状态/熟练度/事件库/见闻库顺序展示 NPC 数据，并与建筑面板互斥切换
-- `scripts/ui/GMPanel.gd`：GM 调试面板脚本，提供可拖动半透明 GM 按钮、命令输入框和资源/时间/建筑/NPC/行动/记忆调试入口；行动分组内有“修复目标”“升级目标”和“治疗目标”下拉用于测试协助修复/协助升级/协助治疗；顶部 `GM_ENABLED` 常量可切换开发/上线显示
+- `scripts/ui/BuildingPanel.gd`：建筑面板脚本，监听 `building_clicked` 打开建筑、监听 `building_state_changed` 刷新当前可见建筑，展示建筑基础信息与按类型分组的工位空闲数 / 占用者，可触发建筑修复/升级
+- `scripts/ui/NPCPanel.gd`：NPC 面板脚本，监听 `npc_clicked`、`npc_state_changed` 和 `npc_memory_changed`，按姓名/HP 与经验/属性/专长/基础状态/熟练度/事件库/见闻库顺序展示 NPC 数据；经验显示在 HP 右侧，有未分配技能点时属性旁显示 `+1`；事件库和见闻库使用固定高度滚动区；对话 / 指令不会关闭 NPC 面板，并与建筑面板互斥切换
+- `scripts/ui/GMPanel.gd`：GM 调试面板脚本，提供可拖动半透明 GM 按钮、命令输入框和资源/时间/建筑/NPC/行动/记忆调试入口；行动分组用行动下拉 + “指定行动”统一触发普通行动，“修复目标”“升级目标”和“治疗目标”下拉用于测试协助修复/协助升级/协助治疗；顶部 `GM_ENABLED` 常量可切换开发/上线显示
 - `scenes/npc/NPC.tscn`：通用 NPC 占位场景，当前为可点击低模实体和短姓名/HP/当前行动标签
 - `scripts/npc/NPC.gd`：NPC 展示脚本，保存唯一 ID，刷新调试标签，在点击时发出 `npc_clicked`，并支持直线移动到指定地点
 - `scripts/camera/CameraRig.gd`：基础俯视摄像机控制，支持 WASD/鼠标中键平移、滚轮缩放和边界限制
 - `scripts/core/EventBus.gd`：全局事件总线，声明基础跨系统信号；`building_clicked` 表示玩家/调试选择建筑，`building_state_changed` 表示建筑数据刷新
 - `scripts/core/GameState.gd`：全局运行状态，保存天数、小时、分钟、秒和战斗状态
 - `scripts/core/ConfigLoader.gd`：JSON 配置读取入口，提供缺失/解析错误提示
-- `scripts/systems/ResourceSystem.gd`：基础资源系统，从 `data/resource_defs.json` 初始化资源，提供读取、增加、扣除和负数保护接口，并通过 `resource_changed` 通知 HUD
+- `scripts/systems/ResourceSystem.gd`：基础资源系统，从 `data/resource_defs.json` 初始化资源，提供读取、定义查询、增加、扣除和负数保护接口，并通过 `resource_changed` 通知 HUD
 - `scripts/systems/BuildingSystem.gd`：基础建筑系统，从 `data/building_defs.json` 初始化建筑状态，绑定低模建筑节点，创建运行时点击区，选择建筑时发出 `building_clicked`，建筑受损/修复/升级等数据变化时发出 `building_state_changed`，并提供倒计时修复、倒计时升级、协助者加速、建筑入口坐标和当前地点快照接口
 - `scripts/systems/NPCSystem.gd`：基础 NPC 系统，从 `data/npc_profiles.json` 生成 8 个 NPC 占位实体，并提供查询、状态更新、调试选择、调试移动和即时进入地点调试接口
-- `scripts/systems/ActionSystem.gd`：简单行动系统，读取 `data/action_defs.json`，支持调试指派工作、协助修复、协助升级、协助治疗昏迷 NPC、诊所医生坐诊/研读医术、病床治疗、吃饭、睡觉；行动到达地点后随 `logical_time_tick` 持续推进，暂停时 pending / active 行动都不继续结算，恢复后继续，并写入结构化行动事件
+- `scripts/systems/ActionSystem.gd`：简单行动系统，读取 `data/action_defs.json`，支持调试指派工作、协助修复、协助升级、协助治疗昏迷 NPC、诊所医生坐诊/研读医术、病床治疗、训练场教官/受训者、吃饭、睡觉；行动到达地点后随 `logical_time_tick` 持续推进，暂停时 pending / active 行动都不继续结算，恢复后继续，并写入结构化行动事件
 - `scripts/systems/MemorySystem.gd`：结构化事件事实源与地点信息节点系统，维护全局事件索引、NPC 当天事件库、NPC 见闻库、短期记忆容器查询、地点当前在场人员/快照和广场事件查询；建筑可传播外部状态只包含等级和完好/受损/正在修复/正在升级，内部状态包含在场 NPC、在场 NPC 的生命/行动状态与工位占用；不提供按地点查询事件的长期接口，地点/广场节点不保存事件历史
 - `scripts/systems/TimeSystem.gd`：基础逻辑时间系统，支持 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速请求、`logical_time_tick` 和 `time_changed` / `time_scale_changed` / `hour_started` / `day_started` 信号
 - `scripts/systems/CombatSystem.gd`：后续战斗系统空脚本占位
 - `data/resource_defs.json`：资源定义，包含第纳尔、粮食、餐食、酒、武器、盔甲、工程器械、马匹整备、木材、石料、铁
-- `data/building_defs.json`：建筑定义，当前覆盖 15 个低模建筑/门墙实体，并包含等级、HP、标签、工作位、资源输入输出、场景节点绑定，以及所有建筑的修复/升级配置；公告牌不在建筑定义中
-- `data/action_defs.json`：行动定义，当前包含菜园、食堂、酒窖、铁匠铺、工械坊、马厩、吃饭、睡觉和需要目标 NPC 的协助治疗定义；菜园通过 `output_scaling` 让耕种、力量和建筑等级提高粮食产出；酒窖通过酿酒与智力消耗粮食产出酒派生库存，并可按酿酒、智力和建筑等级提高实际产出；铁匠铺通过打铁与力量消耗铁产出武器/盔甲派生库存；工械坊通过工程与智力消耗木材产出武器/工程器械派生库存；马厩通过养马与力量消耗粮食产出马匹整备派生库存；协助修复/协助升级由 `ActionSystem` 作为带建筑参数的运行时行为处理，协助治疗由 `ActionSystem` 作为带昏迷 NPC 目标的运行时行为处理
+- `data/building_defs.json`：建筑定义，当前覆盖 15 个低模建筑/门墙实体，并包含等级、HP、标签、工作位、资源输入输出、场景节点绑定，以及所有建筑的修复/升级配置；训练场包含教官工位与受训位，小诊所包含医生工位与病床；公告牌不在建筑定义中
+- `data/action_defs.json`：行动定义，当前包含菜园、食堂、酒窖、铁匠铺、工械坊、马厩、训练场教官、训练场受训者、吃饭、睡觉和需要目标 NPC 的协助治疗定义；菜园通过 `output_scaling` 让耕种、力量和建筑等级提高粮食产出；酒窖通过酿酒与智力消耗粮食产出酒派生库存，并可按酿酒、智力和建筑等级提高实际产出；铁匠铺通过打铁与力量消耗铁产出武器/盔甲派生库存；工械坊通过工程与智力消耗木材产出武器/工程器械派生库存；马厩通过养马与力量消耗粮食产出马匹整备派生库存；训练场通过当前装备决定武器 / 骑术成长项，教官与受训者分工位占用；协助修复/协助升级由 `ActionSystem` 作为带建筑参数的运行时行为处理，协助治疗由 `ActionSystem` 作为带昏迷 NPC 目标的运行时行为处理
 - `tools/verify_dining_hall_meals.gd`：T0802 食堂粮食加工餐食、餐食优先进食和事件入库专项验证
+- `tools/verify_hud_resources.gd`：HUD 主栏资源去重、派生库存刷新、装备/器械详情按钮与详情内容专项验证
 - `tools/verify_garden_grain_output.gd`：T0803 菜园产粮、耕种/力量/菜园等级产出加成和完成事件专项验证
 - `tools/verify_blacksmith_metal_gear.gd`：T0804 铁匠铺打铁/力量/建筑等级效率、铁消耗、武器/盔甲库存产出和完成事件专项验证
 - `tools/verify_workshop_ranged_devices.gd`：T0805 工械坊工程/智力/建筑等级效率、木材消耗、武器/工程器械库存产出和完成事件专项验证
 - `tools/verify_stable_horse_care.gd`：T0806 马厩养马/力量/建筑等级效率、粮食消耗、马匹整备库存产出和完成事件专项验证
 - `tools/verify_tavern_wine_trade.gd`：T0807 酒窖酿酒/智力/建筑等级效率、粮食消耗、酒库存产出、完成事件和暂不自动出售换钱专项验证
-- `data/weapon_defs.json`：武器定义最小样例，当前包含短剑
+- `data/weapon_defs.json`：主武器定义，当前只包含剑盾、长杆、弓、弩四类正式主武器
+- `data/armor_defs.json`：盔甲定义，当前包含头盔、胸甲、腕甲、腿甲
+- `data/mount_defs.json`：坐骑定义，当前包含整备马匹
 - `data/enemy_waves.json`：敌人波次最小样例，当前包含第一波占位
 - `data/npc_profiles.json`：NPC 档案配置，当前包含 8 名初始 NPC：托马、布鲁诺、伊沃、格伦、艾达、马塞尔、莉娜、欧文；老兵副官开局 `recruited=true`，其他 NPC 初始未入伍且不能接收守备官个人指令
 
@@ -279,6 +294,12 @@ env = { GODOT_HOST = "127.0.0.1", GODOT_PORT = "6550" }
 
 ## 最近一次变更
 
+- T0014 UI 面板体验修正：GM 面板行动区去掉工作、吃饭、睡觉、当教官和当受训者等并列快捷按钮，普通行动统一由行动下拉和“指定行动”触发；NPC 面板事件库和见闻库改为固定高度滚动区并自动滚到底部；点击“对话”或“指令”不再关闭 NPC 面板，`DialogPanel` 与 `OrderPanel` 互斥不重叠。验证通过：`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_panel_interactions.gd`、`verify_npc_order.gd`、临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py` 后运行 `verify_dialogue_ui.gd`、`godot --headless --path . --quit-after 1`。
+- T0903 训练场与武器熟练度提升：`data/building_defs.json` 将训练场拆为教官工位和受训位，`data/action_defs.json` 新增 `work_training_instructor` / `receive_weapon_training`；`ActionSystem.gd` 实现无装备拒绝、无教官受训失败、教官独自练习、带受训者训练、教官“教练”成长、受训者武器 / 骑术成长、训练疲劳 / 饱食消耗和训练 `skill_improved` 事件；训练可通过 GM 行动下拉或 `train_instructor` / `train_student` 命令验证；新增 `tools/verify_training_system.gd`。验证通过：`verify_training_system.gd`、`verify_gm_panel.gd`、`verify_action_system_basic.gd`、`verify_work_output_framework.gd`、`verify_equipment_system.gd`、`verify_unit_type_classification.gd`、`verify_clinic_treatment.gd`、`godot --headless --path . --quit-after 1`。
+- T0015 NPC 成长 UI 与 GM 入伍入口修正：NPC 面板移除独立成长说明文本，经验改为 HP 右侧 `经验：当前 / 阈值`；属性旁 `+1` 只在有未分配技能点时出现，用完后消失。GM 面板新增“设为入伍”按钮和 `recruit_npc` 命令，调用 `NPCSystem.set_npc_recruited(...)`。验证通过：`verify_npc_panel_state.gd`、`verify_skill_progression.gd`、`verify_gm_panel.gd`、`verify_npc_order.gd`、`verify_npc_panel_interactions.gd`、`verify_dialogue_ui.gd`、`verify_equipment_system.gd`、`godot --headless --path . --quit-after 1`，Godot MCP 运行主场景日志为空。
+- T0904 职业熟练度与经验升级：`NPCSystem.gd` 新增运行时 `progression`、统一 `increase_npc_skill(...)` 经验入口和 `assign_npc_attribute_point(...)` 玩家分配入口；工作完成会缓慢提升对应职业熟练度，诊所与训练成长同步进入总经验和技能点规则；每 5 点总经验获得 1 个未分配技能点。NPC 面板可在有未分配技能点时通过属性旁 `+1` 分配力量 / 智力，GM 面板支持 `assign_attribute` 命令；属性分配写入 `attribute_improved` 事件。验证通过：`verify_skill_progression.gd`。
+- T0013 移除短剑旧占位装备：`data/weapon_defs.json` 删除旧占位主武器定义，正式主武器只保留剑盾、长杆、弓和弩；`NPCSystem.gd` 移除旧占位武器兼容入口；装备系统、HUD 详情和兵种判定验证增加旧占位武器不可出现的回归断言。验证通过：`verify_equipment_system.gd`、`verify_unit_type_classification.gd`、`verify_hud_resources.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+- T0011 HUD 完整资源库存与装备/器械详情：`HUD.gd` 改为按 `ResourceSystem.get_resource_ids()` 动态生成全量资源栏，餐食、酒、武器、盔甲、工程器械和马匹整备会直接显示并随 `resource_changed` 刷新；资源栏新增“装备”“器械”详情按钮，分别展示装备库存/定义/已分配数量和工程器械库存说明；新增 `tools/verify_hud_resources.gd`。验证通过：`verify_hud_resources.gd`、`verify_equipment_system.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行主场景后游戏日志为空。
 - T0703 入伍 NPC 自然语言指令：新增 `OrderPanel`；`NPCSystem` 权威保存 `current_order`、写入私有 `order_assigned` 并发出计划重评估请求；GM 新增指令观察入口；新增 `tools/verify_npc_order.gd`。
 - T0701 对话 UI：NPC 面板新增对话按钮；新增 `scripts/ui/DialogPanel.gd`，`DialogSystem.gd` 接通玩家-NPC / NPC-NPC 会话、历史、轮次、LLMBridge 请求和结构化事件；`MemorySystem` 将对话事件写入所有参与 NPC 事件库，并确保 `local_public` 只广播给同地点第三者。新增 `tools/verify_dialogue_ui.gd`。验证通过相关 UI、LLMBridge、结构化事件、NPC 面板、GM、后端 Schema/接口与项目加载回归。
 - T0701 Toggle 修复：DialogPanel 的“同地点公开”开关可在首轮发送前切换并同步到 DialogSystem，首轮发送后锁定；专用验证覆盖私人/公开双向切换与第三者见闻传播。
