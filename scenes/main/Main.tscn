@@ -22,7 +22,7 @@
 [ext_resource type="Script" path="res://scripts/systems/DailyReflectionSystem.gd" id="20_daily_reflection"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-size = Vector2(54, 38)
+size = Vector2(58, 68)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
 albedo_color = Color(0.28, 0.35, 0.26, 1)
@@ -362,7 +362,7 @@ billboard = 1
 text = "广场"
 
 [node name="FrontRoad" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=1901118691]
-transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.6, 0, 0.03, 18)
+transform = Transform3D(1.35, 0, 0, 0, 1, 0, 0, 0, 2.4, 0, 0.03, 23)
 mesh = SubResource("BoxMesh_path")
 surface_material_override/0 = SubResource("StandardMaterial3D_path")
 

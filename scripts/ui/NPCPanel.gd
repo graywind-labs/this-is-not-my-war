@@ -111,7 +111,10 @@ func show_npc(npc_id: String) -> void:
 	recruited_label.text = "已入伍：%s" % _format_bool(npc.get("recruited", false))
 	assign_button.visible = bool(npc.get("recruited", false))
 	assign_button.disabled = not bool(npc.get("recruited", false))
-	action_label.text = "当前行动：%s" % _format_action(str(states.get("current_action", "idle")))
+	action_label.text = "当前行动：%s｜行为模式：%s" % [
+		_format_action(str(states.get("current_action", "idle"))),
+		_format_behavior_mode(str(states.get("behavior_mode", "work")))
+	]
 	skills_label.text = _format_skills(npc_system, npc.get("skills", {}))
 	_update_memory_labels(npc_id)
 	_update_diary_labels(npc)
@@ -271,6 +274,24 @@ func _format_action(action_id: String) -> String:
 	if action_id.is_empty() or action_id == "idle":
 		return "待命"
 	return action_id
+
+
+func _format_behavior_mode(mode: String) -> String:
+	match mode:
+		"work":
+			return "工作"
+		"rally":
+			return "集结"
+		"combat":
+			return "战斗"
+		"avoid_combat":
+			return "避战"
+		"unconscious":
+			return "昏迷"
+		"escaped":
+			return "逃离"
+		_:
+			return mode
 
 
 func _format_attributes(raw_stats: Variant) -> String:

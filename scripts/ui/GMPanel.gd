@@ -12,6 +12,7 @@ const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -39,6 +40,7 @@ var _order_text_input: LineEdit
 var _proactive_talk_input: LineEdit
 var _location_select: OptionButton
 var _action_select: OptionButton
+var _combat_wave_select: OptionButton
 var _equipment_weapon_select: OptionButton
 var _equipment_armor_slot_select: OptionButton
 var _repair_building_select: OptionButton
@@ -166,6 +168,7 @@ func _build_ui() -> void:
 	_add_building_section(sections)
 	_add_npc_section(sections)
 	_add_action_section(sections)
+	_add_combat_section(sections)
 	_add_backend_section(sections)
 	_add_memory_section(sections)
 
@@ -401,6 +404,36 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	assist_heal_button.name = "AssistHealButton"
 
 
+func _add_combat_section(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_title("战斗 / 敌人"))
+	var row := _make_row(parent)
+	_combat_wave_select = _make_select(row)
+	_combat_wave_select.name = "CombatWaveSelect"
+	var spawn_first_wave_button := _add_button(row, "生成第一波敌人", func() -> void:
+		_run_spawn_enemy_wave(1)
+	)
+	spawn_first_wave_button.name = "SpawnFirstWaveButton"
+	_add_button(row, "生成所选波次", func() -> void:
+		_run_spawn_enemy_wave(_int_from_selected_id(_combat_wave_select, 1))
+	)
+	var combat_alarm_button := _add_button(row, "警铃集结", _run_combat_alarm)
+	combat_alarm_button.name = "CombatAlarmButton"
+	_add_button(row, "敌人快照", _show_combat_snapshot)
+	var step_enemy_ai_button := _add_button(row, "推进敌人AI", func() -> void:
+		_run_step_enemy_ai(60.0)
+	)
+	step_enemy_ai_button.name = "StepEnemyAIButton"
+	_add_button(row, "清空敌人", _run_clear_enemies)
+	var mode_row := _make_row(parent)
+	_add_button(mode_row, "行为模式快照", _show_behavior_modes)
+	_add_button(mode_row, "模拟避战", func() -> void:
+		_run_avoid_npc(_selected_id(_npc_select))
+	)
+	_add_button(mode_row, "推进集结等待", func() -> void:
+		_run_advance_rally_wait(3600.0)
+	)
+
+
 func _add_backend_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("后端 / LLMBridge"))
 	var row := _make_row(parent)
@@ -494,6 +527,7 @@ func _refresh_options() -> void:
 	_fill_npc_select()
 	_fill_attribute_select()
 	_fill_action_select()
+	_fill_combat_wave_select()
 	_fill_equipment_selects()
 	_fill_location_select()
 	_fill_visibility_select()
@@ -569,6 +603,20 @@ func _fill_action_select() -> void:
 		if action_system != null:
 			var action: Dictionary = action_system.get_action(id)
 			return "%s | %s" % [id, str(action.get("name", id))]
+		return id
+	)
+
+
+func _fill_combat_wave_select() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var ids: Array = []
+	if combat_system != null and combat_system.has_method("get_wave_numbers"):
+		ids = combat_system.get_wave_numbers()
+	_fill_select(_combat_wave_select, ids, func(id: String) -> String:
+		var wave_number := int(id)
+		if combat_system != null and combat_system.has_method("get_wave_config"):
+			var wave: Dictionary = combat_system.get_wave_config(wave_number)
+			return "%d | %s" % [wave_number, str(wave.get("name", "第%d波敌人" % wave_number))]
 		return id
 	)
 
@@ -655,6 +703,7 @@ func _execute_command(command: String) -> void:
 			_refresh_options()
 		"snapshot":
 			_show_resource_snapshot()
+			_show_combat_snapshot()
 			_show_events()
 		"add_resource":
 			if _require_args(parts, 3, "add_resource <resource_id> <amount>"):
@@ -792,6 +841,29 @@ func _execute_command(command: String) -> void:
 		"sleep":
 			if _require_args(parts, 2, "sleep <npc_id>"):
 				_run_sleep(str(parts[1]))
+		"spawn_wave":
+			var spawn_wave_number := int(parts[1]) if parts.size() >= 2 else 1
+			_run_spawn_enemy_wave(spawn_wave_number)
+		"enemy_wave":
+			var enemy_wave_number := int(parts[1]) if parts.size() >= 2 else 1
+			_run_spawn_enemy_wave(enemy_wave_number)
+		"enemies":
+			_show_combat_snapshot()
+		"alarm", "rally":
+			_run_combat_alarm()
+		"step_enemies":
+			var step_seconds := float(parts[1]) if parts.size() >= 2 else 60.0
+			_run_step_enemy_ai(step_seconds)
+		"clear_enemies":
+			_run_clear_enemies()
+		"behavior_modes":
+			_show_behavior_modes()
+		"avoid_npc":
+			if _require_args(parts, 2, "avoid_npc <npc_id>"):
+				_run_avoid_npc(str(parts[1]))
+		"advance_rally_wait":
+			var rally_seconds := float(parts[1]) if parts.size() >= 2 else 3600.0
+			_run_advance_rally_wait(rally_seconds)
 		"damage_building":
 			if _require_args(parts, 3, "damage_building <building_id> <amount>"):
 				_run_damage_building(str(parts[1]), int(parts[2]))
@@ -1242,6 +1314,76 @@ func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
 	_log("协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))])
 
 
+func _run_spawn_enemy_wave(wave_number: int) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_spawn_wave"):
+		_log("CombatSystem 敌人生成接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_spawn_wave(wave_number)
+	_log("生成敌人波次 %d：%s" % [wave_number, _compact(result)])
+
+
+func _run_clear_enemies() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_clear_enemies"):
+		_log("CombatSystem 清空敌人接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_clear_enemies()
+	_log("清空敌人：%s" % _compact(result))
+
+
+func _run_combat_alarm() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_trigger_combat_alarm"):
+		_log("CombatSystem 警铃集结接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_trigger_combat_alarm()
+	_log("警铃集结：%s" % _compact(result))
+
+
+func _show_combat_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_combat_snapshot"):
+		_log("CombatSystem 不可用。")
+		return
+	_log("战斗 / 敌人快照：%s" % _compact(combat_system.debug_get_combat_snapshot()))
+
+
+func _show_behavior_modes() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_get_behavior_mode_snapshot"):
+		_log("NPCSystem 行为模式快照不可用。")
+		return
+	_log("NPC 行为模式：%s" % _compact(npc_system.debug_get_behavior_mode_snapshot()))
+
+
+func _run_avoid_npc(npc_id: String) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_trigger_npc_avoidance"):
+		_log("CombatSystem 避战调试接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_trigger_npc_avoidance(npc_id)
+	_log("模拟避战 %s：%s" % [npc_id, _compact(result)])
+
+
+func _run_advance_rally_wait(game_seconds: float) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_advance_rally_wait"):
+		_log("CombatSystem 集结等待推进接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_advance_rally_wait(game_seconds)
+	_log("推进集结等待 %.1f 秒：%s" % [game_seconds, _compact(result)])
+
+
+func _run_step_enemy_ai(game_seconds: float) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_step_enemy_ai"):
+		_log("CombatSystem 敌人 AI 推进接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_step_enemy_ai(game_seconds)
+	_log("推进敌人 AI %.1f 秒：%s" % [game_seconds, _compact(result)])
+
+
 func _run_backend_health() -> void:
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null or not llm_bridge.has_method("debug_check_health"):
@@ -1462,6 +1604,13 @@ func _int_from_input(input: LineEdit, fallback: int) -> int:
 	return fallback
 
 
+func _int_from_selected_id(select: OptionButton, fallback: int) -> int:
+	var selected := _selected_id(select)
+	if selected.is_valid_int():
+		return int(selected)
+	return fallback
+
+
 func _parse_value(text: String) -> Variant:
 	var clean := text.strip_edges()
 	if clean.to_lower() == "true":
@@ -1516,6 +1665,7 @@ func _help_text() -> String:
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | equip_mount <npc_id> [visibility] | unit_type <npc_id>",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
+		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | advance_rally_wait [game_seconds]",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",

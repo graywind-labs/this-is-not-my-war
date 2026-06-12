@@ -28,6 +28,7 @@ func _init() -> void:
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
+	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
 		gm_panel == null
@@ -42,6 +43,7 @@ func _init() -> void:
 		or equipment_system == null
 		or daily_plan_system == null
 		or daily_reflection_system == null
+		or combat_system == null
 		or game_state == null
 	):
 		push_error("GM verification required nodes not found")
@@ -151,6 +153,17 @@ func _init() -> void:
 		return
 	if not _select_option_by_id(equipment_armor_slot_select, "chest"):
 		push_error("GM armor selector should include chest")
+		quit(1)
+		return
+	var combat_wave_select := gm_window.find_child("CombatWaveSelect", true, false) as OptionButton
+	var spawn_first_wave_button := gm_window.find_child("SpawnFirstWaveButton", true, false) as Button
+	var step_enemy_ai_button := gm_window.find_child("StepEnemyAIButton", true, false) as Button
+	if combat_wave_select == null or spawn_first_wave_button == null or step_enemy_ai_button == null:
+		push_error("GM combat section should include wave selector, first-wave spawn button and enemy AI step button")
+		quit(1)
+		return
+	if not _select_option_by_id(combat_wave_select, "1"):
+		push_error("GM combat wave selector should include wave 1")
 		quit(1)
 		return
 
@@ -334,6 +347,19 @@ func _init() -> void:
 		quit(1)
 		return
 	gm_panel._execute_command("unit_type veteran_deputy_01")
+	gm_panel._execute_command("clear_enemies")
+	gm_panel._execute_command("spawn_wave 1")
+	if combat_system.get_active_enemy_count() <= 0:
+		push_error("GM spawn_wave command should spawn enemies")
+		quit(1)
+		return
+	gm_panel._execute_command("enemies")
+	gm_panel._execute_command("step_enemies 1")
+	if (combat_system.debug_get_combat_snapshot().get("enemy_targets", []) as Array).is_empty():
+		push_error("GM step_enemies command should expose enemy target state")
+		quit(1)
+		return
+	gm_panel._execute_command("clear_enemies")
 
 	if not npc_system.debug_enter_location_immediately("veteran_deputy_01", "training_ground"):
 		push_error("Failed to place veteran at training ground for GM training test")

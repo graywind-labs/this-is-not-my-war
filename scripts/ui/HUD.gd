@@ -39,6 +39,7 @@ func _ready() -> void:
 	var alarm_button := get_node_or_null("AlarmButton") as Button
 	if alarm_button != null:
 		alarm_button.focus_mode = Control.FOCUS_NONE
+		alarm_button.pressed.connect(_on_alarm_button_pressed)
 	_refresh_time()
 	_refresh_time_buttons()
 	_refresh_resources()
@@ -97,6 +98,13 @@ func _on_speed_button_pressed() -> void:
 
 func _on_pause_button_pressed() -> void:
 	_toggle_pause()
+
+
+func _on_alarm_button_pressed() -> void:
+	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
+	if combat_system == null or not combat_system.has_method("trigger_combat_alarm"):
+		return
+	combat_system.trigger_combat_alarm("hud")
 
 
 func _refresh_time() -> void:

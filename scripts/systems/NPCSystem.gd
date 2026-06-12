@@ -9,6 +9,7 @@ const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const PLAYER_ACTOR_ID := "guard_officer"
 const SYSTEM_ACTOR_ID := "system"
@@ -31,6 +32,28 @@ const LLM_ACTIVITY_NONE := ""
 const LLM_ACTIVITY_DIALOGUE := "dialogue"
 const LLM_ACTIVITY_PLAN := "plan"
 const LLM_ACTIVITY_FIRST_SLEEP_SUMMARY := "first_sleep_summary"
+const BEHAVIOR_MODE_WORK := "work"
+const BEHAVIOR_MODE_RALLY := "rally"
+const BEHAVIOR_MODE_COMBAT := "combat"
+const BEHAVIOR_MODE_AVOID_COMBAT := "avoid_combat"
+const BEHAVIOR_MODE_UNCONSCIOUS := "unconscious"
+const BEHAVIOR_MODE_ESCAPED := "escaped"
+const BEHAVIOR_MODE_LABELS := {
+	"work": "工作模式",
+	"rally": "集结模式",
+	"combat": "战斗模式",
+	"avoid_combat": "避战模式",
+	"unconscious": "昏迷",
+	"escaped": "逃离"
+}
+const VALID_BEHAVIOR_MODES: Array[String] = [
+	BEHAVIOR_MODE_WORK,
+	BEHAVIOR_MODE_RALLY,
+	BEHAVIOR_MODE_COMBAT,
+	BEHAVIOR_MODE_AVOID_COMBAT,
+	BEHAVIOR_MODE_UNCONSCIOUS,
+	BEHAVIOR_MODE_ESCAPED
+]
 
 const SPAWN_POINTS: Array[Vector3] = [
 	Vector3(-8.0, 0.0, 2.5),
@@ -46,6 +69,7 @@ const SPAWN_POINTS: Array[Vector3] = [
 var _profiles: Dictionary = {}
 var _npc_order: Array[String] = []
 var _npc_nodes: Dictionary = {}
+var _movement_arrival_contexts: Dictionary = {}
 var _selected_npc_id: String = ""
 var _unconscious_recovery_remainders: Dictionary = {}
 var _last_plan_reevaluation_request: Dictionary = {}
@@ -63,6 +87,7 @@ func initialize() -> void:
 	_profiles.clear()
 	_npc_order.clear()
 	_npc_nodes.clear()
+	_movement_arrival_contexts.clear()
 	_unconscious_recovery_remainders.clear()
 	_last_plan_reevaluation_request.clear()
 	_selected_npc_id = ""
@@ -146,6 +171,153 @@ func get_npc_ids() -> Array[String]:
 
 func get_npc_count() -> int:
 	return _npc_order.size()
+
+
+func get_npc_world_position(npc_id: String) -> Variant:
+	if not _npc_nodes.has(npc_id):
+		return null
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+	if npc_node == null:
+		return null
+	return npc_node.global_position
+
+
+func get_npc_behavior_mode_snapshot(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var state := get_npc_state(npc_id)
+	var mode := _get_current_behavior_mode(npc_id)
+	return {
+		"npc_id": npc_id,
+		"behavior_mode": mode,
+		"behavior_mode_label": _get_behavior_mode_label(mode),
+		"previous_mode": str(state.get("behavior_mode_previous", "")),
+		"reason": str(state.get("behavior_mode_reason", "")),
+		"entered_day": int(state.get("behavior_mode_entered_day", 1)),
+		"entered_time": str(state.get("behavior_mode_entered_time", "00:00:00")),
+		"current_action": str(state.get("current_action", "")),
+		"combat_mode": str(state.get("combat_mode", "")),
+		"combat_target_enemy_id": str(state.get("combat_target_enemy_id", "")),
+		"avoidance_target_id": str(state.get("avoidance_target_id", "")),
+		"avoidance_target_name": str(state.get("avoidance_target_name", "")),
+		"avoidance_target_position": state.get("avoidance_target_position", {}),
+		"unconscious": bool(state.get("unconscious", false)),
+		"escaped": bool(state.get("escaped", false))
+	}
+
+
+func debug_get_behavior_mode_snapshot(npc_id: String = "") -> Variant:
+	var clean_id := npc_id.strip_edges()
+	if not clean_id.is_empty():
+		return get_npc_behavior_mode_snapshot(clean_id)
+	var result: Array[Dictionary] = []
+	for id in _npc_order:
+		result.append(get_npc_behavior_mode_snapshot(id))
+	return result
+
+
+func set_npc_behavior_mode(
+	npc_id: String,
+	mode: String,
+	reason: String = "mode_changed",
+	options: Dictionary = {}
+) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {"ok": false, "error": "unknown_npc", "npc_id": npc_id}
+	var clean_mode := mode.strip_edges()
+	if not VALID_BEHAVIOR_MODES.has(clean_mode):
+		return {"ok": false, "error": "invalid_behavior_mode", "npc_id": npc_id, "mode": mode}
+
+	var state := get_npc_state(npc_id)
+	if bool(state.get("escaped", false)) and clean_mode != BEHAVIOR_MODE_ESCAPED:
+		return {"ok": false, "error": "npc_escaped", "npc_id": npc_id, "mode": clean_mode}
+	if bool(state.get("unconscious", false)) and not [BEHAVIOR_MODE_UNCONSCIOUS, BEHAVIOR_MODE_WORK, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT].has(clean_mode):
+		return {"ok": false, "error": "npc_unconscious", "npc_id": npc_id, "mode": clean_mode}
+
+	var previous_mode := _get_current_behavior_mode(npc_id)
+	var interrupt_modes := [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT]
+	var should_interrupt := bool(options.get("interrupt", interrupt_modes.has(clean_mode)))
+	var interrupt_result := {}
+	if should_interrupt:
+		interrupt_result = _interrupt_for_behavior_mode(npc_id, clean_mode, reason, options)
+
+	var state_changes: Dictionary = options.get("state_changes", {}) if (options.get("state_changes", {}) is Dictionary) else {}
+	var time_snapshot := _get_game_time_snapshot()
+	var changes := state_changes.duplicate(true)
+	changes["behavior_mode"] = clean_mode
+	changes["behavior_mode_previous"] = previous_mode
+	changes["behavior_mode_reason"] = reason
+	changes["behavior_mode_entered_day"] = int(time_snapshot.get("day", 1))
+	changes["behavior_mode_entered_time"] = str(time_snapshot.get("time", "00:00:00"))
+	match clean_mode:
+		BEHAVIOR_MODE_RALLY:
+			changes["combat_mode"] = "rally"
+			if not changes.has("current_action"):
+				changes["current_action"] = "rallying_defense_line"
+		BEHAVIOR_MODE_COMBAT:
+			changes["combat_mode"] = "combat"
+			changes["avoidance_target_id"] = ""
+			changes["avoidance_target_name"] = ""
+			changes["avoidance_target_position"] = {}
+			if not changes.has("current_action"):
+				changes["current_action"] = "combat_ready"
+		BEHAVIOR_MODE_AVOID_COMBAT:
+			changes["combat_mode"] = ""
+			changes["combat_mounted"] = false
+			if not changes.has("current_action"):
+				changes["current_action"] = "avoid_combat"
+		BEHAVIOR_MODE_UNCONSCIOUS:
+			changes["combat_mode"] = ""
+			changes["combat_mounted"] = false
+			changes["avoidance_target_id"] = ""
+			changes["avoidance_target_name"] = ""
+			changes["avoidance_target_position"] = {}
+			changes["current_action"] = "unconscious"
+		BEHAVIOR_MODE_ESCAPED:
+			changes["combat_mode"] = ""
+			changes["combat_mounted"] = false
+			changes["avoidance_target_id"] = ""
+			changes["avoidance_target_name"] = ""
+			changes["avoidance_target_position"] = {}
+		BEHAVIOR_MODE_WORK:
+			changes["combat_mode"] = ""
+			changes["combat_mounted"] = false
+			changes["combat_target_enemy_id"] = ""
+			changes["avoidance_target_id"] = ""
+			changes["avoidance_target_name"] = ""
+			changes["avoidance_target_position"] = {}
+			if _should_clear_action_when_returning_to_work(str(state.get("current_action", "")), options):
+				changes["current_action"] = "idle"
+			if not changes.has("last_action_result"):
+				changes["last_action_result"] = reason
+
+	_set_npc_state_without_signal(npc_id, changes)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+
+	var mode_event := {}
+	if previous_mode != clean_mode or bool(options.get("log_if_same", false)):
+		mode_event = _log_npc_mode_changed(npc_id, previous_mode, clean_mode, reason, options)
+	var reevaluation_status := {}
+	if bool(options.get("request_plan_reevaluation", false)):
+		reevaluation_status = _request_plan_reevaluation_or_defer(npc_id, reason)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"previous_mode": previous_mode,
+		"behavior_mode": clean_mode,
+		"reason": reason,
+		"changed": previous_mode != clean_mode,
+		"interrupt_result": interrupt_result,
+		"event": mode_event,
+		"plan_reevaluation_status": reevaluation_status
+	}
+
+
+func is_npc_sleeping(npc_id: String) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	return _is_sleeping_state(get_npc_state(npc_id))
 
 
 func get_selected_npc_id() -> String:
@@ -237,6 +409,64 @@ func move_npc_to_building(npc_id: String, building_id: String) -> bool:
 	return true
 
 
+func move_npc_to_world_position(
+	npc_id: String,
+	target_id: String,
+	target_name: String,
+	target_position: Vector3,
+	arrival_state: Dictionary = {}
+) -> bool:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot move unknown NPC: %s" % npc_id)
+		return false
+	if not can_npc_act(npc_id):
+		return false
+	if not _npc_nodes.has(npc_id):
+		push_warning("Cannot move NPC without scene node: %s" % npc_id)
+		return false
+
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("move_to_location"):
+		push_warning("Cannot move NPC because node has no movement API: %s" % npc_id)
+		return false
+
+	var clean_target_id := target_id.strip_edges()
+	if clean_target_id.is_empty():
+		clean_target_id = "world_target"
+	var clean_target_name := target_name.strip_edges()
+	if clean_target_name.is_empty():
+		clean_target_name = clean_target_id
+
+	_movement_arrival_contexts[npc_id] = {
+		"target_id": clean_target_id,
+		"target_name": clean_target_name,
+		"target_position": target_position,
+		"arrival_state": arrival_state.duplicate(true)
+	}
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "moving_to_%s" % clean_target_id,
+		"movement_target": clean_target_id,
+		"movement_target_name": clean_target_name,
+		"location_context": {}
+	})
+	npc_node.move_to_location(clean_target_id, target_position)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
+func stop_npc_movement_with_state(npc_id: String, changes: Dictionary = {}) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	_stop_npc_movement(npc_id)
+	_movement_arrival_contexts.erase(npc_id)
+	if not changes.is_empty():
+		_set_npc_state_without_signal(npc_id, changes)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
 func debug_move_npc_to_building(npc_id: String, building_id: String) -> bool:
 	return move_npc_to_building(npc_id, building_id)
 
@@ -279,6 +509,8 @@ func set_npc_recruited(npc_id: String, recruited: bool) -> bool:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("recruitment_changed"):
 		event_bus.recruitment_changed.emit(npc_id, recruited)
+	if recruited:
+		_route_recruited_from_avoidance(npc_id)
 	return true
 
 
@@ -345,6 +577,7 @@ func stop_npc_movement_for_system(npc_id: String, last_result: String = "movemen
 	if not _profiles.has(npc_id):
 		return false
 	_stop_npc_movement(npc_id)
+	_movement_arrival_contexts.erase(npc_id)
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "idle",
 		"movement_target": "",
@@ -666,6 +899,7 @@ func apply_damage_to_npc(
 	var max_hp := maxi(1, int(states.get("max_hp", 100)))
 	var hp_before := clampi(int(states.get("hp", max_hp)), 0, max_hp)
 	var was_unconscious := bool(states.get("unconscious", false))
+	var previous_behavior_mode := _get_current_behavior_mode(npc_id)
 	var hp_after := maxi(0, hp_before - damage)
 	states["hp"] = hp_after
 	states["max_hp"] = max_hp
@@ -675,6 +909,14 @@ func apply_damage_to_npc(
 		states["current_action"] = "unconscious"
 		states["movement_target"] = ""
 		states["movement_target_name"] = ""
+		states["behavior_mode"] = BEHAVIOR_MODE_UNCONSCIOUS
+		states["behavior_mode_previous"] = previous_behavior_mode
+		states["behavior_mode_reason"] = "hp_zero"
+		var unconscious_time := _get_game_time_snapshot()
+		states["behavior_mode_entered_day"] = int(unconscious_time.get("day", 1))
+		states["behavior_mode_entered_time"] = str(unconscious_time.get("time", "00:00:00"))
+		states["combat_mode"] = ""
+		states["combat_mounted"] = false
 		states["last_action_result"] = "became_unconscious"
 	profile["states"] = states
 	_profiles[npc_id] = profile
@@ -689,7 +931,13 @@ func apply_damage_to_npc(
 	var unconscious_event := {}
 	if became_unconscious:
 		unconscious_event = _log_unconscious_started(npc_id, actor_id, damage, hp_before, hp_after, "local_public")
+		_log_npc_mode_changed(npc_id, previous_behavior_mode, BEHAVIOR_MODE_UNCONSCIOUS, "hp_zero", {
+			"visibility": "local_public",
+			"trigger_actor_id": actor_id
+		})
 		_emit_npc_unconscious(npc_id)
+	elif bool(options.get("enemy_attack", false)):
+		_route_enemy_attack_mode(npc_id, actor_id)
 	elif actor_id == PLAYER_ACTOR_ID and bool(options.get("request_plan_reevaluation", true)):
 		_request_plan_reevaluation_or_defer(npc_id, "guard_attack")
 
@@ -1111,8 +1359,126 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["first_sleep_summary_request_id"] = ""
 	if not states.has("pending_plan_reevaluation_after_sleep"):
 		states["pending_plan_reevaluation_after_sleep"] = {}
+	if not states.has("behavior_mode"):
+		if bool(states.get("escaped", false)):
+			states["behavior_mode"] = BEHAVIOR_MODE_ESCAPED
+		elif bool(states.get("unconscious", false)):
+			states["behavior_mode"] = BEHAVIOR_MODE_UNCONSCIOUS
+		else:
+			var legacy_combat_mode := str(states.get("combat_mode", ""))
+			states["behavior_mode"] = legacy_combat_mode if [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(legacy_combat_mode) else BEHAVIOR_MODE_WORK
+	if not states.has("behavior_mode_previous"):
+		states["behavior_mode_previous"] = ""
+	if not states.has("behavior_mode_reason"):
+		states["behavior_mode_reason"] = "initial_state"
+	if not states.has("behavior_mode_entered_day"):
+		states["behavior_mode_entered_day"] = 1
+	if not states.has("behavior_mode_entered_time"):
+		states["behavior_mode_entered_time"] = "00:00:00"
 	profile["states"] = states
 	_profiles[npc_id] = profile
+
+
+func _get_current_behavior_mode(npc_id: String) -> String:
+	if not _profiles.has(npc_id):
+		return BEHAVIOR_MODE_WORK
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {})
+	if bool(states.get("escaped", false)):
+		return BEHAVIOR_MODE_ESCAPED
+	if bool(states.get("unconscious", false)):
+		return BEHAVIOR_MODE_UNCONSCIOUS
+	var mode := str(states.get("behavior_mode", "")).strip_edges()
+	if VALID_BEHAVIOR_MODES.has(mode):
+		return mode
+	var legacy_combat_mode := str(states.get("combat_mode", "")).strip_edges()
+	if [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(legacy_combat_mode):
+		return legacy_combat_mode
+	return BEHAVIOR_MODE_WORK
+
+
+func _get_behavior_mode_label(mode: String) -> String:
+	return str(BEHAVIOR_MODE_LABELS.get(mode, mode))
+
+
+func _is_sleeping_state(state: Dictionary) -> bool:
+	var current_action := str(state.get("current_action", ""))
+	return current_action.begins_with("sleep") or current_action == "sleep_in_dormitory"
+
+
+func _should_clear_action_when_returning_to_work(current_action: String, options: Dictionary) -> bool:
+	if bool(options.get("force_idle", false)):
+		return true
+	if current_action.is_empty():
+		return true
+	return (
+		[
+			"rallying_defense_line",
+			"combat_ready",
+			"avoid_combat",
+			"avoiding_enemy",
+			"unconscious"
+		].has(current_action)
+		or current_action.begins_with("moving_to_combat_rally_")
+		or current_action.begins_with("moving_to_avoid_shelter_")
+	)
+
+
+func _route_recruited_from_avoidance(npc_id: String) -> void:
+	if _get_current_behavior_mode(npc_id) != BEHAVIOR_MODE_AVOID_COMBAT:
+		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system != null and combat_system.has_method("handle_npc_recruited_during_avoidance"):
+		combat_system.handle_npc_recruited_during_avoidance(npc_id)
+
+
+func _interrupt_for_behavior_mode(npc_id: String, mode: String, reason: String, options: Dictionary = {}) -> Dictionary:
+	var result := {
+		"dialogue": {},
+		"llm": {},
+		"action_interrupted": false,
+		"movement_stopped": false,
+		"proactive_cleared": false
+	}
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system != null and dialog_system.has_method("force_end_dialogue_for_npc"):
+		result["dialogue"] = dialog_system.force_end_dialogue_for_npc(npc_id, reason)
+
+	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
+	if llm_bridge != null and llm_bridge.has_method("cancel_npc_llm_requests"):
+		result["llm"] = llm_bridge.cancel_npc_llm_requests(npc_id, reason)
+
+	var state := get_npc_state(npc_id)
+	var proactive: Dictionary = state.get("proactive_talk", {}) if (state.get("proactive_talk", {}) is Dictionary) else {}
+	if bool(proactive.get("active", false)):
+		_clear_proactive_talk(npc_id, "behavior_mode_changed")
+		result["proactive_cleared"] = true
+
+	var action_system := get_node_or_null("/root/Main/Systems/ActionSystem")
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		result["action_interrupted"] = bool(action_system.interrupt_npc_action(npc_id, reason))
+	if bool(options.get("stop_movement", true)):
+		_stop_npc_movement(npc_id)
+		_movement_arrival_contexts.erase(npc_id)
+		result["movement_stopped"] = true
+	return result
+
+
+func _route_enemy_attack_mode(npc_id: String, enemy_id: String) -> void:
+	var profile: Dictionary = _profiles.get(npc_id, {})
+	if profile.is_empty():
+		return
+	var states: Dictionary = profile.get("states", {})
+	if bool(states.get("unconscious", false)) or bool(states.get("escaped", false)):
+		return
+	var target_mode := BEHAVIOR_MODE_COMBAT if bool(profile.get("recruited", false)) else BEHAVIOR_MODE_AVOID_COMBAT
+	set_npc_behavior_mode(npc_id, target_mode, "enemy_attack", {
+		"state_changes": {
+			"combat_target_enemy_id": enemy_id,
+			"last_action_result": "enemy_attack_mode_switch"
+		},
+		"request_plan_reevaluation": false
+	})
 
 
 func _normalize_llm_activity(raw_activity: Variant) -> Dictionary:
@@ -1621,6 +1987,39 @@ func _log_revived(npc_id: String, hp_before: int, hp_after: int, recovery_source
 	})
 
 
+func _log_npc_mode_changed(
+	npc_id: String,
+	from_mode: String,
+	to_mode: String,
+	reason: String,
+	options: Dictionary = {}
+) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var visibility := str(options.get("visibility", "local_public"))
+	if not ["private", "local_public"].has(visibility):
+		visibility = "local_public"
+	var location_id := _get_current_info_location(npc_id, memory_system)
+	return memory_system.add_event({
+		"type": "npc_mode_changed",
+		"subject_npc_id": npc_id,
+		"actor_ids": [str(options.get("trigger_actor_id", SYSTEM_ACTOR_ID))],
+		"target_ids": [npc_id, to_mode],
+		"location_id": location_id,
+		"visibility": visibility,
+		"importance": int(options.get("importance", 70)),
+		"payload": {
+			"npc_id": npc_id,
+			"from_mode": from_mode,
+			"from_mode_label": _get_behavior_mode_label(from_mode),
+			"to_mode": to_mode,
+			"to_mode_label": _get_behavior_mode_label(to_mode),
+			"reason": reason
+		}
+	})
+
+
 func _get_current_info_location(npc_id: String, memory_system: Node) -> String:
 	var state := get_npc_state(npc_id)
 	var location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
@@ -1631,6 +2030,9 @@ func _get_current_info_location(npc_id: String, memory_system: Node) -> String:
 
 func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 	if not _profiles.has(npc_id):
+		return
+	if _movement_arrival_contexts.has(npc_id):
+		_on_custom_movement_arrived(npc_id, building_id)
 		return
 
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
@@ -1669,6 +2071,41 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		"movement_target_name": "",
 		"location_context": location_context
 	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+
+
+func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
+	var context: Dictionary = _movement_arrival_contexts.get(npc_id, {})
+	_movement_arrival_contexts.erase(npc_id)
+
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	var previous_state: Dictionary = get_npc_state(npc_id)
+	var previous_location_id := str(previous_state.get("current_location", PLAZA_LOCATION_ID))
+	var location_context: Dictionary = {}
+	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		var previous_info_location_id := _get_info_location_id(memory_system, previous_location_id)
+		location_context = _transition_npc_info_location(
+			npc_id,
+			previous_info_location_id,
+			PLAZA_LOCATION_ID,
+			PLAZA_LOCATION_ID,
+			memory_system
+		)
+
+	var target_name := str(context.get("target_name", target_id))
+	var arrival_state: Dictionary = context.get("arrival_state", {}) if (context.get("arrival_state", {}) is Dictionary) else {}
+	var changes := {
+		"current_action": str(arrival_state.get("current_action", "idle")),
+		"current_location": str(arrival_state.get("current_location", target_id)),
+		"current_location_name": str(arrival_state.get("current_location_name", target_name)),
+		"movement_target": "",
+		"movement_target_name": "",
+		"location_context": location_context
+	}
+	for key in arrival_state.keys():
+		changes[str(key)] = arrival_state[key]
+	_set_npc_state_without_signal(npc_id, changes)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 

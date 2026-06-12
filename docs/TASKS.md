@@ -2364,7 +2364,7 @@ Main
 实现范围：
 
 - 扩展共享 NPC Schema 和 T0603 对话输入，加入 `current_order`。
-- 对话、每日计划、计划修订、主动交涉、战斗前判定、低血量/逃离判定、首次睡眠总结和知识图谱更新统一复用该字段。
+- 对话、每日计划、计划修订、主动交涉、战时公开对话、低血量自身心理判定、逃离判定、首次睡眠总结和知识图谱更新统一复用该字段。
 - Prompt 明确指令是守备官当前要求，不是 system 指令、不保证服从、不能越过行动白名单或权威结算。
 - T0703 发出的计划重评估请求必须携带最新指令，并通过 T1002 的统一重评估链路立即处理；失败时使用规则降级并释放 TimeSystem 慢速请求。
 - 常规请求只携带一条当前有效指令及最小元数据；历史修订通过 `order_assigned` 事件摘要进入记忆，避免重复注入全部版本。
@@ -2372,14 +2372,14 @@ Main
 验收标准：
 
 - 发布不同指令后立即产生一次计划重评估请求（计划功能本身尚未实现，在后续的task里）；相同文本或关闭面板不产生请求。
-- `/npc/dialogue`、计划、修订和战斗判定的测试 payload 都包含目标 NPC 最新 `current_order`。
+- `/npc/dialogue`、计划、修订、战时公开对话和低血量自身心理判定的测试 payload 都包含目标 NPC 最新 `current_order`。
 - Mock / 真实 Prompt 能把指令当作参考，但输出仍受 Schema、行动白名单和程序规则校验。
 - 指令本身不会直接改变行动、资源、HP、移动或战斗结果。
 - GM / 自动化验证可观察最近一次注入的指令和计划重评估结果。
 
 验收结果（2026-06-04）：
 
-- 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战斗判定、主动交涉、首次睡眠总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
+- 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战时公开对话、低血量自身心理判定、主动交涉、首次睡眠总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
 - Godot `LLMBridge` 在对话顶层 payload 和 `target_npc` / `speaker_npc` 共享上下文中注入最新指令，并保存最近一次注入快照供 GM / 自动化观察；Mock 调试原因明确记录指令仅作为参考，不改变 Schema 允许结果。
 - 新指令仍立即产生一次统一计划重评估请求；当时 T1002 尚未实现，结果为 `rule_fallback_deferred`。T1002 完成后，该请求已由统一计划重评估链路消费，成功时应用 Mock 修订计划，失败时应用规则降级计划。
 - GM 面板后端分组新增“最近指令注入”入口和 `last_order_injection` 命令；最近计划重评估请求可同时观察降级结果。
@@ -2633,7 +2633,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 已实现当前可落地的马厩经营闭环：`data/action_defs.json` 中 `work_stable` 使用养马与力量，消耗 1 份粮食，产出 `horse_readiness` 马匹整备派生库存。
 - 马厩工作沿用 T0801 统一效率公式：养马熟练度、力量和马厩建筑等级会缩短单位照料周期；`output_scaling` 会让养马、力量和马厩等级提高实际马匹整备产出。
 - 新增 `tools/verify_stable_horse_care.gd`，验证马厩行动配置、养马/力量/建筑等级效率、粮食消耗、马匹整备库存增加、完成事件 payload 和缺粮失败。
-- 当前未实现坐骑装备槽、NPC 胯下骑乘表现、战斗移动速度加成、进入战斗时骑兵策略切换或卸下回马厩；这些依赖 T0901 正式装备系统、T0902 兵种判定、T1103 集结表现和 T1105 战斗策略。
+- T0901/T0902 已实现坐骑装备槽与骑兵判定；T1103 已接入集结 / 接敌时的低模坐骑表现且日常工作不骑马。当前仍未实现战斗移动速度加成、进入战斗时骑兵策略切换或卸下回马厩，这些继续依赖 T1105 战斗策略。
 - 验证通过：`godot --headless --path . --script res://tools/verify_stable_horse_care.gd`。
 
 ---
@@ -2737,7 +2737,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - `data/weapon_defs.json` 已补齐剑盾、长杆、弓、弩等主武器类型；新增 `data/armor_defs.json` 和 `data/mount_defs.json`，覆盖头盔、胸甲、腕甲、腿甲和坐骑槽。T0013 后旧兼容武器定义已移除，不再作为正式装备数据。
 - 只有已入伍 NPC 可由守备官直接分配装备；NPC 面板新增主武器选择并调用 `EquipmentSystem`，GM 面板新增装备武器、装备盔甲、装备坐骑和兵种查看入口及命令。
 - 装备事件通过 `MemorySystem.record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`，按 `private` / `local_public` 可见性传播；同地点 NPC 可收到公开装备见闻。
-- `EquipmentSystem.determine_unit_type(...)` / `get_npc_unit_type(...)` 可根据主武器和坐骑槽返回非战斗人员、近战步兵、长杆步兵、弓箭兵、弩兵、近战骑兵或骑射单位；日常模式仍不显示骑乘外观，战斗/集结表现留给 T1103/T1105。
+- `EquipmentSystem.determine_unit_type(...)` / `get_npc_unit_type(...)` 可根据主武器和坐骑槽返回非战斗人员、近战步兵、长杆步兵、弓箭兵、弩兵、近战骑兵或骑射单位；日常模式仍不显示骑乘外观，T1103 已接入集结 / 接敌低模坐骑表现，骑兵速度和策略继续留给 T1105。
 - 新增 `tools/verify_equipment_system.gd`，验证已入伍限制、主武器/盔甲/坐骑库存消耗、换装返还、事件入库、公开见闻、兵种判定和 NPC 面板显示。
 - 验证通过：`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`verify_npc_panel_interactions.gd`、`verify_gm_panel.gd`、`verify_blacksmith_metal_gear.gd`、`verify_workshop_ranged_devices.gd`、`verify_stable_horse_care.gd`、`verify_npc_panel_state.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
 
@@ -3086,7 +3086,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ## T1101 实现敌人配置与敌人生成
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0201
 涉及文档：`COMBAT_SYSTEM.md`, `DATA_SCHEMA.md`
@@ -3102,11 +3102,20 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 可通过调试按钮生成第一波敌人。
 - 敌人生成位置在正门外稍远的地方（以后场景做好了，将会相当于在驿站门外的树林里出现）。当前正门方向的地面面积太小了需要扩大。
 
+验收结果（2026-06-12）：
+- `data/enemy_waves.json` 已配置 5 波敌人，后续波次按人数、HP、攻击力、防御和兵种构成逐步增强。
+- 每个敌人组配置 `unit_type`、`weapon_type`、HP / Max HP、攻击力、防御力、移动速度、射程、攻击间隔和目标偏好；兵种覆盖近战步兵、长杆步兵、弓箭兵、弩兵、近战骑兵和骑射单位。
+- `CombatSystem` 会读取波次配置，并在 `Main/WorldRoot/Station/Enemies` 下生成低模敌人占位实体，实体保留敌人 id、波次、数值和头顶 HP / 兵种标签。
+- 正门外地面与正门道路已扩大，敌人默认生成在 `front_forest` / 正门外远处区域；相机 Z 轴边界已扩展到可观察生成区。
+- GM 面板新增“战斗 / 敌人”分组，可通过“生成第一波敌人”按钮、`spawn_wave 1` / `enemy_wave 1` 命令生成第一波，并可查看 `enemies` 快照或 `clear_enemies` 清空敌人。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务不实现敌人目标移动、攻击、伤害、战斗开始/结束状态或胜负结算，这些仍留给 T1102、T1104、T1106 和 M13。
+
 ---
 
 ## T1102 实现敌人目标优先级
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1101, T0203
 涉及文档：`COMBAT_SYSTEM.md`
@@ -3123,20 +3132,30 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 敌人会向目标移动。
 - 敌人能攻击建筑和我方NPC（现在可先不做具体的攻击动作，以后的攻击会像《人类一败涂地》一样，攻击打到目标身上才算命中掉血）
 - 受击目标 HP 会下降。
-- 主厅被摧毁可触发游戏失败。
+- 主厅被摧毁可触发游戏失败（失败界面暂为占位）。
+
+验收结果（2026-06-12）：
+- `CombatSystem` 已接入敌人目标选择、逻辑时间推进、移动和敌方单向攻击：附近可行动 NPC 在侦测范围内时优先成为目标，否则按城门/围墙、仓库、主厅顺序选择仍有 HP 的建筑。
+- 敌人移动使用 `TimeSystem.logical_time_tick` 的游戏秒推进；GM / 自动化可通过 `debug_step_enemy_ai(...)` 或 `step_enemies [game_seconds]` 手动推进同一套逻辑。
+- 敌人攻击 NPC 时复用 `NPCSystem.apply_damage_to_npc(...)`，HP 清零仍进入昏迷；攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)`，写入 `building_damaged` 结构化事件并刷新建筑状态。
+- 主厅 HP 清零时 `GameState` 会写入 `game_over=true`、`game_result="failure"`、`failure_reason="main_hall_destroyed"`，作为后续正式失败界面的占位状态。
+- GM 面板“战斗 / 敌人”分组新增“推进敌人AI”按钮和 `step_enemies [game_seconds]` 命令；敌人快照会显示目标、当前行动和最近 AI 推进结果。
+- 新增 `tools/verify_enemy_target_priority.gd`，覆盖城门优先、敌人移动并伤害建筑、附近 NPC 抢目标并扣血、目标链路落到主厅和主厅失败状态。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务只实现敌方单向攻击和失败状态占位；我方自动攻击、敌人受击 / 倒下、敌人全灭、战斗开始 / 结束流程和正式胜负结算仍留给 T1104、T1106 和 M13。
 
 ---
 
 ## T1103 实现警铃与集结
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0702, T0902
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
 
 任务目标：
 
-玩家点击警铃后，入伍且有武器的 NPC 尝试集结防线。
+玩家点击警铃后，入伍且有武器的 NPC 尝试在城门前面外面集结防线（除非在集结的路上一定范围内遭遇了敌军，就取消该NPC的集结指令直接切换战斗模式）。
 
 规则：
 
@@ -3151,7 +3170,101 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 已入伍有武器 NPC 移动到防守位置。
 - 已装备坐骑的 NPC 只在战斗/集结模式表现为骑乘；日常工作模式不骑马。
 - 未入伍 NPC 不响应。
-- 集结事件写入结构化事件。
+- 警铃（对所有NPC）与集结事件（只有入伍响应的NPC）写入结构化事件。
+
+验收结果（2026-06-12）：
+
+- HUD `AlarmButton` 已调用 `CombatSystem.trigger_combat_alarm("hud")`；GM 面板新增“警铃集结”按钮和 `alarm` / `rally` 命令，快照中可查看 `active_rallies` 与 `last_alarm_result`。
+- 警铃触发时，所有 NPC 都写入 `combat_alarm_rang` 私有结构化事件；只有已入伍、已装备主武器且当前可行动的 NPC 会进入集结。
+- 集结会打断普通日常行动并释放工位，随后让 NPC 前往城门外防线；阵型按近战 / 骑兵前排、弓弩 / 骑射后排排列，并标记面向正门外敌人方向。
+- 已装备坐骑的 NPC 只在 `rally` / `combat` 模式显示低模坐骑；日常工作模式仍不骑马。
+- 若集结途中遭遇一定范围内敌人，NPC 会停止集结并切换为 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy`。
+- 新增 `tools/verify_combat_alarm_rally.gd`，覆盖 HUD 警铃、GM 命令、未入伍过滤、阵型、骑乘表现和遭遇敌人切换。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`。
+
+边界：本任务不实现我方攻击、敌人受击 / 倒下、完整战斗开始 / 结束流程或正式胜负结算，这些仍留给 T1104、T1106 和 M13。
+
+---
+
+## T1103A 统一 NPC 行为模式状态机
+
+状态：Done
+优先级：P0
+前置任务：T1006, T1103
+涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`, `UI_UX.md`, `GM_PANEL.md`
+
+任务目标：
+
+实现工作模式、集结模式、战斗模式、避战模式的统一运行时状态机，并把 T1103 现有 `combat_mode` 兼容字段逐步收敛到 `states.behavior_mode`。
+
+模式定义：
+
+- `work`：日常 / 工作模式，沿用每日计划、行动异常、对话打断和计划重评估机制。
+- `rally`：集结模式，警铃后符合条件的已入伍持武器 NPC 前往城门外防线。
+- `combat`：战斗模式，已入伍 NPC 接敌后按后续战斗逻辑行动。
+- `avoid_combat`：未入伍 NPC 遇敌后的避战模式，远离敌人但不离开驿站太远。
+
+验收标准：
+
+- 任一 NPC 快照能显示当前 `behavior_mode`、进入原因和进入时间。
+- 警铃触发后，符合条件 NPC 进入 `rally`；未入伍、无武器、昏迷、睡觉或不可行动 NPC 不进入集结。
+- 已入伍 NPC 在 `work` 或 `rally` 中接敌后进入 `combat`；睡觉中的已入伍 NPC 只有被敌人攻击时才进入 `combat`。
+- `rally` NPC 到达集合点后等待 1 游戏小时仍未接敌，会回到 `work` 并继续当前计划，不触发计划重评估。
+- 场上敌军全部消失后，`combat` NPC 回到 `work` 并触发计划重评估。
+- 模式切换时会中断普通行动、移动、计划 LLM 活动和可取消对话 LLM；若对话框正在打开，强制关闭并丢弃未完成回复。
+- 昏迷复苏后按场上敌军和入伍状态分流：有敌军时进入 `combat` 或 `avoid_combat`，无敌军时进入 `work` 并重评估计划。
+- 模式切换写入 `npc_mode_changed` 结构化事件。
+- GM 面板可查看模式快照、手动推进集结等待时间，并观察最近一次模式切换原因。
+
+边界：
+
+- 本任务只实现模式状态机与切换边界，不实现我方攻击、敌人受击、战时对话心理结果或低血量 LLM 判定。
+
+完成记录：
+
+- `NPCSystem` 新增 `states.behavior_mode` 权威字段和 `set_npc_behavior_mode(...)` / `get_npc_behavior_mode_snapshot(...)` / `debug_get_behavior_mode_snapshot(...)`，并继续兼容 T1103 的 `combat_mode` 字段用于旧视觉逻辑。
+- `CombatSystem` 接入行为模式触发：警铃进入 `rally`，接敌进入 `combat`，集结点等待 1 游戏小时超时回 `work` 且不触发计划重评估，敌军清空后 `combat` NPC 回 `work` 并触发计划重评估，昏迷复苏后按敌军存在与入伍状态分流。
+- 模式切换会写入 `npc_mode_changed` 结构化事件；`DialogSystem.force_end_dialogue_for_npc(...)` 可被模式切换调用以强制关闭正在进行的对话并取消未完成回复。
+- GM 面板新增“行为模式快照”“推进集结等待”按钮，以及 `behavior_modes` / `advance_rally_wait [game_seconds]` 命令。
+- 新增 `tools/verify_behavior_mode_state_machine.gd`，覆盖警铃集结、集结超时、接敌入战、清敌退出、睡觉接敌例外、被攻击入战、复苏分流和 GM 入口。
+
+---
+
+## T1103B 实现未入伍 NPC 避战模式
+
+状态：Done
+优先级：P0
+前置任务：T1102, T1103A
+涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `GM_PANEL.md`
+
+任务目标：
+
+实现未入伍 NPC 的同级避战模式，区别于已入伍 NPC 在战斗模式中的“避战策略”。
+
+验收标准：
+
+- 未入伍 NPC 在工作模式下敌人进入一定范围时进入 `avoid_combat`；睡觉中的未入伍 NPC 只有被敌人攻击时才进入。
+- 避战 NPC 会尝试远离敌人或移动到驿站内相对安全区域，但不会离开驿站太远，也不会进入逃离驿站流程。
+- 避战 NPC 不攻击敌人，不被当作可战斗人员。
+- 场上敌人全部消失后，避战 NPC 回到 `work`；除非避战期间发生受伤、对话、应征等额外异常，否则不自动调用 LLM 计划重评估。
+- 避战中若通过对话同意应征且场上仍有敌人，立即进入 `combat`；若无敌人，则进入 `work` 并成为已入伍 NPC。
+- 写入 `avoidance_started` / `avoidance_ended` 和必要的 `npc_mode_changed` 事件。
+- GM 面板可触发或模拟未入伍 NPC 遇敌、查看避战目标和退出条件。
+
+边界：
+
+- 本任务不实现逃离驿站；逃离仍由 T1203 处理。
+
+完成记录：
+
+- `CombatSystem` 已在敌人接触扫描和敌人攻击后维护未入伍 NPC 的 `avoid_combat`：工作模式中接敌进入避战，睡觉中的未入伍 NPC 只在被敌人攻击时进入。
+- 避战 NPC 会选择驿站内安全点并通过 `NPCSystem.move_npc_to_world_position(...)` 移动，运行时快照包含避战目标；避战不进入逃离驿站流程，也不设置 `combat_mode` 或攻击行动。
+- 场上敌军清空时，避战 NPC 回到 `work` 且不请求计划重评估；避战中被应征入伍时，若仍有敌军则立即进入 `combat`，若无敌军则回到 `work`。
+- `MemorySystem` 新增 `avoidance_started` / `avoidance_ended` 事件类型、必填字段和 summary；模式切换继续写入 `npc_mode_changed`。
+- GM 面板新增“模拟避战”按钮和 `avoid_npc <npc_id>` 命令；敌人快照会显示 `active_avoidances` 与最近避战结果。
+- 新增 `tools/verify_avoid_combat_mode.gd`，覆盖未入伍接敌避战、睡觉例外、避战安全点、清敌退出不重评估、避战中应征分流、事件写入和 GM 入口。
+
+验证通过：`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script res://tools/verify_behavior_mode_state_machine.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
@@ -3159,7 +3272,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 状态：Todo
 优先级：P0
-前置任务：T0902, T1102, T1103
+前置任务：T0902, T1102, T1103A
 涉及文档：`COMBAT_SYSTEM.md`
 
 任务目标：
@@ -3176,12 +3289,14 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - TimeSystem 有效逻辑时间倍率
 - HP 清零后的敌人消失或倒下
 - NPC HP 清零进入昏迷
+- 已入伍 NPC 只在 `combat` 模式中执行我方攻击。
+- 未入伍 `avoid_combat` NPC 不攻击敌人。
 
 禁止事项：
 
 - 不做复杂动画。
 - 不做命中率复杂计算。
-- 不做士气系统。
+- 不做战斗中llm判定/逃跑系统。
 
 验收标准：
 
@@ -3190,6 +3305,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 建筑 HP 会被敌人打掉。
 - 敌人被击败后从战斗中移除。
 - 攻击间隔、持续伤害、恢复等时间相关数值使用 `TimeSystem.get_numeric_delta_multiplier()` 或 `logical_time_tick` 结算。
+- 我方攻击不会触发旧式战斗开始全员 LLM 判定。
 
 ---
 
@@ -3197,7 +3313,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 状态：Todo
 优先级：P0
-前置任务：T1104, T1201
+前置任务：T1104, T1103A
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`
 
 策略：
@@ -3231,6 +3347,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 入伍 NPC 的 `current_order` 可影响其策略判断，但玩家不能用 UI 直接硬设一个必然执行的策略。
 - 不同策略行为可明显区分。
 - 策略选择和变化写入 NPC 事件库。
+- 已入伍 NPC 的“避战”是 `combat` 模式中的战术策略，不等于未入伍 NPC 的 `avoid_combat` 模式。
 
 ---
 
@@ -3238,13 +3355,16 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 状态：Todo
 优先级：P0
-前置任务：T1101, T1104
+前置任务：T1101, T1103A, T1104
 涉及文档：`COMBAT_SYSTEM.md`, `CURRENT_STATE.md`
 
 验收标准：
 
-- 敌人波次开始时进入战斗状态。
-- 敌人全灭或撤退后退出战斗状态。
+- 敌人波次开始时刷新场上敌军状态，但不自动触发旧式全员心理判定。
+- 已入伍 NPC 通过接敌进入 `combat`，未入伍 NPC 通过遇敌进入 `avoid_combat`。
+- 敌人全灭或撤退后，所有 `combat` NPC 退出到 `work` 并重新评估计划。
+- 所有 `avoid_combat` NPC 在敌人清空后退出到 `work`；单纯避战结束不强制 LLM 重评估。
+- 所有未接敌的 `rally` NPC 在敌人清空或等待超时后退出到 `work`，不触发计划重评估。
 - 战斗开始/结束进入广场公开信息。
 - 战斗后 NPC 回到工作状态并重新评估计划。
 
@@ -3256,41 +3376,49 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ---
 
-## T1201 实现战斗前 Mock 心理判定
+## T1201 实现战时公开对话心理结果
 
 状态：Todo
 优先级：P0
-前置任务：T0602, T1106
+前置任务：T0603, T0702, T1103A, T1106
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`
 
 任务目标：
 
-战斗触发时，全员进行一次心理判定。
+取消旧式“战斗触发时全员心理判定”。改为在集结 / 战斗 / 避战模式下，守备官主动对话会携带战局上下文，并根据回复产生结构化战时心理意向。
 
-入伍 NPC 结果：
+已入伍 NPC 在集结 / 战斗模式下：
 
-- 参战
-- 逃离驿站
-- 斗志激昂
+- 对话强制 `local_public`，同地点公开 toggle 默认开启且不可关闭。
+- Prompt 明确当前模式为集结或战斗，并注入战斗 / 集结事件。
+- 请求继承 T0603 对话上下文，并额外携带 `battlefield_context`：敌方 / 友方数量、兵种、HP，参战 NPC，驿站内非战斗人员。
+- 回复额外输出 `wartime_reaction = none | escape | morale_boost`。
+- `morale_boost` 由程序应用为 2 游戏小时斗志 buff，提高一定攻击力和移动速度。
+- `escape` 触发逃离意向，后续由 T1203 逃离流程执行。
 
-非入伍 NPC 结果：
+未入伍 NPC 在避战模式下：
 
-- 避战
-- 逃离驿站
+- 对话强制 `local_public`。
+- Prompt 明确其正在躲避敌人袭击，并注入 `battlefield_context`。
+- 仍可勾选“提出应征”，征召结果沿用日常对话逻辑。
+- 如果避战中同意应征且场上仍有敌人，程序立即切入 `combat`。
 
 禁止事项：
 
 - 可先用 Mock，不接真实模型。
 - 不实现复杂情绪数值。
+- 不重新引入战斗开始时全员判定。
 
 验收标准：
 
-- 战斗开始时调用后端 Mock 判定。
-- 判定请求包含该 NPC 当前 `current_order`，但指令不能直接强制判定结果。
-- 结果影响 NPC 行为。
-- 判定结果写入 NPC 事件库。
+- 集结 / 战斗 / 避战模式下打开对话时，公开 toggle 锁定开启。
+- 请求包含 `current_order`、短期事件 / 见闻、地点上下文和 `battlefield_context`。
+- 已入伍 NPC 回复可返回 `none`、`escape` 或 `morale_boost`。
+- `morale_boost` 会写入事件并应用 2 游戏小时 buff；`escape` 会进入逃离流程。
+- 避战中的未入伍 NPC 可通过同一对话接受应征，并在仍有敌军时进入战斗模式。
+- 结果写入 NPC 事件库，公开对话按地点广播。
 - 后端失败时使用规则判定。
-- 判定等待期间申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。
+- 对话等待期间申请 TimeSystem 慢速，请求完成、失败、取消或规则降级后释放。
 
 ---
 
@@ -3301,13 +3429,20 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 前置任务：T1104, T1201
 涉及文档：`COMBAT_SYSTEM.md`
 
+任务目标：
+
+实现战斗模式中 HP 首次低于 30% 的已入伍 NPC 自身心理判定。
+
 验收标准：
 
-- NPC HP 首次低于 30% 时触发判定。
-- 判定请求继续包含该 NPC 最新 `current_order`。
+- 只有处于 `combat` 模式的已入伍 NPC HP 首次低于 30% 时触发判定。
+- 正在睡觉、避战、集结但未接敌、未入伍或昏迷 NPC 不触发该判定。
+- 判定请求继续包含该 NPC 最新 `current_order`，并包含短期事件 / 见闻、地点上下文和 `battlefield_context`。
+- 判定请求没有守备官本轮发言。
 - 可能继续参战、逃离、斗志激昂。
 - 每个 NPC 每波最多触发一次。
 - 判定事件进入 NPC 事件库与广场公开信息。
+- 判定等待期间，玩家不能与该 NPC 对话；如果触发时对话正在进行，强制结束对话、关闭对话框并取消未完成 LLM 请求。
 - 判定等待期间申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。
 
 ---
@@ -3325,6 +3460,8 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 完全离开地图后状态变为 escaped。
 - 逃离事件公开到广场。
 - 逃离 NPC 不再参与工作和战斗。
+- 逃离驿站不同于未入伍 NPC 的避战模式；避战只是留在驿站内躲避敌人。
+- 逃离可由战时公开对话的 `escape` 意向、低血量自身心理判定、逃离挽留失败或调试入口触发。
 
 验收标准：
 
@@ -3367,7 +3504,9 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 公开内容：
 
 - 敌我大致人数
+- NPC 行为模式变化：进入集结、接敌进入战斗、未入伍避战、返回工作
 - NPC 被打到 30% HP 以下
+- NPC 战时对话结果：斗志激昂或逃离意向
 - NPC 击倒或击杀敌人
 - NPC 昏迷
 - NPC 被治疗
@@ -3380,6 +3519,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 战斗事件自动通过广场节点即时广播给当前在场 NPC。
 - NPC 后续对话请求包含相关公开见闻摘要。
 - NPC 面板可查看最近公开见闻。
+- 行为模式、避战、斗志激昂、逃离意向事件与地点 / 广场公开规则一致，不把 LLM 输出直接当作权威事件。
 
 ---
 
@@ -3555,18 +3695,19 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ---
 
-## T1404 打磨战斗判定 Prompt
+## T1404 打磨战时对话与低血量心理 Prompt
 
 状态：Todo
 优先级：P1
-前置任务：T1201, T1401
+前置任务：T1201, T1202, T1401
 涉及文档：`PROMPTS.md`, `COMBAT_SYSTEM.md`
 
 验收标准：
 
-- 战斗前和低血量判定可用真实模型。
+- 集结 / 战斗 / 避战公开对话可用真实模型输出战时结构化意向。
+- 战斗中低血量自身心理判定可用真实模型。
 - 输出只在允许结果中选择。
-- 能引用 NPC 记忆和公开见闻。
+- 能引用 NPC 记忆、公开见闻和 `battlefield_context`。
 - 能参考该 NPC 当前 `current_order`，但不把指令当成强制参战或强制逃离结果。
 - 成本可控。
 

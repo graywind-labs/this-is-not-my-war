@@ -52,6 +52,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - LLM 等待期间的 TimeSystem 慢速请求注册/释放
 - 工作产出
 - 战斗执行
+- NPC 行为模式切换：工作、集结、战斗、避战、昏迷、逃离
 - HP 扣除
 - 昏迷、治疗、复苏状态
 - 事件权威写入、地点/建筑信息节点当前状态维护、即时广播、NPC 事件库与见闻库维护
@@ -68,6 +69,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 对话生成
 - 每日计划生成
 - 战斗/逃离心理判定
+- 战时公开对话结构化意向生成
 - 首次睡眠总结
 - 知识图谱更新
 - API 成本统计
@@ -79,7 +81,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - NPC 如何理解、调整或拒绝守备官当前指令
 - NPC 如何说话
 - NPC 是否愿意征召
-- NPC 是否想参战、逃离、斗志激昂
+- NPC 如何在战时对话或低血量压力下表达逃离、继续战斗或斗志激昂意向
 - NPC 是否主动找玩家交涉
 - NPC 的主观日记与反思
 
@@ -107,7 +109,9 @@ LLM 调用前从事件库 + 见闻库生成摘要
 
 后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱增量，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
 
-T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。T1006 起，打开对话窗也不再打断行动或取消 LLM；只有玩家实际发送消息或在对话窗攻击时，才触发可取消 LLM 取消、普通行动中断和后续重评估候选。玩家发送后若在 NPC 回复完成前结束对话，异步请求会取消，未完成轮次不入库、不触发对话重评估。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。T1006 的对话窗攻击先由 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 和写 `damage_taken`，再请求 NPC 回复；若回复取消，攻击事实不撤销。
+T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。T1006 起，打开对话窗也不再打断行动或取消 LLM；只有玩家实际发送消息或在对话窗攻击时，才触发可取消 LLM 取消、普通行动中断和后续重评估候选。玩家发送后若在 NPC 回复完成前结束对话，异步请求会取消，未完成轮次不入库、不触发对话重评估。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。T1006 的对话窗攻击先由 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 和写 `damage_taken`，再请求 NPC 回复；若回复取消，攻击事实不撤销。T1103A 起，行为模式切换可调用 `DialogSystem.force_end_dialogue_for_npc(...)` 强制关闭当前对话并取消未完成 LLM 回复，不伪造未完成对话事件。
+
+后续战时对话任务需要扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离移动、模式切换和事件入库仍由 Godot 执行。低血量自身心理判定触发时，Godot 也应复用强制关闭对话和取消未完成 LLM 请求的边界。
 
 ### LLM 不负责
 
@@ -209,7 +213,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`BattleJudgementRequest`
 输出 Schema：`BattleJudgementResponse`
 
-覆盖战斗开始、低 HP 和逃离检查。请求必须包含目标 NPC 当前 `current_order`；输出只表达参战、避战、继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、逃离移动和状态变更由 Godot 执行。
+后续只覆盖战斗模式中 HP 首次低于 30% 的已入伍 NPC 自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
 
 ### 首次睡眠总结
 

@@ -74,6 +74,15 @@
 | `dialogue_turn` | `{speaker}对{listener}说：{text}` | `dialogue_id`, `participant_npc_ids`, `dialogue_text`, `speaker_name`, `listener_name`, `speaker_text`, `reply_text`, `visibility`, `current_round`, `max_rounds`, `is_recruitment_request`, `recruitment_result` |
 | `order_assigned` | `守备官制定了新的指令。` | `previous_order_text`, `new_order_text`, `order_revision`；T0703 已实现，固定为 `private` |
 | `damage_taken` | `{target}受到{actor}造成的{damage}点伤害。` | `damage`, `hp_before`, `hp_after` |
+| `combat_alarm_rang` | `{actor}听到了警铃，守备官正在召集所有人。` | `source`, `npc_count`, `active_enemy_count`；T1103 已实现 |
+| `combat_rally_started` | `{actor}作为{unit_type_label}前往{rally_location_name}集结，面向敌人来袭方向。` | `unit_type`, `unit_type_label`, `rally_location_id`, `rally_location_name`, `formation_row`, `formation_index`, `has_mount`；T1103 已实现 |
+| `combat_rally_encountered_enemy` | `{actor}在集结途中遭遇{enemy_name}，放弃集结并准备接敌。` | `enemy_id`, `enemy_name`, `distance`, `has_mount`；T1103 已实现 |
+| `npc_mode_changed` | `{actor}从{from_mode_label}切换到{to_mode_label}，原因：{reason}。` | `npc_id`, `from_mode`, `from_mode_label`, `to_mode`, `to_mode_label`, `reason`；T1103A 已实现 |
+| `avoidance_started` | `{actor}发现{enemy_name}接近，正在前往{target_name}避战。` | `enemy_id`, `enemy_name`, `distance`, `reason`, `target_id`, `target_name`；T1103B 已实现 |
+| `avoidance_ended` | `{actor}不再避战，回到驿站日常安排。` | `reason`, `active_enemy_count`, `target_id`, `target_name`；T1103B 已实现 |
+| `morale_boost_started` | `{actor}被守备官的话激起了斗志。` | `source_event_id`, `duration_seconds`, `attack_bonus`, `move_speed_bonus` |
+| `morale_boost_ended` | `{actor}的斗志激昂状态消退了。` | `source_event_id`, `duration_seconds` |
+| `battle_psychology_result` | `{actor}在战斗压力下作出了判断：{decision}。` | `trigger`, `decision`, `source_event_id`, `battlefield_context_summary` |
 | `healing_started` | `{healer}开始在{location}协助治疗{target}。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `healing_completed` | `{healer}结束了对{target}的治疗。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `revived` | `{target}在{location}苏醒了。` | `hp_before`, `hp_after`, `recovery_source` |
@@ -93,7 +102,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。正式守备官惩戒攻击写入 `damage_taken`，并在 payload 中保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 主动交涉：`proactive_talk_started`、`proactive_talk_message`。前者记录 NPC 发起主动交涉和计划中确定的问题，固定为 `private`；后者记录玩家点击气泡后 NPC 对守备官说出的开场问题。
 - 成长与状态：`skill_improved`、`attribute_improved`、`npc_recruited`、`npc_left_recruited_state`。
-- 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
+- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
 - 建筑与资源见闻：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`。
 
 第一版实现可以只接入少量现有行动事件，但接口与数据结构不得把未来事件类型堵死。
@@ -111,6 +120,8 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - T1004/T1005 起，`clear_npc_short_term_memory(npc_id)` 可清空指定 NPC 当天事件库和见闻库索引，用于首次睡眠总结完成后的短期缓存轮转；该接口不删除 `_events_by_id` 和全局事件列表，因此调试工具仍可查看当天原始事件档案。
 - 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，`NPCPanel` 已接入前端入口：给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`。T1006 起，正式玩家攻击入口移动到 `DialogPanel`：攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 写入带惩戒文案的 `damage_taken`，不重做扣血和昏迷链路；随后请求 NPC 对攻击作出对话回复，回复成功时再写 `dialogue_turn.payload.interaction_kind == "guard_attack"`。若玩家在攻击回复返回前结束对话，攻击事件不撤销，未完成回复不写 `dialogue_turn`，但结束时触发一次计划重评估。T0901 后，装备武器/盔甲/坐骑由 `EquipmentSystem` 结算库存与槽位，再复用 `record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`。
 - T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503 起，协助治疗写入 `healing_started` / `healing_completed`，会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
+- T1103 起，`CombatSystem.trigger_combat_alarm(...)` 会给所有 NPC 写入 `combat_alarm_rang` 私有事件；只有入伍、持主武器且当前可行动的 NPC 会继续写入 `combat_rally_started`，并被移动到城门外防线。若集结途中遇到敌人，系统写入 `combat_rally_encountered_enemy` 并将 NPC 切到 `combat_ready` 占位。上述事件只记录警铃、集结和接敌事实，不代表我方已经攻击、敌人受伤或战斗完成。
+- T1103A 起，`npc_mode_changed` 已记录工作 / 集结 / 战斗 / 避战 / 昏迷之间的程序权威切换；事件只记录程序已应用的事实，LLM 输出本身不直接写入权威数值。T1103B 起，`avoidance_started` / `avoidance_ended` 记录未入伍 NPC 的避战移动阶段、目标点、触发敌人和退出原因。后续仍需以 `battle_psychology_result` 记录战时对话或低血量自身心理判定的结构化结果，以 `morale_boost_started` / `morale_boost_ended` 记录斗志激昂 buff 的开始和结束。
 - T0502A 起，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，因此昏迷者不会收到地点/广场公开广播、状态广播、公告或进入快照；复苏后见闻接收自动恢复。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
 - T0701 已由 Godot `DialogSystem` 接入后端对话文本并写入事件库。每个 `dialogue_turn` 作为一个事实事件进入所有参与 NPC 的事件库；若 `visibility == "local_public"`，事件地点只向同地点非参与者广播一次，避免双方各写一份事件造成第三者重复见闻。
@@ -213,10 +224,13 @@ NPC 从一个可进入室内地点前往另一个可进入室内地点时，逻�
 会通过广场信息节点公开广播的事件包括：
 
 - 战斗开始与结束。
+- NPC 行为模式变化：进入集结、战斗、避战或从这些模式返回工作。
+- 未入伍 NPC 开始避战或敌军清空后结束避战。
 - 敌我大致人数。
 - 广场或室外发生的公开事件。
 - 任一建筑的可传播外部状态变化，包括等级变化、受损、开始修复、修复完成、开始升级或升级完成。HP 变化和剩余修复/升级时长变化不广播。
 - 某 NPC 击倒或击杀敌人。
+- 某 NPC 因守备官战时对话斗志激昂或决定逃离。
 - 某 NPC 昏迷、被治疗、复苏。
 - 某 NPC 逃离或试图逃离。
 - 玩家在公开攻击、赠予或对话。

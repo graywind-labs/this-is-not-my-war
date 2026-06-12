@@ -1,5 +1,68 @@
 # DEV_LOG.md
 
+## 2026-06-12 T1103B 未入伍 NPC 避战模式
+
+- `CombatSystem` 接入未入伍 NPC 避战移动：工作模式中敌人进入范围会切到 `avoid_combat`，睡觉中的未入伍 NPC 只在被敌人攻击时进入避战。
+- 避战 NPC 会选择驿站内安全点并通过 `NPCSystem.move_npc_to_world_position(...)` 移动；避战不设置战斗 `combat_mode`，不攻击敌人，也不使用逃离驿站出口。
+- 敌军清空后，避战 NPC 回到 `work` 且不请求计划重评估；避战中应征成功时，若仍有敌军则进入 `combat`，无敌军则回到 `work`。
+- `MemorySystem` 新增 `avoidance_started` / `avoidance_ended` 事件类型、必填 payload 和 summary；NPC 行动状态摘要支持前往避战点。
+- GM 面板新增“模拟避战”按钮和 `avoid_npc <npc_id>` 命令，敌人快照包含 `active_avoidances` 与最近避战结果。
+- 新增 `tools/verify_avoid_combat_mode.gd`，覆盖未入伍接敌避战、睡觉例外、避战安全点、清敌退出不重评估、避战中应征分流、事件写入和 GM 入口。
+- 验证通过：`godot --headless --path . --script tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script tools/verify_behavior_mode_state_machine.gd`、`godot --headless --path . --script tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务仍不实现我方反击、敌人受击 / 倒下、逃离驿站、战时公开对话心理结果或低血量自身心理判定。
+
+## 2026-06-12 T1103A 统一 NPC 行为模式状态机
+
+- `NPCSystem` 新增 `states.behavior_mode` 权威运行时字段，支持工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离模式，并保留 `combat_mode` 作为旧集结与坐骑视觉兼容字段。
+- `CombatSystem` 接入行为模式切换规则：警铃集结进入 `rally`，接敌进入 `combat`，集合点等待 1 游戏小时未接敌回到 `work` 且不重评估计划，敌军清空后战斗 NPC 回到 `work` 并请求重评估计划，复苏 NPC 按场上敌军和入伍状态分流。
+- 睡觉 NPC 不因范围接敌自动进入战斗或避战；被敌人直接攻击时，已入伍者进入战斗，未入伍者进入避战。
+- 模式切换会中断普通行动、移动、可取消 LLM 和当前对话；`DialogSystem.force_end_dialogue_for_npc(...)` 用于强制关闭对话并取消未完成回复。
+- `MemorySystem` 新增 `npc_mode_changed` 结构化事件摘要；NPC 面板显示当前行为模式，GM 面板新增“行为模式快照”“推进集结等待”按钮和 `behavior_modes` / `advance_rally_wait [game_seconds]` 命令。
+- 新增 `tools/verify_behavior_mode_state_machine.gd`，覆盖警铃集结、集结超时、接敌入战、清敌退出、睡觉接敌例外、被攻击入战、复苏分流和 GM 入口。
+- 验证通过：`godot --headless --path . --script res://tools/verify_behavior_mode_state_machine.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务只实现行为模式状态机和切换边界；未入伍 NPC 避战移动策略、战时公开对话心理结果、低血量自身心理判定、我方反击和完整战斗结算仍在后续任务。
+
+## 2026-06-12 行为模式与战斗心理设计同步
+
+- 设计源 `game_design.md` 新增工作 / 集结 / 战斗 / 避战四种行为模式定义，明确模式触发、退出和互斥边界。
+- 取消旧式“战斗触发时全员心理判定”，改为集结 / 战斗 / 避战模式下的战时公开对话结构化意向，以及战斗中 HP 低于 30% 的自身心理判定。
+- 明确集结模式到达集合点后等待 1 游戏小时仍未接敌则回到工作模式且不重评估计划；战斗模式在敌军清空后回到工作模式并重评估计划；未入伍避战模式只在敌军清空后回到工作模式。
+- 明确战时公开对话强制同地点公开，Prompt 继承 T0603 上下文并额外注入 `battlefield_context`；已入伍 NPC 输出 `wartime_reaction`，未入伍避战 NPC 仍沿用应征结果逻辑。
+- `TASKS.md` 新增 T1103A / T1103B，并重写 T1201 / T1202 等后续任务，避免后续实现重新走旧的全员战斗前判定方案。
+- 本次只更新设计和任务文档，未修改运行时代码。
+
+## 2026-06-12 T1103 警铃与集结
+
+- HUD 警铃按钮接入 `CombatSystem.trigger_combat_alarm("hud")`；GM 面板新增“警铃集结”按钮和 `alarm` / `rally` 命令。
+- `CombatSystem` 新增警铃集结权威流程：所有 NPC 写入 `combat_alarm_rang` 私有事件，入伍且有主武器、当前可行动的 NPC 会被排入城门外防线；近战 / 骑兵在前排，弓弩 / 骑射在后排。
+- 集结会通过 `ActionSystem.interrupt_npc_action(..., "combat_alarm")` 打断普通日常行动并释放工位，再调用 `NPCSystem.move_npc_to_world_position(...)` 前往阵位；`debug_get_combat_snapshot()` 现在包含 `active_rallies` 和 `last_alarm_result`。
+- `NPC.gd` 新增运行时低模骑乘和面向敌人方向标记；只有 `combat_mode == "rally"` 或 `"combat"` 且 `combat_mounted == true` 时显示坐骑，日常工作模式不骑马。
+- 若集结途中遭遇一定范围内敌人，NPC 会停止移动并进入 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy`；这仍不实现我方攻击、敌人受击或完整战斗开始 / 结束流程。
+- `MemorySystem` 新增 `combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy` 事件摘要和行动状态翻译。
+- 新增 `tools/verify_combat_alarm_rally.gd`，覆盖 HUD 警铃、GM 命令、未入伍过滤、近战前排 / 远程后排、骑乘表现和集结途中遭遇敌人切换。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`。
+
+## 2026-06-12 T1102 敌人目标优先级
+
+- `CombatSystem` 接入敌人目标选择、逻辑时间推进、移动和敌方单向攻击；附近可行动 NPC 会优先成为目标，否则按城门/围墙、仓库、主厅选择仍有 HP 的建筑。
+- 敌人攻击 NPC 时复用 `NPCSystem.apply_damage_to_npc(...)`，NPC HP 清零仍进入昏迷；敌人攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)`，扣除建筑 HP、刷新建筑标签并写入 `building_damaged` 结构化事件。
+- `GameState` 新增 `game_over`、`game_result`、`failure_reason` 和 `set_game_over(...)`，主厅 HP 清零时写入 `failure/main_hall_destroyed` 失败占位状态。
+- `NPCSystem` 新增只读 `get_npc_world_position(...)`，供 CombatSystem 判断附近可行动 NPC；`CombatSystem.debug_get_combat_snapshot()` 现在包含敌人目标、当前行动和最近 AI 推进结果。
+- GM 面板“战斗 / 敌人”分组新增“推进敌人AI”按钮和 `step_enemies [game_seconds]` 命令。
+- 新增 `tools/verify_enemy_target_priority.gd`，并扩展 `tools/verify_gm_panel.gd` 覆盖新 GM 入口。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_building_repair_upgrade.gd`、`godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务只实现敌方单向攻击和失败状态占位；我方自动攻击、敌人受击 / 倒下、完整战斗开始 / 结束流程和正式胜负界面仍留给 T1104、T1106 和 M13。
+
+## 2026-06-12 T1101 敌人配置与敌人生成
+
+- `data/enemy_waves.json` 扩展为 5 波 Demo 敌人配置，后续波次在人数、HP、攻击、防御和兵种组合上逐步增强。
+- `CombatSystem` 接入波次配置读取、查询、生成、清空和快照调试接口，可在 `Main/WorldRoot/Station/Enemies` 下生成正门外低模敌人实体；敌人保留 HP、武器类型、单位类型、攻击、防御、移动速度和目标偏好。
+- `Main.tscn` 扩大正门外地面与正门道路，`CameraRig` 扩展 Z 轴视野，保证敌人生成在正门外森林方向且可被观察。
+- GM 面板新增“战斗 / 敌人”分组，支持生成第一波、生成指定波次、查看敌人快照、清空敌人，并补充 `spawn_wave` / `enemy_wave` / `enemies` / `clear_enemies` 命令。
+- 新增 `tools/verify_enemy_wave_generation.gd`，并扩展 `tools/verify_gm_panel.gd` 覆盖 T1101 数据、生成位置、GM 按钮、命令和清理流程。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+- 边界：本任务不实现敌人移动、目标 AI、攻击、伤害、战斗开始/结束或事件写入，这些留给 T1102 / T1104 / T1106。
+
 ## 2026-06-12 T1006 发送后才打断对话与对话窗攻击闭环
 
 - NPC 面板“对话”改为只打开 DialogPanel 和查看历史，不再立刻打断行动、取消 LLM 或请求结束后的计划重评估。

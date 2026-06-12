@@ -22,8 +22,8 @@ const EVENT_TYPES: Array[String] = [
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
-	"combat_started", "combat_ended", "attack_made", "damage_taken", "low_hp_triggered",
-	"unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
+	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "attack_made", "damage_taken", "low_hp_triggered",
+	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_status_changed", "location_status_changed"
 ]
@@ -40,6 +40,12 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"work_completed": ["action_id", "input_resources", "output_resources"],
 	"work_failed": ["action_id", "reason"],
 	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"],
+	"combat_alarm_rang": ["source", "npc_count", "active_enemy_count"],
+	"combat_rally_started": ["formation_row", "unit_type", "rally_location_id", "facing_direction"],
+	"combat_rally_encountered_enemy": ["enemy_id", "distance"],
+	"npc_mode_changed": ["npc_id", "from_mode", "to_mode", "reason"],
+	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
+	"avoidance_ended": ["reason", "active_enemy_count"],
 	"damage_taken": ["damage", "hp_before", "hp_after"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
@@ -822,6 +828,16 @@ func _format_action_status(action_id: String) -> String:
 		return "待命"
 	if action_id == "unconscious":
 		return "昏迷"
+	if action_id.begins_with("moving_to_combat_rally"):
+		return "前往城门外防线"
+	if action_id == "rallying_defense_line":
+		return "在城门外集结"
+	if action_id == "combat_ready":
+		return "准备接敌"
+	if action_id == "avoid_combat" or action_id == "avoiding_enemy":
+		return "避战"
+	if action_id.begins_with("moving_to_avoid_shelter_"):
+		return "前往避战点"
 	if action_id.begins_with("moving_to_"):
 		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
 	if action_id.begins_with("assist_heal_"):
@@ -1049,6 +1065,34 @@ func _format_summary(event: Dictionary) -> String:
 			return "守备官制定了新的指令。"
 		"npc_attacked_by_player":
 			return "%s攻击了%s，造成%d点伤害。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("damage", 0))]
+		"combat_alarm_rang":
+			return "%s听到了警铃，守备官正在召集所有人。" % actor
+		"combat_rally_started":
+			return "%s作为%s前往%s集结，面向敌人来袭方向。" % [
+				actor,
+				str(payload.get("unit_type_label", payload.get("unit_type", "战斗人员"))),
+				str(payload.get("rally_location_name", "城门外防线"))
+			]
+		"combat_rally_encountered_enemy":
+			return "%s在集结途中遭遇%s，放弃集结并准备接敌。" % [
+				actor,
+				str(payload.get("enemy_name", payload.get("enemy_id", "敌人")))
+			]
+		"npc_mode_changed":
+			return "%s从%s切换到%s，原因：%s。" % [
+				actor,
+				str(payload.get("from_mode_label", _format_behavior_mode_label(str(payload.get("from_mode", ""))))),
+				str(payload.get("to_mode_label", _format_behavior_mode_label(str(payload.get("to_mode", ""))))),
+				str(payload.get("reason", "mode_changed"))
+			]
+		"avoidance_started":
+			return "%s发现%s接近，正在前往%s避战。" % [
+				actor,
+				str(payload.get("enemy_name", payload.get("enemy_id", "敌人"))),
+				str(payload.get("target_name", "安全位置"))
+			]
+		"avoidance_ended":
+			return "%s不再避战，回到驿站日常安排。" % actor
 		"damage_taken":
 			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
 			var damage_actor_id := "" if damage_actor_ids.is_empty() else damage_actor_ids[0]
@@ -1116,6 +1160,24 @@ func _format_skill_improved_summary(actor: String, payload: Dictionary, location
 	if reason == "work_completed":
 		return "%s在%s工作后，%s略有长进。" % [actor, location, skill_name]
 	return "%s的%s略有长进。" % [actor, skill_name]
+
+
+func _format_behavior_mode_label(mode: String) -> String:
+	match mode:
+		"work":
+			return "工作模式"
+		"rally":
+			return "集结模式"
+		"combat":
+			return "战斗模式"
+		"avoid_combat":
+			return "避战模式"
+		"unconscious":
+			return "昏迷"
+		"escaped":
+			return "逃离"
+		_:
+			return mode
 
 
 func _format_location_state_summary(payload: Dictionary) -> String:
@@ -1392,6 +1454,8 @@ func _get_npc_display_name(npc_id: String) -> String:
 func _get_actor_display_name(actor_id: String) -> String:
 	if actor_id == PLAYER_ACTOR_ID:
 		return PLAYER_DISPLAY_NAME
+	if actor_id.begins_with("wave_") or actor_id.begins_with("enemy_"):
+		return "敌人"
 	return _get_npc_display_name(actor_id)
 
 

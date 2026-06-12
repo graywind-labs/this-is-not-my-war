@@ -7,7 +7,7 @@ extends Node3D
 @export var min_zoom_distance := 18.0
 @export var max_zoom_distance := 42.0
 @export var x_limits := Vector2(-18.0, 18.0)
-@export var z_limits := Vector2(-21.0, 18.0)
+@export var z_limits := Vector2(-21.0, 34.0)
 
 @onready var camera: Camera3D = get_node(camera_path)
 

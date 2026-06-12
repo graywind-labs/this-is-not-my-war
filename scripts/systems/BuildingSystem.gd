@@ -10,6 +10,7 @@ const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const PLAZA_LOCATION_ID := "plaza"
+const DEFAULT_DAMAGE_VISIBILITY := "local_public"
 const DEFAULT_REPAIR_SECONDS_PER_HP := 30.0
 const DEFAULT_REPAIR_LEVEL_TIME_FACTOR := 0.35
 const DEFAULT_REPAIR_HELPER_BASE_BONUS := 0.10
@@ -454,11 +455,29 @@ func remove_upgrade_helper(building_id: String, npc_id: String) -> bool:
 
 
 func debug_damage_building(building_id: String, amount: int) -> bool:
+	return bool(apply_damage_to_building(building_id, amount, "gm_panel", DEFAULT_DAMAGE_VISIBILITY).get("ok", false))
+
+
+func apply_damage_to_building(
+	building_id: String,
+	amount: int,
+	actor_id: String = "system",
+	visibility: String = DEFAULT_DAMAGE_VISIBILITY,
+	options: Dictionary = {}
+) -> Dictionary:
 	if amount <= 0 or not _buildings.has(building_id):
-		return false
+		return {
+			"ok": false,
+			"building_id": building_id,
+			"damage": amount,
+			"error": "invalid_building_damage"
+		}
 
 	var building: Dictionary = _buildings[building_id]
-	building["hp"] = maxi(0, int(building.get("hp", 0)) - amount)
+	var max_hp := maxi(1, int(building.get("max_hp", 1)))
+	var hp_before := clampi(int(building.get("hp", max_hp)), 0, max_hp)
+	var hp_after := maxi(0, hp_before - amount)
+	building["hp"] = hp_after
 	if _active_repairs.has(building_id):
 		_release_repair_helpers(_active_repairs[building_id], building_id)
 		_active_repairs.erase(building_id)
@@ -468,7 +487,18 @@ func debug_damage_building(building_id: String, amount: int) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
-	return true
+	var event := _log_building_damaged(building_id, actor_id, amount, hp_before, hp_after, visibility, options)
+	return {
+		"ok": true,
+		"building_id": building_id,
+		"building_name": str(building.get("name", building_id)),
+		"damage": amount,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"max_hp": max_hp,
+		"destroyed": hp_after <= 0,
+		"event": event
+	}
 
 
 func restore_building_hp(building_id: String, amount: int) -> bool:
@@ -953,3 +983,47 @@ func _emit_building_state_changed(building_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_state_changed.emit(building_id)
+
+
+func _log_building_damaged(
+	building_id: String,
+	actor_id: String,
+	damage: int,
+	hp_before: int,
+	hp_after: int,
+	visibility: String,
+	options: Dictionary
+) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var building: Dictionary = _buildings.get(building_id, {})
+	var building_name := str(building.get("name", building_id))
+	var attacker_name := str(options.get("attacker_name", actor_id))
+	var summary := str(options.get("summary", "")).strip_edges()
+	if summary.is_empty():
+		summary = "%s攻击了%s，造成%d点建筑伤害，HP 从%d降到%d。" % [
+			attacker_name,
+			building_name,
+			damage,
+			hp_before,
+			hp_after
+		]
+	return memory_system.add_event({
+		"type": "building_damaged",
+		"subject_npc_id": "",
+		"actor_ids": [actor_id],
+		"target_ids": [building_id, PLAZA_LOCATION_ID],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "private" if visibility == "private" else DEFAULT_DAMAGE_VISIBILITY,
+		"importance": 70,
+		"summary": summary,
+		"payload": {
+			"building_id": building_id,
+			"building_name": building_name,
+			"damage": damage,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"damage_source": actor_id
+		}
+	})

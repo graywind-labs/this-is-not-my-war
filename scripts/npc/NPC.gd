@@ -16,6 +16,8 @@ var _is_moving := false
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 var _proactive_bubble: Label3D
 var _llm_activity_marker: Label3D
+var _mount_visual: MeshInstance3D
+var _facing_marker: Label3D
 
 
 func setup(npc_profile: Dictionary) -> void:
@@ -54,6 +56,7 @@ func _ready() -> void:
 		input_event.connect(_on_input_event)
 	_ensure_proactive_bubble()
 	_ensure_llm_activity_marker()
+	_ensure_combat_visuals()
 	_refresh_label()
 
 
@@ -106,6 +109,12 @@ func _refresh_label() -> void:
 	var action_text := str(states.get("current_action", "idle"))
 	if bool(states.get("unconscious", false)):
 		action_text = "昏迷"
+	elif action_text == "rallying_defense_line":
+		action_text = "集结防线"
+	elif action_text == "combat_ready":
+		action_text = "接敌"
+	elif str(states.get("behavior_mode", "")) == "avoid_combat":
+		action_text = "避战"
 	_name_label.text = "%s\nHP %d/%d · %s" % [
 		display_name,
 		hp,
@@ -114,9 +123,11 @@ func _refresh_label() -> void:
 	]
 	_ensure_proactive_bubble()
 	_ensure_llm_activity_marker()
+	_ensure_combat_visuals()
 	var proactive: Dictionary = states.get("proactive_talk", {})
 	_proactive_bubble.visible = bool(proactive.get("active", false))
 	_refresh_llm_activity_marker(states)
+	_refresh_combat_visuals(states)
 
 
 func _ensure_proactive_bubble() -> void:
@@ -147,6 +158,42 @@ func _ensure_llm_activity_marker() -> void:
 	_llm_activity_marker.position = Vector3(0.0, 2.45, 0.0)
 	_llm_activity_marker.visible = false
 	add_child(_llm_activity_marker)
+
+
+func _ensure_combat_visuals() -> void:
+	if _mount_visual == null:
+		_mount_visual = MeshInstance3D.new()
+		_mount_visual.name = "CombatMountVisual"
+		var mount_mesh := BoxMesh.new()
+		mount_mesh.size = Vector3(0.85, 0.28, 1.05)
+		_mount_visual.mesh = mount_mesh
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.36, 0.22, 0.13, 1.0)
+		_mount_visual.set_surface_override_material(0, material)
+		_mount_visual.position = Vector3(0.0, 0.34, 0.0)
+		_mount_visual.visible = false
+		add_child(_mount_visual)
+	if _facing_marker == null:
+		_facing_marker = Label3D.new()
+		_facing_marker.name = "CombatFacingMarker"
+		_facing_marker.text = "↑"
+		_facing_marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_facing_marker.pixel_size = 0.028
+		_facing_marker.modulate = Color(0.95, 0.86, 0.42, 1.0)
+		_facing_marker.outline_size = 7
+		_facing_marker.outline_modulate = Color(0.06, 0.05, 0.02, 1.0)
+		_facing_marker.position = Vector3(0.0, 2.18, 0.0)
+		_facing_marker.visible = false
+		add_child(_facing_marker)
+
+
+func _refresh_combat_visuals(states: Dictionary) -> void:
+	var combat_mode := str(states.get("behavior_mode", states.get("combat_mode", "")))
+	var show_combat_visuals := ["rally", "combat"].has(combat_mode)
+	if _mount_visual != null:
+		_mount_visual.visible = show_combat_visuals and bool(states.get("combat_mounted", false))
+	if _facing_marker != null:
+		_facing_marker.visible = show_combat_visuals
 
 
 func _refresh_llm_activity_marker(states: Dictionary) -> void:

@@ -544,6 +544,32 @@ func end_dialogue() -> Dictionary:
 	return {"ok": true, "dialogue_state": ended_state}
 
 
+func force_end_dialogue_for_npc(npc_id: String, reason: String = "behavior_mode_changed") -> Dictionary:
+	if _active_dialogue.is_empty():
+		return {"ok": true, "ended": false, "reason": "no_active_dialogue"}
+	var participant_ids: Array[String] = []
+	var target_id := str(_active_dialogue.get("target_npc_id", ""))
+	if not target_id.is_empty():
+		participant_ids.append(target_id)
+	var speaker_id := str(_active_dialogue.get("speaker_npc_id", ""))
+	if not speaker_id.is_empty() and not participant_ids.has(speaker_id):
+		participant_ids.append(speaker_id)
+	if not participant_ids.has(npc_id):
+		return {"ok": true, "ended": false, "reason": "npc_not_in_dialogue"}
+	var ended_state := get_dialogue_state()
+	ended_state["forced_end_reason"] = reason
+	_cancel_active_dialogue_llm_requests(reason)
+	_active_dialogue.clear()
+	dialogue_ended.emit(ended_state)
+	return {
+		"ok": true,
+		"ended": true,
+		"npc_id": npc_id,
+		"reason": reason,
+		"dialogue_state": ended_state
+	}
+
+
 func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
 	if _active_dialogue.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
