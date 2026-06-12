@@ -10,18 +10,20 @@ const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
 const MEMORY_LOG_BOX_MIN_SIZE := Vector2(0, 132)
 const MEMORY_LOG_TEXT_MIN_HEIGHT := 92.0
 const DEFAULT_GIFT_MONEY_AMOUNT := 5
-const DEFAULT_ATTACK_DAMAGE := 10
 
 var _current_npc_id: String = ""
 var _is_sanitizing_gift_money_text := false
 var _weapon_select: OptionButton
 var _event_log_text: TextEdit
 var _witness_log_text: TextEdit
+var _diary_label: Label
+var _diary_text: TextEdit
 var _experience_label: Label
 var _strength_value_label: Label
 var _intelligence_value_label: Label
 var _strength_point_button: Button
 var _intelligence_point_button: Button
+var _llm_status_label: Label
 
 @onready var name_label: Label = %NPCNameLabel
 @onready var job_label: Label = %NPCJobLabel
@@ -44,13 +46,13 @@ var _intelligence_point_button: Button
 @onready var gift_money_spin: SpinBox = %NPCGiftMoneySpin
 @onready var gift_money_button: Button = %NPCGiftMoneyButton
 @onready var give_weapon_button: Button = %NPCGiveWeaponButton
-@onready var attack_button: Button = %NPCAttackButton
 @onready var interaction_result_label: Label = %NPCInteractionResultLabel
 
 
 func _ready() -> void:
 	visible = false
 	_setup_memory_log_boxes()
+	_setup_header_status_label()
 	_setup_progression_controls()
 	_setup_interaction_controls()
 	_setup_equipment_controls()
@@ -59,7 +61,6 @@ func _ready() -> void:
 	assign_button.pressed.connect(_on_order_pressed)
 	gift_money_button.pressed.connect(_on_gift_money_pressed)
 	give_weapon_button.pressed.connect(_on_give_weapon_pressed)
-	attack_button.pressed.connect(_on_attack_pressed)
 	gift_money_spin.value_changed.connect(_on_gift_money_value_changed)
 
 	var event_bus := get_node_or_null("/root/EventBus")
@@ -94,6 +95,7 @@ func show_npc(npc_id: String) -> void:
 	_fill_weapon_select()
 
 	name_label.text = str(npc.get("name", npc_id))
+	_update_llm_status_label(states)
 	job_label.text = _format_specialties(npc_system, npc_id)
 	hp_label.text = "HP：%d / %d" % [
 		int(states.get("hp", 0)),
@@ -112,6 +114,7 @@ func show_npc(npc_id: String) -> void:
 	action_label.text = "当前行动：%s" % _format_action(str(states.get("current_action", "idle")))
 	skills_label.text = _format_skills(npc_system, npc.get("skills", {}))
 	_update_memory_labels(npc_id)
+	_update_diary_labels(npc)
 	_update_interaction_controls(npc)
 	visible = true
 
@@ -132,6 +135,47 @@ func _setup_interaction_controls() -> void:
 		gift_money_line_edit.text_changed.connect(_on_gift_money_text_changed)
 		gift_money_line_edit.gui_input.connect(_on_gift_money_line_edit_gui_input)
 	interaction_result_label.text = ""
+
+
+func _setup_header_status_label() -> void:
+	if _llm_status_label != null:
+		return
+	var header := name_label.get_parent() as HBoxContainer
+	if header == null:
+		return
+	_llm_status_label = Label.new()
+	_llm_status_label.name = "NPCLLMStatusLabel"
+	_llm_status_label.text = ""
+	_llm_status_label.modulate = Color(0.72, 0.86, 1.0, 1.0)
+	_llm_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_llm_status_label)
+	header.move_child(_llm_status_label, name_label.get_index() + 1)
+
+
+func _update_llm_status_label(states: Dictionary) -> void:
+	if _llm_status_label == null:
+		return
+	var status_text := _format_llm_status(states)
+	_llm_status_label.text = status_text
+	_llm_status_label.visible = not status_text.is_empty()
+	if status_text == "正在熟睡":
+		_llm_status_label.modulate = Color(1.0, 0.42, 0.38, 1.0)
+	else:
+		_llm_status_label.modulate = Color(0.72, 0.86, 1.0, 1.0)
+
+
+func _format_llm_status(states: Dictionary) -> String:
+	if bool(states.get("first_sleep_summary_active", false)):
+		return "正在熟睡"
+	var activity: Dictionary = states.get("llm_activity", {}) if (states.get("llm_activity", {}) is Dictionary) else {}
+	if not bool(activity.get("active", false)):
+		return ""
+	var kind := str(activity.get("kind", ""))
+	if kind == "first_sleep_summary":
+		return "正在熟睡"
+	if kind == "plan":
+		return "正在计划下一步行动"
+	return "正在思考"
 
 
 func _setup_equipment_controls() -> void:
@@ -357,14 +401,15 @@ func _update_memory_labels(npc_id: String) -> void:
 func _update_interaction_controls(npc: Dictionary) -> void:
 	var states: Dictionary = npc.get("states", {})
 	var is_escaped := bool(states.get("escaped", false))
+	var is_deep_sleeping := bool(states.get("first_sleep_summary_active", false))
 	var is_recruited := bool(npc.get("recruited", false))
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	var has_money := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("money")) >= int(gift_money_spin.value)
 	var has_weapon := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("weapons")) >= 1
 
+	dialogue_button.disabled = is_escaped or is_deep_sleeping
 	gift_money_button.disabled = is_escaped or not has_money
 	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
-	attack_button.disabled = is_escaped
 
 
 func _get_selected_visibility() -> String:
@@ -426,8 +471,14 @@ func _assign_attribute_point(attribute_name: String) -> void:
 
 
 func _setup_memory_log_boxes() -> void:
+	var parent := event_log_label.get_parent() as VBoxContainer
 	_event_log_text = _wrap_memory_label(event_log_label, "NPCEventLogBox", "NPCEventLogText", "事件库")
 	_witness_log_text = _wrap_memory_label(witness_log_label, "NPCWitnessLogBox", "NPCWitnessLogText", "见闻库")
+	if parent != null:
+		_diary_label = Label.new()
+		_diary_label.name = "NPCDiaryLabel"
+		parent.add_child(_diary_label)
+		_diary_text = _wrap_memory_label(_diary_label, "NPCDiaryBox", "NPCDiaryText", "日记")
 
 
 func _wrap_memory_label(label: Label, box_name: String, text_name: String, title: String) -> TextEdit:
@@ -482,6 +533,15 @@ func _set_memory_block_text(title_label: Label, body_text: TextEdit, title: Stri
 		body_text.text = _format_memory_block(events)
 
 
+func _update_diary_labels(npc: Dictionary) -> void:
+	var diary: Array = npc.get("diary", []) if (npc.get("diary", []) is Array) else []
+	if _diary_label != null:
+		_diary_label.text = "日记：%d 条" % diary.size()
+	if _diary_text != null:
+		_diary_text.text = _format_diary_block(diary)
+	_scroll_memory_logs_to_bottom_deferred()
+
+
 func _format_memory_block(events: Array) -> String:
 	if events.is_empty():
 		return "暂无"
@@ -493,6 +553,28 @@ func _format_memory_block(events: Array) -> String:
 		if summary.is_empty():
 			summary = str(event.get("type", "未命名事件"))
 		lines.append("- %s %s" % [str(event.get("time", "--:--:--")), summary])
+	return "\n".join(lines)
+
+
+func _format_diary_block(diary: Array) -> String:
+	if diary.is_empty():
+		return "暂无"
+
+	var lines: Array[String] = []
+	for raw_entry in diary:
+		if raw_entry is Dictionary:
+			var entry: Dictionary = raw_entry
+			var day := int(entry.get("day", 0))
+			var time_text := str(entry.get("time", "--:--:--"))
+			var text := str(entry.get("entry", "")).strip_edges()
+			var summary := str(entry.get("memory_summary", "")).strip_edges()
+			var prefix := "第%d天 %s" % [day, time_text] if day > 0 else time_text
+			if summary.is_empty():
+				lines.append("- %s %s" % [prefix, text])
+			else:
+				lines.append("- %s %s\n  记忆摘要：%s" % [prefix, text, summary])
+		else:
+			lines.append("- %s" % str(raw_entry))
 	return "\n".join(lines)
 
 
@@ -509,6 +591,7 @@ func _scroll_memory_logs_to_bottom_after_layout() -> void:
 func _scroll_memory_logs_to_bottom() -> void:
 	_scroll_to_bottom(_event_log_text)
 	_scroll_to_bottom(_witness_log_text)
+	_scroll_to_bottom(_diary_text)
 
 
 func _scroll_to_bottom(text: TextEdit) -> void:
@@ -642,15 +725,5 @@ func _on_give_weapon_pressed() -> void:
 		return
 	var result: Dictionary = equipment_system.equip_npc_main_weapon(_current_npc_id, _get_selected_weapon_id(), _get_selected_visibility())
 	_show_interaction_result(result, "已装备武器：%s。" % str(result.get("unit_type_label", "")))
-	if bool(result.get("ok", false)):
-		show_npc(_current_npc_id)
-
-
-func _on_attack_pressed() -> void:
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if npc_system == null or _current_npc_id.is_empty() or not npc_system.has_method("apply_damage_to_npc"):
-		return
-	var result: Dictionary = npc_system.apply_damage_to_npc(_current_npc_id, DEFAULT_ATTACK_DAMAGE, "guard_officer", _get_selected_visibility())
-	_show_interaction_result(result, "已造成 %d 点伤害。" % DEFAULT_ATTACK_DAMAGE)
 	if bool(result.get("ok", false)):
 		show_npc(_current_npc_id)

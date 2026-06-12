@@ -16,7 +16,7 @@ const ENTERABLE_LOCATION_IDS: Array[String] = [
 const PLAZA_STATE_SUBJECT_ID := "system"
 
 const EVENT_TYPES: Array[String] = [
-	"wake_up", "plan_created", "reflection_started", "sleep_started", "sleep_ended",
+	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed",
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
@@ -32,6 +32,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds", "is_recruitment_request", "recruitment_result"],
 	"proactive_talk_started": ["prompt_text", "duration_seconds"],
 	"proactive_talk_message": ["dialogue_id", "speaker_name", "listener_name", "speaker_text"],
+	"plan_created": ["plan_day", "items"],
+	"plan_revised": ["plan_day", "items", "reason", "source"],
 	"location_entered": ["to_location_id", "from_location_id"],
 	"location_exited": ["from_location_id", "to_location_id"],
 	"work_started": ["action_id", "workstation_id"],
@@ -332,6 +334,31 @@ func get_npc_short_term_memory_ids(npc_id: String) -> Dictionary:
 		"event_log": get_npc_daily_event_ids(npc_id),
 		"witness_log": get_npc_daily_witness_ids(npc_id)
 	}
+
+
+func clear_npc_short_term_memory(npc_id: String) -> Dictionary:
+	if npc_id.is_empty():
+		return {
+			"ok": false,
+			"reason": "empty_npc_id",
+			"message": "NPC ID 为空。"
+		}
+
+	var event_count := get_npc_daily_event_ids(npc_id).size()
+	var witness_count := get_npc_daily_witness_ids(npc_id).size()
+	_npc_daily_event_ids.erase(npc_id)
+	_npc_daily_witness_ids.erase(npc_id)
+	_emit_npc_memory_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"event_count": event_count,
+		"witness_count": witness_count
+	}
+
+
+func debug_clear_npc_short_term_memory(npc_id: String) -> Dictionary:
+	return clear_npc_short_term_memory(npc_id)
 
 
 func debug_record_player_money_given(npc_id: String, amount: int, visibility: String = LOCAL_PUBLIC_VISIBILITY) -> Dictionary:
@@ -1004,6 +1031,14 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s想主动找守备官交涉。" % actor
 		"proactive_talk_message":
 			return "%s对守备官说：“%s”" % [actor, str(payload.get("speaker_text", ""))]
+		"plan_created":
+			return "%s制定了第%d天的行动计划，包含%d个工作阶段。" % [
+				actor,
+				int(payload.get("plan_day", event.get("day", 1))),
+				int(payload.get("work_phase_count", 0))
+			]
+		"plan_revised":
+			return "%s重新评估了当前计划：%s。" % [actor, str(payload.get("summary", payload.get("reason", "计划异常")))]
 		"money_given":
 			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"equipment_given":

@@ -10,6 +10,8 @@ const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
+const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
+const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -287,6 +289,42 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(order_row, "重评估请求", _show_plan_reevaluation_request)
 
+	var plan_row := _make_row(parent)
+	var plan_label := Label.new()
+	plan_label.text = "每日计划"
+	plan_row.add_child(plan_label)
+	var generate_plan_button := _add_button(plan_row, "生成计划", func() -> void:
+		_run_generate_plan(_selected_id(_npc_select))
+	)
+	generate_plan_button.name = "GeneratePlanButton"
+	var execute_plan_button := _add_button(plan_row, "执行当前计划", func() -> void:
+		_run_execute_plan(_selected_id(_npc_select))
+	)
+	execute_plan_button.name = "ExecutePlanButton"
+	var show_plan_button := _add_button(plan_row, "查看计划", func() -> void:
+		_show_daily_plan(_selected_id(_npc_select))
+	)
+	show_plan_button.name = "ShowPlanButton"
+	var revise_plan_button := _add_button(plan_row, "立即重评估", func() -> void:
+		_run_revise_plan(_selected_id(_npc_select), "gm_manual")
+	)
+	revise_plan_button.name = "RevisePlanButton"
+
+	var reflection_row := _make_row(parent)
+	var reflection_label := Label.new()
+	reflection_label.text = "首次睡眠总结"
+	reflection_row.add_child(reflection_label)
+	var reflect_npc_button := _add_button(reflection_row, "首次总结", func() -> void:
+		_run_reflect_npc(_selected_id(_npc_select), false)
+	)
+	reflect_npc_button.name = "ReflectNpcButton"
+	var long_memory_button := _add_button(reflection_row, "长期记忆", func() -> void:
+		_show_long_memory(_selected_id(_npc_select))
+	)
+	long_memory_button.name = "LongMemoryButton"
+	var last_reflection_button := _add_button(reflection_row, "最近总结", _show_last_reflection)
+	last_reflection_button.name = "LastReflectionButton"
+
 	var proactive_row := _make_row(parent)
 	_proactive_talk_input = _make_input(proactive_row, "主动交涉开场", "守备官，我想问问我们到底还能守多久？", 340)
 	_proactive_talk_input.name = "ProactiveTalkInput"
@@ -373,6 +411,9 @@ func _add_backend_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(row, "应征 Mock", func() -> void:
 		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, true)
+	)
+	_add_button(row, "LLM 状态", func() -> void:
+		_show_llm_state(_selected_id(_npc_select))
 	)
 	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
 
@@ -667,6 +708,42 @@ func _execute_command(command: String) -> void:
 				_show_order(str(parts[1]))
 		"plan_request":
 			_show_plan_reevaluation_request()
+		"plan_generate":
+			if parts.size() >= 2:
+				_run_generate_plan(str(parts[1]))
+			else:
+				_run_generate_plan("all")
+		"plan_generate_rule":
+			if parts.size() >= 2:
+				_run_generate_rule_plan(str(parts[1]))
+			else:
+				_run_generate_rule_plan("all")
+		"plan_execute":
+			if parts.size() >= 2:
+				_run_execute_plan(str(parts[1]))
+			else:
+				_run_execute_plan("all")
+		"plan":
+			if _require_args(parts, 2, "plan <npc_id>"):
+				_show_daily_plan(str(parts[1]))
+		"plan_revise":
+			if parts.size() >= 2:
+				var reason := str(parts[2]) if parts.size() >= 3 else "gm_manual"
+				_run_revise_plan(str(parts[1]), reason)
+			else:
+				_run_revise_plan(_selected_id(_npc_select), "gm_manual")
+		"reflect_npc":
+			if _require_args(parts, 2, "reflect_npc <npc_id> [force]"):
+				var force := parts.size() >= 3 and str(parts[2]).to_lower() in ["force", "true", "1"]
+				_run_reflect_npc(str(parts[1]), force)
+		"long_memory":
+			if _require_args(parts, 2, "long_memory <npc_id>"):
+				_show_long_memory(str(parts[1]))
+		"reflection_result":
+			_show_last_reflection()
+		"llm_state":
+			if _require_args(parts, 2, "llm_state <npc_id>"):
+				_show_llm_state(str(parts[1]))
 		"start_proactive":
 			if _require_args(parts, 3, "start_proactive <npc_id> <text>"):
 				_run_start_proactive_talk(str(parts[1]), command.substr(("start_proactive %s" % str(parts[1])).length()).strip_edges())
@@ -971,6 +1048,83 @@ func _show_plan_reevaluation_request() -> void:
 		_log("NPCSystem 计划重评估请求接口不可用。")
 		return
 	_log("最近计划重评估请求：%s" % _compact(npc_system.get_last_plan_reevaluation_request()))
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system != null and plan_system.has_method("get_last_reevaluation_result"):
+		_log("最近计划重评估结果：%s" % _compact(plan_system.get_last_reevaluation_result()))
+	if plan_system != null and plan_system.has_method("get_last_plan_generation_result"):
+		_log("最近每日计划生成结果：%s" % _compact(plan_system.get_last_plan_generation_result()))
+
+
+func _run_generate_plan(npc_id: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("debug_generate_plan"):
+		_log("DailyPlanSystem 计划生成接口不可用。")
+		return
+	var target_id := "all" if npc_id.is_empty() else npc_id
+	var result: Dictionary = plan_system.debug_generate_plan(target_id)
+	_log("生成每日计划 %s：%s" % [target_id, _compact(result)])
+
+
+func _run_generate_rule_plan(npc_id: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("debug_generate_rule_plan"):
+		_log("DailyPlanSystem 规则计划接口不可用。")
+		return
+	var target_id := "all" if npc_id.is_empty() else npc_id
+	var result: Dictionary = plan_system.debug_generate_rule_plan(target_id)
+	_log("生成规则每日计划 %s：%s" % [target_id, _compact(result)])
+
+
+func _run_execute_plan(npc_id: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("debug_execute_current_plan"):
+		_log("DailyPlanSystem 计划执行接口不可用。")
+		return
+	var target_id := "all" if npc_id.is_empty() else npc_id
+	var result: Dictionary = plan_system.debug_execute_current_plan(target_id, true)
+	_log("执行当前小时计划 %s：%s" % [target_id, _compact(result)])
+
+
+func _show_daily_plan(npc_id: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("debug_get_plan"):
+		_log("DailyPlanSystem 计划查看接口不可用。")
+		return
+	_log("每日计划 %s：%s" % [npc_id, _compact(plan_system.debug_get_plan(npc_id))])
+
+
+func _run_reflect_npc(npc_id: String, force: bool = false) -> void:
+	var reflection_system := get_node_or_null(DAILY_REFLECTION_SYSTEM_PATH)
+	if reflection_system == null or not reflection_system.has_method("debug_generate_reflection"):
+		_log("DailyReflectionSystem 首次睡眠总结接口不可用。")
+		return
+	var result: Dictionary = reflection_system.debug_generate_reflection(npc_id, force)
+	_log("首次睡眠总结 %s：%s" % [npc_id, _compact(result)])
+
+
+func _show_long_memory(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_long_memory"):
+		_log("NPCSystem 长期记忆接口不可用。")
+		return
+	_log("长期记忆 %s：%s" % [npc_id, _compact(npc_system.get_npc_long_memory(npc_id))])
+
+
+func _show_last_reflection() -> void:
+	var reflection_system := get_node_or_null(DAILY_REFLECTION_SYSTEM_PATH)
+	if reflection_system == null or not reflection_system.has_method("get_last_reflection_result"):
+		_log("DailyReflectionSystem 最近总结接口不可用。")
+		return
+	_log("最近首次睡眠总结：%s" % _compact(reflection_system.get_last_reflection_result()))
+
+
+func _run_revise_plan(npc_id: String, reason: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("debug_request_reevaluation"):
+		_log("DailyPlanSystem 计划重评估接口不可用。")
+		return
+	var result: Dictionary = plan_system.debug_request_reevaluation(npc_id, reason)
+	_log("计划重评估 %s：%s" % [npc_id, _compact(result)])
 
 
 func _run_start_proactive_talk(npc_id: String, text: String) -> void:
@@ -1115,6 +1269,22 @@ func _show_last_npc_context_injection() -> void:
 		_log("LLMBridge 指令注入快照不可用。")
 		return
 	_log("最近 NPC LLM 指令注入：%s" % _compact(llm_bridge.get_last_npc_context_injection()))
+
+
+func _show_llm_state(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		_log("NPCSystem 不可用。")
+		return
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+	var snapshot := {
+		"npc_id": npc_id,
+		"llm_activity": state.get("llm_activity", {}),
+		"first_sleep_summary_active": bool(state.get("first_sleep_summary_active", false)),
+		"first_sleep_summary_request_id": str(state.get("first_sleep_summary_request_id", "")),
+		"pending_plan_reevaluation_after_sleep": state.get("pending_plan_reevaluation_after_sleep", {})
+	}
+	_log("LLM 状态 %s：%s" % [npc_id, _compact(snapshot)])
 
 
 func _run_eat(npc_id: String) -> void:
@@ -1337,11 +1507,12 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | last_order_injection",
+		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
-		"publish_order <npc_id> <text> | order <npc_id> | plan_request",
+		"publish_order <npc_id> <text> | order <npc_id> | plan_request | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
+		"reflect_npc <npc_id> [force] | long_memory <npc_id> | reflection_result",
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | equip_mount <npc_id> [visibility] | unit_type <npc_id>",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",

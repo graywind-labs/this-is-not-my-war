@@ -26,6 +26,8 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
 		gm_panel == null
@@ -38,6 +40,8 @@ func _init() -> void:
 		or memory_system == null
 		or llm_bridge == null
 		or equipment_system == null
+		or daily_plan_system == null
+		or daily_reflection_system == null
 		or game_state == null
 	):
 		push_error("GM verification required nodes not found")
@@ -124,6 +128,21 @@ func _init() -> void:
 	var recruit_button := gm_window.find_child("RecruitNpcButton", true, false) as Button
 	if recruit_button == null:
 		push_error("GM NPC section should include a recruit button")
+		quit(1)
+		return
+	var generate_plan_button := gm_window.find_child("GeneratePlanButton", true, false) as Button
+	var execute_plan_button := gm_window.find_child("ExecutePlanButton", true, false) as Button
+	var show_plan_button := gm_window.find_child("ShowPlanButton", true, false) as Button
+	var revise_plan_button := gm_window.find_child("RevisePlanButton", true, false) as Button
+	if generate_plan_button == null or execute_plan_button == null or show_plan_button == null or revise_plan_button == null:
+		push_error("GM NPC section should include daily plan and reevaluation buttons")
+		quit(1)
+		return
+	var reflect_npc_button := gm_window.find_child("ReflectNpcButton", true, false) as Button
+	var long_memory_button := gm_window.find_child("LongMemoryButton", true, false) as Button
+	var last_reflection_button := gm_window.find_child("LastReflectionButton", true, false) as Button
+	if reflect_npc_button == null or long_memory_button == null or last_reflection_button == null:
+		push_error("GM NPC section should include daily reflection buttons")
 		quit(1)
 		return
 	if not _select_option_by_id(equipment_weapon_select, "bow"):
@@ -257,11 +276,42 @@ func _init() -> void:
 		return
 	gm_panel._execute_command("order veteran_deputy_01")
 	gm_panel._execute_command("plan_request")
+	gm_panel._execute_command("plan_generate veteran_deputy_01")
+	if npc_system.get_npc_plan("veteran_deputy_01").size() != 24:
+		push_error("GM plan_generate command should write a 24-hour plan")
+		quit(1)
+		return
+	gm_panel._execute_command("plan veteran_deputy_01")
+	gm_panel._execute_command("plan_execute veteran_deputy_01")
+	gm_panel._execute_command("plan_revise veteran_deputy_01 gm_manual")
+	var plan_result: Dictionary = daily_plan_system.get_last_reevaluation_result()
+	if str(plan_result.get("npc_id", "")) != "veteran_deputy_01":
+		push_error("GM plan_revise command should update DailyPlanSystem reevaluation result")
+		quit(1)
+		return
+	action_system.interrupt_npc_action("veteran_deputy_01", "gm_plan_verify_cleanup")
 	llm_bridge.debug_build_npc_context("veteran_deputy_01", "gm_verify")
 	gm_panel._execute_command("last_order_injection")
 	var injection: Dictionary = llm_bridge.get_last_npc_context_injection()
 	if str(injection.get("npc_id", "")) != "veteran_deputy_01" or str(injection.get("current_order", {}).get("text", "")) != "Hold the gate":
 		push_error("GM last_order_injection command did not expose the latest current_order")
+		quit(1)
+		return
+
+	if llm_bridge.has_method("set_backend_base_url"):
+		llm_bridge.set_backend_base_url("http://127.0.0.1:5999")
+	llm_bridge.request_timeout_seconds = 0.2
+	gm_panel._execute_command("reflect_npc cook_01 force")
+	var cook_long_memory: Dictionary = npc_system.get_npc_long_memory("cook_01")
+	if (cook_long_memory.get("diary", []) as Array).is_empty():
+		push_error("GM reflect_npc command should write a diary entry")
+		quit(1)
+		return
+	gm_panel._execute_command("long_memory cook_01")
+	gm_panel._execute_command("reflection_result")
+	var reflection_result: Dictionary = daily_reflection_system.get_last_reflection_result()
+	if str(reflection_result.get("npc_id", "")) != "cook_01":
+		push_error("GM reflection_result should expose the latest reflection result")
 		quit(1)
 		return
 

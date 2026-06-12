@@ -2,11 +2,11 @@
 
 ## 模块目标
 
-记忆系统用于让 NPC 记住自身经历、玩家行为、地点见闻、战斗事件和他人公开遭遇，并在后续计划、对话、征召、逃离、战斗判定、睡前反思中产生影响。
+记忆系统用于让 NPC 记住自身经历、玩家行为、地点见闻、战斗事件和他人公开遭遇，并在后续计划、对话、征召、逃离、战斗判定、首次睡眠反思中产生影响。
 
 本模块的底层不是“给 LLM 拼一段记忆文本”，而是一套类似埋点系统的事件触发、记录和传播架构。游戏中的事实先被程序记录为事件，再按规则进入 NPC 事件库；公开事件会即时广播到地点/建筑信息节点，由节点转发给当时在场的 NPC，并写入接收者的 NPC 见闻库和后续长期记忆。地点/建筑信息节点不是事件仓库。
 
-世界内称呼规则：所有写入 NPC 事件库、见闻库、Prompt 摘要、睡前总结输入、公告/教学信件等 NPC 可见或 LLM 会当作世界内事实理解的文本，均把玩家称为“守备官”。“玩家”只能用于开发文档和调试命令说明；事件 summary 不得输出以“玩家”为主语的出戏表述。
+世界内称呼规则：所有写入 NPC 事件库、见闻库、Prompt 摘要、首次睡眠总结输入、公告/教学信件等 NPC 可见或 LLM 会当作世界内事实理解的文本，均把玩家称为“守备官”。“玩家”只能用于开发文档和调试命令说明；事件 summary 不得输出以“玩家”为主语的出戏表述。
 
 ## 核心原则
 
@@ -65,6 +65,8 @@
 |---|---|---|
 | `location_entered` | `{actor}进入了{to_location}。` | `to_location_id`, `from_location_id` |
 | `location_exited` | `{actor}离开了{from_location}。` | `from_location_id`, `to_location_id` |
+| `plan_created` | `{actor}制定了第{day}天的行动计划，包含{work_phase_count}个工作阶段。` | `plan_day`, `items`, `work_phase_count` |
+| `plan_revised` | `{actor}重新评估了当前计划：{summary}。` | `plan_day`, `items`, `reason`, `source`, `summary` |
 | `work_started` | `{actor}开始在{location}进行{action}。` | `action_id`, `workstation_id` |
 | `work_completed` | `{actor}完成了{action}，消耗{inputs}，产出{outputs}。` | `action_id`, `input_resources`, `output_resources` |
 | `repair_assist_started` | `{actor}开始协助修复{location}。` | `action_id`, `building_id`, `engineering_skill` |
@@ -84,11 +86,11 @@
 
 T0402 的底层架构至少应为以下事件类型预留类型常量、payload 扩展和查询能力：
 
-- 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`。
+- 日常与计划：`wake_up`、`plan_created`、`plan_revised`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`。
-- 对话只记录实际发生的 `dialogue_turn`。每轮文本、说话者名称、听者名称、是否提出应征、征召结果、当前轮次、最大轮次、是否承诺/威胁/欺骗等都写入 `payload`；打开或关闭对话窗口不入库、不广播。NPC 主动交涉的发起意图和预先确定的开场问题分别写入 `proactive_talk_started` / `proactive_talk_message`，玩家后续回复再走正常 `dialogue_turn`。
-- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。
+- 对话只记录实际完成的 `dialogue_turn`。每轮文本、说话者名称、听者名称、是否提出应征、征召结果、当前轮次、最大轮次、是否承诺/威胁/欺骗等都写入 `payload`；打开或关闭对话窗口不入库、不广播。T1006 起，玩家发送消息后如果在 NPC 回复完成前结束 / 关闭对话，该次 LLM 请求会取消，未完成轮次不写 `dialogue_turn`，也不触发对话结束重评估。NPC 主动交涉的发起意图和预先确定的开场问题分别写入 `proactive_talk_started` / `proactive_talk_message`，玩家后续回复再走正常 `dialogue_turn`。
+- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。正式守备官惩戒攻击写入 `damage_taken`，并在 payload 中保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 主动交涉：`proactive_talk_started`、`proactive_talk_message`。前者记录 NPC 发起主动交涉和计划中确定的问题，固定为 `private`；后者记录玩家点击气泡后 NPC 对守备官说出的开场问题。
 - 成长与状态：`skill_improved`、`attribute_improved`、`npc_recruited`、`npc_left_recruited_state`。
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`。
@@ -104,8 +106,10 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库。广场事件也走同一规则，地点为 `plaza`。
 - 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。`NPCSystem` 到达地点时写入 `location_entered`。
+- T1001 起，`DailyPlanSystem` 生成规则版每日计划时写入 `private` 的 `plan_created` 事件。T1003 起，`/npc/plan_day` Mock 成功和规则降级每日计划也写入同一事件。payload 包含 `plan_day`、24 个小时计划项 `items`、`source`（`rule_default` / `mock_plan_day` / `rule_plan_fallback`）和 `work_phase_count`；该事件只表示 NPC 制定了计划，不代表其中任一行动已经完成。T1002 起，计划异常或指令变化后的修订写入 `private` 的 `plan_revised` 事件，payload 记录修订后的 24 小时计划、触发原因、来源 `mock_revision` 或 `rule_revision_fallback` 和摘要；该事件仍不代表资源、HP 或工作产出已结算。
 - 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_events()` 和对应调试接口。
-- 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，`NPCPanel` 已接入前端入口：给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`；攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`，不重做扣血和昏迷链路。T0901 后，装备武器/盔甲/坐骑由 `EquipmentSystem` 结算库存与槽位，再复用 `record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`。
+- T1004/T1005 起，`clear_npc_short_term_memory(npc_id)` 可清空指定 NPC 当天事件库和见闻库索引，用于首次睡眠总结完成后的短期缓存轮转；该接口不删除 `_events_by_id` 和全局事件列表，因此调试工具仍可查看当天原始事件档案。
+- 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，`NPCPanel` 已接入前端入口：给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`。T1006 起，正式玩家攻击入口移动到 `DialogPanel`：攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 写入带惩戒文案的 `damage_taken`，不重做扣血和昏迷链路；随后请求 NPC 对攻击作出对话回复，回复成功时再写 `dialogue_turn.payload.interaction_kind == "guard_attack"`。若玩家在攻击回复返回前结束对话，攻击事件不撤销，未完成回复不写 `dialogue_turn`，但结束时触发一次计划重评估。T0901 后，装备武器/盔甲/坐骑由 `EquipmentSystem` 结算库存与槽位，再复用 `record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`。
 - T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503 起，协助治疗写入 `healing_started` / `healing_completed`，会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
 - T0502A 起，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，因此昏迷者不会收到地点/广场公开广播、状态广播、公告或进入快照；复苏后见闻接收自动恢复。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
@@ -120,9 +124,9 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - 后续地点或建筑状态变化只写入变化字段对应的见闻，不重新广播完整地点快照。例如建筑受损只广播受损，升级只广播等级变化，单个工位占用变化只广播该工位变化；未变化的建筑等级、工位、公告和在场人员不重复进入见闻库。广场建筑状态见闻使用 `changed_fields`，可进入建筑内部工位变化使用 `changed_workstations`。
 - 主厅、围墙、城门、后门、仓库不作为常规进入空间；NPC 移动到这类实体时，信息节点状态归入广场快照。
 
-当前仍不实现睡前总结、日记、知识图谱、LLM 记忆摘要、战斗本体或公告输入 UI；这些仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
+T1004/T1005 已实现首次睡眠总结、日记写入、知识图谱占位更新和指定 NPC 短期记忆清空；真实 LLM Prompt 打磨、独立知识图谱更新服务、战斗本体或正式公告输入 UI 仍由后续任务推进。旧式“地点继承历史事件”不再作为后续目标。
 
-T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.tscn` 前端验证此前主要依赖脚本的能力：查看地点快照、写入广场公告、广播广场公开事件、记录守备官给钱/攻击事件、查询 NPC 短期记忆和全局事件列表。GM 面板只调用 `MemorySystem` 现有接口或 `debug_*` 接口，不新增独立记忆事实源。
+T0004 后，GM 面板已暴露记忆/见闻相关调试入口，便于在 `Main.tscn` 前端验证此前主要依赖脚本的能力：查看地点快照、写入广场公告、广播广场公开事件、记录守备官给钱/攻击事件、查询 NPC 短期记忆、触发首次睡眠总结、查看长期记忆、LLM 状态和全局事件列表。GM 面板只调用现有系统接口或 `debug_*` 接口，不新增独立记忆事实源。
 
 ## 三层信息结构
 
@@ -231,16 +235,24 @@ NPC 当天短期记忆由两部分组成：
 - 对话：优先注入与玩家、当前 NPC、当前地点相关的事件和见闻。
 - 计划：注入当天关键经历、地点状态、资源压力和未完成目标。
 - 战斗判定：注入亲历伤害、见闻中的战况、玩家承诺或威胁。
-- 睡前总结：注入当天完整事件库和见闻库的筛选摘要。
+- 首次睡眠总结：注入当天完整事件库和见闻库的筛选摘要。
 
-## 睡前总结
+## 首次睡眠总结
 
-每天睡前，NPC 根据当天事件库和见闻库生成：
+每天首次进入睡觉状态并持续睡眠满 1 个游戏小时后，NPC 根据当天事件库和见闻库生成：
 
 1. 第一人称日记。
 2. 知识图谱增量或更新。
 
-总结完成后，清空当天短期事件库和见闻库缓存；是否保留原始事件用于调试或存档，由后续存档任务决定。
+当前实现（T1004/T1005）：
+
+- `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`，每名 NPC 每天首次睡眠满 1 游戏小时后生成一次总结；重复睡眠不会自动重复写入，GM 可用 force 调试。
+- `LLMBridge.request_npc_daily_reflection(...)` 构造 `DailyReflectionRequest`，传入 NPC 上下文、当天事件 / 见闻筛选摘要和已有日记，调用后端 `/npc/daily_reflection`。该接口历史名仍为 daily_reflection，当前玩法语义是首次睡眠总结；请求会触发 TimeSystem 慢速。
+- 总结请求发起到完成期间，NPC 处于不可打断的深度睡眠锁；对话、消息、行动改派和普通中断都会被拒绝。此期间发布的新指令只保存，计划重评估延后到醒来后。
+- 后端不可用或输出无效时，Godot 使用确定性模板生成第一人称日记和最小知识图谱更新，保证睡觉流程不被模型阻断。
+- `NPCSystem.apply_daily_reflection(...)` 把结果追加到 `diary`，并把 `knowledge_graph_updates` 合并到 `knowledge_graph.patches` 与 `knowledge_graph.by_subject` 占位结构。
+- 总结完成后，`MemorySystem.clear_npc_short_term_memory(...)` 清空该 NPC 当天事件库和见闻库索引；全局事件档案仍保留给 GM 和自动化调试查询。
+- `NPCPanel` 显示长期日记，并在总结期间显示“正在熟睡”；GM 面板可用 `reflect_npc <npc_id> [force]`、`long_memory <npc_id>`、`reflection_result` 和 `llm_state <npc_id>` 验证。
 
 ## 记忆注入原则
 

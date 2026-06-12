@@ -277,6 +277,51 @@ func has_active_action(npc_id: String) -> bool:
 	return _active_actions.has(npc_id)
 
 
+func get_pending_action_id(npc_id: String) -> String:
+	return str(_pending_actions.get(npc_id, ""))
+
+
+func get_active_action_id(npc_id: String) -> String:
+	if not _active_actions.has(npc_id):
+		return ""
+	var active_action: Dictionary = _active_actions.get(npc_id, {})
+	var action: Dictionary = active_action.get("action", {})
+	var action_id := str(action.get("id", ""))
+	if not action_id.is_empty():
+		return action_id
+	return str(active_action.get("kind", ""))
+
+
+func get_runtime_action_id(npc_id: String) -> String:
+	var pending_action_id := get_pending_action_id(npc_id)
+	if not pending_action_id.is_empty():
+		return pending_action_id
+	var active_action_id := get_active_action_id(npc_id)
+	if not active_action_id.is_empty():
+		return active_action_id
+	return ""
+
+
+func interrupt_npc_action(npc_id: String, reason: String = "interrupted") -> bool:
+	if _is_first_sleep_summary_locked(npc_id):
+		return false
+	var had_action := _pending_actions.has(npc_id) or _active_actions.has(npc_id)
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	if _active_actions.has(npc_id):
+		_stop_active_action(npc_id, reason)
+		had_action = true
+
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		var current_action := str(state.get("current_action", ""))
+		if current_action.begins_with("moving_to_"):
+			npc_system.stop_npc_movement_for_system(npc_id, reason)
+			had_action = true
+	return had_action
+
+
 func get_healing_helpers_for_target(target_npc_id: String) -> Array[String]:
 	var result: Array[String] = []
 	var helpers: Array = _healing_helpers_by_target.get(target_npc_id, [])
@@ -936,6 +981,9 @@ func _start_sleep(npc_id: String, action: Dictionary) -> bool:
 
 func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 	var action: Dictionary = active_action.get("action", {})
+	if _is_first_sleep_summary_locked(npc_id):
+		_active_actions[npc_id] = active_action
+		return
 	_apply_final_state_deltas(npc_id, active_action)
 	_set_action_idle(npc_id, "completed_sleep")
 	_log_structured_action_event(npc_id, action, "sleep_ended", {
@@ -944,6 +992,9 @@ func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 		"fatigue_delta": int(action.get("fatigue_delta", 0)),
 		"duration_seconds": _get_action_duration_seconds(action)
 	})
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("consume_deferred_plan_reevaluation_after_sleep"):
+		npc_system.consume_deferred_plan_reevaluation_after_sleep(npc_id)
 
 
 func _create_active_action(action: Dictionary, npc_id: String = "") -> Dictionary:
@@ -957,6 +1008,8 @@ func _create_active_action(action: Dictionary, npc_id: String = "") -> Dictionar
 
 
 func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
+	if _is_first_sleep_summary_locked(npc_id):
+		return
 	if _is_npc_unconscious_or_escaped(npc_id):
 		_stop_active_action(npc_id, "")
 		return
@@ -1757,7 +1810,19 @@ func _can_npc_act(npc_id: String) -> bool:
 	if bool(state.get("escaped", false)):
 		push_warning("Escaped NPC cannot act: %s" % npc_id)
 		return false
+	if bool(state.get("first_sleep_summary_active", false)):
+		return false
 	return true
+
+
+func _is_first_sleep_summary_locked(npc_id: String) -> bool:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+	if npc_system.has_method("is_first_sleep_summary_locked"):
+		return bool(npc_system.is_first_sleep_summary_locked(npc_id))
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	return bool(state.get("first_sleep_summary_active", false))
 
 
 func _is_npc_unconscious(npc_id: String) -> bool:

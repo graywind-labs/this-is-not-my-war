@@ -50,7 +50,7 @@ T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和�
 
 T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后进入持续行动状态，并随 `TimeSystem.logical_time_tick` 逐步推进，而不是瞬时完成。吃饭当前以 20 分钟为基准，完整进餐恢复约 50 点饱食度；睡觉以 6.5 小时消耗 100 点疲劳为基准，按逻辑秒细分结算。T0801 起，工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用建筑工位，周期时长会按 NPC 对应熟练度、力量/智力属性和建筑等级缩短；单位完成时结算资源投入、产出、饱食消耗和疲劳增长，完成、失败或中断会释放工位并广播地点内部状态。T0806 后，马厩工作使用养马与力量，消耗粮食并产出 `horse_readiness` 马匹整备库存；T0901 后，该库存可由 `EquipmentSystem` 转换为 NPC 坐骑槽，但日常工作模式仍不骑乘。T0807 后，酒窖工作使用酿酒与智力，消耗粮食并产出 `wine` 酒库存；酒出售换钱仍由后续商人交易系统处理。行动开始、完成或失败都会写入 `MemorySystem` 的结构化事件。
 
-2026-05-24 起新增协助修复行为；2026-05-25 起新增协助升级行为。`debug_assign_repair_assist(npc_id, building_id)` 与 `debug_assign_upgrade_assist(npc_id, building_id)` 都是带建筑参数的独立行为，可让 NPC 在广场协助正在修复或正在升级的建筑，并按工程熟练度加速对应倒计时；NPC 如果在室内，会先前往广场再开始协助。如果 NPC 离开广场或被改派其他行动，`BuildingSystem` 会移除其协助人数和速度加成。协助修复/升级事件写为 `location_id == "plaza"` 的 `local_public`。当前行动仍是最小闭环，不代表 NPC 已有真实每日计划或 LLM 自主决策。
+2026-05-24 起新增协助修复行为；2026-05-25 起新增协助升级行为。`debug_assign_repair_assist(npc_id, building_id)` 与 `debug_assign_upgrade_assist(npc_id, building_id)` 都是带建筑参数的独立行为，可让 NPC 在广场协助正在修复或正在升级的建筑，并按工程熟练度加速对应倒计时；NPC 如果在室内，会先前往广场再开始协助。如果 NPC 离开广场或被改派其他行动，`BuildingSystem` 会移除其协助人数和速度加成。协助修复/升级事件写为 `location_id == "plaza"` 的 `local_public`。当前行动仍是最小闭环，计划系统只能安排意图并调用行动白名单，不能让 LLM 直接结算资源、建筑或 HP。
 
 T0501 起，`NPCSystem.apply_damage_to_npc(...)` / `debug_damage_npc(...)` 负责权威 HP 扣除。HP 降到 0 时 NPC 进入昏迷而不是死亡，停止移动，`current_action` 变为 `unconscious`，头顶标签与 NPC 面板会显示昏迷状态。昏迷 NPC 不能移动或执行工作、吃饭、睡觉、协助修复/升级等行动。
 
@@ -68,7 +68,9 @@ T0502A 起，昏迷 NPC 不接收地点/广场公开广播、建筑/地点状态
 
 2026-06-03 起，睡觉 NPC 使用同一条见闻接收规则：当 `current_action == "sleep_in_dormitory"` 时，该 NPC 不会把同建筑内发生的 `local_public` 事件、地点/建筑状态广播、公告或进入快照写入见闻库；自己的入睡和醒来仍进入事件库。睡醒回到可行动状态后，只从后续广播继续接收见闻，不补收睡觉期间错过的信息。
 
-T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；正式征召仍由对话中的同意结果驱动。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并让 NPC 预先确定的开场问题先入库；1 小时无人点击则状态结束。当前仍不实现复杂避障、真实日程、真实计划重评估处理、战斗心理判定或真实 LLM；Godot 客户端不保存供应商 API Key。
+T1004/T1005 起，NPC 每天首次进入睡觉状态后，必须持续睡眠满 1 个游戏小时才会触发 `DailyReflectionSystem`。系统把当天事件库和见闻库摘要交给 `/npc/daily_reflection` Mock，后端不可用时使用本地模板，生成第一人称日记、记忆摘要和知识图谱占位更新。总结从发起请求到应用完成期间，NPC 进入不可打断的深度睡眠锁：玩家对话、消息、行动改派和普通中断都会被拒绝；已入伍 NPC 仍可保存新指令，但计划重评估延后到醒来后执行。结果由 `NPCSystem.apply_daily_reflection(...)` 写入长期 `diary` 与 `knowledge_graph`，随后清空该 NPC 当天短期事件 / 见闻索引；NPC 面板可查看日记和 LLM 状态，GM 面板可强制触发、查看长期记忆和查看 LLM 状态。
+
+T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；正式征召仍由对话中的同意结果驱动。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并让 NPC 预先确定的开场问题先入库；1 小时无人点击则状态结束。T1001 起，`DailyPlanSystem` 可生成规则版 24 小时计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；同一小时内由计划启动的行动提前完成，会再次执行同一行动。T1002/T1005/T1006 起，行动异常、实际对话打断、主动交涉结束 / 超时、守备官攻击、战斗警报占位和新指令会触发计划重评估；玩家只是打开或关闭对话窗不会打断行动、不会取消 LLM、不会触发重评估。只有玩家真正发送消息或在对话窗中攻击时，才取消目标 NPC 正在等待的可取消 LLM 请求并打断工作、吃饭、睡觉等普通行动。若发送消息后未得到 NPC 回复就结束对话，本轮 LLM 请求会取消，且未完成的对话不入库、不触发对话重评估；攻击例外，攻击事实先扣 HP 并入库，结束时仍触发一次重评估。T1003 起，首次制定每日计划可通过 `/npc/plan_day` Mock 生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单；成功时写入 `plan_created(source=mock_plan_day)`，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)`。T1004/T1005 起，首次睡眠总结可通过 `/npc/daily_reflection` Mock 把当天短期经历沉淀为长期日记和知识图谱占位，失败时模板降级。当前仍不实现复杂避障、战斗心理判定、真实 LLM 或已打磨的每日计划 / 首次睡眠总结 Prompt；Godot 客户端不保存供应商 API Key。
 
 ## 当前地点状态
 
@@ -94,7 +96,7 @@ NPC 离开地点时，系统生成 `location_exited` 事件，`location_id` 使�
 
 NPC 从一个室内信息地点前往另一个室内信息地点时，当前实现会在事件和地点信息层插入广场中转：离开原地点、进入广场、离开广场、进入目标地点。物理表现仍是低模阶段的直线移动占位，不代表最终导航模型。
 
-后续建筑或地点状态变化只进入字段级见闻，例如建筑受损、升级完成、公告变化或某个工位占用变化；未变化的建筑状态和在场人员不重复传递。对话全文也作为对话事件 `payload` 保存，供后续对话、计划和睡前总结引用。
+后续建筑或地点状态变化只进入字段级见闻，例如建筑受损、升级完成、公告变化或某个工位占用变化；未变化的建筑状态和在场人员不重复传递。对话全文也作为对话事件 `payload` 保存，供后续对话、计划和首次睡眠总结引用。
 
 T0603 对话请求的目标 NPC 输入应包含 `npc_id`、`npc_name`、`npc_setting`、`npc_state`、`short_memory`、`long_memory` 和 `location_context`；说话者输入包含 `speaker_name`、`speaker_text` 和 `speaker_context`。T0703A 实现后，所有面向目标 NPC 的对话请求还必须加入该 NPC 的 `current_order`。如果说话者是守备官，名称固定为“守备官”；如果说话者是 NPC，`speaker_context` 应包含发起者健康/受伤状态与外表特征。NPC-NPC 对话由当前轮次与最大轮次控制，接近最大轮次时后端更倾向结束对话。
 
@@ -102,7 +104,7 @@ T0603 对话请求的目标 NPC 输入应包含 `npc_id`、`npc_name`、`npc_set
 
 面向 NPC 的所有玩家相关事件摘要、见闻摘要、对话上下文和后续日记/反思输入，必须把玩家称为“守备官”。“玩家”只作为开发文档里的外部说明词使用，不进入 NPC 可见文本或 LLM 世界内上下文。
 
-当前运行时可通过 `MemorySystem.get_npc_short_term_memory(npc_id)` 获取 `{ event_log, witness_log }` 两个容器，也可通过 `get_npc_short_term_memory_ids(...)` 获取事件 ID 版本。`NPCPanel` 已分开显示事件库和见闻库，并使用固定高度滚动区避免记忆增长撑高面板；地点状态见闻会写明具体建筑名称和状态，例如“围墙受损”“食堂内现在有布鲁诺、莉娜”“在场人员状态：布鲁诺健康，行动：吃饭”“菜园里的 garden_plot_01 状态变为空闲”。T0704 后，守备官给钱和攻击已可从 NPC 面板触发；T0901 后，守备官也可在 NPC 面板为已入伍 NPC 装备主武器，并可通过 GM 装备盔甲和坐骑。给钱、装备和攻击会进入目标 NPC 事件库，公开交互会进入同地点 NPC 的见闻库，并随 `LLMBridge` 后续对话上下文的短期记忆摘要传给后端。“要求休息/请求治疗”不作为 NPC 面板按钮，相关意图由已入伍 NPC 的自然语言指令表达。
+当前运行时可通过 `MemorySystem.get_npc_short_term_memory(npc_id)` 获取 `{ event_log, witness_log }` 两个容器，也可通过 `get_npc_short_term_memory_ids(...)` 获取事件 ID 版本。`NPCPanel` 已分开显示事件库和见闻库，并使用固定高度滚动区避免记忆增长撑高面板；地点状态见闻会写明具体建筑名称和状态，例如“围墙受损”“食堂内现在有布鲁诺、莉娜”“在场人员状态：布鲁诺健康，行动：吃饭”“菜园里的 garden_plot_01 状态变为空闲”。T0704 后，守备官给钱可从 NPC 面板触发；T0901 后，守备官也可在 NPC 面板为已入伍 NPC 装备主武器，并可通过 GM 装备盔甲和坐骑。T1006 起，守备官攻击入口移入对话窗：攻击先复用 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 并写入惩戒攻击 `damage_taken` 事件，再请求 NPC 对攻击作出 LLM 回复。给钱、装备和攻击会进入目标 NPC 事件库，公开交互会进入同地点 NPC 的见闻库，并随 `LLMBridge` 后续对话上下文的短期记忆摘要传给后端。“要求休息/请求治疗”不作为 NPC 面板按钮，相关意图由已入伍 NPC 的自然语言指令表达。
 
 ## NPC 行为层级
 
@@ -130,7 +132,7 @@ NPC 行为分三层：
 - 守备官发布不同于原内容的新指令后立即重新评估计划
 - 对玩家产生主动交涉意图
 
-计划层的时间触发以 TimeSystem 的逻辑时间为准。每日计划和任何计划重评估都必须读取 `current_order`，但指令只提供倾向，不直接启动行动或覆盖程序强制层。若计划生成或重评估会影响当前场景即时行动，Godot 侧必须申请 TimeSystem 慢速，等待 LLM / Mock 返回、失败或降级后释放。
+计划层的时间触发以 TimeSystem 的逻辑时间为准。T1001 规则版计划提供计划生成、保存、事件写入和按小时执行接口；计划项执行仍走 ActionSystem 的行动白名单、移动、工位、资源和状态结算。T1003 的每日计划生成通过 `LLMBridge.request_npc_daily_plan(...)` 调用 Mock / 后端 `/npc/plan_day`，请求包含 `current_order`、人设、状态、技能、短期记忆、长期记忆、地点、资源、建筑状态和行动白名单；成功时应用 Mock 24 小时计划，失败或输出不合法时应用规则降级计划。T1002 的计划修订通过 `LLMBridge.request_npc_plan_revision(...)` 调用 Mock / 后端 `/npc/revise_plan`，请求包含 `current_order`，但指令只提供倾向，不直接启动行动或覆盖程序强制层。计划生成和计划修订会影响当前场景即时行动，因此 Godot 侧会申请 TimeSystem 慢速，等待 LLM / Mock 返回、失败或降级后释放。
 
 ### 3. 表演与判断层
 
@@ -141,11 +143,11 @@ NPC 行为分三层：
 - 战斗前心理判定
 - HP 低于 30% 判定
 - 逃离挽留
-- 睡前总结
+- 首次睡眠总结
 
 表演与判断层等待 LLM 返回时不冻结游戏，也不改变 NPC 移动或动画速度；只让逻辑时间和按时间结算的资源、状态、战斗数值减速到默认 `1/60`，即现实 1 秒约等于游戏 1 秒。玩家主动暂停时，UI、对话和已经发起的 LLM 请求仍可继续等待或返回，但程序权威结算（移动、战斗、资源/状态变化）应保持暂停，恢复后再应用。
 
-所有面向某名 NPC 的 LLM 调用都必须把该 NPC 的 `current_order` 作为独立上下文字段注入，包括对话、每日计划、计划修订、主动交涉、战斗/低血量/逃离判定和睡前反思。Prompt 必须明确：这是守备官当前提出的指令，不是系统消息，不保证服从，也不能越过行动白名单、资源、HP、地点或战斗权威规则。
+所有面向某名 NPC 的 LLM 调用都必须把该 NPC 的 `current_order` 作为独立上下文字段注入，包括对话、每日计划、计划修订、主动交涉、战斗/低血量/逃离判定和首次睡眠反思。Prompt 必须明确：这是守备官当前提出的指令，不是系统消息，不保证服从，也不能越过行动白名单、资源、HP、地点或战斗权威规则。
 
 ## 已入伍 NPC 指令机制
 
@@ -160,7 +162,7 @@ NPC 行为分三层：
 
 `ActionSystem.debug_assign_*` 等直接行动接口仍可用于 GM 和自动化验证，但不代表正式玩家指令语义。
 
-T0703A 后，统一重评估入口仍表现为 `EventBus.npc_plan_reevaluation_requested(npc_id, reason)`；`NPCSystem.get_last_plan_reevaluation_request()` 保存最近请求、最新 `current_order` 和处理结果供 GM / 自动化观察。由于 T1002 完整计划链路尚未实现，当前结果为 `rule_fallback_deferred`：保留最新指令等待统一计划重评估，不直接改变当前行动。`LLMBridge` 同时把最新指令注入对话顶层输入和共享 NPC 上下文，并保存最近注入快照。
+T0703A/T1002 后，统一重评估入口仍表现为 `EventBus.npc_plan_reevaluation_requested(npc_id, reason)`；`NPCSystem.get_last_plan_reevaluation_request()` 保存最近请求、最新 `current_order` 和处理结果供 GM / 自动化观察。`DailyPlanSystem` 监听该信号并调用 `LLMBridge` 修订计划；结果可能是 `mock_revision_applied` 或 `rule_fallback_applied`，都会写入 `plan_revised` 事件并尝试执行当前小时行动。`LLMBridge` 同时把最新指令注入对话、计划修订顶层输入和共享 NPC 上下文，并保存最近注入快照。
 
 ## 主动找玩家机制
 
@@ -181,7 +183,7 @@ NPC 可以在计划中选择“主动找玩家交涉”。T0705 当前先提供�
 - `NPC.gd` 运行时创建 `ProactiveTalkBubble`，主动交涉有效时显示 `?`。
 - 点击后 `DialogSystem.start_proactive_player_dialogue(...)` 复用玩家-NPC 对话窗口，把 `prompt_text` 作为 NPC 第一条历史显示，并写入 `proactive_talk_message`。
 - 玩家后续回复继续走现有 `/npc/dialogue` Mock 与 `dialogue_turn` 事件逻辑。
-- T1002 尚未实现时，对话结束或超时后的计划重评估仍为 `rule_fallback_deferred` 降级观察结果，不直接应用新计划。
+- 对话结束或超时后的计划重评估会进入 T1002 统一链路，应用 Mock 修订或规则降级计划。
 
 触发原因：
 

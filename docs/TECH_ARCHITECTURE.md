@@ -57,7 +57,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 事件权威写入、地点/建筑信息节点当前状态维护、即时广播、NPC 事件库与见闻库维护
 - 已入伍 NPC `current_order` 的权威保存、指令发布差异判断、`private` `order_assigned` 事件写入和计划重评估触发
 - 与后端通信
-- T0604A 后通过 `Main/Systems/LLMBridge` 的 Godot 原生 `HTTPClient` 请求 `/health` 与 `/npc/dialogue`，并负责请求期间的 TimeSystem 慢速申请和释放
+- T0604A 后通过 `Main/Systems/LLMBridge` 的 Godot 原生 `HTTPClient` 请求 `/health`、`/npc/dialogue` 与 `/npc/revise_plan`，并负责请求期间的 TimeSystem 慢速申请和释放；T1006 起玩家对话 UI 使用异步 `/npc/dialogue`，可在回复前取消并丢弃结果
 
 ### Python 后端负责
 
@@ -68,7 +68,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 对话生成
 - 每日计划生成
 - 战斗/逃离心理判定
-- 睡前总结
+- 首次睡眠总结
 - 知识图谱更新
 - API 成本统计
 - 模型供应商切换
@@ -107,7 +107,7 @@ LLM 调用前从事件库 + 见闻库生成摘要
 
 后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱增量，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
 
-T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。
+T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。T1006 起，打开对话窗也不再打断行动或取消 LLM；只有玩家实际发送消息或在对话窗攻击时，才触发可取消 LLM 取消、普通行动中断和后续重评估候选。玩家发送后若在 NPC 回复完成前结束对话，异步请求会取消，未完成轮次不入库、不触发对话重评估。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。T1006 的对话窗攻击先由 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 和写 `damage_taken`，再请求 NPC 回复；若回复取消，攻击事实不撤销。
 
 ### LLM 不负责
 
@@ -189,6 +189,8 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 
 输入必须包含目标 NPC 当前 `current_order`。输出必须是 24 条 `PlanItem`，每条包含小时、行动类型、行动 id、可选地点/目标和理由。计划是建议，不代表资源、移动或行动已经结算；模型可以结合人设、记忆和现场条件调整、推迟或拒绝指令。
 
+当前状态：T1003 已在 Flask 后端接通 `/npc/plan_day`，使用 `DailyPlanRequest` 校验输入、调用 `ModelAdapter.generate("plan_day", ...)`，再用 `DailyPlanResponse` 校验 24 阶段输出。Mock 会按 NPC 熟练度和行动白名单选择真实可执行工作行动，返回睡觉、吃饭、工作和等待组成的计划。Godot 侧 `DailyPlanSystem` 通过 `LLMBridge.request_npc_daily_plan(...)` 调用该接口；成功时写入 `plan_created(source=mock_plan_day)` 并可执行当前小时行动，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)` 并使用规则计划。
+
 ### 计划修订
 
 `POST /npc/revise_plan`
@@ -197,6 +199,8 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输出 Schema：`PlanRevisionResponse`
 
 用于守备官发布新指令、目标不可用、工位占用、资源不足、对话打断、低 HP、低饱食、高疲劳和战斗警报等情况后的计划重评估。请求必须包含最新 `current_order`。
+
+当前状态：T1002 已在 Flask 后端接通 `/npc/revise_plan`，使用 `PlanRevisionRequest` 校验输入、调用 `ModelAdapter.generate("revise_plan", ...)`，再用 `PlanRevisionResponse` 校验输出。Godot 侧 `DailyPlanSystem` 会在计划异常或指令变化时通过 `LLMBridge.request_npc_plan_revision(...)` 调用该接口；成功时合并修订计划并执行当前小时行动，失败时应用 `rule_revision_fallback` 规则降级计划。
 
 ### 战斗判定
 
@@ -207,7 +211,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 
 覆盖战斗开始、低 HP 和逃离检查。请求必须包含目标 NPC 当前 `current_order`；输出只表达参战、避战、继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、逃离移动和状态变更由 Godot 执行。
 
-### 睡前总结
+### 首次睡眠总结
 
 `POST /npc/daily_reflection`
 
@@ -215,6 +219,8 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输出 Schema：`DailyReflectionResponse`
 
 输出第一人称日记、当天记忆摘要和 `KnowledgeGraphPatch` 列表。
+
+当前状态：T1004/T1005 已在 Flask 后端接通 `/npc/daily_reflection`，使用 `DailyReflectionRequest` 校验输入、调用 `ModelAdapter.generate("daily_reflection", ...)`，再用 `DailyReflectionResponse` 校验输出。接口历史名仍是 daily_reflection，当前玩法语义是首次睡眠总结。Godot 侧 `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`，NPC 每天首次睡眠满 1 游戏小时后通过 `LLMBridge.request_npc_daily_reflection(...)` 调用该接口；成功时写入 NPC 长期日记和知识图谱占位，失败时使用 Godot 模板降级，完成后清空该 NPC 当天短期事件 / 见闻索引。该调用会申请 TimeSystem 慢速，且请求发起到应用完成期间 NPC 处于不可打断的深度睡眠锁。
 
 ### 其他 AI 辅助
 
@@ -265,12 +271,15 @@ T0604 已在 Godot 侧新增 `res://scripts/systems/LLMBridge.gd`，挂载于 `M
 - `check_health()` 通过原生 HTTP 请求 `GET /health`，并通过 `backend_status_changed(status_text, ok)` 供 HUD 显示后端状态。
 - `build_npc_dialogue_payload(...)` 按 T0603 Schema 收集目标 NPC 设定、守备官/NPC 说话者上下文、应征标记、轮次、NPC 状态、短期记忆、长期记忆和地点快照。
 - `request_npc_dialogue(...)` 通过原生 HTTP 请求 `POST /npc/dialogue`，返回后端 Mock JSON 或错误字典。
+- `build_npc_daily_plan_payload(...)` 按 T1003 Schema 收集目标 NPC 共享上下文、当前 `current_order`、短期记忆、长期记忆、地点、广场、资源、建筑状态、行动白名单和计划规则。
+- `request_npc_daily_plan(...)` 通过原生 HTTP 请求 `POST /npc/plan_day`，返回后端 Mock 24 小时计划或错误字典。
+- `build_npc_plan_revision_payload(...)` / `request_npc_plan_revision(...)` 通过 `POST /npc/revise_plan` 处理 T1002 行动异常和指令变化后的计划修订。
 - 对话请求前注册 `TimeSystem.request_time_slowdown(...)`，成功、失败或超时后调用 `release_time_slowdown(...)`。
 - `build_npc_dialogue_payload(...)` 与共享 NPC 上下文构造会注入目标 NPC 最新 `current_order`；`get_last_npc_context_injection()` 暴露最近注入快照用于 GM / 自动化验证。
 
-当前传输层不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge` 会解析后端 base url，使用 `HTTPClient.connect_to_host(...)`、`request(...)`、`poll()` 和响应体读取循环完成显式请求状态机，并用 `request_timeout_seconds` 覆盖连接、请求和响应体读取超时。后端关闭、超时、非法 JSON 或后端 `ok=false` 都返回可处理错误字典；会影响当前事态的请求在成功、失败或超时后都会释放 TimeSystem 慢速请求。
+当前传输层不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge` 会解析后端 base url，使用 `HTTPClient.connect_to_host(...)`、`request(...)`、`poll()` 和响应体读取循环完成显式请求状态机，并用 `request_timeout_seconds` 覆盖连接、请求和响应体读取超时。后端关闭、超时、非法 JSON 或后端 `ok=false` 都返回可处理错误字典；会影响当前事态的对话、每日计划和计划修订请求在成功、失败或超时后都会释放 TimeSystem 慢速请求。T1006 新增异步对话请求路径，UI 等待 NPC 回复时不阻塞结束按钮；取消会释放慢速并清除 NPC LLM 活动，后台 HTTP 返回后只发出已取消结果，不再应用到会话。
 
-T0703A 已将 `current_order` 接入共享 NPC 请求上下文和对话顶层 payload，由 `LLMBridge` 统一收集，避免只在某一种 Prompt 中手工拼接。Godot 保持当前指令和事件事实的权威；后端只负责把该上下文传给模型并校验模型输出。T1002 尚未实现时，新指令重评估使用可观察的规则降级结果，不直接应用行动。
+T0703A/T1002/T1003 已将 `current_order` 接入共享 NPC 请求上下文、对话顶层 payload、每日计划请求和计划修订请求，由 `LLMBridge` 统一收集，避免只在某一种 Prompt 中手工拼接。Godot 保持当前指令、事件事实、行动白名单与结算的权威；后端只负责把该上下文传给模型并校验模型输出。新指令重评估现在会通过 T1002 链路应用 Mock 修订计划或规则降级计划；每日计划生成会通过 T1003 链路应用 Mock 24 小时计划或规则降级计划。
 
 验证脚本 `tools/verify_llm_bridge.gd` 会静态检查 `LLMBridge.gd` 不含 `curl.exe` / `OS.execute` / 临时请求体文件旧路径，并覆盖后端关闭、health、`/npc/dialogue` Mock 成功和失败后慢速释放。
 

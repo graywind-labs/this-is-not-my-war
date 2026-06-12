@@ -44,7 +44,7 @@ func _init() -> void:
 		return
 
 	var npc_id := "veteran_deputy_01"
-	npc_system.update_npc_state(npc_id, {"current_action": "guard_placeholder"})
+	npc_system.update_npc_state(npc_id, {"current_action": "idle"})
 	npc_system.debug_select_npc(npc_id)
 	await process_frame
 	if not order_button.visible or order_button.disabled or order_button.text != "指令":
@@ -64,7 +64,6 @@ func _init() -> void:
 		return
 
 	var event_count_before: int = int(memory_system.get_event_count())
-	var action_before := str(npc_system.get_npc_state(npc_id).get("current_action", ""))
 	text_edit.text = "守住城门，但先保证自己安全。"
 	publish_button.pressed.emit()
 	await process_frame
@@ -78,17 +77,13 @@ func _init() -> void:
 		push_error("Published order metadata mismatch")
 		quit(1)
 		return
-	if str(npc_system.get_npc_state(npc_id).get("current_action", "")) != action_before:
-		push_error("Publishing an order must not directly change current_action")
-		quit(1)
-		return
-	if memory_system.get_event_count() != event_count_before + 1 or _reevaluation_signal_count != 1:
-		push_error("Changed order should write one event and emit one reevaluation request")
+	if memory_system.get_event_count() <= event_count_before or _reevaluation_signal_count != 1:
+		push_error("Changed order should write events and emit one reevaluation request")
 		quit(1)
 		return
 
 	var events: Array = memory_system.get_npc_daily_events(npc_id)
-	var order_event: Dictionary = events[events.size() - 1]
+	var order_event: Dictionary = _find_latest_event(events, "order_assigned")
 	var payload: Dictionary = order_event.get("payload", {})
 	if str(order_event.get("type", "")) != "order_assigned" or str(order_event.get("visibility", "")) != "private":
 		push_error("order_assigned event should be private")
@@ -107,17 +102,19 @@ func _init() -> void:
 		push_error("Plan reevaluation request snapshot mismatch")
 		quit(1)
 		return
-	if request.get("current_order", {}) != order or str(request.get("result", {}).get("status", "")) != "rule_fallback_deferred":
-		push_error("Plan reevaluation request must retain the latest order and observable fallback result")
+	var result_status := str(request.get("result", {}).get("status", ""))
+	if request.get("current_order", {}) != order or not ["rule_fallback_applied", "mock_revision_applied"].has(result_status):
+		push_error("Plan reevaluation request must retain the latest order and observable applied result")
 		quit(1)
 		return
 
+	var event_count_after_changed: int = int(memory_system.get_event_count())
 	var unchanged_result: Dictionary = npc_system.publish_npc_order(npc_id, str(order.get("text", "")))
 	if not bool(unchanged_result.get("ok", false)) or bool(unchanged_result.get("changed", true)):
 		push_error("Publishing identical text should return unchanged success")
 		quit(1)
 		return
-	if memory_system.get_event_count() != event_count_before + 1 or _reevaluation_signal_count != 1:
+	if memory_system.get_event_count() != event_count_after_changed or _reevaluation_signal_count != 1:
 		push_error("Publishing identical text must have no event or reevaluation side effect")
 		quit(1)
 		return
@@ -152,3 +149,11 @@ func _init() -> void:
 
 func _on_plan_reevaluation_requested(_npc_id: String, _reason: String) -> void:
 	_reevaluation_signal_count += 1
+
+
+func _find_latest_event(events: Array, event_type: String) -> Dictionary:
+	for index in range(events.size() - 1, -1, -1):
+		var event = events[index]
+		if event is Dictionary and str(event.get("type", "")) == event_type:
+			return event
+	return {}

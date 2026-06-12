@@ -3,10 +3,30 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 
 try:
-    from backend.schemas import APIErrorResponse, NPCDialogueRequest, NPCDialogueResponse
+    from backend.schemas import (
+        APIErrorResponse,
+        DailyPlanRequest,
+        DailyPlanResponse,
+        DailyReflectionRequest,
+        DailyReflectionResponse,
+        NPCDialogueRequest,
+        NPCDialogueResponse,
+        PlanRevisionRequest,
+        PlanRevisionResponse,
+    )
     from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
 except ModuleNotFoundError:
-    from schemas import APIErrorResponse, NPCDialogueRequest, NPCDialogueResponse
+    from schemas import (
+        APIErrorResponse,
+        DailyPlanRequest,
+        DailyPlanResponse,
+        DailyReflectionRequest,
+        DailyReflectionResponse,
+        NPCDialogueRequest,
+        NPCDialogueResponse,
+        PlanRevisionRequest,
+        PlanRevisionResponse,
+    )
     from services.model_adapter import ModelAdapter, ModelAdapterConfig
 
 
@@ -94,6 +114,138 @@ def create_app() -> Flask:
                 "ok": False,
                 "error_code": "model_output_invalid",
                 "message": "Model output did not match NPCDialogueResponse.",
+                "fallback_used": False,
+                "details": exc.errors(),
+                "usage": result.usage,
+            }), 502
+
+        return jsonify(response_model.model_dump())
+
+    @app.post("/npc/plan_day")
+    def npc_plan_day():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            plan_request = DailyPlanRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "DailyPlanRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        result = ModelAdapter().generate("plan_day", plan_request.model_dump())
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), 503
+
+        try:
+            response_model = DailyPlanResponse.model_validate(result.content)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "model_output_invalid",
+                "message": "Model output did not match DailyPlanResponse.",
+                "fallback_used": False,
+                "details": exc.errors(),
+                "usage": result.usage,
+            }), 502
+
+        return jsonify(response_model.model_dump())
+
+    @app.post("/npc/revise_plan")
+    def npc_revise_plan():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            revision_request = PlanRevisionRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "PlanRevisionRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        result = ModelAdapter().generate("revise_plan", revision_request.model_dump())
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), 503
+
+        try:
+            response_model = PlanRevisionResponse.model_validate(result.content)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "model_output_invalid",
+                "message": "Model output did not match PlanRevisionResponse.",
+                "fallback_used": False,
+                "details": exc.errors(),
+                "usage": result.usage,
+            }), 502
+
+        return jsonify(response_model.model_dump())
+
+    @app.post("/npc/daily_reflection")
+    def npc_daily_reflection():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            reflection_request = DailyReflectionRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "DailyReflectionRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        result = ModelAdapter().generate("daily_reflection", reflection_request.model_dump())
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), 503
+
+        try:
+            response_model = DailyReflectionResponse.model_validate(result.content)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "model_output_invalid",
+                "message": "Model output did not match DailyReflectionResponse.",
                 "fallback_used": False,
                 "details": exc.errors(),
                 "usage": result.usage,

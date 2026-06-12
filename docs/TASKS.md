@@ -307,7 +307,7 @@
 
 ## T0016 优化建筑面板工位显示
 
-状态：Doing
+状态：Done
 优先级：P0
 涉及文档：`UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
@@ -1459,7 +1459,7 @@ Main
 - `location_entered`、`location_exited`
 - `work_started`、`work_completed`、`work_failed`、`eat_started`、`eat_completed`
 - `dialogue_turn`；打开/关闭对话窗口不属于事件
-- `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`
+- `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、正式惩戒攻击使用的 `damage_taken`，以及旧调试 / 兼容事件 `npc_attacked_by_player`
 - `skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - `combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - `building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
@@ -1678,7 +1678,7 @@ Main
 
 验收标准：
 
-- `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player` 等玩家交互 summary 使用“守备官”。
+- `money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、正式惩戒攻击使用的 `damage_taken` 和旧调试 / 兼容 `npc_attacked_by_player` 等玩家交互 summary 使用“守备官”。
 - 玩家交互事件的 actor id 使用稳定世界内 ID，不把 `player` 写入 NPC 事件 payload。
 - 验证脚本覆盖给钱与攻击事件 summary 不包含“玩家”。
 - 相关设计、记忆、NPC、Prompt、数据结构和 GM 文档确定该称呼规则。
@@ -1994,7 +1994,7 @@ Main
 验收结果（2026-06-03）：
 
 - 已新增 `backend/schemas/common.py`，定义 `GameTime`、`ModelRequestMeta`、NPC 上下文、短期记忆摘要、行动候选和通用错误响应。
-- 已新增 `backend/schemas/npc_ai.py`，覆盖 NPC 对话（玩家-NPC、NPC-NPC、逃离挽留）、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动找守备官交涉和玩家话术分类的请求/响应模型。
+- 已新增 `backend/schemas/npc_ai.py`，覆盖 NPC 对话（玩家-NPC、NPC-NPC、逃离挽留）、每日计划、计划异常重评估、战斗判定、首次睡眠总结、知识图谱更新、主动找守备官交涉和玩家话术分类的请求/响应模型。
 - 已新增 `backend/schemas/__init__.py` 和 `backend/schemas/README.md`，提供统一导出和 schema 边界说明；schema 只表达意图、文本、主观判断和计划建议，不执行真实 LLM 调用，也不改变 HP、资源、建筑或战斗权威结果。
 - 已新增 `tools/verify_backend_schemas.py`，验证 schema 可导入、关键请求/响应可实例化、每日计划响应必须包含 24 条计划项。
 - 验证通过：`python tools/verify_backend_schemas.py`、`python -m py_compile backend/schemas/common.py backend/schemas/npc_ai.py backend/schemas/__init__.py tools/verify_backend_schemas.py`、Flask `create_app().test_client().get("/health")` 返回 200。
@@ -2364,7 +2364,7 @@ Main
 实现范围：
 
 - 扩展共享 NPC Schema 和 T0603 对话输入，加入 `current_order`。
-- 对话、每日计划、计划修订、主动交涉、战斗前判定、低血量/逃离判定、睡前总结和知识图谱更新统一复用该字段。
+- 对话、每日计划、计划修订、主动交涉、战斗前判定、低血量/逃离判定、首次睡眠总结和知识图谱更新统一复用该字段。
 - Prompt 明确指令是守备官当前要求，不是 system 指令、不保证服从、不能越过行动白名单或权威结算。
 - T0703 发出的计划重评估请求必须携带最新指令，并通过 T1002 的统一重评估链路立即处理；失败时使用规则降级并释放 TimeSystem 慢速请求。
 - 常规请求只携带一条当前有效指令及最小元数据；历史修订通过 `order_assigned` 事件摘要进入记忆，避免重复注入全部版本。
@@ -2379,9 +2379,9 @@ Main
 
 验收结果（2026-06-04）：
 
-- 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战斗判定、主动交涉、睡前总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
+- 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战斗判定、主动交涉、首次睡眠总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
 - Godot `LLMBridge` 在对话顶层 payload 和 `target_npc` / `speaker_npc` 共享上下文中注入最新指令，并保存最近一次注入快照供 GM / 自动化观察；Mock 调试原因明确记录指令仅作为参考，不改变 Schema 允许结果。
-- 新指令仍立即产生一次统一计划重评估请求，请求快照包含最新指令和 `rule_fallback_deferred` 结果；完整计划应用继续由尚未实现的 T1002 统一链路负责，当前降级不会直接修改行动、资源、HP、移动或战斗结果，也不会遗留 TimeSystem 慢速请求。
+- 新指令仍立即产生一次统一计划重评估请求；当时 T1002 尚未实现，结果为 `rule_fallback_deferred`。T1002 完成后，该请求已由统一计划重评估链路消费，成功时应用 Mock 修订计划，失败时应用规则降级计划。
 - GM 面板后端分组新增“最近指令注入”入口和 `last_order_injection` 命令；最近计划重评估请求可同时观察降级结果。
 - 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、Python 编译检查、`verify_llm_bridge.gd`、`verify_dialogue_ui.gd`、`verify_npc_order.gd`、`verify_gm_panel.gd`、结构化记忆回归和项目加载检查；Godot MCP 连接正常，运行主场景无日志错误。
 
@@ -2418,13 +2418,13 @@ Main
 
 验收结果（2026-06-05）：
 
-- `NPCPanel` 新增非对话交互区：可选择 `private` / `local_public` 可见性，直接赠予第纳尔、给予旧占位武器、攻击造成 10 点伤害；给钱数量输入框紧邻“给钱”按钮，并只保留数字输入，WASD 等字母键不会写入金额。该旧占位武器入口已在 T0013 后移除，正式装备统一走 T0901 `EquipmentSystem`。
+- `NPCPanel` 新增非对话交互区：可选择 `private` / `local_public` 可见性，直接赠予第纳尔、给予旧占位武器、攻击造成 10 点伤害；给钱数量输入框紧邻“给钱”按钮，并只保留数字输入，WASD 等字母键不会写入金额。该旧占位武器入口已在 T0013 后移除，正式装备统一走 T0901 `EquipmentSystem`；T1006 后攻击入口已移至 `DialogPanel`，`NPCPanel` 不再提供直接攻击按钮。
 - 新增 `UIInputFocusManager` 挂载到 `Main/UI`：任意 `LineEdit` / `TextEdit` 获得焦点后，点击输入框外任意位置都会释放焦点，后续新增输入框默认遵循同一交互规则。
 - 赠予第纳尔由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱，并复用 `MemorySystem.record_player_interaction(...)` 写入 `money_given`；公开时同地点 NPC 会收到见闻。
 - 给予装备仅做 T0704 范围内的旧占位武器：消耗 1 个全局 `weapons` 资源，写入 `equipment_given` / `equipment_changed`，不实现 T0901 正式装备库存、兵种或战斗数值。该入口已在 T0013 后移除。
-- 攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 权威扣血入口，写入 `damage_taken`，HP 清零仍走既有昏迷/公开广播链路。
+- 攻击仍复用 `NPCSystem.apply_damage_to_npc(...)` 权威扣血入口，写入 `damage_taken`，HP 清零仍走既有昏迷/公开广播链路；T1006 后该入口由对话窗攻击按钮触发，并追加 NPC 攻击语境回复。
 - 已移除 NPC 面板里的“要求休息/请求治疗”入口；休息、治疗这类意图由 T0703 的自然语言指令承担，既有 GM / ActionSystem 调试入口不变。
-- 新增 `tools/verify_npc_panel_interactions.gd` 覆盖 NPC 面板给钱、公开见闻、占位装备、攻击扣血、广场公开事件、后续 NPC LLM 上下文短期记忆摘要，并检查休息/治疗按钮不存在；同时覆盖 NPC 给钱金额框、对话输入框和指令 TextEdit 点击外部失焦。
+- 新增 `tools/verify_npc_panel_interactions.gd` 覆盖 NPC 面板给钱、公开见闻、占位装备、攻击扣血、广场公开事件、后续 NPC LLM 上下文短期记忆摘要，并检查休息/治疗按钮不存在；同时覆盖 NPC 给钱金额框、对话输入框和指令 TextEdit 点击外部失焦。T1006 后该脚本改为确认攻击入口已移出 NPC 面板，攻击扣血与回复由 `tools/verify_dialogue_ui.gd` 覆盖。
 - 验证通过：`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`verify_npc_panel_state.gd`、`verify_gm_panel.gd`、`verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。`verify_dialogue_ui.gd` 需要 5000 端口 mock 后端；本机当前端口被 deepseek provider 后端占用，因此未作为本次通过项。
 
 ---
@@ -2466,7 +2466,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - `NPCSystem` 新增主动交涉状态：`debug_start_proactive_talk(npc_id, text, duration_seconds)` 可触发 NPC 进入 `proactive_talk`，默认持续 3600 游戏秒；触发时写入 `private` 的 `proactive_talk_started` 事件，完整开场问题进入 payload。
 - `NPC.gd` 运行时生成头顶 `?` 气泡；玩家点击有主动交涉的 NPC 时优先打开 `DialogPanel`，不会先弹出 NPC 面板。
 - `DialogSystem.start_proactive_player_dialogue(...)` 复用玩家-NPC 对话面板，把 NPC 预先确定的开场问题作为第一条历史显示，并写入 `proactive_talk_message`；玩家后续回复继续走既有 `send_player_message(...)` / `/npc/dialogue` / `dialogue_turn` 逻辑。
-- 主动交涉被点击或超时后气泡消失；对话结束或 1 小时超时都会请求计划重评估，当前仍按 T0703A 的 `rule_fallback_deferred` 可观察降级结果处理，不直接修改行动计划。
+- 主动交涉被点击或超时后气泡消失；对话结束或 1 小时超时都会请求计划重评估。当时仍按 T0703A 的 `rule_fallback_deferred` 可观察降级结果处理；T1002 完成后已改为进入统一计划重评估链路并应用 Mock 修订或规则降级计划。
 - GM 面板新增“主动交涉”按钮、`start_proactive <npc_id> <text>` 命令和 `proactive <npc_id>` 状态查询。
 - 新增 `tools/verify_npc_proactive_talk.gd`，覆盖调试触发、私有事件、问号气泡、点击进入对话、开场问题入库、对话结束重评估和超时消失。
 - 验证通过：`godot --headless --path . --script res://tools/verify_npc_proactive_talk.gd`、`verify_gm_panel.gd`、`verify_npc_panel_state.gd`、`verify_npc_order.gd`、`verify_npc_panel_interactions.gd`、`godot --headless --path . --quit-after 1`。
@@ -2827,7 +2827,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ---
 
-# M10：每日计划、行动中断与睡前总结
+# M10：每日计划、行动中断与首次睡眠总结
 
 目标：让 NPC 具备“看起来像在生活”的自动计划系统，并让记忆在每天结束时压缩为长期信息。
 
@@ -2835,45 +2835,49 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ## T1001 实现规则版每日计划
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0401, T0305, T0801
 涉及文档：`AI_NPC_SYSTEM.md`
 
 任务目标：
 
-先不用 LLM，使用规则为 NPC 生成简单每日计划。
+先不用 LLM，做好NPC根据计划行动的接口。
 
 规则：
 
-- 一天 24 阶段
-- 至少 6 阶段工作
-- 饱食低则吃饭
-- 疲劳高则睡觉
-- 职业倾向影响工作选择
-- 若存在正在修复且仍受损的建筑，规则计划可把协助修复作为候选行为，并按工程熟练度和建筑重要性选择目标
-- 若存在正在升级的建筑，规则计划可把协助升级作为候选行为，并按工程熟练度和建筑重要性选择目标
-- 副官可优先训练或巡逻
+- 一天 24 阶段对应24小时，这是计划的基本颗粒度。计划要包含每个阶段做什么行为。
+- 将来LLM提示词将会提示至少要安排 6 阶段工作
+- 所有的可选行为都可以安排进计划
+- 按照计划的安排，到时间了就去执行计划里的下一项行为。如果还没到时间，该行为就已经做完了，就再执行一轮同一个行为；如果到时间了，NPC正在执行计划里的这一行为，则不打断。如果到时间了，NPC还在执行别的行为，则打断该行为，执行计划里的行为。（这是与工作行为相关的逻辑，后续吃饭睡觉、或者遇到异常会有不同的逻辑，但先不管，先统一按这个来）
+
 
 禁止事项：
 
 - 不调用 LLM。
-- 不实现复杂社交计划。
+- 暂不实现异常处理和重新评估计划
 
 验收标准：
 
-- 每个 NPC 每天有计划。
 - NPC 按计划执行行动。
-- 计划执行结果写入记忆。
-- 规则计划保留并读取入伍 NPC 的 `current_order`，但不得把自由文本指令直接当成硬性行动覆盖；无法理解时继续按规则计划，并把指令留给后续 Mock / LLM 重评估。
-- 阶段开始、计划执行和计划重估以 `TimeSystem` 的逻辑时间打点为准。
-- NPC 自动计划能在有正在修复或正在升级的建筑时选择协助修复/协助升级；目标必须来自 `BuildingSystem` 当前状态，不由 LLM 或 UI 自行决定。
+- 制定的计划写入事件库
+- 计划执行以 `TimeSystem` 的逻辑时间打点为准。
+
+验收结果（2026-06-10）：
+
+- 新增 `DailyPlanSystem`，可为 NPC 生成规则版 24 小时计划并写入 NPC 运行时 `plan` 字段；默认规则按熟练度选择工作行动，且计划中工作阶段不少于 6 个。
+- `plan_created` 私有事件已接入 `MemorySystem`，payload 保存 `plan_day`、24 项 `items`、`source=rule_default` 和 `work_phase_count`。
+- 计划执行通过 `hour_started` 打点；已有计划的 NPC 在当前小时执行对应行动，若计划启动的行动在同一小时提前完成，会再次执行同一小时行动；小时变化且当前行动不同，会通过 `ActionSystem.interrupt_npc_action(...)` 中断后执行新计划项。
+- T1001 不调用 LLM，不处理异常重评估；未显式生成计划的 NPC 不会被小时信号自动接管，避免调试行动和旧验证被计划系统误接管。
+- GM 面板新增生成计划、执行当前计划和查看计划按钮，并新增 `plan_generate [npc_id|all]`、`plan_execute [npc_id|all]`、`plan <npc_id>` 命令。
+- 新增 `tools/verify_daily_plan_system.gd` 覆盖 24 小时计划、至少 6 个工作阶段、`plan_created` 入库、小时打点执行、同小时完成后重复执行和计划变化打断旧行动。
+- 验证通过：`godot --headless --path . --script res://tools/verify_daily_plan_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_action_system_basic.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `res://scenes/main/Main.tscn` 后游戏日志为空。
 
 ---
 
-## T1002 实现行动异常与计划重评估
+## T1002 实现行动异常与计划重评估（属于日常工作模式而非战斗模式）
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1001
 涉及文档：`AI_NPC_SYSTEM.md`
@@ -2885,25 +2889,31 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 资源不足
 - 被玩家对话打断
 - 被其他 NPC 对话打断
-- HP 过低
-- 饱食或疲劳过低
-- 战斗警报
+- 被守备官攻击
+- 战斗警报（已被征召且有配武器的除外，已被征召且有配武器的会进入战斗模式逻辑，其他没武器或没被征召的才会触发重评估计划）
 - 守备官发布了不同于原内容的新指令
 
 验收标准：
 
-- 轻微异常可用规则处理。
-- 重大异常进入重评估。
-- 重评估后 NPC 不会卡死。
-- 异常事件写入记忆。
-- 需要 LLM / Mock 重评估时，通过 LLMBridge 申请 TimeSystem 慢速请求，返回或降级后释放。
-- 所有重评估请求必须携带该 NPC 最新 `current_order`；新指令触发的重评估使用与其他重大异常相同的统一入口。
+- 异常进入重评估。
+- 重评估后 NPC 执行新计划里当前时段的行动。
+- 需要 LLM / Mock 重评估时，通过 LLMBridge 申请 TimeSystem 慢速请求（游戏内一秒=现实中一秒），返回后释放。
+
+验收结果（2026-06-11）：
+
+- `DailyPlanSystem` 监听 `npc_plan_reevaluation_requested`，并在行动失败、目标建筑不可用、资源不足、工位占用、对话打断、守备官攻击、主动交涉结束 / 超时、战斗警报占位和守备官新指令后进入统一计划重评估。
+- `LLMBridge` 新增 `request_npc_plan_revision(...)` / `build_npc_plan_revision_payload(...)`，调用后端 `/npc/revise_plan`，请求包含目标 NPC 的共享上下文、当前计划、失败计划项、失败类型、行动白名单和最新 `current_order`；请求期间申请 TimeSystem 慢速，请求成功、失败或超时后释放。
+- 后端新增 `/npc/revise_plan`，使用 `PlanRevisionRequest` / `PlanRevisionResponse` 校验 Mock 输出；Mock provider 的 `revise_plan` 可返回当前小时 `immediate_action`。
+- 重评估成功时，Godot 合并修订计划、写入 `plan_revised` 私有事件并立即执行当前小时行动；后端不可用、非 mock provider 未配置或响应不合法时，写入 `rule_revision_fallback` 规则降级计划并执行当前小时行动。
+- GM 面板新增“立即重评估”按钮和 `plan_revise <npc_id> [reason]` 命令；“重评估请求”同时显示 NPCSystem 请求快照与 DailyPlanSystem 最近结果。
+- 新增 `tools/verify_daily_plan_reevaluation.gd`，覆盖资源不足触发重评估、后端不可用规则降级、慢速请求释放、计划修订事件入库和可选 live mock 修订；新增 `tools/verify_plan_revision_endpoint.py` 覆盖 Flask `/npc/revise_plan` Mock 端点。
+- 验证通过：`verify_daily_plan_reevaluation.gd`、以 `LLM_PROVIDER=mock` 和 `T1002_BACKEND_URL=http://127.0.0.1:5055` 临时启动 Flask 后再次运行 `verify_daily_plan_reevaluation.gd`、`verify_plan_revision_endpoint.py`、`verify_daily_plan_system.gd`、`verify_npc_order.gd`、`verify_gm_panel.gd`、`verify_npc_proactive_talk.gd`、`verify_backend_schemas.py`、`verify_mock_model_adapter.py`、`godot --headless --path . --quit-after 1`。
 
 ---
 
-## T1003 实现 LLM / Mock 版每日计划接口
+## T1003 实现 LLM / Mock 版制定计划接口
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0602, T1001
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`, `API_BUDGET.md`
@@ -2911,28 +2921,160 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 验收标准：
 
 - 后端提供 `/npc/plan_day`。
-- Mock 能返回 24 阶段计划。
-- Godot 可选择使用规则计划或 Mock 计划。
-- 输出 JSON 被校验，不合法则回退规则计划。
-- 每日计划请求包含目标 NPC 当前 `current_order`，Prompt 把它作为倾向参考而非强制行动。
-- 影响当前场景即时行动的计划请求必须申请 TimeSystem 慢速；后台批处理每日计划可不申请慢速，但必须记录调试状态。
+- Mock 能返回 24 阶段计划。NPC执行计划。
+- 输出 JSON 被校验，不合法则回退重新计划。
+- 计划请求的上下文包含目标 NPC 当前指令，长期记忆（知识图谱，日记），短期记忆（事件库、见闻库），NPC人设（包括各种核心人设），当前的时间、地点，NPC的各种状态（如HP，属性，职业和武器熟练度，饱食度疲劳度，金钱，装备，是否入伍..）Prompt 把它们作为参考。以及制定计划的指令提示词（json结构化输出的指令以官方文档里的参数的方式传入，而非混在提示词里）。
+- 计划请求过程中必须申请 TimeSystem 慢速。
+- 每日首次制定计划和重新评估计划的请求用一个相同的逻辑（它们的不同由上述上下文来识别而非单独另外建一个逻辑）
+
+验收结果（2026-06-11）：
+
+- 后端新增 `POST /npc/plan_day`，使用 `DailyPlanRequest` 校验输入、调用 `ModelAdapter.generate("plan_day", ...)`，再用 `DailyPlanResponse` 校验 24 阶段计划输出；输出不合法时返回可处理错误。
+- Mock `plan_day` 现在按 NPC 熟练度和行动白名单选择真实可执行工作行动，并返回 `sleep_in_dormitory`、`eat_at_dining_hall`、工作行动和 `idle` 组成的 24 小时计划，工作阶段不少于 6 个。
+- `LLMBridge` 新增 `build_npc_daily_plan_payload(...)` / `request_npc_daily_plan(...)`，请求包含共享 NPC 上下文、当前 `current_order`、长期记忆、短期事件库 / 见闻库摘要、地点、资源、建筑状态、行动白名单和计划规则；请求期间申请 TimeSystem 慢速，成功、失败或超时后释放。
+- `DailyPlanSystem.generate_daily_plan_for_npc(...)` 优先应用 `/npc/plan_day` Mock 计划并写入 `plan_created(source=mock_plan_day)`；后端不可用、输出不合法、不是 24 阶段或工作阶段少于 6 个时，回退规则计划并写入 `plan_created(source=rule_plan_fallback)`。
+- GM 面板 `plan_generate` 现在触发 LLM / Mock 每日计划生成并自动规则降级，新增 `plan_generate_rule [npc_id|all]` 保留纯规则计划入口；`plan_request` 会显示最近每日计划生成结果。
+- 新增 `tools/verify_plan_day_endpoint.py` 和 `tools/verify_daily_plan_llm.gd`，覆盖 Flask `/npc/plan_day`、Godot 侧后端关闭规则降级、慢速释放、live Mock 计划应用、当前小时行动执行和 `current_order` 注入。
+- 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、临时以 `LLM_PROVIDER=mock` 和 `T1003_BACKEND_URL=http://127.0.0.1:5056` 启动 Flask 后再次运行 `verify_daily_plan_llm.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_reevaluation.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T1004 实现睡前总结与短期记忆清空
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0405, T0602
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `PROMPTS.md`
 
 验收标准：
 
-- 每天结束时为 NPC 生成第一人称日记。
+- 每天首次睡觉时为 NPC 生成第一人称日记。
 - 更新知识图谱占位。
 - 清空当天事件库和见闻库缓存。
 - 日记可在 NPC 面板查看。
-- Mock 后端不可用时使用模板总结。
+
+完成记录（2026-06-11）：
+
+- 新增 `DailyReflectionSystem` 并挂载到 `Main/Systems`，历史实现为监听 `sleep_started` 后生成睡前总结；T1005 已修正为每天首次睡眠满 1 游戏小时后生成首次睡眠总结，重复睡眠不会重复写日记，GM 可用 force 强制触发。
+- `LLMBridge` 接入 `/npc/daily_reflection`，后端不可用或输出无效时由 Godot 模板兜底；T1005 已将其语义改为首次睡眠总结，并改为必须申请 TimeSystem 慢速。
+- `NPCSystem.apply_daily_reflection(...)` 写入长期 `diary`，并把 `knowledge_graph_updates` 合并到 `knowledge_graph.patches` / `knowledge_graph.by_subject` 占位结构。
+- `MemorySystem.clear_npc_short_term_memory(...)` 清空指定 NPC 当天事件库和见闻库索引，保留全局事件档案供调试。
+- `NPCPanel` 新增日记滚动区；`GMPanel` 历史新增“睡前总结 / 长期记忆 / 最近总结”按钮和 `reflect_npc <npc_id> [force]`、`long_memory <npc_id>`、`reflection_result` 命令；T1005 已把面板文案改为首次睡眠总结并新增 `llm_state`。
+- 后端新增正式 `POST /npc/daily_reflection` endpoint，Mock 返回日记、记忆摘要和知识图谱增量。
+- 验证通过：`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_plan_day_endpoint.py`、`godot --headless --path . --quit-after 1`。
+
+---
+
+## T1005 实现对话打断、LLM 状态提示与首次睡眠总结优先级
+
+状态：Done
+优先级：P1
+前置任务：T0701, T1002, T1003, T1004
+涉及文档：`AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `GM_PANEL.md`, `PROMPTS.md`, `API_BUDGET.md`, `game_design.md`
+
+任务目标：
+
+实现日常模式下玩家对话的高优先级边界、NPC LLM 请求状态展示，以及首次睡眠总结的最高优先级锁。
+
+需要支持：
+
+- 玩家与 NPC 实际发送消息后的对话可打断工作、吃饭、睡觉等普通日常行动；T1006 起只打开对话窗不会打断。
+- 玩家与 NPC 实际发送消息或对话窗攻击时可取消该 NPC 正在等待的可取消 LLM 请求，例如闲聊、NPC-NPC 聊天、每日计划或计划重评估；对话结束后按 T1006 的有效轮次 / 攻击事实规则触发计划重评估。
+- 每天首次进入睡觉状态后，只有持续睡眠满 1 个游戏小时才触发每日总结。
+- 总结从发起到完成期间是不可打断的深度睡眠：不能发消息、不能进入对话、不能被指令发布立即打断，行动系统也不能改派该 NPC。
+- 总结期间发布给已入伍 NPC 的自然语言指令仍保存，但计划重评估延后到醒来后自然执行。
+- 所有 Godot 侧 LLM 请求都必须申请 TimeSystem 慢速，包括首次睡眠总结。
+- NPC 等待聊天 / 计划 LLM 时，主场景头顶显示三点思考标记，NPC 面板名字旁显示“正在思考”或“正在计划下一步行动”。
+- NPC 正在总结时，主场景头顶显示禁止标记，NPC 面板名字旁显示“正在熟睡”。
+
+验收标准：
+
+- 睡觉开始不足 1 游戏小时不会生成总结；满 1 游戏小时后才生成当天首次睡眠总结。
+- 首次睡眠总结等待期间，`DialogSystem.start_player_dialogue(...)`、`send_player_message(...)` 和 `ActionSystem` 行动改派 / 中断都被拒绝。
+- 首次睡眠总结等待期间发布新指令只更新 `current_order` 和事件，不立即发起计划重评估；睡醒后再请求重评估。
+- T1006 起，实际发送消息或对话窗攻击才会取消该 NPC 的可取消 LLM 活动状态并打断普通行动；总结活动不可取消。
+- 每日计划、计划修订、对话和首次睡眠总结请求均会注册并释放 TimeSystem 慢速。
+- NPC 头顶和 NPC 面板能显示思考、计划和熟睡状态。
+- 相关设计与当前状态文档中的“睡前总结”命名更新为“首次睡眠总结”或说明历史任务名。
+
+完成记录（2026-06-11）：
+
+- `NPCSystem` 新增 `llm_activity`、首次睡眠总结锁和延后计划重评估状态；总结锁期间 `can_npc_act` 返回 false，发布指令只保存并延后重评估。
+- `LLMBridge` 为对话、每日计划、计划修订和首次睡眠总结登记 NPC LLM 活动并申请 TimeSystem 慢速；新增 `cancel_npc_llm_requests(...)`，玩家对话可清除可取消活动并丢弃取消结果，首次睡眠总结不可取消。
+- `DialogSystem` 在玩家对话入口检查熟睡锁；T1006 起，取消目标 NPC 可取消 LLM 活动和打断普通行动的时机后移到实际发送消息或对话窗攻击，对话结束按有效轮次 / 攻击事实请求计划重评估。
+- `DailyReflectionSystem` 改为睡觉开始后计时，首次睡眠满 1 游戏小时才生成总结；总结请求 / 应用期间设置深度睡眠锁。
+- `ActionSystem` 拒绝总结锁期间的行动中断和改派；睡眠完成后会消费延后的计划重评估。
+- `NPC.gd` 新增头顶 LLM 标记，`NPCPanel` 名字旁新增 LLM 状态文字，`GMPanel` 新增 `llm_state <npc_id>`。
+- 新增 `tools/verify_dialogue_sleep_summary_boundaries.gd`，更新 `tools/verify_daily_reflection_system.gd`。
+
+验证通过：
+
+- `godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`
+- `godot --headless --path . --script res://tools/verify_dialogue_sleep_summary_boundaries.gd`
+- `godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`
+- `godot --headless --path . --script res://tools/verify_npc_order.gd`
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd`
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd`
+- `godot --headless --path . --quit-after 1`
+
+---
+
+## T1006 实现发送后才打断对话与对话窗攻击闭环
+
+状态：Done
+优先级：P1
+前置任务：T0701, T0702, T0704, T1005
+涉及文档：`AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `game_design.md`
+
+任务目标：
+
+修正玩家误触对话造成 NPC 行动中断的问题，并把守备官攻击 NPC 从 NPC 面板直接扣血改为对话窗内的带回复交互。
+
+需要支持：
+
+- 点击 NPC 面板“对话”只打开对话窗、展示历史，不取消 NPC LLM 请求、不打断当前行动、不触发结束重评估。
+- 玩家在对话窗真正发送消息后，才按日常模式对话规则取消目标 NPC 的可取消 LLM 请求、打断普通行动并进入 `/npc/dialogue` 调用。
+- 结束对话时，只有本次对话中实际完成过玩家消息与 NPC LLM 回复，才触发对话打断后的计划重评估；只打开查看后关闭不产生副作用。
+- 玩家发送后等待 NPC 回复期间，输入框仍可输入文字，但“发送”按钮不可用，避免同一轮回复前重复发送。
+- 若玩家在等待 NPC 回复时结束 / 关闭对话，则取消本次对话 LLM；若此前没有完成 NPC 回复，视为无有效对话轮次，不触发对话重评估。
+- 攻击入口移动到对话窗，点击后立即扣血并先写入“守备官攻击了你以示惩戒”事件，再调用一次攻击语境的 NPC LLM 回复。
+- 攻击后若未等 NPC 回复就结束 / 关闭，攻击事件不撤销，并且结束时触发一次计划重评估。
+- 对话窗 UI 中，“提出应征”改为右上角“同地点公开”下方的 toggle；“攻击”按钮放到原“提出应征”位置，即“发送”旁边。
+
+验收标准：
+
+- 只打开并关闭对话窗不会改变 NPC 当前行动、不会取消现有 LLM 活动、不会请求计划重评估。
+- 首次发送玩家消息才触发行动打断和可取消 LLM 取消；NPC 回复成功后关闭会触发一次计划重评估。
+- 等待回复期间输入框可编辑但发送按钮禁用。
+- 攻击按钮只存在于对话窗；NPC 面板不再提供直接攻击按钮。
+- 对话窗攻击会扣血、记录惩戒攻击事件、请求 NPC 攻击回复；关闭等待中的攻击回复不会撤销攻击，且会触发一次计划重评估。
+
+完成记录（2026-06-12）：
+
+- `DialogSystem.start_player_dialogue(...)` 改为只打开会话；实际发送消息或攻击时才调用打断 / 可取消 LLM 取消逻辑。
+- `DialogSystem.send_player_message(..., async_request=true)` 和 `LLMBridge.request_npc_dialogue_async(...)` 支持 UI 异步等待与结束取消；普通消息未收到 NPC 回复就结束时不写 `dialogue_turn`，不触发对话重评估。
+- `DialogSystem.attack_target_npc(...)` 新增对话窗攻击流程：先通过 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 并写惩戒攻击事件，再请求 NPC 回复；未等回复就结束时攻击保留并触发一次计划重评估。
+- `NPCSystem.apply_damage_to_npc(...)` 增加可选参数，允许对话攻击覆盖事件 summary 并延后非昏迷攻击的计划重评估。
+- `DialogPanel` 把“提出应征”改为右上角 toggle，把“攻击”放到发送旁；等待回复时输入框可编辑，发送 / 攻击按钮禁用。
+- `NPCPanel` 移除直接攻击按钮，保留给钱和正式装备武器入口。
+- 更新 `tools/verify_dialogue_sleep_summary_boundaries.gd`、`tools/verify_dialogue_ui.gd` 和 `tools/verify_npc_panel_interactions.gd`，覆盖懒打断、异步取消、对话窗攻击和旧 NPC 面板攻击入口移除。
+
+验证通过：
+
+- `godot --headless --path . --quit-after 1`
+- `godot --headless --path . --script res://tools/verify_dialogue_sleep_summary_boundaries.gd`
+- `godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`
+- `godot --headless --path . --script res://tools/verify_dialogue_ui.gd`（临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py`）
+- `godot --headless --path . --script res://tools/verify_llm_bridge.gd`（临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py`）
+- `godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`（临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py`）
+- `godot --headless --path . --script res://tools/verify_npc_panel_state.gd`
+- `godot --headless --path . --script res://tools/verify_npc_proactive_talk.gd`
+- `godot --headless --path . --script res://tools/verify_gm_panel.gd`
+- `godot --headless --path . --script res://tools/verify_daily_plan_reevaluation.gd`
+- `godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`
+- `python tools/verify_backend_schemas.py`
+- `python tools/verify_dialogue_mock_endpoint.py`
+- Godot MCP 运行 `res://scenes/main/Main.tscn`，游戏日志为空。
 
 ---
 
@@ -2955,10 +3097,10 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 验收标准：
 
-- 至少配置 5 波敌人。
-- 敌人有 HP、武器类型、攻击力、目标偏好。
+- 至少配置 5 波敌人，一波比一波稍强。
+- 敌人有 HP、武器类型/兵种（兵种类型复用NPC的几个兵种类型：剑盾、长杆、弓弩、骑马近战骑马远程等）、攻击力、防御力、移动速度等（这些属性维度将会和己方NPC对等，参考game_design.md里战斗系统的设计）、目标偏好。
 - 可通过调试按钮生成第一波敌人。
-- 敌人生成位置在正门外。
+- 敌人生成位置在正门外稍远的地方（以后场景做好了，将会相当于在驿站门外的树林里出现）。当前正门方向的地面面积太小了需要扩大。
 
 ---
 
@@ -2971,7 +3113,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 规则：
 
-1. 攻击城门 / 围墙
+1. 攻击城门
 2. 攻击仓库
 3. 攻击主厅
 4. 如果一定范围内有我方单位，优先攻击我方单位
@@ -2979,9 +3121,9 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 验收标准：
 
 - 敌人会向目标移动。
-- 敌人能攻击建筑。
-- 建筑 HP 会下降。
-- 主厅被攻击可触发失败条件占位。
+- 敌人能攻击建筑和我方NPC（现在可先不做具体的攻击动作，以后的攻击会像《人类一败涂地》一样，攻击打到目标身上才算命中掉血）
+- 受击目标 HP 会下降。
+- 主厅被摧毁可触发游戏失败。
 
 ---
 
@@ -3430,7 +3572,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ---
 
-## T1405 打磨睡前总结 Prompt
+## T1405 打磨首次睡眠总结 Prompt
 
 状态：Todo
 优先级：P1

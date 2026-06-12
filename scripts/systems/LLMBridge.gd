@@ -2,10 +2,15 @@ extends Node
 
 signal backend_status_changed(status_text: String, ok: bool)
 signal dialogue_response_received(result: Dictionary)
+signal dialogue_async_response_received(result: Dictionary)
+signal daily_plan_response_received(result: Dictionary)
+signal plan_revision_response_received(result: Dictionary)
+signal daily_reflection_response_received(result: Dictionary)
 
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const DEFAULT_BACKEND_URL := "http://127.0.0.1:5000"
 const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
@@ -14,7 +19,7 @@ const SHORT_MEMORY_EVENT_LIMIT := 8
 const HTTP_POLL_DELAY_MSEC := 10
 
 @export var backend_base_url: String = DEFAULT_BACKEND_URL
-@export var request_timeout_seconds: float = 8.0
+@export var request_timeout_seconds: float = 2.0
 @export var dialogue_wait_scale: float = -1.0
 
 var _last_backend_ok := false
@@ -23,6 +28,9 @@ var _request_counter := 0
 var _pending_slowdown_request_ids: Array[String] = []
 var _debug_last_slowdown_registered := false
 var _last_npc_context_injection: Dictionary = {}
+var _active_request_by_npc: Dictionary = {}
+var _cancelled_request_ids: Dictionary = {}
+var _async_request_threads: Dictionary = {}
 
 
 func initialize() -> void:
@@ -82,11 +90,120 @@ func request_npc_dialogue(npc_id: String, speaker_text: String, options: Diction
 		return failed
 
 	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("dialogue")))
-	var result: Dictionary = _request_json("POST", "/npc/dialogue", payload, true, request_id)
+	var result: Dictionary = _request_json("POST", "/npc/dialogue", payload, true, request_id, {
+		"npc_id": npc_id,
+		"kind": "dialogue",
+		"label": "正在思考",
+		"cancellable": true
+	})
 	var response := result.duplicate(true)
 	if bool(result.get("ok", false)):
 		response["dialogue"] = result.get("body", {})
 	dialogue_response_received.emit(response.duplicate(true))
+	return response
+
+
+func request_npc_dialogue_async(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
+	var payload := build_npc_dialogue_payload(npc_id, speaker_text, options)
+	if payload.is_empty():
+		return _failure_result("payload_error", "无法构造 NPCDialogueRequest。")
+
+	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("dialogue")))
+	_set_npc_llm_activity(npc_id, request_id, {
+		"npc_id": npc_id,
+		"kind": "dialogue",
+		"label": "正在思考",
+		"cancellable": true
+	})
+	if bool(payload.get("meta", {}).get("requires_time_slowdown", true)):
+		_register_time_slowdown(request_id)
+
+	var thread := Thread.new()
+	var record := {
+		"thread": thread,
+		"npc_id": npc_id,
+		"request_id": request_id,
+		"call_type": "dialogue"
+	}
+	_async_request_threads[request_id] = record
+	var err := thread.start(Callable(self, "_thread_request_json").bind("POST", "/npc/dialogue", payload, request_id))
+	if err != OK:
+		_async_request_threads.erase(request_id)
+		_release_time_slowdown(request_id)
+		_clear_npc_llm_activity(npc_id, request_id)
+		_active_request_by_npc.erase(npc_id)
+		return _failure_result("thread_start_failed", "无法启动异步对话请求。", {
+			"godot_error": err,
+			"request_id": request_id
+		})
+	return {
+		"ok": true,
+		"pending": true,
+		"request_id": request_id
+	}
+
+
+func request_npc_daily_plan(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var payload := build_npc_daily_plan_payload(npc_id, options)
+	if payload.is_empty():
+		var failed := _failure_result("payload_error", "无法构造 DailyPlanRequest。")
+		daily_plan_response_received.emit(failed.duplicate(true))
+		return failed
+
+	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("plan_day")))
+	var result: Dictionary = _request_json("POST", "/npc/plan_day", payload, true, request_id, {
+		"npc_id": npc_id,
+		"kind": "plan",
+		"label": "正在计划下一步行动",
+		"cancellable": true
+	})
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["daily_plan"] = result.get("body", {})
+	daily_plan_response_received.emit(response.duplicate(true))
+	return response
+
+
+func request_npc_plan_revision(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var payload := build_npc_plan_revision_payload(npc_id, options)
+	if payload.is_empty():
+		var failed := _failure_result("payload_error", "无法构造 PlanRevisionRequest。")
+		plan_revision_response_received.emit(failed.duplicate(true))
+		return failed
+
+	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("revise_plan")))
+	var result: Dictionary = _request_json("POST", "/npc/revise_plan", payload, true, request_id, {
+		"npc_id": npc_id,
+		"kind": "plan",
+		"label": "正在计划下一步行动",
+		"cancellable": true
+	})
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["plan_revision"] = result.get("body", {})
+	plan_revision_response_received.emit(response.duplicate(true))
+	return response
+
+
+func request_npc_daily_reflection(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var payload := build_npc_daily_reflection_payload(npc_id, options)
+	if payload.is_empty():
+		var failed := _failure_result("payload_error", "无法构造 DailyReflectionRequest。")
+		daily_reflection_response_received.emit(failed.duplicate(true))
+		return failed
+
+	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("daily_reflection")))
+	var should_slowdown := bool(payload.get("meta", {}).get("requires_time_slowdown", true))
+	var result: Dictionary = _request_json("POST", "/npc/daily_reflection", payload, should_slowdown, request_id, {
+		"npc_id": npc_id,
+		"kind": "first_sleep_summary",
+		"label": "正在熟睡",
+		"cancellable": false
+	})
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["daily_reflection"] = result.get("body", {})
+	daily_reflection_response_received.emit(response.duplicate(true))
 	return response
 
 
@@ -106,6 +223,55 @@ func debug_request_dialogue(
 			"visibility": visibility
 		}
 	})
+
+
+func debug_request_plan_revision(npc_id: String, failure_type: String = "unknown", failure_summary: String = "GM 调试触发计划重评估。") -> Dictionary:
+	return request_npc_plan_revision(npc_id, {
+		"failure_type": failure_type,
+		"failure_summary": failure_summary
+	})
+
+
+func debug_request_daily_plan(npc_id: String) -> Dictionary:
+	return request_npc_daily_plan(npc_id, {
+		"planning_rules": _default_daily_planning_rules()
+	})
+
+
+func debug_request_daily_reflection(npc_id: String) -> Dictionary:
+	return request_npc_daily_reflection(npc_id, {
+		"requires_time_slowdown": true
+	})
+
+
+func cancel_npc_llm_requests(npc_id: String, reason: String = "cancelled_by_player_dialogue") -> Dictionary:
+	if npc_id.is_empty():
+		return _failure_result("empty_npc_id", "NPC ID 为空。")
+	var active: Dictionary = _active_request_by_npc.get(npc_id, {})
+	if active.is_empty():
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if npc_system != null and npc_system.has_method("get_npc_llm_activity"):
+			active = npc_system.get_npc_llm_activity(npc_id)
+	if active.is_empty() or not bool(active.get("active", false)):
+		return {"ok": true, "cancelled": false, "reason": "no_active_request"}
+	if not bool(active.get("cancellable", true)):
+		return _failure_result("request_not_cancellable", "该 NPC 正在首次睡眠总结，无法打断。", {
+			"npc_id": npc_id,
+			"activity": active.duplicate(true)
+		})
+	var request_id := str(active.get("request_id", ""))
+	if not request_id.is_empty():
+		_cancelled_request_ids[request_id] = reason
+	_release_time_slowdown(request_id)
+	_clear_npc_llm_activity(npc_id, request_id)
+	_active_request_by_npc.erase(npc_id)
+	return {
+		"ok": true,
+		"cancelled": true,
+		"npc_id": npc_id,
+		"request_id": request_id,
+		"reason": reason
+	}
 
 
 func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
@@ -181,14 +347,162 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	return payload
 
 
-func _request_json(method: String, endpoint: String, payload: Dictionary = {}, use_slowdown: bool = false, request_id: String = "") -> Dictionary:
-	var active_slowdown_id := ""
-	if use_slowdown:
-		active_slowdown_id = request_id if not request_id.is_empty() else _make_request_id("llm")
-		_register_time_slowdown(active_slowdown_id)
+func build_npc_daily_plan_payload(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		push_warning("LLMBridge cannot build daily plan payload because NPCSystem is missing.")
+		return {}
 
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+
+	var request_id := str(options.get("request_id", _make_request_id("plan_day")))
+	var npc_context := _build_npc_context(npc_id, npc_system)
+	if npc_context.is_empty():
+		return {}
+	var payload := {
+		"meta": {
+			"request_id": request_id,
+			"call_type": "plan_day",
+			"source": "godot",
+			"requires_time_slowdown": bool(options.get("requires_time_slowdown", true)),
+			"related_event_id": options.get("related_event_id", null)
+		},
+		"game_time": _get_game_time_context(),
+		"npc": npc_context,
+		"allowed_actions": _build_allowed_action_candidates(),
+		"current_building_states": _build_building_state_context(),
+		"current_resource_states": _build_resource_state_context(),
+		"planning_rules": options.get("planning_rules", _default_daily_planning_rules())
+	}
+	_record_npc_context_injection(npc_id, "plan_day", npc_context.get("current_order", {}), request_id)
+	return payload
+
+
+func build_npc_plan_revision_payload(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		push_warning("LLMBridge cannot build plan revision payload because NPCSystem is missing.")
+		return {}
+
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+
+	var current_plan: Array = []
+	if options.has("current_plan") and options["current_plan"] is Array:
+		current_plan = options["current_plan"]
+	elif npc_system.has_method("get_npc_plan"):
+		current_plan = npc_system.get_npc_plan(npc_id)
+
+	var game_time := _get_game_time_context()
+	var request_id := str(options.get("request_id", _make_request_id("revise_plan")))
+	var failed_plan_item: Dictionary = options.get("failed_plan_item", {})
+	if failed_plan_item.is_empty():
+		failed_plan_item = _find_plan_item_for_hour(current_plan, int(game_time.get("hour", 0)))
+	if failed_plan_item.is_empty():
+		failed_plan_item = _make_schema_plan_item(int(game_time.get("hour", 0)), "idle", "", "当前没有可用计划项。")
+
+	var failure_type := _normalize_plan_failure_type(str(options.get("failure_type", "unknown")))
+	var failure_summary := str(options.get("failure_summary", "计划执行异常，需要重新评估。"))
+	var npc_context := _build_npc_context(npc_id, npc_system)
+	if npc_context.is_empty():
+		return {}
+
+	var payload := {
+		"meta": {
+			"request_id": request_id,
+			"call_type": "revise_plan",
+			"source": "godot",
+			"requires_time_slowdown": bool(options.get("requires_time_slowdown", true)),
+			"related_event_id": options.get("related_event_id", null)
+		},
+		"game_time": game_time,
+		"npc": npc_context,
+		"current_plan": _plan_items_to_schema(current_plan),
+		"failed_plan_item": _plan_item_to_schema(failed_plan_item),
+		"failure_type": failure_type,
+		"failure_summary": failure_summary,
+		"allowed_actions": _build_allowed_action_candidates()
+	}
+	_record_npc_context_injection(npc_id, "revise_plan", npc_context.get("current_order", {}), request_id)
+	return payload
+
+
+func build_npc_daily_reflection_payload(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		push_warning("LLMBridge cannot build daily reflection payload because NPCSystem is missing.")
+		return {}
+
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+
+	var game_time := _get_game_time_context()
+	var request_id := str(options.get("request_id", _make_request_id("daily_reflection")))
+	var npc_context := _build_npc_context(npc_id, npc_system)
+	if npc_context.is_empty():
+		return {}
+	var payload := {
+		"meta": {
+			"request_id": request_id,
+			"call_type": "daily_reflection",
+			"source": "godot",
+			"requires_time_slowdown": bool(options.get("requires_time_slowdown", true)),
+			"related_event_id": options.get("related_event_id", null)
+		},
+		"game_time": {
+			"day": int(options.get("day", game_time.get("day", 1))),
+			"time": str(game_time.get("time", "00:00:00")),
+			"hour": int(game_time.get("hour", 0))
+		},
+		"npc": npc_context,
+		"day_events": options.get("day_events", _build_reflection_day_events(npc_id)),
+		"existing_diary_entries": _build_existing_diary_entries(npc)
+	}
+	_record_npc_context_injection(npc_id, "daily_reflection", npc_context.get("current_order", {}), request_id)
+	return payload
+
+
+func _thread_request_json(method: String, endpoint: String, payload: Dictionary, request_id: String) -> void:
 	var transport_result := _send_http_request(method, endpoint, payload)
-	_release_time_slowdown(active_slowdown_id)
+	var result := _parse_transport_json_result(transport_result)
+	result["request_id"] = request_id
+	call_deferred("_complete_async_dialogue_request", request_id, result)
+
+
+func _complete_async_dialogue_request(request_id: String, result: Dictionary) -> void:
+	var record: Dictionary = _async_request_threads.get(request_id, {})
+	if record.is_empty():
+		return
+	var thread := record.get("thread", null) as Thread
+	if thread != null:
+		thread.wait_to_finish()
+	_async_request_threads.erase(request_id)
+	var npc_id := str(record.get("npc_id", ""))
+	_release_time_slowdown(request_id)
+	if _was_request_cancelled(request_id):
+		if not npc_id.is_empty():
+			_clear_npc_llm_activity(npc_id, request_id)
+		var cancelled := _failure_result("request_cancelled", "LLM 请求已被玩家对话打断。", {
+			"request_id": request_id,
+			"cancelled": true
+		})
+		dialogue_response_received.emit(cancelled.duplicate(true))
+		dialogue_async_response_received.emit(cancelled.duplicate(true))
+		return
+	if not npc_id.is_empty():
+		_clear_npc_llm_activity(npc_id, request_id)
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["dialogue"] = result.get("body", {})
+	dialogue_response_received.emit(response.duplicate(true))
+	dialogue_async_response_received.emit(response.duplicate(true))
+
+
+func _parse_transport_json_result(transport_result: Dictionary) -> Dictionary:
 	if not bool(transport_result.get("ok", false)):
 		return transport_result
 
@@ -211,6 +525,234 @@ func _request_json(method: String, endpoint: String, payload: Dictionary = {}, u
 		"response_code": int(transport_result.get("response_code", 0)),
 		"body": response_body
 	}
+
+
+func _request_json(
+	method: String,
+	endpoint: String,
+	payload: Dictionary = {},
+	use_slowdown: bool = false,
+	request_id: String = "",
+	activity_options: Dictionary = {}
+) -> Dictionary:
+	var activity_npc_id := str(activity_options.get("npc_id", ""))
+	var activity_request_id := request_id if not request_id.is_empty() else _make_request_id("llm")
+	if not activity_npc_id.is_empty():
+		_set_npc_llm_activity(activity_npc_id, activity_request_id, activity_options)
+	var active_slowdown_id := ""
+	if use_slowdown:
+		active_slowdown_id = activity_request_id
+		_register_time_slowdown(active_slowdown_id)
+
+	var transport_result := _send_http_request(method, endpoint, payload)
+	_release_time_slowdown(active_slowdown_id)
+	if _was_request_cancelled(activity_request_id):
+		if not activity_npc_id.is_empty():
+			_clear_npc_llm_activity(activity_npc_id, activity_request_id)
+		return _failure_result("request_cancelled", "LLM 请求已被玩家对话打断。", {
+			"request_id": activity_request_id,
+			"cancelled": true
+		})
+	if not activity_npc_id.is_empty():
+		_clear_npc_llm_activity(activity_npc_id, activity_request_id)
+	if not bool(transport_result.get("ok", false)):
+		return transport_result
+	return _parse_transport_json_result(transport_result)
+
+
+func _set_npc_llm_activity(npc_id: String, request_id: String, options: Dictionary) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("set_npc_llm_activity"):
+		return
+	var activity := {
+		"active": true,
+		"kind": str(options.get("kind", "dialogue")),
+		"label": str(options.get("label", "")),
+		"request_id": request_id,
+		"cancellable": bool(options.get("cancellable", true)),
+		"reason": str(options.get("reason", ""))
+	}
+	npc_system.set_npc_llm_activity(npc_id, activity)
+	_active_request_by_npc[npc_id] = activity.duplicate(true)
+
+
+func _clear_npc_llm_activity(npc_id: String, request_id: String) -> void:
+	var active: Dictionary = _active_request_by_npc.get(npc_id, {})
+	if not active.is_empty() and str(active.get("request_id", "")) == request_id:
+		_active_request_by_npc.erase(npc_id)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("clear_npc_llm_activity"):
+		npc_system.clear_npc_llm_activity(npc_id, request_id)
+
+
+func _was_request_cancelled(request_id: String) -> bool:
+	if request_id.is_empty() or not _cancelled_request_ids.has(request_id):
+		return false
+	_cancelled_request_ids.erase(request_id)
+	return true
+
+
+func _plan_items_to_schema(plan: Array) -> Array:
+	var result: Array = []
+	for raw_item in plan:
+		if raw_item is Dictionary:
+			result.append(_plan_item_to_schema(raw_item))
+	return result
+
+
+func _plan_item_to_schema(item: Dictionary) -> Dictionary:
+	var hour := clampi(int(item.get("hour", _get_game_time_context().get("hour", 0))), 0, 23)
+	var action_id := str(item.get("action_id", "idle"))
+	if action_id.is_empty():
+		action_id = "idle"
+	var action := _get_action_definition(action_id)
+	var target: Dictionary = item.get("target", {})
+	var location_id: Variant = item.get("location_id", null)
+	if location_id == null or str(location_id).is_empty():
+		location_id = action.get("location_required", null)
+	if location_id == null and target.has("building_id"):
+		location_id = str(target.get("building_id", ""))
+	var target_id: Variant = item.get("target_id", null)
+	if target_id == null:
+		for key in ["target_npc_id", "building_id"]:
+			if target.has(key):
+				target_id = str(target.get(key, ""))
+				break
+	return {
+		"hour": hour,
+		"action_kind": _infer_plan_action_kind(action_id, action),
+		"action_id": action_id,
+		"location_id": null if location_id == null or str(location_id).is_empty() else str(location_id),
+		"target_id": null if target_id == null or str(target_id).is_empty() else str(target_id),
+		"priority": clampi(int(item.get("priority", 50)), 0, 100),
+		"reason": str(item.get("reason", ""))
+	}
+
+
+func _find_plan_item_for_hour(plan: Array, hour: int) -> Dictionary:
+	for raw_item in plan:
+		if raw_item is Dictionary and int((raw_item as Dictionary).get("hour", -1)) == hour:
+			return (raw_item as Dictionary).duplicate(true)
+	return {}
+
+
+func _make_schema_plan_item(hour: int, action_id: String, location_id: String, reason: String) -> Dictionary:
+	return {
+		"hour": clampi(hour, 0, 23),
+		"action_kind": _infer_plan_action_kind(action_id, _get_action_definition(action_id)),
+		"action_id": action_id,
+		"location_id": null if location_id.is_empty() else location_id,
+		"target_id": null,
+		"priority": 50,
+		"reason": reason
+	}
+
+
+func _build_allowed_action_candidates() -> Array:
+	var result: Array = []
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("get_action_ids"):
+		return result
+	for action_id in action_system.get_action_ids():
+		var action: Dictionary = action_system.get_action(str(action_id))
+		result.append({
+			"action_id": str(action_id),
+			"name": str(action.get("name", action_id)),
+			"location_id": null if str(action.get("location_required", "")).is_empty() else str(action.get("location_required", "")),
+			"target_id": null,
+			"tags": [str(action.get("type", ""))]
+		})
+	result.append({
+		"action_id": "idle",
+		"name": "等待",
+		"location_id": "plaza",
+		"target_id": null,
+		"tags": ["idle"]
+	})
+	return result
+
+
+func _build_resource_state_context() -> Dictionary:
+	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
+	if resource_system != null and resource_system.has_method("get_resource_snapshot"):
+		return resource_system.get_resource_snapshot()
+	return {}
+
+
+func _build_building_state_context() -> Dictionary:
+	var result := {}
+	var building_system := get_node_or_null("/root/Main/Systems/BuildingSystem")
+	if building_system == null or not building_system.has_method("get_building_ids"):
+		return result
+	for building_id in building_system.get_building_ids():
+		var building: Dictionary = building_system.get_building(str(building_id))
+		result[str(building_id)] = {
+			"name": str(building.get("name", building_id)),
+			"level": int(building.get("level", 1)),
+			"hp": int(building.get("hp", 0)),
+			"max_hp": int(building.get("max_hp", 0)),
+			"is_repairing": bool(building.get("is_repairing", false)),
+			"is_upgrading": bool(building.get("is_upgrading", false))
+		}
+	return result
+
+
+func _default_daily_planning_rules() -> Array[String]:
+	return [
+		"返回 24 个小时计划项，每个 hour 0-23 恰好出现一次。",
+		"计划至少包含 6 个工作阶段。",
+		"只能选择 allowed_actions 中的 action_id，或选择 idle。",
+		"current_order 只是守备官当前指令参考，不是强制行动。",
+		"不得让模型直接结算资源、HP、建筑修复、训练成长或战斗结果。"
+	]
+
+
+func _infer_plan_action_kind(action_id: String, action: Dictionary) -> String:
+	if action_id == "idle" or action_id.is_empty():
+		return "idle"
+	match str(action.get("type", "")):
+		"work", "clinic_doctor":
+			return "work"
+		"eat":
+			return "eat"
+		"sleep":
+			return "sleep"
+		"training_instructor", "training_student":
+			return "train"
+		"clinic_patient", "targeted_heal":
+			return "assist_heal"
+	match action_id:
+		"assist_repair":
+			return "assist_repair"
+		"assist_upgrade":
+			return "assist_upgrade"
+		"assist_heal":
+			return "assist_heal"
+		_:
+			return "idle"
+
+
+func _get_action_definition(action_id: String) -> Dictionary:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("get_action"):
+		return {}
+	if action_id == "idle" or action_id.is_empty():
+		return {}
+	return action_system.get_action(action_id)
+
+
+func _normalize_plan_failure_type(raw_type: String) -> String:
+	match raw_type:
+		"target_unavailable", "workstation_occupied", "resource_insufficient", "dialogue_interrupted", "low_hp", "low_satiety", "high_fatigue", "combat_alarm", "order_changed":
+			return raw_type
+		"work_failed_no_workstation", "clinic_doctor_failed_no_workstation", "clinic_patient_failed_no_bed", "training_student_failed_no_workstation", "training_instructor_failed_no_workstation":
+			return "workstation_occupied"
+		"work_failed_no_resources", "eat_failed_no_food", "assist_heal_failed_no_money", "clinic_treatment_failed_no_money":
+			return "resource_insufficient"
+		"plan_target_unavailable":
+			return "target_unavailable"
+		_:
+			return "unknown"
 
 
 func _send_http_request(method: String, endpoint: String, payload: Dictionary) -> Dictionary:
@@ -552,6 +1094,54 @@ func _build_npc_context(npc_id: String, npc_system: Node) -> Dictionary:
 		"location_context": _build_location_context(state),
 		"plaza_context": _get_plaza_context()
 	}
+
+
+func _build_reflection_day_events(npc_id: String) -> Array:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("get_npc_short_term_memory"):
+		return []
+	var memory: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
+	var result: Array = []
+	for raw_event in memory.get("event_log", []):
+		if raw_event is Dictionary:
+			var event_summary := _event_to_summary(raw_event)
+			event_summary["memory_kind"] = "experienced"
+			result.append(event_summary)
+	for raw_event in memory.get("witness_log", []):
+		if raw_event is Dictionary:
+			var witness_summary := _event_to_summary(raw_event)
+			witness_summary["memory_kind"] = "witnessed"
+			result.append(witness_summary)
+	return result
+
+
+func _event_to_summary(event: Dictionary) -> Dictionary:
+	return {
+		"event_id": event.get("event_id", null),
+		"type": str(event.get("type", "")),
+		"summary": str(event.get("summary", "")),
+		"importance": clampi(int(event.get("importance", 50)), 0, 100),
+		"day": event.get("day", null),
+		"time": event.get("time", null),
+		"payload": event.get("payload", {})
+	}
+
+
+func _build_existing_diary_entries(npc: Dictionary) -> Array[String]:
+	var entries: Array[String] = []
+	var diary: Variant = npc.get("diary", [])
+	if not diary is Array:
+		return entries
+	for raw_entry in diary:
+		if raw_entry is Dictionary:
+			var entry_text := str((raw_entry as Dictionary).get("entry", ""))
+			if not entry_text.is_empty():
+				entries.append(entry_text)
+		else:
+			var text := str(raw_entry)
+			if not text.is_empty():
+				entries.append(text)
+	return entries
 
 
 func debug_build_npc_context(npc_id: String, call_type: String = "debug") -> Dictionary:

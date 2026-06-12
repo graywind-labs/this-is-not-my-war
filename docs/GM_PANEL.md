@@ -18,7 +18,9 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
-- 已入伍 NPC 当前自然语言指令、修订号、最近计划重评估请求/降级结果和最近一次 NPC LLM 指令注入。
+- 已入伍 NPC 当前自然语言指令、修订号、最近计划重评估请求 / 应用结果和最近一次 NPC LLM 指令注入。
+- 每日计划与 T1002/T1003 重评估：通过 LLM / Mock 生成 24 小时计划并自动规则降级，也可生成纯规则计划、执行当前小时计划、查看当前计划、手动触发当前 NPC 计划重评估。
+- 首次睡眠总结与长期记忆：触发当前 NPC 首次睡眠总结、查看长期日记 / 知识图谱占位、最近一次总结结果和当前 LLM 活动状态。
 - NPC 主动找守备官交涉的调试触发、问号气泡状态和超时 / 对话结束后的计划重评估请求。
 - 正式装备系统：为已入伍 NPC 装备主武器、盔甲和坐骑，并查看当前兵种判定快照。
 - T0904 成长系统：查看 NPC 总经验、未分配技能点，并由玩家把技能点分配到力量或智力。
@@ -89,7 +91,9 @@ NPC：
 - 扣除 NPC HP；HP 清零后由 `NPCSystem` 触发昏迷。
 - 用自然恢复规则推进指定 NPC 的昏迷恢复，便于快速验证复苏。
 - 查看 NPC 快照。
-- 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求及其降级结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
+- 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求及其应用结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
+- 为当前选中 NPC 生成 LLM / Mock 版 24 小时计划、生成纯规则计划、执行当前小时计划、查看计划或立即触发计划重评估；计划入口调用 `DailyPlanSystem`，不在 GMPanel 中自行决定行动结算。`plan_generate` 会请求 `/npc/plan_day` 并在失败时规则降级，`plan_generate_rule` 只生成规则计划。
+- 为当前选中 NPC 触发首次睡眠总结、查看长期记忆、最近一次总结结果和 LLM 状态；首次睡眠总结入口调用 `DailyReflectionSystem`，不在 GMPanel 中自行写日记、清短期记忆或更新知识图谱。`llm_state` 只读取 NPC 当前 `llm_activity`、首次睡眠总结锁和延后计划重评估状态。
 - 将当前选中 NPC 设为入伍；该入口只调用 `NPCSystem.set_npc_recruited(...)`，用于调试验证，正式征召仍由对话同意结果驱动。
 - 触发当前选中 NPC 主动找守备官交涉，并查看该 NPC 的主动交涉状态；触发后 NPC 头顶出现 `?`，点击后进入既有对话面板。
 - 选择武器类型和盔甲部位，为当前选中且已入伍 NPC 装备武器、盔甲或坐骑；装备入口调用 `EquipmentSystem`，消耗 `weapons` / `armor` / `horse_readiness` 派生库存并写入装备事件。
@@ -153,6 +157,15 @@ assign_attribute <npc_id> <strength|intelligence>
 publish_order <npc_id> <text>
 order <npc_id>
 plan_request
+plan_generate [npc_id|all]
+plan_generate_rule [npc_id|all]
+plan_execute [npc_id|all]
+plan <npc_id>
+plan_revise <npc_id> [reason]
+reflect_npc <npc_id> [force]
+long_memory <npc_id>
+reflection_result
+llm_state <npc_id>
 start_proactive <npc_id> <text>
 proactive <npc_id>
 equip_weapon <npc_id> <weapon_id> [visibility]
@@ -217,6 +230,15 @@ publish_order veteran_deputy_01 守住城门，但先保证自己安全。
 recruit_npc priest_01
 order veteran_deputy_01
 plan_request
+plan_generate gardener_01
+plan_generate_rule gardener_01
+plan_execute gardener_01
+plan gardener_01
+plan_revise gardener_01 gm_manual
+reflect_npc cook_01 force
+long_memory cook_01
+reflection_result
+llm_state cook_01
 start_proactive cook_01 守备官，我想知道我们还能不能守住这里。
 proactive cook_01
 add_resource weapons 2
@@ -252,4 +274,4 @@ GM 面板当前有专用验证脚本：
 godot --headless --path . --script res://tools/verify_gm_panel.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、GM 入伍按钮、自然语言指令、计划重评估请求/结果、最近 LLM 指令注入、训练场教官/受训者入口、记忆事件和广场公告。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动计划重评估、首次睡眠总结入口、长期记忆查看、计划重评估请求/结果、最近 LLM 指令注入、训练场教官/受训者入口、记忆事件和广场公告。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T1002 的异常重评估细节由 `tools/verify_daily_plan_reevaluation.gd` 覆盖；T1003 的 `/npc/plan_day` Mock 计划和规则降级由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖。

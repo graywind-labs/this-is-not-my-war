@@ -18,6 +18,8 @@
 [ext_resource type="Script" path="res://scripts/ui/OrderPanel.gd" id="16_order_panel"]
 [ext_resource type="Script" path="res://scripts/ui/UIInputFocusManager.gd" id="17_ui_focus"]
 [ext_resource type="Script" path="res://scripts/systems/EquipmentSystem.gd" id="18_equipment"]
+[ext_resource type="Script" path="res://scripts/systems/DailyPlanSystem.gd" id="19_daily_plan"]
+[ext_resource type="Script" path="res://scripts/systems/DailyReflectionSystem.gd" id="20_daily_reflection"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(54, 38)
@@ -412,6 +414,12 @@ script = ExtResource("14_llm_bridge")
 [node name="DialogSystem" type="Node" parent="Systems" unique_id=538485406]
 script = ExtResource("8_dialog")
 
+[node name="DailyPlanSystem" type="Node" parent="Systems"]
+script = ExtResource("19_daily_plan")
+
+[node name="DailyReflectionSystem" type="Node" parent="Systems"]
+script = ExtResource("20_daily_reflection")
+
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
 script = ExtResource("17_ui_focus")
 
@@ -686,12 +694,6 @@ layout_mode = 2
 text = "装备武器"
 tooltip_text = "消耗 1 个武器库存，为已入伍 NPC 装备所选主武器。"
 
-[node name="NPCAttackButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "攻击"
-tooltip_text = "造成 10 点伤害；HP 清零时进入昏迷。"
-
 [node name="NPCInteractionResultLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -842,11 +844,20 @@ size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 20
 text = "与 NPC 对话"
 
-[node name="DialogPublicToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+[node name="DialogHeaderToggles" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="DialogPublicToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "同地点公开"
+
+[node name="DialogRecruitmentToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "提出应征"
 
 [node name="DialogStatusLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -882,10 +893,11 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "发送"
 
-[node name="DialogRecruitmentButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+[node name="DialogAttackButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "提出应征"
+text = "攻击"
+tooltip_text = "守备官攻击当前 NPC，并等待 NPC 对惩戒作出回应。"
 
 [node name="DialogEndButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
 unique_name_in_owner = true

@@ -39,6 +39,17 @@ class ModelAdapterResult:
 class ModelAdapter:
     """Provider boundary with a deterministic mock backend for local development."""
 
+    SKILL_TO_WORK_ACTION = {
+        "养马": "work_stable",
+        "厨艺": "work_dining_hall",
+        "耕种": "work_garden",
+        "打铁": "work_blacksmith",
+        "教练": "work_garden",
+        "酿酒": "work_tavern",
+        "医术": "work_clinic_doctor",
+        "工程": "work_workshop",
+    }
+
     def __init__(self, config: ModelAdapterConfig | None = None) -> None:
         raw_config = config or ModelAdapterConfig(
             provider=os.getenv("LLM_PROVIDER", "mock"),
@@ -145,16 +156,21 @@ class ModelAdapter:
             }
 
         if call_type == "plan_day":
+            work_action_id = self._first_allowed_work_action(payload)
             plan = []
             for hour in range(24):
                 if 0 <= hour <= 5:
                     item = self._plan_item(hour, "sleep", "sleep_in_dormitory", "dormitory", "夜里先恢复体力。")
-                elif hour in [7, 18]:
-                    item = self._plan_item(hour, "eat", "eat_meal", "dining_hall", "按时吃饭才能继续撑住。")
+                elif hour in [6, 12, 18]:
+                    item = self._plan_item(hour, "eat", "eat_at_dining_hall", "dining_hall", "按时吃饭才能继续撑住。")
                 elif 8 <= hour <= 13:
-                    item = self._plan_item(hour, "work", self._first_allowed_action(payload), None, "白天优先完成本职工作。")
+                    item = self._plan_item(hour, "work", work_action_id, self._location_for_allowed_action(payload, work_action_id), "白天优先完成本职工作。")
                 elif 14 <= hour <= 16:
-                    item = self._plan_item(hour, "rest", "rest", "plaza", "留在广场观察驿站情况。")
+                    item = self._plan_item(hour, "idle", "idle", "plaza", "留在广场观察驿站情况。")
+                elif 17 <= hour <= 20:
+                    item = self._plan_item(hour, "work", work_action_id, self._location_for_allowed_action(payload, work_action_id), "傍晚继续补上驿站需要的工作。")
+                elif hour >= 22:
+                    item = self._plan_item(hour, "sleep", "sleep_in_dormitory", "dormitory", "夜深后休息，避免明天无力做事。")
                 else:
                     item = self._plan_item(hour, "idle", "idle", "plaza", "等待新的安排。")
                 plan.append(item)
@@ -338,11 +354,53 @@ class ModelAdapter:
             return int(game_time.get("hour", 0))
         return 0
 
-    def _first_allowed_action(self, payload: dict[str, Any]) -> str:
+    def _first_allowed_work_action(self, payload: dict[str, Any]) -> str:
         actions = payload.get("allowed_actions", [])
-        if actions and isinstance(actions[0], dict):
-            return str(actions[0].get("action_id", "work"))
-        return "work"
+        allowed_ids: set[str] = set()
+        if isinstance(actions, list):
+            for action in actions:
+                if isinstance(action, dict):
+                    allowed_ids.add(str(action.get("action_id", "")))
+        skilled_action = self._best_skill_work_action(payload)
+        if skilled_action in allowed_ids:
+            return skilled_action
+        if isinstance(actions, list):
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                tags = action.get("tags", [])
+                action_id = str(action.get("action_id", ""))
+                if "work" in tags or action_id.startswith("work_"):
+                    return action_id
+            if actions and isinstance(actions[0], dict):
+                return str(actions[0].get("action_id", "idle"))
+        return "work_garden"
+
+    def _best_skill_work_action(self, payload: dict[str, Any]) -> str:
+        npc = payload.get("npc", {})
+        state = npc.get("state", {}) if isinstance(npc, dict) else {}
+        skills = state.get("skills", {}) if isinstance(state, dict) else {}
+        if not isinstance(skills, dict):
+            return ""
+        best_skill = ""
+        best_value = -1
+        for skill_name, action_id in self.SKILL_TO_WORK_ACTION.items():
+            value = int(skills.get(skill_name, 0) or 0)
+            if value > best_value:
+                best_skill = skill_name
+                best_value = value
+        return self.SKILL_TO_WORK_ACTION.get(best_skill, "")
+
+    def _location_for_allowed_action(self, payload: dict[str, Any], action_id: str) -> str | None:
+        actions = payload.get("allowed_actions", [])
+        if isinstance(actions, list):
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                if str(action.get("action_id", "")) == action_id:
+                    location_id = action.get("location_id")
+                    return str(location_id) if location_id else None
+        return None
 
     def _plan_item(
         self,

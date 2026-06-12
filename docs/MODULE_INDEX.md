@@ -43,6 +43,8 @@
 | NPC 面板 | `res://scenes/ui/NPCPanel.tscn` | 状态、装备、按钮 |
 | 建筑面板 | `res://scenes/ui/BuildingPanel.tscn` | 建筑信息 |
 | GM 调试面板 | `res://scripts/ui/GMPanel.gd` | 开发验证入口 |
+| 每日计划系统 | `res://scripts/systems/DailyPlanSystem.gd` | 规则版 / LLM Mock 24 小时计划生成、执行与异常重评估 |
+| 首次睡眠总结系统 | `res://scripts/systems/DailyReflectionSystem.gd` | 每日首次睡眠满 1 游戏小时后的日记、知识图谱占位更新、短期记忆清空与深度睡眠锁 |
 
 ## Godot 当前已创建
 
@@ -58,8 +60,10 @@
 
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/OrderPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位，并保留主厅前 `NoticeBoard` 视觉占位；`NoticeBoard` 不绑定建筑定义，不具备 HP / 等级 / 工作位。`Props` 下已有广场、正门道路、后门道路和商人入口占位；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、警铃按钮占位和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/OrderPanel` 已接入自然语言指令编辑；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
-依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`EquipmentSystem.gd`、`DialogSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 和 `res://scripts/ui/GMPanel.gd` 作为 UI 脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
+依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`MemorySystem.gd`、`CombatSystem.gd`、`EquipmentSystem.gd`、`LLMBridge.gd`、`DialogSystem.gd`、`DailyPlanSystem.gd`、`DailyReflectionSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd` 和 `res://scripts/ui/GMPanel.gd` 作为 UI 脚本，并绑定 `res://scripts/camera/CameraRig.gd` 作为相机控制脚本。
 当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0012 后 HUD 主栏按资源定义顺序显示非聚合资源库存，并提供装备/器械详情按钮，详情面板贴近各自按钮左下且夹在屏幕内；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息、按类型分组的工位空闲数 / 总数与占用者，并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑，或安排工作、协助修复、协助升级、训练、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉、工作和训练通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。T0804 后，铁匠铺可消耗铁产出武器/盔甲派生库存；T0805 后，工械坊可消耗木材产出武器/工程器械派生库存；T0806 后，马厩可消耗粮食并按养马、力量和马厩等级产出马匹整备派生库存；T0807 后，酒窖可消耗粮食并按酿酒、智力和酒窖等级产出酒派生库存；T0901/T0902 后，装备系统可把武器/盔甲/马匹整备库存转换到已入伍 NPC 的装备槽，并按主武器与 `equipment.mount` 槽提供兵种判定快照；T0903 后，训练场可通过教官工位和受训位提升当前装备对应的武器熟练度 / 骑术，并让教官提升“教练”；T0904 后，工作 / 诊所 / 训练的熟练度提升同步增加经验、产生未分配技能点；T0015 后 NPC 面板把经验显示在 HP 右侧，并只在有未分配技能点时显示属性旁 `+1`，GM 可把选中 NPC 设为入伍并由玩家分配力量或智力。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率、战斗/集结骑乘表现、酒的商队出售交易、工程器械部署或战斗。
+T1001-T1003 补充：`Main.tscn` 已挂载 `DailyPlanSystem`，规则版每日计划接口、按小时执行、行动异常 / 指令变化后的 Mock 或规则降级计划重评估应用、以及 `/npc/plan_day` LLM / Mock 每日计划制定与规则降级应用已实现；上段旧口径中的“未实现真实日程”现在仅指真实 LLM Prompt 打磨和更完整的自主计划链路尚未实现。
+T1004/T1005 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天首次睡觉并持续睡眠满 1 游戏小时后会生成首次睡眠总结，写入长期日记和知识图谱占位，并清空该 NPC 当天短期事件/见闻索引；总结请求和应用期间 NPC 进入不可打断的深度睡眠锁。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -89,7 +93,7 @@
 路径：`res://scripts/systems/TimeSystem.gd`
 用途：基础逻辑时间系统，负责 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速和数值倍率出口。
 依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；后续 LLMBridge / DialogSystem 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
-当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；尚未把战斗、每日计划或真实 LLM 请求接入该倍率。
+当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；T0604/T1002/T1003 已把对话、计划修订和每日计划请求接入慢速申请 / 释放。尚未把战斗或真实 LLM 请求接入完整成本与并发面板。
 
 路径：`res://scripts/systems/ResourceSystem.gd`
 用途：资源系统占位脚本。
@@ -104,7 +108,7 @@
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
 依赖：通过 `/root/ConfigLoader` 读取 `data/npc_profiles.json`，实例化 `res://scenes/npc/NPC.tscn` 到 `Main/WorldRoot/Station/NPCs`，并通过 `/root/EventBus.npc_clicked` 广播点击事件。
-当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0501/T0502/T0503 已实现 HP 扣除、昏迷恢复和协助治疗；T0808 已实现诊所病床治疗和研读医术。T0702 新增征召权威更新入口；T0703 新增 `get_current_order(...)`、`publish_npc_order(...)` 和最近计划重评估请求快照，只有已入伍 NPC 的指令文本变化时才写入私有事件并发出请求。T0704 新增 `give_money_to_npc(...)`；T0013 后旧占位武器兼容入口已移除，正式装备统一通过 T0901 `EquipmentSystem`。T0901 新增 `get_npc_equipment(...)` / `set_npc_equipment_slot(...)`，NPCSystem 只负责保存装备槽和刷新 NPC 状态，不负责库存扣除或兵种判定。T0904 新增 `increase_npc_skill(...)`、`get_npc_progression(...)`、`assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，统一熟练度经验、未分配技能点和玩家分配力量 / 智力。T0705 新增 `debug_start_proactive_talk(...)`、`get_proactive_talk(...)` 和 `handle_npc_clicked(...)`，可让 NPC 进入主动找守备官交涉状态、显示问号气泡、点击后打开既有对话面板，并在超时或对话结束后请求计划重评估。仍不实现复杂避障、真实计划重评估、敌人战斗或真实 LLM。
+当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0501/T0502/T0503 已实现 HP 扣除、昏迷恢复和协助治疗；T0808 已实现诊所病床治疗和研读医术。T0702 新增征召权威更新入口；T0703 新增 `get_current_order(...)`、`publish_npc_order(...)` 和最近计划重评估请求快照，只有已入伍 NPC 的指令文本变化时才写入私有事件并发出请求。T1001 新增 `get_npc_plan(...)` / `set_npc_plan(...)` 和 `stop_npc_movement_for_system(...)`，供每日计划系统保存计划并在小时计划切换时安全中断移动。T1004 新增 `get_npc_long_memory(...)` 与 `apply_daily_reflection(...)`，用于写入长期日记并合并知识图谱占位更新。T0704 新增 `give_money_to_npc(...)`；T0013 后旧占位武器兼容入口已移除，正式装备统一通过 T0901 `EquipmentSystem`。T0901 新增 `get_npc_equipment(...)` / `set_npc_equipment_slot(...)`，NPCSystem 只负责保存装备槽和刷新 NPC 状态，不负责库存扣除或兵种判定。T0904 新增 `increase_npc_skill(...)`、`get_npc_progression(...)`、`assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，统一熟练度经验、未分配技能点和玩家分配力量 / 智力。T0705 新增 `debug_start_proactive_talk(...)`、`get_proactive_talk(...)` 和 `handle_npc_clicked(...)`，可让 NPC 进入主动找守备官交涉状态、显示问号气泡、点击后打开既有对话面板，并在超时或对话结束后请求计划重评估。仍不实现复杂避障、真实计划重评估、敌人战斗或真实 LLM。
 
 路径：`res://scripts/systems/EquipmentSystem.gd`
 用途：正式装备系统，负责把派生库存转换为 NPC 装备槽，并提供兵种判定。
@@ -124,12 +128,22 @@
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)` 和 `debug_get_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。2026-05-25 起，MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态当前会生成 `location_status_changed` 本地见闻。可传播外部状态只计算等级与完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；可进入建筑还会提供每个工位占用/空闲，工位数量不触发广播。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。T0705 新增 `proactive_talk_started` / `proactive_talk_message` 事件模板：主动交涉发起和 NPC 开场问题先进入发起者事件库；玩家后续回复仍走既有 `dialogue_turn`。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史。已为 `location_entered`、`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_completed`、`money_given`、`npc_attacked_by_player`、`damage_taken`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`proactive_talk_started`、`proactive_talk_message` 等实现确定性 summary 模板和必需 payload 字段声明。尚未实现睡前总结或知识图谱更新。
+当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`clear_npc_short_term_memory(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)`、`debug_get_npc_short_term_memory(...)` 和 `debug_clear_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。2026-05-25 起，MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态当前会生成 `location_status_changed` 本地见闻。可传播外部状态只计算等级与完好/受损/正在修复/正在升级；HP、剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；可进入建筑还会提供每个工位占用/空闲，工位数量不触发广播。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。T0705 新增 `proactive_talk_started` / `proactive_talk_message` 事件模板：主动交涉发起和 NPC 开场问题先进入发起者事件库；玩家后续回复仍走既有 `dialogue_turn`。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史；T1004/T1005 首次睡眠总结只清空指定 NPC 的当天事件/见闻索引，不删除全局事件档案。
 
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：行动系统占位脚本，后续用于工作、吃饭、睡觉、训练等行动调度。
 依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` 结构化事件。
-当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_heal_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)`、`debug_assign_action(...)` 和只读 `get_healing_helpers_for_target(...)`。T0801 后，工作支持真实工位占用/释放和统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；T0803 后，配置了 `output_scaling` 的工作可按熟练度、属性和建筑等级提高实际产出，当前菜园产粮使用该规则。T0804 后，铁匠铺工作使用打铁和力量，消耗铁并产出 `weapons` / `armor` 派生库存。T0805 后，工械坊工作使用工程和智力，消耗木材并产出 `weapons` / `defense_devices` 派生库存。T0806 后，马厩工作使用养马和力量，消耗粮食并产出 `horse_readiness` 派生库存。T0901 后，`weapons` / `armor` / `horse_readiness` 可由 `EquipmentSystem` 转换为 NPC 装备槽。T0903 后，训练场支持 `training_instructor` 教官工位和 `training_student` 受训位：无武器且无坐骑不能当教官或受训者；受训者需要已有教官；教官独处时极慢提升自己当前装备对应武器 / 骑术，有受训者时受训者按自己的装备提升对应熟练度，教官提升“教练”。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲库存、工械坊制造弓弩/工程器械库存、马厩产出马匹整备。建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者会前往目标所在信息地点，最多 2 人协助同一目标，按医术熟练度调用 `NPCSystem` 加速昏迷恢复，并按逻辑时间消耗第纳尔。工作、训练、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级同样以 `local_public` 写入 `repair_assist_started` / `upgrade_assist_started`，事件地点为 `plaza`；协助治疗写入 `healing_started` / `healing_completed`，进入治疗者和目标事件库，并写入同地点其他在场 NPC 的见闻库，事件信息不暴露医术熟练度。T0401 暂停语义修正后，暂停期间不会执行行动结算；2026-05-25 起，吃饭、睡觉、工作和训练到达地点后进入 active 行动并随 `logical_time_tick` 推进。未实现 LLM 日程、战斗、工程器械部署或其他职业特殊生产平衡。
+当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_heal_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)`、`debug_assign_action(...)` 和只读 `get_healing_helpers_for_target(...)`。T1001 新增 `get_pending_action_id(...)`、`get_active_action_id(...)`、`get_runtime_action_id(...)` 和 `interrupt_npc_action(...)`，供计划系统判断与中断行动。T0801 后，工作支持真实工位占用/释放和统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；T0803 后，配置了 `output_scaling` 的工作可按熟练度、属性和建筑等级提高实际产出，当前菜园产粮使用该规则。T0804 后，铁匠铺工作使用打铁和力量，消耗铁并产出 `weapons` / `armor` 派生库存。T0805 后，工械坊工作使用工程和智力，消耗木材并产出 `weapons` / `defense_devices` 派生库存。T0806 后，马厩工作使用养马和力量，消耗粮食并产出 `horse_readiness` 派生库存。T0901 后，`weapons` / `armor` / `horse_readiness` 可由 `EquipmentSystem` 转换为 NPC 装备槽。T0903 后，训练场支持 `training_instructor` 教官工位和 `training_student` 受训位：无武器且无坐骑不能当教官或受训者；受训者需要已有教官；教官独处时极慢提升自己当前装备对应武器 / 骑术，有受训者时受训者按自己的装备提升对应熟练度，教官提升“教练”。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲库存、工械坊制造弓弩/工程器械库存、马厩产出马匹整备。建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者会前往目标所在信息地点，最多 2 人协助同一目标，按医术熟练度调用 `NPCSystem` 加速昏迷恢复，并按逻辑时间消耗第纳尔。工作、训练、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级同样以 `local_public` 写入 `repair_assist_started` / `upgrade_assist_started`，事件地点为 `plaza`；协助治疗写入 `healing_started` / `healing_completed`，进入治疗者和目标事件库，并写入同地点其他在场 NPC 的见闻库，事件信息不暴露医术熟练度。T0401 暂停语义修正后，暂停期间不会执行行动结算；2026-05-25 起，吃饭、睡觉、工作和训练到达地点后进入 active 行动并随 `logical_time_tick` 推进。未实现 LLM 日程、战斗、工程器械部署或其他职业特殊生产平衡。
+
+路径：`res://scripts/systems/DailyPlanSystem.gd`
+用途：每日计划系统，负责生成规则版或 LLM / Mock 版 24 小时 NPC 计划、写入计划事件，并按小时打点调用行动系统；行动异常或指令变化时负责应用计划修订或规则降级。
+依赖：读取 `NPCSystem` 的 NPC、熟练度和计划字段；调用 `LLMBridge.request_npc_daily_plan(...)` / `request_npc_plan_revision(...)` 获取后端 Mock 计划；调用 `ActionSystem.debug_assign_action(...)` / 协助类接口执行计划项，并通过 `ActionSystem.interrupt_npc_action(...)` 在计划切换时中断旧行动；调用 `MemorySystem.add_event(...)` 写入 `plan_created` / `plan_revised`。
+当前状态：T1001 已实现规则计划：默认按熟练度选择工作行动，24 小时计划至少包含 6 个工作阶段；执行只接管已经显式生成计划的 NPC，按 `hour_started` 执行当前小时项，同一小时内计划启动的行动提前完成会重复执行当前项。T1002 已接入行动异常和统一计划重评估：资源不足、工位占用、目标不可用、对话打断、守备官攻击、主动交涉结束 / 超时、战斗警报占位和新指令会触发 `/npc/revise_plan` Mock 修订，成功时合并修订计划并执行当前小时行动，失败时应用 `rule_revision_fallback` 规则降级计划。T1003 新增 `generate_daily_plan_for_npc(...)`，优先通过 `LLMBridge.request_npc_daily_plan(...)` 请求 `/npc/plan_day` 并应用 `mock_plan_day` 计划，后端不可用、输出不合法、不是 24 阶段或工作阶段不足时回退 `rule_plan_fallback`。
+
+路径：`res://scripts/systems/DailyReflectionSystem.gd`
+用途：首次睡眠总结系统，负责监听睡觉开始 / 结束和逻辑时间、在每日首次睡眠满 1 游戏小时后生成反思、写入长期日记、更新知识图谱占位并清空当天短期记忆。
+依赖：监听 `EventBus.event_recorded` 的 `sleep_started`；读取 `MemorySystem.get_npc_short_term_memory(...)`；调用 `LLMBridge.request_npc_daily_reflection(...)` 请求 `/npc/daily_reflection`；调用 `NPCSystem.apply_daily_reflection(...)` 写入长期记忆；调用 `MemorySystem.clear_npc_short_term_memory(...)` 清空该 NPC 当天短期索引。
+当前状态：T1004/T1005 已实现；每名 NPC 每天首次睡眠满 1 游戏小时后自动生成一次，发起到完成期间不可被对话、指令或行动改派打断，后端不可用时使用模板降级，GM 可通过 `debug_generate_reflection(...)` 强制触发。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：战斗系统占位脚本，后续用于攻击、策略和敌人波次。
@@ -137,19 +151,19 @@
 当前状态：T0102 已创建并绑定到 `Main/Systems/CombatSystem`；尚未实现战斗逻辑。
 
 路径：`res://scripts/systems/LLMBridge.gd`
-用途：Godot 侧后端桥接脚本，负责请求 `/health` 与 `/npc/dialogue`，构造 T0603 对话 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
-依赖：挂载到 `Main/Systems/LLMBridge`；读取 `NPCSystem`、`MemorySystem`、`GameState` 和 `TimeSystem`；使用 Godot 原生 `HTTPClient` 请求游戏后端。
-当前状态：T0604/T0604A 已实现原生 HTTP 后端桥接；T0701 由 DialogSystem 调用该桥并将成功回复显示到对话 UI、写入对话事件。T0703A 后，LLMBridge 统一把最新 `current_order` 注入对话顶层 payload 与共享 NPC 上下文，并保存最近注入快照供 GM / 自动化观察。LLMBridge 本身仍不修改征召状态或权威数值。
+用途：Godot 侧后端桥接脚本，负责请求 `/health`、`/npc/dialogue`、`/npc/plan_day` 与 `/npc/revise_plan`，构造 T0603 对话 payload、T1003 每日计划 payload 和 T1002 计划修订 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
+依赖：挂载到 `Main/Systems/LLMBridge`；读取 `NPCSystem`、`ActionSystem`、`MemorySystem`、`GameState` 和 `TimeSystem`；使用 Godot 原生 `HTTPClient` 请求游戏后端。
+当前状态：T0604/T0604A 已实现原生 HTTP 后端桥接；T0701 由 DialogSystem 调用该桥并将成功回复显示到对话 UI、写入对话事件。T0703A/T1002/T1003/T1004/T1005 后，LLMBridge 统一把最新 `current_order` 注入对话顶层 payload、每日计划 payload、计划修订 payload、首次睡眠总结 payload 与共享 NPC 上下文，并保存最近注入快照供 GM / 自动化观察。每日计划请求包含行动白名单、资源快照、建筑状态、地点上下文、短期记忆和长期记忆；首次睡眠总结请求包含当天事件摘要和已有日记。对话、每日计划、计划修订和首次睡眠总结都会申请 TimeSystem 慢速；对话可取消普通可取消 LLM 活动，但不能取消首次睡眠总结。T1006 新增异步对话请求 `request_npc_dialogue_async(...)`，供 DialogPanel 在等待回复时保持 UI 可结束 / 取消；取消会释放慢速、清除 NPC LLM 活动并丢弃后续结果。LLMBridge 本身仍不修改征召状态、资源、HP 或行动权威结算。
 
 路径：`res://scripts/systems/DialogSystem.gd`
 用途：Godot 侧对话会话权威入口，维护参与者、历史、公开性和轮次，调用 LLMBridge 并写入 MemorySystem。
 依赖：`NPCSystem`、`LLMBridge`、`MemorySystem`、`Main/UI/DialogPanel`。
-当前状态：T0701/T0702 已实现玩家-NPC 不限轮次对话与 NPC-NPC 默认 5 轮语义；支持开始、发送、结束、一次性应征请求标记、接受/拒绝结果应用和结构化对话事件。T0705 新增 `start_proactive_player_dialogue(...)`，复用玩家-NPC 对话面板，让 NPC 预先确定的开场问题作为第一条历史显示并先入库；对话结束后请求计划重评估。
+当前状态：T0701/T0702 已实现玩家-NPC 不限轮次对话与 NPC-NPC 默认 5 轮语义；支持开始、发送、结束、一次性应征请求标记、接受/拒绝结果应用和结构化对话事件。T0705 新增 `start_proactive_player_dialogue(...)`，复用玩家-NPC 对话面板，让 NPC 预先确定的开场问题作为第一条历史显示并先入库；对话结束后请求计划重评估。T1006 起，`start_player_dialogue(...)` 只打开会话，不打断行动、不取消 LLM、不挂结束重评估；玩家实际发送消息后才触发打断和可取消 LLM 取消。结束时只有已完成玩家消息 + NPC 回复，或已提交攻击事实，才请求计划重评估。新增 `attack_target_npc(...)`：先通过 NPCSystem 扣血并写惩戒攻击事件，再请求 NPC 攻击回复；回复取消时攻击事实保留。
 
 路径：`res://scripts/ui/DialogPanel.gd`
 用途：显示 NPC 名字、对话历史、公开性、轮次、输入框、发送和结束按钮。
 依赖：调用 `Main/Systems/DialogSystem`。
-当前状态：T0701/T0702 已创建并绑定到 `Main/UI/DialogPanel`；显示“提出应征”按钮及待发送/接受/拒绝状态。
+当前状态：T0701/T0702 已创建并绑定到 `Main/UI/DialogPanel`；T1006 后右上角显示“同地点公开”和“提出应征”两个 toggle，“攻击”按钮位于发送按钮旁。发送和攻击走异步对话请求，等待期间输入框仍可编辑但发送 / 攻击按钮禁用；结束等待中的普通消息会取消本轮 LLM 且不入库，结束等待中的攻击会保留攻击事件并触发重评估。
 
 路径：`res://scripts/ui/HUD.gd`
 用途：HUD 展示脚本，刷新标题区下方的天数、`HH:MM:SS` 时间/阶段、全量资源栏、装备/器械库存详情、速度/暂停按钮和后端状态占位。
@@ -170,7 +184,7 @@
 路径：`res://scripts/ui/NPCPanel.gd`
 用途：NPC 信息面板脚本，监听 NPC 点击和状态变化并展示 NPC 基础状态。
 依赖：监听 `/root/EventBus.npc_clicked`、`/root/EventBus.npc_state_changed` 和 `/root/EventBus.building_clicked`，从 `Main/Systems/NPCSystem` 读取 NPC 档案与状态。
-当前状态：T0405 后，`Main/UI/NPCPanel` 会显示 NPC 当天事件库和见闻库，并监听 `npc_memory_changed` 刷新；T0014 后事件库和见闻库使用固定高度滚动区，刷新后自动滚到底部但允许手动上滑查看旧事件；T0703 后已入伍 NPC 显示可用“指令”按钮并打开 `OrderPanel`，点击“对话”或“指令”不会关闭 NPC 面板，`DialogPanel` 与 `OrderPanel` 互斥不重叠；T0704 后面板新增非对话交互区，可选择 `private` / `local_public` 可见性并给钱或攻击，给钱数量输入框紧邻“给钱”按钮；T0901 后面板可选择主武器并为已入伍 NPC 调用 `EquipmentSystem` 装备，当前装备显示会列出主武器、盔甲、坐骑和战斗定位；T0015 后面板在 HP 右侧显示 `经验：当前 / 阈值`，力量 / 智力属性旁仅在有未分配技能点时显示 `+1` 按钮调用 NPCSystem 分配；点击建筑时会隐藏 NPC 面板。
+当前状态：T0405 后，`Main/UI/NPCPanel` 会显示 NPC 当天事件库和见闻库，并监听 `npc_memory_changed` 刷新；T0014 后事件库和见闻库使用固定高度滚动区，刷新后自动滚到底部但允许手动上滑查看旧事件；T1004/T1005 后新增长期日记滚动区，显示首次睡眠总结写入的日记和记忆摘要，并在名字旁显示“正在思考 / 正在计划下一步行动 / 正在熟睡”；T0703 后已入伍 NPC 显示可用“指令”按钮并打开 `OrderPanel`，点击“对话”或“指令”不会关闭 NPC 面板，`DialogPanel` 与 `OrderPanel` 互斥不重叠；T0704 后面板新增非对话交互区，可选择 `private` / `local_public` 可见性并给钱，给钱数量输入框紧邻“给钱”按钮；T1006 起攻击入口已移到 DialogPanel，NPCPanel 不再直接扣血；T0901 后面板可选择主武器并为已入伍 NPC 调用 `EquipmentSystem` 装备，当前装备显示会列出主武器、盔甲、坐骑和战斗定位；T0015 后面板在 HP 右侧显示 `经验：当前 / 阈值`，力量 / 智力属性旁仅在有未分配技能点时显示 `+1` 按钮调用 NPCSystem 分配；点击建筑时会隐藏 NPC 面板。
 
 路径：`res://scripts/ui/OrderPanel.gd`
 用途：已入伍 NPC 自然语言指令撰写与发布面板。
@@ -298,9 +312,9 @@
 ## 后端当前已创建
 
 路径：`backend/app.py`
-用途：Flask 后端入口，当前提供 `GET /health` 健康检查、`POST /mock/model` Mock Model 调试接口和 `POST /npc/dialogue` NPC 对话 Mock 业务接口。
+用途：Flask 后端入口，当前提供 `GET /health` 健康检查、`POST /mock/model` Mock Model 调试接口、`POST /npc/dialogue` NPC 对话 Mock 业务接口、`POST /npc/plan_day` 每日计划 Mock 业务接口、`POST /npc/revise_plan` 计划修订 Mock 业务接口和 `POST /npc/daily_reflection` 首次睡眠总结 Mock 业务接口。
 依赖：`flask`, `python-dotenv`。
-当前状态：T0603 后，`/npc/dialogue` 会校验 T0603 版 `NPCDialogueRequest`，调用默认 mock provider 的 `dialogue` 分支，并将输出校验为 `NPCDialogueResponse`；玩家-NPC 对话可返回 `recruitment_result=accept/reject`，NPC-NPC 对话在轮次接近上限时可返回 `should_end_dialogue=true`。T0602 的 `/mock/model` 仍可按 `call_type` 返回稳定 JSON 并附带伪 token / 用途记录；尚未实现正式计划、判定业务接口或真实 LLM 调用。
+当前状态：T0603 后，`/npc/dialogue` 会校验 T0603 版 `NPCDialogueRequest`，调用默认 mock provider 的 `dialogue` 分支，并将输出校验为 `NPCDialogueResponse`；玩家-NPC 对话可返回 `recruitment_result=accept/reject`，NPC-NPC 对话在轮次接近上限时可返回 `should_end_dialogue=true`。T1003 后，`/npc/plan_day` 会校验 `DailyPlanRequest`，调用 mock provider 的 `plan_day` 分支，并用 `DailyPlanResponse` 校验 24 阶段输出。T1002 后，`/npc/revise_plan` 会校验 `PlanRevisionRequest`，调用 mock provider 的 `revise_plan` 分支，并用 `PlanRevisionResponse` 校验输出。T1004 后，`/npc/daily_reflection` 会校验 `DailyReflectionRequest`，调用 mock provider 的 `daily_reflection` 分支，并用 `DailyReflectionResponse` 校验日记、记忆摘要和知识图谱增量。T0602 的 `/mock/model` 仍可按 `call_type` 返回稳定 JSON 并附带伪 token / 用途记录；尚未实现真实 LLM 调用。
 
 路径：`backend/requirements.txt`
 用途：记录 Python 后端依赖。
@@ -315,7 +329,7 @@
 路径：`backend/services/model_adapter.py`
 用途：模型供应商适配器边界，后续由对话、计划、判定服务复用。
 依赖：环境变量 `LLM_PROVIDER`, `LLM_API_KEY`。
-当前状态：T0602 已实现默认 `mock` provider；`.env` 不存在或未设置 `LLM_PROVIDER` 时默认 mock，支持 `generate(call_type, payload)` 按调用类型返回稳定 JSON，并记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态；非 mock provider 未配置 `LLM_API_KEY` 时返回明确失败，不发起真实 LLM 请求。
+当前状态：T0602 已实现默认 `mock` provider；`.env` 不存在或未设置 `LLM_PROVIDER` 时默认 mock，支持 `generate(call_type, payload)` 按调用类型返回稳定 JSON，当前覆盖 `dialogue`、`plan_day`、`revise_plan`、`battle_judgement`、`daily_reflection`、`knowledge_graph_update`、`proactive_intention` 和 `player_strategy_classification`，并记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态；非 mock provider 未配置 `LLM_API_KEY` 时返回明确失败，不发起真实 LLM 请求。
 
 路径：`backend/schemas/common.py`
 用途：后端 AI 接口共享 Schema，定义游戏时间、请求元信息、事件摘要、短期记忆、NPC 身份/状态/上下文、行动候选和通用错误响应。
@@ -323,9 +337,9 @@
 当前状态：T0601 已创建；T0703A 新增 `CurrentOrderContext` 并接入共享 `NPCContext`，让所有复用该上下文的 NPC 中心请求携带最新指令。只提供数据模型，不调用 LLM，不改变游戏权威状态。
 
 路径：`backend/schemas/npc_ai.py`
-用途：NPC AI 请求/响应 Schema，覆盖玩家-NPC / NPC-NPC / 逃离挽留对话、每日计划、计划异常重评估、战斗判定、睡前总结、知识图谱更新、主动交涉和玩家话术分类。
+用途：NPC AI 请求/响应 Schema，覆盖玩家-NPC / NPC-NPC / 逃离挽留对话、每日计划、计划异常重评估、战斗判定、首次睡眠总结、知识图谱更新、主动交涉和玩家话术分类。
 依赖：`pydantic`，复用 `backend/schemas/common.py`。
-当前状态：T0603 后，对话 Schema 已按当前任务重整为显式输入；T0703A 新增对话顶层 `current_order`，并让每日计划、修订、战斗判定、睡前总结等通过共享 `NPCContext.current_order` 复用最新指令。响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。
+当前状态：T0603 后，对话 Schema 已按当前任务重整为显式输入；T0703A 新增对话顶层 `current_order`，并让每日计划、修订、战斗判定、首次睡眠总结等通过共享 `NPCContext.current_order` 复用最新指令。响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`。
 
 路径：`backend/schemas/__init__.py`
 用途：统一导出后端 Schema 类型。
@@ -374,6 +388,14 @@
 | 小诊所治疗验证 | `tools/verify_clinic_treatment.gd` |
 | 训练场熟练度验证 | `tools/verify_training_system.gd` |
 | 熟练度经验与技能点验证 | `tools/verify_skill_progression.gd` |
+| 规则版每日计划验证 | `tools/verify_daily_plan_system.gd` |
+| LLM / Mock 每日计划验证 | `tools/verify_daily_plan_llm.gd` |
+| 行动异常与计划重评估验证 | `tools/verify_daily_plan_reevaluation.gd` |
+| 首次睡眠总结系统验证 | `tools/verify_daily_reflection_system.gd` |
+| 对话懒打断、异步取消、对话窗攻击与首次睡眠总结边界验证 | `tools/verify_dialogue_sleep_summary_boundaries.gd` |
+| 后端每日计划端点验证 | `tools/verify_plan_day_endpoint.py` |
+| 后端计划修订端点验证 | `tools/verify_plan_revision_endpoint.py` |
+| 后端首次睡眠总结端点验证 | `tools/verify_daily_reflection_endpoint.py` |
 | 装备系统验证 | `tools/verify_equipment_system.gd` |
 | 兵种判定验证 | `tools/verify_unit_type_classification.gd` |
 | HUD 资源库存验证 | `tools/verify_hud_resources.gd` |
@@ -386,7 +408,7 @@
 | NPC 扣血与昏迷验证 | `tools/verify_npc_damage_unconscious.gd` |
 | NPC 昏迷自然恢复验证 | `tools/verify_npc_unconscious_natural_recovery.gd` |
 | NPC 昏迷协助治疗验证 | `tools/verify_npc_unconscious_healing.gd` |
-| NPC 面板非对话交互验证 | `tools/verify_npc_panel_interactions.gd` |
+| NPC 面板非对话交互验证 | `tools/verify_npc_panel_interactions.gd`，T1006 起确认攻击入口已移出 NPC 面板 |
 | NPC 主动交涉验证 | `tools/verify_npc_proactive_talk.gd` |
 | GM 调试面板验证 | `tools/verify_gm_panel.gd` |
 | 后端 Schema 验证 | `tools/verify_backend_schemas.py` |

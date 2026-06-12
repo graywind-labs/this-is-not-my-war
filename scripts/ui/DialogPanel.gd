@@ -11,7 +11,8 @@ const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 @onready var send_button: Button = %DialogSendButton
 @onready var end_button: Button = %DialogEndButton
 @onready var public_toggle: CheckButton = %DialogPublicToggle
-@onready var recruitment_button: Button = %DialogRecruitmentButton
+@onready var recruitment_toggle: CheckButton = %DialogRecruitmentToggle
+@onready var attack_button: Button = %DialogAttackButton
 
 
 func _ready() -> void:
@@ -20,7 +21,8 @@ func _ready() -> void:
 	end_button.pressed.connect(_on_end_pressed)
 	input_edit.text_submitted.connect(_on_text_submitted)
 	public_toggle.toggled.connect(_on_public_toggled)
-	recruitment_button.pressed.connect(_on_recruitment_pressed)
+	recruitment_toggle.toggled.connect(_on_recruitment_toggled)
+	attack_button.pressed.connect(_on_attack_pressed)
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null:
 		dialog_system.dialogue_started.connect(_on_dialogue_started)
@@ -56,16 +58,19 @@ func _on_text_submitted(_text: String) -> void:
 
 func _send_current_text() -> void:
 	var text := input_edit.text.strip_edges()
-	if text.is_empty():
-		status_label.text = "请输入内容。"
-		return
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
 		status_label.text = "对话系统不可用。"
 		return
-	input_edit.clear()
 	var state: Dictionary = dialog_system.get_dialogue_state()
-	var result: Dictionary = dialog_system.send_npc_message(text) if str(state.get("dialogue_kind", "player_npc")) == "npc_npc" else dialog_system.send_player_message(text)
+	if bool(state.get("waiting", false)):
+		status_label.text = "正在等待 NPC 回复。"
+		return
+	if text.is_empty():
+		status_label.text = "请输入内容。"
+		return
+	input_edit.clear()
+	var result: Dictionary = dialog_system.send_npc_message(text) if str(state.get("dialogue_kind", "player_npc")) == "npc_npc" else dialog_system.send_player_message(text, false, true)
 	if not bool(result.get("ok", false)):
 		status_label.text = str(result.get("message", "发送失败。"))
 	input_edit.grab_focus()
@@ -86,15 +91,26 @@ func _on_public_toggled(enabled: bool) -> void:
 		status_label.text = str(result.get("message", "无法修改对话公开性。"))
 
 
-func _on_recruitment_pressed() -> void:
+func _on_recruitment_toggled(enabled: bool) -> void:
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
 		status_label.text = "对话系统不可用。"
 		return
-	var state: Dictionary = dialog_system.get_dialogue_state()
-	var result: Dictionary = dialog_system.set_recruitment_request_pending(not bool(state.get("recruitment_request_pending", false)))
+	var result: Dictionary = dialog_system.set_recruitment_request_pending(enabled)
 	if not bool(result.get("ok", false)):
 		status_label.text = str(result.get("message", "无法提出应征。"))
+		recruitment_toggle.set_pressed_no_signal(not enabled)
+
+
+func _on_attack_pressed() -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null:
+		status_label.text = "对话系统不可用。"
+		return
+	var result: Dictionary = dialog_system.attack_target_npc(10, true)
+	if not bool(result.get("ok", false)):
+		status_label.text = str(result.get("message", "攻击失败。"))
+	input_edit.grab_focus()
 
 
 func _refresh(state: Dictionary) -> void:
@@ -104,12 +120,15 @@ func _refresh(state: Dictionary) -> void:
 	public_toggle.set_pressed_no_signal(str(state.get("visibility", "private")) == "local_public")
 	public_toggle.disabled = waiting or int(state.get("current_round", 0)) > 0
 	send_button.disabled = waiting
-	input_edit.editable = not waiting
+	input_edit.editable = true
 	var is_player_dialogue := str(state.get("dialogue_kind", "player_npc")) == "player_npc"
 	var recruitment_pending := bool(state.get("recruitment_request_pending", false))
-	recruitment_button.visible = is_player_dialogue
-	recruitment_button.disabled = waiting or bool(state.get("target_recruited", false))
-	recruitment_button.text = "已提出应征" if recruitment_pending else "提出应征"
+	recruitment_toggle.visible = is_player_dialogue
+	recruitment_toggle.set_pressed_no_signal(recruitment_pending)
+	recruitment_toggle.disabled = waiting or bool(state.get("target_recruited", false))
+	recruitment_toggle.text = "提出应征"
+	attack_button.visible = is_player_dialogue
+	attack_button.disabled = waiting
 	var last_error := str(state.get("last_error", ""))
 	var recruitment_result := str(state.get("last_recruitment_result", "none"))
 	var recruitment_status := "NPC 已接受应征。" if recruitment_result == "accept" else "NPC 拒绝了应征。" if recruitment_result == "reject" else ""

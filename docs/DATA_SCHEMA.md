@@ -100,6 +100,58 @@ T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。
 
 T0703 已为每名初始 NPC 配置并在运行时规范化 `current_order`。它保存守备官对该 NPC 当前持续提出的自然语言指令，而不是已执行行动：`text` 是当前文本，`issued_by` 固定为 `guard_officer`，`issued_day` / `issued_time` 记录最近一次变更时间，`revision` 在指令文本变化时递增。未入伍或尚无指令时 `text` 为空。发布相同文本或关闭指令面板不得修改该结构。
 
+T1004/T1005 起，运行时 `diary` 保存首次睡眠总结生成的长期日记记录，初始档案仍可为空数组：
+
+```json
+{
+  "day": 1,
+  "time": "22:00:00",
+  "entry": "今天我记住了这些事……",
+  "memory_summary": "当天关键亲历和见闻摘要。",
+  "source": "backend_daily_reflection",
+  "debug_reason": "mock_reflection_template"
+}
+```
+
+同一任务还会把 `DailyReflectionResponse.knowledge_graph_updates` 合并到运行时 `knowledge_graph` 占位结构，当前最小形状为：
+
+```json
+{
+  "patches": [
+    {
+      "subject": "station",
+      "relation": "daily_pressure",
+      "value": "布鲁诺在第1天睡前记住……",
+      "confidence": 0.55,
+      "day": 1,
+      "time": "22:00:00"
+    }
+  ],
+  "by_subject": {
+    "station": {
+      "daily_pressure": "布鲁诺在第1天睡前记住……"
+    }
+  }
+}
+```
+
+该结构目前只是长期记忆占位；LLM 不负责直接改写 HP、资源、建筑或行动事实。
+
+T1001 起，运行时 `plan` 可保存规则版每日计划。T1003 起，同一字段也可保存 `/npc/plan_day` 返回的 Mock / LLM 每日计划，或后端失败后的规则降级计划。计划必须是 24 个小时项，每项至少包含：
+
+```json
+{
+  "hour": 7,
+  "action_id": "work_garden",
+  "action_name": "照料菜园",
+  "source": "rule_default",
+  "target": {},
+  "reason": "按规则日程安排。"
+}
+```
+
+计划由 `DailyPlanSystem` 生成和执行；常规 `action_id` 必须来自 `data/action_defs.json`，执行时仍由 `ActionSystem` 校验地点、工位、资源、HP 和行动合法性。T1003 后计划项 `source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`；T1002 计划修订还可产生 `mock_revision` / `rule_revision_fallback`。计划生成或修订可把当前小时改为 `idle` 安全等待项；`idle` 只表示计划层等待，不是生产行动定义。计划项不是已发生事实；只有实际执行的工作、吃饭、睡觉等行动事件才代表行动发生。
+
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
 T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。
@@ -305,7 +357,7 @@ T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` �
 - `target_ids`：事件关联目标索引，可包含 NPC ID、地点 ID、建筑 ID、行动 ID、资源 ID、敌人 ID 等；它不是自然语言“宾语”，而是查询索引。
 - `location_id`：事件发生地点；室外事件统一为 `plaza`。
 - `visibility`：`private`、`local_public`。广场公开事件使用 `location_id == "plaza"` 的 `local_public`。
-- `importance`：用于 LLM 摘要、见闻裁剪和睡前总结。
+- `importance`：用于 LLM 摘要、见闻裁剪和首次睡眠总结。
 - `summary`：短文本摘要。
 - `payload`：事件类型专属属性。对话全文、战斗伤害数值、建筑状态变化等都放在这里。完整地点状态快照不应放进 `location_entered` / `location_exited` 亲历事件；进入地点时的完整状态应作为进入者的见闻记录。
 
@@ -343,13 +395,55 @@ T0703 `order_assigned` 事件 payload：
 
 该事件只表示守备官改变了指令，不表示 NPC 已执行或同意执行。当前有效文本仍以 NPC 信息中的 `current_order` 为准。
 
+T1001 `plan_created` 事件 payload：
+
+```json
+{
+  "type": "plan_created",
+  "subject_npc_id": "gardener_01",
+  "actor_ids": ["gardener_01"],
+  "target_ids": ["gardener_01"],
+  "visibility": "private",
+  "payload": {
+    "plan_day": 1,
+    "items": [],
+    "source": "rule_default",
+    "work_phase_count": 10
+  }
+}
+```
+
+`items` 保存 24 个小时计划项。`source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`。该事件表示计划被制定，不代表计划项已经执行；后续执行仍由对应行动事件记录。
+
+T1002 `plan_revised` 事件 payload：
+
+```json
+{
+  "type": "plan_revised",
+  "subject_npc_id": "gardener_01",
+  "actor_ids": ["gardener_01"],
+  "target_ids": ["gardener_01"],
+  "visibility": "private",
+  "payload": {
+    "plan_day": 1,
+    "items": [],
+    "reason": "order_changed",
+    "source": "mock_revision",
+    "summary": "Mock 将异常计划修订为等待状态。",
+    "work_phase_count": 9
+  }
+}
+```
+
+`source` 当前可为 `mock_revision` 或 `rule_revision_fallback`。该事件表示 NPC 重新评估了计划；是否移动、工作、吃饭、睡觉或等待仍由随后当前小时计划执行和 `ActionSystem` 结算决定。
+
 必备事件类型方向：
 
-- 日常与计划：`wake_up`、`plan_created`、`reflection_started`、`sleep_started`、`sleep_ended`
+- 日常与计划：`wake_up`、`plan_created`、`plan_revised`、`reflection_started`、`sleep_started`、`sleep_ended`
 - 移动与地点：`location_entered`、`location_exited`
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`
 - 对话：`dialogue_turn`；打开/关闭对话窗口不属于事件
-- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`、`npc_attacked_by_player`；`order_assigned` 固定为 `private`
+- 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`；`order_assigned` 固定为 `private`。正式守备官惩戒攻击写入战斗 / 伤害类 `damage_taken`，payload 保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`assigned_by`
 - 战斗：`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
@@ -476,6 +570,8 @@ Revised event payload rule: `location_entered` and `location_exited` only store 
 
 `event_log` 和 `witness_log` 都保存事件 ID，具体事件内容由 MemorySystem 的事件存储查询。这样可以避免重复复制大 payload，也能区分亲历与听闻。
 
+T1004/T1005 起，首次睡眠总结完成后会清空指定 NPC 当天 `event_log` / `witness_log` 索引，作为短期缓存轮转；全局事件索引仍保留给调试查询和后续存档任务。
+
 ## Location / Building Info Node
 
 地点/建筑信息节点只描述当前状态和广播所需的路由信息，不保存事件历史。`current_public_note_ids` / `public_notes` 用于当前公告或命令；普通建筑不拥有公告牌字段，当前公告文本只保存在广场状态中。公开事件发生时由节点即时转发给当时在场的 NPC，接收者把事件写入自己的 `witness_log`。NPC 进入地点时，完整当前状态只写给进入者的见闻库；已经在场的 NPC 通过 `location_entered` / `location_exited` 事件得知人员变化，不再接收完整 `people_present` 或 `people_statuses` 状态。除进入者的一次性快照外，状态广播应使用字段级差量。
@@ -587,7 +683,7 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 - `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。
 - `NPCDialogueResponse`：返回 `replyer_id`、`reply_text`、`response_kind`、`intent`、`emotion`、`recruitment_result`、`should_end_dialogue` 和建议事件类型。回复玩家时读取 `recruitment_result`；回复 NPC 时读取 `reply_text` 与 `should_end_dialogue`。它只表达 NPC 意向；征召状态变化和事件写入由 Godot 系统完成。
 
-T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、`BattleJudgementRequest`、主动交涉、逃离判断、睡前总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。
+T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、`BattleJudgementRequest`、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。
 
 ## LLM Battle Judgement Response
 
@@ -600,7 +696,7 @@ T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化�
 
 - `DailyPlanRequest` / `DailyPlanResponse`：每日计划；响应必须包含 24 条 `PlanItem`。
 - `PlanRevisionRequest` / `PlanRevisionResponse`：计划执行失败或异常后的计划修订。
-- `DailyReflectionRequest` / `DailyReflectionResponse`：睡前总结、日记和知识图谱增量。
+- `DailyReflectionRequest` / `DailyReflectionResponse`：首次睡眠总结、日记和知识图谱增量。
 - `KnowledgeGraphUpdateRequest` / `KnowledgeGraphUpdateResponse`：独立知识图谱更新。
 - `ProactiveIntentionRequest` / `ProactiveIntentionResponse`：NPC 是否主动找守备官交涉。
 - `PlayerStrategyClassificationRequest` / `PlayerStrategyClassificationResponse`：把守备官话术分类为说服、利诱、威胁、欺骗、安抚、交易、命令或未知。

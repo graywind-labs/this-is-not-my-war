@@ -27,6 +27,10 @@ const UNCONSCIOUS_HEALING_MAX_BONUS_HP_PER_HOUR := 10.0
 const UNCONSCIOUS_HEALING_SKILL_THRESHOLD := 20.0
 const REVIVE_HP_RATIO := 0.3
 const PROACTIVE_TALK_DEFAULT_DURATION_SECONDS := 3600.0
+const LLM_ACTIVITY_NONE := ""
+const LLM_ACTIVITY_DIALOGUE := "dialogue"
+const LLM_ACTIVITY_PLAN := "plan"
+const LLM_ACTIVITY_FIRST_SLEEP_SUMMARY := "first_sleep_summary"
 
 const SPAWN_POINTS: Array[Vector3] = [
 	Vector3(-8.0, 0.0, 2.5),
@@ -315,6 +319,43 @@ func get_current_order(npc_id: String) -> Dictionary:
 	return _normalize_current_order((_profiles[npc_id] as Dictionary).get("current_order", {}))
 
 
+func get_npc_plan(npc_id: String) -> Array:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot get plan for unknown NPC: %s" % npc_id)
+		return []
+	var profile: Dictionary = _profiles[npc_id]
+	var plan: Array = profile.get("plan", [])
+	return plan.duplicate(true)
+
+
+func set_npc_plan(npc_id: String, plan: Array) -> bool:
+	if not _profiles.has(npc_id):
+		push_warning("Cannot set plan for unknown NPC: %s" % npc_id)
+		return false
+	var profile: Dictionary = _profiles[npc_id]
+	profile["plan"] = plan.duplicate(true)
+	_profiles[npc_id] = profile
+	_refresh_npc_node(npc_id)
+	_emit_npc_daily_plan_changed(npc_id, plan)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
+func stop_npc_movement_for_system(npc_id: String, last_result: String = "movement_stopped") -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	_stop_npc_movement(npc_id)
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"movement_target": "",
+		"movement_target_name": "",
+		"last_action_result": last_result
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
 func give_money_to_npc(
 	npc_id: String,
 	amount: int,
@@ -389,7 +430,7 @@ func publish_npc_order(npc_id: String, text: String) -> Dictionary:
 	_profiles[npc_id] = profile
 
 	var event := _log_order_assigned(npc_id, old_text, new_text, revision)
-	_request_plan_reevaluation(npc_id, "order_changed")
+	var reevaluation_status := _request_plan_reevaluation_or_defer(npc_id, "order_changed")
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	var event_bus := get_node_or_null("/root/EventBus")
@@ -401,7 +442,8 @@ func publish_npc_order(npc_id: String, text: String) -> Dictionary:
 		"changed": true,
 		"npc_id": npc_id,
 		"current_order": next_order.duplicate(true),
-		"event": event
+		"event": event,
+		"plan_reevaluation_status": reevaluation_status
 	}
 
 
@@ -474,24 +516,143 @@ func get_last_plan_reevaluation_request() -> Dictionary:
 	return _last_plan_reevaluation_request.duplicate(true)
 
 
-func request_plan_reevaluation(npc_id: String, reason: String) -> void:
+func request_plan_reevaluation(npc_id: String, reason: String) -> Dictionary:
 	if not _profiles.has(npc_id):
+		return {}
+	return _request_plan_reevaluation_or_defer(npc_id, reason)
+
+
+func set_npc_llm_activity(npc_id: String, activity: Dictionary) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var next_activity := _normalize_llm_activity(activity)
+	_set_npc_state_without_signal(npc_id, {"llm_activity": next_activity})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	_emit_npc_llm_activity_changed(npc_id, next_activity)
+	return true
+
+
+func clear_npc_llm_activity(npc_id: String, request_id: String = "") -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var current := get_npc_llm_activity(npc_id)
+	if not request_id.is_empty() and str(current.get("request_id", "")) != request_id:
+		return false
+	return set_npc_llm_activity(npc_id, {})
+
+
+func get_npc_llm_activity(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var state := get_npc_state(npc_id)
+	var activity: Dictionary = state.get("llm_activity", {}) if (state.get("llm_activity", {}) is Dictionary) else {}
+	return _normalize_llm_activity(activity)
+
+
+func set_first_sleep_summary_lock(npc_id: String, locked: bool, request_id: String = "") -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var state := get_npc_state(npc_id)
+	var current_action := str(state.get("current_action", ""))
+	var changes := {
+		"first_sleep_summary_active": locked
+	}
+	if locked:
+		changes["current_action"] = "sleep_in_dormitory"
+		changes["last_action_result"] = "first_sleep_summary_started"
+		if not request_id.is_empty():
+			changes["first_sleep_summary_request_id"] = request_id
+	else:
+		changes["first_sleep_summary_request_id"] = ""
+		if current_action == "sleep_in_dormitory":
+			changes["last_action_result"] = "first_sleep_summary_completed"
+	_set_npc_state_without_signal(npc_id, changes)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
+func is_first_sleep_summary_locked(npc_id: String) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var state := get_npc_state(npc_id)
+	return bool(state.get("first_sleep_summary_active", false))
+
+
+func is_npc_dialogue_blocked(npc_id: String) -> bool:
+	return is_first_sleep_summary_locked(npc_id)
+
+
+func defer_plan_reevaluation_until_wake(npc_id: String, reason: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var issued_at := _get_game_time_snapshot()
+	var deferred := {
+		"active": true,
+		"reason": reason,
+		"day": int(issued_at.get("day", 1)),
+		"time": str(issued_at.get("time", "00:00:00")),
+		"current_order": get_current_order(npc_id)
+	}
+	_set_npc_state_without_signal(npc_id, {"pending_plan_reevaluation_after_sleep": deferred})
+	_last_plan_reevaluation_request = {
+		"npc_id": npc_id,
+		"reason": reason,
+		"day": int(deferred.get("day", 1)),
+		"time": str(deferred.get("time", "00:00:00")),
+		"current_order": deferred.get("current_order", {}),
+		"result": {
+			"status": "deferred_until_wake",
+			"fallback_used": false,
+			"summary": "NPC 正在首次睡眠总结，计划重评估延后到醒来后执行。"
+		}
+	}
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return _last_plan_reevaluation_request.duplicate(true)
+
+
+func consume_deferred_plan_reevaluation_after_sleep(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var state := get_npc_state(npc_id)
+	var deferred: Dictionary = state.get("pending_plan_reevaluation_after_sleep", {}) if (state.get("pending_plan_reevaluation_after_sleep", {}) is Dictionary) else {}
+	if not bool(deferred.get("active", false)):
+		return {}
+	_set_npc_state_without_signal(npc_id, {"pending_plan_reevaluation_after_sleep": {}})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return _request_plan_reevaluation(npc_id, str(deferred.get("reason", "deferred_until_wake")))
+
+
+func apply_plan_reevaluation_result(npc_id: String, reason: String, result: Dictionary) -> void:
+	if _last_plan_reevaluation_request.is_empty():
 		return
-	_request_plan_reevaluation(npc_id, reason)
+	if str(_last_plan_reevaluation_request.get("npc_id", "")) != npc_id:
+		return
+	if str(_last_plan_reevaluation_request.get("reason", "")) != reason:
+		return
+	_last_plan_reevaluation_request["result"] = result.duplicate(true)
 
 
 func can_npc_act(npc_id: String) -> bool:
 	if not _profiles.has(npc_id):
 		return false
 	var state := get_npc_state(npc_id)
-	return not bool(state.get("unconscious", false)) and not bool(state.get("escaped", false))
+	return (
+		not bool(state.get("unconscious", false))
+		and not bool(state.get("escaped", false))
+		and not bool(state.get("first_sleep_summary_active", false))
+	)
 
 
 func apply_damage_to_npc(
 	npc_id: String,
 	damage: int,
 	actor_id: String = PLAYER_ACTOR_ID,
-	visibility: String = "local_public"
+	visibility: String = "local_public",
+	options: Dictionary = {}
 ) -> Dictionary:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot damage unknown NPC: %s" % npc_id)
@@ -524,11 +685,13 @@ func apply_damage_to_npc(
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
 
-	var damage_event := _log_damage_taken(npc_id, actor_id, damage, hp_before, hp_after, visibility)
+	var damage_event := _log_damage_taken(npc_id, actor_id, damage, hp_before, hp_after, visibility, options)
 	var unconscious_event := {}
 	if became_unconscious:
 		unconscious_event = _log_unconscious_started(npc_id, actor_id, damage, hp_before, hp_after, "local_public")
 		_emit_npc_unconscious(npc_id)
+	elif actor_id == PLAYER_ACTOR_ID and bool(options.get("request_plan_reevaluation", true)):
+		_request_plan_reevaluation_or_defer(npc_id, "guard_attack")
 
 	return {
 		"ok": true,
@@ -661,6 +824,58 @@ func get_npc_progression(npc_id: String) -> Dictionary:
 	profile["progression"] = progression
 	_profiles[npc_id] = profile
 	return progression.duplicate(true)
+
+
+func get_npc_long_memory(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	return {
+		"knowledge_graph": profile.get("knowledge_graph", {}).duplicate(true) if (profile.get("knowledge_graph", {}) is Dictionary) else {},
+		"diary": (profile.get("diary", []) as Array).duplicate(true) if (profile.get("diary", []) is Array) else []
+	}
+
+
+func apply_daily_reflection(npc_id: String, reflection: Dictionary) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	if reflection.is_empty():
+		return _interaction_failure("empty_reflection", "首次睡眠总结为空。")
+
+	var diary_entry := str(reflection.get("diary_entry", "")).strip_edges()
+	if diary_entry.is_empty():
+		return _interaction_failure("empty_diary", "首次睡眠日记为空。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	var day := maxi(1, int(reflection.get("day", _get_game_time_snapshot().get("day", 1))))
+	var time_text := str(_get_game_time_snapshot().get("time", "00:00:00"))
+	var diary: Array = profile.get("diary", []) if (profile.get("diary", []) is Array) else []
+	var diary_record := {
+		"day": day,
+		"time": time_text,
+		"entry": diary_entry,
+		"memory_summary": str(reflection.get("memory_summary", "")),
+		"source": str(reflection.get("source", "daily_reflection")),
+		"debug_reason": str(reflection.get("debug_reason", ""))
+	}
+	diary.append(diary_record)
+	profile["diary"] = diary
+
+	var graph: Dictionary = profile.get("knowledge_graph", {}) if (profile.get("knowledge_graph", {}) is Dictionary) else {}
+	graph = _apply_knowledge_graph_updates(graph, reflection.get("knowledge_graph_updates", []), day, time_text)
+	profile["knowledge_graph"] = graph
+	_profiles[npc_id] = profile
+
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"day": day,
+		"diary_count": diary.size(),
+		"diary_entry": diary_entry,
+		"knowledge_graph_update_count": (reflection.get("knowledge_graph_updates", []) as Array).size() if (reflection.get("knowledge_graph_updates", []) is Array) else 0
+	}
 
 
 func assign_npc_attribute_point(npc_id: String, attribute_name: String) -> Dictionary:
@@ -877,6 +1092,10 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	profile["skills"] = normalize_skills(profile.get("skills", {}))
 	profile["current_order"] = _normalize_current_order(profile.get("current_order", {}))
 	profile["progression"] = _normalize_progression(profile.get("progression", {}))
+	if not (profile.get("knowledge_graph", {}) is Dictionary):
+		profile["knowledge_graph"] = {}
+	if not (profile.get("diary", []) is Array):
+		profile["diary"] = []
 	var states: Dictionary = profile.get("states", {})
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
@@ -884,8 +1103,48 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["location_context"] = {}
 	if not states.has("proactive_talk"):
 		states["proactive_talk"] = {}
+	if not states.has("llm_activity"):
+		states["llm_activity"] = {}
+	if not states.has("first_sleep_summary_active"):
+		states["first_sleep_summary_active"] = false
+	if not states.has("first_sleep_summary_request_id"):
+		states["first_sleep_summary_request_id"] = ""
+	if not states.has("pending_plan_reevaluation_after_sleep"):
+		states["pending_plan_reevaluation_after_sleep"] = {}
 	profile["states"] = states
 	_profiles[npc_id] = profile
+
+
+func _normalize_llm_activity(raw_activity: Variant) -> Dictionary:
+	var activity: Dictionary = raw_activity if raw_activity is Dictionary else {}
+	if not bool(activity.get("active", false)):
+		return {}
+	var kind := str(activity.get("kind", LLM_ACTIVITY_DIALOGUE))
+	var label := str(activity.get("label", ""))
+	if label.is_empty():
+		label = _label_for_llm_activity_kind(kind)
+	return {
+		"active": true,
+		"kind": kind,
+		"label": label,
+		"request_id": str(activity.get("request_id", "")),
+		"cancellable": bool(activity.get("cancellable", true)),
+		"started_day": int(activity.get("started_day", _get_game_time_snapshot().get("day", 1))),
+		"started_time": str(activity.get("started_time", _get_game_time_snapshot().get("time", "00:00:00"))),
+		"reason": str(activity.get("reason", ""))
+	}
+
+
+func _label_for_llm_activity_kind(kind: String) -> String:
+	match kind:
+		LLM_ACTIVITY_FIRST_SLEEP_SUMMARY:
+			return "正在熟睡"
+		LLM_ACTIVITY_PLAN:
+			return "正在计划下一步行动"
+		LLM_ACTIVITY_DIALOGUE:
+			return "正在思考"
+		_:
+			return "正在思考"
 
 
 func _normalize_progression(raw_progression: Variant) -> Dictionary:
@@ -971,6 +1230,47 @@ func _normalize_current_order(raw_order: Variant) -> Dictionary:
 	}
 
 
+func _apply_knowledge_graph_updates(graph: Dictionary, raw_updates: Variant, day: int, time_text: String) -> Dictionary:
+	var updates: Array = raw_updates if raw_updates is Array else []
+	if not graph.has("patches") or not (graph["patches"] is Array):
+		graph["patches"] = []
+	if not graph.has("by_subject") or not (graph["by_subject"] is Dictionary):
+		graph["by_subject"] = {}
+
+	var patches: Array = graph["patches"]
+	var by_subject: Dictionary = graph["by_subject"]
+	for raw_update in updates:
+		if not raw_update is Dictionary:
+			continue
+		var update: Dictionary = raw_update
+		var subject := str(update.get("subject", "")).strip_edges()
+		var relation := str(update.get("relation", "")).strip_edges()
+		var value := str(update.get("value", "")).strip_edges()
+		if subject.is_empty() or relation.is_empty() or value.is_empty():
+			continue
+		var patch := {
+			"subject": subject,
+			"relation": relation,
+			"value": value,
+			"confidence": clampf(float(update.get("confidence", 1.0)), 0.0, 1.0),
+			"day": day,
+			"time": time_text
+		}
+		patches.append(patch)
+		var subject_bucket: Dictionary = by_subject.get(subject, {})
+		subject_bucket[relation] = {
+			"value": value,
+			"confidence": patch["confidence"],
+			"day": day,
+			"time": time_text
+		}
+		by_subject[subject] = subject_bucket
+
+	graph["patches"] = patches
+	graph["by_subject"] = by_subject
+	return graph
+
+
 func _get_game_time_snapshot() -> Dictionary:
 	var game_state := get_node_or_null("/root/GameState")
 	if game_state == null:
@@ -1035,7 +1335,13 @@ func _log_player_interaction(npc_id: String, event_type: String, payload: Dictio
 	return memory_system.record_player_interaction(npc_id, event_type, payload, normalized_visibility)
 
 
-func _request_plan_reevaluation(npc_id: String, reason: String) -> void:
+func _request_plan_reevaluation_or_defer(npc_id: String, reason: String) -> Dictionary:
+	if is_first_sleep_summary_locked(npc_id):
+		return defer_plan_reevaluation_until_wake(npc_id, reason)
+	return _request_plan_reevaluation(npc_id, reason)
+
+
+func _request_plan_reevaluation(npc_id: String, reason: String) -> Dictionary:
 	var issued_at := _get_game_time_snapshot()
 	_last_plan_reevaluation_request = {
 		"npc_id": npc_id,
@@ -1044,14 +1350,15 @@ func _request_plan_reevaluation(npc_id: String, reason: String) -> void:
 		"time": str(issued_at.get("time", "00:00:00")),
 		"current_order": get_current_order(npc_id),
 		"result": {
-			"status": "rule_fallback_deferred",
+			"status": "pending",
 			"fallback_used": true,
-			"summary": "计划系统尚未实现；已保留最新指令，等待 T1002 统一重评估链路处理。"
+			"summary": "计划重评估请求已发出，等待 DailyPlanSystem 处理。"
 		}
 	}
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_plan_reevaluation_requested"):
 		event_bus.npc_plan_reevaluation_requested.emit(npc_id, reason)
+	return _last_plan_reevaluation_request.duplicate(true)
 
 
 func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
@@ -1062,7 +1369,7 @@ func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
 		var remaining := float(proactive.get("remaining_seconds", 0.0)) - game_delta_seconds
 		if remaining <= 0.0:
 			_clear_proactive_talk(npc_id, "expired")
-			_request_plan_reevaluation(npc_id, "proactive_talk_expired")
+			_request_plan_reevaluation_or_defer(npc_id, "proactive_talk_expired")
 		else:
 			proactive["remaining_seconds"] = remaining
 			_set_npc_state_without_signal(npc_id, {"proactive_talk": proactive})
@@ -1168,6 +1475,12 @@ func _emit_npc_state_changed(npc_id: String) -> void:
 		event_bus.npc_state_changed.emit(npc_id)
 
 
+func _emit_npc_llm_activity_changed(npc_id: String, activity: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_llm_activity_changed"):
+		event_bus.npc_llm_activity_changed.emit(npc_id, activity.duplicate(true))
+
+
 func _emit_npc_hp_changed(npc_id: String, hp: int, max_hp: int) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_hp_changed"):
@@ -1190,6 +1503,12 @@ func _emit_npc_proactive_talk_changed(npc_id: String, active: bool) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_proactive_talk_changed"):
 		event_bus.npc_proactive_talk_changed.emit(npc_id, active)
+
+
+func _emit_npc_daily_plan_changed(npc_id: String, plan: Array) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_daily_plan_changed"):
+		event_bus.npc_daily_plan_changed.emit(npc_id, plan.duplicate(true))
 
 
 func _log_proactive_talk_started(npc_id: String, prompt_text: String, duration_seconds: float) -> Dictionary:
@@ -1217,14 +1536,24 @@ func _log_damage_taken(
 	damage: int,
 	hp_before: int,
 	hp_after: int,
-	visibility: String
+	visibility: String,
+	options: Dictionary = {}
 ) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return {}
 
 	var location_id := _get_current_info_location(npc_id, memory_system)
-	return memory_system.add_event({
+	var payload := {
+		"damage": damage,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"damage_source": actor_id
+	}
+	for key in ["interaction_kind", "event_text", "attack_prompt"]:
+		if options.has(key):
+			payload[key] = options[key]
+	var event := {
 		"type": "damage_taken",
 		"subject_npc_id": npc_id,
 		"actor_ids": [actor_id],
@@ -1232,13 +1561,12 @@ func _log_damage_taken(
 		"location_id": location_id,
 		"visibility": visibility,
 		"importance": 60,
-		"payload": {
-			"damage": damage,
-			"hp_before": hp_before,
-			"hp_after": hp_after,
-			"damage_source": actor_id
-		}
-	})
+		"payload": payload
+	}
+	var summary := str(options.get("summary", "")).strip_edges()
+	if not summary.is_empty():
+		event["summary"] = summary
+	return memory_system.add_event(event)
 
 
 func _log_unconscious_started(

@@ -15,6 +15,7 @@ var _is_moving := false
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 var _proactive_bubble: Label3D
+var _llm_activity_marker: Label3D
 
 
 func setup(npc_profile: Dictionary) -> void:
@@ -52,6 +53,7 @@ func _ready() -> void:
 	if not input_event.is_connected(_on_input_event):
 		input_event.connect(_on_input_event)
 	_ensure_proactive_bubble()
+	_ensure_llm_activity_marker()
 	_refresh_label()
 
 
@@ -111,8 +113,10 @@ func _refresh_label() -> void:
 		action_text
 	]
 	_ensure_proactive_bubble()
+	_ensure_llm_activity_marker()
 	var proactive: Dictionary = states.get("proactive_talk", {})
 	_proactive_bubble.visible = bool(proactive.get("active", false))
+	_refresh_llm_activity_marker(states)
 
 
 func _ensure_proactive_bubble() -> void:
@@ -129,6 +133,41 @@ func _ensure_proactive_bubble() -> void:
 	_proactive_bubble.position = Vector3(0.0, 2.45, 0.0)
 	_proactive_bubble.visible = false
 	add_child(_proactive_bubble)
+
+
+func _ensure_llm_activity_marker() -> void:
+	if _llm_activity_marker != null:
+		return
+	_llm_activity_marker = Label3D.new()
+	_llm_activity_marker.name = "LLMActivityMarker"
+	_llm_activity_marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_llm_activity_marker.pixel_size = 0.032
+	_llm_activity_marker.outline_size = 8
+	_llm_activity_marker.outline_modulate = Color(0.04, 0.04, 0.04, 1.0)
+	_llm_activity_marker.position = Vector3(0.0, 2.45, 0.0)
+	_llm_activity_marker.visible = false
+	add_child(_llm_activity_marker)
+
+
+func _refresh_llm_activity_marker(states: Dictionary) -> void:
+	if _llm_activity_marker == null:
+		return
+	if bool(states.get("first_sleep_summary_active", false)):
+		_llm_activity_marker.text = "⊘"
+		_llm_activity_marker.modulate = Color(1.0, 0.18, 0.16, 1.0)
+		_llm_activity_marker.visible = true
+		if _proactive_bubble != null:
+			_proactive_bubble.visible = false
+		return
+	var activity: Dictionary = states.get("llm_activity", {}) if (states.get("llm_activity", {}) is Dictionary) else {}
+	if bool(activity.get("active", false)):
+		_llm_activity_marker.text = "..."
+		_llm_activity_marker.modulate = Color(0.42, 0.82, 1.0, 1.0)
+		_llm_activity_marker.visible = true
+		if _proactive_bubble != null:
+			_proactive_bubble.visible = false
+		return
+	_llm_activity_marker.visible = false
 
 
 func _make_node_name(id_value: String) -> String:

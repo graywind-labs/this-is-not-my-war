@@ -13,6 +13,7 @@ from backend.schemas import (
     BattleJudgementResponse,
     CurrentOrderContext,
     DailyPlanResponse,
+    DailyReflectionResponse,
     GameTime,
     ModelRequestMeta,
     NPCContext,
@@ -94,9 +95,19 @@ def _make_payload(call_type: str) -> dict:
             "location_context": {"location_id": "plaza"},
         })
     if call_type == "plan_day":
-        payload["allowed_actions"] = [{"action_id": "garden_work", "name": "菜园工作"}]
+        payload["allowed_actions"] = [{"action_id": "work_garden", "name": "照料菜园", "location_id": "garden", "tags": ["work"]}]
     if call_type == "battle_judgement":
         payload["allowed_decisions"] = ["join_battle", "avoid_battle", "escape_station"]
+    if call_type == "daily_reflection":
+        payload["day_events"] = [
+            {
+                "event_id": "evt_verify_sleep",
+                "type": "sleep_started",
+                "summary": "布鲁诺开始在宿舍休息。",
+                "importance": 40,
+            }
+        ]
+        payload["existing_diary_entries"] = []
     return payload
 
 
@@ -120,6 +131,8 @@ def main() -> None:
     assert plan_result.ok
     plan_response = DailyPlanResponse(**plan_result.content)
     assert len(plan_response.plan) == 24
+    assert plan_response.plan[6].action_id == "eat_at_dining_hall"
+    assert sum(1 for item in plan_response.plan if item.action_id == "work_garden") >= 6
     assert "with_current_order_as_reference" in plan_result.content["debug_reason"]
 
     battle_result = adapter.generate("battle_judgement", _make_payload("battle_judgement"))
@@ -127,8 +140,15 @@ def main() -> None:
     BattleJudgementResponse(**battle_result.content)
     assert "with_current_order_as_reference" in battle_result.content["debug_reason"]
 
+    reflection_result = adapter.generate("daily_reflection", _make_payload("daily_reflection"))
+    assert reflection_result.ok
+    DailyReflectionResponse(**reflection_result.content)
+    assert reflection_result.content["diary_entry"]
+    assert reflection_result.content["knowledge_graph_updates"]
+    assert "with_current_order_as_reference" in reflection_result.content["debug_reason"]
+
     records = adapter.get_usage_records()
-    assert len(records) == 3
+    assert len(records) == 4
     assert records[-1]["input_tokens"] > 0
     assert records[-1]["output_tokens"] > 0
     assert records[-1]["estimated_cost"] == 0.0

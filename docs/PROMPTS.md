@@ -48,6 +48,7 @@
 - `local_public` 只代表 Godot 后续入库和广播规则，不允许模型自行决定第三者记忆写入。
 - 对话全文后续作为 `dialogue_turn` 事件 payload 保存，不单独建立谈话库。
 - 当前指令与本轮守备官说话文本是两个不同输入：`current_order` 是持续上下文，`speaker_text` 是本轮实际发言。
+- 若本轮由对话窗“攻击”触发，`speaker_text` 使用类似“守备官攻击了你以示惩戒，你要说些什么？”的攻击语境文本，`constraints` 会注明这是攻击后的即时反应，不是普通闲聊。攻击造成的 HP 扣除和 `damage_taken` 事件已由 Godot 先行结算；模型只能生成 NPC 对守备官的回应、情绪和态度，不能撤销攻击、改变 HP 或决定后续行动权威结果。
 
 ## 对话 Prompt 输出
 
@@ -87,6 +88,16 @@ NPC-NPC 对话输出示例：
 
 每日计划和计划修订 Prompt 输入必须包含 `current_order`。模型应说明计划如何考虑该指令，但只能从行动白名单中选择合法行动；指令与生存需求、资源、地点或程序强制规则冲突时，可以调整、推迟或拒绝执行。
 
+T1003 当前 `/npc/plan_day` Mock 输入对应 `DailyPlanRequest`，至少包含：
+
+- `npc`：共享 NPC 上下文，内含人设、状态、熟练度、装备、当前地点、`current_order`、短期事件库 / 见闻库摘要、知识图谱、日记和地点上下文。
+- `allowed_actions`：行动白名单；输出只能使用其中的 `action_id` 或 `idle`。
+- `current_resource_states`：当前资源快照。
+- `current_building_states`：当前建筑等级、HP 和修复 / 升级状态快照。
+- `planning_rules`：结构化计划约束，例如 24 阶段、至少 6 个工作阶段、不得越权结算。
+
+Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T1403 打磨。Godot 仍会二次校验输出：不是 24 阶段、行动不在白名单或工作阶段不足时，回退规则计划。
+
 ```json
 {
   "ok": true,
@@ -124,7 +135,15 @@ NPC-NPC 对话输出示例：
 }
 ```
 
-## 睡前总结 Prompt 输出
+## 首次睡眠总结 Prompt 输出
+
+T1004 当前 `/npc/daily_reflection` Mock 输入对应 `DailyReflectionRequest`，至少包含：
+
+- `npc`：共享 NPC 上下文，内含人设、状态、当前指令、短期记忆摘要、知识图谱、地点上下文和广场上下文。
+- `day_events`：当天事件库与见闻库的筛选摘要，区分 `memory_kind=experienced` / `witnessed`。
+- `existing_diary_entries`：既有日记文本，用于避免重复口吻和延续长期记忆。
+
+Mock 当前返回稳定模板；真实 Prompt 打磨留给 T1405。Godot 会校验输出，成功时写入长期日记和知识图谱占位，失败时使用本地模板兜底，并在总结完成后清空该 NPC 当天短期事件 / 见闻索引。
 
 ```json
 {
@@ -148,16 +167,16 @@ NPC-NPC 对话输出示例：
 T0601 后端 Schema 对应关系：
 
 - 对话：`NPCDialogueRequest` / `NPCDialogueResponse`。T0603 后字段以 `npc_id`、`speaker_text`、`speaker_context`、`is_recruitment_request`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 为准；旧式 `guard_officer_input` / `propose_recruitment` 仅作为后端过渡别名。
-- T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战斗判定、主动交涉、逃离判断、睡前总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
-- 每日计划：`DailyPlanRequest` / `DailyPlanResponse`
+- T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战斗判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
+- 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` Mock 端点和 Godot 应用 / 规则降级链路；真实 Prompt 打磨留给 T1403。
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
 - 战斗判定：`BattleJudgementRequest` / `BattleJudgementResponse`
-- 睡前总结：`DailyReflectionRequest` / `DailyReflectionResponse`
+- 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速；真实 Prompt 打磨留给 T1405。
 - 知识图谱更新、主动交涉、玩家话术分类分别使用 `KnowledgeGraphUpdate*`、`ProactiveIntention*`、`PlayerStrategyClassification*`
 
 ## 事件与记忆输入原则
 
-Prompt 不直接接收完整原始事件库，除非是睡前总结或调试任务。常规对话、计划和判定应接收由 Godot / 后端服务裁剪后的摘要：
+Prompt 不直接接收完整原始事件库，除非是首次睡眠总结或调试任务。常规对话、计划和判定应接收由 Godot / 后端服务裁剪后的摘要：
 
 - `experienced_events`：NPC 亲历事件摘要。
 - `witnessed_events`：NPC 见闻摘要。

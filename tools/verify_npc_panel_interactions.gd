@@ -36,10 +36,13 @@ func _init() -> void:
 	var money_spin := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiftMoneySpin") as SpinBox
 	var gift_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiftMoneyButton") as Button
 	var weapon_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiveWeaponButton") as Button
-	var attack_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCAttackButton") as Button
 	var equipment_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEquipmentLabel") as Label
-	if visibility_select == null or money_spin == null or gift_button == null or weapon_button == null or attack_button == null or equipment_label == null:
+	if visibility_select == null or money_spin == null or gift_button == null or weapon_button == null or equipment_label == null:
 		push_error("NPC interaction controls are missing")
+		quit(1)
+		return
+	if root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCAttackButton") != null:
+		push_error("Attack button should no longer exist in NPCPanel")
 		quit(1)
 		return
 	if root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCRestOrHealButton") != null:
@@ -171,31 +174,15 @@ func _init() -> void:
 	npc_system.debug_select_npc(target_id)
 	await process_frame
 
-	var hp_before: int = int(npc_system.get_npc_state(target_id).get("hp", 0))
-	attack_button.pressed.emit()
-	await process_frame
-	if int(npc_system.get_npc_state(target_id).get("hp", 0)) != hp_before - 10:
-		push_error("Attack button did not apply NPC damage")
-		quit(1)
-		return
-	if not _has_event(memory_system.get_npc_daily_events(target_id), "damage_taken"):
-		push_error("Attack button did not write damage event")
-		quit(1)
-		return
-	if not _has_event(memory_system.get_plaza_events(), "damage_taken"):
-		push_error("Public attack damage did not enter plaza public events")
-		quit(1)
-		return
-
 	var dialogue_context: Dictionary = llm_bridge.debug_build_npc_context(target_id)
 	var short_memory: Dictionary = dialogue_context.get("short_term_memory", {})
 	var experienced: Array = short_memory.get("experienced_events", [])
-	if not _summaries_contain(experienced, "守备官给了") or not _summaries_contain(experienced, "受到守备官造成"):
+	if not _summaries_contain(experienced, "守备官给了"):
 		push_error("Dialogue NPC context did not include non-dialogue interaction memories: %s" % JSON.stringify(experienced))
 		quit(1)
 		return
 
-	print("T0704 NPC panel non-dialogue interaction verification passed.")
+	print("T0704 NPC panel non-dialogue interaction verification passed; attack entry moved to DialogPanel.")
 	quit(0)
 
 

@@ -1,5 +1,66 @@
 # DEV_LOG.md
 
+## 2026-06-12 T1006 发送后才打断对话与对话窗攻击闭环
+
+- NPC 面板“对话”改为只打开 DialogPanel 和查看历史，不再立刻打断行动、取消 LLM 或请求结束后的计划重评估。
+- 玩家在对话窗实际发送消息或点击攻击后，才取消目标 NPC 的可取消 LLM 请求并打断工作 / 吃饭 / 睡觉等普通行动；普通消息未等 NPC 回复就结束会取消本轮异步 LLM，不写 `dialogue_turn`，不触发对话重评估。
+- 对话窗等待 NPC 回复期间输入框仍可编辑，但发送和攻击按钮禁用，避免同一轮回复前重复提交。
+- 攻击入口从 NPC 面板移到对话窗：点击后先扣 HP 并写入“守备官攻击了你以示惩戒”的 `damage_taken`，再请求 NPC 作出攻击语境回复；关闭等待中的攻击回复不会撤销攻击，结束时仍触发一次计划重评估。
+- `DialogPanel` 将“提出应征”改为右上角 toggle，攻击按钮放到发送旁；`NPCPanel` 保留给钱和装备入口，不再直接扣血。
+- 验证通过：`godot --headless --path . --quit-after 1`、`godot --headless --path . --script res://tools/verify_dialogue_sleep_summary_boundaries.gd`、`godot --headless --path . --script res://tools/verify_dialogue_ui.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_npc_proactive_talk.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_reevaluation.gd`、`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_mock_endpoint.py`；并通过 Godot MCP 运行 `res://scenes/main/Main.tscn`，日志无报错。
+
+## 2026-06-11 T1005 对话打断、LLM 状态提示与首次睡眠总结优先级
+
+- 玩家对话现在会打断工作 / 吃饭 / 睡觉等普通日常行动，并取消目标 NPC 的可取消 LLM 活动状态；取消后的计划 / 对话结果不会继续应用。
+- 首次睡眠总结改为每天第一次睡觉且持续睡眠满 1 个游戏小时后触发；总结发起到应用完成期间通过 NPCSystem 深度睡眠锁阻止对话、消息、行动中断和行动改派。
+- 总结期间发布给已入伍 NPC 的指令仍保存并写入事件，但计划重评估延后到醒来后执行。
+- 对话、每日计划、计划修订和首次睡眠总结都会申请并释放 TimeSystem 慢速；`/npc/daily_reflection` 保持接口名不变，玩法语义改为首次睡眠总结。
+- NPC 头顶新增 LLM 状态标记：普通 LLM 等待显示 `...`，首次睡眠总结显示禁止标记；NPC 面板名字旁显示“正在思考 / 正在计划下一步行动 / 正在熟睡”。
+- GM 面板新增 `llm_state <npc_id>` 只读入口，查看 NPC LLM 活动、首次睡眠总结锁和延后重评估状态。
+- 新增 `tools/verify_dialogue_sleep_summary_boundaries.gd`，更新 `tools/verify_daily_reflection_system.gd`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_dialogue_sleep_summary_boundaries.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`godot --headless --path . --script res://tools/verify_npc_order.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-11 T1004 睡前总结与短期记忆清空
+
+- 新增 `DailyReflectionSystem` 并挂载到 `Main/Systems/DailyReflectionSystem`，监听 `sleep_started`；每名 NPC 每天首次睡觉生成睡前总结，重复睡眠不自动重复写入，GM 可 force 调试。
+- `LLMBridge` 新增 `/npc/daily_reflection` 请求和 payload 构造，注入共享 NPC 上下文、当前指令、当天事件 / 见闻摘要和已有日记；当时睡前总结默认不申请 TimeSystem 慢速，已在 T1005 修正为首次睡眠总结必须慢速。
+- Flask 后端新增 `POST /npc/daily_reflection`，使用 `DailyReflectionRequest` / `DailyReflectionResponse` 校验输入输出；Mock provider 覆盖 `daily_reflection`。
+- `NPCSystem` 新增长期记忆读取和睡前总结应用接口，写入 `diary`，并把知识图谱更新合并到 `knowledge_graph.patches` / `knowledge_graph.by_subject` 占位结构。
+- `MemorySystem` 新增 `clear_npc_short_term_memory(...)`，只清空指定 NPC 当天事件库 / 见闻库索引，不删除全局事件档案。
+- `NPCPanel` 新增日记滚动区；`GMPanel` 新增睡前总结、长期记忆和最近总结按钮，以及 `reflect_npc`、`long_memory`、`reflection_result` 命令。
+- 新增 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_daily_reflection_endpoint.py`，并扩展 `tools/verify_gm_panel.gd`、`tools/verify_mock_model_adapter.py`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-11 T1003 LLM / Mock 版制定计划接口
+
+- Flask 后端新增 `POST /npc/plan_day`，用 `DailyPlanRequest` / `DailyPlanResponse` 校验每日计划 Mock 输入输出。
+- Mock `plan_day` 会按 NPC 熟练度和行动白名单选择真实可执行工作行动，并返回睡觉、吃饭、工作、等待组成的 24 小时计划。
+- `LLMBridge` 新增每日计划 payload 与 `/npc/plan_day` 请求，注入最新 `current_order`、短期记忆、长期记忆、地点 / 广场上下文、资源快照、建筑状态、行动白名单和计划规则；请求期间申请 TimeSystem 慢速并在成功 / 失败 / 超时后释放。
+- `DailyPlanSystem` 新增 `generate_daily_plan_for_npc(...)`：成功时应用 `mock_plan_day` 并写入 `plan_created`，失败、输出不合法、非 24 阶段或工作阶段不足时应用 `rule_plan_fallback`。
+- GM 面板 `plan_generate` 改为 LLM / Mock 优先并自动规则降级，新增 `plan_generate_rule` 纯规则入口，`plan_request` 可查看最近每日计划生成结果。
+- 新增 `tools/verify_daily_plan_llm.gd` 与 `tools/verify_plan_day_endpoint.py`。
+- 验证通过：`verify_backend_schemas.py`、`verify_mock_model_adapter.py`、`verify_plan_day_endpoint.py`、`verify_plan_revision_endpoint.py`、`verify_daily_plan_llm.gd`、临时以 `LLM_PROVIDER=mock` 和 `T1003_BACKEND_URL=http://127.0.0.1:5056` 启动 Flask 后再次运行 `verify_daily_plan_llm.gd`、`verify_daily_plan_reevaluation.gd`、`verify_daily_plan_system.gd`、`verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-11 T1002 行动异常与计划重评估
+
+- `DailyPlanSystem` 接入统一计划重评估：行动失败、目标建筑不可用、资源不足、工位占用、对话打断、守备官攻击、主动交涉结束 / 超时、战斗警报占位和新指令会触发重评估。
+- `LLMBridge` 新增计划修订 payload 与 `/npc/revise_plan` 请求，注入最新 `current_order`、当前计划、失败计划项、失败类型和行动白名单；请求期间申请 TimeSystem 慢速并在成功 / 失败 / 超时后释放。
+- Flask 后端新增 `/npc/revise_plan`，用 `PlanRevisionRequest` / `PlanRevisionResponse` 校验 Mock 修订输出。
+- 重评估成功写入 `plan_revised` 并执行当前小时修订项；后端不可用或输出失败时写入 `rule_revision_fallback` 并执行规则降级项。
+- GM 面板新增“立即重评估”和 `plan_revise <npc_id> [reason]`，最近请求面板同时显示 NPCSystem 请求和 DailyPlanSystem 结果。
+- 新增 `tools/verify_daily_plan_reevaluation.gd` 与 `tools/verify_plan_revision_endpoint.py`。
+- 验证通过：`verify_daily_plan_reevaluation.gd`、临时以 `LLM_PROVIDER=mock` 和 `T1002_BACKEND_URL=http://127.0.0.1:5055` 启动 Flask 后再次运行 `verify_daily_plan_reevaluation.gd`、`verify_plan_revision_endpoint.py`、`verify_daily_plan_system.gd`、`verify_npc_order.gd`、`verify_gm_panel.gd`、`verify_npc_proactive_talk.gd`、`verify_backend_schemas.py`、`verify_mock_model_adapter.py`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-10 T1001 规则版每日计划
+
+- 新增 `DailyPlanSystem` 并挂载到 `Main/Systems/DailyPlanSystem`，可生成规则版 24 小时计划，默认按 NPC 熟练度选择工作行动，计划中工作阶段不少于 6 个。
+- `NPCSystem` 新增计划存取与系统中断移动接口；`ActionSystem` 新增当前行动查询与 `interrupt_npc_action(...)`，计划切换时可安全释放工位、训练、治疗或移动状态。
+- `MemorySystem` 接入 `plan_created` payload 校验和确定性 summary；计划生成会写入 NPC 私有事件库。
+- GM 面板新增生成计划、执行当前计划、查看计划按钮，以及 `plan_generate` / `plan_execute` / `plan` 命令。
+- 新增 `tools/verify_daily_plan_system.gd`，覆盖 24 小时计划、至少 6 个工作阶段、计划事件入库、小时打点执行、同小时重复执行和计划切换打断。
+- 验证通过：`verify_daily_plan_system.gd`、`verify_gm_panel.gd`、`verify_action_system_basic.gd`、`godot --headless --path . --quit-after 1`；通过 Godot MCP 运行 `Main.tscn` 后游戏日志为空。
+- 备注：`tools/verify_time_system.gd` 当前仍有旧断言期望“暂停后挂起工作在几帧内产出资源”，与现行 T0801 之后的 1 小时持续工作语义不一致，本次未改该旧验证脚本。
+
 ## 2026-06-10 T0016 建筑面板工位显示优化
 
 - `BuildingPanel` 移除独立“当前工作位 x/x”汇总行，场景默认占位改为 `工位：--`。
