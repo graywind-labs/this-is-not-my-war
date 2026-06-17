@@ -15,14 +15,14 @@
         "count": 3,
         "unit_type": "melee_infantry",
         "weapon_type": "sword_shield",
-        "hp": 55,
-        "max_hp": 55,
-        "attack_power": 9,
-        "defense": 2,
+        "hp": 60,
+        "max_hp": 60,
+        "attack_power": 6,
+        "defense": 1,
         "move_speed": 3.0,
         "attack_range": 1.5,
-        "attack_interval": 1.7,
-        "target_preference": ["front_gate", "wall", "warehouse", "main_hall", "nearby_unit"]
+        "attack_interval": 2.4,
+        "target_preference": ["front_gate", "warehouse", "main_hall", "nearby_unit"]
       }
     ],
     "notes": "第一波用于验证敌人生成和低强度战斗闭环。"
@@ -50,7 +50,7 @@
         "move_speed": 3.0,
         "attack_range": 1.5,
         "attack_interval": 1.7,
-        "target_preference": ["front_gate", "wall", "warehouse", "main_hall", "nearby_unit"]
+        "target_preference": ["front_gate", "warehouse", "main_hall", "nearby_unit"]
       },
       {
         "enemy_type_id": "raider_polearm",
@@ -65,7 +65,7 @@
         "move_speed": 2.8,
         "attack_range": 2.4,
         "attack_interval": 1.9,
-        "target_preference": ["front_gate", "wall", "nearby_unit", "warehouse", "main_hall"]
+        "target_preference": ["front_gate", "nearby_unit", "warehouse", "main_hall"]
       }
     ],
     "notes": "长杆兵开始拉开攻击距离差异。"
@@ -93,7 +93,7 @@
         "move_speed": 3.1,
         "attack_range": 1.5,
         "attack_interval": 1.65,
-        "target_preference": ["front_gate", "wall", "nearby_unit", "warehouse", "main_hall"]
+        "target_preference": ["front_gate", "nearby_unit", "warehouse", "main_hall"]
       },
       {
         "enemy_type_id": "raider_archer",
@@ -108,7 +108,7 @@
         "move_speed": 3.2,
         "attack_range": 10.5,
         "attack_interval": 1.8,
-        "target_preference": ["nearby_unit", "front_gate", "wall", "warehouse", "main_hall"]
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
       }
     ],
     "notes": "第三波开始出现远程威胁。"
@@ -136,7 +136,7 @@
         "move_speed": 2.9,
         "attack_range": 2.5,
         "attack_interval": 1.85,
-        "target_preference": ["front_gate", "wall", "nearby_unit", "warehouse", "main_hall"]
+        "target_preference": ["front_gate", "nearby_unit", "warehouse", "main_hall"]
       },
       {
         "enemy_type_id": "raider_crossbow",
@@ -151,7 +151,7 @@
         "move_speed": 2.7,
         "attack_range": 12.0,
         "attack_interval": 2.5,
-        "target_preference": ["nearby_unit", "front_gate", "wall", "warehouse", "main_hall"]
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
       },
       {
         "enemy_type_id": "raider_cavalry",
@@ -167,7 +167,7 @@
         "move_speed": 4.2,
         "attack_range": 1.8,
         "attack_interval": 1.55,
-        "target_preference": ["nearby_unit", "front_gate", "wall", "warehouse", "main_hall"]
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
       }
     ],
     "notes": "第四波引入更高机动和更高单次伤害。"
@@ -195,7 +195,7 @@
         "move_speed": 3.1,
         "attack_range": 1.6,
         "attack_interval": 1.55,
-        "target_preference": ["front_gate", "wall", "nearby_unit", "warehouse", "main_hall"]
+        "target_preference": ["front_gate", "nearby_unit", "warehouse", "main_hall"]
       },
       {
         "enemy_type_id": "raider_crossbow",
@@ -210,7 +210,7 @@
         "move_speed": 2.8,
         "attack_range": 12.5,
         "attack_interval": 2.35,
-        "target_preference": ["nearby_unit", "front_gate", "wall", "warehouse", "main_hall"]
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
       },
       {
         "enemy_type_id": "raider_mounted_archer",
@@ -226,7 +226,7 @@
         "move_speed": 4.5,
         "attack_range": 10.5,
         "attack_interval": 1.7,
-        "target_preference": ["nearby_unit", "front_gate", "wall", "warehouse", "main_hall"]
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
       }
     ],
     "notes": "第五波作为 Demo 胜利前的主攻压力。"

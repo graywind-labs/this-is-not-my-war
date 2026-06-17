@@ -5,6 +5,7 @@ const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
 const MEMORY_LOG_BOX_MIN_SIZE := Vector2(0, 132)
@@ -13,7 +14,9 @@ const DEFAULT_GIFT_MONEY_AMOUNT := 5
 
 var _current_npc_id: String = ""
 var _is_sanitizing_gift_money_text := false
+var _is_filling_strategy_select := false
 var _weapon_select: OptionButton
+var _strategy_select: OptionButton
 var _event_log_text: TextEdit
 var _witness_log_text: TextEdit
 var _diary_label: Label
@@ -93,6 +96,7 @@ func show_npc(npc_id: String) -> void:
 	_current_npc_id = npc_id
 	var states: Dictionary = npc.get("states", {})
 	_fill_weapon_select()
+	_fill_strategy_select()
 
 	name_label.text = str(npc.get("name", npc_id))
 	_update_llm_status_label(states)
@@ -194,6 +198,15 @@ func _setup_equipment_controls() -> void:
 	button_row.move_child(_weapon_select, give_weapon_button.get_index())
 	give_weapon_button.text = "装备武器"
 	give_weapon_button.tooltip_text = "消耗 1 个武器库存，为已入伍 NPC 装备所选主武器。"
+
+	_strategy_select = OptionButton.new()
+	_strategy_select.name = "NPCCombatStrategySelect"
+	_strategy_select.custom_minimum_size = Vector2(122, 30)
+	_strategy_select.focus_mode = Control.FOCUS_NONE
+	_strategy_select.tooltip_text = "选择该 NPC 当前兵种在战斗模式中使用的策略。"
+	button_row.add_child(_strategy_select)
+	button_row.move_child(_strategy_select, give_weapon_button.get_index() + 1)
+	_strategy_select.item_selected.connect(_on_strategy_selected)
 
 
 func _setup_progression_controls() -> void:
@@ -427,10 +440,13 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	var has_money := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("money")) >= int(gift_money_spin.value)
 	var has_weapon := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("weapons")) >= 1
+	var has_strategy_options := _strategy_select != null and _strategy_select.get_item_count() > 0 and not str(_strategy_select.get_item_metadata(0)).is_empty()
 
 	dialogue_button.disabled = is_escaped or is_deep_sleeping
 	gift_money_button.disabled = is_escaped or not has_money
 	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
+	if _strategy_select != null:
+		_strategy_select.disabled = is_escaped or not is_recruited or not has_strategy_options
 
 
 func _get_selected_visibility() -> String:
@@ -467,6 +483,47 @@ func _get_selected_weapon_id() -> String:
 	if _weapon_select == null or _weapon_select.get_item_count() <= 0:
 		return ""
 	var metadata: Variant = _weapon_select.get_item_metadata(_weapon_select.selected)
+	if metadata != null:
+		return str(metadata)
+	return ""
+
+
+func _fill_strategy_select() -> void:
+	if _strategy_select == null:
+		return
+	_is_filling_strategy_select = true
+	_strategy_select.clear()
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or _current_npc_id.is_empty() or not combat_system.has_method("get_npc_combat_strategy_options"):
+		_strategy_select.add_item("无策略")
+		_strategy_select.set_item_metadata(0, "")
+		_is_filling_strategy_select = false
+		return
+	var options: Array = combat_system.get_npc_combat_strategy_options(_current_npc_id)
+	if options.is_empty():
+		_strategy_select.add_item("无策略")
+		_strategy_select.set_item_metadata(0, "")
+		_is_filling_strategy_select = false
+		return
+	var current: Dictionary = combat_system.get_npc_combat_strategy(_current_npc_id) if combat_system.has_method("get_npc_combat_strategy") else {}
+	var current_id := str(current.get("id", ""))
+	var selected_index := 0
+	for raw_option in options:
+		var option: Dictionary = raw_option if raw_option is Dictionary else {}
+		var strategy_id := str(option.get("id", ""))
+		var index := _strategy_select.get_item_count()
+		_strategy_select.add_item(str(option.get("label", strategy_id)))
+		_strategy_select.set_item_metadata(index, strategy_id)
+		if strategy_id == current_id:
+			selected_index = index
+	_strategy_select.select(selected_index)
+	_is_filling_strategy_select = false
+
+
+func _get_selected_strategy_id() -> String:
+	if _strategy_select == null or _strategy_select.get_item_count() <= 0:
+		return ""
+	var metadata: Variant = _strategy_select.get_item_metadata(_strategy_select.selected)
 	if metadata != null:
 		return str(metadata)
 	return ""
@@ -746,5 +803,19 @@ func _on_give_weapon_pressed() -> void:
 		return
 	var result: Dictionary = equipment_system.equip_npc_main_weapon(_current_npc_id, _get_selected_weapon_id(), _get_selected_visibility())
 	_show_interaction_result(result, "已装备武器：%s。" % str(result.get("unit_type_label", "")))
+	if bool(result.get("ok", false)):
+		show_npc(_current_npc_id)
+
+
+func _on_strategy_selected(_index: int) -> void:
+	if _is_filling_strategy_select:
+		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var strategy_id := _get_selected_strategy_id()
+	if combat_system == null or _current_npc_id.is_empty() or strategy_id.is_empty() or not combat_system.has_method("set_npc_combat_strategy"):
+		return
+	var result: Dictionary = combat_system.set_npc_combat_strategy(_current_npc_id, strategy_id, _get_selected_visibility())
+	var strategy: Dictionary = result.get("strategy", {}) if (result.get("strategy", {}) is Dictionary) else {}
+	_show_interaction_result(result, "战斗策略：%s。" % str(strategy.get("label", strategy_id)))
 	if bool(result.get("ok", false)):
 		show_npc(_current_npc_id)

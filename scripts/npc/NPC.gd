@@ -113,6 +113,8 @@ func _refresh_label() -> void:
 		action_text = "集结防线"
 	elif action_text == "combat_ready":
 		action_text = "接敌"
+	elif action_text.begins_with("moving_to_combat_strategy_"):
+		action_text = "战术移动"
 	elif str(states.get("behavior_mode", "")) == "avoid_combat":
 		action_text = "避战"
 	_name_label.text = "%s\nHP %d/%d · %s" % [

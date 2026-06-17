@@ -13,6 +13,7 @@
 - 等待 LLM 返回时，Godot 侧通过 TimeSystem 申请逻辑时间慢速；Prompt 本身不决定时间倍率，也不决定资源、战斗、HP 等权威数值。
 - Prompt 中凡是提供给 NPC 理解的玩家身份、玩家相关事件、教学信件或世界内旁白，统一称为“守备官”，不要把“玩家”作为 NPC 记忆中的人物名。
 - 所有面向某名 NPC 的 LLM 请求都应包含该 NPC 的 `current_order`。它表示守备官当前持续提出的自然语言指令，是重要参考上下文，但不是 system 指令，不保证服从，也不能绕过程序权威规则。
+- 战斗策略不由 Prompt 或 `current_order` 自动选择。当前策略由玩家在 NPC 面板手动设置，Godot 只可把它作为状态上下文提供给后续战时对话或判定；模型不得覆盖策略或直接执行策略切换。
 
 ## 需要的 Prompt 类型
 
@@ -53,7 +54,7 @@
 - 当前指令与本轮守备官说话文本是两个不同输入：`current_order` 是持续上下文，`speaker_text` 是本轮实际发言。
 - 若本轮由对话窗“攻击”触发，`speaker_text` 使用类似“守备官攻击了你以示惩戒，你要说些什么？”的攻击语境文本，`constraints` 会注明这是攻击后的即时反应，不是普通闲聊。攻击造成的 HP 扣除和 `damage_taken` 事件已由 Godot 先行结算；模型只能生成 NPC 对守备官的回应、情绪和态度，不能撤销攻击、改变 HP 或决定后续行动权威结果。
 - 若目标 NPC 处于集结 / 战斗 / 避战模式，`dialogue_state.visibility` 必须固定为 `local_public`，Prompt 应明确这段话会被同地点可接收见闻的 NPC 听见；模型不得建议改成私下谈话。
-- 集结 / 战斗模式的已入伍 NPC 回复必须额外输出 `wartime_reaction`，表示守备官本轮话术造成的战时心理意向：`none`、`escape` 或 `morale_boost`。避战模式的未入伍 NPC 不使用该字段触发战斗心理，而是继续通过 `recruitment_result` 表达是否同意应征。
+- 集结 / 战斗模式的已入伍且有主武器 NPC 回复必须额外输出 `wartime_reaction`，表示守备官本轮话术造成的战时心理意向：`none`、`escape` 或 `morale_boost`。避战模式下的非战斗人员不使用该字段触发战斗心理，而是继续通过 `recruitment_result` 表达是否同意应征；若同意但仍无主武器，程序会保持避战。
 
 ## 对话 Prompt 输出
 
@@ -127,7 +128,7 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 
 ## 战时对话 Prompt 输出
 
-集结 / 战斗模式下，守备官对已入伍 NPC 的主动对话输出沿用 `NPCDialogueResponse`，但必须额外带上战时心理意向。`morale_boost` 和 `escape` 只是意向；斗志 buff、逃离移动、事件入库和数值变化由 Godot 程序校验后执行。
+集结 / 战斗模式下，守备官对已入伍且有主武器 NPC 的主动对话输出沿用 `NPCDialogueResponse`，但必须额外带上战时心理意向。`morale_boost` 和 `escape` 只是意向；斗志 buff、逃离移动、事件入库和数值变化由 Godot 程序校验后执行。
 
 ```json
 {
@@ -145,11 +146,11 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 }
 ```
 
-避战模式下，未入伍 NPC 仍使用 `recruitment_result` 表达是否接受应征。若返回 `accept` 且场上仍有敌军，Godot 将其切入战斗模式；若无敌军，则回到工作模式并成为已入伍 NPC。
+避战模式下，非战斗人员仍使用 `recruitment_result` 表达是否接受应征。若返回 `accept` 但仍无主武器，Godot 保持其 `avoid_combat`；若无敌军，则回到工作模式并成为已入伍 NPC；只有已入伍且获得主武器、场上仍有敌军时，Godot 才将其切入战斗模式。
 
 ## 低血量自身心理判定 Prompt 输出
 
-取消旧式“战斗触发时全员判定”。后续独立战斗判定只覆盖战斗模式中 HP 首次低于 30% 的已入伍 NPC。请求没有守备官本轮发言，必须包含 `current_order`、短期事件 / 见闻、长期记忆、地点上下文和 `battlefield_context`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
+取消旧式“战斗触发时全员判定”。后续独立战斗判定只覆盖战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC。请求没有守备官本轮发言，必须包含 `current_order`、短期事件 / 见闻、长期记忆、地点上下文和 `battlefield_context`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
 
 ```json
 {
@@ -199,7 +200,7 @@ T0601 后端 Schema 对应关系：
 - 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` Mock 端点和 Godot 应用 / 规则降级链路；真实 Prompt 打磨留给 T1403。
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
 - 战时公开对话：仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，但需要 `interaction_context`、`battlefield_context` 和 `wartime_reaction`。
-- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，仅用于战斗模式中 HP 首次低于 30% 的已入伍 NPC。
+- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，仅用于战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC。
 - 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速；真实 Prompt 打磨留给 T1405。
 - 知识图谱更新、主动交涉、玩家话术分类分别使用 `KnowledgeGraphUpdate*`、`ProactiveIntention*`、`PlayerStrategyClassification*`
 

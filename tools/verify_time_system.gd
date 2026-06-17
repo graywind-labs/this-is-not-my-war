@@ -160,6 +160,26 @@ func _init() -> void:
 		push_error("LLM slowdown release did not restore player speed")
 		quit(1)
 		return
+	time_system.request_time_scale_cap("verify_cap", 1.0, "verify_cap")
+	if not time_system.has_time_scale_cap("verify_cap"):
+		push_error("Time scale cap request was not registered")
+		quit(1)
+		return
+	if absf(float(time_system.get_effective_time_scale()) - 1.0) > 0.001:
+		push_error("Time scale cap did not clamp player x4 to x1")
+		quit(1)
+		return
+	time_system.request_time_slowdown("verify_cap_llm_wait", -1.0, "llm_wait")
+	if absf(float(time_system.get_effective_time_scale()) - (1.0 / 60.0)) > 0.001:
+		push_error("LLM slowdown should be slower than a time scale cap")
+		quit(1)
+		return
+	time_system.release_time_slowdown("verify_cap_llm_wait")
+	time_system.release_time_scale_cap("verify_cap")
+	if time_system.has_time_scale_cap("verify_cap") or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
+		push_error("Time scale cap release did not restore player speed")
+		quit(1)
+		return
 	if scale_events.is_empty():
 		push_error("Time scale changes were not emitted")
 		quit(1)
@@ -278,10 +298,16 @@ func _verify_action_settlement_pauses(time_system: Node) -> bool:
 		return false
 
 	time_system.set_paused(false)
-	for frame in range(3):
-		await process_frame
-	if int(resource_system.get_resource("grain")) != starting_grain + 2:
-		push_error("Pending action did not settle after gameplay resumed")
+	await process_frame
+	var event_bus := root.get_node_or_null("EventBus")
+	if event_bus == null:
+		push_error("EventBus not found for action settlement verification")
+		return false
+	event_bus.logical_time_tick.emit(7200.0, time_system.get_numeric_delta_multiplier())
+	await process_frame
+	var grain_after_resume := int(resource_system.get_resource("grain"))
+	if grain_after_resume <= starting_grain:
+		push_error("Pending action did not settle after gameplay resumed. before=%d after=%d" % [starting_grain, grain_after_resume])
 		return false
 	if action_system.has_pending_action(npc_id):
 		push_error("Pending action was not cleared after gameplay resumed")

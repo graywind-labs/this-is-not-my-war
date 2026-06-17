@@ -7,6 +7,7 @@ const MOUNT_DEFS_FILE := "mount_defs.json"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 
 const PLAYER_ACTOR_ID := "guard_officer"
 const DEFAULT_VISIBILITY := "local_public"
@@ -258,6 +259,7 @@ func _equip_npc_item(
 	var current_equipment := _normalize_equipment(npc.get("equipment", {}))
 	var previous_item: Dictionary = current_equipment.get(slot, {})
 	if str(previous_item.get("id", "")) == item_id:
+		var unchanged_strategy_result := _normalize_combat_strategy_after_equipment_change(npc_id, slot, visibility, false)
 		return {
 			"ok": true,
 			"changed": false,
@@ -265,7 +267,8 @@ func _equip_npc_item(
 			"slot": slot,
 			"equipment": current_equipment,
 			"unit_type": determine_unit_type(current_equipment),
-			"unit_type_label": get_unit_type_label(determine_unit_type(current_equipment))
+			"unit_type_label": get_unit_type_label(determine_unit_type(current_equipment)),
+			"combat_strategy": unchanged_strategy_result
 		}
 
 	var resource_id := str(definition.get("source_resource_id", ""))
@@ -299,6 +302,7 @@ func _equip_npc_item(
 		unit_type,
 		visibility
 	)
+	var strategy_result := _normalize_combat_strategy_after_equipment_change(npc_id, slot, visibility, true)
 
 	return {
 		"ok": true,
@@ -310,6 +314,7 @@ func _equip_npc_item(
 		"resource_id": resource_id,
 		"unit_type": unit_type,
 		"unit_type_label": get_unit_type_label(unit_type),
+		"combat_strategy": strategy_result,
 		"event": event
 	}
 
@@ -450,6 +455,20 @@ func _log_equipment_event(
 		"unit_type_label": get_unit_type_label(unit_type),
 		"importance": 55
 	}, normalized_visibility)
+
+
+func _normalize_combat_strategy_after_equipment_change(
+	npc_id: String,
+	slot: String,
+	visibility: String,
+	force_default: bool
+) -> Dictionary:
+	if not [SLOT_MAIN_WEAPON, SLOT_MOUNT].has(slot):
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("normalize_npc_combat_strategy"):
+		return {}
+	return combat_system.normalize_npc_combat_strategy(npc_id, "equipment_changed", visibility, force_default)
 
 
 func get_slot_label(slot: String) -> String:

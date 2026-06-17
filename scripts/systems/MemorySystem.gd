@@ -23,6 +23,7 @@ const EVENT_TYPES: Array[String] = [
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
 	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "attack_made", "damage_taken", "low_hp_triggered",
+	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_status_changed", "location_status_changed"
@@ -41,11 +42,15 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"work_failed": ["action_id", "reason"],
 	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"],
 	"combat_alarm_rang": ["source", "npc_count", "active_enemy_count"],
+	"combat_started": ["wave_number", "enemy_count", "enemy_roster", "friendly_combatant_count", "friendly_roster"],
+	"combat_ended": ["wave_number", "enemy_count", "injured_npcs", "unconscious_npcs", "defeated_by_npc", "reason"],
 	"combat_rally_started": ["formation_row", "unit_type", "rally_location_id", "facing_direction"],
 	"combat_rally_encountered_enemy": ["enemy_id", "distance"],
 	"npc_mode_changed": ["npc_id", "from_mode", "to_mode", "reason"],
 	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
 	"avoidance_ended": ["reason", "active_enemy_count"],
+	"attack_made": ["attacker_npc_id", "target_type", "target_enemy_id", "damage", "hp_before", "hp_after"],
+	"combat_strategy_selected": ["npc_id", "strategy_id", "strategy_label", "unit_type"],
 	"damage_taken": ["damage", "hp_before", "hp_after"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
@@ -830,14 +835,18 @@ func _format_action_status(action_id: String) -> String:
 		return "昏迷"
 	if action_id.begins_with("moving_to_combat_rally"):
 		return "前往城门外防线"
+	if action_id.begins_with("moving_to_combat_strategy_"):
+		return "进行战术移动"
 	if action_id == "rallying_defense_line":
 		return "在城门外集结"
 	if action_id == "combat_ready":
 		return "准备接敌"
+	if action_id.begins_with("attacking_"):
+		return "攻击敌人"
 	if action_id == "avoid_combat" or action_id == "avoiding_enemy":
 		return "避战"
 	if action_id.begins_with("moving_to_avoid_shelter_"):
-		return "前往避战点"
+		return "远离敌人避战"
 	if action_id.begins_with("moving_to_"):
 		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
 	if action_id.begins_with("assist_heal_"):
@@ -1065,6 +1074,10 @@ func _format_summary(event: Dictionary) -> String:
 			return "守备官制定了新的指令。"
 		"npc_attacked_by_player":
 			return "%s攻击了%s，造成%d点伤害。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("damage", 0))]
+		"combat_started":
+			return _format_combat_started_summary(payload)
+		"combat_ended":
+			return _format_combat_ended_summary(payload)
 		"combat_alarm_rang":
 			return "%s听到了警铃，守备官正在召集所有人。" % actor
 		"combat_rally_started":
@@ -1086,13 +1099,27 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("reason", "mode_changed"))
 			]
 		"avoidance_started":
-			return "%s发现%s接近，正在前往%s避战。" % [
+			return "%s发现%s接近，正朝%s避战。" % [
 				actor,
 				str(payload.get("enemy_name", payload.get("enemy_id", "敌人"))),
-				str(payload.get("target_name", "安全位置"))
+				str(payload.get("target_name", "避战方向"))
 			]
 		"avoidance_ended":
 			return "%s不再避战，回到驿站日常安排。" % actor
+		"attack_made":
+			var target_name := str(payload.get("target_enemy_name", payload.get("target_enemy_id", "敌人")))
+			var defeated_text := "，击退了敌人" if bool(payload.get("defeated", false)) else ""
+			return "%s攻击了%s，造成%d点伤害%s。" % [
+				actor,
+				target_name,
+				int(payload.get("damage", 0)),
+				defeated_text
+			]
+		"combat_strategy_selected":
+			return "守备官将%s的战斗策略调整为%s。" % [
+				actor,
+				str(payload.get("strategy_label", payload.get("strategy_id", "未指定策略")))
+			]
 		"damage_taken":
 			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
 			var damage_actor_id := "" if damage_actor_ids.is_empty() else damage_actor_ids[0]
@@ -1125,6 +1152,122 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s在%s休息后恢复了些精神。" % [actor, location]
 		_:
 			return "%s发生了%s事件。" % [actor, event_type]
+
+
+func _format_combat_started_summary(payload: Dictionary) -> String:
+	var enemy_text := _format_enemy_roster_summary(payload.get("enemy_roster", []))
+	var friendly_text := _format_friendly_roster_summary(payload.get("friendly_roster", []))
+	if friendly_text.is_empty():
+		friendly_text = "暂无已入伍且持武器的守备者"
+	return "敌军来袭：第%d波，%d名敌人逼近驿站，敌军包括%s。我方可战斗人员：%s。" % [
+		int(payload.get("wave_number", 0)),
+		int(payload.get("enemy_count", 0)),
+		enemy_text,
+		friendly_text
+	]
+
+
+func _format_combat_ended_summary(payload: Dictionary) -> String:
+	var reason := str(payload.get("reason", "enemies_defeated"))
+	var outcome := "敌人已经全被消灭"
+	if ["enemies_cleared", "gm_clear", "enemy_retreat"].has(reason):
+		outcome = "敌人已经撤退或被清空"
+	var injured_text := _format_battle_injured_summary(payload.get("injured_npcs", []))
+	var unconscious_text := _format_battle_unconscious_summary(payload.get("unconscious_npcs", []))
+	var defeated_text := _format_battle_defeated_summary(payload.get("defeated_by_npc", []))
+	return "%s，第%d波战斗结束。受伤：%s。昏迷：%s。击退敌人：%s。" % [
+		outcome,
+		int(payload.get("wave_number", 0)),
+		injured_text,
+		unconscious_text,
+		defeated_text
+	]
+
+
+func _format_enemy_roster_summary(raw_roster: Variant) -> String:
+	var roster: Array = raw_roster if raw_roster is Array else []
+	if roster.is_empty():
+		return "未知敌军"
+	var parts: Array[String] = []
+	for raw_entry in roster:
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if entry.is_empty():
+			continue
+		var count := int(entry.get("count", 0))
+		var name := str(entry.get("name", "敌人"))
+		var unit_label := str(entry.get("unit_type_label", entry.get("unit_type", "")))
+		if unit_label.is_empty():
+			parts.append("%d名%s" % [count, name])
+		else:
+			parts.append("%d名%s（%s）" % [count, name, unit_label])
+	if parts.is_empty():
+		return "未知敌军"
+	return "、".join(parts)
+
+
+func _format_friendly_roster_summary(raw_roster: Variant) -> String:
+	var roster: Array = raw_roster if raw_roster is Array else []
+	var parts: Array[String] = []
+	for raw_entry in roster:
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if entry.is_empty():
+			continue
+		parts.append("%s（%s）" % [
+			str(entry.get("npc_name", entry.get("npc_id", "未知守备者"))),
+			str(entry.get("unit_type_label", entry.get("unit_type", "战斗人员")))
+		])
+	return "、".join(parts)
+
+
+func _format_battle_injured_summary(raw_entries: Variant) -> String:
+	var entries: Array = raw_entries if raw_entries is Array else []
+	if entries.is_empty():
+		return "无"
+	var parts: Array[String] = []
+	for raw_entry in entries:
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if entry.is_empty():
+			continue
+		parts.append("%s受伤%d点" % [
+			str(entry.get("npc_name", entry.get("npc_id", "未知NPC"))),
+			int(entry.get("damage_taken", 0))
+		])
+	if parts.is_empty():
+		return "无"
+	return "、".join(parts)
+
+
+func _format_battle_unconscious_summary(raw_entries: Variant) -> String:
+	var entries: Array = raw_entries if raw_entries is Array else []
+	if entries.is_empty():
+		return "无"
+	var parts: Array[String] = []
+	for raw_entry in entries:
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if entry.is_empty():
+			continue
+		parts.append(str(entry.get("npc_name", entry.get("npc_id", "未知NPC"))))
+	if parts.is_empty():
+		return "无"
+	return "、".join(parts)
+
+
+func _format_battle_defeated_summary(raw_entries: Variant) -> String:
+	var entries: Array = raw_entries if raw_entries is Array else []
+	if entries.is_empty():
+		return "无"
+	var parts: Array[String] = []
+	for raw_entry in entries:
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if entry.is_empty():
+			continue
+		parts.append("%s击退%d名" % [
+			str(entry.get("npc_name", entry.get("npc_id", "未知NPC"))),
+			int(entry.get("defeated_count", 0))
+		])
+	if parts.is_empty():
+		return "无"
+	return "、".join(parts)
 
 
 func _format_building_or_plaza_state_summary(payload: Dictionary) -> String:
@@ -1350,6 +1493,10 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		target_ids.append(str(payload["resource_id"]))
 	if event_type.begins_with("building_") and payload.has("building_id"):
 		target_ids.append(str(payload["building_id"]))
+	if ["combat_started", "combat_ended"].has(event_type) and payload.has("wave_id"):
+		target_ids.append(str(payload["wave_id"]))
+	if event_type == "attack_made" and payload.has("target_enemy_id"):
+		target_ids.append(str(payload["target_enemy_id"]))
 	if ["damage_taken", "unconscious_started", "healing_started", "healing_completed"].has(event_type) and payload.has("target_npc_id"):
 		target_ids.append(str(payload["target_npc_id"]))
 	if ["healing_started", "healing_completed"].has(event_type) and payload.has("healer_npc_id"):

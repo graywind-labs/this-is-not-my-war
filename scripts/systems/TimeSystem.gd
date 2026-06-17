@@ -9,6 +9,7 @@ var time_scale: float = 1.0
 var _seconds_into_day: float = 0.0
 var _last_emitted_day_second: int = -1
 var _slowdown_requests: Dictionary = {}
+var _time_scale_cap_requests: Dictionary = {}
 var _game_state: Node = null
 var _event_bus: Node = null
 
@@ -107,10 +108,60 @@ func has_time_slowdown() -> bool:
 	return not _slowdown_requests.is_empty()
 
 
+func request_time_scale_cap(request_id: String, max_scale: float = 1.0, reason: String = "time_scale_cap") -> void:
+	if request_id.is_empty():
+		return
+
+	_time_scale_cap_requests[request_id] = {
+		"max_scale": maxf(max_scale, 0.0),
+		"reason": reason
+	}
+	_emit_time_scale_changed(reason)
+
+
+func release_time_scale_cap(request_id: String) -> void:
+	if not _time_scale_cap_requests.has(request_id):
+		return
+
+	var reason := str(_time_scale_cap_requests[request_id].get("reason", "time_scale_cap"))
+	_time_scale_cap_requests.erase(request_id)
+	_emit_time_scale_changed("%s_finished" % reason)
+
+
+func clear_time_scale_caps() -> void:
+	if _time_scale_cap_requests.is_empty():
+		return
+
+	_time_scale_cap_requests.clear()
+	_emit_time_scale_changed("time_scale_caps_cleared")
+
+
+func has_time_scale_cap(request_id: String = "") -> bool:
+	if request_id.is_empty():
+		return not _time_scale_cap_requests.is_empty()
+	return _time_scale_cap_requests.has(request_id)
+
+
+func get_time_scale_snapshot() -> Dictionary:
+	return {
+		"paused": is_paused,
+		"player_scale": time_scale,
+		"effective_scale": get_effective_time_scale(),
+		"numeric_multiplier": get_numeric_delta_multiplier(),
+		"slowdown_requests": _slowdown_requests.duplicate(true),
+		"time_scale_cap_requests": _time_scale_cap_requests.duplicate(true),
+		"slowdown_count": _slowdown_requests.size(),
+		"time_scale_cap_count": _time_scale_cap_requests.size(),
+		"effective_label": get_effective_speed_label()
+	}
+
+
 func get_effective_time_scale() -> float:
 	var effective_scale := time_scale
 	for request in _slowdown_requests.values():
 		effective_scale = minf(effective_scale, float(request.get("scale", effective_scale)))
+	for request in _time_scale_cap_requests.values():
+		effective_scale = minf(effective_scale, float(request.get("max_scale", effective_scale)))
 	return maxf(effective_scale, 0.0)
 
 

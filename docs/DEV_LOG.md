@@ -1,5 +1,96 @@
 # DEV_LOG.md
 
+## 2026-06-17 T1105A 战斗内避战策略距离边界
+
+- 修正战斗模式中“避战”策略的距离边界：只在最近敌人低于非战斗避战安全阈值时按敌人来袭方向短步长远离。
+- 敌人已经远离到安全阈值外时，NPC 保持 `behavior_mode == "combat"` 和 `combat_ready` 等待，不攻击、不继续向驿站边界或角落移动；若正在执行旧避战移动，会停止移动并清空策略移动目标。
+- 扩展 `tools/verify_combat_strategies.gd`，覆盖近距离短步长避战、移动中敌人远离后的停止等待、远距离直接等待、不攻击和战斗模式保持。
+- 文档同步覆盖 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`COMBAT_SYSTEM.md` 和 `game_design.md`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_strategies.gd`、`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 编辑器错误日志为空。
+
+## 2026-06-17 T1106 战斗开始/结束流程
+
+- `CombatSystem` 新增当前战斗运行态：敌人波次生成后写入广场 `combat_started`，记录波次、敌军构成、我方已入伍持主武器 NPC roster 和非战斗人员数量。
+- 敌人被我方击退、NPC 受伤 / 昏迷时会计入本场统计；敌军全灭或 GM 清敌后写入广场 `combat_ended`，记录受伤 / 昏迷 NPC 和各 NPC 击退敌人的数量。
+- 清敌回收补齐未接敌 `rally`：`combat` 回 `work` 并请求计划重评估，`avoid_combat` 与未接敌 `rally` 回 `work` 且不因单纯退出强制重评估；修正战前警铃但尚无敌人时不应被普通逻辑 tick 当作清敌回收。
+- `MemorySystem` 新增 `combat_started` / `combat_ended` 必填 payload 校验和确定性 summary；`debug_get_combat_snapshot()` 暴露 `active_battle`、`last_battle_start_result` 和 `last_battle_end_result`。
+- 新增 `tools/verify_combat_flow.gd` 覆盖战斗开始广播、接敌入战 / 避战、结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态；同步更新结构化事件与广场广播验证脚本的 `combat_started` payload。
+- 文档同步覆盖 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`COMBAT_SYSTEM.md`、`MEMORY_AND_INFO_SPACE.md`、`DATA_SCHEMA.md`、`GODOT_ARCHITECTURE.md` 和 `GM_PANEL.md`。
+- 验证通过：`verify_combat_flow.gd`、`verify_combat_damage.gd`、`verify_combat_alarm_rally.gd`、`verify_avoid_combat_mode.gd`、`verify_combat_strategies.gd`、`verify_combat_time_cap.gd`、`verify_combat_pacing.gd`、`verify_enemy_wave_generation.gd`、`verify_gm_panel.gd`、`verify_structured_memory_events.gd`、`verify_plaza_local_public_broadcast.gd`、`godot --headless --path . --quit-after 1`；`git diff --check` 仅提示 `docs/CURRENT_STATE.md` CRLF/LF 转换。
+- Godot MCP 复验：`addon_status` 显示 connected=true、server/addon 4.0.1 匹配；当前场景为 `res://scenes/main/Main.tscn`；编辑器错误日志为空。
+
+## 2026-06-17 T1105 不同兵种战斗策略
+
+- `CombatSystem` 新增按兵种提供的战斗策略选项和当前策略状态：近战 / 长杆可选“主动进攻 / 避战”，弓弩 / 骑射可选“最大化输出 / 保持距离射击 / 避战”，近战骑兵可选“主动进攻 / 拉开距离冲击 / 避战”。
+- 战斗策略由玩家在已入伍且有主武器 NPC 的面板中手动选择，默认使用该兵种第一项进攻 / 输出策略；更换主武器或坐骑会重置到新兵种默认策略，`current_order` 不自动决定策略。
+- 实现策略行为：远程最大化输出站桩射击，保持距离射击在射程内小幅后撤后继续攻击，近战主动进攻接近敌人，拉开距离冲击先拉开再接近，战斗内避战复用短步长避战移动但保持 `behavior_mode == "combat"`。
+- `NPCPanel` 在“装备武器”旁新增战斗策略下拉框；`NPCSystem` 保存 `states.combat_strategy` 和策略移动目标；`MemorySystem` 新增 `combat_strategy_selected` 事件并支持“战术移动”行动摘要。
+- 文档同步覆盖 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`COMBAT_SYSTEM.md`、`UI_UX.md`、`AI_NPC_SYSTEM.md`、`PROMPTS.md`、`DATA_SCHEMA.md` 和 `GM_PANEL.md`。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_strategies.gd`、`godot --headless --path . --script res://tools/verify_equipment_system.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_pacing.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-17 T1104C 移除围墙作为敌人攻击目标
+
+- 按新设计调整敌人规则 AI：敌人不再攻击围墙；无附近可行动 NPC 时按城门、仓库、主厅推进，城门被攻破后直接转向仓库。
+- `CombatSystem` 默认目标偏好移除 `wall`，并新增目标偏好规范化过滤；旧配置中的 `wall` / `front_wall` 不会进入运行时目标偏好。
+- `data/enemy_waves.json` 的 5 波敌人 `target_preference` 全部移除 `wall`。
+- `tools/verify_enemy_target_priority.gd` 扩展验证：生成敌人偏好不含围墙，城门破坏后目标为仓库，围墙 HP 不变，仓库破坏后目标才转向主厅。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_pacing.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-17 T1103D 模式切换事件降噪
+
+- 按当前设计去掉冗余模式事件：`work -> combat`、`combat -> work`、`work -> avoid_combat`、`avoid_combat -> work` 不再写入 `npc_mode_changed`，也不再通过该事件广播。
+- `NPCSystem.set_npc_behavior_mode(...)` 增加模式事件过滤，同时保留 `force_mode_event` / `suppress_mode_event` 供特殊入口覆盖。
+- 保留具体事实事件：避战开始 / 结束、攻击、受伤、警铃、集结、集结接敌、昏迷和复苏仍按原事件类型写入。
+- 更新 `tools/verify_avoid_combat_mode.gd` 与 `tools/verify_behavior_mode_state_machine.gd`，分别验证工作 / 避战、工作 / 战斗互转不写 `npc_mode_changed`，且集结与避战事实事件不受影响。
+- 验证通过：`godot --headless --path . --quit-after 1`、`godot --headless --path . --script tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script tools/verify_behavior_mode_state_machine.gd`、`godot --headless --path . --script tools/verify_combat_damage.gd`、`godot --headless --path . --script tools/verify_combat_pacing.gd`、`godot --headless --path . --script tools/verify_gm_panel.gd`。
+
+## 2026-06-17 T1104B 战斗动作秒与第一波节奏校准
+
+- 定位第一波战斗过快的根因：`x1` 下 TimeSystem 仍是现实 1 秒推进 60 游戏秒，旧攻击冷却直接消费这 60 游戏秒，导致现实 1 秒内发生大量连续攻击。
+- `CombatSystem` 新增战斗动作秒换算：`60` 游戏秒折算为 `1` 战斗动作秒后再推进我方和敌方攻击冷却；敌人移动继续按 `move_speed * game_delta_seconds / 60` 推进，保持移动与攻速基准一致。
+- 最近 AI 推进、我方攻击和敌方攻击结果补充 `combat_seconds`，便于 GM / 自动化检查实际攻速基准。
+- 第一波劫掠剑盾手调为低强度探路敌人：HP `60`、攻击 `6`、防御 `1`、攻击间隔 `2.4`；艾达持剑对第一波时应能观察到十几秒量级的互相攻击过程。
+- 新增 `tools/verify_combat_pacing.gd`，覆盖艾达持剑对第一波、单个 `x1` 基准秒攻击次数上限、敌方不爆发连击、第一波不瞬间清空和完整交战不应过快结束；同步延长 `tools/verify_enemy_target_priority.gd` 的主厅破坏推进时长。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_pacing.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --quit-after 1`；`git diff --check` 仅提示 `docs/CURRENT_STATE.md` CRLF/LF 转换。
+
+## 2026-06-17 T1104A 战斗时间倍率脱钩与敌人在场限速
+
+- 更新设计源与模块文档：战斗伤害、攻击间隔、攻击速度和战斗移动速度不再随玩家 `x2` / `x4` 时间倍率加速；玩家时间倍率主要服务工作 / 日常资源与状态结算。
+- `TimeSystem` 新增时间倍率上限请求：`request_time_scale_cap(...)` / `release_time_scale_cap(...)` / `clear_time_scale_caps()` / `get_time_scale_snapshot()`；有效倍率由玩家选择、LLM 慢速和上限请求共同取最慢 / 最低上限。
+- `CombatSystem` 在活动敌人存在时注册 `combat_enemy_presence` `x1` 上限，生成敌人时压低有效倍率，最后一个敌人移除或 GM 清敌后释放；LLM 慢速期间仍可降到 `1/60`，释放后回到敌人在场的 `x1`。
+- GM 面板新增时间倍率快照按钮与 `time_snapshot` 命令，`snapshot` 和敌人快照可观察 TimeSystem 慢速请求与上限请求。
+- 新增 `tools/verify_combat_time_cap.gd`，并扩展 `tools/verify_time_system.gd`、`tools/verify_gm_panel.gd` 覆盖上限请求、LLM 慢速叠加和清敌恢复。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --quit-after 1`；`git diff --check` 仅提示 `docs/CURRENT_STATE.md` CRLF/LF 转换。
+
+## 2026-06-17 T1104 基础攻击与伤害
+
+- `CombatSystem` 新增最小自动战斗推进：已入伍且有主武器 NPC 只在 `behavior_mode == "combat"` 中按逻辑时间攻击范围内敌人，`avoid_combat` NPC 不攻击。
+- 我方攻击力读取主武器 `damage` 并按力量修正；攻击间隔读取主武器 `attack_interval`，再按武器熟练度、疲劳、饱食和骑术/坐骑修正。
+- 新增统一防御减伤函数：敌人防御读取波次配置 `defense`，NPC 防御读取盔甲槽 `armor_value` 总和；敌方攻击 NPC 会先减伤再复用 `NPCSystem.apply_damage_to_npc(...)`。
+- 敌人 HP 清零后从活动敌人和场景节点移除；场上敌人清空后沿用 T1103A/T1103B 的战斗 / 避战退出规则。
+- `MemorySystem` 新增 `attack_made` 必填 payload 与 summary；敌方 `damage_taken` payload 补充原始攻击、防御和防御后伤害。
+- 新增 `tools/verify_combat_damage.gd`，覆盖我方伤害、敌方伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击。
+- 验证通过：`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script res://tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_damage_unconscious.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-17 T0017 Godot MCP 4.0.1 版本对齐
+
+- 定位当前问题为 Godot MCP 可连接但版本不一致：Codex MCP `addon_status` 初始返回 `server_version=2.17.0`、`addon_version=3.7.0`、`versions_match=false`。
+- 按“优先升级而非回退”处理：全局安装 `@satelliteoflove/godot-mcp@4.0.1`，并将项目 `addons/godot_mcp` 升级到 `4.0.1`。
+- 处理 4.0.1 安装器在当前中文项目路径下只删除旧 addon、未正确落回新 addon 的问题：从全局 npm 包的 `addon` 目录机械恢复到项目 `addons/godot_mcp`。
+- `MCPGameBridge` 补回本项目类缓存兼容策略：显式预加载 `mcp_runtime_state_sampler.gd`、`key_names.gd`、`joy_names.gd`、`mcp_exec_guard.gd`，避免 `.godot/global_script_class_cache.cfg` 未登记 helper class 时 headless 启动解析失败。
+- 更新 `%USERPROFILE%\.codex\scripts\godot-mcp-broker.mjs`，兼容 4.0.1 移除旧 resources 入口、新版 `godot_*` 工具名和新版 tool result 内容格式；旧 Codex 工具壳仍可转发到新版 registry。
+- 验证通过：`godot_project.addon_status` 返回 `connected=true`、server/addon 均为 `4.0.1`、`versions_match=true`；`godot_editor.get_state` 正常返回 `res://scenes/main/Main.tscn`；`tools/check_godot_mcp.ps1` 返回 `Godot MCP connected`；`godot --headless --path . --quit-after 1` 无报错。
+
+## 2026-06-17 T1103C 非战斗人员避战判定与四散移动
+
+- `CombatSystem` 将可战斗判定统一为“已入伍且有主武器”：无主武器的已入伍 NPC 不集结、不接战，接敌时与未入伍 NPC 一样进入 `avoid_combat`；昏迷复苏和 GM 避战入口也使用同一判定。
+- `NPCSystem` 的敌人攻击分流同步改为主武器判定；睡觉中的无武器入伍 NPC 只有被敌人攻击才进入避战，单纯接近不触发。
+- 避战目标由固定安全点改为按最近敌人方位生成短步长远离目标，并按 NPC / 敌人组合加入稳定散射角，形成逐步四散逃跑效果；目标保持在驿站范围内。
+- 避战中应征入伍但仍无主武器时继续避战；装备主武器且场上仍有敌人时才从避战切入 `combat`。
+- `MemorySystem` 避战行动摘要与 `avoidance_started` summary 改为“远离敌人 / 避战方向”语义，不再暗示固定避战点。
+- 更新 `tools/verify_avoid_combat_mode.gd`，覆盖无武器入伍 NPC 接敌避战、睡觉受击例外、短步长四散、应征后继续避战和装备主武器后入战。
+- 验证通过：`godot --headless --path . --quit-after 1`、`godot --headless --path . --script tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script tools/verify_behavior_mode_state_machine.gd`、`godot --headless --path . --script tools/verify_combat_alarm_rally.gd`、`godot --headless --path . --script tools/verify_gm_panel.gd`、`git diff --check`（仅提示 `docs/CURRENT_STATE.md` 未来会从 CRLF 转 LF）。
+
 ## 2026-06-12 T1103B 未入伍 NPC 避战模式
 
 - `CombatSystem` 接入未入伍 NPC 避战移动：工作模式中敌人进入范围会切到 `avoid_combat`，睡觉中的未入伍 NPC 只在被敌人攻击时进入避战。
@@ -44,7 +135,7 @@
 
 ## 2026-06-12 T1102 敌人目标优先级
 
-- `CombatSystem` 接入敌人目标选择、逻辑时间推进、移动和敌方单向攻击；附近可行动 NPC 会优先成为目标，否则按城门/围墙、仓库、主厅选择仍有 HP 的建筑。
+- `CombatSystem` 接入敌人目标选择、逻辑时间推进、移动和敌方单向攻击；附近可行动 NPC 会优先成为目标，否则按城门、仓库、主厅选择仍有 HP 的建筑。2026-06-17 的 T1104C 已移除围墙作为敌人攻击目标。
 - 敌人攻击 NPC 时复用 `NPCSystem.apply_damage_to_npc(...)`，NPC HP 清零仍进入昏迷；敌人攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)`，扣除建筑 HP、刷新建筑标签并写入 `building_damaged` 结构化事件。
 - `GameState` 新增 `game_over`、`game_result`、`failure_reason` 和 `set_game_over(...)`，主厅 HP 清零时写入 `failure/main_hall_destroyed` 失败占位状态。
 - `NPCSystem` 新增只读 `get_npc_world_position(...)`，供 CombatSystem 判断附近可行动 NPC；`CombatSystem.debug_get_combat_snapshot()` 现在包含敌人目标、当前行动和最近 AI 推进结果。
@@ -252,7 +343,7 @@
 - `data/action_defs.json` 的 `work_stable` 明确使用 `stat="strength"`，消耗 1 份粮食，产出 `horse_readiness` 马匹整备派生库存。
 - 马厩工作沿用 T0801 统一效率公式：养马熟练度、力量和马厩建筑等级会缩短单位照料周期；`output_scaling` 会按养马、力量和马厩等级提高实际马匹整备产出。
 - 新增 `tools/verify_stable_horse_care.gd`，验证马厩配置、养马/力量/建筑等级效率、粮食消耗、马匹整备库存产出、完成事件 payload 和缺粮失败。
-- 当前不实现坐骑装备槽、NPC 胯下骑乘表现、战斗移动速度加成、进入战斗时骑兵策略切换或卸下回马厩；这些已补到 T0901/T0902/T1103/T1105 的后续安排。
+- 当前任务当时不实现坐骑装备槽、NPC 胯下骑乘表现、战斗移动速度加成、骑乘战术或卸下回马厩；坐骑槽、骑乘表现和战斗策略已分别由 T0901/T0902、T1103、T1105 接入，完整移动速度加成和卸下回马厩仍是后续任务。
 - 验证通过：`verify_stable_horse_care.gd`。
 
 ## 2026-06-09 T0805 工械坊弓弩与防御器械
@@ -987,7 +1078,7 @@ T0604 踩坑归因：
 完成：
 - `TimeSystem` 增加 LLM 等待减速请求接口：`request_time_slowdown(...)`、`release_time_slowdown(...)`、`clear_time_slowdowns()`。
 - 新增有效逻辑倍率读取接口：`get_effective_time_scale()`、`get_numeric_delta_multiplier()`、`get_game_delta_seconds(...)`。
-- `EventBus` 新增 `time_scale_changed(...)` 与 `logical_time_tick(...)`，用于后续资源、计划、战斗数值按逻辑时间倍率结算。
+- `EventBus` 新增 `time_scale_changed(...)` 与 `logical_time_tick(...)`，当时用于后续资源、计划和战斗数值按逻辑时间倍率结算；2026-06-17 的 T1104A 已修正该设计，战斗数值不再读取玩家 `x2` / `x4` 作为额外倍率，只受暂停、敌人在场 `x1` 上限和 LLM 慢速影响全局推进节奏。
 - 默认 LLM 等待倍率为 `1/60`，即默认速度下现实 1 秒 = 游戏 1 秒；该机制不修改 `Engine.time_scale`，不改变 NPC 移动或动画速度。
 - 更新 `game_design.md`、架构、AI、经济、战斗、Prompt、API 预算和任务路线图中的相关说明。
 

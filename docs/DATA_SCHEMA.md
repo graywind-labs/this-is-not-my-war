@@ -154,7 +154,22 @@ T1001 起，运行时 `plan` 可保存规则版每日计划。T1003 起，同一
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
-T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B 起，未入伍 NPC 避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前驿站内安全点目标。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
+T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B/T1103C 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前按敌方方位生成的短步长避战方向。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
+
+`states.combat_strategy` 示例：
+
+```json
+{
+  "id": "keep_distance",
+  "label": "保持距离射击",
+  "unit_type": "archer",
+  "unit_type_label": "弓箭兵",
+  "selected_by": "player",
+  "selected_reason": "manual"
+}
+```
+
+可用策略由当前装备 / 兵种决定；当前策略由玩家在 NPC 面板手动选择，默认使用该兵种第一项进攻 / 输出策略。`current_order` 不自动改写该字段。
 
 `states.behavior_mode` 允许值至少为 `work`、`rally`、`combat`、`avoid_combat`、`unconscious`、`escaped`。T1103 现有 `combat_mode` 仍作为兼容字段服务旧集结 / 坐骑视觉；后续应继续以 `behavior_mode` 表达工作 / 集结 / 战斗 / 避战同级关系。战时斗志激昂 buff 可保存为运行时状态，例如：
 
@@ -289,7 +304,7 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 }
 ```
 
-T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等可装备主武器。`source_resource_id` 当前统一指向派生库存 `weapons`；装备系统消耗库存后把完整定义副本写入 NPC `equipment.main_weapon`。`range`、`damage`、`attack_interval` 当前只作为后续战斗系统可读取的数据，不在装备 UI 中结算伤害。
+T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等可装备主武器。`source_resource_id` 当前统一指向派生库存 `weapons`；装备系统消耗库存后把完整定义副本写入 NPC `equipment.main_weapon`。T1104 起，CombatSystem 已读取 `range`、`damage` 和 `attack_interval`：`damage` 作为基础攻击力输入并受 NPC 力量修正，`range` 决定可攻击距离，`attack_interval` 作为基础攻击间隔并受武器熟练度、疲劳、饱食和坐骑 / 骑术修正。T1104B 起，`attack_interval` 的单位是战斗动作秒，CombatSystem 会把 `60` 游戏秒折算为 `1` 战斗动作秒后推进攻击冷却。T1104A 起，玩家时间倍率不参与伤害或攻击速度修正。装备 UI 仍不自行结算伤害。
 
 ## Armor Definition
 
@@ -305,7 +320,7 @@ T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等�
 }
 ```
 
-T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`greaves` 四类盔甲槽。装备时消耗 1 个 `armor` 派生库存；`armor_value` 和 `weight` 当前只作为后续战斗/疲劳/负重系统的数据，不由 UI 直接结算。
+T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`greaves` 四类盔甲槽。装备时消耗 1 个 `armor` 派生库存；T1104 起，CombatSystem 已读取四个盔甲槽的 `armor_value` 总和作为 NPC 防御，敌人攻击 NPC 时会先按防御减伤再扣 HP。`weight` 仍只是后续疲劳 / 负重系统的数据，不由 UI 直接结算。
 
 ## Mount Definition
 
@@ -321,7 +336,7 @@ T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`grea
 }
 ```
 
-T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` 映射到 NPC `equipment.mount` 槽。日常工作模式不显示骑乘；战斗/集结表现、速度加成和骑兵策略切换由后续战斗任务接入。
+T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` 映射到 NPC `equipment.mount` 槽。日常工作模式不显示骑乘；T1103 后集结 / 战斗模式会显示低模坐骑；T1105 后坐骑参与兵种判定并决定可选战斗策略，例如近战骑兵可选“主动进攻 / 拉开距离冲击 / 避战”，骑射单位可选“最大化输出 / 保持距离射击 / 避战”。`speed_bonus` 仍只是后续更完整骑乘移动数值的输入，不由 UI 直接结算。
 
 ## Enemy Wave
 
@@ -348,21 +363,21 @@ T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` �
       "count": 3,
       "unit_type": "melee_infantry",
       "weapon_type": "sword_shield",
-      "hp": 55,
-      "max_hp": 55,
-      "attack_power": 7,
+      "hp": 60,
+      "max_hp": 60,
+      "attack_power": 6,
       "defense": 1,
-      "move_speed": 2.2,
-      "attack_range": 1.6,
-      "attack_interval": 1.7,
-      "target_preference": ["front_gate", "wall", "main_hall"]
+      "move_speed": 3.0,
+      "attack_range": 1.5,
+      "attack_interval": 2.4,
+      "target_preference": ["front_gate", "warehouse", "main_hall"]
     }
   ],
   "notes": "第一波用于验证敌人生成闭环。"
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`move_speed`、`attack_range`、`attack_interval` 和 `target_preference`。`unit_type` 复用 NPC 兵种分类，例如 `melee_infantry`、`polearm_infantry`、`archer`、`crossbowman`、`cavalry`、`mounted_ranged`；骑乘敌人可额外提供 `mount_type`。T1102 起，`move_speed`、`attack_range`、`attack_interval`、`attack_power` 和 `target_preference` 会驱动敌人目标优先级、移动和敌方单向攻击；这些字段仍不由 LLM 改写。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`move_speed`、`attack_range`、`attack_interval` 和 `target_preference`。`unit_type` 复用 NPC 兵种分类，例如 `melee_infantry`、`polearm_infantry`、`archer`、`crossbowman`、`cavalry`、`mounted_ranged`；骑乘敌人可额外提供 `mount_type`。T1102 起，`move_speed`、`attack_range`、`attack_interval`、`attack_power` 和 `target_preference` 会驱动敌人目标优先级、移动和敌方攻击；T1104 起，`defense` 会参与敌人受到我方攻击时的实际 HP 伤害计算，`hp` / `max_hp` 会随我方攻击扣除并在清零后移除敌人。T1104B 起，敌人 `attack_interval` 使用战斗动作秒，`move_speed` 也按 `game_delta_seconds / 60` 折算为战斗动作秒级位移。T1104C 起，`target_preference` 不应包含 `wall`，CombatSystem 也会过滤旧配置中的 `wall` / `front_wall`；敌人默认按城门、仓库、主厅推进，附近可行动 NPC 仍优先。T1104A 起，敌人 `move_speed` 和 `attack_interval` 不直接乘玩家 `x2` / `x4` 时间倍率；活动敌人存在期间由 TimeSystem `x1` 上限控制全局推进速度。这些字段仍不由 LLM 改写。
 
 ## Event Record
 
@@ -490,6 +505,14 @@ T1002 `plan_revised` 事件 payload：
 - 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 
+T1104 起，`attack_made` 表示我方 NPC 对敌人完成了一次程序结算攻击。必备 payload 字段包括 `attacker_npc_id`、`target_type`、`target_enemy_id`、`damage`、`hp_before` 和 `hp_after`；运行时还会记录 `weapon_id`、`weapon_name`、`required_skill`、`weapon_skill`、`strength`、`base_damage`、`strength_multiplier`、`raw_attack_power`、`attack_speed_multiplier`、`target_defense`、`max_hp` 和 `defeated` 等调试字段。该事件只记录已经由 CombatSystem 扣除敌人 HP 的事实，不让 LLM 决定伤害。
+
+T1104 起，敌人攻击 NPC 写入的 `damage_taken` payload 可额外包含 `raw_attack_power`、`target_defense` 和 `damage_after_defense`，用于说明敌人配置攻击力、NPC 盔甲防御和实际扣除 HP 的关系。玩家惩戒攻击与其他 NPC 伤害仍可复用 `damage_taken`，不要求这些额外字段。
+
+T1106 起，`combat_started` 表示敌人波次已经生成并进入当前战斗流程。必备 payload 字段包括 `wave_number`、`enemy_count`、`enemy_roster`、`friendly_combatant_count` 和 `friendly_roster`；运行时还会记录 `wave_id`、`reason`、`noncombatant_count` 等调试字段。`enemy_roster` 以数组记录敌人 ID、名称、兵种 / 单位类型、HP、武器和数量来源；`friendly_roster` 以数组记录已入伍且持主武器 NPC 的 ID、姓名、兵种和主武器。该事件固定写入广场 `local_public`，用于表达敌袭开始和敌我态势，不负责权威伤害、资源或胜负结算。
+
+T1106 起，`combat_ended` 表示当前战斗运行态已因敌军全灭、撤退或 GM 清敌结束。必备 payload 字段包括 `wave_number`、`enemy_count`、`injured_npcs`、`unconscious_npcs`、`defeated_by_npc` 和 `reason`；运行时还会记录 `wave_id`、`defeated_enemy_count`、`remaining_enemy_count` 和 `started_event_id`。`injured_npcs` / `unconscious_npcs` 统计本场所有 NPC，不限于已入伍人员；`defeated_by_npc` 按 NPC 记录击退数量和敌人列表。该事件同样固定写入广场 `local_public`，只表达本场已发生的程序事实。
+
 T0603 对话事件 payload 建议：
 
 ```json
@@ -556,7 +579,7 @@ T0501 已接入的伤害与昏迷事件 payload：
 
 `unconscious_started` 使用同样的 `damage`、`hp_before`、`hp_after`、`damage_source` 字段，并以 `local_public` 写入 NPC 当前信息地点。
 
-`building_damaged` 由 `BuildingSystem.apply_damage_to_building(...)` 写入，当前用于敌人单向攻击建筑。payload 包含 `building_id`、`building_name`、`damage`、`hp_before`、`hp_after` 和 `damage_source`；事件地点固定为 `plaza`，可见性默认为 `local_public`，用于把城门、围墙、仓库或主厅受损广播给广场当前在场 NPC。主厅 HP 清零后的失败状态写入 `GameState`，不由事件系统直接判定胜负。
+`building_damaged` 由 `BuildingSystem.apply_damage_to_building(...)` 写入，当前用于敌人攻击建筑。payload 包含 `building_id`、`building_name`、`damage`、`hp_before`、`hp_after` 和 `damage_source`；事件地点固定为 `plaza`，可见性默认为 `local_public`，用于把城门、仓库或主厅受损广播给广场当前在场 NPC。围墙仍可通过其他系统受损、修复或升级，但 T1104C 起不是敌人规则攻击目标。主厅 HP 清零后的失败状态写入 `GameState`，不由事件系统直接判定胜负。
 
 T1103 已接入的警铃与集结事件 payload：
 
@@ -596,7 +619,9 @@ T1103 已接入的警铃与集结事件 payload：
 }
 ```
 
-T1103A 已实现的 `npc_mode_changed` 使用 `npc_id`、`from_mode`、`from_mode_label`、`to_mode`、`to_mode_label`、`reason`。T1103B 已实现的 `avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录未入伍 NPC 开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff。`battle_psychology_result.trigger` 可为 `wartime_dialogue`、`low_hp_self_check` 或 `escape_intervention`。低血量自身心理判定没有守备官本轮文本，需通过 `battlefield_context_summary` 保留简化战局依据。
+T1103A 已实现的 `npc_mode_changed` 使用 `npc_id`、`from_mode`、`from_mode_label`、`to_mode`、`to_mode_label`、`reason`。T1103D 起，`npc_mode_changed` 不再覆盖 `work <-> combat` 与 `work <-> avoid_combat` 的互转，这些互转也不通过该事件广播；战斗和避战信息由更具体的攻击、伤害、避战开始 / 结束等事件表达。T1103B/T1103C 已实现的 `avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录非战斗人员开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff。`battle_psychology_result.trigger` 可为 `wartime_dialogue`、`low_hp_self_check` 或 `escape_intervention`。低血量自身心理判定没有守备官本轮文本，需通过 `battlefield_context_summary` 保留简化战局依据。
+
+T1105 已实现的 `combat_strategy_selected` 使用 `npc_id`、`strategy_id`、`strategy_label`、`unit_type` 和 `unit_type_label`，记录守备官通过 NPC 面板或装备变更默认化流程为某名入伍持武器 NPC 设置当前战斗策略。该事件只表达策略选择事实，不直接结算移动、攻击、HP 或资源。
 
 T0502 已接入的复苏事件 payload：
 

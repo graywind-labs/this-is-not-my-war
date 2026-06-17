@@ -21,6 +21,8 @@ func _init() -> void:
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
+	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var event_bus := root.get_node_or_null("EventBus")
@@ -28,6 +30,8 @@ func _init() -> void:
 		combat_system == null
 		or npc_system == null
 		or memory_system == null
+		or equipment_system == null
+		or resource_system == null
 		or gm_panel == null
 		or daily_plan_system == null
 		or event_bus == null
@@ -56,13 +60,12 @@ func _init() -> void:
 		push_error("Enemy spawn failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
-	var enemy_id := str(combat_system.get_active_enemy_ids()[0])
-	var enemy: Dictionary = combat_system.get_enemy(enemy_id)
-	var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
-	var contact_position := enemy_position + Vector3(0.0, 0.0, -3.0)
+	var enemy_id := _place_first_enemy(combat_system, Vector3(0.0, 0.0, 4.0))
+	var enemy_position := Vector3(0.0, 0.0, 4.0)
+	var contact_position := Vector3(0.0, 0.0, 1.5)
 	cook_node.global_position = contact_position
 
-	combat_system.debug_step_enemy_ai(0.1)
+	combat_system.debug_step_enemy_ai(0.0)
 	await process_frame
 	if _mode(npc_system, "cook_01") != "avoid_combat":
 		push_error("Unrecruited working NPC should enter avoid_combat on enemy proximity")
@@ -83,16 +86,21 @@ func _init() -> void:
 		quit(1)
 		return
 	var target_position := _dict_to_vector3(cook_avoidance.get("target_position", {}))
+	var travel_distance := target_position.distance_to(contact_position)
 	if not _inside_station_avoidance_bounds(target_position):
 		push_error("Avoidance target should stay inside the station bounds: %s" % str(target_position))
+		quit(1)
+		return
+	if travel_distance < 0.8 or travel_distance > 4.1:
+		push_error("Avoidance should move in a short step instead of jumping to a corner: %s" % str(travel_distance))
 		quit(1)
 		return
 	if target_position.distance_to(enemy_position) <= contact_position.distance_to(enemy_position):
 		push_error("Avoidance target should be farther from the enemy than the contact position")
 		quit(1)
 		return
-	if not _npc_has_event(memory_system, "cook_01", "npc_mode_changed"):
-		push_error("Avoidance mode switch should write npc_mode_changed")
+	if _npc_has_mode_event(memory_system, "cook_01", "work", "avoid_combat"):
+		push_error("Work-to-avoid_combat should not write npc_mode_changed")
 		quit(1)
 		return
 	if not _npc_has_event(memory_system, "cook_01", "avoidance_started"):
@@ -101,10 +109,22 @@ func _init() -> void:
 		return
 	print("[T1103B] proximity avoidance checked")
 
+	var engineer_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Engineer01") as Node3D
+	if engineer_node == null:
+		push_error("Engineer node missing")
+		quit(1)
+		return
+	engineer_node.global_position = Vector3(0.6, 0.0, 1.5)
 	gm_panel._execute_command("avoid_npc engineer_01")
 	await process_frame
-	if _find_avoidance(combat_system.get_active_avoidances(), "engineer_01").is_empty():
+	var engineer_avoidance := _find_avoidance(combat_system.get_active_avoidances(), "engineer_01")
+	if engineer_avoidance.is_empty():
 		push_error("GM avoid_npc command should expose avoidance trigger and target snapshot")
+		quit(1)
+		return
+	var engineer_target := _dict_to_vector3(engineer_avoidance.get("target_position", {}))
+	if engineer_target.distance_to(target_position) <= 0.35:
+		push_error("Avoidance targets should scatter instead of sending all NPCs to the same point")
 		quit(1)
 		return
 
@@ -123,28 +143,70 @@ func _init() -> void:
 		push_error("Avoidance end should write avoidance_ended")
 		quit(1)
 		return
+	if _npc_has_mode_event(memory_system, "cook_01", "avoid_combat", "work"):
+		push_error("Avoid_combat-to-work should not write npc_mode_changed")
+		quit(1)
+		return
 	print("[T1103B] avoidance clear checked")
+
+	spawn_result = combat_system.debug_spawn_wave(1, true)
+	if not bool(spawn_result.get("ok", false)):
+		push_error("Enemy spawn for unarmed recruited avoidance failed: %s" % JSON.stringify(spawn_result))
+		quit(1)
+		return
+	enemy_id = _place_first_enemy(combat_system, Vector3(2.0, 0.0, 3.5))
+	enemy_position = Vector3(2.0, 0.0, 3.5)
+	var stableman_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Stableman01") as Node3D
+	if stableman_node == null:
+		push_error("Stableman node missing")
+		quit(1)
+		return
+	npc_system.set_npc_recruited("stableman_01", true)
+	npc_system.set_npc_equipment_slot("stableman_01", "main_weapon", {})
+	stableman_node.global_position = enemy_position + Vector3(0.0, 0.0, -2.5)
+	combat_system.debug_step_enemy_ai(0.0)
+	await process_frame
+	if _mode(npc_system, "stableman_01") != "avoid_combat":
+		push_error("Recruited NPC without main weapon should enter avoid_combat on enemy proximity")
+		quit(1)
+		return
+	if str(npc_system.get_npc_state("stableman_01").get("combat_mode", "")) != "":
+		push_error("Unarmed recruited avoiding NPC should not be marked as combat personnel")
+		quit(1)
+		return
+	print("[T1103C] unarmed recruited proximity avoidance checked")
 
 	spawn_result = combat_system.debug_spawn_wave(1, true)
 	if not bool(spawn_result.get("ok", false)):
 		push_error("Enemy spawn for sleep test failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
-	enemy_id = str(combat_system.get_active_enemy_ids()[0])
-	enemy = combat_system.get_enemy(enemy_id)
-	enemy_position = enemy.get("position", Vector3.ZERO)
+	enemy_id = _place_first_enemy(combat_system, Vector3(-2.0, 0.0, 3.5))
+	enemy_position = Vector3(-2.0, 0.0, 3.5)
 	var doctor_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Doctor01") as Node3D
 	var gardener_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Gardener01") as Node3D
 	if doctor_node == null or gardener_node == null:
 		push_error("Doctor or gardener node missing")
 		quit(1)
 		return
+	npc_system.set_npc_recruited("doctor_01", true)
+	npc_system.set_npc_equipment_slot("doctor_01", "main_weapon", {})
 	npc_system.update_npc_state("doctor_01", {"current_action": "sleep_in_dormitory"})
 	doctor_node.global_position = enemy_position + Vector3(0.0, 0.0, -3.0)
-	combat_system.debug_step_enemy_ai(0.1)
+	combat_system.debug_step_enemy_ai(0.0)
 	await process_frame
 	if _mode(npc_system, "doctor_01") == "avoid_combat":
-		push_error("Sleeping unrecruited NPC should not avoid from proximity alone")
+		push_error("Sleeping unarmed recruited NPC should not avoid from proximity alone")
+		quit(1)
+		return
+	npc_system.apply_damage_to_npc("doctor_01", 1, enemy_id, "local_public", {
+		"enemy_attack": true,
+		"request_plan_reevaluation": false
+	})
+	combat_system.debug_step_enemy_ai(0.0)
+	await process_frame
+	if _mode(npc_system, "doctor_01") != "avoid_combat":
+		push_error("Sleeping unarmed recruited NPC should enter avoid_combat when attacked")
 		quit(1)
 		return
 	npc_system.update_npc_state("gardener_01", {"current_action": "sleep_in_dormitory"})
@@ -171,16 +233,15 @@ func _init() -> void:
 		push_error("Enemy spawn for recruitment routing failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
-	enemy_id = str(combat_system.get_active_enemy_ids()[0])
-	enemy = combat_system.get_enemy(enemy_id)
-	enemy_position = enemy.get("position", Vector3.ZERO)
+	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 3.5))
+	enemy_position = Vector3(0.0, 0.0, 3.5)
 	var priest_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Priest01") as Node3D
 	if priest_node == null:
 		push_error("Priest node missing")
 		quit(1)
 		return
-	priest_node.global_position = enemy_position + Vector3(0.0, 0.0, -3.0)
-	combat_system.debug_step_enemy_ai(0.1)
+	priest_node.global_position = enemy_position + Vector3(0.0, 0.0, -2.8)
+	combat_system.debug_step_enemy_ai(0.0)
 	await process_frame
 	if _mode(npc_system, "priest_01") != "avoid_combat":
 		push_error("Priest should be avoiding before recruitment routing test")
@@ -188,15 +249,30 @@ func _init() -> void:
 		return
 	npc_system.set_npc_recruited("priest_01", true)
 	await process_frame
+	if _mode(npc_system, "priest_01") != "avoid_combat":
+		push_error("NPC recruited during avoidance should keep avoiding until assigned a main weapon")
+		quit(1)
+		return
+	if _find_avoidance(combat_system.get_active_avoidances(), "priest_01").is_empty():
+		push_error("Avoidance snapshot should remain for recruited NPC without a main weapon")
+		quit(1)
+		return
+	resource_system.add_resource("weapons", 1)
+	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon("priest_01", "sword_shield", "private")
+	if not bool(equip_result.get("ok", false)):
+		push_error("Weapon equip during avoidance failed: %s" % JSON.stringify(equip_result))
+		quit(1)
+		return
+	await process_frame
 	if _mode(npc_system, "priest_01") != "combat":
-		push_error("NPC recruited during avoidance should enter combat while enemies remain")
+		push_error("NPC armed during avoidance should enter combat while enemies remain")
 		quit(1)
 		return
 	if not _find_avoidance(combat_system.get_active_avoidances(), "priest_01").is_empty():
-		push_error("Avoidance snapshot should be cleared after recruited NPC enters combat")
+		push_error("Avoidance snapshot should be cleared after armed NPC enters combat")
 		quit(1)
 		return
-	print("[T1103B] recruitment-to-combat routing checked")
+	print("[T1103C] recruitment and arming routing checked")
 
 	combat_system.debug_clear_enemies()
 	npc_system.set_npc_behavior_mode("blacksmith_01", "avoid_combat", "verify_no_enemy_recruit", {
@@ -227,6 +303,21 @@ func _find_avoidance(avoidances: Array, npc_id: String) -> Dictionary:
 	return {}
 
 
+func _place_first_enemy(combat_system: Node, position: Vector3) -> String:
+	var enemy_ids: Array = combat_system.get_active_enemy_ids()
+	if enemy_ids.is_empty():
+		return ""
+	var enemy_id := str(enemy_ids[0])
+	var active_enemies: Dictionary = combat_system.get("_active_enemies")
+	var enemy: Dictionary = active_enemies.get(enemy_id, {})
+	enemy["position"] = position
+	active_enemies[enemy_id] = enemy
+	combat_system.set("_active_enemies", active_enemies)
+	if combat_system.has_method("_refresh_enemy_node"):
+		combat_system._refresh_enemy_node(enemy_id)
+	return enemy_id
+
+
 func _dict_to_vector3(raw_value: Variant) -> Vector3:
 	if raw_value is Vector3:
 		return raw_value
@@ -246,5 +337,16 @@ func _npc_has_event(memory_system: Node, npc_id: String, event_type: String) -> 
 	for raw_event in memory_system.get_npc_daily_events(npc_id):
 		var event: Dictionary = raw_event
 		if str(event.get("type", "")) == event_type:
+			return true
+	return false
+
+
+func _npc_has_mode_event(memory_system: Node, npc_id: String, from_mode: String, to_mode: String) -> bool:
+	for raw_event in memory_system.get_npc_daily_events(npc_id):
+		var event: Dictionary = raw_event
+		if str(event.get("type", "")) != "npc_mode_changed":
+			continue
+		var payload: Dictionary = event.get("payload", {})
+		if str(payload.get("from_mode", "")) == from_mode and str(payload.get("to_mode", "")) == to_mode:
 			return true
 	return false

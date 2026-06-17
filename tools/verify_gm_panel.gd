@@ -29,6 +29,7 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
 		gm_panel == null
@@ -44,6 +45,7 @@ func _init() -> void:
 		or daily_plan_system == null
 		or daily_reflection_system == null
 		or combat_system == null
+		or time_system == null
 		or game_state == null
 	):
 		push_error("GM verification required nodes not found")
@@ -235,6 +237,7 @@ func _init() -> void:
 		return
 
 	gm_panel._execute_command("set_time 2 9 10 11")
+	gm_panel._execute_command("time_snapshot")
 	if (
 		int(game_state.current_day) != 2
 		or int(game_state.current_hour) != 9
@@ -348,18 +351,29 @@ func _init() -> void:
 		return
 	gm_panel._execute_command("unit_type veteran_deputy_01")
 	gm_panel._execute_command("clear_enemies")
+	time_system.set_time_scale(4.0)
 	gm_panel._execute_command("spawn_wave 1")
 	if combat_system.get_active_enemy_count() <= 0:
 		push_error("GM spawn_wave command should spawn enemies")
 		quit(1)
 		return
+	if not time_system.has_time_scale_cap("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - 1.0) > 0.001:
+		push_error("GM-spawned enemies should cap TimeSystem effective scale to x1")
+		quit(1)
+		return
 	gm_panel._execute_command("enemies")
+	gm_panel._execute_command("time_snapshot")
 	gm_panel._execute_command("step_enemies 1")
 	if (combat_system.debug_get_combat_snapshot().get("enemy_targets", []) as Array).is_empty():
 		push_error("GM step_enemies command should expose enemy target state")
 		quit(1)
 		return
 	gm_panel._execute_command("clear_enemies")
+	if time_system.has_time_scale_cap("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
+		push_error("GM clear_enemies should release combat time cap and restore player speed")
+		quit(1)
+		return
+	time_system.set_time_scale(1.0)
 
 	if not npc_system.debug_enter_location_immediately("veteran_deputy_01", "training_ground"):
 		push_error("Failed to place veteran at training ground for GM training test")

@@ -50,6 +50,8 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 资源数值
 - 逻辑时间流逝与倍率
 - LLM 等待期间的 TimeSystem 慢速请求注册/释放
+- 敌人在场期间的 TimeSystem `x1` 有效倍率上限注册/释放
+- 战斗动作秒换算：在战斗系统内把 TimeSystem 游戏秒折算为攻速 / 位移表现基准
 - 工作产出
 - 战斗执行
 - NPC 行为模式切换：工作、集结、战斗、避战、昏迷、逃离
@@ -213,7 +215,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`BattleJudgementRequest`
 输出 Schema：`BattleJudgementResponse`
 
-后续只覆盖战斗模式中 HP 首次低于 30% 的已入伍 NPC 自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
+后续只覆盖战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC 自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
 
 ### 首次睡眠总结
 
@@ -265,6 +267,10 @@ Godot 执行合法结果
 ## 时间倍率边界
 
 Godot 不使用后端结果直接决定时间倍率。后端只返回业务 JSON；是否申请慢速、慢速 request id、超时释放和恢复玩家速度，由 Godot 的 LLMBridge / DialogSystem / 计划系统负责。
+
+T1104A 起，TimeSystem 还支持“有效倍率上限”请求。CombatSystem 只在活动敌人存在时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；所有敌人消失后释放。该上限与 LLM 慢速取更慢者：玩家选择 `x4` 且有敌人时实际为 `x1`，战斗中若有 LLM 调用则实际可降到 `1/60`，调用结束后回到敌人在场的 `x1`。后端和 LLM 仍不直接决定时间倍率。
+
+T1104B 起，CombatSystem 不把 `logical_time_tick` 传入的原始游戏秒直接当作攻击冷却秒。战斗攻击冷却和敌人位移表现使用 `game_delta_seconds / 60` 得到的战斗动作秒，因此默认 `x1` 下现实 1 秒推进游戏内 1 分钟，也只推进约 1 秒战斗动作。工作、日常状态、治疗、建筑修复 / 升级等经营结算仍直接使用 TimeSystem 游戏秒。
 
 ## Godot LLMBridge 当前实现
 

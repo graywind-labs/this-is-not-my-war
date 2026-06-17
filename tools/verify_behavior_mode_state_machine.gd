@@ -108,6 +108,10 @@ func _init() -> void:
 		push_error("Recruited NPC should enter combat mode on contact")
 		quit(1)
 		return
+	if _npc_has_mode_event(memory_system, "stableman_01", "work", "combat"):
+		push_error("Work-to-combat should not write npc_mode_changed")
+		quit(1)
+		return
 	print("[T1103A] contact combat checked")
 
 	var reevaluations_before_clear := _reevaluation_signal_count
@@ -119,6 +123,10 @@ func _init() -> void:
 		return
 	if _reevaluation_signal_count <= reevaluations_before_clear:
 		push_error("Combat exit should request plan reevaluation")
+		quit(1)
+		return
+	if _npc_has_mode_event(memory_system, "stableman_01", "combat", "work"):
+		push_error("Combat-to-work should not write npc_mode_changed")
 		quit(1)
 		return
 	print("[T1103A] enemy clear checked")

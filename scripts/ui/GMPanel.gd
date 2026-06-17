@@ -214,6 +214,7 @@ func _add_time_section(parent: VBoxContainer) -> void:
 		_run_slowdown("gm_manual", -1.0, "gm_manual")
 	)
 	_add_button(row, "清减速", _run_clear_slowdowns)
+	_add_button(row, "快照", _show_time_snapshot)
 
 
 func _add_building_section(parent: VBoxContainer) -> void:
@@ -702,9 +703,12 @@ func _execute_command(command: String) -> void:
 		"refresh":
 			_refresh_options()
 		"snapshot":
+			_show_time_snapshot()
 			_show_resource_snapshot()
 			_show_combat_snapshot()
 			_show_events()
+		"time_snapshot":
+			_show_time_snapshot()
 		"add_resource":
 			if _require_args(parts, 3, "add_resource <resource_id> <amount>"):
 				_run_add_resource(str(parts[1]), int(parts[2]))
@@ -937,6 +941,17 @@ func _run_spend_resource(resource_id: String, amount: int) -> void:
 		return
 	var ok: bool = resource_system.debug_spend_resources({resource_id: amount})
 	_log("资源扣除 %s %d：%s，当前=%d" % [resource_id, amount, _ok_text(ok), resource_system.get_resource(resource_id)])
+
+
+func _show_time_snapshot() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system == null:
+		_log("TimeSystem 不可用。")
+		return
+	if time_system.has_method("get_time_scale_snapshot"):
+		_log("时间倍率快照：%s" % _compact(time_system.get_time_scale_snapshot()))
+	else:
+		_log("时间倍率：玩家=%s，有效=%s。" % [time_system.get_speed_label(), time_system.get_effective_speed_label()])
 
 
 func _show_resource_snapshot() -> void:
@@ -1654,7 +1669,7 @@ func _help_text() -> String:
 		"常用命令：",
 		"refresh | snapshot | events | plaza_events",
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
-		"set_time <day> <hour> <minute> <second> | advance_hour",
+		"set_time <day> <hour> <minute> <second> | advance_hour | time_snapshot",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
 		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection",
 		"select_npc <npc_id> | select_building <building_id>",

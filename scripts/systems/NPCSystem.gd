@@ -198,6 +198,10 @@ func get_npc_behavior_mode_snapshot(npc_id: String) -> Dictionary:
 		"current_action": str(state.get("current_action", "")),
 		"combat_mode": str(state.get("combat_mode", "")),
 		"combat_target_enemy_id": str(state.get("combat_target_enemy_id", "")),
+		"combat_strategy": state.get("combat_strategy", {}),
+		"combat_strategy_move_target_id": str(state.get("combat_strategy_move_target_id", "")),
+		"combat_strategy_move_target_name": str(state.get("combat_strategy_move_target_name", "")),
+		"combat_strategy_move_target_position": state.get("combat_strategy_move_target_position", {}),
 		"avoidance_target_id": str(state.get("avoidance_target_id", "")),
 		"avoidance_target_name": str(state.get("avoidance_target_name", "")),
 		"avoidance_target_position": state.get("avoidance_target_position", {}),
@@ -264,11 +268,19 @@ func set_npc_behavior_mode(
 		BEHAVIOR_MODE_AVOID_COMBAT:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_strategy_move_target_id"] = ""
+			changes["combat_strategy_move_target_name"] = ""
+			changes["combat_strategy_move_target_position"] = {}
 			if not changes.has("current_action"):
 				changes["current_action"] = "avoid_combat"
 		BEHAVIOR_MODE_UNCONSCIOUS:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_attack_cooldown"] = 0.0
+			changes["combat_last_attack_result"] = {}
+			changes["combat_strategy_move_target_id"] = ""
+			changes["combat_strategy_move_target_name"] = ""
+			changes["combat_strategy_move_target_position"] = {}
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
@@ -276,6 +288,11 @@ func set_npc_behavior_mode(
 		BEHAVIOR_MODE_ESCAPED:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_attack_cooldown"] = 0.0
+			changes["combat_last_attack_result"] = {}
+			changes["combat_strategy_move_target_id"] = ""
+			changes["combat_strategy_move_target_name"] = ""
+			changes["combat_strategy_move_target_position"] = {}
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
@@ -283,6 +300,11 @@ func set_npc_behavior_mode(
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
 			changes["combat_target_enemy_id"] = ""
+			changes["combat_attack_cooldown"] = 0.0
+			changes["combat_last_attack_result"] = {}
+			changes["combat_strategy_move_target_id"] = ""
+			changes["combat_strategy_move_target_name"] = ""
+			changes["combat_strategy_move_target_position"] = {}
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
@@ -296,7 +318,10 @@ func set_npc_behavior_mode(
 	_emit_npc_state_changed(npc_id)
 
 	var mode_event := {}
-	if previous_mode != clean_mode or bool(options.get("log_if_same", false)):
+	if (
+		(previous_mode != clean_mode or bool(options.get("log_if_same", false)))
+		and _should_log_npc_mode_changed(previous_mode, clean_mode, options)
+	):
 		mode_event = _log_npc_mode_changed(npc_id, previous_mode, clean_mode, reason, options)
 	var reevaluation_status := {}
 	if bool(options.get("request_plan_reevaluation", false)):
@@ -541,6 +566,8 @@ func set_npc_equipment_slot(npc_id: String, slot: String, item: Dictionary) -> b
 	_profiles[npc_id] = profile
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
+	if slot == "main_weapon" and not item.is_empty():
+		_route_recruited_from_avoidance(npc_id)
 	return true
 
 
@@ -1359,6 +1386,8 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["first_sleep_summary_request_id"] = ""
 	if not states.has("pending_plan_reevaluation_after_sleep"):
 		states["pending_plan_reevaluation_after_sleep"] = {}
+	if not states.has("combat_strategy"):
+		states["combat_strategy"] = {}
 	if not states.has("behavior_mode"):
 		if bool(states.get("escaped", false)):
 			states["behavior_mode"] = BEHAVIOR_MODE_ESCAPED
@@ -1420,6 +1449,7 @@ func _should_clear_action_when_returning_to_work(current_action: String, options
 			"unconscious"
 		].has(current_action)
 		or current_action.begins_with("moving_to_combat_rally_")
+		or current_action.begins_with("moving_to_combat_strategy_")
 		or current_action.begins_with("moving_to_avoid_shelter_")
 	)
 
@@ -1471,7 +1501,7 @@ func _route_enemy_attack_mode(npc_id: String, enemy_id: String) -> void:
 	var states: Dictionary = profile.get("states", {})
 	if bool(states.get("unconscious", false)) or bool(states.get("escaped", false)):
 		return
-	var target_mode := BEHAVIOR_MODE_COMBAT if bool(profile.get("recruited", false)) else BEHAVIOR_MODE_AVOID_COMBAT
+	var target_mode := BEHAVIOR_MODE_COMBAT if _is_npc_combat_eligible(npc_id) else BEHAVIOR_MODE_AVOID_COMBAT
 	set_npc_behavior_mode(npc_id, target_mode, "enemy_attack", {
 		"state_changes": {
 			"combat_target_enemy_id": enemy_id,
@@ -1479,6 +1509,19 @@ func _route_enemy_attack_mode(npc_id: String, enemy_id: String) -> void:
 		},
 		"request_plan_reevaluation": false
 	})
+
+
+func _is_npc_combat_eligible(npc_id: String) -> bool:
+	var profile: Dictionary = _profiles.get(npc_id, {})
+	if profile.is_empty() or not bool(profile.get("recruited", false)):
+		return false
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system != null and equipment_system.has_method("get_unit_type_snapshot"):
+		var snapshot: Dictionary = equipment_system.get_unit_type_snapshot(npc_id)
+		return bool(snapshot.get("has_main_weapon", false))
+	var equipment: Dictionary = profile.get("equipment", {}) if (profile.get("equipment", {}) is Dictionary) else {}
+	var main_weapon: Dictionary = equipment.get("main_weapon", {}) if (equipment.get("main_weapon", {}) is Dictionary) else {}
+	return not main_weapon.is_empty()
 
 
 func _normalize_llm_activity(raw_activity: Variant) -> Dictionary:
@@ -1916,7 +1959,14 @@ func _log_damage_taken(
 		"hp_after": hp_after,
 		"damage_source": actor_id
 	}
-	for key in ["interaction_kind", "event_text", "attack_prompt"]:
+	for key in [
+		"interaction_kind",
+		"event_text",
+		"attack_prompt",
+		"raw_attack_power",
+		"target_defense",
+		"damage_after_defense"
+	]:
 		if options.has(key):
 			payload[key] = options[key]
 	var event := {
@@ -2018,6 +2068,25 @@ func _log_npc_mode_changed(
 			"reason": reason
 		}
 	})
+
+
+func _should_log_npc_mode_changed(from_mode: String, to_mode: String, options: Dictionary = {}) -> bool:
+	if bool(options.get("force_mode_event", false)):
+		return true
+	if bool(options.get("suppress_mode_event", false)):
+		return false
+	if _is_quiet_behavior_mode_transition(from_mode, to_mode):
+		return false
+	return true
+
+
+func _is_quiet_behavior_mode_transition(from_mode: String, to_mode: String) -> bool:
+	return (
+		(from_mode == BEHAVIOR_MODE_WORK and to_mode == BEHAVIOR_MODE_COMBAT)
+		or (from_mode == BEHAVIOR_MODE_COMBAT and to_mode == BEHAVIOR_MODE_WORK)
+		or (from_mode == BEHAVIOR_MODE_WORK and to_mode == BEHAVIOR_MODE_AVOID_COMBAT)
+		or (from_mode == BEHAVIOR_MODE_AVOID_COMBAT and to_mode == BEHAVIOR_MODE_WORK)
+	)
 
 
 func _get_current_info_location(npc_id: String, memory_system: Node) -> String:

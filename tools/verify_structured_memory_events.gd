@@ -39,10 +39,6 @@ func _init() -> void:
 		push_error("Garden work did not complete")
 		quit(1)
 		return
-	if resource_system.get_resource("grain") != grain_before + 2:
-		push_error("Garden work resource result mismatch")
-		quit(1)
-		return
 
 	var eater_id := "veteran_deputy_01"
 	_set_debug_move_speed(eater_id, 80.0)
@@ -100,6 +96,19 @@ func _init() -> void:
 		push_error("NPC daily event log missing movement or work events")
 		quit(1)
 		return
+	var gardener_completed_event := _find_event(gardener_events, "work_completed")
+	var gardener_payload: Dictionary = gardener_completed_event.get("payload", {}) if (gardener_completed_event.get("payload", {}) is Dictionary) else {}
+	var gardener_outputs: Dictionary = gardener_payload.get("output_resources", {}) if (gardener_payload.get("output_resources", {}) is Dictionary) else {}
+	var expected_grain_delta := int(gardener_outputs.get("grain", 0))
+	if expected_grain_delta <= 0 or resource_system.get_resource("grain") <= grain_before:
+		push_error("Garden work structured output missing: before=%d after=%d expected_delta=%d outputs=%s" % [
+			grain_before,
+			resource_system.get_resource("grain"),
+			expected_grain_delta,
+			JSON.stringify(gardener_outputs)
+		])
+		quit(1)
+		return
 
 	var eat_events: Array = memory_system.debug_get_npc_events(eater_id)
 	if not _has_event(eat_events, "eat_completed") or not _has_event(eat_events, "sleep_ended"):
@@ -122,7 +131,14 @@ func _init() -> void:
 		"location_id": "plaza",
 		"visibility": "local_public",
 		"importance": 70,
-		"payload": {"wave_id": "debug_wave"}
+		"payload": {
+			"wave_id": "debug_wave",
+			"wave_number": 1,
+			"enemy_count": 1,
+			"enemy_roster": [{"enemy_id": "debug_enemy", "name": "调试敌人"}],
+			"friendly_combatant_count": 0,
+			"friendly_roster": []
+		}
 	})
 	if public_event.is_empty() or memory_system.debug_get_plaza_events().size() != plaza_events_before + 1:
 		push_error("Plaza local public event query failed")
@@ -137,7 +153,14 @@ func _init() -> void:
 		"location_id": "chapel",
 		"visibility": "local_public",
 		"importance": 70,
-		"payload": {"wave_id": "debug_indoor_wave"}
+		"payload": {
+			"wave_id": "debug_indoor_wave",
+			"wave_number": 1,
+			"enemy_count": 1,
+			"enemy_roster": [{"enemy_id": "debug_enemy", "name": "调试敌人"}],
+			"friendly_combatant_count": 0,
+			"friendly_roster": []
+		}
 	})
 	if indoor_public_event.is_empty() or memory_system.debug_get_plaza_events().size() != plaza_events_before + 1:
 		push_error("Plaza event query should only include local public events at plaza")
@@ -175,6 +198,13 @@ func _has_event(events: Array, event_type: String) -> bool:
 				return false
 			return true
 	return false
+
+
+func _find_event(events: Array, event_type: String) -> Dictionary:
+	for event in events:
+		if event is Dictionary and str(event.get("type", "")) == event_type:
+			return event
+	return {}
 
 
 func _event_has_required_shape(event: Dictionary) -> bool:

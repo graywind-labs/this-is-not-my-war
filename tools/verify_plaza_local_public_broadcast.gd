@@ -72,7 +72,14 @@ func _init() -> void:
 		"location_id": "plaza",
 		"visibility": "local_public",
 		"importance": 80,
-		"payload": {"wave_id": "debug_wave"}
+		"payload": {
+			"wave_id": "debug_wave",
+			"wave_number": 1,
+			"enemy_count": 1,
+			"enemy_roster": [{"enemy_id": "debug_enemy", "name": "调试敌人"}],
+			"friendly_combatant_count": 0,
+			"friendly_roster": []
+		}
 	})
 	if public_event.is_empty():
 		push_error("Failed to create plaza local_public event")
@@ -112,7 +119,11 @@ func _init() -> void:
 		quit(1)
 		return
 	var plaza_witness_events: Array = memory_system.get_npc_witness_events(plaza_npc_id)
-	var latest_witness: Dictionary = plaza_witness_events[plaza_witness_events.size() - 1]
+	var latest_witness: Dictionary = _find_latest_witness_with_payload_field(plaza_witness_events, status_witness_before, "changed_fields")
+	if latest_witness.is_empty():
+		push_error("Building state witness should carry only changed external fields")
+		quit(1)
+		return
 	var latest_payload: Dictionary = latest_witness.get("payload", {})
 	if not latest_payload.has("changed_fields"):
 		push_error("Building state witness should carry only changed external fields")
@@ -133,3 +144,14 @@ func _init() -> void:
 
 	print("T0404 plaza local_public broadcast verification passed.")
 	quit(0)
+
+
+func _find_latest_witness_with_payload_field(events: Array, start_index: int, payload_field: String) -> Dictionary:
+	for index in range(events.size() - 1, max(start_index, 0) - 1, -1):
+		var event = events[index]
+		if not event is Dictionary:
+			continue
+		var payload: Dictionary = event.get("payload", {}) if (event.get("payload", {}) is Dictionary) else {}
+		if payload.has(payload_field):
+			return event
+	return {}

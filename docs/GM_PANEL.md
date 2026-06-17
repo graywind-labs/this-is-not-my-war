@@ -14,7 +14,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
 - 通过“指定行动”下拉统一指派工作、训练场教官/受训者、吃饭、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
-- TimeSystem 设定时间、跳小时、LLM 等待减速请求。
+- TimeSystem 设定时间、跳小时、LLM 等待减速请求、有效倍率 / 慢速请求 / 时间上限请求快照。
 - LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
@@ -25,7 +25,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - 正式装备系统：为已入伍 NPC 装备主武器、盔甲和坐骑，并查看当前兵种判定快照。
 - T0904 成长系统：查看 NPC 总经验、未分配技能点，并由玩家把技能点分配到力量或智力。
 - T0015 调试征召：可将当前选中 NPC 设为入伍，便于验证指令、装备和训练入口。
-- T1101-T1103B 敌人波次、目标优先级、敌方单向攻击、警铃集结和未入伍避战调试：生成第一波或指定波次敌人，触发警铃集结，查看敌人目标 / NPC 集结 / 避战快照，模拟未入伍 NPC 避战，手动推进敌人 AI，清空当前敌人。
+- T1101-T1106 敌人波次、目标优先级、双方基础攻击、战斗动作秒、警铃集结、非战斗人员避战、不同兵种战斗策略、敌人在场时间上限和战斗开始 / 结束流程调试：生成第一波或指定波次敌人，触发警铃集结，查看敌人目标 / NPC 集结 / 避战 / 战斗策略 / 我方攻击 / 当前战斗 / 最近战斗开始和结束结果 / TimeSystem 倍率快照，模拟未入伍或无主武器 NPC 避战，手动推进战斗 AI，清空当前敌人；T1104C 后敌人不再攻击围墙，城门破坏后转向仓库 / 主厅。T1105 的正式策略选择入口在 NPC 面板“装备武器”旁的下拉框，GM 只通过敌人快照观察当前策略，不另设权威策略按钮。
 
 GM 命令仍可使用 `give_money` / `attack_npc` 这类开发语义；写入 NPC 事件库、见闻库和事件 summary 时，玩家身份必须显示为“守备官”。
 
@@ -72,6 +72,7 @@ const GM_ENABLED := true
 - 跳过 1 小时。
 - 注册一次 GM 手动 LLM 减速。
 - 清空所有减速请求。
+- 查看时间倍率快照，包括玩家选择倍率、实际有效倍率、LLM 慢速请求和 TimeSystem 上限请求；T1104A 后生成敌人时可观察 `combat_enemy_presence` 上限，清敌后应消失。
 
 建筑：
 
@@ -117,17 +118,17 @@ NPC：
 - “生成第一波敌人”固定调用 `CombatSystem.debug_spawn_wave(1)`，用于快速验证 T1101 第一波正门外生成。
 - “生成所选波次”按波次下拉调用 `CombatSystem.debug_spawn_wave(...)`。
 - “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的集结流程：所有 NPC 写入警铃事件，入伍且有主武器的可行动 NPC 前往城门外防线。
-- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、敌人目标、当前行动、NPC 集结状态、未入伍避战目标、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近模式切换结果和最近避战结果。
-- “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(60.0)`，用于手动推进 60 游戏秒的目标选择、移动和敌方单向攻击。
+- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T1104C 后可用该快照确认敌人目标不会是围墙，T1105 后可用该快照确认策略下拉框选择已进入 CombatSystem 状态，T1106 后可用该快照确认 `combat_started` / `combat_ended` 的运行态和结算统计。
+- “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(60.0)`，用于手动推进 60 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T1104B 后这约等于 1 秒战斗动作。命名保留为兼容旧入口。
 - “清空敌人”调用 `CombatSystem.debug_clear_enemies()`，删除当前 `Station/Enemies` 下由 CombatSystem 生成的敌人。
 - “行为模式快照”调用 `NPCSystem.debug_get_behavior_mode_snapshot()`，查看每名 NPC 的 `behavior_mode`、进入原因、进入时间、当前行动和兼容 `combat_mode`。
-- “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的未入伍 NPC 在已有活动敌人时进入避战并生成安全点目标。
+- “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按敌方方位生成短步长四散移动目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
 - “推进集结等待”调用 `CombatSystem.debug_advance_rally_wait(3600.0)`，用于快速验证 NPC 到达集合点后等待 1 游戏小时仍未接敌会返回工作模式且不触发计划重评估。
-- 该分组不自行结算伤害或集结结果，只调用 CombatSystem / NPCSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem，敌方攻击 NPC 复用 `NPCSystem.apply_damage_to_npc(...)`，敌方攻击建筑复用 `BuildingSystem.apply_damage_to_building(...)`。我方反击、敌人受击 / 倒下、完整战斗开始 / 结束流程仍留给后续任务。
+- 该分组不自行结算伤害、集结结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T1104 后，我方攻击和敌人受击由 CombatSystem 结算并写入 `attack_made`，敌方攻击 NPC 先按 NPC 盔甲防御减伤再复用 `NPCSystem.apply_damage_to_npc(...)`，敌方攻击建筑复用 `BuildingSystem.apply_damage_to_building(...)`。T1104A 后，活动敌人存在时 CombatSystem 注册 `combat_enemy_presence` 时间上限，把 TimeSystem 有效倍率上限压到 `x1`，清敌后释放；T1104B 后，GM 推进 60 游戏秒约等于 1 秒战斗动作，便于观察攻速基准。T1106 后，战斗开始 / 结束事件和受伤 / 昏迷 / 击退统计由 CombatSystem 写入并通过敌人快照展示。GM 只显示这些状态，不自行决定倍率、冷却、HP、击退统计或胜负；正式胜负结算和战时心理仍留给后续任务。
 
 行为模式后续调试入口：
 
-- T1103B 已可查看每名 NPC 的 `behavior_mode`、模式进入原因和模式进入时间，并可推进集结等待时间；敌人快照可查看 `active_avoidances`，`avoid_npc <npc_id>` 可手动触发未入伍 NPC 避战。
+- T1103B/T1103C 已可查看每名 NPC 的 `behavior_mode`、模式进入原因和模式进入时间，并可推进集结等待时间；敌人快照可查看 `active_avoidances`，`avoid_npc <npc_id>` 可手动触发非战斗人员避战。
 - 后续仍需补充可视化：当前敌人接触范围判定、斗志 buff 剩余时间。
 - 手动触发 / 验证：战时心理结果和斗志 buff。
 - 查看最近一次战时对话的 `wartime_reaction`、最近一次低血量自身心理判定结果和 TimeSystem 慢速申请 / 释放状态。
@@ -167,6 +168,7 @@ add_resource <resource_id> <amount>
 spend_resource <resource_id> <amount>
 set_time <day> <hour> <minute> <second>
 advance_hour
+time_snapshot
 slowdown [request_id] [scale] [reason]
 release_slowdown <request_id>
 clear_slowdowns
@@ -242,6 +244,7 @@ assist_upgrade engineer_01 garden
 damage_npc cook_01 150 local_public
 assist_heal doctor_01 cook_01
 set_time 2 9 30 0
+time_snapshot
 enter_location cook_01 dining_hall
 work gardener_01 garden
 work blacksmith_01 blacksmith
@@ -312,4 +315,4 @@ GM 面板当前有专用验证脚本：
 godot --headless --path . --script res://tools/verify_gm_panel.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动计划重评估、首次睡眠总结入口、长期记忆查看、计划重评估请求/结果、最近 LLM 指令注入、训练场教官/受训者入口、敌人波次生成 / 警铃集结 / 快照 / AI 推进 / 清空、记忆事件和广场公告。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T1002 的异常重评估细节由 `tools/verify_daily_plan_reevaluation.gd` 覆盖；T1003 的 `/npc/plan_day` Mock 计划和规则降级由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1102 的目标优先级、移动、敌方单向攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、时间倍率快照、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动计划重评估、首次睡眠总结入口、长期记忆查看、计划重评估请求/结果、最近 LLM 指令注入、训练场教官/受训者入口、敌人波次生成 / 警铃集结 / 快照 / AI 推进 / 清空、敌人在场 TimeSystem `x1` 上限注册 / 释放、记忆事件和广场公告。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T1002 的异常重评估细节由 `tools/verify_daily_plan_reevaluation.gd` 覆盖；T1003 的 `/npc/plan_day` Mock 计划和规则降级由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1102/T1104C 的目标优先级、跳过围墙、移动、敌方建筑攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖；T1104 的双方基础伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击由 `tools/verify_combat_damage.gd` 覆盖；T1104A 的战斗时间上限、LLM 慢速叠加和清敌恢复由 `tools/verify_combat_time_cap.gd` 覆盖；T1104B 的艾达持剑第一波节奏和战斗动作秒换算由 `tools/verify_combat_pacing.gd` 覆盖；T1105 的兵种策略选项、NPC 面板策略下拉框、策略事件、默认策略重置、战斗内避战和保持距离射击由 `tools/verify_combat_strategies.gd` 覆盖；T1106 的战斗开始 / 结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态由 `tools/verify_combat_flow.gd` 覆盖。

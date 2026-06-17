@@ -182,7 +182,7 @@ func _init() -> void:
 	await process_frame
 
 	var action_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCActionLabel") as Label
-	if hp_label.text != "HP：64 / 100" or action_label == null or action_label.text != "当前行动：guard_placeholder":
+	if hp_label.text != "HP：64 / 100" or action_label == null or not action_label.text.begins_with("当前行动：guard_placeholder"):
 		push_error("NPCPanel did not refresh after state update")
 		quit(1)
 		return

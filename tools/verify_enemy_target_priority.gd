@@ -32,6 +32,12 @@ func _init() -> void:
 		quit(1)
 		return
 	var first_enemy_id := str(combat_system.get_active_enemy_ids()[0])
+	var first_enemy_state: Dictionary = combat_system.get_enemy(first_enemy_id)
+	var first_preferences: Array = first_enemy_state.get("target_preference", [])
+	if first_preferences.has("wall") or first_preferences.has("front_wall"):
+		push_error("Enemy target preferences should not include wall targets: %s" % JSON.stringify(first_preferences))
+		quit(1)
+		return
 	combat_system.debug_step_enemy_ai(1.0)
 	var first_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
 	if str(first_target.get("type", "")) != "building" or str(first_target.get("id", "")) != "front_gate":
@@ -82,17 +88,30 @@ func _init() -> void:
 		var move_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/%s" % _make_node_name(str(raw_npc_id))) as Node3D
 		if move_node != null:
 			move_node.global_position = Vector3(-30.0, 0.0, -20.0)
+	var wall_hp_before := int(building_system.get_building("wall").get("hp", 0))
 	building_system.debug_damage_building("front_gate", 9999)
-	building_system.debug_damage_building("wall", 9999)
-	building_system.debug_damage_building("warehouse", 9999)
 	combat_system.debug_spawn_wave(1, true)
 	first_enemy_id = str(combat_system.get_active_enemy_ids()[0])
+	combat_system.debug_step_enemy_ai(1.0)
+	var warehouse_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
+	if str(warehouse_target.get("type", "")) != "building" or str(warehouse_target.get("id", "")) != "warehouse":
+		push_error("Enemy should skip wall after front_gate is destroyed and target warehouse, got: %s" % JSON.stringify(warehouse_target))
+		quit(1)
+		return
+	var wall_hp_after := int(building_system.get_building("wall").get("hp", 0))
+	if wall_hp_after != wall_hp_before:
+		push_error("Enemy target priority should not damage wall. before=%d after=%d" % [wall_hp_before, wall_hp_after])
+		quit(1)
+		return
+
+	building_system.debug_damage_building("warehouse", 9999)
 	combat_system.debug_step_enemy_ai(1.0)
 	var main_hall_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
 	if str(main_hall_target.get("type", "")) != "building" or str(main_hall_target.get("id", "")) != "main_hall":
 		push_error("Enemy should fall through destroyed targets to main_hall, got: %s" % JSON.stringify(main_hall_target))
 		quit(1)
 		return
+	combat_system.debug_step_enemy_ai(1200.0)
 	combat_system.debug_step_enemy_ai(1200.0)
 	combat_system.debug_step_enemy_ai(1200.0)
 	var game_state := root.get_node_or_null("/root/GameState")
