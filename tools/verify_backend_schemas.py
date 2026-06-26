@@ -82,17 +82,27 @@ def main() -> None:
         max_rounds=5,
         npc_state=npc.state.model_dump(),
         current_order=npc.current_order,
+        interaction_context="combat",
+        battlefield_context={
+            "active_enemy_count": 2,
+            "friendly_combatant_count": 1,
+            "station_noncombatants": ["cook_01"],
+        },
         short_memory=ShortTermMemoryContext(),
         location_context={"location_id": "plaza"},
     )
     assert dialogue_request.npc_id == "cook_01"
     assert dialogue_request.current_order.text == npc.current_order.text
+    assert dialogue_request.interaction_context == "combat"
+    assert dialogue_request.battlefield_context["active_enemy_count"] == 2
     response = NPCDialogueResponse(
         replyer_id="cook_01",
         reply_text="守备官，我听见了。",
         recruitment_result="none",
+        wartime_reaction="morale_boost",
     )
     assert response.replyer_id == "cook_01"
+    assert response.wartime_reaction == "morale_boost"
 
     plan = [PlanItem(hour=hour, action_kind="idle", action_id="idle") for hour in range(24)]
     plan_response = DailyPlanResponse(npc_id="cook_01", plan_day=1, plan=plan)
@@ -125,11 +135,15 @@ def main() -> None:
             requires_time_slowdown=True,
         ),
         game_time=game_time,
-        trigger="combat_started",
+        trigger="low_hp",
         npc=npc,
-        allowed_decisions=["join_battle", "avoid_battle", "escape_station", "inspired"],
+        combat_context={"hp_before": 100, "hp_after": 25, "threshold_ratio": 0.3},
+        battlefield_context={"active_enemy_count": 3, "target_npc": {"behavior_mode": "avoid_combat"}},
+        allowed_decisions=["avoid_battle", "escape_station"],
     )
-    assert "join_battle" in battle_request.allowed_decisions
+    assert battle_request.trigger == "low_hp"
+    assert battle_request.battlefield_context["active_enemy_count"] == 3
+    assert "avoid_battle" in battle_request.allowed_decisions
     reflection_request = DailyReflectionRequest(
         meta=ModelRequestMeta(request_id="verify_reflection", call_type="daily_reflection"),
         game_time=game_time,

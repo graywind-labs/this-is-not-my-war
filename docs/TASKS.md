@@ -363,6 +363,35 @@
 
 ---
 
+## T0018 NPC 面板事件库 / 见闻库详情弹窗
+
+状态：Done
+优先级：P0
+涉及文档：`UI_UX.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+
+在 NPC 面板中点击事件库或见闻库时，打开一个更大的详情弹窗，方便查看当前 NPC 的完整亲历事件或见闻详情。
+
+验收标准：
+
+- 点击 NPC 面板中的事件库区域会打开事件库详情弹窗。
+- 点击 NPC 面板中的见闻库区域会打开见闻库详情弹窗。
+- 弹窗显示当前 NPC 名称、记录条数和更完整的事件字段，例如时间、summary、类型、地点、可见性、参与者、目标和 payload。
+- 弹窗右上角有关闭图标，点击后关闭弹窗。
+- 弹窗只读取 `MemorySystem` / NPC 面板已有数据，不修改事件库、见闻库或任何权威状态。
+- NPC 面板既有固定高度滚动区、自动滚到底部、建筑 / NPC 面板互斥、对话 / 指令弹窗互斥等回归仍通过。
+
+验收结果（2026-06-25）：
+
+- `NPCPanel` 在事件库和见闻库标题 / 正文区域接入点击输入，点击后打开居中的 `NPCMemoryDetailPopup`。
+- 详情弹窗显示当前 NPC 名称、事件库 / 见闻库类型、记录条数，以及每条记录的日期、时间、summary、类型、地点、可见性、重要度、事件 ID、参与者、目标和 payload JSON。
+- 弹窗右上角 `×` 关闭按钮可关闭；切换 NPC 无效、关闭 NPC 面板或点击建筑时会同步关闭详情弹窗。
+- 该弹窗只读取 NPC 面板缓存的事件 / 见闻数组，不修改 `MemorySystem` 或任何权威状态。
+- `tools/verify_npc_panel_state.gd` 已覆盖详情弹窗打开、内容显示、关闭按钮、点击连接存在，以及既有 NPC 面板滚动区和互斥回归。
+
+---
+
 # M0：项目骨架与工具稳定
 
 目标：让 Godot 项目、Python 后端、MCP 工具和项目文档结构可运行、可检查、可继续开发。
@@ -3623,14 +3652,14 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ## T1201 实现战时公开对话心理结果
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0603, T0702, T1103A, T1106
 涉及文档：`COMBAT_SYSTEM.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`
 
 任务目标：
 
-取消旧式“战斗触发时全员心理判定”。改为在集结 / 战斗 / 避战模式下，守备官主动对话会携带战局上下文，并根据回复产生结构化战时心理意向。
+在集结 / 战斗 / 避战模式下，守备官主动对话会携带战局上下文，并根据回复产生结构化战时心理意向。
 
 已入伍且有主武器 NPC 在集结 / 战斗模式下：
 
@@ -3665,30 +3694,48 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 后端失败时使用规则判定。
 - 对话等待期间申请 TimeSystem 慢速，请求完成、失败、取消或规则降级后释放。
 
+完成记录（2026-06-25）：
+
+- `DialogSystem` 在 `rally` / `combat` / `avoid_combat` 玩家对话中强制 `local_public`，UI toggle 默认开启且锁定。
+- `LLMBridge` 的 `/npc/dialogue` payload 新增 `interaction_context` 与 `battlefield_context`，并保留 `current_order`、短期记忆和地点上下文。
+- `NPCDialogueResponse` / Mock 新增 `wartime_reaction`；后端不可用时战时对话走规则 fallback。
+- `CombatSystem` 应用 `battle_psychology_result`、2 游戏小时 `morale_boost` 攻击 / 移动加成、`escape_intent` pending 状态和调试快照。
+- 新增 `tools/verify_wartime_dialogue.gd` 覆盖强制公开、payload 注入、fallback、士气、逃离意图和避战应征。
+
 ---
 
 ## T1202 实现 HP 低于 30% 心理判定
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1104, T1201
 涉及文档：`COMBAT_SYSTEM.md`
 
 任务目标：
 
-实现战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC 自身心理判定。
+实现战时 NPC HP 首次低于 30% 的自身心理判定。该判定不只限于参战 NPC：避战中的未入伍 NPC、以及已入伍但无主武器的非战斗人员被敌人追上并打到残血时，也必须触发一次判定。
 
 验收标准：
 
-- 只有处于 `combat` 模式的已入伍且有主武器 NPC HP 首次低于 30% 时触发判定。
-- 正在睡觉、避战、集结但未接敌、未入伍、无主武器或昏迷 NPC 不触发该判定。
+- 当前战斗 / 敌人在场期间，任一未昏迷、未逃离 NPC 的 HP 从不低于 30% 首次跌破 30% 且仍大于 0 时触发判定；包括 `combat`、`avoid_combat`、被敌人直接攻击后从睡觉转入战斗 / 避战的 NPC。
+- 已昏迷、已逃离、HP 已低于 30% 后再次受击、或 HP 直接清零进入昏迷的 NPC 不触发该判定。
 - 判定请求继续包含该 NPC 最新 `current_order`，并包含短期事件 / 见闻、地点上下文和 `battlefield_context`。
 - 判定请求没有守备官本轮发言。
-- 可能继续参战、逃离、斗志激昂。
+- 已入伍且有主武器、实际处于 `combat` 模式的 NPC 可返回继续参战、逃离或斗志激昂。
+- 不参战 / 避战 NPC 不会触发斗志激昂，也不会继续参战；只允许触发逃离驿站意向，或留在驿站继续避战（无事发生）。
 - 每个 NPC 每波最多触发一次。
-- 判定事件进入 NPC 事件库与广场公开信息。
+- 低血量事实和判定结果进入 NPC 事件库与广场公开信息。
 - 判定等待期间，玩家不能与该 NPC 对话；如果触发时对话正在进行，强制结束对话、关闭对话框并取消未完成 LLM 请求。
 - 判定等待期间申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。
+
+验收结果（2026-06-25）：
+
+- `NPCSystem.apply_damage_to_npc(...)` 在权威扣血后回调 `CombatSystem.handle_npc_damage_applied(...)`，当前战斗中任一 NPC HP 首次从不低于 30% 跌破 30% 且仍大于 0 时触发自身心理判定。
+- `LLMBridge.request_npc_battle_judgement(...)` 已接通 `/npc/battle_judgement`，payload 包含最新 `current_order`、短期记忆、地点上下文、`battlefield_context`、低血量事实和 Godot 侧限制后的 `allowed_decisions`。
+- 参战且已入伍持主武器的 `combat` NPC 只允许继续参战、逃离或斗志激昂；避战 / 非战斗人员只允许逃离或继续避战，模型越界或后端失败时由 Godot 规则降级。
+- 低血量事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并进入广场公开事件；每场战斗的 `active_battle.low_hp_judgements` 与 GM 敌人快照暴露最近判定结果。
+- 判定期间目标 NPC 处于不可对话的 LLM 活动；若触发时正在对话，会强制结束目标对话并取消未完成回复。请求会申请 TimeSystem 慢速并在完成、失败或规则降级后释放。
+- 新增 `tools/verify_low_hp_battle_judgement.gd`，覆盖参战 NPC 继续参战、避战 NPC 继续避战、不重复触发、对话强制结束、低血事件 / 心理事件入库、最新指令注入和慢速释放。
 
 ---
 

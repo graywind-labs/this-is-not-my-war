@@ -98,6 +98,10 @@ func _init() -> void:
 		push_error("NPCPanel memory scroll verification nodes not found")
 		quit(1)
 		return
+	if event_log_label.get_signal_connection_list("gui_input").is_empty() or witness_log_text.get_signal_connection_list("gui_input").is_empty():
+		push_error("NPCPanel memory log controls should connect gui_input for detail popup opening")
+		quit(1)
+		return
 	var hp_row_index := hp_experience_row.get_index()
 	if attribute_point_row.get_index() != hp_row_index + 1 or specialties_label.get_index() != hp_row_index + 2:
 		push_error("NPCPanel order mismatch; expected HP/experience, inline attributes, specialties")
@@ -174,6 +178,44 @@ func _init() -> void:
 		])
 		quit(1)
 		return
+
+	var detail_result: Dictionary = npc_panel.debug_open_memory_detail("event_log")
+	if not bool(detail_result.get("ok", false)):
+		push_error("Failed to open event memory detail popup: %s" % JSON.stringify(detail_result))
+		quit(1)
+		return
+	await process_frame
+	var memory_detail_popup := root.find_child("NPCMemoryDetailPopup", true, false) as Control
+	var memory_detail_title := root.find_child("NPCMemoryDetailTitle", true, false) as Label
+	var memory_detail_text := root.find_child("NPCMemoryDetailText", true, false) as TextEdit
+	var memory_detail_close := root.find_child("NPCMemoryDetailCloseButton", true, false) as Button
+	if memory_detail_popup == null or memory_detail_title == null or memory_detail_text == null or memory_detail_close == null:
+		push_error("NPC memory detail popup nodes not found")
+		quit(1)
+		return
+	if not memory_detail_popup.visible or not memory_detail_title.text.contains("事件库") or not memory_detail_text.text.contains("测试事件摘要内容变长") or not memory_detail_text.text.contains("Payload"):
+		push_error("Event log detail popup did not show expected content")
+		quit(1)
+		return
+	memory_detail_close.pressed.emit()
+	await process_frame
+	if memory_detail_popup.visible:
+		push_error("Memory detail close button did not hide popup")
+		quit(1)
+		return
+
+	detail_result = npc_panel.debug_open_memory_detail("witness_log")
+	if not bool(detail_result.get("ok", false)):
+		push_error("Failed to open witness memory detail popup: %s" % JSON.stringify(detail_result))
+		quit(1)
+		return
+	await process_frame
+	if not memory_detail_popup.visible or not memory_detail_title.text.contains("见闻库") or not memory_detail_text.text.contains("测试见闻摘要内容变长") or not memory_detail_text.text.contains("Payload"):
+		push_error("Witness log detail popup did not show expected content")
+		quit(1)
+		return
+	memory_detail_close.pressed.emit()
+	await process_frame
 
 	if not npc_system.update_npc_state(npc_id, {"hp": 64, "satiety": 51, "fatigue": 33, "current_action": "guard_placeholder"}):
 		push_error("Failed to update NPC state")

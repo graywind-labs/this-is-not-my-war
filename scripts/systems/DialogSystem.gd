@@ -8,6 +8,7 @@ const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
 const PLAYER_DIALOGUE_MAX_ROUNDS := 999999
@@ -15,6 +16,8 @@ const NPC_DIALOGUE_MAX_ROUNDS := 5
 const DEFAULT_ATTACK_DAMAGE := 10
 const GUARD_ATTACK_EVENT_TEXT := "守备官攻击了你以示惩戒"
 const GUARD_ATTACK_PROMPT := "守备官攻击了你以示惩戒，你要说些什么？"
+const WARTIME_DIALOGUE_CONTEXTS: Array[String] = ["rally", "combat", "avoid_combat"]
+const WARTIME_REACTIONS: Array[String] = ["none", "escape", "morale_boost"]
 
 var _dialogue_counter := 0
 var _active_dialogue: Dictionary = {}
@@ -47,7 +50,11 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 	if not _active_dialogue.is_empty():
 		end_dialogue()
 	_dialogue_counter += 1
+	var interaction_context := _get_player_dialogue_interaction_context(npc_id, npc_state, npc_system)
+	var force_local_public := WARTIME_DIALOGUE_CONTEXTS.has(interaction_context)
 	var clean_visibility := visibility if ["private", "local_public"].has(visibility) else "private"
+	if force_local_public:
+		clean_visibility = "local_public"
 	_active_dialogue = {
 		"dialogue_id": "dialogue_%d_%04d" % [Time.get_ticks_msec(), _dialogue_counter],
 		"dialogue_kind": "player_npc",
@@ -65,6 +72,11 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 		"last_error": "",
 		"recruitment_request_pending": false,
 		"last_recruitment_result": "none",
+		"interaction_context": interaction_context,
+		"force_local_public": force_local_public,
+		"wartime_dialogue": force_local_public,
+		"last_wartime_reaction": "none",
+		"last_wartime_result": {},
 		"player_dialogue_effect_started": false,
 		"completed_player_llm_turns": 0,
 		"attack_committed": false,
@@ -185,7 +197,8 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 			"location_id": str(_active_dialogue.get("location_id", "plaza")),
 			"location_name": str(_active_dialogue.get("location_name", "广场")),
 			"participants": [GUARD_OFFICER_ID, str(_active_dialogue.get("target_npc_id", ""))]
-		}
+		},
+		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
 	var pending := {
 		"kind": "player_message",
@@ -215,9 +228,15 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 	_active_dialogue["waiting"] = false
 	_active_dialogue.erase("pending_llm")
 	if not bool(result.get("ok", false)):
-		_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
-		dialogue_updated.emit(get_dialogue_state())
-		return result
+		if bool(_active_dialogue.get("wartime_dialogue", false)):
+			result = {
+				"ok": true,
+				"dialogue": _make_wartime_rule_fallback_response(pending, result)
+			}
+		else:
+			_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
+			dialogue_updated.emit(get_dialogue_state())
+			return result
 
 	var response: Dictionary = result.get("dialogue", {})
 	var reply_text := str(response.get("reply_text", "")).strip_edges()
@@ -239,7 +258,7 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 	_active_dialogue["history"] = history
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["completed_player_llm_turns"] = int(_active_dialogue.get("completed_player_llm_turns", 0)) + 1
-	_record_dialogue_event("dialogue_turn", {
+	var dialogue_event := _record_dialogue_event("dialogue_turn", {
 		"speaker_name": GUARD_OFFICER_NAME,
 		"listener_name": npc_name,
 		"speaker_text": clean_text,
@@ -247,13 +266,17 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 		"dialogue_text": [player_turn, npc_turn],
 		"is_recruitment_request": effective_recruitment_request,
 		"recruitment_result": recruitment_result,
-		"emotion": str(response.get("emotion", "neutral"))
+		"emotion": str(response.get("emotion", "neutral")),
+		"interaction_context": str(_active_dialogue.get("interaction_context", "work")),
+		"wartime_reaction": _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
 	})
+	var wartime_result := _apply_wartime_reaction(response, dialogue_event)
 	dialogue_updated.emit(get_dialogue_state())
 	return {
 		"ok": true,
 		"reply_text": reply_text,
 		"dialogue": response.duplicate(true),
+		"wartime_result": wartime_result,
 		"dialogue_state": get_dialogue_state()
 	}
 
@@ -340,7 +363,8 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 			"location_id": str(_active_dialogue.get("location_id", "plaza")),
 			"location_name": str(_active_dialogue.get("location_name", "广场")),
 			"participants": [GUARD_OFFICER_ID, target_npc_id]
-		}
+		},
+		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
 	var pending := {
 		"kind": "guard_attack",
@@ -375,9 +399,15 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 	_active_dialogue["waiting"] = false
 	_active_dialogue.erase("pending_llm")
 	if not bool(result.get("ok", false)):
-		_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
-		dialogue_updated.emit(get_dialogue_state())
-		return result
+		if bool(_active_dialogue.get("wartime_dialogue", false)):
+			result = {
+				"ok": true,
+				"dialogue": _make_wartime_rule_fallback_response(pending, result)
+			}
+		else:
+			_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
+			dialogue_updated.emit(get_dialogue_state())
+			return result
 
 	var response: Dictionary = result.get("dialogue", {})
 	var reply_text := str(response.get("reply_text", "")).strip_edges()
@@ -399,7 +429,7 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 	_active_dialogue["history"] = history
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["completed_attack_llm_turns"] = int(_active_dialogue.get("completed_attack_llm_turns", 0)) + 1
-	_record_dialogue_event("dialogue_turn", {
+	var dialogue_event := _record_dialogue_event("dialogue_turn", {
 		"speaker_name": GUARD_OFFICER_NAME,
 		"listener_name": npc_name,
 		"speaker_text": GUARD_ATTACK_EVENT_TEXT,
@@ -409,14 +439,18 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 		"recruitment_result": "none",
 		"emotion": str(response.get("emotion", "neutral")),
 		"interaction_kind": "guard_attack",
-		"related_event_id": attack_event_id
+		"related_event_id": attack_event_id,
+		"interaction_context": str(_active_dialogue.get("interaction_context", "work")),
+		"wartime_reaction": _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
 	})
+	var wartime_result := _apply_wartime_reaction(response, dialogue_event)
 	dialogue_updated.emit(get_dialogue_state())
 	return {
 		"ok": true,
 		"damage": pending.get("damage", {}),
 		"reply_text": reply_text,
 		"dialogue": response.duplicate(true),
+		"wartime_result": wartime_result,
 		"dialogue_state": get_dialogue_state()
 	}
 
@@ -648,6 +682,10 @@ func get_dialogue_state() -> Dictionary:
 func set_dialogue_visibility(visibility: String) -> Dictionary:
 	if _active_dialogue.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
+	if bool(_active_dialogue.get("force_local_public", false)):
+		_active_dialogue["visibility"] = "local_public"
+		dialogue_updated.emit(get_dialogue_state())
+		return _failure("visibility_forced_local_public", "战时对话必须保持同地点公开。")
 	if bool(_active_dialogue.get("waiting", false)) or int(_active_dialogue.get("current_round", 0)) > 0:
 		return _failure("visibility_locked", "对话开始发送后不能修改公开性。")
 	if not ["private", "local_public"].has(visibility):
@@ -694,6 +732,77 @@ func _apply_recruitment_result(response: Dictionary, was_recruitment_request: bo
 			_active_dialogue["last_error"] = "应征状态更新失败。"
 			return "none"
 	return recruitment_result
+
+
+func _get_player_dialogue_interaction_context(npc_id: String, npc_state: Dictionary, npc_system: Node) -> String:
+	var mode := str(npc_state.get("behavior_mode", ""))
+	if npc_system != null and npc_system.has_method("get_npc_behavior_mode_snapshot"):
+		var snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot(npc_id)
+		mode = str(snapshot.get("behavior_mode", mode))
+	if mode.is_empty():
+		mode = str(npc_state.get("combat_mode", ""))
+	if WARTIME_DIALOGUE_CONTEXTS.has(mode):
+		return mode
+	return "work"
+
+
+func _normalize_wartime_reaction(reaction: String) -> String:
+	var clean_reaction := reaction.strip_edges()
+	if WARTIME_REACTIONS.has(clean_reaction):
+		return clean_reaction
+	return "none"
+
+
+func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dictionary) -> Dictionary:
+	var clean_text := str(pending.get("clean_text", GUARD_ATTACK_EVENT_TEXT))
+	var reaction := "none"
+	if _text_contains_any(clean_text, ["逃", "跑", "撤", "保命", "自己活", "别管"]):
+		reaction = "escape"
+	elif _text_contains_any(clean_text, ["守住", "保护", "坚持", "撑住", "拦住", "挡住", "一起", "别怕"]):
+		reaction = "morale_boost"
+	var recruitment_result := "none"
+	if bool(pending.get("effective_recruitment_request", false)):
+		recruitment_result = "accept" if _text_contains_any(clean_text, ["应征", "入伍", "守住", "保护", "帮忙", "一起", "救"]) else "reject"
+	return {
+		"replyer_id": str(_active_dialogue.get("target_npc_id", "")),
+		"reply_text": "守备官，我听见了。现在先按你说的做。",
+		"emotion": "tense",
+		"attitude_delta": 0,
+		"relationship_delta": 0,
+		"recruitment_result": recruitment_result,
+		"wartime_reaction": reaction,
+		"should_end_dialogue": false,
+		"rule_fallback": true,
+		"fallback_error_code": str(error_result.get("error_code", "")),
+		"fallback_message": str(error_result.get("message", "后端请求失败。"))
+	}
+
+
+func _text_contains_any(text: String, keywords: Array[String]) -> bool:
+	for keyword in keywords:
+		if text.find(keyword) >= 0:
+			return true
+	return false
+
+
+func _apply_wartime_reaction(response: Dictionary, dialogue_event: Dictionary) -> Dictionary:
+	if _active_dialogue.is_empty() or not bool(_active_dialogue.get("wartime_dialogue", false)):
+		return {}
+	var interaction_context := str(_active_dialogue.get("interaction_context", "work"))
+	var reaction := _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
+	if reaction == "none" and interaction_context == "avoid_combat":
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("apply_wartime_dialogue_reaction"):
+		return {}
+	var result: Dictionary = combat_system.apply_wartime_dialogue_reaction(str(_active_dialogue.get("target_npc_id", "")), reaction, {
+		"source_event_id": str(dialogue_event.get("event_id", "")),
+		"dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
+		"interaction_context": interaction_context
+	})
+	_active_dialogue["last_wartime_reaction"] = reaction
+	_active_dialogue["last_wartime_result"] = result.duplicate(true)
+	return result
 
 
 func _record_dialogue_event(event_type: String, extra_payload: Dictionary) -> Dictionary:

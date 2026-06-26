@@ -5,18 +5,21 @@ signal dialogue_response_received(result: Dictionary)
 signal dialogue_async_response_received(result: Dictionary)
 signal daily_plan_response_received(result: Dictionary)
 signal plan_revision_response_received(result: Dictionary)
+signal battle_judgement_response_received(result: Dictionary)
 signal daily_reflection_response_received(result: Dictionary)
 
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const DEFAULT_BACKEND_URL := "http://127.0.0.1:5000"
 const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
 const DEFAULT_GUARD_APPEARANCE := "驿站守备官，穿着磨旧的军官外套，带着边境军令。"
 const SHORT_MEMORY_EVENT_LIMIT := 8
 const HTTP_POLL_DELAY_MSEC := 10
+const WARTIME_DIALOGUE_CONTEXTS: Array[String] = ["rally", "combat", "avoid_combat"]
 
 @export var backend_base_url: String = DEFAULT_BACKEND_URL
 @export var request_timeout_seconds: float = 2.0
@@ -185,6 +188,29 @@ func request_npc_plan_revision(npc_id: String, options: Dictionary = {}) -> Dict
 	return response
 
 
+func request_npc_battle_judgement(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var payload := build_npc_battle_judgement_payload(npc_id, options)
+	if payload.is_empty():
+		var failed := _failure_result("payload_error", "无法构造 BattleJudgementRequest。")
+		battle_judgement_response_received.emit(failed.duplicate(true))
+		return failed
+
+	var request_id := str(payload.get("meta", {}).get("request_id", _make_request_id("battle_judgement")))
+	var should_slowdown := bool(payload.get("meta", {}).get("requires_time_slowdown", true))
+	var result: Dictionary = _request_json("POST", "/npc/battle_judgement", payload, should_slowdown, request_id, {
+		"npc_id": npc_id,
+		"kind": "battle_judgement",
+		"label": "正在压住恐惧",
+		"cancellable": false,
+		"reason": str(options.get("reason", "low_hp"))
+	})
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["battle_judgement"] = result.get("body", {})
+	battle_judgement_response_received.emit(response.duplicate(true))
+	return response
+
+
 func request_npc_daily_reflection(npc_id: String, options: Dictionary = {}) -> Dictionary:
 	var payload := build_npc_daily_reflection_payload(npc_id, options)
 	if payload.is_empty():
@@ -229,6 +255,14 @@ func debug_request_plan_revision(npc_id: String, failure_type: String = "unknown
 	return request_npc_plan_revision(npc_id, {
 		"failure_type": failure_type,
 		"failure_summary": failure_summary
+	})
+
+
+func debug_request_battle_judgement(npc_id: String) -> Dictionary:
+	return request_npc_battle_judgement(npc_id, {
+		"trigger": "low_hp",
+		"allowed_decisions": ["continue_fighting", "escape_station", "inspired"],
+		"reason": "gm_debug"
 	})
 
 
@@ -300,6 +334,11 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	var visibility := str(dialogue_state.get("visibility", options.get("visibility", "private")))
 	if not ["private", "local_public"].has(visibility):
 		visibility = "private"
+	var interaction_context := str(options.get("interaction_context", _get_interaction_context_from_state(npc_state)))
+	if not WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
+		interaction_context = "work"
+	if WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
+		visibility = "local_public"
 	var participants := _normalize_string_array(dialogue_state.get("participants", [npc_id, GUARD_OFFICER_ID if speaker_kind == "guard_officer" else speaker_npc_id]))
 
 	var request_id := str(options.get("request_id", _make_request_id("dialogue")))
@@ -320,6 +359,8 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"speaker_name": speaker_name,
 		"speaker_text": speaker_text,
 		"speaker_context": _build_speaker_context(speaker_kind, speaker_npc_id, speaker_name, npc_system),
+		"interaction_context": interaction_context,
+		"battlefield_context": _build_battlefield_context(npc_id, interaction_context),
 		"is_recruitment_request": bool(options.get("is_recruitment_request", false)),
 		"current_round": current_round,
 		"max_rounds": max_rounds,
@@ -343,7 +384,10 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	if speaker_kind == "npc" and not speaker_npc_id.is_empty():
 		payload["speaker_npc"] = _build_npc_context(speaker_npc_id, npc_system)
 	payload["target_npc"] = _build_npc_context(npc_id, npc_system)
-	_record_npc_context_injection(npc_id, "dialogue", current_order, request_id)
+	_record_npc_context_injection(npc_id, "dialogue", current_order, request_id, {
+		"interaction_context": interaction_context,
+		"has_battlefield_context": WARTIME_DIALOGUE_CONTEXTS.has(interaction_context)
+	})
 	return payload
 
 
@@ -427,6 +471,59 @@ func build_npc_plan_revision_payload(npc_id: String, options: Dictionary = {}) -
 		"allowed_actions": _build_allowed_action_candidates()
 	}
 	_record_npc_context_injection(npc_id, "revise_plan", npc_context.get("current_order", {}), request_id)
+	return payload
+
+
+func build_npc_battle_judgement_payload(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		push_warning("LLMBridge cannot build battle judgement payload because NPCSystem is missing.")
+		return {}
+
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+
+	var request_id := str(options.get("request_id", _make_request_id("battle_judgement")))
+	var trigger := _normalize_battle_trigger(str(options.get("trigger", "low_hp")))
+	var npc_context := _build_npc_context(npc_id, npc_system)
+	if npc_context.is_empty():
+		return {}
+	var interaction_context := str(options.get("interaction_context", _get_interaction_context_from_state(npc_system.get_npc_state(npc_id))))
+	if not WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
+		interaction_context = "combat"
+	var battlefield_context: Dictionary = options.get("battlefield_context", {})
+	if battlefield_context.is_empty():
+		battlefield_context = _build_battlefield_context(npc_id, interaction_context)
+	var combat_context: Dictionary = options.get("combat_context", {})
+	if combat_context.is_empty():
+		combat_context = battlefield_context.duplicate(true)
+	else:
+		combat_context = combat_context.duplicate(true)
+	if not combat_context.has("battlefield_context"):
+		combat_context["battlefield_context"] = battlefield_context.duplicate(true)
+	var allowed_decisions := _normalize_battle_decision_array(options.get("allowed_decisions", []))
+	if allowed_decisions.is_empty():
+		allowed_decisions = ["avoid_battle", "escape_station"]
+	var payload := {
+		"meta": {
+			"request_id": request_id,
+			"call_type": "battle_judgement",
+			"source": "godot",
+			"requires_time_slowdown": bool(options.get("requires_time_slowdown", true)),
+			"related_event_id": options.get("related_event_id", null)
+		},
+		"game_time": _get_game_time_context(),
+		"trigger": trigger,
+		"npc": npc_context,
+		"combat_context": combat_context,
+		"battlefield_context": battlefield_context,
+		"allowed_decisions": allowed_decisions
+	}
+	_record_npc_context_injection(npc_id, "battle_judgement", npc_context.get("current_order", {}), request_id, {
+		"trigger": trigger,
+		"has_battlefield_context": not battlefield_context.is_empty()
+	})
 	return payload
 
 
@@ -755,6 +852,33 @@ func _normalize_plan_failure_type(raw_type: String) -> String:
 			return "unknown"
 
 
+func _normalize_battle_trigger(raw_trigger: String) -> String:
+	match raw_trigger:
+		"combat_started", "low_hp", "escape_check":
+			return raw_trigger
+		_:
+			return "low_hp"
+
+
+func _normalize_battle_decision_array(raw_decisions: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if not raw_decisions is Array:
+		return result
+	for raw_decision in raw_decisions:
+		var decision := str(raw_decision)
+		if not [
+			"join_battle",
+			"avoid_battle",
+			"continue_fighting",
+			"escape_station",
+			"inspired"
+		].has(decision):
+			continue
+		if not result.has(decision):
+			result.append(decision)
+	return result
+
+
 func _send_http_request(method: String, endpoint: String, payload: Dictionary) -> Dictionary:
 	var parsed_url := _parse_backend_url()
 	if not bool(parsed_url.get("ok", false)):
@@ -1002,6 +1126,11 @@ func _build_npc_state_context(npc: Dictionary, npc_state: Dictionary) -> Diction
 		"satiety": clampi(int(npc_state.get("satiety", 100)), 0, 100),
 		"fatigue": clampi(int(npc_state.get("fatigue", 0)), 0, 100),
 		"current_action": str(npc_state.get("current_action", "idle")),
+		"behavior_mode": str(npc_state.get("behavior_mode", "work")),
+		"combat_mode": str(npc_state.get("combat_mode", "")),
+		"combat_strategy": npc_state.get("combat_strategy", {}),
+		"morale_boost": npc_state.get("morale_boost", {}),
+		"escape_intent": npc_state.get("escape_intent", {}),
 		"current_location": str(npc_state.get("current_location", "plaza")),
 		"current_location_name": str(npc_state.get("current_location_name", "广场")),
 		"recruited": bool(npc.get("recruited", npc_state.get("recruited", false))),
@@ -1069,6 +1198,28 @@ func _build_location_context(npc_state: Dictionary) -> Dictionary:
 	if memory_system != null and memory_system.has_method("get_location_snapshot"):
 		return memory_system.get_location_snapshot(location_id)
 	return {}
+
+
+func _get_interaction_context_from_state(npc_state: Dictionary) -> String:
+	var mode := str(npc_state.get("behavior_mode", ""))
+	if WARTIME_DIALOGUE_CONTEXTS.has(mode):
+		return mode
+	var combat_mode := str(npc_state.get("combat_mode", ""))
+	if WARTIME_DIALOGUE_CONTEXTS.has(combat_mode):
+		return combat_mode
+	return "work"
+
+
+func _build_battlefield_context(npc_id: String, interaction_context: String) -> Dictionary:
+	if not WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system != null and combat_system.has_method("build_battlefield_context"):
+		return combat_system.build_battlefield_context(npc_id, interaction_context)
+	return {
+		"target_npc_id": npc_id,
+		"target_behavior_mode": interaction_context
+	}
 
 
 func _build_npc_context(npc_id: String, npc_system: Node) -> Dictionary:
@@ -1154,13 +1305,15 @@ func debug_build_npc_context(npc_id: String, call_type: String = "debug") -> Dic
 	return context
 
 
-func _record_npc_context_injection(npc_id: String, call_type: String, current_order: Dictionary, request_id: String) -> void:
+func _record_npc_context_injection(npc_id: String, call_type: String, current_order: Dictionary, request_id: String, extra: Dictionary = {}) -> void:
 	_last_npc_context_injection = {
 		"npc_id": npc_id,
 		"call_type": call_type,
 		"request_id": request_id,
 		"current_order": current_order.duplicate(true)
 	}
+	for key in extra.keys():
+		_last_npc_context_injection[key] = extra[key]
 
 
 func _events_to_summaries(raw_events: Variant, limit: int) -> Array:

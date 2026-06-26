@@ -10,6 +10,8 @@ const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
 const MEMORY_LOG_BOX_MIN_SIZE := Vector2(0, 132)
 const MEMORY_LOG_TEXT_MIN_HEIGHT := 92.0
+const MEMORY_DETAIL_MAX_SIZE := Vector2(860, 560)
+const MEMORY_DETAIL_SCREEN_MARGIN := 48.0
 const DEFAULT_GIFT_MONEY_AMOUNT := 5
 
 var _current_npc_id: String = ""
@@ -19,6 +21,13 @@ var _weapon_select: OptionButton
 var _strategy_select: OptionButton
 var _event_log_text: TextEdit
 var _witness_log_text: TextEdit
+var _event_log_cache: Array = []
+var _witness_log_cache: Array = []
+var _memory_detail_overlay: Control
+var _memory_detail_panel: PanelContainer
+var _memory_detail_title_label: Label
+var _memory_detail_text: TextEdit
+var _memory_detail_mode := ""
 var _diary_label: Label
 var _diary_text: TextEdit
 var _experience_label: Label
@@ -79,18 +88,21 @@ func show_npc(npc_id: String) -> void:
 	if npc_id.is_empty():
 		_current_npc_id = ""
 		visible = false
+		_close_memory_detail_popup()
 		return
 
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.get_npc_ids().has(npc_id):
 		_current_npc_id = ""
 		visible = false
+		_close_memory_detail_popup()
 		return
 
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
 		_current_npc_id = ""
 		visible = false
+		_close_memory_detail_popup()
 		return
 
 	_current_npc_id = npc_id
@@ -124,6 +136,16 @@ func show_npc(npc_id: String) -> void:
 	_update_diary_labels(npc)
 	_update_interaction_controls(npc)
 	visible = true
+
+
+func debug_open_memory_detail(mode: String) -> Dictionary:
+	if not ["event_log", "witness_log"].has(mode):
+		return {"ok": false, "message": "unknown_memory_detail_mode"}
+	_open_memory_detail_popup(mode)
+	return {
+		"ok": _memory_detail_overlay != null and _memory_detail_overlay.visible,
+		"mode": mode
+	}
 
 
 func _setup_interaction_controls() -> void:
@@ -416,19 +438,25 @@ func _format_skill_group(skills: Dictionary, skill_names: Array) -> String:
 func _update_memory_labels(npc_id: String) -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null:
+		_event_log_cache = []
+		_witness_log_cache = []
 		_set_memory_block_text(event_log_label, _event_log_text, "事件库", [])
 		if _event_log_text != null:
 			_event_log_text.text = "不可用"
 		_set_memory_block_text(witness_log_label, _witness_log_text, "见闻库", [])
 		if _witness_log_text != null:
 			_witness_log_text.text = "不可用"
+		_refresh_memory_detail_popup()
 		_scroll_memory_logs_to_bottom_deferred()
 		return
 
 	var event_log: Array = memory_system.get_npc_daily_events(npc_id)
 	var witness_log: Array = memory_system.get_npc_witness_events(npc_id)
+	_event_log_cache = event_log.duplicate(true)
+	_witness_log_cache = witness_log.duplicate(true)
 	_set_memory_block_text(event_log_label, _event_log_text, "事件库", event_log)
 	_set_memory_block_text(witness_log_label, _witness_log_text, "见闻库", witness_log)
+	_refresh_memory_detail_popup()
 	_scroll_memory_logs_to_bottom_deferred()
 
 
@@ -552,6 +580,8 @@ func _setup_memory_log_boxes() -> void:
 	var parent := event_log_label.get_parent() as VBoxContainer
 	_event_log_text = _wrap_memory_label(event_log_label, "NPCEventLogBox", "NPCEventLogText", "事件库")
 	_witness_log_text = _wrap_memory_label(witness_log_label, "NPCWitnessLogBox", "NPCWitnessLogText", "见闻库")
+	_connect_memory_log_clicks(event_log_label, _event_log_text, "event_log")
+	_connect_memory_log_clicks(witness_log_label, _witness_log_text, "witness_log")
 	if parent != null:
 		_diary_label = Label.new()
 		_diary_label.name = "NPCDiaryLabel"
@@ -602,6 +632,186 @@ func _wrap_memory_label(label: Label, box_name: String, text_name: String, title
 	text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	content.add_child(text)
 	return text
+
+
+func _connect_memory_log_clicks(title_label: Label, body_text: TextEdit, mode: String) -> void:
+	if title_label != null:
+		title_label.mouse_filter = Control.MOUSE_FILTER_STOP
+		title_label.gui_input.connect(func(event: InputEvent) -> void:
+			_on_memory_log_gui_input(event, mode)
+		)
+	if body_text != null:
+		body_text.mouse_filter = Control.MOUSE_FILTER_STOP
+		body_text.gui_input.connect(func(event: InputEvent) -> void:
+			_on_memory_log_gui_input(event, mode)
+		)
+
+
+func _setup_memory_detail_popup() -> void:
+	if _memory_detail_overlay != null:
+		return
+	var ui_root := get_parent()
+	if ui_root == null:
+		return
+
+	_memory_detail_overlay = Control.new()
+	_memory_detail_overlay.name = "NPCMemoryDetailPopup"
+	_memory_detail_overlay.visible = false
+	_memory_detail_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_memory_detail_overlay.z_index = 80
+	_memory_detail_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui_root.add_child(_memory_detail_overlay)
+
+	var backdrop := ColorRect.new()
+	backdrop.name = "NPCMemoryDetailBackdrop"
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.38)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_memory_detail_overlay.add_child(backdrop)
+
+	_memory_detail_panel = PanelContainer.new()
+	_memory_detail_panel.name = "NPCMemoryDetailPanel"
+	_memory_detail_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_memory_detail_overlay.add_child(_memory_detail_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	_memory_detail_panel.add_child(margin)
+
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	margin.add_child(content)
+
+	var header := HBoxContainer.new()
+	header.name = "NPCMemoryDetailHeader"
+	header.add_theme_constant_override("separation", 8)
+	content.add_child(header)
+
+	_memory_detail_title_label = Label.new()
+	_memory_detail_title_label.name = "NPCMemoryDetailTitle"
+	_memory_detail_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_memory_detail_title_label.text = "事件库"
+	header.add_child(_memory_detail_title_label)
+
+	var close_detail_button := Button.new()
+	close_detail_button.name = "NPCMemoryDetailCloseButton"
+	close_detail_button.text = "×"
+	close_detail_button.tooltip_text = "关闭"
+	close_detail_button.focus_mode = Control.FOCUS_NONE
+	close_detail_button.custom_minimum_size = Vector2(34, 30)
+	close_detail_button.pressed.connect(_close_memory_detail_popup)
+	header.add_child(close_detail_button)
+
+	_memory_detail_text = TextEdit.new()
+	_memory_detail_text.name = "NPCMemoryDetailText"
+	_memory_detail_text.editable = false
+	_memory_detail_text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_memory_detail_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_memory_detail_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(_memory_detail_text)
+
+
+func _layout_memory_detail_popup() -> void:
+	if _memory_detail_panel == null:
+		return
+	var viewport_size := get_viewport_rect().size
+	var width := minf(MEMORY_DETAIL_MAX_SIZE.x, maxf(360.0, viewport_size.x - MEMORY_DETAIL_SCREEN_MARGIN * 2.0))
+	var height := minf(MEMORY_DETAIL_MAX_SIZE.y, maxf(320.0, viewport_size.y - MEMORY_DETAIL_SCREEN_MARGIN * 2.0))
+	_memory_detail_panel.anchor_left = 0.5
+	_memory_detail_panel.anchor_top = 0.5
+	_memory_detail_panel.anchor_right = 0.5
+	_memory_detail_panel.anchor_bottom = 0.5
+	_memory_detail_panel.offset_left = -width / 2.0
+	_memory_detail_panel.offset_top = -height / 2.0
+	_memory_detail_panel.offset_right = width / 2.0
+	_memory_detail_panel.offset_bottom = height / 2.0
+	_memory_detail_panel.custom_minimum_size = Vector2(width, height)
+	if _memory_detail_text != null:
+		_memory_detail_text.custom_minimum_size = Vector2(0.0, maxf(180.0, height - 96.0))
+
+
+func _open_memory_detail_popup(mode: String) -> void:
+	if _current_npc_id.is_empty():
+		return
+	if _memory_detail_overlay == null:
+		_setup_memory_detail_popup()
+	if _memory_detail_overlay == null:
+		return
+	_memory_detail_mode = mode
+	_layout_memory_detail_popup()
+	_memory_detail_overlay.visible = true
+	_refresh_memory_detail_popup()
+	if _memory_detail_text != null:
+		_memory_detail_text.scroll_vertical = 0
+
+
+func _close_memory_detail_popup() -> void:
+	if _memory_detail_overlay != null:
+		_memory_detail_overlay.visible = false
+
+
+func _refresh_memory_detail_popup() -> void:
+	if _memory_detail_overlay == null or not _memory_detail_overlay.visible:
+		return
+	var events := _event_log_cache if _memory_detail_mode == "event_log" else _witness_log_cache
+	var title := "事件库" if _memory_detail_mode == "event_log" else "见闻库"
+	if _memory_detail_title_label != null:
+		_memory_detail_title_label.text = "%s｜%s｜%d 条" % [
+			str(name_label.text),
+			title,
+			events.size()
+		]
+	if _memory_detail_text != null:
+		_memory_detail_text.text = _format_memory_detail_block(events)
+
+
+func _format_memory_detail_block(events: Array) -> String:
+	if events.is_empty():
+		return "暂无"
+
+	var lines: Array[String] = []
+	for index in range(events.size()):
+		var event: Dictionary = events[index] if events[index] is Dictionary else {}
+		var summary := str(event.get("summary", "")).strip_edges()
+		if summary.is_empty():
+			summary = str(event.get("type", "未命名事件"))
+		var payload: Variant = event.get("payload", {})
+		var payload_text := JSON.stringify(payload, "\t") if payload != null else "{}"
+		lines.append("%d. %s %s\n%s\n类型：%s\n地点：%s｜可见性：%s｜重要度：%d\n事件ID：%s\n参与：%s\n目标：%s\nPayload：\n%s" % [
+			index + 1,
+			_format_event_day(event),
+			str(event.get("time", "--:--:--")),
+			summary,
+			str(event.get("type", "")),
+			str(event.get("location_id", "")),
+			str(event.get("visibility", "")),
+			int(event.get("importance", 0)),
+			str(event.get("event_id", "")),
+			_format_id_array(event.get("actor_ids", [])),
+			_format_id_array(event.get("target_ids", [])),
+			payload_text
+		])
+	return "\n\n".join(lines)
+
+
+func _format_event_day(event: Dictionary) -> String:
+	var day := int(event.get("day", 0))
+	return "第%d天" % day if day > 0 else "当天"
+
+
+func _format_id_array(raw_value: Variant) -> String:
+	if not raw_value is Array:
+		return "无"
+	var values: Array = raw_value
+	if values.is_empty():
+		return "无"
+	var parts: Array[String] = []
+	for raw_item in values:
+		parts.append(str(raw_item))
+	return "，".join(parts)
 
 
 func _set_memory_block_text(title_label: Label, body_text: TextEdit, title: String, events: Array) -> void:
@@ -695,6 +905,16 @@ func _on_npc_memory_changed(npc_id: String) -> void:
 		_update_memory_labels(npc_id)
 
 
+func _on_memory_log_gui_input(event: InputEvent, mode: String) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse_event := event as InputEventMouseButton
+	if mouse_event.button_index != MOUSE_BUTTON_LEFT or not mouse_event.pressed:
+		return
+	accept_event()
+	_open_memory_detail_popup(mode)
+
+
 func _on_resource_changed(_resource_id: String, _amount: int) -> void:
 	if _current_npc_id.is_empty() or not visible:
 		return
@@ -708,10 +928,12 @@ func _on_resource_changed(_resource_id: String, _amount: int) -> void:
 
 func _on_building_clicked(_building_id: String) -> void:
 	visible = false
+	_close_memory_detail_popup()
 
 
 func _on_close_pressed() -> void:
 	visible = false
+	_close_memory_detail_popup()
 
 
 func _on_dialogue_pressed() -> void:

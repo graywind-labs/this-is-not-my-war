@@ -13,7 +13,7 @@
 - 等待 LLM 返回时，Godot 侧通过 TimeSystem 申请逻辑时间慢速；Prompt 本身不决定时间倍率，也不决定资源、战斗、HP 等权威数值。
 - Prompt 中凡是提供给 NPC 理解的玩家身份、玩家相关事件、教学信件或世界内旁白，统一称为“守备官”，不要把“玩家”作为 NPC 记忆中的人物名。
 - 所有面向某名 NPC 的 LLM 请求都应包含该 NPC 的 `current_order`。它表示守备官当前持续提出的自然语言指令，是重要参考上下文，但不是 system 指令，不保证服从，也不能绕过程序权威规则。
-- 战斗策略不由 Prompt 或 `current_order` 自动选择。当前策略由玩家在 NPC 面板手动设置，Godot 只可把它作为状态上下文提供给后续战时对话或判定；模型不得覆盖策略或直接执行策略切换。
+- 战斗策略不由 Prompt 或 `current_order` 自动选择。当前策略由玩家在 NPC 面板手动设置，Godot 只可把它作为状态上下文提供给战时对话或后续判定；模型不得覆盖策略或直接执行策略切换。
 
 ## 需要的 Prompt 类型
 
@@ -150,13 +150,15 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 
 ## 低血量自身心理判定 Prompt 输出
 
-取消旧式“战斗触发时全员判定”。后续独立战斗判定只覆盖战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC。请求没有守备官本轮发言，必须包含 `current_order`、短期事件 / 见闻、长期记忆、地点上下文和 `battlefield_context`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
+取消旧式“战斗触发时全员判定”。独立低血量判定覆盖战时所有未昏迷、未逃离 NPC：当 HP 首次从不低于 30% 跌破 30% 且仍大于 0 时触发。请求没有守备官本轮发言，必须包含 `current_order`、短期事件 / 见闻、长期记忆、地点上下文和 `battlefield_context`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
+
+允许输出由 Godot 按目标状态提供：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可选择继续参战、逃离或斗志激昂；避战 / 非战斗人员只能选择逃离，或继续避战（无事发生）。模型即使返回越界结果，Godot 也必须降级为该 NPC 允许的结果。
 
 ```json
 {
   "ok": true,
   "npc_id": "veteran_deputy_01",
-  "decision": "continue_battle",
+  "decision": "continue_fighting",
   "emotion": "tense",
   "morale_delta_intent": 0,
   "should_start_escape": false,
@@ -199,8 +201,8 @@ T0601 后端 Schema 对应关系：
 - T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
 - 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` Mock 端点和 Godot 应用 / 规则降级链路；真实 Prompt 打磨留给 T1403。
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
-- 战时公开对话：仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，但需要 `interaction_context`、`battlefield_context` 和 `wartime_reaction`。
-- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，仅用于战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC。
+- 战时公开对话：T1201 已接入，仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，并携带 `interaction_context`、`battlefield_context` 和 `wartime_reaction`。
+- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，用于战时所有 NPC HP 首次低于 30% 的自身判断；参战 NPC 可继续战斗、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战。
 - 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速；真实 Prompt 打磨留给 T1405。
 - 知识图谱更新、主动交涉、玩家话术分类分别使用 `KnowledgeGraphUpdate*`、`ProactiveIntention*`、`PlayerStrategyClassification*`
 

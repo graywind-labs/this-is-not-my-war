@@ -35,7 +35,7 @@ T1103A 已实现模式切换的权威边界：进入集结 / 战斗 / 避战时�
 3. 未入伍 NPC、已入伍但无主武器 NPC 在工作模式中遇敌，进入避战模式。
 4. 睡觉中的 NPC 只有被敌人攻击时才从睡觉进入战斗 / 避战。
 
-T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模式切换和非战斗人员避战闭环：HUD `AlarmButton` 和 GM `alarm` / `rally` 都调用 `CombatSystem.trigger_combat_alarm(...)`。警铃会给所有 NPC 写入 `combat_alarm_rang` 结构化事件；随后只有已入伍、已装备主武器、当前可行动且非睡觉的 NPC 响应集结并进入 `behavior_mode == "rally"`。响应者的普通日常行动会通过 `NPCSystem.set_npc_behavior_mode(...)` 的中断边界打断并释放工位，再移动到城门外防线。阵型按近战步兵 / 长杆步兵 / 近战骑兵前排，弓箭兵 / 弩兵 / 骑射单位后排排列，方向标记面向正门外敌人来袭方向。已装备坐骑的 NPC 只在 `behavior_mode == "rally"` 或 `"combat"` 时显示低模坐骑；日常工作模式不显示骑乘。若集结途中或集合点附近遭遇敌人，只有已入伍且有主武器 NPC 会停止集结并进入 `behavior_mode == "combat"` 与 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy` 和必要的 `npc_mode_changed`。未入伍或已入伍但无主武器 NPC 在工作模式中接敌会进入 `behavior_mode == "avoid_combat"`，按最近敌人方位生成短距离散射移动目标，不设置战斗 `combat_mode`，也不攻击敌人；睡觉中的非战斗人员只有被敌人攻击才进入避战。集结到点后等待 1 游戏小时仍未接敌会返回 `work` 且不触发计划重评估；场上敌人清空时，`combat` NPC 返回 `work` 并触发计划重评估，`avoid_combat` NPC 返回 `work` 且不触发计划重评估。T1103D 起，工作 / 战斗和工作 / 避战互转不再写 `npc_mode_changed`，具体战斗和避战事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended` 等事件表达。T1104 后，`combat` 模式中的入伍持主武器 NPC 已能执行基础自动攻击、扣除敌人 HP 并在敌人 HP 清零后移除敌人。T1105 后，战斗模式会按 NPC 当前手动选择的兵种策略决定基础攻击前的战术移动与攻击节奏。T1106 后，波次生成和敌军清空会分别写入广场 `combat_started` / `combat_ended`，并维护本场受伤、昏迷和击退统计；正式胜负结算、命中 / 格挡 / 士气修正和心理判定仍留给后续任务。
+T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模式切换和非战斗人员避战闭环：HUD `AlarmButton` 和 GM `alarm` / `rally` 都调用 `CombatSystem.trigger_combat_alarm(...)`。警铃会给所有 NPC 写入 `combat_alarm_rang` 结构化事件；随后只有已入伍、已装备主武器、当前可行动且非睡觉的 NPC 响应集结并进入 `behavior_mode == "rally"`。响应者的普通日常行动会通过 `NPCSystem.set_npc_behavior_mode(...)` 的中断边界打断并释放工位，再移动到城门外防线。阵型按近战步兵 / 长杆步兵 / 近战骑兵前排，弓箭兵 / 弩兵 / 骑射单位后排排列，方向标记面向正门外敌人来袭方向。已装备坐骑的 NPC 只在 `behavior_mode == "rally"` 或 `"combat"` 时显示低模坐骑；日常工作模式不显示骑乘。若集结途中或集合点附近遭遇敌人，只有已入伍且有主武器 NPC 会停止集结并进入 `behavior_mode == "combat"` 与 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy` 和必要的 `npc_mode_changed`。未入伍或已入伍但无主武器 NPC 在工作模式中接敌会进入 `behavior_mode == "avoid_combat"`，按最近敌人方位生成短距离散射移动目标，不设置战斗 `combat_mode`，也不攻击敌人；睡觉中的非战斗人员只有被敌人攻击才进入避战。集结到点后等待 1 游戏小时仍未接敌会返回 `work` 且不触发计划重评估；场上敌人清空时，`combat` NPC 返回 `work` 并触发计划重评估，`avoid_combat` NPC 返回 `work` 且不触发计划重评估。T1103D 起，工作 / 战斗和工作 / 避战互转不再写 `npc_mode_changed`，具体战斗和避战事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended` 等事件表达。T1104 后，`combat` 模式中的入伍持主武器 NPC 已能执行基础自动攻击、扣除敌人 HP 并在敌人 HP 清零后移除敌人。T1105 后，战斗模式会按 NPC 当前手动选择的兵种策略决定基础攻击前的战术移动与攻击节奏。T1106 后，波次生成和敌军清空会分别写入广场 `combat_started` / `combat_ended`，并维护本场受伤、昏迷和击退统计；T1201 后，战时公开对话可应用斗志 buff 或逃离意图；T1202 后，战时低血量自身心理判定已接入。正式胜负结算、命中 / 格挡和完整逃离流程仍留给后续任务。
 
 ## 兵种判定
 
@@ -59,7 +59,7 @@ T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑�
 
 取消旧规则：战斗触发时不再全员进行一次心理判定。
 
-已入伍 NPC 在集结模式和战斗模式下可被守备官主动对话。该对话必须：
+T1201 已实现：已入伍且有主武器 NPC 在集结模式和战斗模式下可被守备官主动对话。该对话会：
 
 - 强制 `local_public`，UI 中“同地点公开”默认开启且不可关闭。
 - 在 Prompt 中明确当前模式是集结或战斗，并注入相关集结 / 战斗事件。
@@ -67,25 +67,32 @@ T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑�
 - 额外加入战局上下文：敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC 列表，仍在驿站但非战斗人员的 NPC 列表。
 - 在回复结构中额外输出战时心理意向，例如 `wartime_reaction = none | escape | morale_boost`。
 
-`morale_boost` 由程序应用为斗志激昂 buff，持续 2 游戏小时，提高一定攻击力和移动速度；具体数值由战斗系统配置。`escape` 只表示触发逃离意向，逃离移动、状态切换和事件入库仍由程序执行。LLM 不直接改 HP、速度、攻击力或逃离位置。
+`morale_boost` 由 CombatSystem 应用为斗志激昂 buff，持续 2 游戏小时，当前提高攻击力和 NPC 实体移动速度。开始和结束分别写入 `morale_boost_started` / `morale_boost_ended`；每次战时心理结果写入 `battle_psychology_result` 并进入广场公开事件。`escape` 当前只写入 `escape_intent.status == "pending"` 和最近战时对话结果，逃离移动、状态切换和 `escape_started` / `escaped` 事件仍由 T1203 执行。LLM 不直接改 HP、速度、攻击力或逃离位置。
 
-非战斗人员在避战模式下也可被守备官主动对话。该对话同样强制 `local_public`，Prompt 明确其正在躲避敌人袭击，并注入战局上下文。守备官仍可勾选“提出应征”，征召结果沿用日常对话逻辑；若避战中的 NPC 同意应征但仍无主武器，继续避战；只有已入伍且装备主武器并且场上仍有敌人时，程序才将其切入战斗模式。
+非战斗人员在避战模式下也可被守备官主动对话。该对话同样强制 `local_public`，Prompt 明确其正在躲避敌人袭击，并注入战局上下文。守备官仍可勾选“提出应征”，征召结果沿用日常对话逻辑；若避战中的 NPC 同意应征但仍无主武器，继续避战；只有已入伍且装备主武器并且场上仍有敌人时，程序才将其切入战斗模式。后端不可用时，战时对话会使用规则 fallback 生成回复、应征结果和 `wartime_reaction`。
 
 ## 低血量判定
 
-当战斗模式中的已入伍 NPC HP 首次低于 30% 时，触发自身心理判定。
+T1202 已实现：当前战斗 / 敌人在场期间，当任一未昏迷、未逃离 NPC 的 HP 首次从不低于 30% 跌破 30%，且仍大于 0 时，触发自身心理判定。该判定不只覆盖 `combat` 模式中的已入伍持武器 NPC；`avoid_combat` 中的非战斗人员被敌人追上并打到残血时也会触发。
 
-可能结果：
+参战 NPC 的可能结果：
 
 - 继续参战
 - 逃离驿站
 - 斗志激昂
 
-该请求没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次。
+不参战 / 避战 NPC 的可能结果：
 
-低血量与逃离相关判定也必须继续携带最新 `current_order`，让 NPC 在受伤或恐惧时重新解释守备官要求，而不是把发布指令时的旧判断当成永久结果。
+- 逃离驿站
+- 留在驿站继续避战（无事发生）
 
-判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该判定需要申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。
+该请求由 `LLMBridge.request_npc_battle_judgement(...)` 调用 `/npc/battle_judgement`，没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次；后端失败或输出越界时，Godot 按允许结果规则降级。
+
+已入伍且有主武器、实际处于 `combat` 模式的 NPC 可以因判定获得斗志激昂或继续参战。未入伍 NPC、已入伍但无主武器 NPC、以及处于 `avoid_combat` 的非战斗人员，不会获得斗志激昂，也不会因此切入或继续战斗；他们只能触发逃离驿站意向，或继续留在驿站内避战。
+
+低血量与逃离相关判定也必须继续携带最新 `current_order`，让 NPC 在受伤或恐惧时重新解释守备官要求，而不是把发布指令时的旧判断当成永久结果。已昏迷、已逃离、HP 已经低于 30% 后再次受击，或 HP 直接清零进入昏迷的 NPC 不触发该判定。
+
+判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该判定需要申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。触发事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并通过 `debug_get_combat_snapshot().last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements` 暴露给 GM / 自动化验证。
 
 ## 昏迷机制
 

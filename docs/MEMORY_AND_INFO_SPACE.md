@@ -78,13 +78,14 @@
 | `combat_rally_started` | `{actor}作为{unit_type_label}前往{rally_location_name}集结，面向敌人来袭方向。` | `unit_type`, `unit_type_label`, `rally_location_id`, `rally_location_name`, `formation_row`, `formation_index`, `has_mount`；T1103 已实现 |
 | `combat_rally_encountered_enemy` | `{actor}在集结途中遭遇{enemy_name}，放弃集结并准备接敌。` | `enemy_id`, `enemy_name`, `distance`, `has_mount`；T1103 已实现 |
 | `combat_started` | `敌军来袭：第{wave_number}波，{enemy_count}名敌人逼近驿站。` | `wave_number`, `enemy_count`, `enemy_roster`, `friendly_combatant_count`, `friendly_roster`；T1106 已实现 |
-| `combat_ended` | `敌人已经全被消灭，第{wave_number}波战斗结束。受伤：{injured_npcs}。昏迷：{unconscious_npcs}。击退敌人：{defeated_by_npc}。` | `wave_number`, `enemy_count`, `injured_npcs`, `unconscious_npcs`, `defeated_by_npc`, `reason`；T1106 已实现 |
+| `combat_ended` | `敌人已经全被消灭，第{wave_number}波战斗结束。受伤：{injured_npcs}。昏迷：{unconscious_npcs}。击退敌人：{defeated_by_npc}。` | `wave_number`, `enemy_count`, `injured_npcs`, `unconscious_npcs`, `low_hp_judgements`, `defeated_by_npc`, `reason`；T1106 已实现，T1202 起可包含低血量判定记录 |
 | `npc_mode_changed` | `{actor}从{from_mode_label}切换到{to_mode_label}，原因：{reason}。` | `npc_id`, `from_mode`, `from_mode_label`, `to_mode`, `to_mode_label`, `reason`；T1103A 已实现，T1103D 起不覆盖 `work <-> combat` 与 `work <-> avoid_combat` |
 | `avoidance_started` | `{actor}发现{enemy_name}接近，正朝{target_name}避战。` | `enemy_id`, `enemy_name`, `distance`, `reason`, `target_id`, `target_name`, `target_position`；T1103B/T1103C 已实现 |
 | `avoidance_ended` | `{actor}不再避战，回到驿站日常安排。` | `reason`, `active_enemy_count`, `target_id`, `target_name`；T1103B/T1103C 已实现 |
-| `morale_boost_started` | `{actor}被守备官的话激起了斗志。` | `source_event_id`, `duration_seconds`, `attack_bonus`, `move_speed_bonus` |
-| `morale_boost_ended` | `{actor}的斗志激昂状态消退了。` | `source_event_id`, `duration_seconds` |
-| `battle_psychology_result` | `{actor}在战斗压力下作出了判断：{decision}。` | `trigger`, `decision`, `source_event_id`, `battlefield_context_summary` |
+| `low_hp_triggered` | `{actor}被打到残血，HP 从{hp_before}降到{hp_after}。` | `hp_before`, `hp_after`, `max_hp`, `damage`, `damage_source`, `damage_event_id`, `behavior_mode`, `combatant_decisions_allowed`；T1202 已实现 |
+| `morale_boost_started` | `{actor}被守备官的话激起了斗志，攻击和移动暂时提升。` / `{actor}在残血压力下激起了斗志，攻击和移动暂时提升。` | `source_event_id`, `trigger`, `duration_seconds`, `attack_bonus`, `move_speed_bonus`；T1201 已实现，T1202 起支持低血量来源 |
+| `morale_boost_ended` | `{actor}的斗志激昂状态消退了。` | `source_event_id`, `duration_seconds`；T1201 已实现 |
+| `battle_psychology_result` | `{actor}在战斗压力下作出了判断：{decision}。` | `trigger`, `decision`, `source_event_id`, `low_hp_event_id`, `battlefield_context_summary`；T1201 已实现战时对话来源，T1202 已实现低血量来源 |
 | `healing_started` | `{healer}开始在{location}协助治疗{target}。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `healing_completed` | `{healer}结束了对{target}的治疗。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `revived` | `{target}在{location}苏醒了。` | `hp_before`, `hp_after`, `recovery_source` |
@@ -125,7 +126,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - T1103 起，`CombatSystem.trigger_combat_alarm(...)` 会给所有 NPC 写入 `combat_alarm_rang` 私有事件；只有入伍、持主武器且当前可行动的 NPC 会继续写入 `combat_rally_started`，并被移动到城门外防线。若集结途中遇到敌人，系统写入 `combat_rally_encountered_enemy` 并将 NPC 切到 `combat_ready` 占位。上述事件只记录警铃、集结和接敌事实，不代表战斗已经完成。
 - T1104 起，`attack_made` 记录我方 NPC 对敌人完成的一次程序结算攻击，payload 包含攻击者、目标敌人、武器、力量 / 熟练度输入、原始攻击力、防御、实际伤害、敌人 HP 前后值和是否击退敌人。敌人攻击 NPC 仍复用 `damage_taken`，并可在 payload 中保留 `raw_attack_power`、`target_defense` 和 `damage_after_defense`。这些事件只记录程序已应用的 HP 事实，不让 LLM 决定攻击力、防御或扣血。
 - T1106 起，敌人波次生成后写入广场 `combat_started`，payload 记录波次、敌军 roster、我方已入伍持主武器战斗人员 roster 和非战斗人员数量；敌军全灭、撤退或 GM 清敌后写入广场 `combat_ended`，payload 记录本场受伤 / 昏迷 NPC、各 NPC 击退敌人数量和结束原因。两类事件都使用确定性 summary，不让 LLM 决定敌人、伤害、HP 或胜负。
-- T1103A 起，`npc_mode_changed` 记录需要留痕的程序权威模式切换；事件只记录程序已应用的事实，LLM 输出本身不直接写入权威数值。T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 的互转不再写入 `npc_mode_changed`，也不因该事件向地点广播；具体事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended`、警铃、集结、昏迷和复苏等事件表达。T1103B/T1103C 起，`avoidance_started` / `avoidance_ended` 记录非战斗人员的避战移动阶段、按敌方方位生成的短步长目标、触发敌人和退出原因。后续仍需以 `battle_psychology_result` 记录战时对话或低血量自身心理判定的结构化结果，以 `morale_boost_started` / `morale_boost_ended` 记录斗志激昂 buff 的开始和结束。
+- T1103A 起，`npc_mode_changed` 记录需要留痕的程序权威模式切换；事件只记录程序已应用的事实，LLM 输出本身不直接写入权威数值。T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 的互转不再写入 `npc_mode_changed`，也不因该事件向地点广播；具体事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended`、警铃、集结、昏迷和复苏等事件表达。T1103B/T1103C 起，`avoidance_started` / `avoidance_ended` 记录非战斗人员的避战移动阶段、按敌方方位生成的短步长目标、触发敌人和退出原因。T1201 起，战时公开对话的结构化结果写入 `battle_psychology_result`，斗志激昂 buff 的开始和结束写入 `morale_boost_started` / `morale_boost_ended`；T1202 起，低血量事实写入 `low_hp_triggered`，低血量自身心理判定结果写入 `battle_psychology_result`，低血量来源的斗志激昂同样写入 `morale_boost_started(trigger=low_hp)`。
 - T0502A 起，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，因此昏迷者不会收到地点/广场公开广播、状态广播、公告或进入快照；复苏后见闻接收自动恢复。
 - 玩家非对话交互的运行时 actor id 使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本。
 - T0701 已由 Godot `DialogSystem` 接入后端对话文本并写入事件库。每个 `dialogue_turn` 作为一个事实事件进入所有参与 NPC 的事件库；若 `visibility == "local_public"`，事件地点只向同地点非参与者广播一次，避免双方各写一份事件造成第三者重复见闻。

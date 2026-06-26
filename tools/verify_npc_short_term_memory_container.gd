@@ -120,8 +120,8 @@ func _init() -> void:
 
 	npc_panel.show_npc(target_id)
 	await process_frame
-	var event_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEventLogLabel") as Label
-	var witness_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCWitnessLogLabel") as Label
+	var event_label := npc_panel.find_child("NPCEventLogLabel", true, false) as Label
+	var witness_label := npc_panel.find_child("NPCWitnessLogLabel", true, false) as Label
 	if event_label == null or witness_label == null:
 		push_error("NPCPanel memory labels not found")
 		quit(1)

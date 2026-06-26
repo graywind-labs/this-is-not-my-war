@@ -117,8 +117,9 @@ func _refresh(state: Dictionary) -> void:
 	npc_name_label.text = "与 %s 对话" % str(state.get("target_npc_name", "NPC"))
 	round_label.text = "轮次：不限" if str(state.get("dialogue_kind", "player_npc")) == "player_npc" else "轮次：%d / %d" % [int(state.get("current_round", 0)), int(state.get("max_rounds", 5))]
 	var waiting := bool(state.get("waiting", false))
+	var force_public := bool(state.get("force_local_public", false))
 	public_toggle.set_pressed_no_signal(str(state.get("visibility", "private")) == "local_public")
-	public_toggle.disabled = waiting or int(state.get("current_round", 0)) > 0
+	public_toggle.disabled = force_public or waiting or int(state.get("current_round", 0)) > 0
 	send_button.disabled = waiting
 	input_edit.editable = true
 	var is_player_dialogue := str(state.get("dialogue_kind", "player_npc")) == "player_npc"
@@ -132,7 +133,7 @@ func _refresh(state: Dictionary) -> void:
 	var last_error := str(state.get("last_error", ""))
 	var recruitment_result := str(state.get("last_recruitment_result", "none"))
 	var recruitment_status := "NPC 已接受应征。" if recruitment_result == "accept" else "NPC 拒绝了应征。" if recruitment_result == "reject" else ""
-	status_label.text = last_error if not last_error.is_empty() else ("等待回复……" if waiting else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "私人对话" if str(state.get("visibility", "private")) == "private" else "同地点公开对话")
+	status_label.text = last_error if not last_error.is_empty() else ("等待回复……" if waiting else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "战时同地点公开对话" if force_public else "私人对话" if str(state.get("visibility", "private")) == "private" else "同地点公开对话")
 	var lines: Array[String] = []
 	for raw_turn in state.get("history", []):
 		if not raw_turn is Dictionary:

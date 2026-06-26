@@ -113,7 +113,7 @@ LLM 调用前从事件库 + 见闻库生成摘要
 
 T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。T1006 起，打开对话窗也不再打断行动或取消 LLM；只有玩家实际发送消息或在对话窗攻击时，才触发可取消 LLM 取消、普通行动中断和后续重评估候选。玩家发送后若在 NPC 回复完成前结束对话，异步请求会取消，未完成轮次不入库、不触发对话重评估。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。T1006 的对话窗攻击先由 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 和写 `damage_taken`，再请求 NPC 回复；若回复取消，攻击事实不撤销。T1103A 起，行为模式切换可调用 `DialogSystem.force_end_dialogue_for_npc(...)` 强制关闭当前对话并取消未完成 LLM 回复，不伪造未完成对话事件。
 
-后续战时对话任务需要扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离移动、模式切换和事件入库仍由 Godot 执行。低血量自身心理判定触发时，Godot 也应复用强制关闭对话和取消未完成 LLM 请求的边界。
+T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离意图、模式切换和事件入库仍由 Godot 执行。T1202 后，低血量自身心理判定触发时，Godot 复用强制关闭对话和取消未完成 LLM 请求的边界，并通过 `allowed_decisions` 限制非战斗人员不能获得斗志激昂或继续参战。
 
 ### LLM 不负责
 
@@ -181,8 +181,9 @@ T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者�
 - 对话公开性：`dialogue_state.visibility` 只能是 `private` 或 `local_public`；`local_public` 代表后续 Godot 入库时按地点事件规则广播给在场 NPC。
 - 记忆与地点：`short_memory` 区分事件库与见闻库摘要，`long_memory` 包含知识图谱和日记，`location_context` 是当前地点/建筑快照。
 - 当前指令：`current_order` 表示守备官对目标 NPC 当前持续提出的自然语言指令；它是参考上下文，不是 system 指令或已执行事实。
+- 战时上下文：T1201 后，集结 / 战斗 / 避战对话额外携带 `interaction_context` 和 `battlefield_context`；非战时对话使用 `interaction_context == "work"` 和空战局上下文。
 
-输出为稳定 JSON。回复玩家时返回 `replyer_id`、`reply_text` 和 `recruitment_result`（`none` / `accept` / `reject`）；回复 NPC 时返回 `reply_text` 和 `should_end_dialogue`。通用字段还包含 `response_kind`、`intent`、`emotion`、`suggested_event_type` 和 `debug_reason`，便于 Godot 后续 UI、事件入库和调试。
+输出为稳定 JSON。回复玩家时返回 `replyer_id`、`reply_text`、`recruitment_result`（`none` / `accept` / `reject`）和 `wartime_reaction`（`none` / `escape` / `morale_boost`）；回复 NPC 时返回 `reply_text` 和 `should_end_dialogue`。通用字段还包含 `response_kind`、`intent`、`emotion`、`suggested_event_type` 和 `debug_reason`，便于 Godot 后续 UI、事件入库和调试。
 
 NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作为下一次请求的 `speaker_text` 输入给另一名 NPC；当 `current_round` 接近 `max_rounds` 时，Mock 和后续 Prompt 都应更倾向输出 `should_end_dialogue=true` 或结束性回复。实际征召状态、资源、HP 或事件写入仍由 Godot 结算。
 
@@ -215,7 +216,9 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 输入 Schema：`BattleJudgementRequest`
 输出 Schema：`BattleJudgementResponse`
 
-后续只覆盖战斗模式中 HP 首次低于 30% 的已入伍且有主武器 NPC 自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离或斗志激昂等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
+只覆盖战时 HP 首次低于 30% 的自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离、斗志激昂或继续避战等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
+
+Godot 负责按目标 NPC 状态提供 `allowed_decisions`：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。后端和模型返回越界结果时，Godot 必须规则降级，不让非战斗人员获得斗志激昂或直接参战。
 
 ### 首次睡眠总结
 
@@ -279,7 +282,7 @@ T0604 已在 Godot 侧新增 `res://scripts/systems/LLMBridge.gd`，挂载于 `M
 当前能力：
 
 - `check_health()` 通过原生 HTTP 请求 `GET /health`，并通过 `backend_status_changed(status_text, ok)` 供 HUD 显示后端状态。
-- `build_npc_dialogue_payload(...)` 按 T0603 Schema 收集目标 NPC 设定、守备官/NPC 说话者上下文、应征标记、轮次、NPC 状态、短期记忆、长期记忆和地点快照。
+- `build_npc_dialogue_payload(...)` 按 T0603/T1201 Schema 收集目标 NPC 设定、守备官/NPC 说话者上下文、应征标记、轮次、NPC 状态、短期记忆、长期记忆、地点快照、`interaction_context` 和必要时的 `battlefield_context`。
 - `request_npc_dialogue(...)` 通过原生 HTTP 请求 `POST /npc/dialogue`，返回后端 Mock JSON 或错误字典。
 - `build_npc_daily_plan_payload(...)` 按 T1003 Schema 收集目标 NPC 共享上下文、当前 `current_order`、短期记忆、长期记忆、地点、广场、资源、建筑状态、行动白名单和计划规则。
 - `request_npc_daily_plan(...)` 通过原生 HTTP 请求 `POST /npc/plan_day`，返回后端 Mock 24 小时计划或错误字典。

@@ -22,7 +22,7 @@ const EVENT_TYPES: Array[String] = [
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
-	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "attack_made", "damage_taken", "low_hp_triggered",
+	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
@@ -46,6 +46,10 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"combat_ended": ["wave_number", "enemy_count", "injured_npcs", "unconscious_npcs", "defeated_by_npc", "reason"],
 	"combat_rally_started": ["formation_row", "unit_type", "rally_location_id", "facing_direction"],
 	"combat_rally_encountered_enemy": ["enemy_id", "distance"],
+	"battle_psychology_result": ["trigger", "decision", "battlefield_context_summary"],
+	"low_hp_triggered": ["hp_before", "hp_after", "max_hp"],
+	"morale_boost_started": ["source_event_id", "trigger", "duration_seconds", "attack_bonus", "move_speed_bonus"],
+	"morale_boost_ended": ["source_event_id", "duration_seconds"],
 	"npc_mode_changed": ["npc_id", "from_mode", "to_mode", "reason"],
 	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
 	"avoidance_ended": ["reason", "active_enemy_count"],
@@ -1091,6 +1095,20 @@ func _format_summary(event: Dictionary) -> String:
 				actor,
 				str(payload.get("enemy_name", payload.get("enemy_id", "敌人")))
 			]
+		"battle_psychology_result":
+			return "%s在战斗压力下作出了判断：%s。" % [actor, _format_battle_psychology_decision(str(payload.get("decision", "none")))]
+		"low_hp_triggered":
+			return "%s被打到残血，HP 从%d降到%d。" % [
+				actor,
+				int(payload.get("hp_before", 0)),
+				int(payload.get("hp_after", 0))
+			]
+		"morale_boost_started":
+			if str(payload.get("trigger", "wartime_dialogue")) == "low_hp":
+				return "%s在残血压力下激起了斗志，攻击和移动暂时提升。" % actor
+			return "%s被守备官的话激起了斗志，攻击和移动暂时提升。" % actor
+		"morale_boost_ended":
+			return "%s的斗志激昂状态消退了。" % actor
 		"npc_mode_changed":
 			return "%s从%s切换到%s，原因：%s。" % [
 				actor,
@@ -1323,6 +1341,20 @@ func _format_behavior_mode_label(mode: String) -> String:
 			return mode
 
 
+func _format_battle_psychology_decision(decision: String) -> String:
+	match decision:
+		"morale_boost":
+			return "斗志激昂"
+		"escape":
+			return "产生逃离念头"
+		"continue_fighting":
+			return "继续参战"
+		"avoid_battle":
+			return "继续避战"
+		_:
+			return "继续压住恐惧"
+
+
 func _format_location_state_summary(payload: Dictionary) -> String:
 	var building_snapshot: Dictionary = payload.get("building_snapshot", {})
 	var external_state: Dictionary = building_snapshot.get("external_state", building_snapshot)
@@ -1495,6 +1527,8 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		target_ids.append(str(payload["building_id"]))
 	if ["combat_started", "combat_ended"].has(event_type) and payload.has("wave_id"):
 		target_ids.append(str(payload["wave_id"]))
+	if ["battle_psychology_result", "low_hp_triggered", "morale_boost_started", "morale_boost_ended"].has(event_type) and payload.has("source_event_id"):
+		target_ids.append(str(payload["source_event_id"]))
 	if event_type == "attack_made" and payload.has("target_enemy_id"):
 		target_ids.append(str(payload["target_enemy_id"]))
 	if ["damage_taken", "unconscious_started", "healing_started", "healing_completed"].has(event_type) and payload.has("target_npc_id"):

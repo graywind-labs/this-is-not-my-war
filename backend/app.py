@@ -5,6 +5,8 @@ from pydantic import ValidationError
 try:
     from backend.schemas import (
         APIErrorResponse,
+        BattleJudgementRequest,
+        BattleJudgementResponse,
         DailyPlanRequest,
         DailyPlanResponse,
         DailyReflectionRequest,
@@ -18,6 +20,8 @@ try:
 except ModuleNotFoundError:
     from schemas import (
         APIErrorResponse,
+        BattleJudgementRequest,
+        BattleJudgementResponse,
         DailyPlanRequest,
         DailyPlanResponse,
         DailyReflectionRequest,
@@ -202,6 +206,50 @@ def create_app() -> Flask:
                 "ok": False,
                 "error_code": "model_output_invalid",
                 "message": "Model output did not match PlanRevisionResponse.",
+                "fallback_used": False,
+                "details": exc.errors(),
+                "usage": result.usage,
+            }), 502
+
+        return jsonify(response_model.model_dump())
+
+    @app.post("/npc/battle_judgement")
+    def npc_battle_judgement():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            judgement_request = BattleJudgementRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "BattleJudgementRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        result = ModelAdapter().generate("battle_judgement", judgement_request.model_dump())
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), 503
+
+        try:
+            response_model = BattleJudgementResponse.model_validate(result.content)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "model_output_invalid",
+                "message": "Model output did not match BattleJudgementResponse.",
                 "fallback_used": False,
                 "details": exc.errors(),
                 "usage": result.usage,

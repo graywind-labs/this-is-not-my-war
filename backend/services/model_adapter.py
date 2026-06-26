@@ -134,6 +134,13 @@ class ModelAdapter:
             accepts = is_recruitment_request and any(word in text for word in ["守住", "保护", "应征", "帮忙", "一起", "救"])
             rejects = is_recruitment_request and not accepts
             should_end = is_npc_reply and rounds_left <= 1
+            interaction_context = str(payload.get("interaction_context", "work"))
+            wartime_reaction = "none"
+            if interaction_context in {"rally", "combat"} and not is_npc_reply:
+                if any(word in text for word in ["逃", "跑", "撤", "自己活", "别管"]):
+                    wartime_reaction = "escape"
+                elif any(word in text for word in ["守住", "保护", "坚持", "拦住", "挡住", "一起"]):
+                    wartime_reaction = "morale_boost"
             if is_npc_reply:
                 reply_text = "我听明白了。先到这里吧，别让这段谈话耽误手上的事。"
                 if rounds_left > 1:
@@ -142,6 +149,10 @@ class ModelAdapter:
                 reply_text = "守备官，我会先把能做的事做好。若真到了门口，我也不会装作没听见。"
                 if rejects:
                     reply_text = "守备官，我听见了，但我还不能答应把自己交给这场仗。"
+                elif wartime_reaction == "morale_boost":
+                    reply_text = "守备官，说得够明白了。我会把他们拦在门外。"
+                elif wartime_reaction == "escape":
+                    reply_text = "守备官，我撑不住这套说法。我要先想办法离开这里。"
             return {
                 "ok": True,
                 "replyer_id": npc_id,
@@ -150,6 +161,7 @@ class ModelAdapter:
                 "intent": "accept_recruitment" if accepts else "reject_recruitment" if rejects else "end_talk" if should_end else "continue_talk",
                 "emotion": "wary",
                 "recruitment_result": "accept" if accepts else "reject" if rejects else "none",
+                "wartime_reaction": wartime_reaction,
                 "should_end_dialogue": should_end,
                 "suggested_event_type": "dialogue_turn",
                 "debug_reason": f"mock_dialogue_by_keywords_and_round_limit{order_suffix}",

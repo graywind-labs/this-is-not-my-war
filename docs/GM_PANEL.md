@@ -90,7 +90,7 @@ NPC：
 - 移动到指定建筑入口。
 - 立即进入地点信息节点。
 - 设置 NPC 状态字段。
-- 扣除 NPC HP；HP 清零后由 `NPCSystem` 触发昏迷。
+- 扣除 NPC HP；HP 清零后由 `NPCSystem` 触发昏迷；战斗中 HP 首次跌破 30% 且仍大于 0 时由正式低血量判定链路处理。
 - 用自然恢复规则推进指定 NPC 的昏迷恢复，便于快速验证复苏。
 - 查看 NPC 快照。
 - 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求及其应用结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
@@ -118,20 +118,20 @@ NPC：
 - “生成第一波敌人”固定调用 `CombatSystem.debug_spawn_wave(1)`，用于快速验证 T1101 第一波正门外生成。
 - “生成所选波次”按波次下拉调用 `CombatSystem.debug_spawn_wave(...)`。
 - “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的集结流程：所有 NPC 写入警铃事件，入伍且有主武器的可行动 NPC 前往城门外防线。
-- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T1104C 后可用该快照确认敌人目标不会是围墙，T1105 后可用该快照确认策略下拉框选择已进入 CombatSystem 状态，T1106 后可用该快照确认 `combat_started` / `combat_ended` 的运行态和结算统计。
+- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T1104C 后可用该快照确认敌人目标不会是围墙，T1105 后可用该快照确认策略下拉框选择已进入 CombatSystem 状态，T1106 后可用该快照确认 `combat_started` / `combat_ended` 的运行态和结算统计，T1201 后可用该快照确认 `morale_boost` 或 `escape_intent` 的最近应用结果，T1202 后可用该快照确认 `last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements`。
 - “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(60.0)`，用于手动推进 60 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T1104B 后这约等于 1 秒战斗动作。命名保留为兼容旧入口。
 - “清空敌人”调用 `CombatSystem.debug_clear_enemies()`，删除当前 `Station/Enemies` 下由 CombatSystem 生成的敌人。
 - “行为模式快照”调用 `NPCSystem.debug_get_behavior_mode_snapshot()`，查看每名 NPC 的 `behavior_mode`、进入原因、进入时间、当前行动和兼容 `combat_mode`。
 - “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按敌方方位生成短步长四散移动目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
 - “推进集结等待”调用 `CombatSystem.debug_advance_rally_wait(3600.0)`，用于快速验证 NPC 到达集合点后等待 1 游戏小时仍未接敌会返回工作模式且不触发计划重评估。
-- 该分组不自行结算伤害、集结结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T1104 后，我方攻击和敌人受击由 CombatSystem 结算并写入 `attack_made`，敌方攻击 NPC 先按 NPC 盔甲防御减伤再复用 `NPCSystem.apply_damage_to_npc(...)`，敌方攻击建筑复用 `BuildingSystem.apply_damage_to_building(...)`。T1104A 后，活动敌人存在时 CombatSystem 注册 `combat_enemy_presence` 时间上限，把 TimeSystem 有效倍率上限压到 `x1`，清敌后释放；T1104B 后，GM 推进 60 游戏秒约等于 1 秒战斗动作，便于观察攻速基准。T1106 后，战斗开始 / 结束事件和受伤 / 昏迷 / 击退统计由 CombatSystem 写入并通过敌人快照展示。GM 只显示这些状态，不自行决定倍率、冷却、HP、击退统计或胜负；正式胜负结算和战时心理仍留给后续任务。
+- 该分组不自行结算伤害、集结结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T1104 后，我方攻击和敌人受击由 CombatSystem 结算并写入 `attack_made`，敌方攻击 NPC 先按 NPC 盔甲防御减伤再复用 `NPCSystem.apply_damage_to_npc(...)`，敌方攻击建筑复用 `BuildingSystem.apply_damage_to_building(...)`。T1104A 后，活动敌人存在时 CombatSystem 注册 `combat_enemy_presence` 时间上限，把 TimeSystem 有效倍率上限压到 `x1`，清敌后释放；T1104B 后，GM 推进 60 游戏秒约等于 1 秒战斗动作，便于观察攻速基准。T1106 后，战斗开始 / 结束事件和受伤 / 昏迷 / 击退统计由 CombatSystem 写入并通过敌人快照展示。T1201 后，敌人快照可观察最近一次战时对话心理结果、斗志 buff 或逃离意图；T1202 后，通过生成敌人并用 `damage_npc` / NPC 扣血入口让 HP 跨过 30%，可在敌人快照观察低血量自身心理判定结果。GM 仍只显示这些状态，不自行决定倍率、冷却、HP、击退统计、心理结果或胜负。
 
 行为模式后续调试入口：
 
 - T1103B/T1103C 已可查看每名 NPC 的 `behavior_mode`、模式进入原因和模式进入时间，并可推进集结等待时间；敌人快照可查看 `active_avoidances`，`avoid_npc <npc_id>` 可手动触发非战斗人员避战。
-- 后续仍需补充可视化：当前敌人接触范围判定、斗志 buff 剩余时间。
-- 手动触发 / 验证：战时心理结果和斗志 buff。
-- 查看最近一次战时对话的 `wartime_reaction`、最近一次低血量自身心理判定结果和 TimeSystem 慢速申请 / 释放状态。
+- 后续仍需补充可视化：当前敌人接触范围判定、斗志 buff 剩余时间的专用 UI。
+- 手动触发 / 验证：战时心理结果、斗志 buff 和低血量自身心理判定都可通过正式入口与敌人快照验证；低血量判定可用敌人在场时的 NPC 扣血入口触发。
+- 查看最近一次战时对话的 `wartime_reaction`、`battle_psychology_result`、`morale_boost` / `escape_intent` 状态，以及最近一次低血量自身心理判定的 `last_low_hp_judgement_result`、`active_battle.low_hp_judgements` 和 TimeSystem 慢速申请 / 释放状态。
 - 这些入口只能调用 CombatSystem / NPCSystem / DialogSystem / LLMBridge 的公开或 `debug_*` 接口，不在 GMPanel 内自行决定模式、buff、逃离或战斗伤害。
 
 后端 / LLMBridge：

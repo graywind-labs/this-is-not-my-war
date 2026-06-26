@@ -1,5 +1,35 @@
 # DEV_LOG.md
 
+## 2026-06-25 T0018 NPC 面板事件库 / 见闻库详情弹窗
+
+- `NPCPanel` 为事件库和见闻库标题 / 正文区域接入点击输入，点击后打开居中的 `NPCMemoryDetailPopup`。
+- 详情弹窗显示当前 NPC 名称、记录类型、记录条数，以及每条记录的日期、时间、summary、类型、地点、可见性、重要度、事件 ID、参与者、目标和 payload JSON。
+- 弹窗右上角 `×` 按钮可关闭；关闭 NPC 面板、切到建筑面板或 NPC 无效时会同步关闭详情弹窗。
+- 弹窗只读取 NPC 面板缓存的事件 / 见闻数组，不修改 `MemorySystem`、事件库、见闻库或任何权威状态。
+- 更新 `tools/verify_npc_panel_state.gd`，覆盖详情弹窗打开、内容显示、关闭按钮和点击连接存在。
+- 验证通过：`godot --headless --path . --script tools/verify_npc_panel_state.gd`、`godot --headless --path . --script tools/verify_npc_short_term_memory_container.gd`、`godot --headless --path . --script tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-25 T1202 战时低血量自身心理判定
+
+- 按设计更新低血量判定范围：当前战斗 / 敌人在场期间，任一未昏迷、未逃离 NPC 的 HP 首次从不低于 30% 跌破 30% 且仍大于 0 时触发；避战 / 非战斗人员也会判定，但只允许逃离或继续避战，不触发斗志激昂或继续参战。
+- 后端新增 `/npc/battle_judgement` 业务接口，`BattleJudgementRequest` 接收 `battlefield_context`，Mock adapter 按 Godot 提供的 `allowed_decisions` 返回稳定结果。
+- `LLMBridge` 新增 `request_npc_battle_judgement(...)` / `build_npc_battle_judgement_payload(...)`，请求携带最新 `current_order`、短期记忆、地点上下文、低血量事实、战局上下文和允许结果，并申请 / 释放 TimeSystem 慢速。
+- `NPCSystem.apply_damage_to_npc(...)` 在权威扣血后延迟通知 `CombatSystem.handle_npc_damage_applied(...)`；CombatSystem 写入 `low_hp_triggered`、`battle_psychology_result`，每场每名 NPC 只触发一次，并在快照暴露 `last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements`。
+- 参战 NPC 可继续参战、逃离或斗志激昂；避战 / 非战斗人员只可逃离或继续避战。后端失败或模型输出越界时，Godot 规则降级到允许结果。低血判定期间目标 NPC 不可对话，触发时若正在对话则强制结束并取消未完成回复。
+- 新增 `tools/verify_low_hp_battle_judgement.gd`，覆盖参战继续、避战继续避战、不重复触发、对话强制结束、事件入库、最新指令注入和慢速释放。
+- 文档同步覆盖 `CURRENT_STATE.md`、`TASKS.md`、`MODULE_INDEX.md`、`COMBAT_SYSTEM.md`、`AI_NPC_SYSTEM.md`、`MEMORY_AND_INFO_SPACE.md`、`DATA_SCHEMA.md`、`TECH_ARCHITECTURE.md`、`PROMPTS.md`、`GM_PANEL.md`、`API_BUDGET.md`、`PROJECT_BRIEF.md` 和 `game_design.md`。
+- 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`godot --headless --path . --script tools/verify_low_hp_battle_judgement.gd`、`godot --headless --path . --script tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script tools/verify_combat_damage.gd`、`godot --headless --path . --script tools/verify_combat_flow.gd`、`godot --headless --path . --script tools/verify_avoid_combat_mode.gd`、`godot --headless --path . --script tools/verify_dialogue_sleep_summary_boundaries.gd`、`godot --headless --path . --script tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+- Godot MCP 复验：`addon_status` 显示 connected=true、server/addon 4.0.1 匹配，项目路径为 `D:/MyGames/这不是我的战争/`。
+
+## 2026-06-25 T1201 战时公开对话心理结果
+
+- `DialogSystem` 在 `rally` / `combat` / `avoid_combat` 玩家对话中强制 `local_public`，锁定公开 toggle；战时后端失败时生成规则 fallback 回复、应征结果和 `wartime_reaction`。
+- `LLMBridge` 的 `/npc/dialogue` payload 新增 `interaction_context` 与 `battlefield_context`，并在 NPC 状态上下文中暴露 `behavior_mode`、`combat_strategy`、`morale_boost` 和 `escape_intent`。
+- 后端 `NPCDialogueRequest` / `NPCDialogueResponse` 增加战时字段；Mock 对话可按关键词返回 `none` / `escape` / `morale_boost`。
+- `CombatSystem` 新增战场上下文构造、战时对话心理结算、`battle_psychology_result`、2 游戏小时 `morale_boost` 攻击 / 移动加成、过期事件和 `escape_intent` pending 状态；完整逃离移动仍留给 T1203。
+- 新增 `tools/verify_wartime_dialogue.gd`，覆盖强制公开、payload 注入、后端失败 fallback、士气 buff、逃离意图和避战应征保留。
+- 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_dialogue_ui.gd`、`godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --quit-after 1`。
+
 ## 2026-06-17 T1105A 战斗内避战策略距离边界
 
 - 修正战斗模式中“避战”策略的距离边界：只在最近敌人低于非战斗避战安全阈值时按敌人来袭方向短步长远离。

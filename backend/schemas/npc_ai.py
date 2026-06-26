@@ -9,6 +9,8 @@ from .common import ActionCandidate, CurrentOrderContext, GameTime, ModelRequest
 
 DialogueKind = Literal["player_npc", "npc_npc", "escape_intervention"]
 DialogueVisibility = Literal["private", "local_public"]
+InteractionContext = Literal["work", "rally", "combat", "avoid_combat"]
+WartimeReaction = Literal["none", "escape", "morale_boost"]
 DialogueIntent = Literal[
     "continue_talk",
     "accept_recruitment",
@@ -80,6 +82,8 @@ class NPCDialogueRequest(BaseModel):
     npc_state: dict[str, Any] = Field(default_factory=dict)
     current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     dialogue_state: DialogueState = Field(default_factory=DialogueState)
+    interaction_context: InteractionContext = "work"
+    battlefield_context: dict[str, Any] = Field(default_factory=dict)
     short_memory: ShortTermMemoryContext = Field(default_factory=ShortTermMemoryContext)
     long_memory: dict[str, Any] = Field(default_factory=dict)
     location_context: dict[str, Any] = Field(default_factory=dict)
@@ -99,6 +103,7 @@ class NPCDialogueResponse(BaseModel):
     intent: DialogueIntent = "continue_talk"
     emotion: str = "neutral"
     recruitment_result: Literal["accept", "reject", "none"] = "none"
+    wartime_reaction: WartimeReaction = "none"
     should_end_dialogue: bool = False
     suggested_event_type: str = "dialogue_turn"
     debug_reason: str = ""
@@ -198,6 +203,7 @@ class BattleJudgementRequest(BaseModel):
     trigger: BattleTrigger
     npc: NPCContext
     combat_context: dict[str, Any] = Field(default_factory=dict)
+    battlefield_context: dict[str, Any] = Field(default_factory=dict)
     allowed_decisions: list[BattleDecision]
 
 

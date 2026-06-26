@@ -32,6 +32,7 @@ const LLM_ACTIVITY_NONE := ""
 const LLM_ACTIVITY_DIALOGUE := "dialogue"
 const LLM_ACTIVITY_PLAN := "plan"
 const LLM_ACTIVITY_FIRST_SLEEP_SUMMARY := "first_sleep_summary"
+const LLM_ACTIVITY_BATTLE_JUDGEMENT := "battle_judgement"
 const BEHAVIOR_MODE_WORK := "work"
 const BEHAVIOR_MODE_RALLY := "rally"
 const BEHAVIOR_MODE_COMBAT := "combat"
@@ -841,7 +842,10 @@ func is_first_sleep_summary_locked(npc_id: String) -> bool:
 
 
 func is_npc_dialogue_blocked(npc_id: String) -> bool:
-	return is_first_sleep_summary_locked(npc_id)
+	if is_first_sleep_summary_locked(npc_id):
+		return true
+	var activity := get_npc_llm_activity(npc_id)
+	return bool(activity.get("active", false)) and str(activity.get("kind", "")) == LLM_ACTIVITY_BATTLE_JUDGEMENT
 
 
 func defer_plan_reevaluation_until_wake(npc_id: String, reason: String) -> Dictionary:
@@ -968,21 +972,41 @@ func apply_damage_to_npc(
 	elif actor_id == PLAYER_ACTOR_ID and bool(options.get("request_plan_reevaluation", true)):
 		_request_plan_reevaluation_or_defer(npc_id, "guard_attack")
 
-	return {
+	var result := {
 		"ok": true,
 		"npc_id": npc_id,
+		"actor_id": actor_id,
+		"visibility": visibility,
 		"damage": damage,
 		"hp_before": hp_before,
 		"hp_after": hp_after,
 		"max_hp": max_hp,
 		"unconscious": bool(states.get("unconscious", false)),
 		"damage_event": damage_event,
-		"unconscious_event": unconscious_event
+		"unconscious_event": unconscious_event,
+		"options": options.duplicate(true)
 	}
+	_notify_combat_damage_applied(result, options)
+	return result
 
 
 func debug_damage_npc(npc_id: String, damage: int, visibility: String = "local_public") -> Dictionary:
 	return apply_damage_to_npc(npc_id, damage, PLAYER_ACTOR_ID, visibility)
+
+
+func _notify_combat_damage_applied(damage_result: Dictionary, options: Dictionary) -> void:
+	if damage_result.is_empty() or not bool(damage_result.get("ok", false)):
+		return
+	if bool(options.get("skip_low_hp_judgement", false)):
+		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("handle_npc_damage_applied"):
+		return
+	combat_system.call_deferred(
+		"handle_npc_damage_applied",
+		damage_result.duplicate(true),
+		options.duplicate(true)
+	)
 
 
 func debug_advance_unconscious_recovery(npc_id: String, game_seconds: float) -> Dictionary:
@@ -1548,6 +1572,8 @@ func _label_for_llm_activity_kind(kind: String) -> String:
 	match kind:
 		LLM_ACTIVITY_FIRST_SLEEP_SUMMARY:
 			return "正在熟睡"
+		LLM_ACTIVITY_BATTLE_JUDGEMENT:
+			return "正在压住恐惧"
 		LLM_ACTIVITY_PLAN:
 			return "正在计划下一步行动"
 		LLM_ACTIVITY_DIALOGUE:

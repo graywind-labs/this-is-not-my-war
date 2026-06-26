@@ -11,8 +11,8 @@ T0603 dialogue contract:
 
 - `NPCDialogueRequest` is centered on the target NPC: `npc_id`, `npc_name`, `npc_setting`, `npc_state`, `short_memory`, `long_memory` and `location_context`.
 - The current speaker is described separately with `speaker_name`, `speaker_text` and `speaker_context`; the guard officer's display name is always `守备官`.
-- `dialogue_state.visibility` is `private` or `local_public`; this only guides Godot event routing and does not let the backend write memory.
-- `NPCDialogueResponse` returns `replyer_id`, `reply_text`, `response_kind`, `recruitment_result` and `should_end_dialogue`.
+- `dialogue_state.visibility` is `private` or `local_public`; this only guides Godot event routing and does not let the backend write memory. T1201 adds `interaction_context` and `battlefield_context` for wartime dialogue.
+- `NPCDialogueResponse` returns `replyer_id`, `reply_text`, `response_kind`, `recruitment_result`, `wartime_reaction` and `should_end_dialogue`.
 
 Authority boundary:
 

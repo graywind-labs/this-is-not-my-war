@@ -66,13 +66,21 @@ func _process(delta: float) -> void:
 	if _is_gameplay_paused():
 		return
 
-	var next_position := global_position.move_toward(_movement_target_position, move_speed * delta)
+	var next_position := global_position.move_toward(_movement_target_position, move_speed * _get_move_speed_multiplier() * delta)
 	global_position = next_position
 	if global_position.distance_to(_movement_target_position) <= 0.05:
 		global_position = _movement_target_position
 		var arrived_target_id := _movement_target_id
 		stop_movement()
 		movement_arrived.emit(npc_id, arrived_target_id)
+
+
+func _get_move_speed_multiplier() -> float:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	var morale: Dictionary = states.get("morale_boost", {}) if states.get("morale_boost", {}) is Dictionary else {}
+	if not bool(morale.get("active", false)):
+		return 1.0
+	return 1.0 + clampf(float(morale.get("move_speed_bonus", 0.0)), 0.0, 1.0)
 
 
 func _on_input_event(

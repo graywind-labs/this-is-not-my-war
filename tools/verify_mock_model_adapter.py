@@ -97,7 +97,13 @@ def _make_payload(call_type: str) -> dict:
     if call_type == "plan_day":
         payload["allowed_actions"] = [{"action_id": "work_garden", "name": "照料菜园", "location_id": "garden", "tags": ["work"]}]
     if call_type == "battle_judgement":
-        payload["allowed_decisions"] = ["join_battle", "avoid_battle", "escape_station"]
+        payload["trigger"] = "low_hp"
+        payload["combat_context"] = {"hp_before": 100, "hp_after": 25, "threshold_ratio": 0.3}
+        payload["battlefield_context"] = {
+            "active_enemy_count": 3,
+            "target_npc": {"npc_id": "cook_01", "behavior_mode": "avoid_combat"},
+        }
+        payload["allowed_decisions"] = ["avoid_battle", "escape_station"]
     if call_type == "daily_reflection":
         payload["day_events"] = [
             {
@@ -138,6 +144,7 @@ def main() -> None:
     battle_result = adapter.generate("battle_judgement", _make_payload("battle_judgement"))
     assert battle_result.ok
     BattleJudgementResponse(**battle_result.content)
+    assert battle_result.content["decision"] == "avoid_battle"
     assert "with_current_order_as_reference" in battle_result.content["debug_reason"]
 
     reflection_result = adapter.generate("daily_reflection", _make_payload("daily_reflection"))
@@ -174,6 +181,13 @@ def main() -> None:
     assert data["ok"] is True
     assert data["provider"] == "mock"
     BattleJudgementResponse(**data["content"])
+
+    judgement_response = client.post(
+        "/npc/battle_judgement",
+        json=_make_payload("battle_judgement"),
+    )
+    assert judgement_response.status_code == 200
+    BattleJudgementResponse(**judgement_response.get_json())
 
     bad_response = client.post("/mock/model", data="not-json")
     assert bad_response.status_code == 400

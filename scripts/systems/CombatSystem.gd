@@ -8,6 +8,8 @@ const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
+const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DEFAULT_SPAWN_POINT_ID := "front_forest"
 const SYSTEM_ACTOR_ID := "system"
 const COMBAT_TIME_CAP_REQUEST_ID := "combat_enemy_presence"
@@ -39,6 +41,10 @@ const SATIETY_ATTACK_SPEED_PENALTY_START := 35.0
 const SATIETY_ATTACK_SPEED_MAX_PENALTY := 0.2
 const MIN_ATTACK_SPEED_MULTIPLIER := 0.45
 const MIN_NPC_ATTACK_INTERVAL := 0.25
+const MORALE_BOOST_DURATION_SECONDS := 7200.0
+const MORALE_BOOST_ATTACK_BONUS := 0.15
+const MORALE_BOOST_MOVE_SPEED_BONUS := 0.15
+const LOW_HP_JUDGEMENT_RATIO := 0.3
 const FAILURE_REASON_MAIN_HALL_DESTROYED := "main_hall_destroyed"
 const RALLY_TARGET_PREFIX := "combat_rally_"
 const AVOIDANCE_TARGET_PREFIX := "avoid_shelter_"
@@ -84,6 +90,22 @@ const BEHAVIOR_MODE_COMBAT := "combat"
 const BEHAVIOR_MODE_AVOID_COMBAT := "avoid_combat"
 const BEHAVIOR_MODE_UNCONSCIOUS := "unconscious"
 const BEHAVIOR_MODE_ESCAPED := "escaped"
+const WARTIME_REACTION_NONE := "none"
+const WARTIME_REACTION_ESCAPE := "escape"
+const WARTIME_REACTION_MORALE_BOOST := "morale_boost"
+const WARTIME_REACTIONS: Array[String] = [WARTIME_REACTION_NONE, WARTIME_REACTION_ESCAPE, WARTIME_REACTION_MORALE_BOOST]
+const BATTLE_DECISION_JOIN_BATTLE := "join_battle"
+const BATTLE_DECISION_AVOID_BATTLE := "avoid_battle"
+const BATTLE_DECISION_CONTINUE_FIGHTING := "continue_fighting"
+const BATTLE_DECISION_ESCAPE_STATION := "escape_station"
+const BATTLE_DECISION_INSPIRED := "inspired"
+const BATTLE_DECISIONS: Array[String] = [
+	BATTLE_DECISION_JOIN_BATTLE,
+	BATTLE_DECISION_AVOID_BATTLE,
+	BATTLE_DECISION_CONTINUE_FIGHTING,
+	BATTLE_DECISION_ESCAPE_STATION,
+	BATTLE_DECISION_INSPIRED
+]
 const STRATEGY_ATTACK := "attack"
 const STRATEGY_MAX_OUTPUT := "max_output"
 const STRATEGY_KEEP_DISTANCE := "keep_distance"
@@ -127,6 +149,8 @@ var _last_friendly_attack_result: Dictionary = {}
 var _active_battle: Dictionary = {}
 var _last_battle_start_result: Dictionary = {}
 var _last_battle_end_result: Dictionary = {}
+var _last_wartime_dialogue_result: Dictionary = {}
+var _last_low_hp_judgement_result: Dictionary = {}
 
 
 func _ready() -> void:
@@ -159,6 +183,8 @@ func initialize() -> void:
 	_active_battle.clear()
 	_last_battle_start_result.clear()
 	_last_battle_end_result.clear()
+	_last_wartime_dialogue_result.clear()
+	_last_low_hp_judgement_result.clear()
 	_sync_enemy_presence_time_cap("combat_initialize")
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -342,6 +368,8 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_avoidance_result": _last_avoidance_result.duplicate(true),
 		"last_battle_start_result": _last_battle_start_result.duplicate(true),
 		"last_battle_end_result": _last_battle_end_result.duplicate(true),
+		"last_wartime_dialogue_result": _last_wartime_dialogue_result.duplicate(true),
+		"last_low_hp_judgement_result": _last_low_hp_judgement_result.duplicate(true),
 		"time_scale": _get_time_scale_snapshot()
 	}
 
@@ -466,6 +494,132 @@ func get_active_avoidances() -> Array[Dictionary]:
 	return result
 
 
+func build_battlefield_context(target_npc_id: String = "", interaction_context: String = "") -> Dictionary:
+	var friendly_roster := _build_friendly_combatant_roster()
+	var enemy_roster := _build_active_enemy_battlefield_roster()
+	var noncombatants := _build_noncombatant_battlefield_roster()
+	return {
+		"interaction_context": interaction_context,
+		"active_enemy_count": get_active_enemy_count(),
+		"enemy_count": enemy_roster.size(),
+		"friendly_combatant_count": friendly_roster.size(),
+		"noncombatant_count": noncombatants.size(),
+		"enemy_roster": enemy_roster,
+		"friendly_roster": friendly_roster,
+		"station_noncombatants": noncombatants,
+		"participating_npcs": _extract_battlefield_npc_ids(friendly_roster),
+		"target_npc": _build_battlefield_target_snapshot(target_npc_id),
+		"active_battle": _active_battle.duplicate(true)
+	}
+
+
+func apply_wartime_dialogue_reaction(npc_id: String, reaction: String, context: Dictionary = {}) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("update_npc_state"):
+		return _wartime_reaction_failure("npc_system_missing", "NPC 系统不可用。", npc_id, reaction)
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _wartime_reaction_failure("unknown_npc", "NPC 不存在。", npc_id, reaction)
+	var mode := _get_npc_behavior_mode(npc_system, npc_id)
+	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
+		return _wartime_reaction_failure("not_rally_or_combat", "只有集结或战斗中的可战斗 NPC 会产生战时心理结算。", npc_id, reaction, {"behavior_mode": mode})
+	if not _is_npc_combat_eligible(npc_id, npc_system):
+		return _wartime_reaction_failure("not_combat_eligible", "NPC 未入伍或没有主武器。", npc_id, reaction, {"behavior_mode": mode})
+
+	var clean_reaction := _normalize_wartime_reaction(reaction)
+	var battlefield_context := build_battlefield_context(npc_id, str(context.get("interaction_context", mode)))
+	var source_event_id := str(context.get("source_event_id", ""))
+	var result_event := _log_battle_psychology_result(npc_id, clean_reaction, context, battlefield_context)
+	var state_result := {}
+	match clean_reaction:
+		WARTIME_REACTION_MORALE_BOOST:
+			state_result = _start_morale_boost(npc_id, source_event_id)
+		WARTIME_REACTION_ESCAPE:
+			state_result = _start_escape_intent(npc_id, source_event_id, context)
+		_:
+			state_result = {"ok": true, "applied": false, "reason": "none"}
+	_last_wartime_dialogue_result = {
+		"ok": true,
+		"npc_id": npc_id,
+		"npc_name": str(npc.get("name", npc_id)),
+		"reaction": clean_reaction,
+		"behavior_mode": mode,
+		"source_event_id": source_event_id,
+		"battle_psychology_event": result_event,
+		"state_result": state_result
+	}
+	return _last_wartime_dialogue_result.duplicate(true)
+
+
+func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = {}) -> Dictionary:
+	if damage_result.is_empty() or not bool(damage_result.get("ok", false)):
+		return _low_hp_judgement_skip("invalid_damage_result", "", damage_result, context)
+	if _active_battle.is_empty() or get_active_enemy_count() <= 0:
+		return _low_hp_judgement_skip("no_active_battle", str(damage_result.get("npc_id", "")), damage_result, context)
+	var npc_id := str(damage_result.get("npc_id", ""))
+	if npc_id.is_empty():
+		return _low_hp_judgement_skip("empty_npc_id", npc_id, damage_result, context)
+	var max_hp := maxi(1, int(damage_result.get("max_hp", 100)))
+	var hp_before := clampi(int(damage_result.get("hp_before", max_hp)), 0, max_hp)
+	var hp_after := clampi(int(damage_result.get("hp_after", hp_before)), 0, max_hp)
+	if hp_after <= 0:
+		return _low_hp_judgement_skip("became_unconscious", npc_id, damage_result, context)
+	if float(hp_before) / float(max_hp) < LOW_HP_JUDGEMENT_RATIO:
+		return _low_hp_judgement_skip("already_below_threshold", npc_id, damage_result, context)
+	if float(hp_after) / float(max_hp) >= LOW_HP_JUDGEMENT_RATIO:
+		return _low_hp_judgement_skip("above_threshold", npc_id, damage_result, context)
+
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
+		return _low_hp_judgement_failure("npc_system_missing", "NPC 系统不可用。", npc_id, damage_result, context)
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _low_hp_judgement_failure("unknown_npc", "NPC 不存在。", npc_id, damage_result, context)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return _low_hp_judgement_skip("npc_unconscious_or_escaped", npc_id, damage_result, context)
+	if _has_low_hp_judgement_for_active_battle(npc_id):
+		return _low_hp_judgement_skip("already_triggered_this_battle", npc_id, damage_result, context)
+
+	var mode := _get_npc_behavior_mode(npc_system, npc_id)
+	var combatant_decisions_allowed := mode == BEHAVIOR_MODE_COMBAT and _is_npc_combat_eligible(npc_id, npc_system)
+	var allowed_decisions := _get_low_hp_allowed_decisions(combatant_decisions_allowed)
+	var battlefield_context := build_battlefield_context(npc_id, mode)
+	var low_hp_event := _log_low_hp_triggered(npc_id, damage_result, context, mode, combatant_decisions_allowed)
+	var damage_event: Dictionary = damage_result.get("damage_event", {}) if damage_result.get("damage_event", {}) is Dictionary else {}
+	_mark_low_hp_judgement_for_active_battle(npc_id, {
+		"status": "pending",
+		"npc_id": npc_id,
+		"npc_name": str(npc.get("name", npc_id)),
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"max_hp": max_hp,
+		"behavior_mode": mode,
+		"combatant_decisions_allowed": combatant_decisions_allowed,
+		"allowed_decisions": allowed_decisions,
+		"low_hp_event_id": str(low_hp_event.get("event_id", "")),
+		"damage_event_id": str(damage_event.get("event_id", ""))
+	})
+
+	var dialogue_result := _force_end_dialogue_for_low_hp(npc_id)
+	var llm_result := _request_low_hp_battle_judgement(npc_id, low_hp_event, damage_result, context, battlefield_context, allowed_decisions, mode)
+	var judgement: Dictionary = llm_result.get("battle_judgement", {}) if (llm_result.get("battle_judgement", {}) is Dictionary) else {}
+	if not bool(llm_result.get("ok", false)) or judgement.is_empty():
+		judgement = _make_low_hp_rule_fallback_judgement(npc_id, allowed_decisions, llm_result)
+	var applied := _apply_low_hp_judgement_result(npc_id, judgement, {
+		"low_hp_event": low_hp_event,
+		"damage_result": damage_result,
+		"damage_context": context,
+		"battlefield_context": battlefield_context,
+		"allowed_decisions": allowed_decisions,
+		"behavior_mode": mode,
+		"combatant_decisions_allowed": combatant_decisions_allowed,
+		"dialogue_result": dialogue_result,
+		"llm_result": llm_result
+	})
+	return applied
+
+
 func get_combat_strategy_options_for_unit_type(unit_type: String) -> Array[Dictionary]:
 	var option_ids: Array = COMBAT_STRATEGY_OPTIONS_BY_UNIT_TYPE.get(unit_type, [])
 	var result: Array[Dictionary] = []
@@ -547,6 +701,7 @@ func normalize_npc_combat_strategy(
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
+	_advance_morale_boosts(game_delta_seconds)
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
 		return
@@ -1018,7 +1173,8 @@ func _calculate_npc_attack_context(npc_id: String, npc: Dictionary, state: Dicti
 		MIN_STRENGTH_ATTACK_MULTIPLIER,
 		MAX_STRENGTH_ATTACK_MULTIPLIER
 	)
-	var raw_attack_power := base_damage * strength_multiplier
+	var morale_attack_bonus := _get_active_morale_attack_bonus(state)
+	var raw_attack_power := base_damage * strength_multiplier * (1.0 + morale_attack_bonus)
 	var attack_speed_multiplier := _calculate_npc_attack_speed_multiplier(npc, state, weapon_skill)
 	var base_interval := maxf(0.1, float(weapon.get("attack_interval", 1.8)))
 	var attack_interval := maxf(MIN_NPC_ATTACK_INTERVAL, base_interval / attack_speed_multiplier)
@@ -1032,6 +1188,7 @@ func _calculate_npc_attack_context(npc_id: String, npc: Dictionary, state: Dicti
 		"strength": strength,
 		"base_damage": base_damage,
 		"strength_multiplier": strength_multiplier,
+		"morale_attack_bonus": morale_attack_bonus,
 		"raw_attack_power": raw_attack_power,
 		"attack_power": maxi(1, int(round(raw_attack_power))),
 		"base_attack_interval": base_interval,
@@ -1766,6 +1923,7 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 		"noncombatant_count": _get_noncombatant_count(friendly_roster.size()),
 		"injured_npcs": {},
 		"unconscious_npcs": {},
+		"low_hp_judgements": {},
 		"defeated_by_npc": {},
 		"defeated_enemy_count": 0,
 		"additional_waves": []
@@ -1792,6 +1950,7 @@ func _finish_active_battle(reason: String) -> Dictionary:
 	ended["remaining_enemy_count"] = get_active_enemy_count()
 	ended["injured_npcs"] = _battle_map_to_sorted_array(_active_battle.get("injured_npcs", {}))
 	ended["unconscious_npcs"] = _battle_map_to_sorted_array(_active_battle.get("unconscious_npcs", {}))
+	ended["low_hp_judgements"] = _battle_map_to_sorted_array(_active_battle.get("low_hp_judgements", {}))
 	ended["defeated_by_npc"] = _battle_map_to_sorted_array(_active_battle.get("defeated_by_npc", {}))
 	var event := _log_combat_ended(ended)
 	ended["ended_event_id"] = str(event.get("event_id", ""))
@@ -1933,6 +2092,95 @@ func _build_friendly_combatant_roster() -> Array[Dictionary]:
 			"behavior_mode": _get_npc_behavior_mode(npc_system, npc_id)
 		})
 	return result
+
+
+func _build_active_enemy_battlefield_roster() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {}) if _active_enemies.get(enemy_id, {}) is Dictionary else {}
+		if enemy.is_empty():
+			continue
+		result.append({
+			"enemy_id": enemy_id,
+			"name": str(enemy.get("name", enemy_id)),
+			"enemy_type_id": str(enemy.get("enemy_type_id", "")),
+			"unit_type": str(enemy.get("unit_type", "")),
+			"unit_type_label": _get_unit_type_label(str(enemy.get("unit_type", ""))),
+			"weapon_type": str(enemy.get("weapon_type", "")),
+			"hp": int(enemy.get("hp", 0)),
+			"max_hp": int(enemy.get("max_hp", enemy.get("hp", 0))),
+			"position": _vector3_to_dict(enemy.get("position", Vector3.ZERO))
+		})
+	return result
+
+
+func _build_noncombatant_battlefield_roster() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		return result
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		if _is_npc_combat_eligible(npc_id, npc_system):
+			continue
+		var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system.has_method("get_npc") else {}
+		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+		result.append({
+			"npc_id": npc_id,
+			"npc_name": str(npc.get("name", npc_id)),
+			"hp": int(state.get("hp", 0)),
+			"max_hp": int(state.get("max_hp", 0)),
+			"behavior_mode": _get_npc_behavior_mode(npc_system, npc_id),
+			"current_location": str(state.get("current_location", PLAZA_LOCATION_ID)),
+			"current_action": str(state.get("current_action", "idle"))
+		})
+	return result
+
+
+func _extract_battlefield_npc_ids(roster: Array[Dictionary]) -> Array[String]:
+	var ids: Array[String] = []
+	for entry in roster:
+		var npc_id := str(entry.get("npc_id", ""))
+		if not npc_id.is_empty() and not ids.has(npc_id):
+			ids.append(npc_id)
+	return ids
+
+
+func _build_battlefield_target_snapshot(npc_id: String) -> Dictionary:
+	if npc_id.is_empty():
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		return {}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+	var unit_snapshot := _get_npc_unit_type_snapshot(npc_id)
+	return {
+		"npc_id": npc_id,
+		"npc_name": str(npc.get("name", npc_id)),
+		"behavior_mode": _get_npc_behavior_mode(npc_system, npc_id),
+		"unit_type": str(unit_snapshot.get("unit_type", "")),
+		"unit_type_label": str(unit_snapshot.get("unit_type_label", "")),
+		"has_main_weapon": bool(unit_snapshot.get("has_main_weapon", false)),
+		"hp": int(state.get("hp", 0)),
+		"max_hp": int(state.get("max_hp", 0)),
+		"current_action": str(state.get("current_action", "idle")),
+		"morale_boost": state.get("morale_boost", {}),
+		"escape_intent": state.get("escape_intent", {})
+	}
+
+
+func _summarize_battlefield_context(context: Dictionary) -> Dictionary:
+	return {
+		"active_enemy_count": int(context.get("active_enemy_count", 0)),
+		"friendly_combatant_count": int(context.get("friendly_combatant_count", 0)),
+		"noncombatant_count": int(context.get("noncombatant_count", 0)),
+		"target_npc": context.get("target_npc", {}),
+		"enemy_roster": context.get("enemy_roster", []),
+		"friendly_roster": context.get("friendly_roster", [])
+	}
 
 
 func _get_noncombatant_count(friendly_count: int) -> int:
@@ -2563,6 +2811,8 @@ func _apply_enemy_attack_to_npc(
 			"summary": "%s攻击了%s，造成%d点伤害。" % [enemy_name, npc_name, damage],
 			"request_plan_reevaluation": false,
 			"enemy_attack": true,
+			"enemy_id": enemy_id,
+			"enemy_name": enemy_name,
 			"raw_attack_power": raw_attack_power,
 			"target_defense": target_defense,
 			"damage_after_defense": damage
@@ -2952,6 +3202,462 @@ func _serialize_avoidance(avoidance: Dictionary) -> Dictionary:
 	return result
 
 
+func _normalize_wartime_reaction(reaction: String) -> String:
+	var clean_reaction := reaction.strip_edges()
+	if WARTIME_REACTIONS.has(clean_reaction):
+		return clean_reaction
+	return WARTIME_REACTION_NONE
+
+
+func _wartime_reaction_failure(error_code: String, message: String, npc_id: String, reaction: String, extra: Dictionary = {}) -> Dictionary:
+	_last_wartime_dialogue_result = {
+		"ok": false,
+		"error": error_code,
+		"message": message,
+		"npc_id": npc_id,
+		"reaction": _normalize_wartime_reaction(reaction)
+	}
+	for key in extra.keys():
+		_last_wartime_dialogue_result[key] = extra[key]
+	return _last_wartime_dialogue_result.duplicate(true)
+
+
+func _low_hp_judgement_skip(reason: String, npc_id: String, damage_result: Dictionary, context: Dictionary) -> Dictionary:
+	return {
+		"ok": true,
+		"triggered": false,
+		"reason": reason,
+		"npc_id": npc_id,
+		"damage_result": damage_result.duplicate(true),
+		"context": context.duplicate(true)
+	}
+
+
+func _low_hp_judgement_failure(error_code: String, message: String, npc_id: String, damage_result: Dictionary, context: Dictionary) -> Dictionary:
+	_last_low_hp_judgement_result = {
+		"ok": false,
+		"triggered": false,
+		"error": error_code,
+		"message": message,
+		"npc_id": npc_id,
+		"damage_result": damage_result.duplicate(true),
+		"context": context.duplicate(true)
+	}
+	return _last_low_hp_judgement_result.duplicate(true)
+
+
+func _has_low_hp_judgement_for_active_battle(npc_id: String) -> bool:
+	if _active_battle.is_empty() or npc_id.is_empty():
+		return false
+	var judgements: Dictionary = _active_battle.get("low_hp_judgements", {}) if _active_battle.get("low_hp_judgements", {}) is Dictionary else {}
+	return judgements.has(npc_id)
+
+
+func _mark_low_hp_judgement_for_active_battle(npc_id: String, entry: Dictionary) -> void:
+	if _active_battle.is_empty() or npc_id.is_empty():
+		return
+	var judgements: Dictionary = _active_battle.get("low_hp_judgements", {}) if _active_battle.get("low_hp_judgements", {}) is Dictionary else {}
+	judgements[npc_id] = entry.duplicate(true)
+	_active_battle["low_hp_judgements"] = judgements
+
+
+func _update_low_hp_judgement_for_active_battle(npc_id: String, changes: Dictionary) -> void:
+	if _active_battle.is_empty() or npc_id.is_empty():
+		return
+	var judgements: Dictionary = _active_battle.get("low_hp_judgements", {}) if _active_battle.get("low_hp_judgements", {}) is Dictionary else {}
+	var entry: Dictionary = judgements.get(npc_id, {}) if judgements.get(npc_id, {}) is Dictionary else {}
+	for key in changes.keys():
+		entry[key] = changes[key]
+	judgements[npc_id] = entry
+	_active_battle["low_hp_judgements"] = judgements
+
+
+func _get_low_hp_allowed_decisions(combatant_decisions_allowed: bool) -> Array[String]:
+	if combatant_decisions_allowed:
+		return [
+			BATTLE_DECISION_CONTINUE_FIGHTING,
+			BATTLE_DECISION_ESCAPE_STATION,
+			BATTLE_DECISION_INSPIRED
+		]
+	return [
+		BATTLE_DECISION_AVOID_BATTLE,
+		BATTLE_DECISION_ESCAPE_STATION
+	]
+
+
+func _normalize_low_hp_decision(raw_decision: String, allowed_decisions: Array[String]) -> String:
+	var clean_decision := raw_decision.strip_edges()
+	match clean_decision:
+		WARTIME_REACTION_MORALE_BOOST:
+			clean_decision = BATTLE_DECISION_INSPIRED
+		WARTIME_REACTION_ESCAPE:
+			clean_decision = BATTLE_DECISION_ESCAPE_STATION
+		WARTIME_REACTION_NONE:
+			clean_decision = allowed_decisions[0] if not allowed_decisions.is_empty() else BATTLE_DECISION_AVOID_BATTLE
+	if not BATTLE_DECISIONS.has(clean_decision):
+		clean_decision = allowed_decisions[0] if not allowed_decisions.is_empty() else BATTLE_DECISION_AVOID_BATTLE
+	if not allowed_decisions.has(clean_decision):
+		clean_decision = allowed_decisions[0] if not allowed_decisions.is_empty() else BATTLE_DECISION_AVOID_BATTLE
+	return clean_decision
+
+
+func _battle_decision_to_psychology_decision(decision: String) -> String:
+	match decision:
+		BATTLE_DECISION_INSPIRED:
+			return WARTIME_REACTION_MORALE_BOOST
+		BATTLE_DECISION_ESCAPE_STATION:
+			return WARTIME_REACTION_ESCAPE
+		BATTLE_DECISION_CONTINUE_FIGHTING, BATTLE_DECISION_JOIN_BATTLE:
+			return BATTLE_DECISION_CONTINUE_FIGHTING
+		BATTLE_DECISION_AVOID_BATTLE:
+			return BATTLE_DECISION_AVOID_BATTLE
+		_:
+			return WARTIME_REACTION_NONE
+
+
+func _log_low_hp_triggered(npc_id: String, damage_result: Dictionary, context: Dictionary, behavior_mode: String, combatant_decisions_allowed: bool) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var damage_event: Dictionary = damage_result.get("damage_event", {}) if damage_result.get("damage_event", {}) is Dictionary else {}
+	var source_actor_id := str(damage_result.get("actor_id", context.get("enemy_id", context.get("actor_id", SYSTEM_ACTOR_ID)))).strip_edges()
+	if source_actor_id.is_empty():
+		source_actor_id = SYSTEM_ACTOR_ID
+	var hp_before := int(damage_result.get("hp_before", 0))
+	var hp_after := int(damage_result.get("hp_after", hp_before))
+	var max_hp := maxi(1, int(damage_result.get("max_hp", 100)))
+	return memory_system.add_event({
+		"type": "low_hp_triggered",
+		"subject_npc_id": npc_id,
+		"actor_ids": [source_actor_id],
+		"target_ids": [npc_id, PLAZA_LOCATION_ID],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 85,
+		"payload": {
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"max_hp": max_hp,
+			"damage": int(damage_result.get("damage", maxi(0, hp_before - hp_after))),
+			"damage_source": source_actor_id,
+			"damage_event_id": str(damage_event.get("event_id", "")),
+			"threshold_ratio": LOW_HP_JUDGEMENT_RATIO,
+			"behavior_mode": behavior_mode,
+			"combatant_decisions_allowed": combatant_decisions_allowed,
+			"wave_number": int(_active_battle.get("wave_number", 0)),
+			"wave_id": str(_active_battle.get("wave_id", "")),
+			"active_enemy_count": get_active_enemy_count()
+		}
+	})
+
+
+func _force_end_dialogue_for_low_hp(npc_id: String) -> Dictionary:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("force_end_dialogue_for_npc"):
+		return {"ok": true, "ended": false, "reason": "dialog_system_missing"}
+	return dialog_system.force_end_dialogue_for_npc(npc_id, "low_hp_judgement")
+
+
+func _request_low_hp_battle_judgement(
+	npc_id: String,
+	low_hp_event: Dictionary,
+	damage_result: Dictionary,
+	damage_context: Dictionary,
+	battlefield_context: Dictionary,
+	allowed_decisions: Array[String],
+	behavior_mode: String
+) -> Dictionary:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("request_npc_battle_judgement"):
+		return {"ok": false, "error": "llm_bridge_missing", "message": "LLMBridge 不可用。"}
+	var hp_before := int(damage_result.get("hp_before", 0))
+	var hp_after := int(damage_result.get("hp_after", hp_before))
+	var max_hp := maxi(1, int(damage_result.get("max_hp", 100)))
+	var combat_context := {
+		"trigger": "low_hp",
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"max_hp": max_hp,
+		"hp_ratio": float(hp_after) / float(max_hp),
+		"threshold_ratio": LOW_HP_JUDGEMENT_RATIO,
+		"behavior_mode": behavior_mode,
+		"damage": int(damage_result.get("damage", maxi(0, hp_before - hp_after))),
+		"damage_source": str(damage_result.get("actor_id", damage_context.get("enemy_id", ""))),
+		"combatant_decisions_allowed": allowed_decisions.has(BATTLE_DECISION_INSPIRED),
+		"low_hp_event_id": str(low_hp_event.get("event_id", ""))
+	}
+	return llm_bridge.request_npc_battle_judgement(npc_id, {
+		"trigger": "low_hp",
+		"reason": "low_hp",
+		"related_event_id": str(low_hp_event.get("event_id", "")),
+		"interaction_context": behavior_mode,
+		"combat_context": combat_context,
+		"battlefield_context": battlefield_context,
+		"allowed_decisions": allowed_decisions
+	})
+
+
+func _make_low_hp_rule_fallback_judgement(npc_id: String, allowed_decisions: Array[String], error_result: Dictionary) -> Dictionary:
+	var decision := allowed_decisions[0] if not allowed_decisions.is_empty() else BATTLE_DECISION_AVOID_BATTLE
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"decision": decision,
+		"emotion": "tense",
+		"morale_delta_intent": 0,
+		"should_start_escape": decision == BATTLE_DECISION_ESCAPE_STATION,
+		"rule_fallback": true,
+		"fallback_error": str(error_result.get("error", "")),
+		"debug_reason": "rule_low_hp_first_allowed_decision"
+	}
+
+
+func _apply_low_hp_judgement_result(npc_id: String, judgement: Dictionary, context: Dictionary) -> Dictionary:
+	var allowed_decisions: Array[String] = []
+	for raw_decision in _normalize_string_array(context.get("allowed_decisions", [])):
+		if BATTLE_DECISIONS.has(raw_decision) and not allowed_decisions.has(raw_decision):
+			allowed_decisions.append(raw_decision)
+	if allowed_decisions.is_empty():
+		allowed_decisions = _get_low_hp_allowed_decisions(bool(context.get("combatant_decisions_allowed", false)))
+	var decision := _normalize_low_hp_decision(str(judgement.get("decision", "")), allowed_decisions)
+	var psychology_decision := _battle_decision_to_psychology_decision(decision)
+	var low_hp_event: Dictionary = context.get("low_hp_event", {}) if context.get("low_hp_event", {}) is Dictionary else {}
+	var source_event_id := str(low_hp_event.get("event_id", ""))
+	var battlefield_context: Dictionary = context.get("battlefield_context", {}) if context.get("battlefield_context", {}) is Dictionary else {}
+	var behavior_mode := str(context.get("behavior_mode", ""))
+	var result_event := _log_battle_psychology_result(npc_id, psychology_decision, {
+		"trigger": "low_hp",
+		"source_event_id": source_event_id,
+		"low_hp_event_id": source_event_id,
+		"interaction_context": behavior_mode,
+		"raw_decision": str(judgement.get("decision", "")),
+		"emotion": str(judgement.get("emotion", "")),
+		"morale_delta_intent": int(judgement.get("morale_delta_intent", 0)),
+		"rule_fallback": bool(judgement.get("rule_fallback", false))
+	}, battlefield_context)
+	var state_result := {}
+	match decision:
+		BATTLE_DECISION_INSPIRED:
+			state_result = _start_morale_boost(npc_id, source_event_id, "low_hp")
+		BATTLE_DECISION_ESCAPE_STATION:
+			state_result = _start_escape_intent(npc_id, source_event_id, {
+				"trigger": "low_hp",
+				"interaction_context": behavior_mode
+			})
+		BATTLE_DECISION_CONTINUE_FIGHTING, BATTLE_DECISION_JOIN_BATTLE:
+			state_result = {"ok": true, "applied": false, "reason": "continue_fighting"}
+		BATTLE_DECISION_AVOID_BATTLE:
+			state_result = {"ok": true, "applied": false, "reason": "continue_avoid_combat"}
+		_:
+			state_result = {"ok": true, "applied": false, "reason": "none"}
+
+	var llm_result: Dictionary = context.get("llm_result", {}) if context.get("llm_result", {}) is Dictionary else {}
+	var dialogue_result: Dictionary = context.get("dialogue_result", {}) if context.get("dialogue_result", {}) is Dictionary else {}
+	_update_low_hp_judgement_for_active_battle(npc_id, {
+		"status": "completed",
+		"decision": decision,
+		"psychology_decision": psychology_decision,
+		"emotion": str(judgement.get("emotion", "")),
+		"rule_fallback": bool(judgement.get("rule_fallback", false)),
+		"battle_psychology_event_id": str(result_event.get("event_id", "")),
+		"state_result": state_result.duplicate(true),
+		"dialogue_result": dialogue_result.duplicate(true),
+		"llm_ok": bool(llm_result.get("ok", false))
+	})
+
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system != null and npc_system.has_method("get_npc") else {}
+	_last_low_hp_judgement_result = {
+		"ok": true,
+		"triggered": true,
+		"npc_id": npc_id,
+		"npc_name": str(npc.get("name", npc_id)),
+		"decision": decision,
+		"psychology_decision": psychology_decision,
+		"allowed_decisions": allowed_decisions,
+		"behavior_mode": behavior_mode,
+		"combatant_decisions_allowed": bool(context.get("combatant_decisions_allowed", false)),
+		"low_hp_event": low_hp_event.duplicate(true),
+		"battle_psychology_event": result_event.duplicate(true),
+		"state_result": state_result.duplicate(true),
+		"dialogue_result": dialogue_result.duplicate(true),
+		"llm_ok": bool(llm_result.get("ok", false)),
+		"rule_fallback": bool(judgement.get("rule_fallback", false))
+	}
+	return _last_low_hp_judgement_result.duplicate(true)
+
+
+func _start_morale_boost(npc_id: String, source_event_id: String, trigger: String = "wartime_dialogue") -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("update_npc_state"):
+		return {"ok": false, "error": "npc_system_missing", "npc_id": npc_id}
+	var time_snapshot := _get_game_time_snapshot()
+	var morale_state := {
+		"active": true,
+		"source_event_id": source_event_id,
+		"duration_seconds": MORALE_BOOST_DURATION_SECONDS,
+		"remaining_game_seconds": MORALE_BOOST_DURATION_SECONDS,
+		"attack_bonus": MORALE_BOOST_ATTACK_BONUS,
+		"move_speed_bonus": MORALE_BOOST_MOVE_SPEED_BONUS,
+		"trigger": trigger,
+		"started_day": int(time_snapshot.get("day", 1)),
+		"started_time": str(time_snapshot.get("time", "00:00:00"))
+	}
+	npc_system.update_npc_state(npc_id, {
+		"morale_boost": morale_state,
+		"last_action_result": "morale_boost_started"
+	})
+	var event := _log_morale_boost_started(npc_id, morale_state)
+	return {
+		"ok": true,
+		"applied": true,
+		"npc_id": npc_id,
+		"morale_boost": morale_state,
+		"event": event
+	}
+
+
+func _start_escape_intent(npc_id: String, source_event_id: String, context: Dictionary) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("update_npc_state"):
+		return {"ok": false, "error": "npc_system_missing", "npc_id": npc_id}
+	var time_snapshot := _get_game_time_snapshot()
+	var trigger := str(context.get("trigger", "wartime_dialogue"))
+	var escape_intent := {
+		"active": true,
+		"status": "pending",
+		"source_event_id": source_event_id,
+		"trigger": trigger,
+		"interaction_context": str(context.get("interaction_context", "")),
+		"started_day": int(time_snapshot.get("day", 1)),
+		"started_time": str(time_snapshot.get("time", "00:00:00"))
+	}
+	npc_system.update_npc_state(npc_id, {
+		"escape_intent": escape_intent,
+		"last_action_result": "escape_intent_pending"
+	})
+	return {
+		"ok": true,
+		"applied": true,
+		"npc_id": npc_id,
+		"escape_intent": escape_intent,
+		"reason": "escape_intent_pending"
+	}
+
+
+func _advance_morale_boosts(game_delta_seconds: float) -> void:
+	if game_delta_seconds <= 0.0:
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("update_npc_state"):
+		return
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+		var morale: Dictionary = state.get("morale_boost", {}) if state.get("morale_boost", {}) is Dictionary else {}
+		if not bool(morale.get("active", false)):
+			continue
+		var remaining := maxf(0.0, float(morale.get("remaining_game_seconds", MORALE_BOOST_DURATION_SECONDS)) - game_delta_seconds)
+		if remaining > 0.0:
+			morale["remaining_game_seconds"] = remaining
+			npc_system.update_npc_state(npc_id, {"morale_boost": morale})
+			continue
+		_log_morale_boost_ended(npc_id, morale)
+		npc_system.update_npc_state(npc_id, {
+			"morale_boost": {},
+			"last_action_result": "morale_boost_ended"
+		})
+
+
+func _get_active_morale_attack_bonus(state: Dictionary) -> float:
+	var morale: Dictionary = state.get("morale_boost", {}) if state.get("morale_boost", {}) is Dictionary else {}
+	if not bool(morale.get("active", false)):
+		return 0.0
+	return clampf(float(morale.get("attack_bonus", MORALE_BOOST_ATTACK_BONUS)), 0.0, 1.0)
+
+
+func _log_battle_psychology_result(npc_id: String, reaction: String, context: Dictionary, battlefield_context: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var clean_decision := reaction.strip_edges()
+	if not [
+		WARTIME_REACTION_NONE,
+		WARTIME_REACTION_ESCAPE,
+		WARTIME_REACTION_MORALE_BOOST,
+		BATTLE_DECISION_AVOID_BATTLE,
+		BATTLE_DECISION_CONTINUE_FIGHTING
+	].has(clean_decision):
+		clean_decision = WARTIME_REACTION_NONE
+	var trigger := str(context.get("trigger", "wartime_dialogue"))
+	var actor_id := "guard_officer" if trigger == "wartime_dialogue" else SYSTEM_ACTOR_ID
+	return memory_system.add_event({
+		"type": "battle_psychology_result",
+		"subject_npc_id": npc_id,
+		"actor_ids": [actor_id],
+		"target_ids": [npc_id, PLAZA_LOCATION_ID],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 80,
+		"payload": {
+			"trigger": trigger,
+			"decision": clean_decision,
+			"source_event_id": str(context.get("source_event_id", "")),
+			"low_hp_event_id": str(context.get("low_hp_event_id", "")),
+			"dialogue_id": str(context.get("dialogue_id", "")),
+			"interaction_context": str(context.get("interaction_context", "")),
+			"raw_decision": str(context.get("raw_decision", "")),
+			"emotion": str(context.get("emotion", "")),
+			"morale_delta_intent": int(context.get("morale_delta_intent", 0)),
+			"rule_fallback": bool(context.get("rule_fallback", false)),
+			"battlefield_context_summary": _summarize_battlefield_context(battlefield_context)
+		}
+	})
+
+
+func _log_morale_boost_started(npc_id: String, morale_state: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var trigger := str(morale_state.get("trigger", "wartime_dialogue"))
+	var actor_id := "guard_officer" if trigger == "wartime_dialogue" else SYSTEM_ACTOR_ID
+	return memory_system.add_event({
+		"type": "morale_boost_started",
+		"subject_npc_id": npc_id,
+		"actor_ids": [actor_id],
+		"target_ids": [npc_id, PLAZA_LOCATION_ID],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 80,
+		"payload": {
+			"source_event_id": str(morale_state.get("source_event_id", "")),
+			"trigger": trigger,
+			"duration_seconds": float(morale_state.get("duration_seconds", MORALE_BOOST_DURATION_SECONDS)),
+			"attack_bonus": float(morale_state.get("attack_bonus", MORALE_BOOST_ATTACK_BONUS)),
+			"move_speed_bonus": float(morale_state.get("move_speed_bonus", MORALE_BOOST_MOVE_SPEED_BONUS))
+		}
+	})
+
+
+func _log_morale_boost_ended(npc_id: String, morale_state: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "morale_boost_ended",
+		"subject_npc_id": npc_id,
+		"actor_ids": ["system"],
+		"target_ids": [npc_id, PLAZA_LOCATION_ID],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 55,
+		"payload": {
+			"source_event_id": str(morale_state.get("source_event_id", "")),
+			"duration_seconds": float(morale_state.get("duration_seconds", MORALE_BOOST_DURATION_SECONDS))
+		}
+	})
+
+
 func _log_combat_started(battle: Dictionary) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -2999,6 +3705,7 @@ func _log_combat_ended(battle: Dictionary) -> Dictionary:
 			"remaining_enemy_count": int(battle.get("remaining_enemy_count", 0)),
 			"injured_npcs": battle.get("injured_npcs", []),
 			"unconscious_npcs": battle.get("unconscious_npcs", []),
+			"low_hp_judgements": battle.get("low_hp_judgements", []),
 			"defeated_by_npc": battle.get("defeated_by_npc", []),
 			"reason": str(battle.get("end_reason", "enemies_defeated")),
 			"started_event_id": str(battle.get("started_event_id", ""))
