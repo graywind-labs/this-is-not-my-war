@@ -208,5 +208,15 @@
       "money": 1
     },
     "skill": "医术"
+  },
+  {
+    "id": "escaping_station",
+    "name": "逃离驿站",
+    "type": "system"
+  },
+  {
+    "id": "escape_intervention_dialogue",
+    "name": "逃离挽留对话",
+    "type": "system"
   }
 ]

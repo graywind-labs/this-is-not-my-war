@@ -3668,7 +3668,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 请求继承 T0603 对话上下文，并额外携带 `battlefield_context`：敌方 / 友方数量、兵种、HP，参战 NPC，驿站内非战斗人员。
 - 回复额外输出 `wartime_reaction = none | escape | morale_boost`。
 - `morale_boost` 由程序应用为 2 游戏小时斗志 buff，提高一定攻击力和移动速度。
-- `escape` 触发逃离意向，后续由 T1203 逃离流程执行。
+- `escape` 触发逃离流程，由 T1203 的 `CombatSystem.start_npc_escape(...)` 执行移动、离站标记和事件入库。
 
 非战斗人员在避战模式下：
 
@@ -3699,7 +3699,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - `DialogSystem` 在 `rally` / `combat` / `avoid_combat` 玩家对话中强制 `local_public`，UI toggle 默认开启且锁定。
 - `LLMBridge` 的 `/npc/dialogue` payload 新增 `interaction_context` 与 `battlefield_context`，并保留 `current_order`、短期记忆和地点上下文。
 - `NPCDialogueResponse` / Mock 新增 `wartime_reaction`；后端不可用时战时对话走规则 fallback。
-- `CombatSystem` 应用 `battle_psychology_result`、2 游戏小时 `morale_boost` 攻击 / 移动加成、`escape_intent` pending 状态和调试快照。
+- `CombatSystem` 应用 `battle_psychology_result`、2 游戏小时 `morale_boost` 攻击 / 移动加成和调试快照；T1203 后 `escape` 直接进入逃离流程，移动期间 `escape_intent.status == "escaping"`。
 - 新增 `tools/verify_wartime_dialogue.gd` 覆盖强制公开、payload 注入、fallback、士气、逃离意图和避战应征。
 
 ---
@@ -3741,14 +3741,14 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ## T1203 实现逃离驿站行为
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0304, T1201
 涉及文档：`AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`
 
 规则：
 
-- NPC 前往后门或小门。
+- NPC 前往后门。
 - 完全离开地图后状态变为 escaped。
 - 逃离事件公开到广场。
 - 逃离 NPC 不再参与工作和战斗。
@@ -3762,33 +3762,115 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 离开后从可用 NPC 列表中移除或标记。
 - 事件记录完整。
 
+完成记录：
+
+- `CombatSystem.start_npc_escape(...)` / `debug_start_npc_escape(...)` 已接入逃离流程，战时公开对话 `escape` 和低血量自身心理判定 `escape_station` 会直接触发 NPC 前往后门外出口。
+- 逃离开始写入广场公开 `escape_started`；移动期间 `escape_intent.status == "escaping"`，NPC 切出工作 / 战斗行为，不再接受普通行动或被战斗 AI 当作可行动单位。
+- NPC 到达后门外出口后由 `NPCSystem` 标记 `escaped=true`、`behavior_mode="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件。
+- `CombatSystem.debug_get_combat_snapshot()` 暴露 `active_escapes` 与 `last_escape_result`；GM 面板新增“触发逃离”按钮和 `escape_npc <npc_id>` 命令。
+- 新增 `tools/verify_escape_station_behavior.gd`，覆盖调试触发、后门移动、行动阻断、离图标记、节点隐藏、广场事件和 GM 命令。
+
+验证通过：`godot --headless --path . --script res://tools/verify_escape_station_behavior.gd`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_low_hp_battle_judgement.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`。
+
 ---
 
 ## T1204 实现逃离挽留五轮对话
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0701, T1203
 涉及文档：`AI_NPC_SYSTEM.md`, `UI_UX.md`, `PROMPTS.md`
 
 规则：
 
+- NPC正在逃离时，头上会出现一个特殊的标识警示玩家他正在逃离，UI也会弹出一个提示警示玩家正在有NPC逃离。
 - NPC 完全离开前，玩家可进行最多 5 轮对话。
-- 玩家可承诺补偿、威胁、给钱、攻击。
-- 对话后 NPC 可留下、退出入伍状态、继续逃离、被攻击昏迷。
+- 玩家仍可在完全离开前与其交互，不同于正常工作模式的交互，正在离开状态的NPC，给钱会让他离开的移动速度更慢，攻击则会让他离开的移动速度更快。如果在这期间昏迷，醒来后依然是正在逃离驿站的状态。
+- 对话后 NPC 在回复里包括留下或继续逃离的结构化信息，解析后决定该NPC是留下还是继续逃离。如果在5轮里其中一轮决定留下，则变回工作模式，重新做计划。如果仍要继续逃离，那么玩家可再次发起对话，直到满5轮。
 
 验收标准：
 
-- 逃离 NPC 可被点击进入挽留对话。
+- 逃离 NPC 可被点击打开 NPC 面板，并通过【对话】进入挽留对话。
 - 轮数限制生效。
 - 结果改变 NPC 状态。
 - 事件进入 NPC 事件库和广场公开信息。
+
+完成记录（2026-06-29）：
+
+- `DialogSystem` 新增 `escape_intervention` 对话模式：逃离中 NPC 可通过 NPC 面板【对话】进入同地点公开挽留对话，最大 5 轮，不显示应征开关；T1204A 起打开时暂停逃离移动，关闭或满 5 轮后恢复。
+- `CombatSystem` 解析 `stay_after_intervention` / `leave_after_intervention`：留下会停止移动、切回 `work` 并触发计划重评估；继续逃离会保留 `escape_intent.status == "escaping"` 并记录已用轮次。
+- 逃离中给钱会降低 `escape_intent.speed_multiplier`，守备官攻击会提高该倍率；逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续前往后门外出口。
+- NPC 头顶新增 `!` 逃离警示，HUD 顶部显示正在逃离的 NPC 名称；`escape_intervention_result` / `escape_speed_changed` 写入 NPC 事件库和广场公开信息。
+- `/npc/dialogue` Schema / Mock 支持 `dialogue_kind == "escape_intervention"`、`interaction_context == "escape_intervention"`、`escape_intervention_round` 和 stay/leave 意图。
+- 新增 `tools/verify_escape_intervention_dialogue.gd`，覆盖 NPC 面板入口、5 轮限制、打开暂停、关闭恢复、留下 / 继续状态变化、事件入库、给钱减速、逃离攻击无回复计轮和昏迷复苏续逃。
+
+验证通过：`godot --headless --path . --script res://tools/verify_escape_intervention_dialogue.gd`、`godot --headless --path . --script res://tools/verify_escape_station_behavior.gd`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`、`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`。
+
+---
+
+## T1204A 调整逃离挽留入口、暂停与攻击规则
+
+状态：Done
+优先级：P1
+前置任务：T1204
+涉及文档：`CURRENT_STATE.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `COMBAT_SYSTEM.md`, `PROMPTS.md`, `GM_PANEL.md`, `game_design.md`
+
+规则：
+
+- 逃离 NPC 不再由场景实体点击直接进入挽留；玩家点击 NPC 后打开 NPC 面板，再点击【对话】按钮进入逃离挽留。
+- 只要逃离挽留剩余轮次大于 0，【对话】按钮可用；已满 5 轮且没有挽留成功时，【对话】按钮置灰不可点击。
+- 进入逃离挽留对话时，NPC 暂停逃离移动；玩家未满 5 轮时关闭面板，NPC 恢复逃离移动，之后仍可再次打开对话并再次暂停。
+- 玩家发送消息且 NPC 回复后才计为一轮；满 5 轮仍未挽留成功时自动关闭对话面板，NPC 恢复逃离移动。
+- 逃离挽留面板内点击攻击会计为一轮，立刻关闭对话面板并让 NPC 继续逃离；该攻击不向 NPC LLM 发送消息，也不会产生 NPC 回复。
+
+验收标准：
+
+- 逃离中 NPC 点击打开 NPC 面板；【对话】按钮按剩余轮次启用/置灰。
+- 进入逃离挽留对话时 NPC 停止移动，关闭或满 5 轮后继续逃离。
+- 普通消息 + NPC 回复才计轮；满 5 轮自动关闭。
+- 逃离挽留攻击不发起 LLM 请求、不写攻击回复对话事件，计一轮后关闭并继续逃离。
+
+完成记录（2026-06-29）：
+
+- `NPCSystem.handle_npc_clicked(...)` 不再接管逃离 NPC 的点击，逃离 NPC 点击会走正常 NPC 面板入口。
+- `NPCPanel` 按 `CombatSystem.get_escape_intervention_state(...)` 控制【对话】按钮：剩余轮次大于 0 时可进入挽留，5 轮用完后置灰并显示禁用提示。
+- `CombatSystem` 新增 `pause_escape_for_dialogue(...)` / `resume_escape_after_dialogue(...)`，进入逃离挽留时暂停移动，关闭、攻击或满 5 轮后恢复后门逃离移动。
+- `DialogSystem` 调整 `escape_intervention`：玩家消息需等 NPC 回复后才计轮，满 5 轮自动关闭；逃离挽留攻击走无回复分支，只扣 HP、加速、计 1 轮、关闭面板并继续逃离，不请求 LLM、不写攻击回复 `dialogue_turn`。
+- `data/action_defs.json` 补充 `escaping_station` 与 `escape_intervention_dialogue` 系统行动，避免逃离和暂停挽留状态显示缺定义。
+- 更新 `tools/verify_escape_intervention_dialogue.gd`，覆盖 NPC 面板入口、暂停 / 恢复、五轮置灰、消息计轮、无回复攻击、给钱减速和昏迷复苏续逃。
+
+验证通过：`godot --headless --path . --script res://tools/verify_escape_intervention_dialogue.gd`、`godot --headless --path . --script res://tools/verify_escape_station_behavior.gd`、`godot --headless --path . --quit-after 1`；临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py` 后通过 `godot --headless --path . --script res://tools/verify_dialogue_ui.gd`；Godot MCP 连接、自检、运行 `Main.tscn` 和错误日志检查通过。
+
+---
+
+## T1204B 修正逃离攻击事件与 NPC 面板交互提示
+
+状态：Done
+优先级：P1
+前置任务：T1204A
+涉及文档：`CURRENT_STATE.md`, `UI_UX.md`, `MEMORY_AND_INFO_SPACE.md`, `COMBAT_SYSTEM.md`, `MODULE_INDEX.md`
+
+规则：
+
+- 逃离挽留对话里点击攻击时，只写守备官攻击造成的伤害事件和 `escape_speed_changed` 逃离加速事件。
+- 逃离攻击仍计 1 轮并关闭面板、恢复逃离，但不写 `escape_intervention_result`，不出现“听完守备官的话后仍继续逃离驿站”。
+- NPC 面板里的给钱 / 装备 / 策略等临时交互提示只属于当前显示对象；切换到另一个 NPC 面板时必须清空。
+
+完成记录（2026-06-29）：
+
+- `DialogSystem._apply_escape_attack_without_reply(...)` 不再调用 `apply_escape_intervention_result(...)`，改为只记录逃离攻击计轮。
+- `CombatSystem` 新增 `record_escape_attack_intervention_round(...)`，用于更新逃离挽留已用轮次但不写 `escape_intervention_result` 事件。
+- `NPCPanel.show_npc(...)` 在切换到不同 NPC 或隐藏面板时清空 `NPCInteractionResultLabel`，避免给钱成功提示串到其他 NPC。
+- `tools/verify_escape_intervention_dialogue.gd` 增加逃离攻击不写 `escape_intervention_result` 的断言。
+- `tools/verify_npc_panel_interactions.gd` 增加给钱成功提示切换 NPC 后清空的断言。
+
+验证通过：`godot --headless --path . --script res://tools/verify_escape_intervention_dialogue.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_interactions.gd`、`godot --headless --path . --script res://tools/verify_escape_station_behavior.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T1205 完善战场公开信息
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0404, T1106, T1202
 涉及文档：`MEMORY_AND_INFO_SPACE.md`, `COMBAT_SYSTEM.md`
@@ -3812,6 +3894,15 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - NPC 后续对话请求包含相关公开见闻摘要。
 - NPC 面板可查看最近公开见闻。
 - 行为模式、避战、斗志激昂、逃离意向事件与地点 / 广场公开规则一致，不把 LLM 输出直接当作权威事件。
+
+完成记录（2026-06-29）：
+
+- 已对照 T1106、T1201、T1202、T1203、T1204A/T1204B 现有实现确认：`combat_started` / `combat_ended`、`combat_rally_started` / `npc_mode_changed`、`avoidance_started` / `avoidance_ended`、`low_hp_triggered`、`battle_psychology_result`、`attack_made`、`unconscious_started`、`healing_started`、`revived`、`escape_started` / `escaped`、`building_damaged` 均由权威系统写入结构化事件；战场室外事件统一走 `location_id == "plaza"` 的 `local_public` 或同地点见闻写入。
+- 新增 `tools/verify_battlefield_public_info.gd`，综合覆盖广场旁观者见闻、NPC 面板见闻显示、LLMBridge 对话 payload 的 `witnessed_events`、敌我人数、集结 / 避战 / 低血 / 战时心理 / 击退 / 昏迷 / 治疗 / 复苏 / 逃离 / 建筑受损 / 战斗结束事件，以及 `work <-> combat`、`work <-> avoid_combat` 不再通过 `npc_mode_changed` 广播。
+- `tools/verify_wartime_dialogue.gd` 固定使用关闭端口验证规则降级，避免本机已有后端服务导致误判。
+- 未新增 GM 面板入口；现有 GM 敌人快照、记忆 / 见闻、伤害、治疗、逃离和建筑调试入口已能触发和观察相关状态。
+
+验证通过：`godot --headless --path . --script res://tools/verify_battlefield_public_info.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_low_hp_battle_judgement.gd`、`godot --headless --path . --script res://tools/verify_npc_unconscious_healing.gd`、`godot --headless --path . --script res://tools/verify_escape_station_behavior.gd`、`godot --headless --path . --script res://tools/verify_plaza_local_public_broadcast.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 

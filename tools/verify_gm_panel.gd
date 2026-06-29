@@ -374,6 +374,12 @@ func _init() -> void:
 		quit(1)
 		return
 	time_system.set_time_scale(1.0)
+	gm_panel._execute_command("escape_npc priest_01")
+	var priest_escape: Dictionary = npc_system.get_npc_state("priest_01").get("escape_intent", {})
+	if str(priest_escape.get("status", "")) != "escaping":
+		push_error("GM escape_npc command should start station escape")
+		quit(1)
+		return
 
 	if not npc_system.debug_enter_location_immediately("veteran_deputy_01", "training_ground"):
 		push_error("Failed to place veteran at training ground for GM training test")

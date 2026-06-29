@@ -445,8 +445,13 @@ func move_npc_to_world_position(
 	if not _profiles.has(npc_id):
 		push_warning("Cannot move unknown NPC: %s" % npc_id)
 		return false
+	var allow_escaping_movement := bool(arrival_state.get("allow_escaping_movement", false))
 	if not can_npc_act(npc_id):
-		return false
+		if not allow_escaping_movement:
+			return false
+		var state := get_npc_state(npc_id)
+		if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)) or bool(state.get("first_sleep_summary_active", false)):
+			return false
 	if not _npc_nodes.has(npc_id):
 		push_warning("Cannot move NPC without scene node: %s" % npc_id)
 		return false
@@ -647,6 +652,7 @@ func give_money_to_npc(
 		"npc_money_before": money_before,
 		"npc_money_after": money_after
 	}, visibility)
+	var escape_speed_result := _notify_escape_money_given(npc_id, amount, event)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	return {
@@ -655,7 +661,8 @@ func give_money_to_npc(
 		"amount": amount,
 		"npc_money_before": money_before,
 		"npc_money_after": money_after,
-		"event": event
+		"event": event,
+		"escape_speed_result": escape_speed_result
 	}
 
 
@@ -761,6 +768,8 @@ func has_active_proactive_talk(npc_id: String) -> bool:
 
 
 func handle_npc_clicked(npc_id: String) -> bool:
+	if _profiles.has(npc_id) and _is_escape_intervenable_state(get_npc_state(npc_id)):
+		return false
 	if not has_active_proactive_talk(npc_id):
 		return false
 	var proactive := get_proactive_talk(npc_id)
@@ -771,6 +780,20 @@ func handle_npc_clicked(npc_id: String) -> bool:
 		return false
 	var result: Dictionary = dialog_system.start_proactive_player_dialogue(npc_id, prompt_text)
 	return bool(result.get("ok", false))
+
+
+func _notify_escape_money_given(npc_id: String, amount: int, event: Dictionary) -> Dictionary:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("handle_escape_money_given"):
+		return {}
+	return combat_system.handle_escape_money_given(npc_id, amount, event)
+
+
+func _notify_escape_guard_attack(npc_id: String, damage: int, event: Dictionary, became_unconscious: bool) -> Dictionary:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("handle_escape_guard_attack"):
+		return {}
+	return combat_system.handle_escape_guard_attack(npc_id, damage, event, became_unconscious)
 
 
 func get_last_plan_reevaluation_request() -> Dictionary:
@@ -907,6 +930,7 @@ func can_npc_act(npc_id: String) -> bool:
 	return (
 		not bool(state.get("unconscious", false))
 		and not bool(state.get("escaped", false))
+		and not _is_npc_escaping_state(state)
 		and not bool(state.get("first_sleep_summary_active", false))
 	)
 
@@ -959,6 +983,9 @@ func apply_damage_to_npc(
 	_emit_npc_state_changed(npc_id)
 
 	var damage_event := _log_damage_taken(npc_id, actor_id, damage, hp_before, hp_after, visibility, options)
+	var escape_speed_result := {}
+	if actor_id == PLAYER_ACTOR_ID:
+		escape_speed_result = _notify_escape_guard_attack(npc_id, damage, damage_event, became_unconscious)
 	var unconscious_event := {}
 	if became_unconscious:
 		unconscious_event = _log_unconscious_started(npc_id, actor_id, damage, hp_before, hp_after, "local_public")
@@ -984,6 +1011,7 @@ func apply_damage_to_npc(
 		"unconscious": bool(states.get("unconscious", false)),
 		"damage_event": damage_event,
 		"unconscious_event": unconscious_event,
+		"escape_speed_result": escape_speed_result,
 		"options": options.duplicate(true)
 	}
 	_notify_combat_damage_applied(result, options)
@@ -1376,6 +1404,22 @@ func _set_npc_state_without_signal(npc_id: String, changes: Dictionary) -> void:
 		states[str(key)] = changes[key]
 	profile["states"] = states
 	_profiles[npc_id] = profile
+
+
+func _is_npc_escaping_state(state: Dictionary) -> bool:
+	var escape_intent: Dictionary = state.get("escape_intent", {}) if state.get("escape_intent", {}) is Dictionary else {}
+	if not bool(escape_intent.get("active", false)):
+		return false
+	return ["escaping", "paused_unconscious"].has(str(escape_intent.get("status", "")))
+
+
+func _is_escape_intervenable_state(state: Dictionary) -> bool:
+	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return false
+	var escape_intent: Dictionary = state.get("escape_intent", {}) if state.get("escape_intent", {}) is Dictionary else {}
+	if not bool(escape_intent.get("active", false)) or str(escape_intent.get("status", "")) != "escaping":
+		return false
+	return int(escape_intent.get("intervention_rounds_used", 0)) < int(escape_intent.get("intervention_max_rounds", 5))
 
 
 func _stop_npc_movement(npc_id: String) -> void:
@@ -2096,6 +2140,31 @@ func _log_npc_mode_changed(
 	})
 
 
+func _log_npc_escaped(npc_id: String, arrival_state: Dictionary = {}) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var exit_target_id := str(arrival_state.get("exit_target_id", arrival_state.get("target_id", "back_gate_exit")))
+	var exit_target_name := str(arrival_state.get("exit_target_name", arrival_state.get("target_name", "后门外出口")))
+	return memory_system.add_event({
+		"type": "escaped",
+		"subject_npc_id": npc_id,
+		"actor_ids": [SYSTEM_ACTOR_ID],
+		"target_ids": [npc_id, exit_target_id],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 95,
+		"payload": {
+			"npc_id": npc_id,
+			"exit_target_id": exit_target_id,
+			"exit_target_name": exit_target_name,
+			"source_event_id": str(arrival_state.get("source_event_id", "")),
+			"trigger": str(arrival_state.get("escape_trigger", "")),
+			"reason": str(arrival_state.get("escape_reason", "escape_completed"))
+		}
+	})
+
+
 func _should_log_npc_mode_changed(from_mode: String, to_mode: String, options: Dictionary = {}) -> bool:
 	if bool(options.get("force_mode_event", false)):
 		return true
@@ -2199,10 +2268,43 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 		"location_context": location_context
 	}
 	for key in arrival_state.keys():
+		if [
+			"escape_finalize",
+			"escape_reason",
+			"escape_trigger",
+			"source_event_id",
+			"exit_target_id",
+			"exit_target_name"
+		].has(str(key)):
+			continue
 		changes[str(key)] = arrival_state[key]
+	if bool(arrival_state.get("escape_finalize", false)):
+		var escape_intent: Dictionary = previous_state.get("escape_intent", {}) if previous_state.get("escape_intent", {}) is Dictionary else {}
+		var time_snapshot := _get_game_time_snapshot()
+		escape_intent["active"] = false
+		escape_intent["status"] = "escaped"
+		escape_intent["completed_day"] = int(time_snapshot.get("day", 1))
+		escape_intent["completed_time"] = str(time_snapshot.get("time", "00:00:00"))
+		escape_intent["exit_target_id"] = str(arrival_state.get("exit_target_id", target_id))
+		escape_intent["exit_target_name"] = str(arrival_state.get("exit_target_name", target_name))
+		changes["escape_intent"] = escape_intent
+		changes["escaped"] = true
+		changes["unconscious"] = false
+		changes["behavior_mode"] = BEHAVIOR_MODE_ESCAPED
+		changes["behavior_mode_reason"] = str(arrival_state.get("escape_reason", "escape_completed"))
+		changes["current_action"] = "escaped"
+		changes["current_location"] = "outside_station"
+		changes["current_location_name"] = "驿站外"
+		changes["location_context"] = {}
+		changes["last_action_result"] = "escaped_station"
 	_set_npc_state_without_signal(npc_id, changes)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
+	if bool(arrival_state.get("escape_finalize", false)):
+		_log_npc_escaped(npc_id, arrival_state)
+		var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+		if combat_system != null and combat_system.has_method("handle_npc_escape_completed"):
+			combat_system.handle_npc_escape_completed(npc_id, changes.duplicate(true))
 
 
 func debug_enter_location_immediately(npc_id: String, location_id: String) -> bool:

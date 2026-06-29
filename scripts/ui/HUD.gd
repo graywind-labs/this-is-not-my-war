@@ -24,12 +24,14 @@ var _detail_title: Label
 var _detail_text: RichTextLabel
 var _detail_source_button: Control
 var _detail_mode := ""
+var _escape_warning_label: Label
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_resource_strip()
 	_build_detail_panel()
+	_build_escape_warning_label()
 	if speed_button != null:
 		speed_button.focus_mode = Control.FOCUS_NONE
 		speed_button.pressed.connect(_on_speed_button_pressed)
@@ -52,6 +54,9 @@ func _ready() -> void:
 		event_bus.day_started.connect(_on_day_started)
 		event_bus.hour_started.connect(_on_hour_started)
 		event_bus.resource_changed.connect(_on_resource_changed)
+		if event_bus.has_signal("npc_state_changed"):
+			event_bus.npc_state_changed.connect(_on_npc_state_changed)
+	_refresh_escape_warning()
 
 
 func _input(event: InputEvent) -> void:
@@ -85,6 +90,10 @@ func _on_hour_started(_day: int, _hour: int) -> void:
 
 func _on_resource_changed(_resource_id: String, _amount: int) -> void:
 	_refresh_resources()
+
+
+func _on_npc_state_changed(_npc_id: String) -> void:
+	_refresh_escape_warning()
 
 
 func _on_speed_button_pressed() -> void:
@@ -251,6 +260,53 @@ func _build_resource_strip() -> void:
 
 	var devices_button := _make_detail_button("器械", "devices")
 	resource_strip.add_child(devices_button)
+
+
+func _build_escape_warning_label() -> void:
+	if _escape_warning_label != null:
+		return
+	_escape_warning_label = Label.new()
+	_escape_warning_label.name = "EscapeWarningLabel"
+	_escape_warning_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_escape_warning_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_escape_warning_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_escape_warning_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.78, 1.0))
+	_escape_warning_label.add_theme_color_override("font_outline_color", Color(0.26, 0.04, 0.02, 1.0))
+	_escape_warning_label.add_theme_constant_override("outline_size", 5)
+	_escape_warning_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_escape_warning_label.offset_left = 220.0
+	_escape_warning_label.offset_right = -220.0
+	_escape_warning_label.offset_top = 34.0
+	_escape_warning_label.offset_bottom = 66.0
+	_escape_warning_label.visible = false
+	add_child(_escape_warning_label)
+
+
+func _refresh_escape_warning() -> void:
+	if _escape_warning_label == null:
+		return
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("get_npc_state"):
+		_escape_warning_label.visible = false
+		return
+	var names: Array[String] = []
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if bool(state.get("escaped", false)):
+			continue
+		var intent: Dictionary = state.get("escape_intent", {}) if state.get("escape_intent", {}) is Dictionary else {}
+		if not bool(intent.get("active", false)):
+			continue
+		if not ["escaping", "paused_unconscious"].has(str(intent.get("status", ""))):
+			continue
+		var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system.has_method("get_npc") else {}
+		names.append(str(npc.get("name", npc_id)))
+	if names.is_empty():
+		_escape_warning_label.visible = false
+		return
+	_escape_warning_label.text = "警告：%s正在逃离驿站" % "、".join(names)
+	_escape_warning_label.visible = true
 
 
 func _make_detail_button(text: String, mode: String) -> Button:

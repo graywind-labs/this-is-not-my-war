@@ -130,6 +130,30 @@ class ModelAdapter:
             dialogue_kind = str(payload.get("dialogue_kind", "player_npc"))
             current_round, max_rounds = self._read_dialogue_rounds(payload)
             rounds_left = max_rounds - current_round
+            if dialogue_kind == "escape_intervention":
+                stay_keywords = ["留下", "别走", "不要走", "守住", "保护", "一起", "需要你", "补偿", "钱", "给你", "照顾", "帮忙"]
+                leave_keywords = ["滚", "走吧", "逃", "跑", "别管", "随便你", "攻击", "惩戒"]
+                stay = any(word in text for word in stay_keywords)
+                if any(word in text for word in leave_keywords):
+                    stay = False
+                reply_text = (
+                    "守备官，我听见了。那我停下，但你得记住今天说过的话。"
+                    if stay
+                    else "我听见了，可我还是要离开这里。再晚就没有机会了。"
+                )
+                return {
+                    "ok": True,
+                    "replyer_id": npc_id,
+                    "reply_text": reply_text,
+                    "response_kind": "reply_to_player",
+                    "intent": "stay_after_intervention" if stay else "leave_after_intervention",
+                    "emotion": "shaken" if stay else "fearful",
+                    "recruitment_result": "none",
+                    "wartime_reaction": "none",
+                    "should_end_dialogue": stay or rounds_left <= 0,
+                    "suggested_event_type": "dialogue_turn",
+                    "debug_reason": f"mock_escape_intervention_by_keywords_and_round_limit{order_suffix}",
+                }
             is_npc_reply = dialogue_kind == "npc_npc"
             accepts = is_recruitment_request and any(word in text for word in ["守住", "保护", "应征", "帮忙", "一起", "救"])
             rejects = is_recruitment_request and not accepts

@@ -9,7 +9,7 @@ from .common import ActionCandidate, CurrentOrderContext, GameTime, ModelRequest
 
 DialogueKind = Literal["player_npc", "npc_npc", "escape_intervention"]
 DialogueVisibility = Literal["private", "local_public"]
-InteractionContext = Literal["work", "rally", "combat", "avoid_combat"]
+InteractionContext = Literal["work", "rally", "combat", "avoid_combat", "escape_intervention"]
 WartimeReaction = Literal["none", "escape", "morale_boost"]
 DialogueIntent = Literal[
     "continue_talk",

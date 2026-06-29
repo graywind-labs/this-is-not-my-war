@@ -39,7 +39,7 @@
 - `npc_state`：目标 NPC 的当前权威状态快照，包括力量、智力、熟练度、健康/受伤、饱食度、疲劳度、金钱、装备、是否已入伍等。
 - `current_order`：目标 NPC 当前收到的守备官指令；未入伍或尚无指令时为空。模型可结合人设、记忆和现场状态理解、延迟、调整或拒绝，不得把它当作已执行事实。
 - `dialogue_state`：对话公开性和地点；`visibility` 只能是 `private` 或 `local_public`。
-- `interaction_context`：当前对话语境；日常模式为 `work`，集结 / 战斗 / 避战模式下分别为 `rally`、`combat`、`avoid_combat`。
+- `interaction_context`：当前对话语境；日常模式为 `work`，集结 / 战斗 / 避战模式下分别为 `rally`、`combat`、`avoid_combat`；逃离挽留为 `escape_intervention`。
 - `short_memory`：目标 NPC 的短期记忆摘要，必须区分事件库 `experienced_events` 与见闻库 `witnessed_events`。
 - `long_memory`：长期记忆，包括知识图谱和日记。
 - `location_context`：当前地点/建筑快照，包括建筑是否受损、工位状态、内部 NPC 及其状态等。
@@ -52,9 +52,10 @@
 - `local_public` 只代表 Godot 后续入库和广播规则，不允许模型自行决定第三者记忆写入。
 - 对话全文后续作为 `dialogue_turn` 事件 payload 保存，不单独建立谈话库。
 - 当前指令与本轮守备官说话文本是两个不同输入：`current_order` 是持续上下文，`speaker_text` 是本轮实际发言。
-- 若本轮由对话窗“攻击”触发，`speaker_text` 使用类似“守备官攻击了你以示惩戒，你要说些什么？”的攻击语境文本，`constraints` 会注明这是攻击后的即时反应，不是普通闲聊。攻击造成的 HP 扣除和 `damage_taken` 事件已由 Godot 先行结算；模型只能生成 NPC 对守备官的回应、情绪和态度，不能撤销攻击、改变 HP 或决定后续行动权威结果。
+- 若普通对话本轮由对话窗“攻击”触发，`speaker_text` 使用类似“守备官攻击了你以示惩戒，你要说些什么？”的攻击语境文本，`constraints` 会注明这是攻击后的即时反应，不是普通闲聊。攻击造成的 HP 扣除和 `damage_taken` 事件已由 Godot 先行结算；模型只能生成 NPC 对守备官的回应、情绪和态度，不能撤销攻击、改变 HP 或决定后续行动权威结果。逃离挽留中的攻击是例外，不构造该 Prompt，也不请求 NPC 回复。
 - 若目标 NPC 处于集结 / 战斗 / 避战模式，`dialogue_state.visibility` 必须固定为 `local_public`，Prompt 应明确这段话会被同地点可接收见闻的 NPC 听见；模型不得建议改成私下谈话。
 - 集结 / 战斗模式的已入伍且有主武器 NPC 回复必须额外输出 `wartime_reaction`，表示守备官本轮话术造成的战时心理意向：`none`、`escape` 或 `morale_boost`。避战模式下的非战斗人员不使用该字段触发战斗心理，而是继续通过 `recruitment_result` 表达是否同意应征；若同意但仍无主武器，程序会保持避战。
+- 若 `dialogue_kind == "escape_intervention"`，Prompt 必须明确目标 NPC 正在逃离驿站，本轮是守备官在其离图前的挽留 / 威胁 / 承诺。请求会携带 `escape_intervention_round`（1 到 5）、`escape_intent`、当前轮次、短期记忆、长期记忆、地点上下文和 `current_order`。模型只能在 `intent` 中输出 `stay_after_intervention` 或 `leave_after_intervention`，不能输出“留下但退出入伍”等旧分支，也不能直接改变移动、HP、资源或建筑结果。逃离挽留对话中的攻击按钮不发送到模型。
 
 ## 对话 Prompt 输出
 
@@ -147,6 +148,31 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 ```
 
 避战模式下，非战斗人员仍使用 `recruitment_result` 表达是否接受应征。若返回 `accept` 但仍无主武器，Godot 保持其 `avoid_combat`；若无敌军，则回到工作模式并成为已入伍 NPC；只有已入伍且获得主武器、场上仍有敌军时，Godot 才将其切入战斗模式。
+
+## 逃离挽留 Prompt 输出
+
+逃离挽留复用 `NPCDialogueResponse`，但 `dialogue_kind` 必须为 `escape_intervention`，`interaction_context` 必须为 `escape_intervention`，`escape_intervention_round` 必须在 1 到 5 之间。模型必须输出：
+
+- `intent = "stay_after_intervention"`：NPC 被守备官本轮话术挽留下来。Godot 会停止逃离、切回工作模式、触发计划重评估并写入 `escape_intervention_result`。
+- `intent = "leave_after_intervention"`：NPC 继续逃离。Godot 会记录已用轮次，未满 5 轮时允许玩家再次挽留，满 5 轮后拒绝第 6 轮。
+
+给钱和攻击不是模型结算：给钱已经由 Godot 扣资源并降低逃离移动倍率；逃离挽留中的攻击已经由 Godot 扣 HP、提高逃离移动倍率、计入 1 轮并关闭对话面板，不会请求模型回复。若攻击导致昏迷，复苏后程序会继续逃离。
+
+```json
+{
+  "ok": true,
+  "replyer_id": "cook_01",
+  "reply_text": "守备官，我留下。但你得记住你答应过什么。",
+  "response_kind": "reply_to_player",
+  "intent": "stay_after_intervention",
+  "emotion": "shaken",
+  "recruitment_result": "none",
+  "wartime_reaction": "none",
+  "should_end_dialogue": true,
+  "suggested_event_type": "dialogue_turn",
+  "debug_reason": "逃离挽留第 2 轮，守备官承诺补偿并承担后果"
+}
+```
 
 ## 低血量自身心理判定 Prompt 输出
 

@@ -16,6 +16,7 @@ var _is_moving := false
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 var _proactive_bubble: Label3D
 var _llm_activity_marker: Label3D
+var _escape_warning_marker: Label3D
 var _mount_visual: MeshInstance3D
 var _facing_marker: Label3D
 
@@ -31,6 +32,13 @@ func setup(npc_profile: Dictionary) -> void:
 func update_profile(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
 	var states: Dictionary = profile.get("states", {})
+	if bool(states.get("escaped", false)):
+		stop_movement()
+		visible = false
+		input_ray_pickable = false
+		return
+	visible = true
+	input_ray_pickable = true
 	if bool(states.get("unconscious", false)):
 		stop_movement()
 	_refresh_label()
@@ -56,6 +64,7 @@ func _ready() -> void:
 		input_event.connect(_on_input_event)
 	_ensure_proactive_bubble()
 	_ensure_llm_activity_marker()
+	_ensure_escape_warning_marker()
 	_ensure_combat_visuals()
 	_refresh_label()
 
@@ -78,9 +87,13 @@ func _process(delta: float) -> void:
 func _get_move_speed_multiplier() -> float:
 	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
 	var morale: Dictionary = states.get("morale_boost", {}) if states.get("morale_boost", {}) is Dictionary else {}
-	if not bool(morale.get("active", false)):
-		return 1.0
-	return 1.0 + clampf(float(morale.get("move_speed_bonus", 0.0)), 0.0, 1.0)
+	var multiplier := 1.0
+	if bool(morale.get("active", false)):
+		multiplier += clampf(float(morale.get("move_speed_bonus", 0.0)), 0.0, 1.0)
+	var escape_intent: Dictionary = states.get("escape_intent", {}) if states.get("escape_intent", {}) is Dictionary else {}
+	if bool(escape_intent.get("active", false)) and str(escape_intent.get("status", "")) == "escaping":
+		multiplier *= clampf(float(escape_intent.get("speed_multiplier", 1.0)), 0.25, 3.0)
+	return multiplier
 
 
 func _on_input_event(
@@ -117,6 +130,8 @@ func _refresh_label() -> void:
 	var action_text := str(states.get("current_action", "idle"))
 	if bool(states.get("unconscious", false)):
 		action_text = "昏迷"
+	elif _is_escape_warning_state(states):
+		action_text = "逃离"
 	elif action_text == "rallying_defense_line":
 		action_text = "集结防线"
 	elif action_text == "combat_ready":
@@ -133,10 +148,12 @@ func _refresh_label() -> void:
 	]
 	_ensure_proactive_bubble()
 	_ensure_llm_activity_marker()
+	_ensure_escape_warning_marker()
 	_ensure_combat_visuals()
 	var proactive: Dictionary = states.get("proactive_talk", {})
 	_proactive_bubble.visible = bool(proactive.get("active", false))
 	_refresh_llm_activity_marker(states)
+	_refresh_escape_warning_marker(states)
 	_refresh_combat_visuals(states)
 
 
@@ -168,6 +185,22 @@ func _ensure_llm_activity_marker() -> void:
 	_llm_activity_marker.position = Vector3(0.0, 2.45, 0.0)
 	_llm_activity_marker.visible = false
 	add_child(_llm_activity_marker)
+
+
+func _ensure_escape_warning_marker() -> void:
+	if _escape_warning_marker != null:
+		return
+	_escape_warning_marker = Label3D.new()
+	_escape_warning_marker.name = "EscapeWarningMarker"
+	_escape_warning_marker.text = "!"
+	_escape_warning_marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_escape_warning_marker.pixel_size = 0.04
+	_escape_warning_marker.modulate = Color(1.0, 0.22, 0.12, 1.0)
+	_escape_warning_marker.outline_size = 9
+	_escape_warning_marker.outline_modulate = Color(0.08, 0.02, 0.0, 1.0)
+	_escape_warning_marker.position = Vector3(0.0, 2.75, 0.0)
+	_escape_warning_marker.visible = false
+	add_child(_escape_warning_marker)
 
 
 func _ensure_combat_visuals() -> void:
@@ -225,6 +258,21 @@ func _refresh_llm_activity_marker(states: Dictionary) -> void:
 			_proactive_bubble.visible = false
 		return
 	_llm_activity_marker.visible = false
+
+
+func _refresh_escape_warning_marker(states: Dictionary) -> void:
+	if _escape_warning_marker == null:
+		return
+	_escape_warning_marker.visible = _is_escape_warning_state(states)
+
+
+func _is_escape_warning_state(states: Dictionary) -> bool:
+	if bool(states.get("escaped", false)):
+		return false
+	var escape_intent: Dictionary = states.get("escape_intent", {}) if states.get("escape_intent", {}) is Dictionary else {}
+	if not bool(escape_intent.get("active", false)):
+		return false
+	return ["escaping", "paused_unconscious"].has(str(escape_intent.get("status", "")))
 
 
 func _make_node_name(id_value: String) -> String:

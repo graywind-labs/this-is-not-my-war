@@ -88,6 +88,7 @@ func show_npc(npc_id: String) -> void:
 	if npc_id.is_empty():
 		_current_npc_id = ""
 		visible = false
+		interaction_result_label.text = ""
 		_close_memory_detail_popup()
 		return
 
@@ -95,6 +96,7 @@ func show_npc(npc_id: String) -> void:
 	if npc_system == null or not npc_system.get_npc_ids().has(npc_id):
 		_current_npc_id = ""
 		visible = false
+		interaction_result_label.text = ""
 		_close_memory_detail_popup()
 		return
 
@@ -102,10 +104,14 @@ func show_npc(npc_id: String) -> void:
 	if npc.is_empty():
 		_current_npc_id = ""
 		visible = false
+		interaction_result_label.text = ""
 		_close_memory_detail_popup()
 		return
 
+	var previous_npc_id := _current_npc_id
 	_current_npc_id = npc_id
+	if previous_npc_id != npc_id:
+		interaction_result_label.text = ""
 	var states: Dictionary = npc.get("states", {})
 	_fill_weapon_select()
 	_fill_strategy_select()
@@ -469,12 +475,23 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	var has_money := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("money")) >= int(gift_money_spin.value)
 	var has_weapon := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("weapons")) >= 1
 	var has_strategy_options := _strategy_select != null and _strategy_select.get_item_count() > 0 and not str(_strategy_select.get_item_metadata(0)).is_empty()
+	var escape_dialogue_state := _get_escape_dialogue_state(str(npc.get("id", _current_npc_id)))
+	var is_escaping := bool(escape_dialogue_state.get("escaping", false))
+	var can_escape_dialogue := bool(escape_dialogue_state.get("can_dialogue", false))
 
-	dialogue_button.disabled = is_escaped or is_deep_sleeping
+	dialogue_button.disabled = is_escaped or is_deep_sleeping or (is_escaping and not can_escape_dialogue)
+	dialogue_button.tooltip_text = "逃离挽留轮次已用完。" if is_escaping and not can_escape_dialogue else "打开对话面板。"
 	gift_money_button.disabled = is_escaped or not has_money
 	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
 	if _strategy_select != null:
 		_strategy_select.disabled = is_escaped or not is_recruited or not has_strategy_options
+
+
+func _get_escape_dialogue_state(npc_id: String) -> Dictionary:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or npc_id.is_empty() or not combat_system.has_method("get_escape_intervention_state"):
+		return {}
+	return combat_system.get_escape_intervention_state(npc_id)
 
 
 func _get_selected_visibility() -> String:

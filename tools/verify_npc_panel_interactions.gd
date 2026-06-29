@@ -37,7 +37,8 @@ func _init() -> void:
 	var gift_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiftMoneyButton") as Button
 	var weapon_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiveWeaponButton") as Button
 	var equipment_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEquipmentLabel") as Label
-	if visibility_select == null or money_spin == null or gift_button == null or weapon_button == null or equipment_label == null:
+	var result_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionResultLabel") as Label
+	if visibility_select == null or money_spin == null or gift_button == null or weapon_button == null or equipment_label == null or result_label == null:
 		push_error("NPC interaction controls are missing")
 		quit(1)
 		return
@@ -123,6 +124,16 @@ func _init() -> void:
 		return
 	if int(npc_system.get_npc_state(target_id).get("money", 0)) != npc_money_before + 5:
 		push_error("Gift money button did not update NPC money")
+		quit(1)
+		return
+	if result_label.text.find("已赠予 5 枚第纳尔") < 0:
+		push_error("Gift money should show a success result before switching NPC, got: %s" % result_label.text)
+		quit(1)
+		return
+	npc_system.debug_select_npc(witness_id)
+	await process_frame
+	if result_label.text != "":
+		push_error("NPC interaction result should be cleared when switching NPC, got: %s" % result_label.text)
 		quit(1)
 		return
 	if not _has_event(memory_system.get_npc_daily_events(target_id), "money_given"):

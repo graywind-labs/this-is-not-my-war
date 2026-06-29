@@ -13,6 +13,8 @@ const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
 const PLAYER_DIALOGUE_MAX_ROUNDS := 999999
 const NPC_DIALOGUE_MAX_ROUNDS := 5
+const ESCAPE_INTERVENTION_MAX_ROUNDS := 5
+const ESCAPE_INTERVENTION_DIALOGUE_KIND := "escape_intervention"
 const DEFAULT_ATTACK_DAMAGE := 10
 const GUARD_ATTACK_EVENT_TEXT := "守备官攻击了你以示惩戒"
 const GUARD_ATTACK_PROMPT := "守备官攻击了你以示惩戒，你要说些什么？"
@@ -44,6 +46,8 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 	var npc_state: Dictionary = npc_system.get_npc_state(npc_id)
 	if bool(npc_state.get("unconscious", false)):
 		return _failure("npc_unconscious", "昏迷中的 NPC 无法对话。")
+	if _is_active_escape_dialogue_target(npc_state):
+		return start_escape_intervention_dialogue(npc_id)
 	if npc_system.has_method("is_npc_dialogue_blocked") and npc_system.is_npc_dialogue_blocked(npc_id):
 		return _failure("npc_deep_sleep", "NPC 正在熟睡，无法打断。")
 
@@ -78,6 +82,64 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 		"last_wartime_reaction": "none",
 		"last_wartime_result": {},
 		"player_dialogue_effect_started": false,
+		"completed_player_llm_turns": 0,
+		"attack_committed": false,
+		"completed_attack_llm_turns": 0,
+		"reevaluation_targets_on_end": []
+	}
+	dialogue_started.emit(get_dialogue_state())
+	return {"ok": true, "dialogue_state": get_dialogue_state()}
+
+
+func start_escape_intervention_dialogue(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return _failure("npc_system_missing", "NPCSystem 不可用。")
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _failure("npc_not_found", "找不到 NPC：%s。" % npc_id)
+	var npc_state: Dictionary = npc_system.get_npc_state(npc_id)
+	if bool(npc_state.get("unconscious", false)):
+		return _failure("npc_unconscious", "昏迷中的 NPC 无法挽留。")
+	if not _is_active_escape_dialogue_target(npc_state):
+		return _failure("escape_not_active", "该 NPC 当前没有正在逃离。")
+	var escape_intent: Dictionary = npc_state.get("escape_intent", {}) if npc_state.get("escape_intent", {}) is Dictionary else {}
+	var rounds_used := clampi(int(escape_intent.get("intervention_rounds_used", 0)), 0, ESCAPE_INTERVENTION_MAX_ROUNDS)
+	var max_rounds := clampi(int(escape_intent.get("intervention_max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS)), 1, ESCAPE_INTERVENTION_MAX_ROUNDS)
+	if rounds_used >= max_rounds:
+		return _failure("round_limit_reached", "逃离挽留对话已达到 5 轮上限。")
+	if not _active_dialogue.is_empty():
+		_cancel_active_dialogue_llm_requests("escape_intervention_started")
+		end_dialogue()
+	_dialogue_counter += 1
+	var dialogue_id := "dialogue_%d_%04d" % [Time.get_ticks_msec(), _dialogue_counter]
+	var pause_result := _pause_escape_for_dialogue(npc_id, dialogue_id)
+	if not bool(pause_result.get("ok", false)):
+		return pause_result
+	_active_dialogue = {
+		"dialogue_id": dialogue_id,
+		"dialogue_kind": ESCAPE_INTERVENTION_DIALOGUE_KIND,
+		"target_npc_id": npc_id,
+		"target_npc_name": str(npc.get("name", npc_id)),
+		"speaker_npc_id": "",
+		"speaker_name": GUARD_OFFICER_NAME,
+		"visibility": "local_public",
+		"location_id": str(npc_state.get("current_location", "plaza")),
+		"location_name": str(npc_state.get("current_location_name", "广场")),
+		"current_round": rounds_used,
+		"max_rounds": max_rounds,
+		"history": [],
+		"waiting": false,
+		"last_error": "",
+		"recruitment_request_pending": false,
+		"last_recruitment_result": "none",
+		"interaction_context": ESCAPE_INTERVENTION_DIALOGUE_KIND,
+		"force_local_public": true,
+		"wartime_dialogue": false,
+		"escape_intervention": true,
+		"escape_pause_result": pause_result.duplicate(true),
+		"last_escape_intervention_result": {},
+		"player_dialogue_effect_started": true,
 		"completed_player_llm_turns": 0,
 		"attack_committed": false,
 		"completed_attack_llm_turns": 0,
@@ -168,16 +230,20 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 	if npc_system != null and npc_system.has_method("is_npc_dialogue_blocked") and npc_system.is_npc_dialogue_blocked(target_npc_id):
 		return _failure("npc_deep_sleep", "NPC 正在熟睡，无法继续对话。")
 
+	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", "player_npc"))
+	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND and next_round > int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS)):
+		return _failure("round_limit_reached", "逃离挽留对话已达到 5 轮上限。")
+
 	var effect_result := _ensure_player_dialogue_effect_started("player_message_sent")
 	if not bool(effect_result.get("ok", false)):
 		return effect_result
 
 	_active_dialogue["waiting"] = true
 	_active_dialogue["last_error"] = ""
-	var effective_recruitment_request := is_recruitment_request or bool(_active_dialogue.get("recruitment_request_pending", false))
+	var effective_recruitment_request := false if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND else is_recruitment_request or bool(_active_dialogue.get("recruitment_request_pending", false))
 	_active_dialogue["recruitment_request_pending"] = false
 	dialogue_updated.emit(get_dialogue_state())
-	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
 	var history_before: Array = _active_dialogue.get("history", []).duplicate(true)
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null:
@@ -187,7 +253,7 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 		return _failure("llm_bridge_missing", str(_active_dialogue["last_error"]))
 
 	var request_options := {
-		"dialogue_kind": "player_npc",
+		"dialogue_kind": dialogue_kind,
 		"current_round": next_round,
 		"max_rounds": int(_active_dialogue.get("max_rounds", PLAYER_DIALOGUE_MAX_ROUNDS)),
 		"is_recruitment_request": effective_recruitment_request,
@@ -200,11 +266,18 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 		},
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		request_options["escape_intervention_round"] = next_round
+		request_options["constraints"] = [
+			"本轮是守备官试图挽留正在逃离驿站的 NPC。",
+			"回复必须通过 intent 表达 stay_after_intervention 或 leave_after_intervention；程序只解析该结构化意图，不允许模型直接改变 HP、资源、建筑或移动结果。"
+		]
 	var pending := {
 		"kind": "player_message",
 		"clean_text": clean_text,
 		"next_round": next_round,
-		"effective_recruitment_request": effective_recruitment_request
+		"effective_recruitment_request": effective_recruitment_request,
+		"dialogue_kind": dialogue_kind
 	}
 	if async_request and llm_bridge.has_method("request_npc_dialogue_async"):
 		var request_id := "%s_player_%d" % [str(_active_dialogue.get("dialogue_id", "dialogue")), next_round]
@@ -227,11 +300,17 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> Dictionary:
 	_active_dialogue["waiting"] = false
 	_active_dialogue.erase("pending_llm")
+	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", pending.get("dialogue_kind", "player_npc")))
 	if not bool(result.get("ok", false)):
 		if bool(_active_dialogue.get("wartime_dialogue", false)):
 			result = {
 				"ok": true,
 				"dialogue": _make_wartime_rule_fallback_response(pending, result)
+			}
+		elif dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+			result = {
+				"ok": true,
+				"dialogue": _make_escape_intervention_rule_fallback_response(pending, result)
 			}
 		else:
 			_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
@@ -245,7 +324,7 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 		dialogue_updated.emit(get_dialogue_state())
 		return _failure("empty_reply", str(_active_dialogue["last_error"]))
 
-	var effective_recruitment_request := bool(pending.get("effective_recruitment_request", false))
+	var effective_recruitment_request := bool(pending.get("effective_recruitment_request", false)) and dialogue_kind != ESCAPE_INTERVENTION_DIALOGUE_KIND
 	var recruitment_result := _apply_recruitment_result(response, effective_recruitment_request)
 	_active_dialogue["last_recruitment_result"] = recruitment_result
 	var npc_name := str(_active_dialogue.get("target_npc_name", "NPC"))
@@ -271,25 +350,42 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 		"wartime_reaction": _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
 	})
 	var wartime_result := _apply_wartime_reaction(response, dialogue_event)
+	var escape_result := _apply_escape_intervention_response(response, dialogue_event)
+	var close_escape_dialogue := (
+		dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND
+		and (
+			str(escape_result.get("decision", "")) == "stay"
+			or int(_active_dialogue.get("current_round", 0)) >= int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS))
+		)
+	)
 	dialogue_updated.emit(get_dialogue_state())
+	var final_dialogue_state: Dictionary = get_dialogue_state()
+	if close_escape_dialogue:
+		var end_result := end_dialogue()
+		final_dialogue_state = end_result.get("dialogue_state", {}) if end_result.get("dialogue_state", {}) is Dictionary else {}
 	return {
 		"ok": true,
 		"reply_text": reply_text,
 		"dialogue": response.duplicate(true),
 		"wartime_result": wartime_result,
-		"dialogue_state": get_dialogue_state()
+		"escape_intervention_result": escape_result,
+		"dialogue_state": final_dialogue_state
 	}
 
 
 func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool = false) -> Dictionary:
 	if _active_dialogue.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
-	if str(_active_dialogue.get("dialogue_kind", "")) != "player_npc":
+	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", ""))
+	if not ["player_npc", ESCAPE_INTERVENTION_DIALOGUE_KIND].has(dialogue_kind):
 		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以攻击。")
 	if bool(_active_dialogue.get("waiting", false)):
 		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
 	if damage <= 0:
 		return _failure("invalid_damage", "攻击伤害必须为正数。")
+	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND and next_round > int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS)):
+		return _failure("round_limit_reached", "逃离挽留对话已达到 5 轮上限。")
 
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("apply_damage_to_npc"):
@@ -321,13 +417,26 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		return _failure("damage_failed", str(damage_result.get("message", "攻击失败。")))
 
 	_active_dialogue["attack_committed"] = true
-	_add_reevaluation_target_on_end(target_npc_id)
+	if dialogue_kind == "player_npc":
+		_add_reevaluation_target_on_end(target_npc_id)
 	var damage_event: Dictionary = damage_result.get("damage_event", {}) if (damage_result.get("damage_event", {}) is Dictionary) else {}
-	var attack_event_id := str(damage_event.get("id", ""))
-	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
+	var attack_event_id := str(damage_event.get("event_id", damage_event.get("id", "")))
 	var attack_turn := _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
 	var history_before: Array = _active_dialogue.get("history", []).duplicate(true)
 	history_before.append(attack_turn)
+	var pending := {
+		"kind": "guard_attack",
+		"dialogue_kind": dialogue_kind,
+		"target_npc_id": target_npc_id,
+		"npc_name": npc_name,
+		"attack_turn": attack_turn,
+		"attack_event_id": attack_event_id,
+		"next_round": next_round,
+		"damage": damage_result
+	}
+
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		return _apply_escape_attack_without_reply(pending)
 
 	if bool(damage_result.get("unconscious", false)):
 		var history_unconscious: Array = _active_dialogue.get("history", [])
@@ -348,7 +457,7 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		return _failure("llm_bridge_missing", str(_active_dialogue["last_error"]))
 
 	var request_options := {
-		"dialogue_kind": "player_npc",
+		"dialogue_kind": dialogue_kind,
 		"current_round": next_round,
 		"max_rounds": int(_active_dialogue.get("max_rounds", PLAYER_DIALOGUE_MAX_ROUNDS)),
 		"is_recruitment_request": false,
@@ -366,15 +475,9 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		},
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
-	var pending := {
-		"kind": "guard_attack",
-		"target_npc_id": target_npc_id,
-		"npc_name": npc_name,
-		"attack_turn": attack_turn,
-		"attack_event_id": attack_event_id,
-		"next_round": next_round,
-		"damage": damage_result
-	}
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		request_options["escape_intervention_round"] = next_round
+		request_options["constraints"].append("本轮攻击发生在逃离挽留中；攻击已由程序造成 HP 伤害，并会让逃离速度更快。NPC 仍只能通过 intent 表达留下或继续逃离。")
 	if async_request and llm_bridge.has_method("request_npc_dialogue_async"):
 		var request_id := "%s_attack_%d" % [str(_active_dialogue.get("dialogue_id", "dialogue")), next_round]
 		request_options["request_id"] = request_id
@@ -393,16 +496,73 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 	return _apply_attack_response(result, pending)
 
 
+func _apply_escape_attack_without_reply(pending: Dictionary) -> Dictionary:
+	if _active_dialogue.is_empty():
+		return {
+			"ok": true,
+			"damage": pending.get("damage", {}),
+			"dialogue_state": {}
+		}
+	var attack_turn: Dictionary = pending.get("attack_turn", {})
+	if attack_turn.is_empty():
+		var target_npc_id := str(pending.get("target_npc_id", _active_dialogue.get("target_npc_id", "")))
+		var npc_name := str(pending.get("npc_name", _active_dialogue.get("target_npc_name", target_npc_id)))
+		attack_turn = _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
+	var history: Array = _active_dialogue.get("history", [])
+	history.append(attack_turn)
+	_active_dialogue["history"] = history
+	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
+	_active_dialogue["waiting"] = false
+	_active_dialogue.erase("pending_llm")
+	_active_dialogue["last_error"] = ""
+
+	var response := {
+		"replyer_id": str(_active_dialogue.get("target_npc_id", "")),
+		"reply_text": "",
+		"emotion": "fearful",
+		"attitude_delta": 0,
+		"relationship_delta": 0,
+		"recruitment_result": "none",
+		"wartime_reaction": "none",
+		"intent": "guard_attack_no_reply",
+		"should_end_dialogue": true,
+		"rule_fallback": true,
+		"interaction_kind": "escape_guard_attack_no_reply"
+	}
+	var round_result := _record_escape_attack_intervention_round(
+		str(_active_dialogue.get("target_npc_id", "")),
+		int(_active_dialogue.get("current_round", 0)),
+		str(pending.get("attack_event_id", ""))
+	)
+	dialogue_updated.emit(get_dialogue_state())
+	var end_result := end_dialogue()
+	return {
+		"ok": true,
+		"damage": pending.get("damage", {}),
+		"reply_text": "",
+		"dialogue": response,
+		"escape_attack_round_result": round_result,
+		"dialogue_state": end_result.get("dialogue_state", {}),
+		"llm_requested": false
+	}
+
+
 func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictionary:
 	if _active_dialogue.is_empty():
 		return result
 	_active_dialogue["waiting"] = false
 	_active_dialogue.erase("pending_llm")
+	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", pending.get("dialogue_kind", "player_npc")))
 	if not bool(result.get("ok", false)):
 		if bool(_active_dialogue.get("wartime_dialogue", false)):
 			result = {
 				"ok": true,
 				"dialogue": _make_wartime_rule_fallback_response(pending, result)
+			}
+		elif dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+			result = {
+				"ok": true,
+				"dialogue": _make_escape_intervention_rule_fallback_response(pending, result)
 			}
 		else:
 			_active_dialogue["last_error"] = str(result.get("message", "后端请求失败。"))
@@ -444,14 +604,27 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 		"wartime_reaction": _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
 	})
 	var wartime_result := _apply_wartime_reaction(response, dialogue_event)
+	var escape_result := _apply_escape_intervention_response(response, dialogue_event)
+	var close_escape_dialogue := (
+		dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND
+		and (
+			str(escape_result.get("decision", "")) == "stay"
+			or int(_active_dialogue.get("current_round", 0)) >= int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS))
+		)
+	)
 	dialogue_updated.emit(get_dialogue_state())
+	var final_dialogue_state: Dictionary = get_dialogue_state()
+	if close_escape_dialogue:
+		var end_result := end_dialogue()
+		final_dialogue_state = end_result.get("dialogue_state", {}) if end_result.get("dialogue_state", {}) is Dictionary else {}
 	return {
 		"ok": true,
 		"damage": pending.get("damage", {}),
 		"reply_text": reply_text,
 		"dialogue": response.duplicate(true),
 		"wartime_result": wartime_result,
-		"dialogue_state": get_dialogue_state()
+		"escape_intervention_result": escape_result,
+		"dialogue_state": final_dialogue_state
 	}
 
 
@@ -555,6 +728,7 @@ func end_dialogue() -> Dictionary:
 	_cancel_active_dialogue_llm_requests("dialogue_ended")
 	_active_dialogue.clear()
 	dialogue_ended.emit(ended_state)
+	var escape_resume_result := _resume_escape_dialogue_if_needed(ended_state, "escape_dialogue_closed")
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system != null and npc_system.has_method("request_plan_reevaluation"):
 		if bool(ended_state.get("proactive_talk", false)):
@@ -575,7 +749,10 @@ func end_dialogue() -> Dictionary:
 					continue
 				var reason := "guard_attack" if bool(ended_state.get("attack_committed", false)) else "dialogue_interrupted"
 				npc_system.request_plan_reevaluation(target_id, reason)
-	return {"ok": true, "dialogue_state": ended_state}
+	var result := {"ok": true, "dialogue_state": ended_state}
+	if not escape_resume_result.is_empty():
+		result["escape_resume_result"] = escape_resume_result
+	return result
 
 
 func force_end_dialogue_for_npc(npc_id: String, reason: String = "behavior_mode_changed") -> Dictionary:
@@ -595,13 +772,17 @@ func force_end_dialogue_for_npc(npc_id: String, reason: String = "behavior_mode_
 	_cancel_active_dialogue_llm_requests(reason)
 	_active_dialogue.clear()
 	dialogue_ended.emit(ended_state)
-	return {
+	var escape_resume_result := _resume_escape_dialogue_if_needed(ended_state, reason)
+	var result := {
 		"ok": true,
 		"ended": true,
 		"npc_id": npc_id,
 		"reason": reason,
 		"dialogue_state": ended_state
 	}
+	if not escape_resume_result.is_empty():
+		result["escape_resume_result"] = escape_resume_result
+	return result
 
 
 func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
@@ -669,6 +850,25 @@ func _cancel_active_dialogue_llm_requests(reason: String) -> void:
 		_cancel_npc_llm_request(participant_id, reason)
 
 
+func _pause_escape_for_dialogue(npc_id: String, dialogue_id: String) -> Dictionary:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("pause_escape_for_dialogue"):
+		return _failure("combat_system_missing", "CombatSystem 不支持暂停逃离挽留。")
+	return combat_system.pause_escape_for_dialogue(npc_id, dialogue_id)
+
+
+func _resume_escape_dialogue_if_needed(ended_state: Dictionary, reason: String) -> Dictionary:
+	if str(ended_state.get("dialogue_kind", "")) != ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		return {}
+	var npc_id := str(ended_state.get("target_npc_id", ""))
+	if npc_id.is_empty():
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("resume_escape_after_dialogue"):
+		return _failure("combat_system_missing", "CombatSystem 不支持恢复逃离移动。")
+	return combat_system.resume_escape_after_dialogue(npc_id, reason)
+
+
 func get_dialogue_state() -> Dictionary:
 	var state := _active_dialogue.duplicate(true)
 	if state.is_empty():
@@ -685,7 +885,8 @@ func set_dialogue_visibility(visibility: String) -> Dictionary:
 	if bool(_active_dialogue.get("force_local_public", false)):
 		_active_dialogue["visibility"] = "local_public"
 		dialogue_updated.emit(get_dialogue_state())
-		return _failure("visibility_forced_local_public", "战时对话必须保持同地点公开。")
+		var message := "逃离挽留必须保持同地点公开。" if str(_active_dialogue.get("dialogue_kind", "")) == ESCAPE_INTERVENTION_DIALOGUE_KIND else "战时对话必须保持同地点公开。"
+		return _failure("visibility_forced_local_public", message)
 	if bool(_active_dialogue.get("waiting", false)) or int(_active_dialogue.get("current_round", 0)) > 0:
 		return _failure("visibility_locked", "对话开始发送后不能修改公开性。")
 	if not ["private", "local_public"].has(visibility):
@@ -735,6 +936,8 @@ func _apply_recruitment_result(response: Dictionary, was_recruitment_request: bo
 
 
 func _get_player_dialogue_interaction_context(npc_id: String, npc_state: Dictionary, npc_system: Node) -> String:
+	if _is_active_escape_dialogue_target(npc_state):
+		return ESCAPE_INTERVENTION_DIALOGUE_KIND
 	var mode := str(npc_state.get("behavior_mode", ""))
 	if npc_system != null and npc_system.has_method("get_npc_behavior_mode_snapshot"):
 		var snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot(npc_id)
@@ -778,6 +981,29 @@ func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dic
 	}
 
 
+func _make_escape_intervention_rule_fallback_response(pending: Dictionary, error_result: Dictionary) -> Dictionary:
+	var clean_text := str(pending.get("clean_text", "")).strip_edges()
+	if clean_text.is_empty():
+		clean_text = GUARD_ATTACK_PROMPT if str(pending.get("kind", "")) == "guard_attack" else ""
+	var stay := _text_contains_any(clean_text, ["留下", "别走", "不要走", "守住", "保护", "一起", "需要你", "补偿", "钱", "给你", "照顾", "帮忙"])
+	if _text_contains_any(clean_text, ["滚", "走吧", "逃", "跑", "别管", "随便你"]) or str(pending.get("kind", "")) == "guard_attack":
+		stay = false
+	return {
+		"replyer_id": str(_active_dialogue.get("target_npc_id", "")),
+		"reply_text": "我听见了。那我留下，但你得记住今天说过的话。" if stay else "你现在说什么都太迟了。我还是要离开这里。",
+		"emotion": "shaken" if stay else "fearful",
+		"attitude_delta": 0,
+		"relationship_delta": 0,
+		"recruitment_result": "none",
+		"wartime_reaction": "none",
+		"intent": "stay_after_intervention" if stay else "leave_after_intervention",
+		"should_end_dialogue": stay,
+		"rule_fallback": true,
+		"fallback_error_code": str(error_result.get("error_code", "")),
+		"fallback_message": str(error_result.get("message", "后端请求失败。"))
+	}
+
+
 func _text_contains_any(text: String, keywords: Array[String]) -> bool:
 	for keyword in keywords:
 		if text.find(keyword) >= 0:
@@ -805,6 +1031,58 @@ func _apply_wartime_reaction(response: Dictionary, dialogue_event: Dictionary) -
 	return result
 
 
+func _apply_escape_intervention_response(response: Dictionary, dialogue_event: Dictionary) -> Dictionary:
+	if _active_dialogue.is_empty() or str(_active_dialogue.get("dialogue_kind", "")) != ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("apply_escape_intervention_result"):
+		return {}
+	var result: Dictionary = combat_system.apply_escape_intervention_result(str(_active_dialogue.get("target_npc_id", "")), response, {
+		"dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
+		"dialogue_event_id": str(dialogue_event.get("event_id", "")),
+		"current_round": int(_active_dialogue.get("current_round", 0)),
+		"max_rounds": int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS)),
+		"interaction_kind": str(dialogue_event.get("interaction_kind", ""))
+	})
+	_active_dialogue["last_escape_intervention_result"] = result.duplicate(true)
+	if not bool(result.get("ok", false)):
+		_active_dialogue["last_error"] = str(result.get("message", "逃离挽留结果应用失败。"))
+	return result
+
+
+func _record_escape_attack_intervention_round(npc_id: String, current_round: int, source_event_id: String) -> Dictionary:
+	if _active_dialogue.is_empty() or str(_active_dialogue.get("dialogue_kind", "")) != ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("record_escape_attack_intervention_round"):
+		return {}
+	var result: Dictionary = combat_system.record_escape_attack_intervention_round(npc_id, current_round, {
+		"dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
+		"source_event_id": source_event_id,
+		"interaction_kind": "escape_guard_attack_no_reply"
+	})
+	_active_dialogue["last_escape_intervention_result"] = result.duplicate(true)
+	if not bool(result.get("ok", false)):
+		_active_dialogue["last_error"] = str(result.get("message", "逃离攻击轮次记录失败。"))
+	return result
+
+
+func _is_escape_intervention_state(npc_state: Dictionary) -> bool:
+	if not _is_active_escape_dialogue_target(npc_state):
+		return false
+	var escape_intent: Dictionary = npc_state.get("escape_intent", {}) if npc_state.get("escape_intent", {}) is Dictionary else {}
+	return int(escape_intent.get("intervention_rounds_used", 0)) < int(escape_intent.get("intervention_max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS))
+
+
+func _is_active_escape_dialogue_target(npc_state: Dictionary) -> bool:
+	if bool(npc_state.get("unconscious", false)) or bool(npc_state.get("escaped", false)):
+		return false
+	var escape_intent: Dictionary = npc_state.get("escape_intent", {}) if npc_state.get("escape_intent", {}) is Dictionary else {}
+	if not bool(escape_intent.get("active", false)) or str(escape_intent.get("status", "")) != "escaping":
+		return false
+	return true
+
+
 func _record_dialogue_event(event_type: String, extra_payload: Dictionary) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or _active_dialogue.is_empty():
@@ -828,7 +1106,7 @@ func _record_dialogue_event(event_type: String, extra_payload: Dictionary) -> Di
 	return memory_system.add_event({
 		"type": event_type,
 		"subject_npc_id": target_npc_id,
-		"actor_ids": [GUARD_OFFICER_ID if str(_active_dialogue.get("dialogue_kind", "player_npc")) == "player_npc" else str(_active_dialogue.get("speaker_npc_id", ""))],
+		"actor_ids": [GUARD_OFFICER_ID if ["player_npc", ESCAPE_INTERVENTION_DIALOGUE_KIND].has(str(_active_dialogue.get("dialogue_kind", "player_npc"))) else str(_active_dialogue.get("speaker_npc_id", ""))],
 		"target_ids": participant_npc_ids,
 		"location_id": str(_active_dialogue.get("location_id", "plaza")),
 		"visibility": str(_active_dialogue.get("visibility", "private")),

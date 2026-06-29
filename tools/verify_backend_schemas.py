@@ -104,6 +104,43 @@ def main() -> None:
     assert response.replyer_id == "cook_01"
     assert response.wartime_reaction == "morale_boost"
 
+    escape_dialogue_request = NPCDialogueRequest(
+        meta=ModelRequestMeta(
+            request_id="verify_escape_intervention",
+            call_type="dialogue",
+            requires_time_slowdown=True,
+        ),
+        game_time=game_time,
+        dialogue_kind="escape_intervention",
+        npc_id="cook_01",
+        npc_name="布鲁诺",
+        npc_setting=npc.identity.model_dump(),
+        speaker_name="守备官",
+        speaker_text="别走，我会补偿你，我们一起守住这里。",
+        speaker_context=SpeakerContext(
+            speaker_id="guard_officer",
+            speaker_name="守备官",
+            speaker_kind="guard_officer",
+        ),
+        current_round=2,
+        max_rounds=5,
+        npc_state=npc.state.model_dump() | {"escape_intent": {"active": True, "status": "escaping"}},
+        current_order=npc.current_order,
+        interaction_context="escape_intervention",
+        escape_intervention_round=2,
+        short_memory=ShortTermMemoryContext(),
+        location_context={"location_id": "plaza"},
+    )
+    assert escape_dialogue_request.dialogue_kind == "escape_intervention"
+    assert escape_dialogue_request.interaction_context == "escape_intervention"
+    assert escape_dialogue_request.escape_intervention_round == 2
+    escape_response = NPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="我留下。",
+        intent="stay_after_intervention",
+    )
+    assert escape_response.intent == "stay_after_intervention"
+
     plan = [PlanItem(hour=hour, action_kind="idle", action_id="idle") for hour in range(24)]
     plan_response = DailyPlanResponse(npc_id="cook_01", plan_day=1, plan=plan)
     assert len(plan_response.plan) == 24

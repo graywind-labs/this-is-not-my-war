@@ -1,5 +1,7 @@
 extends SceneTree
 
+const CLOSED_BACKEND_URL := "http://127.0.0.1:5999"
+
 
 func _init() -> void:
 	root.size = Vector2i(1280, 720)
@@ -42,6 +44,8 @@ func _init() -> void:
 
 	if memory_system.has_method("clear_event_log"):
 		memory_system.clear_event_log()
+	llm_bridge.set_backend_base_url(CLOSED_BACKEND_URL)
+	llm_bridge.request_timeout_seconds = 0.1
 
 	npc_system.set_npc_recruited("stableman_01", true)
 	resource_system.add_resource("weapons", 2)
@@ -164,13 +168,21 @@ func _init() -> void:
 		"interaction_context": "rally"
 	})
 	if not bool(escape_result.get("ok", false)):
-		push_error("Escape reaction should enter pending intent: %s" % JSON.stringify(escape_result))
+		push_error("Escape reaction should start station escape: %s" % JSON.stringify(escape_result))
 		quit(1)
 		return
 	stableman_state = npc_system.get_npc_state("stableman_01")
 	var escape_intent: Dictionary = stableman_state.get("escape_intent", {})
-	if not bool(escape_intent.get("active", false)) or str(escape_intent.get("status", "")) != "pending":
-		push_error("Escape reaction should only mark pending escape intent for T1201: %s" % JSON.stringify(escape_intent))
+	if not bool(escape_intent.get("active", false)) or str(escape_intent.get("status", "")) != "escaping":
+		push_error("Escape reaction should start escaping for T1203: %s" % JSON.stringify(escape_intent))
+		quit(1)
+		return
+	if str(stableman_state.get("behavior_mode", "")) != "escaped" or str(stableman_state.get("movement_target", "")) != "back_gate_escape_exit":
+		push_error("Escaping NPC should be routed to the back gate exit: %s" % JSON.stringify(stableman_state))
+		quit(1)
+		return
+	if _last_event(memory_system.get_plaza_events(), "escape_started").is_empty():
+		push_error("Escape reaction should write escape_started event")
 		quit(1)
 		return
 

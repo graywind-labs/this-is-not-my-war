@@ -24,7 +24,7 @@ const EVENT_TYPES: Array[String] = [
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
 	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "low_hp_triggered",
 	"combat_strategy_selected",
-	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped",
+	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_status_changed", "location_status_changed"
 ]
@@ -60,6 +60,10 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"revived": ["hp_before", "hp_after", "recovery_source"],
+	"escape_started": ["npc_id", "exit_target_id", "exit_target_name", "trigger"],
+	"escaped": ["npc_id", "exit_target_id", "exit_target_name", "reason"],
+	"escape_intervention_result": ["npc_id", "decision", "current_round", "max_rounds"],
+	"escape_speed_changed": ["npc_id", "trigger", "speed_multiplier_before", "speed_multiplier_after"],
 	"order_assigned": ["previous_order_text", "new_order_text", "order_revision"],
 	"attribute_improved": ["attribute", "before", "after", "assigned_by"]
 }
@@ -851,6 +855,10 @@ func _format_action_status(action_id: String) -> String:
 		return "避战"
 	if action_id.begins_with("moving_to_avoid_shelter_"):
 		return "远离敌人避战"
+	if action_id == "escaping_station" or action_id.begins_with("moving_to_back_gate_escape_exit"):
+		return "正朝后门逃离"
+	if action_id == "escaped":
+		return "已离开驿站"
 	if action_id.begins_with("moving_to_"):
 		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
 	if action_id.begins_with("assist_heal_"):
@@ -1124,6 +1132,26 @@ func _format_summary(event: Dictionary) -> String:
 			]
 		"avoidance_ended":
 			return "%s不再避战，回到驿站日常安排。" % actor
+		"escape_started":
+			return "%s开始朝%s逃离驿站。" % [
+				actor,
+				str(payload.get("exit_target_name", "后门"))
+			]
+		"escaped":
+			return "%s已经从%s离开了驿站。" % [
+				actor,
+				str(payload.get("exit_target_name", "后门"))
+			]
+		"escape_intervention_result":
+			if str(payload.get("decision", "")) == "stay":
+				return "%s被守备官挽留下来，停止逃离驿站。" % actor
+			return "%s听完守备官的话后，仍继续逃离驿站。" % actor
+		"escape_speed_changed":
+			if str(payload.get("trigger", "")) == "money_given":
+				return "%s收下守备官给的钱，逃离脚步慢了下来。" % actor
+			if str(payload.get("trigger", "")) == "guard_attack":
+				return "%s被守备官攻击后，逃离脚步更急了。" % actor
+			return "%s逃离驿站的速度发生变化。" % actor
 		"attack_made":
 			var target_name := str(payload.get("target_enemy_name", payload.get("target_enemy_id", "敌人")))
 			var defeated_text := "，击退了敌人" if bool(payload.get("defeated", false)) else ""

@@ -133,6 +133,29 @@ def main() -> None:
     NPCDialogueResponse(**dialogue_result.content)
     assert "with_current_order_as_reference" in dialogue_result.content["debug_reason"]
 
+    escape_payload = _make_payload("dialogue")
+    escape_payload.update({
+        "dialogue_kind": "escape_intervention",
+        "interaction_context": "escape_intervention",
+        "speaker_text": "别走，我会给你钱，也需要你一起守住这里。",
+        "current_round": 1,
+        "max_rounds": 5,
+        "escape_intervention_round": 1,
+    })
+    escape_stay_result = adapter.generate("dialogue", escape_payload)
+    assert escape_stay_result.ok
+    stay_response = NPCDialogueResponse(**escape_stay_result.content)
+    assert stay_response.intent == "stay_after_intervention"
+    assert "mock_escape_intervention" in escape_stay_result.content["debug_reason"]
+
+    escape_payload["speaker_text"] = "你想跑就跑吧，别管这里。"
+    escape_payload["current_round"] = 5
+    escape_payload["escape_intervention_round"] = 5
+    escape_leave_result = adapter.generate("dialogue", escape_payload)
+    assert escape_leave_result.ok
+    leave_response = NPCDialogueResponse(**escape_leave_result.content)
+    assert leave_response.intent == "leave_after_intervention"
+
     plan_result = adapter.generate("plan_day", _make_payload("plan_day"))
     assert plan_result.ok
     plan_response = DailyPlanResponse(**plan_result.content)
@@ -155,7 +178,7 @@ def main() -> None:
     assert "with_current_order_as_reference" in reflection_result.content["debug_reason"]
 
     records = adapter.get_usage_records()
-    assert len(records) == 4
+    assert len(records) == 6
     assert records[-1]["input_tokens"] > 0
     assert records[-1]["output_tokens"] > 0
     assert records[-1]["estimated_cost"] == 0.0

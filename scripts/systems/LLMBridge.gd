@@ -20,6 +20,7 @@ const DEFAULT_GUARD_APPEARANCE := "驿站守备官，穿着磨旧的军官外套
 const SHORT_MEMORY_EVENT_LIMIT := 8
 const HTTP_POLL_DELAY_MSEC := 10
 const WARTIME_DIALOGUE_CONTEXTS: Array[String] = ["rally", "combat", "avoid_combat"]
+const ESCAPE_INTERVENTION_DIALOGUE_KIND := "escape_intervention"
 
 @export var backend_base_url: String = DEFAULT_BACKEND_URL
 @export var request_timeout_seconds: float = 2.0
@@ -335,7 +336,9 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	if not ["private", "local_public"].has(visibility):
 		visibility = "private"
 	var interaction_context := str(options.get("interaction_context", _get_interaction_context_from_state(npc_state)))
-	if not WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		interaction_context = ESCAPE_INTERVENTION_DIALOGUE_KIND
+	elif not WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
 		interaction_context = "work"
 	if WARTIME_DIALOGUE_CONTEXTS.has(interaction_context):
 		visibility = "local_public"
@@ -380,6 +383,8 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"conversation_history": options.get("conversation_history", []),
 		"constraints": options.get("constraints", [])
 	}
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		payload["escape_intervention_round"] = clampi(int(options.get("escape_intervention_round", current_round)), 1, 5)
 
 	if speaker_kind == "npc" and not speaker_npc_id.is_empty():
 		payload["speaker_npc"] = _build_npc_context(speaker_npc_id, npc_system)

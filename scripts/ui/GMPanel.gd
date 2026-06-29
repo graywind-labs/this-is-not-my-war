@@ -430,6 +430,9 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 	_add_button(mode_row, "模拟避战", func() -> void:
 		_run_avoid_npc(_selected_id(_npc_select))
 	)
+	_add_button(mode_row, "触发逃离", func() -> void:
+		_run_escape_npc(_selected_id(_npc_select))
+	)
 	_add_button(mode_row, "推进集结等待", func() -> void:
 		_run_advance_rally_wait(3600.0)
 	)
@@ -865,6 +868,9 @@ func _execute_command(command: String) -> void:
 		"avoid_npc":
 			if _require_args(parts, 2, "avoid_npc <npc_id>"):
 				_run_avoid_npc(str(parts[1]))
+		"escape_npc":
+			if _require_args(parts, 2, "escape_npc <npc_id>"):
+				_run_escape_npc(str(parts[1]))
 		"advance_rally_wait":
 			var rally_seconds := float(parts[1]) if parts.size() >= 2 else 3600.0
 			_run_advance_rally_wait(rally_seconds)
@@ -1381,6 +1387,15 @@ func _run_avoid_npc(npc_id: String) -> void:
 	_log("模拟避战 %s：%s" % [npc_id, _compact(result)])
 
 
+func _run_escape_npc(npc_id: String) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_start_npc_escape"):
+		_log("CombatSystem 逃离调试接口不可用。")
+		return
+	var result: Dictionary = combat_system.debug_start_npc_escape(npc_id, "gm_debug")
+	_log("触发逃离 %s：%s" % [npc_id, _compact(result)])
+
+
 func _run_advance_rally_wait(game_seconds: float) -> void:
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("debug_advance_rally_wait"):
@@ -1680,7 +1695,7 @@ func _help_text() -> String:
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | equip_mount <npc_id> [visibility] | unit_type <npc_id>",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
-		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | advance_rally_wait [game_seconds]",
+		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",

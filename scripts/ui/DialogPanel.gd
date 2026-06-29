@@ -114,26 +114,32 @@ func _on_attack_pressed() -> void:
 
 
 func _refresh(state: Dictionary) -> void:
+	var dialogue_kind := str(state.get("dialogue_kind", "player_npc"))
 	npc_name_label.text = "与 %s 对话" % str(state.get("target_npc_name", "NPC"))
-	round_label.text = "轮次：不限" if str(state.get("dialogue_kind", "player_npc")) == "player_npc" else "轮次：%d / %d" % [int(state.get("current_round", 0)), int(state.get("max_rounds", 5))]
+	round_label.text = "轮次：不限" if dialogue_kind == "player_npc" else "轮次：%d / %d" % [int(state.get("current_round", 0)), int(state.get("max_rounds", 5))]
 	var waiting := bool(state.get("waiting", false))
 	var force_public := bool(state.get("force_local_public", false))
+	var round_limit_reached := dialogue_kind == "escape_intervention" and int(state.get("current_round", 0)) >= int(state.get("max_rounds", 5))
 	public_toggle.set_pressed_no_signal(str(state.get("visibility", "private")) == "local_public")
 	public_toggle.disabled = force_public or waiting or int(state.get("current_round", 0)) > 0
-	send_button.disabled = waiting
-	input_edit.editable = true
-	var is_player_dialogue := str(state.get("dialogue_kind", "player_npc")) == "player_npc"
+	send_button.disabled = waiting or round_limit_reached
+	input_edit.editable = not round_limit_reached
+	var is_player_dialogue := dialogue_kind == "player_npc"
+	var is_player_controlled_dialogue := ["player_npc", "escape_intervention"].has(dialogue_kind)
 	var recruitment_pending := bool(state.get("recruitment_request_pending", false))
 	recruitment_toggle.visible = is_player_dialogue
 	recruitment_toggle.set_pressed_no_signal(recruitment_pending)
 	recruitment_toggle.disabled = waiting or bool(state.get("target_recruited", false))
 	recruitment_toggle.text = "提出应征"
-	attack_button.visible = is_player_dialogue
-	attack_button.disabled = waiting
+	attack_button.visible = is_player_controlled_dialogue
+	attack_button.disabled = waiting or round_limit_reached
 	var last_error := str(state.get("last_error", ""))
 	var recruitment_result := str(state.get("last_recruitment_result", "none"))
 	var recruitment_status := "NPC 已接受应征。" if recruitment_result == "accept" else "NPC 拒绝了应征。" if recruitment_result == "reject" else ""
-	status_label.text = last_error if not last_error.is_empty() else ("等待回复……" if waiting else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "战时同地点公开对话" if force_public else "私人对话" if str(state.get("visibility", "private")) == "private" else "同地点公开对话")
+	var escape_result: Dictionary = state.get("last_escape_intervention_result", {}) if state.get("last_escape_intervention_result", {}) is Dictionary else {}
+	var escape_decision := str(escape_result.get("decision", ""))
+	var escape_status := "NPC 已停下，准备回到工作安排。" if escape_decision == "stay" else "NPC 仍在继续逃离。" if escape_decision == "continue" else "逃离挽留：剩余 %d 轮。" % maxi(0, int(state.get("max_rounds", 5)) - int(state.get("current_round", 0)))
+	status_label.text = last_error if not last_error.is_empty() else ("等待回复……" if waiting else "逃离挽留轮次已用完。" if round_limit_reached else escape_status if dialogue_kind == "escape_intervention" else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "战时同地点公开对话" if force_public else "私人对话" if str(state.get("visibility", "private")) == "private" else "同地点公开对话")
 	var lines: Array[String] = []
 	for raw_turn in state.get("history", []):
 		if not raw_turn is Dictionary:

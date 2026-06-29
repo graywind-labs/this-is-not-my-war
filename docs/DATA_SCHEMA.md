@@ -154,7 +154,7 @@ T1001 起，运行时 `plan` 可保存规则版每日计划。T1003 起，同一
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
-T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B/T1103C 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前按敌方方位生成的短步长避战方向。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。T1201 起，`states.morale_boost` 保存战时对话产生的 2 游戏小时斗志 buff，`states.escape_intent` 保存待 T1203 消费的逃离意图。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
+T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。初始档案仍可为空对象 `{}`。T0902 起，兵种判定只读取该装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B/T1103C 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前按敌方方位生成的短步长避战方向。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。T1201 起，`states.morale_boost` 保存战时对话产生的 2 游戏小时斗志 buff；T1204A 起，`states.escape_intent` 保存逃离触发、移动目标、开始 / 完成时间、挽留轮次、对话暂停标记、最近挽留结果和逃离移动倍率，`status` 可为 `escaping`、`paused_unconscious`、`stayed` 或 `escaped`。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
 
 `states.combat_strategy` 示例：
 
@@ -190,24 +190,36 @@ T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helme
 }
 ```
 
-逃离意图示例：
+逃离状态示例：
 
 ```json
 {
-  "behavior_mode": "combat",
+  "behavior_mode": "escaped",
+  "escaped": false,
   "escape_intent": {
     "active": true,
-    "status": "pending",
+    "status": "escaping",
     "source_event_id": "evt_day03_101500_veteran_dialogue",
+    "escape_started_event_id": "evt_day03_101501_veteran_deputy_01_escape_started",
     "trigger": "wartime_dialogue",
     "interaction_context": "combat",
+    "exit_target_id": "back_gate_escape_exit",
+    "exit_target_name": "后门外出口",
+    "exit_position": {"x": -10.0, "y": 0.0, "z": -24.0},
+    "intervention_rounds_used": 0,
+    "intervention_max_rounds": 5,
+    "last_intervention_decision": "",
+    "movement_paused_for_dialogue": false,
+    "paused_dialogue_id": "",
+    "last_dialogue_resume_reason": "",
+    "speed_multiplier": 1.0,
     "started_day": 3,
     "started_time": "10:15:00"
   }
 }
 ```
 
-这些字段由程序根据对话 / 判定结果应用和清除，LLM 不能直接改写具体数值。T1201 只产生 pending 逃离意图，完整移动和离站事实由 T1203 继续实现。
+这些字段由程序根据对话 / 判定结果应用和清除，LLM 不能直接改写具体数值。移动期间 `escaped` 仍为 `false`；NPC 到达后门外出口后，`NPCSystem` 将 `escaped` 改为 `true`，把 `escape_intent.status` 改为 `escaped`，并记录 `completed_day` / `completed_time`。T1204A 后，`stay_after_intervention` 会把 `status` 改为 `stayed` 并停止移动；打开逃离挽留时 `movement_paused_for_dialogue=true` 并保存 `paused_dialogue_id`，关闭或满 5 轮继续逃离时清回 `false` 并记录 `last_dialogue_resume_reason`；逃离挽留攻击计入 1 轮但不产生 NPC 回复。逃离期间昏迷会暂记 `paused_unconscious`，复苏后恢复为 `escaping`。
 
 T0501 起，`NPCSystem.apply_damage_to_npc(...)` 会扣除 `states.hp`，并在 HP 降到 0 时设置 `states.unconscious=true`、`states.current_action="unconscious"`、清空移动目标。T0502/T0503 起，昏迷 NPC 会自然恢复，也可被其他 NPC 协助治疗；HP 恢复到 Max HP 30% 后复苏。昏迷 NPC 不会死亡，也不能移动或执行行动。
 
@@ -301,6 +313,7 @@ T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动
 - `clinic_patient`：T0808 新增，用于小诊所病床。读取 `location_required="clinic"` 与 `workstation_type="patient_bed"`。只有受伤且未昏迷 NPC 可通过普通 `assign_action` 执行；病人占床本身不恢复 HP，必须有 `clinic_doctor` 行动中的医生在岗才开始治疗。
 - `training_instructor`：T0903 新增，用于训练场教官工位。读取 `location_required="training_ground"`、`workstation_type="training_instructor"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时提升“教练”。
 - `training_student`：T0903 新增，用于训练场受训位。读取 `location_required="training_ground"`、`workstation_type="training_student"`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；训练项目由受训者自己的当前主武器 / 坐骑决定。训练速度由程序读取教官“教练”、训练场等级和双方对应项目熟练度差，不由 UI 或 LLM 结算。
+- `system`：T1204A 新增，用于 `escaping_station`、`escape_intervention_dialogue` 等系统状态在地点快照、NPC 面板和记忆摘要中显示中文名称；它不是普通 `assign_action` 可执行行动，不包含资源、工位或持续时间结算。
 
 `assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `local_public`，payload 通过 `building_id` 保留实际目标建筑。
 
@@ -521,7 +534,7 @@ T1002 `plan_revised` 事件 payload：
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`；`order_assigned` 固定为 `private`。正式守备官惩戒攻击写入战斗 / 伤害类 `damage_taken`，payload 保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`assigned_by`
-- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`
+- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 
 T1104 起，`attack_made` 表示我方 NPC 对敌人完成了一次程序结算攻击。必备 payload 字段包括 `attacker_npc_id`、`target_type`、`target_enemy_id`、`damage`、`hp_before` 和 `hp_after`；运行时还会记录 `weapon_id`、`weapon_name`、`required_skill`、`weapon_skill`、`strength`、`base_damage`、`strength_multiplier`、`raw_attack_power`、`attack_speed_multiplier`、`target_defense`、`max_hp` 和 `defeated` 等调试字段。该事件只记录已经由 CombatSystem 扣除敌人 HP 的事实，不让 LLM 决定伤害。
@@ -829,7 +842,7 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 
 对话 Schema 位于 `backend/schemas/npc_ai.py`：
 
-- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。
+- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。T1204A 后，逃离挽留中的玩家消息使用 `interaction_context == "escape_intervention"` 和 `escape_intervention_round`，响应 `intent` 只解析 `stay_after_intervention` / `leave_after_intervention`；逃离挽留攻击不构造该请求。
 - `NPCDialogueResponse`：返回 `replyer_id`、`reply_text`、`response_kind`、`intent`、`emotion`、`recruitment_result`、`wartime_reaction`、`should_end_dialogue` 和建议事件类型。回复玩家时读取 `recruitment_result`；回复 NPC 时读取 `reply_text` 与 `should_end_dialogue`。集结 / 战斗模式下的已入伍 NPC 回复可返回 `wartime_reaction = none | escape | morale_boost`。它只表达 NPC 意向；征召状态变化、战时 buff、逃离、模式切换和事件写入由 Godot 系统完成。
 
 T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。
