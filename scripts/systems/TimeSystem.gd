@@ -20,6 +20,11 @@ func initialize() -> void:
 	if _game_state != null:
 		_seconds_into_day = _get_seconds_from_state()
 		_last_emitted_day_second = int(_seconds_into_day)
+	if _event_bus != null and _event_bus.has_signal("game_over_changed"):
+		if not _event_bus.game_over_changed.is_connected(_on_game_over_changed):
+			_event_bus.game_over_changed.connect(_on_game_over_changed)
+	if _game_state != null and bool(_game_state.get("game_over")):
+		set_paused(true)
 
 
 func _ready() -> void:
@@ -27,6 +32,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _game_state != null and bool(_game_state.get("game_over")):
+		return
 	if is_paused or _game_state == null:
 		return
 
@@ -173,6 +180,10 @@ func get_numeric_delta_multiplier() -> float:
 
 func is_gameplay_paused() -> bool:
 	return is_paused
+
+
+func _on_game_over_changed(_result: String, _reason: String) -> void:
+	set_paused(true)
 
 
 func get_game_delta_seconds(real_delta_seconds: float) -> float:

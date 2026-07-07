@@ -159,9 +159,10 @@ func _init() -> void:
 		return
 	var combat_wave_select := gm_window.find_child("CombatWaveSelect", true, false) as OptionButton
 	var spawn_first_wave_button := gm_window.find_child("SpawnFirstWaveButton", true, false) as Button
+	var trigger_next_wave_button := gm_window.find_child("TriggerNextWaveButton", true, false) as Button
 	var step_enemy_ai_button := gm_window.find_child("StepEnemyAIButton", true, false) as Button
-	if combat_wave_select == null or spawn_first_wave_button == null or step_enemy_ai_button == null:
-		push_error("GM combat section should include wave selector, first-wave spawn button and enemy AI step button")
+	if combat_wave_select == null or spawn_first_wave_button == null or trigger_next_wave_button == null or step_enemy_ai_button == null:
+		push_error("GM combat section should include wave selector, first-wave spawn button, next-wave button and enemy AI step button")
 		quit(1)
 		return
 	if not _select_option_by_id(combat_wave_select, "1"):

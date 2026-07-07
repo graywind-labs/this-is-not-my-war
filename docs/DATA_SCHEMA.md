@@ -378,6 +378,8 @@ T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` �
   "wave_number": 1,
   "trigger_day": 3,
   "trigger_hour": 18,
+  "trigger_minute": 0,
+  "trigger_second": 0,
   "spawn_point": "front_forest",
   "spawn_position": {
     "x": 0.0,
@@ -409,7 +411,7 @@ T0901 后，`data/mount_defs.json` 负责把马厩产出的 `horse_readiness` �
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`move_speed`、`attack_range`、`attack_interval` 和 `target_preference`。`unit_type` 复用 NPC 兵种分类，例如 `melee_infantry`、`polearm_infantry`、`archer`、`crossbowman`、`cavalry`、`mounted_ranged`；骑乘敌人可额外提供 `mount_type`。T1102 起，`move_speed`、`attack_range`、`attack_interval`、`attack_power` 和 `target_preference` 会驱动敌人目标优先级、移动和敌方攻击；T1104 起，`defense` 会参与敌人受到我方攻击时的实际 HP 伤害计算，`hp` / `max_hp` 会随我方攻击扣除并在清零后移除敌人。T1104B 起，敌人 `attack_interval` 使用战斗动作秒，`move_speed` 也按 `game_delta_seconds / 60` 折算为战斗动作秒级位移。T1104C 起，`target_preference` 不应包含 `wall`，CombatSystem 也会过滤旧配置中的 `wall` / `front_wall`；敌人默认按城门、仓库、主厅推进，附近可行动 NPC 仍优先。T1104A 起，敌人 `move_speed` 和 `attack_interval` 不直接乘玩家 `x2` / `x4` 时间倍率；活动敌人存在期间由 TimeSystem `x1` 上限控制全局推进速度。这些字段仍不由 LLM 改写。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`move_speed`、`attack_range`、`attack_interval` 和 `target_preference`。`unit_type` 复用 NPC 兵种分类，例如 `melee_infantry`、`polearm_infantry`、`archer`、`crossbowman`、`cavalry`、`mounted_ranged`；骑乘敌人可额外提供 `mount_type`。T1102 起，`move_speed`、`attack_range`、`attack_interval`、`attack_power` 和 `target_preference` 会驱动敌人目标优先级、移动和敌方攻击；T1104 起，`defense` 会参与敌人受到我方攻击时的实际 HP 伤害计算，`hp` / `max_hp` 会随我方攻击扣除并在清零后移除敌人。T1104B 起，敌人 `attack_interval` 使用战斗动作秒，`move_speed` 也按 `game_delta_seconds / 60` 折算为战斗动作秒级位移。T1104C 起，`target_preference` 不应包含 `wall`，CombatSystem 也会过滤旧配置中的 `wall` / `front_wall`；敌人默认按城门、仓库、主厅推进，附近可行动 NPC 仍优先。T1104A 起，敌人 `move_speed` 和 `attack_interval` 不直接乘玩家 `x2` / `x4` 时间倍率；活动敌人存在期间由 TimeSystem `x1` 上限控制全局推进速度。这些字段仍不由 LLM 改写。
 
 ## Event Record
 

@@ -4,7 +4,7 @@
 
 俯视 3D 驿站地图。
 
-当前实现（T0104 / T0202 / T0204 / T0205 / T0303 / T0004 / T0604 / T0701 / T0702 / T0703 / T0704 / T0705 / T0011 / T0012 / T0014 / T0015 / T0016 / T0904 / T1105 / T1204A）：
+当前实现（T0104 / T0202 / T0204 / T0205 / T0303 / T0004 / T0604 / T0701 / T0702 / T0703 / T0704 / T0705 / T0011 / T0012 / T0014 / T0015 / T0016 / T0904 / T1105 / T1204A / T1301 / T1302 / T1303 / T1304 / T1305）：
 
 - `Main/UI` 使用 `CanvasLayer`。
 - `Main/UI` 绑定 `res://scripts/ui/UIInputFocusManager.gd`；当前任意 `LineEdit` / `TextEdit` 输入框获得焦点后，点击输入框外任意位置都会释放焦点，后续新增文本输入框默认遵循同一规则。
@@ -12,6 +12,8 @@
 - `HUD.gd` 会把 HUD 根节点设为鼠标忽略，避免全屏 HUD 背板拦截 3D 建筑点击；具体按钮仍保留自身交互能力。
 - `Main/UI/HUD/TitleLabel` 显示游戏标题。
 - `Main/UI/HUD/DayLabel`、`TimeLabel`、`PhaseLabel` 显示当前天数、`HH:MM:SS` 时间和阶段；当前随 `TimeSystem` 推进并监听 `EventBus.time_changed` / `hour_started` / `day_started` 刷新。
+- T1301 后 HUD 会创建并刷新 `WaveCountdownLabel`，读取 `CombatSystem.get_wave_schedule_snapshot()` 显示下一波倒计时；敌人在场时同时显示当前波次 / 敌人数量和下一波，HUD 不自行决定是否生成敌人。
+- T1302-T1305 后 HUD 会创建 `GameOverPanel` 胜负结算界面；当 `GameState.game_over == true` 时，失败显示“防守失败”、失败原因、失败时间、停止推进提示和 NPC 结局总结，胜利显示“防守成功”、守住 5 波敌人、剩余资源、建筑状态、NPC 可行动 / 昏迷 / 逃离摘要和每名 NPC 的结局总结。结局明细在滚动区显示每名 NPC 的最终状态、是否入伍、最后位置、对守备官最终看法和后续命运；该面板只读取 `GameState` 和结算快照，不自行决定胜负或恢复。
 - `Main/UI/HUD/ResourceStrip` 由 `HUD.gd` 按 `ResourceSystem.get_resource_ids()` 动态生成资源标签，主栏显示 `data/resource_defs.json` 中按 `ui_order` 排列的非聚合资源：第纳尔、粮食、餐食、酒、木材、石料和铁。
 - `HUD.gd` 监听 `EventBus.resource_changed`，资源变化后自动刷新资源栏；武器、盔甲、马匹整备和工程器械等聚合库存不在主栏重复显示。资源栏右侧提供“装备”和“器械”按钮，打开 `ResourceDetailPanel` 查看装备聚合库存、可分配装备定义、已分配装备数量，以及工程器械库存说明。详情面板会出现在各自按钮左下方，并夹在可用屏幕范围内；该详情面板只读取 `ResourceSystem` / `EquipmentSystem` / `NPCSystem`，不修改资源或装备权威状态。
 - `Main/UI/HUD/SpeedButton` 已接入 `TimeSystem`，点击后按 `x1` / `x2` / `x4` 循环切换流速。
@@ -28,9 +30,9 @@
 - `Main/UI/DialogPanel` 已接入 `res://scripts/ui/DialogPanel.gd`：显示 NPC 名字、公开性、应征 toggle、当前轮次、历史对话、自由文本输入、发送按钮、攻击按钮和结束按钮；它与 `OrderPanel` 互斥，但不与右上角 `NPCPanel` 互斥。
 - T0705 后 NPC 主动交涉时会在头顶显示 `?` 气泡；玩家点击该 NPC 会优先打开对话面板并显示 NPC 预先确定的第一句话，不先打开 NPC 面板。T1005 后，NPC 等待可取消的对话 / 闲聊 / 每日计划 / 计划修订 LLM 时，头顶显示 `...` 标记；首次睡眠总结期间显示禁止标记。T1204A 后，逃离中或逃离昏迷暂停中的 NPC 头顶显示 `!` 警示；点击逃离 NPC 先打开普通 NPC 面板，再由面板【对话】按钮进入挽留。
 - `Main/UI/GMPanel` 绑定 `res://scripts/ui/GMPanel.gd`，开发模式下显示半透明可拖动 `GM` 按钮；点击后在 GM 按钮附近打开 GM 调试面板，拖动按钮时已打开的面板会跟随重定位并夹在可用屏幕范围内。面板提供命令输入框、执行结果区，以及资源、时间倍率快照、建筑、NPC、行动、后端 / LLMBridge、记忆/见闻/广场公告、首次睡眠总结、长期记忆和 LLM 状态等调试入口。
-- GM 面板顶部 `GM_ENABLED` 常量可用于开发/上线显示切换；GM 只调用现有系统接口或 `debug_*` 接口，不承担资源、HP、事件、行动或时间倍率的权威结算。T0014 后普通行动统一通过行动下拉和“指定行动”按钮触发，工作、吃饭、睡觉、训练场教官和受训者等普通行动不再额外提供并列快捷按钮；协助修复、协助升级、协助治疗等需要额外目标参数的入口保留。T0904 后 GM 可通过按钮或 `assign_attribute <npc_id> <strength|intelligence>` 命令调用 NPCSystem 分配技能点。T0015 后 GM 的 NPC 分组提供“设为入伍”按钮和 `recruit_npc <npc_id>` 命令，调用 NPCSystem 入伍权威入口。T1103B/T1103C 后 GM 战斗分组提供“警铃集结”“行为模式快照”“模拟避战”“推进集结等待”按钮和 `alarm` / `rally` / `behavior_modes` / `avoid_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令；“模拟避战”适用于未入伍或已入伍但无主武器的非战斗人员。T1104A 后，GM 时间快照和敌人快照可观察 `combat_enemy_presence` 时间上限请求，验证敌人在场时有效倍率不超过 `x1`；T1104B 后，“推进敌人AI”按钮的 60 游戏秒步长约等于 1 秒战斗动作，可用于观察攻速基准。
+- GM 面板顶部 `GM_ENABLED` 常量可用于开发/上线显示切换；GM 只调用现有系统接口或 `debug_*` 接口，不承担资源、HP、事件、行动或时间倍率的权威结算。T0014 后普通行动统一通过行动下拉和“指定行动”按钮触发，工作、吃饭、睡觉、训练场教官和受训者等普通行动不再额外提供并列快捷按钮；协助修复、协助升级、协助治疗等需要额外目标参数的入口保留。T0904 后 GM 可通过按钮或 `assign_attribute <npc_id> <strength|intelligence>` 命令调用 NPCSystem 分配技能点。T0015 后 GM 的 NPC 分组提供“设为入伍”按钮和 `recruit_npc <npc_id>` 命令，调用 NPCSystem 入伍权威入口。T1103B/T1103C 后 GM 战斗分组提供“警铃集结”“行为模式快照”“模拟避战”“推进集结等待”按钮和 `alarm` / `rally` / `behavior_modes` / `avoid_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令；“模拟避战”适用于未入伍或已入伍但无主武器的非战斗人员。T1301 后 GM 战斗分组提供“跳到下一波”按钮和 `next_wave` / `jump_wave` 命令，调用 CombatSystem 触发下一未触发波次。T1104A 后，GM 时间快照和敌人快照可观察 `combat_enemy_presence` 时间上限请求，验证敌人在场时有效倍率不超过 `x1`；T1104B 后，“推进敌人AI”按钮的 60 游戏秒步长约等于 1 秒战斗动作，可用于观察攻速基准。
 - T1103B/T1103C 后 NPC 面板会在“当前行动”行显示当前行为模式；T1105 后已入伍且有主武器 NPC 会在“装备武器”旁显示战斗策略下拉框，可从当前兵种可用策略中手动选择当前策略。`DialogPanel` 在模式切换时可被强制关闭并取消未完成回复；T1201 后，集结 / 战斗 / 避战模式下的“同地点公开”固定为开启且不可关闭，并接入战时上下文和结构化战时意向输出。T1204A 后，`DialogPanel` 支持 `escape_intervention` 模式：强制同地点公开，显示 `当前 / 5` 轮次，隐藏“提出应征”，保留攻击按钮；打开时暂停 NPC 逃离移动，未满 5 轮关闭后恢复移动，满 5 轮自动关闭并让 NPC 面板【对话】置灰。
-- 已实现：警铃集结、非战斗人员避战、对话面板、对话事件入库、最小征召结算、入伍 NPC 自然语言指令发布与 Prompt 注入、NPC 面板非对话交互入口、正式主武器装备入口、玩家手动战斗策略选择、主动交涉问号气泡与点击入口、战时公开对话心理结果、逃离挽留对话。暂未实现完整战斗结算或生产细节；后端 health 和对话 Mock 仍可通过 LLMBridge / GM 调试入口验证。
+- 已实现：警铃集结、非战斗人员避战、对话面板、对话事件入库、最小征召结算、入伍 NPC 自然语言指令发布与 Prompt 注入、NPC 面板非对话交互入口、正式主武器装备入口、玩家手动战斗策略选择、主动交涉问号气泡与点击入口、战时公开对话心理结果、逃离挽留对话、主厅摧毁失败界面、无可战斗人员失败界面、第 5 波胜利界面和 NPC 结局总结页面；后端 health 和对话 Mock 仍可通过 LLMBridge / GM 调试入口验证。
 
 当前摄像机操作（T0105）：
 

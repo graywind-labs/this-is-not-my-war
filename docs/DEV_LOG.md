@@ -1,5 +1,46 @@
 # DEV_LOG.md
 
+## 2026-07-03 T1305 NPC 结局总结页面
+
+- `GameState.set_game_over(...)` 现在会规范化胜负 `settlement_snapshot`，并为每名 NPC 补齐最终状态（可行动 / 昏迷 / 逃离）、是否入伍、最后位置、Mock 最终看法、Mock 后续命运和记忆依据。
+- HUD `GameOverPanel` 详情区改为滚动区；胜利和失败都显示 NPC 结局总结，胜利仍保留剩余资源、建筑状态和 NPC 状态摘要。
+- 结局文案保持“守备官”世界内称呼，不使用“阵亡”或“死亡”描述 NPC。
+- 扩展 `tools/verify_five_wave_victory.gd` 和 `tools/verify_main_hall_failure.gd`，覆盖 NPC 结局字段、HUD 明细和禁用死亡表述。
+- 验证通过：`godot --headless --path . --script res://tools/verify_five_wave_victory.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
+
+## 2026-07-03 T1304 第 5 波胜利条件
+
+- `CombatSystem` 新增最终波次胜利评估：包含第 5 波的战斗在敌人清空后写入 `victory/five_waves_survived`，保存 `last_victory_result`，并在结算后拒绝继续 `spawn_wave(...)`。
+- `GameState.set_game_over(...)` 支持通用 `game_over_reason` 与 `settlement_snapshot`；失败仍保留旧 `failure_reason`，胜利快照记录剩余资源、建筑 HP / 损毁 / 摧毁状态、驿站是否仍可运转、NPC 可行动 / 昏迷 / 逃离状态。
+- HUD `GameOverPanel` 复用为胜负占位界面；胜利时显示“防守成功”、守住 5 波、剩余资源、建筑状态和 NPC 状态摘要。
+- 新增 `tools/verify_five_wave_victory.gd`，覆盖手动触发 5 波、清敌胜利、停止时间、胜利快照、HUD 胜利占位和结算后拒绝刷波。
+- 验证通过：`godot --headless --path . --script res://tools/verify_five_wave_victory.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-30 T1303 无可战斗人员失败条件
+
+- `CombatSystem` 新增可战斗人员可用性快照：已入伍且持主武器、未昏迷、未逃离且未正在逃离的 NPC 计为可抵抗人员；工作中、尚未摇铃、尚未集结或尚未接敌不会误判为不可抵抗。
+- 活动敌人在场时，波次生成、逻辑推进、NPC 昏迷、逃离开始和逃离完成会检查可用性；若所有可战斗人员都昏迷、逃离或正在逃离，则写入 `failure/no_available_combatants`，记录不可用原因和当前战斗快照，并复用 GameState / TimeSystem / HUD 失败占位链路。
+- HUD 新增失败原因“无可战斗人员”；GM 敌人快照新增 `combatant_availability`，无需新增权威结算按钮。
+- 新增 `tools/verify_no_available_combatants_failure.gd`，覆盖未集结不失败、部分逃离不失败、最后战斗人员昏迷后失败、失败时间、HUD 文案和战斗快照。
+- 验证通过：`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
+
+## 2026-06-30 T1302 主厅失败条件
+
+- `GameState` 的 game-over 状态补充失败发生时间，并新增 `EventBus.game_over_changed` 广播；重复设置同一失败结果不会重复广播。
+- `TimeSystem` 监听 game-over 信号，失败后自动暂停，且 `_process` 在 game-over 状态下不再推进逻辑时间。
+- HUD 新增 `GameOverPanel` 失败占位界面，显示“防守失败”、原因“主厅被摧毁”、失败时间和“游戏已停止正常推进”提示。
+- `CombatSystem` 继续作为主厅摧毁失败的触发入口：敌人攻击主厅至 HP 清零后写入 `failure/main_hall_destroyed`，并在敌人快照保留 `last_failure_result`。
+- 新增 `tools/verify_main_hall_failure.gd`，覆盖主厅被摧毁、失败原因、时间停止、HUD 失败占位和战斗快照。
+- 验证通过：`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-06-30 T1301 波次倒计时与自动来袭
+
+- `CombatSystem` 新增波次日程状态：读取每波 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second`，在 TimeSystem `logical_time_tick` 中按逻辑时间触发下一未触发波次，并记录 `triggered_wave_numbers` 防止重复自动生成。
+- HUD 新增 `WaveCountdownLabel`，显示下一波倒计时；敌人在场时显示当前波次 / 敌人数量和下一波。
+- GM 面板新增“跳到下一波”按钮，并补充 `next_wave` / `jump_wave` 命令；敌人快照包含 `wave_schedule`。
+- 新增 `tools/verify_enemy_wave_schedule.gd`，覆盖 HUD 倒计时、第 3 天 18:00 自动触发第一波、重复触发保护、GM 按钮与命令跳波。
+- 验证通过：`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
+
 ## 2026-06-29 T1205 战场公开信息综合验收
 
 - 对照现有 T1106、T1201-T1204B 实现确认，战场公开信息已覆盖敌我人数、集结 / 必要模式切换、避战开始 / 结束、低血量、战时心理结果、NPC 击退敌人、昏迷、治疗、复苏、逃离、建筑受损和战斗结束。

@@ -46,6 +46,8 @@ const MORALE_BOOST_ATTACK_BONUS := 0.15
 const MORALE_BOOST_MOVE_SPEED_BONUS := 0.15
 const LOW_HP_JUDGEMENT_RATIO := 0.3
 const FAILURE_REASON_MAIN_HALL_DESTROYED := "main_hall_destroyed"
+const FAILURE_REASON_NO_AVAILABLE_COMBATANTS := "no_available_combatants"
+const VICTORY_REASON_FIVE_WAVES_SURVIVED := "five_waves_survived"
 const RALLY_TARGET_PREFIX := "combat_rally_"
 const AVOIDANCE_TARGET_PREFIX := "avoid_shelter_"
 const STRATEGY_MOVE_TARGET_PREFIX := "combat_strategy_"
@@ -158,6 +160,7 @@ var _spawn_sequence := 0
 var _last_spawn_result: Dictionary = {}
 var _last_ai_step_result: Dictionary = {}
 var _last_failure_result: Dictionary = {}
+var _last_victory_result: Dictionary = {}
 var _last_alarm_result: Dictionary = {}
 var _last_mode_transition_result: Dictionary = {}
 var _last_avoidance_result: Dictionary = {}
@@ -168,6 +171,9 @@ var _last_battle_end_result: Dictionary = {}
 var _last_wartime_dialogue_result: Dictionary = {}
 var _last_low_hp_judgement_result: Dictionary = {}
 var _last_escape_result: Dictionary = {}
+var _triggered_wave_numbers: Array[int] = []
+var _last_auto_wave_result: Dictionary = {}
+var _last_manual_next_wave_result: Dictionary = {}
 
 
 func _ready() -> void:
@@ -194,6 +200,7 @@ func initialize() -> void:
 	_last_spawn_result.clear()
 	_last_ai_step_result.clear()
 	_last_failure_result.clear()
+	_last_victory_result.clear()
 	_last_alarm_result.clear()
 	_last_mode_transition_result.clear()
 	_last_avoidance_result.clear()
@@ -204,6 +211,9 @@ func initialize() -> void:
 	_last_wartime_dialogue_result.clear()
 	_last_low_hp_judgement_result.clear()
 	_last_escape_result.clear()
+	_triggered_wave_numbers.clear()
+	_last_auto_wave_result.clear()
+	_last_manual_next_wave_result.clear()
 	_sync_enemy_presence_time_cap("combat_initialize")
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -253,6 +263,48 @@ func get_all_wave_configs() -> Array[Dictionary]:
 	return result
 
 
+func get_wave_schedule_snapshot() -> Dictionary:
+	var next_wave := _get_next_pending_wave()
+	var current_absolute_seconds := _get_current_absolute_seconds()
+	var pending_wave_numbers: Array[int] = []
+	for wave in _waves:
+		var wave_number := int(wave.get("wave_number", 0))
+		if _triggered_wave_numbers.has(wave_number):
+			continue
+		pending_wave_numbers.append(wave_number)
+	var next_info := {}
+	if not next_wave.is_empty():
+		var trigger_seconds := _get_wave_trigger_absolute_seconds(next_wave)
+		next_info = {
+			"wave_number": int(next_wave.get("wave_number", 0)),
+			"wave_id": str(next_wave.get("id", "")),
+			"name": str(next_wave.get("name", "")),
+			"trigger_day": int(next_wave.get("trigger_day", 1)),
+			"trigger_hour": int(next_wave.get("trigger_hour", 0)),
+			"trigger_minute": int(next_wave.get("trigger_minute", 0)),
+			"trigger_second": int(next_wave.get("trigger_second", 0)),
+			"trigger_absolute_seconds": trigger_seconds,
+			"seconds_until": maxf(0.0, trigger_seconds - current_absolute_seconds),
+			"due": current_absolute_seconds >= trigger_seconds
+		}
+	return {
+		"wave_count": get_wave_count(),
+		"triggered_wave_numbers": _triggered_wave_numbers.duplicate(),
+		"pending_wave_numbers": pending_wave_numbers,
+		"next_wave": next_info,
+		"all_waves_triggered": next_wave.is_empty(),
+		"active_enemy_count": get_active_enemy_count(),
+		"active_battle": _active_battle.duplicate(true),
+		"last_victory_result": _last_victory_result.duplicate(true),
+		"last_auto_wave_result": _last_auto_wave_result.duplicate(true),
+		"last_manual_next_wave_result": _last_manual_next_wave_result.duplicate(true)
+	}
+
+
+func debug_get_wave_schedule_snapshot() -> Dictionary:
+	return get_wave_schedule_snapshot()
+
+
 func get_last_spawn_result() -> Dictionary:
 	return _last_spawn_result.duplicate(true)
 
@@ -291,9 +343,19 @@ func get_active_enemies() -> Array[Dictionary]:
 	return result
 
 
-func spawn_wave(wave_number: int, clear_existing: bool = false) -> Dictionary:
+func spawn_wave(wave_number: int, clear_existing: bool = false, reason: String = "wave_spawned") -> Dictionary:
 	if not _wave_by_number.has(wave_number):
 		return _failure("unknown_wave", "敌人波次不存在。", {"wave_number": wave_number})
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and bool(game_state.get("game_over")):
+		var game_over_reason := str(game_state.get("game_over_reason"))
+		if game_over_reason.is_empty():
+			game_over_reason = str(game_state.get("failure_reason"))
+		return _failure("game_over", "游戏已经结算，不能继续生成敌人。", {
+			"wave_number": wave_number,
+			"game_result": str(game_state.get("game_result")),
+			"game_over_reason": game_over_reason
+		})
 
 	var enemy_root := get_node_or_null(ENEMY_ROOT_PATH)
 	if enemy_root == null:
@@ -325,7 +387,7 @@ func spawn_wave(wave_number: int, clear_existing: bool = false) -> Dictionary:
 			spawn_index += 1
 
 	var time_cap_result := _sync_enemy_presence_time_cap("enemies_spawned")
-	var battle_start_result := _start_battle_for_wave(wave, spawned, "wave_spawned")
+	var battle_start_result := _start_battle_for_wave(wave, spawned, reason)
 	_last_spawn_result = {
 		"ok": true,
 		"wave_number": wave_number,
@@ -335,9 +397,11 @@ func spawn_wave(wave_number: int, clear_existing: bool = false) -> Dictionary:
 		"spawned_enemy_ids": _extract_enemy_ids(spawned),
 		"spawn_point": str(wave.get("spawn_point", DEFAULT_SPAWN_POINT_ID)),
 		"spawn_position": _vector3_to_dict(_get_wave_spawn_position(wave)),
+		"reason": reason,
 		"time_cap_result": time_cap_result,
 		"battle_start_result": battle_start_result
 	}
+	_evaluate_no_available_combatants_failure("wave_spawned")
 	return _last_spawn_result.duplicate(true)
 
 
@@ -366,10 +430,36 @@ func debug_clear_enemies() -> Dictionary:
 	return clear_spawned_enemies()
 
 
+func debug_trigger_next_wave(clear_existing: bool = false) -> Dictionary:
+	return trigger_next_scheduled_wave("gm_panel", clear_existing)
+
+
+func trigger_next_scheduled_wave(source: String = "system", clear_existing: bool = false) -> Dictionary:
+	var next_wave := _get_next_pending_wave()
+	if next_wave.is_empty():
+		_last_manual_next_wave_result = {
+			"ok": false,
+			"error": "no_pending_wave",
+			"message": "没有尚未触发的敌人波次。",
+			"source": source
+		}
+		return _last_manual_next_wave_result.duplicate(true)
+	var wave_number := int(next_wave.get("wave_number", 0))
+	var result := spawn_wave(wave_number, clear_existing, "manual_next_wave")
+	result["source"] = source
+	if bool(result.get("ok", false)):
+		_mark_wave_triggered(wave_number)
+		result["triggered_wave_numbers"] = _triggered_wave_numbers.duplicate()
+		result["next_wave_after"] = get_wave_schedule_snapshot().get("next_wave", {})
+	_last_manual_next_wave_result = result.duplicate(true)
+	return _last_manual_next_wave_result.duplicate(true)
+
+
 func debug_get_combat_snapshot() -> Dictionary:
 	return {
 		"wave_count": get_wave_count(),
 		"wave_numbers": get_wave_numbers(),
+		"wave_schedule": get_wave_schedule_snapshot(),
 		"active_enemy_count": get_active_enemy_count(),
 		"active_enemy_ids": get_active_enemy_ids(),
 		"enemy_targets": _get_enemy_target_snapshot(),
@@ -384,6 +474,8 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_ai_step_result": _last_ai_step_result.duplicate(true),
 		"last_friendly_attack_result": _last_friendly_attack_result.duplicate(true),
 		"last_failure_result": _last_failure_result.duplicate(true),
+		"last_victory_result": _last_victory_result.duplicate(true),
+		"combatant_availability": _get_combatant_availability_snapshot(),
 		"last_mode_transition_result": _last_mode_transition_result.duplicate(true),
 		"last_avoidance_result": _last_avoidance_result.duplicate(true),
 		"last_battle_start_result": _last_battle_start_result.duplicate(true),
@@ -419,6 +511,7 @@ func debug_step_enemy_ai(game_seconds: float = 60.0) -> Dictionary:
 	_advance_avoidance_units()
 	var result := _advance_combat_ai(seconds)
 	_advance_avoidance_units()
+	result["failure_check"] = _evaluate_no_available_combatants_failure("debug_step_enemy_ai")
 	return result
 
 
@@ -697,6 +790,9 @@ func start_npc_escape(
 	}
 	_active_escapes[npc_id] = result.duplicate(true)
 	_last_escape_result = result.duplicate(true)
+	result["failure_check"] = _evaluate_no_available_combatants_failure("npc_escape_started")
+	_active_escapes[npc_id] = result.duplicate(true)
+	_last_escape_result = result.duplicate(true)
 	return result
 
 
@@ -708,6 +804,8 @@ func handle_npc_escape_completed(npc_id: String, escaped_state: Dictionary = {})
 		"escaped_state": escaped_state.duplicate(true)
 	}
 	_active_escapes.erase(npc_id)
+	_last_escape_result = completion.duplicate(true)
+	completion["failure_check"] = _evaluate_no_available_combatants_failure("npc_escape_completed")
 	_last_escape_result = completion.duplicate(true)
 	return completion
 
@@ -1140,13 +1238,17 @@ func normalize_npc_combat_strategy(
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
 	_advance_morale_boosts(game_delta_seconds)
+	_advance_wave_schedule(game_delta_seconds)
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
+		return
+	if bool(_evaluate_no_available_combatants_failure("logical_time_tick_start").get("triggered", false)):
 		return
 	_advance_behavior_mode_contacts()
 	_advance_avoidance_units()
 	_advance_combat_ai(game_delta_seconds)
 	_advance_avoidance_units()
+	_evaluate_no_available_combatants_failure("logical_time_tick_end")
 
 
 func _advance_combat_ai(game_delta_seconds: float) -> Dictionary:
@@ -2260,6 +2362,7 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_behavior_mode"):
 		result["battle_end_result"] = _finish_active_battle(reason)
+		result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
 		return result
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
@@ -2291,6 +2394,7 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			(result["avoid_to_work"] as Array).append(avoid_result)
 			(result["avoidance_ended"] as Array).append(ended_event)
 	result["battle_end_result"] = _finish_active_battle(reason)
+	result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
 	_last_mode_transition_result = result.duplicate(true)
 	return result
 
@@ -2304,6 +2408,7 @@ func _on_npc_unconscious(npc_id: String) -> void:
 	_complete_npc_avoidance(npc_id, "npc_unconscious")
 	_pause_escape_for_unconscious(npc_id, "npc_unconscious")
 	_record_battle_npc_unconscious(npc_id, "npc_unconscious")
+	_evaluate_no_available_combatants_failure("npc_unconscious")
 
 
 func _route_revived_npc(npc_id: String) -> Dictionary:
@@ -3311,6 +3416,317 @@ func _trigger_main_hall_failure(enemy: Dictionary, damage_result: Dictionary) ->
 		game_state.set_game_over("failure", FAILURE_REASON_MAIN_HALL_DESTROYED)
 
 
+func _evaluate_no_available_combatants_failure(trigger_reason: String) -> Dictionary:
+	if not _last_failure_result.is_empty():
+		return {
+			"ok": true,
+			"triggered": false,
+			"reason": "failure_already_recorded",
+			"last_failure_result": _last_failure_result.duplicate(true)
+		}
+	if _active_enemies.is_empty():
+		return {"ok": true, "triggered": false, "reason": "no_active_enemies"}
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and bool(game_state.get("game_over")):
+		return {"ok": true, "triggered": false, "reason": "game_already_over"}
+	var availability := _get_combatant_availability_snapshot()
+	if int(availability.get("total_combatant_count", 0)) <= 0:
+		return {"ok": true, "triggered": false, "reason": "no_registered_combatants", "combatant_availability": availability}
+	if int(availability.get("available_combatant_count", 0)) > 0:
+		return {"ok": true, "triggered": false, "reason": "combatants_available", "combatant_availability": availability}
+	_trigger_no_available_combatants_failure(trigger_reason, availability)
+	return {
+		"ok": true,
+		"triggered": true,
+		"reason": FAILURE_REASON_NO_AVAILABLE_COMBATANTS,
+		"trigger_reason": trigger_reason,
+		"combatant_availability": availability
+	}
+
+
+func _trigger_no_available_combatants_failure(trigger_reason: String, availability: Dictionary) -> void:
+	if not _last_failure_result.is_empty():
+		return
+	_last_failure_result = {
+		"ok": true,
+		"result": "failure",
+		"reason": FAILURE_REASON_NO_AVAILABLE_COMBATANTS,
+		"trigger_reason": trigger_reason,
+		"active_enemy_count": get_active_enemy_count(),
+		"active_enemy_ids": get_active_enemy_ids(),
+		"combatant_availability": availability.duplicate(true),
+		"active_battle": _active_battle.duplicate(true)
+	}
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and game_state.has_method("set_game_over"):
+		game_state.set_game_over("failure", FAILURE_REASON_NO_AVAILABLE_COMBATANTS)
+
+
+func _evaluate_five_wave_victory(battle_end_result: Dictionary, trigger_reason: String) -> Dictionary:
+	if not _last_victory_result.is_empty():
+		return {
+			"ok": true,
+			"triggered": false,
+			"reason": "victory_already_recorded",
+			"last_victory_result": _last_victory_result.duplicate(true)
+		}
+	if not _last_failure_result.is_empty():
+		return {"ok": true, "triggered": false, "reason": "failure_already_recorded"}
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and bool(game_state.get("game_over")):
+		return {"ok": true, "triggered": false, "reason": "game_already_over"}
+	if battle_end_result.is_empty() or str(battle_end_result.get("error", "")) == "no_active_battle":
+		return {"ok": true, "triggered": false, "reason": "no_finished_battle", "battle_end_result": battle_end_result.duplicate(true)}
+	if int(battle_end_result.get("remaining_enemy_count", 0)) > 0:
+		return {"ok": true, "triggered": false, "reason": "enemies_remaining", "battle_end_result": battle_end_result.duplicate(true)}
+	var final_wave_number := _get_final_wave_number()
+	if final_wave_number <= 0:
+		return {"ok": true, "triggered": false, "reason": "no_configured_waves"}
+	if not _battle_result_includes_wave(battle_end_result, final_wave_number):
+		return {
+			"ok": true,
+			"triggered": false,
+			"reason": "final_wave_not_cleared",
+			"final_wave_number": final_wave_number,
+			"battle_end_result": battle_end_result.duplicate(true)
+		}
+	_trigger_five_wave_victory(final_wave_number, battle_end_result, trigger_reason)
+	return {
+		"ok": true,
+		"triggered": true,
+		"reason": VICTORY_REASON_FIVE_WAVES_SURVIVED,
+		"victory_result": _last_victory_result.duplicate(true)
+	}
+
+
+func _trigger_five_wave_victory(final_wave_number: int, battle_end_result: Dictionary, trigger_reason: String) -> void:
+	if not _last_victory_result.is_empty():
+		return
+	var settlement_snapshot := _build_victory_settlement_snapshot(final_wave_number, battle_end_result, trigger_reason)
+	_last_victory_result = {
+		"ok": true,
+		"result": "victory",
+		"reason": VICTORY_REASON_FIVE_WAVES_SURVIVED,
+		"wave_number": final_wave_number,
+		"trigger_reason": trigger_reason,
+		"battle_end_result": battle_end_result.duplicate(true),
+		"settlement_snapshot": settlement_snapshot.duplicate(true)
+	}
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and game_state.has_method("set_game_over"):
+		game_state.set_game_over("victory", VICTORY_REASON_FIVE_WAVES_SURVIVED, settlement_snapshot)
+
+
+func _build_victory_settlement_snapshot(final_wave_number: int, battle_end_result: Dictionary, trigger_reason: String) -> Dictionary:
+	var resource_snapshot := _build_resource_settlement_snapshot()
+	var building_snapshot := _build_building_settlement_snapshot()
+	var npc_snapshot := _build_npc_settlement_snapshot()
+	var time_snapshot := _get_game_time_snapshot()
+	return {
+		"result": "victory",
+		"reason": VICTORY_REASON_FIVE_WAVES_SURVIVED,
+		"wave_number": final_wave_number,
+		"trigger_reason": trigger_reason,
+		"day": int(time_snapshot.get("day", 1)),
+		"time": str(time_snapshot.get("time", "00:00:00")),
+		"resources": resource_snapshot,
+		"buildings": building_snapshot,
+		"npcs": npc_snapshot,
+		"station_operational": bool(building_snapshot.get("station_operational", false)),
+		"battle_end_result": battle_end_result.duplicate(true)
+	}
+
+
+func _get_final_wave_number() -> int:
+	var final_wave_number := 0
+	for wave in _waves:
+		final_wave_number = maxi(final_wave_number, int(wave.get("wave_number", 0)))
+	return final_wave_number
+
+
+func _battle_result_includes_wave(battle_end_result: Dictionary, wave_number: int) -> bool:
+	if wave_number <= 0:
+		return false
+	if int(battle_end_result.get("wave_number", 0)) == wave_number:
+		return true
+	var additional_waves: Array = battle_end_result.get("additional_waves", []) if battle_end_result.get("additional_waves", []) is Array else []
+	for raw_wave in additional_waves:
+		var wave: Dictionary = raw_wave if raw_wave is Dictionary else {}
+		if int(wave.get("wave_number", 0)) == wave_number:
+			return true
+	return false
+
+
+func _build_resource_settlement_snapshot() -> Dictionary:
+	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
+	if resource_system == null or not resource_system.has_method("get_resource_ids"):
+		return {"items": [], "amounts": {}}
+	var items: Array[Dictionary] = []
+	var amounts := {}
+	for raw_resource_id in resource_system.get_resource_ids():
+		var resource_id := str(raw_resource_id)
+		var amount := int(resource_system.get_resource(resource_id)) if resource_system.has_method("get_resource") else 0
+		var name := resource_id
+		if resource_system.has_method("get_resource_name"):
+			name = str(resource_system.get_resource_name(resource_id))
+		items.append({
+			"id": resource_id,
+			"name": name,
+			"amount": amount
+		})
+		amounts[resource_id] = amount
+	return {"items": items, "amounts": amounts}
+
+
+func _build_building_settlement_snapshot() -> Dictionary:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var buildings: Array[Dictionary] = []
+	var damaged: Array[Dictionary] = []
+	var destroyed: Array[Dictionary] = []
+	var station_operational := false
+	if building_system == null or not building_system.has_method("get_building_ids") or not building_system.has_method("get_building"):
+		return {
+			"items": buildings,
+			"damaged_buildings": damaged,
+			"destroyed_buildings": destroyed,
+			"station_operational": station_operational
+		}
+	for raw_building_id in building_system.get_building_ids():
+		var building_id := str(raw_building_id)
+		var building: Dictionary = building_system.get_building(building_id)
+		if building.is_empty():
+			continue
+		var hp := int(building.get("hp", 0))
+		var max_hp := int(building.get("max_hp", hp))
+		var entry := {
+			"id": building_id,
+			"name": str(building.get("name", building_id)),
+			"level": int(building.get("level", 1)),
+			"hp": hp,
+			"max_hp": max_hp,
+			"condition": str(building.get("condition", "")),
+			"destroyed": hp <= 0,
+			"damaged": hp < max_hp
+		}
+		buildings.append(entry)
+		if bool(entry["destroyed"]):
+			destroyed.append(entry.duplicate(true))
+		elif bool(entry["damaged"]):
+			damaged.append(entry.duplicate(true))
+		if building_id == MAIN_HALL_ID:
+			station_operational = hp > 0
+	return {
+		"items": buildings,
+		"damaged_buildings": damaged,
+		"destroyed_buildings": destroyed,
+		"station_operational": station_operational
+	}
+
+
+func _build_npc_settlement_snapshot() -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var items: Array[Dictionary] = []
+	var active: Array[Dictionary] = []
+	var unconscious: Array[Dictionary] = []
+	var escaped: Array[Dictionary] = []
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("get_npc"):
+		return {
+			"items": items,
+			"active_npcs": active,
+			"unconscious_npcs": unconscious,
+			"escaped_npcs": escaped
+		}
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		var state: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+		if npc_system.has_method("get_npc_state"):
+			state = npc_system.get_npc_state(npc_id)
+		var entry := {
+			"id": npc_id,
+			"name": str(npc.get("name", npc_id)),
+			"recruited": bool(npc.get("recruited", false)),
+			"hp": int(state.get("hp", 0)),
+			"max_hp": int(state.get("max_hp", 0)),
+			"unconscious": bool(state.get("unconscious", false)),
+			"escaped": bool(state.get("escaped", false)),
+			"behavior_mode": str(state.get("behavior_mode", BEHAVIOR_MODE_WORK)),
+			"current_action": str(state.get("current_action", "")),
+			"current_location": str(state.get("current_location", ""))
+		}
+		items.append(entry)
+		if bool(entry["escaped"]):
+			escaped.append(entry.duplicate(true))
+		elif bool(entry["unconscious"]):
+			unconscious.append(entry.duplicate(true))
+		else:
+			active.append(entry.duplicate(true))
+	return {
+		"items": items,
+		"active_npcs": active,
+		"unconscious_npcs": unconscious,
+		"escaped_npcs": escaped
+	}
+
+
+func _get_combatant_availability_snapshot() -> Dictionary:
+	var snapshot := {
+		"active_enemy_count": get_active_enemy_count(),
+		"has_active_enemies": not _active_enemies.is_empty(),
+		"total_combatant_count": 0,
+		"available_combatant_count": 0,
+		"unavailable_combatant_count": 0,
+		"available_combatants": [],
+		"unavailable_combatants": []
+	}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		snapshot["error"] = "npc_system_missing"
+		return snapshot
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		if not _is_npc_combat_eligible(npc_id, npc_system):
+			continue
+		var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system.has_method("get_npc") else {}
+		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+		var unit_snapshot := _get_npc_unit_type_snapshot(npc_id)
+		var reason := _get_combatant_unavailable_reason(state)
+		var entry := {
+			"npc_id": npc_id,
+			"npc_name": str(npc.get("name", npc_id)),
+			"unit_type": str(unit_snapshot.get("unit_type", "")),
+			"unit_type_label": str(unit_snapshot.get("unit_type_label", "")),
+			"main_weapon_id": str(unit_snapshot.get("main_weapon_id", "")),
+			"main_weapon_name": str(unit_snapshot.get("main_weapon_name", "")),
+			"hp": int(state.get("hp", 0)),
+			"max_hp": int(state.get("max_hp", 0)),
+			"behavior_mode": _get_npc_behavior_mode(npc_system, npc_id),
+			"current_action": str(state.get("current_action", "idle"))
+		}
+		snapshot["total_combatant_count"] = int(snapshot.get("total_combatant_count", 0)) + 1
+		if reason.is_empty():
+			entry["available"] = true
+			(snapshot["available_combatants"] as Array).append(entry)
+		else:
+			entry["available"] = false
+			entry["unavailable_reason"] = reason
+			(snapshot["unavailable_combatants"] as Array).append(entry)
+	snapshot["available_combatant_count"] = (snapshot["available_combatants"] as Array).size()
+	snapshot["unavailable_combatant_count"] = (snapshot["unavailable_combatants"] as Array).size()
+	return snapshot
+
+
+func _get_combatant_unavailable_reason(state: Dictionary) -> String:
+	if bool(state.get("unconscious", false)):
+		return "unconscious"
+	if bool(state.get("escaped", false)):
+		return "escaped"
+	var intent := _get_escape_intent_from_state(state)
+	if bool(intent.get("active", false)) and [ESCAPE_STATUS_ESCAPING, ESCAPE_STATUS_PAUSED_UNCONSCIOUS].has(str(intent.get("status", ""))):
+		return "escaping"
+	return ""
+
+
 func _is_target_defeated(target: Dictionary) -> bool:
 	var target_type := str(target.get("type", ""))
 	var target_id := str(target.get("id", ""))
@@ -3345,6 +3761,10 @@ func _normalize_wave(raw_wave: Dictionary) -> Dictionary:
 	normalized["id"] = str(raw_wave.get("id", "wave_%02d" % wave_number))
 	normalized["wave_number"] = wave_number
 	normalized["name"] = str(raw_wave.get("name", "第%d波敌人" % wave_number))
+	normalized["trigger_day"] = maxi(1, int(raw_wave.get("trigger_day", 3 + wave_number - 1)))
+	normalized["trigger_hour"] = clampi(int(raw_wave.get("trigger_hour", 18)), 0, 23)
+	normalized["trigger_minute"] = clampi(int(raw_wave.get("trigger_minute", 0)), 0, 59)
+	normalized["trigger_second"] = clampi(int(raw_wave.get("trigger_second", 0)), 0, 59)
 	normalized["spawn_point"] = str(raw_wave.get("spawn_point", DEFAULT_SPAWN_POINT_ID))
 	normalized["spawn_position"] = _normalize_vector3_dict(raw_wave.get("spawn_position", {}), _get_named_spawn_position(str(normalized["spawn_point"])))
 	normalized["spawn_spread"] = _normalize_spawn_spread(raw_wave.get("spawn_spread", {}))
@@ -4583,6 +5003,69 @@ func _normalize_string_array(raw_value: Variant) -> Array[String]:
 		if not item.is_empty():
 			result.append(item)
 	return result
+
+
+func _advance_wave_schedule(game_delta_seconds: float) -> void:
+	if game_delta_seconds <= 0.0:
+		return
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and bool(game_state.get("game_over")):
+		return
+	var next_wave := _get_next_pending_wave()
+	if next_wave.is_empty():
+		return
+	var current_seconds := _get_current_absolute_seconds()
+	var next_tick_seconds := current_seconds + maxf(0.0, game_delta_seconds)
+	var trigger_seconds := _get_wave_trigger_absolute_seconds(next_wave)
+	if next_tick_seconds < trigger_seconds:
+		return
+	var wave_number := int(next_wave.get("wave_number", 0))
+	var result := spawn_wave(wave_number, false, "scheduled_wave")
+	result["trigger_absolute_seconds"] = trigger_seconds
+	result["current_absolute_seconds"] = current_seconds
+	result["next_tick_absolute_seconds"] = next_tick_seconds
+	if bool(result.get("ok", false)):
+		_mark_wave_triggered(wave_number)
+		result["triggered_wave_numbers"] = _triggered_wave_numbers.duplicate()
+		result["next_wave_after"] = get_wave_schedule_snapshot().get("next_wave", {})
+	_last_auto_wave_result = result.duplicate(true)
+
+
+func _get_next_pending_wave() -> Dictionary:
+	for wave in _waves:
+		var wave_number := int(wave.get("wave_number", 0))
+		if _triggered_wave_numbers.has(wave_number):
+			continue
+		return wave.duplicate(true)
+	return {}
+
+
+func _mark_wave_triggered(wave_number: int) -> void:
+	if wave_number <= 0 or _triggered_wave_numbers.has(wave_number):
+		return
+	_triggered_wave_numbers.append(wave_number)
+	_triggered_wave_numbers.sort()
+
+
+func _get_wave_trigger_absolute_seconds(wave: Dictionary) -> float:
+	var day := maxi(1, int(wave.get("trigger_day", 1)))
+	var hour := clampi(int(wave.get("trigger_hour", 0)), 0, 23)
+	var minute := clampi(int(wave.get("trigger_minute", 0)), 0, 59)
+	var second := clampi(int(wave.get("trigger_second", 0)), 0, 59)
+	return float((day - 1) * 86400 + hour * 3600 + minute * 60 + second)
+
+
+func _get_current_absolute_seconds() -> float:
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state == null:
+		return 0.0
+	return float(
+		maxi(1, int(game_state.get("current_day"))) - 1
+	) * 86400.0 + float(
+		clampi(int(game_state.get("current_hour")), 0, 23) * 3600
+		+ clampi(int(game_state.get("current_minute")), 0, 59) * 60
+		+ clampi(int(game_state.get("current_second")), 0, 59)
+	)
 
 
 func _get_wave_enemy_count(wave: Dictionary) -> int:

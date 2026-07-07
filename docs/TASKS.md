@@ -3914,7 +3914,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 ## T1301 实现波次倒计时与自动来袭
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0401, T1101
 涉及文档：`COMBAT_SYSTEM.md`, `UI_UX.md`
@@ -3927,14 +3927,23 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 可手动调试跳到下一波。
 - 波次倒计时与触发时间使用 TimeSystem 逻辑时间，不使用真实时间。
 
+完成记录（2026-06-30）：
+
+- `CombatSystem` 新增波次日程状态，按 `data/enemy_waves.json` 的 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 在 `logical_time_tick` 中自动触发下一未触发波次，并记录已触发波次，避免同一波重复自动生成。
+- HUD 新增 `WaveCountdownLabel`，显示下一波倒计时；敌人在场时同时显示当前波次 / 敌人数量和下一波。
+- GM 面板战斗分组新增“跳到下一波”按钮，并补充 `next_wave` / `jump_wave` 命令；该入口只调用 `CombatSystem.debug_trigger_next_wave()`，不在 UI 内自行结算波次。
+- 新增 `tools/verify_enemy_wave_schedule.gd`，覆盖 HUD 倒计时、第 3 天 18:00 自动触发第一波、自动触发不重复、GM 按钮 / 命令跳到下一波。
+
+验证通过：`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_generation.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
+
 ---
 
 ## T1302 实现主厅失败条件
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1102, T1104
-涉及文档：`COMBAT_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`
+涉及文档：`COMBAT_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
 验收标准：
 
@@ -3943,14 +3952,24 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 游戏停止正常推进。
 - 显示失败界面占位。
 
+完成记录（2026-06-30）：
+
+- `GameState.set_game_over(...)` 现在记录失败结果、失败原因和结算时间，并通过 `EventBus.game_over_changed` 广播结算状态。
+- 主厅被敌人攻击至 HP 清零时，`CombatSystem` 保持原有权威触发路径，记录 `last_failure_result`，并写入 `failure/main_hall_destroyed`。
+- `TimeSystem` 监听 game-over 信号，失败后自动暂停并阻止逻辑时间继续推进。
+- HUD 新增 `GameOverPanel` 失败占位界面，显示“防守失败”、原因“主厅被摧毁”、失败时间和“游戏已停止正常推进”提示。
+- 新增 `tools/verify_main_hall_failure.gd`，覆盖主厅摧毁、失败原因、时间停止和失败占位 UI。
+
+验证通过：`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_time_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --quit-after 1`。
+
 ---
 
 ## T1303 实现无可战斗人员失败条件
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0501, T1203
-涉及文档：`COMBAT_SYSTEM.md`
+涉及文档：`COMBAT_SYSTEM.md`, `CURRENT_STATE.md`, `MODULE_INDEX.md`, `GM_PANEL.md`, `DEV_LOG.md`
 
 验收标准：
 
@@ -3958,11 +3977,21 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 失败原因记录清楚。
 - 不误判短暂未集结状态。
 
+完成记录（2026-06-30）：
+
+- `CombatSystem` 新增战斗人员可用性快照，已入伍且持主武器、未昏迷、未逃离且未正在逃离的 NPC 计为可抵抗人员；工作、尚未摇铃、尚未集结或尚未接敌不视为不可抵抗。
+- 活动敌人在场时，波次生成、逻辑推进、NPC 昏迷、逃离开始和逃离完成都会检查可用性；若存在可战斗人员但全部处于昏迷、已逃离或正在逃离状态，则写入 `failure/no_available_combatants`，记录 `combatant_availability`，并复用 GameState / TimeSystem / HUD 的失败占位结算链路。
+- `debug_get_combat_snapshot()` 暴露 `combatant_availability`，GM 面板现有敌人快照可观察可战斗人员总数、可用者和不可用原因；未新增新的 GM 结算按钮。
+- HUD 失败原因新增“无可战斗人员”显示。
+- 新增 `tools/verify_no_available_combatants_failure.gd`，覆盖有武装守备者但未集结不失败、一名战斗人员逃离后仍有另一名可用者不失败、最后可用战斗人员昏迷后触发失败、失败时间 / HUD / 快照记录。
+
+验证通过：`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_combat_time_cap.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_enemy_target_priority.gd`、`godot --headless --path . --script res://tools/verify_combat_damage.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
+
 ---
 
 ## T1304 实现 5 波胜利条件
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1301, T1106
 涉及文档：`COMBAT_SYSTEM.md`, `CURRENT_STATE.md`
@@ -3974,11 +4003,21 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 显示胜利界面占位。
 - 记录剩余资源、建筑状态、NPC 状态。
 
+完成记录（2026-07-03）：
+
+- `CombatSystem` 在包含最终配置波次（当前第 5 波）的战斗清敌后触发 `victory/five_waves_survived`，并在 `last_victory_result` 中保留战斗结束结果与结算快照。
+- `GameState.set_game_over(...)` 支持通用 `game_over_reason` 与 `settlement_snapshot`；胜利快照记录剩余资源、建筑 HP / 损毁 / 摧毁状态、驿站是否仍可运转、NPC 可行动 / 昏迷 / 逃离状态。旧 `failure_reason` 仅在失败时保留，兼容既有失败验证。
+- HUD `GameOverPanel` 复用为胜负占位界面；胜利时显示“防守成功”、守住 5 波、剩余资源摘要、建筑状态摘要和 NPC 状态摘要。
+- 结算后 `spawn_wave(...)` 会拒绝继续生成敌人；自动波次调度也因 `GameState.game_over` 停止推进。
+- 新增 `tools/verify_five_wave_victory.gd`，覆盖手动触发 5 波、清敌胜利、停止时间、胜利快照、HUD 胜利占位和结算后拒绝刷波。
+
+验证通过：`godot --headless --path . --script res://tools/verify_five_wave_victory.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_enemy_wave_schedule.gd`、`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_combat_flow.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
 ---
 
 ## T1305 实现 NPC 结局总结页面
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T1302, T1304, T1004
 涉及文档：`UI_UX.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`
@@ -3996,6 +4035,15 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 胜利和失败都显示 NPC 总结。
 - 不出现“阵亡”表述，统一使用昏迷/逃离/最终状态。
 - 可基于日记和记忆生成简短总结。
+
+完成记录（2026-07-03）：
+
+- `GameState.set_game_over(...)` 会在任意胜负结算时规范化 `settlement_snapshot`，并补齐 `npcs.items` 结局明细：最终状态、是否入伍、最后位置、Mock 最终看法、Mock 后续命运和日记 / 事件记忆依据。
+- HUD `GameOverPanel` 详情区改为滚动区；胜利和失败都会显示 `NPC 结局`，每名 NPC 展示最终状态、入伍状态、最后位置、对守备官最终看法和后续命运。结局文案不使用“阵亡”或“死亡”表述。
+- 胜利保留 T1304 的剩余资源、建筑状态和 NPC 状态摘要；失败也会显示 NPC 总结，不再只有失败原因和停止推进提示。
+- 扩展 `tools/verify_five_wave_victory.gd` 和 `tools/verify_main_hall_failure.gd`，覆盖 NPC 结局字段、HUD 明细和禁用死亡表述。
+
+验证通过：`godot --headless --path . --script res://tools/verify_five_wave_victory.gd`、`godot --headless --path . --script res://tools/verify_main_hall_failure.gd`、`godot --headless --path . --script res://tools/verify_no_available_combatants_failure.gd`、`godot --headless --path . --script res://tools/verify_hud_resources.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`；Godot MCP 运行 `res://scenes/main/Main.tscn` 后编辑器错误日志为空。
 
 ---
 
@@ -4018,7 +4066,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 候选：
 
-- DeepSeek
+- DeepSeek首选，deepseek v4-flash
 - MiniMax
 - 通义千问
 - 智谱
