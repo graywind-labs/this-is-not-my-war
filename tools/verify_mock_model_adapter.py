@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import sys
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,39 @@ from backend.schemas import (
     SpeakerContext,
 )
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+
+
+class _FakeProviderResponse:
+    status_code = 200
+    text = ""
+
+    def json(self) -> dict:
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "{\"ok\":true,\"replyer_id\":\"cook_01\",\"reply_text\":\"守备官，我会先听你说完。\","
+                            "\"response_kind\":\"reply_to_player\",\"intent\":\"continue_talk\",\"emotion\":\"wary\","
+                            "\"recruitment_result\":\"none\",\"wartime_reaction\":\"none\",\"should_end_dialogue\":false,"
+                            "\"suggested_event_type\":\"dialogue_turn\",\"debug_reason\":\"fake_deepseek_json\"}"
+                        )
+                    }
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 123,
+                "completion_tokens": 45,
+            },
+        }
+
+
+class _FakeFailedProviderResponse:
+    status_code = 401
+    text = "invalid api key"
+
+    def json(self) -> dict:
+        return {"error": {"message": "invalid api key"}}
 
 
 def _make_npc_context() -> NPCContext:
@@ -191,7 +225,54 @@ def main() -> None:
     assert not failed.ok
     assert failed.error_code == "provider_unavailable"
     assert failed.usage["success"] is False
+    assert failed.usage["fallback_used"] is False
+    assert failed.usage["exception_type"] == "ConfigurationError"
     assert "LLM_API_KEY" in failed.message
+
+    fallback = ModelAdapter(ModelAdapterConfig(provider="deepseek", api_key=None, fallback_to_mock=True)).generate(
+        "dialogue",
+        _make_payload("dialogue"),
+    )
+    assert fallback.ok
+    assert fallback.provider == "mock"
+    assert fallback.usage["fallback_used"] is True
+    assert fallback.usage["success"] is True
+    assert fallback.usage["provider"] == "deepseek"
+    assert fallback.usage["degradation_source"] == "mock_fallback"
+    NPCDialogueResponse(**fallback.content)
+
+    real_adapter = ModelAdapter(ModelAdapterConfig(
+        provider="deepseek",
+        api_key="test_key",
+        fallback_to_mock=False,
+        input_cost_per_million=0.14,
+        output_cost_per_million=0.28,
+    ))
+    with patch("backend.services.model_adapter.requests.post", return_value=_FakeProviderResponse()) as fake_post:
+        real_result = real_adapter.generate("dialogue", _make_payload("dialogue"))
+    assert real_result.ok
+    assert real_result.provider == "deepseek"
+    assert real_result.content["debug_reason"] == "fake_deepseek_json"
+    assert real_result.usage["input_tokens"] == 123
+    assert real_result.usage["output_tokens"] == 45
+    assert real_result.usage["estimated_cost"] > 0.0
+    assert real_result.usage["model"] == "deepseek-v4-flash"
+    fake_call = fake_post.call_args
+    assert fake_call.args[0] == "https://api.deepseek.com/chat/completions"
+    assert fake_call.kwargs["json"]["model"] == "deepseek-v4-flash"
+    assert fake_call.kwargs["headers"]["Authorization"] == "Bearer test_key"
+
+    failed_http_adapter = ModelAdapter(ModelAdapterConfig(
+        provider="deepseek",
+        api_key="test_key",
+        fallback_to_mock=False,
+    ))
+    with patch("backend.services.model_adapter.requests.post", return_value=_FakeFailedProviderResponse()):
+        failed_http_result = failed_http_adapter.generate("dialogue", _make_payload("dialogue"))
+    assert not failed_http_result.ok
+    assert failed_http_result.usage["http_status"] == 401
+    assert failed_http_result.usage["exception_type"] == "ProviderHTTPError"
+    assert "Provider HTTP 401" in failed_http_result.message
 
     os.environ["LLM_PROVIDER"] = "mock"
     client = create_app().test_client()
@@ -211,6 +292,14 @@ def main() -> None:
     )
     assert judgement_response.status_code == 200
     BattleJudgementResponse(**judgement_response.get_json())
+
+    usage_response = client.get("/debug/llm_usage")
+    assert usage_response.status_code == 200
+    usage_data = usage_response.get_json()
+    assert usage_data["ok"] is True
+    assert usage_data["summary"]["count"] >= 1
+    assert usage_data["summary"]["input_tokens"] > 0
+    assert usage_data["model_adapter"]["provider"] == "mock"
 
     bad_response = client.post("/mock/model", data="not-json")
     assert bad_response.status_code == 400

@@ -153,6 +153,41 @@ func _init() -> void:
 		quit(1)
 		return
 
+	print("LLMBridge verify: usage snapshot")
+	var usage_result: Dictionary = llm_bridge.debug_request_llm_usage()
+	if not bool(usage_result.get("ok", false)):
+		push_error("LLM usage request failed: %s" % str(usage_result))
+		quit(1)
+		return
+	var usage_body: Dictionary = usage_result.get("body", {})
+	var usage_summary: Dictionary = usage_body.get("summary", {})
+	if int(usage_summary.get("count", 0)) <= 0:
+		push_error("LLM usage summary should include the dialogue call")
+		quit(1)
+		return
+	if llm_bridge.get_pending_slowdown_count() != 0:
+		push_error("LLM usage request must not leave pending slowdown ids")
+		quit(1)
+		return
+	if not llm_bridge.has_method("debug_get_llm_runtime_snapshot"):
+		push_error("LLMBridge must expose runtime debug snapshot")
+		quit(1)
+		return
+	var runtime_snapshot: Dictionary = llm_bridge.debug_get_llm_runtime_snapshot()
+	if int(runtime_snapshot.get("pending_slowdown_count", -1)) != 0:
+		push_error("LLM runtime snapshot pending_slowdown_count mismatch")
+		quit(1)
+		return
+	var runtime_time_scale: Dictionary = runtime_snapshot.get("time_scale", {})
+	if runtime_time_scale.is_empty() or not runtime_time_scale.has("effective_scale"):
+		push_error("LLM runtime snapshot must include TimeSystem effective scale")
+		quit(1)
+		return
+	if not runtime_time_scale.has("last_time_scale_reason"):
+		push_error("TimeSystem snapshot must include last_time_scale_reason")
+		quit(1)
+		return
+
 	print("LLMBridge verify: failed dialogue")
 	llm_bridge.set_backend_base_url(CLOSED_BACKEND_URL)
 	llm_bridge.request_timeout_seconds = 0.5

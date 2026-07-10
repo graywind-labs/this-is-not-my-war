@@ -12,6 +12,7 @@ var _slowdown_requests: Dictionary = {}
 var _time_scale_cap_requests: Dictionary = {}
 var _game_state: Node = null
 var _event_bus: Node = null
+var _last_time_scale_reason: String = "init"
 
 
 func initialize() -> void:
@@ -159,7 +160,8 @@ func get_time_scale_snapshot() -> Dictionary:
 		"time_scale_cap_requests": _time_scale_cap_requests.duplicate(true),
 		"slowdown_count": _slowdown_requests.size(),
 		"time_scale_cap_count": _time_scale_cap_requests.size(),
-		"effective_label": get_effective_speed_label()
+		"effective_label": get_effective_speed_label(),
+		"last_time_scale_reason": _last_time_scale_reason
 	}
 
 
@@ -257,6 +259,7 @@ func _emit_time_if_needed(day: int) -> void:
 
 
 func _emit_time_scale_changed(reason: String) -> void:
+	_last_time_scale_reason = reason
 	if _event_bus == null:
 		return
 

@@ -7,6 +7,7 @@ signal daily_plan_response_received(result: Dictionary)
 signal plan_revision_response_received(result: Dictionary)
 signal battle_judgement_response_received(result: Dictionary)
 signal daily_reflection_response_received(result: Dictionary)
+signal llm_usage_response_received(result: Dictionary)
 
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
@@ -83,6 +84,12 @@ func check_health() -> Dictionary:
 		_emit_backend_status("后端：已连接 %s" % str(body.get("service", "ok")), true)
 	else:
 		_emit_backend_status("后端：未连接 %s" % str(result.get("message", "请求失败")), false)
+	return result
+
+
+func request_llm_usage() -> Dictionary:
+	var result: Dictionary = _request_json("GET", "/debug/llm_usage", {}, false, "")
+	llm_usage_response_received.emit(result.duplicate(true))
 	return result
 
 
@@ -236,6 +243,29 @@ func request_npc_daily_reflection(npc_id: String, options: Dictionary = {}) -> D
 
 func debug_check_health() -> Dictionary:
 	return check_health()
+
+
+func debug_request_llm_usage() -> Dictionary:
+	return request_llm_usage()
+
+
+func debug_get_llm_runtime_snapshot() -> Dictionary:
+	var time_snapshot: Dictionary = {}
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("get_time_scale_snapshot"):
+		time_snapshot = time_system.get_time_scale_snapshot()
+	return {
+		"backend": get_last_backend_status(),
+		"pending_slowdown_count": get_pending_slowdown_count(),
+		"pending_slowdown_request_ids": _pending_slowdown_request_ids.duplicate(true),
+		"active_request_count": _active_request_by_npc.size(),
+		"active_requests_by_npc": _active_request_by_npc.duplicate(true),
+		"async_request_count": _async_request_threads.size(),
+		"async_request_ids": _async_request_threads.keys(),
+		"time_scale": time_snapshot,
+		"last_time_scale_reason": str(time_snapshot.get("last_time_scale_reason", "")),
+		"last_context_injection": get_last_npc_context_injection()
+	}
 
 
 func debug_request_dialogue(

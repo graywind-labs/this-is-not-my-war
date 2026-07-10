@@ -15,12 +15,12 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
 - 通过“指定行动”下拉统一指派工作、训练场教官/受训者、吃饭、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
 - TimeSystem 设定时间、跳小时、LLM 等待减速请求、有效倍率 / 慢速请求 / 时间上限请求快照。
-- LLMBridge 后端 health check、NPC 对话 Mock 和提出应征 Mock。
+- LLMBridge 后端 health check、开发期 NPC 对话 Mock、提出应征 Mock 和后端 LLM usage / 成本统计 / 预算状态 / 失败原因 / Godot LLM 等待运行态查询。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
 - 已入伍 NPC 当前自然语言指令、修订号、最近计划重评估请求 / 应用结果和最近一次 NPC LLM 指令注入。
 - 每日计划与 T1002/T1003 重评估：通过 LLM / Mock 生成 24 小时计划并自动规则降级，也可生成纯规则计划、执行当前小时计划、查看当前计划、手动触发当前 NPC 计划重评估。
-- 首次睡眠总结与长期记忆：触发当前 NPC 首次睡眠总结、查看长期日记 / 知识图谱占位、最近一次总结结果和当前 LLM 活动状态。
+- 首次睡眠总结与长期记忆：触发当前 NPC 首次睡眠总结、查看长期日记 / 知识图谱当前键值、最近一次总结结果和当前 LLM 活动状态。
 - NPC 主动找守备官交涉的调试触发、问号气泡状态和超时 / 对话结束后的计划重评估请求。
 - 正式装备系统：为已入伍 NPC 装备主武器、盔甲和坐骑，并查看当前兵种判定快照。
 - T0904 成长系统：查看 NPC 总经验、未分配技能点，并由玩家把技能点分配到力量或智力。
@@ -139,10 +139,11 @@ NPC：
 后端 / LLMBridge：
 
 - 后端健康检查，调用 `LLMBridge.check_health()` 并刷新 HUD 后端状态。
-- 对当前选中 NPC 发送 `/npc/dialogue` Mock 请求。
-- 对当前选中 NPC 发送带 `is_recruitment_request=true` 的应征 Mock 请求。
+- 查看后端 LLM usage / 成本统计 / 预算状态，调用 `LLMBridge.debug_request_llm_usage()` 读取 `GET /debug/llm_usage`，显示 provider、model、调用次数、token、费用估算、fallback 次数、预算上限、已用量、剩余额度、最近预算错误、最近失败、HTTP 状态或异常类型、Schema 失败和降级来源；同时读取 `LLMBridge.debug_get_llm_runtime_snapshot()`，显示当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、有效逻辑倍率和最近一次 TimeSystem 倍率变化原因。该入口只读，不申请 TimeSystem 慢速。
+- 对当前选中 NPC 发送 `/npc/dialogue` 开发期 Mock 请求。
+- 对当前选中 NPC 发送带 `is_recruitment_request=true` 的开发期应征 Mock 请求。
 - 查看最近一次共享 NPC LLM 上下文注入的目标、调用类型和 `current_order`。
-- 该分组只显示后端返回，不写入对话事件、不修改入伍状态。
+- 该分组只显示后端返回，不写入对话事件、不修改入伍状态。`dialogue_mock` / `dialogue_recruit` 只用于开发和 Schema 验证，不作为真实 API 验收；真实 provider 失败应通过 usage / 日志查看原因，不用 mock 回复伪装成功。
 
 记忆 / 见闻 / 广场：
 
@@ -230,6 +231,7 @@ attack_npc <npc_id> <damage> [visibility]
 damage_npc <npc_id> <damage> [visibility]
 recover_npc <npc_id> <game_seconds>
 backend_health
+llm_usage
 dialogue_mock <npc_id> <text>
 dialogue_recruit <npc_id> <text>
 last_order_injection
@@ -266,6 +268,7 @@ plaza_notice 今晚所有人都必须留在广场附近。
 give_money cook_01 5 local_public
 recover_npc cook_01 54000
 backend_health
+llm_usage
 dialogue_recruit cook_01 守备官需要你一起保护大家。
 publish_order veteran_deputy_01 守住城门，但先保证自己安全。
 recruit_npc priest_01

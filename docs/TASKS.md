@@ -61,6 +61,18 @@
 - 不要一次性大规模重构。
 - 不要恢复已经从策划案中删掉的机制。
 
+## 0.6 LLM 真实 API 验收与 Mock 封存规则
+
+适用于所有涉及 LLM、Prompt、Model Adapter、AI NPC、记忆摘要、计划生成、战斗心理判定、首次睡眠总结、语音情绪识别或 API 额度的任务，也适用于历史任务在后续被重验或重构时的验收。
+
+- Mock 只用于开发期快速验证 Schema、通信、自动化脚本和本地无费用调试；成品 / Demo 不允许用 mock 伪装真实模型成功。
+- 基础 mock 测试通过后，若环境中已有真实 API Key，必须用真实 provider 对本任务涉及的业务路径发起至少一次测试。
+- 如果任务目标包含真实 LLM / Prompt 行为，但没有完成真实 API 测试，任务不得标记为完全 Done；应标为 Partial / Blocked，或在验收结果中明确“真实 API 未验收”。
+- 真实 API 测试通过后，应把 mock 留在显式开发模式、显式 `LLM_PROVIDER=mock` 或 `/mock/model` 调试入口中；生产 / 演示配置必须关闭自动 mock fallback。
+- 模型失败、超时、无 Key、HTTP 错误、非 JSON、Schema 校验失败等情况必须返回可处理错误并记录真实失败原因；不得用 mock 内容假装没有失败。
+- 规则 / 模板降级可以维持游戏流程，但必须标明 `rule_*_fallback`、`template_*_fallback` 或等价来源，并保留原始模型失败日志；它不是 mock 成功。
+- 日志 / usage 至少记录 request id、call_type、provider、model、NPC id（如有）、HTTP 状态或异常类型、失败原因、是否降级和 token / 费用估算；禁止记录 API Key。
+
 ---
 
 ## T0006 修复建筑修复进度抢占右上角面板
@@ -2015,6 +2027,8 @@ Main
 
 目标：先建立 Godot 与后端的 AI 通信闭环，但默认使用 Mock，不依赖真实模型，不消耗额度。
 
+历史说明：M6 的 Mock 是开发期脚手架。自 M14 起，凡是历史 LLM / Mock 任务被重验、扩展或接入成品路径，都必须套用 0.6 的真实 API 验收与 mock 封存规则；不得把 M6 的开发默认 mock 当作 Demo / 成品兜底。
+
 ---
 
 ## T0601 创建后端 Schema
@@ -3006,7 +3020,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 验收标准：
 
 - 每天首次睡觉时为 NPC 生成第一人称日记。
-- 更新知识图谱占位。
+- 更新知识图谱当前键值。
 - 清空当天事件库和见闻库缓存。
 - 日记可在 NPC 面板查看。
 
@@ -3014,10 +3028,10 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - 新增 `DailyReflectionSystem` 并挂载到 `Main/Systems`，历史实现为监听 `sleep_started` 后生成睡前总结；T1005 已修正为每天首次睡眠满 1 游戏小时后生成首次睡眠总结，重复睡眠不会重复写日记，GM 可用 force 强制触发。
 - `LLMBridge` 接入 `/npc/daily_reflection`，后端不可用或输出无效时由 Godot 模板兜底；T1005 已将其语义改为首次睡眠总结，并改为必须申请 TimeSystem 慢速。
-- `NPCSystem.apply_daily_reflection(...)` 写入长期 `diary`，并把 `knowledge_graph_updates` 合并到 `knowledge_graph.patches` / `knowledge_graph.by_subject` 占位结构。
+- `NPCSystem.apply_daily_reflection(...)` 写入长期 `diary`，并把 `knowledge_graph_updates` 合并到长期知识图谱结构；T1405 后该结构已收敛为 `knowledge_graph.by_subject[subject][relation]` 替换式当前值，不再写 append-only `patches`。
 - `MemorySystem.clear_npc_short_term_memory(...)` 清空指定 NPC 当天事件库和见闻库索引，保留全局事件档案供调试。
 - `NPCPanel` 新增日记滚动区；`GMPanel` 历史新增“睡前总结 / 长期记忆 / 最近总结”按钮和 `reflect_npc <npc_id> [force]`、`long_memory <npc_id>`、`reflection_result` 命令；T1005 已把面板文案改为首次睡眠总结并新增 `llm_state`。
-- 后端新增正式 `POST /npc/daily_reflection` endpoint，Mock 返回日记、记忆摘要和知识图谱增量。
+- 后端新增正式 `POST /npc/daily_reflection` endpoint，Mock 返回日记、记忆摘要和知识图谱更新；T1405 后真实 Prompt 明确该更新是替换式当前键值。
 - 验证通过：`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --script res://tools/verify_npc_panel_state.gd`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_plan_day_endpoint.py`、`godot --headless --path . --quit-after 1`。
 
 ---
@@ -4049,13 +4063,13 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 # M14：真实 LLM 接入与 Prompt 打磨
 
-目标：在 Mock 闭环稳定后，接入真实模型，逐步替换 Mock 输出，并控制成本。
+目标：在开发期 Mock 闭环稳定后，接入真实模型，逐步替换 Mock 输出，并控制成本。M14 起，Mock 只能作为开发测试工具；真实 API 验收通过后，成品 / Demo 路径必须关闭自动 mock fallback，让模型失败以错误、日志、规则 / 模板降级的形式真实暴露。
 
 ---
 
 ## T1401 接入真实 Model Adapter
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T0602, T0701
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `PROMPTS.md`
@@ -4076,24 +4090,76 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - API Key 只从环境变量读取。
 - 真实供应商 API Key 默认只存在于游戏服务器后端或开发者本地后端环境，Godot 导出客户端不保存、不上传、不直连模型供应商。
 - Demo 阶段正式方向是玩家客户端请求服务器后端，由服务器后端调用 LLM；玩家自行配置 API Key 只能作为未来可选 BYOK / 开发模式，不作为 Demo 必需路径。
-- 默认仍可切回 mock。
-- 请求失败自动降级。
+- Mock 只能通过显式开发配置切换，不作为成品 / Demo 默认路径。
+- 真实 provider 请求失败不得自动降级到 mock；必须返回可处理错误并记录真实失败原因。规则 / 模板降级可以维持流程，但必须标明来源。
 - 所有调用记录 token 和用途。
+- 所有失败记录 request id、call_type、provider、model、HTTP 状态或异常类型和失败原因，日志不得包含 API Key。
 - Godot 侧所有会影响当前事态的真实模型请求必须与 TimeSystem 慢速请求成对注册/释放。
 
 验收标准：
 
 - 本地 `.env` 配置后可调用真实模型。
 - 不提交真实 Key。
-- 无 Key 时仍可用 Mock。
+- 无 Key 时开发模式可显式使用 Mock；生产 / 演示模式必须报告未配置或返回可处理错误，不得假装模型成功。
 - 成本统计可见。
 - 请求失败、超时或降级时不会让游戏长期保持慢速逻辑时间。
+- 使用真实 API Key 完成至少一次真实 provider smoke test；如果没有真实 Key，本任务只能记录为真实路径未验收。
+
+完成记录（2026-07-07）：
+
+- `backend/services/model_adapter.py` 已支持 `deepseek` / `openai_compatible` 真实模型调用，DeepSeek 默认 `LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-v4-flash`，API Key 只从 `LLM_API_KEY` / 本地 `backend/.env` 或服务器环境变量读取。
+- 当前代码状态：`LLM_PROVIDER=mock` 仍是本地开发默认路径；非 mock provider 无 Key、请求失败、超时、HTTP 错误或返回非 JSON 时仍支持通过 `LLM_FALLBACK_TO_MOCK=true` 自动降级到 mock，显式设为 `false` 时返回可处理错误。该行为只作为历史实现记录和开发过渡，不再作为 M14 后续验收标准。
+- `ModelAdapter` 现在记录 provider、model、call_type、request id、NPC id、关联事件 id、输入 / 输出 token、费用估算、成功状态、fallback_used 和失败原因；`backend/app.py` 复用同一个 adapter 实例并提供 `GET /debug/llm_usage` 只读统计。
+- `GET /health` 现在返回 `model_adapter` 运行配置快照，便于确认当前 provider、model、base_url、configured、fallback_to_mock 和 timeout。
+- Godot `LLMBridge` 新增 `request_llm_usage()` / `debug_request_llm_usage()`，GM 面板新增“成本统计”按钮和 `llm_usage` 命令；该入口只读取后端统计，不申请 TimeSystem 慢速、不写游戏权威状态。
+- `backend/.env.example` 已改为默认 mock，并列出 DeepSeek / OpenAI-compatible 配置项；未提交真实 Key。
+- T1401 只接入真实 Model Adapter 和基础 JSON schema guard，NPC 对话、每日计划、战时判定和首次睡眠总结的正式 Prompt 打磨仍由 T1402-T1405 继续。
+- 设计修正（2026-07-07）：后续任务必须执行 0.6 的真实 API 验收规则；T1401 的自动 mock fallback 需由 T1401A 封存为开发期能力，不能进入成品 / Demo 默认路径。
+
+验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、临时以 `LLM_PROVIDER=mock` 启动 Flask 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+---
+
+## T1401A 封存成品 Mock fallback 与真实失败日志
+
+状态：Done
+优先级：P0
+前置任务：T1401
+涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `PROMPTS.md`, `backend/README.md`, `GM_PANEL.md`
+
+任务目标：
+
+把 T1401 中的自动 mock fallback 从成品 / Demo 路径移出，仅保留为显式开发调试能力；真实 provider 失败时返回可处理错误，日志中能看到真实失败原因。
+
+实现范围：
+
+- 生产 / 演示配置默认 `LLM_FALLBACK_TO_MOCK=false`，真实 provider 失败不得自动返回 mock 内容。
+- `LLM_PROVIDER=mock` 和 `/mock/model` 可继续保留，但必须标记为开发 / 自动化测试入口。
+- 业务接口在模型失败时返回明确错误结构，Godot 侧释放 TimeSystem 慢速，并按业务需要进入规则 / 模板降级。
+- usage / 日志记录 request id、call_type、provider、model、NPC id（如有）、HTTP 状态或异常类型、失败原因、是否规则 / 模板降级和 token / 费用估算。
+- 不能把 API Key、完整请求头或敏感环境变量写入日志。
+
+验收标准：
+
+- Mock / schema 自动化测试仍通过。
+- 使用真实 API Key 对 `/npc/dialogue` 至少完成一次真实 provider 调用，并在 `GET /debug/llm_usage` 中看到真实 provider、model、token / 费用估算且 `fallback_used=false`。
+- 使用错误 Key、无 Key 或模拟 provider 失败时，业务接口返回可处理错误或明确规则 / 模板降级，不返回 mock 回复；日志 / usage 可定位真实失败原因。
+- Godot 侧请求失败、超时或业务错误后都会释放 TimeSystem 慢速请求。
+- `backend/README.md` 和相关模块文档明确 mock 只用于开发，真实 API 验收通过后不依赖 mock。
+
+完成记录（2026-07-07）：
+
+- `ModelAdapterConfig.fallback_to_mock` 与环境变量默认值已改为 `false`；生产 / 演示路径真实 provider 失败不再自动返回 mock 内容。显式 `LLM_PROVIDER=mock` 和 `/mock/model` 仍作为开发 / 自动化测试入口保留；如确需对比旧行为，必须显式设置 `LLM_FALLBACK_TO_MOCK=true`。
+- usage 记录补齐 `http_status`、`exception_type`、`degradation_source`、最近失败摘要和 Schema 校验失败记录；无 Key、HTTP 错误、超时、非 JSON、模型输出不符合业务 Schema 都会返回可处理错误并记录真实原因，不写入 API Key 或请求头。
+- Model Adapter 的通用 schema guard 加硬了枚举约束，避免真实 provider 自造 `response_kind`、`intent`、`wartime_reaction` 等字段值；正式角色语气和 Prompt 质量仍留给 T1402-T1405。
+- 真实 API 验收：使用本地真实 `LLM_PROVIDER=deepseek` / `LLM_API_KEY` / `LLM_FALLBACK_TO_MOCK=false` 对 `/npc/dialogue` 完成一次真实 provider 调用，返回 200；`GET /debug/llm_usage` 显示 provider=`deepseek`、model=`deepseek-v4-flash`、input_tokens=873、output_tokens=303、`fallback_used=false`。另外无 Key 场景返回 503 `provider_unavailable`，usage 记录 `exception_type=ConfigurationError` 且 `fallback_used=false`。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py tools/verify_plan_day_endpoint.py tools/verify_plan_revision_endpoint.py tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_backend_schemas.py`、临时以 `LLM_PROVIDER=mock` 启动 Flask 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T1402 打磨 NPC 对话 Prompt
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T1401, T0702
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`
@@ -4101,17 +4167,29 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 验收标准：
 
 - NPC 回复符合职业、人设、记忆。
-- NPC 回复能参考当前 `current_order`，并可结合人格和现场状态表达服从、质疑、推迟或拒绝。
-- “提出应征”时能接受或拒绝。
+- NPC 回复能参考当前 `current_order`，并可结合人格和现场状态回复。
+- “提出应征”时能接受或拒绝。其他需要返回明确选项的场景也要返回相应的选项，比如有的场景里有“斗志高昂”，有的场景有逃离驿站。通过查找game_design来明确哪些场景需要这些选项。
 - 输出稳定 JSON。
 - 不越权决定程序数值。
-- 失败时可降级。
+- 基础 mock / schema 测试通过后，必须使用真实 API Key 对日常对话、提出应征、战时结构化意向或逃离挽留中本任务触及的路径做真实调用验证；无真实 Key 时不得标记为完全 Done。
+- 模型失败时可查询日志发现真实失败原因，且不得返回 mock 回复伪装成功。
+
+完成记录（2026-07-07）：
+
+- 新增 `data/prompts/dialogue_system_prompt.txt`，作为 `/npc/dialogue` 真实 provider 的独立系统 Prompt 模板；`ModelAdapter` 会在 `call_type=dialogue` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 对话 Prompt 明确目标 NPC 只回复自己，必须参考职业、人设、当前状态、亲历事件、见闻、长期记忆、地点状态和 `current_order`；`current_order` 只作为守备官持续指令参考，不能越权决定行动、资源、HP、建筑、装备、斗志 buff 或逃离移动。
+- 已按 `game_design.md` 收敛结构化选项：日常 / 征召使用 `recruitment_result=none|accept|reject`；集结 / 战斗对已入伍持主武器 NPC 使用 `wartime_reaction=none|escape|morale_boost`；避战对话不触发 `wartime_reaction`，继续用征召结果表达是否应征；逃离挽留只允许 `intent=stay_after_intervention|leave_after_intervention`。
+- 新增 `tools/verify_dialogue_prompt.py`，用 fake real-provider 请求检查系统 Prompt 包含职业、记忆、`current_order`、征召、战时、避战和逃离挽留约束，并验证返回 JSON 符合 `NPCDialogueResponse`。
+- 新增 `tools/verify_dialogue_prompt_real.py`，在本机存在非 mock provider 和真实 `LLM_API_KEY` 时，对 `/npc/dialogue` 的日常对话、提出应征、战时结构化意向和逃离挽留各发起一次真实 provider 调用；无 Key 时明确 skip，不把 mock 当验收。
+- 真实 API 验收：使用 `LLM_PROVIDER=deepseek`、`model=deepseek-v4-flash`、`LLM_FALLBACK_TO_MOCK=false` 完成 4 次 `/npc/dialogue` 调用，覆盖日常对话、应征、战时意向和逃离挽留；`/debug/llm_usage` 记录 provider=`deepseek`、calls=4、`fallback_used=false`，且无失败。
+
+验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_dialogue_prompt.py tools/verify_dialogue_prompt_real.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt_real.py`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`、`godot --headless --path . --quit-after 1`。
 
 ---
 
 ## T1403 打磨每日计划 Prompt
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T1003, T1401
 涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`
@@ -4122,13 +4200,25 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 至少 6 阶段工作。
 - 计划使用行动白名单。
 - 计划输入包含当前 `current_order`，但指令不得绕过行动白名单、资源或程序强制层。
-- 输出不合法时回退规则计划。
+- 基础 mock / schema 测试通过后，必须使用真实 API Key 对 `/npc/plan_day` 做真实调用验证；无真实 Key 时不得标记为完全 Done。
+- 输出不合法或模型失败时记录真实失败原因，并回退规则计划；不得用 mock 计划伪装真实模型成功。
+
+完成记录（2026-07-07）：
+
+- 新增 `data/prompts/daily_plan_system_prompt.txt`，作为 `/npc/plan_day` 真实 provider 的独立系统 Prompt 模板；`ModelAdapter` 会在 `call_type=plan_day` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 每日计划 Prompt 明确输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` 或 `idle`，并要求 `current_order` 只作为守备官当前指令参考，不能越过行动白名单、资源、HP、地点、建筑、工位或程序强制层。
+- `/npc/plan_day` 在 `DailyPlanResponse` Schema 校验后新增业务校验：hour 必须覆盖 0-23，`action_id` 必须来自 `allowed_actions` / `idle`，工作阶段必须不少于 6；不合法时返回 `model_output_invalid`、记录失败 usage，Godot 侧继续走既有 `rule_plan_fallback`。
+- 新增 `tools/verify_plan_day_prompt.py`，用 fake real-provider 检查 plan_day 系统 Prompt 包含 24 阶段、至少 6 工作阶段、行动白名单、`current_order` 和权威边界约束，并覆盖 Schema 合法但行动越界时后端返回 502 与 usage 失败记录。
+- 新增 `tools/verify_plan_day_prompt_real.py`，在本机存在非 mock provider 和真实 `LLM_API_KEY` 时，对 `/npc/plan_day` 发起真实 provider 调用并校验返回计划覆盖 0-23 点、只使用白名单行动且工作阶段不少于 6；无 Key 时明确 skip，不把 mock 当验收。
+- 真实 API 验收：使用 `LLM_PROVIDER=deepseek`、model=`deepseek-v4-flash`、`LLM_FALLBACK_TO_MOCK=false` 完成 1 次 `/npc/plan_day` 调用；返回计划为 24 阶段、只使用 `allowed_actions` / `idle` 且工作阶段不少于 6；`/debug/llm_usage` 记录 provider=`deepseek`、calls=1、`fallback_used=false`，无失败。
+
+验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_plan_day_prompt.py tools/verify_plan_day_prompt_real.py tools/verify_plan_day_endpoint.py tools/verify_mock_model_adapter.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_plan_day_prompt_real.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
 
 ---
 
 ## T1404 打磨战时对话与低血量心理 Prompt
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T1201, T1202, T1401
 涉及文档：`PROMPTS.md`, `COMBAT_SYSTEM.md`
@@ -4141,12 +4231,23 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 能引用 NPC 记忆、公开见闻和 `battlefield_context`。
 - 能参考该 NPC 当前 `current_order`，但不把指令当成强制参战或强制逃离结果。
 - 成本可控。
+- 基础 mock / schema 测试通过后，必须使用真实 API Key 对战时公开对话和 `/npc/battle_judgement` 中本任务触及的路径做真实调用验证；无真实 Key 时不得标记为完全 Done。
+- 模型失败时记录真实失败原因，并按允许结果规则降级；不得返回 mock 心理结果伪装成功。
+
+完成记录：
+
+- 新增 `data/prompts/battle_judgement_system_prompt.txt`，作为 `/npc/battle_judgement` 真实 provider 的独立低血量自身心理判定系统 Prompt；`ModelAdapter` 在 `call_type=battle_judgement` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 战时公开对话继续复用 `data/prompts/dialogue_system_prompt.txt`；T1404 验收覆盖 `interaction_context=combat` 的结构化 `wartime_reaction`，并与低血量判定同轮真实 provider smoke 验证。
+- `/npc/battle_judgement` 在 `BattleJudgementResponse` Schema 校验后新增业务校验：`decision` 必须来自请求 `allowed_decisions`，`should_start_escape` 只能在 `decision == "escape_station"` 时为 true；越界结果返回 `model_output_invalid` 并写入失败 usage，Godot 保持既有允许结果规则降级。
+- 新增 `tools/verify_battle_judgement_prompt.py` fake real-provider 验证脚本，覆盖 Prompt 必含 `battlefield_context`、亲历 / 见闻、`current_order`、行动白名单、非战斗避战约束和逃离布尔一致性，并验证非法模型输出会被后端拒绝。
+- 新增 `tools/verify_battle_judgement_prompt_real.py` 真实 provider smoke 验证脚本；2026-07-07 已用真实 DeepSeek `deepseek-v4-flash` 对战时 `/npc/dialogue` 与 `/npc/battle_judgement` 各完成一次调用，`/debug/llm_usage` 显示 calls=2、`fallback_used=false`、failed=0。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_battle_judgement_prompt.py tools/verify_battle_judgement_prompt_real.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py tools/verify_dialogue_prompt.py`、`python tools/verify_battle_judgement_prompt.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_battle_judgement_prompt_real.py`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_low_hp_battle_judgement.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
 
 ---
 
 ## T1405 打磨首次睡眠总结 Prompt
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T1004, T1401
 涉及文档：`PROMPTS.md`, `MEMORY_AND_INFO_SPACE.md`
@@ -4155,14 +4256,27 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - 每天生成知识图谱更新和第一人称日记。
 - 日记符合 NPC 语气。
-- 能压缩当天关键事件。
-- 不产生过长上下文。
+- 长期记忆起到压缩当天关键事件的效果。
+- 基础 mock / schema 测试通过后，必须使用真实 API Key 对 `/npc/daily_reflection` 做真实调用验证；无真实 Key 时不得标记为完全 Done。
+- 模型失败时记录真实失败原因；允许使用本地模板完成睡眠流程，但必须标明模板来源，不能把 mock 日记当成真实模型成功。
+
+完成记录（2026-07-07）：
+
+- 新增 `data/prompts/daily_reflection_system_prompt.txt`，作为 `/npc/daily_reflection` 真实 provider 的首次睡眠总结系统 Prompt；`ModelAdapter` 会在 `call_type=daily_reflection` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 首次睡眠总结 Prompt 明确区分知识图谱和日记：`knowledge_graph_updates` 是以 `subject + relation` 为键的替换式当前状态更新，`diary_entry` 是符合 NPC 语气的第一人称日记并按天增量追加。
+- `/npc/daily_reflection` 在 `DailyReflectionResponse` Schema 校验后新增业务校验：`npc_id` 必须匹配请求 NPC、`day` 必须匹配请求日期、日记和摘要不能为空、知识图谱更新字段不能为空、世界内文本必须使用“守备官”而非“玩家”；不合法时记录 `model_output_invalid` usage 并让 Godot 走模板降级。
+- `NPCSystem.apply_daily_reflection(...)` 不再把知识图谱写入 append-only `knowledge_graph.patches`；现在会规范化为 `knowledge_graph.by_subject[subject][relation] = 当前值`，同一键后续更新覆盖旧值。日记仍追加到 `diary`，保持增量更新。
+- 新增 `tools/verify_daily_reflection_prompt.py` fake real-provider 验证脚本，检查 Prompt 包含首次睡眠总结、亲历 / 见闻区分、`current_order`、替换式知识图谱、增量日记和权威边界，并验证模型输出“玩家”会被后端拒绝。
+- 新增 `tools/verify_daily_reflection_prompt_real.py` 真实 provider smoke 验证脚本；2026-07-07 已用真实 DeepSeek `deepseek-v4-flash` 对 `/npc/daily_reflection` 完成一次调用，`/debug/llm_usage` 显示 calls=1、`fallback_used=false`、failed=0。
+- `tools/verify_daily_reflection_system.gd` 已更新为验证知识图谱同键替换、日记增量追加和不再生成 `patches`。
+
+验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py backend/schemas/npc_ai.py tools/verify_daily_reflection_prompt.py tools/verify_daily_reflection_prompt_real.py tools/verify_daily_reflection_endpoint.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py`、`python tools/verify_daily_reflection_prompt.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_daily_reflection_prompt_real.py`、`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、临时以 `LLM_PROVIDER=mock` 启动 `backend/app.py` 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --quit-after 1`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_battle_judgement_prompt.py`。
 
 ---
 
 ## T1406 实现 API 额度面板 / 调试信息
 
-状态：Todo
+状态：Done
 优先级：P1
 前置任务：T1401
 涉及文档：`API_BUDGET.md`, `UI_UX.md`
@@ -4171,15 +4285,30 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - 后端记录调用次数、类型、token、费用估算。
 - Godot 或后端调试页面可查看累计消耗。
-- 超预算时可切换 Mock 或模板降级。
+- 可查看失败次数、失败原因、provider、model、request id、fallback / 降级来源和最近错误摘要。
+- 超预算时生产 / 演示路径返回可处理预算错误或使用明确标记的规则 / 模板降级；Mock 只能作为显式开发模式切换。
 - Godot 调试信息可查看当前等待中的 LLM 请求数量、有效逻辑倍率和最近一次 TimeSystem 慢速原因。
+- 验收必须包含真实 provider 的 usage 记录；无真实 Key 时只能标记真实费用路径未验收。
+
+完成记录（2026-07-07）：
+
+- `ModelAdapter` 新增预算守门配置：`LLM_BUDGET_MAX_CALLS`、`LLM_BUDGET_MAX_INPUT_TOKENS`、`LLM_BUDGET_MAX_OUTPUT_TOKENS`、`LLM_BUDGET_MAX_TOTAL_TOKENS` 和 `LLM_BUDGET_MAX_COST`，默认 `0` 表示关闭。
+- 所有正式业务接口经由同一个 `ModelAdapter.generate(...)` 进入预算检查；超预算时返回 HTTP 429 / `budget_exceeded`，usage 记录 `exception_type=BudgetExceeded`、`degradation_source=budget_blocked`、request id、call_type、provider/model、NPC id、输入 token 估算和失败原因，不触发 mock fallback。
+- `GET /debug/llm_usage` 和 `/health` 的 `model_adapter` 快照新增预算信息：上限、已用量、剩余额度、是否启用和最近预算错误；既有 usage 仍保留调用次数、类型、token、费用估算、失败次数、失败原因、http 状态、异常类型、fallback / 降级来源和最近失败。
+- `TimeSystem.get_time_scale_snapshot()` 新增 `last_time_scale_reason`；`LLMBridge.debug_get_llm_runtime_snapshot()` 新增只读运行态快照，包含当前等待中的 LLM 慢速请求数、pending request id、NPC 活动请求、异步请求数、后端状态、有效逻辑倍率和最近倍率变化原因。
+- GM 面板“成本统计”按钮和 `llm_usage` 命令升级为“LLM 额度 / 调试信息”输出，同时显示后端 usage / budget 和 Godot runtime 快照；不申请 TimeSystem 慢速、不写权威状态。
+- `backend/.env.example` 和 `backend/README.md` 补充预算环境变量、预算超限行为和验证命令。
+- 新增 `tools/verify_api_budget_debug.py`，覆盖真实 provider fake 调用后的 usage / budget 快照、第二次调用超 `max_calls` 后的 `budget_exceeded` usage，以及 Flask 业务接口在输入 token 预算过低时返回 HTTP 429。
+- 真实 provider usage 验收：本轮先运行 `python tools/verify_plan_day_prompt_real.py`，DeepSeek `/npc/plan_day` 超时，业务返回 `provider_unavailable`，usage 记录 `provider=deepseek`、`model=deepseek-v4-flash`、`request_id=verify_plan_day_prompt_real`、`exception_type=ConnectionError`、`fallback_used=false`，证明真实失败原因可见；随后使用真实 DeepSeek 对单次 `/npc/dialogue` 发起短请求，返回 200，`/debug/llm_usage` 显示 `provider=deepseek`、`model=deepseek-v4-flash`、`calls=1`、`failed=0`、`fallback_used=false`。
+
+验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_api_budget_debug.py tools/verify_mock_model_adapter.py`、`python tools/verify_api_budget_debug.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、临时以 `LLM_PROVIDER=mock` 启动后端后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
 
 ---
 
 ## T1407 部署游戏后端到服务器
 
 状态：Todo
-优先级：P0
+优先级：P2
 前置任务：T0604A, T1401, T1406
 涉及文档：`TECH_ARCHITECTURE.md`, `API_BUDGET.md`, `backend/README.md`, `CURRENT_STATE.md`
 
@@ -4198,7 +4327,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 整理 `backend/app.py` 的应用工厂和生产入口，确保可被 WSGI 服务加载。
 - 补充生产依赖：根据部署方案在 `backend/requirements.txt` 中加入 `gunicorn` 或 `waitress`，不要同时引入不必要的大框架。
 - 新增或更新部署说明，至少写入 `backend/README.md`：服务器系统要求、安装依赖、环境变量、启动命令、健康检查、日志位置、重启方式和常见错误。
-- 明确服务器环境变量：`LLM_PROVIDER`、`LLM_API_KEY`、模型 base url / model name、超时、单用户/全局限流、预算上限、是否启用 mock fallback。
+- 明确服务器环境变量：`LLM_PROVIDER`、`LLM_API_KEY`、模型 base url / model name、超时、单用户/全局限流、预算上限；生产 / 演示配置必须关闭自动 mock fallback。
 - 后端必须继续提供 `GET /health`，并可被 Godot 客户端和运维人员用来确认服务可用。
 - 部署环境必须禁止提交真实 `.env`；只提交 `.env.example` 或部署文档。
 - Godot 侧后端地址必须可配置，导出客户端默认指向服务器后端地址或可由配置覆盖；不得把真实 LLM Key 放入客户端。
@@ -4211,6 +4340,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 不把真实 API Key 写入仓库、Godot 工程或导出包。
 - 不让玩家电脑默认直接调用 LLM Provider。
 - 不把本地 `python backend/app.py` 当成正式生产启动方式。
+- 不在生产 / 演示服务中用 mock 内容掩盖真实 provider 失败。
 - 不在本任务重写 NPC、记忆、战斗或对话业务逻辑。
 
 验收标准：
@@ -4218,7 +4348,8 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 在一台干净服务器或本机模拟生产环境中，可以从仓库安装后端依赖并启动生产 WSGI 服务。
 - `GET /health` 可从 Godot 客户端所在机器访问。
 - Godot `LLMBridge` 可配置为请求服务器地址，并通过 `/health` 与 `/npc/dialogue`。
-- 后端能在无真实 Key 时使用 mock 或明确降级；有真实 Key 时通过 Model Adapter 调用真实模型。
+- 生产 / 演示后端无真实 Key 时 health / LLM 业务接口会明确报告未配置或返回可处理错误；本地开发可显式启用 mock，但不能作为部署默认。
+- 有真实 Key 时通过 Model Adapter 调用真实模型，并在 usage / 日志中看到真实 provider、model、request id、token / 费用估算和 `fallback_used=false`。
 - 并发请求不会导致进程崩溃；超过限流或预算时返回可处理错误。
 - 日志中能定位 request id、调用类型、失败原因和预算信息。
 - `backend/README.md` 足够指导重新部署，不依赖口头记忆。
@@ -4421,6 +4552,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 情绪结果进入对话请求。
 - NPC 回复可参考语气。
 - 情绪识别失败时忽略，不阻塞对话。
+- 如果情绪识别接入外部模型或 LLM，基础 mock 测试通过后必须用真实 API Key 验证；失败时记录真实原因并忽略情绪，不得用 mock 情绪伪装识别成功。
 
 ---
 
@@ -4441,7 +4573,8 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - 从新游戏开始到守住或失败能完整跑通。
 - 连续运行 30 分钟无严重报错。
-- 后端断开时仍可降级运行基础流程。
+- 后端断开时仍可运行非 LLM 基础流程；LLM 相关功能必须显示或记录真实失败，并按规则 / 模板降级，不得用 mock 假装模型可用。
+- 若演示目标包含 AI 对话或 Prompt 效果，必须完成真实 API Key 测试；无真实 Key 时该部分验收标记为 Partial / Blocked。
 - 关键 UI 不阻塞操作。
 
 ---
@@ -4458,7 +4591,8 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 有 5 分钟演示脚本。
 - 有 30 分钟可体验路线。
 - 能展示 AI 对话、征召、战斗、昏迷、见闻、结算。
-- 明确哪些功能是真实实现，哪些是 Mock 或占位。
+- 明确哪些功能是真实实现，哪些是规则 / 模板降级或占位；Mock 只能作为开发工具说明，不作为参赛演示里的“真实 AI”展示。
+- 演示脚本应包含真实 API 配置检查、失败日志查看路径和无 Key / 后端失败时的可见降级说明。
 
 ---
 
@@ -4475,6 +4609,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 - 后端运行说明清楚。
 - API Key 配置说明清楚。
 - 不包含真实 Key。
+- 生产 / 演示配置默认关闭自动 mock fallback；如提供开发 mock 开关，必须与成品配置隔离并在说明中标记。
 - 压缩包或提交包结构清晰。
 
 ---

@@ -43,8 +43,8 @@
 | NPC 面板 | `res://scenes/ui/NPCPanel.tscn` | 状态、装备、按钮 |
 | 建筑面板 | `res://scenes/ui/BuildingPanel.tscn` | 建筑信息 |
 | GM 调试面板 | `res://scripts/ui/GMPanel.gd` | 开发验证入口 |
-| 每日计划系统 | `res://scripts/systems/DailyPlanSystem.gd` | 规则版 / LLM Mock 24 小时计划生成、执行与异常重评估 |
-| 首次睡眠总结系统 | `res://scripts/systems/DailyReflectionSystem.gd` | 每日首次睡眠满 1 游戏小时后的日记、知识图谱占位更新、短期记忆清空与深度睡眠锁 |
+| 每日计划系统 | `res://scripts/systems/DailyPlanSystem.gd` | 规则版 / LLM / 开发期 Mock 24 小时计划生成、执行与异常重评估 |
+| 首次睡眠总结系统 | `res://scripts/systems/DailyReflectionSystem.gd` | 每日首次睡眠满 1 游戏小时后的第一人称日记、替换式知识图谱键值更新、短期记忆清空与深度睡眠锁 |
 
 ## Godot 当前已创建
 
@@ -64,7 +64,7 @@
 当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0012 后 HUD 主栏按资源定义顺序显示非聚合资源库存，并提供装备/器械详情按钮，详情面板贴近各自按钮左下且夹在屏幕内；T1301 后 HUD 显示下一波倒计时，T1302-T1305 后 HUD 可显示主厅摧毁、无可战斗人员失败、第 5 波胜利和 NPC 结局总结，结局明细使用滚动区；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；T1101 后正门外地面和正门道路已扩大，`WorldRoot/Station/Enemies` 可由 CombatSystem 生成正门外低模敌人占位；T1103 后 HUD 警铃可触发入伍持武器 NPC 前往城门外防线集结，近战 / 骑兵在前、弓弩 / 骑射在后，集结 / 接敌时显示方向标记和坐骑表现；T1105 后已入伍持武器 NPC 可在 NPC 面板选择当前兵种可用战斗策略，T1105A 后战斗内避战够远时保持等待；T1106 后敌人波次开始 / 结束会写入广场公开事件并维护本场受伤、昏迷和击退统计；T1304/T1305 后包含第 5 波的战斗清敌会进入胜利结算，记录资源 / 建筑 / NPC 结局快照并停止继续刷波；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息、按类型分组的工位空闲数 / 总数与占用者，并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑、战斗集结世界坐标或策略移动目标，或安排工作、协助修复、协助升级、训练、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉、工作和训练通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。T0804 后，铁匠铺可消耗铁产出武器/盔甲派生库存；T0805 后，工械坊可消耗木材产出武器/工程器械派生库存；T0806 后，马厩可消耗粮食并按养马、力量和马厩等级产出马匹整备派生库存；T0807 后，酒窖可消耗粮食并按酿酒、智力和酒窖等级产出酒派生库存；T0901/T0902 后，装备系统可把武器/盔甲/马匹整备库存转换到已入伍 NPC 的装备槽，并按主武器与 `equipment.mount` 槽提供兵种判定快照；T0903 后，训练场可通过教官工位和受训位提升当前装备对应的武器熟练度 / 骑术，并让教官提升“教练”；T0904 后，工作 / 诊所 / 训练的熟练度提升同步增加经验、产生未分配技能点；T0015 后 NPC 面板把经验显示在 HP 右侧，并只在有未分配技能点时显示属性旁 `+1`，GM 可把选中 NPC 设为入伍并由玩家分配力量或智力。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现真实日程、复杂生产效率、酒的商队出售交易、工程器械部署或真实 LLM。
 T1204A 补充：逃离 NPC 会显示头顶 `!` 和 HUD 警告，点击后先打开 NPC 面板；玩家通过【对话】按钮进入强制公开的逃离挽留对话，最多 5 轮。挽留面板打开时 CombatSystem 暂停逃离移动，未满 5 轮关闭后恢复移动且可再次打开，5 轮用完后 NPC 面板【对话】置灰。LLM / Mock 只返回留下或继续逃离意向，CombatSystem 负责停止或继续逃离；守备官给钱会减速，逃离挽留中的攻击会加速、计 1 轮、关闭面板且不请求 NPC LLM 回复，攻击昏迷只暂停逃离并在复苏后继续。
 T1001-T1003 补充：`Main.tscn` 已挂载 `DailyPlanSystem`，规则版每日计划接口、按小时执行、行动异常 / 指令变化后的 Mock 或规则降级计划重评估应用、以及 `/npc/plan_day` LLM / Mock 每日计划制定与规则降级应用已实现；上段旧口径中的“未实现真实日程”现在仅指真实 LLM Prompt 打磨和更完整的自主计划链路尚未实现。
-T1004/T1005 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天首次睡觉并持续睡眠满 1 游戏小时后会生成首次睡眠总结，写入长期日记和知识图谱占位，并清空该 NPC 当天短期事件/见闻索引；总结请求和应用期间 NPC 进入不可打断的深度睡眠锁。
+T1004/T1005/T1405 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天首次睡觉并持续睡眠满 1 游戏小时后会生成首次睡眠总结，增量追加长期日记、按 `subject + relation` 替换式更新知识图谱当前键值，并清空该 NPC 当天短期事件/见闻索引；总结请求和应用期间 NPC 进入不可打断的深度睡眠锁。
 
 路径：`res://scenes/world/`, `res://scenes/npc/`, `res://scenes/enemy/`, `res://scenes/buildings/`, `res://scenes/ui/`
 用途：后续世界、NPC、敌人、建筑和 UI 场景目录。
@@ -94,7 +94,7 @@ T1004/T1005 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天�
 路径：`res://scripts/systems/TimeSystem.gd`
 用途：基础逻辑时间系统，负责 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速和数值倍率出口。
 依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；监听 `/root/EventBus.game_over_changed` 在失败 / 结算时暂停；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；后续 LLMBridge / DialogSystem 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
-当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；T0604/T1002/T1003 已把对话、计划修订和每日计划请求接入慢速申请 / 释放；T1104A 新增 `request_time_scale_cap(...)` / `release_time_scale_cap(...)` / `get_time_scale_snapshot()`，CombatSystem 可在敌人在场时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；T1104B 后战斗攻速由 CombatSystem 内部把游戏秒折算为战斗动作秒，TimeSystem 不承担攻速倍率结算；T1302 后 `GameState.game_over` 为真时不再推进逻辑时间。尚未把真实 LLM 请求接入完整成本与并发面板。
+当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；T0604/T1002/T1003 已把对话、计划修订和每日计划请求接入慢速申请 / 释放；T1104A 新增 `request_time_scale_cap(...)` / `release_time_scale_cap(...)` / `get_time_scale_snapshot()`，CombatSystem 可在敌人在场时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；T1406 后 `get_time_scale_snapshot()` 暴露 `last_time_scale_reason`，供 GM / LLMBridge 调试当前有效倍率和最近慢速 / 上限原因；T1104B 后战斗攻速由 CombatSystem 内部把游戏秒折算为战斗动作秒，TimeSystem 不承担攻速倍率结算；T1302 后 `GameState.game_over` 为真时不再推进逻辑时间。
 
 路径：`res://scripts/systems/ResourceSystem.gd`
 用途：资源系统占位脚本。
@@ -109,7 +109,7 @@ T1004/T1005 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天�
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
 依赖：通过 `/root/ConfigLoader` 读取 `data/npc_profiles.json`，实例化 `res://scenes/npc/NPC.tscn` 到 `Main/WorldRoot/Station/NPCs`，并通过 `/root/EventBus.npc_clicked` 广播点击事件。
-当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0501/T0502/T0503 已实现 HP 扣除、昏迷恢复和协助治疗；T0808 已实现诊所病床治疗和研读医术。T0702 新增征召权威更新入口；T0703 新增 `get_current_order(...)`、`publish_npc_order(...)` 和最近计划重评估请求快照，只有已入伍 NPC 的指令文本变化时才写入私有事件并发出请求。T1001 新增 `get_npc_plan(...)` / `set_npc_plan(...)` 和 `stop_npc_movement_for_system(...)`，供每日计划系统保存计划并在小时计划切换时安全中断移动。T1004 新增 `get_npc_long_memory(...)` 与 `apply_daily_reflection(...)`，用于写入长期日记并合并知识图谱占位更新。T0704 新增 `give_money_to_npc(...)`；T0013 后旧占位武器兼容入口已移除，正式装备统一通过 T0901 `EquipmentSystem`。T0901 新增 `get_npc_equipment(...)` / `set_npc_equipment_slot(...)`，NPCSystem 只负责保存装备槽和刷新 NPC 状态，不负责库存扣除或兵种判定；T1103C 起，如果避战中的已入伍 NPC 获得主武器，会交给 CombatSystem 按当前敌军分流到战斗。T0904 新增 `increase_npc_skill(...)`、`get_npc_progression(...)`、`assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，统一熟练度经验、未分配技能点和玩家分配力量 / 智力。T0705 新增 `debug_start_proactive_talk(...)`、`get_proactive_talk(...)` 和 `handle_npc_clicked(...)`，可让 NPC 进入主动找守备官交涉状态、显示问号气泡、点击后打开既有对话面板，并在超时或对话结束后请求计划重评估。T1204A 后，`handle_npc_clicked(...)` 对正在逃离的 NPC 返回未接管，让点击路径打开 NPC 面板而不是直接进入挽留对话；NPCPanel 再通过【对话】按钮进入逃离挽留。T1102 新增只读 `get_npc_world_position(...)` 供 CombatSystem 做附近单位目标选择；敌人对 NPC 的伤害复用既有 `apply_damage_to_npc(...)` 昏迷链路。T1202 后，`apply_damage_to_npc(...)` 的权威扣血结果会延迟通知 CombatSystem 进行战时低血量判定。T1103 新增 `move_npc_to_world_position(...)` 和 `stop_npc_movement_with_state(...)`，供 CombatSystem 将入伍持武器 NPC 移动到城门外集结点或暂停逃离挽留移动。T1103A 新增 `set_npc_behavior_mode(...)`、`get_npc_behavior_mode_snapshot(...)`、`debug_get_behavior_mode_snapshot(...)` 和睡觉判定接口，统一保存 `behavior_mode`、进入原因和进入时间，并继续兼容 `combat_mode`。T1103B/T1103C 后，避战快照包含 `avoidance_target_id` / `avoidance_target_name` / `avoidance_target_position`，`set_npc_recruited(...)` 会在 NPC 避战中应征成功时交给 CombatSystem 分流：无主武器继续避战，有主武器且仍有敌军进入 `combat`，无敌军回到 `work`。T1105 后，NPCSystem 运行时状态会保存 `states.combat_strategy` 和 `combat_strategy_move_target_*` 策略移动目标，并在行为模式快照中暴露这些字段。T1204A 后，守备官给钱或攻击逃离 NPC 会通知 CombatSystem 调整逃离速度，逃离挽留攻击不触发 NPC LLM 回复，攻击导致昏迷时逃离暂停并在复苏后继续。模式切换可强制中断普通行动、移动、可取消 LLM 和当前对话；T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 不写入 `npc_mode_changed`，其他需要留痕的模式变化仍可记录。仍不实现复杂避障、真实计划重评估或真实 LLM。
+当前状态：T0403/T0409 后，移动到达会通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present` 并写入进入快照；室内信息地点切换到另一个室内信息地点时，会在事件与地点信息层插入“离开原地点 -> 进入广场 -> 离开广场 -> 进入目标地点”的中转链，物理表现仍是直线移动占位。T0501/T0502/T0503 已实现 HP 扣除、昏迷恢复和协助治疗；T0808 已实现诊所病床治疗和研读医术。T0702 新增征召权威更新入口；T0703 新增 `get_current_order(...)`、`publish_npc_order(...)` 和最近计划重评估请求快照，只有已入伍 NPC 的指令文本变化时才写入私有事件并发出请求。T1001 新增 `get_npc_plan(...)` / `set_npc_plan(...)` 和 `stop_npc_movement_for_system(...)`，供每日计划系统保存计划并在小时计划切换时安全中断移动。T1004 新增 `get_npc_long_memory(...)` 与 `apply_daily_reflection(...)`，用于写入长期日记并合并知识图谱更新；T1405 后知识图谱更新为替换式键值结构，不再写 append-only `patches`。T0704 新增 `give_money_to_npc(...)`；T0013 后旧占位武器兼容入口已移除，正式装备统一通过 T0901 `EquipmentSystem`。T0901 新增 `get_npc_equipment(...)` / `set_npc_equipment_slot(...)`，NPCSystem 只负责保存装备槽和刷新 NPC 状态，不负责库存扣除或兵种判定；T1103C 起，如果避战中的已入伍 NPC 获得主武器，会交给 CombatSystem 按当前敌军分流到战斗。T0904 新增 `increase_npc_skill(...)`、`get_npc_progression(...)`、`assign_npc_attribute_point(...)` / `debug_assign_attribute_point(...)`，统一熟练度经验、未分配技能点和玩家分配力量 / 智力。T0705 新增 `debug_start_proactive_talk(...)`、`get_proactive_talk(...)` 和 `handle_npc_clicked(...)`，可让 NPC 进入主动找守备官交涉状态、显示问号气泡、点击后打开既有对话面板，并在超时或对话结束后请求计划重评估。T1204A 后，`handle_npc_clicked(...)` 对正在逃离的 NPC 返回未接管，让点击路径打开 NPC 面板而不是直接进入挽留对话；NPCPanel 再通过【对话】按钮进入逃离挽留。T1102 新增只读 `get_npc_world_position(...)` 供 CombatSystem 做附近单位目标选择；敌人对 NPC 的伤害复用既有 `apply_damage_to_npc(...)` 昏迷链路。T1202 后，`apply_damage_to_npc(...)` 的权威扣血结果会延迟通知 CombatSystem 进行战时低血量判定。T1103 新增 `move_npc_to_world_position(...)` 和 `stop_npc_movement_with_state(...)`，供 CombatSystem 将入伍持武器 NPC 移动到城门外集结点或暂停逃离挽留移动。T1103A 新增 `set_npc_behavior_mode(...)`、`get_npc_behavior_mode_snapshot(...)`、`debug_get_behavior_mode_snapshot(...)` 和睡觉判定接口，统一保存 `behavior_mode`、进入原因和进入时间，并继续兼容 `combat_mode`。T1103B/T1103C 后，避战快照包含 `avoidance_target_id` / `avoidance_target_name` / `avoidance_target_position`，`set_npc_recruited(...)` 会在 NPC 避战中应征成功时交给 CombatSystem 分流：无主武器继续避战，有主武器且仍有敌军进入 `combat`，无敌军回到 `work`。T1105 后，NPCSystem 运行时状态会保存 `states.combat_strategy` 和 `combat_strategy_move_target_*` 策略移动目标，并在行为模式快照中暴露这些字段。T1204A 后，守备官给钱或攻击逃离 NPC 会通知 CombatSystem 调整逃离速度，逃离挽留攻击不触发 NPC LLM 回复，攻击导致昏迷时逃离暂停并在复苏后继续。模式切换可强制中断普通行动、移动、可取消 LLM 和当前对话；T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 不写入 `npc_mode_changed`，其他需要留痕的模式变化仍可记录。仍不实现复杂避障。
 
 路径：`res://scripts/systems/EquipmentSystem.gd`
 用途：正式装备系统，负责把派生库存转换为 NPC 装备槽，并提供兵种判定。
@@ -137,14 +137,14 @@ T1004/T1005 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天�
 当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_heal_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)`、`debug_assign_action(...)` 和只读 `get_healing_helpers_for_target(...)`。T1001 新增 `get_pending_action_id(...)`、`get_active_action_id(...)`、`get_runtime_action_id(...)` 和 `interrupt_npc_action(...)`，供计划系统判断与中断行动。T0801 后，工作支持真实工位占用/释放和统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；T0803 后，配置了 `output_scaling` 的工作可按熟练度、属性和建筑等级提高实际产出，当前菜园产粮使用该规则。T0804 后，铁匠铺工作使用打铁和力量，消耗铁并产出 `weapons` / `armor` 派生库存。T0805 后，工械坊工作使用工程和智力，消耗木材并产出 `weapons` / `defense_devices` 派生库存。T0806 后，马厩工作使用养马和力量，消耗粮食并产出 `horse_readiness` 派生库存。T0901 后，`weapons` / `armor` / `horse_readiness` 可由 `EquipmentSystem` 转换为 NPC 装备槽。T0903 后，训练场支持 `training_instructor` 教官工位和 `training_student` 受训位：无武器且无坐骑不能当教官或受训者；受训者需要已有教官；教官独处时极慢提升自己当前装备对应武器 / 骑术，有受训者时受训者按自己的装备提升对应熟练度，教官提升“教练”。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺制造武器/盔甲库存、工械坊制造弓弩/工程器械库存、马厩产出马匹整备。建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者会前往目标所在信息地点，最多 2 人协助同一目标，按医术熟练度调用 `NPCSystem` 加速昏迷恢复，并按逻辑时间消耗第纳尔。工作、训练、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级同样以 `local_public` 写入 `repair_assist_started` / `upgrade_assist_started`，事件地点为 `plaza`；协助治疗写入 `healing_started` / `healing_completed`，进入治疗者和目标事件库，并写入同地点其他在场 NPC 的见闻库，事件信息不暴露医术熟练度。T0401 暂停语义修正后，暂停期间不会执行行动结算；2026-05-25 起，吃饭、睡觉、工作和训练到达地点后进入 active 行动并随 `logical_time_tick` 推进。未实现 LLM 日程、战斗、工程器械部署或其他职业特殊生产平衡。
 
 路径：`res://scripts/systems/DailyPlanSystem.gd`
-用途：每日计划系统，负责生成规则版或 LLM / Mock 版 24 小时 NPC 计划、写入计划事件，并按小时打点调用行动系统；行动异常或指令变化时负责应用计划修订或规则降级。
-依赖：读取 `NPCSystem` 的 NPC、熟练度和计划字段；调用 `LLMBridge.request_npc_daily_plan(...)` / `request_npc_plan_revision(...)` 获取后端 Mock 计划；调用 `ActionSystem.debug_assign_action(...)` / 协助类接口执行计划项，并通过 `ActionSystem.interrupt_npc_action(...)` 在计划切换时中断旧行动；调用 `MemorySystem.add_event(...)` 写入 `plan_created` / `plan_revised`。
-当前状态：T1001 已实现规则计划：默认按熟练度选择工作行动，24 小时计划至少包含 6 个工作阶段；执行只接管已经显式生成计划的 NPC，按 `hour_started` 执行当前小时项，同一小时内计划启动的行动提前完成会重复执行当前项。T1002 已接入行动异常和统一计划重评估：资源不足、工位占用、目标不可用、对话打断、守备官攻击、主动交涉结束 / 超时、战斗警报占位和新指令会触发 `/npc/revise_plan` Mock 修订，成功时合并修订计划并执行当前小时行动，失败时应用 `rule_revision_fallback` 规则降级计划。T1003 新增 `generate_daily_plan_for_npc(...)`，优先通过 `LLMBridge.request_npc_daily_plan(...)` 请求 `/npc/plan_day` 并应用 `mock_plan_day` 计划，后端不可用、输出不合法、不是 24 阶段或工作阶段不足时回退 `rule_plan_fallback`。
+用途：每日计划系统，负责生成规则版或 LLM / 开发期 Mock 版 24 小时 NPC 计划、写入计划事件，并按小时打点调用行动系统；行动异常或指令变化时负责应用计划修订或规则降级。
+依赖：读取 `NPCSystem` 的 NPC、熟练度和计划字段；调用 `LLMBridge.request_npc_daily_plan(...)` / `request_npc_plan_revision(...)` 获取后端计划或错误；调用 `ActionSystem.debug_assign_action(...)` / 协助类接口执行计划项，并通过 `ActionSystem.interrupt_npc_action(...)` 在计划切换时中断旧行动；调用 `MemorySystem.add_event(...)` 写入 `plan_created` / `plan_revised`。
+当前状态：T1001 已实现规则计划：默认按熟练度选择工作行动，24 小时计划至少包含 6 个工作阶段；执行只接管已经显式生成计划的 NPC，按 `hour_started` 执行当前小时项，同一小时内计划启动的行动提前完成会重复执行当前项。T1002 已接入行动异常和统一计划重评估：资源不足、工位占用、目标不可用、对话打断、守备官攻击、主动交涉结束 / 超时、战斗警报占位和新指令会触发 `/npc/revise_plan`；开发期 mock 修订成功时合并修订计划并执行当前小时行动，真实 provider 失败或输出不合法时应用 `rule_revision_fallback` 规则降级计划并保留失败日志。T1003 新增 `generate_daily_plan_for_npc(...)`，优先通过 `LLMBridge.request_npc_daily_plan(...)` 请求 `/npc/plan_day`；开发期 mock 可应用 `mock_plan_day` 计划，后端不可用、输出不合法、不是 24 阶段或工作阶段不足时回退 `rule_plan_fallback`。
 
 路径：`res://scripts/systems/DailyReflectionSystem.gd`
-用途：首次睡眠总结系统，负责监听睡觉开始 / 结束和逻辑时间、在每日首次睡眠满 1 游戏小时后生成反思、写入长期日记、更新知识图谱占位并清空当天短期记忆。
+用途：首次睡眠总结系统，负责监听睡觉开始 / 结束和逻辑时间、在每日首次睡眠满 1 游戏小时后生成反思、写入长期日记、替换式更新知识图谱当前键值并清空当天短期记忆。
 依赖：监听 `EventBus.event_recorded` 的 `sleep_started`；读取 `MemorySystem.get_npc_short_term_memory(...)`；调用 `LLMBridge.request_npc_daily_reflection(...)` 请求 `/npc/daily_reflection`；调用 `NPCSystem.apply_daily_reflection(...)` 写入长期记忆；调用 `MemorySystem.clear_npc_short_term_memory(...)` 清空该 NPC 当天短期索引。
-当前状态：T1004/T1005 已实现；每名 NPC 每天首次睡眠满 1 游戏小时后自动生成一次，发起到完成期间不可被对话、指令或行动改派打断，后端不可用时使用模板降级，GM 可通过 `debug_generate_reflection(...)` 强制触发。
+当前状态：T1004/T1005/T1405 已实现；每名 NPC 每天首次睡眠满 1 游戏小时后自动生成一次，发起到完成期间不可被对话、指令或行动改派打断，后端不可用时使用模板降级，知识图谱按 `subject + relation` 替换当前值，日记按条追加，GM 可通过 `debug_generate_reflection(...)` 强制触发。
 
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：敌人波次读取、调试生成、目标选择、基础移动、双方基础攻击、战斗动作秒换算、不同兵种战斗策略和战斗调试快照系统，后续继续承接正式战斗流程。
@@ -158,9 +158,9 @@ T1103 新增 `trigger_combat_alarm(...)` / `debug_trigger_combat_alarm(...)`、`
 T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reaction(...)`，战时对话可写入 `battle_psychology_result` 和 2 游戏小时 `morale_boost` 攻击 / 移动加成。T1202 新增 `handle_npc_damage_applied(...)`、低血量判定记录、`low_hp_triggered` 事件写入、`/npc/battle_judgement` 请求应用和规则降级：参战且已入伍持主武器的 `combat` NPC 可继续参战、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战。T1203 新增 `start_npc_escape(...)` / `debug_start_npc_escape(...)` / `handle_npc_escape_completed(...)`，战时逃离意向和 GM 调试会写入 `escape_started`、移动到后门外出口，并在 NPC 离图后记录 `escaped`。T1204A/T1204B 已包含 `apply_escape_intervention_result(...)`、`get_escape_intervention_state(...)`、`pause_escape_for_dialogue(...)`、`resume_escape_after_dialogue(...)`、`handle_escape_money_given(...)`、`handle_escape_guard_attack(...)` 和 `record_escape_attack_intervention_round(...)`：逃离 NPC 最多接受 5 轮挽留，打开对话时暂停移动、关闭时恢复移动，结果只会是留下或继续逃离；给钱会降低逃离速度，逃离挽留攻击会提高逃离速度、计 1 轮并关闭面板但不请求 NPC 回复，也不写 `escape_intervention_result`，昏迷只暂停逃离并在复苏后继续前往后门。T1303 新增 `combatant_availability` 快照和无可战斗人员失败评估。T1304 新增最终波次胜利评估、胜利结算快照和结算后刷波拒绝；T1305 后胜利快照经 `GameState` 补齐 NPC 结局明细。`debug_get_combat_snapshot()` 包含行为模式快照、避战快照、逃离快照、逃离挽留轮次和速度倍率、可战斗人员可用性、战斗策略快照、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量判定结果、最近逃离结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果、最近我方攻击结果和 TimeSystem 倍率快照，`debug_advance_rally_wait(...)` 可供 GM / 自动化推进集结等待。当前仍不实现命中率。
 
 路径：`res://scripts/systems/LLMBridge.gd`
-用途：Godot 侧后端桥接脚本，负责请求 `/health`、`/npc/dialogue`、`/npc/plan_day` 与 `/npc/revise_plan`，构造 T0603 对话 payload、T1003 每日计划 payload 和 T1002 计划修订 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
+用途：Godot 侧后端桥接脚本，负责请求 `/health`、`/debug/llm_usage`、`/npc/dialogue`、`/npc/plan_day`、`/npc/revise_plan`、`/npc/battle_judgement` 与 `/npc/daily_reflection`，构造 NPC 中心请求 payload，并管理 LLM 等待期间的 TimeSystem 慢速请求。
 依赖：挂载到 `Main/Systems/LLMBridge`；读取 `NPCSystem`、`ActionSystem`、`MemorySystem`、`GameState` 和 `TimeSystem`；使用 Godot 原生 `HTTPClient` 请求游戏后端。
-当前状态：T0604/T0604A 已实现原生 HTTP 后端桥接；T0701 由 DialogSystem 调用该桥并将成功回复显示到对话 UI、写入对话事件。T0703A/T1002/T1003/T1004/T1005 后，LLMBridge 统一把最新 `current_order` 注入对话顶层 payload、每日计划 payload、计划修订 payload、首次睡眠总结 payload 与共享 NPC 上下文，并保存最近注入快照供 GM / 自动化观察。每日计划请求包含行动白名单、资源快照、建筑状态、地点上下文、短期记忆和长期记忆；首次睡眠总结请求包含当天事件摘要和已有日记。对话、每日计划、计划修订、低血量自身心理判定和首次睡眠总结都会申请 TimeSystem 慢速；对话可取消普通可取消 LLM 活动，但不能取消低血量判定和首次睡眠总结。T1006 新增异步对话请求 `request_npc_dialogue_async(...)`，供 DialogPanel 在等待回复时保持 UI 可结束 / 取消；取消会释放慢速、清除 NPC LLM 活动并丢弃后续结果。T1201 后，战时公开对话 payload 会加入 `interaction_context` 和 `battlefield_context`，并接收 `wartime_reaction`；T1202 后，低血量自身心理判定使用 `request_npc_battle_judgement(...)` / `build_npc_battle_judgement_payload(...)` 请求 `/npc/battle_judgement`，携带 `battlefield_context`、低血量事实、最新 `current_order` 和 Godot 侧限制后的 `allowed_decisions`。T1204A 后，逃离挽留中玩家发送消息并等待 NPC 回复的轮次复用 `/npc/dialogue`，payload 带 `dialogue_kind="escape_intervention"`、`interaction_context="escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击由 Godot 直接计轮并关闭面板，不调用 LLMBridge。LLMBridge 本身仍不修改征召状态、资源、HP、模式或行动权威结算。
+当前状态：T0604/T0604A 已实现原生 HTTP 后端桥接；T1401 新增 `request_llm_usage()` / `debug_request_llm_usage()` 读取后端 `GET /debug/llm_usage`，用于 GM 面板观察 provider、token、费用统计、fallback 次数和失败原因，查询本身不申请 TimeSystem 慢速、不写游戏权威状态；T1406 新增 `debug_get_llm_runtime_snapshot()`，用于 GM 面板观察当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、有效逻辑倍率和最近 TimeSystem 倍率变化原因。T0701 由 DialogSystem 调用该桥并将成功回复显示到对话 UI、写入对话事件。T0703A/T1002/T1003/T1004/T1005 后，LLMBridge 统一把最新 `current_order` 注入对话顶层 payload、每日计划 payload、计划修订 payload、首次睡眠总结 payload 与共享 NPC 上下文，并保存最近注入快照供 GM / 自动化观察。每日计划请求包含行动白名单、资源快照、建筑状态、地点上下文、短期记忆和长期记忆；首次睡眠总结请求包含当天事件摘要和已有日记。对话、每日计划、计划修订、低血量自身心理判定和首次睡眠总结都会申请 TimeSystem 慢速；对话可取消普通可取消 LLM 活动，但不能取消低血量判定和首次睡眠总结。T1006 新增异步对话请求 `request_npc_dialogue_async(...)`，供 DialogPanel 在等待回复时保持 UI 可结束 / 取消；取消会释放慢速、清除 NPC LLM 活动并丢弃后续结果。T1201 后，战时公开对话 payload 会加入 `interaction_context` 和 `battlefield_context`，并接收 `wartime_reaction`；T1202 后，低血量自身心理判定使用 `request_npc_battle_judgement(...)` / `build_npc_battle_judgement_payload(...)` 请求 `/npc/battle_judgement`，携带 `battlefield_context`、低血量事实、最新 `current_order` 和 Godot 侧限制后的 `allowed_decisions`。T1204A 后，逃离挽留中玩家发送消息并等待 NPC 回复的轮次复用 `/npc/dialogue`，payload 带 `dialogue_kind="escape_intervention"`、`interaction_context="escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击由 Godot 直接计轮并关闭面板，不调用 LLMBridge。LLMBridge 本身仍不修改征召状态、资源、HP、模式或行动权威结算；开发期 mock 只用于验证，生产 / 演示真实 provider 失败或预算超限不得用 mock 伪装成功。
 
 路径：`res://scripts/systems/DialogSystem.gd`
 用途：Godot 侧对话会话权威入口，维护参与者、历史、公开性和轮次，调用 LLMBridge 并写入 MemorySystem。
@@ -303,6 +303,26 @@ T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reacti
 依赖：由 `NPCSystem` 通过 `ConfigLoader.load_data_file("npc_profiles.json")` 读取并生成 NPC 实体。
 当前状态：T0302 已接入运行时 NPC 生成；包含 8 名初始 NPC 档案：马夫 `stableman_01`、厨子 `cook_01`、园丁 `gardener_01`、铁匠 `blacksmith_01`、老兵副官 `veteran_deputy_01`、神父 `priest_01`、医生 `doctor_01`、工程师 `engineer_01`。每名 NPC 包含基础外观、背景、性格、欲望、恐惧、能力、状态、技能、装备、计划、短期记忆、知识图谱和日记字段。
 
+路径：`data/prompts/dialogue_system_prompt.txt`
+用途：`/npc/dialogue` 真实 provider 的系统 Prompt 模板，覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留。
+依赖：由 `backend/services/model_adapter.py` 在 `call_type=dialogue` 时读取，并与通用 JSON / Schema guard 拼接。
+当前状态：T1402 已接入；模板要求 NPC 回复参考职业、人设、状态、亲历事件、见闻、长期记忆、地点状态和 `current_order`，并限制 `recruitment_result`、`wartime_reaction` 与逃离挽留 `intent` 的允许语义。已通过 mock / fake real-provider 验证和真实 DeepSeek `/npc/dialogue` smoke test。
+
+路径：`data/prompts/daily_plan_system_prompt.txt`
+用途：`/npc/plan_day` 真实 provider 的系统 Prompt 模板，覆盖每日 24 小时计划生成。
+依赖：由 `backend/services/model_adapter.py` 在 `call_type=plan_day` 时读取，并与通用 JSON / Schema guard 拼接。
+当前状态：T1403 已接入；模板要求输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` / `idle`，并明确 `current_order` 只能作为守备官当前指令参考，不能越过行动白名单、资源、HP、地点、建筑、工位或程序强制层。已通过 fake real-provider 验证和真实 DeepSeek `/npc/plan_day` smoke test。
+
+路径：`data/prompts/battle_judgement_system_prompt.txt`
+用途：`/npc/battle_judgement` 真实 provider 的系统 Prompt 模板，覆盖战时低血量自身心理判定。
+依赖：由 `backend/services/model_adapter.py` 在 `call_type=battle_judgement` 时读取，并与通用 JSON / Schema guard 拼接；后端 `backend/app.py` 会在响应 Schema 校验后继续做业务约束校验。
+当前状态：T1404 已接入；模板要求引用 NPC 亲历事件、公开见闻、`battlefield_context` 和 `current_order`，但只能从请求的 `allowed_decisions` 中选择，且 `current_order` 不能强制参战或强制逃离。后端会拒绝越界 `decision` 和逃离布尔不一致结果。已通过 fake real-provider 验证和真实 DeepSeek `/npc/battle_judgement` smoke test。
+
+路径：`data/prompts/daily_reflection_system_prompt.txt`
+用途：`/npc/daily_reflection` 真实 provider 的系统 Prompt 模板，覆盖首次睡眠总结、第一人称日记和知识图谱替换式更新。
+依赖：由 `backend/services/model_adapter.py` 在 `call_type=daily_reflection` 时读取，并与通用 JSON / Schema guard 拼接；后端 `backend/app.py` 会在响应 Schema 校验后继续做业务约束校验。
+当前状态：T1405 已接入；模板要求区分亲历事件与见闻，输出符合 NPC 语气的 `diary_entry`，并把 `knowledge_graph_updates` 作为 `subject + relation -> value` 的当前状态更新，不能把知识图谱写成增量日记。后端会拒绝 NPC / 日期不匹配、空字段和世界内文本使用“玩家”的结果。已通过 fake real-provider 验证和真实 DeepSeek `/npc/daily_reflection` smoke test。
+
 ## 后端模块规划
 
 | 模块 | 推荐路径 | 说明 |
@@ -319,9 +339,9 @@ T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reacti
 ## 后端当前已创建
 
 路径：`backend/app.py`
-用途：Flask 后端入口，当前提供 `GET /health` 健康检查、`POST /mock/model` Mock Model 调试接口、`POST /npc/dialogue` NPC 对话 Mock 业务接口、`POST /npc/plan_day` 每日计划 Mock 业务接口、`POST /npc/revise_plan` 计划修订 Mock 业务接口、`POST /npc/battle_judgement` 战斗心理判定 Mock 业务接口和 `POST /npc/daily_reflection` 首次睡眠总结 Mock 业务接口。
+用途：Flask 后端入口，当前提供 `GET /health` 健康检查、`GET /debug/llm_usage` 调用统计、`POST /mock/model` Mock Model 调试接口、`POST /npc/dialogue` NPC 对话业务接口、`POST /npc/plan_day` 每日计划业务接口、`POST /npc/revise_plan` 计划修订业务接口、`POST /npc/battle_judgement` 战斗心理判定业务接口和 `POST /npc/daily_reflection` 首次睡眠总结业务接口。
 依赖：`flask`, `python-dotenv`。
-当前状态：T0603 后，`/npc/dialogue` 会校验 T0603 版 `NPCDialogueRequest`，调用默认 mock provider 的 `dialogue` 分支，并将输出校验为 `NPCDialogueResponse`；玩家-NPC 对话可返回 `recruitment_result=accept/reject`，NPC-NPC 对话在轮次接近上限时可返回 `should_end_dialogue=true`。T1204A 后，逃离挽留中的玩家消息轮次支持 `dialogue_kind="escape_intervention"` / `interaction_context="escape_intervention"` / `escape_intervention_round`，Mock 可返回 `intent=stay_after_intervention` 或 `leave_after_intervention`；逃离挽留攻击不调用该接口。T1003 后，`/npc/plan_day` 会校验 `DailyPlanRequest`，调用 mock provider 的 `plan_day` 分支，并用 `DailyPlanResponse` 校验 24 阶段输出。T1002 后，`/npc/revise_plan` 会校验 `PlanRevisionRequest`，调用 mock provider 的 `revise_plan` 分支，并用 `PlanRevisionResponse` 校验输出。T1202 后，`/npc/battle_judgement` 会校验 `BattleJudgementRequest`，调用 mock provider 的 `battle_judgement` 分支，并用 `BattleJudgementResponse` 校验输出。T1004 后，`/npc/daily_reflection` 会校验 `DailyReflectionRequest`，调用 mock provider 的 `daily_reflection` 分支，并用 `DailyReflectionResponse` 校验日记、记忆摘要和知识图谱增量。T0602 的 `/mock/model` 仍可按 `call_type` 返回稳定 JSON 并附带伪 token / 用途记录；尚未实现真实 LLM 调用。
+当前状态：T1401 后，业务接口复用同一个 `ModelAdapter` 实例以保留 usage 记录；`GET /health` 会返回 `model_adapter` 配置快照，`GET /debug/llm_usage` 返回累计调用记录、失败原因、预算状态与汇总。`/npc/dialogue`、`/npc/plan_day`、`/npc/revise_plan`、`/npc/battle_judgement` 和 `/npc/daily_reflection` 仍先校验请求 Schema，再把模型输出校验为对应响应 Schema；T1401A 后模型输出不合业务 Schema 也会写入失败 usage。T1403 后 `/npc/plan_day` 还会校验 24 个 hour 覆盖、行动白名单和至少 6 个工作阶段，失败同样记录 `model_output_invalid`。T1404 后 `/npc/battle_judgement` 还会校验 `decision` 属于请求 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true，失败同样记录 `model_output_invalid`。T1405 后 `/npc/daily_reflection` 还会校验 NPC id、日期、日记/摘要非空、知识图谱更新字段非空和世界内“守备官”称呼边界，失败同样记录 `model_output_invalid`。T1406 后预算超限返回 HTTP 429 / `budget_exceeded`，usage 记录 `BudgetExceeded` 和 `budget_blocked`，不触发 mock fallback。T0602 的 `/mock/model` 仍显式使用 mock provider，不受 `.env` 真实 provider 配置影响；成品 / Demo 默认不再自动 mock fallback。
 
 路径：`backend/requirements.txt`
 用途：记录 Python 后端依赖。
@@ -331,12 +351,12 @@ T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reacti
 路径：`backend/.env.example`
 用途：本地 `.env` 配置模板。
 依赖：无。
-当前状态：仅包含变量名和占位值；真实 API Key 必须放入本地 `backend/.env`，不得提交仓库。
+当前状态：默认 `LLM_PROVIDER=mock` 仍服务于本地开发，并列出 DeepSeek / OpenAI-compatible 本地后端配置项：`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`、`LLM_FALLBACK_TO_MOCK`、`LLM_FORCE_JSON_RESPONSE`、`LLM_MAX_TOKENS`、`LLM_TEMPERATURE`、可选 token 单价估算和 T1406 预算上限变量。真实 API Key 必须放入本地 `backend/.env` 或服务器环境变量，不得提交仓库。生产 / 演示配置应使用真实 provider 并关闭自动 mock fallback。
 
 路径：`backend/services/model_adapter.py`
 用途：模型供应商适配器边界，后续由对话、计划、判定服务复用。
-依赖：环境变量 `LLM_PROVIDER`, `LLM_API_KEY`。
-当前状态：T0602 已实现默认 `mock` provider；`.env` 不存在或未设置 `LLM_PROVIDER` 时默认 mock，支持 `generate(call_type, payload)` 按调用类型返回稳定 JSON，当前覆盖 `dialogue`、`plan_day`、`revise_plan`、`battle_judgement`、`daily_reflection`、`knowledge_graph_update`、`proactive_intention` 和 `player_strategy_classification`，其中 `dialogue_kind="escape_intervention"` 时会按关键词稳定返回留下或继续逃离意向，并记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态；非 mock provider 未配置 `LLM_API_KEY` 时返回明确失败，不发起真实 LLM 请求。
+依赖：环境变量 `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS`, `LLM_FALLBACK_TO_MOCK`, `LLM_INPUT_COST_PER_M_TOKENS`, `LLM_OUTPUT_COST_PER_M_TOKENS`, `LLM_BUDGET_MAX_CALLS`, `LLM_BUDGET_MAX_INPUT_TOKENS`, `LLM_BUDGET_MAX_OUTPUT_TOKENS`, `LLM_BUDGET_MAX_TOTAL_TOKENS`, `LLM_BUDGET_MAX_COST`。
+当前状态：T0602 已实现默认 `mock` provider；T1401 后支持 `deepseek` / `openai_compatible` 通过 OpenAI 兼容 `/chat/completions` 调用真实模型，DeepSeek 默认 `https://api.deepseek.com` + `deepseek-v4-flash`。`.env` 不存在或未设置 `LLM_PROVIDER` 时当前仍默认 mock，服务本地开发；T1401A 后非 mock provider 的自动 mock fallback 默认关闭，只有显式 `LLM_FALLBACK_TO_MOCK=true` 才启用开发期 fallback。T1406 后读取预算上限变量，任一上限启用且超限时，业务调用返回 `budget_exceeded` 并写入失败 usage，不调用真实 provider 也不自动 mock fallback。T1402 后 `call_type=dialogue` 会读取 `data/prompts/dialogue_system_prompt.txt`，在通用 schema guard 之外补充 NPC 对话、征召、战时、避战和逃离挽留语义约束；T1403 后 `call_type=plan_day` 会读取 `data/prompts/daily_plan_system_prompt.txt`，补充 24 阶段计划、行动白名单、至少 6 个工作阶段和 `current_order` 边界；T1404 后 `call_type=battle_judgement` 会读取 `data/prompts/battle_judgement_system_prompt.txt`，补充低血量心理判定、战场上下文、见闻、允许结果和逃离布尔约束；T1405 后 `call_type=daily_reflection` 会读取 `data/prompts/daily_reflection_system_prompt.txt`，补充首次睡眠总结、亲历/见闻区分、替换式知识图谱和增量日记边界。所有调用记录 provider、model、用途、request id、NPC id、关联事件 id、输入 / 输出 token、估算费用、成功状态、fallback_used、HTTP 状态或异常类型、Schema 失败、预算错误、降级来源和失败原因，并提供 usage / budget 汇总。
 
 路径：`backend/schemas/common.py`
 用途：后端 AI 接口共享 Schema，定义游戏时间、请求元信息、事件摘要、短期记忆、NPC 身份/状态/上下文、行动候选和通用错误响应。
@@ -438,8 +458,17 @@ T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reacti
 | NPC 主动交涉验证 | `tools/verify_npc_proactive_talk.gd` |
 | GM 调试面板验证 | `tools/verify_gm_panel.gd` |
 | 后端 Schema 验证 | `tools/verify_backend_schemas.py` |
-| Mock Model Adapter 验证 | `tools/verify_mock_model_adapter.py` |
+| Mock / Real Model Adapter 验证 | `tools/verify_mock_model_adapter.py`；开发期 mock / fallback 验证不等于真实 API 验收 |
 | `/npc/dialogue` Mock 接口验证 | `tools/verify_dialogue_mock_endpoint.py` |
-| Godot LLMBridge 验证 | `tools/verify_llm_bridge.gd`，T0604A 起包含不依赖 `curl.exe` / `OS.execute` 的静态检查 |
+| NPC 对话 Prompt fake real-provider 验证 | `tools/verify_dialogue_prompt.py` |
+| NPC 对话 Prompt 真实 provider smoke 验证 | `tools/verify_dialogue_prompt_real.py` |
+| 每日计划 Prompt fake real-provider 验证 | `tools/verify_plan_day_prompt.py` |
+| 每日计划 Prompt 真实 provider smoke 验证 | `tools/verify_plan_day_prompt_real.py` |
+| 战时 / 低血量心理 Prompt fake real-provider 验证 | `tools/verify_battle_judgement_prompt.py` |
+| 战时 / 低血量心理 Prompt 真实 provider smoke 验证 | `tools/verify_battle_judgement_prompt_real.py` |
+| 首次睡眠总结 Prompt fake real-provider 验证 | `tools/verify_daily_reflection_prompt.py` |
+| 首次睡眠总结 Prompt 真实 provider smoke 验证 | `tools/verify_daily_reflection_prompt_real.py` |
+| API 额度与调试信息验证 | `tools/verify_api_budget_debug.py` |
+| Godot LLMBridge 验证 | `tools/verify_llm_bridge.gd`，T0604A 起包含不依赖 `curl.exe` / `OS.execute` 的静态检查；T1401 起覆盖 usage 查询不遗留慢速请求 |
 | 对话 UI、轮次与对话事件验证 | `tools/verify_dialogue_ui.gd` |
 | 入伍 NPC 自然语言指令验证 | `tools/verify_npc_order.gd` |

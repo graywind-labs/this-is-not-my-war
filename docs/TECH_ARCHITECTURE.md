@@ -17,26 +17,27 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 正式分发方向：
 
 - 玩家电脑运行 Godot 客户端。
-- Godot 客户端请求游戏服务器后端；Demo / 本地开发可临时请求 `127.0.0.1` 的 mock 后端。
-- 服务器后端负责调用真实 LLM Provider、持有供应商 API Key、统一限流、排队、降级、成本统计和调用日志。
+- Godot 客户端请求游戏服务器后端；本地开发可临时请求 `127.0.0.1` 的后端，并显式使用 mock provider 做开发验证。
+- 服务器后端负责调用真实 LLM Provider、持有供应商 API Key、统一限流、排队、规则 / 模板降级、成本统计和调用日志。
 - Godot 导出客户端不保存真实供应商 API Key，也不直接请求 DeepSeek / MiniMax / 通义千问 / 智谱等模型接口。
 - 玩家自行配置 API Key 只能作为未来可选 BYOK / 开发模式，不是 Demo 阶段的必需路径，也不能成为默认架构。
+- Mock provider 不是成品 / Demo 的模型失败兜底。真实 provider 失败、无 Key、超时、非 JSON 或 Schema 校验失败时，生产 / 演示路径必须返回可处理错误并记录真实失败原因；允许规则 / 模板降级继续游戏流程，但不能用 mock 内容伪装模型成功。
 
 当前后端实现状态：
 
 - 使用 Flask 作为 Python Backend 的最小 Web 框架。
-- `backend/app.py` 提供 `GET /health`，用于 Godot 或开发者确认本地服务可用；另提供 `POST /mock/model` 调试接口和 `POST /npc/dialogue` 对话 Mock 业务接口。
-- `backend/services/model_adapter.py` 是模型供应商隔离层；当前默认 `mock` provider，不执行真实 LLM 调用，但会按调用类型返回稳定 JSON，并记录用途与伪 token 信息。
+- `backend/app.py` 提供 `GET /health`，用于 Godot 或开发者确认本地服务可用；另提供 `GET /debug/llm_usage`、`POST /mock/model` 调试接口和各类 NPC AI 业务接口。
+- `backend/services/model_adapter.py` 是模型供应商隔离层；当前默认 `mock` provider 仍服务于本地开发，也支持 `deepseek` / `openai_compatible` 通过 OpenAI 兼容 `/chat/completions` 调用真实模型。DeepSeek 默认 `LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-v4-flash`。T1401A 后 `LLM_FALLBACK_TO_MOCK` 默认关闭，真实 provider 失败、无 Key、HTTP 错误、超时、非 JSON 或业务 Schema 校验失败时返回可处理错误并写入 usage；只有显式设置 `LLM_FALLBACK_TO_MOCK=true` 时才允许开发期自动 mock fallback。T1406 后可通过 `LLM_BUDGET_MAX_CALLS`、`LLM_BUDGET_MAX_INPUT_TOKENS`、`LLM_BUDGET_MAX_OUTPUT_TOKENS`、`LLM_BUDGET_MAX_TOTAL_TOKENS` 和 `LLM_BUDGET_MAX_COST` 设置预算守门，超限返回 HTTP 429 / `budget_exceeded` 并写入 `BudgetExceeded` usage，不自动 mock fallback。T1402 后，`call_type=dialogue` 会读取 `data/prompts/dialogue_system_prompt.txt` 作为 NPC 对话业务 Prompt；T1403 后，`call_type=plan_day` 会读取 `data/prompts/daily_plan_system_prompt.txt` 作为每日计划业务 Prompt；T1404 后，`call_type=battle_judgement` 会读取 `data/prompts/battle_judgement_system_prompt.txt` 作为低血量自身心理判定业务 Prompt。
 - `backend/schemas/common.py` 和 `backend/schemas/npc_ai.py` 提供后端 AI 请求/响应 Pydantic Schema；T0603 后 `NPCDialogueRequest` / `NPCDialogueResponse` 已按当前对话字段重整，覆盖玩家-NPC 与 NPC-NPC Mock 对话，不执行业务权威结算。
 - T0703A 后共享 `NPCContext` 与对话顶层 `NPCDialogueRequest` 都包含单条最新 `current_order`；Mock 只把它作为参考上下文，Godot 保持指令和行动事实权威。
-- 真实 API Key 必须通过本地 `backend/.env` 或环境变量提供；仓库只保留 `.env.example` 模板。
+- 真实 API Key 必须通过本地 `backend/.env` 或环境变量提供；仓库只保留 `.env.example` 模板。开发可显式 `LLM_PROVIDER=mock`，生产 / 演示配置应使用真实 provider 并关闭自动 mock fallback。
 
 后端部署方向：
 
 - 服务器运行的应用入口仍是 `backend/app.py`。
 - 本地开发可以 `python backend/app.py`，但正式部署不能使用 Flask debug server。
 - T1407 需要补齐生产 WSGI 启动方式，例如 Linux 服务器使用 `gunicorn backend.app:app`，或 Windows 服务器使用 `waitress-serve --call backend.app:create_app`。
-- T1407 还需要补齐 `backend/README.md` 部署说明、生产依赖、环境变量、日志、健康检查、限流、预算和重启策略。
+- T1407 还需要补齐 `backend/README.md` 部署说明、生产依赖、环境变量、日志、健康检查、限流、预算、mock fallback 关闭策略和重启策略。
 - Godot 客户端只配置后端服务地址；真实供应商 API Key 只存在于服务器后端环境中。
 
 ## 职责划分
@@ -109,11 +110,11 @@ NPC 进入地点时，只读取当前状态快照，不继承过去事件
 LLM 调用前从事件库 + 见闻库生成摘要
 ```
 
-后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱增量，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
+后端和 LLM 可以根据事件库、见闻库和知识图谱生成解释、对话、计划、日记和知识图谱当前键值更新，但不能直接新增会改变权威数值的事实。对话全文作为对话事件 `payload` 的一部分保存，不单独建立谈话库。
 
 T0701 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性和轮次，调用 `LLMBridge` 获取文本，再把实际发生的 `dialogue_turn` 写入 `MemorySystem`。打开/关闭对话窗口不属于世界事实，不入库、不广播。T1006 起，打开对话窗也不再打断行动或取消 LLM；只有玩家实际发送消息或在对话窗攻击时，才触发可取消 LLM 取消、普通行动中断和后续重评估候选。玩家发送后若在 NPC 回复完成前结束对话，异步请求会取消，未完成轮次不入库、不触发对话重评估。`local_public` 对话轮次只向同地点非参与者广播一次。T0702 起，UI 只标记下一次消息为应征请求，合法的接受结果由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用；后端和 UI 都不直接修改权威 NPC 数据。T1006 的对话窗攻击先由 `NPCSystem.apply_damage_to_npc(...)` 扣 HP 和写 `damage_taken`，再请求 NPC 回复；若回复取消，攻击事实不撤销。T1103A 起，行为模式切换可调用 `DialogSystem.force_end_dialogue_for_npc(...)` 强制关闭当前对话并取消未完成 LLM 回复，不伪造未完成对话事件。
 
-T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离流程、模式切换和事件入库仍由 Godot 执行。T1202 后，低血量自身心理判定触发时，Godot 复用强制关闭对话和取消未完成 LLM 请求的边界，并通过 `allowed_decisions` 限制非战斗人员不能获得斗志激昂或继续参战。T1203 后，逃离意向由 Godot 的 `CombatSystem.start_npc_escape(...)` 转为后门移动、`escape_started` / `escaped` 事件和最终 `escaped=true` 状态。T1204A 后，逃离挽留由 NPC 面板【对话】进入，打开时 `CombatSystem` 暂停逃离移动，关闭或满 5 轮时恢复；玩家消息轮次复用 `/npc/dialogue`，强制公开并限制 5 轮，LLM 只返回留下或继续逃离意向。逃离挽留中的攻击不调用 `/npc/dialogue`，由 Godot 直接扣 HP、加速、计轮、关闭面板并继续逃离。
+T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离流程、模式切换和事件入库仍由 Godot 执行。T1202 后，低血量自身心理判定触发时，Godot 复用强制关闭对话和取消未完成 LLM 请求的边界，并通过 `allowed_decisions` 限制非战斗人员不能获得斗志激昂或继续参战。T1404 后，战时公开对话与低血量心理判定已完成真实 provider smoke 验证；后端会拒绝 `/npc/battle_judgement` 越界 `decision` 与逃离布尔不一致结果，并写入失败 usage。T1203 后，逃离意向由 Godot 的 `CombatSystem.start_npc_escape(...)` 转为后门移动、`escape_started` / `escaped` 事件和最终 `escaped=true` 状态。T1204A 后，逃离挽留由 NPC 面板【对话】进入，打开时 `CombatSystem` 暂停逃离移动，关闭或满 5 轮时恢复；玩家消息轮次复用 `/npc/dialogue`，强制公开并限制 5 轮，LLM 只返回留下或继续逃离意向。逃离挽留中的攻击不调用 `/npc/dialogue`，由 Godot 直接扣 HP、加速、计轮、关闭面板并继续逃离。
 
 ### LLM 不负责
 
@@ -138,7 +139,13 @@ T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对�
 ```json
 {
   "ok": true,
-  "service": "war-not-mine-backend"
+  "service": "war-not-mine-backend",
+  "model_adapter": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "configured": true,
+    "fallback_to_mock": false
+  }
 }
 ```
 
@@ -163,7 +170,21 @@ T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对�
 - `content`
 - `usage`
 
-该接口只用于 T0602 后端调试和后续服务层接入前的验证，不替代 `/npc/dialogue`、`/npc/plan_day` 等正式业务接口。它显式使用 mock provider，不受本地 `.env` 中未来真实 provider 配置影响；`content` 按 `call_type` 返回可被当前 Schema 校验的稳定 JSON；`usage` 记录 request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态。
+该接口只用于 T0602 后端调试、Schema 验证和自动化测试，不替代 `/npc/dialogue`、`/npc/plan_day` 等正式业务接口。它显式使用 mock provider，不受本地 `.env` 中未来真实 provider 配置影响；`content` 按 `call_type` 返回可被当前 Schema 校验的稳定 JSON；`usage` 记录 request id、NPC id、关联事件 id、伪输入/输出 token、估算费用和成功/失败状态。成品 / Demo 真实 provider 失败时不得退回该接口的内容伪装成功。
+
+### LLM Usage 调试接口
+
+`GET /debug/llm_usage`
+
+返回：
+
+- `ok`
+- `model_adapter`：当前 provider、model、base_url、configured、fallback_to_mock 和 timeout。
+- `summary`：累计调用次数、成功 / 失败数、fallback 次数、输入 / 输出 token、费用估算、最近失败原因和按 call_type 聚合的统计。
+- `summary.budget`：预算是否启用、上限、已用量、剩余额度、下一次调用可能触发的超限原因和最近预算错误。
+- `records`：逐次调用记录，必须能定位 request id、call_type、provider、model、NPC id（如有）、HTTP 状态或异常类型、失败原因、`fallback_used`、`degradation_source` 和是否使用规则 / 模板降级。
+
+该接口只读，不触发模型调用，也不代表 Godot 侧需要申请 TimeSystem 慢速。
 
 ### NPC 对话
 
@@ -196,7 +217,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 
 输入必须包含目标 NPC 当前 `current_order`。输出必须是 24 条 `PlanItem`，每条包含小时、行动类型、行动 id、可选地点/目标和理由。计划是建议，不代表资源、移动或行动已经结算；模型可以结合人设、记忆和现场条件调整、推迟或拒绝指令。
 
-当前状态：T1003 已在 Flask 后端接通 `/npc/plan_day`，使用 `DailyPlanRequest` 校验输入、调用 `ModelAdapter.generate("plan_day", ...)`，再用 `DailyPlanResponse` 校验 24 阶段输出。Mock 会按 NPC 熟练度和行动白名单选择真实可执行工作行动，返回睡觉、吃饭、工作和等待组成的计划。Godot 侧 `DailyPlanSystem` 通过 `LLMBridge.request_npc_daily_plan(...)` 调用该接口；成功时写入 `plan_created(source=mock_plan_day)` 并可执行当前小时行动，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)` 并使用规则计划。
+当前状态：T1003 已在 Flask 后端接通 `/npc/plan_day`，使用 `DailyPlanRequest` 校验输入、调用 `ModelAdapter.generate("plan_day", ...)`，再用 `DailyPlanResponse` 校验 24 阶段输出。T1403 后真实 provider 路径读取 `data/prompts/daily_plan_system_prompt.txt`；后端在 Schema 校验后额外校验计划是否覆盖 0-23 点、是否只使用 `allowed_actions` / `idle`、是否至少 6 个工作阶段，不合法时返回 `model_output_invalid` 并写入 usage 失败。开发期 Mock 会按 NPC 熟练度和行动白名单选择真实可执行工作行动，返回睡觉、吃饭、工作和等待组成的计划。Godot 侧 `DailyPlanSystem` 通过 `LLMBridge.request_npc_daily_plan(...)` 调用该接口；成功时写入模型 / 开发 mock 对应来源的 `plan_created`，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)` 并使用规则计划。真实 provider 失败必须保留失败日志，不能用 mock 计划伪装成功。
 
 ### 计划修订
 
@@ -207,7 +228,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 
 用于守备官发布新指令、目标不可用、工位占用、资源不足、对话打断、低 HP、低饱食、高疲劳和战斗警报等情况后的计划重评估。请求必须包含最新 `current_order`。
 
-当前状态：T1002 已在 Flask 后端接通 `/npc/revise_plan`，使用 `PlanRevisionRequest` 校验输入、调用 `ModelAdapter.generate("revise_plan", ...)`，再用 `PlanRevisionResponse` 校验输出。Godot 侧 `DailyPlanSystem` 会在计划异常或指令变化时通过 `LLMBridge.request_npc_plan_revision(...)` 调用该接口；成功时合并修订计划并执行当前小时行动，失败时应用 `rule_revision_fallback` 规则降级计划。
+当前状态：T1002 已在 Flask 后端接通 `/npc/revise_plan`，使用 `PlanRevisionRequest` 校验输入、调用 `ModelAdapter.generate("revise_plan", ...)`，再用 `PlanRevisionResponse` 校验输出。Godot 侧 `DailyPlanSystem` 会在计划异常或指令变化时通过 `LLMBridge.request_npc_plan_revision(...)` 调用该接口；成功时合并修订计划并执行当前小时行动，失败时应用 `rule_revision_fallback` 规则降级计划。真实 provider 失败必须保留失败日志，不得自动套用 mock 修订结果。
 
 ### 战斗判定
 
@@ -218,7 +239,7 @@ NPC-NPC 对话由 Godot 控制轮次：上一轮回复者的 `reply_text` 会作
 
 只覆盖战时 HP 首次低于 30% 的自身心理判定，以及必要的逃离检查；不再用于“战斗触发时全员判定”。请求必须包含目标 NPC 当前 `current_order` 和 `battlefield_context`；输出只表达继续战斗、逃离、斗志激昂或继续避战等意向，不能把守备官指令直接当成强制结果。伤害、buff、逃离移动和状态变更由 Godot 执行。
 
-Godot 负责按目标 NPC 状态提供 `allowed_decisions`：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。后端和模型返回越界结果时，Godot 必须规则降级，不让非战斗人员获得斗志激昂或直接参战。
+Godot 负责按目标 NPC 状态提供 `allowed_decisions`：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。T1404 后，真实 provider 路径读取 `data/prompts/battle_judgement_system_prompt.txt`，后端在 `BattleJudgementResponse` Schema 校验后额外校验 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true；越界结果返回 `model_output_invalid` 并写入 usage。若仍有非法结果进入 Godot，Godot 必须规则降级，不让非战斗人员获得斗志激昂或直接参战。真实 DeepSeek 已完成战时公开对话与 `/npc/battle_judgement` smoke 验证，`fallback_used=false`。
 
 ### 首次睡眠总结
 
@@ -229,7 +250,7 @@ Godot 负责按目标 NPC 状态提供 `allowed_decisions`：已入伍且有主�
 
 输出第一人称日记、当天记忆摘要和 `KnowledgeGraphPatch` 列表。
 
-当前状态：T1004/T1005 已在 Flask 后端接通 `/npc/daily_reflection`，使用 `DailyReflectionRequest` 校验输入、调用 `ModelAdapter.generate("daily_reflection", ...)`，再用 `DailyReflectionResponse` 校验输出。接口历史名仍是 daily_reflection，当前玩法语义是首次睡眠总结。Godot 侧 `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`，NPC 每天首次睡眠满 1 游戏小时后通过 `LLMBridge.request_npc_daily_reflection(...)` 调用该接口；成功时写入 NPC 长期日记和知识图谱占位，失败时使用 Godot 模板降级，完成后清空该 NPC 当天短期事件 / 见闻索引。该调用会申请 TimeSystem 慢速，且请求发起到应用完成期间 NPC 处于不可打断的深度睡眠锁。
+当前状态：T1004/T1005/T1405 已在 Flask 后端接通 `/npc/daily_reflection`，使用 `DailyReflectionRequest` 校验输入、调用 `ModelAdapter.generate("daily_reflection", ...)`，再用 `DailyReflectionResponse` 校验输出。接口历史名仍是 daily_reflection，当前玩法语义是首次睡眠总结。Godot 侧 `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`，NPC 每天首次睡眠满 1 游戏小时后通过 `LLMBridge.request_npc_daily_reflection(...)` 调用该接口；成功时把 `diary_entry` 追加到 NPC 长期日记，并把 `knowledge_graph_updates` 按 `subject + relation` 替换式写入当前知识图谱键值，失败时使用 Godot 模板降级，完成后清空该 NPC 当天短期事件 / 见闻索引。模板降级必须标明来源并保留模型失败日志，不能用 mock 日记伪装真实模型成功。该调用会申请 TimeSystem 慢速，且请求发起到应用完成期间 NPC 处于不可打断的深度睡眠锁。
 
 ### 其他 AI 辅助
 
@@ -265,7 +286,9 @@ Godot 执行合法结果
 
 ## 失败降级
 
-如果 LLM 请求失败，Godot 必须释放 TimeSystem 慢速请求，并使用 Mock / 规则 / 模板结果降级，不能让游戏长期停留在慢速逻辑时间。
+如果 LLM 请求失败，Godot 必须释放 TimeSystem 慢速请求，并返回可处理错误或使用规则 / 模板结果降级，不能让游戏长期停留在慢速逻辑时间。
+
+生产 / 演示路径不得用 mock 内容掩盖真实 provider 失败。Mock 只允许在显式开发模式中使用。规则 / 模板降级必须有明确 source，并在后端 usage / 日志中保留原始失败原因，便于排查 provider、Key、HTTP、JSON 或 Schema 问题。
 
 ## 时间倍率边界
 
@@ -282,29 +305,33 @@ T0604 已在 Godot 侧新增 `res://scripts/systems/LLMBridge.gd`，挂载于 `M
 当前能力：
 
 - `check_health()` 通过原生 HTTP 请求 `GET /health`，并通过 `backend_status_changed(status_text, ok)` 供 HUD 显示后端状态。
+- `request_llm_usage()` / `debug_request_llm_usage()` 通过原生 HTTP 请求 `GET /debug/llm_usage`，供 GM 面板查看 provider、token、费用统计、预算上限 / 剩余额度、fallback 次数和失败原因；该查询不申请 TimeSystem 慢速。
+- `debug_get_llm_runtime_snapshot()` 只读返回后端状态、当前 pending LLM 慢速请求数、pending request id、NPC 活动请求、异步请求数量、TimeSystem 有效倍率和最近倍率变化原因，供 GM 面板验证等待中的 LLM 请求与时间减速状态。
 - `build_npc_dialogue_payload(...)` 按 T0603/T1201 Schema 收集目标 NPC 设定、守备官/NPC 说话者上下文、应征标记、轮次、NPC 状态、短期记忆、长期记忆、地点快照、`interaction_context` 和必要时的 `battlefield_context`。
-- `request_npc_dialogue(...)` 通过原生 HTTP 请求 `POST /npc/dialogue`，返回后端 Mock JSON 或错误字典。
+- `request_npc_dialogue(...)` 通过原生 HTTP 请求 `POST /npc/dialogue`，返回后端业务 JSON 或错误字典；开发模式可返回 mock JSON，生产 / 演示模式不得把真实失败替换成 mock 回复。
 - `build_npc_daily_plan_payload(...)` 按 T1003 Schema 收集目标 NPC 共享上下文、当前 `current_order`、短期记忆、长期记忆、地点、广场、资源、建筑状态、行动白名单和计划规则。
-- `request_npc_daily_plan(...)` 通过原生 HTTP 请求 `POST /npc/plan_day`，返回后端 Mock 24 小时计划或错误字典。
+- `request_npc_daily_plan(...)` 通过原生 HTTP 请求 `POST /npc/plan_day`，返回后端 24 小时计划或错误字典；开发模式可返回 mock 计划，生产 / 演示模式失败后应走规则计划并保留模型失败日志。
 - `build_npc_plan_revision_payload(...)` / `request_npc_plan_revision(...)` 通过 `POST /npc/revise_plan` 处理 T1002 行动异常和指令变化后的计划修订。
 - 对话请求前注册 `TimeSystem.request_time_slowdown(...)`，成功、失败或超时后调用 `release_time_slowdown(...)`。
 - `build_npc_dialogue_payload(...)` 与共享 NPC 上下文构造会注入目标 NPC 最新 `current_order`；`get_last_npc_context_injection()` 暴露最近注入快照用于 GM / 自动化验证。
 
 当前传输层不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件。`LLMBridge` 会解析后端 base url，使用 `HTTPClient.connect_to_host(...)`、`request(...)`、`poll()` 和响应体读取循环完成显式请求状态机，并用 `request_timeout_seconds` 覆盖连接、请求和响应体读取超时。后端关闭、超时、非法 JSON 或后端 `ok=false` 都返回可处理错误字典；会影响当前事态的对话、每日计划和计划修订请求在成功、失败或超时后都会释放 TimeSystem 慢速请求。T1006 新增异步对话请求路径，UI 等待 NPC 回复时不阻塞结束按钮；取消会释放慢速并清除 NPC LLM 活动，后台 HTTP 返回后只发出已取消结果，不再应用到会话。
 
-T0703A/T1002/T1003 已将 `current_order` 接入共享 NPC 请求上下文、对话顶层 payload、每日计划请求和计划修订请求，由 `LLMBridge` 统一收集，避免只在某一种 Prompt 中手工拼接。Godot 保持当前指令、事件事实、行动白名单与结算的权威；后端只负责把该上下文传给模型并校验模型输出。新指令重评估现在会通过 T1002 链路应用 Mock 修订计划或规则降级计划；每日计划生成会通过 T1003 链路应用 Mock 24 小时计划或规则降级计划。
+T0703A/T1002/T1003 已将 `current_order` 接入共享 NPC 请求上下文、对话顶层 payload、每日计划请求和计划修订请求，由 `LLMBridge` 统一收集，避免只在某一种 Prompt 中手工拼接。Godot 保持当前指令、事件事实、行动白名单与结算的权威；后端只负责把该上下文传给模型并校验模型输出。新指令重评估现在会通过 T1002 链路应用模型 / 开发 mock 修订计划或规则降级计划；每日计划生成会通过 T1003 链路应用模型 / 开发 mock 24 小时计划或规则降级计划。真实 provider 失败不得落到 mock 成功，应记录失败并进入规则 / 模板降级。
 
-验证脚本 `tools/verify_llm_bridge.gd` 会静态检查 `LLMBridge.gd` 不含 `curl.exe` / `OS.execute` / 临时请求体文件旧路径，并覆盖后端关闭、health、`/npc/dialogue` Mock 成功和失败后慢速释放。
+验证脚本 `tools/verify_llm_bridge.gd` 会静态检查 `LLMBridge.gd` 不含 `curl.exe` / `OS.execute` / 临时请求体文件旧路径，并覆盖后端关闭、health、`/npc/dialogue` Mock 成功、usage 查询和失败后慢速释放。
 
 T0604 遇到的坑：
 
 - Godot 原生 HTTP 的首次尝试在 headless 脚本验证中被信号等待和节点生命周期卡住；后续需要显式请求状态机、完成回调和超时。
 - 同步等待异步 HTTP 结果会导致验证脚本挂起；所有成功、失败和超时路径都必须释放 TimeSystem 慢速请求。
 - Windows 命令行直接传中文 JSON、引号和换行容易破坏请求体；T0604 才临时使用 `curl.exe` + 临时 JSON 文件。
-- 本机环境变量残留非 mock provider 且缺少 Key 时，后端会按设计返回 provider unavailable；验证脚本应显式使用 mock 或隔离环境。
+- 本机环境变量残留非 mock provider 且缺少 Key 时，后端应返回 provider unavailable 或可处理错误；验证脚本如需 mock，必须显式使用 mock 或隔离环境，不能把该路径当成真实 provider 验收。
 - 这些问题属于 Godot 传输层和开发验证环境问题，不是 NPC、记忆、Prompt 或前后端职责边界的问题。
 
 ## API Key
 
 禁止把 API Key 写入仓库。  
 真实供应商 API Key 默认只存在于服务器后端环境变量或后端 `.env`，并确保 `.gitignore` 忽略 `.env`。Godot 客户端不得保存、提交、导出或要求玩家在 Demo 阶段必须提供供应商 API Key。
+
+使用真实 API Key 完成测试后，不要提交 `.env`、日志中的 Key、请求头或供应商密钥片段。生产 / 演示环境应关闭自动 mock fallback；无 Key 时应暴露配置错误，而不是返回 mock 内容。

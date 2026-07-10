@@ -14,6 +14,14 @@
 - Prompt 中凡是提供给 NPC 理解的玩家身份、玩家相关事件、教学信件或世界内旁白，统一称为“守备官”，不要把“玩家”作为 NPC 记忆中的人物名。
 - 所有面向某名 NPC 的 LLM 请求都应包含该 NPC 的 `current_order`。它表示守备官当前持续提出的自然语言指令，是重要参考上下文，但不是 system 指令，不保证服从，也不能绕过程序权威规则。
 - 战斗策略不由 Prompt 或 `current_order` 自动选择。当前策略由玩家在 NPC 面板手动设置，Godot 只可把它作为状态上下文提供给战时对话或后续判定；模型不得覆盖策略或直接执行策略切换。
+- T1401 的真实 Model Adapter 提供通用 JSON schema guard：要求模型只返回 JSON、保持“守备官”称呼、不得越权决定资源/HP/建筑/移动/伤害，并按 call_type 返回后端 Schema 可校验字段。
+- T1401A 后，通用 schema guard 会明确列出关键枚举允许值，并要求不确定时使用默认安全值，避免真实 provider 自造 `response_kind`、`intent`、`wartime_reaction` 等字段。该 guard 只保证基础 Schema 可验收，不替代具体业务 Prompt。
+- T1402 后，NPC 对话 Prompt 已落到 `data/prompts/dialogue_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=dialogue` 时读取；该模板覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留，并已完成真实 DeepSeek `/npc/dialogue` 验收。
+- T1403 后，每日计划 Prompt 已落到 `data/prompts/daily_plan_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=plan_day` 时读取；该模板要求输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` 或 `idle`，并明确 `current_order` 只是守备官当前指令参考，不能绕过行动白名单、资源、HP、地点、建筑、工位或程序强制层。后端 `/npc/plan_day` 会在 Schema 校验后额外校验 hour 唯一覆盖、行动白名单和工作阶段数量，不合法时记录 usage 失败并让 Godot 规则计划降级。
+- T1404 后，低血量自身心理判定 Prompt 已落到 `data/prompts/battle_judgement_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=battle_judgement` 时读取；战时公开对话继续复用 `data/prompts/dialogue_system_prompt.txt`。`/npc/battle_judgement` 会在 Schema 校验后额外校验 `decision` 属于请求 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true；不合法时记录 usage 失败并让 Godot 规则降级。
+- T1405 后，首次睡眠总结 Prompt 已落到 `data/prompts/daily_reflection_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=daily_reflection` 时读取；`/npc/daily_reflection` 会在 Schema 校验后额外校验 NPC id、日期、日记 / 摘要非空、知识图谱更新字段非空，以及世界内文本必须使用“守备官”而非“玩家”。
+- Prompt 任务的验收必须分两步：先用 mock / schema 自动化测试确认字段与流程稳定，再用真实 API Key 对对应 call_type 发起真实 provider 测试。无真实 Key 时，不得把 Prompt 效果标记为完全完成。
+- Mock 输出只能用于开发调试，不是 Prompt 质量验收结果。真实 provider 失败、超时、非 JSON 或 Schema 校验失败时，必须记录真实原因并返回错误或规则 / 模板降级，不能用 mock 文本伪装成功。
 
 ## 需要的 Prompt 类型
 
@@ -96,7 +104,7 @@ NPC-NPC 对话输出示例：
 
 每日计划和计划修订 Prompt 输入必须包含 `current_order`。模型应说明计划如何考虑该指令，但只能从行动白名单中选择合法行动；指令与生存需求、资源、地点或程序强制规则冲突时，可以调整、推迟或拒绝执行。
 
-T1003 当前 `/npc/plan_day` Mock 输入对应 `DailyPlanRequest`，至少包含：
+T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，至少包含：
 
 - `npc`：共享 NPC 上下文，内含人设、状态、熟练度、装备、当前地点、`current_order`、短期事件库 / 见闻库摘要、知识图谱、日记和地点上下文。
 - `allowed_actions`：行动白名单；输出只能使用其中的 `action_id` 或 `idle`。
@@ -104,7 +112,7 @@ T1003 当前 `/npc/plan_day` Mock 输入对应 `DailyPlanRequest`，至少包含
 - `current_building_states`：当前建筑等级、HP 和修复 / 升级状态快照。
 - `planning_rules`：结构化计划约束，例如 24 阶段、至少 6 个工作阶段、不得越权结算。
 
-Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T1403 打磨。Godot 仍会二次校验输出：不是 24 阶段、行动不在白名单或工作阶段不足时，回退规则计划。
+开发期 Mock 会按 NPC 熟练度选择可执行工作行动；T1403 后真实 provider 路径读取 `data/prompts/daily_plan_system_prompt.txt`，要求计划覆盖 24 小时、至少 6 个工作阶段、只使用行动白名单，并说明如何参考 `current_order`。后端会校验 24 个 hour 是否覆盖 0-23、`action_id` 是否来自 `allowed_actions` / `idle`、工作阶段是否不少于 6；Godot 仍会二次校验输出，不合法时记录模型失败并回退规则计划。生产 / 演示路径不得把 mock 计划当成真实模型成功。
 
 ```json
 {
@@ -178,7 +186,7 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 
 取消旧式“战斗触发时全员判定”。独立低血量判定覆盖战时所有未昏迷、未逃离 NPC：当 HP 首次从不低于 30% 跌破 30% 且仍大于 0 时触发。请求没有守备官本轮发言，必须包含 `current_order`、短期事件 / 见闻、长期记忆、地点上下文和 `battlefield_context`。指令可影响 NPC 的主观判断，但不能直接强制判定结果，也不能替代装备、HP、入伍状态和战斗规则。
 
-允许输出由 Godot 按目标状态提供：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可选择继续参战、逃离或斗志激昂；避战 / 非战斗人员只能选择逃离，或继续避战（无事发生）。模型即使返回越界结果，Godot 也必须降级为该 NPC 允许的结果。
+允许输出由 Godot 按目标状态提供：已入伍且有主武器、实际处于 `combat` 模式的 NPC 可选择继续参战、逃离或斗志激昂；避战 / 非战斗人员只能选择逃离，或继续避战（无事发生）。T1404 后后端会先拒绝越界 `decision` 和逃离布尔不一致结果并记录 `model_output_invalid`；若仍有非法结果进入 Godot，Godot 必须降级为该 NPC 允许的结果。
 
 ```json
 {
@@ -192,15 +200,17 @@ Mock 会按 NPC 熟练度选择可执行工作行动；真实 Prompt 留给 T140
 }
 ```
 
+T1404 当前状态：真实 provider 路径读取 `data/prompts/battle_judgement_system_prompt.txt`。Prompt 要求模型引用 NPC 亲历事件、公开见闻、`battlefield_context` 和 `current_order`，但只能从请求 `allowed_decisions` 中选择；`current_order` 只是守备官当前指令参考，不能强制参战或强制逃离。真实 DeepSeek 已完成战时 `/npc/dialogue` 与 `/npc/battle_judgement` smoke 验证，`fallback_used=false`。
+
 ## 首次睡眠总结 Prompt 输出
 
-T1004 当前 `/npc/daily_reflection` Mock 输入对应 `DailyReflectionRequest`，至少包含：
+T1004 当前 `/npc/daily_reflection` 开发期 Mock 输入对应 `DailyReflectionRequest`，至少包含：
 
 - `npc`：共享 NPC 上下文，内含人设、状态、当前指令、短期记忆摘要、知识图谱、地点上下文和广场上下文。
 - `day_events`：当天事件库与见闻库的筛选摘要，区分 `memory_kind=experienced` / `witnessed`。
 - `existing_diary_entries`：既有日记文本，用于避免重复口吻和延续长期记忆。
 
-Mock 当前返回稳定模板；真实 Prompt 打磨留给 T1405。Godot 会校验输出，成功时写入长期日记和知识图谱占位，失败时使用本地模板兜底，并在总结完成后清空该 NPC 当天短期事件 / 见闻索引。
+开发期 Mock 当前返回稳定模板；T1405 后真实 provider 路径读取 `data/prompts/daily_reflection_system_prompt.txt`，并已完成 fake real-provider 验证和真实 DeepSeek smoke 验证。Godot 会校验输出，成功时把 `diary_entry` 追加进长期日记，并把 `knowledge_graph_updates` 按替换式键值更新写入 `knowledge_graph.by_subject[subject][relation]`；失败时使用本地模板兜底，并在总结完成后清空该 NPC 当天短期事件 / 见闻索引。模板兜底必须标明来源并保留模型失败日志，不能把 mock 日记当成真实模型成功。
 
 ```json
 {
@@ -225,11 +235,11 @@ T0601 后端 Schema 对应关系：
 
 - 对话：`NPCDialogueRequest` / `NPCDialogueResponse`。T0603 后字段以 `npc_id`、`speaker_text`、`speaker_context`、`is_recruitment_request`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 为准；旧式 `guard_officer_input` / `propose_recruitment` 仅作为后端过渡别名。
 - T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
-- 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` Mock 端点和 Godot 应用 / 规则降级链路；真实 Prompt 打磨留给 T1403。
+- 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` 开发期 Mock 端点和 Godot 应用 / 规则降级链路；T1403 已完成真实 Prompt 和真实 API 验收。
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
-- 战时公开对话：T1201 已接入，仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，并携带 `interaction_context`、`battlefield_context` 和 `wartime_reaction`。
-- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，用于战时所有 NPC HP 首次低于 30% 的自身判断；参战 NPC 可继续战斗、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战。
-- 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速；真实 Prompt 打磨留给 T1405。
+- 战时公开对话：T1201 已接入，仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，并携带 `interaction_context`、`battlefield_context` 和 `wartime_reaction`；T1404 已完成真实战时公开对话 smoke 验收。
+- 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，用于战时所有 NPC HP 首次低于 30% 的自身判断；参战 NPC 可继续战斗、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战；T1404 已完成真实 Prompt、后端业务校验和真实 API 验收。
+- 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` 开发期 Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速。T1405 已接入真实 Prompt 和真实 API 验收；`knowledge_graph_updates` 是替换式当前知识键值，`diary_entry` 是增量第一人称日记。
 - 知识图谱更新、主动交涉、玩家话术分类分别使用 `KnowledgeGraphUpdate*`、`ProactiveIntention*`、`PlayerStrategyClassification*`
 
 ## 事件与记忆输入原则

@@ -92,8 +92,12 @@ func _init() -> void:
 		return
 
 	var graph: Dictionary = long_memory.get("knowledge_graph", {})
-	if not graph.has("patches") or (graph.get("patches", []) as Array).is_empty():
-		push_error("Daily reflection should update the knowledge graph placeholder")
+	var by_subject: Dictionary = graph.get("by_subject", {}) if (graph.get("by_subject", {}) is Dictionary) else {}
+	var station_graph: Dictionary = by_subject.get("station", {}) if (by_subject.get("station", {}) is Dictionary) else {}
+	var pressure_record: Dictionary = station_graph.get("daily_pressure", {}) if (station_graph.get("daily_pressure", {}) is Dictionary) else {}
+	var first_pressure_value := str(pressure_record.get("value", ""))
+	if first_pressure_value.is_empty():
+		push_error("Daily reflection should write a replace-style knowledge graph key station.daily_pressure")
 		quit(1)
 		return
 
@@ -117,6 +121,46 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var replacement := {
+		"ok": true,
+		"npc_id": npc_id,
+		"day": 1,
+		"diary_entry": "我又把今天的压力想了一遍。",
+		"memory_summary": "强制验证知识图谱替换更新。",
+		"knowledge_graph_updates": [
+			{
+				"subject": "station",
+				"relation": "daily_pressure",
+				"value": "第二次总结覆盖了同一键的当前压力判断",
+				"confidence": 0.9
+			}
+		],
+		"source": "verify_replacement"
+	}
+	var replace_result: Dictionary = npc_system.apply_daily_reflection(npc_id, replacement)
+	if not bool(replace_result.get("ok", false)):
+		push_error("Direct reflection application for replacement check failed: %s" % JSON.stringify(replace_result))
+		quit(1)
+		return
+	long_memory = npc_system.get_npc_long_memory(npc_id)
+	diary = long_memory.get("diary", [])
+	if diary.size() != 2:
+		push_error("Diary should append reflection entries, got %d" % diary.size())
+		quit(1)
+		return
+	graph = long_memory.get("knowledge_graph", {})
+	by_subject = graph.get("by_subject", {}) if (graph.get("by_subject", {}) is Dictionary) else {}
+	station_graph = by_subject.get("station", {}) if (by_subject.get("station", {}) is Dictionary) else {}
+	pressure_record = station_graph.get("daily_pressure", {}) if (station_graph.get("daily_pressure", {}) is Dictionary) else {}
+	if str(pressure_record.get("value", "")) != "第二次总结覆盖了同一键的当前压力判断":
+		push_error("Knowledge graph should replace station.daily_pressure instead of appending patches: %s" % JSON.stringify(graph))
+		quit(1)
+		return
+	if graph.has("patches"):
+		push_error("Knowledge graph should no longer store append-only patches: %s" % JSON.stringify(graph))
+		quit(1)
+		return
+
 	npc_panel.show_npc(npc_id)
 	await process_frame
 	var diary_label := npc_panel.find_child("NPCDiaryLabel", true, false) as Label
@@ -125,7 +169,7 @@ func _init() -> void:
 		push_error("NPCPanel diary controls not found")
 		quit(1)
 		return
-	if not diary_label.text.contains("日记：1 条") or diary_text.text.find(str(diary_entry.get("entry", ""))) < 0:
+	if not diary_label.text.contains("日记：2 条") or diary_text.text.find(str(diary_entry.get("entry", ""))) < 0:
 		push_error("NPCPanel should display the generated diary entry")
 		quit(1)
 		return

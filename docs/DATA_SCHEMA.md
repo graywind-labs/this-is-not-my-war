@@ -113,29 +113,27 @@ T1004/T1005 起，运行时 `diary` 保存首次睡眠总结生成的长期日�
 }
 ```
 
-同一任务还会把 `DailyReflectionResponse.knowledge_graph_updates` 合并到运行时 `knowledge_graph` 占位结构，当前最小形状为：
+T1405 后，同一任务会把 `DailyReflectionResponse.knowledge_graph_updates` 合并到运行时 `knowledge_graph` 替换式键值结构。知识图谱记录当前关键信息，同一 `subject + relation` 后续更新会覆盖旧值；日记则继续追加。当前最小形状为：
 
 ```json
 {
-  "patches": [
-    {
-      "subject": "station",
-      "relation": "daily_pressure",
-      "value": "布鲁诺在第1天睡前记住……",
-      "confidence": 0.55,
-      "day": 1,
-      "time": "22:00:00"
-    }
-  ],
+  "schema_version": "key_value_replace_v1",
+  "updated_day": 1,
+  "updated_time": "22:00:00",
   "by_subject": {
     "station": {
-      "daily_pressure": "布鲁诺在第1天睡前记住……"
+      "daily_pressure": {
+        "value": "布鲁诺在第1天睡前记住……",
+        "confidence": 0.55,
+        "day": 1,
+        "time": "22:00:00"
+      }
     }
   }
 }
 ```
 
-该结构目前只是长期记忆占位；LLM 不负责直接改写 HP、资源、建筑或行动事实。
+该结构是 NPC 对当前关键信息的认知状态；LLM 不负责直接改写 HP、资源、建筑或行动事实。
 
 T1001 起，运行时 `plan` 可保存规则版每日计划。T1003 起，同一字段也可保存 `/npc/plan_day` 返回的 Mock / LLM 每日计划，或后端失败后的规则降级计划。计划必须是 24 个小时项，每项至少包含：
 
@@ -150,7 +148,7 @@ T1001 起，运行时 `plan` 可保存规则版每日计划。T1003 起，同一
 }
 ```
 
-计划由 `DailyPlanSystem` 生成和执行；常规 `action_id` 必须来自 `data/action_defs.json`，执行时仍由 `ActionSystem` 校验地点、工位、资源、HP 和行动合法性。T1003 后计划项 `source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`；T1002 计划修订还可产生 `mock_revision` / `rule_revision_fallback`。计划生成或修订可把当前小时改为 `idle` 安全等待项；`idle` 只表示计划层等待，不是生产行动定义。计划项不是已发生事实；只有实际执行的工作、吃饭、睡觉等行动事件才代表行动发生。
+计划由 `DailyPlanSystem` 生成和执行；常规 `action_id` 必须来自 `data/action_defs.json`，执行时仍由 `ActionSystem` 校验地点、工位、资源、HP 和行动合法性。T1003 后计划项 `source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`；T1002 计划修订还可产生 `mock_revision` / `rule_revision_fallback`。`mock_*` source 只代表开发期 mock 结果，不得在生产 / 演示路径中用于掩盖真实 provider 失败；真实失败应记录技术日志并使用规则 / 模板降级 source。计划生成或修订可把当前小时改为 `idle` 安全等待项；`idle` 只表示计划层等待，不是生产行动定义。计划项不是已发生事实；只有实际执行的工作、吃饭、睡觉等行动事件才代表行动发生。
 
 T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
@@ -503,7 +501,7 @@ T1001 `plan_created` 事件 payload：
 }
 ```
 
-`items` 保存 24 个小时计划项。`source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`。该事件表示计划被制定，不代表计划项已经执行；后续执行仍由对应行动事件记录。
+`items` 保存 24 个小时计划项。`source` 可为 `rule_default`、`mock_plan_day` 或 `rule_plan_fallback`；后续真实模型来源应使用明确的新 source，真实 provider 失败不得写成 `mock_plan_day`。该事件表示计划被制定，不代表计划项已经执行；后续执行仍由对应行动事件记录。
 
 T1002 `plan_revised` 事件 payload：
 
@@ -525,7 +523,7 @@ T1002 `plan_revised` 事件 payload：
 }
 ```
 
-`source` 当前可为 `mock_revision` 或 `rule_revision_fallback`。该事件表示 NPC 重新评估了计划；是否移动、工作、吃饭、睡觉或等待仍由随后当前小时计划执行和 `ActionSystem` 结算决定。
+`source` 当前可为 `mock_revision` 或 `rule_revision_fallback`；后续真实模型来源应使用明确的新 source，真实 provider 失败不得写成 `mock_revision`。该事件表示 NPC 重新评估了计划；是否移动、工作、吃饭、睡觉或等待仍由随后当前小时计划执行和 `ActionSystem` 结算决定。
 
 必备事件类型方向：
 
@@ -860,7 +858,7 @@ T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化�
 
 - `DailyPlanRequest` / `DailyPlanResponse`：每日计划；响应必须包含 24 条 `PlanItem`。
 - `PlanRevisionRequest` / `PlanRevisionResponse`：计划执行失败或异常后的计划修订。
-- `DailyReflectionRequest` / `DailyReflectionResponse`：首次睡眠总结、日记和知识图谱增量。
+- `DailyReflectionRequest` / `DailyReflectionResponse`：首次睡眠总结、增量日记和替换式知识图谱键值更新。
 - `KnowledgeGraphUpdateRequest` / `KnowledgeGraphUpdateResponse`：独立知识图谱更新。
 - `ProactiveIntentionRequest` / `ProactiveIntentionResponse`：NPC 是否主动找守备官交涉。
 - `PlayerStrategyClassificationRequest` / `PlayerStrategyClassificationResponse`：把守备官话术分类为说服、利诱、威胁、欺骗、安抚、交易、命令或未知。

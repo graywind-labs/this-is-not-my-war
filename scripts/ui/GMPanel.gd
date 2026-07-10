@@ -454,6 +454,7 @@ func _add_backend_section(parent: VBoxContainer) -> void:
 	_add_button(row, "LLM 状态", func() -> void:
 		_show_llm_state(_selected_id(_npc_select))
 	)
+	_add_button(row, "成本统计", _show_llm_usage)
 	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
 
 
@@ -802,6 +803,8 @@ func _execute_command(command: String) -> void:
 		"llm_state":
 			if _require_args(parts, 2, "llm_state <npc_id>"):
 				_show_llm_state(str(parts[1]))
+		"llm_usage":
+			_show_llm_usage()
 		"start_proactive":
 			if _require_args(parts, 3, "start_proactive <npc_id> <text>"):
 				_run_start_proactive_talk(str(parts[1]), command.substr(("start_proactive %s" % str(parts[1])).length()).strip_edges())
@@ -1436,6 +1439,18 @@ func _run_backend_health() -> void:
 	_log("后端健康检查：%s" % _compact(result))
 
 
+func _show_llm_usage() -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("debug_request_llm_usage"):
+		_log("LLMBridge 成本统计接口不可用。")
+		return
+	var result: Dictionary = llm_bridge.debug_request_llm_usage()
+	var runtime_snapshot: Dictionary = {}
+	if llm_bridge.has_method("debug_get_llm_runtime_snapshot"):
+		runtime_snapshot = llm_bridge.debug_get_llm_runtime_snapshot()
+	_log("LLM 额度 / 调试信息：usage=%s runtime=%s" % [_compact(result), _compact(runtime_snapshot)])
+
+
 func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bool) -> void:
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null or not llm_bridge.has_method("debug_request_dialogue"):
@@ -1699,7 +1714,7 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour | time_snapshot",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection",
+		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",

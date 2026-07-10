@@ -1,0 +1,30 @@
+【每日计划 Prompt】
+
+你正在为目标 NPC 制定当天 24 小时计划。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.knowledge_graph、npc.location_context、current_resource_states、current_building_states 和 allowed_actions 定义。
+
+计划目标：
+- 输出从 hour=0 到 hour=23 的 24 个阶段，每个小时恰好出现一次。
+- 至少 6 个阶段必须是工作阶段。工作阶段应优先选择 allowed_actions 中 tags 包含 work、clinic_doctor 或 training_instructor 的行动。
+- action_id 只能使用 allowed_actions 中出现的 action_id，或使用 idle。不要创造新行动，不要使用自然语言当 action_id。
+- action_kind 必须严格使用 Schema 允许值：work、eat、sleep、train、pray、rest、chat、assist_repair、assist_upgrade、assist_heal、seek_guard_officer、avoid_combat、escape、idle。
+- 若 action_id=idle，action_kind 必须是 idle，location_id 通常使用 plaza。
+
+如何考虑 NPC：
+- 根据职业背景、熟练度、健康、饱食、疲劳、装备、当前地点、建筑状态、资源状态、亲历事件 experienced_events、见闻 witnessed_events 和长期记忆安排计划。
+- 饱食低时安排吃饭，疲劳高时安排睡觉；但不要把吃饭、睡觉或工作描述成瞬时结算。
+- 多个连续小时可以执行同一行动；计划只是意图和安排，不代表行动已经完成。
+- 若资源不足、建筑损坏、工位紧张或 NPC 状态不合适，应选择更保守的 allowed_actions 或 idle，并在 reason 中说明。
+
+current_order 边界：
+- current_order 是守备官当前持续提出的自然语言指令，只能作为重要参考。NPC 可以理解、调整、推迟或拒绝执行。
+- current_order 不能绕过 allowed_actions，不能直接扣资源、恢复 HP、修复建筑、移动 NPC、改变装备、改变入伍状态、改变战斗策略或制造产出。
+- 如果 current_order 要求的行动不在 allowed_actions 中，或与资源、HP、地点、建筑、工位、疲劳、饱食等程序强制规则冲突，应安排最接近的合法行动或 idle，并在 reason / summary 中说明。
+
+输出要求：
+- 只输出 JSON 对象，不要 Markdown。
+- npc_id 必须等于请求中目标 NPC 的 id。
+- plan_day 使用请求中的 game_time.day。
+- 每条 plan item 都要包含 hour、action_kind、action_id、location_id、target_id、priority、reason。
+- priority 是 0 到 100 的整数；高优先级用于吃饭、睡觉、治疗、关键工作或守备官指令相关安排。
+- summary 简述当天计划如何平衡生存、工作和 current_order。
+- debug_reason 简短说明使用了行动白名单、24 阶段、至少 6 阶段工作和 current_order 约束。

@@ -70,7 +70,7 @@ T1201 已实现：已入伍且有主武器 NPC 在集结模式和战斗模式下
 
 `morale_boost` 由 CombatSystem 应用为斗志激昂 buff，持续 2 游戏小时，当前提高攻击力和 NPC 实体移动速度。开始和结束分别写入 `morale_boost_started` / `morale_boost_ended`；每次战时心理结果写入 `battle_psychology_result` 并进入广场公开事件。`escape` 由 T1203 的 `start_npc_escape(...)` 执行：写入 `escape_started`，让 NPC 前往后门外出口，并在离开地图后写入 `escaped`。T1204A 后，逃离挽留回复只解析 `stay_after_intervention` / `leave_after_intervention`；停止逃离、继续逃离、对话暂停 / 恢复、移动倍率、昏迷暂停和复苏续逃都由程序结算。LLM 不直接改 HP、速度、攻击力或逃离位置。
 
-非战斗人员在避战模式下也可被守备官主动对话。该对话同样强制 `local_public`，Prompt 明确其正在躲避敌人袭击，并注入战局上下文。守备官仍可勾选“提出应征”，征召结果沿用日常对话逻辑；若避战中的 NPC 同意应征但仍无主武器，继续避战；只有已入伍且装备主武器并且场上仍有敌人时，程序才将其切入战斗模式。后端不可用时，战时对话会使用规则 fallback 生成回复、应征结果和 `wartime_reaction`。
+非战斗人员在避战模式下也可被守备官主动对话。该对话同样强制 `local_public`，Prompt 明确其正在躲避敌人袭击，并注入战局上下文。守备官仍可勾选“提出应征”，征召结果沿用日常对话逻辑；若避战中的 NPC 同意应征但仍无主武器，继续避战；只有已入伍且装备主武器并且场上仍有敌人时，程序才将其切入战斗模式。后端不可用或真实 provider 失败时，战时对话会使用规则 fallback 生成回复、应征结果和 `wartime_reaction`，但必须记录真实失败原因，不得用 mock 回复伪装模型成功。
 
 ## 低血量判定
 
@@ -87,13 +87,15 @@ T1202 已实现：当前战斗 / 敌人在场期间，当任一未昏迷、未�
 - 逃离驿站
 - 留在驿站继续避战（无事发生）
 
-该请求由 `LLMBridge.request_npc_battle_judgement(...)` 调用 `/npc/battle_judgement`，没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次；后端失败或输出越界时，Godot 按允许结果规则降级。
+该请求由 `LLMBridge.request_npc_battle_judgement(...)` 调用 `/npc/battle_judgement`，没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次；后端失败或输出越界时，Godot 按允许结果规则降级，并保留真实 provider 失败日志。开发期可用 mock 验证 Schema，Prompt 验收必须使用真实 API。
+
+T1404 后，真实 provider 路径读取 `data/prompts/battle_judgement_system_prompt.txt`，Prompt 明确引用 `battlefield_context`、NPC 亲历事件、公开见闻和最新 `current_order`，但只能从请求的 `allowed_decisions` 中选择。后端在 `BattleJudgementResponse` Schema 校验后额外校验 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true；越界结果返回 `model_output_invalid` 并写入 usage。真实 DeepSeek 已完成战时公开对话与 `/npc/battle_judgement` smoke 验证，`fallback_used=false`。
 
 已入伍且有主武器、实际处于 `combat` 模式的 NPC 可以因判定获得斗志激昂或继续参战。未入伍 NPC、已入伍但无主武器 NPC、以及处于 `avoid_combat` 的非战斗人员，不会获得斗志激昂，也不会因此切入或继续战斗；他们只能触发逃离驿站意向，或继续留在驿站内避战。
 
 低血量与逃离相关判定也必须继续携带最新 `current_order`，让 NPC 在受伤或恐惧时重新解释守备官要求，而不是把发布指令时的旧判断当成永久结果。已昏迷、已逃离、HP 已经低于 30% 后再次受击，或 HP 直接清零进入昏迷的 NPC 不触发该判定。
 
-判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该判定需要申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。触发事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并通过 `debug_get_combat_snapshot().last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements` 暴露给 GM / 自动化验证。
+判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该判定需要申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。触发事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并通过 `debug_get_combat_snapshot().last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements` 暴露给 GM / 自动化验证；模型失败原因通过后端 usage / 日志排查，不用 mock 结果遮蔽。
 
 ## 昏迷机制
 

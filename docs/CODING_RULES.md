@@ -31,6 +31,9 @@
 6. 请求失败必须返回可处理错误，不让 Godot 卡死。
 7. 所有外部 Key 使用环境变量。
 8. 不把用户游戏存档和开发配置混在一起。
+9. Mock provider 只能作为开发期显式配置或调试接口使用；成品 / Demo 真实 provider 失败时不得自动返回 mock 内容伪装成功。
+10. 模型调用失败必须记录真实原因、request id、call_type、provider、model、HTTP 状态或异常类型；日志不得包含 API Key。
+11. 规则 / 模板降级可以用于维持游戏流程，但必须以明确 source / error 字段暴露，不能写成模型成功。
 
 ## 数据配置规则
 

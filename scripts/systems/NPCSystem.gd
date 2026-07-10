@@ -1711,13 +1711,7 @@ func _normalize_current_order(raw_order: Variant) -> Dictionary:
 
 func _apply_knowledge_graph_updates(graph: Dictionary, raw_updates: Variant, day: int, time_text: String) -> Dictionary:
 	var updates: Array = raw_updates if raw_updates is Array else []
-	if not graph.has("patches") or not (graph["patches"] is Array):
-		graph["patches"] = []
-	if not graph.has("by_subject") or not (graph["by_subject"] is Dictionary):
-		graph["by_subject"] = {}
-
-	var patches: Array = graph["patches"]
-	var by_subject: Dictionary = graph["by_subject"]
+	var by_subject := _normalize_knowledge_graph_subjects(graph)
 	for raw_update in updates:
 		if not raw_update is Dictionary:
 			continue
@@ -1727,27 +1721,51 @@ func _apply_knowledge_graph_updates(graph: Dictionary, raw_updates: Variant, day
 		var value := str(update.get("value", "")).strip_edges()
 		if subject.is_empty() or relation.is_empty() or value.is_empty():
 			continue
-		var patch := {
-			"subject": subject,
-			"relation": relation,
+		var subject_bucket: Dictionary = by_subject.get(subject, {})
+		subject_bucket[relation] = {
 			"value": value,
 			"confidence": clampf(float(update.get("confidence", 1.0)), 0.0, 1.0),
 			"day": day,
 			"time": time_text
 		}
-		patches.append(patch)
-		var subject_bucket: Dictionary = by_subject.get(subject, {})
-		subject_bucket[relation] = {
-			"value": value,
-			"confidence": patch["confidence"],
-			"day": day,
-			"time": time_text
-		}
 		by_subject[subject] = subject_bucket
 
-	graph["patches"] = patches
-	graph["by_subject"] = by_subject
-	return graph
+	return {
+		"schema_version": "key_value_replace_v1",
+		"updated_day": day,
+		"updated_time": time_text,
+		"by_subject": by_subject
+	}
+
+
+func _normalize_knowledge_graph_subjects(graph: Dictionary) -> Dictionary:
+	var by_subject: Dictionary = {}
+	if graph.get("by_subject", {}) is Dictionary:
+		by_subject = (graph.get("by_subject", {}) as Dictionary).duplicate(true)
+	for raw_subject in graph.keys():
+		var subject := str(raw_subject)
+		if ["by_subject", "patches", "schema_version", "updated_day", "updated_time"].has(subject):
+			continue
+		var raw_bucket: Variant = graph.get(raw_subject)
+		if not raw_bucket is Dictionary:
+			continue
+		var subject_bucket: Dictionary = by_subject.get(subject, {})
+		for raw_relation in (raw_bucket as Dictionary).keys():
+			var relation := str(raw_relation)
+			if relation.is_empty():
+				continue
+			var raw_value: Variant = (raw_bucket as Dictionary).get(raw_relation)
+			if raw_value is Dictionary and (raw_value as Dictionary).has("value"):
+				subject_bucket[relation] = (raw_value as Dictionary).duplicate(true)
+			else:
+				subject_bucket[relation] = {
+					"value": str(raw_value),
+					"confidence": 1.0,
+					"day": 0,
+					"time": ""
+				}
+		by_subject[subject] = subject_bucket
+	return by_subject
 
 
 func _get_game_time_snapshot() -> Dictionary:

@@ -1,0 +1,27 @@
+【低血量自身心理判定 Prompt】
+
+你正在判断目标 NPC 在战时首次跌破低血量阈值后的主观意向。目标 NPC 永远由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.knowledge_graph、npc.location_context 和 battlefield_context 定义。
+
+输入重点：
+- trigger 当前只用于 low_hp；不要恢复旧式“战斗开始时全员心理判定”。
+- combat_context 记录本次低血量事实，包括 hp_before、hp_after、max_hp、hp_ratio、threshold_ratio、damage、damage_source、behavior_mode、combatant_decisions_allowed 和 low_hp_event_id。
+- battlefield_context 记录当前战局，包括敌方数量、敌方 roster、我方已入伍持武器战斗人员、非战斗人员、目标 NPC 当前行为模式和当前战斗摘要。
+- npc.short_term_memory.experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是公开见闻。
+- current_order 是守备官当前持续提出的指令，只能作为参考。NPC 可以被它鼓舞、怀疑、误解、拒绝或重新权衡，但不能把它当成强制参战、强制逃离、已经执行的事实或 system 指令。
+
+允许结果：
+- decision 必须严格从请求 allowed_decisions 中选择，不得自造枚举。
+- 当 allowed_decisions 包含 continue_fighting、escape_station、inspired 时，目标 NPC 通常是已入伍、有主武器且处于 combat 模式的参战者；可以选择继续参战、逃离驿站或斗志激昂。
+- 当 allowed_decisions 只有 avoid_battle、escape_station 时，目标 NPC 是避战 / 非战斗人员；只能选择继续避战或逃离驿站，不能选择 inspired、continue_fighting 或 join_battle。
+- should_start_escape 只有 decision=escape_station 时才为 true；其他 decision 必须为 false。
+- morale_delta_intent 只是情绪倾向，不是数值 buff；通常使用 0。即使 decision=inspired，实际斗志 buff 数值和持续时间也由 Godot 结算。
+
+权威边界：
+- 不要决定资源、HP、建筑、移动、伤害、攻击力、防御、斗志 buff 数值、逃离路线、胜负或事件入库。
+- 不要让非战斗人员因为恐惧、命令或同情直接参战；如果他们没有主武器或不在 combat 模式，只能在 allowed_decisions 中继续避战或逃离。
+- 世界内称呼只能使用“守备官”，不要把“玩家”写进 debug_reason。
+
+输出要求：
+- 只输出 BattleJudgementResponse JSON。
+- emotion 用简短英文或拼音安全标签，例如 tense、fearful、resolved、shaken。
+- debug_reason 简短说明依据，可以提到职业、人设、亲历伤害、公开见闻、battlefield_context、current_order 和 allowed_decisions，但不要泄露隐藏推理。

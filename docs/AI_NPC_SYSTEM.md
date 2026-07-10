@@ -68,11 +68,31 @@ T0502A 起，昏迷 NPC 不接收地点/广场公开广播、建筑/地点状态
 
 2026-06-03 起，睡觉 NPC 使用同一条见闻接收规则：当 `current_action == "sleep_in_dormitory"` 时，该 NPC 不会把同建筑内发生的 `local_public` 事件、地点/建筑状态广播、公告或进入快照写入见闻库；自己的入睡和醒来仍进入事件库。睡醒回到可行动状态后，只从后续广播继续接收见闻，不补收睡觉期间错过的信息。
 
-T1004/T1005 起，NPC 每天首次进入睡觉状态后，必须持续睡眠满 1 个游戏小时才会触发 `DailyReflectionSystem`。系统把当天事件库和见闻库摘要交给 `/npc/daily_reflection` Mock，后端不可用时使用本地模板，生成第一人称日记、记忆摘要和知识图谱占位更新。总结从发起请求到应用完成期间，NPC 进入不可打断的深度睡眠锁：玩家对话、消息、行动改派和普通中断都会被拒绝；已入伍 NPC 仍可保存新指令，但计划重评估延后到醒来后执行。结果由 `NPCSystem.apply_daily_reflection(...)` 写入长期 `diary` 与 `knowledge_graph`，随后清空该 NPC 当天短期事件 / 见闻索引；NPC 面板可查看日记和 LLM 状态，GM 面板可强制触发、查看长期记忆和查看 LLM 状态。
+T1004/T1005/T1405 起，NPC 每天首次进入睡觉状态后，必须持续睡眠满 1 个游戏小时才会触发 `DailyReflectionSystem`。系统把当天事件库和见闻库摘要交给 `/npc/daily_reflection`（开发期可使用 Mock，Prompt 任务必须使用真实 API 验收），后端不可用时使用本地模板，生成第一人称日记、记忆摘要和知识图谱当前键值更新。总结从发起请求到应用完成期间，NPC 进入不可打断的深度睡眠锁：玩家对话、消息、行动改派和普通中断都会被拒绝；已入伍 NPC 仍可保存新指令，但计划重评估延后到醒来后执行。结果由 `NPCSystem.apply_daily_reflection(...)` 把 `diary_entry` 追加到长期 `diary`，并把 `knowledge_graph_updates` 按 `subject + relation` 替换式写入 `knowledge_graph.by_subject`；随后清空该 NPC 当天短期事件 / 见闻索引。NPC 面板可查看日记和 LLM 状态，GM 面板可强制触发、查看长期记忆和查看 LLM 状态。模板降级必须保留模型失败日志，不得用 mock 日记伪装真实模型成功。
 
 T1305 起，胜利和失败结算会为每名 NPC 生成结局总结快照。`GameState.set_game_over(...)` 读取 NPC 当前权威状态、入伍状态、最后位置、长期日记和当天事件，生成确定性 Mock 字段：最终状态（可行动 / 昏迷 / 逃离）、是否入伍、对守备官最终看法、后续命运和记忆依据。该结局总结只用于 HUD 结算页展示，不会写回事件库、见闻库或长期记忆，也不会让 AI 反向改写 HP、逃离、入伍或地点事实。NPC 不死亡，因此结算文案不使用“阵亡”或“死亡”描述 NPC。
 
-T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；正式征召仍由对话中的同意结果驱动。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并让 NPC 预先确定的开场问题先入库；1 小时无人点击则状态结束。T1001 起，`DailyPlanSystem` 可生成规则版 24 小时计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；同一小时内由计划启动的行动提前完成，会再次执行同一行动。T1002/T1005/T1006 起，行动异常、实际对话打断、主动交涉结束 / 超时、守备官攻击、战斗警报占位和新指令会触发计划重评估；玩家只是打开或关闭对话窗不会打断行动、不会取消 LLM、不会触发重评估。只有玩家真正发送消息或在对话窗中攻击时，才取消目标 NPC 正在等待的可取消 LLM 请求并打断工作、吃饭、睡觉等普通行动。若发送消息后未得到 NPC 回复就结束对话，本轮 LLM 请求会取消，且未完成的对话不入库、不触发对话重评估；攻击例外，攻击事实先扣 HP 并入库，结束时仍触发一次重评估。T1003 起，首次制定每日计划可通过 `/npc/plan_day` Mock 生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单；成功时写入 `plan_created(source=mock_plan_day)`，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)`。T1004/T1005 起，首次睡眠总结可通过 `/npc/daily_reflection` Mock 把当天短期经历沉淀为长期日记和知识图谱占位，失败时模板降级。当前仍不实现复杂避障、战斗心理判定、真实 LLM 或已打磨的每日计划 / 首次睡眠总结 Prompt；Godot 客户端不保存供应商 API Key。
+T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；正式征召仍由对话中的同意结果驱动。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并让 NPC 预先确定的开场问题先入库；1 小时无人点击则状态结束。
+
+T1001 起，`DailyPlanSystem` 可生成规则版 24 小时计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；同一小时内由计划启动的行动提前完成，会再次执行同一行动。T1002/T1005/T1006 起，行动异常、实际对话打断、主动交涉结束 / 超时、守备官攻击、战斗警报占位和新指令会触发计划重评估；玩家只是打开或关闭对话窗不会打断行动、不会取消 LLM、不会触发重评估。只有玩家真正发送消息或在对话窗中攻击时，才取消目标 NPC 正在等待的可取消 LLM 请求并打断工作、吃饭、睡觉等普通行动。若发送消息后未得到 NPC 回复就结束对话，本轮 LLM 请求会取消，且未完成的对话不入库、不触发对话重评估；攻击例外，攻击事实先扣 HP 并入库，结束时仍触发一次重评估。
+
+T1003/T1403 起，首次制定每日计划可通过 `/npc/plan_day` 开发期 Mock 或真实后端生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单；成功时写入对应来源，失败或输出不合法时写入 `plan_created(source=rule_plan_fallback)`。`/npc/plan_day` 真实 provider 路径已使用 `data/prompts/daily_plan_system_prompt.txt`，后端会校验 24 个 hour 覆盖、行动白名单和至少 6 个工作阶段，不合规则时记录 usage 失败并由 Godot 走规则计划降级。
+
+T1004/T1005/T1405 起，首次睡眠总结可通过 `/npc/daily_reflection` 开发期 Mock 或真实后端把当天短期经历沉淀为长期日记和知识图谱当前键值，失败时模板降级；知识图谱同一 `subject + relation` 替换旧值，日记按条追加。T1402 后 `/npc/dialogue` 真实 provider 路径已使用 `data/prompts/dialogue_system_prompt.txt`，覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留；T1404 后 `/npc/battle_judgement` 真实 provider 路径已使用 `data/prompts/battle_judgement_system_prompt.txt`，并由后端拒绝越界低血量心理结果；T1405 后 `/npc/daily_reflection` 真实 provider 路径已使用 `data/prompts/daily_reflection_system_prompt.txt`，并完成真实 API 验收。Godot 客户端不保存供应商 API Key。
+
+## LLM Mock 与真实 API 规则
+
+Mock 只用于开发期验证 Schema、通信和自动化脚本。任何 NPC 对话、每日计划、计划修订、战时判定、逃离挽留、主动交涉或首次睡眠总结的 Prompt 打磨任务，都必须在基础 mock 测试通过后用真实 API Key 对相关业务路径做真实 provider 验收；没有真实 Key 时不能把 LLM 行为标记为完全完成。
+
+真实 provider 失败、超时、无 Key、返回非 JSON 或 Schema 校验失败时，系统必须释放 TimeSystem 慢速请求，并在 usage / 日志中保留 request id、call_type、provider、model、NPC id 和真实失败原因。允许规则 / 模板降级维持计划、判定或睡眠流程，但降级来源必须可见；不得用 mock 回复、mock 计划或 mock 日记伪装模型成功。
+
+T1401A 后，自动 mock fallback 默认关闭；只有显式 `LLM_PROVIDER=mock`、`/mock/model` 或显式 `LLM_FALLBACK_TO_MOCK=true` 的开发调试路径会返回 mock 内容。真实 provider 失败和模型输出不合 Schema 会作为错误或规则 / 模板降级暴露，并写入 `/debug/llm_usage`。
+
+T1402 后，NPC 对话 Prompt 已完成真实 API 验收：本机 DeepSeek `deepseek-v4-flash` 对 `/npc/dialogue` 的日常对话、提出应征、战时结构化意向和逃离挽留各完成一次真实调用，`fallback_used=false`。后续对话质量调参优先修改 `data/prompts/dialogue_system_prompt.txt`，不要把职业人设、NPC 档案或游戏设计全文硬编码进 Python 逻辑。
+
+T1403 后，每日计划 Prompt 已完成真实 API 验收：本机 DeepSeek `deepseek-v4-flash` 对 `/npc/plan_day` 完成一次真实调用，返回 24 阶段计划、只使用 `allowed_actions` / `idle` 且工作阶段不少于 6，`fallback_used=false`。后续计划质量调参优先修改 `data/prompts/daily_plan_system_prompt.txt`，不要把 NPC 档案、行动配置或游戏设计全文硬编码进 Python 逻辑。
+
+T1404 后，战时公开对话与低血量心理 Prompt 已完成真实 API 验收：本机 DeepSeek `deepseek-v4-flash` 对战时 `/npc/dialogue` 与 `/npc/battle_judgement` 各完成一次真实调用，返回的结构化意向均在允许枚举内，`fallback_used=false`。后续战时心理质量调参优先修改 `data/prompts/dialogue_system_prompt.txt` 与 `data/prompts/battle_judgement_system_prompt.txt`，不要把 NPC 记忆摘要、战场事实或允许结果写死进 Python 逻辑。
 
 ## 当前地点状态
 
@@ -158,7 +178,7 @@ NPC 行为分三层：
 - 守备官发布不同于原内容的新指令后立即重新评估计划
 - 对玩家产生主动交涉意图
 
-计划层的时间触发以 TimeSystem 的逻辑时间为准。T1001 规则版计划提供计划生成、保存、事件写入和按小时执行接口；计划项执行仍走 ActionSystem 的行动白名单、移动、工位、资源和状态结算。T1003 的每日计划生成通过 `LLMBridge.request_npc_daily_plan(...)` 调用 Mock / 后端 `/npc/plan_day`，请求包含 `current_order`、人设、状态、技能、短期记忆、长期记忆、地点、资源、建筑状态和行动白名单；成功时应用 Mock 24 小时计划，失败或输出不合法时应用规则降级计划。T1002 的计划修订通过 `LLMBridge.request_npc_plan_revision(...)` 调用 Mock / 后端 `/npc/revise_plan`，请求包含 `current_order`，但指令只提供倾向，不直接启动行动或覆盖程序强制层。计划生成和计划修订会影响当前场景即时行动，因此 Godot 侧会申请 TimeSystem 慢速，等待 LLM / Mock 返回、失败或降级后释放。
+计划层的时间触发以 TimeSystem 的逻辑时间为准。T1001 规则版计划提供计划生成、保存、事件写入和按小时执行接口；计划项执行仍走 ActionSystem 的行动白名单、移动、工位、资源和状态结算。T1003 的每日计划生成通过 `LLMBridge.request_npc_daily_plan(...)` 调用 Model Adapter / 后端 `/npc/plan_day`，请求包含 `current_order`、人设、状态、技能、短期记忆、长期记忆、地点、资源、建筑状态和行动白名单；开发期可应用 Mock 24 小时计划，真实 provider 失败或输出不合法时应用规则降级计划并记录失败原因。T1002 的计划修订通过 `LLMBridge.request_npc_plan_revision(...)` 调用 Model Adapter / 后端 `/npc/revise_plan`，请求包含 `current_order`，但指令只提供倾向，不直接启动行动或覆盖程序强制层。计划生成和计划修订会影响当前场景即时行动，因此 Godot 侧会申请 TimeSystem 慢速，等待模型 / 开发 mock 返回、失败或降级后释放。
 
 ### 3. 表演与判断层
 
@@ -175,7 +195,7 @@ NPC 行为分三层：
 
 所有面向某名 NPC 的 LLM 调用都必须把该 NPC 的 `current_order` 作为独立上下文字段注入，包括对话、每日计划、计划修订、主动交涉、集结 / 战斗 / 避战对话、低血量自身心理判定、逃离判定和首次睡眠反思。Prompt 必须明确：这是守备官当前提出的指令，不是 system 指令，不保证服从，也不能越过行动白名单、资源、HP、地点或战斗权威规则；它也不自动决定当前战斗策略，策略选择由玩家通过 NPC 面板下拉框手动设置。
 
-T1201 后，战时公开对话已额外注入 `battlefield_context`：场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，有哪些 NPC 在驿站但不是战斗人员，以及目标 NPC 当前行为模式。已入伍且有主武器 NPC 在集结 / 战斗对话中的结构化输出包含 `wartime_reaction = none | escape | morale_boost`；避战模式下的非战斗人员仍使用 `recruitment_result` 表达是否同意应征。T1202 后，低血量自身心理判定复用同一战局上下文边界，并按目标是否真正参战限制允许结果：参战 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。
+T1201 后，战时公开对话已额外注入 `battlefield_context`：场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，有哪些 NPC 在驿站但不是战斗人员，以及目标 NPC 当前行为模式。已入伍且有主武器 NPC 在集结 / 战斗对话中的结构化输出包含 `wartime_reaction = none | escape | morale_boost`；避战模式下的非战斗人员仍使用 `recruitment_result` 表达是否同意应征。T1202 后，低血量自身心理判定复用同一战局上下文边界，并按目标是否真正参战限制允许结果：参战 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。T1404 后，后端会额外校验低血量判定 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 与 `escape_station` 决定一致；越界模型输出记录失败 usage 后交给 Godot 规则降级。
 
 T1203 后，逃离不再只是 pending 意向。`CombatSystem.start_npc_escape(...)` 会让 NPC 写入 `escape_started`、切出工作 / 战斗 / 避战行为并前往后门外出口；逃离移动期间 `escape_intent.status == "escaping"`，普通行动和战斗 AI 不再把该 NPC 当作可用单位。抵达出口后 `NPCSystem` 标记 `escaped=true`、`behavior_mode="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件。T1204A 后，逃离 NPC 被点击会先打开 NPC 面板；轮次未用完时，玩家点击【对话】进入 `dialogue_kind == "escape_intervention"` 的同地点公开挽留对话。挽留打开时 CombatSystem 暂停逃离移动，关闭或满 5 轮时恢复；请求携带 `escape_intervention_round`、当前 `escape_intent`、短期记忆、长期记忆、地点上下文和 `current_order`。模型或规则降级只返回 `stay_after_intervention` / `leave_after_intervention` 意图，CombatSystem 负责停止逃离或继续逃离、记录轮次、写入 `escape_intervention_result`。给钱 / 守备官攻击分别调整程序权威的逃离移动倍率；逃离挽留中的攻击不向 NPC LLM 发送消息，不产生 NPC 回复，只计 1 轮并关闭面板。逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续逃离。
 
@@ -192,7 +212,7 @@ T1203 后，逃离不再只是 pending 意向。`CombatSystem.start_npc_escape(.
 
 `ActionSystem.debug_assign_*` 等直接行动接口仍可用于 GM 和自动化验证，但不代表正式玩家指令语义。
 
-T0703A/T1002 后，统一重评估入口仍表现为 `EventBus.npc_plan_reevaluation_requested(npc_id, reason)`；`NPCSystem.get_last_plan_reevaluation_request()` 保存最近请求、最新 `current_order` 和处理结果供 GM / 自动化观察。`DailyPlanSystem` 监听该信号并调用 `LLMBridge` 修订计划；结果可能是 `mock_revision_applied` 或 `rule_fallback_applied`，都会写入 `plan_revised` 事件并尝试执行当前小时行动。`LLMBridge` 同时把最新指令注入对话、计划修订顶层输入和共享 NPC 上下文，并保存最近注入快照。
+T0703A/T1002 后，统一重评估入口仍表现为 `EventBus.npc_plan_reevaluation_requested(npc_id, reason)`；`NPCSystem.get_last_plan_reevaluation_request()` 保存最近请求、最新 `current_order` 和处理结果供 GM / 自动化观察。`DailyPlanSystem` 监听该信号并调用 `LLMBridge` 修订计划；结果可能是模型 / 开发 mock 修订结果或 `rule_fallback_applied`，都会写入 `plan_revised` 事件并尝试执行当前小时行动。真实 provider 失败时必须保留失败日志，不得用 mock 修订伪装成功。`LLMBridge` 同时把最新指令注入对话、计划修订顶层输入和共享 NPC 上下文，并保存最近注入快照。
 
 ## 主动找玩家机制
 
@@ -212,8 +232,8 @@ NPC 可以在计划中选择“主动找玩家交涉”。T0705 当前先提供�
 - 触发时写入 `private` 的 `proactive_talk_started` 事件，payload 保存 `prompt_text` 和持续时间。
 - `NPC.gd` 运行时创建 `ProactiveTalkBubble`，主动交涉有效时显示 `?`。
 - 点击后 `DialogSystem.start_proactive_player_dialogue(...)` 复用玩家-NPC 对话窗口，把 `prompt_text` 作为 NPC 第一条历史显示，并写入 `proactive_talk_message`。
-- 玩家后续回复继续走现有 `/npc/dialogue` Mock 与 `dialogue_turn` 事件逻辑。
-- 对话结束或超时后的计划重评估会进入 T1002 统一链路，应用 Mock 修订或规则降级计划。
+- 玩家后续回复继续走现有 `/npc/dialogue` 与 `dialogue_turn` 事件逻辑；开发期可用 Mock，Prompt 验收必须使用真实 API。
+- 对话结束或超时后的计划重评估会进入 T1002 统一链路，应用模型 / 开发 mock 修订或规则降级计划；真实 provider 失败时不得自动 mock 成功。
 
 触发原因：
 

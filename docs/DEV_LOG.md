@@ -1,5 +1,73 @@
 # DEV_LOG.md
 
+## 2026-07-07 T1406 API 额度面板 / 调试信息
+
+- `ModelAdapter` 新增预算守门配置：`LLM_BUDGET_MAX_CALLS`、`LLM_BUDGET_MAX_INPUT_TOKENS`、`LLM_BUDGET_MAX_OUTPUT_TOKENS`、`LLM_BUDGET_MAX_TOTAL_TOKENS` 和 `LLM_BUDGET_MAX_COST`，默认 `0` 关闭。超预算时业务接口返回 HTTP 429 / `budget_exceeded`，usage 记录 `BudgetExceeded`、`budget_blocked`、request id、call_type、provider/model、NPC id 和失败原因，不自动 mock fallback。
+- `/debug/llm_usage` 与 `/health` 的 adapter 快照新增预算上限、已用量、剩余额度、是否启用和最近预算错误；既有 usage 继续记录调用次数、类型、token、费用估算、失败原因、http 状态、异常类型、fallback / 降级来源。
+- `TimeSystem.get_time_scale_snapshot()` 新增 `last_time_scale_reason`；`LLMBridge.debug_get_llm_runtime_snapshot()` 新增当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、后端状态、有效逻辑倍率和最近倍率变化原因。
+- GM 面板“成本统计”按钮和 `llm_usage` 命令现在同时显示后端 usage / budget 与 Godot runtime 快照；该入口只读，不申请慢速、不写权威状态。
+- `backend/.env.example`、`backend/README.md`、`API_BUDGET.md`、`UI_UX.md`、`GM_PANEL.md`、`TECH_ARCHITECTURE.md`、`GODOT_ARCHITECTURE.md`、`MODULE_INDEX.md`、`CURRENT_STATE.md` 和 `TASKS.md` 已同步回写。
+- 新增 `tools/verify_api_budget_debug.py`，覆盖 fake real-provider usage / budget 记录、预算超限 usage 和 Flask 业务接口 HTTP 429。
+- 真实 provider usage 验收：`python tools/verify_plan_day_prompt_real.py` 本轮因 DeepSeek `/npc/plan_day` 超时返回 `provider_unavailable`，usage 记录 `provider=deepseek`、`model=deepseek-v4-flash`、`exception_type=ConnectionError`、`fallback_used=false`；随后使用真实 DeepSeek 对单次 `/npc/dialogue` 发起短请求，返回 200，`/debug/llm_usage` 显示 calls=1、failed=0、`fallback_used=false`。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_api_budget_debug.py tools/verify_mock_model_adapter.py`、`python tools/verify_api_budget_debug.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、临时以 `LLM_PROVIDER=mock` 启动后端后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
+
+## 2026-07-07 T1405 首次睡眠总结 Prompt
+
+- 新增 `data/prompts/daily_reflection_system_prompt.txt`，作为 `/npc/daily_reflection` 真实 provider 的首次睡眠总结系统 Prompt；`ModelAdapter` 在 `call_type=daily_reflection` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- Prompt 明确区分长期记忆的两种更新语义：`knowledge_graph_updates` 是以 `subject + relation` 为键的替换式当前状态更新，`diary_entry` 是符合 NPC 语气的第一人称日记并按天增量追加。
+- `/npc/daily_reflection` 新增业务校验：NPC id、日期、日记 / 摘要非空、知识图谱更新字段非空，以及世界内文本必须使用“守备官”而非“玩家”；不合法时返回 `model_output_invalid` 并写入失败 usage。
+- `NPCSystem.apply_daily_reflection(...)` 不再写入 append-only `knowledge_graph.patches`，改为规范化 `knowledge_graph.by_subject[subject][relation] = 当前值`；同键后续更新覆盖旧值，日记继续追加。
+- 新增 `tools/verify_daily_reflection_prompt.py` fake real-provider 验证和 `tools/verify_daily_reflection_prompt_real.py` 真实 provider smoke 验证。真实 DeepSeek `deepseek-v4-flash` 已完成 1 次 `/npc/daily_reflection` 调用，`fallback_used=false` 且无失败。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py backend/schemas/npc_ai.py tools/verify_daily_reflection_prompt.py tools/verify_daily_reflection_prompt_real.py tools/verify_daily_reflection_endpoint.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py`、`python tools/verify_daily_reflection_prompt.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_daily_reflection_prompt_real.py`、`godot --headless --path . --script res://tools/verify_daily_reflection_system.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、临时以 `LLM_PROVIDER=mock` 启动后端后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --quit-after 1`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_battle_judgement_prompt.py`。
+
+## 2026-07-07 T1404 战时对话与低血量心理 Prompt
+
+- 新增 `data/prompts/battle_judgement_system_prompt.txt`，作为 `/npc/battle_judgement` 真实 provider 的独立低血量自身心理判定系统 Prompt；`ModelAdapter` 在 `call_type=battle_judgement` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 战时公开对话继续复用 `data/prompts/dialogue_system_prompt.txt`；T1404 验收覆盖 `interaction_context=combat` 的结构化 `wartime_reaction`，并与低血量判定同轮真实 provider smoke 验证。
+- `/npc/battle_judgement` 在 `BattleJudgementResponse` Schema 校验后新增业务校验：`decision` 必须来自请求 `allowed_decisions`，`should_start_escape` 只能在 `decision == "escape_station"` 时为 true；不合法时返回 `model_output_invalid` 并写入失败 usage，Godot 继续按允许结果规则降级。
+- 新增 `tools/verify_battle_judgement_prompt.py` fake real-provider 验证与 `tools/verify_battle_judgement_prompt_real.py` 真实 provider smoke 验证。真实 DeepSeek `deepseek-v4-flash` 已完成 1 次战时 `/npc/dialogue` 和 1 次 `/npc/battle_judgement` 调用，`fallback_used=false` 且无失败。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_battle_judgement_prompt.py tools/verify_battle_judgement_prompt_real.py tools/verify_mock_model_adapter.py tools/verify_backend_schemas.py tools/verify_dialogue_prompt.py`、`python tools/verify_battle_judgement_prompt.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_battle_judgement_prompt_real.py`、`godot --headless --path . --script res://tools/verify_wartime_dialogue.gd`、`godot --headless --path . --script res://tools/verify_low_hp_battle_judgement.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`；Godot MCP `addon_status` / `get_state` 复验连接正常。
+
+## 2026-07-07 T1403 每日计划 Prompt
+
+- 新增 `data/prompts/daily_plan_system_prompt.txt`，作为 `/npc/plan_day` 真实 provider 的独立系统 Prompt 模板；`ModelAdapter` 在 `call_type=plan_day` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 每日计划 Prompt 明确输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` / `idle`，并限制 `current_order` 只能作为守备官当前指令参考，不能越过行动白名单、资源、HP、地点、建筑、工位或程序强制层。
+- `/npc/plan_day` 在 `DailyPlanResponse` Schema 校验后新增业务校验：hour 必须覆盖 0-23，行动必须来自白名单，工作阶段必须不少于 6；不合法时返回 `model_output_invalid` 并写入失败 usage，Godot 继续走既有规则计划降级。
+- 新增 `tools/verify_plan_day_prompt.py` fake real-provider 验证，以及 `tools/verify_plan_day_prompt_real.py` 真实 provider smoke 验证。真实 DeepSeek `deepseek-v4-flash` 已完成 1 次 `/npc/plan_day` 调用，返回 24 阶段白名单计划，`fallback_used=false` 且无失败。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_plan_day_prompt.py tools/verify_plan_day_prompt_real.py tools/verify_plan_day_endpoint.py tools/verify_mock_model_adapter.py`、`python tools/verify_plan_day_prompt.py`、`python tools/verify_plan_day_prompt_real.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`godot --headless --path . --script res://tools/verify_daily_plan_llm.gd`、`godot --headless --path . --quit-after 1`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`。
+
+## 2026-07-07 T1402 NPC 对话 Prompt
+
+- 新增 `data/prompts/dialogue_system_prompt.txt`，作为 `/npc/dialogue` 真实 provider 的独立系统 Prompt 模板；`ModelAdapter` 在 `call_type=dialogue` 时读取该模板，并继续叠加通用 JSON / Schema guard。
+- 对话 Prompt 已覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留：日常 / 征召限制 `recruitment_result=none|accept|reject`，集结 / 战斗限制 `wartime_reaction=none|escape|morale_boost`，避战保持 `wartime_reaction=none`，逃离挽留只允许 `intent=stay_after_intervention|leave_after_intervention`。
+- 新增 `tools/verify_dialogue_prompt.py` fake real-provider 验证，以及 `tools/verify_dialogue_prompt_real.py` 真实 provider smoke 验证。真实 DeepSeek `deepseek-v4-flash` 已完成 4 次 `/npc/dialogue` 调用，覆盖日常对话、应征、战时意向和逃离挽留，`fallback_used=false` 且无失败。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_dialogue_prompt.py tools/verify_dialogue_prompt_real.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_dialogue_prompt_real.py`、`powershell -ExecutionPolicy Bypass -File .\tools\check_godot_mcp.ps1`、`godot --headless --path . --quit-after 1`。
+
+## 2026-07-07 T1401A 封存成品 Mock fallback
+
+- `ModelAdapterConfig.fallback_to_mock` 和 `LLM_FALLBACK_TO_MOCK` 环境默认值改为 `false`；真实 provider 失败、无 Key、HTTP 错误、超时、非 JSON 或业务 Schema 校验失败时不再自动返回 mock 内容。显式 `LLM_PROVIDER=mock`、`/mock/model` 和显式 `LLM_FALLBACK_TO_MOCK=true` 仍作为开发 / 自动化测试入口保留。
+- usage 记录新增 `http_status`、`exception_type`、`degradation_source`、最近失败摘要，并在模型输出不符合业务 Schema 时追加失败记录；日志 / usage 不记录 API Key 或请求头。
+- 通用 Model Adapter schema guard 补充枚举约束，避免真实 provider 自造 `response_kind`、`intent`、`wartime_reaction` 等字段；正式 Prompt 打磨仍留给 T1402-T1405。
+- 真实 API 验收通过：使用本地真实 `LLM_PROVIDER=deepseek` / `LLM_API_KEY` / `LLM_FALLBACK_TO_MOCK=false` 调用 `/npc/dialogue`，返回 200；`GET /debug/llm_usage` 显示 provider=`deepseek`、model=`deepseek-v4-flash`、input_tokens=873、output_tokens=303、`fallback_used=false`。无 Key 场景返回 503 `provider_unavailable`，usage 记录 `exception_type=ConfigurationError` 且 `fallback_used=false`。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py tools/verify_plan_day_endpoint.py tools/verify_plan_revision_endpoint.py tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_backend_schemas.py`、临时以 `LLM_PROVIDER=mock` 启动 Flask 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
+## 2026-07-07 LLM Mock 封存与真实 API 验收规则
+
+- 将项目级规则调整为：Mock 只用于开发期 Schema / 通信 / 自动化验证；基础 mock 测试通过后，涉及 LLM / Prompt 的任务必须使用真实 API Key 做真实 provider 验收。
+- 明确生产 / 演示路径不得用自动 mock fallback 掩盖真实 provider 失败；模型失败、超时、无 Key、非 JSON 或 Schema 校验失败必须返回可处理错误并记录 request id、call_type、provider、model、NPC id 和真实失败原因。
+- 允许规则 / 模板降级维持游戏流程，但必须标明 source 并保留原始模型失败日志；不得把 mock 回复、mock 计划或 mock 日记当成模型成功。
+- 更新 `AGENTS.md`、`docs/TASKS.md`、`game_design.md`、LLM / Prompt / API / 架构 / GM / UI / 数据 Schema 相关文档和 `backend/README.md`；新增 T1401A，专门承接“封存成品 mock fallback 与真实失败日志”的后续实现。
+- 本轮只改文档和任务登记，未改运行代码；随后 T1401A 已实现生产 / 演示默认关闭自动 mock fallback。
+
+## 2026-07-07 T1401 真实 Model Adapter
+
+- `ModelAdapter` 新增 `deepseek` / `openai_compatible` 真实 provider 路径，使用 OpenAI 兼容 `/chat/completions`；DeepSeek 默认 `https://api.deepseek.com` + `deepseek-v4-flash`，Key 只从后端环境变量读取。
+- 默认 `LLM_PROVIDER=mock`，非 mock provider 无 Key、请求失败、超时或返回非 JSON 时按 `LLM_FALLBACK_TO_MOCK=true` 自动降级到 mock；关闭降级时返回可处理错误。
+- 后端复用单个 ModelAdapter 实例记录 usage，`GET /health` 返回 adapter 配置快照，`GET /debug/llm_usage` 返回调用记录、token、费用估算和 fallback 汇总。
+- `LLMBridge` 新增 usage 查询接口，GM 面板新增“成本统计”按钮和 `llm_usage` 命令；查询只读，不申请 TimeSystem 慢速、不写权威状态。
+- `backend/.env.example` 改为默认 mock，并补充 DeepSeek / OpenAI-compatible 配置项。
+- 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_backend_schemas.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、临时以 `LLM_PROVIDER=mock` 启动 Flask 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
+
 ## 2026-07-03 T1305 NPC 结局总结页面
 
 - `GameState.set_game_over(...)` 现在会规范化胜负 `settlement_snapshot`，并为每名 NPC 补齐最终状态（可行动 / 昏迷 / 逃离）、是否入伍、最后位置、Mock 最终看法、Mock 后续命运和记忆依据。
@@ -293,7 +361,7 @@
 - 新增 `DailyReflectionSystem` 并挂载到 `Main/Systems/DailyReflectionSystem`，监听 `sleep_started`；每名 NPC 每天首次睡觉生成睡前总结，重复睡眠不自动重复写入，GM 可 force 调试。
 - `LLMBridge` 新增 `/npc/daily_reflection` 请求和 payload 构造，注入共享 NPC 上下文、当前指令、当天事件 / 见闻摘要和已有日记；当时睡前总结默认不申请 TimeSystem 慢速，已在 T1005 修正为首次睡眠总结必须慢速。
 - Flask 后端新增 `POST /npc/daily_reflection`，使用 `DailyReflectionRequest` / `DailyReflectionResponse` 校验输入输出；Mock provider 覆盖 `daily_reflection`。
-- `NPCSystem` 新增长期记忆读取和睡前总结应用接口，写入 `diary`，并把知识图谱更新合并到 `knowledge_graph.patches` / `knowledge_graph.by_subject` 占位结构。
+- `NPCSystem` 新增长期记忆读取和睡前总结应用接口，写入 `diary`，并把知识图谱更新合并到当时的占位结构；T1405 后已收敛为 `knowledge_graph.by_subject[subject][relation]` 替换式当前值，不再写 append-only `patches`。
 - `MemorySystem` 新增 `clear_npc_short_term_memory(...)`，只清空指定 NPC 当天事件库 / 见闻库索引，不删除全局事件档案。
 - `NPCPanel` 新增日记滚动区；`GMPanel` 新增睡前总结、长期记忆和最近总结按钮，以及 `reflect_npc`、`long_memory`、`reflection_result` 命令。
 - 新增 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_daily_reflection_endpoint.py`，并扩展 `tools/verify_gm_panel.gd`、`tools/verify_mock_model_adapter.py`。
