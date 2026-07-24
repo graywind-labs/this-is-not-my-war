@@ -32,8 +32,8 @@ func _init() -> void:
 		return
 
 	var npc_id := "veteran_deputy_01"
-	resource_system.add_resource("weapons", 8)
-	resource_system.add_resource("horse_readiness", 2)
+	resource_system.add_resource("item_sword_shield", 2)
+	resource_system.add_resource("item_bow", 1)
 
 	var sword_result: Dictionary = equipment_system.equip_npc_main_weapon(npc_id, "sword_shield", "local_public")
 	if not bool(sword_result.get("ok", false)):
@@ -50,7 +50,7 @@ func _init() -> void:
 
 	npc_system.debug_select_npc(npc_id)
 	await process_frame
-	var strategy_select := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCCombatStrategySelect") as OptionButton
+	var strategy_select := root.find_child("NPCCombatStrategySelect", true, false) as OptionButton
 	if strategy_select == null:
 		push_error("NPCPanel should create combat strategy selector beside weapon equip controls")
 		quit(1)

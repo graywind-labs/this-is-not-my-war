@@ -113,6 +113,16 @@ func _init() -> void:
 		push_error("Escaped event should be public in plaza events")
 		quit(1)
 		return
+	if (memory_system.get_location_snapshot("plaza").get("people_present", []) as Array).has("cook_01"):
+		push_error("Escaped NPC should be removed from plaza people_present")
+		quit(1)
+		return
+	var escaped_witness_count := int(memory_system.get_npc_witness_events("cook_01").size())
+	memory_system.set_plaza_notice("离站者不应再收到这条通告。", "guard_officer")
+	if memory_system.get_npc_witness_events("cook_01").size() != escaped_witness_count:
+		push_error("Escaped NPC should not receive later notice-board witnesses")
+		quit(1)
+		return
 
 	gm_panel._execute_command("escape_npc priest_01")
 	await process_frame

@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+from tools.station_context_fixture import build_station_context
 
 
 class _FakeDialogueResponse:
@@ -46,6 +47,9 @@ def _base_payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=3, time="18:00:00", hour=18).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
+        ]),
         "dialogue_kind": "player_npc",
         "npc_id": "cook_01",
         "npc_name": "布鲁诺",
@@ -55,6 +59,7 @@ def _base_payload() -> dict:
             "desires": ["保住食堂", "别让普通人被当成士兵消耗"],
             "fears": ["被逼上战场"],
             "boundaries": ["不能接受无意义牺牲"],
+            "speech_style": "说话直率，先确认有多少人、多少粮和多少时间；抱怨归抱怨，最后会给出能执行的办法。",
         },
         "speaker_name": "守备官",
         "speaker_text": "守备官请求你应征，帮忙守住食堂和驿站。",
@@ -111,6 +116,32 @@ def _base_payload() -> dict:
         },
         "long_memory": {"diary": ["我不想让锅铲变成刀。"]},
         "location_context": {"location_id": "dining_hall", "people_present": ["cook_01"]},
+        "allowed_actions": [
+            {
+                "action_id": "work_dining_hall",
+                "name": "加工餐食",
+                "action_kind": "work",
+                "location_id": "dining_hall",
+                "tags": ["work"],
+                "context": {"skill": "厨艺", "authority": "ActionSystem"},
+            },
+            {
+                "action_id": "eat_at_dining_hall",
+                "name": "吃饭",
+                "action_kind": "eat",
+                "location_id": "dining_hall",
+                "tags": ["eat"],
+                "context": {"authority": "ActionSystem"},
+            },
+            {
+                "action_id": "sleep_in_dormitory",
+                "name": "睡觉",
+                "action_kind": "sleep",
+                "location_id": "dormitory",
+                "tags": ["sleep"],
+                "context": {"authority": "ActionSystem"},
+            },
+        ],
     }
 
 
@@ -120,6 +151,7 @@ def _valid_response(**overrides: object) -> dict:
         "replyer_id": "cook_01",
         "reply_text": "守备官，我听见了。要我站出来，就别把食堂里的人当成柴火。",
         "response_kind": "reply_to_player",
+        "invitation_result": "not_applicable",
         "intent": "accept_recruitment",
         "emotion": "wary",
         "recruitment_result": "accept",
@@ -153,17 +185,46 @@ def main() -> None:
     required_prompt_fragments = [
         "NPC 对话 Prompt",
         "职业背景",
+        "speech_style",
+        "自然、直白",
+        "不要为了显得有个性",
+        "不是固定句式或台词模板",
+        "往昔·近日",
+        "传达敌情",
+        "日记字符串保留",
+        "第 N 天 + 时间",
+        "职业经验",
         "experienced_events",
         "witnessed_events",
         "current_order",
+        "allowed_actions",
+        "当前能力边界",
+        "context.eligible=false",
+        "unavailable_reason",
+        "required_ability=主持弥撒",
+        "required_active_action_id",
+        "blocked_by_active_action_id",
+        "attend_mass",
+        "pray_at_chapel",
+        "不是制定或修改计划",
+        "列表外行动",
+        "当前做不到",
         "提出应征",
         "wartime_reaction",
         "avoid_combat",
         "escape_intervention",
         "stay_after_intervention",
         "leave_after_intervention",
+        "dialogue_phase=invitation",
+        "invitation_result",
+        "不占正式对话轮次",
+        "没有程序硬性轮次上限",
+        "soft_round_guidance",
+        "整场会话最后一句",
         "不得决定资源、HP、建筑、移动、伤害",
     ]
+    assert "signature_lines" not in payload["npc_setting"]
+    assert "signature_lines" not in system_prompt
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
     assert "玩家" not in content["reply_text"]
@@ -194,6 +255,59 @@ def main() -> None:
         ),
     )
     assert wartime_content["wartime_reaction"] == "morale_boost"
+
+    invitation_payload = _base_payload()
+    invitation_payload.update({
+        "dialogue_kind": "npc_npc",
+        "dialogue_phase": "invitation",
+        "speaker_name": "莉娜",
+        "speaker_text": "马塞尔，我想和你谈谈诊所工位。",
+        "speaker_context": SpeakerContext(
+            speaker_id="doctor_01",
+            speaker_name="莉娜",
+            speaker_kind="npc",
+        ).model_dump(),
+        "is_recruitment_request": False,
+        "current_round": 0,
+        "max_rounds": 0,
+        "soft_round_threshold": 5,
+        "soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。",
+    })
+    invitation_payload["dialogue_state"] = dict(invitation_payload["dialogue_state"])
+    invitation_payload["dialogue_state"]["current_round"] = 0
+    invitation_payload["dialogue_state"]["max_rounds"] = 0
+    invitation_payload["dialogue_state"]["soft_round_threshold"] = 5
+    invitation_payload["dialogue_state"]["soft_round_guidance"] = invitation_payload["soft_round_guidance"]
+    invitation_payload["dialogue_state"]["participants"] = ["doctor_01", "cook_01"]
+    invitation_content, _ = _run_real_adapter_with_fake_provider(
+        invitation_payload,
+        _valid_response(
+            response_kind="reply_to_npc",
+            invitation_result="accept",
+            intent="continue_talk",
+            recruitment_result="none",
+            reply_text="好，我先听你说。",
+        ),
+    )
+    assert invitation_content["invitation_result"] == "accept"
+
+    formal_payload = dict(invitation_payload)
+    formal_payload["dialogue_state"] = dict(invitation_payload["dialogue_state"])
+    formal_payload["dialogue_phase"] = "conversation"
+    formal_payload["current_round"] = 6
+    formal_payload["dialogue_state"]["current_round"] = 6
+    formal_content, _ = _run_real_adapter_with_fake_provider(
+        formal_payload,
+        _valid_response(
+            response_kind="reply_to_npc",
+            invitation_result="not_applicable",
+            intent="end_talk",
+            recruitment_result="none",
+            should_end_dialogue=True,
+            reply_text="这一轮已经说清，我们先结束。",
+        ),
+    )
+    assert formal_content["should_end_dialogue"] is True
 
     escape_payload = _base_payload()
     escape_payload.update({

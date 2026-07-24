@@ -4,6 +4,7 @@ signal movement_arrived(npc_id: String, target_id: String)
 
 const LABEL_NODE_PATH := "NameLabel"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 
 @export var move_speed := 5.0
 
@@ -15,6 +16,10 @@ var _is_moving := false
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 var _proactive_bubble: Label3D
+var _dialogue_bubble_area: Area3D
+var _dialogue_bubble_collision: CollisionShape3D
+var _dialogue_bubble_label: Label3D
+var _dialogue_bubble_material: StandardMaterial3D
 var _llm_activity_marker: Label3D
 var _escape_warning_marker: Label3D
 var _mount_visual: MeshInstance3D
@@ -63,6 +68,7 @@ func _ready() -> void:
 	if not input_event.is_connected(_on_input_event):
 		input_event.connect(_on_input_event)
 	_ensure_proactive_bubble()
+	_ensure_dialogue_bubble()
 	_ensure_llm_activity_marker()
 	_ensure_escape_warning_marker()
 	_ensure_combat_visuals()
@@ -136,6 +142,8 @@ func _refresh_label() -> void:
 		action_text = "集结防线"
 	elif action_text == "combat_ready":
 		action_text = "接敌"
+	elif action_text == "planning_day":
+		action_text = "制定计划"
 	elif action_text.begins_with("moving_to_combat_strategy_"):
 		action_text = "战术移动"
 	elif str(states.get("behavior_mode", "")) == "avoid_combat":
@@ -147,11 +155,13 @@ func _refresh_label() -> void:
 		action_text
 	]
 	_ensure_proactive_bubble()
+	_ensure_dialogue_bubble()
 	_ensure_llm_activity_marker()
 	_ensure_escape_warning_marker()
 	_ensure_combat_visuals()
 	var proactive: Dictionary = states.get("proactive_talk", {})
 	_proactive_bubble.visible = bool(proactive.get("active", false))
+	_refresh_dialogue_bubble(states)
 	_refresh_llm_activity_marker(states)
 	_refresh_escape_warning_marker(states)
 	_refresh_combat_visuals(states)
@@ -171,6 +181,122 @@ func _ensure_proactive_bubble() -> void:
 	_proactive_bubble.position = Vector3(0.0, 2.45, 0.0)
 	_proactive_bubble.visible = false
 	add_child(_proactive_bubble)
+
+
+func _ensure_dialogue_bubble() -> void:
+	if _dialogue_bubble_area != null:
+		return
+	_dialogue_bubble_area = Area3D.new()
+	_dialogue_bubble_area.name = "AutonomousDialogueBubble"
+	_dialogue_bubble_area.set_meta("interaction_kind", "autonomous_dialogue_bubble")
+	_dialogue_bubble_area.position = Vector3(0.0, 2.62, 0.0)
+	_dialogue_bubble_area.input_ray_pickable = true
+	_dialogue_bubble_area.collision_layer = 1
+	_dialogue_bubble_area.collision_mask = 0
+	_dialogue_bubble_area.monitoring = false
+	_dialogue_bubble_area.monitorable = false
+	_dialogue_bubble_area.visible = false
+	add_child(_dialogue_bubble_area)
+	_dialogue_bubble_area.input_event.connect(_on_dialogue_bubble_input_event)
+
+	_dialogue_bubble_collision = CollisionShape3D.new()
+	_dialogue_bubble_collision.name = "ClickCollision"
+	var click_shape := SphereShape3D.new()
+	click_shape.radius = 0.5
+	_dialogue_bubble_collision.shape = click_shape
+	_dialogue_bubble_collision.disabled = true
+	_dialogue_bubble_area.add_child(_dialogue_bubble_collision)
+
+	var bubble_body := MeshInstance3D.new()
+	bubble_body.name = "BubbleBody"
+	var bubble_mesh := SphereMesh.new()
+	bubble_mesh.radius = 0.42
+	bubble_mesh.height = 0.52
+	bubble_body.mesh = bubble_mesh
+	bubble_body.scale = Vector3(1.15, 0.78, 0.35)
+	_dialogue_bubble_material = StandardMaterial3D.new()
+	_dialogue_bubble_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_dialogue_bubble_material.albedo_color = Color(0.96, 0.93, 0.78, 0.98)
+	bubble_body.set_surface_override_material(0, _dialogue_bubble_material)
+	_dialogue_bubble_area.add_child(bubble_body)
+
+	_dialogue_bubble_label = Label3D.new()
+	_dialogue_bubble_label.name = "BubbleText"
+	_dialogue_bubble_label.text = "..."
+	_dialogue_bubble_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_dialogue_bubble_label.no_depth_test = true
+	_dialogue_bubble_label.pixel_size = 0.014
+	_dialogue_bubble_label.modulate = Color(0.12, 0.10, 0.07, 1.0)
+	_dialogue_bubble_label.outline_size = 3
+	_dialogue_bubble_label.outline_modulate = Color(0.96, 0.93, 0.78, 1.0)
+	_dialogue_bubble_area.add_child(_dialogue_bubble_label)
+
+
+func _refresh_dialogue_bubble(states: Dictionary) -> void:
+	if _dialogue_bubble_area == null or _dialogue_bubble_collision == null:
+		return
+	var dialogue_id := str(states.get("active_dialogue_id", ""))
+	var show_bubble := false
+	var suspended_player_dialogue := false
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if not dialogue_id.is_empty() and dialog_system != null:
+		if dialog_system.has_method("get_suspended_player_dialogue_state"):
+			suspended_player_dialogue = not dialog_system.get_suspended_player_dialogue_state(npc_id).is_empty()
+		if suspended_player_dialogue:
+			show_bubble = true
+		elif str(states.get("current_action", "")) == "talk_to_npc" and dialog_system.has_method("get_autonomous_dialogue_observer_state"):
+			show_bubble = not dialog_system.get_autonomous_dialogue_observer_state(npc_id, dialogue_id).is_empty()
+	_dialogue_bubble_area.visible = show_bubble
+	_dialogue_bubble_area.set_meta("suspended_player_dialogue", suspended_player_dialogue)
+	_dialogue_bubble_area.set_meta("npc_id", npc_id if show_bubble else "")
+	_dialogue_bubble_area.set_meta("dialogue_id", dialogue_id if show_bubble else "")
+	_dialogue_bubble_collision.set_deferred("disabled", not show_bubble)
+	if _dialogue_bubble_material != null:
+		_dialogue_bubble_material.albedo_color = Color(1.0, 0.52, 0.12, 0.98) if suspended_player_dialogue else Color(0.96, 0.93, 0.78, 0.98)
+	if _dialogue_bubble_label != null:
+		_dialogue_bubble_label.text = "↩" if suspended_player_dialogue else "..."
+		_dialogue_bubble_label.outline_modulate = Color(1.0, 0.52, 0.12, 1.0) if suspended_player_dialogue else Color(0.96, 0.93, 0.78, 1.0)
+	if show_bubble and _proactive_bubble != null:
+		_proactive_bubble.visible = false
+
+
+func _on_dialogue_bubble_input_event(
+	_camera: Node,
+	event: InputEvent,
+	_position: Vector3,
+	_normal: Vector3,
+	_shape_idx: int
+) -> void:
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed):
+		return
+	_emit_dialogue_bubble_clicked()
+
+
+func _emit_dialogue_bubble_clicked() -> void:
+	if _dialogue_bubble_area == null or not _dialogue_bubble_area.visible:
+		return
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	var dialogue_id := str(states.get("active_dialogue_id", ""))
+	if dialogue_id.is_empty():
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_dialogue_bubble_clicked"):
+		event_bus.npc_dialogue_bubble_clicked.emit(npc_id, dialogue_id)
+		get_viewport().set_input_as_handled()
+
+
+func debug_get_dialogue_bubble_snapshot() -> Dictionary:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	return {
+		"visible": _dialogue_bubble_area != null and _dialogue_bubble_area.visible,
+		"click_enabled": _dialogue_bubble_collision != null and not _dialogue_bubble_collision.disabled,
+		"dialogue_id": str(states.get("active_dialogue_id", "")),
+		"suspended_player_dialogue": _dialogue_bubble_area != null and bool(_dialogue_bubble_area.get_meta("suspended_player_dialogue", false))
+	}
+
+
+func debug_click_dialogue_bubble() -> void:
+	_emit_dialogue_bubble_clicked()
 
 
 func _ensure_llm_activity_marker() -> void:
@@ -250,6 +376,13 @@ func _refresh_llm_activity_marker(states: Dictionary) -> void:
 			_proactive_bubble.visible = false
 		return
 	var activity: Dictionary = states.get("llm_activity", {}) if (states.get("llm_activity", {}) is Dictionary) else {}
+	if (
+		_dialogue_bubble_area != null
+		and _dialogue_bubble_area.visible
+		and str(activity.get("kind", "")) == "dialogue"
+	):
+		_llm_activity_marker.visible = false
+		return
 	if bool(activity.get("active", false)):
 		_llm_activity_marker.text = "..."
 		_llm_activity_marker.modulate = Color(0.42, 0.82, 1.0, 1.0)

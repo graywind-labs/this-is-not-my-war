@@ -18,18 +18,27 @@ func _init() -> void:
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
-	var dialogue_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButton") as Button
-	var assign_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCAssignButton") as Button
-	var recruited_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCRecruitedLabel") as Label
-	var public_toggle := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles/DialogPublicToggle") as CheckButton
-	var recruitment_toggle := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles/DialogRecruitmentToggle") as CheckButton
-	var send_button := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow/DialogSendButton") as Button
-	var attack_button := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow/DialogAttackButton") as Button
-	var input_edit := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow/DialogInputEdit") as LineEdit
-	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or input_edit == null:
+	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
+	var assign_button := npc_panel.find_child("NPCAssignButton", true, false) as Button
+	var recruited_label := npc_panel.find_child("NPCRecruitedLabel", true, false) as Label
+	var public_toggle := dialog_panel.find_child("DialogPublicToggle", true, false) as CheckButton
+	var recruitment_toggle := dialog_panel.find_child("DialogRecruitmentToggle", true, false) as CheckButton
+	var obsolete_plan_reevaluation_toggle := dialog_panel.find_child("DialogPlanReevaluationToggle", true, false) as CheckButton
+	var send_button := dialog_panel.find_child("DialogSendButton", true, false) as Button
+	var attack_button := dialog_panel.find_child("DialogAttackButton", true, false) as Button
+	var complete_button := dialog_panel.find_child("DialogEndButton", true, false) as Button
+	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
+	var suspend_button := dialog_panel.find_child("DialogSuspendButton", true, false) as Button
+	var input_edit := dialog_panel.find_child("DialogInputEdit", true, false) as LineEdit
+	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null:
 		push_error("Dialogue UI verification required nodes not found")
 		quit(1)
 		return
+	var test_backend_url := OS.get_environment("TEST_BACKEND_URL").strip_edges()
+	if not test_backend_url.is_empty():
+		llm_bridge.set_backend_base_url(test_backend_url)
+	var cook_event_count_before_open := int(memory_system.get_npc_daily_events("cook_01").size())
+	var doctor_witness_count_before_open := int(memory_system.get_npc_witness_events("doctor_01").size())
 
 	npc_system.debug_select_npc("cook_01")
 	await process_frame
@@ -52,6 +61,15 @@ func _init() -> void:
 		push_error("Dialogue public toggle should be enabled before the first turn")
 		quit(1)
 		return
+	if obsolete_plan_reevaluation_toggle != null and obsolete_plan_reevaluation_toggle.visible:
+		push_error("Guard-officer dialogue should not expose the removed plan reevaluation toggle")
+		quit(1)
+		return
+	var dialog_panel_source := FileAccess.get_file_as_string("res://scripts/ui/DialogPanel.gd")
+	if dialog_panel_source.contains("set_plan_reevaluation_on_end") or dialog_panel_source.contains("reevaluate_plan_on_end"):
+		push_error("DialogPanel should not read or write the removed manual plan reevaluation state")
+		quit(1)
+		return
 	public_toggle.button_pressed = true
 	await process_frame
 	state = dialog_system.get_dialogue_state()
@@ -65,7 +83,10 @@ func _init() -> void:
 		push_error("Dialogue public toggle did not switch back to private")
 		quit(1)
 		return
-	if not memory_system.get_npc_daily_events("cook_01").is_empty() or not memory_system.get_npc_witness_events("doctor_01").is_empty():
+	if (
+		memory_system.get_npc_daily_events("cook_01").size() != cook_event_count_before_open
+		or memory_system.get_npc_witness_events("doctor_01").size() != doctor_witness_count_before_open
+	):
 		push_error("Opening dialogue or toggling visibility must not write events or witness entries")
 		quit(1)
 		return
@@ -129,19 +150,34 @@ func _init() -> void:
 		push_error("Local public dialogue Mock request failed: %s" % str(public_result))
 		quit(1)
 		return
+	if _has_event(memory_system.get_npc_witness_events("doctor_01"), "dialogue_turn"):
+		push_error("Local public dialogue must remain buffered until completion")
+		quit(1)
+		return
+	dialog_system.end_dialogue()
 	if not _has_event(memory_system.get_npc_witness_events("doctor_01"), "dialogue_turn"):
 		push_error("Local public dialogue did not reach same-location third party witness log")
 		quit(1)
 		return
-	dialog_system.end_dialogue()
 	var npc_dialogue_start: Dictionary = dialog_system.start_npc_dialogue("doctor_01", "cook_01")
 	if not bool(npc_dialogue_start.get("ok", false)):
 		push_error("Failed to start NPC-NPC dialogue")
 		quit(1)
 		return
-	var npc_dialogue_result: Dictionary = dialog_system.send_npc_message("晚餐后我需要检查你的手。")
-	if not bool(npc_dialogue_result.get("ok", false)):
+	var npc_dialogue_result: Dictionary = dialog_system.send_npc_message("晚餐后我需要检查你的手。", true)
+	if not bool(npc_dialogue_result.get("ok", false)) or not bool(npc_dialogue_result.get("pending", false)):
 		push_error("NPC-NPC dialogue Mock request failed: %s" % str(npc_dialogue_result))
+		quit(1)
+		return
+	# T0049 may have short plan-judgement requests from the two completed player
+	# conversations in flight on the same local backend. Keep this UI test tolerant
+	# of that legitimate queueing without changing the gameplay timeout contract.
+	for _index in range(1000):
+		if not bool(dialog_system.get_dialogue_state().get("waiting", false)):
+			break
+		await create_timer(0.01).timeout
+	if bool(dialog_system.get_dialogue_state().get("waiting", false)):
+		push_error("NPC-NPC dialogue async reply did not finish")
 		quit(1)
 		return
 	var doctor_events: Array = memory_system.get_npc_daily_events("doctor_01")
@@ -168,13 +204,41 @@ func _init() -> void:
 		push_error("Recruitment toggle did not arm the next player message")
 		quit(1)
 		return
-	var accept_result: Dictionary = dialog_system.send_player_message("请帮忙守住驿站，一起应征。")
+	var accept_activation: Dictionary = dialog_system._activate_player_dialogue_draft("verify_recruitment_accept")
+	if not bool(accept_activation.get("ok", false)):
+		push_error("Failed to activate recruitment dialogue draft: %s" % JSON.stringify(accept_activation))
+		quit(1)
+		return
+	var accept_effect: Dictionary = dialog_system._ensure_player_dialogue_effect_started("verify_recruitment_accept")
+	if not bool(accept_effect.get("ok", false)):
+		push_error("Failed to start recruitment dialogue effect: %s" % JSON.stringify(accept_effect))
+		quit(1)
+		return
+	dialog_system.set_recruitment_request_pending(false)
+	var accept_result: Dictionary = dialog_system._apply_player_message_response({
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "cook_01",
+			"reply_text": "好，我愿意应征，一起守住驿站。",
+			"response_kind": "reply_to_player",
+			"intent": "accept_recruitment",
+			"emotion": "determined",
+			"recruitment_result": "accept",
+			"wartime_reaction": "none",
+			"should_end_dialogue": false
+		}
+	}, {
+		"clean_text": "请帮忙守住驿站，一起应征。",
+		"next_round": 1,
+		"effective_recruitment_request": true,
+		"dialogue_kind": "player_npc"
+	})
 	if not bool(accept_result.get("ok", false)):
 		push_error("Recruitment accept request failed: %s" % str(accept_result))
 		quit(1)
 		return
-	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Accepted recruitment did not update NPC authoritative state")
+	if bool(npc_system.get_npc("cook_01").get("recruited", false)):
+		push_error("Accepted recruitment must remain staged until dialogue completion")
 		quit(1)
 		return
 	if bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", true)):
@@ -185,13 +249,17 @@ func _init() -> void:
 		push_error("Recruitment toggle should disable after NPC accepts")
 		quit(1)
 		return
+	dialog_system.end_dialogue()
+	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
+		push_error("Accepted recruitment did not update NPC authoritative state on completion")
+		quit(1)
+		return
 	var recruitment_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "dialogue_turn")
 	var recruitment_payload: Dictionary = recruitment_event.get("payload", {})
 	if not bool(recruitment_payload.get("is_recruitment_request", false)) or str(recruitment_payload.get("recruitment_result", "")) != "accept":
 		push_error("Accepted recruitment was not recorded in dialogue_turn payload")
 		quit(1)
 		return
-	dialog_system.end_dialogue()
 	npc_system.debug_select_npc("cook_01")
 	await process_frame
 	if recruited_label.text != "已入伍：是" or not assign_button.visible or assign_button.disabled or assign_button.text != "指令":
@@ -209,7 +277,35 @@ func _init() -> void:
 		push_error("Failed to arm rejection recruitment request")
 		quit(1)
 		return
-	var reject_result: Dictionary = dialog_system.send_player_message("立刻拿起武器。")
+	var reject_activation: Dictionary = dialog_system._activate_player_dialogue_draft("verify_recruitment_reject")
+	if not bool(reject_activation.get("ok", false)):
+		push_error("Failed to activate rejection dialogue draft: %s" % JSON.stringify(reject_activation))
+		quit(1)
+		return
+	var reject_effect: Dictionary = dialog_system._ensure_player_dialogue_effect_started("verify_recruitment_reject")
+	if not bool(reject_effect.get("ok", false)):
+		push_error("Failed to start rejection dialogue effect: %s" % JSON.stringify(reject_effect))
+		quit(1)
+		return
+	dialog_system.set_recruitment_request_pending(false)
+	var reject_result: Dictionary = dialog_system._apply_player_message_response({
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "stableman_01",
+			"reply_text": "不，我还没有准备好参战。",
+			"response_kind": "reply_to_player",
+			"intent": "reject_recruitment",
+			"emotion": "fearful",
+			"recruitment_result": "reject",
+			"wartime_reaction": "none",
+			"should_end_dialogue": false
+		}
+	}, {
+		"clean_text": "立刻拿起武器。",
+		"next_round": 1,
+		"effective_recruitment_request": true,
+		"dialogue_kind": "player_npc"
+	})
 	if not bool(reject_result.get("ok", false)):
 		push_error("Recruitment reject request failed: %s" % str(reject_result))
 		quit(1)
@@ -218,20 +314,14 @@ func _init() -> void:
 		push_error("Rejected recruitment changed NPC recruited state")
 		quit(1)
 		return
+	dialog_system.end_dialogue()
 	var reject_event := _get_last_event(memory_system.get_npc_daily_events("stableman_01"), "dialogue_turn")
 	var reject_payload: Dictionary = reject_event.get("payload", {})
 	if not bool(reject_payload.get("is_recruitment_request", false)) or str(reject_payload.get("recruitment_result", "")) != "reject":
 		push_error("Rejected recruitment was not recorded in dialogue_turn payload")
 		quit(1)
 		return
-	dialog_system.end_dialogue()
 
-	var reevaluation_counter := {"count": 0}
-	var event_bus := root.get_node_or_null("EventBus")
-	if event_bus != null:
-		event_bus.npc_plan_reevaluation_requested.connect(func(_npc_id: String, _reason: String) -> void:
-			reevaluation_counter["count"] = int(reevaluation_counter.get("count", 0)) + 1
-		)
 	var attack_start: Dictionary = dialog_system.start_player_dialogue("blacksmith_01")
 	if not bool(attack_start.get("ok", false)):
 		push_error("Failed to start attack dialogue")
@@ -249,24 +339,29 @@ func _init() -> void:
 		push_error("Dialogue attack did not write punishment damage event")
 		quit(1)
 		return
-	for _index in range(120):
+	# Headless process_frame can advance far faster than the backend worker thread.
+	# Wait in wall-clock time so this checks the dialogue result instead of CPU speed.
+	for _index in range(500):
 		if not bool(dialog_system.get_dialogue_state().get("waiting", false)):
 			break
-		await process_frame
+		await create_timer(0.01).timeout
 	if bool(dialog_system.get_dialogue_state().get("waiting", false)):
 		push_error("Dialogue attack async reply did not finish")
 		quit(1)
 		return
+	if not _get_last_event(memory_system.get_npc_daily_events("blacksmith_01"), "dialogue_turn").is_empty():
+		push_error("Attack dialogue must remain buffered until completion")
+		quit(1)
+		return
+	dialog_system.end_dialogue()
 	var attack_dialogue_event := _get_last_event(memory_system.get_npc_daily_events("blacksmith_01"), "dialogue_turn")
 	var attack_payload: Dictionary = attack_dialogue_event.get("payload", {})
 	if str(attack_payload.get("interaction_kind", "")) != "guard_attack" or not str(attack_payload.get("speaker_text", "")).contains("以示惩戒"):
 		push_error("Dialogue attack reply was not recorded as guard_attack dialogue payload")
 		quit(1)
 		return
-	dialog_system.end_dialogue()
 	await process_frame
-	if int(reevaluation_counter.get("count", 0)) <= 0:
-		push_error("Dialogue attack should request plan reevaluation on dialogue end")
+	if not await _wait_for_llm_cleanup(llm_bridge):
 		quit(1)
 		return
 
@@ -294,3 +389,12 @@ func _get_last_event(events: Array, event_type: String) -> Dictionary:
 		if event is Dictionary and str(event.get("type", "")) == event_type:
 			return event
 	return {}
+
+
+func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:
+	for _step in range(500):
+		await create_timer(0.01).timeout
+		if int(llm_bridge.debug_get_llm_runtime_snapshot().get("async_request_count", 0)) == 0:
+			return true
+	push_error("Timed out waiting for dialogue UI LLM async cleanup")
+	return false

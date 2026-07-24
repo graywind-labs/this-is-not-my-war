@@ -139,25 +139,20 @@ func _verify_inventory_does_not_imply_mount(
 	_npc_system: Node,
 	target_id: String
 ) -> bool:
-	resource_system.add_resource("weapons", 4)
-	resource_system.add_resource("horse_readiness", 3)
+	resource_system.add_resource("item_bow", 1)
 	await process_frame
 
 	var initial_snapshot: Dictionary = equipment_system.get_unit_type_snapshot(target_id)
-	if str(initial_snapshot.get("unit_type", "")) != "non_combat":
-		push_error("Unarmed NPC should remain non-combat even when horse_readiness inventory exists: %s" % JSON.stringify(initial_snapshot))
+	if str(initial_snapshot.get("unit_type", "")) != "melee_infantry" or str(initial_snapshot.get("main_weapon_id", "")) != "sword_shield":
+		push_error("Ada should begin as sword-and-shield melee infantry: %s" % JSON.stringify(initial_snapshot))
 		return false
 	if bool(initial_snapshot.get("has_mount", false)):
 		push_error("Initial snapshot should not show a mount before EquipmentSystem writes equipment.mount")
 		return false
 
-	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon(target_id, "sword_shield", "private")
-	if not bool(weapon_result.get("ok", false)):
-		push_error("Failed to equip sword_shield: %s" % JSON.stringify(weapon_result))
-		return false
 	var weapon_only_snapshot: Dictionary = equipment_system.get_unit_type_snapshot(target_id)
 	if str(weapon_only_snapshot.get("unit_type", "")) != "melee_infantry":
-		push_error("horse_readiness inventory must not turn weapon-only NPC into cavalry: %s" % JSON.stringify(weapon_only_snapshot))
+		push_error("Unassigned stable horses must not turn Ada's initial weapon-only loadout into cavalry: %s" % JSON.stringify(weapon_only_snapshot))
 		return false
 	if bool(weapon_only_snapshot.get("has_mount", false)):
 		push_error("Weapon-only snapshot should not show a mount before equip_npc_mount")

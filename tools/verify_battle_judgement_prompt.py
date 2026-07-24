@@ -13,6 +13,7 @@ from backend.schemas import (  # noqa: E402
     BattleJudgementResponse,
     CurrentOrderContext,
     GameTime,
+    LongTermMemoryContext,
     ModelRequestMeta,
     NPCContext,
     NPCIdentity,
@@ -20,6 +21,7 @@ from backend.schemas import (  # noqa: E402
     ShortTermMemoryContext,
 )
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig  # noqa: E402
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 class _FakeBattleResponse:
@@ -94,6 +96,10 @@ def _npc_context(recruited: bool = True, main_weapon: str = "sword_shield") -> N
                 }
             ],
         ),
+        long_term_memory=LongTermMemoryContext(
+            knowledge_graph={"guard_officer": {"order_style": "会要求守门，但允许保命"}},
+            diary=["我不是真正的士兵，但也不能把同伴独自丢在墙下。"],
+        ),
         knowledge_graph={"guard_officer": {"order_style": "会要求守门，但允许保命"}},
         location_context={"location_id": "plaza", "people_present": ["stableman_01", "veteran_deputy_01"]},
         plaza_context={"notice": "守备官要求所有人留意正门。"},
@@ -111,6 +117,9 @@ def _payload(allowed_decisions: list[str], npc: NPCContext | None = None) -> dic
             related_event_id="evt_low_hp_verify",
         ).model_dump(),
         "game_time": GameTime(day=3, time="18:04:00", hour=18).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "veteran_deputy_01", "name": "艾达", "identity": "老兵副官"}
+        ]),
         "trigger": "low_hp",
         "npc": npc.model_dump(),
         "combat_context": {
@@ -172,9 +181,15 @@ def main() -> None:
         "battlefield_context",
         "experienced_events",
         "witnessed_events",
+        "npc.long_term_memory",
+        "diary",
         "current_order",
         "不能把它当成强制参战",
         "只能选择继续避战或逃离驿站",
+        "往昔·近日",
+        "传达敌情",
+        "日记字符串保留",
+        "第 N 天 + 时间",
         "should_start_escape",
         "不得决定资源、HP、建筑、移动、伤害",
     ]
@@ -223,6 +238,17 @@ def main() -> None:
     assert response.status_code == 502, response.get_json()
     body = response.get_json()
     assert any("should_start_escape" in detail for detail in body["details"])
+
+    with patch(
+        "backend.services.model_adapter.requests.post",
+        return_value=_FakeBattleResponse(_valid_response(decision="inspired")),
+    ):
+        valid_route_response = app.test_client().post("/npc/battle_judgement", json=payload)
+    assert valid_route_response.status_code == 200, valid_route_response.get_json()
+    valid_route_body = valid_route_response.get_json()
+    assert valid_route_body["model_provider"] == "deepseek"
+    assert valid_route_body["model_name"]
+    assert valid_route_body["model_fallback_used"] is False
 
     print("verify_battle_judgement_prompt: ok")
 

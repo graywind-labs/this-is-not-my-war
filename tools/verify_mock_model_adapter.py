@@ -15,6 +15,7 @@ from backend.schemas import (
     CurrentOrderContext,
     DailyPlanResponse,
     DailyReflectionResponse,
+    DialoguePlanRevisionJudgementResponse,
     GameTime,
     ModelRequestMeta,
     NPCContext,
@@ -24,6 +25,7 @@ from backend.schemas import (
     SpeakerContext,
 )
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+from tools.station_context_fixture import build_station_context
 
 
 class _FakeProviderResponse:
@@ -93,6 +95,9 @@ def _make_payload(call_type: str) -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=1, time="08:00:00", hour=8).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
+        ]),
         "npc": npc.model_dump(),
         "speaker_npc": npc.model_dump(),
     }
@@ -127,9 +132,43 @@ def _make_payload(call_type: str) -> dict:
             },
             "long_memory": {},
             "location_context": {"location_id": "plaza"},
+            "allowed_actions": [
+                {
+                    "action_id": "work_garden",
+                    "name": "照料菜园",
+                    "action_kind": "work",
+                    "location_id": "garden",
+                    "tags": ["work"],
+                    "context": {"authority": "ActionSystem"},
+                }
+            ],
         })
     if call_type == "plan_day":
         payload["allowed_actions"] = [{"action_id": "work_garden", "name": "照料菜园", "location_id": "garden", "tags": ["work"]}]
+    if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
+        payload["dialogue_kind"] = "player_npc"
+        payload["dialogue_history"] = [{
+            "speaker_id": "cook_01",
+            "speaker_name": "布鲁诺",
+            "listener_id": "guard_officer",
+            "listener_name": "守备官",
+            "text": "我答应14点去训练。",
+            "visibility": "private",
+        }]
+        payload["dialogue_end_reason"] = "dialogue_completed"
+        payload["current_plan"] = [
+            {
+                "hour": hour,
+                "action_kind": "idle",
+                "action_id": "idle",
+                "location_id": None,
+                "target_id": None,
+                "priority": 50,
+                "reason": "等待",
+                "dialogue_goal": "",
+            }
+            for hour in range(24)
+        ]
     if call_type == "battle_judgement":
         payload["trigger"] = "low_hp"
         payload["combat_context"] = {"hp_before": 100, "hp_after": 25, "threshold_ratio": 0.3}
@@ -198,6 +237,16 @@ def main() -> None:
     assert sum(1 for item in plan_response.plan if item.action_id == "work_garden") >= 6
     assert "with_current_order_as_reference" in plan_result.content["debug_reason"]
 
+    plan_judgement_result = adapter.generate(
+        "plan_revision_judgement",
+        _make_payload("plan_revision_judgement"),
+    )
+    assert plan_judgement_result.ok
+    plan_judgement = DialoguePlanRevisionJudgementResponse(**plan_judgement_result.content)
+    assert plan_judgement.needs_revision is True
+    assert plan_judgement.revision_hours == [14]
+    assert "with_current_order_as_reference" in plan_judgement.debug_reason
+
     battle_result = adapter.generate("battle_judgement", _make_payload("battle_judgement"))
     assert battle_result.ok
     BattleJudgementResponse(**battle_result.content)
@@ -208,11 +257,15 @@ def main() -> None:
     assert reflection_result.ok
     DailyReflectionResponse(**reflection_result.content)
     assert reflection_result.content["diary_entry"]
+    assert "memory_summary" not in reflection_result.content
     assert reflection_result.content["knowledge_graph_updates"]
+    assert reflection_result.content["knowledge_graph_updates"][0]["subject_label"] == "布鲁诺"
+    assert reflection_result.content["knowledge_graph_updates"][0]["relation_label"] == "留意事项"
+    assert reflection_result.content["knowledge_graph_updates"][0]["value_label"] == "驿站压力正在上升"
     assert "with_current_order_as_reference" in reflection_result.content["debug_reason"]
 
     records = adapter.get_usage_records()
-    assert len(records) == 6
+    assert len(records) == 7
     assert records[-1]["input_tokens"] > 0
     assert records[-1]["output_tokens"] > 0
     assert records[-1]["estimated_cost"] == 0.0

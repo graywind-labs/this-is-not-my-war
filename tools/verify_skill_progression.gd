@@ -60,7 +60,7 @@ func _init() -> void:
 		return
 
 	var trainee_id := "veteran_deputy_01"
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_sword_shield", 1)
 	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon(trainee_id, "sword_shield", "private")
 	if not bool(equip_result.get("ok", false)):
 		push_error("Failed to equip training weapon: %s" % JSON.stringify(equip_result))
@@ -121,8 +121,18 @@ func _init() -> void:
 		push_error("Assigned skill point should be consumed")
 		quit(1)
 		return
-	if not _has_attribute_event(memory_system.get_npc_daily_events(assign_id), "strength"):
+	var strength_event := _find_attribute_event(memory_system.get_npc_daily_events(assign_id), "strength")
+	if strength_event.is_empty():
 		push_error("Attribute assignment should write attribute_improved event")
+		quit(1)
+		return
+	var npc_name := str(assigned_npc.get("name", assign_id))
+	if str(strength_event.get("summary", "")) != "%s通过锻炼体力，力量从%d提高到%d。" % [npc_name, strength_before, strength_before + 1]:
+		push_error("Strength growth should use the NPC physical-training narrative")
+		quit(1)
+		return
+	if strength_event.get("actor_ids", []) != [assign_id] or str(strength_event.get("summary", "")).contains("守备官"):
+		push_error("Attribute growth event should describe the NPC as the actor without mentioning the guard officer")
 		quit(1)
 		return
 
@@ -163,7 +173,8 @@ func _init() -> void:
 		push_error("NPC panel attribute buttons should appear beside attributes when skill points are available")
 		quit(1)
 		return
-	strength_button.pressed.emit()
+	var intelligence_before := int(npc_system.get_npc(assign_id).get("stats", {}).get("intelligence", 0))
+	intelligence_button.pressed.emit()
 	await process_frame
 	if int(npc_system.get_npc_progression(assign_id).get("unspent_skill_points", 0)) != 0:
 		push_error("Inline strength button should consume one skill point")
@@ -171,6 +182,11 @@ func _init() -> void:
 		return
 	if strength_button.visible or intelligence_button.visible:
 		push_error("NPC panel attribute buttons should disappear after the last point is spent")
+		quit(1)
+		return
+	var intelligence_event := _find_attribute_event(memory_system.get_npc_daily_events(assign_id), "intelligence")
+	if str(intelligence_event.get("summary", "")) != "%s通过锻炼脑力，智力从%d提高到%d。" % [npc_name, intelligence_before, intelligence_before + 1]:
+		push_error("Intelligence growth should use the NPC mental-training narrative")
 		quit(1)
 		return
 
@@ -181,6 +197,8 @@ func _init() -> void:
 		quit(1)
 		return
 
+	main.queue_free()
+	await process_frame
 	print("T0904 skill progression verification passed.")
 	quit(0)
 
@@ -201,7 +219,7 @@ func _has_skill_event(events: Array, reason: String, skill_name: String) -> bool
 	return false
 
 
-func _has_attribute_event(events: Array, attribute_name: String) -> bool:
+func _find_attribute_event(events: Array, attribute_name: String) -> Dictionary:
 	for raw_event in events:
 		if not raw_event is Dictionary:
 			continue
@@ -211,8 +229,8 @@ func _has_attribute_event(events: Array, attribute_name: String) -> bool:
 			str(event.get("type", "")) == "attribute_improved"
 			and str(payload.get("attribute", "")) == attribute_name
 		):
-			return true
-	return false
+			return event
+	return {}
 
 
 func _set_profile_skill_and_progression(npc_system: Node, npc_id: String, skill_name: String, skill_value: int, total_experience: int) -> void:

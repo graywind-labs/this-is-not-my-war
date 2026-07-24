@@ -2,7 +2,26 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+PlanActionKind = Literal[
+    "work",
+    "eat",
+    "sleep",
+    "train",
+    "pray",
+    "rest",
+    "visit",
+    "chat",
+    "assist_repair",
+    "assist_upgrade",
+    "assist_heal",
+    "seek_guard_officer",
+    "avoid_combat",
+    "escape",
+    "idle",
+]
 
 
 class GameTime(BaseModel):
@@ -34,15 +53,22 @@ class ShortTermMemoryContext(BaseModel):
     witnessed_events: list[EventSummary] = Field(default_factory=list)
 
 
+class LongTermMemoryContext(BaseModel):
+    knowledge_graph: dict[str, Any] = Field(default_factory=dict)
+    diary: list[str] = Field(default_factory=list)
+
+
 class NPCIdentity(BaseModel):
     npc_id: str
     name: str
     gender: str | None = None
     background_job: str | None = None
+    background_story: str = ""
     personality: list[str] = Field(default_factory=list)
     desires: list[str] = Field(default_factory=list)
     fears: list[str] = Field(default_factory=list)
     boundaries: list[str] = Field(default_factory=list)
+    speech_style: str = ""
 
 
 class NPCStateContext(BaseModel):
@@ -69,11 +95,60 @@ class CurrentOrderContext(BaseModel):
     revision: int = Field(default=0, ge=0)
 
 
+class StationResidentContext(BaseModel):
+    npc_id: str
+    name: str
+    identity: str
+
+
+class StationBuildingContext(BaseModel):
+    building_id: str
+    name: str
+
+
+class StationWorkModeActionContext(BaseModel):
+    action_id: str
+    name: str
+    action_kind: PlanActionKind
+
+
+class StationBasicResourceReserveContext(BaseModel):
+    resource_id: Literal["grain", "meal", "wood", "stone", "iron"]
+    name: str = Field(min_length=1)
+    amount: int = Field(ge=0)
+
+
+class StationSceneContext(BaseModel):
+    setting_summary: str = Field(min_length=1)
+    resident_roster: list[StationResidentContext] = Field(min_length=1)
+    building_roster: list[StationBuildingContext] = Field(min_length=1)
+    work_mode_actions: list[StationWorkModeActionContext] = Field(min_length=1)
+    basic_resource_reserves: list[StationBasicResourceReserveContext] = Field(
+        min_length=5,
+        max_length=5,
+    )
+    station_rules: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_basic_resource_reserves(self):
+        expected_ids = ["grain", "meal", "wood", "stone", "iron"]
+        actual_ids = [item.resource_id for item in self.basic_resource_reserves]
+        if actual_ids != expected_ids:
+            raise ValueError(
+                "basic_resource_reserves must contain grain, meal, wood, stone and iron "
+                "exactly once in that order."
+            )
+        return self
+
+
 class NPCContext(BaseModel):
     identity: NPCIdentity
     state: NPCStateContext
     current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     short_term_memory: ShortTermMemoryContext = Field(default_factory=ShortTermMemoryContext)
+    long_term_memory: LongTermMemoryContext = Field(default_factory=LongTermMemoryContext)
+    # Legacy fixtures may still send this field. LLMBridge no longer populates the
+    # duplicate mirror; every current prompt reads long_term_memory instead.
     knowledge_graph: dict[str, Any] = Field(default_factory=dict)
     location_context: dict[str, Any] = Field(default_factory=dict)
     plaza_context: dict[str, Any] = Field(default_factory=dict)
@@ -82,9 +157,13 @@ class NPCContext(BaseModel):
 class ActionCandidate(BaseModel):
     action_id: str
     name: str
+    action_kind: PlanActionKind | None = None
     location_id: str | None = None
     target_id: str | None = None
+    target_kind: str | None = None
+    target_name: str | None = None
     tags: list[str] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class APIErrorResponse(BaseModel):

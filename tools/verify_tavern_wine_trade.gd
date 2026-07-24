@@ -155,7 +155,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	print("T0807 tavern brewing verification passed; merchant sale remains scheduled for T1507.")
+	print("T0807 tavern brewing verification passed; wine sale remains separate from brewing and is handled by MerchantSystem.")
 	quit(0)
 
 

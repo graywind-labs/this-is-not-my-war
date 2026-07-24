@@ -1,6 +1,7 @@
 extends Node
 
 const NPC_PROFILES_FILE := "npc_profiles.json"
+const NPC_INITIAL_LONG_MEMORY_FILE := "npc_initial_long_memory.json"
 const NPC_SCENE_PATH := "res://scenes/npc/NPC.tscn"
 const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
@@ -74,13 +75,17 @@ var _movement_arrival_contexts: Dictionary = {}
 var _selected_npc_id: String = ""
 var _unconscious_recovery_remainders: Dictionary = {}
 var _last_plan_reevaluation_request: Dictionary = {}
+var _plan_reevaluation_requests_by_npc: Dictionary = {}
 
 
 func _ready() -> void:
 	initialize()
 	var event_bus := get_node_or_null("/root/EventBus")
-	if event_bus != null and not event_bus.logical_time_tick.is_connected(_on_logical_time_tick):
-		event_bus.logical_time_tick.connect(_on_logical_time_tick)
+	if event_bus != null:
+		if not event_bus.logical_time_tick.is_connected(_on_logical_time_tick):
+			event_bus.logical_time_tick.connect(_on_logical_time_tick)
+		if event_bus.has_signal("building_state_changed") and not event_bus.building_state_changed.is_connected(_on_building_state_changed):
+			event_bus.building_state_changed.connect(_on_building_state_changed)
 
 
 func initialize() -> void:
@@ -91,6 +96,7 @@ func initialize() -> void:
 	_movement_arrival_contexts.clear()
 	_unconscious_recovery_remainders.clear()
 	_last_plan_reevaluation_request.clear()
+	_plan_reevaluation_requests_by_npc.clear()
 	_selected_npc_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -101,6 +107,17 @@ func initialize() -> void:
 	var loaded_profiles: Variant = config_loader.load_data_file(NPC_PROFILES_FILE, [])
 	if not loaded_profiles is Array:
 		push_error("NPC profiles must be a JSON array: %s" % NPC_PROFILES_FILE)
+		return
+	var loaded_initial_long_memory: Variant = config_loader.load_data_file(NPC_INITIAL_LONG_MEMORY_FILE, {})
+	if not loaded_initial_long_memory is Dictionary:
+		push_error("NPC initial long memory must be a JSON object: %s" % NPC_INITIAL_LONG_MEMORY_FILE)
+		return
+	var initial_memory_validation := _validate_initial_long_memory_dataset(
+		loaded_profiles,
+		loaded_initial_long_memory
+	)
+	if not bool(initial_memory_validation.get("ok", false)):
+		push_error("Invalid NPC initial long memory: %s" % str(initial_memory_validation.get("message", "")))
 		return
 
 	var npc_scene := load(NPC_SCENE_PATH) as PackedScene
@@ -118,7 +135,7 @@ func initialize() -> void:
 			push_error("Skipped invalid NPC profile because it is not a dictionary.")
 			continue
 
-		var profile: Dictionary = raw_profile
+		var profile: Dictionary = (raw_profile as Dictionary).duplicate(true)
 		var npc_id := str(profile.get("id", ""))
 		if npc_id.is_empty():
 			push_error("Skipped NPC profile with empty id.")
@@ -127,6 +144,9 @@ func initialize() -> void:
 			push_error("Skipped duplicate NPC id: %s" % npc_id)
 			continue
 
+		if not _apply_initial_long_memory(profile, npc_id, loaded_initial_long_memory):
+			push_error("Failed to apply validated initial long memory for NPC: %s" % npc_id)
+			return
 		profile["skills"] = normalize_skills(profile.get("skills", {}))
 		profile["current_order"] = _normalize_current_order(profile.get("current_order", {}))
 		var npc_node := npc_scene.instantiate()
@@ -145,7 +165,17 @@ func initialize() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		var npc_id := _pick_npc_at_screen_position(event.position)
+		var interaction := _pick_npc_interaction_at_screen_position(event.position)
+		if str(interaction.get("kind", "")) == "autonomous_dialogue_bubble":
+			var event_bus := get_node_or_null("/root/EventBus")
+			if event_bus != null and event_bus.has_signal("npc_dialogue_bubble_clicked"):
+				event_bus.npc_dialogue_bubble_clicked.emit(
+					str(interaction.get("npc_id", "")),
+					str(interaction.get("dialogue_id", ""))
+				)
+				get_viewport().set_input_as_handled()
+			return
+		var npc_id := str(interaction.get("npc_id", ""))
 		if not npc_id.is_empty():
 			_select_npc(npc_id)
 			get_viewport().set_input_as_handled()
@@ -410,6 +440,14 @@ func move_npc_to_building(npc_id: String, building_id: String) -> bool:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null:
 		push_warning("Cannot move NPC because BuildingSystem is missing.")
+		return false
+	if not _is_location_available_for_access(building_id, building_system):
+		var availability := _get_location_entry_availability(building_id, building_system)
+		push_warning("Cannot move NPC %s into unavailable building %s: %s" % [
+			npc_id,
+			building_id,
+			str(availability.get("unavailable_reason", "building_unavailable"))
+		])
 		return false
 
 	var target_position: Variant = building_system.get_building_entry_position(building_id)
@@ -800,6 +838,10 @@ func get_last_plan_reevaluation_request() -> Dictionary:
 	return _last_plan_reevaluation_request.duplicate(true)
 
 
+func get_plan_reevaluation_request(npc_id: String) -> Dictionary:
+	return (_plan_reevaluation_requests_by_npc.get(npc_id, {}) as Dictionary).duplicate(true)
+
+
 func request_plan_reevaluation(npc_id: String, reason: String) -> Dictionary:
 	if not _profiles.has(npc_id):
 		return {}
@@ -871,6 +913,11 @@ func is_npc_dialogue_blocked(npc_id: String) -> bool:
 	return bool(activity.get("active", false)) and str(activity.get("kind", "")) == LLM_ACTIVITY_BATTLE_JUDGEMENT
 
 
+func is_npc_plan_llm_active(npc_id: String) -> bool:
+	var activity := get_npc_llm_activity(npc_id)
+	return bool(activity.get("active", false)) and str(activity.get("kind", "")) == LLM_ACTIVITY_PLAN
+
+
 func defer_plan_reevaluation_until_wake(npc_id: String, reason: String) -> Dictionary:
 	if not _profiles.has(npc_id):
 		return {}
@@ -883,7 +930,7 @@ func defer_plan_reevaluation_until_wake(npc_id: String, reason: String) -> Dicti
 		"current_order": get_current_order(npc_id)
 	}
 	_set_npc_state_without_signal(npc_id, {"pending_plan_reevaluation_after_sleep": deferred})
-	_last_plan_reevaluation_request = {
+	var request_snapshot := {
 		"npc_id": npc_id,
 		"reason": reason,
 		"day": int(deferred.get("day", 1)),
@@ -895,9 +942,10 @@ func defer_plan_reevaluation_until_wake(npc_id: String, reason: String) -> Dicti
 			"summary": "NPC 正在首次睡眠总结，计划重评估延后到醒来后执行。"
 		}
 	}
+	_store_plan_reevaluation_request(npc_id, request_snapshot)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
-	return _last_plan_reevaluation_request.duplicate(true)
+	return request_snapshot.duplicate(true)
 
 
 func consume_deferred_plan_reevaluation_after_sleep(npc_id: String) -> Dictionary:
@@ -914,13 +962,18 @@ func consume_deferred_plan_reevaluation_after_sleep(npc_id: String) -> Dictionar
 
 
 func apply_plan_reevaluation_result(npc_id: String, reason: String, result: Dictionary) -> void:
-	if _last_plan_reevaluation_request.is_empty():
+	var request_snapshot: Dictionary = _plan_reevaluation_requests_by_npc.get(npc_id, {})
+	if request_snapshot.is_empty():
 		return
-	if str(_last_plan_reevaluation_request.get("npc_id", "")) != npc_id:
+	if str(request_snapshot.get("reason", "")) != reason:
 		return
-	if str(_last_plan_reevaluation_request.get("reason", "")) != reason:
-		return
-	_last_plan_reevaluation_request["result"] = result.duplicate(true)
+	request_snapshot["result"] = result.duplicate(true)
+	_plan_reevaluation_requests_by_npc[npc_id] = request_snapshot
+	if (
+		str(_last_plan_reevaluation_request.get("npc_id", "")) == npc_id
+		and str(_last_plan_reevaluation_request.get("reason", "")) == reason
+	):
+		_last_plan_reevaluation_request = request_snapshot.duplicate(true)
 
 
 func can_npc_act(npc_id: String) -> bool:
@@ -1159,7 +1212,7 @@ func get_npc_long_memory(npc_id: String) -> Dictionary:
 	var profile: Dictionary = _profiles[npc_id]
 	return {
 		"knowledge_graph": profile.get("knowledge_graph", {}).duplicate(true) if (profile.get("knowledge_graph", {}) is Dictionary) else {},
-		"diary": (profile.get("diary", []) as Array).duplicate(true) if (profile.get("diary", []) is Array) else []
+		"diary": _normalize_diary_entries(profile.get("diary", []))
 	}
 
 
@@ -1176,13 +1229,15 @@ func apply_daily_reflection(npc_id: String, reflection: Dictionary) -> Dictionar
 	var profile: Dictionary = _profiles[npc_id]
 	var day := maxi(1, int(reflection.get("day", _get_game_time_snapshot().get("day", 1))))
 	var time_text := str(_get_game_time_snapshot().get("time", "00:00:00"))
-	var diary: Array = profile.get("diary", []) if (profile.get("diary", []) is Array) else []
+	var diary := _normalize_diary_entries(profile.get("diary", []))
 	var diary_record := {
 		"day": day,
 		"time": time_text,
 		"entry": diary_entry,
-		"memory_summary": str(reflection.get("memory_summary", "")),
 		"source": str(reflection.get("source", "daily_reflection")),
+		"model_provider": str(reflection.get("model_provider", "")),
+		"model_name": str(reflection.get("model_name", "")),
+		"model_fallback_used": bool(reflection.get("model_fallback_used", false)),
 		"debug_reason": str(reflection.get("debug_reason", ""))
 	}
 	diary.append(diary_record)
@@ -1437,8 +1492,7 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	profile["progression"] = _normalize_progression(profile.get("progression", {}))
 	if not (profile.get("knowledge_graph", {}) is Dictionary):
 		profile["knowledge_graph"] = {}
-	if not (profile.get("diary", []) is Array):
-		profile["diary"] = []
+	profile["diary"] = _normalize_diary_entries(profile.get("diary", []))
 	var states: Dictionary = profile.get("states", {})
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
@@ -1446,6 +1500,10 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["location_context"] = {}
 	if not states.has("proactive_talk"):
 		states["proactive_talk"] = {}
+	if not states.has("active_dialogue_id"):
+		states["active_dialogue_id"] = ""
+	if not states.has("player_dialogue_suspended"):
+		states["player_dialogue_suspended"] = false
 	if not states.has("llm_activity"):
 		states["llm_activity"] = {}
 	if not states.has("first_sleep_summary_active"):
@@ -1709,6 +1767,126 @@ func _normalize_current_order(raw_order: Variant) -> Dictionary:
 	}
 
 
+func _normalize_diary_entries(raw_diary: Variant) -> Array:
+	var diary: Array = raw_diary if raw_diary is Array else []
+	var normalized: Array = []
+	for raw_entry in diary:
+		if raw_entry is Dictionary:
+			var entry := (raw_entry as Dictionary).duplicate(true)
+			# T0046 removes the legacy parallel summary so old runtime/save data cannot
+			# silently re-enter later LLM contexts through the diary record.
+			entry.erase("memory_summary")
+			normalized.append(entry)
+		else:
+			normalized.append(raw_entry)
+	return normalized
+
+
+func _validate_initial_long_memory_dataset(raw_profiles: Array, memory_by_npc: Dictionary) -> Dictionary:
+	var expected_npc_ids: Array[String] = []
+	for raw_profile in raw_profiles:
+		if not raw_profile is Dictionary:
+			return {"ok": false, "message": "NPC profile list contains a non-dictionary item."}
+		var npc_id := str((raw_profile as Dictionary).get("id", "")).strip_edges()
+		if npc_id.is_empty():
+			return {"ok": false, "message": "NPC profile contains an empty id."}
+		if expected_npc_ids.has(npc_id):
+			return {"ok": false, "message": "NPC profile contains a duplicate id: %s" % npc_id}
+		expected_npc_ids.append(npc_id)
+		if not memory_by_npc.has(npc_id):
+			return {"ok": false, "message": "Missing initial long memory for NPC: %s" % npc_id}
+		var raw_memory: Variant = memory_by_npc.get(npc_id)
+		if not raw_memory is Dictionary:
+			return {"ok": false, "message": "Initial long memory is not an object for NPC: %s" % npc_id}
+		var initial_memory := raw_memory as Dictionary
+		var raw_diary: Variant = initial_memory.get("diary")
+		if not raw_diary is Array or (raw_diary as Array).size() < 3:
+			return {"ok": false, "message": "Initial diary needs at least three records for NPC: %s" % npc_id}
+		for raw_entry in (raw_diary as Array):
+			if (
+				not raw_entry is Dictionary
+				or str((raw_entry as Dictionary).get("entry", "")).strip_edges().is_empty()
+				or int((raw_entry as Dictionary).get("day", -1)) != 0
+				or str((raw_entry as Dictionary).get("time", "")).strip_edges().is_empty()
+				or str((raw_entry as Dictionary).get("source", "")) != "initial_long_memory"
+				or str((raw_entry as Dictionary).get("model_provider", "")) != ""
+				or str((raw_entry as Dictionary).get("model_name", "")) != ""
+				or bool((raw_entry as Dictionary).get("model_fallback_used", true))
+				or str((raw_entry as Dictionary).get("debug_reason", "")) != "seeded_before_game"
+			):
+				return {"ok": false, "message": "Initial diary contains an invalid record for NPC: %s" % npc_id}
+		var raw_graph: Variant = initial_memory.get("knowledge_graph")
+		if not raw_graph is Dictionary:
+			return {"ok": false, "message": "Initial knowledge graph is missing for NPC: %s" % npc_id}
+		var graph := raw_graph as Dictionary
+		if str(graph.get("schema_version", "")) != "key_value_replace_v1":
+			return {"ok": false, "message": "Initial knowledge graph schema mismatch for NPC: %s" % npc_id}
+		if graph.has("patches"):
+			return {"ok": false, "message": "Initial knowledge graph must not use patches for NPC: %s" % npc_id}
+		var raw_subjects: Variant = graph.get("by_subject")
+		if not raw_subjects is Dictionary or (raw_subjects as Dictionary).is_empty():
+			return {"ok": false, "message": "Initial knowledge graph has no subjects for NPC: %s" % npc_id}
+		for raw_subject in (raw_subjects as Dictionary).keys():
+			var raw_relations: Variant = (raw_subjects as Dictionary).get(raw_subject)
+			if not raw_relations is Dictionary or (raw_relations as Dictionary).is_empty():
+				return {
+					"ok": false,
+					"message": "Initial knowledge subject has no relations for NPC %s: %s" % [
+						npc_id,
+						str(raw_subject)
+					]
+				}
+			for raw_relation in (raw_relations as Dictionary).keys():
+				var raw_record: Variant = (raw_relations as Dictionary).get(raw_relation)
+				if (
+					not raw_record is Dictionary
+					or str((raw_record as Dictionary).get("value", "")).strip_edges().is_empty()
+					or str((raw_record as Dictionary).get("subject_label", "")).strip_edges().is_empty()
+					or str((raw_record as Dictionary).get("relation_label", "")).strip_edges().is_empty()
+					or str((raw_record as Dictionary).get("value_label", "")).strip_edges().is_empty()
+					or float((raw_record as Dictionary).get("confidence", -1.0)) < 0.0
+					or float((raw_record as Dictionary).get("confidence", -1.0)) > 1.0
+					or int((raw_record as Dictionary).get("day", -1)) != 0
+					or str((raw_record as Dictionary).get("time", "")) != "开局前"
+				):
+					return {
+						"ok": false,
+						"message": "Initial knowledge record is invalid for NPC %s: %s.%s" % [
+							npc_id,
+							str(raw_subject),
+							str(raw_relation)
+						]
+					}
+	if memory_by_npc.size() != expected_npc_ids.size():
+		return {
+			"ok": false,
+			"message": "Initial long memory contains unknown NPC ids; expected %d entries, got %d." % [
+				expected_npc_ids.size(),
+				memory_by_npc.size()
+			]
+		}
+	return {"ok": true, "message": ""}
+
+
+func _apply_initial_long_memory(profile: Dictionary, npc_id: String, memory_by_npc: Dictionary) -> bool:
+	var raw_memory: Variant = memory_by_npc.get(npc_id)
+	if not raw_memory is Dictionary:
+		return false
+	var initial_memory := raw_memory as Dictionary
+	var raw_graph: Variant = initial_memory.get("knowledge_graph")
+	if not raw_graph is Dictionary:
+		return false
+	var graph := raw_graph as Dictionary
+	profile["diary"] = _normalize_diary_entries(initial_memory.get("diary", []))
+	profile["knowledge_graph"] = {
+		"schema_version": "key_value_replace_v1",
+		"updated_day": int(graph.get("updated_day", 0)),
+		"updated_time": str(graph.get("updated_time", "开局前")),
+		"by_subject": _normalize_knowledge_graph_subjects(graph)
+	}
+	return true
+
+
 func _apply_knowledge_graph_updates(graph: Dictionary, raw_updates: Variant, day: int, time_text: String) -> Dictionary:
 	var updates: Array = raw_updates if raw_updates is Array else []
 	var by_subject := _normalize_knowledge_graph_subjects(graph)
@@ -1722,12 +1900,23 @@ func _apply_knowledge_graph_updates(graph: Dictionary, raw_updates: Variant, day
 		if subject.is_empty() or relation.is_empty() or value.is_empty():
 			continue
 		var subject_bucket: Dictionary = by_subject.get(subject, {})
-		subject_bucket[relation] = {
+		var previous_record: Dictionary = subject_bucket.get(relation, {}) if subject_bucket.get(relation, {}) is Dictionary else {}
+		var subject_label := str(update.get("subject_label", previous_record.get("subject_label", ""))).strip_edges()
+		var relation_label := str(update.get("relation_label", previous_record.get("relation_label", ""))).strip_edges()
+		var value_label := str(update.get("value_label", previous_record.get("value_label", value))).strip_edges()
+		var record := {
 			"value": value,
 			"confidence": clampf(float(update.get("confidence", 1.0)), 0.0, 1.0),
 			"day": day,
 			"time": time_text
 		}
+		if not subject_label.is_empty():
+			record["subject_label"] = subject_label
+		if not relation_label.is_empty():
+			record["relation_label"] = relation_label
+		if not value_label.is_empty():
+			record["value_label"] = value_label
+		subject_bucket[relation] = record
 		by_subject[subject] = subject_bucket
 
 	return {
@@ -1809,7 +1998,7 @@ func _log_attribute_improved(npc_id: String, attribute_name: String, before: int
 	return memory_system.add_event({
 		"type": "attribute_improved",
 		"subject_npc_id": npc_id,
-		"actor_ids": [PLAYER_ACTOR_ID],
+		"actor_ids": [npc_id],
 		"target_ids": [npc_id, attribute_name],
 		"location_id": _get_current_info_location(npc_id, memory_system),
 		"visibility": "private",
@@ -1819,7 +2008,7 @@ func _log_attribute_improved(npc_id: String, attribute_name: String, before: int
 			"attribute_label": _get_attribute_label(attribute_name),
 			"before": before,
 			"after": after,
-			"assigned_by": PLAYER_ACTOR_ID
+			"training_kind": "physical" if attribute_name == "strength" else "mental"
 		}
 	})
 
@@ -1840,7 +2029,7 @@ func _request_plan_reevaluation_or_defer(npc_id: String, reason: String) -> Dict
 
 func _request_plan_reevaluation(npc_id: String, reason: String) -> Dictionary:
 	var issued_at := _get_game_time_snapshot()
-	_last_plan_reevaluation_request = {
+	var request_snapshot := {
 		"npc_id": npc_id,
 		"reason": reason,
 		"day": int(issued_at.get("day", 1)),
@@ -1848,14 +2037,20 @@ func _request_plan_reevaluation(npc_id: String, reason: String) -> Dictionary:
 		"current_order": get_current_order(npc_id),
 		"result": {
 			"status": "pending",
-			"fallback_used": true,
+			"fallback_used": false,
 			"summary": "计划重评估请求已发出，等待 DailyPlanSystem 处理。"
 		}
 	}
+	_store_plan_reevaluation_request(npc_id, request_snapshot)
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_plan_reevaluation_requested"):
 		event_bus.npc_plan_reevaluation_requested.emit(npc_id, reason)
-	return _last_plan_reevaluation_request.duplicate(true)
+	return request_snapshot.duplicate(true)
+
+
+func _store_plan_reevaluation_request(npc_id: String, request_snapshot: Dictionary) -> void:
+	_plan_reevaluation_requests_by_npc[npc_id] = request_snapshot.duplicate(true)
+	_last_plan_reevaluation_request = request_snapshot.duplicate(true)
 
 
 func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
@@ -1919,13 +2114,17 @@ func _get_spawn_position(index: int) -> Vector3:
 
 
 func _pick_npc_at_screen_position(screen_position: Vector2) -> String:
+	return str(_pick_npc_interaction_at_screen_position(screen_position).get("npc_id", ""))
+
+
+func _pick_npc_interaction_at_screen_position(screen_position: Vector2) -> Dictionary:
 	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
 	if camera == null:
-		return ""
+		return {}
 
 	var world_3d := get_viewport().world_3d
 	if world_3d == null:
-		return ""
+		return {}
 
 	var ray_origin := camera.project_ray_origin(screen_position)
 	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * PICK_RAY_LENGTH
@@ -1935,16 +2134,32 @@ func _pick_npc_at_screen_position(screen_position: Vector2) -> String:
 
 	var result := world_3d.direct_space_state.intersect_ray(query)
 	if result.is_empty():
-		return ""
+		return {}
 
 	var collider := result.get("collider") as Node
+	if (
+		collider != null
+		and str(collider.get_meta("interaction_kind", "")) == "autonomous_dialogue_bubble"
+		and collider is Node3D
+		and (collider as Node3D).visible
+	):
+		var bubble_npc_id := str(collider.get_meta("npc_id", ""))
+		var dialogue_id := str(collider.get_meta("dialogue_id", ""))
+		if not bubble_npc_id.is_empty() and not dialogue_id.is_empty():
+			return {
+				"kind": "autonomous_dialogue_bubble",
+				"npc_id": bubble_npc_id,
+				"dialogue_id": dialogue_id,
+				"collider": collider
+			}
+
 	while collider != null:
 		var npc_id := str(collider.get_meta("npc_id", ""))
 		if not npc_id.is_empty():
-			return npc_id
+			return {"kind": "npc", "npc_id": npc_id, "collider": result.get("collider")}
 		collider = collider.get_parent()
 
-	return ""
+	return {}
 
 
 func _select_npc(npc_id: String) -> void:
@@ -2210,6 +2425,101 @@ func _get_current_info_location(npc_id: String, memory_system: Node) -> String:
 	return PLAZA_LOCATION_ID
 
 
+func _get_location_entry_availability(location_id: String, building_system: Node = null) -> Dictionary:
+	if location_id == PLAZA_LOCATION_ID:
+		return {
+			"ok": true,
+			"building_id": location_id,
+			"is_enterable": true,
+			"is_accessible": true,
+			"is_operational": true,
+			"is_activity_available": true,
+			"unavailable_reason": ""
+		}
+	if building_system == null:
+		building_system = get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null:
+		return {
+			"ok": false,
+			"building_id": location_id,
+			"is_enterable": false,
+			"is_accessible": false,
+			"is_operational": false,
+			"is_activity_available": false,
+			"unavailable_reason": "building_system_missing"
+		}
+	if building_system.has_method("get_building_availability"):
+		return building_system.get_building_availability(location_id)
+	var building: Dictionary = building_system.get_building(location_id) if building_system.has_method("get_building") else {}
+	if building.is_empty():
+		return {
+			"ok": false,
+			"building_id": location_id,
+			"is_enterable": false,
+			"is_accessible": false,
+			"is_operational": false,
+			"is_activity_available": false,
+			"unavailable_reason": "unknown_building"
+		}
+	var enterable := int(building.get("hp", 0)) > 0 and str(building.get("condition", "")) != "upgrading"
+	return {
+		"ok": enterable,
+		"building_id": location_id,
+		"is_enterable": enterable,
+		"is_accessible": enterable,
+		"is_operational": enterable,
+		"is_activity_available": enterable,
+		"unavailable_reason": "" if enterable else "building_unavailable"
+	}
+
+
+func _is_location_available_for_entry(location_id: String, building_system: Node = null) -> bool:
+	return bool(_get_location_entry_availability(location_id, building_system).get("is_enterable", false))
+
+
+func _is_location_available_for_access(location_id: String, building_system: Node = null) -> bool:
+	var availability := _get_location_entry_availability(location_id, building_system)
+	return bool(availability.get("is_accessible", availability.get("is_operational", false)))
+
+
+func _redirect_npc_to_plaza(npc_id: String, unavailable_building_id: String, building_system: Node = null) -> void:
+	if not _profiles.has(npc_id):
+		return
+	var availability := _get_location_entry_availability(unavailable_building_id, building_system)
+	_set_npc_state_without_signal(npc_id, {
+		"last_action_result": "building_use_failed_%s" % str(availability.get("unavailable_reason", "building_unavailable")),
+		"last_action_failure_context": {
+			"building_id": unavailable_building_id,
+			"condition": str(availability.get("condition", "unknown")),
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"is_enterable": false,
+			"is_operational": bool(availability.get("is_operational", false)),
+			"is_activity_available": false
+		}
+	})
+	if move_npc_to_building(npc_id, PLAZA_LOCATION_ID):
+		return
+	debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
+
+
+func _on_building_state_changed(building_id: String) -> void:
+	if building_id.is_empty():
+		return
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if _is_location_available_for_access(building_id, building_system):
+		return
+	for raw_npc_id in _npc_order:
+		var npc_id := str(raw_npc_id)
+		var state: Dictionary = get_npc_state(npc_id)
+		if str(state.get("current_location", "")) != building_id:
+			continue
+		if str(state.get("movement_target", "")) == PLAZA_LOCATION_ID:
+			continue
+		if not can_npc_act(npc_id):
+			continue
+		_redirect_npc_to_plaza(npc_id, building_id, building_system)
+
+
 func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 	if not _profiles.has(npc_id):
 		return
@@ -2218,6 +2528,9 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		return
 
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if not _is_location_available_for_access(building_id, building_system):
+		_redirect_npc_to_plaza(npc_id, building_id, building_system)
+		return
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var location_context: Dictionary = {}
 	var building_name := building_id
@@ -2316,6 +2629,12 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 		changes["location_context"] = {}
 		changes["last_action_result"] = "escaped_station"
 	_set_npc_state_without_signal(npc_id, changes)
+	if (
+		bool(arrival_state.get("escape_finalize", false))
+		and memory_system != null
+		and memory_system.has_method("remove_npc_from_all_locations")
+	):
+		memory_system.remove_npc_from_all_locations(npc_id)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	if bool(arrival_state.get("escape_finalize", false)):
@@ -2328,6 +2647,15 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 func debug_enter_location_immediately(npc_id: String, location_id: String) -> bool:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot set location for unknown NPC: %s" % npc_id)
+		return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if not _is_location_available_for_entry(location_id, building_system):
+		var availability := _get_location_entry_availability(location_id, building_system)
+		push_warning("Cannot place NPC %s inside unavailable building %s: %s" % [
+			npc_id,
+			location_id,
+			str(availability.get("unavailable_reason", "building_unavailable"))
+		])
 		return false
 
 	var previous_state: Dictionary = get_npc_state(npc_id)

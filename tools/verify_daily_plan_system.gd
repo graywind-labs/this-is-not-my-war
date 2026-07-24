@@ -56,6 +56,43 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var unordered_plan := plan.duplicate(true)
+	var hour_six_item: Dictionary = unordered_plan[6]
+	unordered_plan[6] = unordered_plan[7]
+	unordered_plan[7] = hour_six_item
+	if not daily_plan_system.set_npc_daily_plan(npc_id, unordered_plan, false, "rule_unordered_test"):
+		push_error("A complete plan returned out of array order should normalize by each item's hour")
+		quit(1)
+		return
+	var reordered_plan: Array = daily_plan_system.get_npc_daily_plan(npc_id)
+	for expected_hour in range(24):
+		if int(reordered_plan[expected_hour].get("hour", -1)) != expected_hour:
+			push_error("Normalized plan is not indexed by its declared hour: %s" % str(reordered_plan))
+			quit(1)
+			return
+		if str(reordered_plan[expected_hour].get("action_id", "")) != str(plan[expected_hour].get("action_id", "")):
+			push_error("Out-of-order plan changed the action assigned to hour %d" % expected_hour)
+			quit(1)
+			return
+	var duplicate_hour_plan := plan.duplicate(true)
+	duplicate_hour_plan[1]["hour"] = 0
+	if daily_plan_system.set_npc_daily_plan(npc_id, duplicate_hour_plan, false, "rule_duplicate_hour_test"):
+		push_error("A plan with duplicate declared hours must be rejected")
+		quit(1)
+		return
+	var missing_hour_plan := plan.duplicate(true)
+	missing_hour_plan[0].erase("hour")
+	if daily_plan_system.set_npc_daily_plan(npc_id, missing_hour_plan, false, "rule_missing_hour_test"):
+		push_error("A plan item without a declared hour must be rejected")
+		quit(1)
+		return
+	var out_of_range_hour_plan := plan.duplicate(true)
+	out_of_range_hour_plan[23]["hour"] = 24
+	if daily_plan_system.set_npc_daily_plan(npc_id, out_of_range_hour_plan, false, "rule_out_of_range_hour_test"):
+		push_error("A plan item with an out-of-range hour must be rejected")
+		quit(1)
+		return
+
 	if not npc_system.debug_enter_location_immediately(npc_id, "garden"):
 		push_error("Failed to place gardener at garden")
 		quit(1)
@@ -69,8 +106,13 @@ func _init() -> void:
 	action_system._on_logical_time_tick(3600.0, 1.0)
 	await process_frame
 	var after_repeat: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(after_repeat.get("current_action", "")) != "work_garden":
-		push_error("Completed action should repeat within the same plan hour")
+	if str(after_repeat.get("current_action", "")) != "idle":
+		push_error("Completed action must wait for the rest of the same plan hour")
+		quit(1)
+		return
+	var same_slot_result: Dictionary = daily_plan_system.execute_current_plan_for_npc(npc_id, false)
+	if str(same_slot_result.get("status", "")) != "already_executed_this_plan_phase":
+		push_error("Completed action was dispatched again within the same plan hour: %s" % str(same_slot_result))
 		quit(1)
 		return
 

@@ -21,20 +21,23 @@ from backend.schemas import (  # noqa: E402
 )
 from backend.app import create_app  # noqa: E402
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig  # noqa: E402
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 class _FakePlanResponse:
     status_code = 200
     text = ""
 
-    def __init__(self, content: dict) -> None:
+    def __init__(self, content: dict | None = None, raw_content: str = "", finish_reason: str = "stop") -> None:
         import json
 
+        content_text = raw_content if raw_content else json.dumps(content, ensure_ascii=False)
         self._body = {
             "choices": [
                 {
+                    "finish_reason": finish_reason,
                     "message": {
-                        "content": json.dumps(content, ensure_ascii=False),
+                        "content": content_text,
                     }
                 }
             ],
@@ -53,7 +56,7 @@ def _allowed_actions() -> list[ActionCandidate]:
         ActionCandidate(action_id="work_garden", name="照料菜园", location_id="garden", tags=["work"]),
         ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", location_id="dining_hall", tags=["eat"]),
         ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", location_id="dormitory", tags=["sleep"]),
-        ActionCandidate(action_id="idle", name="等待", location_id="plaza", tags=["idle"]),
+        ActionCandidate(action_id="idle", name="等待", location_id=None, tags=["idle"]),
     ]
 
 
@@ -97,6 +100,9 @@ def _base_payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=2, time="07:00:00", hour=7).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "gardener_01", "name": "伊沃", "identity": "园丁"}
+        ]),
         "npc": npc.model_dump(),
         "allowed_actions": [action.model_dump() for action in _allowed_actions()],
         "current_building_states": {"garden": {"level": 1, "hp": 90}, "dormitory": {"level": 1, "hp": 100}},
@@ -148,7 +154,7 @@ def _valid_plan() -> dict:
                 "hour": hour,
                 "action_kind": "idle",
                 "action_id": "idle",
-                "location_id": "plaza",
+                "location_id": None,
                 "target_id": None,
                 "priority": 40,
                 "reason": "留在广场观察情况。",
@@ -179,6 +185,14 @@ def main() -> None:
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
+    assert "max_tokens" not in request_body
+    assert request_body["thinking"] == {"type": "disabled"}
+    assert request_body["temperature"] == 0.4
+    assert result.usage["finish_reason"] == "stop"
+    assert result.usage["thinking_mode"] == "disabled"
+    runtime_snapshot = adapter.get_runtime_config_snapshot()
+    assert runtime_snapshot["client_output_token_limit_applied"] is False
+    assert runtime_snapshot["thinking_mode"] == "disabled"
     required_prompt_fragments = [
         "每日计划 Prompt",
         "24 个阶段",
@@ -187,6 +201,18 @@ def main() -> None:
         "action_id 只能使用",
         "current_order",
         "不能绕过 allowed_actions",
+        "eligible=false",
+        "available_now=false",
+        "required_ability=主持弥撒",
+        "required_active_action_id",
+        "attend_mass",
+        "pray_at_chapel",
+        "主持弥撒期间普通祈祷不可进行",
+        "不指定病床、训练位、祈祷席等位置编号",
+        "往昔·近日",
+        "传达敌情",
+        "日记字符串保留",
+        "第 N 天 + 时间",
         "不得决定资源、HP、建筑、移动、伤害等权威结算",
     ]
     for fragment in required_prompt_fragments:
@@ -208,6 +234,25 @@ def main() -> None:
     assert any("invented_action" in detail for detail in invalid_body["details"])
     assert invalid_body["usage"]["success"] is False
     assert invalid_body["usage"]["exception_type"] == "SchemaValidationError"
+
+    retry_adapter = ModelAdapter(ModelAdapterConfig(
+        provider="deepseek",
+        api_key="test_key",
+        fallback_to_mock=False,
+    ))
+    with patch(
+        "backend.services.model_adapter.requests.post",
+        side_effect=[
+            _FakePlanResponse(raw_content='{"ok":true,"plan":[', finish_reason="length"),
+            _FakePlanResponse(_valid_plan()),
+        ],
+    ) as retry_post:
+        retry_result = retry_adapter.generate("plan_day", payload)
+    assert retry_result.ok
+    assert retry_post.call_count == 2
+    assert "max_tokens" not in retry_post.call_args_list[0].kwargs["json"]
+    assert "max_tokens" not in retry_post.call_args_list[1].kwargs["json"]
+    assert retry_result.usage["attempt_count"] == 2
 
     print("verify_plan_day_prompt: ok")
 

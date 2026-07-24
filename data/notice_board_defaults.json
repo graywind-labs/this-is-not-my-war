@@ -1,0 +1,66 @@
+{
+  "initial_notice": "驿站诸位：\n\n边境战事已起。我们奉命守住此地，敌人随时可能来袭。请各司其职，勤勉工作，爱惜粮食与药品；也请有能力者积极应征入伍，与我们一同保卫驿站。每一份劳作、每一个愿意站出来的人，都会让这里多一分安稳。\n\n——守备官",
+  "schedule_advisory_note": "这是通用的建议日程，仅用作参考，不必严格按照这个日程；如有特殊事务，可以自行安排。",
+  "initial_schedule": [
+    {
+      "id": "sleep_before_dawn",
+      "start_time": "00:00",
+      "end_time": "06:00",
+      "content": "睡觉"
+    },
+    {
+      "id": "breakfast",
+      "start_time": "06:00",
+      "end_time": "07:00",
+      "content": "早餐"
+    },
+    {
+      "id": "morning_work",
+      "start_time": "07:00",
+      "end_time": "12:00",
+      "content": "工作"
+    },
+    {
+      "id": "lunch",
+      "start_time": "12:00",
+      "end_time": "13:00",
+      "content": "午餐"
+    },
+    {
+      "id": "afternoon_work",
+      "start_time": "13:00",
+      "end_time": "17:00",
+      "content": "工作"
+    },
+    {
+      "id": "late_afternoon_rest",
+      "start_time": "17:00",
+      "end_time": "18:00",
+      "content": "休息／祈祷"
+    },
+    {
+      "id": "dinner",
+      "start_time": "18:00",
+      "end_time": "19:00",
+      "content": "晚餐"
+    },
+    {
+      "id": "daily_mass",
+      "start_time": "19:00",
+      "end_time": "20:00",
+      "content": "弥撒"
+    },
+    {
+      "id": "evening_rest",
+      "start_time": "20:00",
+      "end_time": "22:00",
+      "content": "休息／祈祷"
+    },
+    {
+      "id": "sleep_at_night",
+      "start_time": "22:00",
+      "end_time": "24:00",
+      "content": "睡觉"
+    }
+  ]
+}

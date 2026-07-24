@@ -1,5 +1,21 @@
 # COMBAT_SYSTEM.md
 
+## T0054 驿站规则与战斗权威边界
+
+共享 `station_rules` 以站内口吻告诉 NPC：遇敌时已入伍且有主武器者保卫驿站，未入伍或没有主武器者尽量在站内避敌，低士气者可能离开甚至临阵脱逃。这用于对话、计划、战时心理和反思保持同一世界观，不直接切换 `behavior_mode`，也不自行触发警铃、集结、避战或逃离。
+
+实际资格仍由 CombatSystem / NPCSystem 根据征召、主武器、昏迷、逃离、敌人在场和当前状态判断；战时 LLM 只能在本次 `allowed_decisions` 中选择。规则里的“可能”不得被模型当作已发生事实，士气影响与逃离流程也继续走现有程序入口和事件记录。
+
+## T0053 战时心理人物上下文一致性
+
+低血量心理判定继续只在程序确认的阈值事件后触发，`CombatSystem` 提供 `combat_context / battlefield_context / allowed_decisions`，`LLMBridge` 通过共享 `NPCContext` 同时注入 NPC 职业与人格、欲望 / 恐惧 / 底线、权威状态、当前守备官指令、亲历 / 见闻短期记忆、`long_term_memory={knowledge_graph, diary}` 和地点。参战者的继续战斗 / 逃离 / 鼓舞与非战斗人员的继续避战 / 逃离因此使用和日计划、计划判别、正式修订一致的人物依据；长期记忆不能覆盖低血量或战场权威事实，也不能让非战斗人员绕过 `allowed_decisions` 直接参战。
+
+## T0025 日程行动与战斗权威边界
+
+`escaping_station` 可作为每日计划 / 修订中的特殊逃离意向，但 DailyPlanSystem 只把它交给 `CombatSystem.start_npc_escape(...)`，不会按普通 ActionSystem 行动直接改写逃离状态。集结、战斗、避战、昏迷和已进入逃离流程的 NPC 不执行日常计划，也不能成为即时自主闲聊目标；这些权威模式切换会结束自主对话，且结束清理不会把参与者强制恢复为 `idle`。`escape_intervention_dialogue` 仍是玩家干预入口，不进入计划候选。
+
+T0049 后，战斗结束或无敌军时复苏并返回工作模式属于非对话计划触发：不调用对话判别层，直接以 `revision_scope=selected_hours`、`revision_hours=[current_hour]` 修订当前阶段。战时守备官对话和逃离挽留对话仍按实际对话内容先判别；对话窗内已经提交的攻击即使没有 NPC 回复，也作为本轮事实进入同一判别。仍在战斗 / 避战 / 逃离等高优先级模式中的复苏不强行派发日常计划。
+
 ## 战斗目标
 
 战斗系统用于制造外部压力。  
@@ -23,7 +39,7 @@ T1103A 起，战斗相关运行时以 NPC 行为模式为主线，而不是“�
 
 避战模式是非战斗人员的同级行为模式，不等于已入伍且有主武器 NPC 在战斗模式中可选的“避战策略”。后者仍属于战斗模式。
 
-任一高优先级模式触发时，如果该 NPC 正在对话，系统必须强制结束对话、关闭对话框并取消可取消 LLM 请求；未完成回复不写入对话事件。如果 NPC 正在做普通计划行动、移动、工作、吃饭、训练、治疗或计划 LLM 活动，系统应中断并进入新模式。睡觉 NPC 通常不因附近敌人直接切换模式，只有被敌人攻击时才按入伍状态和主武器进入战斗或避战。
+任一高优先级模式触发时，如果该 NPC 正在与守备官对话，系统必须强制完成当前已有会话、关闭对话框并取消可取消 LLM 请求；未完成的 NPC 回复不伪造，但已经说出口的守备官消息和攻击事实随会话入库并进入判别。如果 NPC 正在做普通计划行动、移动、工作、吃饭、训练、治疗或计划 LLM 活动，系统应中断并进入新模式。睡觉 NPC 通常不因附近敌人直接切换模式，只有被敌人攻击时才按入伍状态和主武器进入战斗或避战。
 
 T1103A 已实现模式切换的权威边界：进入集结 / 战斗 / 避战时会中断普通行动、移动、可取消 LLM 与当前对话；需要留痕的模式变化会写入 `npc_mode_changed`。T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 的互转不再写入 `npc_mode_changed`，也不通过该事件广播；避战开始 / 结束、攻击、受伤、警铃、集结、昏迷和复苏仍由具体事件记录。昏迷 NPC 复苏后按场上敌军、入伍状态和主武器分流：仍有敌军时，已入伍且有主武器者进入战斗模式，未入伍或无主武器者进入避战模式；没有敌军时返回工作模式并重新评估计划。T1103B/T1103C 已实现非战斗人员的避战移动、清敌退出、避战中应征 / 装备分流，以及 `avoidance_started` / `avoidance_ended` 事件。
 
@@ -36,7 +52,7 @@ T1103A 已实现模式切换的权威边界：进入集结 / 战斗 / 避战时�
 3. 未入伍 NPC、已入伍但无主武器 NPC 在工作模式中遇敌，进入避战模式。
 4. 睡觉中的 NPC 只有被敌人攻击时才从睡觉进入战斗 / 避战。
 
-T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模式切换和非战斗人员避战闭环：HUD `AlarmButton` 和 GM `alarm` / `rally` 都调用 `CombatSystem.trigger_combat_alarm(...)`。警铃会给所有 NPC 写入 `combat_alarm_rang` 结构化事件；随后只有已入伍、已装备主武器、当前可行动且非睡觉的 NPC 响应集结并进入 `behavior_mode == "rally"`。响应者的普通日常行动会通过 `NPCSystem.set_npc_behavior_mode(...)` 的中断边界打断并释放工位，再移动到城门外防线。阵型按近战步兵 / 长杆步兵 / 近战骑兵前排，弓箭兵 / 弩兵 / 骑射单位后排排列，方向标记面向正门外敌人来袭方向。已装备坐骑的 NPC 只在 `behavior_mode == "rally"` 或 `"combat"` 时显示低模坐骑；日常工作模式不显示骑乘。若集结途中或集合点附近遭遇敌人，只有已入伍且有主武器 NPC 会停止集结并进入 `behavior_mode == "combat"` 与 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy` 和必要的 `npc_mode_changed`。未入伍或已入伍但无主武器 NPC 在工作模式中接敌会进入 `behavior_mode == "avoid_combat"`，按最近敌人方位生成短距离散射移动目标，不设置战斗 `combat_mode`，也不攻击敌人；睡觉中的非战斗人员只有被敌人攻击才进入避战。集结到点后等待 1 游戏小时仍未接敌会返回 `work` 且不触发计划重评估；场上敌人清空时，`combat` NPC 返回 `work` 并触发计划重评估，`avoid_combat` NPC 返回 `work` 且不触发计划重评估。T1103D 起，工作 / 战斗和工作 / 避战互转不再写 `npc_mode_changed`，具体战斗和避战事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended` 等事件表达。T1104 后，`combat` 模式中的入伍持主武器 NPC 已能执行基础自动攻击、扣除敌人 HP 并在敌人 HP 清零后移除敌人。T1105 后，战斗模式会按 NPC 当前手动选择的兵种策略决定基础攻击前的战术移动与攻击节奏。T1106 后，波次生成和敌军清空会分别写入广场 `combat_started` / `combat_ended`，并维护本场受伤、昏迷和击退统计；T1201 后，战时公开对话可应用斗志 buff 或触发逃离；T1202 后，战时低血量自身心理判定已接入；T1203 后，逃离会移动到后门外出口并在离图后标记 `escaped`；T1204A 后，逃离过程中可通过 NPC 面板进行最多 5 轮挽留，打开对话暂停逃离移动，未满 5 轮关闭恢复，给钱减速，逃离攻击加速且不请求 NPC 回复，并在昏迷复苏后继续逃离；T1302 后，主厅被摧毁会进入失败占位结算并停止正常推进；T1303 后，活动敌人在场且所有已入伍持主武器战斗人员均昏迷、已逃离或正在逃离时，会进入无可战斗人员失败；T1304 后，包含第 5 波的战斗清敌会进入 Demo 胜利占位结算并停止继续刷波。NPC 结局总结和命中 / 格挡仍留给后续任务。
+T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模式切换和非战斗人员避战闭环：HUD `AlarmButton` 和 GM `alarm` / `rally` 都调用 `CombatSystem.trigger_combat_alarm(...)`。警铃会给所有 NPC 写入 `combat_alarm_rang` 结构化事件；随后只有已入伍、已装备主武器、当前可行动且非睡觉的 NPC 响应集结并进入 `behavior_mode == "rally"`。响应者的普通日常行动会通过 `NPCSystem.set_npc_behavior_mode(...)` 的中断边界打断并释放工位，再移动到城门外防线。阵型按近战步兵 / 长杆步兵 / 近战骑兵前排，弓箭兵 / 弩兵 / 骑射单位后排排列，方向标记面向正门外敌人来袭方向。HorseSystem 只有在 NPC 进入 `behavior_mode == "rally"` 或 `"combat"` 时才让已分配成年马离厩并标记 `ridden`，CombatSystem 据此显示低模坐骑；日常工作模式下马仍在马厩且不显示骑乘。若集结途中或集合点附近遭遇敌人，只有已入伍且有主武器 NPC 会停止集结并进入 `behavior_mode == "combat"` 与 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy` 和必要的 `npc_mode_changed`。未入伍或已入伍但无主武器 NPC 在工作模式中接敌会进入 `behavior_mode == "avoid_combat"`，按最近敌人方位生成短距离散射移动目标，不设置战斗 `combat_mode`，也不攻击敌人；睡觉中的非战斗人员只有被敌人攻击才进入避战。集结到点后等待 1 游戏小时仍未接敌会返回 `work` 且不触发计划重评估；场上敌人清空时，`combat` NPC 返回 `work` 并触发计划重评估，`avoid_combat` NPC 返回 `work` 且不触发计划重评估。T1103D 起，工作 / 战斗和工作 / 避战互转不再写 `npc_mode_changed`，具体战斗和避战事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended` 等事件表达。T1104 后，`combat` 模式中的入伍持主武器 NPC 已能执行基础自动攻击、扣除敌人 HP 并在敌人 HP 清零后移除敌人。T1105 后，战斗模式会按 NPC 当前手动选择的兵种策略决定基础攻击前的战术移动与攻击节奏。T1106 后，波次生成和敌军清空会分别写入广场 `combat_started` / `combat_ended`，并维护本场受伤、昏迷和击退统计；T1201 后，战时公开对话可应用斗志 buff 或触发逃离；T1202 后，战时低血量自身心理判定已接入；T1203 后，逃离会移动到后门外出口并在离图后标记 `escaped`；T1204A 后，逃离过程中可通过 NPC 面板进行最多 5 轮挽留，打开对话暂停逃离移动，未满 5 轮关闭恢复，给钱减速，逃离攻击加速且不请求 NPC 回复，并在昏迷复苏后继续逃离；T1302 后，主厅被摧毁会进入失败占位结算并停止正常推进；T1303 后，活动敌人在场且所有已入伍持主武器战斗人员均昏迷、已逃离或正在逃离时，会进入无可战斗人员失败；T1304 后，包含第 5 波的战斗清敌会进入 Demo 胜利占位结算并停止继续刷波。NPC 结局总结和命中 / 格挡仍留给后续任务。
 
 ## 兵种判定
 
@@ -52,9 +68,22 @@ T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模�
 | 远程武器 + 马 | 骑射单位 |
 | 无武器 | 非战斗人员 / 避战单位 |
 
-T0804 后，铁匠铺已经能把铁加工为 `weapons` / `armor` 两类派生库存。T0805 后，工械坊会把木材加工为 `weapons` / `defense_devices`；T0806 后，马厩会把粮食维护转化为 `horse_readiness` 马匹整备库存。T0901 后，`EquipmentSystem` 已能把 `weapons` 转换为剑盾、长杆、弓或弩主武器，把 `armor` 转换为头盔、胸甲、腕甲或腿甲，把 `horse_readiness` 转换为坐骑槽。T0902 后，兵种判定已独立验收，并提供 `get_unit_type_snapshot(...)` 供 GM 与后续战斗系统读取；坐骑来源只看 NPC 的 `equipment.mount` 槽，不能直接读取 `horse_readiness` 库存当作已骑乘。T1103 已接入集结 / 接敌时的低模坐骑表现，日常工作仍不骑马；T1104 后，CombatSystem 会读取主武器 `damage` / `range` / `attack_interval`、盔甲 `armor_value` 和坐骑槽来计算基础攻击、防御和部分攻击速度修正。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；工程器械部署仍由 T1508 接入。
+T0804-T0806 曾使用 `weapons` / `armor` / `defense_devices` / `horse_readiness` 聚合库存作为最小占位；T0035-T0038 已完成正式迁移，这四个 id 只保留兼容且不得正式消耗。铁匠铺 / 工械坊现在按分阶段配方产出剑盾、长杆、弓、弩、四个盔甲部位、箭束、弩床和箭塔各自的 `item_*` 库存，EquipmentSystem 逐件消耗 / 返还武器与盔甲的具体来源。坐骑由 HorseSystem 中的真实成年马分配，`equipment.mount` 只是带 `horse_id` 的兼容投影。T0031 后，艾达在新游戏初始化时从正式武器定义直接装载剑盾，开局兵种为近战步兵；这份故事装备不扣库存、不记录守备官赠送事件。T0902 后，兵种判定通过 `get_unit_type_snapshot(...)` 供 GM 与 CombatSystem 读取；T1104 后 CombatSystem 会读取主武器 `damage` / `range` / `attack_interval`、盔甲 `armor_value` 和 HorseSystem 已同步的真实坐骑投影来计算基础攻击、防御和部分攻击速度修正。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；器械部署仍由 DefenseDeviceSystem 权威处理。
 
-T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑术。训练项目由 NPC 当前装备决定：主武器对应剑盾、长杆、弓或弩，坐骑对应骑术；教官带受训者时，受训者按自己的装备成长，教官提升“教练”。训练只改变 NPC 熟练度和基础状态消耗，不直接结算攻击、命中、伤害、防御、骑乘表现或当前战斗策略选择。
+T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑术。训练项目由受训 NPC 当前装备决定：主武器对应剑盾、长杆、弓或弩，坐骑对应骑术。T0043 后，全部有效教官位上的 NPC 以人数、“教练”和对应项目熟练度组成共享团队效率，同时作用于全部训练位；受训者按自己的装备成长，在岗教官提升“教练”。训练只改变 NPC 熟练度和基础状态消耗，不直接结算攻击、命中、伤害、防御、骑乘表现或当前战斗策略选择。
+
+## T0034/T0036/T0038 具体库存与马匹战时生命周期（当前已实现）
+
+具体库存迁移已落地：剑盾、长杆、弓、弩、四个盔甲部位、弩床和箭塔都必须消耗各自具体 `item_*` 库存；`weapons`、`armor`、`defense_devices` 聚合库存不再是可互换的正式结算来源。箭束 `item_arrow_bundle` 当前已作为具体库存显示和制造，但尚未新增弓 / 弩逐次弹药消耗。
+
+坐骑已由 HorseSystem 中的真实马匹实体承担，不再由 `horse_readiness` 生成匿名槽位。分配与战时切换规则如下：
+
+- 分配前置为“NPC 已入伍且有主武器”；只能分配成年、未被占用、物理上位于马厩的马。分配建立预留关系，但 `work` 模式下马仍在马厩，NPC 兵种快照可以预览骑兵类型，世界表现不显示骑乘。
+- NPC 进入 `rally` 或 `combat` 时，HorseSystem 将其已分配马标记为 `location= ridden`、写入 `ridden_by_npc_id`，并从马厩数量中移除；CombatSystem 只消费该权威结果显示骑乘和判定骑兵，不自行复制马匹。
+- NPC 从 `rally` / `combat` 回到 `work`（包括集结超时、清敌、战斗结束）或进入 `unconscious` 时，马返回马厩并清除骑乘者，原分配关系保留。NPC 取消入伍、失去主武器或逃离驿站时，系统先让马返回马厩，再自动解除分配并清空坐骑槽；合法主武器之间的更换不解除。
+- 若战时切换时分配马已不满足权威条件，NPC 不得凭旧装备槽生成坐骑，应按无坐骑兵种继续。马匹战斗受伤与马匹伤害分摊留给独立战斗设计，本轮不新增。
+
+`equipment.mount` 只保存 `horse_id` / `horse_name` 和通用骑乘参数的兼容快照。HorseSystem 是马的位置、HP、饱食、成长、分配和骑乘关系的唯一权威；CombatSystem 不修改这些经营数值。马厩等级每升一级只使生育概率增加 10%，不影响战斗属性、成长速度、进食或自然恢复。
 
 ## 战时对话与心理结果
 
@@ -87,7 +116,7 @@ T1202 已实现：当前战斗 / 敌人在场期间，当任一未昏迷、未�
 - 逃离驿站
 - 留在驿站继续避战（无事发生）
 
-该请求由 `LLMBridge.request_npc_battle_judgement(...)` 调用 `/npc/battle_judgement`，没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次；后端失败或输出越界时，Godot 按允许结果规则降级，并保留真实 provider 失败日志。开发期可用 mock 验证 Schema，Prompt 验收必须使用真实 API。
+该请求由 `LLMBridge.request_npc_battle_judgement_async(...)` 异步调用 `/npc/battle_judgement`，没有守备官本轮发言，只根据 NPC 自身上下文、当前 `current_order`、亲历 / 见闻、低血量事实和战局上下文判断。每名 NPC 每波或每场战斗最多触发一次；返回时若战斗已经结束或波次已变化，旧结果会被丢弃。后端失败或输出越界时，Godot 按允许结果规则降级，并保留真实 provider 失败日志。开发期可用 mock 验证 Schema，Prompt 验收必须使用真实 API。
 
 T1404 后，真实 provider 路径读取 `data/prompts/battle_judgement_system_prompt.txt`，Prompt 明确引用 `battlefield_context`、NPC 亲历事件、公开见闻和最新 `current_order`，但只能从请求的 `allowed_decisions` 中选择。后端在 `BattleJudgementResponse` Schema 校验后额外校验 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true；越界结果返回 `model_output_invalid` 并写入 usage。真实 DeepSeek 已完成战时公开对话与 `/npc/battle_judgement` smoke 验证，`fallback_used=false`。
 
@@ -95,7 +124,7 @@ T1404 后，真实 provider 路径读取 `data/prompts/battle_judgement_system_p
 
 低血量与逃离相关判定也必须继续携带最新 `current_order`，让 NPC 在受伤或恐惧时重新解释守备官要求，而不是把发布指令时的旧判断当成永久结果。已昏迷、已逃离、HP 已经低于 30% 后再次受击，或 HP 直接清零进入昏迷的 NPC 不触发该判定。
 
-判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该判定需要申请 TimeSystem 慢速，请求完成、失败或规则降级后释放。触发事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并通过 `debug_get_combat_snapshot().last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements` 暴露给 GM / 自动化验证；模型失败原因通过后端 usage / 日志排查，不用 mock 结果遮蔽。
+判定等待期间，守备官不能与该 NPC 对话。如果触发时守备官正与该 NPC 对话，当前对话被强制结束并取消未完成 LLM 请求，随后进入自身心理判定。该异步判定不设置 Godot 响应总时长，需要申请 TimeSystem 慢速，并在完成、失败、取消、连接 / 空闲错误或规则降级后释放。触发事实写入 `low_hp_triggered`，判定结果写入 `battle_psychology_result`，并通过 `debug_get_combat_snapshot().last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements` 暴露给 GM / 自动化验证；模型失败原因通过后端 usage / 日志排查，不用 mock 结果遮蔽。
 
 ## 昏迷机制
 
@@ -196,6 +225,17 @@ T1106 已实现战斗开始和结束的最小闭环。`spawn_wave(...)` 成功�
 战斗运行态记录本场受伤 NPC、昏迷 NPC、每名 NPC 击退敌人的数量和击退敌人列表。敌人被我方攻击清零时会计入对应 NPC；敌人攻击 NPC 造成 HP 下降时会计入受伤；NPC 昏迷会计入昏迷统计。敌军全灭或 GM 清敌后，`CombatSystem` 写入广场 `combat_ended` 公开事件，summary 会说明敌人被清空、本场受伤 / 昏迷人员和击退统计。
 
 战斗结束回收仍由行为模式系统执行：`combat` NPC 回到 `work` 并请求计划重评估；`avoid_combat` NPC 回到 `work`，只记录避战结束事实，不强制计划重评估；未接敌的 `rally` NPC 在清敌或等待超时后回到 `work`，也不重评估计划。`debug_get_combat_snapshot()` 暴露 `active_battle`、`last_battle_start_result` 和 `last_battle_end_result`，GM 面板“敌人快照”可直接观察当前战斗与最近结算。
+
+## 工程器械防御（T1508）
+
+工程器械的库存、槽位、部署运行态和触发冷却由 `DefenseDeviceSystem` 权威维护；CombatSystem 不保存第二份部署数据。部署由玩家直接操作，不选择 NPC。两者只通过伤害窄接口协作：
+
+T0036 已把部署成本迁移为具体物品：弩床只扣除 `item_wall_ballista`，箭塔只扣除 `item_wall_arrow_tower`。部署后的攻击、冷却和伤害接口未因库存迁移而改变；旧 `defense_devices` 仅作兼容保留，不参与正式部署结算。
+
+- 弩床按 `60` 游戏秒 = `1` 战斗动作秒推进自身冷却，在配置射程和前向射界内选择最近敌人，再调用 `CombatSystem.apply_defense_device_attack(...)`。该接口复用敌人防御减伤、HP 扣除、清零移除、战斗击退归属和最终波次结算，不让器械脚本直接改 `_active_enemies`。
+- 箭塔复用相同自动攻击结构，使用独立的伤害、攻击间隔、射程和射界配置；当前定位是较低单次伤害、较高攻击频率。CombatSystem 不再包含工程器械移动减速接口。
+
+部署与实际触发分别写入 `defense_device_deployed` / `defense_device_triggered`，主体为守备官，不进入任何 NPC 的亲历事件库。当前伤害、间隔、射程和射界是 T1508 结构验证占位值，后续 T1504 平衡应只调整 `data/defense_device_defs.json`。动画、炮臂转向、命中特效和正式模型留给 T1502/T1503 等画面任务，通过表现层消费同一运行态和 action 信号，不参与伤害结算。
 
 ## 敌人 AI
 

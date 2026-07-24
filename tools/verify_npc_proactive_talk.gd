@@ -3,6 +3,56 @@ extends SceneTree
 var _proactive_signal_count := 0
 
 
+class CapturingPlanBridge:
+	extends Node
+
+	signal dialogue_plan_revision_judgement_async_response_received(result: Dictionary)
+	signal plan_revision_async_response_received(result: Dictionary)
+
+	var judgement_requests: Array[Dictionary] = []
+	var revision_requests: Array[Dictionary] = []
+
+	func check_health() -> Dictionary:
+		return _real_health()
+
+	func get_cached_health(_ttl_msec: int = 5000) -> Dictionary:
+		return _real_health()
+
+	func request_dialogue_plan_revision_judgement_async(
+		npc_id: String,
+		options: Dictionary = {}
+	) -> Dictionary:
+		var request_id := "proactive_judgement_%d" % (judgement_requests.size() + 1)
+		judgement_requests.append({
+			"request_id": request_id,
+			"npc_id": npc_id,
+			"options": options.duplicate(true)
+		})
+		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func request_npc_plan_revision_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+		var request_id := "proactive_revision_%d" % (revision_requests.size() + 1)
+		revision_requests.append({
+			"request_id": request_id,
+			"npc_id": npc_id,
+			"options": options.duplicate(true)
+		})
+		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func _real_health() -> Dictionary:
+		return {
+			"ok": true,
+			"body": {
+				"model_adapter": {
+					"provider": "deepseek",
+					"model": "capture-real-provider",
+					"configured": true,
+					"fallback_to_mock": false
+				}
+			}
+		}
+
+
 func _init() -> void:
 	var main_scene := load("res://scenes/main/Main.tscn") as PackedScene
 	if main_scene == null:
@@ -22,8 +72,25 @@ func _init() -> void:
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var event_bus := root.get_node_or_null("EventBus")
 	var cook_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Cook01")
-	if npc_system == null or dialog_system == null or memory_system == null or dialog_panel == null or npc_panel == null or event_bus == null or cook_node == null:
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var systems := root.get_node_or_null("Main/Systems")
+	var original_llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	if [npc_system, dialog_system, memory_system, dialog_panel, npc_panel, event_bus, cook_node, daily_plan_system, systems, original_llm_bridge].has(null):
 		push_error("T0705 verification required nodes not found")
+		quit(1)
+		return
+
+	systems.remove_child(original_llm_bridge)
+	original_llm_bridge.queue_free()
+	await process_frame
+	var bridge := CapturingPlanBridge.new()
+	bridge.name = "LLMBridge"
+	systems.add_child(bridge)
+	if (
+		not daily_plan_system.set_npc_daily_plan("cook_01", _make_work_plan("work_dining_hall"), false, "verify_proactive")
+		or not daily_plan_system.set_npc_daily_plan("stableman_01", _make_work_plan("work_stable"), false, "verify_proactive")
+	):
+		push_error("Could not install deterministic plans for proactive-talk verification")
 		quit(1)
 		return
 
@@ -86,17 +153,69 @@ func _init() -> void:
 		push_error("Proactive opening line should be shown as the first dialogue history turn")
 		quit(1)
 		return
+	if dialogue_state.has("reevaluate_plan_on_end") or str(dialogue_state.get("dialogue_initiator", "")) != "npc":
+		push_error("NPC-initiated player dialogue should use autonomous judgement without the removed manual toggle")
+		quit(1)
+		return
 	var message_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "proactive_talk_message")
-	if message_event.is_empty() or str(message_event.get("payload", {}).get("speaker_text", "")) != prompt:
-		push_error("Proactive opening line should be recorded before player reply")
+	if not message_event.is_empty():
+		push_error("Proactive dialogue lines must remain buffered until completion")
 		quit(1)
 		return
 
-	dialog_system.end_dialogue()
-	await process_frame
-	var request_after_click: Dictionary = npc_system.get_last_plan_reevaluation_request()
-	if str(request_after_click.get("npc_id", "")) != "cook_01" or str(request_after_click.get("reason", "")) != "proactive_dialogue_ended":
-		push_error("Ending proactive dialogue should request plan reevaluation")
+	var completed_apply: Dictionary = dialog_system.call("_apply_player_message_response", {
+		"ok": true,
+		"dialogue": {
+			"ok": true,
+			"replyer_id": "cook_01",
+			"reply_text": "我听见了，谈完后会重新安排今天剩下的事情。",
+			"response_kind": "reply_to_player",
+			"invitation_result": "not_applicable",
+			"intent": "continue_talk",
+			"emotion": "neutral",
+			"recruitment_result": "none",
+			"wartime_reaction": "none",
+			"should_end_dialogue": false
+		}
+	}, {
+		"kind": "player_message",
+		"clean_text": "把剩下的计划重新想一遍。",
+		"next_round": 1,
+		"effective_recruitment_request": false,
+		"dialogue_kind": "player_npc"
+	})
+	if not bool(completed_apply.get("ok", false)):
+		push_error("Could not apply proactive player-NPC completed turn: %s" % JSON.stringify(completed_apply))
+		quit(1)
+		return
+	var end_result: Dictionary = dialog_system.end_dialogue()
+	var session_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "dialogue_turn")
+	if session_event.is_empty() or (session_event.get("payload", {}).get("dialogue_text", []) as Array).size() < 3:
+		push_error("Completed proactive dialogue should commit its full session history")
+		quit(1)
+		return
+	if not bool(end_result.get("plan_judgement_queued", false)):
+		push_error("Effective proactive dialogue should queue the mandatory plan judgement")
+		quit(1)
+		return
+	for _index in range(5):
+		await process_frame
+		if bridge.judgement_requests.size() == 1:
+			break
+	if bridge.judgement_requests.size() != 1:
+		push_error("Effective proactive dialogue should launch exactly one judgement request: %s" % JSON.stringify(
+			daily_plan_system.get_last_dialogue_plan_judgement_result()
+		))
+		quit(1)
+		return
+	var request_after_click: Dictionary = bridge.judgement_requests[0]
+	var judgement_options: Dictionary = request_after_click.get("options", {})
+	if str(request_after_click.get("npc_id", "")) != "cook_01" or (judgement_options.get("dialogue_history", []) as Array).size() < 2:
+		push_error("Proactive dialogue judgement did not receive the NPC and completed conversation")
+		quit(1)
+		return
+	if not bridge.revision_requests.is_empty():
+		push_error("A plan revision must not start before the proactive dialogue judgement returns")
 		quit(1)
 		return
 
@@ -117,6 +236,17 @@ func _init() -> void:
 		push_error("Expired proactive talk should request plan reevaluation")
 		quit(1)
 		return
+	if bridge.revision_requests.size() != 1 or str(bridge.revision_requests[0].get("npc_id", "")) != "stableman_01":
+		push_error("Expired proactive talk should launch one direct (non-dialogue) revision")
+		quit(1)
+		return
+	var timeout_revision_options: Dictionary = bridge.revision_requests[0].get("options", {})
+	var timeout_hours: Array = timeout_revision_options.get("revision_hours", [])
+	var timeout_plan_item: Dictionary = daily_plan_system.get_current_plan_item("stableman_01")
+	if timeout_hours != [int(timeout_plan_item.get("hour", -1))]:
+		push_error("Expired proactive talk should revise the current hour only: %s" % JSON.stringify(timeout_revision_options))
+		quit(1)
+		return
 	if _proactive_signal_count < 4:
 		push_error("Expected proactive talk changed signals for start/clear/timeout")
 		quit(1)
@@ -128,6 +258,18 @@ func _init() -> void:
 
 func _on_proactive_talk_changed(_npc_id: String, _active: bool) -> void:
 	_proactive_signal_count += 1
+
+
+func _make_work_plan(action_id: String) -> Array:
+	var plan: Array = []
+	for hour in range(24):
+		plan.append({
+			"hour": hour,
+			"action_id": action_id,
+			"reason": "T0049 proactive-talk verification",
+			"source": "verify_proactive"
+		})
+	return plan
 
 
 func _get_last_event(events: Array, event_type: String) -> Dictionary:

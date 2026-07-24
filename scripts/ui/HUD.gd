@@ -1,5 +1,7 @@
 extends Control
 
+const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
+
 @onready var day_label: Label = %DayLabel
 @onready var time_label: Label = %TimeLabel
 @onready var phase_label: Label = %PhaseLabel
@@ -12,19 +14,13 @@ extends Control
 const DETAIL_PANEL_OFFSET := Vector2(0.0, 6.0)
 const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
-const DETAIL_PANEL_RESOURCE_IDS := {
-	"weapons": true,
-	"armor": true,
-	"horse_readiness": true,
-	"defense_devices": true
-}
-
 var _resource_labels: Dictionary = {}
 var _detail_panel: PanelContainer
 var _detail_title: Label
 var _detail_text: RichTextLabel
 var _detail_source_button: Control
 var _detail_mode := ""
+var _detail_drag_controller
 var _escape_warning_label: Label
 var _game_over_panel: PanelContainer
 var _game_over_title_label: Label
@@ -85,7 +81,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
-	if _detail_panel != null and _detail_panel.visible and _detail_source_button != null:
+	if _detail_panel != null and _detail_panel.visible and _detail_source_button != null and (_detail_drag_controller == null or not _detail_drag_controller.has_user_position()):
 		_position_detail_panel_near(_detail_source_button)
 
 
@@ -270,7 +266,7 @@ func _build_resource_strip() -> void:
 
 	for raw_resource_id in resource_ids:
 		var resource_id := str(raw_resource_id)
-		if DETAIL_PANEL_RESOURCE_IDS.has(resource_id):
+		if not _should_show_resource_in_main_hud(resource_system, resource_id):
 			continue
 		var label := Label.new()
 		label.name = "%sResourceLabel" % resource_id.to_pascal_case()
@@ -657,6 +653,8 @@ func _build_detail_panel() -> void:
 		_detail_mode = ""
 	)
 	header.add_child(close_button)
+	_detail_drag_controller = DraggablePanelController.new()
+	_detail_drag_controller.bind(_detail_panel, header)
 
 	_detail_text = RichTextLabel.new()
 	_detail_text.name = "ResourceDetailText"
@@ -679,7 +677,8 @@ func _toggle_detail_panel(mode: String, source_button: Control) -> void:
 	_detail_source_button = source_button
 	_refresh_detail_panel()
 	_detail_panel.visible = true
-	_position_detail_panel_near(source_button)
+	if _detail_drag_controller == null or not _detail_drag_controller.has_user_position():
+		_position_detail_panel_near(source_button)
 	_detail_panel.move_to_front()
 
 
@@ -733,20 +732,23 @@ func _build_equipment_detail_text() -> String:
 	var equipment_system := get_node_or_null("/root/Main/Systems/EquipmentSystem")
 	var lines: Array[String] = []
 
-	lines.append("库存：武器 %d / 盔甲 %d / 马匹整备 %d" % [
-		_get_resource_amount(resource_system, "weapons"),
-		_get_resource_amount(resource_system, "armor"),
-		_get_resource_amount(resource_system, "horse_readiness")
-	])
+	lines.append("具体库存")
+	lines.append("武器：%s" % _build_inventory_group_text(resource_system, "weapon"))
+	lines.append("盔甲：%s" % _build_inventory_group_text(resource_system, "armor"))
+	lines.append("弹药：%s" % _build_inventory_group_text(resource_system, "ammunition"))
+	var horse_system := get_node_or_null("/root/Main/Systems/HorseSystem")
+	if horse_system != null and horse_system.has_method("get_stable_summary"):
+		var stable_summary: Dictionary = horse_system.get_stable_summary()
+		lines.append("马厩：%d 匹（成年 %d / 小马 %d）" % [
+			int(stable_summary.get("total_count", stable_summary.get("total", 0))),
+			int(stable_summary.get("adult_count", stable_summary.get("adult", 0))),
+			int(stable_summary.get("foal_count", stable_summary.get("foal", 0)))
+		])
 
 	if equipment_system == null:
 		lines.append("EquipmentSystem 不可用。")
 		return "\n".join(lines)
 
-	lines.append("")
-	lines.append("主武器：%s" % _join_named_defs(equipment_system, equipment_system.get_weapon_ids(), "get_weapon_def"))
-	lines.append("盔甲：%s" % _join_named_armor(equipment_system))
-	lines.append("坐骑：%s" % _join_named_defs(equipment_system, equipment_system.get_mount_ids(), "get_mount_def"))
 	lines.append("")
 	lines.append("已分配：%s" % _build_equipped_summary())
 	return "\n".join(lines)
@@ -754,12 +756,43 @@ func _build_equipment_detail_text() -> String:
 
 func _build_device_detail_text() -> String:
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
-	return "\n".join([
-		"工程器械库存：%d" % _get_resource_amount(resource_system, "defense_devices"),
-		"",
-		"当前包含工械坊制造的弩床、拒马等防御器械占位库存。",
-		"部署到围墙、自动攻击或阻挡敌人仍由后续工程器械部署任务接入。"
-	])
+	var lines: Array[String] = [
+		"具体库存：%s" % _build_inventory_group_text(resource_system, "defense_device")
+	]
+	var device_system := get_node_or_null("/root/Main/Systems/DefenseDeviceSystem")
+	if device_system != null and device_system.has_method("get_deployments"):
+		var deployments: Array = device_system.get_deployments()
+		lines.append("已部署：%d 件" % deployments.size())
+		for raw_deployment in deployments:
+			if raw_deployment is Dictionary:
+				lines.append("- %s / %s" % [
+					str(raw_deployment.get("device_name", "工程器械")),
+					str(raw_deployment.get("slot_name", "围墙槽位"))
+				])
+	return "\n".join(lines)
+
+
+func _build_inventory_group_text(resource_system: Node, detail_group: String) -> String:
+	if resource_system == null or not resource_system.has_method("get_resource_ids"):
+		return "无法读取"
+	var parts: Array[String] = []
+	for raw_resource_id in resource_system.get_resource_ids():
+		var resource_id := str(raw_resource_id)
+		var definition: Dictionary = resource_system.get_resource_definition(resource_id)
+		if str(definition.get("detail_group", "")) != detail_group:
+			continue
+		parts.append("%s %d" % [
+			str(definition.get("name", resource_id)),
+			int(resource_system.get_resource(resource_id))
+		])
+	return "、".join(parts) if not parts.is_empty() else "无"
+
+
+func _should_show_resource_in_main_hud(resource_system: Node, resource_id: String) -> bool:
+	if resource_system == null or not resource_system.has_method("get_resource_definition"):
+		return not ["weapons", "armor", "horse_readiness", "defense_devices"].has(resource_id)
+	var definition: Dictionary = resource_system.get_resource_definition(resource_id)
+	return bool(definition.get("show_in_main_hud", true))
 
 
 func _join_named_defs(system: Node, ids: Array, method_name: String) -> String:

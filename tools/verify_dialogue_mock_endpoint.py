@@ -10,6 +10,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from backend.app import create_app
 from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from tools.station_context_fixture import build_station_context
 
 
 def _base_payload(text: str, recruitment: bool = False) -> dict:
@@ -20,6 +21,9 @@ def _base_payload(text: str, recruitment: bool = False) -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=1, time="08:00:00", hour=8).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
+        ]),
         "dialogue_kind": "player_npc",
         "npc_id": "cook_01",
         "npc_name": "布鲁诺",
@@ -77,6 +81,16 @@ def _base_payload(text: str, recruitment: bool = False) -> dict:
             "people_present": ["cook_01"],
             "workstations": [{"id": "kitchen_table", "status": "occupied", "occupied_by": "cook_01"}],
         },
+        "allowed_actions": [
+            {
+                "action_id": "work_dining_hall",
+                "name": "加工餐食",
+                "action_kind": "work",
+                "location_id": "dining_hall",
+                "tags": ["work"],
+                "context": {"skill": "厨艺", "authority": "ActionSystem"},
+            }
+        ],
     }
 
 
@@ -115,15 +129,55 @@ def main() -> None:
         appearance="肩背宽厚，旧皮围裙上沾着干草。",
         health_status="健康",
     ).model_dump()
-    npc_payload["current_round"] = 4
-    npc_payload["max_rounds"] = 4
-    npc_payload["dialogue_state"]["current_round"] = 4
-    npc_payload["dialogue_state"]["max_rounds"] = 4
+    npc_payload["dialogue_phase"] = "conversation"
+    soft_guidance = "第六轮起若无紧急或必要事项，应自然告别并输出结束标记。"
+    npc_payload["current_round"] = 6
+    npc_payload["max_rounds"] = 0
+    npc_payload["soft_round_threshold"] = 5
+    npc_payload["soft_round_guidance"] = soft_guidance
+    npc_payload["dialogue_state"]["current_round"] = 6
+    npc_payload["dialogue_state"]["max_rounds"] = 0
+    npc_payload["dialogue_state"]["soft_round_threshold"] = 5
+    npc_payload["dialogue_state"]["soft_round_guidance"] = soft_guidance
     npc_response = client.post("/npc/dialogue", json=npc_payload)
     assert npc_response.status_code == 200
     parsed_npc = NPCDialogueResponse(**npc_response.get_json())
     assert parsed_npc.response_kind == "reply_to_npc"
     assert parsed_npc.should_end_dialogue is True
+    assert parsed_npc.invitation_result == "not_applicable"
+
+    urgent_payload = dict(npc_payload)
+    urgent_payload["dialogue_state"] = dict(npc_payload["dialogue_state"])
+    urgent_payload["speaker_text"] = "有紧急伤员，必须立刻继续协调必要的诊疗安排。"
+    urgent_response = client.post("/npc/dialogue", json=urgent_payload)
+    assert urgent_response.status_code == 200, urgent_response.get_json()
+    parsed_urgent = NPCDialogueResponse(**urgent_response.get_json())
+    assert parsed_urgent.should_end_dialogue is False
+
+    invitation_payload = dict(npc_payload)
+    invitation_payload["dialogue_state"] = dict(npc_payload["dialogue_state"])
+    invitation_payload["dialogue_phase"] = "invitation"
+    invitation_payload["current_round"] = 0
+    invitation_payload["dialogue_state"]["current_round"] = 0
+    invitation_payload["speaker_text"] = "我想和你谈谈诊所工位。"
+    invitation_accept = client.post("/npc/dialogue", json=invitation_payload)
+    assert invitation_accept.status_code == 200, invitation_accept.get_json()
+    parsed_invitation_accept = NPCDialogueResponse(**invitation_accept.get_json())
+    assert parsed_invitation_accept.invitation_result == "accept"
+    assert parsed_invitation_accept.should_end_dialogue is False
+
+    invitation_payload["speaker_text"] = "请拒绝这次邀请，别打扰手上的工作。"
+    invitation_reject = client.post("/npc/dialogue", json=invitation_payload)
+    assert invitation_reject.status_code == 200, invitation_reject.get_json()
+    parsed_invitation_reject = NPCDialogueResponse(**invitation_reject.get_json())
+    assert parsed_invitation_reject.invitation_result == "reject"
+    assert parsed_invitation_reject.should_end_dialogue is True
+
+    missing_actions_payload = _base_payload("验证对话行动参考。")
+    missing_actions_payload.pop("allowed_actions")
+    missing_actions_response = client.post("/npc/dialogue", json=missing_actions_payload)
+    assert missing_actions_response.status_code == 400
+    assert missing_actions_response.get_json()["error_code"] == "validation_error"
 
     bad_response = client.post("/npc/dialogue", json={"npc_id": "cook_01"})
     assert bad_response.status_code == 400

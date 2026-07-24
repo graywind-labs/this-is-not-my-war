@@ -103,8 +103,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var result_status := str(request.get("result", {}).get("status", ""))
-	if request.get("current_order", {}) != order or not ["rule_fallback_applied", "mock_revision_applied"].has(result_status):
-		push_error("Plan reevaluation request must retain the latest order and observable applied result")
+	if request.get("current_order", {}) != order or result_status != "missing_current_plan":
+		push_error("Plan reevaluation request must retain the latest order and report that no current plan can be revised")
 		quit(1)
 		return
 

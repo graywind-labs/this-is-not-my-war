@@ -1,0 +1,82 @@
+{
+  "devices": [
+    {
+      "id": "wall_ballista",
+      "name": "弩床",
+      "description": "部署在前墙平台，自动攻击射界内的敌人。",
+      "inventory_cost": {"item_wall_ballista": 1},
+      "required_building_levels": {"wall": 1, "workshop": 1},
+      "effect": {
+        "kind": "auto_attack",
+        "damage": 24,
+        "attack_interval": 4.0,
+        "range": 32.0,
+        "minimum_forward_dot": 0.05,
+        "max_attacks_per_tick": 16
+      },
+      "presentation": {
+        "model_scene": "",
+        "placeholder_kind": "ballista",
+        "placeholder_color": {"r": 0.38, "g": 0.22, "b": 0.10, "a": 1.0}
+      }
+    },
+    {
+      "id": "wall_arrow_tower",
+      "name": "箭塔",
+      "description": "部署在前墙塔位，以较短间隔自动射击射界内的敌人。",
+      "inventory_cost": {"item_wall_arrow_tower": 1},
+      "required_building_levels": {"wall": 1, "workshop": 1},
+      "effect": {
+        "kind": "auto_attack",
+        "damage": 10,
+        "attack_interval": 1.5,
+        "range": 28.0,
+        "minimum_forward_dot": -0.1,
+        "max_attacks_per_tick": 24
+      },
+      "presentation": {
+        "model_scene": "",
+        "placeholder_kind": "arrow_tower",
+        "placeholder_color": {"r": 0.34, "g": 0.25, "b": 0.14, "a": 1.0}
+      }
+    }
+  ],
+  "slots": [
+    {
+      "id": "front_wall_ballista_left",
+      "name": "前墙左侧平台",
+      "building_id": "wall",
+      "allowed_device_ids": ["wall_ballista"],
+      "position": {"x": -5.0, "y": 1.72, "z": 11.35},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    },
+    {
+      "id": "front_wall_ballista_right",
+      "name": "前墙右侧平台",
+      "building_id": "wall",
+      "allowed_device_ids": ["wall_ballista"],
+      "position": {"x": 5.0, "y": 1.72, "z": 11.35},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    },
+    {
+      "id": "front_wall_arrow_tower_left",
+      "name": "前墙左侧箭塔位",
+      "building_id": "wall",
+      "allowed_device_ids": ["wall_arrow_tower"],
+      "position": {"x": -9.5, "y": 1.72, "z": 11.35},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    },
+    {
+      "id": "front_wall_arrow_tower_right",
+      "name": "前墙右侧箭塔位",
+      "building_id": "wall",
+      "allowed_device_ids": ["wall_arrow_tower"],
+      "position": {"x": 9.5, "y": 1.72, "z": 11.35},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+    }
+  ]
+}

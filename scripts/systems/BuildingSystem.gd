@@ -61,6 +61,13 @@ func initialize() -> void:
 		definition["hp"] = hp
 		definition["max_hp"] = max_hp
 		definition["level"] = max(1, int(definition.get("level", 1)))
+		definition["workstations"] = _normalize_workstations(
+			building_id,
+			definition.get("workstations", []) if definition.get("workstations", []) is Array else []
+		)
+		definition["efficiency_bonuses"] = _normalize_efficiency_bonuses(
+			definition.get("efficiency_bonuses", {})
+		)
 
 		_buildings[building_id] = definition.duplicate(true)
 		_building_order.append(building_id)
@@ -97,6 +104,20 @@ func get_building(building_id: String) -> Dictionary:
 		building["upgrade_status"] = _get_upgrade_status(building_id)
 	else:
 		building["upgrade_status"] = {}
+	var availability := get_building_availability(building_id)
+	building["is_enterable"] = bool(availability.get("is_enterable", false))
+	building["has_enterable_interior"] = bool(availability.get("has_enterable_interior", false))
+	building["is_accessible"] = bool(availability.get("is_accessible", false))
+	building["is_operational"] = bool(availability.get("is_operational", false))
+	building["is_activity_available"] = bool(availability.get("is_activity_available", false))
+	building["unavailable_reason"] = str(availability.get("unavailable_reason", ""))
+	building["damage_efficiency_multiplier"] = get_building_damage_efficiency_multiplier(building_id)
+	building["condition_efficiency"] = building["damage_efficiency_multiplier"]
+	building["operational_efficiency_multiplier"] = get_building_operational_efficiency_multiplier(building_id)
+	building["operational_efficiency"] = building["operational_efficiency_multiplier"]
+	building["activity_efficiency_multiplier"] = get_building_activity_efficiency_multiplier(building_id)
+	building["activity_efficiency_multipliers"] = get_building_activity_efficiency_multipliers(building_id)
+	building["activity_efficiency"] = building["activity_efficiency_multipliers"].duplicate(true)
 	return building
 
 
@@ -105,15 +126,193 @@ func get_building_ids() -> Array[String]:
 
 
 func get_building_snapshot() -> Dictionary:
-	return _buildings.duplicate(true)
+	var snapshot := {}
+	for building_id in _building_order:
+		snapshot[building_id] = get_building(building_id)
+	return snapshot
+
+
+func get_building_availability(building_id: String) -> Dictionary:
+	if building_id == PLAZA_LOCATION_ID:
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"condition": "intact",
+			"is_enterable": true,
+			"has_enterable_interior": true,
+			"is_accessible": true,
+			"is_operational": true,
+			"is_activity_available": true,
+			"unavailable_reason": ""
+		}
+	if not _buildings.has(building_id):
+		return {
+			"ok": false,
+			"building_id": building_id,
+			"condition": "unknown",
+			"is_enterable": false,
+			"has_enterable_interior": false,
+			"is_accessible": false,
+			"is_operational": false,
+			"is_activity_available": false,
+			"unavailable_reason": "unknown_building"
+		}
+
+	var building: Dictionary = _buildings[building_id]
+	var has_enterable_interior := _is_building_location_enterable(building_id)
+	var has_hp := int(building.get("hp", 0)) > 0
+	var upgrading := _active_upgrades.has(building_id)
+	var operational := has_hp and not upgrading
+	var unavailable_reason := ""
+	if not has_hp:
+		unavailable_reason = "building_destroyed"
+	elif upgrading:
+		unavailable_reason = "building_upgrading"
+	elif not has_enterable_interior:
+		unavailable_reason = "building_not_enterable"
+	var enterable := has_enterable_interior and operational
+	return {
+		"ok": enterable,
+		"building_id": building_id,
+		"condition": _get_building_condition(building_id),
+		"is_enterable": enterable,
+		"has_enterable_interior": has_enterable_interior,
+		"is_accessible": operational,
+		"is_operational": operational,
+		"is_activity_available": enterable,
+		"unavailable_reason": unavailable_reason
+	}
+
+
+func is_building_enterable(building_id: String) -> bool:
+	return bool(get_building_availability(building_id).get("is_enterable", false))
+
+
+func is_building_usable(building_id: String) -> bool:
+	return bool(get_building_availability(building_id).get("is_activity_available", false))
+
+
+func is_building_accessible(building_id: String) -> bool:
+	return bool(get_building_availability(building_id).get("is_accessible", false))
+
+
+func get_building_damage_efficiency_multiplier(building_id: String) -> float:
+	if not _buildings.has(building_id):
+		return 0.0
+	var building: Dictionary = _buildings[building_id]
+	if int(building.get("hp", 0)) <= 0 or _active_upgrades.has(building_id):
+		return 0.0
+	var max_hp := maxi(1, int(building.get("max_hp", 1)))
+	var hp_ratio := clampf(float(building.get("hp", 0)) / float(max_hp), 0.0, 1.0)
+	var efficiency_floor := clampf(float(building.get("damage_efficiency_floor", 0.0)), 0.0, 1.0)
+	return lerpf(efficiency_floor, 1.0, hp_ratio)
+
+
+func get_building_operational_efficiency_multiplier(building_id: String) -> float:
+	if not _buildings.has(building_id) or not bool(get_building_availability(building_id).get("is_operational", false)):
+		return 0.0
+	var building: Dictionary = _buildings[building_id]
+	var bonuses: Dictionary = building.get("efficiency_bonuses", {}) if building.get("efficiency_bonuses", {}) is Dictionary else {}
+	var general_bonus := float(bonuses.get("general", bonuses.get("operational", 0.0)))
+	return maxf(0.0, get_building_damage_efficiency_multiplier(building_id) * (1.0 + general_bonus))
+
+
+func get_building_operational_efficiency(building_id: String) -> float:
+	return get_building_operational_efficiency_multiplier(building_id)
+
+
+func get_building_activity_efficiency_multiplier(building_id: String, activity_id: String = "general") -> float:
+	if not _buildings.has(building_id) or not bool(get_building_availability(building_id).get("is_activity_available", false)):
+		return 0.0
+	var building: Dictionary = _buildings[building_id]
+	var bonuses: Dictionary = building.get("efficiency_bonuses", {}) if building.get("efficiency_bonuses", {}) is Dictionary else {}
+	var general_bonus := float(bonuses.get("general", bonuses.get("operational", 0.0)))
+	var activity_bonus := 0.0
+	if not activity_id.is_empty() and not ["general", "operational"].has(activity_id):
+		activity_bonus = float(bonuses.get(activity_id, 0.0))
+	return maxf(0.0, get_building_damage_efficiency_multiplier(building_id) * (1.0 + general_bonus + activity_bonus))
+
+
+func get_building_activity_efficiency_multipliers(building_id: String) -> Dictionary:
+	var result := {
+		"general": get_building_activity_efficiency_multiplier(building_id),
+		"operational": get_building_operational_efficiency_multiplier(building_id)
+	}
+	if not _buildings.has(building_id):
+		return result
+	var building: Dictionary = _buildings[building_id]
+	var bonuses: Dictionary = building.get("efficiency_bonuses", {}) if building.get("efficiency_bonuses", {}) is Dictionary else {}
+	for raw_activity_id in bonuses.keys():
+		var activity_id := str(raw_activity_id)
+		if activity_id.is_empty() or ["general", "operational"].has(activity_id):
+			continue
+		result[activity_id] = get_building_activity_efficiency_multiplier(building_id, activity_id)
+	return result
+
+
+func get_building_special_state(building_id: String) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	var special_state: Variant = building.get("special_state", {})
+	return special_state.duplicate(true) if special_state is Dictionary else {}
+
+
+func get_building_special_state_section(building_id: String, section_id: String) -> Dictionary:
+	if section_id.is_empty():
+		return {}
+	var special_state := get_building_special_state(building_id)
+	var section: Variant = special_state.get(section_id, {})
+	return section.duplicate(true) if section is Dictionary else {}
+
+
+func set_building_special_state_section(
+	building_id: String,
+	section_id: String,
+	section_state: Dictionary,
+	emit_changed: bool = true
+) -> bool:
+	if not _buildings.has(building_id) or section_id.is_empty():
+		return false
+	var building: Dictionary = _buildings[building_id]
+	var raw_special_state: Variant = building.get("special_state", {})
+	var special_state: Dictionary = raw_special_state.duplicate(true) if raw_special_state is Dictionary else {}
+	var previous: Dictionary = special_state.get(section_id, {}) if special_state.get(section_id, {}) is Dictionary else {}
+	var next_state := section_state.duplicate(true)
+	if previous == next_state:
+		return true
+	special_state[section_id] = next_state
+	building["special_state"] = special_state
+	_buildings[building_id] = building
+	if emit_changed:
+		_emit_building_state_changed(building_id)
+	return true
 
 
 func claim_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
 	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
 		return {"ok": false, "reason": "invalid_workstation_request"}
+	var availability := get_building_availability(building_id)
+	if not bool(availability.get("is_activity_available", false)):
+		return {
+			"ok": false,
+			"reason": "building_unavailable",
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"building_id": building_id,
+			"preferred_type": preferred_type,
+			"condition": str(availability.get("condition", "unknown")),
+			"is_enterable": bool(availability.get("is_enterable", false)),
+			"is_accessible": bool(availability.get("is_accessible", false)),
+			"is_operational": bool(availability.get("is_operational", false)),
+			"is_activity_available": false,
+			"blocked_workstations": [],
+			"blocked_by_npc_ids": []
+		}
 
 	var building: Dictionary = _buildings[building_id]
 	var workstations: Array = building.get("workstations", [])
+	var blocked_workstations: Array[Dictionary] = []
+	var blocked_by_npc_ids: Array[String] = []
 	for index in range(workstations.size()):
 		if not workstations[index] is Dictionary:
 			continue
@@ -121,10 +320,17 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
-		if not occupied_by.is_empty() and occupied_by != npc_id:
-			continue
 		var workstation_type := str(workstation.get("type", ""))
 		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		if not occupied_by.is_empty() and occupied_by != npc_id:
+			blocked_workstations.append({
+				"workstation_id": str(workstation.get("id", "")),
+				"workstation_type": workstation_type,
+				"occupied_by": occupied_by
+			})
+			if not blocked_by_npc_ids.has(occupied_by):
+				blocked_by_npc_ids.append(occupied_by)
 			continue
 		workstation["occupied_by"] = npc_id
 		workstations[index] = workstation
@@ -138,7 +344,14 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 			"workstation_type": workstation_type
 		}
 
-	return {"ok": false, "reason": "no_free_workstation"}
+	return {
+		"ok": false,
+		"reason": "no_free_workstation",
+		"building_id": building_id,
+		"preferred_type": preferred_type,
+		"blocked_workstations": blocked_workstations,
+		"blocked_by_npc_ids": blocked_by_npc_ids
+	}
 
 
 func release_workstation(building_id: String, npc_id: String, workstation_id: String = "") -> bool:
@@ -215,12 +428,6 @@ func get_building_entry_position(building_id: String) -> Variant:
 
 
 func get_building_location_context(building_id: String) -> Dictionary:
-	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
-	if memory_system != null and memory_system.has_method("get_location_snapshot"):
-		var snapshot: Dictionary = memory_system.get_location_snapshot(building_id)
-		if not snapshot.is_empty():
-			return snapshot
-
 	var building := get_building(building_id)
 	if building.is_empty():
 		return {}
@@ -234,27 +441,65 @@ func get_building_location_context(building_id: String) -> Dictionary:
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		visible_workstations.append({
 			"id": str(workstation.get("id", "")),
+			"name": str(workstation.get("name", workstation.get("id", ""))),
 			"type": str(workstation.get("type", "")),
 			"occupied_by": occupied_by,
 			"status": "free" if occupied_by.is_empty() or occupied_by == "<null>" else "occupied"
 		})
+	var availability := get_building_availability(building_id)
+	var runtime_fields := {
+		"is_enterable": bool(availability.get("is_enterable", false)),
+		"has_enterable_interior": bool(availability.get("has_enterable_interior", false)),
+		"is_accessible": bool(availability.get("is_accessible", false)),
+		"is_operational": bool(availability.get("is_operational", false)),
+		"is_activity_available": bool(availability.get("is_activity_available", false)),
+		"unavailable_reason": str(availability.get("unavailable_reason", "")),
+		"damage_efficiency_multiplier": float(building.get("damage_efficiency_multiplier", 0.0)),
+		"condition_efficiency": float(building.get("condition_efficiency", 0.0)),
+		"operational_efficiency_multiplier": float(building.get("operational_efficiency_multiplier", 0.0)),
+		"operational_efficiency": float(building.get("operational_efficiency", 0.0)),
+		"activity_efficiency_multiplier": float(building.get("activity_efficiency_multiplier", 0.0)),
+		"activity_efficiency_multipliers": building.get("activity_efficiency_multipliers", {}).duplicate(true),
+		"activity_efficiency": building.get("activity_efficiency", {}).duplicate(true),
+		"efficiency_bonuses": building.get("efficiency_bonuses", {}).duplicate(true)
+	}
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system != null and memory_system.has_method("get_location_snapshot"):
+		var snapshot: Dictionary = memory_system.get_location_snapshot(building_id)
+		if not snapshot.is_empty():
+			snapshot = snapshot.duplicate(true)
+			for field_name in runtime_fields.keys():
+				snapshot[field_name] = runtime_fields[field_name]
+			snapshot["workstations"] = visible_workstations.duplicate(true)
+			var memory_internal: Dictionary = snapshot.get("internal_state", {}) if snapshot.get("internal_state", {}) is Dictionary else {}
+			memory_internal["workstations"] = visible_workstations.duplicate(true)
+			snapshot["internal_state"] = memory_internal
+			var memory_building: Dictionary = snapshot.get("building", {}) if snapshot.get("building", {}) is Dictionary else {}
+			for field_name in runtime_fields.keys():
+				memory_building[field_name] = runtime_fields[field_name]
+			var memory_building_internal: Dictionary = memory_building.get("internal_state", {}) if memory_building.get("internal_state", {}) is Dictionary else {}
+			memory_building_internal["workstations"] = visible_workstations.duplicate(true)
+			memory_building["internal_state"] = memory_building_internal
+			snapshot["building"] = memory_building
+			return snapshot
 	var external_state := {
 		"id": building_id,
 		"name": str(building.get("name", building_id)),
 		"level": int(building.get("level", 1)),
 		"condition": _get_building_condition(building_id)
 	}
-	return {
+	var special_state := get_building_special_state(building_id)
+	var context := {
 		"id": building_id,
 		"name": str(building.get("name", building_id)),
-		"is_enterable": true,
 		"people_present": [],
 		"level": int(external_state["level"]),
 		"condition": str(external_state["condition"]),
 		"external_state": external_state,
 		"internal_state": {
 			"people_present": [],
-			"workstations": visible_workstations.duplicate(true)
+			"workstations": visible_workstations.duplicate(true),
+			"special_state": special_state.duplicate(true)
 		},
 		"building": {
 			"id": building_id,
@@ -262,15 +507,24 @@ func get_building_location_context(building_id: String) -> Dictionary:
 			"external_state": external_state,
 			"internal_state": {
 				"people_present": [],
-				"workstations": visible_workstations.duplicate(true)
+				"workstations": visible_workstations.duplicate(true),
+				"special_state": special_state.duplicate(true)
 			}
 		},
 		"workstations": visible_workstations.duplicate(true),
+		"special_state": special_state.duplicate(true),
 		"current_notice": "",
 		"current_orders": "",
 		"current_public_note_ids": [],
 		"public_notes": []
 	}
+	for field_name in runtime_fields.keys():
+		context[field_name] = runtime_fields[field_name]
+	var context_building: Dictionary = context.get("building", {})
+	for field_name in runtime_fields.keys():
+		context_building[field_name] = runtime_fields[field_name]
+	context["building"] = context_building
+	return context
 
 
 func can_repair_building(building_id: String) -> bool:
@@ -375,11 +629,13 @@ func can_upgrade_building(building_id: String) -> bool:
 	if upgrade_config.is_empty():
 		return false
 
-	var max_level := int(upgrade_config.get("max_level", int(building.get("level", 1))))
+	var max_level := _get_upgrade_max_level(building, upgrade_config)
 	if int(building.get("level", 1)) >= max_level:
 		return false
 
-	var cost: Dictionary = upgrade_config.get("cost", {})
+	var target_level := int(building.get("level", 1)) + 1
+	var level_effect := _resolve_upgrade_level_effect(building, target_level)
+	var cost: Dictionary = level_effect.get("cost", {}) if level_effect.get("cost", {}) is Dictionary else {}
 	if cost.is_empty():
 		return false
 
@@ -392,8 +648,9 @@ func upgrade_building(building_id: String) -> bool:
 		return false
 
 	var building: Dictionary = _buildings[building_id]
-	var upgrade_config: Dictionary = building.get("upgrade", {})
-	var cost: Dictionary = upgrade_config.get("cost", {})
+	var target_level := int(building.get("level", 1)) + 1
+	var upgrade_config := _resolve_upgrade_level_effect(building, target_level)
+	var cost: Dictionary = upgrade_config.get("cost", {}) if upgrade_config.get("cost", {}) is Dictionary else {}
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_system == null or not resource_system.spend_resources(cost):
 		return false
@@ -404,7 +661,7 @@ func upgrade_building(building_id: String) -> bool:
 		"duration_seconds": duration_seconds,
 		"remaining_seconds": duration_seconds,
 		"start_level": int(building.get("level", 1)),
-		"target_level": int(building.get("level", 1)) + 1,
+		"target_level": target_level,
 		"upgrade_config": upgrade_config.duplicate(true),
 		"helpers": {}
 	}
@@ -416,6 +673,16 @@ func upgrade_building(building_id: String) -> bool:
 
 func is_upgrade_in_progress(building_id: String) -> bool:
 	return _active_upgrades.has(building_id)
+
+
+func get_upgrade_level_effect(building_id: String, target_level: int = 0) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	var resolved_level := target_level
+	if resolved_level <= 0:
+		resolved_level = int(building.get("level", 1)) + 1
+	return _resolve_upgrade_level_effect(building, resolved_level)
 
 
 func get_upgrade_status(building_id: String) -> Dictionary:
@@ -741,6 +1008,7 @@ func _finish_upgrade(building_id: String) -> void:
 	building["max_hp"] = int(building.get("max_hp", 0)) + max_hp_bonus
 	building["hp"] = int(building.get("max_hp", building.get("hp", 0)))
 	_apply_workstation_upgrade(building, upgrade_config)
+	_apply_efficiency_upgrade(building, upgrade_config)
 	_buildings[building_id] = building
 	_active_upgrades.erase(building_id)
 	_release_upgrade_helpers(job, building_id)
@@ -955,19 +1223,226 @@ func _refresh_bound_scene_nodes(building_id: String) -> void:
 
 
 func _apply_workstation_upgrade(building: Dictionary, upgrade_config: Dictionary) -> void:
-	var workstation_bonus: int = maxi(0, int(upgrade_config.get("workstation_bonus", 0)))
-	if workstation_bonus <= 0:
+	var deltas := _normalize_workstation_deltas(upgrade_config.get("workstation_deltas", []))
+	var legacy_bonus: int = maxi(0, int(upgrade_config.get("workstation_bonus", 0)))
+	if deltas.is_empty() and legacy_bonus > 0:
+		deltas.append({
+			"type": str(upgrade_config.get("workstation_type", "general")),
+			"count": legacy_bonus,
+			"id_prefix": str(upgrade_config.get("workstation_id_prefix", "")),
+			"name_prefix": str(upgrade_config.get("workstation_name_prefix", ""))
+		})
+	if deltas.is_empty():
 		return
 
-	var workstations: Array = building.get("workstations", [])
-	var station_type := str(upgrade_config.get("workstation_type", "general"))
-	for index in range(workstation_bonus):
-		workstations.append({
-			"id": "%s_upgrade_%02d" % [str(building.get("id", "building")), workstations.size() + index + 1],
-			"type": station_type,
-			"occupied_by": null
-		})
-	building["workstations"] = workstations
+	var building_id := str(building.get("id", "building"))
+	var workstations: Array = building.get("workstations", []) if building.get("workstations", []) is Array else []
+	var fixed_types := _get_fixed_workstation_types(building, upgrade_config)
+	for delta in deltas:
+		var station_type := str(delta.get("type", delta.get("workstation_type", ""))).strip_edges()
+		var count := maxi(0, int(delta.get("count", delta.get("amount", 0))))
+		if station_type.is_empty() or count <= 0:
+			continue
+		if fixed_types.has(station_type):
+			push_warning("Skipped workstation expansion for fixed type '%s' in building '%s'." % [station_type, building_id])
+			continue
+		for addition_index in range(count):
+			var ordinal := _count_workstations_of_type(workstations, station_type) + 1
+			var id_prefix := str(delta.get("id_prefix", "")).strip_edges()
+			if id_prefix.is_empty():
+				id_prefix = "%s_%s" % [building_id, station_type]
+			var workstation_id := _make_unique_workstation_id(workstations, id_prefix, ordinal)
+			var configured_name := str(delta.get("name", "")).strip_edges()
+			var name_prefix := str(delta.get("name_prefix", "")).strip_edges()
+			var has_explicit_name_prefix := not name_prefix.is_empty()
+			if name_prefix.is_empty():
+				name_prefix = station_type
+			var workstation_name := configured_name
+			if workstation_name.contains("{index}"):
+				workstation_name = workstation_name.replace("{index}", str(ordinal))
+			elif workstation_name.contains("{number}"):
+				workstation_name = workstation_name.replace("{number}", str(ordinal))
+			elif workstation_name.is_empty() or count > 1:
+				var display_prefix := name_prefix if configured_name.is_empty() else configured_name
+				var index_separator := "" if has_explicit_name_prefix and configured_name.is_empty() else " "
+				workstation_name = "%s%s%d" % [display_prefix, index_separator, ordinal]
+			workstations.append({
+				"id": workstation_id,
+				"name": workstation_name,
+				"type": station_type,
+				"occupied_by": null
+			})
+	building["workstations"] = _normalize_workstations(building_id, workstations)
+
+
+func _apply_efficiency_upgrade(building: Dictionary, upgrade_config: Dictionary) -> void:
+	var increments := _normalize_efficiency_bonuses(upgrade_config.get("efficiency_bonuses", {}))
+	if increments.is_empty():
+		return
+	var current := _normalize_efficiency_bonuses(building.get("efficiency_bonuses", {}))
+	for raw_activity_id in increments.keys():
+		var activity_id := str(raw_activity_id)
+		current[activity_id] = float(current.get(activity_id, 0.0)) + float(increments.get(activity_id, 0.0))
+	building["efficiency_bonuses"] = current
+
+
+func _resolve_upgrade_level_effect(building: Dictionary, target_level: int) -> Dictionary:
+	var base_upgrade: Dictionary = building.get("upgrade", {}) if building.get("upgrade", {}) is Dictionary else {}
+	if base_upgrade.is_empty():
+		return {}
+	var resolved := base_upgrade.duplicate(true)
+	resolved.erase("level_effects")
+	var raw_level_effects: Variant = base_upgrade.get("level_effects", {})
+	var selected_effect := {}
+	if raw_level_effects is Dictionary:
+		var effects_by_level: Dictionary = raw_level_effects
+		var raw_effect: Variant = effects_by_level.get(str(target_level), {})
+		if raw_effect is Dictionary:
+			selected_effect = (raw_effect as Dictionary).duplicate(true)
+	elif raw_level_effects is Array:
+		for raw_effect in raw_level_effects:
+			if not raw_effect is Dictionary:
+				continue
+			var effect: Dictionary = raw_effect
+			if int(effect.get("target_level", effect.get("level", 0))) == target_level:
+				selected_effect = effect.duplicate(true)
+				break
+	for raw_key in selected_effect.keys():
+		resolved[raw_key] = selected_effect[raw_key]
+	resolved["target_level"] = target_level
+	return resolved
+
+
+func _get_upgrade_max_level(building: Dictionary, upgrade_config: Dictionary) -> int:
+	if upgrade_config.has("max_level"):
+		return maxi(int(building.get("level", 1)), int(upgrade_config.get("max_level", building.get("level", 1))))
+	var max_level := int(building.get("level", 1))
+	var raw_level_effects: Variant = upgrade_config.get("level_effects", {})
+	if raw_level_effects is Dictionary:
+		for raw_level in (raw_level_effects as Dictionary).keys():
+			max_level = maxi(max_level, int(str(raw_level)))
+	elif raw_level_effects is Array:
+		for raw_effect in raw_level_effects:
+			if raw_effect is Dictionary:
+				max_level = maxi(max_level, int((raw_effect as Dictionary).get("target_level", (raw_effect as Dictionary).get("level", 0))))
+	return max_level
+
+
+func _normalize_workstation_deltas(raw_deltas: Variant) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	if raw_deltas is Dictionary:
+		for raw_type in (raw_deltas as Dictionary).keys():
+			var raw_delta: Variant = (raw_deltas as Dictionary).get(raw_type)
+			if raw_delta is Dictionary:
+				var delta := (raw_delta as Dictionary).duplicate(true)
+				delta["type"] = str(delta.get("type", raw_type))
+				result.append(delta)
+			else:
+				result.append({"type": str(raw_type), "count": int(raw_delta)})
+	elif raw_deltas is Array:
+		for raw_delta in raw_deltas:
+			if raw_delta is Dictionary:
+				result.append((raw_delta as Dictionary).duplicate(true))
+	return result
+
+
+func _normalize_efficiency_bonuses(raw_bonuses: Variant) -> Dictionary:
+	var result := {}
+	if not raw_bonuses is Dictionary:
+		return result
+	for raw_activity_id in (raw_bonuses as Dictionary).keys():
+		var activity_id := str(raw_activity_id).strip_edges()
+		if activity_id.is_empty():
+			continue
+		result[activity_id] = float((raw_bonuses as Dictionary).get(raw_activity_id, 0.0))
+	return result
+
+
+func _normalize_workstations(building_id: String, raw_workstations: Array) -> Array:
+	var normalized: Array = []
+	var type_counts := {}
+	for raw_workstation in raw_workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation := (raw_workstation as Dictionary).duplicate(true)
+		var station_type := str(workstation.get("type", "general")).strip_edges()
+		if station_type.is_empty():
+			station_type = "general"
+		var ordinal := int(type_counts.get(station_type, 0)) + 1
+		type_counts[station_type] = ordinal
+		var workstation_id := str(workstation.get("id", "")).strip_edges()
+		if workstation_id.is_empty() or _has_workstation_id(normalized, workstation_id):
+			workstation_id = _make_unique_workstation_id(normalized, "%s_%s" % [building_id, station_type], ordinal)
+		var workstation_name := str(workstation.get("name", "")).strip_edges()
+		if workstation_name.is_empty():
+			workstation_name = "%s %d" % [station_type, ordinal]
+		workstation["id"] = workstation_id
+		workstation["name"] = workstation_name
+		workstation["type"] = station_type
+		if not workstation.has("occupied_by"):
+			workstation["occupied_by"] = null
+		normalized.append(workstation)
+	return normalized
+
+
+func _get_fixed_workstation_types(building: Dictionary, upgrade_config: Dictionary) -> Array[String]:
+	var result: Array[String] = []
+	var sources: Array = [
+		building.get("fixed_workstation_types", []),
+		(building.get("upgrade", {}) as Dictionary).get("fixed_workstation_types", []) if building.get("upgrade", {}) is Dictionary else [],
+		upgrade_config.get("fixed_workstation_types", [])
+	]
+	for raw_source in sources:
+		if not raw_source is Array:
+			continue
+		for raw_type in raw_source:
+			var station_type := str(raw_type).strip_edges()
+			if not station_type.is_empty() and not result.has(station_type):
+				result.append(station_type)
+	for raw_workstation in building.get("workstations", []):
+		if not raw_workstation is Dictionary or not bool((raw_workstation as Dictionary).get("fixed_capacity", false)):
+			continue
+		var fixed_type := str((raw_workstation as Dictionary).get("type", ""))
+		if not fixed_type.is_empty() and not result.has(fixed_type):
+			result.append(fixed_type)
+	return result
+
+
+func _count_workstations_of_type(workstations: Array, station_type: String) -> int:
+	var count := 0
+	for raw_workstation in workstations:
+		if raw_workstation is Dictionary and str((raw_workstation as Dictionary).get("type", "")) == station_type:
+			count += 1
+	return count
+
+
+func _has_workstation_id(workstations: Array, workstation_id: String) -> bool:
+	for raw_workstation in workstations:
+		if raw_workstation is Dictionary and str((raw_workstation as Dictionary).get("id", "")) == workstation_id:
+			return true
+	return false
+
+
+func _make_unique_workstation_id(workstations: Array, raw_prefix: String, preferred_ordinal: int) -> String:
+	var prefix := raw_prefix.strip_edges().replace(" ", "_")
+	if prefix.is_empty():
+		prefix = "workstation"
+	var ordinal := maxi(1, preferred_ordinal)
+	var candidate := "%s_%02d" % [prefix, ordinal]
+	while _has_workstation_id(workstations, candidate):
+		ordinal += 1
+		candidate = "%s_%02d" % [prefix, ordinal]
+	return candidate
+
+
+func _is_building_location_enterable(building_id: String) -> bool:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		return bool(memory_system.is_enterable_location(building_id))
+	if not _buildings.has(building_id):
+		return false
+	var building: Dictionary = _buildings[building_id]
+	return building.get("workstations", []) is Array and not (building.get("workstations", []) as Array).is_empty()
 
 
 func _emit_building_clicked_if_selected(building_id: String) -> void:

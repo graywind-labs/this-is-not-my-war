@@ -1,9 +1,8 @@
 [
   {
     "id": "riding_horse",
-    "name": "整备马匹",
+    "name": "已分配马匹",
     "slot": "mount",
-    "source_resource_id": "horse_readiness",
     "speed_bonus": 1.35,
     "required_skill": "骑术",
     "tags": ["horse"]

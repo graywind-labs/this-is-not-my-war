@@ -22,6 +22,7 @@ from backend.schemas import (  # noqa: E402
     NPCStateContext,
     ShortTermMemoryContext,
 )
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 def _allowed_actions() -> list[ActionCandidate]:
@@ -30,7 +31,53 @@ def _allowed_actions() -> list[ActionCandidate]:
         ActionCandidate(action_id="work_dining_hall", name="加工餐食", location_id="dining_hall", tags=["work"]),
         ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", location_id="dining_hall", tags=["eat"]),
         ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", location_id="dormitory", tags=["sleep"]),
-        ActionCandidate(action_id="idle", name="等待", location_id="plaza", tags=["idle"]),
+        ActionCandidate(
+            action_id="pray_at_chapel",
+            name="去小教堂祈祷",
+            action_kind="pray",
+            location_id="chapel",
+            tags=["pray", "chapel_prayer"],
+            context={"eligible": True, "available_now": True},
+        ),
+        ActionCandidate(
+            action_id="lead_mass",
+            name="主持弥撒",
+            action_kind="pray",
+            location_id="chapel",
+            tags=["pray", "chapel_mass"],
+            context={
+                "eligible": False,
+                "available_now": False,
+                "unavailable_reason": "你没有主持弥撒的能力",
+                "required_ability": "主持弥撒",
+                "eligibility_hint": "没有该能力时不要把它加入计划。",
+            },
+        ),
+        ActionCandidate(
+            action_id="attend_mass",
+            name="参加弥撒",
+            action_kind="pray",
+            location_id="chapel",
+            tags=["pray", "chapel_mass_attendee"],
+            context={
+                "eligible": True,
+                "available_now": False,
+                "unavailable_reason": "当前没有人在祭坛主持弥撒",
+                "required_active_action_id": "lead_mass",
+            },
+        ),
+        ActionCandidate(
+            action_id="assist_upgrade",
+            name="协助升级工械坊",
+            action_kind="assist_upgrade",
+            location_id="plaza",
+            target_id="workshop",
+            target_kind="building",
+            target_name="工械坊",
+            tags=["assist_upgrade", "engineering"],
+            context={"building_level": 1},
+        ),
+        ActionCandidate(action_id="idle", name="等待", location_id=None, tags=["idle"]),
     ]
 
 
@@ -57,7 +104,7 @@ def _payload() -> dict:
             equipment={},
         ),
         current_order=CurrentOrderContext(
-            text="白天尽量多准备粮食，傍晚听到警铃就回广场，不要逞强。",
+            text="白天至少安排六个工作阶段准备粮食，并安排一个阶段协助正在升级的工械坊，加快工程进度。",
             issued_by="guard_officer",
             issued_day=2,
             issued_time="06:30:00",
@@ -79,14 +126,38 @@ def _payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=2, time="07:00:00", hour=7).model_dump(),
+        "station_context": build_station_context(
+            [{"npc_id": "gardener_01", "name": "伊沃", "identity": "园丁"}],
+            basic_resource_amounts={
+                "grain": 18,
+                "meal": 5,
+                "wood": 12,
+                "stone": 8,
+                "iron": 5,
+            },
+        ),
         "npc": npc.model_dump(),
         "allowed_actions": [action.model_dump() for action in _allowed_actions()],
         "current_building_states": {
             "garden": {"name": "菜园", "level": 1, "hp": 90, "max_hp": 100, "is_repairing": False},
             "dining_hall": {"name": "食堂", "level": 1, "hp": 100, "max_hp": 100},
             "dormitory": {"name": "宿舍", "level": 1, "hp": 100, "max_hp": 100},
+            "chapel": {"name": "小教堂", "level": 1, "hp": 100, "max_hp": 100},
+            "workshop": {
+                "name": "工械坊",
+                "level": 1,
+                "hp": 100,
+                "max_hp": 100,
+                "is_upgrading": True,
+            },
         },
-        "current_resource_states": {"grain": 18, "meal": 5, "money": 30},
+        "current_resource_states": {
+            "grain": 18,
+            "meal": 5,
+            "wood": 12,
+            "stone": 8,
+            "iron": 5,
+        },
         "planning_rules": [
             "返回 24 个小时计划项，每个 hour 0-23 恰好出现一次。",
             "计划至少包含 6 个工作阶段。",
@@ -101,7 +172,24 @@ def _validate_plan(body: dict, allowed_action_ids: set[str], work_action_ids: se
     plan_response = DailyPlanResponse(**body)
     assert sorted(item.hour for item in plan_response.plan) == list(range(24))
     assert all(item.action_id in allowed_action_ids for item in plan_response.plan)
+    assert all(
+        not (item.target_id or "").strip() and not (item.location_id or "").strip()
+        for item in plan_response.plan
+        if item.action_id == "idle"
+    )
+    assert all(item.action_id != "lead_mass" for item in plan_response.plan), (
+        "non-priest plan selected eligible=false lead_mass",
+        plan_response,
+    )
+    assert all(item.action_id != "attend_mass" for item in plan_response.plan), (
+        "plan selected available_now=false attend_mass as an immediate/fixed activity",
+        plan_response,
+    )
     assert sum(1 for item in plan_response.plan if item.action_id in work_action_ids) >= 6
+    assert any(item.action_id == "assist_upgrade" for item in plan_response.plan), (
+        "plan ignored the active assist_upgrade candidate despite the station rule and current order",
+        plan_response,
+    )
     return plan_response
 
 
@@ -114,7 +202,6 @@ def main() -> None:
         return
 
     os.environ["LLM_FALLBACK_TO_MOCK"] = "false"
-    os.environ["LLM_MAX_TOKENS"] = "2600"
     os.environ["LLM_TEMPERATURE"] = "0.2"
 
     payload = _payload()

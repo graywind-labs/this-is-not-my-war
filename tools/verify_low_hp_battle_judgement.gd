@@ -44,7 +44,7 @@ func _init() -> void:
 	llm_bridge.request_timeout_seconds = 0.1
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_sword_shield", 1)
 	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	if not bool(weapon_result.get("ok", false)):
 		push_error("Failed to equip stableman: %s" % JSON.stringify(weapon_result))
@@ -91,8 +91,9 @@ func _init() -> void:
 		push_error("Failed to damage combat NPC")
 		quit(1)
 		return
-	await process_frame
-	await process_frame
+	if not await _wait_for_low_hp_result(combat_system, "stableman_01"):
+		quit(1)
+		return
 
 	var snapshot: Dictionary = combat_system.debug_get_combat_snapshot()
 	var low_hp_result: Dictionary = snapshot.get("last_low_hp_judgement_result", {})
@@ -159,8 +160,9 @@ func _init() -> void:
 		push_error("Failed to damage avoid NPC")
 		quit(1)
 		return
-	await process_frame
-	await process_frame
+	if not await _wait_for_low_hp_result(combat_system, "cook_01"):
+		quit(1)
+		return
 	snapshot = combat_system.debug_get_combat_snapshot()
 	low_hp_result = snapshot.get("last_low_hp_judgement_result", {})
 	if str(low_hp_result.get("npc_id", "")) != "cook_01":
@@ -195,13 +197,24 @@ func _init() -> void:
 		push_error("Failed to start doctor dialogue before low HP: %s" % JSON.stringify(dialogue_start))
 		quit(1)
 		return
+	var dialogue_activation: Dictionary = dialog_system._activate_player_dialogue_draft("verify_low_hp_interruption")
+	if not bool(dialogue_activation.get("ok", false)):
+		push_error("Failed to activate doctor dialogue before low HP: %s" % JSON.stringify(dialogue_activation))
+		quit(1)
+		return
+	var dialogue_effect: Dictionary = dialog_system._ensure_player_dialogue_effect_started("verify_low_hp_interruption")
+	if not bool(dialogue_effect.get("ok", false)):
+		push_error("Failed to apply doctor dialogue effect before low HP: %s" % JSON.stringify(dialogue_effect))
+		quit(1)
+		return
 	npc_system.apply_damage_to_npc("doctor_01", 75, enemy_id, "local_public", {
 		"enemy_id": enemy_id,
 		"enemy_name": enemy_name,
 		"request_plan_reevaluation": false
 	})
-	await process_frame
-	await process_frame
+	if not await _wait_for_low_hp_result(combat_system, "doctor_01"):
+		quit(1)
+		return
 	if dialog_system.is_dialogue_active():
 		push_error("Low HP judgement should force-end active dialogue with target NPC")
 		quit(1)
@@ -239,3 +252,13 @@ func _last_event(events: Array, event_type: String, npc_id: String) -> Dictionar
 func _mode(npc_system: Node, npc_id: String) -> String:
 	var snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot(npc_id)
 	return str(snapshot.get("behavior_mode", ""))
+
+
+func _wait_for_low_hp_result(combat_system: Node, npc_id: String) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		var result: Dictionary = combat_system.debug_get_combat_snapshot().get("last_low_hp_judgement_result", {})
+		if str(result.get("npc_id", "")) == npc_id and str(result.get("status", "")) != "pending":
+			return true
+	push_error("Timed out waiting for async low HP judgement for %s" % npc_id)
+	return false

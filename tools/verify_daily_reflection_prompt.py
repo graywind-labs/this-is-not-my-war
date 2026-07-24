@@ -20,6 +20,7 @@ from backend.schemas import (  # noqa: E402
     ShortTermMemoryContext,
 )
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig  # noqa: E402
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 class _FakeReflectionResponse:
@@ -114,6 +115,9 @@ def _payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=2, time="22:30:00", hour=22).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "doctor_01", "name": "莉娜", "identity": "医生"}
+        ]),
         "npc": npc.model_dump(),
         "day_events": [
             {
@@ -141,19 +145,24 @@ def _valid_reflection() -> dict:
         "npc_id": "doctor_01",
         "day": 2,
         "diary_entry": "我今晚终于躺下时，手上还像沾着布鲁诺的体温。守备官说醒来后先照看伤员，这句话至少还像一句人话。",
-        "memory_summary": "亲历：莉娜完成了对布鲁诺的治疗。见闻：她听到广场公告要求节省餐食。",
         "knowledge_graph_updates": [
             {
                 "subject": "guard_officer",
                 "relation": "impression",
                 "value": "急迫，但仍承认医生应先照看伤员",
                 "confidence": 0.75,
+                "subject_label": "守备官",
+                "relation_label": "印象",
+                "value_label": "急迫，但仍承认医生应先照看伤员",
             },
             {
                 "subject": "dining_hall",
                 "relation": "risk",
                 "value": "餐食正在被节省，伤员恢复可能受影响",
                 "confidence": 0.65,
+                "subject_label": "食堂",
+                "relation_label": "风险",
+                "value_label": "餐食正在被节省，伤员恢复可能受影响",
             },
         ],
         "debug_reason": "区分亲历治疗和听闻公告；知识图谱为替换式键值更新，日记为增量追加。",
@@ -172,6 +181,8 @@ def main() -> None:
     reflection_response = DailyReflectionResponse(**result.content)
     assert reflection_response.diary_entry
     assert reflection_response.knowledge_graph_updates[0].subject == "guard_officer"
+    assert "memory_summary" not in reflection_response.model_dump()
+    assert reflection_response.knowledge_graph_updates[0].subject_label == "守备官"
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
@@ -185,13 +196,24 @@ def main() -> None:
         "memory_kind=experienced",
         "memory_kind=witnessed",
         "current_order",
+        "subject_label",
+        "relation_label",
+        "value_label",
+        "中文玩家",
+        "往昔·近日",
+        "传达敌情",
+        "字符串保留",
+        "第 N 天 + 时间",
+        "只写第一人称正文",
+        "自然、直白",
         "不得决定或改写 HP、资源、建筑、移动、伤害",
     ]
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
+    assert "memory_summary" not in system_prompt
 
     invalid_reflection = _valid_reflection()
-    invalid_reflection["knowledge_graph_updates"][0]["value"] = "玩家还算愿意让医生照看伤员"
+    invalid_reflection["knowledge_graph_updates"][0]["subject_label"] = "玩家"
     app = create_app()
     app.config["MODEL_ADAPTER"] = ModelAdapter(ModelAdapterConfig(provider="deepseek", api_key="test_key", fallback_to_mock=False))
     with patch(
@@ -205,6 +227,18 @@ def main() -> None:
     assert any("守备官" in detail for detail in invalid_body["details"])
     assert invalid_body["usage"]["success"] is False
     assert invalid_body["usage"]["exception_type"] == "SchemaValidationError"
+
+    with patch(
+        "backend.services.model_adapter.requests.post",
+        return_value=_FakeReflectionResponse(_valid_reflection()),
+    ):
+        valid_response = app.test_client().post("/npc/daily_reflection", json=payload)
+    assert valid_response.status_code == 200, valid_response.get_json()
+    valid_body = valid_response.get_json()
+    assert valid_body["model_provider"] == "deepseek"
+    assert valid_body["model_name"]
+    assert valid_body["model_fallback_used"] is False
+    assert "memory_summary" not in valid_body
 
     print("verify_daily_reflection_prompt: ok")
 

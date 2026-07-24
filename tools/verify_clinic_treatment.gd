@@ -25,11 +25,11 @@ func _init() -> void:
 		return
 
 	var clinic: Dictionary = building_system.get_building("clinic")
-	if not _has_workstation_type(clinic.get("workstations", []), "clinic_doctor"):
+	if not _has_workstation_type(clinic.get("workstations", []), "clinic_doctor_station"):
 		push_error("Clinic should expose a doctor workstation")
 		quit(1)
 		return
-	if not _has_workstation_type(clinic.get("workstations", []), "patient_bed"):
+	if not _has_workstation_type(clinic.get("workstations", []), "clinic_patient_bed"):
 		push_error("Clinic should expose a patient bed")
 		quit(1)
 		return

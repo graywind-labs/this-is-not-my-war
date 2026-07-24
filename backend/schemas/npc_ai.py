@@ -1,13 +1,24 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from .common import ActionCandidate, CurrentOrderContext, GameTime, ModelRequestMeta, NPCContext, ShortTermMemoryContext
+from .common import (
+    ActionCandidate,
+    CurrentOrderContext,
+    GameTime,
+    ModelRequestMeta,
+    NPCContext,
+    PlanActionKind,
+    ShortTermMemoryContext,
+    StationSceneContext,
+)
 
 
 DialogueKind = Literal["player_npc", "npc_npc", "escape_intervention"]
+PlanRevisionJudgementTriggerKind = Literal["dialogue", "action_failure"]
+DialoguePhase = Literal["conversation", "invitation"]
 DialogueVisibility = Literal["private", "local_public"]
 InteractionContext = Literal["work", "rally", "combat", "avoid_combat", "escape_intervention"]
 WartimeReaction = Literal["none", "escape", "morale_boost"]
@@ -25,6 +36,12 @@ DialogueIntent = Literal[
     "leave_after_intervention",
     "end_talk",
 ]
+PlanHour = Annotated[int, Field(ge=0, le=23)]
+
+
+class StationAwareNPCRequest(BaseModel):
+    # One request-level copy avoids repeating the same roster in nested speaker/target NPC contexts.
+    station_context: StationSceneContext
 
 
 class DialogueTurn(BaseModel):
@@ -51,15 +68,18 @@ class DialogueState(BaseModel):
     visibility: DialogueVisibility = "private"
     location_id: str = "plaza"
     location_name: str = "广场"
-    current_round: int = Field(default=1, ge=1)
-    max_rounds: int = Field(default=1, ge=1)
+    current_round: int = Field(default=1, ge=0)
+    max_rounds: int = Field(default=0, ge=0)
+    soft_round_threshold: int = Field(default=5, ge=1)
+    soft_round_guidance: str = ""
     participants: list[str] = Field(default_factory=list)
 
 
-class NPCDialogueRequest(BaseModel):
+class NPCDialogueRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     dialogue_kind: DialogueKind = "player_npc"
+    dialogue_phase: DialoguePhase = "conversation"
     npc_id: str
     npc_name: str
     npc_setting: dict[str, Any] = Field(default_factory=dict)
@@ -77,8 +97,10 @@ class NPCDialogueRequest(BaseModel):
         default=False,
         validation_alias=AliasChoices("is_recruitment_request", "propose_recruitment"),
     )
-    current_round: int = Field(default=1, ge=1)
-    max_rounds: int = Field(default=1, ge=1)
+    current_round: int = Field(default=1, ge=0)
+    max_rounds: int = Field(default=0, ge=0)
+    soft_round_threshold: int = Field(default=5, ge=1)
+    soft_round_guidance: str = ""
     npc_state: dict[str, Any] = Field(default_factory=dict)
     current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     dialogue_state: DialogueState = Field(default_factory=DialogueState)
@@ -91,7 +113,7 @@ class NPCDialogueRequest(BaseModel):
     target_npc: NPCContext | None = None
     conversation_history: list[DialogueTurn] = Field(default_factory=list)
     escape_intervention_round: int | None = Field(default=None, ge=1, le=5)
-    allowed_actions: list[ActionCandidate] = Field(default_factory=list)
+    allowed_actions: list[ActionCandidate] = Field(min_length=1)
     constraints: list[str] = Field(default_factory=list)
 
 
@@ -100,6 +122,7 @@ class NPCDialogueResponse(BaseModel):
     replyer_id: str
     reply_text: str
     response_kind: Literal["reply_to_player", "reply_to_npc"] = "reply_to_player"
+    invitation_result: Literal["accept", "reject", "not_applicable"] = "not_applicable"
     intent: DialogueIntent = "continue_talk"
     emotion: str = "neutral"
     recruitment_result: Literal["accept", "reject", "none"] = "none"
@@ -107,24 +130,6 @@ class NPCDialogueResponse(BaseModel):
     should_end_dialogue: bool = False
     suggested_event_type: str = "dialogue_turn"
     debug_reason: str = ""
-
-
-PlanActionKind = Literal[
-    "work",
-    "eat",
-    "sleep",
-    "train",
-    "pray",
-    "rest",
-    "chat",
-    "assist_repair",
-    "assist_upgrade",
-    "assist_heal",
-    "seek_guard_officer",
-    "avoid_combat",
-    "escape",
-    "idle",
-]
 
 
 class PlanItem(BaseModel):
@@ -135,9 +140,10 @@ class PlanItem(BaseModel):
     target_id: str | None = None
     priority: int = Field(default=50, ge=0, le=100)
     reason: str = ""
+    dialogue_goal: str = ""
 
 
-class DailyPlanRequest(BaseModel):
+class DailyPlanRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     npc: NPCContext
@@ -156,17 +162,94 @@ class DailyPlanResponse(BaseModel):
     debug_reason: str = ""
 
 
-class PlanRevisionRequest(BaseModel):
+class PlanRevisionJudgementRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
+    npc_id: str
+    npc_name: str = ""
     npc: NPCContext
-    current_plan: list[PlanItem]
-    failed_plan_item: PlanItem
+    trigger_kind: PlanRevisionJudgementTriggerKind = "dialogue"
+    dialogue_kind: DialogueKind = "player_npc"
+    dialogue_history: list[DialogueTurn] = Field(default_factory=list)
+    dialogue_end_reason: str = "dialogue_completed"
+    dialogue_context: dict[str, Any] = Field(default_factory=dict)
+    failed_plan_item: PlanItem | None = None
     failure_type: Literal[
         "target_unavailable",
         "workstation_occupied",
         "resource_insufficient",
         "dialogue_interrupted",
+        "plan_item_superseded",
+        "low_hp",
+        "low_satiety",
+        "high_fatigue",
+        "combat_alarm",
+        "order_changed",
+        "unknown",
+    ] = "unknown"
+    failure_summary: str = ""
+    failure_context: dict[str, Any] = Field(default_factory=dict)
+    allowed_actions: list[ActionCandidate] = Field(default_factory=list)
+    current_building_states: dict[str, Any] = Field(default_factory=dict)
+    current_resource_states: dict[str, Any] = Field(default_factory=dict)
+    current_work_phase_count: int = Field(default=0, ge=0, le=24)
+    minimum_work_phase_count: int = Field(default=6, ge=0, le=24)
+    replacement_work_phase_required_if_non_work: bool = False
+    current_plan: list[PlanItem] = Field(min_length=24, max_length=24)
+
+    @model_validator(mode="after")
+    def validate_trigger_context_and_full_current_plan(self):
+        if self.npc.identity.npc_id != self.npc_id:
+            raise ValueError("npc.identity.npc_id must match npc_id.")
+        if sorted(item.hour for item in self.current_plan) != list(range(24)):
+            raise ValueError("current_plan must contain each hour from 0 to 23 exactly once.")
+        if self.trigger_kind == "dialogue":
+            if not self.dialogue_history:
+                raise ValueError("dialogue trigger requires non-empty dialogue_history.")
+        else:
+            if self.failed_plan_item is None:
+                raise ValueError("action_failure trigger requires failed_plan_item.")
+            if not self.failure_summary.strip():
+                raise ValueError("action_failure trigger requires non-empty failure_summary.")
+            if self.dialogue_history:
+                raise ValueError("action_failure trigger must not include dialogue_history.")
+        return self
+
+
+class PlanRevisionJudgementResponse(BaseModel):
+    ok: Literal[True] = True
+    npc_id: str
+    needs_revision: bool
+    revision_hours: list[PlanHour] = Field(default_factory=list, max_length=24)
+    summary: str = ""
+    debug_reason: str = ""
+
+
+# Compatibility aliases for T0049 callers. New runtime code uses the generic
+# plan revision judgement contract for both dialogue and action-failure facts.
+DialoguePlanRevisionJudgementRequest = PlanRevisionJudgementRequest
+DialoguePlanRevisionJudgementResponse = PlanRevisionJudgementResponse
+
+
+class PlanRevisionRequest(StationAwareNPCRequest):
+    meta: ModelRequestMeta
+    game_time: GameTime
+    npc: NPCContext
+    current_plan: list[PlanItem] = Field(min_length=24, max_length=24)
+    failed_plan_item: PlanItem
+    revision_scope: Literal["selected_hours"] = "selected_hours"
+    revision_hours: list[PlanHour] = Field(min_length=1, max_length=24)
+    current_work_phase_count: int = Field(default=0, ge=0, le=24)
+    minimum_work_phase_count: int = Field(default=6, ge=0, le=24)
+    past_work_phase_count: int = Field(default=0, ge=0, le=24)
+    minimum_remaining_work_phase_count: int = Field(default=6, ge=0, le=24)
+    replacement_work_phase_required_if_non_work: bool = False
+    failure_type: Literal[
+        "target_unavailable",
+        "workstation_occupied",
+        "resource_insufficient",
+        "dialogue_interrupted",
+        "plan_item_superseded",
         "low_hp",
         "low_satiety",
         "high_fatigue",
@@ -175,7 +258,20 @@ class PlanRevisionRequest(BaseModel):
         "unknown",
     ]
     failure_summary: str
+    failure_context: dict[str, Any] = Field(default_factory=dict)
     allowed_actions: list[ActionCandidate]
+    current_building_states: dict[str, Any] = Field(default_factory=dict)
+    current_resource_states: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_selected_hours(self):
+        if sorted(item.hour for item in self.current_plan) != list(range(24)):
+            raise ValueError("current_plan must contain each hour from 0 to 23 exactly once.")
+        if self.revision_hours != sorted(set(self.revision_hours)):
+            raise ValueError("revision_hours must be unique and sorted ascending.")
+        if any(hour < self.game_time.hour for hour in self.revision_hours):
+            raise ValueError("revision_hours cannot contain hours before game_time.hour.")
+        return self
 
 
 class PlanRevisionResponse(BaseModel):
@@ -197,7 +293,7 @@ BattleDecision = Literal[
 ]
 
 
-class BattleJudgementRequest(BaseModel):
+class BattleJudgementRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     trigger: BattleTrigger
@@ -217,7 +313,7 @@ class BattleJudgementResponse(BaseModel):
     debug_reason: str = ""
 
 
-class DailyReflectionRequest(BaseModel):
+class DailyReflectionRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     npc: NPCContext
@@ -230,6 +326,9 @@ class KnowledgeGraphPatch(BaseModel):
     relation: str
     value: str
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    subject_label: str = ""
+    relation_label: str = ""
+    value_label: str = ""
 
 
 class DailyReflectionResponse(BaseModel):
@@ -237,12 +336,11 @@ class DailyReflectionResponse(BaseModel):
     npc_id: str
     day: int = Field(ge=1)
     diary_entry: str
-    memory_summary: str
     knowledge_graph_updates: list[KnowledgeGraphPatch] = Field(default_factory=list)
     debug_reason: str = ""
 
 
-class KnowledgeGraphUpdateRequest(BaseModel):
+class KnowledgeGraphUpdateRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     npc: NPCContext
@@ -256,7 +354,7 @@ class KnowledgeGraphUpdateResponse(BaseModel):
     debug_reason: str = ""
 
 
-class ProactiveIntentionRequest(BaseModel):
+class ProactiveIntentionRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     npc: NPCContext
@@ -273,7 +371,7 @@ class ProactiveIntentionResponse(BaseModel):
     debug_reason: str = ""
 
 
-class PlayerStrategyClassificationRequest(BaseModel):
+class PlayerStrategyClassificationRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
     npc: NPCContext

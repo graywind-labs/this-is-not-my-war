@@ -24,6 +24,7 @@ func _init() -> void:
 	var hour_events: Array[String] = []
 	var day_events: Array[int] = []
 	var scale_events: Array[String] = []
+	var logical_time_ticks: Array[Dictionary] = []
 	event_bus.hour_started.connect(func(day: int, hour: int) -> void:
 		hour_events.append("%d:%d" % [day, hour])
 	)
@@ -32,6 +33,12 @@ func _init() -> void:
 	)
 	event_bus.time_scale_changed.connect(func(player_scale: float, effective_scale: float, numeric_multiplier: float, reason: String) -> void:
 		scale_events.append("%s:%.3f:%.3f:%.3f" % [reason, player_scale, effective_scale, numeric_multiplier])
+	)
+	event_bus.logical_time_tick.connect(func(game_delta_seconds: float, numeric_multiplier: float) -> void:
+		logical_time_ticks.append({
+			"game_delta_seconds": game_delta_seconds,
+			"numeric_multiplier": numeric_multiplier
+		})
 	)
 
 	time_system.set_current_time(1, 6, 0, 0)
@@ -70,8 +77,20 @@ func _init() -> void:
 		quit(1)
 		return
 
+	time_system.set_paused(true)
 	time_system.set_current_time(1, 23, 0, 0)
-	time_system.debug_advance_hour()
+	# Midnight normally starts eight real LLM daily-plan requests. This focused
+	# TimeSystem test disconnects that external side effect while retaining all
+	# authoritative clock and logical-time signals under test.
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var day_started_callback := Callable(daily_plan_system, "_on_day_started")
+	if daily_plan_system != null and event_bus.day_started.is_connected(day_started_callback):
+		event_bus.day_started.disconnect(day_started_callback)
+	logical_time_ticks.clear()
+	if not time_system.debug_advance_hour():
+		push_error("Debug one-hour simulation advance was rejected")
+		quit(1)
+		return
 	if (
 		int(game_state.current_day) != 2
 		or int(game_state.current_hour) != 0
@@ -85,6 +104,19 @@ func _init() -> void:
 		push_error("Time signals were not emitted for rollover")
 		quit(1)
 		return
+	if (
+		logical_time_ticks.size() != 1
+		or not is_equal_approx(float(logical_time_ticks[0].get("game_delta_seconds", 0.0)), 3600.0)
+		or not is_equal_approx(float(logical_time_ticks[0].get("numeric_multiplier", 0.0)), 1.0)
+	):
+		push_error("Debug one-hour advance should emit exactly one authoritative logical_time_tick: %s" % logical_time_ticks)
+		quit(1)
+		return
+	if not time_system.is_paused:
+		push_error("Debug simulation advance should not change the player's pause state")
+		quit(1)
+		return
+	time_system.set_paused(false)
 
 	var day_label := hud.get_node_or_null("DayLabel") as Label
 	var time_label := hud.get_node_or_null("TimeLabel") as Label

@@ -17,7 +17,8 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or resource_system == null or memory_system == null:
+	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
+	if action_system == null or npc_system == null or resource_system == null or memory_system == null or crafting_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -72,6 +73,11 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var crafting_target: Dictionary = crafting_system.set_target("blacksmith", "craft_iron_helmet", true)
+	if not bool(crafting_target.get("ok", false)):
+		push_error("Failed to set blacksmith crafting target: %s" % str(crafting_target))
+		quit(1)
+		return
 	resource_system.spend_resources({"iron": resource_system.get_resource("iron"), "wood": resource_system.get_resource("wood")})
 	var blacksmith_id := "blacksmith_01"
 	_set_debug_move_speed(blacksmith_id, 80.0)
@@ -80,7 +86,7 @@ func _init() -> void:
 		push_error("Failed to assign blacksmith work")
 		quit(1)
 		return
-	if not await _wait_until_action_result(npc_system, blacksmith_id, "work_failed_no_resources"):
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "work_failed_insufficient_stage_resources"):
 		push_error("Work failure did not complete")
 		quit(1)
 		return

@@ -48,7 +48,7 @@ func _init() -> void:
 	llm_bridge.request_timeout_seconds = 0.1
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 2)
+	resource_system.add_resource("item_sword_shield", 1)
 	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	if not bool(weapon_result.get("ok", false)):
 		push_error("Failed to equip stableman: %s" % JSON.stringify(weapon_result))
@@ -125,7 +125,13 @@ func _init() -> void:
 		push_error("Wartime dialogue should mark rule fallback when backend is unavailable")
 		quit(1)
 		return
-	var morale_result: Dictionary = fallback_result.get("wartime_result", {})
+	if not (fallback_result.get("wartime_result", {}) as Dictionary).is_empty():
+		push_error("Wartime reaction must remain staged until dialogue completion")
+		quit(1)
+		return
+	var fallback_completion: Dictionary = dialog_system.complete_displayed_dialogue()
+	var deferred_effects: Dictionary = fallback_completion.get("deferred_effect_results", {}) if fallback_completion.get("deferred_effect_results", {}) is Dictionary else {}
+	var morale_result: Dictionary = deferred_effects.get("wartime_result", {}) if deferred_effects.get("wartime_result", {}) is Dictionary else {}
 	if not bool(morale_result.get("ok", false)) or str(morale_result.get("reaction", "")) != "morale_boost":
 		push_error("Fallback wartime message should apply morale boost: %s" % JSON.stringify(fallback_result))
 		quit(1)
@@ -202,6 +208,16 @@ func _init() -> void:
 		push_error("Avoid combat dialogue should also force local_public with avoid_combat context: %s" % JSON.stringify(state))
 		quit(1)
 		return
+	var avoid_activation: Dictionary = dialog_system._activate_player_dialogue_draft("verify_avoid_recruitment")
+	if not bool(avoid_activation.get("ok", false)):
+		push_error("Failed to activate avoid_combat dialogue draft: %s" % JSON.stringify(avoid_activation))
+		quit(1)
+		return
+	var avoid_effect: Dictionary = dialog_system._ensure_player_dialogue_effect_started("verify_avoid_recruitment")
+	if not bool(avoid_effect.get("ok", false)):
+		push_error("Failed to start avoid_combat dialogue effect: %s" % JSON.stringify(avoid_effect))
+		quit(1)
+		return
 	var recruit_apply: Dictionary = dialog_system._apply_player_message_response({
 		"ok": true,
 		"dialogue": {
@@ -221,12 +237,20 @@ func _init() -> void:
 		push_error("Avoid combat recruitment dialogue response should apply: %s" % JSON.stringify(recruit_apply))
 		quit(1)
 		return
+	if bool(npc_system.get_npc("cook_01").get("recruited", false)):
+		push_error("Avoid combat recruitment must remain staged until completion")
+		quit(1)
+		return
+	dialog_system.complete_displayed_dialogue()
 	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Avoid combat recruitment should set recruited when response accepts")
+		push_error("Avoid combat recruitment should set recruited when the dialogue completes")
 		quit(1)
 		return
 	if str(npc_system.get_npc_state("cook_01").get("behavior_mode", "")) != "avoid_combat":
 		push_error("Recruited but unarmed avoid_combat NPC should stay in avoid_combat")
+		quit(1)
+		return
+	if not await _wait_for_llm_cleanup(llm_bridge):
 		quit(1)
 		return
 
@@ -240,3 +264,12 @@ func _last_event(events: Array, event_type: String) -> Dictionary:
 		if str(event.get("type", "")) == event_type:
 			return event
 	return {}
+
+
+func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		if int(llm_bridge.debug_get_llm_runtime_snapshot().get("async_request_count", 0)) == 0:
+			return true
+	push_error("Timed out waiting for wartime dialogue LLM async cleanup")
+	return false

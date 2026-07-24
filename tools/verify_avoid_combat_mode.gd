@@ -46,7 +46,8 @@ func _init() -> void:
 		if callable.get_object() == daily_plan_system:
 			event_bus.npc_plan_reevaluation_requested.disconnect(callable)
 	event_bus.npc_plan_reevaluation_requested.connect(func(_npc_id: String, _reason: String) -> void:
-		_reevaluation_signal_count += 1
+		if ["cook_01", "engineer_01"].has(_npc_id):
+			_reevaluation_signal_count += 1
 	)
 
 	var cook_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Cook01") as Node3D
@@ -257,7 +258,7 @@ func _init() -> void:
 		push_error("Avoidance snapshot should remain for recruited NPC without a main weapon")
 		quit(1)
 		return
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_sword_shield", 1)
 	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon("priest_01", "sword_shield", "private")
 	if not bool(equip_result.get("ok", false)):
 		push_error("Weapon equip during avoidance failed: %s" % JSON.stringify(equip_result))

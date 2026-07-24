@@ -33,8 +33,8 @@ func _init() -> void:
 		return
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 1)
-	resource_system.add_resource("armor", 1)
+	resource_system.add_resource("item_sword_shield", 1)
+	resource_system.add_resource("item_mail_chest", 1)
 	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	var armor_result: Dictionary = equipment_system.equip_npc_armor("stableman_01", "chest", "mail_chest", "private")
 	if not bool(weapon_result.get("ok", false)) or not bool(armor_result.get("ok", false)):

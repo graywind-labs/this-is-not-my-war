@@ -21,6 +21,7 @@ from backend.schemas import (  # noqa: E402
     NPCStateContext,
     ShortTermMemoryContext,
 )
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 def _payload() -> dict:
@@ -91,6 +92,9 @@ def _payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=2, time="22:30:00", hour=22).model_dump(),
+        "station_context": build_station_context([
+            {"npc_id": "doctor_01", "name": "莉娜", "identity": "医生"}
+        ]),
         "npc": npc.model_dump(),
         "day_events": [
             {
@@ -121,7 +125,6 @@ def main() -> None:
         return
 
     os.environ["LLM_FALLBACK_TO_MOCK"] = "false"
-    os.environ["LLM_MAX_TOKENS"] = "1800"
     os.environ["LLM_TEMPERATURE"] = "0.4"
 
     client = create_app().test_client()
@@ -132,16 +135,21 @@ def main() -> None:
     assert reflection.npc_id == "doctor_01"
     assert reflection.day == 2
     assert reflection.diary_entry
-    assert reflection.memory_summary
     assert "玩家" not in reflection.diary_entry
-    assert "玩家" not in reflection.memory_summary
+    assert "memory_summary" not in reflection.model_dump()
     for update in reflection.knowledge_graph_updates:
         assert update.subject
         assert update.relation
         assert update.value
+        assert update.subject_label
+        assert update.relation_label
+        assert update.value_label
         assert "玩家" not in update.subject
         assert "玩家" not in update.relation
         assert "玩家" not in update.value
+        assert "玩家" not in update.subject_label
+        assert "玩家" not in update.relation_label
+        assert "玩家" not in update.value_label
 
     usage_response = client.get("/debug/llm_usage")
     assert usage_response.status_code == 200

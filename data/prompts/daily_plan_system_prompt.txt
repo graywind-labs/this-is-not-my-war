@@ -1,19 +1,34 @@
 【每日计划 Prompt】
 
-你正在为目标 NPC 制定当天 24 小时计划。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.knowledge_graph、npc.location_context、current_resource_states、current_building_states 和 allowed_actions 定义。
+你正在为目标 NPC 制定当天 24 小时计划。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）、npc.location_context、current_resource_states、current_building_states 和 allowed_actions 定义。
+
+基础场景：
+- station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 只列当前仍在站的 NPC；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
+- 不得补入 resident_roster 外的在站 NPC 或 building_roster 外的驿站建筑；公告牌、广场或站外地点若未列为建筑，也不得擅自称为建筑。
+- work_mode_actions 说明整个驿站支持哪些日常行为类型；目标 NPC 在本次计划中能选择的具体目标、地点、资格和可用性仍只看 allowed_actions。完整行为目录不能绕过行动白名单。
+- basic_resource_reserves 只公开粮食、餐食、木材、石料和铁的当前数量；current_resource_states 也只用于这些基础资源的计划判断。不得臆测第纳尔、酒、装备、器械、马匹或其他未公开库存。
+- station_rules 只提供生活、持续活动与周期结算、建筑升级、遇敌、避敌和士气常识；计划只能安排活动，不能把未完成周期预先写成已有产出，也不能假定 NPC 离岗、改做他事或被打断后活动仍会自行推进。若建筑正在缓慢升级且 allowed_actions 提供该建筑的 assist_upgrade 候选，应把“协助升级建筑”视为能加快工程的现实行动，结合职业、现场需求和其他紧急事项认真考虑，不能无故忽略；没有该候选时不得自造升级目标。实时进度、建筑升级状态、入伍、装备、行为模式、战局与逃离状态以程序事实为准。
 
 计划目标：
 - 输出从 hour=0 到 hour=23 的 24 个阶段，每个小时恰好出现一次。
 - 至少 6 个阶段必须是工作阶段。工作阶段应优先选择 allowed_actions 中 tags 包含 work、clinic_doctor 或 training_instructor 的行动。
 - action_id 只能使用 allowed_actions 中出现的 action_id，或使用 idle。不要创造新行动，不要使用自然语言当 action_id。
-- action_kind 必须严格使用 Schema 允许值：work、eat、sleep、train、pray、rest、chat、assist_repair、assist_upgrade、assist_heal、seek_guard_officer、avoid_combat、escape、idle。
-- 若 action_id=idle，action_kind 必须是 idle，location_id 通常使用 plaza。
+- action_kind 必须严格使用 Schema 允许值：work、eat、sleep、train、pray、rest、visit、chat、assist_repair、assist_upgrade、assist_heal、seek_guard_officer、avoid_combat、escape、idle。
+- 若 action_id=idle，action_kind 必须是 idle，location_id 使用 null 或空字符串，表示留在当前位置等待；若要前往广场，必须选择 visit_location 的广场候选。
+- 对带目标的候选（如 talk_to_npc、visit_location、assist_heal、assist_repair、assist_upgrade），action_id、target_id 与 location_id 必须选择同一条 allowed_actions 候选中的组合，不能只复制 action_id 后自造目标。
+- 每个计划项的 action_kind 必须等于所选 allowed_actions 候选中的 action_kind，不能把对话伪装成工作或把工作标成 idle。
+- 先检查候选 context：eligible=false 表示这个 NPC 能看见但没有执行资格，绝不能加入其计划；available_now=false 表示当前不能立即执行，应优先改选可用行动。尤其只有 required_ability=主持弥撒 且 eligible=true 的 NPC 才能安排 lead_mass。
+- `required_active_action_id` 表示该行动开始和持续期间都依赖另一项在岗行动。`receive_clinic_treatment` 依赖 `work_clinic_doctor`，`receive_weapon_training` 依赖 `work_training_instructor`，`attend_mass` 依赖 `lead_mass`；服务者全部退出后，承载者会被程序中断并重估。当前没有对应在岗者时，不得把这些行动作为立即行动；未来时段只有在确有可协调的服务者计划时才可安排。
+- 教堂有三种不同活动：`pray_at_chapel` 是不依赖神父的普通祈祷；`lead_mass` 是具备资格者在祭坛主持弥撒；`attend_mass` 是其他 NPC 在祈祷席参加正在举行的弥撒。主持弥撒期间普通祈祷不可进行，不能把祈祷、主持和参加弥撒混写成同一行动。
 
 如何考虑 NPC：
 - 根据职业背景、熟练度、健康、饱食、疲劳、装备、当前地点、建筑状态、资源状态、亲历事件 experienced_events、见闻 witnessed_events 和长期记忆安排计划。
+- 初始长期记忆中的人生切片、人物认知和建筑常识只提供稳定视角与经验，不代表今天已经发生对应事件；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能当作 NPC 已知敌袭、征召或备战的证据。实时状态、当天事件和 allowed_actions 与旧认知冲突时，以实时程序事实为准。
 - 饱食低时安排吃饭，疲劳高时安排睡觉；但不要把吃饭、睡觉或工作描述成瞬时结算。
 - 多个连续小时可以执行同一行动；计划只是意图和安排，不代表行动已经完成。
-- 若资源不足、建筑损坏、工位紧张或 NPC 状态不合适，应选择更保守的 allowed_actions 或 idle，并在 reason 中说明。
+- NPC 可以主动安排找其他 NPC 对话、去小教堂祈祷、只前往某处停留或主动找守备官交涉；这些都是正式行动，不要无条件改写成 idle。
+- escaping_station 是“决定离开驿站”的特殊意向，不是普通避战或移动；只有 NPC 的人格、恐惧、记忆和当前局势确实支持离开时才可选择，最终逃离状态、路径和事件仍由 CombatSystem 校验与执行。
+- 若资源不足、建筑损坏、正在升级封闭、位置紧张或 NPC 状态不合适，应从 allowed_actions 选择现实可执行的替代行动。NPC 只选行动和建筑，不指定病床、训练位、祈祷席等位置编号。只有没有合理行动时才使用 idle。
 
 current_order 边界：
 - current_order 是守备官当前持续提出的自然语言指令，只能作为重要参考。NPC 可以理解、调整、推迟或拒绝执行。
@@ -24,7 +39,12 @@ current_order 边界：
 - 只输出 JSON 对象，不要 Markdown。
 - npc_id 必须等于请求中目标 NPC 的 id。
 - plan_day 使用请求中的 game_time.day。
-- 每条 plan item 都要包含 hour、action_kind、action_id、location_id、target_id、priority、reason。
+- 每条 plan item 都要包含 hour、action_kind、action_id、location_id、target_id、priority、reason、dialogue_goal。
 - priority 是 0 到 100 的整数；高优先级用于吃饭、睡觉、治疗、关键工作或守备官指令相关安排。
-- summary 简述当天计划如何平衡生存、工作和 current_order。
-- debug_reason 简短说明使用了行动白名单、24 阶段、至少 6 阶段工作和 current_order 约束。
+- reason 保持紧凑，每条不超过 12 个汉字；没有目标时 target_id 使用空字符串。
+- action_id 为 talk_to_npc 或 seek_guard_officer 时，dialogue_goal 写成 NPC 可直接说出口的开场诉求，不超过 40 个汉字；其他行动使用空字符串。
+- summary 不超过 60 个汉字，简述当天计划如何平衡生存、工作和 current_order。
+- debug_reason 不超过 40 个汉字，简短说明使用了行动白名单、24 阶段、至少 6 阶段工作和 current_order 约束。
+
+JSON 结构示例（只示范单项结构，实际 plan 必须包含 hour=0 到 hour=23 共 24 项）：
+{"ok":true,"npc_id":"请求中的NPC id","plan_day":1,"plan":[{"hour":0,"action_kind":"sleep","action_id":"sleep_in_dormitory","location_id":"dormitory","target_id":"","priority":70,"reason":"夜间休息","dialogue_goal":""}],"summary":"兼顾生存与工作。","debug_reason":"使用白名单并覆盖24小时。"}

@@ -34,7 +34,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	if not await _verify_rule_fallback(time_system, npc_system, memory_system, daily_plan_system, llm_bridge):
+	if not await _verify_real_failure_without_fallback(time_system, npc_system, memory_system, daily_plan_system, llm_bridge):
 		quit(1)
 		return
 	if not await _verify_live_mock_if_available(time_system, npc_system, memory_system, daily_plan_system, llm_bridge):
@@ -45,7 +45,7 @@ func _init() -> void:
 	quit(0)
 
 
-func _verify_rule_fallback(
+func _verify_real_failure_without_fallback(
 	time_system: Node,
 	npc_system: Node,
 	memory_system: Node,
@@ -59,32 +59,26 @@ func _verify_rule_fallback(
 
 	var npc_id := "gardener_01"
 	var result: Dictionary = daily_plan_system.generate_daily_plan_for_npc(npc_id, false)
-	if str(result.get("status", "")) != "rule_plan_fallback_applied":
-		push_error("Closed backend should apply rule plan fallback: %s" % str(result))
+	if bool(result.get("ok", true)) or str(result.get("status", "")) != "backend_health_failed":
+		push_error("Closed backend should fail real daily planning: %s" % str(result))
 		return false
-	if not bool(result.get("fallback_used", false)):
-		push_error("Closed backend plan generation should mark fallback_used")
+	if bool(result.get("fallback_used", true)) or not str(result.get("source", "")).is_empty():
+		push_error("Closed backend must not use Mock or rule fallback")
 		return false
-	if llm_bridge.get_pending_slowdown_count() != 0 or not llm_bridge.debug_was_slowdown_registered():
-		push_error("Daily plan fallback should register and release LLM slowdown")
+	if llm_bridge.get_pending_slowdown_count() != 0:
+		push_error("Failed provider preflight left pending slowdown")
 		return false
 	if absf(time_system.get_effective_time_scale() - 4.0) > 0.001:
 		push_error("Daily plan fallback did not restore player time scale")
 		return false
 
 	var plan: Array = npc_system.get_npc_plan(npc_id)
-	if plan.size() != 24:
-		push_error("Rule fallback should write a 24-hour plan")
-		return false
-	if str(plan[7].get("source", "")) != "rule_plan_fallback":
-		push_error("Fallback plan items should be marked rule_plan_fallback")
+	if not plan.is_empty():
+		push_error("Failed real daily planning must not write any executable plan")
 		return false
 	var plan_event := _find_latest_event(memory_system.get_npc_daily_events(npc_id), "plan_created")
-	if plan_event.is_empty():
-		push_error("Fallback daily plan should write plan_created event")
-		return false
-	if str(plan_event.get("payload", {}).get("source", "")) != "rule_plan_fallback":
-		push_error("Fallback plan_created event should record source")
+	if not plan_event.is_empty():
+		push_error("Failed real daily planning must not write plan_created")
 		return false
 	return true
 
@@ -117,14 +111,13 @@ func _verify_live_mock_if_available(
 	if not bool(order_result.get("ok", false)):
 		push_error("Failed to publish order before plan_day context verification")
 		return false
+	# Publishing an order intentionally starts an async revision request. Let that
+	# independent request release its slowdown before auditing the plan_day call.
+	if not await _wait_until_no_pending_slowdown(llm_bridge):
+		push_error("Order-triggered revision did not release slowdown: %s" % str(llm_bridge.debug_get_llm_runtime_snapshot()))
+		return false
 
-	var result: Dictionary = daily_plan_system.generate_daily_plan_for_npc(npc_id, true)
-	if (
-		str(result.get("status", "")) == "rule_plan_fallback_applied"
-		and str(result.get("request_result", {}).get("error_code", "")) == "provider_unavailable"
-	):
-		print("T1003 live mock daily plan skipped because backend is using a non-mock provider.")
-		return true
+	var result: Dictionary = daily_plan_system.generate_daily_plan_for_npc(npc_id, true, true)
 	if str(result.get("status", "")) != "mock_plan_applied":
 		push_error("Live backend should apply mock daily plan: %s" % str(result))
 		return false
@@ -132,7 +125,7 @@ func _verify_live_mock_if_available(
 		push_error("Live mock daily plan should not use fallback: %s" % str(result))
 		return false
 	if llm_bridge.get_pending_slowdown_count() != 0:
-		push_error("Live mock daily plan left pending slowdown ids")
+		push_error("Live mock daily plan left pending slowdown ids: %s" % str(llm_bridge.debug_get_llm_runtime_snapshot()))
 		return false
 	var injection: Dictionary = llm_bridge.get_last_npc_context_injection()
 	if str(injection.get("call_type", "")) != "plan_day":
@@ -179,6 +172,14 @@ func _wait_until_current_action(npc_system: Node, npc_id: String, expected_actio
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
 			return true
+	return false
+
+
+func _wait_until_no_pending_slowdown(llm_bridge: Node) -> bool:
+	for frame in range(600):
+		if llm_bridge.get_pending_slowdown_count() == 0:
+			return true
+		await process_frame
 	return false
 
 

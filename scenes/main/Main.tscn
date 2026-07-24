@@ -20,6 +20,15 @@
 [ext_resource type="Script" path="res://scripts/systems/EquipmentSystem.gd" id="18_equipment"]
 [ext_resource type="Script" path="res://scripts/systems/DailyPlanSystem.gd" id="19_daily_plan"]
 [ext_resource type="Script" path="res://scripts/systems/DailyReflectionSystem.gd" id="20_daily_reflection"]
+[ext_resource type="Script" path="res://scripts/systems/MerchantSystem.gd" id="21_merchant"]
+[ext_resource type="PackedScene" path="res://scenes/props/NoticeBoard.tscn" id="22_notice_board"]
+[ext_resource type="Script" path="res://scripts/ui/NoticeBoardPanel.gd" id="23_notice_panel"]
+[ext_resource type="Script" path="res://scripts/ui/MerchantPanel.gd" id="24_merchant_panel"]
+[ext_resource type="Script" path="res://scripts/systems/DefenseDeviceSystem.gd" id="25_defense_device"]
+[ext_resource type="Script" path="res://scripts/world/DefenseDevicePresenter.gd" id="26_defense_device_presenter"]
+[ext_resource type="Script" path="res://scripts/systems/GameStartupSystem.gd" id="27_game_startup"]
+[ext_resource type="Script" path="res://scripts/systems/CraftingSystem.gd" id="28_crafting"]
+[ext_resource type="Script" path="res://scripts/systems/HorseSystem.gd" id="29_horse"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -98,12 +107,6 @@ size = Vector3(3.1, 1.35, 2.1)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_workshop"]
 albedo_color = Color(0.31, 0.33, 0.39, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_notice_board"]
-size = Vector3(1.35, 0.8, 0.14)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_notice_board"]
-albedo_color = Color(0.31, 0.2, 0.11, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_wall"]
 size = Vector3(1, 1.6, 1)
@@ -285,17 +288,6 @@ pixel_size = 0.015
 billboard = 1
 text = "工械坊"
 
-[node name="NoticeBoard" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1548929479]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.45, -5.28)
-mesh = SubResource("BoxMesh_notice_board")
-surface_material_override/0 = SubResource("StandardMaterial3D_notice_board")
-
-[node name="NoticeBoardLabel" type="Label3D" parent="WorldRoot/Station/Buildings/NoticeBoard" unique_id=925044267]
-transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 0.62, 0)
-pixel_size = 0.015
-billboard = 1
-text = "公告牌"
-
 [node name="FrontWall" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1749815533]
 transform = Transform3D(28.5, 0, 0, 0, 1, 0, 0, 0, 0.45, 0, 0.8, 12)
 mesh = SubResource("BoxMesh_wall")
@@ -348,7 +340,14 @@ text = "后门"
 
 [node name="Enemies" type="Node3D" parent="WorldRoot/Station" unique_id=1853672627]
 
+[node name="DefenseDevices" type="Node3D" parent="WorldRoot/Station"]
+script = ExtResource("26_defense_device_presenter")
+
 [node name="Props" type="Node3D" parent="WorldRoot/Station" unique_id=52937998]
+
+[node name="NoticeBoard" parent="WorldRoot/Station/Props" instance=ExtResource("22_notice_board")]
+position = Vector3(-3.55, 0, -5.05)
+rotation = Vector3(0, 0.08, 0)
 
 [node name="Plaza" type="MeshInstance3D" parent="WorldRoot/Station/Props" unique_id=2127136059]
 transform = Transform3D(1.45, 0, 0, 0, 1, 0, 0, 0, 1.35, 0, 0.04, 1.3)
@@ -393,14 +392,26 @@ script = ExtResource("2_resource")
 [node name="BuildingSystem" type="Node" parent="Systems" unique_id=1869605880]
 script = ExtResource("3_building")
 
+[node name="CraftingSystem" type="Node" parent="Systems"]
+script = ExtResource("28_crafting")
+
 [node name="NPCSystem" type="Node" parent="Systems" unique_id=1544998544]
 script = ExtResource("4_npc")
+
+[node name="HorseSystem" type="Node" parent="Systems"]
+script = ExtResource("29_horse")
 
 [node name="ActionSystem" type="Node" parent="Systems" unique_id=1444450010]
 script = ExtResource("5_action")
 
 [node name="MemorySystem" type="Node" parent="Systems" unique_id=104922409]
 script = ExtResource("6_memory")
+
+[node name="DefenseDeviceSystem" type="Node" parent="Systems"]
+script = ExtResource("25_defense_device")
+
+[node name="MerchantSystem" type="Node" parent="Systems"]
+script = ExtResource("21_merchant")
 
 [node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
 script = ExtResource("7_combat")
@@ -416,6 +427,10 @@ script = ExtResource("8_dialog")
 
 [node name="DailyPlanSystem" type="Node" parent="Systems"]
 script = ExtResource("19_daily_plan")
+
+[node name="GameStartupSystem" type="Node" parent="Systems"]
+script = ExtResource("27_game_startup")
+startup_mode = 1
 
 [node name="DailyReflectionSystem" type="Node" parent="Systems"]
 script = ExtResource("20_daily_reflection")
@@ -544,12 +559,11 @@ layout_mode = 3
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -384.0
-offset_top = 24.0
-offset_right = -24.0
-offset_bottom = 640.0
+offset_left = -456.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 632.0
 grow_horizontal = 0
-grow_vertical = 1
 script = ExtResource("12_npc_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/NPCPanel"]
@@ -577,8 +591,19 @@ layout_mode = 2
 [node name="NPCNameLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_horizontal = 3
 text = "NPC"
+
+[node name="NPCBackgroundButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(52, 28)
+layout_mode = 2
+text = "背景"
+tooltip_text = "查看该 NPC 同步提供给 LLM Prompt 的人物设定。"
+
+[node name="NPCHeaderSpacer" type="Control" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
 
 [node name="NPCPanelCloseButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
@@ -643,6 +668,31 @@ layout_mode = 2
 text = "技能熟练度：--"
 autowrap_mode = 3
 
+[node name="NPCLongTermInfoButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="NPCCurrentPlanButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCLongTermInfoButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "当前计划"
+tooltip_text = "查看该 NPC 当前生效的 24 小时计划。"
+
+[node name="NPCDiaryButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCLongTermInfoButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "日记"
+tooltip_text = "查看该 NPC 每次首次睡眠总结追加的日记。"
+
+[node name="NPCKnowledgeButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCLongTermInfoButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "知识"
+tooltip_text = "查看该 NPC 当前生效的知识图谱。"
+
 [node name="NPCEventLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
@@ -705,6 +755,21 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "对话"
 
+[node name="NPCDialogueSuspendedDot" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButton"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+offset_left = 4.0
+offset_top = -7.0
+offset_right = 24.0
+offset_bottom = 15.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.47, 0.08, 1)
+theme_override_colors/font_outline_color = Color(0.12, 0.05, 0.01, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 18
+text = "●"
+
 [node name="NPCAssignButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 visible = false
@@ -718,10 +783,10 @@ layout_mode = 3
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -344.0
-offset_top = 24.0
-offset_right = -24.0
-offset_bottom = 332.0
+offset_left = -436.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 536.0
 grow_horizontal = 0
 script = ExtResource("11_building_panel")
 
@@ -835,6 +900,7 @@ layout_mode = 2
 theme_override_constants/separation = 10
 
 [node name="Header" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
 layout_mode = 2
 
 [node name="DialogNPCNameLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
@@ -899,10 +965,27 @@ layout_mode = 2
 text = "攻击"
 tooltip_text = "守备官攻击当前 NPC，并等待 NPC 对惩戒作出回应。"
 
-[node name="DialogEndButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+[node name="SessionActionRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DialogEndButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/SessionActionRow"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "结束对话"
+size_flags_horizontal = 3
+text = "完成对话"
+
+[node name="DialogCancelButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/SessionActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "取消对话"
+
+[node name="DialogSuspendButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/SessionActionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "挂起对话"
 
 [node name="OrderPanel" type="Control" parent="UI"]
 visible = false
@@ -979,6 +1062,203 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "关闭"
+
+[node name="NoticeBoardPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -330.0
+offset_top = -235.0
+offset_right = 330.0
+offset_bottom = 235.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("23_notice_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/NoticeBoardPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/NoticeBoardPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "主厅前公告牌"
+
+[node name="CurrentNoticeLabel" type="Label" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "当前公告：无"
+autowrap_mode = 3
+
+[node name="NoticeTextEdit" type="TextEdit" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 300)
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "写下要向广场公开的公告；留空发布可清空公告。"
+wrap_mode = 1
+
+[node name="NoticeStatusLabel" type="Label" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "公告会成为广场当前状态。"
+autowrap_mode = 3
+
+[node name="ButtonRow" type="HBoxContainer" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NoticePublishButton" type="Button" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "发布公告"
+
+[node name="NoticeCloseButton" type="Button" parent="UI/NoticeBoardPanel/PanelContainer/MarginContainer/Content/ButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "关闭"
+
+[node name="MerchantPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -250.0
+offset_right = 360.0
+offset_bottom = 250.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("24_merchant_panel")
+
+[node name="PanelContainer" type="PanelContainer" parent="UI/MerchantPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/MerchantPanel/PanelContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 20
+text = "后门商人交易"
+
+[node name="MerchantCloseButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 28)
+layout_mode = 2
+text = "×"
+
+[node name="MerchantStatusLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "商人当前不在驿站"
+autowrap_mode = 3
+
+[node name="MerchantResourcesLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "驿站库存：--"
+autowrap_mode = 3
+
+[node name="QuantityRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="QuantityLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
+layout_mode = 2
+text = "本次数量"
+
+[node name="MerchantAmountSpin" type="SpinBox" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 99.0
+value = 1.0
+
+[node name="BuyLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+text = "购买补给（商人出售给驿站）"
+
+[node name="BuyRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MerchantBuySelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MerchantBuyButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "购买"
+
+[node name="SellLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+text = "出售物资（驿站出售给商人）"
+
+[node name="SellRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MerchantSellSelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MerchantSellButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "出售"
+
+[node name="MerchantResultLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "商人每天 10:00-16:00 停在后门。"
+autowrap_mode = 3
 
 [node name="GMPanel" type="Control" parent="UI"]
 layout_mode = 3

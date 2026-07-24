@@ -4,6 +4,8 @@ extends Node
 @export var speed_steps: Array[float] = [1.0, 2.0, 4.0]
 @export var llm_wait_scale: float = 1.0 / 60.0
 
+const MAX_DEBUG_ADVANCE_SECONDS := 3600.0
+
 var is_paused: bool = false
 var time_scale: float = 1.0
 var _seconds_into_day: float = 0.0
@@ -42,16 +44,7 @@ func _process(delta: float) -> void:
 	if game_seconds_delta <= 0.0:
 		return
 
-	_seconds_into_day += game_seconds_delta
-
-	var next_day := int(_game_state.current_day)
-	while _seconds_into_day >= 86400.0:
-		_seconds_into_day -= 86400.0
-		next_day += 1
-
-	if _event_bus != null:
-		_event_bus.logical_time_tick.emit(game_seconds_delta, get_numeric_delta_multiplier())
-	_emit_time_if_needed(next_day)
+	_advance_simulation_time(game_seconds_delta, get_numeric_delta_multiplier())
 
 
 func set_paused(paused: bool) -> void:
@@ -227,23 +220,33 @@ func get_progress_to_next_hour() -> float:
 	return clampf(float(int(_seconds_into_day) % 3600) / 3600.0, 0.0, 1.0)
 
 
-func debug_advance_hour() -> void:
-	_advance_hour()
+func debug_advance_game_seconds(game_seconds: float) -> bool:
+	if (
+		game_seconds <= 0.0
+		or game_seconds > MAX_DEBUG_ADVANCE_SECONDS
+		or is_nan(game_seconds)
+		or is_inf(game_seconds)
+		or _game_state == null
+		or bool(_game_state.get("game_over"))
+	):
+		return false
+	_advance_simulation_time(game_seconds, 1.0)
+	return true
 
 
-func _advance_hour() -> void:
-	if _game_state == null:
-		return
+func debug_advance_hour() -> bool:
+	return debug_advance_game_seconds(3600.0)
 
+
+func _advance_simulation_time(game_seconds_delta: float, numeric_multiplier: float) -> void:
+	_seconds_into_day += game_seconds_delta
 	var next_day := int(_game_state.current_day)
-	var next_hour := int(_game_state.current_hour) + 1
-	if next_hour >= 24:
-		next_hour = 0
+	while _seconds_into_day >= 86400.0:
+		_seconds_into_day -= 86400.0
 		next_day += 1
-
-	_seconds_into_day = float(next_hour * 3600)
-	_last_emitted_day_second = -1
-	_game_state.set_time(next_day, next_hour, 0, 0)
+	if _event_bus != null:
+		_event_bus.logical_time_tick.emit(game_seconds_delta, numeric_multiplier)
+	_emit_time_if_needed(next_day)
 
 
 func _emit_time_if_needed(day: int) -> void:

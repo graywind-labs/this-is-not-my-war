@@ -20,6 +20,7 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
+	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
 	var alarm_button := root.get_node_or_null("Main/UI/HUD/AlarmButton") as Button
@@ -28,6 +29,7 @@ func _init() -> void:
 		or npc_system == null
 		or resource_system == null
 		or equipment_system == null
+		or horse_system == null
 		or memory_system == null
 		or gm_panel == null
 		or alarm_button == null
@@ -37,8 +39,8 @@ func _init() -> void:
 		return
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 3)
-	resource_system.add_resource("horse_readiness", 1)
+	resource_system.add_resource("item_sword_shield", 1)
+	resource_system.add_resource("item_bow", 1)
 	if not bool(equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private").get("ok", false)):
 		push_error("Failed to equip stableman for rally verification")
 		quit(1)
@@ -47,7 +49,13 @@ func _init() -> void:
 		push_error("Failed to equip veteran for rally verification")
 		quit(1)
 		return
-	if not bool(equipment_system.equip_npc_mount("veteran_deputy_01", "", "private").get("ok", false)):
+	var available_horses: Array = horse_system.get_available_horses_for_npc("veteran_deputy_01")
+	if available_horses.is_empty():
+		push_error("No initial adult horse available for rally verification")
+		quit(1)
+		return
+	var horse_id := str((available_horses[0] as Dictionary).get("horse_id", ""))
+	if not bool(equipment_system.equip_npc_mount("veteran_deputy_01", horse_id, "private").get("ok", false)):
 		push_error("Failed to equip veteran mount for rally verification")
 		quit(1)
 		return

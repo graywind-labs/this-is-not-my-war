@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/DefenseDeviceView.gd" id="1_view"]
+
+[node name="DefenseDeviceView" type="Node3D"]
+script = ExtResource("1_view")
+
+[node name="ModelMount" type="Node3D" parent="."]
+
+[node name="StatusLabel" type="Label3D" parent="."]
+position = Vector3(0, 1.45, 0)
+billboard = 1
+pixel_size = 0.012
+outline_size = 5
+outline_modulate = Color(0.04, 0.03, 0.02, 1)
+text = "工程器械"

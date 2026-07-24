@@ -18,7 +18,8 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or crafting_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -111,6 +112,11 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var workshop_target: Dictionary = crafting_system.set_target("workshop", "craft_bow", false)
+	if not bool(workshop_target.get("ok", false)):
+		push_error("Failed to select workshop target for resource-shortage verification")
+		quit(1)
+		return
 	resource_system.add_resource("wood", -9999)
 	npc_system.debug_enter_location_immediately(engineer_id, "workshop")
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
@@ -119,8 +125,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var engineer_state: Dictionary = npc_system.get_npc_state(engineer_id)
-	if str(engineer_state.get("last_action_result", "")) != "work_failed_no_resources":
-		push_error("Resource shortage did not set work_failed_no_resources")
+	if str(engineer_state.get("last_action_result", "")) != "work_failed_insufficient_stage_resources":
+		push_error("Crafting stage resource shortage did not set work_failed_insufficient_stage_resources")
 		quit(1)
 		return
 	var workshop_after_failure: Dictionary = building_system.get_building("workshop")

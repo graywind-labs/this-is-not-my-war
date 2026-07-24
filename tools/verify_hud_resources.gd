@@ -1,6 +1,13 @@
 extends SceneTree
 
-const DETAIL_PANEL_RESOURCE_IDS := ["weapons", "armor", "horse_readiness", "defense_devices"]
+const LEGACY_HIDDEN_RESOURCE_IDS := ["weapons", "armor", "horse_readiness", "defense_devices"]
+const EQUIPMENT_DETAIL_RESOURCE_IDS := [
+	"item_sword_shield", "item_polearm", "item_bow", "item_crossbow",
+	"item_iron_helmet", "item_mail_chest", "item_iron_bracers", "item_iron_greaves",
+	"item_arrow_bundle"
+]
+const DEVICE_DETAIL_RESOURCE_IDS := ["item_wall_ballista", "item_wall_arrow_tower"]
+const HIDDEN_RESOURCE_IDS := LEGACY_HIDDEN_RESOURCE_IDS + EQUIPMENT_DETAIL_RESOURCE_IDS + DEVICE_DETAIL_RESOURCE_IDS
 
 
 func _init() -> void:
@@ -33,7 +40,12 @@ func _init() -> void:
 
 	for raw_resource_id in resource_system.get_resource_ids():
 		var resource_id := str(raw_resource_id)
-		if DETAIL_PANEL_RESOURCE_IDS.has(resource_id):
+		var definition: Dictionary = resource_system.get_resource_definition(resource_id)
+		if not bool(definition.get("show_in_main_hud", true)):
+			if _strip_has_resource_label(resource_strip, resource_id):
+				push_error("HUD resource strip should hide resource: %s" % resource_id)
+				quit(1)
+				return
 			continue
 		var expected_name := str(resource_system.get_resource_name(resource_id))
 		if not _strip_contains(resource_strip, expected_name):
@@ -47,6 +59,21 @@ func _init() -> void:
 	resource_system.add_resource("armor", 2)
 	resource_system.add_resource("defense_devices", 4)
 	resource_system.add_resource("horse_readiness", 1)
+	var detail_amounts := {
+		"item_sword_shield": 1,
+		"item_polearm": 2,
+		"item_bow": 3,
+		"item_crossbow": 4,
+		"item_iron_helmet": 1,
+		"item_mail_chest": 2,
+		"item_iron_bracers": 3,
+		"item_iron_greaves": 4,
+		"item_arrow_bundle": 5,
+		"item_wall_ballista": 2,
+		"item_wall_arrow_tower": 3
+	}
+	for resource_id in detail_amounts.keys():
+		resource_system.add_resource(str(resource_id), int(detail_amounts[resource_id]))
 	await process_frame
 
 	for expected_text in ["餐食 2", "酒 1"]:
@@ -54,9 +81,9 @@ func _init() -> void:
 			push_error("HUD did not refresh derived resource text: %s" % expected_text)
 			quit(1)
 			return
-	for redundant_text in ["武器 3", "盔甲 2", "工程器械 4", "马匹整备 1"]:
-		if _strip_contains(resource_strip, redundant_text):
-			push_error("HUD should not duplicate detail-panel resource in main strip: %s" % redundant_text)
+	for hidden_resource_id in HIDDEN_RESOURCE_IDS:
+		if _strip_has_resource_label(resource_strip, hidden_resource_id):
+			push_error("HUD should not show hidden resource in main strip: %s" % hidden_resource_id)
 			quit(1)
 			return
 
@@ -87,14 +114,24 @@ func _init() -> void:
 		push_error("Equipment detail panel should stay inside the viewport")
 		quit(1)
 		return
-	if not detail_text.text.contains("库存：武器 3 / 盔甲 2 / 马匹整备 1"):
-		push_error("Equipment detail panel did not show aggregate inventory: %s" % detail_text.text)
+	for resource_id in EQUIPMENT_DETAIL_RESOURCE_IDS:
+		var expected_detail := "%s %d" % [
+			str(resource_system.get_resource_name(resource_id)),
+			int(detail_amounts[resource_id])
+		]
+		if not detail_text.text.contains(expected_detail):
+			push_error("Equipment detail panel is missing exact inventory %s: %s" % [expected_detail, detail_text.text])
+			quit(1)
+			return
+	if not detail_text.text.contains("马厩：2 匹（成年 2 / 小马 0）"):
+		push_error("Equipment detail panel did not show real stable horse counts: %s" % detail_text.text)
 		quit(1)
 		return
-	if not detail_text.text.contains("剑盾") or not detail_text.text.contains("锁子甲") or not detail_text.text.contains("整备马匹"):
-		push_error("Equipment detail panel did not show equipment definitions: %s" % detail_text.text)
-		quit(1)
-		return
+	for legacy_text in ["武器 3", "盔甲 2", "马匹整备 1"]:
+		if detail_text.text.contains(legacy_text):
+			push_error("Equipment detail panel still shows deprecated aggregate inventory: %s" % legacy_text)
+			quit(1)
+			return
 	if detail_text.text.contains("短剑"):
 		push_error("Equipment detail panel should not show removed short sword definition: %s" % detail_text.text)
 		quit(1)
@@ -102,8 +139,21 @@ func _init() -> void:
 
 	devices_button.pressed.emit()
 	await process_frame
-	if not detail_panel.visible or not detail_text.text.contains("工程器械库存：4"):
-		push_error("Device detail panel did not show defense device inventory: %s" % detail_text.text)
+	if not detail_panel.visible:
+		push_error("Device detail panel did not open")
+		quit(1)
+		return
+	for resource_id in DEVICE_DETAIL_RESOURCE_IDS:
+		var expected_device_detail := "%s %d" % [
+			str(resource_system.get_resource_name(resource_id)),
+			int(detail_amounts[resource_id])
+		]
+		if not detail_text.text.contains(expected_device_detail):
+			push_error("Device detail panel is missing exact inventory %s: %s" % [expected_device_detail, detail_text.text])
+			quit(1)
+			return
+	if detail_text.text.contains("工程器械 4"):
+		push_error("Device detail panel still shows deprecated defense_devices inventory: %s" % detail_text.text)
 		quit(1)
 		return
 	if not _panel_opens_below_left_of_button(detail_panel, devices_button):
@@ -122,6 +172,14 @@ func _init() -> void:
 func _strip_contains(resource_strip: Node, expected_text: String) -> bool:
 	for child in resource_strip.get_children():
 		if child is Label and str(child.text).contains(expected_text):
+			return true
+	return false
+
+
+func _strip_has_resource_label(resource_strip: Node, resource_id: String) -> bool:
+	var expected_node_name := "%sResourceLabel" % resource_id.to_pascal_case()
+	for child in resource_strip.get_children():
+		if child is Label and str(child.name) == expected_node_name:
 			return true
 	return false
 

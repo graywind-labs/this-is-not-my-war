@@ -32,15 +32,67 @@
     "max_hp": 120,
     "tags": ["living", "rest"],
     "scene_nodes": ["Dormitory"],
+    "fixed_workstation_types": ["dormitory_bed"],
+    "damage_efficiency_floor": 0.25,
     "workstations": [
       {
-        "id": "bed_01",
-        "type": "rest",
+        "id": "dormitory_bed_01",
+        "type": "dormitory_bed",
+        "name": "床位1",
         "occupied_by": null
       },
       {
-        "id": "bed_02",
-        "type": "rest",
+        "id": "dormitory_bed_02",
+        "type": "dormitory_bed",
+        "name": "床位2",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_03",
+        "type": "dormitory_bed",
+        "name": "床位3",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_04",
+        "type": "dormitory_bed",
+        "name": "床位4",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_05",
+        "type": "dormitory_bed",
+        "name": "床位5",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_06",
+        "type": "dormitory_bed",
+        "name": "床位6",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_07",
+        "type": "dormitory_bed",
+        "name": "床位7",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_08",
+        "type": "dormitory_bed",
+        "name": "床位8",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_09",
+        "type": "dormitory_bed",
+        "name": "床位9",
+        "occupied_by": null
+      },
+      {
+        "id": "dormitory_bed_10",
+        "type": "dormitory_bed",
+        "name": "床位10",
         "occupied_by": null
       }
     ],
@@ -56,8 +108,13 @@
       "cost": {"stone": 3},
       "max_level": 2,
       "max_hp_bonus": 20,
-      "workstation_bonus": 1,
-      "workstation_type": "rest"
+      "workstation_bonus": 0,
+      "workstation_type": "dormitory_bed",
+      "level_effects": {
+        "2": {
+          "efficiency_bonuses": {"sleep_recovery": 0.2}
+        }
+      }
     }
   },
   {
@@ -68,10 +125,73 @@
     "max_hp": 110,
     "tags": ["living", "food"],
     "scene_nodes": ["DiningHall"],
+    "fixed_workstation_types": ["dining_seat"],
+    "damage_efficiency_floor": 0.25,
     "workstations": [
       {
-        "id": "kitchen_01",
-        "type": "cook",
+        "id": "dining_kitchen_station_01",
+        "type": "dining_kitchen_station",
+        "name": "灶台1",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_01",
+        "type": "dining_seat",
+        "name": "用餐席1",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_02",
+        "type": "dining_seat",
+        "name": "用餐席2",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_03",
+        "type": "dining_seat",
+        "name": "用餐席3",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_04",
+        "type": "dining_seat",
+        "name": "用餐席4",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_05",
+        "type": "dining_seat",
+        "name": "用餐席5",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_06",
+        "type": "dining_seat",
+        "name": "用餐席6",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_07",
+        "type": "dining_seat",
+        "name": "用餐席7",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_08",
+        "type": "dining_seat",
+        "name": "用餐席8",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_09",
+        "type": "dining_seat",
+        "name": "用餐席9",
+        "occupied_by": null
+      },
+      {
+        "id": "dining_seat_10",
+        "type": "dining_seat",
+        "name": "用餐席10",
         "occupied_by": null
       }
     ],
@@ -87,8 +207,22 @@
       "cost": {"stone": 4},
       "max_level": 3,
       "max_hp_bonus": 40,
-      "workstation_bonus": 1,
-      "workstation_type": "cook"
+      "workstation_bonus": 0,
+      "workstation_type": "dining_kitchen_station",
+      "level_effects": {
+        "2": {
+          "workstation_deltas": [
+            {"type": "dining_kitchen_station", "count": 1, "id_prefix": "dining_kitchen_station", "name_prefix": "灶台"}
+          ],
+          "efficiency_bonuses": {"production": 0.15, "meal_recovery": 0.15}
+        },
+        "3": {
+          "workstation_deltas": [
+            {"type": "dining_kitchen_station", "count": 1, "id_prefix": "dining_kitchen_station", "name_prefix": "灶台"}
+          ],
+          "efficiency_bonuses": {"production": 0.15, "meal_recovery": 0.15}
+        }
+      }
     }
   },
   {
@@ -287,15 +421,24 @@
     "max_hp": 90,
     "tags": ["training", "combat"],
     "scene_nodes": ["TrainingGround"],
+    "damage_efficiency_floor": 0.25,
     "workstations": [
       {
         "id": "training_instructor_01",
-        "type": "training_instructor",
+        "type": "training_instructor_station",
+        "name": "教官位1",
         "occupied_by": null
       },
       {
         "id": "training_student_01",
-        "type": "training_student",
+        "type": "training_practice_slot",
+        "name": "训练位1",
+        "occupied_by": null
+      },
+      {
+        "id": "training_student_02",
+        "type": "training_practice_slot",
+        "name": "训练位2",
         "occupied_by": null
       }
     ],
@@ -310,8 +453,23 @@
       "cost": {"wood": 2, "stone": 1},
       "max_level": 3,
       "max_hp_bonus": 15,
-      "workstation_bonus": 1,
-      "workstation_type": "training_student"
+      "workstation_bonus": 0,
+      "workstation_type": "training_practice_slot",
+      "level_effects": {
+        "2": {
+          "workstation_deltas": [
+            {"type": "training_practice_slot", "count": 1, "id_prefix": "training_student", "name_prefix": "训练位"}
+          ],
+          "efficiency_bonuses": {"training_gain": 0.15}
+        },
+        "3": {
+          "workstation_deltas": [
+            {"type": "training_instructor_station", "count": 1, "id_prefix": "training_instructor", "name_prefix": "教官位"},
+            {"type": "training_practice_slot", "count": 1, "id_prefix": "training_student", "name_prefix": "训练位"}
+          ],
+          "efficiency_bonuses": {"training_gain": 0.15}
+        }
+      }
     }
   },
   {
@@ -352,10 +510,73 @@
     "max_hp": 100,
     "tags": ["faith", "morale"],
     "scene_nodes": ["Chapel"],
+    "fixed_workstation_types": ["chapel_altar", "chapel_prayer_seat"],
+    "damage_efficiency_floor": 0.25,
     "workstations": [
       {
-        "id": "altar_01",
-        "type": "pray",
+        "id": "chapel_altar_01",
+        "type": "chapel_altar",
+        "name": "祭坛",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_01",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席1",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_02",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席2",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_03",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席3",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_04",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席4",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_05",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席5",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_06",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席6",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_07",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席7",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_08",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席8",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_09",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席9",
+        "occupied_by": null
+      },
+      {
+        "id": "chapel_prayer_seat_10",
+        "type": "chapel_prayer_seat",
+        "name": "祈祷席10",
         "occupied_by": null
       }
     ],
@@ -370,8 +591,8 @@
       "cost": {"wood": 2, "stone": 2},
       "max_level": 2,
       "max_hp_bonus": 20,
-      "workstation_bonus": 1,
-      "workstation_type": "pray"
+      "workstation_bonus": 0,
+      "workstation_type": "chapel_prayer_seat"
     }
   },
   {
@@ -382,15 +603,24 @@
     "max_hp": 100,
     "tags": ["medical", "recovery"],
     "scene_nodes": ["Clinic"],
+    "damage_efficiency_floor": 0.25,
     "workstations": [
       {
         "id": "doctor_desk_01",
-        "type": "clinic_doctor",
+        "type": "clinic_doctor_station",
+        "name": "诊疗位1",
         "occupied_by": null
       },
       {
         "id": "treatment_bed_01",
-        "type": "patient_bed",
+        "type": "clinic_patient_bed",
+        "name": "病床1",
+        "occupied_by": null
+      },
+      {
+        "id": "treatment_bed_02",
+        "type": "clinic_patient_bed",
+        "name": "病床2",
         "occupied_by": null
       }
     ],
@@ -405,8 +635,23 @@
       "cost": {"wood": 2, "stone": 2},
       "max_level": 3,
       "max_hp_bonus": 20,
-      "workstation_bonus": 1,
-      "workstation_type": "patient_bed"
+      "workstation_bonus": 0,
+      "workstation_type": "clinic_patient_bed",
+      "level_effects": {
+        "2": {
+          "workstation_deltas": [
+            {"type": "clinic_patient_bed", "count": 1, "id_prefix": "treatment_bed", "name_prefix": "病床"}
+          ],
+          "efficiency_bonuses": {"clinic_recovery": 0.15}
+        },
+        "3": {
+          "workstation_deltas": [
+            {"type": "clinic_doctor_station", "count": 1, "id_prefix": "doctor_desk", "name_prefix": "诊疗位"},
+            {"type": "clinic_patient_bed", "count": 1, "id_prefix": "treatment_bed", "name_prefix": "病床"}
+          ],
+          "efficiency_bonuses": {"clinic_recovery": 0.15}
+        }
+      }
     }
   },
   {

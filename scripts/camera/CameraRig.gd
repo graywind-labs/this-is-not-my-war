@@ -14,6 +14,7 @@ extends Node3D
 var _is_middle_dragging := false
 var _camera_offset_direction := Vector3.ZERO
 var _zoom_distance := 0.0
+var _pressed_pan_keys: Dictionary = {}
 
 
 func _ready() -> void:
@@ -24,19 +25,37 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	var pan_input := Vector2.ZERO
+	if _is_text_input_focused():
+		_reset_keyboard_pan()
+		return
 
-	if Input.is_key_pressed(KEY_A):
+	var pan_input := Vector2.ZERO
+	if _pressed_pan_keys.has(KEY_A):
 		pan_input.x -= 1.0
-	if Input.is_key_pressed(KEY_D):
+	if _pressed_pan_keys.has(KEY_D):
 		pan_input.x += 1.0
-	if Input.is_key_pressed(KEY_W):
+	if _pressed_pan_keys.has(KEY_W):
 		pan_input.y += 1.0
-	if Input.is_key_pressed(KEY_S):
+	if _pressed_pan_keys.has(KEY_S):
 		pan_input.y -= 1.0
 
 	if pan_input != Vector2.ZERO:
 		_pan_by_vector(pan_input.normalized(), keyboard_pan_speed * delta)
+
+
+func _input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key_event := event as InputEventKey
+	var pan_key := _get_pan_key(key_event)
+	if pan_key == Key.KEY_NONE:
+		return
+	if not key_event.pressed:
+		_pressed_pan_keys.erase(pan_key)
+		return
+	if key_event.echo or _is_text_input_focused():
+		return
+	_pressed_pan_keys[pan_key] = true
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -56,6 +75,37 @@ func _unhandled_input(event: InputEvent) -> void:
 		var distance_scale := _zoom_distance / max_zoom_distance
 		_pan_by_vector(Vector2(-mouse_motion.relative.x, mouse_motion.relative.y), mouse_pan_speed * distance_scale)
 		get_viewport().set_input_as_handled()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_reset_input_state()
+
+
+func _get_pan_key(event: InputEventKey) -> Key:
+	var physical_key := event.physical_keycode
+	if [KEY_A, KEY_D, KEY_W, KEY_S].has(physical_key):
+		return physical_key
+	var logical_key := event.keycode
+	if [KEY_A, KEY_D, KEY_W, KEY_S].has(logical_key):
+		return logical_key
+	return Key.KEY_NONE
+
+
+func _is_text_input_focused() -> bool:
+	if not is_inside_tree():
+		return false
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	return focus_owner is LineEdit or focus_owner is TextEdit
+
+
+func _reset_keyboard_pan() -> void:
+	_pressed_pan_keys.clear()
+
+
+func _reset_input_state() -> void:
+	_reset_keyboard_pan()
+	_is_middle_dragging = false
 
 
 func _pan_by_vector(input_vector: Vector2, amount: float) -> void:

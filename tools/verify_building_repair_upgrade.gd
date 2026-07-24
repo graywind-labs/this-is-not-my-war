@@ -12,6 +12,8 @@ func _init() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
+	await process_frame
+	await process_frame
 
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
@@ -46,7 +48,29 @@ func _init() -> void:
 		return
 
 	panel.show_building(building_id)
-	var location_label := root.get_node_or_null("Main/UI/BuildingPanel/PanelContainer/MarginContainer/Content/BuildingLocationLabel") as Label
+	panel.debug_set_layout_viewport_override(Vector2(1152.0, 648.0))
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	if not _panel_matches_content_height(panel):
+		push_error("Building panel should initially match its visible content height.")
+		quit(1)
+		return
+	# Switching/closing during an unfinished transparent measurement must not
+	# leave the fit queue stuck or let an obsolete coroutine reveal old content.
+	panel.show_building("stable")
+	panel._on_close_pressed()
+	panel.show_building(building_id)
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	if not panel.visible or panel.modulate.a < 0.99 or not _panel_matches_content_height(panel):
+		push_error("Interrupted panel measurement should recover on the next building selection.")
+		quit(1)
+		return
+	var location_label := panel.find_child("BuildingLocationLabel", true, false) as Label
 	if location_label == null:
 		push_error("Building location label is missing.")
 		quit(1)
@@ -67,9 +91,18 @@ func _init() -> void:
 	await process_frame
 	var viewport_size := root.get_viewport().get_visible_rect().size
 	edge_anchor.global_position = Vector2(viewport_size.x - edge_anchor.size.x - 2.0, 48.0)
+	var panel_height_before_hint: float = panel.size.y
 	panel._show_action_hint(edge_anchor, "升级\n消耗：石料 x3\n条件：可执行")
 	await process_frame
 	var hint_panel: Control = panel._action_hint_panel
+	if hint_panel.get_parent() != panel.get_parent():
+		push_error("Building action hint should live on the UI overlay, outside BuildingPanel content sizing.")
+		quit(1)
+		return
+	if absf(panel.size.y - panel_height_before_hint) > 1.0:
+		push_error("Building action hint should not change panel height or create a flashing dark block.")
+		quit(1)
+		return
 	if hint_panel.global_position.x + hint_panel.size.x > viewport_size.x:
 		push_error("Building action hint should stay inside the viewport near screen edges.")
 		quit(1)
@@ -87,6 +120,18 @@ func _init() -> void:
 
 	if not building_system.repair_building(building_id):
 		push_error("Repair did not start.")
+		quit(1)
+		return
+	if panel.size.y >= 615.0:
+		push_error("Repair start should not flash a viewport-height empty panel.")
+		quit(1)
+		return
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	if not _panel_matches_content_height(panel):
+		push_error("Repair panel should settle to its visible content height.")
 		quit(1)
 		return
 	if building_system.can_upgrade_building(building_id):
@@ -140,6 +185,18 @@ func _init() -> void:
 		push_error("Upgrade did not start.")
 		quit(1)
 		return
+	if panel.size.y >= 615.0:
+		push_error("Upgrade start should not flash a viewport-height empty panel.")
+		quit(1)
+		return
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	if not _panel_matches_content_height(panel):
+		push_error("Upgrade panel should settle to its visible content height.")
+		quit(1)
+		return
 
 	var upgrade_started: Dictionary = building_system.get_building(building_id)
 	if int(upgrade_started.get("level", 0)) != int(repaired.get("level", 0)):
@@ -189,6 +246,18 @@ func _init() -> void:
 		push_error("Upgrade status did not clear after completion.")
 		quit(1)
 		return
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	await process_frame
+	if not _panel_matches_content_height(panel):
+		push_error("Upgrade completion should shrink the panel back to current content.")
+		quit(1)
+		return
 
 	var stone_before_failed_upgrade: int = resource_system.get_resource("stone")
 	if building_system.upgrade_building(building_id):
@@ -202,3 +271,15 @@ func _init() -> void:
 
 	print("T0205 repair and upgrade verification passed.")
 	quit(0)
+
+
+func _panel_matches_content_height(panel: Control) -> bool:
+	var location_label := panel.find_child("BuildingLocationLabel", true, false) as Label
+	if location_label == null:
+		return false
+	var content := location_label.get_parent() as VBoxContainer
+	if content == null:
+		return false
+	var available_height := 648.0 - 32.0
+	var expected_height := minf(available_height, content.get_combined_minimum_size().y + 24.0)
+	return absf(panel.size.y - expected_height) <= 2.0

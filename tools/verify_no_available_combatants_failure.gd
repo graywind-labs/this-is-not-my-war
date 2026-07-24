@@ -39,7 +39,8 @@ func _init() -> void:
 	time_system.set_current_time(5, 20, 10, 0)
 	npc_system.set_npc_recruited("stableman_01", true)
 	npc_system.set_npc_recruited("veteran_deputy_01", true)
-	resource_system.add_resource("weapons", 2)
+	resource_system.add_resource("item_sword_shield", 1)
+	resource_system.add_resource("item_bow", 1)
 	var stableman_weapon: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	var veteran_weapon: Dictionary = equipment_system.equip_npc_main_weapon("veteran_deputy_01", "bow", "private")
 	if not bool(stableman_weapon.get("ok", false)) or not bool(veteran_weapon.get("ok", false)):

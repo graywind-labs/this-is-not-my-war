@@ -8,9 +8,13 @@ const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 
 const PLAYER_ACTOR_ID := "guard_officer"
 const DEFAULT_VISIBILITY := "local_public"
+const DEPRECATED_FORMAL_INVENTORY_IDS: Array[String] = [
+	"weapons", "armor", "defense_devices", "horse_readiness"
+]
 
 const SLOT_MAIN_WEAPON := "main_weapon"
 const SLOT_HELMET := "helmet"
@@ -55,6 +59,7 @@ func initialize() -> void:
 	_load_weapon_defs()
 	_load_armor_defs()
 	_load_mount_defs()
+	_apply_initial_equipment_from_profiles()
 
 
 func get_weapon_ids() -> Array[String]:
@@ -134,15 +139,256 @@ func equip_npc_armor(
 
 func equip_npc_mount(
 	npc_id: String,
-	mount_id: String = "",
+	horse_id: String = "",
 	visibility: String = DEFAULT_VISIBILITY
 ) -> Dictionary:
-	var resolved_mount_id := mount_id
-	if resolved_mount_id.is_empty():
-		if _mount_order.is_empty():
-			return _failure("mount_not_configured", "没有可用坐骑定义。")
-		resolved_mount_id = _mount_order[0]
-	return _equip_npc_item(npc_id, SLOT_MOUNT, resolved_mount_id, "mount", visibility)
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("assign_horse_to_npc"):
+		return _failure("horse_system_missing", "马匹系统不可用，不能分配坐骑。")
+	var raw_result: Variant = horse_system.call("assign_horse_to_npc", npc_id, horse_id, visibility)
+	if raw_result is Dictionary:
+		return (raw_result as Dictionary).duplicate(true)
+	return _failure("horse_assignment_failed", "马匹系统未返回合法分配结果。")
+
+
+func set_npc_horse_mount(
+	npc_id: String,
+	horse_snapshot: Dictionary,
+	visibility: String = DEFAULT_VISIBILITY,
+	record_event: bool = true
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
+		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _failure("unknown_npc", "NPC 不存在。")
+	if not bool(npc.get("recruited", false)):
+		return _failure("npc_not_recruited", "只有已入伍 NPC 可以分配马匹。")
+	var states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+	if bool(states.get("escaped", false)):
+		return _failure("npc_escaped", "逃离的 NPC 不能分配马匹。")
+	var equipment := _normalize_equipment(npc.get("equipment", {}))
+	if (equipment.get(SLOT_MAIN_WEAPON, {}) as Dictionary).is_empty():
+		return _failure("main_weapon_required", "NPC 必须先装备主武器才能分配马匹。")
+
+	var horse_id := str(horse_snapshot.get("horse_id", horse_snapshot.get("id", ""))).strip_edges()
+	if horse_id.is_empty():
+		return _failure("invalid_horse", "马匹引用缺少唯一 horse_id。")
+	var horse_name := str(horse_snapshot.get("name", horse_snapshot.get("horse_name", horse_id))).strip_edges()
+	var mount_definition_id := str(horse_snapshot.get("mount_definition_id", "riding_horse"))
+	var mount_definition := get_mount_def(mount_definition_id)
+	if mount_definition.is_empty():
+		return _failure("mount_not_configured", "没有可用坐骑定义。")
+
+	var previous_item: Dictionary = equipment.get(SLOT_MOUNT, {})
+	if str(previous_item.get("horse_id", "")) == horse_id:
+		return {
+			"ok": true,
+			"changed": false,
+			"npc_id": npc_id,
+			"slot": SLOT_MOUNT,
+			"horse_id": horse_id,
+			"equipment": equipment,
+			"unit_type": determine_unit_type(equipment),
+			"unit_type_label": get_unit_type_label(determine_unit_type(equipment))
+		}
+
+	var next_item := _make_equipped_item(SLOT_MOUNT, "mount", mount_definition)
+	next_item["horse_id"] = horse_id
+	next_item["horse_name"] = horse_name
+	next_item["name"] = horse_name
+	if not npc_system.set_npc_equipment_slot(npc_id, SLOT_MOUNT, next_item):
+		return _failure("equipment_write_failed", "写入 NPC 马匹引用失败。")
+
+	var next_equipment := get_equipment_snapshot(npc_id)
+	var unit_type := determine_unit_type(next_equipment)
+	var event := {}
+	if record_event:
+		event = _log_equipment_event(
+			npc_id,
+			"equipment_changed" if not previous_item.is_empty() else "equipment_given",
+			SLOT_MOUNT,
+			"mount",
+			next_item,
+			previous_item,
+			"",
+			unit_type,
+			visibility
+		)
+	var strategy_result := _normalize_combat_strategy_after_equipment_change(npc_id, SLOT_MOUNT, visibility, true)
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"slot": SLOT_MOUNT,
+		"horse_id": horse_id,
+		"horse_name": horse_name,
+		"equipment": next_equipment,
+		"previous_equipment": previous_item.duplicate(true),
+		"unit_type": unit_type,
+		"unit_type_label": get_unit_type_label(unit_type),
+		"combat_strategy": strategy_result,
+		"event": event
+	}
+
+
+func clear_npc_horse_mount(
+	npc_id: String,
+	visibility: String = DEFAULT_VISIBILITY,
+	reason: String = "horse_unassigned",
+	record_event: bool = true
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
+		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _failure("unknown_npc", "NPC 不存在。")
+	var equipment := _normalize_equipment(npc.get("equipment", {}))
+	var previous_item: Dictionary = equipment.get(SLOT_MOUNT, {})
+	if previous_item.is_empty():
+		return {
+			"ok": true,
+			"changed": false,
+			"npc_id": npc_id,
+			"slot": SLOT_MOUNT,
+			"reason": reason,
+			"equipment": equipment
+		}
+	if not npc_system.set_npc_equipment_slot(npc_id, SLOT_MOUNT, {}):
+		return _failure("equipment_write_failed", "清除 NPC 马匹引用失败。")
+
+	var next_equipment := get_equipment_snapshot(npc_id)
+	var unit_type := determine_unit_type(next_equipment)
+	var event := {}
+	if record_event:
+		event = _log_equipment_event(
+			npc_id,
+			"equipment_changed",
+			SLOT_MOUNT,
+			"mount",
+			{"id": "", "name": "未分配马匹", "slot": SLOT_MOUNT, "kind": "mount"},
+			previous_item,
+			"",
+			unit_type,
+			visibility
+		)
+	var strategy_result := _normalize_combat_strategy_after_equipment_change(npc_id, SLOT_MOUNT, visibility, true)
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"slot": SLOT_MOUNT,
+		"reason": reason,
+		"horse_id": str(previous_item.get("horse_id", "")),
+		"horse_name": str(previous_item.get("horse_name", previous_item.get("name", ""))),
+		"equipment": next_equipment,
+		"previous_equipment": previous_item.duplicate(true),
+		"unit_type": unit_type,
+		"unit_type_label": get_unit_type_label(unit_type),
+		"combat_strategy": strategy_result,
+		"event": event
+	}
+
+
+func unequip_npc_slot(
+	npc_id: String,
+	slot: String,
+	visibility: String = DEFAULT_VISIBILITY,
+	reason: String = "player_unequip"
+) -> Dictionary:
+	var normalized_slot := _normalize_slot_id(slot)
+	if not EQUIPMENT_SLOTS.has(normalized_slot):
+		return _failure("invalid_equipment_slot", "装备部位无效。")
+	if normalized_slot == SLOT_MOUNT:
+		var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+		if horse_system == null or not horse_system.has_method("unassign_horse_from_npc"):
+			return _failure("horse_system_missing", "马匹系统不可用，不能解除马匹分配。")
+		var raw_horse_result: Variant = horse_system.call(
+			"unassign_horse_from_npc",
+			npc_id,
+			reason,
+			visibility
+		)
+		if raw_horse_result is Dictionary:
+			return (raw_horse_result as Dictionary).duplicate(true)
+		return _failure("horse_unassignment_failed", "马匹系统未返回合法解除结果。")
+
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
+		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _failure("unknown_npc", "NPC 不存在。")
+	var equipment := _normalize_equipment(npc.get("equipment", {}))
+	var previous_item: Dictionary = equipment.get(normalized_slot, {})
+	if previous_item.is_empty():
+		return {
+			"ok": true,
+			"changed": false,
+			"npc_id": npc_id,
+			"slot": normalized_slot,
+			"reason": reason,
+			"equipment": equipment
+		}
+
+	var resource_id := str(previous_item.get("source_resource_id", ""))
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if not resource_id.is_empty() and (
+		resource_system == null or not resource_system.has_method("add_resource")
+	):
+		return _failure("resource_system_missing", "资源系统不可用，不能安全归还装备。")
+	if not npc_system.set_npc_equipment_slot(npc_id, normalized_slot, {}):
+		return _failure("equipment_write_failed", "卸下 NPC 装备失败。")
+	if not resource_id.is_empty() and not resource_system.add_resource(resource_id, 1):
+		npc_system.set_npc_equipment_slot(npc_id, normalized_slot, previous_item)
+		return _failure("inventory_return_failed", "装备库存归还失败。")
+
+	var horse_result := {}
+	if normalized_slot == SLOT_MAIN_WEAPON:
+		horse_result = _unassign_horse_after_main_weapon_removed(npc_id, visibility)
+		if not bool(horse_result.get("ok", false)):
+			if not resource_id.is_empty() and resource_system.has_method("spend_resources"):
+				resource_system.spend_resources({resource_id: 1})
+			npc_system.set_npc_equipment_slot(npc_id, normalized_slot, previous_item)
+			return _failure("horse_unassignment_failed", "马匹自动解绑失败，主武器未被收回。")
+
+	var next_equipment := get_equipment_snapshot(npc_id)
+	var unit_type := determine_unit_type(next_equipment)
+	var event := _log_equipment_event(
+		npc_id,
+		"equipment_changed",
+		normalized_slot,
+		_get_item_kind_for_slot(normalized_slot),
+		{"id": "", "name": "未装备%s" % get_slot_label(normalized_slot), "slot": normalized_slot},
+		previous_item,
+		resource_id,
+		unit_type,
+		visibility
+	)
+	var strategy_result := _normalize_combat_strategy_after_equipment_change(
+		npc_id,
+		normalized_slot,
+		visibility,
+		true
+	)
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"slot": normalized_slot,
+		"reason": reason,
+		"returned_resource_id": resource_id,
+		"returned_amount": 1 if not resource_id.is_empty() else 0,
+		"equipment": next_equipment,
+		"previous_equipment": previous_item.duplicate(true),
+		"unit_type": unit_type,
+		"unit_type_label": get_unit_type_label(unit_type),
+		"horse_unassignment": horse_result,
+		"combat_strategy": strategy_result,
+		"event": event
+	}
 
 
 func determine_unit_type(equipment: Variant) -> String:
@@ -213,6 +459,8 @@ func get_unit_type_snapshot(npc_id: String) -> Dictionary:
 		"has_mount": not mount.is_empty(),
 		"mount_id": str(mount.get("id", "")),
 		"mount_name": str(mount.get("name", "")),
+		"horse_id": str(mount.get("horse_id", "")),
+		"horse_name": str(mount.get("horse_name", mount.get("name", ""))),
 		"equipment": equipment
 	}
 
@@ -236,6 +484,8 @@ func _equip_npc_item(
 	item_kind: String,
 	visibility: String
 ) -> Dictionary:
+	if item_kind == "mount" or slot == SLOT_MOUNT:
+		return _failure("horse_system_required", "马匹必须通过 HorseSystem 分配，不能作为库存装备。")
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
 		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
@@ -272,6 +522,8 @@ func _equip_npc_item(
 		}
 
 	var resource_id := str(definition.get("source_resource_id", ""))
+	if DEPRECATED_FORMAL_INVENTORY_IDS.has(resource_id):
+		return _failure("deprecated_inventory", "旧聚合库存不能再用于正式装备结算。")
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_id.is_empty() or resource_system == null or not resource_system.has_method("spend_resources"):
 		return _failure("resource_system_missing", "资源系统不可用。")
@@ -329,7 +581,7 @@ func _load_weapon_defs() -> void:
 			continue
 		definition["equipment_slot"] = SLOT_MAIN_WEAPON
 		if not definition.has("source_resource_id"):
-			definition["source_resource_id"] = "weapons"
+			definition["source_resource_id"] = "item_%s" % id
 		if not definition.has("weapon_class"):
 			definition["weapon_class"] = id
 		_weapon_defs[id] = definition.duplicate(true)
@@ -346,7 +598,7 @@ func _load_armor_defs() -> void:
 			push_warning("Skipped invalid armor definition: %s" % JSON.stringify(definition))
 			continue
 		if not definition.has("source_resource_id"):
-			definition["source_resource_id"] = "armor"
+			definition["source_resource_id"] = "item_%s" % id
 		definition["slot"] = slot
 		_armor_defs[id] = definition.duplicate(true)
 		if not _armor_order_by_slot.has(slot):
@@ -363,10 +615,47 @@ func _load_mount_defs() -> void:
 			push_warning("Skipped mount definition with empty id.")
 			continue
 		definition["slot"] = SLOT_MOUNT
-		if not definition.has("source_resource_id"):
-			definition["source_resource_id"] = "horse_readiness"
+		definition.erase("source_resource_id")
 		_mount_defs[id] = definition.duplicate(true)
 		_mount_order.append(id)
+
+
+func _apply_initial_equipment_from_profiles() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
+		push_error("EquipmentSystem requires NPCSystem initial equipment interfaces.")
+		return
+
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var profile: Dictionary = npc_system.get_npc(npc_id)
+		var initial_equipment: Dictionary = profile.get("initial_equipment", {}) if profile.get("initial_equipment", {}) is Dictionary else {}
+		if initial_equipment.is_empty():
+			continue
+		var current_equipment := _normalize_equipment(profile.get("equipment", {}))
+		for slot in EQUIPMENT_SLOTS:
+			if current_equipment.has(slot):
+				continue
+			if slot == SLOT_MOUNT:
+				# Horses are runtime entities owned by HorseSystem, never anonymous story items.
+				continue
+			var item_id := str(initial_equipment.get(slot, "")).strip_edges()
+			if item_id.is_empty():
+				continue
+			var item_kind := _get_item_kind_for_slot(slot)
+			var definition := _get_item_def(item_kind, item_id)
+			if definition.is_empty():
+				push_warning("Skipped unknown initial equipment %s for NPC %s." % [item_id, npc_id])
+				continue
+			var expected_slot := _normalize_slot_id(str(definition.get("equipment_slot", definition.get("slot", slot))))
+			if expected_slot != slot:
+				push_warning("Skipped initial equipment %s for NPC %s because slot %s does not match %s." % [item_id, npc_id, expected_slot, slot])
+				continue
+			# Story loadouts are part of the initial world state, not a player inventory transfer.
+			# They therefore hydrate from the canonical definition without spending resources
+			# or recording an equipment_given interaction event.
+			if npc_system.set_npc_equipment_slot(npc_id, slot, _make_equipped_item(slot, item_kind, definition)):
+				current_equipment[slot] = definition.duplicate(true)
 
 
 func _load_array_file(file_name: String) -> Array:
@@ -393,13 +682,27 @@ func _get_item_def(item_kind: String, item_id: String) -> Dictionary:
 			return {}
 
 
+func _get_item_kind_for_slot(slot: String) -> String:
+	if slot == SLOT_MAIN_WEAPON:
+		return "weapon"
+	if ARMOR_SLOTS.has(slot):
+		return "armor"
+	if slot == SLOT_MOUNT:
+		return "mount"
+	return ""
+
+
 func _make_equipped_item(slot: String, item_kind: String, definition: Dictionary) -> Dictionary:
 	var item := definition.duplicate(true)
 	item["id"] = str(definition.get("id", ""))
 	item["name"] = str(definition.get("name", item.get("id", "")))
 	item["slot"] = slot
 	item["kind"] = item_kind
-	item["source_resource_id"] = str(definition.get("source_resource_id", ""))
+	var source_resource_id := str(definition.get("source_resource_id", ""))
+	if source_resource_id.is_empty():
+		item.erase("source_resource_id")
+	else:
+		item["source_resource_id"] = source_resource_id
 	return item
 
 
@@ -469,6 +772,24 @@ func _normalize_combat_strategy_after_equipment_change(
 	if combat_system == null or not combat_system.has_method("normalize_npc_combat_strategy"):
 		return {}
 	return combat_system.normalize_npc_combat_strategy(npc_id, "equipment_changed", visibility, force_default)
+
+
+func _unassign_horse_after_main_weapon_removed(npc_id: String, visibility: String) -> Dictionary:
+	var equipment := get_equipment_snapshot(npc_id)
+	if (equipment.get(SLOT_MOUNT, {}) as Dictionary).is_empty():
+		return {"ok": true, "changed": false, "reason": "no_horse_assigned"}
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("unassign_horse_from_npc"):
+		return _failure("horse_system_missing", "马匹系统不可用。")
+	var raw_result: Variant = horse_system.call(
+		"unassign_horse_from_npc",
+		npc_id,
+		"main_weapon_removed",
+		visibility
+	)
+	if raw_result is Dictionary:
+		return (raw_result as Dictionary).duplicate(true)
+	return _failure("horse_unassignment_failed", "马匹系统未返回合法解除结果。")
 
 
 func get_slot_label(slot: String) -> String:

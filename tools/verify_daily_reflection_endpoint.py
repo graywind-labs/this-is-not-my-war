@@ -22,6 +22,7 @@ from backend.schemas import (  # noqa: E402
     NPCStateContext,
     ShortTermMemoryContext,
 )
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 def _make_request() -> dict:
@@ -57,6 +58,9 @@ def _make_request() -> dict:
             requires_time_slowdown=False,
         ),
         game_time=GameTime(day=1, time="22:00:00", hour=22),
+        station_context=build_station_context([
+            {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
+        ]),
         npc=npc,
         day_events=[
             {
@@ -80,9 +84,15 @@ def main() -> None:
     assert body["npc_id"] == "cook_01"
     assert body["day"] == 1
     assert body["diary_entry"]
-    assert body["memory_summary"]
+    assert "memory_summary" not in body
     assert body["knowledge_graph_updates"]
+    assert body["knowledge_graph_updates"][0]["subject_label"] == "布鲁诺"
+    assert body["knowledge_graph_updates"][0]["relation_label"] == "留意事项"
+    assert body["knowledge_graph_updates"][0]["value_label"]
     assert "with_current_order" in body["debug_reason"]
+    assert body["model_provider"] == "mock"
+    assert body["model_name"] == "mock"
+    assert body["model_fallback_used"] is False
     print("verify_daily_reflection_endpoint: ok")
 
 

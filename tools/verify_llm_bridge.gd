@@ -6,6 +6,9 @@ const BACKEND_URL := "http://127.0.0.1:5000"
 const CLOSED_BACKEND_URL := "http://127.0.0.1:5999"
 
 func _init() -> void:
+	var live_backend_url := OS.get_environment("TEST_BACKEND_URL").strip_edges()
+	if live_backend_url.is_empty():
+		live_backend_url = BACKEND_URL
 	var script_file := FileAccess.open(LLM_BRIDGE_SCRIPT, FileAccess.READ)
 	if script_file == null:
 		push_error("Failed to read LLMBridge.gd")
@@ -61,6 +64,10 @@ func _init() -> void:
 		push_error("Player initiated dialogue must use speaker_name == 守备官")
 		quit(1)
 		return
+	if str(payload.get("dialogue_phase", "")) != "conversation":
+		push_error("Ordinary dialogue payload must default to conversation phase")
+		quit(1)
+		return
 	if str(payload.get("npc_id", "")) != target_npc_id:
 		push_error("Dialogue payload target npc_id mismatch")
 		quit(1)
@@ -95,6 +102,29 @@ func _init() -> void:
 		push_error("LLMBridge did not expose the latest current_order injection snapshot")
 		quit(1)
 		return
+	var invitation_payload: Dictionary = llm_bridge.build_npc_dialogue_payload(target_npc_id, "我想和你谈谈。", {
+		"dialogue_kind": "npc_npc",
+		"dialogue_phase": "invitation",
+		"speaker_kind": "npc",
+		"speaker_npc_id": "doctor_01",
+		"current_round": 1,
+		"max_rounds": 0,
+		"soft_round_threshold": 5,
+		"soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。"
+	})
+	if (
+		str(invitation_payload.get("dialogue_phase", "")) != "invitation"
+		or int(invitation_payload.get("current_round", -1)) != 0
+		or int(invitation_payload.get("max_rounds", -1)) != 0
+		or int(invitation_payload.get("soft_round_threshold", 0)) != 5
+		or str(invitation_payload.get("soft_round_guidance", "")).is_empty()
+		or int((invitation_payload.get("dialogue_state", {}) as Dictionary).get("current_round", -1)) != 0
+		or int((invitation_payload.get("dialogue_state", {}) as Dictionary).get("max_rounds", -1)) != 0
+	):
+		push_error("NPC invitation payload must be a pre-round phase with soft guidance and no hard cap")
+		quit(1)
+		return
+	llm_bridge.cancel_npc_llm_requests(target_npc_id, "verification_cleanup")
 
 	print("LLMBridge verify: closed health")
 	llm_bridge.set_backend_base_url(CLOSED_BACKEND_URL)
@@ -106,7 +136,7 @@ func _init() -> void:
 		return
 
 	print("LLMBridge verify: live health")
-	llm_bridge.set_backend_base_url(BACKEND_URL)
+	llm_bridge.set_backend_base_url(live_backend_url)
 	llm_bridge.request_timeout_seconds = 4.0
 	var health_result: Dictionary = llm_bridge.check_health()
 	if not bool(health_result.get("ok", false)):

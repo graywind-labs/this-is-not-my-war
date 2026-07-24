@@ -13,12 +13,15 @@ const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
+const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
 	"training_ground", "stable", "chapel", "clinic", "workshop"
 ]
 const DEFAULT_VISIBILITIES := ["private", "local_public"]
+const LEGACY_AGGREGATE_RESOURCE_IDS := ["weapons", "armor", "defense_devices", "horse_readiness"]
 const COMMAND_HISTORY_LIMIT := 40
 const PANEL_BUTTON_GAP := 8.0
 const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
@@ -43,6 +46,11 @@ var _action_select: OptionButton
 var _combat_wave_select: OptionButton
 var _equipment_weapon_select: OptionButton
 var _equipment_armor_slot_select: OptionButton
+var _crafting_building_select: OptionButton
+var _crafting_recipe_select: OptionButton
+var _horse_select: OptionButton
+var _horse_damage_input: LineEdit
+var _horse_advance_input: LineEdit
 var _repair_building_select: OptionButton
 var _upgrade_building_select: OptionButton
 var _heal_target_select: OptionButton
@@ -166,6 +174,7 @@ func _build_ui() -> void:
 	_add_resource_section(sections)
 	_add_time_section(sections)
 	_add_building_section(sections)
+	_add_crafting_horse_section(sections)
 	_add_npc_section(sections)
 	_add_action_section(sections)
 	_add_combat_section(sections)
@@ -184,6 +193,7 @@ func _add_resource_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("资源"))
 	var row := _make_row(parent)
 	_resource_select = _make_select(row)
+	_resource_select.name = "ResourceSelect"
 	_resource_amount_input = _make_input(row, "数量", "20", 80)
 	_add_button(row, "增加", func() -> void:
 		_run_add_resource(_selected_id(_resource_select), _int_from_input(_resource_amount_input, 0))
@@ -209,7 +219,7 @@ func _add_time_section(parent: VBoxContainer) -> void:
 			_int_from_input(_second_input, 0)
 		)
 	)
-	_add_button(row, "跳 1 小时", _run_advance_hour)
+	_add_button(row, "推进模拟 1 小时", _run_advance_hour)
 	_add_button(row, "LLM 减速", func() -> void:
 		_run_slowdown("gm_manual", -1.0, "gm_manual")
 	)
@@ -236,6 +246,78 @@ func _add_building_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(row, "快照", func() -> void:
 		_show_building(_selected_id(_building_select))
+	)
+
+
+func _add_crafting_horse_section(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_title("制造 / 马匹"))
+	var crafting_row := _make_row(parent)
+	var crafting_label := Label.new()
+	crafting_label.text = "制造"
+	crafting_row.add_child(crafting_label)
+	_crafting_building_select = _make_select(crafting_row)
+	_crafting_building_select.name = "CraftingBuildingSelect"
+	_crafting_building_select.item_selected.connect(func(_index: int) -> void:
+		_fill_crafting_recipe_select()
+	)
+	_crafting_recipe_select = _make_select(crafting_row)
+	_crafting_recipe_select.name = "CraftingRecipeSelect"
+	_add_button(crafting_row, "设置目标", func() -> void:
+		_run_craft_target(
+			_selected_id(_crafting_building_select),
+			_selected_id(_crafting_recipe_select),
+			false
+		)
+	)
+	_add_button(crafting_row, "强制换目标", func() -> void:
+		_run_craft_target(
+			_selected_id(_crafting_building_select),
+			_selected_id(_crafting_recipe_select),
+			true
+		)
+	)
+	_add_button(crafting_row, "完成阶段", func() -> void:
+		_run_craft_stage(_selected_id(_crafting_building_select), _selected_id(_npc_select))
+	)
+	_add_button(crafting_row, "制造快照", func() -> void:
+		_show_craft_snapshot(_selected_id(_crafting_building_select))
+	)
+
+	var horse_row := _make_row(parent)
+	var horse_label := Label.new()
+	horse_label.text = "马匹"
+	horse_row.add_child(horse_label)
+	_horse_select = _make_select(horse_row)
+	_horse_select.name = "HorseSelect"
+	_horse_damage_input = _make_input(horse_row, "伤害", "10", 70)
+	_horse_damage_input.name = "HorseDamageInput"
+	_horse_advance_input = _make_input(horse_row, "推进秒", "3600", 90)
+	_horse_advance_input.name = "HorseAdvanceInput"
+	_add_button(horse_row, "马匹快照", func() -> void:
+		_show_horse_snapshot(_selected_id(_horse_select))
+	)
+	_add_button(horse_row, "马匹受伤", func() -> void:
+		_run_horse_damage(_selected_id(_horse_select), float(_horse_damage_input.text))
+	)
+	_add_button(horse_row, "推进马匹", func() -> void:
+		_run_horse_advance(float(_horse_advance_input.text))
+	)
+	_add_button(horse_row, "强制繁育", _run_horse_birth)
+
+	var horse_assignment_row := _make_row(parent)
+	var assignment_label := Label.new()
+	assignment_label.text = "马匹分配使用上方 NPC / 马匹选项"
+	assignment_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	horse_assignment_row.add_child(assignment_label)
+	_add_button(horse_assignment_row, "分配马匹", func() -> void:
+		_run_horse_assign(
+			_selected_id(_npc_select),
+			_selected_id(_horse_select),
+			_selected_id(_visibility_select)
+		)
+	)
+	_add_button(horse_assignment_row, "取消分配", func() -> void:
+		_run_horse_unassign(_selected_id(_npc_select), _selected_id(_visibility_select))
 	)
 
 
@@ -353,9 +435,6 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 	_add_button(equipment_row, "装备盔甲", func() -> void:
 		_run_equip_armor(_selected_id(_npc_select), _selected_id(_equipment_armor_slot_select), _selected_id(_visibility_select))
 	)
-	_add_button(equipment_row, "装备坐骑", func() -> void:
-		_run_equip_mount(_selected_id(_npc_select), _selected_id(_visibility_select))
-	)
 	_add_button(equipment_row, "兵种", func() -> void:
 		_show_unit_type(_selected_id(_npc_select))
 	)
@@ -456,6 +535,7 @@ func _add_backend_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(row, "成本统计", _show_llm_usage)
 	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
+	_add_button(row, "驿站上下文", _show_station_context)
 
 
 func _add_memory_section(parent: VBoxContainer) -> void:
@@ -536,6 +616,8 @@ func _refresh_options() -> void:
 	_fill_action_select()
 	_fill_combat_wave_select()
 	_fill_equipment_selects()
+	_fill_crafting_selects()
+	_fill_horse_select()
 	_fill_location_select()
 	_fill_visibility_select()
 	_log("GM 选项已刷新。")
@@ -545,7 +627,10 @@ func _fill_resource_select() -> void:
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	var ids: Array = []
 	if resource_system != null and resource_system.has_method("get_resource_ids"):
-		ids = resource_system.get_resource_ids()
+		for raw_resource_id in resource_system.get_resource_ids():
+			var resource_id := str(raw_resource_id)
+			if not LEGACY_AGGREGATE_RESOURCE_IDS.has(resource_id):
+				ids.append(resource_id)
 	_fill_select(_resource_select, ids, func(id: String) -> String:
 		if resource_system != null and resource_system.has_method("get_resource_name"):
 			return "%s | %s" % [id, resource_system.get_resource_name(id)]
@@ -650,6 +735,44 @@ func _fill_equipment_selects() -> void:
 	)
 
 
+func _fill_crafting_selects() -> void:
+	_fill_select(_crafting_building_select, ["blacksmith", "workshop"], func(id: String) -> String:
+		return id
+	)
+	_fill_crafting_recipe_select()
+
+
+func _fill_crafting_recipe_select() -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	var building_id := _selected_id(_crafting_building_select)
+	var recipe_ids: Array = []
+	if crafting_system != null and crafting_system.has_method("get_recipe_ids_for_building"):
+		recipe_ids = crafting_system.get_recipe_ids_for_building(building_id)
+	_fill_select(_crafting_recipe_select, recipe_ids, func(id: String) -> String:
+		if crafting_system != null and crafting_system.has_method("get_recipe"):
+			var recipe: Dictionary = crafting_system.get_recipe(id)
+			return "%s | %s" % [id, str(recipe.get("name", id))]
+		return id
+	)
+
+
+func _fill_horse_select() -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	var horse_ids: Array = []
+	if horse_system != null and horse_system.has_method("get_horse_ids"):
+		horse_ids = horse_system.get_horse_ids()
+	_fill_select(_horse_select, horse_ids, func(id: String) -> String:
+		if horse_system != null and horse_system.has_method("get_horse_snapshot"):
+			var horse: Dictionary = horse_system.get_horse_snapshot(id)
+			return "%s | %s | %s" % [
+				id,
+				str(horse.get("name", id)),
+				str(horse.get("life_stage", ""))
+			]
+		return id
+	)
+
+
 func _fill_location_select() -> void:
 	_fill_select(_location_select, DEFAULT_LOCATION_IDS, func(id: String) -> String:
 		return id
@@ -711,6 +834,8 @@ func _execute_command(command: String) -> void:
 		"snapshot":
 			_show_time_snapshot()
 			_show_resource_snapshot()
+			_show_craft_snapshot()
+			_show_horse_snapshot()
 			_show_combat_snapshot()
 			_show_events()
 		"time_snapshot":
@@ -721,6 +846,37 @@ func _execute_command(command: String) -> void:
 		"spend_resource":
 			if _require_args(parts, 3, "spend_resource <resource_id> <amount>"):
 				_run_spend_resource(str(parts[1]), int(parts[2]))
+		"craft_target":
+			if _require_args(parts, 3, "craft_target <blacksmith|workshop> <recipe_id|none> [force]"):
+				var recipe_id := str(parts[2])
+				if recipe_id.to_lower() in ["none", "clear", "empty"]:
+					recipe_id = ""
+				var force := parts.size() >= 4 and str(parts[3]).to_lower() in ["force", "true", "1", "yes"]
+				_run_craft_target(str(parts[1]), recipe_id, force)
+		"craft_stage":
+			if _require_args(parts, 2, "craft_stage <blacksmith|workshop> [npc_id]"):
+				var npc_id := str(parts[2]) if parts.size() >= 3 else ""
+				_run_craft_stage(str(parts[1]), npc_id)
+		"craft_snapshot":
+			_show_craft_snapshot(str(parts[1]) if parts.size() >= 2 else "")
+		"horse_snapshot":
+			_show_horse_snapshot(str(parts[1]) if parts.size() >= 2 else "")
+		"horse_damage":
+			if _require_args(parts, 3, "horse_damage <horse_id> <amount>"):
+				_run_horse_damage(str(parts[1]), float(parts[2]))
+		"horse_advance":
+			if _require_args(parts, 2, "horse_advance <game_seconds>"):
+				_run_horse_advance(float(parts[1]))
+		"horse_birth":
+			_run_horse_birth()
+		"horse_assign":
+			if _require_args(parts, 3, "horse_assign <npc_id> <horse_id> [visibility]"):
+				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
+				_run_horse_assign(str(parts[1]), str(parts[2]), visibility)
+		"horse_unassign":
+			if _require_args(parts, 2, "horse_unassign <npc_id> [visibility]"):
+				var visibility := str(parts[2]) if parts.size() >= 3 else "local_public"
+				_run_horse_unassign(str(parts[1]), visibility)
 		"set_time":
 			if _require_args(parts, 5, "set_time <day> <hour> <minute> <second>"):
 				_run_set_time(int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
@@ -767,6 +923,8 @@ func _execute_command(command: String) -> void:
 				_show_order(str(parts[1]))
 		"plan_request":
 			_show_plan_reevaluation_request()
+		"expire_plan_dialogues":
+			_run_expire_plan_dialogues()
 		"plan_generate":
 			if parts.size() >= 2:
 				_run_generate_plan(str(parts[1]))
@@ -805,9 +963,15 @@ func _execute_command(command: String) -> void:
 				_show_llm_state(str(parts[1]))
 		"llm_usage":
 			_show_llm_usage()
+		"station_context":
+			_show_station_context()
 		"start_proactive":
 			if _require_args(parts, 3, "start_proactive <npc_id> <text>"):
 				_run_start_proactive_talk(str(parts[1]), command.substr(("start_proactive %s" % str(parts[1])).length()).strip_edges())
+		"npc_talk":
+			if _require_args(parts, 3, "npc_talk <speaker_npc_id> <target_npc_id> [opening_text]"):
+				var prefix := "npc_talk %s %s" % [str(parts[1]), str(parts[2])]
+				_run_npc_talk(str(parts[1]), str(parts[2]), command.substr(prefix.length()).strip_edges())
 		"proactive":
 			if _require_args(parts, 2, "proactive <npc_id>"):
 				_show_proactive_talk(str(parts[1]))
@@ -819,10 +983,6 @@ func _execute_command(command: String) -> void:
 			if _require_args(parts, 3, "equip_armor <npc_id> <slot> [visibility]"):
 				var visibility := str(parts[3]) if parts.size() >= 4 else "local_public"
 				_run_equip_armor(str(parts[1]), str(parts[2]), visibility)
-		"equip_mount":
-			if _require_args(parts, 2, "equip_mount <npc_id> [visibility]"):
-				var visibility := str(parts[2]) if parts.size() >= 3 else "local_public"
-				_run_equip_mount(str(parts[1]), visibility)
 		"unit_type":
 			if _require_args(parts, 2, "unit_type <npc_id>"):
 				_show_unit_type(str(parts[1]))
@@ -975,6 +1135,135 @@ func _show_resource_snapshot() -> void:
 	_log("资源快照：%s" % _compact(resource_system.get_resource_snapshot()))
 
 
+func _run_craft_target(building_id: String, recipe_id: String, force: bool) -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if crafting_system == null or not crafting_system.has_method("set_target"):
+		_log("CraftingSystem 目标接口不可用。")
+		return
+	var result: Dictionary = crafting_system.call("set_target", building_id, recipe_id, force)
+	_log("制造目标 %s -> %s：%s" % [
+		building_id,
+		recipe_id if not recipe_id.is_empty() else "未选择",
+		_compact(result)
+	])
+
+
+func _run_craft_stage(building_id: String, npc_id: String = "") -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if (
+		crafting_system == null
+		or not crafting_system.has_method("get_project_snapshot")
+		or not crafting_system.has_method("complete_stage")
+	):
+		_log("CraftingSystem 阶段接口不可用。")
+		return
+	var project: Dictionary = crafting_system.call("get_project_snapshot", building_id)
+	if project.is_empty():
+		_log("制造建筑不可用：%s" % building_id)
+		return
+	var project_revision := int(project.get("project_revision", project.get("revision", -1)))
+	var result: Dictionary = crafting_system.call("complete_stage", building_id, project_revision, npc_id)
+	_log("完成制造阶段 %s revision=%d npc=%s：%s" % [
+		building_id,
+		project_revision,
+		npc_id if not npc_id.is_empty() else "gm",
+		_compact(result)
+	])
+
+
+func _show_craft_snapshot(building_id: String = "") -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if crafting_system == null:
+		_log("CraftingSystem 不可用。")
+		return
+	if not building_id.is_empty() and crafting_system.has_method("get_project_snapshot"):
+		_log("制造项目快照 %s：%s" % [
+			building_id,
+			_compact(crafting_system.call("get_project_snapshot", building_id))
+		])
+		return
+	if crafting_system.has_method("debug_get_snapshot"):
+		_log("制造系统快照：%s" % _compact(crafting_system.call("debug_get_snapshot")))
+		return
+	_log("CraftingSystem 调试快照接口不可用。")
+
+
+func _show_horse_snapshot(horse_id: String = "") -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null:
+		_log("HorseSystem 不可用。")
+		return
+	if not horse_id.is_empty() and horse_system.has_method("get_horse_snapshot"):
+		_log("马匹快照 %s：%s" % [
+			horse_id,
+			_compact(horse_system.call("get_horse_snapshot", horse_id))
+		])
+		return
+	if horse_system.has_method("get_horses_snapshot"):
+		var snapshot := {
+			"counts": horse_system.call("get_horse_counts_snapshot") if horse_system.has_method("get_horse_counts_snapshot") else {},
+			"stable": horse_system.call("get_stable_summary") if horse_system.has_method("get_stable_summary") else {},
+			"balance": horse_system.call("get_balance_snapshot") if horse_system.has_method("get_balance_snapshot") else {},
+			"horses": horse_system.call("get_horses_snapshot")
+		}
+		_log("马匹系统快照：%s" % _compact(snapshot))
+		return
+	_log("HorseSystem 快照接口不可用。")
+
+
+func _run_horse_damage(horse_id: String, damage: float) -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("debug_damage"):
+		_log("HorseSystem debug_damage 接口不可用。")
+		return
+	var result: Dictionary = horse_system.call("debug_damage", horse_id, damage)
+	_log("马匹受伤 %s -%.2f：%s" % [horse_id, damage, _compact(result)])
+
+
+func _run_horse_advance(game_seconds: float) -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("debug_advance"):
+		_log("HorseSystem debug_advance 接口不可用。")
+		return
+	var result: Dictionary = horse_system.call("debug_advance", game_seconds)
+	_log("推进马匹生态 %.2f 游戏秒：%s" % [game_seconds, _compact(result)])
+
+
+func _run_horse_birth() -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("debug_force_birth"):
+		_log("HorseSystem debug_force_birth 接口不可用。")
+		return
+	var result: Dictionary = horse_system.call("debug_force_birth")
+	_fill_horse_select()
+	_log("强制马匹繁育：%s" % _compact(result))
+
+
+func _run_horse_assign(npc_id: String, horse_id: String, visibility: String) -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("assign_horse_to_npc"):
+		_log("HorseSystem 分配接口不可用。")
+		return
+	var result: Dictionary = horse_system.call("assign_horse_to_npc", npc_id, horse_id, visibility)
+	_fill_horse_select()
+	_log("分配马匹 %s -> %s：%s" % [npc_id, horse_id, _compact(result)])
+
+
+func _run_horse_unassign(npc_id: String, visibility: String) -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("unassign_horse_from_npc"):
+		_log("HorseSystem 取消分配接口不可用。")
+		return
+	var result: Dictionary = horse_system.call(
+		"unassign_horse_from_npc",
+		npc_id,
+		"gm_manual",
+		visibility
+	)
+	_fill_horse_select()
+	_log("取消马匹分配 %s：%s" % [npc_id, _compact(result)])
+
+
 func _run_set_time(day: int, hour: int, minute: int, second: int) -> void:
 	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
 	if time_system == null:
@@ -989,8 +1278,8 @@ func _run_advance_hour() -> void:
 	if time_system == null:
 		_log("TimeSystem 不可用。")
 		return
-	time_system.debug_advance_hour()
-	_log("已跳过 1 小时。")
+	var success := bool(time_system.debug_advance_hour())
+	_log("推进模拟 1 小时：%s" % _ok_text(success))
 
 
 func _run_slowdown(request_id: String, scale: float, reason: String) -> void:
@@ -1149,6 +1438,10 @@ func _show_plan_reevaluation_request() -> void:
 		return
 	_log("最近计划重评估请求：%s" % _compact(npc_system.get_last_plan_reevaluation_request()))
 	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system != null and plan_system.has_method("get_last_plan_revision_judgement_result"):
+		_log("最近计划修改判别：%s" % _compact(plan_system.get_last_plan_revision_judgement_result()))
+	elif plan_system != null and plan_system.has_method("get_last_dialogue_plan_judgement_result"):
+		_log("最近对话后计划判别：%s" % _compact(plan_system.get_last_dialogue_plan_judgement_result()))
 	if plan_system != null and plan_system.has_method("get_last_reevaluation_result"):
 		_log("最近计划重评估结果：%s" % _compact(plan_system.get_last_reevaluation_result()))
 	if plan_system != null and plan_system.has_method("get_last_plan_generation_result"):
@@ -1216,6 +1509,8 @@ func _show_last_reflection() -> void:
 		_log("DailyReflectionSystem 最近总结接口不可用。")
 		return
 	_log("最近首次睡眠总结：%s" % _compact(reflection_system.get_last_reflection_result()))
+	if reflection_system.has_method("get_async_reflection_snapshot"):
+		_log("首次睡眠总结并发：%s" % _compact(reflection_system.get_async_reflection_snapshot()))
 
 
 func _run_revise_plan(npc_id: String, reason: String) -> void:
@@ -1234,6 +1529,33 @@ func _run_start_proactive_talk(npc_id: String, text: String) -> void:
 		return
 	var result: Dictionary = npc_system.debug_start_proactive_talk(npc_id, text)
 	_log("主动交涉 %s：%s" % [npc_id, _compact(result)])
+
+
+func _run_npc_talk(speaker_npc_id: String, target_npc_id: String, opening_text: String = "") -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("assign_npc_dialogue"):
+		_log("NPC-NPC 对话系统不可用。")
+		return
+	var clean_opening := opening_text.strip_edges()
+	if clean_opening.is_empty():
+		clean_opening = "我想和你谈谈眼下的安排。"
+	var ok := bool(action_system.assign_npc_dialogue(
+		speaker_npc_id,
+		target_npc_id,
+		clean_opening,
+		5,
+		true
+	))
+	_log("NPC-NPC 对话 %s -> %s：%s" % [speaker_npc_id, target_npc_id, _ok_text(ok)])
+
+
+func _run_expire_plan_dialogues() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("expire_invalid_daily_plan_dialogues"):
+		_log("日计划对话等待扫描接口不可用。")
+		return
+	var expired_npc_ids: Array[String] = action_system.expire_invalid_daily_plan_dialogues()
+	_log("日计划对话等待扫描：expired=%s" % JSON.stringify(expired_npc_ids))
 
 
 func _show_proactive_talk(npc_id: String) -> void:
@@ -1260,15 +1582,6 @@ func _run_equip_armor(npc_id: String, slot: String, visibility: String) -> void:
 		return
 	var result: Dictionary = equipment_system.debug_equip_armor(npc_id, slot, visibility)
 	_log("装备盔甲 %s -> %s：%s" % [npc_id, slot, _compact(result)])
-
-
-func _run_equip_mount(npc_id: String, visibility: String) -> void:
-	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
-	if equipment_system == null or not equipment_system.has_method("debug_equip_mount"):
-		_log("EquipmentSystem 坐骑接口不可用。")
-		return
-	var result: Dictionary = equipment_system.debug_equip_mount(npc_id, visibility)
-	_log("装备坐骑 %s：%s" % [npc_id, _compact(result)])
 
 
 func _show_unit_type(npc_id: String) -> void:
@@ -1469,6 +1782,25 @@ func _show_last_npc_context_injection() -> void:
 		_log("LLMBridge 指令注入快照不可用。")
 		return
 	_log("最近 NPC LLM 指令注入：%s" % _compact(llm_bridge.get_last_npc_context_injection()))
+
+
+func _show_station_context() -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("debug_build_station_context"):
+		_log("LLMBridge 驿站上下文快照不可用。")
+		return
+	var station_context: Dictionary = llm_bridge.debug_build_station_context()
+	var residents: Array = station_context.get("resident_roster", [])
+	var buildings: Array = station_context.get("building_roster", [])
+	var work_actions: Array = station_context.get("work_mode_actions", [])
+	var basic_resources: Array = station_context.get("basic_resource_reserves", [])
+	var rules: Array = station_context.get("station_rules", [])
+	_log("NPC LLM 驿站简介：%s" % str(station_context.get("setting_summary", "")))
+	_log("当前在站成员（%d）：%s" % [residents.size(), _compact(residents)])
+	_log("驿站建筑（%d）：%s" % [buildings.size(), _compact(buildings)])
+	_log("工作模式行为（%d）：%s" % [work_actions.size(), _compact(work_actions)])
+	_log("公开基础资源（%d）：%s" % [basic_resources.size(), _compact(basic_resources)])
+	_log("精简驿站规则（%d）：%s" % [rules.size(), _compact(rules)])
 
 
 func _show_llm_state(npc_id: String) -> void:
@@ -1712,16 +2044,20 @@ func _help_text() -> String:
 		"常用命令：",
 		"refresh | snapshot | events | plaza_events",
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
-		"set_time <day> <hour> <minute> <second> | advance_hour | time_snapshot",
+		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection",
+		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection | station_context",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
-		"publish_order <npc_id> <text> | order <npc_id> | plan_request | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
+		"publish_order <npc_id> <text> | order <npc_id> | plan_request | expire_plan_dialogues | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
 		"reflect_npc <npc_id> [force] | long_memory <npc_id> | reflection_result",
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
-		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | equip_mount <npc_id> [visibility] | unit_type <npc_id>",
+		"npc_talk <speaker_npc_id> <target_npc_id> [opening_text]",
+		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | unit_type <npc_id>",
+		"craft_target <blacksmith|workshop> <recipe_id|none> [force] | craft_stage <building_id> [npc_id] | craft_snapshot [building_id]",
+		"horse_snapshot [horse_id] | horse_damage <horse_id> <amount> | horse_advance <game_seconds> | horse_birth",
+		"horse_assign <npc_id> <horse_id> [visibility] | horse_unassign <npc_id> [visibility]",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | next_wave | jump_wave | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",

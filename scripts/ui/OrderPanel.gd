@@ -1,9 +1,11 @@
 extends Control
 
+const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 
 var _current_npc_id := ""
+var _drag_controller
 
 @onready var title_label: Label = %OrderTitleLabel
 @onready var metadata_label: Label = %OrderMetadataLabel
@@ -15,6 +17,8 @@ var _current_npc_id := ""
 
 func _ready() -> void:
 	visible = false
+	_drag_controller = DraggablePanelController.new()
+	_drag_controller.bind(self, title_label)
 	publish_button.pressed.connect(_on_publish_pressed)
 	close_button.pressed.connect(_on_close_pressed)
 
@@ -31,8 +35,12 @@ func show_order(npc_id: String) -> Dictionary:
 		return _failure("npc_not_recruited", "未入伍 NPC 不能接收个人指令。")
 
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
-	if dialog_system != null and dialog_system.has_method("is_dialogue_active") and bool(dialog_system.is_dialogue_active()):
-		dialog_system.end_dialogue()
+	if dialog_system != null and dialog_system.has_method("get_dialogue_state"):
+		var dialogue_state: Dictionary = dialog_system.get_dialogue_state()
+		if not dialogue_state.is_empty() and str(dialogue_state.get("dialogue_kind", "")) in ["player_npc", "escape_intervention"]:
+			return _failure("player_dialogue_active", "请先完成或取消当前守备官对话。")
+		if dialog_system.has_method("is_dialogue_active") and bool(dialog_system.is_dialogue_active()):
+			dialog_system.end_dialogue("order_panel_opened")
 
 	_current_npc_id = npc_id
 	title_label.text = "给 %s 的当前指令" % str(npc.get("name", npc_id))

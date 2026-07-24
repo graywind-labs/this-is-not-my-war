@@ -34,11 +34,11 @@ func _init() -> void:
 		return
 
 	var training_ground: Dictionary = building_system.get_building("training_ground")
-	if not _has_workstation_type(training_ground.get("workstations", []), "training_instructor"):
+	if not _has_workstation_type(training_ground.get("workstations", []), "training_instructor_station"):
 		push_error("Training ground should expose an instructor workstation")
 		quit(1)
 		return
-	if not _has_workstation_type(training_ground.get("workstations", []), "training_student"):
+	if not _has_workstation_type(training_ground.get("workstations", []), "training_practice_slot"):
 		push_error("Training ground should expose a student workstation")
 		quit(1)
 		return
@@ -80,8 +80,8 @@ func _init() -> void:
 		"骑术": 5
 	})
 
-	resource_system.add_resource("weapons", 4)
-	resource_system.add_resource("horse_readiness", 2)
+	resource_system.add_resource("item_sword_shield", 1)
+	resource_system.add_resource("item_bow", 1)
 	var instructor_weapon: Dictionary = equipment_system.equip_npc_main_weapon(instructor_id, "sword_shield", "private")
 	if not bool(instructor_weapon.get("ok", false)):
 		push_error("Failed to equip instructor sword shield: %s" % JSON.stringify(instructor_weapon))

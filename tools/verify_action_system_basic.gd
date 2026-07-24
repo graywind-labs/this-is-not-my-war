@@ -14,11 +14,12 @@ func _init() -> void:
 	await physics_frame
 
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
+	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -156,10 +157,17 @@ func _init() -> void:
 
 	var blacksmith_id := "blacksmith_01"
 	_set_debug_move_speed(blacksmith_id, 80.0)
+	resource_system.add_resource("iron", 10)
 	var iron_before: int = resource_system.get_resource("iron")
 	var wood_before_blacksmith: int = resource_system.get_resource("wood")
-	var weapons_before: int = resource_system.get_resource("weapons")
-	var armor_before: int = resource_system.get_resource("armor")
+	var helmet_before: int = resource_system.get_resource("item_iron_helmet")
+	var legacy_weapons_before: int = resource_system.get_resource("weapons")
+	var legacy_armor_before: int = resource_system.get_resource("armor")
+	var target_result: Dictionary = crafting_system.set_target("blacksmith", "craft_iron_helmet", true)
+	if not bool(target_result.get("ok", false)):
+		push_error("Failed to select blacksmith crafting target")
+		quit(1)
+		return
 	npc_system.update_npc_state(blacksmith_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
 		push_error("Failed to assign blacksmith work")
@@ -171,23 +179,51 @@ func _init() -> void:
 		return
 	action_system._on_logical_time_tick(3600.0, 1.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
-		push_error("Blacksmith work did not complete")
+		push_error("Blacksmith first crafting stage did not complete")
+		quit(1)
+		return
+	if int(crafting_system.get_project_snapshot("blacksmith").get("completed_stages", -1)) != 1:
+		push_error("Blacksmith work cycle did not advance exactly one crafting stage")
+		quit(1)
+		return
+	npc_system.update_npc_state(blacksmith_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
+	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		push_error("Failed to assign final blacksmith crafting stage")
+		quit(1)
+		return
+	if not await _wait_until_current_action(npc_system, blacksmith_id, "work_blacksmith"):
+		push_error("Final blacksmith crafting stage did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(3600.0, 1.0)
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
+		push_error("Final blacksmith crafting stage did not complete")
 		quit(1)
 		return
 	if resource_system.get_resource("iron") != iron_before - 2 or resource_system.get_resource("wood") != wood_before_blacksmith:
-		push_error("Blacksmith input resource mismatch")
+		push_error("Blacksmith exact stage material result mismatch")
 		quit(1)
 		return
-	if resource_system.get_resource("weapons") != weapons_before + 1 or resource_system.get_resource("armor") != armor_before + 1:
-		push_error("Blacksmith output resource mismatch")
+	if resource_system.get_resource("item_iron_helmet") != helmet_before + 1:
+		push_error("Blacksmith product did not enter item_iron_helmet inventory")
+		quit(1)
+		return
+	if resource_system.get_resource("weapons") != legacy_weapons_before or resource_system.get_resource("armor") != legacy_armor_before:
+		push_error("Blacksmith work mutated deprecated aggregate inventory")
 		quit(1)
 		return
 
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(engineer_id, 80.0)
+	resource_system.add_resource("wood", 10)
 	var wood_before_workshop: int = resource_system.get_resource("wood")
-	var weapons_before_workshop: int = resource_system.get_resource("weapons")
-	var devices_before: int = resource_system.get_resource("defense_devices")
+	var arrows_before: int = resource_system.get_resource("item_arrow_bundle")
+	var legacy_devices_before: int = resource_system.get_resource("defense_devices")
+	target_result = crafting_system.set_target("workshop", "craft_arrow_bundle", true)
+	if not bool(target_result.get("ok", false)):
+		push_error("Failed to select workshop crafting target")
+		quit(1)
+		return
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(engineer_id, "workshop"):
 		push_error("Failed to assign workshop work")
@@ -202,12 +238,16 @@ func _init() -> void:
 		push_error("Workshop work did not complete")
 		quit(1)
 		return
-	if resource_system.get_resource("wood") != wood_before_workshop - 2:
-		push_error("Workshop input resource mismatch")
+	if resource_system.get_resource("wood") != wood_before_workshop - 1:
+		push_error("Workshop exact stage material result mismatch")
 		quit(1)
 		return
-	if resource_system.get_resource("weapons") != weapons_before_workshop + 1 or resource_system.get_resource("defense_devices") != devices_before + 1:
-		push_error("Workshop resource result mismatch")
+	if resource_system.get_resource("item_arrow_bundle") != arrows_before + 1:
+		push_error("Workshop product did not enter item_arrow_bundle inventory")
+		quit(1)
+		return
+	if resource_system.get_resource("weapons") != legacy_weapons_before or resource_system.get_resource("defense_devices") != legacy_devices_before:
+		push_error("Workshop work mutated deprecated aggregate inventory")
 		quit(1)
 		return
 

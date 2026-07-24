@@ -16,72 +16,153 @@ func _init() -> void:
 	var panel := root.get_node_or_null("Main/UI/BuildingPanel")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
-	var workstation_label := root.get_node_or_null("Main/UI/BuildingPanel/PanelContainer/MarginContainer/Content/BuildingWorkstationLabel") as Label
+	var workstation_label: Label = panel.get("workstation_label") as Label if panel != null else null
 	if panel == null or building_system == null or npc_system == null or workstation_label == null:
 		push_error("Required building panel systems are missing")
 		quit(1)
 		return
 
 	panel.show_building("dining_hall")
-	if workstation_label.text.contains("当前工作位"):
-		push_error("Building panel should not show the old standalone workstation summary")
+	var dining_hall: Dictionary = building_system.get_building("dining_hall")
+	var dining_workstations: Array = dining_hall.get("workstations", [])
+	if dining_workstations.is_empty() or not dining_workstations[0] is Dictionary:
+		push_error("Dining hall should expose configured workstation order")
 		quit(1)
 		return
-	if not workstation_label.text.contains("厨师 1/1：空闲"):
-		push_error("Free dining hall workstation should show free/total count inline: %s" % workstation_label.text)
+	var kitchen_station: Dictionary = dining_workstations[0]
+	if str(kitchen_station.get("type", "")) != "dining_kitchen_station":
+		push_error("Dining hall first configured position should be the kitchen station")
+		quit(1)
+		return
+	var kitchen_name := str(kitchen_station.get("name", "灶台1"))
+	var dining_lines := workstation_label.text.split("\n")
+	if dining_lines.is_empty() or dining_lines[0] != "%s：空闲" % kitchen_name:
+		push_error("Building panel should preserve config order and station.name: %s" % workstation_label.text)
+		quit(1)
+		return
+	if workstation_label.text.contains("主动") or workstation_label.text.contains("被动") or workstation_label.text.contains("/"):
+		push_error("Building panel should use concrete per-position occupancy lines: %s" % workstation_label.text)
 		quit(1)
 		return
 
-	var claim_result: Dictionary = building_system.claim_workstation("dining_hall", "cook_01", "cook")
+	var claim_result: Dictionary = building_system.claim_workstation(
+		"dining_hall",
+		"cook_01",
+		"dining_kitchen_station"
+	)
 	if not bool(claim_result.get("ok", false)):
-		push_error("Failed to claim dining hall cook workstation")
+		push_error("Failed to claim dining hall kitchen station: %s" % claim_result)
 		quit(1)
 		return
 	panel.show_building("dining_hall")
-	var cook_name := _npc_name(npc_system, "cook_01")
-	if not workstation_label.text.contains("厨师 0/1：%s" % cook_name):
-		push_error("Occupied dining hall workstation should show NPC name and 0 free slots: %s" % workstation_label.text)
+	var occupied_kitchen_line := "%s：%s占用中" % [kitchen_name, _npc_name(npc_system, "cook_01")]
+	if workstation_label.text.split("\n")[0] != occupied_kitchen_line:
+		push_error("Occupied position should show its concrete NPC: %s" % workstation_label.text)
 		quit(1)
 		return
-	building_system.release_workstation("dining_hall", "cook_01", str(claim_result.get("workstation_id", "")))
+	building_system.release_workstation(
+		"dining_hall",
+		"cook_01",
+		str(claim_result.get("workstation_id", ""))
+	)
 
 	var custom_clinic_workstations: Array[Dictionary] = [
-		{"id": "doctor_desk_01", "type": "clinic_doctor", "occupied_by": "doctor_01"},
-		{"id": "treatment_bed_01", "type": "patient_bed", "occupied_by": "priest_01"},
-		{"id": "treatment_bed_02", "type": "patient_bed", "occupied_by": null}
+		{"id": "doctor_desk_01", "type": "clinic_doctor_station", "name": "医生位", "occupied_by": "doctor_01"},
+		{"id": "treatment_bed_01", "type": "clinic_patient_bed", "name": "病床", "occupied_by": "priest_01"},
+		{"id": "treatment_bed_02", "type": "clinic_patient_bed", "name": "病床", "occupied_by": null}
 	]
 	var clinic_text := str(panel._format_workstations(custom_clinic_workstations))
-	if not clinic_text.contains("医生 0/1：%s" % _npc_name(npc_system, "doctor_01")):
-		push_error("Clinic doctor slot should show its own free/total count and occupant: %s" % clinic_text)
+	var expected_clinic_text := "\n".join([
+		"医生位：%s占用中" % _npc_name(npc_system, "doctor_01"),
+		"病床1：%s占用中" % _npc_name(npc_system, "priest_01"),
+		"病床2：空闲"
+	])
+	if clinic_text != expected_clinic_text:
+		push_error("Clinic positions should render one line each in config order: %s" % clinic_text)
 		quit(1)
 		return
-	if not clinic_text.contains("病床 1/2：%s" % _npc_name(npc_system, "priest_01")):
-		push_error("Clinic beds should be grouped with real free/total count: %s" % clinic_text)
+
+	var custom_chapel_workstations: Array[Dictionary] = [
+		{"id": "chapel_altar_01", "type": "chapel_altar", "occupied_by": null},
+		{"id": "chapel_prayer_seat_01", "type": "chapel_prayer_seat", "occupied_by": null},
+		{"id": "chapel_prayer_seat_02", "type": "chapel_prayer_seat", "occupied_by": "gardener_01"}
+	]
+	var chapel_text := str(panel._format_workstations(custom_chapel_workstations))
+	var expected_chapel_text := "\n".join([
+		"祭坛：空闲",
+		"祈祷席1：空闲",
+		"祈祷席2：%s占用中" % _npc_name(npc_system, "gardener_01")
+	])
+	if chapel_text != expected_chapel_text:
+		push_error("Type labels should provide stable fallbacks when station.name is absent: %s" % chapel_text)
 		quit(1)
 		return
 
 	var custom_training_workstations: Array[Dictionary] = [
-		{"id": "training_instructor_01", "type": "training_instructor", "occupied_by": "veteran_deputy_01"},
-		{"id": "training_student_01", "type": "training_student", "occupied_by": "stableman_01"},
-		{"id": "training_student_02", "type": "training_student", "occupied_by": null}
+		{"id": "training_student_01", "type": "training_practice_slot", "name": "训练位", "occupied_by": null},
+		{"id": "training_instructor_01", "type": "training_instructor_station", "name": "教官位", "occupied_by": "veteran_deputy_01"},
+		{"id": "training_student_02", "type": "training_practice_slot", "name": "训练位", "occupied_by": "stableman_01"}
 	]
 	var training_text := str(panel._format_workstations(custom_training_workstations))
-	if not training_text.contains("教官 0/1：%s" % _npc_name(npc_system, "veteran_deputy_01")):
-		push_error("Training instructor slot should show its own line: %s" % training_text)
+	var expected_training_text := "\n".join([
+		"训练位1：空闲",
+		"教官位：%s占用中" % _npc_name(npc_system, "veteran_deputy_01"),
+		"训练位2：%s占用中" % _npc_name(npc_system, "stableman_01")
+	])
+	if training_text != expected_training_text:
+		push_error("Training positions should not be regrouped by type: %s" % training_text)
 		quit(1)
 		return
-	if not training_text.contains("受训者 1/2：%s" % _npc_name(npc_system, "stableman_01")):
-		push_error("Training student slots should be grouped with free/total count: %s" % training_text)
+
+	var named_unknown_text := str(panel._format_workstations([
+		{"id": "custom_01", "type": "future_position_type", "name": "靠窗位", "occupied_by": null}
+	]))
+	if named_unknown_text != "靠窗位：空闲":
+		push_error("Explicit station.name should take priority over type mapping: %s" % named_unknown_text)
+		quit(1)
+		return
+
+	panel.show_building("stable")
+	await process_frame
+	await process_frame
+	await process_frame
+	var horse_section := panel.find_child("HorseSection", true, false) as VBoxContainer
+	var horse_summary := panel.find_child("HorseSummaryLabel", true, false) as Label
+	if horse_section == null or horse_summary == null:
+		push_error("Stable horse UI nodes are missing")
+		quit(1)
+		return
+	if not horse_summary.text.begins_with("在厩：") or not horse_summary.text.contains("｜离厩："):
+		push_error("Stable summary should use simplified in/out wording: %s" % horse_summary.text)
+		quit(1)
+		return
+	var assignment_count := 0
+	for node in horse_section.find_children("*", "Label", true, false):
+		var label := node as Label
+		if label == null:
+			continue
+		if label.text == "马厩马匹" or label.text.contains("物理在厩") or label.text.contains("骑手："):
+			push_error("Stable panel retained redundant horse wording: %s" % label.text)
+			quit(1)
+			return
+		if label.name.begins_with("HorseAssignment_"):
+			assignment_count += 1
+			if not label.text.begins_with("分配：") or label.text.contains("｜"):
+				push_error("Horse assignment line should contain only assignment: %s" % label.text)
+				quit(1)
+				return
+	if assignment_count == 0:
+		push_error("Stable panel should render at least one horse assignment line")
 		quit(1)
 		return
 
 	panel.show_building("wall")
-	if workstation_label.text != "工位：无":
-		push_error("Buildings without workstations should use the new no-workstation label: %s" % workstation_label.text)
+	if workstation_label.text != "位置：无":
+		push_error("Buildings without positions should use the concrete empty-state label: %s" % workstation_label.text)
 		quit(1)
 		return
 
-	print("T0016 building panel workstation display verification passed.")
+	print("Building panel per-position workstation display verification passed.")
 	quit(0)
 
 

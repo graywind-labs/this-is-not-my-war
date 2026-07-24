@@ -1,5 +1,20 @@
 extends SceneTree
 
+const SPECIFIC_ITEM_IDS := [
+	"item_sword_shield",
+	"item_polearm",
+	"item_bow",
+	"item_crossbow",
+	"item_iron_helmet",
+	"item_mail_chest",
+	"item_iron_bracers",
+	"item_iron_greaves",
+	"item_arrow_bundle",
+	"item_wall_ballista",
+	"item_wall_arrow_tower"
+]
+const LEGACY_AGGREGATE_IDS := ["weapons", "armor", "defense_devices", "horse_readiness"]
+
 
 func _init() -> void:
 	root.size = Vector2i(1280, 720)
@@ -29,6 +44,8 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
+	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
+	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
@@ -45,12 +62,21 @@ func _init() -> void:
 		or daily_plan_system == null
 		or daily_reflection_system == null
 		or combat_system == null
+		or crafting_system == null
+		or horse_system == null
 		or time_system == null
 		or game_state == null
 	):
 		push_error("GM verification required nodes not found")
 		quit(1)
 		return
+
+	# Keep this broad UI/command regression offline and deterministic. The dedicated
+	# real-provider suites own real LLM acceptance; an unsupported scheme makes any
+	# accidental request fail synchronously into the explicit rule/template path.
+	if llm_bridge.has_method("set_backend_base_url"):
+		llm_bridge.set_backend_base_url("gm-verify-invalid://backend")
+	llm_bridge.request_timeout_seconds = 0.2
 
 	if not gm_panel.visible:
 		push_error("GMPanel should be visible while GM_ENABLED is true")
@@ -110,6 +136,10 @@ func _init() -> void:
 		push_error("GM action controls should keep action selector and assign button")
 		quit(1)
 		return
+	if not _select_option_by_id(action_select, "attend_mass"):
+		push_error("GM action selector should expose attend_mass")
+		quit(1)
+		return
 	for redundant_text in ["工作", "当教官", "当受训者", "吃饭", "睡觉"]:
 		if _has_button_text(gm_window, redundant_text):
 			push_error("GM action section should not keep redundant '%s' button" % redundant_text)
@@ -127,6 +157,41 @@ func _init() -> void:
 	var equipment_armor_slot_select := gm_window.find_child("EquipmentArmorSlotSelect", true, false) as OptionButton
 	if equipment_weapon_select == null or equipment_armor_slot_select == null:
 		push_error("GM equipment controls should include weapon and armor slot selectors")
+		quit(1)
+		return
+	var resource_select := gm_window.find_child("ResourceSelect", true, false) as OptionButton
+	var crafting_building_select := gm_window.find_child("CraftingBuildingSelect", true, false) as OptionButton
+	var crafting_recipe_select := gm_window.find_child("CraftingRecipeSelect", true, false) as OptionButton
+	var horse_select := gm_window.find_child("HorseSelect", true, false) as OptionButton
+	if resource_select == null or crafting_building_select == null or crafting_recipe_select == null or horse_select == null:
+		push_error("GM crafting/horse controls should expose resource, building, recipe and horse selectors")
+		quit(1)
+		return
+	for item_id in SPECIFIC_ITEM_IDS:
+		if not _select_option_by_id(resource_select, item_id):
+			push_error("GM resource selector should include concrete item inventory: %s" % item_id)
+			quit(1)
+			return
+	for aggregate_id in LEGACY_AGGREGATE_IDS:
+		if _select_option_by_id(resource_select, aggregate_id):
+			push_error("GM resource selector should hide deprecated aggregate inventory: %s" % aggregate_id)
+			quit(1)
+			return
+	if not _select_option_by_id(crafting_building_select, "blacksmith"):
+		push_error("GM crafting building selector should include blacksmith")
+		quit(1)
+		return
+	gm_panel._fill_crafting_recipe_select()
+	if not _select_option_by_id(crafting_recipe_select, "craft_iron_helmet"):
+		push_error("GM crafting recipe selector should include blacksmith recipes")
+		quit(1)
+		return
+	if not _select_option_by_id(horse_select, "horse_chestnut_wind"):
+		push_error("GM horse selector should include the configured initial horses")
+		quit(1)
+		return
+	if _has_button_text(gm_window, "装备坐骑"):
+		push_error("GM panel should replace the deprecated generic mount button with horse assignment")
 		quit(1)
 		return
 	var recruit_button := gm_window.find_child("RecruitNpcButton", true, false) as Button
@@ -174,6 +239,32 @@ func _init() -> void:
 	gm_panel._execute_command("add_resource money 3")
 	if int(resource_system.get_resource("money")) != money_before + 3:
 		push_error("GM add_resource command failed")
+		quit(1)
+		return
+
+	var helmet_stock_before := int(resource_system.get_resource("item_iron_helmet"))
+	resource_system.add_resource("iron", 2)
+	gm_panel._execute_command("craft_target blacksmith craft_iron_helmet")
+	var blacksmith_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
+	if str(blacksmith_project.get("target_recipe_id", "")) != "craft_iron_helmet":
+		push_error("GM craft_target command should set the blacksmith project")
+		quit(1)
+		return
+	gm_panel._execute_command("craft_stage blacksmith gm_verify")
+	blacksmith_project = crafting_system.get_project_snapshot("blacksmith")
+	if int(blacksmith_project.get("completed_stages", 0)) != 1:
+		push_error("GM craft_stage command should complete exactly one stage")
+		quit(1)
+		return
+	gm_panel._execute_command("craft_snapshot blacksmith")
+	gm_panel._execute_command("craft_stage blacksmith gm_verify")
+	if int(resource_system.get_resource("item_iron_helmet")) != helmet_stock_before + 1:
+		push_error("GM craft_stage should add the concrete finished item after the final stage")
+		quit(1)
+		return
+	blacksmith_project = crafting_system.get_project_snapshot("blacksmith")
+	if int(blacksmith_project.get("completed_stages", -1)) != 0:
+		push_error("Completed crafting product should retain the target and reset integer stages")
 		quit(1)
 		return
 
@@ -293,9 +384,15 @@ func _init() -> void:
 		return
 	gm_panel._execute_command("order veteran_deputy_01")
 	gm_panel._execute_command("plan_request")
+	if not str(gm_panel._help_text()).contains("expire_plan_dialogues"):
+		push_error("GM help should expose the daily-plan dialogue expiry scan")
+		quit(1)
+		return
+	gm_panel._execute_command("expire_plan_dialogues")
 	gm_panel._execute_command("plan_generate veteran_deputy_01")
+	gm_panel._execute_command("plan_generate_rule veteran_deputy_01")
 	if npc_system.get_npc_plan("veteran_deputy_01").size() != 24:
-		push_error("GM plan_generate command should write a 24-hour plan")
+		push_error("GM plan_generate_rule command should write a deterministic 24-hour plan")
 		quit(1)
 		return
 	gm_panel._execute_command("plan veteran_deputy_01")
@@ -314,17 +411,41 @@ func _init() -> void:
 		push_error("GM last_order_injection command did not expose the latest current_order")
 		quit(1)
 		return
+	gm_panel._execute_command("station_context")
+	var station_context: Dictionary = llm_bridge.debug_build_station_context()
+	if (
+		(station_context.get("building_roster", []) as Array).is_empty()
+		or (station_context.get("work_mode_actions", []) as Array).is_empty()
+		or (station_context.get("basic_resource_reserves", []) as Array).size() != 5
+		or (station_context.get("station_rules", []) as Array).is_empty()
+	):
+		push_error("GM station_context command did not expose the expanded station context")
+		quit(1)
+		return
 
-	if llm_bridge.has_method("set_backend_base_url"):
-		llm_bridge.set_backend_base_url("http://127.0.0.1:5999")
-	llm_bridge.request_timeout_seconds = 0.2
+	var cook_diary_count_before := (
+		npc_system.get_npc_long_memory("cook_01").get("diary", []) as Array
+	).size()
 	gm_panel._execute_command("reflect_npc cook_01 force")
+	if not await _wait_for_reflection(
+		npc_system,
+		llm_bridge,
+		"cook_01",
+		cook_diary_count_before + 1
+	):
+		quit(1)
+		return
 	var cook_long_memory: Dictionary = npc_system.get_npc_long_memory("cook_01")
 	if (cook_long_memory.get("diary", []) as Array).is_empty():
 		push_error("GM reflect_npc command should write a diary entry")
 		quit(1)
 		return
 	gm_panel._execute_command("long_memory cook_01")
+	var long_memory_output := str(gm_panel._result_text.text)
+	if not long_memory_output.contains("\"confidence\"") or not long_memory_output.contains("\"time\""):
+		push_error("GM long_memory must retain raw confidence/time metadata even when NPCPanel hides it")
+		quit(1)
+		return
 	gm_panel._execute_command("reflection_result")
 	var reflection_result: Dictionary = daily_reflection_system.get_last_reflection_result()
 	if str(reflection_result.get("npc_id", "")) != "cook_01":
@@ -332,9 +453,8 @@ func _init() -> void:
 		quit(1)
 		return
 
-	resource_system.add_resource("weapons", 2)
-	resource_system.add_resource("armor", 1)
-	resource_system.add_resource("horse_readiness", 1)
+	resource_system.add_resource("item_bow", 2)
+	resource_system.add_resource("item_mail_chest", 1)
 	gm_panel._execute_command("equip_weapon veteran_deputy_01 bow local_public")
 	if str(equipment_system.get_npc_unit_type("veteran_deputy_01")) != "archer":
 		push_error("GM equip_weapon command should equip bow and classify archer")
@@ -345,9 +465,43 @@ func _init() -> void:
 		push_error("GM equip_armor command should equip chest armor")
 		quit(1)
 		return
-	gm_panel._execute_command("equip_mount veteran_deputy_01 local_public")
+	var horse_id := "horse_chestnut_wind"
+	var horse_before: Dictionary = horse_system.get_horse_snapshot(horse_id)
+	gm_panel._execute_command("horse_snapshot %s" % horse_id)
+	gm_panel._execute_command("horse_damage %s 5" % horse_id)
+	var horse_after_damage: Dictionary = horse_system.get_horse_snapshot(horse_id)
+	if float(horse_after_damage.get("hp", 0.0)) >= float(horse_before.get("hp", 0.0)):
+		push_error("GM horse_damage command should apply damage through HorseSystem")
+		quit(1)
+		return
+	var satiety_before_advance := float(horse_after_damage.get("satiety", 0.0))
+	gm_panel._execute_command("horse_advance 60")
+	if float(horse_system.get_horse_snapshot(horse_id).get("satiety", 0.0)) >= satiety_before_advance:
+		push_error("GM horse_advance command should advance horse ecology")
+		quit(1)
+		return
+	var horse_count_before_birth := int(horse_system.get_horse_count())
+	gm_panel._execute_command("horse_birth")
+	if int(horse_system.get_horse_count()) != horse_count_before_birth + 1:
+		push_error("GM horse_birth command should call HorseSystem.debug_force_birth")
+		quit(1)
+		return
+	gm_panel._execute_command("horse_assign veteran_deputy_01 %s local_public" % horse_id)
 	if str(equipment_system.get_npc_unit_type("veteran_deputy_01")) != "mounted_ranged":
-		push_error("GM equip_mount command should update mounted unit type")
+		push_error("GM horse_assign command should assign a concrete horse and update unit type")
+		quit(1)
+		return
+	if str(horse_system.get_horse_snapshot(horse_id).get("assigned_npc_id", "")) != "veteran_deputy_01":
+		push_error("GM horse_assign should update the HorseSystem assignment fact")
+		quit(1)
+		return
+	gm_panel._execute_command("horse_unassign veteran_deputy_01 local_public")
+	if not str(horse_system.get_horse_snapshot(horse_id).get("assigned_npc_id", "")).is_empty():
+		push_error("GM horse_unassign should clear the concrete horse assignment")
+		quit(1)
+		return
+	if str(equipment_system.get_npc_unit_type("veteran_deputy_01")) != "archer":
+		push_error("GM horse_unassign should clear the NPC mount projection")
 		quit(1)
 		return
 	gm_panel._execute_command("unit_type veteran_deputy_01")
@@ -382,6 +536,14 @@ func _init() -> void:
 		quit(1)
 		return
 
+	if not await _wait_for_llm_cleanup(llm_bridge):
+		quit(1)
+		return
+	# The startup/planning verification above may intentionally leave gameplay paused.
+	# Unpause and clear startup-plan work before asserting that a GM-assigned runtime
+	# action starts immediately. Startup LLM timing must not decide this assertion.
+	time_system.set_paused(false)
+	action_system.interrupt_npc_action("veteran_deputy_01", "gm_verify_training_setup")
 	if not npc_system.debug_enter_location_immediately("veteran_deputy_01", "training_ground"):
 		push_error("Failed to place veteran at training ground for GM training test")
 		quit(1)
@@ -392,12 +554,13 @@ func _init() -> void:
 		quit(1)
 		return
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_bow", 1)
 	var stableman_weapon: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "bow", "private")
 	if not bool(stableman_weapon.get("ok", false)):
 		push_error("Failed to equip stableman for GM training test")
 		quit(1)
 		return
+	action_system.interrupt_npc_action("stableman_01", "gm_verify_training_setup")
 	if not npc_system.debug_enter_location_immediately("stableman_01", "training_ground"):
 		push_error("Failed to place stableman at training ground for GM training test")
 		quit(1)
@@ -441,6 +604,31 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("last_action_result", "")) == expected_result:
 			return true
+	return false
+
+
+func _wait_for_reflection(
+	npc_system: Node,
+	llm_bridge: Node,
+	npc_id: String,
+	expected_diary_count: int
+) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		var diary: Array = npc_system.get_npc_long_memory(npc_id).get("diary", [])
+		var runtime: Dictionary = llm_bridge.debug_get_llm_runtime_snapshot()
+		if diary.size() == expected_diary_count and int(runtime.get("async_request_count", 0)) == 0:
+			return true
+	push_error("Timed out waiting for GM async reflection")
+	return false
+
+
+func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		if int(llm_bridge.debug_get_llm_runtime_snapshot().get("async_request_count", 0)) == 0:
+			return true
+	push_error("Timed out waiting for GM LLM async cleanup")
 	return false
 
 

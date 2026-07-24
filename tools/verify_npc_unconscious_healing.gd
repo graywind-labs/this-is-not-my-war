@@ -154,6 +154,25 @@ func _init() -> void:
 		push_error("Healing should fail when money is insufficient")
 		quit(1)
 		return
+	if not resource_system.debug_add_resource("money", 1):
+		push_error("Failed to fund one initial healing payment")
+		quit(1)
+		return
+	if not action_system.debug_assign_heal_assist(third_healer_id, no_money_target_id):
+		push_error("Healer should start when exactly the initial payment is available")
+		quit(1)
+		return
+	event_bus.logical_time_tick.emit(1800.0, 1.0)
+	await process_frame
+	var depleted_state: Dictionary = npc_system.get_npc_state(third_healer_id)
+	if str(depleted_state.get("last_action_result", "")) != "assist_heal_failed_no_money":
+		push_error("Mid-treatment money depletion was not exposed as an action failure: %s" % str(depleted_state))
+		quit(1)
+		return
+	if not _has_event(memory_system.get_npc_daily_events(third_healer_id), "healing_failed"):
+		push_error("Mid-treatment money depletion was falsely logged as completion")
+		quit(1)
+		return
 
 	print("T0503 NPC unconscious healing verification passed.")
 	quit(0)

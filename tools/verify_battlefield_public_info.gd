@@ -86,7 +86,7 @@ func _init() -> void:
 	_set_npc_position(npc_system, ESCAPER_ID, Vector3(-10.0, 0.0, -22.7))
 
 	npc_system.set_npc_recruited(COMBATANT_ID, true)
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_sword_shield", 1)
 	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon(COMBATANT_ID, "sword_shield", "private")
 	if not bool(weapon_result.get("ok", false)):
 		_fail("Failed to equip combatant for verification: %s" % JSON.stringify(weapon_result))
@@ -189,8 +189,8 @@ func _init() -> void:
 	if not bool(low_hp_damage.get("ok", false)):
 		_fail("Failed to damage NPC for low HP check")
 		return
-	await process_frame
-	await process_frame
+	if not await _wait_for_low_hp_result(combat_system, LOW_HP_ID):
+		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "low_hp_triggered", LOW_HP_ID), "Witness should receive low_hp_triggered"):
 		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "battle_psychology_result", LOW_HP_ID), "Witness should receive low HP battle_psychology_result"):
@@ -207,6 +207,14 @@ func _init() -> void:
 		return
 	await process_frame
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "unconscious_started", UNCONSCIOUS_ID), "Witness should receive unconscious_started"):
+		return
+	action_system.interrupt_npc_action(HEALER_ID, "verify_battlefield_healer_ready")
+	var healer_mode_result: Dictionary = npc_system.set_npc_behavior_mode(HEALER_ID, "work", "verify_battlefield_healer_ready", {
+		"force_idle": true,
+		"request_plan_reevaluation": false
+	})
+	if not bool(healer_mode_result.get("ok", false)):
+		_fail("Failed to reset healer before assisted recovery: %s" % JSON.stringify(healer_mode_result))
 		return
 	if not action_system.debug_assign_heal_assist(HEALER_ID, UNCONSCIOUS_ID):
 		_fail("Healer should be able to assist unconscious NPC")
@@ -257,6 +265,8 @@ func _init() -> void:
 		return
 	if not _expect(not _has_mode_transition(memory_system.get_all_events(), "avoid_combat", "work"), "avoid_combat -> work should not broadcast npc_mode_changed"):
 		return
+	if not await _wait_for_llm_cleanup(llm_bridge):
+		return
 
 	print("T1205 battlefield public info verification passed.")
 	quit(0)
@@ -272,6 +282,25 @@ func _expect(condition: bool, message: String) -> bool:
 		_fail(message)
 		return false
 	return true
+
+
+func _wait_for_low_hp_result(combat_system: Node, npc_id: String) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		var result: Dictionary = combat_system.debug_get_combat_snapshot().get("last_low_hp_judgement_result", {})
+		if str(result.get("npc_id", "")) == npc_id and str(result.get("status", "")) != "pending":
+			return true
+	_fail("Timed out waiting for async low HP judgement for %s" % npc_id)
+	return false
+
+
+func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		if int(llm_bridge.debug_get_llm_runtime_snapshot().get("async_request_count", 0)) == 0:
+			return true
+	_fail("Timed out waiting for battlefield LLM async cleanup")
+	return false
 
 
 func _first_enemy_id(combat_system: Node) -> String:

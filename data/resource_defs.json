@@ -37,7 +37,10 @@
     "category": "derived",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 5
+    "ui_order": 5,
+    "show_in_main_hud": false,
+    "deprecated": true,
+    "formal_consumption_allowed": false
   },
   {
     "id": "armor",
@@ -45,7 +48,10 @@
     "category": "derived",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 6
+    "ui_order": 6,
+    "show_in_main_hud": false,
+    "deprecated": true,
+    "formal_consumption_allowed": false
   },
   {
     "id": "defense_devices",
@@ -53,7 +59,10 @@
     "category": "derived",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 7
+    "ui_order": 7,
+    "show_in_main_hud": false,
+    "deprecated": true,
+    "formal_consumption_allowed": false
   },
   {
     "id": "horse_readiness",
@@ -61,7 +70,10 @@
     "category": "derived",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 8
+    "ui_order": 8,
+    "show_in_main_hud": false,
+    "deprecated": true,
+    "formal_consumption_allowed": false
   },
   {
     "id": "wood",
@@ -86,5 +98,115 @@
     "initial_amount": 5,
     "min_amount": 0,
     "ui_order": 11
+  },
+  {
+    "id": "item_sword_shield",
+    "name": "剑盾",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 20,
+    "show_in_main_hud": false,
+    "detail_group": "weapon"
+  },
+  {
+    "id": "item_polearm",
+    "name": "长杆武器",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 21,
+    "show_in_main_hud": false,
+    "detail_group": "weapon"
+  },
+  {
+    "id": "item_bow",
+    "name": "弓",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 22,
+    "show_in_main_hud": false,
+    "detail_group": "weapon"
+  },
+  {
+    "id": "item_crossbow",
+    "name": "弩",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 23,
+    "show_in_main_hud": false,
+    "detail_group": "weapon"
+  },
+  {
+    "id": "item_iron_helmet",
+    "name": "铁盔",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 24,
+    "show_in_main_hud": false,
+    "detail_group": "armor"
+  },
+  {
+    "id": "item_mail_chest",
+    "name": "锁子甲",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 25,
+    "show_in_main_hud": false,
+    "detail_group": "armor"
+  },
+  {
+    "id": "item_iron_bracers",
+    "name": "铁护腕",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 26,
+    "show_in_main_hud": false,
+    "detail_group": "armor"
+  },
+  {
+    "id": "item_iron_greaves",
+    "name": "铁护腿",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 27,
+    "show_in_main_hud": false,
+    "detail_group": "armor"
+  },
+  {
+    "id": "item_arrow_bundle",
+    "name": "箭束",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 28,
+    "show_in_main_hud": false,
+    "detail_group": "ammunition"
+  },
+  {
+    "id": "item_wall_ballista",
+    "name": "弩床",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 29,
+    "show_in_main_hud": false,
+    "detail_group": "defense_device"
+  },
+  {
+    "id": "item_wall_arrow_tower",
+    "name": "箭塔",
+    "category": "crafted_item",
+    "initial_amount": 0,
+    "min_amount": 0,
+    "ui_order": 30,
+    "show_in_main_hud": false,
+    "detail_group": "defense_device"
   }
 ]

@@ -26,10 +26,14 @@ func _init() -> void:
 		return
 
 	var npc_id := "veteran_deputy_01"
-	resource_system.add_resource("weapons", 1)
-	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon(npc_id, "sword_shield", "private")
-	if not bool(weapon_result.get("ok", false)):
-		push_error("Failed to equip Ada with sword_shield: %s" % JSON.stringify(weapon_result))
+	var initial_weapons := int(resource_system.get_resource("weapons"))
+	var initial_unit: Dictionary = equipment_system.get_unit_type_snapshot(npc_id)
+	if str(initial_unit.get("main_weapon_id", "")) != "sword_shield" or str(initial_unit.get("unit_type", "")) != "melee_infantry":
+		push_error("Ada should enter the initial combat pacing scenario with sword_shield: %s" % JSON.stringify(initial_unit))
+		quit(1)
+		return
+	if int(resource_system.get_resource("weapons")) != initial_weapons:
+		push_error("Ada's initial sword_shield must not spend station weapon inventory")
 		quit(1)
 		return
 

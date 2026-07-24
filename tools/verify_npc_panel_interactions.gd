@@ -32,13 +32,21 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var visibility_select := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow/NPCInteractionVisibilitySelect") as OptionButton
-	var money_spin := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiftMoneySpin") as SpinBox
-	var gift_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiftMoneyButton") as Button
-	var weapon_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCGiveWeaponButton") as Button
-	var equipment_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCEquipmentLabel") as Label
-	var result_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionResultLabel") as Label
-	if visibility_select == null or money_spin == null or gift_button == null or weapon_button == null or equipment_label == null or result_label == null:
+	# NPCPanel is wrapped in a runtime ScrollContainer, so interaction tests locate
+	# stable named controls instead of depending on the pre-wrap absolute path.
+	var visibility_select := npc_panel.find_child("NPCInteractionVisibilitySelect", true, false) as OptionButton
+	var money_spin := npc_panel.find_child("NPCGiftMoneySpin", true, false) as SpinBox
+	var gift_button := npc_panel.find_child("NPCGiftMoneyButton", true, false) as Button
+	var weapon_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
+	var unequip_weapon_button := npc_panel.find_child("NPCUnequipWeaponButton", true, false) as Button
+	var armor_equip_button := npc_panel.find_child("NPCEquipArmorButton", true, false) as Button
+	var armor_unequip_button := npc_panel.find_child("NPCUnequipArmorButton", true, false) as Button
+	var horse_assign_button := npc_panel.find_child("NPCAssignHorseButton", true, false) as Button
+	var horse_unassign_button := npc_panel.find_child("NPCUnassignHorseButton", true, false) as Button
+	var strategy_select := npc_panel.find_child("NPCCombatStrategySelect", true, false) as OptionButton
+	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
+	var result_label := npc_panel.find_child("NPCInteractionResultLabel", true, false) as Label
+	if [visibility_select, money_spin, gift_button, weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select, equipment_label, result_label].has(null):
 		push_error("NPC interaction controls are missing")
 		quit(1)
 		return
@@ -145,23 +153,35 @@ func _init() -> void:
 		quit(1)
 		return
 
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_bow", 1)
 	await process_frame
 	if not weapon_button.disabled:
 		push_error("Weapon button should stay disabled for unrecruited NPC")
 		quit(1)
 		return
+	var recruitment_hint := "需先说服该人物应征入伍，才能进行这项操作。"
+	for control in [weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select]:
+		if not control.disabled or control.tooltip_text != recruitment_hint:
+			push_error("Unrecruited gated control should be disabled with recruitment guidance: %s / %s" % [control.name, control.tooltip_text])
+			quit(1)
+			return
 
 	var recruited_target_id := "veteran_deputy_01"
 	npc_system.debug_select_npc(recruited_target_id)
 	await process_frame
-	if weapon_button.disabled:
-		push_error("Weapon button stayed disabled for recruited NPC after adding weapon resource")
+	var weapon_select := npc_panel.find_child("NPCWeaponSelect", true, false) as OptionButton
+	if weapon_select == null or not _select_option_by_id(weapon_select, "bow"):
+		push_error("Formal weapon selector should include bow backed by item_bow")
 		quit(1)
 		return
-	var weapon_select := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCWeaponSelect") as OptionButton
-	if weapon_select == null or not _select_option_by_id(weapon_select, "sword_shield"):
-		push_error("Formal weapon selector should include sword_shield")
+	weapon_select.item_selected.emit(weapon_select.selected)
+	await process_frame
+	if weapon_button.disabled:
+		push_error("Weapon button stayed disabled for recruited NPC after adding item_bow")
+		quit(1)
+		return
+	if weapon_button.tooltip_text == recruitment_hint:
+		push_error("Recruited NPC control should restore its normal tooltip")
 		quit(1)
 		return
 	weapon_button.pressed.emit()
@@ -169,16 +189,16 @@ func _init() -> void:
 	var target_profile: Dictionary = npc_system.get_npc(recruited_target_id)
 	var equipment: Dictionary = target_profile.get("equipment", {})
 	var main_weapon: Dictionary = equipment.get("main_weapon", {})
-	if str(main_weapon.get("id", "")) != "sword_shield":
+	if str(main_weapon.get("id", "")) != "bow":
 		push_error("Weapon button did not assign selected formal weapon")
 		quit(1)
 		return
-	if not equipment_label.text.contains("剑盾"):
+	if not equipment_label.text.contains("弓"):
 		push_error("NPCPanel did not display formal weapon")
 		quit(1)
 		return
-	if not _has_event(memory_system.get_npc_daily_events(recruited_target_id), "equipment_given"):
-		push_error("Weapon button did not write equipment event")
+	if not _has_event(memory_system.get_npc_daily_events(recruited_target_id), "equipment_changed"):
+		push_error("Replacing Ada's story sword with the selected bow did not write equipment_changed")
 		quit(1)
 		return
 

@@ -5,12 +5,31 @@
     "gender": "male",
     "background_job": "马夫",
     "appearance": "肩背宽厚，常穿沾着干草和马汗味的旧皮围裙，手上有缰绳磨出的茧。",
-    "background_story": "托马在马厩工作多年，熟悉每匹马的脾气。他认为自己的职责是让马活下来，而不是把它们送进战场。",
-    "personality": ["谨慎", "重感情", "嘴硬心软"],
-    "desires": ["保护马厩", "保住驿站的马匹", "活过这场围困"],
-    "fears": ["被迫冲锋", "马匹被当作消耗品", "自己临阵失控"],
-    "boundaries": ["不能接受无意义牺牲马匹"],
-    "abilities": ["照料马匹", "基础骑术", "运送物资"],
+    "background_story": "托马把照料生命看成一份必须亲自负责的工作。他会耐心确认马匹的伤病和情绪，不轻易承诺，也不会为了服从而忽视明显风险。对他而言，可靠比逞强重要。",
+    "personality": [
+      "耐心谨慎",
+      "重视责任",
+      "不爱逞强"
+    ],
+    "desires": [
+      "把马匹照料好",
+      "保住马厩和驿站的马",
+      "在危机中让自己和马都活下来"
+    ],
+    "fears": [
+      "马匹因疏忽受伤",
+      "被迫带着不适合出战的马参加冲锋",
+      "自己的专业判断被随意否定"
+    ],
+    "boundaries": [
+      "不会接受明知会无谓伤害或牺牲马匹的安排"
+    ],
+    "speech_style": "说话朴素简短，先描述自己看到的马匹状态和实际困难，再给意见。很少说教，也不会为了显得深刻而绕弯子。",
+    "abilities": [
+      "照料马匹",
+      "基础骑术",
+      "运送物资"
+    ],
     "stats": {
       "strength": 6,
       "intelligence": 4
@@ -41,7 +60,13 @@
       "骑术": 48
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -54,12 +79,31 @@
     "gender": "male",
     "background_job": "厨子",
     "appearance": "身材结实，围裙总带着烟熏和肉汤味，说话时习惯把勺子当指挥棒。",
-    "background_story": "布鲁诺负责食堂和酒窖的日常。他相信一锅热汤比一场演说更能让人站稳。",
-    "personality": ["直率", "爱抱怨", "照顾别人"],
-    "desires": ["守住食堂", "让所有人吃上一顿热饭", "证明后勤也能救命"],
-    "fears": ["粮食见底", "被要求用刀杀人", "饭桌变成伤员床"],
-    "boundaries": ["不愿主动处决或虐待俘虏"],
-    "abilities": ["烹饪", "酿酒", "分配口粮"],
+    "background_story": "布鲁诺习惯从饭量、存粮和谁先吃饭判断一个地方是否公道。他脾气大，账算得细，照顾别人时很少说好听话，但不会假装没看见有人挨饿。",
+    "personality": [
+      "直来直去",
+      "精打细算",
+      "嘴硬心软"
+    ],
+    "desires": [
+      "让食堂每天稳定开饭",
+      "危机中仍让所有人吃到热饭",
+      "让后勤工作得到应有的重视"
+    ],
+    "fears": [
+      "存粮耗尽",
+      "有人靠抢食维持秩序",
+      "伤员多到食堂也被迫腾作病房"
+    ],
+    "boundaries": [
+      "不会参与处决、虐待俘虏或故意断绝他人的食物"
+    ],
+    "speech_style": "说话口语化，喜欢直接报人数、分量和花费。抱怨通常很具体，关心别人时也常先批评对方没吃饭或给他添了多少收拾工作。",
+    "abilities": [
+      "烹饪",
+      "酿酒",
+      "分配口粮"
+    ],
     "stats": {
       "strength": 6,
       "intelligence": 4
@@ -90,7 +134,13 @@
       "骑术": 4
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -103,12 +153,31 @@
     "gender": "male",
     "background_job": "园丁",
     "appearance": "身形瘦高，指甲里常有泥土，腰间挂着修枝小刀和一卷细绳。",
-    "background_story": "伊沃照看菜园和药草。他相信活物需要耐心，而战争只会把一切连根拔起。",
-    "personality": ["温和", "固执", "怕冲突"],
-    "desires": ["保护菜园", "维持粮食产出", "让驿站的人别互相撕裂"],
-    "fears": ["菜园被烧毁", "粮食短缺引发争抢", "自己被迫伤人"],
-    "boundaries": ["不接受烧毁平民粮田的命令"],
-    "abilities": ["耕种", "辨认草药", "维护菜园"],
+    "background_story": "伊沃有耐心，喜欢把大问题拆成每天能做完的小事。他愿意等作物长成，也愿意给人时间；但涉及土地、种子和普通人的口粮时，他会把反对理由说清楚，并坚持到底。",
+    "personality": [
+      "安静耐心",
+      "做事细致",
+      "在原则问题上固执"
+    ],
+    "desires": [
+      "让菜园持续有收成",
+      "保住下一季能用的种子",
+      "避免粮食短缺引发争抢"
+    ],
+    "fears": [
+      "菜园遭到严重破坏",
+      "一季收成全部失败",
+      "被要求毁掉普通人赖以生存的田地"
+    ],
+    "boundaries": [
+      "不会烧毁或故意破坏平民赖以生存的粮田"
+    ],
+    "speech_style": "语气平静，句子完整，通常先说明天气、土壤或实际进度，再表达判断。他不高声争辩，拒绝时会把理由说清楚。",
+    "abilities": [
+      "耕种",
+      "辨认草药",
+      "维护菜园"
+    ],
     "stats": {
       "strength": 5,
       "intelligence": 5
@@ -139,7 +208,13 @@
       "骑术": 5
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -152,12 +227,32 @@
     "gender": "male",
     "background_job": "铁匠",
     "appearance": "手臂粗壮，胡须里沾着煤灰，旧围裙被火星烫出许多小洞。",
-    "background_story": "格伦打造工具、马蹄铁和武器。他知道铁器能保护人，也知道它们会怎样切开人。",
-    "personality": ["暴躁", "讲原则", "护短"],
-    "desires": ["保住铁匠铺", "让自己的作品用于防御", "不让外行糟蹋装备"],
-    "fears": ["武器被滥用", "工坊被夺走", "亲手打造屠杀工具"],
-    "boundaries": ["反感把没训练的人直接推上前线"],
-    "abilities": ["打铁", "修理武器", "制作护甲"],
+    "background_story": "格伦认为，工匠的责任不只是在交货前检查成品，还要考虑成品会被谁使用。他说话直接，对材料和工序要求严格，宁可拒绝一笔生意，也不肯把明知不可靠的装备交出去。",
+    "personality": [
+      "直率",
+      "严格",
+      "重视责任"
+    ],
+    "desires": [
+      "保住铁匠铺和稳定的制作工序",
+      "让自己打造的装备真正保护使用者",
+      "让驿站尊重材料、时间和专业判断"
+    ],
+    "fears": [
+      "赶工或劣质材料最终害人",
+      "成品被不负责任的人滥用",
+      "自己明知有风险却选择沉默"
+    ],
+    "boundaries": [
+      "拒绝省略会影响安全的关键工序",
+      "反对把没有训练的人直接推到前线"
+    ],
+    "speech_style": "句子短，先说结论，再说明材料、工序或风险。不讲漂亮话，认可别人时也只会直接指出哪件事做对了。",
+    "abilities": [
+      "打铁",
+      "修理武器",
+      "制作护甲"
+    ],
     "stats": {
       "strength": 8,
       "intelligence": 5
@@ -188,7 +283,13 @@
       "骑术": 4
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -199,14 +300,34 @@
     "id": "veteran_deputy_01",
     "name": "艾达",
     "gender": "female",
-    "background_job": "副官",
+    "background_job": "老兵副官",
     "appearance": "短发夹着灰白，旧军服修补得很整齐，左眉有一道浅疤。",
-    "background_story": "艾达曾在边境军服役，见过真正的溃败。她是开局唯一可被指派的人，也是玩家和军事流程之间的桥梁。",
-    "personality": ["沉稳", "疲惫", "守规矩"],
-    "desires": ["守住主厅", "让其他人活下来", "把防线组织成形"],
-    "fears": ["防线过早崩溃", "玩家用谎言制造更大灾难", "无训练者被白白送死"],
-    "boundaries": ["不接受无意义处决"],
-    "abilities": ["基础指挥", "武器训练", "防线组织"],
+    "background_story": "艾达接到命令时会先核对人手、路线和退路。她接受职责约束，却不会用服从逃避责任；如果一项安排会让人白白送命，她一定会把风险和替代方案说出来。",
+    "personality": [
+      "冷静",
+      "务实",
+      "有责任感"
+    ],
+    "desires": [
+      "守住主厅并维持驿站秩序",
+      "让每项命令都有清楚的执行安排",
+      "尽可能把所有人安全带回来"
+    ],
+    "fears": [
+      "错误信息造成无法挽回的损失",
+      "无人轮换导致人员和秩序一同崩溃",
+      "没有训练的人被白白牺牲"
+    ],
+    "boundaries": [
+      "不执行无意义的处决",
+      "不会隐瞒命令的风险和代价"
+    ],
+    "speech_style": "说话有条理，习惯按现状、风险、方案和后果依次说明。语气克制，不用英雄口号，也不会替错误命令找借口。",
+    "abilities": [
+      "基础指挥",
+      "武器训练",
+      "防线组织"
+    ],
     "stats": {
       "strength": 7,
       "intelligence": 6
@@ -237,7 +358,16 @@
       "骑术": 35
     },
     "recruited": true,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
+    "initial_equipment": {
+      "main_weapon": "sword_shield"
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -250,12 +380,32 @@
     "gender": "male",
     "background_job": "神父",
     "appearance": "黑色旧袍洗得发白，胸前挂着木质圣徽，眼神温和但并不软弱。",
-    "background_story": "马塞尔主持小教堂和弥撒，常替伤员与惊惧者祷告。他不愿把信仰变成战争口号。",
-    "personality": ["克制", "善辩", "关心众人"],
-    "desires": ["安抚驿站的人", "守住小教堂", "避免仇恨吞掉每个人"],
-    "fears": ["信仰被用来合理化暴力", "人群恐慌", "自己无法阻止逃离"],
-    "boundaries": ["不愿为残酷命令背书"],
-    "abilities": ["主持弥撒", "安抚情绪", "调解争执"],
+    "background_story": "马塞尔相信，信仰应当帮助人面对恐惧和责任，而不是替任何权力免罪。他温和、善辩，擅长酿酒，也愿意承认现实中的难题通常比教义问答更麻烦。",
+    "personality": [
+      "温和",
+      "善于倾听",
+      "有原则"
+    ],
+    "desires": [
+      "让驿站的人能够表达恐惧和分歧",
+      "维持小教堂的日常活动",
+      "阻止信仰被用来替残酷行为辩护"
+    ],
+    "fears": [
+      "人们因恐慌而互相伤害",
+      "教会身份被当成命令的装饰",
+      "自己在应该反对时选择沉默"
+    ],
+    "boundaries": [
+      "不会为残酷命令提供宗教背书",
+      "不会用祷告替代能够实际帮助人的行动"
+    ],
+    "speech_style": "语气温和，使用完整清楚的句子。愿意先听完再提出异议，谈信仰时会落到具体的人和后果，偶尔用教会规矩与生活现实的差距缓和气氛。",
+    "abilities": [
+      "主持弥撒",
+      "安抚情绪",
+      "调解争执"
+    ],
     "stats": {
       "strength": 3,
       "intelligence": 7
@@ -286,7 +436,13 @@
       "骑术": 2
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -299,12 +455,32 @@
     "gender": "female",
     "background_job": "医生",
     "appearance": "衣袖总是卷起，药箱边角磨损严重，说话冷静而直接。",
-    "background_story": "莉娜负责小诊所，见过太多伤口和截肢。她对英雄话术不敏感，更在意谁会被送回来缝合。",
-    "personality": ["冷静", "尖锐", "责任感强"],
-    "desires": ["救治伤员", "保住诊所", "减少无谓伤亡"],
-    "fears": ["药品耗尽", "被迫放弃病人", "玩家把人当作资源消耗"],
-    "boundaries": ["拒绝主动伤害无防备者"],
-    "abilities": ["治疗", "判断伤势", "研究医术"],
+    "background_story": "莉娜把准确诊断和避免二次伤害放在首位。她说话克制，面对痛苦时总是先处理问题，再考虑如何安慰人，因此常显得冷淡；但只要病人仍有救，她就不会轻易放弃。",
+    "personality": [
+      "冷静谨慎",
+      "观察细致",
+      "不轻易放弃病人"
+    ],
+    "desires": [
+      "让伤病得到及时处理",
+      "维持诊所正常运作",
+      "减少本可避免的伤害"
+    ],
+    "fears": [
+      "关键药品耗尽",
+      "病人因错误记录受到伤害",
+      "被迫放弃仍有救的人"
+    ],
+    "boundaries": [
+      "不主动伤害毫无防备的人",
+      "不隐瞒会危及病人的医疗风险"
+    ],
+    "speech_style": "说话简洁克制，先核对事实和风险，再给出结论。她会直接说明伤情、用药和时间上的代价，不用夸张修辞，也很少说没有实际帮助的安慰话。",
+    "abilities": [
+      "治疗",
+      "判断伤势",
+      "研究医术"
+    ],
     "stats": {
       "strength": 3,
       "intelligence": 8
@@ -335,7 +511,13 @@
       "骑术": 2
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],
@@ -348,12 +530,32 @@
     "gender": "male",
     "background_job": "工程师",
     "appearance": "皮带上挂着尺、炭笔和几枚木楔，常盯着墙角估算承重。",
-    "background_story": "欧文负责工械坊和防御器械。他喜欢解决结构问题，却害怕自己的设计变成杀人的机器。",
-    "personality": ["好奇", "焦虑", "爱较真"],
-    "desires": ["守住围墙", "证明工械坊有用", "把问题拆成可解决的结构"],
-    "fears": ["器械失控", "设计造成平民伤亡", "来不及修好防线"],
-    "boundaries": ["不愿制造明显针对平民的陷阱"],
-    "abilities": ["木工工程", "制造弓弩", "布置简易防御器械"],
+    "background_story": "欧文对新结构和新器械有强烈好奇心，动手前却一定要问清尺寸、材料和失效后果。他愿意尝试可以控制、可以维修的方案，也会因为担心漏掉小问题而反复检查。",
+    "personality": [
+      "好奇心强",
+      "做事严谨",
+      "容易为遗漏细节焦虑"
+    ],
+    "desires": [
+      "让驿站设施可靠运作",
+      "证明工械坊能解决实际问题",
+      "把复杂故障拆成可处理的步骤"
+    ],
+    "fears": [
+      "器械失控伤到无关的人",
+      "结构问题被拖到无法补救",
+      "为省材料导致更大的返工"
+    ],
+    "boundaries": [
+      "不制造无法区分目标的陷阱",
+      "不在明知结构不安全时认可施工"
+    ],
+    "speech_style": "表达有条理，通常按问题、原因、解决办法的顺序说话。遇到含糊要求时会追问尺寸、材料和使用条件；紧张时会把检查事项说得过细。",
+    "abilities": [
+      "木工工程",
+      "制造弓弩",
+      "布置简易防御器械"
+    ],
     "stats": {
       "strength": 4,
       "intelligence": 8
@@ -384,7 +586,13 @@
       "骑术": 4
     },
     "recruited": false,
-    "current_order": {"text": "", "issued_by": "guard_officer", "issued_day": 0, "issued_time": "", "revision": 0},
+    "current_order": {
+      "text": "",
+      "issued_by": "guard_officer",
+      "issued_day": 0,
+      "issued_time": "",
+      "revision": 0
+    },
     "equipment": {},
     "plan": [],
     "short_term_memory": [],

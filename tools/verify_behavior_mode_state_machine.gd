@@ -52,7 +52,7 @@ func _init() -> void:
 	print("[T1103A] systems ready")
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 5)
+	resource_system.add_resource("item_sword_shield", 1)
 	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	if not bool(equip_result.get("ok", false)):
 		push_error("Failed to equip stableman: %s" % JSON.stringify(equip_result))

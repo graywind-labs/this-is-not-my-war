@@ -25,8 +25,14 @@ func _init() -> void:
 	var cook_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Cook01")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel") as Control
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel") as Control
-	var dialogue_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButton") as Button
-	var hud_warning := root.get_node_or_null("Main/UI/HUD/EscapeWarningLabel") as Label
+	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button if npc_panel != null else null
+	var hud := root.get_node_or_null("Main/UI/HUD")
+	var hud_warning := hud.find_child("EscapeWarningLabel", true, false) as Label if hud != null else null
+	if cook_node == null:
+		for child in root.get_node("Main/WorldRoot/Station/NPCs").get_children():
+			if str(child.get("npc_id")) == "cook_01":
+				cook_node = child
+				break
 	if (
 		combat_system == null
 		or npc_system == null
@@ -312,8 +318,8 @@ func _init() -> void:
 		push_error("Escape dialogue attack should speed escape: before=%f after=%f" % [attack_before, attack_after])
 		quit(1)
 		return
-	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "dialogue_turn") != dialogue_turns_before:
-		push_error("Escape dialogue attack should not record a dialogue_turn reply")
+	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "dialogue_turn") != dialogue_turns_before + 1:
+		push_error("Escape dialogue attack should complete and preserve one no-reply dialogue session")
 		quit(1)
 		return
 	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "escape_intervention_result") != intervention_results_before:

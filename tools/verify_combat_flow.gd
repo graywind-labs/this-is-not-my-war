@@ -40,7 +40,7 @@ func _init() -> void:
 	_set_npc_position(npc_system, "cook_01", Vector3(0.35, 0.0, 0.0))
 
 	npc_system.set_npc_recruited("stableman_01", true)
-	resource_system.add_resource("weapons", 1)
+	resource_system.add_resource("item_sword_shield", 1)
 	var weapon_result: Dictionary = equipment_system.equip_npc_main_weapon("stableman_01", "sword_shield", "private")
 	if not bool(weapon_result.get("ok", false)):
 		push_error("Failed to equip stableman for combat flow verification: %s" % JSON.stringify(weapon_result))

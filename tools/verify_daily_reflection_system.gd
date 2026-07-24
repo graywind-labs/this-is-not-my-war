@@ -35,7 +35,7 @@ func _init() -> void:
 
 	game_state.set_time(1, 22, 0, 0)
 	if llm_bridge.has_method("set_backend_base_url"):
-		llm_bridge.set_backend_base_url("http://127.0.0.1:5999")
+		llm_bridge.set_backend_base_url("reflection-verify-invalid://backend")
 	llm_bridge.request_timeout_seconds = 0.2
 
 	var npc_id := "cook_01"
@@ -59,8 +59,9 @@ func _init() -> void:
 
 	var long_memory: Dictionary = npc_system.get_npc_long_memory(npc_id)
 	var diary: Array = long_memory.get("diary", [])
-	if diary.size() != 0:
-		push_error("First sleep summary should wait one game hour before writing diary, got %d" % diary.size())
+	var initial_diary_count := diary.size()
+	if initial_diary_count < 3:
+		push_error("Cook should start with at least three seeded historical diary slices, got %d" % initial_diary_count)
 		quit(1)
 		return
 
@@ -72,22 +73,28 @@ func _init() -> void:
 	event_bus.logical_time_tick.emit(3000.0, 1.0)
 	await process_frame
 	diary = (npc_system.get_npc_long_memory(npc_id).get("diary", []) as Array)
-	if diary.size() != 0:
-		push_error("First sleep summary should not run before one game hour, got %d" % diary.size())
+	if diary.size() != initial_diary_count:
+		push_error("First sleep summary should not append before one game hour, got %d" % diary.size())
 		quit(1)
 		return
 
 	event_bus.logical_time_tick.emit(1000.0, 1.0)
-	await process_frame
-	long_memory = npc_system.get_npc_long_memory(npc_id)
-	diary = long_memory.get("diary", [])
-	if diary.size() != 1:
-		push_error("First sleep after one game hour should write exactly one diary entry, got %d" % diary.size())
+	if not await _wait_for_reflection(npc_system, llm_bridge, npc_id, initial_diary_count + 1):
 		quit(1)
 		return
-	var diary_entry: Dictionary = diary[0]
+	long_memory = npc_system.get_npc_long_memory(npc_id)
+	diary = long_memory.get("diary", [])
+	if diary.size() != initial_diary_count + 1:
+		push_error("First sleep after one game hour should append exactly one diary entry, got %d" % diary.size())
+		quit(1)
+		return
+	var diary_entry: Dictionary = diary[diary.size() - 1]
 	if str(diary_entry.get("entry", "")).is_empty():
 		push_error("Diary entry should not be empty")
+		quit(1)
+		return
+	if diary_entry.has("memory_summary") or reflection_system.get_last_reflection_result().has("memory_summary"):
+		push_error("Daily reflection should retain only the first-person diary and knowledge graph")
 		quit(1)
 		return
 
@@ -116,7 +123,7 @@ func _init() -> void:
 		push_error("Second non-forced reflection should be skipped")
 		quit(1)
 		return
-	if (npc_system.get_npc_long_memory(npc_id).get("diary", []) as Array).size() != 1:
+	if (npc_system.get_npc_long_memory(npc_id).get("diary", []) as Array).size() != initial_diary_count + 1:
 		push_error("Skipped reflection should not append a second diary entry")
 		quit(1)
 		return
@@ -126,13 +133,46 @@ func _init() -> void:
 		"npc_id": npc_id,
 		"day": 1,
 		"diary_entry": "我又把今天的压力想了一遍。",
-		"memory_summary": "强制验证知识图谱替换更新。",
+		"memory_summary": "兼容输入也不得再保存。",
 		"knowledge_graph_updates": [
 			{
 				"subject": "station",
 				"relation": "daily_pressure",
 				"value": "第二次总结覆盖了同一键的当前压力判断",
-				"confidence": 0.9
+				"confidence": 0.9,
+				"subject_label": "驿站",
+				"relation_label": "当日压力",
+				"value_label": "第二次总结覆盖了同一键的当前压力判断"
+			},
+			{
+				"subject": "station",
+				"relation": "status",
+				"value": "busy",
+				"confidence": 0.8
+			},
+			{
+				"subject": "guard_officer",
+				"relation": "order_style",
+				"value": "命令急迫，但会听取解释",
+				"confidence": 0.7
+			},
+			{
+				"subject": "cook_01",
+				"relation": "availability",
+				"value": "今晚已经休息",
+				"confidence": 0.8
+			},
+			{
+				"subject": "promise:food_after_battle",
+				"relation": "promise",
+				"value": "战斗结束后补足食物",
+				"confidence": 0.6
+			},
+			{
+				"subject": "unmapped_subject_key",
+				"relation": "unmapped_relation_key",
+				"value": "无法归入现有分类的信息",
+				"confidence": 0.5
 			}
 		],
 		"source": "verify_replacement"
@@ -144,8 +184,12 @@ func _init() -> void:
 		return
 	long_memory = npc_system.get_npc_long_memory(npc_id)
 	diary = long_memory.get("diary", [])
-	if diary.size() != 2:
+	if diary.size() != initial_diary_count + 2:
 		push_error("Diary should append reflection entries, got %d" % diary.size())
+		quit(1)
+		return
+	if (diary[diary.size() - 1] as Dictionary).has("memory_summary"):
+		push_error("Legacy reflection summary input must not be persisted into diary records")
 		quit(1)
 		return
 	graph = long_memory.get("knowledge_graph", {})
@@ -163,16 +207,86 @@ func _init() -> void:
 
 	npc_panel.show_npc(npc_id)
 	await process_frame
-	var diary_label := npc_panel.find_child("NPCDiaryLabel", true, false) as Label
-	var diary_text := npc_panel.find_child("NPCDiaryText", true, false) as TextEdit
-	if diary_label == null or diary_text == null:
-		push_error("NPCPanel diary controls not found")
+	var diary_button := npc_panel.find_child("NPCDiaryButton", true, false) as Button
+	var knowledge_button := npc_panel.find_child("NPCKnowledgeButton", true, false) as Button
+	if diary_button == null or knowledge_button == null:
+		push_error("NPCPanel diary or knowledge button not found")
 		quit(1)
 		return
-	if not diary_label.text.contains("日记：2 条") or diary_text.text.find(str(diary_entry.get("entry", ""))) < 0:
-		push_error("NPCPanel should display the generated diary entry")
+	if npc_panel.find_child("NPCDiaryBox", true, false) != null:
+		push_error("NPCPanel should not display an inline diary box")
+		quit(1)
+		return
+	diary_button.pressed.emit()
+	await process_frame
+	var detail_popup := root.find_child("NPCMemoryDetailPopup", true, false) as Control
+	var detail_title := root.find_child("NPCMemoryDetailTitle", true, false) as Label
+	var detail_text := root.find_child("NPCMemoryDetailText", true, false) as TextEdit
+	var detail_close := root.find_child("NPCMemoryDetailCloseButton", true, false) as Button
+	if detail_popup == null or detail_title == null or detail_text == null or detail_close == null:
+		push_error("NPCPanel long-term detail popup not found")
+		quit(1)
+		return
+	if not detail_popup.visible or not detail_title.text.contains("日记") or detail_text.text.find(str(diary_entry.get("entry", ""))) < 0:
+		push_error("NPCPanel diary popup should display generated diary entries")
+		quit(1)
+		return
+	detail_close.pressed.emit()
+	await process_frame
+	knowledge_button.pressed.emit()
+	await process_frame
+	if (
+		not detail_popup.visible
+		or not detail_title.text.contains("知识图谱")
+		or not detail_text.text.contains("【驿站】")
+		or not detail_text.text.contains("当日压力")
+		or not detail_text.text.contains("第二次总结覆盖")
+		or not detail_text.text.contains("【守备官】")
+		or not detail_text.text.contains("命令方式")
+		or not detail_text.text.contains("【布鲁诺（厨子）】")
+		or not detail_text.text.contains("可用情况")
+		or not detail_text.text.contains("【承诺：战后食物】")
+		or not detail_text.text.contains("【其他对象】")
+		or not detail_text.text.contains("其他认知")
+		or not detail_text.text.contains("忙碌")
+		or detail_text.text.contains("可信度")
+		or detail_text.text.contains("更新于")
+	):
+		push_error("NPCPanel knowledge popup should display Chinese labels without internal confidence/time metadata: %s" % detail_text.text)
+		quit(1)
+		return
+	for raw_key in ["daily_pressure", "guard_officer", "order_style", "cook_01", "availability", "promise:food_after_battle", "unmapped_subject_key", "unmapped_relation_key", "busy"]:
+		if detail_text.text.contains(raw_key):
+			push_error("NPCPanel knowledge popup exposed a raw technical key '%s': %s" % [raw_key, detail_text.text])
+			quit(1)
+			return
+	var legacy_value_text: String = npc_panel._format_knowledge_graph_block({
+		"by_subject": {"station": {"status": "busy"}}
+	})
+	if legacy_value_text.contains("busy") or not legacy_value_text.contains("忙碌"):
+		push_error("NPCPanel exposed a legacy English knowledge value: %s" % legacy_value_text)
+		quit(1)
+		return
+	if detail_text.text.contains("记忆摘要："):
+		push_error("NPCPanel diary/knowledge flow should not render a separate memory summary")
 		quit(1)
 		return
 
 	print("Daily reflection system verification passed.")
 	quit(0)
+
+
+func _wait_for_reflection(
+	npc_system: Node,
+	llm_bridge: Node,
+	npc_id: String,
+	expected_diary_count: int
+) -> bool:
+	for _step in range(300):
+		await create_timer(0.01).timeout
+		var diary: Array = npc_system.get_npc_long_memory(npc_id).get("diary", [])
+		var runtime: Dictionary = llm_bridge.debug_get_llm_runtime_snapshot()
+		if diary.size() == expected_diary_count and int(runtime.get("async_request_count", 0)) == 0:
+			return true
+	push_error("Timed out waiting for async daily reflection completion")
+	return false

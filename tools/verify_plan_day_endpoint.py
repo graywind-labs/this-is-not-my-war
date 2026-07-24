@@ -23,6 +23,7 @@ from backend.schemas import (  # noqa: E402
     NPCStateContext,
     ShortTermMemoryContext,
 )
+from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
 def _make_request() -> dict:
@@ -58,6 +59,9 @@ def _make_request() -> dict:
             requires_time_slowdown=True,
         ),
         game_time=game_time,
+        station_context=build_station_context([
+            {"npc_id": "gardener_01", "name": "伊沃", "identity": "园丁"}
+        ]),
         npc=npc,
         allowed_actions=[
             ActionCandidate(
@@ -93,6 +97,8 @@ def main() -> None:
     assert response.status_code == 200, response.get_data(as_text=True)
     body = response.get_json()
     assert body["ok"] is True
+    assert body["model_provider"] == "mock"
+    assert body["model_fallback_used"] is False
     assert body["npc_id"] == "gardener_01"
     assert len(body["plan"]) == 24
     work_count = sum(1 for item in body["plan"] if item["action_id"] == "work_garden")

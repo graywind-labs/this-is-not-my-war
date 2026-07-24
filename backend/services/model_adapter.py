@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +12,10 @@ import requests
 PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "data" / "prompts"
 PROMPT_TEMPLATE_BY_CALL_TYPE = {
     "dialogue": "dialogue_system_prompt.txt",
+    "plan_revision_judgement": "plan_revision_judgement_system_prompt.txt",
+    "dialogue_plan_revision_judgement": "plan_revision_judgement_system_prompt.txt",
     "plan_day": "daily_plan_system_prompt.txt",
+    "revise_plan": "plan_revision_system_prompt.txt",
     "battle_judgement": "battle_judgement_system_prompt.txt",
     "daily_reflection": "daily_reflection_system_prompt.txt",
 }
@@ -23,13 +27,14 @@ class ModelAdapterConfig:
     api_key: str | None = None
     base_url: str = ""
     model: str = ""
-    timeout_seconds: float = 30.0
+    provider_connect_timeout_seconds: float = 10.0
+    provider_idle_timeout_seconds: float = 120.0
     fallback_to_mock: bool = False
     input_cost_per_million: float = 0.0
     output_cost_per_million: float = 0.0
-    max_tokens: int = 1200
     temperature: float = 0.4
     force_json_response: bool = True
+    thinking_mode: str = "disabled"
     budget_max_calls: int = 0
     budget_max_input_tokens: int = 0
     budget_max_output_tokens: int = 0
@@ -55,6 +60,10 @@ class ModelUsageRecord:
     http_status: int | None = None
     exception_type: str = ""
     degradation_source: str = ""
+    finish_reason: str = ""
+    response_content_length: int = 0
+    attempt_count: int = 1
+    thinking_mode: str = ""
 
 
 @dataclass(frozen=True)
@@ -69,10 +78,17 @@ class ModelAdapterResult:
 
 
 class ModelProviderError(RuntimeError):
-    def __init__(self, message: str, http_status: int | None = None, exception_type: str = "ProviderError") -> None:
+    def __init__(
+        self,
+        message: str,
+        http_status: int | None = None,
+        exception_type: str = "ProviderError",
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
         self.exception_type = exception_type
+        self.details = details or {}
 
 
 class ModelAdapter:
@@ -97,13 +113,14 @@ class ModelAdapter:
             api_key=raw_config.api_key,
             base_url=raw_config.base_url.strip(),
             model=raw_config.model.strip(),
-            timeout_seconds=max(0.1, raw_config.timeout_seconds),
+            provider_connect_timeout_seconds=max(0.1, raw_config.provider_connect_timeout_seconds),
+            provider_idle_timeout_seconds=max(0.1, raw_config.provider_idle_timeout_seconds),
             fallback_to_mock=raw_config.fallback_to_mock,
             input_cost_per_million=max(0.0, raw_config.input_cost_per_million),
             output_cost_per_million=max(0.0, raw_config.output_cost_per_million),
-            max_tokens=max(1, raw_config.max_tokens),
             temperature=raw_config.temperature,
             force_json_response=raw_config.force_json_response,
+            thinking_mode=self._normalize_thinking_mode(raw_config.thinking_mode),
             budget_max_calls=max(0, raw_config.budget_max_calls),
             budget_max_input_tokens=max(0, raw_config.budget_max_input_tokens),
             budget_max_output_tokens=max(0, raw_config.budget_max_output_tokens),
@@ -120,13 +137,14 @@ class ModelAdapter:
             api_key=os.getenv("LLM_API_KEY"),
             base_url=os.getenv("LLM_BASE_URL", ""),
             model=os.getenv("LLM_MODEL", ""),
-            timeout_seconds=_read_float_env("LLM_TIMEOUT_SECONDS", 30.0),
+            provider_connect_timeout_seconds=_read_float_env("LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS", 10.0),
+            provider_idle_timeout_seconds=_read_float_env("LLM_PROVIDER_IDLE_TIMEOUT_SECONDS", 120.0),
             fallback_to_mock=_read_bool_env("LLM_FALLBACK_TO_MOCK", False),
             input_cost_per_million=_read_float_env("LLM_INPUT_COST_PER_M_TOKENS", 0.0),
             output_cost_per_million=_read_float_env("LLM_OUTPUT_COST_PER_M_TOKENS", 0.0),
-            max_tokens=_read_int_env("LLM_MAX_TOKENS", 1200),
             temperature=_read_float_env("LLM_TEMPERATURE", 0.4),
             force_json_response=_read_bool_env("LLM_FORCE_JSON_RESPONSE", True),
+            thinking_mode=os.getenv("LLM_THINKING_MODE", "disabled"),
             budget_max_calls=_read_int_env("LLM_BUDGET_MAX_CALLS", 0),
             budget_max_input_tokens=_read_int_env("LLM_BUDGET_MAX_INPUT_TOKENS", 0),
             budget_max_output_tokens=_read_int_env("LLM_BUDGET_MAX_OUTPUT_TOKENS", 0),
@@ -181,6 +199,11 @@ class ModelAdapter:
                     failure_details["failure_reason"],
                     http_status=failure_details["http_status"],
                     exception_type=failure_details["exception_type"],
+                    output_tokens=failure_details["output_tokens"],
+                    finish_reason=failure_details["finish_reason"],
+                    response_content_length=failure_details["response_content_length"],
+                    attempt_count=failure_details["attempt_count"],
+                    thinking_mode=failure_details["thinking_mode"],
                 )
             output_tokens = int(provider_usage.get("output_tokens", self._estimate_tokens(content)))
             input_tokens = int(provider_usage.get("input_tokens", input_tokens))
@@ -194,6 +217,10 @@ class ModelAdapter:
                 output_tokens=output_tokens,
                 estimated_cost=estimated_cost,
                 success=True,
+                finish_reason=str(provider_usage.get("finish_reason", "")),
+                response_content_length=int(provider_usage.get("response_content_length", 0) or 0),
+                attempt_count=int(provider_usage.get("attempt_count", 1) or 1),
+                thinking_mode=str(provider_usage.get("thinking_mode", "")),
             )
             return ModelAdapterResult(
                 ok=True,
@@ -317,7 +344,13 @@ class ModelAdapter:
             "base_url": self._provider_base_url(),
             "configured": self.is_configured(),
             "fallback_to_mock": self.config.fallback_to_mock,
-            "timeout_seconds": self.config.timeout_seconds,
+            "provider_connect_timeout_seconds": self.config.provider_connect_timeout_seconds,
+            "provider_idle_timeout_seconds": self.config.provider_idle_timeout_seconds,
+            "provider_streaming": True,
+            "client_output_token_limit_applied": False,
+            "temperature": self.config.temperature,
+            "force_json_response": self.config.force_json_response,
+            "thinking_mode": self.config.thinking_mode,
             "budget": self.get_budget_snapshot(),
         }
 
@@ -397,6 +430,11 @@ class ModelAdapter:
         failure_reason: str,
         http_status: int | None = None,
         exception_type: str = "ProviderError",
+        output_tokens: int = 0,
+        finish_reason: str = "",
+        response_content_length: int = 0,
+        attempt_count: int = 1,
+        thinking_mode: str = "",
     ) -> ModelAdapterResult:
         if self.config.fallback_to_mock:
             content = self._mock_content(call_type, payload)
@@ -420,6 +458,10 @@ class ModelAdapter:
                 http_status=http_status,
                 exception_type=exception_type,
                 degradation_source="mock_fallback",
+                finish_reason=finish_reason,
+                response_content_length=response_content_length,
+                attempt_count=attempt_count,
+                thinking_mode=thinking_mode,
             )
             return ModelAdapterResult(
                 ok=True,
@@ -435,12 +477,16 @@ class ModelAdapter:
             npc_id=npc_id,
             related_event_id=related_event_id,
             input_tokens=input_tokens,
-            output_tokens=0,
-            estimated_cost=0.0,
+            output_tokens=output_tokens,
+            estimated_cost=self._estimate_cost(input_tokens, output_tokens),
             success=False,
             failure_reason=failure_reason,
             http_status=http_status,
             exception_type=exception_type,
+            finish_reason=finish_reason,
+            response_content_length=response_content_length,
+            attempt_count=attempt_count,
+            thinking_mode=thinking_mode,
         )
         return ModelAdapterResult(
             ok=False,
@@ -473,33 +519,155 @@ class ModelAdapter:
             exception_type="SchemaValidationError",
         )
 
-    def _generate_real_content(self, call_type: str, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
+    def _generate_real_content(self, call_type: str, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.config.provider not in {"deepseek", "openai_compatible"}:
             raise RuntimeError("Unsupported LLM_PROVIDER: %s" % self.config.provider)
-        response_json = self._send_chat_completion(call_type, payload)
-        choices = response_json.get("choices", [])
-        if not choices or not isinstance(choices[0], dict):
-            raise RuntimeError("Provider response did not include choices.")
-        message = choices[0].get("message", {})
-        if not isinstance(message, dict):
-            raise RuntimeError("Provider response message was invalid.")
-        content_text = str(message.get("content", "")).strip()
-        content = self._parse_model_json(content_text)
-        usage = response_json.get("usage", {})
-        provider_usage = {
-            "input_tokens": int(usage.get("prompt_tokens", self._estimate_tokens(payload))) if isinstance(usage, dict) else self._estimate_tokens(payload),
-            "output_tokens": int(usage.get("completion_tokens", self._estimate_tokens(content))) if isinstance(usage, dict) else self._estimate_tokens(content),
-        }
-        return content, provider_usage
+        max_attempts = 2 if call_type in PROMPT_TEMPLATE_BY_CALL_TYPE else 1
+        last_error: ModelProviderError | None = None
+        for attempt_index in range(max_attempts):
+            attempt_count = attempt_index + 1
+            response_json = self._send_chat_completion(
+                call_type,
+                payload,
+                retry_compact_json=attempt_count > 1,
+            )
+            choices = response_json.get("choices", [])
+            if not choices or not isinstance(choices[0], dict):
+                raise RuntimeError("Provider response did not include choices.")
+            choice = choices[0]
+            finish_reason = str(choice.get("finish_reason", ""))
+            message = choice.get("message", {})
+            if not isinstance(message, dict):
+                raise RuntimeError("Provider response message was invalid.")
+            content_text = str(message.get("content", "")).strip()
+            usage = response_json.get("usage", {})
+            input_tokens = (
+                int(usage.get("prompt_tokens", self._estimate_tokens(payload)))
+                if isinstance(usage, dict)
+                else self._estimate_tokens(payload)
+            )
+            output_tokens = (
+                int(usage.get("completion_tokens", self._estimate_tokens(content_text)))
+                if isinstance(usage, dict)
+                else self._estimate_tokens(content_text)
+            )
+            if finish_reason == "length":
+                last_error = ModelProviderError(
+                    (
+                        "Provider stopped at its output or context limit"
+                        " (finish_reason=length, content_length=%d, attempt=%d/%d)."
+                    )
+                    % (len(content_text), attempt_count, max_attempts),
+                    exception_type="ModelOutputTruncated",
+                    details={
+                        "output_tokens": output_tokens,
+                        "finish_reason": finish_reason,
+                        "response_content_length": len(content_text),
+                        "attempt_count": attempt_count,
+                        "thinking_mode": self.config.thinking_mode,
+                    },
+                )
+                if attempt_count < max_attempts:
+                    continue
+                raise last_error
+            try:
+                content = self._parse_model_json(content_text)
+            except (json.JSONDecodeError, RuntimeError) as exc:
+                last_error = ModelProviderError(
+                    (
+                        "Provider returned invalid JSON"
+                        " (finish_reason=%s, content_length=%d, attempt=%d/%d): %s"
+                    )
+                    % (
+                        finish_reason or "unknown",
+                        len(content_text),
+                        attempt_count,
+                        max_attempts,
+                        str(exc),
+                    ),
+                    exception_type="ModelJSONDecodeError",
+                    details={
+                        "output_tokens": output_tokens,
+                        "finish_reason": finish_reason,
+                        "response_content_length": len(content_text),
+                        "attempt_count": attempt_count,
+                        "thinking_mode": self.config.thinking_mode,
+                    },
+                )
+                if attempt_count < max_attempts:
+                    continue
+                raise last_error from exc
+            provider_usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "finish_reason": finish_reason,
+                "response_content_length": len(content_text),
+                "attempt_count": attempt_count,
+                "thinking_mode": self.config.thinking_mode,
+            }
+            return content, provider_usage
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Provider did not return content.")
 
-    def _send_chat_completion(self, call_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _send_chat_completion(
+        self,
+        call_type: str,
+        payload: dict[str, Any],
+        retry_compact_json: bool = False,
+    ) -> dict[str, Any]:
         url = "%s/chat/completions" % self._provider_base_url().rstrip("/")
+        system_prompt = self._system_prompt_for_call_type(call_type)
+        if retry_compact_json:
+            if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
+                system_prompt += (
+                    "\n上一次计划修改范围判别输出为空、截断或不是合法 JSON。"
+                    "这次只输出 npc_id、needs_revision、revision_hours、summary、debug_reason；"
+                    "revision_hours 必须升序去重且不得早于 game_time.hour，空数组与 needs_revision=false 严格一致。"
+                )
+            elif call_type == "revise_plan":
+                system_prompt += (
+                    "\n上一次定向计划重估输出为空、截断或不是合法 JSON。"
+                    "这次 revised_plan 的小时必须与请求 revision_hours 完全一致，不能缺失、增加、重复或乱序；"
+                    "仅当 revision_hours 包含 game_time.hour 时输出与该项完全一致的 immediate_action，否则必须为 null。"
+                    "每条 reason 不超过 12 个汉字，summary 不超过 40 个汉字，"
+                    "对话行动的 dialogue_goal 不超过 40 个汉字，debug_reason 不超过 30 个汉字。"
+                )
+            elif call_type == "plan_day":
+                system_prompt += (
+                    "\n上一次每日计划输出为空、被供应商截断或不是合法 JSON。"
+                    "这次直接输出完整紧凑 JSON；plan 中每条 reason 不超过 12 个汉字，"
+                    "summary 不超过 60 个汉字，debug_reason 不超过 40 个汉字。"
+                )
+            elif call_type == "dialogue":
+                system_prompt += (
+                    "\n上一次对话输出为空、被供应商截断或不是合法 JSON。"
+                    "这次只输出所需 JSON 字段；reply_text 保持简洁，"
+                    "debug_reason 不超过 30 个汉字。"
+                )
+            elif call_type == "battle_judgement":
+                system_prompt += (
+                    "\n上一次战时心理判定输出为空、被供应商截断或不是合法 JSON。"
+                    "这次只输出所需 JSON 字段，decision 必须来自 allowed_decisions，"
+                    "debug_reason 不超过 30 个汉字。"
+                )
+            elif call_type == "daily_reflection":
+                system_prompt += (
+                    "\n上一次首次睡眠总结输出为空、被供应商截断或不是合法 JSON。"
+                    "这次只输出关键第一人称日记和必要的知识图谱更新；"
+                    "避免重复既有日记，debug_reason 不超过 30 个汉字。"
+                )
+            else:
+                system_prompt += (
+                    "\n上一次结构化输出为空、截断或不是合法 JSON。"
+                    "这次直接输出与当前任务 Schema 对齐的紧凑 JSON。"
+                )
         request_body: dict[str, Any] = {
             "model": self._provider_model(),
             "messages": [
                 {
                     "role": "system",
-                    "content": self._system_prompt_for_call_type(call_type),
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
@@ -507,9 +675,13 @@ class ModelAdapter:
                 },
             ],
             "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-            "stream": False,
+            "stream": True,
+            "stream_options": {
+                "include_usage": True,
+            },
         }
+        if self.config.provider == "deepseek":
+            request_body["thinking"] = {"type": self.config.thinking_mode}
         if self.config.force_json_response:
             request_body["response_format"] = {"type": "json_object"}
         try:
@@ -518,25 +690,114 @@ class ModelAdapter:
                 headers={
                     "Authorization": "Bearer %s" % self.config.api_key,
                     "Content-Type": "application/json",
-                    "Accept": "application/json",
+                    "Accept": "text/event-stream",
                 },
                 json=request_body,
-                timeout=self.config.timeout_seconds,
+                stream=True,
+                timeout=(
+                    self.config.provider_connect_timeout_seconds,
+                    self.config.provider_idle_timeout_seconds,
+                ),
             )
-        except requests.Timeout as exc:
-            raise ModelProviderError("Provider request timed out.", exception_type="Timeout") from exc
-        except requests.RequestException as exc:
-            raise ModelProviderError(str(exc), exception_type=exc.__class__.__name__) from exc
-        if response.status_code >= 400:
+            if response.status_code >= 400:
+                raise ModelProviderError(
+                    "Provider HTTP %d: %s" % (response.status_code, response.text[:300]),
+                    http_status=response.status_code,
+                    exception_type="ProviderHTTPError",
+                )
+            return self._read_chat_completion_response(response)
+        except requests.ConnectTimeout as exc:
             raise ModelProviderError(
-                "Provider HTTP %d: %s" % (response.status_code, response.text[:300]),
-                http_status=response.status_code,
-                exception_type="ProviderHTTPError",
+                "Provider connection timed out.",
+                exception_type="ProviderConnectTimeout",
+            ) from exc
+        except requests.ReadTimeout as exc:
+            raise ModelProviderError(
+                "Provider stream was idle for too long.",
+                exception_type="ProviderIdleTimeout",
+            ) from exc
+        except requests.Timeout as exc:
+            raise ModelProviderError(
+                "Provider transport timed out.",
+                exception_type="ProviderTransportTimeout",
+            ) from exc
+        except requests.RequestException as exc:
+            if "read timed out" in str(exc).lower():
+                raise ModelProviderError(
+                    "Provider stream was idle for too long.",
+                    exception_type="ProviderIdleTimeout",
+                ) from exc
+            raise ModelProviderError(str(exc), exception_type=exc.__class__.__name__) from exc
+
+    def _read_chat_completion_response(self, response: requests.Response) -> dict[str, Any]:
+        response_headers = getattr(response, "headers", {})
+        content_type = str(response_headers.get("Content-Type", "")).lower()
+        if "text/event-stream" not in content_type:
+            try:
+                return response.json()
+            except ValueError as exc:
+                raise ModelProviderError(
+                    "Provider response was not valid JSON.",
+                    exception_type="ProviderJSONError",
+                ) from exc
+
+        content_parts: list[str] = []
+        finish_reason = ""
+        usage: dict[str, Any] = {}
+        saw_data_chunk = False
+        for raw_line in response.iter_lines(chunk_size=1, decode_unicode=True):
+            if isinstance(raw_line, bytes):
+                line = raw_line.decode("utf-8", errors="replace").strip()
+            else:
+                line = str(raw_line or "").strip()
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if line == "[DONE]":
+                break
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ModelProviderError(
+                    "Provider stream contained invalid JSON.",
+                    exception_type="ProviderJSONError",
+                ) from exc
+            if not isinstance(chunk, dict):
+                continue
+            saw_data_chunk = True
+            chunk_usage = chunk.get("usage")
+            if isinstance(chunk_usage, dict) and chunk_usage:
+                usage = chunk_usage
+            choices = chunk.get("choices", [])
+            if not choices or not isinstance(choices[0], dict):
+                continue
+            choice = choices[0]
+            delta = choice.get("delta", {})
+            if isinstance(delta, dict):
+                content_delta = delta.get("content")
+                if content_delta is not None:
+                    content_parts.append(str(content_delta))
+            chunk_finish_reason = choice.get("finish_reason")
+            if chunk_finish_reason is not None:
+                finish_reason = str(chunk_finish_reason)
+
+        if not saw_data_chunk:
+            raise ModelProviderError(
+                "Provider stream ended without data.",
+                exception_type="ProviderEmptyStream",
             )
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise ModelProviderError("Provider response was not valid JSON.", exception_type="ProviderJSONError") from exc
+        return {
+            "choices": [
+                {
+                    "finish_reason": finish_reason,
+                    "message": {
+                        "content": "".join(content_parts),
+                    },
+                }
+            ],
+            "usage": usage,
+        }
 
     def _system_prompt_for_call_type(self, call_type: str) -> str:
         prompt_parts = [
@@ -570,9 +831,10 @@ class ModelAdapter:
     def _schema_hint_for_call_type(self, call_type: str) -> str:
         if call_type == "dialogue":
             return (
-                "字段：ok=true, replyer_id, reply_text, response_kind, intent, emotion, recruitment_result, "
+                "字段：ok=true, replyer_id, reply_text, response_kind, invitation_result, intent, emotion, recruitment_result, "
                 "wartime_reaction, should_end_dialogue, suggested_event_type, debug_reason。"
                 "response_kind 只能是 reply_to_player 或 reply_to_npc；"
+                "invitation_result 只能是 accept, reject, not_applicable；"
                 "intent 只能是 continue_talk, accept_recruitment, reject_recruitment, request_money, "
                 "request_equipment, request_rest, request_treatment, share_witness, start_escape, "
                 "stay_after_intervention, leave_after_intervention, end_talk；"
@@ -583,18 +845,30 @@ class ModelAdapter:
         if call_type == "plan_day":
             return (
                 "字段：ok=true, npc_id, plan_day, plan(必须 24 条，每条含 hour/action_kind/action_id/location_id/"
-                "target_id/priority/reason), summary, debug_reason。action_kind 只能是 work, eat, sleep, "
-                "train, pray, rest, chat, assist_repair, assist_upgrade, assist_heal, seek_guard_officer, "
+                "target_id/priority/reason/dialogue_goal), summary, debug_reason。action_kind 只能是 work, eat, sleep, "
+                "train, pray, rest, visit, chat, assist_repair, assist_upgrade, assist_heal, seek_guard_officer, "
                 "avoid_combat, escape, idle。"
             )
+        if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
+            return (
+                "字段：ok=true, npc_id, needs_revision, revision_hours, summary, debug_reason；"
+                "revision_hours 只能包含 game_time.hour 到 23 的整数，必须升序且不重复；"
+                "空数组时 needs_revision 必须为 false，非空时必须为 true。"
+            )
         if call_type == "revise_plan":
-            return "字段：ok=true, npc_id, revised_plan, immediate_action, summary, debug_reason；计划项枚举限制同 plan_day。"
+            return (
+                "字段：ok=true, npc_id, revised_plan, immediate_action, summary, debug_reason；"
+                "revised_plan 小时必须与请求 revision_hours 完全一致；"
+                "仅当 revision_hours 含 game_time.hour 时 immediate_action 为该小时计划项，否则为 null；"
+                "计划项枚举限制同 plan_day。"
+            )
         if call_type == "battle_judgement":
             return "字段：ok=true, npc_id, decision, emotion, morale_delta_intent, should_start_escape, debug_reason；decision 必须从请求 allowed_decisions 中选择。"
         if call_type == "daily_reflection":
             return (
-                "字段：ok=true, npc_id, day, diary_entry, memory_summary, knowledge_graph_updates, debug_reason；"
-                "knowledge_graph_updates 是对象数组，每项含 subject/relation/value/confidence。"
+                "字段：ok=true, npc_id, day, diary_entry, knowledge_graph_updates, debug_reason；"
+                "knowledge_graph_updates 是对象数组，每项含 subject/relation/value/confidence/subject_label/relation_label/value_label；"
+                "subject_label、relation_label 与 value_label 必须是供中文玩家阅读的中文文本。"
                 "knowledge_graph_updates 表示替换式键值更新：同一 subject + relation 的新 value 会覆盖旧值；"
                 "diary_entry 是第一人称日记，会追加为新日记，不能写成知识图谱条目。"
             )
@@ -609,6 +883,10 @@ class ModelAdapter:
         if not isinstance(parsed, dict):
             raise RuntimeError("Provider returned JSON that is not an object.")
         return parsed
+
+    @staticmethod
+    def _normalize_thinking_mode(raw_mode: str) -> str:
+        return "enabled" if str(raw_mode).strip().lower() == "enabled" else "disabled"
 
     def _provider_base_url(self) -> str:
         if self.config.base_url:
@@ -642,6 +920,7 @@ class ModelAdapter:
                 payload.get("is_recruitment_request", payload.get("propose_recruitment", False))
             )
             dialogue_kind = str(payload.get("dialogue_kind", "player_npc"))
+            dialogue_phase = str(payload.get("dialogue_phase", "conversation"))
             current_round, max_rounds = self._read_dialogue_rounds(payload)
             rounds_left = max_rounds - current_round
             if dialogue_kind == "escape_intervention":
@@ -660,6 +939,7 @@ class ModelAdapter:
                     "replyer_id": npc_id,
                     "reply_text": reply_text,
                     "response_kind": "reply_to_player",
+                    "invitation_result": "not_applicable",
                     "intent": "stay_after_intervention" if stay else "leave_after_intervention",
                     "emotion": "shaken" if stay else "fearful",
                     "recruitment_result": "none",
@@ -669,9 +949,37 @@ class ModelAdapter:
                     "debug_reason": f"mock_escape_intervention_by_keywords_and_round_limit{order_suffix}",
                 }
             is_npc_reply = dialogue_kind == "npc_npc"
+            if is_npc_reply and dialogue_phase == "invitation":
+                reject_invitation = any(word in text for word in ["拒绝", "别打扰", "不必谈", "不要谈"])
+                return {
+                    "ok": True,
+                    "replyer_id": npc_id,
+                    "reply_text": "我手上的事不能停，这次先不谈。" if reject_invitation else "好，我先停一下，听你把事情说完。",
+                    "response_kind": "reply_to_npc",
+                    "invitation_result": "reject" if reject_invitation else "accept",
+                    "intent": "end_talk" if reject_invitation else "continue_talk",
+                    "emotion": "wary",
+                    "recruitment_result": "none",
+                    "wartime_reaction": "none",
+                    "should_end_dialogue": reject_invitation,
+                    "suggested_event_type": "dialogue_turn",
+                    "debug_reason": f"mock_npc_dialogue_invitation_by_keywords{order_suffix}",
+                }
             accepts = is_recruitment_request and any(word in text for word in ["守住", "保护", "应征", "帮忙", "一起", "救"])
             rejects = is_recruitment_request and not accepts
-            should_end = is_npc_reply and rounds_left <= 1
+            soft_round_threshold = self._read_dialogue_soft_round_threshold(payload)
+            urgent_or_necessary = any(
+                word in text
+                for word in ["紧急", "必要", "立刻", "马上", "必须", "敌人", "战斗", "伤员", "救命", "着火", "危险"]
+            )
+            matter_finished = any(
+                word in text
+                for word in ["说完", "说清", "就这样", "先这样", "到这里", "没别的", "没有别的", "告别", "再见"]
+            )
+            should_end = is_npc_reply and (
+                matter_finished
+                or (current_round > soft_round_threshold and not urgent_or_necessary)
+            )
             interaction_context = str(payload.get("interaction_context", "work"))
             wartime_reaction = "none"
             if interaction_context in {"rally", "combat"} and not is_npc_reply:
@@ -680,9 +988,11 @@ class ModelAdapter:
                 elif any(word in text for word in ["守住", "保护", "坚持", "拦住", "挡住", "一起"]):
                     wartime_reaction = "morale_boost"
             if is_npc_reply:
-                reply_text = "我听明白了。先到这里吧，别让这段谈话耽误手上的事。"
-                if rounds_left > 1:
-                    reply_text = "我会记住你说的话。现在先把能做的事做稳。"
+                reply_text = (
+                    "我听明白了。那就先谈到这里，我回去把手上的事做好。"
+                    if should_end
+                    else "我会记住你说的话。现在先把要紧的事情说清楚。"
+                )
             else:
                 reply_text = "守备官，我会先把能做的事做好。若真到了门口，我也不会装作没听见。"
                 if rejects:
@@ -696,13 +1006,84 @@ class ModelAdapter:
                 "replyer_id": npc_id,
                 "reply_text": reply_text,
                 "response_kind": "reply_to_npc" if is_npc_reply else "reply_to_player",
+                "invitation_result": "not_applicable",
                 "intent": "accept_recruitment" if accepts else "reject_recruitment" if rejects else "end_talk" if should_end else "continue_talk",
                 "emotion": "wary",
                 "recruitment_result": "accept" if accepts else "reject" if rejects else "none",
                 "wartime_reaction": wartime_reaction,
                 "should_end_dialogue": should_end,
                 "suggested_event_type": "dialogue_turn",
-                "debug_reason": f"mock_dialogue_by_keywords_and_round_limit{order_suffix}",
+                "debug_reason": f"mock_dialogue_by_keywords_and_soft_round_guidance{order_suffix}",
+            }
+
+        if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
+            trigger_kind = str(payload.get("trigger_kind", "dialogue"))
+            current_hour = self._read_game_hour(payload)
+            if trigger_kind == "action_failure":
+                failure_context = payload.get("failure_context", {})
+                if not isinstance(failure_context, dict):
+                    failure_context = {}
+                no_revision = bool(failure_context.get("debug_force_no_revision", False))
+                revision_hours: list[int] = [] if no_revision else [current_hour]
+                if (
+                    revision_hours
+                    and bool(payload.get("replacement_work_phase_required_if_non_work", False))
+                ):
+                    for item in payload.get("current_plan", []):
+                        if not isinstance(item, dict):
+                            continue
+                        hour = int(item.get("hour", -1))
+                        if hour <= current_hour:
+                            continue
+                        action_kind = str(item.get("action_kind", "idle"))
+                        action_id = str(item.get("action_id", "idle"))
+                        if action_kind != "work" and not action_id.startswith("work_"):
+                            revision_hours.append(hour)
+                            break
+                return {
+                    "ok": True,
+                    "npc_id": npc_id,
+                    "needs_revision": bool(revision_hours),
+                    "revision_hours": revision_hours,
+                    "summary": (
+                        "行动失败需要调整指定阶段。"
+                        if revision_hours
+                        else "本次失败不需要修改原计划。"
+                    ),
+                    "debug_reason": f"mock_action_failure_plan_revision_judgement{order_suffix}",
+                }
+            dialogue_history = payload.get("dialogue_history", [])
+            dialogue_text = " ".join(
+                str(turn.get("text", ""))
+                for turn in dialogue_history
+                if isinstance(turn, dict)
+            )
+            current_hour = self._read_game_hour(payload)
+            keep_plan_phrases = ["按原计划", "不用改计划", "不必改计划", "计划不变", "照旧"]
+            plan_change_keywords = [
+                "改计划", "调整计划", "改变安排", "取消", "推迟", "提前", "改到", "换到",
+                "承诺", "答应", "应征", "守门", "巡逻", "训练", "治疗", "休息", "睡觉",
+                "吃饭", "工作", "帮忙", "修理", "升级", "攻击", "受伤", "工位", "资源不足",
+            ]
+            explicit_hours = sorted({
+                int(match)
+                for match in re.findall(r"(?<!\d)([01]?\d|2[0-3])(?:[:：]00|点|时)", dialogue_text)
+                if int(match) >= current_hour
+            })
+            requests_plan_change = (
+                any(keyword in dialogue_text for keyword in plan_change_keywords)
+                and not any(phrase in dialogue_text for phrase in keep_plan_phrases)
+            )
+            revision_hours = explicit_hours if requests_plan_change and explicit_hours else []
+            if requests_plan_change and not revision_hours:
+                revision_hours = [current_hour]
+            return {
+                "ok": True,
+                "npc_id": npc_id,
+                "needs_revision": bool(revision_hours),
+                "revision_hours": revision_hours,
+                "summary": "本轮对话需要调整指定时段。" if revision_hours else "本轮对话不影响原计划。",
+                "debug_reason": f"mock_dialogue_plan_revision_judgement{order_suffix}",
             }
 
         if call_type == "plan_day":
@@ -716,13 +1097,13 @@ class ModelAdapter:
                 elif 8 <= hour <= 13:
                     item = self._plan_item(hour, "work", work_action_id, self._location_for_allowed_action(payload, work_action_id), "白天优先完成本职工作。")
                 elif 14 <= hour <= 16:
-                    item = self._plan_item(hour, "idle", "idle", "plaza", "留在广场观察驿站情况。")
+                    item = self._plan_item(hour, "idle", "idle", None, "留在当前地点观察驿站情况。")
                 elif 17 <= hour <= 20:
                     item = self._plan_item(hour, "work", work_action_id, self._location_for_allowed_action(payload, work_action_id), "傍晚继续补上驿站需要的工作。")
                 elif hour >= 22:
                     item = self._plan_item(hour, "sleep", "sleep_in_dormitory", "dormitory", "夜深后休息，避免明天无力做事。")
                 else:
-                    item = self._plan_item(hour, "idle", "idle", "plaza", "等待新的安排。")
+                    item = self._plan_item(hour, "idle", "idle", None, "等待新的安排。")
                 plan.append(item)
             return {
                 "ok": True,
@@ -734,20 +1115,32 @@ class ModelAdapter:
             }
 
         if call_type == "revise_plan":
-            immediate = self._plan_item(
-                self._read_game_hour(payload),
-                "idle",
-                "idle",
-                "plaza",
-                "原计划失败，先回到广场等待守备官安排。",
+            revision_hours = sorted({int(hour) for hour in payload.get("revision_hours", [])})
+            current_hour = self._read_game_hour(payload)
+            current_plan = payload.get("current_plan", [])
+            current_by_hour = {
+                int(item.get("hour", -1)): dict(item)
+                for item in current_plan
+                if isinstance(item, dict)
+            }
+            revised_plan = [
+                current_by_hour.get(
+                    hour,
+                    self._plan_item(hour, "idle", "idle", None, "重新评估后暂时等待。"),
+                )
+                for hour in revision_hours
+            ]
+            immediate = next(
+                (item for item in revised_plan if int(item.get("hour", -1)) == current_hour),
+                None,
             )
             return {
                 "ok": True,
                 "npc_id": npc_id,
-                "revised_plan": [immediate],
+                "revised_plan": revised_plan,
                 "immediate_action": immediate,
-                "summary": "Mock 将异常计划修订为等待状态。",
-                "debug_reason": f"mock_safe_fallback_revision{order_suffix}",
+                "summary": "Mock 仅返回请求指定的计划阶段。",
+                "debug_reason": f"mock_selected_hours_revision{order_suffix}",
             }
 
         if call_type == "battle_judgement":
@@ -764,18 +1157,23 @@ class ModelAdapter:
             }
 
         if call_type == "daily_reflection":
+            npc_context = payload.get("npc", {})
+            identity = npc_context.get("identity", {}) if isinstance(npc_context, dict) else {}
+            npc_label = str(identity.get("name", "")).strip() if isinstance(identity, dict) else ""
             return {
                 "ok": True,
                 "npc_id": npc_id,
                 "day": day,
                 "diary_entry": "今天驿站仍然紧绷。我记下了守备官的安排，也记下了大家脸上的疲惫。",
-                "memory_summary": "Mock 总结：记录当天关键事件，等待真实模型替换。",
                 "knowledge_graph_updates": [
                     {
                         "subject": npc_id,
                         "relation": "noticed",
                         "value": "驿站压力正在上升",
                         "confidence": 0.6,
+                        "subject_label": npc_label or "当事人",
+                        "relation_label": "留意事项",
+                        "value_label": "驿站压力正在上升",
                     }
                 ],
                 "debug_reason": f"mock_reflection_template{order_suffix}",
@@ -831,6 +1229,10 @@ class ModelAdapter:
         http_status: int | None = None,
         exception_type: str = "",
         degradation_source: str = "",
+        finish_reason: str = "",
+        response_content_length: int = 0,
+        attempt_count: int = 1,
+        thinking_mode: str = "",
     ) -> dict[str, Any]:
         provider = provider_override or self.config.provider
         record = ModelUsageRecord(
@@ -850,6 +1252,10 @@ class ModelAdapter:
             http_status=http_status,
             exception_type=exception_type,
             degradation_source=degradation_source,
+            finish_reason=finish_reason,
+            response_content_length=response_content_length,
+            attempt_count=attempt_count,
+            thinking_mode=thinking_mode,
         )
         self._usage_records.append(record)
         return asdict(record)
@@ -860,11 +1266,21 @@ class ModelAdapter:
                 "failure_reason": str(exc),
                 "http_status": exc.http_status,
                 "exception_type": exc.exception_type,
+                "output_tokens": int(exc.details.get("output_tokens", 0) or 0),
+                "finish_reason": str(exc.details.get("finish_reason", "")),
+                "response_content_length": int(exc.details.get("response_content_length", 0) or 0),
+                "attempt_count": int(exc.details.get("attempt_count", 1) or 1),
+                "thinking_mode": str(exc.details.get("thinking_mode", "")),
             }
         return {
             "failure_reason": str(exc),
             "http_status": None,
             "exception_type": exc.__class__.__name__,
+            "output_tokens": 0,
+            "finish_reason": "",
+            "response_content_length": 0,
+            "attempt_count": 1,
+            "thinking_mode": self.config.thinking_mode,
         }
 
     def _recent_failure_reason(self) -> str:
@@ -923,9 +1339,18 @@ class ModelAdapter:
         max_rounds = payload.get("max_rounds")
         dialogue_state = payload.get("dialogue_state", {})
         if isinstance(dialogue_state, dict):
-            current_round = current_round or dialogue_state.get("current_round")
-            max_rounds = max_rounds or dialogue_state.get("max_rounds")
-        return int(current_round or 1), int(max_rounds or 1)
+            if current_round is None:
+                current_round = dialogue_state.get("current_round")
+            if max_rounds is None:
+                max_rounds = dialogue_state.get("max_rounds")
+        return int(1 if current_round is None else current_round), int(1 if max_rounds is None else max_rounds)
+
+    def _read_dialogue_soft_round_threshold(self, payload: dict[str, Any]) -> int:
+        soft_round_threshold = payload.get("soft_round_threshold")
+        dialogue_state = payload.get("dialogue_state", {})
+        if soft_round_threshold is None and isinstance(dialogue_state, dict):
+            soft_round_threshold = dialogue_state.get("soft_round_threshold")
+        return max(1, int(5 if soft_round_threshold is None else soft_round_threshold))
 
     def _current_order_debug_suffix(self, payload: dict[str, Any]) -> str:
         current_order = payload.get("current_order", {})

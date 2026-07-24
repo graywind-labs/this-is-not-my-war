@@ -9,10 +9,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from backend.schemas import (
     BattleJudgementRequest,
+    ActionCandidate,
     CurrentOrderContext,
     DailyPlanRequest,
     DailyPlanResponse,
     DailyReflectionRequest,
+    DailyReflectionResponse,
+    PlanRevisionJudgementRequest,
+    PlanRevisionJudgementResponse,
     GameTime,
     KnowledgeGraphUpdateRequest,
     ModelRequestMeta,
@@ -27,7 +31,9 @@ from backend.schemas import (
     ProactiveIntentionRequest,
     ShortTermMemoryContext,
     SpeakerContext,
+    StationSceneContext,
 )
+from tools.station_context_fixture import build_station_context
 
 
 def _make_npc_context() -> NPCContext:
@@ -37,6 +43,7 @@ def _make_npc_context() -> NPCContext:
             name="布鲁诺",
             background_job="厨子",
             personality=["谨慎"],
+            speech_style="直率絮叨，常用锅和口粮作比。",
         ),
         state=NPCStateContext(
             hp=100,
@@ -58,6 +65,9 @@ def _make_npc_context() -> NPCContext:
 def main() -> None:
     game_time = GameTime(day=1, time="08:00:00", hour=8)
     npc = _make_npc_context()
+    station_context = StationSceneContext.model_validate(build_station_context([
+        {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
+    ]))
 
     dialogue_request = NPCDialogueRequest(
         meta=ModelRequestMeta(
@@ -66,6 +76,7 @@ def main() -> None:
             requires_time_slowdown=True,
         ),
         game_time=game_time,
+        station_context=station_context,
         npc_id="cook_01",
         npc_name="布鲁诺",
         npc_setting=npc.identity.model_dump(),
@@ -90,9 +101,20 @@ def main() -> None:
         },
         short_memory=ShortTermMemoryContext(),
         location_context={"location_id": "plaza"},
+        allowed_actions=[
+            ActionCandidate(
+                action_id="work_dining_hall",
+                name="加工餐食",
+                action_kind="work",
+                location_id="dining_hall",
+                tags=["work"],
+            )
+        ],
     )
     assert dialogue_request.npc_id == "cook_01"
     assert dialogue_request.current_order.text == npc.current_order.text
+    assert dialogue_request.npc_setting["speech_style"] == "直率絮叨，常用锅和口粮作比。"
+    assert "signature_lines" not in dialogue_request.npc_setting
     assert dialogue_request.interaction_context == "combat"
     assert dialogue_request.battlefield_context["active_enemy_count"] == 2
     response = NPCDialogueResponse(
@@ -103,6 +125,32 @@ def main() -> None:
     )
     assert response.replyer_id == "cook_01"
     assert response.wartime_reaction == "morale_boost"
+    assert response.invitation_result == "not_applicable"
+
+    npc_invitation_request = dialogue_request.model_copy(update={
+        "dialogue_kind": "npc_npc",
+        "dialogue_phase": "invitation",
+        "current_round": 0,
+        "max_rounds": 0,
+        "soft_round_threshold": 5,
+        "soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。",
+        "dialogue_state": dialogue_request.dialogue_state.model_copy(update={
+            "current_round": 0,
+            "max_rounds": 0,
+            "soft_round_threshold": 5,
+            "soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。",
+        }),
+    })
+    npc_invitation_response = NPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="好，我听你说。",
+        response_kind="reply_to_npc",
+        invitation_result="accept",
+    )
+    assert npc_invitation_request.dialogue_phase == "invitation"
+    assert npc_invitation_request.max_rounds == 0
+    assert npc_invitation_request.soft_round_threshold == 5
+    assert npc_invitation_response.invitation_result == "accept"
 
     escape_dialogue_request = NPCDialogueRequest(
         meta=ModelRequestMeta(
@@ -111,6 +159,7 @@ def main() -> None:
             requires_time_slowdown=True,
         ),
         game_time=game_time,
+        station_context=station_context,
         dialogue_kind="escape_intervention",
         npc_id="cook_01",
         npc_name="布鲁诺",
@@ -130,6 +179,15 @@ def main() -> None:
         escape_intervention_round=2,
         short_memory=ShortTermMemoryContext(),
         location_context={"location_id": "plaza"},
+        allowed_actions=[
+            ActionCandidate(
+                action_id="work_dining_hall",
+                name="加工餐食",
+                action_kind="work",
+                location_id="dining_hall",
+                tags=["work"],
+            )
+        ],
     )
     assert escape_dialogue_request.dialogue_kind == "escape_intervention"
     assert escape_dialogue_request.interaction_context == "escape_intervention"
@@ -147,23 +205,58 @@ def main() -> None:
     plan_request = DailyPlanRequest(
         meta=ModelRequestMeta(request_id="verify_plan", call_type="plan_day"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
         allowed_actions=[],
     )
     assert plan_request.npc.current_order.revision == 1
 
-    failed_item = PlanItem(hour=8, action_kind="work", action_id="garden_work")
+    judgement_request = PlanRevisionJudgementRequest(
+        meta=ModelRequestMeta(
+            request_id="verify_dialogue_plan_revision_judgement",
+            call_type="plan_revision_judgement",
+        ),
+        game_time=game_time,
+        station_context=station_context,
+        npc_id="cook_01",
+        npc_name="布鲁诺",
+        npc=npc,
+        dialogue_kind="player_npc",
+        dialogue_history=[{
+            "speaker_id": "guard_officer",
+            "speaker_name": "守备官",
+            "listener_id": "cook_01",
+            "listener_name": "布鲁诺",
+            "text": "下午两点改去训练。",
+        }],
+        current_plan=plan,
+    )
+    judgement_response = PlanRevisionJudgementResponse(
+        npc_id="cook_01",
+        needs_revision=True,
+        revision_hours=[14],
+    )
+    assert judgement_request.npc_id == "cook_01"
+    assert judgement_request.npc.identity.personality == ["谨慎"]
+    assert judgement_response.revision_hours == [14]
+
+    failed_item = plan[8]
     revision_request = PlanRevisionRequest(
         meta=ModelRequestMeta(request_id="verify_revision", call_type="revise_plan"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
-        current_plan=[failed_item],
+        current_plan=plan,
         failed_plan_item=failed_item,
+        revision_scope="selected_hours",
+        revision_hours=[8, 14],
         failure_type="order_changed",
         failure_summary="守备官发布了新指令。",
         allowed_actions=[],
     )
     assert revision_request.npc.current_order.text == npc.current_order.text
+    assert revision_request.revision_scope == "selected_hours"
+    assert revision_request.revision_hours == [8, 14]
 
     battle_request = BattleJudgementRequest(
         meta=ModelRequestMeta(
@@ -172,6 +265,7 @@ def main() -> None:
             requires_time_slowdown=True,
         ),
         game_time=game_time,
+        station_context=station_context,
         trigger="low_hp",
         npc=npc,
         combat_context={"hp_before": 100, "hp_after": 25, "threshold_ratio": 0.3},
@@ -184,22 +278,45 @@ def main() -> None:
     reflection_request = DailyReflectionRequest(
         meta=ModelRequestMeta(request_id="verify_reflection", call_type="daily_reflection"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
     )
+    reflection_response = DailyReflectionResponse.model_validate({
+        "ok": True,
+        "npc_id": "cook_01",
+        "day": 1,
+        "diary_entry": "我把今天的事记在这里。",
+        "memory_summary": "旧字段不应再进入响应模型。",
+        "knowledge_graph_updates": [{
+            "subject": "station",
+            "relation": "status",
+            "value": "仍在运转",
+            "confidence": 0.8,
+            "subject_label": "驿站",
+            "relation_label": "状态",
+            "value_label": "仍在运转",
+        }],
+    })
+    assert "memory_summary" not in reflection_response.model_dump()
+    assert reflection_response.knowledge_graph_updates[0].subject_label == "驿站"
+    assert reflection_response.knowledge_graph_updates[0].value_label == "仍在运转"
     graph_request = KnowledgeGraphUpdateRequest(
         meta=ModelRequestMeta(request_id="verify_graph", call_type="knowledge_graph_update"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
         source_summaries=[],
     )
     proactive_request = ProactiveIntentionRequest(
         meta=ModelRequestMeta(request_id="verify_proactive", call_type="proactive_intention"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
     )
     classification_request = PlayerStrategyClassificationRequest(
         meta=ModelRequestMeta(request_id="verify_classify", call_type="player_strategy_classification"),
         game_time=game_time,
+        station_context=station_context,
         npc=npc,
         guard_officer_input="守住这里。",
     )

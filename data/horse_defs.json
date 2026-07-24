@@ -1,0 +1,35 @@
+{
+  "initial_horses": [
+    {
+      "horse_id": "horse_chestnut_wind",
+      "name": "栗风",
+      "growth": 0.6
+    },
+    {
+      "horse_id": "horse_gray_mane",
+      "name": "灰鬃",
+      "growth": 0.6
+    }
+  ],
+  "balance": {
+    "stable_satiety_loss_per_hour": 0.5,
+    "outside_satiety_loss_per_hour": 2.0,
+    "feeding_missing_ratio": 0.2,
+    "feeding_duration_seconds": 1200,
+    "feeding_grain_cost": 1,
+    "feeding_satiety_restore": 35,
+    "natural_hp_restore_per_hour": 0.2,
+    "satiety_cost_per_hp": 0.5,
+    "foal_natural_max_hp": 40,
+    "foal_max_satiety": 50,
+    "adult_natural_max_hp": 100,
+    "adult_max_satiety": 100,
+    "adult_growth_threshold": 0.6,
+    "base_full_growth_care_minutes": 10080,
+    "birth_probability_gain_per_care_minute": 0.00005,
+    "birth_probability_cap": 1.0,
+    "birth_cooldown_minutes": 1440,
+    "stable_level_birth_bonus_per_level": 0.1,
+    "care_skill_100_bonus_hp_cap": 20
+  }
+}

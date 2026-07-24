@@ -170,6 +170,7 @@ var _last_battle_start_result: Dictionary = {}
 var _last_battle_end_result: Dictionary = {}
 var _last_wartime_dialogue_result: Dictionary = {}
 var _last_low_hp_judgement_result: Dictionary = {}
+var _pending_low_hp_judgement_by_request: Dictionary = {}
 var _last_escape_result: Dictionary = {}
 var _triggered_wave_numbers: Array[int] = []
 var _last_auto_wave_result: Dictionary = {}
@@ -185,6 +186,13 @@ func _ready() -> void:
 		event_bus.npc_revived.connect(_on_npc_revived)
 	if event_bus != null and event_bus.has_signal("npc_unconscious") and not event_bus.npc_unconscious.is_connected(_on_npc_unconscious):
 		event_bus.npc_unconscious.connect(_on_npc_unconscious)
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if (
+		llm_bridge != null
+		and llm_bridge.has_signal("battle_judgement_async_response_received")
+		and not llm_bridge.battle_judgement_async_response_received.is_connected(_on_battle_judgement_async_response_received)
+	):
+		llm_bridge.battle_judgement_async_response_received.connect(_on_battle_judgement_async_response_received)
 
 
 func initialize() -> void:
@@ -210,6 +218,7 @@ func initialize() -> void:
 	_last_battle_end_result.clear()
 	_last_wartime_dialogue_result.clear()
 	_last_low_hp_judgement_result.clear()
+	_pending_low_hp_judgement_by_request.clear()
 	_last_escape_result.clear()
 	_triggered_wave_numbers.clear()
 	_last_auto_wave_result.clear()
@@ -341,6 +350,35 @@ func get_active_enemies() -> Array[Dictionary]:
 	for enemy_id in get_active_enemy_ids():
 		result.append(get_enemy(enemy_id))
 	return result
+
+
+func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, context: Dictionary = {}) -> Dictionary:
+	if enemy_id.is_empty() or raw_attack_power <= 0.0 or not _active_enemies.has(enemy_id):
+		return {}
+	var target_defense := _calculate_enemy_defense(enemy_id)
+	var damage := _calculate_actual_hp_damage(raw_attack_power, target_defense)
+	var damage_result := _apply_damage_to_enemy(
+		enemy_id,
+		damage,
+		"",
+		{
+			"raw_attack_power": raw_attack_power,
+			"target_defense": target_defense,
+			"source_type": "defense_device",
+			"deployment_id": str(context.get("deployment_id", "")),
+			"device_id": str(context.get("device_id", "")),
+			"device_name": str(context.get("device_name", "工程器械"))
+		}
+	)
+	if damage_result.is_empty():
+		return {}
+	damage_result["source_type"] = "defense_device"
+	damage_result["deployment_id"] = str(context.get("deployment_id", ""))
+	damage_result["device_id"] = str(context.get("device_id", ""))
+	damage_result["device_name"] = str(context.get("device_name", "工程器械"))
+	if bool(damage_result.get("defeated", false)) and _active_enemies.is_empty():
+		damage_result["mode_exit_result"] = _handle_all_enemies_cleared("enemies_defeated_by_device")
+	return damage_result
 
 
 func spawn_wave(wave_number: int, clear_existing: bool = false, reason: String = "wave_spawned") -> Dictionary:
@@ -993,7 +1031,9 @@ func apply_escape_intervention_result(npc_id: String, response: Dictionary, cont
 			})
 		var mode_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, "escape_intervention_stayed", {
 			"force_idle": true,
-			"request_plan_reevaluation": true,
+			# 本轮挽留对话结束后由统一对话判别层决定是否以及修改哪些阶段，
+			# 避免“留下”同时触发一条无条件计划重估。
+			"request_plan_reevaluation": false,
 			"state_changes": {
 				"escaped": false,
 				"escape_intent": intent,
@@ -1139,10 +1179,7 @@ func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = 
 
 	var dialogue_result := _force_end_dialogue_for_low_hp(npc_id)
 	var llm_result := _request_low_hp_battle_judgement(npc_id, low_hp_event, damage_result, context, battlefield_context, allowed_decisions, mode)
-	var judgement: Dictionary = llm_result.get("battle_judgement", {}) if (llm_result.get("battle_judgement", {}) is Dictionary) else {}
-	if not bool(llm_result.get("ok", false)) or judgement.is_empty():
-		judgement = _make_low_hp_rule_fallback_judgement(npc_id, allowed_decisions, llm_result)
-	var applied := _apply_low_hp_judgement_result(npc_id, judgement, {
+	var apply_context := {
 		"low_hp_event": low_hp_event,
 		"damage_result": damage_result,
 		"damage_context": context,
@@ -1151,8 +1188,32 @@ func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = 
 		"behavior_mode": mode,
 		"combatant_decisions_allowed": combatant_decisions_allowed,
 		"dialogue_result": dialogue_result,
-		"llm_result": llm_result
-	})
+		"llm_result": llm_result,
+		"battle_wave_id": str(_active_battle.get("wave_id", ""))
+	}
+	if bool(llm_result.get("ok", false)) and bool(llm_result.get("pending", false)):
+		var request_id := str(llm_result.get("request_id", ""))
+		if not request_id.is_empty():
+			_pending_low_hp_judgement_by_request[request_id] = {
+				"npc_id": npc_id,
+				"context": apply_context.duplicate(true)
+			}
+		_last_low_hp_judgement_result = {
+			"ok": true,
+			"triggered": true,
+			"status": "pending",
+			"npc_id": npc_id,
+			"request_id": request_id,
+			"allowed_decisions": allowed_decisions,
+			"behavior_mode": mode,
+			"combatant_decisions_allowed": combatant_decisions_allowed,
+			"dialogue_result": dialogue_result.duplicate(true)
+		}
+		return _last_low_hp_judgement_result.duplicate(true)
+	var judgement: Dictionary = llm_result.get("battle_judgement", {}) if (llm_result.get("battle_judgement", {}) is Dictionary) else {}
+	if not bool(llm_result.get("ok", false)) or judgement.is_empty():
+		judgement = _make_low_hp_rule_fallback_judgement(npc_id, allowed_decisions, llm_result)
+	var applied := _apply_low_hp_judgement_result(npc_id, judgement, apply_context)
 	return applied
 
 
@@ -4231,7 +4292,7 @@ func _request_low_hp_battle_judgement(
 	behavior_mode: String
 ) -> Dictionary:
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
-	if llm_bridge == null or not llm_bridge.has_method("request_npc_battle_judgement"):
+	if llm_bridge == null:
 		return {"ok": false, "error": "llm_bridge_missing", "message": "LLMBridge 不可用。"}
 	var hp_before := int(damage_result.get("hp_before", 0))
 	var hp_after := int(damage_result.get("hp_after", hp_before))
@@ -4249,7 +4310,7 @@ func _request_low_hp_battle_judgement(
 		"combatant_decisions_allowed": allowed_decisions.has(BATTLE_DECISION_INSPIRED),
 		"low_hp_event_id": str(low_hp_event.get("event_id", ""))
 	}
-	return llm_bridge.request_npc_battle_judgement(npc_id, {
+	var request_options := {
 		"trigger": "low_hp",
 		"reason": "low_hp",
 		"related_event_id": str(low_hp_event.get("event_id", "")),
@@ -4257,7 +4318,42 @@ func _request_low_hp_battle_judgement(
 		"combat_context": combat_context,
 		"battlefield_context": battlefield_context,
 		"allowed_decisions": allowed_decisions
-	})
+	}
+	if llm_bridge.has_method("request_npc_battle_judgement_async"):
+		return llm_bridge.request_npc_battle_judgement_async(npc_id, request_options)
+	if llm_bridge.has_method("request_npc_battle_judgement"):
+		return llm_bridge.request_npc_battle_judgement(npc_id, request_options)
+	return {"ok": false, "error": "llm_bridge_method_missing", "message": "LLMBridge 缺少战时心理判定接口。"}
+
+
+func _on_battle_judgement_async_response_received(result: Dictionary) -> void:
+	var request_id := str(result.get("request_id", ""))
+	if request_id.is_empty() or not _pending_low_hp_judgement_by_request.has(request_id):
+		return
+	var pending: Dictionary = _pending_low_hp_judgement_by_request.get(request_id, {})
+	_pending_low_hp_judgement_by_request.erase(request_id)
+	var npc_id := str(pending.get("npc_id", result.get("npc_id", "")))
+	var apply_context: Dictionary = pending.get("context", {}) if pending.get("context", {}) is Dictionary else {}
+	var expected_wave_id := str(apply_context.get("battle_wave_id", ""))
+	if _active_battle.is_empty() or str(_active_battle.get("wave_id", "")) != expected_wave_id:
+		_last_low_hp_judgement_result = {
+			"ok": true,
+			"triggered": true,
+			"status": "discarded",
+			"reason": "battle_ended_before_llm_response",
+			"npc_id": npc_id,
+			"request_id": request_id
+		}
+		return
+	apply_context["llm_result"] = result.duplicate(true)
+	var allowed_decisions: Array[String] = []
+	for raw_decision in _normalize_string_array(apply_context.get("allowed_decisions", [])):
+		if BATTLE_DECISIONS.has(raw_decision) and not allowed_decisions.has(raw_decision):
+			allowed_decisions.append(raw_decision)
+	var judgement: Dictionary = result.get("battle_judgement", {}) if result.get("battle_judgement", {}) is Dictionary else {}
+	if not bool(result.get("ok", false)) or judgement.is_empty():
+		judgement = _make_low_hp_rule_fallback_judgement(npc_id, allowed_decisions, result)
+	_apply_low_hp_judgement_result(npc_id, judgement, apply_context)
 
 
 func _make_low_hp_rule_fallback_judgement(npc_id: String, allowed_decisions: Array[String], error_result: Dictionary) -> Dictionary:
