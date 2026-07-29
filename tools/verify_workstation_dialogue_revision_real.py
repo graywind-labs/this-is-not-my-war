@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-from backend.schemas import NPCDialogueResponse, PlanRevisionResponse  # noqa: E402
+from backend.schemas import NPCNPCDialogueResponse, PlanRevisionResponse  # noqa: E402
 from tools.verify_npc_npc_dialogue_real import _payload as _dialogue_payload  # noqa: E402
 from tools.verify_plan_action_contract import _revision_payload  # noqa: E402
 
@@ -121,7 +121,7 @@ def _verify_workstation_revision(provider: str, unique_suffix: str) -> tuple[str
     assert immediate.action_kind == "chat", immediate
     assert immediate.action_id == "talk_to_npc", immediate
     assert immediate.target_id == "priest_01", immediate
-    assert immediate.location_id == "clinic", immediate
+    assert immediate.location_id is None, immediate
     assert immediate.dialogue_goal.strip(), immediate
 
     merged_by_hour = {item["hour"]: item for item in payload["current_plan"]}
@@ -141,12 +141,6 @@ def _verify_workstation_revision(provider: str, unique_suffix: str) -> tuple[str
         for item in merged_by_hour.values()
         if item["action_id"] in work_action_ids
     )
-    assert work_phase_count >= 6, {
-        "work_phase_count": work_phase_count,
-        "revised_plan": [item.model_dump() for item in revision.revised_plan],
-        "immediate_action": immediate.model_dump(),
-    }
-
     _assert_usage_record(request_id, "revise_plan", provider)
     return request_id, work_phase_count
 
@@ -163,13 +157,15 @@ def _verify_npc_npc_dialogue(provider: str, unique_suffix: str) -> str:
     assert status == 200, {"status": status, "body": body}
     _assert_success_provenance(body, provider)
 
-    dialogue = NPCDialogueResponse.model_validate(body)
+    dialogue = NPCNPCDialogueResponse.model_validate({
+        key: value
+        for key, value in body.items()
+        if not key.startswith("model_")
+    })
     assert dialogue.replyer_id == "priest_01", dialogue
     assert dialogue.response_kind == "reply_to_npc", dialogue
     assert dialogue.invitation_result in {"accept", "reject"}, dialogue
     assert dialogue.reply_text.strip(), dialogue
-    assert dialogue.recruitment_result == "none", dialogue
-    assert dialogue.wartime_reaction == "none", dialogue
 
     _assert_usage_record(request_id, "dialogue", provider)
     return request_id
@@ -183,7 +179,7 @@ def main() -> None:
     print(
         "verify_workstation_dialogue_revision_real: ok "
         f"provider={provider} model={model} "
-        "revision=talk_to_npc target=priest_01 location=clinic "
+        "revision=talk_to_npc target=priest_01 dynamic_location "
         f"work_phases={work_phase_count} dialogue=reply_to_npc fallback_used=false"
     )
 

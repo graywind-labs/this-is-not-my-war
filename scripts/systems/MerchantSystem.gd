@@ -238,6 +238,14 @@ func _execute_trade(direction: String, resource_id: String, amount: int) -> Dict
 	if direction == "buy":
 		if not resource_system.can_afford({"money": total_price}):
 			return _trade_error("insufficient_money", "第纳尔不足。")
+		if (
+			resource_system.has_method("can_store_resources")
+			and not bool(resource_system.can_store_resources({resource_id: amount}))
+		):
+			return _trade_error(
+				"warehouse_capacity",
+				"%s已达到仓库储存上限。" % resource_system.get_resource_name(resource_id)
+			)
 		paid = resource_system.spend_resources({"money": total_price})
 		if paid and not resource_system.add_resource(resource_id, amount):
 			resource_system.add_resource("money", total_price)

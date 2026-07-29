@@ -126,6 +126,52 @@ def main() -> None:
     past_request = _make_request()
     past_request["revision_hours"] = [9]
     assert client.post("/npc/revise_plan", json=past_request).status_code == 400
+
+    upgrade_request = _make_request()
+    upgrade_request["meta"]["request_id"] = "verify_revise_plan_upgrade_assist"
+    upgrade_request["revision_hours"] = [10]
+    upgrade_request["current_work_phase_count"] = 7
+    upgrade_request["minimum_work_phase_count"] = 7
+    upgrade_request["failure_type"] = "target_unavailable"
+    upgrade_request["failure_summary"] = "到达工械坊入口后发现建筑正在升级。"
+    upgrade_request["failure_context"] = {
+        "building_id": "workshop",
+        "condition": "upgrading",
+        "failure_reason": "building_upgrading",
+        "arrival_check_failed": True,
+    }
+    upgrade_request["allowed_actions"] = [
+        ActionCandidate(
+            action_id="assist_upgrade",
+            name="协助升级工械坊",
+            action_kind="assist_upgrade",
+            location_id="plaza",
+            target_id="workshop",
+            target_kind="building",
+            target_name="工械坊",
+            tags=["assist_upgrade", "engineering"],
+            context={
+                "available_now": True,
+                "requires_building_entry": False,
+                "counts_as_work_phase": True,
+            },
+        ).model_dump()
+    ]
+    upgrade_request["current_plan"][10] = {
+        "hour": 10,
+        "action_kind": "assist_upgrade",
+        "action_id": "assist_upgrade",
+        "location_id": "plaza",
+        "target_id": "workshop",
+        "priority": 80,
+        "reason": "协助升级工械坊",
+        "dialogue_goal": "",
+    }
+    upgrade_response = client.post("/npc/revise_plan", json=upgrade_request)
+    assert upgrade_response.status_code == 200, upgrade_response.get_data(as_text=True)
+    upgrade_body = upgrade_response.get_json()
+    assert upgrade_body["revised_plan"][0]["action_id"] == "assist_upgrade"
+    assert upgrade_body["immediate_action"]["target_id"] == "workshop"
     print("verify_plan_revision_endpoint: ok")
 
 

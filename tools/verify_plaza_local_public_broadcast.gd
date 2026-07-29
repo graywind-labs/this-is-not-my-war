@@ -99,6 +99,7 @@ func _init() -> void:
 		return
 
 	var notice_witness_before: int = memory_system.get_npc_witness_events(plaza_npc_id).size()
+	var indoor_notice_witness_before: int = memory_system.get_npc_witness_events(indoor_npc_id).size()
 	memory_system.debug_set_plaza_notice("Debug notice")
 	if memory_system.debug_get_location_snapshot("plaza").get("current_notice", "") != "Debug notice":
 		push_error("Plaza notice did not update current snapshot")
@@ -106,6 +107,10 @@ func _init() -> void:
 		return
 	if memory_system.get_npc_witness_events(plaza_npc_id).size() <= notice_witness_before:
 		push_error("Plaza notice change was not written to plaza NPC witness log")
+		quit(1)
+		return
+	if memory_system.get_npc_witness_events(indoor_npc_id).size() != indoor_notice_witness_before + 1:
+		push_error("Plaza notice change was not broadcast once to the indoor NPC")
 		quit(1)
 		return
 

@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def build_station_context(
-    resident_roster: list[dict[str, str]],
+    resident_roster: list[dict[str, Any]],
     *,
     setting_summary: str | None = None,
     basic_resource_amounts: dict[str, int] | None = None,
@@ -18,6 +18,11 @@ def build_station_context(
     building_defs = _load_json(REPO_ROOT / "data/building_defs.json")
     action_defs = _load_json(REPO_ROOT / "data/action_defs.json")
     resource_defs = _load_json(REPO_ROOT / "data/resource_defs.json")
+    npc_profiles = _load_json(REPO_ROOT / "data/npc_profiles.json")
+    recruited_by_npc_id = {
+        str(profile["id"]): bool(profile.get("recruited", False))
+        for profile in npc_profiles
+    }
     public_resource_ids = ("grain", "meal", "wood", "stone", "iron")
     resource_defs_by_id = {
         str(resource["id"]): resource
@@ -26,7 +31,17 @@ def build_station_context(
     resource_amounts = basic_resource_amounts or {}
     return {
         "setting_summary": setting_summary or str(context_config["setting_summary"]),
-        "resident_roster": resident_roster,
+        "resident_roster": [
+            {
+                **resident,
+                "recruited": bool(resident.get(
+                    "recruited",
+                    recruited_by_npc_id.get(str(resident.get("npc_id", "")), False),
+                )),
+                "in_station": bool(resident.get("in_station", True)),
+            }
+            for resident in resident_roster
+        ],
         "building_roster": [
             {"building_id": str(building["id"]), "name": str(building["name"])}
             for building in building_defs
@@ -36,6 +51,7 @@ def build_station_context(
                 "action_id": str(action["id"]),
                 "name": str(action["name"]),
                 "action_kind": _action_kind(action),
+                "description": str(action.get("description", "")),
             }
             for action in action_defs
             if _is_work_mode_action(action)
@@ -72,6 +88,7 @@ def _action_kind(action: dict[str, Any]) -> str:
         "work": "work",
         "clinic_doctor": "work",
         "eat": "eat",
+        "drink": "drink",
         "sleep": "sleep",
         "training_instructor": "train",
         "training_student": "train",

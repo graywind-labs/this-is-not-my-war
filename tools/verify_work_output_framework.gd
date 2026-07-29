@@ -19,8 +19,13 @@ func _init() -> void:
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or crafting_system == null:
+	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or crafting_system == null or llm_bridge == null:
 		push_error("Required systems not found")
+		quit(1)
+		return
+	if llm_bridge._normalize_plan_failure_type("work_failed_storage_capacity") != "resource_insufficient":
+		push_error("Storage-capacity work failure must enter resource-insufficient plan revision")
 		quit(1)
 		return
 
@@ -109,6 +114,44 @@ func _init() -> void:
 	var completion_event := _find_event(gardener_events, "work_completed")
 	if float(completion_event.get("payload", {}).get("efficiency_multiplier", 1.0)) <= 1.0:
 		push_error("Work completion payload did not include efficiency multiplier")
+		quit(1)
+		return
+
+	var grain_capacity: int = resource_system.get_resource_capacity("grain")
+	var grain_fill_amount: int = grain_capacity - int(resource_system.get_resource("grain"))
+	if grain_fill_amount <= 0 or not resource_system.add_resource("grain", grain_fill_amount):
+		push_error("Failed to prepare full grain storage for work-output capacity check")
+		quit(1)
+		return
+	npc_system.update_npc_state(
+		gardener_id,
+		{"satiety": 80, "fatigue": 20, "last_action_result": ""}
+	)
+	if not action_system.debug_assign_work(gardener_id, "garden"):
+		push_error("Gardener should be able to start a work cycle before its output check")
+		quit(1)
+		return
+	if not await _wait_until_current_action(npc_system, gardener_id, "work_garden"):
+		push_error("Capacity-check garden work did not start")
+		quit(1)
+		return
+	action_system._on_logical_time_tick(gardener_duration + 1.0, 1.0)
+	if not await _wait_until_action_result(
+		npc_system,
+		gardener_id,
+		"work_failed_storage_capacity"
+	):
+		push_error("Full warehouse did not reject completed garden output")
+		quit(1)
+		return
+	if (
+		resource_system.get_resource("grain") != grain_capacity
+		or _is_workstation_occupied_by(
+			building_system.get_building("garden").get("workstations", []),
+			gardener_id
+		)
+	):
+		push_error("Storage-capacity work failure changed inventory or kept the workstation")
 		quit(1)
 		return
 

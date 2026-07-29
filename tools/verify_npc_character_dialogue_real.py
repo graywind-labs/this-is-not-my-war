@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from backend.app import create_app
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from backend.schemas import GameTime, ModelRequestMeta, PlayerNPCDialogueResponse, SpeakerContext
 from tools.station_context_fixture import build_station_context
 
 
@@ -154,7 +154,12 @@ def main() -> None:
         assert "signature_lines" not in payload["npc_setting"]
         response = client.post("/npc/dialogue", json=payload)
         assert response.status_code == 200, {npc_id: response.get_json()}
-        dialogue = NPCDialogueResponse(**response.get_json())
+        response_body = response.get_json()
+        dialogue = PlayerNPCDialogueResponse(**{
+            key: value
+            for key, value in response_body.items()
+            if not key.startswith("model_")
+        })
         assert dialogue.replyer_id == npc_id
         assert dialogue.recruitment_result == "none"
         assert dialogue.wartime_reaction == "none"

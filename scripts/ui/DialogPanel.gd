@@ -4,6 +4,8 @@ const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 const EVENT_BUS_PATH := "/root/EventBus"
+const RECRUITMENT_ACCEPT_COLOR := "#63D471"
+const RECRUITMENT_REJECT_COLOR := "#FF6B6B"
 
 @onready var npc_name_label: Label = %DialogNPCNameLabel
 @onready var status_label: Label = %DialogStatusLabel
@@ -274,8 +276,30 @@ func _refresh(state: Dictionary) -> void:
 	end_button.text = "关闭" if _observer_mode else "完成对话"
 	end_button.tooltip_text = "只关闭旁听窗口，不会打断 NPC 的自主对话。" if _observer_mode else "保存本次会话；若正在等待回复，将放弃回复并以守备官最后一句话结束。"
 	cancel_button.visible = is_player_controlled_dialogue and not _observer_mode
-	cancel_button.disabled = bool(state.get("attack_committed", false))
-	cancel_button.tooltip_text = "本次会话发生过攻击，伤害事实不可撤销，因此不能取消。" if cancel_button.disabled else "丢弃本次会话，不入库，也不触发计划修改判别。"
+	var npc_initiated_proactive_talk := (
+		is_player_dialogue
+		and str(state.get("dialogue_initiator", "")) == "npc"
+		and bool(state.get("proactive_talk", false))
+	)
+	var recruitment_request_sent := bool(state.get("session_had_recruitment_request", false))
+	cancel_button.disabled = (
+		npc_initiated_proactive_talk
+		or bool(state.get("attack_committed", false))
+		or recruitment_request_sent
+	)
+	cancel_button.tooltip_text = (
+		"驿站成员主动交涉不可取消对话。"
+		if npc_initiated_proactive_talk
+		else (
+			"本次会话发生过攻击，伤害事实不可撤销，因此不能取消。"
+			if bool(state.get("attack_committed", false))
+			else (
+				"本次会话已经提出应征，只能完成对话。"
+				if recruitment_request_sent
+				else "丢弃本次会话，不入库，也不触发计划修改判别。"
+			)
+		)
+	)
 	suspend_button.visible = is_player_controlled_dialogue and not _observer_mode
 	suspend_button.disabled = false
 	suspend_button.tooltip_text = "暂时隐藏窗口并保持 NPC 对话状态；最多挂起 2 个游戏小时。"
@@ -294,10 +318,25 @@ func _refresh(state: Dictionary) -> void:
 		if not raw_turn is Dictionary:
 			continue
 		var turn: Dictionary = raw_turn
-		lines.append("[b]%s[/b]：%s" % [str(turn.get("speaker_name", "")), str(turn.get("text", ""))])
+		var turn_lines: Array[String] = [
+			"[b]%s[/b]：%s" % [str(turn.get("speaker_name", "")), str(turn.get("text", ""))]
+		]
+		var turn_recruitment_result := str(turn.get("recruitment_result", "none"))
+		var turn_speaker_name := str(turn.get("speaker_name", "NPC"))
+		if turn_recruitment_result == "accept":
+			turn_lines.append(
+				"[color=%s]✓ %s接受了守备官的应征请求[/color]"
+				% [RECRUITMENT_ACCEPT_COLOR, turn_speaker_name]
+			)
+		elif turn_recruitment_result == "reject":
+			turn_lines.append(
+				"[color=%s]× %s拒绝了守备官的应征请求[/color]"
+				% [RECRUITMENT_REJECT_COLOR, turn_speaker_name]
+			)
+		lines.append("\n".join(turn_lines))
 	if _observer_mode and waiting:
 		var pending: Dictionary = state.get("pending_llm", {}) if state.get("pending_llm", {}) is Dictionary else {}
 		if not pending.is_empty() and not bool(pending.get("speaker_text_already_recorded", false)):
 			lines.append("[b]%s[/b]：%s" % [str(pending.get("speaker_name", "")), str(pending.get("clean_text", ""))])
 	history_text.text = "\n\n".join(lines)
-	history_text.scroll_to_line(maxi(0, lines.size() - 1))
+	history_text.scroll_to_line(maxi(0, history_text.get_line_count() - 1))

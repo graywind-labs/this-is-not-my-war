@@ -1,0 +1,334 @@
+{
+  "battle_judgement": {
+    "full_three_way_actual": {
+      "debug_reason": "艾达是老兵副官，责任感强，当前仍有24血且持盾剑，守备官命令是‘再守一阵’而非撤退；格伦倒地但托马仍在战斗，敌人仅剩三人且一人重伤，她认为可以继续牵制。",
+      "decision": "continue_fighting",
+      "emotion": "resolved",
+      "morale_delta_intent": 0,
+      "should_start_escape": false
+    },
+    "full_two_way_actual": {
+      "debug_reason": "莉娜是非战斗人员，无主武器，行为模式为避敌。她刚被箭擦伤跌破三成血量，诊所外墙开裂，门外仍有敌人脚步。守备官指令要求她安全时照看伤员、敌人逼近时后撤。作为医生，她优先考虑伤员安全，但当前自身受伤且诊所不再安全，她选择继续避战而非冒险逃离，因为后门路线不明且可能遭遇敌人。",
+      "decision": "avoid_battle",
+      "emotion": "tense",
+      "morale_delta_intent": 0,
+      "should_start_escape": false
+    },
+    "singleton_contract_reachability": {
+      "avoid_battle": {
+        "debug_reason": "马塞尔是非战斗人员，没有武器，已按守备官指令在小教堂避敌。他听到敌袭警报但未亲历伤害，作为神父倾向于留在安全处安抚他人而非逃离。allowed_decisions只有avoid_battle，故选择继续避战。",
+        "decision": "avoid_battle",
+        "emotion": "tense",
+        "morale_delta_intent": 0,
+        "should_start_escape": false
+      },
+      "continue_fighting": {
+        "debug_reason": "艾达是老兵副官，责任感强，当前伤势虽重但未到守备官划定的撤退界线；两名友军仍在侧翼，敌人也已重伤，局势尚可支撑。她选择继续战斗。",
+        "decision": "continue_fighting",
+        "emotion": "resolved",
+        "morale_delta_intent": 0,
+        "should_start_escape": false
+      },
+      "escape_station": {
+        "debug_reason": "托马被重创至18HP（低于30%阈值），身边无友军掩护，五名敌人包围。守备官命令不准后退，但托马长期记忆显示守备官前后承诺冲突，且其性格谨慎、不爱逞强，当前处境已无胜算，选择逃离驿站以保全性命。",
+        "decision": "escape_station",
+        "emotion": "desperate",
+        "morale_delta_intent": -2,
+        "should_start_escape": true
+      },
+      "inspired": {
+        "debug_reason": "格伦虽首次跌破30%血量，但自制盾牌成功挡住冲击，艾达已到侧翼，最后一名敌人重伤；守备官指令明确且信任其盾牌作用。铁匠的责任感与对装备使用者的保护欲转化为斗志，选择继续战斗。",
+        "decision": "inspired",
+        "emotion": "resolved",
+        "morale_delta_intent": 0,
+        "should_start_escape": false
+      },
+      "join_battle": {
+        "debug_reason": "格伦已入伍、有主武器，且守备官命令他拿长杆到主厅与艾达会合。他目睹敌袭，虽非战斗专长但责任感强，认为装备使用者应亲自验证装备在实战中的表现。allowed_decisions只有join_battle，故选择参战。",
+        "decision": "join_battle",
+        "emotion": "resolved",
+        "morale_delta_intent": 0,
+        "should_start_escape": false
+      }
+    }
+  },
+  "dialogue": {
+    "avoid_combat": {
+      "none": {
+        "debug_reason": "伊沃如实回答守备官询问，符合其安静细致的性格和当前避敌状态。",
+        "emotion": "calm",
+        "intent": "continue_talk",
+        "recruitment_result": "none",
+        "reply_text": "宿舍里只有我一个人，守备官。没人受伤，我按你说的待在墙角，没靠近窗户。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "none"
+      },
+      "recruitment_accept": {
+        "debug_reason": "布鲁诺信任守备官此前兑现了食物优先承诺，且应征后只需留在食堂后间护住伤员和热饭，不直接接战，符合其底线与当前能力。",
+        "emotion": "resolute",
+        "intent": "accept_recruitment",
+        "recruitment_result": "accept",
+        "reply_text": "行，守备官。我应征。伤员和热饭我盯着，窄门那边你们自己操心。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "none"
+      },
+      "recruitment_reject": {
+        "debug_reason": "医生莉娜以病人安全为首位，当前两名重伤员无法离开她；她无武器无战斗技能，应征只会送死，符合人设和边界。",
+        "emotion": "冷静而坚定",
+        "intent": "reject_recruitment",
+        "recruitment_result": "reject",
+        "reply_text": "守备官，我理解你的意思，但这两个伤员刚止血，我一旦松手他们几分钟内就会失血而死。我没有武器，也没有战斗训练，空手去城门只会多一具尸体。我不能丢下他们。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "none"
+      }
+    },
+    "escape_intervention": {
+      "fifth_round_leave": {
+        "debug_reason": "第五轮且是最后一轮，守备官仍无支撑材料或修复承诺；欧文已负伤且结构警告被连续忽视，符合人设中'不在明知结构不安全时认可施工'的底线，选择继续逃离。",
+        "emotion": "resigned",
+        "intent": "leave_after_intervention",
+        "recruitment_result": "none",
+        "reply_text": "守备官，第五轮了，你仍然没有支撑材料，也没有承诺修复。我负伤了，工械坊随时可能再塌。处罚也好，逃兵也罢，我不能死在一座我警告过四次的危房里。再见。",
+        "should_end_dialogue": true,
+        "wartime_reaction": "none"
+      },
+      "leave": {
+        "debug_reason": "欧文已受伤，工械坊结构危险且无修复材料，连续警告被忽视，当前行为模式为逃离，选择继续逃离。",
+        "emotion": "fear",
+        "intent": "leave_after_intervention",
+        "recruitment_result": "none",
+        "reply_text": "守备官，我身上有伤，工械坊的梁柱已经开裂，没有木材根本撑不住。我留下也做不了什么，只会被砸死。抱歉，我必须走。",
+        "should_end_dialogue": true,
+        "wartime_reaction": "none"
+      },
+      "stay": {
+        "debug_reason": "托马因守备官兑现撤退承诺、艾达封住通道、马匹安全而选择留下；符合其重视责任、不爱逞强的人设。",
+        "emotion": "relieved",
+        "intent": "stay_after_intervention",
+        "recruitment_result": "none",
+        "reply_text": "守备官，我信你上次的承诺。艾达确实封住了路，马也在内栏。我留下照料马匹，不回城门。",
+        "should_end_dialogue": true,
+        "wartime_reaction": "none"
+      }
+    },
+    "wartime": {
+      "escape": {
+        "debug_reason": "托马重伤（17/100），马匹已散，敌人五名合围，当前指令要求死守但实际无法执行，性格谨慎不爱逞强，选择表达逃离意向。",
+        "emotion": "desperate",
+        "intent": "continue_talk",
+        "recruitment_result": "none",
+        "reply_text": "守备官，我伤得太重，马也全跑了。一个人守不住这道门，硬顶只会白送命。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "escape"
+      },
+      "morale_boost": {
+        "debug_reason": "combat context, shield just saved two, enemy weakened, order not to pursue, morale high",
+        "emotion": "proud",
+        "intent": "continue_talk",
+        "recruitment_result": "none",
+        "reply_text": "盾没白打就好。缺口我守着，不追。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "morale_boost"
+      },
+      "none": {
+        "debug_reason": "守备官要求报告伤势、阵位和距离，艾达按现状、风险、方案顺序回答，符合务实性格和当前 combat 上下文。",
+        "emotion": "冷静",
+        "intent": "continue_talk",
+        "recruitment_result": "none",
+        "reply_text": "伤势不重，左臂被划了一下，不影响握盾。阵位在主厅门前，距城门大约三十步。部署照旧，我守在这里，不会让任何人绕过我。",
+        "should_end_dialogue": false,
+        "wartime_reaction": "none"
+      }
+    }
+  },
+  "model": "deepseek-v4-flash",
+  "ok": true,
+  "provider": "deepseek",
+  "usage": {
+    "count": 16,
+    "estimated_cost": 0.0,
+    "fallback_to_mock": false,
+    "input_tokens": 89562,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 2614,
+    "provider": "deepseek",
+    "records": [
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4361,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 133,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_single_join_battle",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4336,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 124,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_single_avoid_battle",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4519,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 117,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_single_continue_fighting",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4545,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 135,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_single_escape_station",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4454,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 125,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_single_inspired",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4537,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 127,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_full_three_way",
+        "success": true
+      },
+      {
+        "call_type": "battle_judgement",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 4402,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 157,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_battle_full_two_way",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6263,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 195,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_none",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6470,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 187,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_escape",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6427,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 155,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_morale",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6290,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 162,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_none",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6427,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 185,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_accept",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6397,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 207,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_reject",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6472,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 189,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_escape_stay",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 6498,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 193,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_escape_leave",
+        "success": true
+      },
+      {
+        "call_type": "dialogue",
+        "estimated_cost": 0.0,
+        "fallback_used": false,
+        "input_tokens": 7164,
+        "model": "deepseek-v4-flash",
+        "output_tokens": 223,
+        "provider": "deepseek",
+        "request_id": "verify_t0067_combat_escape_real_dialogue_escape_final_round_leave",
+        "success": true
+      }
+    ]
+  }
+}

@@ -17,8 +17,11 @@ func _init() -> void:
 
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
+	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if building_system == null or resource_system == null or panel == null:
+	if building_system == null or resource_system == null or memory_system == null or llm_bridge == null or time_system == null or panel == null:
 		push_error("Required systems or building panel are missing.")
 		quit(1)
 		return
@@ -152,6 +155,85 @@ func _init() -> void:
 		push_error("Repair did not spend stone up front.")
 		quit(1)
 		return
+	var repair_status: Dictionary = started.get("repair_status", {})
+	if (
+		not str(repair_status.get("duration_text", "")).contains("小时")
+		or not str(repair_status.get("duration_text", "")).contains("分")
+		or not str(repair_status.get("duration_text", "")).contains("秒")
+		or not str(repair_status.get("remaining_text", "")).ends_with("00秒")
+	):
+		push_error("Repair status should expose readable total and stable remaining duration: %s" % repair_status)
+		quit(1)
+		return
+	var plaza_snapshot: Dictionary = memory_system.get_location_snapshot("plaza")
+	var external_states: Dictionary = plaza_snapshot.get("building_external_states", {})
+	var wall_external: Dictionary = external_states.get(building_id, {})
+	if (
+		str(wall_external.get("active_job", "")) != "repair"
+		or str(wall_external.get("job_total_duration_text", "")) != str(repair_status.get("duration_text", ""))
+	):
+		push_error("Repair start propagation should include readable total duration: %s" % wall_external)
+		quit(1)
+		return
+	var repair_sentence := str(memory_system._format_external_state_sentence(
+		str(started.get("name", building_id)),
+		wall_external
+	))
+	if not repair_sentence.contains("本次修复预计需要"):
+		push_error("NPC-readable repair information should explain total duration: %s" % repair_sentence)
+		quit(1)
+		return
+	var propagated_repair_event_found := false
+	for event in memory_system.get_plaza_events():
+		var payload: Dictionary = event.get("payload", {}) if event.get("payload", {}) is Dictionary else {}
+		if (
+			str(payload.get("building_id", "")) == building_id
+			and str(event.get("summary", "")).contains("本次修复预计需要")
+			and str(event.get("summary", "")).contains(str(repair_status.get("duration_text", "")))
+		):
+			propagated_repair_event_found = true
+	if not propagated_repair_event_found:
+		push_error("Repair start should emit a propagated NPC-readable duration event")
+		quit(1)
+		return
+	var building_context: Dictionary = llm_bridge._build_building_state_context()
+	var wall_context: Dictionary = building_context.get(building_id, {})
+	var repair_job_context: Dictionary = wall_context.get("repair_job", {})
+	if (
+		str(repair_job_context.get("total_duration", "")).is_empty()
+		or repair_job_context.has("duration_seconds")
+		or repair_job_context.has("remaining_seconds")
+	):
+		push_error("LLM building context should carry readable repair time without naked seconds: %s" % repair_job_context)
+		quit(1)
+		return
+	var location_label_during_repair := panel.find_child("BuildingLocationLabel", true, false) as Label
+	var repair_button := panel.find_child("RepairButton", true, false) as Button
+	if (
+		location_label_during_repair == null
+		or repair_button == null
+		or not location_label_during_repair.text.contains("剩余 0小时")
+		or not location_label_during_repair.text.contains("00秒")
+		or not repair_button.text.contains("小时")
+	):
+		push_error("Building panel should show readable repair remaining time.")
+		quit(1)
+		return
+	building_system._on_logical_time_tick(1.5, 1.0)
+	time_system.request_time_slowdown("verify_building_duration", -1.0, "llm_wait")
+	await process_frame
+	var precise_repair: Dictionary = building_system.get_repair_status(building_id)
+	if str(precise_repair.get("remaining_text", "")).ends_with("00秒"):
+		push_error("Building remaining time should reveal precise seconds during LLM slowdown: %s" % precise_repair)
+		quit(1)
+		return
+	time_system.release_time_slowdown("verify_building_duration")
+	await process_frame
+	var stable_repair: Dictionary = building_system.get_repair_status(building_id)
+	if not str(stable_repair.get("remaining_text", "")).ends_with("00秒"):
+		push_error("Building remaining time should return to stable minutes after LLM slowdown: %s" % stable_repair)
+		quit(1)
+		return
 
 	building_system._on_logical_time_tick(600.0, 1.0)
 	var halfway: Dictionary = building_system.get_building(building_id)
@@ -217,6 +299,20 @@ func _init() -> void:
 		return
 	if building_system.can_repair_building(building_id):
 		push_error("Building under upgrade should not be repairable.")
+		quit(1)
+		return
+	var upgrade_status: Dictionary = upgrade_started.get("upgrade_status", {})
+	var upgraded_plaza_snapshot: Dictionary = memory_system.get_location_snapshot("plaza")
+	var upgraded_external_states: Dictionary = upgraded_plaza_snapshot.get("building_external_states", {})
+	var upgrade_external: Dictionary = upgraded_external_states.get(building_id, {})
+	var upgrade_context: Dictionary = llm_bridge._build_building_state_context().get(building_id, {})
+	if (
+		str(upgrade_status.get("duration_text", "")).is_empty()
+		or str(upgrade_external.get("active_job", "")) != "upgrade"
+		or str(upgrade_external.get("job_total_duration_text", "")) != str(upgrade_status.get("duration_text", ""))
+		or str(upgrade_context.get("upgrade_job", {}).get("total_duration", "")).is_empty()
+	):
+		push_error("Upgrade start should propagate readable total duration to NPC context.")
 		quit(1)
 		return
 

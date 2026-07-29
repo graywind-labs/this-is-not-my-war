@@ -41,13 +41,13 @@ const TRAINING_GAP_SPEED_SCALE := 0.65
 const TRAINING_COACHING_SPEED_SCALE := 0.50
 const TRAINING_BUILDING_LEVEL_SPEED_SCALE := 0.15
 const TRAINING_MIN_STUDENT_SKILL_INTERVAL_SECONDS := 600.0
-const TRAINING_STATE_COST_INTERVAL_SECONDS := 3600.0
 const NPC_DIALOGUE_ACTION_ID := "talk_to_npc"
 const NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD := 5
 const VISIT_LOCATION_ACTION_ID := "visit_location"
 const PRAY_ACTION_ID := "pray_at_chapel"
 const MASS_ACTION_ID := "lead_mass"
 const MASS_ATTEND_ACTION_ID := "attend_mass"
+const DRINK_WINE_ACTION_ID := "drink_wine"
 const NPC_DIALOGUE_MAX_CHASES := 1
 const WORK_SKILL_SPEED_SCALE := 0.50
 const WORK_ATTRIBUTE_SPEED_SCALE := 0.025
@@ -56,9 +56,24 @@ const WORK_MAX_SPEED_MULTIPLIER := 2.5
 const WORK_OUTPUT_DEFAULT_SKILL_PER_BONUS := 50
 const WORK_OUTPUT_DEFAULT_ATTRIBUTE_BASELINE := 5
 const WORK_OUTPUT_DEFAULT_ATTRIBUTE_PER_BONUS := 3
+const COMPLETION_POLICY_REPEAT_WHILE_PLANNED := "repeat_while_planned"
+const COMPLETION_POLICY_CONTINUOUS_UNTIL_PLAN_CHANGES := "continuous_until_plan_changes"
+const COMPLETION_POLICY_UNTIL_TARGET_RESOLVED := "until_target_resolved"
+const COMPLETION_POLICY_ONCE_PER_PLAN_HOUR := "once_per_plan_hour"
+const COMPLETION_POLICY_TERMINAL := "terminal"
+const COMPLETION_POLICY_NOT_PLAN_SELECTABLE := "not_plan_selectable"
+const VALID_COMPLETION_POLICIES := {
+	COMPLETION_POLICY_REPEAT_WHILE_PLANNED: true,
+	COMPLETION_POLICY_CONTINUOUS_UNTIL_PLAN_CHANGES: true,
+	COMPLETION_POLICY_UNTIL_TARGET_RESOLVED: true,
+	COMPLETION_POLICY_ONCE_PER_PLAN_HOUR: true,
+	COMPLETION_POLICY_TERMINAL: true,
+	COMPLETION_POLICY_NOT_PLAN_SELECTABLE: true,
+}
 
 var _actions: Dictionary = {}
 var _actions_by_location: Dictionary = {}
+var _action_definition_errors: Array[String] = []
 var _pending_actions: Dictionary = {}
 var _pending_action_targets: Dictionary = {}
 var _pending_action_options: Dictionary = {}
@@ -66,11 +81,13 @@ var _active_actions: Dictionary = {}
 var _healing_helpers_by_target: Dictionary = {}
 var _dialogue_reservations: Dictionary = {}
 var _building_eviction_guards: Dictionary = {}
+var _timed_experience_seconds: Dictionary = {}
 
 
 func initialize() -> void:
 	_actions.clear()
 	_actions_by_location.clear()
+	_action_definition_errors.clear()
 	_pending_actions.clear()
 	_pending_action_targets.clear()
 	_pending_action_options.clear()
@@ -78,6 +95,7 @@ func initialize() -> void:
 	_healing_helpers_by_target.clear()
 	_dialogue_reservations.clear()
 	_building_eviction_guards.clear()
+	_timed_experience_seconds.clear()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
@@ -99,6 +117,24 @@ func initialize() -> void:
 		if action_id.is_empty():
 			push_error("Skipped action definition with empty id.")
 			continue
+		var completion_policy := str(definition.get("completion_policy", ""))
+		if not VALID_COMPLETION_POLICIES.has(completion_policy):
+			var completion_policy_error := (
+				"Skipped action definition '%s': missing or invalid completion_policy '%s'."
+				% [action_id, completion_policy]
+			)
+			_action_definition_errors.append(completion_policy_error)
+			push_error(completion_policy_error)
+			continue
+		var plan_selectable := bool(definition.get("plan_selectable", true))
+		if not is_action_completion_policy_valid(completion_policy, plan_selectable):
+			var plan_selectable_policy_error := (
+				"Skipped action definition '%s': completion_policy '%s' conflicts with plan_selectable=%s."
+				% [action_id, completion_policy, plan_selectable]
+			)
+			_action_definition_errors.append(plan_selectable_policy_error)
+			push_error(plan_selectable_policy_error)
+			continue
 
 		_actions[action_id] = definition.duplicate(true)
 		var location_id := str(definition.get("location_required", ""))
@@ -117,6 +153,11 @@ func _ready() -> void:
 		event_bus.logical_time_tick.connect(_on_logical_time_tick)
 		if not event_bus.building_state_changed.is_connected(_on_building_state_changed):
 			event_bus.building_state_changed.connect(_on_building_state_changed)
+		if (
+			event_bus.has_signal("npc_building_entry_failed")
+			and not event_bus.npc_building_entry_failed.is_connected(_on_npc_building_entry_failed)
+		):
+			event_bus.npc_building_entry_failed.connect(_on_npc_building_entry_failed)
 
 
 func get_action(action_id: String) -> Dictionary:
@@ -126,12 +167,113 @@ func get_action(action_id: String) -> Dictionary:
 	return _actions[action_id].duplicate(true)
 
 
+func get_action_completion_policy(action_id: String) -> String:
+	if not _actions.has(action_id):
+		return ""
+	return str((_actions[action_id] as Dictionary).get("completion_policy", ""))
+
+
+func is_action_completion_policy_valid(
+	completion_policy: String,
+	plan_selectable: bool = true
+) -> bool:
+	if not VALID_COMPLETION_POLICIES.has(completion_policy):
+		return false
+	return (
+		(plan_selectable and completion_policy != COMPLETION_POLICY_NOT_PLAN_SELECTABLE)
+		or (
+			not plan_selectable
+			and completion_policy == COMPLETION_POLICY_NOT_PLAN_SELECTABLE
+		)
+	)
+
+
+func get_action_definition_errors() -> Array[String]:
+	return _action_definition_errors.duplicate()
+
+
 func get_action_ids() -> Array[String]:
 	var ids: Array[String] = []
 	for action_id in _actions.keys():
 		ids.append(str(action_id))
 	ids.sort()
 	return ids
+
+
+func advance_timed_action_experience(
+	npc_id: String,
+	action_id: String,
+	effective_game_seconds: float,
+	location_id: String = ""
+) -> Dictionary:
+	if effective_game_seconds <= 0.0 or not _actions.has(action_id):
+		return {}
+	var action: Dictionary = _actions[action_id]
+	var timed_experience: Dictionary = (
+		action.get("timed_experience", {})
+		if action.get("timed_experience", {}) is Dictionary
+		else {}
+	)
+	if timed_experience.is_empty():
+		return {}
+	var skill_name := str(timed_experience.get("skill", ""))
+	var interval_seconds := maxf(1.0, float(timed_experience.get("interval_seconds", 3600.0)))
+	var amount := maxi(1, int(timed_experience.get("amount", 1)))
+	if skill_name.is_empty():
+		return {}
+
+	var timer_key := "%s::%s" % [npc_id, action_id]
+	var timer := float(_timed_experience_seconds.get(timer_key, 0.0)) + effective_game_seconds
+	var awards := 0
+	var experience_gained := 0
+	var event_location := location_id
+	if event_location.is_empty():
+		var npc_system := _get_npc_system()
+		if npc_system != null:
+			event_location = str(npc_system.get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID))
+	while timer >= interval_seconds:
+		timer -= interval_seconds
+		var result := _improve_npc_skill_at_location(
+			npc_id,
+			skill_name,
+			amount,
+			str(timed_experience.get("reason", action_id)),
+			event_location
+		)
+		if not result.is_empty():
+			awards += 1
+			experience_gained += int(result.get("experience_gained", 0))
+	_timed_experience_seconds[timer_key] = timer
+	return {
+		"npc_id": npc_id,
+		"action_id": action_id,
+		"skill": skill_name,
+		"effective_game_seconds": effective_game_seconds,
+		"awards": awards,
+		"experience_gained": experience_gained,
+		"remainder_seconds": timer
+	}
+
+
+func get_timed_action_experience_snapshot(npc_id: String, action_id: String) -> Dictionary:
+	if not _actions.has(action_id):
+		return {}
+	var action: Dictionary = _actions[action_id]
+	var timed_experience: Dictionary = (
+		action.get("timed_experience", {})
+		if action.get("timed_experience", {}) is Dictionary
+		else {}
+	)
+	if timed_experience.is_empty():
+		return {}
+	return {
+		"npc_id": npc_id,
+		"action_id": action_id,
+		"skill": str(timed_experience.get("skill", "")),
+		"interval_seconds": float(timed_experience.get("interval_seconds", 3600.0)),
+		"amount": int(timed_experience.get("amount", 1)),
+		"remainder_seconds": float(_timed_experience_seconds.get("%s::%s" % [npc_id, action_id], 0.0))
+	}
 
 
 func get_action_eligibility(npc_id: String, action_id: String) -> Dictionary:
@@ -190,15 +332,49 @@ func get_action_eligibility(npc_id: String, action_id: String) -> Dictionary:
 		if eligible and environment_available and not building_available:
 			unavailable_reason = "建筑当前不可进入或使用"
 
+	var personal_resource_cost: Dictionary = (
+		action.get("personal_resource_cost", {})
+		if action.get("personal_resource_cost", {}) is Dictionary
+		else {}
+	)
+	var personal_resources_available := true
+	if not personal_resource_cost.is_empty():
+		var personal_npc_system := _get_npc_system()
+		personal_resources_available = (
+			personal_npc_system != null
+			and personal_npc_system.has_method("can_npc_afford_owned_resources")
+			and bool(personal_npc_system.can_npc_afford_owned_resources(npc_id, personal_resource_cost))
+		)
+		if (
+			eligible
+			and environment_available
+			and building_available
+			and runtime_dependency_available
+			and not personal_resources_available
+		):
+			unavailable_reason = (
+				"本人当前没有酒，无法饮酒"
+				if str(action.get("id", "")) == DRINK_WINE_ACTION_ID
+				else "本人当前持有的资源不足"
+			)
+
 	return {
 		"eligible": eligible,
-		"available_now": eligible and environment_available and building_available and runtime_dependency_available,
+		"available_now": (
+			eligible
+			and environment_available
+			and building_available
+			and runtime_dependency_available
+			and personal_resources_available
+		),
 		"unavailable_reason": unavailable_reason,
 		"required_ability": required_ability,
 		"eligibility_hint": str(action.get("eligibility_hint", "")),
 		"required_active_action_id": required_active_action_id,
 		"blocked_by_active_action_id": blocked_by_active_action_id,
-		"building_id": building_id
+		"building_id": building_id,
+		"personal_resource_cost": personal_resource_cost.duplicate(true),
+		"personal_resources_available": personal_resources_available
 	}
 
 
@@ -275,7 +451,12 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 
 	if not location_id.is_empty():
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
-		if str(state.get("current_location", "")) != location_id:
+		var movement_target := str(state.get("movement_target", ""))
+		var is_in_transit := (
+			not movement_target.is_empty()
+			or str(state.get("current_action", "")).begins_with("moving_to_")
+		)
+		if str(state.get("current_location", "")) != location_id or is_in_transit:
 			_pending_actions[npc_id] = action_id
 			_pending_action_targets.erase(npc_id)
 			_pending_action_options.erase(npc_id)
@@ -600,6 +781,7 @@ func get_runtime_action_snapshot(npc_id: String) -> Dictionary:
 			"blocked_by_active_action_id": str(action.get("blocked_by_active_action_id", "")),
 			"elapsed_seconds": float(active_action.get("elapsed_seconds", 0.0)),
 			"duration_seconds": float(active_action.get("duration_seconds", 0.0)),
+			"medical_skill": int(active_action.get("medical_skill", 0)),
 			"options": {},
 		}
 
@@ -618,6 +800,45 @@ func get_runtime_action_snapshot(npc_id: String) -> Dictionary:
 					"options": {},
 				}
 	return {}
+
+
+func get_daily_plan_dialogue_carryover_snapshot(
+	current_day: int = -1,
+	current_hour: int = -1
+) -> Dictionary:
+	var game_state := get_node_or_null(GAME_STATE_PATH)
+	if current_day < 0 and game_state != null:
+		current_day = int(game_state.current_day)
+	if current_hour < 0 and game_state != null:
+		current_hour = int(game_state.current_hour)
+	var result := {}
+	for raw_speaker_npc_id in _pending_actions.keys():
+		var speaker_npc_id := str(raw_speaker_npc_id)
+		if str(_pending_actions.get(speaker_npc_id, "")) != NPC_DIALOGUE_ACTION_ID:
+			continue
+		var options: Dictionary = _pending_action_options.get(speaker_npc_id, {})
+		if str(options.get("plan_action_source", "")) != "daily_plan":
+			continue
+		var assigned_day := int(options.get("assigned_plan_day", current_day))
+		var assigned_hour := int(options.get("assigned_plan_hour", current_hour))
+		if assigned_day != current_day or assigned_hour >= current_hour:
+			continue
+		result[speaker_npc_id] = {
+			"speaker_npc_id": speaker_npc_id,
+			"target_npc_id": str(_pending_action_targets.get(speaker_npc_id, "")),
+			"phase": "pending",
+			"assigned_plan_day": assigned_day,
+			"assigned_plan_hour": assigned_hour,
+			"assigned_plan_version": int(options.get("assigned_plan_version", -1)),
+			"assigned_plan_item": (
+				(options.get("assigned_plan_item", {}) as Dictionary).duplicate(true)
+				if options.get("assigned_plan_item", {}) is Dictionary
+				else {}
+			),
+			"waiting_for_target_plan": bool(options.get("waiting_for_target_plan", false)),
+			"chase_count": int(options.get("chase_count", 0))
+		}
+	return result
 
 
 func get_active_work_cycle_snapshots(building_id: String = "", action_ids: Array = []) -> Array[Dictionary]:
@@ -804,6 +1025,10 @@ func _on_building_state_changed(building_id: String) -> void:
 			):
 				npc_system.stop_npc_movement_for_system(npc_id, "building_%s" % condition)
 			continue
+		if condition == "upgrading" and pending_targets_building and not active_targets_building:
+			# Travellers have not observed the closure yet. Their authoritative
+			# failure is produced only when NPCSystem rejects entry at the door.
+			continue
 
 		var interrupted_action_id := pending_action_id if not pending_action_id.is_empty() else active_action_id
 		var interrupted_action: Dictionary = (
@@ -843,6 +1068,67 @@ func _on_building_state_changed(building_id: String) -> void:
 	_building_eviction_guards.erase(building_id)
 
 
+func _on_npc_building_entry_failed(
+	npc_id: String,
+	building_id: String,
+	entry_context: Dictionary
+) -> void:
+	var pending_action_id := str(_pending_actions.get(npc_id, ""))
+	if pending_action_id.is_empty():
+		return
+	var pending_action: Dictionary = _actions.get(pending_action_id, {})
+	var pending_target_id := str(_pending_action_targets.get(npc_id, ""))
+	var targets_building := (
+		str(pending_action.get("location_required", "")) == building_id
+		or (
+			pending_action_id == VISIT_LOCATION_ACTION_ID
+			and pending_target_id == building_id
+		)
+	)
+	if not targets_building:
+		return
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var building: Dictionary = (
+		building_system.get_building(building_id)
+		if building_system != null and building_system.has_method("get_building")
+		else {}
+	)
+	var condition := str(entry_context.get("condition", building.get("condition", "unavailable")))
+	var failure_reason := "building_upgrading" if condition == "upgrading" else "building_unavailable"
+	var unavailable_reason := "建筑正在升级" if condition == "upgrading" else "建筑已经失效"
+	var building_name := str(building.get("name", building_id))
+	var action_name := str(pending_action.get("name", pending_action_id))
+	var failure_summary := (
+		"到达%s入口后发现建筑正在升级，无法进入执行“%s”。"
+		% [building_name, action_name]
+		if condition == "upgrading"
+		else "到达%s入口后发现建筑已经失效，无法进入执行“%s”。"
+		% [building_name, action_name]
+	)
+	var failure_context := entry_context.duplicate(true)
+	failure_context.merge({
+		"action_id": pending_action_id,
+		"action_name": action_name,
+		"building_id": building_id,
+		"building_name": building_name,
+		"condition": condition,
+		"is_enterable": false,
+		"unavailable_reason": unavailable_reason,
+		"failure_reason": failure_reason,
+		"failure_summary": failure_summary,
+		"interrupted_phase": "pending",
+		"arrival_check_failed": true
+	}, true)
+	_update_action_failure(
+		npc_id,
+		"%s_failed_%s" % [pending_action_id, failure_reason],
+		failure_context
+	)
+
+
 func _refresh_active_building_action_efficiencies(building_id: String) -> void:
 	for raw_npc_id in _active_actions.keys():
 		var npc_id := str(raw_npc_id)
@@ -873,7 +1159,7 @@ func _on_gameplay_pause_changed(paused: bool) -> void:
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
-	if game_delta_seconds <= 0.0:
+	if game_delta_seconds <= 0.0 or _is_gameplay_paused():
 		return
 	expire_invalid_daily_plan_dialogues()
 	if _active_actions.is_empty():
@@ -889,6 +1175,8 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 
 func _try_execute_pending_action(npc_id: String) -> void:
 	if not _pending_actions.has(npc_id):
+		return
+	if _is_gameplay_paused():
 		return
 	if not _can_npc_act(npc_id):
 		_cancel_dialogue_approach_for_participant(npc_id, "talk_to_npc_target_unavailable")
@@ -931,8 +1219,7 @@ func _try_execute_pending_action(npc_id: String) -> void:
 	var location_id := str(action.get("location_required", ""))
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if (
-		(location_id.is_empty() or str(state.get("current_location", "")) == location_id)
-		and str(state.get("current_action", "")) == "idle"
+		_is_action_commit_ready(npc_id, location_id, state)
 		and not _active_actions.has(npc_id)
 	):
 		_pending_actions.erase(npc_id)
@@ -942,6 +1229,8 @@ func _try_execute_pending_action(npc_id: String) -> void:
 
 
 func _try_execute_pending_repair_assist(npc_id: String) -> void:
+	if _is_gameplay_paused():
+		return
 	var building_id := str(_pending_action_targets.get(npc_id, ""))
 	if building_id.is_empty():
 		_pending_actions.erase(npc_id)
@@ -953,13 +1242,19 @@ func _try_execute_pending_repair_assist(npc_id: String) -> void:
 		return
 
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) == PLAZA_LOCATION_ID and str(state.get("current_action", "")) == "idle":
+	if (
+		_is_action_commit_ready(npc_id, PLAZA_LOCATION_ID, state)
+		and not _active_actions.has(npc_id)
+	):
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
+		_pending_action_options.erase(npc_id)
 		_execute_repair_assist(npc_id, building_id)
 
 
 func _try_execute_pending_upgrade_assist(npc_id: String) -> void:
+	if _is_gameplay_paused():
+		return
 	var building_id := str(_pending_action_targets.get(npc_id, ""))
 	if building_id.is_empty():
 		_pending_actions.erase(npc_id)
@@ -971,13 +1266,19 @@ func _try_execute_pending_upgrade_assist(npc_id: String) -> void:
 		return
 
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) == PLAZA_LOCATION_ID and str(state.get("current_action", "")) == "idle":
+	if (
+		_is_action_commit_ready(npc_id, PLAZA_LOCATION_ID, state)
+		and not _active_actions.has(npc_id)
+	):
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
+		_pending_action_options.erase(npc_id)
 		_execute_upgrade_assist(npc_id, building_id)
 
 
 func _try_execute_pending_heal_assist(npc_id: String) -> void:
+	if _is_gameplay_paused():
+		return
 	var target_npc_id := str(_pending_action_targets.get(npc_id, ""))
 	if target_npc_id.is_empty():
 		_pending_actions.erase(npc_id)
@@ -990,7 +1291,10 @@ func _try_execute_pending_heal_assist(npc_id: String) -> void:
 
 	var target_location_id := _get_target_healing_location(target_npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) == target_location_id and str(state.get("current_action", "")) == "idle":
+	if (
+		_is_action_commit_ready(npc_id, target_location_id, state)
+		and not _active_actions.has(npc_id)
+	):
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
@@ -1002,6 +1306,8 @@ func _try_execute_pending_training_student(npc_id: String) -> void:
 
 
 func _try_execute_pending_service_dependent(npc_id: String, action_id: String) -> void:
+	if _is_gameplay_paused():
+		return
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
@@ -1011,8 +1317,7 @@ func _try_execute_pending_service_dependent(npc_id: String, action_id: String) -
 	var location_id := str(action.get("location_required", ""))
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if (
-		str(state.get("current_location", "")) != location_id
-		or str(state.get("current_action", "")) != "idle"
+		not _is_action_commit_ready(npc_id, location_id, state)
 		or _active_actions.has(npc_id)
 	):
 		return
@@ -1087,7 +1392,8 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 		str(options.get("opening_text", "")),
 		"local_public",
 		int(options.get("soft_round_threshold", NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD)),
-		bool(options.get("require_real_provider", true))
+		bool(options.get("require_real_provider", true)),
+		options.duplicate(true)
 	)
 	if bool(start_result.get("ok", false)):
 		_pending_actions.erase(speaker_npc_id)
@@ -1173,6 +1479,17 @@ func _get_invalid_daily_plan_dialogue_context(
 	var options: Dictionary = _pending_action_options.get(speaker_npc_id, {})
 	if str(options.get("plan_action_source", "")) != "daily_plan":
 		return {}
+	var game_state := get_node_or_null(GAME_STATE_PATH)
+	if current_day < 0 and game_state != null:
+		current_day = int(game_state.current_day)
+	if current_hour < 0 and game_state != null:
+		current_hour = int(game_state.current_hour)
+	var assigned_day := int(options.get("assigned_plan_day", current_day))
+	var assigned_hour := int(options.get("assigned_plan_hour", current_hour))
+	# Once a planned conversation is already in progress, an ordinary hour change
+	# does not revoke it. A new day remains a hard boundary and may supersede it.
+	if assigned_day == current_day and assigned_hour < current_hour:
+		return {}
 	var daily_plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
 	if daily_plan_system == null or not daily_plan_system.has_method("get_current_plan_item"):
 		return {}
@@ -1180,22 +1497,16 @@ func _get_invalid_daily_plan_dialogue_context(
 	var current_plan_item: Dictionary = daily_plan_system.get_current_plan_item(speaker_npc_id)
 	var current_target_npc_id := _get_plan_dialogue_target_id(current_plan_item)
 	if (
-		str(current_plan_item.get("action_id", "")) == NPC_DIALOGUE_ACTION_ID
+		assigned_day == current_day
+		and str(current_plan_item.get("action_id", "")) == NPC_DIALOGUE_ACTION_ID
 		and current_target_npc_id == target_npc_id
 	):
 		return {}
-	var game_state := get_node_or_null(GAME_STATE_PATH)
-	if current_day < 0 and game_state != null:
-		current_day = int(game_state.current_day)
-	if current_hour < 0 and game_state != null:
-		current_hour = int(game_state.current_hour)
 	var assigned_plan_item: Dictionary = (
 		(options.get("assigned_plan_item", {}) as Dictionary).duplicate(true)
 		if options.get("assigned_plan_item", {}) is Dictionary
 		else {}
 	)
-	var assigned_day := int(options.get("assigned_plan_day", current_day))
-	var assigned_hour := int(options.get("assigned_plan_hour", current_hour))
 	var current_plan_version := -1
 	if daily_plan_system.has_method("get_plan_version"):
 		current_plan_version = int(daily_plan_system.get_plan_version(speaker_npc_id))
@@ -1224,6 +1535,8 @@ func _get_plan_dialogue_target_id(item: Dictionary) -> String:
 
 
 func _try_execute_pending_visit(npc_id: String) -> void:
+	if _is_gameplay_paused():
+		return
 	var location_id := str(_pending_action_targets.get(npc_id, ""))
 	var npc_system := _get_npc_system()
 	if location_id.is_empty() or npc_system == null or not _is_enterable_location(location_id):
@@ -1236,7 +1549,10 @@ func _try_execute_pending_visit(npc_id: String) -> void:
 		})
 		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) != location_id or str(state.get("current_action", "")) != "idle":
+	if (
+		not _is_action_commit_ready(npc_id, location_id, state)
+		or _active_actions.has(npc_id)
+	):
 		return
 	_pending_actions.erase(npc_id)
 	_pending_action_targets.erase(npc_id)
@@ -1246,12 +1562,19 @@ func _try_execute_pending_visit(npc_id: String) -> void:
 
 func _execute_action(npc_id: String, action_id: String) -> bool:
 	var action: Dictionary = _actions[action_id]
+	if not _is_action_commit_ready(
+		npc_id,
+		str(action.get("location_required", ""))
+	):
+		return false
 	var action_type := str(action.get("type", ""))
 	match action_type:
 		"work":
 			return _start_work(npc_id, action)
 		"eat":
 			return _start_eat(npc_id, action)
+		"drink":
+			return _start_drink(npc_id, action)
 		"sleep":
 			return _start_sleep(npc_id, action)
 		"pray":
@@ -1279,6 +1602,11 @@ func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if npc_system == null or building_system == null:
+		return false
+	if (
+		not _is_action_commit_ready(npc_id, PLAZA_LOCATION_ID)
+		or _active_actions.has(npc_id)
+	):
 		return false
 	if not building_system.has_method("add_repair_helper") or not building_system.is_repair_in_progress(building_id):
 		_update_action_failure(npc_id, "assist_repair_failed_no_active_repair")
@@ -1314,6 +1642,11 @@ func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if npc_system == null or building_system == null:
 		return false
+	if (
+		not _is_action_commit_ready(npc_id, PLAZA_LOCATION_ID)
+		or _active_actions.has(npc_id)
+	):
+		return false
 	if not building_system.has_method("add_upgrade_helper") or not building_system.is_upgrade_in_progress(building_id):
 		_update_action_failure(npc_id, "assist_upgrade_failed_no_active_upgrade")
 		return false
@@ -1346,6 +1679,14 @@ func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
+		return false
+	if (
+		not _is_action_commit_ready(
+			healer_npc_id,
+			_get_target_healing_location(target_npc_id)
+		)
+		or _active_actions.has(healer_npc_id)
+	):
 		return false
 	if not _is_npc_unconscious(target_npc_id):
 		_update_action_failure(healer_npc_id, "assist_heal_failed_target_not_unconscious")
@@ -1531,8 +1872,7 @@ func _start_training_instructor(npc_id: String, action: Dictionary) -> bool:
 		"building_id": TRAINING_LOCATION_ID,
 		"workstation_id": str(claim_result.get("workstation_id", "")),
 		"solo_skill_timer_seconds": {},
-		"coaching_skill_timer_seconds": 0.0,
-		"state_cost_timer_seconds": 0.0
+		"coaching_skill_timer_seconds": 0.0
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
@@ -1609,8 +1949,7 @@ func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 		"instructor_npc_id": str(instructor_ids[0]),
 		"instructor_npc_ids": instructor_ids.duplicate(),
 		"training_skills": equipped_skills,
-		"skill_timers": {},
-		"state_cost_timer_seconds": 0.0
+		"skill_timers": {}
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
@@ -1771,6 +2110,25 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		return
 
 	var input_resources: Dictionary = action.get("input_resources", {})
+	var output_resources: Dictionary = _get_work_output_resources(action, npc_id)
+	if (
+		resource_system.has_method("can_store_resources")
+		and not bool(resource_system.can_store_resources(output_resources))
+	):
+		_release_workstation_for_action(npc_id, active_action)
+		_update_action_failure(npc_id, "work_failed_storage_capacity", {
+			"output_resources": output_resources.duplicate(true),
+			"failure_reason": "warehouse_capacity"
+		})
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", "")),
+			"reason": "仓库容量不足",
+			"output_resources": output_resources,
+			"workstation_id": str(active_action.get("workstation_id", "")),
+			"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
+			"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action)))
+		})
+		return
 	if not resource_system.spend_resources(input_resources):
 		_release_workstation_for_action(npc_id, active_action)
 		_update_action_failure(npc_id, "work_failed_no_resources")
@@ -1784,9 +2142,21 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		})
 		return
 
-	var output_resources: Dictionary = _get_work_output_resources(action, npc_id)
-	for resource_id in output_resources.keys():
-		resource_system.add_resource(str(resource_id), int(output_resources[resource_id]))
+	if resource_system.has_method("add_resources"):
+		if not bool(resource_system.add_resources(output_resources)):
+			# Capacity was checked before inputs were spent; reaching this branch
+			# means another same-frame producer filled the warehouse first.
+			for raw_resource_id in input_resources.keys():
+				resource_system.add_resource(str(raw_resource_id), int(input_resources[raw_resource_id]))
+			_release_workstation_for_action(npc_id, active_action)
+			_update_action_failure(npc_id, "work_failed_storage_capacity", {
+				"output_resources": output_resources.duplicate(true),
+				"failure_reason": "warehouse_capacity_race"
+			})
+			return
+	else:
+		for resource_id in output_resources.keys():
+			resource_system.add_resource(str(resource_id), int(output_resources[resource_id]))
 
 	_apply_building_effects(action)
 	_apply_final_state_deltas(npc_id, active_action)
@@ -1798,8 +2168,7 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		"input_resources": input_resources,
 		"output_resources": output_resources,
 		"building_hp_restore": int(action.get("building_hp_restore", 0)),
-		"satiety_delta": int(action.get("satiety_delta", 0)),
-		"fatigue_delta": int(action.get("fatigue_delta", 0)),
+		"needs_profile": str(action.get("needs_profile", "")),
 		"workstation_id": str(active_action.get("workstation_id", "")),
 		"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
 		"base_duration_seconds": _get_action_duration_seconds(action),
@@ -1880,6 +2249,55 @@ func _complete_eat(npc_id: String, active_action: Dictionary) -> void:
 	})
 
 
+func _start_drink(npc_id: String, action: Dictionary) -> bool:
+	var npc_system := _get_npc_system()
+	if npc_system == null or not npc_system.has_method("spend_npc_owned_resources"):
+		return false
+	var personal_resource_cost: Dictionary = (
+		action.get("personal_resource_cost", {})
+		if action.get("personal_resource_cost", {}) is Dictionary
+		else {}
+	)
+	var spend_result: Dictionary = npc_system.spend_npc_owned_resources(npc_id, personal_resource_cost)
+	if not bool(spend_result.get("ok", false)):
+		var failure_context := {
+			"action_id": str(action.get("id", DRINK_WINE_ACTION_ID)),
+			"resource_id": "wine",
+			"unavailable_reason": "自己当前没有酒，无法饮酒"
+		}
+		_update_action_failure(npc_id, "drink_wine_failed_no_wine", failure_context)
+		_log_action_start_failure(npc_id, action, "自己当前没有酒，无法饮酒", failure_context)
+		return false
+
+	var owned_before: Dictionary = spend_result.get("owned_resources_before", {})
+	var owned_after: Dictionary = spend_result.get("owned_resources_after", {})
+	var amount := int(personal_resource_cost.get("wine", 1))
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", DRINK_WINE_ACTION_ID)),
+		"last_action_result": "started_drink_wine",
+		"last_action_failure_context": {}
+	})
+	var active_action := _create_active_action(action, npc_id)
+	active_action["personal_resource_cost"] = personal_resource_cost.duplicate(true)
+	_active_actions[npc_id] = active_action
+	var event_action := action.duplicate(true)
+	var current_location := str(npc_system.get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID))
+	event_action["location_required"] = current_location
+	_log_structured_action_event(npc_id, event_action, "wine_consumed", {
+		"action_id": str(action.get("id", DRINK_WINE_ACTION_ID)),
+		"resource_id": "wine",
+		"amount": amount,
+		"npc_wine_before": int(owned_before.get("wine", 0)),
+		"npc_wine_after": int(owned_after.get("wine", 0)),
+		"context_effect": "饮酒改善了心情，让过去的伤痛暂时淡化；不删除记忆，也不产生情绪数值。"
+	})
+	return true
+
+
+func _complete_drink(npc_id: String, _active_action: Dictionary) -> void:
+	_set_action_idle(npc_id, "completed_drink_wine")
+
+
 func _start_sleep(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
@@ -1919,8 +2337,7 @@ func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 	_set_action_idle(npc_id, "completed_sleep")
 	_log_structured_action_event(npc_id, action, "sleep_ended", {
 		"action_id": str(action.get("id", "")),
-		"satiety_delta": int(action.get("satiety_delta", 0)),
-		"fatigue_delta": int(action.get("fatigue_delta", 0)),
+		"needs_profile": str(action.get("needs_profile", "")),
 		"duration_seconds": _get_action_duration_seconds(action)
 	})
 	var npc_system := _get_npc_system()
@@ -1934,24 +2351,46 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 	if npc_system == null or building_system == null:
 		return false
 	var action_id := str(action.get("id", PRAY_ACTION_ID))
+	var building_id := str(action.get("location_required", "chapel"))
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if (
+		str(state.get("current_location", "")) != building_id
+		or not str(state.get("movement_target", "")).is_empty()
+		or str(state.get("current_action", "")).begins_with("moving_to_")
+	):
+		var location_failure_id := "%s_failed_target_unavailable_not_arrived" % action_id
+		var location_failure_context := {
+			"action_id": action_id,
+			"building_id": building_id,
+			"current_location": str(state.get("current_location", "")),
+			"movement_target": str(state.get("movement_target", "")),
+			"unavailable_reason": "尚未实际到达小教堂，不能开始教堂活动"
+		}
+		_update_action_failure(npc_id, location_failure_id, location_failure_context)
+		_log_action_start_failure(
+			npc_id,
+			action,
+			str(location_failure_context["unavailable_reason"]),
+			location_failure_context
+		)
+		return false
 	var eligibility := get_action_eligibility(npc_id, action_id)
 	if not bool(eligibility.get("eligible", false)):
 		_update_action_failure(npc_id, "%s_failed_ineligible" % action_id, {
 			"action_id": action_id,
-			"building_id": str(action.get("location_required", "chapel")),
+			"building_id": building_id,
 			"required_ability": str(eligibility.get("required_ability", "")),
 			"unavailable_reason": str(eligibility.get("unavailable_reason", ""))
 		})
 		_log_structured_action_event(npc_id, action, "prayer_failed", {
 			"action_id": action_id,
 			"reason": str(eligibility.get("unavailable_reason", "行动者没有资格")),
-			"building_id": str(action.get("location_required", "chapel"))
+			"building_id": building_id
 		})
 		return false
 	if not bool(eligibility.get("available_now", false)):
 		_fail_action_before_start(npc_id, action, eligibility)
 		return false
-	var building_id := str(action.get("location_required", "chapel"))
 	var claim_result: Dictionary = building_system.claim_workstation(
 		building_id,
 		npc_id,
@@ -2020,6 +2459,11 @@ func _complete_pray(npc_id: String, active_action: Dictionary) -> void:
 func _start_visit(npc_id: String, action: Dictionary, location_id: String) -> bool:
 	if action.is_empty() or not _is_enterable_location(location_id):
 		return false
+	if (
+		not _is_action_commit_ready(npc_id, location_id)
+		or _active_actions.has(npc_id)
+	):
+		return false
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
@@ -2058,7 +2502,7 @@ func _create_active_action(action: Dictionary, npc_id: String = "") -> Dictionar
 		"action": action.duplicate(true),
 		"elapsed_seconds": 0.0,
 		"duration_seconds": _get_effective_action_duration_seconds(action, npc_id),
-		"state_deltas": _get_action_state_deltas(action),
+		"state_deltas": {},
 		"applied_state_deltas": {}
 	}
 
@@ -2111,6 +2555,8 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 			_complete_work(npc_id, active_action)
 		"eat":
 			_complete_eat(npc_id, active_action)
+		"drink":
+			_complete_drink(npc_id, active_action)
 		"sleep":
 			_complete_sleep(npc_id, active_action)
 		"pray":
@@ -2243,7 +2689,6 @@ func _advance_training_instructor(instructor_npc_id: String, active_action: Dict
 		_stop_active_action(instructor_npc_id, "training_instructor_failed_no_equipment")
 		return
 
-	active_action = _apply_hourly_training_state_costs(instructor_npc_id, active_action, game_delta_seconds)
 	var student_ids := _find_active_training_students_for_instructor(instructor_npc_id)
 	if student_ids.is_empty():
 		active_action = _advance_solo_training(instructor_npc_id, active_action, game_delta_seconds)
@@ -2275,7 +2720,6 @@ func _advance_training_student(student_npc_id: String, active_action: Dictionary
 	active_action["instructor_npc_id"] = str(instructor_ids[0])
 	active_action["instructor_npc_ids"] = instructor_ids.duplicate()
 
-	active_action = _apply_hourly_training_state_costs(student_npc_id, active_action, game_delta_seconds)
 	var current_skills := _get_equipped_training_skills(npc_system.get_npc(student_npc_id))
 	if current_skills.is_empty():
 		_stop_active_action(student_npc_id, "training_student_failed_no_equipment")
@@ -2329,21 +2773,6 @@ func _advance_coaching_skill(instructor_npc_id: String, active_action: Dictionar
 		timer -= interval
 		_improve_npc_skill(instructor_npc_id, "教练", 1, "training_coaching")
 	active_action["coaching_skill_timer_seconds"] = timer
-	return active_action
-
-
-func _apply_hourly_training_state_costs(npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> Dictionary:
-	var action: Dictionary = active_action.get("action", {})
-	var timer := float(active_action.get("state_cost_timer_seconds", 0.0)) + game_delta_seconds
-	while timer >= TRAINING_STATE_COST_INTERVAL_SECONDS:
-		timer -= TRAINING_STATE_COST_INTERVAL_SECONDS
-		var fatigue_delta := int(action.get("fatigue_delta_per_hour", 0))
-		var satiety_delta := int(action.get("satiety_delta_per_hour", 0))
-		if fatigue_delta != 0:
-			_apply_single_state_delta(npc_id, "fatigue", fatigue_delta)
-		if satiety_delta != 0:
-			_apply_single_state_delta(npc_id, "satiety", satiety_delta)
-	active_action["state_cost_timer_seconds"] = timer
 	return active_action
 
 
@@ -2414,15 +2843,6 @@ func _apply_final_state_deltas(npc_id: String, active_action: Dictionary) -> voi
 		var delta_to_apply := total_delta - already_applied
 		if delta_to_apply != 0:
 			_apply_single_state_delta(npc_id, str(state_key), delta_to_apply)
-
-
-func _get_action_state_deltas(action: Dictionary) -> Dictionary:
-	var state_deltas := {}
-	if action.has("satiety_delta"):
-		state_deltas["satiety"] = int(action.get("satiety_delta", 0))
-	if action.has("fatigue_delta"):
-		state_deltas["fatigue"] = int(action.get("fatigue_delta", 0))
-	return state_deltas
 
 
 func _get_action_duration_seconds(action: Dictionary) -> float:
@@ -2575,13 +2995,6 @@ func _get_medical_skill(npc: Dictionary) -> int:
 	return 0
 
 
-func _apply_state_deltas(npc_id: String, action: Dictionary) -> void:
-	if action.has("satiety_delta"):
-		_apply_single_state_delta(npc_id, "satiety", int(action.get("satiety_delta", 0)))
-	if action.has("fatigue_delta"):
-		_apply_single_state_delta(npc_id, "fatigue", int(action.get("fatigue_delta", 0)))
-
-
 func _apply_building_effects(action: Dictionary) -> void:
 	var hp_restore := int(action.get("building_hp_restore", 0))
 	if hp_restore <= 0:
@@ -2620,12 +3033,14 @@ func _set_action_idle(npc_id: String, last_result: String) -> void:
 func _update_action_failure(npc_id: String, failure_id: String, failure_context: Dictionary = {}) -> void:
 	if npc_id.is_empty():
 		return
+	var authoritative_failure_context := failure_context.duplicate(true)
+	authoritative_failure_context["failure_id"] = failure_id
 	var npc_system := _get_npc_system()
 	if npc_system != null:
 		npc_system.update_npc_state(npc_id, {
 			"current_action": "idle",
 			"last_action_result": failure_id,
-			"last_action_failure_context": failure_context.duplicate(true)
+			"last_action_failure_context": authoritative_failure_context
 		})
 	if failure_id.begins_with("clinic_doctor_failed"):
 		call_deferred("_fail_waiting_dependents_without_provider", CLINIC_DOCTOR_ACTION_ID)
@@ -2854,7 +3269,11 @@ func _fail_waiting_dependents_without_provider(provider_action_id: String) -> vo
 			_pending_action_targets.erase(npc_id)
 			_pending_action_options.erase(npc_id)
 			if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
-				npc_system.stop_npc_movement_for_system(npc_id, "%s_provider_unavailable" % dependent_action_id)
+				npc_system.stop_npc_movement_for_system(
+					npc_id,
+					"%s_provider_unavailable" % dependent_action_id,
+					false
+				)
 			var action: Dictionary = _actions.get(dependent_action_id, {})
 			_fail_action_before_start(npc_id, action, {
 				"building_id": str(action.get("location_required", "")),
@@ -2968,14 +3387,29 @@ func _fail_ordinary_prayers_for_mass(leader_npc_id: String) -> void:
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
-		if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
-			npc_system.stop_npc_movement_for_system(npc_id, "pray_failed_mass_started")
-		_fail_action_before_start(npc_id, _actions.get(PRAY_ACTION_ID, {}), {
+		var context := {
+			"action_id": PRAY_ACTION_ID,
 			"building_id": "chapel",
 			"blocked_by_active_action_id": MASS_ACTION_ID,
 			"provider_npc_id": leader_npc_id,
 			"unavailable_reason": "弥撒已经开始，不能进行普通祈祷"
-		})
+		}
+		if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
+			# Settle travel and the location information node before judgement, but
+			# suppress the intermediate state signal. The authoritative failure
+			# update below then emits once with its exact failure_id and Mass facts.
+			npc_system.stop_npc_movement_for_system(
+				npc_id,
+				"pray_failed_mass_started",
+				false
+			)
+		_update_action_failure(npc_id, "pray_failed_mass_started", context)
+		_log_action_start_failure(
+			npc_id,
+			_actions.get(PRAY_ACTION_ID, {}),
+			str(context["unavailable_reason"]),
+			context
+		)
 
 
 func _get_missing_dependency_reason(action_id: String) -> String:
@@ -3012,7 +3446,9 @@ func _fail_action_before_start(npc_id: String, action: Dictionary, availability:
 	var blocked_by_active_action_id := str(action.get("blocked_by_active_action_id", availability.get("blocked_by_active_action_id", "")))
 	var reason := str(availability.get("unavailable_reason", "当前不能执行该行动"))
 	var failure_id := "%s_failed_building_unavailable" % action_id
-	if not required_active_action_id.is_empty() and _find_active_npc_ids_for_action(required_active_action_id).is_empty():
+	if not bool(availability.get("personal_resources_available", true)):
+		failure_id = "drink_wine_failed_no_wine" if action_id == DRINK_WINE_ACTION_ID else "%s_failed_no_personal_resources" % action_id
+	elif not required_active_action_id.is_empty() and _find_active_npc_ids_for_action(required_active_action_id).is_empty():
 		failure_id = _get_dependency_failure_id(action_id)
 	elif not blocked_by_active_action_id.is_empty() and not _find_active_npc_ids_for_action(blocked_by_active_action_id).is_empty():
 		failure_id = "pray_failed_mass_in_progress" if action_id == PRAY_ACTION_ID else "%s_failed_conflicting_action" % action_id
@@ -3134,14 +3570,16 @@ func _improve_work_skill(npc_id: String, action: Dictionary) -> void:
 	_improve_npc_skill_at_location(npc_id, skill_name, 1, "work_completed", str(action.get("location_required", PLAZA_LOCATION_ID)))
 
 
-func _improve_npc_skill_at_location(npc_id: String, skill_name: String, amount: int, reason: String, location_id: String) -> void:
+func _improve_npc_skill_at_location(npc_id: String, skill_name: String, amount: int, reason: String, location_id: String) -> Dictionary:
 	var npc_system := _get_npc_system()
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("increase_npc_skill"):
-		return
+		return {}
 	var result: Dictionary = npc_system.increase_npc_skill(npc_id, skill_name, amount)
-	if result.is_empty() or memory_system == null or not memory_system.has_method("add_event"):
-		return
+	if result.is_empty():
+		return {}
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return result
 	var event_location := location_id if not location_id.is_empty() else PLAZA_LOCATION_ID
 	memory_system.add_event({
 		"type": "skill_improved",
@@ -3165,6 +3603,7 @@ func _improve_npc_skill_at_location(npc_id: String, skill_name: String, amount: 
 			"next_skill_point_xp": int(result.get("next_skill_point_xp", 0))
 		}
 	})
+	return result
 
 
 func _get_equipped_training_skills(npc: Dictionary) -> Array[String]:
@@ -3367,9 +3806,11 @@ func _make_workstation_failure_context(action: Dictionary, claim_result: Diction
 		"building_condition": str(claim_result.get("building_condition", claim_result.get("condition", ""))),
 		"is_enterable": bool(claim_result.get("is_enterable", true)),
 		"workstation_type": str(claim_result.get("preferred_type", action.get("workstation_type", ""))),
+		"assigned_workstation_id": str(claim_result.get("assigned_workstation_id", "")),
 		"blocked_workstations": claim_result.get("blocked_workstations", []),
 		"blocked_by_npc_ids": blocked_by_npc_ids,
-		"blocked_by_npcs": blocked_by_npcs
+		"blocked_by_npcs": blocked_by_npcs,
+		"reserved_workstations": claim_result.get("reserved_workstations", [])
 	}
 
 
@@ -3444,6 +3885,32 @@ func _is_enterable_location(location_id: String) -> bool:
 	)
 
 
+func _is_action_commit_ready(
+	npc_id: String,
+	location_id: String,
+	state_override: Dictionary = {}
+) -> bool:
+	if _is_gameplay_paused():
+		return false
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return false
+	var state: Dictionary = (
+		state_override
+		if not state_override.is_empty()
+		else npc_system.get_npc_state(npc_id)
+	)
+	if state.is_empty():
+		return false
+	if str(state.get("current_action", "")) != "idle":
+		return false
+	if not str(state.get("movement_target", "")).is_empty():
+		return false
+	if str(state.get("current_action", "")).begins_with("moving_to_"):
+		return false
+	return location_id.is_empty() or str(state.get("current_location", "")) == location_id
+
+
 func _fail_pending_npc_dialogue(
 	speaker_npc_id: String,
 	failure_id: String,
@@ -3459,7 +3926,11 @@ func _fail_pending_npc_dialogue(
 		# Movement cleanup may emit npc_state_changed synchronously. Keep its reason
 		# non-failing so DailyPlanSystem only observes the final structured failure
 		# written below, with the original plan item and full failure context intact.
-		npc_system.stop_npc_movement_for_system(speaker_npc_id, "pending_dialogue_cancelled")
+		npc_system.stop_npc_movement_for_system(
+			speaker_npc_id,
+			"pending_dialogue_cancelled",
+			false
+		)
 	var merged_failure_context := {
 		"action_id": NPC_DIALOGUE_ACTION_ID,
 		"target_npc_id": target_npc_id
@@ -3488,7 +3959,7 @@ func _cancel_dialogue_approach_for_participant(npc_id: String, reason: String) -
 	if speaker_npc_id != npc_id:
 		var npc_system := _get_npc_system()
 		if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
-			npc_system.stop_npc_movement_for_system(speaker_npc_id, reason)
+			npc_system.stop_npc_movement_for_system(speaker_npc_id, reason, false)
 		_update_action_failure(speaker_npc_id, "talk_to_npc_failed_target_unavailable", {
 			"action_id": NPC_DIALOGUE_ACTION_ID,
 			"target_npc_id": target_npc_id,

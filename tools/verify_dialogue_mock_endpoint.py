@@ -1,4 +1,5 @@
 from pathlib import Path
+import copy
 import os
 import sys
 
@@ -9,8 +10,19 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from backend.app import create_app
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from backend.schemas import (
+    EscapeInterventionDialogueResponse,
+    GameTime,
+    ModelRequestMeta,
+    NPCNPCDialogueResponse,
+    PlayerNPCDialogueResponse,
+    SpeakerContext,
+)
 from tools.station_context_fixture import build_station_context
+
+
+def _contract_body(body: dict) -> dict:
+    return {key: value for key, value in body.items() if not key.startswith("model_")}
 
 
 def _base_payload(text: str, recruitment: bool = False) -> dict:
@@ -106,17 +118,19 @@ def main() -> None:
     )
     assert accept_response.status_code == 200
     accept_data = accept_response.get_json()
-    parsed_accept = NPCDialogueResponse(**accept_data)
+    parsed_accept = PlayerNPCDialogueResponse(**_contract_body(accept_data))
     assert parsed_accept.replyer_id == "cook_01"
     assert parsed_accept.recruitment_result == "accept"
     assert parsed_accept.response_kind == "reply_to_player"
+    assert "intent" not in accept_data
+    assert "should_end_dialogue" not in accept_data
 
     reject_response = client.post(
         "/npc/dialogue",
         json=_base_payload("守备官要求你立刻拿起武器。", recruitment=True),
     )
     assert reject_response.status_code == 200
-    parsed_reject = NPCDialogueResponse(**reject_response.get_json())
+    parsed_reject = PlayerNPCDialogueResponse(**_contract_body(reject_response.get_json()))
     assert parsed_reject.recruitment_result == "reject"
 
     npc_payload = _base_payload("你听见外面那阵声音了吗？", recruitment=False)
@@ -141,17 +155,19 @@ def main() -> None:
     npc_payload["dialogue_state"]["soft_round_guidance"] = soft_guidance
     npc_response = client.post("/npc/dialogue", json=npc_payload)
     assert npc_response.status_code == 200
-    parsed_npc = NPCDialogueResponse(**npc_response.get_json())
+    parsed_npc = NPCNPCDialogueResponse(**_contract_body(npc_response.get_json()))
     assert parsed_npc.response_kind == "reply_to_npc"
     assert parsed_npc.should_end_dialogue is True
     assert parsed_npc.invitation_result == "not_applicable"
+    assert "intent" not in npc_response.get_json()
+    assert "recruitment_result" not in npc_response.get_json()
 
     urgent_payload = dict(npc_payload)
     urgent_payload["dialogue_state"] = dict(npc_payload["dialogue_state"])
     urgent_payload["speaker_text"] = "有紧急伤员，必须立刻继续协调必要的诊疗安排。"
     urgent_response = client.post("/npc/dialogue", json=urgent_payload)
     assert urgent_response.status_code == 200, urgent_response.get_json()
-    parsed_urgent = NPCDialogueResponse(**urgent_response.get_json())
+    parsed_urgent = NPCNPCDialogueResponse(**_contract_body(urgent_response.get_json()))
     assert parsed_urgent.should_end_dialogue is False
 
     invitation_payload = dict(npc_payload)
@@ -162,16 +178,39 @@ def main() -> None:
     invitation_payload["speaker_text"] = "我想和你谈谈诊所工位。"
     invitation_accept = client.post("/npc/dialogue", json=invitation_payload)
     assert invitation_accept.status_code == 200, invitation_accept.get_json()
-    parsed_invitation_accept = NPCDialogueResponse(**invitation_accept.get_json())
+    parsed_invitation_accept = NPCNPCDialogueResponse(
+        **_contract_body(invitation_accept.get_json())
+    )
     assert parsed_invitation_accept.invitation_result == "accept"
     assert parsed_invitation_accept.should_end_dialogue is False
 
     invitation_payload["speaker_text"] = "请拒绝这次邀请，别打扰手上的工作。"
     invitation_reject = client.post("/npc/dialogue", json=invitation_payload)
     assert invitation_reject.status_code == 200, invitation_reject.get_json()
-    parsed_invitation_reject = NPCDialogueResponse(**invitation_reject.get_json())
+    parsed_invitation_reject = NPCNPCDialogueResponse(
+        **_contract_body(invitation_reject.get_json())
+    )
     assert parsed_invitation_reject.invitation_result == "reject"
     assert parsed_invitation_reject.should_end_dialogue is True
+
+    escape_payload = copy.deepcopy(_base_payload("别走，我会兑现保护和补给承诺。"))
+    escape_payload["dialogue_kind"] = "escape_intervention"
+    escape_payload["interaction_context"] = "escape_intervention"
+    escape_payload["escape_intervention_round"] = 1
+    escape_payload["npc_state"]["escape_intent"] = {
+        "active": True,
+        "status": "escaping",
+        "intervention_rounds_used": 0,
+        "intervention_max_rounds": 5,
+    }
+    escape_response = client.post("/npc/dialogue", json=escape_payload)
+    assert escape_response.status_code == 200, escape_response.get_json()
+    escape_data = escape_response.get_json()
+    parsed_escape = EscapeInterventionDialogueResponse(**_contract_body(escape_data))
+    assert parsed_escape.escape_intervention_result == "stay"
+    assert "intent" not in escape_data
+    assert "recruitment_result" not in escape_data
+    assert "should_end_dialogue" not in escape_data
 
     missing_actions_payload = _base_payload("验证对话行动参考。")
     missing_actions_payload.pop("allowed_actions")

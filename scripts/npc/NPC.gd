@@ -3,8 +3,11 @@ extends Area3D
 signal movement_arrived(npc_id: String, target_id: String)
 
 const LABEL_NODE_PATH := "NameLabel"
+const STATUS_LABEL_NODE_PATH := "StatusLabel"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
+const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
+const DEFAULT_NAME_COLOR := Color.WHITE
 
 @export var move_speed := 5.0
 
@@ -15,6 +18,7 @@ var _movement_target_position := Vector3.ZERO
 var _is_moving := false
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
+@onready var _status_label := get_node_or_null(STATUS_LABEL_NODE_PATH) as Label3D
 var _proactive_bubble: Label3D
 var _dialogue_bubble_area: Area3D
 var _dialogue_bubble_collision: CollisionShape3D
@@ -148,8 +152,10 @@ func _refresh_label() -> void:
 		action_text = "战术移动"
 	elif str(states.get("behavior_mode", "")) == "avoid_combat":
 		action_text = "避战"
-	_name_label.text = "%s\nHP %d/%d · %s" % [
-		display_name,
+	_name_label.text = display_name
+	_name_label.modulate = RECRUITED_NAME_COLOR if bool(profile.get("recruited", false)) else DEFAULT_NAME_COLOR
+	if _status_label != null:
+		_status_label.text = "HP %d/%d · %s" % [
 		hp,
 		max_hp,
 		action_text

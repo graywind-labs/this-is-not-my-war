@@ -11,8 +11,10 @@ try:
         DailyPlanResponse,
         DailyReflectionRequest,
         DailyReflectionResponse,
+        EscapeInterventionDialogueResponse,
+        NPCNPCDialogueResponse,
         NPCDialogueRequest,
-        NPCDialogueResponse,
+        PlayerNPCDialogueResponse,
         PlanRevisionJudgementRequest,
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
@@ -28,8 +30,10 @@ except ModuleNotFoundError:
         DailyPlanResponse,
         DailyReflectionRequest,
         DailyReflectionResponse,
+        EscapeInterventionDialogueResponse,
+        NPCNPCDialogueResponse,
         NPCDialogueRequest,
-        NPCDialogueResponse,
+        PlayerNPCDialogueResponse,
         PlanRevisionJudgementRequest,
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
@@ -57,6 +61,8 @@ def create_app() -> Flask:
             payload,
             failure_reason,
             result.usage,
+            model_output=result.content,
+            validation_details=exc.errors(),
         )
         return jsonify({
             "ok": False,
@@ -73,6 +79,8 @@ def create_app() -> Flask:
             payload,
             failure_reason,
             result.usage,
+            model_output=result.content,
+            validation_details=details,
         )
         return jsonify({
             "ok": False,
@@ -92,6 +100,17 @@ def create_app() -> Flask:
         response_payload["model_normalizations"] = list(normalizations or [])
         return response_payload
 
+    def model_request_payload(request_model) -> dict:
+        """Remove fields that are not choices for target-driven plan actions."""
+        payload = request_model.model_dump()
+        for candidate in payload.get("allowed_actions", []):
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("action_id") == "talk_to_npc"
+            ):
+                candidate.pop("location_id", None)
+        return payload
+
     def matching_allowed_candidates(item, candidates):
         item_target = (item.target_id or "").strip()
         item_location = (item.location_id or "").strip()
@@ -100,7 +119,10 @@ def create_app() -> Flask:
             for candidate in candidates
             if candidate.action_id == item.action_id
             and (candidate.target_id or "").strip() == item_target
-            and (candidate.location_id or "").strip() == item_location
+            and (
+                item.action_id == "talk_to_npc"
+                or (candidate.location_id or "").strip() == item_location
+            )
         ]
 
     def plan_item_matches_allowed_candidate(item, candidates) -> bool:
@@ -118,6 +140,7 @@ def create_app() -> Flask:
         special_kinds = {
             "idle": "idle",
             "talk_to_npc": "chat",
+            "drink_wine": "drink",
             "visit_location": "visit",
             "assist_repair": "assist_repair",
             "assist_upgrade": "assist_upgrade",
@@ -132,6 +155,8 @@ def create_app() -> Flask:
             return "work"
         if "eat" in tags:
             return "eat"
+        if "drink" in tags:
+            return "drink"
         if "sleep" in tags:
             return "sleep"
         if tags.intersection({"training_instructor", "training_student"}):
@@ -142,12 +167,45 @@ def create_app() -> Flask:
             return "pray"
         return None
 
+    def canonicalize_target_driven_locations(items, candidates, path_prefix: str) -> list[dict]:
+        """Discard redundant snapshot locations from NPC-targeted dialogue plans."""
+        normalizations: list[dict] = []
+        for index, item in enumerate(items):
+            if (
+                item is None
+                or item.action_id != "talk_to_npc"
+                or not (item.location_id or "").strip()
+            ):
+                continue
+            matching_candidates = matching_allowed_candidates(item, candidates)
+            if len(matching_candidates) != 1:
+                continue
+            model_location = item.location_id
+            item.location_id = None
+            normalization_path = (
+                "%s.location_id" % path_prefix
+                if path_prefix == "immediate_action"
+                else "%s[%d].location_id" % (path_prefix, index)
+            )
+            normalizations.append({
+                "field": "location_id",
+                "path": normalization_path,
+                "hour": item.hour,
+                "action_id": item.action_id,
+                "target_id": item.target_id,
+                "model_value": model_location,
+                "canonical_value": None,
+                "source": "dynamic_npc_target",
+            })
+        return normalizations
+
     def canonicalize_plan_action_kinds(items, candidates, path_prefix: str) -> list[dict]:
         """Repair only the redundant kind field from an exact allowed-action match.
 
-        The model still owns action_id, target_id, and location_id. If that tuple is
-        not an allowed candidate, or if the matching candidates do not imply one
-        canonical kind, business validation rejects the response as before.
+        The model still owns action_id and target_id. Fixed-location actions also own
+        location_id. If that contract is not an allowed candidate, or if the matching
+        candidates do not imply one canonical kind, business validation rejects the
+        response as before.
         """
         normalizations: list[dict] = []
         for index, item in enumerate(items):
@@ -191,11 +249,18 @@ def create_app() -> Flask:
     def validate_plan_item_candidate(item, candidates, npc_id: str) -> list[str]:
         details: list[str] = []
         if not plan_item_matches_allowed_candidate(item, candidates):
-            details.append(
-                "action/target/location combination is not in allowed_actions: "
-                "action_id='%s', target_id='%s', location_id='%s'."
-                % (item.action_id, item.target_id or "", item.location_id or "")
-            )
+            if item.action_id == "talk_to_npc":
+                details.append(
+                    "action/target combination is not in allowed_actions: "
+                    "action_id='%s', target_id='%s'."
+                    % (item.action_id, item.target_id or "")
+                )
+            else:
+                details.append(
+                    "action/target/location combination is not in allowed_actions: "
+                    "action_id='%s', target_id='%s', location_id='%s'."
+                    % (item.action_id, item.target_id or "", item.location_id or "")
+                )
         matching_candidates = (
             [] if item.action_id == "idle" else matching_allowed_candidates(item, candidates)
         )
@@ -221,32 +286,33 @@ def create_app() -> Flask:
 
     def validate_dialogue_business_rules(
         dialogue_request: NPCDialogueRequest,
-        response_model: NPCDialogueResponse,
+        response_model: (
+            PlayerNPCDialogueResponse
+            | NPCNPCDialogueResponse
+            | EscapeInterventionDialogueResponse
+        ),
     ) -> list[str]:
         details: list[str] = []
         if response_model.replyer_id != dialogue_request.npc_id:
             details.append("replyer_id did not match request npc_id.")
-        expected_response_kind = (
-            "reply_to_npc"
-            if dialogue_request.dialogue_kind == "npc_npc"
-            else "reply_to_player"
-        )
-        if response_model.response_kind != expected_response_kind:
+
+        is_escape_dialogue = dialogue_request.dialogue_kind == "escape_intervention"
+        is_escape_context = dialogue_request.interaction_context == "escape_intervention"
+        if is_escape_dialogue != is_escape_context:
             details.append(
-                "response_kind '%s' did not match dialogue_kind '%s'; expected '%s'."
-                % (
-                    response_model.response_kind,
-                    dialogue_request.dialogue_kind,
-                    expected_response_kind,
-                )
+                "dialogue_kind=escape_intervention and interaction_context=escape_intervention must appear together."
             )
+        if dialogue_request.current_round != dialogue_request.dialogue_state.current_round:
+            details.append("dialogue current_round must match dialogue_state.current_round.")
+        if dialogue_request.max_rounds != dialogue_request.dialogue_state.max_rounds:
+            details.append("dialogue max_rounds must match dialogue_state.max_rounds.")
+
         if dialogue_request.dialogue_kind == "npc_npc":
+            if not isinstance(response_model, NPCNPCDialogueResponse):
+                details.append("npc_npc dialogue requires NPCNPCDialogueResponse.")
+                return details
             if dialogue_request.max_rounds != 0 or dialogue_request.dialogue_state.max_rounds != 0:
                 details.append("npc_npc max_rounds must be 0 because formal dialogue has no hard round limit.")
-            if dialogue_request.current_round != dialogue_request.dialogue_state.current_round:
-                details.append("dialogue current_round must match dialogue_state.current_round.")
-            if dialogue_request.max_rounds != dialogue_request.dialogue_state.max_rounds:
-                details.append("dialogue max_rounds must match dialogue_state.max_rounds.")
             if dialogue_request.soft_round_threshold != dialogue_request.dialogue_state.soft_round_threshold:
                 details.append("dialogue soft_round_threshold must match dialogue_state.soft_round_threshold.")
             if not dialogue_request.soft_round_guidance.strip():
@@ -263,20 +329,68 @@ def create_app() -> Flask:
                 if response_model.invitation_result == "reject":
                     if not response_model.should_end_dialogue:
                         details.append("rejected npc_npc invitation must set should_end_dialogue=true.")
-                    if response_model.intent != "end_talk":
-                        details.append("rejected npc_npc invitation must use intent=end_talk.")
             else:
                 if dialogue_request.current_round < 1:
                     details.append("npc_npc conversation current_round must be at least 1.")
                 if response_model.invitation_result != "not_applicable":
                     details.append("npc_npc conversation reply must use invitation_result=not_applicable.")
-        else:
+
+            if dialogue_request.is_recruitment_request:
+                details.append("npc_npc dialogue cannot be a recruitment request.")
+            if dialogue_request.escape_intervention_round is not None:
+                details.append("escape_intervention_round is only valid for escape_intervention.")
+            return details
+
+        if dialogue_request.dialogue_kind == "escape_intervention":
+            if not isinstance(response_model, EscapeInterventionDialogueResponse):
+                details.append(
+                    "escape_intervention dialogue requires EscapeInterventionDialogueResponse."
+                )
+                return details
             if dialogue_request.current_round < 1 or dialogue_request.dialogue_state.current_round < 1:
                 details.append("non npc_npc dialogue current_round must be at least 1.")
             if dialogue_request.max_rounds < 1 or dialogue_request.dialogue_state.max_rounds < 1:
                 details.append("non npc_npc dialogue max_rounds must be at least 1.")
-            if response_model.invitation_result != "not_applicable":
-                details.append("non npc_npc dialogue must use invitation_result=not_applicable.")
+            if dialogue_request.is_recruitment_request:
+                details.append("escape_intervention cannot be a recruitment request.")
+            if dialogue_request.escape_intervention_round is None:
+                details.append("escape_intervention requires escape_intervention_round.")
+            elif dialogue_request.escape_intervention_round != dialogue_request.current_round:
+                details.append("escape_intervention_round must match current_round.")
+            return details
+
+        if not isinstance(response_model, PlayerNPCDialogueResponse):
+            details.append("player_npc dialogue requires PlayerNPCDialogueResponse.")
+            return details
+        if dialogue_request.current_round < 1 or dialogue_request.dialogue_state.current_round < 1:
+            details.append("non npc_npc dialogue current_round must be at least 1.")
+        if dialogue_request.max_rounds < 1 or dialogue_request.dialogue_state.max_rounds < 1:
+            details.append("non npc_npc dialogue max_rounds must be at least 1.")
+        if dialogue_request.escape_intervention_round is not None:
+            details.append("escape_intervention_round is only valid for escape_intervention.")
+        if dialogue_request.is_recruitment_request:
+            if response_model.recruitment_result not in {"accept", "reject"}:
+                details.append("recruitment request requires recruitment_result accept or reject.")
+        elif response_model.recruitment_result != "none":
+            details.append(
+                "dialogue without a recruitment request must use recruitment_result=none."
+            )
+
+        interaction_context = dialogue_request.interaction_context
+        if interaction_context in {"work", "avoid_combat"}:
+            if response_model.wartime_reaction != "none":
+                details.append(
+                    "%s dialogue must use wartime_reaction=none." % interaction_context
+                )
+        elif interaction_context in {"rally", "combat"}:
+            npc_state = dialogue_request.npc_state
+            equipment = npc_state.get("equipment", {})
+            main_weapon = equipment.get("main_weapon") if isinstance(equipment, dict) else None
+            combat_eligible = bool(npc_state.get("recruited", False)) and bool(main_weapon)
+            if not combat_eligible and response_model.wartime_reaction != "none":
+                details.append(
+                    "rally/combat dialogue without recruited status and a main weapon must use wartime_reaction=none."
+                )
         return details
 
     def validate_daily_plan_business_rules(plan_request: DailyPlanRequest, response_model: DailyPlanResponse) -> list[str]:
@@ -295,14 +409,12 @@ def create_app() -> Flask:
                 plan_request.npc.identity.npc_id,
             ))
 
-        work_action_ids = {
-            action.action_id
-            for action in plan_request.allowed_actions
-            if any(tag in {"work", "clinic_doctor", "training_instructor"} for tag in action.tags)
-        }
-        work_phase_count = sum(1 for item in response_model.plan if item.action_id in work_action_ids)
-        if work_phase_count < 6:
-            details.append("plan must include at least 6 work phases; got %d." % work_phase_count)
+        drink_phase_count = sum(1 for item in response_model.plan if item.action_id == "drink_wine")
+        if drink_phase_count > plan_request.npc.state.wine:
+            details.append(
+                "drink_wine phases cannot exceed NPC-owned wine; got %d phases with %d wine."
+                % (drink_phase_count, plan_request.npc.state.wine)
+            )
         return details
 
     def validate_plan_revision_judgement_business_rules(
@@ -317,6 +429,14 @@ def create_app() -> Flask:
             details.append("revision_hours must be unique and sorted ascending.")
         if any(hour < judgement_request.game_time.hour for hour in revision_hours):
             details.append("revision_hours cannot contain hours before game_time.hour.")
+        missing_required_hours = sorted(
+            set(judgement_request.required_revision_hours) - set(revision_hours)
+        )
+        if missing_required_hours:
+            details.append(
+                "revision_hours must include every required_revision_hours value; missing %s."
+                % missing_required_hours
+            )
         if response_model.needs_revision != bool(revision_hours):
             details.append(
                 "needs_revision must be true exactly when revision_hours is non-empty."
@@ -362,38 +482,18 @@ def create_app() -> Flask:
                 details.append(
                     "selected_hours immediate_action must exactly match the revised_plan item at game_time.hour."
                 )
-        work_action_ids = {
-            action.action_id
-            for action in revision_request.allowed_actions
-            if any(tag in {"work", "clinic_doctor", "training_instructor"} for tag in action.tags)
-        }
-
-        def is_work_phase(item) -> bool:
-            if item is None:
-                return False
-            # 新行动必须来自 allowed_actions；旧计划中的工作建筑可能刚被摧毁，因而
-            # 已不在当前白名单里，但不能因此把其原有工作阶段从基数中全部抹掉。
-            return (
-                item.action_id in work_action_ids
-                or item.action_kind == "work"
-                or item.action_id.startswith("work_")
-            )
-
         merged_by_hour = {item.hour: item for item in revision_request.current_plan}
-        work_phase_count = revision_request.current_work_phase_count
         for item in response_model.revised_plan:
-            previous_item = merged_by_hour.get(item.hour)
-            if is_work_phase(previous_item):
-                work_phase_count -= 1
-            if is_work_phase(item):
-                work_phase_count += 1
             merged_by_hour[item.hour] = item
-        work_phase_count = max(0, min(24, work_phase_count))
-        minimum_work_phases = revision_request.minimum_work_phase_count
-        if work_phase_count < minimum_work_phases:
+        remaining_drink_phases = sum(
+            1
+            for hour, item in merged_by_hour.items()
+            if hour >= revision_request.game_time.hour and item.action_id == "drink_wine"
+        )
+        if remaining_drink_phases > revision_request.npc.state.wine:
             details.append(
-                "merged plan must keep at least %d work phases; got %d."
-                % (minimum_work_phases, work_phase_count)
+                "remaining drink_wine phases cannot exceed NPC-owned wine; got %d phases with %d wine."
+                % (remaining_drink_phases, revision_request.npc.state.wine)
             )
         return details
 
@@ -493,7 +593,14 @@ def create_app() -> Flask:
                 "fallback_used": False,
             }), 400
 
-        result = ModelAdapter(ModelAdapterConfig(provider="mock", api_key=None)).generate(call_type, payload)
+        runtime_config = model_adapter().config
+        result = ModelAdapter(ModelAdapterConfig(
+            provider="mock",
+            api_key=None,
+            audit_log_enabled=runtime_config.audit_log_enabled,
+            audit_log_path=runtime_config.audit_log_path,
+            audit_log_include_payloads=runtime_config.audit_log_include_payloads,
+        )).generate(call_type, payload)
         response = {
             "ok": result.ok,
             "provider": result.provider,
@@ -527,7 +634,8 @@ def create_app() -> Flask:
                 "details": exc.errors(include_context=False),
             }), 400
 
-        result = model_adapter().generate("dialogue", dialogue_request.model_dump())
+        dialogue_payload = model_request_payload(dialogue_request)
+        result = model_adapter().generate("dialogue", dialogue_payload)
         if not result.ok:
             return jsonify({
                 "ok": False,
@@ -537,22 +645,51 @@ def create_app() -> Flask:
                 "usage": result.usage,
             }), model_adapter_error_status(result.error_code)
 
+        response_model_type = {
+            "player_npc": PlayerNPCDialogueResponse,
+            "npc_npc": NPCNPCDialogueResponse,
+            "escape_intervention": EscapeInterventionDialogueResponse,
+        }[dialogue_request.dialogue_kind]
+        response_model_name = response_model_type.__name__
+        dialogue_output = dict(result.content)
+        dialogue_normalizations: list[dict] = []
+        for field_name, default_value in (
+            ("emotion", "neutral"),
+            ("suggested_event_type", "dialogue_turn"),
+            ("debug_reason", ""),
+        ):
+            if field_name in dialogue_output and dialogue_output[field_name] is None:
+                dialogue_output[field_name] = default_value
+                dialogue_normalizations.append({
+                    "path": field_name,
+                    "from": None,
+                    "to": default_value,
+                    "source": "nullable_non_authoritative_metadata_default",
+                })
         try:
-            response_model = NPCDialogueResponse.model_validate(result.content)
+            response_model = response_model_type.model_validate(dialogue_output)
         except ValidationError as exc:
-            return model_output_invalid_response("dialogue", dialogue_request.model_dump(), result, "NPCDialogueResponse", exc)
+            return model_output_invalid_response(
+                "dialogue",
+                dialogue_payload,
+                result,
+                response_model_name,
+                exc,
+            )
 
         business_errors = validate_dialogue_business_rules(dialogue_request, response_model)
         if business_errors:
             return model_output_business_invalid_response(
                 "dialogue",
-                dialogue_request.model_dump(),
+                dialogue_payload,
                 result,
-                "NPCDialogueResponse failed business validation.",
+                "%s failed business validation." % response_model_name,
                 business_errors,
             )
 
-        return jsonify(model_success_payload(response_model, result))
+        return jsonify(
+            model_success_payload(response_model, result, dialogue_normalizations)
+        )
 
     @app.post("/npc/dialogue_plan_revision_judgement")
     @app.post("/npc/plan_revision_judgement")
@@ -575,7 +712,7 @@ def create_app() -> Flask:
                 "details": exc.errors(include_context=False),
             }), 400
 
-        request_payload = judgement_request.model_dump()
+        request_payload = model_request_payload(judgement_request)
         result = model_adapter().generate(
             "plan_revision_judgement",
             request_payload,
@@ -600,6 +737,28 @@ def create_app() -> Flask:
                 exc,
             )
 
+        normalizations: list[dict] = []
+        missing_required_hours = sorted(
+            set(judgement_request.required_revision_hours)
+            - set(response_model.revision_hours)
+        )
+        if missing_required_hours:
+            original_revision_hours = list(response_model.revision_hours)
+            normalized_revision_hours = sorted({
+                *original_revision_hours,
+                *judgement_request.required_revision_hours,
+            })
+            response_model = response_model.model_copy(update={
+                "needs_revision": True,
+                "revision_hours": normalized_revision_hours,
+            })
+            normalizations.append({
+                "field": "revision_hours",
+                "reason": "required_revision_hours_authoritative_union",
+                "from": original_revision_hours,
+                "to": normalized_revision_hours,
+            })
+
         business_errors = validate_plan_revision_judgement_business_rules(
             judgement_request,
             response_model,
@@ -613,7 +772,7 @@ def create_app() -> Flask:
                 business_errors,
             )
 
-        return jsonify(model_success_payload(response_model, result))
+        return jsonify(model_success_payload(response_model, result, normalizations))
 
     @app.post("/npc/plan_day")
     def npc_plan_day():
@@ -635,7 +794,8 @@ def create_app() -> Flask:
                 "details": exc.errors(),
             }), 400
 
-        result = model_adapter().generate("plan_day", plan_request.model_dump())
+        request_payload = model_request_payload(plan_request)
+        result = model_adapter().generate("plan_day", request_payload)
         if not result.ok:
             return jsonify({
                 "ok": False,
@@ -648,18 +808,23 @@ def create_app() -> Flask:
         try:
             response_model = DailyPlanResponse.model_validate(result.content)
         except ValidationError as exc:
-            return model_output_invalid_response("plan_day", plan_request.model_dump(), result, "DailyPlanResponse", exc)
+            return model_output_invalid_response("plan_day", request_payload, result, "DailyPlanResponse", exc)
 
-        normalizations = canonicalize_plan_action_kinds(
+        normalizations = canonicalize_target_driven_locations(
             response_model.plan,
             plan_request.allowed_actions,
             "plan",
         )
+        normalizations.extend(canonicalize_plan_action_kinds(
+            response_model.plan,
+            plan_request.allowed_actions,
+            "plan",
+        ))
         business_errors = validate_daily_plan_business_rules(plan_request, response_model)
         if business_errors:
             return model_output_business_invalid_response(
                 "plan_day",
-                plan_request.model_dump(),
+                request_payload,
                 result,
                 "DailyPlanResponse failed business validation.",
                 business_errors,
@@ -687,7 +852,8 @@ def create_app() -> Flask:
                 "details": exc.errors(include_context=False),
             }), 400
 
-        result = model_adapter().generate("revise_plan", revision_request.model_dump())
+        request_payload = model_request_payload(revision_request)
+        result = model_adapter().generate("revise_plan", request_payload)
         if not result.ok:
             return jsonify({
                 "ok": False,
@@ -697,18 +863,26 @@ def create_app() -> Flask:
                 "usage": result.usage,
             }), model_adapter_error_status(result.error_code)
 
-        request_payload = revision_request.model_dump()
-
         def parse_revision_response(adapter_result):
             try:
                 parsed_response = PlanRevisionResponse.model_validate(adapter_result.content)
             except ValidationError as exc:
                 return None, [], exc
-            parsed_normalizations = canonicalize_plan_action_kinds(
+            parsed_normalizations = canonicalize_target_driven_locations(
                 parsed_response.revised_plan,
                 revision_request.allowed_actions,
                 "revised_plan",
             )
+            parsed_normalizations.extend(canonicalize_target_driven_locations(
+                [parsed_response.immediate_action],
+                revision_request.allowed_actions,
+                "immediate_action",
+            ))
+            parsed_normalizations.extend(canonicalize_plan_action_kinds(
+                parsed_response.revised_plan,
+                revision_request.allowed_actions,
+                "revised_plan",
+            ))
             parsed_normalizations.extend(canonicalize_plan_action_kinds(
                 [parsed_response.immediate_action],
                 revision_request.allowed_actions,
@@ -728,8 +902,10 @@ def create_app() -> Flask:
                 "PlanRevisionResponse failed business validation before real-model correction retry: %s"
                 % "; ".join(business_errors),
                 result.usage,
+                model_output=result.content,
+                validation_details=business_errors,
             )
-            retry_payload = revision_request.model_dump()
+            retry_payload = model_request_payload(revision_request)
             retry_payload["business_validation_feedback"] = business_errors
             retry_meta = retry_payload.get("meta", {})
             retry_meta["request_id"] = "%s_business_retry" % retry_meta.get("request_id", "revise_plan")

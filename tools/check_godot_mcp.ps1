@@ -28,9 +28,16 @@ $directGodotMcpProcesses = @(
     }
 )
 $brokerListen = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue
+$pluginProcess = $null
+if ($listen) {
+    $pluginProcess = Get-Process -Id ($listen | Select-Object -First 1).OwningProcess -ErrorAction SilentlyContinue
+}
 
 if ($conn) {
     Write-Host "Godot MCP connected" -ForegroundColor Green
+    if ($pluginProcess) {
+        Write-Host "Info: 127.0.0.1:6550 is the expected Godot addon listener owned by $($pluginProcess.ProcessName) (PID $($pluginProcess.Id))." -ForegroundColor Cyan
+    }
 
     if ($brokerProcesses.Count -ne 1 -or -not $brokerListen) {
         Write-Host "Warning: expected exactly one listening broker." -ForegroundColor Yellow
@@ -55,13 +62,16 @@ if ($conn) {
 
 if ($listen) {
     Write-Host "Godot plugin is running, but MCP is not connected" -ForegroundColor Yellow
+    if ($pluginProcess) {
+        Write-Host "Port 6550 is already correctly owned by $($pluginProcess.ProcessName) (PID $($pluginProcess.Id)); do not start a second --editor instance or kill this listener just because the port is occupied." -ForegroundColor Cyan
+    }
 
     if ($godotMcp) {
         Write-Host "Detected godot-mcp processes:" -ForegroundColor Yellow
         $godotMcp |
             Select-Object ProcessId, ParentProcessId, Name, CommandLine |
             Format-Table -AutoSize
-        Write-Host "Try restarting Codex once after closing duplicate sessions." -ForegroundColor Yellow
+        Write-Host "Run tools/verify_godot_mcp_topology.mjs, then restart only the affected Codex session if its stdio transport was already closed." -ForegroundColor Yellow
     } else {
         Write-Host "Open Codex after Godot, or restart Codex once." -ForegroundColor Yellow
     }

@@ -130,6 +130,20 @@ func _init() -> void:
 		push_error("HUD did not refresh time labels")
 		quit(1)
 		return
+	time_system.set_current_time(2, 0, 12, 37)
+	await process_frame
+	if time_label.text != "00:12:00":
+		push_error("Normal-speed HUD clock should freeze display seconds at 00: %s" % time_label.text)
+		quit(1)
+		return
+	if str(time_system.format_game_duration(3661.2, true, true)) != "1小时2分00秒":
+		push_error("Normal-speed duration should round up to a stable minute display")
+		quit(1)
+		return
+	if str(hud._format_wave_countdown(61.2)) != "2分00秒":
+		push_error("Normal-speed wave countdown should freeze seconds and avoid premature zero")
+		quit(1)
+		return
 	if speed_button == null or pause_button == null:
 		push_error("HUD time buttons not found")
 		quit(1)
@@ -186,10 +200,41 @@ func _init() -> void:
 		push_error("LLM slowdown should make one real second equal one game second")
 		quit(1)
 		return
+	var precise_clock_text := "%02d:%02d:%02d" % [
+		int(game_state.current_hour),
+		int(game_state.current_minute),
+		int(game_state.current_second)
+	]
+	if time_label.text != precise_clock_text or time_label.text.ends_with(":00"):
+		push_error("HUD should reveal actual seconds immediately during LLM slowdown: %s expected=%s" % [
+			time_label.text,
+			precise_clock_text
+		])
+		quit(1)
+		return
+	if str(time_system.format_game_duration(3661.2, true, true)) != "1小时1分02秒":
+		push_error("LLM slowdown duration should reveal precise seconds")
+		quit(1)
+		return
+	if str(hud._format_wave_countdown(61.2)) != "1分02秒":
+		push_error("LLM slowdown wave countdown should reveal precise seconds")
+		quit(1)
+		return
 
 	time_system.release_time_slowdown("verify_llm_wait")
 	if time_system.has_time_slowdown() or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
 		push_error("LLM slowdown release did not restore player speed")
+		quit(1)
+		return
+	var stable_clock_text := "%02d:%02d:00" % [
+		int(game_state.current_hour),
+		int(game_state.current_minute)
+	]
+	if time_label.text != stable_clock_text:
+		push_error("HUD should freeze seconds again immediately after LLM slowdown: %s expected=%s" % [
+			time_label.text,
+			stable_clock_text
+		])
 		quit(1)
 		return
 	time_system.request_time_scale_cap("verify_cap", 1.0, "verify_cap")

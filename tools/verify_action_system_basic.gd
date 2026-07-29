@@ -14,12 +14,13 @@ func _init() -> void:
 	await physics_frame
 
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
+	var needs_system := root.get_node_or_null("Main/Systems/NPCNeedsSystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	if action_system == null or needs_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -37,7 +38,7 @@ func _init() -> void:
 		push_error("Eat action did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(1200.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, npc_id, 1200.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_eat"):
 		push_error("Eat action did not complete")
 		quit(1)
@@ -58,13 +59,13 @@ func _init() -> void:
 		push_error("Meal eat action did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, npc_id, 600.0)
 	var mid_meal_eat: Dictionary = npc_system.get_npc_state(npc_id)
 	if int(mid_meal_eat.get("satiety", 0)) != 65 or str(mid_meal_eat.get("last_action_result", "")) == "completed_eat":
 		push_error("Meal eating should restore satiety over time before completion")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, npc_id, 600.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_eat"):
 		push_error("Meal eat action did not complete")
 		quit(1)
@@ -76,6 +77,7 @@ func _init() -> void:
 		return
 
 	npc_system.update_npc_state(npc_id, {"fatigue": 70, "last_action_result": ""})
+	needs_system.initialize()
 	if not action_system.debug_assign_sleep(npc_id):
 		push_error("Failed to assign sleep action")
 		quit(1)
@@ -84,13 +86,14 @@ func _init() -> void:
 		push_error("Sleep action did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(11700.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, npc_id, 11700.0)
 	var mid_sleep: Dictionary = npc_system.get_npc_state(npc_id)
-	if int(mid_sleep.get("fatigue", 0)) != 20 or str(mid_sleep.get("last_action_result", "")) == "completed_sleep":
-		push_error("Sleep should reduce fatigue over time before completion")
+	var mid_sleep_fatigue := int(mid_sleep.get("fatigue", 0))
+	if mid_sleep_fatigue <= 0 or mid_sleep_fatigue > 21 or str(mid_sleep.get("last_action_result", "")) == "completed_sleep":
+		push_error("Sleep should substantially reduce fatigue over time before completion")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(11700.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, npc_id, 11700.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_sleep"):
 		push_error("Sleep action did not complete")
 		quit(1)
@@ -115,7 +118,7 @@ func _init() -> void:
 		push_error("Garden work did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, worker_id, 3600.0)
 	if not await _wait_until_action_result(npc_system, worker_id, "completed_work_garden"):
 		push_error("Garden work did not complete")
 		quit(1)
@@ -125,8 +128,8 @@ func _init() -> void:
 		push_error("Garden work resource output mismatch")
 		quit(1)
 		return
-	if int(after_work.get("satiety", 0)) != 76 or int(after_work.get("fatigue", 0)) != 28:
-		push_error("Garden work state delta mismatch")
+	if int(after_work.get("satiety", 0)) >= 80 or int(after_work.get("fatigue", 0)) <= 20:
+		push_error("Garden work must consume satiety and add fatigue")
 		quit(1)
 		return
 
@@ -145,7 +148,7 @@ func _init() -> void:
 		push_error("Tavern work did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, cook_id, 3600.0)
 	if not await _wait_until_action_result(npc_system, cook_id, "completed_work_tavern"):
 		push_error("Tavern work did not complete")
 		quit(1)
@@ -177,7 +180,7 @@ func _init() -> void:
 		push_error("Blacksmith work did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
 		push_error("Blacksmith first crafting stage did not complete")
 		quit(1)
@@ -195,7 +198,7 @@ func _init() -> void:
 		push_error("Final blacksmith crafting stage did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
 		push_error("Final blacksmith crafting stage did not complete")
 		quit(1)
@@ -233,7 +236,7 @@ func _init() -> void:
 		push_error("Workshop work did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	_advance_action_time(needs_system, action_system, npc_system, engineer_id, 3600.0)
 	if not await _wait_until_action_result(npc_system, engineer_id, "completed_work_workshop"):
 		push_error("Workshop work did not complete")
 		quit(1)
@@ -372,6 +375,17 @@ func _init() -> void:
 
 	print("T0305 basic action system verification passed.")
 	quit(0)
+
+
+func _advance_action_time(
+	needs_system: Node,
+	action_system: Node,
+	npc_system: Node,
+	npc_id: String,
+	game_seconds: float
+) -> void:
+	needs_system._advance_npc(npc_id, npc_system.get_npc_state(npc_id), game_seconds)
+	action_system._on_logical_time_tick(game_seconds, 1.0)
 
 
 func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result: String) -> bool:

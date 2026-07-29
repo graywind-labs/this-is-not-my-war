@@ -98,6 +98,9 @@ func _verify_chapel_lifecycle(
 	if str(npc_system.get_npc_state(attendee_id).get("last_action_result", "")) != "attend_mass_failed_no_leader":
 		_fail("Missing Mass leader should produce attend_mass_failed_no_leader")
 		return false
+	if str(npc_system.get_npc_state(attendee_id).get("last_action_failure_context", {}).get("failure_id", "")) != "attend_mass_failed_no_leader":
+		_fail("Missing Mass leader failure context should preserve its precise failure_id")
+		return false
 
 	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
 		_fail("Ordinary prayer should start without a priest or Mass")
@@ -108,6 +111,9 @@ func _verify_chapel_lifecycle(
 	if str(npc_system.get_npc_state(prayer_id).get("last_action_result", "")) != "pray_failed_mass_started":
 		_fail("Starting Mass should interrupt an existing ordinary prayer")
 		return false
+	if str(npc_system.get_npc_state(prayer_id).get("last_action_failure_context", {}).get("failure_id", "")) != "pray_failed_mass_started":
+		_fail("Interrupted prayer failure context should preserve pray_failed_mass_started")
+		return false
 	if _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
 		_fail("Interrupted ordinary prayer should release its prayer seat")
 		return false
@@ -117,6 +123,9 @@ func _verify_chapel_lifecycle(
 		return false
 	if str(npc_system.get_npc_state(prayer_id).get("last_action_result", "")) != "pray_failed_mass_in_progress":
 		_fail("Prayer during Mass should expose pray_failed_mass_in_progress")
+		return false
+	if str(npc_system.get_npc_state(prayer_id).get("last_action_failure_context", {}).get("failure_id", "")) != "pray_failed_mass_in_progress":
+		_fail("Prayer conflict failure context should preserve pray_failed_mass_in_progress")
 		return false
 	var during_mass_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(attendee_id, {"requires_time_slowdown": false})
 	var during_attend := _find_candidate(during_mass_payload.get("allowed_actions", []), "attend_mass")
@@ -158,6 +167,9 @@ func _verify_chapel_lifecycle(
 	action_system.interrupt_npc_action(priest_id, "t0043a_mass_interrupted", true)
 	if str(npc_system.get_npc_state(attendee_id).get("last_action_result", "")) != "attend_mass_failed_leader_left":
 		_fail("Interrupting the leader should immediately fail every Mass attendee")
+		return false
+	if str(npc_system.get_npc_state(attendee_id).get("last_action_failure_context", {}).get("failure_id", "")) != "attend_mass_failed_leader_left":
+		_fail("Interrupted Mass attendance should preserve attend_mass_failed_leader_left")
 		return false
 	if _is_occupied_by(building_system.get_building("chapel").get("workstations", []), attendee_id):
 		_fail("Failed Mass attendance should release the prayer seat")

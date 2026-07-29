@@ -18,7 +18,7 @@ from backend.schemas import (  # noqa: E402
     LongTermMemoryContext,
     ModelRequestMeta,
     NPCContext,
-    NPCDialogueResponse,
+    PlayerNPCDialogueResponse,
     NPCIdentity,
     NPCStateContext,
     ShortTermMemoryContext,
@@ -205,7 +205,12 @@ def main() -> None:
 
     dialogue_response = client.post("/npc/dialogue", json=_dialogue_payload())
     assert dialogue_response.status_code == 200, dialogue_response.get_json()
-    dialogue = NPCDialogueResponse(**dialogue_response.get_json())
+    dialogue_body = dialogue_response.get_json()
+    dialogue = PlayerNPCDialogueResponse(**{
+        key: value
+        for key, value in dialogue_body.items()
+        if not key.startswith("model_")
+    })
     assert dialogue.recruitment_result == "none"
     assert dialogue.wartime_reaction in {"none", "escape", "morale_boost"}
 

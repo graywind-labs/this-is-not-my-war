@@ -3,6 +3,7 @@
     "id": "work_garden",
     "name": "照料菜园",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "garden",
     "workstation_type": "farm",
     "skill": "耕种",
@@ -19,13 +20,13 @@
       "attribute_per_bonus": 3,
       "building_level_bonus": true
     },
-    "fatigue_delta": 8,
-    "satiety_delta": -4
+    "needs_profile": "heavy_work"
   },
   {
     "id": "work_dining_hall",
     "name": "加工餐食",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "dining_hall",
     "workstation_type": "dining_kitchen_station",
     "building_efficiency_key": "production",
@@ -37,13 +38,13 @@
     "output_resources": {
       "meal": 1
     },
-    "fatigue_delta": 6,
-    "satiety_delta": -3
+    "needs_profile": "light_work"
   },
   {
     "id": "work_stable",
     "name": "照料马厩",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "stable",
     "workstation_type": "horse_care",
     "skill": "养马",
@@ -51,13 +52,13 @@
     "duration_seconds": 3600,
     "input_resources": {},
     "output_resources": {},
-    "fatigue_delta": 6,
-    "satiety_delta": -3
+    "needs_profile": "light_work"
   },
   {
     "id": "work_tavern",
     "name": "酿造酒",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "tavern",
     "workstation_type": "brew",
     "skill": "酿酒",
@@ -76,13 +77,13 @@
       "attribute_per_bonus": 3,
       "building_level_bonus": true
     },
-    "fatigue_delta": 6,
-    "satiety_delta": -3
+    "needs_profile": "light_work"
   },
   {
     "id": "work_blacksmith",
     "name": "推进铁匠铺制造",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "blacksmith",
     "workstation_type": "forge",
     "skill": "打铁",
@@ -91,13 +92,13 @@
     "requires_crafting_target": true,
     "input_resources": {},
     "output_resources": {},
-    "fatigue_delta": 8,
-    "satiety_delta": -4
+    "needs_profile": "heavy_work"
   },
   {
     "id": "work_workshop",
     "name": "推进工械坊制造",
     "type": "work",
+    "completion_policy": "repeat_while_planned",
     "location_required": "workshop",
     "workstation_type": "engineering",
     "skill": "工程",
@@ -106,13 +107,13 @@
     "requires_crafting_target": true,
     "input_resources": {},
     "output_resources": {},
-    "fatigue_delta": 8,
-    "satiety_delta": -4
+    "needs_profile": "heavy_work"
   },
   {
     "id": "work_training_instructor",
     "name": "指导训练",
     "type": "training_instructor",
+    "completion_policy": "continuous_until_plan_changes",
     "location_required": "training_ground",
     "skill": "教练",
     "stat": "intelligence",
@@ -120,24 +121,24 @@
     "solo_skill_interval_seconds": 14400,
     "coaching_skill_interval_seconds": 3600,
     "student_skill_interval_seconds": 3600,
-    "fatigue_delta_per_hour": 4,
-    "satiety_delta_per_hour": -2
+    "needs_profile": "training_instructor"
   },
   {
     "id": "receive_weapon_training",
     "name": "接受武器训练",
     "type": "training_student",
+    "completion_policy": "continuous_until_plan_changes",
     "location_required": "training_ground",
     "workstation_type": "training_practice_slot",
     "required_active_action_id": "work_training_instructor",
     "student_skill_interval_seconds": 3600,
-    "fatigue_delta_per_hour": 8,
-    "satiety_delta_per_hour": -4
+    "needs_profile": "training_student"
   },
   {
     "id": "work_clinic_doctor",
     "name": "坐诊或研读医学著作",
     "type": "clinic_doctor",
+    "completion_policy": "continuous_until_plan_changes",
     "location_required": "clinic",
     "skill": "医术",
     "stat": "intelligence",
@@ -148,25 +149,29 @@
     "input_resources": {
       "money": 1
     },
-    "fatigue_delta_per_hour": 3,
-    "satiety_delta_per_hour": 1
+    "needs_profile": "light_work"
   },
   {
     "id": "receive_clinic_treatment",
     "name": "在诊所病床接受治疗",
     "type": "clinic_patient",
+    "completion_policy": "until_target_resolved",
+    "reevaluate_current_hour_on_completion": true,
     "location_required": "clinic",
     "workstation_type": "clinic_patient_bed",
-    "required_active_action_id": "work_clinic_doctor"
+    "required_active_action_id": "work_clinic_doctor",
+    "needs_profile": "clinic_rest"
   },
   {
     "id": "eat_at_dining_hall",
     "name": "吃饭",
     "type": "eat",
+    "completion_policy": "once_per_plan_hour",
     "location_required": "dining_hall",
     "workstation_type": "dining_seat",
     "building_efficiency_key": "meal_recovery",
     "duration_seconds": 1200,
+    "needs_profile": "eat",
     "food_options": [
       {
         "resource": "meal",
@@ -181,112 +186,172 @@
     ]
   },
   {
+    "id": "drink_wine",
+    "name": "饮酒",
+    "type": "drink",
+    "completion_policy": "once_per_plan_hour",
+    "reevaluate_current_hour_on_completion": true,
+    "duration_seconds": 600,
+    "personal_resource_cost": {
+      "wine": 1
+    },
+    "description": "前提是本人当前确实持有至少 1 份酒；饮用时程序会消耗 1 份本人持有的酒。饮酒可以改善心情，让过去的伤痛暂时淡化。",
+    "eligibility_hint": "只有本人当前确实持有至少 1 份酒时才能执行；开始饮酒时消耗 1 份个人酒，改善心情，并让过去的伤痛暂时淡化。",
+    "visibility": "local_public",
+    "needs_profile": "drink_rest"
+  },
+  {
     "id": "sleep_in_dormitory",
     "name": "睡觉",
     "type": "sleep",
+    "completion_policy": "once_per_plan_hour",
     "location_required": "dormitory",
     "workstation_type": "dormitory_bed",
     "building_efficiency_key": "sleep_recovery",
     "duration_seconds": 23400,
-    "fatigue_delta": -100,
-    "satiety_delta": -13
+    "needs_profile": "sleep"
   },
   {
     "id": "pray_at_chapel",
     "name": "祈祷",
     "type": "pray",
+    "completion_policy": "once_per_plan_hour",
     "location_required": "chapel",
     "workstation_type": "chapel_prayer_seat",
     "blocked_by_active_action_id": "lead_mass",
     "duration_seconds": 3600,
-    "visibility": "local_public"
+    "visibility": "local_public",
+    "needs_profile": "prayer_rest"
   },
   {
     "id": "attend_mass",
     "name": "参加弥撒",
     "type": "pray",
+    "completion_policy": "once_per_plan_hour",
     "location_required": "chapel",
     "workstation_type": "chapel_prayer_seat",
     "required_active_action_id": "lead_mass",
     "complete_with_required_action": true,
     "eligibility_hint": "只有祭坛上有人正在主持弥撒时才能参加；主持异常中断时参加弥撒也会失败。",
     "duration_seconds": 3600,
-    "visibility": "local_public"
+    "visibility": "local_public",
+    "needs_profile": "prayer_rest"
   },
   {
     "id": "lead_mass",
     "name": "主持弥撒",
     "type": "pray",
+    "completion_policy": "once_per_plan_hour",
     "location_required": "chapel",
     "workstation_type": "chapel_altar",
     "required_ability": "主持弥撒",
     "interrupts_action_ids": ["pray_at_chapel"],
     "eligibility_hint": "只有具备‘主持弥撒’能力的人才能执行；你没有该能力时不要把它加入计划。",
     "duration_seconds": 3600,
-    "visibility": "local_public"
+    "visibility": "local_public",
+    "needs_profile": "prayer_rest"
   },
   {
     "id": "talk_to_npc",
     "name": "找某个 NPC 对话",
     "type": "npc_dialogue",
+    "completion_policy": "once_per_plan_hour",
     "requires_target": "npc",
     "soft_round_threshold": 5,
-    "visibility": "local_public"
+    "visibility": "local_public",
+    "needs_profile": "dialogue"
   },
   {
     "id": "visit_location",
     "name": "前往并停留在某建筑",
     "type": "visit",
+    "completion_policy": "once_per_plan_hour",
     "requires_target": "enterable_location",
     "duration_seconds": 3600,
-    "visibility": "local_public"
+    "visibility": "local_public",
+    "needs_profile": "visit"
   },
   {
     "id": "seek_guard_officer",
     "name": "主动找守备官交涉",
     "type": "proactive_talk",
+    "completion_policy": "once_per_plan_hour",
     "duration_seconds": 3600,
-    "visibility": "private"
+    "visibility": "private",
+    "needs_profile": "dialogue"
   },
   {
     "id": "assist_repair",
     "name": "协助修复建筑",
     "type": "targeted_building_assist",
-    "requires_target": "active_repair"
+    "completion_policy": "until_target_resolved",
+    "reevaluate_current_hour_on_completion": true,
+    "requires_target": "active_repair",
+    "needs_profile": "heavy_work",
+    "timed_experience": {
+      "skill": "工程",
+      "interval_seconds": 3600,
+      "amount": 1,
+      "reason": "assist_repair"
+    }
   },
   {
     "id": "assist_upgrade",
     "name": "协助升级建筑",
     "type": "targeted_building_assist",
-    "requires_target": "active_upgrade"
+    "completion_policy": "until_target_resolved",
+    "reevaluate_current_hour_on_completion": true,
+    "requires_target": "active_upgrade",
+    "needs_profile": "heavy_work",
+    "timed_experience": {
+      "skill": "工程",
+      "interval_seconds": 3600,
+      "amount": 1,
+      "reason": "assist_upgrade"
+    }
   },
   {
     "id": "assist_heal",
     "name": "协助治疗昏迷者",
     "type": "targeted_heal",
+    "completion_policy": "until_target_resolved",
+    "reevaluate_current_hour_on_completion": true,
     "requires_target": "unconscious_npc",
     "target_limit_per_target": 2,
     "resource_cost_interval_seconds": 1800,
     "input_resources": {
       "money": 1
     },
-    "skill": "医术"
+    "skill": "医术",
+    "needs_profile": "light_work",
+    "timed_experience": {
+      "skill": "医术",
+      "interval_seconds": 3600,
+      "amount": 1,
+      "reason": "assist_heal"
+    }
   },
   {
     "id": "escaping_station",
     "name": "逃离驿站",
-    "type": "system"
+    "type": "system",
+    "completion_policy": "terminal",
+    "needs_profile": "escape"
   },
   {
     "id": "escape_intervention_dialogue",
     "name": "逃离挽留对话",
     "type": "system",
-    "plan_selectable": false
+    "completion_policy": "not_plan_selectable",
+    "plan_selectable": false,
+    "needs_profile": "dialogue"
   },
   {
     "id": "talk_to_guard_officer",
     "name": "与守备官对话",
     "type": "system",
-    "plan_selectable": false
+    "completion_policy": "not_plan_selectable",
+    "plan_selectable": false,
+    "needs_profile": "dialogue"
   }
 ]

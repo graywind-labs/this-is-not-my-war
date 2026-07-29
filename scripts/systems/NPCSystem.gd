@@ -15,6 +15,8 @@ const PLAZA_LOCATION_ID := "plaza"
 const PLAYER_ACTOR_ID := "guard_officer"
 const SYSTEM_ACTOR_ID := "system"
 const MONEY_RESOURCE_ID := "money"
+const WINE_RESOURCE_ID := "wine"
+const NPC_OWNED_RESOURCE_IDS: Array[String] = [MONEY_RESOURCE_ID, WINE_RESOURCE_ID]
 const PICK_RAY_LENGTH := 1000.0
 const PROFESSIONAL_SKILLS: Array[String] = ["养马", "厨艺", "耕种", "打铁", "教练", "酿酒", "医术", "工程"]
 const WEAPON_SKILLS: Array[String] = ["剑盾", "长杆", "弓", "弩", "骑术"]
@@ -269,12 +271,73 @@ func set_npc_behavior_mode(
 	if bool(state.get("unconscious", false)) and not [BEHAVIOR_MODE_UNCONSCIOUS, BEHAVIOR_MODE_WORK, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT].has(clean_mode):
 		return {"ok": false, "error": "npc_unconscious", "npc_id": npc_id, "mode": clean_mode}
 
+	var world_movement: Dictionary = (
+		options.get("_world_movement", {})
+		if options.get("_world_movement", {}) is Dictionary
+		else {}
+	)
+	var movement_node: Node = null
+	var movement_target_id := ""
+	var movement_target_name := ""
+	var movement_target_position := Vector3.ZERO
+	var movement_arrival_state: Dictionary = {}
+	if not world_movement.is_empty():
+		movement_arrival_state = (
+			(world_movement.get("arrival_state", {}) as Dictionary).duplicate(true)
+			if world_movement.get("arrival_state", {}) is Dictionary
+			else {}
+		)
+		if not can_npc_move_to_world_position(npc_id, movement_arrival_state):
+			return {
+				"ok": false,
+				"error": "movement_unavailable",
+				"npc_id": npc_id,
+				"mode": clean_mode
+			}
+		movement_target_id = str(world_movement.get("target_id", "")).strip_edges()
+		if movement_target_id.is_empty():
+			movement_target_id = "world_target"
+		movement_target_name = str(world_movement.get("target_name", "")).strip_edges()
+		if movement_target_name.is_empty():
+			movement_target_name = movement_target_id
+		var raw_target_position: Variant = world_movement.get("target_position", Vector3.ZERO)
+		if not raw_target_position is Vector3:
+			return {
+				"ok": false,
+				"error": "invalid_movement_target",
+				"npc_id": npc_id,
+				"mode": clean_mode
+			}
+		movement_target_position = raw_target_position
+		movement_node = get_node_or_null(_npc_nodes.get(npc_id, NodePath("")))
+		if movement_node == null or not movement_node.has_method("move_to_location"):
+			return {
+				"ok": false,
+				"error": "movement_unavailable",
+				"npc_id": npc_id,
+				"mode": clean_mode
+			}
+
 	var previous_mode := _get_current_behavior_mode(npc_id)
 	var interrupt_modes := [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT]
 	var should_interrupt := bool(options.get("interrupt", interrupt_modes.has(clean_mode)))
 	var interrupt_result := {}
 	if should_interrupt:
 		interrupt_result = _interrupt_for_behavior_mode(npc_id, clean_mode, reason, options)
+	if (
+		not world_movement.is_empty()
+		and (
+			not is_instance_valid(movement_node)
+			or not movement_node.has_method("move_to_location")
+		)
+	):
+		return {
+			"ok": false,
+			"error": "movement_unavailable_after_interrupt",
+			"npc_id": npc_id,
+			"mode": clean_mode,
+			"interrupt_result": interrupt_result
+		}
 
 	var state_changes: Dictionary = options.get("state_changes", {}) if (options.get("state_changes", {}) is Dictionary) else {}
 	var time_snapshot := _get_game_time_snapshot()
@@ -344,7 +407,20 @@ func set_npc_behavior_mode(
 			if not changes.has("last_action_result"):
 				changes["last_action_result"] = reason
 
+	if not world_movement.is_empty():
+		changes["current_action"] = "moving_to_%s" % movement_target_id
+		changes["movement_target"] = movement_target_id
+		changes["movement_target_name"] = movement_target_name
+		changes["location_context"] = {}
+		_movement_arrival_contexts[npc_id] = {
+			"target_id": movement_target_id,
+			"target_name": movement_target_name,
+			"target_position": movement_target_position,
+			"arrival_state": movement_arrival_state.duplicate(true)
+		}
 	_set_npc_state_without_signal(npc_id, changes)
+	if not world_movement.is_empty():
+		movement_node.move_to_location(movement_target_id, movement_target_position)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 
@@ -366,8 +442,29 @@ func set_npc_behavior_mode(
 		"changed": previous_mode != clean_mode,
 		"interrupt_result": interrupt_result,
 		"event": mode_event,
-		"plan_reevaluation_status": reevaluation_status
+		"plan_reevaluation_status": reevaluation_status,
+		"movement_started": not world_movement.is_empty()
 	}
+
+
+func set_npc_behavior_mode_and_move_to_world_position(
+	npc_id: String,
+	mode: String,
+	reason: String,
+	target_id: String,
+	target_name: String,
+	target_position: Vector3,
+	arrival_state: Dictionary = {},
+	options: Dictionary = {}
+) -> Dictionary:
+	var transition_options := options.duplicate(true)
+	transition_options["_world_movement"] = {
+		"target_id": target_id,
+		"target_name": target_name,
+		"target_position": target_position,
+		"arrival_state": arrival_state.duplicate(true)
+	}
+	return set_npc_behavior_mode(npc_id, mode, reason, transition_options)
 
 
 func is_npc_sleeping(npc_id: String) -> bool:
@@ -524,6 +621,26 @@ func move_npc_to_world_position(
 	return true
 
 
+func can_npc_move_to_world_position(npc_id: String, arrival_state: Dictionary = {}) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var allow_escaping_movement := bool(arrival_state.get("allow_escaping_movement", false))
+	if not can_npc_act(npc_id):
+		if not allow_escaping_movement:
+			return false
+		var state := get_npc_state(npc_id)
+		if (
+			bool(state.get("unconscious", false))
+			or bool(state.get("escaped", false))
+			or bool(state.get("first_sleep_summary_active", false))
+		):
+			return false
+	if not _npc_nodes.has(npc_id):
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	return npc_node != null and npc_node.has_method("move_to_location")
+
+
 func stop_npc_movement_with_state(npc_id: String, changes: Dictionary = {}) -> bool:
 	if not _profiles.has(npc_id):
 		return false
@@ -644,20 +761,124 @@ func set_npc_plan(npc_id: String, plan: Array) -> bool:
 	return true
 
 
-func stop_npc_movement_for_system(npc_id: String, last_result: String = "movement_stopped") -> bool:
+func stop_npc_movement_for_system(
+	npc_id: String,
+	last_result: String = "movement_stopped",
+	emit_state_changed: bool = true
+) -> bool:
 	if not _profiles.has(npc_id):
 		return false
+	var previous_state := get_npc_state(npc_id)
+	var previous_location_id := str(previous_state.get("current_location", PLAZA_LOCATION_ID))
+	var movement_target_id := str(previous_state.get("movement_target", ""))
+	var was_in_transit := (
+		not movement_target_id.is_empty()
+		or str(previous_state.get("current_action", "")).begins_with("moving_to_")
+	)
 	_stop_npc_movement(npc_id)
 	_movement_arrival_contexts.erase(npc_id)
+	var location_id := previous_location_id
+	var location_name := str(previous_state.get("current_location_name", previous_location_id))
+	var location_context: Dictionary = (
+		(previous_state.get("location_context", {}) as Dictionary).duplicate(true)
+		if previous_state.get("location_context", {}) is Dictionary
+		else {}
+	)
+	if was_in_transit and previous_location_id != PLAZA_LOCATION_ID:
+		# Building travel is logically routed through the plaza. If travel is
+		# interrupted before arrival, the NPC is outdoors rather than still inside
+		# the old building; settling the information node at the plaza also prevents
+		# a same-origin action from starting while the scene actor is mid-route.
+		var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+		if memory_system != null:
+			location_context = _transition_npc_info_location(
+				npc_id,
+				_get_info_location_id(memory_system, previous_location_id),
+				PLAZA_LOCATION_ID,
+				PLAZA_LOCATION_ID,
+				memory_system
+			)
+		location_id = PLAZA_LOCATION_ID
+		location_name = str(location_context.get("name", "广场"))
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "idle",
+		"current_location": location_id,
+		"current_location_name": location_name,
 		"movement_target": "",
 		"movement_target_name": "",
+		"location_context": location_context,
 		"last_action_result": last_result
 	})
 	_refresh_npc_node(npc_id)
-	_emit_npc_state_changed(npc_id)
+	if emit_state_changed:
+		_emit_npc_state_changed(npc_id)
 	return true
+
+
+func get_npc_owned_resources(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var states: Dictionary = (_profiles[npc_id] as Dictionary).get("states", {})
+	var owned_resources := {}
+	for resource_id in NPC_OWNED_RESOURCE_IDS:
+		owned_resources[resource_id] = maxi(0, int(states.get(resource_id, 0)))
+	return owned_resources
+
+
+func can_npc_afford_owned_resources(npc_id: String, costs: Dictionary) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var owned_resources := get_npc_owned_resources(npc_id)
+	for raw_resource_id in costs.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(costs.get(raw_resource_id, 0))
+		if not NPC_OWNED_RESOURCE_IDS.has(resource_id) or amount < 0:
+			return false
+		if int(owned_resources.get(resource_id, 0)) < amount:
+			return false
+	return true
+
+
+func spend_npc_owned_resources(npc_id: String, costs: Dictionary) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	if costs.is_empty():
+		return _interaction_failure("invalid_personal_resource_cost", "个人资源消耗不能为空。")
+	var normalized_costs := {}
+	for raw_resource_id in costs.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(costs.get(raw_resource_id, 0))
+		if not NPC_OWNED_RESOURCE_IDS.has(resource_id) or amount < 0:
+			return _interaction_failure("invalid_personal_resource_cost", "个人资源消耗无效。")
+		if amount > 0:
+			normalized_costs[resource_id] = amount
+	if normalized_costs.is_empty():
+		return _interaction_failure("invalid_personal_resource_cost", "个人资源消耗必须大于 0。")
+
+	var owned_before := get_npc_owned_resources(npc_id)
+	for resource_id in normalized_costs.keys():
+		if int(owned_before.get(resource_id, 0)) < int(normalized_costs[resource_id]):
+			return _interaction_failure(
+				"not_enough_personal_resource",
+				"NPC 本人持有的%s不足。" % resource_id
+			)
+
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {})
+	for resource_id in normalized_costs.keys():
+		states[resource_id] = int(owned_before.get(resource_id, 0)) - int(normalized_costs[resource_id])
+	profile["states"] = states
+	_profiles[npc_id] = profile
+	var owned_after := get_npc_owned_resources(npc_id)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"costs": normalized_costs.duplicate(true),
+		"owned_resources_before": owned_before,
+		"owned_resources_after": owned_after
+	}
 
 
 func give_money_to_npc(
@@ -701,6 +922,48 @@ func give_money_to_npc(
 		"npc_money_after": money_after,
 		"event": event,
 		"escape_speed_result": escape_speed_result
+	}
+
+
+func give_wine_to_npc(
+	npc_id: String,
+	amount: int,
+	visibility: String = "local_public"
+) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return _interaction_failure("unknown_npc", "NPC 不存在。")
+	if amount <= 0:
+		return _interaction_failure("invalid_amount", "赠予酒的数量必须大于 0。")
+
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null or not resource_system.has_method("spend_resources"):
+		return _interaction_failure("resource_system_missing", "资源系统不可用。")
+	if not resource_system.spend_resources({WINE_RESOURCE_ID: amount}):
+		return _interaction_failure("not_enough_wine", "驿站库存中的酒不足。")
+
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {})
+	var wine_before := int(states.get("wine", 0))
+	var wine_after := wine_before + amount
+	states["wine"] = wine_after
+	profile["states"] = states
+	_profiles[npc_id] = profile
+
+	var event := _log_player_interaction(npc_id, "wine_given", {
+		"amount": amount,
+		"resource_id": WINE_RESOURCE_ID,
+		"npc_wine_before": wine_before,
+		"npc_wine_after": wine_after
+	}, visibility)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"amount": amount,
+		"npc_wine_before": wine_before,
+		"npc_wine_after": wine_after,
+		"event": event
 	}
 
 
@@ -1124,6 +1387,32 @@ func assist_unconscious_recovery(
 	)
 
 
+func get_assisted_recovery_effective_seconds(
+	target_npc_id: String,
+	requested_game_seconds: float,
+	healer_npc_id: String,
+	medical_skill: int
+) -> float:
+	if requested_game_seconds <= 0.0 or not _profiles.has(target_npc_id):
+		return 0.0
+	var state: Dictionary = get_npc_state(target_npc_id)
+	if not bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return 0.0
+	var max_hp := maxi(1, int(state.get("max_hp", 100)))
+	var hp_before := clampi(int(state.get("hp", 0)), 0, max_hp)
+	var revive_threshold := _get_revive_hp_threshold(max_hp)
+	if hp_before >= revive_threshold:
+		return 0.0
+	var hp_per_hour := _calculate_healing_hp_per_hour(medical_skill)
+	if hp_per_hour <= 0.0:
+		return 0.0
+	var remainder_key := _get_recovery_remainder_key(target_npc_id, "healing_assist", healer_npc_id)
+	var accumulated := float(_unconscious_recovery_remainders.get(remainder_key, 0.0))
+	var hp_progress_needed := maxf(0.0, float(revive_threshold - hp_before) - accumulated)
+	var seconds_until_revive := hp_progress_needed * 3600.0 / hp_per_hour
+	return minf(requested_game_seconds, seconds_until_revive)
+
+
 func restore_npc_hp(
 	npc_id: String,
 	amount: int,
@@ -1228,23 +1517,46 @@ func apply_daily_reflection(npc_id: String, reflection: Dictionary) -> Dictionar
 
 	var profile: Dictionary = _profiles[npc_id]
 	var day := maxi(1, int(reflection.get("day", _get_game_time_snapshot().get("day", 1))))
-	var time_text := str(_get_game_time_snapshot().get("time", "00:00:00"))
+	var trigger_day := maxi(1, int(reflection.get(
+		"trigger_day",
+		_get_game_time_snapshot().get("day", day)
+	)))
+	var time_text := str(reflection.get(
+		"trigger_time",
+		_get_game_time_snapshot().get("time", "00:00:00")
+	))
+	var record_label := str(reflection.get("record_label", "")).strip_edges()
 	var diary := _normalize_diary_entries(profile.get("diary", []))
 	var diary_record := {
 		"day": day,
 		"time": time_text,
+		"record_label": record_label,
 		"entry": diary_entry,
 		"source": str(reflection.get("source", "daily_reflection")),
 		"model_provider": str(reflection.get("model_provider", "")),
 		"model_name": str(reflection.get("model_name", "")),
 		"model_fallback_used": bool(reflection.get("model_fallback_used", false)),
-		"debug_reason": str(reflection.get("debug_reason", ""))
+		"debug_reason": str(reflection.get("debug_reason", "")),
+		"summary_window_key": str(reflection.get("summary_window_key", "")),
+		"window_anchor_day": maxi(0, int(reflection.get("window_anchor_day", day))),
+		"trigger_day": trigger_day,
+		"trigger_time": time_text,
+		"reflection_period": (
+			reflection.get("reflection_period", {}).duplicate(true)
+			if reflection.get("reflection_period", {}) is Dictionary
+			else {}
+		)
 	}
 	diary.append(diary_record)
 	profile["diary"] = diary
 
 	var graph: Dictionary = profile.get("knowledge_graph", {}) if (profile.get("knowledge_graph", {}) is Dictionary) else {}
-	graph = _apply_knowledge_graph_updates(graph, reflection.get("knowledge_graph_updates", []), day, time_text)
+	graph = _apply_knowledge_graph_updates(
+		graph,
+		reflection.get("knowledge_graph_updates", []),
+		trigger_day,
+		time_text
+	)
 	profile["knowledge_graph"] = graph
 	_profiles[npc_id] = profile
 
@@ -1254,6 +1566,8 @@ func apply_daily_reflection(npc_id: String, reflection: Dictionary) -> Dictionar
 		"ok": true,
 		"npc_id": npc_id,
 		"day": day,
+		"trigger_day": trigger_day,
+		"record_label": record_label,
 		"diary_count": diary.size(),
 		"diary_entry": diary_entry,
 		"knowledge_graph_update_count": (reflection.get("knowledge_graph_updates", []) as Array).size() if (reflection.get("knowledge_graph_updates", []) is Array) else 0
@@ -1494,6 +1808,8 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		profile["knowledge_graph"] = {}
 	profile["diary"] = _normalize_diary_entries(profile.get("diary", []))
 	var states: Dictionary = profile.get("states", {})
+	states["money"] = maxi(0, int(states.get("money", 0)))
+	states["wine"] = maxi(0, int(states.get("wine", 0)))
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
 	if not states.has("location_context"):
@@ -2487,7 +2803,9 @@ func _redirect_npc_to_plaza(npc_id: String, unavailable_building_id: String, bui
 		return
 	var availability := _get_location_entry_availability(unavailable_building_id, building_system)
 	_set_npc_state_without_signal(npc_id, {
-		"last_action_result": "building_use_failed_%s" % str(availability.get("unavailable_reason", "building_unavailable")),
+		# ActionSystem writes a structured failure when an actual dependency was
+		# interrupted. Plain occupants are only evicted and must not trigger replan.
+		"last_action_result": "building_evicted_to_plaza",
 		"last_action_failure_context": {
 			"building_id": unavailable_building_id,
 			"condition": str(availability.get("condition", "unknown")),
@@ -2500,6 +2818,54 @@ func _redirect_npc_to_plaza(npc_id: String, unavailable_building_id: String, bui
 	if move_npc_to_building(npc_id, PLAZA_LOCATION_ID):
 		return
 	debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
+
+
+func _settle_failed_building_entry(
+	npc_id: String,
+	unavailable_building_id: String,
+	availability: Dictionary
+) -> void:
+	if not _profiles.has(npc_id):
+		return
+	_stop_npc_movement(npc_id)
+	_movement_arrival_contexts.erase(npc_id)
+	var previous_state: Dictionary = get_npc_state(npc_id)
+	var previous_location_id := str(previous_state.get("current_location", PLAZA_LOCATION_ID))
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	var location_context: Dictionary = {}
+	if memory_system != null and memory_system.has_method("is_enterable_location"):
+		location_context = _transition_npc_info_location(
+			npc_id,
+			_get_info_location_id(memory_system, previous_location_id),
+			PLAZA_LOCATION_ID,
+			PLAZA_LOCATION_ID,
+			memory_system
+		)
+	var failure_context := availability.duplicate(true)
+	failure_context["building_id"] = unavailable_building_id
+	failure_context["arrival_check_failed"] = true
+	failure_context["current_location_before_failure"] = previous_location_id
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"current_location": PLAZA_LOCATION_ID,
+		"current_location_name": str(location_context.get("name", "广场")),
+		"movement_target": "",
+		"movement_target_name": "",
+		"location_context": location_context,
+		# ActionSystem owns any pending action failure and emits the final
+		# building-specific result after this arrival state has settled.
+		"last_action_result": "building_entry_rejected",
+		"last_action_failure_context": failure_context
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_building_entry_failed"):
+		event_bus.npc_building_entry_failed.emit(
+			npc_id,
+			unavailable_building_id,
+			failure_context.duplicate(true)
+		)
 
 
 func _on_building_state_changed(building_id: String) -> void:
@@ -2528,8 +2894,9 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		return
 
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
-	if not _is_location_available_for_access(building_id, building_system):
-		_redirect_npc_to_plaza(npc_id, building_id, building_system)
+	var availability := _get_location_entry_availability(building_id, building_system)
+	if not bool(availability.get("is_accessible", availability.get("is_operational", false))):
+		_settle_failed_building_entry(npc_id, building_id, availability)
 		return
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var location_context: Dictionary = {}

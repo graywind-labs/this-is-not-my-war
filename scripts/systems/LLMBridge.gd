@@ -132,6 +132,37 @@ func request_llm_usage() -> Dictionary:
 	return result
 
 
+func request_llm_usage_async() -> Dictionary:
+	var request_id := _make_request_id("llm_usage")
+	var thread := Thread.new()
+	_async_request_threads[request_id] = {
+		"thread": thread,
+		"npc_id": "",
+		"request_id": request_id,
+		"call_type": "llm_usage"
+	}
+	var err := thread.start(
+		Callable(self, "_thread_request_json").bind(
+			"GET",
+			"/debug/llm_usage",
+			{},
+			request_id,
+			request_timeout_seconds
+		)
+	)
+	if err != OK:
+		_async_request_threads.erase(request_id)
+		return _failure_result("thread_start_failed", "无法启动 LLM 用量查询线程。", {
+			"request_id": request_id,
+			"error": err
+		})
+	return {
+		"ok": true,
+		"pending": true,
+		"request_id": request_id
+	}
+
+
 func request_npc_dialogue(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
 	var payload := build_npc_dialogue_payload(npc_id, speaker_text, options)
 	if payload.is_empty():
@@ -594,6 +625,10 @@ func debug_request_llm_usage() -> Dictionary:
 	return request_llm_usage()
 
 
+func debug_request_llm_usage_async() -> Dictionary:
+	return request_llm_usage_async()
+
+
 func debug_get_llm_runtime_snapshot() -> Dictionary:
 	var time_snapshot: Dictionary = {}
 	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
@@ -645,9 +680,7 @@ func debug_request_battle_judgement(npc_id: String) -> Dictionary:
 
 
 func debug_request_daily_plan(npc_id: String) -> Dictionary:
-	return request_npc_daily_plan(npc_id, {
-		"planning_rules": _default_daily_planning_rules()
-	})
+	return request_npc_daily_plan(npc_id)
 
 
 func debug_request_daily_reflection(npc_id: String) -> Dictionary:
@@ -804,21 +837,24 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"allowed_actions": _build_allowed_action_candidates(npc_id, true),
 		"constraints": options.get("constraints", [])
 	}
+	var interrupted_activity_context: Dictionary = (
+		options.get("interrupted_activity_context", {})
+		if options.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	if not interrupted_activity_context.is_empty():
+		payload["interrupted_activity_context"] = interrupted_activity_context.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		payload["escape_intervention_round"] = clampi(int(options.get("escape_intervention_round", current_round)), 1, 5)
 
-	if speaker_kind == "npc" and not speaker_npc_id.is_empty():
-		# The speaker participant exposes current identity/state/memory of the
-		# conversation, but never leaks that NPC's private long-term diary/graph
-		# into another NPC's request.
-		payload["speaker_npc"] = _build_npc_context(speaker_npc_id, npc_system, false)
 	# Dialogue has one canonical target long-memory field at payload.long_memory.
 	# Keep target_npc for the shared participant shape without duplicating the
 	# full seeded graph in the same provider request.
 	payload["target_npc"] = _build_npc_context(npc_id, npc_system, false)
 	_record_npc_context_injection(npc_id, "dialogue", current_order, request_id, {
 		"interaction_context": interaction_context,
-		"has_battlefield_context": WARTIME_DIALOGUE_CONTEXTS.has(interaction_context)
+		"has_battlefield_context": WARTIME_DIALOGUE_CONTEXTS.has(interaction_context),
+		"has_interrupted_activity_context": not interrupted_activity_context.is_empty()
 	})
 	return payload
 
@@ -870,6 +906,10 @@ func build_plan_revision_judgement_payload(
 		return {}
 	var game_time := _get_game_time_context()
 	var current_hour := clampi(int(game_time.get("hour", 0)), 0, 23)
+	var required_revision_hours := _normalize_revision_hours(
+		options.get("required_revision_hours", []),
+		current_hour
+	)
 	var failed_plan_item: Dictionary = (
 		(options.get("failed_plan_item", {}) as Dictionary).duplicate(true)
 		if options.get("failed_plan_item", {}) is Dictionary
@@ -929,6 +969,7 @@ func build_plan_revision_judgement_payload(
 		"failure_type": _normalize_plan_failure_type(str(options.get("failure_type", "unknown"))),
 		"failure_summary": failure_summary,
 		"failure_context": failure_context,
+		"required_revision_hours": required_revision_hours,
 		"allowed_actions": _build_allowed_action_candidates(npc_id, false),
 		"current_building_states": _build_building_state_context(),
 		"current_resource_states": _build_resource_state_context(),
@@ -948,6 +989,7 @@ func build_plan_revision_judgement_payload(
 			"trigger_kind": trigger_kind,
 			"dialogue_kind": dialogue_kind,
 			"dialogue_turn_count": dialogue_history.size(),
+			"required_revision_hours": required_revision_hours.duplicate(),
 			"character_context_included": true
 		}
 	)
@@ -981,9 +1023,14 @@ func build_npc_daily_plan_payload(npc_id: String, options: Dictionary = {}) -> D
 		"npc": npc_context,
 		"allowed_actions": _build_allowed_action_candidates(npc_id, true),
 		"current_building_states": _build_building_state_context(),
-		"current_resource_states": _build_resource_state_context(),
-		"planning_rules": options.get("planning_rules", _default_daily_planning_rules())
+		"current_resource_states": _build_resource_state_context()
 	}
+	# The system prompt already owns the default planning contract. Keep this field
+	# only as an explicit extension point for a caller that adds genuinely new rules.
+	if options.has("planning_rules") and options.get("planning_rules", []) is Array:
+		var custom_planning_rules: Array = options.get("planning_rules", [])
+		if not custom_planning_rules.is_empty():
+			payload["planning_rules"] = custom_planning_rules.duplicate(true)
 	_record_npc_context_injection(npc_id, "plan_day", npc_context.get("current_order", {}), request_id)
 	return payload
 
@@ -1160,12 +1207,22 @@ func build_npc_daily_reflection_payload(npc_id: String, options: Dictionary = {}
 		},
 		"game_time": {
 			"day": int(options.get("day", game_time.get("day", 1))),
-			"time": str(game_time.get("time", "00:00:00")),
-			"hour": int(game_time.get("hour", 0))
+			"time": str(options.get("trigger_time", game_time.get("time", "00:00:00"))),
+			"hour": int(options.get("trigger_hour", game_time.get("hour", 0)))
 		},
 		"station_context": _build_station_context(npc_system),
 		"npc": npc_context,
 		"day_events": options.get("day_events", _build_reflection_day_events(npc_id)),
+		"summary_window": (
+			options.get("summary_window", {}).duplicate(true)
+			if options.get("summary_window", {}) is Dictionary
+			else {}
+		),
+		"reflection_period": (
+			options.get("reflection_period", {}).duplicate(true)
+			if options.get("reflection_period", {}) is Dictionary
+			else {}
+		),
 		"existing_diary_entries": _build_existing_diary_entries(npc)
 	}
 	_record_npc_context_injection(npc_id, "daily_reflection", npc_context.get("current_order", {}), request_id)
@@ -1210,6 +1267,9 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 		_clear_npc_llm_activity(npc_id, request_id)
 	var response := result.duplicate(true)
 	response["npc_id"] = npc_id
+	if call_type == "llm_usage":
+		_emit_async_response(call_type, response)
+		return
 	if bool(result.get("ok", false)):
 		match call_type:
 			"plan_revision_judgement":
@@ -1231,6 +1291,9 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 
 
 func _emit_async_response(call_type: String, response: Dictionary) -> void:
+	if call_type == "llm_usage":
+		llm_usage_response_received.emit(response.duplicate(true))
+		return
 	if call_type == "plan_revision_judgement":
 		plan_revision_judgement_response_received.emit(response.duplicate(true))
 		plan_revision_judgement_async_response_received.emit(response.duplicate(true))
@@ -1373,7 +1436,9 @@ func _plan_item_to_schema(item: Dictionary) -> Dictionary:
 	var location_id: Variant = item.get("location_id", null)
 	if location_id == null or str(location_id).is_empty():
 		location_id = action.get("location_required", null)
-	if location_id == null and target.has("building_id"):
+	if (location_id == null or str(location_id).is_empty()) and target.has("location_id"):
+		location_id = str(target.get("location_id", ""))
+	if (location_id == null or str(location_id).is_empty()) and target.has("building_id"):
 		location_id = str(target.get("building_id", ""))
 	var target_id: Variant = item.get("target_id", null)
 	if target_id == null:
@@ -1422,6 +1487,8 @@ func _count_schema_work_phases(plan: Array) -> int:
 
 func _is_schema_work_phase(item: Dictionary) -> bool:
 	var action_id := str(item.get("action_id", ""))
+	if action_id == "assist_upgrade":
+		return true
 	var action := _get_action_definition(action_id)
 	if str(action.get("type", "")) in ["work", "clinic_doctor", "training_instructor"]:
 		return true
@@ -1483,6 +1550,7 @@ func _build_allowed_action_candidates(
 			"tags": [action_type],
 			"context": {
 				"duration_seconds": float(action.get("duration_seconds", 0.0)),
+				"description": str(action.get("description", "")),
 				"skill": str(action.get("skill", "")),
 				"workstation_type": str(action.get("workstation_type", "")),
 				"eligible": bool(eligibility.get("eligible", true)),
@@ -1539,16 +1607,13 @@ func _build_allowed_action_candidates(
 				"action_id": "talk_to_npc",
 				"name": "找%s对话" % target_name,
 				"action_kind": "chat",
-				"location_id": target_location_id,
+				# This action chooses a person, not a destination. ActionSystem resolves
+				# and tracks the target's real location only when execution starts.
 				"target_id": target_npc_id,
 				"target_kind": "npc",
 				"target_name": target_name,
 				"tags": ["npc_dialogue", "chat", "target_npc"],
-				"context": {
-					"current_action": str(target_state.get("current_action", "idle")),
-					"current_location_name": str(target_state.get("current_location_name", "广场")),
-					"recruited": bool(target_npc.get("recruited", false))
-				}
+				"context": {}
 			})
 
 		var heal_action: Dictionary = action_system.get_action("assist_heal")
@@ -1632,8 +1697,16 @@ func _build_allowed_action_candidates(
 					"target_id": building_id,
 					"target_kind": "building",
 					"target_name": building_name,
-					"tags": ["assist_upgrade", "engineering"],
-					"context": {"building_level": int(building.get("level", 1))}
+					"tags": ["work", "assist_upgrade", "engineering"],
+					"context": {
+						"building_level": int(building.get("level", 1)),
+						"eligible": true,
+						"available_now": true,
+						"execution_location": "plaza",
+						"requires_building_entry": false,
+						"counts_as_work_phase": true,
+						"effect": "在建筑外协助正在进行的升级，加快工程进度"
+					}
 				})
 	result.append({
 		"action_id": "idle",
@@ -1667,6 +1740,8 @@ func _is_static_plan_action_available_for_npc(
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	match action_id:
+		"drink_wine":
+			return int(state.get("wine", 0)) >= 1
 		"receive_clinic_treatment":
 			return int(state.get("hp", 0)) < maxi(1, int(state.get("max_hp", 100)))
 		"work_training_instructor":
@@ -1827,6 +1902,8 @@ func _build_building_state_context() -> Dictionary:
 		return result
 	for building_id in building_system.get_building_ids():
 		var building: Dictionary = building_system.get_building(str(building_id))
+		var repair_status: Dictionary = building.get("repair_status", {}) if building.get("repair_status", {}) is Dictionary else {}
+		var upgrade_status: Dictionary = building.get("upgrade_status", {}) if building.get("upgrade_status", {}) is Dictionary else {}
 		var workstations: Array = []
 		for raw_workstation in building.get("workstations", []):
 			if not raw_workstation is Dictionary:
@@ -1850,24 +1927,33 @@ func _build_building_state_context() -> Dictionary:
 			"level": int(building.get("level", 1)),
 			"hp": int(building.get("hp", 0)),
 			"max_hp": int(building.get("max_hp", 0)),
-			"is_repairing": bool(building.get("is_repairing", false)),
-			"is_upgrading": bool(building.get("is_upgrading", false)),
+			"is_repairing": (
+				bool(building_system.is_repair_in_progress(str(building_id)))
+				if building_system.has_method("is_repair_in_progress")
+				else false
+			),
+			"is_upgrading": (
+				bool(building_system.is_upgrade_in_progress(str(building_id)))
+				if building_system.has_method("is_upgrade_in_progress")
+				else false
+			),
+			"repair_job": _build_readable_building_job_context(repair_status),
+			"upgrade_job": _build_readable_building_job_context(upgrade_status),
 			"workstations": workstations
 		}
 	return result
 
 
-func _default_daily_planning_rules() -> Array[String]:
-	return [
-		"返回 24 个小时计划项，每个 hour 0-23 恰好出现一次。",
-		"计划至少包含 6 个工作阶段。",
-		"只能选择 allowed_actions 中的 action_id，或选择 idle。",
-		"不得选择 allowed_actions.context.eligible=false 的行动；available_now=false 的行动不能作为当前立即行动。",
-		"带目标行动必须使用 allowed_actions 同一候选中的 action_id、target_id 与 location_id。",
-		"NPC 对话、祈祷、前往地点和主动找守备官都是正式行动；没有合理行动时才等待。",
-		"current_order 只是守备官当前指令参考，不是强制行动。",
-		"不得让模型直接结算资源、HP、建筑修复、训练成长或战斗结果。"
-	]
+func _build_readable_building_job_context(status: Dictionary) -> Dictionary:
+	if status.is_empty():
+		return {}
+	return {
+		"active": bool(status.get("active", true)),
+		"total_duration": str(status.get("duration_text", "")),
+		"remaining_time": str(status.get("remaining_text", "")),
+		"progress_percent": int(round(float(status.get("progress", 0.0)) * 100.0)),
+		"helper_count": int(status.get("helper_count", 0))
+	}
 
 
 func _infer_plan_action_kind(action_id: String, action: Dictionary) -> String:
@@ -1878,6 +1964,8 @@ func _infer_plan_action_kind(action_id: String, action: Dictionary) -> String:
 			return "work"
 		"eat":
 			return "eat"
+		"drink":
+			return "drink"
 		"sleep":
 			return "sleep"
 		"training_instructor", "training_student":
@@ -1917,13 +2005,13 @@ func _get_action_definition(action_id: String) -> Dictionary:
 
 func _normalize_plan_failure_type(raw_type: String) -> String:
 	match raw_type:
-		"target_unavailable", "workstation_occupied", "resource_insufficient", "dialogue_interrupted", "plan_item_superseded", "low_hp", "low_satiety", "high_fatigue", "combat_alarm", "order_changed":
+		"target_unavailable", "workstation_occupied", "resource_insufficient", "dialogue_interrupted", "plan_item_superseded", "action_completed", "low_hp", "low_satiety", "high_fatigue", "combat_alarm", "order_changed":
 			return raw_type
 		"clinic_patient_failed_no_doctor", "clinic_patient_failed_doctor_left", "training_student_failed_no_instructor", "training_student_failed_instructor_left", "attend_mass_failed_no_leader", "attend_mass_failed_leader_left", "pray_failed_mass_in_progress", "pray_failed_mass_started":
 			return "target_unavailable"
 		"work_failed_no_workstation", "clinic_doctor_failed_no_workstation", "clinic_patient_failed_no_bed", "training_student_failed_no_workstation", "training_instructor_failed_no_workstation", "lead_mass_failed_no_workstation", "attend_mass_failed_no_workstation":
 			return "workstation_occupied"
-		"work_failed_no_resources", "eat_failed_no_food", "assist_heal_failed_no_money", "clinic_treatment_failed_no_money":
+		"work_failed_no_resources", "work_failed_storage_capacity", "eat_failed_no_food", "drink_wine_failed_no_wine", "assist_heal_failed_no_money", "clinic_treatment_failed_no_money":
 			return "resource_insufficient"
 		"plan_target_unavailable":
 			return "target_unavailable"
@@ -2244,7 +2332,8 @@ func _build_npc_state_context(npc: Dictionary, npc_state: Dictionary) -> Diction
 		"equipment": npc.get("equipment", {}),
 		"skills": npc.get("skills", {}),
 		"stats": npc_state.get("stats", npc.get("stats", {})),
-		"money": int(npc_state.get("money", 0))
+		"money": maxi(0, int(npc_state.get("money", 0))),
+		"wine": maxi(0, int(npc_state.get("wine", 0)))
 	}
 
 
@@ -2267,7 +2356,9 @@ func _build_speaker_context(speaker_kind: String, speaker_npc_id: String, speake
 		"speaker_kind": "npc",
 		"appearance": str(speaker.get("appearance", "")),
 		"health_status": _describe_health_status(state),
-		"state": _build_npc_state_context(speaker, state)
+		# The replying NPC may observe the other participant's appearance and health,
+		# but must not receive that participant's private state, order or memory.
+		"state": {}
 	}
 
 
@@ -2369,12 +2460,14 @@ func _build_station_context(npc_system: Node) -> Dictionary:
 			var resident_npc_id := str(raw_npc_id)
 			var resident: Dictionary = npc_system.get_npc(resident_npc_id)
 			var resident_state: Dictionary = npc_system.get_npc_state(resident_npc_id)
-			if resident.is_empty() or _has_npc_left_station(resident_state):
+			if resident.is_empty():
 				continue
 			resident_roster.append({
 				"npc_id": resident_npc_id,
 				"name": str(resident.get("name", resident_npc_id)),
-				"identity": str(resident.get("background_job", "驿站居民"))
+				"identity": str(resident.get("background_job", "驿站居民")),
+				"recruited": bool(resident.get("recruited", resident_state.get("recruited", false))),
+				"in_station": not _has_npc_left_station(resident_state)
 			})
 
 	if _station_context_template.is_empty():
@@ -2434,7 +2527,8 @@ func _build_station_work_mode_actions() -> Array[Dictionary]:
 		work_mode_actions.append({
 			"action_id": action_id,
 			"name": str(action.get("name", action_id)),
-			"action_kind": _infer_plan_action_kind(action_id, action)
+			"action_kind": _infer_plan_action_kind(action_id, action),
+			"description": str(action.get("description", ""))
 		})
 	return work_mode_actions
 
@@ -2512,7 +2606,12 @@ func _build_existing_diary_entries(npc: Dictionary) -> Array[String]:
 			if not entry_text.is_empty():
 				var day := int(diary_record.get("day", 0))
 				var time_label := str(diary_record.get("time", "")).strip_edges()
-				if day > 0 and not time_label.is_empty():
+				var record_label := str(diary_record.get("record_label", "")).strip_edges()
+				if not record_label.is_empty() and not time_label.is_empty():
+					entries.append("%s %s：%s" % [record_label, time_label, entry_text])
+				elif not record_label.is_empty():
+					entries.append("%s：%s" % [record_label, entry_text])
+				elif day > 0 and not time_label.is_empty():
 					entries.append("第%d天 %s：%s" % [day, time_label, entry_text])
 				elif day > 0:
 					entries.append("第%d天：%s" % [day, entry_text])

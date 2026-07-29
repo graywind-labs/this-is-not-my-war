@@ -166,7 +166,7 @@ func _build_npc_final_opinion(npc_id: String, npc: Dictionary, state: Dictionary
 		return "Mock：对守备官的看法停在疲惫和混乱里，但仍知道自己没有被写成牺牲品。"
 	if _npc_has_guard_event(npc_id, ["damage_taken", "escape_speed_changed"]):
 		return "Mock：对守备官心存戒备，记得命令背后也可能有疼痛。"
-	if _npc_has_guard_event(npc_id, ["money_given", "equipment_given", "equipment_changed"]):
+	if _npc_has_guard_event(npc_id, ["money_given", "wine_given", "equipment_given", "equipment_changed"]):
 		return "Mock：记得守备官给过实际帮助，信任里仍带着战后的保留。"
 	if bool(npc.get("recruited", false)):
 		return "Mock：承认守备官把自己推上防线，也记得这份临时责任的重量。"

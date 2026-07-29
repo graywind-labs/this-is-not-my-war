@@ -84,6 +84,39 @@ func _init() -> void:
 			if by_subject.has(non_building_id):
 				_fail("%s incorrectly seeded %s as a building subject" % [npc_id, non_building_id])
 				return
+		var warehouse_record: Dictionary = (
+			by_subject.get("warehouse", {}).values()[0]
+			if by_subject.get("warehouse", {}) is Dictionary
+			and not (by_subject.get("warehouse", {}) as Dictionary).is_empty()
+			else {}
+		)
+		var warehouse_text := str(warehouse_record.get("value_label", ""))
+		if (
+			str(warehouse_record.get("value", ""))
+			!= "level_based_bulk_storage_and_post_breach_attack_target"
+			or not warehouse_text.contains("上限")
+			or not warehouse_text.contains("扩建")
+		):
+			_fail("%s did not load level-based warehouse-capacity knowledge" % npc_id)
+			return
+		if npc_id == "veteran_deputy_01":
+			var training_relations: Dictionary = by_subject.get("training_ground", {})
+			var instructor_rule: Dictionary = training_relations.get("instructor_growth_rule", {})
+			if not str(instructor_rule.get("value_label", "")).contains("没有受训者"):
+				_fail("Ada did not load the solo-instructor growth rule")
+				return
+		elif npc_id == "stableman_01":
+			if not (by_subject.get("stable", {}) as Dictionary).has("assignment_rule"):
+				_fail("Toma did not load the horse-assignment rule")
+				return
+		elif npc_id == "cook_01":
+			if not (by_subject.get("dining_hall", {}) as Dictionary).has("meal_value_rule"):
+				_fail("Bruno did not load the prepared-meal rule")
+				return
+		elif npc_id == "doctor_01":
+			if not (by_subject.get("clinic", {}) as Dictionary).has("study_rule"):
+				_fail("Lina did not load the idle-study rule")
+				return
 
 		var diary_text: String = npc_panel._format_diary_block(diary)
 		for period in DIARY_PERIODS:
@@ -254,6 +287,7 @@ func _init() -> void:
 	print(
 		"T0061 NPC copy and initial long-memory verification passed: "
 		+ "8 NPCs, 24 diary slices, 15 buildings each, duties-only guard knowledge, "
+		+ "four overlooked-role rules, level-based warehouse-capacity knowledge, "
 		+ "narrative building labels, compact knowledge UI, labeled six-way LLM payloads, "
 		+ "idempotent reinitialization; "
 		+ "largest payload chars=%s." % JSON.stringify(largest_payload_chars)

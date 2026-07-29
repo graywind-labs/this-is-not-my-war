@@ -64,6 +64,8 @@ def main() -> None:
         "npc_id": "stableman_01",
         "name": "托马",
         "identity": "马夫",
+        "recruited": False,
+        "in_station": True,
     }
     assert dumped_context["building_roster"][0] == {
         "building_id": "main_hall",
@@ -78,9 +80,17 @@ def main() -> None:
             "action_id": "assist_upgrade",
             "name": "协助升级建筑",
             "action_kind": "assist_upgrade",
+            "description": "",
         }
         for item in dumped_context["work_mode_actions"]
     )
+    drink_action = next(
+        item for item in dumped_context["work_mode_actions"]
+        if item["action_id"] == "drink_wine"
+    )
+    assert drink_action["action_kind"] == "drink"
+    assert "本人当前确实持有" in drink_action["description"]
+    assert "过去的伤痛暂时淡化" in drink_action["description"]
     assert dumped_context["basic_resource_reserves"] == [
         {"resource_id": "grain", "name": "粮食", "amount": 18},
         {"resource_id": "meal", "name": "餐食", "amount": 0},
@@ -104,6 +114,13 @@ def main() -> None:
         amount=18,
     ).amount == 18
     assert StationBuildingContext(building_id="main_hall", name="主厅").name == "主厅"
+    assert StationResidentContext(
+        npc_id="veteran_deputy_01",
+        name="艾达",
+        identity="老兵副官",
+        recruited=True,
+        in_station=True,
+    ).recruited is True
     assert StationWorkModeActionContext(
         action_id="work_garden",
         name="照料菜园",
@@ -125,6 +142,17 @@ def main() -> None:
         pass
     else:
         raise AssertionError("station_context resident_roster must not be empty")
+
+    invalid_resident_tags = build_station_context([
+        {"npc_id": "stableman_01", "name": "托马", "identity": "马夫"}
+    ])
+    invalid_resident_tags["resident_roster"][0].pop("recruited")
+    try:
+        StationSceneContext.model_validate(invalid_resident_tags)
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("station_context resident rows must require recruited and in_station")
 
     for empty_field in (
         "building_roster",

@@ -40,6 +40,7 @@
       "satiety": 82,
       "fatigue": 18,
       "money": 2,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -114,6 +115,7 @@
       "satiety": 88,
       "fatigue": 22,
       "money": 3,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -188,6 +190,7 @@
       "satiety": 78,
       "fatigue": 20,
       "money": 1,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -263,6 +266,7 @@
       "satiety": 84,
       "fatigue": 26,
       "money": 4,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -338,6 +342,7 @@
       "satiety": 80,
       "fatigue": 20,
       "money": 2,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -416,6 +421,7 @@
       "satiety": 76,
       "fatigue": 18,
       "money": 1,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -491,6 +497,7 @@
       "satiety": 74,
       "fatigue": 24,
       "money": 2,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"
@@ -566,6 +573,7 @@
       "satiety": 78,
       "fatigue": 28,
       "money": 3,
+      "wine": 0,
       "unconscious": false,
       "escaped": false,
       "current_action": "idle"

@@ -32,13 +32,13 @@ DIARY_RECORD_FIELDS = {
 }
 NON_BUILDING_SUBJECTS = {"plaza", "notice_board"}
 PRIMARY_BUILDING_MIN_RELATIONS = {
-    "stableman_01": {"stable": 3},
-    "cook_01": {"dining_hall": 3, "tavern": 2},
+    "stableman_01": {"stable": 4},
+    "cook_01": {"dining_hall": 4, "tavern": 2},
     "gardener_01": {"garden": 3},
     "blacksmith_01": {"blacksmith": 3},
-    "veteran_deputy_01": {"main_hall": 2, "front_gate": 2, "training_ground": 2},
+    "veteran_deputy_01": {"main_hall": 2, "front_gate": 2, "training_ground": 3},
     "priest_01": {"chapel": 3, "tavern": 2},
-    "doctor_01": {"clinic": 3},
+    "doctor_01": {"clinic": 4},
     "engineer_01": {"workshop": 3, "wall": 2},
 }
 OPEN_GUARD_MARKERS = (
@@ -87,8 +87,6 @@ BUILDING_MANUAL_MARKERS = (
     "百分之",
 )
 WAREHOUSE_UNIMPLEMENTED_MARKERS = (
-    "容量",
-    "多存",
     "少丢",
     "物资流失",
     "丢物资",
@@ -462,10 +460,14 @@ def _verify_knowledge_graph(
     warehouse_relations = by_subject["warehouse"]
     assert len(warehouse_relations) == 1
     warehouse_record = next(iter(warehouse_relations.values()))
-    assert warehouse_record["value"] == "central_storage_and_post_breach_attack_target", (
+    assert warehouse_record["value"] == "level_based_bulk_storage_and_post_breach_attack_target", (
         f"{npc_id} warehouse technical value must match the implemented runtime rules"
     )
     warehouse_text = str(warehouse_record["value_label"])
+    assert all(
+        marker in warehouse_text
+        for marker in ("粮食", "餐食", "酒", "木材", "石料", "铁", "上限", "扩建")
+    ), f"{npc_id} warehouse knowledge must explain level-based bulk-resource caps"
     assert any(marker in warehouse_text for marker in ("城门", "正门"))
     assert "主厅" in warehouse_text
     for marker in WAREHOUSE_UNIMPLEMENTED_MARKERS:
@@ -480,6 +482,28 @@ def _verify_knowledge_graph(
                 "doctor_01 clinic recovery must distinguish local unconscious aid "
                 "from conscious clinic treatment"
             )
+        study_text = str(by_subject["clinic"]["study_rule"]["value_label"])
+        assert all(fragment in study_text for fragment in ("没有病人", "研读", "医术")), (
+            "doctor_01 clinic knowledge must explain idle medical study"
+        )
+    if npc_id == "stableman_01":
+        assignment_text = str(by_subject["stable"]["assignment_rule"]["value_label"])
+        assert all(fragment in assignment_text for fragment in ("入伍", "主武器", "战斗")), (
+            "stableman_01 stable knowledge must explain horse assignment eligibility"
+        )
+    if npc_id == "cook_01":
+        meal_text = str(by_subject["dining_hall"]["meal_value_rule"]["value_label"])
+        assert all(fragment in meal_text for fragment in ("餐食", "粮食", "更饱")), (
+            "cook_01 dining knowledge must explain why prepared meals matter"
+        )
+    if npc_id == "veteran_deputy_01":
+        instructor_text = str(
+            by_subject["training_ground"]["instructor_growth_rule"]["value_label"]
+        )
+        assert all(
+            fragment in instructor_text
+            for fragment in ("没有受训者", "独自操练", "教练本事")
+        ), "Ada must know both solo instructor practice and coached growth"
     if npc_id == "engineer_01":
         wall_upgrade_text = str(by_subject["wall"]["upgrade_rule"]["value_label"])
         assert all(fragment in wall_upgrade_text for fragment in ("不会", "安装", "地方")), (

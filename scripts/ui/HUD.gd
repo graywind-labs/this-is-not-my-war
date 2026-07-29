@@ -37,6 +37,7 @@ func _ready() -> void:
 	_build_game_over_panel()
 	if speed_button != null:
 		speed_button.focus_mode = Control.FOCUS_NONE
+		speed_button.tooltip_text = "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
 		speed_button.pressed.connect(_on_speed_button_pressed)
 	if pause_button != null:
 		pause_button.focus_mode = Control.FOCUS_NONE
@@ -58,6 +59,9 @@ func _ready() -> void:
 		event_bus.day_started.connect(_on_day_started)
 		event_bus.hour_started.connect(_on_hour_started)
 		event_bus.resource_changed.connect(_on_resource_changed)
+		event_bus.building_state_changed.connect(_on_building_state_changed)
+		if event_bus.has_signal("time_scale_changed"):
+			event_bus.time_scale_changed.connect(_on_time_scale_changed)
 		if event_bus.has_signal("gameplay_pause_changed"):
 			event_bus.gameplay_pause_changed.connect(_on_gameplay_pause_changed)
 		if event_bus.has_signal("game_over_changed"):
@@ -69,12 +73,22 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	var shortcut_scale := _get_speed_shortcut_scale(event)
+	if shortcut_scale > 0.0:
+		_set_time_scale_from_shortcut(shortcut_scale)
+		get_viewport().set_input_as_handled()
+		return
 	if _is_pause_shortcut(event):
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	var shortcut_scale := _get_speed_shortcut_scale(event)
+	if shortcut_scale > 0.0:
+		_set_time_scale_from_shortcut(shortcut_scale)
+		get_viewport().set_input_as_handled()
+		return
 	if _is_pause_shortcut(event):
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
@@ -104,11 +118,27 @@ func _on_resource_changed(_resource_id: String, _amount: int) -> void:
 	_refresh_resources()
 
 
+func _on_building_state_changed(building_id: String) -> void:
+	if building_id == "warehouse":
+		_refresh_resources()
+
+
 func _on_npc_state_changed(_npc_id: String) -> void:
 	_refresh_escape_warning()
 
 
 func _on_gameplay_pause_changed(_paused: bool) -> void:
+	_refresh_time_buttons()
+
+
+func _on_time_scale_changed(
+	_player_scale: float,
+	_effective_scale: float,
+	_numeric_multiplier: float,
+	_reason: String
+) -> void:
+	_refresh_time()
+	_refresh_wave_countdown()
 	_refresh_time_buttons()
 
 
@@ -150,7 +180,12 @@ func _refresh_time() -> void:
 		second = game_state.current_second
 
 	day_label.text = "第 %d 天" % day
-	time_label.text = "%02d:%02d:%02d" % [hour, minute, second]
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	time_label.text = (
+		str(time_system.format_game_clock(hour, minute, second))
+		if time_system != null and time_system.has_method("format_game_clock")
+		else "%02d:%02d:%02d" % [hour, minute, second]
+	)
 	phase_label.text = _get_phase_label(hour)
 
 
@@ -175,6 +210,7 @@ func _refresh_resources() -> void:
 			resource_system.get_resource_name(resource_id),
 			resource_system.get_resource(resource_id)
 		]
+		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
 
 	if _detail_panel != null and _detail_panel.visible:
 		_refresh_detail_panel()
@@ -214,16 +250,56 @@ func _toggle_pause() -> void:
 	_refresh_time_buttons()
 
 
+func _set_time_scale_from_shortcut(scale: float) -> void:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	if time_system == null:
+		return
+	time_system.set_time_scale(scale)
+	_refresh_time_buttons()
+
+
+func _get_speed_shortcut_scale(event: InputEvent) -> float:
+	if not (event is InputEventKey):
+		return 0.0
+	var key_event := event as InputEventKey
+	if (
+		not key_event.pressed
+		or key_event.echo
+		or key_event.ctrl_pressed
+		or key_event.alt_pressed
+		or key_event.meta_pressed
+		or key_event.shift_pressed
+		or _is_text_input_focused()
+	):
+		return 0.0
+	var shortcut_key := key_event.physical_keycode
+	if shortcut_key == KEY_NONE:
+		shortcut_key = key_event.keycode
+	match shortcut_key:
+		KEY_1:
+			return 1.0
+		KEY_2:
+			return 2.0
+		KEY_3:
+			return 4.0
+		_:
+			return 0.0
+
+
 func _is_pause_shortcut(event: InputEvent) -> bool:
 	if not (event is InputEventKey):
 		return false
 	if not event.pressed or event.echo or event.keycode != KEY_SPACE:
 		return false
 
-	var focus_owner := get_viewport().gui_get_focus_owner()
-	if focus_owner is LineEdit or focus_owner is TextEdit:
+	if _is_text_input_focused():
 		return false
 	return true
+
+
+func _is_text_input_focused() -> bool:
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	return focus_owner is LineEdit or focus_owner is TextEdit
 
 
 func _get_phase_label(hour: int) -> String:
@@ -272,7 +348,8 @@ func _build_resource_strip() -> void:
 		label.name = "%sResourceLabel" % resource_id.to_pascal_case()
 		label.layout_mode = 2
 		label.text = "%s --" % _resource_display_name(resource_id)
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.mouse_filter = Control.MOUSE_FILTER_STOP
+		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
 		resource_strip.add_child(label)
 		_resource_labels[resource_id] = label
 
@@ -281,6 +358,27 @@ func _build_resource_strip() -> void:
 
 	var devices_button := _make_detail_button("器械", "devices")
 	resource_strip.add_child(devices_button)
+
+
+func _refresh_resource_capacity_tooltip(
+	label: Label,
+	resource_system: Node,
+	resource_id: String
+) -> void:
+	if (
+		label == null
+		or resource_system == null
+		or not resource_system.has_method("get_resource_capacity")
+	):
+		if label != null:
+			label.tooltip_text = ""
+		return
+	var capacity := int(resource_system.get_resource_capacity(resource_id))
+	label.tooltip_text = (
+		"仓库储存上限：%d" % capacity
+		if capacity >= 0
+		else ""
+	)
 
 
 func _build_escape_warning_label() -> void:
@@ -580,7 +678,12 @@ func _join_settlement_names(items: Array, limit: int, empty_text: String = "") -
 
 
 func _format_wave_countdown(seconds_until: float) -> String:
-	var total_seconds := int(maxf(0.0, seconds_until))
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	var total_seconds := (
+		int(time_system.get_display_duration_seconds(seconds_until))
+		if time_system != null and time_system.has_method("get_display_duration_seconds")
+		else ceili(maxf(0.0, seconds_until))
+	)
 	if total_seconds <= 0:
 		return "即将来袭"
 	var days := total_seconds / 86400

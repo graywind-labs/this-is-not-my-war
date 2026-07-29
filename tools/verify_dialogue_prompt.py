@@ -8,7 +8,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from backend.schemas import (
+    EscapeInterventionDialogueResponse,
+    GameTime,
+    ModelRequestMeta,
+    NPCNPCDialogueResponse,
+    PlayerNPCDialogueResponse,
+    SpeakerContext,
+)
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
 from tools.station_context_fixture import build_station_context
 
@@ -145,26 +152,41 @@ def _base_payload() -> dict:
     }
 
 
-def _valid_response(**overrides: object) -> dict:
+def _valid_player_response(**overrides: object) -> dict:
     response = {
-        "ok": True,
-        "replyer_id": "cook_01",
         "reply_text": "守备官，我听见了。要我站出来，就别把食堂里的人当成柴火。",
-        "response_kind": "reply_to_player",
-        "invitation_result": "not_applicable",
-        "intent": "accept_recruitment",
         "emotion": "wary",
         "recruitment_result": "accept",
-        "wartime_reaction": "none",
-        "should_end_dialogue": False,
-        "suggested_event_type": "dialogue_turn",
         "debug_reason": "职业、人设、记忆和 current_order 共同影响应征判断。",
     }
     response.update(overrides)
     return response
 
 
-def _run_real_adapter_with_fake_provider(payload: dict, fake_content: dict) -> tuple[dict, str]:
+def _valid_npc_response(**overrides: object) -> dict:
+    response = {
+        "reply_text": "好，我先听你说。",
+        "emotion": "neutral",
+        "invitation_result": "not_applicable",
+        "should_end_dialogue": False,
+        "debug_reason": "NPC 对话轮次判断。",
+    }
+    response.update(overrides)
+    return response
+
+
+def _valid_escape_response(**overrides: object) -> dict:
+    response = {
+        "reply_text": "我再信你一次，留下。",
+        "emotion": "wary",
+        "escape_intervention_result": "stay",
+        "debug_reason": "逃离挽留选择留下。",
+    }
+    response.update(overrides)
+    return response
+
+
+def _run_real_adapter_with_fake_provider(payload: dict, fake_content: dict) -> tuple[dict, str, dict]:
     adapter = ModelAdapter(ModelAdapterConfig(provider="deepseek", api_key="test_key", fallback_to_mock=False))
     with patch(
         "backend.services.model_adapter.requests.post",
@@ -172,15 +194,24 @@ def _run_real_adapter_with_fake_provider(payload: dict, fake_content: dict) -> t
     ) as fake_post:
         result = adapter.generate("dialogue", payload)
     assert result.ok
-    NPCDialogueResponse(**result.content)
+    response_models = {
+        "player_npc": PlayerNPCDialogueResponse,
+        "npc_npc": NPCNPCDialogueResponse,
+        "escape_intervention": EscapeInterventionDialogueResponse,
+    }
+    response_models[payload["dialogue_kind"]](**result.content)
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
-    return result.content, system_prompt
+    provider_payload = __import__("json").loads(request_body["messages"][1]["content"])
+    return result.content, system_prompt, provider_payload
 
 
 def main() -> None:
     payload = _base_payload()
-    content, system_prompt = _run_real_adapter_with_fake_provider(payload, _valid_response())
+    content, system_prompt, provider_payload = _run_real_adapter_with_fake_provider(
+        payload,
+        _valid_player_response(),
+    )
 
     required_prompt_fragments = [
         "NPC 对话 Prompt",
@@ -196,7 +227,18 @@ def main() -> None:
         "职业经验",
         "experienced_events",
         "witnessed_events",
+        "只能把自己的 short_memory / long_memory / location_context / current_order",
+        "供应商请求不提供 speaker_npc 或 target_npc 人物副本",
+        "未说出口的记忆",
+        "allowed_actions 中为程序执行和合法性校验提供的目标 / 地点",
+        "不自动成为目标 NPC 的见闻",
         "current_order",
+        "interrupted_activity_context",
+        "activity_before_interruption",
+        "expected_activity_after_dialogue",
+        "talk_to_guard_officer",
+        "刚才正在睡觉",
+        "不是事件库、见闻库或长期记忆中的事件",
         "allowed_actions",
         "当前能力边界",
         "context.eligible=false",
@@ -206,6 +248,10 @@ def main() -> None:
         "blocked_by_active_action_id",
         "attend_mass",
         "pray_at_chapel",
+        "drink_wine",
+        "npc_state.wine",
+        "程序会扣除 1 份个人酒",
+        "不得声称旧记忆已被删除",
         "不是制定或修改计划",
         "列表外行动",
         "当前做不到",
@@ -213,8 +259,7 @@ def main() -> None:
         "wartime_reaction",
         "avoid_combat",
         "escape_intervention",
-        "stay_after_intervention",
-        "leave_after_intervention",
+        "escape_intervention_result 只能是 stay 或 leave",
         "dialogue_phase=invitation",
         "invitation_result",
         "不占正式对话轮次",
@@ -225,10 +270,83 @@ def main() -> None:
     ]
     assert "signature_lines" not in payload["npc_setting"]
     assert "signature_lines" not in system_prompt
+    assert "speaker_npc" not in payload
+    assert "meta" not in provider_payload
+    assert "speaker_npc" not in provider_payload
+    assert "target_npc" not in provider_payload
+    assert "current_round" not in provider_payload["dialogue_state"]
+    assert "max_rounds" not in provider_payload["dialogue_state"]
+    assert "speaker_name" not in provider_payload["speaker_context"]
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
     assert "玩家" not in content["reply_text"]
     assert content["recruitment_result"] == "accept"
+    assert content["ok"] is True
+    assert content["replyer_id"] == "cook_01"
+    assert content["response_kind"] == "reply_to_player"
+    assert content["wartime_reaction"] == "none"
+    assert content["suggested_event_type"] == "dialogue_turn"
+
+    sleep_payload = _base_payload()
+    sleep_payload.update({
+        "is_recruitment_request": False,
+        "speaker_text": "我把你叫起来了。你刚才在做什么，谈完准备做什么？",
+        "npc_state": _base_payload()["npc_state"] | {
+            "current_action": "talk_to_guard_officer",
+            "current_location": "dormitory",
+            "current_location_name": "宿舍",
+        },
+        "interrupted_activity_context": {
+            "interrupted_by_guard_officer": True,
+            "private_to_target_npc": True,
+            "activity_before_interruption": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "active",
+                "location_id": "dormitory",
+                "location_name": "宿舍",
+                "workstation_id": "dormitory_bed_02",
+                "elapsed_seconds": 1800.0,
+                "duration_seconds": 23400.0,
+            },
+            "current_plan_activity": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "planned",
+                "day": 3,
+                "hour": 18,
+                "location_id": "dormitory",
+            },
+            "expected_activity_after_dialogue": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "planned",
+                "day": 3,
+                "hour": 18,
+                "location_id": "dormitory",
+            },
+            "resume_policy": "resume_interrupted_activity_if_plan_unchanged",
+            "resume_expected_if_plan_unchanged": True,
+        },
+    })
+    sleep_content, _, sleep_provider_payload = _run_real_adapter_with_fake_provider(
+        sleep_payload,
+        _valid_player_response(
+            reply_text="我刚才还在睡，是你把我叫醒的。要是计划没变，谈完我还得回去把这一觉睡完。",
+            recruitment_result="none",
+        ),
+    )
+    sleep_context = sleep_provider_payload["interrupted_activity_context"]
+    assert sleep_context["private_to_target_npc"] is True
+    assert (
+        sleep_context["activity_before_interruption"]["action_id"]
+        == "sleep_in_dormitory"
+    )
+    assert (
+        sleep_context["expected_activity_after_dialogue"]["action_id"]
+        == "sleep_in_dormitory"
+    )
+    assert "刚才还在睡" in sleep_content["reply_text"]
 
     wartime_payload = _base_payload()
     wartime_payload.update({
@@ -245,10 +363,9 @@ def main() -> None:
             "friendly_combatants": ["veteran_deputy_01", "cook_01"],
         },
     })
-    wartime_content, _ = _run_real_adapter_with_fake_provider(
+    wartime_content, _, _ = _run_real_adapter_with_fake_provider(
         wartime_payload,
-        _valid_response(
-            intent="continue_talk",
+        _valid_player_response(
             recruitment_result="none",
             wartime_reaction="morale_boost",
             debug_reason="战斗公开对话产生斗志激昂意向。",
@@ -279,13 +396,10 @@ def main() -> None:
     invitation_payload["dialogue_state"]["soft_round_threshold"] = 5
     invitation_payload["dialogue_state"]["soft_round_guidance"] = invitation_payload["soft_round_guidance"]
     invitation_payload["dialogue_state"]["participants"] = ["doctor_01", "cook_01"]
-    invitation_content, _ = _run_real_adapter_with_fake_provider(
+    invitation_content, _, _ = _run_real_adapter_with_fake_provider(
         invitation_payload,
-        _valid_response(
-            response_kind="reply_to_npc",
+        _valid_npc_response(
             invitation_result="accept",
-            intent="continue_talk",
-            recruitment_result="none",
             reply_text="好，我先听你说。",
         ),
     )
@@ -296,13 +410,10 @@ def main() -> None:
     formal_payload["dialogue_phase"] = "conversation"
     formal_payload["current_round"] = 6
     formal_payload["dialogue_state"]["current_round"] = 6
-    formal_content, _ = _run_real_adapter_with_fake_provider(
+    formal_content, _, _ = _run_real_adapter_with_fake_provider(
         formal_payload,
-        _valid_response(
-            response_kind="reply_to_npc",
+        _valid_npc_response(
             invitation_result="not_applicable",
-            intent="end_talk",
-            recruitment_result="none",
             should_end_dialogue=True,
             reply_text="这一轮已经说清，我们先结束。",
         ),
@@ -317,18 +428,15 @@ def main() -> None:
         "speaker_text": "别走，我会补偿你，也需要你见证我们守住这里。",
         "escape_intervention_round": 2,
     })
-    escape_content, _ = _run_real_adapter_with_fake_provider(
+    escape_content, _, _ = _run_real_adapter_with_fake_provider(
         escape_payload,
-        _valid_response(
-            intent="stay_after_intervention",
-            recruitment_result="none",
-            wartime_reaction="none",
-            should_end_dialogue=True,
+        _valid_escape_response(
+            escape_intervention_result="stay",
             debug_reason="逃离挽留选择留下。",
         ),
     )
-    assert escape_content["intent"] == "stay_after_intervention"
-    assert escape_content["should_end_dialogue"] is True
+    assert escape_content["escape_intervention_result"] == "stay"
+    assert "intent" not in escape_content
 
     print("verify_dialogue_prompt: ok")
 

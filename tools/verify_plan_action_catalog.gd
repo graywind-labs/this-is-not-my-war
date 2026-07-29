@@ -403,8 +403,8 @@ func _verify_dynamic_dialogue_targets(actions: Array, npc_system: Node) -> Strin
 	for candidate in talk_candidates:
 		if str(candidate.get("target_kind", "")) != "npc":
 			return "talk_to_npc candidate must declare target_kind=npc"
-		if str(candidate.get("location_id", "")).is_empty():
-			return "talk_to_npc candidate must expose the target NPC current location"
+		if candidate.has("location_id"):
+			return "talk_to_npc candidate must not expose or bind a location_id"
 	return ""
 
 
@@ -453,12 +453,13 @@ func _verify_candidates_are_plan_routable(
 			"hour": 8,
 			"action_id": action_id,
 			"action_kind": action_kind,
-			"location_id": candidate.get("location_id", null),
 			"target_id": candidate.get("target_id", null),
 			"priority": 50,
 			"reason": "验证计划候选可被正式计划解析。",
 			"dialogue_goal": "我想和你谈谈当前的安排。" if action_id == "talk_to_npc" else "",
 		}
+		if action_id != "talk_to_npc":
+			schema_item["location_id"] = candidate.get("location_id", null)
 		var plan_item = daily_plan_system.call(
 			"_plan_item_from_schema",
 			schema_item,

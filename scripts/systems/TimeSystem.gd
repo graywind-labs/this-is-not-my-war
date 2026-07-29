@@ -109,6 +109,47 @@ func has_time_slowdown() -> bool:
 	return not _slowdown_requests.is_empty()
 
 
+func should_show_precise_display_seconds() -> bool:
+	return has_time_slowdown()
+
+
+func get_display_duration_seconds(game_seconds: float) -> int:
+	var clamped_seconds := maxf(0.0, game_seconds)
+	if clamped_seconds <= 0.0:
+		return 0
+	if should_show_precise_display_seconds():
+		return ceili(clamped_seconds)
+	return ceili(clamped_seconds / 60.0) * 60
+
+
+func format_game_clock(hour: int, minute: int, second: int) -> String:
+	var display_second := clampi(second, 0, 59) if should_show_precise_display_seconds() else 0
+	return "%02d:%02d:%02d" % [
+		clampi(hour, 0, 23),
+		clampi(minute, 0, 59),
+		display_second
+	]
+
+
+func format_game_duration(
+	game_seconds: float,
+	always_show_hours: bool = false,
+	respect_display_precision: bool = true
+) -> String:
+	var total_seconds := (
+		get_display_duration_seconds(game_seconds)
+		if respect_display_precision
+		else ceili(maxf(0.0, game_seconds))
+	)
+	var hours := total_seconds / 3600
+	var remainder := total_seconds % 3600
+	var minutes := remainder / 60
+	var seconds := remainder % 60
+	if always_show_hours or hours > 0:
+		return "%d小时%d分%02d秒" % [hours, minutes, seconds]
+	return "%d分%02d秒" % [minutes, seconds]
+
+
 func request_time_scale_cap(request_id: String, max_scale: float = 1.0, reason: String = "time_scale_cap") -> void:
 	if request_id.is_empty():
 		return

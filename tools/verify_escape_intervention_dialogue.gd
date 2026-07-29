@@ -125,7 +125,7 @@ func _init() -> void:
 
 	var stay_apply: Dictionary = dialog_system._apply_player_message_response({
 		"ok": true,
-		"dialogue": _make_escape_dialogue_response("cook_01", "我留下。", "stay_after_intervention")
+		"dialogue": _make_escape_dialogue_response("cook_01", "我留下。", "stay")
 	}, {
 		"clean_text": "别走，我会给你补偿。",
 		"next_round": 1,
@@ -166,7 +166,7 @@ func _init() -> void:
 		return
 	var doctor_round: Dictionary = dialog_system._apply_player_message_response({
 		"ok": true,
-		"dialogue": _make_escape_dialogue_response("doctor_01", "我还是要走。", "leave_after_intervention")
+		"dialogue": _make_escape_dialogue_response("doctor_01", "我还是要走。", "leave")
 	}, {
 		"clean_text": "先留下听我说。",
 		"next_round": 1,
@@ -216,7 +216,7 @@ func _init() -> void:
 	for round_number in range(1, 6):
 		var apply_result: Dictionary = dialog_system._apply_player_message_response({
 			"ok": true,
-			"dialogue": _make_escape_dialogue_response("priest_01", "我还是要走。", "leave_after_intervention")
+			"dialogue": _make_escape_dialogue_response("priest_01", "我还是要走。", "leave")
 		}, {
 			"clean_text": "你想走就走吧。",
 			"next_round": round_number,
@@ -395,16 +395,13 @@ func _assert_escape_resumed(npc_system: Node, npc_id: String, message: String) -
 	return true
 
 
-func _make_escape_dialogue_response(npc_id: String, reply_text: String, intent: String) -> Dictionary:
+func _make_escape_dialogue_response(npc_id: String, reply_text: String, result: String) -> Dictionary:
 	return {
 		"replyer_id": npc_id,
 		"reply_text": reply_text,
 		"response_kind": "reply_to_player",
-		"intent": intent,
+		"escape_intervention_result": result,
 		"emotion": "tense",
-		"recruitment_result": "none",
-		"wartime_reaction": "none",
-		"should_end_dialogue": intent == "stay_after_intervention"
 	}
 
 

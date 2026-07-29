@@ -73,33 +73,149 @@ func _init() -> void:
 		_fail("Completing a waiting dialogue did not commit the guard-final session exactly once")
 		return
 
-	# A completed model exchange can still be cancelled. It must leave no dialogue
-	# event and must not apply a staged recruitment decision.
+	# A completed multi-round guard session remains one event, but both its payload
+	# and deterministic player-facing summary must preserve every spoken line.
+	dialogue_events_before = _count_events(memory_system, "stableman_01", "dialogue_turn")
+	start_result = dialog_system.start_player_dialogue("stableman_01")
+	if not bool(start_result.get("ok", false)):
+		_fail("Could not start multi-round transcript test dialogue")
+		return
+	send_result = dialog_system.send_player_message("第一轮问题", false, true)
+	var pending: Dictionary = dialog_system.get_dialogue_state().get("pending_llm", {})
+	dialog_system.call("_apply_player_message_response", {
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "stableman_01",
+			"reply_text": "第一轮回复",
+			"emotion": "steady",
+			"recruitment_result": "none",
+			"wartime_reaction": "none",
+		}
+	}, pending)
+	send_result = dialog_system.send_player_message("第二轮问题", false, true)
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
+	dialog_system.call("_apply_player_message_response", {
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "stableman_01",
+			"reply_text": "第二轮回复",
+			"emotion": "steady",
+			"recruitment_result": "none",
+			"wartime_reaction": "none",
+		}
+	}, pending)
+	complete_result = dialog_system.complete_displayed_dialogue()
+	var transcript_event: Dictionary = complete_result.get("dialogue_event", {}) if complete_result.get("dialogue_event", {}) is Dictionary else {}
+	var transcript_payload: Dictionary = transcript_event.get("payload", {}) if transcript_event.get("payload", {}) is Dictionary else {}
+	var transcript_history: Array = transcript_payload.get("dialogue_text", [])
+	var transcript_summary := str(transcript_event.get("summary", ""))
+	if (
+		not bool(send_result.get("ok", false))
+		or transcript_history.size() != 4
+		or _count_events(memory_system, "stableman_01", "dialogue_turn") != dialogue_events_before + 1
+		or not transcript_summary.begins_with("守备官与托马对话：")
+		or transcript_summary.contains("完整对话")
+		or not transcript_summary.contains("第一轮问题")
+		or not transcript_summary.contains("第一轮回复")
+		or not transcript_summary.contains("第二轮问题")
+		or not transcript_summary.contains("第二轮回复")
+	):
+		_fail("Completed multi-round dialogue did not expose the full transcript in one event")
+		return
+	npc_system.debug_select_npc("stableman_01")
+	await process_frame
+	var detail_result: Dictionary = npc_panel.debug_open_memory_detail("event_log")
+	await process_frame
+	var memory_detail_text := root.get_node("Main/UI").find_child("NPCMemoryDetailText", true, false) as TextEdit
+	if (
+		not bool(detail_result.get("ok", false))
+		or memory_detail_text == null
+		or not memory_detail_text.text.contains("第一轮问题")
+		or not memory_detail_text.text.contains("第一轮回复")
+		or not memory_detail_text.text.contains("第二轮问题")
+		or not memory_detail_text.text.contains("第二轮回复")
+	):
+		_fail("NPC event library detail did not render the completed full transcript")
+		return
+	npc_panel.call("_close_memory_detail_popup")
+
+	# Sending any recruitment-marked line makes the whole session non-cancellable.
+	# The toggle stays armed for later turns until the player explicitly switches it off.
 	dialogue_events_before = _count_events(memory_system, "gardener_01", "dialogue_turn")
 	start_result = dialog_system.start_player_dialogue("gardener_01")
 	if not bool(start_result.get("ok", false)):
 		_fail("Could not start cancellation test dialogue")
 		return
 	send_result = dialog_system.send_player_message("请应征入伍。", true, true)
-	var pending: Dictionary = dialog_system.get_dialogue_state().get("pending_llm", {})
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
 	dialog_system.call("_apply_player_message_response", {
 		"ok": true,
 		"dialogue": {
 			"replyer_id": "gardener_01",
-			"reply_text": "好，我愿意应征。",
+			"reply_text": "不，我还没有准备好应征。",
 			"emotion": "steady",
-			"recruitment_result": "accept",
+			"recruitment_result": "reject",
 			"wartime_reaction": "none",
-			"intent": "continue_talk"
 		}
 	}, pending)
+	var recruitment_state: Dictionary = dialog_system.get_dialogue_state()
+	dialog_panel.call("_refresh", recruitment_state)
+	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
 	if (
-		not bool(cancel_result.get("ok", false))
+		bool(cancel_result.get("ok", false))
+		or not bool(recruitment_state.get("recruitment_request_pending", false))
+		or not bool(recruitment_state.get("session_had_recruitment_request", false))
+		or cancel_button == null
+		or not cancel_button.disabled
 		or _count_events(memory_system, "gardener_01", "dialogue_turn") != dialogue_events_before
 		or bool(npc_system.get_npc("gardener_01").get("recruited", false))
 	):
-		_fail("Cancelled dialogue wrote an event or applied deferred recruitment")
+		_fail("Recruitment message did not keep the toggle armed and lock cancellation")
+		return
+	send_result = dialog_system.send_player_message("第二轮继续谈应征条件。", false, true)
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
+	if not bool(send_result.get("ok", false)) or not bool(pending.get("effective_recruitment_request", false)):
+		_fail("Sticky recruitment toggle did not mark the next player message")
+		return
+	dialog_system.call("_apply_player_message_response", {
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "gardener_01",
+			"reply_text": "我的答复仍然是不。",
+			"emotion": "steady",
+			"recruitment_result": "reject",
+			"wartime_reaction": "none",
+		}
+	}, pending)
+	if not bool(dialog_system.set_recruitment_request_pending(false).get("ok", false)):
+		_fail("Player could not explicitly switch off the sticky recruitment toggle")
+		return
+	send_result = dialog_system.send_player_message("那先谈谈今天的安排。", false, true)
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
+	if not bool(send_result.get("ok", false)) or bool(pending.get("effective_recruitment_request", true)):
+		_fail("Switching off the recruitment toggle did not restore an ordinary next message")
+		return
+	dialog_system.call("_apply_player_message_response", {
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "gardener_01",
+			"reply_text": "那就只谈今天的活。",
+			"emotion": "steady",
+			"recruitment_result": "none",
+			"wartime_reaction": "none",
+		}
+	}, pending)
+	if bool(dialog_system.cancel_displayed_dialogue().get("ok", false)):
+		_fail("Switching off the toggle incorrectly unlocked a recruitment-marked session")
+		return
+	complete_result = dialog_system.complete_displayed_dialogue()
+	if (
+		not bool(complete_result.get("ok", false))
+		or _count_events(memory_system, "gardener_01", "dialogue_turn") != dialogue_events_before + 1
+		or bool(npc_system.get_npc("gardener_01").get("recruited", false))
+	):
+		_fail("Recruitment-locked dialogue did not complete after an explicit rejection")
 		return
 
 	# Attack is authoritative immediately and locks cancellation; completion then
@@ -109,7 +225,7 @@ func _init() -> void:
 	var attack_result: Dictionary = dialog_system.attack_target_npc(1, true)
 	var attack_state: Dictionary = dialog_system.get_dialogue_state()
 	dialog_panel.call("_refresh", attack_state)
-	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
+	cancel_button = dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var locked_cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
 	if not bool(attack_result.get("ok", false)) or not bool(attack_state.get("attack_committed", false)) or cancel_button == null or not cancel_button.disabled or bool(locked_cancel_result.get("ok", false)):
 		_fail("Attack did not lock the cancel action")
@@ -163,6 +279,17 @@ func _init() -> void:
 	dialog_system.call("_on_logical_time_tick", 7200.0, 1.0)
 	if dialog_system.has_active_dialogue() or _count_events(memory_system, "priest_01", "dialogue_turn") != dialogue_events_before:
 		_fail("Two-hour suspension timeout did not auto-cancel without a dialogue event")
+		return
+
+	# A recruitment-marked session uses the same non-cancellable boundary while
+	# suspended, so timeout completes and stores it instead of silently cancelling.
+	dialogue_events_before = _count_events(memory_system, "gardener_01", "dialogue_turn")
+	dialog_system.start_player_dialogue("gardener_01")
+	dialog_system.send_player_message("我再次正式提出应征。", true, true)
+	dialog_system.suspend_displayed_dialogue()
+	dialog_system.call("_on_logical_time_tick", 7200.0, 1.0)
+	if dialog_system.has_active_dialogue() or _count_events(memory_system, "gardener_01", "dialogue_turn") != dialogue_events_before + 1:
+		_fail("Recruitment-locked suspension timeout did not complete and store the session")
 		return
 
 	# An attack cannot be erased by the same timeout: it auto-completes and keeps the

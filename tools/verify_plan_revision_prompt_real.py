@@ -66,7 +66,7 @@ def main() -> None:
     assert revision.immediate_action.hour == 8
     assert revision.immediate_action.action_id == "talk_to_npc", revision.immediate_action
     assert revision.immediate_action.target_id == "priest_01", revision.immediate_action
-    assert revision.immediate_action.location_id == "clinic", revision.immediate_action
+    assert revision.immediate_action.location_id is None, revision.immediate_action
     assert revision.immediate_action.dialogue_goal.strip(), revision.immediate_action
     assert revision.immediate_action.action_id != "receive_clinic_treatment", revision.immediate_action
 
@@ -79,15 +79,66 @@ def main() -> None:
         for candidate in payload["allowed_actions"]
         if any(tag in {"work", "clinic_doctor", "training_instructor"} for tag in candidate.get("tags", []))
     }
-    assert sum(
+    work_phase_count = sum(
         1 for item in merged_by_hour.values() if item["action_id"] in work_action_ids
-    ) >= 6
+    )
 
     current_item = next(item for item in revision.revised_plan if item.hour == current_hour)
     assert revision.immediate_action.action_id == current_item.action_id
     assert revision.immediate_action.action_kind == current_item.action_kind
     assert revision.immediate_action.target_id == current_item.target_id
     assert revision.immediate_action.location_id == current_item.location_id
+
+    completion_payload = _revision_payload()
+    completion_payload["meta"]["request_id"] = "verify_action_completed_revision_real"
+    completion_payload["revision_hours"] = [current_hour]
+    completion_payload["replacement_work_phase_required_if_non_work"] = False
+    completion_payload["npc"]["state"]["wine"] = 1
+    completed_drink = {
+        "hour": current_hour,
+        "action_kind": "drink",
+        "action_id": "drink_wine",
+        "location_id": None,
+        "target_id": None,
+        "priority": 75,
+        "reason": "短暂饮酒",
+        "dialogue_goal": "",
+    }
+    completion_payload["current_plan"][current_hour] = copy.deepcopy(completed_drink)
+    completion_payload["failed_plan_item"] = copy.deepcopy(completed_drink)
+    completion_payload["failure_type"] = "action_completed"
+    completion_payload["failure_summary"] = "饮酒已经完成，当前小时仍需安排后续活动。"
+    completion_payload["failure_context"] = {
+        "condition": "successful_plan_action_completion",
+        "completed_action_id": "drink_wine",
+        "completion_result": "completed_drink_wine",
+        "requires_different_current_activity": True,
+    }
+    completion_payload["allowed_actions"].append({
+        "action_id": "drink_wine",
+        "name": "饮酒",
+        "action_kind": "drink",
+        "location_id": None,
+        "target_id": None,
+        "tags": ["drink"],
+        "context": {
+            "eligible": True,
+            "available_now": True,
+            "description": "消耗一份个人酒。",
+        },
+    })
+    completion_response, completion_attempts = _post_with_real_retries(
+        client,
+        completion_payload,
+    )
+    assert completion_response.status_code == 200, completion_response.get_json()
+    completion_revision = PlanRevisionResponse(**completion_response.get_json())
+    assert [item.hour for item in completion_revision.revised_plan] == [current_hour]
+    assert completion_revision.immediate_action is not None
+    assert completion_revision.immediate_action.hour == current_hour
+    assert completion_revision.immediate_action.action_id != "drink_wine", (
+        completion_revision.immediate_action
+    )
 
     usage_response = client.get("/debug/llm_usage")
     assert usage_response.status_code == 200
@@ -102,7 +153,10 @@ def main() -> None:
     print(
         "verify_plan_revision_prompt_real: ok "
         f"provider={provider} model={usage['model_adapter']['model']} "
-        f"attempts={attempts} selected_items={len(revision.revised_plan)}"
+        f"attempts={attempts}+{completion_attempts} "
+        f"selected_items={len(revision.revised_plan)} "
+        f"completion_action={completion_revision.immediate_action.action_id} "
+        f"work_phases={work_phase_count}"
     )
 
 

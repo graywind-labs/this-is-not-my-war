@@ -13,6 +13,7 @@ from backend.schemas import (  # noqa: E402
     CurrentOrderContext,
     DailyReflectionResponse,
     GameTime,
+    LongTermMemoryContext,
     ModelRequestMeta,
     NPCContext,
     NPCIdentity,
@@ -94,6 +95,19 @@ def _payload() -> dict:
                 }
             ],
         ),
+        long_term_memory=LongTermMemoryContext(
+            knowledge_graph={
+                "by_subject": {
+                    "guard_officer": {
+                        "impression": {
+                            "value": "急迫，但还会允许医生照看伤员",
+                            "confidence": 0.6,
+                        }
+                    }
+                }
+            },
+            diary=["我不喜欢他们把勇敢说成止血布。"],
+        ),
         knowledge_graph={
             "by_subject": {
                 "guard_officer": {
@@ -119,6 +133,24 @@ def _payload() -> dict:
             {"npc_id": "doctor_01", "name": "莉娜", "identity": "医生"}
         ]),
         "npc": npc.model_dump(),
+        "summary_window": {
+            "window_key": "night_2_2100",
+            "anchor_day": 2,
+            "anchor_time": "21:00:00",
+            "end_day": 3,
+            "end_time": "21:00:00",
+            "diary_label": "接到守备命令的第2天",
+            "notice_basis": "守备官在公告牌向驿站众人传达“我们奉命守住此地”的守站告示",
+        },
+        "reflection_period": {
+            "start": {"day": 1, "time": "23:10:00"},
+            "end": {"day": 2, "time": "22:30:00"},
+            "start_inclusive": False,
+            "start_basis": "上一次成功熟睡总结的请求快照水位",
+            "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
+            "snapshot_event_count": 1,
+            "snapshot_witness_count": 1,
+        },
         "day_events": [
             {
                 "event_id": "evt_heal",
@@ -141,9 +173,6 @@ def _payload() -> dict:
 
 def _valid_reflection() -> dict:
     return {
-        "ok": True,
-        "npc_id": "doctor_01",
-        "day": 2,
         "diary_entry": "我今晚终于躺下时，手上还像沾着布鲁诺的体温。守备官说醒来后先照看伤员，这句话至少还像一句人话。",
         "knowledge_graph_updates": [
             {
@@ -186,8 +215,16 @@ def main() -> None:
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
+    provider_payload = __import__("json").loads(request_body["messages"][1]["content"])
+    assert "meta" not in provider_payload
+    assert "existing_diary_entries" not in provider_payload
+    assert result.content["ok"] is True
+    assert result.content["npc_id"] == "doctor_01"
+    assert result.content["day"] == 2
+    assert provider_payload["summary_window"]["diary_label"] == "接到守备命令的第2天"
+    assert provider_payload["reflection_period"]["start"]["day"] == 1
     required_prompt_fragments = [
-        "首次睡眠总结 Prompt",
+        "熟睡总结 Prompt",
         "knowledge_graph_updates 是替换式更新",
         "subject + relation",
         "value 为当前关键信息",
@@ -195,6 +232,9 @@ def main() -> None:
         "第一人称",
         "memory_kind=experienced",
         "memory_kind=witnessed",
+        "wine_consumed",
+        "真实喝掉了 1 份个人酒",
+        "不能删除或否认旧日记与知识图谱",
         "current_order",
         "subject_label",
         "relation_label",
@@ -203,7 +243,11 @@ def main() -> None:
         "往昔·近日",
         "传达敌情",
         "字符串保留",
-        "第 N 天 + 时间",
+        "接到守备命令的第N天 + 时间",
+        "我们奉命守住此地",
+        "reflection_period",
+        "请求快照水位",
+        "自然跨越多日",
         "只写第一人称正文",
         "自然、直白",
         "不得决定或改写 HP、资源、建筑、移动、伤害",

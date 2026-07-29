@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://oec2bonv8i0x"
+
+[deps]
+
+files=["res://docs/audits/T0067_LLM_94_CALLS/call_inventory.source.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.request.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.call.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.npc.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.input.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.output.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.success.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.fallback.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.evidence.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.full.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.result.translation"]
+
+source_file="res://docs/audits/T0067_LLM_94_CALLS/call_inventory.csv"
+dest_files=["res://docs/audits/T0067_LLM_94_CALLS/call_inventory.source.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.request.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.call.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.npc.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.input.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.output.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.success.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.fallback.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.evidence.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.full.translation", "res://docs/audits/T0067_LLM_94_CALLS/call_inventory.result.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

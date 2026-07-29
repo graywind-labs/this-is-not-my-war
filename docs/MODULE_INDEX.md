@@ -1,5 +1,335 @@
 # MODULE_INDEX.md
 
+## T0095/T0096 Pending 与熟睡总结水位索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 统一 pending 暂停闸门、抵达提交条件、逻辑 tick 暂停保护与单次失效 |
+| `scripts/npc/NPC.gd`、`scripts/systems/NPCSystem.gd` | 暂停保留物理路线；到达后提交地点事实；日记保存窗口标签、触发时刻和记录范围 |
+| `scripts/systems/MemorySystem.gd` | 原子读取短期正文 + 稳定 ID，并只轮转成功请求快照内的 ID |
+| `scripts/systems/DailyReflectionSystem.gd` | 维护 21:00 窗口、上次成功内容终点、本次请求快照和“接到守备命令的第N天”归属 |
+| `scripts/systems/LLMBridge.gd`、`backend/schemas/npc_ai.py`、`data/prompts/daily_reflection_system_prompt.txt` | 传输 / 校验 / 解释 `summary_window + reflection_period`，限制模型回顾范围 |
+| `scripts/ui/NPCPanel.gd` | 优先显示新 `record_label`，兼容旧“第N天”与开局前日记 |
+| `tools/verify_pending_action_pause_resume.gd` | 穷尽固定地点目录与目标行动的暂停、抵达临界、恢复和单次失败 |
+| `tools/verify_daily_reflection_system.gd`、`tools/verify_daily_reflection_*.py` | 覆盖异步增量保留、跨夜归属、Schema / Mock / Prompt / 真实 provider |
+
+## T0094 睡眠语境、弥撒链、对话记录与床位显示索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/ui/BuildingPanel.gd` | 逐项显示床位实时空闲 / 占用，不暴露固定归属 |
+| `scenes/main/Main.tscn`、`scripts/ui/NPCPanel.gd` | 在对话右侧提供“记录”，从全局事件档案按日期 / 时间 / 历史波次显示守备官会话 |
+| `scripts/systems/DialogSystem.gd`、`scripts/systems/LLMBridge.gd` | 在真正打断前构造并仅向目标 NPC 对话请求传递 `interrupted_activity_context` |
+| `backend/schemas/npc_ai.py`、`data/prompts/dialogue_system_prompt.txt` | 校验临时活动上下文，并要求睡眠 NPC 正确理解被叫醒与暂定恢复 |
+| `scripts/systems/ActionSystem.gd`、`scripts/systems/NPCSystem.gd` | 固定地点 / 教堂最终到达守卫、移动中断地点收束及弥撒开始的祈祷失败事实 |
+| `scripts/systems/DailyPlanSystem.gd`、`data/prompts/dialogue_plan_revision_judgement_system_prompt.txt`、`data/prompts/plan_revision_judgement_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt` | 把祈祷失败或明确谈妥的当下弥撒承诺交给当前小时判别、修订与可靠派发 |
+| `scripts/systems/DailyReflectionSystem.gd` | 维护 21:00 锚定窗口、跨中断睡眠累计、成功去重和扩展调试快照 |
+| `tools/verify_fixed_dormitory_beds.gd`、`tools/verify_npc_dialogue_history_ui.gd` | 覆盖固定床规则与隐藏归属文案、历史筛选 / 分组 / 长记录滚动 |
+| `tools/verify_mass_prayer_runtime.gd`、`tools/verify_mass_prayer_revision_real.py` | 覆盖教堂到达守卫、祈祷中断和真实计划续接 |
+| `tools/verify_dialogue_sleep_summary_boundaries.gd`、`tools/verify_daily_reflection_system.gd`、`tools/verify_sleep_interruption_dialogue_real.py`、对话 Schema / Prompt 专项 | 覆盖临时睡眠语境、21:00 窗口累计、完成去重和真实回复 |
+
+## T0092 LLM 等价精简索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `backend/services/model_adapter.py` | 投影最小 provider 请求、生成动态最小输出合同，并补齐完整游戏响应 |
+| `scripts/systems/LLMBridge.gd` | 避免重复发送默认日计划规则，只保留显式自定义规则 |
+| `data/prompts/*.txt` | 六类正式调用只要求不可推导的输出，并保留有效人物 / 现场判断规则 |
+| `tools/verify_llm_contract_compaction.py` | 量化六类输入与 provider 输出字符缩减，检查投影不含 `null` |
+| `tools/verify_*prompt*.py`、`tools/verify_dialogue_business_contract.py`、`tools/verify_plan_action_contract.py` | 验证最小模型输出可补齐、真正业务错误仍被拒绝 |
+
+## T0091 `talk_to_npc` 目标驱动合同索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/LLMBridge.gd` | 构造只含目标 NPC、不含地点的对话行动候选 |
+| `scripts/systems/DailyPlanSystem.gd` | 导入模型计划时不保存对话地点，只把目标 NPC 交给运行时 |
+| `scripts/systems/ActionSystem.gd` | 按目标 NPC 实时位置接近、追踪与有限重定向，不依赖计划地点 |
+| `backend/app.py` | 向模型剥离对话候选地点，按 action + target 校验并清空冗余模型地点 |
+| `backend/services/model_adapter.py` | 在日计划 / 修订 schema guard 中要求对话只返回目标 NPC |
+| `data/prompts/daily_plan_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt` | 区分固定地点行动与目标驱动对话 |
+| `tools/verify_plan_action_contract.py`、`tools/verify_plan_action_catalog.gd`、`tools/verify_npc_npc_plan_action.gd` | 覆盖候选省略地点、冗余地点规范化与动态执行 |
+
+## T0089 教堂失败后计划修订索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 在权威行动失败上下文中保留精确 `failure_id`，供后续计划链识别 |
+| `data/prompts/plan_revision_judgement_system_prompt.txt` | 对可转为弥撒参与 / 普通祈祷的教堂失败固定选中当前小时 |
+| `data/prompts/plan_revision_system_prompt.txt` | 在人物与实时行动边界内强烈优先保持原宗教活动意图 |
+| `tools/verify_service_dependency_interruptions.gd` | 验证四个教堂失败码进入运行态失败上下文 |
+| `tools/verify_mass_prayer_revision_real.py` | 使用真实 provider 验证两个方向的判别与正式修订 |
+
+## T0088 建筑工期、时间显示与友军颜色索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/TimeSystem.gd` | 统一 HUD 时钟及剩余时长的正常分钟精度 / LLM 慢速秒精度格式 |
+| `scripts/systems/BuildingSystem.gd` | 保留作业权威秒数，并提供稳定总工期与显示口径剩余时长 |
+| `scripts/systems/MemorySystem.gd` | 在建筑外部状态变化中传播 active job 与可读总工期，不逐 tick 广播剩余时间 |
+| `scripts/systems/LLMBridge.gd` | 向六类 NPC 请求投影无裸秒数的 repair / upgrade job 可读上下文 |
+| `scripts/ui/HUD.gd`、`scripts/ui/BuildingPanel.gd` | 监听慢速状态切换并立即刷新时钟、波次与建筑剩余时间 |
+| `scenes/npc/NPC.tscn`、`scripts/npc/NPC.gd`、`scripts/ui/NPCPanel.gd` | 分离世界姓名 / 状态标签，并把入伍 NPC 姓名显示为淡绿色 |
+
+## T0085 升级协助完成后的计划重估索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/LLMBridge.gd` | 计划 Schema 往返优先保留显式 `target.location_id`，统一把 `assist_upgrade` 计入工作统计，并把 6 阶段下限表述为软建议 |
+| `scripts/systems/DailyPlanSystem.gd` | 为已结束的协助目标构造本轮失败上下文，并移除日计划 / 修订应用层的工作数量硬拒绝 |
+| `scripts/systems/BuildingSystem.gd` | 升级 / 修复协助正常结束时清空陈旧行动失败上下文 |
+| `backend/app.py` | 保留小时、白名单、目标 / 地点与即时行动等业务校验，移除 plan_day / revise_plan 的最低工作数量拒绝 |
+| `data/prompts/daily_plan_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt`、`data/prompts/plan_revision_judgement_system_prompt.txt` | 将通常至少 6 个工作阶段保留为强规划建议，并明确不能为凑数扩大修订范围 |
+| `tools/verify_building_upgrade_action_failure.gd`、`tools/verify_daily_plan_system.gd`、`tools/verify_plan_action_contract.py` | 覆盖升级结束重估、室外地点、工作计数与低工作量合法计划 |
+| `tools/verify_upgrade_assist_real.py` | 使用真实 provider 验证升级结束后恢复诊所工作的修订 |
+
+## T0084 固定宿舍床位索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/building_defs.json` | 按叙事到站顺序把床位 1–8 配置给艾达、托马、布鲁诺、伊沃、格伦、欧文、马塞尔、莉娜，床位 9–10 保留未分配 |
+| `scripts/systems/BuildingSystem.gd` | 在通用位置申请中执行专属位置约束，并把归属与运行时占用分开维护 |
+| `scripts/systems/ActionSystem.gd` | 继续复用睡眠生命周期，并在位置失败上下文保留固定 / 保留位信息 |
+| `scripts/ui/BuildingPanel.gd` | 只读显示床位实时空闲 / 占用；T0094 起不显示专属归属 |
+| `tools/verify_fixed_dormitory_beds.gd` | 覆盖叙事顺序、乱序 / 重复分配、空余床、真实睡眠复用和隐藏归属后的宿舍面板文案 |
+
+## T0083 应征结果反馈与事件标题索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/DialogSystem.gd` | 将合法 `accept / reject` 绑定到产生结果的具体 NPC 历史回复，不修改真实回复文本 |
+| `scripts/ui/DialogPanel.gd` | 在对应回复下方渲染绿色对勾接受行或红色叉号拒绝行 |
+| `scripts/systems/MemorySystem.gd` | 以“守备官与 XX 对话”作为完成会话全文摘要标题，正文仍只转写真实发言 |
+| `tools/verify_dialogue_ui.gd`、`tools/verify_dialogue_session_lifecycle.gd` | 覆盖两种彩色富文本、逐回复元数据、精简标题与全文保留 |
+
+## T0082 多轮会话事件与应征锁索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/DialogSystem.gd` | 维持会话内应征 toggle，首次应征消息后永久锁定本场取消，并让锁定会话挂起超时按完成收口 |
+| `scripts/ui/DialogPanel.gd` | 投影 sticky toggle、应征锁 disabled 状态与不可取消 tooltip |
+| `scripts/systems/MemorySystem.gd` | 从完成会话的 `dialogue_text` 逐句生成完整确定性 summary，保持单事件与单次广播 |
+| `scripts/ui/NPCPanel.gd` | 继续通过通用事件摘要显示完整会话，无第二套对话详情数据 |
+| `tools/verify_dialogue_session_lifecycle.gd`、`tools/verify_dialogue_ui.gd` | 覆盖两轮四句单事件、NPC 事件库全文、sticky 开关、系统 / UI 取消锁和挂起超时完成 |
+
+## T0081 统一生活消耗与协助经验索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/activity_needs.json` | 生活数值边界、每小时速率、行为模式映射与 idle / movement 默认档位的唯一配置源 |
+| `data/action_defs.json` | 25 个行为各声明唯一 `needs_profile`；三类协助声明 `timed_experience` |
+| `scripts/systems/NPCNeedsSystem.gd` | 按有效逻辑秒解析档位、累积小数、钳制边界、截断行动有效时间并驱动协助经验 |
+| `scripts/systems/ActionSystem.gd` | 移除旧生活扣除；保留吃饭正向恢复；按配置累计并写入工程 / 医术成长 |
+| `scripts/systems/NPCSystem.gd` | 提供协助治疗到 30% 复苏阈值前的精确有效秒数 |
+| `scenes/main/Main.tscn` | 在 TimeSystem 后优先挂载 NPCNeedsSystem，使 tick 读取推进前快照 |
+| `tools/verify_activity_needs_framework.gd`、`tools/verify_assist_timed_experience.gd` | 穷尽行动 / 行为模式，并覆盖三类协助的有效时间经验 |
+
+## T0080 建筑门口失败与升级协助认知索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/core/EventBus.gd`、`scripts/systems/NPCSystem.gd` | NPC 抵达不可进入建筑时先完成门口落点收束，再广播带到达事实的 `npc_building_entry_failed` |
+| `scripts/systems/ActionSystem.gd` | 保留赶路中的 pending 行动；在门口事件后写唯一结构化失败；室内 active 仍在升级开始时立即中断 |
+| `scripts/systems/LLMBridge.gd` | 投影实时升级 / 修复布尔状态，并把 `assist_upgrade` 描述为广场室外、无需入内、当前可用且计入劳动 |
+| `scripts/systems/DailyPlanSystem.gd`、`backend/app.py` | 在 Godot 规则计划、日计划 endpoint 与正式修订校验中把 `assist_upgrade` 计为工作阶段 |
+| `data/prompts/dialogue_system_prompt.txt`、`data/prompts/daily_plan_system_prompt.txt`、`data/prompts/plan_revision_judgement_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt` | 统一升级协助的室外可执行语义、工作量语义和同建筑失败后的优先考虑规则 |
+| `tools/verify_building_upgrade_action_failure.gd`、`tools/verify_dynamic_station_context.gd` | 覆盖路上不失败、门口失败、active 立即失败、实时升级状态和动态协助候选 |
+| `tools/verify_plan_revision_endpoint.py`、`tools/verify_upgrade_assist_real.py` | 覆盖 Mock / endpoint 工作阶段校验及真实 provider 对话与正式修订选择 |
+| `game_design.md`、`docs/AI_NPC_SYSTEM.md`、`docs/ECONOMY_AND_BUILDINGS.md` | 固化非全知门口判定、室内清退和室外协助升级边界 |
+
+## T0079 当前计划连续时段显示索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/ui/NPCPanel.gd` | 隐藏与行动名相同的重复 `reason`，按完整展示语义合并连续小时，并按合并后的可见时段计算当前标记与首次滚动位置 |
+| `tools/verify_npc_panel_state.gd` | 覆盖 `13:00–16:00` 合并、重复说明隐藏、不同说明拆段、当前时段标记、刷新与 0 点 / 1 点边界 |
+| `game_design.md`、`docs/UI_UX.md` | 固化当前计划只读合并显示、重复说明隐藏和底层 24 小时权威计划不变的设计边界 |
+
+## T0078 NPC 主动交涉收口索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/DialogSystem.gd` | 识别 NPC 发起的主动守备官会话，权威拒绝取消；挂起超时按完成收口；向计划判别传递 `proactive_talk` |
+| `scripts/systems/DailyPlanSystem.gd` | 仅在结束时当前项仍为 `seek_guard_officer` 时，把当前小时加入 `required_revision_hours`，并复用统一即时 / deferred 派发 |
+| `scripts/ui/DialogPanel.gd` | 主动交涉时禁用取消按钮并显示专用 tooltip，守备官主动普通会话保持可取消 |
+| `backend/app.py` | 将程序指定但模型遗漏的 required 小时权威并入判别响应，并通过 `model_normalizations` 公开来源 |
+| `data/prompts/plan_revision_judgement_system_prompt.txt` | 解释主动找守备官交涉完成后必须重排当前阶段，后续仍从正常候选选择 |
+| `tools/verify_npc_proactive_talk.gd` | 覆盖取消锁、超时完成、必选当前小时、正式修订和新行动立即开始 |
+| `tools/verify_dialogue_plan_revision_judgement.py`、`tools/verify_dialogue_plan_revision_judgement_real.py` | 覆盖程序归并、Prompt / Mock 及真实 provider 的主动交涉 required 小时 |
+
+## T0076 对话跨小时延续与当前计划落地索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 保存日计划对话来源，普通同日跨小时保留接近 / 等待与预约，公开只读 carryover 快照；同小时替代、跨日和权威失效仍产生结构化失败 |
+| `scripts/systems/DialogSystem.gd` | 让自主邀请 / 正式会话继承计划来源，并把发起者、目标和自主标记传给对话后判别；普通整点不自行结束会话 |
+| `scripts/systems/DailyPlanSystem.gd` | 整点重建 pending / active 对话屏障；发起者判别必选当前小时；所有当前小时修订共用立即派发与可靠 deferred marker |
+| `scripts/systems/LLMBridge.gd`、`backend/schemas/npc_ai.py`、`backend/app.py` | 构造、校验 `required_revision_hours`，保留精确选时和正常动态候选合同 |
+| `backend/services/model_adapter.py`、`data/prompts/plan_revision_judgement_system_prompt.txt` | 正式 Prompt、紧凑重试与显式 Mock 都要求响应包含全部 required 小时 |
+| `scripts/ui/GMPanel.gd`、`docs/GM_PANEL.md` | 只读 `dialogue_carryover` 查看 pending / active / deferred 状态，替换旧普通跨小时过期扫描入口 |
+| `tools/verify_npc_npc_dialogue_edges.gd`、`tools/verify_npc_npc_plan_action.gd` | 覆盖等待 / 正式会话跨小时、发起者必改当前小时、双人屏障和结束后新小时派发 |
+| `tools/verify_plan_revision_remaining_day.gd` | 覆盖其他修订来源的当前小时直接执行、对话屏障及行为模式解除后 deferred 执行 |
+| `tools/verify_dialogue_plan_revision_judgement.py`、`tools/verify_dialogue_plan_revision_judgement_real.py` | 覆盖 Schema / endpoint / Mock / Prompt 与真实 provider 的 required 小时及正式当前小时修订 |
+
+## T0093/T0086 提前完成行动连续续接索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/action_defs.json` | 以 `reevaluate_current_hour_on_completion` 标记协助修理 / 升级 / 治疗、病床治疗与饮酒完成后需重排连续计划段；字段名保留以兼容既有数据 |
+| `scripts/systems/DailyPlanSystem.gd` | 识别不同成功结果，延迟确认小时边界，从当前小时收集连续相同 action + target，直接发起 `action_completed` 正式修订，拒绝当前小时原样重复并立即派发新行动 |
+| `scripts/systems/LLMBridge.gd`、`backend/schemas/npc_ai.py` | 在 Godot 规范化与后端 Schema 中保留 `action_completed` 合法枚举 |
+| `data/prompts/daily_plan_system_prompt.txt`、`data/prompts/plan_revision_judgement_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt` | 用游戏时间、建筑总工期 / 剩余时间约束安排范围；正式修订识别连续完成段 |
+| `scripts/ui/HUD.gd` | 处理主键盘数字行 `1 / 2 / 3 -> x1 / x2 / x4`，排除小键盘、修饰键和文本输入焦点 |
+| `tools/verify_plan_completion_reevaluation.gd` | 覆盖五类配置 / 完成结果、连续三小时边界、重复拒绝、即时执行、单小时、跨小时接管与倍速快捷键 |
+| `tools/verify_upgrade_assist_real.py` | 用真实 provider 验证连续三小时 `action_completed` 升级协助修订且不使用 fallback |
+
+## T0075 计划行动完成策略索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/action_defs.json` | 为全部 25 个配置行为声明 `completion_policy`，作为新增行为必须选择的完成语义 |
+| `docs/DATA_SCHEMA.md`、`docs/AI_NPC_SYSTEM.md` | 定义合法策略枚举、配置约束与当前全部 action id 的穷尽分类 |
+| `scripts/systems/ActionSystem.gd` | 校验完成策略枚举及计划可选性，公开只读策略 / 配置错误；继续负责实际行动与周期结算 |
+| `scripts/systems/DailyPlanSystem.gd` | 生产成功后 deferred 续开；单次行为跨计划版本按小时去重；整点相同行动 / 目标保留进度、不同项中断切换 |
+| `tools/verify_plan_action_completion_policy.gd` | 穷尽 25 项完成策略和 5 项完成后重估标记，并覆盖生产续开、完成 / 开始事件顺序、同 / 异行动跨小时与未完成产出边界 |
+| `tools/verify_plan_slot_dispatch_once.gd` | 覆盖单次吃饭提前完成、下一小时可执行及同小时替换计划版本仍不重放 |
+| `tools/verify_daily_plan_system.gd`、`tools/verify_player_dialogue_plan_resume.gd` | 更新规则计划生产续开、幂等采用及对话恢复后的单次行为边界回归 |
+
+## T0074 制造目标提醒索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scenes/main/Main.tscn` | 在 `UI` 下挂载 `CraftingTargetAlerts`，保留既有 HUD 与对象面板层级 |
+| `scripts/ui/CraftingTargetAlertPresenter.gd` | 只读制造项目快照，把两个建筑名称位置投影到屏幕并维护红色提醒、tooltip、点击与目标变化显隐 |
+| `scripts/systems/BuildingSystem.gd` | 提供世界点击与提醒按钮共用的正式 `select_building(...)` 入口；继续广播既有 `building_clicked` |
+| `tools/verify_crafting_target_alerts.gd` | 覆盖双提醒、颜色 / 位置 / tooltip、真实鼠标点击、对应面板和目标显隐状态机 |
+
+## T0073 指令面板文案与计划影响验收索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scenes/main/Main.tscn`、`scripts/ui/OrderPanel.gd` | 提供无 placeholder 的自由文本输入、精简标题与世界内叙事说明；发布仍只提交软性指令 |
+| `tools/verify_npc_order.gd` | 覆盖新标题、说明、空 placeholder 及既有指令存储 / 事件合同 |
+| `tools/verify_order_plan_effect.gd` | 确定性覆盖面板发布、`current_order` 正式 payload 注入与权威 24 小时计划合并 |
+| `tools/verify_order_plan_effect_real.gd` | 使用已配置真实 provider 验证新指令实际改变 NPC 当前小时计划，拒绝 Mock / fallback |
+
+## T0072 应征即时刷新与软性指令入口索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/DialogSystem.gd` | 在合法接受回复进入历史后立即提交权威入伍状态；会话完成仍负责记录完整对话事件，但不再延迟或重复应用征召 |
+| `scripts/ui/NPCPanel.gd` | 监听既有 `npc_state_changed` 即时刷新“已入伍”和“指令”入口；个人酒标签精简为“酒” |
+| `scripts/ui/OrderPanel.gd`、`scripts/systems/NPCSystem.gd` | 既有自由文本软性指令输入、权威 `current_order` 保存、事件与计划重评估链路 |
+| `tools/verify_dialogue_ui.gd`、`tools/verify_dialogue_session_lifecycle.gd`、`tools/verify_wartime_dialogue.gd` | 覆盖普通 / 战时应征即时生效、面板即时刷新及取消不回滚边界 |
+| `tools/verify_npc_order.gd`、`tools/verify_npc_panel_interactions.gd` | 覆盖新入伍 NPC 指令输入闭环和精简酒标签 |
+
+## T0071 NPC-NPC 对话私有上下文隔离索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/LLMBridge.gd` | 只为回复者构造完整 NPCContext；说话者仅投影姓名、外表、健康和已说出口文本；对话行动候选不暴露目标实时地点 / 行动 / 入伍状态 |
+| `backend/schemas/npc_ai.py`、`data/prompts/dialogue_system_prompt.txt` | 拒绝非空 `speaker_npc / speaker_context.state`，并约束回复者只能使用自己的信息空间 |
+| `tools/verify_dialogue_private_context_boundary.gd` | 用格伦独有的私有铁盔批次标记审计伊沃的对话及其余五类 payload |
+| `tools/verify_dialogue_private_context_real.py` | 使用真实 provider 验证回复者不会声称知道对方未公开安排 |
+| `tools/verify_backend_schemas.py`、`tools/verify_dialogue_prompt.py` | 覆盖 Schema 拒绝和 Prompt 边界文本 |
+
+## T0070 全员名册、职业知识与仓库容量索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/LLMBridge.gd`、`backend/schemas/common.py`、六份正式 Prompt | 向六类请求提供全体登记成员及必填 `recruited / in_station` 标签；仓库满载工作失败归一为资源不足 |
+| `tools/station_context_fixture.py`、`tools/verify_station_context_schema.py`、`tools/verify_dynamic_station_context.gd`、`tools/verify_npc_roster_knowledge_real.py` | 覆盖 fixture、Schema、六类动态 payload、离站成员保留与真实模型名册 / 艾达知识理解 |
+| `data/npc_initial_long_memory.json` | 保存 226 条种子关系；新增训练场、诊所、马厩、食堂职业细节，并把 8 条仓库关系更新为按等级扩容 / 受袭次序 |
+| `data/resource_defs.json`、`scripts/systems/ResourceSystem.gd` | 配置并权威计算六项仓库容量，提供剩余空间、批量预检和原子入库 |
+| `scripts/systems/ActionSystem.gd`、`scripts/systems/MerchantSystem.gd` | 在工作产出和购买扣费前预检容量，满载失败不产生部分结算 |
+| `scripts/ui/BuildingPanel.gd`、`scripts/ui/HUD.gd` | 仓库面板显示六项上限，左上角受限资源悬停显示上限 |
+| `tools/verify_warehouse_capacity_ui.gd`、`tools/verify_work_output_framework.gd`、`tools/verify_merchant_trade_system.gd` | 覆盖等级容量、UI、满载工作与购买原子失败 |
+
+## T0077 LLM 日预算与 GM 运行成本索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `backend/services/llm_cost_ledger.py` | 逐 provider 尝试追加人民币 / token JSONL；按上海自然日重放，维护进程内并发费用预留，并在账本故障时失败关闭 |
+| `backend/services/model_adapter.py` | 读取 DeepSeek 缓存命中 / 未命中 usage，使用官方人民币价结算每次尝试；供应商调用前预留每日额度并把 session / daily 快照暴露给 debug endpoint |
+| `backend/.env.example` | 记录 V4 Flash 官方人民币单价、每日 20 元、上海时区、1.77 元单次预留和两个本地日志路径 |
+| `scripts/systems/LLMBridge.gd` | 为 `/debug/llm_usage` 提供不阻塞主线程的异步查询和完成信号 |
+| `scripts/ui/GMPanel.gd` | 在面板顶栏周期显示本次后端运行 token / 人民币与今日持久化金额 / 上限 |
+| `tools/verify_api_budget_debug.py` | 覆盖 provider usage、HTTP 429、持久化账本、重建 adapter 后继续拦截和上海时区 |
+| `tools/verify_llm_persistent_audit_log.py`、`tools/verify_gm_panel.gd` | 覆盖缓存 token / 人民币 billing 审计，以及 GM 顶栏格式和异步入口 |
+| `backend/logs/llm_cost_ledger.jsonl` | 默认本地计费账本；由 `.gitignore` 排除，不属于仓库交付文件 |
+
+## T0069 后端 LLM 持久化审计索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `backend/services/llm_audit_logger.py` | 以按路径进程内共享锁追加 JSONL；递归脱敏凭据与配置 API Key；写盘失败不阻断业务 |
+| `backend/services/model_adapter.py` | 为调用分配 audit id，记录输入、逐次 provider body / 聚合响应、解析结果、usage、fallback 和最终状态，并关联业务校验失败 |
+| `backend/app.py` | 把 Pydantic / 业务校验详情和被拒绝模型输出交给审计器；显式 `/mock/model` 复用主后端日志配置 |
+| `tools/verify_llm_persistent_audit_log.py` | 使用临时文件与 fake provider 覆盖成功、重试、HTTP 失败、业务无效、Mock 并发、脱敏、默认配置和写盘失败 |
+| `backend/logs/llm_calls.jsonl` | 默认本地运行时日志；由 `.gitignore` 排除，不属于仓库交付文件 |
+
+## T0068 T0067 真实 LLM 调用审计包索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `tools/export_t0067_llm_audit.py` | 只读解析本机 T0067 会话证据，恢复 usage / 原始测试输出，重建静态定向矩阵 provider body，并生成无 Key / 请求头审计包；不调用 provider |
+| `docs/audits/T0067_LLM_94_CALLS/README.md` | 说明 94 次调用统计、证据级别、文件导航和不可恢复边界 |
+| `docs/audits/T0067_LLM_94_CALLS/call_inventory.csv` | 94 行调用库存；真实 request id 与 aggregate-only 占位明确分列 |
+| `docs/audits/T0067_LLM_94_CALLS/SCENARIO_TEXTS.md`、`RESULTS.md` | 汇总 Agent 编写的场景话术与可读结果 |
+| `docs/audits/T0067_LLM_94_CALLS/formal_system_prompts/` | 保存战斗判定、对话、日计划三类完整 system Prompt |
+| `docs/audits/T0067_LLM_94_CALLS/direct_calls/` | 保存 16 路确定性重建完整 provider body、原始结果和 usage，不含请求头 |
+| `docs/audits/T0067_LLM_94_CALLS/raw_outputs/`、`recovered_marker_events.json` | 保存从会话证据恢复的原始测试输出和去重场景事件 |
+| `docs/audits/T0067_LLM_94_CALLS/main_usage_*` | 保存 Main 聚合统计、历史尾部 12 条原始记录和按修复语义合并后的 11 个真实请求 |
+
+## T0067 真实战斗心理、日常逃离与挽留验收索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `backend/schemas/common.py` | 在正式 NPC 状态上下文保留 behavior / combat / strategy / morale / escape 五类权威投影 |
+| `backend/app.py` | 对对话响应执行逃离挽留、避战、应征和战时反应的上下文业务校验 |
+| `backend/services/model_adapter.py` | 业务输出无效时原地更新同一供应商请求的 usage，避免调用、token 与预算双计 |
+| `scripts/systems/CombatSystem.gd` | 低血量迟到结果复验；原子逃离入口调用；复苏续逃失败分流 |
+| `scripts/systems/NPCSystem.gd` | 提供行为模式与世界移动的原子提交接口，避免逃离半状态 |
+| `scripts/systems/DialogSystem.gd` | 屏蔽避战战时反应、保护暂存结果应用并防止结束会话重入 |
+| `tools/verify_combat_psychology_real_game.gd` | 用新 Main 场景、真实波次、装备、伤害和事件测试低血量自然选择与实际应用 |
+| `tools/verify_daily_escape_plan_real_game.gd` | 检查日计划逃离候选，并在基准 / 高压真实上下文中测试模型选择 |
+| `tools/verify_dialogue_escape_real_game.gd` | 真实 Main 覆盖战时、避战应征、挽留成功和五轮失败；支持 `REAL_DIALOGUE_SCENARIO` 单场景复测 |
+| `tools/verify_combat_escape_prompt_real.py` | 用正式 provider 运行受限结果和对话全分支定向矩阵，区分“分支可达”与“自然选择” |
+| `tools/verify_backend_schemas.py`、`tools/verify_dialogue_business_contract.py`、`tools/verify_mock_model_adapter.py` | 回归五字段保留、对话业务组合拒绝及业务无效输出 usage 不双计 |
+| `tools/verify_low_hp_battle_judgement.gd`、`tools/verify_escape_station_behavior.gd`、`tools/verify_wartime_dialogue.gd` | 回归迟到结果丢弃、计划逃离实际执行、原子移动失败及战时暂存反应完成 |
+
+## T0066 公告牌与当前计划 UI 索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/notice_board_defaults.json` | 保存公告牌日程表黄色建议文案的权威默认值，供 UI 和日程事件 / 见闻共同读取 |
+| `scripts/ui/NoticeBoardPanel.gd` | 提供精简后的“通告 / 日程表”双页草稿编辑；隐藏冗余默认说明，保留按需校验 / 发布反馈 |
+| `scripts/ui/NPCPanel.gd` | 当前计划首次打开时定位当前行动前两项；保留完整计划、刷新滚动和其他详情模式合同 |
+| `tools/verify_notice_board_tabs.gd` | 验证新文案、旧标签缺失、默认状态提示为空，并回归草稿 / 发布 / 广播边界 |
+| `tools/verify_npc_panel_state.gd` | 验证 08:00 当前行动第三项定位、00:00 / 01:00 开头夹取及既有详情刷新滚动 |
+
+## T0065 公告牌全站单次广播索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/systems/MemorySystem.gd` | 权威保存公告牌两页；实际变更分别生成 `plaza_notice_changed` / `plaza_schedule_changed`，按事件类型向全站当前可接收见闻的 NPC 广播一次；写入广场入场见闻前剔除公告牌三项 |
+| `scripts/ui/NoticeBoardPanel.gd` | 继续维护两页独立草稿 / 发布入口并把成功提示明确为全站 NPC 广播；T0066 后玩家页签名为“日程表” |
+| `tools/verify_notice_board_tabs.gd` | 端到端覆盖所有 NPC 跨地点单次接收、两页独立变更检测、未变化不广播，以及后来进入广场不重复获得公告牌内容 |
+| `tools/verify_notice_board_input.gd`、`tools/verify_plaza_local_public_broadcast.gd`、`tools/verify_location_info_nodes.gd` | 回归公告牌点击 / 预览、普通广场事件地点边界、公告专用全站边界与无公告牌入场见闻 |
+
+## T0063 守备官赠酒与 NPC 饮酒闭环索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/npc_profiles.json`、`scripts/systems/NPCSystem.gd` | 在个人 `money` 旁保存非负 `wine`；负责驿站库存赠酒转移及个人资源查询 / 原子扣减 |
+| `scenes/main/Main.tscn`、`scripts/ui/NPCPanel.gd` | 在给钱右侧提供给酒数量和按钮，以“酒”标签显示目标 NPC 个人酒库存 |
+| `data/action_defs.json`、`scripts/systems/ActionSystem.gd` | 定义并执行 `drink_wine`；本人酒不足时拒绝，成功开始实际扣 1 并记录上下文事件 |
+| `scripts/systems/MemorySystem.gd`、`scripts/systems/DailyPlanSystem.gd` | 保存 `wine_given / wine_consumed` 事件与见闻，并把无酒失败规范为资源不足进入既有重估链 |
+| `scripts/systems/LLMBridge.gd`、`backend/schemas/common.py`、`backend/app.py` | 同步个人 `money / wine`、`drink` kind、动态候选、背景行为说明及计划个人酒数量业务校验 |
+| `data/prompts/dialogue_system_prompt.txt`、`daily_plan_system_prompt.txt`、`plan_revision_judgement_system_prompt.txt`、`plan_revision_system_prompt.txt`、`battle_judgement_system_prompt.txt`、`daily_reflection_system_prompt.txt` | 解释饮酒前提、实际扣减和仅通过上下文产生的心理影响；禁止情绪数值和删除记忆 |
+| `tools/verify_npc_wine_drinking.gd` | 端到端验证个人酒默认值、赠酒、候选、执行扣减、事件上下文与无酒失败 |
+| `tools/verify_npc_panel_interactions.gd`、`tools/verify_dynamic_station_context.gd` | 回归面板给酒 / 见闻与六类正式请求的行为背景目录 |
+
 ## T0061 NPC 背景叙事与知识面板收束索引
 
 | 文件 | 当前职责 |
@@ -7,11 +337,11 @@
 | `data/npc_profiles.json` | 保存 8 人稳定根本人设与宽松 `speech_style`；不再保存会限定口吻的 `signature_lines` |
 | `scripts/core/NPCPromptProfile.gd` | 统一构造背景弹窗与对话 `npc_setting` 的 9 项人物字段，不再提供“代表性表达” |
 | `scripts/systems/LLMBridge.gd`、`backend/schemas/common.py` | 为对话、日计划、修改判别、正式修订、战时心理和首次睡眠反思提供同一宽松身份上下文；六类 payload 均不携带固定样例句 |
-| `data/npc_initial_long_memory.json` | 保存 8 人按艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜拼接的宏观身世 / 到站群像、未改动的近日微观日常、统一 `role` 的守备官职责和叙事化建筑常识；8 条仓库 `value` 受控迁移为 `central_storage_and_post_breach_attack_target`，其余技术值不变，222 条 `confidence / day / time` 完整保留 |
+| `data/npc_initial_long_memory.json` | 保存 8 人按艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜拼接的宏观身世 / 到站群像、未改动的近日微观日常、统一 `role` 的守备官职责和叙事化建筑常识；T0070 后含 4 条职业关键规则及 8 条按等级扩容仓库关系，共 226 条完整元数据 |
 | `data/prompts/dialogue_system_prompt.txt`、`daily_plan_system_prompt.txt`、`plan_revision_judgement_system_prompt.txt`、`plan_revision_system_prompt.txt`、`battle_judgement_system_prompt.txt`、`daily_reflection_system_prompt.txt` | 只把 `speech_style` 视为宽松表达习惯；解释前两篇宏观背景、近日时间边界、职责型守备官种子和实时程序事实优先 |
 | `scripts/ui/NPCPanel.gd` | “背景”详情移除代表性表达；“知识”详情只显示中文主体 / 关系 / 值，不显示可信度或更新时间 |
 | `scripts/ui/GMPanel.gd` | 不新增入口；既有 `long_memory <npc_id>` 继续显示含 `confidence / day / time` 的完整运行态图谱，用于核对玩家 UI 隐藏而底层保留 |
-| `tools/verify_npc_initial_long_memory.py` | 静态校验八人到站时序、前两篇宏观 / 拼图叙事、近日未改、守备官 `role`、建筑叙事化、仓库技术值迁移和 222 条底层元数据保留 |
+| `tools/verify_npc_initial_long_memory.py` | 静态校验八人到站时序、前两篇宏观 / 拼图叙事、近日未改、守备官 `role`、建筑叙事化、4 条职业规则、仓库容量语义和 226 条底层元数据 |
 | `tools/verify_npc_character_profiles.gd`、`tools/verify_npc_initial_long_memory.gd`、`tools/verify_npc_panel_state.gd`、`tools/verify_daily_reflection_system.gd`、`tools/verify_gm_panel.gd` | 5 个 Godot 专项校验档案 / 六类身份上下文无 `signature_lines`、运行态种子、反思追加、GM 原始数据与玩家 UI 隐藏边界；最终最大 payload 字符数为 `battle_judgement=32057 / daily_reflection=29242 / dialogue=48330 / plan_day=47118 / plan_revision_judgement=50053 / revise_plan=49952` |
 | `tools/verify_npc_initial_long_memory_real.py` | 真实 DeepSeek `deepseek-v4-flash` 完成 3 次记忆路径调用，0 失败，全部 `fallback_used=false` |
 
@@ -83,25 +413,25 @@
 | `data/prompts/dialogue_system_prompt.txt`、`daily_plan_system_prompt.txt`、`plan_revision_judgement_system_prompt.txt`、`plan_revision_system_prompt.txt`、`battle_judgement_system_prompt.txt`、`daily_reflection_system_prompt.txt` | 解释完整世界目录、单次候选和程序权威边界，禁止补造名单外成员 / 建筑 |
 | `scripts/ui/GMPanel.gd`、`docs/GM_PANEL.md` | 通过按钮 / `station_context` 命令只读观察运行态上下文，不修改世界事实 |
 | `tools/station_context_fixture.py` | 从正式配置构造 Python 测试上下文，避免测试维护第二份建筑 / 行为清单 |
-| `tools/verify_station_context_schema.py`、`tools/verify_dynamic_station_context.gd`、`tools/verify_station_context_real.py`、`tools/verify_gm_panel.gd` | 覆盖 Schema、六类 Godot payload、动态离站名单、目录来源、叙事规则、GM 入口和真实 provider 语义 |
+| `tools/verify_station_context_schema.py`、`tools/verify_dynamic_station_context.gd`、`tools/verify_station_context_real.py`、`tools/verify_gm_panel.gd` | 覆盖 Schema、六类 Godot payload、全员标签名册、目录来源、叙事规则、GM 入口和真实 provider 语义 |
 
-## T0053 跨小时对话失效与上下文统一索引
+## T0053 对话等待来源与上下文统一索引（普通跨小时口径已由 T0076 覆盖）
 
 | 文件 | 当前职责 |
 |---|---|
-| `scripts/systems/ActionSystem.gd` | 保存日计划对话来源元数据；在逻辑 tick / 计划重试 / 整点派发前校验当前计划，失配时释放预约并写 `talk_to_npc_failed_plan_superseded` 完整上下文 |
-| `scripts/systems/DailyPlanSystem.gd` | 日计划对话派发时附加来源项；整点先过期无效等待；行动失败优先使用上下文中的旧 `failed_plan_item` 进入 T0050 两阶段链 |
+| `scripts/systems/ActionSystem.gd` | 保存日计划对话来源元数据；同小时计划被替代、跨日或权威目标失效时释放预约并写完整失败上下文；普通同日跨小时由 T0076 延续 |
+| `scripts/systems/DailyPlanSystem.gd` | 日计划对话派发时附加来源项；行动失败优先使用上下文中的旧 `failed_plan_item` 进入 T0050，两阶段链；普通整点 carryover 见 T0076 |
 | `scripts/systems/LLMBridge.gd` | 判别、日计划、正式修订和战时心理共用 NPCContext；长期记忆同时含知识图谱和日记 |
 | `backend/schemas/common.py` | `NPCContext.long_term_memory={knowledge_graph, diary}` 及兼容知识图谱字段 |
 | `backend/schemas/npc_ai.py` | 判别请求继承 StationAwareNPCRequest、必填 NPCContext / 现实条件并支持 `plan_item_superseded` |
 | `data/prompts/plan_revision_judgement_system_prompt.txt` | 结合失败事实与人物 / 记忆 / 指令上下文选择精确修订小时，不制定行动 |
 | `data/prompts/plan_revision_system_prompt.txt` | 正式修订延续同一人物与长短期记忆，并区分旧失败项 / 当前项 |
 | `data/prompts/battle_judgement_system_prompt.txt` | 低血量参战 / 避战 / 逃离心理读取同一长期记忆与人物上下文 |
-| `scripts/ui/GMPanel.gd` | `expire_plan_dialogues` 只扫描既有日计划对话等待并显示真实过期 NPC，不创建或伪造失败 |
-| `tools/verify_npc_npc_dialogue_edges.gd` | 回归计划等待续接、跨小时失效、预约释放和失败判别上下文 |
+| `scripts/ui/GMPanel.gd` | T0076 已用只读 `dialogue_carryover` 替换旧 `expire_plan_dialogues` |
+| `tools/verify_npc_npc_dialogue_edges.gd` | 回归计划等待续接、普通跨小时延续、预约保留，以及同小时 / 权威失败边界 |
 | `tools/verify_action_failure_plan_revision_judgement.gd` | 回归判别 / 正式修订两层失败事实与完整人物上下文 |
 | `tools/verify_dynamic_station_context.gd` | 防止日计划 / 修订 / 战时心理丢失共享人设、长短期记忆或地点字段 |
-| `tools/verify_gm_panel.gd` | 回归过期扫描命令存在且可安全执行 |
+| `tools/verify_gm_panel.gd` | 回归只读 `dialogue_carryover` 命令存在且可安全执行 |
 
 ## T0052 计划阶段对话互斥与等待续接索引
 
@@ -164,15 +494,15 @@
 
 | 路径 | 职责 |
 |---|---|
-| `backend/schemas/common.py`、`backend/schemas/npc_ai.py` | 建立 `StationAwareNPCRequest` 顶层必填上下文和当前在站人员基础合同；T0054 已扩充建筑、行为与规则字段；反思响应仅含日记和知识更新 |
-| `scripts/systems/LLMBridge.gd` | 从运行态动态构建中文在站名单并过滤逃离 / 站外 NPC；T0054 已将同一构造器扩充并覆盖六类业务 payload |
+| `backend/schemas/common.py`、`backend/schemas/npc_ai.py` | 建立 `StationAwareNPCRequest` 顶层必填上下文；T0070 后人员条目严格要求 `recruited / in_station`，反思响应仅含日记和知识更新 |
+| `scripts/systems/LLMBridge.gd` | 从运行态动态构建中文全员名册并保留逃离 / 站外 NPC，以 `in_station=false` 标记；同一构造器覆盖六类业务 payload |
 | `data/prompts/dialogue_system_prompt.txt`、`daily_plan_system_prompt.txt`、`plan_revision_system_prompt.txt`、`battle_judgement_system_prompt.txt`、`daily_reflection_system_prompt.txt` | T0046 建立共享场景与反思输出基础；T0054 已扩充共享场景字段与世界内规则 |
 | `scripts/systems/DailyReflectionSystem.gd`、`scripts/systems/NPCSystem.gd`、`scripts/ui/NPCPanel.gd` | 仅写入第一人称日记 + 替换式知识图谱，规范化时剔除旧 `memory_summary`，向玩家显示中文知识主体 / 关系 / 值 |
 | `data/notice_board_defaults.json` | 守备官口吻的初始通告、10 条通用参考日程和固定“仅供参考、可自行安排”备注 |
-| `scripts/systems/MemorySystem.gd` | 权威保存广场当前通告 / 参考日程，校验时段，广播 `plaza_notice_changed` / `plaza_schedule_changed`，提供入场快照并预写初始 NPC 见闻；离站者从地点节点移除且不再接收见闻 |
+| `scripts/systems/MemorySystem.gd` | 权威保存广场当前通告 / 参考日程并校验时段；T0065 后发布事件改为全站单次广播，广场入场见闻不再携带公告牌三项；仍预写初始 NPC 见闻并过滤离站者 |
 | `scripts/ui/NoticeBoardPanel.gd`、`scenes/main/Main.tscn` | 提供“通告 / 参考日程”双 Tab 草稿编辑、日程增删改 / 全天重叠提示、发布 / 退出语义与容器尺寸 |
 | `tools/verify_station_context_schema.py`、`tools/verify_dynamic_station_context.gd`、`tools/verify_station_context_real.py` | Schema、运行态 8→7 名单和真实 provider 基础场景验收 |
-| `tools/verify_notice_board_tabs.gd`、`tools/verify_notice_board_input.gd`、`tools/verify_escape_station_behavior.gd`、`tools/verify_reference_schedule_real_plans.gd` | 草稿取消、双页 UI、日程增删改 / 全天重叠提示、初始 / 广播 / 入场 / 离站见闻和 8 人真实计划采样 |
+| `tools/verify_notice_board_tabs.gd`、`tools/verify_notice_board_input.gd`、`tools/verify_escape_station_behavior.gd`、`tools/verify_reference_schedule_real_plans.gd` | 草稿取消、双页 UI、日程增删改 / 全天重叠提示、初始 / 全站单次广播 / 无公告牌入场重复 / 离站见闻和 8 人真实计划采样 |
 
 ## T0045 建筑布局、镜头输入与成长文案索引
 
@@ -308,8 +638,8 @@ T0048 历史补充：`remaining_day` 曾从玩家对话专用范围提升为所�
 | `tools/verify_plan_target_replacement.gd` | 同一 action id 更换 NPC / 地点目标时的当前计划替换回归 |
 | `tools/verify_training_plan_coordination.gd` | 同批教官先落地、受训者后落地的训练协作回归 |
 | `tools/verify_plan_revision_single_successor.gd`、`tools/verify_plan_revision_late_failure_bound.gd` | 修订单后继队列、迟到落地失败和有界重试回归 |
-| `tools/verify_plan_slot_dispatch_once.gd` | 同一计划版本同一时段短行动只派发一次 |
-| `tools/verify_daily_plan_system.gd` | 24 小时计划、按声明 hour 纠正数组乱序、重复 / 缺失 / 越界小时拒绝与小时执行回归 |
+| `tools/verify_plan_slot_dispatch_once.gd` | 每小时单次行为提前完成后不重放；同小时新计划版本也不能绕过消费记录 |
+| `tools/verify_daily_plan_system.gd` | 24 小时计划、按声明 hour 纠正数组乱序、重复 / 缺失 / 越界小时拒绝、小时执行与生产续开回归 |
 | `tools/verify_plan_action_contract.py` | 后端行动种类与精确候选组合合同 |
 | `tools/verify_npc_npc_dialogue_real.py`、`tools/verify_workstation_dialogue_revision_real.py` | 真实 provider 对话与工位修订验收 |
 
@@ -361,7 +691,7 @@ T0048 历史补充：`remaining_day` 曾从玩家对话专用范围提升为所�
 | 工程器械表现 | `res://scripts/world/DefenseDevicePresenter.gd`、`res://scenes/defense_devices/DefenseDeviceView.tscn` | 低模占位、`ModelMount` 与正式模型替换契约 |
 | 每日计划系统 | `res://scripts/systems/DailyPlanSystem.gd` | 正式真实 LLM 8 路并发计划、显式调试计划、按小时执行与异常重评估 |
 | 游戏启动编排 | `res://scripts/systems/GameStartupSystem.gd` | 静止调试、正式循环与新手引导占位三状态开关 |
-| 首次睡眠总结系统 | `res://scripts/systems/DailyReflectionSystem.gd` | 每日首次睡眠满 1 游戏小时后的第一人称日记、替换式知识图谱键值更新、短期记忆清空与深度睡眠锁 |
+| 熟睡总结系统 | `res://scripts/systems/DailyReflectionSystem.gd` | 21:00 锚定窗口累计睡眠满 1 游戏小时后的第一人称日记、替换式知识图谱键值更新、短期记忆轮转与深度睡眠锁 |
 
 ## Godot 当前已创建
 
@@ -373,17 +703,17 @@ T0048 历史补充：`remaining_day` 曾从玩家对话专用范围提升为所�
 路径：`addons/godot_mcp/`
 用途：Godot MCP 编辑器插件与运行桥接，供 Codex / MCP server 查看场景、节点、资源、截图、运行状态和编辑器状态。
 依赖：Node 侧 `@satelliteoflove/godot-mcp`；插件监听 `127.0.0.1:6550`。
-当前状态：2026-06-17 已升级到 `4.0.1`，与本机 npm server `4.0.1` 对齐；新增/保留运行态采样、输入名解析、执行保护和网格校验相关脚本。`MCPGameBridge` 显式预加载 `mcp_runtime_state_sampler.gd`、`key_names.gd`、`joy_names.gd` 和 `mcp_exec_guard.gd`，避免换机或 `.godot` 缓存未刷新时 Autoload 解析失败。Codex MCP 已通过 `godot_project.addon_status` / `godot_editor.get_state` 复验连接正常。换环境恢复时先按 `docs/CURRENT_STATE.md` 的“换环境恢复 Godot MCP 清单”和 `docs/TASKS.md` 的 T0007 / T0009 / T0017 记录检查 server/addon/config 版本一致性和运行桥接脚本状态。
+当前状态：2026-06-17 已升级到 `4.0.1`，与本机 npm server `4.0.1` 对齐；新增/保留运行态采样、输入名解析、执行保护和网格校验相关脚本。`MCPGameBridge` 显式预加载 `mcp_runtime_state_sampler.gd`、`key_names.gd`、`joy_names.gd` 和 `mcp_exec_guard.gd`，避免换机或 `.godot` 缓存未刷新时 Autoload 解析失败。T0064 后 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs` 不再只依赖易清理的 npx 缓存，而是优先使用 broker lock / 全局 Godot MCP 包内 SDK；`6550` 是当前 Godot 插件的正常单例监听，`8765` 是 broker 单例监听。Codex MCP 已通过 broker 实际调用 `godot_project.addon_status` / `godot_editor_read.get_state` 复验连接正常。换环境恢复时先运行 `tools/check_godot_mcp.ps1` 与 `node tools/verify_godot_mcp_topology.mjs`，再按 T0005 / T0009 / T0017 / T0064 检查。
 
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/DefenseDevices`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DialogPanel`、`UI/OrderPanel`、`UI/NoticeBoardPanel`、`UI/MerchantPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`、`MerchantSystem`、`CraftingSystem`、`HorseSystem` 与 `DefenseDeviceSystem`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位；主厅前 `NoticeBoard` 已有独立点击和公告预览，但不绑定建筑定义、不具备 HP / 等级 / 工作位。`DefenseDevices` 由 presenter 生成已部署器械表现；`Props` 下已有广场、正门道路、后门道路和商人入口，商人标记在到访时段可点击；`UI/HUD` 下已有标题、天数、`HH:MM:SS` 时间/阶段、资源占位、速度按钮、暂停按钮、可触发警铃集结的警铃按钮和后端状态；`UI/NPCPanel` 和 `UI/BuildingPanel` 已接入右上角信息面板；`UI/OrderPanel` 已接入自然语言指令编辑；`UI/NoticeBoardPanel` 与 `UI/MerchantPanel` 已接入公告和交易；`UI/GMPanel` 已接入可拖动半透明 GM 调试按钮和面板；`CameraRig` 已挂载基础俯视摄像机控制。
-依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`CraftingSystem.gd`、`HorseSystem.gd`、`MemorySystem.gd`、`MerchantSystem.gd`、`DefenseDeviceSystem.gd`、`CombatSystem.gd`、`EquipmentSystem.gd`、`LLMBridge.gd`、`DialogSystem.gd`、`DailyPlanSystem.gd`、`GameStartupSystem.gd`、`DailyReflectionSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd`、`NoticeBoardPanel.gd`、`MerchantPanel.gd` 和 `GMPanel.gd` 作为 UI 脚本，并给主厅前公告牌绑定 `res://scripts/world/NoticeBoard.gd`、给器械表现容器绑定 `DefenseDevicePresenter.gd`，相机继续使用 `res://scripts/camera/CameraRig.gd`。
+依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`NPCNeedsSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`CraftingSystem.gd`、`HorseSystem.gd`、`MemorySystem.gd`、`MerchantSystem.gd`、`DefenseDeviceSystem.gd`、`CombatSystem.gd`、`EquipmentSystem.gd`、`LLMBridge.gd`、`DialogSystem.gd`、`DailyPlanSystem.gd`、`GameStartupSystem.gd`、`DailyReflectionSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd`、`NoticeBoardPanel.gd`、`MerchantPanel.gd` 和 `GMPanel.gd` 作为 UI 脚本，并给主厅前公告牌绑定 `res://scripts/world/NoticeBoard.gd`、给器械表现容器绑定 `DefenseDevicePresenter.gd`，相机继续使用 `res://scripts/camera/CameraRig.gd`。
 当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0012 后 HUD 主栏按资源定义顺序显示非聚合资源库存，并提供装备/器械详情按钮，详情面板贴近各自按钮左下且夹在屏幕内；T1301 后 HUD 显示下一波倒计时，T1302-T1305 后 HUD 可显示主厅摧毁、无可战斗人员失败、第 5 波胜利和 NPC 结局总结，结局明细使用滚动区；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；T1506 后主厅公告牌可点击输入并显示当前广场公告；T1507 后后门商队每天 10:00-16:00 可买基础资源、卖酒并写入结构化公开事件。低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；T1101 后正门外地面和正门道路已扩大，`WorldRoot/Station/Enemies` 可由 CombatSystem 生成正门外低模敌人占位；T1103 后 HUD 警铃可触发入伍持武器 NPC 前往城门外防线集结，近战 / 骑兵在前、弓弩 / 骑射在后，集结 / 接敌时显示方向标记和坐骑表现；T1105 后已入伍持武器 NPC 可在 NPC 面板选择当前兵种可用战斗策略，T1105A 后战斗内避战够远时保持等待；T1106 后敌人波次开始 / 结束会写入广场公开事件并维护本场受伤、昏迷和击退统计；T1304/T1305 后包含第 5 波的战斗清敌会进入胜利结算，记录资源 / 建筑和 NPC 结局快照并停止继续刷波；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息、建筑状态、精确运作效率，以及按配置顺序逐项列出的具体位置名称与占用情况，并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑、战斗集结世界坐标或策略移动目标，或安排工作、协助修复、协助升级、训练、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉、工作和训练通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。T0035/T0036 后，铁匠铺 / 工械坊按 11 个分阶段配方产出具体 `item_*` 库存，制造工作必须先选目标，一个周期提交一个阶段，建筑面板显示阶段进度并在非零进度切换目标时确认；T0037/T0038/T0056 后，马厩由 HorseSystem 维护两匹初始 60% 刚成年马与后续小马的生态、成长、拆分 HP、累积繁育概率 / 冷却、分配和战时骑乘，NPC 面板只为已入伍且有主武器者提供成年马分配；EquipmentSystem / DefenseDeviceSystem 逐件消费具体库存，四类旧聚合 id 仅兼容保留；T0903 后，训练场可通过教官位和训练位提升当前装备对应的武器熟练度 / 骑术，并让教官提升“教练”；T0904 后，工作 / 诊所 / 训练的熟练度提升同步增加经验、产生未分配技能点；T0015 后 NPC 面板把经验显示在 HP 右侧，并只在有未分配技能点时显示属性旁 `+1`，GM 可把选中 NPC 设为入伍并由玩家分配力量或智力。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现复杂生产平衡、正式工程器械美术或命中/格挡；T1508 部署闭环已完成。
 T0035-T0038/T0056 当前补充：`Main/Systems` 已挂载 CraftingSystem 与 HorseSystem。铁匠铺 / 工械坊由 11 个分阶段配方产出具体 `item_*` 库存，建筑面板提供目标下拉、阶段进度和非零进度切换确认；马厩初始化两匹 60% 刚成年马并逐个显示基础 / 照料额外 HP、成长、繁育概率 / 冷却等生态状态，HorseSystem 处理成长、繁育、喂食、恢复、分配和 `rally` / `combat` 战时离厩。装备 / 部署已逐件消耗具体库存，旧 `weapons` / `armor` / `defense_devices` / `horse_readiness` 仅兼容保留且不得正式消耗。依赖补充：`Main.tscn` 绑定 `res://scripts/systems/CraftingSystem.gd` 与 `res://scripts/systems/HorseSystem.gd`，ActionSystem、BuildingPanel、NPCPanel、HUD、EquipmentSystem、MemorySystem、CombatSystem 和 DefenseDeviceSystem 通过窄接口消费其权威状态。
 T1204A 补充：逃离 NPC 会显示头顶 `!` 和 HUD 警告，点击后先打开 NPC 面板；玩家通过【对话】按钮进入强制公开的逃离挽留对话，最多 5 轮。挽留面板打开时 CombatSystem 暂停逃离移动，未满 5 轮关闭后恢复移动且可再次打开，5 轮用完后 NPC 面板【对话】置灰。LLM / Mock 只返回留下或继续逃离意向，CombatSystem 负责停止或继续逃离；守备官给钱会减速，逃离挽留中的攻击会加速、计 1 轮、关闭面板且不请求 NPC LLM 回复，攻击昏迷只暂停逃离并在复苏后继续。
 T1001-T1003/T0022 补充：`Main.tscn` 已挂载 `DailyPlanSystem`，规则计划只作为显式调试；正式开局和新一天的 `/npc/plan_day` 使用真实 provider 、8 路并发和 `llm_plan_day` 来源，失败不使用 Mock 或规则降级。行动异常 / 指令变化后的计划重评估仍是独立修订链路。
 T0019 补充：`Main.tscn` 已挂载 `GameStartupSystem`。默认正式模式会暂停时间，让 8 名 NPC 在第 1 天 06:00 记录起床并进入“制定计划”；全部 24 小时计划完成后才统一执行当前项并恢复时间。静止调试模式不生成计划，新手引导模式当前只保留占位快照。
-T1004/T1005/T1405 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`，NPC 每天首次睡觉并持续睡眠满 1 游戏小时后会生成首次睡眠总结，增量追加长期日记、按 `subject + relation` 替换式更新知识图谱当前键值，并清空该 NPC 当天短期事件/见闻索引；总结请求和应用期间 NPC 进入不可打断的深度睡眠锁。
+T1004/T1005/T1405 补充：`Main.tscn` 已挂载 `DailyReflectionSystem`；T0094 后 NPC 在当前 21:00 锚定窗口累计睡眠满 1 游戏小时会生成熟睡总结，增量追加长期日记、按 `subject + relation` 替换式更新知识图谱当前键值，并轮转该 NPC 当前短期事件 / 见闻索引；总结请求和应用期间 NPC 进入不可打断的深度睡眠锁。
 
 T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按配置顺序逐位置显示“名称：空闲 / 姓名占用中”；Main 的既有 BuildingSystem、NPCSystem、ActionSystem、MemorySystem 和 LLMBridge 共同承担升级封闭、自动占位、团队效率和资格 / 可用性候选上下文，无需新增权威系统节点。
 
@@ -417,6 +747,11 @@ T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按
 依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；监听 `/root/EventBus.game_over_changed` 在失败 / 结算时暂停；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；后续 LLMBridge / DialogSystem 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
 当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；T0020 后对话、常规每日计划、计划修订、低血量心理判定和首次睡眠总结均接入慢速申请 / 释放，T0019 后正式开局的批量每日计划改由 `GameStartupSystem` 直接 `set_paused(true)`，整批完成后恢复，不为每个请求重复登记慢速；T1104A 新增 `request_time_scale_cap(...)` / `release_time_scale_cap(...)` / `get_time_scale_snapshot()`，CombatSystem 可在敌人在场时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；T1406 后 `get_time_scale_snapshot()` 暴露 `last_time_scale_reason`，供 GM / LLMBridge 调试当前有效倍率和最近慢速 / 上限原因；T1104B 后战斗攻速由 CombatSystem 内部把游戏秒折算为战斗动作秒，TimeSystem 不承担攻速倍率结算；T1302 后 `GameState.game_over` 为真时不再推进逻辑时间。
 
+路径：`res://scripts/systems/NPCNeedsSystem.gd`
+用途：NPC 饱食 / 疲劳的统一持续结算权威。
+依赖：通过 ConfigLoader 读取 `data/activity_needs.json`；监听 `EventBus.logical_time_tick`；只读 NPCSystem、ActionSystem 和 BuildingSystem 快照，通过 NPCSystem 写回状态，并把三类协助有效秒数交给 ActionSystem 成长入口。
+当前状态：T0081 已实现全部在站 NPC 的唯一档位解析、跨行动小数余量、0–100 边界、有限行动 / 建筑作业 / 协助治疗的有效时间截断，以及完成后的 idle 剩余时间结算；`escaped=true` 的 NPC 不再推进站内生活值。
+
 路径：`res://scripts/systems/ResourceSystem.gd`
 用途：基础资源与具体物品库存事实源。
 依赖：通过 `/root/ConfigLoader` 读取 `data/resource_defs.json`，通过 `/root/EventBus.resource_changed` 广播资源变化，供 HUD 刷新。
@@ -427,7 +762,7 @@ T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按
 依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击选择、通过 `/root/EventBus.building_state_changed` 广播状态刷新。
 当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。T0006 后建筑受损、修复进度、协助者变化、修复完成和升级只触发 `building_state_changed`，不再伪装为建筑点击。T0801 新增 `claim_workstation(...)` / `release_workstation(...)`，作为工作位占用和释放的权威接口；工位变化仍通过 `building_state_changed` 交给 MemorySystem 广播地点内部状态差量。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；修复和升级都会创建随 `logical_time_tick` 推进的倒计时作业，并可被多个 NPC 按工程熟练度协助加速；建筑受损、正在修复或正在升级时不能开始升级，只有完好建筑可升级；协助者离开对应建筑或被改派时会从作业中移除；T1102 新增 `apply_damage_to_building(...)` 供 CombatSystem 结算敌方建筑伤害，并写入 `building_damaged` 结构化事件；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史。 T0035/T0037 后新增 `get_building_special_state(...)`、`get_building_special_state_section(...)`、`set_building_special_state_section(...)`，作为 CraftingSystem / HorseSystem 写入内部特殊状态的唯一建筑接口；BuildingSystem 不自行结算制造或马匹生态。
 
-T0043 补充：BuildingSystem 现在还权威维护逐位置 `id/type/name/occupied_by/status`、统一可进入 / 可用状态、受损效率、固定位置类型与 `upgrade.level_effects`。升级可配置成本、时长、Max HP、位置和效率增量；施工期间封闭建筑、拒绝占位并清退使用者，完成后一次应用奖励。`claim_workstation(...)` 仍由程序自动分配同类型第一个空位。
+T0043/T0084 补充：BuildingSystem 现在还权威维护逐位置 `id/type/name/assigned_npc_id/occupied_by/status`、统一可进入 / 可用状态、受损效率、固定位置类型与 `upgrade.level_effects`。升级可配置成本、时长、Max HP、位置和效率增量；施工期间封闭建筑、拒绝占位并清退使用者，完成后一次应用奖励。`claim_workstation(...)` 对普通位置自动分配同类型第一个空位；宿舍床位优先且仅使用调用者自己的专属床，没有归属的未来 NPC 只能使用未分配床位。
 
 路径：`res://scripts/systems/NPCSystem.gd`
 用途：基础 NPC 系统，负责读取 NPC 档案、生成 NPC 占位实体和转发 NPC 点击事件。
@@ -462,7 +797,9 @@ T0043 补充：BuildingSystem 现在还权威维护逐位置 `id/type/name/occup
 路径：`res://scripts/systems/MemorySystem.gd`
 用途：事件、见闻与地点/广场信息节点系统。
 依赖：由 ActionSystem、NPCSystem、DialogSystem、CombatSystem、BuildingSystem 等系统写入事件；读取 GameState / TimeSystem 的游戏时间；通过 EventBus 广播 `event_recorded`、`npc_memory_changed`、`location_info_changed` 和 `public_event_added`。
-当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`clear_npc_short_term_memory(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)`、`debug_get_npc_short_term_memory(...)` 和 `debug_clear_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态会生成 `location_status_changed` 本地见闻。可传播外部状态计算等级、`condition`、`is_enterable` 与 `operational_efficiency` 分档；精确 HP、精确效率和剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；T1103 后行动状态摘要会把集结 / 接敌状态显示为“前往城门外防线 / 在城门外集结 / 准备接敌”，T1105 后会把策略移动显示为“进行战术移动”，T1203/T1204A 后会把逃离显示为“正朝后门逃离 / 已离开驿站”；可进入建筑还会提供逐位置 `id/type/name/occupied_by/status`，位置按 ID 比较，新增、移除、改名、改类型和占用变化会触发本地差量见闻。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。T0705/T0051 后，主动交涉发起仍写 `proactive_talk_started`，预设开场问题随完成会话的单条 `dialogue_turn` 入库；`proactive_talk_message` 仅作旧事件兼容。守备官-NPC 对话取消不写事件或见闻，NPC-NPC 仍按完成轮次写入。T1103 新增 `combat_alarm_rang`、`combat_rally_started` 和 `combat_rally_encountered_enemy` 事件模板，记录听到警铃、前往城门外集结和集结途中接敌；T1105 新增 `combat_strategy_selected`，记录守备官为入伍持武器 NPC 设置当前战斗策略；T1202 新增 / 完善 `low_hp_triggered`、`battle_psychology_result` 和低血来源的 `morale_boost_started` 摘要，支持“继续参战 / 继续避战 / 逃离 / 斗志激昂”的公开事件表达；T1203 新增 `escape_started` / `escaped` 摘要；T1204A 新增 `escape_intervention_result` 与 `escape_speed_changed` 摘要，记录挽留后留下 / 继续逃离和给钱 / 攻击造成的逃离速度变化。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点/广场节点也不保存事件历史；T1004/T1005 首次睡眠总结只清空指定 NPC 的当天事件/见闻索引，不删除全局事件档案。T0035/T0037 后增加建筑内部特殊状态白名单：铁匠铺 / 工械坊只保留 `production.target_item_id`、`target_name`、`completed_stages`、`total_stages`、`current_stage_index`、`current_stage_name`；马厩只保留物理在厩 `horses.total`、`adult`、`foal`。进入者通过一次地点快照获得完整白名单状态，后续只给当时仍在该建筑且可接收的 NPC 写字段级 `location_status_changed` 差量；不广播到广场，不传播制造小数进度或马匹个体详情。
+当前状态：T0405 已实现 NPC 短期记忆容器查询；支持 `get_npc_short_term_memory(...)`、`get_npc_short_term_memory_ids(...)`、`clear_npc_short_term_memory(...)`、`record_player_interaction(...)`、`debug_record_player_money_given(...)`、`debug_record_player_attack_npc(...)`、`debug_get_npc_witness_events(...)`、`debug_get_npc_short_term_memory(...)` 和 `debug_clear_npc_short_term_memory(...)`。T0404/T0408/T0409 已实现广场信息即时广播并统一为 `location_id == "plaza"` 的 `local_public`；支持 `move_npc_between_locations(...)`、`get_location_snapshot(...)`、`get_location_people_present(...)`、`is_enterable_location(...)`、`set_plaza_notice(...)`、`broadcast_plaza_event(...)`、`broadcast_plaza_state_change(...)`、`notify_key_entity_state_changed(...)` 及对应调试接口。MemorySystem 监听 `building_state_changed`：任一建筑可传播外部状态会同步进广场 `building_external_states` / `key_entities` 并生成带具体建筑名和具体事实的 `plaza_status_changed`；可进入建筑的外部或内部可传播状态会生成 `location_status_changed` 本地见闻。可传播外部状态计算等级、`condition`、`is_enterable` 与 `operational_efficiency` 分档；精确 HP、精确效率和剩余修复/升级时长不触发广播。广场和可进入建筑进入快照都会生成 `people_statuses`，把当前在场 NPC 的生命状态写为健康/受伤/昏迷，昏迷时可列出治疗者，并把 `current_action` 翻译成精简中文；T1103 后行动状态摘要会把集结 / 接敌状态显示为“前往城门外防线 / 在城门外集结 / 准备接敌”，T1105 后会把策略移动显示为“进行战术移动”，T1203/T1204A 后会把逃离显示为“正朝后门逃离 / 已离开驿站”；可进入建筑还会提供逐位置 `id/type/name/occupied_by/status`，位置按 ID 比较，新增、移除、改名、改类型和占用变化会触发本地差量见闻。NPC 进入广场会获得当前广场在场 NPC、这些 NPC 的生命状态/行动状态、当前公告文本和所有建筑外部状态，进入可进入建筑会获得该建筑外部 + 内部状态。T0407 已实现：`location_entered` / `location_exited` 事件库只保留进出行动事实，进入者获得一次状态见闻，已在场 NPC 只收进出事件，建筑/地点状态变化改为字段级差量见闻。T0402 已升级为结构化事件事实源；支持 `add_event(...)`、`get_event_log()` / `get_all_events()`、`get_npc_daily_events(...)`、`get_npc_witness_events(...)`、`get_plaza_events(...)`、`add_witness_event(...)` 和调试查询接口。T0502A 后，`add_witness_event(...)` 会拒绝给昏迷 NPC 写入见闻，复苏后自动恢复。事件会规范化为包含 `event_id`、`day`、`time`、`type`、`subject_npc_id`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary`、`payload` 的结构，并首先写入对应 NPC 当天事件库；`local_public` 会转发给事件地点当前在场且未昏迷 NPC 的见闻库，广场事件通过同一机制转发给广场当前在场且未昏迷 NPC 并可被广场查询返回。玩家非对话交互写入时 actor id 使用 `guard_officer`，summary 使用“守备官”。T0705/T0051 后，主动交涉发起仍写 `proactive_talk_started`，预设开场问题随完成会话的单条 `dialogue_turn` 入库；`proactive_talk_message` 仅作旧事件兼容。守备官-NPC 对话取消不写事件或见闻，NPC-NPC 仍按完成轮次写入。T1103 新增 `combat_alarm_rang`、`combat_rally_started` 和 `combat_rally_encountered_enemy` 事件模板，记录听到警铃、前往城门外集结和集结途中接敌；T1105 新增 `combat_strategy_selected`，记录守备官为入伍持武器 NPC 设置当前战斗策略；T1202 新增 / 完善 `low_hp_triggered`、`battle_psychology_result` 和低血来源的 `morale_boost_started` 摘要，支持“继续参战 / 继续避战 / 逃离 / 斗志激昂”的公开事件表达；T1203 新增 `escape_started` / `escaped` 摘要；T1204A 新增 `escape_intervention_result` 与 `escape_speed_changed` 摘要，记录挽留后留下 / 继续逃离和给钱 / 攻击造成的逃离速度变化。公告变更写入 `plaza_notice_changed`，建筑状态变更写入 `plaza_status_changed` 或 `location_status_changed`。MemorySystem 不提供按地点查询事件的长期接口，地点 / 广场节点也不保存事件历史；熟睡总结只轮转指定 NPC 当前短期事件 / 见闻索引，不删除全局事件档案，因此 T0094 的“记录”仍可读取旧会话。T0035/T0037 后增加建筑内部特殊状态白名单：铁匠铺 / 工械坊只保留 `production.target_item_id`、`target_name`、`completed_stages`、`total_stages`、`current_stage_index`、`current_stage_name`；马厩只保留物理在厩 `horses.total`、`adult`、`foal`。进入者通过一次地点快照获得完整白名单状态，后续只给当时仍在该建筑且可接收的 NPC 写字段级 `location_status_changed` 差量；不广播到广场，不传播制造小数进度或马匹个体详情。
+
+T0095 补充：正式熟睡总结使用 `get_npc_short_term_memory_snapshot(...)` 取得正文和稳定 `event_ids / witness_ids`，成功后由 `clear_npc_short_term_memory_snapshot(...)` 只轮转请求快照内的 ID；整批 `clear_npc_short_term_memory(...)` 仅保留给显式调试和旧调用兼容。
 
 T0043 当前口径：精确 HP、精确效率和剩余时长仍不传播；外部传播 `condition / is_enterable / operational_efficiency` 分档，室内逐位置状态按 ID 比较并传播新增、移除、改名、改类型和占用变化。
 
@@ -479,14 +816,16 @@ T0043 当前口径：精确 HP、精确效率和剩余时长仍不传播；外�
 路径：`res://scripts/systems/ActionSystem.gd`
 用途：日常行动权威系统，负责工作、吃饭、睡觉、训练、诊所、祈祷、地点拜访、NPC-NPC 对话接近，以及带目标协助行动的移动、占位、结算、中断和失败事实。
 依赖：通过 `/root/ConfigLoader` 读取 `data/action_defs.json`，调用 `NPCSystem` 移动与状态接口、`ResourceSystem` 资源结算接口，并写入 `MemorySystem` 结构化事件。
-当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_heal_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)`、`debug_assign_action(...)` 和只读 `get_healing_helpers_for_target(...)`。T1001 新增 `get_pending_action_id(...)`、`get_active_action_id(...)`、`get_runtime_action_id(...)` 和 `interrupt_npc_action(...)`，供计划系统判断与中断行动。T0801 后，工作支持真实位置占用/释放和统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；T0803 后，配置了 `output_scaling` 的工作可按熟练度、属性和建筑等级提高实际产出，当前菜园产粮使用该规则。T0035 后，`work_blacksmith` / `work_workshop` 要求制造目标，调用 CraftingSystem 校验项目 revision / 阶段材料、同步当前周期进度并在完整周期结束时提交一个阶段；中断或切换目标会清除未完成周期，已提交阶段由 CraftingSystem 保留。T0037 后，`work_stable` 不再产出匿名库存，其 active 状态供 HorseSystem 选择有效养马人并按养马能力推进马匹成长 / 生育。训练场使用 `training_instructor_station` 教官位和 `training_practice_slot` 训练位：无武器且无坐骑不能当教官或受训者；受训者需要至少一名在岗教官；全部在岗教官按人数和技能形成团队贡献，统一提高全部在位受训者的效率。诊所同样由全部 `clinic_doctor_station` 在岗人员按医术形成团队贡献，提高所有 `clinic_patient_bed` 占用者的恢复效率。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺 / 工械坊推进具体制造项目，以及马厩养马人照料真实马匹。建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者会前往目标所在信息地点，最多 2 人协助同一目标，按医术熟练度调用 `NPCSystem` 加速昏迷恢复，并按逻辑时间消耗第纳尔。工作、训练、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级同样以 `local_public` 写入 `repair_assist_started` / `upgrade_assist_started`，事件地点为 `plaza`；协助治疗写入 `healing_started` / `healing_completed`，进入治疗者和目标事件库，并写入同地点其他在场 NPC 的见闻库，事件信息不暴露医术熟练度。T0401 暂停语义修正后，暂停期间不会执行行动结算；吃饭、睡觉、工作和训练到达地点后进入 active 行动并随 `logical_time_tick` 推进。行动系统自身不实现 LLM 日程、战斗、器械部署或其他职业特殊生产平衡；T1508 部署由独立 DefenseDeviceSystem 负责。T0025 后新增 `assign_npc_dialogue(...)`、祈祷与地点拜访执行，`get_runtime_action_snapshot(...)` 暴露 pending/active 的 action、target、location、耗时和实际位置；治疗中途缺钱或离开地点写 `healing_failed`，不再伪装完成。对话接近会预定双方，开始前打断普通工作并释放位置；吃饭、睡觉、祈祷、弥撒、诊疗和训练都会自动申请同类型空位，满位或建筑封闭时返回结构化失败并触发计划重估。普通祈祷不依赖神父；`lead_mass` 对所有 NPC 可见，但只有具备“主持弥撒”能力者可执行。
+当前状态：T0402 已在 T0305 工作 / 吃饭 / 睡觉最小行动闭环上接入结构化事件；提供 `debug_assign_work(...)`、`debug_assign_repair_assist(...)`、`debug_assign_upgrade_assist(...)`、`debug_assign_heal_assist(...)`、`debug_assign_eat(...)`、`debug_assign_sleep(...)`、`debug_assign_action(...)` 和只读 `get_healing_helpers_for_target(...)`。T1001 新增 `get_pending_action_id(...)`、`get_active_action_id(...)`、`get_runtime_action_id(...)` 和 `interrupt_npc_action(...)`，供计划系统判断与中断行动。T0075 后初始化会验证每个配置行为的 `completion_policy`，并公开只读策略和错误列表；生命周期与资源结算仍不由策略配置直接完成。T0801 后，工作支持真实位置占用/释放和统一效率公式：NPC 对应熟练度、力量/智力属性和建筑等级会缩短单位工作周期；T0803 后，配置了 `output_scaling` 的工作可按熟练度、属性和建筑等级提高实际产出，当前菜园产粮使用该规则。T0035 后，`work_blacksmith` / `work_workshop` 要求制造目标，调用 CraftingSystem 校验项目 revision / 阶段材料、同步当前周期进度并在完整周期结束时提交一个阶段；中断或切换目标会清除未完成周期，已提交阶段由 CraftingSystem 保留。T0037 后，`work_stable` 不再产出匿名库存，其 active 状态供 HorseSystem 选择有效养马人并按养马能力推进马匹成长 / 生育。训练场使用 `training_instructor_station` 教官位和 `training_practice_slot` 训练位：无武器且无坐骑不能当教官或受训者；受训者需要至少一名在岗教官；全部在岗教官按人数和技能形成团队贡献，统一提高全部在位受训者的效率。诊所同样由全部 `clinic_doctor_station` 在岗人员按医术形成团队贡献，提高所有 `clinic_patient_bed` 占用者的恢复效率。当前工作支持菜园产粮、食堂加工餐食、酒窖酿酒、铁匠铺 / 工械坊推进具体制造项目，以及马厩养马人照料真实马匹。建筑修复和升级由 `BuildingSystem` 创建倒计时作业，NPC 行动只负责在广场协助正在进行的修复/升级并加速倒计时。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者会前往目标所在信息地点，最多 2 人协助同一目标，按医术熟练度调用 `NPCSystem` 加速昏迷恢复，并按逻辑时间消耗第纳尔。工作、训练、吃饭、睡觉会以 `local_public` 写入事件，让同地点当前在场 NPC 收到见闻；协助修复/协助升级同样以 `local_public` 写入 `repair_assist_started` / `upgrade_assist_started`，事件地点为 `plaza`；协助治疗写入 `healing_started` / `healing_completed`，进入治疗者和目标事件库，并写入同地点其他在场 NPC 的见闻库，事件信息不暴露医术熟练度。T0401 暂停语义修正后，暂停期间不会执行行动结算；吃饭、睡觉、工作和训练到达地点后进入 active 行动并随 `logical_time_tick` 推进。行动系统自身不实现 LLM 日程、战斗、器械部署或其他职业特殊生产平衡；T1508 部署由独立 DefenseDeviceSystem 负责。T0025 后新增 `assign_npc_dialogue(...)`、祈祷与地点拜访执行，`get_runtime_action_snapshot(...)` 暴露 pending/active 的 action、target、location、耗时和实际位置；治疗中途缺钱或离开地点写 `healing_failed`，不再伪装完成。对话接近会预定双方，开始前打断普通工作并释放位置；吃饭、睡觉、祈祷、弥撒、诊疗和训练都会自动申请同类型空位，满位或建筑封闭时返回结构化失败并触发计划重估。普通祈祷不依赖神父；`lead_mass` 对所有 NPC 可见，但只有具备“主持弥撒”能力者可执行。
 
 T0043 当前口径：训练使用 `training_instructor_station` / `training_practice_slot`，诊所使用 `clinic_doctor_station` / `clinic_patient_bed`；全部在岗教官 / 医生形成团队贡献。吃饭、睡觉、祈祷和弥撒也申请具体位置。普通祈祷始终可用，只有 `lead_mass` 需要“主持弥撒”能力；封闭、满位和摧毁失败均进入计划重估。
+
+T0081 当前口径：ActionSystem 不再从行动定义读取饱食 / 疲劳变化；吃饭仅保留食物恢复。`advance_timed_action_experience(...)` 按 `timed_experience` 配置累计三类协助的有效秒数，每满 3600 秒调用统一熟练度成长并写 `skill_improved`。
 
 路径：`res://scripts/systems/DailyPlanSystem.gd`
 用途：每日计划系统，负责正式真实 LLM 和显式调试用 24 小时 NPC 计划、写入计划事件，并按小时打点调用行动系统；T0049/T0050 后还负责对话 / 日常行动失败计划修改判别、精确阶段修订和其他直接受限修订。
 依赖：读取 `NPCSystem` 的 NPC、熟练度和计划字段；调用 `LLMBridge.request_npc_daily_plan_async(...)`、`request_plan_revision_judgement_async(...)` / `request_npc_plan_revision_async(...)` 获取后端结果；调用 `ActionSystem` 执行计划项并安全中断旧行动；调用 `MemorySystem.add_event(...)` 写入 `wake_up` / `plan_created` / `plan_revised`。
-当前状态：T1001 已实现规则计划调试、保存和按小时执行。T0025 后以 `(day, hour, plan_version, action_id, target_id, dialogue_goal)` 保证同一版本同一时段只派发一次；批量执行按教官、其他非对话、受训者、对话顺序落地。T0022 后，正式 `/npc/plan_day` 先检查非 Mock 真实 provider，默认 8 路并发，将成功项标记为 `llm_plan_day`，每名 NPC 最多尝试 3 次真实请求。开局和 `day_started` 只在整批全部成功后恢复时间并执行；否则保持暂停与 `planning_day`。T0049/T0050 后，实际对话（包括已提交攻击轮）与明确的日常计划行动失败都先请求通用判别，空 `revision_hours` 不修订，非空才通过 `/npc/revise_plan` 精确合并所选小时；指令变化、战斗结束 / 复苏和 GM 等其他来源继续直接受限修订。双目标 NPC-NPC 会话等待双方判别 / 修订终态后按依赖顺序放行，跨小时玩家对话和行动失败判别也会延迟旧计划重派到链路终态。成功项标记 `llm_plan_revision`，失败最多 3 次真实请求并保留原计划；请求日 / 小时 / 计划版本 / 对话 epoch、单后继队列和连续迟到落地失败上限共同防止旧结果覆盖与无限循环。
+当前状态：T1001 已实现规则计划调试、保存和按小时执行。T0025 后以 `(day, hour, plan_version, action_id, target_id, dialogue_goal)` 保证普通派发幂等；T0075 增加生产完成后的受控续开、每小时单次逻辑项消费，以及整点相同运行态采用 / 不同项中断。批量执行按教官、其他非对话、受训者、对话顺序落地。T0022 后，正式 `/npc/plan_day` 先检查非 Mock 真实 provider，默认 8 路并发，将成功项标记为 `llm_plan_day`，每名 NPC 最多尝试 3 次真实请求。开局和 `day_started` 只在整批全部成功后恢复时间并执行；否则保持暂停与 `planning_day`。T0049/T0050 后，实际对话（包括已提交攻击轮）与明确的日常计划行动失败都先请求通用判别，空 `revision_hours` 不修订，非空才通过 `/npc/revise_plan` 精确合并所选小时；指令变化、战斗结束 / 复苏和 GM 等其他来源继续直接受限修订。双目标 NPC-NPC 会话等待双方判别 / 修订终态后按依赖顺序放行，跨小时玩家对话和行动失败判别也会延迟旧计划重派到链路终态。成功项标记 `llm_plan_revision`，失败最多 3 次真实请求并保留原计划；请求日 / 小时 / 计划版本 / 对话 epoch、单后继队列和连续迟到落地失败上限共同防止旧结果覆盖与无限循环。
 T0024 补充：正式批次快照新增 `max_observed_concurrent`，用于区分“配置为 8”与“实际同时在飞达到 8”；真实开局和 `day_started` 均已完成实际峰值 8 的验收。
 
 路径：`res://scripts/systems/GameStartupSystem.gd`
@@ -495,9 +834,9 @@ T0024 补充：正式批次快照新增 `max_observed_concurrent`，用于区分
 当前状态：T0019/T0022 已实现并挂载到 `Main/Systems/GameStartupSystem`。正式模式先暂停时间与自动执行，让 8 名 NPC 进入计划制定状态，再发起 8 路并发真实计划。收到整批成功信号并确认每人都有 24 小时 `llm_plan_day` 后，才统一执行第 1 天 06:00 项并恢复时间；失败保持暂停。静止模式不生成计划；教程模式只记录占位状态。
 
 路径：`res://scripts/systems/DailyReflectionSystem.gd`
-用途：首次睡眠总结系统，负责监听睡觉开始 / 结束和逻辑时间、在每日首次睡眠满 1 游戏小时后生成反思、写入长期日记、替换式更新知识图谱当前键值并清空当天短期记忆。
-依赖：监听 `EventBus.event_recorded` 的 `sleep_started`；读取 `MemorySystem.get_npc_short_term_memory(...)`；调用 `LLMBridge.request_npc_daily_reflection_async(...)` 请求 `/npc/daily_reflection`；调用 `NPCSystem.apply_daily_reflection(...)` 写入长期记忆；调用 `MemorySystem.clear_npc_short_term_memory(...)` 清空该 NPC 当天短期索引。
-当前状态：T1004/T1005/T1405 已实现；每名 NPC 每天首次睡眠满 1 游戏小时后自动异步生成一次，发起到完成期间不可被对话、指令或行动改派打断，后端不可用时使用模板降级，知识图谱按 `subject + relation` 替换当前值，日记按条追加，GM 可通过 `debug_generate_reflection(...)` 强制触发。
+用途：熟睡总结系统，负责监听睡觉开始 / 结束和逻辑时间、按 21:00 锚定窗口累计同窗睡眠，在满 1 游戏小时后生成反思、写入长期日记、替换式更新知识图谱当前键值并轮转当前短期记忆。
+依赖：监听 `EventBus.event_recorded` 的 `sleep_started`；读取 `MemorySystem.get_npc_short_term_memory_snapshot(...)`；调用 `LLMBridge.request_npc_daily_reflection_async(...)` 请求 `/npc/daily_reflection`；调用 `NPCSystem.apply_daily_reflection(...)` 写入长期记忆；调用 `MemorySystem.clear_npc_short_term_memory_snapshot(...)` 只轮转本次请求快照内的短期索引。
+当前状态：T1004/T1005/T1405 已实现；T0094 后每名 NPC 在一个 21:00 锚定窗口内跨中断累计睡眠，满 1 游戏小时后自动异步生成且成功应用后该窗口去重一次。T0095 后请求显式携带窗口与内容范围，日记按锚点标为“接到守备命令的第N天”，实际触发时刻独立保存；成功只推进本次请求快照水位，失败不消耗窗口也不推进内容。发起到完成期间不可被对话、指令或行动改派打断，后端不可用时使用模板降级，知识图谱按 `subject + relation` 替换当前值，GM 可通过 `debug_generate_reflection(...)` 强制触发。
 T0024 补充：最多 8 路首次睡眠总结同时在飞，`get_async_reflection_snapshot()` 暴露当前活动数、实际峰值、启动 / 完成计数和逐 NPC 结果。真实 provider 成功写为 `llm_daily_reflection`，显式 Mock provider 写为 `mock_daily_reflection`；缺少来源证明或模型 fallback 不会被猜成真实成功。
 
 路径：`res://scripts/systems/CombatSystem.gd`
@@ -603,6 +942,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 | 游戏状态 | `res://scripts/core/GameState.gd` | 全局状态 |
 | 配置加载 | `res://scripts/core/ConfigLoader.gd` | JSON 配置加载 |
 | 时间系统 | `res://scripts/systems/TimeSystem.gd` | 天数、阶段、加速 |
+| NPC 生活消耗 | `res://scripts/systems/NPCNeedsSystem.gd` | 饱食 / 疲劳档位、有效时间、小数余量与边界 |
 | 资源系统 | `res://scripts/systems/ResourceSystem.gd` | 金钱、粮食等 |
 | 建筑系统 | `res://scripts/systems/BuildingSystem.gd` | 建筑 HP、等级、逐位置状态、可进入性、损伤效率与升级封闭 |
 | NPC 系统 | `res://scripts/systems/NPCSystem.gd` | NPC 生成与管理 |
@@ -640,6 +980,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 | NPC 初始长期记忆 | `data/npc_initial_long_memory.json` | 8 人开局前日记与替换式知识图谱种子 |
 | 建筑定义 | `data/building_defs.json` | 建筑 HP、逐位置、固定类型、活动效率和逐级升级效果；公告牌不在此表中 |
 | 行动定义 | `data/action_defs.json` | 工作、诊疗、训练、吃饭、睡觉、祈祷、主持弥撒及其位置映射 |
+| 活动生活消耗 | `data/activity_needs.json` | 0–100 边界、每小时速率与行为模式映射 |
 | 武器定义 | `data/weapon_defs.json` | 剑盾、长杆、弓、弩 |
 | 盔甲定义 | `data/armor_defs.json` | 头盔、胸甲、腕甲、腿甲 |
 | 坐骑定义 | `data/mount_defs.json` | HorseSystem 同步装备槽时使用的通用骑乘参数 |
@@ -679,9 +1020,14 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 当前状态：T0206 后为 15 条建筑/门墙定义，覆盖主厅、宿舍、食堂、仓库、围墙、城门、后门、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所和工械坊；所有建筑都有 `upgrade` 最小规则，既有关键建筑保留 `repair` 规则，`repair` 可配置每点缺失 HP 耗时和等级耗时系数。T0043 后不可进入建筑不保留内部位置；小教堂固定 `chapel_altar ×1 + chapel_prayer_seat ×10`，小诊所初始 `clinic_doctor_station ×1 + clinic_patient_bed ×2`，训练场初始 `training_instructor_station ×1 + training_practice_slot ×2`，食堂初始 `dining_kitchen_station ×1 + dining_seat ×10`，宿舍固定 `dormitory_bed ×10`。诊疗位、病床、教官位、训练位和灶台可按逐级配置扩容；祭坛、祈祷席、用餐席和宿舍床位固定。升级配置还可增加效率与 Max HP；公告牌仍独立于建筑定义。
 
 路径：`data/action_defs.json`
-用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出和状态变化。
+用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出、唯一生活消耗档位和可选有效工时经验。
 依赖：由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
-当前状态：T0305 已由 `ActionSystem` 读取；包含菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、马厩照料、小诊所医生坐诊/研读医术、小诊所病床治疗、训练场教官、训练场受训者、吃饭、睡觉和协助治疗昏迷者等最小行动定义。2026-05-25 起优先使用 `duration_seconds` 表达持续时间：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。T0803 后 `work_garden` 配置 `output_scaling`，基础产出 2 份粮食，并由耕种熟练度、力量和菜园等级提高实际产出。T0035 后 `work_blacksmith` / `work_workshop` 保留打铁 + 力量、工程 + 智力和 3600 秒基础周期，但 `input_resources` / `output_resources` 为空并设 `requires_crafting_target=true`，实际阶段材料与具体成品由 CraftingSystem 配方结算。T0037 后 `work_stable` 保留养马 + 力量和 3600 秒周期，但不再直接消耗粮食或产出 `horse_readiness`，其 active 状态作为 HorseSystem 照料资格。T0807 后 `work_tavern` 明确使用酿酒与智力，消耗 1 份粮食并产出酒派生库存，且通过 `output_scaling` 让酿酒、智力和酒窖等级提高实际产出；T1507 后酒由 MerchantSystem 在商人到访时按配置出售，酿酒行动仍不自动换钱。T0808 后 `work_clinic_doctor` 占用诊所医生工位，`receive_clinic_treatment` 占用诊所病床，二者同时满足时推进治疗并消耗第纳尔；医生无病人时缓慢研读医术。T0903 后 `work_training_instructor` 占用训练场教官工位，`receive_weapon_training` 占用训练场受训位，训练项目由 NPC 当前主武器 / 坐骑决定。T1204A 后补充 `escaping_station` 与 `escape_intervention_dialogue` 系统显示行动，用于地点快照和 UI 文案格式化，不作为普通行动下拉的可执行工作。协助治疗是需要目标 NPC 的 `targeted_heal` 行动，普通 `assign_action` 不直接执行，必须走 `debug_assign_heal_assist(healer_npc_id, target_npc_id)`。协助修复和协助升级不在该文件中按建筑写死，而由 `ActionSystem` 作为带建筑参数的运行时行为处理。
+当前状态：T0305 已由 `ActionSystem` 读取；包含菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、马厩照料、小诊所医生坐诊/研读医术、小诊所病床治疗、训练场教官、训练场受训者、吃饭、睡觉和三类协助等 25 个行动定义。2026-05-25 起优先使用 `duration_seconds` 表达持续时间：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。T0803 后 `work_garden` 配置 `output_scaling`，基础产出 2 份粮食，并由耕种熟练度、力量和菜园等级提高实际产出。T0035 后 `work_blacksmith` / `work_workshop` 保留打铁 + 力量、工程 + 智力和 3600 秒基础周期，但 `input_resources` / `output_resources` 为空并设 `requires_crafting_target=true`，实际阶段材料与具体成品由 CraftingSystem 配方结算。T0037 后 `work_stable` 保留养马 + 力量和 3600 秒周期，但不再直接消耗粮食或产出 `horse_readiness`，其 active 状态作为 HorseSystem 照料资格。T0807 后 `work_tavern` 明确使用酿酒与智力，消耗 1 份粮食并产出酒派生库存，且通过 `output_scaling` 让酿酒、智力和酒窖等级提高实际产出；T1507 后酒由 MerchantSystem 在商人到访时按配置出售，酿酒行动仍不自动换钱。T0808 后 `work_clinic_doctor` 占用诊所医生工位，`receive_clinic_treatment` 占用诊所病床，二者同时满足时推进治疗并消耗第纳尔；医生无病人时缓慢研读医术。T0903 后 `work_training_instructor` 占用训练场教官工位，`receive_weapon_training` 占用训练场受训位，训练项目由 NPC 当前主武器 / 坐骑决定。T1204A 后补充 `escaping_station` 与 `escape_intervention_dialogue` 系统显示行动，用于地点快照和 UI 文案格式化，不作为普通行动下拉的可执行工作。T0081 后每条定义必须声明唯一 `needs_profile`，不得再出现旧生活状态 delta 字段；`assist_repair / assist_upgrade / assist_heal` 作为参数化定义保留在本表，并通过 `timed_experience` 分别累计工程 / 工程 / 医术。
+
+路径：`data/activity_needs.json`
+用途：NPC 活动生活消耗配置，记录 0–100 边界、每小时饱食 / 疲劳速率、行为模式映射、动态 idle / movement / unconscious 档位和说明。
+依赖：由 `NPCNeedsSystem` 通过 ConfigLoader 读取；行动通过 `needs_profile` 引用，不复制数值。
+当前状态：T0081 已覆盖 idle、dialogue、visit、movement、rally、avoid_combat、escape、combat、轻 / 重工作、两类训练、吃饭、睡眠、病床、祈祷、饮酒和昏迷休息。
 
 T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`、`clinic_patient_bed`、`training_instructor_station`、`training_practice_slot`；吃饭、睡觉、普通祈祷和主持弥撒分别映射 `dining_seat`、`dormitory_bed`、`chapel_prayer_seat`、`chapel_altar`。`lead_mass` 对所有 NPC 可见但要求“主持弥撒”能力。NPC 不选择编号，满位 / 封闭失败由程序返回并触发计划重估。
 
@@ -708,7 +1054,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 路径：`data/npc_initial_long_memory.json`
 用途：独立保存 8 名初始 NPC 的开局前日记和知识图谱，不与根本人设或运行时权威状态混写。
 依赖：由 `NPCSystem` 与 `npc_profiles.json` 同时读取；两者 NPC id 必须完全一致，验证通过后才生成 NPC。
-当前状态：T0059 已配置 8 人 × 3 篇第一人称生命切片；T0061 起前两篇分别承担宏观身世 / 来站原因与按一致时序相互拼接的到站群像，近日篇继续保留 T0060 的微观站内生活。每人图谱覆盖其余 7 人、守备官、全部 15 座配置建筑和至少 2 个个人故事主体；守备官仅保留统一 `role` 职位职责，建筑中文 `relation_label / value_label` 使用世界内叙事。为去除尚未实现的容量 / 丢货语义，8 条仓库技术 `value` 统一迁移为 `central_storage_and_post_breach_attack_target`，其余技术值不变；222 条关系记录的 `confidence / day / time` 完整保留。后续反思在运行态追加 / 替换，不回写本文件。
+当前状态：T0059 已配置 8 人 × 3 篇第一人称生命切片；T0061 起前两篇分别承担宏观身世 / 来站原因与按一致时序相互拼接的到站群像，近日篇继续保留 T0060 的微观站内生活。每人图谱覆盖其余 7 人、守备官、全部 15 座配置建筑和至少 2 个个人故事主体；守备官仅保留统一 `role` 职位职责，建筑中文 `relation_label / value_label` 使用世界内叙事。T0070 后新增 4 条职业关键规则，8 条仓库技术值更新为 `level_based_bulk_storage_and_post_breach_attack_target`；当前共 226 条关系，`confidence / day / time` 完整保留。后续反思在运行态追加 / 替换，不回写本文件。
 
 路径：`data/npc_profiles.json`
 用途：NPC 档案配置，记录身份、性格、欲望、恐惧、底线、基础数值、状态、技能、入伍状态、装备、知识图谱和日记。
@@ -718,12 +1064,12 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 路径：`data/prompts/dialogue_system_prompt.txt`
 用途：`/npc/dialogue` 真实 provider 的系统 Prompt 模板，覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留。
 依赖：由 `backend/services/model_adapter.py` 在 `call_type=dialogue` 时读取，并与通用 JSON / Schema guard 拼接。
-当前状态：T1402 已接入；T0061 起模板只读取宽松 `speech_style` 与其他稳定人设，从目标 NPC 的职业经验、关注点和判断习惯出发回应，不读取或模仿固定样例句。模板继续限制 `recruitment_result`、`wartime_reaction` 与逃离挽留 `intent` 的允许语义。T1501 的 mock / fake real-provider 与 8 人真实 DeepSeek 职业身份对话保留为历史验收；T0061 当前版本的静态、Prompt、Mock / endpoint、Godot 与真实 DeepSeek 复验均已完成。
+当前状态：T1402 已接入；T0061 起模板只读取宽松 `speech_style` 与其他稳定人设，从目标 NPC 的职业经验、关注点和判断习惯出发回应，不读取或模仿固定样例句。T0087 后模板按 `dialogue_kind` 分别限制 `recruitment_result / wartime_reaction`、`invitation_result / should_end_dialogue` 与 `escape_intervention_result=stay|leave`，不再使用通用 `intent`。T1501 的 mock / fake real-provider 与 8 人真实 DeepSeek 职业身份对话保留为历史验收；当前版本的静态、Prompt、Mock / endpoint、Godot 与真实 DeepSeek 复验均已完成。
 
 路径：`data/prompts/daily_plan_system_prompt.txt`
 用途：`/npc/plan_day` 真实 provider 的系统 Prompt 模板，覆盖每日 24 小时计划生成。
 依赖：由 `backend/services/model_adapter.py` 在 `call_type=plan_day` 时读取，并与通用 JSON / Schema guard 拼接。
-当前状态：T1403 已接入；模板要求输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` / `idle`，并明确 `current_order` 只能作为守备官当前指令参考，不能越过行动白名单、资源、HP、地点、建筑、工位或程序强制层。已通过 fake real-provider 验证和真实 DeepSeek `/npc/plan_day` smoke test。
+当前状态：T1403/T0085 已接入；模板要求输出 0-23 点共 24 阶段、只使用 `allowed_actions` / `idle`，并强烈建议通常至少 6 个工作阶段但明确这不是程序硬门槛。`current_order` 只能作为守备官当前指令参考，不能越过行动白名单、资源、HP、地点、建筑、工位或程序强制层。
 
 路径：`data/prompts/plan_revision_judgement_system_prompt.txt`
 用途：`/npc/plan_revision_judgement` 的范围判别系统 Prompt，根据完整本轮对话或程序权威行动失败事实、原计划和共享人物 / 记忆 / 指令上下文返回 0 个或若干个需要修改的精确小时。
@@ -788,7 +1134,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 路径：`backend/schemas/npc_ai.py`
 用途：NPC AI 请求/响应 Schema，覆盖玩家-NPC / NPC-NPC / 逃离挽留对话、对话 / 行动失败通用计划修改判别、每日计划、精确小时计划修订、战斗判定、首次睡眠总结、知识图谱更新、主动交涉和玩家话术分类。
 依赖：`pydantic`，复用 `backend/schemas/common.py`。
-当前状态：T0603 后，对话 Schema 已按当前任务重整为显式输入；T0703A 新增对话顶层 `current_order`，并让每日计划、修订、战斗判定、首次睡眠总结等通过共享 `NPCContext.current_order` 复用最新指令。T0049/T0050 定义 `PlanRevisionJudgementRequest/Response`，通过 `trigger_kind` 选择完整对话或权威行动失败事实、原计划和可为空的精确 `revision_hours`；旧 `DialoguePlanRevisionJudgement*` 名为兼容别名，`PlanRevisionRequest` 只接受 `selected_hours` 与非空精确小时。T1202 后，`BattleJudgementRequest` 包含 `combat_context`、`battlefield_context` 和 Godot 提供的 `allowed_decisions`，用于低血量自身心理判定。T1204A 后，`InteractionContext` 包含 `escape_intervention`，逃离挽留中的玩家消息可携带 `dialogue_kind="escape_intervention"` 与 `escape_intervention_round`，`NPCDialogueResponse.intent` 可表达 `stay_after_intervention` / `leave_after_intervention`；逃离挽留攻击不走对话 Schema。响应使用 `replyer_id`、`reply_text`、`response_kind`、`recruitment_result` 和 `should_end_dialogue`；战斗判定响应使用 `BattleJudgementResponse.decision` 表达允许集合内的意向。
+当前状态：T0603 后，对话请求 Schema 已重整为显式输入；T0703A 新增顶层 `current_order`，并让每日计划、修订、战斗判定、首次睡眠总结等通过共享 `NPCContext.current_order` 复用最新指令。T0049/T0050 定义 `PlanRevisionJudgementRequest/Response`，通过 `trigger_kind` 选择完整对话或权威行动失败事实、原计划和可为空的精确 `revision_hours`；旧 `DialoguePlanRevisionJudgement*` 名为兼容别名，`PlanRevisionRequest` 只接受 `selected_hours` 与非空精确小时。T1202 后，`BattleJudgementRequest` 包含 `combat_context`、`battlefield_context` 和 Godot 提供的 `allowed_decisions`，用于低血量自身心理判定。T0087 后，统一 `NPCDialogueRequest` 按 `dialogue_kind` 分派到 `PlayerNPCDialogueResponse / NPCNPCDialogueResponse / EscapeInterventionDialogueResponse`，三个响应禁止额外字段；逃离挽留使用 `escape_intervention_result=stay|leave`，攻击不走对话 Schema。战斗判定响应继续使用 `BattleJudgementResponse.decision` 表达允许集合内的意向。
 
 路径：`backend/schemas/__init__.py`
 用途：统一导出后端 Schema 类型。
@@ -819,10 +1165,11 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 
 | 内容 | 文件 |
 |---|---|
-| Godot MCP 连接与拓扑自检 | `tools/check_godot_mcp.ps1` |
-| Godot MCP 多会话 proxy / 单 broker 拓扑验证 | `tools/verify_godot_mcp_topology.mjs` |
+| Godot MCP 连接与拓扑自检（区分正常 6550 owner、8765 broker 与已建立连接） | `tools/check_godot_mcp.ps1` |
+| Godot MCP fresh proxy / 多会话隔离 / 单 broker 拓扑验证（失败时输出子 proxy stderr） | `tools/verify_godot_mcp_topology.mjs` |
 | 建筑修复/升级验证 | `tools/verify_building_repair_upgrade.gd` |
 | 建筑面板工位显示验证 | `tools/verify_building_panel_workstations.gd` |
+| 固定宿舍床位、空余床与重复睡眠验证 | `tools/verify_fixed_dormitory_beds.gd` |
 | 五建筑位置、资格、团队效率、升级封闭与损伤效率综合验证 | `tools/verify_building_service_positions.gd` |
 | NPC 面板与状态验证 | `tools/verify_npc_panel_state.gd` |
 | NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |
@@ -836,7 +1183,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 具体配方与分阶段制造闭环验证 | `tools/verify_crafting_pipeline.gd` |
 | 真实马匹生态、分配与战时生命周期验证 | `tools/verify_horse_ecology_assignment.gd` |
 | 马匹基础 / 额外 HP、初始成长、累积繁育概率、冷却与 UI 验证 | `tools/verify_horse_care_feedback.gd` |
-| 酒窖酿酒与出售边界验证 | `tools/verify_tavern_wine_trade.gd` |
+| 酒窖酿酒、出售与 NPC 个人饮酒边界验证 | `tools/verify_tavern_wine_trade.gd`、`tools/verify_npc_wine_drinking.gd` |
 | 公告牌输入与广场广播验证 | `tools/verify_notice_board_input.gd` |
 | 商人时段、买卖与事件验证 | `tools/verify_merchant_trade_system.gd` |
 | 具体弩床 / 箭塔库存、部署、战斗效果、事件与模型挂点验证 | `tools/verify_defense_device_deployment.gd` |

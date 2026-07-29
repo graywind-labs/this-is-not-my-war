@@ -246,14 +246,24 @@ func _init() -> void:
 		push_error("Plaza entry witness snapshot was not created")
 		quit(1)
 		return
+	var plaza_entry_witness_snapshot: Dictionary = plaza_entry_snapshot_event.get("payload", {}).get("location_snapshot", {})
+	if (
+		plaza_entry_witness_snapshot.has("current_notice")
+		or plaza_entry_witness_snapshot.has("reference_schedule")
+		or plaza_entry_witness_snapshot.has("schedule_advisory_note")
+	):
+		push_error("Plaza entry witness snapshot should not repeat notice-board pages")
+		quit(1)
+		return
 	var plaza_entry_summary := str(plaza_entry_snapshot_event.get("summary", ""))
 	if (
 		not plaza_entry_summary.contains("广场现在有")
 		or not plaza_entry_summary.contains("在场人员状态")
 		or not plaza_entry_summary.contains("莉娜健康")
-		or not plaza_entry_summary.contains("公告牌写着")
+		or plaza_entry_summary.contains("公告牌")
+		or plaza_entry_summary.contains("参考日程")
 	):
-		push_error("Plaza entry summary did not mention present NPC statuses and notice board")
+		push_error("Plaza entry summary did not keep people state while excluding notice-board pages")
 		quit(1)
 		return
 

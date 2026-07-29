@@ -37,6 +37,9 @@ func _init() -> void:
 	var visibility_select := npc_panel.find_child("NPCInteractionVisibilitySelect", true, false) as OptionButton
 	var money_spin := npc_panel.find_child("NPCGiftMoneySpin", true, false) as SpinBox
 	var gift_button := npc_panel.find_child("NPCGiftMoneyButton", true, false) as Button
+	var wine_spin := npc_panel.find_child("NPCGiftWineSpin", true, false) as SpinBox
+	var gift_wine_button := npc_panel.find_child("NPCGiftWineButton", true, false) as Button
+	var wine_label := npc_panel.find_child("NPCWineLabel", true, false) as Label
 	var weapon_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
 	var unequip_weapon_button := npc_panel.find_child("NPCUnequipWeaponButton", true, false) as Button
 	var armor_equip_button := npc_panel.find_child("NPCEquipArmorButton", true, false) as Button
@@ -46,7 +49,7 @@ func _init() -> void:
 	var strategy_select := npc_panel.find_child("NPCCombatStrategySelect", true, false) as OptionButton
 	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
 	var result_label := npc_panel.find_child("NPCInteractionResultLabel", true, false) as Label
-	if [visibility_select, money_spin, gift_button, weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select, equipment_label, result_label].has(null):
+	if [visibility_select, money_spin, gift_button, wine_spin, gift_wine_button, wine_label, weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select, equipment_label, result_label].has(null):
 		push_error("NPC interaction controls are missing")
 		quit(1)
 		return
@@ -138,6 +141,25 @@ func _init() -> void:
 		push_error("Gift money should show a success result before switching NPC, got: %s" % result_label.text)
 		quit(1)
 		return
+	resource_system.add_resource("wine", 2)
+	await process_frame
+	wine_spin.value = 1.0
+	var global_wine_before: int = int(resource_system.get_resource("wine"))
+	var npc_wine_before: int = int(npc_system.get_npc_state(target_id).get("wine", 0))
+	gift_wine_button.pressed.emit()
+	await process_frame
+	if int(resource_system.get_resource("wine")) != global_wine_before - 1:
+		push_error("Gift wine button did not spend global wine")
+		quit(1)
+		return
+	if int(npc_system.get_npc_state(target_id).get("wine", 0)) != npc_wine_before + 1:
+		push_error("Gift wine button did not update NPC-owned wine")
+		quit(1)
+		return
+	if result_label.text.find("已赠予 1 份酒") < 0 or not wine_label.text.contains("酒：%d" % (npc_wine_before + 1)):
+		push_error("Gift wine UI did not refresh result and NPC-owned wine label")
+		quit(1)
+		return
 	npc_system.debug_select_npc(witness_id)
 	await process_frame
 	if result_label.text != "":
@@ -150,6 +172,14 @@ func _init() -> void:
 		return
 	if not _has_event(memory_system.get_npc_witness_events(witness_id), "money_given"):
 		push_error("Public gift money did not reach same-location witness log")
+		quit(1)
+		return
+	if not _has_event(memory_system.get_npc_daily_events(target_id), "wine_given"):
+		push_error("Gift wine did not enter target NPC event log")
+		quit(1)
+		return
+	if not _has_event(memory_system.get_npc_witness_events(witness_id), "wine_given"):
+		push_error("Public gift wine did not reach same-location witness log")
 		quit(1)
 		return
 

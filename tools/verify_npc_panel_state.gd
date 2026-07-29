@@ -19,11 +19,13 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var game_state := root.get_node_or_null("GameState")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel") as Control
 	var building_panel := root.get_node_or_null("Main/UI/BuildingPanel") as Control
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel") as Control
 	var order_panel := root.get_node_or_null("Main/UI/OrderPanel") as Control
-	if npc_system == null or building_system == null or memory_system == null or daily_plan_system == null or npc_panel == null or building_panel == null or dialog_panel == null or order_panel == null:
+	if npc_system == null or building_system == null or memory_system == null or daily_plan_system == null or time_system == null or game_state == null or npc_panel == null or building_panel == null or dialog_panel == null or order_panel == null:
 		push_error("Required systems or panels not found")
 		quit(1)
 		return
@@ -319,10 +321,26 @@ func _init() -> void:
 	await process_frame
 
 	daily_plan_system.generate_rule_plan_for_npc(npc_id)
+	time_system.set_current_time(1, 8, 0, 0)
+	if int(game_state.current_hour) != 8:
+		push_error("Failed to set current plan verification time to 08:00")
+		quit(1)
+		return
 	current_plan_button.pressed.emit()
 	await process_frame
-	if not memory_detail_popup.visible or not memory_detail_title.text.contains("当前计划") or not memory_detail_text.text.contains("08:00"):
+	await process_frame
+	await process_frame
+	if not memory_detail_popup.visible or not memory_detail_title.text.contains("当前计划") or not memory_detail_text.text.contains("07:00–11:00"):
 		push_error("Current plan popup did not show the active 24-hour plan")
+		quit(1)
+		return
+	var first_visible_plan_line := memory_detail_text.get_first_visible_line()
+	if not memory_detail_text.get_line(first_visible_plan_line).contains("00:00–05:00") or not memory_detail_text.text.contains("▶ 07:00–11:00"):
+		push_error("Current plan popup should begin with the second prior visible group and mark the 08:00 group third: hour=%d first_line=%d text=%s" % [
+			int(game_state.current_hour),
+			first_visible_plan_line,
+			memory_detail_text.get_line(first_visible_plan_line)
+		])
 		quit(1)
 		return
 	var updated_plan: Array = daily_plan_system.get_npc_daily_plan(npc_id)
@@ -336,8 +354,60 @@ func _init() -> void:
 		push_error("Current plan popup should refresh when the active plan is replaced")
 		quit(1)
 		return
+
+	updated_plan = daily_plan_system.get_npc_daily_plan(npc_id)
+	for hour in range(13, 17):
+		updated_plan[hour]["action_id"] = "work_tavern"
+		updated_plan[hour]["action_name"] = "酿造酒"
+		updated_plan[hour]["source"] = "llm_plan_day"
+		updated_plan[hour]["target"] = {}
+		updated_plan[hour]["priority"] = 60
+		updated_plan[hour]["reason"] = "酿造酒"
+		updated_plan[hour]["dialogue_goal"] = ""
+	time_system.set_current_time(1, 14, 0, 0)
+	if not daily_plan_system.set_npc_daily_plan(npc_id, updated_plan, false, "rule_default"):
+		push_error("Failed to set grouped LLM plan display fixture")
+		quit(1)
+		return
+	await process_frame
+	var grouped_plan_line := "▶ 13:00–16:00  酿造酒｜真实 LLM 日计划"
+	if not memory_detail_text.text.contains(grouped_plan_line):
+		push_error("Consecutive identical plan hours should merge into one marked range: %s" % memory_detail_text.text)
+		quit(1)
+		return
+	if memory_detail_text.text.contains("\n    酿造酒") or memory_detail_text.text.count("酿造酒") != 1:
+		push_error("Plan reason identical to the action name should be hidden: %s" % memory_detail_text.text)
+		quit(1)
+		return
+	updated_plan = daily_plan_system.get_npc_daily_plan(npc_id)
+	updated_plan[15]["reason"] = "计划覆盖刷新测试"
+	if not daily_plan_system.set_npc_daily_plan(npc_id, updated_plan, false, "rule_default"):
+		push_error("Failed to update one grouped plan reason")
+		quit(1)
+		return
+	await process_frame
+	if not memory_detail_text.text.contains("计划覆盖刷新测试") or memory_detail_text.text.contains("13:00–16:00"):
+		push_error("A distinct visible reason should remain visible and split the merged range")
+		quit(1)
+		return
 	memory_detail_close.pressed.emit()
 	await process_frame
+	for boundary_hour in [0, 1]:
+		time_system.set_current_time(1, boundary_hour, 0, 0)
+		current_plan_button.pressed.emit()
+		await process_frame
+		await process_frame
+		await process_frame
+		if memory_detail_text.get_first_visible_line() != 0 or not memory_detail_text.get_line(0).contains("00:00–05:00") or not memory_detail_text.text.contains("▶ 00:00–05:00"):
+			push_error("Current plan popup boundary positioning failed at %02d:00: first_line=%d" % [
+				boundary_hour,
+				memory_detail_text.get_first_visible_line()
+			])
+			quit(1)
+			return
+		memory_detail_close.pressed.emit()
+		await process_frame
+	time_system.set_current_time(1, 6, 0, 0)
 
 	var reflection_apply: Dictionary = npc_system.apply_daily_reflection(npc_id, {
 		"ok": true,
@@ -651,6 +721,9 @@ func _init() -> void:
 		push_error("Building repair progress should not switch the right panel away from NPCPanel")
 		quit(1)
 		return
+	if not await _verify_recruited_name_color(npc_system, npc_panel):
+		quit(1)
+		return
 
 	var close_button := npc_panel.find_child("NPCPanelCloseButton", true, false) as Button
 	if close_button == null:
@@ -666,6 +739,41 @@ func _init() -> void:
 
 	print("T0303 NPC panel and state verification passed.")
 	quit(0)
+
+
+func _verify_recruited_name_color(npc_system: Node, npc_panel: Control) -> bool:
+	const EXPECTED_FRIENDLY_COLOR := Color(0.64, 0.92, 0.68, 1.0)
+	var target_npc_id := "stableman_01"
+	if not npc_system.set_npc_recruited(target_npc_id, true):
+		push_error("Failed to recruit NPC for friendly name color verification")
+		return false
+	npc_system.debug_select_npc(target_npc_id)
+	await process_frame
+	var panel_name := npc_panel.find_child("NPCNameLabel", true, false) as Label
+	if panel_name == null or not panel_name.modulate.is_equal_approx(EXPECTED_FRIENDLY_COLOR):
+		push_error("Recruited NPC panel name should refresh to light green")
+		return false
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	var target_node: Node = null
+	for child in npc_root.get_children():
+		if str(child.get_meta("npc_id", "")) == target_npc_id:
+			target_node = child
+			break
+	if target_node == null:
+		push_error("Recruited NPC world node not found")
+		return false
+	var world_name := target_node.get_node_or_null("NameLabel") as Label3D
+	var world_status := target_node.get_node_or_null("StatusLabel") as Label3D
+	if world_name == null or not world_name.modulate.is_equal_approx(EXPECTED_FRIENDLY_COLOR):
+		push_error("Recruited NPC world name should refresh to light green")
+		return false
+	if world_status == null or not world_status.modulate.is_equal_approx(Color.WHITE):
+		push_error("Only the recruited NPC name should be green; status text should remain neutral")
+		return false
+	if world_name.text.contains("\n") or not world_status.text.begins_with("HP "):
+		push_error("World NPC name and status labels should be visually separable")
+		return false
+	return true
 
 
 func _contains_internal_event_fields(text: String) -> bool:

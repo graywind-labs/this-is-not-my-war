@@ -26,9 +26,11 @@ const COMMAND_HISTORY_LIMIT := 40
 const PANEL_BUTTON_GAP := 8.0
 const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
+const LLM_USAGE_REFRESH_SECONDS := 3.0
 
 var _gm_button: Button
 var _panel: PanelContainer
+var _llm_usage_summary_label: Label
 var _command_input: LineEdit
 var _result_text: TextEdit
 var _resource_select: OptionButton
@@ -67,6 +69,8 @@ var _is_dragging_button := false
 var _button_dragged := false
 var _drag_offset := Vector2.ZERO
 var _history: Array[String] = []
+var _llm_usage_refresh_elapsed := 0.0
+var _llm_usage_request_pending := false
 
 
 func _ready() -> void:
@@ -78,12 +82,17 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_ui()
+	_connect_llm_usage_signal()
 	call_deferred("_refresh_options")
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if _panel != null and _panel.visible:
 		_position_panel_near_button()
+		_llm_usage_refresh_elapsed += delta
+		if _llm_usage_refresh_elapsed >= LLM_USAGE_REFRESH_SECONDS:
+			_llm_usage_refresh_elapsed = 0.0
+			_request_llm_usage_refresh()
 
 
 func _build_ui() -> void:
@@ -144,6 +153,15 @@ func _build_ui() -> void:
 	)
 	header.add_child(close_button)
 
+	_llm_usage_summary_label = Label.new()
+	_llm_usage_summary_label.name = "LLMUsageSummaryLabel"
+	_llm_usage_summary_label.text = "本次运行：等待后端用量…"
+	_llm_usage_summary_label.tooltip_text = "按正式供应商每次 HTTP 尝试累计；人民币为基于供应商 usage 与配置单价的估算。"
+	_llm_usage_summary_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_llm_usage_summary_label.add_theme_font_size_override("font_size", 13)
+	_llm_usage_summary_label.add_theme_color_override("font_color", Color(0.95, 0.82, 0.42))
+	content.add_child(_llm_usage_summary_label)
+
 	var command_row := HBoxContainer.new()
 	content.add_child(command_row)
 
@@ -162,7 +180,7 @@ func _build_ui() -> void:
 	command_row.add_child(execute_button)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(596, 250)
+	scroll.custom_minimum_size = Vector2(596, 226)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(scroll)
 
@@ -620,6 +638,8 @@ func _refresh_options() -> void:
 	_fill_horse_select()
 	_fill_location_select()
 	_fill_visibility_select()
+	if _panel != null and _panel.visible:
+		_request_llm_usage_refresh()
 	_log("GM 选项已刷新。")
 
 
@@ -923,8 +943,8 @@ func _execute_command(command: String) -> void:
 				_show_order(str(parts[1]))
 		"plan_request":
 			_show_plan_reevaluation_request()
-		"expire_plan_dialogues":
-			_run_expire_plan_dialogues()
+		"dialogue_carryover":
+			_show_dialogue_carryover()
 		"plan_generate":
 			if parts.size() >= 2:
 				_run_generate_plan(str(parts[1]))
@@ -1549,13 +1569,14 @@ func _run_npc_talk(speaker_npc_id: String, target_npc_id: String, opening_text: 
 	_log("NPC-NPC 对话 %s -> %s：%s" % [speaker_npc_id, target_npc_id, _ok_text(ok)])
 
 
-func _run_expire_plan_dialogues() -> void:
-	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
-	if action_system == null or not action_system.has_method("expire_invalid_daily_plan_dialogues"):
-		_log("日计划对话等待扫描接口不可用。")
+func _show_dialogue_carryover() -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if plan_system == null or not plan_system.has_method("get_dialogue_carryover_snapshot"):
+		_log("日计划对话跨小时状态接口不可用。")
 		return
-	var expired_npc_ids: Array[String] = action_system.expire_invalid_daily_plan_dialogues()
-	_log("日计划对话等待扫描：expired=%s" % JSON.stringify(expired_npc_ids))
+	_log("日计划对话跨小时状态：%s" % _compact(
+		plan_system.get_dialogue_carryover_snapshot()
+	))
 
 
 func _show_proactive_talk(npc_id: String) -> void:
@@ -1764,6 +1785,76 @@ func _show_llm_usage() -> void:
 	_log("LLM 额度 / 调试信息：usage=%s runtime=%s" % [_compact(result), _compact(runtime_snapshot)])
 
 
+func _connect_llm_usage_signal() -> void:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_signal("llm_usage_response_received"):
+		return
+	var callback := Callable(self, "_on_llm_usage_response_received")
+	if not llm_bridge.llm_usage_response_received.is_connected(callback):
+		llm_bridge.llm_usage_response_received.connect(callback)
+
+
+func _request_llm_usage_refresh() -> void:
+	if _llm_usage_request_pending:
+		return
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge == null or not llm_bridge.has_method("debug_request_llm_usage_async"):
+		if _llm_usage_summary_label != null:
+			_llm_usage_summary_label.text = "本次运行：LLM 用量接口不可用"
+		return
+	_llm_usage_request_pending = true
+	var start_result: Dictionary = llm_bridge.debug_request_llm_usage_async()
+	if not bool(start_result.get("ok", false)):
+		_llm_usage_request_pending = false
+		if _llm_usage_summary_label != null:
+			_llm_usage_summary_label.text = "本次运行：LLM 用量查询启动失败"
+
+
+func _on_llm_usage_response_received(result: Dictionary) -> void:
+	_llm_usage_request_pending = false
+	if _llm_usage_summary_label == null:
+		return
+	if not bool(result.get("ok", false)):
+		_llm_usage_summary_label.text = "本次运行：后端未连接，暂时无法读取 LLM 用量"
+		return
+	var body: Dictionary = result.get("body", result)
+	var summary: Dictionary = body.get("summary", {})
+	var provider_usage: Dictionary = summary.get("provider_usage", {})
+	var session: Dictionary = provider_usage.get("session", {})
+	var daily: Dictionary = provider_usage.get("daily", {})
+	var total_tokens := int(session.get(
+		"total_tokens",
+		int(session.get("input_tokens", 0)) + int(session.get("output_tokens", 0))
+	))
+	var session_cost := float(session.get("estimated_cost_cny", summary.get("estimated_cost", 0.0)))
+	var daily_cost := float(daily.get("estimated_cost_cny", 0.0))
+	var daily_limit := float(provider_usage.get("daily_limit_cny", 0.0))
+	var limit_text := "未启用"
+	if daily_limit > 0.0:
+		limit_text = "¥%.2f" % daily_limit
+	_llm_usage_summary_label.text = (
+		"运行：入 %s / 出 %s / 总 %s tokens｜¥%.4f　今日：¥%.4f / %s"
+		% [
+			_format_token_count(int(session.get("input_tokens", 0))),
+			_format_token_count(int(session.get("output_tokens", 0))),
+			_format_token_count(total_tokens),
+			session_cost,
+			daily_cost,
+			limit_text
+		]
+	)
+
+
+func _format_token_count(value: int) -> String:
+	var digits := str(maxi(0, value))
+	var parts: Array[String] = []
+	while digits.length() > 3:
+		parts.push_front(digits.right(3))
+		digits = digits.left(digits.length() - 3)
+	parts.push_front(digits)
+	return ",".join(parts)
+
+
 func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bool) -> void:
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null or not llm_bridge.has_method("debug_request_dialogue"):
@@ -1920,6 +2011,8 @@ func _on_gm_button_pressed() -> void:
 		return
 	_panel.visible = not _panel.visible
 	if _panel.visible:
+		_llm_usage_refresh_elapsed = LLM_USAGE_REFRESH_SECONDS
+		_request_llm_usage_refresh()
 		_position_panel_near_button()
 		_panel.move_to_front()
 
@@ -2050,7 +2143,7 @@ func _help_text() -> String:
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
-		"publish_order <npc_id> <text> | order <npc_id> | plan_request | expire_plan_dialogues | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
+		"publish_order <npc_id> <text> | order <npc_id> | plan_request | dialogue_carryover | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
 		"reflect_npc <npc_id> [force] | long_memory <npc_id> | reflection_result",
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"npc_talk <speaker_npc_id> <target_npc_id> [opening_text]",

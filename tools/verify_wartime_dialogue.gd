@@ -168,13 +168,41 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var escape_result: Dictionary = combat_system.apply_wartime_dialogue_reaction("stableman_01", "escape", {
-		"source_event_id": "verify_escape_dialogue_event",
-		"dialogue_id": "verify_escape_dialogue",
-		"interaction_context": "rally"
-	})
+	var escape_dialogue_start: Dictionary = dialog_system.start_player_dialogue("stableman_01", "private")
+	if not bool(escape_dialogue_start.get("ok", false)):
+		push_error("Failed to start staged escape wartime dialogue: %s" % JSON.stringify(escape_dialogue_start))
+		quit(1)
+		return
+	var escape_reply: Dictionary = dialog_system.send_player_message(
+		"城门守不住了，别管阵线，你快逃命。",
+		false,
+		false
+	)
+	if (
+		not bool(escape_reply.get("ok", false))
+		or str(escape_reply.get("dialogue", {}).get("wartime_reaction", "")) != "escape"
+		or not bool(escape_reply.get("dialogue", {}).get("rule_fallback", false))
+	):
+		push_error("Closed-backend wartime escape should be staged by rule fallback: %s" % JSON.stringify(escape_reply))
+		quit(1)
+		return
+	if str(npc_system.get_npc_state("stableman_01").get("behavior_mode", "")) == "escaped":
+		push_error("Wartime escape reaction must remain staged until completion")
+		quit(1)
+		return
+	var escape_completion: Dictionary = dialog_system.complete_displayed_dialogue()
+	var escape_effects: Dictionary = (
+		escape_completion.get("deferred_effect_results", {})
+		if escape_completion.get("deferred_effect_results", {}) is Dictionary
+		else {}
+	)
+	var escape_result: Dictionary = (
+		escape_effects.get("wartime_result", {})
+		if escape_effects.get("wartime_result", {}) is Dictionary
+		else {}
+	)
 	if not bool(escape_result.get("ok", false)):
-		push_error("Escape reaction should start station escape: %s" % JSON.stringify(escape_result))
+		push_error("Completed wartime dialogue should start station escape: %s" % JSON.stringify(escape_completion))
 		quit(1)
 		return
 	stableman_state = npc_system.get_npc_state("stableman_01")
@@ -218,32 +246,31 @@ func _init() -> void:
 		push_error("Failed to start avoid_combat dialogue effect: %s" % JSON.stringify(avoid_effect))
 		quit(1)
 		return
-	var recruit_apply: Dictionary = dialog_system._apply_player_message_response({
-		"ok": true,
-		"dialogue": {
-			"replyer_id": "cook_01",
-			"reply_text": "守备官，我会帮忙，但我还没有武器。",
-			"emotion": "tense",
-			"recruitment_result": "accept",
-			"wartime_reaction": "none",
-			"should_end_dialogue": false
-		}
-	}, {
-		"clean_text": "请应征，帮大家守住驿站。",
-		"next_round": 1,
-		"effective_recruitment_request": true
-	})
+	var recruit_apply: Dictionary = dialog_system.send_player_message(
+		"请应征，和我们一起守住这里。",
+		true,
+		false
+	)
 	if not bool(recruit_apply.get("ok", false)):
-		push_error("Avoid combat recruitment dialogue response should apply: %s" % JSON.stringify(recruit_apply))
+		push_error("Avoid combat recruitment fallback should apply: %s" % JSON.stringify(recruit_apply))
 		quit(1)
 		return
-	if bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Avoid combat recruitment must remain staged until completion")
+	var avoid_dialogue_response: Dictionary = recruit_apply.get("dialogue", {})
+	if (
+		not bool(avoid_dialogue_response.get("rule_fallback", false))
+		or str(avoid_dialogue_response.get("recruitment_result", "")) != "accept"
+		or str(avoid_dialogue_response.get("wartime_reaction", "")) != "none"
+	):
+		push_error("Avoid combat fallback must keep recruitment but suppress wartime reaction: %s" % JSON.stringify(recruit_apply))
+		quit(1)
+		return
+	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
+		push_error("Avoid combat recruitment acceptance should apply immediately")
 		quit(1)
 		return
 	dialog_system.complete_displayed_dialogue()
 	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Avoid combat recruitment should set recruited when the dialogue completes")
+		push_error("Completing avoid combat dialogue rolled back immediate recruitment")
 		quit(1)
 		return
 	if str(npc_system.get_npc_state("cook_01").get("behavior_mode", "")) != "avoid_combat":

@@ -16,6 +16,8 @@ const LLM_PLAN_SOURCE := "llm_plan_day"
 const MOCK_PLAN_SOURCE := "mock_plan_day"
 const LLM_REVISION_SOURCE := "llm_plan_revision"
 const IDLE_ACTION_ID := "idle"
+const COMPLETION_POLICY_REPEAT_WHILE_PLANNED := "repeat_while_planned"
+const COMPLETION_POLICY_ONCE_PER_PLAN_HOUR := "once_per_plan_hour"
 const FORMAL_PLAN_MAX_CONCURRENT := 8
 const FORMAL_PLAN_MAX_ATTEMPTS := 3
 const FORMAL_REVISION_MAX_ATTEMPTS := 3
@@ -39,6 +41,9 @@ var _last_completed_result_by_npc: Dictionary = {}
 var _last_failure_result_by_npc: Dictionary = {}
 var _plan_owned_action_by_npc: Dictionary = {}
 var _plan_execution_signature_by_npc: Dictionary = {}
+var _one_shot_execution_keys_by_npc: Dictionary = {}
+var _repeat_continuation_generation_by_npc: Dictionary = {}
+var _completion_reevaluation_generation_by_npc: Dictionary = {}
 var _last_plan_generation_result: Dictionary = {}
 var _last_reevaluation_result: Dictionary = {}
 var _last_plan_revision_judgement_result: Dictionary = {}
@@ -121,6 +126,9 @@ func begin_new_day_planning_for_npc(npc_id: String, reason: String = "new_day") 
 	_bump_plan_version(npc_id)
 	_plan_owned_action_by_npc.erase(npc_id)
 	_plan_execution_signature_by_npc.erase(npc_id)
+	_one_shot_execution_keys_by_npc.erase(npc_id)
+	_repeat_continuation_generation_by_npc.erase(npc_id)
+	_completion_reevaluation_generation_by_npc.erase(npc_id)
 	npc_system.set_npc_plan(npc_id, [])
 	var enters_planning_state: bool = bool(npc_system.can_npc_act(npc_id)) and _is_npc_in_work_behavior_mode(npc_id, npc_system)
 	if enters_planning_state:
@@ -408,12 +416,7 @@ func execute_current_plan_for_all(force_interrupt: bool = false) -> Dictionary:
 	if npc_system == null:
 		return result
 	var npc_ids: Array[String] = npc_system.get_npc_ids()
-	# 小时切换先统一结束上一时段对话。若逐 NPC 执行，先发起的新对话会在轮到
-	# 对方时被 force_interrupt 立即关闭，导致一个 LLM 回合都无法完成。
 	if force_interrupt:
-		var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
-		if dialog_system != null and dialog_system.has_method("end_autonomous_dialogue_for_hour_change"):
-			dialog_system.end_autonomous_dialogue_for_hour_change()
 		# 新日并发规划结束时所有 NPC 仍标记为 planning_day。先整体释放该瞬态，
 		# 否则 A→B 且 B 本小时也计划对话时，A 会把仍在 planning_day 的 B 误判为不可交谈。
 		for raw_npc_id in npc_ids:
@@ -484,10 +487,15 @@ func execute_current_plan_for_npc(
 	var action_system := _get_action_system()
 	if npc_system == null or action_system == null:
 		return _result(false, npc_id, action_id, "missing_system")
+	var completion_policy := _get_action_completion_policy(action_id, action_system)
+	if action_id != IDLE_ACTION_ID and completion_policy.is_empty():
+		return _result(false, npc_id, action_id, "invalid_action_completion_policy")
 	if not npc_system.can_npc_act(npc_id):
 		return _result(false, npc_id, action_id, "npc_cannot_act")
 	if not _is_npc_in_work_behavior_mode(npc_id, npc_system):
 		return _result(false, npc_id, action_id, "authoritative_behavior_mode_active")
+	if _is_current_plan_waiting_for_dialogue_resolution(npc_id):
+		return _result(true, npc_id, action_id, "dialogue_plan_judgement_pending")
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null and dialog_system.has_method("is_npc_in_dialogue") and dialog_system.is_npc_in_dialogue(npc_id):
 		var active_dialogue_state: Dictionary = (
@@ -521,18 +529,32 @@ func execute_current_plan_for_npc(
 				"dialogue_epoch": _get_npc_dialogue_epoch(npc_id)
 			})
 			return _result(false, npc_id, action_id, "priority_dialogue_active")
-		elif dialog_system.has_method("end_autonomous_dialogue_for_hour_change"):
-			dialog_system.end_autonomous_dialogue_for_hour_change()
-		elif dialog_system.has_method("force_end_dialogue_for_npc"):
-			dialog_system.force_end_dialogue_for_npc(npc_id, "plan_hour_changed", {
-				"suppress_plan_reevaluation": false,
-				"suppress_dialogue_resume": true
-			})
-	if _is_current_plan_waiting_for_dialogue_resolution(npc_id):
-		return _result(true, npc_id, action_id, "dialogue_plan_judgement_pending")
+		else:
+			if _should_preserve_active_autonomous_dialogue(active_dialogue_state):
+				_defer_current_plan_until_dialogue_resolved(npc_id, {
+					"npc_id": npc_id,
+					"dialogue_id": str(active_dialogue_state.get("dialogue_id", "")),
+					"dialogue_epoch": _get_npc_dialogue_epoch(npc_id),
+					"carryover_dialogue": true
+				})
+				return _result(true, npc_id, action_id, "carried_dialogue_active")
+			elif dialog_system.has_method("end_autonomous_dialogue_for_hour_change"):
+				dialog_system.end_autonomous_dialogue_for_hour_change()
+			elif dialog_system.has_method("force_end_dialogue_for_npc"):
+				dialog_system.force_end_dialogue_for_npc(npc_id, "plan_hour_changed", {
+					"suppress_plan_reevaluation": false,
+					"suppress_dialogue_resume": true
+				})
 
 	if _is_plan_target_unavailable(npc_id, item):
-		return request_plan_reevaluation(npc_id, "target_unavailable", item, "目标建筑不可用。")
+		var target_failure_context := _build_plan_target_unavailable_context(npc_id, item)
+		return request_plan_reevaluation(
+			npc_id,
+			"target_unavailable",
+			item,
+			str(target_failure_context.get("failure_summary", "计划目标不可用。")),
+			target_failure_context
+		)
 
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var current_action := str(state.get("current_action", ""))
@@ -546,9 +568,16 @@ func execute_current_plan_for_npc(
 	var execution_signature := _make_plan_execution_signature(npc_id, item)
 	if _runtime_action_matches_plan_item(npc_id, item, current_action, action_system):
 		_plan_execution_signature_by_npc[npc_id] = execution_signature
+		if completion_policy == COMPLETION_POLICY_ONCE_PER_PLAN_HOUR:
+			_mark_one_shot_plan_item_executed(npc_id, item)
 		if action_id != IDLE_ACTION_ID:
 			_plan_owned_action_by_npc[npc_id] = action_id
 		return _result(true, npc_id, action_id, "already_running")
+	if (
+		completion_policy == COMPLETION_POLICY_ONCE_PER_PLAN_HOUR
+		and _was_one_shot_plan_item_executed(npc_id, item)
+	):
+		return _result(true, npc_id, action_id, "already_executed_once_per_plan_hour")
 	if str(_plan_execution_signature_by_npc.get(npc_id, "")) == execution_signature:
 		return _result(true, npc_id, action_id, "already_executed_this_plan_phase")
 
@@ -562,6 +591,8 @@ func execute_current_plan_for_npc(
 	var ok := _assign_plan_item(npc_id, item)
 	if ok:
 		_plan_execution_signature_by_npc[npc_id] = execution_signature
+		if completion_policy == COMPLETION_POLICY_ONCE_PER_PLAN_HOUR:
+			_mark_one_shot_plan_item_executed(npc_id, item)
 		if action_id != IDLE_ACTION_ID:
 			_plan_owned_action_by_npc[npc_id] = action_id
 	else:
@@ -640,6 +671,10 @@ func resume_current_plan_after_dialogue(npc_id: String, interrupted_action_id: S
 	# consume the same phase a second time.
 	_plan_execution_signature_by_npc.erase(npc_id)
 	_plan_owned_action_by_npc.erase(npc_id)
+	if _get_action_completion_policy(action_id) == COMPLETION_POLICY_ONCE_PER_PLAN_HOUR:
+		# The explicit dialogue-resume path continues an interrupted execution;
+		# it is not an automatic second execution of a completed one-shot action.
+		_erase_one_shot_plan_item_execution(npc_id, item)
 
 	var result := execute_current_plan_for_npc(npc_id, true)
 	result["resumed_after_dialogue"] = true
@@ -665,6 +700,15 @@ func _adopt_running_current_plan_action(npc_id: String) -> bool:
 
 
 func _make_plan_execution_signature(npc_id: String, item: Dictionary) -> String:
+	return "%d:%d:%d:%s" % [
+		_get_current_day(),
+		_get_current_hour(),
+		_get_plan_version(npc_id),
+		_make_plan_item_identity(item),
+	]
+
+
+func _make_plan_item_identity(item: Dictionary) -> String:
 	var action_id := str(item.get("action_id", ""))
 	var target: Dictionary = item.get("target", {}) if item.get("target", {}) is Dictionary else {}
 	var target_id := str(target.get("target_id", ""))
@@ -673,14 +717,55 @@ func _make_plan_execution_signature(npc_id: String, item: Dictionary) -> String:
 			target_id = str(target.get(target_key, ""))
 			if not target_id.is_empty():
 				break
-	return "%d:%d:%d:%s:%s:%s" % [
-		_get_current_day(),
-		_get_current_hour(),
-		_get_plan_version(npc_id),
+	return JSON.stringify([
 		action_id,
 		target_id,
 		str(item.get("dialogue_goal", "")).strip_edges(),
+	])
+
+
+func _make_one_shot_execution_key(item: Dictionary) -> String:
+	return "%d:%d:%s" % [
+		_get_current_day(),
+		_get_current_hour(),
+		_make_plan_item_identity(item),
 	]
+
+
+func _mark_one_shot_plan_item_executed(npc_id: String, item: Dictionary) -> void:
+	var execution_keys: Dictionary = _one_shot_execution_keys_by_npc.get(npc_id, {})
+	execution_keys[_make_one_shot_execution_key(item)] = true
+	_one_shot_execution_keys_by_npc[npc_id] = execution_keys
+
+
+func _was_one_shot_plan_item_executed(npc_id: String, item: Dictionary) -> bool:
+	var execution_keys: Dictionary = _one_shot_execution_keys_by_npc.get(npc_id, {})
+	return execution_keys.has(_make_one_shot_execution_key(item))
+
+
+func _erase_one_shot_plan_item_execution(npc_id: String, item: Dictionary) -> void:
+	var execution_keys: Dictionary = _one_shot_execution_keys_by_npc.get(npc_id, {})
+	execution_keys.erase(_make_one_shot_execution_key(item))
+	if execution_keys.is_empty():
+		_one_shot_execution_keys_by_npc.erase(npc_id)
+	else:
+		_one_shot_execution_keys_by_npc[npc_id] = execution_keys
+
+
+func _get_action_completion_policy(action_id: String, action_system: Node = null) -> String:
+	if action_id == IDLE_ACTION_ID:
+		return ""
+	var resolved_action_system := action_system
+	if resolved_action_system == null:
+		resolved_action_system = _get_action_system()
+	if resolved_action_system == null:
+		return ""
+	if resolved_action_system.has_method("get_action_completion_policy"):
+		return str(resolved_action_system.get_action_completion_policy(action_id))
+	if resolved_action_system.has_method("get_action"):
+		var action: Dictionary = resolved_action_system.get_action(action_id)
+		return str(action.get("completion_policy", ""))
+	return ""
 
 
 func _runtime_action_matches_plan_item(
@@ -749,7 +834,11 @@ func _defer_current_plan_until_dialogue_resolved(
 		"wait_for_dialogue_resolution": true,
 		"dialogue_id": dialogue_id,
 		"dialogue_epoch": dialogue_epoch,
-		"mark_revision_applied": bool(existing.get("mark_revision_applied", false))
+		"mark_revision_applied": bool(existing.get("mark_revision_applied", false)),
+		"carryover_dialogue": bool(context.get(
+			"carryover_dialogue",
+			existing.get("carryover_dialogue", false)
+		))
 	}
 
 
@@ -932,6 +1021,23 @@ func request_dialogue_plan_revision_judgement(
 		"dialogue_epoch",
 		_get_npc_dialogue_epoch(npc_id)
 	))
+	var required_revision_hours: Array[int] = []
+	var current_plan_item := get_current_plan_item(npc_id)
+	if (
+		(
+			str(context.get("dialogue_kind", "")) == "npc_npc"
+			and bool(context.get("autonomous", false))
+			and str(context.get("speaker_npc_id", "")) == npc_id
+		)
+		or (
+			str(context.get("dialogue_kind", "")) == "player_npc"
+			and str(context.get("dialogue_initiator", "")) == "npc"
+			and bool(context.get("proactive_talk", false))
+			and str(current_plan_item.get("action_id", "")) == "seek_guard_officer"
+		)
+	):
+		required_revision_hours.append(_get_current_hour())
+	context["required_revision_hours"] = required_revision_hours.duplicate()
 	context["execute_current_plan_when_resolved"] = (
 		bool(dialogue_context.get("execute_current_plan_when_resolved", false))
 		or _is_current_plan_waiting_for_dialogue_resolution(npc_id)
@@ -985,6 +1091,7 @@ func request_dialogue_plan_revision_judgement(
 		"dialogue_history": dialogue_history,
 		"dialogue_end_reason": str(context.get("dialogue_end_reason", "dialogue_completed")),
 		"dialogue_context": _build_dialogue_judgement_context(context),
+		"required_revision_hours": required_revision_hours.duplicate(),
 		"requires_time_slowdown": true
 	}
 	var request_result: Dictionary = (
@@ -1660,6 +1767,15 @@ func _on_dialogue_plan_revision_judgement_async_response(response: Dictionary) -
 	var revision_hours: Array[int] = []
 	for raw_hour in hours_validation.get("revision_hours", []):
 		revision_hours.append(int(raw_hour))
+	for raw_required_hour in context.get("required_revision_hours", []):
+		var required_hour := int(raw_required_hour)
+		if not revision_hours.has(required_hour):
+			result["status"] = "invalid_dialogue_plan_judgement"
+			result["summary"] = "对话后计划判别遗漏了必须修改的当前小时。"
+			result["resume_result"] = _resume_interrupted_dialogue_plan(context)
+			result["current_plan_dispatch_result"] = _finish_dialogue_resolution_execution(context)
+			_record_dialogue_plan_judgement_result(result)
+			return
 	var needs_revision := not revision_hours.is_empty()
 	result["ok"] = true
 	result["needs_revision"] = needs_revision
@@ -1719,7 +1835,14 @@ func _build_dialogue_judgement_context(context: Dictionary) -> Dictionary:
 		"current_round": int(context.get("current_round", 0)),
 		"invitation_result": str(context.get("invitation_result", "")),
 		"attack_committed": bool(context.get("attack_committed", false)),
-		"dialogue_initiator": str(context.get("dialogue_initiator", ""))
+		"dialogue_initiator": str(context.get("dialogue_initiator", "")),
+		"proactive_talk": bool(context.get("proactive_talk", false)),
+		"autonomous": bool(context.get("autonomous", false)),
+		"speaker_npc_id": str(context.get("speaker_npc_id", "")),
+		"target_npc_id": str(context.get("target_npc_id", "")),
+		"plan_action_source": str(context.get("plan_action_source", "")),
+		"assigned_plan_day": int(context.get("assigned_plan_day", -1)),
+		"assigned_plan_hour": int(context.get("assigned_plan_hour", -1))
 	}
 
 
@@ -2477,8 +2600,123 @@ func _finalize_new_day_plan_batch(plans_ready: bool) -> void:
 		time_system.set_paused(false)
 
 
+func get_dialogue_carryover_snapshot() -> Dictionary:
+	var action_system := _get_action_system()
+	var pending_dialogues: Dictionary = {}
+	if (
+		action_system != null
+		and action_system.has_method("get_daily_plan_dialogue_carryover_snapshot")
+	):
+		pending_dialogues = action_system.get_daily_plan_dialogue_carryover_snapshot(
+			_get_current_day(),
+			_get_current_hour()
+		)
+	var active_dialogue: Dictionary = {}
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system != null and dialog_system.has_method("get_dialogue_state"):
+		var dialogue_state: Dictionary = dialog_system.get_dialogue_state()
+		if _is_active_daily_plan_dialogue_carryover(dialogue_state):
+			active_dialogue = dialogue_state.duplicate(true)
+	var deferred_npc_ids: Array[String] = []
+	for raw_npc_id in _deferred_current_revision_execution_by_npc.keys():
+		var npc_id := str(raw_npc_id)
+		var marker: Dictionary = _deferred_current_revision_execution_by_npc.get(npc_id, {})
+		if bool(marker.get("carryover_dialogue", false)):
+			deferred_npc_ids.append(npc_id)
+	deferred_npc_ids.sort()
+	return {
+		"day": _get_current_day(),
+		"hour": _get_current_hour(),
+		"pending_dialogues": pending_dialogues.duplicate(true),
+		"active_dialogue": active_dialogue,
+		"deferred_npc_ids": deferred_npc_ids
+	}
+
+
+func _prepare_hourly_dialogue_carryovers(
+	current_day: int,
+	current_hour: int,
+	previous_markers: Dictionary
+) -> void:
+	for raw_npc_id in previous_markers.keys():
+		var npc_id := str(raw_npc_id)
+		var marker: Dictionary = previous_markers.get(npc_id, {})
+		if (
+			bool(marker.get("wait_for_dialogue_resolution", false))
+			and _has_pending_dialogue_plan_chain(npc_id)
+		):
+			_defer_current_plan_until_dialogue_resolved(npc_id, {
+				"dialogue_id": str(marker.get("dialogue_id", "")),
+				"dialogue_epoch": int(marker.get("dialogue_epoch", _get_npc_dialogue_epoch(npc_id))),
+				"carryover_dialogue": true
+			})
+	var action_system := _get_action_system()
+	if (
+		action_system != null
+		and action_system.has_method("get_daily_plan_dialogue_carryover_snapshot")
+	):
+		var pending_dialogues: Dictionary = (
+			action_system.get_daily_plan_dialogue_carryover_snapshot(current_day, current_hour)
+		)
+		for raw_npc_id in pending_dialogues.keys():
+			_defer_current_plan_until_dialogue_resolved(str(raw_npc_id), {
+				"carryover_dialogue": true
+			})
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("get_dialogue_state"):
+		return
+	var dialogue_state: Dictionary = dialog_system.get_dialogue_state()
+	if not _is_active_daily_plan_dialogue_carryover(dialogue_state):
+		return
+	var carried_npc_ids: Array[String] = []
+	var speaker_npc_id := str(dialogue_state.get("speaker_npc_id", ""))
+	if str(dialogue_state.get("session_status", "")) == "invitation_pending":
+		if not speaker_npc_id.is_empty():
+			carried_npc_ids.append(speaker_npc_id)
+	else:
+		for raw_npc_id in dialogue_state.get("participant_npc_ids", []):
+			var npc_id := str(raw_npc_id)
+			if not npc_id.is_empty() and not carried_npc_ids.has(npc_id):
+				carried_npc_ids.append(npc_id)
+	var dialogue_epochs: Dictionary = (
+		(dialogue_state.get("dialogue_epoch_by_npc", {}) as Dictionary)
+		if dialogue_state.get("dialogue_epoch_by_npc", {}) is Dictionary
+		else {}
+	)
+	for npc_id in carried_npc_ids:
+		_defer_current_plan_until_dialogue_resolved(npc_id, {
+			"dialogue_id": str(dialogue_state.get("dialogue_id", "")),
+			"dialogue_epoch": int(dialogue_epochs.get(npc_id, _get_npc_dialogue_epoch(npc_id))),
+			"carryover_dialogue": true
+		})
+
+
+func _is_active_daily_plan_dialogue_carryover(dialogue_state: Dictionary) -> bool:
+	return (
+		not dialogue_state.is_empty()
+		and str(dialogue_state.get("dialogue_kind", "")) == "npc_npc"
+		and bool(dialogue_state.get("autonomous", false))
+		and str(dialogue_state.get("plan_action_source", "")) == "daily_plan"
+		and int(dialogue_state.get("assigned_plan_day", -1)) == _get_current_day()
+		and int(dialogue_state.get("assigned_plan_hour", -1)) < _get_current_hour()
+	)
+
+
+func _should_preserve_active_autonomous_dialogue(dialogue_state: Dictionary) -> bool:
+	var assigned_hour := int(dialogue_state.get("assigned_plan_hour", -1))
+	return (
+		str(dialogue_state.get("plan_action_source", "")) == "daily_plan"
+		and int(dialogue_state.get("assigned_plan_day", -1)) == _get_current_day()
+		and assigned_hour >= 0
+		and assigned_hour <= _get_current_hour()
+	)
+
+
 func _on_hour_started(_day: int, _hour: int) -> void:
+	var previous_deferred_markers := _deferred_current_revision_execution_by_npc.duplicate(true)
 	_deferred_current_revision_execution_by_npc.clear()
+	_prepare_hourly_dialogue_carryovers(_day, _hour, previous_deferred_markers)
+	_one_shot_execution_keys_by_npc.clear()
 	# Duplicate suppression is scoped to one plan stage. The same structured
 	# failure in a later hour is a new action failure and must run judgement again.
 	_last_failure_result_by_npc.clear()
@@ -2499,16 +2737,25 @@ func _on_npc_state_changed(npc_id: String) -> void:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
-	if _schedule_deferred_current_revision_execution(npc_id, npc_system):
-		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_action", "")) != "idle":
-		_last_failure_result_by_npc.erase(npc_id)
-		return
 	var last_result := str(state.get("last_action_result", ""))
 	if _is_failure_result(last_result):
 		if str(_last_failure_result_by_npc.get(npc_id, "")) == last_result:
 			return
+		var deferred_marker: Dictionary = _deferred_current_revision_execution_by_npc.get(npc_id, {})
+		if (
+			bool(deferred_marker.get("carryover_dialogue", false))
+			and bool(deferred_marker.get("wait_for_dialogue_resolution", false))
+		):
+			# A pending approach can fail before DialogSystem owns a session. Convert
+			# its carryover barrier into a ready marker, but let the authoritative
+			# failure judgement register first so the old current plan cannot race it.
+			deferred_marker["day"] = _get_current_day()
+			deferred_marker["hour"] = _get_current_hour()
+			deferred_marker["plan_version"] = _get_plan_version(npc_id)
+			deferred_marker["scheduled"] = false
+			deferred_marker["wait_for_dialogue_resolution"] = false
+			_deferred_current_revision_execution_by_npc[npc_id] = deferred_marker
 		_record_revision_landing_failure(npc_id)
 		_last_failure_result_by_npc[npc_id] = last_result
 		var failure_context: Dictionary = (
@@ -2529,18 +2776,250 @@ func _on_npc_state_changed(npc_id: String) -> void:
 			failure_context
 		)
 		return
+	if _schedule_deferred_current_revision_execution(npc_id, npc_system):
+		return
+	if str(state.get("current_action", "")) != "idle":
+		_last_failure_result_by_npc.erase(npc_id)
+		# A newly started cycle makes the same textual completion result valid
+		# again when that cycle finishes.
+		_last_completed_result_by_npc.erase(npc_id)
+		return
 	if _reevaluating_npcs.has(npc_id):
 		return
 	_last_failure_result_by_npc.erase(npc_id)
-	if not last_result.begins_with("completed_"):
-		return
 	if not _plan_owned_action_by_npc.has(npc_id):
+		return
+	var completed_action_id := str(_plan_owned_action_by_npc.get(npc_id, ""))
+	if not _is_successful_plan_action_completion(completed_action_id, last_result):
 		return
 	_clear_revision_failure_cycle(npc_id)
 	if str(_last_completed_result_by_npc.get(npc_id, "")) == last_result:
 		return
 	_last_completed_result_by_npc[npc_id] = last_result
 	_plan_owned_action_by_npc.erase(npc_id)
+	var item := get_current_plan_item(npc_id)
+	if str(item.get("action_id", "")) != completed_action_id:
+		return
+	if (
+		_get_action_completion_policy(completed_action_id)
+		== COMPLETION_POLICY_REPEAT_WHILE_PLANNED
+	):
+		var continuation_generation := int(
+			_repeat_continuation_generation_by_npc.get(npc_id, 0)
+		) + 1
+		_repeat_continuation_generation_by_npc[npc_id] = continuation_generation
+		call_deferred("_continue_repeatable_plan_action_after_completion", npc_id, {
+			"generation": continuation_generation,
+			"completion_day": _get_current_day(),
+			"completion_hour": _get_current_hour(),
+			"action_id": completed_action_id,
+			"plan_item_identity": _make_plan_item_identity(item),
+		})
+		return
+	if not _should_reevaluate_current_hour_on_completion(completed_action_id):
+		return
+	var reevaluation_generation := int(
+		_completion_reevaluation_generation_by_npc.get(npc_id, 0)
+	) + 1
+	_completion_reevaluation_generation_by_npc[npc_id] = reevaluation_generation
+	call_deferred("_reevaluate_current_hour_after_plan_action_completion", npc_id, {
+		"generation": reevaluation_generation,
+		"completion_day": _get_current_day(),
+		"completion_hour": _get_current_hour(),
+		"action_id": completed_action_id,
+		"action_name": _get_action_name(completed_action_id),
+		"completion_result": last_result,
+		"completed_plan_item": item.duplicate(true),
+		"plan_item_identity": _make_plan_item_identity(item),
+	})
+
+
+func _is_successful_plan_action_completion(action_id: String, last_result: String) -> bool:
+	match action_id:
+		"assist_heal":
+			return last_result.begins_with("assist_heal_completed_")
+		"receive_clinic_treatment":
+			return last_result == "clinic_treatment_completed"
+		_:
+			return last_result.begins_with("completed_")
+
+
+func _should_reevaluate_current_hour_on_completion(
+	action_id: String,
+	action_system: Node = null
+) -> bool:
+	var resolved_action_system := action_system if action_system != null else _get_action_system()
+	if (
+		resolved_action_system == null
+		or not resolved_action_system.has_method("get_action")
+	):
+		return false
+	var action: Dictionary = resolved_action_system.get_action(action_id)
+	return bool(action.get("reevaluate_current_hour_on_completion", false))
+
+
+func _get_contiguous_completion_revision_hours(
+	npc_id: String,
+	start_hour: int,
+	completed_item: Dictionary
+) -> Array[int]:
+	var result: Array[int] = []
+	if start_hour < 0 or start_hour > 23 or completed_item.is_empty():
+		return result
+	var plan := get_npc_daily_plan(npc_id)
+	if plan.size() != 24:
+		return result
+	var completed_identity := _make_plan_item_identity(completed_item)
+	if completed_identity.is_empty():
+		return result
+	for hour in range(start_hour, plan.size()):
+		var raw_item: Variant = plan[hour]
+		if (
+			not raw_item is Dictionary
+			or _make_plan_item_identity(raw_item as Dictionary) != completed_identity
+		):
+			break
+		result.append(hour)
+	return result
+
+
+func _reevaluate_current_hour_after_plan_action_completion(
+	npc_id: String,
+	context: Dictionary
+) -> void:
+	if (
+		int(_completion_reevaluation_generation_by_npc.get(npc_id, 0))
+		!= int(context.get("generation", -1))
+		or not auto_execution_enabled
+	):
+		return
+	if (
+		int(context.get("completion_day", -1)) != _get_current_day()
+		or int(context.get("completion_hour", -1)) != _get_current_hour()
+	):
+		# The authoritative hour-start dispatch owns the new hour. In particular,
+		# a large logical tick may complete an action before GameState publishes
+		# the crossed hour, so never revise the stale previous-hour item here.
+		return
+	var npc_system := _get_npc_system()
+	var action_system := _get_action_system()
+	if (
+		npc_system == null
+		or action_system == null
+		or not npc_system.can_npc_act(npc_id)
+		or not _is_npc_in_work_behavior_mode(npc_id, npc_system)
+	):
+		return
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var current_action := str(state.get("current_action", ""))
+	if current_action != "idle" and not current_action.is_empty():
+		return
+	var completed_action_id := str(context.get("action_id", ""))
+	var item := get_current_plan_item(npc_id)
+	if (
+		str(item.get("action_id", "")) != completed_action_id
+		or _make_plan_item_identity(item) != str(context.get("plan_item_identity", ""))
+		or not _should_reevaluate_current_hour_on_completion(
+			completed_action_id,
+			action_system
+		)
+	):
+		return
+	var completed_plan_item: Dictionary = (
+		(context.get("completed_plan_item", {}) as Dictionary).duplicate(true)
+		if context.get("completed_plan_item", {}) is Dictionary
+		else item.duplicate(true)
+	)
+	var revision_hours := _get_contiguous_completion_revision_hours(
+		npc_id,
+		_get_current_hour(),
+		completed_plan_item
+	)
+	if revision_hours.is_empty():
+		return
+	var completion_summary := "计划行动“%s”已完成，当前小时仍需安排后续活动。" % str(
+		context.get("action_name", _get_action_name(completed_action_id))
+	)
+	if revision_hours.size() > 1:
+		completion_summary = (
+			"计划行动“%s”已完成，需重新安排当前起连续的%d个相同计划阶段。"
+			% [
+				str(context.get("action_name", _get_action_name(completed_action_id))),
+				revision_hours.size(),
+			]
+		)
+	request_plan_reevaluation(
+		npc_id,
+		"plan_action_completed",
+		completed_plan_item,
+		completion_summary,
+		{
+			"condition": "successful_plan_action_completion",
+			"completed_action_id": completed_action_id,
+			"completed_action_name": str(
+				context.get("action_name", _get_action_name(completed_action_id))
+			),
+			"completion_result": str(context.get("completion_result", "")),
+			"completed_plan_item": completed_plan_item,
+			"requires_different_current_activity": true,
+			"contiguous_revision_hours": revision_hours.duplicate(),
+		},
+		{
+			"revision_hours": revision_hours,
+			"skip_plan_revision_judgement": true,
+		}
+	)
+
+
+func _continue_repeatable_plan_action_after_completion(
+	npc_id: String,
+	context: Dictionary
+) -> void:
+	if (
+		int(_repeat_continuation_generation_by_npc.get(npc_id, 0))
+		!= int(context.get("generation", -1))
+		or not auto_execution_enabled
+	):
+		return
+	if (
+		int(context.get("completion_day", -1)) != _get_current_day()
+		or int(context.get("completion_hour", -1)) != _get_current_hour()
+	):
+		# Once the clock has crossed an hour, _on_hour_started owns the next
+		# dispatch (including a failed dispatch) so this completion callback
+		# must not create a second attempt.
+		return
+	var npc_system := _get_npc_system()
+	var action_system := _get_action_system()
+	if (
+		npc_system == null
+		or action_system == null
+		or not npc_system.can_npc_act(npc_id)
+		or not _is_npc_in_work_behavior_mode(npc_id, npc_system)
+	):
+		return
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var current_action := str(state.get("current_action", ""))
+	if current_action != "idle" and not current_action.is_empty():
+		# Hour-start dispatch may already have continued the same action or
+		# switched to the next hour's different action.
+		return
+	var item := get_current_plan_item(npc_id)
+	var completed_action_id := str(context.get("action_id", ""))
+	if (
+		str(item.get("action_id", "")) != completed_action_id
+		or _make_plan_item_identity(item) != str(context.get("plan_item_identity", ""))
+		or (
+			_get_action_completion_policy(completed_action_id, action_system)
+			!= COMPLETION_POLICY_REPEAT_WHILE_PLANNED
+		)
+	):
+		return
+	# A successful cycle consumed the ordinary phase signature. Only the
+	# repeatable completion policy may clear it and dispatch the next cycle.
+	_plan_execution_signature_by_npc.erase(npc_id)
+	_plan_owned_action_by_npc.erase(npc_id)
+	execute_current_plan_for_npc(npc_id, false)
 
 
 func schedule_ready_deferred_current_plans() -> Dictionary:
@@ -2773,19 +3252,41 @@ func _execute_deferred_current_revision(npc_id: String) -> void:
 		"already_in_npc_dialogue",
 		"npc_in_dialogue",
 		"priority_dialogue_active",
-		"dialogue_plan_judgement_pending"
+		"dialogue_plan_judgement_pending",
+		"carried_dialogue_active"
 	]:
-		pending["scheduled"] = false
-		pending["plan_version"] = _get_plan_version(npc_id)
-		_deferred_current_revision_execution_by_npc[npc_id] = pending
+		var blocked_marker: Dictionary = _deferred_current_revision_execution_by_npc.get(
+			npc_id,
+			pending
+		)
+		blocked_marker["scheduled"] = false
+		blocked_marker["plan_version"] = _get_plan_version(npc_id)
+		_deferred_current_revision_execution_by_npc[npc_id] = blocked_marker
 		return
-	if bool(execute_result.get("ok", false)):
+	var landed := (
+		bool(execute_result.get("ok", false))
+		and not str(execute_result.get("status", "")) in [
+			"already_executed_once_per_plan_hour",
+			"already_executed_this_plan_phase"
+		]
+	)
+	if landed:
 		var saved_context: Dictionary = _dialogue_resume_context_by_npc.get(npc_id, {})
 		if (
 			str(saved_context.get("dialogue_id", "")) == str(pending.get("dialogue_id", ""))
 			and int(saved_context.get("dialogue_epoch", -1)) == int(pending.get("dialogue_epoch", -1))
 		):
 			_dialogue_resume_context_by_npc.erase(npc_id)
+	else:
+		var retry_marker: Dictionary = _deferred_current_revision_execution_by_npc.get(
+			npc_id,
+			pending
+		)
+		retry_marker["day"] = _get_current_day()
+		retry_marker["hour"] = _get_current_hour()
+		retry_marker["plan_version"] = _get_plan_version(npc_id)
+		retry_marker["scheduled"] = false
+		_deferred_current_revision_execution_by_npc[npc_id] = retry_marker
 
 
 func _schedule_deferred_current_revision_execution_ready(
@@ -2923,6 +3424,28 @@ func _apply_revision_response(
 			str(scope_validation.get("message", "真实 LLM 计划修订范围无效。")),
 			revision
 		)
+	if (
+		str(options.get("failure_type", "")) == "action_completed"
+		and revision_hours.has(_get_current_hour())
+	):
+		var revised_current_item := _get_revision_item_for_hour(
+			revision,
+			_get_current_hour()
+		)
+		var completed_item: Dictionary = (
+			(options.get("failed_plan_item", {}) as Dictionary)
+			if options.get("failed_plan_item", {}) is Dictionary
+			else {}
+		)
+		if _revision_item_repeats_completed_activity(
+			revised_current_item,
+			completed_item
+		):
+			return _revision_failure(
+				"completed_action_repeated",
+				"已完成行动的当前小时修订不能原样重复同一行动与目标。",
+				revision
+			)
 	var previous_current_item: Dictionary = (
 		current_plan[_get_current_hour()]
 		if _get_current_hour() >= 0
@@ -2942,8 +3465,6 @@ func _apply_revision_response(
 	var merged_plan := _merge_revision_items(npc_id, current_plan, revision)
 	if merged_plan.is_empty():
 		return _revision_failure("invalid_revision_response", "真实 LLM 计划修订响应没有可用行动。", revision)
-	if _count_work_phases(merged_plan) < 6:
-		return _revision_failure("invalid_revision_response", "真实 LLM 计划修订后工作阶段少于 6 个。", revision)
 	if not set_npc_daily_plan(npc_id, merged_plan, false, LLM_REVISION_SOURCE):
 		return _revision_failure("invalid_revision_response", "真实 LLM 计划修订响应未通过本地校验。", revision)
 	var summary := str(revision.get("summary", "真实 LLM 修订了当前计划。"))
@@ -2964,6 +3485,7 @@ func _apply_revision_response(
 	if current_hour_revised:
 		_dialogue_resume_context_by_npc.erase(npc_id)
 		if execution_deferred_by_dialogue_resolution:
+			_defer_current_plan_until_dialogue_resolved(npc_id, dialogue_resume_context)
 			execute_result = {
 				"ok": true,
 				"npc_id": npc_id,
@@ -2977,9 +3499,36 @@ func _apply_revision_response(
 				and npc_system.can_npc_act(npc_id)
 				and _is_npc_in_work_behavior_mode(npc_id, npc_system)
 			):
+				_deferred_current_revision_execution_by_npc[npc_id] = {
+					"day": _get_current_day(),
+					"hour": _get_current_hour(),
+					"plan_version": _get_plan_version(npc_id),
+					"scheduled": true,
+					"mark_revision_applied": true
+				}
 				_mark_revision_applied(npc_id)
 				execute_result = execute_current_plan_for_npc(npc_id, true)
-				execution_ok = bool(execute_result.get("ok", false))
+				execution_ok = (
+					bool(execute_result.get("ok", false))
+					and not str(execute_result.get("status", "")) in [
+						"already_executed_once_per_plan_hour",
+						"already_executed_this_plan_phase"
+					]
+				)
+				var pending_after_attempt: Dictionary = (
+					_deferred_current_revision_execution_by_npc.get(npc_id, {})
+				)
+				if execution_ok and not bool(
+					pending_after_attempt.get("wait_for_dialogue_resolution", false)
+				):
+					_deferred_current_revision_execution_by_npc.erase(npc_id)
+				elif not execution_ok:
+					pending_after_attempt["day"] = _get_current_day()
+					pending_after_attempt["hour"] = _get_current_hour()
+					pending_after_attempt["plan_version"] = _get_plan_version(npc_id)
+					pending_after_attempt["scheduled"] = false
+					pending_after_attempt["mark_revision_applied"] = true
+					_deferred_current_revision_execution_by_npc[npc_id] = pending_after_attempt
 			else:
 				execution_deferred_by_behavior_mode = true
 				_deferred_current_revision_execution_by_npc[npc_id] = {
@@ -3075,6 +3624,54 @@ func _revision_actions_match(first: Dictionary, second: Dictionary) -> bool:
 	)
 
 
+func _get_revision_item_for_hour(revision: Dictionary, hour: int) -> Dictionary:
+	var revision_items: Array = (
+		revision.get("revised_plan", [])
+		if revision.get("revised_plan", []) is Array
+		else []
+	)
+	for raw_item in revision_items:
+		if raw_item is Dictionary and int((raw_item as Dictionary).get("hour", -1)) == hour:
+			return (raw_item as Dictionary).duplicate(true)
+	return {}
+
+
+func _revision_item_repeats_completed_activity(
+	revised_item: Dictionary,
+	completed_item: Dictionary
+) -> bool:
+	if (
+		revised_item.is_empty()
+		or completed_item.is_empty()
+		or str(revised_item.get("action_id", ""))
+		!= str(completed_item.get("action_id", ""))
+	):
+		return false
+	return (
+		_get_plan_item_target_id(revised_item)
+		== _get_plan_item_target_id(completed_item)
+	)
+
+
+func _get_plan_item_target_id(item: Dictionary) -> String:
+	var target_id := _nullable_string(item.get("target_id", null))
+	if not target_id.is_empty():
+		return target_id
+	var target: Dictionary = (
+		item.get("target", {})
+		if item.get("target", {}) is Dictionary
+		else {}
+	)
+	target_id = _nullable_string(target.get("target_id", null))
+	if not target_id.is_empty():
+		return target_id
+	for target_key in ["target_npc_id", "location_id", "building_id"]:
+		target_id = _nullable_string(target.get(target_key, null))
+		if not target_id.is_empty():
+			return target_id
+	return ""
+
+
 func _revision_failure(status: String, summary: String, response: Dictionary = {}) -> Dictionary:
 	return {
 		"ok": false,
@@ -3163,8 +3760,6 @@ func _apply_daily_plan_response(
 	plan = _normalize_plan(plan, plan_source)
 	if plan.size() != 24:
 		return _daily_plan_failure(npc_id, "invalid_plan_response", "每日计划响应不是 24 个小时项。", {"body": response})
-	if _count_work_phases(plan) < 6:
-		return _daily_plan_failure(npc_id, "invalid_plan_response", "每日计划响应工作阶段少于 6 个。", {"body": response})
 	if not set_npc_daily_plan(npc_id, plan, true, plan_source):
 		return _daily_plan_failure(npc_id, "invalid_plan_response", "每日计划响应未通过本地校验。", {"body": response})
 	var execute_result := {}
@@ -3286,7 +3881,7 @@ func _merge_revision_items(npc_id: String, current_plan: Array, revision: Dictio
 			return []
 		next_plan[hour] = item
 	var normalized_plan := _normalize_plan(next_plan)
-	if normalized_plan.size() != 24 or _count_work_phases(normalized_plan) < 6:
+	if normalized_plan.size() != 24:
 		return []
 	return normalized_plan
 
@@ -3306,7 +3901,7 @@ func _plan_item_from_schema(item: Dictionary, source: String, npc_id: String = "
 			target["target_npc_id"] = target_id
 		elif action_id == "visit_location":
 			target["location_id"] = target_id
-	if not location_id.is_empty():
+	if not location_id.is_empty() and action_id != "talk_to_npc":
 		target["location_id"] = location_id
 	if not _is_valid_plan_target(npc_id, action_id, target):
 		return {}
@@ -3406,6 +4001,59 @@ func _is_plan_target_unavailable(npc_id: String, item: Dictionary) -> bool:
 	return int(building.get("hp", 1)) <= 0
 
 
+func _build_plan_target_unavailable_context(npc_id: String, item: Dictionary) -> Dictionary:
+	var action_id := str(item.get("action_id", ""))
+	var target: Dictionary = (
+		(item.get("target", {}) as Dictionary).duplicate(true)
+		if item.get("target", {}) is Dictionary
+		else {}
+	)
+	var context := {
+		"action_id": action_id,
+		"action_name": _get_action_name(action_id),
+		"failure_reason": "plan_target_unavailable",
+		"failure_summary": "计划目标当前不可用：%s。" % _get_action_name(action_id),
+		"failed_plan_item": item.duplicate(true),
+		"target": target.duplicate(true)
+	}
+	if action_id in ["assist_upgrade", "assist_repair"]:
+		var building_id := str(target.get("building_id", target.get("target_id", "")))
+		var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+		var building: Dictionary = (
+			building_system.get_building(building_id)
+			if building_system != null
+			and building_system.has_method("get_building")
+			and not building_id.is_empty()
+			else {}
+		)
+		var building_name := str(building.get("name", building_id))
+		context["building_id"] = building_id
+		context["building_name"] = building_name
+		context["condition"] = "target_resolved_or_inactive"
+		if action_id == "assist_upgrade":
+			context["failure_reason"] = "no_active_upgrade"
+			context["failure_summary"] = "%s的升级作业已经结束或当前未在进行，协助升级目标已不可用。" % building_name
+		else:
+			context["failure_reason"] = "no_active_repair"
+			context["failure_summary"] = "%s的修复作业已经结束或当前未在进行，协助修复目标已不可用。" % building_name
+	elif action_id == "assist_heal":
+		var target_npc_id := str(target.get("target_npc_id", target.get("target_id", "")))
+		context["target_npc_id"] = target_npc_id
+		context["condition"] = "target_resolved_or_inactive"
+		context["failure_reason"] = "healing_target_unavailable"
+		context["failure_summary"] = "原协助治疗目标已经复苏、离站或当前不可治疗。"
+	elif action_id == "talk_to_npc":
+		context["target_npc_id"] = str(target.get("target_npc_id", target.get("target_id", "")))
+		context["condition"] = "target_unavailable"
+		context["failure_reason"] = "dialogue_target_unavailable"
+	elif action_id == "visit_location":
+		context["location_id"] = str(target.get("location_id", target.get("target_id", "")))
+		context["condition"] = "location_unavailable"
+		context["failure_reason"] = "visit_target_unavailable"
+	context["npc_id"] = npc_id
+	return context
+
+
 func _is_failure_result(last_result: String) -> bool:
 	return (
 		last_result.contains("failed")
@@ -3436,6 +4084,8 @@ func _should_use_action_failure_plan_judgement(reason: String, options: Dictiona
 
 
 func _normalize_failure_type(reason: String) -> String:
+	if reason == "plan_action_completed":
+		return "action_completed"
 	if reason.contains("plan_superseded"):
 		return "plan_item_superseded"
 	if (
@@ -3469,6 +4119,7 @@ func _normalize_failure_type(reason: String) -> String:
 		reason.contains("no_resources")
 		or reason.contains("insufficient_stage_resources")
 		or reason.contains("no_food")
+		or reason.contains("no_wine")
 		or reason.contains("no_money")
 	):
 		return "resource_insufficient"
@@ -3483,6 +4134,8 @@ func _normalize_failure_type(reason: String) -> String:
 
 func _describe_reevaluation_reason(reason: String, item: Dictionary) -> String:
 	match _normalize_failure_type(reason):
+		"action_completed":
+			return "计划行动已经完成，当前小时需要安排后续活动。"
 		"plan_item_superseded":
 			return "等待期间计划阶段已经变化，原对话行动未能开始。"
 		"target_unavailable":
@@ -3706,6 +4359,9 @@ func _count_work_phases(plan: Array) -> int:
 		var action_id := str((raw_item as Dictionary).get("action_id", ""))
 		if action_id == IDLE_ACTION_ID:
 			continue
+		if action_id == "assist_upgrade":
+			count += 1
+			continue
 		var action := _get_action(action_id)
 		if str(action.get("type", "")) in ["work", "clinic_doctor", "training_instructor"]:
 			count += 1
@@ -3715,9 +4371,9 @@ func _count_work_phases(plan: Array) -> int:
 func _daily_planning_rules() -> Array[String]:
 	return [
 		"计划必须覆盖 0 到 23 点共 24 个阶段。",
-		"至少 6 个阶段安排 work / clinic_doctor / training_instructor 类型的生产或训练工作。",
+		"通常应强烈优先安排至少 6 个生产、训练或升级协助阶段；assist_upgrade 计入工作阶段，但该数量不是程序硬门槛。",
 		"只能选择行动白名单中的 action_id，或选择 idle。",
-		"带目标行动必须使用白名单同一候选中的 action_id、target_id 与 location_id。",
+		"固定地点的带目标行动必须使用白名单同一候选中的 action_id、target_id 与 location_id；talk_to_npc 只选择 target_id，不选择或返回 location_id。",
 		"NPC 对话、祈祷、前往地点和主动找守备官都是正式行动；只有没有合理行动时才等待。",
 		"守备官当前指令只能作为参考，不能越过资源、HP、地点、工位或行动合法性。"
 	]

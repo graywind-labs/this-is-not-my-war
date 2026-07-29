@@ -11,7 +11,14 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from backend.app import create_app
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from backend.schemas import (
+    EscapeInterventionDialogueResponse,
+    GameTime,
+    ModelRequestMeta,
+    NPCNPCDialogueResponse,
+    PlayerNPCDialogueResponse,
+    SpeakerContext,
+)
 from tools.station_context_fixture import build_station_context
 
 
@@ -31,6 +38,19 @@ ACTION_REFERENCE = [
         "location_id": "dining_hall",
         "tags": ["eat"],
         "context": {"authority": "ActionSystem"},
+    },
+    {
+        "action_id": "drink_wine",
+        "name": "饮酒",
+        "action_kind": "drink",
+        "location_id": None,
+        "tags": ["drink"],
+        "context": {
+            "eligible": True,
+            "available_now": True,
+            "description": "本人确实持有酒；开始时消耗1份个人酒，改善心情并让过去伤痛暂时淡化。",
+            "authority": "ActionSystem",
+        },
     },
     {
         "action_id": "sleep_in_dormitory",
@@ -109,6 +129,7 @@ def _base_payload(request_id: str, text: str) -> dict:
             "satiety": 66,
             "fatigue": 34,
             "money": 1,
+            "wine": 1,
             "recruited": False,
             "unconscious": False,
             "escaped": False,
@@ -161,13 +182,28 @@ def _base_payload(request_id: str, text: str) -> dict:
     }
 
 
-def _post_dialogue(client, payload: dict) -> NPCDialogueResponse:
+def _post_dialogue(
+    client,
+    payload: dict,
+) -> PlayerNPCDialogueResponse | NPCNPCDialogueResponse | EscapeInterventionDialogueResponse:
     response = client.post("/npc/dialogue", json=payload)
-    assert response.status_code == 200, response.get_json()
-    return NPCDialogueResponse(**response.get_json())
+    body = response.get_json()
+    assert response.status_code == 200, body
+    response_models = {
+        "player_npc": PlayerNPCDialogueResponse,
+        "npc_npc": NPCNPCDialogueResponse,
+        "escape_intervention": EscapeInterventionDialogueResponse,
+    }
+    return response_models[payload["dialogue_kind"]](**{
+        key: value
+        for key, value in body.items()
+        if not key.startswith("model_")
+    })
 
 
-def _assert_action_boundary(reply: NPCDialogueResponse) -> None:
+def _assert_action_boundary(
+    reply: PlayerNPCDialogueResponse | NPCNPCDialogueResponse,
+) -> None:
     text = reply.reply_text
     assert any(fragment in text for fragment in ["餐食", "做饭", "做菜", "食堂", "烹饪"]), text
     assert "飞龙" in text, text
@@ -177,13 +213,13 @@ def _assert_action_boundary(reply: NPCDialogueResponse) -> None:
             "不能", "不会", "做不到", "没法", "无法", "不行", "不来", "干不了", "办不到",
             "别开玩笑", "哪会", "休想", "想都别想",
             "没骑过", "开涮", "扯淡", "荒唐",
-            "没那本事",
+            "没那本事", "更别说",
         ]
     ), text
     assert not any(fragment in text.replace(" ", "") for fragment in ["能骑飞龙", "会骑飞龙", "可以骑飞龙"]), text
 
 
-def _assert_chapel_dependency_boundary(reply: NPCDialogueResponse) -> None:
+def _assert_chapel_dependency_boundary(reply: PlayerNPCDialogueResponse) -> None:
     text = reply.reply_text.replace(" ", "")
     assert "祈祷" in text, text
     assert "弥撒" in text, text
@@ -222,6 +258,20 @@ def main() -> None:
         ),
     )
     _assert_action_boundary(player_action_awareness)
+
+    wine_action_awareness = _post_dialogue(
+        client,
+        _base_payload(
+            "verify_dialogue_prompt_real_wine_action_awareness",
+            "只按你当前被允许的行动和个人持有量回答：你现在有一份酒，能不能饮酒？执行时会消耗什么？",
+        ),
+    )
+    wine_reply = wine_action_awareness.reply_text.replace(" ", "")
+    assert any(fragment in wine_reply for fragment in ["能", "可以", "喝"]), wine_reply
+    assert any(
+        fragment in wine_reply
+        for fragment in ["一份", "一瓶", "这份", "手里", "消耗", "喝掉", "没了"]
+    ), wine_reply
 
     chapel_dependency_awareness = _post_dialogue(
         client,
@@ -303,14 +353,16 @@ def main() -> None:
         "dialogue_kind": "escape_intervention",
         "interaction_context": "escape_intervention",
         "escape_intervention_round": 2,
+        "current_round": 2,
         "npc_state": escape_payload["npc_state"] | {
             "escape_intent": {"active": True, "status": "escaping", "rounds_used": 1},
         },
     })
+    escape_payload["dialogue_state"] = dict(escape_payload["dialogue_state"])
+    escape_payload["dialogue_state"]["current_round"] = 2
     escape = _post_dialogue(client, escape_payload)
-    assert escape.intent in {"stay_after_intervention", "leave_after_intervention"}
-    assert escape.recruitment_result == "none"
-    assert escape.wartime_reaction == "none"
+    assert isinstance(escape, EscapeInterventionDialogueResponse)
+    assert escape.escape_intervention_result in {"stay", "leave"}
 
     usage_response = client.get("/debug/llm_usage")
     assert usage_response.status_code == 200

@@ -1,5 +1,43 @@
 # GM_PANEL.md
 
+T0095 / T0096 不新增 GM 命令或按钮。pending 生命周期继续用既有“暂停 / 继续”“指定行动”“立即进入地点”、NPC 最近行动结果、当前计划和运行态快照验证；GMPanel 不直接提交 active、占工位或伪造到达。`reflection_result` 继续读取 DailyReflectionSystem 快照，现在额外包含逐 NPC 上次成功 `reflection_period.end`；`long_memory <npc_id>` 可看到日记的 `record_label / summary_window_key / trigger_day / trigger_time / reflection_period`，短期事件查询可确认请求快照后新增记录仍保留。GMPanel 不自行移动记忆水位或生成“接到守备命令的第N天”。
+
+T0094 不新增 GM 命令或按钮。宿舍 `床位X：空闲 / XX占用中` 与 NPC 面板右侧“记录”可直接在 `Main.tscn` 验证；“记录”读取全局事件档案并按历史日期、时间和波次分组，不需要 GM 复制对话。弥撒继续复用通用“指定行动”、当前计划、最近行动结果、`plan_request` 与 LLM 日志，GMPanel 不伪造到达、祈祷失败、对话承诺或修订选择。既有 `reflection_result` 继续调用 `DailyReflectionSystem.get_async_reflection_snapshot()`，现在额外显示 21:00 锚点、逐 NPC 当前睡眠窗口累计 / 剩余 / 状态及已完成窗口；它只读观察，不推进睡眠、不标记窗口完成，也不新增总结权威。
+
+T0092 不新增 GM 命令或按钮。既有 `plan_request`、`npc_talk`、当前计划、最近行动结果、后端 LLM 日志、用量顶栏和 `llm_usage` 已能确认完整 Godot 响应、provider 实际 payload 与 token usage。GMPanel 不执行 provider projection、不补齐模型字段，也不维护第二套响应合同。
+
+T0091 不新增 GM 命令或按钮。既有 `npc_talk`、通用“指定行动”、当前计划、最近行动结果、`plan_request` 与后端 LLM 日志足以验证目标驱动对话：模型计划只需选择目标 NPC，ActionSystem 会按目标实时地点接近；目标移动时仍按既有规则追踪。GMPanel 不填写计划地点、不传送双方，也不伪造工位占用或修订结果。
+
+T0089 不新增 GM 命令或按钮。既有“指定行动”下拉已包含 `pray_at_chapel / lead_mass / attend_mass`：主持期间给另一 NPC 指定普通祈祷，可从最近行动结果、当前计划、`plan_request` 与后端 LLM 日志观察 `pray_failed_mass_in_progress -> attend_mass`；让参加者入席后中断主持者，可观察 `attend_mass_failed_leader_left -> pray_at_chapel`。GMPanel 只构造真实行动条件，不写 `failure_id`、不选择修订行动，也不绕过 ActionSystem 或 LLM。
+
+T0087 不新增 GM 命令或按钮。玩家应征、普通对话和结构化结果可直接在 `Main.tscn` 对话窗验证；NPC-NPC 可复用 `npc_talk`，逃离挽留可复用既有 `escape_npc` 与 NPC 面板对话入口。事件查询、后端 LLM 日志和用量快照足以确认实际 `dialogue_kind`、响应字段、provider 与失败原因。GMPanel 不构造第二份响应 Schema、不伪造 `recruitment_result / invitation_result / escape_intervention_result`，也不自行决定入伍、会话结束或逃离结算。
+
+T0093/T0086 不新增 GM 命令或按钮。既有通用“指定行动”、协助修复 / 升级 / 治疗、建筑修复 / 升级、NPC 受伤 / 状态、推进时间、执行 / 查看 / 重估计划、`plan_request` 和后端 LLM 日志足以构造并观察完成后重排：让当前起连续几小时计划为同一协助 / 病床 / 饮酒，再推进到目标完成，应看到 `failure_type=action_completed / revision_hours=[当前小时, ...连续同任务小时]`，首个不同任务小时不应被包含，修订后当前行动立即变化；只有一个相同阶段时数组仍只有当前小时，在整点前完成并跨小时则不应产生旧小时请求。HUD `1 / 2 / 3` 可直接在 Main 前端验证。GMPanel 不伪造完成结果、不代替 LLM 选择后续行动，也不新增权威结算。
+
+T0085 不新增 GM 命令或按钮。既有建筑“升级”、通用“协助升级”、计划生成 / 查看 / 执行 / 手动重估、推进时间、最近行动结果、`plan_request` 与后端 LLM 日志已经可以复现并观察完整链路：升级完成后旧协助项应产生 `no_active_upgrade`，一次正式修订后改为新行动，即使合并计划少于 6 个工作阶段也应接受。GMPanel 不伪造工程完成、失败上下文、计划计数或模型响应。
+
+T0083 不新增 GM 命令或按钮：接受 / 拒绝结果行可在 `Main.tscn` 对话窗直接看到，精简标题可在 NPC 事件库直接确认；既有事件查询足够辅助检查 summary 和 `dialogue_text`。GMPanel 不生成应征结果、不修改 history turn，也不拼接 UI 文案。
+
+T0082 不新增 GM 命令或按钮：完整多轮会话摘要、应征 toggle 保持和取消按钮禁用都可在 `Main.tscn` 对话 / NPC 事件库直接验证。既有事件查询可确认完成后仍只有一条 `dialogue_turn` 且 summary 包含全文；既有“推进 1 小时”可连续两次验证应征锁定挂起会话按完成收口。GMPanel 不创建对话历史、不修改 toggle，也不绕过 DialogSystem 取消锁。
+
+T0081 不新增 GM 按钮或命令。既有“指定行动”、`eat / sleep / train_* / assist_repair / assist_upgrade / assist_heal`、立即进入地点、推进逻辑时间、NPC 状态、建筑修复 / 升级、警铃 / 避战 / 逃离与敌人快照已经能构造所有生活消耗档位；在 NPC 面板观察饱食 / 疲劳和经验即可。暂停后推进不应变化，恢复后按 TimeSystem 有效逻辑时间变化。GMPanel 不自行选择 `needs_profile`、计算小数余量或授予经验；25 项穷尽分类和三类协助有效工时由 `verify_activity_needs_framework.gd` / `verify_assist_timed_experience.gd` 验证。
+
+T0080 不新增 GM 按钮或命令。用“指定行动”为 NPC 安排依赖某建筑的工作，在 NPC 仍位于别处并正在前往时，用建筑分组“升级”启动目标建筑升级：最近行动结果和 `plan_request` 此时不应出现失败；待 NPC 真实抵达入口后，应看到 `<action_id>_failed_building_upgrading`、`interrupted_phase=pending / arrival_check_failed=true` 及随后判别 / 按需修订。若先用“立即进入地点”让 NPC 在建筑内开始行动，再升级同一建筑，应立即看到 `interrupted_phase=active` 失败和广场清退。既有“协助升级”目标入口、驿站上下文、当前计划和后端 LLM 日志足够观察室外候选与模型选择；GMPanel 不伪造到达、失败、候选或升级结算。
+
+T0078 不新增 GM 按钮或命令。既有 `start_proactive` / `proactive` 可以为指定 NPC 构造主动交涉问号，点击 NPC 后直接在 `Main.tscn` 验证取消按钮、tooltip、完成 / 挂起；既有“推进 1 小时”、`plan_request`、当前计划和最近行动结果足以观察超时收口、required 当前小时及新行为立即开始。GMPanel 不自行结束会话、归并判别小时或执行计划。
+
+T0077 在 GM 面板标题下方新增常驻用量顶栏：打开面板立即异步读取一次 `/debug/llm_usage`，面板保持可见时每 3 秒刷新，格式为“运行：入 / 出 / 总 tokens｜估算人民币　今日：金额 / ¥20.00”。`session` 按本次后端进程的每个正式供应商 HTTP 尝试累计，`daily` 从上海自然日持久化账本重放；自动重试会计入多次。查询通过 `LLMBridge.debug_request_llm_usage_async()` 工作线程完成，不阻塞游戏、不申请慢速、不调用模型。既有“成本统计”按钮和 `llm_usage` 命令继续输出完整 runtime / budget / audit 快照；GMPanel 只显示后端值，不在客户端计算价格、扣预算或修改账本。
+
+T0076 用只读命令 `dialogue_carryover` 替换旧 `expire_plan_dialogues`。它调用 `DailyPlanSystem.get_dialogue_carryover_snapshot()`，显示当前日 / 小时、仍在接近或等待的日计划对话、已进入邀请 / 正式阶段的跨小时会话，以及被延迟执行当前计划的 NPC；不推进时间、不结束对话、不修改计划、不释放预约。可先让自然日计划产生 `talk_to_npc`，在赶路 / 等待 / 交谈时用既有“推进 1 小时”，再执行该命令观察旧行动仍在且发起者 / 参与者进入 deferred；对话结束后通过 `plan_request` 和最近行动结果观察发起者判别必选当前小时、组屏障释放及新行为立即开始。
+
+T0075 不新增 GM 按钮或命令。既有“指定行动”“执行当前计划”“推进 1 小时”、制造目标 / 单阶段和最近事件入口已经可以构造并观察连续生产：为 NPC 安排工作并推进到周期完成，可看到旧 `work_completed` 后立即出现下一次 `work_started`；跨小时前后计划相同应保留活动进度，不同则中断切换。吃饭 / 饮酒等单次行为可用现有行动与计划入口观察同小时不重放。GMPanel 只调用 ActionSystem、DailyPlanSystem、TimeSystem 与 CraftingSystem 的既有接口，不自行判断 `completion_policy`、清除派发记录或结算周期；穷尽分类由 `verify_plan_action_completion_policy.gd` 验证。
+
+T0071 不新增 GM 按钮或命令。既有 `npc_talk <speaker_npc_id> <target_npc_id> [opening_text]` 可触发正式 NPC-NPC 对话；NPC 事件 / 见闻查询可确认某条事实只属于说话者，后端持久化 LLM 日志可核对实际 payload 不含 `speaker_npc`。确定性回归由 `verify_dialogue_private_context_boundary.gd` 完成，GMPanel 不复制私有记忆、拼装 Prompt 或建立第二套对话入口。
+
+T0069 复用既有“成本统计”按钮和 `llm_usage` 命令，不新增按钮或权威接口。`GET /debug/llm_usage.model_adapter.audit_log` 现在显示持久化日志是否启用、JSONL schema 版本、路径、是否保存正文及最近写盘错误 / 时间；GMPanel 继续用 `_compact(...)` 显示完整后端快照。该入口只观察配置，不读取或回传日志正文，完整 Prompt、私人记忆和模型原始文本只能在后端受控文件中查看。
+
+T0063 不新增 GM 命令或按钮。赠酒与个人持酒可直接在 `Main.tscn` 的 NPC 面板观察；既有资源增减入口可补充驿站 `wine`，通用“指定行动”下拉会从 `data/action_defs.json` 自动出现 `drink_wine`。先给目标 NPC 酒再指定饮酒，可通过 NPC 面板个人酒、最近行动结果和事件 / 见闻查询观察实际扣 1 与 `wine_consumed`；无酒时指定同一行动应得到资源失败。GMPanel 只调用现有系统，不创建第二套赠酒、饮酒或情绪结算。
+
 T0061 不新增 GM 命令或按钮。玩家可直接在 `Main.tscn` 的 NPC 面板“背景 / 日记 / 知识”查看移除代表性表达后的 9 项档案、八人相互拼接的身世 / 到站日记，以及叙事化建筑认识；“知识”详情只显示主体、关系和值。既有 `long_memory <npc_id>` 继续显示同一份完整运行态长期记忆，保留每条知识的 `confidence / day / time`，可用于核对玩家 UI 只是隐藏可信度与更新时间而没有删除底层字段，也可核对每人的守备官种子只有一条职位职责。GMPanel 不复制档案或记忆文案、不改写知识记录，也不创建第二套玩家显示规则。
 
 T0060 不新增 GM 命令或按钮。其 8 人档案、3 篇种子日记和知识图谱继续由 NPC 面板与 `long_memory <npc_id>` 复用同一运行态来源；T0061 已取代当时的固定代表性表达、前两篇微观写法、守备官开放评估措辞和知识面板元数据展示。六类 payload 的日记时间标签仍由 LLMBridge 投影，GMPanel 不创建第二套时间事实。
@@ -8,7 +46,7 @@ T0059 不新增 GM 命令或按钮。NPC 面板“日记 / 知识”从 `Main.ts
 
 T0058 复用既有“驿站上下文”按钮与 `station_context` 命令，不新增入口。输出新增“公开基础资源（5）”，直接显示 LLMBridge 从 ResourceSystem 当前读取的粮食、餐食、木材、石料和铁；“精简驿站规则（6）”可看到升级缓慢推进、成员可协助加快的规则。该入口只读，不修改资源、启动升级、指派 NPC 或结算加速。
 
-T0057 不新增 GM 入口：用“指定行动”为 NPC 安排依赖某座建筑的行动，在其前往途中或开始活动后，用建筑分组“升级”启动同一建筑升级；随后通过 NPC 最近行动结果与 `plan_request` 观察 `<action_id>_failed_building_upgrading`、`trigger_kind=action_failure`、建筑升级中文摘要和判别 / 按需修订结果。该组合只调用 ActionSystem、BuildingSystem 与 DailyPlanSystem 既有权威入口，GMPanel 不直接写失败原因或伪造重估。
+T0057 不新增 GM 入口；其原“路上立即失败”验证口径已由 T0080 修正。现在用“指定行动”安排依赖建筑的行动后，途中启动升级应继续移动且暂不产生失败；抵达入口后才通过最近行动结果与 `plan_request` 观察 `<action_id>_failed_building_upgrading`、`trigger_kind=action_failure`、门口中文摘要和判别 / 按需修订。已在建筑内的 active 行动仍在升级开始时立即失败。该组合只调用 ActionSystem、BuildingSystem 与 DailyPlanSystem 既有权威入口，GMPanel 不直接写失败原因或伪造重估。
 
 T0056 不新增 GM 入口：基础 HP / 照料额外 HP、成长、逐马繁育概率与冷却都可在 `Main.tscn` 马厩面板直接观察；既有马匹查看、生态推进与强制繁育命令继续调用 HorseSystem，可辅助验证概率重置和冷却，但 GMPanel 不自行写繁育概率或冷却。
 
@@ -16,7 +54,7 @@ T0055 不新增 GM 入口：既有“驿站上下文”按钮与 `station_contex
 
 T0054 在“后端 / LLMBridge”分组新增只读“驿站上下文”按钮与 `station_context` 命令，调用 `LLMBridge.debug_build_station_context()` 显示当前正式请求会共用的 `setting_summary`、动态在站 `resident_roster`、完整 `building_roster`、配置化 `work_mode_actions` 和精简 `station_rules`。该入口只观察由 NPCSystem / BuildingSystem / ActionSystem 与 `data/station_context.json` 组合出的上下文，不新增或修改 NPC、建筑、行动、士气、逃离或战斗事实。
 
-T0053 新增命令 `expire_plan_dialogues`，只调用 `ActionSystem.expire_invalid_daily_plan_dialogues()` 扫描当前已经存在的日计划对话等待，并显示实际过期的发起者 ID；它不创建 pending、不改计划、不伪造失败。自然日计划产生 `talk_to_npc` 且目标正在制定 / 重估计划后，可推进时间，再执行该命令并通过“最近行动结果”和 `plan_request` 观察 `talk_to_npc_failed_plan_superseded`、`trigger_kind=action_failure` 及判别 / 按需修订结果。正式日计划来源元数据只能由 DailyPlanSystem 派发写入；`npc_talk` 是 GM 直接动作，本身不会被跨小时计划项规则误判为过期。
+T0053 原 `expire_plan_dialogues` 命令已由 T0076 移除，因为普通同日跨小时不再使已开始的对话等待失效。同小时计划被修订替代、跨日或目标 / 行为模式权威失效仍由运行系统自然产生结构化失败，可用“最近行动结果”和 `plan_request` 观察；GM 不提供伪造该失败的入口。
 
 T0052 未新增专用 GM 命令或按钮。前端按钮状态可直接在 `Main.tscn` 观察；需要构造内部时序时，先用既有 `plan_revise <target_npc_id> [reason]` 让目标进入 `kind=plan`，再立即执行 `npc_talk <speaker_npc_id> <target_npc_id> [opening_text]`，用 `llm_state <target_npc_id>` 与“最近行动结果”观察目标思考期间没有邀请 / 失败、计划结束后自动进入原邀请流程。GMPanel 仍只调用 DailyPlanSystem / ActionSystem / NPCSystem 的既有接口，不新增等待或对话权威。
 
@@ -43,7 +81,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - NPC 选中、状态修改、移动到建筑、立即进入地点。
 - NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
-- 通过“指定行动”下拉统一指派工作、训练场教官/受训者、诊疗位/病床、普通祈祷、主持弥撒、参加弥撒、吃饭、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
+- 通过“指定行动”下拉统一指派工作、训练场教官/受训者、诊疗位/病床、普通祈祷、主持弥撒、参加弥撒、吃饭、饮酒、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
 - TimeSystem 设定时间、推进模拟小时、LLM 等待减速请求、有效倍率 / 慢速请求 / 时间上限请求快照。
 - LLMBridge 后端 health check、开发期 NPC 对话 Mock、提出应征 Mock、正式请求共享驿站上下文快照，以及后端 LLM usage / 成本统计 / 预算状态 / 失败原因 / Godot LLM 等待运行态与逐请求慢速注册 / 释放查询。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
@@ -136,7 +174,7 @@ NPC：
 - 查看 NPC 快照。
 - 为已入伍 NPC 发布自然语言指令、查看当前指令，并查看最近一次计划重评估请求、对话后判别及其应用结果；未入伍 NPC 发布会被 `NPCSystem` 拒绝。
 - 为当前选中 NPC 生成真实 LLM 24 小时计划、生成纯规则调试计划、执行当前小时计划、查看计划或立即触发计划修订；计划入口调用 `DailyPlanSystem`，不在 GMPanel 中自行决定行动结算。T0049/T0050 后 `plan_revise` 是非对话调试触发，固定以 `revision_hours=[current_hour]` 修订当前阶段；对话或行动失败的范围必须由真实会话 / 权威行动失败触发后的 LLM 判别产生。T0022 后 `plan_generate` 要求已配置的非 Mock provider，成功来源为 `llm_plan_day`；失败只显示真实错误，不规则降级。`plan_generate_rule` 仍是独立的显式纯规则调试入口，不会被正式开局或新一天调用。
-- 为当前选中 NPC 触发首次睡眠总结、查看长期记忆、最近一次反思结果和 LLM 状态；首次睡眠总结入口调用 `DailyReflectionSystem`，不在 GMPanel 中自行写日记、清短期记忆或更新知识图谱。T0024 后 `reflection_result` 同时输出反思批次并发快照，包括上限、当前活动数、实际峰值、启动 / 完成数、请求 ID 和逐 NPC 结果；`llm_state` 继续只读取单个 NPC 当前活动与睡眠锁状态。
+- 为当前选中 NPC 触发熟睡总结、查看长期记忆、最近一次反思结果和 LLM 状态；总结入口调用 `DailyReflectionSystem`，不在 GMPanel 中自行写日记、清短期记忆或更新知识图谱。T0024 后 `reflection_result` 同时输出反思批次并发快照；T0094 后该快照还包含 21:00 窗口锚点、逐 NPC 累计 / 剩余睡眠、请求状态和已完成窗口。`llm_state` 继续只读取单个 NPC 当前活动与睡眠锁状态。
 - 将当前选中 NPC 设为入伍；该入口只调用 `NPCSystem.set_npc_recruited(...)`，用于调试验证，正式征召仍由对话同意结果驱动。
 - 触发当前选中 NPC 主动找守备官交涉，并查看该 NPC 的主动交涉状态；触发后 NPC 头顶出现 `?`，点击后进入既有对话面板。
 - 通过 `npc_talk` 指定发起者、目标和可选开场目的，直接触发已有 NPC-NPC 自主对话行动；目标合法性、移动、邀请接受 / 拒绝、双方预定、接受后的工作打断、软性轮次指导和结束标记仍由 ActionSystem / DialogSystem 校验。
@@ -181,7 +219,8 @@ NPC：
 后端 / LLMBridge：
 
 - 后端健康检查，调用 `LLMBridge.check_health()` 并刷新 HUD 后端状态。
-- 查看后端 LLM usage / 成本统计 / 预算状态，调用 `LLMBridge.debug_request_llm_usage()` 读取 `GET /debug/llm_usage`，显示 provider、model、调用次数、token、费用估算、fallback 次数、预算上限、已用量、剩余额度、最近预算错误、最近失败、HTTP 状态或异常类型、Schema 失败和降级来源；同时读取 `LLMBridge.debug_get_llm_runtime_snapshot()`，显示当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、有效逻辑倍率、最近一次 TimeSystem 倍率变化原因，以及每个请求的 call_type、慢速是否注册 / 释放和时间戳。该入口只读，不申请 TimeSystem 慢速。
+- 面板顶栏通过 `LLMBridge.debug_request_llm_usage_async()` 显示本次后端运行的正式 provider 尝试输入 / 输出 / 总 token、人民币估算和上海自然日持久化金额 / 上限；面板隐藏时停止轮询。
+- 查看完整后端 LLM usage / 成本统计 / 预算状态，调用 `LLMBridge.debug_request_llm_usage()` 读取 `GET /debug/llm_usage`，显示 provider、model、业务调用记录、每次 provider 尝试 token / 人民币、今日持久化金额、fallback 次数、两层预算上限 / 已用 / 剩余、最近预算错误、最近失败、HTTP 状态或异常类型、Schema 失败和降级来源；同时读取 `LLMBridge.debug_get_llm_runtime_snapshot()`，显示当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、有效逻辑倍率、最近一次 TimeSystem 倍率变化原因，以及每个请求的 call_type、慢速是否注册 / 释放和时间戳。该入口只读，不申请 TimeSystem 慢速。
 - 对当前选中 NPC 发送 `/npc/dialogue` 开发期 Mock 请求。
 - 对当前选中 NPC 发送带 `is_recruitment_request=true` 的开发期应征 Mock 请求。
 - 查看最近一次共享 NPC LLM 上下文注入的目标、调用类型和 `current_order`；`station_context` 显示当前在站成员、建筑、行为目录、五项公开基础资源和六条规则；`plan_request` 还显示最近一次通用 `plan_revision_judgement` 的 `trigger_kind`、结果及 `revision_hours`。

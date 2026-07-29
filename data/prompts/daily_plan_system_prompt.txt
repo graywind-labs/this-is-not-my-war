@@ -1,23 +1,25 @@
 【每日计划 Prompt】
 
-你正在为目标 NPC 制定当天 24 小时计划。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）、npc.location_context、current_resource_states、current_building_states 和 allowed_actions 定义。
+你正在为目标 NPC 制定当天 24 小时计划。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）、npc.location_context、station_context.basic_resource_reserves、current_building_states 和 allowed_actions 定义。
 
 基础场景：
-- station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 只列当前仍在站的 NPC；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
+- station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人安排为站内目标；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
 - 不得补入 resident_roster 外的在站 NPC 或 building_roster 外的驿站建筑；公告牌、广场或站外地点若未列为建筑，也不得擅自称为建筑。
 - work_mode_actions 说明整个驿站支持哪些日常行为类型；目标 NPC 在本次计划中能选择的具体目标、地点、资格和可用性仍只看 allowed_actions。完整行为目录不能绕过行动白名单。
-- basic_resource_reserves 只公开粮食、餐食、木材、石料和铁的当前数量；current_resource_states 也只用于这些基础资源的计划判断。不得臆测第纳尔、酒、装备、器械、马匹或其他未公开库存。
-- station_rules 只提供生活、持续活动与周期结算、建筑升级、遇敌、避敌和士气常识；计划只能安排活动，不能把未完成周期预先写成已有产出，也不能假定 NPC 离岗、改做他事或被打断后活动仍会自行推进。若建筑正在缓慢升级且 allowed_actions 提供该建筑的 assist_upgrade 候选，应把“协助升级建筑”视为能加快工程的现实行动，结合职业、现场需求和其他紧急事项认真考虑，不能无故忽略；没有该候选时不得自造升级目标。实时进度、建筑升级状态、入伍、装备、行为模式、战局与逃离状态以程序事实为准。
+- basic_resource_reserves 只公开粮食、餐食、木材、石料和铁的当前数量。不得臆测驿站第纳尔、酒、装备、器械、马匹或其他未公开库存；但 npc.state.money 与 npc.state.wine 是目标 NPC 本人实际持有的资源，必须按该权威值判断。
+- station_rules 只提供生活、持续活动与周期结算、建筑升级、遇敌、避敌和士气常识；计划只能安排活动，不能把未完成周期预先写成已有产出，也不能假定 NPC 离岗、改做他事或被打断后活动仍会自行推进。若建筑正在缓慢升级且 allowed_actions 提供该建筑的 assist_upgrade 候选，应把“协助升级建筑”视为能加快工程的现实行动，结合职业、现场需求和其他紧急事项认真考虑，不能无故忽略；该候选的 `location_id=plaza`、`requires_building_entry=false` 表示在建筑外协助，不能因建筑封闭而判为不可执行。没有该候选时不得自造升级目标。实时进度、建筑升级状态、入伍、装备、行为模式、战局与逃离状态以程序事实为准。
+- 安排建筑作业相关阶段时，必须用 game_time 对照 current_building_states 中的总工期与剩余时间；协助或封闭影响只安排到预计完工前，不能把短工期机械铺满更晚时段。
 
 计划目标：
 - 输出从 hour=0 到 hour=23 的 24 个阶段，每个小时恰好出现一次。
-- 至少 6 个阶段必须是工作阶段。工作阶段应优先选择 allowed_actions 中 tags 包含 work、clinic_doctor 或 training_instructor 的行动。
+- 通常应强烈优先安排至少 6 个工作阶段，以维持驿站基础产出。工作阶段包括 allowed_actions 中 tags 包含 work、clinic_doctor 或 training_instructor 的行动；assist_upgrade 是实际劳动并计入工作阶段。但这不是程序硬门槛：人格、健康、危机、逃离意向和现场条件可以支持更少的工作，不能为了凑数安排明显不合理或不可执行的行动。
 - action_id 只能使用 allowed_actions 中出现的 action_id，或使用 idle。不要创造新行动，不要使用自然语言当 action_id。
-- action_kind 必须严格使用 Schema 允许值：work、eat、sleep、train、pray、rest、visit、chat、assist_repair、assist_upgrade、assist_heal、seek_guard_officer、avoid_combat、escape、idle。
-- 若 action_id=idle，action_kind 必须是 idle，location_id 使用 null 或空字符串，表示留在当前位置等待；若要前往广场，必须选择 visit_location 的广场候选。
-- 对带目标的候选（如 talk_to_npc、visit_location、assist_heal、assist_repair、assist_upgrade），action_id、target_id 与 location_id 必须选择同一条 allowed_actions 候选中的组合，不能只复制 action_id 后自造目标。
-- 每个计划项的 action_kind 必须等于所选 allowed_actions 候选中的 action_kind，不能把对话伪装成工作或把工作标成 idle。
+- 若 action_id=idle，只输出 hour、action_id 和 reason，表示留在当前位置等待；若要前往广场，必须选择 visit_location 的广场候选。
+- 对固定地点的带目标候选（如 visit_location、assist_heal、assist_repair、assist_upgrade），action_id 与 target_id 必须选择同一条 allowed_actions 候选，不能只复制 action_id 后自造目标。后端会从唯一候选补齐 location_id；只有同一 action_id + target_id 在 allowed_actions 中对应多个不同地点时才输出 location_id 消歧。
+- `talk_to_npc` 是目标 NPC 驱动的动态追踪行动：只从 allowed_actions 选择对应 `target_id`，不要选择或返回 `location_id`。目标当前在哪只用于理解现场，执行时由程序重新查询并追踪，不能把瞬时地点绑定为计划目的地。
+- 每个计划项都必须完整复用同一条 allowed_actions 候选；action_kind 由后端从该候选确定，不要重复输出。
 - 先检查候选 context：eligible=false 表示这个 NPC 能看见但没有执行资格，绝不能加入其计划；available_now=false 表示当前不能立即执行，应优先改选可用行动。尤其只有 required_ability=主持弥撒 且 eligible=true 的 NPC 才能安排 lead_mass。
+- drink_wine 的硬前提是 npc.state.wine 至少为 1，且每个饮酒阶段开始时由程序实际消耗 1 份个人酒；全天计划中的 drink_wine 阶段数不得超过当前个人持有酒数量。饮酒只通过后续事件与上下文表现心情改善、过去伤痛暂时淡化，不得生成情绪数值或删除记忆。
 - `required_active_action_id` 表示该行动开始和持续期间都依赖另一项在岗行动。`receive_clinic_treatment` 依赖 `work_clinic_doctor`，`receive_weapon_training` 依赖 `work_training_instructor`，`attend_mass` 依赖 `lead_mass`；服务者全部退出后，承载者会被程序中断并重估。当前没有对应在岗者时，不得把这些行动作为立即行动；未来时段只有在确有可协调的服务者计划时才可安排。
 - 教堂有三种不同活动：`pray_at_chapel` 是不依赖神父的普通祈祷；`lead_mass` 是具备资格者在祭坛主持弥撒；`attend_mass` 是其他 NPC 在祈祷席参加正在举行的弥撒。主持弥撒期间普通祈祷不可进行，不能把祈祷、主持和参加弥撒混写成同一行动。
 
@@ -37,14 +39,13 @@ current_order 边界：
 
 输出要求：
 - 只输出 JSON 对象，不要 Markdown。
-- npc_id 必须等于请求中目标 NPC 的 id。
-- plan_day 使用请求中的 game_time.day。
-- 每条 plan item 都要包含 hour、action_kind、action_id、location_id、target_id、priority、reason、dialogue_goal。
-- priority 是 0 到 100 的整数；高优先级用于吃饭、睡觉、治疗、关键工作或守备官指令相关安排。
-- reason 保持紧凑，每条不超过 12 个汉字；没有目标时 target_id 使用空字符串。
-- action_id 为 talk_to_npc 或 seek_guard_officer 时，dialogue_goal 写成 NPC 可直接说出口的开场诉求，不超过 40 个汉字；其他行动使用空字符串。
+- 只输出 plan、summary 和 debug_reason；后端会补齐 ok、npc_id 和 plan_day。
+- 每条 plan item 固定输出 hour、action_id、reason；只有所选候选确实带目标时才输出 target_id。地点能由 action_id + target_id 唯一确定时不要输出 location_id，只有候选地点有歧义时才输出。
+- 不要输出 action_kind、priority、null、空 target_id、空 location_id 或空 dialogue_goal；后端会从所选候选补齐行动种类、唯一地点并使用程序默认优先级。
+- reason 保持紧凑，每条不超过 12 个汉字。
+- action_id 为 talk_to_npc 或 seek_guard_officer 时，额外输出 dialogue_goal，写成 NPC 可直接说出口的开场诉求，不超过 40 个汉字。
 - summary 不超过 60 个汉字，简述当天计划如何平衡生存、工作和 current_order。
-- debug_reason 不超过 40 个汉字，简短说明使用了行动白名单、24 阶段、至少 6 阶段工作和 current_order 约束。
+- debug_reason 不超过 40 个汉字，简短说明使用了行动白名单、24 阶段、工作安排建议和 current_order 约束。
 
 JSON 结构示例（只示范单项结构，实际 plan 必须包含 hour=0 到 hour=23 共 24 项）：
-{"ok":true,"npc_id":"请求中的NPC id","plan_day":1,"plan":[{"hour":0,"action_kind":"sleep","action_id":"sleep_in_dormitory","location_id":"dormitory","target_id":"","priority":70,"reason":"夜间休息","dialogue_goal":""}],"summary":"兼顾生存与工作。","debug_reason":"使用白名单并覆盖24小时。"}
+{"plan":[{"hour":0,"action_id":"sleep_in_dormitory","reason":"夜间休息"}],"summary":"兼顾生存与工作。","debug_reason":"使用白名单并覆盖24小时。"}

@@ -1,5 +1,394 @@
 # TECH_ARCHITECTURE.md
 
+## T0095/T0096 提交与反思水位数据流
+
+```text
+pending(action + target + options + movement_target)
+  -> 暂停：NPC 移动冻结，ActionSystem 提交与 logical tick 返回
+  -> 恢复：继续原 movement_target
+  -> 抵达：NPCSystem 清 movement_target，写实际地点与 idle
+  -> ActionSystem 统一提交闸门
+       ├─ 地点 / NPC / 服务目标失效：一次结构化失败
+       └─ 条件仍成立：申请工位并进入 active
+```
+
+移动停止清理与行动失败分开：对话目标 / 服务提供者失效时先使用 `emit_state_changed=false` 收束移动，随后由唯一结构化失败发状态变化，避免 DailyPlanSystem 抢到中间结果。ActionSystem 的逻辑 tick 也检查暂停，即使外部调试误发 tick 也不推进 active。
+
+```text
+21:00 summary_window 累计睡眠达标
+  -> MemorySystem 原子短期快照（正文 + event_ids / witness_ids）
+  -> reflection_period = 上次成功 end .. 本次请求快照时刻
+  -> /npc/daily_reflection(summary_window, reflection_period, day_events)
+  -> 长期记忆写入
+  -> 只从当前短期索引移除本次快照 ID
+  -> 保存本次 end，作为下次 start
+```
+
+窗口只管资格和归属，水位只管内容，触发时刻只管真实请求时间。请求在飞期间的新 ID 不属于旧快照，因此不会被旧回调清除；漏掉窗口不会推进水位。
+
+## T0094 对话实况、历史投影与夜间总结数据流
+
+```text
+守备官第一条有效消息
+  -> DialogSystem 在中断前读取 ActionSystem runtime snapshot + 当前计划
+  -> interrupted_activity_context（目标私有、仅本会话）
+  -> LLMBridge -> NPCDialogueRequest
+  -> 对话 Prompt 按“被打断的活动 / 计划不变时暂定恢复”回答
+  X 不进入 MemorySystem / EventRecord / 传播 / 长期记忆
+```
+
+对话完成仍只写既有 `dialogue_turn`。NPCPanel 的“记录”从 MemorySystem 全局 append-only 事件档案筛选目标 NPC 与守备官会话，按事件 `day / time` 排序，并沿 `combat_started / combat_ended.wave_number` 的历史序列计算波次标签。短期事件 / 见闻索引被熟睡总结清空后，已完成会话仍可查看；UI 不建立独立数据库，也不拿 CombatSystem 当前波次重写旧记录。
+
+```text
+sleep_in_dormitory 的有效逻辑秒
+  -> DailyReflectionSystem 解析 21:00 锚定窗口
+  -> 同一 night_<anchor_day>_2100 跨多次睡眠累计
+     ├─ 未满 3600 秒：保留 accumulated / remaining
+     ├─ 达标但并发或旧请求占用：保持 eligible 可重试
+     └─ 达标发起既有 /npc/daily_reflection
+          -> 长期记忆成功应用 + 短期索引轮转
+          -> completed_windows_by_npc 登记该窗口
+```
+
+T0095 起总结窗口及记录范围会进入后端 `DailyReflectionRequest`，帮助模型严格限制正文内容；日记按窗口锚点归档，实际触发日 / 时间独立保存。失败不消耗窗口也不推进内容水位，21:00 边界开启下一窗口。现有深度睡眠锁、最多 8 路并发、TimeSystem 慢速和明确模板降级来源不变。
+
+固定地点行动开始前由 ActionSystem 同时校验 `current_location`、`movement_target` 和 `moving_to_*`；教堂再在 `_start_pray(...)` 做最终到达守卫。弥撒开始同时扫描 active 与 pending 普通祈祷：active 释放祈祷席；pending 先以 `emit_state_changed=false` 收束移动和信息地点，再由唯一一次 `_update_action_failure(...)` 发出带完整现场上下文的 `pray_failed_mass_started`，防止中间移动信号抢占重估。该精确失败与守备官已谈妥的当前承诺都进入既有 DailyPlanSystem 范围判别 / 正式修订链，程序只约束当前小时和合法性，不硬编码 NPC 必须参加。
+
+## T0092 双层 LLM 合同
+
+```text
+Godot 完整业务请求
+  -> Flask 完整请求 Schema
+  -> ModelAdapter provider projection
+       ├─ 删除 meta / null / 同值副本 / 分支外字段
+       └─ 保留人物、记忆、现场事实、白名单
+  -> provider 最小 JSON 决定
+  -> ModelAdapter deterministic hydration
+       ├─ 固定响应 envelope 与派生布尔值
+       └─ 候选 action_kind / priority / 唯一 location
+  -> Flask 完整响应 Schema + 业务校验
+  -> Godot 既有消费链
+```
+
+投影和补齐只在 `ModelAdapter` 的 provider 边界执行，不能代替 Flask / Godot 的业务校验。后端覆盖模型多余或错误的固定回声，但不会修复真正的行动、目标、枚举、修订小时或记忆内容错误。Mock 也经过同一 hydration，以保证本地和真实 provider 的 Godot 响应形状一致。
+
+## T0091 目标驱动对话计划数据流
+
+```text
+LLMBridge allowed_actions
+  -> talk_to_npc {action_id, action_kind, target_id, target_kind, target_name}
+  -> backend 发给 provider 时再次移除 location_id
+  -> 模型只选择 target_id
+     ├─ 省略 / null location_id -> 直接校验 action + target
+     └─ 冗余瞬时地点          -> 规范化 null + model_normalizations
+  -> DailyPlanSystem 只保存 target_npc_id
+  -> ActionSystem 执行时查询目标实时地点并追踪
+```
+
+固定工作、拜访和协助行动仍使用 action + target + location 的精确候选合同。该例外不让模型决定寻路，也不放宽对话目标资格、自聊、`action_kind=chat` 或 `dialogue_goal` 校验；它只消除“目标当下位于 clinic，却因为协议要求 null 而拒绝整次修订”的表示冲突。
+
+## T0087 对话响应按类型分派
+
+```text
+NPCDialogueRequest.dialogue_kind
+  ├─ player_npc          -> PlayerNPCDialogueResponse
+  ├─ npc_npc             -> NPCNPCDialogueResponse
+  └─ escape_intervention -> EscapeInterventionDialogueResponse
+                               -> 分支 Schema extra=forbid
+                               -> 分支业务校验
+                               -> Godot 对应唯一消费字段
+```
+
+请求合同保持统一，便于 LLMBridge 继续复用人物、记忆、地点和行动候选构造；响应合同在 HTTP 层按请求类型选择，模型不能再把邀请、应征、战时和逃离字段混装进一个对象。应征权威只消费 `recruitment_result`，NPC-NPC 生命周期只消费 `invitation_result / should_end_dialogue`，逃离权威只消费 `escape_intervention_result=stay|leave`。通用 `intent` 已删除；分支外字段和旧失效意图均在进入 Godot 前以 `model_output_invalid` 拒绝。
+
+供应商偶发把 `emotion / suggested_event_type / debug_reason` 返回为 `null` 时，HTTP 层只对这些非权威元数据替换 Schema 默认值，并把路径、原值、目标值和来源写入 `model_normalizations`。这不会改变 `recruitment_result / invitation_result / should_end_dialogue / wartime_reaction / escape_intervention_result`，也不会触发 Mock fallback。
+
+## T0085 计划工作量软约束与目标失效数据流
+
+```text
+BuildingSystem 完成 upgrade / repair
+  -> 释放协助者并清空 last_action_failure_context
+  -> 下个计划小时仍命中旧 assist_upgrade
+     -> DailyPlanSystem 查询实时作业状态
+        -> 生成 no_active_upgrade / target_resolved_or_inactive
+        -> /npc/plan_revision_judgement 选择受影响小时
+        -> /npc/revise_plan 返回新合法行动
+           -> 只校验精确小时、白名单、目标/地点、即时行动等硬合同
+           -> 合并并立即/延迟可靠派发
+```
+
+`minimum_work_phase_count` 等字段为兼容 Schema 与 Prompt 规划上下文继续保留，但 backend 和 Godot 不再据此拒绝响应。`assist_upgrade` 的工作计数与 `location_id=plaza` 在 LLMBridge、DailyPlanSystem 和 backend 之间一致，避免历史计划计数失真或把室外协助重新投影进封闭建筑。
+
+## T0084 固定床位分配数据流
+
+```text
+building_defs.json.workstations[].assigned_npc_id
+  -> BuildingSystem 规范化位置配置
+     -> claim_workstation(dormitory, npc, dormitory_bed)
+        ├─ NPC 有固定床：只检查并申请自己的位置
+        └─ NPC 无固定床：跳过全部专属位置，只申请未分配床
+           -> ActionSystem 保存 workstation_id
+              -> 完成 / 中断 / 封闭时只释放 occupied_by
+
+BuildingSystem.get_building(dormitory)
+  -> BuildingPanel 只读显示实时“空闲 / XX占用中”，不暴露固定归属
+```
+
+归属是建筑配置事实，`occupied_by` 是运行时使用事实，两者不能混用。ActionSystem 不维护第二份 NPC—床位表，UI 不参与分配；LLM 仍只选择“睡觉”行动，不接收床位编号选择权。
+
+## T0083 应征结果的前端投影
+
+后端玩家对话 `PlayerNPCDialogueResponse.recruitment_result` 由 T0087 保留并成为应征唯一结构化结果。Godot 业务层完成既有上下文校验和权威入伍应用后，把有效 `accept / reject` 作为可选元数据写入对应 NPC history turn；UI 按元数据渲染结果，MemorySystem 只读取 turn 的真实文本生成摘要。该分层避免通过会话级 `last_recruitment_result` 给旧回复补错结果，也避免把 UI 文案伪装成模型发言。
+
+## T0081 持续生活消耗与成长数据流
+
+```text
+TimeSystem.logical_time_tick(effective_game_seconds)
+  -> NPCNeedsSystem
+       -> NPCSystem 状态 / behavior_mode
+       -> ActionSystem active / external_active 快照
+       -> BuildingSystem 修复 / 升级剩余时间
+       -> activity_needs.json 唯一速率档位
+       -> NPCSystem.update_npc_state(satiety, fatigue)
+       -> ActionSystem.advance_timed_action_experience(...)
+            -> NPCSystem.increase_npc_skill(...)
+            -> MemorySystem.skill_improved
+```
+
+`data/action_defs.json` 的每条配置行为只保存 `needs_profile` 引用，不再携带饱食 / 疲劳总量或每小时重复字段；`data/activity_needs.json` 是速率、边界、行为模式映射和动态默认档位的唯一数值源。NPCNeedsSystem 在 tick 开头结算，因此有限 active 行动可用 `duration - elapsed` 截断；建筑协助用 `remaining / speed_multiplier` 截断；治疗协助用复苏前理论秒数截断。剩余时间按 idle 结算，切换档位时保留未满 1 点的小数，钳制到边界时丢弃继续越界方向的余量。
+
+ActionSystem 仍独占行动生命周期、食物恢复、工位 / 资源和成长事件；NPCNeedsSystem 不产出资源、完成行动、恢复 HP 或决定经验技能。BuildingSystem / NPCSystem 只提供有效时间事实，不复制经验计时器。工作 / 训练的既有完成 / 有效时长成长保持原入口，三类 assist 使用 `timed_experience` 配置补齐工程 / 医术成长；非工作行动没有该配置。
+
+## T0080 建筑门口失败与升级协助数据流
+
+```text
+BuildingSystem.upgrade_building()
+  -> building_state_changed(condition=upgrading)
+     ├─ ActionSystem active 依赖行动
+     │    -> 立即释放位置 / 周期 -> 清退广场
+     │    -> *_failed_building_upgrading(interrupted_phase=active)
+     └─ ActionSystem pending 依赖行动
+          -> 保留 pending 与移动目标，不产生失败
+          -> NPCSystem 抵达建筑入口后查询 BuildingSystem availability
+             -> 不可进入：收束到广场并发 npc_building_entry_failed
+                -> ActionSystem 清除 pending
+                -> *_failed_building_upgrading(
+                     interrupted_phase=pending,
+                     arrival_check_failed=true
+                   )
+                -> DailyPlanSystem T0050 判别 -> 按需精确修订
+
+BuildingSystem 当前升级作业
+  -> LLMBridge allowed_actions.assist_upgrade
+     -> plaza / requires_building_entry=false / counts_as_work_phase=true
+     -> DailyPlanSystem + backend 工作阶段统计（Prompt 建议）
+     -> LLM 只能选择候选；ActionSystem / BuildingSystem 权威执行与结算
+```
+
+`npc_building_entry_failed` 只表达 NPC 已经到达入口且程序拒绝进入的观察事实，不替代 BuildingSystem 可用性判断，也不直接调用 LLM。NPCSystem 先写最终室外地点，再发信号；ActionSystem 拥有 pending 行动和结构化失败，DailyPlanSystem 仍从唯一最终失败启动既有两层链。没有 pending 行动所有权的普通访客只被收束到广场，不伪造计划失败。
+
+LLMBridge 的 `current_building_states.is_upgrading / is_repairing` 必须调用 BuildingSystem 实时查询，不能读取 `get_building()` 中不存在的便利布尔字段。`assist_upgrade.target_id` 仍是被协助建筑，`location_id / execution_location` 才是实际执行地点；Godot 与后端 Prompt 统计使用同一行动语义，但工作量不作为接受门槛。
+
+## T0078 NPC 主动交涉完成数据流
+
+```text
+当前计划 seek_guard_officer
+  -> NPCSystem 生成问号并由 NPC 发起 player_npc 会话
+     -> DialogPanel：取消 disabled + 专用 tooltip
+     -> DialogSystem：取消接口权威拒绝
+        ├─ 完成
+        └─ 挂起满 2 小时 -> 按完成收口
+           -> DailyPlanSystem 核对结束时当前计划仍为 seek_guard_officer
+              -> judgement.required_revision_hours=[当前小时]
+                 -> 后端保留模型选择的额外小时，并权威并入任何遗漏 required 小时
+                    -> selected-hours revise_plan（普通动态 allowed_actions）
+                       -> T0076 当前小时立即 / deferred 派发
+```
+
+`required_revision_hours` 是程序已经确认的范围事实，不是模型建议。后端只归并小时并记录 `model_normalizations`，不替模型选择行动、地点或目标；正式修订、Godot 合并和 ActionSystem 执行校验仍保持原权威边界。守备官发起会话与结束时已不再执行 `seek_guard_officer` 的会话不获得该强制范围。
+
+## T0076 对话延续与当前小时派发数据流
+
+```text
+DailyPlanSystem 派发 talk_to_npc（保存来源日/小时/版本/计划项）
+  -> ActionSystem pending：接近 / 等待目标计划
+     -> 普通 hour_started
+        -> ActionSystem 保留 pending 与预约
+        -> DailyPlanSystem 为发起者登记 carryover barrier
+        -> 跳过新小时计划，不中断移动
+     -> DialogSystem invitation / active（继承计划来源）
+        -> 普通 hour_started：邀请保留发起者；正式会话保留双方
+        -> 对话结束：双方进入同一 resolution group
+           ├─ 发起者 judgement.required_revision_hours=[当前小时]
+           │    -> selected-hours revise_plan -> normal allowed_actions
+           └─ 受邀者普通独立 judgement -> 按需 revise_plan
+        -> 全组终态
+           -> current-hour deferred marker
+           -> 依赖排序派发结束时当前计划
+
+任意 revise_plan 修改当前小时
+  -> 合并并写 current-hour dispatch marker
+     ├─ 当前可执行：立即正常派发，成功后消费 marker
+     ├─ 对话 / 行为模式阻塞：保留 marker，状态解除后派发
+     └─ 派发失败：保留 marker，并由权威失败链产生唯一后继修订
+```
+
+后端 `PlanRevisionJudgementRequest.required_revision_hours` 是范围下限，不是行动选择。Pydantic 校验排序 / 时效，endpoint 校验响应包含全部 required 小时，ModelAdapter Prompt / 紧凑重试 / Mock 共用同一合同；`PlanRevisionResponse` 的精确选时、即时行动一致性与候选校验不变。
+
+## T0075 配置化完成策略数据流
+
+```text
+data/action_defs.json.completion_policy
+  -> ActionSystem.initialize() 校验 / 建立行为目录
+     -> DailyPlanSystem 派发当前计划项
+        ├─ active 与新小时 action + 必要 target 相同
+        │    -> 采用既有 runtime，保留进度
+        ├─ 新小时计划不同
+        │    -> interrupt_npc_action -> 正常派发新项
+        ├─ repeat_while_planned 成功 completed
+        │    -> deferred -> 再读当前计划 -> 清除本阶段签名
+        │       -> 正常派发 / 重新校验下一周期
+        └─ once_per_plan_hour 已消费
+             -> 日期 + 小时 + 逻辑计划项去重（不含 plan_version）
+             -> 不重复派发
+```
+
+普通 `(day, hour, plan_version, action, target, dialogue_goal)` 签名仍负责同一计划版本的幂等派发；生产成功回调只有在配置策略与当前逻辑计划项都匹配时才可受控清除签名。每小时单次记录独立于计划版本，避免同小时修订后重复吃饭 / 饮酒。续开通过 deferred 调用发生，使 ActionSystem 先完成旧周期结算和 `work_completed` 记录，再产生下一周期 `work_started`；重新派发失败继续进入原有结构化失败与计划修改判别，没有新建资源或制造结算路径。
+
+## T0073 指令发布到计划变化的数据流
+
+```text
+OrderPanel 发布自由文本
+  -> NPCSystem.publish_npc_order(...)
+     -> current_order + private order_assigned
+     -> npc_plan_reevaluation_requested(reason=order_changed)
+        -> DailyPlanSystem 当前小时 selected_hours 修订
+           -> LLMBridge /npc/revise_plan（包含最新 current_order）
+              -> 后端 Schema / Prompt / 白名单校验
+                 -> 合并回权威 24 小时计划
+```
+
+UI 叙事文字只表达成员会“尽量遵循”，不改变上述权威边界。指令发布不会直接调用 ActionSystem；只有真实 provider 返回、通过精确小时集合与行动白名单校验的修订才会改变 DailyPlanSystem 计划。T0073 的确定性专项锁定 payload 注入和合并边界，真实专项确认 `order_changed` 可把当前计划从空闲改为前往指定地点。
+
+## T0071 NPC-NPC 对话私有上下文边界
+
+```text
+回复者 NPC 自身
+  -> npc_setting / npc_state / short_memory / long_memory
+     / location_context / current_order / target_npc
+
+说话者 NPC
+  -> speaker_name + speaker_text
+     + speaker_context{speaker_id,name,kind,appearance,health_status,state={}}
+  -X-> speaker_npc / private NPCContext
+```
+
+`LLMBridge.build_npc_dialogue_payload(...)` 是正式对话 payload 的唯一构造点，不再调用 `_build_npc_context(...)` 构造说话者。后端 `NPCDialogueRequest.speaker_npc` 只接受 `null`，`SpeakerContext.state` 必须为空；因此旧客户端、手工请求或未来重构不能把说话者的短期 / 长期记忆、`current_order`、地点上下文、技能 / 属性或个人资源重新混入回复者请求。模型只能从回复者自己的信息空间、对方已说出的文本和可观察外表 / 健康作答。
+
+其余五类正式请求继续各自携带唯一目标 NPCContext，没有第二名 NPCContext。`talk_to_npc` 候选只提供目标 id / 名称，不再投影目标当前地点、行动或入伍状态；ActionSystem 在计划真正执行时读取目标权威地点并追踪移动。其他 `allowed_actions` 仍承担程序合法性与路由约束，但 Prompt 明确其元数据不自动转化为目标 NPC 见闻。
+
+## T0070 全员名册与仓库容量数据流
+
+```text
+NPCSystem 全部登记实体
+  -> LLMBridge._build_station_context(...)
+     -> resident_roster[{npc_id,name,identity,recruited,in_station}]
+        -> 六类请求 / Pydantic StationResidentContext / Prompt
+
+data/resource_defs.json.warehouse_capacity
+  + BuildingSystem.warehouse.level
+     -> ResourceSystem 容量 / 剩余量 / 原子入库
+        ├─ ActionSystem 工作产出预检
+        ├─ MerchantSystem 购买预检
+        ├─ BuildingPanel 仓库上限行
+        └─ HUD 资源悬停提示
+```
+
+名册标签和容量均由 Godot 权威状态投影，后端与 LLM 只读。没有 `warehouse_capacity` 的资源视为无限，而不是容量 0；配置为受限的六项资源在批量入库前整体校验，失败时不得先扣输入。UI 不缓存或计算容量，始终调用 ResourceSystem。仓库受击资源损失尚未接入这条数据流。
+
+## T0077 每日人民币硬预算与 provider 尝试账本
+
+```text
+ModelAdapter.generate(...)
+  -> 进程内累计预算检查
+  -> LLMCostLedger.reserve(audit_id:attempt)
+     -> 重放 Asia/Shanghai 当日 provider_usage
+     -> 已用 + 全部在途预留 + 本次 ¥1.77 <= ¥20
+  -> provider HTTP
+     -> 读取 prompt_cache_hit/miss + completion usage
+     -> LLMCostLedger.settle(...) 释放预留并追加 JSONL
+     -> audit provider_response_received 同步保存 billing
+  -> /debug/llm_usage
+     -> session（当前 ModelAdapter 进程）
+     -> daily（从持久化账本重放）
+     -> GMPanel 异步顶栏
+```
+
+DeepSeek V4 Flash 默认人民币价为缓存命中输入 ¥0.02/M、缓存未命中输入 ¥1/M、输出 ¥2/M。单次预留 ¥1.77 覆盖官方 1M 上下文与 384K 最大输出的缓存未命中理论上界；预留只占用在途额度，拿到真实 usage 后释放未用部分。每个 HTTP 尝试独立结算，所以非法 JSON / 截断后的紧凑重试不会漏算。价格、预留、上限、时区和账本路径均由后端环境配置；配置价格缺失、账本不可读写或预留会越过上限时失败关闭并返回 `budget_exceeded`，不进入 Mock。
+
+JSONL 是跨后端重启的当日费用事实源；`ModelAdapter._usage_records` 继续表达业务调用最终结果，两者不得相加。当前 Flask 部署复用单个 ModelAdapter，进程内锁覆盖 Godot 的并发请求；未来若改为多 worker，必须把预留和追加迁移到支持跨进程原子事务的集中存储后才可继续宣称全局硬预算。
+
+## T0069 LLM 调用持久化审计
+
+`ModelAdapter.generate(...)` 为每次调用创建唯一 `audit_id`，`LLMCallAuditLogger` 以 append-only JSONL 写入同一调用的生命周期事件。正式 provider 在 `_send_chat_completion(...)` 生成请求体后、加入 Authorization 请求头前记录完整 `messages / temperature / thinking / response_format`；流式 SSE 仍由现有传输层聚合，审计保存聚合后的供应商响应和原始模型 `content`，不保存逐个 SSE 网络分块。
+
+```text
+call_started(input_payload)
+  -> provider_request_sent(attempt, full body, no headers)
+     -> provider_response_received(http_status, aggregated response)
+        -> provider_output_parsed | provider_output_rejected
+  -> call_completed(content, usage, error/fallback)
+     -> business_validation_failed (optional, same audit_id)
+```
+
+`record_model_output_invalid(...)` 继续原地修改内存 usage，避免调用 / token 双计，同时通过 usage timestamp 找回原 `audit_id` 并追加不可变的业务校验失败事件。日志写盘按解析后的绝对路径使用进程内共享锁，每个事件一次性追加一行；目录创建或写入失败只更新 `audit_log.last_error / last_error_timestamp`，不改变模型业务结果。多进程服务器仍依赖操作系统 append 语义，部署阶段若启用多个 worker，应为各 worker 配置独立文件或接入集中日志收集器。
+
+日志正文保存前递归处理敏感 key、JSON 字符串中的凭据字段、Bearer / `sk-...` 格式和当前配置 API Key。供应商请求头从不传入日志器。`get_runtime_config_snapshot()` 只公开启用状态、JSONL 版本、显示路径、正文开关与最近错误；HTTP / GM 不提供日志下载，避免把人物私密上下文扩散到客户端。
+
+## T0067 LLM 判定复验与原子逃离边界
+
+```text
+Godot 权威 NPC / 战场状态
+  -> LLMBridge NPCContext
+     -> Pydantic NPCStateContext（保留五个模式 / 心理 / 逃离字段）
+        -> real provider
+           -> Schema + dialogue / battle business validation
+              -> Godot apply-time stale validation
+                 -> CombatSystem 权威结果
+
+CombatSystem.start_npc_escape(...)
+  -> NPCSystem.set_npc_behavior_mode_and_move_to_world_position(...)
+     ├─ preflight：NPC、世界节点、移动能力、目标
+     ├─ interrupt：行动、对话、LLM、旧移动
+     └─ 单次提交：behavior_mode + state_changes + 新移动
+  -> 成功后才写 escape_started / active_escapes / escape_intent
+```
+
+这条链把“模型意向”“业务可接受”“当前仍有效”“程序已成功提交”分为四层。后端不决定 HP、战斗资格、移动或事件；Godot 也不会把迟到或业务越界的结构化 JSON 当作权威事实。低血量 pending 除 request id 外绑定 `wave_id + started_event_id`，防止同一波编号的新战斗误收旧回复。
+
+DialogSystem 在完成会话并应用暂存战时反应时设置结束中标记。逃离模式切换再次尝试强制结束同一会话，只会得到幂等的 `dialogue_end_in_progress`，不会重复提交对话事件或递归调用。复苏续逃失败不再留下“活动逃离但没有移动”的半状态。
+
+ModelAdapter 在供应商完成生成时先取得真实 token 与 finish 元数据；若随后 HTTP 业务层判定输出无效，`record_model_output_invalid(...)` 会优先用上游 usage timestamp，并结合非空 request id、call type 和 NPC，找到精确的成功 usage 后原地替换为 `SchemaValidationError` 失败记录。这样一次上游请求只消耗一次调用 / token / 预算，重复报告幂等，同时保留真实失败原因；只有找不到对应上游记录时才追加独立失败记录。
+
+## T0063 个人酒转移、行动与 LLM 投影
+
+```text
+ResourceSystem.wine
+  -> NPCSystem.give_wine_to_npc(...)
+     -> npc.states.wine
+        -> ActionSystem.get_action_eligibility(...)
+        -> spend_npc_owned_resources({wine: 1})
+           -> MemorySystem.wine_consumed
+              -> 六类后续 NPC 上下文
+
+data/action_defs.json: drink_wine
+  -> ActionSystem
+     ├─ DailyPlan / dialogue allowed_actions（本人有酒时）
+     └─ LLMBridge.station_context.work_mode_actions + description（完整背景目录）
+```
+
+NPCSystem 是个人金钱 / 酒持有量和扣减的唯一权威，ResourceSystem 继续只保存驿站库存。LLMBridge 把目标个人 `money / wine` 投影进 NPC 状态，把完整行动说明投影进共享背景目录；后端只校验计划白名单、kind 和可安排数量，不执行扣减。事件上下文承载非数值心理影响，不新增情绪状态或记忆删除路径。本任务不新增 endpoint、call_type、Autoload 或模型调用。
+
 ## T0061 人设投影与知识展示边界
 
 ```text
@@ -27,7 +416,8 @@ data/npc_initial_long_memory.json
 8 字段运行态日记
   -> LLMBridge._build_existing_diary_entries(...)（唯一投影点）
      -> day=0：“往昔·…：正文”
-     -> day>0：“第N天 HH:MM:SS：正文”
+     -> 新熟睡总结：“接到守备命令的第N天 HH:MM:SS：正文”
+     -> 无 record_label 的旧 day>0 记录：“第N天 HH:MM:SS：正文”
      -> 旧纯字符串 / 缺日期或时间元数据：兼容保留可读内容
   -> 六类既有 LLM 请求的 list[str]
 ```
@@ -71,13 +461,13 @@ data/station_context.json 第六条规则
 
 LLMBridge 是公开资源投影的唯一组装点；不得把 `ResourceSystem.get_resource_snapshot()` 全量暴露给模型。`StationSceneContext` 要求五项资源按稳定顺序各出现一次，后端拒绝其他资源 id。资源数量只读且每次请求重新读取，不写入记忆事件，也不授权模型扣除或增加资源。升级规则只解释既有 BuildingSystem / ActionSystem 事实；升级作业、倒计时、协助加速和完成仍由程序权威结算。
 
-## T0057 建筑升级导致行动失败的数据流
+## T0057 建筑升级导致行动失败的数据流（pending 时序由 T0080 修正）
 
 ```text
 BuildingSystem.upgrade_building()
   -> building_state_changed(condition=upgrading)
   -> ActionSystem 识别真正指向该建筑的 pending / active 行动
-     -> pending：停止前往建筑的移动并清理待执行动作
+     -> pending：保留前往建筑的移动，到入口被拒后才清理待执行动作
      -> active：释放位置 / 周期并将建筑内 NPC 收束到广场
      -> 写 <action_id>_failed_building_upgrading + 权威失败上下文
   -> DailyPlanSystem 规范为 target_unavailable
@@ -85,7 +475,7 @@ BuildingSystem.upgrade_building()
   -> revision_hours 非空时进入精确阶段修订
 ```
 
-升级封闭只把真正依赖目标建筑的 pending / active 行动记为失败；单纯停留者仍会被清退、没有行动所有权的普通移动仍会停止，但不会伪造行动失败。ActionSystem 必须先完成普通中断和移动 / 位置清理，再一次性写最终 `failed` 状态，避免同步 `npc_state_changed` 用无上下文中间结果抢占失败去重。失败上下文包含 action / building、`condition=upgrading`、`failure_reason=building_upgrading`、pending / active 阶段和中文摘要；LLM 只判断受影响小时及合法替代行动，不决定升级、封闭、移动、位置或失败事实。
+升级封闭只把真正依赖目标建筑的 pending / active 行动记为失败；active 在状态变化时立即失败，pending 必须等 NPCSystem 在入口重查可进入性后失败。单纯停留者会被清退；没有行动所有权的普通访客到门口被拒时也不会伪造行动失败。ActionSystem 必须在 NPCSystem 完成门口位置收束后一次性写最终 `failed` 状态，避免同步 `npc_state_changed` 用无上下文中间结果抢占失败去重。失败上下文包含 action / building、`condition=upgrading`、`failure_reason=building_upgrading`、pending / active 阶段和中文摘要；LLM 只判断受影响小时及合法替代行动，不决定升级、封闭、移动、位置或失败事实。
 
 ## T0055 周期规则的数据边界
 
@@ -95,7 +485,7 @@ BuildingSystem.upgrade_building()
 
 ```text
 data/station_context.json ── 精简简介 / 世界内规则 ┐
-NPCSystem ── 当前在站人员                              │
+NPCSystem ── 全体登记成员及 recruited / in_station     │
 BuildingSystem ── 已加载全部建筑                      ├─> LLMBridge._build_station_context(...)
 ActionSystem ── 可计划行为定义 + 特殊逃离意向          │
                                                        └─> 六类请求顶层 station_context
@@ -106,21 +496,23 @@ ActionSystem ── 可计划行为定义 + 特殊逃离意向          │
 
 该目录是世界知识层，不是决策授权层。`allowed_actions / allowed_decisions`、`current_building_states / current_resource_states`、NPC state、战场上下文和各系统校验继续负责当前事实与合法性。后端 Schema 和 Prompt 都不得依据背景规则替代权威结算。GM 只读入口调用 LLMBridge 的 debug 快照，不建立第二套组装或结算逻辑。
 
-## T0053 计划等待失效与共享人物上下文数据流
+## T0053/T0076 计划对话延续、失效与共享人物上下文数据流
 
 ```text
 DailyPlanSystem dispatch talk_to_npc
   -> ActionSystem pending(plan day/hour/version + assigned_plan_item + target)
   -> target llm_activity(kind=plan): keep reservations and wait
   -> logical tick / target-plan retry / hour_started pre-dispatch validation
-       ├─ current item still talk_to same target -> continue wait/invite
-       └─ changed -> release + stop approach
+       ├─ same-day old hour -> keep wait/invite/session + rebuild dispatch marker
+       ├─ same-hour item still talks to same target -> continue wait/invite
+       └─ same-hour replacement / cross-day / authoritative invalidation
+            -> release + stop approach
             -> last_action_result=talk_to_npc_failed_plan_superseded
             -> context(old item + current item + old/current time/version)
             -> DailyPlanSystem T0050 judgement -> optional selected-hours revision
 ```
 
-ActionSystem 只对带 `plan_action_source=daily_plan` 的 pending 对话做此校验，避免 GM / 测试直接交谈被日计划误取消。移动停止可能同步发出状态信号，因此先用非失败 cleanup reason 停止，再一次性写入最终结构化失败；否则第一条无上下文失败会被 DailyPlanSystem 去重并吞掉真正上下文。DailyPlanSystem 收到失败时优先使用 `failure_context.failed_plan_item`，不能用跨小时后的当前项替代旧失败项。
+ActionSystem 只对带 `plan_action_source=daily_plan` 的 pending 对话应用日计划延续 / 替代规则，避免 GM / 测试直接交谈冒充跨小时日计划。普通同日整点时，DailyPlanSystem 为 pending、邀请中和正式会话重建 carryover marker，暂缓当前小时计划；对话自然结束并完成双方判别 / 必要修订后再派发当前项。真正失效时，移动停止可能同步发出状态信号，因此先用非失败 cleanup reason 停止，再一次性写入最终结构化失败；否则第一条无上下文失败会被 DailyPlanSystem 去重并吞掉真正上下文。DailyPlanSystem 收到失败时优先使用 `failure_context.failed_plan_item`，不能用当前项替代旧失败项。
 
 `LLMBridge._build_npc_context(...)` 是 plan_day、plan_revision_judgement、revise_plan 和 battle_judgement 的共享人物入口，包含 identity、state、current_order、short_term_memory、`long_term_memory={knowledge_graph, diary}`、location / plaza context。范围判别请求也继承 StationAwareNPCRequest 并读取候选、建筑和资源状态；两层之间完整传递失败项 / 类型 / 摘要 / 上下文。判别仍只输出小时，修订仍只输出合法计划，战时心理仍只输出允许的意向。
 
@@ -147,7 +539,7 @@ DialogPanel.send
   -> DialogSystem 立即 append 守备官 history turn
   -> dialogue_updated（UI 先显示）
   -> LLMBridge async /npc/dialogue
-  -> 回复仅 append NPC turn，并暂存 recruitment / wartime / escape intent
+  -> 回复仅 append NPC turn，并暂存 recruitment / wartime / escape branch result
 
 完成：cancel pending reply -> MemorySystem 单次提交整场 dialogue_turn
      -> 应用暂存的程序权威结果 -> T0049/T0050 计划修改判别
@@ -162,7 +554,7 @@ DialogPanel.send
 
 `backend/schemas/npc_ai.py` 使用 `StationAwareNPCRequest` 为所有携带 NPC 人设的请求提供一份顶层必填 `station_context`；`NPCContext` 本身不嵌套该字段。T0046 先建立动态在站人员基础，T0054 再扩充完整建筑、工作模式行为与世界内规则。`DailyReflectionResponse` 仅含 `diary_entry` 与 `knowledge_graph_updates`，知识 patch 可同时保存技术 `subject / relation / value` 和中文 `subject_label / relation_label / value_label`；不再有 `memory_summary`。
 
-公告牌 UI 只管理草稿。发布后由 `MemorySystem` 校验并权威更新广场 `current_notice / reference_schedule / schedule_advisory_note`，再以 `plaza_notice_changed / plaza_schedule_changed` 沿旧有广场在场广播与入场快照路由传播。初始内容来自 `data/notice_board_defaults.json` 并预写初始在站 NPC 见闻；逃离完成时 NPCSystem 调用 MemorySystem 将该 NPC 从全部地点人员节点移除，接收资格也再次过滤离站状态。UI 不直接写见闻或广场事实。
+公告牌 UI 只管理草稿。发布后由 `MemorySystem` 校验并权威更新广场 `current_notice / reference_schedule / schedule_advisory_note`。T0065 起，`plaza_notice_changed / plaza_schedule_changed` 是公告牌专用全站广播：发生实际变化的页面各生成一条事件，由 `_broadcast_public_event(...)` 按事件类型选择全部在站 NPC，再通过既有接收资格过滤昏迷、睡觉与离站者；其他 `local_public` 事件仍按地点在场范围转发。广场 `location_entry_snapshot` 在写入见闻前剔除公告牌三项，权威广场快照本身仍保留它们供 UI / GM / 只读系统查询。初始内容来自 `data/notice_board_defaults.json` 并预写初始在站 NPC 见闻；逃离完成时 NPCSystem 调用 MemorySystem 将该 NPC 从全部地点人员节点移除，接收资格也再次过滤离站状态。UI 不直接写见闻或广场事实。
 
 ## T0043A 服务提供者—承载者运行时闭环
 
@@ -186,9 +578,9 @@ ActionSystem + BuildingSystem
   -> DailyPlanSystem 在真实失败后重评估
 ```
 
-位置数量、名称、类型和占用只由 `BuildingSystem` 的建筑状态决定。NPC 只选择行动与建筑，`ActionSystem` 调用 `claim_workstation(...)` 自动取得同类型第一个空位；无空位、升级封闭或建筑摧毁均返回结构化失败。诊所和训练场分别聚合全部在岗医生 / 教官的数量与技能，不建立 UI 或 LLM 决定的一对一配对。
+位置数量、名称、类型、固定归属和占用只由 `BuildingSystem` 的建筑状态决定。NPC 只选择行动与建筑，`ActionSystem` 调用 `claim_workstation(...)` 取得合法位置：普通位置使用同类型第一个空位，宿舍床位按 T0084 使用 NPC 自己的固定床或未分配床；无合法位置、升级封闭或建筑摧毁均返回结构化失败。诊所和训练场分别聚合全部在岗医生 / 教官的数量与技能，不建立 UI 或 LLM 决定的一对一配对。
 
-升级的成本、时长、Max HP、位置增量与活动效率增量都来自 `upgrade.level_effects`；固定位置类型拒绝扩容。施工开始后建筑不可进入，指向该建筑的 pending / active 依赖行动以建筑升级为原因失败、停止移动、释放位置并进入 T0050，完成后一次应用升级效果。建筑受损倍率与升级加成由 `BuildingSystem` 计算，`ActionSystem` 只消费倍率；UI 可显示精确值，NPC 信息空间只传播分档，避免逐 HP 修复刷屏。LLM 只看行动资格、即时可用性和失败原因，不决定占位、效率、资源、HP 或升级事实。
+升级的成本、时长、Max HP、位置增量与活动效率增量都来自 `upgrade.level_effects`；固定位置类型拒绝扩容。施工开始后建筑不可进入：室内 active 依赖行动立即以建筑升级失败、释放位置并进入 T0050；路上 pending 继续到入口，只有实际被拒后才以同一权威原因失败。完成后一次应用升级效果。建筑受损倍率与升级加成由 `BuildingSystem` 计算，`ActionSystem` 只消费倍率；UI 可显示精确值，NPC 信息空间只传播分档，避免逐 HP 修复刷屏。LLM 只看行动资格、即时可用性和失败原因，不决定占位、效率、资源、HP 或升级事实。
 
 ## T0041 非计划对话行动参考数据流
 
@@ -300,7 +692,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 使用 Flask 作为 Python Backend 的最小 Web 框架。
 - `backend/app.py` 提供 `GET /health`，用于 Godot 或开发者确认本地服务可用；另提供 `GET /debug/llm_usage`、`POST /mock/model` 调试接口和各类 NPC AI 业务接口。
 - `backend/services/model_adapter.py` 是模型供应商隔离层；默认 `mock` 服务本地开发，也支持 `deepseek` / `openai_compatible`。生产自动 mock fallback 默认关闭。正式 `dialogue`、`plan_revision_judgement`、`plan_day`、`revise_plan`、`battle_judgement`、`daily_reflection` 请求使用流式 SSE 聚合完整 JSON，不向供应商发送客户端单次输出 token 上限，也不设置模型生成总时长。连接建立和流完全无数据分别由 provider connect / idle timeout 保护；持续 token 或 keep-alive 会继续等待。DeepSeek 结构化路径默认 `LLM_THINKING_MODE=disabled`；六类调用的 JSON 为空、截断或非法时都可按业务紧凑重试一次。六个成功业务端点统一通过同一 helper 附加 `model_provider` / `model_name` / `model_fallback_used`，避免各路由或 Godot 调用方自行猜来源。Usage 记录 `finish_reason`、响应长度和尝试次数，累计预算守门继续由 T1406 变量独立控制。
-- `backend/schemas/common.py` 和 `backend/schemas/npc_ai.py` 提供后端 AI 请求/响应 Pydantic Schema；T0603/T0025/T0029/T0030 后 `NPCDialogueRequest` / `NPCDialogueResponse` 覆盖玩家-NPC、逃离挽留与真实 NPC-NPC 对话，并用 `dialogue_phase` / `invitation_result` 区分邀请接受、拒绝和正式会话；NPC-NPC 使用 `max_rounds=0` 与一致的软轮次字段，后端和 Godot 都校验回复者身份、`response_kind` 及阶段字段，但不执行业务权威结算。
+- `backend/schemas/common.py` 和 `backend/schemas/npc_ai.py` 提供后端 AI 请求/响应 Pydantic Schema；统一 `NPCDialogueRequest` 覆盖玩家-NPC、逃离挽留与真实 NPC-NPC 对话，T0087 后按 `dialogue_kind` 分派到三个响应 Schema。NPC-NPC 继续用 `dialogue_phase / invitation_result` 区分邀请与正式会话，并使用 `max_rounds=0` 与一致的软轮次字段；后端和 Godot 校验回复者身份、`response_kind` 及当前分支字段，但不替业务系统结算权威状态。
 - T0703A 后共享 `NPCContext` 与对话顶层 `NPCDialogueRequest` 都包含单条最新 `current_order`；Mock 只把它作为参考上下文，Godot 保持指令和行动事实权威。
 - 真实 API Key 必须通过本地 `backend/.env` 或环境变量提供；仓库只保留 `.env.example` 模板。开发可显式 `LLM_PROVIDER=mock`，生产 / 演示配置应使用真实 provider 并关闭自动 mock fallback。
 
@@ -380,7 +772,7 @@ MemorySystem.add_event(...)
   ↓
 NPC 进入地点时，只读取当前状态快照，不继承过去事件
   ↓
-进入广场快照包含当前在场 NPC、这些 NPC 的生命状态 / 行动状态、公告牌当前通告、参考日程及非强制备注和建筑外部状态；进入可进入建筑快照包含建筑内 NPC 的生命状态 / 行动状态；室内到室内切换在事件层经由广场
+进入广场见闻快照包含当前在场 NPC、这些 NPC 的生命状态 / 行动状态和建筑外部状态，不含公告牌通告 / 参考日程 / 备注；进入可进入建筑快照包含建筑内 NPC 的生命状态 / 行动状态；室内到室内切换在事件层经由广场
   ↓
 LLM 调用前从事件库 + 见闻库生成摘要
 ```
@@ -391,7 +783,7 @@ T1506/T1507/T0046 遵守同一边界：`NoticeBoardPanel` 只把通告或参考�
 
 T1508 修订后延续同一边界：围墙 BuildingPanel 只提交器械和槽位，不选择部署 NPC；`DefenseDeviceSystem` 校验建筑 / 库存并原子部署，弩床与箭塔都通过 CombatSystem 窄接口结算敌人伤害。`DefenseDevicePresenter` / `DefenseDeviceView` 仅消费快照与 action 信号，正式 `model_scene`、动画和特效不能反向决定库存、HP、槽位或攻击事实。该路径不调用 LLM。
 
-T0701/T0051 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性、轮次和守备官会话生命周期。守备官消息发送后立即写入内存历史；“完成对话”取消仍在等待的回复、把完整历史作为一条 `dialogue_turn` 写入 `MemorySystem`，应用会话中已经返回的征召 / 战时 / 挽留意向，并进入 T0049/T0050 判别。“取消对话”不入库、不广播、不应用这些意向也不判别；“挂起对话”保持 NPC 的 `talk_to_guard_officer` 运行态和原会话，2 个游戏小时后无攻击自动取消。攻击由 `NPCSystem.apply_damage_to_npc(...)` 立即权威扣 HP 并锁定取消，随后完成或超时都会保留攻击历史。`local_public` 完成会话只向同地点非参与者广播一次。判别返回空 `revision_hours` 时只在动作确被本次对话打断、仍匹配当前计划且行为模式允许时恢复原小时行动；非空时才把精确小时交给 DailyPlanSystem。T0702 起，后端只返回应征意向，真正入伍由完成会话时 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用。T0029/T0030/T0049 后，自主 NPC-NPC 会话仍按实际完成轮次入库：邀请不计正式轮次，任一方结束标记回复先入库再停止下一次调用，邀请拒绝和正式结束分别为实际参与双方判别。T1103A/T0051 后，行为模式切换调用 `force_end_dialogue_for_npc(...)` 强制完成已有守备官会话、取消未完成回复并优先切换模式，不丢弃已经说出口的消息或攻击事实。
+T0701/T0051 起，`DialogSystem` 是 Godot 侧会话权威入口：它维护参与者、历史、公开性、轮次和守备官会话生命周期。守备官消息发送后立即写入内存历史；“完成对话”取消仍在等待的回复、把完整历史作为一条 `dialogue_turn` 写入 `MemorySystem`，应用会话中仍暂存的战时 / 挽留意向，并进入 T0049/T0050 判别。“取消对话”不入库、不广播、不应用仍暂存的意向也不判别；“挂起对话”保持 NPC 的 `talk_to_guard_officer` 运行态和原会话。攻击由 `NPCSystem.apply_damage_to_npc(...)` 立即权威扣 HP 并锁定取消，随后完成或超时都会保留攻击历史。T0082 起，“提出应征”是会话内持续开关，第一次带标记的消息发送后 `session_had_recruitment_request` 永久锁定本场取消；该开关随后关闭只影响后续请求，挂起超时仍按完成。完成的守备官会话 summary 从完整 `dialogue_text` 逐句生成，但事件、广播和判别仍各只有一次。`local_public` 完成会话只向同地点非参与者广播一次。判别返回空 `revision_hours` 时只在动作确被本次对话打断、仍匹配当前计划且行为模式允许时恢复原小时行动；非空时才把精确小时交给 DailyPlanSystem。T0702 起，后端只返回应征意向；T0072 起，合法接受回复进入会话历史后立即由 `DialogSystem` 调用 `NPCSystem.set_npc_recruited(...)` 应用，拒绝仍不改变状态。T0029/T0030/T0049 后，自主 NPC-NPC 会话仍按实际完成轮次入库：邀请不计正式轮次，任一方结束标记回复先入库再停止下一次调用，邀请拒绝和正式结束分别为实际参与双方判别。T1103A/T0051 后，行为模式切换调用 `force_end_dialogue_for_npc(...)` 强制完成已有守备官会话、取消未完成回复并优先切换模式，不丢弃已经说出口的消息或攻击事实。
 
 T1201 已扩展同一边界：集结 / 战斗 / 避战模式下的守备官对话强制 `local_public`，并额外携带 `interaction_context` 与 `battlefield_context`；后端只返回文本、征召意向和 `wartime_reaction`，斗志 buff、逃离流程、模式切换和事件入库仍由 Godot 执行。T1202 后，低血量自身心理判定触发时，Godot 复用强制完成已有会话和取消未完成 LLM 请求的边界，并通过 `allowed_decisions` 限制非战斗人员不能获得斗志激昂或继续参战。T1404 后，战时公开对话与低血量心理判定已完成真实 provider smoke 验证；后端会拒绝 `/npc/battle_judgement` 越界 `decision` 与逃离布尔不一致结果，并写入失败 usage。T1203 后，逃离意向由 Godot 的 `CombatSystem.start_npc_escape(...)` 转为后门移动、`escape_started` / `escaped` 事件和最终 `escaped=true` 状态。T1204A/T0051 后，逃离挽留由 NPC 面板【对话】进入，打开或挂起时 `CombatSystem` 都保持逃离暂停；完成、取消或满 5 轮时恢复。玩家消息轮次复用 `/npc/dialogue`，强制公开并限制 5 轮，LLM 只返回留下或继续逃离意向且在完成时应用。逃离挽留攻击不调用 `/npc/dialogue`，由 Godot 直接扣 HP、加速、计轮并自动完成会话。
 
@@ -520,7 +912,7 @@ CombatSystem 切换 rally / combat
 `POST /npc/dialogue`
 
 输入 Schema：`NPCDialogueRequest`
-输出 Schema：`NPCDialogueResponse`
+输出 Schema：`PlayerNPCDialogueResponse` / `NPCNPCDialogueResponse` / `EscapeInterventionDialogueResponse`
 
 覆盖玩家-NPC、NPC-NPC 和逃离挽留对话。T0603 当前对话输入必须能表达：
 
@@ -534,7 +926,7 @@ CombatSystem 切换 rally / combat
 - 行动参考：`allowed_actions` 必须非空，并与每日计划复用同一动态候选构造器；对话只用它判断目标 NPC 能做 / 做不到什么，不输出或应用计划。
 - 战时上下文：T1201 后，集结 / 战斗 / 避战对话额外携带 `interaction_context` 和 `battlefield_context`；非战时对话使用 `interaction_context == "work"` 和空战局上下文。T1204A 后，逃离挽留中的玩家消息轮次使用 `dialogue_kind == "escape_intervention"`、`interaction_context == "escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击不构造该请求。
 
-输出为稳定 JSON。回复玩家时返回 `replyer_id`、`reply_text`、`recruitment_result`（`none` / `accept` / `reject`）和 `wartime_reaction`（`none` / `escape` / `morale_boost`）；逃离挽留时 `intent` 只能表达 `stay_after_intervention` 或 `leave_after_intervention`。回复 NPC 时，`replyer_id` 必须等于请求目标且 `response_kind=reply_to_npc`；邀请阶段的 `invitation_result` 必须是 `accept` 或 `reject`，正式会话必须是 `not_applicable`，并返回 `reply_text` 和 `should_end_dialogue`。玩家 / 挽留回复必须为 `reply_to_player` 且邀请结果为 `not_applicable`。通用字段还包含 `intent`、`emotion`、`suggested_event_type` 和 `debug_reason`，便于 Godot 后续 UI、事件入库和调试。
+输出为按类型稳定 JSON。玩家对话返回 `replyer_id`、`reply_text`、`response_kind=reply_to_player`、`recruitment_result`（`none / accept / reject`）和 `wartime_reaction`（`none / escape / morale_boost`）。NPC-NPC 回复要求 `response_kind=reply_to_npc`，邀请阶段 `invitation_result=accept|reject`，正式会话使用 `not_applicable`，并只用 `should_end_dialogue` 控制收尾。逃离挽留要求 `response_kind=reply_to_player` 与 `escape_intervention_result=stay|leave`。三个 Schema 都禁止额外字段；不再存在通用 `intent` 或用重复枚举表达同一决定。
 
 NPC-NPC 对话由 Godot 控制轮次推进：邀请接受后，上一轮回复者的 `reply_text` 仅在没有结束标记时作为下一次请求的 `speaker_text` 输入给另一名 NPC；每一轮模型都能通过 `should_end_dialogue=true` 主动结束。Godot 不按第 3 / 5 轮截断；默认第 6 轮起的收尾只是 Prompt 参考。结束标记所在回复先写入历史 / 事件，再结束且不产生下一次调用。正式路径的邀请和每轮对话都使用真实 provider、分别降速；失败不写未完成轮次，也不用 Mock 伪装成功。实际行动中断、计划重评估、资源、HP 或事件写入仍由 Godot 结算。
 
@@ -547,7 +939,7 @@ NPC-NPC 对话由 Godot 控制轮次推进：邀请接受后，上一轮回复�
 
 输入必须包含目标 NPC 当前 `current_order`。输出必须是 24 条 `PlanItem`，每条包含小时、行动类型、行动 id、可选地点/目标和理由。计划是建议，不代表资源、移动或行动已经结算；模型可以结合人设、记忆和现场条件调整、推迟或拒绝指令。
 
-当前状态：`/npc/plan_day` 使用 `DailyPlanRequest` / `DailyPlanResponse`，真实 provider 读取独立 Prompt，并校验 0-23 点覆盖、精确行动候选和至少 6 个工作阶段。成功响应附加 provider / model / fallback 元数据和 `model_normalizations`（未规范化时为空数组）。Schema 已通过后，非 idle 项只有在 action/target/location 唯一命中显式 kind 候选时才可规范化冗余 kind；idle 仅按固定空目标 / 空地点合同规范化，其他 Schema / 业务错误仍失败。正式开局和新一天通过 `request_npc_daily_plan_async(...)` 同时发起 8 个真实请求，单人最多 3 次真实请求。Godot 按每项声明的 `hour` 重排 0-23，拒绝重复 / 缺失小时；Godot 只接受 `source=llm_plan_day`；任一失败时整批保持暂停与 `planning_day`，不生成 `rule_plan_fallback` 或 `mock_plan_day`。
+当前状态：`/npc/plan_day` 使用 `DailyPlanRequest` / `DailyPlanResponse`，真实 provider 读取独立 Prompt，并校验 0-23 点覆盖和精确行动候选。通常至少 6 个工作阶段是 Prompt 强建议，不是 backend / Godot 的接受门槛。成功响应附加 provider / model / fallback 元数据和 `model_normalizations`（未规范化时为空数组）。其他 Schema、白名单和小时错误仍失败；正式开局与新一天仍只接受真实 `source=llm_plan_day`，失败保持暂停，不使用规则 / Mock 冒充成功。
 
 ### 对话 / 行动失败通用计划修改判别
 
@@ -567,7 +959,7 @@ NPC-NPC 对话由 Godot 控制轮次推进：邀请接受后，上一轮回复�
 
 用于通用判别选中阶段，以及守备官发布新指令、战斗结束 / 复苏、主动交涉超时和 GM 手动重估等直接触发后的计划修订。请求必须包含最新 `current_order`、`revision_scope=selected_hours` 与非空、排序且去重的 `revision_hours`。对话路径（包括其中已提交的攻击轮）与行动失败路径都沿用既有完整修订上下文，但小时集合来自上一层判别；其他直接触发的范围由各自程序入口给出。
 
-当前状态：`/npc/revise_plan` 使用 `PlanRevisionRequest` / `PlanRevisionResponse`，读取紧凑计划修订 Prompt，并额外校验 NPC id、响应小时集合与请求完全一致、精确行动候选、工作阶段保持规则，以及包含当前小时请求时的 `immediate_action`；成功响应附加 provider / model / fallback 元数据和 `model_normalizations`（未规范化时为空数组）。Godot 通过 `request_npc_plan_revision_async(...)` 调用，不阻塞主线程；正式路径只接受真实 provider，成功时以 `llm_plan_revision` 合并所选小时，未选小时原样保留，并仅在当前行为模式允许时执行当前小时。失败最多重试 3 次真实请求且不应用 Mock / 规则修订。请求日 / 小时 / 计划版本或对话 epoch 过期时丢弃响应，单后继队列只保留最新失败上下文。
+当前状态：`/npc/revise_plan` 使用 `PlanRevisionRequest` / `PlanRevisionResponse`，读取紧凑计划修订 Prompt，并额外校验 NPC id、响应小时集合与请求完全一致、精确行动候选，以及包含当前小时请求时的 `immediate_action`；工作阶段统计继续输入 Prompt，但不再作为业务拒绝条件。成功响应附加 provider / model / fallback 元数据和 `model_normalizations`。Godot 通过异步真实 provider 调用，成功时只合并所选小时；其他失败、重试、过期响应和单后继队列规则不变。
 
 ### 战斗判定
 
@@ -589,7 +981,7 @@ Godot 负责按目标 NPC 状态提供 `allowed_decisions`：已入伍且有主�
 
 输出第一人称日记和 `KnowledgeGraphPatch` 列表；T0046 起不再输出与日记并列的当天长期摘要。
 
-当前状态：T1004/T1005/T1405/T0024 已在 Flask 后端接通 `/npc/daily_reflection`，使用 `DailyReflectionRequest` 校验输入、调用 `ModelAdapter.generate("daily_reflection", ...)`，再用 `DailyReflectionResponse` 校验输出并附加 provider 元数据。接口历史名仍是 daily_reflection，当前玩法语义是首次睡眠总结。Godot 侧 `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`，NPC 每天首次睡眠满 1 游戏小时后通过异步接口调用；最多允许 8 路同时在飞，并暴露实际峰值快照。真实成功标记 `llm_daily_reflection`，显式 Mock provider 标记 `mock_daily_reflection`；缺少来源证明或 fallback 结果不会伪装成真实成功。完成后把日记 / 知识写入长期记忆并清空该 NPC 当天短期索引。模板降级必须标明来源并保留模型失败日志。该调用会申请 TimeSystem 慢速，且请求发起到应用完成期间 NPC 处于不可打断的深度睡眠锁。
+当前状态：T1004/T1005/T1405/T0024 已在 Flask 后端接通 `/npc/daily_reflection`，使用 `DailyReflectionRequest` 校验输入、调用 `ModelAdapter.generate("daily_reflection", ...)`，再用 `DailyReflectionResponse` 校验输出并附加 provider 元数据。接口历史名仍是 daily_reflection，当前玩法语义是熟睡总结。Godot 侧 `DailyReflectionSystem` 监听 `sleep_started`、`sleep_ended` 和 `logical_time_tick`；T0094 后按 21:00 锚定窗口累计多段睡眠，达到 1 游戏小时后通过异步接口调用，只有成功应用才完成该窗口。最多允许 8 路同时在飞，并暴露实际峰值、逐 NPC 窗口与完成窗口快照。真实成功标记 `llm_daily_reflection`，显式 Mock provider 标记 `mock_daily_reflection`；缺少来源证明或 fallback 结果不会伪装成真实成功。完成后把日记 / 知识写入长期记忆并轮转该 NPC 当前短期索引。模板降级必须标明来源并保留模型失败日志。该调用会申请 TimeSystem 慢速，且请求发起到应用完成期间 NPC 处于不可打断的深度睡眠锁。
 
 ### 其他 AI 辅助
 

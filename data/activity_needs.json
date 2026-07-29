@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "unit": "points_per_game_hour",
+  "bounds": {
+    "satiety": {
+      "min": 0,
+      "max": 100
+    },
+    "fatigue": {
+      "min": 0,
+      "max": 100
+    }
+  },
+  "idle_profile": "idle",
+  "movement_profile": "movement",
+  "unconscious_profile": "unconscious_rest",
+  "dialogue_action_ids": [
+    "talk_to_npc",
+    "seek_guard_officer",
+    "escape_intervention_dialogue",
+    "talk_to_guard_officer"
+  ],
+  "dialogue_current_actions": [
+    "talk_to_npc",
+    "proactive_talk",
+    "escape_intervention_dialogue",
+    "talk_to_guard_officer"
+  ],
+  "behavior_mode_profiles": {
+    "work": "",
+    "rally": "rally",
+    "combat": "combat",
+    "avoid_combat": "avoid_combat",
+    "unconscious": "unconscious_rest",
+    "escaped": "escape"
+  },
+  "profiles": {
+    "idle": {
+      "category": "idle",
+      "satiety_per_hour": -0.5,
+      "fatigue_per_hour": 0.5,
+      "description": "最低但非零的基础生命消耗。"
+    },
+    "dialogue": {
+      "category": "social",
+      "satiety_per_hour": -1.0,
+      "fatigue_per_hour": 1.0,
+      "description": "对话与交涉的低强度消耗，不产生技能经验。"
+    },
+    "visit": {
+      "category": "social",
+      "satiety_per_hour": -1.0,
+      "fatigue_per_hour": 1.0,
+      "description": "抵达后的停留；途中移动另按 movement 结算。"
+    },
+    "movement": {
+      "category": "movement",
+      "satiety_per_hour": -3.0,
+      "fatigue_per_hour": 6.0,
+      "description": "普通移动，强度接近轻工作，不产生技能经验。"
+    },
+    "rally": {
+      "category": "movement",
+      "satiety_per_hour": -4.0,
+      "fatigue_per_hour": 8.0,
+      "description": "战时集结与待命，不产生技能经验。"
+    },
+    "avoid_combat": {
+      "category": "movement",
+      "satiety_per_hour": -4.0,
+      "fatigue_per_hour": 8.0,
+      "description": "主动避战，不产生技能经验。"
+    },
+    "escape": {
+      "category": "movement",
+      "satiety_per_hour": -5.0,
+      "fatigue_per_hour": 10.0,
+      "description": "逃离驿站的高压移动，不产生技能经验。"
+    },
+    "combat": {
+      "category": "combat",
+      "satiety_per_hour": -8.0,
+      "fatigue_per_hour": 16.0,
+      "description": "战斗消耗为重工作的两倍，不由行动经验框架授予工作经验。"
+    },
+    "light_work": {
+      "category": "work",
+      "satiety_per_hour": -3.0,
+      "fatigue_per_hour": 6.0,
+      "description": "沿用既有一小时轻工作基准。"
+    },
+    "heavy_work": {
+      "category": "work",
+      "satiety_per_hour": -4.0,
+      "fatigue_per_hour": 8.0,
+      "description": "沿用既有一小时重工作基准。"
+    },
+    "training_instructor": {
+      "category": "training",
+      "satiety_per_hour": -2.0,
+      "fatigue_per_hour": 4.0,
+      "description": "指导训练基准。"
+    },
+    "training_student": {
+      "category": "training",
+      "satiety_per_hour": -4.0,
+      "fatigue_per_hour": 8.0,
+      "description": "受训者高强度训练基准。"
+    },
+    "eat": {
+      "category": "meal",
+      "satiety_per_hour": 0.0,
+      "fatigue_per_hour": 3.0,
+      "description": "食物恢复由行动资源配置结算；20 分钟进食增加 1 点疲劳。"
+    },
+    "sleep": {
+      "category": "rest",
+      "satiety_per_hour": -2.0,
+      "fatigue_per_hour": -15.3846153846,
+      "description": "沿用 6.5 小时睡眠消耗 13 饱食、恢复 100 疲劳的既有基准。"
+    },
+    "clinic_rest": {
+      "category": "rest",
+      "satiety_per_hour": -1.0,
+      "fatigue_per_hour": -4.0,
+      "description": "病床治疗期间低代谢休息。"
+    },
+    "prayer_rest": {
+      "category": "rest",
+      "satiety_per_hour": -1.0,
+      "fatigue_per_hour": -4.0,
+      "description": "祈祷或弥撒带来温和疲劳恢复。"
+    },
+    "drink_rest": {
+      "category": "rest",
+      "satiety_per_hour": -6.0,
+      "fatigue_per_hour": -18.0,
+      "description": "10 分钟饮酒合计消耗 1 饱食、恢复 3 疲劳。"
+    },
+    "unconscious_rest": {
+      "category": "rest",
+      "satiety_per_hour": -0.5,
+      "fatigue_per_hour": -2.0,
+      "description": "昏迷期间维持最低代谢并缓慢恢复疲劳。"
+    }
+  }
+}

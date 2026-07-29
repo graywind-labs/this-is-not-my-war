@@ -1,0 +1,28 @@
+{
+  "call_types": {
+    "battle_judgement": {
+      "count": 7,
+      "input_tokens": 123776,
+      "output_tokens": 876
+    },
+    "dialogue": {
+      "count": 43,
+      "input_tokens": 1073589,
+      "output_tokens": 8842
+    },
+    "plan_day": {
+      "count": 28,
+      "input_tokens": 589862,
+      "output_tokens": 49188
+    }
+  },
+  "source": "T0067 final audited aggregate",
+  "total": {
+    "business_invalid": 1,
+    "business_valid": 77,
+    "count": 78,
+    "fallback_count": 0,
+    "input_tokens": 1787227,
+    "output_tokens": 58906
+  }
+}

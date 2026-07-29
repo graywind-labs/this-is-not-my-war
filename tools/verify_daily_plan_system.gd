@@ -106,13 +106,13 @@ func _init() -> void:
 	action_system._on_logical_time_tick(3600.0, 1.0)
 	await process_frame
 	var after_repeat: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(after_repeat.get("current_action", "")) != "idle":
-		push_error("Completed action must wait for the rest of the same plan hour")
+	if str(after_repeat.get("current_action", "")) != "work_garden":
+		push_error("Completed repeatable work must immediately start its next cycle")
 		quit(1)
 		return
 	var same_slot_result: Dictionary = daily_plan_system.execute_current_plan_for_npc(npc_id, false)
-	if str(same_slot_result.get("status", "")) != "already_executed_this_plan_phase":
-		push_error("Completed action was dispatched again within the same plan hour: %s" % str(same_slot_result))
+	if str(same_slot_result.get("status", "")) != "already_running":
+		push_error("Repeated work cycle was not adopted idempotently: %s" % str(same_slot_result))
 		quit(1)
 		return
 
@@ -143,7 +143,47 @@ func _init() -> void:
 		quit(1)
 		return
 
-	print("T1001 daily plan system verification passed.")
+	var low_work_schema_plan: Array = []
+	for hour in range(24):
+		low_work_schema_plan.append({
+			"hour": hour,
+			"action_kind": "idle",
+			"action_id": "idle",
+			"location_id": null,
+			"target_id": null,
+			"priority": 50,
+			"reason": "现场需要休整",
+			"dialogue_goal": ""
+		})
+	var low_work_result: Dictionary = daily_plan_system._apply_daily_plan_response(
+		npc_id,
+		{
+			"npc_id": npc_id,
+			"plan_day": 1,
+			"plan": low_work_schema_plan,
+			"summary": "现场条件支持暂时休整。",
+			"debug_reason": "验证工作阶段软建议。",
+			"model_provider": "mock",
+			"model_name": "verification",
+			"model_fallback_used": false
+		},
+		false,
+		false
+	)
+	if (
+		not bool(low_work_result.get("ok", false))
+		or int(daily_plan_system._count_work_phases(
+			daily_plan_system.get_npc_daily_plan(npc_id)
+		)) != 0
+	):
+		push_error(
+			"A complete low-work plan should pass the soft work recommendation: %s"
+			% JSON.stringify(low_work_result)
+		)
+		quit(1)
+		return
+
+	print("T1001/T0085 daily plan system verification passed.")
 	quit(0)
 
 

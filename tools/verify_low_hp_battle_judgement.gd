@@ -230,6 +230,86 @@ func _init() -> void:
 		quit(1)
 		return
 
+	npc_system.apply_damage_to_npc("doctor_01", 25, enemy_id, "local_public", {
+		"enemy_attack": true,
+		"enemy_id": enemy_id,
+		"enemy_name": enemy_name,
+		"request_plan_reevaluation": false
+	})
+	var psychology_count_before_stale := _count_events(
+		memory_system.get_plaza_events(),
+		"battle_psychology_result",
+		"doctor_01"
+	)
+	var stale_apply: Dictionary = combat_system._apply_low_hp_judgement_result("doctor_01", {
+		"ok": true,
+		"npc_id": "doctor_01",
+		"decision": "inspired",
+		"emotion": "defiant",
+		"morale_delta_intent": 1,
+		"should_start_escape": false
+	}, {
+		"allowed_decisions": ["continue_fighting", "escape_station", "inspired"],
+		"behavior_mode": "combat",
+		"combatant_decisions_allowed": true,
+		"llm_result": {
+			"ok": true,
+			"request_id": "verify_stale_low_hp_response"
+		}
+	})
+	if (
+		str(stale_apply.get("status", "")) != "discarded"
+		or str(stale_apply.get("reason", "")) != "npc_unconscious"
+	):
+		push_error("Stale low HP response should be discarded after NPC became unconscious: %s" % JSON.stringify(stale_apply))
+		quit(1)
+		return
+	if (
+		_count_events(memory_system.get_plaza_events(), "battle_psychology_result", "doctor_01")
+		!= psychology_count_before_stale
+		or bool(npc_system.get_npc_state("doctor_01").get("morale_boost", {}).get("active", false))
+	):
+		push_error("Discarded low HP response must not write psychology event or apply morale")
+		quit(1)
+		return
+
+	var restart_guard_battle: Dictionary = (
+		combat_system.debug_get_combat_snapshot().get("active_battle", {})
+	)
+	combat_system._pending_low_hp_judgement_by_request["verify_same_wave_restart"] = {
+		"npc_id": "stableman_01",
+		"context": {
+			"battle_wave_id": str(restart_guard_battle.get("wave_id", "")),
+			"battle_started_event_id": "superseded_battle_started_event"
+		}
+	}
+	combat_system._on_battle_judgement_async_response_received({
+		"ok": true,
+		"request_id": "verify_same_wave_restart",
+		"npc_id": "stableman_01",
+		"battle_judgement": {
+			"ok": true,
+			"npc_id": "stableman_01",
+			"decision": "escape_station",
+			"emotion": "afraid",
+			"morale_delta_intent": -1,
+			"should_start_escape": true
+		}
+	})
+	var restart_guard_result: Dictionary = (
+		combat_system.debug_get_combat_snapshot().get("last_low_hp_judgement_result", {})
+	)
+	if (
+		str(restart_guard_result.get("status", "")) != "discarded"
+		or str(restart_guard_result.get("reason", "")) != "battle_restarted_before_llm_response"
+	):
+		push_error(
+			"Low HP response from an earlier instance of the same wave must be discarded: %s"
+			% JSON.stringify(restart_guard_result)
+		)
+		quit(1)
+		return
+
 	print("Low HP battle judgement verification passed.")
 	quit(0)
 
@@ -247,6 +327,15 @@ func _last_event(events: Array, event_type: String, npc_id: String) -> Dictionar
 		if str(event.get("type", "")) == event_type and str(event.get("subject_npc_id", "")) == npc_id:
 			return event
 	return {}
+
+
+func _count_events(events: Array, event_type: String, npc_id: String) -> int:
+	var count := 0
+	for raw_event in events:
+		var event: Dictionary = raw_event if raw_event is Dictionary else {}
+		if str(event.get("type", "")) == event_type and str(event.get("subject_npc_id", "")) == npc_id:
+			count += 1
+	return count
 
 
 func _mode(npc_system: Node, npc_id: String) -> String:

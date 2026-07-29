@@ -1,10 +1,246 @@
 # DATA_SCHEMA.md
 
+## T0095 熟睡总结窗口与记忆水位
+
+`DailyReflectionRequest` 新增两个必填结构：
+
+```json
+{
+  "summary_window": {
+    "window_key": "night_2_2100",
+    "anchor_day": 2,
+    "anchor_time": "21:00:00",
+    "end_day": 3,
+    "end_time": "21:00:00",
+    "diary_label": "接到守备命令的第2天",
+    "notice_basis": "守备官在公告牌向驿站众人传达“我们奉命守住此地”的守备命令"
+  },
+  "reflection_period": {
+    "start": {"day": 1, "time": "23:10:00"},
+    "end": {"day": 2, "time": "22:30:00"},
+    "start_inclusive": false,
+    "start_basis": "上一次成功熟睡总结的请求快照水位",
+    "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
+    "snapshot_event_count": 4,
+    "snapshot_witness_count": 2
+  }
+}
+```
+
+Schema 强制窗口两端均为 21:00、`end_day=anchor_day+1`、标签精确匹配锚点，并要求 `notice_basis` 包含公开命令原文。`reflection_period.end` 不得早于 start。Godot 正式日记在兼容旧 8 字段基础上新增 `record_label / summary_window_key / window_anchor_day / trigger_day / trigger_time / reflection_period`；短期快照另持有内部 `event_ids / witness_ids`，不发送给模型。
+
+## T0094 对话打断上下文与熟睡窗口状态
+
+`NPCDialogueRequest` 新增可空的目标私有运行时字段：
+
+```json
+{
+  "interrupted_activity_context": {
+    "interrupted_by_guard_officer": true,
+    "private_to_target_npc": true,
+    "activity_before_interruption": {
+      "action_id": "sleep_in_dormitory",
+      "action_name": "睡觉",
+      "phase": "active",
+      "location_id": "dormitory",
+      "location_name": "宿舍",
+      "target_id": "dormitory",
+      "workstation_id": "dormitory_bed_01",
+      "elapsed_seconds": 1800.0,
+      "duration_seconds": 23400.0
+    },
+    "current_plan_activity": {
+      "action_id": "sleep_in_dormitory",
+      "action_name": "睡觉",
+      "phase": "planned",
+      "day": 2,
+      "hour": 3,
+      "location_id": "dormitory"
+    },
+    "expected_activity_after_dialogue": {
+      "action_id": "sleep_in_dormitory",
+      "action_name": "睡觉",
+      "phase": "planned",
+      "day": 2,
+      "hour": 3,
+      "location_id": "dormitory"
+    },
+    "resume_policy": "resume_interrupted_activity_if_plan_unchanged",
+    "resume_expected_if_plan_unchanged": true
+  }
+}
+```
+
+活动子项类型为 `DialogueActivityContext`，`phase` 仅允许 `pending / active / external_active / planned`；`day / hour / elapsed_seconds / duration_seconds` 按阶段可空。外层 `DialogueInterruptionContext` 只在真正发生打断时出现，不属于 `EventRecord.payload`。
+
+守备官对话记录不新增第二套 Schema。NPCPanel 从全局 `EventRecord` 读取既有 `dialogue_turn` 的顶层 `day / time` 和 `payload.dialogue_kind / dialogue_text / participant_npc_ids`，再按全局 `combat_started / combat_ended.payload.wave_number` 顺序还原历史波次分组。熟睡总结的客户端调度状态由 `get_async_reflection_snapshot()` 暴露：
+
+```json
+{
+  "summary_window_anchor": {
+    "hour": 21,
+    "time": "21:00:00",
+    "window_duration_seconds": 86400,
+    "required_accumulated_sleep_seconds": 3600
+  },
+  "sleep_window_states_by_npc": {
+    "veteran_deputy_01": {
+      "window_key": "night_1_2100",
+      "anchor_day": 1,
+      "end_day": 2,
+      "accumulated_sleep_seconds": 1800.0,
+      "remaining_sleep_seconds": 1800.0,
+      "summary_status": "accumulating"
+    }
+  },
+  "completed_windows_by_npc": {}
+}
+```
+
+窗口键既用于 Godot 侧累计、并发等待、重试和成功去重，也随 `summary_window` 进入后端合同约束模型叙事。`DailyReflectionRequest.day` 仍是实际触发日；写入日记的 `day / window_anchor_day` 使用窗口锚点，玩家可见标签固定为“接到守备命令的第N天”，实际触发日 / 时间另存于 `trigger_day / trigger_time`。
+
+## T0088 建筑作业可读时间投影
+
+BuildingSystem 内部继续以 `duration_seconds / remaining_seconds` 保存和结算浮点游戏秒，同时在修复 / 升级状态中增加：
+
+```json
+{
+  "duration_text": "2小时0分00秒",
+  "remaining_text": "1小时35分00秒"
+}
+```
+
+NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变化的剩余秒数：
+
+```json
+{
+  "condition": "upgrading",
+  "active_job": "upgrade",
+  "job_total_duration_text": "2小时0分00秒"
+}
+```
+
+六类 NPC LLM 请求复用的 `current_building_states.<building>.repair_job / upgrade_job` 为 `{active, total_duration, remaining_time, progress_percent, helper_count}`；非活动作业为 `{}`。该模型投影不包含裸 `duration_seconds / remaining_seconds`，权威秒数不因此删除。
+
+## T0087 分类型对话响应 Schema
+
+`NPCDialogueRequest` 继续统一承载人物、说话者、记忆、地点、行动候选与 `dialogue_kind`。响应由 endpoint 根据请求类型选择：
+
+```json
+// player_npc
+{"replyer_id":"cook_01","reply_text":"……","response_kind":"reply_to_player","recruitment_result":"reject","wartime_reaction":"none"}
+
+// npc_npc
+{"replyer_id":"priest_01","reply_text":"……","response_kind":"reply_to_npc","invitation_result":"not_applicable","should_end_dialogue":true}
+
+// escape_intervention
+{"replyer_id":"cook_01","reply_text":"……","response_kind":"reply_to_player","escape_intervention_result":"stay"}
+```
+
+三个响应分别是 `PlayerNPCDialogueResponse`、`NPCNPCDialogueResponse` 和 `EscapeInterventionDialogueResponse`，都设置 `extra="forbid"`。旧 `DialogueIntent` 和 `request_money / request_equipment / request_rest / request_treatment / share_witness / start_escape` 已删除；应征不再重复输出 `accept_recruitment / reject_recruitment`，NPC-NPC 不再输出 `continue_talk / end_talk`，逃离不再输出 `stay_after_intervention / leave_after_intervention`。分支外字段属于模型输出错误。
+
+## T0076 计划修改范围必选小时
+
+`PlanRevisionJudgementRequest` 新增：
+
+```json
+{
+  "required_revision_hours": [10]
+}
+```
+
+该字段默认为 `[]`，最多 24 项，必须升序、去重且不得早于 `game_time.hour`。`PlanRevisionJudgementResponse.revision_hours` 必须包含其中全部值；仍可包含其他真正受影响且未过去的小时，`needs_revision` 继续严格等于数组是否非空。自主 NPC-NPC 对话发起者，以及结束时当前计划仍为 `seek_guard_officer` 的 NPC 主动守备官会话，使用 `[结束时当前小时]`；受邀者和其他普通判别默认空数组。若模型遗漏 required 值，HTTP 层将程序权威集合并入并通过 `model_normalizations` 留痕。第二阶段 Schema 不变，仍以 `PlanRevisionRequest.revision_hours` 精确覆盖并在包含当前小时时要求 `immediate_action`。
+
+## T0071 对话说话者公开上下文 Schema
+
+`NPCDialogueRequest` 的回复目标仍由顶层 `npc_* / short_memory / long_memory / location_context / current_order` 定义。说话者只使用：
+
+```json
+{
+  "speaker_name": "格伦",
+  "speaker_text": "伊沃，菜园工位你还要用多久？",
+  "speaker_context": {
+    "speaker_id": "blacksmith_01",
+    "speaker_name": "格伦",
+    "speaker_kind": "npc",
+    "appearance": "可观察外表",
+    "health_status": "健康",
+    "state": {}
+  }
+}
+```
+
+`speaker_npc` 是只兼容旧请求中 `null` 的封闭字段；任何非空对象都会被 Pydantic 拒绝。`speaker_context.state` 同样必须为空。请求不能在这两个位置携带另一名 NPC 的记忆、指令、技能、属性、个人资源或地点上下文。
+
+`allowed_actions` 中的 `talk_to_npc` 候选只公开 `target_id / target_name`，不包含 `location_id`，`context` 为空；它不把目标的实时地点、当前行动或征召状态伪装成回复者已知事实。模型输出同样只需给出 `target_id`。动作真正执行时，由 `ActionSystem` 再按 `target_id` 查询目标实时位置并完成权威路由。
+
+## T0070 名册与仓库容量 Schema
+
+`backend.schemas.common.StationResidentContext` 的每个成员现在必填：
+
+```json
+{
+  "npc_id": "engineer",
+  "name": "欧文",
+  "identity": "工程师",
+  "recruited": false,
+  "in_station": false
+}
+```
+
+`recruited` 与 `in_station` 是相互独立的严格布尔值；离站成员仍保留在 `StationSceneContext.resident_roster`。缺少任一标签的正式请求会被 Schema 拒绝。
+
+`data/resource_defs.json` 对受限资源新增 `warehouse_capacity={level_1,per_level_bonus}`。当前粮食、餐食、木材、石料、铁为 `{120,60}`，酒为 `{60,30}`；未配置或空配置表示不受仓库容量限制。`npc_initial_long_memory.json` 图谱结构未改变，关系总数由 222 增至 226，仓库稳定技术值更新为 `level_based_bulk_storage_and_post_breach_attack_target`。
+
+## T0069 LLM 审计 JSONL Schema v1
+
+`backend/logs/llm_calls.jsonl` 每行是独立 JSON 对象，公共字段为：
+
+```json
+{
+  "schema_version": 1,
+  "timestamp": "UTC ISO-8601",
+  "audit_id": "同一次 ModelAdapter 调用的随机唯一 id",
+  "event": "call_started|provider_request_sent|provider_response_received|provider_output_parsed|provider_output_rejected|provider_attempt_failed|call_completed|business_validation_failed",
+  "call_type": "dialogue|plan_day|...",
+  "provider": "deepseek|openai_compatible|mock",
+  "model": "provider model",
+  "request_id": "可空",
+  "npc_id": "可空",
+  "related_event_id": "可空"
+}
+```
+
+事件按职责携带 `input_payload`、`provider_request_body`、`provider_response / raw_response_body`、`raw_model_content / model_output`、`attempt_count / http_status / exception_type / failure_reason`、`usage` 或 `validation_details`。这是 append-only 诊断 Schema：后续业务校验失败追加新事件，不重写历史 JSONL 行；内存 usage 仍可原地修正以避免预算双计。敏感值写入前替换为 `[REDACTED]`，请求 / 响应 headers 不属于该 Schema。
+
+## T0067 战斗状态投影与对话业务合同
+
+`backend.schemas.common.NPCStateContext` 在原有生命、饱食、疲劳、装备和个人资源字段外，显式声明：
+
+```json
+{
+  "behavior_mode": "work|rally|combat|avoid_combat|escaped|unconscious",
+  "combat_mode": "",
+  "combat_strategy": {},
+  "morale_boost": {},
+  "escape_intent": {}
+}
+```
+
+三个对象字段默认 `{}`，字符串默认空值，以兼容旧请求；它们是 Godot 权威状态的只读投影。修复前 Pydantic 会静默忽略这五项，造成请求成功但模型看不到实际战斗 / 逃离状态。
+
+`DialogueRequest / DialogueResponse` 保持原 Schema，但 endpoint 新增业务组合校验：
+
+- `escape_intervention` 的 kind / context 必须成对，轮次必须与当前上下文一致，intent 只能 stay / leave；留下与最终轮继续离开必须结束会话。
+- `is_recruitment_request` 与 `recruitment_result / intent` 必须一致；未勾选应征时结果必须为 `none`。
+- `avoid_combat`、普通工作和 NPC-NPC 对话的 `wartime_reaction` 必须为 `none`；只有 `rally / combat` 且目标已入伍并持主武器时允许 `escape / morale_boost`。
+- 业务不一致按真实模型输出无效处理并写入 usage，不以 Mock 结果伪装成功。
+
 ## T0061 NPC 人设与长期记忆展示合同
 
 - `data/npc_profiles.json`、`NPCPromptProfile.build_setting(...)`、对话 `npc_setting`、共享 `NPCIdentity` 和六类正式 Prompt 均已移除 `signature_lines`；人物表达只保留宽松 `speech_style`，不再维护代表性表达数组。
 - `npc_initial_long_memory.json` 结构不变。三篇 `day=0` 日记仍使用相同 8 字段；“来站前”改为宏观身世 / 来站原因 / 到站时间，“初到驿站”改为工作与相遇群像，“近日”保持开局前微观生活。固定到站顺序为艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜。
-- 每人的 `guard_officer` 只保留一条技术键为 `role` 的职责关系。建筑中文 `relation_label / value_label` 使用世界内叙事表达；仓库旧的未落地容量 / 掠夺语义同步改为当前真实的集中登记 / 受袭次序技术值，其余建筑技术 `value` 不变，`confidence / day / time` 字段全部保留。
+- 每人的 `guard_officer` 只保留一条技术键为 `role` 的职责关系。建筑中文 `relation_label / value_label` 使用世界内叙事表达；T0061 当时仓库使用集中登记 / 受袭次序技术值，T0070 容量落地后更新为按等级扩容 / 受袭次序技术值，仍不包含受击丢货，`confidence / day / time` 字段全部保留。
 - `NPCPanel` 的【知识】弹窗不显示 `confidence / day / time`；NPCSystem 运行态、Pydantic 输入 / 输出、保存结构及 GM 调试仍保留完整字段。本任务没有迁移知识图谱 Schema。
 
 ## T0060 文案重写不改变 Schema
@@ -40,13 +276,32 @@ T0060 当时不增加、删除或改名任何档案、日记、知识图谱、�
   "setting_summary": "...",
   "resident_roster": [{ "npc_id": "...", "name": "...", "identity": "..." }],
   "building_roster": [{ "building_id": "...", "name": "..." }],
-  "work_mode_actions": [{ "action_id": "...", "name": "...", "action_kind": "work" }],
+  "work_mode_actions": [{ "action_id": "...", "name": "...", "action_kind": "work", "description": "..." }],
   "basic_resource_reserves": [{ "resource_id": "grain", "name": "粮食", "amount": 18 }],
   "station_rules": ["..."]
 }
 ```
 
-六个字段必填，五个数组都必须非空。人员项是当前仍在站者；建筑项是 BuildingSystem 已加载的完整建筑身份；工作行为项是 ActionSystem 可计划类型目录，`action_kind` 复用 `PlanActionKind`；基础资源项按上节严格白名单。目录不携带当前 HP、占用、资格、动态 target / location 或战场状态，这些事实继续由各请求的实时字段表达。`StationAwareNPCRequest` 只在请求顶层保存一份该对象，嵌套 `NPCContext`、speaker / target 不得重复。
+六个字段必填，五个数组都必须非空。人员项是当前仍在站者；建筑项是 BuildingSystem 已加载的完整建筑身份；工作行为项是 ActionSystem 可计划类型目录，`action_kind` 复用 `PlanActionKind`，`description` 保存稳定行为前提 / 上下文影响；基础资源项按上节严格白名单。目录不携带当前 HP、占用、资格、动态 target / location 或战场状态，这些事实继续由各请求的实时字段表达。`StationAwareNPCRequest` 只在请求顶层保存一份该对象，嵌套 `NPCContext`、speaker / target 不得重复。
+
+## T0083 对话历史回合的应征结果元数据
+
+完成守备官会话的 `dialogue_text[]` turn 保持既有 `speaker_id / speaker_name / listener_id / listener_name / text / visibility` 字段，并允许产生应征决定的 NPC 回复额外携带：
+
+```json
+{
+  "recruitment_result": "accept"
+}
+```
+
+该可选字段只取 `accept | reject`；普通回复和守备官发言省略。它用于把前端提示绑定到具体回复，不替代完成事件顶层的汇总 `payload.recruitment_result`，也不得把“接受 / 拒绝了守备官的应征请求”系统提示拼入 turn `text`。
+
+## T0063 NPC 个人酒与饮酒行动
+
+- `npc_profiles[].states` 和运行态 `NPCStateContext` 在 `money` 旁新增非负整数 `wine`。两者表示 NPC 本人持有资源；不进入 `station_context.basic_resource_reserves` 五项驿站公开库存。
+- `Action Definition.personal_resource_cost` 描述个人资源消耗；当前 `drink_wine` 固定为 `{ "wine": 1 }`，`type=drink`，后端 `PlanActionKind` 同步新增 `drink`。
+- `wine_given.payload` 必含 `amount / resource_id / npc_wine_before / npc_wine_after`；`wine_consumed.payload` 还必含 `action_id / context_effect`。扣减后的前后值由程序写入，LLM 不生成。
+- 日计划业务校验要求 `drink_wine` 阶段数不超过 `npc.state.wine`；修订合并后从当前小时起的剩余饮酒阶段也不得超过当前个人酒。
 
 ## T0051 守备官会话运行态与提交事件
 
@@ -92,7 +347,7 @@ T0060 当时不增加、删除或改名任何档案、日记、知识图谱、�
 
 ## T0043 建筑位置、升级奖励与行动资格字段
 
-`Building Definition` 的 `workstations` 是位置权威清单。每项至少包含稳定 `id`、位置类型 `type`、玩家显示 `name` 和 `occupied_by`；数组顺序同时是建筑面板显示顺序。建筑可声明 `fixed_workstation_types`，升级不得为这些类型扩容。运行态额外暴露 `condition`、`is_enterable`、`damage_efficiency_multiplier`、`operational_efficiency_multiplier` 与累计 `efficiency_bonuses`。
+`Building Definition` 的 `workstations` 是位置权威清单。每项至少包含稳定 `id`、位置类型 `type`、玩家显示 `name` 和 `occupied_by`；数组顺序同时是建筑面板显示顺序。位置可选声明 `assigned_npc_id` 作为固定归属，当前只用于宿舍床位：归属者只能申请自己的位置，未归属 NPC 只能申请没有该字段的位置；释放占用不得删除归属。建筑可声明 `fixed_workstation_types`，升级不得为这些类型扩容。运行态额外暴露 `condition`、`is_enterable`、`damage_efficiency_multiplier`、`operational_efficiency_multiplier` 与累计 `efficiency_bonuses`。
 
 升级继续保留旧单一奖励字段兼容，但新配置使用按目标等级索引的 `upgrade.level_effects`：每级可覆盖 `cost`、`duration_seconds`、`max_hp_bonus`，并包含 `workstation_deltas: [{type, count, id_prefix, name_prefix}]` 和 `efficiency_bonuses: {activity_key: additive_bonus}`。完成前不修改等级、容量或效率；升级 job 保存开始级、目标级与已解析奖励。
 
@@ -108,13 +363,13 @@ T0060 当时不增加、删除或改名任何档案、日记、知识图谱、�
 
 ## T0025 目标行动与计划修订契约
 
-`ActionCandidate` 现在以 `action_id`、`action_kind`、`location_id`、`target_id`、`target_kind`、`target_name`、`tags` 和 `context` 描述一条不可拆分的合法候选。`PlanItem` 必须回传对应的 `action_kind`，并为对话 / 主动交涉提供 `dialogue_goal`。后端逐项校验 action、kind、target 与 location 的精确组合，同时拒绝 NPC 与自己对话。
+`ActionCandidate` 现在以 `action_id`、`action_kind`、可选 `location_id`、`target_id`、`target_kind`、`target_name`、`tags` 和 `context` 描述一条合法候选。`PlanItem` 必须回传对应的 `action_kind`，并为对话 / 主动交涉提供 `dialogue_goal`。固定地点行动由后端逐项校验 action、kind、target 与 location 的精确组合；T0091 起 `talk_to_npc` 只按 `action_id + target_id` 命中候选并拒绝 NPC 与自己对话，规范化后的 `location_id` 统一为空。
 
-T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`。请求携带 `game_time`、目标 NPC 标识、`trigger_kind` 和恰好覆盖 0-23 点的 `current_plan`；`dialogue` 分支要求 `dialogue_kind`、非空 `dialogue_history`、`dialogue_end_reason` 与 `dialogue_context`，`action_failure` 分支要求 `failed_plan_item`、非空 `failure_type` / `failure_summary`、必要 `failure_context` 及工作阶段计数 / 下限。T0053 起该模型继承 `StationAwareNPCRequest`，必填统一 `npc: NPCContext`，并携带 `allowed_actions / current_building_states / current_resource_states`；`npc.identity.npc_id` 必须与顶层 `npc_id` 一致。`failure_type` 新增 `plan_item_superseded`，用于等待期间旧计划项被当前阶段替代。响应仍只返回 `needs_revision`、升序去重的 `revision_hours`、`summary` 和 `debug_reason`；`needs_revision` 必须与数组是否非空一致，小时不得早于 `game_time.hour`，空数组表示 0 个修改阶段。旧 `DialoguePlanRevisionJudgement*` 名保留为兼容别名。
+T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`。请求携带 `game_time`、目标 NPC 标识、`trigger_kind` 和恰好覆盖 0-23 点的 `current_plan`；`dialogue` 分支要求 `dialogue_kind`、非空 `dialogue_history`、`dialogue_end_reason` 与 `dialogue_context`，`action_failure` 分支要求 `failed_plan_item`、非空 `failure_type` / `failure_summary`、必要 `failure_context` 及工作阶段计数 / 下限。T0053 起该模型继承 `StationAwareNPCRequest`，必填统一 `npc: NPCContext`，并携带 `allowed_actions / current_building_states / current_resource_states`；`npc.identity.npc_id` 必须与顶层 `npc_id` 一致。`failure_type` 包含 `plan_item_superseded`，用于等待期间旧计划项被当前阶段替代；T0086 新增 `action_completed`，表示旧项已经成功完成、当前小时需另排后续活动；T0093 要求 Godot 规范化层保持该合法枚举。响应仍只返回 `needs_revision`、升序去重的 `revision_hours`、`summary` 和 `debug_reason`；`needs_revision` 必须与数组是否非空一致，小时不得早于 `game_time.hour`，空数组表示 0 个修改阶段。旧 `DialoguePlanRevisionJudgement*` 名保留为兼容别名。
 
-`PlanRevisionRequest` 携带 `failure_context`、实时建筑 / 资源状态、`current_work_phase_count`、`minimum_work_phase_count`、`replacement_work_phase_required_if_non_work`、`past_work_phase_count` 和 `minimum_remaining_work_phase_count`。T0049 后 `revision_scope` 只允许 `selected_hours`，且非空 `revision_hours` 必须升序去重、不早于当前小时。`PlanRevisionResponse.revised_plan` 必须按同样顺序恰好覆盖该集合；当前小时入选时 `immediate_action` 必须存在并与该项一致，未入选时必须为 `null`。合并回未选中的原计划后仍必须满足工作阶段下限。T0048 的 `remaining_day` 与 `revision_start_hour` 已被此合同取代。工位失败上下文包含被占工位及 `blocked_by_npc_ids` / `blocked_by_npcs`，因此模型可以结构化选择具体占用者作为 `talk_to_npc.target_id`。合法 `PlanActionKind` 包含 `pray`、`visit`、`chat`、三类协助、`seek_guard_officer` 与特殊 `escape`；权威数值结算仍不属于 Schema 输出。
+`PlanRevisionRequest` 携带 `failure_context`、实时建筑 / 资源状态、`current_work_phase_count`、`minimum_work_phase_count`、`replacement_work_phase_required_if_non_work`、`past_work_phase_count` 和 `minimum_remaining_work_phase_count`。T0049 后 `revision_scope` 只允许 `selected_hours`，且非空 `revision_hours` 必须升序去重、不早于当前小时。`PlanRevisionResponse.revised_plan` 必须按同样顺序恰好覆盖该集合；当前小时入选时 `immediate_action` 必须存在并与该项一致，未入选时必须为 `null`。合并回未选中的原计划后仍必须满足工作阶段下限。T0048 的 `remaining_day` 与 `revision_start_hour` 已被此合同取代。工位失败上下文包含被占工位及 `blocked_by_npc_ids` / `blocked_by_npcs`，因此模型可以结构化选择具体占用者作为 `talk_to_npc.target_id`。合法 `PlanActionKind` 包含 `drink`、`pray`、`visit`、`chat`、三类协助、`seek_guard_officer` 与特殊 `escape`；权威数值结算仍不属于 Schema 输出。
 
-六类正式成功传输体始终包含 `model_normalizations` 数组，当前只有计划 / 修订可能为非空。它只记录 Schema 已通过后，对冗余 `action_kind` 所做的确定性规范化：非 idle 必须由 action、target、location 唯一命中一条带显式 kind 的候选；idle 必须符合固定空目标 / 空地点合同。每项记录字段路径、模型原值、规范值和候选来源。该机制不修复未知枚举、自聊、空 `dialogue_goal`、目标 / 地点变化、重复候选或工作阶段不足。`required_ability` 只表达行动者资格；普通祈祷不再依赖 `requires_present_npc_id`，主持弥撒则用“主持弥撒”能力校验。
+六类正式成功传输体始终包含 `model_normalizations` 数组，当前只有计划 / 修订可能为非空。它记录 Schema 已通过后的确定性规范化：固定地点行动须由 action、target、location 唯一命中候选后才可修正冗余 `action_kind`；`talk_to_npc` 由 action、target 唯一命中后可把模型多余返回的瞬时地点规范化为 `null`，再按候选修正 kind；idle 必须符合固定空目标 / 空地点合同。每项记录字段路径、模型原值、规范值和候选来源。该机制不修复未知枚举、自聊、空 `dialogue_goal`、白名单外目标、固定行动地点变化、重复候选或工作阶段不足。`required_ability` 只表达行动者资格；普通祈祷不再依赖 `requires_present_npc_id`，主持弥撒则用“主持弥撒”能力校验。
 
 ## Resource Definition
 
@@ -443,7 +698,7 @@ T0033 起，马塞尔的 `background_story` 只补充简短的“他擅长酿酒
 }
 ```
 
-这些字段由程序根据对话 / 判定结果应用和清除，LLM 不能直接改写具体数值。移动期间 `escaped` 仍为 `false`；NPC 到达后门外出口后，`NPCSystem` 将 `escaped` 改为 `true`，把 `escape_intent.status` 改为 `escaped`，并记录 `completed_day` / `completed_time`。T1204A/T0051 后，`stay_after_intervention` 只在完成会话时把 `status` 改为 `stayed` 并停止移动；打开或挂起逃离挽留时 `movement_paused_for_dialogue=true` 并保存 `paused_dialogue_id`，完成、取消或满 5 轮继续逃离时清回 `false` 并记录 `last_dialogue_resume_reason`。取消不应用暂存意向；逃离挽留攻击计入 1 轮、不产生 NPC 回复、锁定取消并自动完成会话。逃离期间昏迷会暂记 `paused_unconscious`，复苏后恢复为 `escaping`。
+这些字段由程序根据对话 / 判定结果应用和清除，LLM 不能直接改写具体数值。移动期间 `escaped` 仍为 `false`；NPC 到达后门外出口后，`NPCSystem` 将 `escaped` 改为 `true`，把 `escape_intent.status` 改为 `escaped`，并记录 `completed_day` / `completed_time`。T0087 后，`escape_intervention_result=stay` 只在完成会话时把 `status` 改为 `stayed` 并停止移动；打开或挂起逃离挽留时 `movement_paused_for_dialogue=true` 并保存 `paused_dialogue_id`，完成、取消或满 5 轮继续逃离时清回 `false` 并记录 `last_dialogue_resume_reason`。取消不应用暂存结果；逃离挽留攻击计入 1 轮、不产生 NPC 回复、锁定取消并自动完成会话。逃离期间昏迷会暂记 `paused_unconscious`，复苏后恢复为 `escaping`。
 
 T0501 起，`NPCSystem.apply_damage_to_npc(...)` 会扣除 `states.hp`，并在 HP 降到 0 时设置 `states.unconscious=true`、`states.current_action="unconscious"`、清空移动目标。T0502/T0503 起，昏迷 NPC 会自然恢复，也可被其他 NPC 协助治疗；HP 恢复到 Max HP 30% 后复苏。昏迷 NPC 不会死亡，也不能移动或执行行动。
 
@@ -472,14 +727,14 @@ T0904 起，属性成长不由 AI 自动分配。玩家通过 `NPCSystem.assign_
   "fixed_workstation_types": ["dormitory_bed"],
   "damage_efficiency_floor": 0.25,
   "workstations": [
-    {"id":"dormitory_bed_01","type":"dormitory_bed","name":"床位1","occupied_by":null},
-    {"id":"dormitory_bed_02","type":"dormitory_bed","name":"床位2","occupied_by":null},
-    {"id":"dormitory_bed_03","type":"dormitory_bed","name":"床位3","occupied_by":null},
-    {"id":"dormitory_bed_04","type":"dormitory_bed","name":"床位4","occupied_by":null},
-    {"id":"dormitory_bed_05","type":"dormitory_bed","name":"床位5","occupied_by":null},
-    {"id":"dormitory_bed_06","type":"dormitory_bed","name":"床位6","occupied_by":null},
-    {"id":"dormitory_bed_07","type":"dormitory_bed","name":"床位7","occupied_by":null},
-    {"id":"dormitory_bed_08","type":"dormitory_bed","name":"床位8","occupied_by":null},
+    {"id":"dormitory_bed_01","type":"dormitory_bed","name":"床位1","assigned_npc_id":"veteran_deputy_01","occupied_by":null},
+    {"id":"dormitory_bed_02","type":"dormitory_bed","name":"床位2","assigned_npc_id":"stableman_01","occupied_by":null},
+    {"id":"dormitory_bed_03","type":"dormitory_bed","name":"床位3","assigned_npc_id":"cook_01","occupied_by":null},
+    {"id":"dormitory_bed_04","type":"dormitory_bed","name":"床位4","assigned_npc_id":"gardener_01","occupied_by":null},
+    {"id":"dormitory_bed_05","type":"dormitory_bed","name":"床位5","assigned_npc_id":"blacksmith_01","occupied_by":null},
+    {"id":"dormitory_bed_06","type":"dormitory_bed","name":"床位6","assigned_npc_id":"engineer_01","occupied_by":null},
+    {"id":"dormitory_bed_07","type":"dormitory_bed","name":"床位7","assigned_npc_id":"priest_01","occupied_by":null},
+    {"id":"dormitory_bed_08","type":"dormitory_bed","name":"床位8","assigned_npc_id":"doctor_01","occupied_by":null},
     {"id":"dormitory_bed_09","type":"dormitory_bed","name":"床位9","occupied_by":null},
     {"id":"dormitory_bed_10","type":"dormitory_bed","name":"床位10","occupied_by":null}
   ],
@@ -526,6 +781,7 @@ T0035/T0037 后，可进入建筑的 `internal_state.special_state` 已按 T0034
   "id": "work_garden",
   "name": "照料菜园",
   "type": "work",
+  "completion_policy": "repeat_while_planned",
   "location_required": "garden",
   "skill": "耕种",
   "stat": "strength",
@@ -541,26 +797,64 @@ T0035/T0037 后，可进入建筑的 `internal_state.special_state` 已按 T0034
     "attribute_per_bonus": 3,
     "building_level_bonus": true
   },
-  "fatigue_delta": 8,
-  "satiety_delta": -4
+  "needs_profile": "heavy_work"
 }
 ```
 
-T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动时长优先使用 `duration_seconds`，旧的 `base_duration_hours` 仅保留为兼容字段。行动抵达地点后按 TimeSystem 逻辑秒推进，不应在抵达瞬间完成。协助修复/协助升级是运行时参数化行为，不作为每个建筑一条固定 JSON 行动：
+T0305 起，行动定义支持多类 JSON 最小行动；2026-05-25 起，行动时长优先使用 `duration_seconds`，旧的 `base_duration_hours` 仅保留为兼容字段。行动抵达地点后按 TimeSystem 逻辑秒推进，不应在抵达瞬间完成。T0081 起，`data/action_defs.json` 中每一条行动定义必须且只能通过 `needs_profile` 绑定生活消耗档位；不得再声明 `satiety_delta`、`fatigue_delta`、`satiety_delta_per_hour` 或 `fatigue_delta_per_hour`。所有档位速率统一由 `data/activity_needs.json` 按“点 / 游戏小时”定义，并由 `NPCNeedsSystem` 按有效逻辑秒连续结算。
 
-- `work`：读取 `location_required`、`workstation_type`、`duration_seconds`、`input_resources`、`output_resources`、`fatigue_delta`、`satiety_delta` 后由程序结算。`duration_seconds` 是单位工作周期基准；实际周期按 NPC 技能 / 属性、建筑等级奖励和建筑损伤效率结算。工作开始申请目标位置，完成、失败或中断时释放。`work_dining_hall` 使用 `dining_kitchen_station` 与 `building_efficiency_key="production"`。T0804-T0806 的聚合制造 / 马匹整备配置属于历史运行态，已被下一条当前覆盖取代。
+T0075 起，`completion_policy` 是每条配置行为的必填字段，只允许 `repeat_while_planned / continuous_until_plan_changes / until_target_resolved / once_per_plan_hour / terminal / not_plan_selectable`。`not_plan_selectable` 必须与 `plan_selectable=false` 同时出现，其余策略必须属于计划可选行为；缺失、未知值或二者冲突时 ActionSystem 跳过该定义并记录配置错误。策略分类的完整 action id 表见 `AI_NPC_SYSTEM.md`；后续新增行为必须同步扩展分类专项，不能依赖 `type` 或 id 前缀隐式推断。
+
+T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不替代 `completion_policy`；T0093 后其兼容字段名不变，语义是该行动成功结束且权威当前小时仍指向同一计划项时，直接重排当前小时起连续相同 action + target 的计划段。当前只能为 `assist_repair / assist_upgrade / assist_heal / receive_clinic_treatment / drink_wine` 设为 `true`；未声明等价于 `false`。完成修订上下文使用 `failure_type=action_completed`，并携带 `condition=successful_plan_action_completion`、`completed_action_id`、`completion_result`、`completed_plan_item`、`requires_different_current_activity=true` 与 `contiguous_revision_hours`；后者必须等于本次精确 `revision_hours`。
+
+各行动类型字段：
+
+- `work`：读取 `location_required`、`workstation_type`、`duration_seconds`、`input_resources`、`output_resources` 和 `needs_profile` 后由程序结算。`duration_seconds` 是单位工作周期基准；实际周期按 NPC 技能 / 属性、建筑等级奖励和建筑损伤效率结算。工作开始申请目标位置，完成、失败或中断时释放。`work_dining_hall` 使用 `dining_kitchen_station` 与 `building_efficiency_key="production"`。T0804-T0806 的聚合制造 / 马匹整备配置属于历史运行态，已被下一条当前覆盖取代。
 - T0035/T0037 当前覆盖：`work_blacksmith` / `work_workshop` 使用 `requires_crafting_target=true`，选中该建筑合法制造目标才允许开工；每个完整工作周期只向 CraftingSystem 提交一个阶段，不直接写任何聚合或具体成品产出。周期中断只丢失该 NPC 未完成的小数周期，已提交整数阶段不回退。`work_stable` 的 `input_resources / output_resources` 均为空，只把有效在岗者的最高“养马”能力交给 HorseSystem 推进繁育、成长与额外 HP 培养；马匹进食由 HorseSystem 在进食周期完成时自行原子扣粮。
-- `eat`：使用 `workstation_type="dining_seat"` 申请一个用餐席，使用 `food_options` 定义可消耗食物及饱食度恢复量，并以 `building_efficiency_key="meal_recovery"` 应用食堂升级与损伤效率。标准进食时长为 1200 秒，恢复按进度逐步应用。
-- `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds`、`fatigue_delta` 和 `satiety_delta` 调整 NPC 状态，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳。
-- `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`，不要求神父在场，但以 `blocked_by_active_action_id="lead_mass"` 声明互斥；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`，并以 `interrupts_action_ids` 中断普通祈祷；`attend_mass` 使用 `chapel_prayer_seat`，以 `required_active_action_id="lead_mass"` 和 `complete_with_required_action=true` 绑定主持生命周期。
-- `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money` 和 `skill="医术"` 作为行为声明；具体目标校验、费用扣除、医术加速和 HP 恢复由 `ActionSystem` / `NPCSystem` 结算。
-- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `input_resources.money`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。
-- `clinic_patient`：读取 `location_required="clinic"`、`workstation_type="clinic_patient_bed"` 与 `required_active_action_id="work_clinic_doctor"`。只有受伤且未昏迷 NPC 可执行；无在岗医生时开始失败，活动中全部医生离岗时中断失败。团队、诊所升级与损伤效率由程序合成，不建立医生—病人一对一绑定。
-- `training_instructor`：读取 `location_required="training_ground"`、`workstation_type="training_instructor_station"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时参与全教官团队效率并提升“教练”。
-- `training_student`：读取 `location_required="training_ground"`、`workstation_type="training_practice_slot"`、`required_active_action_id="work_training_instructor"`、`student_skill_interval_seconds`、`fatigue_delta_per_hour` 和 `satiety_delta_per_hour`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；全部教官离岗时当前受训中断失败。训练项目由受训者当前主武器 / 坐骑决定。全部在岗教官的人数、“教练”和对应项目熟练度组成团队效率，与训练场升级、损伤效率一起作用于全部训练位。
-- `system`：T1204A 新增，用于 `escaping_station`、`escape_intervention_dialogue` 等系统状态在地点快照、NPC 面板和记忆摘要中显示中文名称；它不是普通 `assign_action` 可执行行动，不包含资源、工位或持续时间结算。
+- `eat`：使用 `workstation_type="dining_seat"` 申请一个用餐席，使用 `food_options` 定义可消耗食物及饱食度恢复量，并以 `building_efficiency_key="meal_recovery"` 应用食堂升级与损伤效率。标准进食时长为 1200 秒，食物恢复按进度逐步应用；`needs_profile="eat"` 同时表达进食仍会增加少量疲劳。
+- `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳并消耗 13 点饱食。
+- `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`，不要求神父在场，但以 `blocked_by_active_action_id="lead_mass"` 声明互斥；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`，并以 `interrupts_action_ids` 中断普通祈祷；`attend_mass` 使用 `chapel_prayer_seat`，以 `required_active_action_id="lead_mass"` 和 `complete_with_required_action=true` 绑定主持生命周期。三者都绑定 `needs_profile="prayer_rest"`。
+- `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money`、`skill="医术"`、`needs_profile="light_work"` 和 `timed_experience` 作为行为声明；具体目标校验、费用扣除、医术加速、有效治疗时长、HP 恢复和成长由 `ActionSystem` / `NPCSystem` 结算。
+- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。
+- `clinic_patient`：读取 `location_required="clinic"`、`workstation_type="clinic_patient_bed"`、`required_active_action_id="work_clinic_doctor"` 和 `needs_profile="clinic_rest"`。只有受伤且未昏迷 NPC 可执行；无在岗医生时开始失败，活动中全部医生离岗时中断失败。团队、诊所升级与损伤效率由程序合成，不建立医生—病人一对一绑定。
+- `training_instructor`：读取 `location_required="training_ground"`、`workstation_type="training_instructor_station"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds` 和 `needs_profile="training_instructor"`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时参与全教官团队效率并提升“教练”。
+- `training_student`：读取 `location_required="training_ground"`、`workstation_type="training_practice_slot"`、`required_active_action_id="work_training_instructor"`、`student_skill_interval_seconds` 和 `needs_profile="training_student"`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；全部教官离岗时当前受训中断失败。训练项目由受训者当前主武器 / 坐骑决定。全部在岗教官的人数、“教练”和对应项目熟练度组成团队效率，与训练场升级、损伤效率一起作用于全部训练位。
+- `system`：T1204A 新增，用于 `escaping_station`、`escape_intervention_dialogue` 等系统状态在地点快照、NPC 面板和记忆摘要中显示中文名称；它不是普通 `assign_action` 可执行行动，但仍必须通过 `needs_profile` 声明其持续生活消耗。
 
-`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。不要在 `data/action_defs.json` 中新增类似“修补围墙”或“升级菜园”的固定建筑行动；建筑 HP、资源预付、修复/升级倒计时和协助者加成都由 `BuildingSystem` 结算。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `local_public`，payload 通过 `building_id` 保留实际目标建筑。
+`assist_repair` 由 `ActionSystem.debug_assign_repair_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在修复作业。`assist_upgrade` 由 `ActionSystem.debug_assign_upgrade_assist(npc_id, building_id)` 接收 `building_id` 参数，并读取 `BuildingSystem` 当前是否存在升级作业。二者只在 `data/action_defs.json` 中各保留一条参数化行为，不能为每栋建筑复制定义；建筑 HP、资源预付、倒计时和协助者加成都由 `BuildingSystem` 结算。两者使用 `needs_profile="heavy_work"`，并以 `timed_experience={skill:"工程", interval_seconds:3600, amount:1}` 按真正推动作业的有效时长成长。协助治疗使用相同结构按有效治疗时长增加“医术”；目标在当前 tick 中复苏时，超出复苏时点的时间不得结算生活消耗或经验。协助修复/协助升级都是室外广场行为，事件 `location_id` 固定为 `plaza`，`visibility` 固定为 `local_public`，payload 通过 `building_id` 保留实际目标建筑。
+
+## Activity Needs Definition
+
+`data/activity_needs.json` 是 NPC 持续行动饱食 / 疲劳的唯一数值源：
+
+```json
+{
+  "schema_version": 1,
+  "unit": "points_per_game_hour",
+  "defaults": {
+    "idle_profile": "idle",
+    "movement_profile": "movement",
+    "unconscious_profile": "unconscious_rest"
+  },
+  "behavior_mode_profiles": {
+    "rally": "rally",
+    "combat": "combat",
+    "avoid_combat": "avoid_combat",
+    "escaped": "escape"
+  },
+  "profiles": {
+    "idle": {"satiety_per_hour": -0.5, "fatigue_per_hour": 0.5},
+    "heavy_work": {"satiety_per_hour": -4.0, "fatigue_per_hour": 8.0},
+    "combat": {"satiety_per_hour": -8.0, "fatigue_per_hour": 16.0},
+    "sleep": {"satiety_per_hour": -2.0, "fatigue_per_hour": -15.3846153846}
+  }
+}
+```
+
+- `satiety_per_hour < 0` 表示消耗饱食，`fatigue_per_hour > 0` 表示增加疲劳，`fatigue_per_hour < 0` 表示恢复疲劳。
+- `NPCNeedsSystem` 按 tick 开始时的权威状态为每名 NPC 选择唯一档位，避免移动、行动和行为模式重复扣算；行动在 tick 中途完成时，剩余时间按 idle 结算。
+- 小数变化按 NPC 累积余数，写入 `NPCSystem` 时仍保持整数状态；达到 0 / 100 边界后不会保留继续向边界外增长的债务。
+- `tools/verify_activity_needs_framework.gd` 必须动态穷尽全部行动定义，检查每条 `needs_profile` 存在、禁用旧生活字段、工作 / 训练 / 协助和休息方向正确，并覆盖所有行为模式映射。
 
 ## Weapon Definition
 
@@ -1007,8 +1301,7 @@ T0402 已接入的行动事件 payload：
     "input_resources": {},
     "output_resources": {"grain": 3},
     "building_hp_restore": 0,
-    "satiety_delta": -4,
-    "fatigue_delta": 8,
+    "needs_profile": "heavy_work",
     "workstation_id": "garden_plot_01",
     "building_id": "garden",
     "base_duration_seconds": 3600,
@@ -1253,7 +1546,7 @@ T1004/T1005 起，首次睡眠总结完成后会清空指定 NPC 当天 `event_l
 }
 ```
 
-主厅、围墙、城门、后门、仓库等不可进入实体不作为 NPC 常规进入地点；它们只提供可传播外部状态，不暴露内部 NPC、NPC 状态或位置状态。所有建筑的外部 `level / condition / is_enterable / operational_efficiency` 进入广场 `building_external_states`，其中 `operational_efficiency` 是供 NPC 信息传播的离散分档值；HP、Max HP、精确效率和剩余修复 / 升级时长不直接作为 NPC 见闻字段。可进入建筑内部的位置数量不使用额外聚合数字广播；容量变化通过按位置 ID 的新增 / 移除差量表达，改名、改类型和占用变化同理。NPC 进入广场时，应在进入者的见闻库写入当前广场在场 NPC、这些 NPC 的生命状态 / 行动状态、公告牌当前通告、参考日程及非强制备注和这些建筑当前外部状态，但 `location_entered` 事件本身只记录进入广场的行动事实，不包含过去事件历史。
+主厅、围墙、城门、后门、仓库等不可进入实体不作为 NPC 常规进入地点；它们只提供可传播外部状态，不暴露内部 NPC、NPC 状态或位置状态。所有建筑的外部 `level / condition / is_enterable / operational_efficiency` 进入广场 `building_external_states`，其中 `operational_efficiency` 是供 NPC 信息传播的离散分档值；HP、Max HP、精确效率和剩余修复 / 升级时长不直接作为 NPC 见闻字段。可进入建筑内部的位置数量不使用额外聚合数字广播；容量变化通过按位置 ID 的新增 / 移除差量表达，改名、改类型和占用变化同理。NPC 进入广场时，应在进入者的见闻库写入当前广场在场 NPC、这些 NPC 的生命状态 / 行动状态和这些建筑当前外部状态，不写公告牌当前通告、参考日程或非强制备注；公告牌两页只在守备官发布实际变更时通过各自事件向全站可接收见闻的 NPC 广播一次。`location_entered` 事件本身只记录进入广场的行动事实，不包含过去事件历史。
 
 T0035/T0037 后的当前 `special_state` 示例：铁匠铺 / 工械坊使用 `{"production":{"target_item_id":"item_sword_shield","target_name":"剑盾","completed_stages":2,"total_stages":4,"current_stage_index":3,"current_stage_name":"锻造配件"}}`；马厩使用 `{"horses":{"total":2,"adult":2,"foal":0}}`。这两个结构都是室内状态，严禁复制进上方广场 `building_external_states`。在场增量沿用 `location_status_changed`，`reason` 固定为 `building_internal_special_state_changed`，变化字段放入 `changed_special_state`；周期小数进度和马匹个体详情不允许出现在该 payload。
 
@@ -1271,8 +1564,8 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 
 对话 Schema 位于 `backend/schemas/npc_ai.py`：
 
-- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T0041 要求 `allowed_actions` 至少一条，并与每日计划复用 `data/action_defs.json` 驱动的动态候选构造链路；它只表示目标 NPC 的对话能力边界，不是计划或已执行行动。T0029 新增 `dialogue_phase=conversation|invitation`；T0030 要求 NPC-NPC 请求顶层与 `dialogue_state` 的 `max_rounds` 都为 0，并携带一致的 `soft_round_threshold` 与非空 `soft_round_guidance`。T0061 后 `npc_setting` 和共享 `NPCIdentity` 只携带宽松 `speech_style`，不再携带 `signature_lines`。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。T1204A 后，逃离挽留中的玩家消息使用 `interaction_context == "escape_intervention"` 和 `escape_intervention_round`，响应 `intent` 只解析 `stay_after_intervention` / `leave_after_intervention`；逃离挽留攻击不构造该请求。
-- `NPCDialogueResponse`：返回 `replyer_id`、`reply_text`、`response_kind`、`invitation_result`、`intent`、`emotion`、`recruitment_result`、`wartime_reaction`、`should_end_dialogue` 和建议事件类型。后端与 Godot 都做跨字段校验：NPC-NPC 请求必须由目标 NPC 回复且 `response_kind=reply_to_npc`；邀请阶段 `invitation_result` 必须为 `accept|reject`，拒绝必须 `intent=end_talk` 且 `should_end_dialogue=true`，接受不得在正式对话开始前结束；正式回复必须用 `invitation_result=not_applicable`。玩家 / 逃离挽留请求必须 `response_kind=reply_to_player` 且 `invitation_result=not_applicable`。集结 / 战斗模式下的已入伍 NPC 回复可返回 `wartime_reaction = none | escape | morale_boost`。它只表达 NPC 意向；征召状态变化、工作打断、战时 buff、逃离、模式切换和事件写入由 Godot 系统完成。
+- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T0041 要求 `allowed_actions` 至少一条，并与每日计划复用 `data/action_defs.json` 驱动的动态候选构造链路；它只表示目标 NPC 的对话能力边界，不是计划或已执行行动。T0029 新增 `dialogue_phase=conversation|invitation`；T0030 要求 NPC-NPC 请求顶层与 `dialogue_state` 的 `max_rounds` 都为 0，并携带一致的 `soft_round_threshold` 与非空 `soft_round_guidance`。T0061 后 `npc_setting` 和共享 `NPCIdentity` 只携带宽松 `speech_style`，不再携带 `signature_lines`。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。逃离挽留中的玩家消息使用 `interaction_context == "escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击不构造该请求。
+- 对话响应：T0087 后玩家、NPC-NPC 与逃离挽留分别使用三个封闭 Schema。NPC-NPC 请求必须由目标 NPC 回复且 `response_kind=reply_to_npc`；邀请阶段 `invitation_result=accept|reject`，拒绝要求 `should_end_dialogue=true`，接受不得在正式对话开始前结束；正式回复使用 `invitation_result=not_applicable`。玩家对话使用 `response_kind=reply_to_player`，应征只由 `recruitment_result` 表达；集结 / 战斗下符合资格者可返回 `wartime_reaction=none|escape|morale_boost`。逃离挽留使用 `response_kind=reply_to_player` 与 `escape_intervention_result=stay|leave`。征召状态、工作打断、战时 buff、逃离、模式切换和事件写入仍由 Godot 权威系统完成。
 
 T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。
 
@@ -1286,7 +1579,7 @@ T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化�
 其他 T0601 后端 AI Schema：
 
 - `DailyPlanRequest` / `DailyPlanResponse`：每日计划；业务响应必须包含 24 条 `PlanItem`。
-- `PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`：对话与日常行动失败共用的计划影响范围判别。两类都携带动态 `station_context`、统一 NPC 人设 / 状态 / 指令 / 长短期记忆 / 地点、候选与实时环境及原 24 小时计划；`trigger_kind=dialogue` 另要求本轮完整 `dialogue_history`、结束原因和会话元数据，`trigger_kind=action_failure` 另要求程序权威 `failed_plan_item`、`failure_type`、`failure_summary`、必要 `failure_context`、当前 / 最低工作阶段数。输出仍只有空或精确 `revision_hours`，不输出计划项。旧 `DialoguePlanRevisionJudgement*` 为兼容别名。
+- `PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`：对话与日常行动失败共用的计划影响范围判别。两类都携带动态 `station_context`、统一 NPC 人设 / 状态 / 指令 / 长短期记忆 / 地点、候选与实时环境及原 24 小时计划；`trigger_kind=dialogue` 另要求本轮完整 `dialogue_history`、结束原因和会话元数据，`trigger_kind=action_failure` 另要求程序权威 `failed_plan_item`、`failure_type`、`failure_summary`、必要 `failure_context`、当前 / 建议工作阶段数。工作数量字段为 Prompt 统计兼容项，不是响应接受门槛。输出仍只有空或精确 `revision_hours`，不输出计划项。
 - `PlanRevisionRequest` / `PlanRevisionResponse`：通用判别非空或其他程序直接触发后的指定小时计划修订；既有完整修订上下文继续保留，响应小时必须与请求 `revision_hours` 完全一致。
 - `DailyReflectionRequest` / `DailyReflectionResponse`：首次睡眠总结、增量日记和替换式知识图谱键值更新。
 - `KnowledgeGraphUpdateRequest` / `KnowledgeGraphUpdateResponse`：独立知识图谱更新。

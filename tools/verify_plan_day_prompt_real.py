@@ -27,10 +27,21 @@ from tools.station_context_fixture import build_station_context  # noqa: E402
 
 def _allowed_actions() -> list[ActionCandidate]:
     return [
-        ActionCandidate(action_id="work_garden", name="照料菜园", location_id="garden", tags=["work"]),
-        ActionCandidate(action_id="work_dining_hall", name="加工餐食", location_id="dining_hall", tags=["work"]),
-        ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", location_id="dining_hall", tags=["eat"]),
-        ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", location_id="dormitory", tags=["sleep"]),
+        ActionCandidate(action_id="work_garden", name="照料菜园", action_kind="work", location_id="garden", tags=["work"]),
+        ActionCandidate(action_id="work_dining_hall", name="加工餐食", action_kind="work", location_id="dining_hall", tags=["work"]),
+        ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", action_kind="eat", location_id="dining_hall", tags=["eat"]),
+        ActionCandidate(
+            action_id="drink_wine",
+            name="饮酒",
+            action_kind="drink",
+            tags=["drink"],
+            context={
+                "eligible": True,
+                "available_now": True,
+                "description": "本人确实持有酒；开始时消耗1份个人酒，改善心情并让过去伤痛暂时淡化。",
+            },
+        ),
+        ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", action_kind="sleep", location_id="dormitory", tags=["sleep"]),
         ActionCandidate(
             action_id="pray_at_chapel",
             name="去小教堂祈祷",
@@ -77,7 +88,7 @@ def _allowed_actions() -> list[ActionCandidate]:
             tags=["assist_upgrade", "engineering"],
             context={"building_level": 1},
         ),
-        ActionCandidate(action_id="idle", name="等待", location_id=None, tags=["idle"]),
+        ActionCandidate(action_id="idle", name="等待", action_kind="idle", location_id=None, tags=["idle"]),
     ]
 
 
@@ -102,9 +113,11 @@ def _payload() -> dict:
             recruited=True,
             skills={"耕种": 76, "厨艺": 12, "工程": 20, "剑盾": 8},
             equipment={},
+            money=2,
+            wine=1,
         ),
         current_order=CurrentOrderContext(
-            text="白天至少安排六个工作阶段准备粮食，并安排一个阶段协助正在升级的工械坊，加快工程进度。",
+            text="白天至少安排六个工作阶段准备粮食，安排一个阶段协助正在升级的工械坊，并只安排一个饮酒阶段缓一缓。",
             issued_by="guard_officer",
             issued_day=2,
             issued_time="06:30:00",
@@ -160,8 +173,9 @@ def _payload() -> dict:
         },
         "planning_rules": [
             "返回 24 个小时计划项，每个 hour 0-23 恰好出现一次。",
-            "计划至少包含 6 个工作阶段。",
+            "通常应强烈优先安排至少 6 个工作阶段，但这不是程序硬门槛。",
             "只能选择 allowed_actions 中的 action_id，或选择 idle。",
+            "drink_wine 每阶段实际消耗 1 份个人酒，不能超过 npc.state.wine。",
             "current_order 只是守备官当前指令参考，不是强制行动。",
             "不得让模型直接结算资源、HP、建筑修复、训练成长或战斗结果。",
         ],
@@ -185,9 +199,12 @@ def _validate_plan(body: dict, allowed_action_ids: set[str], work_action_ids: se
         "plan selected available_now=false attend_mass as an immediate/fixed activity",
         plan_response,
     )
-    assert sum(1 for item in plan_response.plan if item.action_id in work_action_ids) >= 6
     assert any(item.action_id == "assist_upgrade" for item in plan_response.plan), (
         "plan ignored the active assist_upgrade candidate despite the station rule and current order",
+        plan_response,
+    )
+    assert sum(1 for item in plan_response.plan if item.action_id == "drink_wine") == 1, (
+        "plan did not respect the one-wine drink_wine instruction and personal resource limit",
         plan_response,
     )
     return plan_response
@@ -216,7 +233,10 @@ def main() -> None:
         for action in _allowed_actions()
         if any(tag in {"work", "clinic_doctor", "training_instructor"} for tag in action.tags)
     }
-    _validate_plan(body, allowed_action_ids, work_action_ids)
+    plan_response = _validate_plan(body, allowed_action_ids, work_action_ids)
+    work_phase_count = sum(
+        1 for item in plan_response.plan if item.action_id in work_action_ids
+    )
 
     usage_response = client.get("/debug/llm_usage")
     assert usage_response.status_code == 200
@@ -228,7 +248,8 @@ def main() -> None:
 
     print(
         "verify_plan_day_prompt_real: ok "
-        f"provider={provider} model={usage['model_adapter']['model']} calls={usage['summary']['count']}"
+        f"provider={provider} model={usage['model_adapter']['model']} "
+        f"calls={usage['summary']['count']} work_phases={work_phase_count}"
     )
 
 

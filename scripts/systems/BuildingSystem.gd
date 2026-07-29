@@ -9,6 +9,7 @@ const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_DAMAGE_VISIBILITY := "local_public"
 const DEFAULT_REPAIR_SECONDS_PER_HP := 30.0
@@ -313,21 +314,45 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 	var workstations: Array = building.get("workstations", [])
 	var blocked_workstations: Array[Dictionary] = []
 	var blocked_by_npc_ids: Array[String] = []
+	var reserved_workstations: Array[Dictionary] = []
+	var assigned_workstation_id := _find_assigned_workstation_id(
+		workstations,
+		npc_id,
+		preferred_type
+	)
 	for index in range(workstations.size()):
 		if not workstations[index] is Dictionary:
 			continue
 		var workstation: Dictionary = workstations[index]
+		var workstation_id := str(workstation.get("id", ""))
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
 		var workstation_type := str(workstation.get("type", ""))
 		if not preferred_type.is_empty() and workstation_type != preferred_type:
 			continue
+		var assigned_npc_id := str(workstation.get("assigned_npc_id", "")).strip_edges()
+		if assigned_npc_id == "<null>":
+			assigned_npc_id = ""
+		if not assigned_workstation_id.is_empty() and workstation_id != assigned_workstation_id:
+			continue
+		if (
+			assigned_workstation_id.is_empty()
+			and not assigned_npc_id.is_empty()
+			and assigned_npc_id != npc_id
+		):
+			reserved_workstations.append({
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"assigned_npc_id": assigned_npc_id
+			})
+			continue
 		if not occupied_by.is_empty() and occupied_by != npc_id:
 			blocked_workstations.append({
-				"workstation_id": str(workstation.get("id", "")),
+				"workstation_id": workstation_id,
 				"workstation_type": workstation_type,
-				"occupied_by": occupied_by
+				"occupied_by": occupied_by,
+				"assigned_npc_id": assigned_npc_id
 			})
 			if not blocked_by_npc_ids.has(occupied_by):
 				blocked_by_npc_ids.append(occupied_by)
@@ -340,8 +365,9 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 		return {
 			"ok": true,
 			"building_id": building_id,
-			"workstation_id": str(workstation.get("id", "")),
-			"workstation_type": workstation_type
+			"workstation_id": workstation_id,
+			"workstation_type": workstation_type,
+			"assigned_npc_id": assigned_npc_id
 		}
 
 	return {
@@ -349,8 +375,10 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 		"reason": "no_free_workstation",
 		"building_id": building_id,
 		"preferred_type": preferred_type,
+		"assigned_workstation_id": assigned_workstation_id,
 		"blocked_workstations": blocked_workstations,
-		"blocked_by_npc_ids": blocked_by_npc_ids
+		"blocked_by_npc_ids": blocked_by_npc_ids,
+		"reserved_workstations": reserved_workstations
 	}
 
 
@@ -928,7 +956,8 @@ func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
 		var npc_id := str(raw_npc_id)
 		npc_system.update_npc_state(npc_id, {
 			"current_action": "idle",
-			"last_action_result": "completed_assist_repair_%s" % building_id
+			"last_action_result": "completed_assist_repair_%s" % building_id,
+			"last_action_failure_context": {}
 		})
 
 
@@ -941,7 +970,8 @@ func _release_upgrade_helpers(job: Dictionary, building_id: String) -> void:
 		var npc_id := str(raw_npc_id)
 		npc_system.update_npc_state(npc_id, {
 			"current_action": "idle",
-			"last_action_result": "completed_assist_upgrade_%s" % building_id
+			"last_action_result": "completed_assist_upgrade_%s" % building_id,
+			"last_action_failure_context": {}
 		})
 
 
@@ -956,6 +986,8 @@ func _get_repair_status(building_id: String) -> Dictionary:
 		"active": true,
 		"duration_seconds": duration,
 		"remaining_seconds": remaining,
+		"duration_text": _format_job_duration(duration, false),
+		"remaining_text": _format_job_duration(remaining, true),
 		"progress": clampf((duration - remaining) / duration, 0.0, 1.0),
 		"speed_multiplier": _get_repair_speed_multiplier(job),
 		"helper_count": helpers.size(),
@@ -975,12 +1007,24 @@ func _get_upgrade_status(building_id: String) -> Dictionary:
 		"active": true,
 		"duration_seconds": duration,
 		"remaining_seconds": remaining,
+		"duration_text": _format_job_duration(duration, false),
+		"remaining_text": _format_job_duration(remaining, true),
 		"progress": clampf((duration - remaining) / duration, 0.0, 1.0),
 		"speed_multiplier": _get_upgrade_speed_multiplier(job),
 		"helper_count": helpers.size(),
 		"helpers": helpers.duplicate(true),
 		"target_level": int(job.get("target_level", 0))
 	}
+
+
+func _format_job_duration(game_seconds: float, respect_display_precision: bool) -> String:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("format_game_duration"):
+		return str(time_system.format_game_duration(game_seconds, true, respect_display_precision))
+	var total_seconds := ceili(maxf(0.0, game_seconds))
+	var hours := total_seconds / 3600
+	var remainder := total_seconds % 3600
+	return "%d小时%d分%02d秒" % [hours, remainder / 60, remainder % 60]
 
 
 func _get_building_condition(building_id: String) -> String:
@@ -1085,6 +1129,10 @@ func _is_upgrade_helper_still_valid(building_id: String, npc_id: String) -> bool
 
 
 func debug_select_building(building_id: String) -> bool:
+	return select_building(building_id)
+
+
+func select_building(building_id: String) -> bool:
 	if not _buildings.has(building_id):
 		push_warning("Cannot select unknown building: %s" % building_id)
 		return false
@@ -1379,10 +1427,34 @@ func _normalize_workstations(building_id: String, raw_workstations: Array) -> Ar
 		workstation["id"] = workstation_id
 		workstation["name"] = workstation_name
 		workstation["type"] = station_type
+		var assigned_npc_id := str(workstation.get("assigned_npc_id", "")).strip_edges()
+		if assigned_npc_id.is_empty() or assigned_npc_id == "<null>":
+			workstation.erase("assigned_npc_id")
+		else:
+			workstation["assigned_npc_id"] = assigned_npc_id
 		if not workstation.has("occupied_by"):
 			workstation["occupied_by"] = null
 		normalized.append(workstation)
 	return normalized
+
+
+func _find_assigned_workstation_id(
+	workstations: Array,
+	npc_id: String,
+	preferred_type: String
+) -> String:
+	for raw_workstation in workstations:
+		if not raw_workstation is Dictionary:
+			continue
+		var workstation: Dictionary = raw_workstation
+		if (
+			not preferred_type.is_empty()
+			and str(workstation.get("type", "")) != preferred_type
+		):
+			continue
+		if str(workstation.get("assigned_npc_id", "")).strip_edges() == npc_id:
+			return str(workstation.get("id", ""))
+	return ""
 
 
 func _get_fixed_workstation_types(building: Dictionary, upgrade_config: Dictionary) -> Array[String]:

@@ -18,6 +18,9 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var dialog_system := root.get_node_or_null("Main/Systems/DialogSystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var game_state := root.get_node_or_null("GameState")
 	if (
@@ -26,6 +29,9 @@ func _init() -> void:
 		or memory_system == null
 		or reflection_system == null
 		or llm_bridge == null
+		or time_system == null
+		or daily_plan_system == null
+		or dialog_system == null
 		or npc_panel == null
 		or game_state == null
 	):
@@ -33,9 +39,10 @@ func _init() -> void:
 		quit(1)
 		return
 
+	time_system.set_time_scale(0.0)
 	game_state.set_time(1, 22, 0, 0)
 	if llm_bridge.has_method("set_backend_base_url"):
-		llm_bridge.set_backend_base_url("reflection-verify-invalid://backend")
+		llm_bridge.set_backend_base_url("http://127.0.0.1:1")
 	llm_bridge.request_timeout_seconds = 0.2
 
 	var npc_id := "cook_01"
@@ -79,6 +86,16 @@ func _init() -> void:
 		return
 
 	event_bus.logical_time_tick.emit(1000.0, 1.0)
+	var post_snapshot_event: Dictionary = memory_system.debug_record_player_money_given(
+		npc_id,
+		2,
+		"private"
+	)
+	var post_snapshot_event_id := str(post_snapshot_event.get("event_id", ""))
+	if post_snapshot_event_id.is_empty():
+		push_error("Could not create a post-snapshot memory event")
+		quit(1)
+		return
 	if not await _wait_for_reflection(npc_system, llm_bridge, npc_id, initial_diary_count + 1):
 		quit(1)
 		return
@@ -91,6 +108,14 @@ func _init() -> void:
 	var diary_entry: Dictionary = diary[diary.size() - 1]
 	if str(diary_entry.get("entry", "")).is_empty():
 		push_error("Diary entry should not be empty")
+		quit(1)
+		return
+	if (
+		str(diary_entry.get("record_label", "")) != "接到守备命令的第1天"
+		or str(diary_entry.get("summary_window_key", "")) != "night_1_2100"
+		or int(diary_entry.get("trigger_day", 0)) != 1
+	):
+		push_error("Diary entry lost its guard-notice night attribution: %s" % JSON.stringify(diary_entry))
 		quit(1)
 		return
 	if diary_entry.has("memory_summary") or reflection_system.get_last_reflection_result().has("memory_summary"):
@@ -109,8 +134,31 @@ func _init() -> void:
 		return
 
 	var memory_after: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
-	if int(memory_after.get("event_count", -1)) != 0 or int(memory_after.get("witness_count", -1)) != 0:
-		push_error("Daily reflection should clear NPC short-term memory after writing diary: %s" % JSON.stringify(memory_after))
+	var remaining_event_ids: Array = memory_system.get_npc_daily_event_ids(npc_id)
+	if (
+		int(memory_after.get("event_count", -1)) != 1
+		or int(memory_after.get("witness_count", -1)) != 0
+		or not remaining_event_ids.has(post_snapshot_event_id)
+	):
+		push_error("Daily reflection must clear only its request snapshot watermark: %s ids=%s" % [
+			JSON.stringify(memory_after),
+			JSON.stringify(remaining_event_ids)
+		])
+		quit(1)
+		return
+	var first_reflection_result: Dictionary = reflection_system.get_last_reflection_result()
+	var first_period: Dictionary = first_reflection_result.get("reflection_period", {})
+	if (
+		int(first_period.get("start", {}).get("day", 0)) != 1
+		or str(first_period.get("start", {}).get("time", "")) != "06:00:00"
+		or int(first_period.get("end", {}).get("day", 0)) != 1
+		or str(first_period.get("end", {}).get("time", "")) != "22:10:00"
+		or int(first_reflection_result.get("cleared_short_term_memory", {}).get(
+			"remaining_event_count",
+			-1
+		)) != 1
+	):
+		push_error("First reflection period/watermark was incorrect: %s" % JSON.stringify(first_reflection_result))
 		quit(1)
 		return
 	if not reflection_system.has_reflected_today(npc_id, 1):
@@ -125,6 +173,23 @@ func _init() -> void:
 		return
 	if (npc_system.get_npc_long_memory(npc_id).get("diary", []) as Array).size() != initial_diary_count + 1:
 		push_error("Skipped reflection should not append a second diary entry")
+		quit(1)
+		return
+	action_system.interrupt_npc_action(
+		npc_id,
+		"verify_primary_reflection_finished",
+		true
+	)
+
+	if not await _verify_cross_night_sleep_window(
+		npc_system,
+		action_system,
+		reflection_system,
+		llm_bridge,
+		time_system,
+		daily_plan_system,
+		dialog_system
+	):
 		quit(1)
 		return
 
@@ -276,6 +341,237 @@ func _init() -> void:
 	quit(0)
 
 
+func _verify_cross_night_sleep_window(
+	npc_system: Node,
+	action_system: Node,
+	reflection_system: Node,
+	llm_bridge: Node,
+	time_system: Node,
+	daily_plan_system: Node,
+	dialog_system: Node
+) -> bool:
+	const NPC_ID := "stableman_01"
+	var event_bus := root.get_node_or_null("EventBus")
+	var day_started_callback := Callable(daily_plan_system, "_on_day_started")
+	if (
+		event_bus != null
+		and event_bus.day_started.is_connected(day_started_callback)
+	):
+		# This专项 isolates the reflection window; cross-day plan batching has its
+		# own tests and would deliberately replace the installed deterministic plan.
+		event_bus.day_started.disconnect(day_started_callback)
+	time_system.set_current_time(1, 23, 30, 0)
+	if not daily_plan_system.set_npc_daily_plan(
+		NPC_ID,
+		_make_all_sleep_plan(),
+		false,
+		"verify_cross_night_sleep_window"
+	):
+		push_error("Could not install the cross-night sleep plan")
+		return false
+	if not npc_system.debug_enter_location_immediately(NPC_ID, "dormitory"):
+		push_error("Could not place stableman in dormitory for cross-night verification")
+		return false
+	if not action_system.debug_assign_sleep(NPC_ID):
+		push_error("Could not start stableman sleep for cross-night verification")
+		return false
+	await process_frame
+
+	var initial_diary_count := (
+		npc_system.get_npc_long_memory(NPC_ID).get("diary", []) as Array
+	).size()
+	if not time_system.debug_advance_game_seconds(1800.0):
+		push_error("Could not advance the first half-hour across midnight")
+		return false
+	await process_frame
+	if int(root.get_node("GameState").current_day) != 2:
+		push_error("Cross-night verification did not reach day 2 midnight")
+		return false
+	var first_half_snapshot: Dictionary = reflection_system.get_async_reflection_snapshot()
+	var first_half_window: Dictionary = (
+		first_half_snapshot.get("sleep_window_states_by_npc", {}).get(NPC_ID, {})
+		if first_half_snapshot.get("sleep_window_states_by_npc", {}) is Dictionary
+		else {}
+	)
+	if (
+		int(first_half_snapshot.get("summary_window_anchor", {}).get("hour", -1)) != 21
+		or str(first_half_window.get("window_key", "")) != "night_1_2100"
+		or absf(float(first_half_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 0.1
+	):
+		push_error("Midnight sleep accumulation did not stay in the 21:00 window: %s" % JSON.stringify(first_half_snapshot))
+		return false
+
+	var dialogue_start: Dictionary = dialog_system.start_player_dialogue(NPC_ID)
+	if not bool(dialogue_start.get("ok", false)):
+		push_error("Could not open sleep interruption dialogue: %s" % JSON.stringify(dialogue_start))
+		return false
+	var activation: Dictionary = dialog_system.call(
+		"_activate_player_dialogue_draft",
+		"verify_sleep_interruption_context"
+	)
+	var effect: Dictionary = dialog_system.call(
+		"_ensure_player_dialogue_effect_started",
+		"verify_sleep_interruption_context"
+	)
+	if (
+		not bool(activation.get("ok", false))
+		or not bool(effect.get("interrupted_action", false))
+		or str(effect.get("interrupted_action_id", "")) != "sleep_in_dormitory"
+	):
+		push_error("Player dialogue did not interrupt the active sleep action: %s / %s state=%s runtime=%s plan=%s" % [
+			JSON.stringify(activation),
+			JSON.stringify(effect),
+			JSON.stringify(npc_system.get_npc_state(NPC_ID)),
+			JSON.stringify(action_system.get_runtime_action_snapshot(NPC_ID)),
+			JSON.stringify(daily_plan_system.get_current_plan_item(NPC_ID))
+		])
+		return false
+	var interrupted_context: Dictionary = (
+		dialog_system.get_dialogue_state().get("interrupted_activity_context", {})
+		if dialog_system.get_dialogue_state().get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	var formal_payload: Dictionary = llm_bridge.build_npc_dialogue_payload(
+		NPC_ID,
+		"你刚才在干什么，谈完以后准备做什么？",
+		{
+			"dialogue_kind": "player_npc",
+			"current_round": 1,
+			"max_rounds": 999999,
+			"conversation_history": [],
+			"interrupted_activity_context": interrupted_context,
+			"dialogue_state": {
+				"visibility": "private",
+				"location_id": "dormitory",
+				"location_name": "宿舍",
+				"participants": ["guard_officer", NPC_ID]
+			}
+		}
+	)
+	var before_activity: Dictionary = (
+		formal_payload.get("interrupted_activity_context", {}).get(
+			"activity_before_interruption",
+			{}
+		)
+		if formal_payload.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	var expected_activity: Dictionary = (
+		formal_payload.get("interrupted_activity_context", {}).get(
+			"expected_activity_after_dialogue",
+			{}
+		)
+		if formal_payload.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	if (
+		str(formal_payload.get("npc_state", {}).get("current_action", "")) != "talk_to_guard_officer"
+		or str(before_activity.get("action_id", "")) != "sleep_in_dormitory"
+		or str(expected_activity.get("action_id", "")) != "sleep_in_dormitory"
+		or not bool(formal_payload.get("interrupted_activity_context", {}).get(
+			"private_to_target_npc",
+			false
+		))
+	):
+		push_error("Formal dialogue payload lost target-private sleep interruption context: %s" % JSON.stringify(formal_payload))
+		return false
+
+	if not time_system.debug_advance_game_seconds(1800.0):
+		push_error("Could not advance time while the sleep dialogue was active")
+		return false
+	var interrupted_snapshot: Dictionary = reflection_system.get_async_reflection_snapshot()
+	var interrupted_window: Dictionary = interrupted_snapshot.get(
+		"sleep_window_states_by_npc",
+		{}
+	).get(NPC_ID, {})
+	if absf(float(interrupted_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 0.1:
+		push_error("Dialogue time incorrectly counted as sleep: %s" % JSON.stringify(interrupted_window))
+		return false
+	var cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
+	if not bool(cancel_result.get("ok", false)):
+		push_error("Could not end sleep interruption dialogue: %s" % JSON.stringify(cancel_result))
+		return false
+	await process_frame
+	if str(action_system.get_runtime_action_id(NPC_ID)) != "sleep_in_dormitory":
+		push_error("Unchanged sleep plan did not resume after dialogue")
+		return false
+
+	if not time_system.debug_advance_game_seconds(1800.0):
+		push_error("Could not advance resumed sleep to the one-hour threshold")
+		return false
+	if not await _wait_for_reflection(
+		npc_system,
+		llm_bridge,
+		NPC_ID,
+		initial_diary_count + 1
+	):
+		return false
+	var first_night_diary: Array = npc_system.get_npc_long_memory(NPC_ID).get("diary", [])
+	var first_night_entry: Dictionary = first_night_diary[first_night_diary.size() - 1]
+	if (
+		int(first_night_entry.get("day", 0)) != 1
+		or int(first_night_entry.get("trigger_day", 0)) != 2
+		or str(first_night_entry.get("record_label", "")) != "接到守备命令的第1天"
+		or not reflection_system.has_completed_summary_window(NPC_ID, "night_1_2100")
+	):
+		push_error("Cross-night summary must use the 21:00 anchor attribution and retain its trigger day: %s" % JSON.stringify(first_night_entry))
+		return false
+
+	# The next 21:00 anchor creates a new eligible window even though the previous
+	# window also completed on calendar day 2.
+	time_system.set_current_time(2, 21, 0, 0)
+	if not time_system.debug_advance_game_seconds(3600.0):
+		push_error("Could not advance the next evening sleep window")
+		return false
+	if not await _wait_for_reflection(
+		npc_system,
+		llm_bridge,
+		NPC_ID,
+		initial_diary_count + 2
+	):
+		return false
+	var next_night_snapshot: Dictionary = reflection_system.get_async_reflection_snapshot()
+	var next_night_window: Dictionary = next_night_snapshot.get(
+		"sleep_window_states_by_npc",
+		{}
+	).get(NPC_ID, {})
+	if (
+		str(next_night_window.get("window_key", "")) != "night_2_2100"
+		or str(next_night_window.get("summary_status", "")) != "completed"
+		or not reflection_system.has_completed_summary_window(NPC_ID, "night_2_2100")
+	):
+		push_error("Next evening did not receive an independent summary window: %s" % JSON.stringify(next_night_snapshot))
+		return false
+	var next_night_diary: Array = npc_system.get_npc_long_memory(NPC_ID).get("diary", [])
+	var next_night_entry: Dictionary = next_night_diary[next_night_diary.size() - 1]
+	var next_period: Dictionary = next_night_entry.get("reflection_period", {})
+	if (
+		int(next_night_entry.get("day", 0)) != 2
+		or str(next_night_entry.get("record_label", "")) != "接到守备命令的第2天"
+		or int(next_period.get("start", {}).get("day", 0)) != 2
+		or int(next_period.get("end", {}).get("day", 0)) != 2
+	):
+		push_error("Next night did not continue from the previous successful snapshot: %s" % JSON.stringify(next_night_entry))
+		return false
+	return true
+
+
+func _make_all_sleep_plan() -> Array:
+	var plan: Array = []
+	for hour in range(24):
+		plan.append({
+			"hour": hour,
+			"action_id": "sleep_in_dormitory",
+			"action_name": "睡觉",
+			"source": "verify_cross_night_sleep_window",
+			"target": {},
+			"priority": 50,
+			"reason": "验证跨夜睡眠窗口累计。",
+			"dialogue_goal": ""
+		})
+	return plan
+
+
 func _wait_for_reflection(
 	npc_system: Node,
 	llm_bridge: Node,
@@ -288,5 +584,15 @@ func _wait_for_reflection(
 		var runtime: Dictionary = llm_bridge.debug_get_llm_runtime_snapshot()
 		if diary.size() == expected_diary_count and int(runtime.get("async_request_count", 0)) == 0:
 			return true
-	push_error("Timed out waiting for async daily reflection completion")
+	var reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
+	push_error("Timed out waiting for async daily reflection completion: expected=%d actual=%d runtime=%s reflection=%s" % [
+		expected_diary_count,
+		(npc_system.get_npc_long_memory(npc_id).get("diary", []) as Array).size(),
+		JSON.stringify(llm_bridge.debug_get_llm_runtime_snapshot()),
+		JSON.stringify(
+			reflection_system.get_async_reflection_snapshot()
+			if reflection_system != null
+			else {}
+		)
+	])
 	return false

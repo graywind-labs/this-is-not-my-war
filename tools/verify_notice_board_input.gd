@@ -85,8 +85,11 @@ func _init() -> void:
 	if memory_system.get_npc_witness_events(plaza_npc_id).size() != plaza_witness_before + 1:
 		_fail("Current plaza NPC did not receive notice witness")
 		return
-	if memory_system.get_npc_witness_events(indoor_npc_id).size() != indoor_witness_before:
-		_fail("Notice broadcast leaked to NPC outside the plaza")
+	if memory_system.get_npc_witness_events(indoor_npc_id).size() != indoor_witness_before + 1:
+		_fail("Indoor NPC did not receive the all-station notice witness")
+		return
+	if not str(event.get("summary", "")).contains("守备官更新了通告"):
+		_fail("Notice event summary did not identify the guard officer notice update")
 		return
 	var board_label := notice_board.get_node_or_null("VisualRoot/NoticeBoardLabel") as Label3D
 	if board_label == null or not board_label.text.contains("今晚在主厅前集合"):

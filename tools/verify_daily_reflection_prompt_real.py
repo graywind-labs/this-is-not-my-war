@@ -96,6 +96,24 @@ def _payload() -> dict:
             {"npc_id": "doctor_01", "name": "莉娜", "identity": "医生"}
         ]),
         "npc": npc.model_dump(),
+        "summary_window": {
+            "window_key": "night_2_2100",
+            "anchor_day": 2,
+            "anchor_time": "21:00:00",
+            "end_day": 3,
+            "end_time": "21:00:00",
+            "diary_label": "接到守备命令的第2天",
+            "notice_basis": "守备官在公告牌向驿站众人传达“我们奉命守住此地”的守站告示",
+        },
+        "reflection_period": {
+            "start": {"day": 1, "time": "23:10:00"},
+            "end": {"day": 2, "time": "22:30:00"},
+            "start_inclusive": False,
+            "start_basis": "上一次成功熟睡总结的请求快照水位",
+            "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
+            "snapshot_event_count": 1,
+            "snapshot_witness_count": 1,
+        },
         "day_events": [
             {
                 "event_id": "evt_heal",

@@ -141,7 +141,8 @@ func _init() -> void:
 		_fail("Could not install deterministic 24-hour plan")
 		return
 
-	# Stage one is deliberately lightweight: dialogue + original plan, without the heavy revise context.
+	# Stage one now shares the station-aware character context with formal revision,
+	# while still returning only the exact hours and never selecting an action.
 	var judgement_payload: Dictionary = original_llm_bridge.build_dialogue_plan_revision_judgement_payload(NPC_ID, {
 		"current_plan": daily_plan_system.get_npc_daily_plan(NPC_ID),
 		"dialogue_kind": "player_npc",
@@ -150,7 +151,8 @@ func _init() -> void:
 			{"speaker_id": NPC_ID, "speaker_name": "厨子", "text": "我先判断一下。"}
 		],
 		"dialogue_end_reason": "verification_completed",
-		"dialogue_context": {"dialogue_id": "slim_payload_verification"}
+		"dialogue_context": {"dialogue_id": "station_aware_payload_verification"},
+		"required_revision_hours": [CURRENT_HOUR]
 	})
 	if (
 		str(judgement_payload.get("npc_id", "")) != NPC_ID
@@ -159,18 +161,21 @@ func _init() -> void:
 		or (judgement_payload.get("dialogue_history", []) as Array).size() != 2
 		or (judgement_payload.get("current_plan", []) as Array).size() != 24
 	):
-		_fail("Dialogue judgement payload is missing its lightweight required fields: %s" % JSON.stringify(judgement_payload))
+		_fail("Dialogue judgement payload is missing required fields: %s" % JSON.stringify(judgement_payload))
 		return
-	for forbidden_field in [
+	for required_context_field in [
 		"station_context",
 		"npc",
 		"allowed_actions",
 		"current_building_states",
 		"current_resource_states"
 	]:
-		if judgement_payload.has(forbidden_field):
-			_fail("Dialogue judgement payload still contains heavy field '%s'" % forbidden_field)
+		if not judgement_payload.has(required_context_field):
+			_fail("Dialogue judgement payload lost station-aware field '%s'" % required_context_field)
 			return
+	if judgement_payload.get("required_revision_hours", []) != [CURRENT_HOUR]:
+		_fail("Dialogue judgement payload lost the required current-hour contract")
+		return
 
 	# LLMBridge must carry only the explicit selected hours into the second-stage request.
 	var payload: Dictionary = original_llm_bridge.build_npc_plan_revision_payload(NPC_ID, {
@@ -934,12 +939,9 @@ func _complete_player_dialogue(
 			"replyer_id": npc_id,
 			"reply_text": "我听见了，先保留原计划。",
 			"response_kind": "reply_to_player",
-			"invitation_result": "not_applicable",
-			"intent": "continue_talk",
 			"emotion": "neutral",
 			"recruitment_result": "none",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"kind": "player_message",
@@ -990,12 +992,9 @@ func _apply_player_dialogue_turn(
 			"replyer_id": npc_id,
 			"reply_text": "我听见了，先保留原计划。",
 			"response_kind": "reply_to_player",
-			"invitation_result": "not_applicable",
-			"intent": "continue_talk",
 			"emotion": "neutral",
 			"recruitment_result": "none",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"kind": "player_message",

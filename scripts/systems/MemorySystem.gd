@@ -24,10 +24,10 @@ const HORSE_COUNT_SPECIAL_FIELDS: Array[String] = ["total", "adult", "foal"]
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
-	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed",
+	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
 	"prayer_started", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
-	"money_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
+	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
 	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "low_hp_triggered",
 	"combat_strategy_selected",
@@ -51,6 +51,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"work_completed": ["action_id", "input_resources", "output_resources"],
 	"work_failed": ["action_id", "reason"],
 	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"],
+	"wine_consumed": ["action_id", "resource_id", "amount", "npc_wine_before", "npc_wine_after", "context_effect"],
+	"wine_given": ["amount", "resource_id", "npc_wine_before", "npc_wine_after"],
 	"prayer_started": ["action_id", "workstation_id", "duration_seconds"],
 	"prayer_completed": ["action_id", "workstation_id", "duration_seconds"],
 	"prayer_failed": ["action_id", "reason"],
@@ -231,6 +233,12 @@ func _record_location_entry_snapshot_witness(npc_id: String, location_id: String
 	var normalized_location_id := _normalize_location_id(location_id)
 	if not is_enterable_location(normalized_location_id):
 		normalized_location_id = DEFAULT_LOCATION_ID
+	var witness_snapshot := snapshot.duplicate(true)
+	if normalized_location_id == DEFAULT_LOCATION_ID:
+		# 公告牌两页改为发布时全站广播；入场快照不再重复写入同一内容。
+		witness_snapshot.erase("current_notice")
+		witness_snapshot.erase("reference_schedule")
+		witness_snapshot.erase("schedule_advisory_note")
 
 	var event := add_event({
 		"type": "location_status_changed",
@@ -242,10 +250,10 @@ func _record_location_entry_snapshot_witness(npc_id: String, location_id: String
 		"importance": 30,
 		"payload": {
 			"reason": "location_entry_snapshot",
-			"location_snapshot": snapshot.duplicate(true),
+			"location_snapshot": witness_snapshot,
 			"building_id": normalized_location_id,
 			"building_name": _get_location_name(normalized_location_id),
-			"building_snapshot": snapshot.get("building", {})
+			"building_snapshot": witness_snapshot.get("building", {})
 		}
 	})
 	if not event.is_empty():
@@ -454,12 +462,27 @@ func record_player_interaction(
 
 
 func get_npc_short_term_memory(npc_id: String) -> Dictionary:
+	var snapshot := get_npc_short_term_memory_snapshot(npc_id)
 	return {
 		"npc_id": npc_id,
-		"event_log": get_npc_daily_events(npc_id),
-		"witness_log": get_npc_witness_events(npc_id),
-		"event_count": get_npc_daily_events(npc_id).size(),
-		"witness_count": get_npc_witness_events(npc_id).size()
+		"event_log": snapshot.get("event_log", []),
+		"witness_log": snapshot.get("witness_log", []),
+		"event_count": int(snapshot.get("event_count", 0)),
+		"witness_count": int(snapshot.get("witness_count", 0))
+	}
+
+
+func get_npc_short_term_memory_snapshot(npc_id: String) -> Dictionary:
+	var event_ids := get_npc_daily_event_ids(npc_id)
+	var witness_ids := get_npc_daily_witness_ids(npc_id)
+	return {
+		"npc_id": npc_id,
+		"event_ids": event_ids,
+		"witness_ids": witness_ids,
+		"event_log": _events_from_ids(event_ids),
+		"witness_log": _events_from_ids(witness_ids),
+		"event_count": event_ids.size(),
+		"witness_count": witness_ids.size()
 	}
 
 
@@ -468,6 +491,62 @@ func get_npc_short_term_memory_ids(npc_id: String) -> Dictionary:
 		"npc_id": npc_id,
 		"event_log": get_npc_daily_event_ids(npc_id),
 		"witness_log": get_npc_daily_witness_ids(npc_id)
+	}
+
+
+func clear_npc_short_term_memory_snapshot(
+	npc_id: String,
+	snapshot: Dictionary
+) -> Dictionary:
+	if npc_id.is_empty():
+		return {
+			"ok": false,
+			"reason": "empty_npc_id",
+			"message": "NPC ID 为空。"
+		}
+	var snapshot_event_ids: Array = (
+		snapshot.get("event_ids", [])
+		if snapshot.get("event_ids", []) is Array
+		else []
+	)
+	var snapshot_witness_ids: Array = (
+		snapshot.get("witness_ids", [])
+		if snapshot.get("witness_ids", []) is Array
+		else []
+	)
+	var current_event_ids := get_npc_daily_event_ids(npc_id)
+	var current_witness_ids := get_npc_daily_witness_ids(npc_id)
+	var remaining_event_ids := _without_snapshot_ids(
+		current_event_ids,
+		snapshot_event_ids
+	)
+	var remaining_witness_ids := _without_snapshot_ids(
+		current_witness_ids,
+		snapshot_witness_ids
+	)
+	var cleared_event_count := current_event_ids.size() - remaining_event_ids.size()
+	var cleared_witness_count := current_witness_ids.size() - remaining_witness_ids.size()
+	if remaining_event_ids.is_empty():
+		_npc_daily_event_ids.erase(npc_id)
+	else:
+		_npc_daily_event_ids[npc_id] = remaining_event_ids
+	if remaining_witness_ids.is_empty():
+		_npc_daily_witness_ids.erase(npc_id)
+	else:
+		_npc_daily_witness_ids[npc_id] = remaining_witness_ids
+	if cleared_event_count > 0 or cleared_witness_count > 0:
+		_emit_npc_memory_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"snapshot_event_count": snapshot_event_ids.size(),
+		"snapshot_witness_count": snapshot_witness_ids.size(),
+		"cleared_event_count": cleared_event_count,
+		"cleared_witness_count": cleared_witness_count,
+		"remaining_event_count": remaining_event_ids.size(),
+		"remaining_witness_count": remaining_witness_ids.size(),
+		"remaining_event_ids": remaining_event_ids.duplicate(),
+		"remaining_witness_ids": remaining_witness_ids.duplicate()
 	}
 
 
@@ -906,7 +985,10 @@ func _on_building_state_changed(building_id: String) -> void:
 		var plaza_changed_fields := _diff_state_fields(
 			_last_plaza_external_states.get(building_id, {}),
 			external_snapshot,
-			["level", "condition", "is_enterable", "operational_efficiency"]
+			[
+				"level", "condition", "is_enterable", "operational_efficiency",
+				"active_job", "job_total_duration_text"
+			]
 		)
 		_last_plaza_external_states[building_id] = external_snapshot.duplicate(true)
 		_broadcast_plaza_state_changed("building_external_state_changed", {
@@ -927,7 +1009,10 @@ func _on_building_state_changed(building_id: String) -> void:
 		var location_changed_fields := _diff_state_fields(
 			_last_location_external_states.get(building_id, {}),
 			location_external_state,
-			["level", "condition", "is_enterable", "operational_efficiency"]
+			[
+				"level", "condition", "is_enterable", "operational_efficiency",
+				"active_job", "job_total_duration_text"
+			]
 		)
 		_last_location_external_states[building_id] = location_external_state.duplicate(true)
 		_broadcast_location_state_changed(building_id, "building_external_state_changed", {
@@ -981,13 +1066,24 @@ func _broadcast_public_event(event: Dictionary, location_id: String) -> void:
 	if not is_enterable_location(target_location_id):
 		target_location_id = DEFAULT_LOCATION_ID
 
-	var recipient_ids := get_location_people_present(target_location_id)
+	var recipient_ids: Array[String] = []
+	if str(event.get("type", "")) in ["plaza_notice_changed", "plaza_schedule_changed"]:
+		recipient_ids = _get_all_station_npc_ids()
+	else:
+		recipient_ids = get_location_people_present(target_location_id)
 	var subject_npc_id := str(event.get("subject_npc_id", ""))
 	var participant_npc_ids := _normalize_string_array(event.get("payload", {}).get("participant_npc_ids", []))
 	for npc_id in recipient_ids:
 		if npc_id == subject_npc_id or participant_npc_ids.has(npc_id):
 			continue
 		add_witness_event(npc_id, str(event.get("event_id", "")))
+
+
+func _get_all_station_npc_ids() -> Array[String]:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		return []
+	return _normalize_string_array(npc_system.get_npc_ids())
 
 
 func _broadcast_plaza_state_changed(
@@ -1059,12 +1155,24 @@ func _get_building_external_state_snapshot(building_id: String) -> Dictionary:
 	var building: Dictionary = building_system.get_building(building_id)
 	if building.is_empty():
 		return {}
+	var repair_status: Dictionary = building.get("repair_status", {}) if building.get("repair_status", {}) is Dictionary else {}
+	var upgrade_status: Dictionary = building.get("upgrade_status", {}) if building.get("upgrade_status", {}) is Dictionary else {}
+	var active_job := ""
+	var job_total_duration_text := ""
+	if not repair_status.is_empty():
+		active_job = "repair"
+		job_total_duration_text = str(repair_status.get("duration_text", ""))
+	elif not upgrade_status.is_empty():
+		active_job = "upgrade"
+		job_total_duration_text = str(upgrade_status.get("duration_text", ""))
 	return {
 		"id": building_id,
 		"name": str(building.get("name", building_id)),
 		"level": int(building.get("level", 1)),
 		"condition": str(building.get("condition", _derive_building_condition(building))),
 		"is_enterable": bool(building.get("is_enterable", ENTERABLE_LOCATION_IDS.has(building_id))),
+		"active_job": active_job,
+		"job_total_duration_text": job_total_duration_text,
 		"operational_efficiency": _to_operational_efficiency_band(float(building.get(
 			"operational_efficiency",
 			building.get("operational_efficiency_multiplier", 1.0)
@@ -1492,11 +1600,28 @@ func _format_summary(event: Dictionary) -> String:
 	var event_type := str(event.get("type", ""))
 	var payload: Dictionary = event.get("payload", {})
 	if event_type == "plaza_notice_changed":
-		return "广场公告更新：%s" % str(payload.get("notice", ""))
+		var notice := str(payload.get("notice", ""))
+		if str(payload.get("reason", "")) == "initial_notice_board_state":
+			return "公告牌初始通告：%s" % notice
+		var notice_actor_ids := _normalize_string_array(event.get("actor_ids", []))
+		var notice_actor_id := str(event.get("subject_npc_id", PLAZA_STATE_SUBJECT_ID))
+		if not notice_actor_ids.is_empty():
+			notice_actor_id = notice_actor_ids[0]
+		var notice_actor := _get_actor_display_name(notice_actor_id)
+		return "%s更新了通告：%s" % [notice_actor, "当前无通告。" if notice.is_empty() else notice]
 	if event_type == "plaza_schedule_changed":
+		var schedule_actor := ""
+		if str(payload.get("reason", "")) != "initial_notice_board_state":
+			var schedule_actor_ids := _normalize_string_array(event.get("actor_ids", []))
+			var schedule_actor_id := str(event.get("subject_npc_id", PLAZA_STATE_SUBJECT_ID))
+			if not schedule_actor_ids.is_empty():
+				schedule_actor_id = schedule_actor_ids[0]
+			schedule_actor = _get_actor_display_name(schedule_actor_id)
 		return _format_reference_schedule_summary(
 			payload.get("reference_schedule", []),
-			str(payload.get("schedule_advisory_note", ""))
+			str(payload.get("schedule_advisory_note", "")),
+			false,
+			schedule_actor
 		)
 	if event_type == "plaza_status_changed":
 		return _format_building_or_plaza_state_summary(payload)
@@ -1578,6 +1703,8 @@ func _format_summary(event: Dictionary) -> String:
 				_get_resource_name(str(payload.get("resource_id", ""))),
 				int(payload.get("satiety_restore", 0))
 			]
+		"wine_consumed":
+			return "%s喝了一份酒，心情有所改善，过去的伤痛也暂时淡了一些。" % actor
 		"prayer_started":
 			return "%s开始在%s%s。" % [actor, location, _get_action_name(str(payload.get("action_id", "pray_at_chapel")))]
 		"prayer_completed":
@@ -1594,6 +1721,9 @@ func _format_summary(event: Dictionary) -> String:
 		"visit_completed":
 			return "%s结束了在%s的停留。" % [actor, location]
 		"dialogue_turn":
+			var completed_transcript := _format_completed_player_dialogue_transcript(payload)
+			if not completed_transcript.is_empty():
+				return completed_transcript
 			if str(payload.get("reply_text", "")).is_empty():
 				return "%s对%s说：“%s”" % [
 					str(payload.get("speaker_name", PLAYER_DISPLAY_NAME)),
@@ -1621,6 +1751,8 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s重新评估了当前计划：%s。" % [actor, str(payload.get("summary", payload.get("reason", "计划异常")))]
 		"money_given":
 			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
+		"wine_given":
+			return "%s给了%s%d份酒。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"equipment_given":
 			return "%s把%s交给了%s。" % [PLAYER_DISPLAY_NAME, str(payload.get("equipment_name", "装备")), actor]
 		"equipment_changed":
@@ -1764,6 +1896,32 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s发生了%s事件。" % [actor, event_type]
 
 
+func _format_completed_player_dialogue_transcript(payload: Dictionary) -> String:
+	if not bool(payload.get("session_completed", false)):
+		return ""
+	var raw_history: Variant = payload.get("dialogue_text", [])
+	if not raw_history is Array:
+		return ""
+	var transcript_lines: Array[String] = []
+	for raw_turn in raw_history:
+		if not raw_turn is Dictionary:
+			continue
+		var turn: Dictionary = raw_turn
+		var turn_speaker_name := str(turn.get("speaker_name", "")).strip_edges()
+		var turn_text := str(turn.get("text", "")).strip_edges()
+		if turn_speaker_name.is_empty() or turn_text.is_empty():
+			continue
+		transcript_lines.append("%s：“%s”" % [turn_speaker_name, turn_text])
+	if transcript_lines.is_empty():
+		return ""
+	var speaker_name := str(payload.get("speaker_name", PLAYER_DISPLAY_NAME)).strip_edges()
+	var listener_name := str(payload.get("listener_name", "")).strip_edges()
+	var heading := "对话"
+	if not speaker_name.is_empty() and not listener_name.is_empty():
+		heading = "%s与%s对话" % [speaker_name, listener_name]
+	return "%s：\n%s" % [heading, "\n".join(transcript_lines)]
+
+
 func _format_combat_started_summary(payload: Dictionary) -> String:
 	var enemy_text := _format_enemy_roster_summary(payload.get("enemy_roster", []))
 	var friendly_text := _format_friendly_roster_summary(payload.get("friendly_roster", []))
@@ -1891,7 +2049,12 @@ func _format_building_or_plaza_state_summary(payload: Dictionary) -> String:
 	return "广场公告变为：%s。" % str(payload.get("current_notice", ""))
 
 
-func _format_reference_schedule_summary(raw_schedule: Variant, advisory_note: String, current_state: bool = false) -> String:
+func _format_reference_schedule_summary(
+	raw_schedule: Variant,
+	advisory_note: String,
+	current_state: bool = false,
+	update_actor: String = ""
+) -> String:
 	var schedule := _duplicate_schedule(raw_schedule)
 	var parts: Array[String] = []
 	for entry in schedule:
@@ -1903,6 +2066,8 @@ func _format_reference_schedule_summary(raw_schedule: Variant, advisory_note: St
 	var schedule_text := "暂无安排" if parts.is_empty() else "；".join(parts)
 	var normalized_note := advisory_note.strip_edges()
 	var heading := "公告牌当前参考日程" if current_state else "公告牌参考日程更新"
+	if not update_actor.is_empty():
+		heading = "%s更新了参考日程" % update_actor
 	if normalized_note.is_empty():
 		return "%s：%s。" % [heading, schedule_text]
 	return "%s：%s。备注：%s" % [heading, schedule_text, normalized_note]
@@ -2012,14 +2177,16 @@ func _format_location_entry_snapshot_summary(payload: Dictionary) -> String:
 		var plaza_parts: Array[String] = []
 		plaza_parts.append("%s现在有%s。" % [location_name, _format_people_present(snapshot.get("people_present", []))])
 		plaza_parts.append(_format_people_statuses(snapshot.get("people_statuses", [])))
-		var current_notice := str(snapshot.get("current_notice", ""))
-		if current_notice.is_empty():
-			plaza_parts.append("公告牌目前没有公告。")
-		else:
-			plaza_parts.append("公告牌写着：%s。" % current_notice)
-		var reference_schedule := _duplicate_schedule(snapshot.get("reference_schedule", []))
-		var advisory_note := str(snapshot.get("schedule_advisory_note", ""))
-		plaza_parts.append(_format_reference_schedule_summary(reference_schedule, advisory_note, true))
+		if snapshot.has("current_notice"):
+			var current_notice := str(snapshot.get("current_notice", ""))
+			if current_notice.is_empty():
+				plaza_parts.append("公告牌目前没有公告。")
+			else:
+				plaza_parts.append("公告牌写着：%s。" % current_notice)
+		if snapshot.has("reference_schedule") or snapshot.has("schedule_advisory_note"):
+			var reference_schedule := _duplicate_schedule(snapshot.get("reference_schedule", []))
+			var advisory_note := str(snapshot.get("schedule_advisory_note", ""))
+			plaza_parts.append(_format_reference_schedule_summary(reference_schedule, advisory_note, true))
 		for building_id in external_states.keys():
 			var external_state: Dictionary = external_states[building_id]
 			plaza_parts.append(_format_external_state_sentence(str(external_state.get("name", building_id)), external_state))
@@ -2055,6 +2222,11 @@ func _format_external_state_delta_sentence(building_name: String, changed_fields
 		changes.append("现在可进入" if bool(changed_fields.get("is_enterable", false)) else "现在不可进入")
 	if changed_fields.has("operational_efficiency"):
 		changes.append("运作效率变为%d%%" % int(round(float(changed_fields.get("operational_efficiency", 1.0)) * 100.0)))
+	var active_job := str(changed_fields.get("active_job", ""))
+	var duration_text := str(changed_fields.get("job_total_duration_text", ""))
+	if not duration_text.is_empty():
+		var job_label := "修复" if active_job == "repair" else "升级" if active_job == "upgrade" else "作业"
+		changes.append("本次%s预计需要%s" % [job_label, duration_text])
 	if changes.is_empty():
 		return "%s状态发生变化。" % building_name
 	return "%s%s。" % [building_name, "，".join(changes)]
@@ -2126,6 +2298,11 @@ func _format_external_state_sentence(building_name: String, external_state: Dict
 	var operational_efficiency := maxf(0.0, float(external_state.get("operational_efficiency", 1.0)))
 	if not is_equal_approx(operational_efficiency, 1.0):
 		state_parts.append("运作效率%d%%" % int(round(operational_efficiency * 100.0)))
+	var duration_text := str(external_state.get("job_total_duration_text", ""))
+	if not duration_text.is_empty():
+		var active_job := str(external_state.get("active_job", ""))
+		var job_label := "修复" if active_job == "repair" else "升级" if active_job == "upgrade" else "作业"
+		state_parts.append("本次%s预计需要%s" % [job_label, duration_text])
 	return "%s%s。" % [building_name, "，".join(state_parts)]
 
 
@@ -2287,6 +2464,17 @@ func _events_from_ids(event_ids: Array) -> Array[Dictionary]:
 		if _events_by_id.has(event_id):
 			events.append(_events_by_id[event_id].duplicate(true))
 	return events
+
+
+func _without_snapshot_ids(current_ids: Array, snapshot_ids: Array) -> Array:
+	var snapshot_set := {}
+	for raw_id in snapshot_ids:
+		snapshot_set[str(raw_id)] = true
+	var remaining: Array = []
+	for raw_id in current_ids:
+		if not snapshot_set.has(str(raw_id)):
+			remaining.append(raw_id)
+	return remaining
 
 
 func _normalize_string_array(value: Variant) -> Array[String]:

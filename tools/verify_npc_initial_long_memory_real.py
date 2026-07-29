@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from backend.app import create_app
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext
+from backend.schemas import GameTime, ModelRequestMeta, PlayerNPCDialogueResponse, SpeakerContext
 from tools.station_context_fixture import build_station_context
 
 
@@ -220,7 +220,11 @@ def main() -> None:
         )
         assert response.status_code == 200, {npc_id: response.get_json()}
         body = response.get_json()
-        dialogue = NPCDialogueResponse(**body)
+        dialogue = PlayerNPCDialogueResponse(**{
+            key: value
+            for key, value in body.items()
+            if not key.startswith("model_")
+        })
         assert body["model_provider"] == provider
         assert body["model_fallback_used"] is False
         assert dialogue.replyer_id == npc_id

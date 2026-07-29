@@ -1,5 +1,25 @@
 # COMBAT_SYSTEM.md
 
+## T0087 逃离挽留响应合同
+
+逃离挽留不再从通用 `intent` 解析结果。`dialogue_kind=escape_intervention` 的唯一业务字段是 `EscapeInterventionDialogueResponse.escape_intervention_result`，值只能为 `stay` 或 `leave`。CombatSystem 仍负责暂停 / 恢复移动、记录轮次、第五轮收口、停止逃离或继续逃离并写入事件；LLM 不决定速度、位置、行为模式或事件事实。守备官攻击的无回复路径记录 `intervention_result=guard_attack_no_reply`，不伪装成 NPC 的 stay / leave 选择。
+
+## T0081 战时生活消耗
+
+`NPCNeedsSystem` 按行为模式为战时 NPC 选择唯一生活消耗档位：集结与避战每小时 `-4 饱食 / +8 疲劳`，逃离 `-5/+10`，战斗 `-8/+16`。战斗档位是重工作的两倍，移动 / 集结 / 避战 / 逃离均不增加职业经验；逃离挽留对话在逻辑时间推进时按对话档位处理。真正 `escaped=true` 的 NPC 不再参与站内生活模拟。
+
+这些数值只消费 TimeSystem 已计算的有效逻辑秒：暂停不推进，敌人在场的 `x1` 上限和 LLM 慢速自然生效；NPCNeedsSystem 不读取玩家倍率来额外放大战斗数值，也不修改 CombatSystem 的攻击、伤害、冷却或战斗移动公式。
+
+## T0067 真实战斗心理与逃离链路验收
+
+正常参战仍是程序状态机结果，不由 LLM 直接决定：NPC 必须已入伍、持有主武器、可行动且场上有敌军，才会从集结 / 接敌或避战装备分流进入 `combat`。真实 Main 场景已验证格伦在 `avoid_combat` 中接受应征后仍因无武器继续避战，实际装备剑盾后自动进入 `combat`。
+
+低血量真实 Main 验收中，`continue_fighting`、非战斗人员的 `avoid_battle` 和 `escape_station` 已自然触发；后者实际进入逃离模式。参战低血量的 `escape_station` 与 `inspired` 在多组完整高压 / 有利上下文中仍被模型选择为 `continue_fighting`，但每个结果作为唯一允许项时均由同一真实 provider 正确返回并通过业务校验。另一个真实 `combat` 对话场景已自然返回 `wartime_reaction=morale_boost` 并实际应用士气，说明士气程序路径正常；当前偏置集中在低血量多选判定和战时逃离选择。
+
+异步低血量结果应用前会重新确认：NPC 仍存在、未昏迷 / 离站、HP 仍低于阈值、仍可行动、行为模式与战斗资格未变、敌军仍在，并且当前战斗的 `wave_id + started_event_id` 与请求发起时相同。任一条件变化都把结果标为 `discarded`，不写 `battle_psychology_result`、不加士气且不开始逃离。
+
+逃离开始现通过 `NPCSystem.set_npc_behavior_mode_and_move_to_world_position(...)` 原子完成行为中断、模式 / 状态提交和出口移动。预检或启动移动失败时不写 `escape_started`、不留下活动逃离；昏迷复苏后的续逃也复用同一接口，失败会把意向标为 `resume_failed`、移出活动逃离，再按现有敌军 / 装备条件走正常工作、战斗或避战分流。战时对话完成时触发逃离还增加了 DialogSystem 会话结束重入保护。
+
 ## T0054 驿站规则与战斗权威边界
 
 共享 `station_rules` 以站内口吻告诉 NPC：遇敌时已入伍且有主武器者保卫驿站，未入伍或没有主武器者尽量在站内避敌，低士气者可能离开甚至临阵脱逃。这用于对话、计划、战时心理和反思保持同一世界观，不直接切换 `behavior_mode`，也不自行触发警铃、集结、避战或逃离。
@@ -97,7 +117,7 @@ T1201 已实现：已入伍且有主武器 NPC 在集结模式和战斗模式下
 - 额外加入战局上下文：敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC 列表，仍在驿站但非战斗人员的 NPC 列表。
 - 在回复结构中额外输出战时心理意向，例如 `wartime_reaction = none | escape | morale_boost`。
 
-`morale_boost` 由 CombatSystem 应用为斗志激昂 buff，持续 2 游戏小时，当前提高攻击力和 NPC 实体移动速度。开始和结束分别写入 `morale_boost_started` / `morale_boost_ended`；每次战时心理结果写入 `battle_psychology_result` 并进入广场公开事件。`escape` 由 T1203 的 `start_npc_escape(...)` 执行：写入 `escape_started`，让 NPC 前往后门外出口，并在离开地图后写入 `escaped`。T1204A 后，逃离挽留回复只解析 `stay_after_intervention` / `leave_after_intervention`；停止逃离、继续逃离、对话暂停 / 恢复、移动倍率、昏迷暂停和复苏续逃都由程序结算。LLM 不直接改 HP、速度、攻击力或逃离位置。
+`morale_boost` 由 CombatSystem 应用为斗志激昂 buff，持续 2 游戏小时，当前提高攻击力和 NPC 实体移动速度。开始和结束分别写入 `morale_boost_started` / `morale_boost_ended`；每次战时心理结果写入 `battle_psychology_result` 并进入广场公开事件。`escape` 由 T1203 的 `start_npc_escape(...)` 执行：写入 `escape_started`，让 NPC 前往后门外出口，并在离开地图后写入 `escaped`。T0087 后，逃离挽留回复只解析 `escape_intervention_result=stay|leave`；停止逃离、继续逃离、对话暂停 / 恢复、移动倍率、昏迷暂停和复苏续逃都由程序结算。LLM 不直接改 HP、速度、攻击力或逃离位置。
 
 非战斗人员在避战模式下也可被守备官主动对话。该对话同样强制 `local_public`，Prompt 明确其正在躲避敌人袭击，并注入战局上下文。守备官仍可勾选“提出应征”，征召结果沿用日常对话逻辑；若避战中的 NPC 同意应征但仍无主武器，继续避战；只有已入伍且装备主武器并且场上仍有敌人时，程序才将其切入战斗模式。后端不可用或真实 provider 失败时，战时对话会使用规则 fallback 生成回复、应征结果和 `wartime_reaction`，但必须记录真实失败原因，不得用 mock 回复伪装模型成功。
 
@@ -190,9 +210,9 @@ T1103B/T1103C 当前实现：`CombatSystem` 在敌人接触扫描中检测工作
 
 ## 逃离驿站行为
 
-T1203/T1204A 已实现逃离闭环。`CombatSystem.start_npc_escape(...)` 是权威入口，战时公开对话 `wartime_reaction == "escape"`、低血量判定 `decision == "escape_station"` 或 GM `escape_npc <npc_id>` 都走同一接口。逃离开始时写入广场公开 `escape_started`，NPC 切到 `behavior_mode == "escaped"` 但 `states.escaped` 仍为 `false`，并以 `escape_intent.status == "escaping"` 前往后门外出口；这段期间普通行动和战斗 AI 不再把该 NPC 当作可用单位。逃离中的 NPC 被点击会打开 NPC 面板；若挽留轮次未用完，NPC 面板【对话】按钮调用 `DialogSystem.start_escape_intervention_dialogue(...)`，该对话强制 `local_public`、最多 5 轮、隐藏应征入口，并通过 `/npc/dialogue` 的 `dialogue_kind == "escape_intervention"` 请求结构化 stay/leave 意图。进入挽留时 `CombatSystem.pause_escape_for_dialogue(...)` 暂停移动，关闭、攻击或满 5 轮后由 `resume_escape_after_dialogue(...)` 恢复前往后门。
+T1203/T1204A 已实现逃离闭环。`CombatSystem.start_npc_escape(...)` 是权威入口，战时公开对话 `wartime_reaction == "escape"`、低血量判定 `decision == "escape_station"` 或 GM `escape_npc <npc_id>` 都走同一接口。逃离开始时写入广场公开 `escape_started`，NPC 切到 `behavior_mode == "escaped"` 但 `states.escaped` 仍为 `false`，并以 `escape_intent.status == "escaping"` 前往后门外出口；这段期间普通行动和战斗 AI 不再把该 NPC 当作可用单位。逃离中的 NPC 被点击会打开 NPC 面板；若挽留轮次未用完，NPC 面板【对话】按钮调用 `DialogSystem.start_escape_intervention_dialogue(...)`，该对话强制 `local_public`、最多 5 轮、隐藏应征入口，并通过 `/npc/dialogue` 的 `dialogue_kind == "escape_intervention"` 请求结构化 `escape_intervention_result=stay|leave`。进入挽留时 `CombatSystem.pause_escape_for_dialogue(...)` 暂停移动，关闭、攻击或满 5 轮后由 `resume_escape_after_dialogue(...)` 恢复前往后门。
 
-NPC 抵达后门外出口后，`NPCSystem` 将其标记为 `escaped=true`、`current_action="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件，并从 `CombatSystem.active_escapes` 中移除。若挽留结果为 `stay_after_intervention`，CombatSystem 会停止移动，把 `escape_intent.status` 设为 `stayed`，切回 `work` 并触发计划重评估；若结果为 `leave_after_intervention`，NPC 继续逃离，直至 5 轮上限，随后 NPC 面板【对话】置灰。未满 5 轮时玩家可关闭面板，NPC 立即继续逃离，之后仍可再次打开并再次暂停。逃离中给钱会降低 `escape_intent.speed_multiplier`；逃离挽留中的守备官攻击会提高该倍率、计为 1 轮并立即关闭面板，但不请求 NPC LLM 回复、不写攻击回复对话事件，也不写 `escape_intervention_result`。速度变化写入 `escape_speed_changed`，只有真正的挽留消息回复结果才写入 `escape_intervention_result`。如果逃离中 NPC 昏迷，`escape_intent.status` 暂停为 `paused_unconscious`，复苏后会再次移动到后门外出口。`debug_get_combat_snapshot()` 暴露 `active_escapes`、剩余挽留轮次、速度倍率与 `last_escape_result`。
+NPC 抵达后门外出口后，`NPCSystem` 将其标记为 `escaped=true`、`current_action="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件，并从 `CombatSystem.active_escapes` 中移除。若挽留结果为 `stay`，CombatSystem 会停止移动，把 `escape_intent.status` 设为 `stayed`，切回 `work` 并触发计划重评估；若结果为 `leave`，NPC 继续逃离，直至 5 轮上限，随后 NPC 面板【对话】置灰。未满 5 轮时玩家可关闭面板，NPC 立即继续逃离，之后仍可再次打开并再次暂停。逃离中给钱会降低 `escape_intent.speed_multiplier`；逃离挽留中的守备官攻击会提高该倍率、计为 1 轮并立即关闭面板，但不请求 NPC LLM 回复、不写攻击回复对话事件，也不写 `escape_intervention_result`。速度变化写入 `escape_speed_changed`，只有真正的挽留消息回复结果才写入 `escape_intervention_result`。如果逃离中 NPC 昏迷，`escape_intent.status` 暂停为 `paused_unconscious`，复苏后会再次移动到后门外出口。`debug_get_combat_snapshot()` 暴露 `active_escapes`、剩余挽留轮次、速度倍率与 `last_escape_result`。
 
 ## 基础攻击与伤害（T1104 / T1104A / T1104B / T1105）
 

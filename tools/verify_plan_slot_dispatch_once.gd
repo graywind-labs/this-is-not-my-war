@@ -107,8 +107,9 @@ func _init() -> void:
 		return
 	var started_after_next_hour := _count_events(memory_system.get_npc_daily_events(NPC_ID), "eat_started")
 
-	# Replacing the plan increments plan_version, so the same day/hour is executable
-	# once under the new version. Its slot must then again be consumed exactly once.
+	# Replacing the plan increments plan_version, but once_per_plan_hour is keyed by
+	# the logical plan item rather than plan_version. Replanning must not cause a
+	# second meal in the same hour.
 	npc_system.update_npc_state(NPC_ID, {"satiety": 0})
 	if not daily_plan_system.set_npc_daily_plan(NPC_ID, plan, false, "verify_new_plan_version"):
 		_fail("Could not install replacement plan version")
@@ -119,22 +120,16 @@ func _init() -> void:
 		return
 	var new_version_execute: Dictionary = daily_plan_system.execute_current_plan_for_npc(NPC_ID, false)
 	if not bool(new_version_execute.get("ok", false)):
-		_fail("New plan_version did not dispatch in the same day/hour: %s" % str(new_version_execute))
+		_fail("Consumed one-shot slot was not handled idempotently: %s" % str(new_version_execute))
 		return
-	if str(action_system.get_runtime_action_id(NPC_ID)) != "eat_at_dining_hall":
-		_fail("New plan_version did not start the short action")
+	if str(new_version_execute.get("status", "")) != "already_executed_once_per_plan_hour":
+		_fail("New plan_version did not preserve strict one-shot consumption: %s" % str(new_version_execute))
 		return
-	if _count_events(memory_system.get_npc_daily_events(NPC_ID), "eat_started") != started_after_next_hour + 1:
-		_fail("New plan_version did not create exactly one new eat_started event")
-		return
-	action_system._on_logical_time_tick(1200.0, 1.0)
-	for _index in range(3):
-		await process_frame
 	if not str(action_system.get_runtime_action_id(NPC_ID)).is_empty():
-		_fail("New-version completed slot was re-dispatched more than once")
+		_fail("New plan_version restarted a consumed one-shot action")
 		return
-	if _count_events(memory_system.get_npc_daily_events(NPC_ID), "eat_started") != started_after_next_hour + 1:
-		_fail("New-version slot wrote duplicate eat_started events after completion")
+	if _count_events(memory_system.get_npc_daily_events(NPC_ID), "eat_started") != started_after_next_hour:
+		_fail("New plan_version wrote a duplicate eat_started event")
 		return
 
 	print("T0025 plan slot single-dispatch verification passed.")

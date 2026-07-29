@@ -76,10 +76,7 @@ class FakeDialogueBridge:
 				"reply_text": "好，我先听你说。" if invitation else replies[mini(request_index - 1, replies.size() - 1)],
 				"response_kind": "reply_to_npc",
 				"invitation_result": "accept" if invitation else "not_applicable",
-				"intent": "end_talk" if not invitation and current_round >= 3 else "continue_talk",
 				"emotion": "neutral",
-				"recruitment_result": "none",
-				"wartime_reaction": "none",
 				"should_end_dialogue": not invitation and current_round >= 3,
 				"suggested_event_type": "dialogue_turn",
 				"debug_reason": "edge_test_fake",
@@ -164,8 +161,7 @@ func _init() -> void:
 		"stableman_01",
 		_make_plan(current_hour, "talk_to_npc", "work_stable", {
 			"target_id": "doctor_01",
-			"target_npc_id": "doctor_01",
-			"location_id": "clinic"
+			"target_npc_id": "doctor_01"
 		}, "莉娜，我们谈谈诊所工位的安排。"),
 		false,
 		"verify_batch_dialogue"
@@ -310,10 +306,8 @@ func _init() -> void:
 	dialog_system.end_dialogue("verify_plan_wait_cleanup", {"suppress_plan_reevaluation": true})
 	await create_timer(0.25).timeout
 
-	# A daily-plan-owned talk that is still waiting for its target's plan must not
-	# survive into an hour whose current plan item is no longer the same talk. The
-	# old action becomes an authoritative failure and enters the T0050 judgement
-	# chain with both the failed and replacement plan items preserved.
+	# A daily-plan-owned talk that is already waiting for its target must survive an
+	# ordinary hour boundary even when the new hour contains another plan item.
 	if not _prepare_idle_pair(npc_system, "stableman_01", "engineer_01", "plaza"):
 		_fail("Could not prepare cross-hour plan-wait dialogue pair")
 		return
@@ -329,7 +323,6 @@ func _init() -> void:
 	var cross_hour_plan := _make_plan(current_hour, "talk_to_npc", "idle", {
 		"target_id": "engineer_01",
 		"target_npc_id": "engineer_01",
-		"location_id": "plaza",
 	}, "米拉，想完以后我们谈谈。")
 	if not daily_plan_system.set_npc_daily_plan(
 		"stableman_01",
@@ -352,47 +345,57 @@ func _init() -> void:
 	):
 		_fail("Daily dialogue wait lost plan ownership metadata: %s" % JSON.stringify(cross_hour_snapshot))
 		return
-	var judgement_count_before_expiry := fake_bridge.judgement_requests.size()
-	var next_hour := (current_hour + 1) % 24
-	var next_day := int(game_state.current_day) + (1 if next_hour == 0 else 0)
-	game_state.current_day = next_day
+	var judgement_count_before_carryover := fake_bridge.judgement_requests.size()
+	var next_hour := current_hour + 1
+	if next_hour > 23:
+		_fail("Cross-hour carryover fixture requires an ordinary same-day hour boundary")
+		return
+	var next_day := int(game_state.current_day)
 	game_state.current_hour = next_hour
 	var expired_npc_ids: Array[String] = action_system.expire_invalid_daily_plan_dialogues(next_day, next_hour)
-	if expired_npc_ids != ["stableman_01"]:
-		_fail("Cross-hour dialogue wait did not expire exactly once: %s" % JSON.stringify(expired_npc_ids))
+	if not expired_npc_ids.is_empty():
+		_fail("Ordinary cross-hour dialogue wait was incorrectly expired: %s" % JSON.stringify(expired_npc_ids))
 		return
-	var expired_state: Dictionary = npc_system.get_npc_state("stableman_01")
-	var expiry_context: Dictionary = expired_state.get("last_action_failure_context", {})
+	daily_plan_system.call("_on_hour_started", next_day, next_hour)
+	var carried_snapshot: Dictionary = action_system.get_runtime_action_snapshot("stableman_01")
+	var carryover_state: Dictionary = daily_plan_system.get_dialogue_carryover_snapshot()
 	if (
-		str(expired_state.get("last_action_result", "")) != "talk_to_npc_failed_plan_superseded"
-		or str(expiry_context.get("reason", "")) != "daily_plan_item_changed_while_dialogue_pending"
-		or not bool(expiry_context.get("waited_across_hour", false))
-		or str((expiry_context.get("failed_plan_item", {}) as Dictionary).get("action_id", "")) != "talk_to_npc"
-		or str((expiry_context.get("current_plan_item", {}) as Dictionary).get("action_id", "")) != "idle"
+		str(carried_snapshot.get("action_id", "")) != "talk_to_npc"
+		or not bool((carried_snapshot.get("options", {}) as Dictionary).get("waiting_for_target_plan", false))
+		or not (carryover_state.get("deferred_npc_ids", []) as Array).has("stableman_01")
 	):
-		_fail("Cross-hour dialogue failure context is incomplete: %s" % JSON.stringify(expiry_context))
+		_fail("Cross-hour dialogue did not retain pending ownership and current-hour deferral: %s / %s" % [
+			JSON.stringify(carried_snapshot),
+			JSON.stringify(carryover_state)
+		])
 		return
 	if (
-		action_system.has_pending_action("stableman_01")
-		or action_system.is_npc_dialogue_reserved("stableman_01")
-		or action_system.is_npc_dialogue_reserved("engineer_01")
+		not action_system.has_pending_action("stableman_01")
+		or not action_system.is_npc_dialogue_reserved("stableman_01")
+		or not action_system.is_npc_dialogue_reserved("engineer_01")
 	):
-		_fail("Cross-hour dialogue expiry retained pending action or participant reservation")
+		_fail("Cross-hour dialogue did not retain pending action and participant reservations")
 		return
-	if fake_bridge.judgement_requests.size() != judgement_count_before_expiry + 1:
-		_fail("Cross-hour dialogue expiry did not enter plan revision judgement")
-		return
-	var expiry_judgement_options: Dictionary = fake_bridge.judgement_requests.back().get("options", {})
-	if (
-		str(expiry_judgement_options.get("failure_type", "")) != "plan_item_superseded"
-		or str((expiry_judgement_options.get("failed_plan_item", {}) as Dictionary).get("action_id", "")) != "talk_to_npc"
-		or str((expiry_judgement_options.get("failure_context", {}) as Dictionary).get("current_plan_item", {}).get("action_id", "")) != "idle"
-	):
-		_fail("Plan revision judgement lost cross-hour failure facts: %s" % JSON.stringify(expiry_judgement_options))
+	if fake_bridge.judgement_requests.size() != judgement_count_before_carryover:
+		_fail("Cross-hour continuation fabricated an action-failure judgement")
 		return
 	if not npc_system.clear_npc_llm_activity("engineer_01", "verify_cross_hour_target_plan_wait"):
 		_fail("Could not clear cross-hour target planning activity")
 		return
+	var carryover_start_deadline := Time.get_ticks_msec() + 1000
+	while not dialog_system.has_active_dialogue() and Time.get_ticks_msec() < carryover_start_deadline:
+		await process_frame
+	if (
+		not dialog_system.has_active_dialogue()
+		or str(dialog_system.get_dialogue_state().get("plan_action_source", "")) != "daily_plan"
+		or int(dialog_system.get_dialogue_state().get("assigned_plan_hour", -1)) != current_hour
+	):
+		_fail("Cross-hour pending talk did not continue into the autonomous dialogue session")
+		return
+	dialog_system.end_dialogue("verify_cross_hour_carryover_cleanup", {
+		"suppress_plan_reevaluation": true
+	})
+	await process_frame
 	game_state.current_day = 1
 	game_state.current_hour = current_hour
 

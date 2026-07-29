@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+from pydantic import ValidationError
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -15,14 +17,16 @@ from backend.schemas import (
     DailyPlanResponse,
     DailyReflectionRequest,
     DailyReflectionResponse,
+    EscapeInterventionDialogueResponse,
     PlanRevisionJudgementRequest,
     PlanRevisionJudgementResponse,
     GameTime,
     KnowledgeGraphUpdateRequest,
     ModelRequestMeta,
     NPCContext,
+    NPCNPCDialogueResponse,
     NPCDialogueRequest,
-    NPCDialogueResponse,
+    PlayerNPCDialogueResponse,
     NPCIdentity,
     NPCStateContext,
     PlanItem,
@@ -50,8 +54,15 @@ def _make_npc_context() -> NPCContext:
             max_hp=100,
             satiety=70,
             fatigue=20,
+            behavior_mode="avoid_combat",
+            combat_mode="avoid_combat",
+            combat_strategy={"strategy_id": "hold_position"},
+            morale_boost={"active": True, "remaining_game_seconds": 300.0},
+            escape_intent={"active": True, "status": "escaping"},
             current_location="plaza",
             current_location_name="广场",
+            money=3,
+            wine=1,
         ),
         current_order=CurrentOrderContext(
             text="优先守住城门，但不要冒进。",
@@ -65,6 +76,14 @@ def _make_npc_context() -> NPCContext:
 def main() -> None:
     game_time = GameTime(day=1, time="08:00:00", hour=8)
     npc = _make_npc_context()
+    assert npc.state.money == 3
+    assert npc.state.wine == 1
+    state_dump = npc.state.model_dump()
+    assert state_dump["behavior_mode"] == "avoid_combat"
+    assert state_dump["combat_mode"] == "avoid_combat"
+    assert state_dump["combat_strategy"]["strategy_id"] == "hold_position"
+    assert state_dump["morale_boost"]["active"] is True
+    assert state_dump["escape_intent"]["status"] == "escaping"
     station_context = StationSceneContext.model_validate(build_station_context([
         {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
     ]))
@@ -93,6 +112,38 @@ def main() -> None:
         max_rounds=5,
         npc_state=npc.state.model_dump(),
         current_order=npc.current_order,
+        interrupted_activity_context={
+            "interrupted_by_guard_officer": True,
+            "private_to_target_npc": True,
+            "activity_before_interruption": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "active",
+                "location_id": "dormitory",
+                "location_name": "宿舍",
+                "workstation_id": "dormitory_bed_02",
+                "elapsed_seconds": 1800.0,
+                "duration_seconds": 23400.0,
+            },
+            "current_plan_activity": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "planned",
+                "day": 1,
+                "hour": 8,
+                "location_id": "dormitory",
+            },
+            "expected_activity_after_dialogue": {
+                "action_id": "sleep_in_dormitory",
+                "action_name": "睡觉",
+                "phase": "planned",
+                "day": 1,
+                "hour": 8,
+                "location_id": "dormitory",
+            },
+            "resume_policy": "resume_interrupted_activity_if_plan_unchanged",
+            "resume_expected_if_plan_unchanged": True,
+        },
         interaction_context="combat",
         battlefield_context={
             "active_enemy_count": 2,
@@ -117,7 +168,32 @@ def main() -> None:
     assert "signature_lines" not in dialogue_request.npc_setting
     assert dialogue_request.interaction_context == "combat"
     assert dialogue_request.battlefield_context["active_enemy_count"] == 2
-    response = NPCDialogueResponse(
+    assert dialogue_request.interrupted_activity_context is not None
+    assert (
+        dialogue_request.interrupted_activity_context.activity_before_interruption.action_id
+        == "sleep_in_dormitory"
+    )
+    assert dialogue_request.interrupted_activity_context.resume_expected_if_plan_unchanged
+    leaked_speaker_payload = dialogue_request.model_dump()
+    leaked_speaker_payload["speaker_npc"] = npc.model_dump()
+    try:
+        NPCDialogueRequest.model_validate(leaked_speaker_payload)
+        raise AssertionError("Dialogue schema accepted another NPC's private context")
+    except ValidationError as exc:
+        assert "speaker_npc" in str(exc)
+
+    leaked_speaker_state_payload = dialogue_request.model_dump()
+    leaked_speaker_state_payload["speaker_context"]["state"] = {
+        "money": 3,
+        "short_term_memory": {"experienced_events": [], "witnessed_events": []},
+    }
+    try:
+        NPCDialogueRequest.model_validate(leaked_speaker_state_payload)
+        raise AssertionError("Dialogue schema accepted private data in speaker_context.state")
+    except ValidationError as exc:
+        assert "speaker_context.state must remain empty" in str(exc)
+
+    response = PlayerNPCDialogueResponse(
         replyer_id="cook_01",
         reply_text="守备官，我听见了。",
         recruitment_result="none",
@@ -125,7 +201,15 @@ def main() -> None:
     )
     assert response.replyer_id == "cook_01"
     assert response.wartime_reaction == "morale_boost"
-    assert response.invitation_result == "not_applicable"
+    try:
+        PlayerNPCDialogueResponse(
+            replyer_id="cook_01",
+            reply_text="不应接受旧字段。",
+            intent="continue_talk",
+        )
+        raise AssertionError("Player dialogue response accepted removed intent")
+    except ValidationError as exc:
+        assert "Extra inputs are not permitted" in str(exc)
 
     npc_invitation_request = dialogue_request.model_copy(update={
         "dialogue_kind": "npc_npc",
@@ -141,10 +225,9 @@ def main() -> None:
             "soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。",
         }),
     })
-    npc_invitation_response = NPCDialogueResponse(
+    npc_invitation_response = NPCNPCDialogueResponse(
         replyer_id="cook_01",
         reply_text="好，我听你说。",
-        response_kind="reply_to_npc",
         invitation_result="accept",
     )
     assert npc_invitation_request.dialogue_phase == "invitation"
@@ -192,12 +275,12 @@ def main() -> None:
     assert escape_dialogue_request.dialogue_kind == "escape_intervention"
     assert escape_dialogue_request.interaction_context == "escape_intervention"
     assert escape_dialogue_request.escape_intervention_round == 2
-    escape_response = NPCDialogueResponse(
+    escape_response = EscapeInterventionDialogueResponse(
         replyer_id="cook_01",
         reply_text="我留下。",
-        intent="stay_after_intervention",
+        escape_intervention_result="stay",
     )
-    assert escape_response.intent == "stay_after_intervention"
+    assert escape_response.escape_intervention_result == "stay"
 
     plan = [PlanItem(hour=hour, action_kind="idle", action_id="idle") for hour in range(24)]
     plan_response = DailyPlanResponse(npc_id="cook_01", plan_day=1, plan=plan)
@@ -250,13 +333,18 @@ def main() -> None:
         failed_plan_item=failed_item,
         revision_scope="selected_hours",
         revision_hours=[8, 14],
-        failure_type="order_changed",
-        failure_summary="守备官发布了新指令。",
+        failure_type="action_completed",
+        failure_summary="当前小时的短活动已经完成。",
+        failure_context={
+            "condition": "successful_plan_action_completion",
+            "requires_different_current_activity": True,
+        },
         allowed_actions=[],
     )
     assert revision_request.npc.current_order.text == npc.current_order.text
     assert revision_request.revision_scope == "selected_hours"
     assert revision_request.revision_hours == [8, 14]
+    assert revision_request.failure_type == "action_completed"
 
     battle_request = BattleJudgementRequest(
         meta=ModelRequestMeta(
@@ -280,6 +368,24 @@ def main() -> None:
         game_time=game_time,
         station_context=station_context,
         npc=npc,
+        summary_window={
+            "window_key": "night_1_2100",
+            "anchor_day": 1,
+            "anchor_time": "21:00:00",
+            "end_day": 2,
+            "end_time": "21:00:00",
+            "diary_label": "接到守备命令的第1天",
+            "notice_basis": "守备官在公告牌向驿站众人传达“我们奉命守住此地”的守站告示",
+        },
+        reflection_period={
+            "start": {"day": 1, "time": "06:00:00"},
+            "end": {"day": 1, "time": "12:00:00"},
+            "start_inclusive": True,
+            "start_basis": "守站告示传达后的首个记录范围",
+            "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
+            "snapshot_event_count": 0,
+            "snapshot_witness_count": 0,
+        },
     )
     reflection_response = DailyReflectionResponse.model_validate({
         "ok": True,

@@ -20,11 +20,13 @@ func _init() -> void:
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var order_panel := root.get_node_or_null("Main/UI/OrderPanel")
 	var event_bus := root.get_node_or_null("EventBus")
-	var order_button := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCAssignButton") as Button
+	var order_button := npc_panel.find_child("NPCAssignButton", true, false) as Button if npc_panel != null else null
+	var title_label := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/OrderTitleLabel") as Label
+	var status_label := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/OrderStatusLabel") as Label
 	var text_edit := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/OrderTextEdit") as TextEdit
 	var publish_button := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/ButtonRow/OrderPublishButton") as Button
 	var close_button := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/ButtonRow/OrderCloseButton") as Button
-	if npc_system == null or memory_system == null or npc_panel == null or order_panel == null or event_bus == null or order_button == null or text_edit == null or publish_button == null or close_button == null:
+	if npc_system == null or memory_system == null or npc_panel == null or order_panel == null or event_bus == null or order_button == null or title_label == null or status_label == null or text_edit == null or publish_button == null or close_button == null:
 		push_error("T0703 verification required nodes not found")
 		quit(1)
 		return
@@ -60,6 +62,18 @@ func _init() -> void:
 		return
 	if not text_edit.text.is_empty():
 		push_error("Initial current order should be empty")
+		quit(1)
+		return
+	if title_label.text != "给 艾达 的指令":
+		push_error("Order title should use the concise in-world wording: %s" % title_label.text)
+		quit(1)
+		return
+	if status_label.text != "驿站成员将尽量遵循守备官的指令行动。":
+		push_error("Order default status wording mismatch: %s" % status_label.text)
+		quit(1)
+		return
+	if not text_edit.placeholder_text.is_empty():
+		push_error("Order text input should not show the removed redundant placeholder")
 		quit(1)
 		return
 

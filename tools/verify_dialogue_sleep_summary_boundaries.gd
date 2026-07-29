@@ -153,12 +153,9 @@ func _init() -> void:
 			"replyer_id": npc_id,
 			"reply_text": "守备官，我听明白了，会重新安排手上的事。",
 			"response_kind": "reply_to_player",
-			"invitation_result": "not_applicable",
-			"intent": "continue_talk",
 			"emotion": "neutral",
 			"recruitment_result": "none",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"kind": "player_message",
@@ -313,6 +310,100 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var sleeping_npc_id := "engineer_01"
+	if not daily_plan_system.set_npc_daily_plan(
+		sleeping_npc_id,
+		_make_all_sleep_plan(),
+		false,
+		"verify_sleep_dialogue_payload"
+	):
+		push_error("Could not install sleep plan for dialogue payload verification")
+		quit(1)
+		return
+	if (
+		not npc_system.debug_enter_location_immediately(sleeping_npc_id, "dormitory")
+		or not action_system.debug_assign_sleep(sleeping_npc_id)
+	):
+		push_error("Could not start an actual sleep action for dialogue payload verification")
+		quit(1)
+		return
+	await process_frame
+	var sleep_dialogue: Dictionary = dialog_system.start_player_dialogue(sleeping_npc_id)
+	var sleep_activation: Dictionary = dialog_system.call(
+		"_activate_player_dialogue_draft",
+		"verify_sleep_dialogue_payload"
+	)
+	var sleep_effect: Dictionary = dialog_system.call(
+		"_ensure_player_dialogue_effect_started",
+		"verify_sleep_dialogue_payload"
+	)
+	var interrupted_context: Dictionary = (
+		dialog_system.get_dialogue_state().get("interrupted_activity_context", {})
+		if dialog_system.get_dialogue_state().get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	var sleep_payload: Dictionary = llm_bridge.build_npc_dialogue_payload(
+		sleeping_npc_id,
+		"你刚才在做什么，谈完以后准备做什么？",
+		{
+			"dialogue_kind": "player_npc",
+			"current_round": 1,
+			"max_rounds": 999999,
+			"interrupted_activity_context": interrupted_context,
+			"dialogue_state": {
+				"visibility": "private",
+				"location_id": "dormitory",
+				"location_name": "宿舍",
+				"participants": ["guard_officer", sleeping_npc_id]
+			}
+		}
+	)
+	var before_sleep: Dictionary = (
+		sleep_payload.get("interrupted_activity_context", {}).get(
+			"activity_before_interruption",
+			{}
+		)
+		if sleep_payload.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	var resume_sleep: Dictionary = (
+		sleep_payload.get("interrupted_activity_context", {}).get(
+			"expected_activity_after_dialogue",
+			{}
+		)
+		if sleep_payload.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	if (
+		not bool(sleep_dialogue.get("ok", false))
+		or not bool(sleep_activation.get("ok", false))
+		or not bool(sleep_effect.get("interrupted_action", false))
+		or str(sleep_effect.get("interrupted_action_id", "")) != "sleep_in_dormitory"
+		or str(sleep_payload.get("npc_state", {}).get("current_action", "")) != "talk_to_guard_officer"
+		or str(before_sleep.get("action_id", "")) != "sleep_in_dormitory"
+		or str(resume_sleep.get("action_id", "")) != "sleep_in_dormitory"
+		or not bool(sleep_payload.get("interrupted_activity_context", {}).get(
+			"private_to_target_npc",
+			false
+		))
+	):
+		push_error("Sleep dialogue payload lost its private interrupted/resume context: %s" % JSON.stringify(sleep_payload))
+		quit(1)
+		return
+	var sleep_cancel: Dictionary = dialog_system.cancel_displayed_dialogue()
+	for _resume_step in range(10):
+		if str(action_system.get_runtime_action_id(sleeping_npc_id)) == "sleep_in_dormitory":
+			break
+		await process_frame
+	if not bool(sleep_cancel.get("ok", false)):
+		push_error("Could not cancel the view-only sleep dialogue: %s" % JSON.stringify(sleep_cancel))
+		quit(1)
+		return
+	if str(action_system.get_runtime_action_id(sleeping_npc_id)) != "sleep_in_dormitory":
+		push_error("Cancelling the view-only sleep dialogue did not resume the unchanged sleep plan: %s" % JSON.stringify(sleep_cancel))
+		quit(1)
+		return
+
 	print("Dialogue and first sleep summary boundary verification passed.")
 	quit(0)
 
@@ -341,3 +432,19 @@ func _wait_for_async_cleanup(llm_bridge: Node) -> bool:
 			return true
 	push_error("Timed out waiting for LLM async cleanup")
 	return false
+
+
+func _make_all_sleep_plan() -> Array:
+	var plan: Array = []
+	for hour in range(24):
+		plan.append({
+			"hour": hour,
+			"action_id": "sleep_in_dormitory",
+			"action_name": "睡觉",
+			"source": "verify_sleep_dialogue_payload",
+			"target": {},
+			"priority": 50,
+			"reason": "验证睡眠对话私有上下文。",
+			"dialogue_goal": ""
+		})
+	return plan

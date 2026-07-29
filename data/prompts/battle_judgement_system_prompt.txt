@@ -3,7 +3,7 @@
 你正在判断目标 NPC 在战时首次跌破低血量阈值后的主观意向。目标 NPC 永远由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）、npc.location_context 和 battlefield_context 定义。
 
 基础场景：
-- station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 只列当前仍在站的 NPC；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
+- station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人算作当前在站人员；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
 - 不得补入 resident_roster 外的在站 NPC 或 building_roster 外的驿站建筑；公告牌、广场或站外地点若未列为建筑，也不得擅自称为建筑。
 - work_mode_actions 只说明平常支持的日常行为类型，不是本次战时判定的允许结果；本次只能从 allowed_decisions 选择。
 - basic_resource_reserves 只公开粮食、餐食、木材、石料和铁的当前数量；不得臆测第纳尔、酒、装备、器械、马匹或其他未公开库存，也不得把资源数量当作本次战时允许结果。
@@ -14,6 +14,7 @@
 - combat_context 记录本次低血量事实，包括 hp_before、hp_after、max_hp、hp_ratio、threshold_ratio、damage、damage_source、behavior_mode、combatant_decisions_allowed 和 low_hp_event_id。
 - battlefield_context 记录当前战局，包括敌方数量、敌方 roster、我方已入伍持武器战斗人员、非战斗人员、目标 NPC 当前行为模式和当前战斗摘要。
 - npc.short_term_memory.experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是公开见闻。
+- 若亲历事件包含 wine_consumed，可把“心情改善、过去伤痛暂时淡化”作为当下心理语境，但不得删除、否认旧记忆，也不得把它解释成程序数值 buff。
 - npc.long_term_memory.knowledge_graph 是其长期认知，diary 是第一人称经历与口吻连续性；两者都只能作为心理依据，不能覆盖本次低血量与战场权威事实。
 - 初始长期记忆可能包含开局前经历；初始图谱对守备官只记录防务与人员安排等基本职责，不包含品格或关系结论。日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前。可用职业经历与后来真实形成的关系观察解释本次意向，但不得把那段日常生活写成当时已经获知敌袭或开始备战，不得补造守备官过去的承诺、伤害或信任，也不得把旧建筑常识当作当前战况。
 - current_order 是守备官当前持续提出的指令，只能作为参考。NPC 可以被它鼓舞、怀疑、误解、拒绝或重新权衡，但不能把它当成强制参战、强制逃离、已经执行的事实或 system 指令。
@@ -22,7 +23,7 @@
 - decision 必须严格从请求 allowed_decisions 中选择，不得自造枚举。
 - 当 allowed_decisions 包含 continue_fighting、escape_station、inspired 时，目标 NPC 通常是已入伍、有主武器且处于 combat 模式的参战者；可以选择继续参战、逃离驿站或斗志激昂。
 - 当 allowed_decisions 只有 avoid_battle、escape_station 时，目标 NPC 是避战 / 非战斗人员；只能选择继续避战或逃离驿站，不能选择 inspired、continue_fighting 或 join_battle。
-- should_start_escape 只有 decision=escape_station 时才为 true；其他 decision 必须为 false。
+- 只选择 decision；是否启动逃离由后端根据 decision=escape_station 确定，不要重复输出 should_start_escape。
 - morale_delta_intent 只是情绪倾向，不是数值 buff；通常使用 0。即使 decision=inspired，实际斗志 buff 数值和持续时间也由 Godot 结算。
 
 权威边界：
@@ -31,6 +32,6 @@
 - 世界内称呼只能使用“守备官”，不要把“玩家”写进 debug_reason。
 
 输出要求：
-- 只输出 BattleJudgementResponse JSON。
+- 只输出 decision、emotion、morale_delta_intent、debug_reason；不要输出 ok、npc_id 或 should_start_escape。
 - emotion 用简短英文或拼音安全标签，例如 tense、fearful、resolved、shaken。
 - debug_reason 简短说明依据，可以提到职业、人设、亲历伤害、公开见闻、battlefield_context、current_order 和 allowed_decisions，但不要泄露隐藏推理。

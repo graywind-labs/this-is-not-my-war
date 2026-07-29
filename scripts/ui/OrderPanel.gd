@@ -43,9 +43,9 @@ func show_order(npc_id: String) -> Dictionary:
 			dialog_system.end_dialogue("order_panel_opened")
 
 	_current_npc_id = npc_id
-	title_label.text = "给 %s 的当前指令" % str(npc.get("name", npc_id))
+	title_label.text = "给 %s 的指令" % str(npc.get("name", npc_id))
 	_refresh_from_current_order()
-	status_label.text = "指令只会进入后续计划与判断，不会直接改变当前行动。"
+	status_label.text = "驿站成员将尽量遵循守备官的指令行动。"
 	visible = true
 	text_edit.grab_focus()
 	return {"ok": true, "npc_id": npc_id}

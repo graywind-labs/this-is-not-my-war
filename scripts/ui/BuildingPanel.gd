@@ -7,6 +7,7 @@ const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const PANEL_SCREEN_MARGIN := 16.0
 const PANEL_MIN_WIDTH := 360.0
 const PANEL_MAX_WIDTH := 420.0
@@ -54,6 +55,7 @@ var _device_slot_select: OptionButton
 var _device_deploy_button: Button
 var _device_summary_label: Label
 var _device_status_label: Label
+var _warehouse_capacity_label: Label
 var _crafting_section: VBoxContainer
 var _crafting_target_select: OptionButton
 var _crafting_recipe_label: Label
@@ -100,6 +102,7 @@ func _ready() -> void:
 	repair_button.mouse_exited.connect(_hide_action_hint)
 	upgrade_button.mouse_entered.connect(_show_upgrade_hint)
 	upgrade_button.mouse_exited.connect(_hide_action_hint)
+	_build_warehouse_capacity_label()
 	_build_crafting_section()
 	_build_horse_section()
 	_build_defense_device_section()
@@ -109,6 +112,8 @@ func _ready() -> void:
 	if event_bus != null:
 		event_bus.building_clicked.connect(_on_building_clicked)
 		event_bus.building_state_changed.connect(_on_building_state_changed)
+		if event_bus.has_signal("time_scale_changed"):
+			event_bus.time_scale_changed.connect(_on_time_scale_changed)
 		event_bus.npc_clicked.connect(_on_npc_clicked)
 		if event_bus.has_signal("defense_device_state_changed"):
 			event_bus.defense_device_state_changed.connect(_on_defense_device_state_changed)
@@ -301,6 +306,16 @@ func _on_building_state_changed(building_id: String) -> void:
 		show_building(building_id)
 
 
+func _on_time_scale_changed(
+	_player_scale: float,
+	_effective_scale: float,
+	_numeric_multiplier: float,
+	_reason: String
+) -> void:
+	if visible and not _current_building_id.is_empty():
+		show_building(_current_building_id)
+
+
 func _on_npc_clicked(_npc_id: String) -> void:
 	_hide_action_hint()
 	_cancel_pending_panel_fit()
@@ -342,6 +357,9 @@ func _flush_queued_horse_refresh() -> void:
 
 
 func _on_resource_changed(_resource_id: String, _amount: int) -> void:
+	if visible and _current_building_id == "warehouse":
+		_refresh_warehouse_capacity_label()
+		_queue_panel_fit()
 	if visible and _current_building_id == "wall":
 		_refresh_defense_device_section()
 		_queue_panel_fit()
@@ -406,6 +424,7 @@ func show_building(building_id: String) -> void:
 	workstation_label.text = _format_workstations(building.get("workstations", []))
 	location_label.text = _format_location_placeholder(building)
 	_update_action_buttons(building_system, building_id, building)
+	_refresh_warehouse_capacity_label()
 	_refresh_crafting_section()
 	_refresh_horse_section()
 	_refresh_defense_device_section()
@@ -413,6 +432,45 @@ func show_building(building_id: String) -> void:
 	if not needs_deferred_reveal:
 		visible = true
 		_set_panel_interaction_enabled(true)
+
+
+func _build_warehouse_capacity_label() -> void:
+	if _warehouse_capacity_label != null:
+		return
+	var content := location_label.get_parent() as VBoxContainer
+	if content == null:
+		return
+	_warehouse_capacity_label = Label.new()
+	_warehouse_capacity_label.name = "WarehouseCapacityLabel"
+	_warehouse_capacity_label.visible = false
+	_warehouse_capacity_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_warehouse_capacity_label.tooltip_text = "储存上限随仓库等级提高"
+	content.add_child(_warehouse_capacity_label)
+	content.move_child(_warehouse_capacity_label, location_label.get_index() + 1)
+
+
+func _refresh_warehouse_capacity_label() -> void:
+	if _warehouse_capacity_label == null:
+		return
+	_warehouse_capacity_label.visible = _current_building_id == "warehouse"
+	if not _warehouse_capacity_label.visible:
+		return
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null or not resource_system.has_method("get_warehouse_capacity_snapshot"):
+		_warehouse_capacity_label.text = "储存上限：无法读取"
+		return
+	var parts: Array[String] = []
+	for raw_item in resource_system.get_warehouse_capacity_snapshot():
+		var item: Dictionary = raw_item if raw_item is Dictionary else {}
+		parts.append("%s %d" % [
+			str(item.get("name", item.get("resource_id", ""))),
+			int(item.get("capacity", 0))
+		])
+	_warehouse_capacity_label.text = (
+		"储存上限：%s" % " / ".join(parts)
+		if not parts.is_empty()
+		else "储存上限：无"
+	)
 
 
 func _build_crafting_section() -> void:
@@ -1138,16 +1196,16 @@ func _format_location_placeholder(building: Dictionary) -> String:
 		lines.append("内部状态：封闭，无法进入或使用位置")
 
 	if not repair_status.is_empty():
-		lines.append("修复中：%d%%，剩余 %.0f 秒，x%.2f，协助 %d 人" % [
+		lines.append("修复中：%d%%，剩余 %s，x%.2f，协助 %d 人" % [
 			int(round(float(repair_status.get("progress", 0.0)) * 100.0)),
-			float(repair_status.get("remaining_seconds", 0.0)),
+			_format_remaining_duration(repair_status),
 			float(repair_status.get("speed_multiplier", 1.0)),
 			int(repair_status.get("helper_count", 0))
 		])
 	if not upgrade_status.is_empty():
-		lines.append("升级中：%d%%，剩余 %.0f 秒，x%.2f，协助 %d 人" % [
+		lines.append("升级中：%d%%，剩余 %s，x%.2f，协助 %d 人" % [
 			int(round(float(upgrade_status.get("progress", 0.0)) * 100.0)),
-			float(upgrade_status.get("remaining_seconds", 0.0)),
+			_format_remaining_duration(upgrade_status),
 			float(upgrade_status.get("speed_multiplier", 1.0)),
 			int(upgrade_status.get("helper_count", 0))
 		])
@@ -1181,15 +1239,31 @@ func _update_action_buttons(building_system: Node, building_id: String, building
 
 	repair_button.disabled = not building_system.can_repair_building(building_id)
 	if not repair_status.is_empty():
-		repair_button.text = "修复中 %.0f 秒" % float(repair_status.get("remaining_seconds", 0.0))
+		repair_button.text = "修复中 %s" % _format_remaining_duration(repair_status)
 	else:
 		repair_button.text = "修复" if hp < max_hp else "修复（已满）"
 
 	upgrade_button.disabled = not building_system.can_upgrade_building(building_id)
 	if not upgrade_status.is_empty():
-		upgrade_button.text = "升级中 %.0f 秒" % float(upgrade_status.get("remaining_seconds", 0.0))
+		upgrade_button.text = "升级中 %s" % _format_remaining_duration(upgrade_status)
 	else:
 		upgrade_button.text = "升级" if int(building.get("level", 1)) < max_level else "升级（已满）"
+
+
+func _format_remaining_duration(status: Dictionary) -> String:
+	var formatted := str(status.get("remaining_text", ""))
+	if not formatted.is_empty():
+		return formatted
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	var remaining_seconds := float(status.get("remaining_seconds", 0.0))
+	if time_system != null and time_system.has_method("format_game_duration"):
+		return str(time_system.format_game_duration(remaining_seconds, true, true))
+	var total_seconds := ceili(maxf(0.0, remaining_seconds))
+	return "%d小时%d分%02d秒" % [
+		total_seconds / 3600,
+		(total_seconds % 3600) / 60,
+		total_seconds % 60
+	]
 
 
 func _build_action_hint() -> void:

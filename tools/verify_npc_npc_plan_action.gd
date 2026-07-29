@@ -6,10 +6,12 @@ class FakeDialogueBridge:
 
 	signal dialogue_async_response_received(result: Dictionary)
 	signal dialogue_plan_revision_judgement_async_response_received(result: Dictionary)
+	signal plan_revision_async_response_received(result: Dictionary)
 
 	var request_count := 0
 	var cancelled_request_ids: Array[String] = []
 	var judgement_requests: Array[Dictionary] = []
+	var revision_requests: Array[Dictionary] = []
 
 	func request_npc_dialogue_async(npc_id: String, _speaker_text: String, options: Dictionary = {}) -> Dictionary:
 		request_count += 1
@@ -47,15 +49,68 @@ class FakeDialogueBridge:
 		return {"ok": true, "pending": true, "request_id": request_id}
 
 	func answer_judgement_unchanged(request: Dictionary) -> void:
+		var required_hours: Array = (
+			request.get("options", {}).get("required_revision_hours", []) as Array
+		)
 		dialogue_plan_revision_judgement_async_response_received.emit({
 			"ok": true,
 			"request_id": str(request.get("request_id", "")),
 			"npc_id": str(request.get("npc_id", "")),
 			"dialogue_plan_revision_judgement": {
 				"npc_id": str(request.get("npc_id", "")),
-				"needs_revision": false,
-				"revision_hours": [],
+				"needs_revision": not required_hours.is_empty(),
+				"revision_hours": required_hours.duplicate(),
 				"summary": "hour-boundary plan remains valid",
+				"model_provider": "fake_real_provider",
+				"model_name": "functional-test",
+				"model_fallback_used": false
+			}
+		})
+
+	func request_npc_plan_revision_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+		var request_id := "npc_npc_revision_%d" % (revision_requests.size() + 1)
+		var request := {
+			"request_id": request_id,
+			"npc_id": npc_id,
+			"options": options.duplicate(true)
+		}
+		revision_requests.append(request)
+		call_deferred("_answer_revision", request)
+		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func _answer_revision(request: Dictionary) -> void:
+		var options: Dictionary = request.get("options", {})
+		var revised_items: Array = []
+		var immediate_action: Variant = null
+		var requested_hours: Array = options.get("revision_hours", [])
+		var current_hour := int(options.get(
+			"request_hour",
+			requested_hours[0] if not requested_hours.is_empty() else -1
+		))
+		for raw_hour in options.get("revision_hours", []):
+			var hour := int(raw_hour)
+			var item := {
+				"hour": hour,
+				"action_kind": "visit",
+				"action_id": "visit_location",
+				"location_id": "plaza",
+				"target_id": null,
+				"priority": 60,
+				"reason": "对话后去广场继续安排",
+				"dialogue_goal": ""
+			}
+			revised_items.append(item)
+			if hour == current_hour:
+				immediate_action = item.duplicate(true)
+		plan_revision_async_response_received.emit({
+			"ok": true,
+			"request_id": str(request.get("request_id", "")),
+			"npc_id": str(request.get("npc_id", "")),
+			"plan_revision": {
+				"npc_id": str(request.get("npc_id", "")),
+				"revised_plan": revised_items,
+				"immediate_action": immediate_action,
+				"summary": "对话发起者已安排当前后续活动。",
 				"model_provider": "fake_real_provider",
 				"model_name": "functional-test",
 				"model_fallback_used": false
@@ -92,10 +147,7 @@ class FakeDialogueBridge:
 				"reply_text": "好，我接受邀请，先听你说。" if invitation else replies[mini(round_index - 1, replies.size() - 1)],
 				"response_kind": "reply_to_npc",
 				"invitation_result": "accept" if invitation else "not_applicable",
-				"intent": "end_talk" if not invitation and round_index >= 3 else "continue_talk",
 				"emotion": "neutral",
-				"recruitment_result": "none",
-				"wartime_reaction": "none",
 				"should_end_dialogue": not invitation and round_index >= 3,
 				"suggested_event_type": "dialogue_turn",
 				"debug_reason": "functional_fake",
@@ -165,6 +217,9 @@ func _init() -> void:
 	fake_bridge.dialogue_async_response_received.connect(Callable(dialog_system, "_on_dialogue_async_response_received"))
 	fake_bridge.dialogue_plan_revision_judgement_async_response_received.connect(
 		Callable(daily_plan_system, "_on_dialogue_plan_revision_judgement_async_response")
+	)
+	fake_bridge.plan_revision_async_response_received.connect(
+		Callable(daily_plan_system, "_on_plan_revision_async_response")
 	)
 
 	if not npc_system.debug_enter_location_immediately("priest_01", "clinic"):
@@ -351,6 +406,14 @@ func _init() -> void:
 	if not _has_exact_pair_judgements(fake_bridge.judgement_requests):
 		_fail("Dialogue completion must request one independent judgement for each participant: %s" % str(fake_bridge.judgement_requests))
 		return
+	for request in fake_bridge.judgement_requests:
+		var required_hours: Array = request.get("options", {}).get("required_revision_hours", [])
+		if str(request.get("npc_id", "")) == "doctor_01" and required_hours != [current_hour]:
+			_fail("Autonomous dialogue initiator did not require a current-hour revision: %s" % str(request))
+			return
+		if str(request.get("npc_id", "")) == "priest_01" and not required_hours.is_empty():
+			_fail("Dialogue target was incorrectly forced to revise the current hour: %s" % str(request))
+			return
 	if int(reevaluation_counts["doctor_01"]) != 0 or int(reevaluation_counts["priest_01"]) != 0:
 		_fail("Dialogue completion still emitted the old direct reevaluation signal: %s" % str(reevaluation_counts))
 		return
@@ -401,8 +464,8 @@ func _init() -> void:
 		_fail("Hour-boundary cleanup fabricated a judgement without dialogue content")
 		return
 
-	# Once two actual lines exist, the same hour-boundary cleanup must launch a lightweight
-	# judgement for both NPCs, while suppressing every old-hour resume token.
+	# Once two actual lines exist, an ordinary hour boundary must preserve the
+	# conversation. Judgement and new-hour dispatch happen only after it naturally ends.
 	var game_state := root.get_node("GameState")
 	var boundary_old_hour := current_hour
 	var boundary_new_hour := (boundary_old_hour + 1) % 24
@@ -431,7 +494,15 @@ func _init() -> void:
 		"priest_01",
 		"local_public",
 		2,
-		{"autonomous": true, "ui_visible": false, "replace_existing": false}
+		{
+			"autonomous": true,
+			"ui_visible": false,
+			"replace_existing": false,
+			"plan_action_source": "daily_plan",
+			"assigned_plan_day": int(game_state.current_day),
+			"assigned_plan_hour": boundary_old_hour,
+			"assigned_plan_version": int(daily_plan_system.get_plan_version("doctor_01"))
+		}
 	)
 	if not bool(actual_boundary_start.get("ok", false)):
 		_fail("Could not set up actual hour-boundary dialogue")
@@ -451,16 +522,33 @@ func _init() -> void:
 		int(game_state.current_second)
 	)
 	if (
-		dialog_system.has_active_dialogue()
-		or fake_bridge.judgement_requests.size() != actual_boundary_request_start + 2
+		not dialog_system.has_active_dialogue()
+		or fake_bridge.judgement_requests.size() != actual_boundary_request_start
 	):
 		_fail(
-			"Actual hour_started boundary did not end the exchange and launch two judgements; active=%s request_delta=%d"
+			"Actual hour_started boundary interrupted the exchange or launched judgement early; active=%s request_delta=%d"
 			% [
 				str(dialog_system.has_active_dialogue()),
 				fake_bridge.judgement_requests.size() - actual_boundary_request_start
 			]
 		)
+		return
+	var carryover_snapshot: Dictionary = daily_plan_system.get_dialogue_carryover_snapshot()
+	if (
+		not (carryover_snapshot.get("deferred_npc_ids", []) as Array).has("doctor_01")
+		or not (carryover_snapshot.get("deferred_npc_ids", []) as Array).has("priest_01")
+	):
+		_fail("Active cross-hour conversation did not defer both participants' new-hour plans")
+		return
+	dialog_system.end_dialogue("verify_cross_hour_dialogue_completed")
+	var boundary_judgement_deadline := Time.get_ticks_msec() + 1000
+	while (
+		fake_bridge.judgement_requests.size() < actual_boundary_request_start + 2
+		and Time.get_ticks_msec() < boundary_judgement_deadline
+	):
+		await process_frame
+	if fake_bridge.judgement_requests.size() != actual_boundary_request_start + 2:
+		_fail("Completed cross-hour dialogue did not launch two plan judgements")
 		return
 	var first_boundary_request: Dictionary = fake_bridge.judgement_requests[actual_boundary_request_start]
 	var sibling_boundary_request: Dictionary = fake_bridge.judgement_requests[actual_boundary_request_start + 1]
@@ -473,6 +561,8 @@ func _init() -> void:
 	# Resolve only the first NPC. Its own state changes must not bypass the unresolved
 	# sibling barrier and dispatch the new-hour action early.
 	fake_bridge.answer_judgement_unchanged(first_boundary_request)
+	await process_frame
+	await process_frame
 	var first_boundary_npc := str(first_boundary_request.get("npc_id", ""))
 	var sibling_boundary_npc := str(sibling_boundary_request.get("npc_id", ""))
 	var boundary_markers: Dictionary = daily_plan_system.get("_deferred_current_revision_execution_by_npc")
@@ -532,6 +622,9 @@ func _init() -> void:
 			_fail("Hour-boundary judgement resumed %s's old-hour prayer" % participant_id)
 			return
 		action_system.interrupt_npc_action(participant_id, "verify_hour_boundary_cleanup")
+		if not npc_system.debug_enter_location_immediately(participant_id, "chapel"):
+			_fail("Could not reset %s after hour-boundary dispatch" % participant_id)
+			return
 	current_hour = boundary_new_hour
 
 	# A behavior-mode takeover before any completed exchange ends the session but does not
@@ -544,7 +637,14 @@ func _init() -> void:
 		{"autonomous": true, "ui_visible": false, "replace_existing": false}
 	)
 	if not bool(behavior_interrupt_start.get("ok", false)):
-		_fail("Could not set up behavior-mode dialogue interruption")
+		_fail(
+			"Could not set up behavior-mode dialogue interruption: %s; doctor=%s; priest=%s"
+			% [
+				str(behavior_interrupt_start),
+				str(npc_system.get_npc_state("doctor_01")),
+				str(npc_system.get_npc_state("priest_01"))
+			]
+		)
 		return
 	var doctor_reevaluations_before := int(reevaluation_counts["doctor_01"])
 	var priest_reevaluations_before := int(reevaluation_counts["priest_01"])
@@ -695,8 +795,7 @@ func _make_dialogue_plan(current_hour: int) -> Array:
 				"priority": 85,
 				"target": {
 					"target_id": "priest_01",
-					"target_npc_id": "priest_01",
-					"location_id": "clinic"
+					"target_npc_id": "priest_01"
 				}
 			})
 		else:

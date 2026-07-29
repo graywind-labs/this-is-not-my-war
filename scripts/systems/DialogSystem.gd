@@ -29,6 +29,7 @@ var _active_dialogue: Dictionary = {}
 var _player_dialogue_draft: Dictionary = {}
 var _pending_forced_end_dialogue_id := ""
 var _dialogue_epoch_by_npc: Dictionary = {}
+var _dialogue_end_in_progress := false
 
 
 func initialize() -> void:
@@ -36,6 +37,7 @@ func initialize() -> void:
 	_player_dialogue_draft.clear()
 	_pending_forced_end_dialogue_id = ""
 	_dialogue_epoch_by_npc.clear()
+	_dialogue_end_in_progress = false
 
 
 func _ready() -> void:
@@ -107,6 +109,7 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 		"player_dialogue_effect_started": false,
 		"player_dialogue_interrupted_action": false,
 		"player_dialogue_interrupted_action_id": "",
+		"interrupted_activity_context": {},
 		"completed_player_llm_turns": 0,
 		"attack_committed": false,
 		"completed_attack_llm_turns": 0,
@@ -288,6 +291,11 @@ func start_npc_dialogue(
 	var participant_names: Dictionary = {}
 	participant_names[speaker_npc_id] = str(speaker.get("name", speaker_npc_id))
 	participant_names[target_npc_id] = str(target.get("name", target_npc_id))
+	var plan_context: Dictionary = (
+		(options.get("plan_context", {}) as Dictionary)
+		if options.get("plan_context", {}) is Dictionary
+		else {}
+	)
 	_active_dialogue = {
 		"dialogue_id": dialogue_id,
 		"dialogue_kind": "npc_npc",
@@ -310,6 +318,28 @@ func start_npc_dialogue(
 		"autonomous": autonomous,
 		"ui_visible": bool(options.get("ui_visible", not autonomous)),
 		"require_real_provider": bool(options.get("require_real_provider", autonomous)),
+		"dialogue_initiator": "npc" if autonomous else "",
+		"plan_action_source": str(plan_context.get(
+			"plan_action_source",
+			options.get("plan_action_source", "")
+		)),
+		"assigned_plan_day": int(plan_context.get(
+			"assigned_plan_day",
+			options.get("assigned_plan_day", -1)
+		)),
+		"assigned_plan_hour": int(plan_context.get(
+			"assigned_plan_hour",
+			options.get("assigned_plan_hour", -1)
+		)),
+		"assigned_plan_version": int(plan_context.get(
+			"assigned_plan_version",
+			options.get("assigned_plan_version", -1)
+		)),
+		"assigned_plan_item": (
+			(plan_context.get("assigned_plan_item", {}) as Dictionary).duplicate(true)
+			if plan_context.get("assigned_plan_item", {}) is Dictionary
+			else {}
+		),
 		"dialogue_phase": "invitation" if defer_participant_activation else "conversation",
 		"session_status": "invitation_pending" if defer_participant_activation else "starting",
 		"interrupted_plan_action_by_npc": {}
@@ -354,7 +384,8 @@ func start_autonomous_npc_dialogue(
 	opening_text: String,
 	visibility: String = "local_public",
 	soft_round_threshold: int = NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD,
-	require_real_provider: bool = true
+	require_real_provider: bool = true,
+	plan_context: Dictionary = {}
 ) -> Dictionary:
 	var clean_opening := opening_text.strip_edges()
 	if clean_opening.is_empty():
@@ -364,11 +395,22 @@ func start_autonomous_npc_dialogue(
 		"ui_visible": false,
 		"replace_existing": false,
 		"require_real_provider": require_real_provider,
-		"defer_participant_activation": true
+		"defer_participant_activation": true,
+		"plan_context": plan_context.duplicate(true)
 	})
 	if not bool(start_result.get("ok", false)):
 		return start_result
 	_active_dialogue["opening_text"] = clean_opening
+	_active_dialogue["dialogue_initiator"] = "npc"
+	_active_dialogue["plan_action_source"] = str(plan_context.get("plan_action_source", ""))
+	_active_dialogue["assigned_plan_day"] = int(plan_context.get("assigned_plan_day", -1))
+	_active_dialogue["assigned_plan_hour"] = int(plan_context.get("assigned_plan_hour", -1))
+	_active_dialogue["assigned_plan_version"] = int(plan_context.get("assigned_plan_version", -1))
+	_active_dialogue["assigned_plan_item"] = (
+		(plan_context.get("assigned_plan_item", {}) as Dictionary).duplicate(true)
+		if plan_context.get("assigned_plan_item", {}) is Dictionary
+		else {}
+	)
 	var send_result := _send_autonomous_dialogue_invitation(clean_opening, true)
 	if not bool(send_result.get("ok", false)):
 		var failure_message := str(send_result.get("message", "无法发起 NPC 对话邀请判定。"))
@@ -498,7 +540,9 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 	var effective_recruitment_request := false if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND else is_recruitment_request or bool(_active_dialogue.get("recruitment_request_pending", false))
 	if effective_recruitment_request:
 		_active_dialogue["session_had_recruitment_request"] = true
-	_active_dialogue["recruitment_request_pending"] = false
+		# “提出应征”是当前会话内的持续选项；玩家主动关闭前，
+		# 后续消息继续携带同一意图，避免每轮都要重新勾选。
+		_active_dialogue["recruitment_request_pending"] = true
 	dialogue_updated.emit(get_dialogue_state())
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null:
@@ -519,13 +563,18 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 			"location_name": str(_active_dialogue.get("location_name", "广场")),
 			"participants": [GUARD_OFFICER_ID, str(_active_dialogue.get("target_npc_id", ""))]
 		},
+		"interrupted_activity_context": (
+			(_active_dialogue.get("interrupted_activity_context", {}) as Dictionary).duplicate(true)
+			if _active_dialogue.get("interrupted_activity_context", {}) is Dictionary
+			else {}
+		),
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		request_options["escape_intervention_round"] = next_round
 		request_options["constraints"] = [
 			"本轮是守备官试图挽留正在逃离驿站的 NPC。",
-			"回复必须通过 intent 表达 stay_after_intervention 或 leave_after_intervention；程序只解析该结构化意图，不允许模型直接改变 HP、资源、建筑或移动结果。"
+			"回复必须通过 escape_intervention_result 表达 stay 或 leave；程序只解析该结构化结果，不允许模型直接改变 HP、资源、建筑或移动结果。"
 		]
 	var pending := {
 		"kind": "player_message",
@@ -589,21 +638,31 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 	var clean_text := str(pending.get("clean_text", ""))
 	_ensure_pending_player_turn_in_history(pending)
 	var npc_turn := _make_history_turn(str(_active_dialogue.get("target_npc_id", "")), npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
+	if ["accept", "reject"].has(recruitment_result):
+		# 结果跟随产生它的具体回复，后续普通回合不会覆盖历史提示；
+		# 展示文案由 UI 生成，不污染 NPC 的真实 reply_text。
+		npc_turn["recruitment_result"] = recruitment_result
 	var history: Array = _active_dialogue.get("history", [])
 	history.append(npc_turn)
 	_active_dialogue["history"] = history
 	_active_dialogue["last_reply_text"] = reply_text
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["completed_player_llm_turns"] = int(_active_dialogue.get("completed_player_llm_turns", 0)) + 1
+	var recruitment_applied_immediately := false
+	if recruitment_result == "accept":
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		var target_npc_id := str(_active_dialogue.get("target_npc_id", ""))
+		if npc_system != null and npc_system.has_method("set_npc_recruited"):
+			recruitment_applied_immediately = bool(npc_system.set_npc_recruited(target_npc_id, true))
 	if bool(_active_dialogue.get("wartime_dialogue", false)):
 		_active_dialogue["deferred_wartime_response"] = response.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		_active_dialogue["deferred_escape_response"] = response.duplicate(true)
-	var escape_intent := str(response.get("intent", ""))
+	var escape_intervention_result := str(response.get("escape_intervention_result", ""))
 	var close_escape_dialogue := (
 		dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND
 		and (
-			escape_intent == "stay_after_intervention"
+			escape_intervention_result == "stay"
 			or int(_active_dialogue.get("current_round", 0)) >= int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS))
 		)
 	)
@@ -619,6 +678,7 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 		"wartime_result": {},
 		"escape_intervention_result": {},
 		"effects_deferred_until_completion": true,
+		"recruitment_applied_immediately": recruitment_applied_immediately,
 		"dialogue_state": final_dialogue_state
 	}
 
@@ -724,11 +784,16 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 			"location_name": str(_active_dialogue.get("location_name", "广场")),
 			"participants": [GUARD_OFFICER_ID, target_npc_id]
 		},
+		"interrupted_activity_context": (
+			(_active_dialogue.get("interrupted_activity_context", {}) as Dictionary).duplicate(true)
+			if _active_dialogue.get("interrupted_activity_context", {}) is Dictionary
+			else {}
+		),
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		request_options["escape_intervention_round"] = next_round
-		request_options["constraints"].append("本轮攻击发生在逃离挽留中；攻击已由程序造成 HP 伤害，并会让逃离速度更快。NPC 仍只能通过 intent 表达留下或继续逃离。")
+		request_options["constraints"].append("本轮攻击发生在逃离挽留中；攻击已由程序造成 HP 伤害，并会让逃离速度更快。若请求模型，NPC 只能通过 escape_intervention_result 表达 stay 或 leave。")
 	if async_request and llm_bridge.has_method("request_npc_dialogue_async"):
 		var request_id := "%s_attack_%d" % [str(_active_dialogue.get("dialogue_id", "dialogue")), next_round]
 		request_options["request_id"] = request_id
@@ -770,10 +835,7 @@ func _apply_escape_attack_without_reply(pending: Dictionary) -> Dictionary:
 		"emotion": "fearful",
 		"attitude_delta": 0,
 		"relationship_delta": 0,
-		"recruitment_result": "none",
-		"wartime_reaction": "none",
-		"intent": "guard_attack_no_reply",
-		"should_end_dialogue": true,
+		"attack_result": "continue_escape",
 		"rule_fallback": true,
 		"interaction_kind": "escape_guard_attack_no_reply"
 	}
@@ -841,11 +903,11 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 		_active_dialogue["deferred_wartime_response"] = response.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		_active_dialogue["deferred_escape_response"] = response.duplicate(true)
-	var escape_intent := str(response.get("intent", ""))
+	var escape_intervention_result := str(response.get("escape_intervention_result", ""))
 	var close_escape_dialogue := (
 		dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND
 		and (
-			escape_intent == "stay_after_intervention"
+			escape_intervention_result == "stay"
 			or int(_active_dialogue.get("current_round", 0)) >= int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS))
 		)
 	)
@@ -944,7 +1006,6 @@ func _apply_autonomous_dialogue_invitation_response(result: Dictionary, pending:
 			invitation_result == "reject"
 			and (
 				not bool(response.get("should_end_dialogue", false))
-				or str(response.get("intent", "")) != "end_talk"
 			)
 		)
 	):
@@ -1326,6 +1387,11 @@ func end_displayed_dialogue(dialogue_id: String = "") -> Dictionary:
 func cancel_displayed_dialogue(dialogue_id: String = "") -> Dictionary:
 	var draft_id := str(_player_dialogue_draft.get("dialogue_id", ""))
 	if not draft_id.is_empty() and (dialogue_id.is_empty() or dialogue_id == draft_id):
+		if _is_npc_initiated_proactive_player_dialogue(_player_dialogue_draft):
+			return _failure(
+				"dialogue_cancel_locked_by_npc_initiator",
+				"驿站成员主动交涉不可取消对话。"
+			)
 		var ended_draft := get_display_dialogue_state()
 		ended_draft["end_reason"] = "player_cancelled_draft"
 		ended_draft["completion_mode"] = "cancelled"
@@ -1336,8 +1402,18 @@ func cancel_displayed_dialogue(dialogue_id: String = "") -> Dictionary:
 		return _failure("dialogue_not_started", "当前没有可取消的守备官对话。")
 	if not dialogue_id.is_empty() and dialogue_id != str(_active_dialogue.get("dialogue_id", "")):
 		return _failure("dialogue_not_started", "当前显示的对话已经结束。")
+	if _is_npc_initiated_proactive_player_dialogue(_active_dialogue):
+		return _failure(
+			"dialogue_cancel_locked_by_npc_initiator",
+			"驿站成员主动交涉不可取消对话。"
+		)
 	if bool(_active_dialogue.get("attack_committed", false)):
 		return _failure("dialogue_cancel_locked_by_attack", "守备官已经攻击 NPC，本次对话不能取消。")
+	if bool(_active_dialogue.get("session_had_recruitment_request", false)):
+		return _failure(
+			"dialogue_cancel_locked_by_recruitment_request",
+			"守备官已经在本次会话中提出应征，只能完成对话。"
+		)
 	return _cancel_active_player_dialogue("player_cancelled_dialogue")
 
 
@@ -1398,17 +1474,33 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	_active_dialogue["suspended_remaining_seconds"] = remaining
 	if remaining > 0.0:
 		return
-	if bool(_active_dialogue.get("attack_committed", false)):
-		end_dialogue("suspended_dialogue_timeout_after_attack")
+	if (
+		bool(_active_dialogue.get("attack_committed", false))
+		or _is_npc_initiated_proactive_player_dialogue(_active_dialogue)
+		or bool(_active_dialogue.get("session_had_recruitment_request", false))
+	):
+		var timeout_reason := "suspended_dialogue_timeout_after_recruitment_request"
+		if bool(_active_dialogue.get("attack_committed", false)):
+			timeout_reason = "suspended_dialogue_timeout_after_attack"
+		elif _is_npc_initiated_proactive_player_dialogue(_active_dialogue):
+			timeout_reason = "suspended_npc_proactive_dialogue_timeout"
+		end_dialogue(timeout_reason)
 	else:
 		_cancel_active_player_dialogue("suspended_dialogue_timeout")
 
 
 func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -> Dictionary:
+	if _dialogue_end_in_progress:
+		return {
+			"ok": true,
+			"ended": false,
+			"reason": "dialogue_end_in_progress"
+		}
 	if _active_dialogue.is_empty():
 		if not _player_dialogue_draft.is_empty():
 			return complete_displayed_dialogue(str(_player_dialogue_draft.get("dialogue_id", "")))
 		return {"ok": true}
+	_dialogue_end_in_progress = true
 	var suppress_plan_reevaluation := bool(options.get("suppress_plan_reevaluation", false))
 	var suppress_dialogue_resume := bool(options.get("suppress_dialogue_resume", false))
 	var is_player_dialogue := _is_player_controlled_dialogue(_active_dialogue)
@@ -1428,6 +1520,7 @@ func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -
 	ended_state["end_reason"] = reason
 	ended_state["ui_visible"] = false
 	_active_dialogue.clear()
+	_dialogue_end_in_progress = false
 	_pending_forced_end_dialogue_id = ""
 	_release_player_dialogue_target(ended_state)
 	_restore_npc_dialogue_participants(ended_state)
@@ -1469,6 +1562,11 @@ func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -
 func _cancel_active_player_dialogue(reason: String) -> Dictionary:
 	if _active_dialogue.is_empty() or not _is_player_controlled_dialogue(_active_dialogue):
 		return _failure("dialogue_not_started", "当前没有可取消的守备官对话。")
+	if _is_npc_initiated_proactive_player_dialogue(_active_dialogue):
+		return _failure(
+			"dialogue_cancel_locked_by_npc_initiator",
+			"驿站成员主动交涉不可取消对话。"
+		)
 	var ended_state := get_dialogue_state()
 	ended_state["end_reason"] = reason
 	ended_state["completion_mode"] = "cancelled"
@@ -1498,6 +1596,14 @@ func _cancel_active_player_dialogue(reason: String) -> Dictionary:
 
 func _is_player_controlled_dialogue(dialogue_state: Dictionary) -> bool:
 	return str(dialogue_state.get("dialogue_kind", "")) in ["player_npc", ESCAPE_INTERVENTION_DIALOGUE_KIND]
+
+
+func _is_npc_initiated_proactive_player_dialogue(dialogue_state: Dictionary) -> bool:
+	return (
+		str(dialogue_state.get("dialogue_kind", "")) == "player_npc"
+		and str(dialogue_state.get("dialogue_initiator", "")) == "npc"
+		and bool(dialogue_state.get("proactive_talk", false))
+	)
 
 
 func _set_player_dialogue_npc_runtime_state(suspended: bool) -> void:
@@ -1618,12 +1724,6 @@ func _apply_deferred_player_dialogue_effects(dialogue_event: Dictionary) -> Dict
 	if _active_dialogue.is_empty() or not _is_player_controlled_dialogue(_active_dialogue):
 		return {}
 	var results := {}
-	var recruitment_result := str(_active_dialogue.get("deferred_recruitment_result", "none"))
-	if recruitment_result == "accept":
-		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-		var npc_id := str(_active_dialogue.get("target_npc_id", ""))
-		if npc_system != null and npc_system.has_method("set_npc_recruited"):
-			results["recruitment_applied"] = bool(npc_system.set_npc_recruited(npc_id, true))
 	var wartime_response: Dictionary = _active_dialogue.get("deferred_wartime_response", {}) if _active_dialogue.get("deferred_wartime_response", {}) is Dictionary else {}
 	if not wartime_response.is_empty():
 		results["wartime_result"] = _apply_wartime_reaction(wartime_response, dialogue_event)
@@ -1839,6 +1939,13 @@ func _request_dialogue_plan_judgements_deferred(ended_state: Dictionary) -> void
 			"invitation_result": str(ended_state.get("invitation_result", "")),
 			"attack_committed": bool(ended_state.get("attack_committed", false)),
 			"dialogue_initiator": str(ended_state.get("dialogue_initiator", "")),
+			"proactive_talk": bool(ended_state.get("proactive_talk", false)),
+			"autonomous": bool(ended_state.get("autonomous", false)),
+			"speaker_npc_id": str(ended_state.get("speaker_npc_id", "")),
+			"target_npc_id": str(ended_state.get("target_npc_id", "")),
+			"plan_action_source": str(ended_state.get("plan_action_source", "")),
+			"assigned_plan_day": int(ended_state.get("assigned_plan_day", -1)),
+			"assigned_plan_hour": int(ended_state.get("assigned_plan_hour", -1)),
 			"execute_current_plan_when_resolved": bool(ended_state.get(
 				"execute_current_plan_when_resolved",
 				false
@@ -2162,11 +2269,20 @@ func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system != null and action_system.has_method("get_runtime_action_id"):
 		interrupted_action_id = str(action_system.get_runtime_action_id(target_npc_id))
+	var interruption_context := _build_player_dialogue_interruption_context(
+		target_npc_id,
+		interrupted_action_id
+	)
 	var interrupted_action := _interrupt_for_dialogue(target_npc_id)
 	_active_dialogue["player_dialogue_effect_started"] = true
 	_active_dialogue["session_status"] = "active"
 	_active_dialogue["player_dialogue_interrupted_action"] = interrupted_action
 	_active_dialogue["player_dialogue_interrupted_action_id"] = interrupted_action_id if interrupted_action else ""
+	_active_dialogue["interrupted_activity_context"] = (
+		interruption_context
+		if interrupted_action and not interruption_context.is_empty()
+		else {}
+	)
 	if interrupted_action and not interrupted_action_id.is_empty():
 		var interrupted_actions: Dictionary = {}
 		interrupted_actions[target_npc_id] = interrupted_action_id
@@ -2249,6 +2365,142 @@ func _interrupt_for_dialogue(npc_id: String) -> bool:
 	if action_system == null or not action_system.has_method("interrupt_npc_action"):
 		return false
 	return action_system.interrupt_npc_action(npc_id, "dialogue_interrupted")
+
+
+func _build_player_dialogue_interruption_context(
+	npc_id: String,
+	runtime_action_id: String
+) -> Dictionary:
+	if npc_id.is_empty() or runtime_action_id.is_empty():
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if npc_system == null or action_system == null:
+		return {}
+	var npc_state: Dictionary = npc_system.get_npc_state(npc_id)
+	var runtime_snapshot: Dictionary = {}
+	if action_system.has_method("get_runtime_action_snapshot"):
+		runtime_snapshot = action_system.get_runtime_action_snapshot(npc_id)
+	var action_definition: Dictionary = {}
+	if action_system.has_method("get_action"):
+		action_definition = action_system.get_action(runtime_action_id)
+	var activity_before := _make_dialogue_activity_context(
+		runtime_action_id,
+		str(action_definition.get("name", runtime_action_id)),
+		str(runtime_snapshot.get("phase", "active")),
+		npc_state,
+		runtime_snapshot,
+		{}
+	)
+	if activity_before.is_empty():
+		return {}
+
+	var current_plan_activity: Dictionary = {}
+	var daily_plan_system := get_node_or_null("/root/Main/Systems/DailyPlanSystem")
+	if (
+		daily_plan_system != null
+		and daily_plan_system.has_method("get_current_plan_item")
+	):
+		var current_plan_item: Dictionary = daily_plan_system.get_current_plan_item(npc_id)
+		var planned_action_id := str(current_plan_item.get("action_id", ""))
+		if not planned_action_id.is_empty():
+			var planned_definition: Dictionary = {}
+			if action_system.has_method("get_action"):
+				planned_definition = action_system.get_action(planned_action_id)
+			current_plan_activity = _make_dialogue_activity_context(
+				planned_action_id,
+				str(current_plan_item.get(
+					"action_name",
+					planned_definition.get("name", planned_action_id)
+				)),
+				"planned",
+				npc_state,
+				{},
+				current_plan_item
+			)
+
+	var resume_expected := (
+		not current_plan_activity.is_empty()
+		and str(current_plan_activity.get("action_id", "")) == runtime_action_id
+	)
+	return {
+		"interrupted_by_guard_officer": true,
+		"private_to_target_npc": true,
+		"activity_before_interruption": activity_before,
+		"current_plan_activity": current_plan_activity if not current_plan_activity.is_empty() else null,
+		"expected_activity_after_dialogue": current_plan_activity.duplicate(true) if resume_expected else null,
+		"resume_policy": (
+			"resume_interrupted_activity_if_plan_unchanged"
+			if resume_expected
+			else "follow_current_plan_after_dialogue_resolution"
+		),
+		"resume_expected_if_plan_unchanged": resume_expected
+	}
+
+
+func _make_dialogue_activity_context(
+	action_id: String,
+	action_name: String,
+	phase: String,
+	npc_state: Dictionary,
+	runtime_snapshot: Dictionary,
+	plan_item: Dictionary
+) -> Dictionary:
+	if action_id.is_empty():
+		return {}
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var action_definition: Dictionary = {}
+	if action_system != null and action_system.has_method("get_action"):
+		action_definition = action_system.get_action(action_id)
+	var target: Dictionary = (
+		plan_item.get("target", {})
+		if plan_item.get("target", {}) is Dictionary
+		else {}
+	)
+	var target_id := str(runtime_snapshot.get("target_id", ""))
+	if target_id.is_empty():
+		for key in ["target_id", "target_npc_id", "building_id", "location_id"]:
+			target_id = str(target.get(key, ""))
+			if not target_id.is_empty():
+				break
+	var location_id := str(runtime_snapshot.get("building_id", ""))
+	if location_id.is_empty():
+		location_id = str(target.get("location_id", ""))
+	if location_id.is_empty():
+		location_id = str(action_definition.get("location_required", ""))
+	if location_id.is_empty():
+		location_id = str(npc_state.get("current_location", ""))
+	var location_name := str(npc_state.get("current_location_name", ""))
+	if location_id != str(npc_state.get("current_location", "")):
+		location_name = ""
+	var result := {
+		"action_id": action_id,
+		"action_name": action_name if not action_name.is_empty() else action_id,
+		"phase": phase if phase in ["pending", "active", "external_active", "planned"] else "active",
+		"location_id": location_id,
+		"location_name": location_name,
+		"target_id": target_id,
+		"workstation_id": str(runtime_snapshot.get("workstation_id", ""))
+	}
+	if phase == "planned":
+		result["day"] = _get_current_game_day()
+		result["hour"] = clampi(int(plan_item.get("hour", _get_current_game_hour())), 0, 23)
+	else:
+		if runtime_snapshot.has("elapsed_seconds"):
+			result["elapsed_seconds"] = maxf(0.0, float(runtime_snapshot.get("elapsed_seconds", 0.0)))
+		if runtime_snapshot.has("duration_seconds"):
+			result["duration_seconds"] = maxf(0.0, float(runtime_snapshot.get("duration_seconds", 0.0)))
+	return result
+
+
+func _get_current_game_day() -> int:
+	var game_state := get_node_or_null("/root/GameState")
+	return maxi(1, int(game_state.current_day)) if game_state != null else 1
+
+
+func _get_current_game_hour() -> int:
+	var game_state := get_node_or_null("/root/GameState")
+	return clampi(int(game_state.current_hour), 0, 23) if game_state != null else 0
 
 
 func _cancel_npc_llm_request(npc_id: String, reason: String) -> Dictionary:
@@ -2443,10 +2695,12 @@ func _normalize_wartime_reaction(reaction: String) -> String:
 func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dictionary) -> Dictionary:
 	var clean_text := str(pending.get("clean_text", GUARD_ATTACK_EVENT_TEXT))
 	var reaction := "none"
-	if _text_contains_any(clean_text, ["逃", "跑", "撤", "保命", "自己活", "别管"]):
-		reaction = "escape"
-	elif _text_contains_any(clean_text, ["守住", "保护", "坚持", "撑住", "拦住", "挡住", "一起", "别怕"]):
-		reaction = "morale_boost"
+	var interaction_context := str(_active_dialogue.get("interaction_context", "work"))
+	if interaction_context != "avoid_combat":
+		if _text_contains_any(clean_text, ["逃", "跑", "撤", "保命", "自己活", "别管"]):
+			reaction = "escape"
+		elif _text_contains_any(clean_text, ["守住", "保护", "坚持", "撑住", "拦住", "挡住", "一起", "别怕"]):
+			reaction = "morale_boost"
 	var recruitment_result := "none"
 	if bool(pending.get("effective_recruitment_request", false)):
 		recruitment_result = "accept" if _text_contains_any(clean_text, ["应征", "入伍", "守住", "保护", "帮忙", "一起", "救"]) else "reject"
@@ -2458,7 +2712,6 @@ func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dic
 		"relationship_delta": 0,
 		"recruitment_result": recruitment_result,
 		"wartime_reaction": reaction,
-		"should_end_dialogue": false,
 		"rule_fallback": true,
 		"fallback_error_code": str(error_result.get("error_code", "")),
 		"fallback_message": str(error_result.get("message", "后端请求失败。"))
@@ -2478,10 +2731,7 @@ func _make_escape_intervention_rule_fallback_response(pending: Dictionary, error
 		"emotion": "shaken" if stay else "fearful",
 		"attitude_delta": 0,
 		"relationship_delta": 0,
-		"recruitment_result": "none",
-		"wartime_reaction": "none",
-		"intent": "stay_after_intervention" if stay else "leave_after_intervention",
-		"should_end_dialogue": stay,
+		"escape_intervention_result": "stay" if stay else "leave",
 		"rule_fallback": true,
 		"fallback_error_code": str(error_result.get("error_code", "")),
 		"fallback_message": str(error_result.get("message", "后端请求失败。"))
@@ -2499,9 +2749,9 @@ func _apply_wartime_reaction(response: Dictionary, dialogue_event: Dictionary) -
 	if _active_dialogue.is_empty() or not bool(_active_dialogue.get("wartime_dialogue", false)):
 		return {}
 	var interaction_context := str(_active_dialogue.get("interaction_context", "work"))
-	var reaction := _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
-	if reaction == "none" and interaction_context == "avoid_combat":
+	if interaction_context == "avoid_combat":
 		return {}
+	var reaction := _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("apply_wartime_dialogue_reaction"):
 		return {}

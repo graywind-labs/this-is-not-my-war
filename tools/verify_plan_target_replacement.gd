@@ -39,7 +39,6 @@ func _init() -> void:
 	if not _install_and_execute(daily_plan_system, hour, "talk_to_npc", {
 		"target_id": FIRST_TARGET_ID,
 		"target_npc_id": FIRST_TARGET_ID,
-		"location_id": "clinic",
 	}, "先去找医生。"):
 		_fail("Could not start first dialogue approach")
 		return
@@ -51,7 +50,6 @@ func _init() -> void:
 	if not _install_and_execute(daily_plan_system, hour, "talk_to_npc", {
 		"target_id": SECOND_TARGET_ID,
 		"target_npc_id": SECOND_TARGET_ID,
-		"location_id": "chapel",
 	}, "改去找神父。"):
 		_fail("Could not replace dialogue approach target")
 		return

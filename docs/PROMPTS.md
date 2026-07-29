@@ -1,5 +1,146 @@
 # PROMPTS.md
 
+## T0095 熟睡总结的窗口、内容与标题
+
+`daily_reflection_system_prompt.txt` 现在把 `summary_window` 与 `reflection_period` 作为显式输入。前者规定 21:00 窗口、锚点和权威 `diary_label=接到守备命令的第N天`；后者规定从上一次成功请求快照终点到本次请求快照的精确回顾范围。`day_events` 只投影该水位内尚未总结的事件；窗口缺失不要求补造日记，下次可跨日回顾。
+
+“接到守备命令”在 Prompt 中固定解释为守备官通过公告牌向驿站众人传达“我们奉命守住此地”的公开命令。模型不得把它理解为目标 NPC 当天入伍、刚到驿站或收到个人指令，也不得自行在正文添加第 N 天 / 第 N 夜标题。Godot 负责写入权威标签、触发时刻和记录范围。
+
+## T0094 睡眠打断语境与弥撒当前小时
+
+`dialogue_system_prompt.txt` 解释可选的 `interrupted_activity_context`：它是守备官第一条有效消息真正打断目标 NPC 后才出现的目标私有运行时事实，不是记忆事件。模型必须以 `activity_before_interruption` 识别打断前活动，以 `current_plan_activity / expected_activity_after_dialogue` 理解计划不变时的暂定恢复项；睡眠场景不得把“被叫醒谈话”说成自然睡醒并准备工作，也不得把暂定恢复说成已经执行。
+
+`dialogue_plan_revision_judgement_system_prompt.txt` 对“守备官要求现在参加正在举行的弥撒，且目标 NPC 在本轮明确答应”的会话规定：只要当前小时原计划需要立即改变，就必须把 `game_time.hour` 纳入最小修订集合，不能把已经谈妥的当下承诺判为空。它仍只选小时，不选择行动。
+
+教堂失败链继续由通用 `plan_revision_judgement_system_prompt.txt / plan_revision_system_prompt.txt` 处理。`pray_failed_mass_started / pray_failed_mass_in_progress` 且 `attend_mass.available_now=true` 时，第一层固定选中当前小时，第二层强烈优先参加弥撒；明确谈妥的当前弥撒承诺也强烈优先同一合法候选。人物、状态、记忆、`current_order` 或更紧迫事实可以给出具体反对理由，因此 Prompt 不把参加弥撒变成程序硬命令，也不绕过资格、地点、席位或主持者校验。
+
+## T0093 建筑工期与连续完成段
+
+`daily_plan_system_prompt.txt`、`plan_revision_judgement_system_prompt.txt` 和 `plan_revision_system_prompt.txt` 各增加一条精简时间规则：必须用 `game_time` 对照 `current_building_states` 的总工期和剩余时间，只把协助、封闭影响或替代安排放在预计完工前，不能把短工期机械延伸到更晚阶段。
+
+正式修订的 `action_completed` 分支同时读取 `failure_context.contiguous_revision_hours`：非空时表示当前小时起连续相同任务的原计划阶段都需要重新安排。精确返回请求中的全部 `revision_hours` 仍是硬合同；只有当前小时承担“不得原样重复已完成 action + target”和 `immediate_action` 一致性约束。
+
+## T0092 最小供应商输出
+
+六份正式 Prompt 和动态 schema hint 不再要求模型回显 `ok`、NPC / 日期、响应分支、固定“不适用”结果或可从主决定推导的布尔值。当前最小输出为：
+
+- 对话：`reply_text / emotion` 加当前分支唯一决定及 `debug_reason`。
+- 日计划：`plan / summary / debug_reason`；计划项不返回 `action_kind / priority / null`，地点唯一时也不返回 `location_id`。
+- 范围判别：`revision_hours / summary / debug_reason`，`needs_revision` 由数组是否为空生成。
+- 正式修订：`revised_plan / summary / debug_reason`，不返回 `immediate_action`。
+- 战时心理：`decision / emotion / morale_delta_intent / debug_reason`，不返回 `should_start_escape`。
+- 熟睡总结：`diary_entry / knowledge_graph_updates / debug_reason`，不回显 NPC / 日期；模型读取但不回显 `summary_window / reflection_period`。
+
+输入仍保留能改变人物判断的全部事实，只删除纯传输 `meta`、同值副本、当前分支不可能使用的字段和空占位。默认日计划规则只有 Prompt 一份来源；调用方明确增加的临时规则仍进入请求。紧凑重试提示也使用同一最小合同，避免第一次输出失败后重新要求冗余字段。
+
+## T0091 `talk_to_npc` 目标驱动输出
+
+`daily_plan_system_prompt.txt` 与 `plan_revision_system_prompt.txt` 把固定地点行动和对话行动拆开：前者继续从同一候选复用 `action_id + target_id + location_id`，`talk_to_npc` 只选择 `target_id` 并省略地点。工位占用上下文可以说明占用者当下位于诊所，但模型不得把这一瞬时地点绑定进对话计划；运行时会重新查询目标。
+
+供应商若仍多返回地点，后端将其规范化为空并记录，而不是把物理上正确的 `clinic` 当成非法选择。该兼容只处理冗余地点，不修复白名单外 NPC、自聊、错误 kind 或空 `dialogue_goal`。
+
+## T0089 弥撒与普通祈祷的失败替代倾向
+
+`plan_revision_judgement_system_prompt.txt` 读取 `failure_context.failure_id`：`pray_failed_mass_in_progress / pray_failed_mass_started` 且 `attend_mass.available_now=true` 时必须把当前小时交给第二层；`attend_mass_failed_no_leader / attend_mass_failed_leader_left` 且 `pray_at_chapel.available_now=true` 时同理。第一层仍不选择具体行动。
+
+`plan_revision_system_prompt.txt` 对两个方向分别强烈优先 `attend_mass` 与 `pray_at_chapel`。只有人物、状态、记忆、`current_order` 或更紧迫程序事实提供明确具体理由时才可选择其他候选，不能仅用泛泛的工作偏好让 NPC 离开教堂。该倾向不绕过动态 `allowed_actions`、`eligible / available_now` 或 ActionSystem 权威执行校验。
+
+真实 DeepSeek `deepseek-v4-flash` 已完成两个方向各一次判别与修订：`pray_failed_mass_in_progress -> attend_mass`、`attend_mass_failed_leader_left -> pray_at_chapel`，均首次成功、`fallback_used=false`。
+
+## T0087 对话输出合同按类型拆分
+
+`dialogue_system_prompt.txt` 与 Model Adapter 的动态 schema hint 现在根据 `dialogue_kind` 只列出当前分支字段：
+
+- `player_npc -> PlayerNPCDialogueResponse`：`replyer_id / reply_text / response_kind=reply_to_player / recruitment_result / wartime_reaction` 及通用非权威元数据。
+- `npc_npc -> NPCNPCDialogueResponse`：`replyer_id / reply_text / response_kind=reply_to_npc / invitation_result / should_end_dialogue` 及通用非权威元数据。
+- `escape_intervention -> EscapeInterventionDialogueResponse`：`replyer_id / reply_text / response_kind=reply_to_player / escape_intervention_result=stay|leave` 及通用非权威元数据。
+
+三个合同都禁止输出 `intent` 和其他分支字段。应征接受 / 拒绝只用 `recruitment_result`；NPC-NPC 续聊 / 收尾只用 `should_end_dialogue`；逃离挽留只用 `escape_intervention_result`。已从设计删除的 `request_money / request_equipment / request_rest / request_treatment / share_witness / start_escape` 不再出现在枚举、提示或 Mock。供应商若把 `emotion / suggested_event_type / debug_reason` 返回为 `null`，HTTP 层只对这些非权威元数据应用带 `model_normalizations` 记录的默认值；业务枚举仍严格拒绝非法值。
+
+真实 DeepSeek `deepseek-v4-flash` 已用三类合同完成玩家、NPC-NPC、应征、战时和逃离分支，并另验 NPC-NPC 邀请接受 / 拒绝与正式收尾；最终验收均 `fallback_used=false`。
+
+## T0086 已完成行动修订（范围由 T0093 扩展）
+
+`plan_revision_system_prompt.txt` 现在识别 `failure_type=action_completed`：`failed_plan_item` 在此不是失败，而是已经成功完成；模型必须为当前小时剩余时间从普通实时 `allowed_actions` 中选择后续活动。`failure_context.requires_different_current_activity=true` 时，当前小时不得原样重复相同 `action_id + target_id`，但可选择其他目标的同类协助或任何符合人物、状态和现场条件的工作、休息、交谈等合法行为。
+
+这条确定性完成链不调用 `plan_revision_judgement` Prompt，只调用一次正式 `revise_plan`；`revision_hours` 是当前小时起的连续同任务段，精确小时集合、当前小时 `immediate_action` 一致性、白名单、目标 / 地点和 provider 证明仍为硬合同。Godot 另外拒绝当前小时原样重复的完成项并在既有最多 3 次真实修订边界内重试，Prompt 不负责结算完成事实。真实 DeepSeek `deepseek-v4-flash` 已一次改写连续三小时升级协助，`fallback_used=false`。
+
+## T0085 工作阶段是强建议，不是硬门槛
+
+`daily_plan_system_prompt.txt` 继续强烈建议正常情况下至少安排 6 个工作阶段，以维持驿站基础产出，并明确 `assist_upgrade` 是劳动。但人格、健康、危机、逃离意向和现场条件可以支持更少工作；不能为了凑数安排不可执行行动。
+
+`plan_revision_judgement_system_prompt.txt` 与 `plan_revision_system_prompt.txt` 继续接收当前 / 最低工作阶段统计，用来提醒模型尽量维持劳动。该统计不允许范围判别仅为补数量扩大 `revision_hours`，也不允许 backend 或 Godot 拒绝已经满足小时、白名单、目标 / 地点和即时行动合同的结果。升级已结束时，修订层读取本轮 `no_active_upgrade` 上下文，不应继续安排已经失效的 `assist_upgrade`。
+
+## T0083 应征结果显式反馈（Prompt 不变）
+
+本任务不修改对话 Prompt、输出 Schema 或模型判断规则。既有合法 `recruitment_result=accept|reject` 由 Godot 绑定到对应 NPC 回复并渲染颜色 / 符号；系统提示不是模型发言，不进入 `reply_text`，也不要求模型复述结果。
+
+## T0082 应征会话 UI 生命周期（Prompt 不变）
+
+本任务不修改对话 Prompt、输出 Schema 或模型判断规则。每次 `/npc/dialogue` 仍只根据该请求的 `is_recruitment_request` 判断本轮能否返回 `accept / reject`；toggle 是否保持、会话何时锁定取消、挂起超时和完成事件如何显示全文均由 Godot 客户端处理。关闭 toggle 后的新请求恢复 `is_recruitment_request=false`，但不会删除已经发生的会话历史。
+
+## T0080 升级协助的室外与工作阶段语义
+
+对话、日计划、计划修改判别和正式修订 Prompt 统一解释动态候选：`assist_upgrade.target_id` 表示被协助的工程，`location_id=plaza / execution_location=plaza / requires_building_entry=false` 表示实际在广场 / 建筑外搬料、递工具，不需要进入封闭建筑。只要候选同时为 `eligible / available_now`，模型不得用“门锁着、进不去”否认它。
+
+日计划与正式修订把 `assist_upgrade` 视为一个工作阶段；判别层仍只选择受影响小时，不直接选择行动。同一 NPC 原工作建筑因升级在门口失败时，正式修订应优先认真考虑该建筑的合法协助候选，但不是程序强制选择：人设、守备官指令、饥饿疲劳和其他紧急事实仍可支持另一个合法结果。
+
+六类 Prompt 继续遵守信息边界：程序建筑状态可以说明当前工程存在；路上 NPC 在抵达入口前没有由该状态自动生成的个人见闻或行动失败。LLM 不决定入口拒绝、工作量下限、升级速度或完成事实。
+
+## T0078 主动找守备官的必选当前小时
+
+`plan_revision_judgement_system_prompt.txt` 现在同时解释两种 required 当前小时来源：自主 NPC-NPC 对话的实际发起者，以及当前小时按 `seek_guard_officer` 主动找守备官并完成会话的 NPC。两者都表示原对话行动已经完成，范围判别必须覆盖当下后续活动；下一层仍从正常动态 `allowed_actions` 选择。
+
+required 集合是程序事实。若真实模型输出遗漏，后端会保留其其他合法 `revision_hours`、权威并入 required 小时，并在 `model_normalizations` 记录 `required_revision_hours_authoritative_union`；这不生成行动内容，也不使用 Mock 伪装模型输出。正式修订仍必须由真实 provider 输出精确选中阶段和当前小时 `immediate_action`。
+
+## T0076 自主对话发起者的必选当前小时
+
+`plan_revision_judgement_system_prompt.txt` 新增 `required_revision_hours` 硬合同。它不是行动建议，而是程序给范围判别器的最小必选集合：输出必须包含全部 required 小时，仍可加入确实受对话 / 失败影响的未来小时；required 非空时不能返回 `needs_revision=false`。自主 NPC-NPC 对话只为实际发起者设置结束时当前小时，受邀者保持普通独立判别。
+
+该 Prompt 明确原因是发起者的“找人对话”阶段已经完成，下一层必须为当前阶段安排后续活动。下一层 `plan_revision_system_prompt.txt` 仍只从实时 `allowed_actions` 选择工作、生活、拜访、其他可用 NPC 对话或其他合法行为，且 `immediate_action` 必须与当前小时修订项完全一致。T0078 起，真实输出若遗漏 required 小时，由 endpoint 将程序权威范围并入并显式记录 normalization；行动内容仍不由本地硬拼，也不以 Mock 伪装成功。
+
+## T0071 对话 Prompt 私有信息边界
+
+对话 Prompt 现在把输入分成两侧：
+
+- 回复者：完整使用自己的 `npc_setting / npc_state / short_memory / long_memory / location_context / current_order`。
+- 说话者：只使用 `speaker_name / speaker_text / speaker_context.appearance / health_status`；`speaker_npc` 必须为空或缺失，`speaker_context.state` 必须为空。
+
+模型不得把说话者未说出口的记忆、见闻、日记、图谱、指令、个人资源或地点私有状态当成回复者知识。`talk_to_npc` 候选不再提供目标实时地点、行动或入伍状态；其他 `allowed_actions` 的目标、地点与当前可用性只用于程序行为边界。若同一事实没有出现在回复者自己的信息空间、共享驿站常识或已发生对话中，回复文本不能主动声称知道。
+
+## T0070 全员名册标签解释
+
+六份正式 Prompt 都明确说明 `station_context.resident_roster` 是全体登记成员而非仅当前在站人员；每行的 `recruited` 表示是否已经入伍，`in_station` 表示是否仍在驿站。模型不得把 `false` 解释成相反状态，也不得因为离站成员仍出现在名单里就宣称其人在站内。名单、标签和长期知识均来自动态 payload，本轮没有在 Prompt 中硬编码 8 人姓名。
+
+艾达的教官独练规则及其他职业规则通过长期知识图谱进入六类上下文，不额外复制成全局 Prompt 条款，避免让所有 NPC 无差别获得专业细节。
+
+## T0069 完整 Prompt 审计边界
+
+正式 provider 每次尝试实际发送的 system / user messages 现在保存在后端 JSONL 的 `provider_request_sent.provider_request_body` 中；紧凑重试会使用同一 `audit_id`、不同 `attempt_count` 单独记录，因此可以看到重试追加提示后的真实 Prompt。`call_started.input_payload` 同时保留序列化前动态业务上下文，便于区分 Prompt 模板、Schema hint 与 Godot 请求事实。
+
+日志不改变任何 Prompt，不向模型追加审计指令，也不保存 Authorization 请求头。若设置 `LLM_AUDIT_LOG_INCLUDE_PAYLOADS=false`，完整 Prompt / payload / response 会被省略，只保留调用元数据和 usage；涉及 Prompt 效果验收时必须保持该项为 true 并妥善保护日志文件。
+
+## T0067 真实分支偏置与待确认修改建议
+
+本轮没有修改任何正式 Prompt，只记录真实 provider 证据。受限为单一允许结果时，战斗的继续参战、避战、逃离和激昂，以及战时对话的 `none / escape / morale_boost`、避战应征接受 / 拒绝、逃离挽留 stay / leave 都能正确返回；真实 Main 的安全、互相掩护场景也自然触发了战时 `morale_boost`。但低血量完整候选下，参战 NPC 在多组场景中持续优先选择首项 `continue_fighting`，极端战时逃离对话也保持 `none`。当前战斗请求约 1.6 万至 2.0 万输入 tokens，角色完整档案、长期记忆、战场信息和守备官指令可能稀释临界决策事实；低温度和结果列表顺序也可能强化首项偏置。
+
+当时日计划 Prompt 同时硬性要求完整 24 小时计划和至少 6 个工作阶段，并反复强调正常工作；`escaping_station` 是终止在站生活的特殊意向，却没有说明选择后余下小时应如何解释。T0085 已把工作数量改成强建议而非程序硬门槛，但逃离终止意向与 24 小时排程的结构冲突仍需单独设计。
+
+建议在用户确认后分步试验，而不是直接改动：
+
+1. 在长上下文前增加程序生成的紧凑 `decision_facts`，只汇总 HP 比例、敌我人数、昏迷友军、关键建筑受损和当前命令是否触碰已知底线；这些必须来自权威状态，不由 Python 猜测人格结论。
+2. 为参战三结果与避战两结果提供对称判据和各一条简短正反例，避免只列枚举；单独评估战斗判定温度和选项顺序，但不能简单随机打乱，因为规则 fallback 当前使用首个安全允许项。
+3. 将“是否离站”的终止决定与 24 小时工作排程拆开，或明确选中 `escaping_station` 时怎样表达后续在站小时；同时给日计划提供紧凑的站内危机摘要。
+4. 保留“承诺必须与权威状态一致”的挽留原则。真实测试显示程序实际撤回危险命令比只在对话中口头承诺更稳定，不建议通过 Prompt 强迫 NPC 相信未兑现承诺。
+
+## T0063 个人酒与饮酒上下文规则
+
+六份正式 NPC Prompt 的共享 `station_context.work_mode_actions` 现在携带 `description`；`drink_wine` 因此与其他可计划行为一样进入 NPC 背景行为目录，不在 Prompt 里维护第二份静态行为表。计划、修订和对话仍只能使用动态 `allowed_actions`，其中饮酒只在目标 NPC 当前确实持有酒时出现。
+
+`npc.state.money / wine`（对话中为 `npc_state.money / wine`）是目标 NPC 本人的权威持有量，不是驿站五项公开资源。计划和修订选择 `drink_wine` 时，每个阶段都会在执行开始由程序实际扣除 1 份个人酒；初始日计划的饮酒阶段数不得超过当前个人酒。无酒失败 `drink_wine_failed_no_wine` 归入资源不足判别，不得在没有新酒的前提下重复安排。
+
+`wine_consumed` 表达“心情改善、过去伤痛暂时淡化”的叙事语境。对话、战时心理和首次睡眠反思可以让这种当下感受影响措辞和判断，但不得新增情绪数值、程序 buff，亦不得删除、否认或覆盖旧日记、知识图谱和历史事件。
+
 ## T0061 宽松人物声音与开局认知规则
 
 六份正式 Prompt 不再读取或提及 `signature_lines` / 代表性表达。对话顶层 `npc_setting` 与共享 `NPCIdentity` 只携带宽松 `speech_style`；模型应综合职业经验、性格、欲望、恐惧、底线、长期记忆和当前事实生成自然表达，不能把任何旧句子当作台词模板。
@@ -12,7 +153,7 @@
 
 六份正式 Prompt 统一要求自然、直白、符合母语习惯的中文；人物声音通过句式、用词、关注重点和判断习惯区分，不用晦涩比喻、过度拟人或谜语式表达制造个性。轻微黑色幽默只有在意思一读即懂时使用。
 
-六份 Prompt 都解释日记时间前缀：“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”属于开局前历史，“第N天 HH:MM:SS”属于运行后记录；其中“往昔·近日”明确发生在守备官收到并向众人传达敌情之前。模型不得把它推断为人物已知敌袭、征召或备战，也不得从只有职责的守备官种子知识补造既往关系。首次睡眠反思的 `diary_entry` 仍只输出第一人称正文，不自行添加日期或时间前缀；权威前缀由 Godot 保存并在后续上下文投影时统一生成。
+六份 Prompt 都解释日记时间前缀：“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”属于开局前历史，新熟睡总结使用“接到守备命令的第N天 HH:MM:SS”，旧运行态记录继续兼容“第N天 HH:MM:SS”；其中“往昔·近日”明确发生在守备官收到并向众人传达敌情之前。“接到守备命令”专指公告牌向众人公开传达“我们奉命守住此地”，不是 NPC 入伍、刚到驿站或收到个人指令。模型不得从前缀补造人物已知敌袭、征召或既往关系。熟睡总结的 `diary_entry` 仍只输出第一人称正文，不自行添加日期或时间前缀；权威前缀由 Godot 保存并在后续上下文投影时统一生成。
 
 ## T0059 初始长期记忆提示规则
 
@@ -31,7 +172,7 @@
 
 六份正式 Prompt 都必须读取 `station_context.basic_resource_reserves`，把它解释为本次调用时公开的粮食、餐食、木材、石料和铁数量。不得补造第纳尔、酒、装备、器械、马匹或其他未公开库存，也不得直接改变数量。计划 / 判别 / 修订中的 `current_resource_states` 使用同一五项白名单。
 
-`station_rules` 第六条说明建筑升级缓慢推进、成员可协助加快。对话只能在 `allowed_actions` 有目标明确的 `assist_upgrade` 时说当前能协助；日计划与正式修订应认真考虑该候选，尤其避免无故用 `idle` 替代，但仍结合人设和紧急事项决定。判别只选小时，战时心理只选 `allowed_decisions`，反思不能把规则写成已经协助或已经升级完成的事实。
+`station_rules` 第六条说明建筑升级缓慢推进、成员可协助加快。对话只能在 `allowed_actions` 有目标明确的 `assist_upgrade` 时说当前能协助；该候选在 T0080 后明确为广场 / 室外执行、不需进入目标建筑，并计为工作阶段。日计划与正式修订应认真考虑该候选，尤其避免无故用 `idle` 替代，但仍结合人设和紧急事项决定。判别只选小时，战时心理只选 `allowed_decisions`，反思不能把规则写成已经协助或已经升级完成的事实。
 
 ## T0055 持续活动 / 周期结算提示规则
 
@@ -59,11 +200,11 @@
 
 `data/prompts/plan_revision_judgement_system_prompt.txt` 由 `call_type=plan_revision_judgement` 读取。请求以 `trigger_kind=dialogue|action_failure` 区分事实来源：对话分支读取本轮完整对话、结束原因、当前时间、NPC 标识、会话元数据与原 24 小时计划；行动失败分支读取程序权威失败项、`failure_type / failure_summary / failure_context`、原计划及计划派生的工作阶段下限信息。T0053 起两者还读取与日计划 / 正式修订一致的 `station_context`、`npc.identity / state / current_order / short_term_memory / long_term_memory / location_context`、行动候选和实时建筑 / 资源状态，以保持人物与记忆连续性；仍只输出 `needs_revision` 和最小精确 `revision_hours`，不输出行动或计划项。
 
-对话中的普通寒暄、重复信息或仅短暂打断，以及不再影响原计划的一次性失败，都可返回 `needs_revision=false, revision_hours=[]`。新承诺、新任务、明确时间协调、持续工位 / 目标 / 资源阻塞等才选择受影响小时。失败工作阶段可能改成非工作行动且原计划已处于最低工作阶段数时，第一层还要选择最少的未来非工作阶段作为补偿范围。判别非空后，`plan_revision_system_prompt.txt` 继续使用原有完整修订上下文，但 `revision_scope` 固定为 `selected_hours`，`revised_plan` 小时必须与请求 `revision_hours` 完全一致。只有集合包含 `game_time.hour` 时才必须输出与该项一致的 `immediate_action`；否则必须为 `null`。指令变化、战斗 / 复苏和 GM 等其他非对话路径继续直接受限修订。
+对话中的普通寒暄、重复信息或仅短暂打断，以及不再影响原计划的一次性失败，都可返回 `needs_revision=false, revision_hours=[]`。新承诺、新任务、明确时间协调、持续工位 / 目标 / 资源阻塞等才选择受影响小时。工作阶段数量可作为范围选择的次要参考，但第一层不得仅为凑足数量扩展到未受影响的未来阶段。判别非空后，`plan_revision_system_prompt.txt` 继续使用完整修订上下文，且 `revised_plan` 小时必须与请求 `revision_hours` 完全一致。
 
 ## T0046 动态驿站上下文与反思输出
 
-所有包含 NPC 根本人设的请求都必须在顶层携带一份 `station_context`；Schema 拒绝缺失字段或空人员 / 建筑 / 行为 / 基础资源 / 规则列表。T0046 最初只定义地点简介与当前在站人员，T0054 扩充世界目录，T0058 再形成六字段常识块；背景可能性不得扩写为当前已发生事实。
+所有包含 NPC 根本人设的请求都必须在顶层携带一份 `station_context`；Schema 拒绝缺失字段或空人员 / 建筑 / 行为 / 基础资源 / 规则列表。T0046 最初只定义地点简介与当前在站人员，T0054 扩充世界目录，T0058 再形成六字段常识块，T0070 把人员解释更新为带双标签的全体登记名册；背景可能性不得扩写为当前已发生事实。
 
 `daily_reflection` 只输出第一人称 `diary_entry` 与 `knowledge_graph_updates`，不输出 `memory_summary`。每条知识更新除稳定 `subject / relation / value` 外，还必须输出供中文玩家阅读的 `subject_label / relation_label / value_label`；即使技术值为英文，中文值文本也不得缺失。
 
@@ -94,9 +235,9 @@
 
 ## T0025 计划行动与工位交涉规则
 
-`daily_plan_system_prompt.txt` 和 `plan_revision_system_prompt.txt` 要求每个计划项严格复用同一条 `allowed_actions` 候选的 `action_id + action_kind + target_id + location_id`。NPC 可以安排找其他 NPC 对话、祈祷、前往地点、主动找守备官交涉或表达逃离意向；`idle` 只表示留在原地，不能替代前往广场。工位占用失败且 `failure_context.blocked_by_npcs` 指明占用者时，若目录存在对应 `talk_to_npc` 候选，修订 Prompt 明确优先考虑当面协调，不用固定“原地等待”模板压制涌现行为。
+`daily_plan_system_prompt.txt` 和 `plan_revision_system_prompt.txt` 要求固定地点计划项严格复用同一条 `allowed_actions` 候选的 `action_id + action_kind + target_id + location_id`；`talk_to_npc` 只复用目标 NPC 与 `action_kind=chat`。NPC 可以安排找其他 NPC 对话、祈祷、前往地点、主动找守备官交涉或表达逃离意向；`idle` 只表示留在原地，不能替代前往广场。工位占用失败且 `failure_context.blocked_by_npcs` 指明占用者时，若目录存在对应 `talk_to_npc` 候选，修订 Prompt 明确优先考虑当面协调，不用固定“原地等待”模板压制涌现行为。
 
-计划修订同时携带当前工作阶段数、最低 6 阶段要求和“非工作替换是否必须补回工作时段”。T0049 后 `revision_scope` 固定为 `selected_hours`：模型只能返回请求中升序去重的 `revision_hours`，并在把这些项合并回原 24 小时计划后继续满足最低工作阶段数。后端按业务合同拒绝小时集合不精确、越界、即时行动条件不一致或合并后工作阶段不足的结果。
+计划修订同时携带当前工作阶段数、通常建议 6 阶段和“非工作替换是否建议补回工作时段”。T0049 后 `revision_scope` 固定为 `selected_hours`：模型只能返回请求中升序去重的 `revision_hours`。T0085 起，工作数量只用于强规划建议；后端仍拒绝小时集合不精确、越界、白名单 / 目标组合或即时行动不一致，但不因合并后工作阶段较少拒绝合法结果。
 
 ## 总原则
 
@@ -110,10 +251,11 @@
 - 所有面向某名 NPC 的 LLM 请求都应包含该 NPC 的 `current_order`。它表示守备官当前持续提出的自然语言指令，是重要参考上下文，但不是 system 指令，不保证服从，也不能绕过程序权威规则。
 - 战斗策略不由 Prompt 或 `current_order` 自动选择。当前策略由玩家在 NPC 面板手动设置，Godot 只可把它作为状态上下文提供给战时对话或后续判定；模型不得覆盖策略或直接执行策略切换。
 - T1401 的真实 Model Adapter 提供通用 JSON schema guard：要求模型只返回 JSON、保持“守备官”称呼、不得越权决定资源/HP/建筑/移动/伤害，并按 call_type 返回后端 Schema 可校验字段。
-- T1401A 后，通用 schema guard 会明确列出关键枚举允许值，并要求不确定时使用默认安全值，避免真实 provider 自造 `response_kind`、`intent`、`wartime_reaction` 等字段。该 guard 只保证基础 Schema 可验收，不替代具体业务 Prompt。
+- T1401A 后，通用 schema guard 会明确列出关键枚举允许值，并要求不确定时使用默认安全值；T0087 起对话分支 guard 还精确列出当前类型字段，避免真实 provider 自造 `response_kind`、`wartime_reaction` 或跨分支结果。该 guard 只保证基础 Schema 可验收，不替代具体业务 Prompt。
 - T1402/T0029/T0030 后，NPC 对话 Prompt 已落到 `data/prompts/dialogue_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=dialogue` 时读取；模板覆盖日常对话、NPC-NPC 邀请接受 / 拒绝、无硬上限正式对话、逐轮主动结束与第 6 轮起软性收尾、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留，并已完成真实 DeepSeek `/npc/dialogue` 验收。T0061 后模板只读取宽松 `speech_style`，并结合人物其他字段、长期记忆和当前处境避免不同 NPC 生成可互换的通用士兵台词。
-- T1403/T0022 后，每日计划 Prompt 已落到 `data/prompts/daily_plan_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=plan_day` 时读取；该模板要求输出 0-23 点共 24 阶段、至少 6 个工作阶段、只使用 `allowed_actions` 或 `idle`，并明确 `current_order` 只是守备官当前指令参考，不能绕过行动白名单、资源、HP、地点、建筑、工位或程序强制层。后端 `/npc/plan_day` 在 Schema 后校验 hour 唯一覆盖、行动白名单和工作阶段数量，不合法时记录 usage 失败。Godot 正式每日计划只重试真实请求，不进入规则 / Mock 降级。
-- 2026-07-16 起，计划修订 Prompt 独立放在 `data/prompts/plan_revision_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=revise_plan` 时读取。T0049 后请求只使用 `selected_hours`，`revised_plan` 必须按升序恰好返回 `revision_hours`；当前小时入选时 `immediate_action` 必须与该项一致，未入选时必须为 `null`。后端校验 NPC id、精确小时集合、行动白名单、即时行动条件和合并后工作阶段下限。T0023 后成功响应还附加 provider / model / fallback 运行元数据；Godot 正式修订只接受真实 provider，失败只重试真实请求，不使用 Mock / 规则修订。
+- T1403/T0022/T0085 后，每日计划 Prompt 已落到 `data/prompts/daily_plan_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=plan_day` 时读取；该模板要求输出 0-23 点共 24 阶段、只使用 `allowed_actions` 或 `idle`，并把通常至少 6 个工作阶段作为强建议而非程序硬门槛。`current_order` 仍只是守备官当前指令参考，不能绕过行动白名单、资源、HP、地点、建筑、工位或程序强制层。后端校验 hour 唯一覆盖与行动白名单，不按工作数量拒绝；Godot 正式路径只重试真实请求。
+- 2026-07-16 起，计划修订 Prompt 独立放在 `data/prompts/plan_revision_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=revise_plan` 时读取。T0049 后请求只使用 `selected_hours`，`revised_plan` 必须按升序恰好返回 `revision_hours`；当前小时入选时 `immediate_action` 必须与该项一致，未入选时必须为 `null`。T0085 起后端继续校验 NPC id、精确小时集合、行动白名单和即时行动条件，但不再把合并后工作阶段下限当成硬合同。T0086 起 `action_completed` 要求为已完成的当前项选择不同后续活动。Godot 正式修订只接受真实 provider，失败只重试真实请求，不使用 Mock / 规则修订。
+- T0073 未修改计划 Prompt，而是补齐实际效果验收：发布“当前小时优先前往小教堂”的 `current_order` 后，真实 DeepSeek `deepseek-v4-flash` 的 `revise_plan` 返回 `visit_location(chapel)` 并通过 Godot 合并，证明现有 Prompt 会参考指令；该结果不改变“软性参考而非强制行动”的约束。
 - T1404 后，低血量自身心理判定 Prompt 已落到 `data/prompts/battle_judgement_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=battle_judgement` 时读取；战时公开对话继续复用 `data/prompts/dialogue_system_prompt.txt`。`/npc/battle_judgement` 会在 Schema 校验后额外校验 `decision` 属于请求 `allowed_decisions`，并校验 `should_start_escape` 只在 `decision == "escape_station"` 时为 true；不合法时记录 usage 失败并让 Godot 规则降级。
 - T1405/T0024/T0046 后，首次睡眠总结 Prompt 已落到 `data/prompts/daily_reflection_system_prompt.txt`，由 `ModelAdapter` 在 `call_type=daily_reflection` 时读取；`/npc/daily_reflection` 会在 Schema 校验后额外校验 NPC id、日期、日记非空、知识图谱更新字段非空，以及世界内文本必须使用“守备官”而非“玩家”。成功传输体与其他正式 LLM 接口统一附加 provider / model / fallback 元数据，Godot 不再根据调用位置猜测真实或 Mock 来源。
 - Prompt 任务的验收必须分两步：先用 mock / schema 自动化测试确认字段与流程稳定，再用真实 API Key 对对应 call_type 发起真实 provider 测试。无真实 Key 时，不得把 Prompt 效果标记为完全完成。
@@ -150,7 +292,7 @@
 - `dialogue_state`：对话公开性和地点；`visibility` 只能是 `private` 或 `local_public`。
 - `interaction_context`：当前对话语境；日常模式为 `work`，集结 / 战斗 / 避战模式下分别为 `rally`、`combat`、`avoid_combat`；逃离挽留为 `escape_intervention`。
 - `short_memory`：目标 NPC 的短期记忆摘要，必须区分事件库 `experienced_events` 与见闻库 `witnessed_events`。
-- `long_memory`：长期记忆，包括知识图谱和日记。T0059 后它是对话目标的规范长期记忆字段；`target_npc` 只保留共享参与者结构，不重复该图谱 / 日记，NPC-NPC 的 `speaker_npc` 也不携带其私人长期记忆。
+- `long_memory`：长期记忆，包括知识图谱和日记。T0059 后它是对话目标的规范长期记忆字段；`target_npc` 只保留共享参与者结构，不重复该图谱 / 日记。T0071 后正式 payload 不再发送 `speaker_npc`，避免说话者的任何私有上下文进入回复者请求。
 - `location_context`：当前地点/建筑快照，包括建筑 `condition`、是否可进入、运行效率分档、逐位置的显示名 / 空闲或占用状态，以及内部 NPC 及其状态。位置清单本身表达容量，不让模型选择编号。
 - `battlefield_context`：仅在集结 / 战斗 / 避战相关对话或低血量判定中提供；包含场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，仍在驿站但非战斗人员的 NPC，以及目标 NPC 当前行为模式。
 
@@ -165,7 +307,7 @@
 - 若普通对话本轮由对话窗“攻击”触发，`speaker_text` 使用类似“守备官攻击了你以示惩戒，你要说些什么？”的攻击语境文本，`constraints` 会注明这是攻击后的即时反应，不是普通闲聊。攻击造成的 HP 扣除和 `damage_taken` 事件已由 Godot 先行结算；模型只能生成 NPC 对守备官的回应、情绪和态度，不能撤销攻击、改变 HP 或决定后续行动权威结果。逃离挽留中的攻击是例外，不构造该 Prompt，也不请求 NPC 回复。
 - 若目标 NPC 处于集结 / 战斗 / 避战模式，`dialogue_state.visibility` 必须固定为 `local_public`，Prompt 应明确这段话会被同地点可接收见闻的 NPC 听见；模型不得建议改成私下谈话。
 - 集结 / 战斗模式的已入伍且有主武器 NPC 回复必须额外输出 `wartime_reaction`，表示守备官本轮话术造成的战时心理意向：`none`、`escape` 或 `morale_boost`。避战模式下的非战斗人员不使用该字段触发战斗心理，而是继续通过 `recruitment_result` 表达是否同意应征；若同意但仍无主武器，程序会保持避战。
-- 若 `dialogue_kind == "escape_intervention"`，Prompt 必须明确目标 NPC 正在逃离驿站，本轮是守备官在其离图前的挽留 / 威胁 / 承诺。请求会携带 `escape_intervention_round`（1 到 5）、`escape_intent`、当前轮次、短期记忆、长期记忆、地点上下文和 `current_order`。模型只能在 `intent` 中输出 `stay_after_intervention` 或 `leave_after_intervention`，不能输出“留下但退出入伍”等旧分支，也不能直接改变移动、HP、资源或建筑结果。逃离挽留对话中的攻击按钮不发送到模型。
+- 若 `dialogue_kind == "escape_intervention"`，Prompt 必须明确目标 NPC 正在逃离驿站，本轮是守备官在其离图前的挽留 / 威胁 / 承诺。请求会携带 `escape_intervention_round`（1 到 5）、`escape_intent`、当前轮次、短期记忆、长期记忆、地点上下文和 `current_order`。模型只能在 `escape_intervention_result` 中输出 `stay` 或 `leave`，不能输出其他分支，也不能直接改变移动、HP、资源或建筑结果。逃离挽留对话中的攻击按钮不发送到模型。
 
 ## 对话 Prompt 输出
 
@@ -175,14 +317,11 @@
   "replyer_id": "cook_01",
   "reply_text": "守备官，我可以听你说完，但别把锅里的粮食也算成士兵。",
   "response_kind": "reply_to_player",
-  "invitation_result": "not_applicable",
-  "intent": "continue_talk",
   "emotion": "wary",
   "recruitment_result": "none",
   "wartime_reaction": "none",
-  "should_end_dialogue": false,
   "suggested_event_type": "dialogue_turn",
-  "debug_reason": "参考 NPCDialogueResponse"
+  "debug_reason": "参考 PlayerNPCDialogueResponse"
 }
 ```
 
@@ -195,10 +334,7 @@ NPC-NPC 邀请接受示例：
   "reply_text": "好，我先停一下，听你说。",
   "response_kind": "reply_to_npc",
   "invitation_result": "accept",
-  "intent": "continue_talk",
   "emotion": "wary",
-  "recruitment_result": "none",
-  "wartime_reaction": "none",
   "should_end_dialogue": false,
   "suggested_event_type": "dialogue_turn",
   "debug_reason": "当前可接受紧急协调"
@@ -214,9 +350,7 @@ NPC-NPC 正式对话主动结束示例：
   "reply_text": "我知道了。先别在这里吵，食堂还有活要做。",
   "response_kind": "reply_to_npc",
   "invitation_result": "not_applicable",
-  "intent": "end_talk",
   "emotion": "tired",
-  "recruitment_result": "none",
   "should_end_dialogue": true,
   "suggested_event_type": "dialogue_turn",
   "debug_reason": "本轮已说清，主动结束"
@@ -230,12 +364,12 @@ NPC-NPC 正式对话主动结束示例：
 T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，至少包含：
 
 - `npc`：共享 NPC 上下文，内含人设、状态、熟练度、装备、当前地点、`current_order`、短期事件库 / 见闻库摘要、知识图谱、日记和地点上下文。
-- `allowed_actions`：不可拆分的行动白名单；输出必须复用同一候选的 `action_id + action_kind + target_id + location_id`，或使用固定空目标 / 空地点的 `idle` 合同。
+- `allowed_actions`：行动白名单；固定地点行动必须复用同一候选的 `action_id + action_kind + target_id + location_id`，`talk_to_npc` 只复用 `action_id + action_kind + target_id`，或使用固定空目标 / 空地点的 `idle` 合同。
 - `current_resource_states`：当前资源快照。
 - `current_building_states`：当前建筑等级、HP 和修复 / 升级状态快照。
-- `planning_rules`：结构化计划约束，例如 24 阶段、至少 6 个工作阶段、不得越权结算。
+- `planning_rules`：结构化计划要求，例如 24 阶段硬合同、通常至少 6 个工作阶段的强建议、不得越权结算。
 
-开发期 Mock 会按 NPC 熟练度选择可执行工作行动；T1403/T0025 后真实 provider 路径读取 `data/prompts/daily_plan_system_prompt.txt`，要求计划覆盖 24 小时、至少 6 个工作阶段、只使用精确行动候选，并说明如何参考 `current_order`。后端会校验 24 个 hour 是否覆盖 0-23、每项 action/kind/target/location 组合是否合法、对话目标 / 目的和工作阶段是否满足合同；Godot 仍会二次校验输出。正式开局 / 新一天不合法时保留真实失败并保持暂停，不生成规则或 Mock 计划。仅当 Schema 已通过，非 idle 的 action/target/location 唯一命中候选，或 idle 符合固定空目标 / 空地点合同时，后端可把冗余 `action_kind` 规范为合同值并记录 `model_normalizations`；其他错误不得被规范化为成功。
+开发期 Mock 会按 NPC 熟练度选择可执行工作行动；T1403/T0025/T0085 后真实 provider 路径读取 `data/prompts/daily_plan_system_prompt.txt`，要求计划覆盖 24 小时、只使用精确行动候选，并强烈建议通常至少 6 个工作阶段。后端校验 24 个 hour 覆盖、固定行动的 action/kind/target/location 组合，以及对话的 action/kind/target/目的；工作数量不是合同。Godot 仍二次校验硬约束，正式开局 / 新一天不合法时保留真实失败并保持暂停，不生成规则或 Mock 计划。
 
 ```json
 {
@@ -281,9 +415,9 @@ T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，�
 
 `/npc/revise_plan` 输入包含当前 24 小时计划、当前失败项、`failure_type`、`failure_summary`、NPC 共享上下文、`current_order`、`allowed_actions`、固定的 `revision_scope=selected_hours` 与非空 `revision_hours`。`revised_plan` 必须按升序恰好覆盖 `revision_hours`，不得缺失、增加、重复、乱序或修改未选中小时。
 - `immediate_action`：当且仅当 `revision_hours` 包含 `game_time.hour` 时必须存在，并与该小时修订项完全一致；否则必须为 `null`。
-- 每个修订项必须精确复用同一条 `allowed_actions` 的 `action_id + action_kind + target_id + location_id`，或使用固定 `idle` 合同；`talk_to_npc` 还必须提供非空 `dialogue_goal` 且不能以自己为目标。
+- 固定地点修订项必须精确复用同一条 `allowed_actions` 的 `action_id + action_kind + target_id + location_id`；`talk_to_npc` 只复用 `action_id + action_kind + target_id`，必须提供非空 `dialogue_goal` 且不能以自己为目标；`idle` 使用固定空目标 / 空地点合同。
 - 每条 `reason` 不超过 12 个汉字，避免修订响应再次因冗长被截断。
-- 响应合并回未选中的原计划后，还必须满足每日最低工作阶段。
+- 响应合并回未选中的原计划后，应认真权衡并尽量维持基础工作量；工作阶段数量不是硬门槛。
 - 模型只提出计划，不结算资源、HP、建筑、移动、伤害、治疗、训练或工作产出。
 
 ```json
@@ -317,7 +451,7 @@ T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，�
 
 ## 战时对话 Prompt 输出
 
-集结 / 战斗模式下，守备官对已入伍且有主武器 NPC 的主动对话输出沿用 `NPCDialogueResponse`，但必须额外带上战时心理意向。`morale_boost` 和 `escape` 只是意向；斗志 buff、逃离移动、事件入库和数值变化由 Godot 程序校验后执行。
+集结 / 战斗模式下，守备官对已入伍且有主武器 NPC 的主动对话输出使用 `PlayerNPCDialogueResponse`，并带上战时心理意向。`morale_boost` 和 `escape` 只是意向；斗志 buff、逃离移动、事件入库和数值变化由 Godot 程序校验后执行。
 
 ```json
 {
@@ -325,11 +459,9 @@ T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，�
   "replyer_id": "veteran_deputy_01",
   "reply_text": "守备官，说得够明白了。我会把他们拦在门外。",
   "response_kind": "reply_to_player",
-  "intent": "continue_talk",
   "emotion": "resolved",
   "recruitment_result": "none",
   "wartime_reaction": "morale_boost",
-  "should_end_dialogue": false,
   "suggested_event_type": "dialogue_turn",
   "debug_reason": "集结模式公开对话，参考 battlefield_context 与 current_order"
 }
@@ -339,10 +471,10 @@ T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，�
 
 ## 逃离挽留 Prompt 输出
 
-逃离挽留复用 `NPCDialogueResponse`，但 `dialogue_kind` 必须为 `escape_intervention`，`interaction_context` 必须为 `escape_intervention`，`escape_intervention_round` 必须在 1 到 5 之间。模型必须输出：
+逃离挽留使用 `EscapeInterventionDialogueResponse`；`dialogue_kind` 与 `interaction_context` 必须同时为 `escape_intervention`，`escape_intervention_round` 必须在 1 到 5 之间。模型必须输出：
 
-- `intent = "stay_after_intervention"`：NPC 被守备官本轮话术挽留下来。Godot 会停止逃离、切回工作模式、触发计划重评估并写入 `escape_intervention_result`。
-- `intent = "leave_after_intervention"`：NPC 继续逃离。Godot 会记录已用轮次，未满 5 轮时允许玩家再次挽留，满 5 轮后拒绝第 6 轮。
+- `escape_intervention_result = "stay"`：NPC 被守备官本轮话术挽留下来。Godot 会停止逃离、切回工作模式、触发计划重评估并写入同名事件。
+- `escape_intervention_result = "leave"`：NPC 继续逃离。Godot 会记录已用轮次，未满 5 轮时允许玩家再次挽留，满 5 轮后拒绝第 6 轮。
 
 给钱和攻击不是模型结算：给钱已经由 Godot 扣资源并降低逃离移动倍率；逃离挽留中的攻击已经由 Godot 扣 HP、提高逃离移动倍率、计入 1 轮并关闭对话面板，不会请求模型回复。若攻击导致昏迷，复苏后程序会继续逃离。
 
@@ -352,11 +484,8 @@ T1003 当前 `/npc/plan_day` 开发期 Mock 输入对应 `DailyPlanRequest`，�
   "replyer_id": "cook_01",
   "reply_text": "守备官，我留下。但你得记住你答应过什么。",
   "response_kind": "reply_to_player",
-  "intent": "stay_after_intervention",
+  "escape_intervention_result": "stay",
   "emotion": "shaken",
-  "recruitment_result": "none",
-  "wartime_reaction": "none",
-  "should_end_dialogue": true,
   "suggested_event_type": "dialogue_turn",
   "debug_reason": "逃离挽留第 2 轮，守备官承诺补偿并承担后果"
 }
@@ -415,14 +544,14 @@ T1004 当前 `/npc/daily_reflection` 开发期 Mock 输入对应 `DailyReflectio
 
 T0601 后端 Schema 对应关系：
 
-- 对话：`NPCDialogueRequest` / `NPCDialogueResponse`。T0603 后字段以 `npc_id`、`speaker_text`、`speaker_context`、`is_recruitment_request`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 为准；旧式 `guard_officer_input` / `propose_recruitment` 仅作为后端过渡别名。
+- 对话请求统一使用 `NPCDialogueRequest`；响应按 `dialogue_kind` 使用 `PlayerNPCDialogueResponse / NPCNPCDialogueResponse / EscapeInterventionDialogueResponse`。输入以 `npc_id`、`speaker_text`、`speaker_context`、`is_recruitment_request`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context` 为准；旧式 `guard_officer_input` / `propose_recruitment` 仅作为后端过渡别名。
 - T0703A 后，`current_order` 已进入共享 NPC 上下文，并由对话、每日计划、计划修订、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用；不要在每种 Prompt 中用不同字段名重复表达。Mock 的调试原因会标记是否读取到当前指令，但仍只从 Schema 允许结果中输出。
 - 每日计划：`DailyPlanRequest` / `DailyPlanResponse`。T1003 已接通 `/npc/plan_day` 与开发期 Mock 测试；T1403 已完成真实 Prompt 和真实 API 验收；T0022 将 Godot 正式应用改为真实 provider 专用、`source=llm_plan_day`、失败不降级。
 - 对话 / 行动失败通用计划修改判别：`PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`；按 `trigger_kind` 读取对话或权威失败事实，同时读取共享 NPC 人设 / 长短期记忆 / 指令上下文，只输出空或精确 `revision_hours`，不输出新计划。旧 `DialoguePlanRevisionJudgement*` 名仅作兼容。
 - 计划异常修订：`PlanRevisionRequest` / `PlanRevisionResponse`
-- 战时公开对话：T1201 已接入，仍使用 `NPCDialogueRequest` / `NPCDialogueResponse`，并携带 `interaction_context`、`battlefield_context` 和 `wartime_reaction`；T1404 已完成真实战时公开对话 smoke 验收。
+- 战时公开对话使用 `NPCDialogueRequest / PlayerNPCDialogueResponse`，并携带 `interaction_context`、`battlefield_context` 和 `wartime_reaction`；T1404 已完成真实战时公开对话 smoke 验收。
 - 低血量自身心理判定：`BattleJudgementRequest` / `BattleJudgementResponse`，用于战时所有 NPC HP 首次低于 30% 的自身判断；参战 NPC 可继续战斗、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战；T1404 已完成真实 Prompt、后端业务校验和真实 API 验收。
-- 首次睡眠总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` 开发期 Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；触发时机为每天首次睡眠满 1 游戏小时后，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速。T1405 已接入真实 Prompt 和真实 API 验收；`knowledge_graph_updates` 是替换式当前知识键值，`diary_entry` 是增量第一人称日记。
+- 熟睡总结：`DailyReflectionRequest` / `DailyReflectionResponse`。T1004/T1005 已接通 `/npc/daily_reflection` 开发期 Mock 端点、Godot 调用、模板降级、长期日记写入和短期记忆清空；T0094 后触发时机为当前 21:00 锚定窗口累计睡眠满 1 游戏小时，请求期间不可被对话或指令打断且会申请 TimeSystem 慢速。T1405 已接入真实 Prompt 和真实 API 验收；`knowledge_graph_updates` 是替换式当前知识键值，`diary_entry` 是增量第一人称日记。
 - 知识图谱更新、主动交涉、玩家话术分类分别使用 `KnowledgeGraphUpdate*`、`ProactiveIntention*`、`PlayerStrategyClassification*`
 
 ## 事件与记忆输入原则

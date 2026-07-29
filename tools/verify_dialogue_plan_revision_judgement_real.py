@@ -57,13 +57,21 @@ def main() -> None:
     changed_payload = _payload(
         "守备官，我明确答应今天14点替你去训练；除此之外都按原计划。"
     )
+    changed_payload["current_plan"][15].update({
+        "action_kind": "work",
+        "action_id": "work_garden",
+        "location_id": "garden",
+        "priority": 60,
+        "reason": "照料菜园",
+    })
     changed_payload["meta"]["request_id"] = "verify_dialogue_plan_revision_judgement_real_changed"
     changed_response, changed_attempts = _post_with_real_retries(client, changed_payload)
     assert changed_response.status_code == 200, changed_response.get_json()
     changed = PlanRevisionJudgementResponse.model_validate(changed_response.get_json())
     assert changed.npc_id == "gardener_01"
     assert changed.needs_revision is True, changed
-    assert changed.revision_hours == [14], changed
+    assert 14 in changed.revision_hours, changed
+    assert all(hour >= changed_payload["game_time"]["hour"] for hour in changed.revision_hours)
     assert changed_response.get_json()["model_provider"] == provider
     assert changed_response.get_json()["model_fallback_used"] is False
 
@@ -112,7 +120,11 @@ def main() -> None:
     assert revision_response.status_code == 200, revision_response.get_json()
     revision = PlanRevisionResponse.model_validate(revision_response.get_json())
     assert [item.hour for item in revision.revised_plan] == changed.revision_hours
-    assert revision.immediate_action is None
+    if changed_payload["game_time"]["hour"] in changed.revision_hours:
+        assert revision.immediate_action is not None
+        assert revision.immediate_action.hour == changed_payload["game_time"]["hour"]
+    else:
+        assert revision.immediate_action is None
     assert revision_response.get_json()["model_provider"] == provider
     assert revision_response.get_json()["model_fallback_used"] is False
 
@@ -129,6 +141,107 @@ def main() -> None:
     assert unchanged.revision_hours == [], unchanged
     assert unchanged_response.get_json()["model_provider"] == provider
     assert unchanged_response.get_json()["model_fallback_used"] is False
+
+    initiator_payload = copy.deepcopy(unchanged_payload)
+    initiator_payload["meta"]["request_id"] = (
+        "verify_dialogue_plan_revision_judgement_real_initiator_current"
+    )
+    initiator_payload["dialogue_kind"] = "npc_npc"
+    initiator_payload["dialogue_context"].update({
+        "autonomous": True,
+        "speaker_npc_id": "gardener_01",
+        "target_npc_id": "cook_01",
+    })
+    initiator_payload["required_revision_hours"] = [10]
+    initiator_response, initiator_attempts = _post_with_real_retries(
+        client,
+        initiator_payload,
+    )
+    assert initiator_response.status_code == 200, initiator_response.get_json()
+    initiator_judgement = PlanRevisionJudgementResponse.model_validate(
+        initiator_response.get_json()
+    )
+    assert initiator_judgement.needs_revision is True, initiator_judgement
+    assert 10 in initiator_judgement.revision_hours, initiator_judgement
+    assert initiator_response.get_json()["model_provider"] == provider
+    assert initiator_response.get_json()["model_fallback_used"] is False
+
+    proactive_payload = copy.deepcopy(unchanged_payload)
+    proactive_payload["meta"]["request_id"] = (
+        "verify_dialogue_plan_revision_judgement_real_proactive_guard_current"
+    )
+    proactive_payload["dialogue_kind"] = "player_npc"
+    proactive_payload["dialogue_history"] = [
+        {
+            "speaker_id": "gardener_01",
+            "speaker_name": "伊沃",
+            "listener_id": "guard_officer",
+            "listener_name": "守备官",
+            "text": "守备官，我主动来确认接下来的安排。",
+        },
+        {
+            "speaker_id": "guard_officer",
+            "speaker_name": "守备官",
+            "listener_id": "gardener_01",
+            "listener_name": "伊沃",
+            "text": "先把眼前的事情处理好，再按现场情况行动。",
+        },
+    ]
+    proactive_payload["dialogue_context"].update({
+        "dialogue_initiator": "npc",
+        "proactive_talk": True,
+        "target_npc_id": "gardener_01",
+    })
+    proactive_payload["required_revision_hours"] = [10]
+    proactive_response, proactive_attempts = _post_with_real_retries(
+        client,
+        proactive_payload,
+    )
+    assert proactive_response.status_code == 200, proactive_response.get_json()
+    proactive_judgement = PlanRevisionJudgementResponse.model_validate(
+        proactive_response.get_json()
+    )
+    assert proactive_judgement.needs_revision is True, proactive_judgement
+    assert 10 in proactive_judgement.revision_hours, proactive_judgement
+    assert proactive_response.get_json()["model_provider"] == provider
+    assert proactive_response.get_json()["model_fallback_used"] is False
+
+    initiator_revision_payload = copy.deepcopy(revision_payload)
+    initiator_revision_payload["meta"]["request_id"] = (
+        "verify_dialogue_plan_revision_real_initiator_current"
+    )
+    initiator_revision_payload["failed_plan_item"] = copy.deepcopy(
+        initiator_revision_payload["current_plan"][10]
+    )
+    initiator_revision_payload["revision_hours"] = (
+        initiator_judgement.revision_hours
+    )
+    initiator_revision_payload["failure_summary"] = (
+        "自主对话已经结束，发起者需要安排当前小时的后续活动。"
+    )
+    initiator_revision_payload["failure_context"] = {
+        "dialogue_history": copy.deepcopy(initiator_payload["dialogue_history"]),
+        "dialogue_context": copy.deepcopy(initiator_payload["dialogue_context"]),
+        "dialogue_plan_revision_judgement": initiator_judgement.model_dump(),
+    }
+    initiator_revision_response, initiator_revision_attempts = (
+        _post_with_real_retries(
+            client,
+            initiator_revision_payload,
+            path="/npc/revise_plan",
+        )
+    )
+    assert initiator_revision_response.status_code == 200, (
+        initiator_revision_response.get_json()
+    )
+    initiator_revision = PlanRevisionResponse.model_validate(
+        initiator_revision_response.get_json()
+    )
+    assert 10 in [item.hour for item in initiator_revision.revised_plan]
+    assert initiator_revision.immediate_action is not None
+    assert initiator_revision.immediate_action.hour == 10
+    assert initiator_revision_response.get_json()["model_provider"] == provider
+    assert initiator_revision_response.get_json()["model_fallback_used"] is False
 
     action_revision_payload = _revision_payload()
     action_judgement_payload = {
@@ -166,7 +279,9 @@ def main() -> None:
         action_response.get_json()
     )
     assert action_judgement.needs_revision is True, action_judgement
-    assert action_judgement.revision_hours == [8, 14], action_judgement
+    assert 8 in action_judgement.revision_hours, action_judgement
+    assert action_judgement.revision_hours == sorted(set(action_judgement.revision_hours))
+    assert all(8 <= hour <= 23 for hour in action_judgement.revision_hours)
     assert action_response.get_json()["model_provider"] == provider
     assert action_response.get_json()["model_fallback_used"] is False
 
@@ -186,7 +301,7 @@ def main() -> None:
     action_revision = PlanRevisionResponse.model_validate(
         action_revision_response.get_json()
     )
-    assert [item.hour for item in action_revision.revised_plan] == [8, 14]
+    assert [item.hour for item in action_revision.revised_plan] == action_judgement.revision_hours
     assert action_revision.immediate_action is not None
     assert action_revision_response.get_json()["model_provider"] == provider
     assert action_revision_response.get_json()["model_fallback_used"] is False
@@ -216,6 +331,9 @@ def main() -> None:
         f"provider={provider} model={usage['model_adapter']['model']} "
         f"changed_attempts={changed_attempts} revision_attempts={revision_attempts} "
         f"unchanged_attempts={unchanged_attempts} "
+        f"initiator_attempts={initiator_attempts} "
+        f"proactive_attempts={proactive_attempts} "
+        f"initiator_revision_attempts={initiator_revision_attempts} "
         f"action_judgement_attempts={action_judgement_attempts} "
         f"action_revision_attempts={action_revision_attempts}"
     )

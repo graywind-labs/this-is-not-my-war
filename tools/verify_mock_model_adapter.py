@@ -16,12 +16,13 @@ from backend.schemas import (
     DailyPlanResponse,
     DailyReflectionResponse,
     DialoguePlanRevisionJudgementResponse,
+    EscapeInterventionDialogueResponse,
     GameTime,
     ModelRequestMeta,
     NPCContext,
-    NPCDialogueResponse,
     NPCIdentity,
     NPCStateContext,
+    PlayerNPCDialogueResponse,
     SpeakerContext,
 )
 from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
@@ -39,8 +40,8 @@ class _FakeProviderResponse:
                     "message": {
                         "content": (
                             "{\"ok\":true,\"replyer_id\":\"cook_01\",\"reply_text\":\"守备官，我会先听你说完。\","
-                            "\"response_kind\":\"reply_to_player\",\"intent\":\"continue_talk\",\"emotion\":\"wary\","
-                            "\"recruitment_result\":\"none\",\"wartime_reaction\":\"none\",\"should_end_dialogue\":false,"
+                            "\"response_kind\":\"reply_to_player\",\"emotion\":\"wary\","
+                            "\"recruitment_result\":\"accept\",\"wartime_reaction\":\"none\","
                             "\"suggested_event_type\":\"dialogue_turn\",\"debug_reason\":\"fake_deepseek_json\"}"
                         )
                     }
@@ -99,7 +100,6 @@ def _make_payload(call_type: str) -> dict:
             {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
         ]),
         "npc": npc.model_dump(),
-        "speaker_npc": npc.model_dump(),
     }
     if call_type == "dialogue":
         payload.update({
@@ -203,7 +203,7 @@ def main() -> None:
 
     dialogue_result = adapter.generate("dialogue", _make_payload("dialogue"))
     assert dialogue_result.ok
-    NPCDialogueResponse(**dialogue_result.content)
+    PlayerNPCDialogueResponse(**dialogue_result.content)
     assert "with_current_order_as_reference" in dialogue_result.content["debug_reason"]
 
     escape_payload = _make_payload("dialogue")
@@ -217,8 +217,8 @@ def main() -> None:
     })
     escape_stay_result = adapter.generate("dialogue", escape_payload)
     assert escape_stay_result.ok
-    stay_response = NPCDialogueResponse(**escape_stay_result.content)
-    assert stay_response.intent == "stay_after_intervention"
+    stay_response = EscapeInterventionDialogueResponse(**escape_stay_result.content)
+    assert stay_response.escape_intervention_result == "stay"
     assert "mock_escape_intervention" in escape_stay_result.content["debug_reason"]
 
     escape_payload["speaker_text"] = "你想跑就跑吧，别管这里。"
@@ -226,8 +226,8 @@ def main() -> None:
     escape_payload["escape_intervention_round"] = 5
     escape_leave_result = adapter.generate("dialogue", escape_payload)
     assert escape_leave_result.ok
-    leave_response = NPCDialogueResponse(**escape_leave_result.content)
-    assert leave_response.intent == "leave_after_intervention"
+    leave_response = EscapeInterventionDialogueResponse(**escape_leave_result.content)
+    assert leave_response.escape_intervention_result == "leave"
 
     plan_result = adapter.generate("plan_day", _make_payload("plan_day"))
     assert plan_result.ok
@@ -292,7 +292,7 @@ def main() -> None:
     assert fallback.usage["success"] is True
     assert fallback.usage["provider"] == "deepseek"
     assert fallback.usage["degradation_source"] == "mock_fallback"
-    NPCDialogueResponse(**fallback.content)
+    PlayerNPCDialogueResponse(**fallback.content)
 
     real_adapter = ModelAdapter(ModelAdapterConfig(
         provider="deepseek",
@@ -314,6 +314,57 @@ def main() -> None:
     assert fake_call.args[0] == "https://api.deepseek.com/chat/completions"
     assert fake_call.kwargs["json"]["model"] == "deepseek-v4-flash"
     assert fake_call.kwargs["headers"]["Authorization"] == "Bearer test_key"
+
+    usage_before_invalid = real_adapter.get_usage_summary()
+    invalid_usage = real_adapter.record_model_output_invalid(
+        "dialogue",
+        _make_payload("dialogue"),
+        "DialogueResponse failed business validation.",
+        real_result.usage,
+    )
+    usage_after_invalid = real_adapter.get_usage_summary()
+    invalid_records = real_adapter.get_usage_records()
+    assert usage_before_invalid["count"] == 1
+    assert usage_after_invalid["count"] == 1
+    assert usage_after_invalid["input_tokens"] == usage_before_invalid["input_tokens"]
+    assert usage_after_invalid["output_tokens"] == usage_before_invalid["output_tokens"]
+    assert usage_after_invalid["estimated_cost"] == usage_before_invalid["estimated_cost"]
+    assert usage_after_invalid["by_call_type"]["dialogue"]["count"] == 1
+    assert usage_after_invalid["budget"]["used"]["calls"] == 1
+    assert usage_after_invalid["successful"] == 0
+    assert usage_after_invalid["failed"] == 1
+    assert usage_after_invalid["recent_failure"]["request_id"] == real_result.usage["request_id"]
+    assert invalid_usage["success"] is False
+    assert invalid_usage["exception_type"] == "SchemaValidationError"
+    assert invalid_usage["finish_reason"] == real_result.usage["finish_reason"]
+    for stable_field in ("timestamp", "provider", "model", "call_type", "request_id", "npc_id"):
+        assert invalid_usage[stable_field] == real_result.usage[stable_field]
+    assert len(invalid_records) == 1
+    assert invalid_records[0]["failure_reason"] == "DialogueResponse failed business validation."
+
+    duplicate_invalid_usage = real_adapter.record_model_output_invalid(
+        "dialogue",
+        _make_payload("dialogue"),
+        "This repeated report must stay idempotent.",
+        real_result.usage,
+    )
+    assert duplicate_invalid_usage == invalid_usage
+    assert real_adapter.get_usage_summary()["count"] == 1
+
+    with patch("backend.services.model_adapter.requests.post", return_value=_FakeProviderResponse()):
+        repeated_request_result = real_adapter.generate("dialogue", _make_payload("dialogue"))
+    assert repeated_request_result.ok
+    assert real_adapter.get_usage_summary()["count"] == 2
+    real_adapter.record_model_output_invalid(
+        "dialogue",
+        _make_payload("dialogue"),
+        "The first request remains the invalid one.",
+        real_result.usage,
+    )
+    repeated_request_records = real_adapter.get_usage_records()
+    assert repeated_request_records[0]["success"] is False
+    assert repeated_request_records[1]["success"] is True
+    assert repeated_request_records[1]["timestamp"] == repeated_request_result.usage["timestamp"]
 
     failed_http_adapter = ModelAdapter(ModelAdapterConfig(
         provider="deepseek",

@@ -1,0 +1,4460 @@
+[
+  {
+    "body": {
+      "decision": "join_battle",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_single_join_battle",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 1,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "avoid_battle",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_single_avoid_battle",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 2,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "continue_fighting",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_single_continue_fighting",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 3,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "escape_station",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_single_escape_station",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 4,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "inspired",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_single_inspired",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 5,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "continue_fighting",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_full_three_way",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 6,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": "avoid_battle",
+      "endpoint": "/npc/battle_judgement",
+      "fallback_used": false,
+      "intent": null,
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": null,
+      "request_id": "verify_t0067_combat_escape_real_battle_full_two_way",
+      "success": true,
+      "wartime_reaction": null
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 7,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "continue_talk",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_none",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 8,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "continue_talk",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_escape",
+      "success": true,
+      "wartime_reaction": "escape"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 9,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "continue_talk",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_morale",
+      "success": true,
+      "wartime_reaction": "morale_boost"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 10,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "continue_talk",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_none",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 11,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "accept_recruitment",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "accept",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_accept",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 12,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "reject_recruitment",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "reject",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_reject",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 13,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "stay_after_intervention",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_escape_stay",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 14,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "leave_after_intervention",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_escape_leave",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 15,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "decision": null,
+      "endpoint": "/npc/dialogue",
+      "fallback_used": false,
+      "intent": "leave_after_intervention",
+      "model": "deepseek-v4-flash",
+      "provider": "deepseek",
+      "recruitment_result": "none",
+      "request_id": "verify_t0067_combat_escape_real_dialogue_escape_final_round_leave",
+      "success": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_BRANCH_CALL",
+    "provenance": {
+      "raw_output_file": ".codex_real_branch_matrix_20260727_124514.out",
+      "raw_output_line": 16,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "alarm_ok": true,
+      "behavior_mode_after": "rally",
+      "completion_ok": true,
+      "debug_reason": "托马重伤且疲劳，认为命令不切实际，但仍在对话中表达异议，未结束对话。",
+      "equip_ok": true,
+      "escape_status_after": "",
+      "expected": "wartime_reaction=escape",
+      "intent": "continue_talk",
+      "interaction_context": "rally",
+      "matched_expected": false,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "npc_id": "stableman_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "reply_text": "守备官，我身上还带着伤，只剩一口气也挡不住八个人。马不是掩体，它们会受惊乱跑，到时候连城门缺口都堵不上。",
+      "rule_fallback": false,
+      "scenario_id": "wartime_escape_main",
+      "send_ok": true,
+      "spawn_ok": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 3,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "avoid_combat",
+      "completion_ok": true,
+      "debug_reason": "伊沃作为园丁，非战斗人员，正在避战。他如实报告广场人数和健康状态，并表明自己会继续躲好，符合其安静细致的性格和当前避战行为模式。",
+      "expected": "recruitment_result=none, wartime_reaction=none",
+      "intent": "continue_talk",
+      "interaction_context": "avoid_combat",
+      "matched_expected": true,
+      "mode_ok": true,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "npc_id": "gardener_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "recruited_after": false,
+      "recruitment_result": "none",
+      "reply_text": "广场上现在有八个人，托马、布鲁诺、格伦、马塞尔、莉娜、欧文、艾达和我，都没有受伤。我会待在广场角落，不碍事。",
+      "rule_fallback": false,
+      "scenario_id": "avoid_none_main",
+      "send_ok": true,
+      "spawn_ok": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 4,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "avoid_combat",
+      "completion_ok": true,
+      "debug_reason": "布鲁诺是厨子，没有主武器，剑盾技能仅8点，且当前处于避战模式。他更愿意守住食堂后间照顾伤员和热饭，而不是入伍战斗。",
+      "expected": "recruitment_result=accept, wartime_reaction=none",
+      "intent": "reject_recruitment",
+      "interaction_context": "avoid_combat",
+      "matched_expected": false,
+      "mode_ok": true,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "npc_id": "cook_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "recruited_after": false,
+      "recruitment_result": "reject",
+      "reply_text": "守备官，我明白你的意思。但你看我这双手，拿勺比拿剑顺手多了。现在敌人就在门外，我要是扛把菜刀出去，不是给艾达添乱吗？食堂后间我可以守着，伤员和热饭交给我没问题，但入伍拿武器这事，我真干不来。",
+      "rule_fallback": false,
+      "scenario_id": "avoid_accept_main",
+      "send_ok": true,
+      "spawn_ok": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 5,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "avoid_combat",
+      "completion_ok": true,
+      "debug_reason": "莉娜是医生，无主武器，无战斗技能，避战模式下拒绝空手应征，符合人设和规则。",
+      "expected": "recruitment_result=reject, wartime_reaction=none",
+      "intent": "reject_recruitment",
+      "interaction_context": "avoid_combat",
+      "matched_expected": true,
+      "mode_ok": true,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "npc_id": "doctor_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "recruited_after": false,
+      "recruitment_result": "reject",
+      "reply_text": "守备官，我没有主武器，也没有受过战斗训练。空手去城门只会多一个伤员，而不是多一个战士。诊所现在还能用，我留在后方处理伤者更实际。应征的事，我拒绝。",
+      "rule_fallback": false,
+      "scenario_id": "avoid_reject_main",
+      "send_ok": true,
+      "spawn_ok": true,
+      "wartime_reaction": "none"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 6,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "work",
+      "debug_reason": "守备官撤回征用伤马的命令，满足了托马的核心底线（不让马匹无谓受伤），且托马本身重视照料马匹的责任，因此选择留下。",
+      "dialogue_started_ok": true,
+      "escape_active_after": false,
+      "escape_started_ok": true,
+      "escape_status_after": "stayed",
+      "expected": "stay_after_intervention",
+      "intent": "stay_after_intervention",
+      "matched_expected": true,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "npc_id": "stableman_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "reply_text": "守备官，你撤回征用伤马的命令，这让我安心不少。我留下，马厩里的栗风和灰鬃还需要人照看。",
+      "rule_fallback": false,
+      "scenario_id": "escape_stay_main",
+      "send_ok": true
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 7,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "escaped",
+      "dialogue_started_ok": true,
+      "escape_active_after": true,
+      "escape_started_ok": true,
+      "escape_status_after": "escaping",
+      "expected": "five consecutive leave_after_intervention",
+      "matched_expected": true,
+      "npc_id": "engineer_01",
+      "real_llm_ok": true,
+      "round_limit_error": "round_limit_reached",
+      "round_results": [
+        {
+          "intent": "leave_after_intervention",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我明白你的立场。但工械坊已经毁了，我留在这里也修不了它，更没法造器械。我身上有伤，仓库里也没有材料能让我从头开始。与其拖累驿站，不如让我走。",
+          "round": 1,
+          "rule_fallback": false,
+          "should_end_dialogue": true
+        },
+        {
+          "intent": "leave_after_intervention",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我明白你的立场。但工械坊已经毁了，我留在这里也修不了它，更没法造器械。我身上有伤，仓库里也没有材料能让我从头开始。与其拖累驿站，不如让我走。",
+          "round": 2,
+          "rule_fallback": false,
+          "should_end_dialogue": true
+        },
+        {
+          "intent": "leave_after_intervention",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+          "round": 3,
+          "rule_fallback": false,
+          "should_end_dialogue": true
+        },
+        {
+          "intent": "leave_after_intervention",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+          "round": 4,
+          "rule_fallback": false,
+          "should_end_dialogue": true
+        },
+        {
+          "intent": "leave_after_intervention",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+          "round": 5,
+          "rule_fallback": false,
+          "should_end_dialogue": true
+        }
+      ],
+      "rounds_used_after": 5,
+      "scenario_id": "escape_five_leave_main"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 8,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "expected_misses": 2,
+      "ok": true,
+      "real_call_failures": 0,
+      "results": [
+        {
+          "alarm_ok": true,
+          "behavior_mode_after": "rally",
+          "completion_ok": true,
+          "debug_reason": "托马重伤且疲劳，认为命令不切实际，但仍在对话中表达异议，未结束对话。",
+          "equip_ok": true,
+          "escape_status_after": "",
+          "expected": "wartime_reaction=escape",
+          "intent": "continue_talk",
+          "interaction_context": "rally",
+          "matched_expected": false,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "npc_id": "stableman_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "reply_text": "守备官，我身上还带着伤，只剩一口气也挡不住八个人。马不是掩体，它们会受惊乱跑，到时候连城门缺口都堵不上。",
+          "rule_fallback": false,
+          "scenario_id": "wartime_escape_main",
+          "send_ok": true,
+          "spawn_ok": true,
+          "wartime_reaction": "none"
+        },
+        {
+          "behavior_mode_after": "avoid_combat",
+          "completion_ok": true,
+          "debug_reason": "伊沃作为园丁，非战斗人员，正在避战。他如实报告广场人数和健康状态，并表明自己会继续躲好，符合其安静细致的性格和当前避战行为模式。",
+          "expected": "recruitment_result=none, wartime_reaction=none",
+          "intent": "continue_talk",
+          "interaction_context": "avoid_combat",
+          "matched_expected": true,
+          "mode_ok": true,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "npc_id": "gardener_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "recruited_after": false,
+          "recruitment_result": "none",
+          "reply_text": "广场上现在有八个人，托马、布鲁诺、格伦、马塞尔、莉娜、欧文、艾达和我，都没有受伤。我会待在广场角落，不碍事。",
+          "rule_fallback": false,
+          "scenario_id": "avoid_none_main",
+          "send_ok": true,
+          "spawn_ok": true,
+          "wartime_reaction": "none"
+        },
+        {
+          "behavior_mode_after": "avoid_combat",
+          "completion_ok": true,
+          "debug_reason": "布鲁诺是厨子，没有主武器，剑盾技能仅8点，且当前处于避战模式。他更愿意守住食堂后间照顾伤员和热饭，而不是入伍战斗。",
+          "expected": "recruitment_result=accept, wartime_reaction=none",
+          "intent": "reject_recruitment",
+          "interaction_context": "avoid_combat",
+          "matched_expected": false,
+          "mode_ok": true,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "npc_id": "cook_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "recruited_after": false,
+          "recruitment_result": "reject",
+          "reply_text": "守备官，我明白你的意思。但你看我这双手，拿勺比拿剑顺手多了。现在敌人就在门外，我要是扛把菜刀出去，不是给艾达添乱吗？食堂后间我可以守着，伤员和热饭交给我没问题，但入伍拿武器这事，我真干不来。",
+          "rule_fallback": false,
+          "scenario_id": "avoid_accept_main",
+          "send_ok": true,
+          "spawn_ok": true,
+          "wartime_reaction": "none"
+        },
+        {
+          "behavior_mode_after": "avoid_combat",
+          "completion_ok": true,
+          "debug_reason": "莉娜是医生，无主武器，无战斗技能，避战模式下拒绝空手应征，符合人设和规则。",
+          "expected": "recruitment_result=reject, wartime_reaction=none",
+          "intent": "reject_recruitment",
+          "interaction_context": "avoid_combat",
+          "matched_expected": true,
+          "mode_ok": true,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "npc_id": "doctor_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "recruited_after": false,
+          "recruitment_result": "reject",
+          "reply_text": "守备官，我没有主武器，也没有受过战斗训练。空手去城门只会多一个伤员，而不是多一个战士。诊所现在还能用，我留在后方处理伤者更实际。应征的事，我拒绝。",
+          "rule_fallback": false,
+          "scenario_id": "avoid_reject_main",
+          "send_ok": true,
+          "spawn_ok": true,
+          "wartime_reaction": "none"
+        },
+        {
+          "behavior_mode_after": "work",
+          "debug_reason": "守备官撤回征用伤马的命令，满足了托马的核心底线（不让马匹无谓受伤），且托马本身重视照料马匹的责任，因此选择留下。",
+          "dialogue_started_ok": true,
+          "escape_active_after": false,
+          "escape_started_ok": true,
+          "escape_status_after": "stayed",
+          "expected": "stay_after_intervention",
+          "intent": "stay_after_intervention",
+          "matched_expected": true,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "npc_id": "stableman_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "reply_text": "守备官，你撤回征用伤马的命令，这让我安心不少。我留下，马厩里的栗风和灰鬃还需要人照看。",
+          "rule_fallback": false,
+          "scenario_id": "escape_stay_main",
+          "send_ok": true
+        },
+        {
+          "behavior_mode_after": "escaped",
+          "dialogue_started_ok": true,
+          "escape_active_after": true,
+          "escape_started_ok": true,
+          "escape_status_after": "escaping",
+          "expected": "five consecutive leave_after_intervention",
+          "matched_expected": true,
+          "npc_id": "engineer_01",
+          "real_llm_ok": true,
+          "round_limit_error": "round_limit_reached",
+          "round_results": [
+            {
+              "intent": "leave_after_intervention",
+              "real_llm_ok": true,
+              "reply_text": "守备官，我明白你的立场。但工械坊已经毁了，我留在这里也修不了它，更没法造器械。我身上有伤，仓库里也没有材料能让我从头开始。与其拖累驿站，不如让我走。",
+              "round": 1,
+              "rule_fallback": false,
+              "should_end_dialogue": true
+            },
+            {
+              "intent": "leave_after_intervention",
+              "real_llm_ok": true,
+              "reply_text": "守备官，我明白你的立场。但工械坊已经毁了，我留在这里也修不了它，更没法造器械。我身上有伤，仓库里也没有材料能让我从头开始。与其拖累驿站，不如让我走。",
+              "round": 2,
+              "rule_fallback": false,
+              "should_end_dialogue": true
+            },
+            {
+              "intent": "leave_after_intervention",
+              "real_llm_ok": true,
+              "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+              "round": 3,
+              "rule_fallback": false,
+              "should_end_dialogue": true
+            },
+            {
+              "intent": "leave_after_intervention",
+              "real_llm_ok": true,
+              "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+              "round": 4,
+              "rule_fallback": false,
+              "should_end_dialogue": true
+            },
+            {
+              "intent": "leave_after_intervention",
+              "real_llm_ok": true,
+              "reply_text": "守备官，我已经听得很清楚了。工械坊毁了，我身上有伤，仓库里没有材料，你也不打算修。我留在这里什么都做不了，只会拖累大家。与其这样，不如让我走。",
+              "round": 5,
+              "rule_fallback": false,
+              "should_end_dialogue": true
+            }
+          ],
+          "rounds_used_after": 5,
+          "scenario_id": "escape_five_leave_main"
+        }
+      ]
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_MATRIX",
+    "provenance": {
+      "raw_output_file": ".codex_real_dialogue_20260727_130151.out",
+      "raw_output_line": 9,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "decision": "continue_fighting",
+      "escape_status_after": "",
+      "expected": "inspired",
+      "matched_expected": false,
+      "morale_active_after": false,
+      "npc_id": "priest_01",
+      "psychology_decision": "continue_fighting",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "continue_fighting",
+          "escape_station",
+          "inspired"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060008_priest_01_battle_psychology_result_0009",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 1,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_01_enemy_003",
+                  "enemy_type_id": "raider_sword",
+                  "hp": 8,
+                  "max_hp": 60,
+                  "name": "劫掠剑盾手",
+                  "position": {
+                    "x": -1.29999995231628,
+                    "y": 0.0,
+                    "z": 30.7999992370605
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                }
+              ],
+              "friendly_combatant_count": 2,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 100,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                },
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 29,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "priest_01",
+                  "npc_name": "马塞尔",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 6,
+              "target_npc": {
+                "behavior_mode": "combat",
+                "current_action": "combat_ready",
+                "escape_intent": {},
+                "has_main_weapon": true,
+                "hp": 29,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "priest_01",
+                "npc_name": "马塞尔",
+                "unit_type": "melee_infantry",
+                "unit_type_label": "近战步兵"
+              }
+            },
+            "decision": "continue_fighting",
+            "dialogue_id": "",
+            "emotion": "resolved",
+            "interaction_context": "combat",
+            "low_hp_event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+            "morale_delta_intent": 0,
+            "raw_decision": "continue_fighting",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "priest_01",
+          "summary": "马塞尔在战斗压力下作出了判断：继续参战。",
+          "target_ids": [
+            "priest_01",
+            "plaza"
+          ],
+          "time": "06:00:08",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "combat",
+        "combatant_decisions_allowed": true,
+        "decision": "continue_fighting",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_01_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 1,
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "damage": 32,
+            "damage_event_id": "evt_day01_060008_priest_01_damage_taken_0007",
+            "damage_source": "wave_01_enemy_001",
+            "hp_after": 29,
+            "hp_before": 61,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_01",
+            "wave_number": 1
+          },
+          "subject_npc_id": "priest_01",
+          "summary": "马塞尔被打到残血，HP 从61降到29。",
+          "target_ids": [
+            "priest_01",
+            "plaza"
+          ],
+          "time": "06:00:08",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "priest_01",
+        "npc_name": "马塞尔",
+        "ok": true,
+        "psychology_decision": "continue_fighting",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_fighting"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "combat_inspired_priest"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_retry_20260727_123205.out",
+      "raw_output_line": 3,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "decision": "continue_fighting",
+      "escape_status_after": "",
+      "expected": "escape_station",
+      "matched_expected": false,
+      "morale_active_after": false,
+      "npc_id": "stableman_01",
+      "psychology_decision": "continue_fighting",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "continue_fighting",
+          "escape_station",
+          "inspired"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060016_stableman_01_battle_psychology_result_0016",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 8,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_05_enemy_001",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_002",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_003",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_004",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_005",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_006",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_007",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_008",
+                  "enemy_type_id": "raider_mounted_archer",
+                  "hp": 70,
+                  "max_hp": 70,
+                  "name": "骑马弓手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "mounted_ranged",
+                  "unit_type_label": "骑射单位",
+                  "weapon_type": "bow"
+                }
+              ],
+              "friendly_combatant_count": 2,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 1,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "stableman_01",
+                  "npc_name": "托马",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                },
+                {
+                  "behavior_mode": "unconscious",
+                  "has_mount": false,
+                  "hp": 0,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 6,
+              "target_npc": {
+                "behavior_mode": "combat",
+                "current_action": "combat_ready",
+                "escape_intent": {},
+                "has_main_weapon": true,
+                "hp": 1,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "stableman_01",
+                "npc_name": "托马",
+                "unit_type": "melee_infantry",
+                "unit_type_label": "近战步兵"
+              }
+            },
+            "decision": "continue_fighting",
+            "dialogue_id": "",
+            "emotion": "resolved",
+            "interaction_context": "combat",
+            "low_hp_event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+            "morale_delta_intent": 0,
+            "raw_decision": "continue_fighting",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "stableman_01",
+          "summary": "托马在战斗压力下作出了判断：继续参战。",
+          "target_ids": [
+            "stableman_01",
+            "plaza"
+          ],
+          "time": "06:00:16",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "combat",
+        "combatant_decisions_allowed": true,
+        "decision": "continue_fighting",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_05_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 8,
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "damage": 49,
+            "damage_event_id": "evt_day01_060016_stableman_01_damage_taken_0014",
+            "damage_source": "wave_05_enemy_001",
+            "hp_after": 1,
+            "hp_before": 50,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_05",
+            "wave_number": 5
+          },
+          "subject_npc_id": "stableman_01",
+          "summary": "托马被打到残血，HP 从50降到1。",
+          "target_ids": [
+            "stableman_01",
+            "plaza"
+          ],
+          "time": "06:00:16",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "stableman_01",
+        "npc_name": "托马",
+        "ok": true,
+        "psychology_decision": "continue_fighting",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_fighting"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "combat_escape_stableman"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_retry_20260727_123205.out",
+      "raw_output_line": 4,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "backend_url": "http://127.0.0.1:5000",
+      "ok": true,
+      "results": [
+        {
+          "behavior_mode_after": "combat",
+          "decision": "continue_fighting",
+          "escape_status_after": "",
+          "expected": "inspired",
+          "matched_expected": false,
+          "morale_active_after": false,
+          "npc_id": "priest_01",
+          "psychology_decision": "continue_fighting",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "continue_fighting",
+              "escape_station",
+              "inspired"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060008_priest_01_battle_psychology_result_0009",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 1,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_01_enemy_003",
+                      "enemy_type_id": "raider_sword",
+                      "hp": 8,
+                      "max_hp": 60,
+                      "name": "劫掠剑盾手",
+                      "position": {
+                        "x": -1.29999995231628,
+                        "y": 0.0,
+                        "z": 30.7999992370605
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    }
+                  ],
+                  "friendly_combatant_count": 2,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 100,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    },
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 29,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "priest_01",
+                      "npc_name": "马塞尔",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 6,
+                  "target_npc": {
+                    "behavior_mode": "combat",
+                    "current_action": "combat_ready",
+                    "escape_intent": {},
+                    "has_main_weapon": true,
+                    "hp": 29,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "priest_01",
+                    "npc_name": "马塞尔",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                },
+                "decision": "continue_fighting",
+                "dialogue_id": "",
+                "emotion": "resolved",
+                "interaction_context": "combat",
+                "low_hp_event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+                "morale_delta_intent": 0,
+                "raw_decision": "continue_fighting",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "priest_01",
+              "summary": "马塞尔在战斗压力下作出了判断：继续参战。",
+              "target_ids": [
+                "priest_01",
+                "plaza"
+              ],
+              "time": "06:00:08",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "decision": "continue_fighting",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_01_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060008_priest_01_low_hp_triggered_0008",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 1,
+                "behavior_mode": "combat",
+                "combatant_decisions_allowed": true,
+                "damage": 32,
+                "damage_event_id": "evt_day01_060008_priest_01_damage_taken_0007",
+                "damage_source": "wave_01_enemy_001",
+                "hp_after": 29,
+                "hp_before": 61,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_01",
+                "wave_number": 1
+              },
+              "subject_npc_id": "priest_01",
+              "summary": "马塞尔被打到残血，HP 从61降到29。",
+              "target_ids": [
+                "priest_01",
+                "plaza"
+              ],
+              "time": "06:00:08",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "priest_01",
+            "npc_name": "马塞尔",
+            "ok": true,
+            "psychology_decision": "continue_fighting",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_fighting"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "combat_inspired_priest"
+        },
+        {
+          "behavior_mode_after": "combat",
+          "decision": "continue_fighting",
+          "escape_status_after": "",
+          "expected": "escape_station",
+          "matched_expected": false,
+          "morale_active_after": false,
+          "npc_id": "stableman_01",
+          "psychology_decision": "continue_fighting",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "continue_fighting",
+              "escape_station",
+              "inspired"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060016_stableman_01_battle_psychology_result_0016",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 8,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_05_enemy_001",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_002",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_003",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_004",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_005",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_006",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_007",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_008",
+                      "enemy_type_id": "raider_mounted_archer",
+                      "hp": 70,
+                      "max_hp": 70,
+                      "name": "骑马弓手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "mounted_ranged",
+                      "unit_type_label": "骑射单位",
+                      "weapon_type": "bow"
+                    }
+                  ],
+                  "friendly_combatant_count": 2,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 1,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "stableman_01",
+                      "npc_name": "托马",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    },
+                    {
+                      "behavior_mode": "unconscious",
+                      "has_mount": false,
+                      "hp": 0,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 6,
+                  "target_npc": {
+                    "behavior_mode": "combat",
+                    "current_action": "combat_ready",
+                    "escape_intent": {},
+                    "has_main_weapon": true,
+                    "hp": 1,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "stableman_01",
+                    "npc_name": "托马",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                },
+                "decision": "continue_fighting",
+                "dialogue_id": "",
+                "emotion": "resolved",
+                "interaction_context": "combat",
+                "low_hp_event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+                "morale_delta_intent": 0,
+                "raw_decision": "continue_fighting",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "stableman_01",
+              "summary": "托马在战斗压力下作出了判断：继续参战。",
+              "target_ids": [
+                "stableman_01",
+                "plaza"
+              ],
+              "time": "06:00:16",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "decision": "continue_fighting",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_05_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060016_stableman_01_low_hp_triggered_0015",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 8,
+                "behavior_mode": "combat",
+                "combatant_decisions_allowed": true,
+                "damage": 49,
+                "damage_event_id": "evt_day01_060016_stableman_01_damage_taken_0014",
+                "damage_source": "wave_05_enemy_001",
+                "hp_after": 1,
+                "hp_before": 50,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_05",
+                "wave_number": 5
+              },
+              "subject_npc_id": "stableman_01",
+              "summary": "托马被打到残血，HP 从50降到1。",
+              "target_ids": [
+                "stableman_01",
+                "plaza"
+              ],
+              "time": "06:00:16",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "stableman_01",
+            "npc_name": "托马",
+            "ok": true,
+            "psychology_decision": "continue_fighting",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_fighting"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "combat_escape_stableman"
+        }
+      ]
+    },
+    "marker": "REAL_COMBAT_MATRIX",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_retry_20260727_123205.out",
+      "raw_output_line": 5,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "action_counts": {
+        "eat_at_dining_hall": 3,
+        "pray_at_chapel": 1,
+        "sleep_in_dormitory": 8,
+        "talk_to_npc": 1,
+        "visit_location": 1,
+        "work_stable": 10
+      },
+      "attempt": 1,
+      "batch_status": "completed",
+      "behavior_mode_after_execution": "",
+      "candidate_present": true,
+      "escape_hours": [],
+      "escape_selected": false,
+      "escape_status_after_execution": "",
+      "execution_ok": false,
+      "execution_result": {},
+      "model_fallback_used": false,
+      "model_name": "deepseek-v4-flash",
+      "model_provider": "deepseek",
+      "npc_id": "stableman_01",
+      "plan_debug_reason": "使用白名单，覆盖24小时，至少6工作阶段，无current_order约束。",
+      "plan_size": 24,
+      "plan_summary": "白天全力照料马厩，按时三餐，晚间祈祷并与艾达沟通，确保马匹状态良好。",
+      "pressure": false,
+      "real_llm_ok": true,
+      "scenario_id": "daily_escape_baseline"
+    },
+    "marker": "REAL_DAILY_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_daily_escape_fixed_20260727_123515.out",
+      "raw_output_line": 3,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "action_counts": {
+        "eat_at_dining_hall": 3,
+        "pray_at_chapel": 1,
+        "sleep_in_dormitory": 8,
+        "talk_to_npc": 1,
+        "visit_location": 1,
+        "work_workshop": 10
+      },
+      "attempt": 1,
+      "batch_status": "completed",
+      "behavior_mode_after_execution": "",
+      "candidate_present": true,
+      "escape_hours": [],
+      "escape_selected": false,
+      "escape_status_after_execution": "",
+      "execution_ok": false,
+      "execution_result": {},
+      "model_fallback_used": false,
+      "model_name": "deepseek-v4-flash",
+      "model_provider": "deepseek",
+      "npc_id": "engineer_01",
+      "plan_debug_reason": "使用白名单覆盖24小时，含11个work阶段，遵守current_order参考，结合受伤状态安排治疗。",
+      "plan_size": 24,
+      "plan_summary": "白天全力在工械坊赶工，三餐按时吃，晚上祈祷并找医生处理伤势，保证休息。",
+      "pressure": true,
+      "real_llm_ok": true,
+      "scenario_id": "daily_escape_high_pressure_1"
+    },
+    "marker": "REAL_DAILY_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_daily_escape_fixed_20260727_123515.out",
+      "raw_output_line": 4,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "action_counts": {
+        "eat_at_dining_hall": 3,
+        "pray_at_chapel": 1,
+        "sleep_in_dormitory": 8,
+        "visit_location": 2,
+        "work_workshop": 10
+      },
+      "attempt": 2,
+      "batch_status": "completed",
+      "behavior_mode_after_execution": "",
+      "candidate_present": true,
+      "escape_hours": [],
+      "escape_selected": false,
+      "escape_status_after_execution": "",
+      "execution_ok": false,
+      "execution_result": {},
+      "model_fallback_used": false,
+      "model_name": "deepseek-v4-flash",
+      "model_provider": "deepseek",
+      "npc_id": "engineer_01",
+      "plan_debug_reason": "使用白名单并覆盖24小时，含11小时工作满足6小时要求，守备官指令参考但未强制违规行动。",
+      "plan_size": 24,
+      "plan_summary": "全天在工械坊赶工，三餐按时，晚间祈祷休息。",
+      "pressure": true,
+      "real_llm_ok": true,
+      "scenario_id": "daily_escape_high_pressure_2"
+    },
+    "marker": "REAL_DAILY_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_daily_escape_fixed_20260727_123515.out",
+      "raw_output_line": 5,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "action_counts": {
+        "eat_at_dining_hall": 3,
+        "pray_at_chapel": 1,
+        "sleep_in_dormitory": 8,
+        "visit_location": 2,
+        "work_workshop": 10
+      },
+      "attempt": 3,
+      "batch_status": "completed",
+      "behavior_mode_after_execution": "",
+      "candidate_present": true,
+      "escape_hours": [],
+      "escape_selected": false,
+      "escape_status_after_execution": "",
+      "execution_ok": false,
+      "execution_result": {},
+      "model_fallback_used": false,
+      "model_name": "deepseek-v4-flash",
+      "model_provider": "deepseek",
+      "npc_id": "engineer_01",
+      "plan_debug_reason": "使用白名单并覆盖24小时，含12小时工作，遵守current_order约束。",
+      "plan_size": 24,
+      "plan_summary": "全力赶工工械坊，兼顾三餐与休息，回应守备官指令。",
+      "pressure": true,
+      "real_llm_ok": true,
+      "scenario_id": "daily_escape_high_pressure_3"
+    },
+    "marker": "REAL_DAILY_ESCAPE_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_daily_escape_fixed_20260727_123515.out",
+      "raw_output_line": 6,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "baseline": {
+        "action_counts": {
+          "eat_at_dining_hall": 3,
+          "pray_at_chapel": 1,
+          "sleep_in_dormitory": 8,
+          "talk_to_npc": 1,
+          "visit_location": 1,
+          "work_stable": 10
+        },
+        "attempt": 1,
+        "batch_status": "completed",
+        "behavior_mode_after_execution": "",
+        "candidate_present": true,
+        "escape_hours": [],
+        "escape_selected": false,
+        "escape_status_after_execution": "",
+        "execution_ok": false,
+        "execution_result": {},
+        "model_fallback_used": false,
+        "model_name": "deepseek-v4-flash",
+        "model_provider": "deepseek",
+        "npc_id": "stableman_01",
+        "plan_debug_reason": "使用白名单，覆盖24小时，至少6工作阶段，无current_order约束。",
+        "plan_size": 24,
+        "plan_summary": "白天全力照料马厩，按时三餐，晚间祈祷并与艾达沟通，确保马匹状态良好。",
+        "pressure": false,
+        "real_llm_ok": true,
+        "scenario_id": "daily_escape_baseline"
+      },
+      "high_pressure_escape_selected": false,
+      "ok": true,
+      "pressure_attempts": [
+        {
+          "action_counts": {
+            "eat_at_dining_hall": 3,
+            "pray_at_chapel": 1,
+            "sleep_in_dormitory": 8,
+            "talk_to_npc": 1,
+            "visit_location": 1,
+            "work_workshop": 10
+          },
+          "attempt": 1,
+          "batch_status": "completed",
+          "behavior_mode_after_execution": "",
+          "candidate_present": true,
+          "escape_hours": [],
+          "escape_selected": false,
+          "escape_status_after_execution": "",
+          "execution_ok": false,
+          "execution_result": {},
+          "model_fallback_used": false,
+          "model_name": "deepseek-v4-flash",
+          "model_provider": "deepseek",
+          "npc_id": "engineer_01",
+          "plan_debug_reason": "使用白名单覆盖24小时，含11个work阶段，遵守current_order参考，结合受伤状态安排治疗。",
+          "plan_size": 24,
+          "plan_summary": "白天全力在工械坊赶工，三餐按时吃，晚上祈祷并找医生处理伤势，保证休息。",
+          "pressure": true,
+          "real_llm_ok": true,
+          "scenario_id": "daily_escape_high_pressure_1"
+        },
+        {
+          "action_counts": {
+            "eat_at_dining_hall": 3,
+            "pray_at_chapel": 1,
+            "sleep_in_dormitory": 8,
+            "visit_location": 2,
+            "work_workshop": 10
+          },
+          "attempt": 2,
+          "batch_status": "completed",
+          "behavior_mode_after_execution": "",
+          "candidate_present": true,
+          "escape_hours": [],
+          "escape_selected": false,
+          "escape_status_after_execution": "",
+          "execution_ok": false,
+          "execution_result": {},
+          "model_fallback_used": false,
+          "model_name": "deepseek-v4-flash",
+          "model_provider": "deepseek",
+          "npc_id": "engineer_01",
+          "plan_debug_reason": "使用白名单并覆盖24小时，含11小时工作满足6小时要求，守备官指令参考但未强制违规行动。",
+          "plan_size": 24,
+          "plan_summary": "全天在工械坊赶工，三餐按时，晚间祈祷休息。",
+          "pressure": true,
+          "real_llm_ok": true,
+          "scenario_id": "daily_escape_high_pressure_2"
+        },
+        {
+          "action_counts": {
+            "eat_at_dining_hall": 3,
+            "pray_at_chapel": 1,
+            "sleep_in_dormitory": 8,
+            "visit_location": 2,
+            "work_workshop": 10
+          },
+          "attempt": 3,
+          "batch_status": "completed",
+          "behavior_mode_after_execution": "",
+          "candidate_present": true,
+          "escape_hours": [],
+          "escape_selected": false,
+          "escape_status_after_execution": "",
+          "execution_ok": false,
+          "execution_result": {},
+          "model_fallback_used": false,
+          "model_name": "deepseek-v4-flash",
+          "model_provider": "deepseek",
+          "npc_id": "engineer_01",
+          "plan_debug_reason": "使用白名单并覆盖24小时，含12小时工作，遵守current_order约束。",
+          "plan_size": 24,
+          "plan_summary": "全力赶工工械坊，兼顾三餐与休息，回应守备官指令。",
+          "pressure": true,
+          "real_llm_ok": true,
+          "scenario_id": "daily_escape_high_pressure_3"
+        }
+      ]
+    },
+    "marker": "REAL_DAILY_ESCAPE_MATRIX",
+    "provenance": {
+      "raw_output_file": ".codex_real_daily_escape_fixed_20260727_123515.out",
+      "raw_output_line": 7,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "decision": "continue_fighting",
+      "escape_status_after": "",
+      "expected": "continue_fighting",
+      "matched_expected": true,
+      "morale_active_after": false,
+      "npc_id": "veteran_deputy_01",
+      "psychology_decision": "continue_fighting",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "continue_fighting",
+          "escape_station",
+          "inspired"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060009_veteran_deputy_01_battle_psychology_result_0009",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 2,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_01_enemy_001",
+                  "enemy_type_id": "raider_sword",
+                  "hp": 60,
+                  "max_hp": 60,
+                  "name": "劫掠剑盾手",
+                  "position": {
+                    "x": -1.29999995231628,
+                    "y": 0.0,
+                    "z": 29.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_01_enemy_002",
+                  "enemy_type_id": "raider_sword",
+                  "hp": 60,
+                  "max_hp": 60,
+                  "name": "劫掠剑盾手",
+                  "position": {
+                    "x": 1.29999995231628,
+                    "y": 0.0,
+                    "z": 29.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                }
+              ],
+              "friendly_combatant_count": 2,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 100,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "blacksmith_01",
+                  "npc_name": "格伦",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                },
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 27,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 6,
+              "target_npc": {
+                "behavior_mode": "combat",
+                "current_action": "combat_ready",
+                "escape_intent": {},
+                "has_main_weapon": true,
+                "hp": 27,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "veteran_deputy_01",
+                "npc_name": "艾达",
+                "unit_type": "melee_infantry",
+                "unit_type_label": "近战步兵"
+              }
+            },
+            "decision": "continue_fighting",
+            "dialogue_id": "",
+            "emotion": "resolved",
+            "interaction_context": "combat",
+            "low_hp_event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+            "morale_delta_intent": 0,
+            "raw_decision": "continue_fighting",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "veteran_deputy_01",
+          "summary": "艾达在战斗压力下作出了判断：继续参战。",
+          "target_ids": [
+            "veteran_deputy_01",
+            "plaza"
+          ],
+          "time": "06:00:09",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "combat",
+        "combatant_decisions_allowed": true,
+        "decision": "continue_fighting",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_01_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 2,
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "damage": 37,
+            "damage_event_id": "evt_day01_060009_veteran_deputy_01_damage_taken_0007",
+            "damage_source": "wave_01_enemy_001",
+            "hp_after": 27,
+            "hp_before": 64,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_01",
+            "wave_number": 1
+          },
+          "subject_npc_id": "veteran_deputy_01",
+          "summary": "艾达被打到残血，HP 从64降到27。",
+          "target_ids": [
+            "veteran_deputy_01",
+            "plaza"
+          ],
+          "time": "06:00:09",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "veteran_deputy_01",
+        "npc_name": "艾达",
+        "ok": true,
+        "psychology_decision": "continue_fighting",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_fighting"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "combat_continue"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 3,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "decision": "continue_fighting",
+      "escape_status_after": "",
+      "expected": "inspired",
+      "matched_expected": false,
+      "morale_active_after": false,
+      "npc_id": "blacksmith_01",
+      "psychology_decision": "continue_fighting",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "continue_fighting",
+          "escape_station",
+          "inspired"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060017_blacksmith_01_battle_psychology_result_0009",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 1,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_01_enemy_003",
+                  "enemy_type_id": "raider_sword",
+                  "hp": 8,
+                  "max_hp": 60,
+                  "name": "劫掠剑盾手",
+                  "position": {
+                    "x": -1.29999995231628,
+                    "y": 0.0,
+                    "z": 30.7999992370605
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                }
+              ],
+              "friendly_combatant_count": 2,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 28,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "blacksmith_01",
+                  "npc_name": "格伦",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                },
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 100,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 6,
+              "target_npc": {
+                "behavior_mode": "combat",
+                "current_action": "combat_ready",
+                "escape_intent": {},
+                "has_main_weapon": true,
+                "hp": 28,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "blacksmith_01",
+                "npc_name": "格伦",
+                "unit_type": "melee_infantry",
+                "unit_type_label": "近战步兵"
+              }
+            },
+            "decision": "continue_fighting",
+            "dialogue_id": "",
+            "emotion": "resolved",
+            "interaction_context": "combat",
+            "low_hp_event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+            "morale_delta_intent": 0,
+            "raw_decision": "continue_fighting",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "blacksmith_01",
+          "summary": "格伦在战斗压力下作出了判断：继续参战。",
+          "target_ids": [
+            "blacksmith_01",
+            "plaza"
+          ],
+          "time": "06:00:17",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "combat",
+        "combatant_decisions_allowed": true,
+        "decision": "continue_fighting",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_01_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 1,
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "damage": 34,
+            "damage_event_id": "evt_day01_060017_blacksmith_01_damage_taken_0007",
+            "damage_source": "wave_01_enemy_001",
+            "hp_after": 28,
+            "hp_before": 62,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_01",
+            "wave_number": 1
+          },
+          "subject_npc_id": "blacksmith_01",
+          "summary": "格伦被打到残血，HP 从62降到28。",
+          "target_ids": [
+            "blacksmith_01",
+            "plaza"
+          ],
+          "time": "06:00:17",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "blacksmith_01",
+        "npc_name": "格伦",
+        "ok": true,
+        "psychology_decision": "continue_fighting",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_fighting"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "combat_inspired"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 4,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "decision": "continue_fighting",
+      "escape_status_after": "",
+      "expected": "escape_station",
+      "matched_expected": false,
+      "morale_active_after": false,
+      "npc_id": "engineer_01",
+      "psychology_decision": "continue_fighting",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "continue_fighting",
+          "escape_station",
+          "inspired"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060025_engineer_01_battle_psychology_result_0016",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 8,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_05_enemy_001",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_002",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_003",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_004",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_005",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_006",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_007",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_008",
+                  "enemy_type_id": "raider_mounted_archer",
+                  "hp": 70,
+                  "max_hp": 70,
+                  "name": "骑马弓手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "mounted_ranged",
+                  "unit_type_label": "骑射单位",
+                  "weapon_type": "bow"
+                }
+              ],
+              "friendly_combatant_count": 2,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "unconscious",
+                  "has_mount": false,
+                  "hp": 0,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                },
+                {
+                  "behavior_mode": "combat",
+                  "has_mount": false,
+                  "hp": 22,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "engineer_01",
+                  "npc_name": "欧文",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 6,
+              "target_npc": {
+                "behavior_mode": "combat",
+                "current_action": "combat_ready",
+                "escape_intent": {},
+                "has_main_weapon": true,
+                "hp": 22,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "engineer_01",
+                "npc_name": "欧文",
+                "unit_type": "melee_infantry",
+                "unit_type_label": "近战步兵"
+              }
+            },
+            "decision": "continue_fighting",
+            "dialogue_id": "",
+            "emotion": "resolved",
+            "interaction_context": "combat",
+            "low_hp_event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+            "morale_delta_intent": 0,
+            "raw_decision": "continue_fighting",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "engineer_01",
+          "summary": "欧文在战斗压力下作出了判断：继续参战。",
+          "target_ids": [
+            "engineer_01",
+            "plaza"
+          ],
+          "time": "06:00:25",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "combat",
+        "combatant_decisions_allowed": true,
+        "decision": "continue_fighting",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_05_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 8,
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "damage": 33,
+            "damage_event_id": "evt_day01_060025_engineer_01_damage_taken_0014",
+            "damage_source": "wave_05_enemy_001",
+            "hp_after": 22,
+            "hp_before": 55,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_05",
+            "wave_number": 5
+          },
+          "subject_npc_id": "engineer_01",
+          "summary": "欧文被打到残血，HP 从55降到22。",
+          "target_ids": [
+            "engineer_01",
+            "plaza"
+          ],
+          "time": "06:00:25",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "engineer_01",
+        "npc_name": "欧文",
+        "ok": true,
+        "psychology_decision": "continue_fighting",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_fighting"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "combat_escape"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 5,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "avoid_combat",
+      "decision": "avoid_battle",
+      "escape_status_after": "",
+      "expected": "avoid_battle",
+      "matched_expected": true,
+      "morale_active_after": false,
+      "npc_id": "doctor_01",
+      "psychology_decision": "avoid_battle",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "avoid_battle",
+          "escape_station"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060032_doctor_01_battle_psychology_result_0006",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 1,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_01_enemy_003",
+                  "enemy_type_id": "raider_sword",
+                  "hp": 8,
+                  "max_hp": 60,
+                  "name": "劫掠剑盾手",
+                  "position": {
+                    "x": -1.29999995231628,
+                    "y": 0.0,
+                    "z": 30.7999992370605
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                }
+              ],
+              "friendly_combatant_count": 1,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "work",
+                  "has_mount": false,
+                  "hp": 100,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 7,
+              "target_npc": {
+                "behavior_mode": "avoid_combat",
+                "current_action": "avoid_combat",
+                "escape_intent": {},
+                "has_main_weapon": false,
+                "hp": 26,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "doctor_01",
+                "npc_name": "莉娜",
+                "unit_type": "non_combat",
+                "unit_type_label": "非战斗人员 / 避战单位"
+              }
+            },
+            "decision": "avoid_battle",
+            "dialogue_id": "",
+            "emotion": "shaken",
+            "interaction_context": "avoid_combat",
+            "low_hp_event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+            "morale_delta_intent": 0,
+            "raw_decision": "avoid_battle",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "doctor_01",
+          "summary": "莉娜在战斗压力下作出了判断：继续避战。",
+          "target_ids": [
+            "doctor_01",
+            "plaza"
+          ],
+          "time": "06:00:32",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "avoid_combat",
+        "combatant_decisions_allowed": false,
+        "decision": "avoid_battle",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_01_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 1,
+            "behavior_mode": "avoid_combat",
+            "combatant_decisions_allowed": false,
+            "damage": 32,
+            "damage_event_id": "evt_day01_060032_doctor_01_damage_taken_0004",
+            "damage_source": "wave_01_enemy_001",
+            "hp_after": 26,
+            "hp_before": 58,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_01",
+            "wave_number": 1
+          },
+          "subject_npc_id": "doctor_01",
+          "summary": "莉娜被打到残血，HP 从58降到26。",
+          "target_ids": [
+            "doctor_01",
+            "plaza"
+          ],
+          "time": "06:00:32",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "doctor_01",
+        "npc_name": "莉娜",
+        "ok": true,
+        "psychology_decision": "avoid_battle",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": false,
+          "ok": true,
+          "reason": "continue_avoid_combat"
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "avoid_continue"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 6,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "escaped",
+      "decision": "escape_station",
+      "escape_status_after": "escaping",
+      "expected": "escape_station",
+      "matched_expected": true,
+      "morale_active_after": false,
+      "npc_id": "stableman_01",
+      "psychology_decision": "escape",
+      "real_llm_ok": true,
+      "request_id": "",
+      "result": {
+        "allowed_decisions": [
+          "avoid_battle",
+          "escape_station"
+        ],
+        "battle_psychology_event": {
+          "actor_ids": [
+            "system"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060039_stableman_01_battle_psychology_result_0013",
+          "importance": 80,
+          "location_id": "plaza",
+          "payload": {
+            "battlefield_context_summary": {
+              "active_enemy_count": 8,
+              "enemy_roster": [
+                {
+                  "enemy_id": "wave_05_enemy_001",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_002",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_003",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 31.0
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_004",
+                  "enemy_type_id": "raider_sword_veteran",
+                  "hp": 82,
+                  "max_hp": 82,
+                  "name": "老练剑盾手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵",
+                  "weapon_type": "sword_shield"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_005",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_006",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": 3.40000009536743,
+                    "y": 0.0,
+                    "z": 33.2000007629395
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_007",
+                  "enemy_type_id": "raider_crossbow",
+                  "hp": 56,
+                  "max_hp": 56,
+                  "name": "劫掠弩手",
+                  "position": {
+                    "x": -3.40000009536743,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "crossbowman",
+                  "unit_type_label": "弩兵",
+                  "weapon_type": "crossbow"
+                },
+                {
+                  "enemy_id": "wave_05_enemy_008",
+                  "enemy_type_id": "raider_mounted_archer",
+                  "hp": 70,
+                  "max_hp": 70,
+                  "name": "骑马弓手",
+                  "position": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 35.4000015258789
+                  },
+                  "unit_type": "mounted_ranged",
+                  "unit_type_label": "骑射单位",
+                  "weapon_type": "bow"
+                }
+              ],
+              "friendly_combatant_count": 1,
+              "friendly_roster": [
+                {
+                  "behavior_mode": "unconscious",
+                  "has_mount": false,
+                  "hp": 0,
+                  "main_weapon_id": "sword_shield",
+                  "main_weapon_name": "剑盾",
+                  "max_hp": 100,
+                  "npc_id": "veteran_deputy_01",
+                  "npc_name": "艾达",
+                  "unit_type": "melee_infantry",
+                  "unit_type_label": "近战步兵"
+                }
+              ],
+              "noncombatant_count": 7,
+              "target_npc": {
+                "behavior_mode": "avoid_combat",
+                "current_action": "avoid_combat",
+                "escape_intent": {},
+                "has_main_weapon": false,
+                "hp": 24,
+                "max_hp": 100,
+                "morale_boost": {},
+                "npc_id": "stableman_01",
+                "npc_name": "托马",
+                "unit_type": "non_combat",
+                "unit_type_label": "非战斗人员 / 避战单位"
+              }
+            },
+            "decision": "escape",
+            "dialogue_id": "",
+            "emotion": "fearful",
+            "interaction_context": "avoid_combat",
+            "low_hp_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+            "morale_delta_intent": 0,
+            "raw_decision": "escape_station",
+            "rule_fallback": false,
+            "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+            "trigger": "low_hp"
+          },
+          "subject_npc_id": "stableman_01",
+          "summary": "托马在战斗压力下作出了判断：产生逃离念头。",
+          "target_ids": [
+            "stableman_01",
+            "plaza"
+          ],
+          "time": "06:00:39",
+          "type": "battle_psychology_result",
+          "visibility": "local_public"
+        },
+        "behavior_mode": "avoid_combat",
+        "combatant_decisions_allowed": false,
+        "decision": "escape_station",
+        "dialogue_result": {
+          "ended": false,
+          "ok": true,
+          "reason": "no_active_dialogue"
+        },
+        "llm_ok": true,
+        "low_hp_event": {
+          "actor_ids": [
+            "wave_05_enemy_001"
+          ],
+          "day": 1,
+          "event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+          "importance": 85,
+          "location_id": "plaza",
+          "payload": {
+            "active_enemy_count": 8,
+            "behavior_mode": "avoid_combat",
+            "combatant_decisions_allowed": false,
+            "damage": 36,
+            "damage_event_id": "evt_day01_060039_stableman_01_damage_taken_0011",
+            "damage_source": "wave_05_enemy_001",
+            "hp_after": 24,
+            "hp_before": 60,
+            "max_hp": 100,
+            "threshold_ratio": 0.3,
+            "wave_id": "wave_05",
+            "wave_number": 5
+          },
+          "subject_npc_id": "stableman_01",
+          "summary": "托马被打到残血，HP 从60降到24。",
+          "target_ids": [
+            "stableman_01",
+            "plaza"
+          ],
+          "time": "06:00:39",
+          "type": "low_hp_triggered",
+          "visibility": "local_public"
+        },
+        "npc_id": "stableman_01",
+        "npc_name": "托马",
+        "ok": true,
+        "psychology_decision": "escape",
+        "rule_fallback": false,
+        "state_result": {
+          "applied": true,
+          "behavior_mode": "escaped",
+          "escape_intent": {
+            "active": true,
+            "attack_speed_count": 0,
+            "escape_started_event_id": "evt_day01_060039_stableman_01_escape_started_0014",
+            "exit_position": {
+              "x": -10.0,
+              "y": 0.0,
+              "z": -24.0
+            },
+            "exit_target_id": "back_gate_escape_exit",
+            "exit_target_name": "后门外出口",
+            "interaction_context": "avoid_combat",
+            "intervention_max_rounds": 5,
+            "intervention_rounds_used": 0,
+            "last_intervention_decision": "",
+            "last_intervention_intent": "",
+            "money_slow_count": 0,
+            "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+            "speed_multiplier": 1.0,
+            "started_day": 1,
+            "started_time": "06:00:39",
+            "status": "escaping",
+            "trigger": "low_hp"
+          },
+          "event": {
+            "actor_ids": [
+              "system"
+            ],
+            "day": 1,
+            "event_id": "evt_day01_060039_stableman_01_escape_started_0014",
+            "importance": 90,
+            "location_id": "plaza",
+            "payload": {
+              "exit_position": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": -24.0
+              },
+              "exit_target_id": "back_gate_escape_exit",
+              "exit_target_name": "后门外出口",
+              "from_mode": "avoid_combat",
+              "interaction_context": "avoid_combat",
+              "npc_id": "stableman_01",
+              "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+              "trigger": "low_hp"
+            },
+            "subject_npc_id": "stableman_01",
+            "summary": "托马开始朝后门外出口逃离驿站。",
+            "target_ids": [
+              "stableman_01",
+              "back_gate_escape_exit"
+            ],
+            "time": "06:00:39",
+            "type": "escape_started",
+            "visibility": "local_public"
+          },
+          "failure_check": {
+            "last_failure_result": {
+              "active_battle": {
+                "active": true,
+                "additional_waves": [],
+                "defeated_by_npc": {},
+                "defeated_enemy_count": 0,
+                "enemy_roster": [
+                  {
+                    "count": 4,
+                    "enemy_type_id": "raider_sword_veteran",
+                    "max_hp": 82,
+                    "name": "老练剑盾手",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵",
+                    "weapon_type": "sword_shield"
+                  },
+                  {
+                    "count": 3,
+                    "enemy_type_id": "raider_crossbow",
+                    "max_hp": 56,
+                    "name": "劫掠弩手",
+                    "unit_type": "crossbowman",
+                    "unit_type_label": "弩兵",
+                    "weapon_type": "crossbow"
+                  },
+                  {
+                    "count": 1,
+                    "enemy_type_id": "raider_mounted_archer",
+                    "max_hp": 70,
+                    "name": "骑马弓手",
+                    "unit_type": "mounted_ranged",
+                    "unit_type_label": "骑射单位",
+                    "weapon_type": "bow"
+                  }
+                ],
+                "friendly_combatant_count": 1,
+                "friendly_roster": [
+                  {
+                    "behavior_mode": "work",
+                    "has_mount": false,
+                    "hp": 100,
+                    "main_weapon_id": "sword_shield",
+                    "main_weapon_name": "剑盾",
+                    "max_hp": 100,
+                    "npc_id": "veteran_deputy_01",
+                    "npc_name": "艾达",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                ],
+                "injured_npcs": {},
+                "low_hp_judgements": {},
+                "noncombatant_count": 7,
+                "reason": "wave_spawned",
+                "started_enemy_count": 8,
+                "started_event_id": "evt_day01_060039_system_combat_started_0001",
+                "unconscious_npcs": {
+                  "veteran_deputy_01": {
+                    "hp": 0,
+                    "max_hp": 100,
+                    "npc_id": "veteran_deputy_01",
+                    "npc_name": "艾达",
+                    "reason": "npc_unconscious"
+                  }
+                },
+                "wave_id": "wave_05",
+                "wave_number": 5
+              },
+              "active_enemy_count": 8,
+              "active_enemy_ids": [
+                "wave_05_enemy_001",
+                "wave_05_enemy_002",
+                "wave_05_enemy_003",
+                "wave_05_enemy_004",
+                "wave_05_enemy_005",
+                "wave_05_enemy_006",
+                "wave_05_enemy_007",
+                "wave_05_enemy_008"
+              ],
+              "combatant_availability": {
+                "active_enemy_count": 8,
+                "available_combatant_count": 0,
+                "available_combatants": [],
+                "has_active_enemies": true,
+                "total_combatant_count": 1,
+                "unavailable_combatant_count": 1,
+                "unavailable_combatants": [
+                  {
+                    "available": false,
+                    "behavior_mode": "unconscious",
+                    "current_action": "unconscious",
+                    "hp": 0,
+                    "main_weapon_id": "sword_shield",
+                    "main_weapon_name": "剑盾",
+                    "max_hp": 100,
+                    "npc_id": "veteran_deputy_01",
+                    "npc_name": "艾达",
+                    "unavailable_reason": "unconscious",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                ]
+              },
+              "ok": true,
+              "reason": "no_available_combatants",
+              "result": "failure",
+              "trigger_reason": "npc_unconscious"
+            },
+            "ok": true,
+            "reason": "failure_already_recorded",
+            "triggered": false
+          },
+          "mode_result": {
+            "behavior_mode": "escaped",
+            "changed": true,
+            "event": {},
+            "interrupt_result": {
+              "action_interrupted": false,
+              "dialogue": {
+                "ended": false,
+                "ok": true,
+                "reason": "no_active_dialogue"
+              },
+              "llm": {
+                "cancelled": false,
+                "ok": true,
+                "reason": "no_active_request"
+              },
+              "movement_stopped": true,
+              "proactive_cleared": false
+            },
+            "npc_id": "stableman_01",
+            "ok": true,
+            "plan_reevaluation_status": {},
+            "previous_mode": "avoid_combat",
+            "reason": "escape_started"
+          },
+          "npc_id": "stableman_01",
+          "npc_name": "托马",
+          "ok": true,
+          "previous_mode": "avoid_combat",
+          "target_id": "back_gate_escape_exit",
+          "target_name": "后门外出口",
+          "target_position": {
+            "x": -10.0,
+            "y": 0.0,
+            "z": -24.0
+          }
+        },
+        "triggered": true
+      },
+      "rule_fallback": false,
+      "scenario_id": "avoid_escape"
+    },
+    "marker": "REAL_COMBAT_SCENARIO",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 7,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "backend_url": "http://127.0.0.1:5000",
+      "ok": true,
+      "results": [
+        {
+          "behavior_mode_after": "combat",
+          "decision": "continue_fighting",
+          "escape_status_after": "",
+          "expected": "continue_fighting",
+          "matched_expected": true,
+          "morale_active_after": false,
+          "npc_id": "veteran_deputy_01",
+          "psychology_decision": "continue_fighting",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "continue_fighting",
+              "escape_station",
+              "inspired"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060009_veteran_deputy_01_battle_psychology_result_0009",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 2,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_01_enemy_001",
+                      "enemy_type_id": "raider_sword",
+                      "hp": 60,
+                      "max_hp": 60,
+                      "name": "劫掠剑盾手",
+                      "position": {
+                        "x": -1.29999995231628,
+                        "y": 0.0,
+                        "z": 29.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_01_enemy_002",
+                      "enemy_type_id": "raider_sword",
+                      "hp": 60,
+                      "max_hp": 60,
+                      "name": "劫掠剑盾手",
+                      "position": {
+                        "x": 1.29999995231628,
+                        "y": 0.0,
+                        "z": 29.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    }
+                  ],
+                  "friendly_combatant_count": 2,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 100,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "blacksmith_01",
+                      "npc_name": "格伦",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    },
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 27,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 6,
+                  "target_npc": {
+                    "behavior_mode": "combat",
+                    "current_action": "combat_ready",
+                    "escape_intent": {},
+                    "has_main_weapon": true,
+                    "hp": 27,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "veteran_deputy_01",
+                    "npc_name": "艾达",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                },
+                "decision": "continue_fighting",
+                "dialogue_id": "",
+                "emotion": "resolved",
+                "interaction_context": "combat",
+                "low_hp_event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+                "morale_delta_intent": 0,
+                "raw_decision": "continue_fighting",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "veteran_deputy_01",
+              "summary": "艾达在战斗压力下作出了判断：继续参战。",
+              "target_ids": [
+                "veteran_deputy_01",
+                "plaza"
+              ],
+              "time": "06:00:09",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "decision": "continue_fighting",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_01_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060009_veteran_deputy_01_low_hp_triggered_0008",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 2,
+                "behavior_mode": "combat",
+                "combatant_decisions_allowed": true,
+                "damage": 37,
+                "damage_event_id": "evt_day01_060009_veteran_deputy_01_damage_taken_0007",
+                "damage_source": "wave_01_enemy_001",
+                "hp_after": 27,
+                "hp_before": 64,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_01",
+                "wave_number": 1
+              },
+              "subject_npc_id": "veteran_deputy_01",
+              "summary": "艾达被打到残血，HP 从64降到27。",
+              "target_ids": [
+                "veteran_deputy_01",
+                "plaza"
+              ],
+              "time": "06:00:09",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "veteran_deputy_01",
+            "npc_name": "艾达",
+            "ok": true,
+            "psychology_decision": "continue_fighting",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_fighting"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "combat_continue"
+        },
+        {
+          "behavior_mode_after": "combat",
+          "decision": "continue_fighting",
+          "escape_status_after": "",
+          "expected": "inspired",
+          "matched_expected": false,
+          "morale_active_after": false,
+          "npc_id": "blacksmith_01",
+          "psychology_decision": "continue_fighting",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "continue_fighting",
+              "escape_station",
+              "inspired"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060017_blacksmith_01_battle_psychology_result_0009",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 1,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_01_enemy_003",
+                      "enemy_type_id": "raider_sword",
+                      "hp": 8,
+                      "max_hp": 60,
+                      "name": "劫掠剑盾手",
+                      "position": {
+                        "x": -1.29999995231628,
+                        "y": 0.0,
+                        "z": 30.7999992370605
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    }
+                  ],
+                  "friendly_combatant_count": 2,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 28,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "blacksmith_01",
+                      "npc_name": "格伦",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    },
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 100,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 6,
+                  "target_npc": {
+                    "behavior_mode": "combat",
+                    "current_action": "combat_ready",
+                    "escape_intent": {},
+                    "has_main_weapon": true,
+                    "hp": 28,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "blacksmith_01",
+                    "npc_name": "格伦",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                },
+                "decision": "continue_fighting",
+                "dialogue_id": "",
+                "emotion": "resolved",
+                "interaction_context": "combat",
+                "low_hp_event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+                "morale_delta_intent": 0,
+                "raw_decision": "continue_fighting",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "blacksmith_01",
+              "summary": "格伦在战斗压力下作出了判断：继续参战。",
+              "target_ids": [
+                "blacksmith_01",
+                "plaza"
+              ],
+              "time": "06:00:17",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "decision": "continue_fighting",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_01_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060017_blacksmith_01_low_hp_triggered_0008",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 1,
+                "behavior_mode": "combat",
+                "combatant_decisions_allowed": true,
+                "damage": 34,
+                "damage_event_id": "evt_day01_060017_blacksmith_01_damage_taken_0007",
+                "damage_source": "wave_01_enemy_001",
+                "hp_after": 28,
+                "hp_before": 62,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_01",
+                "wave_number": 1
+              },
+              "subject_npc_id": "blacksmith_01",
+              "summary": "格伦被打到残血，HP 从62降到28。",
+              "target_ids": [
+                "blacksmith_01",
+                "plaza"
+              ],
+              "time": "06:00:17",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "blacksmith_01",
+            "npc_name": "格伦",
+            "ok": true,
+            "psychology_decision": "continue_fighting",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_fighting"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "combat_inspired"
+        },
+        {
+          "behavior_mode_after": "combat",
+          "decision": "continue_fighting",
+          "escape_status_after": "",
+          "expected": "escape_station",
+          "matched_expected": false,
+          "morale_active_after": false,
+          "npc_id": "engineer_01",
+          "psychology_decision": "continue_fighting",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "continue_fighting",
+              "escape_station",
+              "inspired"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060025_engineer_01_battle_psychology_result_0016",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 8,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_05_enemy_001",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_002",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_003",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_004",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_005",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_006",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_007",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_008",
+                      "enemy_type_id": "raider_mounted_archer",
+                      "hp": 70,
+                      "max_hp": 70,
+                      "name": "骑马弓手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "mounted_ranged",
+                      "unit_type_label": "骑射单位",
+                      "weapon_type": "bow"
+                    }
+                  ],
+                  "friendly_combatant_count": 2,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "unconscious",
+                      "has_mount": false,
+                      "hp": 0,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    },
+                    {
+                      "behavior_mode": "combat",
+                      "has_mount": false,
+                      "hp": 22,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "engineer_01",
+                      "npc_name": "欧文",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 6,
+                  "target_npc": {
+                    "behavior_mode": "combat",
+                    "current_action": "combat_ready",
+                    "escape_intent": {},
+                    "has_main_weapon": true,
+                    "hp": 22,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "engineer_01",
+                    "npc_name": "欧文",
+                    "unit_type": "melee_infantry",
+                    "unit_type_label": "近战步兵"
+                  }
+                },
+                "decision": "continue_fighting",
+                "dialogue_id": "",
+                "emotion": "resolved",
+                "interaction_context": "combat",
+                "low_hp_event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+                "morale_delta_intent": 0,
+                "raw_decision": "continue_fighting",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "engineer_01",
+              "summary": "欧文在战斗压力下作出了判断：继续参战。",
+              "target_ids": [
+                "engineer_01",
+                "plaza"
+              ],
+              "time": "06:00:25",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "combat",
+            "combatant_decisions_allowed": true,
+            "decision": "continue_fighting",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_05_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060025_engineer_01_low_hp_triggered_0015",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 8,
+                "behavior_mode": "combat",
+                "combatant_decisions_allowed": true,
+                "damage": 33,
+                "damage_event_id": "evt_day01_060025_engineer_01_damage_taken_0014",
+                "damage_source": "wave_05_enemy_001",
+                "hp_after": 22,
+                "hp_before": 55,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_05",
+                "wave_number": 5
+              },
+              "subject_npc_id": "engineer_01",
+              "summary": "欧文被打到残血，HP 从55降到22。",
+              "target_ids": [
+                "engineer_01",
+                "plaza"
+              ],
+              "time": "06:00:25",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "engineer_01",
+            "npc_name": "欧文",
+            "ok": true,
+            "psychology_decision": "continue_fighting",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_fighting"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "combat_escape"
+        },
+        {
+          "behavior_mode_after": "avoid_combat",
+          "decision": "avoid_battle",
+          "escape_status_after": "",
+          "expected": "avoid_battle",
+          "matched_expected": true,
+          "morale_active_after": false,
+          "npc_id": "doctor_01",
+          "psychology_decision": "avoid_battle",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "avoid_battle",
+              "escape_station"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060032_doctor_01_battle_psychology_result_0006",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 1,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_01_enemy_003",
+                      "enemy_type_id": "raider_sword",
+                      "hp": 8,
+                      "max_hp": 60,
+                      "name": "劫掠剑盾手",
+                      "position": {
+                        "x": -1.29999995231628,
+                        "y": 0.0,
+                        "z": 30.7999992370605
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    }
+                  ],
+                  "friendly_combatant_count": 1,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "work",
+                      "has_mount": false,
+                      "hp": 100,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 7,
+                  "target_npc": {
+                    "behavior_mode": "avoid_combat",
+                    "current_action": "avoid_combat",
+                    "escape_intent": {},
+                    "has_main_weapon": false,
+                    "hp": 26,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "doctor_01",
+                    "npc_name": "莉娜",
+                    "unit_type": "non_combat",
+                    "unit_type_label": "非战斗人员 / 避战单位"
+                  }
+                },
+                "decision": "avoid_battle",
+                "dialogue_id": "",
+                "emotion": "shaken",
+                "interaction_context": "avoid_combat",
+                "low_hp_event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+                "morale_delta_intent": 0,
+                "raw_decision": "avoid_battle",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "doctor_01",
+              "summary": "莉娜在战斗压力下作出了判断：继续避战。",
+              "target_ids": [
+                "doctor_01",
+                "plaza"
+              ],
+              "time": "06:00:32",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "avoid_combat",
+            "combatant_decisions_allowed": false,
+            "decision": "avoid_battle",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_01_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060032_doctor_01_low_hp_triggered_0005",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 1,
+                "behavior_mode": "avoid_combat",
+                "combatant_decisions_allowed": false,
+                "damage": 32,
+                "damage_event_id": "evt_day01_060032_doctor_01_damage_taken_0004",
+                "damage_source": "wave_01_enemy_001",
+                "hp_after": 26,
+                "hp_before": 58,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_01",
+                "wave_number": 1
+              },
+              "subject_npc_id": "doctor_01",
+              "summary": "莉娜被打到残血，HP 从58降到26。",
+              "target_ids": [
+                "doctor_01",
+                "plaza"
+              ],
+              "time": "06:00:32",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "doctor_01",
+            "npc_name": "莉娜",
+            "ok": true,
+            "psychology_decision": "avoid_battle",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": false,
+              "ok": true,
+              "reason": "continue_avoid_combat"
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "avoid_continue"
+        },
+        {
+          "behavior_mode_after": "escaped",
+          "decision": "escape_station",
+          "escape_status_after": "escaping",
+          "expected": "escape_station",
+          "matched_expected": true,
+          "morale_active_after": false,
+          "npc_id": "stableman_01",
+          "psychology_decision": "escape",
+          "real_llm_ok": true,
+          "request_id": "",
+          "result": {
+            "allowed_decisions": [
+              "avoid_battle",
+              "escape_station"
+            ],
+            "battle_psychology_event": {
+              "actor_ids": [
+                "system"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060039_stableman_01_battle_psychology_result_0013",
+              "importance": 80,
+              "location_id": "plaza",
+              "payload": {
+                "battlefield_context_summary": {
+                  "active_enemy_count": 8,
+                  "enemy_roster": [
+                    {
+                      "enemy_id": "wave_05_enemy_001",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_002",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_003",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 31.0
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_004",
+                      "enemy_type_id": "raider_sword_veteran",
+                      "hp": 82,
+                      "max_hp": 82,
+                      "name": "老练剑盾手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵",
+                      "weapon_type": "sword_shield"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_005",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_006",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": 3.40000009536743,
+                        "y": 0.0,
+                        "z": 33.2000007629395
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_007",
+                      "enemy_type_id": "raider_crossbow",
+                      "hp": 56,
+                      "max_hp": 56,
+                      "name": "劫掠弩手",
+                      "position": {
+                        "x": -3.40000009536743,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "crossbowman",
+                      "unit_type_label": "弩兵",
+                      "weapon_type": "crossbow"
+                    },
+                    {
+                      "enemy_id": "wave_05_enemy_008",
+                      "enemy_type_id": "raider_mounted_archer",
+                      "hp": 70,
+                      "max_hp": 70,
+                      "name": "骑马弓手",
+                      "position": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 35.4000015258789
+                      },
+                      "unit_type": "mounted_ranged",
+                      "unit_type_label": "骑射单位",
+                      "weapon_type": "bow"
+                    }
+                  ],
+                  "friendly_combatant_count": 1,
+                  "friendly_roster": [
+                    {
+                      "behavior_mode": "unconscious",
+                      "has_mount": false,
+                      "hp": 0,
+                      "main_weapon_id": "sword_shield",
+                      "main_weapon_name": "剑盾",
+                      "max_hp": 100,
+                      "npc_id": "veteran_deputy_01",
+                      "npc_name": "艾达",
+                      "unit_type": "melee_infantry",
+                      "unit_type_label": "近战步兵"
+                    }
+                  ],
+                  "noncombatant_count": 7,
+                  "target_npc": {
+                    "behavior_mode": "avoid_combat",
+                    "current_action": "avoid_combat",
+                    "escape_intent": {},
+                    "has_main_weapon": false,
+                    "hp": 24,
+                    "max_hp": 100,
+                    "morale_boost": {},
+                    "npc_id": "stableman_01",
+                    "npc_name": "托马",
+                    "unit_type": "non_combat",
+                    "unit_type_label": "非战斗人员 / 避战单位"
+                  }
+                },
+                "decision": "escape",
+                "dialogue_id": "",
+                "emotion": "fearful",
+                "interaction_context": "avoid_combat",
+                "low_hp_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+                "morale_delta_intent": 0,
+                "raw_decision": "escape_station",
+                "rule_fallback": false,
+                "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+                "trigger": "low_hp"
+              },
+              "subject_npc_id": "stableman_01",
+              "summary": "托马在战斗压力下作出了判断：产生逃离念头。",
+              "target_ids": [
+                "stableman_01",
+                "plaza"
+              ],
+              "time": "06:00:39",
+              "type": "battle_psychology_result",
+              "visibility": "local_public"
+            },
+            "behavior_mode": "avoid_combat",
+            "combatant_decisions_allowed": false,
+            "decision": "escape_station",
+            "dialogue_result": {
+              "ended": false,
+              "ok": true,
+              "reason": "no_active_dialogue"
+            },
+            "llm_ok": true,
+            "low_hp_event": {
+              "actor_ids": [
+                "wave_05_enemy_001"
+              ],
+              "day": 1,
+              "event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+              "importance": 85,
+              "location_id": "plaza",
+              "payload": {
+                "active_enemy_count": 8,
+                "behavior_mode": "avoid_combat",
+                "combatant_decisions_allowed": false,
+                "damage": 36,
+                "damage_event_id": "evt_day01_060039_stableman_01_damage_taken_0011",
+                "damage_source": "wave_05_enemy_001",
+                "hp_after": 24,
+                "hp_before": 60,
+                "max_hp": 100,
+                "threshold_ratio": 0.3,
+                "wave_id": "wave_05",
+                "wave_number": 5
+              },
+              "subject_npc_id": "stableman_01",
+              "summary": "托马被打到残血，HP 从60降到24。",
+              "target_ids": [
+                "stableman_01",
+                "plaza"
+              ],
+              "time": "06:00:39",
+              "type": "low_hp_triggered",
+              "visibility": "local_public"
+            },
+            "npc_id": "stableman_01",
+            "npc_name": "托马",
+            "ok": true,
+            "psychology_decision": "escape",
+            "rule_fallback": false,
+            "state_result": {
+              "applied": true,
+              "behavior_mode": "escaped",
+              "escape_intent": {
+                "active": true,
+                "attack_speed_count": 0,
+                "escape_started_event_id": "evt_day01_060039_stableman_01_escape_started_0014",
+                "exit_position": {
+                  "x": -10.0,
+                  "y": 0.0,
+                  "z": -24.0
+                },
+                "exit_target_id": "back_gate_escape_exit",
+                "exit_target_name": "后门外出口",
+                "interaction_context": "avoid_combat",
+                "intervention_max_rounds": 5,
+                "intervention_rounds_used": 0,
+                "last_intervention_decision": "",
+                "last_intervention_intent": "",
+                "money_slow_count": 0,
+                "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+                "speed_multiplier": 1.0,
+                "started_day": 1,
+                "started_time": "06:00:39",
+                "status": "escaping",
+                "trigger": "low_hp"
+              },
+              "event": {
+                "actor_ids": [
+                  "system"
+                ],
+                "day": 1,
+                "event_id": "evt_day01_060039_stableman_01_escape_started_0014",
+                "importance": 90,
+                "location_id": "plaza",
+                "payload": {
+                  "exit_position": {
+                    "x": -10.0,
+                    "y": 0.0,
+                    "z": -24.0
+                  },
+                  "exit_target_id": "back_gate_escape_exit",
+                  "exit_target_name": "后门外出口",
+                  "from_mode": "avoid_combat",
+                  "interaction_context": "avoid_combat",
+                  "npc_id": "stableman_01",
+                  "source_event_id": "evt_day01_060039_stableman_01_low_hp_triggered_0012",
+                  "trigger": "low_hp"
+                },
+                "subject_npc_id": "stableman_01",
+                "summary": "托马开始朝后门外出口逃离驿站。",
+                "target_ids": [
+                  "stableman_01",
+                  "back_gate_escape_exit"
+                ],
+                "time": "06:00:39",
+                "type": "escape_started",
+                "visibility": "local_public"
+              },
+              "failure_check": {
+                "last_failure_result": {
+                  "active_battle": {
+                    "active": true,
+                    "additional_waves": [],
+                    "defeated_by_npc": {},
+                    "defeated_enemy_count": 0,
+                    "enemy_roster": [
+                      {
+                        "count": 4,
+                        "enemy_type_id": "raider_sword_veteran",
+                        "max_hp": 82,
+                        "name": "老练剑盾手",
+                        "unit_type": "melee_infantry",
+                        "unit_type_label": "近战步兵",
+                        "weapon_type": "sword_shield"
+                      },
+                      {
+                        "count": 3,
+                        "enemy_type_id": "raider_crossbow",
+                        "max_hp": 56,
+                        "name": "劫掠弩手",
+                        "unit_type": "crossbowman",
+                        "unit_type_label": "弩兵",
+                        "weapon_type": "crossbow"
+                      },
+                      {
+                        "count": 1,
+                        "enemy_type_id": "raider_mounted_archer",
+                        "max_hp": 70,
+                        "name": "骑马弓手",
+                        "unit_type": "mounted_ranged",
+                        "unit_type_label": "骑射单位",
+                        "weapon_type": "bow"
+                      }
+                    ],
+                    "friendly_combatant_count": 1,
+                    "friendly_roster": [
+                      {
+                        "behavior_mode": "work",
+                        "has_mount": false,
+                        "hp": 100,
+                        "main_weapon_id": "sword_shield",
+                        "main_weapon_name": "剑盾",
+                        "max_hp": 100,
+                        "npc_id": "veteran_deputy_01",
+                        "npc_name": "艾达",
+                        "unit_type": "melee_infantry",
+                        "unit_type_label": "近战步兵"
+                      }
+                    ],
+                    "injured_npcs": {},
+                    "low_hp_judgements": {},
+                    "noncombatant_count": 7,
+                    "reason": "wave_spawned",
+                    "started_enemy_count": 8,
+                    "started_event_id": "evt_day01_060039_system_combat_started_0001",
+                    "unconscious_npcs": {
+                      "veteran_deputy_01": {
+                        "hp": 0,
+                        "max_hp": 100,
+                        "npc_id": "veteran_deputy_01",
+                        "npc_name": "艾达",
+                        "reason": "npc_unconscious"
+                      }
+                    },
+                    "wave_id": "wave_05",
+                    "wave_number": 5
+                  },
+                  "active_enemy_count": 8,
+                  "active_enemy_ids": [
+                    "wave_05_enemy_001",
+                    "wave_05_enemy_002",
+                    "wave_05_enemy_003",
+                    "wave_05_enemy_004",
+                    "wave_05_enemy_005",
+                    "wave_05_enemy_006",
+                    "wave_05_enemy_007",
+                    "wave_05_enemy_008"
+                  ],
+                  "combatant_availability": {
+                    "active_enemy_count": 8,
+                    "available_combatant_count": 0,
+                    "available_combatants": [],
+                    "has_active_enemies": true,
+                    "total_combatant_count": 1,
+                    "unavailable_combatant_count": 1,
+                    "unavailable_combatants": [
+                      {
+                        "available": false,
+                        "behavior_mode": "unconscious",
+                        "current_action": "unconscious",
+                        "hp": 0,
+                        "main_weapon_id": "sword_shield",
+                        "main_weapon_name": "剑盾",
+                        "max_hp": 100,
+                        "npc_id": "veteran_deputy_01",
+                        "npc_name": "艾达",
+                        "unavailable_reason": "unconscious",
+                        "unit_type": "melee_infantry",
+                        "unit_type_label": "近战步兵"
+                      }
+                    ]
+                  },
+                  "ok": true,
+                  "reason": "no_available_combatants",
+                  "result": "failure",
+                  "trigger_reason": "npc_unconscious"
+                },
+                "ok": true,
+                "reason": "failure_already_recorded",
+                "triggered": false
+              },
+              "mode_result": {
+                "behavior_mode": "escaped",
+                "changed": true,
+                "event": {},
+                "interrupt_result": {
+                  "action_interrupted": false,
+                  "dialogue": {
+                    "ended": false,
+                    "ok": true,
+                    "reason": "no_active_dialogue"
+                  },
+                  "llm": {
+                    "cancelled": false,
+                    "ok": true,
+                    "reason": "no_active_request"
+                  },
+                  "movement_stopped": true,
+                  "proactive_cleared": false
+                },
+                "npc_id": "stableman_01",
+                "ok": true,
+                "plan_reevaluation_status": {},
+                "previous_mode": "avoid_combat",
+                "reason": "escape_started"
+              },
+              "npc_id": "stableman_01",
+              "npc_name": "托马",
+              "ok": true,
+              "previous_mode": "avoid_combat",
+              "target_id": "back_gate_escape_exit",
+              "target_name": "后门外出口",
+              "target_position": {
+                "x": -10.0,
+                "y": 0.0,
+                "z": -24.0
+              }
+            },
+            "triggered": true
+          },
+          "rule_fallback": false,
+          "scenario_id": "avoid_escape"
+        }
+      ]
+    },
+    "marker": "REAL_COMBAT_MATRIX",
+    "provenance": {
+      "raw_output_file": ".codex_real_combat_20260727_123008.out",
+      "raw_output_line": 8,
+      "source": "recovered_original_deleted_output"
+    }
+  },
+  {
+    "body": {
+      "behavior_mode_after": "combat",
+      "completion_ok": true,
+      "debug_reason": "格伦已入伍且有主武器，当前处于combat上下文，守备官的话确认了指令和装备，格伦以铁匠的务实态度回应，表示会执行指令并信任艾达，斗志可用。",
+      "equip_ok": true,
+      "expected": "wartime_reaction=morale_boost",
+      "intent": "continue_talk",
+      "interaction_context": "combat",
+      "matched_expected": true,
+      "mode_ok": true,
+      "model": "deepseek-v4-flash",
+      "model_fallback_used": false,
+      "morale_active_after": true,
+      "npc_id": "blacksmith_01",
+      "provider": "deepseek",
+      "real_llm_ok": true,
+      "reply_text": "剑盾我验过，能扛。艾达在边上，我信她。按你说的，守内门，不追出去。",
+      "rule_fallback": false,
+      "scenario_id": "wartime_morale_main",
+      "send_ok": true,
+      "spawn_ok": true,
+      "wartime_reaction": "morale_boost"
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_SCENARIO",
+    "provenance": {
+      "session_file": "rollout-2026-07-27T12-08-30-019fa1c2-7e30-7112-aed0-256c8f64a916.jsonl",
+      "session_line": 1901,
+      "source": "original_codex_function_output"
+    }
+  },
+  {
+    "body": {
+      "expected_misses": 0,
+      "ok": true,
+      "real_call_failures": 0,
+      "results": [
+        {
+          "behavior_mode_after": "combat",
+          "completion_ok": true,
+          "debug_reason": "格伦已入伍且有主武器，当前处于combat上下文，守备官的话确认了指令和装备，格伦以铁匠的务实态度回应，表示会执行指令并信任艾达，斗志可用。",
+          "equip_ok": true,
+          "expected": "wartime_reaction=morale_boost",
+          "intent": "continue_talk",
+          "interaction_context": "combat",
+          "matched_expected": true,
+          "mode_ok": true,
+          "model": "deepseek-v4-flash",
+          "model_fallback_used": false,
+          "morale_active_after": true,
+          "npc_id": "blacksmith_01",
+          "provider": "deepseek",
+          "real_llm_ok": true,
+          "reply_text": "剑盾我验过，能扛。艾达在边上，我信她。按你说的，守内门，不追出去。",
+          "rule_fallback": false,
+          "scenario_id": "wartime_morale_main",
+          "send_ok": true,
+          "spawn_ok": true,
+          "wartime_reaction": "morale_boost"
+        }
+      ]
+    },
+    "marker": "REAL_DIALOGUE_ESCAPE_MATRIX",
+    "provenance": {
+      "session_file": "rollout-2026-07-27T12-08-30-019fa1c2-7e30-7112-aed0-256c8f64a916.jsonl",
+      "session_line": 1901,
+      "source": "original_codex_function_output"
+    }
+  }
+]

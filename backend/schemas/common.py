@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 PlanActionKind = Literal[
     "work",
     "eat",
+    "drink",
     "sleep",
     "train",
     "pray",
@@ -77,6 +78,11 @@ class NPCStateContext(BaseModel):
     satiety: int = Field(ge=0, le=100)
     fatigue: int = Field(ge=0, le=100)
     current_action: str = "idle"
+    behavior_mode: str = "work"
+    combat_mode: str = ""
+    combat_strategy: dict[str, Any] = Field(default_factory=dict)
+    morale_boost: dict[str, Any] = Field(default_factory=dict)
+    escape_intent: dict[str, Any] = Field(default_factory=dict)
     current_location: str = "plaza"
     current_location_name: str = "广场"
     recruited: bool = False
@@ -85,6 +91,8 @@ class NPCStateContext(BaseModel):
     equipment: dict[str, Any] = Field(default_factory=dict)
     skills: dict[str, int] = Field(default_factory=dict)
     stats: dict[str, int] = Field(default_factory=dict)
+    money: int = Field(default=0, ge=0)
+    wine: int = Field(default=0, ge=0)
 
 
 class CurrentOrderContext(BaseModel):
@@ -99,6 +107,8 @@ class StationResidentContext(BaseModel):
     npc_id: str
     name: str
     identity: str
+    recruited: bool
+    in_station: bool
 
 
 class StationBuildingContext(BaseModel):
@@ -110,6 +120,7 @@ class StationWorkModeActionContext(BaseModel):
     action_id: str
     name: str
     action_kind: PlanActionKind
+    description: str = ""
 
 
 class StationBasicResourceReserveContext(BaseModel):

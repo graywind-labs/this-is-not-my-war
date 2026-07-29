@@ -1,0 +1,178 @@
+[
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4361,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 133,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_single_join_battle",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4336,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 124,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_single_avoid_battle",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4519,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 117,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_single_continue_fighting",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4545,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 135,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_single_escape_station",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4454,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 125,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_single_inspired",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4537,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 127,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_full_three_way",
+    "success": true
+  },
+  {
+    "call_type": "battle_judgement",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 4402,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 157,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_battle_full_two_way",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6263,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 195,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_none",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6470,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 187,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_escape",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6427,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 155,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_wartime_morale",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6290,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 162,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_none",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6427,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 185,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_accept",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6397,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 207,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_avoid_reject",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6472,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 189,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_escape_stay",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 6498,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 193,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_escape_leave",
+    "success": true
+  },
+  {
+    "call_type": "dialogue",
+    "estimated_cost": 0.0,
+    "fallback_used": false,
+    "input_tokens": 7164,
+    "model": "deepseek-v4-flash",
+    "output_tokens": 223,
+    "provider": "deepseek",
+    "request_id": "verify_t0067_combat_escape_real_dialogue_escape_final_round_leave",
+    "success": true
+  }
+]

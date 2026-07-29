@@ -7,6 +7,7 @@ class CapturingPlanBridge:
 	extends Node
 
 	signal dialogue_plan_revision_judgement_async_response_received(result: Dictionary)
+	signal plan_revision_judgement_async_response_received(result: Dictionary)
 	signal plan_revision_async_response_received(result: Dictionary)
 
 	var judgement_requests: Array[Dictionary] = []
@@ -39,6 +40,38 @@ class CapturingPlanBridge:
 		})
 		return {"ok": true, "pending": true, "request_id": request_id}
 
+	func answer_judgement(request: Dictionary, revision_hours: Array) -> void:
+		plan_revision_judgement_async_response_received.emit({
+			"ok": true,
+			"request_id": str(request.get("request_id", "")),
+			"npc_id": str(request.get("npc_id", "")),
+			"dialogue_plan_revision_judgement": {
+				"npc_id": str(request.get("npc_id", "")),
+				"needs_revision": not revision_hours.is_empty(),
+				"revision_hours": revision_hours.duplicate(),
+				"summary": "主动交涉完成后安排当前后续活动。",
+				"model_provider": "deepseek",
+				"model_name": "capture-real-provider",
+				"model_fallback_used": false
+			}
+		})
+
+	func answer_revision(request: Dictionary, revised_item: Dictionary) -> void:
+		plan_revision_async_response_received.emit({
+			"ok": true,
+			"request_id": str(request.get("request_id", "")),
+			"npc_id": str(request.get("npc_id", "")),
+			"plan_revision": {
+				"npc_id": str(request.get("npc_id", "")),
+				"revised_plan": [revised_item.duplicate(true)],
+				"immediate_action": revised_item.duplicate(true),
+				"summary": "主动交涉结束，立即返回食堂工作。",
+				"model_provider": "deepseek",
+				"model_name": "capture-real-provider",
+				"model_fallback_used": false
+			}
+		})
+
 	func _real_health() -> Dictionary:
 		return {
 			"ok": true,
@@ -70,12 +103,15 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
+	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button if dialog_panel != null else null
 	var event_bus := root.get_node_or_null("EventBus")
+	var game_state := root.get_node_or_null("GameState")
 	var cook_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Cook01")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var systems := root.get_node_or_null("Main/Systems")
 	var original_llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
-	if [npc_system, dialog_system, memory_system, dialog_panel, npc_panel, event_bus, cook_node, daily_plan_system, systems, original_llm_bridge].has(null):
+	if [npc_system, dialog_system, memory_system, dialog_panel, npc_panel, cancel_button, event_bus, game_state, cook_node, daily_plan_system, action_system, systems, original_llm_bridge].has(null):
 		push_error("T0705 verification required nodes not found")
 		quit(1)
 		return
@@ -86,9 +122,17 @@ func _init() -> void:
 	var bridge := CapturingPlanBridge.new()
 	bridge.name = "LLMBridge"
 	systems.add_child(bridge)
+	bridge.plan_revision_judgement_async_response_received.connect(
+		Callable(daily_plan_system, "_on_plan_revision_judgement_async_response")
+	)
+	bridge.plan_revision_async_response_received.connect(
+		Callable(daily_plan_system, "_on_plan_revision_async_response")
+	)
+	var current_hour := int(game_state.current_hour)
 	if (
-		not daily_plan_system.set_npc_daily_plan("cook_01", _make_work_plan("work_dining_hall"), false, "verify_proactive")
+		not daily_plan_system.set_npc_daily_plan("cook_01", _make_proactive_plan(current_hour), false, "verify_proactive")
 		or not daily_plan_system.set_npc_daily_plan("stableman_01", _make_work_plan("work_stable"), false, "verify_proactive")
+		or not daily_plan_system.set_npc_daily_plan("gardener_01", _make_proactive_plan(current_hour), false, "verify_proactive")
 	):
 		push_error("Could not install deterministic plans for proactive-talk verification")
 		quit(1)
@@ -157,6 +201,19 @@ func _init() -> void:
 		push_error("NPC-initiated player dialogue should use autonomous judgement without the removed manual toggle")
 		quit(1)
 		return
+	if not cancel_button.disabled or cancel_button.tooltip_text != "驿站成员主动交涉不可取消对话。":
+		push_error("NPC-initiated proactive dialogue did not disable cancellation with the required tooltip")
+		quit(1)
+		return
+	var locked_cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
+	if (
+		bool(locked_cancel_result.get("ok", false))
+		or str(locked_cancel_result.get("error_code", "")) != "dialogue_cancel_locked_by_npc_initiator"
+		or not dialog_system.has_active_dialogue()
+	):
+		push_error("DialogSystem did not enforce the NPC-initiated cancellation lock")
+		quit(1)
+		return
 	var message_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "proactive_talk_message")
 	if not message_event.is_empty():
 		push_error("Proactive dialogue lines must remain buffered until completion")
@@ -170,12 +227,9 @@ func _init() -> void:
 			"replyer_id": "cook_01",
 			"reply_text": "我听见了，谈完后会重新安排今天剩下的事情。",
 			"response_kind": "reply_to_player",
-			"invitation_result": "not_applicable",
-			"intent": "continue_talk",
 			"emotion": "neutral",
 			"recruitment_result": "none",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"kind": "player_message",
@@ -214,8 +268,87 @@ func _init() -> void:
 		push_error("Proactive dialogue judgement did not receive the NPC and completed conversation")
 		quit(1)
 		return
+	if judgement_options.get("required_revision_hours", []) != [current_hour]:
+		push_error("Current seek_guard_officer dialogue did not require the ending current hour")
+		quit(1)
+		return
 	if not bridge.revision_requests.is_empty():
 		push_error("A plan revision must not start before the proactive dialogue judgement returns")
+		quit(1)
+		return
+	bridge.answer_judgement(request_after_click, [current_hour])
+	for _index in range(5):
+		await process_frame
+		if bridge.revision_requests.size() == 1:
+			break
+	if bridge.revision_requests.size() != 1:
+		push_error("Required proactive current hour did not launch formal revision")
+		quit(1)
+		return
+	var proactive_revision_request: Dictionary = bridge.revision_requests[0]
+	if proactive_revision_request.get("options", {}).get("revision_hours", []) != [current_hour]:
+		push_error("Formal proactive revision did not keep the exact required current hour")
+		quit(1)
+		return
+	var revised_current_item := {
+		"hour": current_hour,
+		"action_id": "work_dining_hall",
+		"action_kind": "work",
+		"location_id": "dining_hall",
+		"target_id": null,
+		"priority": 60,
+		"reason": "主动交涉后返回食堂继续工作",
+		"dialogue_goal": ""
+	}
+	bridge.answer_revision(proactive_revision_request, revised_current_item)
+	for _index in range(5):
+		await process_frame
+	if (
+		str(daily_plan_system.get_current_plan_item("cook_01").get("action_id", "")) != "work_dining_hall"
+		or str(action_system.get_runtime_action_id("cook_01")) != "work_dining_hall"
+	):
+		push_error("Proactive current-hour revision did not dispatch its new action immediately")
+		quit(1)
+		return
+
+	var ordinary_start: Dictionary = dialog_system.start_player_dialogue("doctor_01")
+	var ordinary_cancel: Dictionary = dialog_system.cancel_displayed_dialogue()
+	if not bool(ordinary_start.get("ok", false)) or not bool(ordinary_cancel.get("ok", false)):
+		push_error("Guard-initiated ordinary dialogue should remain cancellable")
+		quit(1)
+		return
+
+	var suspended_event_count_before := _count_events(
+		memory_system.get_npc_daily_events("gardener_01"),
+		"dialogue_turn"
+	)
+	var suspended_start: Dictionary = npc_system.debug_start_proactive_talk(
+		"gardener_01",
+		"守备官，我需要稍后继续谈这件事。"
+	)
+	if (
+		not bool(suspended_start.get("ok", false))
+		or not npc_system.handle_npc_clicked("gardener_01")
+	):
+		push_error("Could not set up suspended NPC-initiated proactive dialogue")
+		quit(1)
+		return
+	var suspended_result: Dictionary = dialog_system.suspend_displayed_dialogue()
+	if not bool(suspended_result.get("ok", false)):
+		push_error("NPC-initiated proactive dialogue should remain suspendable")
+		quit(1)
+		return
+	event_bus.logical_time_tick.emit(7201.0, 1.0)
+	for _index in range(5):
+		await process_frame
+	if (
+		dialog_system.has_active_dialogue()
+		or _count_events(
+			memory_system.get_npc_daily_events("gardener_01"),
+			"dialogue_turn"
+		) != suspended_event_count_before + 1
+	):
+		push_error("Non-cancellable suspended proactive dialogue did not complete on timeout")
 		quit(1)
 		return
 
@@ -236,11 +369,11 @@ func _init() -> void:
 		push_error("Expired proactive talk should request plan reevaluation")
 		quit(1)
 		return
-	if bridge.revision_requests.size() != 1 or str(bridge.revision_requests[0].get("npc_id", "")) != "stableman_01":
+	if bridge.revision_requests.size() != 2 or str(bridge.revision_requests[1].get("npc_id", "")) != "stableman_01":
 		push_error("Expired proactive talk should launch one direct (non-dialogue) revision")
 		quit(1)
 		return
-	var timeout_revision_options: Dictionary = bridge.revision_requests[0].get("options", {})
+	var timeout_revision_options: Dictionary = bridge.revision_requests[1].get("options", {})
 	var timeout_hours: Array = timeout_revision_options.get("revision_hours", [])
 	var timeout_plan_item: Dictionary = daily_plan_system.get_current_plan_item("stableman_01")
 	if timeout_hours != [int(timeout_plan_item.get("hour", -1))]:
@@ -272,9 +405,32 @@ func _make_work_plan(action_id: String) -> Array:
 	return plan
 
 
+func _make_proactive_plan(current_hour: int) -> Array:
+	var plan := _make_work_plan("work_dining_hall")
+	plan[current_hour] = {
+		"hour": current_hour,
+		"action_id": "seek_guard_officer",
+		"action_kind": "seek_guard_officer",
+		"location_id": null,
+		"target_id": null,
+		"priority": 80,
+		"reason": "主动找守备官确认安排",
+		"dialogue_goal": "守备官，我想确认接下来的安排。"
+	}
+	return plan
+
+
 func _get_last_event(events: Array, event_type: String) -> Dictionary:
 	for index in range(events.size() - 1, -1, -1):
 		var event: Variant = events[index]
 		if event is Dictionary and str(event.get("type", "")) == event_type:
 			return event
 	return {}
+
+
+func _count_events(events: Array, event_type: String) -> int:
+	var count := 0
+	for raw_event in events:
+		if raw_event is Dictionary and str((raw_event as Dictionary).get("type", "")) == event_type:
+			count += 1
+	return count

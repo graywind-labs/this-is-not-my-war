@@ -75,6 +75,1076 @@
 
 ---
 
+## T0094 宿舍与对话记录 UI、弥撒重估、睡眠对话上下文及跨夜熟睡总结修复
+
+状态：Done
+优先级：P0
+前置任务：T0043A, T0049, T0050, T0082, T0084, T0089
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 固定宿舍床位继续由配置与 BuildingSystem 权威维护，但 BuildingPanel 不再显示“某人专属”；与其他建筑位置统一，只显示“床位X：空闲”或“床位X：某人占用”。
+- NPC 面板把原对话入口拆为主【对话】按钮和右侧小【记录】按钮；记录窗口只展示该 NPC 与守备官的过往对话，按游戏日期、时间和波次分组。
+- 修复主持弥撒开始时，既有普通祈祷者没有可靠进入行动失败—计划重估链、NPC 可能异地祈祷，以及守备官明确谈妥参加弥撒后没有及时重估的问题；保持“强倾向而非程序硬选行动”的设计。
+- 玩家在 NPC 睡眠中主动开启对话时，把被打断的当前活动和对话后应恢复的计划作为本轮私有上下文，避免 NPC 谎称已经睡醒并准备工作；不能把计划描述伪装成已经发生的事件。
+- 把“每日一次”熟睡总结改为跨夜睡眠窗口：仅当 NPC 自上一个符合条件的夜间窗口起尚未总结，且在跨夜睡眠段累计达到既有时长阈值时触发；凌晨短暂被对话叫醒后继续睡应累计同一睡眠窗口，不提前消耗当晚总结资格。
+
+验收标准：
+
+- 固定床位分配、重复入睡与未来 NPC 空余床规则不变；宿舍面板只显示实时占用，不泄露专属归属文案。
+- NPC 面板中【记录】不发起或恢复对话；记录按日期 / 时间 / 波次展示完整守备官—NPC 历史，并与事件库、见闻库及 NPC-NPC 对话区分。
+- 弥撒开始会中断同教堂内全部普通祈祷、释放祈祷席并向 DailyPlanSystem 提交精确 `pray_failed_mass_started`；合法时正式修订强倾向参加当前弥撒。普通祈祷只能在小教堂实际到达并占位后进入 active。
+- 守备官对话涉及当前 / 下一步活动时，正式对话 payload 明确包含对话打断前行动和恢复计划；对话结束后的行动恢复与计划重估规则不回归。
+- 21:00 起算的夜间总结窗口按跨夜睡眠累计时长触发；凌晨对话短暂打断后继续睡仍属于同一窗口，当天白天补觉不会占用下一晚资格，同一窗口最多成功提交一次总结。
+- UI、对话、行动、计划修订、记忆 / 反思专项与项目 headless 回归通过；环境已有真实 Key 时，对弥撒修订和睡眠中对话各完成真实 provider 验收且 `fallback_used=false`。
+
+验收结果（2026-07-28）：
+
+- BuildingPanel 保留固定床位分配但只显示通用空闲 / 占用文案；NPCPanel 新增右侧小【记录】，从全局事件档案按日期、事件时间和历史波次展示完整守备官会话，打开记录不会创建、恢复或打断对话。
+- ActionSystem 为所有固定地点行动增加抵达复验；弥撒开始同时处理中断 active 祈祷与仍在移动的 pending 祈祷，后者先无信号收束移动，再只提交一次带完整上下文的 `pray_failed_mass_started`，避免无上下文状态信号抢占重估。守备官已谈妥当前弥撒也会强制把当前小时送入判别，最终仍由 LLM 在合法候选内选择。
+- 第一条有效守备官消息携带目标私有 `interrupted_activity_context`，睡眠中 NPC 能说明刚被叫醒及计划不变时继续睡觉；上下文不写事件、见闻或长期记忆。熟睡总结改为 21:00 锚定窗口，跨多次睡眠累计既有 1 小时门槛，失败可重试，同窗只成功应用一次。
+- 新增 / 扩展宿舍、记录、弥撒运行时、睡眠对话、夜间窗口专项；相关 UI、对话、行动、日计划、反思、Schema、Mock / endpoint、Prompt 与项目 headless 回归通过。真实 DeepSeek 四次弥撒判别 / 修订及一次睡眠打断对话均首次成功、`fallback_used=false`。Godot MCP 实测床位文案、历史分组、记录按钮只读边界与编辑器零错误。
+
+---
+
+## T0096 Pending 行动暂停恢复与抵达提交一致性
+
+状态：Done
+优先级：P0
+前置任务：T0043, T0080, T0094
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 穷尽审计所有需要移动后才开始的行动，使暂停只冻结移动和逻辑推进，不删除、完成、失败或重复派发 pending；恢复后继续同一目标与同一行动。
+- 所有移动依赖行动都必须在实际抵达、停止移动并重新通过地点 / 建筑 / 工位 / 目标条件校验后才能进入 active、占用位置或产生收益。
+- 建筑封闭、昏迷、战斗接管、目标离开、真实对话打断等权威外部变化仍可取消 pending，但每次取消只能产生一次带精确原因的状态变化 / 行动失败。
+
+验收标准：
+
+- 对行动目录中全部可产生 pending 的行动，覆盖途中暂停、抵达临界帧暂停、长时间暂停和恢复；pending 的 action / target / options / movement target 保持，暂停期间无 active、无提前工位占用、无进度或资源结算，恢复抵达后恰好开始一次。
+- 暂停期间让建筑或动态 NPC 目标失效，恢复 / 抵达时按既有权威规则产生一次精确失败，不重复释放、重复重估或启动旧行动。
+- 既有吃饭、睡觉、工作、训练、治疗、祈祷 / 弥撒、拜访、NPC-NPC 对话与三类协助专项，以及 TimeSystem、结构化事件和项目解析回归通过；Godot MCP 运行态确认暂停 / 恢复不改变 pending。
+- 现有 GM 通用“指定行动”、暂停 / 继续、最近行动结果与运行态快照足够构造和观察，不新增第二套行动权威。
+
+验收结果（2026-07-29）：
+
+- ActionSystem 新增统一提交闸门：暂停时任何 pending 都不能提交；恢复后还必须满足 `current_action=idle`、`movement_target` 已清空、实际地点匹配且没有 active，才可申请工位或开始收益。
+- 固定地点目录 15 项与 `assist_repair / assist_upgrade / assist_heal / visit_location / talk_to_npc` 五类目标行动均纳入 `verify_pending_action_pause_resume.gd`。专项覆盖暂停保留 pending、抵达临界帧暂停、逻辑 tick 不结算、恢复恰好启动一次、路线原样继续及目标失效单次精确失败。
+- `verify_time_system.gd`、弥撒 / 服务依赖、建筑入口失败、基础行动、计划目录、NPC-NPC 对话和昏迷协助治疗回归通过；Godot MCP 4.0.1 / Godot 4.6.2 冻结启动正常且编辑器无错误。
+
+---
+
+## T0095 熟睡总结异步期间的短期记忆增量保留
+
+状态：Done
+优先级：P0
+前置任务：T0094, T1005
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 熟睡总结请求按发起时的短期记忆快照生成；若请求在飞期间产生新的私有事件或见闻，成功应用时只能轮转已经进入该快照的记录，不能把未被本次总结覆盖的增量一并清空。
+- 采用稳定事件 ID / 快照水位或等价的权威边界，不在 UI 或模型侧猜测哪些记忆已经总结。
+- 总结内容固定为“上一次成功总结水位之后，到本次请求快照水位为止”的尚未总结经历；某夜未睡够或请求失败时不伪造空白日记，下一次成功总结继续覆盖这段未总结区间。
+- 日记归属使用 21:00 夜间窗口锚点而不是实际完成的自然日期。世界内前缀统一表达为“接到守备命令的第N天”，其中“守备命令”明确指守备官在公告牌向众人传达“我们奉命守住此地”的公开命令，不表示 NPC 当天才到驿站、收到个人指令或已经入伍。
+
+验收标准：
+
+- 构造“请求发起后新增事件、随后总结成功”的异步场景，新事件仍保留在 NPC 当前短期索引，快照内旧事件被正常轮转。
+- 模型失败 / 模板降级、并发上限、21:00 窗口完成语义、全局 append-only 对话档案与既有深度睡眠锁不回归。
+- 同一自然日凌晨与深夜各完成一次时，前者归前一个 21:00 窗口、后者归后一个窗口，日记前缀分别使用不同的“接到守备命令的第N天”；日记 payload 和后续 LLM 上下文保留窗口键、锚点日、实际总结时刻及本次记忆区间。
+- Prompt 只总结明确区间内的亲历 / 见闻，不把“接到守备命令的第N天”解释为入伍日、到站日或个人受命日；环境有真实 Key 时完成一次真实 `daily_reflection` 验收且 `fallback_used=false`。
+
+验收结果（2026-07-29）：
+
+- MemorySystem 提供带稳定 `event_ids / witness_ids` 的原子短期快照，并按该快照选择性轮转；异步请求发出后新增的事件继续留在当前短期索引，不会被旧请求清除。
+- DailyReflectionSystem 把触发窗口、内容水位和日记归属拆开：每个 21:00 窗口最多成功一次，内容从上次成功快照终点延续到本次请求快照，归档前缀按窗口锚点写为“接到守备命令的第N天”，同时保留实际触发日 / 时间和精确记录范围。
+- 后端新增结构化 `summary_window / reflection_period` 合同，Prompt 明确“守备命令”是公告牌上“我们奉命守住此地”的公开命令，不是个人入伍或个人受命。Schema、Mock endpoint、Prompt、Godot 异步水位 / 跨夜窗口专项通过；真实 DeepSeek `deepseek-v4-flash` 一次成功且 `fallback_used=false`。
+
+---
+
+## T0093 完成型行动连续计划段重估与建筑工期规划约束
+
+状态：Done
+优先级：P0
+前置任务：T0086, T0088
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复 Godot `LLMBridge` 把上游合法 `action_completed` 计划修订原因规范化为 `unknown` 的合同遗漏。
+- 日计划、计划修改范围判别和正式计划修订必须结合 `game_time` 与建筑作业可读总工期 / 剩余时间安排阶段，不能把短时升级协助机械铺满预计完工后的时段。
+- `reevaluate_current_hour_on_completion=true` 的五类行动完成后，不再只修订当前小时；从当前小时开始，把原计划中连续的同一 `action_id + target_id` 阶段一次性交给正式修订，遇到不同任务 / 目标或当天结束立即停止。只有当前一项时仍只修改当前小时。
+- 保留 T0086 的真实 provider、跳过范围判别、当前小时即时执行、禁止当前小时原样重复、跨小时陈旧回调丢弃和最多三次正式修订边界。
+
+验收标准：
+
+- `action_completed` 从 DailyPlanSystem 经 LLMBridge 构造正式 payload 后仍保持原枚举。
+- 五类完成型行动的配置穷尽集合不变；连续相同任务三小时完成后请求 `revision_hours=[当前, 当前+1, 当前+2]`，下一小时不同任务不被夹带，单小时与跨小时边界保持既有行为。
+- 三份计划 Prompt 都用精简规则要求按游戏时间和建筑剩余工期约束受影响 / 协助时段。
+- Prompt、Schema、Mock / endpoint、Godot 完成重估与建筑作业回归通过；环境已有真实 Key 时，用真实 provider 验证多小时 `action_completed` 修订且 `fallback_used=false`。
+- 现有 GM 指定行动、推进时间、当前计划、`plan_request` 与 LLM 日志足够观察，不新增重复入口或权威结算。
+
+验收结果：
+
+- `LLMBridge` 已保留合法 `action_completed` 枚举；DailyPlanSystem 从完成时的当前小时起，按既有计划项 identity 收集连续相同 `action_id + target` 的小时，遇到第一项不同任务 / 目标即停止，并把完整小时数组一次性交给正式修订。
+- 三份计划 Prompt 已分别约束日计划、范围判别和正式修订：必须用 `game_time` 对照建筑总工期 / 剩余时间，只在预计完工前安排协助或受作业影响阶段。
+- Godot 专项确认三小时连续 `drink_wine` 请求 `revision_hours=[8,9,10]`、第 11 小时不同任务不被修改、重复完成项触发真实重试、单小时与跨小时边界不变；五类标记行动的穷尽集合保持不变。
+- Python Schema、Mock、endpoint、Prompt、行动合同和压缩合同回归，以及 Godot 日计划、修订、完成策略、建筑升级、协助经验回归全部通过。真实 DeepSeek `deepseek-v4-flash` 把 8–10 点三段 `assist_upgrade clinic` 全部改为 `work_clinic_doctor`，`fallback_used=false`，本次请求 6,391 input / 142 output tokens，估算 ¥0.00378988。
+- Godot MCP 4.0.1 / Godot 4.6.2 运行态确认枚举、连续段 helper 与五类配置，编辑器错误为空。既有 GM 入口足够验证，未新增按钮或权威结算。
+
+---
+
+## T0092 LLM 等价上下文与响应合同精简
+
+状态：Done
+优先级：P0
+前置任务：T0087, T0091
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `backend/README.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 精简六类正式 LLM 调用中完全不影响人物判断、玩法功能和 Godot 最终成功响应的重复输入、固定回声字段与空占位。
+- 供应商只返回真正需要模型选择的内容；`ok`、目标 NPC、请求日、响应分支、可由主决定推导的布尔值及计划候选固定元数据由后端确定性补齐。
+- 保留人物设定、长短期记忆、守备官指令、实时建筑 / 资源 / 战场事实、动态行动白名单、有效叙事输出与所有程序权威校验。
+
+验收标准：
+
+- Godot 到后端的业务请求与后端到 Godot 的成功响应保持兼容；正式 provider 不再接收纯传输元数据、重复人物 / 轮次 / 资源 / 日记 / 战局副本或可省略的 `null`。
+- 对话、日计划、范围判别、计划修订、战时心理和首次睡眠总结的 provider 输出合同只要求不可由请求或其他主字段确定的值；后端补齐的值仍通过既有完整响应 Schema 和业务校验。
+- 日计划 / 修订的 `action_kind` 由命中的 `allowed_actions` 候选补齐，`priority` 使用程序默认值；`reason / summary / emotion` 及对话行动的 `dialogue_goal` 保留。
+- Mock、Schema、endpoint、Prompt、Model Adapter 和 Godot 相关回归通过；若环境已有真实 Key，六类正式 provider 路径全部完成真实验收且 `fallback_used=false`。
+- 用真实或同形 payload 对比记录精简前后字符 / token 体量；不以 Mock 伪装真实模型效果。
+
+完成记录（2026-07-28）：
+
+- Model Adapter 新增六类 provider request projection 与完整业务 response hydration；Godot / HTTP Schema 不变，模型不再负责固定回声、派生布尔值、即时行动或计划候选元数据。
+- 日计划 / 修订可由唯一 `action_id + target_id` 候选补齐地点；只有候选地点有歧义时才要求模型返回 `location_id`。运行时默认 `planning_rules` 不再重复进入 payload，自定义附加规则继续保留。
+- 六类样例输入字符减少 3.62%–11.49%，provider 输出字符减少 7.47%–61.30%；真实同 ID 对话与范围判别 input/output token 分别下降 5.70% / 27.50% 和 9.12% / 39.29%。
+- Python 编译、17 个后端专项、7 个 Godot 专项、项目解析与 Godot MCP 检查通过；六类 DeepSeek `deepseek-v4-flash` 真实路径均成功且 `fallback_used=false`，未使用 Mock 伪装真实结果。
+
+---
+
+## T0091 `talk_to_npc` 目标驱动计划合同
+
+状态：Done
+优先级：P0
+前置任务：T0025, T0049, T0050
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `backend/README.md`, `DEV_LOG.md`
+
+任务目标：
+
+- `talk_to_npc` 只由目标 NPC 决定，不要求模型选择或返回目标当下地点。
+- Godot 继续在执行时读取并追踪目标 NPC 的实时地点；计划中的地点不得变成过期目的地或远程知识。
+- 后端对该行动只校验 `action_id + target_id`，不因模型省略地点或多余返回目标当下地点而拒绝整份计划；规范化后的权威计划统一保存空地点。
+
+验收标准：
+
+- 日计划与正式修订的 `talk_to_npc` 候选不包含地点选择要求，Prompt 明确该行动只选目标 NPC。
+- `PlanItem.location_id` 对其他固定地点行动保持原合同；仅 `talk_to_npc` 允许省略 / 空值，并将非空冗余地点确定性规范化为空且记录 normalization。
+- 后端仍拒绝不存在、不可交谈或白名单外的目标，不放宽其他行动的 action / target / location 精确校验。
+- Godot 执行 `talk_to_npc` 时仍动态解析目标当前位置并按既有规则最多重定向一次。
+- Schema、Prompt、Mock / endpoint、Godot 计划目录与 NPC-NPC 行动回归通过；若环境已有真实 Key，使用真实 provider 验证工位占用后选择占用者交涉并成功落地，`fallback_used=false`。
+
+完成记录（2026-07-28）：
+
+- `LLMBridge` 的对话候选与正式 provider 请求均不再包含地点；DailyPlanSystem 只保存 `target_npc_id`，ActionSystem 继续按目标实时位置接近与追踪。
+- 后端为 `talk_to_npc` 增加 action + target 专用匹配与地点规范化；白名单外目标、自聊、错误对话目的仍失败，固定行动的 action / target / location 精确合同未放宽。
+- Python Schema / Mock / endpoint / Prompt 与 6 个 Godot 计划 / 对话专项通过；Godot 4.6.2 editor 解析通过，MCP 4.0.1 连接正常且编辑器无错误。
+- 真实 DeepSeek `deepseek-v4-flash` 一次返回 `talk_to_npc -> priest_01 / location_id=null`，合并后 6 个工作阶段；NPC-NPC 邀请随后成功。两次均 `fallback_used=false`，未使用 Mock 或规则降级。
+
+---
+
+## T0090 开发期真实 LLM 日额度重置与请求预留校准
+
+状态：Done
+优先级：P0
+前置任务：T0077, T0022
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `API_BUDGET.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 清除上海时区 2026-07-28 的本地持久化 LLM 费用账本记录，使开发期今日额度归零，并保留可恢复备份。
+- 根据截至清理前 347 次真实 provider 尝试的实测费用分布，降低 `LLM_DAILY_BUDGET_REQUEST_RESERVE_CNY`，避免 8 路开局计划因理论极端上界预留而误触发每日 ¥20 门禁。
+- 保留每日 ¥20 硬上限、真实 provider、无自动 Mock fallback 和逐次实际 usage 结算。
+
+验收标准：
+
+- 清理前统计记录尝试数、总费用、均值、P95、P99 和最大单次费用；预留值的安全余量与风险有文档说明。
+- 原费用账本存在独立备份；活动账本中上海时区 2026-07-28 的 `provider_usage` 记录为 0。
+- 后端重启后 `/health` / `/debug/llm_usage` 显示今日已结算金额为 0、单次请求预留为新值、每日上限仍为 ¥20。
+- 不删除其他日期记录，不输出或改动 API Key，不启用 Mock fallback。
+
+完成记录（2026-07-28）：
+
+- 清理前 347 次真实 provider 尝试总估算 ¥6.58959012，平均 ¥0.01899017，P95 ¥0.02998008，P99 ¥0.03258096，最大 ¥0.04262264；据此将当前 Flash 请求预留从 ¥1.77 调整为 ¥0.05。
+- 停止本项目后端后备份完整账本，仅移除上海时区今日 347 条，保留其他日期 23 条；真实验收产生的 2 条、¥0.00327664 也在二次备份后清除。
+- 更新 `.env`、示例配置、ModelAdapter 默认值、后端 README、预算专项和 API 成本文档；每日上限仍为 ¥20，真实 provider 与 `fallback=false` 保持。
+- Python 编译、预算专项通过；真实 DeepSeek 私有边界对话成功且 `fallback_used=false`。验收脚本补充合法同义词“无从知晓”后通过。
+- 后端重启后 `/health` / `/debug/llm_usage` 确认今日 0 次 / ¥0、在途 ¥0、剩余 ¥20、单次预留 ¥0.05。
+
+---
+
+## T0089 教堂行动失败后的弥撒 / 祈祷优先修订
+
+状态：Done
+优先级：P1
+前置任务：T0043A, T0050
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- NPC 的普通祈祷因弥撒正在举行或弥撒开始而失败时，如果 `attend_mass` 当前可用，计划判别应选中当前小时，正式修订应强烈倾向改为参加弥撒。
+- NPC 的参加弥撒因没有主持者或主持者离岗而失败时，如果 `pray_at_chapel` 当前可用，计划判别应选中当前小时，正式修订应强烈倾向改为普通祈祷。
+- 两条规则都是符合现场语义的强倾向，不绕过实时候选、NPC 人格、状态、记忆、守备官指令或程序权威，不把转换写成无条件硬编码。
+
+验收标准：
+
+- 两份计划 Prompt 明确识别 `pray_failed_mass_in_progress / pray_failed_mass_started` 与 `attend_mass_failed_no_leader / attend_mass_failed_leader_left`。
+- 对应替代行动当前可用时，第一层不得把本次失败判为无需修订；第二层应优先选择对应教堂行动，只有明确的人格、状态、记忆、指令或更紧迫现实原因才可选择其他合法行动。
+- Prompt 合同、Mock / Schema / endpoint 与教堂 Godot 专项通过；若环境已有真实 Key，使用真实 provider 分别验证两个方向且 `fallback_used=false`。
+
+完成记录（2026-07-28）：
+
+- ActionSystem 在所有权威行动失败上下文中补入精确 `failure_id`，解决四个教堂失败进入 LLM 前只剩通用 `target_unavailable`、Prompt 只能依赖中文摘要猜测的问题。
+- 范围判别对两个方向的现实可行替代固定选择当前小时；正式修订分别强烈优先 `attend_mass` 与 `pray_at_chapel`，但保留实时白名单、人物连续性、指令和紧急事实的否决空间。
+- Prompt 合同、Schema、Mock Model Adapter、计划 endpoint、教堂依赖、行动目录、日计划与项目 smoke 回归通过。真实 DeepSeek `deepseek-v4-flash` 对两个方向各完成 1 次判别 + 1 次修订，全部首次成功且 `fallback_used=false`。
+- Godot MCP 4.0.1 / Godot 4.6.2 运行态确认 `pray_failed_mass_in_progress` 时 `attend_mass.available_now=true`，`attend_mass_failed_leader_left` 时 `pray_at_chapel.available_now=true`，编辑器错误为空；既有 GM 入口足够验证，未新增按钮或权威结算。
+
+---
+
+## T0088 建筑工期信息、平缓时间显示与入伍友军颜色
+
+状态：Done
+优先级：P1
+前置任务：T0043, T0058, T0065, T0072, T0086
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 建筑开始修复或升级时，在建筑状态传播与 NPC 计划上下文中提供本次作业总工期，并使用“小时/分/秒”的可读格式。
+- 建筑面板把修复/升级剩余秒数换算为可读时长；正常 `x1/x2/x4` 下秒位冻结为 `00`，LLM 调用降速期间恢复精确秒数。
+- 主界面时钟在正常 `x1/x2/x4` 下仅推进分钟、秒位显示 `00`；LLM 调用降速期间恢复显示游戏秒。
+- 其他持续刷新的剩余时间显示沿用同一秒位策略，避免正常速度下快速跳字。
+- NPC 入伍后，主场景名称与 NPC 面板名称改为淡绿色；未入伍名称维持原色。
+
+验收标准：
+
+- 修复/升级开始事件与 NPC 可读建筑状态均含总工期可读文本，不以裸秒数作为 NPC 信息。
+- 建筑面板修复/升级状态与按钮显示 `x小时x分x秒`；正常速度秒位为 `00`，LLM 降速时显示实际秒。
+- HUD 时钟与波次剩余时间在正常速度下秒位固定为 `00`，进入/退出 LLM 降速时立即切换显示策略。
+- 入伍状态变化后，场景内与 NPC 面板中的名称立即刷新为淡绿色。
+- Godot 无新增脚本错误，相关自动化与真实 provider 验证（环境可用时）通过。
+
+完成记录：
+
+- TimeSystem 统一正常速度分钟精度与 LLM 慢速秒精度；HUD 时钟、波次倒计时及建筑修复 / 升级剩余时间在慢速请求进入 / 退出时立即刷新。
+- BuildingSystem 同时保留权威秒数和玩家 / NPC 可读时长；MemorySystem 只传播稳定总工期，不逐秒广播剩余时间；LLMBridge active job 上下文只投影可读总工期与剩余时间。
+- 世界 NPC 姓名与状态拆为两个 Label3D，入伍后仅姓名变为淡绿色；NPC 面板姓名同步使用相同颜色。
+- 时间、建筑、地点信息、动态上下文、NPC 面板、Schema 与 Prompt 基础回归通过；真实 DeepSeek 升级协助三条业务路径均 `fallback_used=false`。Godot MCP 实机确认正常 / 慢速两套显示与入伍颜色，编辑器错误为空。
+
+---
+
+## T0087 按对话类型拆分 LLM 输出合同并删除失效意图
+
+状态：Done
+优先级：P0
+前置任务：T0067, T0072, T1201, T1204A, T0029, T0030
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `TECH_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 删除当前设计与 Godot 运行态均不消费的 `request_money`、`request_equipment`、`request_rest`、`request_treatment`、`share_witness`、`start_escape` 对话意图。
+- 不再让 `player_npc`、`npc_npc` 与 `escape_intervention` 共用包含全部可选字段的单一响应模型；按对话类型拆分 Pydantic 输出合同和模型字段提示。
+- 玩家普通 / 应征对话只返回玩家对话需要的文本、应征结果与战时反应；征召权威只读取 `recruitment_result`，不再要求重复的 `accept_recruitment / reject_recruitment` intent。
+- NPC-NPC 邀请 / 正式对话只返回邀请结果与 `should_end_dialogue`；正式续聊和结束继续由 `should_end_dialogue` 唯一控制。
+- 逃离挽留只返回独立的留下 / 继续逃离结果；Godot 不再从通用 `intent` 解析该分支。
+
+验收标准：
+
+- 三种 `dialogue_kind` 分别通过自己的响应 Schema 校验，输出其他分支字段或已删除意图时明确拒绝并写入真实校验原因。
+- 应征 `accept / reject` 不再依赖第二个重复 intent，布鲁诺式“拒绝结果 + 仍愿继续交谈的文本”可作为合法拒绝回复应用。
+- NPC-NPC 邀请接受 / 拒绝、正式自动续聊 / 收尾仍只由 `invitation_result` 与 `should_end_dialogue` 控制。
+- 逃离挽留留下、继续逃离与第 5 轮自动收口保持既有程序行为。
+- 基础 Schema、Mock endpoint、Prompt、业务合同和 Godot 对话专项回归通过；若环境已有真实 Key，再分别验证玩家应征、NPC-NPC 与逃离挽留真实 provider 输出，且 `fallback_used=false`。
+
+完成记录：
+
+- 三类 Pydantic 响应均使用 `extra="forbid"`；旧 `intent` 与跨分支字段会在 HTTP 层返回 `model_output_invalid`，不再进入 Godot。
+- 玩家应征只校验 `recruitment_result`，NPC-NPC 只校验 `invitation_result / should_end_dialogue`，逃离挽留只校验并消费 `escape_intervention_result=stay|leave`。
+- Schema、Mock adapter、Prompt、Mock endpoint、业务合同和 Godot 对话专项全部通过；真实 DeepSeek 覆盖玩家、NPC-NPC、邀请接受 / 拒绝和逃离分支，最终验收均为 `fallback_used=false`。
+
+---
+
+## T0086 提前完成计划行动的当前小时重估与倍速快捷键
+
+状态：Done
+优先级：P1
+前置任务：T0050, T0075, T0076, T0081, T0085
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 对会在当前小时内提前完成并留下较长空闲的计划行动增加数据驱动标记；协助修理、协助升级、协助治疗、接受诊所治疗与饮酒完成后，若当前小时仍是该计划项，直接重估当前小时并在修订成功后立即执行新行动。
+- 成功完成重估不经过“是否需要修改”判别层；重估结果不得在同一小时原样重复已经完成的行动，仍可从正常合法行动候选中选择工作、休息、协助、交谈等活动。
+- 完成回调延迟到权威时钟更新后再确认日 / 小时、计划项、NPC 空闲与可行动状态；若已跨小时，则由正常小时开始调度接管，不对旧小时发起陈旧重估。
+- 审计其他计划行动：重复生产与持续服务沿用既有续作策略；吃饭、睡觉、祈祷、弥撒、拜访等常规或整小时活动不新增完成重估；NPC 交谈和主动找守备官交涉沿用既有对话后重估。
+- HUD 默认支持主键盘数字行 `1` / `2` / `3` 直接切换 `x1` / `x2` / `x4`；不响应小键盘数字，也不在文本输入控件聚焦时抢占按键。
+
+验收标准：
+
+- 五类配置标记行动成功完成后仅发起一轮当前小时正式计划修订，payload 使用明确的完成原因、只允许修改当前小时，并携带已完成计划项与结果。
+- 当前小时新计划落地后立即执行一次；重复生产、持续行动及未标记的一次性行动行为不变。
+- 若行动完成时权威时间已经跨小时，不发送旧小时完成重估，由当前小时正常计划调度接管。
+- 自动化验证五类配置清单、特殊完成结果识别、完成后重估 / 立即执行、跨小时去重和主键盘倍速快捷键；Godot MCP 连接正常且运行时无新增错误。
+- 基础 Schema / Mock / Prompt 测试通过；若环境已有真实 Key，再验证 `action_completed` 业务路径且 `fallback_used=false`。
+
+验收结果：
+
+- 五类行动配置、不同成功结果识别、完成后单链直接修订、原样重复拒绝 / 真实重试、合法新行动即时执行和跨小时由新计划接管均通过 Godot 专项；T0075 完成策略、T0085 升级结束、T0081 协助有效经验与时间系统回归通过。
+- Python Schema、Mock Model Adapter 与计划修订 Prompt fake-provider 测试通过。真实 DeepSeek `deepseek-v4-flash` 一次完成 `action_completed` 修订，把已完成的 `drink_wine` 改为 `work_clinic_doctor`，`fallback_used=false`。
+- Godot MCP 4.0.1 / Godot 4.6.2 连接与版本匹配；运行态真实注入主键盘物理键 `3` 后倍率与按钮均为 `x4`，小键盘直调不改变倍率，编辑器错误为空。既有 GM 入口足够验证，未新增按钮或权威结算。
+
+---
+
+## T0085 修复升级协助完成后的计划重估并软化工作阶段下限
+
+状态：Done
+优先级：P0
+前置任务：T0050, T0075, T0080
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复包含 `assist_upgrade` 的计划在建筑升级完成后工作阶段计数变成 0，导致合法修订被后端反复拒绝并保留旧计划的问题。
+- 修复升级协助再次投影到 LLM payload 时把室外执行地点错误写成目标建筑，以及目标失效重估复用旧行动失败上下文的问题。
+- “每天至少 6 个工作阶段”只保留为日计划 / 修订 Prompt 的强建议和调试统计，不再作为后端或 Godot 接受计划的硬门槛；NPC 可因现场变化形成少于 6 个工作阶段的合法计划。
+
+验收标准：
+
+- `LLMBridge`、`DailyPlanSystem` 与后端对 `assist_upgrade` 的工作阶段统计一致；升级完成后旧升级协助阶段仍能作为历史工作阶段正确计数。
+- `assist_upgrade` 往返计划 Schema 后保持 `target_id=<building>`、`location_id=plaza`。
+- 目标已解决 / 不可用的计划项产生本轮真实失败上下文，不复用此前建筑升级中断的陈旧上下文。
+- `/npc/plan_day`、`/npc/revise_plan` 和 Godot 本地计划应用不再因为工作阶段少于 6 个拒绝合法计划；Prompt 仍明确建议通常至少安排 6 个工作阶段。
+- 新增自动化覆盖诊所升级完成后 `assist_upgrade -> work_clinic_doctor` 的受限修订、软工作下限、地点投影与失败上下文；基础 Mock / Schema / endpoint、Godot 计划与升级相关回归通过。
+- 若环境已有真实 Key，在基础测试通过后用真实 provider 验证对应业务路径，且 `fallback_used=false`。
+
+验收结果：
+
+- Python 契约、Schema、日计划 / 修订 endpoint、两份计划 Prompt 和范围判别回归通过；0 工作阶段完整日计划与低工作量修订均被接受。
+- Godot 专项确认 `assist_upgrade` 计数与 Schema 往返地点正确，诊所升级完成后只产生一轮 `no_active_upgrade` 判别，并成功把当前小时改为 `work_clinic_doctor`；日计划、重估、行动失败与建筑升级相关回归通过。
+- 真实 DeepSeek `deepseek-v4-flash` 完成升级结束修订，返回 `work_clinic_doctor @ clinic`，`fallback_used=false`；Godot MCP 连接正常且编辑器错误为空。
+
+---
+
+## T0084 按叙事到站顺序固定 NPC 宿舍床位
+
+状态：Done
+优先级：P1
+前置任务：T0043, T0061
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 为 8 名初始 NPC 固定宿舍床位，睡觉时始终申请自己的床，不再按当次空闲顺序重新分配。
+- 按既有叙事到站顺序分配床位 1–8：艾达、托马、布鲁诺、伊沃、格伦、欧文、马塞尔、莉娜；床位 9–10 保留为空余床位。
+- 床位归属由建筑配置与 BuildingSystem 权威维护，ActionSystem 只申请分配结果，UI 只读显示，不在 GDScript 中按姓名写死。
+
+验收标准：
+
+- 每名初始 NPC 连续两次睡觉都占用同一个配置床位；无论其他 NPC 先后睡觉，归属不变化。
+- NPC 不能占用其他初始 NPC 的专属床位；无专属床位的未来 NPC 只能申请未分配床位。
+- 点击宿舍时，BuildingPanel 可直接看到床位 1–8 的归属以及当前空闲 / 占用状态，床位 9–10 显示为空余床位。
+- 睡眠完成、中断、建筑升级封闭和失败流程仍只释放当前占用，不清除固定归属。
+- 固定床位专项、建筑位置 / 面板、睡眠 / 结构化事件和项目 headless 回归通过；Godot MCP 运行态确认床位归属与错误日志为空。
+
+验收结果（2026-07-28）：
+
+- `building_defs.json` 为床位 1–8 配置 `assigned_npc_id`，顺序为艾达、托马、布鲁诺、伊沃、格伦、欧文、马塞尔、莉娜；床位 9–10 不配置归属。
+- `BuildingSystem.claim_workstation(...)` 对有专属位置的 NPC 只尝试该位置，对没有专属位置的 NPC 跳过全部专属床；`release_workstation(...)` 继续只清除 `occupied_by`。ActionSystem 睡眠生命周期不维护第二份床位表。
+- BuildingPanel 直接显示 1–8 号床的专属 NPC 和空闲 / 占用状态，9–10 号显示“空余床位”；功能前端可见，未新增 GM 入口。
+- 新增 `verify_fixed_dormitory_beds.gd`，覆盖叙事顺序、乱序并发、重复申请、未来 NPC 只用空余床、真实睡眠两次复用同床、释放后归属保留和面板文案。
+- 固定床位、建筑面板、五建筑位置、基础行动、结构化事件、日计划、首次睡眠总结及项目 headless 回归全部通过。Godot MCP 4.6.2 冻结运行确认布鲁诺连续两次均使用 `dormitory_bed_03`、占用文案正确且编辑器错误为空；验证后已恢复 `startup_mode=1`。
+- 本任务未修改 Prompt、后端或模型行为，不调用真实 provider，也不增加 API 成本。
+
+---
+
+## T0083 精简守备官对话事件标题并强化应征结果反馈
+
+状态：Done
+优先级：P0
+前置任务：T0082, T0072
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 将完成后的守备官-NPC 单事件全文摘要标题从“守备官与 XX 的完整对话”精简为“守备官与 XX 对话”，不改变逐句正文、单事件边界或 NPC-NPC 逐轮入库规则。
+- 后端已有 `recruitment_result=accept|reject` 返回时，把结果绑定到对应 NPC 历史回复，并在该回复正下方显示独立结果行：接受为绿色对勾，拒绝为红色叉号。
+- 结果提示只作为结构化结果的前端表现，不混入 NPC `reply_text` 或事件逐句对话正文；普通回复和无应征结果的回复不显示提示。
+
+验收标准：
+
+- 完成守备官与托马的多轮对话后，事件摘要以“守备官与托马对话：”开头，不再包含“完整对话”，且仍按原顺序包含所有发言。
+- 应征接受回复下方显示绿色“✓ NPC名接受了守备官的应征请求”；拒绝回复下方显示红色“× NPC名拒绝了守备官的应征请求”。
+- 接受 / 拒绝提示与产生结果的具体 NPC 回复绑定；后续普通回复不会误显示或覆盖历史结果，事件全文只转写真实发言文本。
+- 对话 UI、对话会话生命周期、结构化记忆、NPC 面板及项目 headless 自动化通过；Godot MCP 运行态确认富文本提示、精简事件标题与编辑器错误为空。
+- 功能可直接在 `Main.tscn` 对话窗和 NPC 事件库中验证，既有 GM 事件查询足够辅助观察，不新增重复入口。
+
+验收结果（2026-07-28）：
+
+- `MemorySystem` 完成会话标题改为“守备官与 XX 对话”；两轮四句仍只写一条事件，summary 正文继续逐句转写真实 `dialogue_text`。
+- `DialogSystem` 只在合法应征响应上给对应 NPC turn 写入 `recruitment_result`；`DialogPanel` 在同一回复块下一行渲染绿色 `✓` 接受或红色 `×` 拒绝，不修改 `reply_text`。
+- `verify_dialogue_ui.gd` 覆盖布鲁诺接受与托马拒绝的精确 BBCode；`verify_dialogue_session_lifecycle.gd` 覆盖“守备官与托马对话：”精确标题并禁止旧“完整对话”字样。
+- 对话 UI、会话生命周期、结构化记忆、NPC 面板交互 / 状态及静态主场景 headless smoke 全部通过。
+- Godot MCP 4.6.2 冻结运行确认两种颜色 / 符号、逐回复结果、精简事件标题、事件正文只含真实发言，编辑器错误为空。验证后 `startup_mode=1` 已恢复，显式 Mock 服务已关闭。
+- 本任务未修改后端、Prompt 或模型判断，未调用真实 provider、未增加 API 成本；功能前端可见，未新增 GM 入口。
+
+---
+
+## T0082 修复守备官多轮对话事件显示与应征会话锁
+
+状态：Done
+优先级：P0
+前置任务：T0051, T0072
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 排查守备官与 NPC 完成多轮对话后，NPC 事件库只显示最后一轮的问题；保留“整场会话只提交一条 `dialogue_turn`”的事件边界，并让该事件的确定性摘要完整呈现会话中的每一句。
+- 一次守备官-NPC 会话内，只要玩家曾在“提出应征”开启时发送消息，本场会话的“取消对话”立即禁用且系统入口拒绝取消，只允许完成或挂起；挂起超时按完成收口，不能绕过应征会话锁。
+- “提出应征”在当前会话内改为持续开关：开启并发送后保持开启，后续消息默认继续携带应征标记，直到玩家主动关闭或会话结束。
+
+验收标准：
+
+- 两轮守备官-NPC 对话完成后仍只新增一条 `dialogue_turn`，其 `payload.dialogue_text` 与事件 `summary` 都按顺序包含两轮共四句；NPC 面板事件库 / 详情可直接看到完整对话。
+- 首次携带应征标记的消息一经发送，取消按钮立即半透明禁用；即使玩家随后关闭应征 toggle，系统取消入口仍拒绝本场会话。
+- 应征 toggle 发送后不自动复位；拒绝后继续开启时，下一次发送仍带 `is_recruitment_request=true`。主动关闭后，后续消息恢复为普通对话。
+- 应征锁定会话挂起 2 个游戏小时后自动完成并入库；主动交涉、攻击、逃离挽留和 NPC-NPC 对话既有边界不回归。
+- 对话生命周期、对话 UI、结构化记忆、NPC 面板及项目 headless 自动化通过；Godot MCP 运行态确认按钮、toggle、完整事件摘要与编辑器错误为空。
+
+验收结果（2026-07-28）：
+
+- 根因确认：完成两轮会话后 `payload.dialogue_text` 已有四句，数据未丢；但 `MemorySystem` summary 只读取 `last_player_text / last_reply_text`，而 NPCPanel 只展示 summary，因此事件库和摘要型短期记忆只看见最后一轮。
+- `MemorySystem` 现对 `session_completed=true` 的守备官会话按 `dialogue_text` 原顺序逐句生成全文；仍只写一条 `dialogue_turn`、只广播一次。`DialogSystem` 保持会话内应征开关，并在第一次应征消息发送后用 `session_had_recruitment_request` 锁定取消；`DialogPanel` 同步 disabled / tooltip，挂起超时按完成。
+- `verify_dialogue_session_lifecycle.gd` 新增两轮四句单事件、NPC 事件库详情全文、下一轮默认应征、主动关闭恢复普通消息、关闭后仍不可取消和挂起超时完成；`verify_dialogue_ui.gd` 更新 sticky 与 UI 锁断言。
+- 对话生命周期、对话 UI、结构化记忆、短期记忆、NPC 面板、主动交涉、战时对话、逃离挽留、玩家对话计划恢复和项目 headless 全部通过。
+- Godot MCP 在静止调试 + 显式 Mock 后端下确认：应征发送后 toggle 保持开启、取消 disabled、tooltip 正确、系统取消失败；两轮四句完成后事件数为 1、payload 为 4 句，事件详情逐句显示全文，编辑器错误为空。验证后已恢复 `startup_mode=1` 正式启动配置。
+- 本任务未修改 Prompt、Schema、后端接口或模型输出效果，不需要新增真实 provider 语义验收。首次按正式主场景配置启动 MCP 时自动触发现有 8 路 DeepSeek 日计划，账本日尝试从 172 增至 180、估算费用增加约 ¥0.125404；后续专项均切到静止调试和 Mock，未再产生无关真实调用。
+
+---
+
+## T0081 统一持续行动生活消耗与协助工作经验
+
+状态：Done
+优先级：P0
+前置任务：T0305, T0503, T0801, T0808, T0903, T0904, T1103
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 建立配置化、按有效逻辑时间持续结算的 NPC 生活消耗权威框架，统一覆盖工作、训练、协助、休息、治疗、饮酒、祈祷、对话、移动、集结、避战、战斗、逃离和等待，移除 ActionSystem 中按行动各自重复结算饱食 / 疲劳的旧路径。
+- 以现有普通工作每小时饱食 `-3/-4`、疲劳 `+6/+8` 为劳动基准，按活动强度和常识配置各类每小时速率：工作 / 训练 / 协助、对话 / 移动、休息类、等待类和战斗类分别使用明确档位；吃饭继续恢复饱食并小幅增加疲劳，睡眠 / 病床治疗 / 饮酒 / 祈祷消耗饱食并降低疲劳。
+- 协助修复、协助升级和协助治疗按真实有效参与时长累计对应工程 / 医术经验；未开始、暂停、离岗、目标已解决和无效协助时间不得获得经验。
+- 新增穷尽 `data/action_defs.json` 全部行动定义和全部程序行为模式的自动化测试，保证每项都有且只有一个生活消耗档位，工作 / 训练 / 协助类声明经验规则，其他行动不得误加经验。
+
+验收标准：
+
+- 所有在站、可模拟 NPC 在非暂停逻辑时间内始终能解析到唯一生活消耗档位；暂停、LLM 慢速、玩家加速和敌人在场倍率上限继续服从 TimeSystem 的有效逻辑时间。
+- 普通工作、训练和三类协助持续扣饱食并增加疲劳；睡眠、病床治疗、饮酒、祈祷持续扣饱食并降低疲劳；对话、移动、集结、避战、逃离持续扣饱食并增加疲劳；等待以最低非零速率扣饱食并增加疲劳；战斗速率显著高于普通工作。
+- 旧工作 / 训练 / 睡眠状态变化不重复结算；吃饭恢复量保持餐食 `+50`、粮食 `+25`，并按进餐时长小幅增加疲劳。
+- 六类普通职业工作、诊所医生、训练教官 / 受训者与三类协助均进入统一成长规则；协助修复 / 升级增加工程经验，协助治疗增加医术经验，其他行动不增加经验。
+- 穷尽行动目录测试、生活消耗专项、协助经验专项、既有行动 / 训练 / 诊所 / 建筑 / 治疗 / 战斗 / 时间回归和项目 headless 加载通过；Godot MCP 运行态确认关键档位、暂停边界和编辑器错误为空。
+- 现有 GM 通用指定行动、推进时间、建筑修复 / 升级、治疗目标、战斗与 NPC 状态入口足够构造并观察所有档位，不新增重复按钮或命令；同步补充 GM 验证说明。
+
+验收结果（2026-07-28）：
+
+- 新增 `data/activity_needs.json` 与 `Main/Systems/NPCNeedsSystem`，统一按有效逻辑秒结算饱食 / 疲劳、小数余量、0–100 边界和有限行动的真实剩余时长；25 个 `action_defs` 行为全部改用唯一 `needs_profile`，旧工作 / 训练 / 睡眠状态扣除字段与训练整小时扣除函数已移除。
+- 轻 / 重工作沿用 `-3/+6`、`-4/+8`；移动、集结、避战、逃离、战斗、空闲、对话、吃饭、睡眠、病床、祈祷、饮酒与昏迷休息已配置独立速率。移动按消耗饱食并增加疲劳实现，不采纳需求末句与前文冲突的“移动减少疲劳”。
+- `assist_repair / assist_upgrade / assist_heal` 新增 `timed_experience`。统一框架只把建筑作业完成前、目标复苏前的有效秒数交给 ActionSystem；每 3600 秒分别增加工程 / 工程 / 医术 1 点并进入既有总经验。
+- 新增 `verify_activity_needs_framework.gd`，动态穷尽 25 个行动、6 种程序行为模式、旧字段清零、档位符号 / 强度、工作经验资格和精确数值；新增 `verify_assist_timed_experience.gd`，覆盖三类协助、分段累计、非工作无经验及治疗中途复苏截断。
+- 专项以及 `verify_action_system_basic.gd`、`verify_training_system.gd`、`verify_clinic_treatment.gd`、`verify_npc_unconscious_healing.gd`、`verify_skill_progression.gd`、`verify_time_system.gd`、`verify_npc_movement_location.gd`、`verify_combat_flow.gd`、`verify_avoid_combat_mode.gd`、`verify_escape_station_behavior.gd`、`verify_plan_extended_actions.gd`、`verify_tavern_wine_trade.gd`、`verify_dining_hall_meals.gd` 与项目 headless 加载通过。Godot MCP 4.6.2 已确认 25 项载入、0 配置错误和新系统节点存在；现有 GM 入口足够，未新增按钮 / 命令。
+
+---
+
+## T0080 建筑门口失败重估与升级协助认知修复
+
+状态：Done
+优先级：P0
+前置任务：T0050, T0057, T0058
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修正 T0057 的 pending 行动时序：建筑开始升级时，只立即中断已经在建筑内执行的依赖行动；仍在路上的 NPC 不应隔空得知升级，而应继续到达建筑入口，在程序确认无法进入后才以“建筑正在升级”失败并触发统一计划重估。
+- 修复 NPC 对升级协助的理解：动态 `assist_upgrade` 候选必须明确表示行动在建筑外 / 广场执行、不需要进入正在升级的建筑，并作为有效劳动计入日计划最低工作阶段。
+- 保持 BuildingSystem、ActionSystem、DailyPlanSystem 与 LLM 的权威边界；LLM 只选择合法行动，不直接结算升级或强制指定 NPC 协助。
+
+验收标准：
+
+- pending 工作在目标建筑开始升级后仍保持移动，未到门口前不写行动失败、不发起 `action_failure` 判别。
+- NPC 到达升级建筑入口后不能进入，逻辑地点落在广场 / 室外；ActionSystem 写入包含行动、建筑、`condition=upgrading`、`interrupted_phase=pending`、中文摘要和到达失败事实的唯一最终失败，然后 DailyPlanSystem 才触发两段式重估。
+- 已在建筑内的 active 依赖行动仍在升级开始时立即失败、释放位置并清退到广场；协助升级自身不被封闭规则误杀。
+- 六类动态候选中的 `assist_upgrade` 明确携带室外执行、不需入内、当前可用的上下文；日计划与修订的工作阶段统计把协助升级视为劳动，Godot 与后端校验一致。
+- 基础 Mock / Prompt / Schema、Godot 专项与相关回归通过；环境已有真实 Key 时，用真实 provider 验证 NPC 能明确说出“无需进入建筑即可协助”，并在同建筑工作失败的修订中实际选择 `assist_upgrade`，且 `fallback_used=false`。
+- 现有 GM“指定行动 → 升级 → plan_request / 最近行动结果”足以构造和观察链路，不新增重复入口；同步更新 GM 验证说明。
+
+验收结果（2026-07-28）：
+
+- BuildingSystem 发出升级状态后，ActionSystem 只立即处理 active 依赖行动；目标相同的 pending 运行态和移动目标保持不变。NPCSystem 在真实到达入口时重新查询可进入性，失败后落在广场并通过新增 `npc_building_entry_failed` 交给 ActionSystem 生成唯一最终失败，避免普通清退中间状态抢占重估。
+- `failure_context` 区分门口 pending 与室内 active：前者包含 `arrival_check_failed=true / interrupted_phase=pending` 和“到达入口后发现建筑正在升级”的摘要；后者继续在升级开始时立即释放工位并以 `interrupted_phase=active` 失败。
+- `assist_upgrade` 候选明确为广场 / 室外执行、无需进入、当前可用、计为工作阶段；LLMBridge 的 `current_building_states.is_upgrading / is_repairing` 改用 BuildingSystem 实时接口。DailyPlanSystem 与后端日计划 / 修订最低工作量校验均认可该行动。
+- Python Schema、Mock adapter、四类 Prompt、日计划 / 修订 endpoint 与 Godot 升级失败、动态上下文、日计划及建筑回归通过；项目 headless 加载通过。真实 DeepSeek 对话明确愿意在广场协助，正式修订实际选择 `assist_upgrade -> workshop / plaza`，均 `fallback_used=false`。
+- Godot MCP 4.6.2 冻结 Main 验证路上 pending 未失败、模拟抵达门口后才失败并清退、室内 active 在升级开始时立即失败；运行态候选与建筑升级布尔值正确，编辑器错误为空。现有 GM 组合足够复现，未新增入口。
+
+---
+
+## T0079 合并 NPC 当前计划连续行动并隐藏重复说明
+
+状态：Done
+优先级：P1
+前置任务：T0023, T0066
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `GODOT_ARCHITECTURE.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- NPC“当前计划”详情中，若计划项 `reason` 去除首尾空白后与行动显示名完全相同，不显示重复的第二行说明。
+- 将小时连续、行动与展示语义完全一致的相邻计划项合并为一个时间段，例如 `13:00–16:00  酿造酒｜真实 LLM 日计划`。
+- 合并只影响 UI 投影，不修改 24 小时权威计划、Prompt、Schema、来源标记或计划执行。
+- 当前小时落在合并时段内时，该时段显示当前项标记；首次打开仍从当前时段之前第二个可见计划行动开始。
+
+验收标准：
+
+- 相同 `action_id / action_name / source / target / priority / dialogue_goal` 且可见 `reason` 相同的连续小时合并；时间不连续或任一展示语义不同则保持分开。
+- `reason == action_name` 时只显示行动标题，不显示同文第二行；不同说明继续显示。
+- 当前小时标记、首次打开定位、计划更新时刷新、0 点 / 1 点边界和原始 24 小时计划内容保持正确。
+- 更新 NPC 面板专项自动化并通过项目加载与 Godot MCP 运行态检查；功能可从 `Main.tscn` 直接验证，不新增 GM 入口。
+
+验收结果（2026-07-28）：
+
+- `NPCPanel` 先把 24 小时计划投影为可见分组：只有相邻小时连续，且 action id / name / kind、source、target、priority、可见 reason、dialogue goal 全部一致时才合并；不同说明、目标或来源不会被吞掉。
+- `reason.strip_edges() == action_name` 时只在显示层置空说明；权威计划仍保留原始 `reason`。当前小时命中区间内任一小时都会给整段加 `▶`。
+- 首次打开滚动改为按可见分组寻找当前时段及其前两项；00:00 / 01:00 落在 00:00–05:00 合并段时仍从首行开始。计划替换后的打开中刷新与不同说明拆段均已覆盖。
+- `verify_npc_panel_state.gd`、`verify_npc_panel_interactions.gd`、`verify_daily_plan_system.gd` 和项目 headless 加载通过。Godot MCP 4.6.2 冻结运行确认 `▶ 13:00–16:00  酿造酒｜真实 LLM 日计划`、行动名仅出现一次、重复说明不存在，编辑器错误为空。
+- 本任务只改 UI 与测试，没有修改 Prompt、Schema、后端、LLM 输出或计划执行；功能可直接从 `Main.tscn` 验证，未新增 GM 入口。
+
+---
+
+## T0078 NPC 主动交涉完成后的当前小时重估与不可取消会话
+
+状态：Done
+优先级：P1
+前置任务：T0049, T0051, T0076, T0705
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `UI_UX.md`, `GM_PANEL.md`, `DEV_LOG.md`, `backend/README.md`, `backend/schemas/README.md`
+
+任务目标：
+
+- NPC 按当前小时 `seek_guard_officer` 计划主动找守备官交涉并完成有效会话后，计划修改判别必须包含结束时当前小时；正式修订继续从正常动态候选中安排工作、休息、拜访、其他对话等后续活动，并沿用 T0076 当前小时立即派发合同。
+- 只对 NPC 发起的守备官会话禁用取消：取消按钮半透明不可点击，悬停提示“驿站成员主动交涉不可取消对话”；DialogSystem 权威入口也必须拒绝取消。守备官主动发起的普通会话仍可取消，攻击后的既有不可取消边界保持不变。
+- NPC 主动交涉允许完成或挂起；不可取消的挂起会话到期后按完成收口、保存会话并进入计划判别，不能经超时绕过不可取消合同。
+- 本任务不增加跨小时 / 跨日延续规则，不改变 `seek_guard_officer` 的等待气泡时长或无人响应超时修订逻辑。
+
+验收标准：
+
+- 当前计划项为 `seek_guard_officer` 且会话由 NPC 发起时，完成后的判别请求固定携带 `required_revision_hours=[当前小时]`；当前计划不是该行动时仍按普通守备官对话独立判断。
+- NPC 发起会话中，取消按钮 disabled 且 tooltip 正确，直接调用取消接口返回明确错误；守备官发起会话仍可正常取消。
+- required 当前小时的正式修订成功后立即开始新行为；暂时阻塞时沿用可靠 deferred marker。
+- 主动交涉专项、普通会话生命周期、UI、Schema / Prompt / Mock、真实 provider 与 Godot MCP 运行态验证通过。
+
+验收结果（2026-07-27）：
+
+- `seek_guard_officer` 主动会话完成时固定请求当前小时；真实模型遗漏 required 时由 HTTP 层保留其他合法选时并权威归并当前小时，正式修订成功后通过统一派发立即开始新行动。
+- 主动交涉取消键 disabled，tooltip 为“驿站成员主动交涉不可取消对话。”；DialogSystem 直接取消返回 `dialogue_cancel_locked_by_npc_initiator`。守备官主动普通会话仍可取消，主动会话挂起超时按完成入库。
+- 主动交涉、会话生命周期、当前小时派发、NPC-NPC、玩家对话恢复、GM、Schema / Prompt / Mock、项目解析及 diff 检查通过。真实 DeepSeek 的两种 required 判别、当前小时正式修订与既有失败链均一次成功、无 fallback。
+- Godot MCP 4.0.1 / Godot 4.6.2 冻结运行确认会话状态、按钮 disabled / tooltip 和系统取消锁，编辑器错误为空；功能可直接从 `Main.tscn` 验证，未新增 GM 入口。
+
+---
+
+## T0077 LLM 完整用量审计、每日 20 元硬预算与 GM 运行成本顶栏
+
+状态：Done
+优先级：P0
+前置任务：T0069, T1406
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`, `backend/README.md`
+
+任务目标：
+
+- 核验并保留每次 LLM 调用的完整输入、正式供应商请求体、响应、UTC 时间、重试序号、token usage、费用估算与失败信息；请求头和 API Key 必须继续脱敏 / 不落盘。
+- 按 DeepSeek V4 Flash 官方人民币价格分别核算缓存命中输入、缓存未命中输入与输出 token；每次正式供应商尝试都必须计费，不能只统计最终成功结果。
+- 增加按 `Asia/Shanghai` 自然日持久化的人民币硬预算，默认每日最多 20 元；在供应商请求发出前做并发安全的费用预留，后端重启后仍从当日已用金额继续拦截，超限返回 `budget_exceeded`，不伪装为 Mock 成功。
+- GM 面板最上方持续显示本次后端运行累计输入 / 输出 / 总 token、人民币估算，以及今日持久化费用 / 20 元上限；刷新不得阻塞游戏主线程。
+- 补充后端持久化 / 重启 / 重试 / 并发预算测试、GM 自动化验证和 Godot MCP 运行检查；若环境已有真实 Key，完成一次受预算保护的真实 provider 验收。
+
+验收标准：
+
+- `/debug/llm_usage` 同时返回本次后端进程 provider 尝试累计与按日持久化账本；重建 ModelAdapter 后当日金额和 token 不清零。
+- 每次正式 HTTP 尝试的 DeepSeek `prompt_cache_hit_tokens`、`prompt_cache_miss_tokens`、`completion_tokens` 都进入账本和审计；重试不会漏算。
+- 当日已用金额加在途预留达到 20 元时，请求在发给供应商之前失败，HTTP 业务接口返回 429 / `budget_exceeded`。
+- 打开 GM 面板后，顶栏无需点击“成本统计”即可异步更新本次运行 token / 人民币与今日预算。
+
+验收结果（2026-07-27）：
+
+- T0069 JSONL 审计复核通过：完整输入、正式 messages、聚合响应、UTC 时间、重试、原始正文、usage 和最终状态均可按 audit id 关联；Authorization / API Key 继续不落盘。
+- 新增逐 provider 尝试持久化账本，V4 Flash 默认按官方人民币价 `0.02 / 1 / 2 元每百万 token` 结算；上海自然日重建 adapter 后仍保留当天 token / 费用。单次 ¥1.77 并发预留与每日 ¥20 上限在 HTTP 前拦截，账本 / 定价异常失败关闭。
+- GM 顶栏异步显示本次后端运行输入 / 输出 / 总 token、人民币估算和今日金额 / 上限；既有完整成本统计入口保留。
+- Python 编译、Schema、Mock adapter、Mock endpoint、审计、预算持久化 / 重启测试、GM 专项和项目 headless 均通过。真实 DeepSeek 对话返回 200、0 fallback，输入 5,827 / 输出 180 / 估算 ¥0.00330188；Godot MCP 运行态顶栏格式和编辑器无错误验证通过。
+
+---
+
+## T0076 NPC 对话跨小时延续与重估后当前行动立即派发
+
+状态：Done
+优先级：P1
+前置任务：T0025, T0049, T0050, T0053, T0075
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `GM_PANEL.md`, `DEV_LOG.md`, `backend/schemas/README.md`
+
+任务目标：
+
+- NPC 按日计划主动找另一名 NPC 对话后，发起者必须进入计划修改判别，并保证判别至少选中结束时的当前小时；正式修订仍从正常动态候选中选择工作、休息、对话等可执行活动。
+- 普通整点到来时，日计划发起且仍在赶路、等待、邀请或正式交谈中的 NPC-NPC 对话继续完成，不被下一小时计划强制打断；对话结束后再执行结束时当前小时的新计划。
+- 统一所有计划重估的当前小时落地语义：只要成功修订包含结束时当前小时，就在对话 / 批次屏障和行为模式允许后立即派发一次新行为；暂时不能派发时保留可靠的延迟执行标记，不让 NPC 因一次状态信号或跨小时清理而永久站立。
+- 跨日、战斗 / 逃离 / 昏迷等高优先级权威模式继续拥有中断权；对话失败沿用结构化失败与两阶段重估，不绕过合法性、位置、目标、资源和每小时单次行为约束。
+- 替换与旧 T0053 普通跨小时失效口径绑定的 GM 入口和自动化，补充跨小时延续、发起者必改当前小时以及各种重估路径即时派发的回归验证。
+
+验收标准：
+
+- 发起者完成 NPC-NPC 对话后，判别请求强制包含结束时当前小时，第二阶段输出与动态行动候选严格一致，并在双人判别屏障释放后立即开始当前小时新行为。
+- 对话途中跨越普通整点时，移动 / 等待 / 邀请 / 正式会话不被新小时计划覆盖；结束或失败后只落地当时当前小时，不补播已经错过的小时。
+- 指令变化、行动失败、玩家 / NPC 对话等既有修订路径只要成功修改当前小时，均能立即执行或可靠延迟到阻塞解除后执行；专项测试不允许“修订成功但 NPC 长期 idle”。
+- Mock / 本地自动化、Godot 项目解析与 MCP 运行验证通过；若环境存在真实 API Key，再完成真实 provider 的判别与正式修订业务路径测试。
+
+验收结果（2026-07-27）：
+
+- ActionSystem 的同日旧小时 `talk_to_npc` 不再被当前计划项过期扫描淘汰；DailyPlanSystem 在整点为 pending 发起者、邀请发起者或正式双方重建 carryover marker，批量派发不再调用普通整点强制结束自主会话。跨日及权威行为模式中断保持原职责。
+- DialogSystem 继承 `plan_action_source / assigned_plan_*` 并在结束上下文传递自主发起者。发起者判别请求固定 `required_revision_hours=[当前小时]`，受邀者仍独立；Schema、endpoint、Prompt、紧凑重试与 Mock 均校验 required 子集，正式修订继续使用正常动态候选。
+- 当前小时修订统一先登记 dispatch marker；直接派发成功后消费，组屏障 / 行为模式阻塞和派发失败时保留。既有 `verify_plan_revision_remaining_day.gd` 已通过直接当前项、双人屏障、连续后继和行为模式恢复后立即执行验证。
+- GM `dialogue_carryover` 已替换旧 `expire_plan_dialogues`，只读显示 pending / active / deferred；相关文档和 `verify_gm_panel.gd` 已同步。
+- `verify_npc_npc_dialogue_edges.gd`、`verify_npc_npc_plan_action.gd`、`verify_plan_revision_remaining_day.gd`、`verify_action_failure_plan_revision_judgement.gd`、`verify_order_plan_effect.gd`、`verify_plan_revision_single_successor.gd`、`verify_gm_panel.gd`、Python Schema / endpoint / Mock 专项及 Godot 4.6.2 项目解析通过。
+- 真实 DeepSeek `deepseek-v4-flash` 完成发起者 required 当前小时判别与当前小时正式修订；判别首次遗漏 required 后被真实业务校验拒绝并由同 provider 紧凑重试纠正，修订一次成功且返回 `immediate_action`。全程 `LLM_FALLBACK_TO_MOCK=false`、最终 `fallback_used=false`。
+
+---
+
+## T0075 计划行动完成策略与连续生产周期
+
+状态：Done
+优先级：P1
+前置任务：T0025, T0035, T0043, T0063
+涉及文档：`game_design.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 把正式计划行为在成功完成后的续行语义配置化，形成新增行为必须遵守的统一设计合同。
+- 六种通用生产工作在当前小时计划仍为同一行动时，完成一个周期后立即重新校验并开始下一周期，不再空闲等待整点。
+- 跨小时时，若新小时计划与当前运行行动及必要目标相同，则保留当前进度继续；若不同，则中断旧行动并执行新小时计划。
+- 吃饭、饮酒、睡觉、祈祷、弥撒、对话、拜访等单次行为不得因完成回调在同一计划小时自动重复；计划版本变化也不能绕过严格每小时单次边界。
+- 持续服务、条件目标和逃离等行为不套用生产批次重开；完成、失败或目标消失后沿用各自权威生命周期。
+
+验收标准：
+
+- `data/action_defs.json` 为全部 25 个配置行为显式声明合法完成策略；`idle` 使用程序固定策略，未知或缺失策略在自动化中失败，防止后续新增行为遗漏分类。
+- `work_garden / work_dining_hall / work_stable / work_tavern / work_blacksmith / work_workshop` 使用连续生产策略；成功完成并写完旧周期事件后，若当前计划仍匹配则延迟续开并重新校验工位、资源、建筑和制造目标。
+- 跨小时相同行动不清零运行进度；行动或必要目标不同则中断并派发新小时项。
+- 每小时单次行为的消费记录不依赖 `plan_version`；同小时替换计划或显式再次派发不会重复吃饭、饮酒或重放其他单次行为。
+- 持续服务 / 受训、条件治疗 / 修复 / 升级、终局逃离及两个非计划系统行为保持各自生命周期，不被自动续开。
+- 完成事件顺序固定为旧周期 `*_completed` 在前、新周期 `*_started` 在后；失败续开不形成同步递归或重复判别。
+- 新增专项覆盖全行为分类、生产续开、制造阶段、同/异行动跨小时、目标比较、单次行为与计划版本、失败边界和事件顺序；相关既有回归、项目加载和 Godot MCP 检查通过。
+- 功能可通过 `Main.tscn` 正常日志、建筑进度及既有 GM 时间 / 指定行动 / 计划入口观察，不新增第二套调试结算。
+
+验收结果（2026-07-27）：
+
+- 全部 25 个配置行为已按六类策略穷尽标注；ActionSystem 初始化校验合法枚举及 `plan_selectable` 一致性，运行态 MCP 检查为 25 项、0 策略错误。
+- DailyPlanSystem 在成功完成生产周期后 deferred 续开，确保旧 `work_completed` 先写、新 `work_started` 后写；重新派发继续走工位、资源、建筑、制造目标 / revision 等正式校验，失败与中断不进入自动续开。
+- 整点派发沿用既有目标感知运行态比较：同 action / 必要 target 采用当前 active 并保留 `elapsed_seconds`，不同项中断并派发新计划；专项确认被中断的未完成工作不增加完成事件或产出。
+- 每小时单次行为增加独立于 `plan_version` 的“日期 + 小时 + 逻辑计划项”消费记录；吃饭提前完成保持空闲，同小时替换计划后返回 `already_executed_once_per_plan_hour`，不会再次扣资源 / 写开始事件。既有玩家对话显式恢复会临时释放该记录，只继续未完成执行。
+- 新增 `verify_plan_action_completion_policy.gd`，更新 `verify_plan_slot_dispatch_once.gd`、`verify_daily_plan_system.gd` 与 `verify_player_dialogue_plan_resume.gd`。完成策略、行动目录、基础行动、目标替换、扩展行动、制造管线 / 提醒、普通工作产出和项目解析回归通过。
+- Godot MCP 4.0.1 与 addon 版本一致；Godot 4.6.2 冻结运行载入 Main、ActionSystem 和 DailyPlanSystem 正常，编辑器错误为空。现有 GM 入口足够观察，未新增第二套结算。
+- 旧 `verify_daily_plan_reevaluation.gd` 的可选真实后端分支仍在既有 LLM slowdown 审计处失败，`verify_plan_revision_remaining_day.gd` 也命中其既有 payload / 后端线程问题；两者失败点不在本任务的完成策略、行动派发或结算路径，本任务未用 Mock 伪装通过。
+
+---
+
+## T0074 制造目标缺失主场景提醒
+
+状态：Done
+优先级：P1
+前置任务：T0035, T0804, T0805
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 铁匠铺或工械坊尚未选择制造目标时，在主场景对应建筑名称上方显示红色感叹号。
+- 鼠标悬停感叹号时显示“未选择制造物品”。
+- 点击感叹号时复用既有建筑选择链路，打开对应建筑面板。
+- 选择合法制造目标后立即隐藏对应感叹号；清空目标后重新显示。
+
+验收标准：
+
+- 开局两个制造项目都为空时，铁匠铺与工械坊名称上方各有一个可点击红色感叹号。
+- 感叹号悬停提示固定为“未选择制造物品”，点击分别打开 `blacksmith` / `workshop` 建筑面板。
+- 通过建筑面板选择目标后，对应提醒立即隐藏，另一建筑提醒不受影响；清空目标后提醒恢复。
+- 提醒只读取 `CraftingSystem` 项目快照，不自行设置目标、推进阶段或结算资源。
+- 新增专项自动化验证，并通过 Godot MCP 运行态外观 / 交互与错误日志检查。
+
+验收结果（2026-07-27）：
+
+- 新增 `CraftingTargetAlertPresenter.gd` 与 `Main/UI/CraftingTargetAlerts`：两个红色 `!` 跟随铁匠铺 / 工械坊名称屏幕位置，靠近视口边缘时自动夹取；低于 320×180 的不可用测试视口隐藏提醒，避免覆盖原有世界点击。
+- 提醒只读取 `CraftingSystem.get_project_snapshot(...)` 并监听 `project_changed`；无目标时显示，选择目标后对应提醒立即隐藏，清空后恢复，两个建筑状态互不干扰。
+- Godot 原生 tooltip 固定为“未选择制造物品”。真实鼠标点击提醒通过新增的正式 `BuildingSystem.select_building(...)` 复用 `building_clicked -> BuildingPanel`；原 `debug_select_building(...)` 改为委托同一正式入口。
+- 新增 `verify_crafting_target_alerts.gd`，覆盖开局两个提醒、红色、名称上方定位、真实鼠标悬停 / 点击、对应面板、独立隐藏及清空恢复。
+- 通过制造管线、铁匠铺、工械坊、15 座建筑真实点击、建筑工位面板和项目加载回归。Godot MCP 4.6.2 运行态确认两个提醒、tooltip、工械坊面板打开和选择弓后单独隐藏，编辑器错误为空。
+- 功能可直接在 `Main.tscn` 手动验证，未新增 GM 调试入口。
+
+---
+
+## T0073 指令面板叙事文案与指令影响计划验收
+
+状态：Done
+优先级：P1
+前置任务：T0703, T0703A, T1002, T0023, T0072
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 移除指令文本框中“自由撰写守备官希望该 NPC 持续参考的指令……”占位文案。
+- 指令面板标题从“给 {NPC} 的当前指令”精简为“给 {NPC} 的指令”。
+- 面板默认说明改为世界内叙事“驿站成员将尽量遵循守备官的指令行动。”，保留发布成功 / 未变化 / 失败等即时反馈。
+- 验证发布不同指令不只保存文本和发出信号，还会在已有 24 小时计划时进入真实计划修订链，并实际改变当前权威计划；不把指令变成强制行动。
+
+验收标准：
+
+- `OrderPanel` 打开时不显示被移除的占位文案，标题和默认说明使用指定叙事文本。
+- 既有未入伍拦截、预填、修订号、私有事件、相同文本无副作用和关闭不保存合同保持通过。
+- 确定性专项证明发布新指令会把最新 `current_order` 注入修订请求，并将合法修订结果合并到 24 小时权威计划；若环境中有可用真实 provider，追加关闭 Mock fallback 的真实发布指令 → 计划变化验收。
+- Godot MCP 运行态确认新文案和空占位，编辑器错误为空；功能可在 `Main.tscn` 前端与既有 GM 当前计划 / 指令入口观察，不新增重复 GM 控件。
+
+验收结果（2026-07-27）：
+
+- `OrderPanel` 已删除输入框 placeholder；动态标题改为“给 {NPC} 的指令”，默认说明改为“驿站成员将尽量遵循守备官的指令行动。”。发布成功 / 未变化 / 失败反馈保持原合同。
+- `verify_npc_order.gd` 新增三条运行态 UI 断言，并继续通过未入伍拦截、预填、修订号、私有事件、相同文本无副作用、关闭不保存和新入伍入口回归。
+- 新增确定性 `verify_order_plan_effect.gd`：从真实 `OrderPanel` 发布指令，捕获 `order_changed` 当前小时修订请求，使用正式 LLMBridge builder 确认最新 `current_order` 已注入，再证明合法响应把权威 24 小时计划当前项从 `idle` 改成 `visit_location -> chapel`。
+- 新增真实 `verify_order_plan_effect_real.gd`：DeepSeek `deepseek-v4-flash`、关闭 Mock fallback，一次正式 `revise_plan` 将老兵副官 08:00 计划从 `idle` 改为前往小教堂；`request_id=godot_revise_plan_1436_0002`，输入 22,884 / 输出 266 tokens，`fallback_used=false`。
+- Godot MCP 4.6.2 冻结运行确认“给 艾达 的指令”、新叙事说明、空 placeholder 与面板布局，编辑器错误为空。功能直接在 Main 前端可见，后端影响可复用既有 GM 当前指令 / 最近注入 / 当前计划入口，未新增重复 GM 控件。
+
+---
+
+## T0072 应征接受即时刷新与 NPC 面板文案精简
+
+状态：Done
+优先级：P0
+前置任务：T0702, T0703, T0704, T0051
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- NPC 在守备官对话回复中明确接受应征时，立即写入权威 `recruited` 状态，不再等玩家结束或重新打开对话 / NPC 面板。
+- 复用 `npc_state_changed` 让当前已打开的 NPC 面板即时显示“已入伍：是”，并立即显示可用“指令”按钮。
+- 保留既有自然语言软性指令闭环：已入伍 NPC 从 NPC 面板打开 `OrderPanel`，指令作为后续计划与判断上下文而非 RTS 强制行动。
+- 把 NPC 面板个人库存文案“持有酒”精简为“酒”。
+
+验收标准：
+
+- 对话响应返回 `recruitment_result=accept` 后、对话仍保持打开时，NPC 权威状态与面板“已入伍”字段均已更新，“指令”按钮立即可用。
+- 接受应征后的会话取消 / 关闭不会回滚已经明确返回的接受结果；拒绝结果仍不改变入伍状态。
+- 自动化覆盖即时状态刷新、即时指令入口、会话事件 payload、精简酒文案和既有指令发布闭环；Godot MCP 运行与错误日志检查通过。
+- 功能可直接在 `Main.tscn` 的 NPC / 对话 / 指令面板验证，不新增重复 GM 入口。
+
+验收结果（2026-07-27）：
+
+- 根因确认：`DialogSystem` 只把接受结果写入 `deferred_recruitment_result`，直到 `end_dialogue(...)` 才调用 `set_npc_recruited(...)`；面板监听与刷新逻辑本身正常，但在回复出现时没有权威状态变化可监听。
+- 接受结果现在于 NPC 回复进入会话历史后立即提交权威入伍状态；打开中的 NPC 面板同步显示“已入伍：是”并显示可用“指令”按钮。取消 / 完成剩余会话都不回滚已经明确说出口的接受；拒绝保持原状态。
+- 既有软性指令前后端链路确认完整：`NPCPanel -> OrderPanel -> NPCSystem.current_order -> LLMBridge / 后端 current_order 上下文 -> 计划重评估`。玩家对话仍须先完成或取消再打开中央指令窗，NPC 面板无需重开。
+- NPC 个人酒显示已精简为“酒：N”。对话 UI、会话生命周期、战时应征、NPC 面板交互、指令发布、面板状态 6 项 Godot 专项和项目 headless smoke 通过。
+- Godot MCP 4.6.2 冻结主场景直接模拟接受回复时确认：对话仍活动、`recruited=true`、“已入伍：是”、“指令”可用、“酒：0”；编辑器错误为空。功能前端可见，未新增 GM 入口；本任务未修改 Prompt / provider 行为，无需真实 API 调用。
+
+---
+
+## T0071 NPC-NPC 对话私有上下文隔离
+
+状态：Done
+优先级：P0
+前置任务：T0029, T0040, T0041, T0059, T0069
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复 NPC-NPC 对话请求把说话者短期记忆注入回复者模型上下文的问题，禁止回复者读取对方未说出口、也未通过亲历 / 见闻合法获得的私有事实。
+- 审计六类正式 LLM payload，确认不存在其他跨 NPC 注入短期记忆、长期记忆、私人指令或地点私有上下文的路径。
+- 把说话者上下文收敛为当场可观察的姓名、外表和健康状态，以及本轮已经说出口的文本；不把说话者技能、属性、个人金钱 / 酒、指令或记忆作为回复者知识。
+- 排查并清除行动候选中的同类侧漏：`talk_to_npc` 只向模型公开可交谈对象身份，不公开对方实时地点、当前行动或征召状态。
+
+验收标准：
+
+- `build_npc_dialogue_payload(...)` 的 NPC 说话者路径不再发送 `speaker_npc`，`speaker_context` 不含记忆、指令、技能、属性、个人资源或地点私有上下文。
+- 后端 Schema 拒绝非空 `speaker_npc`，防止旧客户端或手工请求重新携带完整 `NPCContext`；Prompt 明确回复者只能使用自己的记忆与对方已说出口 / 当场可观察的信息。
+- 自动化构造“格伦知道铁盔、伊沃不知道”的差异记忆，证明伊沃对话 payload 中不存在铁盔私有事实，同时保留伊沃自己的短期 / 长期记忆。
+- 六类 payload 静态与运行态审计、Schema、Mock / fake-provider、Godot headless、项目 smoke 和 Godot MCP 检查通过；若已有真实 API Key，以关闭 Mock fallback 的真实 provider 验证 NPC-NPC 对话未知事实边界。
+- 同步回写相关文档；不新增第二套记忆或对话权威系统。
+
+验收结果（2026-07-27）：
+
+- 根因确认：`LLMBridge` 为 NPC 说话者调用 `_build_npc_context(..., false)`，只排除了长期记忆，却仍把说话者短期记忆、当前指令、地点 / 广场上下文和完整状态注入回复者请求。真实审计中伊沃自己的记忆没有铁盔事实，而 `speaker_npc.short_term_memory` 含格伦合法接收的铁盔制造差量。
+- 正式对话 payload 已删除 `speaker_npc`；NPC 说话者的 `speaker_context` 只保留姓名、外表、健康状态和空 `state`。回复者自己的顶层长短期记忆、地点与指令保持完整。
+- 后端 `speaker_npc` 只接受 `null`，`speaker_context.state` 必须为空；ModelAdapter 不再从 `speaker_npc` 读取 NPC id。Prompt 同步禁止把对方未说出口的私有信息、或行动候选中的程序路由元数据当成回复者见闻。
+- 六类运行态 payload 审计没有发现第二条跨 `NPCContext` 注入路径；但发现 `talk_to_npc` 候选曾附带目标的实时地点、当前行动和征召状态，现已改为仅给 `target_id / target_name`，实际移动目的地仍由 `ActionSystem` 执行时权威查询。
+- 新增 Godot 差异记忆专项确认格伦私有铁盔批次不进入伊沃任何正式 payload，同时伊沃自己的长短期记忆保留，并验证所有对话候选不再携带他人实时状态。
+- Schema、Mock、fake provider、对话 endpoint、六类 Prompt、动态 station context、NPC-NPC 邀请 / 边缘流程和项目 smoke 通过。真实 DeepSeek `deepseek-v4-flash` 1 次明确回答不知道说话者未公开安排，输入 5,581 / 输出 207 tokens，`fallback_used=false`。Godot MCP 运行态确认 LLMBridge 节点与空编辑器错误。
+- 现有 GM `npc_talk`、事件 / 见闻查询与后端持久化日志已能观察正式链路，未新增重复 GM 按钮或权威入口。
+
+---
+
+## T0070 NPC 公共在站标签、关键规则认知与仓库容量 UI
+
+状态：Done
+优先级：P1
+前置任务：T0043, T0046, T0059, T0061, T0069
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 在所有 NPC 共用的动态驿站居民名单中，为每人提供极简的“已/未入伍”和“在站/离站”标签；不复制私密记忆，不让 LLM 决定权威状态。
+- 把“教官没有受训者时也能自行训练并提升能力”以精简世界内叙事补入艾达对训练场的初始知识；审计其他已实现建筑关键规则，把确实重要但现有种子知识遗漏的细节补给应当知道的对应 NPC。
+- 在仓库建筑面板显示受仓库等级影响的各类资源当前容量上限，并在 HUD 左上资源项悬停时显示对应上限。
+
+验收标准：
+
+- `station_context.resident_roster` 的每一行包含程序实时生成的 `recruited` 与 `in_station`；完整名单语义与离站保留规则明确，六类正式 LLM 请求、后端 Schema、Mock / Prompt 契约与真实 provider 至少一条业务路径通过。
+- 初始知识修改保持数据驱动、叙事化和人物知情边界；静态测试能锁定新增规则，不把未实现机制写成已发生事实。
+- ResourceSystem / BuildingSystem 提供仓库容量的权威只读查询和资源增减上限约束；仓库面板逐项显示受容量影响资源的当前上限，HUD 主资源悬停提示同一权威数值。
+- UI 只读取系统状态，不自行计算或修改库存；仓库升级后容量显示与实际可存上限同步刷新。
+- Godot 专项、后端 Schema / Prompt / endpoint 回归、项目 headless smoke 和 Godot MCP 运行态检查通过；同步回写相关文档。
+
+验收结果（2026-07-27）：
+
+- 六类正式请求的 `resident_roster` 现在始终列出全部 8 名登记 NPC，并逐行携带权威 `recruited / in_station`；离站者不再从基础名单消失。后端两个布尔字段为必填，六份 Prompt 明确禁止把 `in_station=false` 当成在站目标。
+- 艾达的训练场知识补入教官独练 / 带训两种成长；规则审计另补托马的坐骑分配资格、布鲁诺的餐食优先价值、莉娜的无病人研读。8 人仓库常识同步为已实现的分资源容量与升级扩容，不声称尚未实现的受击丢货。
+- `resource_defs.json` 为粮食、餐食、酒、木材、石料、铁配置逐项容量；1 级依次为 120 / 120 / 60 / 120 / 120 / 120，后续每级增加 60 / 60 / 30 / 60 / 60 / 60。ResourceSystem 权威拒绝单项与批量溢出，工作产出和商人购买均保持失败原子性。
+- 仓库建筑面板新增“储存上限”行；HUD 左上受限资源悬停显示同一权威数值，仓库升级后两处同步刷新。第纳尔、具体装备和兼容资源保持无限制，不显示伪上限。
+- 静态知识、Schema、六类动态上下文、工作产出、交易、HUD、训练、诊所、马匹、食堂与仓库专项通过。真实 DeepSeek `deepseek-v4-flash` 1 次准确复述 8 人入伍 / 在站状态和教官成长，0 fallback；Godot MCP 4.0.1 / Godot 4.6.2 运行态及 UI 截图通过，编辑器错误为空。
+- 修复实现中发现的硬错误：无 `warehouse_capacity` 配置的资源曾因空字典被误判为容量 0；现仅显式非空配置的六种资源受限。T0062 改为 `Partial`，其受击资源损失、损失事件与 GM 观察仍待实现。
+
+---
+
+## T0069 后端 LLM 调用持久化审计日志
+
+状态：Done
+优先级：P1
+前置任务：T0068
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `DATA_SCHEMA.md`, `AI_NPC_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `backend/README.md`, `DEV_LOG.md`
+
+任务目标：
+
+让 ModelAdapter 的每次调用、正式供应商请求和响应、解析结果、usage、失败与后续 Schema / 业务校验结果以脱敏 JSONL 持久化到后端文件，避免后端重启或控制台输出轮转后失去测试证据。
+
+验收标准：
+
+- 后端默认启用本地 JSONL 调用日志，路径可由环境变量覆盖；运行时目录必须被 Git 忽略，日志写入失败不得中断游戏调用。
+- 每次 ModelAdapter 调用保存唯一 audit id、request id、call type、provider、model、NPC / 事件 id、输入 payload、状态和最终 usage。
+- 每次真实供应商尝试保存不含 Authorization 请求头的完整 provider JSON body，以及聚合后的原始响应正文、HTTP 状态、finish reason、token 和尝试序号；重试必须逐次可区分。
+- Mock、无 Key、预算拦截、HTTP / 超时、非 JSON、截断、Schema / 业务校验失败和 Mock fallback 都有可关联的生命周期事件。
+- API Key、Authorization、密码、secret 和常见 token 凭据字段必须递归脱敏；配置中的真实 API Key 即使意外出现在文本值中也必须替换。
+- `/health`、`/debug/llm_usage` 和既有 GM“成本统计”可观察日志启用状态、格式、路径与最近写盘错误，但不得通过 HTTP 返回完整日志正文。
+- 使用临时日志文件和 fake provider 自动验证成功、重试 / 失败、业务校验改写、并发安全和敏感信息脱敏；测试不得调用真实 provider。
+- 同步更新后端说明、架构、Prompt / API 审计边界、模块索引和开发日志。
+
+验收结果（2026-07-27）：
+
+- 新增 `LLMCallAuditLogger`，环境配置创建的后端默认写入 `backend/logs/llm_calls.jsonl`，支持开关、路径和完整正文开关；目录已由 `.gitignore` 排除，写盘错误只进入运行快照，不中断调用。
+- 每次调用分配唯一 `audit_id`；完整记录输入 payload、逐次 provider body、聚合响应、原始正文、解析 / 拒绝、HTTP / 异常、usage、fallback、最终结果及后续业务校验失败。正式请求从不把 Authorization headers 交给日志器。
+- 敏感 key、序列化 JSON 凭据、Bearer、`sk-...` 和配置 API Key 均在写盘前脱敏。`/health`、usage 与 GM 只返回日志配置 / 错误，不返回正文。
+- `verify_llm_persistent_audit_log.py` 覆盖 fake 成功、两次非 JSON 重试、HTTP 503、业务无效关联、24 路并发 Mock、默认环境配置、敏感信息和写盘失败；既有 ModelAdapter、预算、Schema、六类 endpoint / Prompt 回归通过。
+- 真实 DeepSeek `deepseek-v4-flash` 在关闭 Mock fallback 后完成 `/npc/dialogue` 与 `/npc/battle_judgement` 各 1 次；日志为 2 个 audit id / 10 条生命周期事件，完整 messages、响应与 token 均存在，0 fallback，API Key / 请求头扫描通过。
+
+---
+
+## T0068 T0067 真实 LLM 94 次调用审计包
+
+状态：Partial
+优先级：P1
+前置任务：T0067
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `API_BUDGET.md`, `DEV_LOG.md`
+
+任务目标：
+
+整理 T0067 的 94 次真实供应商请求，汇总测试编写的场景话术、正式系统 Prompt、可恢复的完整供应商请求体、usage 元数据和模型返回结果，形成不含 API Key / Authorization 请求头的可检索审计包。
+
+验收标准：
+
+- 按 request id 列出 78 次 Main 唯一请求与 16 次独立定向矩阵请求，保留 call type、NPC、token、成功 / 失败和 fallback 元数据。
+- 恢复本次会话仍保存的原始测试输出，并区分原始证据、确定性重建和仅能给出来源 / 摘要的内容。
+- 导出测试脚本中由 Agent 编写的守备官话术、命令和压力场景；导出测试时使用的正式系统 Prompt。
+- 对静态、确定性的 16 次独立矩阵重建完整 provider 请求体；不得把未持久化的 Main 动态 payload 或原始模型文本伪装成完整原始记录。
+- 不重新调用真实 provider，不输出 API Key、Authorization 请求头或无关 Codex 会话内容。
+- 更新任务状态、模块索引、API 成本说明和开发日志。
+
+验收结果（2026-07-27）：
+
+- 已生成 `docs/audits/T0067_LLM_94_CALLS/`。`call_inventory.csv` 恰好 94 行：Main 78（battle 7 / dialogue 43 / plan 28）与独立矩阵 16（battle 7 / dialogue 9）。
+- 已恢复独立矩阵 16 次的原始业务结果和 usage，并从当时未再改动的 payload builder、正式 Prompt 与 ModelAdapter 排序 JSON 规则确定性重建完整无请求头 provider body；输入 89,562 / 输出 2,614 tokens 与 T0067 原统计一致。
+- 已导出三类完整 system Prompt、Agent 编写的 Main 场景命令 / 对话、四份测试脚本快照、39 条去重场景结果事件和 5 份删除前原始 `.out`。
+- Main 最终 usage 尾部恢复 12 条历史原始记录，合并旧双计后为 11 个真实 request id；其余 67 次 Main 请求只有 call type 聚合与部分场景输出，动态完整 user payload、原始 SSE 和逐条业务 JSON 当时未持久化。
+- 全部生成过程不调用真实 provider；导出的 16 份 provider body 不含 headers，敏感字段扫描通过。
+- 任务保持 `Partial`：已经把所有仍可证明的原始证据与确定性重建内容整理完毕，但不能把未保存的 78 次 Main 完整 Prompt / 响应伪造为原始记录。后续 T0069 已按用户要求实现默认启用、可配置关闭的脱敏持久化日志；它只能保护今后的调用，不能补回 T0067 已丢失的正文。
+
+---
+
+## T0067 真实游戏场景战斗心理、日常逃离与挽留全分支验收
+
+状态：Partial
+优先级：P0
+前置任务：T0025, T1201, T1202, T1203, T1204A, T1402, T1404
+涉及文档：`game_design.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `COMBAT_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+在当前真实 provider、正式 NPC 档案、长短期记忆、地点与战场上下文中，尽量通过 `Main.tscn` 的正式 Godot → 后端 → LLM → Godot 状态链模拟真实游戏场景，系统验收战斗低血量心理、战时 / 避战公开对话、日常计划逃离和逃离挽留全部程序允许结果。
+
+验收标准：
+
+- 先通过 Schema、Prompt、Mock endpoint 与 Godot 既有专项回归；真实 provider 验收必须关闭自动 Mock fallback，usage 可定位 request id、call_type、provider、model、NPC id、成功 / 失败与 fallback 状态。
+- 参战 NPC 首次从不低于 30% HP 跌破 30% 且仍大于 0 时，真实 `/npc/battle_judgement` 能分别产生并由 Godot 正确应用 `continue_fighting`、`escape_station`、`morale_boost`；结果进入正式战斗心理事件，逃离与斗志状态实际生效。
+- 避战 / 非战斗 NPC 的低血量判定只能产生 `continue_avoiding` 或 `escape_station`，不能越界参战或获得斗志；同时覆盖避战公开对话的正式允许结果和征召后的程序模式边界。
+- `escaping_station` 确实进入工作模式日计划 / 修订候选，并能在符合人物、记忆、恐惧和战况压力的真实上下文中由真实计划模型选择；DailyPlanSystem 必须把该特殊意向交给 `CombatSystem.start_npc_escape(...)`，不能仅停留在计划文本。
+- 逃离中的正式 `escape_intervention` 对话用真实 provider 覆盖当前 `escape_intervention_result=stay|leave`；验证挽留成功返回工作并重估计划，连续失败达到 5 轮后继续逃离且入口禁用。
+- 尽量使用真实游戏运行态和正式系统接口构造场景，不把直接伪造模型响应的单元测试当作真实 LLM 验收；为覆盖低概率分支所做的定向压力场景必须保留正式 payload 和权威状态链，并在结果中区分自然触发与定向触发。
+- 发现硬性代码 / 接线 / Schema bug 时直接最小修复并完成 Mock 与真实 provider 回归；若分支因上下文或 Prompt 设计稳定性不足而难以触发，只记录原因、证据与修改建议，不擅自调整软性设计。
+- 更新测试记录、当前状态、相关模块文档与开发日志；若没有新增 / 移动文件，`MODULE_INDEX.md` 记录现有验证入口或说明无需结构变更。
+
+验收结果（2026-07-27）：
+
+- 基础回归通过：9 项 Python Schema / Mock / Prompt / endpoint 契约与 8 项 Godot 战斗、逃离、事件、时间专项均为 exit code 0；Godot MCP 4.0.1 与 Godot 4.6.2 保持连接。
+- 正式 Main 低血量真实调用 7 次：参战继续战斗、避战继续躲避和避战逃离自然触发并正确应用；参战逃离与斗志激昂在两组定向极端 / 有利上下文中仍返回继续战斗。单结果正式 payload 可分别触发 `join_battle / avoid_battle / continue_fighting / escape_station / inspired`，证明分支可达但完整上下文选择不稳定。
+- 正式 Main 战时 / 避战对话已覆盖士气高昂、无应征、接受与拒绝。格伦在 `combat` 中返回 `morale_boost` 并实际获得士气状态；另一场避战对话中接受应征后，无武器时保持避战，实际领取剑盾后由程序自动进入 `combat`；莉娜拒绝不合理的空手前线应征。避战对话始终保持 `wartime_reaction=none`。
+- 正式 Main 逃离挽留已覆盖成功与失败：程序先实际撤回危险命令后，托马选择留下并回到 `work`；欧文连续 5 轮选择继续离开，轮次耗尽后保持 `escaping` 且再次开启返回 `round_limit_reached`。战时对话极端逃离场景仍返回 `none`；定向正式 payload 的 `none / escape / morale_boost` 均可达。
+- `escaping_station` 已确认存在于日计划候选，手工注入的合法 24 小时计划会经 DailyPlanSystem 实际调用 CombatSystem 并开始离站；但一个基准计划和 3 次权威高压计划均未选择逃离。完整计划仍优先满足至少 6 个工作阶段，故本项仅完成“候选与执行链”，未完成“真实模型自然选择”。
+- 修复硬性问题：补齐 `NPCStateContext` 的 `behavior_mode / combat_mode / combat_strategy / morale_boost / escape_intent`；增加对话上下文业务校验；禁止避战 fallback / 应用层产生战时反应；低血量迟到结果增加状态、资格、敌军和 `started_event_id` 复验；逃离模式与移动改为原子提交并修复复苏续逃失败；增加会话结束重入保护；业务校验失败改为原地更新同一条 usage，不再把一次供应商请求重复累计为成功和失败。
+- 去重后真实 provider 合计 94 次实际开发验收请求（正式 Main 后端 78 次，独立定向矩阵 16 次），93 次通过业务校验、1 次普通开局 `plan_day` 业务校验失败、0 fallback；输入 1,876,789 tokens，输出 61,520 tokens。修复前运行中后端曾把这 1 次无效输出双记，原始快照显示 79 条 Main usage；审计统计按 request id 去重，修复后新请求不会再双计。
+- 任务保持 `Partial`：代码与契约硬故障均已修复，但完整真实上下文中的参战逃离、斗志激昂和日计划主动逃离仍缺少稳定自然样本。建议经用户确认后再调整 Prompt / 上下文，不在本轮擅自改变角色决策风格。
+
+---
+
+## T0066 精简公告牌文案并优化 NPC 当前计划初始定位
+
+状态：Done
+优先级：P1
+前置任务：T0024, T0046, T0065
+涉及文档：`game_design.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+减少公告牌双页中重复解释草稿 / 发布机制的 UI 文案，把玩家可见的“参考日程”统一改为更自然的“日程表”，并让 NPC“当前计划”详情打开时默认从当前执行计划之前的第二项开始显示，使当前项处于第三行，便于同时查看前后计划。
+
+验收标准：
+
+- 公告牌通告页移除“当前已发布通告 N 字（下方为可编辑副本）”和“退出不会保存草稿；只有发布才会……”等冗余说明，不影响草稿取消、发布、清空和全站广播合同。
+- 公告牌第二个 Tab、发布按钮和玩家可见相关文案统一使用“日程表”，不再显示“参考日程”。
+- 日程表页黄色世界内备注改为“这是建议日程，驿站成员不一定严格按照这个日程，如有特殊事务可自行安排”，并移除底部“新增、编辑和删除只改草稿……”提示；底层 `schedule_advisory_note` 与事件 / NPC 见闻继续使用同一权威文本。
+- NPC“当前计划”详情打开时，以当前游戏小时对应计划为当前项；正常情况下显示区第一行从当前项之前第二个计划行动开始，使当前项位于第三行。0 点 / 1 点等不足两个前项时夹取到计划开头，不循环到前一天。
+- 详情打开期间的既有刷新滚动保持逻辑不被破坏；事件库 / 见闻库继续定位最新记录，日记 / 知识详情不受影响。
+- 更新公告牌和 NPC 面板专项，完成项目 headless 与 Godot MCP 实际 UI 验收。
+
+验收结果（2026-07-27）：
+
+- `NoticeBoardPanel` 移除已发布字数、通告草稿标题和两页默认草稿提示；玩家界面改为“通告 / 日程表”，发布按钮为“发布日程表”，但系统不可用、校验失败、全天重叠和发布结果等即时反馈仍保留。
+- `schedule_advisory_note` 更新为指定的世界内文案，黄色标签直接显示权威文本；公告牌草稿取消、清空、独立发布和 T0065 全站单次广播合同保持不变。
+- `NPCPanel` 首次打开当前计划时按每个行动实际占用的文本行定位到当前项前两项，并允许滚过文件末尾以保持晚间小时的相对位置；0 / 1 点夹取到首项。弹窗打开后的刷新滚动保持、事件 / 见闻首次到底部和其他详情模式未改变。
+- `verify_notice_board_tabs.gd` 与 `verify_npc_panel_state.gd` 覆盖新文案、冗余节点 / 默认提示缺失、08:00 第三项定位及 00:00 / 01:00 边界；公告牌输入、地点信息、普通广场广播、NPC 交互和项目 headless smoke 回归通过。
+- Godot MCP 4.0.1 / Godot 4.6.2 运行态读取到“通告 / 日程表”、空默认状态提示、指定黄色文案、无旧标签；08:00 当前计划首个可见行动为 06:00 且 08:00 带当前标记，编辑器错误日志为空。
+- 功能可直接在 `Main.tscn` 公告牌和 NPC 面板验证，未新增或替换 GM 入口；本任务不涉及 LLM、Prompt、Schema 或 API 调用。
+
+---
+
+## T0065 公告牌发布改为全站单次广播并移除入场重复内容
+
+状态：Done
+优先级：P1
+前置任务：T0046, T1506
+涉及文档：`PROJECT_BRIEF.md`, `game_design.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+把公告牌通告与参考日程从“发布时只通知广场在场 NPC、后来进入广场再随快照重复获得”改为“守备官发布实际变更时向全站 NPC 单次广播对应页面”，并让广场入场快照不再重复携带公告牌两页内容。
+
+验收标准：
+
+- 守备官发布发生实际变化的通告时，只生成一条 `plaza_notice_changed`，向所有仍在驿站且当前可接收见闻的 NPC 广播一次，不受 NPC 当前位于广场或室内影响。
+- 守备官发布发生实际变化的参考日程时，只生成一条 `plaza_schedule_changed`，向同一全站接收范围广播一次；日程见闻继续携带非强制参考备注。
+- 通告与参考日程保持独立变更检测：只改通告不广播日程，只改日程不广播通告，两页都改并分别发布时各广播一次；未变化的页面不生成事件。
+- 公告牌发布事件 summary 明确区分“守备官更新了通告”和“守备官更新了参考日程”，新内容继续保存在各自事件 payload 中。
+- NPC 进入广场时，`location_entry_snapshot` 不再携带或总结当前通告、参考日程与日程备注；广场权威当前状态仍保存这三项，供公告牌 UI、GM 和其他只读系统查询。
+- 保持既有昏迷、睡觉、逃离 / 离站 NPC 的见闻接收资格规则，不借本任务改变认知或离站边界。
+- 更新公告牌、广场广播与地点快照专项测试，并通过项目 headless 与 Godot MCP 运行态验证。
+
+验收结果（2026-07-27）：
+
+- `MemorySystem` 只对 `plaza_notice_changed / plaza_schedule_changed` 使用全部在站 NPC 接收者，其他 `local_public` 事件仍使用地点 `people_present`；最终写入继续复用既有昏迷、睡觉和离站资格过滤。
+- 通告 / 日程接口各自只在内容变化时生成一条事件，summary 分别为“守备官更新了通告…”与“守备官更新了参考日程…”。专项确认只改一页不生成另一页事件，连续发布未变化内容不会增加任何 NPC 见闻。
+- 广场权威状态继续保存两页及备注；写入 `location_entry_snapshot` 前剔除 `current_notice / reference_schedule / schedule_advisory_note`，入场 summary 不再提公告牌。公告牌 UI 发布提示同步改为全站广播。
+- 10 项 Godot 专项与项目 headless smoke 通过；Godot MCP 4.0.1 / Godot 4.6.2 冻结运行确认 8 名 NPC 对通告和日程分别各收 1 条，室内 NPC 后续进入广场不再获得公告牌字段或摘要，编辑器错误日志为空。
+- 功能可直接在 `Main.tscn` 通过公告牌发布并查看任意 NPC 见闻验证；既有 GM 地点快照 / NPC 见闻查询足够辅助观察，未新增 GM 入口。
+
+---
+
+## T0064 修复 Godot MCP 多会话 proxy 生命周期回归与 6550 误报
+
+状态：Done
+优先级：P0
+前置任务：T0005, T0017
+涉及文档：`CURRENT_STATE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+
+任务目标：
+
+修复当前 Godot MCP 多会话拓扑验证中“关闭一个 session-local proxy 后另一个 proxy 也退出”的生命周期隔离回归，并避免在已有 Godot 编辑器正常监听 `127.0.0.1:6550` 时通过第二个 editor 实例产生误导性的端口占用报错。
+
+验收标准：
+
+- 明确区分 Godot 插件正常监听 `6550`、broker 正常监听 `8765`、broker 到 Godot 的已建立连接，以及当前 Codex stdio transport 是否可用。
+- 多个 session-local proxy 可共存；关闭其中一个不会关闭另一个，也不会中断唯一 broker 到 Godot 的连接。
+- `tools/check_godot_mcp.ps1` 和拓扑专项能够重复验证上述边界，并给出不会建议误杀正常 Godot 编辑器的诊断信息。
+- 通过 broker 实际调用 Godot MCP 的 addon / editor 只读工具，确认项目、编辑器和插件连接可用。
+- 项目 headless 验证不再通过启动第二个 `--editor` 实例触发 `6550` 误报；使用不会加载编辑器插件的游戏/headless smoke。
+
+验收结果（2026-07-27）：
+
+- 诊断确认 `6550` 由当前 Godot 4.6.2 编辑器正常监听，`8765` 由唯一 broker 正常监听，broker→Godot 已建立；此前第二个 `--editor` 的端口报错是验证方式错误，不是插件掉线。
+- 复现 fresh proxy 因 `C:\Users\JT\AppData\Local\npm-cache\_npx` 已不存在而 `ENOENT` 退出；修复 `C:\Users\JT\.codex\scripts\godot-mcp-proxy.mjs`，优先使用 broker lock / 全局 Godot MCP 4.0.1 包内 SDK，并保留全局独立 SDK 与 npx 回退。
+- `tools/verify_godot_mcp_topology.mjs` 增加子 proxy stderr / exit 诊断；fresh proxy 多会话测试重新通过，关闭一条不会影响另一条或 broker→Godot。
+- `tools/check_godot_mcp.ps1` 现在显示 6550 正常 owner，并明确不得因监听存在而重复启动第二个 editor 或误杀正常 Godot。
+- broker 实际调用 `godot_project.addon_status`、`godot_editor_read.get_state`、`get_log_messages` 均成功：server/addon `4.0.1` 对齐，Godot `4.6.2`，`Main.tscn` 已打开，编辑器错误为空。
+- 验证通过：`check_godot_mcp.ps1`、`verify_godot_mcp_topology.mjs`、`godot --headless --path . --quit-after 1`。修复前已关闭的当前会话 stdio transport 需刷新或新开 Codex 会话才能重新注册工具。
+
+---
+
+## T0063 守备官赠酒与 NPC 自主饮酒闭环
+
+状态：Done
+优先级：P1
+前置任务：T0041, T0704, T0807, T1003
+涉及文档：`game_design.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+让驿站已经能够酿造和出售的酒进入 NPC 个人交互与自主生活闭环：守备官可从 NPC 面板把驿站库存中的酒赠予目标 NPC；NPC 运行态记录个人持酒量，并可在自己确实有酒时把“饮酒”加入计划并由程序权威消耗。
+
+验收标准：
+
+- NPC 面板在“给钱”右侧提供“给酒”与数量输入，复用同一公开 / 私下可见性；成功时从驿站 `wine` 库存扣除对应数量并增加目标 NPC 的个人持酒量，库存不足或数量非法时两侧状态均不改变。
+- `data/npc_profiles.json` 与 NPC 运行态在个人金钱旁记录个人酒数量；NPC 面板与六类正式 NPC LLM 状态上下文均可观察当前个人金钱和酒数量，不把个人持酒混入驿站五项公开资源储备。
+- `data/action_defs.json` 新增可计划的“饮酒”行为，说明必须由本人实际持有至少 1 份酒；饮酒会由程序扣除 1 份个人酒，不新增情绪数值，也不删除历史记忆，而是通过结构化亲历事件让“心情改善、过去伤痛暂时淡化”进入后续上下文。
+- 每日计划、计划修改判别和正式修订只在目标 NPC 当前确实持酒时获得动态 `drink_wine` 候选；执行瞬间再次权威校验，个人酒不足时产生可处理的资源失败并进入既有计划失败判别链。
+- 新行为由 `action_defs.json -> ActionSystem -> LLMBridge` 同一链路同步进入 `station_context.work_mode_actions` 与对话 `allowed_actions`，不维护 Prompt 专用手写行为清单；计划与对话 Prompt 明确候选、个人库存与权威扣减边界。
+- 赠酒与饮酒事件进入目标 NPC 事件库，公开赠酒 / 饮酒按现有同地点规则进入见闻；专项覆盖 UI、库存原子性、个人状态、候选、计划执行扣减、事件上下文、Schema / Mock / Prompt 与项目 headless。环境已有真实 Key 时追加真实 provider 验收，不允许自动 Mock fallback。
+
+验收结果（2026-07-27）：
+
+- NPC 面板已在“给钱”右侧增加“给酒 + 数量”，显示个人“持有酒”；`give_wine_to_npc(...)` 从驿站库存转入 NPC 个人 `states.wine`，并按可见性写 `wine_given` 事件 / 见闻。
+- 新增 `drink_wine` / `action_kind=drink`。候选要求本人持酒，执行开始时通过个人资源接口原子扣 1；不足时记录 `drink_wine_failed_no_wine`，成功时记录 `wine_consumed`，只用事件上下文表达心情改善和伤痛暂时淡化，不创建情绪数值或删除记忆。
+- `work_mode_actions.description`、计划 / 对话动态候选和六类正式 NPC 状态上下文已同步个人酒语义；共享五项公开资源边界保持不变。后端拒绝饮酒阶段数超过 NPC 当前个人酒的日计划 / 剩余日修订。
+- `verify_npc_wine_drinking.gd`、`verify_npc_panel_interactions.gd`、`verify_dynamic_station_context.gd`、Godot 4.6.2 headless、Schema、六份 fake-provider Prompt 与 Mock endpoint 全部通过。
+- 真实 DeepSeek `deepseek-v4-flash` 在关闭 Mock fallback 后通过 plan_day、dialogue、plan_revision_judgement、revise_plan、battle_judgement、daily_reflection 对应验收，所有成功记录均为真实 provider、`fallback_used=false`。
+- 功能可直接从 NPC 面板和既有 GM “指定行动 / 资源增减 / 事件查询”组合验证，没有新增 GM 按钮或命令。
+
+---
+
 ## T0061 收束 NPC 背景叙事与知识面板展示
 
 状态：Done
@@ -110,7 +1180,7 @@
 
 ## T0062 实现仓库容量与受击资源损失闭环
 
-状态：Todo
+状态：Partial
 优先级：P2
 前置任务：T0061, T0205, T1102
 涉及文档：`ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `GM_PANEL.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
@@ -127,8 +1197,8 @@
 - 仓库受击损失以结构化事件记录受击前后库存、实际损失和触发原因，并按既有广场公开规则传播；不得重复扣除或让 UI 自行结算。
 - 仓库修复 / 升级与容量变化保持一致，存量超过新上限等边界有明确规则和自动化覆盖。
 - BuildingPanel / HUD / GM 只读显示当前容量、占用与最近损失结果；新增或替换 GM 入口时同步更新 `GM_PANEL.md`。
-- 实现后再更新 8 人仓库知识与六类 Prompt 语义；在此之前继续使用 `central_storage_and_post_breach_attack_target`，不声称已有容量或丢货机制。
-- 完成相关 Godot 专项、结构化事件回归、战斗 / 交易 / 生产回归、项目 headless 与 Godot MCP 运行态验证。本条当前仅登记，T0061 不实现该系统。
+- T0070 已实现按仓库等级变化的六种大宗资源容量、统一入库约束、BuildingPanel / HUD 显示和 8 人仓库知识；受击丢货仍不得写成已发生机制。
+- 容量部分已完成交易 / 生产、项目 headless 与 Godot MCP 运行态验证。剩余工作是配置并实现仓库受击资源损失、结构化损失事件、CombatSystem 接线、GM 观察入口及对应战斗回归。
 
 ---
 
@@ -195,7 +1265,7 @@
 - 建筑认识已逐条对照当前权威规则审校，修正了“昏迷者进入诊所”“围墙升级增加器械槽”“训练必须同时有武器和坐骑”“围墙当前已阻止穿越”等错误或歧义；本职建筑记录更细，其他建筑保持粗略且正确。所有守备官初始认知均显式保留开放判断。
 - 重写 8 人 `background_story`，只保存稳定职业视角、价值尺度与根本矛盾；具体人生节点、人物关系和建筑知识只留在长期记忆。`npc_profiles.json` 的 `diary=[] / knowledge_graph={}` 继续作为空运行字段占位，避免复制第二份种子数据。
 - `NPCSystem` 在生成实体前验证初始记忆数据与档案 id 完全对应，再装载日记和替换式图谱；无效或缺失数据会中止 NPC 初始化并报告具体错误。首次睡眠反思仍只追加日记、替换实际发生变化的知识键。
-- 六类正式 NPC LLM payload 均注入初始长期记忆。移除 `NPCContext.knowledge_graph` 的运行时重复镜像；对话以顶层 `long_memory` 为目标唯一长期记忆，`target_npc / speaker_npc` 不重复或泄露私人日记与图谱。六份 Prompt 同步实时事实优先、初始历史边界与守备官关系开放性。
+- 六类正式 NPC LLM payload 均注入初始长期记忆。移除 `NPCContext.knowledge_graph` 的运行时重复镜像；当时对话以顶层 `long_memory` 为目标唯一长期记忆，参与者副本不重复私人日记与图谱；T0071 后 `speaker_npc` 已从正式对话请求完全删除。六份 Prompt 同步实时事实优先、初始历史边界与守备官关系开放性。
 - 自动化通过：`verify_npc_initial_long_memory.py`、`verify_npc_initial_long_memory.gd`（8 人 / 24 篇完整格式日记 / 15 建筑 / 六类上下文 / 重复 initialize 幂等）、`verify_npc_character_profiles.gd`、`verify_daily_reflection_system.gd`、`verify_gm_panel.gd`、后端 Schema、六份 Prompt 和 `verify_mock_model_adapter.py`。
 - 真实 DeepSeek `deepseek-v4-flash` 专项在 `LLM_FALLBACK_TO_MOCK=false` 下通过：当时的莉娜 / 欧文两条旧故事锚点均被准确复述，usage 为 2 次调用、0 失败、`fallback_used=false`。两条旧故事已由 T0060 替换，不再保留为现行文案示例。
 - Godot MCP server / addon 4.0.1 与 Godot 4.6.2 冻结运行 `Main.tscn`：8 个 NPC Area3D 实体均存在，每人 3 篇日记、25 个知识主体且包含守备官；莉娜对话顶层长期记忆非空、嵌套 target 长期记忆为空，payload 47714 字符；编辑器错误日志为空，验证后已停止场景。
@@ -1626,6 +2696,8 @@
 优先级：P0
 前置任务：T0050, T0052, T1202, T1404
 涉及文档：`game_design.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `COMBAT_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `GM_PANEL.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+> 历史说明：本任务的“普通同日跨小时即失效”口径已由 T0076 取代。当前已经开始接近 / 等待 / 邀请 / 正式交谈的日计划对话会跨普通整点延续；同小时计划替代、跨日和权威状态失效仍保留结构化失败。以下内容记录 T0053 当时实现。
 
 任务目标：
 
@@ -3534,7 +4606,7 @@ Main
 
 验收结果（2026-06-03）：
 
-- 已在 `backend/app.py` 新增正式 `POST /npc/dialogue` Mock 业务接口，请求体先校验为 `NPCDialogueRequest`，Mock 输出再校验为 `NPCDialogueResponse`，非法 JSON / schema 错误返回 400，模型输出不合法返回 502，非 mock provider 无 Key 返回 503。
+- 已在 `backend/app.py` 新增正式 `POST /npc/dialogue` Mock 业务接口，请求体先校验为 `NPCDialogueRequest`；T0087 后 Mock 输出按对话类型校验为三个封闭响应 Schema。非法 JSON / schema 错误返回 400，模型输出不合法返回 502，非 mock provider 无 Key 返回 503。
 - 已按本任务临时增改版重整对话 Schema：输入包含目标 NPC `npc_id` / `npc_name` / `npc_setting`、`speaker_name` / `speaker_text` / `speaker_context`、`is_recruitment_request`、当前轮次 / 最大轮次、`npc_state`、`dialogue_state`、`short_memory`、`long_memory` 和 `location_context`。
 - Mock 玩家-NPC 对话会在“提出应征”请求中按关键词稳定返回 `recruitment_result=accept` 或 `reject`；NPC-NPC 对话会在轮次接近 `max_rounds` 时返回 `should_end_dialogue=true`。
 - 已新增 `tools/verify_dialogue_mock_endpoint.py`，覆盖 `/npc/dialogue` HTTP 路径、应征 accept/reject、NPC-NPC 结束倾向和非法请求 400。
@@ -3815,7 +4887,7 @@ Main
 验收结果（2026-06-04）：
 
 - 后端新增共享 `CurrentOrderContext`，`NPCContext` 与 `NPCDialogueRequest` 统一携带单条最新 `current_order`；因此每日计划、计划修订、战时公开对话、低血量自身心理判定、主动交涉、首次睡眠总结、知识图谱更新和玩家话术分类等复用 `NPCContext` 的请求自动共享该字段。
-- Godot `LLMBridge` 在对话顶层 payload 和 `target_npc` / `speaker_npc` 共享上下文中注入最新指令，并保存最近一次注入快照供 GM / 自动化观察；Mock 调试原因明确记录指令仅作为参考，不改变 Schema 允许结果。
+- Godot `LLMBridge` 当时在对话顶层 payload 和 `target_npc` / `speaker_npc` 共享上下文中注入最新指令，并保存最近一次注入快照供 GM / 自动化观察；T0071 已废止对话中的 `speaker_npc` 注入，说话者指令不再进入回复目标上下文。Mock 调试原因明确记录指令仅作为参考，不改变 Schema 允许结果。
 - 新指令仍立即产生一次统一计划重评估请求；当时 T1002 尚未实现，结果为 `rule_fallback_deferred`。T1002 完成后曾应用 Mock / 规则修订；该历史口径已由 T0023 覆盖，当前只接受真实 `llm_plan_revision`。
 - GM 面板后端分组新增“最近指令注入”入口和 `last_order_injection` 命令；最近计划重评估请求可同时观察降级结果。
 - 验证通过：`python tools/verify_backend_schemas.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、Python 编译检查、`verify_llm_bridge.gd`、`verify_dialogue_ui.gd`、`verify_npc_order.gd`、`verify_gm_panel.gd`、结构化记忆回归和项目加载检查；Godot MCP 连接正常，运行主场景无日志错误。
@@ -5076,7 +6148,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - `DialogSystem` 在 `rally` / `combat` / `avoid_combat` 玩家对话中强制 `local_public`，UI toggle 默认开启且锁定。
 - `LLMBridge` 的 `/npc/dialogue` payload 新增 `interaction_context` 与 `battlefield_context`，并保留 `current_order`、短期记忆和地点上下文。
-- `NPCDialogueResponse` / Mock 新增 `wartime_reaction`；后端不可用时战时对话走规则 fallback。
+- 玩家对话响应 / Mock 包含 `wartime_reaction`；T0087 后对应类型为 `PlayerNPCDialogueResponse`。后端不可用时战时对话走规则 fallback。
 - `CombatSystem` 应用 `battle_psychology_result`、2 游戏小时 `morale_boost` 攻击 / 移动加成和调试快照；T1203 后 `escape` 直接进入逃离流程，移动期间 `escape_intent.status == "escaping"`。
 - 新增 `tools/verify_wartime_dialogue.gd` 覆盖强制公开、payload 注入、fallback、士气、逃离意图和避战应征。
 
@@ -5176,7 +6248,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 完成记录（2026-06-29）：
 
 - `DialogSystem` 新增 `escape_intervention` 对话模式：逃离中 NPC 可通过 NPC 面板【对话】进入同地点公开挽留对话，最大 5 轮，不显示应征开关；T1204A 起打开时暂停逃离移动，关闭或满 5 轮后恢复。
-- `CombatSystem` 解析 `stay_after_intervention` / `leave_after_intervention`：留下会停止移动、切回 `work` 并触发计划重评估；继续逃离会保留 `escape_intent.status == "escaping"` 并记录已用轮次。
+- `CombatSystem` 解析当前 `escape_intervention_result=stay|leave`：留下会停止移动、切回 `work` 并触发计划重评估；继续逃离会保留 `escape_intent.status == "escaping"` 并记录已用轮次。
 - 逃离中给钱会降低 `escape_intent.speed_multiplier`，守备官攻击会提高该倍率；逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续前往后门外出口。
 - NPC 头顶新增 `!` 逃离警示，HUD 顶部显示正在逃离的 NPC 名称；`escape_intervention_result` / `escape_speed_changed` 写入 NPC 事件库和广场公开信息。
 - `/npc/dialogue` Schema / Mock 支持 `dialogue_kind == "escape_intervention"`、`interaction_context == "escape_intervention"`、`escape_intervention_round` 和 stay/leave 意图。
@@ -5515,7 +6587,7 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - `ModelAdapterConfig.fallback_to_mock` 与环境变量默认值已改为 `false`；生产 / 演示路径真实 provider 失败不再自动返回 mock 内容。显式 `LLM_PROVIDER=mock` 和 `/mock/model` 仍作为开发 / 自动化测试入口保留；如确需对比旧行为，必须显式设置 `LLM_FALLBACK_TO_MOCK=true`。
 - usage 记录补齐 `http_status`、`exception_type`、`degradation_source`、最近失败摘要和 Schema 校验失败记录；无 Key、HTTP 错误、超时、非 JSON、模型输出不符合业务 Schema 都会返回可处理错误并记录真实原因，不写入 API Key 或请求头。
-- Model Adapter 的通用 schema guard 加硬了枚举约束，避免真实 provider 自造 `response_kind`、`intent`、`wartime_reaction` 等字段值；正式角色语气和 Prompt 质量仍留给 T1402-T1405。
+- Model Adapter 的通用 schema guard 加硬了枚举约束；T0087 后对话再按类型限制 `response_kind`、业务结果和可出现字段，避免真实 provider 自造枚举或跨分支输出。正式角色语气和 Prompt 质量仍由 T1402-T1405 维护。
 - 真实 API 验收：使用本地真实 `LLM_PROVIDER=deepseek` / `LLM_API_KEY` / `LLM_FALLBACK_TO_MOCK=false` 对 `/npc/dialogue` 完成一次真实 provider 调用，返回 200；`GET /debug/llm_usage` 显示 provider=`deepseek`、model=`deepseek-v4-flash`、input_tokens=873、output_tokens=303、`fallback_used=false`。另外无 Key 场景返回 503 `provider_unavailable`，usage 记录 `exception_type=ConfigurationError` 且 `fallback_used=false`。
 - 验证通过：`python -m py_compile backend/app.py backend/services/model_adapter.py tools/verify_mock_model_adapter.py tools/verify_dialogue_mock_endpoint.py tools/verify_plan_day_endpoint.py tools/verify_plan_revision_endpoint.py tools/verify_daily_reflection_endpoint.py`、`python tools/verify_mock_model_adapter.py`、`python tools/verify_dialogue_mock_endpoint.py`、`python tools/verify_plan_day_endpoint.py`、`python tools/verify_plan_revision_endpoint.py`、`python tools/verify_daily_reflection_endpoint.py`、`python tools/verify_backend_schemas.py`、临时以 `LLM_PROVIDER=mock` 启动 Flask 后运行 `godot --headless --path . --script res://tools/verify_llm_bridge.gd`、`godot --headless --path . --script res://tools/verify_gm_panel.gd`、`godot --headless --path . --quit-after 1`。
 
@@ -5542,8 +6614,8 @@ T0804 当前产出 `weapons` / `armor` 两类派生库存占位，T0805 当前�
 
 - 新增 `data/prompts/dialogue_system_prompt.txt`，作为 `/npc/dialogue` 真实 provider 的独立系统 Prompt 模板；`ModelAdapter` 会在 `call_type=dialogue` 时读取该模板，并继续叠加通用 JSON / Schema guard。
 - 对话 Prompt 明确目标 NPC 只回复自己，必须参考职业、人设、当前状态、亲历事件、见闻、长期记忆、地点状态和 `current_order`；`current_order` 只作为守备官持续指令参考，不能越权决定行动、资源、HP、建筑、装备、斗志 buff 或逃离移动。
-- 已按 `game_design.md` 收敛结构化选项：日常 / 征召使用 `recruitment_result=none|accept|reject`；集结 / 战斗对已入伍持主武器 NPC 使用 `wartime_reaction=none|escape|morale_boost`；避战对话不触发 `wartime_reaction`，继续用征召结果表达是否应征；逃离挽留只允许 `intent=stay_after_intervention|leave_after_intervention`。
-- 新增 `tools/verify_dialogue_prompt.py`，用 fake real-provider 请求检查系统 Prompt 包含职业、记忆、`current_order`、征召、战时、避战和逃离挽留约束，并验证返回 JSON 符合 `NPCDialogueResponse`。
+- 已按 `game_design.md` 收敛结构化选项：日常 / 征召使用 `recruitment_result=none|accept|reject`；集结 / 战斗对已入伍持主武器 NPC 使用 `wartime_reaction=none|escape|morale_boost`；避战对话不触发 `wartime_reaction`，继续用征召结果表达是否应征；T0087 后逃离挽留使用 `escape_intervention_result=stay|leave`。
+- 新增 `tools/verify_dialogue_prompt.py`，用 fake real-provider 请求检查系统 Prompt 包含职业、记忆、`current_order`、征召、战时、避战和逃离挽留约束；T0087 后按三种响应 Schema 验证返回 JSON。
 - 新增 `tools/verify_dialogue_prompt_real.py`，在本机存在非 mock provider 和真实 `LLM_API_KEY` 时，对 `/npc/dialogue` 的日常对话、提出应征、战时结构化意向和逃离挽留各发起一次真实 provider 调用；无 Key 时明确 skip，不把 mock 当验收。
 - 真实 API 验收：使用 `LLM_PROVIDER=deepseek`、`model=deepseek-v4-flash`、`LLM_FALLBACK_TO_MOCK=false` 完成 4 次 `/npc/dialogue` 调用，覆盖日常对话、应征、战时意向和逃离挽留；`/debug/llm_usage` 记录 provider=`deepseek`、calls=4、`fallback_used=false`，且无失败。
 

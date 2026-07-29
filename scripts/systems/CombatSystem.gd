@@ -58,6 +58,7 @@ const ESCAPE_STATUS_ESCAPING := "escaping"
 const ESCAPE_STATUS_PAUSED_UNCONSCIOUS := "paused_unconscious"
 const ESCAPE_STATUS_ESCAPED := "escaped"
 const ESCAPE_STATUS_STAYED := "stayed"
+const ESCAPE_STATUS_RESUME_FAILED := "resume_failed"
 const ESCAPE_DECISION_STAY := "stay"
 const ESCAPE_DECISION_CONTINUE := "continue"
 const ESCAPE_SPEED_DEFAULT_MULTIPLIER := 1.0
@@ -727,7 +728,10 @@ func start_npc_escape(
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
 		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
-	if not npc_system.has_method("set_npc_behavior_mode") or not npc_system.has_method("move_npc_to_world_position"):
+	if (
+		not npc_system.has_method("set_npc_behavior_mode_and_move_to_world_position")
+		or not npc_system.has_method("can_npc_move_to_world_position")
+	):
 		return _escape_failure("npc_system_missing_escape_api", "NPC 系统缺少逃离所需接口。", npc_id)
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
@@ -756,23 +760,6 @@ func start_npc_escape(
 	if clean_source_event_id.is_empty():
 		clean_source_event_id = str(context.get("source_event_id", ""))
 	var previous_mode := _get_npc_behavior_mode(npc_system, npc_id)
-	var event := _log_escape_started(npc_id, clean_source_event_id, clean_trigger, context, previous_mode)
-	var mode_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_ESCAPED, "escape_started", {
-		"interrupt": true,
-		"stop_movement": true,
-		"suppress_mode_event": true,
-		"request_plan_reevaluation": false,
-		"state_changes": {
-			"escaped": false,
-			"current_action": "escaping_station",
-			"last_action_result": "escape_started",
-			"combat_target_enemy_id": "",
-			"morale_boost": {}
-		}
-	})
-	if not bool(mode_result.get("ok", false)):
-		return _escape_failure("mode_switch_failed", "无法切换到逃离状态。", npc_id, {"mode_result": mode_result})
-
 	var arrival_state := {
 		"escape_finalize": true,
 		"allow_escaping_movement": true,
@@ -782,10 +769,36 @@ func start_npc_escape(
 		"exit_target_id": ESCAPE_TARGET_ID,
 		"exit_target_name": ESCAPE_TARGET_NAME
 	}
-	var moved := bool(npc_system.move_npc_to_world_position(npc_id, ESCAPE_TARGET_ID, ESCAPE_TARGET_NAME, ESCAPE_EXIT_POSITION, arrival_state))
-	if not moved:
-		return _escape_failure("movement_failed", "无法让 NPC 前往后门出口。", npc_id, {"mode_result": mode_result})
+	if not bool(npc_system.can_npc_move_to_world_position(npc_id, arrival_state)):
+		return _escape_failure("movement_unavailable", "NPC 当前无法开始前往后门出口。", npc_id)
+	var mode_result: Dictionary = npc_system.set_npc_behavior_mode_and_move_to_world_position(
+		npc_id,
+		BEHAVIOR_MODE_ESCAPED,
+		"escape_started",
+		ESCAPE_TARGET_ID,
+		ESCAPE_TARGET_NAME,
+		ESCAPE_EXIT_POSITION,
+		arrival_state,
+		{
+			"interrupt": true,
+			"stop_movement": true,
+			"suppress_mode_event": true,
+			"request_plan_reevaluation": false,
+			"state_changes": {
+				"escaped": false,
+				"current_action": "escaping_station",
+				"last_action_result": "escape_started",
+				"combat_target_enemy_id": "",
+				"morale_boost": {}
+			}
+		}
+	)
+	if not bool(mode_result.get("ok", false)):
+		return _escape_failure("escape_transition_failed", "无法切换到逃离状态并开始移动。", npc_id, {
+			"mode_result": mode_result
+		})
 
+	var event := _log_escape_started(npc_id, clean_source_event_id, clean_trigger, context, previous_mode)
 	var time_snapshot := _get_game_time_snapshot()
 	var escape_intent := {
 		"active": true,
@@ -800,7 +813,7 @@ func start_npc_escape(
 		"intervention_rounds_used": 0,
 		"intervention_max_rounds": ESCAPE_INTERVENTION_MAX_ROUNDS,
 		"last_intervention_decision": "",
-		"last_intervention_intent": "",
+		"last_intervention_result": "",
 		"speed_multiplier": ESCAPE_SPEED_DEFAULT_MULTIPLIER,
 		"money_slow_count": 0,
 		"attack_speed_count": 0,
@@ -992,11 +1005,12 @@ func apply_escape_intervention_result(npc_id: String, response: Dictionary, cont
 	var previous_rounds := clampi(int(intent.get("intervention_rounds_used", 0)), 0, ESCAPE_INTERVENTION_MAX_ROUNDS)
 	var current_round := clampi(int(context.get("current_round", previous_rounds + 1)), 1, ESCAPE_INTERVENTION_MAX_ROUNDS)
 	var rounds_used := maxi(previous_rounds, current_round)
-	var response_intent := str(response.get("intent", ""))
-	var decision := _normalize_escape_intervention_decision(response_intent)
+	var intervention_result := str(response.get("escape_intervention_result", ""))
+	var decision := _normalize_escape_intervention_decision(intervention_result)
 	intent["intervention_rounds_used"] = rounds_used
 	intent["intervention_max_rounds"] = ESCAPE_INTERVENTION_MAX_ROUNDS
-	intent["last_intervention_intent"] = response_intent
+	intent.erase("last_intervention_intent")
+	intent["last_intervention_result"] = intervention_result
 	intent["last_intervention_decision"] = decision
 	intent["last_intervention_reply"] = str(response.get("reply_text", ""))
 	intent["last_intervention_dialogue_event_id"] = str(context.get("dialogue_event_id", ""))
@@ -1012,7 +1026,7 @@ func apply_escape_intervention_result(npc_id: String, response: Dictionary, cont
 		"npc_id": npc_id,
 		"npc_name": str(npc.get("name", npc_id)),
 		"decision": decision,
-		"intent": response_intent,
+		"intervention_result": intervention_result,
 		"rounds_used": rounds_used,
 		"max_rounds": ESCAPE_INTERVENTION_MAX_ROUNDS,
 		"rounds_left": maxi(0, ESCAPE_INTERVENTION_MAX_ROUNDS - rounds_used),
@@ -1096,7 +1110,8 @@ func record_escape_attack_intervention_round(npc_id: String, current_round: int,
 	var rounds_used := clampi(maxi(previous_rounds, current_round), 0, ESCAPE_INTERVENTION_MAX_ROUNDS)
 	intent["intervention_rounds_used"] = rounds_used
 	intent["intervention_max_rounds"] = ESCAPE_INTERVENTION_MAX_ROUNDS
-	intent["last_intervention_intent"] = "guard_attack_no_reply"
+	intent.erase("last_intervention_intent")
+	intent["last_intervention_result"] = "guard_attack_no_reply"
 	intent["last_intervention_decision"] = ESCAPE_DECISION_CONTINUE
 	intent["last_intervention_reply"] = ""
 	intent["last_intervention_dialogue_event_id"] = ""
@@ -1115,7 +1130,7 @@ func record_escape_attack_intervention_round(npc_id: String, current_round: int,
 		"ok": true,
 		"npc_id": npc_id,
 		"decision": ESCAPE_DECISION_CONTINUE,
-		"intent": "guard_attack_no_reply",
+		"intervention_result": "guard_attack_no_reply",
 		"rounds_used": rounds_used,
 		"max_rounds": ESCAPE_INTERVENTION_MAX_ROUNDS,
 		"rounds_left": maxi(0, ESCAPE_INTERVENTION_MAX_ROUNDS - rounds_used),
@@ -1189,7 +1204,8 @@ func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = 
 		"combatant_decisions_allowed": combatant_decisions_allowed,
 		"dialogue_result": dialogue_result,
 		"llm_result": llm_result,
-		"battle_wave_id": str(_active_battle.get("wave_id", ""))
+		"battle_wave_id": str(_active_battle.get("wave_id", "")),
+		"battle_started_event_id": str(_active_battle.get("started_event_id", ""))
 	}
 	if bool(llm_result.get("ok", false)) and bool(llm_result.get("pending", false)):
 		var request_id := str(llm_result.get("request_id", ""))
@@ -4345,6 +4361,20 @@ func _on_battle_judgement_async_response_received(result: Dictionary) -> void:
 			"request_id": request_id
 		}
 		return
+	var expected_started_event_id := str(apply_context.get("battle_started_event_id", ""))
+	if (
+		not expected_started_event_id.is_empty()
+		and str(_active_battle.get("started_event_id", "")) != expected_started_event_id
+	):
+		_last_low_hp_judgement_result = {
+			"ok": true,
+			"triggered": true,
+			"status": "discarded",
+			"reason": "battle_restarted_before_llm_response",
+			"npc_id": npc_id,
+			"request_id": request_id
+		}
+		return
 	apply_context["llm_result"] = result.duplicate(true)
 	var allowed_decisions: Array[String] = []
 	for raw_decision in _normalize_string_array(apply_context.get("allowed_decisions", [])):
@@ -4371,7 +4401,63 @@ func _make_low_hp_rule_fallback_judgement(npc_id: String, allowed_decisions: Arr
 	}
 
 
+func _get_low_hp_judgement_stale_reason(npc_id: String, context: Dictionary) -> String:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("get_npc_state")
+	):
+		return "npc_system_missing"
+	if (npc_system.get_npc(npc_id) as Dictionary).is_empty():
+		return "npc_missing"
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var max_hp := maxi(1, int(state.get("max_hp", 100)))
+	var hp := clampi(int(state.get("hp", max_hp)), 0, max_hp)
+	if hp <= 0 or bool(state.get("unconscious", false)):
+		return "npc_unconscious"
+	if bool(state.get("escaped", false)):
+		return "npc_already_escaped"
+	if get_active_enemy_count() <= 0:
+		return "no_active_enemies"
+	if float(hp) / float(max_hp) >= LOW_HP_JUDGEMENT_RATIO:
+		return "hp_recovered_above_threshold"
+	if npc_system.has_method("can_npc_act") and not bool(npc_system.can_npc_act(npc_id)):
+		return "npc_not_actionable"
+	var expected_mode := str(context.get("behavior_mode", ""))
+	var current_mode := _get_npc_behavior_mode(npc_system, npc_id)
+	if not expected_mode.is_empty() and current_mode != expected_mode:
+		return "behavior_mode_changed"
+	var expected_combatant := bool(context.get("combatant_decisions_allowed", false))
+	var current_combatant := current_mode == BEHAVIOR_MODE_COMBAT and _is_npc_combat_eligible(npc_id, npc_system)
+	if current_combatant != expected_combatant:
+		return "combat_eligibility_changed"
+	return ""
+
+
 func _apply_low_hp_judgement_result(npc_id: String, judgement: Dictionary, context: Dictionary) -> Dictionary:
+	var stale_reason := _get_low_hp_judgement_stale_reason(npc_id, context)
+	if not stale_reason.is_empty():
+		var stale_llm_result: Dictionary = context.get("llm_result", {}) if context.get("llm_result", {}) is Dictionary else {}
+		var stale_dialogue_result: Dictionary = context.get("dialogue_result", {}) if context.get("dialogue_result", {}) is Dictionary else {}
+		_update_low_hp_judgement_for_active_battle(npc_id, {
+			"status": "discarded",
+			"discard_reason": stale_reason,
+			"dialogue_result": stale_dialogue_result.duplicate(true),
+			"llm_ok": bool(stale_llm_result.get("ok", false))
+		})
+		_last_low_hp_judgement_result = {
+			"ok": true,
+			"triggered": true,
+			"status": "discarded",
+			"reason": stale_reason,
+			"npc_id": npc_id,
+			"request_id": str(stale_llm_result.get("request_id", "")),
+			"dialogue_result": stale_dialogue_result.duplicate(true),
+			"llm_ok": bool(stale_llm_result.get("ok", false)),
+			"rule_fallback": bool(judgement.get("rule_fallback", false))
+		}
+		return _last_low_hp_judgement_result.duplicate(true)
 	var allowed_decisions: Array[String] = []
 	for raw_decision in _normalize_string_array(context.get("allowed_decisions", [])):
 		if BATTLE_DECISIONS.has(raw_decision) and not allowed_decisions.has(raw_decision):
@@ -4511,7 +4597,11 @@ func _pause_escape_for_unconscious(npc_id: String, reason: String) -> Dictionary
 
 
 func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary:
-	if npc_system == null or not npc_system.has_method("get_npc_state"):
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc_state")
+		or not npc_system.has_method("update_npc_state")
+	):
 		return {"ok": false, "active_escape": false, "error": "npc_system_missing", "npc_id": npc_id}
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var intent := _get_escape_intent_from_state(state)
@@ -4521,28 +4611,15 @@ func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary
 		return {"ok": true, "applied": false, "active_escape": false, "reason": "already_escaped", "npc_id": npc_id}
 	if bool(state.get("unconscious", false)):
 		return {"ok": true, "applied": false, "active_escape": true, "reason": "still_unconscious", "npc_id": npc_id}
-	if not npc_system.has_method("set_npc_behavior_mode") or not npc_system.has_method("move_npc_to_world_position"):
+	if (
+		not npc_system.has_method("set_npc_behavior_mode_and_move_to_world_position")
+		or not npc_system.has_method("can_npc_move_to_world_position")
+	):
 		return _escape_failure("npc_system_missing_escape_api", "NPC 系统缺少逃离所需接口。", npc_id)
 	intent["active"] = true
 	intent["status"] = ESCAPE_STATUS_ESCAPING
 	intent["resumed_day"] = int(_get_game_time_snapshot().get("day", 1))
 	intent["resumed_time"] = str(_get_game_time_snapshot().get("time", "00:00:00"))
-	var mode_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_ESCAPED, "escape_resumed_after_revive", {
-		"interrupt": true,
-		"stop_movement": true,
-		"suppress_mode_event": true,
-		"request_plan_reevaluation": false,
-		"state_changes": {
-			"escaped": false,
-			"escape_intent": intent,
-			"current_action": "escaping_station",
-			"last_action_result": "escape_resumed_after_revive",
-			"combat_target_enemy_id": "",
-			"morale_boost": {}
-		}
-	})
-	if not bool(mode_result.get("ok", false)):
-		return _escape_failure("mode_switch_failed", "无法恢复逃离状态。", npc_id, {"mode_result": mode_result, "active_escape": true})
 	var arrival_state := {
 		"escape_finalize": true,
 		"allow_escaping_movement": true,
@@ -4552,9 +4629,47 @@ func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary
 		"exit_target_id": ESCAPE_TARGET_ID,
 		"exit_target_name": ESCAPE_TARGET_NAME
 	}
-	var moved := bool(npc_system.move_npc_to_world_position(npc_id, ESCAPE_TARGET_ID, ESCAPE_TARGET_NAME, ESCAPE_EXIT_POSITION, arrival_state))
-	if not moved:
-		return _escape_failure("movement_failed", "无法让复苏 NPC 继续前往后门出口。", npc_id, {"mode_result": mode_result, "active_escape": true})
+	if not bool(npc_system.can_npc_move_to_world_position(npc_id, arrival_state)):
+		return _cancel_escape_resume_after_failure(
+			npc_system,
+			npc_id,
+			intent,
+			"movement_unavailable",
+			"复苏 NPC 当前无法继续前往后门出口。",
+			{}
+		)
+	var mode_result: Dictionary = npc_system.set_npc_behavior_mode_and_move_to_world_position(
+		npc_id,
+		BEHAVIOR_MODE_ESCAPED,
+		"escape_resumed_after_revive",
+		ESCAPE_TARGET_ID,
+		ESCAPE_TARGET_NAME,
+		ESCAPE_EXIT_POSITION,
+		arrival_state,
+		{
+			"interrupt": true,
+			"stop_movement": true,
+			"suppress_mode_event": true,
+			"request_plan_reevaluation": false,
+			"state_changes": {
+				"escaped": false,
+				"escape_intent": intent,
+				"current_action": "escaping_station",
+				"last_action_result": "escape_resumed_after_revive",
+				"combat_target_enemy_id": "",
+				"morale_boost": {}
+			}
+		}
+	)
+	if not bool(mode_result.get("ok", false)):
+		return _cancel_escape_resume_after_failure(
+			npc_system,
+			npc_id,
+			intent,
+			"escape_transition_failed",
+			"无法恢复逃离状态并继续移动。",
+			{"mode_result": mode_result}
+		)
 	var snapshot := _sync_active_escape_from_state(npc_id)
 	var result := {
 		"ok": true,
@@ -4568,6 +4683,31 @@ func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary
 	}
 	_last_escape_result = result.duplicate(true)
 	return result
+
+
+func _cancel_escape_resume_after_failure(
+	npc_system: Node,
+	npc_id: String,
+	intent: Dictionary,
+	error_code: String,
+	message: String,
+	extra: Dictionary = {}
+) -> Dictionary:
+	var failed_intent := intent.duplicate(true)
+	failed_intent["active"] = false
+	failed_intent["status"] = ESCAPE_STATUS_RESUME_FAILED
+	failed_intent["resume_failure_code"] = error_code
+	failed_intent["resume_failure_day"] = int(_get_game_time_snapshot().get("day", 1))
+	failed_intent["resume_failure_time"] = str(_get_game_time_snapshot().get("time", "00:00:00"))
+	npc_system.update_npc_state(npc_id, {
+		"escape_intent": failed_intent,
+		"last_action_result": "escape_resume_failed"
+	})
+	_active_escapes.erase(npc_id)
+	var failure_extra := extra.duplicate(true)
+	failure_extra["active_escape"] = false
+	failure_extra["escape_intent"] = failed_intent.duplicate(true)
+	return _escape_failure(error_code, message, npc_id, failure_extra)
 
 
 func _change_escape_speed_multiplier(npc_id: String, trigger: String, factor: float, context: Dictionary = {}) -> Dictionary:
@@ -4654,8 +4794,8 @@ func _get_escape_speed_multiplier(intent: Dictionary) -> float:
 	return clampf(float(intent.get("speed_multiplier", ESCAPE_SPEED_DEFAULT_MULTIPLIER)), ESCAPE_SPEED_MIN_MULTIPLIER, ESCAPE_SPEED_MAX_MULTIPLIER)
 
 
-func _normalize_escape_intervention_decision(response_intent: String) -> String:
-	if response_intent == "stay_after_intervention":
+func _normalize_escape_intervention_decision(intervention_result: String) -> String:
+	if intervention_result == "stay":
 		return ESCAPE_DECISION_STAY
 	return ESCAPE_DECISION_CONTINUE
 
@@ -4681,7 +4821,7 @@ func _log_escape_intervention_result(
 		"payload": {
 			"npc_id": npc_id,
 			"decision": decision,
-			"intent": str(response.get("intent", "")),
+			"intervention_result": str(response.get("escape_intervention_result", "")),
 			"current_round": int(intent.get("intervention_rounds_used", 0)),
 			"max_rounds": ESCAPE_INTERVENTION_MAX_ROUNDS,
 			"rounds_left": maxi(0, ESCAPE_INTERVENTION_MAX_ROUNDS - int(intent.get("intervention_rounds_used", 0))),

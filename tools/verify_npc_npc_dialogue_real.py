@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 
 from backend.app import create_app  # noqa: E402
-from backend.schemas import GameTime, ModelRequestMeta, NPCDialogueResponse, SpeakerContext  # noqa: E402
+from backend.schemas import GameTime, ModelRequestMeta, NPCNPCDialogueResponse, SpeakerContext  # noqa: E402
 from tools.station_context_fixture import build_station_context  # noqa: E402
 
 
@@ -169,7 +169,11 @@ def main() -> None:
     invitation_response = client.post("/npc/dialogue", json=invitation_payload)
     invitation_body = invitation_response.get_json()
     assert invitation_response.status_code == 200, invitation_body
-    invitation = NPCDialogueResponse(**invitation_body)
+    invitation = NPCNPCDialogueResponse(**{
+        key: value
+        for key, value in invitation_body.items()
+        if not key.startswith("model_")
+    })
     assert invitation.replyer_id == "priest_01"
     assert invitation.response_kind == "reply_to_npc"
     assert invitation.invitation_result == "accept", invitation
@@ -190,10 +194,14 @@ def main() -> None:
     rejection_response = client.post("/npc/dialogue", json=rejection_payload)
     rejection_body = rejection_response.get_json()
     assert rejection_response.status_code == 200, rejection_body
-    rejection = NPCDialogueResponse(**rejection_body)
+    rejection = NPCNPCDialogueResponse(**{
+        key: value
+        for key, value in rejection_body.items()
+        if not key.startswith("model_")
+    })
     assert rejection.invitation_result == "reject", rejection
-    assert rejection.intent == "end_talk", rejection
     assert rejection.should_end_dialogue is True, rejection
+    assert "intent" not in rejection_body
     assert rejection_body["model_provider"].strip().lower() == provider
     assert rejection_body["model_fallback_used"] is False
 
@@ -223,15 +231,19 @@ def main() -> None:
     conversation_response = client.post("/npc/dialogue", json=conversation_payload)
     body = conversation_response.get_json()
     assert conversation_response.status_code == 200, body
-    dialogue = NPCDialogueResponse(**body)
+    dialogue = NPCNPCDialogueResponse(**{
+        key: value
+        for key, value in body.items()
+        if not key.startswith("model_")
+    })
     assert dialogue.replyer_id == "priest_01"
     assert dialogue.response_kind == "reply_to_npc"
     assert dialogue.reply_text.strip()
-    assert dialogue.recruitment_result == "none"
-    assert dialogue.wartime_reaction == "none"
     assert dialogue.invitation_result == "not_applicable"
     assert dialogue.should_end_dialogue is True, dialogue
-    assert dialogue.intent == "end_talk", dialogue
+    assert "intent" not in body
+    assert "recruitment_result" not in body
+    assert "wartime_reaction" not in body
     assert body["model_provider"].strip().lower() == provider
     assert body["model_provider"].strip().lower() != "mock"
     assert body["model_fallback_used"] is False

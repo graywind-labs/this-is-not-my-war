@@ -13,7 +13,11 @@
     "category": "supply",
     "initial_amount": 18,
     "min_amount": 0,
-    "ui_order": 2
+    "ui_order": 2,
+    "warehouse_capacity": {
+      "level_1": 120,
+      "per_level_bonus": 60
+    }
   },
   {
     "id": "meal",
@@ -21,7 +25,11 @@
     "category": "supply",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 3
+    "ui_order": 3,
+    "warehouse_capacity": {
+      "level_1": 120,
+      "per_level_bonus": 60
+    }
   },
   {
     "id": "wine",
@@ -29,7 +37,11 @@
     "category": "derived",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 4
+    "ui_order": 4,
+    "warehouse_capacity": {
+      "level_1": 60,
+      "per_level_bonus": 30
+    }
   },
   {
     "id": "weapons",
@@ -81,7 +93,11 @@
     "category": "material",
     "initial_amount": 12,
     "min_amount": 0,
-    "ui_order": 9
+    "ui_order": 9,
+    "warehouse_capacity": {
+      "level_1": 120,
+      "per_level_bonus": 60
+    }
   },
   {
     "id": "stone",
@@ -89,7 +105,11 @@
     "category": "material",
     "initial_amount": 8,
     "min_amount": 0,
-    "ui_order": 10
+    "ui_order": 10,
+    "warehouse_capacity": {
+      "level_1": 120,
+      "per_level_bonus": 60
+    }
   },
   {
     "id": "iron",
@@ -97,7 +117,11 @@
     "category": "material",
     "initial_amount": 5,
     "min_amount": 0,
-    "ui_order": 11
+    "ui_order": 11,
+    "warehouse_capacity": {
+      "level_1": 120,
+      "per_level_bonus": 60
+    }
   },
   {
     "id": "item_sword_shield",

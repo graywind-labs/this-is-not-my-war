@@ -6,7 +6,6 @@ const GUARD_OFFICER_ID := "guard_officer"
 const MINUTES_PER_DAY := 24 * 60
 const TIME_STEP_MINUTES := 15
 
-var current_notice_label: Label
 var notice_text_edit: TextEdit
 var notice_status_label: Label
 var publish_button: Button
@@ -60,28 +59,28 @@ func _on_publish_pressed() -> void:
 	elif notice.is_empty():
 		notice_status_label.text = "通告已清空并发布。"
 	else:
-		notice_status_label.text = "新通告已发布给广场。"
+		notice_status_label.text = "新通告已向全站 NPC 广播。"
 
 
 func _on_schedule_publish_pressed() -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("set_plaza_reference_schedule"):
-		schedule_status_label.text = "参考日程系统不可用。"
+		schedule_status_label.text = "日程表系统不可用。"
 		return
 	var result: Dictionary = memory_system.set_plaza_reference_schedule(
 		_schedule_draft.duplicate(true),
 		GUARD_OFFICER_ID
 	)
 	if not bool(result.get("ok", false)):
-		schedule_status_label.text = str(result.get("message", "参考日程无法发布，请检查时间和内容。"))
+		schedule_status_label.text = str(result.get("message", "日程表无法发布，请检查时间和内容。"))
 		return
 	_schedule_draft = _duplicate_schedule(result.get("schedule", []))
 	_render_schedule_rows()
 	_refresh_published_labels()
 	if bool(result.get("changed", false)):
-		schedule_status_label.text = "参考日程已发布给广场。"
+		schedule_status_label.text = "日程表已向全站 NPC 广播。"
 	else:
-		schedule_status_label.text = "参考日程没有变化。"
+		schedule_status_label.text = "日程表没有变化。"
 
 
 func _on_schedule_add_pressed() -> void:
@@ -98,7 +97,7 @@ func _on_schedule_add_pressed() -> void:
 	})
 	_render_schedule_rows()
 	if schedule_is_full:
-		schedule_status_label.text = "已新增本地草稿，但现有日程已覆盖全天；请先调整或删除重叠时段，再填写内容并发布。"
+		schedule_status_label.text = "已新增本地草稿，但现有日程表已覆盖全天；请先调整或删除重叠时段，再填写内容并发布。"
 	else:
 		schedule_status_label.text = "已新增本地草稿；填写内容并发布后才会生效。"
 
@@ -121,7 +120,7 @@ func _on_schedule_time_selected(item_index: int, row_id: String, field: String, 
 		if str(entry.get("id", "")) == row_id:
 			entry[field] = selected_time
 			break
-	schedule_status_label.text = "日程草稿有未发布的更改。"
+	schedule_status_label.text = "日程表草稿有未发布的更改。"
 
 
 func _on_schedule_content_changed(new_text: String, row_id: String) -> void:
@@ -129,7 +128,7 @@ func _on_schedule_content_changed(new_text: String, row_id: String) -> void:
 		if str(entry.get("id", "")) == row_id:
 			entry["content"] = new_text
 			break
-	schedule_status_label.text = "日程草稿有未发布的更改。"
+	schedule_status_label.text = "日程表草稿有未发布的更改。"
 
 
 func _on_location_info_changed(location_id: String) -> void:
@@ -193,18 +192,6 @@ func _build_notice_tab() -> void:
 	notice_tab.add_theme_constant_override("separation", 10)
 	notice_page.add_child(notice_tab)
 
-	current_notice_label = Label.new()
-	current_notice_label.name = "CurrentNoticeLabel"
-	current_notice_label.text = "当前已发布通告：无"
-	current_notice_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	notice_tab.add_child(current_notice_label)
-
-	var draft_label := Label.new()
-	draft_label.name = "NoticeDraftLabel"
-	draft_label.text = "通告草稿"
-	draft_label.add_theme_font_size_override("font_size", 16)
-	notice_tab.add_child(draft_label)
-
 	notice_text_edit = TextEdit.new()
 	notice_text_edit.name = "NoticeTextEdit"
 	notice_text_edit.placeholder_text = "以守备官的口吻写下要向驿站公开的通告……"
@@ -215,7 +202,7 @@ func _build_notice_tab() -> void:
 
 	notice_status_label = Label.new()
 	notice_status_label.name = "NoticeStatusLabel"
-	notice_status_label.text = "退出不会保存草稿；只有发布才会更新广场见闻。"
+	notice_status_label.text = ""
 	notice_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	notice_tab.add_child(notice_status_label)
 
@@ -242,7 +229,7 @@ func _build_notice_tab() -> void:
 
 func _build_schedule_tab() -> void:
 	var schedule_page := Control.new()
-	schedule_page.name = "参考日程"
+	schedule_page.name = "日程表"
 	board_tabs.add_child(schedule_page)
 
 	var schedule_tab := VBoxContainer.new()
@@ -289,6 +276,7 @@ func _build_schedule_tab() -> void:
 
 	schedule_status_label = Label.new()
 	schedule_status_label.name = "ScheduleStatusLabel"
+	schedule_status_label.text = ""
 	schedule_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	schedule_tab.add_child(schedule_status_label)
 
@@ -299,7 +287,7 @@ func _build_schedule_tab() -> void:
 
 	schedule_add_button = Button.new()
 	schedule_add_button.name = "ScheduleAddButton"
-	schedule_add_button.text = "+ 新建日程"
+	schedule_add_button.text = "+ 新建安排"
 	schedule_add_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	schedule_add_button.pressed.connect(_on_schedule_add_pressed)
 	button_row.add_child(schedule_add_button)
@@ -307,14 +295,14 @@ func _build_schedule_tab() -> void:
 	var exit_button := Button.new()
 	exit_button.name = "ScheduleExitButton"
 	exit_button.text = "退出"
-	exit_button.tooltip_text = "丢弃这次未发布的日程草稿"
+	exit_button.tooltip_text = "丢弃这次未发布的日程表草稿"
 	exit_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	exit_button.pressed.connect(close_panel)
 	button_row.add_child(exit_button)
 
 	schedule_publish_button = Button.new()
 	schedule_publish_button.name = "SchedulePublishButton"
-	schedule_publish_button.text = "发布日程"
+	schedule_publish_button.text = "发布日程表"
 	schedule_publish_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	schedule_publish_button.pressed.connect(_on_schedule_publish_pressed)
 	button_row.add_child(schedule_publish_button)
@@ -331,7 +319,7 @@ func _render_schedule_rows() -> void:
 	if _schedule_draft.is_empty():
 		var empty_label := Label.new()
 		empty_label.name = "EmptyScheduleLabel"
-		empty_label.text = "尚无参考日程。点击“+ 新建日程”添加一条。"
+		empty_label.text = "日程表尚无安排。点击“+ 新建安排”添加一条。"
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_label.custom_minimum_size = Vector2(0, 56)
 		schedule_rows.add_child(empty_label)
@@ -416,21 +404,14 @@ func _load_published_state() -> void:
 	_schedule_row_counter = _schedule_draft.size()
 	_render_schedule_rows()
 	_refresh_published_labels(state)
-	notice_status_label.text = "退出不会保存草稿；只有发布才会更新广场见闻。"
-	schedule_status_label.text = "新增、编辑和删除只改草稿；点击“发布日程”后才会生效。"
+	notice_status_label.text = ""
+	schedule_status_label.text = ""
 
 
 func _refresh_published_labels(state: Dictionary = {}) -> void:
 	var board_state := state if not state.is_empty() else _get_board_state()
-	var notice := str(board_state.get("current_notice", ""))
-	if notice.is_empty():
-		current_notice_label.text = "当前已发布通告：无"
-	else:
-		# 完整已发布内容已经作为可编辑副本载入下方文本框；此处只保留状态，
-		# 避免同一长文重复占高并把公告牌挤出较小视口。
-		current_notice_label.text = "当前已发布通告：%d 字（下方为可编辑副本）" % notice.length()
 	var advisory_note := str(board_state.get("schedule_advisory_note", ""))
-	schedule_advisory_label.text = "参考性质｜%s" % advisory_note
+	schedule_advisory_label.text = advisory_note
 
 
 func _get_board_state() -> Dictionary:

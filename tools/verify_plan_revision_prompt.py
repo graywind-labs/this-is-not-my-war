@@ -117,6 +117,7 @@ def _payload() -> dict:
             {
                 "action_id": "work_blacksmith",
                 "name": "打铁",
+                "action_kind": "work",
                 "location_id": "blacksmith",
                 "target_id": None,
                 "tags": ["work"],
@@ -124,6 +125,7 @@ def _payload() -> dict:
             {
                 "action_id": "idle",
                 "name": "等待",
+                "action_kind": "idle",
                 "location_id": None,
                 "target_id": None,
                 "tags": ["idle"],
@@ -134,14 +136,15 @@ def _payload() -> dict:
 
 def _valid_revision() -> dict:
     revised_plan = [
-        _plan_item(hour, "work_blacksmith", "work", "blacksmith", "重估剩余打铁安排")
+        {
+            "hour": hour,
+            "action_id": "work_blacksmith",
+            "reason": "重估剩余打铁安排",
+        }
         for hour in [8, 14]
     ]
     return {
-        "ok": True,
-        "npc_id": "blacksmith_01",
         "revised_plan": revised_plan,
-        "immediate_action": copy.deepcopy(revised_plan[0]),
         "summary": "只重新安排指定时段。",
         "debug_reason": "仅覆盖指定小时。",
     }
@@ -166,23 +169,50 @@ def main() -> None:
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
+    provider_payload = __import__("json").loads(request_body["messages"][1]["content"])
     assert "max_tokens" not in request_body
     assert request_body["thinking"] == {"type": "disabled"}
     assert adapter.get_runtime_config_snapshot()["client_output_token_limit_applied"] is False
+    assert "meta" not in provider_payload
+    assert "revision_scope" not in provider_payload
+    assert provider_payload["allowed_actions"][0]["action_kind"] == "work"
+    assert revision.revised_plan[0].action_kind == "work"
+    assert revision.revised_plan[0].location_id == "blacksmith"
+    assert revision.revised_plan[0].priority == 50
     for fragment in [
         "revision_scope` 固定为 `selected_hours",
         "必须与请求的 `revision_hours` 完全一致",
-        "不得为了输出即时行动而擅自增加当前小时",
+        "不得为制造即时行动而擅自增加当前小时",
         "原计划中其他小时由程序保留",
+        "不是程序硬门槛",
         "allowed_actions",
         "current_order",
         "eligible=false",
         "available_now=false",
+        "总工期与剩余时间",
+        "不能把短工期机械延长到更晚时段",
         "required_ability=主持弥撒",
         "required_active_action_id",
         "attend_mass",
         "pray_at_chapel",
         "blocked_by_active_action_id=lead_mass",
+        "pray_failed_mass_in_progress",
+        "pray_failed_mass_started",
+        "attend_mass_failed_no_leader",
+        "attend_mass_failed_leader_left",
+        "应强烈优先把当前小时改为 `attend_mass`",
+        "应强烈优先把当前小时改为 `pray_at_chapel`",
+        "不得仅因泛泛的工作偏好离开教堂",
+        "failure_context.dialogue_history",
+        "NPC 已清楚答应立即参加",
+        "兑现刚形成的承诺",
+        "drink_wine",
+        "drink_wine_failed_no_wine",
+        "程序消耗 1 份个人酒",
+        "failure_type=action_completed",
+        "contiguous_revision_hours",
+        "requires_different_current_activity=true",
+        "不得原样重复相同的 `action_id + target_id`",
         "不指定某一张病床、某个训练位或其他位置编号",
         "往昔·近日",
         "传达敌情",
@@ -257,7 +287,6 @@ def main() -> None:
     future_payload["revision_hours"] = [14]
     future_revision = _valid_revision()
     future_revision["revised_plan"] = [future_revision["revised_plan"][1]]
-    future_revision["immediate_action"] = None
     future_app = create_app()
     future_app.config["MODEL_ADAPTER"] = ModelAdapter(ModelAdapterConfig(
         provider="deepseek",

@@ -101,6 +101,7 @@ class CapturingLLMBridge:
 const CURRENT_HOUR := 8
 const TRAVEL_NPC_ID := "cook_01"
 const ACTIVE_NPC_ID := "gardener_01"
+const COMPLETION_NPC_ID := "doctor_01"
 
 
 func _init() -> void:
@@ -139,6 +140,19 @@ func _init() -> void:
 	for resource_id in ["wood", "stone", "money", "grain", "meal"]:
 		resource_system.add_resource(resource_id, 100)
 
+	var assist_work_plan := _make_upgrade_assist_plan("clinic", 6)
+	var assist_schema_plan: Array = original_bridge._plan_items_to_schema(assist_work_plan)
+	if (
+		int(original_bridge._count_schema_work_phases(assist_schema_plan)) != 6
+		or str(assist_schema_plan[0].get("location_id", "")) != "plaza"
+		or str(assist_schema_plan[0].get("target_id", "")) != "clinic"
+	):
+		_fail(
+			"LLMBridge lost upgrade-assist work count or outdoor location: %s"
+			% JSON.stringify(assist_schema_plan)
+		)
+		return
+
 	systems.remove_child(original_bridge)
 	original_bridge.queue_free()
 	await process_frame
@@ -151,6 +165,9 @@ func _init() -> void:
 	bridge.plan_revision_async_response_received.connect(
 		Callable(daily_plan_system, "_on_plan_revision_async_response")
 	)
+	if int(daily_plan_system._count_work_phases(assist_work_plan)) != 6:
+		_fail("assist_upgrade was not counted as a work phase by DailyPlanSystem")
+		return
 
 	if not _verify_travel_failure(
 		bridge,
@@ -168,8 +185,16 @@ func _init() -> void:
 		building_system
 	):
 		return
+	if not _verify_completed_upgrade_followup(
+		bridge,
+		daily_plan_system,
+		action_system,
+		npc_system,
+		building_system
+	):
+		return
 
-	print("T0057 building-upgrade action-failure verification passed.")
+	print("T0057/T0085 building-upgrade action-failure verification passed.")
 	quit(0)
 
 
@@ -200,6 +225,24 @@ func _verify_travel_failure(
 	if not building_system.upgrade_building("dining_hall"):
 		_fail("Could not start dining hall upgrade")
 		return false
+	var travelling_after_upgrade: Dictionary = action_system.get_runtime_action_snapshot(TRAVEL_NPC_ID)
+	var travelling_state: Dictionary = npc_system.get_npc_state(TRAVEL_NPC_ID)
+	if (
+		str(travelling_after_upgrade.get("phase", "")) != "pending"
+		or str(travelling_state.get("movement_target", "")) != "dining_hall"
+		or str(travelling_state.get("last_action_result", "")).contains("failed_building_upgrading")
+		or bridge.judgement_requests.size() != 0
+	):
+		_fail(
+			"Pending action learned about the upgrade before reaching the door: %s"
+			% JSON.stringify({
+				"runtime": travelling_after_upgrade,
+				"state": travelling_state,
+				"judgements": bridge.judgement_requests
+			})
+		)
+		return false
+	npc_system._on_npc_movement_arrived(TRAVEL_NPC_ID, "dining_hall")
 	if not _assert_upgrade_failure(
 		TRAVEL_NPC_ID,
 		"work_dining_hall",
@@ -210,7 +253,7 @@ func _verify_travel_failure(
 	):
 		return false
 	if bridge.judgement_requests.size() != 1:
-		_fail("Travel interruption did not start exactly one failure judgement")
+		_fail("Door rejection did not start exactly one failure judgement")
 		return false
 	var request: Dictionary = bridge.judgement_requests.back()
 	if not _assert_judgement_request(request, TRAVEL_NPC_ID, "dining_hall", "pending"):
@@ -291,6 +334,116 @@ func _verify_active_failure(
 	return true
 
 
+func _verify_completed_upgrade_followup(
+	bridge: CapturingLLMBridge,
+	daily_plan_system: Node,
+	action_system: Node,
+	npc_system: Node,
+	building_system: Node
+) -> bool:
+	daily_plan_system.set_auto_execution_enabled(false)
+	action_system.interrupt_npc_action(COMPLETION_NPC_ID, "t0085_completion_reset", true)
+	npc_system.debug_enter_location_immediately(COMPLETION_NPC_ID, "plaza")
+	npc_system.update_npc_state(COMPLETION_NPC_ID, {
+		"last_action_result": "work_clinic_doctor_failed_building_upgrading",
+		"last_action_failure_context": {
+			"action_id": "work_clinic_doctor",
+			"building_id": "clinic",
+			"condition": "upgrading",
+			"failure_reason": "building_upgrading",
+			"failure_summary": "陈旧的诊所升级中断上下文。"
+		}
+	})
+	if not building_system.upgrade_building("clinic"):
+		_fail("Could not start clinic upgrade for completion follow-up")
+		return false
+	if not daily_plan_system.set_npc_daily_plan(
+		COMPLETION_NPC_ID,
+		_make_upgrade_assist_plan("clinic", 1),
+		false,
+		"verify_upgrade_completion"
+	):
+		_fail("Could not install upgrade-assist completion plan")
+		return false
+	if not action_system.debug_assign_upgrade_assist(COMPLETION_NPC_ID, "clinic"):
+		_fail("Doctor could not start assisting the clinic upgrade")
+		return false
+	building_system._finish_upgrade("clinic")
+	var completed_state: Dictionary = npc_system.get_npc_state(COMPLETION_NPC_ID)
+	if (
+		str(completed_state.get("current_action", "")) != "idle"
+		or not str(completed_state.get("last_action_result", "")).begins_with(
+			"completed_assist_upgrade_clinic"
+		)
+		or not (completed_state.get("last_action_failure_context", {}) as Dictionary).is_empty()
+	):
+		_fail(
+			"Upgrade completion did not clear stale action failure context: %s"
+			% JSON.stringify(completed_state)
+		)
+		return false
+
+	var judgement_count_before := bridge.judgement_requests.size()
+	daily_plan_system.set_auto_execution_enabled(true)
+	daily_plan_system.execute_current_plan_for_npc(COMPLETION_NPC_ID, true)
+	if bridge.judgement_requests.size() != judgement_count_before + 1:
+		_fail("Resolved upgrade target did not start exactly one follow-up judgement")
+		return false
+	var judgement_request: Dictionary = bridge.judgement_requests.back()
+	var judgement_options: Dictionary = judgement_request.get("options", {})
+	var judgement_context: Dictionary = judgement_options.get("failure_context", {})
+	if (
+		str(judgement_options.get("failure_type", "")) != "target_unavailable"
+		or str(judgement_context.get("failure_reason", "")) != "no_active_upgrade"
+		or str(judgement_context.get("building_id", "")) != "clinic"
+		or str(judgement_context.get("action_id", "")) != "assist_upgrade"
+		or str(judgement_context.get("failure_summary", "")).contains("正在升级")
+	):
+		_fail(
+			"Upgrade completion reused stale failure context: %s"
+			% JSON.stringify(judgement_request)
+		)
+		return false
+
+	bridge.answer_judgement(judgement_request, [CURRENT_HOUR])
+	if bridge.revision_requests.is_empty():
+		_fail("Upgrade completion judgement did not launch the selected-hour revision")
+		return false
+	var revision_request: Dictionary = bridge.revision_requests.back()
+	bridge.answer_revision(
+		revision_request,
+		[{
+			"hour": CURRENT_HOUR,
+			"action_kind": "work",
+			"action_id": "work_clinic_doctor",
+			"location_id": "clinic",
+			"target_id": null,
+			"priority": 80,
+			"reason": "恢复坐诊",
+			"dialogue_goal": ""
+		}]
+	)
+	var result: Dictionary = daily_plan_system.get_last_reevaluation_result()
+	var current_item: Dictionary = daily_plan_system.get_current_plan_item(COMPLETION_NPC_ID)
+	if (
+		not bool(result.get("plan_applied", false))
+		or str(current_item.get("action_id", "")) != "work_clinic_doctor"
+		or int(daily_plan_system._count_work_phases(
+			daily_plan_system.get_npc_daily_plan(COMPLETION_NPC_ID)
+		)) != 1
+	):
+		_fail(
+			"Soft work minimum blocked the valid clinic follow-up revision: %s"
+			% JSON.stringify({
+				"result": result,
+				"current_item": current_item,
+				"plan": daily_plan_system.get_npc_daily_plan(COMPLETION_NPC_ID)
+			})
+		)
+		return false
+	return true
+
+
 func _prepare_plan(
 	daily_plan_system: Node,
 	npc_id: String,
@@ -331,7 +484,17 @@ func _assert_upgrade_failure(
 		or str(context.get("failure_reason", "")) != "building_upgrading"
 		or str(context.get("unavailable_reason", "")) != "建筑正在升级"
 		or str(context.get("interrupted_phase", "")) != expected_phase
-		or not str(context.get("failure_summary", "")).contains("开始升级")
+		or (
+			expected_phase == "pending"
+			and (
+				not bool(context.get("arrival_check_failed", false))
+				or not str(context.get("failure_summary", "")).contains("入口后")
+			)
+		)
+		or (
+			expected_phase == "active"
+			and not str(context.get("failure_summary", "")).contains("开始升级")
+		)
 	):
 		_fail("Upgrade interruption did not produce the expected failure: %s" % JSON.stringify(state))
 		return false
@@ -353,7 +516,17 @@ func _assert_judgement_request(
 		or str(context.get("building_id", "")) != building_id
 		or str(context.get("failure_reason", "")) != "building_upgrading"
 		or str(context.get("interrupted_phase", "")) != expected_phase
-		or not str(options.get("failure_summary", "")).contains("开始升级")
+		or (
+			expected_phase == "pending"
+			and (
+				not bool(context.get("arrival_check_failed", false))
+				or not str(options.get("failure_summary", "")).contains("入口后")
+			)
+		)
+		or (
+			expected_phase == "active"
+			and not str(options.get("failure_summary", "")).contains("开始升级")
+		)
 	):
 		_fail("Failure judgement lost the building-upgrade facts: %s" % JSON.stringify(request))
 		return false
@@ -365,6 +538,30 @@ func _make_plan(action_id: String, location_id: String) -> Array:
 	for hour in range(24):
 		if hour >= CURRENT_HOUR and hour < CURRENT_HOUR + 7:
 			plan.append(_item(hour, "work", action_id, location_id))
+		else:
+			plan.append(_item(hour, "idle", "idle", ""))
+	return plan
+
+
+func _make_upgrade_assist_plan(building_id: String, work_phase_count: int) -> Array:
+	var plan: Array = []
+	for hour in range(24):
+		if hour == CURRENT_HOUR or hour < maxi(0, work_phase_count - 1):
+			plan.append({
+				"hour": hour,
+				"action_kind": "assist_upgrade",
+				"action_id": "assist_upgrade",
+				"location_id": "",
+				"target_id": building_id,
+				"priority": 80,
+				"reason": "协助升级",
+				"expected_outcome": "推进升级",
+				"target": {
+					"target_id": building_id,
+					"building_id": building_id,
+					"location_id": "plaza"
+				}
+			})
 		else:
 			plan.append(_item(hour, "idle", "idle", ""))
 	return plan

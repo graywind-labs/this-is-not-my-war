@@ -149,12 +149,9 @@ def _payload(allowed_decisions: list[str], npc: NPCContext | None = None) -> dic
 
 def _valid_response(**overrides: object) -> dict:
     response = {
-        "ok": True,
-        "npc_id": "stableman_01",
         "decision": "continue_fighting",
         "emotion": "tense",
         "morale_delta_intent": 0,
-        "should_start_escape": False,
         "debug_reason": "参照亲历受伤、battlefield_context、current_order 和 allowed_decisions。",
     }
     response.update(overrides)
@@ -175,12 +172,21 @@ def main() -> None:
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
+    provider_payload = __import__("json").loads(request_body["messages"][1]["content"])
+    assert "meta" not in provider_payload
+    assert "battlefield_context" not in provider_payload["npc"]
+    assert result.content["ok"] is True
+    assert result.content["npc_id"] == "stableman_01"
+    assert result.content["should_start_escape"] is False
     required_prompt_fragments = [
         "低血量自身心理判定 Prompt",
         "allowed_decisions",
         "battlefield_context",
         "experienced_events",
         "witnessed_events",
+        "wine_consumed",
+        "过去伤痛暂时淡化",
+        "不得删除、否认旧记忆",
         "npc.long_term_memory",
         "diary",
         "current_order",
@@ -235,9 +241,10 @@ def main() -> None:
         )),
     ):
         response = app.test_client().post("/npc/battle_judgement", json=payload)
-    assert response.status_code == 502, response.get_json()
+    assert response.status_code == 200, response.get_json()
     body = response.get_json()
-    assert any("should_start_escape" in detail for detail in body["details"])
+    assert body["decision"] == "escape_station"
+    assert body["should_start_escape"] is True
 
     with patch(
         "backend.services.model_adapter.requests.post",

@@ -14,11 +14,15 @@ const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const GAME_STATE_PATH := "/root/GameState"
 const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
+const GUARD_OFFICER_ID := "guard_officer"
+const GUARD_OFFICER_NAME := "守备官"
+const PLAYER_DIALOGUE_KINDS: Array[String] = ["player_npc", "escape_intervention"]
 const MEMORY_LOG_BOX_MIN_SIZE := Vector2(0, 112)
 const MEMORY_LOG_TEXT_MIN_HEIGHT := 72.0
 const MEMORY_DETAIL_MAX_SIZE := Vector2(860, 560)
 const MEMORY_DETAIL_SCREEN_MARGIN := 48.0
 const DEFAULT_GIFT_MONEY_AMOUNT := 5
+const DEFAULT_GIFT_WINE_AMOUNT := 1
 const PANEL_SCREEN_MARGIN := 16.0
 const PANEL_MIN_WIDTH := 380.0
 const PANEL_MAX_WIDTH := 440.0
@@ -32,6 +36,8 @@ const EQUIP_ARMOR_TOOLTIP := "消耗 1 件所选具体盔甲库存。"
 const UNEQUIP_ARMOR_TOOLTIP := "收回当前部位的盔甲并返还同一具体物品。"
 const ASSIGN_HORSE_TOOLTIP := "分配一匹成年、未占用且当前在厩的马；NPC 还需持有主武器。"
 const UNASSIGN_HORSE_TOOLTIP := "取消该 NPC 当前的马匹分配。"
+const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
+const DEFAULT_NAME_COLOR := Color.WHITE
 const KNOWLEDGE_SUBJECT_LABELS := {
 	"guard_officer": "守备官",
 	"player": "守备官",
@@ -175,6 +181,7 @@ const KNOWLEDGE_KEY_TOKEN_LABELS := {
 
 var _current_npc_id: String = ""
 var _is_sanitizing_gift_money_text := false
+var _is_sanitizing_gift_wine_text := false
 var _is_filling_strategy_select := false
 var _weapon_select: OptionButton
 var _unequip_weapon_button: Button
@@ -203,6 +210,7 @@ var _memory_detail_saved_horizontal := 0
 var _memory_detail_saved_mode := ""
 var _memory_detail_saved_npc_id := ""
 var _memory_detail_initial_bottom_pending := false
+var _memory_detail_initial_plan_scroll_pending := false
 var _experience_label: Label
 var _strength_value_label: Label
 var _intelligence_value_label: Label
@@ -222,6 +230,7 @@ var _drag_controller
 @onready var satiety_label: Label = %NPCSatietyLabel
 @onready var fatigue_label: Label = %NPCFatigueLabel
 @onready var money_label: Label = %NPCMoneyLabel
+@onready var wine_label: Label = %NPCWineLabel
 @onready var equipment_label: Label = %NPCEquipmentLabel
 @onready var unconscious_label: Label = %NPCUnconsciousLabel
 @onready var recruited_label: Label = %NPCRecruitedLabel
@@ -234,11 +243,14 @@ var _drag_controller
 @onready var witness_log_label: Label = %NPCWitnessLogLabel
 @onready var close_button: Button = %NPCPanelCloseButton
 @onready var dialogue_button: Button = %NPCDialogueButton
+@onready var dialogue_history_button: Button = %NPCDialogueHistoryButton
 @onready var dialogue_suspended_dot: Label = %NPCDialogueSuspendedDot
 @onready var assign_button: Button = %NPCAssignButton
 @onready var visibility_select: OptionButton = %NPCInteractionVisibilitySelect
 @onready var gift_money_spin: SpinBox = %NPCGiftMoneySpin
 @onready var gift_money_button: Button = %NPCGiftMoneyButton
+@onready var gift_wine_spin: SpinBox = %NPCGiftWineSpin
+@onready var gift_wine_button: Button = %NPCGiftWineButton
 @onready var give_weapon_button: Button = %NPCGiveWeaponButton
 @onready var interaction_result_label: Label = %NPCInteractionResultLabel
 
@@ -256,13 +268,16 @@ func _ready() -> void:
 	close_button.pressed.connect(_on_close_pressed)
 	background_button.pressed.connect(_on_background_pressed)
 	dialogue_button.pressed.connect(_on_dialogue_pressed)
+	dialogue_history_button.pressed.connect(_on_dialogue_history_pressed)
 	assign_button.pressed.connect(_on_order_pressed)
 	gift_money_button.pressed.connect(_on_gift_money_pressed)
+	gift_wine_button.pressed.connect(_on_gift_wine_pressed)
 	give_weapon_button.pressed.connect(_on_give_weapon_pressed)
 	current_plan_button.pressed.connect(_on_current_plan_pressed)
 	diary_button.pressed.connect(_on_diary_pressed)
 	knowledge_button.pressed.connect(_on_knowledge_pressed)
 	gift_money_spin.value_changed.connect(_on_gift_money_value_changed)
+	gift_wine_spin.value_changed.connect(_on_gift_wine_value_changed)
 
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
@@ -413,6 +428,7 @@ func show_npc(npc_id: String) -> void:
 	_fill_strategy_select()
 
 	name_label.text = str(npc.get("name", npc_id))
+	name_label.modulate = RECRUITED_NAME_COLOR if bool(npc.get("recruited", false)) else DEFAULT_NAME_COLOR
 	_update_llm_status_label(states)
 	job_label.text = _format_specialties(npc_system, npc_id)
 	hp_label.text = "HP：%d / %d" % [
@@ -424,6 +440,7 @@ func show_npc(npc_id: String) -> void:
 	satiety_label.text = "饱食度：%d" % int(states.get("satiety", 0))
 	fatigue_label.text = "疲劳度：%d" % int(states.get("fatigue", 0))
 	money_label.text = "金钱：%d" % int(states.get("money", 0))
+	wine_label.text = "酒：%d" % int(states.get("wine", 0))
 	equipment_label.text = "当前装备：%s" % _format_equipment(npc.get("equipment", {}))
 	unconscious_label.text = "昏迷：%s" % _format_bool(states.get("unconscious", false))
 	recruited_label.text = "已入伍：%s" % _format_bool(npc.get("recruited", false))
@@ -442,7 +459,15 @@ func show_npc(npc_id: String) -> void:
 
 
 func debug_open_memory_detail(mode: String) -> Dictionary:
-	if not ["background", "current_plan", "diary", "knowledge", "event_log", "witness_log"].has(mode):
+	if not [
+		"background",
+		"current_plan",
+		"diary",
+		"knowledge",
+		"event_log",
+		"witness_log",
+		"dialogue_history"
+	].has(mode):
 		return {"ok": false, "message": "unknown_memory_detail_mode"}
 	_open_memory_detail_popup(mode)
 	return {
@@ -466,6 +491,15 @@ func _setup_interaction_controls() -> void:
 		gift_money_line_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
 		gift_money_line_edit.text_changed.connect(_on_gift_money_text_changed)
 		gift_money_line_edit.gui_input.connect(_on_gift_money_line_edit_gui_input)
+	gift_wine_spin.min_value = 1.0
+	gift_wine_spin.max_value = 20.0
+	gift_wine_spin.step = 1.0
+	gift_wine_spin.value = DEFAULT_GIFT_WINE_AMOUNT
+	var gift_wine_line_edit := gift_wine_spin.get_line_edit()
+	if gift_wine_line_edit != null:
+		gift_wine_line_edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+		gift_wine_line_edit.text_changed.connect(_on_gift_wine_text_changed)
+		gift_wine_line_edit.gui_input.connect(_on_gift_wine_line_edit_gui_input)
 	interaction_result_label.text = ""
 	interaction_result_label.visible = false
 
@@ -708,6 +742,8 @@ func _format_action(action_id: String) -> String:
 		return "与守备官对话"
 	if action_id == "escape_intervention_dialogue":
 		return "与守备官进行逃离挽留对话"
+	if action_id == "drink_wine":
+		return "饮酒"
 	return action_id
 
 
@@ -869,6 +905,7 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	var is_recruited := bool(npc.get("recruited", false))
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	var has_money := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("money")) >= int(gift_money_spin.value)
+	var has_wine := resource_system != null and resource_system.has_method("get_resource") and int(resource_system.get_resource("wine")) >= int(gift_wine_spin.value)
 	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	var selected_weapon_def: Dictionary = equipment_system.get_weapon_def(_get_selected_weapon_id()) if equipment_system != null and equipment_system.has_method("get_weapon_def") else {}
 	var selected_weapon_resource_id := str(selected_weapon_def.get("source_resource_id", ""))
@@ -900,6 +937,7 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 		else "打开对话面板。"
 	)
 	gift_money_button.disabled = is_escaped or not has_money
+	gift_wine_button.disabled = is_escaped or not has_wine
 	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
 	_set_recruitment_gate_tooltip(give_weapon_button, is_recruited, EQUIP_WEAPON_TOOLTIP)
 	if _unequip_weapon_button != null:
@@ -1338,8 +1376,11 @@ func _open_memory_detail_popup(mode: String) -> void:
 	_refresh_memory_detail_popup(false)
 	if _memory_detail_text != null:
 		_memory_detail_text.scroll_horizontal = 0
-		if ["event_log", "witness_log"].has(mode):
+		_memory_detail_text.scroll_past_end_of_file = mode == "current_plan"
+		if ["event_log", "witness_log", "dialogue_history"].has(mode):
 			_schedule_memory_detail_initial_bottom_scroll()
+		elif mode == "current_plan":
+			_schedule_memory_detail_initial_plan_scroll(_get_current_daily_plan())
 		else:
 			_memory_detail_text.scroll_vertical = 0
 
@@ -1356,6 +1397,7 @@ func _refresh_memory_detail_popup(preserve_scroll: bool = true) -> void:
 	var detail_text := ""
 	var title := ""
 	var item_count := 0
+	var item_unit := "条"
 	match _memory_detail_mode:
 		"background":
 			var setting := _get_current_npc_prompt_setting()
@@ -1377,16 +1419,23 @@ func _refresh_memory_detail_popup(preserve_scroll: bool = true) -> void:
 			title = "知识图谱"
 			item_count = _count_knowledge_graph_entries(graph)
 			detail_text = _format_knowledge_graph_block(graph)
+		"dialogue_history":
+			var dialogues := _get_current_guard_dialogue_history()
+			title = "对话记录"
+			item_count = dialogues.size()
+			item_unit = "场"
+			detail_text = _format_guard_dialogue_history_block(dialogues)
 		_:
 			var events := _event_log_cache if _memory_detail_mode == "event_log" else _witness_log_cache
 			title = "事件库" if _memory_detail_mode == "event_log" else "见闻库"
 			item_count = events.size()
 			detail_text = _format_memory_detail_block(events)
 	if _memory_detail_title_label != null:
-		_memory_detail_title_label.text = "%s｜%s｜%d 条" % [
+		_memory_detail_title_label.text = "%s｜%s｜%d %s" % [
 			str(name_label.text),
 			title,
-			item_count
+			item_count,
+			item_unit
 		]
 	if _memory_detail_text != null:
 		_set_memory_detail_text(detail_text, preserve_scroll)
@@ -1456,24 +1505,74 @@ func _format_current_plan_block(plan: Array) -> String:
 	var game_state := get_node_or_null(GAME_STATE_PATH)
 	if game_state != null:
 		current_hour = int(game_state.current_hour)
+	var display_groups := _build_current_plan_display_groups(plan, current_hour)
 	var lines: Array[String] = []
-	for raw_item in plan:
-		var item: Dictionary = raw_item if raw_item is Dictionary else {}
-		var hour := int(item.get("hour", -1))
-		var marker := "▶" if hour == current_hour else "  "
-		var action_id := str(item.get("action_id", "idle"))
-		var action_name := str(item.get("action_name", "")).strip_edges()
-		if action_name.is_empty():
-			action_name = _format_action(action_id)
-		var source := _format_plan_source(str(item.get("source", "")))
-		var reason := str(item.get("reason", "")).strip_edges()
-		var line := "%s %02d:00  %s" % [marker, hour, action_name]
+	for raw_group in display_groups:
+		var group: Dictionary = raw_group if raw_group is Dictionary else {}
+		var start_hour := int(group.get("start_hour", -1))
+		var end_hour := int(group.get("end_hour", start_hour))
+		var marker := "▶" if bool(group.get("contains_current_hour", false)) else "  "
+		var time_text := (
+			"%02d:00" % start_hour
+			if start_hour == end_hour
+			else "%02d:00–%02d:00" % [start_hour, end_hour]
+		)
+		var action_name := str(group.get("action_name", ""))
+		var source := _format_plan_source(str(group.get("source", "")))
+		var reason := str(group.get("reason", ""))
+		var line := "%s %s  %s" % [marker, time_text, action_name]
 		if not source.is_empty():
 			line += "｜%s" % source
 		if not reason.is_empty():
 			line += "\n    %s" % reason
 		lines.append(line)
 	return "\n\n".join(lines)
+
+
+func _build_current_plan_display_groups(plan: Array, current_hour: int) -> Array:
+	var groups: Array = []
+	for raw_item in plan:
+		var item: Dictionary = raw_item if raw_item is Dictionary else {}
+		var hour := int(item.get("hour", -1))
+		var action_id := str(item.get("action_id", "idle"))
+		var action_name := str(item.get("action_name", "")).strip_edges()
+		if action_name.is_empty():
+			action_name = _format_action(action_id)
+		var source := str(item.get("source", ""))
+		var reason := str(item.get("reason", "")).strip_edges()
+		if reason == action_name:
+			reason = ""
+		var signature := JSON.stringify([
+			action_id,
+			action_name,
+			str(item.get("action_kind", "")),
+			source,
+			item.get("target", {}),
+			int(item.get("priority", 50)),
+			reason,
+			str(item.get("dialogue_goal", "")).strip_edges(),
+		])
+		if not groups.is_empty():
+			var previous_group: Dictionary = groups[groups.size() - 1]
+			if (
+				hour == int(previous_group.get("end_hour", -2)) + 1
+				and signature == str(previous_group.get("signature", ""))
+			):
+				previous_group["end_hour"] = hour
+				if hour == current_hour:
+					previous_group["contains_current_hour"] = true
+				groups[groups.size() - 1] = previous_group
+				continue
+		groups.append({
+			"start_hour": hour,
+			"end_hour": hour,
+			"action_name": action_name,
+			"source": source,
+			"reason": reason,
+			"signature": signature,
+			"contains_current_hour": hour == current_hour,
+		})
+	return groups
 
 
 func _format_plan_source(source: String) -> String:
@@ -1490,10 +1589,46 @@ func _format_plan_source(source: String) -> String:
 			return source
 
 
+func _get_current_plan_initial_scroll_line(plan: Array) -> int:
+	if plan.is_empty():
+		return 0
+	var game_state := get_node_or_null(GAME_STATE_PATH)
+	if game_state == null:
+		return 0
+	var current_hour := int(game_state.current_hour)
+	var display_groups := _build_current_plan_display_groups(plan, current_hour)
+	var current_index := -1
+	for index in range(display_groups.size()):
+		var raw_group: Variant = display_groups[index]
+		var group: Dictionary = raw_group if raw_group is Dictionary else {}
+		if bool(group.get("contains_current_hour", false)):
+			current_index = index
+			break
+	if current_index < 0:
+		return 0
+	var first_action_index := maxi(0, current_index - 2)
+	var first_line := 0
+	for index in range(first_action_index):
+		var raw_group: Variant = display_groups[index]
+		var group: Dictionary = raw_group if raw_group is Dictionary else {}
+		first_line += 1
+		var reason := str(group.get("reason", ""))
+		if not reason.is_empty():
+			first_line += reason.count("\n") + 1
+		# _format_current_plan_block() separates adjacent visible plan groups with one blank line.
+		first_line += 1
+	return first_line
+
+
 func _set_memory_detail_text(new_text: String, preserve_scroll: bool) -> void:
 	if _memory_detail_text == null or _memory_detail_text.text == new_text:
 		return
-	if preserve_scroll and not _memory_detail_initial_bottom_pending and not _memory_detail_scroll_restore_pending:
+	if (
+		preserve_scroll
+		and not _memory_detail_initial_bottom_pending
+		and not _memory_detail_initial_plan_scroll_pending
+		and not _memory_detail_scroll_restore_pending
+	):
 		_memory_detail_saved_vertical = _memory_detail_text.scroll_vertical
 		_memory_detail_saved_horizontal = _memory_detail_text.scroll_horizontal
 		_memory_detail_saved_mode = _memory_detail_mode
@@ -1505,6 +1640,44 @@ func _set_memory_detail_text(new_text: String, preserve_scroll: bool) -> void:
 			_memory_detail_scroll_restore_generation
 		)
 	_memory_detail_text.text = new_text
+
+
+func _schedule_memory_detail_initial_plan_scroll(plan: Array) -> void:
+	if _memory_detail_text == null:
+		return
+	_memory_detail_initial_plan_scroll_pending = true
+	_memory_detail_scroll_restore_generation += 1
+	call_deferred(
+		"_scroll_memory_detail_to_current_plan_after_layout",
+		_memory_detail_scroll_restore_generation,
+		_memory_detail_mode,
+		_current_npc_id,
+		_get_current_plan_initial_scroll_line(plan)
+	)
+
+
+func _scroll_memory_detail_to_current_plan_after_layout(
+	generation: int,
+	mode: String,
+	npc_id: String,
+	first_line: int
+) -> void:
+	await get_tree().process_frame
+	if generation != _memory_detail_scroll_restore_generation:
+		return
+	if (
+		_memory_detail_text == null
+		or _memory_detail_overlay == null
+		or not _memory_detail_overlay.visible
+		or _memory_detail_mode != mode
+		or _current_npc_id != npc_id
+		or mode != "current_plan"
+	):
+		_memory_detail_initial_plan_scroll_pending = false
+		return
+	_memory_detail_text.set_line_as_first_visible(maxi(0, first_line))
+	_memory_detail_text.scroll_horizontal = 0
+	_memory_detail_initial_plan_scroll_pending = false
 
 
 func _schedule_memory_detail_initial_bottom_scroll() -> void:
@@ -1534,7 +1707,7 @@ func _scroll_memory_detail_to_bottom_after_layout(
 		or not _memory_detail_overlay.visible
 		or _memory_detail_mode != mode
 		or _current_npc_id != npc_id
-		or not ["event_log", "witness_log"].has(mode)
+		or not ["event_log", "witness_log", "dialogue_history"].has(mode)
 	):
 		_memory_detail_initial_bottom_pending = false
 		return
@@ -1564,12 +1737,228 @@ func _cancel_pending_memory_detail_scroll_restore() -> void:
 	_memory_detail_scroll_restore_generation += 1
 	_memory_detail_scroll_restore_pending = false
 	_memory_detail_initial_bottom_pending = false
+	_memory_detail_initial_plan_scroll_pending = false
 
 
 func _format_memory_detail_block(events: Array) -> String:
 	# The expanded player view intentionally uses the same whitelist as the
 	# compact box. Structured metadata remains available to systems and GM tools.
 	return _format_memory_block(events)
+
+
+func _get_current_guard_dialogue_history() -> Array:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if (
+		memory_system == null
+		or _current_npc_id.is_empty()
+		or not memory_system.has_method("get_all_events")
+	):
+		return []
+
+	var all_events: Array = memory_system.get_all_events()
+	var chronological_events: Array = []
+	for event_index in range(all_events.size()):
+		var raw_event: Variant = all_events[event_index]
+		if not raw_event is Dictionary:
+			continue
+		var event := (raw_event as Dictionary).duplicate(true)
+		event["_history_sequence"] = event_index
+		chronological_events.append(event)
+	chronological_events.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_day := int(left.get("day", 0))
+		var right_day := int(right.get("day", 0))
+		if left_day != right_day:
+			return left_day < right_day
+		var left_time := _dialogue_history_time_seconds(str(left.get("time", "00:00:00")))
+		var right_time := _dialogue_history_time_seconds(str(right.get("time", "00:00:00")))
+		if left_time != right_time:
+			return left_time < right_time
+		return int(left.get("_history_sequence", 0)) < int(right.get("_history_sequence", 0))
+	)
+
+	var dialogues: Array = []
+	var active_wave_number := 0
+	var latest_wave_number := 0
+	for raw_event in chronological_events:
+		var event: Dictionary = raw_event if raw_event is Dictionary else {}
+		var event_type := str(event.get("type", ""))
+		var payload: Dictionary = (
+			event.get("payload", {})
+			if event.get("payload", {}) is Dictionary
+			else {}
+		)
+		if event_type == "combat_started":
+			active_wave_number = maxi(0, int(payload.get("wave_number", 0)))
+			latest_wave_number = maxi(latest_wave_number, active_wave_number)
+			continue
+		if event_type == "combat_ended":
+			var ended_wave_number := maxi(0, int(payload.get("wave_number", active_wave_number)))
+			latest_wave_number = maxi(latest_wave_number, ended_wave_number)
+			if active_wave_number == ended_wave_number or ended_wave_number <= 0:
+				active_wave_number = 0
+			continue
+		if not _is_guard_dialogue_history_event(event, _current_npc_id):
+			continue
+		var dialogue_event := event.duplicate(true)
+		dialogue_event["_history_wave_label"] = _format_dialogue_wave_group(
+			payload,
+			active_wave_number,
+			latest_wave_number
+		)
+		dialogues.append(dialogue_event)
+	return dialogues
+
+
+func _is_guard_dialogue_history_event(event: Dictionary, npc_id: String) -> bool:
+	if npc_id.is_empty() or str(event.get("type", "")) != "dialogue_turn":
+		return false
+	var payload: Dictionary = (
+		event.get("payload", {})
+		if event.get("payload", {}) is Dictionary
+		else {}
+	)
+	var dialogue_kind := str(payload.get("dialogue_kind", ""))
+	if dialogue_kind == "npc_npc":
+		return false
+
+	var includes_target_npc := str(event.get("subject_npc_id", "")) == npc_id
+	var participant_npc_ids: Variant = payload.get("participant_npc_ids", [])
+	if participant_npc_ids is Array:
+		for raw_participant_id in participant_npc_ids:
+			if str(raw_participant_id) == npc_id:
+				includes_target_npc = true
+				break
+	if not includes_target_npc:
+		return false
+	if PLAYER_DIALOGUE_KINDS.has(dialogue_kind):
+		return true
+	if not dialogue_kind.is_empty():
+		return false
+
+	var actor_ids: Variant = event.get("actor_ids", [])
+	if actor_ids is Array:
+		for raw_actor_id in actor_ids:
+			if str(raw_actor_id) == GUARD_OFFICER_ID:
+				return true
+	var dialogue_text: Variant = payload.get("dialogue_text", [])
+	if dialogue_text is Array:
+		for raw_turn in dialogue_text:
+			if not raw_turn is Dictionary:
+				continue
+			var turn: Dictionary = raw_turn
+			if (
+				str(turn.get("speaker_id", "")) == GUARD_OFFICER_ID
+				or str(turn.get("listener_id", "")) == GUARD_OFFICER_ID
+				or str(turn.get("speaker_name", "")) == GUARD_OFFICER_NAME
+				or str(turn.get("listener_name", "")) == GUARD_OFFICER_NAME
+			):
+				return true
+	return false
+
+
+func _format_dialogue_wave_group(
+	payload: Dictionary,
+	active_wave_number: int,
+	latest_wave_number: int
+) -> String:
+	if payload.has("wave_number"):
+		var explicit_wave_number := maxi(0, int(payload.get("wave_number", 0)))
+		var explicit_phase := str(payload.get("wave_phase", "")).strip_edges()
+		if explicit_wave_number <= 0:
+			return "非战时"
+		if explicit_phase == "active":
+			return "第%d波期间" % explicit_wave_number
+		if explicit_phase == "ended":
+			return "第%d波后" % explicit_wave_number
+		return "第%d波" % explicit_wave_number
+	if active_wave_number > 0:
+		return "第%d波期间" % active_wave_number
+	if latest_wave_number > 0:
+		return "第%d波后" % latest_wave_number
+	return "首波前"
+
+
+func _dialogue_history_time_seconds(time_text: String) -> int:
+	var parts := time_text.split(":")
+	if parts.size() < 2:
+		return 0
+	var hour := int(parts[0])
+	var minute := int(parts[1])
+	var second := int(parts[2]) if parts.size() >= 3 else 0
+	return hour * 3600 + minute * 60 + second
+
+
+func _format_guard_dialogue_history_block(dialogues: Array) -> String:
+	if dialogues.is_empty():
+		return "暂无与守备官的过往对话。"
+
+	var sections: Array[String] = []
+	var current_group_key := ""
+	var current_group_heading := ""
+	var current_group_entries: Array[String] = []
+	for raw_event in dialogues:
+		var event: Dictionary = raw_event if raw_event is Dictionary else {}
+		var day := maxi(1, int(event.get("day", 1)))
+		var wave_label := str(event.get("_history_wave_label", "非战时"))
+		var group_key := "%d|%s" % [day, wave_label]
+		if group_key != current_group_key:
+			if not current_group_entries.is_empty():
+				sections.append("%s\n%s" % [
+					current_group_heading,
+					"\n\n".join(current_group_entries)
+				])
+			current_group_key = group_key
+			current_group_heading = "【第%d天｜%s】" % [day, wave_label]
+			current_group_entries.clear()
+		var payload: Dictionary = (
+			event.get("payload", {})
+			if event.get("payload", {}) is Dictionary
+			else {}
+		)
+		current_group_entries.append("%s\n%s" % [
+			str(event.get("time", "--:--:--")),
+			_format_guard_dialogue_transcript(payload)
+		])
+	if not current_group_entries.is_empty():
+		sections.append("%s\n%s" % [
+			current_group_heading,
+			"\n\n".join(current_group_entries)
+		])
+	return "\n\n".join(sections)
+
+
+func _format_guard_dialogue_transcript(payload: Dictionary) -> String:
+	var lines: Array[String] = []
+	var dialogue_text: Variant = payload.get("dialogue_text", [])
+	if dialogue_text is Array:
+		for raw_turn in dialogue_text:
+			if not raw_turn is Dictionary:
+				continue
+			var turn: Dictionary = raw_turn
+			var text := str(turn.get("text", "")).strip_edges()
+			if text.is_empty():
+				continue
+			var speaker_id := str(turn.get("speaker_id", ""))
+			var speaker_name := str(turn.get("speaker_name", "")).strip_edges()
+			if speaker_name.is_empty():
+				speaker_name = (
+					GUARD_OFFICER_NAME
+					if speaker_id == GUARD_OFFICER_ID
+					else str(name_label.text)
+					if speaker_id == _current_npc_id
+					else speaker_id
+				)
+			lines.append("%s：%s" % [speaker_name, text])
+	if lines.is_empty():
+		var speaker_text := str(payload.get("speaker_text", "")).strip_edges()
+		var reply_text := str(payload.get("reply_text", "")).strip_edges()
+		var speaker_name := str(payload.get("speaker_name", GUARD_OFFICER_NAME)).strip_edges()
+		var listener_name := str(payload.get("listener_name", name_label.text)).strip_edges()
+		if not speaker_text.is_empty():
+			lines.append("%s：%s" % [speaker_name, speaker_text])
+		if not reply_text.is_empty():
+			lines.append("%s：%s" % [listener_name, reply_text])
+	return "\n".join(lines) if not lines.is_empty() else "（本场对话没有可显示的文本）"
 
 
 func _set_memory_block_text(title_label: Label, body_text: TextEdit, title: String, events: Array) -> void:
@@ -1604,7 +1993,12 @@ func _format_diary_block(diary: Array) -> String:
 			var day := int(entry.get("day", 0))
 			var time_text := str(entry.get("time", "--:--:--"))
 			var text := str(entry.get("entry", "")).strip_edges()
-			var prefix := "第%d天 %s" % [day, time_text] if day > 0 else time_text
+			var record_label := str(entry.get("record_label", "")).strip_edges()
+			var prefix := (
+				"%s %s" % [record_label, time_text]
+				if not record_label.is_empty()
+				else ("第%d天 %s" % [day, time_text] if day > 0 else time_text)
+			)
 			lines.append("- %s %s" % [prefix, text])
 		else:
 			lines.append("- %s" % str(raw_entry))
@@ -1813,6 +2207,10 @@ func _on_knowledge_pressed() -> void:
 	_open_memory_detail_popup("knowledge")
 
 
+func _on_dialogue_history_pressed() -> void:
+	_open_memory_detail_popup("dialogue_history")
+
+
 func _on_memory_log_gui_input(event: InputEvent, mode: String) -> void:
 	if not event is InputEventMouseButton:
 		return
@@ -1905,6 +2303,10 @@ func _on_gift_money_value_changed(_value: float) -> void:
 		_update_interaction_controls(npc)
 
 
+func _on_gift_wine_value_changed(value: float) -> void:
+	_on_gift_money_value_changed(value)
+
+
 func _on_gift_money_text_changed(new_text: String) -> void:
 	if _is_sanitizing_gift_money_text:
 		return
@@ -1936,6 +2338,34 @@ func _on_gift_money_line_edit_gui_input(event: InputEvent) -> void:
 		gift_money_spin.get_line_edit().release_focus()
 
 
+func _on_gift_wine_text_changed(new_text: String) -> void:
+	if _is_sanitizing_gift_wine_text:
+		return
+	var sanitized := _digits_only(new_text)
+	var line_edit := gift_wine_spin.get_line_edit()
+	if line_edit == null or sanitized == new_text:
+		return
+	_is_sanitizing_gift_wine_text = true
+	line_edit.text = sanitized
+	line_edit.caret_column = sanitized.length()
+	_is_sanitizing_gift_wine_text = false
+
+
+func _on_gift_wine_line_edit_gui_input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.ctrl_pressed or key_event.alt_pressed or key_event.meta_pressed:
+		return
+	var is_letter_key := (
+		key_event.keycode >= KEY_A and key_event.keycode <= KEY_Z
+	) or (
+		key_event.physical_keycode >= KEY_A and key_event.physical_keycode <= KEY_Z
+	)
+	if is_letter_key:
+		gift_wine_spin.get_line_edit().release_focus()
+
+
 func _digits_only(text: String) -> String:
 	var result := ""
 	for index in range(text.length()):
@@ -1952,6 +2382,17 @@ func _on_gift_money_pressed() -> void:
 	var amount := int(gift_money_spin.value)
 	var result: Dictionary = npc_system.give_money_to_npc(_current_npc_id, amount, _get_selected_visibility())
 	_show_interaction_result(result, "已赠予 %d 枚第纳尔。" % amount)
+	if bool(result.get("ok", false)):
+		show_npc(_current_npc_id)
+
+
+func _on_gift_wine_pressed() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or _current_npc_id.is_empty() or not npc_system.has_method("give_wine_to_npc"):
+		return
+	var amount := int(gift_wine_spin.value)
+	var result: Dictionary = npc_system.give_wine_to_npc(_current_npc_id, amount, _get_selected_visibility())
+	_show_interaction_result(result, "已赠予 %d 份酒。" % amount)
 	if bool(result.get("ok", false)):
 		show_npc(_current_npc_id)
 

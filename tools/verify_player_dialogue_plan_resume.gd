@@ -284,7 +284,7 @@ func _init() -> void:
 		_fail("Could not interrupt the new-hour action for the exactly-once check")
 		return
 	var cross_hour_repeat: Dictionary = daily_plan_system.execute_current_plan_for_npc(NPC_ID, true)
-	if str(cross_hour_repeat.get("status", "")) != "already_executed_this_plan_phase":
+	if str(cross_hour_repeat.get("status", "")) != "already_executed_once_per_plan_hour":
 		_fail("Cross-hour no-change judgement dispatched the current-hour phase more than once: %s" % JSON.stringify(cross_hour_repeat))
 		return
 
@@ -333,12 +333,9 @@ func _apply_completed_turn(dialog_system: Node, npc_id: String, player_text: Str
 			"replyer_id": npc_id,
 			"reply_text": "明白了，守备官。",
 			"response_kind": "reply_to_player",
-			"invitation_result": "not_applicable",
-			"intent": "continue_talk",
 			"emotion": "neutral",
 			"recruitment_result": "none",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"kind": "player_message",

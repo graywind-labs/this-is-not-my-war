@@ -88,6 +88,18 @@ const proxies = [
   spawn(process.execPath, [PROXY_PATH], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }),
   spawn(process.execPath, [PROXY_PATH], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
 ];
+const proxyStderr = ['', ''];
+for (const [index, proxy] of proxies.entries()) {
+  proxy.stderr.setEncoding('utf8');
+  proxy.stderr.on('data', (chunk) => {
+    proxyStderr[index] += chunk;
+  });
+}
+
+function proxyStatus(index) {
+  const proxy = proxies[index];
+  return `exitCode=${proxy.exitCode}, signalCode=${proxy.signalCode}, stderr=${JSON.stringify(proxyStderr[index])}`;
+}
 
 try {
   let topology = await waitForStableTopology();
@@ -105,7 +117,10 @@ try {
   proxies[0].stdin.end();
   await sleep(1000);
   topology = getTopology();
-  assert(proxies[1].exitCode === null, 'Closing one session proxy must not close the other proxy.');
+  assert(
+    proxies[1].exitCode === null,
+    `Closing one session proxy must not close the other proxy (${proxyStatus(1)}).`
+  );
   assert(topology.brokers.length === 1 && topology.godotEstablished.length === 1, 'Closing one proxy must not disrupt broker-to-Godot.');
 
   console.log('Godot MCP multi-session topology verification passed.');

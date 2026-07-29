@@ -39,48 +39,56 @@
         "id": "dormitory_bed_01",
         "type": "dormitory_bed",
         "name": "床位1",
+        "assigned_npc_id": "veteran_deputy_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_02",
         "type": "dormitory_bed",
         "name": "床位2",
+        "assigned_npc_id": "stableman_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_03",
         "type": "dormitory_bed",
         "name": "床位3",
+        "assigned_npc_id": "cook_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_04",
         "type": "dormitory_bed",
         "name": "床位4",
+        "assigned_npc_id": "gardener_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_05",
         "type": "dormitory_bed",
         "name": "床位5",
+        "assigned_npc_id": "blacksmith_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_06",
         "type": "dormitory_bed",
         "name": "床位6",
+        "assigned_npc_id": "engineer_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_07",
         "type": "dormitory_bed",
         "name": "床位7",
+        "assigned_npc_id": "priest_01",
         "occupied_by": null
       },
       {
         "id": "dormitory_bed_08",
         "type": "dormitory_bed",
         "name": "床位8",
+        "assigned_npc_id": "doctor_01",
         "occupied_by": null
       },
       {

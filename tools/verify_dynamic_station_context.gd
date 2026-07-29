@@ -2,14 +2,14 @@ extends SceneTree
 
 
 const EXPECTED_RESIDENTS := {
-	"stableman_01": {"name": "托马", "identity": "马夫"},
-	"cook_01": {"name": "布鲁诺", "identity": "厨子"},
-	"gardener_01": {"name": "伊沃", "identity": "园丁"},
-	"blacksmith_01": {"name": "格伦", "identity": "铁匠"},
-	"veteran_deputy_01": {"name": "艾达", "identity": "老兵副官"},
-	"priest_01": {"name": "马塞尔", "identity": "神父"},
-	"doctor_01": {"name": "莉娜", "identity": "医生"},
-	"engineer_01": {"name": "欧文", "identity": "工程师"}
+	"stableman_01": {"name": "托马", "identity": "马夫", "recruited": false, "in_station": true},
+	"cook_01": {"name": "布鲁诺", "identity": "厨子", "recruited": false, "in_station": true},
+	"gardener_01": {"name": "伊沃", "identity": "园丁", "recruited": false, "in_station": true},
+	"blacksmith_01": {"name": "格伦", "identity": "铁匠", "recruited": false, "in_station": true},
+	"veteran_deputy_01": {"name": "艾达", "identity": "老兵副官", "recruited": true, "in_station": true},
+	"priest_01": {"name": "马塞尔", "identity": "神父", "recruited": false, "in_station": true},
+	"doctor_01": {"name": "莉娜", "identity": "医生", "recruited": false, "in_station": true},
+	"engineer_01": {"name": "欧文", "identity": "工程师", "recruited": false, "in_station": true}
 }
 const REQUIRED_RULE_DETAILS := [
 	"工作和生活",
@@ -72,6 +72,9 @@ func _init() -> void:
 	resource_system.add_resource("grain", 7)
 	resource_system.add_resource("money", 11)
 	resource_system.add_resource("wine", 3)
+	if not building_system.upgrade_building("workshop"):
+		_fail("Failed to start workshop upgrade for dynamic assist candidate verification")
+		return
 	if not npc_system.update_npc_state("engineer_01", {
 		"escaped": true,
 		"behavior_mode": "escaped",
@@ -81,8 +84,8 @@ func _init() -> void:
 		_fail("Failed to mark engineer as having left the station")
 		return
 
-	var remaining_residents := EXPECTED_RESIDENTS.duplicate(true)
-	remaining_residents.erase("engineer_01")
+	var updated_residents := EXPECTED_RESIDENTS.duplicate(true)
+	updated_residents["engineer_01"]["in_station"] = false
 	var updated_payloads := _build_all_payloads(llm_bridge)
 	var updated_public_resources := _public_resource_amounts(resource_system)
 	if int(updated_public_resources.get("grain", 0)) != int(initial_public_resources.get("grain", 0)) + 7:
@@ -92,15 +95,61 @@ func _init() -> void:
 		if not _verify_payload(
 			str(call_type),
 			updated_payloads[call_type],
-			remaining_residents,
+			updated_residents,
 			building_system,
 			action_system,
 			updated_public_resources
 		):
 			return
+		if not _verify_upgrade_assist_candidate(str(call_type), updated_payloads[call_type]):
+			return
 
 	print("T0058 station context public resources and upgrade-rule verification passed.")
 	quit(0)
+
+
+func _verify_upgrade_assist_candidate(call_type: String, payload: Dictionary) -> bool:
+	if not payload.has("allowed_actions"):
+		return true
+	if payload.has("current_building_states"):
+		var building_states: Dictionary = payload.get("current_building_states", {})
+		var workshop_state: Dictionary = building_states.get("workshop", {})
+		if not bool(workshop_state.get("is_upgrading", false)):
+			_fail(
+				"%s payload did not expose the active workshop upgrade: %s"
+				% [call_type, JSON.stringify(workshop_state)]
+			)
+			return false
+	var candidate: Dictionary = {}
+	for raw_candidate in payload.get("allowed_actions", []):
+		if (
+			raw_candidate is Dictionary
+			and str((raw_candidate as Dictionary).get("action_id", "")) == "assist_upgrade"
+			and str((raw_candidate as Dictionary).get("target_id", "")) == "workshop"
+		):
+			candidate = raw_candidate
+			break
+	var context: Dictionary = (
+		candidate.get("context", {})
+		if candidate.get("context", {}) is Dictionary
+		else {}
+	)
+	if (
+		candidate.is_empty()
+		or str(candidate.get("location_id", "")) != "plaza"
+		or not (candidate.get("tags", []) as Array).has("work")
+		or not bool(context.get("eligible", false))
+		or not bool(context.get("available_now", false))
+		or bool(context.get("requires_building_entry", true))
+		or not bool(context.get("counts_as_work_phase", false))
+		or str(context.get("execution_location", "")) != "plaza"
+	):
+		_fail(
+			"%s payload lost the outdoor upgrade-assist contract: %s"
+			% [call_type, JSON.stringify(candidate)]
+		)
+		return false
+	return true
 
 
 func _build_all_payloads(llm_bridge: Node) -> Dictionary:
@@ -207,12 +256,11 @@ func _verify_payload(
 			actual.is_empty()
 			or str(actual.get("name", "")) != str(expected.get("name", ""))
 			or str(actual.get("identity", "")) != str(expected.get("identity", ""))
+			or bool(actual.get("recruited", false)) != bool(expected.get("recruited", false))
+			or bool(actual.get("in_station", false)) != bool(expected.get("in_station", false))
 		):
 			_fail("%s roster identity mismatch for %s: %s" % [call_type, npc_id, str(actual)])
 			return false
-	if actual_by_id.has("engineer_01") and not expected_residents.has("engineer_01"):
-		_fail("%s roster retained an NPC who already left the station" % call_type)
-		return false
 
 	var building_roster: Array = station_context.get("building_roster", [])
 	var expected_building_ids: Array = building_system.get_building_ids()
@@ -266,6 +314,18 @@ func _verify_payload(
 		if not actual_action_ids.has(expected_action_id):
 			_fail("%s work-mode action catalog lost %s" % [call_type, expected_action_id])
 			return false
+	var drink_action: Dictionary = {}
+	for raw_action in work_mode_actions:
+		if raw_action is Dictionary and str((raw_action as Dictionary).get("action_id", "")) == "drink_wine":
+			drink_action = raw_action
+			break
+	if (
+		str(drink_action.get("action_kind", "")) != "drink"
+		or not str(drink_action.get("description", "")).contains("本人当前确实持有")
+		or not str(drink_action.get("description", "")).contains("过去的伤痛暂时淡化")
+	):
+		_fail("%s work-mode action catalog lost drink_wine prerequisite/effect description" % call_type)
+		return false
 	for non_work_mode_action in ["escape_intervention_dialogue", "talk_to_guard_officer"]:
 		if actual_action_ids.has(non_work_mode_action):
 			_fail("%s work-mode action catalog included runtime-only action %s" % [call_type, non_work_mode_action])

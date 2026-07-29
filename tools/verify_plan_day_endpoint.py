@@ -85,7 +85,7 @@ def _make_request() -> dict:
         ],
         current_resource_states={"grain": 18, "meal": 0},
         current_building_states={"garden": {"level": 1, "hp": 90}},
-        planning_rules=["至少 6 个工作阶段。"],
+        planning_rules=["通常应强烈优先安排至少 6 个工作阶段，但这不是程序硬门槛。"],
     )
     return request.model_dump()
 

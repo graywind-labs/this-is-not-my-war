@@ -12,14 +12,14 @@
 3. `revision_hours` 必须是最小且精确的受影响小时集合。不要为了保险把当前小时到 23 点全部列出，也不要列出不需要变化的相邻阶段。
 4. 如果当前小时的原行动需要立即改变，列入 `game_time.hour`；如果只影响未来阶段，不要强行加入当前小时。
 5. 只能返回 `game_time.hour` 到 23 的整数，严格升序且不重复。过去小时不可修改。
-6. 不需要修改时返回 `needs_revision=false` 且 `revision_hours=[]`；需要修改时返回 `needs_revision=true` 且数组非空。这两者必须严格一致。
+6. 不需要修改时返回 `revision_hours=[]`；需要修改时返回非空数组。`needs_revision` 由后端根据数组是否为空生成，不要重复输出。
 7. 不输出 `revised_plan`、`immediate_action` 或任何行动建议。下一步计划重估会在必要时由独立调用完成。
 8. `summary` 不超过 40 个汉字，`debug_reason` 不超过 30 个汉字。
 
 示例：
 
 本轮对话只让 NPC 答应在 14 点替班，而原 14 点计划需要改变：
-{"ok":true,"npc_id":"cook_01","needs_revision":true,"revision_hours":[14],"summary":"14点替班承诺影响原安排。","debug_reason":"仅14点需要调整。"}
+{"revision_hours":[14],"summary":"14点替班承诺影响原安排。","debug_reason":"仅14点需要调整。"}
 
 本轮只是交换看法，没有形成新行动安排：
-{"ok":true,"npc_id":"cook_01","needs_revision":false,"revision_hours":[],"summary":"对话未改变原计划。","debug_reason":"没有计划层影响。"}
+{"revision_hours":[],"summary":"对话未改变原计划。","debug_reason":"没有计划层影响。"}

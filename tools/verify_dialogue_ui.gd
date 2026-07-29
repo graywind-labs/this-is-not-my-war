@@ -30,7 +30,8 @@ func _init() -> void:
 	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var suspend_button := dialog_panel.find_child("DialogSuspendButton", true, false) as Button
 	var input_edit := dialog_panel.find_child("DialogInputEdit", true, false) as LineEdit
-	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null:
+	var history_text := dialog_panel.find_child("DialogHistoryText", true, false) as RichTextLabel
+	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null or history_text == null:
 		push_error("Dialogue UI verification required nodes not found")
 		quit(1)
 		return
@@ -214,18 +215,15 @@ func _init() -> void:
 		push_error("Failed to start recruitment dialogue effect: %s" % JSON.stringify(accept_effect))
 		quit(1)
 		return
-	dialog_system.set_recruitment_request_pending(false)
 	var accept_result: Dictionary = dialog_system._apply_player_message_response({
 		"ok": true,
 		"dialogue": {
 			"replyer_id": "cook_01",
 			"reply_text": "好，我愿意应征，一起守住驿站。",
 			"response_kind": "reply_to_player",
-			"intent": "accept_recruitment",
 			"emotion": "determined",
 			"recruitment_result": "accept",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"clean_text": "请帮忙守住驿站，一起应征。",
@@ -237,23 +235,46 @@ func _init() -> void:
 		push_error("Recruitment accept request failed: %s" % str(accept_result))
 		quit(1)
 		return
-	if bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Accepted recruitment must remain staged until dialogue completion")
+	await process_frame
+	if (
+		not bool(npc_system.get_npc("cook_01").get("recruited", false))
+		or recruited_label.text != "已入伍：是"
+		or not assign_button.visible
+		or assign_button.disabled
+		or assign_button.text != "指令"
+	):
+		push_error("Accepted recruitment did not immediately refresh authoritative state and NPCPanel order entry")
 		quit(1)
 		return
-	if bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", true)):
-		push_error("Recruitment request should be consumed after the next request")
+	if (
+		not bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
+		or not recruitment_toggle.button_pressed
+	):
+		push_error("Recruitment toggle should remain armed for the current session after sending")
 		quit(1)
 		return
 	if not recruitment_toggle.disabled:
 		push_error("Recruitment toggle should disable after NPC accepts")
 		quit(1)
 		return
-	dialog_system.end_dialogue()
-	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
-		push_error("Accepted recruitment did not update NPC authoritative state on completion")
+	if not history_text.text.contains("[color=#63D471]✓ 布鲁诺接受了守备官的应征请求[/color]"):
+		push_error("Accepted recruitment reply did not show its green check result line")
 		quit(1)
 		return
+	dialog_system.end_dialogue()
+	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
+		push_error("Completing dialogue rolled back the already accepted recruitment")
+		quit(1)
+		return
+	assign_button.pressed.emit()
+	await process_frame
+	var order_panel := root.get_node_or_null("Main/UI/OrderPanel") as Control
+	var order_text_edit := root.get_node_or_null("Main/UI/OrderPanel/PanelContainer/MarginContainer/Content/OrderTextEdit") as TextEdit
+	if order_panel == null or order_text_edit == null or not order_panel.visible:
+		push_error("Accepted recruitment did not expose a working soft-order text entry")
+		quit(1)
+		return
+	order_panel.visible = false
 	var recruitment_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "dialogue_turn")
 	var recruitment_payload: Dictionary = recruitment_event.get("payload", {})
 	if not bool(recruitment_payload.get("is_recruitment_request", false)) or str(recruitment_payload.get("recruitment_result", "")) != "accept":
@@ -287,18 +308,15 @@ func _init() -> void:
 		push_error("Failed to start rejection dialogue effect: %s" % JSON.stringify(reject_effect))
 		quit(1)
 		return
-	dialog_system.set_recruitment_request_pending(false)
 	var reject_result: Dictionary = dialog_system._apply_player_message_response({
 		"ok": true,
 		"dialogue": {
 			"replyer_id": "stableman_01",
 			"reply_text": "不，我还没有准备好参战。",
 			"response_kind": "reply_to_player",
-			"intent": "reject_recruitment",
 			"emotion": "fearful",
 			"recruitment_result": "reject",
 			"wartime_reaction": "none",
-			"should_end_dialogue": false
 		}
 	}, {
 		"clean_text": "立刻拿起武器。",
@@ -312,6 +330,20 @@ func _init() -> void:
 		return
 	if bool(npc_system.get_npc("stableman_01").get("recruited", false)):
 		push_error("Rejected recruitment changed NPC recruited state")
+		quit(1)
+		return
+	if (
+		not bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
+		or not bool(dialog_system.get_dialogue_state().get("session_had_recruitment_request", false))
+		or not recruitment_toggle.button_pressed
+		or not cancel_button.disabled
+		or bool(dialog_system.cancel_displayed_dialogue().get("ok", false))
+	):
+		push_error("Rejected recruitment should keep the toggle armed and the session non-cancellable")
+		quit(1)
+		return
+	if not history_text.text.contains("[color=#FF6B6B]× 托马拒绝了守备官的应征请求[/color]"):
+		push_error("Rejected recruitment reply did not show its red cross result line")
 		quit(1)
 		return
 	dialog_system.end_dialogue()

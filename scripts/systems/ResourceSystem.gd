@@ -1,6 +1,9 @@
 extends Node
 
 const RESOURCE_DEFS_FILE := "resource_defs.json"
+const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const WAREHOUSE_BUILDING_ID := "warehouse"
+const UNLIMITED_CAPACITY := -1
 
 var _definitions: Dictionary = {}
 var _amounts: Dictionary = {}
@@ -35,6 +38,13 @@ func initialize() -> void:
 		var min_amount: int = int(definition.get("min_amount", 0))
 		var initial_amount: int = max(int(definition.get("initial_amount", 0)), min_amount)
 		_definitions[resource_id] = definition.duplicate(true)
+		var initial_capacity := _get_resource_capacity_for_level(resource_id, 1)
+		if initial_capacity >= 0 and initial_amount > initial_capacity:
+			push_error(
+				"Initial resource amount exceeds level-1 warehouse capacity: %s (%d > %d)"
+				% [resource_id, initial_amount, initial_capacity]
+			)
+			initial_amount = initial_capacity
 		_amounts[resource_id] = initial_amount
 		_resource_order.append(resource_id)
 
@@ -73,12 +83,82 @@ func get_resource_snapshot() -> Dictionary:
 	return _amounts.duplicate()
 
 
+func is_resource_capacity_limited(resource_id: String) -> bool:
+	if not _definitions.has(resource_id):
+		return false
+	if not _definitions[resource_id].has("warehouse_capacity"):
+		return false
+	var capacity_config: Variant = _definitions[resource_id].get("warehouse_capacity")
+	return capacity_config is Dictionary and not (capacity_config as Dictionary).is_empty()
+
+
+func get_resource_capacity(resource_id: String) -> int:
+	if not is_resource_capacity_limited(resource_id):
+		return UNLIMITED_CAPACITY
+	return _get_resource_capacity_for_level(resource_id, _get_warehouse_level())
+
+
+func get_resource_remaining_capacity(resource_id: String) -> int:
+	var capacity := get_resource_capacity(resource_id)
+	if capacity < 0:
+		return UNLIMITED_CAPACITY
+	return maxi(0, capacity - get_resource(resource_id))
+
+
+func get_warehouse_capacity_snapshot() -> Array[Dictionary]:
+	var snapshot: Array[Dictionary] = []
+	var warehouse_level := _get_warehouse_level()
+	for resource_id in _resource_order:
+		if not is_resource_capacity_limited(resource_id):
+			continue
+		var capacity := _get_resource_capacity_for_level(resource_id, warehouse_level)
+		snapshot.append({
+			"resource_id": resource_id,
+			"name": get_resource_name(resource_id),
+			"amount": get_resource(resource_id),
+			"capacity": capacity,
+			"remaining": maxi(0, capacity - get_resource(resource_id)),
+			"warehouse_level": warehouse_level
+		})
+	return snapshot
+
+
+func can_store_resources(resource_amounts: Dictionary) -> bool:
+	for raw_resource_id in resource_amounts.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(resource_amounts[raw_resource_id])
+		if amount < 0 or not _amounts.has(resource_id):
+			return false
+		var capacity := get_resource_capacity(resource_id)
+		if capacity >= 0 and get_resource(resource_id) + amount > capacity:
+			return false
+	return true
+
+
+func add_resources(resource_amounts: Dictionary) -> bool:
+	if not can_store_resources(resource_amounts):
+		return false
+	for raw_resource_id in resource_amounts.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(resource_amounts[raw_resource_id])
+		if amount == 0:
+			continue
+		_amounts[resource_id] = get_resource(resource_id) + amount
+		_emit_resource_changed(resource_id)
+	return true
+
+
 func add_resource(resource_id: String, amount: int) -> bool:
 	if amount == 0:
 		return true
 	if not _amounts.has(resource_id):
 		push_warning("Cannot add unknown resource: %s" % resource_id)
 		return false
+
+	if amount > 0:
+		var capacity := get_resource_capacity(resource_id)
+		if capacity >= 0 and get_resource(resource_id) + amount > capacity:
+			return false
 
 	var min_amount: int = _get_min_amount(resource_id)
 	var next_amount: int = max(get_resource(resource_id) + amount, min_amount)
@@ -128,6 +208,31 @@ func _get_min_amount(resource_id: String) -> int:
 	if not _definitions.has(resource_id):
 		return 0
 	return int(_definitions[resource_id].get("min_amount", 0))
+
+
+func _get_resource_capacity_for_level(resource_id: String, warehouse_level: int) -> int:
+	if not _definitions.has(resource_id):
+		return UNLIMITED_CAPACITY
+	if not _definitions[resource_id].has("warehouse_capacity"):
+		return UNLIMITED_CAPACITY
+	var capacity_config: Variant = _definitions[resource_id].get("warehouse_capacity")
+	if (
+		not capacity_config is Dictionary
+		or (capacity_config as Dictionary).is_empty()
+	):
+		return UNLIMITED_CAPACITY
+	var capacity: Dictionary = capacity_config
+	var level_1 := maxi(0, int(capacity.get("level_1", 0)))
+	var per_level_bonus := maxi(0, int(capacity.get("per_level_bonus", 0)))
+	return level_1 + maxi(0, warehouse_level - 1) * per_level_bonus
+
+
+func _get_warehouse_level() -> int:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building"):
+		return 1
+	var warehouse: Dictionary = building_system.get_building(WAREHOUSE_BUILDING_ID)
+	return maxi(1, int(warehouse.get("level", 1)))
 
 
 func _compare_resource_order(a: String, b: String) -> bool:

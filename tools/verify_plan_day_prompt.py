@@ -53,10 +53,10 @@ class _FakePlanResponse:
 
 def _allowed_actions() -> list[ActionCandidate]:
     return [
-        ActionCandidate(action_id="work_garden", name="照料菜园", location_id="garden", tags=["work"]),
-        ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", location_id="dining_hall", tags=["eat"]),
-        ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", location_id="dormitory", tags=["sleep"]),
-        ActionCandidate(action_id="idle", name="等待", location_id=None, tags=["idle"]),
+        ActionCandidate(action_id="work_garden", name="照料菜园", action_kind="work", location_id="garden", tags=["work"]),
+        ActionCandidate(action_id="eat_at_dining_hall", name="吃饭", action_kind="eat", location_id="dining_hall", tags=["eat"]),
+        ActionCandidate(action_id="sleep_in_dormitory", name="睡觉", action_kind="sleep", location_id="dormitory", tags=["sleep"]),
+        ActionCandidate(action_id="idle", name="等待", action_kind="idle", location_id=None, tags=["idle"]),
     ]
 
 
@@ -100,16 +100,17 @@ def _base_payload() -> dict:
             requires_time_slowdown=True,
         ).model_dump(),
         "game_time": GameTime(day=2, time="07:00:00", hour=7).model_dump(),
-        "station_context": build_station_context([
-            {"npc_id": "gardener_01", "name": "伊沃", "identity": "园丁"}
-        ]),
+        "station_context": build_station_context(
+            [{"npc_id": "gardener_01", "name": "伊沃", "identity": "园丁"}],
+            basic_resource_amounts={"grain": 18, "meal": 4},
+        ),
         "npc": npc.model_dump(),
         "allowed_actions": [action.model_dump() for action in _allowed_actions()],
         "current_building_states": {"garden": {"level": 1, "hp": 90}, "dormitory": {"level": 1, "hp": 100}},
         "current_resource_states": {"grain": 18, "meal": 4},
         "planning_rules": [
             "返回 24 个小时计划项，每个 hour 0-23 恰好出现一次。",
-            "计划至少包含 6 个工作阶段。",
+            "通常应强烈优先安排至少 6 个工作阶段，但这不是程序硬门槛。",
             "只能选择 allowed_actions 中的 action_id，或选择 idle。",
             "current_order 只是守备官当前指令参考，不是强制行动。",
         ],
@@ -122,51 +123,32 @@ def _valid_plan() -> dict:
         if hour <= 5 or hour >= 22:
             item = {
                 "hour": hour,
-                "action_kind": "sleep",
                 "action_id": "sleep_in_dormitory",
-                "location_id": "dormitory",
-                "target_id": None,
-                "priority": 70,
                 "reason": "夜间休息以恢复疲劳。",
             }
         elif hour in {6, 12, 18}:
             item = {
                 "hour": hour,
-                "action_kind": "eat",
                 "action_id": "eat_at_dining_hall",
-                "location_id": "dining_hall",
-                "target_id": None,
-                "priority": 80,
                 "reason": "按时吃饭维持体力。",
             }
         elif 8 <= hour <= 14 and hour != 12:
             item = {
                 "hour": hour,
-                "action_kind": "work",
                 "action_id": "work_garden",
-                "location_id": "garden",
-                "target_id": None,
-                "priority": 75,
                 "reason": "响应守备官指令，优先准备粮食。",
             }
         else:
             item = {
                 "hour": hour,
-                "action_kind": "idle",
                 "action_id": "idle",
-                "location_id": None,
-                "target_id": None,
-                "priority": 40,
                 "reason": "留在广场观察情况。",
             }
         plan.append(item)
     return {
-        "ok": True,
-        "npc_id": "gardener_01",
-        "plan_day": 2,
         "plan": plan,
         "summary": "白天集中照料菜园，兼顾吃饭和休息，并把守备官指令作为参考。",
-        "debug_reason": "使用 allowed_actions、24 阶段、至少 6 个工作阶段和 current_order 约束。",
+        "debug_reason": "使用 allowed_actions 和 24 阶段，并把通常至少 6 个工作阶段作为规划目标。",
     }
 
 
@@ -185,6 +167,7 @@ def main() -> None:
 
     request_body = fake_post.call_args.kwargs["json"]
     system_prompt = request_body["messages"][0]["content"]
+    provider_payload = __import__("json").loads(request_body["messages"][1]["content"])
     assert "max_tokens" not in request_body
     assert request_body["thinking"] == {"type": "disabled"}
     assert request_body["temperature"] == 0.4
@@ -193,21 +176,37 @@ def main() -> None:
     runtime_snapshot = adapter.get_runtime_config_snapshot()
     assert runtime_snapshot["client_output_token_limit_applied"] is False
     assert runtime_snapshot["thinking_mode"] == "disabled"
+    assert "meta" not in provider_payload
+    assert "planning_rules" in provider_payload
+    assert "current_resource_states" not in provider_payload
+    assert result.content["ok"] is True
+    assert result.content["npc_id"] == "gardener_01"
+    assert result.content["plan_day"] == 2
+    assert result.content["plan"][8]["action_kind"] == "work"
+    assert result.content["plan"][8]["location_id"] == "garden"
+    assert result.content["plan"][8]["priority"] == 50
     required_prompt_fragments = [
         "每日计划 Prompt",
         "24 个阶段",
-        "至少 6 个阶段",
+        "至少 6 个工作阶段",
+        "不是程序硬门槛",
         "allowed_actions",
         "action_id 只能使用",
         "current_order",
         "不能绕过 allowed_actions",
         "eligible=false",
         "available_now=false",
+        "总工期与剩余时间",
+        "不能把短工期机械铺满更晚时段",
         "required_ability=主持弥撒",
         "required_active_action_id",
         "attend_mass",
         "pray_at_chapel",
         "主持弥撒期间普通祈祷不可进行",
+        "drink_wine",
+        "npc.state.wine",
+        "每个饮酒阶段开始时由程序实际消耗 1 份个人酒",
+        "不得生成情绪数值或删除记忆",
         "不指定病床、训练位、祈祷席等位置编号",
         "往昔·近日",
         "传达敌情",
@@ -221,6 +220,7 @@ def main() -> None:
 
     invalid_plan = _valid_plan()
     invalid_plan["plan"][8]["action_id"] = "invented_action"
+    invalid_plan["plan"][8]["action_kind"] = "work"
     app = create_app()
     app.config["MODEL_ADAPTER"] = ModelAdapter(ModelAdapterConfig(provider="deepseek", api_key="test_key", fallback_to_mock=False))
     with patch(

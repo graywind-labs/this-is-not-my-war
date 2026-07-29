@@ -62,6 +62,24 @@ def _make_request() -> dict:
             {"npc_id": "cook_01", "name": "布鲁诺", "identity": "厨子"}
         ]),
         npc=npc,
+        summary_window={
+            "window_key": "night_1_2100",
+            "anchor_day": 1,
+            "anchor_time": "21:00:00",
+            "end_day": 2,
+            "end_time": "21:00:00",
+            "diary_label": "接到守备命令的第1天",
+            "notice_basis": "守备官在公告牌向驿站众人传达“我们奉命守住此地”的守站告示",
+        },
+        reflection_period={
+            "start": {"day": 1, "time": "06:00:00"},
+            "end": {"day": 1, "time": "22:00:00"},
+            "start_inclusive": True,
+            "start_basis": "守站告示传达后的首个记录范围",
+            "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
+            "snapshot_event_count": 1,
+            "snapshot_witness_count": 0,
+        },
         day_events=[
             {
                 "event_id": "evt_verify_sleep_started",

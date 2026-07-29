@@ -34,6 +34,7 @@ func _init() -> void:
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
 	var gm_button := root.get_node_or_null("Main/UI/GMPanel/GMButton") as Button
 	var gm_window := root.get_node_or_null("Main/UI/GMPanel/GMWindow") as PanelContainer
+	var llm_usage_summary_label := gm_window.find_child("LLMUsageSummaryLabel", true, false) as Label
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
@@ -52,6 +53,7 @@ func _init() -> void:
 		gm_panel == null
 		or gm_button == null
 		or gm_window == null
+		or llm_usage_summary_label == null
 		or resource_system == null
 		or building_system == null
 		or npc_system == null
@@ -94,6 +96,32 @@ func _init() -> void:
 	gm_button.pressed.emit()
 	if not gm_window.visible:
 		push_error("GM button did not open the GM window")
+		quit(1)
+		return
+	gm_panel._on_llm_usage_response_received({
+		"ok": true,
+		"body": {
+			"summary": {
+				"provider_usage": {
+					"session": {
+						"input_tokens": 1234,
+						"output_tokens": 56,
+						"total_tokens": 1290,
+						"estimated_cost_cny": 0.1234
+					},
+					"daily": {
+						"estimated_cost_cny": 3.21
+					},
+					"daily_limit_cny": 20.0
+				}
+			}
+		}
+	})
+	if (
+		"1,290 tokens" not in llm_usage_summary_label.text
+		or "今日：¥3.2100 / ¥20.00" not in llm_usage_summary_label.text
+	):
+		push_error("GM top usage summary did not render session tokens and daily CNY budget")
 		quit(1)
 		return
 	if not _panel_inside_viewport(gm_window, gm_panel._get_usable_viewport_size()):
@@ -384,11 +412,11 @@ func _init() -> void:
 		return
 	gm_panel._execute_command("order veteran_deputy_01")
 	gm_panel._execute_command("plan_request")
-	if not str(gm_panel._help_text()).contains("expire_plan_dialogues"):
-		push_error("GM help should expose the daily-plan dialogue expiry scan")
+	if not str(gm_panel._help_text()).contains("dialogue_carryover"):
+		push_error("GM help should expose the daily-plan dialogue carryover snapshot")
 		quit(1)
 		return
-	gm_panel._execute_command("expire_plan_dialogues")
+	gm_panel._execute_command("dialogue_carryover")
 	gm_panel._execute_command("plan_generate veteran_deputy_01")
 	gm_panel._execute_command("plan_generate_rule veteran_deputy_01")
 	if npc_system.get_npc_plan("veteran_deputy_01").size() != 24:

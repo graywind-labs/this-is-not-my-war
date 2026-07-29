@@ -168,9 +168,6 @@ def _action_failure_payload(force_no_revision: bool = False) -> dict:
 
 def _valid_response() -> dict:
     return {
-        "ok": True,
-        "npc_id": "gardener_01",
-        "needs_revision": True,
         "revision_hours": [14, 18],
         "summary": "两个明确承诺影响原安排。",
         "debug_reason": "仅修改承诺时段。",
@@ -205,6 +202,16 @@ def main() -> None:
     assert unchanged.get_json()["needs_revision"] is False
     assert unchanged.get_json()["revision_hours"] == []
 
+    forced_current_payload = copy.deepcopy(unchanged_payload)
+    forced_current_payload["required_revision_hours"] = [10]
+    forced_current = mock_client.post(
+        "/npc/plan_revision_judgement",
+        json=forced_current_payload,
+    )
+    assert forced_current.status_code == 200, forced_current.get_json()
+    assert forced_current.get_json()["needs_revision"] is True
+    assert forced_current.get_json()["revision_hours"] == [10]
+
     empty_dialogue = copy.deepcopy(payload)
     empty_dialogue["dialogue_history"] = []
     assert mock_client.post(
@@ -232,7 +239,19 @@ def main() -> None:
     assert result.ok
     PlanRevisionJudgementResponse.model_validate(result.content)
     request_body = fake_post.call_args.kwargs["json"]
+    provider_payload = json.loads(request_body["messages"][1]["content"])
     assert "max_tokens" not in request_body
+    assert "meta" not in provider_payload
+    assert "npc_id" not in provider_payload
+    assert "npc_name" not in provider_payload
+    assert "failed_plan_item" not in provider_payload
+    assert "failure_type" not in provider_payload
+    assert "failure_summary" not in provider_payload
+    assert "failure_context" not in provider_payload
+    assert "knowledge_graph" not in provider_payload["npc"]
+    assert result.content["ok"] is True
+    assert result.content["npc_id"] == "gardener_01"
+    assert result.content["needs_revision"] is True
     prompt = request_body["messages"][0]["content"]
     for fragment in [
         "计划修改范围判别器",
@@ -249,8 +268,21 @@ def main() -> None:
         "日记字符串保留",
         "第 N 天 + 时间",
         "不要为了保险把当前小时到 23 点全部列出",
-        "needs_revision=false",
+        "总工期与剩余时间",
+        "不能把短工期外推到更晚时段",
+        "required_revision_hours",
+        "主动找守备官交涉",
+        "只输出 revision_hours、summary、debug_reason",
         "不得选择行动",
+        "failure_context.failure_id",
+        "pray_failed_mass_in_progress",
+        "pray_failed_mass_started",
+        "attend_mass_failed_no_leader",
+        "attend_mass_failed_leader_left",
+        "必须把当前小时加入 revision_hours",
+        "守备官请目标 NPC 现在参加",
+        "NPC 清楚答应立即参加",
+        "`attend_mass` 当前 `eligible=true / available_now=true`",
     ]:
         assert fragment in prompt, fragment
 
@@ -292,8 +324,30 @@ def main() -> None:
             "/npc/plan_revision_judgement",
             json=payload,
         )
-    assert invalid.status_code == 502, invalid.get_json()
-    assert any("needs_revision" in detail for detail in invalid.get_json()["details"])
+    assert invalid.status_code == 200, invalid.get_json()
+    assert invalid.get_json()["needs_revision"] is True
+
+    missing_required = _valid_response()
+    missing_required["needs_revision"] = False
+    missing_required["revision_hours"] = []
+    missing_required["summary"] = "模型认为普通对话无需修改。"
+    with patch(
+        "backend.services.model_adapter.requests.post",
+        return_value=_FakeResponse(missing_required),
+    ):
+        normalized_required = invalid_app.test_client().post(
+            "/npc/plan_revision_judgement",
+            json=forced_current_payload,
+        )
+    assert normalized_required.status_code == 200, normalized_required.get_json()
+    assert normalized_required.get_json()["needs_revision"] is True
+    assert normalized_required.get_json()["revision_hours"] == [10]
+    assert normalized_required.get_json()["model_normalizations"] == [{
+        "field": "revision_hours",
+        "reason": "required_revision_hours_authoritative_union",
+        "from": [],
+        "to": [10],
+    }]
 
     action_failure_payload = _action_failure_payload()
     action_request = PlanRevisionJudgementRequest.model_validate(action_failure_payload)
@@ -301,7 +355,7 @@ def main() -> None:
 
     superseded_payload = _action_failure_payload()
     superseded_payload["failure_type"] = "plan_item_superseded"
-    superseded_payload["failure_summary"] = "等待目标制定计划期间跨到下一小时，当前计划已不再要求这次对话。"
+    superseded_payload["failure_summary"] = "等待目标制定计划期间同小时计划被新安排替代。"
     superseded_payload["failure_context"].update({
         "target_npc_id": "engineer_01",
         "assigned_day": 2,
@@ -309,11 +363,11 @@ def main() -> None:
         "failed_day": 2,
         "failed_hour": 11,
         "current_plan_item": _plan_item(11),
-        "waited_across_hour": True,
+        "waited_across_hour": False,
     })
     superseded_request = PlanRevisionJudgementRequest.model_validate(superseded_payload)
     assert superseded_request.failure_type == "plan_item_superseded"
-    assert superseded_request.failure_context["waited_across_hour"] is True
+    assert superseded_request.failure_context["waited_across_hour"] is False
     assert superseded_request.npc.long_term_memory.diary
 
     action_failure = mock_client.post(

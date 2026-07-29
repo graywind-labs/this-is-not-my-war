@@ -18,10 +18,12 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or daily_plan_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
+	daily_plan_system.set_auto_execution_enabled(false)
 
 	var cook_id := "cook_01"
 	var stableman_id := "stableman_01"

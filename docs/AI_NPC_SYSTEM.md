@@ -1,12 +1,189 @@
 # AI_NPC_SYSTEM.md
 
+## T0095/T0096 Pending 提交与熟睡总结语义
+
+行动调度把 pending 与 active 视为两个明确阶段。暂停期间 NPC 节点不移动，ActionSystem 不执行 pending 提交，也不推进 active 逻辑 tick；恢复后仅当 `current_action=idle`、`movement_target` 为空、实际地点满足、NPC 可行动且不存在 active 时才提交。固定地点行动、诊所 / 训练 / 弥撒依赖者、修复 / 升级 / 治疗协助、拜访和 NPC-NPC 对话都服从同一闸门。建筑、目标 NPC 或服务提供者失效仍可权威取消，但移动清理使用无信号收束，最终结构化失败是唯一可供计划重估观察的结果。
+
+熟睡总结的三个概念互不代替：`summary_window` 决定资格与日记归属，`reflection_period` 决定模型允许回顾的时间边界，MemorySystem 的事件 ID 快照决定成功后可轮转的精确短期索引。某一窗口没睡够或请求失败时不生成占位日记；下次成功仍从上次成功水位继续，因此允许记录范围跨日。日记前缀“接到守备命令的第N天”中的 N 来自 21:00 窗口锚点；“守备命令”是公告牌公开消息，不是入伍状态或个人指令。
+
+## T0094 对话打断实况、弥撒续接与夜间总结窗口
+
+守备官第一条有效消息真正打断 NPC 行动时，DialogSystem 会在中断前抓取运行时行动与当前计划，形成仅供目标 NPC 使用的 `interrupted_activity_context`。其中 `activity_before_interruption` 表示开口前正在进行或前往进行的真实活动，`current_plan_activity / expected_activity_after_dialogue` 表示当前计划与“计划不变时”的暂定恢复项。该上下文随本场后续对话请求复用，但不是事件、见闻或长期记忆；模型不得因为对话时 `current_action=talk_to_guard_officer` 就声称旧活动已经自然完成。被睡眠打断时，NPC 应知道自己刚被叫醒，以及计划不变时谈完仍会继续睡觉。
+
+所有固定地点行动在真正开始前都必须再次确认 NPC 已抵达目标且不在移动途中。教堂活动另有 `_start_pray(...)` 最终守卫；未实际到达小教堂时返回结构化的 `*_failed_target_unavailable_not_arrived`，不能占用祭坛或祈祷席。室内出发的移动被系统中断时，NPCSystem 按既有室内经广场路由把逻辑地点与世界位置一并收束到广场，避免人物已在广场却仍被认作身处教堂。
+
+弥撒开始会同时中断已经 active 与仍在前往教堂的 pending 普通祈祷。pending 路径先无信号收束移动和信息地点，再只发出一次带精确上下文的 `pray_failed_mass_started`，避免无上下文的移动停止信号先触发判别。该失败进入既有两阶段计划链：第一层在 `attend_mass` 当前可用时必须选中当前小时，第二层强烈倾向把它改为参加正在举行的弥撒，并在修订落地后立即按正常计划入口执行。守备官与 NPC 在本轮明确谈妥“现在参加弥撒”时，也必须由对话范围判别把当前小时纳入修订，再由人物、状态、记忆、指令与实时合法候选共同决定；这是强倾向而不是 GDScript 硬选行动。
+
+熟睡总结不再按自然日做僵硬的“一天一次”去重。每个 NPC 使用从当日 21:00 到次日 21:00 的窗口 `night_<anchor_day>_2100`，同一窗口内多段睡眠累计到既有 1 游戏小时门槛；对话叫醒、短暂离床再睡不会清零。只有长期记忆成功应用后才把该窗口标为完成；21:00 后进入新窗口，白天补觉仍归前一晚窗口。T0095 起日记归属使用窗口锚点，实际触发日 / 时间作为独立元数据保留；GM `force` 调试仍可显式绕过去重。
+
+## T0093 完成型行动连续计划段与工期约束
+
+`LLMBridge` 的计划失败类型规范化现在显式保留 `action_completed`，避免完成事实在 Godot 正式修订 payload 中退化为 `unknown`。`reevaluate_current_hour_on_completion` 的五类行动配置不变；完成时从当前小时起，DailyPlanSystem 按计划项 identity 收集连续相同 `action_id + target` 的阶段，第一项不同任务 / 目标即形成边界，单项仍只修订当前小时。
+
+该连续小时数组直接进入正式修订，不经过范围判别；`failure_context.contiguous_revision_hours` 同步说明范围来源。只有当前小时禁止原样重复完成项，当前小时修订落地后仍立即派发，跨小时陈旧回调、三次真实重试和 ActionSystem 权威校验保持不变。
+
+日计划、范围判别和正式修订现在都被明确要求结合 `game_time` 与 `current_building_states.total_duration / remaining_time`。模型只应在预计完工前安排建筑协助或封闭影响，不得因为上午计划是连续格子就把短工期机械外推；工期仍是程序只读事实，模型不能改倒计时或宣布工程完成。
+
+## T0092 最小 provider 合同与完整游戏合同
+
+六类正式 NPC 调用区分“游戏业务合同”和“供应商生成合同”。Godot 继续发送既有业务请求、接收完整响应；Model Adapter 在供应商边界删除纯传输元数据、确定性重复副本、分支外上下文和 `null`，模型只判断人物话语、行动、修改小时、战时心理或记忆内容。
+
+后端从请求和模型主决定补齐固定字段：对话的回复者 / 响应类型 / 不适用结果，计划的 NPC / 日期 / `action_kind / priority / location_id`，范围判别的 `needs_revision`，修订的 `immediate_action`，战时判定的 `should_start_escape`，反思的 NPC / 日期。地点只在 `action_id + target_id` 不能唯一命中白名单候选时由模型消歧。补齐后仍经过完整 Schema、动态白名单和业务规则校验；非法枚举、非法行动、非法目标或漏选小时不会被掩盖。
+
+人物设定、长短期记忆、`current_order`、公开驿站事实、实时建筑 / 资源 / 战场状态、行动资格和叙事输出全部保留。`reason / summary / emotion / morale_delta_intent / dialogue_goal / diary_entry / knowledge_graph_updates / debug_reason` 仍有 UI、事件、人物记忆或诊断用途，没有为了省 token 删除。
+
+## T0091 对话计划只绑定 NPC 目标
+
+`talk_to_npc` 的计划候选与模型请求只提供目标 NPC，不再提供或要求 `location_id`。生成计划时看到的目标当前地点只是瞬时上下文，不能成为固定目的地；计划落地时只保存 `target_npc_id`，ActionSystem 在接近与重定向阶段继续查询目标实时位置。
+
+后端对白名单的例外只限这一种行动：按 `action_id + target_id` 匹配，仍要求 `action_kind=chat`、非自聊、非空 `dialogue_goal` 和合法动态目标。若供应商沿用旧习惯多返回地点，HTTP 层确定性规范化为 `null` 并写入 `model_normalizations`，不把它当成地点选择错误；其他工作、拜访和协助行动继续精确校验目标与地点。
+
+## T0089 教堂行动失败后的意图延续
+
+ActionSystem 的 `last_action_failure_context` 现在始终携带与 `last_action_result` 一致的精确 `failure_id`。计划系统仍把这些失败归类为通用 `target_unavailable` 以保持 Schema 稳定，但两阶段 LLM 链可以通过 `failure_context.failure_id` 区分具体服务依赖和互斥原因，不再依赖中文 `failure_summary` 猜测。
+
+当普通祈祷因弥撒正在举行或弥撒开始而失败，且实时候选表确认 `attend_mass` 可立即执行时，第一层必须选择当前小时，第二层强烈优先改为参加弥撒。当参加弥撒因没有主持者或主持者离岗而失败，且 `pray_at_chapel` 可立即执行时，第一层同样选择当前小时，第二层强烈优先改为普通祈祷。
+
+该规则延续的是 NPC 原计划中的宗教活动意图，而不是把人物变成无条件服从的状态机。人格、当前状态、记忆、守备官指令或更紧迫的程序事实若给出明确理由，模型仍可选择其他合法行动；对应候选不可用时也不得强行输出。ActionSystem 继续权威校验主持者、互斥状态、祈祷席、开始、中断和完成。
+
+## T0088 计划上下文中的建筑作业工期
+
+`LLMBridge._build_building_state_context()` 不再只告诉模型建筑“正在修复 / 正在升级”。活动作业同时提供可读的 `total_duration`、`remaining_time`、整数进度百分比和协助人数，供日计划、修改范围判别与正式修订参考。模型上下文不暴露裸秒数字段，BuildingSystem 的权威秒数仍只用于程序结算。
+
+作业总工期是稳定事实，可随“开始修复 / 开始升级”的外部状态变化进入人物见闻；剩余时间是请求构造时的实时只读投影，不按秒写入事件 / 见闻。模型可以据此安排工作、休息或协助，但不能修改倒计时、宣布完成或结算等级 / HP。
+
+入伍颜色仅是 `recruited` 权威状态的 UI 投影。应征接受仍由 `recruitment_result` 经 NPCSystem 落地，颜色不参与 LLM 判断，也不改变行动资格、战斗资格或指令合同。
+
+## T0087 对话决策字段单一来源
+
+对话请求仍复用一套人物与信息空间构造，但输出按类型封闭：
+
+- 守备官对话只读取 `PlayerNPCDialogueResponse`；应征接受 / 拒绝只由 `recruitment_result` 表达，战时意向只由 `wartime_reaction` 表达。
+- NPC-NPC 对话只读取 `NPCNPCDialogueResponse`；邀请由 `invitation_result` 表达，正式续聊 / 收尾只由 `should_end_dialogue` 表达。
+- 逃离挽留只读取 `EscapeInterventionDialogueResponse.escape_intervention_result=stay|leave`。
+
+旧通用 `intent` 及其失效选项已删除。模型文本可以在拒绝应征后继续解释或提出其他条件，不会因为“文本没有结束谈话”而推翻结构化拒绝；程序也不会从台词猜测入伍、结束或逃离结果。三个响应 Schema 禁止跨分支字段，Godot 只消费当前分支的唯一决定字段。
+
+## T0086 短活动完成后的续接（范围由 T0093 扩展）
+
+`data/action_defs.json` 以可选布尔字段 `reevaluate_current_hour_on_completion` 标记“目标解决或短时完成后，不应在原计划项上空等到整点”的行为。当前穷尽集合为 `assist_repair`、`assist_upgrade`、`assist_heal`、`receive_clinic_treatment` 和 `drink_wine`。DailyPlanSystem 仍只处理由当前日计划真正派发的成功完成：建筑协助识别 `completed_assist_*`，协助治疗识别 `assist_heal_completed_*`，病床识别 `clinic_treatment_completed`，饮酒识别 `completed_drink_wine`；手工调试结果、失败或中断不能冒充完成。
+
+完成后延迟一帧确认权威 day / hour、计划项 identity、NPC 空闲、可行动和 `behavior_mode=work`。若仍是同一小时和同一计划项，直接使用 `failure_type=action_completed` 修订当前小时起连续相同 action + target 的原计划段，不先调用“是否需要修改”判别；这是已经完成后必然需要后续安排的确定性事实。修订仍从实时普通 `allowed_actions` 中选择，成功合并后共用 T0076 可靠派发立即执行当前小时新项。Prompt 与 Godot 双重禁止当前小时原样重复相同 `action_id + target_id`；其他目标的同类协助仍可合法选择。
+
+若完成 tick 同时跨过整点，deferred 回调看到权威小时变化后直接退出，由 `hour_started` 正常执行新小时计划，不修改旧小时。六类生产继续用 `repeat_while_planned` 自行续周期，持续医生 / 训练保持运行态；吃饭、睡觉、祈祷、弥撒、拜访等常规或整小时活动不增加额外 LLM 调用。自主 NPC-NPC 对话与主动找守备官交涉继续使用各自对话后 required-current-hour 合同。
+
+## T0085 可塑工作量与升级目标失效
+
+计划系统仍向模型提供 `current_work_phase_count / minimum_work_phase_count / replacement_work_phase_required_if_non_work`，但这些字段只用于强规划建议和可观测统计。模型通常应维持基础劳动；人格、健康、危机、逃离意向或现场目标变化也可以形成少于 6 个工作阶段的合法日计划 / 修订。后端与 Godot 不得为凑数拒绝整份响应或扩大 `revision_hours`，真正的小时、白名单、目标 / 地点、资格和即时行动合同仍为硬约束。
+
+`assist_upgrade` 在历史 / 当前计划里始终计作劳动，Schema 表达为 `action_id=assist_upgrade / target_id=<building> / location_id=plaza`。当工程已经完成，DailyPlanSystem 不把旧的“建筑正在升级”失败继续喂给模型，而是根据 BuildingSystem 当前事实生成 `failure_reason=no_active_upgrade / condition=target_resolved_or_inactive`，再让范围判别选择真正受影响的小时。修订成功后按既有当前小时可靠派发链立即执行新行动。
+
+## T0083 应征结果的逐回复表现
+
+既有 `/npc/dialogue` 响应与业务校验不变：只有带应征标记的守备官消息才允许返回 `recruitment_result=accept|reject`。Godot 应用合法结果后，将枚举附在产生它的 NPC history turn 上，供对话 UI 明确显示；模型的 `reply_text` 不拼接系统提示，Prompt、provider、Schema 和入伍权威均未改变。
+
+接受仍立即由 NPCSystem 写入权威 `recruited=true`，拒绝仍保持原状态。新增的绿色对勾 / 红色叉号只是既有结构化结果的前端投影，不让 LLM 生成颜色、符号或系统文案。
+
+## T0082 守备官应征会话持续状态
+
+“提出应征”不再是发送后自动清除的一次性标记，而是当前守备官-NPC 会话内的持续选项。开启后，每次发送默认都向既有 `/npc/dialogue` 请求提供 `is_recruitment_request=true`，直到玩家主动关闭；不新增 endpoint、响应字段或模型职责。第一次带标记的消息发送时，DialogSystem 同时写入 `session_had_recruitment_request=true`，从此本场取消入口永久锁定，toggle 后续关闭只改变新消息标记，不能抹去已经说出口的应征要求。
+
+该会话仍可完成或挂起；挂起两小时后按完成收口。NPC 的 `accept / reject` 仍由既有回复业务校验处理，合法 `accept` 继续即时写入 NPCSystem 权威入伍状态。完整会话事件摘要由 MemorySystem 从 `dialogue_text` 逐句生成，计划判别继续收到同一完整历史。
+
+## T0080 建筑门口观察与升级协助语义
+
+NPC 对建筑封闭的认知遵守物理到达边界。建筑开始升级时，已经在内部执行依赖行动的 NPC 会立即因环境变化失败并被清退；仍在路上的 NPC 保留 pending 行动和移动目标，不生成失败、见闻或计划判别。只有抵达入口、程序重新确认建筑不可进入后，才写 `arrival_check_failed=true / interrupted_phase=pending` 的“到达门口后发现升级”失败，并由 DailyPlanSystem 启动原有两段式重估。
+
+`assist_upgrade` 是目标指向升级建筑、执行地点位于广场 / 建筑外的劳动。动态候选明确包含 `eligible=true / available_now=true / execution_location=plaza / requires_building_entry=false / counts_as_work_phase=true` 和 `work` 标签。模型不得把 `target_id=building` 误读成需要进入该建筑，也不得为了满足最低工作量而排除该行动；它仍可结合人格、指令和其他紧急事项选择别的合法候选。
+
+实时 `current_building_states.is_upgrading / is_repairing` 来自 BuildingSystem 查询，不从建筑数据字典猜测。LLM 只选择动态候选；入口拒绝、移动落点、行动失败、工作阶段合法性和升级加速均由程序权威处理。
+
+## T0078 主动找守备官交涉后的行动续接
+
+NPC 发起的 `player_npc` 主动交涉只有在结束时当前计划项仍为 `seek_guard_officer` 时，才会固定重排当前小时。判别 payload 携带 `dialogue_initiator=npc`、`proactive_talk=true` 和 `required_revision_hours=[game_time.hour]`；后端把 required 集合权威并入模型选择，模型仍可按对话影响增加未来阶段，但不能让已经完成的主动交涉继续占据当前时段。
+
+第二层不维护专用“交涉后行为表”，仍从实时 `allowed_actions` 选择工作、吃饭、休息、拜访、找其他 NPC 对话或其他合法活动。包含当前小时的正式修订成功后共用 T0076 立即 / deferred 派发，因此不会只改计划而让 NPC 站到下一小时。若对话结束时当前计划已经变化，则按普通守备官对话判断，不强行覆盖新安排。
+
+NPC 主动交涉不能取消，但可以完成或挂起。挂起两小时到期会保存现有会话并进入同一判别链；守备官主动会话仍可取消并按“无事发生”恢复。该生命周期差异由 DialogSystem 权威判断，UI 只显示按钮状态。
+
+## T0076 对话跨小时延续与当前计划落地
+
+日计划 `talk_to_npc` 的生命周期现在覆盖“接近目标 → 等待目标结束计划 → 邀请判定 → 正式交谈 → 对话后计划链”。`assigned_plan_day / assigned_plan_hour / assigned_plan_version / assigned_plan_item` 会从 DailyPlanSystem 经 ActionSystem 传入 DialogSystem。普通同日整点只改变当前计划读取位置，不撤销已经开始的对话生命周期：pending 发起者继续移动 / 等待，邀请阶段保留发起者，正式会话保留双方；新小时计划以 deferred marker 等待对话结束。跨日不继承，战斗 / 逃离 / 昏迷等行为模式仍由各自权威中断。
+
+自主 NPC-NPC 对话有实际内容并结束后，发起者的范围判别请求必须携带 `required_revision_hours=[game_time.hour]`。Schema 和 endpoint 要求响应 `revision_hours` 包含全部 required 小时，Prompt 和真实 provider 紧凑重试遵守同一合同；受邀者继续按对话影响独立判别。发起者当前阶段的第二层修订仍使用 LLMBridge 实时生成的普通 `allowed_actions`，不新增“对话后行为”白名单，也不由 LLM 绕过资源、地点、目标、工位或行为模式校验。
+
+当前小时修订的落地统一使用可靠派发标记。非阻塞时在修订合并后立即调用正常计划派发；对话组未完成、NPC 不在工作模式或派发暂时失败时保留 `{day,hour,plan_version,scheduled,mark_revision_applied}`，状态恢复后按医生 / 教官 / 普通 / 承载者 / 对话依赖顺序执行。只有真正开始、采用已运行项或有意执行 `idle` 才消费本次派发；`already_executed_once_per_plan_hour` 不再被当作“新计划已经落地”。这样指令、行动失败、玩家对话和 NPC-NPC 对话等既有修订来源共用相同“修改当前小时就立即执行或可靠延迟”的合同。
+
+## T0075 计划行动完成策略
+
+所有 `data/action_defs.json` 行为必须显式声明 `completion_policy`。这是计划执行语义的必填合同，不是给 LLM 自由解释的提示：ActionSystem 装载时只接受下列六个值，缺失、未知值或 `not_plan_selectable` 与 `plan_selectable` 冲突时跳过该定义并记录配置错误。程序合成的 `idle` 不进入配置，固定为当前小时只保持空闲、整点重新读取计划。
+
+| 策略 | 当前穷尽分类 | 完成 / 跨小时语义 |
+|---|---|---|
+| `repeat_while_planned` | `work_garden`、`work_dining_hall`、`work_stable`、`work_tavern`、`work_blacksmith`、`work_workshop` | 成功完成一个结算周期后，若当前计划仍是同一逻辑行动，则在旧周期完成事件写入后重新校验并立即开始下一周期；失败、中断、资源 / 工位 / 目标不足不续开 |
+| `continuous_until_plan_changes` | `work_training_instructor`、`receive_weapon_training`、`work_clinic_doctor` | 本身是持续服务状态，不人为切成“完成后重开”的生产批次；只要跨小时计划仍匹配就保留运行态，计划改变或服务生命周期失败时退出 |
+| `until_target_resolved` | `receive_clinic_treatment`、`assist_repair`、`assist_upgrade`、`assist_heal` | 持续到病人恢复、建筑作业完成、昏迷目标复苏等权威目标解决；目标完成 / 消失后结束，不按计划文字自动创建第二个目标周期 |
+| `once_per_plan_hour` | `eat_at_dining_hall`、`drink_wine`、`sleep_in_dormitory`、`pray_at_chapel`、`attend_mass`、`lead_mass`、`talk_to_npc`、`visit_location`、`seek_guard_officer` | 同一个“日期 + 小时 + action + 必要 target + dialogue goal”成功派发一次后即消费，替换 `plan_version` 也不能重放同一逻辑项。默认提前完成后不自动重复；T0086 的 `drink_wine` 会转为当前小时后续计划重估。不同目标 / 交涉目标属于不同逻辑项；玩家对话打断后的既有显式恢复入口只是继续未完成执行，不算自动重放 |
+| `terminal` | `escaping_station` | 交给 CombatSystem 的单向逃离生命周期，不由普通行动完成回调续开 |
+| `not_plan_selectable` | `escape_intervention_dialogue`、`talk_to_guard_officer` | 仅供系统运行态 / 显示，不进入每日计划目录 |
+
+整点派发先比较当前权威运行态与新小时计划。行动及必要目标相同就直接采用既有运行态，保留当前周期 `elapsed_seconds`、工位和制造 revision；不同则沿既有强制切换路径中断旧行动，再执行新小时项。因此跨小时不会因“还是同一件事”损失快完成的制造周期，也不会因旧行动拖延而跳过新小时的不同安排。
+
+`repeat_while_planned` 的续开使用 deferred 调度，保证旧周期 `*_completed` 先于新周期 `*_started`。续开仍走正常 ActionSystem 校验，所以制造目标、项目 revision、阶段材料、建筑、工位、NPC 可行动状态和行为模式都必须再次合法；任何失败只进入既有失败判别 / 计划重估，不同步递归重试。后续新增行为时必须先选择上述策略、更新本表与专项分类测试，禁止依靠 action id 前缀或完成结果字符串猜测可重复性。
+
+## T0073 当前指令对计划的实际影响
+
+已入伍 NPC 的 `current_order` 不是仅供界面展示的字段。发布不同文本后，NPCSystem 以 `order_changed` 请求当前小时计划修订；LLMBridge 在正式 `revise_plan` payload 的目标 NPC 上下文中注入最新指令，DailyPlanSystem 只把通过真实 provider、Schema、精确小时集合、行动白名单和工作阶段下限校验的结果合并回权威 24 小时计划。
+
+确定性专项已锁定完整调用链，真实 DeepSeek `deepseek-v4-flash` 也把“当前小时优先前往小教堂”的指令落实为 `idle -> visit_location(chapel)`。这只证明指令能影响计划，不意味着 NPC 必须机械服从：Prompt 仍允许其结合人设、记忆、现场状态和程序规则调整、推迟或拒绝，资源、地点资格、HP、战斗与行动执行仍由 Godot 权威校验。
+
+## T0071 NPC-NPC 对话知情边界
+
+每次 NPC-NPC 对话调用只让模型扮演当前回复者。回复者完整读取自己的身份、状态、长短期记忆、地点上下文和守备官指令；对话对象只以姓名、外表、健康状态和本轮已经说出口的文字出现。另一名 NPC 的事件库、见闻库、日记、知识图谱、私人指令、技能 / 属性、金钱 / 酒和地点私有上下文都不属于回复者知识，不能为了“人物连续性”注入。
+
+T0071 修复前，对话 builder 使用 `_build_npc_context(speaker_npc_id, ..., false)`：`false` 只移除了长期记忆，仍会携带说话者短期记忆、指令和地点上下文。真实场景中格伦在铁匠铺合法获知制造目标为铁盔，随后该私有短期记忆被放入伊沃的回复请求，模型据此让伊沃说出“我听说你那边已经定下要打铁盔”。现在该路径已删除并由后端 Schema 双重拒绝。
+
+六类请求审计没有发现其他跨 NPCContext 注入：计划、判别、修订、战时心理与反思始终以当前 NPC 为唯一人物上下文。审计另发现 `talk_to_npc` 候选曾携带目标实时地点、行动和入伍状态；这些字段并非执行所需，现已删除，执行时由 ActionSystem 权威查找 / 追踪目标。其他动态候选仍只定义可尝试行动，不授予角色知识。
+
+## T0070 全员动态名册与职业规则认知
+
+六类正式 NPC 请求的 `station_context.resident_roster` 现在始终列出全部 8 名登记成员，每人显式携带 `recruited` 与 `in_station` 两个布尔标签。逃离或已经处于 `outside_station` 的人不再从名册消失，而是保留身份并把 `in_station=false`；模型必须区分“未入伍”和“不在驿站”，不能用缺席或猜测补状态。名单来自 NPCSystem 当前状态，不在 Prompt 里维护静态副本。
+
+初始知识图谱新增四条职业相关、已由程序实现但此前容易被忽略的规则：艾达知道训练场无受训者时教官独自练习会提高自己的武器或骑术，有受训者时则增长教练熟练度；莉娜知道诊所无病人时医生研习医术、有病人时团队共同治疗；托马知道成年马只能分配给已入伍且持主武器者，集结或战斗时坐骑会随骑手离厩；布鲁诺知道成餐比直接吃粮更耐饱。全部 8 人的仓库认识也加入六项资源按等级扩容的已实现事实，但仍不宣称仓库受击会丢货。
+
+## T0077 NPC LLM 用量与预算边界
+
+每日人民币账本按正式供应商的每次 HTTP 尝试计数，不按 NPC 事件数、业务成功数或 JSONL 生命周期行数计数。自动紧凑重试、业务最终失败和不同 NPC 的并发请求都会消耗同一上海自然日预算；Mock、规则 / 模板降级不写入真实 provider 费用账本。
+
+预算拦截只阻止新的供应商尝试，不改变 NPC 性格、记忆、计划或程序权威状态。上层系统继续按现有可处理错误决定保留原计划或使用明确标记的规则 / 模板降级；禁止把 `budget_exceeded` 改写为模型成功或写入伪造的 NPC 话语。
+
+## T0069 NPC LLM 诊断证据
+
+NPC 对话、日计划、计划修改判别 / 修订、战时心理和首次睡眠反思的完整动态输入现在可在后端 JSONL 中按 `audit_id / request_id / npc_id / call_type` 检索。该日志只记录模型边界的输入、输出和校验，不写回 NPC 事件、见闻、日记或知识图谱，也不成为权威游戏状态；Godot 仍只应用通过 Schema、业务规则和迟到复验的结果。
+
+完整日志可能包含 NPC 私人记忆、守备官对话和未被业务层接受的模型文本，因此不得作为广场公共信息、玩家 UI 内容或模型后续记忆源。业务校验失败以追加事件保留原始证据，但不会因日志存在而绕过既有拒绝 / 降级流程。
+
+## T0067 战斗、日计划逃离与挽留真实模型结论
+
+后端 `NPCStateContext` 现显式接收 Godot 已发送的 `behavior_mode / combat_mode / combat_strategy / morale_boost / escape_intent`。修复前这些字段会被 Pydantic 默认忽略，导致模型看到的状态丢失而不报错；现在六类继承 `NPCContext` 的正式请求都保留这些权威投影，LLM 仍无权直接修改它们。
+
+对话响应除 Schema 外还执行上下文业务校验：逃离挽留只能用于 `dialogue_kind` 或 `interaction_context=escape_intervention`，必须匹配当前轮次且只返回 stay / leave；避战对话的 `wartime_reaction` 必须是 `none`；应征勾选与 `recruitment_result / intent` 必须一致；只有已入伍且持主武器的集结 / 战斗目标可返回战时逃离或斗志结果。真实 Main 已覆盖战时士气高昂、避战无应征、应征接受、应征拒绝、挽留成功和五轮失败。
+
+`escaping_station` 确实由动态行动目录进入日计划候选，且合法计划执行时会由 DailyPlanSystem 交给 CombatSystem 的权威逃离入口。基准 1 次和高压 3 次真实 `plan_day` 都没有选择该项，因此目前只确认“可见 + 可执行”，没有确认完整日计划会稳定自主选择。后续不能用强行注入计划冒充模型自然选择。
+
+真实选择证据表明上下文改变会影响挽留：只在台词中承诺撤回命令时，托马曾留下也曾继续逃离；当已入伍托马的危险 `current_order` 由程序实际更新为安全安排后，同一真实链返回 `escape_intervention_result=stay` 并成功回到工作。五轮不撤回底线冲突的场景则连续返回 `leave` 并耗尽入口。
+
+## T0066 当前计划详情读取边界
+
+NPCPanel 的“当前计划”继续只读 DailyPlanSystem 已生效的完整计划，不截断、不重排、不修改计划，也不触发 LLM。首次打开详情时，以 `GameState.current_hour` 对应的计划项为当前执行项，视图从该项之前第二个计划行动开始；0 点 / 1 点不足两项时夹取到当天开头，不读取或拼接前一天计划。打开后的计划替换 / 刷新继续保持玩家当前滚动位置。
+
 ## T0061 人物表达、历史切片与认知展示合同
 
 `data/npc_profiles.json` 不再保存 `signature_lines` / “代表性表达”。`scripts/core/NPCPromptProfile.gd`、对话顶层 `npc_setting`、共享 `NPCIdentity` 和六类正式 LLM 上下文只保留宽松的 `speech_style` 作为语言倾向；模型必须结合性格、职业、长期记忆和当下事实自然组织语言，不能依赖固定台词池。T1501 / T0060 中关于台词样例注入的旧口径由本节取代。
 
 三篇开局日记继续使用既有 8 字段结构，但前两篇承担不同层级的叙事职责：“往昔·来站前”宏观勾勒身世、职业来路、离开原处的原因和到站时间；“往昔·初到驿站”记录接手的工作与遇见的人。八人的到站顺序固定为艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜，各人的第二篇从不同角度互相咬合，拼成驿站逐渐恢复运转的群像。“往昔·近日”保留 T0060 已确认的开局前微观生活片段。
 
-每名 NPC 对守备官只有一条技术键为 `role` 的开局职责认知：守备官负责统筹驿站防务、警戒和危急时的人手安排。不得在种子中加入“尚待观察”“是否值得信任”等预设评价，也不得伪造既往互动。15 座建筑知识继续覆盖真实规则，但玩家可见 `relation_label / value_label` 必须写成人物在驿站生活中会形成的常识，不使用“初始、升级后、槽位、效率、结算”等说明书腔。本轮机械审校已从仓库条目移除尚未实现的容量 / 受击丢货 / 减少掠夺语义，改为集中登记与正门失守后的实际受袭次序；其余技术 `value` 不变。`confidence / day / time` 元数据全部保留。`NPCPanel` 的【知识】弹窗只显示中文主体、关系和值，不显示可信度与更新时间；NPCSystem、反思更新、后端参数和 GM 原始调试仍保留这些字段。
+每名 NPC 对守备官只有一条技术键为 `role` 的开局职责认知：守备官负责统筹驿站防务、警戒和危急时的人手安排。不得在种子中加入“尚待观察”“是否值得信任”等预设评价，也不得伪造既往互动。15 座建筑知识继续覆盖真实规则，但玩家可见 `relation_label / value_label` 必须写成人物在驿站生活中会形成的常识，不使用“初始、升级后、槽位、效率、结算”等说明书腔。T0061 当时从仓库条目移除了尚未实现的容量语义；T0070 容量落地后已重新加入按等级扩容常识，受击丢货 / 减少掠夺仍不写入。`confidence / day / time` 元数据全部保留。`NPCPanel` 的【知识】弹窗只显示中文主体、关系和值，不显示可信度与更新时间；NPCSystem、反思更新、后端参数和 GM 原始调试仍保留这些字段。
 
 ## T0060 八名 NPC 文案与开局认知合同
 
@@ -20,13 +197,13 @@
 
 每人初始知识图谱覆盖其余 7 人、守备官、15 座正式建筑和至少 2 个个人故事主体。本职建筑有多条具体规则，其他建筑保持世界内口吻的粗略但正确认识；T0061 后守备官条目只记录其防务、警戒与危急人手统筹职责，不预写人物评价。
 
-NPCSystem 在生成实体前同时校验档案和初始记忆，缺失、未知 id、空日记、非 `key_value_replace_v1` 图谱或空关系都会让初始化明确失败。加载后六类正式 LLM 业务均读取这份运行态长期记忆：对话使用唯一顶层 `long_memory`，计划 / 判别 / 修订 / 战时心理 / 反思使用 `npc.long_term_memory`。对话 participant 只公开参与当前会话所需的身份、状态和短期上下文，不复制目标记忆，也不向另一 NPC 泄露私人日记 / 图谱。
+NPCSystem 在生成实体前同时校验档案和初始记忆，缺失、未知 id、空日记、非 `key_value_replace_v1` 图谱或空关系都会让初始化明确失败。加载后六类正式 LLM 业务均读取这份运行态长期记忆：对话使用唯一顶层 `long_memory`，计划 / 判别 / 修订 / 战时心理 / 反思使用 `npc.long_term_memory`。`target_npc` 不复制目标长期记忆；T0071 后说话者只使用公开 `speaker_context`，不再注入另一 NPC 的任何完整人物或记忆上下文。
 
 长期记忆是人格连续性和判断材料，不是程序权威。若初始建筑认知或过去印象与当前建筑、资源、行动候选、当天事件冲突，始终以实时程序字段和已发生事件为准；后续反思只在真实新事实支持时追加日记或替换认知。
 
 ## T0058 共享基础资源认知与升级协助
 
-所有 NPC 中心 LLM 调用现在都从唯一顶层 `station_context.basic_resource_reserves` 获得驿站当前粮食、餐食、木材、石料和铁。该快照每次调用重新读取，不公开第纳尔、酒、装备、器械、马匹或其他库存；NPC 可以据此对话和安排，但不能直接改写数量。
+所有 NPC 中心 LLM 调用现在都从唯一顶层 `station_context.basic_resource_reserves` 获得驿站当前粮食、餐食、木材、石料和铁。该快照每次调用重新读取，不公开驿站第纳尔、酒、装备、器械、马匹或其他库存；NPC 可以据此对话和安排，但不能直接改写数量。T0063 起，目标 `npc.state.money / wine` 另表示该 NPC 本人实际持有量，不属于共享公开库存。
 
 共享规则明确建筑升级会缓慢推进，成员可通过 `assist_upgrade` / “协助升级建筑”加快正在进行的工程。完整 `work_mode_actions` 告诉 NPC 这种行为存在；只有本次 `allowed_actions` 中出现某座建筑的动态候选时才表示当前可选，计划和修订不得从基础规则自造升级目标。
 
@@ -38,15 +215,15 @@ NPCSystem 在生成实体前同时校验档案和初始记忆，缺失、未知 
 
 ## T0054 共享驿站常识与世界边界
 
-所有 NPC 中心正式请求继续继承 `StationAwareNPCRequest`，唯一顶层 `station_context` 在 T0058 后固定包含六部分：精简地点简介、当前在站人员、驿站全部建筑、工作模式下完整行为类型目录、五项公开基础资源、当前六条世界内驿站规则。人员、建筑、行为和资源分别来自对应权威系统，禁止在 Prompt、Schema 或 GDScript 中另写静态运行态副本。广场和公告牌不是建筑；仅运行态对话 / 逃离干预动作也不是工作模式计划行为。
+所有 NPC 中心正式请求继续继承 `StationAwareNPCRequest`，唯一顶层 `station_context` 在 T0058 后固定包含六部分：精简地点简介、全体登记成员及当前标签、驿站全部建筑、工作模式下完整行为类型目录、五项公开基础资源、当前六条世界内驿站规则。人员、建筑、行为和资源分别来自对应权威系统，禁止在 Prompt、Schema 或 GDScript 中另写静态运行态副本。广场和公告牌不是建筑；仅运行态对话 / 逃离干预动作也不是工作模式计划行为。
 
 这些规则只告诉人物如何理解所在世界：成员平时在站内工作和生活；需要持续参与活动并完成周期才会结算结果；敌袭时已入伍且装备主武器者保卫驿站；未入伍或没有主武器者尽量在站内避敌；士气低落时任何人都可能离开甚至临阵脱逃，使留下者处境更危险。这些是叙事与推理背景，不是状态结算。实际进度、产出、入伍、武器、士气、敌情、行动资格、资源和行为模式必须读取本次请求的权威状态；模型不得凭规则宣称事件已经发生。
 
-`work_mode_actions` 是完整“行为类型目录”，用于防止模型补造世界外行为；计划 / 修订 / 普通对话仍以本次动态 `allowed_actions` 为可尝试的精确候选，战时心理仍以 `allowed_decisions` 为输出边界。对话、每日计划、计划修改判别、正式修订、战时心理和首次睡眠反思只在顶层注入一次，共享 NPCContext、speaker / target 或记忆子结构不得复制它。
+`work_mode_actions` 是完整“行为类型目录”，用于防止模型补造世界外行为；每项的 `description` 可说明稳定前提和上下文影响。计划 / 修订 / 普通对话仍以本次动态 `allowed_actions` 为可尝试的精确候选，战时心理仍以 `allowed_decisions` 为输出边界。对话、每日计划、计划修改判别、正式修订、战时心理和首次睡眠反思只在顶层注入一次，共享 NPCContext、speaker / target 或记忆子结构不得复制它。
 
 ## T0053 跨小时对话等待与跨阶段人物上下文
 
-只有 `DailyPlanSystem` 派发的 `talk_to_npc` 才在 ActionSystem pending options 中写入 `plan_action_source=daily_plan`、来源日 / 小时、计划版本和完整原计划项。等待目标 `llm_activity.kind=plan` 时，ActionSystem 在逻辑时间、计划结束重试及整点新计划派发前读取说话者当前计划；仍为与同一目标对话才继续等待 / 邀请，否则返回 `talk_to_npc_failed_plan_superseded`。该失败的 `last_action_failure_context` 同时保存原 `failed_plan_item`、当前计划项、原 / 当前小时和版本、原目标、等待状态及 `waited_across_hour`，DailyPlanSystem 必须优先用其中的原计划项启动 T0050 判别，不能误把下一小时的新行动当成失败项。非日计划的 GM / 测试对话不参与此过期规则。
+只有 `DailyPlanSystem` 派发的 `talk_to_npc` 才在 ActionSystem pending options 中写入 `plan_action_source=daily_plan`、来源日 / 小时、计划版本和完整原计划项。T0076 覆盖 T0053 原“普通跨小时失效”口径：同一天跨小时后，即使当前计划已经移动到下一项，已经开始接近 / 等待的旧对话仍继续；只有同一小时内计划项被新修订替代、跨日，或权威目标 / 模式失效时才退出。仍走 `plan_item_superseded` 的失败会在 `last_action_failure_context` 保存原 `failed_plan_item`、当前计划项、来源 / 当前时间和版本、原目标及等待状态，DailyPlanSystem 必须使用原失败项启动 T0050 判别。非日计划的 GM / 测试对话不冒充日计划跨小时延续。
 
 `PlanRevisionJudgementRequest` 不再是无人物上下文的轻量合同。日计划、对话 / 行动失败修改范围判别、正式修订和低血量战时心理判定统一使用 `NPCContext`：`identity`、权威 `state`、`current_order`、`short_term_memory`、`long_term_memory={knowledge_graph, diary}`、`location_context`；顶层携带动态 `station_context`。判别与修订还读取当前行动候选、建筑 / 资源状态；失败分支在两层之间原样传递 `failed_plan_item / failure_type / failure_summary / failure_context`。第一层仍只决定 `revision_hours`，不得输出行动或结算事实。战时加入战斗 / 继续避战 / 逃离的心理判断同样必须以这套人物与记忆上下文结合 `combat_context / battlefield_context`，不能另造一套人格。
 
@@ -60,15 +237,15 @@ NPC-NPC 计划行动采用“可等待目标”而不是把计划活动当永久
 
 守备官-NPC 会话现在把“窗口是否显示”与“会话是否仍活动”分开。普通对话第一次发送、攻击或挂起草稿时才真正打断 NPC 当前普通行动，记录被打断的运行时 action，并把 NPC 运行态设为 `current_action=talk_to_guard_officer`、`active_dialogue_id=<本会话>`；逃离挽留继续使用 `escape_intervention_dialogue`。挂起只写 `ui_visible=false`、`suspended=true` 和 7200 逻辑秒倒计时，不释放会话槽、原行动恢复令牌或正在等待的 LLM。
 
-完成会话会先取消尚未返回的对话请求，再以已经存在的历史结尾提交会话事件；历史只要非空就进入 T0049/T0050 判别，因此玩家最后一句未获回复时也会触发。取消会话只允许在 `attack_committed=false` 时执行：取消 LLM、清空未提交历史、跳过事件 / 见闻 / 计划判别，并恢复仍匹配的原行动。两小时挂起超时时，普通会话自动取消；含攻击事实的会话因不可取消而自动完成。迟到异步响应因 `dialogue_id/request_id` 已失效而直接丢弃。
+完成会话会先取消尚未返回的对话请求，再以已经存在的历史结尾提交会话事件；历史只要非空就进入 T0049/T0050 判别，因此玩家最后一句未获回复时也会触发。取消会话只允许在 `attack_committed=false`、不是 NPC 主动交涉且尚未发送应征消息时执行：取消 LLM、清空未提交历史、跳过事件 / 见闻 / 计划判别，并恢复仍匹配的原行动。两小时挂起超时时，普通可取消会话自动取消；含攻击事实、NPC 主动发起或已发送应征消息的会话因不可取消而自动完成。迟到异步响应因 `dialogue_id/request_id` 已失效而直接丢弃。
 
-应征接受、战时反应和逃离挽留结构化结果在模型回复回来时只暂存于会话，完成时才由 NPCSystem / CombatSystem 权威应用；取消因此不会留下征召、士气或逃离决定副作用。HP 伤害仍在攻击点击时立即结算，永不回滚。NPC-NPC 自主对话不使用此三态生命周期，继续逐轮入库和双方计划判别。
+T0072 后，应征接受在模型合法回复回来并进入历史时立即由 NPCSystem 权威应用，取消剩余会话不会回滚；拒绝仍不改变状态。战时反应和逃离挽留结构化结果继续只暂存于会话，完成时才由 CombatSystem 权威应用，取消不会留下士气或逃离决定副作用。HP 伤害仍在攻击点击时立即结算，永不回滚。NPC-NPC 自主对话不使用此生命周期，继续逐轮入库和双方计划判别。
 
 ## T0050 统一计划修改判别层
 
 T0050 将日常行动失败接入 T0049 已建立的两阶段机制。`PlanRevisionJudgementRequest` 通过 `trigger_kind=dialogue|action_failure` 区分事实来源：对话分支读取本轮完整对话、结束原因和会话元数据；行动失败分支读取程序权威 `failed_plan_item`、`failure_type`、`failure_summary`、必要的 `failure_context`、原 24 小时计划，以及从原计划派生的工作阶段下限信息。T0053 起两类分支都额外注入与日计划 / 正式修订一致的驿站、NPC 人设 / 状态、短期 / 长期记忆、行动候选、建筑 / 资源和 `current_order`，但仍不输出行动。
 
-第一层统一返回 `needs_revision + revision_hours`。空集合表示 0 个修改阶段并立即终止；行动失败后 NPC 可以保持空闲等待下一阶段，但不会伪造修订。非空集合才进入原有完整 `/npc/revise_plan` 上下文，第二层只允许改写判别出的精确小时。若失败工作阶段可能改为交涉 / 等待且全天计划已经只有最低 6 个工作阶段，第一层应同时选择最少的未来非工作阶段供第二层补回工作量，避免“当前工作改成谈话后只剩 5 段、但又无权修改别的阶段”的不可满足合同。
+第一层统一返回 `needs_revision + revision_hours`。空集合表示 0 个修改阶段并立即终止；行动失败后 NPC 可以保持空闲等待下一阶段，但不会伪造修订。非空集合才进入完整 `/npc/revise_plan` 上下文，第二层只允许改写判别出的精确小时。工作阶段统计只提醒模型尽量维持产出，第一层不得仅为凑足 6 个阶段选择未受影响小时。
 
 行动失败判别期间复用计划修订互斥锁、排队、过期版本丢弃、TimeSystem 慢速和对话派发屏障。判别为空 / 失败会释放锁且不产生第二层；判别非空后，原失败事实与判别结果一并进入第二层。同一计划阶段内可抑制重复状态通知，但进入新小时会清除失败去重缓存，因此同名失败在后续阶段重新发生时必须再次判别。修订落地后再次失败时，新权威失败也先重新判别，再按原有连续 3 次落地失败上限停止，不能绕过判别形成双后继或无限循环。守备官新指令、战斗结束 / 复苏和 GM 手动修订不属于日常行动失败，继续直接进入受限修订。
 
@@ -82,7 +259,7 @@ NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSyst
 
 ## T0046 共享基础场景与长期记忆输出
 
-所有携带 NPC 根本人设的请求继承 `StationAwareNPCRequest`，并在顶层只携带一份必填且名单非空的 `station_context`。T0046 最初只提供地点简介和动态在站人员；T0054 已扩充建筑、工作模式行为与精简驿站规则。逃离、`behavior_mode=escaped` 或已在 `outside_station` 的 NPC 立即从人员名单除名，整个上下文仍不在嵌套 speaker / target 中重复。
+所有携带 NPC 根本人设的请求继承 `StationAwareNPCRequest`，并在顶层只携带一份必填且名单非空的 `station_context`。T0046 最初只提供地点简介和动态在站人员；T0054 已扩充建筑、工作模式行为与精简驿站规则；T0070 再把人员改为全体登记成员，并要求 `recruited / in_station` 两个标签。逃离、`behavior_mode=escaped` 或已在 `outside_station` 的 NPC 会保留在名册中并标为不在站，整个上下文仍不在嵌套 speaker / target 中重复。
 
 首次睡眠反思只产生第一人称 `diary_entry` 和替换式 `knowledge_graph_updates`，不再产生独立 `memory_summary`。知识更新同时携带 `subject_label / relation_label / value_label` 中文显示文本；内部 `subject / relation / value` 仍可用稳定技术键 / 值，NPCPanel 必须映射为中文且对未知键和值使用中文保底。T0061 后玩家知识弹窗不展示 `confidence / day / time`，但这些元数据继续保存在运行态、后端请求 / 响应和 GM 调试视图中。
 
@@ -98,21 +275,23 @@ NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSyst
 
 教堂候选严格分为 `pray_at_chapel` 普通祈祷、`lead_mass` 主持弥撒、`attend_mass` 参加弥撒。普通祈祷无需神父，但与正在举行的弥撒互斥；主持开始会中断普通祈祷。参加者绑定具体主持者，主持正常结束时共同完成，异常退出时共同失败。每日计划同批派发顺序为服务者优先、普通行动其次、依赖者随后、对话最后，减少遍历顺序造成的伪失败；程序仍在每次执行时做最终权威复验。
 
-## T0057 建筑升级失败重估合同
+## T0057 建筑升级失败重估合同（pending 时序由 T0080 修正）
 
-建筑升级是程序已经确认的高优先级事实。NPC 正在前往目标建筑执行活动时，ActionSystem 以 pending 阶段失败停止移动；NPC 已经在建筑内执行依赖活动时，以 active 阶段失败释放位置并退出到广场。两者都写入可被 DailyPlanSystem 识别的 `*_failed_building_upgrading`，并在 `failure_context` 中保留建筑、行动、阶段、`condition=upgrading`、`failure_reason=building_upgrading` 和“建筑正在升级”的中文摘要。
+建筑升级是程序已经确认的高优先级事实。NPC 正在前往目标建筑执行活动时继续移动，抵达入口且确认无法进入后才以 pending 阶段失败；NPC 已经在建筑内执行依赖活动时，以 active 阶段立即失败、释放位置并退出到广场。两者都写入可被 DailyPlanSystem 识别的 `*_failed_building_upgrading`，并在 `failure_context` 中保留建筑、行动、阶段、`condition=upgrading`、`failure_reason=building_upgrading` 和中文摘要；pending 另含 `arrival_check_failed=true`。
 
 计划判别与正式修订继续使用现有 Schema 的 `failure_type=target_unavailable`，精确升级原因由 `failure_summary / failure_context` 承载。模型不得否认建筑已经开始升级，也不得让 NPC 继续进入或使用该建筑；第一层只选择需要修改的小时，非空时第二层才选择当前合法替代行动。协助升级发生在广场，不属于被升级建筑内部依赖行动，不能被该封闭规则误杀。
 
 ## T0043 位置行动、可见资格与失败重估合同
 
-每日计划和对话行动参考继续共用 `data/action_defs.json` 候选源。吃饭、睡觉、普通祈祷、主持弥撒、参加弥撒、坐诊、接受治疗、指导训练和接受训练分别申请建筑定义中的具体位置类型；NPC 不输出位置编号，ActionSystem 在执行瞬间申请一个同类空位。满位、升级封闭、建筑失效、服务依赖缺失或资格不符都写入 `last_action_failure_context` 并触发既有计划修订链路。
+每日计划和对话行动参考继续共用 `data/action_defs.json` 候选源。吃饭、睡觉、普通祈祷、主持弥撒、参加弥撒、坐诊、接受治疗、指导训练和接受训练分别申请建筑定义中的具体位置类型；NPC 不输出位置编号。除睡眠外，ActionSystem 在执行瞬间申请一个同类空位；睡眠由 BuildingSystem 根据 `assigned_npc_id` 返回该 NPC 的固定床，初始 8 人按既有叙事到站顺序使用床位 1–8，没有固定床位的未来 NPC 只能使用未分配床位。满位、固定床被占、升级封闭、建筑失效、服务依赖缺失或资格不符都写入 `last_action_failure_context` 并触发既有计划修订链路，LLM 不选择或改写床位归属。
+
+T0063 新增 `drink_wine`：只有目标 NPC 当前 `states.wine >= 1` 时才进入其动态计划 / 对话候选；ActionSystem 开始执行时通过 NPC 个人资源接口再次原子校验并扣除 1。成功写 `wine_consumed`，只把“心情改善、过去伤痛暂时淡化”投影到后续上下文；不建立情绪数值，也不删除任何记忆。无酒写 `drink_wine_failed_no_wine`，DailyPlanSystem 按资源不足进入既有失败判别。
 
 `lead_mass` 是“可见但受资格限制”的特例：所有 NPC 的候选目录都保留它，候选上下文携带 `eligible`、`available_now`、`unavailable_reason` 和 `required_ability=主持弥撒`。模型应让无资格者极少选择它；即使选择，程序仍确定性拒绝。资格读取 NPC 档案的 `abilities`，不按 `background_job`、姓名或固定 NPC ID 判断。普通 `pray_at_chapel` 不要求神父在场。
 
 诊所和训练场采用建筑内团队模型，不把受服务者绑定给某一个医生或教官。每个逻辑推进周期重新读取全部有效诊疗位 / 教官位占用者，汇总人数和相应技能，再乘建筑升级与损伤效率，应用到全部病床 / 训练位。LLM 只选择行动，不计算治疗量、技能增长、资源扣除、位置占用或升级结果。
 
-升级启动是高优先级程序事实：所有指向该建筑的待执行 / 移动中 pending 行动和正在使用位置的 active 行动都以建筑升级为明确原因失败，NPC 逻辑退出至广场并进入统一重估；没有依赖行动的停留者只清退，不伪造失败。升级协助本身发生在广场，仍可继续。
+升级启动是高优先级程序事实：正在使用位置的 active 行动立即以建筑升级失败并退出广场；指向该建筑的待执行 / 移动中 pending 行动继续到入口，程序拒绝进入后才失败并进入统一重估。没有依赖行动的停留 / 访问者只清退，不伪造失败。升级协助本身发生在广场、不需入内，仍可继续并计为工作阶段。
 
 ## T0042 Prompt 人设与玩家背景详情共用
 
@@ -142,11 +321,11 @@ NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSyst
 
 ## T0025 NPC-NPC 自主对话与完整计划行动目录
 
-正式每日计划和失败修订现在都从同一动态 `allowed_actions` 目录选行动。目录覆盖设计稿 10.3 的前往建筑、职业工作、吃饭、睡觉、祈祷、诊所治疗、NPC-NPC 对话、训练，以及特殊的主动找守备官交涉和逃离意向；修复 / 升级 / 昏迷治疗协助只在实时目标存在时加入。`talk_to_npc` 必须使用同一候选中的 `target_id`、`location_id` 和 `action_kind=chat`，不能选择自己、昏迷、逃离、深睡、非工作行为模式或不存在的 NPC。
+正式每日计划和失败修订现在都从同一动态 `allowed_actions` 目录选行动。目录覆盖设计稿 10.3 的前往建筑、职业工作、吃饭、睡觉、祈祷、诊所治疗、NPC-NPC 对话、训练，以及特殊的主动找守备官交涉和逃离意向；修复 / 升级 / 昏迷治疗协助只在实时目标存在时加入。`talk_to_npc` 必须使用同一候选中的 `target_id` 和 `action_kind=chat`，不选择地点，也不能选择自己、昏迷、逃离、深睡、非工作行为模式或不存在的 NPC。
 
 计划执行 `talk_to_npc` 时，发起者先追踪目标当前地点；目标移动后最多重定向一次。接近期间双方由 ActionSystem 预定，防止第三人并发抢占；已有权威对话时，即时计划修订不会再暴露必然失败的对话候选。到达后先走邀请判定，接受后才打断双方普通行动并释放工位，再使用真实 `/npc/dialogue` 自动轮流回复，直到任一方输出结束标记或高优先级条件中断。后端与 Godot 都要求 `replyer_id` 等于目标 NPC、`response_kind=reply_to_npc` 且邀请 / 正式阶段和软轮次字段一致。每个邀请交换和完成轮次写入双方事件库；任一已实际发生的邀请拒绝或正式会话结束后，两名参与者都各自请求 T0049 判别，仅判别非空者进入受限小时修订。战斗、避战、集结、昏迷和逃离等高优先级权威状态不会被日常计划或对话恢复逻辑覆盖。
 
-24 小时计划先按每项声明的 `hour` 建表再排成 0-23，模型数组乱序不会交换行动时段，重复 / 越界 / 缺失小时会被拒绝。同批当前时段计划按“教官 → 其他非对话 → 受训者 → 对话”顺序派发，避免依赖 NPC 遍历顺序。运行态比较包含 action、target、location 和 dialogue goal；同一计划版本同一时段只派发一次。修订请求绑定请求日、小时和计划版本，并使用单后继队列；迟到响应不会覆盖新计划，连续 3 次迟到落地失败后停止自动续修。正式计划 / 修订不使用 Mock 或规则降级；仅当 Schema 已通过、action/target/location 唯一命中白名单候选时，后端可确定性规范化冗余 `action_kind` 并记录 `model_normalizations`，其他错误仍失败。
+24 小时计划先按每项声明的 `hour` 建表再排成 0-23，模型数组乱序不会交换行动时段，重复 / 越界 / 缺失小时会被拒绝。同批当前时段计划按“教官 → 其他非对话 → 受训者 → 对话”顺序派发，避免依赖 NPC 遍历顺序。运行态比较包含 action、target、必要 location 和 dialogue goal；普通派发仍以日、小时和计划版本签名幂等，T0075 在其上增加配置化完成策略：生产工作成功完成可受控清除签名并续开，单次行为另有不依赖计划版本的小时消费记录。修订请求绑定请求日、小时和计划版本，并使用单后继队列；迟到响应不会覆盖新计划，连续 3 次迟到落地失败后停止自动续修。正式计划 / 修订不使用 Mock 或规则降级；固定地点行动仅在 action/target/location 唯一命中时规范化冗余 kind，`talk_to_npc` 则在 action/target 唯一命中后把冗余地点清空并记录 `model_normalizations`，其他错误仍失败。
 
 ## 模块目标
 
@@ -219,6 +398,10 @@ T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和�
 
 T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后进入持续行动状态，并随 `TimeSystem.logical_time_tick` 逐步推进，而不是瞬时完成。吃饭当前以 20 分钟为基准，完整进餐恢复约 50 点饱食度；睡觉以 6.5 小时消耗 100 点疲劳为基准，按逻辑秒细分结算。T0801 起，工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用建筑工位，周期时长会按 NPC 对应熟练度、力量 / 智力属性和建筑等级缩短；完成、失败或中断会释放工位并广播地点内部状态。T0804-T0806 的早期聚合制造 / 马匹整备路径已由 T0035-T0038 覆盖：铁匠铺与工械坊周期提交配置阶段，马厩周期只提供有效照料能力，不直接产出资源。T0807 的酒窖仍消耗粮食并产出 `wine`；行动开始、完成或失败继续写入 `MemorySystem` 的结构化事件。
 
+T0081 起，`NPCNeedsSystem` 成为全部 NPC 持续生活消耗的唯一入口。它读取 `data/activity_needs.json`，按 tick 开始时的移动、行动、战斗行为模式或昏迷状态选择唯一档位，再按有效逻辑秒连续结算饱食和疲劳。idle 仍会缓慢消耗；对话、拜访和移动只消耗生活状态、不增加经验；所有职业工作、训练和协助行为都消耗饱食、增加疲劳并进入现有成长体系；睡觉、病床治疗、饮酒和祈祷消耗饱食但恢复疲劳；集结、避战、逃离和战斗逐级提高压力，战斗档位最高。吃饭的食物恢复仍由 ActionSystem 结算，同时 `eat` 档位增加少量疲劳。
+
+T0063 后，驿站 `wine` 还可通过 `NPCSystem.give_wine_to_npc(...)` 转入 NPC 个人 `states.wine`。个人酒与全局酒分开；`spend_npc_owned_resources(...)` 是饮酒的权威扣减入口，UI 和 LLM 都不能自行修改。
+
 T0034 冻结的制造、具体库存和马匹合同现已由 T0035-T0038 实现：
 
 - `work_blacksmith` / `work_workshop` 只有在对应建筑已经由玩家选中合法制造目标时才能开始。一个完整工作周期只提交一个配置阶段；周期被对话、改派、战斗、昏迷、离岗等打断时，该 NPC 本周期的小数进度归零，但建筑已完成整数阶段不回退。多工位可并行跑周期，提交时由 CraftingSystem 按 revision 原子领取下一阶段、扣除阶段材料并最终增加 11 项具体库存中的对应成品；NPC、LLM 和计划文本均不能直接指定完成阶段或产出成品。
@@ -226,33 +409,33 @@ T0034 冻结的制造、具体库存和马匹合同现已由 T0035-T0038 实现�
 - `HorseSystem` 权威保存唯一马匹实体和分配关系。只有已入伍且持主武器的 NPC 可分配成年、未分配、物理在厩马；分配后日常仍在厩，进入 `rally / combat` 才变为 `ridden`，退出战时状态返厩。收回主武器、取消入伍或逃离会自动解除分配；`equipment.mount` 仅保存具体 `horse_id / horse_name` 投影。
 - 每日计划 / 修订可以选择这些工作意图，但 ActionSystem 在执行时仍须校验制造目标、马厩位置、工位和 NPC 可行动状态。计划 LLM 不能生成马、选择出生结果、扣粮、完成阶段或改写具体库存；弃用的 `weapons / armor / defense_devices / horse_readiness` 也不再是合法正式产出或消费来源。
 
-2026-05-24 起新增协助修复行为；2026-05-25 起新增协助升级行为。`debug_assign_repair_assist(npc_id, building_id)` 与 `debug_assign_upgrade_assist(npc_id, building_id)` 都是带建筑参数的独立行为，可让 NPC 在广场协助正在修复或正在升级的建筑，并按工程熟练度加速对应倒计时；NPC 如果在室内，会先前往广场再开始协助。如果 NPC 离开广场或被改派其他行动，`BuildingSystem` 会移除其协助人数和速度加成。协助修复/升级事件写为 `location_id == "plaza"` 的 `local_public`。当前行动仍是最小闭环，计划系统只能安排意图并调用行动白名单，不能让 LLM 直接结算资源、建筑或 HP。
+2026-05-24 起新增协助修复行为；2026-05-25 起新增协助升级行为。`debug_assign_repair_assist(npc_id, building_id)` 与 `debug_assign_upgrade_assist(npc_id, building_id)` 都是带建筑参数的独立行为，可让 NPC 在广场协助正在修复或正在升级的建筑，并按工程熟练度加速对应倒计时；NPC 如果在室内，会先前往广场再开始协助。如果 NPC 离开广场或被改派其他行动，`BuildingSystem` 会移除其协助人数和速度加成。T0081 起，两类协助按真正推动作业的有效时长累计工程经验，每 3600 有效游戏秒增加 1 点“工程”；目标作业在 tick 中途结束时，超出完成时点的时间不再计算生活消耗或经验。协助修复/升级事件写为 `location_id == "plaza"` 的 `local_public`。计划系统只能安排意图并调用行动白名单，不能让 LLM 直接结算资源、建筑、经验或 HP。
 
 T0501 起，`NPCSystem.apply_damage_to_npc(...)` / `debug_damage_npc(...)` 负责权威 HP 扣除。HP 降到 0 时 NPC 进入昏迷而不是死亡，停止移动，`current_action` 变为 `unconscious`，头顶标签与 NPC 面板会显示昏迷状态。昏迷 NPC 不能移动或执行工作、吃饭、睡觉、协助修复/升级等行动。
 
 T0502 起，昏迷 NPC 会随 `TimeSystem.logical_time_tick` 自然恢复 HP，当前速率为每游戏小时 2 HP；HP 达到 Max HP 的 30% 后自动复苏，`unconscious=false`，`current_action=idle`，后续移动和行动指派重新允许。复苏会写入 `revived` 事件并按当前信息地点 `local_public` 广播。
 
-T0503 起，其他可行动 NPC 可通过 `ActionSystem.debug_assign_heal_assist(healer_npc_id, target_npc_id)` 协助治疗昏迷目标。治疗者会前往目标所在信息地点；目标必须处于昏迷状态，每个目标最多 2 名治疗者。治疗开始和持续治疗会消耗全局第纳尔；医术熟练度会转化为额外 HP 恢复速度，低医术几乎没有额外加成，医生的高医术会明显快于自然恢复。治疗开始/完成事件会写入治疗者和目标的事件库，并写入同地点其他在场 NPC 的见闻库；事件信息不暴露医术熟练度。该功能只覆盖“他人治疗昏迷者”，不等同后续 NPC 主动去诊所治疗或医疗床位系统。
+T0503 起，其他可行动 NPC 可通过 `ActionSystem.debug_assign_heal_assist(healer_npc_id, target_npc_id)` 协助治疗昏迷目标。治疗者会前往目标所在信息地点；目标必须处于昏迷状态，每个目标最多 2 名治疗者。治疗开始和持续治疗会消耗全局第纳尔；医术熟练度会转化为额外 HP 恢复速度，低医术几乎没有额外加成，医生的高医术会明显快于自然恢复。T0081 起，协助者每 3600 有效治疗秒增加 1 点“医术”；NPCSystem 依据目标当前 HP、30% 复苏阈值、自然恢复和所有治疗者加速，返回本 tick 真正有效的治疗秒数，避免目标已经复苏后继续获得生活消耗或经验。治疗开始/完成事件会写入治疗者和目标的事件库，并写入同地点其他在场 NPC 的见闻库；事件信息不暴露医术熟练度。
 
 T0808 起，小诊所治疗补齐为两个独立行动；T0043 将它们的位置合同统一为 `work_clinic_doctor -> clinic_doctor_station` 诊疗位与 `receive_clinic_treatment -> clinic_patient_bed` 病床。初始容量为 1 个诊疗位、2 个病床，两类都可由升级扩展。每个逻辑推进周期都汇总全部有效诊疗位占用者的人数、医术和相关属性，得到共享诊疗团队效率并作用于全部病床；再与诊所升级和损伤效率合成最终 HP 恢复速率。无病人时，诊疗位上的 NPC 以很慢节奏研读医学著作；医术增长继续进入统一经验与技能点规则。
 
 T0903 起，训练场补齐为两个独立行动；T0043 将它们的位置合同统一为 `work_training_instructor -> training_instructor_station` 教官位与 `receive_weapon_training -> training_practice_slot` 训练位。初始容量为 1 个教官位、2 个训练位，两类都可由升级扩展。训练项目由受训者当前武器 / 坐骑决定；每个逻辑推进周期汇总全部有效教官位占用者的人数、“教练”和对应项目熟练度，得到共享指导团队效率并作用于全部训练位；再与训练场升级和损伤效率合成最终训练速率。无受训者时，教官仍极慢练习自己当前装备；有受训者时，教官只提升“教练”。
 
-T0904 起，`NPCSystem.increase_npc_skill(...)` 是统一成长入口。普通职业工作完成时会以很慢速度提升该行动配置的职业熟练度；诊所研读 / 治疗、训练场独自练习 / 受训 / 指导训练也复用同一入口。每次熟练度实际增加都会写入运行时 `progression.skill_experience` 和 `progression.total_experience`；当前每 5 点总经验产生 1 个 `unspent_skill_points`。技能点不由 AI 自动分配，必须由玩家在 NPC 面板或 GM 调试入口调用 `NPCSystem.assign_npc_attribute_point(...)` 分配到力量或智力。AI 后续可以根据背景、近期行为和目标给出建议或倾向，但不能自行消耗技能点，也不能直接改写力量 / 智力权威状态。T0045 后属性分配仍写入 `private` 的 `attribute_improved` 事件，但世界内 summary 把 NPC 自身作为 actor，力量 / 智力分别表达为锻炼体力 / 脑力所得，不再写“守备官分配”。
+T0904 起，`NPCSystem.increase_npc_skill(...)` 是统一成长入口。普通职业工作完成时会以很慢速度提升该行动配置的职业熟练度；诊所研读 / 治疗、训练场独自练习 / 受训 / 指导训练也复用同一入口。T0081 将协助修复、协助升级和协助治疗的有效时长成长接入同一入口；非工作行动（idle、移动、对话、吃饭、睡觉、祈祷、饮酒、病床恢复、集结、避战、逃离、战斗）不会仅因生活消耗而获得经验。每次熟练度实际增加都会写入运行时 `progression.skill_experience` 和 `progression.total_experience`；当前每 5 点总经验产生 1 个 `unspent_skill_points`。技能点不由 AI 自动分配，必须由玩家在 NPC 面板或 GM 调试入口调用 `NPCSystem.assign_npc_attribute_point(...)` 分配到力量或智力。AI 后续可以根据背景、近期行为和目标给出建议或倾向，但不能自行消耗技能点，也不能直接改写力量 / 智力权威状态。T0045 后属性分配仍写入 `private` 的 `attribute_improved` 事件，但世界内 summary 把 NPC 自身作为 actor，力量 / 智力分别表达为锻炼体力 / 脑力所得，不再写“守备官分配”。
 
 T0502A 起，昏迷 NPC 不接收地点/广场公开广播、建筑/地点状态广播、公告或进入快照，见闻库暂停更新；事件库仍记录发生在自己身上的受伤、昏迷、复苏等亲历事件。复苏后见闻接收自动恢复，但不会补收昏迷期间错过的信息。
 
 2026-06-03 起，睡觉 NPC 使用同一条见闻接收规则：当 `current_action == "sleep_in_dormitory"` 时，该 NPC 不会把同建筑内发生的 `local_public` 事件、地点/建筑状态广播、公告或进入快照写入见闻库；自己的入睡和醒来仍进入事件库。睡醒回到可行动状态后，只从后续广播继续接收见闻，不补收睡觉期间错过的信息。
 
-T1004/T1005/T1405/T0046 起，NPC 每天首次进入睡觉状态后，必须持续睡眠满 1 个游戏小时才会触发 `DailyReflectionSystem`。系统通过异步 `/npc/daily_reflection` 把当天事件库和见闻库摘要交给后端（开发期可使用 Mock，Prompt 任务必须使用真实 API 验收），后端不可用时使用本地模板，生成第一人称日记和知识图谱当前键值更新，不再生成并列的长期摘要。反思从发起请求到应用完成期间，NPC 进入不可打断的深度睡眠锁：玩家对话、消息、行动改派和普通中断都会被拒绝；已入伍 NPC 仍可保存新指令，但计划重评估延后到醒来后执行。结果由 `NPCSystem.apply_daily_reflection(...)` 把 `diary_entry` 追加到长期 `diary`，并把 `knowledge_graph_updates` 按 `subject + relation` 替换式写入 `knowledge_graph.by_subject`；随后清空该 NPC 当天短期事件 / 见闻索引。NPC 面板可查看日记和 LLM 状态，GM 面板可强制触发、查看长期记忆和查看 LLM 状态。模板降级必须保留模型失败日志，不得用 mock 日记伪装真实模型成功。
+T1004/T1005/T1405/T0046 建立了熟睡总结、长期写入与深度睡眠锁；T0094 将触发调度修订为 21:00 锚定窗口。同一窗口内实际睡眠可跨多次中断累计，满 1 个游戏小时才触发 `DailyReflectionSystem`，成功应用后该窗口不再自动重复。系统通过异步 `/npc/daily_reflection` 把当前短期事件库和见闻库摘要交给后端（开发期可使用 Mock，Prompt 任务必须使用真实 API 验收），后端不可用时使用本地模板，生成第一人称日记和知识图谱当前键值更新，不再生成并列的长期摘要。反思从发起请求到应用完成期间，NPC 进入不可打断的深度睡眠锁：玩家对话、消息、行动改派和普通中断都会被拒绝；已入伍 NPC 仍可保存新指令，但计划重评估延后到醒来后执行。结果由 `NPCSystem.apply_daily_reflection(...)` 把 `diary_entry` 追加到长期 `diary`，并把 `knowledge_graph_updates` 按 `subject + relation` 替换式写入 `knowledge_graph.by_subject`；随后轮转该 NPC 当前短期事件 / 见闻索引。NPC 面板可查看日记和 LLM 状态，GM 面板可强制触发、查看长期记忆和 21:00 窗口快照。模板降级必须保留模型失败日志，不得用 mock 日记伪装真实模型成功。
 
 T1305 起，胜利和失败结算会为每名 NPC 生成结局总结快照。`GameState.set_game_over(...)` 读取 NPC 当前权威状态、入伍状态、最后位置、长期日记和当天事件，生成确定性 Mock 字段：最终状态（可行动 / 昏迷 / 逃离）、是否入伍、对守备官最终看法、后续命运和记忆依据。该结局总结只用于 HUD 结算页展示，不会写回事件库、见闻库或长期记忆，也不会让 AI 反向改写 HP、逃离、入伍或地点事实。NPC 不死亡，因此结算文案不使用“阵亡”或“死亡”描述 NPC。
 
-T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；正式征召仍由对话完成时提交的同意结果驱动。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并把预先确定的开场问题放入会话缓冲；1 小时无人点击则状态结束。
+T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；T0072 后正式对话返回合法接受结果时立即提交同一权威状态并刷新 NPC 面板，不再等会话完成。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并把预先确定的开场问题放入会话缓冲；1 小时无人点击则状态结束。
 
-T1001 起，`DailyPlanSystem` 可生成规则版 24 小时调试计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；T0025 后同一计划版本同一小时只派发一次，短行动提前完成后等待下一小时或新计划版本。T0050 后，实际对话与日常行动失败都先调用通用判别层，仅在返回非空 `revision_hours` 时进入真实 `/npc/revise_plan`；主动交涉超时、战斗结束 / 复苏和新指令等其他非对话原因仍直接修订。T0023 后，计划修订通过 `LLMBridge.request_npc_plan_revision_async(...)` 在后台调用真实 `/npc/revise_plan`；工位占用、资源不足以及其他已有 `failed` 行动结果先进入 `request_plan_revision_judgement_async(...)`。等待期间 NPC 显示 LLM 活动并注册 TimeSystem 慢速；Godot 只接受带非 Mock provider 证明且 `model_fallback_used=false` 的响应，成功合并为 `llm_plan_revision`。只有修订包含当前小时时才执行即时项；失败最多重试 3 次真实请求且不应用 Mock / 规则修订。T0051 后，打开后取消空会话无副作用；玩家消息发送即进入会话历史，完成会话时即使 NPC 回复未返回也会取消请求、把已有历史入库并触发判别。取消会话不入库、不应用结构化意向且不判别；挂起会话让 NPC 保持 `talk_to_guard_officer`，最多 2 游戏小时后自动取消。攻击一旦发生则不能取消，完成或攻击后的挂起超时都会保留攻击历史并进入统一判别。
+T1001 起，`DailyPlanSystem` 可生成规则版 24 小时调试计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；T0025 后普通派发以同一计划版本 / 小时签名幂等，T0075 后短行动是否续开改由 `completion_policy` 决定：六种生产工作成功完成可在当前逻辑计划项不变时立即开始下一周期，每小时单次行为不因新 `plan_version` 重放；T0086 的五类配置标记短 / 目标行为在成功完成后改为直接修订并立即执行当前小时后续安排。T0050 后，实际对话与日常行动失败都先调用通用判别层，仅在返回非空 `revision_hours` 时进入真实 `/npc/revise_plan`；已经成功完成的标记行动、主动交涉超时、战斗结束 / 复苏和新指令等确定性来源直接修订。T0023 后，计划修订通过 `LLMBridge.request_npc_plan_revision_async(...)` 在后台调用真实 `/npc/revise_plan`；工位占用、资源不足以及其他已有 `failed` 行动结果先进入 `request_plan_revision_judgement_async(...)`。等待期间 NPC 显示 LLM 活动并注册 TimeSystem 慢速；Godot 只接受带非 Mock provider 证明且 `model_fallback_used=false` 的响应，成功合并为 `llm_plan_revision`。只有修订包含当前小时时才执行即时项；失败最多重试 3 次真实请求且不应用 Mock / 规则修订。T0051 后，打开后取消空会话无副作用；玩家消息发送即进入会话历史，完成会话时即使 NPC 回复未返回也会取消请求、把已有历史入库并触发判别。取消会话不入库、不应用仍暂存的战时 / 挽留意向且不判别；T0072 的合法应征接受是已经提交的权威状态，不随取消回滚。挂起会话让 NPC 保持 `talk_to_guard_officer`，最多 2 游戏小时后自动取消。攻击一旦发生则不能取消，完成或攻击后的挂起超时都会保留攻击历史并进入统一判别。
 
-T1003/T1403/T0022 起，每日计划可通过 `/npc/plan_day` 生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单。正式开局和跨天后的新一天只接受已配置的真实 provider；后端成功响应携带 `model_provider` / `model_name` / `model_fallback_used`，Godot 将通过验证的计划统一写为 `source=llm_plan_day`。`/npc/plan_day` 真实 provider 路径使用 `data/prompts/daily_plan_system_prompt.txt`，后端校验 24 个 hour 覆盖、行动白名单和至少 6 个工作阶段。真实请求失败或输出不合法时只重试真实请求，不写入规则 / Mock 计划；显式开发 Mock 和 GM 纯规则入口仍与正式路径隔离保留。
+T1003/T1403/T0022/T0085 起，每日计划可通过 `/npc/plan_day` 生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单。正式开局和跨天后的新一天只接受已配置的真实 provider；后端成功响应携带 `model_provider` / `model_name` / `model_fallback_used`，Godot 将通过验证的计划统一写为 `source=llm_plan_day`。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段只保留为 Prompt 强建议。其他真实失败仍只重试真实请求，不写入规则 / Mock 计划。
 
 T0019/T0022/T0024 起，`GameStartupSystem` 把每日计划接入正式开局。默认模式会先暂停 `TimeSystem` 和计划自动执行，在第 1 天 06:00 为 8 名 NPC 逐人写入私有 `wake_up`、清空旧计划并把 `current_action` 设为 `planning_day`。随后同时发起 8 个真实 `/npc/plan_day` 请求；单人失败最多再试 2 次，仍失败则整批失败。只有 8 份 `llm_plan_day` 计划全部就绪后，系统才统一执行当前小时项并恢复时间；否则所有 NPC 保持 `planning_day`，游戏保持暂停。`DailyPlanSystem` 在 `day_started` 也使用同一整批事务边界，不允许成功一半就提前执行；批次快照同时记录 `max_concurrent=8` 与实际 `max_observed_concurrent`。静止调试模式不生成起床 / 计划 / 行动；新手引导模式当前复用同一正式循环。
 
@@ -281,7 +464,7 @@ T0304 起，NPC 运行时 `states` 会补齐以下地点字段：
 - `current_location`：当前地点 id，默认 `plaza`，到达建筑后更新为建筑 id。
 - `current_location_name`：当前地点显示名，到达建筑后由 `BuildingSystem` 填入。
 - `movement_target` / `movement_target_name`：移动中的目标地点；到达后清空。
-- `location_context`：地点当前状态读取占位，不包含地点历史事件。进入广场时包含当前广场在场 NPC、在场 NPC 状态、公告牌当前通告、参考日程及非强制备注和所有建筑的可传播外部状态；进入可进入建筑时包含该建筑的等级、`condition`、`is_enterable`、运行效率分档，以及在场 NPC、NPC 状态和完整逐位置清单。每个位置使用玩家可读名称表达空闲 / 占用；位置新增、移除、改名、改类型或换占用者时，在场 NPC 获得字段级差量。在场 NPC 的生命状态只表达健康、受伤、昏迷，行动状态由 `current_action` 翻译成精简中文。HP 具体数值、精确效率和剩余修复 / 升级时长不进入 NPC 见闻；容量不用额外聚合数字表达，而由完整位置清单及其增删差量自然得出。
+- `location_context`：地点当前状态读取占位，不包含地点历史事件。广场权威状态仍保存公告牌当前通告、参考日程及非强制备注，供公告牌 UI / GM / 只读上下文查询；但 NPC 的广场 `location_entry_snapshot` 只包含当前在场 NPC、在场 NPC 状态和所有建筑的可传播外部状态，不再重复携带公告牌两页。进入可进入建筑时包含该建筑的等级、`condition`、`is_enterable`、运行效率分档，以及在场 NPC、NPC 状态和完整逐位置清单。每个位置使用玩家可读名称表达空闲 / 占用；位置新增、移除、改名、改类型或换占用者时，在场 NPC 获得字段级差量。在场 NPC 的生命状态只表达健康、受伤、昏迷，行动状态由 `current_action` 翻译成精简中文。HP 具体数值、精确效率和剩余修复 / 升级时长不进入 NPC 见闻；容量不用额外聚合数字表达，而由完整位置清单及其增删差量自然得出。
 
 T0035/T0037 已按 T0034 冻结合同在 `location_context.internal_state.special_state` 中实现严格白名单：铁匠铺 / 工械坊只包含制造目标与整数阶段；马厩只包含物理在厩马匹的总数、成年数和小马数。当前制造周期的小数进度、逐匹马的名称 / HP / 饱食 / 成长 / 进食 / 分配信息不得进入 NPC 地点上下文。NPC 只有进入该建筑时获得完整当前快照，或在仍处于该建筑且未昏迷 / 未睡觉时获得字段级变化；建筑外 NPC 与广场快照不得获得这些实时内部状态。离开后，后续 LLM 只能看到该 NPC 已经合法收进见闻的旧信息，不能绕过 MemorySystem 查询全局最新值。
 
@@ -294,7 +477,7 @@ T0405 后，NPC 的短期记忆不再视为一个扁平文本列表，而由两�
 - NPC 事件库：发生在该 NPC 身上的事件，例如醒来、制定计划、进入/离开地点、工作、吃饭、睡觉、对话、收到或修改守备官指令、被给予金钱/装备、升级、受击、昏迷、治疗、复苏、逃离等。
 - NPC 见闻库：该 NPC 从地点/广场即时广播、状态变化广播、公告或他人公开事件中获得的信息；昏迷或睡觉期间暂停更新。
 
-NPC 进入地点时，系统生成 `location_entered` 事件并写入进入者事件库；该事件只记录“某人进入了某地”，不附带完整建筑状态。进入者随后在见闻库获得一次当前状态快照：进入广场时获得当前广场在场 NPC、广场在场 NPC 的生命状态 / 行动状态、公告牌当前通告、参考日程及非强制备注和所有建筑可传播外部状态，进入某个可进入建筑时获得该建筑外部 + 内部状态，包括当前在场 NPC、建筑内 NPC 的生命状态 / 行动状态和工位占用。已经在该地点的其他 NPC 只收到 `location_entered` 本地公开事件，不再额外收到完整人员状态。NPC 不会因为进入某建筑而继承该建筑过去发生的事件。
+NPC 进入地点时，系统生成 `location_entered` 事件并写入进入者事件库；该事件只记录“某人进入了某地”，不附带完整建筑状态。进入者随后在见闻库获得一次当前状态快照：进入广场时获得当前广场在场 NPC、广场在场 NPC 的生命状态 / 行动状态和所有建筑可传播外部状态，不包含公告牌通告、参考日程或备注；进入某个可进入建筑时获得该建筑外部 + 内部状态，包括当前在场 NPC、建筑内 NPC 的生命状态 / 行动状态和工位占用。公告牌两页在守备官发布实际变更时分别向全站当前可接收见闻的 NPC 广播一次，不受地点影响；只改一页不广播另一页。已经在该地点的其他 NPC 只收到 `location_entered` 本地公开事件，不再额外收到完整人员状态。NPC 不会因为进入某建筑而继承该建筑过去发生的事件。
 
 NPC 离开地点时，系统生成 `location_exited` 事件，`location_id` 使用其离开的地点；该事件写入离开者事件库，并以 `local_public` 广播给仍在该地点的 NPC。离开事件本身表达了“谁离开了这里”，不再额外广播完整 `people_present`。
 
@@ -393,12 +576,13 @@ NPC 行为分三层：
 
 T1201 后，战时公开对话已额外注入 `battlefield_context`：场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，有哪些 NPC 在驿站但不是战斗人员，以及目标 NPC 当前行为模式。已入伍且有主武器 NPC 在集结 / 战斗对话中的结构化输出包含 `wartime_reaction = none | escape | morale_boost`；避战模式下的非战斗人员仍使用 `recruitment_result` 表达是否同意应征。T1202 后，低血量自身心理判定复用同一战局上下文边界，并按目标是否真正参战限制允许结果：参战 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。T1404 后，后端会额外校验低血量判定 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 与 `escape_station` 决定一致；越界模型输出记录失败 usage 后交给 Godot 规则降级。
 
-T1203 后，逃离不再只是 pending 意向。`CombatSystem.start_npc_escape(...)` 会让 NPC 写入 `escape_started`、切出工作 / 战斗 / 避战行为并前往后门外出口；逃离移动期间 `escape_intent.status == "escaping"`，普通行动和战斗 AI 不再把该 NPC 当作可用单位。抵达出口后 `NPCSystem` 标记 `escaped=true`、`behavior_mode="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件。T1204A/T0051 后，逃离 NPC 被点击会先打开 NPC 面板；轮次未用完时，玩家点击【对话】进入 `dialogue_kind == "escape_intervention"` 的同地点公开挽留对话。挽留打开或挂起时 CombatSystem 保持逃离暂停，完成、取消或满 5 轮时恢复；请求携带 `escape_intervention_round`、当前 `escape_intent`、短期记忆、长期记忆、地点上下文和 `current_order`。模型或规则降级只返回暂存的 `stay_after_intervention` / `leave_after_intervention` 意向，完成时才由 CombatSystem 停止或继续逃离、记录轮次并按既有规则写入 `escape_intervention_result`；取消不应用意向。给钱 / 守备官攻击分别调整程序权威的逃离移动倍率；逃离挽留攻击不向 NPC LLM 发送消息、不产生 NPC 回复，只计 1 轮、锁定取消并自动完成会话。逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续逃离。
+T1203 后，逃离不再只是 pending 意向。`CombatSystem.start_npc_escape(...)` 会让 NPC 写入 `escape_started`、切出工作 / 战斗 / 避战行为并前往后门外出口；逃离移动期间 `escape_intent.status == "escaping"`，普通行动和战斗 AI 不再把该 NPC 当作可用单位。抵达出口后 `NPCSystem` 标记 `escaped=true`、`behavior_mode="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件。逃离 NPC 被点击会先打开 NPC 面板；轮次未用完时，玩家点击【对话】进入 `dialogue_kind == "escape_intervention"` 的同地点公开挽留对话。挽留打开或挂起时 CombatSystem 保持逃离暂停，完成、取消或满 5 轮时恢复；请求携带 `escape_intervention_round`、当前 `escape_intent`、短期记忆、长期记忆、地点上下文和 `current_order`。T0087 后模型或规则降级只返回暂存的 `escape_intervention_result=stay|leave`，完成时才由 CombatSystem 停止或继续逃离、记录轮次并写入同名事件；取消不应用结果。给钱 / 守备官攻击分别调整程序权威的逃离移动倍率；逃离挽留攻击不向 NPC LLM 发送消息、不产生 NPC 回复，只计 1 轮、锁定取消并自动完成会话。逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续逃离。
 
 ## 已入伍 NPC 指令机制
 
 正式玩家指令系统不是 ActionSystem 的行动下拉，也不是 RTS 式强制命令：
 
+- T0072 后，守备官对话返回合法 `recruitment_result=accept` 时立即调用 `NPCSystem.set_npc_recruited(...)`；不再等对话结束。`npc_state_changed` 会让仍打开的 NPC 面板立刻显示入伍状态和指令入口，取消剩余对话不会撤销已经说出口的接受结果。
 - 只有 `recruited=true` 的 NPC 面板显示可用“指令”按钮。
 - 点击后打开自由文本指令撰写与发布面板；已有指令会预填，供玩家直接修改。
 - 点击“发布”时，新文本只有与原 `current_order.text` 不同才覆盖旧指令、递增修订号并触发后续效果。

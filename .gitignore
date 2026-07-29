@@ -4,6 +4,7 @@
 
 # Local backend secrets
 backend/.env
+backend/logs/
 
 # Python cache
 __pycache__/

@@ -97,6 +97,24 @@ func _init() -> void:
 		_fail("Purchase event leaked to indoor NPC")
 		return
 
+	var grain_capacity: int = resource_system.get_resource_capacity("grain")
+	var grain_fill_amount: int = grain_capacity - int(resource_system.get_resource("grain"))
+	if grain_fill_amount <= 0 or not resource_system.add_resource("grain", grain_fill_amount):
+		_fail("Failed to prepare a full warehouse for trade capacity verification")
+		return
+	var money_before_capacity_buy: int = resource_system.get_resource("money")
+	var events_before_capacity_buy: int = memory_system.get_plaza_events().size()
+	var capacity_buy: Dictionary = merchant_system.buy_resource("grain", 1)
+	if (
+		bool(capacity_buy.get("ok", false))
+		or str(capacity_buy.get("code", "")) != "warehouse_capacity"
+		or resource_system.get_resource("grain") != grain_capacity
+		or resource_system.get_resource("money") != money_before_capacity_buy
+		or memory_system.get_plaza_events().size() != events_before_capacity_buy
+	):
+		_fail("A purchase above warehouse capacity was not rejected atomically")
+		return
+
 	var money_before_failed_buy: int = resource_system.get_resource("money")
 	var grain_before_failed_buy: int = resource_system.get_resource("grain")
 	var events_before_failed_buy: int = memory_system.get_plaza_events().size()

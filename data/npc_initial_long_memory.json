@@ -182,11 +182,11 @@
         },
         "warehouse": {
           "function": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.93,
             "subject_label": "仓库",
             "relation_label": "存放的东西",
-            "value_label": "站里的钱粮、材料和装备都由仓库统一记账。领草料、马具或修厩材料时，得先看那里现在真有什么；城门若失守，来犯者也会先奔它去，再往主厅逼近。",
+            "value_label": "站里的钱粮、材料和装备都由仓库统一记账。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；城门若失守，来犯者也会先奔它去，再往主厅逼近。",
             "day": 0,
             "time": "开局前"
           }
@@ -293,6 +293,15 @@
             "subject_label": "马厩",
             "relation_label": "喂料常识",
             "value_label": "马饿到一定程度，回到厩里才会安稳进食，吃完才会动用粮食。马离开厩舍后饿得更快，也吃不上这里备好的槽料。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "assignment_rule": {
+            "value": "adult_horse_requires_recruited_armed_rider_for_assignment",
+            "confidence": 0.99,
+            "subject_label": "马厩",
+            "relation_label": "坐骑分配",
+            "value_label": "马长到可以役用后，也只交给已经入伍、带着主武器的人；平日马仍留在厩里，集结或战斗时才随骑手出厩。",
             "day": 0,
             "time": "开局前"
           }
@@ -530,15 +539,24 @@
             "value_label": "把食堂修整扩开，灶边可以容下更多掌勺的人，做饭和进食也会更利落；长桌的座位不会跟着变多。封门动工时，谁都只好先惦记冷饭。",
             "day": 0,
             "time": "开局前"
+          },
+          "meal_value_rule": {
+            "value": "prepared_meal_preferred_over_raw_grain",
+            "confidence": 0.99,
+            "subject_label": "食堂",
+            "relation_label": "餐食与粮食",
+            "value_label": "用餐时有餐食就先吃餐食，填得更饱；没有餐食才拿粮食应急。把粮先做成饭，才不算白费灶火。",
+            "day": 0,
+            "time": "开局前"
           }
         },
         "warehouse": {
           "function": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.96,
             "subject_label": "仓库",
             "relation_label": "存放的东西",
-            "value_label": "全站的钱粮、材料和装备都在仓库账上。我要开几锅饭，先看那里真有多少粮；城门一旦失守，来犯者也会先冲仓库，再往主厅去。",
+            "value_label": "全站的钱粮、材料和装备都在仓库账上。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；城门一旦失守，来犯者也会先冲仓库，再往主厅去。",
             "day": 0,
             "time": "开局前"
           }
@@ -859,11 +877,11 @@
         },
         "warehouse": {
           "function": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.93,
             "subject_label": "仓库",
             "relation_label": "存放的东西",
-            "value_label": "钱粮、材料和装备都由仓库统一登记，菜园的收成真正做完后也会记到那里。城门若被攻破，来犯者会先冲仓库，再继续逼近主厅。",
+            "value_label": "钱粮、材料和装备都由仓库统一登记。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；城门若被攻破，来犯者会先冲仓库，再继续逼近主厅。",
             "day": 0,
             "time": "开局前"
           }
@@ -1193,11 +1211,11 @@
         },
         "warehouse": {
           "operational_role": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.92,
             "subject_label": "仓库",
             "relation_label": "存放的东西",
-            "value_label": "钱粮、材料和一件件装备都以仓库的现货为准，开炉前尤其要看铁和木料。正门若被撞开，来犯者会先冲这里，再往主厅去。",
+            "value_label": "钱粮、材料和一件件装备都以仓库现货为准。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；正门若被撞开，来犯者会先冲这里，再往主厅去。",
             "day": 0,
             "time": "开局前"
           }
@@ -1536,11 +1554,11 @@
         },
         "warehouse": {
           "operational_role": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.95,
             "subject_label": "仓库",
             "relation_label": "物资底账",
-            "value_label": "全站的钱粮、材料和装备都归仓库清点。正门一旦失守，来犯者会先压向这里，再转攻主厅；安排守备时不能把库房从路线中漏掉。",
+            "value_label": "全站的钱粮、材料和装备都归仓库清点。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；正门失守后敌人会先压向这里，再转攻主厅。",
             "day": 0,
             "time": "开局前"
           }
@@ -1636,6 +1654,15 @@
             "subject_label": "训练场",
             "relation_label": "谁能训练",
             "value_label": "训练跟着手上的主武器和名下的坐骑走；两样都有就两样都练，空手又无马的人既不能受训，也不能指导别人。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "instructor_growth_rule": {
+            "value": "solo_instructor_practice_and_group_coaching",
+            "confidence": 0.99,
+            "subject_label": "训练场",
+            "relation_label": "教官如何成长",
+            "value_label": "没有受训者时，教官也能留在教官位独自操练，慢慢精进自己的武器或骑术；有人受训时，则在指导中增长教练本事。",
             "day": 0,
             "time": "开局前"
           }
@@ -1870,11 +1897,11 @@
         },
         "warehouse": {
           "operational_role": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.86,
             "subject_label": "仓库",
             "relation_label": "共同物资",
-            "value_label": "粮食、钱、材料和装备都由仓库统一登记。正门失守后，来犯者会先冲向这里，再逼近主厅；所以家底和退路常挤在同一条线上。",
+            "value_label": "粮食、钱、材料和装备都由仓库统一登记。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；正门失守后敌人会先冲这里，再逼近主厅。",
             "day": 0,
             "time": "开局前"
           }
@@ -2213,11 +2240,11 @@
         },
         "warehouse": {
           "function": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.93,
             "subject_label": "仓库",
             "relation_label": "物资事实",
-            "value_label": "第纳尔、粮食、材料和逐件装备都以仓库现货为准；没有记在账上的东西，不能拿来安排治疗或修缮。正门失守后，来犯者会先冲这里，再逼近主厅。",
+            "value_label": "第纳尔、粮食、材料和逐件装备都以仓库现货为准。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；正门失守后敌人会先冲这里，再逼近主厅。",
             "day": 0,
             "time": "开局前"
           }
@@ -2346,6 +2373,15 @@
             "subject_label": "小诊所",
             "relation_label": "昏迷伤员",
             "value_label": "昏迷者先留在倒下的地方，由不超过两个人就地协助；围得更多只会碍手。等生命恢复到足以醒来并自行行动，才谈得上送进诊所继续治疗。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "study_rule": {
+            "value": "idle_doctor_studies_medicine",
+            "confidence": 0.99,
+            "subject_label": "小诊所",
+            "relation_label": "无病人时",
+            "value_label": "诊疗位上暂时没有病人时，坐诊的人可以研读医书，慢慢提升医术；有病人后，精力就转去共同照看病床。",
             "day": 0,
             "time": "开局前"
           }
@@ -2547,11 +2583,11 @@
         },
         "warehouse": {
           "function": {
-            "value": "central_storage_and_post_breach_attack_target",
+            "value": "level_based_bulk_storage_and_post_breach_attack_target",
             "confidence": 0.95,
             "subject_label": "仓库",
             "relation_label": "工程底账",
-            "value_label": "工程预算只认仓库账上的钱粮、材料和逐件装备。正门失守后，仓库会成为来犯者逼近主厅前的下一处目标，库房能多撑一会儿就多一分周转余地。",
+            "value_label": "工程预算只认仓库账上的钱粮、材料和逐件装备。粮食、餐食、酒、木材、石料和铁各有库位上限，扩建才会抬高；正门失守后仓库仍是通往主厅前的目标。",
             "day": 0,
             "time": "开局前"
           }
