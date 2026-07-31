@@ -19,16 +19,16 @@ const HORSE_LIST_MAX_HEIGHT := 620.0
 const WORKSTATION_TYPE_LABELS := {
 	"rest": "床位",
 	"cook": "厨师",
-	"brew": "酿酒",
-	"farm": "耕种",
-	"forge": "锻造",
+	"brew": "酿酒位",
+	"farm": "耕作位",
+	"forge": "锻造位",
 	"training_instructor": "教官",
 	"training_student": "受训者",
-	"horse_care": "马匹照料",
+	"horse_care": "照料位",
 	"pray": "祈祷",
 	"clinic_doctor": "医生",
 	"patient_bed": "病床",
-	"engineering": "工程",
+	"engineering": "工程位",
 	"command": "指挥",
 	"storage": "储存",
 	"repair": "修复",
@@ -41,7 +41,9 @@ const WORKSTATION_TYPE_LABELS := {
 	"training_practice_slot": "训练位",
 	"dining_kitchen_station": "灶台",
 	"dining_seat": "用餐席",
-	"dormitory_bed": "床位"
+	"dormitory_bed": "床位",
+	"general": "位置",
+	"unknown": "位置"
 }
 
 var _current_building_id: String = ""
@@ -326,7 +328,7 @@ func _on_npc_clicked(_npc_id: String) -> void:
 
 
 func _on_defense_device_state_changed(_snapshot: Dictionary) -> void:
-	if visible and _current_building_id == "wall":
+	if visible and ["wall", "main_hall"].has(_current_building_id):
 		_refresh_defense_device_section()
 		_queue_panel_fit()
 
@@ -360,7 +362,7 @@ func _on_resource_changed(_resource_id: String, _amount: int) -> void:
 	if visible and _current_building_id == "warehouse":
 		_refresh_warehouse_capacity_label()
 		_queue_panel_fit()
-	if visible and _current_building_id == "wall":
+	if visible and ["wall", "main_hall"].has(_current_building_id):
 		_refresh_defense_device_section()
 		_queue_panel_fit()
 	if visible and ["blacksmith", "workshop"].has(_current_building_id):
@@ -812,7 +814,7 @@ func _add_horse_card(horse: Dictionary) -> void:
 	var location := str(horse.get("location", "stable"))
 	var feeding: Dictionary = horse.get("feeding", {}) if horse.get("feeding", {}) is Dictionary else {}
 	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马"]
-	status_parts.append("在厩" if location == "stable" else "骑乘中" if location == "ridden" else location)
+	status_parts.append("在厩" if location == "stable" else "骑乘中" if location == "ridden" else "位置未知")
 	if bool(feeding.get("active", false)):
 		status_parts.append("进食 %d%%" % int(round(float(feeding.get("progress", 0.0)) * 100.0)))
 	elif bool(feeding.get("waiting_for_grain", false)):
@@ -938,7 +940,7 @@ func _build_defense_device_section() -> void:
 	var separator := HSeparator.new()
 	_device_section.add_child(separator)
 	var title := Label.new()
-	title.text = "围墙工程器械"
+	title.text = "防御器械部署"
 	title.add_theme_font_size_override("font_size", 16)
 	_device_section.add_child(title)
 
@@ -950,7 +952,7 @@ func _build_defense_device_section() -> void:
 	_device_slot_select.item_selected.connect(_on_device_selection_changed)
 
 	_device_deploy_button = Button.new()
-	_device_deploy_button.text = "部署到围墙"
+	_device_deploy_button.text = "部署到当前建筑"
 	_device_deploy_button.pressed.connect(_on_device_deploy_pressed)
 	_device_section.add_child(_device_deploy_button)
 
@@ -979,7 +981,7 @@ func _add_device_option_row(label_text: String) -> OptionButton:
 func _refresh_defense_device_section() -> void:
 	if _device_section == null:
 		return
-	_device_section.visible = _current_building_id == "wall"
+	_device_section.visible = ["wall", "main_hall"].has(_current_building_id)
 	if not _device_section.visible:
 		return
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
@@ -987,6 +989,12 @@ func _refresh_defense_device_section() -> void:
 		_device_stock_label.text = "工程器械系统不可用"
 		_device_deploy_button.disabled = true
 		return
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var building_name := _current_building_id
+	if building_system != null and building_system.has_method("get_building"):
+		var building: Dictionary = building_system.get_building(_current_building_id)
+		building_name = str(building.get("name", _current_building_id))
+	_device_deploy_button.text = "部署到%s" % building_name
 
 	var selected_device_id := _get_selected_metadata(_device_select)
 	var selected_slot_id := _get_selected_metadata(_device_slot_select)
@@ -1041,7 +1049,7 @@ func _populate_device_options(device_system: Node, preferred_id: String) -> void
 
 func _populate_device_slot_options(device_system: Node, device_id: String, preferred_id: String) -> void:
 	_device_slot_select.clear()
-	for raw_slot in device_system.get_slots_for_device(device_id, true):
+	for raw_slot in device_system.get_slots_for_device(device_id, true, _current_building_id):
 		if not raw_slot is Dictionary:
 			continue
 		var slot: Dictionary = raw_slot
@@ -1059,11 +1067,13 @@ func _format_device_deployment_summary(device_system: Node) -> String:
 		if not raw_deployment is Dictionary:
 			continue
 		var deployment: Dictionary = raw_deployment
+		if str(deployment.get("building_id", "")) != _current_building_id:
+			continue
 		lines.append("- %s / %s" % [
 			str(deployment.get("device_name", "工程器械")),
 			str(deployment.get("slot_name", "围墙槽位"))
 		])
-	return "\n".join(lines)
+	return "\n".join(lines) if lines.size() > 1 else "已部署：无"
 
 
 func _get_selected_metadata(option: OptionButton) -> String:
@@ -1131,9 +1141,7 @@ func _format_workstations(raw_workstations: Variant) -> String:
 			station_type = "unknown"
 		var station_index := int(indices_by_type.get(station_type, 0)) + 1
 		indices_by_type[station_type] = station_index
-		var station_name := str(station.get("name", "")).strip_edges()
-		if station_name.is_empty():
-			station_name = _format_workstation_type_label(station_type)
+		var station_name := _format_workstation_name(station, station_type)
 		if int(totals_by_type.get(station_type, 0)) > 1 and not _has_numeric_suffix(station_name):
 			station_name = "%s%d" % [station_name, station_index]
 		var occupied_by := str(station.get("occupied_by", ""))
@@ -1147,7 +1155,20 @@ func _format_workstations(raw_workstations: Variant) -> String:
 
 
 func _format_workstation_type_label(station_type: String) -> String:
-	return str(WORKSTATION_TYPE_LABELS.get(station_type, station_type))
+	return str(WORKSTATION_TYPE_LABELS.get(station_type, "位置"))
+
+
+func _format_workstation_name(station: Dictionary, station_type: String) -> String:
+	var station_name := str(station.get("name", "")).strip_edges()
+	# BuildingSystem historically generated missing names from the internal type.
+	# Keep those keys in runtime data, but never expose them as player-facing text.
+	if (
+		station_name.is_empty()
+		or station_name == station_type
+		or station_name.begins_with("%s " % station_type)
+	):
+		return _format_workstation_type_label(station_type)
+	return station_name
 
 
 func _has_numeric_suffix(text: String) -> bool:
@@ -1165,21 +1186,13 @@ func _format_npc_name(npc_id: String) -> String:
 			var npc_name := str(npc.get("name", ""))
 			if not npc_name.is_empty():
 				return npc_name
-	return npc_id
+	return "未知成员"
 
 
 func _format_location_placeholder(building: Dictionary) -> String:
-	var tags: Array = building.get("tags", [])
 	var repair_status: Dictionary = building.get("repair_status", {})
 	var upgrade_status: Dictionary = building.get("upgrade_status", {})
 	var lines: Array[String] = []
-	if tags.is_empty():
-		lines.append("地点状态：占位")
-	else:
-		var tag_labels: Array[String] = []
-		for tag in tags:
-			tag_labels.append(str(tag))
-		lines.append("地点标签：%s" % ", ".join(tag_labels))
 
 	var condition := str(building.get("condition", "unknown"))
 	var condition_label: String = str({
@@ -1224,9 +1237,11 @@ func _format_cost(cost: Dictionary) -> String:
 
 func _format_resource_name(resource_id: String) -> String:
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
-	if resource_system != null:
-		return resource_system.get_resource_name(resource_id)
-	return resource_id
+	if resource_system != null and resource_system.has_method("get_resource_name"):
+		var resource_name := str(resource_system.get_resource_name(resource_id)).strip_edges()
+		if not resource_name.is_empty() and resource_name != resource_id:
+			return resource_name
+	return "未知资源"
 
 
 func _update_action_buttons(building_system: Node, building_id: String, building: Dictionary) -> void:
@@ -1380,12 +1395,22 @@ func _format_upgrade_hint() -> String:
 	if _current_building.is_empty():
 		return ""
 
-	var upgrade_config: Dictionary = _current_building.get("upgrade", {})
-	var cost: Dictionary = upgrade_config.get("cost", {})
-	var max_level := int(upgrade_config.get("max_level", int(_current_building.get("level", 1))))
+	var base_upgrade_config: Dictionary = _current_building.get("upgrade", {})
+	var current_level := int(_current_building.get("level", 1))
+	var max_level := int(base_upgrade_config.get("max_level", current_level))
+	var target_level := current_level + 1
+	var upgrade_config := _get_next_upgrade_effect(target_level)
+	var cost: Dictionary = upgrade_config.get("cost", {}) if upgrade_config.get("cost", {}) is Dictionary else {}
 	var lines: Array[String] = ["升级"]
-	lines.append("消耗：%s" % _format_cost(cost))
-	if upgrade_config.is_empty() or cost.is_empty():
+	if current_level < max_level:
+		lines[0] = "升级至 Lv.%d" % target_level
+		lines.append("消耗：%s" % _format_cost(cost))
+		var duration_seconds := float(upgrade_config.get("duration_seconds", 0.0))
+		if duration_seconds > 0.0:
+			lines.append("工期：%s" % _format_game_duration(duration_seconds))
+		for benefit_line in _format_upgrade_benefits(upgrade_config, current_level, target_level):
+			lines.append(benefit_line)
+	if base_upgrade_config.is_empty():
 		lines.append("条件：该建筑不可升级")
 	elif not _current_building.get("upgrade_status", {}).is_empty():
 		lines.append("条件：正在升级中")
@@ -1393,13 +1418,101 @@ func _format_upgrade_hint() -> String:
 		lines.append("条件：正在修复中")
 	elif int(_current_building.get("hp", 0)) < int(_current_building.get("max_hp", 0)):
 		lines.append("条件：建筑受损，需先修复")
-	elif int(_current_building.get("level", 1)) >= max_level:
+	elif current_level >= max_level:
 		lines.append("条件：已达最高等级 Lv.%d" % max_level)
+	elif cost.is_empty():
+		lines.append("条件：该等级缺少升级消耗配置")
 	elif not _can_afford(cost):
 		lines.append("条件：资源不足")
 	else:
 		lines.append("条件：可执行，最高 Lv.%d" % max_level)
 	return "\n".join(lines)
+
+
+func _get_next_upgrade_effect(target_level: int) -> Dictionary:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if (
+		building_system != null
+		and building_system.has_method("get_upgrade_level_effect")
+		and not _current_building_id.is_empty()
+	):
+		return building_system.get_upgrade_level_effect(_current_building_id, target_level)
+	return _current_building.get("upgrade", {}).duplicate(true)
+
+
+func _format_upgrade_benefits(
+	upgrade_config: Dictionary,
+	current_level: int,
+	target_level: int
+) -> Array[String]:
+	var benefits: Array[String] = []
+	var max_hp_bonus := maxi(0, int(upgrade_config.get("max_hp_bonus", 0)))
+	if max_hp_bonus > 0:
+		benefits.append("收益：Max HP +%d" % max_hp_bonus)
+	var defense_device_range_bonus := maxf(
+		0.0,
+		float(upgrade_config.get("defense_device_range_bonus", 0.0))
+	)
+	if defense_device_range_bonus > 0.0:
+		benefits.append("器械射程：+%d%%" % roundi(defense_device_range_bonus * 100.0))
+
+	var workstation_delta := 0
+	var raw_deltas: Variant = upgrade_config.get("workstation_deltas", [])
+	if raw_deltas is Array:
+		for raw_delta in raw_deltas:
+			if raw_delta is Dictionary:
+				workstation_delta += maxi(0, int((raw_delta as Dictionary).get("count", 0)))
+	if workstation_delta > 0:
+		benefits.append("功能位置：+%d" % workstation_delta)
+	if (
+		upgrade_config.get("efficiency_bonuses", {}) is Dictionary
+		and not (upgrade_config.get("efficiency_bonuses", {}) as Dictionary).is_empty()
+	):
+		benefits.append("运行效率：提升")
+
+	var current_slots := _count_unlocked_defense_slots_at_level(current_level)
+	var target_slots := _count_unlocked_defense_slots_at_level(target_level)
+	if target_slots > 0:
+		var slot_delta := target_slots - current_slots
+		var total_slots := _count_unlocked_defense_slots_at_level(999)
+		if slot_delta > 0:
+			benefits.append("部署槽：+%d（解锁至 %d/%d）" % [
+				slot_delta,
+				target_slots,
+				total_slots
+			])
+		else:
+			benefits.append("部署槽：本级不增加（%d/%d）" % [
+				target_slots,
+				total_slots
+			])
+	return benefits
+
+
+func _count_unlocked_defense_slots_at_level(level: int) -> int:
+	if _current_building_id not in ["wall", "main_hall"]:
+		return 0
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("get_slots_for_building"):
+		return 0
+	var count := 0
+	for raw_slot in device_system.get_slots_for_building(_current_building_id, true):
+		var slot: Dictionary = raw_slot
+		if int(slot.get("required_building_level", 1)) <= level:
+			count += 1
+	return count
+
+
+func _format_game_duration(duration_seconds: float) -> String:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("format_game_duration"):
+		return str(time_system.format_game_duration(duration_seconds, true, true))
+	var total_seconds := ceili(maxf(0.0, duration_seconds))
+	return "%d小时%d分%02d秒" % [
+		total_seconds / 3600,
+		(total_seconds % 3600) / 60,
+		total_seconds % 60
+	]
 
 
 func _can_afford(cost: Dictionary) -> bool:

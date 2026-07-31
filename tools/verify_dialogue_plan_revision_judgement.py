@@ -275,16 +275,22 @@ def main() -> None:
         "只输出 revision_hours、summary、debug_reason",
         "不得选择行动",
         "failure_context.failure_id",
+        "必须把当前小时加入 revision_hours",
+        "守备官请目标 NPC 现在参加",
+        "NPC 清楚答应立即参加",
+        "`pray_at_chapel` 当前可用",
+        "程序会在到达小教堂时自动参加",
+        "不会作为行动失败进入本层",
+    ]:
+        assert fragment in prompt, fragment
+    for removed_fragment in [
+        "attend_mass",
         "pray_failed_mass_in_progress",
         "pray_failed_mass_started",
         "attend_mass_failed_no_leader",
         "attend_mass_failed_leader_left",
-        "必须把当前小时加入 revision_hours",
-        "守备官请目标 NPC 现在参加",
-        "NPC 清楚答应立即参加",
-        "`attend_mass` 当前 `eligible=true / available_now=true`",
     ]:
-        assert fragment in prompt, fragment
+        assert removed_fragment not in prompt
 
     retry_adapter = ModelAdapter(ModelAdapterConfig(
         provider="deepseek",

@@ -158,7 +158,7 @@ func _place_enemies_for_flow_test(combat_system: Node, enemy_ids: Array[String],
 		var enemy: Dictionary = active_enemies.get(enemy_id, {})
 		if enemy.is_empty():
 			continue
-		enemy["position"] = Vector3(0.0, 0.0, float(index) * 0.25)
+		enemy["position"] = Vector3(0.0, 0.0, float(index) * 0.05)
 		if weaken:
 			enemy["hp"] = 1
 			enemy["attack_cooldown"] = 999.0

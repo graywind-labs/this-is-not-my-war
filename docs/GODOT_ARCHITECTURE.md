@@ -1,5 +1,100 @@
 # GODOT_ARCHITECTURE.md
 
+## T0116 新运行时接口
+
+- `LLMBridge.build_dialogue_intent_revalidation_payload(...)`
+- `LLMBridge.request_npc_dialogue_intent_revalidation[_async](...)`
+- `dialogue_intent_revalidation_response_received / ..._async_response_received`
+- `DailyPlanSystem.debug_get_dialogue_intent_revalidation_snapshot(npc_id)`
+
+DailyPlanSystem 保存复核 request-id / NPC 去重表、一次性批准签名和最近结果；计划更新会清除旧批准。modify 写回当前小时 `dialogue_goal` 并更新意图制定元数据后重新计算签名，cancel 调用既有 `request_plan_reevaluation(..., revision_hours=[current_hour])`。Main.tscn 无节点改动。
+
+## T0115 Godot 侧主动交涉与失败重估职责
+
+- `DailyPlanSystem.gd` 把 stage-one 的 `action_failure` 来源带入正式修订上下文；当前小时若原样重复失败项，在 `set_npc_daily_plan(...)` 前返回 `failed_action_repeated`，继续使用既有 `FORMAL_REVISION_MAX_ATTEMPTS`，不写计划、不派发、不另开判别链。
+- `NPCSystem.gd` 在主动交涉、建筑移动和世界目标移动开始时原子写入新 action、非失败 start result 与空失败上下文。`handle_npc_clicked(...)` 先请求 DialogSystem；失败时消费点击但保留 proactive，成功后才清理问号状态。
+- `DialogSystem.gd` 为主动交涉保存新草稿 ID。激活失败或草稿在同步状态事件中消失时，按 cancelled 会话清理仍属于该 ID 的草稿并返回失败；只有同一 ID 真正成为 active dialogue 才写 NPC 开场轮次。
+- `NPC.gd` 的 `...` 覆盖 `?` 规则不变：这只是当前规划活动的显示优先级。规划结束后 NPCSystem 刷新节点，未消费的 proactive 问号自动恢复。
+- 没有新增节点、Autoload、信号、场景或 GM 控件。三个既有专项分别锁定交涉事务、失败修订重试与移动状态原子性。
+
+## T0114 Godot 侧虔诚与陨石职责
+
+- `Main.tscn` 在 CombatSystem 后注册 `PietySystem`，并在 Station 下提供无碰撞的 `Effects` 容器；没有新增 Autoload。
+- `ActionSystem.gd` 在 active 祈祷推进后把本 tick 的有效秒提交给 PietySystem。暂停分支、pending 移动、行动中断和已到个人时长后的弥撒等待不会触发提交。
+- `PietySystem.gd` 读取 `data/piety_ability.json`，保存共享虔诚、pending 陨石和燃烧区，监听 `logical_time_tick` 推进，并通过 EventBus 发布进度 / 施放 / 落地。MemorySystem 只消费结构化事件，不反向决定效果。
+- `PietyAbilityButton.gd` 负责圆环绘制，HUD 负责输入与地面预览；两者都不保存独立虔诚，也不触碰 HP。`CombatSystem.apply_enemy_area_damage(...)` 是两段伤害唯一入口且只枚举活动敌人，确保 NPC、建筑和器械无友伤。
+- GMPanel 只暴露 PietySystem 的填满、设值、快照和时间推进调试接口；专项自动化与主界面都经过真实系统路径。
+
+## T0109 Godot 侧异步请求退出职责
+
+- `LLMBridge.gd` 继续独占每个原生 HTTP 工作线程；互斥保护的传输取消状态只用于通知 worker 停止 `HTTPClient.poll()`，不参与业务结果、usage 或权威状态判断。
+- `cancel_llm_request(...)` / `cancel_npc_llm_requests(...)` 先保留原有慢速和 NPC 活动释放，再请求对应传输协作退出；正常 deferred 完成路径仍由主线程 `wait_to_finish()` 并发出既有取消结果。
+- `_exit_tree()` 统一拒绝新异步请求、取消所有传输、释放所有慢速 / NPC 活动并 join 已启动线程。退出中的 worker 不再投递完成回调，避免 Callable 指向已释放节点。
+- 没有新增节点、Autoload、endpoint、EventBus 信号或 GM 关闭按钮。`verify_llm_bridge_shutdown.gd` 使用本地悬挂 TCP 响应验证真实慢连接退出，不依赖供应商或 Mock 伪成功。
+
+## T0108 Godot 侧稳定知识迁移职责
+
+- `data/npc_initial_long_memory.json` 仍是 8 人开局前建筑知识的唯一数据源；围墙 / 主厅两条六级器械位置曲线和主厅 `2.0x` 射程只写入该图谱。
+- `NPCSystem` 的加载、深拷贝和幂等初始化不变；`LLMBridge` 仍通过既有 `long_memory / long_term_memory` 原样投影，NPCPanel 仍只读中文知识标签。
+- 没有新增事件、广播、短期记忆、Prompt 字段、Schema、节点或权威结算。Python / Godot 专项负责锁定旧“只能上墙 / 永不增槽”文本已消失。
+
+## T0106 Godot 侧全量紧凑记忆职责
+
+- `MemorySystem.gd` 的权威事件、见闻、稳定 ID、原始 payload、广播与熟睡总结快照轮转均不修改。
+- `LLMBridge.gd` 移除每类 8 条上限，六类 payload 都按当前索引原顺序投影全部亲历 / 见闻；公共 `build_compact_memory_event(...)` 生成 `summary + details`，省略重复大结构并把计划 `items` 合并为连续 `plan_segments`。
+- `DailyReflectionSystem.gd` 复用同一投影器生成反思快照；`memory_kind` 只标记亲历 / 见闻，不改事件归属。供应商侧的反思去重由后端 Model Adapter 完成。
+- `GMPanel.gd` 将原“短期记忆”入口改为“短期记忆 / LLM”，只读显示原始事件 / 见闻计数和 LLM 实际全量紧凑投影；不写事件、不清水位，也不维护第二套压缩器。
+- 没有新增节点、Autoload、EventBus 信号、endpoint、call_type 或权威结算。专项覆盖六类 payload、超过 8 条旧因果、紧凑率与现有私有记忆边界。
+
+## T0105B Godot 侧跨小时弥撒职责
+
+- `ActionSystem.gd` 通过只读 `is_npc_committed_to_active_mass(...)` 统一识别 active `lead_mass` 与 `pray_at_chapel + mass_attendance`。参礼者自身祈祷计时到期时停在时长上限，必须等主持自然结束后先恢复独祷，再正常完成。
+- `DailyPlanSystem.gd` 只在 `hour_started` 的计划不同且 NPC 仍受弥撒约束时登记运行时 deferred marker，不打断、不释放位置。弥撒结束后，同一 deferred 批次按现有服务提供者、训练指导者、普通行动、服务接受者、训练学员、对话的依赖顺序执行当时最新的当前小时计划。
+- 非小时边界的计划修订、对话恢复和主动执行会清理该 marker 并沿用既有即时切换；对话、建筑失效、昏迷等系统仍可按原权威路径中断弥撒。普通行动、完成策略和计划数据结构均未修改。
+- 没有新增节点、Autoload、EventBus 信号、后端、Schema、Prompt、模型调用或 GM 权威入口。
+
+## T0105A Godot 侧结束语义职责
+
+- `ActionSystem.gd` 在 `lead_mass` 自身时长完成时，先让参礼者以 `mass_completed` 恢复独祷，再复用 `_complete_pray(...)` 释放祭坛、设置主持者完成状态并写 `prayer_completed`。
+- T0105B 已取消“计划小时边界直接完成主持”的旧入口；整点现在只登记等待，不能冒充弥撒自然结束。
+- `MemorySystem.gd` 现有摘要分支不变：`mass_leader_stopped` 显示“因主持中断而结束”，`mass_completed` 显示“弥撒结束”。事件仍经既有 `local_public` 路由入库 / 广播。
+- 没有新增节点、Autoload、EventBus 信号、后端、Schema、Prompt、模型调用或 GM 权威入口。
+
+## T0102 Godot 显示层本地化职责
+
+- `data/building_defs.json` 为旧生产位置提供中文 `name / workstation_name_prefix`，但 BuildingSystem 继续保存并使用原有 `id / type / tags`；没有新增数据迁移或第二套位置状态。
+- `BuildingPanel.gd` 不再读取标签用于渲染，并在配置名缺失或等于历史自动生成的英文 `type + 序号` 时使用中文类型名；未知类型、资源、成员和马匹位置只在显示层降级为中文。
+- `NPCPanel.gd` 通过既有 ActionSystem 目录获取正常 action 的配置中文名，移动和未知运行态采用显示保底；HUD 只把实现类名改为玩家可读的“装备系统”。
+- 没有修改后端、Schema、Prompt、Autoload、场景节点、EventBus 信号、权威结算或 GM 控件。主场景可直接验证；GM 日志仍可显示内部系统名。
+
+## T0101 Godot 侧职责
+
+- `data/npc_initial_long_memory.json` 是守备官四条开局前知识的唯一种子来源；Godot 不在 GDScript 写死“三年前”或关系文案。
+- `NPCSystem` 沿既有 `key_value_replace_v1` 初始化并保存四条关系，`LLMBridge` 沿既有长期记忆构造原样投影到六类正式请求；没有新增传输镜像。
+- `NPCPanel` 的【知识】弹窗继续只显示中文主体、关系和值，因此玩家可直接确认“到站时间 / 来站前经历 / 过往相处”；底层 `confidence / day / time` 仍保留。
+- 没有新增场景节点、Autoload、EventBus 信号、GM 命令或权威结算。既有 `long_memory <npc_id>` 可辅助查看原始记录，但前端本身已经可验证。
+
+## T0100 人设字段职责
+
+- `data/npc_profiles.json` 是 8 人 `religion="天主教"` 的唯一配置源；现有背景无冲突，不在 GDScript 补写人物故事。
+- `NPCPromptProfile.FIELD_DEFINITIONS / build_setting(...)` 新增“宗教信仰”一项，因此对话 `npc_setting` 与 NPCPanel【背景】自动读取相同字段；UI 不保存副本。
+- `LLMBridge._build_npc_context(...)` 把同一字段放入共享 `NPCIdentity`，覆盖日计划、范围判别、正式修订、战时心理和熟睡总结；后端 Schema 显式保留。
+- 没有新增节点、Autoload、EventBus 信号、endpoint、模型调用次数、状态或权威结算。玩家可从主场景背景弹窗直接验证，无需 GM 入口。
+
+## T0099 Godot UI 职责
+
+- `NPCPanel.gd` 继续只读 `MemorySystem.get_all_events()`，但筛选后只按 `day / time / _history_sequence` 排序并按日期输出，不再消费 `combat_started / combat_ended` 或生成 `_history_wave_label`。
+- `DialogPanel.gd` 在自身可见、非旁听且“提出应征”可用时处理 `Tab`，通过设置 CheckButton 的 `button_pressed` 复用既有 `toggled -> DialogSystem.set_recruitment_request_pending(...)` 链；禁用 / 隐藏状态保持权威。
+- `Main.tscn` 在 `DialogPanel` 下增加 `DialogAttackConfirmationDialog`。`DialogPanel.gd` 持有“本次打开已确认攻击”的纯 UI 标记，在新开、挂起隐藏、恢复、完成、取消、强制结束或切换旁听边界重置；只有确认成功调用既有攻击接口后才解除本次打开期间的重复提示。
+- 没有新增 Autoload、EventBus 信号、后端 endpoint、Schema、权威结算或 GM 控件；日期、快捷键与确认均可在主场景直接验证。
+
+## T0098 Godot 系统职责
+
+- `ActionSystem.gd` 继续把权威 action 保持为 `pray_at_chapel`，active 字典新增 `prayer_mode=personal_prayer / mass_attendance` 与可选 `provider_npc_id`。`lead_mass` 开始、完成或停止时只转换 / 重绑定这些字段；祈祷席、`elapsed_seconds`、`duration_seconds` 和计划执行签名不变。
+- `MemorySystem.gd` 注册 `prayer_joined_mass / prayer_resumed_alone`，生成确定性摘要并使用既有 `local_public` 路由；没有新增 EventBus 信号或独立事件系统。
+- `DailyPlanSystem.gd` 与 `LLMBridge.gd` 移除独立参加弥撒的派发排序、依赖候选和教堂失败归一化；模型、GM 和计划下拉只看到 `pray_at_chapel / lead_mass`。
+- `get_runtime_action_snapshot()` 暴露 `prayer_mode`，既有 GM 运行态、当前计划和事件列表即可观察转换。本任务不新增节点、Autoload、场景或 GM 权威按钮。
+
 ## T0095/T0096 Godot 系统职责
 
 - `ActionSystem.gd` 持有统一 `_is_action_commit_ready(...)`，所有 fixed / target-aware pending 在暂停、尚在移动、地点不符或已有 active 时不得提交；`_on_logical_time_tick(...)` 在暂停时也不推进。
@@ -11,11 +106,11 @@
 ## T0094 Godot 节点与系统职责
 
 - `Main.tscn` 在 NPC 面板原对话位置使用 `NPCDialogueButtonRow`，包含占满剩余宽度的 `NPCDialogueButton` 与右侧小型 `NPCDialogueHistoryButton`；既有挂起橙点仍是对话按钮子节点。没有新增独立历史弹窗，记录复用 `NPCMemoryDetailPopup`。
-- `NPCPanel.gd` 只读 `MemorySystem.get_all_events()`，筛选当前 NPC 与守备官的完整会话，按日期 / 时间排序并从历史战斗开始、结束事件计算波次组。它不写事件、不启动对话、不触发 LLM；`BuildingPanel.gd` 则把宿舍床位恢复为通用位置格式，只显示 `occupied_by`。
+- `NPCPanel.gd` 只读 `MemorySystem.get_all_events()`，筛选当前 NPC 与守备官的完整会话并按日期 / 时间排序；T0099 起展示只按日期分组，不再计算历史波次组。它不写事件、不启动对话、不触发 LLM；`BuildingPanel.gd` 则把宿舍床位恢复为通用位置格式，只显示 `occupied_by`。
 - `DialogSystem.gd` 在真正打断前构造 `interrupted_activity_context` 并保存在当前会话；`LLMBridge.gd` 仅在非空时把它放入目标 NPC 的对话请求。该结构不经过 MemorySystem，也不新增 EventBus 信号。
-- `ActionSystem.gd` 负责固定地点行动与 `_start_pray(...)` 最终到达校验，以及弥撒打断普通祈祷的精确失败；`NPCSystem.gd` 负责移动中断时让逻辑地点、信息空间和世界位置一致收束。`DailyPlanSystem.gd` 继续负责失败 / 对话后的两阶段计划链和当前小时可靠派发。
+- `ActionSystem.gd` 负责固定地点行动与 `_start_pray(...)` 最终到达校验；T0098 后弥撒开始 / 结束改为同一祈祷行动的内部模式转换。`NPCSystem.gd` 负责移动中断时让逻辑地点、信息空间和世界位置一致收束。`DailyPlanSystem.gd` 继续负责其他真实失败 / 对话后的两阶段计划链和当前小时可靠派发。
 - `DailyReflectionSystem.gd` 负责 21:00 窗口 identity、同窗睡眠累计、并发等待、成功去重与调试快照；T0095 起 MemorySystem 的短期索引轮转改为按请求快照 ID，NPCSystem 既有深度睡眠锁与 LLMBridge 既有 endpoint 不变。
-- 本任务不新增系统节点、Autoload、endpoint、EventBus 信号或 GM 按钮。前端可直接验证床位与记录；弥撒继续复用通用指定行动 / 计划入口，夜间窗口通过扩展后的 `reflection_result` 快照观察。
+- 本任务不新增系统节点、Autoload、endpoint、EventBus 信号或 GM 按钮。前端可直接验证床位与记录；教堂继续复用通用祈祷 / 主持弥撒指定行动与计划入口，夜间窗口通过扩展后的 `reflection_result` 快照观察。
 
 ## T0092 Godot 侧兼容边界
 
@@ -27,7 +122,7 @@
 ## T0091 对话目标与地点职责
 
 - `LLMBridge.gd` 的 `talk_to_npc` 候选只暴露目标 NPC 身份，不写 `location_id`；固定地点行动候选不变。
-- `DailyPlanSystem.gd` 将计划 Schema 转成内部计划时，对 `talk_to_npc` 只保存 `target_id / target_npc_id`。即使旧后端或供应商响应含冗余地点，Godot 也不会把它写成计划目的地。
+- `DailyPlanSystem.gd` 将后端完整计划 Schema 转成内部计划时，对 `talk_to_npc` 只保存 `target_id / target_npc_id`。T0097 的 provider 冗余字段已在后端编译边界丢弃；即使兼容旧完整响应含冗余地点，Godot 也不会把它写成计划目的地。
 - `ActionSystem.gd` 继续拥有对话寻路权威：派发时读取目标当前地点，接近期间按既有有限重定向规则跟踪目标，目标不可用则产生结构化失败。
 - 没有新增节点、Autoload、EventBus 信号或 GM 权威入口。
 
@@ -161,7 +256,7 @@
 
 ## T0061 人设构造与知识弹窗职责
 
-- `data/npc_profiles.json`、`NPCPromptProfile.FIELD_DEFINITIONS / build_setting(...)` 和 `LLMBridge._build_npc_context(...)` 已移除 `signature_lines`。对话 `npc_setting`、共享 `NPCIdentity` 与 NPCPanel【背景】继续共用同一构造器，只读取宽松 `speech_style`，没有第二套 UI 或 Prompt 档案。
+- `data/npc_profiles.json`、`NPCPromptProfile.FIELD_DEFINITIONS / build_setting(...)` 和 `LLMBridge._build_npc_context(...)` 已移除 `signature_lines`。对话 `npc_setting`、共享 `NPCIdentity` 与 NPCPanel【背景】继续共用同一档案来源；T0100 后另含精简 `religion`，语言倾向仍只读取宽松 `speech_style`，没有第二套 UI 或 Prompt 档案。
 - `NPCSystem.gd` 仍完整装载三篇 8 字段历史日记和 `key_value_replace_v1` 图谱。前两篇的新叙事层级、固定到站顺序、守备官唯一职责关系及建筑叙事化 `value_label` 都是数据内容合同，不在 GDScript 写死。
 - `NPCPanel._format_knowledge_graph_block(...)` 只把 `subject_label / relation_label / value_label` 组装成玩家可读文本，不再追加 `confidence / day / time`。该过滤只作用于【知识】弹窗；NPCSystem 运行态、DailyReflectionSystem 替换更新、LLMBridge 请求和 GM 原始调试继续保留完整记录。
 - 本任务没有新增场景节点、Autoload、endpoint、`call_type`、调用频率或权威结算。现有 Main 前端可通过 NPCPanel 的【日记】【知识】【背景】直接验收，无需新增 GM 入口。
@@ -249,9 +344,9 @@
 
 ## T0043A ActionSystem 服务依赖路由
 
-`ActionSystem` 现在把 `work_clinic_doctor → receive_clinic_treatment`、`work_training_instructor → receive_weapon_training`、`lead_mass → attend_mass` 作为配置驱动的服务依赖。服务者在移动时，依赖者保持 pending；服务者有效占位后重试依赖者。服务者停止时统一扫描活动中和等待中的依赖者，写失败、释放位置、记录事件并交给 DailyPlanSystem 重评估。
+`ActionSystem` 现在把 `work_clinic_doctor → receive_clinic_treatment`、`work_training_instructor → receive_weapon_training` 作为配置驱动的服务依赖。服务者在移动时，依赖者保持 pending；服务者有效占位后重试依赖者。服务者停止时统一扫描活动中和等待中的依赖者，写失败、释放位置、记录事件并交给 DailyPlanSystem 重评估。
 
-`lead_mass` 开始后还会中断同教堂内 `pray_at_chapel`；`attend_mass` 使用祈祷席并保存 `provider_npc_id`，由对应主持正常完成或异常离岗统一收束。`get_runtime_action_snapshot()` 暴露依赖、互斥及主持者绑定，供 GM / 调试读取；BuildingSystem 仍只管理位置与建筑状态，不承接行为规则。
+T0098 后 `lead_mass` 不再中断 `pray_at_chapel`，也不形成服务依赖。ActionSystem 在祈祷 active 数据中保存内部模式与当前主持者绑定；主持正常完成、异常离岗或替换主持者接管时原地转换 / 重绑定。`get_runtime_action_snapshot()` 暴露该模式，供 GM / 调试读取；BuildingSystem 仍只管理位置与建筑状态，不承接行为规则。
 
 ## T0041 对话行动参考职责
 
@@ -403,11 +498,11 @@ T0049 覆盖上述“五类正式业务”和 T0048 剩余日重排口径：新�
 
 T0050 将第六类统一命名为 `plan_revision_judgement`，请求通过 `trigger_kind=dialogue|action_failure` 区分本轮完整对话和程序权威行动失败事实，并统一发送到 `/npc/plan_revision_judgement`。日常行动失败不再默认直接修订当前小时：空判别保持原计划，非空才用原有完整第二层上下文精确修改选中小时；第一层等待和第二层修订都占用既有 NPC 计划屏障。旧 dialogue 命名的端点、Schema 和 LLMBridge 方法只保留兼容包装。
 
-T1501 曾同时注入 `speech_style` 与 `signature_lines`；T0061 已取代该历史口径。`LLMBridge._build_npc_setting(...)` 和共享 `_build_npc_context(...)` 现在只从 `data/npc_profiles.json` 读取宽松 `speech_style`，分别注入对话顶层人设和 `NPCContext.identity`。该字段只影响模型语气与主观文本，不改变 NPC 状态、行动或任何权威结算。
+T1501 曾同时注入 `speech_style` 与 `signature_lines`；T0061 已取代该历史口径。`LLMBridge._build_npc_setting(...)` 和共享 `_build_npc_context(...)` 现在从 `data/npc_profiles.json` 读取精简 `religion` 与宽松 `speech_style`，分别注入对话顶层人设和 `NPCContext.identity`。两者只影响人物背景、模型语气与主观文本，不改变 NPC 状态、行动或任何权威结算。
 
 T0042 后，`res://scripts/core/NPCPromptProfile.gd` 集中定义对话顶层 `npc_setting` 的字段集合和构造规则；`LLMBridge._build_npc_setting(...)` 委托该构造器，`NPCPanel` 的人物背景详情也读取同一结果。标题行新增的“背景”按钮只负责打开共用详情弹窗，UI 不保存第二份背景数据，不触发 LLM，也不写 NPC / 记忆权威状态。
 
-T1508 修订后，`DefenseDeviceSystem.gd` 绑定到 `Main/Systems/DefenseDeviceSystem`，`DefenseDevicePresenter.gd` 绑定到 `Main/WorldRoot/Station/DefenseDevices`。前者权威维护器械配置、围墙槽位、库存扣除、弩床 / 箭塔自动攻击和事件，不依赖 NPCSystem；后者只消费部署快照并创建 `DefenseDeviceView.tscn`。每个 view 固定包含 `ModelMount`，可选 `presentation.model_scene` 在该挂点下实例化，为 T15 正式模型、动画和特效保留稳定替换契约。
+T0107 覆盖 T1508 的围墙专属结构。`DefenseDeviceSystem.gd` 绑定到 `Main/Systems/DefenseDeviceSystem`，权威维护围墙 / 主厅通用槽、等级解锁、库存、器械 HP / 防御 / 穿透 / 攻速、宿主射程倍率与自动攻击；围墙 / 主厅均最高 6 级，容量分别为 `1 / 2 / 2 / 3 / 3 / 4` 与 `1 / 1 / 2 / 2 / 3 / 4`。T0112 后 `get_slot(...)` 会把槽位基础倍率与宿主逐级 `defense_device_range_bonus` 合成为实时有效倍率，部署快照、自动攻击和选敌都复用该槽位快照。`DefenseSlotPresenter.gd` 绑定到 `Main/UI/DefenseSlotPresenter`，只投影已解锁空槽的圆形 `+` 并提交部署请求；弹窗每次稳定布局后同时重算宽高，避免自动换行标签的初始高度缓存把面板拉满窗口。`DefenseDevicePresenter.gd` 继续绑定到 `Main/WorldRoot/Station/DefenseDevices`，消费已部署快照并创建 `DefenseDeviceView.tscn`；T0112 起还监听既有 `building_state_changed`，在围墙 / 主厅等级变化后立即用新快照刷新世界射程标签。每个 view 固定包含 `ModelMount`，可选 `presentation.model_scene` 在该挂点下实例化，为正式模型、动画和特效保留稳定替换契约。
 
 ## 逻辑时间倍率原则
 
@@ -479,6 +574,7 @@ Main
 │  ├─ HUD
 │  ├─ NPCPanel
 │  ├─ BuildingPanel
+│  ├─ DefenseSlotPresenter
 │  ├─ NoticeBoardPanel
 │  ├─ MerchantPanel
 │  ├─ GMPanel
@@ -488,9 +584,9 @@ Main
 └─ SunLight
 ```
 
-T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊，以及主厅前公告牌均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。2026-06-12 为 T1101 扩大正门外地面与 `Props/FrontRoad`，使敌人可生成在正门外森林方向。T1506 后公告牌拥有独立点击区和当前公告预览，但仍不绑定 `data/building_defs.json`，不拥有 HP、等级、工作位、修复或升级；公告文本归广场状态保存。T1507 后后门商人入口标签只在配置到访时段显示并可点击交易。T1508 后 `Station/DefenseDevices` 由独立 presenter 生成低模器械占位，模型资源与权威结算解耦。
+T0103 已在 `Main.tscn` 直接放置低模驿站 Blockout：主厅、宿舍、食堂、仓库、围墙/城门、广场、后门/商人入口、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊，以及主厅前公告牌均使用简单几何体和 `Label3D` 调试标签表示。2026-05-19 已扩大地面、围墙和相机视野，并拉开建筑间距，避免建筑过小过密；围墙四角已闭合，公告牌已缩小并移动到主厅正面。2026-06-12 为 T1101 扩大正门外地面与 `Props/FrontRoad`，使敌人可生成在正门外森林方向。T1506 后公告牌拥有独立点击区和当前公告预览，但仍不绑定 `data/building_defs.json`，不拥有 HP、等级、工作位、修复或升级；公告文本归广场状态保存。T1507 后后门商人入口标签只在配置到访时段显示并可点击交易。T0107 后 `Station/DefenseDevices` 由独立 presenter 生成围墙 / 主厅已部署低模器械，`UI/DefenseSlotPresenter` 负责已解锁空槽圆形 `+` 与部署卡；T0112 起锁定槽不创建可见等级标记，卡片尺寸在窗口变化时按稳定内容重新收束。两个表现层都不拥有库存、HP、射程或伤害权威。
 
-T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、资源栏、速度按钮、暂停按钮、警铃按钮和后端状态。`Main/UI` 绑定 `res://scripts/ui/UIInputFocusManager.gd`，统一处理文本输入框点击外部失焦；`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0012 后，HUD 会监听 `EventBus.resource_changed`，按 `ResourceSystem.get_resource_ids()` / `data/resource_defs.json.ui_order` 动态显示非聚合资源，并提供装备/器械详情按钮；详情面板贴近各自按钮左下并保持在屏幕内，只读取 `ResourceSystem`、`EquipmentSystem` 和 `NPCSystem`。T1301 后 HUD 显示波次倒计时；T1302-T1305 后 HUD 复用 `GameOverPanel` 显示失败或胜利结算，胜利读取 `GameState.settlement_snapshot` 展示剩余资源、建筑和 NPC 状态摘要，胜利和失败都会在滚动详情区展示 NPC 结局总结。T0604 后，HUD 读取 `Main/Systems/LLMBridge` 的后端状态，并监听 `backend_status_changed` 刷新 health check 结果。T1103 后，警铃按钮调用 `CombatSystem.trigger_combat_alarm("hud")`，不在 HUD 内自行决定 NPC 集结或战斗事实。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、建筑状态、精确运作效率及按配置顺序排列的逐位置名称 / 空闲 / 占用者，并通过按钮触发 `BuildingSystem` 的修复/升级接口；不显示“主动工位 / 被动工位”或按类型聚合摘要。修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。T1508 修订后围墙面板额外显示弩床 / 箭塔库存、类型、兼容空槽和已部署清单，不显示部署者，所有按钮只调用 DefenseDeviceSystem。
+T0104 已在 `Main/UI/HUD` 下补齐基础 HUD：标题、天数、`HH:MM:SS` 时间/阶段、资源栏、速度按钮、暂停按钮、警铃按钮和后端状态。`Main/UI` 绑定 `res://scripts/ui/UIInputFocusManager.gd`，统一处理文本输入框点击外部失焦；`Main/UI/HUD` 绑定 `res://scripts/ui/HUD.gd`，负责显示和从 `GameState` 读取当前时间；T0401 后会监听 `EventBus.time_changed` / `hour_started` / `day_started`，并通过 `SpeedButton` 调用 `TimeSystem.cycle_speed()` 在 `x1`、`x2`、`x4` 间循环，通过 `PauseButton` 或空格调用 `TimeSystem.toggle_paused()`。T0012 后，HUD 会监听 `EventBus.resource_changed`，按 `ResourceSystem.get_resource_ids()` / `data/resource_defs.json.ui_order` 动态显示非聚合资源，并提供装备/器械详情按钮；详情面板贴近各自按钮左下并保持在屏幕内，只读取 `ResourceSystem`、`EquipmentSystem` 和 `NPCSystem`。T1301 后 HUD 显示波次倒计时；T1302-T1305 后 HUD 复用 `GameOverPanel` 显示失败或胜利结算，胜利读取 `GameState.settlement_snapshot` 展示剩余资源、建筑和 NPC 状态摘要，胜利和失败都会在滚动详情区展示 NPC 结局总结。T0604 后，HUD 读取 `Main/Systems/LLMBridge` 的后端状态，并监听 `backend_status_changed` 刷新 health check 结果。T1103 后，警铃按钮调用 `CombatSystem.trigger_combat_alarm("hud")`，不在 HUD 内自行决定 NPC 集结或战斗事实。T0205 已将 `Main/UI/BuildingPanel` 绑定 `res://scripts/ui/BuildingPanel.gd`：监听 `EventBus.building_clicked` 打开被点击建筑，监听 `EventBus.building_state_changed` 刷新当前可见建筑，从 `BuildingSystem` 读取名称、等级、HP、建筑状态、精确运作效率及按配置顺序排列的逐位置名称 / 空闲 / 占用者，并通过按钮触发 `BuildingSystem` 的修复/升级接口；不显示“主动工位 / 被动工位”或按类型聚合摘要。修复/升级消耗和条件只在按钮悬停提示框中显示，进行中会显示倒计时进度、剩余时间、速度倍率和协助人数。T0110 后升级提示通过 BuildingSystem 读取下一目标等级已解析的逐级成本、工期与奖励，并显示该级是否扩展工程器械槽；T0112 后同一路径显示围墙非扩槽等级的器械射程增量。T0107 后围墙 / 主厅面板显示当前建筑的弩床 / 箭塔库存、已解锁空槽和部署清单；世界槽位 `+` 是直接入口，所有入口都只调用 DefenseDeviceSystem。
 
 T0604 已新增 `res://scripts/systems/LLMBridge.gd`，并以 Godot 原生 `HTTPClient` 状态机支持后端地址、健康检查和 NPC AI 业务请求。T0049/T0050 后六类正式业务均有异步路径、request id、取消、NPC LLM 活动和 TimeSystem 慢速审计；`request_timeout_seconds=2` 只保护建立本地后端连接及 health / usage 等短请求，业务生成由后端流式连接 / 空闲超时控制。对话 payload 继续收集目标 NPC 设定、权威状态、记忆、地点、说话者、轮次和战时上下文；T0053 起 `build_plan_revision_judgement_payload(...)` / `request_plan_revision_judgement_async(...)` 按 `trigger_kind` 把对话或行动失败事实、判别基线原计划以及共享 NPC 人设 / 状态 / 长短期记忆 / 指令 / 驿站 / 现实条件送往 `/npc/plan_revision_judgement`。计划修订和战时心理 payload 使用同一 NPCContext，修订仍采用 `revision_scope=selected_hours` 与精确 `revision_hours`。该桥只返回后端 JSON 或错误字典，不写入权威事件或状态，也不直连真实 LLM 供应商。
 
@@ -520,9 +616,9 @@ T0043 覆盖上一段 T0808/T0903 的单服务者旧效率口径：小诊所使�
 
 T1507 已新增 `res://scripts/systems/MerchantSystem.gd` 与 `res://scripts/ui/MerchantPanel.gd`。MerchantSystem 读取 `data/merchant_defs.json`，监听 `time_changed` 判断每日到访窗口，控制 `Props/MerchantEntranceMarker` 的可见标签和运行时点击区；玩家交易时由 MerchantSystem 校验时段、报价、数量和余额/库存，再调用 ResourceSystem 结算。买入粮食/木材/石料/铁会扣第纳尔，卖酒会扣 `wine` 并增加第纳尔；失败交易不修改状态。MemorySystem 记录 `merchant_arrived`、`merchant_departed`、`merchant_trade_completed` 广场公开事件。MerchantPanel 只展示配置报价和提交请求，不直接写资源。
 
-T0901 已新增 `res://scripts/systems/EquipmentSystem.gd`：系统读取武器、盔甲和坐骑定义，消耗 `weapons` / `armor` / `horse_readiness` 派生库存，把装备写入已入伍 NPC 的 `equipment` 槽位，并通过 `MemorySystem.record_player_interaction(...)` 记录玩家给予或更换事件。T0031 起，NPC 档案的 `initial_equipment` 会在定义加载后装载到空槽；该故事初始化不扣库存、不写玩家交互事件，当前用于让艾达开局持有正式剑盾。T0902 起，兵种判定只根据 `equipment.main_weapon` 与 `equipment.mount` 返回分类标签和只读快照；`horse_readiness` 库存本身不会让 NPC 被判定为骑兵。T1103 起，CombatSystem 只读兵种快照决定集结前后排和是否显示战斗坐骑，NPC 日常工作不会因坐骑库存或装备而自动骑乘。UI 和 GM 面板只调用装备系统接口，不自行决定装备事实或兵种结果。T1104 后，CombatSystem 会读取主武器数值、盔甲防御和坐骑槽参与基础攻击与攻速修正；EquipmentSystem 本身仍不执行伤害结算、耐久或完整外观换装。
+T0901 已新增 `res://scripts/systems/EquipmentSystem.gd`：系统读取武器、盔甲和坐骑定义，消耗具体库存，把装备写入已入伍 NPC 的 `equipment` 槽位，并通过 `MemorySystem.record_player_interaction(...)` 记录玩家给予或更换事件。T0031 起，NPC 档案的 `initial_equipment` 会在定义加载后装载到空槽；该故事初始化不扣库存、不写玩家交互事件，当前用于让艾达开局持有正式剑盾。T0902 起，兵种判定只根据 `equipment.main_weapon` 与 `equipment.mount` 返回分类标签和只读快照；旧 `horse_readiness` 库存本身不会让 NPC 被判定为骑兵。T0107 后 CombatSystem 读取 NPC `combat_base`、主武器、四甲与坐骑定义，生成统一基础 / 成长 / 装备 / 状态 / 最终属性，并负责远程距离带、敌人抬手 / 僵直和骑兵冲锋状态机；EquipmentSystem 本身仍不执行伤害结算、耐久或完整外观换装。
 
-T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 NPC 点击与状态变化，显示目标的权威状态、成长、装备、行动和记忆入口；切换建筑时隐藏自身。T0042 后标题行“背景”按钮复用详情弹窗展示 `NPCPromptProfile` 人设。T0024/T0049 后，事件库上方并排显示“当前计划 / 日记 / 知识”；事件库和见闻库详情首次打开自动滚到最底部的最新记录，已打开时刷新保留玩家当前位置，日记与知识图谱继续在独立详情弹窗查看。T1103A 后当前行动同时显示行为模式；T1204A 后逃离 NPC 仍可从该面板进入挽留对话。`BuildingPanel` 在 `npc_clicked` 时隐藏，确保对象面板互斥。
+T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 NPC 点击与状态变化，显示目标的权威状态、成长、装备、行动和记忆入口；T0107 后额外只读 CombatSystem 最终快照，显示战斗等级、攻击、防御、穿透和攻速。切换建筑时隐藏自身。T0042 后标题行“背景”按钮复用详情弹窗展示 `NPCPromptProfile` 人设。T0024/T0049 后，事件库上方并排显示“当前计划 / 日记 / 知识”；事件库和见闻库详情首次打开自动滚到最底部的最新记录，已打开时刷新保留玩家当前位置，日记与知识图谱继续在独立详情弹窗查看。T1103A 后当前行动同时显示行为模式；T1204A 后逃离 NPC 仍可从该面板进入挽留对话。`BuildingPanel` 在 `npc_clicked` 时隐藏，确保对象面板互斥。
 
 T0079 后，`NPCPanel` 的当前计划详情会在只读展示层合并连续且完整展示语义相同的小时项，并隐藏与行动名完全相同的重复 `reason`；当前时段标记和首次滚动按合并后的可见分组计算。DailyPlanSystem / NPCSystem 的 24 小时权威计划、来源、Prompt、Schema 与执行均不受影响。
 

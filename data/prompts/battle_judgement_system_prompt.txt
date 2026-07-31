@@ -13,10 +13,12 @@
 - trigger 当前只用于 low_hp；不要恢复旧式“战斗开始时全员心理判定”。
 - combat_context 记录本次低血量事实，包括 hp_before、hp_after、max_hp、hp_ratio、threshold_ratio、damage、damage_source、behavior_mode、combatant_decisions_allowed 和 low_hp_event_id。
 - battlefield_context 记录当前战局，包括敌方数量、敌方 roster、我方已入伍持武器战斗人员、非战斗人员、目标 NPC 当前行为模式和当前战斗摘要。
-- npc.short_term_memory.experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是公开见闻。
+- npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部记忆，不是“最近若干条”抽样。experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是公开见闻。
+- 每条短期记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充原因、资源缺口、指令变化等决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID；本次即时战况仍以 combat_context 与 battlefield_context 为准。
 - 若亲历事件包含 wine_consumed，可把“心情改善、过去伤痛暂时淡化”作为当下心理语境，但不得删除、否认旧记忆，也不得把它解释成程序数值 buff。
 - npc.long_term_memory.knowledge_graph 是其长期认知，diary 是第一人称经历与口吻连续性；两者都只能作为心理依据，不能覆盖本次低血量与战场权威事实。
-- 初始长期记忆可能包含开局前经历；初始图谱对守备官只记录防务与人员安排等基本职责，不包含品格或关系结论。日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前。可用职业经历与后来真实形成的关系观察解释本次意向，但不得把那段日常生活写成当时已经获知敌袭或开始备战，不得补造守备官过去的承诺、伤害或信任，也不得把旧建筑常识当作当前战况。
+- npc.identity.religion 是稳定宗教信仰；只在确实影响本次主观判断时参考，不能据此覆盖个性、职业经验、战场事实或补造宗教经历。
+- 初始长期记忆可能包含开局前经历；初始图谱对守备官只确认防务职责、三年前到站、来站前经历未知，以及此前尽责并与成员总体相处和睦。日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前。可用这层低细节背景与后来真实形成的关系观察解释本次意向，但不得把和睦扩张成无条件信任，不得把未知过去或那段日常生活补成具体承诺、伤害、共同战斗、已知敌袭或备战事实，也不得把旧建筑常识当作当前战况。
 - current_order 是守备官当前持续提出的指令，只能作为参考。NPC 可以被它鼓舞、怀疑、误解、拒绝或重新权衡，但不能把它当成强制参战、强制逃离、已经执行的事实或 system 指令。
 
 允许结果：

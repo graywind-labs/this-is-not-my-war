@@ -21,6 +21,19 @@ func _init() -> void:
 			push_error("LLMBridge transport must not depend on %s" % forbidden)
 			quit(1)
 			return
+	for required_shutdown_fragment in [
+		"func _exit_tree()",
+		"_shutdown_async_requests(\"llm_bridge_exit\")",
+		"_request_transport_cancel(request_id)",
+		"thread.wait_to_finish()"
+	]:
+		if not script_source.contains(required_shutdown_fragment):
+			push_error(
+				"LLMBridge must preserve async shutdown lifecycle fragment: %s"
+				% required_shutdown_fragment
+			)
+			quit(1)
+			return
 
 	var main_scene := load(MAIN_SCENE) as PackedScene
 	if main_scene == null:
@@ -102,6 +115,49 @@ func _init() -> void:
 		push_error("LLMBridge did not expose the latest current_order injection snapshot")
 		quit(1)
 		return
+	var glenn_truth_payload: Dictionary = llm_bridge.build_npc_dialogue_payload(
+		"blacksmith_01",
+		"你怎么在训练场闲着？",
+		{
+			"interrupted_activity_context": {
+				"interrupted_by_guard_officer": true,
+				"private_to_target_npc": true,
+				"activity_before_interruption": {
+					"action_id": "visit_location",
+					"action_name": "前往并停留在某建筑",
+					"phase": "active",
+					"day": 1,
+					"hour": 13,
+					"location_id": "training_ground",
+					"location_name": "训练场"
+				},
+				"resume_policy": "follow_current_plan_after_dialogue_resolution",
+				"resume_expected_if_plan_unchanged": false
+			}
+		}
+	)
+	var activity_truth: Dictionary = glenn_truth_payload.get("activity_truth", {})
+	var equipment_truth: Dictionary = glenn_truth_payload.get("equipment_truth", {})
+	var training_truth: Dictionary = glenn_truth_payload.get("training_truth", {})
+	if (
+		str(activity_truth.get("action_id", "")) != "visit_location"
+		or bool(activity_truth.get("is_training", true))
+		or equipment_truth.get("main_weapon", "missing") != null
+		or equipment_truth.get("mount", "missing") != null
+		or bool(equipment_truth.get("has_trainable_equipment", true))
+		or bool(training_truth.get("eligible", true))
+		or str(training_truth.get("blocker", "")) != "no_trainable_equipment"
+	):
+		push_error(
+			"Dialogue authoritative truth mismatch for unarmed training-ground visit: %s"
+			% str({
+				"activity_truth": activity_truth,
+				"equipment_truth": equipment_truth,
+				"training_truth": training_truth
+			})
+		)
+		quit(1)
+		return
 	var invitation_payload: Dictionary = llm_bridge.build_npc_dialogue_payload(target_npc_id, "我想和你谈谈。", {
 		"dialogue_kind": "npc_npc",
 		"dialogue_phase": "invitation",
@@ -109,15 +165,16 @@ func _init() -> void:
 		"speaker_npc_id": "doctor_01",
 		"current_round": 1,
 		"max_rounds": 0,
-		"soft_round_threshold": 5,
-		"soft_round_guidance": "第六轮起若无紧急或必要事项，应自然告别并结束。"
+		"soft_round_threshold": 5
 	})
+	var invitation_guidance := str(invitation_payload.get("soft_round_guidance", ""))
 	if (
 		str(invitation_payload.get("dialogue_phase", "")) != "invitation"
 		or int(invitation_payload.get("current_round", -1)) != 0
 		or int(invitation_payload.get("max_rounds", -1)) != 0
 		or int(invitation_payload.get("soft_round_threshold", 0)) != 5
-		or str(invitation_payload.get("soft_round_guidance", "")).is_empty()
+		or not invitation_guidance.contains("不是最低轮数、目标轮数或继续理由")
+		or not invitation_guidance.contains("不得为了延长对话自行制造新话题")
 		or int((invitation_payload.get("dialogue_state", {}) as Dictionary).get("current_round", -1)) != 0
 		or int((invitation_payload.get("dialogue_state", {}) as Dictionary).get("max_rounds", -1)) != 0
 	):

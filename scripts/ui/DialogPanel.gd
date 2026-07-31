@@ -19,6 +19,7 @@ const RECRUITMENT_REJECT_COLOR := "#FF6B6B"
 @onready var public_toggle: CheckButton = %DialogPublicToggle
 @onready var recruitment_toggle: CheckButton = %DialogRecruitmentToggle
 @onready var attack_button: Button = %DialogAttackButton
+@onready var attack_confirmation_dialog: ConfirmationDialog = %DialogAttackConfirmationDialog
 
 
 func _ready() -> void:
@@ -31,6 +32,7 @@ func _ready() -> void:
 	public_toggle.toggled.connect(_on_public_toggled)
 	recruitment_toggle.toggled.connect(_on_recruitment_toggled)
 	attack_button.pressed.connect(_on_attack_pressed)
+	attack_confirmation_dialog.confirmed.connect(_on_attack_confirmation_confirmed)
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null:
 		dialog_system.dialogue_started.connect(_on_dialogue_started)
@@ -48,11 +50,20 @@ var _displayed_dialogue_state: Dictionary = {}
 var _observer_mode := false
 var _observer_dialogue_ended := false
 var _drag_controller
+var _attack_confirmed_for_current_open := false
+
+
+func _input(event: InputEvent) -> void:
+	if not _is_recruitment_shortcut(event):
+		return
+	recruitment_toggle.button_pressed = not recruitment_toggle.button_pressed
+	get_viewport().set_input_as_handled()
 
 
 func _on_dialogue_started(state: Dictionary) -> void:
 	if not bool(state.get("ui_visible", true)):
 		return
+	_reset_attack_confirmation_for_open()
 	_observer_mode = false
 	_observer_dialogue_ended = false
 	_displayed_dialogue_id = str(state.get("dialogue_id", ""))
@@ -76,11 +87,14 @@ func _on_dialogue_updated(state: Dictionary) -> void:
 	if not bool(state.get("ui_visible", true)):
 		if dialogue_id == _displayed_dialogue_id:
 			visible = false
+			_reset_attack_confirmation_for_open()
 		return
 	if not _displayed_dialogue_id.is_empty() and dialogue_id != _displayed_dialogue_id:
 		return
 	_displayed_dialogue_id = dialogue_id
 	_displayed_dialogue_state = state.duplicate(true)
+	if not visible:
+		_reset_attack_confirmation_for_open()
 	visible = true
 	_refresh(state)
 
@@ -95,6 +109,7 @@ func _on_dialogue_ended(state: Dictionary) -> void:
 		return
 	if not _displayed_dialogue_id.is_empty() and str(state.get("dialogue_id", "")) != _displayed_dialogue_id:
 		return
+	_reset_attack_confirmation_for_open()
 	visible = false
 	input_edit.clear()
 	_displayed_dialogue_id = ""
@@ -118,6 +133,7 @@ func _on_npc_dialogue_bubble_clicked(npc_id: String, dialogue_id: String) -> voi
 		return
 	_observer_mode = true
 	_observer_dialogue_ended = false
+	_reset_attack_confirmation_for_open()
 	_displayed_dialogue_id = dialogue_id
 	_displayed_dialogue_state = state.duplicate(true)
 	var order_panel := get_node_or_null(ORDER_PANEL_PATH)
@@ -157,6 +173,7 @@ func _send_current_text() -> void:
 
 func _on_end_pressed() -> void:
 	if _observer_mode:
+		_reset_attack_confirmation_for_open()
 		visible = false
 		input_edit.clear()
 		_displayed_dialogue_id = ""
@@ -196,6 +213,8 @@ func _on_suspend_pressed() -> void:
 	var result: Dictionary = dialog_system.suspend_displayed_dialogue(_displayed_dialogue_id)
 	if not bool(result.get("ok", false)):
 		status_label.text = str(result.get("message", "无法挂起会话。"))
+	else:
+		_reset_attack_confirmation_for_open()
 
 
 func _on_public_toggled(enabled: bool) -> void:
@@ -219,14 +238,59 @@ func _on_recruitment_toggled(enabled: bool) -> void:
 
 
 func _on_attack_pressed() -> void:
+	if not _attack_confirmed_for_current_open:
+		attack_confirmation_dialog.popup_centered()
+		return
+	_commit_attack()
+
+
+func _on_attack_confirmation_confirmed() -> void:
+	if _commit_attack():
+		_attack_confirmed_for_current_open = true
+
+
+func _commit_attack() -> bool:
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
 		status_label.text = "对话系统不可用。"
-		return
+		return false
 	var result: Dictionary = dialog_system.attack_target_npc(10, true)
 	if not bool(result.get("ok", false)):
 		status_label.text = str(result.get("message", "攻击失败。"))
 	input_edit.grab_focus()
+	return bool(result.get("ok", false))
+
+
+func _reset_attack_confirmation_for_open() -> void:
+	_attack_confirmed_for_current_open = false
+	if attack_confirmation_dialog != null:
+		attack_confirmation_dialog.hide()
+
+
+func _is_recruitment_shortcut(event: InputEvent) -> bool:
+	if (
+		not visible
+		or _observer_mode
+		or not recruitment_toggle.visible
+		or recruitment_toggle.disabled
+		or attack_confirmation_dialog.visible
+		or not (event is InputEventKey)
+	):
+		return false
+	var key_event := event as InputEventKey
+	if (
+		not key_event.pressed
+		or key_event.echo
+		or key_event.ctrl_pressed
+		or key_event.alt_pressed
+		or key_event.meta_pressed
+		or key_event.shift_pressed
+	):
+		return false
+	var shortcut_key := key_event.physical_keycode
+	if shortcut_key == KEY_NONE:
+		shortcut_key = key_event.keycode
+	return shortcut_key == KEY_TAB
 
 
 func _refresh(state: Dictionary) -> void:
@@ -271,6 +335,7 @@ func _refresh(state: Dictionary) -> void:
 	recruitment_toggle.set_pressed_no_signal(recruitment_pending)
 	recruitment_toggle.disabled = waiting or bool(state.get("target_recruited", false)) or str(state.get("last_recruitment_result", "none")) == "accept"
 	recruitment_toggle.text = "提出应征"
+	recruitment_toggle.tooltip_text = "快捷键：Tab"
 	attack_button.visible = is_player_controlled_dialogue and not _observer_mode
 	attack_button.disabled = waiting or round_limit_reached
 	end_button.text = "关闭" if _observer_mode else "完成对话"

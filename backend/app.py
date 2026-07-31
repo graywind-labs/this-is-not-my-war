@@ -11,6 +11,8 @@ try:
         DailyPlanResponse,
         DailyReflectionRequest,
         DailyReflectionResponse,
+        DialogueIntentRevalidationRequest,
+        DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
@@ -30,6 +32,8 @@ except ModuleNotFoundError:
         DailyPlanResponse,
         DailyReflectionRequest,
         DailyReflectionResponse,
+        DialogueIntentRevalidationRequest,
+        DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
@@ -167,93 +171,26 @@ def create_app() -> Flask:
             return "pray"
         return None
 
-    def canonicalize_target_driven_locations(items, candidates, path_prefix: str) -> list[dict]:
-        """Discard redundant snapshot locations from NPC-targeted dialogue plans."""
-        normalizations: list[dict] = []
-        for index, item in enumerate(items):
-            if (
-                item is None
-                or item.action_id != "talk_to_npc"
-                or not (item.location_id or "").strip()
-            ):
-                continue
-            matching_candidates = matching_allowed_candidates(item, candidates)
-            if len(matching_candidates) != 1:
-                continue
-            model_location = item.location_id
-            item.location_id = None
-            normalization_path = (
-                "%s.location_id" % path_prefix
-                if path_prefix == "immediate_action"
-                else "%s[%d].location_id" % (path_prefix, index)
-            )
-            normalizations.append({
-                "field": "location_id",
-                "path": normalization_path,
-                "hour": item.hour,
-                "action_id": item.action_id,
-                "target_id": item.target_id,
-                "model_value": model_location,
-                "canonical_value": None,
-                "source": "dynamic_npc_target",
-            })
-        return normalizations
-
-    def canonicalize_plan_action_kinds(items, candidates, path_prefix: str) -> list[dict]:
-        """Repair only the redundant kind field from an exact allowed-action match.
-
-        The model still owns action_id and target_id. Fixed-location actions also own
-        location_id. If that contract is not an allowed candidate, or if the matching
-        candidates do not imply one canonical kind, business validation rejects the
-        response as before.
-        """
-        normalizations: list[dict] = []
-        for index, item in enumerate(items):
-            if item is None:
-                continue
-            if item.action_id == "idle":
-                expected_kinds = {"idle"}
-                normalization_source = "idle_contract"
-            else:
-                matching_candidates = matching_allowed_candidates(item, candidates)
-                if len(matching_candidates) != 1:
-                    continue
-                canonical_candidate_kind = matching_candidates[0].action_kind
-                if canonical_candidate_kind is None:
-                    continue
-                expected_kinds = {canonical_candidate_kind}
-                normalization_source = "exact_allowed_action_candidate"
-            if len(expected_kinds) != 1 or item.action_kind in expected_kinds:
-                continue
-            canonical_kind = next(iter(expected_kinds))
-            model_kind = item.action_kind
-            item.action_kind = canonical_kind
-            normalization_path = (
-                "%s.action_kind" % path_prefix
-                if path_prefix == "immediate_action"
-                else "%s[%d].action_kind" % (path_prefix, index)
-            )
-            normalizations.append({
-                "field": "action_kind",
-                "path": normalization_path,
-                "hour": item.hour,
-                "action_id": item.action_id,
-                "target_id": item.target_id,
-                "location_id": item.location_id,
-                "model_value": model_kind,
-                "canonical_value": canonical_kind,
-                "source": normalization_source,
-            })
-        return normalizations
-
     def validate_plan_item_candidate(item, candidates, npc_id: str) -> list[str]:
         details: list[str] = []
         if not plan_item_matches_allowed_candidate(item, candidates):
-            if item.action_id == "talk_to_npc":
+            required_selector = {
+                "visit_location": "location_id",
+                "talk_to_npc": "target_npc_id",
+                "assist_heal": "target_npc_id",
+                "assist_repair": "building_id",
+                "assist_upgrade": "building_id",
+            }.get(item.action_id, "")
+            if required_selector:
                 details.append(
-                    "action/target combination is not in allowed_actions: "
-                    "action_id='%s', target_id='%s'."
-                    % (item.action_id, item.target_id or "")
+                    "%s requires a valid %s decision from allowed_actions; "
+                    "compiled target_id='%s', location_id='%s'."
+                    % (
+                        item.action_id,
+                        required_selector,
+                        item.target_id or "",
+                        item.location_id or "",
+                    )
                 )
             else:
                 details.append(
@@ -414,6 +351,28 @@ def create_app() -> Flask:
             details.append(
                 "drink_wine phases cannot exceed NPC-owned wine; got %d phases with %d wine."
                 % (drink_phase_count, plan_request.npc.state.wine)
+            )
+        return details
+
+    def validate_dialogue_intent_revalidation_business_rules(
+        intent_request: DialogueIntentRevalidationRequest,
+        response_model: DialogueIntentRevalidationResponse,
+    ) -> list[str]:
+        details: list[str] = []
+        if response_model.npc_id != intent_request.npc.identity.npc_id:
+            details.append("npc_id did not match request npc identity.")
+        dialogue_goal = response_model.dialogue_goal.strip()
+        original_goal = intent_request.planned_intent.plan_item.dialogue_goal.strip()
+        if response_model.decision == "modify":
+            if not dialogue_goal:
+                details.append("modify decision requires non-empty dialogue_goal.")
+            elif dialogue_goal == original_goal:
+                details.append("modify decision dialogue_goal must differ from the original.")
+            elif len(dialogue_goal) > 120:
+                details.append("modify decision dialogue_goal must not exceed 120 characters.")
+        elif dialogue_goal:
+            details.append(
+                "continue and cancel_and_replan decisions require empty dialogue_goal."
             )
         return details
 
@@ -774,6 +733,121 @@ def create_app() -> Flask:
 
         return jsonify(model_success_payload(response_model, result, normalizations))
 
+    @app.post("/npc/dialogue_intent_revalidation")
+    def npc_dialogue_intent_revalidation():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            intent_request = DialogueIntentRevalidationRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "DialogueIntentRevalidationRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(include_context=False),
+            }), 400
+
+        request_payload = model_request_payload(intent_request)
+        result = model_adapter().generate(
+            "dialogue_intent_revalidation",
+            request_payload,
+        )
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), model_adapter_error_status(result.error_code)
+
+        try:
+            response_model = DialogueIntentRevalidationResponse.model_validate(
+                result.content
+            )
+        except ValidationError as exc:
+            return model_output_invalid_response(
+                "dialogue_intent_revalidation",
+                request_payload,
+                result,
+                "DialogueIntentRevalidationResponse",
+                exc,
+            )
+
+        business_errors = validate_dialogue_intent_revalidation_business_rules(
+            intent_request,
+            response_model,
+        )
+        if business_errors:
+            model_adapter().record_model_output_invalid(
+                "dialogue_intent_revalidation",
+                request_payload,
+                "DialogueIntentRevalidationResponse failed business validation before correction retry: %s"
+                % "; ".join(business_errors),
+                result.usage,
+                model_output=result.content,
+                validation_details=business_errors,
+            )
+            retry_payload = model_request_payload(intent_request)
+            retry_payload["business_validation_feedback"] = business_errors
+            retry_meta = retry_payload.get("meta", {})
+            retry_meta["request_id"] = "%s_business_retry" % retry_meta.get(
+                "request_id",
+                "dialogue_intent_revalidation",
+            )
+            retry_payload["meta"] = retry_meta
+            retry_result = model_adapter().generate(
+                "dialogue_intent_revalidation",
+                retry_payload,
+            )
+            if not retry_result.ok:
+                return jsonify({
+                    "ok": False,
+                    "error_code": retry_result.error_code,
+                    "message": retry_result.message,
+                    "fallback_used": False,
+                    "usage": retry_result.usage,
+                }), model_adapter_error_status(retry_result.error_code)
+            try:
+                retry_response_model = (
+                    DialogueIntentRevalidationResponse.model_validate(
+                        retry_result.content
+                    )
+                )
+            except ValidationError as exc:
+                return model_output_invalid_response(
+                    "dialogue_intent_revalidation",
+                    retry_payload,
+                    retry_result,
+                    "DialogueIntentRevalidationResponse",
+                    exc,
+                )
+            retry_business_errors = (
+                validate_dialogue_intent_revalidation_business_rules(
+                    intent_request,
+                    retry_response_model,
+                )
+            )
+            result = retry_result
+            response_model = retry_response_model
+            business_errors = retry_business_errors
+        if business_errors:
+            return model_output_business_invalid_response(
+                "dialogue_intent_revalidation",
+                request_payload,
+                result,
+                "DialogueIntentRevalidationResponse failed business validation.",
+                business_errors,
+            )
+
+        return jsonify(model_success_payload(response_model, result))
+
     @app.post("/npc/plan_day")
     def npc_plan_day():
         body = request.get_json(silent=True)
@@ -810,16 +884,6 @@ def create_app() -> Flask:
         except ValidationError as exc:
             return model_output_invalid_response("plan_day", request_payload, result, "DailyPlanResponse", exc)
 
-        normalizations = canonicalize_target_driven_locations(
-            response_model.plan,
-            plan_request.allowed_actions,
-            "plan",
-        )
-        normalizations.extend(canonicalize_plan_action_kinds(
-            response_model.plan,
-            plan_request.allowed_actions,
-            "plan",
-        ))
         business_errors = validate_daily_plan_business_rules(plan_request, response_model)
         if business_errors:
             return model_output_business_invalid_response(
@@ -830,7 +894,7 @@ def create_app() -> Flask:
                 business_errors,
             )
 
-        return jsonify(model_success_payload(response_model, result, normalizations))
+        return jsonify(model_success_payload(response_model, result))
 
     @app.post("/npc/revise_plan")
     def npc_revise_plan():
@@ -868,27 +932,7 @@ def create_app() -> Flask:
                 parsed_response = PlanRevisionResponse.model_validate(adapter_result.content)
             except ValidationError as exc:
                 return None, [], exc
-            parsed_normalizations = canonicalize_target_driven_locations(
-                parsed_response.revised_plan,
-                revision_request.allowed_actions,
-                "revised_plan",
-            )
-            parsed_normalizations.extend(canonicalize_target_driven_locations(
-                [parsed_response.immediate_action],
-                revision_request.allowed_actions,
-                "immediate_action",
-            ))
-            parsed_normalizations.extend(canonicalize_plan_action_kinds(
-                parsed_response.revised_plan,
-                revision_request.allowed_actions,
-                "revised_plan",
-            ))
-            parsed_normalizations.extend(canonicalize_plan_action_kinds(
-                [parsed_response.immediate_action],
-                revision_request.allowed_actions,
-                "immediate_action",
-            ))
-            return parsed_response, parsed_normalizations, None
+            return parsed_response, [], None
 
         response_model, normalizations, parse_error = parse_revision_response(result)
         if parse_error is not None:

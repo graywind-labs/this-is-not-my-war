@@ -64,6 +64,12 @@ OPEN_GUARD_MARKERS = (
     "未来",
 )
 GUARD_DUTY_MARKERS = ("防务", "警戒", "人员安排", "危急")
+EXPECTED_GUARD_RELATION_VALUES = {
+    "role": "station_defense_alert_and_emergency_staff_coordination",
+    "arrival_at_station": "arrived_three_years_before_game_start",
+    "past_before_station": "unknown_not_disclosed",
+    "pre_game_relationship": "consistently_dedicated_and_harmonious",
+}
 PREJUDGED_GUARD_PHRASES = (
     "守备官曾经",
     "守备官已经",
@@ -412,6 +418,10 @@ def _verify_knowledge_graph(
                     value_label,
                 )
                 for marker in BUILDING_MANUAL_MARKERS:
+                    if subject in {"wall", "main_hall"} and marker in {"槽位", "等级", "解锁"}:
+                        # T0108 intentionally seeds the exact defense-device
+                        # progression as pre-game stable knowledge.
+                        continue
                     assert marker not in displayed_text, (
                         f"{npc_id}.{subject}.{relation} reads like a game manual: "
                         f"{marker!r}"
@@ -432,16 +442,36 @@ def _verify_knowledge_graph(
         for record in by_subject["guard_officer"].values()
         if isinstance(record, dict)
     )
-    assert len(by_subject["guard_officer"]) == 1, (
-        f"{npc_id} guard-officer seed must contain duties only"
+    guard_relations = by_subject["guard_officer"]
+    assert set(guard_relations) == set(EXPECTED_GUARD_RELATION_VALUES), (
+        f"{npc_id} guard-officer seed must contain role, arrival, unknown past and "
+        f"pre-game relationship, got {sorted(guard_relations)}"
     )
-    assert set(by_subject["guard_officer"]) == {"role"}, (
-        f"{npc_id} guard-officer relation key must describe a role, not an assessment"
-    )
+    for relation, expected_value in EXPECTED_GUARD_RELATION_VALUES.items():
+        assert guard_relations[relation]["value"] == expected_value, (
+            f"{npc_id}.guard_officer.{relation} must use {expected_value!r}"
+        )
     assert "防务" in guard_text and any(
         marker in guard_text for marker in GUARD_DUTY_MARKERS[1:]
     ), (
-        f"{npc_id} guard-officer knowledge must state only the post's basic duties"
+        f"{npc_id} guard-officer knowledge must preserve the post's basic duties"
+    )
+    assert "三年前" in str(guard_relations["arrival_at_station"]["value_label"]), (
+        f"{npc_id} guard-officer arrival must state the shared three-year anchor"
+    )
+    unknown_past_text = str(guard_relations["past_before_station"]["value_label"])
+    assert any(marker in unknown_past_text for marker in ("不知道", "不在我所知范围内")), (
+        f"{npc_id} guard-officer past must be explicitly unknown"
+    )
+    assert any(marker in unknown_past_text for marker in ("不该", "不能", "不会", "不应")), (
+        f"{npc_id} guard-officer past must forbid inference or invention"
+    )
+    relationship_text = str(guard_relations["pre_game_relationship"]["value_label"])
+    assert any(marker in relationship_text for marker in ("尽责", "敬业", "忠于职守", "尽职", "认真履职")), (
+        f"{npc_id} guard-officer pre-game relationship must preserve dedication"
+    )
+    assert any(marker in relationship_text for marker in ("和睦", "和气", "和谐")), (
+        f"{npc_id} guard-officer pre-game relationship must preserve harmony"
     )
     for marker in OPEN_GUARD_MARKERS:
         assert marker not in guard_text, (
@@ -475,6 +505,35 @@ def _verify_knowledge_graph(
             f"{npc_id} warehouse knowledge claims an unimplemented rule: {marker!r}"
         )
 
+    wall_text = " ".join(
+        str(record.get("value_label", ""))
+        for record in by_subject["wall"].values()
+        if isinstance(record, dict)
+    )
+    main_hall_text = " ".join(
+        str(record.get("value_label", ""))
+        for record in by_subject["main_hall"].values()
+        if isinstance(record, dict)
+    )
+    assert all(marker in wall_text for marker in ("弩床", "箭塔", "1、2、2、3、3、4")), (
+        f"{npc_id} wall knowledge must preserve the current six-level universal-slot curve"
+    )
+    assert all(
+        marker in main_hall_text
+        for marker in ("弩床", "箭塔", "1、1、2、2、3、4")
+    ), f"{npc_id} main-hall knowledge must preserve the delayed six-level slot curve"
+    assert "射程" in main_hall_text and any(
+        marker in main_hall_text for marker in ("两倍", "翻倍", "加倍")
+    ), f"{npc_id} main-hall knowledge must preserve the 2x device range"
+    assert not any(
+        stale_phrase in f"{wall_text} {main_hall_text}"
+        for stale_phrase in (
+            "只能安在各自合适的墙位",
+            "只会让墙体更耐打",
+            "不会凭空多出安装器械的地方",
+        )
+    ), f"{npc_id} retained stale wall-only device knowledge"
+
     if npc_id == "doctor_01":
         recovery_text = str(by_subject["clinic"]["recovery_rule"]["value_label"])
         for required_fragment in ("倒下", "两", "自行行动"):
@@ -506,13 +565,19 @@ def _verify_knowledge_graph(
         ), "Ada must know both solo instructor practice and coached growth"
     if npc_id == "engineer_01":
         wall_upgrade_text = str(by_subject["wall"]["upgrade_rule"]["value_label"])
-        assert all(fragment in wall_upgrade_text for fragment in ("不会", "安装", "地方")), (
-            "engineer_01 wall knowledge must not invent upgrade deployment slots"
+        assert all(
+            fragment in wall_upgrade_text
+            for fragment in ("1、2、2、3、3、4", "1、1、2、2、3、4", "最多", "某些")
+        ), (
+            "engineer_01 must know both host slot curves and that some levels do not unlock slots"
         )
     if npc_id == "blacksmith_01":
         wall_text = str(by_subject["wall"]["operational_role"]["value_label"])
-        assert all(fragment in wall_text for fragment in ("不会", "器械", "位置")), (
-            "blacksmith_01 wall knowledge must not treat partial damage as deployment loss"
+        assert all(
+            fragment in wall_text
+            for fragment in ("弩床", "箭塔", "1、2、2、3、3、4", "至多")
+        ), (
+            "blacksmith_01 wall knowledge must preserve the six-level slot progression"
         )
         training_text = str(
             by_subject["training_ground"]["operational_role"]["value_label"]
@@ -553,6 +618,9 @@ def main() -> None:
     all_knowledge_labels: set[str] = set()
     for npc_id, profile in profile_by_id.items():
         background_story = str(profile.get("background_story", "")).strip()
+        assert profile.get("religion") == "天主教", (
+            f"{npc_id}.religion must use the concise shared value 天主教"
+        )
         assert 20 <= len(background_story) <= 120, (
             f"{npc_id}.background_story must stay concise and fundamental"
         )
@@ -620,6 +688,12 @@ def main() -> None:
 
     for prompt_path in PROMPT_PATHS:
         prompt_text = prompt_path.read_text(encoding="utf-8")
+        assert "宗教信仰" in prompt_text, (
+            f"{prompt_path.name} must preserve the shared religion field as character context"
+        )
+        assert all(marker in prompt_text for marker in ("三年前", "来站前", "相处和睦")), (
+            f"{prompt_path.name} must preserve the shared guard-officer history boundary"
+        )
         assert "初始" in prompt_text and "长期记忆" in prompt_text, (
             f"{prompt_path.name} must explain how seeded long memory differs from current facts"
         )

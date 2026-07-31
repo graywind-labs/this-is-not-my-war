@@ -9,6 +9,9 @@
     "source_resource_id": "item_sword_shield",
     "range": 1.6,
     "damage": 13,
+    "defense": 2.0,
+    "penetration": 1.0,
+    "attack_speed_modifier": 0.0,
     "attack_interval": 1.35,
     "required_skill": "剑盾",
     "tags": ["one_handed", "shield"]
@@ -23,6 +26,9 @@
     "source_resource_id": "item_polearm",
     "range": 2.5,
     "damage": 15,
+    "defense": 0.0,
+    "penetration": 3.0,
+    "attack_speed_modifier": -0.08,
     "attack_interval": 1.65,
     "required_skill": "长杆",
     "tags": ["two_handed", "reach"]
@@ -37,6 +43,9 @@
     "source_resource_id": "item_bow",
     "range": 12.0,
     "damage": 10,
+    "defense": 0.0,
+    "penetration": 1.5,
+    "attack_speed_modifier": 0.06,
     "attack_interval": 1.5,
     "required_skill": "弓",
     "tags": ["wooden", "ranged"]
@@ -51,6 +60,9 @@
     "source_resource_id": "item_crossbow",
     "range": 13.5,
     "damage": 16,
+    "defense": 0.0,
+    "penetration": 5.0,
+    "attack_speed_modifier": -0.12,
     "attack_interval": 2.4,
     "required_skill": "弩",
     "tags": ["wooden", "ranged"]

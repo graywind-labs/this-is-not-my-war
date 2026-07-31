@@ -17,9 +17,10 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
+	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var presenter := root.get_node_or_null("Main/WorldRoot/Station/DefenseDevices")
 	var building_panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if device_system == null or combat_system == null or resource_system == null or memory_system == null or npc_system == null or action_system == null or presenter == null or building_panel == null:
+	if device_system == null or combat_system == null or resource_system == null or memory_system == null or npc_system == null or action_system == null or building_system == null or presenter == null or building_panel == null:
 		_fail("T1508 required nodes or systems are missing")
 		return
 
@@ -35,9 +36,46 @@ func _init() -> void:
 	if device_system.get_device_definition("wall_arrow_tower").get("inventory_cost", {}) != {"item_wall_arrow_tower": 1}:
 		_fail("Arrow-tower definition does not use its exact item inventory")
 		return
-	if device_system.get_slots_for_device("wall_ballista").size() < 2 or device_system.get_slots_for_device("wall_arrow_tower").size() < 2:
-		_fail("Wall deployment slots were not loaded from configuration")
+	var ballista_definition: Dictionary = device_system.get_device_definition("wall_ballista")
+	var arrow_definition: Dictionary = device_system.get_device_definition("wall_arrow_tower")
+	var ballista_effect: Dictionary = ballista_definition.get("effect", {})
+	var arrow_effect: Dictionary = arrow_definition.get("effect", {})
+	if (
+		int(ballista_definition.get("tier", 0)) != int(arrow_definition.get("tier", -1))
+		or float(ballista_effect.get("damage", 0.0)) <= float(arrow_effect.get("damage", 0.0))
+		or float(ballista_effect.get("penetration", 0.0)) <= float(arrow_effect.get("penetration", 0.0))
+		or float(ballista_effect.get("range", 0.0)) <= float(arrow_effect.get("range", 0.0))
+		or float(ballista_effect.get("attack_speed", 0.0)) >= float(arrow_effect.get("attack_speed", 0.0))
+		or int(ballista_definition.get("max_hp", 0)) >= int(arrow_definition.get("max_hp", 0))
+	):
+		_fail("Ballista and arrow-tower horizontal balance contract is invalid")
 		return
+	var wall_slots: Array = device_system.get_slots_for_building("wall", true)
+	var main_hall_slots: Array = device_system.get_slots_for_building("main_hall", true)
+	if wall_slots.size() != 4 or main_hall_slots.size() != 4:
+		_fail("Wall and main hall should each load four configured deployment slots")
+		return
+	for building_id in ["wall", "main_hall"]:
+		var expected_curve: Array = (
+			[1, 1, 2, 2, 3, 4]
+			if building_id == "main_hall"
+			else [1, 2, 2, 3, 3, 4]
+		)
+		for level in range(1, 7):
+			_set_building_level_for_slot_test(building_system, building_id, level)
+			var expected_unlocked := int(expected_curve[level - 1])
+			if device_system.get_slots_for_building(building_id, false).size() != expected_unlocked:
+				_fail("%s Lv.%d should unlock %d deployment slots" % [building_id, level, expected_unlocked])
+				return
+		_set_building_level_for_slot_test(building_system, building_id, 1)
+	wall_slots = device_system.get_slots_for_building("wall", true)
+	main_hall_slots = device_system.get_slots_for_building("main_hall", true)
+	for raw_slot in wall_slots + main_hall_slots:
+		var slot: Dictionary = raw_slot
+		var allowed: Array = slot.get("allowed_device_ids", [])
+		if not allowed.has("wall_ballista") or not allowed.has("wall_arrow_tower"):
+			_fail("Deployment slots should be generic for both same-tier devices: %s" % JSON.stringify(slot))
+			return
 	for slot_id in device_system.get_slot_ids():
 		if str(slot_id).contains("barricade"):
 			_fail("Removed barricade slot is still available")
@@ -69,15 +107,25 @@ func _init() -> void:
 	npc_system.debug_enter_location_immediately(plaza_witness_id, "plaza")
 	# Deprecated aggregate stock is a sentinel and must never be consumed.
 	resource_system.add_resource("defense_devices", 3)
-	resource_system.add_resource("item_wall_ballista", 1)
+	resource_system.add_resource("item_wall_ballista", 2)
 	resource_system.add_resource("item_wall_arrow_tower", 1)
 	var legacy_inventory_before: int = resource_system.get_resource("defense_devices")
 	var inventory_before: int = resource_system.get_resource("item_wall_ballista")
 	var unrelated_events_before: int = memory_system.get_npc_daily_events(unrelated_npc_id).size()
 	var plaza_witness_before: int = memory_system.get_npc_witness_events(plaza_witness_id).size()
 	var global_events_before: int = memory_system.get_all_events().size()
+	var wall_level_one_slot_id := _find_slot_id(wall_slots, 1)
+	var wall_level_two_slot_id := _find_slot_id(wall_slots, 2)
+	var main_hall_level_one_slot_id := _find_slot_id(main_hall_slots, 1)
+	if wall_level_one_slot_id.is_empty() or wall_level_two_slot_id.is_empty() or main_hall_level_one_slot_id.is_empty():
+		_fail("Could not resolve configured wall/main-hall deployment slots")
+		return
+	var locked_result: Dictionary = device_system.deploy_device("wall_arrow_tower", wall_level_two_slot_id)
+	if bool(locked_result.get("ok", false)) or str(locked_result.get("code", "")) != "slot_locked":
+		_fail("A slot above the host building level should reject deployment")
+		return
 
-	var ballista_result: Dictionary = device_system.deploy_device("wall_ballista", "front_wall_ballista_left")
+	var ballista_result: Dictionary = device_system.deploy_device("wall_ballista", wall_level_one_slot_id)
 	if not bool(ballista_result.get("ok", false)):
 		_fail("Ballista deployment failed: %s" % str(ballista_result))
 		return
@@ -88,7 +136,7 @@ func _init() -> void:
 		_fail("Ballista deployment consumed deprecated defense_devices inventory")
 		return
 	var deploy_event := _find_latest_event(memory_system.get_all_events(), "defense_device_deployed")
-	if deploy_event.is_empty() or str(deploy_event.get("payload", {}).get("slot_id", "")) != "front_wall_ballista_left":
+	if deploy_event.is_empty() or str(deploy_event.get("payload", {}).get("slot_id", "")) != wall_level_one_slot_id:
 		_fail("Deployment event did not enter the global structured event log")
 		return
 	if not str(deploy_event.get("summary", "")).contains("弩床"):
@@ -112,7 +160,7 @@ func _init() -> void:
 
 	var inventory_before_duplicate: int = resource_system.get_resource("item_wall_ballista")
 	var events_before_duplicate: int = memory_system.get_all_events().size()
-	var duplicate_result: Dictionary = device_system.deploy_device("wall_ballista", "front_wall_ballista_left")
+	var duplicate_result: Dictionary = device_system.deploy_device("wall_ballista", wall_level_one_slot_id)
 	if bool(duplicate_result.get("ok", false)) or str(duplicate_result.get("code", "")) != "slot_occupied":
 		_fail("Occupied wall slot did not reject a duplicate deployment")
 		return
@@ -120,8 +168,24 @@ func _init() -> void:
 		_fail("Failed duplicate deployment changed inventory or event state")
 		return
 
+	var main_hall_ballista_result: Dictionary = device_system.deploy_device("wall_ballista", main_hall_level_one_slot_id)
+	if not bool(main_hall_ballista_result.get("ok", false)):
+		_fail("Main-hall ballista deployment failed: %s" % str(main_hall_ballista_result))
+		return
+	var wall_ballista: Dictionary = device_system.get_deployment(str(ballista_result.get("deployment_id", "")))
+	var main_hall_ballista: Dictionary = device_system.get_deployment(str(main_hall_ballista_result.get("deployment_id", "")))
+	var wall_range := float(wall_ballista.get("effect", {}).get("range", 0.0))
+	var main_hall_range := float(main_hall_ballista.get("effect", {}).get("range", 0.0))
+	if wall_range <= 0.0 or not is_equal_approx(main_hall_range, wall_range * 2.0):
+		_fail("Main-hall deployment should double the same device's effective range")
+		return
+	if int(wall_ballista.get("hp", 0)) != int(ballista_definition.get("max_hp", 0)):
+		_fail("Deployed defense device should expose configured HP")
+		return
+
+	_set_building_level_for_slot_test(building_system, "wall", 2)
 	var arrow_tower_inventory_before := int(resource_system.get_resource("item_wall_arrow_tower"))
-	var arrow_tower_result: Dictionary = device_system.deploy_device("wall_arrow_tower", "front_wall_arrow_tower_left")
+	var arrow_tower_result: Dictionary = device_system.deploy_device("wall_arrow_tower", wall_level_two_slot_id)
 	if not bool(arrow_tower_result.get("ok", false)):
 		_fail("Arrow-tower deployment failed: %s" % str(arrow_tower_result))
 		return
@@ -137,7 +201,7 @@ func _init() -> void:
 		return
 
 	await process_frame
-	if presenter.get_view_count() != 2:
+	if presenter.get_view_count() != 3:
 		_fail("Defense-device presenter did not create one view per deployment")
 		return
 	var ballista_view: Node3D = presenter.get_view_for_deployment(str(ballista_result.get("deployment_id", "")))
@@ -175,6 +239,22 @@ func _init() -> void:
 
 	print("T0036 concrete defense-device inventory verification passed.")
 	quit(0)
+
+
+func _find_slot_id(slots: Array, required_level: int) -> String:
+	for raw_slot in slots:
+		var slot: Dictionary = raw_slot if raw_slot is Dictionary else {}
+		if int(slot.get("required_building_level", 0)) == required_level:
+			return str(slot.get("id", ""))
+	return ""
+
+
+func _set_building_level_for_slot_test(building_system: Node, building_id: String, level: int) -> void:
+	var buildings: Dictionary = building_system.get("_buildings")
+	var building: Dictionary = buildings.get(building_id, {})
+	building["level"] = level
+	buildings[building_id] = building
+	building_system.set("_buildings", buildings)
 
 
 func _find_latest_event(events: Array, event_type: String) -> Dictionary:

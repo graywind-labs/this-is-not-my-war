@@ -17,6 +17,8 @@ from backend.schemas import (
     DailyPlanResponse,
     DailyReflectionRequest,
     DailyReflectionResponse,
+    DialogueIntentRevalidationRequest,
+    DialogueIntentRevalidationResponse,
     EscapeInterventionDialogueResponse,
     PlanRevisionJudgementRequest,
     PlanRevisionJudgementResponse,
@@ -30,6 +32,7 @@ from backend.schemas import (
     NPCIdentity,
     NPCStateContext,
     PlanItem,
+    PlannedDialogueIntent,
     PlanRevisionRequest,
     PlayerStrategyClassificationRequest,
     ProactiveIntentionRequest,
@@ -46,6 +49,7 @@ def _make_npc_context() -> NPCContext:
             npc_id="cook_01",
             name="布鲁诺",
             background_job="厨子",
+            religion="天主教",
             personality=["谨慎"],
             speech_style="直率絮叨，常用锅和口粮作比。",
         ),
@@ -76,6 +80,22 @@ def _make_npc_context() -> NPCContext:
 def main() -> None:
     game_time = GameTime(day=1, time="08:00:00", hour=8)
     npc = _make_npc_context()
+    compact_memory = ShortTermMemoryContext.model_validate({
+        "experienced_events": [{
+            "event_id": "legacy_fixture_id",
+            "type": "plan_revised",
+            "summary": "格伦因缺铁改去菜园。",
+            "importance": 90,
+            "day": 1,
+            "time": "11:03:00",
+            "details": {"reason": "铁储备为0"},
+            "payload": {"items": [{"hour": 0}]},
+        }],
+        "witnessed_events": [],
+    })
+    compact_memory_dump = compact_memory.model_dump()
+    assert compact_memory_dump["experienced_events"][0]["details"]["reason"] == "铁储备为0"
+    assert "payload" not in compact_memory_dump["experienced_events"][0]
     assert npc.state.money == 3
     assert npc.state.wine == 1
     state_dump = npc.state.model_dump()
@@ -111,6 +131,19 @@ def main() -> None:
         current_round=1,
         max_rounds=5,
         npc_state=npc.state.model_dump(),
+        activity_truth={
+            "action_id": "sleep_in_dormitory",
+            "is_training": False,
+        },
+        equipment_truth={
+            "main_weapon": None,
+            "mount": None,
+            "has_trainable_equipment": False,
+        },
+        training_truth={
+            "eligible": False,
+            "blocker": "no_trainable_equipment",
+        },
         current_order=npc.current_order,
         interrupted_activity_context={
             "interrupted_by_guard_officer": True,
@@ -164,6 +197,8 @@ def main() -> None:
     )
     assert dialogue_request.npc_id == "cook_01"
     assert dialogue_request.current_order.text == npc.current_order.text
+    assert npc.identity.religion == "天主教"
+    assert dialogue_request.npc_setting["religion"] == "天主教"
     assert dialogue_request.npc_setting["speech_style"] == "直率絮叨，常用锅和口粮作比。"
     assert "signature_lines" not in dialogue_request.npc_setting
     assert dialogue_request.interaction_context == "combat"
@@ -174,6 +209,20 @@ def main() -> None:
         == "sleep_in_dormitory"
     )
     assert dialogue_request.interrupted_activity_context.resume_expected_if_plan_unchanged
+    assert dialogue_request.activity_truth.action_id == "sleep_in_dormitory"
+    assert dialogue_request.activity_truth.is_training is False
+    assert dialogue_request.equipment_truth.main_weapon is None
+    assert dialogue_request.equipment_truth.mount is None
+    assert dialogue_request.equipment_truth.has_trainable_equipment is False
+    assert dialogue_request.training_truth.eligible is False
+    assert dialogue_request.training_truth.blocker == "no_trainable_equipment"
+    partial_truth_payload = dialogue_request.model_dump()
+    partial_truth_payload.pop("training_truth")
+    try:
+        NPCDialogueRequest.model_validate(partial_truth_payload)
+        raise AssertionError("Dialogue schema accepted a partial authoritative truth bundle")
+    except ValidationError as exc:
+        assert "must appear together" in str(exc)
     leaked_speaker_payload = dialogue_request.model_dump()
     leaked_speaker_payload["speaker_npc"] = npc.model_dump()
     try:
@@ -293,6 +342,49 @@ def main() -> None:
         allowed_actions=[],
     )
     assert plan_request.npc.current_order.revision == 1
+
+    dialogue_plan = list(plan)
+    dialogue_item = PlanItem(
+        hour=8,
+        action_kind="seek_guard_officer",
+        action_id="seek_guard_officer",
+        priority=70,
+        reason="汇报制造受阻",
+        dialogue_goal="守备官，弩床缺铁，需要调拨铁料。",
+    )
+    dialogue_plan[8] = dialogue_item
+    intent_request = DialogueIntentRevalidationRequest(
+        meta=ModelRequestMeta(
+            request_id="verify_dialogue_intent_revalidation",
+            call_type="dialogue_intent_revalidation",
+        ),
+        game_time=game_time,
+        station_context=station_context,
+        npc=npc,
+        planned_intent=PlannedDialogueIntent(
+            created_day=1,
+            created_time="06:05:00",
+            source="llm_plan_day",
+            plan_item=dialogue_item,
+        ),
+        current_plan=dialogue_plan,
+        allowed_actions=[],
+        current_resource_states={"iron": 5},
+    )
+    assert intent_request.planned_intent.created_time == "06:05:00"
+    assert DialogueIntentRevalidationResponse(
+        npc_id="cook_01",
+        decision="continue",
+    ).dialogue_goal == ""
+    assert DialogueIntentRevalidationResponse(
+        npc_id="cook_01",
+        decision="modify",
+        dialogue_goal="守备官，我来汇报弩床当前制造进度。",
+    ).decision == "modify"
+    assert DialogueIntentRevalidationResponse(
+        npc_id="cook_01",
+        decision="cancel_and_replan",
+    ).decision == "cancel_and_replan"
 
     judgement_request = PlanRevisionJudgementRequest(
         meta=ModelRequestMeta(

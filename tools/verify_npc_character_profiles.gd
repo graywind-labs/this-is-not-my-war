@@ -61,6 +61,9 @@ func _init() -> void:
 		if str(npc.get("background_job", "")) != str(expected.get("job", "")):
 			_fail("%s background_job mismatch: %s" % [npc_id, str(npc.get("background_job", ""))])
 			return
+		if str(npc.get("religion", "")) != "天主教":
+			_fail("%s religion must be the concise shared value 天主教" % npc_id)
+			return
 
 		for field_name in ["personality", "desires", "fears", "boundaries"]:
 			var values: Array = npc.get(field_name, [])
@@ -102,8 +105,14 @@ func _init() -> void:
 		if npc_setting.get("speech_style", "") != speech_style or npc_setting.has("signature_lines"):
 			_fail("%s dialogue npc_setting did not keep the broad voice profile boundary" % npc_id)
 			return
+		if str(npc_setting.get("religion", "")) != "天主教":
+			_fail("%s dialogue npc_setting lost the religion field" % npc_id)
+			return
 		if identity.get("speech_style", "") != speech_style or identity.has("signature_lines"):
 			_fail("%s shared NPC identity did not keep the broad voice profile boundary" % npc_id)
+			return
+		if str(identity.get("religion", "")) != "天主教":
+			_fail("%s shared NPC identity lost the religion field" % npc_id)
 			return
 
 	var priest: Dictionary = npc_system.get_npc("priest_01")
@@ -131,7 +140,7 @@ func _init() -> void:
 		_fail("Dialogue prompt still exposes fixed signature lines")
 		return
 
-	print("T0061 NPC character profile verification passed.")
+	print("T0061/T0100 NPC character profile verification passed.")
 	quit(0)
 
 

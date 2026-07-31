@@ -17,10 +17,57 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var workstation_label: Label = panel.get("workstation_label") as Label if panel != null else null
-	if panel == null or building_system == null or npc_system == null or workstation_label == null:
+	var location_label: Label = panel.get("location_label") as Label if panel != null else null
+	if panel == null or building_system == null or npc_system == null or workstation_label == null or location_label == null:
 		push_error("Required building panel systems are missing")
 		quit(1)
 		return
+
+	var raw_tag_tokens := [
+		"command", "failure_target", "living", "rest", "food", "storage",
+		"raid_target", "defense", "outer_barrier", "gate", "escape_route",
+		"merchant_route", "production", "morale", "weapons", "training",
+		"combat", "horses", "faith", "medical", "recovery", "engineering"
+	]
+	for raw_building_id in building_system.get_building_ids():
+		var tag_building_id := str(raw_building_id)
+		panel.show_building(tag_building_id)
+		if location_label.text.contains("地点标签"):
+			push_error("Building panel should hide metadata tags: %s / %s" % [tag_building_id, location_label.text])
+			quit(1)
+			return
+		for token in raw_tag_tokens:
+			if location_label.text.contains(str(token)):
+				push_error("Building panel leaked metadata tag '%s': %s / %s" % [token, tag_building_id, location_label.text])
+				quit(1)
+				return
+
+	var expected_legacy_position_names := {
+		"tavern": ["酿酒位1", "酿酒位"],
+		"garden": ["耕作位1", "耕作位"],
+		"blacksmith": ["锻造位1", "锻造位"],
+		"stable": ["照料位1", "照料位"],
+		"workshop": ["工程位1", "工程位"]
+	}
+	for raw_building_id in expected_legacy_position_names.keys():
+		var legacy_building_id := str(raw_building_id)
+		var expected: Array = expected_legacy_position_names[legacy_building_id]
+		var legacy_building: Dictionary = building_system.get_building(legacy_building_id)
+		var positions: Array = legacy_building.get("workstations", [])
+		if positions.is_empty() or str(positions[0].get("name", "")) != str(expected[0]):
+			push_error("Legacy position should have a configured Chinese name: %s / %s" % [legacy_building_id, JSON.stringify(positions)])
+			quit(1)
+			return
+		var upgrade: Dictionary = legacy_building.get("upgrade", {})
+		if str(upgrade.get("workstation_name_prefix", "")) != str(expected[1]):
+			push_error("Upgraded positions should keep a Chinese name prefix: %s / %s" % [legacy_building_id, JSON.stringify(upgrade)])
+			quit(1)
+			return
+		panel.show_building(legacy_building_id)
+		if not workstation_label.text.begins_with("%s：" % str(expected[0])):
+			push_error("Legacy position leaked an internal type in the panel: %s / %s" % [legacy_building_id, workstation_label.text])
+			quit(1)
+			return
 
 	panel.show_building("dining_hall")
 	var dining_hall: Dictionary = building_system.get_building("dining_hall")
@@ -119,6 +166,14 @@ func _init() -> void:
 	]))
 	if named_unknown_text != "靠窗位：空闲":
 		push_error("Explicit station.name should take priority over type mapping: %s" % named_unknown_text)
+		quit(1)
+		return
+
+	var unnamed_unknown_text := str(panel._format_workstations([
+		{"id": "future_01", "type": "future_position_type", "name": "future_position_type 1", "occupied_by": null}
+	]))
+	if unnamed_unknown_text != "位置：空闲":
+		push_error("Unknown internal position types should use a Chinese fallback: %s" % unnamed_unknown_text)
 		quit(1)
 		return
 

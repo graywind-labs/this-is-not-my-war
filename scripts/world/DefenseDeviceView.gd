@@ -16,9 +16,12 @@ func configure_device(snapshot: Dictionary) -> void:
 	set_meta("slot_id", str(snapshot.get("slot_id", "")))
 	position = _dict_to_vector3(snapshot.get("position", {}))
 	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
-	status_label.text = "%s\n%s" % [
+	var effect: Dictionary = snapshot.get("effect", {}) if snapshot.get("effect", {}) is Dictionary else {}
+	status_label.text = "%s\nHP %d/%d · 射程 %.1f" % [
 		str(snapshot.get("device_name", "工程器械")),
-		str(snapshot.get("slot_name", "围墙部署槽"))
+		int(snapshot.get("hp", 0)),
+		int(snapshot.get("max_hp", 0)),
+		float(effect.get("range", 0.0))
 	]
 
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}

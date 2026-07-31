@@ -1,5 +1,13 @@
 # COMBAT_SYSTEM.md
 
+## T0114 虔诚陨石与无友伤边界
+
+守备官在共享虔诚满 100 后可选取合法地表召唤陨石。默认半径 5.5 米、下落 1.15 战斗动作秒；落地使用 48 点攻击力与 5 点穿透对范围内活动敌人结算一次冲击。随后地面燃烧 10 战斗动作秒，每 1 秒以 1 点攻击力、0 穿透对当时仍位于范围内的敌人结算一次。
+
+两段伤害均只经过 `CombatSystem.apply_enemy_area_damage(center, radius, raw_attack_power, context)`：该入口只遍历 `_active_enemies`，用水平距离判断范围，并复用 `有效防御=max(0, defense-penetration)` 与 `20/(20+有效防御)`、敌人死亡和正常清敌 / 战斗结束结算。它不枚举 NPC、建筑或我方工程器械，也不调用三者的伤害入口，因此陨石和燃烧严格没有友伤；友方站在落点内也不会损失 HP。
+
+陨石时序使用逻辑 tick，但将游戏秒除以配置的 60 换算为战斗动作秒，因此暂停停止推进，玩家世界时间倍率仍经 TimeSystem 生效，而大招表现与既有战斗动作尺度一致。所有半径、时序、伤害和穿透都来自 `data/piety_ability.json`；HUD 只提交目标位置，不能自行扣虔诚、伤害或清敌。
+
 ## T0087 逃离挽留响应合同
 
 逃离挽留不再从通用 `intent` 解析结果。`dialogue_kind=escape_intervention` 的唯一业务字段是 `EscapeInterventionDialogueResponse.escape_intervention_result`，值只能为 `stay` 或 `leave`。CombatSystem 仍负责暂停 / 恢复移动、记录轮次、第五轮收口、停止逃离或继续逃离并写入事件；LLM 不决定速度、位置、行为模式或事件事实。守备官攻击的无回复路径记录 `intervention_result=guard_attack_no_reply`，不伪装成 NPC 的 stay / leave 选择。
@@ -88,7 +96,7 @@ T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模�
 | 远程武器 + 马 | 骑射单位 |
 | 无武器 | 非战斗人员 / 避战单位 |
 
-T0804-T0806 曾使用 `weapons` / `armor` / `defense_devices` / `horse_readiness` 聚合库存作为最小占位；T0035-T0038 已完成正式迁移，这四个 id 只保留兼容且不得正式消耗。铁匠铺 / 工械坊现在按分阶段配方产出剑盾、长杆、弓、弩、四个盔甲部位、箭束、弩床和箭塔各自的 `item_*` 库存，EquipmentSystem 逐件消耗 / 返还武器与盔甲的具体来源。坐骑由 HorseSystem 中的真实成年马分配，`equipment.mount` 只是带 `horse_id` 的兼容投影。T0031 后，艾达在新游戏初始化时从正式武器定义直接装载剑盾，开局兵种为近战步兵；这份故事装备不扣库存、不记录守备官赠送事件。T0902 后，兵种判定通过 `get_unit_type_snapshot(...)` 供 GM 与 CombatSystem 读取；T1104 后 CombatSystem 会读取主武器 `damage` / `range` / `attack_interval`、盔甲 `armor_value` 和 HorseSystem 已同步的真实坐骑投影来计算基础攻击、防御和部分攻击速度修正。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；器械部署仍由 DefenseDeviceSystem 权威处理。
+T0804-T0806 曾使用 `weapons` / `armor` / `defense_devices` / `horse_readiness` 聚合库存作为最小占位；T0035-T0038 已完成正式迁移，这四个 id 只保留兼容且不得正式消耗。铁匠铺 / 工械坊现在按分阶段配方产出剑盾、长杆、弓、弩、四个盔甲部位、箭束、弩床和箭塔各自的 `item_*` 库存，EquipmentSystem 逐件消耗 / 返还武器与盔甲的具体来源。坐骑由 HorseSystem 中的真实成年马分配，`equipment.mount` 只是带 `horse_id` 的兼容投影。T0031 后，艾达在新游戏初始化时从正式武器定义直接装载剑盾，开局兵种为近战步兵；这份故事装备不扣库存、不记录守备官赠送事件。T0902 后，兵种判定通过 `get_unit_type_snapshot(...)` 供 GM 与 CombatSystem 读取。T0107 后 CombatSystem 以 NPC 配置 `combat_base` 为人物差异起点，读取主武器伤害 / 射程 / 间隔、武器与盔甲的攻击 / 防御 / 穿透 / 攻速修正，以及坐骑战斗参数，统一生成基础、成长、装备、状态和最终战斗属性快照。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；器械部署仍由 DefenseDeviceSystem 权威处理。
 
 T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑术。训练项目由受训 NPC 当前装备决定：主武器对应剑盾、长杆、弓或弩，坐骑对应骑术。T0043 后，全部有效教官位上的 NPC 以人数、“教练”和对应项目熟练度组成共享团队效率，同时作用于全部训练位；受训者按自己的装备成长，在岗教官提升“教练”。训练只改变 NPC 熟练度和基础状态消耗，不直接结算攻击、命中、伤害、防御、骑乘表现或当前战斗策略选择。
 
@@ -196,8 +204,8 @@ T1105 后，某名 NPC 可用哪些策略只由当前主武器和坐骑判定出
 
 - 主动进攻：近战步兵 / 长杆步兵 / 近战骑兵主动接近敌人，进入武器射程后攻击。
 - 最大化输出：远程兵种站桩射击，不为了保持距离主动移动。
-- 保持距离射击：远程兵种在敌人太近时短距离后撤，目标点仍尽量保持在自身攻击射程内；敌人过远时会接近到可射击范围，拉开一小段距离后继续射击。
-- 拉开距离冲击：近战骑兵在过近或冲击冷却时拉开距离，随后重新接近并攻击，用于形成冲击循环占位。
+- 保持距离射击：远程兵种使用武器射程的 `45% / 72% / 90%` 作为最小、理想和最远控制带；太近时退到理想距离，太远时接近，位于安全带内才稳定射击。
+- 拉开距离冲击：近战骑兵执行 `withdraw -> ready -> charging -> impact` 循环。先拉到重置距离，再以坐骑冲锋速度接近；命中时先结算马匹独立冲撞与僵直，再用冲锋倍率结算武器攻击，随后重新脱离。
 - 避战：入伍持武器 NPC 的战斗策略，复用非战斗人员短步长避战目标算法，但保持 `behavior_mode == "combat"`；该策略只在最近敌人低于避战安全阈值时按敌人来袭方向短距离远离，敌人已经远离到阈值外时保持 `combat_ready` 等待，不继续退向驿站边界或角落；该策略不主动攻击，清敌后按战斗模式退出规则回到工作模式。
 
 ## 非战斗人员避战模式
@@ -214,7 +222,7 @@ T1203/T1204A 已实现逃离闭环。`CombatSystem.start_npc_escape(...)` 是权
 
 NPC 抵达后门外出口后，`NPCSystem` 将其标记为 `escaped=true`、`current_action="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件，并从 `CombatSystem.active_escapes` 中移除。若挽留结果为 `stay`，CombatSystem 会停止移动，把 `escape_intent.status` 设为 `stayed`，切回 `work` 并触发计划重评估；若结果为 `leave`，NPC 继续逃离，直至 5 轮上限，随后 NPC 面板【对话】置灰。未满 5 轮时玩家可关闭面板，NPC 立即继续逃离，之后仍可再次打开并再次暂停。逃离中给钱会降低 `escape_intent.speed_multiplier`；逃离挽留中的守备官攻击会提高该倍率、计为 1 轮并立即关闭面板，但不请求 NPC LLM 回复、不写攻击回复对话事件，也不写 `escape_intervention_result`。速度变化写入 `escape_speed_changed`，只有真正的挽留消息回复结果才写入 `escape_intervention_result`。如果逃离中 NPC 昏迷，`escape_intent.status` 暂停为 `paused_unconscious`，复苏后会再次移动到后门外出口。`debug_get_combat_snapshot()` 暴露 `active_escapes`、剩余挽留轮次、速度倍率与 `last_escape_result`。
 
-## 基础攻击与伤害（T1104 / T1104A / T1104B / T1105）
+## 基础攻击与伤害（T1104 / T0107）
 
 T1104 已实现最小自动战斗，T1105 已接入不同兵种的玩家手动策略选择和对应战术移动，但仍不包含命中率、格挡、士气修正、完整动画或正式战斗结算。`CombatSystem` 在 `TimeSystem.logical_time_tick(game_delta_seconds, numeric_multiplier)` 推进中先处理我方策略与基础攻击，再处理敌方 AI；GM `step_enemies [game_seconds]` 使用同一套逻辑。T1104A 后，玩家时间倍率不再直接影响伤害、攻击间隔、攻击速度或战斗移动速度；敌人在场时 TimeSystem 会把有效倍率上限压到 `x1`，LLM 慢速仍可进一步降低有效推进速度。CombatSystem 不读取真实帧率或 Godot 全局时间缩放。
 
@@ -228,11 +236,11 @@ T1104B 后，战斗攻击冷却使用“战斗动作秒”作为基准：`60` �
 
 数值口径：
 
-- NPC 基础攻击力 = 主武器 `damage` × 力量修正。力量 5 作为基线，每高 / 低 1 点约修正 8%，当前倍率限制在 0.65 到 1.45。
-- NPC 攻击间隔 = 主武器 `attack_interval` / 攻击速度倍率。`attack_interval` 的单位是战斗动作秒，不是 TimeSystem 游戏秒。攻击速度倍率读取对应武器熟练度，疲劳超过 60 产生惩罚，饱食低于 35 产生惩罚；已装备坐骑时，骑术会提供小额攻击速度加成。当前最短攻击间隔为 0.25 战斗动作秒。玩家 `x2` / `x4` 不参与该倍率。
-- NPC 防御 = 头盔、胸甲、腕甲、腿甲四个装备槽 `armor_value` 之和。
-- 敌人防御 = `data/enemy_waves.json` 中该敌人的 `defense`。
-- 实际 HP 伤害 = 原始攻击力 × (1 - 防御减伤)，四舍五入且至少 1 点。防御每点当前减少 4% 伤害，最大减伤 70%。
+- NPC 战斗等级由 `1 + floor(total_experience / 10)` 确定，当前上限 10。等级提高攻击、防御、穿透和攻速；力量 5 为攻击基线，每点仍约修正 8% 攻击，并在高于基线时增加防御和穿透。武器熟练度不再提供穿透；只有当前主武器 `required_skill` 对应的熟练度会按最高 `+35%` 的乘区提高该武器攻速，其他武器熟练度不提供通用攻速。
+- NPC 原始攻击由主武器 `damage`、人物 `combat_base.attack_power`、装备攻击修正、等级、力量和斗志共同生成。防御与穿透由人物基础、等级 / 力量成长及主武器、四甲、坐骑修正合成。
+- 攻击速度是规范真值，攻击间隔统一为 `1 / attack_speed`。NPC 先把武器基础间隔换算为速度，并叠加人物攻速基线、等级、当前武器对应熟练度、疲劳、饱食和装备正负修正；当前最短间隔为 0.25 战斗动作秒。骑术不进入攻速乘区；坐骑定义本身若有固定装备修正，仍按装备规则结算。玩家 `x2` / `x4` 不参与该倍率。
+- NPC、敌人与器械使用同一穿透结算：`effective_defense = max(0, defense - penetration)`，`damage_multiplier = 20 / (20 + effective_defense)`，`damage_reduction = effective_defense / (20 + effective_defense)`。最终伤害四舍五入且至少 1 点；当前不设 70% 硬上限，高防御通过曲线自然产生边际收益递减。
+- `get_npc_combat_stats(...)` 返回 `base / growth / equipment / condition / final`，GM、NPCPanel 和自动化只读该快照，不重新计算第二份数值。
 
 敌人 HP 清零后从 `_active_enemies` 和 `Station/Enemies` 场景节点中移除；若场上敌人全部消失，沿用 T1103A/T1103B/T1106 的清敌退出规则：`combat` NPC 回到 `work` 并请求计划重评估，`avoid_combat` NPC 回到 `work` 且不因单纯避战结束重评估，未接敌的 `rally` NPC 回到 `work` 且不重评估计划。
 
@@ -246,28 +254,32 @@ T1106 已实现战斗开始和结束的最小闭环。`spawn_wave(...)` 成功�
 
 战斗结束回收仍由行为模式系统执行：`combat` NPC 回到 `work` 并请求计划重评估；`avoid_combat` NPC 回到 `work`，只记录避战结束事实，不强制计划重评估；未接敌的 `rally` NPC 在清敌或等待超时后回到 `work`，也不重评估计划。`debug_get_combat_snapshot()` 暴露 `active_battle`、`last_battle_start_result` 和 `last_battle_end_result`，GM 面板“敌人快照”可直接观察当前战斗与最近结算。
 
-## 工程器械防御（T1508）
+## 工程器械防御（T1508 / T0107）
 
-工程器械的库存、槽位、部署运行态和触发冷却由 `DefenseDeviceSystem` 权威维护；CombatSystem 不保存第二份部署数据。部署由玩家直接操作，不选择 NPC。两者只通过伤害窄接口协作：
+工程器械的库存、槽位、部署运行态、HP、防御、穿透、攻速和触发冷却由 `DefenseDeviceSystem` 权威维护；CombatSystem 不保存第二份部署数据。部署由玩家直接操作，不选择 NPC。两者只通过攻击 / 受击窄接口协作：
 
 T0036 已把部署成本迁移为具体物品：弩床只扣除 `item_wall_ballista`，箭塔只扣除 `item_wall_arrow_tower`。部署后的攻击、冷却和伤害接口未因库存迁移而改变；旧 `defense_devices` 仅作兼容保留，不参与正式部署结算。
 
-- 弩床按 `60` 游戏秒 = `1` 战斗动作秒推进自身冷却，在配置射程和前向射界内选择最近敌人，再调用 `CombatSystem.apply_defense_device_attack(...)`。该接口复用敌人防御减伤、HP 扣除、清零移除、战斗击退归属和最终波次结算，不让器械脚本直接改 `_active_enemies`。
-- 箭塔复用相同自动攻击结构，使用独立的伤害、攻击间隔、射程和射界配置；当前定位是较低单次伤害、较高攻击频率。CombatSystem 不再包含工程器械移动减速接口。
+- 弩床与箭塔同为 1 级工械坊可制造 / 部署的同级器械。弩床为高伤害、高穿透、远射程、慢攻速、低 HP；箭塔为较低伤害 / 穿透、稍近射程、高攻速、高 HP / 防御。
+- 围墙与主厅都使用通用槽并提高到 6 级，每次升级最多解锁 1 个。围墙 1–6 级容量为 `1 / 2 / 2 / 3 / 3 / 4`，主厅为 `1 / 1 / 2 / 2 / 3 / 4`。围墙 Lv.3 / Lv.5 虽不扩槽，但各从建筑逐级配置累计 `+5%` 器械射程；最终倍率依次为 `1.0 / 1.0 / 1.05 / 1.05 / 1.10 / 1.10`。主厅固定 `range_multiplier=2.0`，不使用围墙加固收益。DefenseDeviceSystem 每次生成槽位、部署与选敌快照时按宿主当前等级解析倍率，因此升级前已部署的器械也会立即获得收益。
+- 器械按 `60` 游戏秒 = `1` 战斗动作秒推进冷却，在有效射程和前向射界内选择最近敌人，再调用 `CombatSystem.apply_defense_device_attack(...)`。该接口复用敌人有效防御、HP 扣除、清零移除、击退归属和最终波次结算。
+- 敌人可把附近有效器械作为战斗目标，通过 `DefenseDeviceSystem.apply_damage_to_device(...)` 扣除器械 HP；HP 清零会释放槽位并移除部署。宿主建筑 HP 为 0 或处于不可用状态时，器械不攻击也不暴露为活动目标。
 
-部署与实际触发分别写入 `defense_device_deployed` / `defense_device_triggered`，主体为守备官，不进入任何 NPC 的亲历事件库。当前伤害、间隔、射程和射界是 T1508 结构验证占位值，后续 T1504 平衡应只调整 `data/defense_device_defs.json`。动画、炮臂转向、命中特效和正式模型留给 T1502/T1503 等画面任务，通过表现层消费同一运行态和 action 信号，不参与伤害结算。
+既有部署与实际触发仍沿用 `defense_device_deployed` / `defense_device_triggered`；T0107 没有为器械受击、摧毁、穿透或僵直新增信息事件。当前数值仍是可迭代占位，后续平衡只调整数据定义。动画、炮臂转向、命中特效和正式模型通过表现层消费同一运行态，不参与伤害结算。
 
 ## 敌人 AI
 
 Demo 阶段敌人使用规则 AI，不调用 LLM。
 
-T1101 已完成敌人波次配置与调试生成：`data/enemy_waves.json` 包含 5 波 Demo 敌人，后续波次在人数、HP、攻击、防御和兵种组合上逐步增强；每个敌人组记录 HP、武器类型、单位类型、攻击、防御、移动速度、攻击范围、攻击间隔和目标偏好。T1104B 后第一波被校准为低强度探路敌人，艾达持剑时应能观察到十几秒左右的互相攻击过程，而不是瞬间结束。`CombatSystem` 会读取该配置，并可通过 `spawn_wave(...)` / `debug_spawn_wave(...)` 在 `Main/WorldRoot/Station/Enemies` 下生成正门外低模敌人实体。
+T1101 已完成敌人波次配置与调试生成；T0107 将 5 波调整为 `8 / 12 / 18 / 26 / 36` 人，单个敌人的 HP、攻击、防御和穿透整体低于我方平均武装单位，以逐波人数增长制造杀敌反馈和数量压力。每个敌人组记录 HP、武器类型、单位类型、攻击、防御、穿透、攻击速度 / 间隔、攻击抬手、移动速度、攻击范围和目标偏好。`CombatSystem` 会读取该配置，并可通过 `spawn_wave(...)` / `debug_spawn_wave(...)` 在 `Main/WorldRoot/Station/Enemies` 下生成正门外低模敌人实体。
 
 T1301 已完成波次倒计时与自动来袭：每个波次配置可包含 `trigger_day`、`trigger_hour`、`trigger_minute` 和 `trigger_second`，当前 5 波默认分别在第 3-7 天 18:00 触发。`CombatSystem` 在 TimeSystem 的 `logical_time_tick` 中按逻辑时间比较配置触发点，只触发下一未触发波次，并记录 `triggered_wave_numbers`，避免同一波重复自动生成。`get_wave_schedule_snapshot()` 暴露下一波、已触发波次、待触发波次、活动敌人数量、最近自动触发结果和最近手动跳波结果；HUD 使用该快照显示下一波倒计时，GM “跳到下一波”按钮和 `next_wave` / `jump_wave` 命令调用 `debug_trigger_next_wave()` 触发下一未触发波次。T1304 后，包含最终配置波次（当前第 5 波）的战斗在敌人清空后触发 `victory/five_waves_survived`；`GameState.set_game_over(...)` 保存通用结算原因和 `settlement_snapshot`，快照记录剩余资源、建筑 HP / 损毁 / 摧毁、驿站是否仍可运转，以及 NPC 可行动 / 昏迷 / 逃离状态。胜利后 TimeSystem 停止推进，HUD 显示胜利占位界面，`spawn_wave(...)` 会因游戏已结算而拒绝继续生成敌人。
 
 T1303 已完成无可战斗人员失败条件：`CombatSystem` 的 `combatant_availability` 快照只把已入伍且持主武器、未昏迷、未逃离且未正在逃离的 NPC 视为当前可抵抗人员。该判定不要求 NPC 已经处于 `rally` 或 `combat`，因此工作中、尚未摇铃、尚未集结或尚未接敌的武装入伍 NPC 仍会计为可用，避免短暂未集结状态误判。活动敌人在场时，波次生成、逻辑推进、NPC 昏迷、逃离开始和逃离完成都会检查该快照；若存在可战斗人员但全部不可用，会写入 `failure/no_available_combatants`、保留不可用原因（`unconscious` / `escaped` / `escaping`）并复用 `GameState`、`TimeSystem` 和 HUD 的失败占位链路。
 
 T1102 已完成敌人目标优先级、移动和敌方攻击，T1104 已把该推进扩展为双方基础攻击：`CombatSystem` 监听 `TimeSystem.logical_time_tick` 推进战斗 AI；敌人若在侦测范围内发现可行动 NPC，会优先攻击该 NPC，否则按目标偏好选择仍有 HP 的城门、仓库或主厅。T1104C 起，围墙不再作为敌人攻击目标：城门被攻破后敌人直接转向仓库，仓库被摧毁后再转向主厅；旧配置中的 `wall` / `front_wall` 会在目标偏好规范化时过滤。敌人移动按配置 `move_speed` 和 `game_delta_seconds / 60` 折算为战斗动作秒级位移；玩家 `x2` / `x4` 不额外提高敌人移动速度。进入 `attack_range` 后按战斗动作秒中的 `attack_interval` 和 `attack_power` 进行接触式攻击。攻击 NPC 时会先按 NPC 盔甲防御计算实际伤害，再调用 `NPCSystem.apply_damage_to_npc(...)`；攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)` 并写入 `building_damaged` 事件。T1302 后，主厅 HP 清零时 `GameState` 写入 `game_over=true`、`game_result="failure"`、`failure_reason="main_hall_destroyed"` 和失败时间，广播 `game_over_changed`，`TimeSystem` 自动暂停并停止逻辑推进，HUD 显示失败占位界面。T1303 后，活动敌人在场且所有已入伍持主武器战斗人员均不可用时，`GameState.failure_reason` 会写入 `no_available_combatants`。T1304 后，最终波次清敌时 `GameState.game_result` 会写入 `victory`，`game_over_reason` 写入 `five_waves_survived`，`failure_reason` 保持为空，并保存胜利 `settlement_snapshot`。T1104 后，`CombatSystem` 同时维护最近我方攻击快照 `last_friendly_attack_result`，并在最近 AI 推进结果中返回 `friendly_attacks`。T1104A 后，活动敌人存在期间 `debug_get_combat_snapshot()` 会包含 TimeSystem 时间倍率快照，GM 可观察 `combat_enemy_presence` 上限请求；T1104B 后快照会同时包含 `game_seconds` 与 `combat_seconds`，便于检查战斗动作秒换算；T1105 后快照包含 `combat_strategies`，用于查看每名入伍持武器 NPC 当前策略、可选策略和策略移动目标；T1204A 后快照包含 `active_escapes`、`last_escape_result`、已用 / 剩余挽留轮次、逃离速度倍率和暂停 / 恢复状态；T1303 后快照包含 `combatant_availability` 与 `last_failure_result` 供 GM / 自动化验证；T1304 后快照包含 `last_victory_result` 供 GM / 自动化验证。GM 面板提供“警铃集结”“推进敌人AI”“行为模式快照”“模拟避战”“触发逃离”“推进集结等待”按钮和 `alarm` / `rally` / `step_enemies [game_seconds]` / `behavior_modes` / `avoid_npc <npc_id>` / `escape_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令；敌人快照会显示目标、当前行动、最近 AI 推进结果、我方攻击结果、集结状态、避战目标、逃离目标、可战斗人员可用性、战斗策略、行为模式、失败 / 胜利结果和时间上限状态。
+
+T0107 后敌人攻击变为“冷却 -> 抬手 -> 命中”两阶段。`attack_windup` 大于 0 时，目标在抬手结束前不会受伤；`apply_enemy_stagger(...)` 会清空当前抬手并暂停行动。近战骑兵冲撞使用该接口打断敌人，随后再结算增伤武器攻击。T0110 后骑术只进入 `charge_damage + riding_skill × charge_damage_riding_scale` 的马匹冲撞伤害，不提高骑乘攻击速度。敌人还会把附近有效器械列为候选目标；对 NPC、敌人和器械的伤害均使用同一有效防御 / 穿透递减曲线。`debug_get_combat_snapshot()` 额外暴露 `friendly_combat_stats`、`defense_devices`、敌人抬手 / 僵直与骑兵冲锋阶段。
 
 目标优先级：
 

@@ -47,6 +47,7 @@ func _init() -> void:
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
+	var piety_system := root.get_node_or_null("Main/Systems/PietySystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var game_state := root.get_node_or_null("GameState")
 	if (
@@ -66,6 +67,7 @@ func _init() -> void:
 		or combat_system == null
 		or crafting_system == null
 		or horse_system == null
+		or piety_system == null
 		or time_system == null
 		or game_state == null
 	):
@@ -164,8 +166,12 @@ func _init() -> void:
 		push_error("GM action controls should keep action selector and assign button")
 		quit(1)
 		return
-	if not _select_option_by_id(action_select, "attend_mass"):
-		push_error("GM action selector should expose attend_mass")
+	if _select_option_by_id(action_select, "attend_mass"):
+		push_error("GM action selector should not expose removed attend_mass")
+		quit(1)
+		return
+	if not _select_option_by_id(action_select, "pray_at_chapel"):
+		push_error("GM action selector should expose merged pray_at_chapel")
 		quit(1)
 		return
 	for redundant_text in ["工作", "当教官", "当受训者", "吃饭", "睡觉"]:
@@ -260,6 +266,27 @@ func _init() -> void:
 		return
 	if not _select_option_by_id(combat_wave_select, "1"):
 		push_error("GM combat wave selector should include wave 1")
+		quit(1)
+		return
+	var fill_piety_button := gm_window.find_child("FillPietyButton", true, false) as Button
+	var piety_snapshot_button := gm_window.find_child("PietySnapshotButton", true, false) as Button
+	if fill_piety_button == null or piety_snapshot_button == null:
+		push_error("GM combat section should expose piety fill and meteor snapshot controls")
+		quit(1)
+		return
+	fill_piety_button.pressed.emit()
+	if not bool(piety_system.is_ready_to_cast()):
+		push_error("GM fill-piety button did not charge the meteor ability")
+		quit(1)
+		return
+	gm_panel._execute_command("piety_set 25")
+	if not is_equal_approx(float(piety_system.get_current_piety()), 25.0):
+		push_error("GM piety_set command failed")
+		quit(1)
+		return
+	gm_panel._execute_command("piety_snapshot")
+	if not str(gm_panel._help_text()).contains("piety_fill"):
+		push_error("GM help should expose piety and meteor verification commands")
 		quit(1)
 		return
 
@@ -388,9 +415,11 @@ func _init() -> void:
 		push_error("GM attack_npc command should deduct HP and set unconscious")
 		quit(1)
 		return
-	gm_panel._execute_command("recover_npc stableman_01 54000")
+	var stableman_revive_hp := int(ceil(float(stableman_state.get("max_hp", 100)) * 0.3))
+	var stableman_recovery_seconds := int(ceil(float(stableman_revive_hp) * 3600.0 / 2.0))
+	gm_panel._execute_command("recover_npc stableman_01 %d" % stableman_recovery_seconds)
 	stableman_state = npc_system.get_npc_state("stableman_01")
-	if int(stableman_state.get("hp", -1)) != 30 or bool(stableman_state.get("unconscious", true)):
+	if int(stableman_state.get("hp", -1)) != stableman_revive_hp or bool(stableman_state.get("unconscious", true)):
 		push_error("GM recover_npc command should advance natural recovery and revive NPC")
 		quit(1)
 		return

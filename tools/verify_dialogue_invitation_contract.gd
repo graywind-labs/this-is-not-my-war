@@ -144,12 +144,14 @@ func _init() -> void:
 		_fail("Could not start rejection invitation: %s" % str(reject_start))
 		return
 	var pending_state: Dictionary = dialog_system.get_dialogue_state()
+	var pending_guidance := str(pending_state.get("soft_round_guidance", ""))
 	if (
 		str(pending_state.get("session_status", "")) != "invitation_pending"
 		or int(pending_state.get("current_round", -1)) != 0
 		or int(pending_state.get("max_rounds", -1)) != 0
 		or int(pending_state.get("soft_round_threshold", 0)) != 5
-		or str(pending_state.get("soft_round_guidance", "")).is_empty()
+		or not pending_guidance.contains("不是最低轮数、目标轮数或继续理由")
+		or not pending_guidance.contains("不得为了延长对话自行制造新话题")
 	):
 		_fail("Invitation must be a separate pre-round phase: %s" % str(pending_state))
 		return

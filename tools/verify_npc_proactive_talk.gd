@@ -142,6 +142,14 @@ func _init() -> void:
 
 	var prompt := "守备官，我想知道你是不是真的有守住这里的办法。"
 	var event_count_before: int = int(memory_system.get_event_count())
+	npc_system.call("_set_npc_state_without_signal", "cook_01", {
+		"last_action_result": "work_failed_crafting_target_missing",
+		"last_action_failure_context": {
+			"action_id": "work_workshop",
+			"failure_type": "crafting_target_missing",
+			"failure_summary": "未选择制造目标。"
+		}
+	})
 	var start_result: Dictionary = npc_system.debug_start_proactive_talk("cook_01", prompt)
 	if not bool(start_result.get("ok", false)):
 		push_error("Failed to start proactive talk: %s" % str(start_result))
@@ -156,6 +164,19 @@ func _init() -> void:
 		return
 	if str(npc_system.get_npc_state("cook_01").get("current_action", "")) != "proactive_talk":
 		push_error("NPC should enter proactive_talk action state")
+		quit(1)
+		return
+	var proactive_npc_state: Dictionary = npc_system.get_npc_state("cook_01")
+	if (
+		str(proactive_npc_state.get("last_action_result", "")) != "proactive_talk_started"
+		or not (proactive_npc_state.get("last_action_failure_context", {}) as Dictionary).is_empty()
+	):
+		push_error("Proactive talk did not atomically replace the stale action failure")
+		quit(1)
+		return
+	await process_frame
+	if not bridge.judgement_requests.is_empty():
+		push_error("Starting proactive talk re-consumed the stale action failure")
 		quit(1)
 		return
 	var bubble := cook_node.get_node_or_null("ProactiveTalkBubble") as Label3D
@@ -175,6 +196,79 @@ func _init() -> void:
 		return
 	if memory_system.get_event_count() != event_count_before + 1:
 		push_error("Starting proactive talk should write exactly one event")
+		quit(1)
+		return
+
+	var planning_request_id := "verify_proactive_click_during_plan"
+	if not npc_system.set_npc_llm_activity("cook_01", {
+		"active": true,
+		"kind": "plan",
+		"label": "正在规划",
+		"request_id": planning_request_id
+	}):
+		push_error("Could not install deterministic planning activity")
+		quit(1)
+		return
+	await process_frame
+	if bubble.visible:
+		push_error("Planning activity should temporarily cover the proactive question marker")
+		quit(1)
+		return
+	if not npc_system.handle_npc_clicked("cook_01"):
+		push_error("Planning-time proactive click should still be consumed by the interaction")
+		quit(1)
+		return
+	await process_frame
+	if (
+		not bool(npc_system.get_proactive_talk("cook_01").get("active", false))
+		or dialog_system.has_active_dialogue()
+		or not dialog_system.get_display_dialogue_state().is_empty()
+	):
+		push_error("Rejected planning-time click silently consumed proactive state or opened dialogue")
+		quit(1)
+		return
+	if not npc_system.clear_npc_llm_activity("cook_01", planning_request_id):
+		push_error("Could not clear deterministic planning activity")
+		quit(1)
+		return
+	await process_frame
+	if not bubble.visible or bubble.text != "?":
+		push_error("Proactive question marker did not return after planning completed")
+		quit(1)
+		return
+
+	var activation_race_request_id := "verify_proactive_activation_race"
+	var inject_planning_during_activation := func(_dialogue_state: Dictionary) -> void:
+		npc_system.set_npc_llm_activity("cook_01", {
+			"active": true,
+			"kind": "plan",
+			"label": "正在规划",
+			"request_id": activation_race_request_id
+		})
+	dialog_system.dialogue_started.connect(
+		inject_planning_during_activation,
+		CONNECT_ONE_SHOT
+	)
+	if not npc_system.handle_npc_clicked("cook_01"):
+		push_error("Activation-race proactive click should remain owned by the interaction")
+		quit(1)
+		return
+	await process_frame
+	if (
+		not bool(npc_system.get_proactive_talk("cook_01").get("active", false))
+		or dialog_system.has_active_dialogue()
+		or not dialog_system.get_display_dialogue_state().is_empty()
+	):
+		push_error("Activation-race rejection left a ghost draft or consumed proactive state")
+		quit(1)
+		return
+	if not npc_system.clear_npc_llm_activity("cook_01", activation_race_request_id):
+		push_error("Could not clear activation-race planning activity")
+		quit(1)
+		return
+	await process_frame
+	if not bubble.visible or bubble.text != "?":
+		push_error("Proactive marker did not recover after activation-race rejection")
 		quit(1)
 		return
 

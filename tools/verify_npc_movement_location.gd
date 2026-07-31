@@ -22,6 +22,13 @@ func _init() -> void:
 
 	var npc_id := "veteran_deputy_01"
 	_set_debug_move_speed(npc_id, 60.0)
+	npc_system.call("_set_npc_state_without_signal", npc_id, {
+		"last_action_result": "work_failed_resource_insufficient",
+		"last_action_failure_context": {
+			"failure_id": "work_failed_resource_insufficient",
+			"failure_summary": "缺少木料。"
+		}
+	})
 	for building_id in ["dining_hall", "dormitory", "warehouse"]:
 		if not npc_system.debug_move_npc_to_building(npc_id, building_id):
 			push_error("debug_move_npc_to_building failed for %s" % building_id)
@@ -31,6 +38,13 @@ func _init() -> void:
 		var moving_state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(moving_state.get("current_action", "")) != "moving_to_%s" % building_id:
 			push_error("NPC did not enter moving state for %s" % building_id)
+			quit(1)
+			return
+		if (
+			str(moving_state.get("last_action_result", "")) != "movement_started"
+			or not (moving_state.get("last_action_failure_context", {}) as Dictionary).is_empty()
+		):
+			push_error("Movement start did not atomically replace the previous action failure")
 			quit(1)
 			return
 

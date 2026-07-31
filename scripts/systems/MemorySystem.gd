@@ -25,7 +25,7 @@ const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
-	"prayer_started", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
+	"prayer_started", "prayer_joined_mass", "prayer_resumed_alone", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
@@ -35,7 +35,8 @@ const EVENT_TYPES: Array[String] = [
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_schedule_changed", "plaza_status_changed", "location_status_changed",
 	"merchant_arrived", "merchant_departed", "merchant_trade_completed",
-	"defense_device_deployed", "defense_device_triggered"
+	"defense_device_deployed", "defense_device_triggered",
+	"piety_meteor_cast", "piety_meteor_impact"
 ]
 
 const REQUIRED_PAYLOAD_FIELDS := {
@@ -54,6 +55,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"wine_consumed": ["action_id", "resource_id", "amount", "npc_wine_before", "npc_wine_after", "context_effect"],
 	"wine_given": ["amount", "resource_id", "npc_wine_before", "npc_wine_after"],
 	"prayer_started": ["action_id", "workstation_id", "duration_seconds"],
+	"prayer_joined_mass": ["action_id", "leader_npc_id", "trigger", "from_mode", "to_mode"],
+	"prayer_resumed_alone": ["action_id", "leader_npc_id", "trigger", "from_mode", "to_mode"],
 	"prayer_completed": ["action_id", "workstation_id", "duration_seconds"],
 	"prayer_failed": ["action_id", "reason"],
 	"visit_started": ["action_id", "location_id", "duration_seconds"],
@@ -89,7 +92,9 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"merchant_departed": ["merchant_id", "merchant_name", "arrival_time", "departure_time", "visit_day"],
 	"merchant_trade_completed": ["merchant_id", "direction", "resource_id", "amount", "unit_price", "total_price", "money_delta", "resource_delta"],
 	"defense_device_deployed": ["deployment_id", "device_id", "device_name", "slot_id", "slot_name", "inventory_resource_id", "inventory_cost"],
-	"defense_device_triggered": ["deployment_id", "device_id", "device_name", "target_enemy_id", "damage", "hp_before", "hp_after"]
+	"defense_device_triggered": ["deployment_id", "device_id", "device_name", "target_enemy_id", "damage", "hp_before", "hp_after"],
+	"piety_meteor_cast": ["cast_id", "target_position", "radius", "piety_spent"],
+	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -1706,7 +1711,29 @@ func _format_summary(event: Dictionary) -> String:
 		"wine_consumed":
 			return "%s喝了一份酒，心情有所改善，过去的伤痛也暂时淡了一些。" % actor
 		"prayer_started":
+			if str(payload.get("prayer_mode", "")) == "mass_attendance":
+				return "%s开始在%s参加弥撒。" % [actor, location]
 			return "%s开始在%s%s。" % [actor, location, _get_action_name(str(payload.get("action_id", "pray_at_chapel")))]
+		"prayer_joined_mass":
+			if str(payload.get("trigger", "")) == "prayer_started_during_mass":
+				return "%s到达%s祈祷时，%s正在主持弥撒，%s随众参加弥撒。" % [
+					actor,
+					location,
+					_get_npc_display_name(str(payload.get("leader_npc_id", ""))),
+					actor
+				]
+			return "%s因为%s开始主持弥撒，转为参加弥撒。" % [
+				actor,
+				_get_npc_display_name(str(payload.get("leader_npc_id", "")))
+			]
+		"prayer_resumed_alone":
+			if str(payload.get("trigger", "")) == "mass_leader_stopped":
+				return "%s参加的弥撒因主持中断而结束，%s继续在%s独自祈祷。" % [
+					actor,
+					actor,
+					location
+				]
+			return "%s参加的弥撒结束，继续在%s独自祈祷。" % [actor, location]
 		"prayer_completed":
 			return "%s完成了在%s的%s。" % [actor, location, _get_action_name(str(payload.get("action_id", "pray_at_chapel")))]
 		"prayer_failed":
@@ -1856,6 +1883,13 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("target_enemy_name", payload.get("target_enemy_id", "敌人"))),
 				int(payload.get("damage", 0)),
 				defeated_text
+			]
+		"piety_meteor_cast":
+			return "守备官消耗全部虔诚，指定了一处陨石落点。"
+		"piety_meteor_impact":
+			return "陨石砸向敌阵，命中%d名敌人、击退%d名，并点燃了地面；没有伤及友方。" % [
+				int(payload.get("enemy_hit_count", 0)),
+				int(payload.get("enemy_defeated_count", 0))
 			]
 		"damage_taken":
 			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
@@ -2414,6 +2448,8 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		for key in ["deployment_id", "device_id", "slot_id", "target_enemy_id"]:
 			if payload.has(key):
 				target_ids.append(str(payload[key]))
+	if ["piety_meteor_cast", "piety_meteor_impact"].has(event_type) and payload.has("cast_id"):
+		target_ids.append(str(payload["cast_id"]))
 	return target_ids
 
 

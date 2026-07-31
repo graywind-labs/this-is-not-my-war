@@ -18,10 +18,37 @@
     },
     "upgrade": {
       "cost": {"stone": 4},
-      "max_level": 3,
-      "max_hp_bonus": 30,
+      "max_level": 6,
+      "max_hp_bonus": 40,
       "workstation_bonus": 0,
-      "workstation_type": "command"
+      "workstation_type": "command",
+      "level_effects": {
+        "2": {
+          "cost": {"stone": 4},
+          "duration_seconds": 3600,
+          "max_hp_bonus": 40
+        },
+        "3": {
+          "cost": {"stone": 5, "wood": 1},
+          "duration_seconds": 5400,
+          "max_hp_bonus": 30
+        },
+        "4": {
+          "cost": {"stone": 6, "wood": 1},
+          "duration_seconds": 7200,
+          "max_hp_bonus": 50
+        },
+        "5": {
+          "cost": {"stone": 7, "wood": 2},
+          "duration_seconds": 9000,
+          "max_hp_bonus": 40
+        },
+        "6": {
+          "cost": {"stone": 9, "wood": 2, "iron": 1},
+          "duration_seconds": 10800,
+          "max_hp_bonus": 60
+        }
+      }
     }
   },
   {
@@ -143,6 +170,12 @@
         "occupied_by": null
       },
       {
+        "id": "dining_kitchen_station_02",
+        "type": "dining_kitchen_station",
+        "name": "灶台2",
+        "occupied_by": null
+      },
+      {
         "id": "dining_seat_01",
         "type": "dining_seat",
         "name": "用餐席1",
@@ -219,9 +252,6 @@
       "workstation_type": "dining_kitchen_station",
       "level_effects": {
         "2": {
-          "workstation_deltas": [
-            {"type": "dining_kitchen_station", "count": 1, "id_prefix": "dining_kitchen_station", "name_prefix": "灶台"}
-          ],
           "efficiency_bonuses": {"production": 0.15, "meal_recovery": 0.15}
         },
         "3": {
@@ -277,10 +307,39 @@
     },
     "upgrade": {
       "cost": {"stone": 3},
-      "max_level": 2,
-      "max_hp_bonus": 25,
+      "max_level": 6,
+      "max_hp_bonus": 30,
       "workstation_bonus": 0,
-      "workstation_type": "repair"
+      "workstation_type": "repair",
+      "level_effects": {
+        "2": {
+          "cost": {"stone": 3},
+          "duration_seconds": 3600,
+          "max_hp_bonus": 30
+        },
+        "3": {
+          "cost": {"stone": 4},
+          "duration_seconds": 5400,
+          "max_hp_bonus": 45,
+          "defense_device_range_bonus": 0.05
+        },
+        "4": {
+          "cost": {"stone": 5, "wood": 1},
+          "duration_seconds": 7200,
+          "max_hp_bonus": 35
+        },
+        "5": {
+          "cost": {"stone": 6, "wood": 1},
+          "duration_seconds": 9000,
+          "max_hp_bonus": 55,
+          "defense_device_range_bonus": 0.05
+        },
+        "6": {
+          "cost": {"stone": 8, "wood": 2},
+          "duration_seconds": 10800,
+          "max_hp_bonus": 45
+        }
+      }
     }
   },
   {
@@ -343,6 +402,13 @@
       {
         "id": "cellar_01",
         "type": "brew",
+        "name": "酿酒位1",
+        "occupied_by": null
+      },
+      {
+        "id": "cellar_02",
+        "type": "brew",
+        "name": "酿酒位2",
         "occupied_by": null
       }
     ],
@@ -357,8 +423,16 @@
       "cost": {"wood": 2, "stone": 2},
       "max_level": 3,
       "max_hp_bonus": 20,
-      "workstation_bonus": 1,
-      "workstation_type": "brew"
+      "workstation_bonus": 0,
+      "workstation_type": "brew",
+      "workstation_name_prefix": "酿酒位",
+      "level_effects": {
+        "3": {
+          "workstation_deltas": [
+            {"type": "brew", "count": 1, "id_prefix": "cellar", "name_prefix": "酿酒位"}
+          ]
+        }
+      }
     }
   },
   {
@@ -373,6 +447,13 @@
       {
         "id": "garden_plot_01",
         "type": "farm",
+        "name": "耕作位1",
+        "occupied_by": null
+      },
+      {
+        "id": "garden_plot_02",
+        "type": "farm",
+        "name": "耕作位2",
         "occupied_by": null
       }
     ],
@@ -387,8 +468,16 @@
       "cost": {"wood": 2, "stone": 1},
       "max_level": 3,
       "max_hp_bonus": 15,
-      "workstation_bonus": 1,
-      "workstation_type": "farm"
+      "workstation_bonus": 0,
+      "workstation_type": "farm",
+      "workstation_name_prefix": "耕作位",
+      "level_effects": {
+        "3": {
+          "workstation_deltas": [
+            {"type": "farm", "count": 1, "id_prefix": "garden_plot", "name_prefix": "耕作位"}
+          ]
+        }
+      }
     }
   },
   {
@@ -403,6 +492,13 @@
       {
         "id": "forge_01",
         "type": "forge",
+        "name": "锻造位1",
+        "occupied_by": null
+      },
+      {
+        "id": "forge_02",
+        "type": "forge",
+        "name": "锻造位2",
         "occupied_by": null
       }
     ],
@@ -417,8 +513,16 @@
       "cost": {"wood": 2, "stone": 2, "iron": 1},
       "max_level": 3,
       "max_hp_bonus": 25,
-      "workstation_bonus": 1,
-      "workstation_type": "forge"
+      "workstation_bonus": 0,
+      "workstation_type": "forge",
+      "workstation_name_prefix": "锻造位",
+      "level_effects": {
+        "3": {
+          "workstation_deltas": [
+            {"type": "forge", "count": 1, "id_prefix": "forge", "name_prefix": "锻造位"}
+          ]
+        }
+      }
     }
   },
   {
@@ -492,6 +596,13 @@
       {
         "id": "stall_01",
         "type": "horse_care",
+        "name": "照料位1",
+        "occupied_by": null
+      },
+      {
+        "id": "stall_02",
+        "type": "horse_care",
+        "name": "照料位2",
         "occupied_by": null
       }
     ],
@@ -506,8 +617,16 @@
       "cost": {"wood": 3, "stone": 1},
       "max_level": 3,
       "max_hp_bonus": 20,
-      "workstation_bonus": 1,
-      "workstation_type": "horse_care"
+      "workstation_bonus": 0,
+      "workstation_type": "horse_care",
+      "workstation_name_prefix": "照料位",
+      "level_effects": {
+        "3": {
+          "workstation_deltas": [
+            {"type": "horse_care", "count": 1, "id_prefix": "stall", "name_prefix": "照料位"}
+          ]
+        }
+      }
     }
   },
   {
@@ -620,6 +739,12 @@
         "occupied_by": null
       },
       {
+        "id": "doctor_desk_02",
+        "type": "clinic_doctor_station",
+        "name": "诊疗位2",
+        "occupied_by": null
+      },
+      {
         "id": "treatment_bed_01",
         "type": "clinic_patient_bed",
         "name": "病床1",
@@ -654,7 +779,6 @@
         },
         "3": {
           "workstation_deltas": [
-            {"type": "clinic_doctor_station", "count": 1, "id_prefix": "doctor_desk", "name_prefix": "诊疗位"},
             {"type": "clinic_patient_bed", "count": 1, "id_prefix": "treatment_bed", "name_prefix": "病床"}
           ],
           "efficiency_bonuses": {"clinic_recovery": 0.15}
@@ -674,6 +798,13 @@
       {
         "id": "workbench_01",
         "type": "engineering",
+        "name": "工程位1",
+        "occupied_by": null
+      },
+      {
+        "id": "workbench_02",
+        "type": "engineering",
+        "name": "工程位2",
         "occupied_by": null
       }
     ],
@@ -688,8 +819,16 @@
       "cost": {"wood": 3, "stone": 2, "iron": 1},
       "max_level": 3,
       "max_hp_bonus": 25,
-      "workstation_bonus": 1,
-      "workstation_type": "engineering"
+      "workstation_bonus": 0,
+      "workstation_type": "engineering",
+      "workstation_name_prefix": "工程位",
+      "level_effects": {
+        "3": {
+          "workstation_deltas": [
+            {"type": "engineering", "count": 1, "id_prefix": "workbench", "name_prefix": "工程位"}
+          ]
+        }
+      }
     }
   }
 ]

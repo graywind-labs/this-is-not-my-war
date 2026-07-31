@@ -1,14 +1,32 @@
 # GM_PANEL.md
 
+## T0116 对话意图复核观察
+
+- 后端 / LLMBridge 区新增“对话意图复核”按钮，读取所选 NPC 的 pending request、一次性批准和最近 continue / modify / cancel 结果。
+- 命令：`intent_revalidation <npc_id>`。
+- 触发仍使用既有 `plan_execute <npc_id>`：当当前计划项为带非空 `dialogue_goal` 的 `talk_to_npc / seek_guard_officer` 时，会先进入复核。面板不伪造模型响应、不修改计划或启动对话。
+
+T0114 在战斗调试区增加“填满虔诚”“虔诚快照”和“推进陨石 1 秒”，并支持 `piety_fill`、`piety_set <0-100>`、`piety_snapshot`、`piety_step <战斗动作秒>`。这些入口只调用 PietySystem 的 `debug_*` 接口：填满 / 设值用于进入 HUD 选点，快照显示累计来源、pending 陨石、燃烧区和最近施放结果，推进用于不等待实时 tick 验证落地与燃烧。GMPanel 不自行生成伤害、扣除虔诚或改敌人 / NPC / 建筑 / 器械 HP；无友伤必须从 PietySystem → CombatSystem 的真实路径验证。
+
+T0106 用现有“短期记忆”按钮替换为“短期记忆 / LLM”，不堆叠新入口。点击后同时显示目标 NPC 权威原始事件 / 见闻计数，以及 `LLMBridge` 为正式调用构造的全部紧凑投影；可以直接确认第 8 条以前的关键事件仍存在，且模型侧没有 `event_id / payload / items / snapshot / roster`。该入口只读，不修改 MemorySystem、总结水位或 Prompt，也不自行压缩事件。
+
+T0105B 不新增 GM 命令或按钮。复用计划查看 / 执行、推进逻辑时间、当前行动、位置占用和事件列表即可验证：让马塞尔主持、其他 NPC 参礼，并把下一小时改为其他行动；跨过整点后双方仍应主持 / 参礼，个人祈祷计时先满也不能离席。等弥撒自身结束后，应先看到“弥撒结束”、参礼者恢复独祷及必要的祈祷完成，再执行当时当前小时计划。普通工作的不同小时计划仍立即切换；在主持期间用对话打断，仍应显示“因主持中断而结束”。GMPanel 不写延迟标记、不伪造结束原因或转换事件。
+
+T0105A 不新增 GM 命令或按钮。复用通用“指定行动”、推进逻辑时间、NPC 对话、当前行动和事件列表即可验证：让其他 NPC 祈祷、马塞尔主持后，弥撒自身按时完成应看到“弥撒结束”；在主持期间用对话等方式打断马塞尔，仍应看到“因主持中断而结束”。两条路径都应让未完成祈祷者原地恢复独自祈祷，GMPanel 不伪造结束原因或转换事件。
+
+T0098 不新增 GM 命令或按钮。通用“指定行动”下拉只保留 `pray_at_chapel / lead_mass`：先给 NPC 指派祈祷，再让神父主持弥撒，可从 NPC 最近行动结果、运行态快照和事件列表观察 `prayer_mode` 从独自祈祷转为参礼；正常结束或中断主持后应恢复独自祈祷。整个过程中祈祷席、累计时间和当前计划不变，`plan_request` 不应出现教堂失败重估。GMPanel 不直接写模式、不伪造转换事件，也不代替 ActionSystem 判断主持者。
+
+T0097 不新增 GM 命令或按钮。既有“当前计划”、`plan_request`、后端持久化 LLM 日志、通用“指定行动”、拜访 / 对话 / 三类协助目标和最近行动结果已经能对照观察“provider 最小决策 → 后端完整 PlanItem → ActionSystem 执行”；合并后的祈祷继续复用相同入口。GMPanel 不填写 `action_kind / priority / internal target`，不替模型选择 `location_id / target_npc_id / building_id`，也不维护第二套计划编译器。
+
 T0095 / T0096 不新增 GM 命令或按钮。pending 生命周期继续用既有“暂停 / 继续”“指定行动”“立即进入地点”、NPC 最近行动结果、当前计划和运行态快照验证；GMPanel 不直接提交 active、占工位或伪造到达。`reflection_result` 继续读取 DailyReflectionSystem 快照，现在额外包含逐 NPC 上次成功 `reflection_period.end`；`long_memory <npc_id>` 可看到日记的 `record_label / summary_window_key / trigger_day / trigger_time / reflection_period`，短期事件查询可确认请求快照后新增记录仍保留。GMPanel 不自行移动记忆水位或生成“接到守备命令的第N天”。
 
-T0094 不新增 GM 命令或按钮。宿舍 `床位X：空闲 / XX占用中` 与 NPC 面板右侧“记录”可直接在 `Main.tscn` 验证；“记录”读取全局事件档案并按历史日期、时间和波次分组，不需要 GM 复制对话。弥撒继续复用通用“指定行动”、当前计划、最近行动结果、`plan_request` 与 LLM 日志，GMPanel 不伪造到达、祈祷失败、对话承诺或修订选择。既有 `reflection_result` 继续调用 `DailyReflectionSystem.get_async_reflection_snapshot()`，现在额外显示 21:00 锚点、逐 NPC 当前睡眠窗口累计 / 剩余 / 状态及已完成窗口；它只读观察，不推进睡眠、不标记窗口完成，也不新增总结权威。
+T0094 不新增 GM 命令或按钮。宿舍 `床位X：空闲 / XX占用中` 与 NPC 面板右侧“记录”可直接在 `Main.tscn` 验证；“记录”读取全局事件档案并按历史日期、时间和波次分组，不需要 GM 复制对话。教堂继续复用通用“指定行动”、当前计划、最近行动结果、`plan_request` 与 LLM 日志，GMPanel 不伪造到达、对话承诺或修订选择；其旧祈祷失败链已由 T0098 模式转换替代。既有 `reflection_result` 继续调用 `DailyReflectionSystem.get_async_reflection_snapshot()`，现在额外显示 21:00 锚点、逐 NPC 当前睡眠窗口累计 / 剩余 / 状态及已完成窗口；它只读观察，不推进睡眠、不标记窗口完成，也不新增总结权威。
 
 T0092 不新增 GM 命令或按钮。既有 `plan_request`、`npc_talk`、当前计划、最近行动结果、后端 LLM 日志、用量顶栏和 `llm_usage` 已能确认完整 Godot 响应、provider 实际 payload 与 token usage。GMPanel 不执行 provider projection、不补齐模型字段，也不维护第二套响应合同。
 
 T0091 不新增 GM 命令或按钮。既有 `npc_talk`、通用“指定行动”、当前计划、最近行动结果、`plan_request` 与后端 LLM 日志足以验证目标驱动对话：模型计划只需选择目标 NPC，ActionSystem 会按目标实时地点接近；目标移动时仍按既有规则追踪。GMPanel 不填写计划地点、不传送双方，也不伪造工位占用或修订结果。
 
-T0089 不新增 GM 命令或按钮。既有“指定行动”下拉已包含 `pray_at_chapel / lead_mass / attend_mass`：主持期间给另一 NPC 指定普通祈祷，可从最近行动结果、当前计划、`plan_request` 与后端 LLM 日志观察 `pray_failed_mass_in_progress -> attend_mass`；让参加者入席后中断主持者，可观察 `attend_mass_failed_leader_left -> pray_at_chapel`。GMPanel 只构造真实行动条件，不写 `failure_id`、不选择修订行动，也不绕过 ActionSystem 或 LLM。
+T0089 的教堂双向失败验证入口已由 T0098 废止。当前“指定行动”下拉不再包含独立参加弥撒；GM 只用祈祷与主持弥撒构造真实转换条件。
 
 T0087 不新增 GM 命令或按钮。玩家应征、普通对话和结构化结果可直接在 `Main.tscn` 对话窗验证；NPC-NPC 可复用 `npc_talk`，逃离挽留可复用既有 `escape_npc` 与 NPC 面板对话入口。事件查询、后端 LLM 日志和用量快照足以确认实际 `dialogue_kind`、响应字段、provider 与失败原因。GMPanel 不构造第二份响应 Schema、不伪造 `recruitment_result / invitation_result / escape_intervention_result`，也不自行决定入伍、会话结束或逃离结算。
 
@@ -20,7 +38,7 @@ T0083 不新增 GM 命令或按钮：接受 / 拒绝结果行可在 `Main.tscn` 
 
 T0082 不新增 GM 命令或按钮：完整多轮会话摘要、应征 toggle 保持和取消按钮禁用都可在 `Main.tscn` 对话 / NPC 事件库直接验证。既有事件查询可确认完成后仍只有一条 `dialogue_turn` 且 summary 包含全文；既有“推进 1 小时”可连续两次验证应征锁定挂起会话按完成收口。GMPanel 不创建对话历史、不修改 toggle，也不绕过 DialogSystem 取消锁。
 
-T0081 不新增 GM 按钮或命令。既有“指定行动”、`eat / sleep / train_* / assist_repair / assist_upgrade / assist_heal`、立即进入地点、推进逻辑时间、NPC 状态、建筑修复 / 升级、警铃 / 避战 / 逃离与敌人快照已经能构造所有生活消耗档位；在 NPC 面板观察饱食 / 疲劳和经验即可。暂停后推进不应变化，恢复后按 TimeSystem 有效逻辑时间变化。GMPanel 不自行选择 `needs_profile`、计算小数余量或授予经验；25 项穷尽分类和三类协助有效工时由 `verify_activity_needs_framework.gd` / `verify_assist_timed_experience.gd` 验证。
+T0081 不新增 GM 按钮或命令。既有“指定行动”、`eat / sleep / train_* / assist_repair / assist_upgrade / assist_heal`、立即进入地点、推进逻辑时间、NPC 状态、建筑修复 / 升级、警铃 / 避战 / 逃离与敌人快照已经能构造所有生活消耗档位；在 NPC 面板观察饱食 / 疲劳和经验即可。暂停后推进不应变化，恢复后按 TimeSystem 有效逻辑时间变化。GMPanel 不自行选择 `needs_profile`、计算小数余量或授予经验；T0098 后 24 项穷尽分类和三类协助有效工时由 `verify_activity_needs_framework.gd` / `verify_assist_timed_experience.gd` 验证。
 
 T0080 不新增 GM 按钮或命令。用“指定行动”为 NPC 安排依赖某建筑的工作，在 NPC 仍位于别处并正在前往时，用建筑分组“升级”启动目标建筑升级：最近行动结果和 `plan_request` 此时不应出现失败；待 NPC 真实抵达入口后，应看到 `<action_id>_failed_building_upgrading`、`interrupted_phase=pending / arrival_check_failed=true` 及随后判别 / 按需修订。若先用“立即进入地点”让 NPC 在建筑内开始行动，再升级同一建筑，应立即看到 `interrupted_phase=active` 失败和广场清退。既有“协助升级”目标入口、驿站上下文、当前计划和后端 LLM 日志足够观察室外候选与模型选择；GMPanel 不伪造到达、失败、候选或升级结算。
 
@@ -39,6 +57,8 @@ T0069 复用既有“成本统计”按钮和 `llm_usage` 命令，不新增按�
 T0063 不新增 GM 命令或按钮。赠酒与个人持酒可直接在 `Main.tscn` 的 NPC 面板观察；既有资源增减入口可补充驿站 `wine`，通用“指定行动”下拉会从 `data/action_defs.json` 自动出现 `drink_wine`。先给目标 NPC 酒再指定饮酒，可通过 NPC 面板个人酒、最近行动结果和事件 / 见闻查询观察实际扣 1 与 `wine_consumed`；无酒时指定同一行动应得到资源失败。GMPanel 只调用现有系统，不创建第二套赠酒、饮酒或情绪结算。
 
 T0061 不新增 GM 命令或按钮。玩家可直接在 `Main.tscn` 的 NPC 面板“背景 / 日记 / 知识”查看移除代表性表达后的 9 项档案、八人相互拼接的身世 / 到站日记，以及叙事化建筑认识；“知识”详情只显示主体、关系和值。既有 `long_memory <npc_id>` 继续显示同一份完整运行态长期记忆，保留每条知识的 `confidence / day / time`，可用于核对玩家 UI 只是隐藏可信度与更新时间而没有删除底层字段，也可核对每人的守备官种子只有一条职位职责。GMPanel 不复制档案或记忆文案、不改写知识记录，也不创建第二套玩家显示规则。
+
+T0101 不新增 GM 命令或按钮。NPC【知识】已经直接显示守备官“职务 / 到站时间 / 来站前经历 / 过往相处”四条关系，对话可直接验证身份未知和三年旧事转题；既有 `long_memory <npc_id>` 可辅助核对四条技术键、技术值及元数据。上段 T0061 的“只有一条职位职责”是当时状态，当前已由 T0101 的四关系种子取代。GMPanel 不写入玩家身份、不生成旧事，也不提供绕过真实对话 Prompt 的专用回答按钮。
 
 T0060 不新增 GM 命令或按钮。其 8 人档案、3 篇种子日记和知识图谱继续由 NPC 面板与 `long_memory <npc_id>` 复用同一运行态来源；T0061 已取代当时的固定代表性表达、前两篇微观写法、守备官开放评估措辞和知识面板元数据展示。六类 payload 的日记时间标签仍由 LLMBridge 投影，GMPanel 不创建第二套时间事实。
 
@@ -66,7 +86,7 @@ T0046 不新增 GM 入口：公告牌双 Tab、通告草稿取消、参考日程
 
 T0049/T0050 不新增“强制判别”按钮。实际对话必须经 DialogSystem 自然结束、日常行动失败必须经 ActionSystem / DailyPlanSystem 权威失败链触发通用判别；GM 只通过既有 `npc_talk` 或“指定行动”构造真实场景，通过 `plan_request` 观察最近判别和修订结果。`plan_revise` 保留为非对话手动触发，固定修订当前小时，不能指定判别范围或伪造对话 / 失败事实。
 
-T0043A 复用“指定行动”通用下拉，不增加重复专用按钮。下拉自动包含 `pray_at_chapel`、`lead_mass` 与新增 `attend_mass`：先把具备资格的 NPC 指派为 `lead_mass`，再给其他 NPC 指派 `attend_mass`，可观察祭坛 / 祈祷席占用；随后改派或中断主持者，可观察参加者的 `attend_mass_failed_leader_left` 与祈祷席释放。主持期间指派 `pray_at_chapel` 应得到互斥失败。诊疗 / 训练同理可先启动医生 / 教官和承载者，再改派服务者验证中断。
+T0043A 复用“指定行动”通用下拉，不增加重复专用按钮。T0098 后下拉只包含 `pray_at_chapel` 与 `lead_mass` 两个教堂行为：先给其他 NPC 指派祈祷，再让具备资格的 NPC 主持，可观察祈祷者原地参礼；改派或中断主持者后应原地恢复独自祈祷，位置与进度不变。诊疗 / 训练仍可先启动医生 / 教官和承载者，再改派服务者验证真实依赖中断。
 
 T0025 提供命令级验证入口 `npc_talk <speaker_npc_id> <target_npc_id> [opening_text]`：它只调用 ActionSystem 的自主对话公开入口。T0029/T0030/T0049 后，该命令便于构造“发起者追踪目标 → 目标先用真实 LLM 接受 / 拒绝 → 接受后才打断双方普通工作并释放工位 → 无硬轮次上限且由任一方结束标记收尾 → 拒绝或正式结束后双方各自判别计划 → 非空才修订精确小时”的链路，不在 GMPanel 内写对话、行动或判别事实。邀请等待或拒绝时不显示气泡；接受后双方显示可点击三点气泡，关闭旁听不会打断会话。因此无需新增重复 GM 按钮或命令。
 
@@ -81,7 +101,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - NPC 选中、状态修改、移动到建筑、立即进入地点。
 - NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
-- 通过“指定行动”下拉统一指派工作、训练场教官/受训者、诊疗位/病床、普通祈祷、主持弥撒、参加弥撒、吃饭、饮酒、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口。
+- 通过“指定行动”下拉统一指派工作、训练场教官/受训者、诊疗位/病床、祈祷、主持弥撒、吃饭、饮酒、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口；参加弥撒由祈祷运行态自动切换。
 - TimeSystem 设定时间、推进模拟小时、LLM 等待减速请求、有效倍率 / 慢速请求 / 时间上限请求快照。
 - LLMBridge 后端 health check、开发期 NPC 对话 Mock、提出应征 Mock、正式请求共享驿站上下文快照，以及后端 LLM usage / 成本统计 / 预算状态 / 失败原因 / Godot LLM 等待运行态与逐请求慢速注册 / 释放查询。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
@@ -94,7 +114,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - T0035-T0038 制造与马匹调试：设置铁匠铺 / 工械坊目标、提交单个阶段、查看项目 / 具体库存，以及查看、伤害、推进、强制繁育和分配逐匹马。
 - T0904 成长系统：查看 NPC 总经验、未分配技能点，并由玩家把技能点分配到力量或智力。
 - T0015 调试征召：可将当前选中 NPC 设为入伍，便于验证指令、装备和训练入口。
-- T1101-T1304 敌人波次、目标优先级、双方基础攻击、战斗动作秒、警铃集结、非战斗人员避战、不同兵种战斗策略、敌人在场时间上限、战斗开始 / 结束流程、逃离驿站、逃离挽留、波次日程、失败条件和第 5 波胜利调试：生成第一波或指定波次敌人，按已触发记录跳到下一波，触发警铃集结，查看敌人目标 / NPC 集结 / 避战 / 逃离 / 挽留轮次 / 逃离速度 / 可战斗人员可用性 / 战斗策略 / 我方攻击 / 当前战斗 / 波次日程 / 最近战斗开始和结束结果 / 最近失败或胜利结果 / TimeSystem 倍率快照，模拟未入伍或无主武器 NPC 避战，手动触发 NPC 逃离，手动推进战斗 AI，清空当前敌人；T1104C 后敌人不再攻击围墙，城门破坏后转向仓库 / 主厅。T1105 的正式策略选择入口在 NPC 面板“装备武器”旁的下拉框，GM 只通过敌人快照观察当前策略，不另设权威策略按钮。
+- T1101-T1304/T0107 敌人波次、统一战斗属性、目标优先级、双方攻击、工程器械、战斗动作秒、警铃集结、非战斗人员避战、兵种策略、骑兵冲锋 / 僵直、敌人在场时间上限、战斗开始 / 结束、逃离、波次日程、失败条件和第 5 波胜利调试：生成第一波或指定波次敌人，按已触发记录跳到下一波，触发警铃集结，通过敌人快照查看我方最终属性、器械、敌人抬手 / 僵直、骑兵冲锋阶段及既有战斗状态。正式策略选择仍在 NPC 面板，围墙 / 主厅部署可直接通过 Main 世界 `+` 验证；GM 不另设第二套权威策略或部署按钮。
 
 GM 命令仍可使用 `give_money` / `attack_npc` 这类开发语义；写入 NPC 事件库、见闻库和事件 summary 时，玩家身份必须显示为“守备官”。
 
@@ -184,13 +204,13 @@ NPC：
 
 行动：
 
-- 指派指定行动；该下拉列出 `data/action_defs.json` 中的普通行动，包括工作、诊所、训练、吃饭、睡觉、普通祈祷和主持弥撒等入口，不包含需要额外目标参数的协助行动。
+- 指派指定行动；该下拉列出 `data/action_defs.json` 中的普通行动，包括工作、诊所、训练、吃饭、睡觉、祈祷和主持弥撒等入口，不包含需要额外目标参数的协助行动，也不再包含独立参加弥撒。
 - 工作类行动会占用目标可进入建筑的真实工位，并按 NPC 对应熟练度、力量 / 智力属性和建筑等级缩短单位周期。T0035 后铁匠铺 / 工械坊必须先有合法目标，每个完整周期只向 CraftingSystem 提交一个阶段，阶段材料与具体成品由系统原子结算。T0037 后 `work_stable` 提供养马照料劳动，不再消耗粮食产出抽象马匹整备；马匹进食由 HorseSystem 按持续周期扣粮。菜园、酒窖等其他工作继续使用各自现有结算。工位占满、无目标或资源不足时由行动 / 权威系统返回失败。
 - “指派行动”下拉可直接选择 `work_clinic_doctor` 和 `receive_clinic_treatment` 验证小诊所：医生自动占诊疗位、伤员自动占病床；多名在岗医生共同提高全部病床恢复，治疗随逻辑时间扣第纳尔。无病人时医生研读医学著作。
 - 通过行动分组内的“修复目标”建筑下拉选择目标，再指派 NPC 协助该建筑的修复；协助修复是一个统一行为，建筑由该下拉或命令参数决定。
 - 通过行动分组内的“升级目标”建筑下拉选择目标，再指派 NPC 协助该建筑的升级；协助升级同样是带建筑参数的统一行为。
 - 通过行动分组内的“治疗目标”NPC 下拉选择昏迷目标，再指派当前选中 NPC 协助治疗；协助治疗是带目标 NPC 参数的统一行为，目标必须昏迷，每个昏迷目标最多 2 名治疗者。
-- 训练、吃饭、睡觉、祈祷和主持弥撒都通过行动下拉指派；`train_instructor`、`train_student`、`eat`、`sleep` 等命令继续保留。多名在岗教官共同提高全部训练位成长；吃饭 / 睡觉分别申请用餐席 / 宿舍床位；普通祈祷申请祈祷席且不依赖神父，`lead_mass` 申请祭坛并验证“主持弥撒”能力。满位、封闭、无装备或无教官等日常计划行动失败仍由 ActionSystem 写入，并先触发通用计划修改判别，非空才修订所选阶段。
+- 训练、吃饭、睡觉、祈祷和主持弥撒都通过行动下拉指派；`train_instructor`、`train_student`、`eat`、`sleep` 等命令继续保留。多名在岗教官共同提高全部训练位成长；吃饭 / 睡觉分别申请用餐席 / 宿舍床位；祈祷申请祈祷席且不依赖神父，弥撒开始后自动参礼、结束后继续独自祈祷；`lead_mass` 申请祭坛并验证“主持弥撒”能力。满位、封闭、无装备或无教官等真实日常计划行动失败仍由 ActionSystem 写入，并先触发通用计划修改判别，非空才修订所选阶段。
 
 战斗 / 敌人：
 
@@ -199,14 +219,14 @@ NPC：
 - “生成所选波次”按波次下拉调用 `CombatSystem.debug_spawn_wave(...)`。
 - “跳到下一波”调用 `CombatSystem.debug_trigger_next_wave()`，按 `CombatSystem` 已记录的 `triggered_wave_numbers` 触发下一未触发波次，用于快速验证 T1301 自动波次日程；该入口不修改时间、不自行写战斗事件。
 - “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的集结流程：所有 NPC 写入警铃事件，入伍且有主武器的可行动 NPC 前往城门外防线。
-- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、波次日程、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、逃离目标、逃离挽留轮次、逃离速度倍率、可战斗人员可用性 `combatant_availability`、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、最近逃离结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T1104C 后可用该快照确认敌人目标不会是围墙，T1105 后可用该快照确认策略下拉框选择已进入 CombatSystem 状态，T1106 后可用该快照确认 `combat_started` / `combat_ended` 的运行态和结算统计，T1201 后可用该快照确认 `morale_boost` 或逃离流程的最近应用结果，T1202 后可用该快照确认 `last_low_hp_judgement_result` 与 `active_battle.low_hp_judgements`，T1204A/T0051 后可用 `active_escapes` / `last_escape_result` 确认逃离开始、挽留打开或挂起时持续暂停、完成 / 取消 / 满 5 轮后恢复、挽留后留下 / 继续、给钱减速、攻击加速且无 NPC 回复并自动完成、昏迷暂停、复苏继续和离站完成；T1301 后可用 `wave_schedule` 确认下一波、已触发波次和最近手动跳波结果；T1303 后可用 `combatant_availability` 和 `last_failure_result.reason == "no_available_combatants"` 确认无可战斗人员失败；T1304 后可用 `last_victory_result.reason == "five_waves_survived"` 和 `settlement_snapshot` 确认第 5 波胜利快照。
+- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、波次日程、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、逃离目标、逃离挽留轮次、逃离速度倍率、可战斗人员可用性 `combatant_availability`、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、最近逃离结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T0107 后还包含 `friendly_combat_stats` 的基础 / 成长 / 装备 / 最终值、`defense_devices` 的 HP / 防御 / 穿透 / 有效射程、敌人的 `penetration / attack_speed / attack_windup_remaining / stagger_remaining`，以及战斗策略中的冲锋阶段和最近冲撞结果。该快照可确认统一穿透结算、主厅射程翻倍、敌人抬手被僵直打断与骑兵冲锋循环；既有 T1104C-T1304 验证边界不变。
 - “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(60.0)`，用于手动推进 60 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T1104B 后这约等于 1 秒战斗动作。命名保留为兼容旧入口。
 - “清空敌人”调用 `CombatSystem.debug_clear_enemies()`，删除当前 `Station/Enemies` 下由 CombatSystem 生成的敌人。
 - “行为模式快照”调用 `NPCSystem.debug_get_behavior_mode_snapshot()`，查看每名 NPC 的 `behavior_mode`、进入原因、进入时间、当前行动和兼容 `combat_mode`。
 - “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按敌方方位生成短步长四散移动目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
 - “触发逃离”调用 `CombatSystem.debug_start_npc_escape(selected_npc_id)`，用于让当前选中且未昏迷、未逃离的 NPC 前往后门外出口；该入口只触发正式逃离系统，`escape_started` / `escaped` 事件和 `escaped=true` 标记仍由系统结算。T1204A 后可用该入口制造逃离状态，再在主界面点击逃离 NPC 打开 NPC 面板，通过【对话】进入五轮挽留；也可用 `give_money` 或逃离挽留面板里的攻击按钮验证逃离速度变化。
 - “推进集结等待”调用 `CombatSystem.debug_advance_rally_wait(3600.0)`，用于快速验证 NPC 到达集合点后等待 1 游戏小时仍未接敌会返回工作模式且不触发计划重评估。
-- 该分组不自行结算伤害、集结结果、逃离结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T1104 后，我方攻击和敌人受击由 CombatSystem 结算并写入 `attack_made`，敌方攻击 NPC 先按 NPC 盔甲防御减伤再复用 `NPCSystem.apply_damage_to_npc(...)`，敌方攻击建筑复用 `BuildingSystem.apply_damage_to_building(...)`。T1104A 后，活动敌人存在时 CombatSystem 注册 `combat_enemy_presence` 时间上限，把 TimeSystem 有效倍率上限压到 `x1`，清敌后释放；T1104B 后，GM 推进 60 游戏秒约等于 1 秒战斗动作，便于观察攻速基准。T1106 后，战斗开始 / 结束事件和受伤 / 昏迷 / 击退统计由 CombatSystem 写入并通过敌人快照展示。T1201 后，敌人快照可观察最近一次战时对话心理结果和斗志 buff；T1202 后，通过生成敌人并用 `damage_npc` / NPC 扣血入口让 HP 跨过 30%，可在敌人快照观察低血量自身心理判定结果；T1204A 后，逃离调试、挽留暂停 / 恢复、轮次置灰、速度变化、逃离攻击无回复、昏迷暂停和正式逃离结果可在敌人快照观察。GM 仍只显示这些状态，不自行决定倍率、冷却、HP、击退统计、心理结果、逃离完成或胜负。
+- 该分组不自行结算伤害、集结结果、逃离结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T0110 后 NPC、敌人和器械统一按 `max(0, defense - penetration)` 得到有效防御，再按 `20 / (20 + effective_defense)` 得到伤害倍率，由 CombatSystem / DefenseDeviceSystem 的窄接口扣除各自权威 HP；GM 不读取“只看盔甲”的旧口径，也不自行生成冲锋、抬手或僵直结果。既有时间上限、战斗事件、心理、逃离与胜负职责不变。
 
 行为模式后续调试入口：
 
@@ -220,7 +240,7 @@ NPC：
 
 - 后端健康检查，调用 `LLMBridge.check_health()` 并刷新 HUD 后端状态。
 - 面板顶栏通过 `LLMBridge.debug_request_llm_usage_async()` 显示本次后端运行的正式 provider 尝试输入 / 输出 / 总 token、人民币估算和上海自然日持久化金额 / 上限；面板隐藏时停止轮询。
-- 查看完整后端 LLM usage / 成本统计 / 预算状态，调用 `LLMBridge.debug_request_llm_usage()` 读取 `GET /debug/llm_usage`，显示 provider、model、业务调用记录、每次 provider 尝试 token / 人民币、今日持久化金额、fallback 次数、两层预算上限 / 已用 / 剩余、最近预算错误、最近失败、HTTP 状态或异常类型、Schema 失败和降级来源；同时读取 `LLMBridge.debug_get_llm_runtime_snapshot()`，显示当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、有效逻辑倍率、最近一次 TimeSystem 倍率变化原因，以及每个请求的 call_type、慢速是否注册 / 释放和时间戳。该入口只读，不申请 TimeSystem 慢速。
+- 查看完整后端 LLM usage / 成本统计 / 预算状态，调用 `LLMBridge.debug_request_llm_usage()` 读取 `GET /debug/llm_usage`，显示 provider、model、业务调用记录、每次 provider 尝试 token / 人民币、今日持久化金额、fallback 次数、两层预算上限 / 已用 / 剩余、最近预算错误、最近失败、HTTP 状态或异常类型、Schema 失败和降级来源；同时读取 `LLMBridge.debug_get_llm_runtime_snapshot()`，显示当前等待中的 LLM 请求数、pending slowdown request id、NPC 活动请求、异步请求数量、传输退出标记、最近线程收束结果、有效逻辑倍率、最近一次 TimeSystem 倍率变化原因，以及每个请求的 call_type、慢速是否注册 / 释放和时间戳。该入口只读，不申请 TimeSystem 慢速。T0109 不增加“关闭 LLMBridge”按钮，因为退出收束发生后节点已离开场景，强行在正式运行中触发会破坏后续请求；悬挂传输与线程 join 由 `verify_llm_bridge_shutdown.gd` 验证。
 - 对当前选中 NPC 发送 `/npc/dialogue` 开发期 Mock 请求。
 - 对当前选中 NPC 发送带 `is_recruitment_request=true` 的开发期应征 Mock 请求。
 - 查看最近一次共享 NPC LLM 上下文注入的目标、调用类型和 `current_order`；`station_context` 显示当前在站成员、建筑、行为目录、五项公开基础资源和六条规则；`plan_request` 还显示最近一次通用 `plan_revision_judgement` 的 `trigger_kind`、结果及 `revision_hours`。
@@ -443,4 +463,4 @@ T0043 的五建筑位置、资格、团队效率、损伤与升级封闭由下�
 godot --headless --path . --script res://tools/verify_building_service_positions.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、时间倍率快照、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动当前小时计划修订、首次睡眠总结入口、长期记忆查看、计划修订请求 / 结果、最近通用计划修改判别、最近 LLM 指令注入、训练场教官 / 受训者入口、敌人波次生成 / 跳到下一波按钮 / 警铃集结 / 快照 / AI 推进 / 清空、逃离命令、敌人在场 TimeSystem `x1` 上限注册 / 释放、记忆事件和广场公告。T0035-T0038 后还会验证资源选择器包含 11 个具体 `item_*` 且隐藏四个过期聚合键、制造目标 / 单阶段 / 成品入库，以及马匹快照 / 受伤 / 生态推进 / 强制繁育 / 具体分配 / 解除分配。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T0023/T0050 的资源不足 / 工位占用触发、判别为空 / 非空、精确小时修订、Mock 隔离、真实计划修订和慢速释放由 `tools/verify_daily_plan_reevaluation.gd` 与 `tools/verify_action_failure_plan_revision_judgement.gd` 覆盖；NPC 当前计划入口、事件 / 见闻详情首次定位最新记录与刷新滚动保持由 `tools/verify_npc_panel_state.gd` 覆盖；T0029/T0030/T0049 的邀请接受 / 拒绝、无硬上限、软轮次参考、任一方结束标记，以及拒绝 / 正式结束后的双方独立判别由 `tools/verify_dialogue_invitation_contract.gd` 和对话判别专项覆盖；T1003 的显式开发 Mock 日计划由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1301 的 HUD 倒计时、配置时间自动来袭、重复触发保护和 GM 跳波入口由 `tools/verify_enemy_wave_schedule.gd` 覆盖；T1102/T1104C 的目标优先级、跳过围墙、移动、敌方建筑攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖；T1104 的双方基础伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击由 `tools/verify_combat_damage.gd` 覆盖；T1104A 的战斗时间上限、LLM 慢速叠加和清敌恢复由 `tools/verify_combat_time_cap.gd` 覆盖；T1104B 的艾达持剑第一波节奏和战斗动作秒换算由 `tools/verify_combat_pacing.gd` 覆盖；T1105 的兵种策略选项、NPC 面板策略下拉框、策略事件、默认策略重置、战斗内避战和保持距离射击由 `tools/verify_combat_strategies.gd` 覆盖；T1106 的战斗开始 / 结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态由 `tools/verify_combat_flow.gd` 覆盖；T1203 的完整逃离移动、离站标记和事件由 `tools/verify_escape_station_behavior.gd` 覆盖；T1204A 的逃离警告、NPC 面板入口、对话打开暂停、关闭恢复、五轮置灰、给钱减速、逃离攻击无回复计轮、昏迷暂停和复苏继续由 `tools/verify_escape_intervention_dialogue.gd` 覆盖；T1303 的无可战斗人员失败、未集结误判边界和 HUD / 快照原因由 `tools/verify_no_available_combatants_failure.gd` 覆盖；T1304 的第 5 波胜利、结算快照、HUD 胜利占位和结算后拒绝刷波由 `tools/verify_five_wave_victory.gd` 覆盖。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、时间倍率快照、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动当前小时计划修订、首次睡眠总结入口、长期记忆查看、计划修订请求 / 结果、最近通用计划修改判别、最近 LLM 指令注入、训练场教官 / 受训者入口、敌人波次生成 / 跳到下一波按钮 / 警铃集结 / 快照 / AI 推进 / 清空、逃离命令、敌人在场 TimeSystem `x1` 上限注册 / 释放、记忆事件和广场公告。T0035-T0038 后还会验证资源选择器包含 11 个具体 `item_*` 且隐藏四个过期聚合键、制造目标 / 单阶段 / 成品入库，以及马匹快照 / 受伤 / 生态推进 / 强制繁育 / 具体分配 / 解除分配。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T0023/T0050 的资源不足 / 工位占用触发、判别为空 / 非空、精确小时修订、Mock 隔离、真实计划修订和慢速释放由 `tools/verify_daily_plan_reevaluation.gd` 与 `tools/verify_action_failure_plan_revision_judgement.gd` 覆盖；NPC 当前计划入口、事件 / 见闻详情首次定位最新记录与刷新滚动保持由 `tools/verify_npc_panel_state.gd` 覆盖；T0029/T0030/T0049 的邀请接受 / 拒绝、无硬上限、软轮次参考、任一方结束标记，以及拒绝 / 正式结束后的双方独立判别由 `tools/verify_dialogue_invitation_contract.gd` 和对话判别专项覆盖；T1003 的显式开发 Mock 日计划由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1301 的 HUD 倒计时、配置时间自动来袭、重复触发保护和 GM 跳波入口由 `tools/verify_enemy_wave_schedule.gd` 覆盖；T1102/T1104C 的目标优先级、跳过围墙、移动、敌方建筑攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖；T1104 的双方基础伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击由 `tools/verify_combat_damage.gd` 覆盖；T1104A 的战斗时间上限、LLM 慢速叠加和清敌恢复由 `tools/verify_combat_time_cap.gd` 覆盖；T1104B 的艾达持剑第一波节奏和战斗动作秒换算由 `tools/verify_combat_pacing.gd` 覆盖；T1105 的兵种策略选项、NPC 面板策略下拉框、策略事件、默认策略重置、战斗内避战和保持距离射击由 `tools/verify_combat_strategies.gd` 覆盖；T1106 的战斗开始 / 结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态由 `tools/verify_combat_flow.gd` 覆盖；T1203 的完整逃离移动、离站标记和事件由 `tools/verify_escape_station_behavior.gd` 覆盖；T1204A 的逃离警告、NPC 面板入口、对话打开暂停、关闭恢复、五轮置灰、给钱减速、逃离攻击无回复计轮、昏迷暂停和复苏继续由 `tools/verify_escape_intervention_dialogue.gd` 覆盖；T1303 的无可战斗人员失败、未集结误判边界和 HUD / 快照原因由 `tools/verify_no_available_combatants_failure.gd` 覆盖；T1304 的第 5 波胜利、结算快照、HUD 胜利占位和结算后拒绝刷波由 `tools/verify_five_wave_victory.gd` 覆盖。T0107 的统一属性、双建筑通用槽、主厅射程、器械 HP、弱敌人潮、远程距离带和骑兵冲锋 / 僵直由 `tools/verify_t0107_combat_foundation.gd` 及塔防、伤害、策略、波次专项共同覆盖；世界 `+` 直接在 Main 前端验收，不新增 GM 部署入口。

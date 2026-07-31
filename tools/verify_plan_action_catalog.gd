@@ -65,20 +65,25 @@ func _init() -> void:
 
 	for required_action_id in [
 		"pray_at_chapel",
-		"attend_mass",
 		"seek_guard_officer",
 		"escaping_station",
 	]:
 		if _find_candidates(baseline_actions, required_action_id).size() != 1:
 			_fail("Expected exactly one static candidate for %s" % required_action_id)
 			return
-	var attend_mass_candidate: Dictionary = _find_candidates(baseline_actions, "attend_mass")[0]
-	var attend_mass_context: Dictionary = attend_mass_candidate.get("context", {})
-	if bool(attend_mass_context.get("available_now", true)):
-		_fail("attend_mass must be unavailable until a valid Mass leader is active")
+	if not _find_candidates(baseline_actions, "attend_mass").is_empty():
+		_fail("attend_mass must not remain a separate plan candidate")
 		return
-	if str(attend_mass_context.get("required_active_action_id", "")) != "lead_mass":
-		_fail("attend_mass candidate must expose its lead_mass runtime dependency")
+	var prayer_context: Dictionary = _find_candidates(
+		baseline_actions,
+		"pray_at_chapel"
+	)[0].get("context", {})
+	if (
+		not bool(prayer_context.get("available_now", false))
+		or not str(prayer_context.get("required_active_action_id", "")).is_empty()
+		or not str(prayer_context.get("blocked_by_active_action_id", "")).is_empty()
+	):
+		_fail("Merged prayer must stay available without a Mass dependency or blocker")
 		return
 	if not _find_candidates(baseline_actions, "escape_intervention_dialogue").is_empty():
 		_fail("escape_intervention_dialogue must never be plan-selectable")
@@ -288,7 +293,7 @@ func _init() -> void:
 		_fail(active_job_route_error)
 		return
 
-	# Priest departure only removes his ability to lead Mass. Ordinary prayer stays
+	# Priest departure only removes his ability to lead Mass. Merged prayer stays
 	# available, while lead_mass remains visible with an explicit eligibility hint.
 	if not npc_system.update_npc_state("priest_01", {
 		"escaped": true,
@@ -306,7 +311,7 @@ func _init() -> void:
 		_fail("Non-priest should see an explicitly ineligible Mass candidate")
 		return
 	if not _find_candidates(closed_chapel_actions, "attend_mass").is_empty():
-		_fail("attend_mass should disappear when no potential Mass leader remains in the station")
+		_fail("attend_mass must remain absent after the priest leaves")
 		return
 	if bool(daily_plan_system.call("_is_plan_target_unavailable", ACTOR_NPC_ID, {
 		"action_id": "pray_at_chapel",
@@ -337,7 +342,7 @@ func _init() -> void:
 			return
 	await process_frame
 	var destroyed_actions := _get_allowed_actions(llm_bridge, ACTOR_NPC_ID)
-	for unavailable_action_id in ["pray_at_chapel", "attend_mass", "work_clinic_doctor", "receive_clinic_treatment"]:
+	for unavailable_action_id in ["pray_at_chapel", "work_clinic_doctor", "receive_clinic_treatment"]:
 		if not _find_candidates(destroyed_actions, unavailable_action_id).is_empty():
 			_fail("Destroyed required building still exposed action %s" % unavailable_action_id)
 			return

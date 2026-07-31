@@ -144,8 +144,15 @@ func _init() -> void:
 	combat_system.debug_trigger_combat_alarm()
 	combat_system.debug_step_enemy_ai(0.1)
 	stableman_state = npc_system.get_npc_state("stableman_01")
-	if str(stableman_state.get("combat_mode", "")) != "combat" or str(stableman_state.get("current_action", "")) != "combat_ready":
-		push_error("NPC encountering enemy during rally should switch to combat_ready")
+	var encounter_action := str(stableman_state.get("current_action", ""))
+	if (
+		str(stableman_state.get("combat_mode", "")) != "combat"
+		or (
+			encounter_action != "combat_ready"
+			and not encounter_action.begins_with("attacking_")
+		)
+	):
+		push_error("NPC encountering enemy during rally should switch to combat readiness or attack: %s" % JSON.stringify(stableman_state))
 		quit(1)
 		return
 	if not _npc_has_event(memory_system, "stableman_01", "combat_rally_encountered_enemy"):

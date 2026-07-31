@@ -9,6 +9,15 @@ func _init() -> void:
 		_fail("Failed to load Main.tscn")
 		return
 	var main := packed.instantiate()
+	var startup_plan_system := main.get_node_or_null("Systems/DailyPlanSystem")
+	if startup_plan_system != null:
+		startup_plan_system.set_auto_execution_enabled(false)
+	var startup_llm_bridge := main.get_node_or_null("Systems/LLMBridge")
+	if (
+		startup_llm_bridge != null
+		and startup_llm_bridge.has_method("set_backend_base_url")
+	):
+		startup_llm_bridge.set_backend_base_url("http://127.0.0.1:1")
 	root.add_child(main)
 	await process_frame
 	await physics_frame
@@ -41,10 +50,6 @@ func _init() -> void:
 		"clinic_patient_failed_doctor_left",
 		"training_student_failed_no_instructor",
 		"training_student_failed_instructor_left",
-		"attend_mass_failed_no_leader",
-		"attend_mass_failed_leader_left",
-		"pray_failed_mass_in_progress",
-		"pray_failed_mass_started",
 	]:
 		if not bool(daily_plan_system.call("_is_failure_result", dependency_failure_id)):
 			_fail("DailyPlanSystem did not recognize dependency failure: %s" % dependency_failure_id)
@@ -54,7 +59,15 @@ func _init() -> void:
 			return
 	daily_plan_system.set_auto_execution_enabled(false)
 
-	if not _verify_chapel_lifecycle(event_bus, action_system, building_system, npc_system, memory_system, llm_bridge):
+	if not await _verify_chapel_lifecycle(
+		event_bus,
+		action_system,
+		building_system,
+		npc_system,
+		memory_system,
+		llm_bridge,
+		daily_plan_system
+	):
 		return
 	if not _verify_clinic_dependency(action_system, building_system, npc_system, memory_system):
 		return
@@ -71,112 +84,341 @@ func _verify_chapel_lifecycle(
 	building_system: Node,
 	npc_system: Node,
 	memory_system: Node,
-	llm_bridge: Node
+	llm_bridge: Node,
+	daily_plan_system: Node
 ) -> bool:
 	var priest_id := "priest_01"
-	var attendee_id := "cook_01"
 	var prayer_id := "gardener_01"
-	for npc_id in [priest_id, attendee_id, prayer_id]:
+	var observer_id := "cook_01"
+	for npc_id in [priest_id, prayer_id, observer_id]:
 		action_system.interrupt_npc_action(npc_id, "t0043a_chapel_setup", true)
 		npc_system.debug_enter_location_immediately(npc_id, "chapel")
 
-	var attend_action: Dictionary = action_system.get_action("attend_mass")
-	if (
-		str(attend_action.get("workstation_type", "")) != "chapel_prayer_seat"
-		or str(attend_action.get("required_active_action_id", "")) != "lead_mass"
-	):
-		_fail("attend_mass must use a prayer seat and require lead_mass")
+	if action_system.get_action_ids().has("attend_mass"):
+		_fail("attend_mass must be removed from the runtime action catalog")
 		return false
-	var before_mass_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(attendee_id, {"requires_time_slowdown": false})
-	var before_attend := _find_candidate(before_mass_payload.get("allowed_actions", []), "attend_mass")
-	if before_attend.is_empty() or bool(before_attend.get("context", {}).get("available_now", true)):
-		_fail("attend_mass should remain visible but unavailable before Mass begins")
+	var before_mass_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(prayer_id, {"requires_time_slowdown": false})
+	if not _find_candidate(before_mass_payload.get("allowed_actions", []), "attend_mass").is_empty():
+		_fail("attend_mass must not appear in allowed_actions")
 		return false
-	if action_system.debug_assign_action(attendee_id, "attend_mass"):
-		_fail("Mass attendance must fail without an active leader")
-		return false
-	if str(npc_system.get_npc_state(attendee_id).get("last_action_result", "")) != "attend_mass_failed_no_leader":
-		_fail("Missing Mass leader should produce attend_mass_failed_no_leader")
-		return false
-	if str(npc_system.get_npc_state(attendee_id).get("last_action_failure_context", {}).get("failure_id", "")) != "attend_mass_failed_no_leader":
-		_fail("Missing Mass leader failure context should preserve its precise failure_id")
+	var prayer_candidate := _find_candidate(before_mass_payload.get("allowed_actions", []), "pray_at_chapel")
+	if prayer_candidate.is_empty() or not bool(prayer_candidate.get("context", {}).get("available_now", false)):
+		_fail("Merged prayer must be available without a Mass leader")
 		return false
 
 	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
-		_fail("Ordinary prayer should start without a priest or Mass")
+		_fail("Prayer should start without a priest or Mass")
 		return false
+	var personal_snapshot: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
+	if (
+		str(personal_snapshot.get("action_id", "")) != "pray_at_chapel"
+		or str(personal_snapshot.get("prayer_mode", "")) != "personal_prayer"
+	):
+		_fail("Prayer without an active Mass should begin as personal prayer")
+		return false
+	event_bus.logical_time_tick.emit(600.0, 1.0)
+	var elapsed_before_mass := float(action_system.get_runtime_action_snapshot(prayer_id).get("elapsed_seconds", -1.0))
+
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Eligible priest should start Mass")
 		return false
-	if str(npc_system.get_npc_state(prayer_id).get("last_action_result", "")) != "pray_failed_mass_started":
-		_fail("Starting Mass should interrupt an existing ordinary prayer")
+	var joined_snapshot: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
+	if str(joined_snapshot.get("prayer_mode", "")) != "mass_attendance":
+		_fail("Starting Mass should convert active prayer to Mass attendance")
 		return false
-	if str(npc_system.get_npc_state(prayer_id).get("last_action_failure_context", {}).get("failure_id", "")) != "pray_failed_mass_started":
-		_fail("Interrupted prayer failure context should preserve pray_failed_mass_started")
+	if not is_equal_approx(float(joined_snapshot.get("elapsed_seconds", -2.0)), elapsed_before_mass):
+		_fail("Joining Mass must preserve elapsed prayer time")
 		return false
-	if _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
-		_fail("Interrupted ordinary prayer should release its prayer seat")
+	if not _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
+		_fail("Joining Mass must keep the same prayer seat")
 		return false
-
-	if action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
-		_fail("Ordinary prayer must fail while Mass is active")
+	if not npc_system.get_npc_state(prayer_id).get("last_action_failure_context", {}).is_empty():
+		_fail("Joining Mass must not create an action failure")
 		return false
-	if str(npc_system.get_npc_state(prayer_id).get("last_action_result", "")) != "pray_failed_mass_in_progress":
-		_fail("Prayer during Mass should expose pray_failed_mass_in_progress")
+	var joined_event := _find_latest_event(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_joined_mass",
+		"pray_at_chapel"
+	)
+	if joined_event.is_empty() or str(joined_event.get("visibility", "")) != "local_public":
+		_fail("Joining Mass should write a local-public structured event")
 		return false
-	if str(npc_system.get_npc_state(prayer_id).get("last_action_failure_context", {}).get("failure_id", "")) != "pray_failed_mass_in_progress":
-		_fail("Prayer conflict failure context should preserve pray_failed_mass_in_progress")
-		return false
-	var during_mass_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(attendee_id, {"requires_time_slowdown": false})
-	var during_attend := _find_candidate(during_mass_payload.get("allowed_actions", []), "attend_mass")
-	var during_prayer := _find_candidate(during_mass_payload.get("allowed_actions", []), "pray_at_chapel")
-	if not bool(during_attend.get("context", {}).get("available_now", false)):
-		_fail("attend_mass should become available while the priest is leading Mass")
-		return false
-	if bool(during_prayer.get("context", {}).get("available_now", true)):
-		_fail("Ordinary prayer candidate should be unavailable while Mass is active")
-		return false
-	if not action_system.debug_assign_action(attendee_id, "attend_mass"):
-		_fail("NPC should be able to occupy a prayer seat and attend active Mass")
-		return false
-	if not _is_occupied_by(building_system.get_building("chapel").get("workstations", []), attendee_id):
-		_fail("Mass attendee should occupy a prayer seat")
+	if _find_latest_event(
+		memory_system.get_npc_witness_events(observer_id),
+		"prayer_joined_mass",
+		"pray_at_chapel"
+	).is_empty():
+		_fail("Joining Mass should broadcast to eligible NPCs already in the chapel")
 		return false
 
-	event_bus.logical_time_tick.emit(3600.0, 1.0)
-	if str(npc_system.get_npc_state(priest_id).get("last_action_result", "")) != "completed_mass":
-		_fail("Mass leader should complete after the configured cycle")
+	action_system.interrupt_npc_action(priest_id, "dialogue_interrupted", true)
+	var resumed_snapshot: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
+	if str(resumed_snapshot.get("prayer_mode", "")) != "personal_prayer":
+		_fail("Stopping Mass should resume personal prayer")
 		return false
-	if str(npc_system.get_npc_state(attendee_id).get("last_action_result", "")) != "completed_mass_attendance":
-		_fail("Active attendees should complete together with a normally completed Mass")
+	if not is_equal_approx(float(resumed_snapshot.get("elapsed_seconds", -2.0)), elapsed_before_mass):
+		_fail("Mass interruption must not reset prayer progress")
 		return false
-	if _is_occupied_by(building_system.get_building("chapel").get("workstations", []), attendee_id):
-		_fail("Completed Mass attendance should release the prayer seat")
+	if not _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
+		_fail("Resuming personal prayer must keep the prayer seat")
 		return false
-	var attendee_completed := _find_latest_event(memory_system.get_npc_daily_events(attendee_id), "prayer_completed", "attend_mass")
-	if attendee_completed.is_empty():
-		_fail("Completed Mass attendance should write a structured prayer_completed event")
+	var resumed_event := _find_latest_event(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_resumed_alone",
+		"pray_at_chapel"
+	)
+	if resumed_event.is_empty():
+		_fail("Mass interruption should write a prayer_resumed_alone event")
+		return false
+	var interrupted_payload: Dictionary = resumed_event.get("payload", {})
+	var interrupted_summary := str(resumed_event.get("summary", ""))
+	if (
+		str(interrupted_payload.get("trigger", "")) != "mass_leader_stopped"
+		or str(interrupted_payload.get("provider_stop_reason", ""))
+		!= "dialogue_interrupted"
+		or not interrupted_summary.contains("主持中断")
+	):
+		_fail("Dialogue interruption should preserve its interruption trigger and wording")
+		return false
+	if _find_latest_event(
+		memory_system.get_npc_witness_events(observer_id),
+		"prayer_resumed_alone",
+		"pray_at_chapel"
+	).is_empty():
+		_fail("Resuming personal prayer should broadcast to eligible NPCs in the chapel")
 		return false
 
+	action_system.interrupt_npc_action(prayer_id, "t0098_chapel_second_scenario", true)
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
-		_fail("Priest should be able to start a second Mass for interruption testing")
+		_fail("Priest should start Mass before a new prayer arrives")
 		return false
-	if not action_system.debug_assign_action(attendee_id, "attend_mass"):
-		_fail("Attendee should join the second Mass")
+	event_bus.logical_time_tick.emit(600.0, 1.0)
+	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
+		_fail("Merged prayer should start while Mass is already active")
 		return false
-	action_system.interrupt_npc_action(priest_id, "t0043a_mass_interrupted", true)
-	if str(npc_system.get_npc_state(attendee_id).get("last_action_result", "")) != "attend_mass_failed_leader_left":
-		_fail("Interrupting the leader should immediately fail every Mass attendee")
+	var started_during_mass: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
+	if (
+		str(started_during_mass.get("action_id", "")) != "pray_at_chapel"
+		or str(started_during_mass.get("prayer_mode", "")) != "mass_attendance"
+	):
+		_fail("Prayer started during Mass should immediately become Mass attendance")
 		return false
-	if str(npc_system.get_npc_state(attendee_id).get("last_action_failure_context", {}).get("failure_id", "")) != "attend_mass_failed_leader_left":
-		_fail("Interrupted Mass attendance should preserve attend_mass_failed_leader_left")
+	event_bus.logical_time_tick.emit(3000.0, 1.0)
+	if str(npc_system.get_npc_state(priest_id).get("last_action_result", "")) != "completed_mass":
+		_fail("Mass leader should complete after its configured duration")
 		return false
-	if _is_occupied_by(building_system.get_building("chapel").get("workstations", []), attendee_id):
-		_fail("Failed Mass attendance should release the prayer seat")
+	var after_normal_mass: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
+	if (
+		str(after_normal_mass.get("phase", "")) != "active"
+		or str(after_normal_mass.get("prayer_mode", "")) != "personal_prayer"
+		or not is_equal_approx(float(after_normal_mass.get("elapsed_seconds", -1.0)), 3000.0)
+	):
+		_fail("Normal Mass completion should resume the unfinished original prayer")
 		return false
-	var attendee_failed := _find_latest_event(memory_system.get_npc_daily_events(attendee_id), "prayer_failed", "attend_mass")
-	if attendee_failed.is_empty():
-		_fail("Interrupted Mass attendance should write a structured prayer_failed event")
+	var normal_completion_event := _find_latest_event(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_resumed_alone",
+		"pray_at_chapel"
+	)
+	var normal_completion_payload: Dictionary = normal_completion_event.get(
+		"payload",
+		{}
+	)
+	var normal_completion_summary := str(normal_completion_event.get("summary", ""))
+	if (
+		normal_completion_event.is_empty()
+		or str(normal_completion_payload.get("trigger", "")) != "mass_completed"
+		or not normal_completion_summary.contains("弥撒结束")
+		or normal_completion_summary.contains("中断")
+	):
+		_fail("Normal Mass completion should record the return to personal prayer")
+		return false
+
+	action_system.interrupt_npc_action(prayer_id, "t0105b_plan_boundary_setup", true)
+	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
+		_fail("Prayer should restart for the planned Mass boundary scenario")
+		return false
+	event_bus.logical_time_tick.emit(1800.0, 1.0)
+	if not action_system.debug_assign_action(priest_id, "lead_mass"):
+		_fail("Priest should start Mass for the planned boundary scenario")
+		return false
+	var game_state := root.get_node_or_null("GameState")
+	if game_state == null:
+		_fail("GameState is missing")
+		return false
+	var current_hour := int(game_state.current_hour)
+	if not daily_plan_system.set_npc_daily_plan(
+		priest_id,
+		_make_current_plan(current_hour, "idle", "idle", ""),
+		false,
+		"verify_t0105b_mass_boundary"
+	):
+		_fail("Could not install the post-Mass plan")
+		return false
+	if not daily_plan_system.set_npc_daily_plan(
+		prayer_id,
+		_make_current_plan(current_hour, "work_garden", "work", "garden"),
+		false,
+		"verify_t0105b_mass_attendee_boundary"
+	):
+		_fail("Could not install the post-Mass attendee plan")
+		return false
+	daily_plan_system.set_auto_execution_enabled(true)
+	var leader_boundary_result: Dictionary = daily_plan_system.execute_current_plan_for_npc(
+		priest_id,
+		true,
+		false,
+		true
+	)
+	var attendee_boundary_result: Dictionary = (
+		daily_plan_system.execute_current_plan_for_npc(
+			prayer_id,
+			true,
+			false,
+			true
+		)
+	)
+	if (
+		str(leader_boundary_result.get("status", ""))
+		!= "deferred_until_mass_completed"
+		or str(attendee_boundary_result.get("status", ""))
+		!= "deferred_until_mass_completed"
+	):
+		_fail("The planned Mass boundary should defer both plans: %s / %s" % [
+			JSON.stringify(leader_boundary_result),
+			JSON.stringify(attendee_boundary_result),
+		])
+		return false
+	var boundary_resumed_count_before := _count_events(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_resumed_alone",
+		"pray_at_chapel"
+	)
+	var leader_during_boundary: Dictionary = action_system.get_runtime_action_snapshot(
+		priest_id
+	)
+	var attendee_during_boundary: Dictionary = action_system.get_runtime_action_snapshot(
+		prayer_id
+	)
+	if (
+		str(leader_during_boundary.get("action_id", "")) != "lead_mass"
+		or str(attendee_during_boundary.get("action_id", ""))
+		!= "pray_at_chapel"
+		or str(attendee_during_boundary.get("prayer_mode", ""))
+		!= "mass_attendance"
+	):
+		_fail("The hour boundary must preserve the active Mass and its attendee")
+		return false
+	event_bus.logical_time_tick.emit(1800.0, 1.0)
+	var attendee_at_own_duration: Dictionary = action_system.get_runtime_action_snapshot(
+		prayer_id
+	)
+	if (
+		str(attendee_at_own_duration.get("phase", "")) != "active"
+		or str(attendee_at_own_duration.get("prayer_mode", ""))
+		!= "mass_attendance"
+		or not is_equal_approx(
+			float(attendee_at_own_duration.get("elapsed_seconds", -1.0)),
+			3600.0
+		)
+		or _count_events(
+			memory_system.get_npc_daily_events(prayer_id),
+			"prayer_resumed_alone",
+			"pray_at_chapel"
+		) != boundary_resumed_count_before
+	):
+		_fail("An attendee whose prayer timer expires must remain in Mass")
+		return false
+	event_bus.logical_time_tick.emit(1800.0, 1.0)
+	await process_frame
+	await process_frame
+	daily_plan_system.set_auto_execution_enabled(false)
+	if (
+		action_system.has_active_action(priest_id)
+		or str(npc_system.get_npc_state(priest_id).get("current_action", ""))
+		!= "idle"
+		or action_system.get_pending_action_id(prayer_id) != "work_garden"
+	):
+		_fail("Deferred plans should execute only after Mass truly completes")
+		return false
+	var completed_attendee_snapshot: Dictionary = action_system.get_runtime_action_snapshot(
+		prayer_id
+	)
+	if (
+		str(completed_attendee_snapshot.get("phase", "")) != "pending"
+		or str(completed_attendee_snapshot.get("action_id", "")) != "work_garden"
+		or _is_occupied_by(
+			building_system.get_building("chapel").get("workstations", []),
+			prayer_id
+		)
+	):
+		_fail("The attendee should release prayer and begin the deferred work plan")
+		return false
+	var boundary_resumed_event := _find_latest_event(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_resumed_alone",
+		"pray_at_chapel"
+	)
+	var boundary_payload: Dictionary = boundary_resumed_event.get("payload", {})
+	var boundary_summary := str(boundary_resumed_event.get("summary", ""))
+	if (
+		_count_events(
+			memory_system.get_npc_daily_events(prayer_id),
+			"prayer_resumed_alone",
+			"pray_at_chapel"
+		) != boundary_resumed_count_before + 1
+		or str(boundary_payload.get("trigger", "")) != "mass_completed"
+		or not boundary_summary.contains("弥撒结束")
+		or boundary_summary.contains("中断")
+	):
+		_fail("Natural completion after the boundary should use Mass-ended wording")
+		return false
+	if _find_latest_event(
+		memory_system.get_npc_daily_events(prayer_id),
+		"prayer_completed",
+		"pray_at_chapel"
+	).is_empty():
+		_fail("The expired attendee prayer should complete after Mass ends")
+		return false
+	if _find_latest_event(
+		memory_system.get_npc_daily_events(priest_id),
+		"prayer_completed",
+		"lead_mass"
+	).is_empty():
+		_fail("The protected Mass leader should finish normally")
+		return false
+
+	action_system.interrupt_npc_action(observer_id, "t0105b_ordinary_boundary_setup", true)
+	if not npc_system.debug_enter_location_immediately(observer_id, "dining_hall"):
+		_fail("Could not place the ordinary boundary actor")
+		return false
+	if not action_system.debug_assign_action(observer_id, "work_dining_hall"):
+		_fail("Could not start ordinary work for boundary isolation")
+		return false
+	if not daily_plan_system.set_npc_daily_plan(
+		observer_id,
+		_make_current_plan(current_hour, "idle", "idle", ""),
+		false,
+		"verify_t0105b_ordinary_boundary"
+	):
+		_fail("Could not install the ordinary post-boundary plan")
+		return false
+	var ordinary_boundary_result: Dictionary = (
+		daily_plan_system.execute_current_plan_for_npc(
+			observer_id,
+			true,
+			false,
+			true
+		)
+	)
+	if (
+		not bool(ordinary_boundary_result.get("ok", false))
+		or str(ordinary_boundary_result.get("status", "")) != "started"
+		or action_system.has_active_action(observer_id)
+		or str(npc_system.get_npc_state(observer_id).get("current_action", ""))
+		!= "idle"
+	):
+		_fail("The Mass boundary protection must not preserve ordinary work")
 		return false
 	return true
 
@@ -314,6 +556,29 @@ func _find_candidate(raw_candidates, action_id: String) -> Dictionary:
 	return {}
 
 
+func _make_current_plan(
+	current_hour: int,
+	current_action_id: String,
+	current_action_kind: String,
+	current_location_id: String
+) -> Array:
+	var plan: Array = []
+	for hour in range(24):
+		var is_current_hour := hour == current_hour
+		plan.append({
+			"hour": hour,
+			"action_kind": current_action_kind if is_current_hour else "idle",
+			"action_id": current_action_id if is_current_hour else "idle",
+			"location_id": current_location_id if is_current_hour else "",
+			"target_id": "",
+			"priority": 50 if is_current_hour else 40,
+			"reason": "T0105B planned Mass boundary verification",
+			"dialogue_goal": "",
+			"source": "verify_t0105b_mass_boundary",
+		})
+	return plan
+
+
 func _is_occupied_by(raw_workstations, npc_id: String) -> bool:
 	if not raw_workstations is Array:
 		return false
@@ -333,6 +598,21 @@ func _find_latest_event(events: Array, event_type: String, action_id: String) ->
 		if str(event.get("type", "")) == event_type and str(payload.get("action_id", "")) == action_id:
 			return event
 	return {}
+
+
+func _count_events(events: Array, event_type: String, action_id: String) -> int:
+	var count := 0
+	for raw_event in events:
+		if not raw_event is Dictionary:
+			continue
+		var event: Dictionary = raw_event
+		var payload: Dictionary = event.get("payload", {})
+		if (
+			str(event.get("type", "")) == event_type
+			and str(payload.get("action_id", "")) == action_id
+		):
+			count += 1
+	return count
 
 
 func _fail(message: String) -> void:

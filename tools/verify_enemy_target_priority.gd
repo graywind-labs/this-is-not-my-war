@@ -47,7 +47,8 @@ func _init() -> void:
 
 	var gate_before := int(building_system.get_building("front_gate").get("hp", 0))
 	combat_system.debug_step_enemy_ai(720.0)
-	combat_system.debug_step_enemy_ai(10.0)
+	# T0107 enemy attacks have a windup measured in combat-action seconds.
+	combat_system.debug_step_enemy_ai(60.0)
 	var gate_after := int(building_system.get_building("front_gate").get("hp", 0))
 	if gate_after >= gate_before:
 		push_error("Enemy should move to and damage front_gate. before=%d after=%d" % [gate_before, gate_after])
@@ -69,7 +70,7 @@ func _init() -> void:
 		return
 	npc_node.global_position = enemy_position + Vector3(0.0, 0.0, -1.0)
 	var npc_hp_before := int(npc_system.get_npc_state(npc_id).get("hp", 0))
-	combat_system.debug_step_enemy_ai(3.0)
+	combat_system.debug_step_enemy_ai(60.0)
 	var nearby_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
 	if str(nearby_target.get("type", "")) != "npc" or str(nearby_target.get("id", "")) != npc_id:
 		push_error("Nearby actionable NPC should override building target, got: %s" % JSON.stringify(nearby_target))

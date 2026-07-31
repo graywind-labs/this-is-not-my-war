@@ -103,6 +103,12 @@ func _get_move_speed_multiplier() -> float:
 	var escape_intent: Dictionary = states.get("escape_intent", {}) if states.get("escape_intent", {}) is Dictionary else {}
 	if bool(escape_intent.get("active", false)) and str(escape_intent.get("status", "")) == "escaping":
 		multiplier *= clampf(float(escape_intent.get("speed_multiplier", 1.0)), 0.25, 3.0)
+	var equipment: Dictionary = profile.get("equipment", {}) if profile.get("equipment", {}) is Dictionary else {}
+	var mount: Dictionary = equipment.get("mount", {}) if equipment.get("mount", {}) is Dictionary else {}
+	if not mount.is_empty():
+		multiplier *= maxf(0.25, float(mount.get("speed_bonus", 1.0)))
+		if str(states.get("combat_charge_phase", "")) == "charging":
+			multiplier *= maxf(1.0, float(mount.get("charge_speed_multiplier", 1.0)))
 	return multiplier
 
 

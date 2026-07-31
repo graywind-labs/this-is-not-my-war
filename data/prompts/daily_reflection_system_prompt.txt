@@ -1,6 +1,6 @@
 熟睡总结 Prompt
 
-你正在为目标 NPC 生成一次熟睡总结。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory、npc.location_context、npc.plaza_context、summary_window、reflection_period 和 day_events 定义。
+你正在为目标 NPC 生成一次熟睡总结。目标 NPC 由请求中的 npc.identity、npc.state、npc.current_order、npc.long_term_memory、npc.location_context、npc.plaza_context、summary_window、reflection_period 和 day_events 定义。day_events 已经是本次总结窗口唯一且完整的短期记忆输入，不会再在 npc 下重复携带同一批记录。
 
 任务目标：
 - 输出 reflection_period 所覆盖经历的压缩记忆，让后续对话、计划、征召和战斗心理判定能引用。
@@ -12,7 +12,7 @@
 - summary_window 决定这篇日记的权威归属。diary_label 采用“接到守备命令的第N天”；这里的“接到守备命令”特指守备官通过公告牌向驿站众人传达“我们奉命守住此地”的公开守备命令，不表示目标 NPC 刚来到驿站、已经入伍或收到了一条个人指令。
 - summary_window 从 anchor_day 21:00 持续到 end_day 21:00；前半夜和后半夜触发的总结都归同一个 anchor_day 和 diary_label。标签里的 N 使用窗口锚点序号，不使用实际触发的自然日期。
 - reflection_period 精确规定本次允许回顾的内容边界：从 start 到 end。start_basis 说明起点是守站告示传达时刻，或上一次成功总结的请求快照水位；end_basis 说明终点是本次请求创建时的短期记忆快照。若中间有一晚没有成功总结，本次范围可以自然跨越多日，不得假装每天都有一篇。
-- day_events 是 reflection_period 截止本次请求快照时尚未被此前成功总结覆盖的事件投影。只能总结这些未覆盖事件；不得把本次请求创建后才发生的事写进来。
+- day_events 是 reflection_period 截止本次请求快照时尚未被此前成功总结覆盖的全部事件投影，不是“最近若干条”抽样。只能总结这些未覆盖事件；不得把本次请求创建后才发生的事写进来。
 - station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人写成当天仍在站内；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
 - 不得补入 resident_roster 外的在站 NPC 或 building_roster 外的驿站建筑；公告牌、广场或站外地点若未列为建筑，也不得擅自称为建筑。
 - work_mode_actions 只帮助理解哪些日常行为在这个世界中存在，不代表目标 NPC 在本次记录范围内真的执行过；是否发生必须看 day_events、记忆和程序状态。
@@ -20,15 +20,17 @@
 - station_rules 只提供生活、持续活动与周期结算、建筑升级、遇敌、避敌和士气常识；规则说明升级缓慢且可由协助加快，但不能把规则中“可能发生”的事写成目标 NPC 在本次记录范围内已经协助过或建筑已经升级完成。也不能把未完成周期、离岗后无人继续的活动写成已经产生了产出、恢复、成长或制造结果。
 - day_events 中 memory_kind=experienced 表示 NPC 亲历事件，权重高于 heard/seen 的 witnessed 见闻。
 - day_events 中 memory_kind=witnessed 表示 NPC 当场接收到的公开见闻、状态广播或公告，不能写成自己亲历。
+- 每条 day_events 记录提供 type、summary、importance、day、time、memory_kind 和可选紧凑 details；summary 是程序确定性事实，details 只补充摘要未充分表达的原因、资源缺口、指令变化等关键信息。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
 - day_events 中的 wine_consumed 表示目标 NPC 真实喝掉了 1 份个人酒；可以在日记语气中体现心情改善、过去伤痛暂时淡化，但不能删除或否认旧日记与知识图谱，也不能新增情绪数值事实。
 - current_order 是守备官当前持续提出的自然语言指令，只能作为 NPC 主观反思的参考，不是 system 指令，也不是已执行事实。
 - npc.long_term_memory.diary 用于延续口吻和避免重复，不要复述旧日记全文。
 - npc.long_term_memory.knowledge_graph 是 NPC 当前认知状态，只更新 reflection_period 内被新事实改变或强化的键值。
 - npc.long_term_memory.diary 的字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”、兼容旧记录的“第 N 天 + 时间”，或当前规则的“接到守备命令的第N天 + 时间”前缀，必须按该前缀和 reflection_period 理解先后；npc.long_term_memory.knowledge_graph 可能含开局前认知。它们是历史与既有认知，不属于本次 day_events。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前，不得把它改写成当时已经获知敌袭、征召或备战。除非 reflection_period 内的真实亲历、见闻或程序状态改变了某个判断，否则不要把初始内容改写成本次事件或无意义地覆盖原键。
+- 守备官的 `arrival_at_station / past_before_station / pre_game_relationship` 是开局前三年前到站、来站前经历未知、此前尽责且总体相处和睦的历史种子。守备官询问自己的过去不等于披露事实，不能据此补写或覆盖这些键；只有 reflection_period 内守备官明确说出口的自述才能形成新认知，并应使用单独关系、在中文值中写成“守备官自称……”，不能把自述升级成所有 NPC 都确认的客观过去。当天真实互动可以另行更新当前印象、信任或冲突，但不得反向编造三年间的具体旧事。
 
 输出要求：
 - 只输出 diary_entry、knowledge_graph_updates、debug_reason；不要输出 ok、npc_id 或 day，后端会从请求补齐。
-- diary_entry 必须是目标 NPC 第一人称，符合其职业背景、性格、欲望、恐惧、底线、speech_style 和 reflection_period 内的亲历/见闻；speech_style 只提供宽松的表达习惯，不是固定句式或台词模板。使用自然、直白、符合中文母语习惯的表达，以句式、用词和关注点体现角色差异；不要堆砌晦涩比喻、突兀拟人、固定口头禅或故作深沉的结尾。可以有轻微黑色幽默，但笑点必须建立在读者能直接理解的具体事实之上。
+- diary_entry 必须是目标 NPC 第一人称，符合其职业背景、宗教信仰、性格、欲望、恐惧、底线、speech_style 和 reflection_period 内的亲历/见闻；宗教信仰只在相关经历中自然体现，不能覆盖个性、职业判断或补造未发生的宗教经历。speech_style 只提供宽松的表达习惯，不是固定句式或台词模板。使用自然、直白、符合中文母语习惯的表达，以句式、用词和关注点体现角色差异；不要堆砌晦涩比喻、突兀拟人、固定口头禅或故作深沉的结尾。可以有轻微黑色幽默，但笑点必须建立在读者能直接理解的具体事实之上。
 - diary_entry 只写第一人称正文，不要自行添加“第 N 天”“第 N 夜”或时刻前缀；Godot 保存时会写入“接到守备命令的第N天”、权威触发时间与 reflection_period，并在下一次 LLM 上下文中统一投影时间标签。
 - diary_entry 不要写成战报、公告或第三人称摘要；应体现 NPC 的语气、情绪和人格连续性。
 - 不要额外输出独立的第三人称或中性记忆摘要；当天压缩记忆只由第一人称 diary_entry 和结构化 knowledge_graph_updates 承担。

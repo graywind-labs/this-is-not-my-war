@@ -99,6 +99,36 @@ func _init() -> void:
 		):
 			_fail("%s did not load level-based warehouse-capacity knowledge" % npc_id)
 			return
+		var wall_text := _format_relation_values(by_subject.get("wall", {}))
+		var main_hall_text := _format_relation_values(by_subject.get("main_hall", {}))
+		if (
+			not wall_text.contains("弩床")
+			or not wall_text.contains("箭塔")
+			or not wall_text.contains("1、2、2、3、3、4")
+		):
+			_fail("%s did not load the current wall slot curve" % npc_id)
+			return
+		if (
+			not main_hall_text.contains("弩床")
+			or not main_hall_text.contains("箭塔")
+			or not main_hall_text.contains("1、1、2、2、3、4")
+			or not main_hall_text.contains("射程")
+			or (
+				not main_hall_text.contains("两倍")
+				and not main_hall_text.contains("翻倍")
+				and not main_hall_text.contains("加倍")
+			)
+		):
+			_fail("%s did not load the current main-hall slot/range rule" % npc_id)
+			return
+		for stale_phrase in [
+			"只能安在各自合适的墙位",
+			"只会让墙体更耐打",
+			"不会凭空多出安装器械的地方"
+		]:
+			if ("%s %s" % [wall_text, main_hall_text]).contains(stale_phrase):
+				_fail("%s retained stale wall-only device knowledge" % npc_id)
+				return
 		if npc_id == "veteran_deputy_01":
 			var training_relations: Dictionary = by_subject.get("training_ground", {})
 			var instructor_rule: Dictionary = training_relations.get("instructor_growth_rule", {})
@@ -131,12 +161,34 @@ func _init() -> void:
 			_fail("%s knowledge UI exposed internal confidence/time metadata" % npc_id)
 			return
 		var guard_relations: Dictionary = by_subject.get("guard_officer", {})
-		if guard_relations.size() != 1 or not guard_relations.has("role"):
-			_fail("%s guard-officer seed must contain one role relation with duties only" % npc_id)
+		var expected_guard_values := {
+			"role": "station_defense_alert_and_emergency_staff_coordination",
+			"arrival_at_station": "arrived_three_years_before_game_start",
+			"past_before_station": "unknown_not_disclosed",
+			"pre_game_relationship": "consistently_dedicated_and_harmonious",
+		}
+		if guard_relations.size() != expected_guard_values.size():
+			_fail("%s guard-officer seed must contain four stable background relations" % npc_id)
 			return
-		var guard_record: Dictionary = guard_relations.values()[0] if guard_relations.values()[0] is Dictionary else {}
-		if not guard_record.has("confidence") or not guard_record.has("day") or not guard_record.has("time"):
-			_fail("%s guard-officer raw record lost confidence/time metadata" % npc_id)
+		for relation_key in expected_guard_values:
+			var guard_record: Dictionary = guard_relations.get(relation_key, {})
+			if (
+				str(guard_record.get("value", "")) != str(expected_guard_values[relation_key])
+				or not guard_record.has("confidence")
+				or not guard_record.has("day")
+				or not guard_record.has("time")
+			):
+				_fail("%s guard-officer relation %s lost its stable value or metadata" % [
+					npc_id,
+					relation_key,
+				])
+				return
+		if (
+			not str(guard_relations.get("arrival_at_station", {}).get("value_label", "")).contains("三年前")
+			or not str(guard_relations.get("past_before_station", {}).get("value_label", "")).contains("不")
+			or not str(guard_relations.get("pre_game_relationship", {}).get("value_label", "")).contains("和")
+		):
+			_fail("%s guard-officer player-facing history boundary is incomplete" % npc_id)
 			return
 		for raw_building_id in building_ids:
 			var building: Dictionary = building_system.get_building(str(raw_building_id))
@@ -202,6 +254,12 @@ func _init() -> void:
 				if str(call_type) == "dialogue"
 				else payload.get("npc", {}).get("identity", {})
 			)
+			if str(prompt_identity.get("religion", "")) != "天主教":
+				_fail("%s %s payload lost the shared religion field" % [
+					npc_id,
+					str(call_type)
+				])
+				return
 			if prompt_identity.has("signature_lines"):
 				_fail("%s %s payload still exposed fixed representative expressions" % [
 					npc_id,
@@ -285,14 +343,25 @@ func _init() -> void:
 		return
 
 	print(
-		"T0061 NPC copy and initial long-memory verification passed: "
-		+ "8 NPCs, 24 diary slices, 15 buildings each, duties-only guard knowledge, "
+		"T0061/T0101 NPC copy and initial long-memory verification passed: "
+		+ "8 NPCs, 24 diary slices, 15 buildings each, four-part guard knowledge, "
 		+ "four overlooked-role rules, level-based warehouse-capacity knowledge, "
+		+ "six-level wall/main-hall device-slot knowledge and main-hall 2x range, "
 		+ "narrative building labels, compact knowledge UI, labeled six-way LLM payloads, "
 		+ "idempotent reinitialization; "
 		+ "largest payload chars=%s." % JSON.stringify(largest_payload_chars)
 	)
 	quit(0)
+
+
+func _format_relation_values(raw_relations: Variant) -> String:
+	if not raw_relations is Dictionary:
+		return ""
+	var parts: Array[String] = []
+	for raw_record in (raw_relations as Dictionary).values():
+		if raw_record is Dictionary:
+			parts.append(str((raw_record as Dictionary).get("value_label", "")))
+	return " ".join(parts)
 
 
 func _build_idle_plan() -> Array[Dictionary]:

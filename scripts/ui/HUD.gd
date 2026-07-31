@@ -1,6 +1,7 @@
 extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
+const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd")
 
 @onready var day_label: Label = %DayLabel
 @onready var time_label: Label = %TimeLabel
@@ -26,6 +27,12 @@ var _game_over_panel: PanelContainer
 var _game_over_title_label: Label
 var _game_over_reason_label: Label
 var _game_over_detail_label: Label
+var _piety_ability_button
+var _meteor_target_hint: Label
+var _meteor_target_preview: MeshInstance3D
+var _meteor_targeting_active := false
+var _meteor_target_valid := false
+var _meteor_target_position := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -33,6 +40,7 @@ func _ready() -> void:
 	_build_resource_strip()
 	_build_detail_panel()
 	_build_wave_countdown_label()
+	_build_piety_ability_button()
 	_build_escape_warning_label()
 	_build_game_over_panel()
 	if speed_button != null:
@@ -68,11 +76,17 @@ func _ready() -> void:
 			event_bus.game_over_changed.connect(_on_game_over_changed)
 		if event_bus.has_signal("npc_state_changed"):
 			event_bus.npc_state_changed.connect(_on_npc_state_changed)
+		if event_bus.has_signal("piety_changed"):
+			event_bus.piety_changed.connect(_on_piety_changed)
+	_refresh_piety_ability()
 	_refresh_escape_warning()
 	_refresh_game_over_panel()
 
 
 func _input(event: InputEvent) -> void:
+	if _handle_meteor_targeting_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	var shortcut_scale := _get_speed_shortcut_scale(event)
 	if shortcut_scale > 0.0:
 		_set_time_scale_from_shortcut(shortcut_scale)
@@ -125,6 +139,15 @@ func _on_building_state_changed(building_id: String) -> void:
 
 func _on_npc_state_changed(_npc_id: String) -> void:
 	_refresh_escape_warning()
+
+
+func _on_piety_changed(
+	_current_piety: float,
+	_max_piety: float,
+	_delta: float,
+	_reason: String
+) -> void:
+	_refresh_piety_ability()
 
 
 func _on_gameplay_pause_changed(_paused: bool) -> void:
@@ -488,6 +511,198 @@ func _build_wave_countdown_label() -> void:
 		alarm_button.offset_bottom = 210.0
 
 
+func _build_piety_ability_button() -> void:
+	if _piety_ability_button != null:
+		return
+	_piety_ability_button = PietyAbilityButtonClass.new()
+	_piety_ability_button.name = "PietyAbilityButton"
+	_piety_ability_button.position = Vector2(342.0, 172.0)
+	_piety_ability_button.size = Vector2(48.0, 48.0)
+	_piety_ability_button.ability_requested.connect(_begin_meteor_targeting)
+	add_child(_piety_ability_button)
+
+	_meteor_target_hint = Label.new()
+	_meteor_target_hint.name = "MeteorTargetHint"
+	_meteor_target_hint.visible = false
+	_meteor_target_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_meteor_target_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_meteor_target_hint.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_meteor_target_hint.offset_left = 280.0
+	_meteor_target_hint.offset_right = -280.0
+	_meteor_target_hint.offset_top = 76.0
+	_meteor_target_hint.offset_bottom = 108.0
+	_meteor_target_hint.add_theme_color_override("font_color", Color(1.0, 0.9, 0.66, 1.0))
+	_meteor_target_hint.add_theme_color_override("font_outline_color", Color(0.16, 0.04, 0.02, 1.0))
+	_meteor_target_hint.add_theme_constant_override("outline_size", 5)
+	_meteor_target_hint.text = "选择陨石落点：左键确认，右键或 Esc 取消"
+	add_child(_meteor_target_hint)
+
+
+func _refresh_piety_ability() -> void:
+	if _piety_ability_button == null:
+		return
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	if piety_system == null or not piety_system.has_method("get_piety_snapshot"):
+		_piety_ability_button.set_piety(0.0, 100.0)
+		if _meteor_targeting_active:
+			_end_meteor_targeting()
+		return
+	var snapshot: Dictionary = piety_system.get_piety_snapshot()
+	_piety_ability_button.set_piety(
+		float(snapshot.get("current_piety", 0.0)),
+		float(snapshot.get("max_piety", 100.0))
+	)
+	if _meteor_targeting_active and not bool(snapshot.get("ready", false)):
+		_end_meteor_targeting()
+
+
+func _begin_meteor_targeting() -> void:
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	if (
+		piety_system == null
+		or not piety_system.has_method("is_ready_to_cast")
+		or not bool(piety_system.is_ready_to_cast())
+	):
+		_refresh_piety_ability()
+		return
+	_ensure_meteor_target_preview()
+	_meteor_targeting_active = true
+	_meteor_target_valid = false
+	if _piety_ability_button != null:
+		_piety_ability_button.set_targeting(true)
+	if _meteor_target_hint != null:
+		_meteor_target_hint.visible = true
+	Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+	_update_meteor_target_from_screen(get_viewport().get_mouse_position())
+
+
+func _handle_meteor_targeting_input(event: InputEvent) -> bool:
+	if not _meteor_targeting_active:
+		return false
+	if event is InputEventMouseMotion:
+		_update_meteor_target_from_screen((event as InputEventMouseMotion).position)
+		return true
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
+		_end_meteor_targeting()
+		return true
+	if event is InputEventMouseButton and event.pressed:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			_end_meteor_targeting()
+			return true
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			_confirm_meteor_target()
+			return true
+	return false
+
+
+func _confirm_meteor_target() -> void:
+	if not _meteor_targeting_active or not _meteor_target_valid:
+		return
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	if piety_system == null or not piety_system.has_method("request_meteor_cast"):
+		_end_meteor_targeting()
+		return
+	var result: Dictionary = piety_system.request_meteor_cast(_meteor_target_position)
+	if bool(result.get("ok", false)):
+		_end_meteor_targeting()
+	else:
+		_refresh_piety_ability()
+
+
+func _end_meteor_targeting() -> void:
+	_meteor_targeting_active = false
+	_meteor_target_valid = false
+	if _piety_ability_button != null:
+		_piety_ability_button.set_targeting(false)
+	if _meteor_target_hint != null:
+		_meteor_target_hint.visible = false
+	if _meteor_target_preview != null:
+		_meteor_target_preview.visible = false
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+
+func _update_meteor_target_from_screen(screen_position: Vector2) -> void:
+	if not _meteor_targeting_active:
+		return
+	var camera := get_viewport().get_camera_3d()
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	if camera == null or piety_system == null:
+		_set_meteor_target_valid(false)
+		return
+	var targeting_snapshot: Dictionary = (
+		piety_system.get_targeting_snapshot()
+		if piety_system.has_method("get_targeting_snapshot")
+		else {}
+	)
+	var ground_y := float(targeting_snapshot.get("ground_y", 0.0))
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_direction := camera.project_ray_normal(screen_position)
+	if absf(ray_direction.y) < 0.00001:
+		_set_meteor_target_valid(false)
+		return
+	var distance := (ground_y - ray_origin.y) / ray_direction.y
+	if distance <= 0.0:
+		_set_meteor_target_valid(false)
+		return
+	var target_position := ray_origin + ray_direction * distance
+	var valid := (
+		bool(piety_system.is_target_position_allowed(target_position))
+		if piety_system.has_method("is_target_position_allowed")
+		else false
+	)
+	_meteor_target_position = target_position
+	_set_meteor_target_valid(valid)
+	if valid and _meteor_target_preview != null:
+		_meteor_target_preview.global_position = target_position + Vector3(0.0, 0.055, 0.0)
+
+
+func _set_meteor_target_valid(valid: bool) -> void:
+	_meteor_target_valid = valid
+	if _meteor_target_preview != null:
+		_meteor_target_preview.visible = valid
+	if _meteor_target_hint != null:
+		_meteor_target_hint.text = (
+			"选择陨石落点：左键确认，右键或 Esc 取消"
+			if valid
+			else "请把陨石圆圈放在驿站地表内；右键或 Esc 取消"
+		)
+
+
+func _ensure_meteor_target_preview() -> void:
+	if _meteor_target_preview != null:
+		return
+	var effects_root := get_node_or_null("/root/Main/WorldRoot/Station/Effects") as Node3D
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	if effects_root == null or piety_system == null:
+		return
+	var targeting_snapshot: Dictionary = (
+		piety_system.get_targeting_snapshot()
+		if piety_system.has_method("get_targeting_snapshot")
+		else {}
+	)
+	var radius := maxf(0.1, float(targeting_snapshot.get("radius", 5.0)))
+	_meteor_target_preview = MeshInstance3D.new()
+	_meteor_target_preview.name = "MeteorTargetPreview"
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = 0.035
+	mesh.radial_segments = 64
+	_meteor_target_preview.mesh = mesh
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.albedo_color = Color(1.0, 0.42, 0.12, 0.25)
+	material.emission_enabled = true
+	material.emission = Color(1.0, 0.22, 0.04, 1.0)
+	material.emission_energy_multiplier = 1.35
+	_meteor_target_preview.set_surface_override_material(0, material)
+	_meteor_target_preview.visible = false
+	effects_root.add_child(_meteor_target_preview)
+
+
 func _refresh_wave_countdown() -> void:
 	if wave_countdown_label == null:
 		return
@@ -849,7 +1064,7 @@ func _build_equipment_detail_text() -> String:
 		])
 
 	if equipment_system == null:
-		lines.append("EquipmentSystem 不可用。")
+		lines.append("装备系统不可用。")
 		return "\n".join(lines)
 
 	lines.append("")
@@ -959,5 +1174,7 @@ func _get_resource_amount(resource_system: Node, resource_id: String) -> int:
 func _resource_display_name(resource_id: String) -> String:
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
 	if resource_system != null and resource_system.has_method("get_resource_name"):
-		return resource_system.get_resource_name(resource_id)
-	return resource_id
+		var resource_name := str(resource_system.get_resource_name(resource_id)).strip_edges()
+		if not resource_name.is_empty() and resource_name != resource_id:
+			return resource_name
+	return "未知资源"

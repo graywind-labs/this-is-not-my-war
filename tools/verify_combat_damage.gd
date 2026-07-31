@@ -41,6 +41,83 @@ func _init() -> void:
 		push_error("Failed to equip stableman for combat damage verification")
 		quit(1)
 		return
+	var initial_stat_signatures := {}
+	for npc_id in npc_system.get_npc_ids():
+		var npc: Dictionary = npc_system.get_npc(str(npc_id))
+		var combat_base: Dictionary = npc.get("combat_base", {})
+		var snapshot: Dictionary = combat_system.get_npc_combat_stats(str(npc_id))
+		if (
+			not combat_base.has("attack_power")
+			or not combat_base.has("defense")
+			or not combat_base.has("penetration")
+			or not combat_base.has("attack_speed_multiplier")
+			or snapshot.get("base", {}).is_empty()
+			or snapshot.get("growth", {}).is_empty()
+			or snapshot.get("equipment", {}).is_empty()
+			or snapshot.get("final", {}).is_empty()
+		):
+			push_error("NPC combat stats should expose configured base/growth/equipment/final sections: %s" % str(npc_id))
+			quit(1)
+			return
+		initial_stat_signatures[JSON.stringify(combat_base)] = true
+	if initial_stat_signatures.size() < 2:
+		push_error("Initial NPC combat bases should vary by character configuration")
+		quit(1)
+		return
+
+	var equipped_stats: Dictionary = combat_system.get_npc_combat_stats("stableman_01")
+	var equipped_final: Dictionary = equipped_stats.get("final", {})
+	var equipped_modifiers: Dictionary = equipped_stats.get("equipment", {})
+	if (
+		str(equipped_modifiers.get("weapon_id", "")) != "sword_shield"
+		or float(equipped_modifiers.get("defense", 0.0)) <= 0.0
+		or float(equipped_modifiers.get("penetration", 0.0)) <= 0.0
+		or float(equipped_modifiers.get("attack_speed_modifier", 0.0)) >= 0.0
+		or float(equipped_final.get("attack_power", 0.0)) <= 0.0
+		or float(equipped_final.get("attack_speed", 0.0)) <= 0.0
+	):
+		push_error("Weapon and armor modifiers were not reflected in the combat snapshot: %s" % JSON.stringify(equipped_stats))
+		quit(1)
+		return
+
+	var training_result: Dictionary = npc_system.increase_npc_skill("stableman_01", "剑盾", 10)
+	var trained_stats: Dictionary = combat_system.get_npc_combat_stats("stableman_01")
+	var trained_final: Dictionary = trained_stats.get("final", {})
+	if (
+		training_result.is_empty()
+		or int(trained_stats.get("level", 0)) <= int(equipped_stats.get("level", 0))
+		or float(trained_final.get("attack_power", 0.0)) <= float(equipped_final.get("attack_power", 0.0))
+		or float(trained_final.get("defense", 0.0)) <= float(equipped_final.get("defense", 0.0))
+		or float(trained_final.get("penetration", 0.0)) <= float(equipped_final.get("penetration", 0.0))
+		or float(trained_final.get("attack_speed", 0.0)) <= float(equipped_final.get("attack_speed", 0.0))
+	):
+		push_error("Combat level and weapon training should improve deterministic combat stats")
+		quit(1)
+		return
+	var strength_result: Dictionary = npc_system.assign_npc_attribute_point("stableman_01", "strength")
+	var strengthened_final: Dictionary = combat_system.get_npc_combat_stats("stableman_01").get("final", {})
+	if (
+		not bool(strength_result.get("ok", false))
+		or float(strengthened_final.get("attack_power", 0.0)) <= float(trained_final.get("attack_power", 0.0))
+		or float(strengthened_final.get("defense", 0.0)) <= float(trained_final.get("defense", 0.0))
+		or float(strengthened_final.get("penetration", 0.0)) <= float(trained_final.get("penetration", 0.0))
+	):
+		push_error("Assigning a strength point should improve attack, defense, and penetration")
+		quit(1)
+		return
+
+	var no_penetration: Dictionary = combat_system.calculate_damage_resolution(20.0, 10.0, 0.0)
+	var partial_penetration: Dictionary = combat_system.calculate_damage_resolution(20.0, 10.0, 4.0)
+	var full_penetration: Dictionary = combat_system.calculate_damage_resolution(20.0, 10.0, 12.0)
+	if (
+		not is_equal_approx(float(partial_penetration.get("effective_defense", -1.0)), 6.0)
+		or not is_zero_approx(float(full_penetration.get("effective_defense", -1.0)))
+		or int(partial_penetration.get("damage", 0)) <= int(no_penetration.get("damage", 0))
+		or int(full_penetration.get("damage", 0)) != 20
+	):
+		push_error("Penetration should use max(0, defense - penetration) before damage reduction")
+		quit(1)
+		return
 
 	var stableman_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Stableman01") as Node3D
 	if stableman_node == null:
@@ -66,7 +143,7 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
-	var step_result: Dictionary = combat_system.debug_step_enemy_ai(1.0)
+	var step_result: Dictionary = combat_system.debug_step_enemy_ai(60.0)
 	var enemy_after: Dictionary = combat_system.get_enemy(enemy_id)
 	var npc_hp_after := int(npc_system.get_npc_state("stableman_01").get("hp", 0))
 	if int(enemy_after.get("hp", 0)) >= int(enemy_before.get("hp", 0)):
@@ -77,14 +154,18 @@ func _init() -> void:
 		quit(1)
 		return
 	if npc_hp_after >= npc_hp_before:
-		push_error("Enemy should still damage nearby NPC during mutual combat")
+		push_error("Enemy should finish its windup and damage a nearby NPC: %s" % JSON.stringify(step_result))
 		quit(1)
 		return
-	if npc_hp_before - npc_hp_after >= int(enemy_before.get("attack_power", 0)):
-		push_error("NPC armor defense should reduce enemy raw attack damage. before=%d after=%d raw=%d" % [
-			npc_hp_before,
-			npc_hp_after,
-			int(enemy_before.get("attack_power", 0))
+	var expected_enemy_damage := int(combat_system.calculate_damage_resolution(
+		float(enemy_before.get("attack_power", 0.0)),
+		float(strengthened_final.get("defense", 0.0)),
+		float(enemy_before.get("penetration", 0.0))
+	).get("damage", 0))
+	if npc_hp_before - npc_hp_after != expected_enemy_damage:
+		push_error("Enemy damage should use the same defense/penetration resolver. expected=%d actual=%d" % [
+			expected_enemy_damage,
+			npc_hp_before - npc_hp_after
 		])
 		quit(1)
 		return
@@ -115,7 +196,6 @@ func _init() -> void:
 		push_error("Attack cooldown should decrease by combat action seconds")
 		quit(1)
 		return
-
 	var active_enemies: Dictionary = combat_system.get("_active_enemies")
 	var weakened_enemy: Dictionary = active_enemies.get(enemy_id, {})
 	weakened_enemy["hp"] = 1
@@ -175,6 +255,8 @@ func _place_first_enemy(combat_system: Node, position: Vector3) -> String:
 	var active_enemies: Dictionary = combat_system.get("_active_enemies")
 	var enemy: Dictionary = active_enemies.get(enemy_id, {})
 	enemy["position"] = position
+	enemy["hp"] = maxi(100, int(enemy.get("hp", 0)))
+	enemy["max_hp"] = maxi(100, int(enemy.get("max_hp", 0)))
 	active_enemies[enemy_id] = enemy
 	combat_system.set("_active_enemies", active_enemies)
 	if combat_system.has_method("_refresh_enemy_node"):

@@ -216,9 +216,37 @@ func start_proactive_player_dialogue(npc_id: String, opening_text: String, visib
 	var start_result := start_player_dialogue(npc_id, visibility)
 	if not bool(start_result.get("ok", false)):
 		return start_result
+	var started_dialogue_state: Dictionary = (
+		start_result.get("dialogue_state", {})
+		if start_result.get("dialogue_state", {}) is Dictionary
+		else {}
+	)
+	var started_dialogue_id := str(started_dialogue_state.get("dialogue_id", ""))
 	var activation_result := _activate_player_dialogue_draft("proactive_dialogue_started")
 	if not bool(activation_result.get("ok", false)):
+		_discard_player_dialogue_draft(
+			started_dialogue_id,
+			"proactive_dialogue_activation_failed"
+		)
 		return activation_result
+	var activated_dialogue_state: Dictionary = (
+		activation_result.get("dialogue_state", {})
+		if activation_result.get("dialogue_state", {}) is Dictionary
+		else {}
+	)
+	if (
+		not bool(activation_result.get("activated", false))
+		or started_dialogue_id.is_empty()
+		or str(activated_dialogue_state.get("dialogue_id", "")) != started_dialogue_id
+	):
+		_discard_player_dialogue_draft(
+			started_dialogue_id,
+			"proactive_dialogue_activation_lost"
+		)
+		return _failure(
+			"proactive_dialogue_activation_lost",
+			"主动交涉在进入对话前失效，请稍后重试。"
+		)
 	_ensure_active_dialogue_epoch_for_npc(npc_id)
 	var clean_text := opening_text.strip_edges()
 	if clean_text.is_empty():
@@ -233,6 +261,20 @@ func start_proactive_player_dialogue(npc_id: String, opening_text: String, visib
 	_active_dialogue["dialogue_initiator"] = "npc"
 	dialogue_updated.emit(get_dialogue_state())
 	return {"ok": true, "dialogue_state": get_dialogue_state()}
+
+
+func _discard_player_dialogue_draft(dialogue_id: String, reason: String) -> void:
+	if (
+		_player_dialogue_draft.is_empty()
+		or dialogue_id.is_empty()
+		or str(_player_dialogue_draft.get("dialogue_id", "")) != dialogue_id
+	):
+		return
+	var ended_draft := _decorate_dialogue_state(_player_dialogue_draft)
+	ended_draft["end_reason"] = reason
+	ended_draft["completion_mode"] = "cancelled"
+	_player_dialogue_draft.clear()
+	dialogue_ended.emit(ended_draft)
 
 
 func start_npc_dialogue(
@@ -2902,8 +2944,10 @@ func _make_history_turn(speaker_id: String, speaker_name: String, listener_id: S
 func _build_npc_dialogue_soft_round_guidance(soft_round_threshold: int) -> String:
 	var threshold := maxi(1, soft_round_threshold)
 	return (
-		"两人讲完当前想讲的事情后，应在自己的最后一句 reply_text 中自然告别，并设置 should_end_dialogue=true。"
-		+ "current_round 超过 %d（即第 %d 轮起）且没有紧急或必要事项时，应说一句告别话并结束；紧急或必要事项尚未说清时可以继续。"
+		"soft_round_threshold 只是偏晚阶段的收尾保险，不是最低轮数、目标轮数或继续理由，绝不能为了等到阈值而续聊。"
+		+ "每轮若不能推进 conversation_history 中已经存在的未决紧急或必要事项，只能确认、复述或改写已有内容，必须在本轮用至多一句简短收尾并设置 should_end_dialogue=true；对方已经完整回答或双方已经达成一致时也必须结束。"
+		+ "不得为了延长对话自行制造新话题、新任务、新问题、额外帮助或后续安排。"
+		+ "current_round 超过 %d（即第 %d 轮起）且没有尚未说清的紧急或必要事项时必须告别结束；只有本轮确实能推进必要新内容时才可继续。"
 	) % [threshold, threshold + 1]
 
 

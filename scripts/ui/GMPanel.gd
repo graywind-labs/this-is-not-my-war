@@ -13,6 +13,7 @@ const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const PIETY_SYSTEM_PATH := "/root/Main/Systems/PietySystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 
@@ -535,6 +536,14 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 	_add_button(mode_row, "推进集结等待", func() -> void:
 		_run_advance_rally_wait(3600.0)
 	)
+	var piety_row := _make_row(parent)
+	var fill_piety_button := _add_button(piety_row, "充满虔诚", _run_fill_piety)
+	fill_piety_button.name = "FillPietyButton"
+	var piety_snapshot_button := _add_button(piety_row, "虔诚 / 陨石快照", _show_piety_snapshot)
+	piety_snapshot_button.name = "PietySnapshotButton"
+	_add_button(piety_row, "推进陨石 1 秒", func() -> void:
+		_run_step_piety_effects(60.0)
+	)
 
 
 func _add_backend_section(parent: VBoxContainer) -> void:
@@ -551,6 +560,9 @@ func _add_backend_section(parent: VBoxContainer) -> void:
 	_add_button(row, "LLM 状态", func() -> void:
 		_show_llm_state(_selected_id(_npc_select))
 	)
+	_add_button(row, "对话意图复核", func() -> void:
+		_show_dialogue_intent_revalidation(_selected_id(_npc_select))
+	)
 	_add_button(row, "成本统计", _show_llm_usage)
 	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
 	_add_button(row, "驿站上下文", _show_station_context)
@@ -566,7 +578,7 @@ func _add_memory_section(parent: VBoxContainer) -> void:
 	_add_button(row, "地点快照", func() -> void:
 		_show_location(_selected_id(_location_select))
 	)
-	_add_button(row, "短期记忆", func() -> void:
+	_add_button(row, "短期记忆 / LLM", func() -> void:
 		_show_memory(_selected_id(_npc_select))
 	)
 
@@ -857,6 +869,7 @@ func _execute_command(command: String) -> void:
 			_show_craft_snapshot()
 			_show_horse_snapshot()
 			_show_combat_snapshot()
+			_show_piety_snapshot()
 			_show_events()
 		"time_snapshot":
 			_show_time_snapshot()
@@ -981,6 +994,9 @@ func _execute_command(command: String) -> void:
 		"llm_state":
 			if _require_args(parts, 2, "llm_state <npc_id>"):
 				_show_llm_state(str(parts[1]))
+		"intent_revalidation":
+			if _require_args(parts, 2, "intent_revalidation <npc_id>"):
+				_show_dialogue_intent_revalidation(str(parts[1]))
 		"llm_usage":
 			_show_llm_usage()
 		"station_context":
@@ -1061,6 +1077,16 @@ func _execute_command(command: String) -> void:
 		"advance_rally_wait":
 			var rally_seconds := float(parts[1]) if parts.size() >= 2 else 3600.0
 			_run_advance_rally_wait(rally_seconds)
+		"piety_fill":
+			_run_fill_piety()
+		"piety_set":
+			if _require_args(parts, 2, "piety_set <value>"):
+				_run_set_piety(float(parts[1]))
+		"piety_snapshot":
+			_show_piety_snapshot()
+		"piety_step":
+			var piety_step_seconds := float(parts[1]) if parts.size() >= 2 else 60.0
+			_run_step_piety_effects(piety_step_seconds)
 		"damage_building":
 			if _require_args(parts, 3, "damage_building <building_id> <amount>"):
 				_run_damage_building(str(parts[1]), int(parts[2]))
@@ -1755,6 +1781,41 @@ func _run_advance_rally_wait(game_seconds: float) -> void:
 	_log("推进集结等待 %.1f 秒：%s" % [game_seconds, _compact(result)])
 
 
+func _run_fill_piety() -> void:
+	var piety_system := get_node_or_null(PIETY_SYSTEM_PATH)
+	if piety_system == null or not piety_system.has_method("debug_fill_piety"):
+		_log("PietySystem 充能接口不可用。")
+		return
+	_log("充满虔诚：%s" % _compact(piety_system.debug_fill_piety()))
+
+
+func _run_set_piety(value: float) -> void:
+	var piety_system := get_node_or_null(PIETY_SYSTEM_PATH)
+	if piety_system == null or not piety_system.has_method("debug_set_piety"):
+		_log("PietySystem 设置接口不可用。")
+		return
+	_log("设置虔诚 %.2f：%s" % [value, _compact(piety_system.debug_set_piety(value))])
+
+
+func _show_piety_snapshot() -> void:
+	var piety_system := get_node_or_null(PIETY_SYSTEM_PATH)
+	if piety_system == null or not piety_system.has_method("get_piety_snapshot"):
+		_log("PietySystem 快照不可用。")
+		return
+	_log("虔诚 / 陨石快照：%s" % _compact(piety_system.get_piety_snapshot()))
+
+
+func _run_step_piety_effects(game_seconds: float) -> void:
+	var piety_system := get_node_or_null(PIETY_SYSTEM_PATH)
+	if piety_system == null or not piety_system.has_method("debug_advance_effects"):
+		_log("PietySystem 陨石推进接口不可用。")
+		return
+	_log("推进陨石 / 燃烧 %.1f 游戏秒：%s" % [
+		game_seconds,
+		_compact(piety_system.debug_advance_effects(game_seconds))
+	])
+
+
 func _run_step_enemy_ai(game_seconds: float) -> void:
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("debug_step_enemy_ai"):
@@ -1910,6 +1971,29 @@ func _show_llm_state(npc_id: String) -> void:
 	_log("LLM 状态 %s：%s" % [npc_id, _compact(snapshot)])
 
 
+func _show_dialogue_intent_revalidation(npc_id: String) -> void:
+	var plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if (
+		plan_system == null
+		or not plan_system.has_method(
+			"debug_get_dialogue_intent_revalidation_snapshot"
+		)
+	):
+		_log("日计划对话意图复核状态接口不可用。")
+		return
+	_log(
+		"对话意图复核 %s：%s"
+		% [
+			npc_id,
+			_compact(
+				plan_system.debug_get_dialogue_intent_revalidation_snapshot(
+					npc_id
+				)
+			)
+		]
+	)
+
+
 func _run_eat(npc_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -1976,7 +2060,17 @@ func _show_memory(npc_id: String) -> void:
 	if memory_system == null:
 		_log("MemorySystem 不可用。")
 		return
-	_log("短期记忆 %s：%s" % [npc_id, _compact(memory_system.debug_get_npc_short_term_memory(npc_id))])
+	var raw_memory: Dictionary = memory_system.debug_get_npc_short_term_memory(npc_id)
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	var prompt_memory: Dictionary = {}
+	if llm_bridge != null and llm_bridge.has_method("debug_build_short_memory_context"):
+		prompt_memory = llm_bridge.debug_build_short_memory_context(npc_id)
+	_log("短期记忆 %s（原始事件 %d / 见闻 %d；LLM 全量紧凑投影）：%s" % [
+		npc_id,
+		int(raw_memory.get("event_count", 0)),
+		int(raw_memory.get("witness_count", 0)),
+		_compact(prompt_memory)
+	])
 
 
 func _show_location(location_id: String) -> void:
@@ -2139,7 +2233,7 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | last_order_injection | station_context",
+		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | intent_revalidation <npc_id> | last_order_injection | station_context",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
@@ -2153,6 +2247,7 @@ func _help_text() -> String:
 		"horse_assign <npc_id> <horse_id> [visibility] | horse_unassign <npc_id> [visibility]",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | next_wave | jump_wave | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
+		"piety_fill | piety_set <value> | piety_snapshot | piety_step [game_seconds]",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",

@@ -48,7 +48,11 @@ def _allowed_actions() -> list[ActionCandidate]:
             action_kind="pray",
             location_id="chapel",
             tags=["pray", "chapel_prayer"],
-            context={"eligible": True, "available_now": True},
+            context={
+                "eligible": True,
+                "available_now": True,
+                "description": "祈祷期间弥撒开始会自动参加，结束后继续独自祈祷。",
+            },
         ),
         ActionCandidate(
             action_id="lead_mass",
@@ -62,19 +66,6 @@ def _allowed_actions() -> list[ActionCandidate]:
                 "unavailable_reason": "你没有主持弥撒的能力",
                 "required_ability": "主持弥撒",
                 "eligibility_hint": "没有该能力时不要把它加入计划。",
-            },
-        ),
-        ActionCandidate(
-            action_id="attend_mass",
-            name="参加弥撒",
-            action_kind="pray",
-            location_id="chapel",
-            tags=["pray", "chapel_mass_attendee"],
-            context={
-                "eligible": True,
-                "available_now": False,
-                "unavailable_reason": "当前没有人在祭坛主持弥撒",
-                "required_active_action_id": "lead_mass",
             },
         ),
         ActionCandidate(
@@ -193,10 +184,6 @@ def _validate_plan(body: dict, allowed_action_ids: set[str], work_action_ids: se
     )
     assert all(item.action_id != "lead_mass" for item in plan_response.plan), (
         "non-priest plan selected eligible=false lead_mass",
-        plan_response,
-    )
-    assert all(item.action_id != "attend_mass" for item in plan_response.plan), (
-        "plan selected available_now=false attend_mass as an immediate/fixed activity",
         plan_response,
     )
     assert any(item.action_id == "assist_upgrade" for item in plan_response.plan), (

@@ -1,5 +1,83 @@
 # AI_NPC_SYSTEM.md
 
+## T0116 计划对话意图执行前复核
+
+每日计划和正式修订仍可为 `talk_to_npc / seek_guard_officer` 预先写 `dialogue_goal`，但该文本现在只是带制定时间的旧意图。计划应用时会保存 `intent_created_day / intent_created_time / intent_source`；执行到该小时后，DailyPlanSystem 在中断现有行动、开始追踪目标、发邀请或创建主动交涉问号之前请求一次真实 LLM 复核。
+
+复核拥有与计划同级的当前 NPC / 记忆 / 指令 / 地点 / 居民 / 建筑 / 资源 / 行动候选 / 24 小时计划，并额外获得制造项目的 `completed_stages / current_stage_index / current_stage_cost`。它只可继续原文、改写同一行动同一目标的首句，或放弃并触发既有当前小时计划重估；不能自己选替代行动或改资源。等待期间同签名去重，返回时校验日、小时、计划版本和 `action + target + dialogue_goal`，迟到结果不落地。
+
+## T0115 失败重估与主动交涉事务边界
+
+行动失败判别仍由真实 LLM 选择需要修改的小时，正式修订仍由真实 LLM 给出这些小时的新计划；Godot 新增的是落地前的权威一致性校验。若 `trigger_kind=action_failure` 且修订包含当前小时，返回项不能与 `failed_plan_item` 具有相同的 `action_id + target + dialogue_goal`。违反时返回 `failed_action_repeated`，保留原计划并沿当前 stage-two 的最多 3 次重试继续请求，不制造新的 stage-one 判别链。
+
+`seek_guard_officer` 的可见行为仍是 NPC 头顶 `?`，不是朝一个世界坐标寻路。主动交涉运行态由 NPCSystem 独占；DialogSystem 只有成功激活 NPC 发起的 `player_npc` 会话后，NPCSystem 才清除该状态。`llm_activity.kind=plan` 会用 `...` 暂时覆盖问号并拒绝对话，但不会消费交涉；活动清除后问号恢复。草稿创建和激活之间若发生规划、行为模式或可行动性变化，整个交接失败且可重试。
+
+新行动开始必须先替换上一行动的终态结果，再发 `npc_state_changed`。主动交涉和移动入口现显式写入非失败的 start result 并清空失败上下文；这样 DailyPlanSystem 只能消费当前真实失败，不能把旧失败归因给刚开始的交涉或赶路。该规则不改变人物自主性、计划 one-shot 语义、对话内容生成或资源 / 制造结算权威。
+
+## T0113 对话中的行动、装备与训练权威实况
+
+LLMBridge 在构造每个对话请求时额外生成 `activity_truth / equipment_truth / training_truth`。它们不建立新的训练权威：行动真相来自现有 ActionSystem 运行态或 DialogSystem 保存的打断前活动，装备来自 NPCSystem 当前装备槽，训练资格复用现有可训练装备判据、在岗教官和 ActionSystem 环境资格。
+
+打断后的 `npc_state.current_action=talk_to_guard_officer` 仍只表示正在对话；`activity_truth.action_id` 才是开口前实际活动。拜访训练场保持 `visit_location + is_training=false`，不会因为当前计划 reason 写着“训练”、短期记忆提到教官或 NPC 身处训练场而升级成训练事实。无主武器 / 坐骑且两个槽均无 `required_skill` 时，训练真相固定为 `eligible=false / blocker=no_trainable_equipment`。
+
+这三组字段只增强目标 NPC 的事实约束，不改变计划生成 / 修订、记忆摘要、行动白名单、工位占用、熟练度增长或失败重估。真实复放已消除 5/5 次“格伦已经在训练”的说法，但模型仍会从旧记忆推断艾达在场；后者不在本次三个目标 NPC 自身真相字段的覆盖范围内。
+
+## T0106 全量紧凑短期记忆
+
+对话、日计划、计划修改范围判别、正式修订、低血量战时心理和熟睡总结现在都读取目标 NPC 当前短期索引中的全部亲历与见闻，不再分别只取最后 8 条。列表保持原始发生顺序且继续区分 `experienced_events / witnessed_events`；亲历是自身经历，模型权重高于听见 / 看见的公开见闻。
+
+模型读取的是程序生成的记忆投影，不是 MemorySystem 原始事件对象。每条记录固定包含 `type / summary / importance / day / time`，只有摘要没有充分表达的决策事实才进入可选 `details`。原因、资源缺口、投入产出、指令变化和行动目标可以保留；重复 24 小时计划改为连续 `plan_segments`；事件 ID、完整 payload、地点 / 建筑快照、敌我阵容和已在 summary 中展开的对话正文不会进入供应商上下文。
+
+当前库存、地点和战场上下文仍是“现在”的权威事实，旧记忆是“当时发生过什么”。Prompt 要求模型按时间区分两者，不能因为 GM 后来补了铁就把较早的缺铁重估改写成“菜园缺人”。熟睡总结使用带 `memory_kind` 的全量紧凑 `day_events` 作为唯一短期证据副本，避免同一事实在 `npc.short_term_memory` 中重复加权。
+
+## T0103 NPC-NPC 对话收尾与防复述
+
+自主 NPC-NPC 正式会话继续使用 T0030 的 `max_rounds=0` 无硬上限合同。`soft_round_threshold=5` 只表示偏晚阶段的收尾保险，绝不是最低轮数、目标长度或“尚未到收尾轮次”的继续理由；紧急 / 必要事项确实尚未说清时仍允许超过阈值。
+
+每次正式回复都必须先检查 `conversation_history + speaker_text` 中是否存在尚未解决的紧急或必要事项。只有本轮能用新事实、新决定或必要提议推进该既有事项时才能继续；若原问题已完整回答、双方已达成一致、对方已经收尾，或当前回复只能确认、复述 / 近义改写旧内容，模型必须用至多一句符合角色口吻的短收尾并返回 `should_end_dialogue=true`。不得为避免结束临时创造新话题、新任务、新问题、额外帮助或后续安排。
+
+Godot 仍只消费结构化结束字段：结束回复先写入历史 / 事件，再立即结束且不调下一轮；没有新增语义重复判定器、硬轮次截断或 UI 权威。真实铁匠铺复现确认邀请阶段已经回答后，正式第 1 轮就结束；旧重复历史放在第 3 轮时也立即收尾。
+
+## T0101 守备官共同背景与认知边界
+
+每名初始 NPC 对守备官的根本知识统一为四项：职责、三年前到站、来站前经历未知、在该 NPC 认识他以来一向尽责且与成员总体相处和睦。前三项是明确事实 / 明确未知，第四项是低细节共同背景；它不包含任何具体事件、对话、共同任务、承诺、恩怨或无条件信任。
+
+对话中，守备官询问姓名、出身、家庭或来站前经历时，NPC 只能依据自己后来真实听到的自述回答；没有自述就明确说不知道。询问三年相处故事时，最多三句：概括三年前到站、尽责、和睦，说明没有可确认的具体旧事，随后立即转到当前驿站或自己的确知近况。不得用职业、外表或日常常识补写玩家过去。
+
+计划、战时心理和关系判断可以把“此前尽责和睦”当作初始低细节印象，但不能据此无条件服从。熟睡反思中，守备官后来明确说出的个人资料只能作为该 NPC 的“守备官自称……”认知保存；守备官问“我是谁”不是披露，也不会自动写成全站客观身份。
+
+## T0100 统一宗教信仰人设
+
+8 名初始 NPC 的根本人设统一新增 `religion="天主教"`。现有背景故事没有其他教派、无神论或宗教身份冲突，因此不改写职业内核与长期记忆；马塞尔既有神父、教区和弥撒经历与该字段一致。
+
+`religion` 与其他根本人设字段同源：对话使用 `npc_setting.religion`，日计划、修改范围判别、正式修订、战时心理和熟睡总结使用 `npc.identity.religion`，NPC 面板【背景】显示“宗教信仰：天主教”。Prompt 仅在话题或经历相关时自然参考，不得把共同信仰写成 8 人共同性格、服从倾向或相同虔诚程度，也不得补造宗教经历。
+
+## T0099 对话 UI 不扩张模型职责
+
+`Tab` 只是 `DialogPanel` 对“提出应征” CheckButton 的本地快捷操作，最终仍调用 `DialogSystem.set_recruitment_request_pending(...)`；它不新增对话字段、不自动发送消息，也不能绕过等待、已入伍或已接受应征时的禁用状态。首次攻击确认同样只包裹既有 `attack_target_npc(...)`：取消时完全不发起攻击或 LLM，确认后普通惩戒回复与逃离攻击分流保持原合同。纯日期对话记录只改变玩家 UI 分组，不改变模型看到的短期 / 长期记忆。
+
+## T0105B 弥撒跨小时计划接管
+
+模型仍只制定逐小时计划，不需要输出“延迟执行”字段，也不需要预测子帧误差。DailyPlanSystem 在整点读取到与当前弥撒不同的新计划时，将该计划保存为弥撒结束后的当前小时接管项：主持者继续 `lead_mass`，参礼者继续同一个 `pray_at_chapel + mass_attendance`。弥撒结束后使用当时最新的当前小时计划，而不是锁死旧快照；动态目标、工位、资格和行为模式仍在真正派发时重新校验。
+
+该保护只属于普通整点接管。玩家 / NPC 对话、计划修订即时派发、建筑失效、昏迷和其他权威中断仍沿用既有流程；其他行动也不获得“必须做完”特权。参礼者个人祈祷时长先满时由 ActionSystem 保持在弥撒中，结束后先恢复独祷语义，再完成祈祷或切换到积压计划，不产生教堂失败或 LLM 重估。
+
+## T0098 合并后的祈祷行为
+
+计划目录只保留 `pray_at_chapel` 与 `lead_mass`。NPC 是否去小教堂祈祷仍由人物、状态、记忆、指令和模型决定；“独自祈祷 / 参加弥撒”不再是模型需要选择的两个行为，而是祈祷 active 状态中的程序模式。
+
+祈祷者抵达并占用祈祷席后，根据有效 `lead_mass` 进入 `personal_prayer` 或 `mass_attendance`。主持开始时 active 祈祷者原地参礼，主持正常完成或异常退出且没有替换主持者时原地恢复独自祈祷；pending 祈祷者保持原移动，到达后按实时状态进入正确模式。整个过程保留计划身份、位置和累计时长，不生成失败，不请求计划重估。
+
+对话中若 NPC 明确答应现在参加弥撒，当前小时修订选择 `pray_at_chapel`；到达后的模式由 ActionSystem 确定。`allowed_actions`、背景知识和 Prompt 不再暴露 `attend_mass`，只用一句规则说明祈祷会随弥撒自动参礼、结束后继续。
+
+## T0097 计划模型只返回决策
+
+日计划与正式修订现在把 provider 输出和游戏内部计划彻底分开。模型每项始终决定 `hour + action_id`；只有行为本身需要选择目标时才额外决定：拜访为 `location_id`，找 NPC / 协助治疗为 `target_npc_id`，协助修复 / 升级为 `building_id`。`reason` 继续是简短人物理由，`dialogue_goal` 只对找 NPC 或主动找守备官有执行 / 表达意义。
+
+Model Adapter 不再相信或校验模型返回的 `action_kind / priority / target_id` 等内部字段。它先根据 `action_id` 判断唯一需要读取的选择字段，把其他字段全部丢弃，再从本次动态 `allowed_actions` 精确命中候选并生成原有完整 `PlanItem`。固定工作、饮食、睡眠、祈祷、主持弥撒、等待、逃离等行为的 kind 与地点由候选确定；模型即使多给地点、目标、错误 kind 或额外对话诉求也不会改变执行计划。
+
+必要选择不会被忽略或猜测：`visit_location` 缺少合法地点、NPC 目标行为缺少合法 NPC、建筑协助缺少合法建筑时，HTTP 业务校验会明确拒绝。旧通用 `target_id` 只是模型侧无关字段，不能代替专用选择。编译后的 Godot 合同、动态 NPC 追踪、建筑外协助地点、工位申请、行动进度、失败重估和 ActionSystem 最终资格校验完全不变。
+
 ## T0095/T0096 Pending 提交与熟睡总结语义
 
 行动调度把 pending 与 active 视为两个明确阶段。暂停期间 NPC 节点不移动，ActionSystem 不执行 pending 提交，也不推进 active 逻辑 tick；恢复后仅当 `current_action=idle`、`movement_target` 为空、实际地点满足、NPC 可行动且不存在 active 时才提交。固定地点行动、诊所 / 训练 / 弥撒依赖者、修复 / 升级 / 治疗协助、拜访和 NPC-NPC 对话都服从同一闸门。建筑、目标 NPC 或服务提供者失效仍可权威取消，但移动清理使用无信号收束，最终结构化失败是唯一可供计划重估观察的结果。
@@ -12,7 +90,7 @@
 
 所有固定地点行动在真正开始前都必须再次确认 NPC 已抵达目标且不在移动途中。教堂活动另有 `_start_pray(...)` 最终守卫；未实际到达小教堂时返回结构化的 `*_failed_target_unavailable_not_arrived`，不能占用祭坛或祈祷席。室内出发的移动被系统中断时，NPCSystem 按既有室内经广场路由把逻辑地点与世界位置一并收束到广场，避免人物已在广场却仍被认作身处教堂。
 
-弥撒开始会同时中断已经 active 与仍在前往教堂的 pending 普通祈祷。pending 路径先无信号收束移动和信息地点，再只发出一次带精确上下文的 `pray_failed_mass_started`，避免无上下文的移动停止信号先触发判别。该失败进入既有两阶段计划链：第一层在 `attend_mass` 当前可用时必须选中当前小时，第二层强烈倾向把它改为参加正在举行的弥撒，并在修订落地后立即按正常计划入口执行。守备官与 NPC 在本轮明确谈妥“现在参加弥撒”时，也必须由对话范围判别把当前小时纳入修订，再由人物、状态、记忆、指令与实时合法候选共同决定；这是强倾向而不是 GDScript 硬选行动。
+T0098 后弥撒开始不再中断 active 或 pending 祈祷。active 祈祷者原地切到参礼模式；pending 祈祷者继续前往教堂，并在抵达时按祭坛实时状态开始。守备官与 NPC 在本轮明确谈妥“现在参加弥撒”时，对话范围判别仍可把当前小时纳入修订，但第二层统一选择 `pray_at_chapel`，不再生成教堂失败或双向替代提示。
 
 熟睡总结不再按自然日做僵硬的“一天一次”去重。每个 NPC 使用从当日 21:00 到次日 21:00 的窗口 `night_<anchor_day>_2100`，同一窗口内多段睡眠累计到既有 1 游戏小时门槛；对话叫醒、短暂离床再睡不会清零。只有长期记忆成功应用后才把该窗口标为完成；21:00 后进入新窗口，白天补觉仍归前一晚窗口。T0095 起日记归属使用窗口锚点，实际触发日 / 时间作为独立元数据保留；GM `force` 调试仍可显式绕过去重。
 
@@ -28,23 +106,23 @@
 
 六类正式 NPC 调用区分“游戏业务合同”和“供应商生成合同”。Godot 继续发送既有业务请求、接收完整响应；Model Adapter 在供应商边界删除纯传输元数据、确定性重复副本、分支外上下文和 `null`，模型只判断人物话语、行动、修改小时、战时心理或记忆内容。
 
-后端从请求和模型主决定补齐固定字段：对话的回复者 / 响应类型 / 不适用结果，计划的 NPC / 日期 / `action_kind / priority / location_id`，范围判别的 `needs_revision`，修订的 `immediate_action`，战时判定的 `should_start_escape`，反思的 NPC / 日期。地点只在 `action_id + target_id` 不能唯一命中白名单候选时由模型消歧。补齐后仍经过完整 Schema、动态白名单和业务规则校验；非法枚举、非法行动、非法目标或漏选小时不会被掩盖。
+后端从请求和模型主决定补齐固定字段：对话的回复者 / 响应类型 / 不适用结果，计划的 NPC / 日期 / 完整内部项，范围判别的 `needs_revision`，修订的 `immediate_action`，战时判定的 `should_start_escape`，反思的 NPC / 日期。T0097 起计划的地点、NPC、建筑选择使用行为专用字段，`action_kind / priority / internal target / 固定 location` 全由程序编译。补齐后仍经过完整 Schema、动态白名单和业务规则校验；非法行动、必要目标或漏选小时不会被掩盖。
 
 人物设定、长短期记忆、`current_order`、公开驿站事实、实时建筑 / 资源 / 战场状态、行动资格和叙事输出全部保留。`reason / summary / emotion / morale_delta_intent / dialogue_goal / diary_entry / knowledge_graph_updates / debug_reason` 仍有 UI、事件、人物记忆或诊断用途，没有为了省 token 删除。
 
 ## T0091 对话计划只绑定 NPC 目标
 
-`talk_to_npc` 的计划候选与模型请求只提供目标 NPC，不再提供或要求 `location_id`。生成计划时看到的目标当前地点只是瞬时上下文，不能成为固定目的地；计划落地时只保存 `target_npc_id`，ActionSystem 在接近与重定向阶段继续查询目标实时位置。
+`talk_to_npc` 的计划候选不提供固定 `location_id`。生成计划时看到的目标当前地点只是瞬时上下文，不能成为固定目的地；T0097 起模型使用 `target_npc_id` 选择对象，计划落地时仍只保存该 NPC，ActionSystem 在接近与重定向阶段继续查询目标实时位置。
 
-后端对白名单的例外只限这一种行动：按 `action_id + target_id` 匹配，仍要求 `action_kind=chat`、非自聊、非空 `dialogue_goal` 和合法动态目标。若供应商沿用旧习惯多返回地点，HTTP 层确定性规范化为 `null` 并写入 `model_normalizations`，不把它当成地点选择错误；其他工作、拜访和协助行动继续精确校验目标与地点。
+后端编译后仍要求内部 `action_kind=chat`、非自聊、非空 `dialogue_goal` 和合法动态目标。供应商多返回的瞬时地点或通用目标在 T0097 编译边界直接丢弃，不进入 `model_normalizations`；拜访与两类协助分别使用地点、NPC、建筑专用选择后再精确编译内部目标与地点。
 
-## T0089 教堂行动失败后的意图延续
+## T0089 教堂行动失败后的意图延续（已由 T0098 废止）
 
-ActionSystem 的 `last_action_failure_context` 现在始终携带与 `last_action_result` 一致的精确 `failure_id`。计划系统仍把这些失败归类为通用 `target_unavailable` 以保持 Schema 稳定，但两阶段 LLM 链可以通过 `failure_context.failure_id` 区分具体服务依赖和互斥原因，不再依赖中文 `failure_summary` 猜测。
+ActionSystem 的 `last_action_failure_context` 仍携带与 `last_action_result` 一致的精确 `failure_id`，供诊所、训练、位置、建筑等真实失败使用。T0098 后祈祷的弥撒模式切换不进入该失败链。
 
-当普通祈祷因弥撒正在举行或弥撒开始而失败，且实时候选表确认 `attend_mass` 可立即执行时，第一层必须选择当前小时，第二层强烈优先改为参加弥撒。当参加弥撒因没有主持者或主持者离岗而失败，且 `pray_at_chapel` 可立即执行时，第一层同样选择当前小时，第二层强烈优先改为普通祈祷。
+原先两个独立教堂行为之间的双向替代规则已删除；祈祷选定后的参礼 / 独祷切换由程序完成。
 
-该规则延续的是 NPC 原计划中的宗教活动意图，而不是把人物变成无条件服从的状态机。人格、当前状态、记忆、守备官指令或更紧迫的程序事实若给出明确理由，模型仍可选择其他合法行动；对应候选不可用时也不得强行输出。ActionSystem 继续权威校验主持者、互斥状态、祈祷席、开始、中断和完成。
+人格、当前状态、记忆、守备官指令或更紧迫事实仍决定 NPC 是否选择祈祷；ActionSystem 继续权威校验主持资格、祈祷席、抵达、开始与完成。
 
 ## T0088 计划上下文中的建筑作业工期
 
@@ -70,7 +148,7 @@ ActionSystem 的 `last_action_failure_context` 现在始终携带与 `last_actio
 
 完成后延迟一帧确认权威 day / hour、计划项 identity、NPC 空闲、可行动和 `behavior_mode=work`。若仍是同一小时和同一计划项，直接使用 `failure_type=action_completed` 修订当前小时起连续相同 action + target 的原计划段，不先调用“是否需要修改”判别；这是已经完成后必然需要后续安排的确定性事实。修订仍从实时普通 `allowed_actions` 中选择，成功合并后共用 T0076 可靠派发立即执行当前小时新项。Prompt 与 Godot 双重禁止当前小时原样重复相同 `action_id + target_id`；其他目标的同类协助仍可合法选择。
 
-若完成 tick 同时跨过整点，deferred 回调看到权威小时变化后直接退出，由 `hour_started` 正常执行新小时计划，不修改旧小时。六类生产继续用 `repeat_while_planned` 自行续周期，持续医生 / 训练保持运行态；吃饭、睡觉、祈祷、弥撒、拜访等常规或整小时活动不增加额外 LLM 调用。自主 NPC-NPC 对话与主动找守备官交涉继续使用各自对话后 required-current-hour 合同。
+若完成 tick 同时跨过整点，deferred 回调看到权威小时变化后直接退出，由 `hour_started` 正常执行新小时计划，不修改旧小时。六类生产继续用 `repeat_while_planned` 自行续周期，持续医生 / 训练保持运行态；吃饭、睡觉、祈祷、主持弥撒、拜访等常规或整小时活动不增加额外 LLM 调用。自主 NPC-NPC 对话与主动找守备官交涉继续使用各自对话后 required-current-hour 合同。
 
 ## T0085 可塑工作量与升级目标失效
 
@@ -94,7 +172,7 @@ ActionSystem 的 `last_action_failure_context` 现在始终携带与 `last_actio
 
 NPC 对建筑封闭的认知遵守物理到达边界。建筑开始升级时，已经在内部执行依赖行动的 NPC 会立即因环境变化失败并被清退；仍在路上的 NPC 保留 pending 行动和移动目标，不生成失败、见闻或计划判别。只有抵达入口、程序重新确认建筑不可进入后，才写 `arrival_check_failed=true / interrupted_phase=pending` 的“到达门口后发现升级”失败，并由 DailyPlanSystem 启动原有两段式重估。
 
-`assist_upgrade` 是目标指向升级建筑、执行地点位于广场 / 建筑外的劳动。动态候选明确包含 `eligible=true / available_now=true / execution_location=plaza / requires_building_entry=false / counts_as_work_phase=true` 和 `work` 标签。模型不得把 `target_id=building` 误读成需要进入该建筑，也不得为了满足最低工作量而排除该行动；它仍可结合人格、指令和其他紧急事项选择别的合法候选。
+`assist_upgrade` 是目标指向升级建筑、执行地点位于广场 / 建筑外的劳动。动态候选明确包含 `eligible=true / available_now=true / execution_location=plaza / requires_building_entry=false / counts_as_work_phase=true` 和 `work` 标签。模型用 `building_id` 选择被协助建筑，不需要判断内部 `target_id` 或执行地点，也不得为了满足最低工作量而排除该行动；它仍可结合人格、指令和其他紧急事项选择别的合法候选。
 
 实时 `current_building_states.is_upgrading / is_repairing` 来自 BuildingSystem 查询，不从建筑数据字典猜测。LLM 只选择动态候选；入口拒绝、移动落点、行动失败、工作阶段合法性和升级加速均由程序权威处理。
 
@@ -123,7 +201,7 @@ NPC 主动交涉不能取消，但可以完成或挂起。挂起两小时到期�
 | `repeat_while_planned` | `work_garden`、`work_dining_hall`、`work_stable`、`work_tavern`、`work_blacksmith`、`work_workshop` | 成功完成一个结算周期后，若当前计划仍是同一逻辑行动，则在旧周期完成事件写入后重新校验并立即开始下一周期；失败、中断、资源 / 工位 / 目标不足不续开 |
 | `continuous_until_plan_changes` | `work_training_instructor`、`receive_weapon_training`、`work_clinic_doctor` | 本身是持续服务状态，不人为切成“完成后重开”的生产批次；只要跨小时计划仍匹配就保留运行态，计划改变或服务生命周期失败时退出 |
 | `until_target_resolved` | `receive_clinic_treatment`、`assist_repair`、`assist_upgrade`、`assist_heal` | 持续到病人恢复、建筑作业完成、昏迷目标复苏等权威目标解决；目标完成 / 消失后结束，不按计划文字自动创建第二个目标周期 |
-| `once_per_plan_hour` | `eat_at_dining_hall`、`drink_wine`、`sleep_in_dormitory`、`pray_at_chapel`、`attend_mass`、`lead_mass`、`talk_to_npc`、`visit_location`、`seek_guard_officer` | 同一个“日期 + 小时 + action + 必要 target + dialogue goal”成功派发一次后即消费，替换 `plan_version` 也不能重放同一逻辑项。默认提前完成后不自动重复；T0086 的 `drink_wine` 会转为当前小时后续计划重估。不同目标 / 交涉目标属于不同逻辑项；玩家对话打断后的既有显式恢复入口只是继续未完成执行，不算自动重放 |
+| `once_per_plan_hour` | `eat_at_dining_hall`、`drink_wine`、`sleep_in_dormitory`、`pray_at_chapel`、`lead_mass`、`talk_to_npc`、`visit_location`、`seek_guard_officer` | 同一个“日期 + 小时 + action + 必要 target + dialogue goal”成功派发一次后即消费，替换 `plan_version` 也不能重放同一逻辑项。默认提前完成后不自动重复；T0086 的 `drink_wine` 会转为当前小时后续计划重估。不同目标 / 交涉目标属于不同逻辑项；玩家对话打断后的既有显式恢复入口只是继续未完成执行，不算自动重放 |
 | `terminal` | `escaping_station` | 交给 CombatSystem 的单向逃离生命周期，不由普通行动完成回调续开 |
 | `not_plan_selectable` | `escape_intervention_dialogue`、`talk_to_guard_officer` | 仅供系统运行态 / 显示，不进入每日计划目录 |
 
@@ -179,23 +257,25 @@ NPCPanel 的“当前计划”继续只读 DailyPlanSystem 已生效的完整计
 
 ## T0061 人物表达、历史切片与认知展示合同
 
-`data/npc_profiles.json` 不再保存 `signature_lines` / “代表性表达”。`scripts/core/NPCPromptProfile.gd`、对话顶层 `npc_setting`、共享 `NPCIdentity` 和六类正式 LLM 上下文只保留宽松的 `speech_style` 作为语言倾向；模型必须结合性格、职业、长期记忆和当下事实自然组织语言，不能依赖固定台词池。T1501 / T0060 中关于台词样例注入的旧口径由本节取代。
+`data/npc_profiles.json` 不再保存 `signature_lines` / “代表性表达”。`scripts/core/NPCPromptProfile.gd`、对话顶层 `npc_setting`、共享 `NPCIdentity` 和六类正式 LLM 上下文的语言倾向只保留宽松 `speech_style`；T0100 后身份另含精简 `religion`。模型必须结合性格、职业、长期记忆和当下事实自然组织语言，不能依赖固定台词池。T1501 / T0060 中关于台词样例注入的旧口径由本节取代。
 
 三篇开局日记继续使用既有 8 字段结构，但前两篇承担不同层级的叙事职责：“往昔·来站前”宏观勾勒身世、职业来路、离开原处的原因和到站时间；“往昔·初到驿站”记录接手的工作与遇见的人。八人的到站顺序固定为艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜，各人的第二篇从不同角度互相咬合，拼成驿站逐渐恢复运转的群像。“往昔·近日”保留 T0060 已确认的开局前微观生活片段。
 
-每名 NPC 对守备官只有一条技术键为 `role` 的开局职责认知：守备官负责统筹驿站防务、警戒和危急时的人手安排。不得在种子中加入“尚待观察”“是否值得信任”等预设评价，也不得伪造既往互动。15 座建筑知识继续覆盖真实规则，但玩家可见 `relation_label / value_label` 必须写成人物在驿站生活中会形成的常识，不使用“初始、升级后、槽位、效率、结算”等说明书腔。T0061 当时从仓库条目移除了尚未实现的容量语义；T0070 容量落地后已重新加入按等级扩容常识，受击丢货 / 减少掠夺仍不写入。`confidence / day / time` 元数据全部保留。`NPCPanel` 的【知识】弹窗只显示中文主体、关系和值，不显示可信度与更新时间；NPCSystem、反思更新、后端参数和 GM 原始调试仍保留这些字段。
+T0061 当时每名 NPC 对守备官只有一条技术键为 `role` 的开局职责认知；T0101 已新增三年前到站、来站前经历未知和开局前尽责和睦三条关系，但仍不得伪造具体旧事、身份或无条件信任。15 座建筑知识继续覆盖真实规则，但玩家可见 `relation_label / value_label` 必须写成人物在驿站生活中会形成的常识，不使用“初始、升级后、槽位、效率、结算”等说明书腔。T0061 当时从仓库条目移除了尚未实现的容量语义；T0070 容量落地后已重新加入按等级扩容常识，受击丢货 / 减少掠夺仍不写入。`confidence / day / time` 元数据全部保留。`NPCPanel` 的【知识】弹窗只显示中文主体、关系和值，不显示可信度与更新时间；NPCSystem、反思更新、后端参数和 GM 原始调试仍保留这些字段。
 
 ## T0060 八名 NPC 文案与开局认知合同
 
 8 名 NPC 的根本人设、三篇初始日记和中文知识图谱已统一改为专业、直白、自然的中文。人物差异不再依赖晦涩比喻或刻意拟人，而由句式、用词、关注重点和判断习惯体现：托马朴实谨慎，布鲁诺口语化且爱抱怨，伊沃安静务实，格伦简短严厉，艾达条理分明，马塞尔温和完整，莉娜临床精确，欧文讲原因与解决办法。清楚易懂的轻微黑色幽默可以保留，但不得妨碍事实理解。
 
-“往昔·近日”严格发生在守备官收到并向众人传达敌情之前，只能记录普通驿站生活，不得暗示人物已经知道敌袭、征召或备战安排。T0061 后，守备官种子认知进一步收敛为唯一职责事实，不附加开放判断句。每人的图谱继续覆盖全部 15 座正式建筑：本职建筑记录更具体的用途和关键规则，其他建筑保持粗略但准确的世界内认识；这些认识仍不替代运行时权威状态与结算。
+“往昔·近日”严格发生在守备官收到并向众人传达敌情之前，只能记录普通驿站生活，不得暗示人物已经知道敌袭、征召或备战安排。T0061 曾把守备官种子收敛为唯一职责事实；T0101 在保持玩家身份开放的前提下补入三年前到站、过去未知和开局前尽责和睦三项低细节认知。每人的图谱继续覆盖全部 15 座正式建筑：本职建筑记录更具体的用途和关键规则，其他建筑保持粗略但准确的世界内认识；这些认识仍不替代运行时权威状态与结算。
 
 ## T0059 开局人物历史与长期认知
 
 8 名初始 NPC 的根本人设与具体人生历史现已分层：`npc_profiles.json.background_story` 只保存不随玩家互动改变的职业视角、价值尺度和根本矛盾；`npc_initial_long_memory.json` 保存每人来站前、初到驿站、近日三个第一人称生命切片，以及其对人物、建筑和个人往事的当前认知。这样同一职业信息不再在系统人设、日记和知识图谱三处反复讲述。
 
-每人初始知识图谱覆盖其余 7 人、守备官、15 座正式建筑和至少 2 个个人故事主体。本职建筑有多条具体规则，其他建筑保持世界内口吻的粗略但正确认识；T0061 后守备官条目只记录其防务、警戒与危急人手统筹职责，不预写人物评价。
+T0108 后，8 人对围墙 / 主厅工程器械位置的开局前认知与当前建筑配置一致：围墙六级数量为 `1 / 2 / 2 / 3 / 3 / 4`，主厅为 `1 / 1 / 2 / 2 / 3 / 4`，一次升级最多增加一个且部分等级不增加，主厅位置使弩床 / 箭塔射程变为 `2.0x`。这仍是 `npc_initial_long_memory.json` 中的稳定长期知识，不是新增人物属性或 Prompt Schema；防御、穿透和攻速等战斗数值仍不会作为 NPC Prompt 属性注入。
+
+每人初始知识图谱覆盖其余 7 人、守备官、15 座正式建筑和至少 2 个个人故事主体。本职建筑有多条具体规则，其他建筑保持世界内口吻的粗略但正确认识；T0101 后守备官条目固定职责、三年前到站、来站前经历未知和开局前尽责和睦四项认知，不预写具体旧事或玩家身份。
 
 NPCSystem 在生成实体前同时校验档案和初始记忆，缺失、未知 id、空日记、非 `key_value_replace_v1` 图谱或空关系都会让初始化明确失败。加载后六类正式 LLM 业务均读取这份运行态长期记忆：对话使用唯一顶层 `long_memory`，计划 / 判别 / 修订 / 战时心理 / 反思使用 `npc.long_term_memory`。`target_npc` 不复制目标长期记忆；T0071 后说话者只使用公开 `speaker_context`，不再注入另一 NPC 的任何完整人物或记忆上下文。
 
@@ -271,9 +351,9 @@ NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSyst
 
 ## T0043A 服务依赖行动生命周期
 
-`receive_clinic_treatment`、`receive_weapon_training`、`attend_mass` 分别持续依赖 `work_clinic_doctor`、`work_training_instructor`、`lead_mass`。ActionSystem 在依赖者到岗申请位置前再次验证有效服务者；同批派发时若服务者仍在移动，依赖者可等待服务者到岗。依赖行动开始后，只要全部有效服务者退出，依赖者就立即得到结构化失败、释放位置并触发计划重评估，不等待替补。
+`receive_clinic_treatment`、`receive_weapon_training` 分别持续依赖 `work_clinic_doctor`、`work_training_instructor`。ActionSystem 在依赖者到岗申请位置前再次验证有效服务者；同批派发时若服务者仍在移动，依赖者可等待服务者到岗。依赖行动开始后，只要全部有效服务者退出，依赖者就立即得到结构化失败、释放位置并触发计划重评估，不等待替补。
 
-教堂候选严格分为 `pray_at_chapel` 普通祈祷、`lead_mass` 主持弥撒、`attend_mass` 参加弥撒。普通祈祷无需神父，但与正在举行的弥撒互斥；主持开始会中断普通祈祷。参加者绑定具体主持者，主持正常结束时共同完成，异常退出时共同失败。每日计划同批派发顺序为服务者优先、普通行动其次、依赖者随后、对话最后，减少遍历顺序造成的伪失败；程序仍在每次执行时做最终权威复验。
+教堂候选只有 `pray_at_chapel` 祈祷与 `lead_mass` 主持弥撒。祈祷无需神父，也不与弥撒互斥；主持开始、结束只改变祈祷者内部模式。每日计划同批派发顺序仍让诊所 / 训练服务者优先、普通行动其次、依赖者随后、对话最后，减少遍历顺序造成的伪失败；程序仍在每次执行时做最终权威复验。
 
 ## T0057 建筑升级失败重估合同（pending 时序由 T0080 修正）
 
@@ -283,7 +363,7 @@ NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSyst
 
 ## T0043 位置行动、可见资格与失败重估合同
 
-每日计划和对话行动参考继续共用 `data/action_defs.json` 候选源。吃饭、睡觉、普通祈祷、主持弥撒、参加弥撒、坐诊、接受治疗、指导训练和接受训练分别申请建筑定义中的具体位置类型；NPC 不输出位置编号。除睡眠外，ActionSystem 在执行瞬间申请一个同类空位；睡眠由 BuildingSystem 根据 `assigned_npc_id` 返回该 NPC 的固定床，初始 8 人按既有叙事到站顺序使用床位 1–8，没有固定床位的未来 NPC 只能使用未分配床位。满位、固定床被占、升级封闭、建筑失效、服务依赖缺失或资格不符都写入 `last_action_failure_context` 并触发既有计划修订链路，LLM 不选择或改写床位归属。
+每日计划和对话行动参考继续共用 `data/action_defs.json` 候选源。吃饭、睡觉、祈祷、主持弥撒、坐诊、接受治疗、指导训练和接受训练分别申请建筑定义中的具体位置类型；NPC 不输出位置编号。除睡眠外，ActionSystem 在执行瞬间申请一个同类空位；睡眠由 BuildingSystem 根据 `assigned_npc_id` 返回该 NPC 的固定床，初始 8 人按既有叙事到站顺序使用床位 1–8，没有固定床位的未来 NPC 只能使用未分配床位。满位、固定床被占、升级封闭、建筑失效、服务依赖缺失或资格不符都写入 `last_action_failure_context` 并触发既有计划修订链路，LLM 不选择或改写床位归属。
 
 T0063 新增 `drink_wine`：只有目标 NPC 当前 `states.wine >= 1` 时才进入其动态计划 / 对话候选；ActionSystem 开始执行时通过 NPC 个人资源接口再次原子校验并扣除 1。成功写 `wine_consumed`，只把“心情改善、过去伤痛暂时淡化”投影到后续上下文；不建立情绪数值，也不删除任何记忆。无酒写 `drink_wine_failed_no_wine`，DailyPlanSystem 按资源不足进入既有失败判别。
 
@@ -321,11 +401,11 @@ T0063 新增 `drink_wine`：只有目标 NPC 当前 `states.wine >= 1` 时才进
 
 ## T0025 NPC-NPC 自主对话与完整计划行动目录
 
-正式每日计划和失败修订现在都从同一动态 `allowed_actions` 目录选行动。目录覆盖设计稿 10.3 的前往建筑、职业工作、吃饭、睡觉、祈祷、诊所治疗、NPC-NPC 对话、训练，以及特殊的主动找守备官交涉和逃离意向；修复 / 升级 / 昏迷治疗协助只在实时目标存在时加入。`talk_to_npc` 必须使用同一候选中的 `target_id` 和 `action_kind=chat`，不选择地点，也不能选择自己、昏迷、逃离、深睡、非工作行为模式或不存在的 NPC。
+正式每日计划和失败修订都从同一动态 `allowed_actions` 目录选行动。目录覆盖设计稿 10.3 的前往建筑、职业工作、吃饭、睡觉、祈祷、诊所治疗、NPC-NPC 对话、训练，以及特殊的主动找守备官交涉和逃离意向；修复 / 升级 / 昏迷治疗协助只在实时目标存在时加入。`talk_to_npc` 的 provider 决策必须使用同一候选对应的 `target_npc_id`，不选择地点，也不能选择自己、昏迷、逃离、深睡、非工作行为模式或不存在的 NPC；内部 kind 与目标由程序编译。
 
 计划执行 `talk_to_npc` 时，发起者先追踪目标当前地点；目标移动后最多重定向一次。接近期间双方由 ActionSystem 预定，防止第三人并发抢占；已有权威对话时，即时计划修订不会再暴露必然失败的对话候选。到达后先走邀请判定，接受后才打断双方普通行动并释放工位，再使用真实 `/npc/dialogue` 自动轮流回复，直到任一方输出结束标记或高优先级条件中断。后端与 Godot 都要求 `replyer_id` 等于目标 NPC、`response_kind=reply_to_npc` 且邀请 / 正式阶段和软轮次字段一致。每个邀请交换和完成轮次写入双方事件库；任一已实际发生的邀请拒绝或正式会话结束后，两名参与者都各自请求 T0049 判别，仅判别非空者进入受限小时修订。战斗、避战、集结、昏迷和逃离等高优先级权威状态不会被日常计划或对话恢复逻辑覆盖。
 
-24 小时计划先按每项声明的 `hour` 建表再排成 0-23，模型数组乱序不会交换行动时段，重复 / 越界 / 缺失小时会被拒绝。同批当前时段计划按“教官 → 其他非对话 → 受训者 → 对话”顺序派发，避免依赖 NPC 遍历顺序。运行态比较包含 action、target、必要 location 和 dialogue goal；普通派发仍以日、小时和计划版本签名幂等，T0075 在其上增加配置化完成策略：生产工作成功完成可受控清除签名并续开，单次行为另有不依赖计划版本的小时消费记录。修订请求绑定请求日、小时和计划版本，并使用单后继队列；迟到响应不会覆盖新计划，连续 3 次迟到落地失败后停止自动续修。正式计划 / 修订不使用 Mock 或规则降级；固定地点行动仅在 action/target/location 唯一命中时规范化冗余 kind，`talk_to_npc` 则在 action/target 唯一命中后把冗余地点清空并记录 `model_normalizations`，其他错误仍失败。
+24 小时计划先按每项声明的 `hour` 建表再排成 0-23，模型数组乱序不会交换行动时段，重复 / 越界 / 缺失小时会被拒绝。同批当前时段计划按“教官 → 其他非对话 → 受训者 → 对话”顺序派发，避免依赖 NPC 遍历顺序。运行态比较包含 action、target、必要 location 和 dialogue goal；普通派发仍以日、小时和计划版本签名幂等，T0075 在其上增加配置化完成策略：生产工作成功完成可受控清除签名并续开，单次行为另有不依赖计划版本的小时消费记录。修订请求绑定请求日、小时和计划版本，并使用单后继队列；迟到响应不会覆盖新计划，连续 3 次迟到落地失败后停止自动续修。正式计划 / 修订不使用 Mock 或规则降级；T0097 在完整 Schema 前只读取行为必要决策并丢弃其余模型字段，编译后的候选、小时、自聊和对话诉求错误仍失败。
 
 ## 模块目标
 
@@ -350,7 +430,7 @@ T0301 已在 `data/npc_profiles.json` 补齐 8 名初始 NPC 档案：
 
 ## 人设与职业语气
 
-T1501 已把 8 名 NPC 从数据草案收敛为 Demo 正式短档案。T0061 后，每名 NPC 在 `personality`、`desires`、`fears`、`boundaries` 之外只保留以下宽松语言字段：
+T1501 已把 8 名 NPC 从数据草案收敛为 Demo 正式短档案。T0100 后每名 NPC 另有精简 `religion="天主教"`；在 `personality`、`desires`、`fears`、`boundaries` 之外，语言表达仍只由以下宽松字段限定：
 
 - `speech_style`：描述句式、用词、关注顺序和表达习惯，不提供固定台词或必须重复的比喻。
 
@@ -365,7 +445,7 @@ T1501 已把 8 名 NPC 从数据草案收敛为 Demo 正式短档案。T0061 后
 | 莉娜 | 先核对事实与风险，再说明结论和代价 | 救治伤员 / 害怕药尽与放弃病人 / 不伤害无防备者 |
 | 欧文 | 按问题、原因和解决办法说明，含糊处会追问 | 守住围墙 / 害怕器械失控 / 不做针对平民的陷阱 |
 
-`LLMBridge` 会把 `speech_style` 放入对话 `npc_setting` 和共享 `NPCContext.identity`。对话 Prompt 要求模型从职业经验、性格、长期记忆与当前处境出发回应，并避免可互换的通用士兵台词；首次睡眠总结也参考同一宽松语气，但不受固定句式约束。
+`LLMBridge` 会把 `religion` 与 `speech_style` 放入对话 `npc_setting` 和共享 `NPCContext.identity`。对话 Prompt 要求模型从职业经验、性格、长期记忆与当前处境出发回应，并避免可互换的通用士兵台词；宗教信仰只在相关话题中自然参考，首次睡眠总结也遵守同一边界。
 
 ## 熟练度架构
 

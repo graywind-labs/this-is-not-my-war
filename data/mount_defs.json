@@ -4,6 +4,12 @@
     "name": "已分配马匹",
     "slot": "mount",
     "speed_bonus": 1.35,
+    "attack_speed_modifier": 0.05,
+    "charge_speed_multiplier": 1.30,
+    "charge_weapon_damage_multiplier": 1.65,
+    "charge_damage": 7.0,
+    "charge_damage_riding_scale": 0.05,
+    "charge_stagger_seconds": 0.8,
     "required_skill": "骑术",
     "tags": ["horse"]
   }

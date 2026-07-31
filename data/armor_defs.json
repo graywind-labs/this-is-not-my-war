@@ -5,6 +5,9 @@
     "slot": "helmet",
     "source_resource_id": "item_iron_helmet",
     "armor_value": 2,
+    "attack_power_modifier": 0.0,
+    "penetration_modifier": 0.0,
+    "attack_speed_modifier": -0.02,
     "weight": 1,
     "tags": ["metal", "head"]
   },
@@ -14,6 +17,9 @@
     "slot": "chest",
     "source_resource_id": "item_mail_chest",
     "armor_value": 5,
+    "attack_power_modifier": 0.0,
+    "penetration_modifier": 0.0,
+    "attack_speed_modifier": -0.12,
     "weight": 4,
     "tags": ["metal", "body"]
   },
@@ -23,6 +29,9 @@
     "slot": "bracers",
     "source_resource_id": "item_iron_bracers",
     "armor_value": 2,
+    "attack_power_modifier": 0.5,
+    "penetration_modifier": 0.5,
+    "attack_speed_modifier": -0.02,
     "weight": 1,
     "tags": ["metal", "arms"]
   },
@@ -32,6 +41,9 @@
     "slot": "greaves",
     "source_resource_id": "item_iron_greaves",
     "armor_value": 3,
+    "attack_power_modifier": 0.0,
+    "penetration_modifier": 0.0,
+    "attack_speed_modifier": -0.06,
     "weight": 2,
     "tags": ["metal", "legs"]
   }

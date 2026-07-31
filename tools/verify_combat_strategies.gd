@@ -218,8 +218,79 @@ func _init() -> void:
 		return
 	var keep_target := _first_strategy_movement(keep_step)
 	var target_distance := float(keep_target.get("target_enemy_distance", 999.0))
-	if target_distance > 12.0:
-		push_error("Keep-distance shooting should remain within bow attack range, target distance %.2f" % target_distance)
+	var keep_min_distance := float(combat_system._get_keep_distance_min_distance(12.0))
+	if target_distance < keep_min_distance or target_distance > 12.0:
+		push_error("Keep-distance shooting should move into its configured min/range band, target distance %.2f" % target_distance)
+		quit(1)
+		return
+
+	combat_system.debug_clear_enemies()
+	combat_system.debug_spawn_wave(1, true)
+	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 1.2), 200)
+	_set_npc_world_position(cavalry_id, Vector3.ZERO)
+	var charge_select: Dictionary = combat_system.set_npc_combat_strategy(cavalry_id, "charge_cycle", "private")
+	if not bool(charge_select.get("ok", false)):
+		push_error("Failed to select cavalry charge-cycle strategy")
+		quit(1)
+		return
+	npc_system.set_npc_behavior_mode(cavalry_id, "combat", "verify_charge_impact", {
+		"state_changes": {
+			"current_action": "combat_ready",
+			"combat_target_enemy_id": enemy_id,
+			"combat_attack_cooldown": 0.0,
+			"combat_charge_phase": "impact"
+		},
+		"request_plan_reevaluation": false
+	})
+	var active_enemies: Dictionary = combat_system.get("_active_enemies")
+	var winding_enemy: Dictionary = active_enemies.get(enemy_id, {})
+	winding_enemy["attack_windup_remaining"] = 0.4
+	winding_enemy["attack_windup_target"] = {
+		"type": "npc",
+		"id": cavalry_id,
+		"name": "托马"
+	}
+	winding_enemy["current_action"] = "winding_up_%s" % cavalry_id
+	active_enemies[enemy_id] = winding_enemy
+	combat_system.set("_active_enemies", active_enemies)
+	var charge_hp_before := int(combat_system.get_enemy(enemy_id).get("hp", 0))
+	var charge_step: Dictionary = combat_system.debug_step_enemy_ai(0.1)
+	var charge_attack := _first_charge_attack(charge_step, cavalry_id)
+	if charge_attack.is_empty():
+		push_error("Charge-cycle impact should produce a weapon attack plus horse collision: %s" % JSON.stringify(charge_step))
+		quit(1)
+		return
+	var charge_impact: Dictionary = charge_attack.get("charge_impact", {})
+	var charged_enemy: Dictionary = combat_system.get_enemy(enemy_id)
+	var charge_hp_loss := charge_hp_before - int(charged_enemy.get("hp", 0))
+	var collision_damage := int(charge_impact.get("collision_damage", 0))
+	var weapon_damage := int(charge_attack.get("damage", 0))
+	var base_context: Dictionary = charge_impact.get("base_attack_context", {})
+	var unboosted_weapon_damage := int(combat_system.calculate_damage_resolution(
+		float(base_context.get("raw_attack_power", 0.0)),
+		float(charge_attack.get("target_defense", 0.0)),
+		float(charge_attack.get("penetration", 0.0))
+	).get("damage", 0))
+	if (
+		collision_damage <= 0
+		or weapon_damage <= unboosted_weapon_damage
+		or float(charge_impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
+		or charge_hp_loss != collision_damage + weapon_damage
+	):
+		push_error("Mounted charge should combine boosted weapon damage with independent collision damage")
+		quit(1)
+		return
+	if (
+		not bool(charge_impact.get("interrupted_windup", false))
+		or float(charged_enemy.get("stagger_remaining", 0.0)) <= 0.0
+		or float(charged_enemy.get("attack_windup_remaining", -1.0)) != 0.0
+		or int(charged_enemy.get("windup_interrupt_count", 0)) <= 0
+	):
+		push_error("Horse collision should stagger the enemy and interrupt its active windup: %s" % JSON.stringify(charged_enemy))
+		quit(1)
+		return
+	if str(npc_system.get_npc_state(cavalry_id).get("combat_charge_phase", "")) != "withdraw":
+		push_error("Cavalry should return to withdraw phase after an impact")
 		quit(1)
 		return
 
@@ -262,6 +333,19 @@ func _first_strategy_movement(step: Dictionary) -> Dictionary:
 		var movement: Dictionary = entry.get("strategy_movement", {}) if (entry.get("strategy_movement", {}) is Dictionary) else {}
 		if not movement.is_empty():
 			return movement
+	return {}
+
+
+func _first_charge_attack(step: Dictionary, npc_id: String) -> Dictionary:
+	var friendly_attacks: Dictionary = step.get("friendly_attacks", {}) if step.get("friendly_attacks", {}) is Dictionary else {}
+	for raw_entry in friendly_attacks.get("attacks", []):
+		var entry: Dictionary = raw_entry if raw_entry is Dictionary else {}
+		if str(entry.get("npc_id", "")) != npc_id:
+			continue
+		for raw_attack in entry.get("attacks", []):
+			var attack: Dictionary = raw_attack if raw_attack is Dictionary else {}
+			if attack.get("charge_impact", {}) is Dictionary and not (attack.get("charge_impact", {}) as Dictionary).is_empty():
+				return attack
 	return {}
 
 

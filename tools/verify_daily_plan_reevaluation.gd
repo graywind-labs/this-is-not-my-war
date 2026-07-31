@@ -126,13 +126,25 @@ func _verify_failures_trigger_real_only(
 	if not bool(workshop_target.get("ok", false)):
 		push_error("Failed to set workshop crafting target: %s" % str(workshop_target))
 		return false
-	var claim_result: Dictionary = building_system.claim_workstation("workshop", "cook_01", "engineering")
-	if not bool(claim_result.get("ok", false)):
-		push_error("Failed to occupy workshop before workstation failure verification: %s" % str(claim_result))
+	var claim_results: Array[Dictionary] = []
+	for blocker_id in ["cook_01", "priest_01"]:
+		var claim_result: Dictionary = building_system.claim_workstation("workshop", blocker_id, "engineering")
+		if not bool(claim_result.get("ok", false)):
+			push_error("Failed to fill workshop before workstation failure verification: %s" % str(claim_result))
+			return false
+		claim_results.append(claim_result)
+	if claim_results.size() != 2:
+		push_error("Workshop blocker fixture should occupy both initial workstations")
 		return false
 	daily_plan_system.execute_current_plan_for_npc(occupied_npc_id, true)
 	var occupied_result: Dictionary = await _wait_for_reevaluation(daily_plan_system, occupied_npc_id, 5.0)
-	building_system.release_workstation("workshop", "cook_01", str(claim_result.get("workstation_id", "")))
+	for blocker_index in range(claim_results.size()):
+		var blocker_id: String = str(["cook_01", "priest_01"][blocker_index])
+		building_system.release_workstation(
+			"workshop",
+			blocker_id,
+			str(claim_results[blocker_index].get("workstation_id", ""))
+		)
 	if str(occupied_result.get("failure_type", "")) != "workstation_occupied":
 		push_error("Occupied workstation failure should trigger real-only reevaluation: %s" % str(occupied_result))
 		return false

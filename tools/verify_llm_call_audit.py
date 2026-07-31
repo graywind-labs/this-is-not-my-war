@@ -236,11 +236,12 @@ def main() -> None:
 
     backend_app_source = (REPO_ROOT / "backend" / "app.py").read_text(encoding="utf-8")
     assert "def model_success_payload" in backend_app_source
-    assert backend_app_source.count("model_success_payload(response_model, result") == 7
+    assert backend_app_source.count("model_success_payload(response_model, result") == 8
     assert "dialogue_normalizations" in backend_app_source
     assert backend_app_source.count(
         "return jsonify(model_success_payload(response_model, result, normalizations))"
-    ) == 3
+    ) == 2
+    assert "return jsonify(model_success_payload(response_model, result))" in backend_app_source
     assert '"model_normalizations"' in backend_app_source
 
     daily_plan_source = (

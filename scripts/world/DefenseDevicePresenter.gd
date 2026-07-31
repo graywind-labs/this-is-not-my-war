@@ -15,6 +15,8 @@ func _ready() -> void:
 			event_bus.defense_device_state_changed.connect(_on_device_state_changed)
 		if event_bus.has_signal("defense_device_action_resolved"):
 			event_bus.defense_device_action_resolved.connect(_on_device_action_resolved)
+		if event_bus.has_signal("building_state_changed"):
+			event_bus.building_state_changed.connect(_on_building_state_changed)
 	call_deferred("rebuild_from_system")
 
 
@@ -75,6 +77,11 @@ func _on_device_action_resolved(deployment_id: String, action_result: Dictionary
 	var view := get_view_for_deployment(deployment_id)
 	if view != null and view.has_method("play_device_action"):
 		view.play_device_action(action_result)
+
+
+func _on_building_state_changed(building_id: String) -> void:
+	if building_id == "wall" or building_id == "main_hall":
+		rebuild_from_system()
 
 
 func _make_node_name(value: String) -> String:

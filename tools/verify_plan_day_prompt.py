@@ -200,9 +200,9 @@ def main() -> None:
         "不能把短工期机械铺满更晚时段",
         "required_ability=主持弥撒",
         "required_active_action_id",
-        "attend_mass",
         "pray_at_chapel",
-        "主持弥撒期间普通祈祷不可进行",
+        "弥撒开始会由程序自动转为参加弥撒",
+        "模型不用另选“参加弥撒”行动",
         "drink_wine",
         "npc.state.wine",
         "每个饮酒阶段开始时由程序实际消耗 1 份个人酒",
@@ -216,6 +216,7 @@ def main() -> None:
     ]
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
+    assert "attend_mass" not in system_prompt
     assert "玩家" not in result.content["summary"]
 
     invalid_plan = _valid_plan()

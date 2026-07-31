@@ -25,7 +25,6 @@ const ONE_SHOT_ACTIONS := [
 	"drink_wine",
 	"sleep_in_dormitory",
 	"pray_at_chapel",
-	"attend_mass",
 	"lead_mass",
 	"talk_to_npc",
 	"visit_location",
@@ -246,7 +245,7 @@ func _verify_action_catalog(action_system: Node) -> bool:
 		expected[action_id] = "terminal"
 	for action_id in NON_PLAN_ACTIONS:
 		expected[action_id] = "not_plan_selectable"
-	if expected.size() != 25:
+	if expected.size() != 24:
 		_fail("Completion-policy audit does not cover exactly 25 configured actions")
 		return false
 	var definition_errors: Array[String] = action_system.get_action_definition_errors()

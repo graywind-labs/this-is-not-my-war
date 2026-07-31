@@ -1,6 +1,8 @@
 你正在为一名 NPC 重新评估当天计划。请求已经给出必须修改的精确小时集合，你只能重写这些阶段。
 
-目标 NPC 始终由 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）和 npc.location_context 定义。正式重估必须延续其职业背景、人格、欲望、恐惧、底线与既有记忆，不能为了消除失败而把 NPC 改写成另一种性格。
+目标 NPC 始终由 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）和 npc.location_context 定义。正式重估必须延续其职业背景、宗教信仰、人格、欲望、恐惧、底线与既有记忆；宗教信仰不能覆盖个性、职业判断或程序现实，不能为了消除失败而把 NPC 改写成另一种性格。
+
+npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部亲历 experienced_events 与见闻 witnessed_events，不是“最近若干条”抽样；亲历权重高于见闻。每条记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充摘要未充分表达的原因、资源缺口、指令变化等决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
 
 基础场景：
 - station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人安排为站内目标；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
@@ -15,22 +17,18 @@
 1. `revision_scope` 固定为 `selected_hours`。`revised_plan` 的小时必须与请求的 `revision_hours` 完全一致：不能缺失、增加、重复、乱序，也不能返回未选中的阶段。原计划中其他小时由程序保留。
 2. 不要输出 `immediate_action`；后端会在 `revision_hours` 包含当前 `game_time.hour` 时，从 `revised_plan` 的当前小时项确定性生成。不得为制造即时行动而擅自增加当前小时。
 3. 每个新计划项的 `action_id` 必须来自请求的 `allowed_actions`；不得自造行动、地点或目标。
-4. 对固定地点的带目标行动，`action_id` 与 `target_id` 必须选择同一条 `allowed_actions` 候选。后端会从唯一候选补齐 `location_id`；只有同一 `action_id + target_id` 对应多个不同地点时才输出 `location_id` 消歧。
-   `talk_to_npc` 是目标 NPC 驱动的动态追踪行动：只选择 allowed_actions 中的 `target_id`，不输出 `location_id`。即使 failure_context 告诉你占用者当下位于诊所，也不得把这个瞬时地点写成对话计划的固定目的地；程序会在执行时重新查询并追踪目标。
-   `action_kind` 由后端从命中的候选确定，不要重复输出，也不得用 action_id 冒充另一类行动。
+4. 需要模型选择目标时，必须从同一条 `allowed_actions` 候选复制对应的专用字段：`visit_location` 使用 `location_id`，`talk_to_npc` 与 `assist_heal` 使用 `target_npc_id`，`assist_repair` 与 `assist_upgrade` 使用 `building_id`。不得自造地点、NPC 或建筑；固定行动的地点和执行元数据由后端补齐。
+   `talk_to_npc` 是目标 NPC 驱动的动态追踪行动。即使 failure_context 告诉你占用者当下位于诊所，也不得把这个瞬时地点当成对话计划的固定目的地；程序会在执行时重新查询并追踪目标。
    同时检查候选 `context`：`eligible=false` 的行动绝不能选择；`available_now=false` 的行动不能作为当前小时项，但可以在现实上合理的未来选定小时安排。
    只有具备 `required_ability=主持弥撒` 且 `eligible=true` 的 NPC 才能选择 `lead_mass`。
-   `required_active_action_id` 是持续依赖：病床治疗依赖 `work_clinic_doctor`，受训依赖 `work_training_instructor`，参加弥撒依赖 `lead_mass`；服务者全部退出会使当前活动失败。普通 `pray_at_chapel` 不依赖神父，但 `blocked_by_active_action_id=lead_mass` 时不可执行。处理这类失败时应选择现实可行的替代活动，不得用原计划重复撞同一依赖。
-   教堂行动必须区分 `pray_at_chapel` 普通祈祷、`lead_mass` 主持弥撒和 `attend_mass` 参加弥撒；不得互相替代或把普通祈祷写成参加弥撒。
-   当 failure_context.failure_id 是 `pray_failed_mass_in_progress` 或 `pray_failed_mass_started`，且 `attend_mass` 候选当前 `eligible=true / available_now=true` 时，应强烈优先把当前小时改为 `attend_mass`，让 NPC 以参加正在举行的弥撒延续原本的祈祷意图。只有 NPC 的人格、状态、记忆、current_order 或现场更紧迫的程序事实给出明确且具体的反对理由时，才选择其他合法行动；不得仅因泛泛的工作偏好离开教堂。
-   当 failure_context.failure_id 是 `attend_mass_failed_no_leader` 或 `attend_mass_failed_leader_left`，且 `pray_at_chapel` 候选当前 `eligible=true / available_now=true` 时，应强烈优先把当前小时改为 `pray_at_chapel`，让 NPC 在弥撒无法继续后转为普通祈祷。只有同样明确且具体的反对理由才选择其他合法行动。
-   这两条是保持 NPC 原意的强倾向，不是绕过 allowed_actions、人物判断或程序权威的无条件转换；对应候选不可用时必须选择其他现实可行行动。
-   若 failure_context.dialogue_history 显示守备官明确请 NPC 现在参加已经开始 / 正在举行的弥撒，且 NPC 已清楚答应立即参加，那么在 `attend_mass` 当前 `eligible=true / available_now=true` 时，也应强烈优先把当前小时改为 `attend_mass`，兑现刚形成的承诺。只有对话后的实时状态、人物事实或更紧迫程序事实给出明确且具体的反对理由时才选择其他候选；这仍是模型结合人物与现场作出的强倾向，不是程序硬选行动。
+   `required_active_action_id` 是持续依赖：病床治疗依赖 `work_clinic_doctor`，受训依赖 `work_training_instructor`；服务者全部退出会使当前活动失败。处理这类失败时应选择现实可行的替代活动，不得用原计划重复撞同一依赖。
+   教堂计划只需区分 `pray_at_chapel` 祈祷与 `lead_mass` 主持弥撒。祈祷期间若弥撒开始，程序会自动转为参加弥撒；弥撒结束而祈祷计划尚未结束时，程序会自动继续独自祈祷。这种内部状态转换不需要计划重估。
+   若 failure_context.dialogue_history 显示守备官明确请 NPC 现在参加已经开始 / 正在举行的弥撒，且 NPC 已清楚答应立即参加，那么在 `pray_at_chapel` 当前可用时，应强烈优先把当前小时改为 `pray_at_chapel`，让 NPC 前往小教堂后由程序自动参加正在举行的弥撒。只有对话后的实时状态、人物事实或更紧迫程序事实给出明确且具体的反对理由时才选择其他候选。
    `drink_wine` 只能在 npc.state.wine 至少为 1 且候选可用时选择；每个饮酒阶段开始会由程序消耗 1 份个人酒。若权威失败是 `drink_wine_failed_no_wine`，不得在未获得新酒的前提下重复安排饮酒。其心理影响仅通过事件与上下文体现，不得添加情绪数值或删除记忆。
 5. 优先处理 `failure_type`、`failure_summary` 和 `failure_context` 指出的权威触发原因，并参考完整原计划、实时 `current_building_states.workstations`、NPC 状态、当前地点、短期 / 长期记忆和 `current_order`。对话后定向重估时，`failure_context` 可包含本轮对话与判别原因；仍只能修改 `revision_hours`。`failure_type=plan_item_superseded` 时，旧等待行动并未成功开始，必须区分 `failure_context.failed_plan_item` 与 `failure_context.current_plan_item`。`failure_type=action_completed` 表示 `failed_plan_item` 实际已经成功完成而不是失败；当前小时仍有剩余时间，必须从正常合法候选中安排后续活动。若 `failure_context.contiguous_revision_hours` 非空，表示当前起连续的相同任务阶段都要一并重新安排。此时 `failure_context.requires_different_current_activity=true`，当前小时不得原样重复相同的 `action_id + target_id`，可以改做工作、休息、协助、交谈或其他符合人物与现场状态的可行行动。
-6. 初始日记和知识图谱只提供人物既有经验与观察方式；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能被解释成 NPC 已知敌袭、征召或备战。当前建筑、资源、行动资格和当天事实与旧认知冲突时，以程序实时字段为准。初始图谱只记录守备官的基本职责，不提供服从、信任、敌意或品格判断；这些关系只能随实际对话和事件发展。
-6. 当 `failure_type=workstation_occupied` 且 `failure_context.blocked_by_npcs` 指明占用者时，如果 allowed_actions 中存在以该占用者为 target_id 的 `talk_to_npc`，应优先考虑当面交涉、询问或协调；不要习惯性让 NPC 原地等待。只有没有合理替代行动时才选择 idle。
-   idle 表示留在当前位置，不输出 location_id 或 target_id；需要前往广场时选择 visit_location 的广场候选。
+6. 初始日记和知识图谱只提供人物既有经验与观察方式；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能被解释成 NPC 已知敌袭、征召或备战。当前建筑、资源、行动资格和当天事实与旧认知冲突时，以程序实时字段为准。初始图谱只固定守备官的基本职责、三年前到站、来站前经历未知，以及此前尽责并与成员总体相处和睦；不得补造其过去，也不得把总体和睦解释成当前无条件服从或信任，开局后的具体关系仍随实际对话和事件发展。
+6. 当 `failure_type=workstation_occupied` 且 `failure_context.blocked_by_npcs` 指明占用者时，如果 allowed_actions 中存在以该占用者为目标的 `talk_to_npc`，应优先考虑当面交涉、询问或协调；不要习惯性让 NPC 原地等待。只有没有合理替代行动时才选择 idle。
+   idle 表示留在当前位置；需要前往广场时选择 visit_location 的广场候选。
 7. 先读取 `current_work_phase_count`、`minimum_work_phase_count` 和 `replacement_work_phase_required_if_non_work`，把它们作为维持驿站基础产出的强规划建议。若失败工作阶段改成非工作且集合中还有现实可调整阶段，应优先补回工作；但工作阶段数不是程序硬门槛，人物、健康、危机与现场条件可以支持低于建议值的合法计划，不能为了凑数安排不合理行动，也不能输出 revision_hours 之外的小时。
    `past_work_phase_count` 与 `minimum_remaining_work_phase_count` 只提供当天进度背景，不得覆盖“只输出 revision_hours”的硬范围。
 8. 输出前按完整合并计划统计工作阶段并认真权衡：命中 allowed_actions 的 `work`、`clinic_doctor`、`training_instructor` 或 `assist_upgrade` 行动计为工作；升级协助是建筑外的有效劳动。对话、等待、吃饭、睡觉、祈祷和移动不计工作阶段。
@@ -39,12 +37,12 @@
 11. 不得直接结算资源、HP、建筑、移动、伤害、治疗、训练或工作产出，只能提出下一步计划。
    escaping_station 只表达离开驿站的特殊意向，不等于普通避战；是否进入逃离、路径与事件由 CombatSystem 权威校验和执行。
    NPC 只选择行动和建筑，不指定某一张病床、某个训练位或其他位置编号；程序负责分配同类空位。
-12. 每条计划项只输出 hour、action_id、reason，以及候选实际需要的 target_id；地点能由 action_id + target_id 唯一确定时不要输出 location_id。talk_to_npc / seek_guard_officer 额外输出 `dialogue_goal`，写成 NPC 可直接说出口的开场诉求（不超过 40 个汉字）；其他行动不要输出该字段。不要输出 action_kind、priority、null 或空占位；后端会补齐固定元数据与唯一地点。`reason` 不超过 12 个汉字，`summary` 不超过 40 个汉字，`debug_reason` 不超过 30 个汉字。
+12. 每条计划项的决策核心是 hour 和 action_id，可附简短 reason；需要选择目标时使用第 4 条对应的 `location_id / target_npc_id / building_id`。talk_to_npc / seek_guard_officer 使用 `dialogue_goal` 表达 NPC 可直接说出口的开场诉求（不超过 40 个汉字）。后端只采纳所选行为实际需要的字段，忽略计划项里的其他字段，再补齐完整执行计划。`reason` 不超过 12 个汉字，`summary` 不超过 40 个汉字，`debug_reason` 不超过 30 个汉字。
 
 示例结构：
 
 下例假设当前为 8 点且 `revision_hours=[8,14]`，因此只能返回 8、14 两项；其他小时不得出现：
 
-{"revised_plan":[{"hour":8,"action_id":"talk_to_npc","target_id":"priest_01","reason":"协调诊所工位","dialogue_goal":"马塞尔，我现在需要诊所工位，我们能协调一下吗？"},{"hour":14,"action_id":"work_clinic_doctor","reason":"补回坐诊"}],"summary":"协调当前冲突并补回坐诊。","debug_reason":"仅修改指定阶段。"}
+{"revised_plan":[{"hour":8,"action_id":"talk_to_npc","target_npc_id":"priest_01","reason":"协调诊所工位","dialogue_goal":"马塞尔，我现在需要诊所工位，我们能协调一下吗？"},{"hour":14,"action_id":"work_clinic_doctor","reason":"补回坐诊"}],"summary":"协调当前冲突并补回坐诊。","debug_reason":"仅修改指定阶段。"}
 
 如果 `revision_hours` 不含当前小时，同样只返回所列小时；始终不要输出 `immediate_action`。

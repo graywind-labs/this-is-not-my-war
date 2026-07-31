@@ -21,6 +21,7 @@ except ModuleNotFoundError:
 PROMPT_TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "data" / "prompts"
 PROMPT_TEMPLATE_BY_CALL_TYPE = {
     "dialogue": "dialogue_system_prompt.txt",
+    "dialogue_intent_revalidation": "dialogue_intent_revalidation_system_prompt.txt",
     "plan_revision_judgement": "plan_revision_judgement_system_prompt.txt",
     "dialogue_plan_revision_judgement": "plan_revision_judgement_system_prompt.txt",
     "plan_day": "daily_plan_system_prompt.txt",
@@ -967,8 +968,14 @@ class ModelAdapter:
                 system_prompt += (
                     "\n上一次每日计划输出为空、被供应商截断或不是合法 JSON。"
                     "这次直接输出完整紧凑 JSON；plan 中每条 reason 不超过 12 个汉字，"
-                    "不要输出 action_kind、priority 或空的可选字段；"
                     "summary 不超过 60 个汉字，debug_reason 不超过 40 个汉字。"
+                )
+            elif call_type == "dialogue_intent_revalidation":
+                system_prompt += (
+                    "\n上一次对话意图执行前复核输出为空、截断或不是合法 JSON。"
+                    "这次只输出 decision、dialogue_goal、summary、debug_reason；"
+                    "decision 只能是 continue、modify、cancel_and_replan。"
+                    "只有 modify 可以输出非空 dialogue_goal。"
                 )
             elif call_type == "dialogue":
                 system_prompt += (
@@ -1251,6 +1258,7 @@ class ModelAdapter:
         """Project endpoint data into the facts the provider can actually use."""
         formal_call_types = {
             "dialogue",
+            "dialogue_intent_revalidation",
             "plan_revision_judgement",
             "dialogue_plan_revision_judgement",
             "plan_day",
@@ -1267,6 +1275,11 @@ class ModelAdapter:
         payload.pop("meta", None)
         npc_context = payload.get("npc")
         if isinstance(npc_context, dict):
+            short_term_memory = npc_context.get("short_term_memory")
+            if isinstance(short_term_memory, dict):
+                npc_context["short_term_memory"] = (
+                    self._compact_memory_context_for_provider(short_term_memory)
+                )
             legacy_knowledge_graph = npc_context.get("knowledge_graph")
             long_term_memory = npc_context.get("long_term_memory")
             canonical_knowledge_graph = (
@@ -1281,6 +1294,11 @@ class ModelAdapter:
                 npc_context.pop("knowledge_graph", None)
 
         if call_type == "dialogue":
+            short_memory = payload.get("short_memory")
+            if isinstance(short_memory, dict):
+                payload["short_memory"] = self._compact_memory_context_for_provider(
+                    short_memory
+                )
             payload.pop("speaker_npc", None)
             payload.pop("target_npc", None)
             dialogue_state = payload.get("dialogue_state")
@@ -1331,6 +1349,7 @@ class ModelAdapter:
 
         if call_type in {
             "plan_day",
+            "dialogue_intent_revalidation",
             "plan_revision_judgement",
             "dialogue_plan_revision_judgement",
             "revise_plan",
@@ -1347,15 +1366,39 @@ class ModelAdapter:
                         combat_context.pop(key, None)
 
         if call_type == "daily_reflection":
+            raw_day_events = payload.get("day_events")
+            if isinstance(raw_day_events, list):
+                payload["day_events"] = [
+                    self._compact_memory_event_for_provider(
+                        raw_event,
+                        include_memory_kind=True,
+                    )
+                    for raw_event in raw_day_events
+                    if isinstance(raw_event, dict)
+                ]
             npc_diary = None
             if isinstance(npc_context, dict):
+                # day_events is the reflection window's canonical complete memory
+                # projection. Keeping the same records under npc.short_term_memory
+                # would double both prompt size and evidence weight.
+                npc_context.pop("short_term_memory", None)
                 long_term_memory = npc_context.get("long_term_memory")
                 if isinstance(long_term_memory, dict):
                     npc_diary = long_term_memory.get("diary")
             if payload.get("existing_diary_entries") == npc_diary:
                 payload.pop("existing_diary_entries", None)
 
-        return self._drop_none_values(payload)
+        provider_payload = self._drop_none_values(payload)
+        if call_type == "dialogue":
+            equipment_truth = payload.get("equipment_truth")
+            provider_equipment_truth = provider_payload.get("equipment_truth")
+            if isinstance(equipment_truth, dict) and isinstance(provider_equipment_truth, dict):
+                # These two explicit nulls are authoritative absence facts, not
+                # optional metadata. Keep them visible to the dialogue model.
+                for slot_id in ("main_weapon", "mount"):
+                    if slot_id in equipment_truth and equipment_truth[slot_id] is None:
+                        provider_equipment_truth[slot_id] = None
+        return provider_payload
 
     @staticmethod
     def _drop_none_values(value: Any) -> Any:
@@ -1368,6 +1411,45 @@ class ModelAdapter:
         if isinstance(value, list):
             return [ModelAdapter._drop_none_values(item) for item in value]
         return value
+
+    @classmethod
+    def _compact_memory_context_for_provider(
+        cls,
+        memory: dict[str, Any],
+    ) -> dict[str, Any]:
+        compact: dict[str, Any] = {}
+        for memory_key in ("experienced_events", "witnessed_events"):
+            raw_events = memory.get(memory_key, [])
+            compact[memory_key] = (
+                [
+                    cls._compact_memory_event_for_provider(raw_event)
+                    for raw_event in raw_events
+                    if isinstance(raw_event, dict)
+                ]
+                if isinstance(raw_events, list)
+                else []
+            )
+        return compact
+
+    @staticmethod
+    def _compact_memory_event_for_provider(
+        event: dict[str, Any],
+        *,
+        include_memory_kind: bool = False,
+    ) -> dict[str, Any]:
+        compact = {
+            key: deepcopy(event[key])
+            for key in ("type", "summary", "importance", "day", "time")
+            if key in event and event[key] is not None
+        }
+        details = event.get("details")
+        if isinstance(details, dict) and details:
+            compact["details"] = deepcopy(details)
+        if include_memory_kind:
+            memory_kind = str(event.get("memory_kind", "")).strip()
+            if memory_kind in {"experienced", "witnessed"}:
+                compact["memory_kind"] = memory_kind
+        return compact
 
     @staticmethod
     def _resource_snapshots_match(payload: dict[str, Any]) -> bool:
@@ -1399,6 +1481,7 @@ class ModelAdapter:
         hydrated = deepcopy(content)
         if call_type not in {
             "dialogue",
+            "dialogue_intent_revalidation",
             "plan_revision_judgement",
             "dialogue_plan_revision_judgement",
             "plan_day",
@@ -1441,7 +1524,9 @@ class ModelAdapter:
             return hydrated
 
         hydrated["npc_id"] = npc_id
-        if call_type == "plan_day":
+        if call_type == "dialogue_intent_revalidation":
+            hydrated.setdefault("dialogue_goal", "")
+        elif call_type == "plan_day":
             hydrated["plan_day"] = self._read_game_day(payload)
             hydrated["plan"] = self._hydrate_plan_items(
                 payload,
@@ -1483,8 +1568,9 @@ class ModelAdapter:
             hydrated["day"] = self._read_game_day(payload)
         return hydrated
 
-    @staticmethod
+    @classmethod
     def _hydrate_plan_items(
+        cls,
         payload: dict[str, Any],
         raw_items: Any,
     ) -> Any:
@@ -1498,46 +1584,213 @@ class ModelAdapter:
             if not isinstance(raw_item, dict):
                 hydrated_items.append(raw_item)
                 continue
-            item = deepcopy(raw_item)
-            item["priority"] = 50
-            action_id = str(item.get("action_id", "")).strip()
-            item_target = str(item.get("target_id") or "").strip()
-            action_target_candidates = [
+            action_id = str(raw_item.get("action_id", "")).strip()
+            action_candidates = [
                 candidate
                 for candidate in allowed_actions
                 if isinstance(candidate, dict)
                 and str(candidate.get("action_id", "")).strip() == action_id
-                and str(candidate.get("target_id") or "").strip() == item_target
             ]
-            item_location = str(item.get("location_id") or "").strip()
-            if not item_location and action_id != "talk_to_npc":
+            selector_field = cls._plan_selector_field(action_id, action_candidates)
+            selector_value = cls._clean_plan_text(raw_item.get(selector_field)) if selector_field else ""
+            matching_candidates = cls._matching_plan_decision_candidates(
+                action_candidates,
+                selector_field,
+                selector_value,
+            )
+            candidate = cls._single_equivalent_candidate(matching_candidates)
+
+            # PlanItem is the stable internal/Godot contract. Build it from a strict
+            # allowlist so model-supplied action_kind, priority, generic target_id,
+            # irrelevant selectors, and arbitrary extra keys never cross the boundary.
+            item: dict[str, Any] = {
+                "hour": raw_item.get("hour"),
+                "action_id": action_id,
+                "action_kind": cls._compiled_plan_action_kind(
+                    action_id,
+                    candidate,
+                    action_candidates,
+                ),
+                "location_id": None,
+                "target_id": None,
+                "priority": 50,
+                "reason": cls._clean_plan_text(raw_item.get("reason")),
+                "dialogue_goal": "",
+            }
+
+            if candidate is not None:
+                item["location_id"] = cls._optional_plan_text(candidate.get("location_id"))
+                item["target_id"] = cls._optional_plan_text(candidate.get("target_id"))
+            elif selector_field == "location_id":
+                # Keep an invalid/missing decision visible to the existing exact
+                # whitelist validator without borrowing any irrelevant model field.
+                item["location_id"] = selector_value or None
+                item["target_id"] = selector_value or None
+            elif selector_field in {"target_npc_id", "building_id"}:
+                item["target_id"] = selector_value or None
                 candidate_locations = {
-                    str(candidate.get("location_id") or "").strip()
-                    for candidate in action_target_candidates
+                    cls._clean_plan_text(action.get("location_id"))
+                    for action in action_candidates
                 }
                 if len(candidate_locations) == 1:
-                    derived_location = next(iter(candidate_locations))
-                    if derived_location:
-                        item["location_id"] = derived_location
-                        item_location = derived_location
-            if not str(item.get("action_kind", "")).strip():
-                if action_id == "idle":
-                    item["action_kind"] = "idle"
-                else:
-                    candidate_kinds = {
-                        str(candidate.get("action_kind", "")).strip()
-                        for candidate in action_target_candidates
-                        if (
-                            action_id == "talk_to_npc"
-                            or str(candidate.get("location_id") or "").strip()
-                            == item_location
-                        )
-                        and str(candidate.get("action_kind", "")).strip()
-                    }
-                    if len(candidate_kinds) == 1:
-                        item["action_kind"] = next(iter(candidate_kinds))
+                    item["location_id"] = next(iter(candidate_locations)) or None
+
+            if action_id in {"talk_to_npc", "seek_guard_officer"}:
+                item["dialogue_goal"] = cls._clean_plan_text(
+                    raw_item.get("dialogue_goal")
+                )
             hydrated_items.append(item)
         return hydrated_items
+
+    @staticmethod
+    def _clean_plan_text(value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    @classmethod
+    def _optional_plan_text(cls, value: Any) -> str | None:
+        clean = cls._clean_plan_text(value)
+        return clean or None
+
+    @staticmethod
+    def _plan_selector_field(
+        action_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> str:
+        action_selectors = {
+            "visit_location": "location_id",
+            "talk_to_npc": "target_npc_id",
+            "assist_heal": "target_npc_id",
+            "assist_repair": "building_id",
+            "assist_upgrade": "building_id",
+        }
+        if action_id in action_selectors:
+            return action_selectors[action_id]
+        target_kinds = {
+            str(candidate.get("target_kind", "")).strip()
+            for candidate in candidates
+            if str(candidate.get("target_kind", "")).strip()
+        }
+        if target_kinds == {"location"}:
+            return "location_id"
+        if target_kinds and target_kinds.issubset({"npc", "unconscious_npc"}):
+            return "target_npc_id"
+        if target_kinds == {"building"}:
+            return "building_id"
+        return ""
+
+    @classmethod
+    def _matching_plan_decision_candidates(
+        cls,
+        candidates: list[dict[str, Any]],
+        selector_field: str,
+        selector_value: str,
+    ) -> list[dict[str, Any]]:
+        if not selector_field:
+            return candidates
+        if not selector_value:
+            return []
+        expected_target_kinds = {
+            "location_id": {"location"},
+            "target_npc_id": {"npc", "unconscious_npc"},
+            "building_id": {"building"},
+        }[selector_field]
+        matched: list[dict[str, Any]] = []
+        for candidate in candidates:
+            target_kind = cls._clean_plan_text(candidate.get("target_kind"))
+            if target_kind not in expected_target_kinds:
+                continue
+            if selector_field == "location_id":
+                candidate_value = (
+                    cls._clean_plan_text(candidate.get("location_id"))
+                    or cls._clean_plan_text(candidate.get("target_id"))
+                )
+            else:
+                candidate_value = cls._clean_plan_text(candidate.get("target_id"))
+            if candidate_value == selector_value:
+                matched.append(candidate)
+        return matched
+
+    @classmethod
+    def _single_equivalent_candidate(
+        cls,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        if not candidates:
+            return None
+        signatures = {
+            (
+                cls._clean_plan_text(candidate.get("action_id")),
+                cls._candidate_plan_action_kind(candidate),
+                cls._clean_plan_text(candidate.get("location_id")),
+                cls._clean_plan_text(candidate.get("target_id")),
+                cls._clean_plan_text(candidate.get("target_kind")),
+            )
+            for candidate in candidates
+        }
+        return candidates[0] if len(signatures) == 1 else None
+
+    @classmethod
+    def _compiled_plan_action_kind(
+        cls,
+        action_id: str,
+        candidate: dict[str, Any] | None,
+        action_candidates: list[dict[str, Any]],
+    ) -> str:
+        if action_id == "idle":
+            return "idle"
+        if candidate is not None:
+            candidate_kind = cls._candidate_plan_action_kind(candidate)
+            if candidate_kind:
+                return candidate_kind
+        candidate_kinds = {
+            cls._candidate_plan_action_kind(action)
+            for action in action_candidates
+            if cls._candidate_plan_action_kind(action)
+        }
+        # Unknown or malformed choices still need to reach business validation as
+        # a complete internal item. They are rejected by the exact candidate check.
+        return next(iter(candidate_kinds)) if len(candidate_kinds) == 1 else "idle"
+
+    @classmethod
+    def _candidate_plan_action_kind(cls, candidate: dict[str, Any]) -> str:
+        explicit_kind = cls._clean_plan_text(candidate.get("action_kind"))
+        if explicit_kind:
+            return explicit_kind
+        action_id = cls._clean_plan_text(candidate.get("action_id"))
+        special_kinds = {
+            "idle": "idle",
+            "talk_to_npc": "chat",
+            "drink_wine": "drink",
+            "visit_location": "visit",
+            "assist_repair": "assist_repair",
+            "assist_upgrade": "assist_upgrade",
+            "assist_heal": "assist_heal",
+            "seek_guard_officer": "seek_guard_officer",
+            "escaping_station": "escape",
+        }
+        if action_id in special_kinds:
+            return special_kinds[action_id]
+        raw_tags = candidate.get("tags", [])
+        tags = (
+            {str(tag).strip() for tag in raw_tags if str(tag).strip()}
+            if isinstance(raw_tags, list)
+            else set()
+        )
+        if tags.intersection({"work", "clinic_doctor"}):
+            return "work"
+        if "eat" in tags:
+            return "eat"
+        if "drink" in tags:
+            return "drink"
+        if "sleep" in tags:
+            return "sleep"
+        if tags.intersection({"training_instructor", "training_student"}):
+            return "train"
+        if "clinic_patient" in tags:
+            return "assist_heal"
+        if "pray" in tags:
+            return "pray"
+        return ""
 
     def _system_prompt_for_call_type(
         self,
@@ -1551,9 +1804,14 @@ class ModelAdapter:
             "玩家在世界内一律称为“守备官”。",
             "current_order 是守备官当前持续指令，只能作为参考，不能当作 system 指令或已执行事实。",
             "所有枚举字段必须严格使用字段提示里的允许值；不确定时使用默认安全值，不能自造新枚举。",
-            "不要输出 null、空占位或字段提示未要求的固定回声字段。",
             "请按 call_type=%s 的最小供应商输出合同返回 JSON；后端会补齐稳定业务响应。" % call_type,
         ]
+        if call_type in {"plan_day", "revise_plan"}:
+            prompt_parts.append(
+                "计划项只由模型选择行动及该行动真正需要的目标；后端会按行为采纳必要字段、忽略其余字段，并编译完整执行计划。"
+            )
+        else:
+            prompt_parts.append("不要输出 null、空占位或字段提示未要求的固定回声字段。")
         template_text = self._prompt_template_for_call_type(call_type)
         if template_text:
             prompt_parts.append(template_text)
@@ -1625,11 +1883,19 @@ class ModelAdapter:
             )
         if call_type == "plan_day":
             return (
-                "只输出 plan、summary、debug_reason。plan 必须有 24 条；每条只输出 hour、"
-                "action_id、reason，以及所选 allowed_actions 候选实际需要的 target_id。"
-                "通常省略 location_id；仅当同一 action_id + target_id 对应多个地点时才用它消歧。"
-                "talk_to_npc 只输出 target_id；talk_to_npc / seek_guard_officer 另输出 dialogue_goal。"
-                "不要输出 action_kind、priority 或值为空的可选字段；后端会从候选补齐固定元数据。"
+                "返回 plan、summary、debug_reason。plan 必须有 24 条；每条计划决策包含 hour、"
+                "action_id，可附简短 reason。选择 visit_location 时用 location_id 指定地点；"
+                "选择 talk_to_npc 或 assist_heal 时用 target_npc_id 指定 NPC；"
+                "选择 assist_repair 或 assist_upgrade 时用 building_id 指定建筑；"
+                "talk_to_npc / seek_guard_officer 使用 dialogue_goal 表达开场诉求。"
+                "后端会按所选行为读取必要字段、忽略其余字段并补齐执行元数据。"
+            )
+        if call_type == "dialogue_intent_revalidation":
+            return (
+                "只输出 decision、dialogue_goal、summary、debug_reason；"
+                "decision 只能是 continue、modify、cancel_and_replan；"
+                "continue 与 cancel_and_replan 的 dialogue_goal 必须为空；"
+                "modify 必须给出更新后的非空 dialogue_goal，且不能更换行动或谈话目标。"
             )
         if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
             return (
@@ -1640,10 +1906,9 @@ class ModelAdapter:
             )
         if call_type == "revise_plan":
             return (
-                "只输出 revised_plan、summary、debug_reason；"
+                "返回 revised_plan、summary、debug_reason；"
                 "revised_plan 小时必须与请求 revision_hours 完全一致；"
-                "计划项使用与 plan_day 相同的最小字段，地点唯一时不返回 location_id；"
-                "talk_to_npc 只返回 target_id。"
+                "计划项使用与 plan_day 相同的决策字段和按行为区分的地点 / NPC / 建筑选择字段；"
                 "不要输出 immediate_action，后端会从当前小时项生成。"
             )
         if call_type == "battle_judgement":
@@ -1831,6 +2096,35 @@ class ModelAdapter:
                 response["wartime_reaction"] = wartime_reaction
             return response
 
+        if call_type == "dialogue_intent_revalidation":
+            planned_intent = payload.get("planned_intent", {})
+            if not isinstance(planned_intent, dict):
+                planned_intent = {}
+            plan_item = planned_intent.get("plan_item", {})
+            if not isinstance(plan_item, dict):
+                plan_item = {}
+            original_goal = str(plan_item.get("dialogue_goal", "")).strip()
+            if any(keyword in original_goal for keyword in ["不必再谈", "已经解决", "无需再说"]):
+                return {
+                    "decision": "cancel_and_replan",
+                    "dialogue_goal": "",
+                    "summary": "旧谈话意图已无执行必要。",
+                    "debug_reason": f"mock_cancel_stale_dialogue_intent{order_suffix}",
+                }
+            if "旧说法" in original_goal:
+                return {
+                    "decision": "modify",
+                    "dialogue_goal": original_goal.replace("旧说法", "更新后的说法"),
+                    "summary": "保留谈话行动并更新开场诉求。",
+                    "debug_reason": f"mock_modify_stale_dialogue_intent{order_suffix}",
+                }
+            return {
+                "decision": "continue",
+                "dialogue_goal": "",
+                "summary": "当前事实支持继续原谈话意图。",
+                "debug_reason": f"mock_continue_dialogue_intent{order_suffix}",
+            }
+
         if call_type in {"plan_revision_judgement", "dialogue_plan_revision_judgement"}:
             trigger_kind = str(payload.get("trigger_kind", "dialogue"))
             current_hour = self._read_game_hour(payload)
@@ -1930,10 +2224,11 @@ class ModelAdapter:
                 else:
                     item = self._plan_item(hour, "idle", "idle", None, "等待新的安排。")
                 plan.append(item)
+            plan = [
+                self._provider_plan_decision_item(payload, item)
+                for item in plan
+            ]
             return {
-                "ok": True,
-                "npc_id": npc_id,
-                "plan_day": day,
                 "plan": plan,
                 "summary": "Mock 生成了 24 小时稳定日程。",
                 "debug_reason": f"mock_24_hour_template{order_suffix}",
@@ -1941,7 +2236,6 @@ class ModelAdapter:
 
         if call_type == "revise_plan":
             revision_hours = sorted({int(hour) for hour in payload.get("revision_hours", [])})
-            current_hour = self._read_game_hour(payload)
             current_plan = payload.get("current_plan", [])
             current_by_hour = {
                 int(item.get("hour", -1)): dict(item)
@@ -1955,15 +2249,12 @@ class ModelAdapter:
                 )
                 for hour in revision_hours
             ]
-            immediate = next(
-                (item for item in revised_plan if int(item.get("hour", -1)) == current_hour),
-                None,
-            )
+            revised_plan = [
+                self._provider_plan_decision_item(payload, item)
+                for item in revised_plan
+            ]
             return {
-                "ok": True,
-                "npc_id": npc_id,
                 "revised_plan": revised_plan,
-                "immediate_action": immediate,
                 "summary": "Mock 仅返回请求指定的计划阶段。",
                 "debug_reason": f"mock_selected_hours_revision{order_suffix}",
             }
@@ -2266,6 +2557,52 @@ class ModelAdapter:
             "priority": 50,
             "reason": reason,
         }
+
+    @classmethod
+    def _provider_plan_decision_item(
+        cls,
+        payload: dict[str, Any],
+        internal_item: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Project an internal plan item into the same minimal shape a model owns."""
+        action_id = cls._clean_plan_text(internal_item.get("action_id"))
+        raw_candidates = payload.get("allowed_actions", [])
+        candidates = [
+            candidate
+            for candidate in raw_candidates
+            if isinstance(raw_candidates, list)
+            and isinstance(candidate, dict)
+            and cls._clean_plan_text(candidate.get("action_id")) == action_id
+        ]
+        selector_field = cls._plan_selector_field(action_id, candidates)
+        decision = {
+            "hour": internal_item.get("hour"),
+            "action_id": action_id,
+            "reason": cls._clean_plan_text(internal_item.get("reason")),
+        }
+        if selector_field:
+            if selector_field == "location_id":
+                selector_value = (
+                    cls._clean_plan_text(internal_item.get("location_id"))
+                    or cls._clean_plan_text(internal_item.get("target_id"))
+                )
+            else:
+                selector_value = cls._clean_plan_text(internal_item.get("target_id"))
+            if not selector_value:
+                unique_candidate = cls._single_equivalent_candidate(candidates)
+                if unique_candidate is not None:
+                    selector_value = (
+                        cls._clean_plan_text(unique_candidate.get("location_id"))
+                        if selector_field == "location_id"
+                        else cls._clean_plan_text(unique_candidate.get("target_id"))
+                    )
+            if selector_value:
+                decision[selector_field] = selector_value
+        if action_id in {"talk_to_npc", "seek_guard_officer"}:
+            dialogue_goal = cls._clean_plan_text(internal_item.get("dialogue_goal"))
+            if dialogue_goal:
+                decision["dialogue_goal"] = dialogue_goal
+        return decision
 
 
 def _read_bool_env(name: str, default: bool) -> bool:

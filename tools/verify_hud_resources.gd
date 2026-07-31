@@ -31,6 +31,10 @@ func _init() -> void:
 		push_error("HUD resource verification nodes not found")
 		quit(1)
 		return
+	if hud._resource_display_name("future_resource_type") != "未知资源":
+		push_error("HUD should not expose an unknown internal resource id")
+		quit(1)
+		return
 
 	var resource_strip := hud.get_node_or_null("ResourceStrip")
 	if resource_strip == null:

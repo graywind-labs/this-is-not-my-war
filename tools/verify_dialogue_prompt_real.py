@@ -69,21 +69,7 @@ ACTION_REFERENCE = [
         "context": {
             "eligible": True,
             "available_now": True,
-            "blocked_by_active_action_id": "lead_mass",
-            "authority": "ActionSystem",
-        },
-    },
-    {
-        "action_id": "attend_mass",
-        "name": "参加弥撒",
-        "action_kind": "pray",
-        "location_id": "chapel",
-        "tags": ["pray", "chapel_mass_attendee"],
-        "context": {
-            "eligible": True,
-            "available_now": False,
-            "unavailable_reason": "当前没有人正在主持弥撒",
-            "required_active_action_id": "lead_mass",
+            "description": "前往小教堂祈祷；弥撒开始时自动参加，结束后继续独自祈祷。",
             "authority": "ActionSystem",
         },
     },
@@ -223,11 +209,10 @@ def _assert_chapel_dependency_boundary(reply: PlayerNPCDialogueResponse) -> None
     text = reply.reply_text.replace(" ", "")
     assert "祈祷" in text, text
     assert "弥撒" in text, text
-    prayer_clause = text.split("弥撒", 1)[0]
-    assert "祈祷" in prayer_clause and any(fragment in prayer_clause for fragment in ["可以", "能", "照样"]), text
+    assert any(fragment in text for fragment in ["可以", "能", "照样"]), text
     assert any(
         fragment in text
-        for fragment in ["不能参加", "没法参加", "无法参加", "参加不了", "不能去参加", "没人在主持", "没人主持", "只能干站着"]
+        for fragment in ["自动参加", "转为参加", "一开始就参加", "跟着参加", "开始后参加"]
     ), text
 
 
@@ -277,7 +262,7 @@ def main() -> None:
         client,
         _base_payload(
             "verify_dialogue_prompt_real_chapel_dependency",
-            "现在没有人在祭坛主持弥撒。只按当前行动条件回答：我还能普通祈祷吗？现在能参加弥撒吗？请分别明确回答。",
+            "现在没有人在祭坛主持弥撒。只按当前行动条件回答：我能去祈祷吗？如果祈祷期间弥撒开始，会发生什么？",
         ),
     )
     _assert_chapel_dependency_boundary(chapel_dependency_awareness)

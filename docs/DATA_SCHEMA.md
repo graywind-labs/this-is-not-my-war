@@ -1,5 +1,145 @@
 # DATA_SCHEMA.md
 
+## T0116 对话意图复核与制造失败
+
+`DialogueIntentRevalidationRequest`：`meta / game_time / station_context / npc / planned_intent / current_plan[24] / allowed_actions / current_building_states / current_resource_states`。`planned_intent` 包含 `created_day / created_time / source / plan_item`，且计划项必须等于当前小时计划并仅可为 `talk_to_npc / seek_guard_officer`。
+
+`DialogueIntentRevalidationResponse`：`npc_id / decision / dialogue_goal / summary / debug_reason`；decision 为 `continue | modify | cancel_and_replan`。只有 modify 允许非空且不同于原文的 `dialogue_goal`。
+
+制造 `work_failed.payload` 新增 / 固化：`failure_reason`、`crafting_error`、`required_resources`、`crafting_project`。项目只保留配方 / 产物 / revision / completed / total / current stage / cost / stock，不包含 active_workers。
+
+## T0114 虔诚与陨石配置 / 运行态
+
+`data/piety_ability.json` 是这项能力的唯一数值配置源，分为共享产出、合法地表和陨石效果三组：
+
+```json
+{
+  "max_piety": 100.0,
+  "piety_per_prayer_hour": 3.0,
+  "contributing_action_ids": ["pray_at_chapel", "lead_mass"],
+  "prayer_mode_multipliers": {
+    "personal_prayer": 1.0,
+    "mass_attendance": 1.0
+  },
+  "combat_action_game_seconds_per_second": 60.0,
+  "ground": {
+    "y": 0.0,
+    "min_x": -28.5,
+    "max_x": 28.5,
+    "min_z": -33.5,
+    "max_z": 33.5
+  },
+  "meteor": {
+    "radius": 5.5,
+    "fall_duration_seconds": 1.15,
+    "impact_damage": 48.0,
+    "impact_penetration": 5.0,
+    "burn_duration_seconds": 10.0,
+    "burn_tick_interval_seconds": 1.0,
+    "burn_damage": 1.0,
+    "burn_penetration": 0.0
+  }
+}
+```
+
+ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `3 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
+
+施放事件 `piety_meteor_cast` 至少保存 `cast_id / target_position / radius / piety_spent`；落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / hit_count / defeated_count / friendly_fire=false`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。
+
+## T0113 对话训练权威实况
+
+`NPCDialogueRequest` 新增三组同生共灭的紧凑字段。当前 Godot 正式请求始终发送；兼容旧夹具时可以三组全部缺失，但后端拒绝只出现其中一部分：
+
+```json
+{
+  "activity_truth": {
+    "action_id": "visit_location",
+    "is_training": false
+  },
+  "equipment_truth": {
+    "main_weapon": null,
+    "mount": null,
+    "has_trainable_equipment": false
+  },
+  "training_truth": {
+    "eligible": false,
+    "blocker": "no_trainable_equipment"
+  }
+}
+```
+
+- `activity_truth.action_id` 来自打断前活动；无打断时读取 ActionSystem 运行态，再保守回退到 NPC 当前行动。`is_training` 只有在 `receive_weapon_training / work_training_instructor` 确实处于 active / external_active 时为真。
+- `equipment_truth.main_weapon / mount` 为装备定义 ID / 马匹 ID；空槽必须显式为 `null`。`has_trainable_equipment` 仍以槽中 `required_skill` 为程序判据。
+- `training_truth.eligible` 表示此刻能否接受训练；不可训练时 `blocker` 必须为 `no_trainable_equipment / no_active_instructor / training_unavailable` 之一，可训练时必须为 `null`。
+- Model Adapter 的通用投影仍删除其他无意义 `None`，但为这两个装备槽保留 `null`，因为“确实没装备”本身是模型必须看到的权威事实。
+
+## T0112 围墙器械射程升级字段
+
+`data/building_defs.json` 的逐级 `upgrade.level_effects` 可选新增：
+
+```json
+{
+  "3": {
+    "max_hp_bonus": 45,
+    "defense_device_range_bonus": 0.05
+  }
+}
+```
+
+`defense_device_range_bonus` 是该目标等级完成时新增的非负小数增量，不是最终倍率。DefenseDeviceSystem 从 Lv.2 累加到宿主当前等级，再与 `data/defense_device_defs.json` 槽位自身的 `effect_modifiers.range_multiplier` 相乘；当前围墙 Lv.3 / Lv.5 各为 `0.05`，主厅不配置此字段并保留槽位基础 `2.0x`。未知、缺失或负值按 0 处理，累计宿主增量程序上限为 `1.0`。该字段只影响程序权威器械射程，不新增事件、记忆或 NPC Prompt 字段。
+
+## T0106 LLM 短期记忆投影
+
+MemorySystem 权威事件 Schema 不变。后端 `EventSummary` 只描述供应商可见投影：
+
+```json
+{
+  "type": "work_failed",
+  "summary": "格伦未能完成推进铁匠铺制造：铁料不足。",
+  "importance": 80,
+  "day": 3,
+  "time": "14:00:00",
+  "details": {
+    "action_id": "work_blacksmith",
+    "reason": "铁料不足",
+    "resource_id": "iron"
+  }
+}
+```
+
+- 必有：`type / summary / importance`。
+- 可有：`day / time / details`；空 `details` 在 Godot 当前投影中省略。
+- `event_id` 只为旧测试 / 审计输入兼容接受，当前 Godot 与供应商投影不生成。
+- 原 `payload` 不再是 Pydantic 字段，额外输入会在 Schema / Model Adapter 边界被丢弃。
+- `ShortTermMemoryContext` 仍为 `experienced_events / witnessed_events`；`DailyReflectionRequest.day_events` 的同形记录额外带 `memory_kind=experienced|witnessed`。
+
+## T0101 守备官初始知识关系
+
+`data/npc_initial_long_memory.json` 中每名 NPC 的 `knowledge_graph.by_subject.guard_officer` 固定包含四条关系：
+
+| relation | value | 语义 |
+|---|---|---|
+| `role` | `station_defense_alert_and_emergency_staff_coordination` | 统筹驿站防务、警戒与危急人手 |
+| `arrival_at_station` | `arrived_three_years_before_game_start` | 守备官三年前来到驿站 |
+| `past_before_station` | `unknown_not_disclosed` | NPC 不知道守备官来站前经历，不得推测或编造 |
+| `pre_game_relationship` | `consistently_dedicated_and_harmonious` | 在该 NPC 认识守备官以来，守备官一向尽责并与成员总体相处和睦；不包含具体旧事 |
+
+四条关系继续使用 `key_value_replace_v1` 的 `confidence / subject_label / relation_label / value_label / day / time` 记录形态，不新增后端 Schema 或运行时状态。技术值在 8 人间一致；`value_label` 可按 NPC 口吻略有差异，但必须保持同一事实边界。当前初始图谱总计 250 条关系。
+
+## T0100 NPC 宗教信仰字段
+
+`data/npc_profiles.json` 的 8 名初始 NPC 新增必填精简字段：
+
+```json
+{
+  "id": "stableman_01",
+  "background_job": "马夫",
+  "religion": "天主教"
+}
+```
+
+该字段是稳定根本人设，不是知识图谱关系、运行时状态或宗教行为权威。`NPCPromptProfile` 将其原样放入对话 `npc_setting`，`LLMBridge` 将其放入其他五类请求的 `NPCIdentity.religion`；后端 Pydantic Schema 显式保留字符串，避免静默丢弃。当前 8 人统一为“天主教”，不得由 Prompt 自行扩写教派经历或虔诚程度。
+
 ## T0095 熟睡总结窗口与记忆水位
 
 `DailyReflectionRequest` 新增两个必填结构：
@@ -73,7 +213,7 @@ Schema 强制窗口两端均为 21:00、`end_day=anchor_day+1`、标签精确匹
 
 活动子项类型为 `DialogueActivityContext`，`phase` 仅允许 `pending / active / external_active / planned`；`day / hour / elapsed_seconds / duration_seconds` 按阶段可空。外层 `DialogueInterruptionContext` 只在真正发生打断时出现，不属于 `EventRecord.payload`。
 
-守备官对话记录不新增第二套 Schema。NPCPanel 从全局 `EventRecord` 读取既有 `dialogue_turn` 的顶层 `day / time` 和 `payload.dialogue_kind / dialogue_text / participant_npc_ids`，再按全局 `combat_started / combat_ended.payload.wave_number` 顺序还原历史波次分组。熟睡总结的客户端调度状态由 `get_async_reflection_snapshot()` 暴露：
+守备官对话记录不新增第二套 Schema。NPCPanel 从全局 `EventRecord` 读取既有 `dialogue_turn` 的顶层 `day / time` 和 `payload.dialogue_kind / dialogue_text / participant_npc_ids`；T0099 起玩家界面只按 `day / time` 排序并按日期分组，不再消费 `combat_started / combat_ended.payload.wave_number`。熟睡总结的客户端调度状态由 `get_async_reflection_snapshot()` 暴露：
 
 ```json
 {
@@ -172,7 +312,7 @@ NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变�
 
 `speaker_npc` 是只兼容旧请求中 `null` 的封闭字段；任何非空对象都会被 Pydantic 拒绝。`speaker_context.state` 同样必须为空。请求不能在这两个位置携带另一名 NPC 的记忆、指令、技能、属性、个人资源或地点上下文。
 
-`allowed_actions` 中的 `talk_to_npc` 候选只公开 `target_id / target_name`，不包含 `location_id`，`context` 为空；它不把目标的实时地点、当前行动或征召状态伪装成回复者已知事实。模型输出同样只需给出 `target_id`。动作真正执行时，由 `ActionSystem` 再按 `target_id` 查询目标实时位置并完成权威路由。
+`allowed_actions` 中的 `talk_to_npc` 候选只公开内部 `target_id / target_name`，不包含 `location_id`，`context` 为空；它不把目标的实时地点、当前行动或征召状态伪装成回复者已知事实。T0097 起模型输出用 `target_npc_id` 选择对象，Model Adapter 再编译成内部 `target_id`。动作真正执行时，由 `ActionSystem` 按内部目标查询实时位置并完成权威路由。
 
 ## T0070 名册与仓库容量 Schema
 
@@ -238,7 +378,7 @@ NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变�
 
 ## T0061 NPC 人设与长期记忆展示合同
 
-- `data/npc_profiles.json`、`NPCPromptProfile.build_setting(...)`、对话 `npc_setting`、共享 `NPCIdentity` 和六类正式 Prompt 均已移除 `signature_lines`；人物表达只保留宽松 `speech_style`，不再维护代表性表达数组。
+- `data/npc_profiles.json`、`NPCPromptProfile.build_setting(...)`、对话 `npc_setting`、共享 `NPCIdentity` 和六类正式 Prompt 均已移除 `signature_lines`；T0100 后身份另含精简 `religion`，人物表达仍只保留宽松 `speech_style`，不再维护代表性表达数组。
 - `npc_initial_long_memory.json` 结构不变。三篇 `day=0` 日记仍使用相同 8 字段；“来站前”改为宏观身世 / 来站原因 / 到站时间，“初到驿站”改为工作与相遇群像，“近日”保持开局前微观生活。固定到站顺序为艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜。
 - 每人的 `guard_officer` 只保留一条技术键为 `role` 的职责关系。建筑中文 `relation_label / value_label` 使用世界内叙事表达；T0061 当时仓库使用集中登记 / 受袭次序技术值，T0070 容量落地后更新为按等级扩容 / 受袭次序技术值，仍不包含受击丢货，`confidence / day / time` 字段全部保留。
 - `NPCPanel` 的【知识】弹窗不显示 `confidence / day / time`；NPCSystem 运行态、Pydantic 输入 / 输出、保存结构及 GM 调试仍保留完整字段。本任务没有迁移知识图谱 Schema。
@@ -336,14 +476,14 @@ T0060 当时不增加、删除或改名任何档案、日记、知识图谱、�
 
 ## T0043A 行动持续依赖与互斥字段
 
-`Action Definition` 新增四个数据驱动字段：
+`Action Definition` 保留四个通用数据驱动字段：
 
-- `required_active_action_id`：开始和持续期间必须存在的在岗行动；当前用于病床治疗、接受训练和参加弥撒。
-- `blocked_by_active_action_id`：另一行动在岗时，本行动不可开始；当前普通祈祷被主持弥撒阻止。
-- `interrupts_action_ids`：本行动成功开始后，中断同建筑内列出的互斥行动；当前主持弥撒中断普通祈祷。
-- `complete_with_required_action`：依赖行动正常完成时，本行动随之完成；当前仅用于参加弥撒。
+- `required_active_action_id`：开始和持续期间必须存在的在岗行动；当前用于病床治疗和接受训练。
+- `blocked_by_active_action_id`：另一行动在岗时，本行动不可开始；仍可供其他行为配置使用。
+- `interrupts_action_ids`：本行动成功开始后，中断同建筑内列出的互斥行动；仍可供其他行为配置使用。
+- `complete_with_required_action`：依赖行动正常完成时，本行动随之完成；仍可供其他行为配置使用。
 
-`ActionCandidate.context` 和 `ActionSystem.get_runtime_action_snapshot(...)` 暴露相应依赖 / 阻止 action id；活动中的弥撒参加者另暴露 `provider_npc_id`。这些字段描述程序权威前置条件与运行态绑定，不授权 LLM 决定服务者是否真实在岗。
+`ActionCandidate.context` 和 `ActionSystem.get_runtime_action_snapshot(...)` 暴露相应依赖 / 阻止 action id。这些字段描述程序权威前置条件与运行态绑定，不授权 LLM 决定服务者是否真实在岗。T0098 后 `pray_at_chapel` 不使用上述依赖 / 互斥字段；active 运行态额外暴露 `prayer_mode=personal_prayer|mass_attendance`，参礼模式可带 `provider_npc_id`。该内部模式不进入 PlanItem 或模型输出。
 
 ## T0043 建筑位置、升级奖励与行动资格字段
 
@@ -363,13 +503,13 @@ T0060 当时不增加、删除或改名任何档案、日记、知识图谱、�
 
 ## T0025 目标行动与计划修订契约
 
-`ActionCandidate` 现在以 `action_id`、`action_kind`、可选 `location_id`、`target_id`、`target_kind`、`target_name`、`tags` 和 `context` 描述一条合法候选。`PlanItem` 必须回传对应的 `action_kind`，并为对话 / 主动交涉提供 `dialogue_goal`。固定地点行动由后端逐项校验 action、kind、target 与 location 的精确组合；T0091 起 `talk_to_npc` 只按 `action_id + target_id` 命中候选并拒绝 NPC 与自己对话，规范化后的 `location_id` 统一为空。
+`ActionCandidate` 以 `action_id`、`action_kind`、可选 `location_id`、`target_id`、`target_kind`、`target_name`、`tags` 和 `context` 描述一条内部合法候选。`PlanItem` 是后端 / Godot 稳定结构，必须含编译后的 `action_kind`，并为对话 / 主动交涉保留 `dialogue_goal`。T0097 的 provider 决策项只以 `hour + action_id` 为核心：拜访选择 `location_id`，对话 / 协助治疗选择 `target_npc_id`，修复 / 升级选择 `building_id`；其他模型字段丢弃。后端从候选生成完整 kind、内部 target、固定 location 和 priority 后，再逐项校验精确组合。
 
 T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgementResponse`。请求携带 `game_time`、目标 NPC 标识、`trigger_kind` 和恰好覆盖 0-23 点的 `current_plan`；`dialogue` 分支要求 `dialogue_kind`、非空 `dialogue_history`、`dialogue_end_reason` 与 `dialogue_context`，`action_failure` 分支要求 `failed_plan_item`、非空 `failure_type` / `failure_summary`、必要 `failure_context` 及工作阶段计数 / 下限。T0053 起该模型继承 `StationAwareNPCRequest`，必填统一 `npc: NPCContext`，并携带 `allowed_actions / current_building_states / current_resource_states`；`npc.identity.npc_id` 必须与顶层 `npc_id` 一致。`failure_type` 包含 `plan_item_superseded`，用于等待期间旧计划项被当前阶段替代；T0086 新增 `action_completed`，表示旧项已经成功完成、当前小时需另排后续活动；T0093 要求 Godot 规范化层保持该合法枚举。响应仍只返回 `needs_revision`、升序去重的 `revision_hours`、`summary` 和 `debug_reason`；`needs_revision` 必须与数组是否非空一致，小时不得早于 `game_time.hour`，空数组表示 0 个修改阶段。旧 `DialoguePlanRevisionJudgement*` 名保留为兼容别名。
 
-`PlanRevisionRequest` 携带 `failure_context`、实时建筑 / 资源状态、`current_work_phase_count`、`minimum_work_phase_count`、`replacement_work_phase_required_if_non_work`、`past_work_phase_count` 和 `minimum_remaining_work_phase_count`。T0049 后 `revision_scope` 只允许 `selected_hours`，且非空 `revision_hours` 必须升序去重、不早于当前小时。`PlanRevisionResponse.revised_plan` 必须按同样顺序恰好覆盖该集合；当前小时入选时 `immediate_action` 必须存在并与该项一致，未入选时必须为 `null`。合并回未选中的原计划后仍必须满足工作阶段下限。T0048 的 `remaining_day` 与 `revision_start_hour` 已被此合同取代。工位失败上下文包含被占工位及 `blocked_by_npc_ids` / `blocked_by_npcs`，因此模型可以结构化选择具体占用者作为 `talk_to_npc.target_id`。合法 `PlanActionKind` 包含 `drink`、`pray`、`visit`、`chat`、三类协助、`seek_guard_officer` 与特殊 `escape`；权威数值结算仍不属于 Schema 输出。
+`PlanRevisionRequest` 携带 `failure_context`、实时建筑 / 资源状态、`current_work_phase_count`、`minimum_work_phase_count`、`replacement_work_phase_required_if_non_work`、`past_work_phase_count` 和 `minimum_remaining_work_phase_count`。T0049 后 `revision_scope` 只允许 `selected_hours`，且非空 `revision_hours` 必须升序去重、不早于当前小时。provider 的 `revised_plan` 必须按同样顺序恰好覆盖该集合；当前小时入选时后端生成 `immediate_action` 并使其与编译后的当前项一致，未入选时为 `null`。工作阶段下限是规划建议，不是响应硬拒绝。T0048 的 `remaining_day` 与 `revision_start_hour` 已被此合同取代。工位失败上下文包含被占工位及 `blocked_by_npc_ids` / `blocked_by_npcs`，因此模型可以用 `talk_to_npc.target_npc_id` 选择具体占用者。合法内部 `PlanActionKind` 包含 `drink`、`pray`、`visit`、`chat`、三类协助、`seek_guard_officer` 与特殊 `escape`；权威数值结算仍不属于模型输出。
 
-六类正式成功传输体始终包含 `model_normalizations` 数组，当前只有计划 / 修订可能为非空。它记录 Schema 已通过后的确定性规范化：固定地点行动须由 action、target、location 唯一命中候选后才可修正冗余 `action_kind`；`talk_to_npc` 由 action、target 唯一命中后可把模型多余返回的瞬时地点规范化为 `null`，再按候选修正 kind；idle 必须符合固定空目标 / 空地点合同。每项记录字段路径、模型原值、规范值和候选来源。该机制不修复未知枚举、自聊、空 `dialogue_goal`、白名单外目标、固定行动地点变化、重复候选或工作阶段不足。`required_ability` 只表达行动者资格；普通祈祷不再依赖 `requires_present_npc_id`，主持弥撒则用“主持弥撒”能力校验。
+六类正式成功传输体始终包含 `model_normalizations` 数组。T0097 的计划模型字段清洗发生在完整响应 Schema 之前：无关字段直接丢弃，原始值只在受控审计日志中保留，不逐项写 normalization。`model_normalizations` 继续用于程序权威小时并集、非权威默认值等其他显式规范化。必要选择字段仍不修复：自聊、空 `dialogue_goal`、白名单外地点 / NPC / 建筑或重复冲突候选都会失败。`required_ability` 只表达行动者资格；普通祈祷不再依赖 `requires_present_npc_id`，主持弥撒则用“主持弥撒”能力校验。
 
 ## Resource Definition
 
@@ -485,6 +625,7 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
   "name": "托马",
   "gender": "male",
   "background_job": "马夫",
+  "religion": "天主教",
   "appearance": "肩背宽厚，常穿沾着干草和马汗味的旧皮围裙，手上有缰绳磨出的茧。",
   "background_story": "托马把照料生命看成一份必须亲自负责的工作。他会耐心确认马匹的伤病和情绪，不轻易承诺，也不会为了服从而忽视明显风险。对他而言，可靠比逞强重要。",
   "personality": ["耐心谨慎", "重视责任", "不爱逞强"],
@@ -560,7 +701,22 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
 }
 ```
 
-T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。T0061 后，`gender`、`appearance`、`background_story`、`abilities`、`speech_style`、`plan`、`short_term_memory` 为 NPC 档案必填基础字段；`background_job` 只保留叙事出身，`boundaries`、`stats` 继续供后续计划、征召、对话和战斗心理判定使用。`speech_style` 是不锁死句式的表达倾向；`signature_lines` 已从正式档案、构造器与 Schema 移除。开局只有 `veteran_deputy_01` 的 `recruited` 为 `true`，其他 NPC 均为 `false`。
+T0301 起，`data/npc_profiles.json` 已使用该结构补齐 8 名初始 NPC。T0100 后，`religion` 与 `gender`、`appearance`、`background_story`、`abilities`、`speech_style`、`plan`、`short_term_memory` 一样属于 NPC 档案必填基础字段；`background_job` 只保留叙事出身，`boundaries`、`stats` 继续供后续计划、征召、对话和战斗心理判定使用。`religion` 当前统一为精简值“天主教”，`speech_style` 是不锁死句式的表达倾向；`signature_lines` 已从正式档案、构造器与 Schema 移除。开局只有 `veteran_deputy_01` 的 `recruited` 为 `true`，其他 NPC 均为 `false`。
+
+T0107 后 8 名初始 NPC 还必须包含配置化战斗基础，人物差异不得在 GDScript 按 NPC id 分支：
+
+```json
+{
+  "combat_base": {
+    "attack_power": 5.5,
+    "defense": 2.0,
+    "penetration": 1.5,
+    "attack_speed_multiplier": 1.08
+  }
+}
+```
+
+`combat_base` 只供 CombatSystem 的权威数值快照使用，不属于 NPC 人设或 Prompt Schema。最终战斗值还会合并总经验派生等级、力量、当前主武器对应熟练度、当前装备与疲劳 / 饱食 / 斗志等状态。武器熟练度只进入当前主武器的攻速乘区，不提供穿透；其他武器熟练度不提供通用攻速。骑术只按坐骑的 `charge_damage_riding_scale` 提高马匹冲撞伤害，不提高骑乘攻击速度。
 
 T0059 后 `background_story` 只保存职业身份、稳定观察方式、价值尺度与根本矛盾，不复述具体往事、人物关系或建筑知识；这些可变化、可被后续事件更新的内容属于独立长期记忆。
 
@@ -813,7 +969,7 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
 - T0035/T0037 当前覆盖：`work_blacksmith` / `work_workshop` 使用 `requires_crafting_target=true`，选中该建筑合法制造目标才允许开工；每个完整工作周期只向 CraftingSystem 提交一个阶段，不直接写任何聚合或具体成品产出。周期中断只丢失该 NPC 未完成的小数周期，已提交整数阶段不回退。`work_stable` 的 `input_resources / output_resources` 均为空，只把有效在岗者的最高“养马”能力交给 HorseSystem 推进繁育、成长与额外 HP 培养；马匹进食由 HorseSystem 在进食周期完成时自行原子扣粮。
 - `eat`：使用 `workstation_type="dining_seat"` 申请一个用餐席，使用 `food_options` 定义可消耗食物及饱食度恢复量，并以 `building_efficiency_key="meal_recovery"` 应用食堂升级与损伤效率。标准进食时长为 1200 秒，食物恢复按进度逐步应用；`needs_profile="eat"` 同时表达进食仍会增加少量疲劳。
 - `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳并消耗 13 点饱食。
-- `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`，不要求神父在场，但以 `blocked_by_active_action_id="lead_mass"` 声明互斥；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`，并以 `interrupts_action_ids` 中断普通祈祷；`attend_mass` 使用 `chapel_prayer_seat`，以 `required_active_action_id="lead_mass"` 和 `complete_with_required_action=true` 绑定主持生命周期。三者都绑定 `needs_profile="prayer_rest"`。
+- `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`、不要求神父在场，并绑定 `needs_profile="prayer_rest"`；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`。参加弥撒不是独立 action definition，而是 `pray_at_chapel` active 数据中的 `prayer_mode="mass_attendance"`；弥撒结束后恢复 `personal_prayer`。
 - `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money`、`skill="医术"`、`needs_profile="light_work"` 和 `timed_experience` 作为行为声明；具体目标校验、费用扣除、医术加速、有效治疗时长、HP 恢复和成长由 `ActionSystem` / `NPCSystem` 结算。
 - `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。
 - `clinic_patient`：读取 `location_required="clinic"`、`workstation_type="clinic_patient_bed"`、`required_active_action_id="work_clinic_doctor"` 和 `needs_profile="clinic_rest"`。只有受伤且未昏迷 NPC 可执行；无在岗医生时开始失败，活动中全部医生离岗时中断失败。团队、诊所升级与损伤效率由程序合成，不建立医生—病人一对一绑定。
@@ -869,13 +1025,16 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
   "source_resource_id": "item_bow",
   "range": 12.0,
   "damage": 10,
+  "defense": 0.0,
+  "penetration": 1.5,
+  "attack_speed_modifier": 0.06,
   "attack_interval": 1.5,
   "required_skill": "弓",
   "tags": ["wooden", "ranged"]
 }
 ```
 
-T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等可装备主武器；T0036 当前实现已让 `source_resource_id` 分别指向 `item_sword_shield`、`item_polearm`、`item_bow`、`item_crossbow`。装备系统只在该具体库存足够时消耗对应一件，卸下时返还同一 ID，并把完整定义副本写入 NPC `equipment.main_weapon`；弃用的 `weapons` 不再参与正式装备。T1104 起，CombatSystem 已读取 `range`、`damage` 和 `attack_interval`：`damage` 作为基础攻击力输入并受 NPC 力量修正，`range` 决定可攻击距离，`attack_interval` 作为基础攻击间隔并受武器熟练度、疲劳、饱食和坐骑 / 骑术修正。T1104B 起，`attack_interval` 的单位是战斗动作秒，CombatSystem 会把 `60` 游戏秒折算为 `1` 战斗动作秒后推进攻击冷却。T1104A 起，玩家时间倍率不参与伤害或攻击速度修正。装备 UI 仍不自行结算伤害。
+T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等可装备主武器；T0036 当前实现已让 `source_resource_id` 分别指向 `item_sword_shield`、`item_polearm`、`item_bow`、`item_crossbow`。装备系统只在该具体库存足够时消耗对应一件，卸下时返还同一 ID，并把完整定义副本写入 NPC `equipment.main_weapon`；弃用的 `weapons` 不再参与正式装备。T0107 后 CombatSystem 读取 `range`、`damage`、`defense`、`penetration`、`attack_speed_modifier` 和 `attack_interval`；武器可用防御 / 穿透表达剑盾保护、长杆破甲、弩高穿透等差异。`attack_interval` 的单位是战斗动作秒，最终攻击速度由完整 NPC 快照换算，玩家时间倍率不参与修正。装备 UI 仍不自行结算伤害。
 
 ## Armor Definition
 
@@ -886,12 +1045,15 @@ T0901 后，`data/weapon_defs.json` 至少包含剑盾、长杆、弓、弩等�
   "slot": "chest",
   "source_resource_id": "item_mail_chest",
   "armor_value": 5,
+  "attack_power_modifier": 0.0,
+  "penetration_modifier": 0.0,
+  "attack_speed_modifier": -0.12,
   "weight": 4,
   "tags": ["metal", "body"]
 }
 ```
 
-T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`greaves` 四类盔甲槽。T0036 当前实现分别消费 / 返还 `item_iron_helmet`、`item_mail_chest`、`item_iron_bracers`、`item_iron_greaves`，不得以 `armor` 聚合库存互换部位。T1104 起，CombatSystem 已读取四个盔甲槽的 `armor_value` 总和作为 NPC 防御，敌人攻击 NPC 时会先按防御减伤再扣 HP。`weight` 仍只是后续疲劳 / 负重系统的数据，不由 UI 直接结算。
+T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`greaves` 四类盔甲槽。T0036 当前实现分别消费 / 返还 `item_iron_helmet`、`item_mail_chest`、`item_iron_bracers`、`item_iron_greaves`，不得以 `armor` 聚合库存互换部位。T0107 后 CombatSystem 会合计 `armor_value`、`attack_power_modifier`、`penetration_modifier` 和 `attack_speed_modifier`；重甲以攻速负修正换取防御，护腕等部位也可提供小额攻击 / 穿透。`weight` 仍只是后续疲劳 / 负重系统的数据，不由 UI 直接结算。
 
 ## Mount Definition
 
@@ -901,12 +1063,18 @@ T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`grea
   "name": "马匹",
   "slot": "mount",
   "speed_bonus": 1.35,
+  "attack_speed_modifier": 0.05,
+  "charge_speed_multiplier": 1.30,
+  "charge_weapon_damage_multiplier": 1.65,
+  "charge_damage": 7.0,
+  "charge_damage_riding_scale": 0.05,
+  "charge_stagger_seconds": 0.8,
   "required_skill": "骑术",
   "tags": ["horse"]
 }
 ```
 
-T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含 `horse_readiness` 消费来源。实际 `equipment.mount` 必须引用 HorseSystem 中唯一的 `horse_id / horse_name`，由 HorseSystem 建立或解除分配，EquipmentSystem 只写轻量投影。日常工作模式不显示骑乘；进入集结 / 战斗模式时该马的权威位置改为 `ridden`，退出后返厩。T1103 后集结 / 战斗模式会显示低模坐骑；T1105 后坐骑参与兵种判定并决定可选战斗策略，例如近战骑兵可选“主动进攻 / 拉开距离冲击 / 避战”，骑射单位可选“最大化输出 / 保持距离射击 / 避战”。`speed_bonus` 仍只是后续更完整骑乘移动数值的输入，不由 UI 直接结算。
+T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含 `horse_readiness` 消费来源。实际 `equipment.mount` 必须引用 HorseSystem 中唯一的 `horse_id / horse_name`，由 HorseSystem 建立或解除分配，EquipmentSystem 只写轻量投影。日常工作模式不显示骑乘；进入集结 / 战斗模式时该马的权威位置改为 `ridden`，退出后返厩。T0107 后 `speed_bonus` 作为骑乘移动倍率，`charge_speed_multiplier` 只在冲锋阶段叠加；冲锋命中分别使用 `charge_damage + riding_skill × charge_damage_riding_scale` 的马匹冲撞伤害、`charge_weapon_damage_multiplier` 的武器增伤和 `charge_stagger_seconds` 的敌人僵直。T0110 明确骑术不进入攻击速度结算；`attack_speed_modifier` 若存在，只是坐骑定义自身的固定装备修正。UI 不自行结算这些字段。
 
 ## Defense Device Definition
 
@@ -916,14 +1084,19 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 {
   "id": "wall_ballista",
   "name": "弩床",
+  "tier": 1,
   "inventory_cost": {"item_wall_ballista": 1},
-  "required_building_levels": {"wall": 1, "workshop": 1},
+  "required_building_levels": {"workshop": 1},
+  "max_hp": 55,
+  "defense": 1.0,
   "effect": {
     "kind": "auto_attack",
-    "damage": 24,
-    "attack_interval": 4.0,
-    "range": 32.0,
-    "minimum_forward_dot": 0.05,
+    "damage": 36,
+    "penetration": 8.0,
+    "attack_speed": 0.22,
+    "attack_interval": 4.55,
+    "range": 34.0,
+    "minimum_forward_dot": 0.0,
     "max_attacks_per_tick": 16
   },
   "presentation": {
@@ -938,19 +1111,37 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 ```json
 {
-  "id": "front_wall_ballista_left",
-  "name": "前墙左侧平台",
-  "building_id": "wall",
-  "allowed_device_ids": ["wall_ballista"],
-  "position": {"x": -5.0, "y": 1.72, "z": 11.35},
+  "id": "main_hall_slot_01",
+  "name": "主厅屋顶中央左位",
+  "building_id": "main_hall",
+  "required_building_level": 1,
+  "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+  "position": {"x": -0.65, "y": 2.52, "z": -7.0},
   "rotation_y_degrees": 0.0,
-  "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+  "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+  "effect_modifiers": {"range_multiplier": 2.0}
 }
 ```
 
-`effect.kind` 当前只支持 `auto_attack`，弩床与箭塔使用各自的 `damage`、`attack_interval`、`range`、`minimum_forward_dot` 和 `max_attacks_per_tick`；`attack_interval` 使用战斗动作秒。`position`、`rotation_y_degrees` 和 `facing_direction` 是逻辑部署与射界输入；表现层只能读取。`presentation.model_scene` 是可选 PackedScene 路径，空值时使用低模占位；正式模型统一挂到 `DefenseDeviceView/ModelMount` 下，不承载库存或伤害逻辑。
+围墙与主厅各有 4 个通用槽。围墙槽的 `required_building_level` 为 `1 / 2 / 4 / 6`，形成 1–6 级 `1 / 2 / 2 / 3 / 3 / 4` 容量；主厅槽为 `1 / 3 / 5 / 6`，形成 `1 / 1 / 2 / 2 / 3 / 4`。围墙槽的 `range_multiplier=1.0`，主厅槽固定为 `2.0`。两座建筑 `upgrade.max_level=6`，逐级 `level_effects` 覆盖成本、工期和 Max HP 收益。例如围墙槽：
 
-运行时 deployment snapshot 包含 `deployment_id`、`device_id`、`slot_id`、`building_id`、`status`、`attack_cooldown`、`total_attacks`、`total_damage`、`last_action_result`，以及规范化的器械效果、表现与槽位坐标。部署不包含 NPC id；该运行态由 DefenseDeviceSystem 持有，不写回静态 JSON。
+```json
+{
+  "id": "wall_slot_01",
+  "name": "围墙中央左位",
+  "building_id": "wall",
+  "required_building_level": 1,
+  "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+  "position": {"x": -2.5, "y": 1.72, "z": 11.35},
+  "rotation_y_degrees": 0.0,
+  "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+  "effect_modifiers": {"range_multiplier": 1.0}
+}
+```
+
+`effect.kind` 当前只支持 `auto_attack`。`attack_speed` 是规范真值，DefenseDeviceSystem 统一生成 `attack_interval=1/attack_speed`；伤害先用 `penetration` 抵消目标防御，再复用 CombatSystem 的 `20 / (20 + effective_defense)` 递减曲线。`position`、`rotation_y_degrees`、`facing_direction` 和槽位倍率是逻辑部署 / 选敌输入；表现层只能读取。`presentation.model_scene` 是可选 PackedScene 路径，空值时使用低模占位；正式模型统一挂到 `DefenseDeviceView/ModelMount` 下，不承载库存或伤害逻辑。
+
+运行时 deployment snapshot 包含 `deployment_id`、`device_id`、`slot_id`、`building_id`、`status`、`hp`、`max_hp`、`defense`、`attack_cooldown`、`total_attacks`、`total_damage`、`range_multiplier`、`last_action_result`，以及规范化的基础 / 有效效果、表现与槽位坐标。部署不包含 NPC id；该运行态由 DefenseDeviceSystem 持有，不写回静态 JSON。
 
 上方 `inventory_cost` 是 T0036 当前结构：弩床只消耗 `item_wall_ballista`，箭塔只消耗 `item_wall_arrow_tower`。DefenseDeviceSystem 会拒绝四种弃用聚合库存成为正式成本，并在部署快照 / 事件中保留具体 `inventory_resource_id` 与 `inventory_cost`。
 
@@ -1081,24 +1272,27 @@ HorseSystem 随 TimeSystem 逻辑时间推进：在厩 / 离厩饱食分别按�
     {
       "enemy_type_id": "raider_militia",
       "name": "掠袭民兵",
-      "count": 3,
+      "count": 8,
       "unit_type": "melee_infantry",
       "weapon_type": "sword_shield",
-      "hp": 60,
-      "max_hp": 60,
-      "attack_power": 6,
-      "defense": 1,
-      "move_speed": 3.0,
+      "hp": 32,
+      "max_hp": 32,
+      "attack_power": 4,
+      "defense": 0,
+      "penetration": 0.0,
+      "move_speed": 2.9,
       "attack_range": 1.5,
-      "attack_interval": 2.4,
-      "target_preference": ["front_gate", "warehouse", "main_hall"]
+      "attack_speed": 0.38,
+      "attack_interval": 2.6,
+      "attack_windup": 0.42,
+      "target_preference": ["front_gate", "warehouse", "main_hall", "nearby_unit"]
     }
   ],
   "notes": "第一波用于验证敌人生成闭环。"
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`move_speed`、`attack_range`、`attack_interval` 和 `target_preference`。`unit_type` 复用 NPC 兵种分类，例如 `melee_infantry`、`polearm_infantry`、`archer`、`crossbowman`、`cavalry`、`mounted_ranged`；骑乘敌人可额外提供 `mount_type`。T1102 起，`move_speed`、`attack_range`、`attack_interval`、`attack_power` 和 `target_preference` 会驱动敌人目标优先级、移动和敌方攻击；T1104 起，`defense` 会参与敌人受到我方攻击时的实际 HP 伤害计算，`hp` / `max_hp` 会随我方攻击扣除并在清零后移除敌人。T1104B 起，敌人 `attack_interval` 使用战斗动作秒，`move_speed` 也按 `game_delta_seconds / 60` 折算为战斗动作秒级位移。T1104C 起，`target_preference` 不应包含 `wall`，CombatSystem 也会过滤旧配置中的 `wall` / `front_wall`；敌人默认按城门、仓库、主厅推进，附近可行动 NPC 仍优先。T1104A 起，敌人 `move_speed` 和 `attack_interval` 不直接乘玩家 `x2` / `x4` 时间倍率；活动敌人存在期间由 TimeSystem `x1` 上限控制全局推进速度。这些字段仍不由 LLM 改写。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。T0107 后敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值并生成兼容间隔；抬手期间可被骑兵冲撞僵直打断。5 波总数固定为 `8 / 12 / 18 / 26 / 36`，敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
 
 ## Event Record
 
@@ -1558,13 +1752,13 @@ T0601 后，后端 AI Schema 放在 `backend/schemas/`，使用 Pydantic 定义�
 
 - `GameTime`：`day`、`time`、`hour`。
 - `ModelRequestMeta`：`request_id`、`call_type`、来源、是否需要 TimeSystem 慢速、关联事件 id。
-- `NPCContext`：NPC 身份、运行时状态、短期记忆摘要、`long_term_memory={knowledge_graph, diary}`、当前地点上下文和广场上下文；T0703A 后还包含当前 `current_order`。其中 `NPCIdentity` 在 T0061 后只保留宽松 `speech_style`，不再包含 `signature_lines`。
+- `NPCContext`：NPC 身份、运行时状态、短期记忆摘要、`long_term_memory={knowledge_graph, diary}`、当前地点上下文和广场上下文；T0703A 后还包含当前 `current_order`。其中 `NPCIdentity` 在 T0100 后显式包含精简 `religion`，语言字段仍只保留宽松 `speech_style`，不再包含 `signature_lines`。
 - `ShortTermMemoryContext`：分开的 `experienced_events` 与 `witnessed_events`。
 - `ActionCandidate`：后续计划/修订可选择的行动候选。
 
 对话 Schema 位于 `backend/schemas/npc_ai.py`：
 
-- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T0041 要求 `allowed_actions` 至少一条，并与每日计划复用 `data/action_defs.json` 驱动的动态候选构造链路；它只表示目标 NPC 的对话能力边界，不是计划或已执行行动。T0029 新增 `dialogue_phase=conversation|invitation`；T0030 要求 NPC-NPC 请求顶层与 `dialogue_state` 的 `max_rounds` 都为 0，并携带一致的 `soft_round_threshold` 与非空 `soft_round_guidance`。T0061 后 `npc_setting` 和共享 `NPCIdentity` 只携带宽松 `speech_style`，不再携带 `signature_lines`。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。逃离挽留中的玩家消息使用 `interaction_context == "escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击不构造该请求。
+- `NPCDialogueRequest`：覆盖 `player_npc`、`npc_npc`、`escape_intervention`。T0603 后输入以目标 NPC `npc_id` / `npc_name` / `npc_setting`，说话者 `speaker_name` / `speaker_text` / `speaker_context`，`is_recruitment_request`，`current_round` / `max_rounds`，`npc_state`，`dialogue_state`，`short_memory`，`long_memory` 和 `location_context` 为主。T0041 要求 `allowed_actions` 至少一条，并与每日计划复用 `data/action_defs.json` 驱动的动态候选构造链路；它只表示目标 NPC 的对话能力边界，不是计划或已执行行动。T0029 新增 `dialogue_phase=conversation|invitation`；T0030 要求 NPC-NPC 请求顶层与 `dialogue_state` 的 `max_rounds` 都为 0，并携带一致的 `soft_round_threshold` 与非空 `soft_round_guidance`。T0100 后 `npc_setting` 和共享 `NPCIdentity` 显式携带精简 `religion`，语言字段仍只有宽松 `speech_style`，不再携带 `signature_lines`。T1201 后，战时公开对话额外携带 `interaction_context` 和 `battlefield_context`。逃离挽留中的玩家消息使用 `interaction_context == "escape_intervention"` 和 `escape_intervention_round`；逃离挽留攻击不构造该请求。
 - 对话响应：T0087 后玩家、NPC-NPC 与逃离挽留分别使用三个封闭 Schema。NPC-NPC 请求必须由目标 NPC 回复且 `response_kind=reply_to_npc`；邀请阶段 `invitation_result=accept|reject`，拒绝要求 `should_end_dialogue=true`，接受不得在正式对话开始前结束；正式回复使用 `invitation_result=not_applicable`。玩家对话使用 `response_kind=reply_to_player`，应征只由 `recruitment_result` 表达；集结 / 战斗下符合资格者可返回 `wartime_reaction=none|escape|morale_boost`。逃离挽留使用 `response_kind=reply_to_player` 与 `escape_intervention_result=stay|leave`。征召状态、工作打断、战时 buff、逃离、模式切换和事件写入仍由 Godot 权威系统完成。
 
 T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化当前文本、发布者、最近发布时间和修订号。共享 `NPCContext` 和 `NPCDialogueRequest` 都包含 `current_order`；`DailyPlanRequest`、`PlanRevisionRequest`、战时公开对话、低血量自身心理判定、主动交涉、逃离判断、首次睡眠总结和知识图谱更新等 NPC 中心请求复用同一字段。该字段是参考上下文，不是权威行动或 system prompt。

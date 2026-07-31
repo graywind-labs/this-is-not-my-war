@@ -387,6 +387,7 @@ func complete_stage(
 		return result
 
 	var project: Dictionary = _projects[building_id]
+	result["project"] = get_project_snapshot(building_id)
 	var current_revision := int(project.get("revision", 0))
 	result["current_project_revision"] = current_revision
 	if project_revision != current_revision:
@@ -394,6 +395,8 @@ func complete_stage(
 		return result
 
 	var recipe_id := str(project.get("target_recipe_id", ""))
+	result["recipe_id"] = recipe_id
+	result["target_item_id"] = str(project.get("target_item_id", ""))
 	if recipe_id.is_empty():
 		result["reason"] = "crafting_target_missing"
 		return result

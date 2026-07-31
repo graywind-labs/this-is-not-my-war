@@ -4,6 +4,7 @@
     "name": "托马",
     "gender": "male",
     "background_job": "马夫",
+    "religion": "天主教",
     "appearance": "肩背宽厚，常穿沾着干草和马汗味的旧皮围裙，手上有缰绳磨出的茧。",
     "background_story": "托马把照料生命看成一份必须亲自负责的工作。他会耐心确认马匹的伤病和情绪，不轻易承诺，也不会为了服从而忽视明显风险。对他而言，可靠比逞强重要。",
     "personality": [
@@ -34,9 +35,15 @@
       "strength": 6,
       "intelligence": 4
     },
+    "combat_base": {
+      "attack_power": 4.5,
+      "defense": 1.0,
+      "penetration": 0.6,
+      "attack_speed_multiplier": 1.05
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 108,
+      "max_hp": 108,
       "satiety": 82,
       "fatigue": 18,
       "money": 2,
@@ -79,6 +86,7 @@
     "name": "布鲁诺",
     "gender": "male",
     "background_job": "厨子",
+    "religion": "天主教",
     "appearance": "身材结实，围裙总带着烟熏和肉汤味，说话时习惯把勺子当指挥棒。",
     "background_story": "布鲁诺习惯从饭量、存粮和谁先吃饭判断一个地方是否公道。他脾气大，账算得细，照顾别人时很少说好听话，但不会假装没看见有人挨饿。",
     "personality": [
@@ -109,9 +117,15 @@
       "strength": 6,
       "intelligence": 4
     },
+    "combat_base": {
+      "attack_power": 4.2,
+      "defense": 0.8,
+      "penetration": 0.4,
+      "attack_speed_multiplier": 0.96
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 112,
+      "max_hp": 112,
       "satiety": 88,
       "fatigue": 22,
       "money": 3,
@@ -154,6 +168,7 @@
     "name": "伊沃",
     "gender": "male",
     "background_job": "园丁",
+    "religion": "天主教",
     "appearance": "身形瘦高，指甲里常有泥土，腰间挂着修枝小刀和一卷细绳。",
     "background_story": "伊沃有耐心，喜欢把大问题拆成每天能做完的小事。他愿意等作物长成，也愿意给人时间；但涉及土地、种子和普通人的口粮时，他会把反对理由说清楚，并坚持到底。",
     "personality": [
@@ -183,6 +198,12 @@
     "stats": {
       "strength": 5,
       "intelligence": 5
+    },
+    "combat_base": {
+      "attack_power": 3.4,
+      "defense": 0.6,
+      "penetration": 0.5,
+      "attack_speed_multiplier": 1.10
     },
     "states": {
       "hp": 100,
@@ -229,6 +250,7 @@
     "name": "格伦",
     "gender": "male",
     "background_job": "铁匠",
+    "religion": "天主教",
     "appearance": "手臂粗壮，胡须里沾着煤灰，旧围裙被火星烫出许多小洞。",
     "background_story": "格伦认为，工匠的责任不只是在交货前检查成品，还要考虑成品会被谁使用。他说话直接，对材料和工序要求严格，宁可拒绝一笔生意，也不肯把明知不可靠的装备交出去。",
     "personality": [
@@ -260,9 +282,15 @@
       "strength": 8,
       "intelligence": 5
     },
+    "combat_base": {
+      "attack_power": 5.0,
+      "defense": 1.5,
+      "penetration": 1.0,
+      "attack_speed_multiplier": 0.92
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 125,
+      "max_hp": 125,
       "satiety": 84,
       "fatigue": 26,
       "money": 4,
@@ -305,6 +333,7 @@
     "name": "艾达",
     "gender": "female",
     "background_job": "老兵副官",
+    "religion": "天主教",
     "appearance": "短发夹着灰白，旧军服修补得很整齐，左眉有一道浅疤。",
     "background_story": "艾达接到命令时会先核对人手、路线和退路。她接受职责约束，却不会用服从逃避责任；如果一项安排会让人白白送命，她一定会把风险和替代方案说出来。",
     "personality": [
@@ -336,9 +365,15 @@
       "strength": 7,
       "intelligence": 6
     },
+    "combat_base": {
+      "attack_power": 5.5,
+      "defense": 2.0,
+      "penetration": 1.5,
+      "attack_speed_multiplier": 1.08
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 120,
+      "max_hp": 120,
       "satiety": 80,
       "fatigue": 20,
       "money": 2,
@@ -384,6 +419,7 @@
     "name": "马塞尔",
     "gender": "male",
     "background_job": "神父",
+    "religion": "天主教",
     "appearance": "黑色旧袍洗得发白，胸前挂着木质圣徽，眼神温和但并不软弱。",
     "background_story": "马塞尔相信，信仰应当帮助人面对恐惧和责任，而不是替任何权力免罪。他温和、善辩，擅长酿酒，也愿意承认现实中的难题通常比教义问答更麻烦。",
     "personality": [
@@ -415,9 +451,15 @@
       "strength": 3,
       "intelligence": 7
     },
+    "combat_base": {
+      "attack_power": 2.4,
+      "defense": 0.5,
+      "penetration": 0.2,
+      "attack_speed_multiplier": 0.90
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 85,
+      "max_hp": 85,
       "satiety": 76,
       "fatigue": 18,
       "money": 1,
@@ -460,6 +502,7 @@
     "name": "莉娜",
     "gender": "female",
     "background_job": "医生",
+    "religion": "天主教",
     "appearance": "衣袖总是卷起，药箱边角磨损严重，说话冷静而直接。",
     "background_story": "莉娜把准确诊断和避免二次伤害放在首位。她说话克制，面对痛苦时总是先处理问题，再考虑如何安慰人，因此常显得冷淡；但只要病人仍有救，她就不会轻易放弃。",
     "personality": [
@@ -491,9 +534,15 @@
       "strength": 3,
       "intelligence": 8
     },
+    "combat_base": {
+      "attack_power": 2.5,
+      "defense": 0.7,
+      "penetration": 0.2,
+      "attack_speed_multiplier": 1.00
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 88,
+      "max_hp": 88,
       "satiety": 74,
       "fatigue": 24,
       "money": 2,
@@ -536,6 +585,7 @@
     "name": "欧文",
     "gender": "male",
     "background_job": "工程师",
+    "religion": "天主教",
     "appearance": "皮带上挂着尺、炭笔和几枚木楔，常盯着墙角估算承重。",
     "background_story": "欧文对新结构和新器械有强烈好奇心，动手前却一定要问清尺寸、材料和失效后果。他愿意尝试可以控制、可以维修的方案，也会因为担心漏掉小问题而反复检查。",
     "personality": [
@@ -567,9 +617,15 @@
       "strength": 4,
       "intelligence": 8
     },
+    "combat_base": {
+      "attack_power": 3.6,
+      "defense": 0.8,
+      "penetration": 1.2,
+      "attack_speed_multiplier": 0.98
+    },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 94,
+      "max_hp": 94,
       "satiety": 78,
       "fatigue": 28,
       "money": 3,

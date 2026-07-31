@@ -5,6 +5,8 @@ const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
 signal backend_status_changed(status_text: String, ok: bool)
 signal dialogue_response_received(result: Dictionary)
 signal dialogue_async_response_received(result: Dictionary)
+signal dialogue_intent_revalidation_response_received(result: Dictionary)
+signal dialogue_intent_revalidation_async_response_received(result: Dictionary)
 signal plan_revision_judgement_response_received(result: Dictionary)
 signal plan_revision_judgement_async_response_received(result: Dictionary)
 signal dialogue_plan_revision_judgement_response_received(result: Dictionary)
@@ -23,18 +25,55 @@ const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DEFAULT_BACKEND_URL := "http://127.0.0.1:5000"
 const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
 const DEFAULT_GUARD_APPEARANCE := "驿站守备官，穿着磨旧的军官外套，带着边境军令。"
-const SHORT_MEMORY_EVENT_LIMIT := 8
 const HTTP_POLL_DELAY_MSEC := 10
 const WARTIME_DIALOGUE_CONTEXTS: Array[String] = ["rally", "combat", "avoid_combat"]
 const ESCAPE_INTERVENTION_DIALOGUE_KIND := "escape_intervention"
 const NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD := 5
 const STATION_CONTEXT_FILE := "station_context.json"
+const SHORT_MEMORY_OMITTED_PAYLOAD_KEYS: Array[String] = [
+	# Deterministic summary already carries these texts; retaining them would
+	# duplicate whole transcripts, notices and plan explanations.
+	"summary",
+	"dialogue_text",
+	"speaker_text",
+	"reply_text",
+	"notice",
+	"current_notice",
+	"reference_schedule",
+	"schedule_advisory_note",
+	# These are authoritative runtime/debug structures rather than memory facts
+	# the model needs to choose or explain an action.
+	"items",
+	"location_snapshot",
+	"building_snapshot",
+	"building_external_states",
+	"key_entities",
+	"enemy_roster",
+	"friendly_roster",
+	"injured_npcs",
+	"unconscious_npcs",
+	"defeated_by_npc",
+	"participant_npc_ids",
+	"dialogue_id",
+	"source_event_id",
+	"deployment_id",
+	"session_completed",
+	"ended_while_waiting",
+	"completed_reply_count",
+	"current_round",
+	"max_rounds",
+	"visibility",
+	"player_actor_id",
+	"actor_display_name",
+	"order_revision"
+]
 const BASIC_RESOURCE_RESERVE_IDS: Array[String] = [
 	"grain",
 	"meal",
@@ -59,6 +98,10 @@ var _station_context_template: Dictionary = {}
 var _active_request_by_npc: Dictionary = {}
 var _cancelled_request_ids: Dictionary = {}
 var _async_request_threads: Dictionary = {}
+var _transport_lifecycle_mutex := Mutex.new()
+var _transport_cancelled_request_ids: Dictionary = {}
+var _transport_shutdown_requested := false
+var _last_async_shutdown_result: Dictionary = {}
 var _cached_health_result: Dictionary = {}
 var _cached_health_checked_msec := 0
 
@@ -70,6 +113,10 @@ func initialize() -> void:
 
 func _ready() -> void:
 	initialize()
+
+
+func _exit_tree() -> void:
+	_shutdown_async_requests("llm_bridge_exit")
 
 
 func set_backend_base_url(url: String) -> void:
@@ -133,6 +180,8 @@ func request_llm_usage() -> Dictionary:
 
 
 func request_llm_usage_async() -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var request_id := _make_request_id("llm_usage")
 	var thread := Thread.new()
 	_async_request_threads[request_id] = {
@@ -186,6 +235,8 @@ func request_npc_dialogue(npc_id: String, speaker_text: String, options: Diction
 
 
 func request_npc_dialogue_async(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_npc_dialogue_payload(npc_id, speaker_text, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 NPCDialogueRequest。")
@@ -229,6 +280,110 @@ func request_npc_dialogue_async(npc_id: String, speaker_text: String, options: D
 	return {
 		"ok": true,
 		"pending": true,
+		"request_id": request_id
+	}
+
+
+func request_npc_dialogue_intent_revalidation(
+	npc_id: String,
+	plan_item: Dictionary,
+	options: Dictionary = {}
+) -> Dictionary:
+	var payload := build_dialogue_intent_revalidation_payload(npc_id, plan_item, options)
+	if payload.is_empty():
+		var failed := _failure_result(
+			"payload_error",
+			"无法构造 DialogueIntentRevalidationRequest。"
+		)
+		dialogue_intent_revalidation_response_received.emit(failed.duplicate(true))
+		return failed
+	var request_id := str(
+		payload.get("meta", {}).get(
+			"request_id",
+			_make_request_id("dialogue_intent_revalidation")
+		)
+	)
+	var should_slowdown := bool(
+		payload.get("meta", {}).get("requires_time_slowdown", true)
+	)
+	var result: Dictionary = _request_json(
+		"POST",
+		"/npc/dialogue_intent_revalidation",
+		payload,
+		should_slowdown,
+		request_id,
+		{
+			"npc_id": npc_id,
+			"kind": "plan",
+			"label": "正在复核对话意图",
+			"cancellable": true
+		},
+		0.0
+	)
+	var response := result.duplicate(true)
+	if bool(result.get("ok", false)):
+		response["dialogue_intent_revalidation"] = result.get("body", {})
+	dialogue_intent_revalidation_response_received.emit(response.duplicate(true))
+	return response
+
+
+func request_npc_dialogue_intent_revalidation_async(
+	npc_id: String,
+	plan_item: Dictionary,
+	options: Dictionary = {}
+) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
+	var payload := build_dialogue_intent_revalidation_payload(npc_id, plan_item, options)
+	if payload.is_empty():
+		return _failure_result(
+			"payload_error",
+			"无法构造 DialogueIntentRevalidationRequest。"
+		)
+	var request_id := str(
+		payload.get("meta", {}).get(
+			"request_id",
+			_make_request_id("dialogue_intent_revalidation")
+		)
+	)
+	_set_npc_llm_activity(npc_id, request_id, {
+		"npc_id": npc_id,
+		"kind": "plan",
+		"label": "正在复核对话意图",
+		"cancellable": true
+	})
+	if bool(payload.get("meta", {}).get("requires_time_slowdown", true)):
+		_register_time_slowdown(request_id, "dialogue_intent_revalidation")
+	var thread := Thread.new()
+	_async_request_threads[request_id] = {
+		"thread": thread,
+		"npc_id": npc_id,
+		"request_id": request_id,
+		"call_type": "dialogue_intent_revalidation"
+	}
+	var err := thread.start(
+		Callable(self, "_thread_request_json").bind(
+			"POST",
+			"/npc/dialogue_intent_revalidation",
+			payload,
+			request_id,
+			0.0
+		)
+	)
+	if err != OK:
+		_async_request_threads.erase(request_id)
+		_release_time_slowdown(request_id)
+		_clear_npc_llm_activity(npc_id, request_id)
+		_active_request_by_npc.erase(npc_id)
+		return _failure_result(
+			"thread_start_failed",
+			"无法启动异步对话意图执行前复核请求。",
+			{"godot_error": err, "request_id": request_id}
+		)
+	return {
+		"ok": true,
+		"pending": true,
+		"npc_id": npc_id,
 		"request_id": request_id
 	}
 
@@ -282,6 +437,8 @@ func request_dialogue_plan_revision_judgement_async(npc_id: String, options: Dic
 
 
 func request_plan_revision_judgement_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_plan_revision_judgement_payload(npc_id, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 PlanRevisionJudgementRequest。")
@@ -356,6 +513,8 @@ func request_npc_daily_plan(npc_id: String, options: Dictionary = {}) -> Diction
 
 
 func request_npc_daily_plan_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_npc_daily_plan_payload(npc_id, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 DailyPlanRequest。")
@@ -427,6 +586,8 @@ func request_npc_plan_revision(npc_id: String, options: Dictionary = {}) -> Dict
 
 
 func request_npc_plan_revision_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_npc_plan_revision_payload(npc_id, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 PlanRevisionRequest。")
@@ -499,6 +660,8 @@ func request_npc_battle_judgement(npc_id: String, options: Dictionary = {}) -> D
 
 
 func request_npc_battle_judgement_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_npc_battle_judgement_payload(npc_id, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 BattleJudgementRequest。")
@@ -570,6 +733,8 @@ func request_npc_daily_reflection(npc_id: String, options: Dictionary = {}) -> D
 
 
 func request_npc_daily_reflection_async(npc_id: String, options: Dictionary = {}) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
 	var payload := build_npc_daily_reflection_payload(npc_id, options)
 	if payload.is_empty():
 		return _failure_result("payload_error", "无法构造 DailyReflectionRequest。")
@@ -644,6 +809,8 @@ func debug_get_llm_runtime_snapshot() -> Dictionary:
 		"active_requests_by_npc": _active_request_by_npc.duplicate(true),
 		"async_request_count": _async_request_threads.size(),
 		"async_request_ids": _async_request_threads.keys(),
+		"transport_shutdown_requested": _is_transport_shutdown_requested(),
+		"last_async_shutdown_result": _last_async_shutdown_result.duplicate(true),
 		"time_scale": time_snapshot,
 		"last_time_scale_reason": str(time_snapshot.get("last_time_scale_reason", "")),
 		"last_context_injection": get_last_npc_context_injection()
@@ -707,6 +874,7 @@ func cancel_npc_llm_requests(npc_id: String, reason: String = "cancelled_by_play
 	var request_id := str(active.get("request_id", ""))
 	if not request_id.is_empty():
 		_cancelled_request_ids[request_id] = reason
+		_request_transport_cancel(request_id)
 	_release_time_slowdown(request_id)
 	_clear_npc_llm_activity(npc_id, request_id)
 	_active_request_by_npc.erase(npc_id)
@@ -727,6 +895,7 @@ func cancel_llm_request(request_id: String, reason: String = "cancelled") -> Dic
 		return {"ok": true, "cancelled": false, "reason": "request_not_active"}
 	var npc_id := str(record.get("npc_id", ""))
 	_cancelled_request_ids[request_id] = reason
+	_request_transport_cancel(request_id)
 	_release_time_slowdown(request_id)
 	if not npc_id.is_empty():
 		_clear_npc_llm_activity(npc_id, request_id)
@@ -737,6 +906,109 @@ func cancel_llm_request(request_id: String, reason: String = "cancelled") -> Dic
 		"request_id": request_id,
 		"reason": reason
 	}
+
+
+func _shutdown_async_requests(reason: String = "llm_bridge_shutdown") -> Dictionary:
+	if _is_transport_shutdown_requested() and _async_request_threads.is_empty():
+		return _last_async_shutdown_result.duplicate(true)
+
+	var started_at_msec := Time.get_ticks_msec()
+	var request_ids: Array = _async_request_threads.keys()
+	_request_transport_shutdown()
+
+	for raw_request_id in request_ids:
+		var request_id := str(raw_request_id)
+		var record: Dictionary = _async_request_threads.get(request_id, {})
+		var npc_id := str(record.get("npc_id", ""))
+		_cancelled_request_ids[request_id] = reason
+		_request_transport_cancel(request_id)
+		_release_time_slowdown(request_id)
+		if not npc_id.is_empty():
+			_clear_npc_llm_activity(npc_id, request_id)
+
+	for pending_request_id in _pending_slowdown_request_ids.duplicate():
+		_release_time_slowdown(str(pending_request_id))
+
+	var joined_count := 0
+	for raw_request_id in request_ids:
+		var request_id := str(raw_request_id)
+		var record: Dictionary = _async_request_threads.get(request_id, {})
+		var thread := record.get("thread", null) as Thread
+		if thread != null and thread.is_started():
+			thread.wait_to_finish()
+			joined_count += 1
+
+	for raw_npc_id in _active_request_by_npc.keys():
+		var npc_id := str(raw_npc_id)
+		var active: Dictionary = _active_request_by_npc.get(npc_id, {})
+		_clear_npc_llm_activity(npc_id, str(active.get("request_id", "")))
+
+	_async_request_threads.clear()
+	_active_request_by_npc.clear()
+	_cancelled_request_ids.clear()
+	_pending_slowdown_request_ids.clear()
+	_slowdown_audit_by_request.clear()
+	_last_async_shutdown_result = {
+		"ok": true,
+		"reason": reason,
+		"cancelled_request_count": request_ids.size(),
+		"joined_thread_count": joined_count,
+		"elapsed_msec": Time.get_ticks_msec() - started_at_msec
+	}
+	return _last_async_shutdown_result.duplicate(true)
+
+
+func _request_transport_shutdown() -> void:
+	_transport_lifecycle_mutex.lock()
+	_transport_shutdown_requested = true
+	_transport_lifecycle_mutex.unlock()
+
+
+func _is_transport_shutdown_requested() -> bool:
+	_transport_lifecycle_mutex.lock()
+	var requested := _transport_shutdown_requested
+	_transport_lifecycle_mutex.unlock()
+	return requested
+
+
+func _request_transport_cancel(request_id: String) -> void:
+	if request_id.is_empty():
+		return
+	_transport_lifecycle_mutex.lock()
+	_transport_cancelled_request_ids[request_id] = true
+	_transport_lifecycle_mutex.unlock()
+
+
+func _clear_transport_cancel(request_id: String) -> void:
+	if request_id.is_empty():
+		return
+	_transport_lifecycle_mutex.lock()
+	_transport_cancelled_request_ids.erase(request_id)
+	_transport_lifecycle_mutex.unlock()
+
+
+func _should_cancel_transport(request_id: String) -> bool:
+	_transport_lifecycle_mutex.lock()
+	var cancelled := (
+		_transport_shutdown_requested
+		or (not request_id.is_empty() and _transport_cancelled_request_ids.has(request_id))
+	)
+	_transport_lifecycle_mutex.unlock()
+	return cancelled
+
+
+func _transport_cancelled_result(request_id: String) -> Dictionary:
+	return _failure_result("request_cancelled", "LLM 请求已取消。", {
+		"request_id": request_id,
+		"cancelled": true
+	})
+
+
+func _async_shutdown_failure() -> Dictionary:
+	return _failure_result(
+		"llm_bridge_shutting_down",
+		"LLMBridge 正在退出，不能启动新的异步请求。"
+	)
 
 
 func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
@@ -775,8 +1047,10 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 	)).strip_edges()
 	if dialogue_kind == "npc_npc" and soft_round_guidance.is_empty():
 		soft_round_guidance = (
-			"两人讲完当前想讲的事情后，应在自己的最后一句 reply_text 中自然告别，并设置 should_end_dialogue=true。"
-			+ "current_round 超过 %d（即第 %d 轮起）且没有紧急或必要事项时，应说一句告别话并结束；紧急或必要事项尚未说清时可以继续。"
+			"soft_round_threshold 只是偏晚阶段的收尾保险，不是最低轮数、目标轮数或继续理由，绝不能为了等到阈值而续聊。"
+			+ "每轮若不能推进 conversation_history 中已经存在的未决紧急或必要事项，只能确认、复述或改写已有内容，必须在本轮用至多一句简短收尾并设置 should_end_dialogue=true；对方已经完整回答或双方已经达成一致时也必须结束。"
+			+ "不得为了延长对话自行制造新话题、新任务、新问题、额外帮助或后续安排。"
+			+ "current_round 超过 %d（即第 %d 轮起）且没有尚未说清的紧急或必要事项时必须告别结束；只有本轮确实能推进必要新内容时才可继续。"
 		) % [soft_round_threshold, soft_round_threshold + 1]
 	var visibility := str(dialogue_state.get("visibility", options.get("visibility", "private")))
 	if not ["private", "local_public"].has(visibility):
@@ -792,6 +1066,18 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 
 	var request_id := str(options.get("request_id", _make_request_id("dialogue")))
 	var current_order: Dictionary = npc_system.get_current_order(npc_id) if npc_system.has_method("get_current_order") else {}
+	var interrupted_activity_context: Dictionary = (
+		options.get("interrupted_activity_context", {})
+		if options.get("interrupted_activity_context", {}) is Dictionary
+		else {}
+	)
+	var dialogue_truth: Dictionary = _build_dialogue_authoritative_truth(
+		npc_id,
+		npc,
+		npc_state,
+		interrupted_activity_context,
+		npc_system
+	)
 	var payload := {
 		"meta": {
 			"request_id": request_id,
@@ -818,6 +1104,9 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"soft_round_threshold": soft_round_threshold,
 		"soft_round_guidance": soft_round_guidance,
 		"npc_state": _build_npc_state_context(npc, npc_state),
+		"activity_truth": dialogue_truth.get("activity_truth", {}),
+		"equipment_truth": dialogue_truth.get("equipment_truth", {}),
+		"training_truth": dialogue_truth.get("training_truth", {}),
 		"current_order": current_order.duplicate(true),
 		"dialogue_state": {
 			"visibility": visibility,
@@ -837,11 +1126,6 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"allowed_actions": _build_allowed_action_candidates(npc_id, true),
 		"constraints": options.get("constraints", [])
 	}
-	var interrupted_activity_context: Dictionary = (
-		options.get("interrupted_activity_context", {})
-		if options.get("interrupted_activity_context", {}) is Dictionary
-		else {}
-	)
 	if not interrupted_activity_context.is_empty():
 		payload["interrupted_activity_context"] = interrupted_activity_context.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
@@ -856,6 +1140,112 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"has_battlefield_context": WARTIME_DIALOGUE_CONTEXTS.has(interaction_context),
 		"has_interrupted_activity_context": not interrupted_activity_context.is_empty()
 	})
+	return payload
+
+
+func build_dialogue_intent_revalidation_payload(
+	npc_id: String,
+	plan_item: Dictionary,
+	options: Dictionary = {}
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		push_warning(
+			"LLMBridge cannot build dialogue intent revalidation payload because NPCSystem is missing."
+		)
+		return {}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+	var action_id := str(plan_item.get("action_id", ""))
+	var dialogue_goal := str(plan_item.get("dialogue_goal", "")).strip_edges()
+	if not ["talk_to_npc", "seek_guard_officer"].has(action_id) or dialogue_goal.is_empty():
+		return {}
+	var current_plan: Array = (
+		(options.get("current_plan", []) as Array).duplicate(true)
+		if options.get("current_plan", []) is Array
+		else []
+	)
+	if current_plan.is_empty() and npc_system.has_method("get_npc_plan"):
+		current_plan = npc_system.get_npc_plan(npc_id)
+	var current_plan_schema := _plan_items_to_schema(current_plan)
+	if current_plan_schema.size() != 24:
+		return {}
+	var game_time := _get_game_time_context()
+	var plan_item_schema := _plan_item_to_schema(plan_item)
+	if int(plan_item_schema.get("hour", -1)) != int(game_time.get("hour", -2)):
+		return {}
+	var npc_context := _build_npc_context(npc_id, npc_system)
+	if npc_context.is_empty():
+		return {}
+	var request_id := str(
+		options.get(
+			"request_id",
+			_make_request_id("dialogue_intent_revalidation")
+		)
+	)
+	var created_day := maxi(
+		1,
+		int(
+			plan_item.get(
+				"intent_created_day",
+				options.get("intent_created_day", game_time.get("day", 1))
+			)
+		)
+	)
+	var created_time := str(
+		plan_item.get(
+			"intent_created_time",
+			options.get("intent_created_time", game_time.get("time", "00:00:00"))
+		)
+	)
+	if created_time.is_empty():
+		created_time = str(game_time.get("time", "00:00:00"))
+	var created_source := str(
+		plan_item.get(
+			"intent_source",
+			options.get("intent_source", plan_item.get("source", "unknown"))
+		)
+	).strip_edges()
+	if created_source.is_empty():
+		created_source = "unknown"
+	var payload := {
+		"meta": {
+			"request_id": request_id,
+			"call_type": "dialogue_intent_revalidation",
+			"source": "godot",
+			"requires_time_slowdown": bool(
+				options.get("requires_time_slowdown", true)
+			),
+			"related_event_id": options.get("related_event_id", null)
+		},
+		"game_time": game_time,
+		"station_context": _build_station_context(npc_system),
+		"npc": npc_context,
+		"planned_intent": {
+			"created_day": created_day,
+			"created_time": created_time,
+			"source": created_source,
+			"plan_item": plan_item_schema
+		},
+		"current_plan": current_plan_schema,
+		"allowed_actions": _build_allowed_action_candidates(npc_id, false),
+		"current_building_states": _build_building_state_context(),
+		"current_resource_states": _build_resource_state_context()
+	}
+	_record_npc_context_injection(
+		npc_id,
+		"dialogue_intent_revalidation",
+		npc_context.get("current_order", {}),
+		request_id,
+		{
+			"intent_created_day": created_day,
+			"intent_created_time": created_time,
+			"intent_source": created_source,
+			"planned_action_id": action_id,
+			"planned_dialogue_goal": dialogue_goal
+		}
+	)
 	return payload
 
 
@@ -1212,7 +1602,9 @@ func build_npc_daily_reflection_payload(npc_id: String, options: Dictionary = {}
 		},
 		"station_context": _build_station_context(npc_system),
 		"npc": npc_context,
-		"day_events": options.get("day_events", _build_reflection_day_events(npc_id)),
+		"day_events": _compact_reflection_day_events(
+			options.get("day_events", _build_reflection_day_events(npc_id))
+		),
 		"summary_window": (
 			options.get("summary_window", {}).duplicate(true)
 			if options.get("summary_window", {}) is Dictionary
@@ -1236,9 +1628,17 @@ func _thread_request_json(
 	request_id: String,
 	timeout_seconds: float = -1.0
 ) -> void:
-	var transport_result := _send_http_request(method, endpoint, payload, timeout_seconds)
+	var transport_result := _send_http_request(
+		method,
+		endpoint,
+		payload,
+		timeout_seconds,
+		request_id
+	)
 	var result := _parse_transport_json_result(transport_result)
 	result["request_id"] = request_id
+	if _is_transport_shutdown_requested():
+		return
 	call_deferred("_complete_async_request", request_id, result)
 
 
@@ -1250,6 +1650,7 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 	if thread != null:
 		thread.wait_to_finish()
 	_async_request_threads.erase(request_id)
+	_clear_transport_cancel(request_id)
 	var npc_id := str(record.get("npc_id", ""))
 	var call_type := str(record.get("call_type", "dialogue"))
 	_release_time_slowdown(request_id)
@@ -1272,6 +1673,8 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 		return
 	if bool(result.get("ok", false)):
 		match call_type:
+			"dialogue_intent_revalidation":
+				response["dialogue_intent_revalidation"] = result.get("body", {})
 			"plan_revision_judgement":
 				response["plan_revision_judgement"] = result.get("body", {})
 				response["dialogue_plan_revision_judgement"] = result.get("body", {})
@@ -1293,6 +1696,12 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 func _emit_async_response(call_type: String, response: Dictionary) -> void:
 	if call_type == "llm_usage":
 		llm_usage_response_received.emit(response.duplicate(true))
+		return
+	if call_type == "dialogue_intent_revalidation":
+		dialogue_intent_revalidation_response_received.emit(response.duplicate(true))
+		dialogue_intent_revalidation_async_response_received.emit(
+			response.duplicate(true)
+		)
 		return
 	if call_type == "plan_revision_judgement":
 		plan_revision_judgement_response_received.emit(response.duplicate(true))
@@ -1370,8 +1779,15 @@ func _request_json(
 		var call_type := str(payload.get("meta", {}).get("call_type", "llm"))
 		_register_time_slowdown(active_slowdown_id, call_type)
 
-	var transport_result := _send_http_request(method, endpoint, payload, timeout_seconds)
+	var transport_result := _send_http_request(
+		method,
+		endpoint,
+		payload,
+		timeout_seconds,
+		activity_request_id
+	)
 	_release_time_slowdown(active_slowdown_id)
+	_clear_transport_cancel(activity_request_id)
 	if _was_request_cancelled(activity_request_id):
 		if not activity_npc_id.is_empty():
 			_clear_npc_llm_activity(activity_npc_id, activity_request_id)
@@ -1754,10 +2170,6 @@ func _is_static_plan_action_available_for_npc(
 			if allow_transient_planning_targets:
 				return _has_potential_training_instructor(npc_id, npc_system)
 			return _has_active_training_instructor(npc_id, npc_system, action_system)
-		"attend_mass":
-			if allow_transient_planning_targets:
-				return _has_potential_mass_leader(npc_id, npc_system)
-			return _has_active_mass_leader(npc_id, npc_system, action_system)
 	return true
 
 
@@ -1768,6 +2180,89 @@ func _npc_has_trainable_equipment(npc: Dictionary) -> bool:
 		if not str(item.get("required_skill", "")).strip_edges().is_empty():
 			return true
 	return false
+
+
+func _build_dialogue_authoritative_truth(
+	npc_id: String,
+	npc: Dictionary,
+	npc_state: Dictionary,
+	interrupted_activity_context: Dictionary,
+	npc_system: Node
+) -> Dictionary:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var action_id := str(npc_state.get("current_action", "idle")).strip_edges()
+	var action_phase := ""
+	var activity_before: Dictionary = (
+		interrupted_activity_context.get("activity_before_interruption", {})
+		if interrupted_activity_context.get("activity_before_interruption", {}) is Dictionary
+		else {}
+	)
+	if not activity_before.is_empty():
+		action_id = str(activity_before.get("action_id", action_id)).strip_edges()
+		action_phase = str(activity_before.get("phase", "")).strip_edges()
+	elif action_system != null and action_system.has_method("get_runtime_action_snapshot"):
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if not runtime.is_empty():
+			action_id = str(runtime.get("action_id", action_id)).strip_edges()
+			action_phase = str(runtime.get("phase", "")).strip_edges()
+	if action_id.is_empty():
+		action_id = "idle"
+	var is_training := (
+		["receive_weapon_training", "work_training_instructor"].has(action_id)
+		and ["active", "external_active"].has(action_phase)
+	)
+
+	var equipment: Dictionary = (
+		npc.get("equipment", {})
+		if npc.get("equipment", {}) is Dictionary
+		else {}
+	)
+	var main_weapon_id: Variant = _compact_equipment_truth_id(equipment.get("main_weapon", {}))
+	var mount_id: Variant = _compact_equipment_truth_id(equipment.get("mount", {}))
+	var has_trainable_equipment := _npc_has_trainable_equipment(npc)
+
+	var training_eligible := false
+	var training_blocker: Variant = null
+	if not has_trainable_equipment:
+		training_blocker = "no_trainable_equipment"
+	elif not _has_active_training_instructor(npc_id, npc_system, action_system):
+		training_blocker = "no_active_instructor"
+	elif action_system == null or not action_system.has_method("get_action_eligibility"):
+		training_blocker = "training_unavailable"
+	else:
+		var eligibility: Dictionary = action_system.get_action_eligibility(
+			npc_id,
+			"receive_weapon_training"
+		)
+		training_eligible = bool(eligibility.get("available_now", false))
+		if not training_eligible:
+			training_blocker = "training_unavailable"
+
+	return {
+		"activity_truth": {
+			"action_id": action_id,
+			"is_training": is_training
+		},
+		"equipment_truth": {
+			"main_weapon": main_weapon_id,
+			"mount": mount_id,
+			"has_trainable_equipment": has_trainable_equipment
+		},
+		"training_truth": {
+			"eligible": training_eligible,
+			"blocker": training_blocker
+		}
+	}
+
+
+func _compact_equipment_truth_id(raw_item: Variant) -> Variant:
+	if not raw_item is Dictionary or (raw_item as Dictionary).is_empty():
+		return null
+	for field in ["id", "horse_id", "name"]:
+		var item_id := str((raw_item as Dictionary).get(field, "")).strip_edges()
+		if not item_id.is_empty():
+			return item_id
+	return null
 
 
 func _has_active_training_instructor(
@@ -1806,41 +2301,6 @@ func _has_potential_training_instructor(student_npc_id: String, npc_system: Node
 			if str(mode.get("behavior_mode", "work")) != "work":
 				continue
 		if _npc_has_trainable_equipment(npc_system.get_npc(candidate_id)):
-			return true
-	return false
-
-
-func _has_active_mass_leader(
-	attendee_npc_id: String,
-	npc_system: Node,
-	action_system: Node
-) -> bool:
-	if npc_system == null or action_system == null:
-		return false
-	for raw_npc_id in npc_system.get_npc_ids():
-		var candidate_id := str(raw_npc_id)
-		if candidate_id == attendee_npc_id:
-			continue
-		if action_system.has_method("get_runtime_action_snapshot"):
-			var runtime: Dictionary = action_system.get_runtime_action_snapshot(candidate_id)
-			if (
-				str(runtime.get("phase", "")) == "active"
-				and str(runtime.get("action_id", "")) == "lead_mass"
-			):
-				return true
-	return false
-
-
-func _has_potential_mass_leader(attendee_npc_id: String, npc_system: Node) -> bool:
-	if npc_system == null:
-		return false
-	for raw_npc_id in npc_system.get_npc_ids():
-		var candidate_id := str(raw_npc_id)
-		if candidate_id == attendee_npc_id or not npc_system.can_npc_act(candidate_id):
-			continue
-		var candidate: Dictionary = npc_system.get_npc(candidate_id)
-		var abilities: Array = candidate.get("abilities", []) if candidate.get("abilities", []) is Array else []
-		if abilities.has("主持弥撒"):
 			return true
 	return false
 
@@ -1898,6 +2358,7 @@ func _build_building_state_context() -> Dictionary:
 	var result := {}
 	var building_system := get_node_or_null("/root/Main/Systems/BuildingSystem")
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("get_building_ids"):
 		return result
 	for building_id in building_system.get_building_ids():
@@ -1922,7 +2383,7 @@ func _build_building_state_context() -> Dictionary:
 				"occupied_by_name": null if occupied_by.is_empty() else str(occupant.get("name", occupied_by)),
 				"occupied_by_action": null if occupied_by.is_empty() else str(occupant_state.get("current_action", ""))
 			})
-		result[str(building_id)] = {
+		var building_context := {
 			"name": str(building.get("name", building_id)),
 			"level": int(building.get("level", 1)),
 			"hp": int(building.get("hp", 0)),
@@ -1941,6 +2402,39 @@ func _build_building_state_context() -> Dictionary:
 			"upgrade_job": _build_readable_building_job_context(upgrade_status),
 			"workstations": workstations
 		}
+		if (
+			crafting_system != null
+			and crafting_system.has_method("get_project_snapshot")
+		):
+			var project: Dictionary = crafting_system.get_project_snapshot(
+				str(building_id)
+			)
+			if not project.is_empty():
+				building_context["crafting_project"] = {
+					"target_recipe_id": str(project.get("target_recipe_id", "")),
+					"target_item_id": str(project.get("target_item_id", "")),
+					"target_name": str(project.get("target_name", "")),
+					"project_revision": int(project.get("project_revision", 0)),
+					"completed_stages": int(project.get("completed_stages", 0)),
+					"total_stages": int(project.get("total_stages", 0)),
+					"current_stage_index": int(
+						project.get("current_stage_index", 0)
+					),
+					"current_stage_id": str(
+						project.get("current_stage_id", "")
+					),
+					"current_stage_name": str(
+						project.get("current_stage_name", "")
+					),
+					"current_stage_cost": (
+						(project.get("current_stage_cost", {}) as Dictionary)
+							.duplicate(true)
+						if project.get("current_stage_cost", {}) is Dictionary
+						else {}
+					),
+					"stock_amount": int(project.get("stock_amount", 0))
+				}
+		result[str(building_id)] = building_context
 	return result
 
 
@@ -2005,11 +2499,11 @@ func _get_action_definition(action_id: String) -> Dictionary:
 
 func _normalize_plan_failure_type(raw_type: String) -> String:
 	match raw_type:
-		"target_unavailable", "workstation_occupied", "resource_insufficient", "dialogue_interrupted", "plan_item_superseded", "action_completed", "low_hp", "low_satiety", "high_fatigue", "combat_alarm", "order_changed":
+		"target_unavailable", "workstation_occupied", "resource_insufficient", "dialogue_interrupted", "plan_item_superseded", "action_completed", "low_hp", "low_satiety", "high_fatigue", "combat_alarm", "order_changed", "dialogue_intent_cancelled", "dialogue_intent_revalidation_failed":
 			return raw_type
-		"clinic_patient_failed_no_doctor", "clinic_patient_failed_doctor_left", "training_student_failed_no_instructor", "training_student_failed_instructor_left", "attend_mass_failed_no_leader", "attend_mass_failed_leader_left", "pray_failed_mass_in_progress", "pray_failed_mass_started":
+		"clinic_patient_failed_no_doctor", "clinic_patient_failed_doctor_left", "training_student_failed_no_instructor", "training_student_failed_instructor_left":
 			return "target_unavailable"
-		"work_failed_no_workstation", "clinic_doctor_failed_no_workstation", "clinic_patient_failed_no_bed", "training_student_failed_no_workstation", "training_instructor_failed_no_workstation", "lead_mass_failed_no_workstation", "attend_mass_failed_no_workstation":
+		"work_failed_no_workstation", "clinic_doctor_failed_no_workstation", "clinic_patient_failed_no_bed", "training_student_failed_no_workstation", "training_instructor_failed_no_workstation", "lead_mass_failed_no_workstation":
 			return "workstation_occupied"
 		"work_failed_no_resources", "work_failed_storage_capacity", "eat_failed_no_food", "drink_wine_failed_no_wine", "assist_heal_failed_no_money", "clinic_treatment_failed_no_money":
 			return "resource_insufficient"
@@ -2050,8 +2544,11 @@ func _send_http_request(
 	method: String,
 	endpoint: String,
 	payload: Dictionary,
-	timeout_seconds: float = -1.0
+	timeout_seconds: float = -1.0,
+	request_id: String = ""
 ) -> Dictionary:
+	if _should_cancel_transport(request_id):
+		return _transport_cancelled_result(request_id)
 	var parsed_url := _parse_backend_url()
 	if not bool(parsed_url.get("ok", false)):
 		return parsed_url
@@ -2070,7 +2567,7 @@ func _send_http_request(
 		})
 
 	var connect_timeout_at := Time.get_ticks_msec() + int(maxf(request_timeout_seconds, 0.1) * 1000.0)
-	var connect_result := _wait_for_http_connect(client, connect_timeout_at)
+	var connect_result := _wait_for_http_connect(client, connect_timeout_at, request_id)
 	if not bool(connect_result.get("ok", false)):
 		client.close()
 		return connect_result
@@ -2093,13 +2590,13 @@ func _send_http_request(
 		})
 
 	var response_timeout_at := _make_optional_timeout_at(timeout_seconds)
-	var request_result := _wait_for_http_response(client, response_timeout_at)
+	var request_result := _wait_for_http_response(client, response_timeout_at, request_id)
 	if not bool(request_result.get("ok", false)):
 		client.close()
 		return request_result
 
 	var response_code := client.get_response_code()
-	var response_body_result := _read_http_response_body(client, response_timeout_at)
+	var response_body_result := _read_http_response_body(client, response_timeout_at, request_id)
 	client.close()
 	if not bool(response_body_result.get("ok", false)):
 		return response_body_result
@@ -2112,8 +2609,14 @@ func _send_http_request(
 	}
 
 
-func _wait_for_http_connect(client: HTTPClient, timeout_at: int) -> Dictionary:
+func _wait_for_http_connect(
+	client: HTTPClient,
+	timeout_at: int,
+	request_id: String = ""
+) -> Dictionary:
 	while client.get_status() == HTTPClient.STATUS_RESOLVING or client.get_status() == HTTPClient.STATUS_CONNECTING:
+		if _should_cancel_transport(request_id):
+			return _transport_cancelled_result(request_id)
 		var err := client.poll()
 		if err != OK:
 			return _failure_result("http_connect_failed", "连接后端时发生错误。", {
@@ -2130,8 +2633,14 @@ func _wait_for_http_connect(client: HTTPClient, timeout_at: int) -> Dictionary:
 	return {"ok": true}
 
 
-func _wait_for_http_response(client: HTTPClient, timeout_at: int) -> Dictionary:
+func _wait_for_http_response(
+	client: HTTPClient,
+	timeout_at: int,
+	request_id: String = ""
+) -> Dictionary:
 	while client.get_status() == HTTPClient.STATUS_REQUESTING:
+		if _should_cancel_transport(request_id):
+			return _transport_cancelled_result(request_id)
 		var err := client.poll()
 		if err != OK:
 			return _failure_result("http_request_failed", "等待后端响应时发生错误。", {
@@ -2150,9 +2659,15 @@ func _wait_for_http_response(client: HTTPClient, timeout_at: int) -> Dictionary:
 	return {"ok": true}
 
 
-func _read_http_response_body(client: HTTPClient, timeout_at: int) -> Dictionary:
+func _read_http_response_body(
+	client: HTTPClient,
+	timeout_at: int,
+	request_id: String = ""
+) -> Dictionary:
 	var response_body := PackedByteArray()
 	while client.get_status() == HTTPClient.STATUS_BODY:
+		if _should_cancel_transport(request_id):
+			return _transport_cancelled_result(request_id)
 		var err := client.poll()
 		if err != OK:
 			return _failure_result("http_body_read_failed", "读取后端响应体时发生错误。", {
@@ -2329,12 +2844,49 @@ func _build_npc_state_context(npc: Dictionary, npc_state: Dictionary) -> Diction
 		"recruited": bool(npc.get("recruited", npc_state.get("recruited", false))),
 		"unconscious": bool(npc_state.get("unconscious", false)),
 		"escaped": bool(npc_state.get("escaped", false)),
-		"equipment": npc.get("equipment", {}),
+		"equipment": _build_prompt_equipment_context(npc.get("equipment", {})),
 		"skills": npc.get("skills", {}),
 		"stats": npc_state.get("stats", npc.get("stats", {})),
 		"money": maxi(0, int(npc_state.get("money", 0))),
 		"wine": maxi(0, int(npc_state.get("wine", 0)))
 	}
+
+
+func _build_prompt_equipment_context(raw_equipment: Variant) -> Dictionary:
+	if not raw_equipment is Dictionary:
+		return {}
+	var result := {}
+	var allowed_fields: Array[String] = [
+		"id",
+		"name",
+		"type",
+		"kind",
+		"slot",
+		"equipment_slot",
+		"weapon_class",
+		"combat_role",
+		"required_skill",
+		"source_resource_id",
+		"horse_id",
+		"tags",
+		"damage",
+		"range",
+		"attack_interval",
+		"armor_value",
+		"weight",
+		"speed_bonus"
+	]
+	for raw_slot_id in (raw_equipment as Dictionary).keys():
+		var slot_id := str(raw_slot_id)
+		var raw_item: Variant = (raw_equipment as Dictionary).get(raw_slot_id, {})
+		if not raw_item is Dictionary or (raw_item as Dictionary).is_empty():
+			continue
+		var projected := {}
+		for field in allowed_fields:
+			if (raw_item as Dictionary).has(field):
+				projected[field] = (raw_item as Dictionary).get(field)
+		result[slot_id] = projected
+	return result
 
 
 func _build_speaker_context(speaker_kind: String, speaker_npc_id: String, speaker_name: String, npc_system: Node) -> Dictionary:
@@ -2372,8 +2924,8 @@ func _build_short_memory_context(npc_id: String) -> Dictionary:
 
 	var memory: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
 	return {
-		"experienced_events": _events_to_summaries(memory.get("event_log", []), SHORT_MEMORY_EVENT_LIMIT),
-		"witnessed_events": _events_to_summaries(memory.get("witness_log", []), SHORT_MEMORY_EVENT_LIMIT)
+		"experienced_events": _events_to_summaries(memory.get("event_log", [])),
+		"witnessed_events": _events_to_summaries(memory.get("witness_log", []))
 	}
 
 
@@ -2435,6 +2987,7 @@ func _build_npc_context(
 			"name": str(npc.get("name", npc_id)),
 			"gender": npc.get("gender", null),
 			"background_job": npc.get("background_job", null),
+			"religion": str(npc.get("religion", "")),
 			"background_story": str(npc.get("background_story", "")),
 			"personality": npc.get("personality", []),
 			"desires": npc.get("desires", []),
@@ -2583,15 +3136,7 @@ func _build_reflection_day_events(npc_id: String) -> Array:
 
 
 func _event_to_summary(event: Dictionary) -> Dictionary:
-	return {
-		"event_id": event.get("event_id", null),
-		"type": str(event.get("type", "")),
-		"summary": str(event.get("summary", "")),
-		"importance": clampi(int(event.get("importance", 50)), 0, 100),
-		"day": event.get("day", null),
-		"time": event.get("time", null),
-		"payload": event.get("payload", {})
-	}
+	return build_compact_memory_event(event)
 
 
 func _build_existing_diary_entries(npc: Dictionary) -> Array[String]:
@@ -2636,6 +3181,10 @@ func debug_build_npc_context(npc_id: String, call_type: String = "debug") -> Dic
 	return context
 
 
+func debug_build_short_memory_context(npc_id: String) -> Dictionary:
+	return _build_short_memory_context(npc_id)
+
+
 func _record_npc_context_injection(npc_id: String, call_type: String, current_order: Dictionary, request_id: String, extra: Dictionary = {}) -> void:
 	_last_npc_context_injection = {
 		"npc_id": npc_id,
@@ -2647,27 +3196,136 @@ func _record_npc_context_injection(npc_id: String, call_type: String, current_or
 		_last_npc_context_injection[key] = extra[key]
 
 
-func _events_to_summaries(raw_events: Variant, limit: int) -> Array:
+func _events_to_summaries(raw_events: Variant) -> Array:
 	var summaries: Array = []
 	if not raw_events is Array:
 		return summaries
 	var events: Array = raw_events
-	var start := maxi(0, events.size() - limit)
-	for index in range(start, events.size()):
-		var raw_event: Variant = events[index]
+	for raw_event in events:
+		if not raw_event is Dictionary:
+			continue
+		summaries.append(build_compact_memory_event(raw_event as Dictionary))
+	return summaries
+
+
+func build_compact_memory_event(event: Dictionary) -> Dictionary:
+	var event_type := str(event.get("type", ""))
+	var compact := {
+		"type": event_type,
+		"summary": str(event.get("summary", "")).strip_edges(),
+		"importance": clampi(int(event.get("importance", 50)), 0, 100),
+		"day": event.get("day", null),
+		"time": event.get("time", null)
+	}
+	var raw_payload: Variant = event.get("payload", event.get("details", {}))
+	if raw_payload is Dictionary:
+		var details := _build_compact_memory_details(raw_payload as Dictionary)
+		if (
+			["plan_created", "plan_revised"].has(event_type)
+			and (raw_payload as Dictionary).get("items", []) is Array
+		):
+			var plan_segments := _compact_memory_plan_segments(
+				(raw_payload as Dictionary).get("items", [])
+			)
+			if not plan_segments.is_empty():
+				details["plan_segments"] = plan_segments
+		if not details.is_empty():
+			compact["details"] = details
+	return compact
+
+
+func _build_compact_memory_details(payload: Dictionary) -> Dictionary:
+	var details := {}
+	for raw_key in payload.keys():
+		var key := str(raw_key)
+		if SHORT_MEMORY_OMITTED_PAYLOAD_KEYS.has(key):
+			continue
+		var compact_value: Variant = _compact_memory_detail_value(payload[raw_key])
+		if compact_value != null:
+			details[key] = compact_value
+	return details
+
+
+func _compact_memory_detail_value(value: Variant) -> Variant:
+	if value is String or value is StringName:
+		var text_value := str(value).strip_edges()
+		return null if text_value.is_empty() else text_value
+	if value is bool or value is int or value is float:
+		return value
+	if value is Dictionary:
+		var compact_dictionary := {}
+		for raw_key in (value as Dictionary).keys():
+			var key := str(raw_key)
+			if SHORT_MEMORY_OMITTED_PAYLOAD_KEYS.has(key):
+				continue
+			var compact_value: Variant = _compact_memory_detail_value(
+				(value as Dictionary)[raw_key]
+			)
+			if compact_value != null:
+				compact_dictionary[key] = compact_value
+		return null if compact_dictionary.is_empty() else compact_dictionary
+	if value is Array:
+		var compact_array: Array = []
+		for raw_item in value as Array:
+			var compact_item: Variant = _compact_memory_detail_value(raw_item)
+			if compact_item != null:
+				compact_array.append(compact_item)
+		return null if compact_array.is_empty() else compact_array
+	return null
+
+
+func _compact_memory_plan_segments(raw_items: Variant) -> Array:
+	var segments: Array = []
+	if not raw_items is Array:
+		return segments
+	for raw_item in raw_items:
+		if not raw_item is Dictionary:
+			continue
+		var item: Dictionary = raw_item
+		var hour := clampi(int(item.get("hour", 0)), 0, 23)
+		var segment := {
+			"from_hour": hour,
+			"to_hour": hour,
+			"action_id": str(item.get("action_id", "idle"))
+		}
+		for optional_key in ["location_id", "target_id"]:
+			var optional_value := str(item.get(optional_key, "")).strip_edges()
+			if not optional_value.is_empty():
+				segment[optional_key] = optional_value
+		if not segments.is_empty():
+			var previous: Dictionary = segments[-1]
+			if (
+				int(previous.get("to_hour", -1)) + 1 == hour
+				and _memory_plan_segments_match(previous, segment)
+			):
+				previous["to_hour"] = hour
+				segments[-1] = previous
+				continue
+		segments.append(segment)
+	return segments
+
+
+func _memory_plan_segments_match(left: Dictionary, right: Dictionary) -> bool:
+	for key in ["action_id", "location_id", "target_id"]:
+		if str(left.get(key, "")) != str(right.get(key, "")):
+			return false
+	return true
+
+
+func _compact_reflection_day_events(raw_events: Variant) -> Array:
+	var compact_events: Array = []
+	if not raw_events is Array:
+		return compact_events
+	for raw_event in raw_events:
 		if not raw_event is Dictionary:
 			continue
 		var event: Dictionary = raw_event
-		summaries.append({
-			"event_id": event.get("event_id", null),
-			"type": str(event.get("type", "")),
-			"summary": str(event.get("summary", "")),
-			"importance": clampi(int(event.get("importance", 50)), 0, 100),
-			"day": event.get("day", null),
-			"time": event.get("time", null),
-			"payload": event.get("payload", {})
-		})
-	return summaries
+		var compact := build_compact_memory_event(event)
+		var memory_kind := str(event.get("memory_kind", "")).strip_edges()
+		if ["experienced", "witnessed"].has(memory_kind):
+			compact["memory_kind"] = memory_kind
+		compact_events.append(compact)
+	return compact_events
 
 
 func _get_game_time_context() -> Dictionary:

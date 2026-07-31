@@ -8,6 +8,7 @@ const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
+const PIETY_SYSTEM_PATH := "/root/Main/Systems/PietySystem"
 const GAME_STATE_PATH := "/root/GameState"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_WORK_DURATION_HOURS := 1
@@ -46,7 +47,8 @@ const NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD := 5
 const VISIT_LOCATION_ACTION_ID := "visit_location"
 const PRAY_ACTION_ID := "pray_at_chapel"
 const MASS_ACTION_ID := "lead_mass"
-const MASS_ATTEND_ACTION_ID := "attend_mass"
+const PRAYER_MODE_PERSONAL := "personal_prayer"
+const PRAYER_MODE_MASS := "mass_attendance"
 const DRINK_WINE_ACTION_ID := "drink_wine"
 const NPC_DIALOGUE_MAX_CHASES := 1
 const WORK_SKILL_SPEED_SCALE := 0.50
@@ -777,6 +779,7 @@ func get_runtime_action_snapshot(npc_id: String) -> Dictionary:
 			"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
 			"workstation_id": str(active_action.get("workstation_id", "")),
 			"provider_npc_id": str(active_action.get("provider_npc_id", "")),
+			"prayer_mode": str(active_action.get("prayer_mode", "")),
 			"required_active_action_id": str(action.get("required_active_action_id", "")),
 			"blocked_by_active_action_id": str(action.get("blocked_by_active_action_id", "")),
 			"elapsed_seconds": float(active_action.get("elapsed_seconds", 0.0)),
@@ -936,6 +939,21 @@ func interrupt_npc_action(npc_id: String, reason: String = "interrupted", force:
 			npc_system.stop_npc_movement_for_system(npc_id, reason)
 			had_action = true
 	return had_action
+
+
+func is_npc_committed_to_active_mass(npc_id: String) -> bool:
+	if not _active_actions.has(npc_id):
+		return false
+	var active_action: Dictionary = _active_actions.get(npc_id, {})
+	var action: Dictionary = active_action.get("action", {})
+	var action_id := str(action.get("id", ""))
+	return (
+		action_id == MASS_ACTION_ID
+		or (
+			action_id == PRAY_ACTION_ID
+			and str(active_action.get("prayer_mode", "")) == PRAYER_MODE_MASS
+		)
+	)
 
 
 func is_npc_dialogue_reserved(npc_id: String) -> bool:
@@ -1195,7 +1213,7 @@ func _try_execute_pending_action(npc_id: String) -> void:
 	if action_id == HEALING_ACTION_ID:
 		_try_execute_pending_heal_assist(npc_id)
 		return
-	if action_id in [CLINIC_PATIENT_ACTION_ID, TRAINING_STUDENT_ACTION_ID, MASS_ATTEND_ACTION_ID]:
+	if action_id in [CLINIC_PATIENT_ACTION_ID, TRAINING_STUDENT_ACTION_ID]:
 		_try_execute_pending_service_dependent(npc_id, action_id)
 		return
 	if action_id == NPC_DIALOGUE_ACTION_ID:
@@ -1980,12 +1998,17 @@ func _start_work(npc_id: String, action: Dictionary) -> bool:
 		if not bool(crafting_context.get("ok", false)):
 			var crafting_failure := str(crafting_context.get("error", crafting_context.get("reason", "crafting_target_missing")))
 			_update_action_failure(npc_id, "work_failed_%s" % crafting_failure, crafting_context)
-			_log_structured_action_event(npc_id, action, "work_failed", {
-				"action_id": str(action.get("id", "")),
-				"reason": str(crafting_context.get("message", "未选择制造目标")),
-				"building_id": building_id,
-				"crafting_error": crafting_failure
-			})
+			_log_structured_action_event(
+				npc_id,
+				action,
+				"work_failed",
+				_build_crafting_failure_event_payload(
+					action,
+					building_id,
+					crafting_failure,
+					crafting_context
+				)
+			)
 			return false
 
 	var input_resources: Dictionary = action.get("input_resources", {})
@@ -2068,14 +2091,17 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 			_release_workstation_for_action(npc_id, active_action)
 			var crafting_failure := str(crafting_result.get("error", crafting_result.get("reason", "crafting_stage_failed")))
 			_update_action_failure(npc_id, "work_failed_%s" % crafting_failure, crafting_result)
-			_log_structured_action_event(npc_id, action, "work_failed", {
-				"action_id": str(action.get("id", "")),
-				"reason": str(crafting_result.get("message", "制造阶段未能完成")),
-				"crafting_error": crafting_failure,
-				"building_id": building_id,
-				"recipe_id": str(active_action.get("crafting_recipe_id", "")),
-				"workstation_id": str(active_action.get("workstation_id", ""))
-			})
+			var failure_payload := _build_crafting_failure_event_payload(
+				action,
+				building_id,
+				crafting_failure,
+				crafting_result
+			)
+			failure_payload["recipe_id"] = str(
+				failure_payload.get("recipe_id", active_action.get("crafting_recipe_id", ""))
+			)
+			failure_payload["workstation_id"] = str(active_action.get("workstation_id", ""))
+			_log_structured_action_event(npc_id, action, "work_failed", failure_payload)
 			return
 		var crafting_inputs: Dictionary = crafting_result.get("input_resources", {}) if crafting_result.get("input_resources", {}) is Dictionary else {}
 		var crafting_outputs: Dictionary = crafting_result.get("output_resources", {}) if crafting_result.get("output_resources", {}) is Dictionary else {}
@@ -2411,9 +2437,11 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 	if action_id == MASS_ACTION_ID:
 		started_result = "started_mass"
 		active_kind = "mass_leader"
-	elif action_id == MASS_ATTEND_ACTION_ID:
-		started_result = "started_mass_attendance"
-		active_kind = "mass_attendee"
+	var mass_leader_id := ""
+	if action_id == PRAY_ACTION_ID:
+		mass_leader_id = _find_active_mass_leader_id()
+		if not mass_leader_id.is_empty():
+			started_result = "started_mass_attendance"
 	npc_system.update_npc_state(npc_id, {
 		"current_action": action_id,
 		"last_action_result": started_result,
@@ -2423,18 +2451,32 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 	active_action["kind"] = active_kind
 	active_action["building_id"] = building_id
 	active_action["workstation_id"] = str(claim_result.get("workstation_id", ""))
-	if action_id == MASS_ATTEND_ACTION_ID:
-		active_action["provider_npc_id"] = _find_active_mass_leader_id()
+	if action_id == PRAY_ACTION_ID:
+		active_action["prayer_mode"] = (
+			PRAYER_MODE_MASS
+			if not mass_leader_id.is_empty()
+			else PRAYER_MODE_PERSONAL
+		)
+		if not mass_leader_id.is_empty():
+			active_action["provider_npc_id"] = mass_leader_id
 	_active_actions[npc_id] = active_action
 	_log_structured_action_event(npc_id, action, "prayer_started", {
 		"action_id": action_id,
 		"building_id": building_id,
 		"workstation_id": str(claim_result.get("workstation_id", "")),
-		"duration_seconds": _get_action_duration_seconds(action)
+		"duration_seconds": _get_action_duration_seconds(action),
+		"prayer_mode": str(active_action.get("prayer_mode", ""))
 	})
+	if action_id == PRAY_ACTION_ID and not mass_leader_id.is_empty():
+		_log_prayer_mode_transition(
+			npc_id,
+			action,
+			"prayer_joined_mass",
+			mass_leader_id,
+			"prayer_started_during_mass"
+		)
 	if action_id == MASS_ACTION_ID:
-		_fail_ordinary_prayers_for_mass(npc_id)
-		_retry_pending_dependents_for_provider(MASS_ACTION_ID)
+		_transition_active_prayers_to_mass(npc_id)
 	return true
 
 
@@ -2445,14 +2487,13 @@ func _complete_pray(npc_id: String, active_action: Dictionary) -> void:
 	var completed_result := "completed_prayer"
 	if action_id == MASS_ACTION_ID:
 		completed_result = "completed_mass"
-	elif action_id == MASS_ATTEND_ACTION_ID:
-		completed_result = "completed_mass_attendance"
 	_set_action_idle(npc_id, completed_result)
 	_log_structured_action_event(npc_id, action, "prayer_completed", {
 		"action_id": action_id,
 		"building_id": str(active_action.get("building_id", "chapel")),
 		"workstation_id": str(active_action.get("workstation_id", "")),
-		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action)))
+		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action))),
+		"prayer_mode": str(active_action.get("prayer_mode", ""))
 	})
 
 
@@ -2529,11 +2570,17 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 	if str(active_action.get("kind", "")) == "training_student":
 		_advance_training_student(npc_id, active_action, game_delta_seconds)
 		return
-	if str(active_action.get("kind", "")) == "mass_attendee":
-		_advance_mass_attendee(npc_id, active_action)
-		return
 	var duration := maxf(0.001, float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS)))
-	var elapsed := clampf(float(active_action.get("elapsed_seconds", 0.0)) + game_delta_seconds, 0.0, duration)
+	var elapsed_before := clampf(float(active_action.get("elapsed_seconds", 0.0)), 0.0, duration)
+	var elapsed := clampf(elapsed_before + game_delta_seconds, 0.0, duration)
+	var action: Dictionary = active_action.get("action", {})
+	if str(action.get("type", "")) == "pray":
+		_add_piety_from_prayer(
+			npc_id,
+			str(action.get("id", "")),
+			maxf(0.0, elapsed - elapsed_before),
+			str(active_action.get("prayer_mode", ""))
+		)
 	active_action["elapsed_seconds"] = elapsed
 	_active_actions[npc_id] = active_action
 	_sync_crafting_cycle_progress(npc_id, active_action, elapsed / duration)
@@ -2541,15 +2588,25 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 	_apply_progress_state_deltas(npc_id, active_action)
 	active_action = _active_actions.get(npc_id, active_action)
 
+	if (
+		elapsed >= duration
+		and str(action.get("id", "")) == PRAY_ACTION_ID
+		and str(active_action.get("prayer_mode", "")) == PRAYER_MODE_MASS
+	):
+		# Personal prayer time may expire while the NPC is attending Mass, but
+		# an ordinary timer completion must not make an attendee walk out before
+		# the active Mass ends.
+		return
 	if elapsed < duration:
 		return
 
-	var action: Dictionary = active_action.get("action", {})
 	if str(action.get("id", "")) == MASS_ACTION_ID:
-		_complete_mass_attendees(npc_id)
+		_transition_mass_prayers_to_personal(
+			npc_id,
+			"mass_completed",
+			"主持弥撒正常结束"
+		)
 	_active_actions.erase(npc_id)
-	if str(action.get("id", "")) == MASS_ACTION_ID:
-		_fail_waiting_dependents_without_provider(MASS_ACTION_ID)
 	match str(action.get("type", "")):
 		"work":
 			_complete_work(npc_id, active_action)
@@ -2565,20 +2622,23 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 			_complete_visit(npc_id, active_action)
 
 
-func _advance_mass_attendee(npc_id: String, active_action: Dictionary) -> void:
-	var provider_npc_id := str(active_action.get("provider_npc_id", ""))
-	if provider_npc_id.is_empty() or not _is_active_provider_for_action(provider_npc_id, MASS_ACTION_ID):
-		_fail_active_service_dependent(
-			npc_id,
-			"attend_mass_failed_leader_left",
-			"主持者已经停止主持弥撒",
-			MASS_ACTION_ID
-		)
+func _add_piety_from_prayer(
+	npc_id: String,
+	action_id: String,
+	active_game_seconds: float,
+	prayer_mode: String
+) -> void:
+	if active_game_seconds <= 0.0:
 		return
-	var provider_action: Dictionary = _active_actions.get(provider_npc_id, {})
-	active_action["elapsed_seconds"] = float(provider_action.get("elapsed_seconds", 0.0))
-	active_action["duration_seconds"] = float(provider_action.get("duration_seconds", _get_action_duration_seconds(active_action.get("action", {}))))
-	_active_actions[npc_id] = active_action
+	var piety_system := get_node_or_null(PIETY_SYSTEM_PATH)
+	if piety_system == null or not piety_system.has_method("add_prayer_progress"):
+		return
+	piety_system.add_prayer_progress(
+		npc_id,
+		action_id,
+		active_game_seconds,
+		prayer_mode
+	)
 
 
 func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
@@ -3046,8 +3106,82 @@ func _update_action_failure(npc_id: String, failure_id: String, failure_context:
 		call_deferred("_fail_waiting_dependents_without_provider", CLINIC_DOCTOR_ACTION_ID)
 	elif failure_id.begins_with("training_instructor_failed"):
 		call_deferred("_fail_waiting_dependents_without_provider", TRAINING_INSTRUCTOR_ACTION_ID)
-	elif failure_id.begins_with("lead_mass_failed"):
-		call_deferred("_fail_waiting_dependents_without_provider", MASS_ACTION_ID)
+
+
+func _build_crafting_failure_event_payload(
+	action: Dictionary,
+	building_id: String,
+	crafting_error: String,
+	failure_context: Dictionary
+) -> Dictionary:
+	var reason_messages := {
+		"crafting_target_missing": "未选择制造目标",
+		"unsupported_building": "该建筑不支持制造",
+		"stage_commit_in_progress": "另一名工人正在结算同一制造阶段",
+		"invalid_current_recipe": "当前制造配方无效",
+		"invalid_current_stage": "当前制造阶段无效",
+		"resource_system_unavailable": "资源系统不可用",
+		"output_inventory_missing": "产物库存项不存在",
+		"insufficient_stage_resources": "当前制造阶段材料不足",
+		"project_revision_mismatch": "制造目标已发生变化",
+		"stage_resource_commit_failed": "制造阶段材料扣除失败",
+		"output_inventory_commit_failed": "制造产物入库失败",
+		"crafting_stage_failed": "制造阶段未能完成"
+	}
+	var project: Dictionary = (
+		(failure_context.get("project", {}) as Dictionary).duplicate(true)
+		if failure_context.get("project", {}) is Dictionary
+		else {}
+	)
+	var required_resources: Dictionary = (
+		(failure_context.get("required_resources", {}) as Dictionary).duplicate(true)
+		if failure_context.get("required_resources", {}) is Dictionary
+		else {}
+	)
+	if required_resources.is_empty() and project.get("current_stage_cost", {}) is Dictionary:
+		required_resources = (project.get("current_stage_cost", {}) as Dictionary).duplicate(true)
+	var crafting_project := {}
+	for key in [
+		"target_recipe_id",
+		"recipe_id",
+		"target_item_id",
+		"target_name",
+		"project_revision",
+		"completed_stages",
+		"total_stages",
+		"current_stage_index",
+		"current_stage_id",
+		"current_stage_name",
+		"current_stage_cost",
+		"stock_amount"
+	]:
+		if project.has(key):
+			crafting_project[key] = (
+				(project[key] as Dictionary).duplicate(true)
+				if project[key] is Dictionary
+				else project[key]
+			)
+	var payload := {
+		"action_id": str(action.get("id", "")),
+		"reason": str(failure_context.get(
+			"message",
+			reason_messages.get(crafting_error, "制造阶段未能完成")
+		)),
+		"failure_reason": crafting_error,
+		"crafting_error": crafting_error,
+		"building_id": building_id,
+		"required_resources": required_resources,
+		"crafting_project": crafting_project
+	}
+	var recipe_id := str(
+		project.get(
+			"recipe_id",
+			project.get("target_recipe_id", failure_context.get("recipe_id", ""))
+		)
+	)
+	if not recipe_id.is_empty():
+		payload["recipe_id"] = recipe_id
+	return payload
 
 
 func _stop_active_action(npc_id: String, last_result: String = "active_action_stopped") -> void:
@@ -3220,8 +3354,6 @@ func _get_dependent_action_ids_for_provider(provider_action_id: String) -> Array
 			return [CLINIC_PATIENT_ACTION_ID]
 		TRAINING_INSTRUCTOR_ACTION_ID:
 			return [TRAINING_STUDENT_ACTION_ID]
-		MASS_ACTION_ID:
-			return [MASS_ATTEND_ACTION_ID]
 	return []
 
 
@@ -3283,6 +3415,17 @@ func _fail_waiting_dependents_without_provider(provider_action_id: String) -> vo
 
 
 func _handle_service_provider_stopped(provider_action_id: String, provider_npc_id: String, reason: String) -> void:
+	if provider_action_id == MASS_ACTION_ID:
+		var replacement_leader_id := _find_active_mass_leader_id()
+		if replacement_leader_id.is_empty():
+			_transition_mass_prayers_to_personal(
+				provider_npc_id,
+				"mass_leader_stopped",
+				reason
+			)
+		else:
+			_rebind_mass_prayers(provider_npc_id, replacement_leader_id)
+		return
 	if not _find_active_npc_ids_for_action(provider_action_id).is_empty():
 		return
 	var failure_id := "service_activity_failed_provider_left"
@@ -3294,9 +3437,6 @@ func _handle_service_provider_stopped(provider_action_id: String, provider_npc_i
 		TRAINING_INSTRUCTOR_ACTION_ID:
 			failure_id = "training_student_failed_instructor_left"
 			failure_reason = "全部教官已经离开教官位"
-		MASS_ACTION_ID:
-			failure_id = "attend_mass_failed_leader_left"
-			failure_reason = "主持者已经停止主持弥撒"
 	for dependent_action_id in _get_dependent_action_ids_for_provider(provider_action_id):
 		var dependent_ids: Array[String] = []
 		for raw_npc_id in _active_actions.keys():
@@ -3342,74 +3482,118 @@ func _fail_active_service_dependent(
 	_log_action_start_failure(npc_id, action, reason, failure_context)
 
 
-func _complete_mass_attendees(leader_npc_id: String) -> void:
-	var attendee_ids: Array[String] = []
+func _transition_active_prayers_to_mass(leader_npc_id: String) -> void:
+	for raw_npc_id in _active_actions.keys():
+		var npc_id := str(raw_npc_id)
+		var active_action: Dictionary = _active_actions.get(npc_id, {})
+		var action: Dictionary = active_action.get("action", {})
+		if (
+			str(action.get("id", "")) != PRAY_ACTION_ID
+			or str(active_action.get("prayer_mode", PRAYER_MODE_PERSONAL)) == PRAYER_MODE_MASS
+		):
+			continue
+		active_action["prayer_mode"] = PRAYER_MODE_MASS
+		active_action["provider_npc_id"] = leader_npc_id
+		_active_actions[npc_id] = active_action
+		var npc_system := _get_npc_system()
+		if npc_system != null:
+			npc_system.update_npc_state(npc_id, {
+				"current_action": PRAY_ACTION_ID,
+				"last_action_result": "prayer_joined_mass",
+				"last_action_failure_context": {}
+			})
+		_log_prayer_mode_transition(
+			npc_id,
+			action,
+			"prayer_joined_mass",
+			leader_npc_id,
+			"mass_started"
+		)
+
+
+func _transition_mass_prayers_to_personal(
+	leader_npc_id: String,
+	trigger: String,
+	provider_stop_reason: String
+) -> void:
+	for raw_npc_id in _active_actions.keys():
+		var npc_id := str(raw_npc_id)
+		var active_action: Dictionary = _active_actions.get(npc_id, {})
+		var action: Dictionary = active_action.get("action", {})
+		if (
+			str(action.get("id", "")) != PRAY_ACTION_ID
+			or str(active_action.get("prayer_mode", "")) != PRAYER_MODE_MASS
+			or str(active_action.get("provider_npc_id", "")) != leader_npc_id
+		):
+			continue
+		active_action["prayer_mode"] = PRAYER_MODE_PERSONAL
+		active_action.erase("provider_npc_id")
+		_active_actions[npc_id] = active_action
+		var npc_system := _get_npc_system()
+		if npc_system != null:
+			npc_system.update_npc_state(npc_id, {
+				"current_action": PRAY_ACTION_ID,
+				"last_action_result": "prayer_resumed_alone",
+				"last_action_failure_context": {}
+			})
+		_log_prayer_mode_transition(
+			npc_id,
+			action,
+			"prayer_resumed_alone",
+			leader_npc_id,
+			trigger,
+			provider_stop_reason
+		)
+		if (
+			float(active_action.get("elapsed_seconds", 0.0))
+			>= float(active_action.get(
+				"duration_seconds",
+				_get_action_duration_seconds(action)
+			))
+		):
+			_active_actions.erase(npc_id)
+			_complete_pray(npc_id, active_action)
+
+
+func _rebind_mass_prayers(stopped_leader_npc_id: String, replacement_leader_npc_id: String) -> void:
 	for raw_npc_id in _active_actions.keys():
 		var npc_id := str(raw_npc_id)
 		var active_action: Dictionary = _active_actions.get(npc_id, {})
 		if (
-			str(active_action.get("action", {}).get("id", "")) == MASS_ATTEND_ACTION_ID
-			and str(active_action.get("provider_npc_id", "")) == leader_npc_id
+			str(active_action.get("action", {}).get("id", "")) == PRAY_ACTION_ID
+			and str(active_action.get("prayer_mode", "")) == PRAYER_MODE_MASS
+			and str(active_action.get("provider_npc_id", "")) == stopped_leader_npc_id
 		):
-			attendee_ids.append(npc_id)
-	for attendee_id in attendee_ids:
-		var attendee_action: Dictionary = _active_actions.get(attendee_id, {})
-		_active_actions.erase(attendee_id)
-		_complete_pray(attendee_id, attendee_action)
+			active_action["provider_npc_id"] = replacement_leader_npc_id
+			_active_actions[npc_id] = active_action
 
 
-func _fail_ordinary_prayers_for_mass(leader_npc_id: String) -> void:
-	var active_prayer_ids: Array[String] = []
-	for raw_npc_id in _active_actions.keys():
-		var npc_id := str(raw_npc_id)
-		if str(_active_actions.get(npc_id, {}).get("action", {}).get("id", "")) == PRAY_ACTION_ID:
-			active_prayer_ids.append(npc_id)
-	for npc_id in active_prayer_ids:
-		var active_action: Dictionary = _active_actions.get(npc_id, {})
-		var action: Dictionary = active_action.get("action", {})
-		_release_workstation_for_action(npc_id, active_action)
-		_active_actions.erase(npc_id)
-		var context := {
-			"action_id": PRAY_ACTION_ID,
-			"building_id": "chapel",
-			"blocked_by_active_action_id": MASS_ACTION_ID,
-			"provider_npc_id": leader_npc_id,
-			"unavailable_reason": "弥撒已经开始，普通祈祷被中断"
-		}
-		_update_action_failure(npc_id, "pray_failed_mass_started", context)
-		_log_action_start_failure(npc_id, action, str(context["unavailable_reason"]), context)
-
-	var npc_system := _get_npc_system()
-	for raw_npc_id in _pending_actions.keys():
-		var npc_id := str(raw_npc_id)
-		if str(_pending_actions.get(npc_id, "")) != PRAY_ACTION_ID:
-			continue
-		_pending_actions.erase(npc_id)
-		_pending_action_targets.erase(npc_id)
-		_pending_action_options.erase(npc_id)
-		var context := {
-			"action_id": PRAY_ACTION_ID,
-			"building_id": "chapel",
-			"blocked_by_active_action_id": MASS_ACTION_ID,
-			"provider_npc_id": leader_npc_id,
-			"unavailable_reason": "弥撒已经开始，不能进行普通祈祷"
-		}
-		if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
-			# Settle travel and the location information node before judgement, but
-			# suppress the intermediate state signal. The authoritative failure
-			# update below then emits once with its exact failure_id and Mass facts.
-			npc_system.stop_npc_movement_for_system(
-				npc_id,
-				"pray_failed_mass_started",
-				false
-			)
-		_update_action_failure(npc_id, "pray_failed_mass_started", context)
-		_log_action_start_failure(
-			npc_id,
-			_actions.get(PRAY_ACTION_ID, {}),
-			str(context["unavailable_reason"]),
-			context
+func _log_prayer_mode_transition(
+	npc_id: String,
+	action: Dictionary,
+	event_type: String,
+	leader_npc_id: String,
+	trigger: String,
+	provider_stop_reason: String = ""
+) -> void:
+	var payload := {
+		"action_id": PRAY_ACTION_ID,
+		"leader_npc_id": leader_npc_id,
+		"trigger": trigger,
+		"from_mode": (
+			PRAYER_MODE_PERSONAL
+			if event_type == "prayer_joined_mass"
+			else PRAYER_MODE_MASS
+		),
+		"to_mode": (
+			PRAYER_MODE_MASS
+			if event_type == "prayer_joined_mass"
+			else PRAYER_MODE_PERSONAL
 		)
+	}
+	if not provider_stop_reason.is_empty():
+		payload["provider_stop_reason"] = provider_stop_reason
+	_log_structured_action_event(npc_id, action, event_type, payload)
 
 
 func _get_missing_dependency_reason(action_id: String) -> String:
@@ -3418,14 +3602,10 @@ func _get_missing_dependency_reason(action_id: String) -> String:
 			return "诊所没有在岗医生"
 		TRAINING_STUDENT_ACTION_ID:
 			return "训练场没有在岗教官"
-		MASS_ATTEND_ACTION_ID:
-			return "当前没有人正在主持弥撒"
 	return "所需服务人员当前不在岗"
 
 
 func _get_active_blocker_reason(action_id: String) -> String:
-	if action_id == PRAY_ACTION_ID:
-		return "弥撒正在举行，不能进行普通祈祷"
 	return "当前存在互斥活动"
 
 
@@ -3435,8 +3615,6 @@ func _get_dependency_failure_id(action_id: String) -> String:
 			return "clinic_patient_failed_no_doctor"
 		TRAINING_STUDENT_ACTION_ID:
 			return "training_student_failed_no_instructor"
-		MASS_ATTEND_ACTION_ID:
-			return "attend_mass_failed_no_leader"
 	return "%s_failed_dependency_unavailable" % action_id
 
 
@@ -3451,7 +3629,7 @@ func _fail_action_before_start(npc_id: String, action: Dictionary, availability:
 	elif not required_active_action_id.is_empty() and _find_active_npc_ids_for_action(required_active_action_id).is_empty():
 		failure_id = _get_dependency_failure_id(action_id)
 	elif not blocked_by_active_action_id.is_empty() and not _find_active_npc_ids_for_action(blocked_by_active_action_id).is_empty():
-		failure_id = "pray_failed_mass_in_progress" if action_id == PRAY_ACTION_ID else "%s_failed_conflicting_action" % action_id
+		failure_id = "%s_failed_conflicting_action" % action_id
 	var failure_context := {
 		"action_id": action_id,
 		"building_id": str(availability.get("building_id", action.get("location_required", ""))),
@@ -3708,7 +3886,12 @@ func _log_structured_action_event(npc_id: String, action: Dictionary, event_type
 			target_ids.append(building_id)
 	if payload.has("resource_id"):
 		target_ids.append(str(payload["resource_id"]))
-	for key in ["input_resources", "output_resources"]:
+	for key in ["leader_npc_id", "provider_npc_id"]:
+		if payload.has(key):
+			var target_npc_id := str(payload[key])
+			if not target_npc_id.is_empty() and not target_ids.has(target_npc_id):
+				target_ids.append(target_npc_id)
+	for key in ["input_resources", "output_resources", "required_resources"]:
 		if payload.has(key) and payload[key] is Dictionary:
 			for resource_id in (payload[key] as Dictionary).keys():
 				var resource_text := str(resource_id)

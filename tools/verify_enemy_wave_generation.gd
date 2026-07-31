@@ -10,9 +10,12 @@ const REQUIRED_ENEMY_FIELDS := [
 	"max_hp",
 	"attack_power",
 	"defense",
+	"penetration",
 	"move_speed",
 	"attack_range",
+	"attack_speed",
 	"attack_interval",
+	"attack_windup",
 	"target_preference"
 ]
 const VALID_UNIT_TYPES := [
@@ -57,6 +60,7 @@ func _init() -> void:
 		return
 
 	var previous_threat := 0.0
+	var previous_enemy_count := 0
 	for wave_number in combat_system.get_wave_numbers():
 		var wave: Dictionary = combat_system.get_wave_config(int(wave_number))
 		if wave.is_empty():
@@ -83,6 +87,26 @@ func _init() -> void:
 				push_error("Wave %s enemy stats must be positive: %s" % [str(wave_number), JSON.stringify(enemy)])
 				quit(1)
 				return
+			if (
+				float(enemy.get("defense", -1.0)) < 0.0
+				or float(enemy.get("penetration", -1.0)) < 0.0
+				or float(enemy.get("attack_speed", 0.0)) <= 0.0
+				or float(enemy.get("attack_interval", 0.0)) <= 0.0
+				or float(enemy.get("attack_windup", 0.0)) <= 0.0
+			):
+				push_error("Wave %s enemy defense/penetration/speed/windup contract is invalid: %s" % [
+					str(wave_number),
+					JSON.stringify(enemy)
+				])
+				quit(1)
+				return
+			if not is_equal_approx(
+				float(enemy.get("attack_interval", 0.0)),
+				1.0 / float(enemy.get("attack_speed", 1.0))
+			):
+				push_error("Wave %s enemy attack_speed should be the reciprocal of attack_interval" % str(wave_number))
+				quit(1)
+				return
 			var target_preference: Array = enemy.get("target_preference", [])
 			if not target_preference.has("front_gate") or not target_preference.has("main_hall"):
 				push_error("Enemy target_preference should include front_gate and main_hall")
@@ -93,6 +117,16 @@ func _init() -> void:
 				+ float(enemy.get("attack_power", 0))
 				+ float(enemy.get("defense", 0)) * 1.5
 			)
+		var enemy_count := _wave_enemy_count(wave)
+		if enemy_count <= previous_enemy_count:
+			push_error("Enemy wave counts should strictly increase. wave=%s count=%d previous=%d" % [
+				str(wave_number),
+				enemy_count,
+				previous_enemy_count
+			])
+			quit(1)
+			return
+		previous_enemy_count = enemy_count
 		if previous_threat > 0.0 and threat < previous_threat:
 			push_error("Enemy waves should not get weaker. wave=%s threat=%s previous=%s" % [str(wave_number), str(threat), str(previous_threat)])
 			quit(1)
@@ -115,6 +149,10 @@ func _init() -> void:
 
 	var wave_one: Dictionary = combat_system.get_wave_config(1)
 	var expected_wave_one_count := _wave_enemy_count(wave_one)
+	if expected_wave_one_count <= 3:
+		push_error("First wave should contain more enemies than the old three-unit baseline")
+		quit(1)
+		return
 	var spawn_position: Dictionary = wave_one.get("spawn_position", {})
 	if float(spawn_position.get("z", 0.0)) < 27.0:
 		push_error("First wave should spawn outside and ahead of the front gate")

@@ -98,6 +98,45 @@ def _allowed_actions() -> list[dict]:
             "tags": ["visit"],
         },
         {
+            "action_id": "assist_heal",
+            "name": "协助治疗托马",
+            "action_kind": "assist_heal",
+            "location_id": "plaza",
+            "target_id": "stableman_01",
+            "target_kind": "unconscious_npc",
+            "target_name": "托马",
+            "tags": ["assist_heal", "target_npc"],
+        },
+        {
+            "action_id": "assist_repair",
+            "name": "协助修复铁匠铺",
+            "action_kind": "assist_repair",
+            "location_id": "plaza",
+            "target_id": "blacksmith",
+            "target_kind": "building",
+            "target_name": "铁匠铺",
+            "tags": ["assist_repair"],
+        },
+        {
+            "action_id": "assist_upgrade",
+            "name": "协助升级工械坊",
+            "action_kind": "assist_upgrade",
+            "location_id": "plaza",
+            "target_id": "workshop",
+            "target_kind": "building",
+            "target_name": "工械坊",
+            "tags": ["work", "assist_upgrade"],
+        },
+        {
+            "action_id": "pray_at_chapel",
+            "name": "祈祷",
+            "action_kind": "pray",
+            "location_id": "chapel",
+            "target_id": None,
+            "target_kind": None,
+            "tags": ["pray"],
+        },
+        {
             # Even a malformed caller-provided whitelist must not authorize self-talk.
             "action_id": "talk_to_npc",
             "name": "错误的自我对话候选",
@@ -259,16 +298,13 @@ def _revision_payload() -> dict:
 
 
 def _talk_to_priest(hour: int = 8) -> dict:
-    item = _item(
-        hour,
-        "talk_to_npc",
-        "chat",
-        None,
-        target_id="priest_01",
-        dialogue_goal="马塞尔，我需要诊所工位，我们能协调一下吗？",
-    )
-    item.pop("location_id")
-    return item
+    return {
+        "hour": hour,
+        "action_id": "talk_to_npc",
+        "target_npc_id": "priest_01",
+        "reason": "协调诊所工位",
+        "dialogue_goal": "马塞尔，我需要诊所工位，我们能协调一下吗？",
+    }
 
 
 def _selected_hours_revision(payload: dict) -> dict:
@@ -339,17 +375,17 @@ def _verify_daily_target_contract() -> None:
     assert all("location_id" not in candidate for candidate in talk_candidates)
 
     missing_target = copy.deepcopy(legal)
-    missing_target["plan"][14]["target_id"] = None
+    missing_target["plan"][14].pop("target_npc_id")
     _assert_business_rejection(
         _post_fake("/npc/plan_day", payload, missing_target),
-        "action/target combination",
+        "requires a valid target_npc_id decision",
     )
 
     invented_target = copy.deepcopy(legal)
-    invented_target["plan"][14]["target_id"] = "invented_npc_01"
+    invented_target["plan"][14]["target_npc_id"] = "invented_npc_01"
     _assert_business_rejection(
         _post_fake("/npc/plan_day", payload, invented_target),
-        "action/target combination",
+        "requires a valid target_npc_id decision",
     )
 
     redundant_location = copy.deepcopy(legal)
@@ -362,19 +398,10 @@ def _verify_daily_target_contract() -> None:
     assert redundant_location_response.status_code == 200, redundant_location_response.get_json()
     redundant_location_body = redundant_location_response.get_json()
     assert redundant_location_body["plan"][14]["location_id"] is None
-    assert redundant_location_body["model_normalizations"] == [{
-        "field": "location_id",
-        "path": "plan[14].location_id",
-        "hour": 14,
-        "action_id": "talk_to_npc",
-        "target_id": "priest_01",
-        "model_value": "clinic",
-        "canonical_value": None,
-        "source": "dynamic_npc_target",
-    }]
+    assert redundant_location_body["model_normalizations"] == []
 
     self_target = copy.deepcopy(legal)
-    self_target["plan"][14]["target_id"] = "doctor_01"
+    self_target["plan"][14]["target_npc_id"] = "doctor_01"
     _assert_business_rejection(
         _post_fake("/npc/plan_day", payload, self_target),
         "cannot be the acting NPC",
@@ -386,17 +413,7 @@ def _verify_daily_target_contract() -> None:
     assert normalized_response.status_code == 200, normalized_response.get_json()
     normalized_body = normalized_response.get_json()
     assert normalized_body["plan"][14]["action_kind"] == "chat"
-    assert normalized_body["model_normalizations"] == [{
-        "field": "action_kind",
-        "path": "plan[14].action_kind",
-        "hour": 14,
-        "action_id": "talk_to_npc",
-        "target_id": "priest_01",
-        "location_id": None,
-        "model_value": "work",
-        "canonical_value": "chat",
-        "source": "exact_allowed_action_candidate",
-    }]
+    assert normalized_body["model_normalizations"] == []
 
     ambiguous_payload = copy.deepcopy(payload)
     ambiguous_payload["allowed_actions"].append(copy.deepcopy(
@@ -407,10 +424,12 @@ def _verify_daily_target_contract() -> None:
             and action["target_id"] == "priest_01"
         )
     ))
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", ambiguous_payload, wrong_kind),
-        "action_kind 'work' does not match action_id 'talk_to_npc'",
+    equivalent_duplicate = _post_fake(
+        "/npc/plan_day",
+        ambiguous_payload,
+        wrong_kind,
     )
+    assert equivalent_duplicate.status_code == 200, equivalent_duplicate.get_json()
 
     # Reproduce the real-provider startup failure: the selected visit tuple is
     # valid, while the model labels its redundant kind as semantic "rest".
@@ -425,19 +444,19 @@ def _verify_daily_target_contract() -> None:
     assert visit_response.status_code == 200, visit_response.get_json()
     visit_body = visit_response.get_json()
     assert visit_body["plan"][14]["action_kind"] == "visit"
-    assert visit_body["model_normalizations"][0]["model_value"] == "rest"
-    assert visit_body["model_normalizations"][0]["canonical_value"] == "visit"
+    assert visit_body["plan"][14]["location_id"] == "dining_hall"
+    assert visit_body["plan"][14]["target_id"] == "dining_hall"
+    assert visit_body["model_normalizations"] == []
 
     schema_invalid_kind = copy.deepcopy(legal)
     schema_invalid_kind["plan"][14]["action_kind"] = "dance"
-    schema_invalid_response = _post_fake(
+    ignored_invalid_kind_response = _post_fake(
         "/npc/plan_day",
         payload,
         schema_invalid_kind,
     )
-    assert schema_invalid_response.status_code == 502, schema_invalid_response.get_json()
-    assert schema_invalid_response.get_json()["error_code"] == "model_output_invalid"
-    assert schema_invalid_response.get_json()["fallback_used"] is False
+    assert ignored_invalid_kind_response.status_code == 200, ignored_invalid_kind_response.get_json()
+    assert ignored_invalid_kind_response.get_json()["plan"][14]["action_kind"] == "chat"
 
     missing_dialogue_goal = copy.deepcopy(legal)
     missing_dialogue_goal["plan"][14]["dialogue_goal"] = "   "
@@ -454,6 +473,123 @@ def _verify_daily_target_contract() -> None:
     assert low_work_response.status_code == 200, low_work_response.get_json()
 
 
+def _verify_behavior_specific_decision_fields() -> None:
+    payload = _daily_payload()
+
+    prayer_with_noise = _daily_response({
+        "hour": 14,
+        "action_id": "pray_at_chapel",
+        "action_kind": "not_a_real_kind",
+        "location_id": "invented_location",
+        "target_id": "chapel",
+        "target_npc_id": "cook_01",
+        "building_id": "workshop",
+        "priority": 99,
+        "reason": "去小教堂祈祷",
+        "dialogue_goal": "这条字段与弥撒无关",
+        "arbitrary_extra": {"ignored": True},
+    })
+    prayer_response = _post_fake(
+        "/npc/plan_day",
+        payload,
+        prayer_with_noise,
+    )
+    assert prayer_response.status_code == 200, prayer_response.get_json()
+    prayer_item = prayer_response.get_json()["plan"][14]
+    assert prayer_item == {
+        "hour": 14,
+        "action_kind": "pray",
+        "action_id": "pray_at_chapel",
+        "location_id": "chapel",
+        "target_id": None,
+        "priority": 50,
+        "reason": "去小教堂祈祷",
+        "dialogue_goal": "",
+    }, prayer_item
+
+    removed_mass_action = copy.deepcopy(prayer_with_noise)
+    removed_mass_action["plan"][14]["action_id"] = "attend_mass"
+    _assert_business_rejection(
+        _post_fake("/npc/plan_day", payload, removed_mass_action),
+        "action/target/location combination is not in allowed_actions",
+    )
+
+    visit_plan = _daily_response({
+        "hour": 14,
+        "action_id": "visit_location",
+        "location_id": "dining_hall",
+        "target_id": "invented_legacy_target",
+        "building_id": "blacksmith",
+        "reason": "去食堂停留",
+    })
+    visit_response = _post_fake("/npc/plan_day", payload, visit_plan)
+    assert visit_response.status_code == 200, visit_response.get_json()
+    visit_item = visit_response.get_json()["plan"][14]
+    assert visit_item["action_kind"] == "visit"
+    assert visit_item["location_id"] == "dining_hall"
+    assert visit_item["target_id"] == "dining_hall"
+
+    visit_without_location = copy.deepcopy(visit_plan)
+    visit_without_location["plan"][14].pop("location_id")
+    _assert_business_rejection(
+        _post_fake("/npc/plan_day", payload, visit_without_location),
+        "requires a valid location_id decision",
+    )
+
+    heal_plan = _daily_response({
+        "hour": 14,
+        "action_id": "assist_heal",
+        "target_npc_id": "stableman_01",
+        "location_id": "clinic",
+        "building_id": "clinic",
+        "reason": "协助救治",
+    })
+    heal_response = _post_fake("/npc/plan_day", payload, heal_plan)
+    assert heal_response.status_code == 200, heal_response.get_json()
+    heal_item = heal_response.get_json()["plan"][14]
+    assert heal_item["action_kind"] == "assist_heal"
+    assert heal_item["target_id"] == "stableman_01"
+    assert heal_item["location_id"] == "plaza"
+
+    heal_with_only_legacy_target = copy.deepcopy(heal_plan)
+    heal_with_only_legacy_target["plan"][14].pop("target_npc_id")
+    heal_with_only_legacy_target["plan"][14]["target_id"] = "stableman_01"
+    _assert_business_rejection(
+        _post_fake("/npc/plan_day", payload, heal_with_only_legacy_target),
+        "requires a valid target_npc_id decision",
+    )
+
+    for action_id, building_id, expected_kind in (
+        ("assist_repair", "blacksmith", "assist_repair"),
+        ("assist_upgrade", "workshop", "assist_upgrade"),
+    ):
+        building_plan = _daily_response({
+            "hour": 14,
+            "action_id": action_id,
+            "building_id": building_id,
+            "target_npc_id": "stableman_01",
+            "location_id": "inside_the_building",
+            "reason": "协助工程",
+        })
+        building_response = _post_fake(
+            "/npc/plan_day",
+            payload,
+            building_plan,
+        )
+        assert building_response.status_code == 200, building_response.get_json()
+        building_item = building_response.get_json()["plan"][14]
+        assert building_item["action_kind"] == expected_kind
+        assert building_item["target_id"] == building_id
+        assert building_item["location_id"] == "plaza"
+
+        wrong_building = copy.deepcopy(building_plan)
+        wrong_building["plan"][14]["building_id"] = "invented_building"
+        _assert_business_rejection(
+            _post_fake("/npc/plan_day", payload, wrong_building),
+            "requires a valid building_id decision",
+        )
+
+
 def _verify_exact_null_candidate_contract() -> None:
     payload = _daily_payload()
 
@@ -468,17 +604,23 @@ def _verify_exact_null_candidate_contract() -> None:
 
     seek_with_invented_location = copy.deepcopy(legal_seek)
     seek_with_invented_location["plan"][14]["location_id"] = "plaza"
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", payload, seek_with_invented_location),
-        "action/target/location combination",
+    ignored_seek_location = _post_fake(
+        "/npc/plan_day",
+        payload,
+        seek_with_invented_location,
     )
+    assert ignored_seek_location.status_code == 200, ignored_seek_location.get_json()
+    assert ignored_seek_location.get_json()["plan"][14]["location_id"] is None
 
     seek_with_invented_target = copy.deepcopy(legal_seek)
     seek_with_invented_target["plan"][14]["target_id"] = "guard_officer"
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", payload, seek_with_invented_target),
-        "action/target/location combination",
+    ignored_seek_target = _post_fake(
+        "/npc/plan_day",
+        payload,
+        seek_with_invented_target,
     )
+    assert ignored_seek_target.status_code == 200, ignored_seek_target.get_json()
+    assert ignored_seek_target.get_json()["plan"][14]["target_id"] is None
 
     legal_escape = _daily_response(_item(
         14,
@@ -491,10 +633,13 @@ def _verify_exact_null_candidate_contract() -> None:
 
     escape_with_invented_location = copy.deepcopy(legal_escape)
     escape_with_invented_location["plan"][14]["location_id"] = "front_gate"
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", payload, escape_with_invented_location),
-        "action/target/location combination",
+    ignored_escape_location = _post_fake(
+        "/npc/plan_day",
+        payload,
+        escape_with_invented_location,
     )
+    assert ignored_escape_location.status_code == 200, ignored_escape_location.get_json()
+    assert ignored_escape_location.get_json()["plan"][14]["location_id"] is None
 
     legal_idle = _daily_response(_item(14, "idle", "idle", None))
     response = _post_fake("/npc/plan_day", payload, legal_idle)
@@ -502,17 +647,23 @@ def _verify_exact_null_candidate_contract() -> None:
 
     idle_with_invented_location = copy.deepcopy(legal_idle)
     idle_with_invented_location["plan"][14]["location_id"] = "plaza"
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", payload, idle_with_invented_location),
-        "action/target/location combination",
+    ignored_idle_location = _post_fake(
+        "/npc/plan_day",
+        payload,
+        idle_with_invented_location,
     )
+    assert ignored_idle_location.status_code == 200, ignored_idle_location.get_json()
+    assert ignored_idle_location.get_json()["plan"][14]["location_id"] is None
 
     idle_with_invented_target = copy.deepcopy(legal_idle)
     idle_with_invented_target["plan"][14]["target_id"] = "doctor_01"
-    _assert_business_rejection(
-        _post_fake("/npc/plan_day", payload, idle_with_invented_target),
-        "action/target/location combination",
+    ignored_idle_target = _post_fake(
+        "/npc/plan_day",
+        payload,
+        idle_with_invented_target,
     )
+    assert ignored_idle_target.status_code == 200, ignored_idle_target.get_json()
+    assert ignored_idle_target.get_json()["plan"][14]["target_id"] is None
 
 
 def _verify_revision_contract_and_prompt() -> None:
@@ -531,9 +682,7 @@ def _verify_revision_contract_and_prompt() -> None:
     normalized_body = normalized_response.get_json()
     assert normalized_body["revised_plan"][0]["action_kind"] == "chat"
     assert normalized_body["immediate_action"]["action_kind"] == "chat"
-    assert {
-        item["path"] for item in normalized_body["model_normalizations"]
-    } == {"revised_plan[0].action_kind", "immediate_action.action_kind"}
+    assert normalized_body["model_normalizations"] == []
 
     missing_immediate_action = copy.deepcopy(valid_revision)
     missing_immediate_action["immediate_action"] = None
@@ -582,9 +731,7 @@ def _verify_revision_contract_and_prompt() -> None:
     normalized_locations_body = normalized_locations_response.get_json()
     assert normalized_locations_body["revised_plan"][0]["location_id"] is None
     assert normalized_locations_body["immediate_action"]["location_id"] is None
-    assert {
-        item["path"] for item in normalized_locations_body["model_normalizations"]
-    } == {"revised_plan[0].location_id", "immediate_action.location_id"}
+    assert normalized_locations_body["model_normalizations"] == []
 
     # A destroyed building is correctly removed from the *current* whitelist. Old
     # future work slots remain valid historical plan entries, while their count is
@@ -632,15 +779,17 @@ def _verify_revision_contract_and_prompt() -> None:
         "replacement_work_phase_required_if_non_work",
         "minimum_remaining_work_phase_count",
         "minimum_work_phase_count",
-        "action_kind",
         "`talk_to_npc` 是目标 NPC 驱动的动态追踪行动",
-        "不输出 `location_id`",
+        "`target_npc_id`",
+        "`building_id`",
     ]:
         assert fragment in prompt, fragment
+    assert "action_kind" not in prompt
 
 
 def main() -> None:
     _verify_daily_target_contract()
+    _verify_behavior_specific_decision_fields()
     _verify_exact_null_candidate_contract()
     _verify_revision_contract_and_prompt()
     print("verify_plan_action_contract: ok")

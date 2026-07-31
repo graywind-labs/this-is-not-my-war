@@ -1,5 +1,52 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0116 制造失败记忆事实
+
+制造 `work_failed` 的权威 payload 不再用缺失的自由文本 `message` 推断原因。阶段材料不足固定记录 `reason=当前制造阶段材料不足 / failure_reason=insufficient_stage_resources / crafting_error=insufficient_stage_resources`，并携带 `required_resources` 与紧凑 `crafting_project`；缺目标才使用“未选择制造目标”。这些字段会被现有全量紧凑记忆投影保留，熟睡总结无需从含糊 reason 反推阶段或资源。
+
+`crafting_project.completed_stages` 是已完成数量，`current_stage_index` 是从 1 开始的当前阶段序号，两者不得互换。计划对话执行前复核读取当前权威资源 / 制造项目来校验旧意图；旧 `work_failed` 或日记只是历史证据，不能覆盖当前状态。
+
+## T0106 权威记忆与 LLM 紧凑投影
+
+MemorySystem 继续保存完整、可追溯的事件对象：`event_id / actor_ids / target_ids / location_id / visibility / payload` 均不因 Prompt 优化而删除。LLMBridge 只在每次正式 NPC LLM 调用时，从熟睡总结轮转后仍在目标 NPC 当前索引中的全部 `event_log / witness_log` 构造紧凑投影；不做最近 N 条、重要度或相关性截断。
+
+模型侧每条记忆结构为：
+
+```json
+{
+  "type": "plan_revised",
+  "summary": "格伦重新评估了当前计划：因铁料不足先去照料菜园。",
+  "importance": 80,
+  "day": 3,
+  "time": "14:00:00",
+  "details": {
+    "reason": "铁料不足，无法继续当前制造工序",
+    "resource_gap": {"resource_id": "iron", "available": 0, "required": 2},
+    "plan_segments": [
+      {"from_hour": 14, "to_hour": 16, "action_id": "work_garden", "location_id": "garden"}
+    ]
+  }
+}
+```
+
+`summary` 是 MemorySystem 的确定性事实表达；`details` 仅补充摘要没完整表达的原因、资源、数量、前后值、目标与其他决策事实。完整 24 项计划按连续相同行为压成 `plan_segments`；完整地点 / 建筑快照、人员 / 敌我阵容、内部 ID、重复公告 / 日程 / 对话正文及其他已由 summary 表达的大结构不再复制。供应商 Model Adapter 再用外层字段白名单清洗一次，因此旧客户端即使发送 `payload / event_id` 也不会让它们进入模型。
+
+当前七类正式调用（含 T0116 执行前复核）共用这套合同。非反思调用以 `short_memory` 或 `npc.short_term_memory` 保存亲历 / 见闻两个数组；熟睡总结以带 `memory_kind=experienced|witnessed` 的 `day_events` 作为本次快照唯一短期记忆副本，供应商投影删除等价的 `npc.short_term_memory`。反思成功后的快照水位轮转规则不变。
+
+## T0101 守备官开局前知识边界
+
+`guard_officer` 初始主体从 T0061 的单一职责关系扩展为四条：`role`、`arrival_at_station`、`past_before_station`、`pre_game_relationship`。其中“过去未知”必须作为明确键值存在，不能靠缺字段表达；这让六类 LLM 都能区分“没有提供的信息”与“可以自由补全的叙事空白”。
+
+`pre_game_relationship` 只保存开局前的总体印象：在该 NPC 认识守备官以来，守备官一向尽责并与驿站成员相处和睦。它不保存具体三年旧事。开局后真实对话、攻击、赠予、承诺、命令和见闻仍按现有短期记忆与熟睡反思形成新的 `impression / trust / promise / order_style` 等关系；不得反向覆盖或编造开局前三年的事件。
+
+玩家后来明确自述姓名、出身或过去时，只对实际听见 / 得知的 NPC 生效。反思应建立单独的“守备官自称……”关系，而不是把自述写成所有人共享的客观事实；单纯询问“我是谁”不属于自述。
+
+## T0099 对话记录展示与攻击确认边界
+
+NPC 面板“记录”继续读取全局 append-only 事件档案中的已完成守备官会话，底层事件日期、时间、完整 `dialogue_text`、战斗事件与会话 payload 均不修改。T0099 只把玩家展示分组收敛为 `【第X天】`，不再依据 `combat_started / combat_ended` 派生波次阶段标题。
+
+首次攻击确认是 `DialogPanel` 每次打开期间的临时防误触状态，不写事件、见闻或会话 payload。取消确认不会生成 `damage_taken` 或对话行；确认后仍由既有攻击路径先权威扣 HP / 写惩戒事件，再按普通对话或逃离挽留规则处理回复、完整会话和计划判别。
+
 ## T0095 熟睡总结快照水位与日记归属
 
 短期记忆轮转使用请求快照水位，不再在异步反思完成时整批清空。`get_npc_short_term_memory_snapshot(...)` 一次返回事件 / 见闻正文及稳定 ID；`clear_npc_short_term_memory_snapshot(...)` 只移除这些 ID，当请求在飞期间出现新事件时，新 ID 保持在当前索引。全局事件库仍 append-only。每次成功总结把本次请求的 `reflection_period.end` 记为下一次起点；失败、没睡够或并发等待都不推进水位。
@@ -8,7 +55,7 @@
 
 ## T0094 对话档案、私有打断上下文与夜间窗口
 
-NPC 面板“记录”读取 MemorySystem 的全局事件档案，而不是已经会在熟睡总结后轮转的单人 `event_log` 索引。它只筛选目标 NPC 与守备官已经落库的 `player_npc / escape_intervention` 会话，保留每场 `dialogue_text` 全文；NPC-NPC 对话不混入。显示按事件自身 `day / time` 排序，并结合全局档案中 `combat_started / combat_ended.wave_number` 的历史顺序还原“首波前 / 第 N 波期间 / 第 N 波后”，因此后来查看不会拿当前波次覆盖旧会话。
+NPC 面板“记录”读取 MemorySystem 的全局事件档案，而不是已经会在熟睡总结后轮转的单人 `event_log` 索引。它只筛选目标 NPC 与守备官已经落库的 `player_npc / escape_intervention` 会话，保留每场 `dialogue_text` 全文；NPC-NPC 对话不混入。显示按事件自身 `day / time` 排序；T0099 起只按日期分组，不再显示波次阶段。
 
 `interrupted_activity_context` 是守备官第一条有效消息打断目标 NPC 时生成的临时、目标私有运行时上下文。它只解释打断前活动、当前计划和计划不变时的暂定恢复项，不调用 `MemorySystem.add_event(...)`，不进入事件库、见闻库、全局事件档案、日记或知识图谱，也不得传播给其他 NPC。会话完成后，真正说过的话仍按既有单条 `dialogue_turn` 规则入库；临时上下文本身不成为一条“守备官打断了你”的虚构事件。
 
@@ -72,19 +119,21 @@ NPC A 向 NPC B 说话时，B 的 LLM 请求只能读取 B 自己的事件库、
 
 开局三篇 `day=0` 日记仍是同一 8 字段记录，不新增历史专用 Schema。“往昔·来站前”保存宏观身世、离开原处的原因和到站时间；“往昔·初到驿站”保存接手的工作与最初遇见的人，并按艾达 → 托马 → 布鲁诺 → 伊沃 → 格伦 → 欧文 → 马塞尔 → 莉娜的固定到站顺序互相印证；“往昔·近日”仍是敌情传达前的微观生活。前三篇是开局前既有记忆，不进入第 1 天事件 / 见闻，也不因加载而产生广播。
 
-守备官种子知识只有一条技术键为 `role` 的职责事实，不保存“尚待观察”、信任、敌意或品格判断。建筑记录的技术 `value` 继续承载稳定规则语义，中文 `relation_label / value_label` 改为 NPC 在工作和生活中会说出的叙事化常识。T0061 当时仓库容量 / 受击丢货尚未落地，因而只保留集中登记与受袭次序；T0070 已把实现后的按等级容量重新写入知识，受击丢货仍排除。`confidence / day / time` 仍参与初始校验、替换式更新、后端传输与 GM 排查，但 `NPCPanel` 的玩家【知识】弹窗不显示可信度和更新时间。底层元数据与玩家可见文本是两个层次，禁止为了隐藏 UI 而删除字段。
+T0061 当时守备官种子知识只有一条技术键为 `role` 的职责事实；T0101 已在同一主体增加三年前到站、来站前经历未知和开局前尽责和睦三条关系，但仍不预设具体身份、旧事或无条件信任。建筑记录的技术 `value` 继续承载稳定规则语义，中文 `relation_label / value_label` 改为 NPC 在工作和生活中会说出的叙事化常识。T0061 当时仓库容量 / 受击丢货尚未落地，因而只保留集中登记与受袭次序；T0070 已把实现后的按等级容量重新写入知识，受击丢货仍排除。`confidence / day / time` 仍参与初始校验、替换式更新、后端传输与 GM 排查，但 `NPCPanel` 的玩家【知识】弹窗不显示可信度和更新时间。底层元数据与玩家可见文本是两个层次，禁止为了隐藏 UI 而删除字段。
 
 ## T0060 日记时间投影与开局前边界
 
 运行态种子日记继续兼容原 8 字段；正式熟睡总结在其上增加 `record_label / summary_window_key / window_anchor_day / trigger_day / trigger_time / reflection_period`。`LLMBridge._build_existing_diary_entries(...)` 是统一文本投影入口：`day=0` 种子形成“往昔·…：正文”，新正式记录形成“接到守备命令的第N天 HH:MM:SS：正文”，旧正式记录仍兼容“第N天 HH:MM:SS”。旧纯字符串和缺元数据记录无需迁移。
 
-六类 LLM 上下文据此前缀理解先后；“往昔·近日”属于守备官收到并传达敌情之前的普通驿站生活，不是当天事件，也不是人物已知敌袭、征召或备战的证据。T0061 后守备官种子条目只记录职责；后续人物看法只能由真实对话、见闻和程序事件形成。知识图谱对 15 座建筑的认识仍是人物已有常识，本职建筑更详细、其他建筑更概括，但都不能覆盖当前 HP、资源、占用、行动资格或结算事实。
+六类 LLM 上下文据此前缀理解先后；“往昔·近日”属于守备官收到并传达敌情之前的普通驿站生活，不是当天事件，也不是人物已知敌袭、征召或备战的证据。T0101 后守备官种子条目记录职责、三年前到站、过去未知和开局前尽责和睦；具体身份、旧事及开局后人物看法只能由真实自述、对话、见闻和程序事件形成。知识图谱对 15 座建筑的认识仍是人物已有常识，本职建筑更详细、其他建筑更概括，但都不能覆盖当前 HP、资源、占用、行动资格或结算事实。
 
 ## T0059 初始长期记忆与当天事实边界
 
 `npc_initial_long_memory.json` 表达第 1 天开始前已经形成的长期内容，不是新游戏启动时发生的一批事件。三篇 `day=0` 日记保留第一人称感受、语气与人生切片；`updated_day=0 / updated_time=开局前` 的知识图谱保留相对客观的当前认知。它们不进入当天 `event_log / witness_log`，也不会因为装载而广播人物、建筑或关系事件。
 
-初始图谱中的人物印象允许带 NPC 自身视角，但守备官条目只写防务、警戒和危急人手统筹职责，不附加评价，也不伪造守备官尚未做出的承诺、伤害、信任或敌意。建筑条目只是 NPC 对既有规则的理解；实时 HP、资源、建筑状态、工位、装备、入伍、移动和行动结果仍以 Godot 权威系统为准。
+T0108 只迁移这份开局前图谱中的稳定建筑认知：删除“器械只能部署围墙 / 围墙升级永不增加位置”的旧事实，改为围墙与主厅都拥有弩床 / 箭塔通用位置，围墙六级为 `1 / 2 / 2 / 3 / 3 / 4`、主厅为 `1 / 1 / 2 / 2 / 3 / 4`，每次升级最多增加一个，主厅位置提供 `2.0x` 射程。装载边界不变：不生成事件、不广播、不写短期记忆，也不新增器械升级事件类型。
+
+初始图谱中的人物印象允许带 NPC 自身视角；守备官条目固定防务职责、三年前到站、来站前经历未知和开局前低细节尽责和睦背景，不伪造具体旧事、承诺、伤害、信任或敌意。建筑条目只是 NPC 对既有规则的理解；实时 HP、资源、建筑状态、工位、装备、入伍、移动和行动结果仍以 Godot 权威系统为准。
 
 首次睡眠反思以当天真实事件 / 见闻为新证据：日记在 3 篇种子之后继续追加；知识图谱只替换被今天事实改变或强化的 `subject + relation`。已有种子本身不是 `day_events`，不得为了“总结今天”无意义复述、改写或覆盖。UI 与 GM 都读取加载后的同一运行态长期记忆，不另建展示副本。
 
@@ -136,11 +185,44 @@ NPCPanel 的事件库 / 见闻库详情首次打开时，必须等待文本和�
 
 NPCPanel 的事件库和见闻库小框、大号详情统一只向玩家展示 `time + summary`。事件的 `event_id`、`type`、`location_id`、`visibility`、`importance`、actor / target ID 与 `payload` 仍保存在 MemorySystem 权威结构中，继续供广播、短期记忆、LLM 上下文、存档和 GM 调试使用；本次只收敛玩家 UI，不删除或改写底层事实。
 
-## T0043A 服务中断与教堂事件语义
+## T0105B 跨小时参礼结束事件顺序
 
-诊所 / 训练依赖失败继续使用各自工作失败事件，并携带 action id、服务者 action id、失败原因及实际释放的位置；“开始时无人服务”和“周期内服务者全部离岗”是不同 failure id。教堂三种行动复用 `prayer_started / prayer_completed / prayer_failed` 事件族，但必须依 `action_id` 生成“祈祷 / 主持弥撒 / 参加弥撒”的具体摘要，不能再把普通祈祷写成参加弥撒。
+整点本身不再产生弥撒结束、祈祷恢复或行动失败事件。主持者和参礼者继续原 active 状态，直到弥撒自然完成或发生外部权威中断。
 
-弥撒开始造成的普通祈祷中断记录 `pray_failed_mass_started`；弥撒期间的新祈祷记录 `pray_failed_mass_in_progress`；主持异常离岗造成的参加者中断记录 `attend_mass_failed_leader_left`。主持正常完成时，绑定参加者分别记录完成事实。事件只反映 ActionSystem 已结算结果，LLM 不推断或补写主持 / 参与状态。
+参礼者个人祈祷时长已经到期时，最终顺序固定为：
+
+1. 主持自然完成；
+2. 参礼者写 `prayer_resumed_alone(trigger=mass_completed)`，摘要为“弥撒结束”；
+3. 该祈祷写 `prayer_completed` 并释放祈祷席；
+4. DailyPlanSystem 才执行积压的当前小时计划。
+
+未到期祈祷也必须先写恢复独祷事件，之后才允许新小时不同计划中断 / 替换它。计划延迟标记不是事件、见闻或模型记忆，不对 NPC 广播；真正开始的新行动继续使用各自既有事件规则。
+
+## T0105A 弥撒结束与中断的事件语义
+
+`prayer_resumed_alone` 的结构化 trigger 是摘要的唯一判据：
+
+- 主持弥撒自然计时完成：`trigger=mass_completed`，摘要写“弥撒结束”。T0105B 后普通计划小时边界只延迟新计划，不再直接结束弥撒。
+- 对话、改派、建筑失效等外部原因停止主持：`trigger=mass_leader_stopped`，同时保留实际 `provider_stop_reason`，摘要写“因主持中断而结束”。
+
+DailyPlanSystem 不构造结束事件；普通计划小时边界只延迟新计划，由 ActionSystem 在弥撒真正完成或被外力中断时生成结构化事实。MemorySystem 不读取自由文本 reason 猜测正常 / 中断。两类 `prayer_resumed_alone` 都继续进入祈祷者事件库并按小教堂 `local_public` 广播，且不改变祈祷席、进度或计划身份。
+
+## T0098 祈祷模式转换事件
+
+`prayer_started` 继续表示 `pray_at_chapel` 真正开始，并在 payload 中携带初始 `prayer_mode`。若到达时弥撒已经开始，摘要直接说明 NPC 正在参加弥撒；行动本身仍是祈祷。
+
+弥撒期间的模式转换使用两个稳定事件：
+
+- `prayer_joined_mass`：祈祷者从独自祈祷转为参礼；payload 包含 `action_id / leader_npc_id / trigger / from_mode / to_mode`。
+- `prayer_resumed_alone`：主持正常结束或异常退出后，尚未完成的祈祷者恢复独自祈祷；payload 另可包含 `provider_stop_reason`。
+
+两类事件进入祈祷者本人事件库，并按 `location_id=chapel / visibility=local_public` 广播给当时同地点且可接收见闻的 NPC。摘要由 MemorySystem 根据结构化字段确定性生成；模型不补写模式事实。主持者被有效替换时只重绑定，不伪造“弥撒结束 / 恢复独祷”事件。
+
+## T0043A 服务中断与教堂事件语义（教堂部分已由 T0098 替代）
+
+诊所 / 训练依赖失败继续使用各自工作失败事件，并携带 action id、服务者 action id、失败原因及实际释放的位置；“开始时无人服务”和“周期内服务者全部离岗”是不同 failure id。教堂只保留祈祷和主持弥撒两个 action，继续使用 `prayer_started / prayer_completed / prayer_failed` 事件族；参加弥撒是祈祷的内部模式。
+
+弥撒开始、正常结束和异常离岗不再产生祈祷失败；它们使用 T0098 模式转换事件。事件只反映 ActionSystem 已结算结果，LLM 不推断或补写主持 / 参与状态。
 
 ## T0043 建筑位置与可用性传播
 
@@ -152,7 +234,7 @@ NPCPanel 的事件库和见闻库小框、大号详情统一只向玩家展示 `
 
 ## T0025 行动与自主对话事件
 
-NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `dialogue_turn`；事件同时进入两名参与者事件库，并按 `private` / `local_public` 与当前地点传播。T0029/T0030 后邀请事件带 `dialogue_phase=invitation`、`invitation_result=accept|reject` 且 `current_round=0`；接受后的正式事件带 `dialogue_phase=conversation`、`max_rounds=0`、软性轮次字段和本轮 `should_end_dialogue`。正式会话无程序硬轮次上限；任一回复带结束标记时，该回复作为最后一句先入库，程序随后结束且不会再发给另一名 NPC。自动续聊不会把上一轮最后一句再次复制进下一事件。T0049 后，已完成的正式会话和邀请拒绝都让两名参与者分别用完整对话与自己的原计划判别 `revision_hours`；未完成的 LLM 请求不写事件，也不伪造对话判别输入。新增计划行动事件 `prayer_started` / `prayer_completed` / `prayer_failed` 与 `visit_started` / `visit_completed`，分别记录行动、地点、工位和持续时间。地点状态快照会把动态 `visit_location_<location_id>` 显示为“停留在某地点”，不再作为未知 action id 报警。
+NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `dialogue_turn`；事件同时进入两名参与者事件库，并按 `private` / `local_public` 与当前地点传播。T0029/T0030 后邀请事件带 `dialogue_phase=invitation`、`invitation_result=accept|reject` 且 `current_round=0`；接受后的正式事件带 `dialogue_phase=conversation`、`max_rounds=0`、软性轮次字段和本轮 `should_end_dialogue`。正式会话无程序硬轮次上限；任一回复带结束标记时，该回复作为最后一句先入库，程序随后结束且不会再发给另一名 NPC。自动续聊不会把上一轮最后一句再次复制进下一事件。T0049 后，已完成的正式会话和邀请拒绝都让两名参与者分别用完整对话与自己的原计划判别 `revision_hours`；未完成的 LLM 请求不写事件，也不伪造对话判别输入。计划行动事件 `prayer_started / prayer_completed / prayer_failed / prayer_joined_mass / prayer_resumed_alone` 与 `visit_started / visit_completed` 分别记录行动、模式转换、地点、工位和持续时间。地点状态快照会把动态 `visit_location_<location_id>` 显示为“停留在某地点”，不再作为未知 action id 报警。
 
 ## 模块目标
 
@@ -265,7 +347,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 
 - 日常与计划：`wake_up`、`plan_created`、`plan_revised`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`wine_consumed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`visit_started`、`visit_completed`。
+- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`wine_consumed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`prayer_joined_mass`、`prayer_resumed_alone`、`visit_started`、`visit_completed`。
 - T0051 后，守备官-NPC 对话按完整会话记录：玩家发送的消息立即进入会话缓冲，“完成对话”时把当前完整历史写成一条 `dialogue_turn`；等待中的 NPC 回复会被取消且不补写。取消或无攻击的挂起超时不入库、不广播、不触发判别。NPC-NPC 自主对话仍按实际完成轮次记录。NPC 主动交涉的发起意图写入 `proactive_talk_started`，预设开场问题随完整会话在完成时入库，不再在点击气泡时单独写 `proactive_talk_message`。
 - 玩家交互：`money_given`、`wine_given`、`equipment_given`、`equipment_changed`、`order_assigned`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。正式守备官惩戒攻击写入 `damage_taken`，并在 payload 中保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 主动交涉：`proactive_talk_started` 记录 NPC 发起交涉及计划中确定的问题，固定为 `private`。`proactive_talk_message` 仅作为旧事件类型兼容保留；当前玩家点击气泡后的开场内容随完成会话的 `dialogue_turn` 入库。
@@ -438,12 +520,11 @@ NPC 当天短期记忆由两部分组成：
 - `event_log`：自己的亲历事件。
 - `witness_log`：自己获得的见闻。
 
-当天 LLM 调用时不直接塞入全部事件，而应按用途生成摘要：
+当天任意正式 NPC LLM 调用都注入当前短期索引中的全部两类记录，不按用途删事件，也不截断最近 N 条。程序只压缩单条记录的表示：保留确定性摘要与对决策有意义的紧凑 `details`，省略重复或可由摘要表达的大结构。
 
-- 对话：优先注入与玩家、当前 NPC、当前地点相关的事件和见闻。
-- 计划：注入当天关键经历、地点状态、资源压力和未完成目标。
-- 战斗判定：注入亲历伤害、见闻中的战况、玩家承诺或威胁。
-- 熟睡总结：注入上次成功总结水位之后、截至本次请求快照仍未总结的事件和见闻；范围可以跨自然日。
+- 对话、日计划、计划修改范围判别、正式修订和战时心理分别在目标 NPC 的 `short_memory / npc.short_term_memory` 中读取完整亲历与见闻。
+- 熟睡总结读取上次成功总结水位之后、截至本次请求快照仍未总结的全部 `day_events`；范围可以跨自然日，并保留亲历 / 见闻分类。
+- 当前状态、库存、地点和战场上下文描述“现在”；记忆按 `day / time` 描述“当时”。模型不得用后来状态覆盖较早事件原因。
 
 ## 21:00 窗口熟睡总结
 

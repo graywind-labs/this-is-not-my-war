@@ -142,6 +142,7 @@ func _init() -> void:
 
 	const NPC_ID := "doctor_01"
 	const BLOCKER_ID := "priest_01"
+	const BLOCKER_TWO_ID := "engineer_01"
 	time_system.set_current_time(1, 8, 0, 0)
 	daily_plan_system.set_auto_execution_enabled(true)
 	if not npc_system.debug_enter_location_immediately(BLOCKER_ID, "clinic"):
@@ -152,6 +153,15 @@ func _init() -> void:
 		return
 	if not _workstation_owned_by(building_system.get_building("clinic"), BLOCKER_ID):
 		_fail("Clinic workstation precondition did not take effect")
+		return
+	if not npc_system.debug_enter_location_immediately(BLOCKER_TWO_ID, "clinic"):
+		_fail("Could not place second workstation blocker in clinic")
+		return
+	if not action_system.debug_assign_action(BLOCKER_TWO_ID, "work_clinic_doctor"):
+		_fail("Could not occupy second clinic doctor workstation")
+		return
+	if not _workstation_owned_by(building_system.get_building("clinic"), BLOCKER_TWO_ID):
+		_fail("Second clinic workstation precondition did not take effect")
 		return
 	if not npc_system.debug_enter_location_immediately(NPC_ID, "clinic"):
 		_fail("Could not place revision actor in clinic")

@@ -1,6 +1,10 @@
 # Backend README
 
-T0092 起，正式 provider 使用比 HTTP / Godot 更小的内部合同。Model Adapter 在发送前删除纯传输 `meta`、`null`、同值资源 / 记忆 / 轮次副本和分支外字段；模型返回后确定性补齐完整响应的固定 envelope、派生布尔值、`immediate_action` 及计划候选的 `action_kind / priority / 唯一 location_id`。HTTP Schema、动态白名单和业务校验仍验证补齐后的完整结构，非法行动、目标、枚举和小时不会被降级掩盖。
+T0116 新增 `/npc/dialogue_intent_revalidation`。它在计划对话执行前接收旧意图制定时间、当前完整计划和计划同级 NPC / 驿站 / 建筑 / 资源上下文，只返回 continue / modify / cancel_and_replan。HTTP 层严格约束首句字段并可对业务矛盾使用同一真实 provider 纠错一次；失败不转 Mock。
+
+T0106 起，正式 NPC 请求的短期记忆在供应商边界统一为全量紧凑投影；T0116 加入执行前复核后当前共七类。每条只允许 `type / summary / importance / day / time / details`，不转发 `event_id / payload / extra`。普通调用保留当前索引全部 `experienced_events / witnessed_events`；`daily_reflection` 保留带 `memory_kind` 的全部 `day_events`，并删除同批 `npc.short_term_memory`。这层清洗是 Godot 压缩后的防御边界，不改变 MemorySystem 权威事件或 HTTP 业务事实。
+
+T0092 起，正式 provider 使用比 HTTP / Godot 更小的内部合同。Model Adapter 在发送前删除纯传输 `meta`、`null`、同值资源 / 记忆 / 轮次副本和分支外字段；模型返回后确定性补齐完整响应的固定 envelope 和派生字段。T0097 起计划项以 `hour + action_id` 为核心，拜访、NPC 目标和建筑目标分别读取 `location_id / target_npc_id / building_id`；其他模型字段全部丢弃，再由动态候选编译 `action_kind / priority / internal target / 固定 location_id` 和修订 `immediate_action`。HTTP Schema、动态白名单和业务校验仍验证补齐后的完整结构，非法行动、必要目标和小时不会被降级掩盖。
 
 T0078 起，`/npc/plan_revision_judgement` 把请求中的 `required_revision_hours` 视为程序权威范围下限。若真实模型遗漏，HTTP 层保留模型选择的其他合法小时、并入 required 集合、同步令 `needs_revision=true`，并在 `model_normalizations` 写入 `required_revision_hours_authoritative_union`；它不生成第二层行动。该规则用于自主 NPC-NPC 发起者和当前计划仍为 `seek_guard_officer` 的 NPC 主动守备官会话。
 
@@ -16,7 +20,7 @@ T0078 起，`/npc/plan_revision_judgement` 把请求中的 `required_revision_ho
 - 知识图谱更新
 - API 额度统计
 
-T0025/T0049/T0050 后，`/npc/plan_day` 与 `/npc/revise_plan` 按请求中的 `allowed_actions` 校验计划候选。固定地点行动精确校验 `action_id + action_kind + target_id + location_id`；T0091 起 `talk_to_npc` 只由 `action_id + target_id` 选择 NPC，模型请求不再包含候选地点，输出可省略 / 置空地点。若供应商冗余返回瞬时地点，后端确定性规范化为 `null` 并写入 `model_normalizations`；白名单外目标、自聊、错误 kind 与空 `dialogue_goal` 仍失败。通用 `/npc/plan_revision_judgement` 通过 `trigger_kind=dialogue|action_failure` 接收会话事实或程序权威失败项 / 类型 / 摘要 / 上下文、原计划和工作阶段下限；T0053 起同样必填动态 `station_context`、完整 `NPCContext`（含长短期记忆与当前指令）、行动候选及实时建筑 / 资源状态。T0054 将唯一顶层 `station_context` 收紧为精简简介、当前在站人员、完整建筑、工作模式行为和驿站规则五部分；目录是世界常识，不能替代 `allowed_actions / allowed_decisions` 或实时状态。输出仍是可为空的精确 `revision_hours`，空数组表示无需修订。`/npc/revise_plan` 只接受 `revision_scope=selected_hours` 与非空、升序、去重的 `revision_hours`，返回项小时集合必须与请求完全一致；对话和日常行动失败路径都使用第一层判别结果，第二层原样保留失败与人物上下文。首个真实 JSON / Schema 合法响应若仅业务校验失败，仍可交回同一真实 provider 纠正一次，不进入 Mock / 规则降级。T0029/T0030 后，`/npc/dialogue` 的 NPC-NPC 邀请 / 正式会话合同保持不变：目标 NPC 以 `reply_to_npc` 回复，邀请返回接受 / 拒绝，正式会话无硬轮次上限；模型只返回文本与意向，不直接改写行动、资源、工位或计划。
+T0025/T0049/T0050 后，`/npc/plan_day` 与 `/npc/revise_plan` 按请求中的 `allowed_actions` 校验计划候选。T0097 起 provider 不再回显内部 `action_kind / target_id / priority`：固定行为只选 action，拜访选地点，找人 / 治疗选 NPC，修复 / 升级选建筑；无关字段直接丢弃。编译后的内部 action/kind/target/location 组合仍精确校验，白名单外目标、自聊与空 `dialogue_goal` 仍失败。通用 `/npc/plan_revision_judgement` 通过 `trigger_kind=dialogue|action_failure` 接收会话事实或程序权威失败项 / 类型 / 摘要 / 上下文、原计划和工作阶段下限；T0053 起同样必填动态 `station_context`、完整 `NPCContext`（含长短期记忆与当前指令）、行动候选及实时建筑 / 资源状态。T0054 将唯一顶层 `station_context` 收紧为精简简介、当前在站人员、完整建筑、工作模式行为和驿站规则五部分；目录是世界常识，不能替代 `allowed_actions / allowed_decisions` 或实时状态。输出仍是可为空的精确 `revision_hours`，空数组表示无需修订。`/npc/revise_plan` 只接受 `revision_scope=selected_hours` 与非空、升序、去重的 `revision_hours`，返回项小时集合必须与请求完全一致；对话和日常行动失败路径都使用第一层判别结果，第二层原样保留失败与人物上下文。首个真实 JSON / Schema 合法响应若仅业务校验失败，仍可交回同一真实 provider 纠正一次，不进入 Mock / 规则降级。T0029/T0030 后，`/npc/dialogue` 的 NPC-NPC 邀请 / 正式会话合同保持不变：目标 NPC 以 `reply_to_npc` 回复，邀请返回接受 / 拒绝，正式会话无硬轮次上限；模型只返回文本与意向，不直接改写行动、资源、工位或计划。
 
 T0095 后，`/npc/daily_reflection` 必填 `summary_window / reflection_period`：前者固定 21:00 到次日 21:00 的锚点窗口和“接到守备命令的第N天”标签，后者限定从上次成功总结水位到本次请求快照的未总结内容。“接到守备命令”专指公告牌向驿站众人公开传达“我们奉命守住此地”，不是目标 NPC 入伍或收到个人命令；后端只约束模型叙事，不决定触发、记忆清理或日记写入。
 
@@ -114,7 +118,7 @@ LLM 相关任务的推荐验证顺序：
 - `POST /npc/battle_judgement`
 - `POST /npc/daily_reflection`
 
-六个正式 LLM 业务端点成功响应都会统一附加 `model_provider`、`model_name`、`model_fallback_used` 和 `model_normalizations`；该数组当前仅在计划 / 修订发生确定性 kind 规范化时非空。这些字段来自 Model Adapter 运行结果和后端业务校验，不属于模型输出 Schema；Godot 据此区分真实 provider、显式开发 Mock 和 fallback，不能按调用路径硬编码来源。正式日计划、对话计划判别和修订仍只接受非 Mock 且无 fallback 的响应。
+六个正式 LLM 业务端点成功响应都会统一附加 `model_provider`、`model_name`、`model_fallback_used` 和 `model_normalizations`。T0097 的计划项无关字段在 Model Adapter 编译边界直接丢弃，原始值只保留在本地审计日志，不为每个丢弃字段生成 normalization；`model_normalizations` 继续记录其他程序权威合并或默认化。这些字段不属于模型输出 Schema；Godot 据此区分真实 provider、显式开发 Mock 和 fallback，不能按调用路径硬编码来源。正式日计划、对话计划判别和修订仍只接受非 Mock 且无 fallback 的响应。
 
 Mock 调试接口：
 

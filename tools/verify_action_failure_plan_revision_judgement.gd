@@ -279,6 +279,14 @@ func _init() -> void:
 	if revision_options.get("revision_hours", []) != [CURRENT_HOUR, 14]:
 		_fail("Stage two did not preserve exact selected hours: %s" % JSON.stringify(revision_options))
 		return
+	var pending_contexts: Dictionary = daily_plan_system.get("_async_revision_requests")
+	var stage_two_runtime_context: Dictionary = pending_contexts.get(
+		str(revision_request.get("request_id", "")),
+		{}
+	)
+	if str(stage_two_runtime_context.get("trigger_kind", "")) != "action_failure":
+		_fail("Stage two lost its action-failure trigger origin")
+		return
 	var stage_two_context: Dictionary = revision_options.get("failure_context", {})
 	if (
 		str(stage_two_context.get("building_id", "")) != "dining_hall"
@@ -286,6 +294,31 @@ func _init() -> void:
 	):
 		_fail("Stage two lost the original failure context or judgement result")
 		return
+	var repeated_current_work := _item(
+		CURRENT_HOUR,
+		"work",
+		"work_dining_hall",
+		"dining_hall"
+	)
+	var repeated_future_work := _item(14, "work", "work_dining_hall", "dining_hall")
+	bridge.answer_revision(
+		revision_request,
+		[repeated_current_work, repeated_future_work],
+		repeated_current_work.duplicate(true)
+	)
+	if bridge.revision_requests.size() != 2:
+		_fail("Repeating the just-failed current action did not launch one bounded retry")
+		return
+	var unchanged_after_repeat: Array = daily_plan_system.get_npc_daily_plan(NPC_ID)
+	if (
+		str((unchanged_after_repeat[CURRENT_HOUR] as Dictionary).get("action_id", ""))
+		!= "work_dining_hall"
+		or str(daily_plan_system.get_last_reevaluation_result().get("status", ""))
+		!= "pending_async"
+	):
+		_fail("Repeated failed action was applied or did not remain in the retry chain")
+		return
+	revision_request = bridge.revision_requests.back()
 	var current_idle := _item(CURRENT_HOUR, "idle", "idle", "")
 	var future_work := _item(14, "work", "work_dining_hall", "dining_hall")
 	bridge.answer_revision(
@@ -326,6 +359,11 @@ func _item(hour: int, action_kind: String, action_id: String, location_id: Strin
 		"action_id": action_id,
 		"location_id": location_id,
 		"target_id": "",
+		"target": (
+			{"location_id": location_id}
+			if not location_id.is_empty()
+			else {}
+		),
 		"priority": 60,
 		"reason": "verification",
 		"dialogue_goal": "",

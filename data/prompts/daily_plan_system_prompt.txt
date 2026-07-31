@@ -14,18 +14,19 @@
 - 输出从 hour=0 到 hour=23 的 24 个阶段，每个小时恰好出现一次。
 - 通常应强烈优先安排至少 6 个工作阶段，以维持驿站基础产出。工作阶段包括 allowed_actions 中 tags 包含 work、clinic_doctor 或 training_instructor 的行动；assist_upgrade 是实际劳动并计入工作阶段。但这不是程序硬门槛：人格、健康、危机、逃离意向和现场条件可以支持更少的工作，不能为了凑数安排明显不合理或不可执行的行动。
 - action_id 只能使用 allowed_actions 中出现的 action_id，或使用 idle。不要创造新行动，不要使用自然语言当 action_id。
-- 若 action_id=idle，只输出 hour、action_id 和 reason，表示留在当前位置等待；若要前往广场，必须选择 visit_location 的广场候选。
-- 对固定地点的带目标候选（如 visit_location、assist_heal、assist_repair、assist_upgrade），action_id 与 target_id 必须选择同一条 allowed_actions 候选，不能只复制 action_id 后自造目标。后端会从唯一候选补齐 location_id；只有同一 action_id + target_id 在 allowed_actions 中对应多个不同地点时才输出 location_id 消歧。
-- `talk_to_npc` 是目标 NPC 驱动的动态追踪行动：只从 allowed_actions 选择对应 `target_id`，不要选择或返回 `location_id`。目标当前在哪只用于理解现场，执行时由程序重新查询并追踪，不能把瞬时地点绑定为计划目的地。
-- 每个计划项都必须完整复用同一条 allowed_actions 候选；action_kind 由后端从该候选确定，不要重复输出。
+- 若 action_id=idle，表示留在当前位置等待；若要前往广场，必须选择 visit_location 的广场候选。
+- 需要模型选择目标时，必须从同一条 allowed_actions 候选复制对应的专用字段：`visit_location` 使用 `location_id`，`talk_to_npc` 与 `assist_heal` 使用 `target_npc_id`，`assist_repair` 与 `assist_upgrade` 使用 `building_id`。不得自造地点、NPC 或建筑。
+- `talk_to_npc` 是目标 NPC 驱动的动态追踪行动。目标当前在哪只用于理解现场，执行时由程序重新查询并追踪，不能把瞬时地点绑定为计划目的地。
+- 固定工作、吃饭、睡觉、祈祷、主持弥撒等行动的地点和执行元数据由后端从所选候选补齐。
 - 先检查候选 context：eligible=false 表示这个 NPC 能看见但没有执行资格，绝不能加入其计划；available_now=false 表示当前不能立即执行，应优先改选可用行动。尤其只有 required_ability=主持弥撒 且 eligible=true 的 NPC 才能安排 lead_mass。
 - drink_wine 的硬前提是 npc.state.wine 至少为 1，且每个饮酒阶段开始时由程序实际消耗 1 份个人酒；全天计划中的 drink_wine 阶段数不得超过当前个人持有酒数量。饮酒只通过后续事件与上下文表现心情改善、过去伤痛暂时淡化，不得生成情绪数值或删除记忆。
-- `required_active_action_id` 表示该行动开始和持续期间都依赖另一项在岗行动。`receive_clinic_treatment` 依赖 `work_clinic_doctor`，`receive_weapon_training` 依赖 `work_training_instructor`，`attend_mass` 依赖 `lead_mass`；服务者全部退出后，承载者会被程序中断并重估。当前没有对应在岗者时，不得把这些行动作为立即行动；未来时段只有在确有可协调的服务者计划时才可安排。
-- 教堂有三种不同活动：`pray_at_chapel` 是不依赖神父的普通祈祷；`lead_mass` 是具备资格者在祭坛主持弥撒；`attend_mass` 是其他 NPC 在祈祷席参加正在举行的弥撒。主持弥撒期间普通祈祷不可进行，不能把祈祷、主持和参加弥撒混写成同一行动。
+- `required_active_action_id` 表示该行动开始和持续期间都依赖另一项在岗行动。`receive_clinic_treatment` 依赖 `work_clinic_doctor`，`receive_weapon_training` 依赖 `work_training_instructor`；服务者全部退出后，承载者会被程序中断并重估。当前没有对应在岗者时，不得把这些行动作为立即行动；未来时段只有在确有可协调的服务者计划时才可安排。
+- 教堂计划只需区分 `pray_at_chapel` 祈祷与 `lead_mass` 主持弥撒。NPC 选择祈祷后，若弥撒开始会由程序自动转为参加弥撒；弥撒结束而祈祷计划尚未结束时，会自动继续独自祈祷。模型不用另选“参加弥撒”行动，也不用为这两种状态转换重排计划。
 
 如何考虑 NPC：
-- 根据职业背景、熟练度、健康、饱食、疲劳、装备、当前地点、建筑状态、资源状态、亲历事件 experienced_events、见闻 witnessed_events 和长期记忆安排计划。
-- 初始长期记忆中的人生切片、人物认知和建筑常识只提供稳定视角与经验，不代表今天已经发生对应事件；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能当作 NPC 已知敌袭、征召或备战的证据。实时状态、当天事件和 allowed_actions 与旧认知冲突时，以实时程序事实为准。
+- npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部亲历 experienced_events 与见闻 witnessed_events，不是“最近若干条”抽样；亲历事实的权重高于见闻。每条记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充原因、资源缺口、指令变化等决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
+- 根据职业背景、宗教信仰、熟练度、健康、饱食、疲劳、装备、当前地点、建筑状态、资源状态、全部短期亲历 / 见闻和长期记忆安排计划；宗教信仰只是稳定人物背景，不能覆盖个性、职业职责或程序现实。
+- 初始长期记忆中的人生切片、人物认知和建筑常识只提供稳定视角与经验，不代表今天已经发生对应事件；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。其中“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能当作 NPC 已知敌袭、征召或备战的证据。守备官种子只确认职责、三年前到站、来站前经历未知，以及此前一向尽责并与成员总体相处和睦；未知过去不能被计划理由补全，和睦背景也不等于无条件服从。实时状态、当天事件和 allowed_actions 与旧认知冲突时，以实时程序事实为准。
 - 饱食低时安排吃饭，疲劳高时安排睡觉；但不要把吃饭、睡觉或工作描述成瞬时结算。
 - 多个连续小时可以执行同一行动；计划只是意图和安排，不代表行动已经完成。
 - NPC 可以主动安排找其他 NPC 对话、去小教堂祈祷、只前往某处停留或主动找守备官交涉；这些都是正式行动，不要无条件改写成 idle。
@@ -40,8 +41,8 @@ current_order 边界：
 输出要求：
 - 只输出 JSON 对象，不要 Markdown。
 - 只输出 plan、summary 和 debug_reason；后端会补齐 ok、npc_id 和 plan_day。
-- 每条 plan item 固定输出 hour、action_id、reason；只有所选候选确实带目标时才输出 target_id。地点能由 action_id + target_id 唯一确定时不要输出 location_id，只有候选地点有歧义时才输出。
-- 不要输出 action_kind、priority、null、空 target_id、空 location_id 或空 dialogue_goal；后端会从所选候选补齐行动种类、唯一地点并使用程序默认优先级。
+- 每条 plan item 的决策核心是 hour 和 action_id，可附简短 reason；需要选择目标时使用上文对应的 `location_id / target_npc_id / building_id`。
+- 后端只采纳所选行为实际需要的字段，忽略计划项里的其他字段，再从合法候选补齐完整执行计划。
 - reason 保持紧凑，每条不超过 12 个汉字。
 - action_id 为 talk_to_npc 或 seek_guard_officer 时，额外输出 dialogue_goal，写成 NPC 可直接说出口的开场诉求，不超过 40 个汉字。
 - summary 不超过 60 个汉字，简述当天计划如何平衡生存、工作和 current_order。

@@ -62,6 +62,7 @@ def _base_payload() -> dict:
         "npc_name": "布鲁诺",
         "npc_setting": {
             "background_job": "厨子",
+            "religion": "天主教",
             "personality": ["谨慎", "嘴硬"],
             "desires": ["保住食堂", "别让普通人被当成士兵消耗"],
             "fears": ["被逼上战场"],
@@ -87,6 +88,19 @@ def _base_payload() -> dict:
             "recruited": False,
             "equipment": {},
             "current_action": "work_dining_hall",
+        },
+        "activity_truth": {
+            "action_id": "work_dining_hall",
+            "is_training": False,
+        },
+        "equipment_truth": {
+            "main_weapon": None,
+            "mount": None,
+            "has_trainable_equipment": False,
+        },
+        "training_truth": {
+            "eligible": False,
+            "blocker": "no_trainable_equipment",
         },
         "current_order": {
             "text": "优先保证食堂运转，敌人靠近时先保护自己。",
@@ -121,7 +135,34 @@ def _base_payload() -> dict:
                 }
             ],
         },
-        "long_memory": {"diary": ["我不想让锅铲变成刀。"]},
+        "long_memory": {
+            "diary": ["我不想让锅铲变成刀。"],
+            "knowledge_graph": {
+                "schema_version": "key_value_replace_v1",
+                "updated_day": 0,
+                "updated_time": "开局前",
+                "by_subject": {
+                    "guard_officer": {
+                        "role": {
+                            "value": "station_defense_alert_and_emergency_staff_coordination",
+                            "value_label": "守备官负责驿站防务与警戒。",
+                        },
+                        "arrival_at_station": {
+                            "value": "arrived_three_years_before_game_start",
+                            "value_label": "守备官三年前来到驿站。",
+                        },
+                        "past_before_station": {
+                            "value": "unknown_not_disclosed",
+                            "value_label": "守备官没有说明来站前的经历，我不知道他的过去。",
+                        },
+                        "pre_game_relationship": {
+                            "value": "consistently_dedicated_and_harmonious",
+                            "value_label": "守备官一直尽责，与驿站成员相处和睦。",
+                        },
+                    }
+                },
+            },
+        },
         "location_context": {"location_id": "dining_hall", "people_present": ["cook_01"]},
         "allowed_actions": [
             {
@@ -222,8 +263,38 @@ def main() -> None:
         "不是固定句式或台词模板",
         "往昔·近日",
         "传达敌情",
+        "【最高优先级的权威实况】",
+        "activity_truth",
+        "equipment_truth",
+        "training_truth",
+        "优先于计划、计划 reason / summary",
+        "只有 activity_truth.is_training=true",
+        "action_id=visit_location",
+        "只表示拜访 / 停留",
+        "equipment_truth.main_weapon / mount 为 null",
+        "blocker=no_trainable_equipment",
+        "不得用计划里写了训练、人在训练场",
         "日记字符串保留",
         "第 N 天 + 时间",
+        "不是最低轮数、目标轮数或继续对话的理由",
+        "绝不能为了等到阈值而续聊",
+        "只能确认、复述或换一种说法重复",
+        "必须停止重复",
+        "对方已经完整回答",
+        "双方已经达成一致",
+        "不得为了延长对话自行制造新话题、新任务、新问题、额外帮助或后续安排",
+        "已经存在的未决紧急或必要事项",
+        "三年前来到驿站",
+        "你没有告诉过我 / 我不知道",
+        "不得替守备官编造身份和故事",
+        "一直尽责",
+        "相处和睦",
+        "reply_text 必须明确使用“尽责 / 敬业 / 尽职”",
+        "该分支最多三句",
+        "最后一句立即转向当前驿站事务",
+        "不得在转题前补充理由、例子、引语、日常场景",
+        "不得补造某天发生的事件",
+        "立即转向当前驿站事务",
         "职业经验",
         "experienced_events",
         "witnessed_events",
@@ -246,8 +317,9 @@ def main() -> None:
         "required_ability=主持弥撒",
         "required_active_action_id",
         "blocked_by_active_action_id",
-        "attend_mass",
         "pray_at_chapel",
+        "弥撒开始时程序会自动让祈祷者参加",
+        "弥撒结束后继续独自祈祷",
         "drink_wine",
         "npc_state.wine",
         "程序会扣除 1 份个人酒",
@@ -272,6 +344,23 @@ def main() -> None:
     assert "signature_lines" not in system_prompt
     assert "speaker_npc" not in payload
     assert "meta" not in provider_payload
+    assert provider_payload["activity_truth"] == payload["activity_truth"]
+    assert provider_payload["equipment_truth"] == payload["equipment_truth"]
+    assert provider_payload["training_truth"] == payload["training_truth"]
+    assert provider_payload["npc_setting"]["religion"] == "天主教"
+    guard_knowledge = provider_payload["long_memory"]["knowledge_graph"]["by_subject"]["guard_officer"]
+    assert set(guard_knowledge) == {
+        "role",
+        "arrival_at_station",
+        "past_before_station",
+        "pre_game_relationship",
+    }
+    assert guard_knowledge["arrival_at_station"]["value"] == "arrived_three_years_before_game_start"
+    assert guard_knowledge["past_before_station"]["value"] == "unknown_not_disclosed"
+    assert (
+        guard_knowledge["pre_game_relationship"]["value"]
+        == "consistently_dedicated_and_harmonious"
+    )
     assert "speaker_npc" not in provider_payload
     assert "target_npc" not in provider_payload
     assert "current_round" not in provider_payload["dialogue_state"]
@@ -279,6 +368,7 @@ def main() -> None:
     assert "speaker_name" not in provider_payload["speaker_context"]
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
+    assert "attend_mass" not in system_prompt
     assert "玩家" not in content["reply_text"]
     assert content["recruitment_result"] == "accept"
     assert content["ok"] is True

@@ -53,9 +53,9 @@ func _init() -> void:
 func _verify_initial_positions(building_system: Node, memory_system: Node) -> bool:
 	var expectations := {
 		"chapel": {"chapel_altar": 1, "chapel_prayer_seat": 10},
-		"clinic": {"clinic_doctor_station": 1, "clinic_patient_bed": 2},
+		"clinic": {"clinic_doctor_station": 2, "clinic_patient_bed": 2},
 		"training_ground": {"training_instructor_station": 1, "training_practice_slot": 2},
-		"dining_hall": {"dining_kitchen_station": 1, "dining_seat": 10},
+		"dining_hall": {"dining_kitchen_station": 2, "dining_seat": 10},
 		"dormitory": {"dormitory_bed": 10}
 	}
 	for building_id in expectations.keys():
@@ -77,7 +77,11 @@ func _verify_initial_positions(building_system: Node, memory_system: Node) -> bo
 		return false
 	var clinic_snapshot: Dictionary = memory_system.get_location_snapshot("clinic")
 	var snapshot_stations: Array = clinic_snapshot.get("workstations", [])
-	if snapshot_stations.size() != 3 or str(snapshot_stations[0].get("name", "")) != "诊疗位1":
+	if (
+		snapshot_stations.size() != 4
+		or str(snapshot_stations[0].get("name", "")) != "诊疗位1"
+		or str(snapshot_stations[1].get("name", "")) != "诊疗位2"
+	):
 		_fail("Location snapshot should expose full named position state")
 		return false
 	return true
@@ -233,7 +237,7 @@ func _verify_life_positions_and_dining_upgrade(
 		_fail("Dining seats must remain fixed at ten after upgrade")
 		return false
 	if _count_type(upgraded.get("workstations", []), "dining_kitchen_station") != 2:
-		_fail("Dining upgrade should add a kitchen station")
+		_fail("Level-two dining upgrade should retain the two initial kitchen stations")
 		return false
 	if float(building_system.get_building_activity_efficiency_multiplier("dining_hall", "meal_recovery")) <= 1.0:
 		_fail("Dining upgrade should improve meal recovery efficiency")

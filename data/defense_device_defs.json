@@ -3,15 +3,20 @@
     {
       "id": "wall_ballista",
       "name": "弩床",
-      "description": "部署在前墙平台，自动攻击射界内的敌人。",
+      "tier": 1,
+      "description": "重型远射器械：攻击、穿透和射程更高，但射速慢且耐久较低。",
       "inventory_cost": {"item_wall_ballista": 1},
-      "required_building_levels": {"wall": 1, "workshop": 1},
+      "required_building_levels": {"workshop": 1},
+      "max_hp": 55,
+      "defense": 1.0,
       "effect": {
         "kind": "auto_attack",
-        "damage": 24,
-        "attack_interval": 4.0,
-        "range": 32.0,
-        "minimum_forward_dot": 0.05,
+        "damage": 36,
+        "penetration": 8.0,
+        "attack_speed": 0.22,
+        "attack_interval": 4.55,
+        "range": 34.0,
+        "minimum_forward_dot": 0.0,
         "max_attacks_per_tick": 16
       },
       "presentation": {
@@ -23,13 +28,18 @@
     {
       "id": "wall_arrow_tower",
       "name": "箭塔",
-      "description": "部署在前墙塔位，以较短间隔自动射击射界内的敌人。",
+      "tier": 1,
+      "description": "轻型速射器械：攻击、穿透和射程稍低，但射速快且耐久更高。",
       "inventory_cost": {"item_wall_arrow_tower": 1},
-      "required_building_levels": {"wall": 1, "workshop": 1},
+      "required_building_levels": {"workshop": 1},
+      "max_hp": 110,
+      "defense": 3.0,
       "effect": {
         "kind": "auto_attack",
-        "damage": 10,
-        "attack_interval": 1.5,
+        "damage": 16,
+        "penetration": 4.0,
+        "attack_speed": 0.72,
+        "attack_interval": 1.39,
         "range": 28.0,
         "minimum_forward_dot": -0.1,
         "max_attacks_per_tick": 24
@@ -43,40 +53,92 @@
   ],
   "slots": [
     {
-      "id": "front_wall_ballista_left",
-      "name": "前墙左侧平台",
+      "id": "wall_slot_01",
+      "name": "围墙中央左位",
       "building_id": "wall",
-      "allowed_device_ids": ["wall_ballista"],
-      "position": {"x": -5.0, "y": 1.72, "z": 11.35},
+      "required_building_level": 1,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": -2.5, "y": 1.72, "z": 11.35},
       "rotation_y_degrees": 0.0,
-      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
-      "id": "front_wall_ballista_right",
-      "name": "前墙右侧平台",
+      "id": "wall_slot_02",
+      "name": "围墙中央右位",
       "building_id": "wall",
-      "allowed_device_ids": ["wall_ballista"],
-      "position": {"x": 5.0, "y": 1.72, "z": 11.35},
+      "required_building_level": 2,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": 2.5, "y": 1.72, "z": 11.35},
       "rotation_y_degrees": 0.0,
-      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
-      "id": "front_wall_arrow_tower_left",
-      "name": "前墙左侧箭塔位",
+      "id": "wall_slot_03",
+      "name": "围墙左翼位",
       "building_id": "wall",
-      "allowed_device_ids": ["wall_arrow_tower"],
-      "position": {"x": -9.5, "y": 1.72, "z": 11.35},
+      "required_building_level": 4,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": -8.0, "y": 1.72, "z": 11.35},
       "rotation_y_degrees": 0.0,
-      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
-      "id": "front_wall_arrow_tower_right",
-      "name": "前墙右侧箭塔位",
+      "id": "wall_slot_04",
+      "name": "围墙右翼位",
       "building_id": "wall",
-      "allowed_device_ids": ["wall_arrow_tower"],
-      "position": {"x": 9.5, "y": 1.72, "z": 11.35},
+      "required_building_level": 6,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": 8.0, "y": 1.72, "z": 11.35},
       "rotation_y_degrees": 0.0,
-      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 1.0}
+    },
+    {
+      "id": "main_hall_slot_01",
+      "name": "主厅屋顶中央左位",
+      "building_id": "main_hall",
+      "required_building_level": 1,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": -0.65, "y": 2.52, "z": -7.0},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 2.0}
+    },
+    {
+      "id": "main_hall_slot_02",
+      "name": "主厅屋顶中央右位",
+      "building_id": "main_hall",
+      "required_building_level": 3,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": 0.65, "y": 2.52, "z": -7.0},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 2.0}
+    },
+    {
+      "id": "main_hall_slot_03",
+      "name": "主厅屋顶左翼位",
+      "building_id": "main_hall",
+      "required_building_level": 5,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": -1.75, "y": 2.52, "z": -7.0},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 2.0}
+    },
+    {
+      "id": "main_hall_slot_04",
+      "name": "主厅屋顶右翼位",
+      "building_id": "main_hall",
+      "required_building_level": 6,
+      "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
+      "position": {"x": 1.75, "y": 2.52, "z": -7.0},
+      "rotation_y_degrees": 0.0,
+      "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
+      "effect_modifiers": {"range_multiplier": 2.0}
     }
   ]
 }

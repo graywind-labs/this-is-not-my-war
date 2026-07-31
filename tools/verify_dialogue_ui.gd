@@ -8,6 +8,10 @@ func _init() -> void:
 		quit(1)
 		return
 	var main := main_scene.instantiate()
+	var test_backend_url := OS.get_environment("TEST_BACKEND_URL").strip_edges()
+	var preconfigured_llm_bridge := main.get_node_or_null("Systems/LLMBridge")
+	if not test_backend_url.is_empty() and preconfigured_llm_bridge != null:
+		preconfigured_llm_bridge.set_backend_base_url(test_backend_url)
 	root.add_child(main)
 	await process_frame
 	await physics_frame
@@ -26,16 +30,16 @@ func _init() -> void:
 	var obsolete_plan_reevaluation_toggle := dialog_panel.find_child("DialogPlanReevaluationToggle", true, false) as CheckButton
 	var send_button := dialog_panel.find_child("DialogSendButton", true, false) as Button
 	var attack_button := dialog_panel.find_child("DialogAttackButton", true, false) as Button
+	var attack_confirmation_dialog := dialog_panel.find_child("DialogAttackConfirmationDialog", true, false) as ConfirmationDialog
 	var complete_button := dialog_panel.find_child("DialogEndButton", true, false) as Button
 	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var suspend_button := dialog_panel.find_child("DialogSuspendButton", true, false) as Button
 	var input_edit := dialog_panel.find_child("DialogInputEdit", true, false) as LineEdit
 	var history_text := dialog_panel.find_child("DialogHistoryText", true, false) as RichTextLabel
-	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null or history_text == null:
+	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or attack_confirmation_dialog == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null or history_text == null:
 		push_error("Dialogue UI verification required nodes not found")
 		quit(1)
 		return
-	var test_backend_url := OS.get_environment("TEST_BACKEND_URL").strip_edges()
 	if not test_backend_url.is_empty():
 		llm_bridge.set_backend_base_url(test_backend_url)
 	var cook_event_count_before_open := int(memory_system.get_npc_daily_events("cook_01").size())
@@ -64,6 +68,28 @@ func _init() -> void:
 		return
 	if obsolete_plan_reevaluation_toggle != null and obsolete_plan_reevaluation_toggle.visible:
 		push_error("Guard-officer dialogue should not expose the removed plan reevaluation toggle")
+		quit(1)
+		return
+	var tab_event := InputEventKey.new()
+	tab_event.pressed = true
+	tab_event.keycode = KEY_TAB
+	tab_event.physical_keycode = KEY_TAB
+	dialog_panel.call("_input", tab_event)
+	await process_frame
+	if (
+		not recruitment_toggle.button_pressed
+		or not bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
+	):
+		push_error("Tab should enable the visible recruitment toggle")
+		quit(1)
+		return
+	dialog_panel.call("_input", tab_event)
+	await process_frame
+	if (
+		recruitment_toggle.button_pressed
+		or bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
+	):
+		push_error("Tab should disable the visible recruitment toggle on the next press")
 		quit(1)
 		return
 	var dialog_panel_source := FileAccess.get_file_as_string("res://scripts/ui/DialogPanel.gd")
@@ -97,6 +123,12 @@ func _init() -> void:
 	await process_frame
 	if not input_edit.editable or not send_button.disabled or not attack_button.disabled:
 		push_error("Waiting UI should keep input editable while disabling send and attack")
+		quit(1)
+		return
+	dialog_panel.call("_input", tab_event)
+	await process_frame
+	if recruitment_toggle.button_pressed or bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false)):
+		push_error("Tab must not toggle recruitment while the control is disabled")
 		quit(1)
 		return
 	dialog_panel.call("_refresh", dialog_system.get_dialogue_state())
@@ -362,8 +394,29 @@ func _init() -> void:
 	var hp_before_attack := int(npc_system.get_npc_state("blacksmith_01").get("hp", 0))
 	attack_button.pressed.emit()
 	await process_frame
+	if (
+		not attack_confirmation_dialog.visible
+		or int(npc_system.get_npc_state("blacksmith_01").get("hp", 0)) != hp_before_attack
+	):
+		push_error("First attack click after opening should only show confirmation")
+		quit(1)
+		return
+	attack_confirmation_dialog.get_cancel_button().pressed.emit()
+	await process_frame
+	if int(npc_system.get_npc_state("blacksmith_01").get("hp", 0)) != hp_before_attack:
+		push_error("Cancelling first-attack confirmation must not apply damage")
+		quit(1)
+		return
+	attack_button.pressed.emit()
+	await process_frame
+	if not attack_confirmation_dialog.visible:
+		push_error("Cancelling confirmation should keep the next attack protected")
+		quit(1)
+		return
+	attack_confirmation_dialog.get_ok_button().pressed.emit()
+	await process_frame
 	if int(npc_system.get_npc_state("blacksmith_01").get("hp", 0)) != hp_before_attack - 10:
-		push_error("Dialogue attack button did not apply NPC damage")
+		push_error("Confirming the first attack did not apply exactly one NPC damage action")
 		quit(1)
 		return
 	var attack_event := _get_last_event(memory_system.get_npc_daily_events("blacksmith_01"), "damage_taken")
@@ -381,6 +434,24 @@ func _init() -> void:
 		push_error("Dialogue attack async reply did not finish")
 		quit(1)
 		return
+	var hp_before_followup_attack := int(npc_system.get_npc_state("blacksmith_01").get("hp", 0))
+	attack_button.pressed.emit()
+	await process_frame
+	if (
+		attack_confirmation_dialog.visible
+		or int(npc_system.get_npc_state("blacksmith_01").get("hp", 0)) != hp_before_followup_attack - 10
+	):
+		push_error("Follow-up attack in the same visible panel should bypass repeated confirmation")
+		quit(1)
+		return
+	for _index in range(500):
+		if not bool(dialog_system.get_dialogue_state().get("waiting", false)):
+			break
+		await create_timer(0.01).timeout
+	if bool(dialog_system.get_dialogue_state().get("waiting", false)):
+		push_error("Follow-up attack async reply did not finish")
+		quit(1)
+		return
 	if not _get_last_event(memory_system.get_npc_daily_events("blacksmith_01"), "dialogue_turn").is_empty():
 		push_error("Attack dialogue must remain buffered until completion")
 		quit(1)
@@ -394,6 +465,28 @@ func _init() -> void:
 		return
 	await process_frame
 	if not await _wait_for_llm_cleanup(llm_bridge):
+		quit(1)
+		return
+	var reopen_result: Dictionary = dialog_system.start_player_dialogue("blacksmith_01")
+	if not bool(reopen_result.get("ok", false)):
+		push_error("Failed to reopen attack dialogue for confirmation reset verification")
+		quit(1)
+		return
+	await process_frame
+	var hp_before_reopened_attack := int(npc_system.get_npc_state("blacksmith_01").get("hp", 0))
+	attack_button.pressed.emit()
+	await process_frame
+	if (
+		not attack_confirmation_dialog.visible
+		or int(npc_system.get_npc_state("blacksmith_01").get("hp", 0)) != hp_before_reopened_attack
+	):
+		push_error("Reopening the dialogue panel should restore first-attack confirmation")
+		quit(1)
+		return
+	attack_confirmation_dialog.get_cancel_button().pressed.emit()
+	var cleanup_result: Dictionary = dialog_system.cancel_displayed_dialogue()
+	if not bool(cleanup_result.get("ok", false)):
+		push_error("Failed to clean up reopened attack-confirmation dialogue")
 		quit(1)
 		return
 

@@ -562,7 +562,9 @@ func move_npc_to_building(npc_id: String, building_id: String) -> bool:
 		"current_action": "moving_to_%s" % building_id,
 		"movement_target": building_id,
 		"movement_target_name": building_name,
-		"location_context": {}
+		"location_context": {},
+		"last_action_result": "movement_started",
+		"last_action_failure_context": {}
 	})
 	npc_node.move_to_location(building_id, target_position)
 	_refresh_npc_node(npc_id)
@@ -613,7 +615,9 @@ func move_npc_to_world_position(
 		"current_action": "moving_to_%s" % clean_target_id,
 		"movement_target": clean_target_id,
 		"movement_target_name": clean_target_name,
-		"location_context": {}
+		"location_context": {},
+		"last_action_result": "movement_started",
+		"last_action_failure_context": {}
 	})
 	npc_node.move_to_location(clean_target_id, target_position)
 	_refresh_npc_node(npc_id)
@@ -1037,7 +1041,12 @@ func start_proactive_talk(npc_id: String, prompt_text: String, duration_seconds:
 	}
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "proactive_talk",
-		"proactive_talk": proactive_state
+		"proactive_talk": proactive_state,
+		# Starting a new authoritative action must replace the previous action's
+		# terminal result before npc_state_changed is emitted. Otherwise the plan
+		# listener can misattribute a stale failure to this proactive interaction.
+		"last_action_result": "proactive_talk_started",
+		"last_action_failure_context": {}
 	})
 	var event := _log_proactive_talk_started(npc_id, clean_text, duration)
 	_refresh_npc_node(npc_id)
@@ -1075,12 +1084,19 @@ func handle_npc_clicked(npc_id: String) -> bool:
 		return false
 	var proactive := get_proactive_talk(npc_id)
 	var prompt_text := str(proactive.get("prompt_text", "")).strip_edges()
-	_clear_proactive_talk(npc_id, "clicked")
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null or not dialog_system.has_method("start_proactive_player_dialogue"):
-		return false
+		# The click belongs to the active proactive interaction even when its
+		# consumer is temporarily unavailable. Keep the question intact instead
+		# of falling through to the ordinary NPC panel.
+		return true
 	var result: Dictionary = dialog_system.start_proactive_player_dialogue(npc_id, prompt_text)
-	return bool(result.get("ok", false))
+	if not bool(result.get("ok", false)):
+		# Plan activity and other dialogue guards are allowed to reject the
+		# handoff. The proactive state remains authoritative and can be retried.
+		return true
+	_clear_proactive_talk(npc_id, "clicked")
+	return true
 
 
 func _notify_escape_money_given(npc_id: String, amount: int, event: Dictionary) -> Dictionary:

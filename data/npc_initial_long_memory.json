@@ -46,6 +46,33 @@
             "value_label": "守备官统筹驿站的防务与警戒，遇到危急情况也负责安排站里的人手。",
             "day": 0,
             "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官是在三年前来到这座驿站的。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "他没有向我说过来站前的生活；那段过去我不知道，也不该替他编。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "自我认识守备官起，他做事一直尽责，与站里的人也相处和睦；再具体的旧事，我没有可确认的内容。",
+            "day": 0,
+            "time": "开局前"
           }
         },
         "cook_01": {
@@ -149,11 +176,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_and_final_failure_target",
+            "value": "command_center_final_target_and_late_device_platform",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅统筹全站，大家平日不在那里干活。敌人若毁掉主厅，这座驿站便算守不住了。",
+            "value_label": "守备官在主厅统筹全站，大家平日不在那里干活。敌人若毁掉主厅，这座驿站便算守不住了；这里也能安放弩床和箭塔，六级槽位依次为1、1、2、2、3、4个，架在这里的器械射程是原来的两倍。",
             "day": 0,
             "time": "开局前"
           }
@@ -193,11 +220,11 @@
         },
         "wall": {
           "function": {
-            "value": "defense_boundary_and_device_platform",
+            "value": "defense_boundary_and_six_level_device_platform",
             "confidence": 0.94,
             "subject_label": "围墙",
             "relation_label": "防务用途",
-            "value_label": "围墙圈住驿站外沿，也是安放弩床和箭塔的地方。来犯者会先冲着城门去，并不直接拿围墙开刀；墙体有损伤，仍得及时修补。",
+            "value_label": "围墙圈住驿站外沿，也能安放弩床和箭塔；从一级到六级可用槽位依次为1、2、2、3、3、4个。来犯者会先冲着城门去，并不直接拿围墙开刀；墙体有损伤，仍得及时修补。",
             "day": 0,
             "time": "开局前"
           }
@@ -312,7 +339,7 @@
             "confidence": 0.92,
             "subject_label": "小教堂",
             "relation_label": "在站里的作用",
-            "value_label": "谁都可以到小教堂独自祈祷，不必等神父在场。弥撒却得有人在祭坛主持才能参加，站里目前能做这件事的是马塞尔。",
+            "value_label": "谁都可以到小教堂祈祷，不必等神父在场；若马塞尔正在祭坛主持弥撒，祈祷者会自然随众参礼，弥撒结束后再继续独自祈祷。",
             "day": 0,
             "time": "开局前"
           }
@@ -387,6 +414,33 @@
             "subject_label": "守备官",
             "relation_label": "职务",
             "value_label": "守备官负责驿站的防务与日常警戒，遇到危急情况要决定哪些人去哪里、先做什么。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "我知道守备官三年前到了驿站，此后一直留在这里办差。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "守备官没讲过到站以前的经历；他的出身和过去我不知道，不能凭空猜。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "我认识的守备官一向敬业，和驿站众人也处得和气；要说某件三年旧事，我没有能确认的故事。",
             "day": 0,
             "time": "开局前"
           }
@@ -492,11 +546,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_and_final_failure_target",
+            "value": "command_center_final_target_and_delayed_device_slots",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅拿主意，大家不把那里当饭堂或工房。主厅要是被毁了，这站也就守不成了。",
+            "value_label": "守备官在主厅拿主意，大家不把那里当饭堂或工房。主厅要是被毁了，这站也就守不成了；它从一级到六级能架1、1、2、2、3、4件弩床或箭塔，而且器械射程是平常的两倍。",
             "day": 0,
             "time": "开局前"
           }
@@ -563,11 +617,11 @@
         },
         "wall": {
           "function": {
-            "value": "defense_boundary_and_device_platform",
+            "value": "defense_boundary_and_staggered_device_slots",
             "confidence": 0.92,
             "subject_label": "围墙",
             "relation_label": "防务用途",
-            "value_label": "围墙围着驿站，也给弩床和箭塔留了安放的地方。敌人来时先砸的是城门，不是围墙；墙体有损伤，照样得用石料修。",
+            "value_label": "围墙围着驿站，也给弩床和箭塔留了位置；六级依次能用1、2、2、3、3、4个槽，并非每次加固都添新位置。敌人来时先砸的是城门，不是围墙；墙体有损伤，照样得用石料修。",
             "day": 0,
             "time": "开局前"
           }
@@ -664,7 +718,7 @@
             "confidence": 0.9,
             "subject_label": "小教堂",
             "relation_label": "在站里的作用",
-            "value_label": "普通祈祷谁都可以自己去做，不必等神父。要参加弥撒，祭坛前就得有人主持，站里眼下只有马塞尔有这个资格。",
+            "value_label": "祈祷谁都可以自己去做，不必等神父；若祭坛前正有人主持弥撒，祈祷者会自然随众参礼，站里眼下只有马塞尔有主持资格。",
             "day": 0,
             "time": "开局前"
           }
@@ -739,6 +793,33 @@
             "subject_label": "守备官",
             "relation_label": "职务",
             "value_label": "守备官掌管驿站防务和警戒，危急时也要调配各处人手，免得站里各忙各的。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官来到驿站是在三年前，这是站里人都知道的时间。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "他从没向我交代来站前的人生，我不知道那段过去，也不会替他补故事。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "在我同守备官相处的日子里，他始终认真履职，也和大家相处和谐；更细的往事我并不清楚。",
             "day": 0,
             "time": "开局前"
           }
@@ -844,11 +925,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_and_final_failure_target",
+            "value": "command_center_failure_target_and_long_range_device_slots",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅处理全站事务，普通成员不在那里安排日常工作。若主厅被毁，驿站便失去了必须守住的中心。",
+            "value_label": "守备官在主厅处理全站事务，普通成员不在那里安排日常工作。若主厅被毁，驿站便失去了必须守住的中心；主厅六级的器械槽按1、1、2、2、3、4增长，装在那里的弩床和箭塔射程翻倍。",
             "day": 0,
             "time": "开局前"
           }
@@ -888,11 +969,11 @@
         },
         "wall": {
           "function": {
-            "value": "defense_boundary_and_device_platform",
+            "value": "defense_boundary_and_gradual_device_platform",
             "confidence": 0.92,
             "subject_label": "围墙",
             "relation_label": "防务用途",
-            "value_label": "围墙圈出驿站外沿，也承着弩床和箭塔。敌人通常先冲城门，并不直接攻墙；墙体坏了仍应修补，免得防务先从边角松掉。",
+            "value_label": "围墙圈出驿站外沿，也承着弩床和箭塔；从一级到六级的槽位是1、2、2、3、3、4个，有些等级只把墙修得更牢。敌人通常先冲城门，并不直接攻墙；墙体坏了仍应修补，免得防务先从边角松掉。",
             "day": 0,
             "time": "开局前"
           }
@@ -998,7 +1079,7 @@
             "confidence": 0.9,
             "subject_label": "小教堂",
             "relation_label": "在站里的作用",
-            "value_label": "人可以独自在小教堂祈祷，不必等神父来带领。弥撒不同，必须有人在祭坛主持，眼下站里有资格的是马塞尔。",
+            "value_label": "人可以随时去小教堂祈祷，不必等神父来带领；若祭坛正在举行弥撒，祈祷会自然转为随众参礼，眼下有资格主持的是马塞尔。",
             "day": 0,
             "time": "开局前"
           }
@@ -1073,6 +1154,33 @@
             "subject_label": "守备官",
             "relation_label": "职务",
             "value_label": "守备官管全站防务与警戒。危急时由这个职位定下人手安排，谁去哪里、做什么，都要说清。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官三年前来到驿站；关于时间，我只认这一点。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "他没说过来站前做过什么、来自哪里，我不知道，也不会胡编。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "我见过的守备官办差一直尽责，同站里人相处也和睦；具体哪一桩旧事，没有事实我就不说。",
             "day": 0,
             "time": "开局前"
           }
@@ -1178,11 +1286,11 @@
         },
         "main_hall": {
           "operational_role": {
-            "value": "command_center_and_final_defense_objective",
+            "value": "command_center_final_objective_and_double_range_device_host",
             "confidence": 0.96,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅统筹全站，平日没人把那里当工房。主厅一旦被毁，驿站也就守不住了。",
+            "value_label": "守备官在主厅统筹全站，平日没人把那里当工房。主厅一旦被毁，驿站也就守不住了；它的六级器械位按1、1、2、2、3、4开放，弩床或箭塔装上去能获得两倍射程。",
             "day": 0,
             "time": "开局前"
           }
@@ -1222,11 +1330,11 @@
         },
         "wall": {
           "operational_role": {
-            "value": "defensive_boundary_and_engine_platform",
+            "value": "defensive_boundary_and_six_level_engine_platform",
             "confidence": 0.9,
             "subject_label": "围墙",
             "relation_label": "防务用途",
-            "value_label": "围墙是驿站的外沿，也是安放弩床和箭塔的地方。来犯者先砸城门，不直接拿墙开刀；墙体有损仍该修，但把墙加固也不会多出新的器械位置。",
+            "value_label": "围墙是驿站的外沿，也是安放弩床和箭塔的地方；一级到六级依次开放1、2、2、3、3、4个通用槽，每次加固至多添一个，三级和五级不添槽。来犯者先砸城门，不直接拿墙开刀；墙体有损仍该修。",
             "day": 0,
             "time": "开局前"
           }
@@ -1332,7 +1440,7 @@
             "confidence": 0.82,
             "subject_label": "小教堂",
             "relation_label": "在站里的作用",
-            "value_label": "普通祈祷谁都能自己做，不需要神父守着。弥撒要有人在祭坛主持才办得起来，站里目前能主持的是马塞尔。",
+            "value_label": "祈祷谁都能自己做，不需要神父守着；弥撒要有人在祭坛主持才办得起来，举行时祈祷者会自然随众参礼，站里目前能主持的是马塞尔。",
             "day": 0,
             "time": "开局前"
           }
@@ -1407,6 +1515,33 @@
             "subject_label": "守备官",
             "relation_label": "职责",
             "value_label": "守备官统筹驿站防务与警戒，并在危急时安排人手；我的职责是协助把这些安排落实。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官于三年前抵达驿站，这一时间我记得清楚。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "守备官未向我说明到任前的身份与经历；那部分不在我所知范围内，不能推断。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "在我与守备官共事期间，他始终忠于职守，也与站内成员保持和睦关系；没有记录的具体往事不作补充。",
             "day": 0,
             "time": "开局前"
           }
@@ -1512,11 +1647,11 @@
         },
         "main_hall": {
           "strategic_role": {
-            "value": "station_command_center",
+            "value": "station_command_center_and_long_range_device_host",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "调度中枢",
-            "value_label": "主厅是守备官汇总消息、发出安排的地方。它不供日常起居，紧要的是让人手、路线和命令在这里对得上。",
+            "value_label": "主厅是守备官汇总消息、发出安排的地方，也能作为纵深器械阵位。六级槽位按1、1、2、2、3、4开放，架在这里的弩床和箭塔有效射程为普通位置的两倍。",
             "day": 0,
             "time": "开局前"
           },
@@ -1565,11 +1700,11 @@
         },
         "wall": {
           "operational_role": {
-            "value": "boundary_repair_upgrade_and_engine_slots",
+            "value": "boundary_repair_and_six_level_engine_slots",
             "confidence": 0.94,
             "subject_label": "围墙",
             "relation_label": "防线位置",
-            "value_label": "围墙划出驿站的防区，也托住弩床和箭塔。来犯者会先压向城门，不能因为墙面还完整，就把门口当成安全地方。",
+            "value_label": "围墙划出驿站的防区，也托住弩床和箭塔；从一级到六级依次有1、2、2、3、3、4个通用槽，每次升级至多增加一个。来犯者会先压向城门，不能因为墙面还完整，就把门口当成安全地方。",
             "day": 0,
             "time": "开局前"
           }
@@ -1684,7 +1819,7 @@
             "confidence": 0.88,
             "subject_label": "小教堂",
             "relation_label": "祈祷与弥撒",
-            "value_label": "个人祈祷不必等神父到场；弥撒则要由有资格的人站上祭坛主持。两件事都能安定人心，但不能把彼此的条件混在一起。",
+            "value_label": "祈祷不必等神父到场；若有资格的人站上祭坛主持弥撒，正在祈祷的人会自然随众参礼，结束后继续独自祈祷。",
             "day": 0,
             "time": "开局前"
           }
@@ -1759,6 +1894,33 @@
             "subject_label": "守备官",
             "relation_label": "职责",
             "value_label": "守备官负责统筹驿站防务、日常警戒，以及危急时站内人员的安排。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官在三年前来到驿站，我只把这个时间当作确知的事实。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "他没有向我谈过踏进驿站以前的过去；我不知道那段人生，也不应替他杜撰。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "自相识以来，守备官一直尽职，同驿站众人相处和谐；若问某件旧事，我只能说没有更多确证。",
             "day": 0,
             "time": "开局前"
           }
@@ -1864,11 +2026,11 @@
         },
         "main_hall": {
           "operational_role": {
-            "value": "command_center_whose_loss_defeats_station",
+            "value": "command_center_loss_condition_and_double_range_device_host",
             "confidence": 0.93,
             "subject_label": "主厅",
             "relation_label": "驿站中枢",
-            "value_label": "主厅是守备官料理全站事务的地方。它若倒下，驿站便无从维持；平日也不是居民进出消磨时间的房间。",
+            "value_label": "主厅是守备官料理全站事务的地方。它若倒下，驿站便无从维持；平日也不是居民消磨时间的房间。这里另有按1、1、2、2、3、4随六级开放的器械槽，弩床和箭塔能获得两倍射程。",
             "day": 0,
             "time": "开局前"
           }
@@ -1908,11 +2070,11 @@
         },
         "wall": {
           "operational_role": {
-            "value": "repairable_boundary_and_defense_engine_platform",
+            "value": "repairable_boundary_and_progressive_defense_engine_platform",
             "confidence": 0.86,
             "subject_label": "围墙",
             "relation_label": "外侧屏障",
-            "value_label": "围墙圈住驿站，也给弩床和箭塔留出安放的地方。来犯者更会先冲正门，但墙体受损仍需修补，石头并不会因为没人敲它就永远牢靠。",
+            "value_label": "围墙圈住驿站，也给弩床和箭塔留出安放的地方；六级槽位依次为1、2、2、3、3、4个，有的加固等级只增耐久。来犯者更会先冲正门，但墙体受损仍需修补，石头并不会因为没人敲它就永远牢靠。",
             "day": 0,
             "time": "开局前"
           }
@@ -2018,7 +2180,7 @@
             "confidence": 0.99,
             "subject_label": "小教堂",
             "relation_label": "谁能主持",
-            "value_label": "任何人都能独自祈祷，不需要我批准；主持弥撒则要有相应资格，目前站内由我承担这件事。",
+            "value_label": "任何人都能来祈祷，不需要我批准；我主持弥撒时，祈祷者会自然随众参礼，结束后再继续自己的祈祷。",
             "day": 0,
             "time": "开局前"
           },
@@ -2027,7 +2189,7 @@
             "confidence": 0.99,
             "subject_label": "小教堂",
             "relation_label": "弥撒如何维持",
-            "value_label": "弥撒要等主持者先站上祭坛才能开始；主持者离开，众人的弥撒也只能停下。弥撒开始时，原本各自进行的祈祷需要让出祈祷席。",
+            "value_label": "弥撒要等主持者先站上祭坛才能开始；主持者离开，众人的参礼也会结束。弥撒开始时，原本各自祈祷的人留在祈祷席上随众参礼，结束后再继续独自祈祷。",
             "day": 0,
             "time": "开局前"
           }
@@ -2102,6 +2264,33 @@
             "subject_label": "守备官",
             "relation_label": "职责",
             "value_label": "守备官负责全站防务和日常警戒，危急时还要安排人员去向与先后次序。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官三年前抵达驿站；这是我能确认的到站时间。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "守备官没有提供来站前的经历，我不知道其出身和过往，不能作无依据的判断。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "在我的实际接触中，守备官一直敬业，与驿站成员的相处也和睦；缺少记录的具体故事不能当成事实。",
             "day": 0,
             "time": "开局前"
           }
@@ -2207,11 +2396,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_and_failure_critical_structure",
+            "value": "command_center_failure_critical_and_double_range_device_host",
             "confidence": 0.97,
             "subject_label": "主厅",
             "relation_label": "驿站中枢",
-            "value_label": "主厅是守备官统筹驿站的地方，也是不能失去的中枢。它不供成员日常进入和工作，伤员也不该被往那里送。",
+            "value_label": "主厅是守备官统筹驿站的地方，也是不能失去的中枢。它不供成员日常进入和工作，伤员也不该被往那里送；其六级器械槽按1、1、2、2、3、4开放，部署的弩床和箭塔射程加倍。",
             "day": 0,
             "time": "开局前"
           }
@@ -2251,11 +2440,11 @@
         },
         "wall": {
           "function": {
-            "value": "defensive_boundary_and_device_platform",
+            "value": "defensive_boundary_and_level_gated_device_platform",
             "confidence": 0.91,
             "subject_label": "围墙",
             "relation_label": "外部防线",
-            "value_label": "围墙划出驿站的防御边界，也承载弩床和箭塔。来犯者会先冲击城门而不是墙体，器械安放则由守备官安排。",
+            "value_label": "围墙划出驿站的防御边界，也承载弩床和箭塔；一级到六级的可用槽位为1、2、2、3、3、4个，升级不会一次开放多个。来犯者会先冲击城门而不是墙体，器械安放则由守备官安排。",
             "day": 0,
             "time": "开局前"
           }
@@ -2343,7 +2532,7 @@
             "confidence": 0.92,
             "subject_label": "小教堂",
             "relation_label": "祈祷与弥撒",
-            "value_label": "个人祈祷不需要神父在场；参加弥撒则必须有合资格的人正在祭坛主持。两种活动都有用，但条件不同，不能互相顶替。",
+            "value_label": "祈祷不需要神父在场；若有合资格的人正在祭坛主持弥撒，祈祷者会自然随众参礼，弥撒结束后继续独自祈祷。",
             "day": 0,
             "time": "开局前"
           }
@@ -2445,6 +2634,33 @@
             "subject_label": "守备官",
             "relation_label": "职责",
             "value_label": "守备官统筹驿站的防务、警戒和危急时的人手安排，也负责让各处行动彼此衔接。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "arrival_at_station": {
+            "value": "arrived_three_years_before_game_start",
+            "confidence": 0.99,
+            "subject_label": "守备官",
+            "relation_label": "到站时间",
+            "value_label": "守备官是在三年前进入驿站任职的；时间范围可以确定。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "past_before_station": {
+            "value": "unknown_not_disclosed",
+            "confidence": 1.0,
+            "subject_label": "守备官",
+            "relation_label": "来站前经历",
+            "value_label": "他从未说明到站以前的履历，我不知道那部分过去，也不能用猜测填上。",
+            "day": 0,
+            "time": "开局前"
+          },
+          "pre_game_relationship": {
+            "value": "consistently_dedicated_and_harmonious",
+            "confidence": 0.95,
+            "subject_label": "守备官",
+            "relation_label": "过往相处",
+            "value_label": "我认识守备官以来，他始终尽责，并与驿站成员维持和谐相处；再细的旧事没有资料可证。",
             "day": 0,
             "time": "开局前"
           }
@@ -2550,11 +2766,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_and_failure_critical_structure",
+            "value": "command_center_failure_critical_and_rear_device_platform",
             "confidence": 0.97,
             "subject_label": "主厅",
             "relation_label": "结构与用途",
-            "value_label": "主厅收拢全站的消息和安排，也是驿站不能失去的核心。它不当普通工作间使用；需要修缮或扩建时，人只能从广场一侧协助施工。",
+            "value_label": "主厅收拢全站的消息和安排，也是驿站不能失去的核心。它不当普通工作间使用；六级器械槽按1、1、2、2、3、4开放，部署在这里的弩床和箭塔射程为围墙位置的两倍。",
             "day": 0,
             "time": "开局前"
           }
@@ -2612,20 +2828,20 @@
             "time": "开局前"
           },
           "device_deployment_rule": {
-            "value": "configured_device_slots_deployed_directly_by_guard",
+            "value": "wall_and_main_hall_device_slots_deployed_directly_by_guard",
             "confidence": 0.99,
             "subject_label": "围墙",
             "relation_label": "安放器械",
-            "value_label": "弩床和箭塔只能安在各自合适的墙位上，由守备官直接选定并安排；不需要再让某个成员把这项部署当成一份日常工作。",
+            "value_label": "弩床和箭塔可安在围墙或主厅已解锁的通用槽里，由守备官直接选定并安排；不需要再让某个成员把部署当成一份日常工作，主厅位置会把器械射程提高到两倍。",
             "day": 0,
             "time": "开局前"
           },
           "upgrade_rule": {
-            "value": "current_wall_upgrade_only_increases_max_hp",
+            "value": "six_level_host_slot_curves_with_non_slot_levels",
             "confidence": 0.99,
             "subject_label": "围墙",
             "relation_label": "加固所得",
-            "value_label": "把墙修厚只会让墙体更耐打，不会凭空多出安装器械的地方。",
+            "value_label": "围墙六级槽位依次为1、2、2、3、3、4个，主厅依次为1、1、2、2、3、4个；一次升级最多增加一个槽，某些等级只提高建筑耐久，不会每级都添位置。",
             "day": 0,
             "time": "开局前"
           }

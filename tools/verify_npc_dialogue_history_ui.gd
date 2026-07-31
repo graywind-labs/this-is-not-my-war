@@ -157,10 +157,8 @@ func _init() -> void:
 
 	var text := detail_text.text
 	for expected in [
-		"【第1天｜首波前】",
-		"【第1天｜第1波期间】",
-		"【第1天｜第1波后】",
-		"【第2天｜第1波后】",
+		"【第1天】",
+		"【第2天】",
 		"08:10:00",
 		"08:40:00",
 		"09:15:00",
@@ -174,6 +172,14 @@ func _init() -> void:
 		if not text.contains(expected):
 			_fail("Dialogue history omitted grouped transcript content '%s': %s" % [expected, text])
 			return
+	if (
+		text.count("【第1天】") != 1
+		or text.count("【第2天】") != 1
+		or text.contains("【第1天｜")
+		or text.contains("【第2天｜")
+	):
+		_fail("Dialogue history should group only by day without wave-phase headings: %s" % text)
+		return
 	if text.find("08:10:00") >= text.find("08:40:00"):
 		_fail("Dialogue history should sort conversations by in-game time")
 		return

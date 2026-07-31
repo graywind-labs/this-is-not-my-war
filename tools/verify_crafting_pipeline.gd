@@ -46,7 +46,13 @@ func _init() -> void:
 
 	if not _verify_catalog(crafting_system):
 		return
-	if not _verify_no_target_blocks_work(crafting_system, action_system, npc_system):
+	if not _verify_crafting_failure_facts(
+		crafting_system,
+		action_system,
+		resource_system,
+		npc_system,
+		memory_system
+	):
 		return
 
 	resource_system.add_resource("iron", 30)
@@ -189,7 +195,13 @@ func _verify_catalog(crafting_system: Node) -> bool:
 	return true
 
 
-func _verify_no_target_blocks_work(crafting_system: Node, action_system: Node, npc_system: Node) -> bool:
+func _verify_crafting_failure_facts(
+	crafting_system: Node,
+	action_system: Node,
+	resource_system: Node,
+	npc_system: Node,
+	memory_system: Node
+) -> bool:
 	crafting_system.set_target("blacksmith", "", true)
 	var worker_id := "blacksmith_01"
 	action_system.interrupt_npc_action(worker_id, "crafting_verification_reset")
@@ -201,6 +213,59 @@ func _verify_no_target_blocks_work(crafting_system: Node, action_system: Node, n
 	if str(npc_system.get_npc_state(worker_id).get("last_action_result", "")) != "work_failed_crafting_target_missing":
 		_fail("Missing target did not expose the expected action failure")
 		return false
+	var selected: Dictionary = crafting_system.set_target(
+		"blacksmith",
+		"craft_iron_helmet",
+		true
+	)
+	if not bool(selected.get("ok", false)):
+		_fail("Could not select resource-failure crafting target")
+		return false
+	var iron_before := int(resource_system.get_resource("iron"))
+	if iron_before > 0 and not resource_system.debug_spend_resources(
+		{"iron": iron_before}
+	):
+		_fail("Could not clear iron for crafting failure fact verification")
+		return false
+	var event_count: int = memory_system.get_npc_daily_events(worker_id).size()
+	if action_system.debug_assign_work(worker_id, "blacksmith"):
+		_fail("Blacksmith work must not start without the current stage material")
+		return false
+	var events: Array = memory_system.get_npc_daily_events(worker_id)
+	if events.size() <= event_count:
+		_fail("Insufficient stage resources did not write work_failed memory")
+		return false
+	var event: Dictionary = events[events.size() - 1]
+	var payload: Dictionary = (
+		event.get("payload", {})
+		if event.get("payload", {}) is Dictionary
+		else {}
+	)
+	var crafting_project: Dictionary = (
+		payload.get("crafting_project", {})
+		if payload.get("crafting_project", {}) is Dictionary
+		else {}
+	)
+	if (
+		str(event.get("type", "")) != "work_failed"
+		or str(payload.get("crafting_error", ""))
+			!= "insufficient_stage_resources"
+		or str(payload.get("reason", "")) != "当前制造阶段材料不足"
+		or int(payload.get("required_resources", {}).get("iron", 0)) != 1
+		or str(crafting_project.get("target_item_id", ""))
+			!= "item_iron_helmet"
+		or int(crafting_project.get("current_stage_index", 0)) != 1
+		or str(crafting_project.get("current_stage_name", "")).is_empty()
+		or int(crafting_project.get("current_stage_cost", {}).get("iron", 0))
+			!= 1
+	):
+		_fail(
+			"Crafting failure memory lost authoritative stage facts: %s"
+			% JSON.stringify(event)
+		)
+		return false
+	if iron_before > 0:
+		resource_system.add_resource("iron", iron_before)
 	return true
 
 
@@ -564,8 +629,8 @@ func _verify_parallel_blacksmith_cycles_after_upgrade(
 ) -> bool:
 	var blacksmith_before: Dictionary = building_system.get_building("blacksmith")
 	var workstations_before: Array = blacksmith_before.get("workstations", [])
-	if int(blacksmith_before.get("level", 0)) != 1 or workstations_before.size() != 1:
-		_fail("Parallel crafting verification requires a level-1 blacksmith with one workstation")
+	if int(blacksmith_before.get("level", 0)) != 1 or workstations_before.size() != 2:
+		_fail("Parallel crafting verification requires a level-1 blacksmith with two workstations")
 		return false
 	if not building_system.upgrade_building("blacksmith"):
 		_fail("Could not start the real blacksmith upgrade")
@@ -579,7 +644,7 @@ func _verify_parallel_blacksmith_cycles_after_upgrade(
 	var blacksmith_after: Dictionary = building_system.get_building("blacksmith")
 	var upgraded_workstations: Array = blacksmith_after.get("workstations", [])
 	if int(blacksmith_after.get("level", 0)) != 2 or upgraded_workstations.size() != 2:
-		_fail("Real blacksmith upgrade did not create the second workstation: %s" % JSON.stringify(blacksmith_after))
+		_fail("Level-two blacksmith upgrade should retain two workstations: %s" % JSON.stringify(blacksmith_after))
 		return false
 
 	var selected: Dictionary = crafting_system.set_target("blacksmith", "craft_sword_shield", true)
@@ -611,7 +676,7 @@ func _verify_parallel_blacksmith_cycles_after_upgrade(
 
 	var cycles: Array = action_system.get_active_work_cycle_snapshots("blacksmith", ["work_blacksmith"])
 	if cycles.size() != 2:
-		_fail("Upgraded blacksmith should expose two simultaneous work cycles: %s" % JSON.stringify(cycles))
+		_fail("Blacksmith should expose two simultaneous work cycles: %s" % JSON.stringify(cycles))
 		return false
 	var cycle_by_worker := {}
 	var occupied_workstations: Array[String] = []

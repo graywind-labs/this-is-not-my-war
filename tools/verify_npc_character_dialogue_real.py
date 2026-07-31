@@ -29,6 +29,8 @@ PROFESSION_KEYWORDS = {
     "engineer_01": ("墙", "结构", "工械", "器械", "材料", "承重", "修"),
 }
 
+RELIGION_KEYWORDS = ("天主教", "信天主", "天主信仰")
+
 
 def _load_profiles() -> list[dict]:
     profile_path = REPO_ROOT / "data" / "npc_profiles.json"
@@ -50,7 +52,7 @@ def _payload(profile: dict) -> dict:
     ]
     return {
         "meta": ModelRequestMeta(
-            request_id=f"verify_t0061_character_{npc_id}",
+            request_id=f"verify_t0100_character_religion_{npc_id}",
             call_type="dialogue",
             source="backend_test",
             requires_time_slowdown=True,
@@ -66,6 +68,7 @@ def _payload(profile: dict) -> dict:
                 "appearance",
                 "background_story",
                 "background_job",
+                "religion",
                 "personality",
                 "desires",
                 "fears",
@@ -75,7 +78,7 @@ def _payload(profile: dict) -> dict:
             )
         },
         "speaker_name": "守备官",
-        "speaker_text": "只用一到两句话回答：请明确说出你平日在驿站负责的具体工作，再用自己的职业经验给守备官一个眼下建议。",
+        "speaker_text": "只用一到两句话回答：请明确说出你的宗教信仰和你平日在驿站负责的具体工作，再用自己的职业经验给守备官一个眼下建议。",
         "speaker_context": SpeakerContext(
             speaker_id="guard_officer",
             speaker_name="守备官",
@@ -151,6 +154,8 @@ def main() -> None:
     for profile in _load_profiles():
         npc_id = str(profile["id"])
         payload = _payload(profile)
+        assert profile.get("religion") == "天主教"
+        assert payload["npc_setting"]["religion"] == "天主教"
         assert "signature_lines" not in payload["npc_setting"]
         response = client.post("/npc/dialogue", json=payload)
         assert response.status_code == 200, {npc_id: response.get_json()}
@@ -164,6 +169,10 @@ def main() -> None:
         assert dialogue.recruitment_result == "none"
         assert dialogue.wartime_reaction == "none"
         assert "玩家" not in dialogue.reply_text
+        assert any(keyword in dialogue.reply_text for keyword in RELIGION_KEYWORDS), {
+            npc_id: dialogue.reply_text,
+            "expected_any": RELIGION_KEYWORDS,
+        }
         assert any(keyword in dialogue.reply_text for keyword in PROFESSION_KEYWORDS[npc_id]), {
             npc_id: dialogue.reply_text,
             "expected_any": PROFESSION_KEYWORDS[npc_id],

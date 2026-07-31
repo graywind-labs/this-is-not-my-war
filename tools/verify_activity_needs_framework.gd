@@ -18,7 +18,6 @@ const REST_ACTION_IDS := [
 	"drink_wine",
 	"sleep_in_dormitory",
 	"pray_at_chapel",
-	"attend_mass",
 	"lead_mass",
 	"receive_clinic_treatment",
 ]
@@ -56,8 +55,8 @@ func _init() -> void:
 		return
 
 	var action_ids: Array[String] = action_system.get_action_ids()
-	if action_ids.size() != 25:
-		_fail("Expected all 25 current action definitions, got %d" % action_ids.size())
+	if action_ids.size() != 24:
+		_fail("Expected all 24 current action definitions, got %d" % action_ids.size())
 		return
 	var profile_ids: Array[String] = needs_system.get_profile_ids()
 	for action_id in action_ids:

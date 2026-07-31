@@ -40,13 +40,16 @@ class ModelRequestMeta(BaseModel):
 
 
 class EventSummary(BaseModel):
+    # event_id remains accepted for compatibility with older fixtures and audit
+    # inputs, but current Godot prompt projections omit it because the model
+    # cannot use an internal storage identifier to make a better decision.
     event_id: str | None = None
     type: str
     summary: str
     importance: int = Field(default=50, ge=0, le=100)
     day: int | None = Field(default=None, ge=1)
     time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}:\d{2}$")
-    payload: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ShortTermMemoryContext(BaseModel):
@@ -64,6 +67,7 @@ class NPCIdentity(BaseModel):
     name: str
     gender: str | None = None
     background_job: str | None = None
+    religion: str = ""
     background_story: str = ""
     personality: list[str] = Field(default_factory=list)
     desires: list[str] = Field(default_factory=list)

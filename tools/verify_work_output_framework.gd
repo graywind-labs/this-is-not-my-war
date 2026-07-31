@@ -31,10 +31,12 @@ func _init() -> void:
 
 	var gardener_id := "gardener_01"
 	var stableman_id := "stableman_01"
+	var cook_id := "cook_01"
 	var priest_id := "priest_01"
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(gardener_id, 100.0)
 	_set_debug_move_speed(stableman_id, 100.0)
+	_set_debug_move_speed(cook_id, 100.0)
 	_set_debug_move_speed(engineer_id, 100.0)
 
 	var garden_action: Dictionary = action_system.get_action("work_garden")
@@ -82,11 +84,21 @@ func _init() -> void:
 
 	npc_system.update_npc_state(stableman_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(stableman_id, "garden"):
-		push_error("Second worker should at least move toward garden before workstation rejection")
+		push_error("Second worker should be able to use the second initial garden workstation")
 		quit(1)
 		return
-	if not await _wait_until_action_result(npc_system, stableman_id, "work_failed_no_workstation"):
-		push_error("Second worker was not rejected when all workstations were occupied")
+	if not await _wait_until_current_action(npc_system, stableman_id, "work_garden"):
+		push_error("Second worker did not start work on the second garden workstation")
+		quit(1)
+		return
+
+	npc_system.update_npc_state(cook_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
+	if not action_system.debug_assign_work(cook_id, "garden"):
+		push_error("Third worker should at least move toward garden before workstation rejection")
+		quit(1)
+		return
+	if not await _wait_until_action_result(npc_system, cook_id, "work_failed_no_workstation"):
+		push_error("Third worker was not rejected when both initial garden workstations were occupied")
 		quit(1)
 		return
 

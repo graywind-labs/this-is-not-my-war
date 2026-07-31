@@ -193,19 +193,12 @@ def main() -> None:
         "不能把短工期机械延长到更晚时段",
         "required_ability=主持弥撒",
         "required_active_action_id",
-        "attend_mass",
         "pray_at_chapel",
-        "blocked_by_active_action_id=lead_mass",
-        "pray_failed_mass_in_progress",
-        "pray_failed_mass_started",
-        "attend_mass_failed_no_leader",
-        "attend_mass_failed_leader_left",
-        "应强烈优先把当前小时改为 `attend_mass`",
-        "应强烈优先把当前小时改为 `pray_at_chapel`",
-        "不得仅因泛泛的工作偏好离开教堂",
+        "程序会自动转为参加弥撒",
+        "这种内部状态转换不需要计划重估",
         "failure_context.dialogue_history",
         "NPC 已清楚答应立即参加",
-        "兑现刚形成的承诺",
+        "强烈优先把当前小时改为 `pray_at_chapel`",
         "drink_wine",
         "drink_wine_failed_no_wine",
         "程序消耗 1 份个人酒",
@@ -221,6 +214,14 @@ def main() -> None:
         "不得直接结算资源、HP、建筑、移动、伤害",
     ]:
         assert fragment in system_prompt, fragment
+    for removed_fragment in [
+        "attend_mass",
+        "pray_failed_mass_in_progress",
+        "pray_failed_mass_started",
+        "attend_mass_failed_no_leader",
+        "attend_mass_failed_leader_left",
+    ]:
+        assert removed_fragment not in system_prompt
 
     retry_adapter = ModelAdapter(ModelAdapterConfig(
         provider="deepseek",

@@ -109,7 +109,6 @@ func _verify_catalog_pause_gate(
 		"eat_at_dining_hall",
 		"sleep_in_dormitory",
 		"pray_at_chapel",
-		"attend_mass",
 		"lead_mass"
 	]
 	for action_id in expected_fixed:

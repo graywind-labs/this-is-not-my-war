@@ -98,6 +98,40 @@ class DialogueInterruptionContext(BaseModel):
     resume_expected_if_plan_unchanged: bool = False
 
 
+class DialogueActivityTruth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: str = Field(min_length=1)
+    is_training: bool
+
+
+class DialogueEquipmentTruth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    main_weapon: str | None
+    mount: str | None
+    has_trainable_equipment: bool
+
+
+class DialogueTrainingTruth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eligible: bool
+    blocker: Literal[
+        "no_trainable_equipment",
+        "no_active_instructor",
+        "training_unavailable",
+    ] | None
+
+    @model_validator(mode="after")
+    def validate_blocker_matches_eligibility(self):
+        if self.eligible and self.blocker is not None:
+            raise ValueError("eligible training_truth cannot include a blocker.")
+        if not self.eligible and self.blocker is None:
+            raise ValueError("ineligible training_truth requires a blocker.")
+        return self
+
+
 class NPCDialogueRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
@@ -125,6 +159,9 @@ class NPCDialogueRequest(StationAwareNPCRequest):
     soft_round_threshold: int = Field(default=5, ge=1)
     soft_round_guidance: str = ""
     npc_state: dict[str, Any] = Field(default_factory=dict)
+    activity_truth: DialogueActivityTruth | None = None
+    equipment_truth: DialogueEquipmentTruth | None = None
+    training_truth: DialogueTrainingTruth | None = None
     current_order: CurrentOrderContext = Field(default_factory=CurrentOrderContext)
     dialogue_state: DialogueState = Field(default_factory=DialogueState)
     interrupted_activity_context: DialogueInterruptionContext | None = None
@@ -141,6 +178,20 @@ class NPCDialogueRequest(StationAwareNPCRequest):
     escape_intervention_round: int | None = Field(default=None, ge=1, le=5)
     allowed_actions: list[ActionCandidate] = Field(min_length=1)
     constraints: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_authoritative_truth_bundle(self):
+        truth_fields = (
+            self.activity_truth,
+            self.equipment_truth,
+            self.training_truth,
+        )
+        present_count = sum(value is not None for value in truth_fields)
+        if present_count not in {0, 3}:
+            raise ValueError(
+                "activity_truth, equipment_truth and training_truth must appear together."
+            )
+        return self
 
 
 class DialogueResponseBase(BaseModel):
@@ -201,6 +252,60 @@ class DailyPlanResponse(BaseModel):
     debug_reason: str = ""
 
 
+class PlannedDialogueIntent(BaseModel):
+    created_day: int = Field(ge=1)
+    created_time: str = Field(pattern=r"^\d{2}:\d{2}:\d{2}$")
+    source: str
+    plan_item: PlanItem
+
+    @model_validator(mode="after")
+    def validate_dialogue_action(self):
+        if self.plan_item.action_id not in {"talk_to_npc", "seek_guard_officer"}:
+            raise ValueError(
+                "planned dialogue intent action_id must be talk_to_npc or seek_guard_officer."
+            )
+        if not self.plan_item.dialogue_goal.strip():
+            raise ValueError("planned dialogue intent requires non-empty dialogue_goal.")
+        return self
+
+
+class DialogueIntentRevalidationRequest(StationAwareNPCRequest):
+    meta: ModelRequestMeta
+    game_time: GameTime
+    npc: NPCContext
+    planned_intent: PlannedDialogueIntent
+    current_plan: list[PlanItem] = Field(min_length=24, max_length=24)
+    allowed_actions: list[ActionCandidate]
+    current_building_states: dict[str, Any] = Field(default_factory=dict)
+    current_resource_states: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_current_plan_and_intent(self):
+        if sorted(item.hour for item in self.current_plan) != list(range(24)):
+            raise ValueError("current_plan must contain each hour from 0 to 23 exactly once.")
+        plan_item = self.planned_intent.plan_item
+        if plan_item.hour != self.game_time.hour:
+            raise ValueError("planned_intent.plan_item.hour must match game_time.hour.")
+        current_item = next(
+            (item for item in self.current_plan if item.hour == self.game_time.hour),
+            None,
+        )
+        if current_item is None or current_item.model_dump() != plan_item.model_dump():
+            raise ValueError(
+                "planned_intent.plan_item must exactly match current_plan at game_time.hour."
+            )
+        return self
+
+
+class DialogueIntentRevalidationResponse(BaseModel):
+    ok: Literal[True] = True
+    npc_id: str
+    decision: Literal["continue", "modify", "cancel_and_replan"]
+    dialogue_goal: str = ""
+    summary: str = ""
+    debug_reason: str = ""
+
+
 class PlanRevisionJudgementRequest(StationAwareNPCRequest):
     meta: ModelRequestMeta
     game_time: GameTime
@@ -225,6 +330,8 @@ class PlanRevisionJudgementRequest(StationAwareNPCRequest):
         "high_fatigue",
         "combat_alarm",
         "order_changed",
+        "dialogue_intent_cancelled",
+        "dialogue_intent_revalidation_failed",
         "unknown",
     ] = "unknown"
     failure_summary: str = ""
@@ -303,6 +410,8 @@ class PlanRevisionRequest(StationAwareNPCRequest):
         "high_fatigue",
         "combat_alarm",
         "order_changed",
+        "dialogue_intent_cancelled",
+        "dialogue_intent_revalidation_failed",
         "unknown",
     ]
     failure_summary: str

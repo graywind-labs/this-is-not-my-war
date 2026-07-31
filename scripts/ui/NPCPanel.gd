@@ -11,6 +11,7 @@ const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
+const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const GAME_STATE_PATH := "/root/GameState"
 const ORDER_PANEL_PATH := "/root/Main/UI/OrderPanel"
 const DIALOG_PANEL_PATH := "/root/Main/UI/DialogPanel"
@@ -214,6 +215,7 @@ var _memory_detail_initial_plan_scroll_pending := false
 var _experience_label: Label
 var _strength_value_label: Label
 var _intelligence_value_label: Label
+var _combat_stats_label: Label
 var _strength_point_button: Button
 var _intelligence_point_button: Button
 var _llm_status_label: Label
@@ -728,6 +730,13 @@ func _setup_progression_controls() -> void:
 	)
 	row.add_child(_intelligence_point_button)
 
+	_combat_stats_label = Label.new()
+	_combat_stats_label.name = "NPCCombatStatsLabel"
+	_combat_stats_label.text = "战斗 Lv.1｜攻击 0｜防御 0｜穿透 0｜攻速 0.00/秒"
+	_combat_stats_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_combat_stats_label)
+	parent.move_child(_combat_stats_label, row.get_index() + 1)
+
 
 func _format_bool(value: Variant) -> String:
 	return "是" if bool(value) else "否"
@@ -742,9 +751,22 @@ func _format_action(action_id: String) -> String:
 		return "与守备官对话"
 	if action_id == "escape_intervention_dialogue":
 		return "与守备官进行逃离挽留对话"
-	if action_id == "drink_wine":
-		return "饮酒"
-	return action_id
+	if action_id.begins_with("moving_to_"):
+		var target_id := action_id.trim_prefix("moving_to_")
+		var target_name := str(KNOWLEDGE_SUBJECT_LABELS.get(target_id, "")).strip_edges()
+		return "前往%s" % (target_name if not target_name.is_empty() else "目的地")
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if (
+		action_system != null
+		and action_system.has_method("get_action_ids")
+		and action_system.get_action_ids().has(action_id)
+		and action_system.has_method("get_action")
+	):
+		var action: Dictionary = action_system.get_action(action_id)
+		var action_name := str(action.get("name", "")).strip_edges()
+		if not action_name.is_empty():
+			return action_name
+	return "未知行动"
 
 
 func _format_behavior_mode(mode: String) -> String:
@@ -762,7 +784,7 @@ func _format_behavior_mode(mode: String) -> String:
 		"escaped":
 			return "逃离"
 		_:
-			return mode
+			return "未知状态"
 
 
 func _format_attributes(raw_stats: Variant) -> String:
@@ -795,6 +817,21 @@ func _update_progression_controls(npc_system: Node, npc: Dictionary) -> void:
 	if _intelligence_point_button != null:
 		_intelligence_point_button.visible = unspent_points > 0 and intelligence < 10
 		_intelligence_point_button.disabled = not _intelligence_point_button.visible
+	if _combat_stats_label != null:
+		var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+		var combat_stats: Dictionary = (
+			combat_system.get_npc_combat_stats(_current_npc_id)
+			if combat_system != null and combat_system.has_method("get_npc_combat_stats")
+			else {}
+		)
+		var final_stats: Dictionary = combat_stats.get("final", {}) if combat_stats.get("final", {}) is Dictionary else {}
+		_combat_stats_label.text = "战斗 Lv.%d｜攻击 %.1f｜防御 %.1f｜穿透 %.1f｜攻速 %.2f/秒" % [
+			int(combat_stats.get("level", 1)),
+			float(final_stats.get("attack_power", 0.0)),
+			float(final_stats.get("defense", 0.0)),
+			float(final_stats.get("penetration", 0.0)),
+			float(final_stats.get("attack_speed", 0.0))
+		]
 
 
 func _format_specialties(npc_system: Node, npc_id: String) -> String:
@@ -1109,7 +1146,7 @@ func _fill_horse_select(npc: Dictionary) -> void:
 		var location := str(assigned.get("location", "stable"))
 		_set_horse_status("当前分配：%s｜%s" % [
 			str(assigned.get("name", assigned.get("horse_id", "马"))),
-			"在马厩" if location == "stable" else "已骑乘离厩" if location == "ridden" else location
+			"在马厩" if location == "stable" else "已骑乘离厩" if location == "ridden" else "位置未知"
 		])
 
 
@@ -1586,7 +1623,7 @@ func _format_plan_source(source: String) -> String:
 		"mock_plan_day":
 			return "Mock 调试计划"
 		_:
-			return source
+			return "其他来源"
 
 
 func _get_current_plan_initial_scroll_line(plan: Array) -> int:
@@ -1777,35 +1814,11 @@ func _get_current_guard_dialogue_history() -> Array:
 	)
 
 	var dialogues: Array = []
-	var active_wave_number := 0
-	var latest_wave_number := 0
 	for raw_event in chronological_events:
 		var event: Dictionary = raw_event if raw_event is Dictionary else {}
-		var event_type := str(event.get("type", ""))
-		var payload: Dictionary = (
-			event.get("payload", {})
-			if event.get("payload", {}) is Dictionary
-			else {}
-		)
-		if event_type == "combat_started":
-			active_wave_number = maxi(0, int(payload.get("wave_number", 0)))
-			latest_wave_number = maxi(latest_wave_number, active_wave_number)
-			continue
-		if event_type == "combat_ended":
-			var ended_wave_number := maxi(0, int(payload.get("wave_number", active_wave_number)))
-			latest_wave_number = maxi(latest_wave_number, ended_wave_number)
-			if active_wave_number == ended_wave_number or ended_wave_number <= 0:
-				active_wave_number = 0
-			continue
 		if not _is_guard_dialogue_history_event(event, _current_npc_id):
 			continue
-		var dialogue_event := event.duplicate(true)
-		dialogue_event["_history_wave_label"] = _format_dialogue_wave_group(
-			payload,
-			active_wave_number,
-			latest_wave_number
-		)
-		dialogues.append(dialogue_event)
+		dialogues.append(event)
 	return dialogues
 
 
@@ -1856,28 +1869,6 @@ func _is_guard_dialogue_history_event(event: Dictionary, npc_id: String) -> bool
 	return false
 
 
-func _format_dialogue_wave_group(
-	payload: Dictionary,
-	active_wave_number: int,
-	latest_wave_number: int
-) -> String:
-	if payload.has("wave_number"):
-		var explicit_wave_number := maxi(0, int(payload.get("wave_number", 0)))
-		var explicit_phase := str(payload.get("wave_phase", "")).strip_edges()
-		if explicit_wave_number <= 0:
-			return "非战时"
-		if explicit_phase == "active":
-			return "第%d波期间" % explicit_wave_number
-		if explicit_phase == "ended":
-			return "第%d波后" % explicit_wave_number
-		return "第%d波" % explicit_wave_number
-	if active_wave_number > 0:
-		return "第%d波期间" % active_wave_number
-	if latest_wave_number > 0:
-		return "第%d波后" % latest_wave_number
-	return "首波前"
-
-
 func _dialogue_history_time_seconds(time_text: String) -> int:
 	var parts := time_text.split(":")
 	if parts.size() < 2:
@@ -1899,8 +1890,7 @@ func _format_guard_dialogue_history_block(dialogues: Array) -> String:
 	for raw_event in dialogues:
 		var event: Dictionary = raw_event if raw_event is Dictionary else {}
 		var day := maxi(1, int(event.get("day", 1)))
-		var wave_label := str(event.get("_history_wave_label", "非战时"))
-		var group_key := "%d|%s" % [day, wave_label]
+		var group_key := str(day)
 		if group_key != current_group_key:
 			if not current_group_entries.is_empty():
 				sections.append("%s\n%s" % [
@@ -1908,7 +1898,7 @@ func _format_guard_dialogue_history_block(dialogues: Array) -> String:
 					"\n\n".join(current_group_entries)
 				])
 			current_group_key = group_key
-			current_group_heading = "【第%d天｜%s】" % [day, wave_label]
+			current_group_heading = "【第%d天】" % day
 			current_group_entries.clear()
 		var payload: Dictionary = (
 			event.get("payload", {})

@@ -46,7 +46,7 @@ func _init() -> void:
 		return
 
 	var hp_label := npc_panel.find_child("NPCHPLabel", true, false) as Label
-	if hp_label == null or hp_label.text != "HP：100 / 100":
+	if hp_label == null or hp_label.text != "HP：120 / 120":
 		push_error("NPCPanel HP text mismatch: %s" % (hp_label.text if hp_label != null else "<missing>"))
 		quit(1)
 		return
@@ -64,6 +64,7 @@ func _init() -> void:
 	var intelligence_point_button := npc_panel.find_child("NPCIntelligencePointButton", true, false) as Button
 	var strength_value_label := npc_panel.find_child("NPCStrengthValueLabel", true, false) as Label
 	var intelligence_value_label := npc_panel.find_child("NPCIntelligenceValueLabel", true, false) as Label
+	var combat_stats_label := npc_panel.find_child("NPCCombatStatsLabel", true, false) as Label
 	var specialties_label := npc_panel.find_child("NPCJobLabel", true, false) as Label
 	var panel_scroll := npc_panel.find_child("NPCPanelScroll", true, false) as ScrollContainer
 	var long_term_button_row := npc_panel.find_child("NPCLongTermInfoButtonRow", true, false) as HBoxContainer
@@ -102,6 +103,15 @@ func _init() -> void:
 		return
 	if intelligence_value_label == null or intelligence_value_label.text != "智力 6":
 		push_error("NPCPanel intelligence inline text mismatch")
+		quit(1)
+		return
+	if (
+		combat_stats_label == null
+		or not combat_stats_label.text.begins_with("战斗 Lv.")
+		or not combat_stats_label.text.contains("穿透")
+		or not combat_stats_label.text.contains("攻速")
+	):
+		push_error("NPCPanel combat stats text mismatch: %s" % (combat_stats_label.text if combat_stats_label != null else "<missing>"))
 		quit(1)
 		return
 	if specialties_label == null or not specialties_label.text.begins_with("专长："):
@@ -281,7 +291,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var veteran_profile: Dictionary = npc_system.get_npc(npc_id)
-	var required_profile_fields: Array[String] = ["appearance", "background_story", "background_job", "personality", "desires", "fears", "boundaries", "speech_style", "abilities"]
+	var required_profile_fields: Array[String] = ["appearance", "background_story", "background_job", "religion", "personality", "desires", "fears", "boundaries", "speech_style", "abilities"]
 	if not memory_detail_popup.visible or not memory_detail_title.text.contains("人物背景"):
 		push_error("NPC background button did not open the character background popup")
 		quit(1)
@@ -567,7 +577,7 @@ func _init() -> void:
 	await process_frame
 
 	var action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
-	if hp_label.text != "HP：64 / 100" or action_label == null or not action_label.text.begins_with("当前行动：guard_placeholder"):
+	if hp_label.text != "HP：64 / 120" or action_label == null or not action_label.text.begins_with("当前行动：未知行动"):
 		push_error("NPCPanel did not refresh after state update")
 		quit(1)
 		return

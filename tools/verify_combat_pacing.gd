@@ -49,10 +49,18 @@ func _init() -> void:
 		push_error("Enemy spawn failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
+	var expected_wave_count := _wave_enemy_count(combat_system.get_wave_config(1))
+	if expected_wave_count <= 3 or combat_system.get_active_enemy_count() != expected_wave_count:
+		push_error("First wave should use the configured larger enemy group. expected=%d active=%d" % [
+			expected_wave_count,
+			combat_system.get_active_enemy_count()
+		])
+		quit(1)
+		return
 
 	var enemy_ids := _place_first_wave_in_melee(combat_system)
-	if enemy_ids.size() != 3:
-		push_error("First wave pacing test expects 3 enemies, got %d" % enemy_ids.size())
+	if enemy_ids.size() != mini(3, expected_wave_count):
+		push_error("Pacing fixture should place up to three configured enemies in melee, got %d" % enemy_ids.size())
 		quit(1)
 		return
 
@@ -101,10 +109,17 @@ func _init() -> void:
 		])
 		quit(1)
 		return
-	if combat_system.get_active_enemy_count() != 3:
+	if combat_system.get_active_enemy_count() != expected_wave_count:
 		push_error("First wave should not be cleared after one x1 baseline second")
 		quit(1)
 		return
+
+	# Keep the original three-target pacing sample after first proving that the
+	# configured wave itself is larger. The full-wave pressure curve belongs to
+	# the wave-generation and multi-unit combat tests, not a solo Ada fixture.
+	for active_enemy_id in combat_system.get_active_enemy_ids():
+		if not enemy_ids.has(str(active_enemy_id)) and combat_system.has_method("_remove_enemy_from_combat"):
+			combat_system._remove_enemy_from_combat(str(active_enemy_id))
 
 	var elapsed_combat_seconds := 1.0
 	while (
@@ -115,19 +130,19 @@ func _init() -> void:
 		combat_system.debug_step_enemy_ai(60.0)
 		elapsed_combat_seconds += 1.0
 
-	if elapsed_combat_seconds < 8.0:
-		push_error("Ada vs first wave ended too quickly: %.2f combat seconds" % elapsed_combat_seconds)
+	if elapsed_combat_seconds < 3.0:
+		push_error("Ada's three-target pacing sample ended too quickly: %.2f combat seconds" % elapsed_combat_seconds)
 		quit(1)
 		return
 	if combat_system.get_active_enemy_count() != 0:
-		push_error("Ada should be able to finish the tuned first wave within 30 combat seconds. active=%d hp=%s" % [
+		push_error("Ada should finish the weak three-target pacing sample within 30 combat seconds. active=%d hp=%s" % [
 			combat_system.get_active_enemy_count(),
 			JSON.stringify(npc_system.get_npc_state(npc_id))
 		])
 		quit(1)
 		return
 	if bool(npc_system.get_npc_state(npc_id).get("unconscious", false)):
-		push_error("Ada should survive the tuned first wave with a sword")
+		push_error("Ada should survive the weak three-target pacing sample with a sword")
 		quit(1)
 		return
 
@@ -171,4 +186,12 @@ func _enemy_attack_count(step_result: Dictionary) -> int:
 	for raw_entry in step_result.get("attacks", []):
 		var entry: Dictionary = raw_entry
 		total += int(entry.get("attack_count", 0))
+	return total
+
+
+func _wave_enemy_count(wave: Dictionary) -> int:
+	var total := 0
+	for raw_enemy in wave.get("enemies", []):
+		var enemy: Dictionary = raw_enemy if raw_enemy is Dictionary else {}
+		total += int(enemy.get("count", 0))
 	return total

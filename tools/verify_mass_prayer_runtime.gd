@@ -72,8 +72,8 @@ class CapturingLLMBridge:
 				"npc_id": str(request.get("npc_id", "")),
 				"revised_plan": [revised_item.duplicate(true)],
 				"immediate_action": revised_item.duplicate(true),
-				"summary": "改为参加正在举行的弥撒。",
-				"debug_reason": "T0094 deterministic revision",
+				"summary": "改为前往小教堂祈祷。",
+				"debug_reason": "T0098 deterministic revision",
 				"model_provider": "deepseek",
 				"model_name": "capture-real-provider",
 				"model_fallback_used": false
@@ -149,7 +149,7 @@ func _init() -> void:
 	)
 
 	time_system.set_current_time(1, CURRENT_HOUR, 0, 0)
-	if not _verify_mass_interrupt_revision(
+	if not _verify_mass_transition_without_revision(
 		action_system,
 		building_system,
 		npc_system,
@@ -165,7 +165,7 @@ func _init() -> void:
 	):
 		return
 
-	print("T0094 Mass/prayer runtime verification passed.")
+	print("T0098 merged Mass/prayer runtime verification passed.")
 	quit(0)
 
 
@@ -241,7 +241,7 @@ func _verify_prayer_requires_arrival(
 	return true
 
 
-func _verify_mass_interrupt_revision(
+func _verify_mass_transition_without_revision(
 	action_system: Node,
 	building_system: Node,
 	npc_system: Node,
@@ -312,81 +312,58 @@ func _verify_mass_interrupt_revision(
 		_fail("Priest could not start Mass")
 		return false
 	var new_judgements := bridge.judgement_requests.slice(judgement_start_index)
-	if new_judgements.size() != interrupted_prayer_ids.size():
-		_fail(
-			"Mass start did not launch one exact judgement per active/pending prayer"
-		)
+	if not new_judgements.is_empty():
+		_fail("Mass start must not launch plan revision for merged prayer")
 		return false
-	for npc_id in interrupted_prayer_ids:
+	for npc_id in prayer_ids:
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
-		var failure_context: Dictionary = state.get("last_action_failure_context", {})
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
 		if (
-			str(state.get("last_action_result", "")) != "pray_failed_mass_started"
-			or str(failure_context.get("failure_id", "")) != "pray_failed_mass_started"
-			or action_system.has_active_action(npc_id)
-			or not action_system.get_pending_action_id(npc_id).is_empty()
-			or _is_occupied_by(
+			str(runtime.get("action_id", "")) != "pray_at_chapel"
+			or str(runtime.get("prayer_mode", "")) != "mass_attendance"
+			or not state.get("last_action_failure_context", {}).is_empty()
+			or not _is_occupied_by(
 				building_system.get_building("chapel").get("workstations", []),
 				npc_id
 			)
 		):
-			_fail("Mass start did not atomically fail prayer and release its seat: %s" % npc_id)
+			_fail("Mass start did not preserve and convert prayer: %s" % npc_id)
 			return false
-
-	for raw_request in new_judgements:
-		var request: Dictionary = raw_request
-		var npc_id := str(request.get("npc_id", ""))
-		var options: Dictionary = request.get("options", {})
-		var failure_context: Dictionary = options.get("failure_context", {})
+	var pending_state_after_mass: Dictionary = npc_system.get_npc_state(pending_prayer_id)
+	if (
+		action_system.get_pending_action_id(pending_prayer_id) != "pray_at_chapel"
+		or str(pending_state_after_mass.get("movement_target", "")) != "chapel"
+		or action_system.has_active_action(pending_prayer_id)
+	):
+		_fail("Mass start must preserve prayer that is still travelling")
+		return false
+	if not npc_system.debug_enter_location_immediately(pending_prayer_id, "chapel"):
+		_fail("Could not complete pending prayer arrival during Mass")
+		return false
+	var arrived_runtime: Dictionary = action_system.get_runtime_action_snapshot(
+		pending_prayer_id
+	)
+	if (
+		str(arrived_runtime.get("action_id", "")) != "pray_at_chapel"
+		or str(arrived_runtime.get("prayer_mode", "")) != "mass_attendance"
+	):
+		_fail("Prayer arriving during Mass should immediately attend it")
+		return false
+	action_system.interrupt_npc_action(priest_id, "t0098_mass_stopped", true)
+	if bridge.judgement_requests.size() != judgement_start_index:
+		_fail("Mass end must not launch plan revision for merged prayer")
+		return false
+	for npc_id in interrupted_prayer_ids:
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
 		if (
-			not interrupted_prayer_ids.has(npc_id)
-			or str(options.get("trigger_kind", "")) != "action_failure"
-			or str(options.get("failure_type", "")) != "target_unavailable"
-			or str(failure_context.get("failure_id", "")) != "pray_failed_mass_started"
+			str(runtime.get("action_id", "")) != "pray_at_chapel"
+			or str(runtime.get("prayer_mode", "")) != "personal_prayer"
+			or not npc_system.get_npc_state(npc_id).get(
+				"last_action_failure_context",
+				{}
+			).is_empty()
 		):
-			_fail("Stage-one Mass interruption lost its exact failure facts")
-			return false
-		var revision_count_before := bridge.revision_requests.size()
-		bridge.answer_judgement(request, [CURRENT_HOUR])
-		if bridge.revision_requests.size() != revision_count_before + 1:
-			_fail("Mass interruption judgement did not launch stage two")
-			return false
-		var revision_request: Dictionary = bridge.revision_requests.back()
-		var revision_options: Dictionary = revision_request.get("options", {})
-		var revision_failure_context: Dictionary = revision_options.get(
-			"failure_context",
-			{}
-		)
-		if (
-			revision_options.get("revision_hours", []) != [CURRENT_HOUR]
-			or str(revision_failure_context.get("failure_id", ""))
-			!= "pray_failed_mass_started"
-		):
-			_fail("Stage-two Mass revision lost exact hour or failure_id")
-			return false
-		bridge.answer_revision(
-			revision_request,
-			_item(CURRENT_HOUR, "attend_mass", "pray", "chapel")
-		)
-		if npc_id == pending_prayer_id:
-			var pending_state_after_revision: Dictionary = npc_system.get_npc_state(
-				npc_id
-			)
-			if (
-				action_system.get_pending_action_id(npc_id) != "attend_mass"
-				or str(pending_state_after_revision.get("movement_target", ""))
-				!= "chapel"
-			):
-				_fail(
-					"Revised travelling prayer did not reroute to attend Mass: %s"
-					% npc_id
-				)
-				return false
-		elif action_system.get_active_action_id(npc_id) != "attend_mass":
-			_fail(
-				"Revised prayer did not immediately join the active Mass: %s"
-				% npc_id
-			)
+			_fail("Mass end did not resume the original prayer: %s" % npc_id)
 			return false
 	return true
 
@@ -398,8 +375,16 @@ func _verify_dialogue_commitment_revision(
 	bridge: CapturingLLMBridge
 ) -> bool:
 	var npc_id := "veteran_deputy_01"
-	action_system.interrupt_npc_action(npc_id, "t0094_dialogue_mass_setup", true)
-	if not npc_system.debug_enter_location_immediately(npc_id, "chapel"):
+	var priest_id := "priest_01"
+	for actor_id in [npc_id, priest_id]:
+		action_system.interrupt_npc_action(actor_id, "t0098_dialogue_mass_setup", true)
+		if not npc_system.debug_enter_location_immediately(actor_id, "chapel"):
+			_fail("Could not place dialogue Mass actor in chapel")
+			return false
+	if not action_system.debug_assign_action(priest_id, "lead_mass"):
+		_fail("Could not start Mass for dialogue commitment verification")
+		return false
+	if str(npc_system.get_npc_state(npc_id).get("current_location", "")) != "chapel":
 		_fail("Could not place dialogue actor in chapel")
 		return false
 	if not daily_plan_system.set_npc_daily_plan(
@@ -477,9 +462,13 @@ func _verify_dialogue_commitment_revision(
 		return false
 	bridge.answer_revision(
 		revision_request,
-		_item(CURRENT_HOUR, "attend_mass", "pray", "chapel")
+		_item(CURRENT_HOUR, "pray_at_chapel", "pray", "chapel")
 	)
-	if action_system.get_active_action_id(npc_id) != "attend_mass":
+	var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+	if (
+		str(runtime.get("action_id", "")) != "pray_at_chapel"
+		or str(runtime.get("prayer_mode", "")) != "mass_attendance"
+	):
 		_fail("Accepted current Mass commitment was revised but did not execute immediately")
 		return false
 	return true

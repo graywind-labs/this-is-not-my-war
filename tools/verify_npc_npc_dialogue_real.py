@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 
@@ -30,6 +31,7 @@ def _npc_setting(profile: dict) -> dict:
             "appearance",
             "background_story",
             "background_job",
+            "religion",
             "personality",
             "desires",
             "fears",
@@ -45,8 +47,9 @@ def _payload() -> dict:
     priest = _profile("priest_01")
     priest_states = dict(priest.get("states", {}))
     soft_guidance = (
-        "两人讲完当前想讲的事情后，在最后一句里自然告别并设置结束标记；"
-        "第六轮起若无紧急或必要事项，应说一句告别话并结束。"
+        "soft_round_threshold 只是偏晚阶段的收尾保险，不是最低轮数、目标轮数或继续理由，"
+        "绝不能为了等到阈值而续聊。每轮若不能增加新内容，只能确认、复述或改写已有内容，"
+        "必须在本轮用至多一句简短收尾并设置 should_end_dialogue=true。"
     )
     return {
         "meta": ModelRequestMeta(
@@ -145,6 +148,65 @@ def _payload() -> dict:
     }
 
 
+def _set_participants(payload: dict, target_id: str, speaker_id: str) -> None:
+    target = _profile(target_id)
+    speaker = _profile(speaker_id)
+    target_states = dict(target.get("states", {}))
+    payload["npc_id"] = target_id
+    payload["npc_name"] = str(target["name"])
+    payload["npc_setting"] = _npc_setting(target)
+    payload["npc_state"].update({
+        "hp": target_states.get("hp", 100),
+        "max_hp": target_states.get("max_hp", 100),
+        "satiety": target_states.get("satiety", 80),
+        "fatigue": target_states.get("fatigue", 20),
+        "money": target_states.get("money", 0),
+        "recruited": bool(target.get("recruited", False)),
+    })
+    payload["current_order"] = target.get("current_order", {})
+    payload["speaker_name"] = str(speaker["name"])
+    payload["speaker_context"] = SpeakerContext(
+        speaker_id=speaker_id,
+        speaker_name=str(speaker["name"]),
+        speaker_kind="npc",
+        appearance=str(speaker.get("appearance", "")),
+        health_status="健康",
+    ).model_dump()
+    payload["dialogue_state"]["participants"] = [speaker_id, target_id]
+    payload["station_context"] = build_station_context([
+        {
+            "npc_id": speaker_id,
+            "name": str(speaker["name"]),
+            "identity": str(speaker["background_job"]),
+        },
+        {
+            "npc_id": target_id,
+            "name": str(target["name"]),
+            "identity": str(target["background_job"]),
+        },
+    ])
+
+
+def _turn(speaker_id: str, listener_id: str, text: str) -> dict:
+    speaker = _profile(speaker_id)
+    listener = _profile(listener_id)
+    return {
+        "speaker_id": speaker_id,
+        "speaker_name": str(speaker["name"]),
+        "listener_id": listener_id,
+        "listener_name": str(listener["name"]),
+        "text": text,
+        "visibility": "private",
+    }
+
+
+def _max_similarity(reply_text: str, prior_texts: list[str]) -> float:
+    return max(
+        (SequenceMatcher(None, reply_text, prior_text).ratio() for prior_text in prior_texts),
+        default=0.0,
+    )
+
+
 def main() -> None:
     load_dotenv(REPO_ROOT / "backend" / ".env")
     provider = os.getenv("LLM_PROVIDER", "mock").strip().lower()
@@ -188,9 +250,18 @@ def main() -> None:
     rejection_payload["dialogue_state"]["current_round"] = 0
     rejection_payload["meta"]["request_id"] = "verify_npc_npc_invitation_reject_real"
     rejection_payload["speaker_text"] = (
-        "马塞尔，这不是什么急事。请你立刻放下正在照看的伤员和诊所工作，"
-        "只陪我闲聊消磨时间；你完全可以拒绝。"
+        "马塞尔，重伤员还在流血。请你立刻停下正在做的救助，跟我离开诊所闲聊一个时辰；"
+        "这场谈话没有任何急事，你完全可以拒绝。"
     )
+    rejection_payload["short_memory"]["experienced_events"] = [{
+        "event_id": "evt_real_invitation_reject_critical_patient",
+        "type": "healing_started",
+        "day": 1,
+        "time": "07:58:00",
+        "summary": "马塞尔正在诊所协助照看一名仍在流血的重伤员。",
+        "importance": 95,
+        "payload": {},
+    }]
     rejection_response = client.post("/npc/dialogue", json=rejection_payload)
     rejection_body = rejection_response.get_json()
     assert rejection_response.status_code == 200, rejection_body
@@ -248,10 +319,147 @@ def main() -> None:
     assert body["model_provider"].strip().lower() != "mock"
     assert body["model_fallback_used"] is False
 
+    resolved_cases = [
+        {
+            "request_id": "verify_npc_npc_no_repeat_blacksmith_round_1_real",
+            "target_id": "veteran_deputy_01",
+            "speaker_id": "blacksmith_01",
+            "location_id": "blacksmith",
+            "location_name": "铁匠铺",
+            "current_round": 1,
+            "speaker_text": "剑盾还剩最后一道装配打磨，大概一个时辰。你要等的话，炉子空出来我就叫你。",
+            "history": [
+                _turn(
+                    "veteran_deputy_01",
+                    "blacksmith_01",
+                    "格伦，你还要多久完工？我可以等或者帮你一起做。",
+                ),
+            ],
+        },
+        {
+            "request_id": "verify_npc_npc_no_repeat_blacksmith_real",
+            "target_id": "veteran_deputy_01",
+            "speaker_id": "blacksmith_01",
+            "location_id": "blacksmith",
+            "location_name": "铁匠铺",
+            "current_round": 3,
+            "speaker_text": "行，你等着吧。最后一道装配打磨，快了。",
+            "history": [
+                _turn(
+                    "veteran_deputy_01",
+                    "blacksmith_01",
+                    "格伦，你还要多久完工？我可以等或者帮你一起做。",
+                ),
+                _turn(
+                    "blacksmith_01",
+                    "veteran_deputy_01",
+                    "剑盾还剩最后一道装配打磨，大概一个时辰。你要等的话，炉子空出来我就叫你。",
+                ),
+                _turn(
+                    "veteran_deputy_01",
+                    "blacksmith_01",
+                    "好，那我就在这儿等着。你专心把最后一道工序做完，炉子空出来我再上手。",
+                ),
+            ],
+        },
+        {
+            "request_id": "verify_npc_npc_no_repeat_clinic_real",
+            "target_id": "priest_01",
+            "speaker_id": "doctor_01",
+            "location_id": "clinic",
+            "location_name": "小诊所",
+            "current_round": 2,
+            "speaker_text": "那就定了：伤员归我处理，你先回小教堂；诊所需要帮手时我再叫你。",
+            "history": [
+                _turn(
+                    "priest_01",
+                    "doctor_01",
+                    "莉娜，需要我继续留在诊所帮忙，还是回小教堂？",
+                ),
+                _turn(
+                    "doctor_01",
+                    "priest_01",
+                    "最急的伤口已经处理完，你可以回去；真缺人时我会去叫你。",
+                ),
+            ],
+        },
+        {
+            "request_id": "verify_npc_npc_no_repeat_stable_real",
+            "target_id": "stableman_01",
+            "speaker_id": "veteran_deputy_01",
+            "location_id": "stable",
+            "location_name": "马厩",
+            "current_round": 2,
+            "speaker_text": "前半夜我让欧文巡马厩，后半夜你照看栗风；药膏由莉娜准备，就按这个安排。",
+            "history": [
+                _turn(
+                    "stableman_01",
+                    "veteran_deputy_01",
+                    "栗风的蹄子要敷药，今晚后半夜我守着；前半夜得有人替我看一会儿。",
+                ),
+                _turn(
+                    "veteran_deputy_01",
+                    "stableman_01",
+                    "我会安排欧文守前半夜，也让莉娜备好药膏。",
+                ),
+            ],
+        },
+    ]
+    resolved_results = []
+    for case in resolved_cases:
+        resolved_payload = _payload()
+        _set_participants(
+            resolved_payload,
+            str(case["target_id"]),
+            str(case["speaker_id"]),
+        )
+        resolved_payload["meta"]["request_id"] = str(case["request_id"])
+        resolved_payload["current_round"] = int(case["current_round"])
+        resolved_payload["dialogue_state"]["current_round"] = int(case["current_round"])
+        resolved_payload["dialogue_state"]["location_id"] = str(case["location_id"])
+        resolved_payload["dialogue_state"]["location_name"] = str(case["location_name"])
+        resolved_payload["npc_state"]["current_location"] = str(case["location_id"])
+        resolved_payload["location_context"] = {
+            "location_id": str(case["location_id"]),
+            "location_name": str(case["location_name"]),
+            "people_present": [str(case["speaker_id"]), str(case["target_id"])],
+        }
+        resolved_payload["speaker_text"] = str(case["speaker_text"])
+        resolved_payload["conversation_history"] = list(case["history"])
+        prior_texts = [
+            str(turn["text"])
+            for turn in resolved_payload["conversation_history"]
+        ] + [str(resolved_payload["speaker_text"])]
+
+        resolved_response = client.post("/npc/dialogue", json=resolved_payload)
+        resolved_body = resolved_response.get_json()
+        assert resolved_response.status_code == 200, resolved_body
+        resolved_dialogue = NPCNPCDialogueResponse(**{
+            key: value
+            for key, value in resolved_body.items()
+            if not key.startswith("model_")
+        })
+        similarity = _max_similarity(resolved_dialogue.reply_text, prior_texts)
+        assert resolved_dialogue.should_end_dialogue is True, resolved_dialogue
+        assert similarity < 0.82, {
+            "request_id": case["request_id"],
+            "reply_text": resolved_dialogue.reply_text,
+            "max_similarity": similarity,
+        }
+        assert resolved_body["model_provider"].strip().lower() == provider
+        assert resolved_body["model_provider"].strip().lower() != "mock"
+        assert resolved_body["model_fallback_used"] is False
+        resolved_results.append({
+            "request_id": case["request_id"],
+            "round": case["current_round"],
+            "reply_text": resolved_dialogue.reply_text,
+            "max_similarity": round(similarity, 3),
+        })
+
     usage_response = client.get("/debug/llm_usage")
     assert usage_response.status_code == 200
     usage = usage_response.get_json()
-    assert usage["summary"]["count"] == 3
+    assert usage["summary"]["count"] == 3 + len(resolved_cases)
     assert usage["summary"]["failed"] == 0
     assert usage["records"][-1]["call_type"] == "dialogue"
     assert usage["records"][-1]["fallback_used"] is False
@@ -261,6 +469,7 @@ def main() -> None:
         f"provider={provider} model={usage['model_adapter']['model']} "
         f"invitation_result={invitation.invitation_result}/{rejection.invitation_result} "
         "formal_rounds=no_hard_limit soft_threshold=5 end_at_round_6=true "
+        f"resolved_no_repeat={json.dumps(resolved_results, ensure_ascii=False)} "
         "response_kind=reply_to_npc fallback_used=false"
     )
 

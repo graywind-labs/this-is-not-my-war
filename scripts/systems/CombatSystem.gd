@@ -6,6 +6,7 @@ const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
+const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
@@ -27,20 +28,26 @@ const MOVE_SPEED_GAME_SECONDS_DIVISOR := 60.0
 const COMBAT_ACTION_GAME_SECONDS_PER_SECOND := 60.0
 const MAX_ATTACKS_PER_AI_STEP := 100
 const MAX_FRIENDLY_ATTACKS_PER_AI_STEP := 100
-const DEFENSE_REDUCTION_PER_POINT := 0.04
-const MAX_DEFENSE_DAMAGE_REDUCTION := 0.7
+const DEFENSE_CURVE_SCALE := 20.0
 const STRENGTH_ATTACK_BASELINE := 5.0
 const STRENGTH_ATTACK_BONUS_PER_POINT := 0.08
 const MIN_STRENGTH_ATTACK_MULTIPLIER := 0.65
 const MAX_STRENGTH_ATTACK_MULTIPLIER := 1.45
-const SKILL_ATTACK_SPEED_BONUS_AT_100 := 0.35
-const MOUNTED_ATTACK_SPEED_BONUS_AT_100_RIDING := 0.12
+const WEAPON_PROFICIENCY_ATTACK_SPEED_BONUS_AT_100 := 0.35
 const FATIGUE_ATTACK_SPEED_PENALTY_START := 60.0
 const FATIGUE_ATTACK_SPEED_MAX_PENALTY := 0.25
 const SATIETY_ATTACK_SPEED_PENALTY_START := 35.0
 const SATIETY_ATTACK_SPEED_MAX_PENALTY := 0.2
 const MIN_ATTACK_SPEED_MULTIPLIER := 0.45
 const MIN_NPC_ATTACK_INTERVAL := 0.25
+const COMBAT_LEVEL_EXPERIENCE_STEP := 10
+const MAX_COMBAT_LEVEL := 10
+const LEVEL_ATTACK_POWER_BONUS := 0.6
+const LEVEL_DEFENSE_BONUS := 0.3
+const LEVEL_PENETRATION_BONUS := 0.2
+const LEVEL_ATTACK_SPEED_BONUS := 0.015
+const STRENGTH_DEFENSE_BONUS_PER_POINT := 0.15
+const STRENGTH_PENETRATION_BONUS_PER_POINT := 0.08
 const MORALE_BOOST_DURATION_SECONDS := 7200.0
 const MORALE_BOOST_ATTACK_BONUS := 0.15
 const MORALE_BOOST_MOVE_SPEED_BONUS := 0.15
@@ -94,6 +101,11 @@ const KEEP_DISTANCE_MAX_RANGE_RATIO := 0.9
 const COMBAT_APPROACH_RANGE_RATIO := 0.85
 const CAVALRY_CHARGE_CLOSE_DISTANCE := 3.0
 const CAVALRY_CHARGE_RESET_DISTANCE := 5.5
+const CAVALRY_CHARGE_IMPACT_TOLERANCE := 0.9
+const CHARGE_PHASE_WITHDRAW := "withdraw"
+const CHARGE_PHASE_READY := "ready"
+const CHARGE_PHASE_CHARGING := "charging"
+const CHARGE_PHASE_IMPACT := "impact"
 const VALID_UNIT_TYPES: Array[String] = [
 	"melee_infantry",
 	"polearm_infantry",
@@ -166,6 +178,7 @@ var _last_alarm_result: Dictionary = {}
 var _last_mode_transition_result: Dictionary = {}
 var _last_avoidance_result: Dictionary = {}
 var _last_friendly_attack_result: Dictionary = {}
+var _last_area_damage_result: Dictionary = {}
 var _active_battle: Dictionary = {}
 var _last_battle_start_result: Dictionary = {}
 var _last_battle_end_result: Dictionary = {}
@@ -214,6 +227,7 @@ func initialize() -> void:
 	_last_mode_transition_result.clear()
 	_last_avoidance_result.clear()
 	_last_friendly_attack_result.clear()
+	_last_area_damage_result.clear()
 	_active_battle.clear()
 	_last_battle_start_result.clear()
 	_last_battle_end_result.clear()
@@ -353,11 +367,203 @@ func get_active_enemies() -> Array[Dictionary]:
 	return result
 
 
+func get_npc_combat_level(npc_id: String) -> int:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		return 1
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return 1
+	var progression: Dictionary = npc.get("progression", {}) if npc.get("progression", {}) is Dictionary else {}
+	var total_experience := maxi(0, int(progression.get("total_experience", 0)))
+	return clampi(
+		1 + int(floor(float(total_experience) / float(COMBAT_LEVEL_EXPERIENCE_STEP))),
+		1,
+		MAX_COMBAT_LEVEL
+	)
+
+
+func get_npc_combat_stats(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("get_npc_state")
+	):
+		return {}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {}
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var weapon := _get_npc_main_weapon(npc)
+	var required_skill := str(weapon.get("required_skill", weapon.get("weapon_class", "")))
+	var weapon_skill := _get_npc_skill_value(npc, required_skill)
+	var strength := _get_npc_stat_value(npc, "strength", int(STRENGTH_ATTACK_BASELINE))
+	var combat_base: Dictionary = npc.get("combat_base", {}) if npc.get("combat_base", {}) is Dictionary else {}
+	var level := get_npc_combat_level(npc_id)
+	var level_steps := maxi(0, level - 1)
+	var strength_growth_steps := maxi(0, strength - int(STRENGTH_ATTACK_BASELINE))
+
+	var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
+	var equipment_attack_power := 0.0
+	var equipment_defense := 0.0
+	var equipment_penetration := 0.0
+	var equipment_attack_speed_modifier := 0.0
+	for slot_id in ["main_weapon", "helmet", "chest", "bracers", "greaves", "mount"]:
+		var item: Dictionary = equipment.get(slot_id, {}) if equipment.get(slot_id, {}) is Dictionary else {}
+		if item.is_empty():
+			continue
+		equipment_attack_power += float(item.get("attack_power_modifier", 0.0))
+		equipment_defense += maxf(0.0, float(item.get("defense", 0.0)))
+		equipment_defense += maxf(0.0, float(item.get("armor_value", 0.0)))
+		equipment_penetration += maxf(0.0, float(item.get("penetration", 0.0)))
+		equipment_penetration += maxf(0.0, float(item.get("penetration_modifier", 0.0)))
+		equipment_attack_speed_modifier += float(item.get("attack_speed_modifier", 0.0))
+
+	var weapon_damage := maxf(0.0, float(weapon.get("damage", 0.0)))
+	var innate_attack_power := maxf(0.0, float(combat_base.get("attack_power", 0.0)))
+	var strength_multiplier := clampf(
+		1.0 + (float(strength) - STRENGTH_ATTACK_BASELINE) * STRENGTH_ATTACK_BONUS_PER_POINT,
+		MIN_STRENGTH_ATTACK_MULTIPLIER,
+		MAX_STRENGTH_ATTACK_MULTIPLIER
+	)
+	var morale_attack_bonus := _get_active_morale_attack_bonus(state)
+	var attack_before_multipliers := weapon_damage + innate_attack_power + equipment_attack_power
+	attack_before_multipliers += float(level_steps) * LEVEL_ATTACK_POWER_BONUS
+	var raw_attack_power := maxf(
+		0.0,
+		attack_before_multipliers * strength_multiplier * (1.0 + morale_attack_bonus)
+	)
+	var base_defense := maxf(0.0, float(combat_base.get("defense", 0.0)))
+	var final_defense := (
+		base_defense
+		+ equipment_defense
+		+ float(strength_growth_steps) * STRENGTH_DEFENSE_BONUS_PER_POINT
+		+ float(level_steps) * LEVEL_DEFENSE_BONUS
+	)
+	var base_penetration := maxf(0.0, float(combat_base.get("penetration", 0.0)))
+	var final_penetration := (
+		base_penetration
+		+ equipment_penetration
+		+ float(strength_growth_steps) * STRENGTH_PENETRATION_BONUS_PER_POINT
+		+ float(level_steps) * LEVEL_PENETRATION_BONUS
+	)
+	var weapon_skill_attack_speed_multiplier := (
+		1.0
+		+ clampf(float(weapon_skill) / 100.0, 0.0, 1.0)
+		* WEAPON_PROFICIENCY_ATTACK_SPEED_BONUS_AT_100
+	)
+	var condition_attack_speed_multiplier := _calculate_npc_condition_attack_speed_multiplier(state)
+	var innate_attack_speed_multiplier := maxf(
+		0.2,
+		float(combat_base.get("attack_speed_multiplier", 1.0))
+	)
+	var equipment_attack_speed_multiplier := maxf(0.2, 1.0 + equipment_attack_speed_modifier)
+	var level_attack_speed_multiplier := 1.0 + float(level_steps) * LEVEL_ATTACK_SPEED_BONUS
+	var final_attack_speed_multiplier := maxf(
+		MIN_ATTACK_SPEED_MULTIPLIER,
+		condition_attack_speed_multiplier
+		* weapon_skill_attack_speed_multiplier
+		* innate_attack_speed_multiplier
+		* equipment_attack_speed_multiplier
+		* level_attack_speed_multiplier
+	)
+	var base_interval := maxf(0.1, float(weapon.get("attack_interval", 1.8)))
+	var attack_interval := maxf(MIN_NPC_ATTACK_INTERVAL, base_interval / final_attack_speed_multiplier)
+	var attack_speed := 1.0 / attack_interval
+	var max_hp := maxi(1, int(state.get("max_hp", 100)))
+	var hp := clampi(int(state.get("hp", max_hp)), 0, max_hp)
+	return {
+		"npc_id": npc_id,
+		"npc_name": str(npc.get("name", npc_id)),
+		"level": level,
+		"total_experience": int((npc.get("progression", {}) as Dictionary).get("total_experience", 0)) if npc.get("progression", {}) is Dictionary else 0,
+		"strength": strength,
+		"weapon_skill": weapon_skill,
+		"base": {
+			"attack_power": innate_attack_power,
+			"defense": base_defense,
+			"penetration": base_penetration,
+			"attack_speed_multiplier": innate_attack_speed_multiplier,
+			"hp": hp,
+			"max_hp": max_hp
+		},
+		"growth": {
+			"level_steps": level_steps,
+			"strength_steps": strength_growth_steps,
+			"attack_power": float(level_steps) * LEVEL_ATTACK_POWER_BONUS,
+			"defense": (
+				float(strength_growth_steps) * STRENGTH_DEFENSE_BONUS_PER_POINT
+				+ float(level_steps) * LEVEL_DEFENSE_BONUS
+			),
+			"penetration": (
+				float(strength_growth_steps) * STRENGTH_PENETRATION_BONUS_PER_POINT
+				+ float(level_steps) * LEVEL_PENETRATION_BONUS
+			),
+			"weapon_skill_name": required_skill,
+			"weapon_skill_attack_speed_multiplier": weapon_skill_attack_speed_multiplier,
+			"level_attack_speed_multiplier": level_attack_speed_multiplier,
+			"attack_speed_multiplier": (
+				weapon_skill_attack_speed_multiplier
+				* level_attack_speed_multiplier
+			)
+		},
+		"equipment": {
+			"weapon_id": str(weapon.get("id", "")),
+			"weapon_name": str(weapon.get("name", "")),
+			"weapon_damage": weapon_damage,
+			"attack_power": equipment_attack_power,
+			"defense": equipment_defense,
+			"penetration": equipment_penetration,
+			"attack_speed_modifier": equipment_attack_speed_modifier
+		},
+		"condition": {
+			"strength_multiplier": strength_multiplier,
+			"morale_attack_bonus": morale_attack_bonus,
+			"attack_speed_multiplier": condition_attack_speed_multiplier
+		},
+		"final": {
+			"attack_power": raw_attack_power,
+			"defense": maxf(0.0, final_defense),
+			"penetration": maxf(0.0, final_penetration),
+			"attack_speed": attack_speed,
+			"attack_speed_multiplier": final_attack_speed_multiplier,
+			"attack_interval": attack_interval,
+			"range": maxf(0.1, float(weapon.get("range", 1.5))) if not weapon.is_empty() else 0.0,
+			"hp": hp,
+			"max_hp": max_hp
+		}
+	}
+
+
+func calculate_damage_resolution(raw_attack_power: float, defense: float, penetration: float = 0.0) -> Dictionary:
+	var target_defense := maxf(0.0, defense)
+	var attacker_penetration := maxf(0.0, penetration)
+	var effective_defense := maxf(0.0, target_defense - attacker_penetration)
+	var damage_multiplier := DEFENSE_CURVE_SCALE / (DEFENSE_CURVE_SCALE + effective_defense)
+	var reduction := 1.0 - damage_multiplier
+	var damage := maxi(
+		1,
+		int(round(maxf(1.0, raw_attack_power) * damage_multiplier))
+	)
+	return {
+		"raw_attack_power": raw_attack_power,
+		"target_defense": target_defense,
+		"penetration": attacker_penetration,
+		"effective_defense": effective_defense,
+		"damage_multiplier": damage_multiplier,
+		"damage_reduction": reduction,
+		"damage": damage
+	}
+
+
 func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, context: Dictionary = {}) -> Dictionary:
 	if enemy_id.is_empty() or raw_attack_power <= 0.0 or not _active_enemies.has(enemy_id):
 		return {}
 	var target_defense := _calculate_enemy_defense(enemy_id)
-	var damage := _calculate_actual_hp_damage(raw_attack_power, target_defense)
+	var penetration := maxf(0.0, float(context.get("penetration", 0.0)))
+	var resolution := calculate_damage_resolution(raw_attack_power, target_defense, penetration)
+	var damage := int(resolution.get("damage", 1))
 	var damage_result := _apply_damage_to_enemy(
 		enemy_id,
 		damage,
@@ -365,6 +571,8 @@ func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, cont
 		{
 			"raw_attack_power": raw_attack_power,
 			"target_defense": target_defense,
+			"penetration": penetration,
+			"effective_defense": float(resolution.get("effective_defense", target_defense)),
 			"source_type": "defense_device",
 			"deployment_id": str(context.get("deployment_id", "")),
 			"device_id": str(context.get("device_id", "")),
@@ -380,6 +588,119 @@ func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, cont
 	if bool(damage_result.get("defeated", false)) and _active_enemies.is_empty():
 		damage_result["mode_exit_result"] = _handle_all_enemies_cleared("enemies_defeated_by_device")
 	return damage_result
+
+
+func apply_enemy_area_damage(
+	center: Vector3,
+	radius: float,
+	raw_attack_power: float,
+	context: Dictionary = {}
+) -> Dictionary:
+	if radius <= 0.0 or raw_attack_power <= 0.0:
+		return {}
+	var penetration := maxf(0.0, float(context.get("penetration", 0.0)))
+	var source_type := str(context.get("source_type", "enemy_area_damage"))
+	var source_id := str(context.get("source_id", ""))
+	var source_name := str(context.get("source_name", "范围效果"))
+	var hit_results: Array[Dictionary] = []
+	var defeated_count := 0
+	var target_ids := get_active_enemy_ids()
+	for enemy_id in target_ids:
+		if not _active_enemies.has(enemy_id):
+			continue
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var horizontal_distance := Vector2(center.x, center.z).distance_to(
+			Vector2(enemy_position.x, enemy_position.z)
+		)
+		if horizontal_distance > radius:
+			continue
+		var target_defense := _calculate_enemy_defense(enemy_id)
+		var resolution := calculate_damage_resolution(
+			raw_attack_power,
+			target_defense,
+			penetration
+		)
+		var damage_result := _apply_damage_to_enemy(
+			enemy_id,
+			int(resolution.get("damage", 1)),
+			"",
+			{
+				"raw_attack_power": raw_attack_power,
+				"target_defense": target_defense,
+				"penetration": penetration,
+				"effective_defense": float(resolution.get("effective_defense", target_defense)),
+				"source_type": source_type,
+				"source_id": source_id,
+				"source_name": source_name
+			}
+		)
+		if damage_result.is_empty():
+			continue
+		damage_result["distance_to_center"] = horizontal_distance
+		damage_result["source_type"] = source_type
+		damage_result["source_id"] = source_id
+		damage_result["source_name"] = source_name
+		hit_results.append(damage_result)
+		if bool(damage_result.get("defeated", false)):
+			defeated_count += 1
+
+	_last_area_damage_result = {
+		"ok": true,
+		"center": _vector3_to_dict(center),
+		"radius": radius,
+		"raw_attack_power": raw_attack_power,
+		"penetration": penetration,
+		"source_type": source_type,
+		"source_id": source_id,
+		"source_name": source_name,
+		"hit_count": hit_results.size(),
+		"defeated_count": defeated_count,
+		"hits": hit_results
+	}
+	if defeated_count > 0 and _active_enemies.is_empty():
+		_last_area_damage_result["mode_exit_result"] = _handle_all_enemies_cleared(
+			str(context.get("mode_exit_reason", "enemies_defeated_by_area_damage"))
+		)
+	return _last_area_damage_result.duplicate(true)
+
+
+func apply_enemy_stagger(enemy_id: String, duration_seconds: float, context: Dictionary = {}) -> Dictionary:
+	if not _active_enemies.has(enemy_id) or duration_seconds <= 0.0:
+		return {}
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+	var windup_before := maxf(0.0, float(enemy.get("attack_windup_remaining", 0.0)))
+	var stagger_before := maxf(0.0, float(enemy.get("stagger_remaining", 0.0)))
+	var stagger_after := maxf(stagger_before, duration_seconds)
+	var interrupted := windup_before > 0.0
+	enemy["stagger_remaining"] = stagger_after
+	enemy["attack_windup_remaining"] = 0.0
+	enemy["attack_windup_target"] = {}
+	enemy["current_action"] = "staggered"
+	enemy["stagger_count"] = int(enemy.get("stagger_count", 0)) + 1
+	if interrupted:
+		enemy["windup_interrupt_count"] = int(enemy.get("windup_interrupt_count", 0)) + 1
+	enemy["last_stagger_result"] = {
+		"duration": duration_seconds,
+		"stagger_before": stagger_before,
+		"stagger_after": stagger_after,
+		"windup_before": windup_before,
+		"interrupted_windup": interrupted,
+		"source_type": str(context.get("source_type", "")),
+		"source_id": str(context.get("source_id", "")),
+		"source_name": str(context.get("source_name", ""))
+	}
+	_active_enemies[enemy_id] = enemy
+	_refresh_enemy_node(enemy_id)
+	return {
+		"ok": true,
+		"enemy_id": enemy_id,
+		"duration": duration_seconds,
+		"stagger_before": stagger_before,
+		"stagger_after": stagger_after,
+		"interrupted_windup": interrupted,
+		"windup_before": windup_before
+	}
 
 
 func spawn_wave(wave_number: int, clear_existing: bool = false, reason: String = "wave_spawned") -> Dictionary:
@@ -512,9 +833,12 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_spawn_result": get_last_spawn_result(),
 		"last_ai_step_result": _last_ai_step_result.duplicate(true),
 		"last_friendly_attack_result": _last_friendly_attack_result.duplicate(true),
+		"last_area_damage_result": _last_area_damage_result.duplicate(true),
 		"last_failure_result": _last_failure_result.duplicate(true),
 		"last_victory_result": _last_victory_result.duplicate(true),
 		"combatant_availability": _get_combatant_availability_snapshot(),
+		"friendly_combat_stats": _get_all_npc_combat_stats(),
+		"defense_devices": _get_defense_device_combat_snapshot(),
 		"last_mode_transition_result": _last_mode_transition_result.duplicate(true),
 		"last_avoidance_result": _last_avoidance_result.duplicate(true),
 		"last_battle_start_result": _last_battle_start_result.duplicate(true),
@@ -524,6 +848,25 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_escape_result": _last_escape_result.duplicate(true),
 		"time_scale": _get_time_scale_snapshot()
 	}
+
+
+func _get_all_npc_combat_stats() -> Array[Dictionary]:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		return []
+	var result: Array[Dictionary] = []
+	for raw_npc_id in npc_system.get_npc_ids():
+		var combat_stats := get_npc_combat_stats(str(raw_npc_id))
+		if not combat_stats.is_empty():
+			result.append(combat_stats)
+	return result
+
+
+func _get_defense_device_combat_snapshot() -> Dictionary:
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("get_state_snapshot"):
+		return {}
+	return device_system.get_state_snapshot()
 
 
 func get_active_escapes() -> Array[Dictionary]:
@@ -1452,11 +1795,56 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		target = _select_npc_attack_target(npc_id, attack_context)
 		if target.is_empty():
 			break
-		var single_attack := _apply_npc_attack_to_enemy(npc_id, npc, target, attack_context)
+		var is_charge_impact := (
+			str(attack_context.get("strategy_id", "")) == STRATEGY_CHARGE_CYCLE
+			and str(state.get("combat_charge_phase", "")) == CHARGE_PHASE_IMPACT
+		)
+		var single_attack := {}
+		if is_charge_impact:
+			var charge_impact := _apply_cavalry_charge_impact(npc_id, npc, target, attack_context)
+			if charge_impact.is_empty():
+				break
+			var target_enemy_id := str(target.get("id", ""))
+			if _active_enemies.has(target_enemy_id):
+				var charged_attack_context := attack_context.duplicate(true)
+				var weapon_multiplier := maxf(1.0, float(charge_impact.get("weapon_damage_multiplier", 1.0)))
+				charged_attack_context["raw_attack_power"] = (
+					float(attack_context.get("raw_attack_power", 1.0))
+					* weapon_multiplier
+				)
+				charged_attack_context["attack_power"] = maxi(
+					1,
+					int(round(float(charged_attack_context.get("raw_attack_power", 1.0))))
+				)
+				charged_attack_context["charge_impact"] = charge_impact.duplicate(true)
+				single_attack = _apply_npc_attack_to_enemy(
+					npc_id,
+					npc,
+					target,
+					charged_attack_context
+				)
+				single_attack["charge_impact"] = charge_impact.duplicate(true)
+			else:
+				single_attack = {
+					"attacker_npc_id": npc_id,
+					"attacker_name": str(npc.get("name", npc_id)),
+					"target_enemy_id": target_enemy_id,
+					"target_enemy_name": str(target.get("name", target_enemy_id)),
+					"source_type": "horse_collision",
+					"damage": int(charge_impact.get("collision_damage", 0)),
+					"damage_result": charge_impact.get("collision_damage_result", {}).duplicate(true),
+					"charge_impact": charge_impact.duplicate(true),
+					"event": {}
+				}
+			_update_npc_charge_phase(npc_id, CHARGE_PHASE_WITHDRAW, charge_impact)
+		else:
+			single_attack = _apply_npc_attack_to_enemy(npc_id, npc, target, attack_context)
 		if single_attack.is_empty():
 			break
 		attacks.append(single_attack)
 		cooldown = float(attack_context.get("attack_interval", 1.5))
+		if is_charge_impact:
+			break
 
 	var last_attack := attacks[attacks.size() - 1] if not attacks.is_empty() else {}
 	var state_changes := {
@@ -1490,6 +1878,11 @@ func _select_npc_attack_target(npc_id: String, attack_context: Dictionary) -> Di
 	if npc_system != null and npc_system.has_method("get_npc_state"):
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		preferred_enemy_id = str(state.get("combat_target_enemy_id", ""))
+		if (
+			str(attack_context.get("strategy_id", "")) == STRATEGY_CHARGE_CYCLE
+			and str(state.get("combat_charge_phase", "")) == CHARGE_PHASE_IMPACT
+		):
+			attack_range += CAVALRY_CHARGE_IMPACT_TOLERANCE
 	if _active_enemies.has(preferred_enemy_id):
 		var preferred := _make_enemy_attack_target(preferred_enemy_id, npc_position)
 		if not preferred.is_empty() and float(preferred.get("distance", INF)) <= attack_range:
@@ -1542,7 +1935,11 @@ func _advance_npc_combat_strategy_movement(
 	if is_strategy_moving:
 		if strategy_id == STRATEGY_AVOID and distance >= AVOIDANCE_DESIRED_DISTANCE:
 			return _hold_combat_strategy_avoid(npc_id, state, nearest, true)
-		if strategy_id == STRATEGY_AVOID or target_in_range.is_empty():
+		if (
+			strategy_id == STRATEGY_AVOID
+			or strategy_id == STRATEGY_CHARGE_CYCLE
+			or target_in_range.is_empty()
+		):
 			return {
 				"ok": true,
 				"npc_id": npc_id,
@@ -1589,24 +1986,38 @@ func _advance_npc_combat_strategy_movement(
 				)
 		STRATEGY_CHARGE_CYCLE:
 			var cooldown := maxf(0.0, float(state.get("combat_attack_cooldown", 0.0)))
-			var close_distance := maxf(CAVALRY_CHARGE_CLOSE_DISTANCE, attack_range + 0.75)
-			if distance <= attack_range and cooldown <= 0.0:
+			var charge_phase := str(state.get("combat_charge_phase", CHARGE_PHASE_WITHDRAW))
+			if charge_phase == CHARGE_PHASE_IMPACT and distance <= attack_range + CAVALRY_CHARGE_IMPACT_TOLERANCE and cooldown <= 0.0:
 				return {}
-			if distance < close_distance or (not target_in_range.is_empty() and cooldown > 0.0):
-				return _start_combat_strategy_move(
-					npc_id,
-					strategy_id,
-					nearest,
-					_select_charge_reset_target(npc_id, nearest, attack_range),
-					"combat_strategy_charge_reset"
-				)
-			if target_in_range.is_empty():
+			if charge_phase == CHARGE_PHASE_IMPACT and cooldown > 0.0:
+				charge_phase = CHARGE_PHASE_WITHDRAW
+				_update_npc_charge_phase(npc_id, charge_phase)
+			if charge_phase == CHARGE_PHASE_WITHDRAW:
+				if distance >= CAVALRY_CHARGE_RESET_DISTANCE:
+					charge_phase = CHARGE_PHASE_READY
+					_update_npc_charge_phase(npc_id, charge_phase)
+				else:
+					return _start_combat_strategy_move(
+						npc_id,
+						strategy_id,
+						nearest,
+						_select_charge_reset_target(npc_id, nearest, attack_range),
+						"combat_strategy_charge_reset",
+						{"combat_charge_phase": CHARGE_PHASE_READY},
+						{"combat_charge_phase": CHARGE_PHASE_WITHDRAW}
+					)
+			if charge_phase == CHARGE_PHASE_READY and not target_in_range.is_empty():
+				_update_npc_charge_phase(npc_id, CHARGE_PHASE_IMPACT)
+				return {}
+			if [CHARGE_PHASE_READY, CHARGE_PHASE_CHARGING, CHARGE_PHASE_IMPACT].has(charge_phase):
 				return _start_combat_strategy_move(
 					npc_id,
 					strategy_id,
 					nearest,
 					_select_approach_target(npc_id, nearest, attack_range),
-					"combat_strategy_charge_approach"
+					"combat_strategy_charge_approach",
+					{"combat_charge_phase": CHARGE_PHASE_IMPACT},
+					{"combat_charge_phase": CHARGE_PHASE_CHARGING}
 				)
 		_:
 			pass
@@ -1618,7 +2029,9 @@ func _start_combat_strategy_move(
 	strategy_id: String,
 	encounter: Dictionary,
 	target: Dictionary,
-	reason: String
+	reason: String,
+	arrival_state_overrides: Dictionary = {},
+	moving_state_overrides: Dictionary = {}
 ) -> Dictionary:
 	if target.is_empty():
 		return {}
@@ -1641,7 +2054,10 @@ func _start_combat_strategy_move(
 		"combat_strategy_move_target_name": target_name,
 		"combat_strategy_move_target_position": _vector3_to_dict(target_position)
 	}
+	arrival_state.merge(arrival_state_overrides, true)
 	var moved := bool(npc_system.move_npc_to_world_position(npc_id, target_id, target_name, target_position, arrival_state))
+	if moved and not moving_state_overrides.is_empty() and npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, moving_state_overrides)
 	return {
 		"ok": moved,
 		"npc_id": npc_id,
@@ -1657,6 +2073,16 @@ func _start_combat_strategy_move(
 		"target_enemy_distance": float(target.get("enemy_distance_after", 0.0)),
 		"travel_distance": npc_position.distance_to(target_position)
 	}
+
+
+func _update_npc_charge_phase(npc_id: String, phase: String, impact: Dictionary = {}) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("update_npc_state"):
+		return
+	var changes := {"combat_charge_phase": phase}
+	if not impact.is_empty():
+		changes["combat_charge_last_impact"] = impact.duplicate(true)
+	npc_system.update_npc_state(npc_id, changes)
 
 
 func _hold_combat_strategy_avoid(
@@ -1781,20 +2207,27 @@ func _calculate_npc_attack_context(npc_id: String, npc: Dictionary, state: Dicti
 	var weapon := _get_npc_main_weapon(npc)
 	if weapon.is_empty():
 		return {}
+	var combat_stats := get_npc_combat_stats(npc_id)
+	if combat_stats.is_empty():
+		return {}
+	var final_stats: Dictionary = combat_stats.get("final", {})
+	var condition: Dictionary = combat_stats.get("condition", {})
 	var required_skill := str(weapon.get("required_skill", weapon.get("weapon_class", "")))
 	var weapon_skill := _get_npc_skill_value(npc, required_skill)
 	var strength := _get_npc_stat_value(npc, "strength", int(STRENGTH_ATTACK_BASELINE))
 	var base_damage := maxf(1.0, float(weapon.get("damage", 1.0)))
-	var strength_multiplier := clampf(
-		1.0 + (float(strength) - STRENGTH_ATTACK_BASELINE) * STRENGTH_ATTACK_BONUS_PER_POINT,
-		MIN_STRENGTH_ATTACK_MULTIPLIER,
-		MAX_STRENGTH_ATTACK_MULTIPLIER
+	var strength_multiplier := float(condition.get("strength_multiplier", 1.0))
+	var morale_attack_bonus := float(condition.get("morale_attack_bonus", 0.0))
+	var raw_attack_power := maxf(1.0, float(final_stats.get("attack_power", base_damage)))
+	var attack_speed_multiplier := maxf(
+		MIN_ATTACK_SPEED_MULTIPLIER,
+		float(final_stats.get("attack_speed_multiplier", 1.0))
 	)
-	var morale_attack_bonus := _get_active_morale_attack_bonus(state)
-	var raw_attack_power := base_damage * strength_multiplier * (1.0 + morale_attack_bonus)
-	var attack_speed_multiplier := _calculate_npc_attack_speed_multiplier(npc, state, weapon_skill)
 	var base_interval := maxf(0.1, float(weapon.get("attack_interval", 1.8)))
-	var attack_interval := maxf(MIN_NPC_ATTACK_INTERVAL, base_interval / attack_speed_multiplier)
+	var attack_interval := maxf(
+		MIN_NPC_ATTACK_INTERVAL,
+		float(final_stats.get("attack_interval", base_interval / attack_speed_multiplier))
+	)
 	return {
 		"npc_id": npc_id,
 		"weapon_id": str(weapon.get("id", "")),
@@ -1808,16 +2241,20 @@ func _calculate_npc_attack_context(npc_id: String, npc: Dictionary, state: Dicti
 		"morale_attack_bonus": morale_attack_bonus,
 		"raw_attack_power": raw_attack_power,
 		"attack_power": maxi(1, int(round(raw_attack_power))),
+		"defense": maxf(0.0, float(final_stats.get("defense", 0.0))),
+		"penetration": maxf(0.0, float(final_stats.get("penetration", 0.0))),
 		"base_attack_interval": base_interval,
 		"attack_speed_multiplier": attack_speed_multiplier,
+		"attack_speed": maxf(0.01, float(final_stats.get("attack_speed", 1.0 / attack_interval))),
 		"attack_interval": attack_interval,
-		"range": maxf(0.1, float(weapon.get("range", 1.5)))
+		"range": maxf(0.1, float(final_stats.get("range", weapon.get("range", 1.5)))),
+		"combat_level": int(combat_stats.get("level", 1)),
+		"combat_stats": combat_stats
 	}
 
 
-func _calculate_npc_attack_speed_multiplier(npc: Dictionary, state: Dictionary, weapon_skill: int) -> float:
-	var skill_bonus := clampf(float(weapon_skill) / 100.0, 0.0, 1.0) * SKILL_ATTACK_SPEED_BONUS_AT_100
-	var multiplier := 1.0 + skill_bonus
+func _calculate_npc_condition_attack_speed_multiplier(state: Dictionary) -> float:
+	var multiplier := 1.0
 	var fatigue := clampf(float(state.get("fatigue", 0.0)), 0.0, 100.0)
 	if fatigue > FATIGUE_ATTACK_SPEED_PENALTY_START:
 		var fatigue_ratio := (fatigue - FATIGUE_ATTACK_SPEED_PENALTY_START) / (100.0 - FATIGUE_ATTACK_SPEED_PENALTY_START)
@@ -1826,11 +2263,6 @@ func _calculate_npc_attack_speed_multiplier(npc: Dictionary, state: Dictionary, 
 	if satiety < SATIETY_ATTACK_SPEED_PENALTY_START:
 		var satiety_ratio := (SATIETY_ATTACK_SPEED_PENALTY_START - satiety) / SATIETY_ATTACK_SPEED_PENALTY_START
 		multiplier *= 1.0 - clampf(satiety_ratio, 0.0, 1.0) * SATIETY_ATTACK_SPEED_MAX_PENALTY
-	var equipment: Dictionary = npc.get("equipment", {}) if (npc.get("equipment", {}) is Dictionary) else {}
-	var mount: Dictionary = equipment.get("mount", {}) if (equipment.get("mount", {}) is Dictionary) else {}
-	if not mount.is_empty():
-		var riding_skill := _get_npc_skill_value(npc, "骑术")
-		multiplier *= 1.0 + clampf(float(riding_skill) / 100.0, 0.0, 1.0) * MOUNTED_ATTACK_SPEED_BONUS_AT_100_RIDING
 	return maxf(MIN_ATTACK_SPEED_MULTIPLIER, multiplier)
 
 
@@ -1856,10 +2288,14 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 		return {}
 	var target_defense := _calculate_enemy_defense(enemy_id)
 	var raw_attack_power := float(attack_context.get("raw_attack_power", 1.0))
-	var damage := _calculate_actual_hp_damage(raw_attack_power, target_defense)
+	var penetration := maxf(0.0, float(attack_context.get("penetration", 0.0)))
+	var resolution := calculate_damage_resolution(raw_attack_power, target_defense, penetration)
+	var damage := int(resolution.get("damage", 1))
 	var damage_result := _apply_damage_to_enemy(enemy_id, damage, npc_id, {
 		"raw_attack_power": raw_attack_power,
 		"target_defense": target_defense,
+		"penetration": penetration,
+		"effective_defense": float(resolution.get("effective_defense", target_defense)),
 		"weapon_id": str(attack_context.get("weapon_id", "")),
 		"weapon_name": str(attack_context.get("weapon_name", "武器"))
 	})
@@ -1871,9 +2307,83 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 		"target_enemy_name": str(target.get("name", enemy_id)),
 		"raw_attack_power": raw_attack_power,
 		"target_defense": target_defense,
+		"penetration": penetration,
+		"effective_defense": float(resolution.get("effective_defense", target_defense)),
 		"damage": damage,
 		"damage_result": damage_result,
 		"event": event
+	}
+
+
+func _apply_cavalry_charge_impact(
+	npc_id: String,
+	npc: Dictionary,
+	target: Dictionary,
+	attack_context: Dictionary
+) -> Dictionary:
+	var enemy_id := str(target.get("id", ""))
+	if enemy_id.is_empty() or not _active_enemies.has(enemy_id):
+		return {}
+	var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
+	var mount: Dictionary = equipment.get("mount", {}) if equipment.get("mount", {}) is Dictionary else {}
+	if mount.is_empty():
+		return {}
+	var riding_skill := _get_npc_skill_value(npc, "骑术")
+	var collision_raw_damage := maxf(
+		1.0,
+		float(mount.get("charge_damage", 4.0))
+		+ float(riding_skill) * maxf(0.0, float(mount.get("charge_damage_riding_scale", 0.04)))
+	)
+	var collision_penetration := maxf(0.0, float(mount.get("charge_penetration", 0.0)))
+	var target_defense := _calculate_enemy_defense(enemy_id)
+	var resolution := calculate_damage_resolution(
+		collision_raw_damage,
+		target_defense,
+		collision_penetration
+	)
+	var stagger_duration := maxf(0.0, float(mount.get("charge_stagger_seconds", 0.6)))
+	var stagger_result := apply_enemy_stagger(
+		enemy_id,
+		stagger_duration,
+		{
+			"source_type": "horse_collision",
+			"source_id": npc_id,
+			"source_name": str(npc.get("name", npc_id))
+		}
+	)
+	var damage_result := _apply_damage_to_enemy(
+		enemy_id,
+		int(resolution.get("damage", 1)),
+		npc_id,
+		{
+			"raw_attack_power": collision_raw_damage,
+			"target_defense": target_defense,
+			"penetration": collision_penetration,
+			"effective_defense": float(resolution.get("effective_defense", target_defense)),
+			"source_type": "horse_collision",
+			"mount_id": str(mount.get("id", mount.get("horse_id", ""))),
+			"mount_name": str(mount.get("name", "坐骑"))
+		}
+	)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"enemy_id": enemy_id,
+		"mount_id": str(mount.get("id", mount.get("horse_id", ""))),
+		"mount_name": str(mount.get("name", "坐骑")),
+		"riding_skill": riding_skill,
+		"weapon_damage_multiplier": maxf(
+			1.0,
+			float(mount.get("charge_weapon_damage_multiplier", 1.45))
+		),
+		"collision_raw_damage": collision_raw_damage,
+		"collision_damage": int(resolution.get("damage", 1)),
+		"collision_penetration": collision_penetration,
+		"collision_damage_result": damage_result,
+		"stagger_duration": stagger_duration,
+		"stagger_result": stagger_result,
+		"interrupted_windup": bool(stagger_result.get("interrupted_windup", false)),
+		"base_attack_context": attack_context.duplicate(true)
 	}
 
 
@@ -1892,6 +2402,8 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		"damage": damage,
 		"raw_attack_power": float(context.get("raw_attack_power", damage)),
 		"target_defense": float(context.get("target_defense", 0.0)),
+		"penetration": float(context.get("penetration", 0.0)),
+		"effective_defense": float(context.get("effective_defense", context.get("target_defense", 0.0))),
 		"hp_before": hp_before,
 		"hp_after": hp_after,
 		"max_hp": max_hp,
@@ -1934,22 +2446,13 @@ func _calculate_enemy_defense(enemy_id: String) -> float:
 
 
 func _calculate_npc_defense(npc_id: String) -> float:
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if npc_system == null or not npc_system.has_method("get_npc"):
-		return 0.0
-	var npc: Dictionary = npc_system.get_npc(npc_id)
-	var equipment: Dictionary = npc.get("equipment", {}) if (npc.get("equipment", {}) is Dictionary) else {}
-	var defense := 0.0
-	for slot in ["helmet", "chest", "bracers", "greaves"]:
-		var item: Dictionary = equipment.get(slot, {}) if (equipment.get(slot, {}) is Dictionary) else {}
-		defense += maxf(0.0, float(item.get("armor_value", 0.0)))
-	return defense
+	var combat_stats := get_npc_combat_stats(npc_id)
+	var final_stats: Dictionary = combat_stats.get("final", {}) if combat_stats.get("final", {}) is Dictionary else {}
+	return maxf(0.0, float(final_stats.get("defense", 0.0)))
 
 
-func _calculate_actual_hp_damage(raw_attack_power: float, defense: float) -> int:
-	var reduction := clampf(maxf(0.0, defense) * DEFENSE_REDUCTION_PER_POINT, 0.0, MAX_DEFENSE_DAMAGE_REDUCTION)
-	var damage := maxf(1.0, maxf(1.0, raw_attack_power) * (1.0 - reduction))
-	return maxi(1, int(round(damage)))
+func _calculate_actual_hp_damage(raw_attack_power: float, defense: float, penetration: float = 0.0) -> int:
+	return int(calculate_damage_resolution(raw_attack_power, defense, penetration).get("damage", 1))
 
 
 func _log_npc_attack_made(
@@ -2006,6 +2509,7 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 		"combat_seconds": combat_delta_seconds,
 		"moved": [],
 		"attacks": [],
+		"staggered": [],
 		"targets": []
 	}
 	if game_delta_seconds <= 0.0 or _active_enemies.is_empty():
@@ -2017,6 +2521,19 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 			continue
 		var enemy: Dictionary = _active_enemies[enemy_id]
 		if not bool(enemy.get("alive", true)):
+			continue
+		var stagger_remaining := maxf(0.0, float(enemy.get("stagger_remaining", 0.0)))
+		if stagger_remaining > 0.0:
+			var stagger_after := maxf(0.0, stagger_remaining - combat_delta_seconds)
+			enemy["stagger_remaining"] = stagger_after
+			enemy["current_action"] = "staggered" if stagger_after > 0.0 else "recovering_from_stagger"
+			(result["staggered"] as Array).append({
+				"enemy_id": enemy_id,
+				"before": stagger_remaining,
+				"after": stagger_after
+			})
+			_active_enemies[enemy_id] = enemy
+			_refresh_enemy_node(enemy_id)
 			continue
 
 		var target := _select_enemy_target(enemy)
@@ -2033,6 +2550,7 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 
 		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
 		var target_position: Vector3 = target.get("position", enemy_position)
+		target_position.y = enemy_position.y
 		var attack_range := maxf(0.1, float(enemy.get("attack_range", 1.5)))
 		var distance := enemy_position.distance_to(target_position)
 		if distance > attack_range:
@@ -3119,10 +3637,13 @@ func _set_npc_combat_strategy(
 	var previous_id := _extract_combat_strategy_id(_get_npc_state(npc_id).get("combat_strategy", {}))
 	var strategy_state := _make_combat_strategy_state(npc_id, clean_strategy_id, snapshot, reason)
 	var changed := previous_id != clean_strategy_id
-	npc_system.update_npc_state(npc_id, {
+	var state_changes := {
 		"combat_strategy": strategy_state,
-		"last_action_result": "combat_strategy_selected" if changed else "combat_strategy_unchanged"
-	})
+		"last_action_result": "combat_strategy_selected" if changed else "combat_strategy_unchanged",
+		"combat_charge_phase": CHARGE_PHASE_WITHDRAW if clean_strategy_id == STRATEGY_CHARGE_CYCLE else "",
+		"combat_charge_last_impact": {}
+	}
+	npc_system.update_npc_state(npc_id, state_changes)
 	var event := {}
 	if should_log and changed:
 		event = _log_combat_strategy_selected(npc_id, previous, strategy_state, reason, visibility)
@@ -3283,6 +3804,9 @@ func _get_combat_strategy_snapshots() -> Array[Dictionary]:
 		var strategy := get_npc_combat_strategy(npc_id)
 		if strategy.is_empty():
 			continue
+		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+		strategy["charge_phase"] = str(state.get("combat_charge_phase", ""))
+		strategy["charge_last_impact"] = state.get("combat_charge_last_impact", {}).duplicate(true) if state.get("combat_charge_last_impact", {}) is Dictionary else {}
 		result.append(strategy)
 	return result
 
@@ -3315,31 +3839,48 @@ func _select_enemy_target(enemy: Dictionary) -> Dictionary:
 
 func _find_nearby_unit_target(enemy: Dictionary, enemy_position: Vector3) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("get_npc_world_position"):
-		return {}
-
 	var detection_range := maxf(DEFAULT_NEARBY_UNIT_DETECTION_RANGE, float(enemy.get("attack_range", 1.5)))
 	var nearest_target := {}
 	var nearest_distance := INF
-	for npc_id in npc_system.get_npc_ids():
-		if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
-			continue
-		var raw_position: Variant = npc_system.get_npc_world_position(npc_id)
-		if raw_position == null:
-			continue
-		var npc_position: Vector3 = raw_position
-		var distance := enemy_position.distance_to(npc_position)
-		if distance > detection_range or distance >= nearest_distance:
-			continue
-		var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system.has_method("get_npc") else {}
-		nearest_distance = distance
-		nearest_target = {
-			"type": "npc",
-			"id": npc_id,
-			"name": str(npc.get("name", npc_id)),
-			"position": npc_position,
-			"distance": distance
-		}
+	if (
+		npc_system != null
+		and npc_system.has_method("get_npc_ids")
+		and npc_system.has_method("get_npc_world_position")
+	):
+		for npc_id in npc_system.get_npc_ids():
+			if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
+				continue
+			var raw_position: Variant = npc_system.get_npc_world_position(npc_id)
+			if raw_position == null:
+				continue
+			var npc_position: Vector3 = raw_position
+			var distance := enemy_position.distance_to(npc_position)
+			if distance > detection_range or distance >= nearest_distance:
+				continue
+			var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system.has_method("get_npc") else {}
+			nearest_distance = distance
+			nearest_target = {
+				"type": "npc",
+				"id": npc_id,
+				"name": str(npc.get("name", npc_id)),
+				"position": npc_position,
+				"distance": distance
+			}
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system != null and device_system.has_method("get_active_defense_targets"):
+		for raw_target in device_system.get_active_defense_targets():
+			if not raw_target is Dictionary:
+				continue
+			var device_target: Dictionary = raw_target
+			var device_position: Vector3 = device_target.get("position", enemy_position)
+			var device_offset := device_position - enemy_position
+			device_offset.y = 0.0
+			var distance := device_offset.length()
+			if distance > detection_range or distance >= nearest_distance:
+				continue
+			nearest_distance = distance
+			nearest_target = device_target.duplicate(true)
+			nearest_target["distance"] = distance
 	return nearest_target
 
 
@@ -3365,29 +3906,64 @@ func _make_building_target(building_id: String) -> Dictionary:
 
 
 func _advance_enemy_attack(enemy: Dictionary, target: Dictionary, combat_delta_seconds: float) -> Dictionary:
-	var remaining := combat_delta_seconds
+	var remaining := maxf(0.0, combat_delta_seconds)
 	var cooldown := maxf(0.0, float(enemy.get("attack_cooldown", 0.0)))
 	var interval := maxf(0.1, float(enemy.get("attack_interval", 1.8)))
+	var windup_duration := maxf(0.0, float(enemy.get("attack_windup", 0.0)))
+	var windup_remaining := maxf(0.0, float(enemy.get("attack_windup_remaining", 0.0)))
+	var windup_target: Dictionary = enemy.get("attack_windup_target", {}) if enemy.get("attack_windup_target", {}) is Dictionary else {}
+	var current_target_id := str(target.get("id", ""))
+	if windup_remaining > 0.0 and str(windup_target.get("id", "")) != current_target_id:
+		windup_remaining = 0.0
+		windup_target = {}
 	var attacks: Array[Dictionary] = []
 	while remaining > 0.0 and attacks.size() < MAX_ATTACKS_PER_AI_STEP:
-		if cooldown > remaining:
-			cooldown -= remaining
-			remaining = 0.0
-			break
-		remaining -= cooldown
+		if windup_remaining > 0.0:
+			if windup_remaining > remaining:
+				windup_remaining -= remaining
+				remaining = 0.0
+				break
+			remaining -= windup_remaining
+			windup_remaining = 0.0
+		elif cooldown > 0.0:
+			if cooldown > remaining:
+				cooldown -= remaining
+				remaining = 0.0
+				break
+			remaining -= cooldown
+			cooldown = 0.0
+			if remaining <= 0.0:
+				break
+			windup_remaining = windup_duration
+			windup_target = _serialize_target(target)
+			if windup_remaining > 0.0:
+				enemy["current_action"] = "winding_up_%s" % current_target_id
+				continue
+		elif windup_target.is_empty() and windup_duration > 0.0:
+			windup_remaining = windup_duration
+			windup_target = _serialize_target(target)
+			enemy["current_action"] = "winding_up_%s" % current_target_id
+			continue
 		var single_attack := _apply_enemy_attack(enemy, target)
 		if single_attack.is_empty():
 			break
 		attacks.append(single_attack)
 		cooldown = interval
+		windup_target = {}
 		if _is_target_defeated(target):
 			break
 	enemy["attack_cooldown"] = cooldown
+	enemy["attack_windup_remaining"] = windup_remaining
+	enemy["attack_windup_target"] = windup_target
+	if attacks.is_empty() and windup_remaining > 0.0:
+		enemy["current_action"] = "winding_up_%s" % current_target_id
 	var result := {
 		"enemy_id": str(enemy.get("id", "")),
 		"target": _serialize_target(target),
 		"combat_seconds": combat_delta_seconds,
 		"attack_count": attacks.size(),
+		"windup_remaining": windup_remaining,
+		"windup_target": windup_target.duplicate(true),
 		"attacks": attacks
 	}
 	enemy["last_attack_result"] = result.duplicate(true)
@@ -3400,11 +3976,29 @@ func _apply_enemy_attack(enemy: Dictionary, target: Dictionary) -> Dictionary:
 	if target_id.is_empty():
 		return {}
 	var raw_attack_power := maxf(1.0, float(enemy.get("attack_power", 1.0)))
+	var penetration := maxf(0.0, float(enemy.get("penetration", 0.0)))
 	match target_type:
 		"npc":
 			var target_defense := _calculate_npc_defense(target_id)
-			var damage := _calculate_actual_hp_damage(raw_attack_power, target_defense)
-			return _apply_enemy_attack_to_npc(enemy, target_id, damage, raw_attack_power, target_defense)
+			var resolution := calculate_damage_resolution(raw_attack_power, target_defense, penetration)
+			return _apply_enemy_attack_to_npc(
+				enemy,
+				target_id,
+				int(resolution.get("damage", 1)),
+				raw_attack_power,
+				target_defense,
+				penetration,
+				float(resolution.get("effective_defense", target_defense))
+			)
+		"defense_device":
+			var device_defense := maxf(0.0, float(target.get("defense", 0.0)))
+			var resolution := calculate_damage_resolution(raw_attack_power, device_defense, penetration)
+			return _apply_enemy_attack_to_defense_device(
+				enemy,
+				target_id,
+				int(resolution.get("damage", 1)),
+				resolution
+			)
 		"building":
 			return _apply_enemy_attack_to_building(enemy, target_id, maxi(1, int(round(raw_attack_power))))
 		_:
@@ -3416,7 +4010,9 @@ func _apply_enemy_attack_to_npc(
 	npc_id: String,
 	damage: int,
 	raw_attack_power: float,
-	target_defense: float
+	target_defense: float,
+	penetration: float,
+	effective_defense: float
 ) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("apply_damage_to_npc"):
@@ -3440,6 +4036,8 @@ func _apply_enemy_attack_to_npc(
 			"enemy_name": enemy_name,
 			"raw_attack_power": raw_attack_power,
 			"target_defense": target_defense,
+			"penetration": penetration,
+			"effective_defense": effective_defense,
 			"damage_after_defense": damage
 		}
 	)
@@ -3450,8 +4048,41 @@ func _apply_enemy_attack_to_npc(
 		"target_id": npc_id,
 		"raw_attack_power": raw_attack_power,
 		"target_defense": target_defense,
+		"penetration": penetration,
+		"effective_defense": effective_defense,
 		"damage": damage,
 		"result": damage_result
+	}
+
+
+func _apply_enemy_attack_to_defense_device(
+	enemy: Dictionary,
+	deployment_id: String,
+	damage: int,
+	resolution: Dictionary
+) -> Dictionary:
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("apply_damage_to_device"):
+		return {}
+	var result: Dictionary = device_system.apply_damage_to_device(
+		deployment_id,
+		damage,
+		{
+			"attacker_id": str(enemy.get("id", "")),
+			"attacker_name": str(enemy.get("name", "敌人"))
+		}
+	)
+	if result.is_empty():
+		return {}
+	return {
+		"target_type": "defense_device",
+		"target_id": deployment_id,
+		"raw_attack_power": float(resolution.get("raw_attack_power", damage)),
+		"target_defense": float(resolution.get("target_defense", 0.0)),
+		"penetration": float(resolution.get("penetration", 0.0)),
+		"effective_defense": float(resolution.get("effective_defense", 0.0)),
+		"damage": damage,
+		"result": result
 	}
 
 
@@ -3820,6 +4451,16 @@ func _is_target_defeated(target: Dictionary) -> bool:
 				return false
 			var state: Dictionary = npc_system.get_npc_state(target_id)
 			return state.is_empty() or bool(state.get("unconscious", false)) or bool(state.get("escaped", false))
+		"defense_device":
+			var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+			if device_system == null or not device_system.has_method("get_deployment"):
+				return false
+			var deployment: Dictionary = device_system.get_deployment(target_id)
+			return (
+				deployment.is_empty()
+				or str(deployment.get("status", "")) != "active"
+				or int(deployment.get("hp", 0)) <= 0
+			)
 	return false
 
 
@@ -3886,9 +4527,16 @@ func _normalize_enemy_group(raw_enemy: Dictionary, wave_number: int) -> Dictiona
 	normalized["max_hp"] = max_hp
 	normalized["attack_power"] = maxi(1, int(raw_enemy.get("attack_power", raw_enemy.get("damage", 1))))
 	normalized["defense"] = maxi(0, int(raw_enemy.get("defense", 0)))
+	normalized["penetration"] = maxf(0.0, float(raw_enemy.get("penetration", 0.0)))
 	normalized["move_speed"] = maxf(0.1, float(raw_enemy.get("move_speed", 2.5)))
 	normalized["attack_range"] = maxf(0.1, float(raw_enemy.get("attack_range", raw_enemy.get("range", 1.5))))
-	normalized["attack_interval"] = maxf(0.1, float(raw_enemy.get("attack_interval", 1.8)))
+	var configured_attack_speed := maxf(0.0, float(raw_enemy.get("attack_speed", 0.0)))
+	var configured_attack_interval := maxf(0.1, float(raw_enemy.get("attack_interval", 1.8)))
+	if configured_attack_speed <= 0.0:
+		configured_attack_speed = 1.0 / configured_attack_interval
+	normalized["attack_speed"] = configured_attack_speed
+	normalized["attack_interval"] = 1.0 / configured_attack_speed
+	normalized["attack_windup"] = maxf(0.0, float(raw_enemy.get("attack_windup", 0.0)))
 	normalized["target_preference"] = target_preference
 	return normalized
 
@@ -3914,6 +4562,12 @@ func _make_enemy_state(
 	state["current_action"] = "spawned"
 	state["target"] = {}
 	state["attack_cooldown"] = 0.0
+	state["attack_windup_remaining"] = 0.0
+	state["attack_windup_target"] = {}
+	state["stagger_remaining"] = 0.0
+	state["stagger_count"] = 0
+	state["windup_interrupt_count"] = 0
+	state["last_stagger_result"] = {}
 	state["last_attack_result"] = {}
 	state["alive"] = true
 	return state
@@ -4110,7 +4764,24 @@ func _get_enemy_target_snapshot() -> Array[Dictionary]:
 			"current_action": str(enemy.get("current_action", "")),
 			"position": _vector3_to_dict(enemy.get("position", Vector3.ZERO)),
 			"target": _serialize_target(target),
-			"attack_cooldown": float(enemy.get("attack_cooldown", 0.0))
+			"hp": int(enemy.get("hp", 0)),
+			"max_hp": int(enemy.get("max_hp", 0)),
+			"attack_power": float(enemy.get("attack_power", 0.0)),
+			"defense": float(enemy.get("defense", 0.0)),
+			"penetration": float(enemy.get("penetration", 0.0)),
+			"attack_speed": float(enemy.get("attack_speed", 0.0)),
+			"attack_cooldown": float(enemy.get("attack_cooldown", 0.0)),
+			"attack_windup": float(enemy.get("attack_windup", 0.0)),
+			"attack_windup_remaining": float(enemy.get("attack_windup_remaining", 0.0)),
+			"attack_windup_target": _serialize_target(
+				enemy.get("attack_windup_target", {})
+				if enemy.get("attack_windup_target", {}) is Dictionary
+				else {}
+			),
+			"stagger_remaining": float(enemy.get("stagger_remaining", 0.0)),
+			"stagger_count": int(enemy.get("stagger_count", 0)),
+			"windup_interrupt_count": int(enemy.get("windup_interrupt_count", 0)),
+			"last_stagger_result": enemy.get("last_stagger_result", {}).duplicate(true) if enemy.get("last_stagger_result", {}) is Dictionary else {}
 		})
 	return result
 

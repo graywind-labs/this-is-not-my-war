@@ -942,14 +942,15 @@ func _build_day_events(memory_before: Dictionary) -> Array:
 
 
 func _event_to_summary(event: Dictionary) -> Dictionary:
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge != null and llm_bridge.has_method("build_compact_memory_event"):
+		return llm_bridge.build_compact_memory_event(event)
 	return {
-		"event_id": event.get("event_id", null),
 		"type": str(event.get("type", "")),
 		"summary": str(event.get("summary", "")),
 		"importance": clampi(int(event.get("importance", 50)), 0, 100),
 		"day": event.get("day", null),
-		"time": event.get("time", null),
-		"payload": event.get("payload", {})
+		"time": event.get("time", null)
 	}
 
 

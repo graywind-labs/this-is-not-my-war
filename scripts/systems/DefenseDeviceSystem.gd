@@ -91,19 +91,72 @@ func get_slot(slot_id: String) -> Dictionary:
 	if slot.is_empty():
 		return {}
 	var deployment_id := str(_slot_occupancy.get(slot_id, ""))
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var building_id := str(slot.get("building_id", "wall"))
+	var building: Dictionary = (
+		building_system.get_building(building_id)
+		if building_system != null and building_system.has_method("get_building")
+		else {}
+	)
+	var current_level := int(building.get("level", 0))
+	var required_level := maxi(1, int(slot.get("required_building_level", 1)))
+	var host_available := not building.is_empty() and int(building.get("hp", 0)) > 0
+	var modifiers: Dictionary = (
+		slot.get("effect_modifiers", {}).duplicate(true)
+		if slot.get("effect_modifiers", {}) is Dictionary
+		else {}
+	)
+	var base_range_multiplier := maxf(
+		0.1,
+		float(modifiers.get("range_multiplier", 1.0))
+	)
+	var host_range_bonus := _get_host_defense_device_range_bonus(
+		building_system,
+		building_id,
+		current_level
+	)
+	modifiers["base_range_multiplier"] = base_range_multiplier
+	modifiers["host_range_bonus"] = host_range_bonus
+	modifiers["range_multiplier"] = base_range_multiplier * (1.0 + host_range_bonus)
+	slot["effect_modifiers"] = modifiers
 	slot["occupied"] = not deployment_id.is_empty()
 	slot["deployment_id"] = deployment_id
+	slot["current_building_level"] = current_level
+	slot["required_building_level"] = required_level
+	slot["host_available"] = host_available
+	slot["unlocked"] = host_available and current_level >= required_level
 	return slot
 
 
-func get_slots_for_device(device_id: String, available_only: bool = false) -> Array[Dictionary]:
+func get_slots_for_device(
+	device_id: String,
+	available_only: bool = false,
+	building_id: String = ""
+) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for slot_id in _slot_order:
 		var slot := get_slot(slot_id)
+		if not building_id.is_empty() and str(slot.get("building_id", "")) != building_id:
+			continue
 		var allowed: Array = slot.get("allowed_device_ids", [])
 		if not allowed.has(device_id):
 			continue
-		if available_only and bool(slot.get("occupied", false)):
+		if available_only and (
+			bool(slot.get("occupied", false))
+			or not bool(slot.get("unlocked", false))
+		):
+			continue
+		result.append(slot)
+	return result
+
+
+func get_slots_for_building(building_id: String, include_locked: bool = true) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for slot_id in _slot_order:
+		var slot := get_slot(slot_id)
+		if str(slot.get("building_id", "")) != building_id:
+			continue
+		if not include_locked and not bool(slot.get("unlocked", false)):
 			continue
 		result.append(slot)
 	return result
@@ -129,6 +182,73 @@ func get_deployments() -> Array[Dictionary]:
 	return result
 
 
+func get_active_defense_targets() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for deployment in get_deployments():
+		var slot := get_slot(str(deployment.get("slot_id", "")))
+		if (
+			str(deployment.get("status", "")) != "active"
+			or int(deployment.get("hp", 0)) <= 0
+			or not bool(slot.get("host_available", false))
+		):
+			continue
+		result.append({
+			"type": "defense_device",
+			"id": str(deployment.get("deployment_id", "")),
+			"name": str(deployment.get("device_name", "工程器械")),
+			"position": _dict_to_vector3(deployment.get("position", {})),
+			"hp": int(deployment.get("hp", 0)),
+			"max_hp": int(deployment.get("max_hp", 0)),
+			"defense": float(deployment.get("defense", 0.0)),
+			"building_id": str(deployment.get("building_id", "")),
+			"slot_id": str(deployment.get("slot_id", ""))
+		})
+	return result
+
+
+func apply_damage_to_device(
+	deployment_id: String,
+	damage: int,
+	context: Dictionary = {}
+) -> Dictionary:
+	if not _deployments.has(deployment_id):
+		return {}
+	var deployment: Dictionary = _deployments.get(deployment_id, {})
+	if str(deployment.get("status", "")) != "active":
+		return {}
+	var hp_before := maxi(0, int(deployment.get("hp", 0)))
+	var resolved_damage := maxi(0, damage)
+	var hp_after := maxi(0, hp_before - resolved_damage)
+	var destroyed := hp_after <= 0
+	deployment["hp"] = hp_after
+	deployment["status"] = "destroyed" if destroyed else "active"
+	deployment["last_damage_result"] = {
+		"damage": resolved_damage,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"destroyed": destroyed,
+		"attacker_id": str(context.get("attacker_id", "")),
+		"attacker_name": str(context.get("attacker_name", "敌人"))
+	}
+	_deployments[deployment_id] = deployment
+	var snapshot := _make_deployment_snapshot(deployment)
+	if destroyed:
+		_slot_occupancy.erase(str(deployment.get("slot_id", "")))
+		_deployments.erase(deployment_id)
+	_emit_state_changed()
+	return {
+		"ok": true,
+		"deployment_id": deployment_id,
+		"device_id": str(deployment.get("device_id", "")),
+		"device_name": str(snapshot.get("device_name", "工程器械")),
+		"damage": resolved_damage,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"destroyed": destroyed,
+		"deployment": snapshot
+	}
+
+
 func get_state_snapshot() -> Dictionary:
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	return {
@@ -148,13 +268,16 @@ func get_deploy_eligibility(device_id: String, slot_id: String) -> Dictionary:
 	if not _definitions.has(device_id):
 		return _deployment_error("unknown_device", "未知工程器械。")
 	if not _slots.has(slot_id):
-		return _deployment_error("unknown_slot", "未知围墙部署槽。")
+		return _deployment_error("unknown_slot", "未知工程器械部署槽。")
 	if _slot_occupancy.has(slot_id):
 		return _deployment_error("slot_occupied", "该部署槽已经被占用。")
 
 	var slot: Dictionary = _slots.get(slot_id, {})
 	if not (slot.get("allowed_device_ids", []) as Array).has(device_id):
 		return _deployment_error("slot_incompatible", "该器械不能部署到所选槽位。")
+	var host_result := _validate_slot_host(slot)
+	if not bool(host_result.get("ok", false)):
+		return host_result
 	var definition: Dictionary = _definitions.get(device_id, {})
 	var building_result := _validate_required_buildings(definition.get("required_building_levels", {}))
 	if not bool(building_result.get("ok", false)):
@@ -198,6 +321,9 @@ func deploy_device(device_id: String, slot_id: String) -> Dictionary:
 		"slot_id": slot_id,
 		"building_id": str(slot.get("building_id", "wall")),
 		"status": "active",
+		"hp": maxi(1, int(definition.get("max_hp", 1))),
+		"max_hp": maxi(1, int(definition.get("max_hp", 1))),
+		"defense": maxf(0.0, float(definition.get("defense", 0.0))),
 		"attack_cooldown": 0.0,
 		"total_attacks": 0,
 		"total_damage": 0,
@@ -268,7 +394,16 @@ func _advance_auto_attack(deployment_id: String, action_seconds: float, combat_s
 	if deployment.is_empty() or str(deployment.get("status", "")) != "active":
 		return {}
 	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
-	var effect: Dictionary = definition.get("effect", {})
+	var slot := get_slot(str(deployment.get("slot_id", "")))
+	var host_result := _validate_slot_host(slot)
+	if not bool(host_result.get("ok", false)):
+		return {
+			"deployment_id": deployment_id,
+			"attack_count": 0,
+			"cooldown": float(deployment.get("attack_cooldown", 0.0)),
+			"reason": str(host_result.get("error", "slot_host_unavailable"))
+		}
+	var effect := _make_effective_effect(definition, slot)
 	if str(effect.get("kind", "")) != "auto_attack":
 		return {}
 
@@ -294,7 +429,8 @@ func _advance_auto_attack(deployment_id: String, action_seconds: float, combat_s
 				"deployment_id": deployment_id,
 				"device_id": str(deployment.get("device_id", "")),
 				"device_name": str(definition.get("name", "工程器械")),
-				"slot_id": str(deployment.get("slot_id", ""))
+				"slot_id": str(deployment.get("slot_id", "")),
+				"penetration": maxf(0.0, float(effect.get("penetration", 0.0)))
 			}
 		)
 		if attack_result.is_empty():
@@ -339,8 +475,8 @@ func _advance_auto_attack(deployment_id: String, action_seconds: float, combat_s
 
 
 func _select_attack_target(deployment: Dictionary, definition: Dictionary, combat_system: Node) -> Dictionary:
-	var effect: Dictionary = definition.get("effect", {})
-	var slot: Dictionary = _slots.get(str(deployment.get("slot_id", "")), {})
+	var slot := get_slot(str(deployment.get("slot_id", "")))
+	var effect := _make_effective_effect(definition, slot)
 	var origin := _dict_to_vector3(slot.get("position", {}))
 	var forward := _dict_to_vector3(slot.get("facing_direction", {"z": 1.0}))
 	forward.y = 0.0
@@ -442,6 +578,26 @@ func _validate_required_buildings(raw_requirements: Variant) -> Dictionary:
 	return {"ok": true}
 
 
+func _validate_slot_host(slot: Dictionary) -> Dictionary:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building"):
+		return _deployment_error("building_system_missing", "建筑系统不可用。")
+	var building_id := str(slot.get("building_id", "wall"))
+	var building: Dictionary = building_system.get_building(building_id)
+	if building.is_empty() or int(building.get("hp", 0)) <= 0:
+		return _deployment_error("slot_host_unavailable", "部署位置所属建筑当前不可用。")
+	var required_level := maxi(1, int(slot.get("required_building_level", 1)))
+	if int(building.get("level", 1)) < required_level:
+		return _deployment_error(
+			"slot_locked",
+			"%s达到 Lv.%d 后解锁该部署位。" % [
+				str(building.get("name", building_id)),
+				required_level
+			]
+		)
+	return {"ok": true}
+
+
 func _normalize_inventory_cost(raw_cost: Variant) -> Dictionary:
 	if not raw_cost is Dictionary:
 		return {}
@@ -503,9 +659,23 @@ func _normalize_definition(raw: Dictionary) -> Dictionary:
 	var normalized := raw.duplicate(true)
 	normalized["id"] = str(raw.get("id", "")).strip_edges()
 	normalized["name"] = str(raw.get("name", normalized.get("id", "工程器械")))
+	normalized["tier"] = maxi(1, int(raw.get("tier", 1)))
+	normalized["max_hp"] = maxi(1, int(raw.get("max_hp", 1)))
+	normalized["defense"] = maxf(0.0, float(raw.get("defense", 0.0)))
 	normalized["inventory_cost"] = _normalize_inventory_cost(raw.get("inventory_cost", {}))
 	normalized["required_building_levels"] = raw.get("required_building_levels", {}).duplicate(true) if raw.get("required_building_levels", {}) is Dictionary else {}
-	normalized["effect"] = raw.get("effect", {}).duplicate(true) if raw.get("effect", {}) is Dictionary else {}
+	var effect: Dictionary = raw.get("effect", {}).duplicate(true) if raw.get("effect", {}) is Dictionary else {}
+	effect["damage"] = maxf(1.0, float(effect.get("damage", 1.0)))
+	effect["penetration"] = maxf(0.0, float(effect.get("penetration", 0.0)))
+	var attack_speed := maxf(0.0, float(effect.get("attack_speed", 0.0)))
+	var attack_interval := maxf(0.1, float(effect.get("attack_interval", 1.8)))
+	if attack_speed <= 0.0:
+		attack_speed = 1.0 / attack_interval
+	attack_interval = 1.0 / attack_speed
+	effect["attack_speed"] = attack_speed
+	effect["attack_interval"] = attack_interval
+	effect["range"] = maxf(0.1, float(effect.get("range", 1.0)))
+	normalized["effect"] = effect
 	normalized["presentation"] = raw.get("presentation", {}).duplicate(true) if raw.get("presentation", {}) is Dictionary else {}
 	return normalized
 
@@ -515,6 +685,7 @@ func _normalize_slot(raw: Dictionary) -> Dictionary:
 	normalized["id"] = str(raw.get("id", "")).strip_edges()
 	normalized["name"] = str(raw.get("name", normalized.get("id", "围墙部署槽")))
 	normalized["building_id"] = str(raw.get("building_id", "wall"))
+	normalized["required_building_level"] = maxi(1, int(raw.get("required_building_level", 1)))
 	var allowed: Array[String] = []
 	for raw_id in raw.get("allowed_device_ids", []):
 		var device_id := str(raw_id)
@@ -524,6 +695,9 @@ func _normalize_slot(raw: Dictionary) -> Dictionary:
 	normalized["position"] = _vector3_to_dict(_dict_to_vector3(raw.get("position", {})))
 	normalized["facing_direction"] = _vector3_to_dict(_dict_to_vector3(raw.get("facing_direction", {"z": 1.0})))
 	normalized["rotation_y_degrees"] = float(raw.get("rotation_y_degrees", 0.0))
+	var modifiers: Dictionary = raw.get("effect_modifiers", {}).duplicate(true) if raw.get("effect_modifiers", {}) is Dictionary else {}
+	modifiers["range_multiplier"] = maxf(0.1, float(modifiers.get("range_multiplier", 1.0)))
+	normalized["effect_modifiers"] = modifiers
 	return normalized
 
 
@@ -532,16 +706,61 @@ func _make_deployment_snapshot(raw_deployment: Variant) -> Dictionary:
 		return {}
 	var deployment: Dictionary = (raw_deployment as Dictionary).duplicate(true)
 	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
-	var slot: Dictionary = _slots.get(str(deployment.get("slot_id", "")), {})
+	var slot := get_slot(str(deployment.get("slot_id", "")))
 	deployment["device_name"] = str(definition.get("name", deployment.get("device_id", "工程器械")))
 	deployment["description"] = str(definition.get("description", ""))
-	deployment["effect"] = definition.get("effect", {}).duplicate(true) if definition.get("effect", {}) is Dictionary else {}
+	deployment["tier"] = int(definition.get("tier", 1))
+	deployment["hp"] = maxi(0, int(deployment.get("hp", definition.get("max_hp", 1))))
+	deployment["max_hp"] = maxi(1, int(deployment.get("max_hp", definition.get("max_hp", 1))))
+	deployment["defense"] = maxf(0.0, float(deployment.get("defense", definition.get("defense", 0.0))))
+	deployment["base_effect"] = definition.get("effect", {}).duplicate(true) if definition.get("effect", {}) is Dictionary else {}
+	deployment["effect"] = _make_effective_effect(definition, slot)
 	deployment["presentation"] = definition.get("presentation", {}).duplicate(true) if definition.get("presentation", {}) is Dictionary else {}
 	deployment["slot_name"] = str(slot.get("name", deployment.get("slot_id", "围墙部署槽")))
 	deployment["position"] = slot.get("position", {}).duplicate(true) if slot.get("position", {}) is Dictionary else {}
 	deployment["facing_direction"] = slot.get("facing_direction", {}).duplicate(true) if slot.get("facing_direction", {}) is Dictionary else {}
 	deployment["rotation_y_degrees"] = float(slot.get("rotation_y_degrees", 0.0))
+	deployment["range_multiplier"] = float((slot.get("effect_modifiers", {}) as Dictionary).get("range_multiplier", 1.0))
 	return deployment
+
+
+func _make_effective_effect(definition: Dictionary, slot: Dictionary) -> Dictionary:
+	var effect: Dictionary = definition.get("effect", {}).duplicate(true) if definition.get("effect", {}) is Dictionary else {}
+	var modifiers: Dictionary = slot.get("effect_modifiers", {}) if slot.get("effect_modifiers", {}) is Dictionary else {}
+	var range_multiplier := maxf(0.1, float(modifiers.get("range_multiplier", 1.0)))
+	effect["base_range"] = maxf(0.1, float(effect.get("range", 1.0)))
+	effect["range_multiplier"] = range_multiplier
+	effect["range"] = float(effect.get("base_range", 1.0)) * range_multiplier
+	var attack_speed := maxf(0.01, float(effect.get("attack_speed", 0.0)))
+	if attack_speed <= 0.01:
+		attack_speed = 1.0 / maxf(0.1, float(effect.get("attack_interval", 1.8)))
+	effect["attack_speed"] = attack_speed
+	effect["attack_interval"] = 1.0 / attack_speed
+	return effect
+
+
+func _get_host_defense_device_range_bonus(
+	building_system: Node,
+	building_id: String,
+	current_level: int
+) -> float:
+	if (
+		building_system == null
+		or not building_system.has_method("get_upgrade_level_effect")
+		or current_level < 2
+	):
+		return 0.0
+	var bonus := 0.0
+	for target_level in range(2, current_level + 1):
+		var level_effect: Dictionary = building_system.get_upgrade_level_effect(
+			building_id,
+			target_level
+		)
+		bonus += maxf(
+			0.0,
+			float(level_effect.get("defense_device_range_bonus", 0.0))
+		)
+	return clampf(bonus, 0.0, 1.0)
 
 
 func _get_all_slot_snapshots() -> Array[Dictionary]:

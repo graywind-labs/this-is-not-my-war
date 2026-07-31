@@ -355,13 +355,74 @@ func _init() -> void:
 		quit(1)
 		return
 
+	if int(upgraded.get("upgrade", {}).get("max_level", 0)) != 6:
+		push_error("Wall upgrade cap should be Lv.6.")
+		quit(1)
+		return
+	resource_system.add_resources({"stone": 100, "wood": 30})
+	for target_level in range(3, 7):
+		var level_effect: Dictionary = building_system.get_upgrade_level_effect(building_id, target_level)
+		var level_cost: Dictionary = level_effect.get("cost", {})
+		var resources_before := {}
+		for raw_resource_id in level_cost.keys():
+			var resource_id := str(raw_resource_id)
+			resources_before[resource_id] = resource_system.get_resource(resource_id)
+		var max_hp_before := int(building_system.get_building(building_id).get("max_hp", 0))
+		if not building_system.upgrade_building(building_id):
+			push_error("Wall should support upgrade to Lv.%d." % target_level)
+			quit(1)
+			return
+		for raw_resource_id in level_cost.keys():
+			var resource_id := str(raw_resource_id)
+			if resource_system.get_resource(resource_id) != int(resources_before.get(resource_id, 0)) - int(level_cost.get(resource_id, 0)):
+				push_error("Wall Lv.%d upgrade did not spend configured %s cost." % [
+					target_level,
+					resource_id
+				])
+				quit(1)
+				return
+		var level_status: Dictionary = building_system.get_upgrade_status(building_id)
+		if not is_equal_approx(
+			float(level_status.get("duration_seconds", 0.0)),
+			float(level_effect.get("duration_seconds", 0.0))
+		):
+			push_error("Wall Lv.%d upgrade duration did not use its level effect." % target_level)
+			quit(1)
+			return
+		building_system._on_logical_time_tick(
+			float(level_status.get("remaining_seconds", 0.0)) + 1.0,
+			1.0
+		)
+		var level_building: Dictionary = building_system.get_building(building_id)
+		if (
+			int(level_building.get("level", 0)) != target_level
+			or building_system.is_upgrade_in_progress(building_id)
+		):
+			push_error("Wall upgrade should complete at Lv.%d." % target_level)
+			quit(1)
+			return
+		if int(level_building.get("max_hp", 0)) != max_hp_before + int(level_effect.get("max_hp_bonus", 0)):
+			push_error("Wall Lv.%d did not apply configured Max HP benefit." % target_level)
+			quit(1)
+			return
+
+	var maximized: Dictionary = building_system.get_building(building_id)
+	if int(maximized.get("level", 0)) != 6:
+		push_error("Wall should reach Lv.6.")
+		quit(1)
+		return
+	if building_system.can_upgrade_building(building_id):
+		push_error("Lv.6 wall should be at its configured upgrade cap.")
+		quit(1)
+		return
+
 	var stone_before_failed_upgrade: int = resource_system.get_resource("stone")
 	if building_system.upgrade_building(building_id):
-		push_error("Upgrade should fail when stone is insufficient.")
+		push_error("Upgrade should fail when the wall is already Lv.6.")
 		quit(1)
 		return
 	if resource_system.get_resource("stone") != stone_before_failed_upgrade:
-		push_error("Failed upgrade changed stone.")
+		push_error("Failed max-level upgrade changed stone.")
 		quit(1)
 		return
 

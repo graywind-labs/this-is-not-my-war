@@ -65,6 +65,19 @@ def _base_payload(text: str, recruitment: bool = False) -> dict:
             "recruited": False,
             "equipment": {},
         },
+        "activity_truth": {
+            "action_id": "work_dining_hall",
+            "is_training": False,
+        },
+        "equipment_truth": {
+            "main_weapon": None,
+            "mount": None,
+            "has_trainable_equipment": False,
+        },
+        "training_truth": {
+            "eligible": False,
+            "blocker": "no_trainable_equipment",
+        },
         "current_order": {
             "text": "优先保证食堂运转。",
             "issued_by": "guard_officer",
@@ -217,6 +230,12 @@ def main() -> None:
     missing_actions_response = client.post("/npc/dialogue", json=missing_actions_payload)
     assert missing_actions_response.status_code == 400
     assert missing_actions_response.get_json()["error_code"] == "validation_error"
+
+    partial_truth_payload = _base_payload("验证对话权威状态成套校验。")
+    partial_truth_payload.pop("training_truth")
+    partial_truth_response = client.post("/npc/dialogue", json=partial_truth_payload)
+    assert partial_truth_response.status_code == 400
+    assert partial_truth_response.get_json()["error_code"] == "validation_error"
 
     bad_response = client.post("/npc/dialogue", json={"npc_id": "cook_01"})
     assert bad_response.status_code == 400

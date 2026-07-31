@@ -1,14 +1,104 @@
 # API_BUDGET.md
 
+## T0116 对话意图执行前复核
+
+- 每个实际开始执行的 `talk_to_npc / seek_guard_officer` 计划阶段最多增加 1 次正式 `dialogue_intent_revalidation`；同一日 / 小时 / 计划版本 / 计划项在途去重，迟到结果不重放。
+- 只有业务响应自相矛盾时才允许同一真实 provider 纠错 1 次；无 Key、超时、HTTP / JSON / Schema 失败不转 Mock，而是进入当前小时计划重估。
+- 2026-07-30 最终真实 DeepSeek 三分支验收：3 次成功，11,424 input / 263 output tokens，估算 ¥0.00342008，continue / modify / cancel_and_replan 各 1 次，全部 `fallback_used=false`。Prompt 调试期间的失败 / 探索请求仍保留在 LLM 审计账本中。
+
+## T0115 主动交涉竞态修复与验证成本
+
+本任务不新增 endpoint、`call_type`、Prompt 字段或正常业务触发。`failed_action_repeated` 在 Godot 落地前使用既有 stage-two 最多 3 次重试；与旧错误路径相比，它不再先应用必败项并由状态监听器另开一轮 `plan_revision_judgement + revise_plan`。主动交涉点击、草稿回滚、移动 start result 和陈旧失败隔离均为本地状态操作。
+
+本地先通过后端 Mock / Schema 与 Godot 确定性回归，再用 DeepSeek `deepseek-v4-flash`、显式禁止 Mock fallback 跑 2 次 `/npc/revise_plan`，均首次成功：13,869 input / 238 output tokens，估算 ¥0.01120900。
+
+验证期间另有两个应计副作用：既有 `verify_daily_plan_reevaluation.gd` 未完全隔离当前真实后端，触发 1 次 `plan_revision_judgement` 与 1 次 `revise_plan`；Godot MCP 冻结启动 `Main.tscn` 仍会执行 `_ready` 的开局计划批次，触发 8 次 `plan_day`。连同正式修订验收，本任务时段共 12 次真实调用，224,388 input / 5,996 output tokens，估算 ¥0.06101488，全部成功且 `fallback_used=false`。这些是开发验证成本，不改变成品频率；后续 MCP 运行时复现应先隔离后端或关闭启动批次，不能把 frozen 当作 `_ready` 隔离。
+
+## T0113 对话权威实况验收成本
+
+本任务不新增 endpoint、`call_type` 或正常对话调用频率，只在既有 `/npc/dialogue` 输入中增加三个很小的事实对象；单次增量远小于人物记忆与行动目录。正式请求仍受每日 ¥20、单次 ¥0.05 在途预留和禁止自动 Mock fallback 约束。
+
+真实验证使用 DeepSeek `deepseek-v4-flash` 复放问题发生时约 35k input token 的两份格伦审计上下文。最终用于判断效果的 4 次 Model Adapter 复放与 1 次完整 endpoint 验收均成功、`fallback_used=false`。开发过程另有 1 次在打印结果时触发本地脚本属性错误后的重复调用，以及 1 次因把供应商压缩版审计 payload 直接回灌 endpoint、缺少重复轮次字段而在模型成功后触发业务校验失败；随后补回审计中被压缩的重复字段并通过。账本共记录 7 次供应商调用，247,019 input / 738 output tokens，估算 ¥0.10185564；这些都属于开发验收，不改变成品调用频率。
+
+## T0107 战斗基础与 Prompt 隔离验收成本
+
+本任务的战斗属性、塔防槽位、器械 HP、敌群、远程距离与骑兵冲击均在 Godot 程序侧结算，不新增 endpoint、`call_type`、正常业务模型触发或 Prompt 字段。由于运行时装备槽会保存完整配置副本，LLMBridge 在既有装备上下文上增加旧字段白名单投影，明确剔除防御、穿透、攻速修正和 `charge_*` 等新战斗配置，避免它们进入六类 NPC Prompt。
+
+本地 `verify_dialogue_prompt.py` mock 与 T0107 Godot payload 边界均通过。按项目真实验收规则，使用 DeepSeek `deepseek-v4-flash`、temperature 0、显式关闭 fallback 运行既有对话业务矩阵 8 次；8 次全部成功且 `fallback_used=false`。持久化成本账本记录合计 50,115 input / 733 output tokens，估算 ¥0.02272980。该费用只属于开发验收，不改变成品调用频率、每日 ¥20 门禁、单次 ¥0.05 在途预留或真实失败关闭规则。
+
+## T0106 全量紧凑短期记忆的成本边界
+
+本任务不新增 endpoint、`call_type` 或调用频率；只把普通五类调用的亲历 / 见闻从“各最后 8 条”改为当前短期索引全部记录，并让熟睡总结使用唯一的全量紧凑 `day_events`。因此增量成本与一次总结窗口内尚未轮转的事件数量线性相关，不会跨成功总结无限累积。
+
+程序不传原始事件对象。专项 Godot 夹具中 13 条亲历 + 15 条见闻的权威结构为 15,275 字符，模型投影为 5,372 字符，减少约 64.8%。真实因果夹具的 13 + 13 条紧凑记忆为 2,897 字符；若沿用旧的各最后 8 条则为 1,611 字符，本次全量多 1,286 字符，约相当于 300–400 个粗估输入 token。实际供应商总输入还包含固定系统 Prompt、人物、驿站和行动目录，因此不能把这 1,286 字符直接当作整次调用倍数。
+
+真实 DeepSeek `deepseek-v4-flash` 验收 1 次，关键缺铁事件位于第 1 条，之后各有 12 条记录且当前库存为 20。调用首次成功、`fallback_used=false`，usage 为 7,403 input / 81 output tokens，估算 ¥0.00643604；回复正确区分“当时铁料不足”和“后来库存变化”。熟睡总结删除重复的 `npc.short_term_memory` 后，反思请求不会因本次全量策略把同一批事件计算两次。
+
+## T0105B 弥撒跨小时完成优先的调用边界
+
+本任务只调整 Godot 本地行动计时与计划派发，不新增 endpoint、`call_type`、Prompt、模型字段或正常业务调用。跨小时等待、弥撒结束后的当前计划接管都使用已有运行态和已经生成的日计划，不触发失败型计划重估。
+
+专项测试在 `Main.tscn` 加入场景树前关闭自动计划执行，并把测试用后端地址指向不可用的本地端口，避免开局计划和熟睡总结触发真实供应商。三次完整专项均通过，测试前后持久化 API 账本长度不变，本任务实际 provider 调用为 0。T0105A 历史验证成本保留如下，不归入本任务。
+
+## T0105A 弥撒结束语义与验证成本
+
+运行时分流完全发生在 Godot，不新增 endpoint、`call_type`、Prompt、正常业务模型调用或弥撒结束后的计划重估。自然完成由 ActionSystem 本地结算；当时实现的计划小时边界完成路径已由 T0105B 取代，外部中断同样不调用模型。
+
+开发验证中，若干会实例化 `Main.tscn` 的既有回归没有隔离当前真实后端，产生 8 次熟睡总结和 8 次开局日计划；随后临时让专项通过完整 `_on_hour_started` 自动派发全部 NPC，又让园丁的既有完成后重估监听产生 1 次 `revise_plan`。DeepSeek `deepseek-v4-flash` 共 17 次调用，全部首次成功且 `fallback_used=false`：
+
+- `daily_reflection` 8 次：939,003 input / 4,383 output tokens，估算 ¥0.947769。
+- `plan_day` 8 次：168,953 input / 5,342 output tokens，估算 ¥0.13435316。
+- `revise_plan` 1 次：25,715 input / 101 output tokens，估算 ¥0.02566612；request id 为 `godot_revise_plan_2139_0003`。
+- 合计：1,133,671 input / 9,826 output tokens，估算 ¥1.10778828。
+
+发现后，小时边界专项恢复为隔离调用同一计划派发入口并显式传入边界，不再开启全局自动执行；本任务也不再运行会触发正式开局 / 反思批次的夹具。这些均为测试副作用，不是功能新增成本；每日 ¥20 门禁、单次 ¥0.05 在途预留和禁止自动 Mock fallback 均不变。
+
+## T0103 NPC-NPC 防复述真实验收
+
+本任务不新增 endpoint、`call_type` 或正常业务调用次数；通过更早返回 `should_end_dialogue=true`，已解决话题会减少后续逐轮 `/npc/dialogue` 调用。`max_rounds=0` 与必要事项可继续的成本边界不变。
+
+Mock / Schema / Godot 回归后，使用 DeepSeek `deepseek-v4-flash`、显式关闭 fallback 复验邀请接受 / 拒绝、第 6 轮兜底和四组已解决话题。最终四组均当轮结束，文本最高相似度 0.254～0.571，无逐字或高相似复述。Prompt 迭代共发生 19 次实际 provider 调用：117,347 input / 1,460 output tokens，估算 ¥0.04851532；19 次供应商调用全部成功且 `fallback_used=false`。其中两次本地后置断言失败分别用于发现旧拒绝夹具语境不成立、模型会自行添加后续安排，不属于 provider 失败。
+
+## T0101 守备官背景真实对话验收
+
+- provider / model：DeepSeek `deepseek-v4-flash`，显式 `LLM_FALLBACK_TO_MOCK=false`、temperature 0。
+- 最终三问分别验证：身份过去未知；三年前来到驿站且来站前经历未知；开局前三年只概括尽责、和睦、无可确认具体旧事，并转回当前食堂事务。最终 3 次均首次成功、`fallback_used=false`。
+- 为接受“没提过 / 没跟我说过”等合规自然同义表达，并从“未编重大剧情”继续收紧到“不得顺手补日常例子 / 引语”，本任务累计发生 16 次实际 provider 调用。16 次供应商调用全部成功、无 fallback；部分早期运行只在本地后置语义断言失败，不是 provider 失败。
+- 累计 usage：154,937 input / 1,916 output tokens，估算 ¥0.07873828。
+
+## T0100 宗教信仰字段与验收成本
+
+本任务只为既有人设增加一个短 `religion` 字符串及六份 Prompt 的一句边界说明，不新增 endpoint、`call_type`、正常调用次数、触发条件或输出字段。每次人物上下文只增加“天主教”及字段名的少量输入；NPCPanel 显示与 Godot / Pydantic 投影均为本地操作。
+
+基础 Schema、六份 Prompt、显式 Mock 与 Godot payload 验收通过后，使用真实 DeepSeek `deepseek-v4-flash` 逐人追问信仰和本职工作。最终 8 次正式验收全部首次成功且 `fallback_used=false`。首次托马调用也由 provider 成功返回“信天主”，但旧测试只接受精确“天主教”而后置失败；修正为接受等价世界内表达后重跑 8 人。两轮共 9 次实际 provider 尝试：51,791 input / 842 output tokens（cache hit 27,392 / miss 24,399），估算 ¥0.02663084。该费用属于开发验收，不改变成品频率；每日 ¥20 门禁、单次 ¥0.05 在途预留与禁止自动 Mock fallback 均不变。
+
+## T0099 对话 UI 修改与验证成本
+
+日期分组、Tab 快捷键和首次攻击确认全部发生在 Godot UI，本身不新增 endpoint、`call_type`、Prompt 字段或正常业务调用次数。对话确认成功后仍只走玩家主动触发的既有惩戒路径；取消确认不调用 LLM。
+
+对话 UI 专项使用显式隔离的 `LLM_PROVIDER=mock` 后端。随后 Godot MCP 为实机输入和确认窗验证冻结启动 `Main.tscn`；冻结只停止玩法帧，不阻止 `_ready` 中正式开局计划批次，因此仍产生 8 次非预期真实 `plan_day`。DeepSeek `deepseek-v4-flash` 合计 166,408 input / 5,338 output tokens，估算 ¥0.16905584；8 次均首次成功，`fallback_used=false`。这属于验证副作用，不是 T0099 的运行时成本增量；每日 ¥20 门禁、单次 ¥0.05 在途预留、真实 usage 结算和禁止自动 Mock fallback 均未改变。
+
+## T0098 合并祈祷 / 弥撒成本
+
+运行时模式转换完全发生在 Godot，不新增 endpoint、`call_type` 或正常 LLM 次数；与旧设计相比，弥撒开始 / 结束不再触发 `plan_revision_judgement + revise_plan`，因此会减少教堂场景中的模型调用。Prompt 和候选也移除了一个独立行为及四类失败提示。
+
+按项目规则先完成 Mock / endpoint 验收，再用真实 DeepSeek `deepseek-v4-flash` 验证 1 次日计划和 1 组对话承诺判别 + 正式修订，共 3 次调用：16,964 input / 790 output tokens，估算 ¥0.018544；全部首次成功且 `fallback_used=false`，计划只选择 `pray_at_chapel`。每日 ¥20 门禁、单次 ¥0.05 在途预留、真实 usage 结算和生产禁止自动 Mock fallback 均未改变。
+
+## T0097 计划决策编译成本
+
+本任务不新增 endpoint、`call_type` 或正常调用次数。计划项输出去除内部 kind、优先级、固定地点和通用目标回显，通常会减少输出 token；按行为字段清洗与编译完全在后端本地完成，不产生额外 LLM 调用。必要目标错误继续使用既有业务失败 / 正式修订纠错边界，不使用 Mock 伪装成功。
+
+真实 DeepSeek `deepseek-v4-flash` 验收共 6 次：1 次完整日计划、2 组弥撒范围判别 + 正式修订、1 次 NPC 目标正式修订。合计 36,889 input / 1,089 output tokens，估算 ¥0.039067，全部首次成功且 `fallback_used=false`。原始模型计划项没有返回 `action_kind / priority / internal target`；升级协助使用 `building_id`，找 NPC 使用 `target_npc_id`，固定弥撒只返回 action。每日 ¥20 门禁、单次 ¥0.05 在途预留、真实 usage 结算和生产禁止自动 Mock fallback 均未改变。
+
 ## T0095/T0096 Pending 与熟睡总结水位成本
 
 pending 生命周期修改完全发生在 Godot 权威模拟层，不新增 endpoint、`call_type` 或模型请求。熟睡总结继续使用既有 `/npc/daily_reflection`，每个 21:00 窗口仍最多成功一次；新增的 `summary_window / reflection_period` 是小型结构化边界，不增加正常调用次数。漏掉一晚不会补请求，下一次成功调用覆盖更长的未总结区间。
 
 本轮先完成 Schema / Mock / endpoint 验收，再按项目规则使用真实 DeepSeek `deepseek-v4-flash` 验证一次更新后的 Prompt：4,528 input / 223 output tokens，总计 4,751 tokens，估算 ¥0.004974，首次成功且 `fallback_used=false`。Godot MCP 采用冻结帧启动，没有触发开局计划批次。每日 ¥20 门禁、单次 ¥0.05 在途预留、真实 usage 结算和禁止自动 Mock fallback 均未改变。
 
-## T0094 对话实况、弥撒重估与夜间窗口成本
+## T0094 对话实况、弥撒重估与夜间窗口成本（教堂调用已由 T0098 取消）
 
-本任务不新增 endpoint 或 `call_type`。睡眠打断实况只给既有 `/npc/dialogue` 增加一个短、可选的 `interrupted_activity_context`；弥撒开始和明确的当前弥撒承诺继续使用既有“1 次 `plan_revision_judgement`，判别非空后 1 次 `revise_plan`”链。21:00 夜间窗口只改变 Godot 调度 / 去重，不增加单个总结的 provider 调用数；同窗累计睡眠仍最多成功提交一次自动总结，失败保持真实错误并可重试。
+T0094 当时未新增 endpoint 或 `call_type`。睡眠打断实况只给既有 `/npc/dialogue` 增加一个短、可选的 `interrupted_activity_context`；当时弥撒开始和明确承诺使用既有判别 + 修订链。T0098 已取消弥撒开始 / 结束触发的失败重估，只保留明确对话承诺确实需要改变当前安排时的通用对话判别。21:00 夜间窗口只改变 Godot 调度 / 去重，不增加单个总结的 provider 调用数；同窗累计睡眠仍最多成功提交一次自动总结，失败保持真实错误并可重试。
 
 本任务期间活动账本由 200 次 / ¥3.66845792 增至 225 次 / ¥3.78598564，共增加 25 次真实调用、434,333 input tokens、11,694 output tokens、估算 ¥0.11752772；最终每日剩余额度 ¥16.21401436。明细如下：
 
@@ -166,7 +256,7 @@ T0068 只读取本机已有 Codex 会话证据、当前测试构造器和正式 
 
 ## T0061 人物上下文收敛成本
 
-本任务不新增 endpoint、`call_type`、正常游戏调用次数、重试、触发条件或输出字段。`signature_lines` 从 8 人档案、`NPCPromptProfile`、共享 `NPCIdentity`、对话 `npc_setting` 和六类正式 Prompt 移除，使每次人物上下文略微缩短；`speech_style`、3 篇初始日记和完整知识图谱仍按原有路径注入，不为节省 token 删除人格连续性或建筑常识。
+本任务不新增 endpoint、`call_type`、正常游戏调用次数、重试、触发条件或输出字段。`signature_lines` 从 8 人档案、`NPCPromptProfile`、共享 `NPCIdentity`、对话 `npc_setting` 和六类正式 Prompt 移除，使每次人物上下文略微缩短；`speech_style`、3 篇初始日记和完整知识图谱仍按原有路径注入，不为节省 token 删除人格连续性或建筑常识。T0100 后新增的短 `religion` 成本见本文件顶部记录。
 
 前两篇日记重写和建筑 `relation_label / value_label` 叙事化属于既有长期记忆内容替换；守备官认识从原有多条开放评估收束为每人一条职责事实，使全体种子关系总数从 227 条降至 222 条，不增加调用频率。`confidence / day / time` 仅在玩家【知识】弹窗隐藏，原始数据、运行态、后端参数、反思更新和 GM 调试仍传输完整字段，因此没有 Schema 迁移或额外调用。文案与 UI 显示本身不会触发模型请求。
 
@@ -330,6 +420,8 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - `POST /mock/model` 可用于后端调试；后续实现对话、计划、判定接口时，服务层应复用 Model Adapter 的 usage 信息，并补齐是否申请 TimeSystem 慢速、慢速申请与释放时间等 Godot 侧字段。
 - T0604 已在 Godot 侧实现 `LLMBridge`；T0049/T0050 后对话、通用计划修改判别、每日计划、计划修订、低血量心理判定和首次睡眠总结都按 payload 注册 TimeSystem 慢速请求，并在成功、失败、取消或超时后释放。T1401 新增同步“成本统计”只读入口；T0077 新增不阻塞主线程的 `request_llm_usage_async()`，GM 面板可见时每 3 秒在顶栏显示本次后端运行 provider 尝试 token / 人民币与今日持久化金额 / 上限。用量查询自身不申请 TimeSystem 慢速、不计入模型成本。更完整的多玩家限流、跨进程并发队列和服务器部署治理仍归 T1407。
 - T0604A 已将 Godot 侧传输层改为原生 `HTTPClient`，不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件，并继续保证失败、超时和降级路径都会释放慢速请求。
+- T0109 不新增 endpoint、call_type、重试或供应商调用。显式取消和场景退出现在会协作终止仍在等待的 Godot `HTTPClient` 传输并 join 工作线程；已经发送到后端 / 供应商的尝试仍按后端真实 usage 与审计记录保留，客户端取消不会伪造成功、抹掉成本或触发 Mock fallback。
+- T0108 只更新既有长期记忆内容，不增加正常运行调用次数。2026-07-30 最终真实验收使用 DeepSeek `deepseek-v4-flash` 完成 3 次对话，29,784 input / 459 output tokens、估算 ¥0.00185080，全部 `fallback_used=false`；包含一次为放宽表面措辞断言而重跑的完整迭代后，本任务共发生 6 次成功 provider 调用，59,568 input / 888 output tokens、估算 ¥0.02132864。
 - T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入历史的守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消。逃离挽留攻击不调用 LLM，不申请慢速，不计入 API 成本，并自动完成会话。
 - T0050/T0085 后，日常行动异常、NPC-NPC 和守备官-NPC 实际对话都先请求异步 `/npc/plan_revision_judgement`，仅非空判别再请求 `/npc/revise_plan`。T0086/T0093 的五类成功完成事件属于确定性后续安排，跳过判别并直接修订当前小时起连续相同 action + target 的计划段。修订输出与 `revision_hours` 完全一致；精确小时、白名单或目标组合不合法时后端可携带业务错误让同一真实 provider 纠正一次，Godot 也会拒绝当前小时原样重复已完成的 action + target。工作阶段较少不再触发纠错或 Godot 重试。正式路径仍拒绝 Mock / fallback，最终失败保留原计划。
 - T1003/T1403/T0022/T0085 后，每日计划通过 `/npc/plan_day` 走 Model Adapter。正式开局和新一天会暂停时间并同时发起 8 个真实请求。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段是 Prompt 建议，不是重试来源。Godot 正式路径只接受 `llm_plan_day`，其他真实失败仍保持暂停且不使用 Mock / 规则计划。
