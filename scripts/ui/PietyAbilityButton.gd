@@ -94,7 +94,7 @@ func _build_glyph() -> void:
 	_glyph_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_glyph_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_glyph_label.add_theme_font_size_override("font_size", 17)
-	_glyph_label.text = "祷"
+	_glyph_label.text = "虔"
 	_glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_glyph_label)
 
@@ -106,4 +106,4 @@ func _refresh_tooltip() -> void:
 	elif _ready_to_cast:
 		tooltip_text = "虔诚 %s\n已充满，点击选择陨石落点。" % value_text
 	else:
-		tooltip_text = "虔诚 %s\nNPC 在小教堂祈祷或主持弥撒时共同积累。" % value_text
+		tooltip_text = "虔诚 %s" % value_text

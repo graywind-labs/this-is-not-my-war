@@ -5,7 +5,17 @@
 
 ## 当前版本
 
-版本：`0.0.204-dialogue-intent-preflight`
+版本：`0.0.206-wartime-morale-dialogue-feedback`
+
+T0118 当前状态为 `Done`。集结 / 战斗对话的 NPC 回复返回 `wartime_reaction=morale_boost` 时，DialogSystem 会把结果绑定到产生它的具体 NPC history turn；DialogPanel 随即在该台词下方以与接受应征相同的绿色显示“↑ {NPC名}受到了激励，进入斗志激昂状态”。后续普通回复不会覆盖旧提示，`none / escape`、避战和日常对话不显示该行。显示层不改变权威结算：斗志 buff 仍在玩家完成对话时由 CombatSystem 应用，攻击 / 移动加成、2 游戏小时持续时间和事件链保持不变。
+
+`verify_wartime_dialogue.gd` 已同时断言回合绑定和精确绿色 BBCode 文本，`verify_dialogue_ui.gd` 与项目 headless smoke 通过；smoke 仅保留既有快速退出 `ObjectDB instances leaked at exit` 警告。本任务未修改 Prompt、Schema、Model Adapter 或 LLM 调用数量，也未调用真实或 Mock provider。
+
+T0117 当前状态为 `Done`。主界面左上共享虔诚进度圈中心字形已从“祷”改为“虔”；未充满时悬停只显示“虔诚 当前值 / 上限”，不再显示 NPC 祈祷积累解释。满值和选点状态仍保留必要操作提示，虔诚产出、选点与陨石结算均未改变。
+
+战斗 LLM 手测口径已复核：集结 / 战斗 / 避战中的守备官消息和逃离挽留每个回复回合调用一次 `/npc/dialogue`；战斗中首次跨入 30% 以下且仍大于 0 的低血量 NPC 每场最多调用一次 `/npc/battle_judgement`。已完成的守备官对话随后还会对目标 NPC 调用一次 `/npc/plan_revision_judgement`，只有返回非空修订小时才追加 `/npc/revise_plan`。警铃、刷波、普通战斗推进、程序启动逃离和逃离挽留中的攻击本身不请求战斗回复；逃离挽留攻击会结束本轮且可能继续进入对话后的计划判别链。避战公开对话的 `wartime_reaction` 必须为 `none`，逃离 / 斗志判定应从参战者的集结 / 战斗公开对话或低血量自身心理判定验证。
+
+`verify_piety_meteor_ability.gd` 已新增“虔”字和精简 tooltip 断言并通过；项目 headless smoke 通过，仅保留既有快速退出 `ObjectDB instances leaked at exit` 警告。Godot MCP 4.0.1 / Godot 4.6.2 连接、版本匹配和编辑器错误检查正常。本任务未修改 Prompt / Schema / Model Adapter，未发起真实或 Mock LLM 调用。
 
 T0116 当前状态为 `Done`。制造阶段开工 / 完成失败的 `work_failed` 不再把所有无 `message` 的 CraftingSystem 结果降成“未选择制造目标”：事件现在区分 `failure_reason / crafting_error`，并保存 `required_resources` 与紧凑 `crafting_project`（配方、产物、已完成阶段、当前阶段名 / 成本、库存）。因此“当前阶段材料不足”进入短期记忆和熟睡总结时已有可核对的权威事实。
 

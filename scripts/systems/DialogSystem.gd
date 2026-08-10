@@ -684,6 +684,11 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 		# 结果跟随产生它的具体回复，后续普通回合不会覆盖历史提示；
 		# 展示文案由 UI 生成，不污染 NPC 的真实 reply_text。
 		npc_turn["recruitment_result"] = recruitment_result
+	if (
+		bool(_active_dialogue.get("wartime_dialogue", false))
+		and str(response.get("wartime_reaction", "none")) == "morale_boost"
+	):
+		npc_turn["wartime_reaction"] = "morale_boost"
 	var history: Array = _active_dialogue.get("history", [])
 	history.append(npc_turn)
 	_active_dialogue["history"] = history
@@ -935,6 +940,11 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 		attack_turn = _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
 	var attack_event_id := str(pending.get("attack_event_id", ""))
 	var npc_turn := _make_history_turn(target_npc_id, npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
+	if (
+		bool(_active_dialogue.get("wartime_dialogue", false))
+		and str(response.get("wartime_reaction", "none")) == "morale_boost"
+	):
+		npc_turn["wartime_reaction"] = "morale_boost"
 	var history: Array = _active_dialogue.get("history", [])
 	history.append(npc_turn)
 	_active_dialogue["history"] = history

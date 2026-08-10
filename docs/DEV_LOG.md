@@ -1,5 +1,19 @@
 # DEV_LOG.md
 
+## 2026-08-10 T0118 战时斗志激昂绿色反馈
+
+- DialogSystem 将 `morale_boost` 绑定到产生它的具体 NPC 对话回合，普通消息与攻击回复共用同一规则；不为 `none / escape` 添加标记。
+- DialogPanel 在该 NPC 台词下用应征接受同款绿色显示用户指定文本“↑ {NPC名}受到了激励，进入斗志激昂状态”。
+- 保持战时效果在完成对话后才由 CombatSystem 权威应用，不修改 buff 数值、持续时间、事件或 LLM 请求。
+- `verify_wartime_dialogue.gd`、`verify_dialogue_ui.gd` 和项目 headless smoke 通过；仅保留既有快速退出 ObjectDB 泄漏警告，未调用 LLM。
+
+## 2026-08-10 T0117 HUD 虔诚字形与战斗 LLM 手测审计
+
+- 将左上共享虔诚圆环中心从“祷”改为“虔”；未充满 tooltip 只保留精确虔诚值，删除 NPC 祈祷积累解释，满值 / 选点操作提示不变。
+- 审计战斗直接 LLM 路径：战时公开对话、低血量 `/npc/battle_judgement`、逃离挽留；补充完成对话后的计划判别 / 条件修订链，以及警铃、刷波、自动战斗、程序逃离和挽留攻击等无战斗回复路径。
+- 明确避战对话 `wartime_reaction=none`，参战低血量允许 `continue_fighting / escape_station / inspired`，避战低血量只允许 `avoid_battle / escape_station`；记录可用 GM 命令、快照字段和真实 provider / fallback 核对方式。
+- `verify_piety_meteor_ability.gd` 和项目 headless smoke 通过；Godot MCP server/addon 4.0.1、Godot 4.6.2 连接和版本匹配，编辑器错误为空。未改 Prompt / Schema，未调用 LLM。
+
 ## 2026-07-30 T0116 制造失败事实与计划对话执行前复核
 
 - 修复制造失败事件用缺失 `message` 的“未选择制造目标”默认值覆盖真实 `insufficient_stage_resources`；开工 / 完成失败现保存 required_resources 和紧凑制造阶段项目。

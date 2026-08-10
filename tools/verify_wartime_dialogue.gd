@@ -27,6 +27,7 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel")
 	var public_toggle := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles/DialogPublicToggle") as CheckButton
+	var history_text := root.get_node_or_null("Main/UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText") as RichTextLabel
 	if (
 		dialog_system == null
 		or llm_bridge == null
@@ -37,6 +38,7 @@ func _init() -> void:
 		or memory_system == null
 		or dialog_panel == null
 		or public_toggle == null
+		or history_text == null
 	):
 		push_error("Wartime dialogue verification required nodes not found")
 		quit(1)
@@ -127,6 +129,16 @@ func _init() -> void:
 		return
 	if not (fallback_result.get("wartime_result", {}) as Dictionary).is_empty():
 		push_error("Wartime reaction must remain staged until dialogue completion")
+		quit(1)
+		return
+	var staged_history: Array = dialog_system.get_dialogue_state().get("history", [])
+	var staged_npc_turn: Dictionary = staged_history.back() if not staged_history.is_empty() and staged_history.back() is Dictionary else {}
+	if str(staged_npc_turn.get("wartime_reaction", "")) != "morale_boost":
+		push_error("Morale boost feedback should stay attached to the NPC turn: %s" % JSON.stringify(staged_history))
+		quit(1)
+		return
+	if not history_text.text.contains("[color=#63D471]↑ 托马受到了激励，进入斗志激昂状态[/color]"):
+		push_error("Wartime morale reply did not show the requested green feedback line: %s" % history_text.text)
 		quit(1)
 		return
 	var fallback_completion: Dictionary = dialog_system.complete_displayed_dialogue()

@@ -89,6 +89,13 @@ func _init() -> void:
 	if ability_button == null:
 		_fail("HUD piety charge button is missing")
 		return
+	var piety_glyph := ability_button.find_child("PietyGlyph", true, false) as Label
+	if piety_glyph == null or piety_glyph.text != "虔":
+		_fail("HUD piety charge glyph must display 虔")
+		return
+	if "NPC 在小教堂" in str(ability_button.tooltip_text):
+		_fail("HUD piety charge tooltip should not include the prayer accumulation explanation")
+		return
 	piety_system.debug_fill_piety()
 	await process_frame
 	if not bool(ability_button.is_ready_to_cast()):

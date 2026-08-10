@@ -1,5 +1,28 @@
 # COMBAT_SYSTEM.md
 
+## T0118 斗志激昂对话内反馈
+
+`wartime_reaction=morale_boost` 的战时 NPC 回复会把 `wartime_reaction` 标记绑定到本轮 NPC history turn，DialogPanel 在该台词下显示绿色“↑ {NPC名}受到了激励，进入斗志激昂状态”。该反馈不改变 T1201 的权威边界：模型仍只表达意向，玩家完成对话后才由 `CombatSystem.apply_wartime_dialogue_reaction(...)` 应用 2 游戏小时 buff 并写入 `battle_psychology_result / morale_boost_started`；取消会话仍不应用被暂存的战时效果。
+
+## T0117 战斗 LLM 调用与手动验收口径
+
+战斗期间可能出现三条直接业务调用：
+
+1. 集结 / 战斗 / 避战中的守备官—NPC 对话，每个需要 NPC 回复的消息或普通攻击回合调用一次 `/npc/dialogue`（`call_type=dialogue`）。只有已入伍且持主武器、处于 `rally / combat` 的 NPC 可返回 `wartime_reaction=none|escape|morale_boost`；`avoid_combat` 对话强制为 `none`，只可沿普通对话合同处理应征。
+2. NPC 在活动战斗中首次从不低于 30% HP 跌到 30% 以下且仍大于 0 时，调用一次 `/npc/battle_judgement`（`call_type=battle_judgement`）。实际 `combat` 且已入伍持主武器者的 `allowed_decisions` 为 `continue_fighting / escape_station / inspired`；其他避战 / 非战斗人员为 `avoid_battle / escape_station`。每名 NPC 每场只触发一次，直接清零、已经低于阈值、战斗已结束或迟到结果失效时不应用。
+3. 正在逃离 NPC 的挽留消息，每个回复回合调用一次 `/npc/dialogue`，但使用 `dialogue_kind=escape_intervention`，唯一业务结果为 `escape_intervention_result=stay|leave`。挽留中的守备官攻击是显式无回复路径，不调用 `/npc/dialogue`、不写 stay / leave，只计一轮并加快逃离。
+
+已完成的守备官对话（含战时公开对话与逃离挽留）还会为目标 NPC 调用一次 `/npc/plan_revision_judgement`；只有判别返回非空 `revision_hours` 时才追加 `/npc/revise_plan`。因此一个单回合且正常完成的战时 / 挽留会话通常能在 usage 中看到 `dialogue -> plan_revision_judgement ->（条件性）revise_plan`。低血量判定本身通常只有 `battle_judgement`；若它强制结束了已有且有内容的对话，结束对话仍可额外产生上述计划判别链。警铃、刷波、敌我自动攻击、程序启动逃离和清敌本身不调用 LLM。
+
+手动验收建议在真实 provider、有效 Key、`LLM_FALLBACK_TO_MOCK=false` 下逐项重开场景隔离：
+
+- 战时公开对话：GM 执行 `spawn_wave 1`、`alarm`，用 `behavior_modes` 确认艾达处于 `rally` 或 `combat`；必要时用 `step_enemies 60` 推进。点击艾达对话，分别用“守住缺口、一起撑住”和“局势已失，立刻从后门撤离保命”等明确话术，收到回复后点击完成。用 `enemies` 查看 `last_wartime_dialogue_result`，并检查 NPC 的 `morale_boost` 或 `escape_intent`。注意效果在完成会话时应用，单看回复但不完成对话不足以验收程序结果。
+- 低血量参战者：保持敌人在场并先用 `behavior_modes` 确认艾达为 `combat`；新游戏艾达为 `120/120`，可执行 `damage_npc veteran_deputy_01 90 local_public` 让其跨入阈值且不昏迷。用 `enemies` 检查 `last_low_hp_judgement_result.decision`、`psychology_decision`、`llm_ok` 与 `rule_fallback`；真实结果合法值为继续战斗、逃离驿站或 `inspired`（程序映射为斗志激昂）。GM 扣血以守备官为伤害来源，可能另触发既有计划重估；核对低血量模型时应按 `call_type=battle_judgement` 过滤。
+- 低血量避战者：有敌人时执行 `avoid_npc priest_01`，确认其为 `avoid_combat`；新游戏神父为 `85/85`，可执行 `damage_npc priest_01 64 local_public`。此时只允许 `avoid_battle / escape_station`，绝不应返回 `inspired`。
+- 逃离挽留：执行 `escape_npc priest_01` 只建立程序逃离状态，本身不调用 LLM。回到主界面点击该 NPC，再点【对话】，分别使用明确挽留或放弃话术；检查响应的 `escape_intervention_result=stay|leave`、`active_escapes` 和 `last_escape_result`。点击攻击应看到 `llm_requested=false / guard_attack_no_reply`，不能把它算作模型选择。
+
+低血量自然多选结果受人物与战局上下文影响，不保证一句话或一次伤害就覆盖 `escape_station / inspired`；需要重复测试时应清敌并开始新战斗，最好重开场景恢复未逃离、未加 buff 的基线。真实 provider 成功必须同时确认 usage 中 provider / model 正确、`fallback_used=false`，不能只看 Godot 的规则降级结果。
+
 ## T0114 虔诚陨石与无友伤边界
 
 守备官在共享虔诚满 100 后可选取合法地表召唤陨石。默认半径 5.5 米、下落 1.15 战斗动作秒；落地使用 48 点攻击力与 5 点穿透对范围内活动敌人结算一次冲击。随后地面燃烧 10 战斗动作秒，每 1 秒以 1 点攻击力、0 穿透对当时仍位于范围内的敌人结算一次。

@@ -398,6 +398,11 @@ func _refresh(state: Dictionary) -> void:
 				"[color=%s]× %s拒绝了守备官的应征请求[/color]"
 				% [RECRUITMENT_REJECT_COLOR, turn_speaker_name]
 			)
+		if str(turn.get("wartime_reaction", "none")) == "morale_boost":
+			turn_lines.append(
+				"[color=%s]↑ %s受到了激励，进入斗志激昂状态[/color]"
+				% [RECRUITMENT_ACCEPT_COLOR, turn_speaker_name]
+			)
 		lines.append("\n".join(turn_lines))
 	if _observer_mode and waiting:
 		var pending: Dictionary = state.get("pending_llm", {}) if state.get("pending_llm", {}) is Dictionary else {}
