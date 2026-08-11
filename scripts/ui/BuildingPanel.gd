@@ -1373,10 +1373,20 @@ func _format_repair_hint() -> String:
 		return ""
 
 	var repair_config: Dictionary = _current_building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var repair_quote: Dictionary = {}
+	if building_system != null and building_system.has_method("get_repair_quote"):
+		repair_quote = building_system.get_repair_quote(_current_building_id)
+	var cost: Dictionary = repair_quote.get("cost", repair_config.get("cost", {}))
 	var lines: Array[String] = ["修复"]
 	lines.append("消耗：%s" % _format_cost(cost))
-	if repair_config.is_empty() or cost.is_empty():
+	if int(repair_quote.get("repair_batches", 0)) > 0:
+		lines.append("工程量：缺失 %d HP，共 %d 批（每批恢复 %d HP）" % [
+			int(repair_quote.get("missing_hp", 0)),
+			int(repair_quote.get("repair_batches", 0)),
+			int(repair_quote.get("hp_restore", 0))
+		])
+	if repair_config.is_empty():
 		lines.append("条件：该建筑不可修复")
 	elif not _current_building.get("upgrade_status", {}).is_empty():
 		lines.append("条件：正在升级中")
@@ -1384,6 +1394,8 @@ func _format_repair_hint() -> String:
 		lines.append("条件：正在修复中")
 	elif int(_current_building.get("hp", 0)) >= int(_current_building.get("max_hp", 0)):
 		lines.append("条件：HP 已满")
+	elif cost.is_empty():
+		lines.append("条件：修复配置无效")
 	elif not _can_afford(cost):
 		lines.append("条件：资源不足")
 	else:

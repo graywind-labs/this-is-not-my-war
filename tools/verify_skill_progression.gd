@@ -93,7 +93,7 @@ func _init() -> void:
 
 	var assign_id := "cook_01"
 	_set_profile_skill_and_progression(npc_system, assign_id, "厨艺", 0, 0)
-	for _index in range(5):
+	for _index in range(10):
 		var gain_result: Dictionary = npc_system.increase_npc_skill(assign_id, "厨艺", 1)
 		if gain_result.is_empty():
 			push_error("Direct skill gain should succeed before reaching cap")
@@ -101,7 +101,7 @@ func _init() -> void:
 			return
 	var progression_after_threshold: Dictionary = npc_system.get_npc_progression(assign_id)
 	if int(progression_after_threshold.get("unspent_skill_points", 0)) != 1:
-		push_error("Five skill experience should grant one unspent skill point")
+		push_error("Ten skill experience should grant one unspent skill point")
 		quit(1)
 		return
 
@@ -165,7 +165,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	for _index in range(5):
+	for _index in range(10):
 		npc_system.increase_npc_skill(assign_id, "厨艺", 1)
 	npc_panel.show_npc(assign_id)
 	await process_frame
@@ -240,7 +240,7 @@ func _set_profile_skill_and_progression(npc_system: Node, npc_id: String, skill_
 	profile["skills"] = skills
 	profile["progression"] = {
 		"total_experience": total_experience,
-		"next_skill_point_xp": 5,
+		"next_skill_point_xp": 10,
 		"unspent_skill_points": 0,
 		"spent_skill_points": 0,
 		"skill_experience": {}

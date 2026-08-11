@@ -28,8 +28,16 @@ func _init() -> void:
 		if merchant_system.get_buy_offer(resource_id).is_empty():
 			_fail("Merchant is missing buy offer for %s" % resource_id)
 			return
-	if merchant_system.get_sell_offer("wine").is_empty():
-		_fail("Merchant is missing wine sell offer")
+	var expected_sell_prices := {"grain": 1, "wood": 2, "stone": 3, "iron": 4, "wine": 4}
+	for resource_id in expected_sell_prices.keys():
+		if int(merchant_system.get_sell_offer(str(resource_id)).get("unit_price", 0)) != int(expected_sell_prices[resource_id]):
+			_fail("Merchant sell-price contract mismatch for %s" % resource_id)
+			return
+		if resource_id != "wine" and int(merchant_system.get_buy_offer(str(resource_id)).get("unit_price", 0)) <= int(expected_sell_prices[resource_id]):
+			_fail("Base-resource sell price must remain below its buy price for %s" % resource_id)
+			return
+	if not merchant_system.get_buy_offer("wine").is_empty():
+		_fail("Wine must remain sell-only")
 		return
 
 	var plaza_npc_id := "priest_01"

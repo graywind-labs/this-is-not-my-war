@@ -355,6 +355,7 @@
     "outputs": {},
     "repair": {
       "cost": {"stone": 2},
+      "hp_restore": 40,
       "seconds_per_missing_hp": 40,
       "level_time_factor": 0.25
     },
@@ -379,6 +380,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 35,
       "level_time_factor": 0.2
     },
@@ -416,6 +418,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 30,
       "level_time_factor": 0.2
     },
@@ -461,6 +464,7 @@
     "outputs": {"grain": 1},
     "repair": {
       "cost": {"wood": 1},
+      "hp_restore": 20,
       "seconds_per_missing_hp": 25,
       "level_time_factor": 0.15
     },
@@ -506,6 +510,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 35,
       "level_time_factor": 0.25
     },
@@ -558,6 +563,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1},
+      "hp_restore": 20,
       "seconds_per_missing_hp": 25,
       "level_time_factor": 0.15
     },
@@ -610,6 +616,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 30,
       "level_time_factor": 0.2
     },
@@ -711,6 +718,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 25,
       "level_time_factor": 0.15
     },
@@ -761,6 +769,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 30,
       "level_time_factor": 0.2
     },
@@ -812,6 +821,7 @@
     "outputs": {},
     "repair": {
       "cost": {"wood": 1, "stone": 1},
+      "hp_restore": 25,
       "seconds_per_missing_hp": 35,
       "level_time_factor": 0.25
     },

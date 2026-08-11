@@ -1,0 +1,153 @@
+{
+  "suite": "final_retention",
+  "generated_at_utc": "2026-08-10T08:05:24.770491+00:00",
+  "prompt_sha256": {
+    "data/prompts/dialogue_system_prompt.txt": "f16adaa023da9c40f9b68b59ce18a56d8118435354d74549b77fbb4ee8405c62",
+    "data/prompts/daily_plan_system_prompt.txt": "746f891a2b0159ec50def5b8d2950e531be00f1d685c21088f5641d376f35e61",
+    "data/prompts/plan_revision_judgement_system_prompt.txt": "5c374cfbeba11a286af8e7ecd51aa5ce09b2393733fa163625cd5915e0c38945",
+    "data/prompts/plan_revision_system_prompt.txt": "bbb2626575e64e71690550e9084b2f83497d46a178e87c953dd7bebb836d9f75",
+    "data/prompts/battle_judgement_system_prompt.txt": "42bb5bbbf0ea3e36a2a9497e185bc1fb9c5a992d74669bf9f1bc026245ec1eea",
+    "data/prompts/daily_reflection_system_prompt.txt": "19433b3534e56e0e3de603b9bc4828b2d9485f3e809b75ccb58ecdbac6499e2b"
+  },
+  "calls": 30,
+  "http_successes": 30,
+  "real_provider_successes": 30,
+  "input_tokens": 370152,
+  "output_tokens": 3421,
+  "estimated_cost": 0.12335432,
+  "universal_recruitment": {
+    "accepts": 0,
+    "rejects": 0,
+    "by_npc": {
+      "stableman_01": [],
+      "cook_01": [],
+      "gardener_01": [],
+      "blacksmith_01": [],
+      "priest_01": [],
+      "doctor_01": [],
+      "engineer_01": []
+    }
+  },
+  "daily_pressure": {
+    "cook_01": [],
+    "stableman_01": [],
+    "doctor_01": [],
+    "engineer_01": []
+  },
+  "ada_battle_pressure": [],
+  "by_category": {
+    "retention_money": {
+      "calls": 6,
+      "by_npc": {
+        "stableman_01": [
+          "leave",
+          "leave"
+        ],
+        "doctor_01": [
+          "leave",
+          "leave"
+        ],
+        "engineer_01": [
+          "leave",
+          "leave"
+        ]
+      }
+    },
+    "retention_order_changed": {
+      "calls": 6,
+      "by_npc": {
+        "stableman_01": [
+          "stay",
+          "stay"
+        ],
+        "doctor_01": [
+          "stay",
+          "leave"
+        ],
+        "engineer_01": [
+          "leave",
+          "leave"
+        ]
+      }
+    },
+    "retention_order_equipment_role": {
+      "calls": 6,
+      "by_npc": {
+        "stableman_01": [
+          "stay",
+          "stay"
+        ],
+        "doctor_01": [
+          "stay",
+          "stay"
+        ],
+        "engineer_01": [
+          "leave",
+          "leave"
+        ]
+      }
+    },
+    "retention_platitude": {
+      "calls": 6,
+      "by_npc": {
+        "stableman_01": [
+          "leave",
+          "leave"
+        ],
+        "doctor_01": [
+          "leave",
+          "leave"
+        ],
+        "engineer_01": [
+          "leave",
+          "leave"
+        ]
+      }
+    },
+    "retention_targeted_outcome": {
+      "calls": 6,
+      "by_npc": {
+        "stableman_01": [
+          "stay",
+          "stay"
+        ],
+        "doctor_01": [
+          "stay",
+          "leave"
+        ],
+        "engineer_01": [
+          "stay",
+          "leave"
+        ]
+      }
+    }
+  },
+  "behavioral_acceptance": {
+    "applicable": true,
+    "passed": true,
+    "checks": [
+      {
+        "name": "platitude_and_money_lowest",
+        "passed": true,
+        "evidence": {
+          "money": 0,
+          "order_changed": 3,
+          "order_equipment_role": 4,
+          "platitude": 0,
+          "targeted_outcome": 4
+        }
+      },
+      {
+        "name": "actual_changes_outperform_words_and_money",
+        "passed": true,
+        "evidence": {
+          "money": 0,
+          "order_changed": 3,
+          "order_equipment_role": 4,
+          "platitude": 0,
+          "targeted_outcome": 4
+        }
+      }
+    ]
+  }
+}

@@ -94,7 +94,7 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"defense_device_deployed": ["deployment_id", "device_id", "device_name", "slot_id", "slot_name", "inventory_resource_id", "inventory_cost"],
 	"defense_device_triggered": ["deployment_id", "device_id", "device_name", "target_enemy_id", "damage", "hp_before", "hp_after"],
 	"piety_meteor_cast": ["cast_id", "target_position", "radius", "piety_spent"],
-	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"]
+	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "impact_max_targets", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"]
 }
 
 var _events_by_id: Dictionary = {}

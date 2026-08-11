@@ -1,17 +1,17 @@
 extends SceneTree
 
 const EXPECTED_RECIPES := {
-	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 2],
-	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 2],
-	"craft_polearm": ["blacksmith", "item_polearm", 3],
-	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 3],
-	"craft_sword_shield": ["blacksmith", "item_sword_shield", 4],
-	"craft_mail_chest": ["blacksmith", "item_mail_chest", 6],
+	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 3],
+	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 3],
+	"craft_polearm": ["blacksmith", "item_polearm", 4],
+	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 4],
+	"craft_sword_shield": ["blacksmith", "item_sword_shield", 5],
+	"craft_mail_chest": ["blacksmith", "item_mail_chest", 8],
 	"craft_arrow_bundle": ["workshop", "item_arrow_bundle", 1],
-	"craft_bow": ["workshop", "item_bow", 2],
-	"craft_crossbow": ["workshop", "item_crossbow", 4],
-	"craft_wall_ballista": ["workshop", "item_wall_ballista", 6],
-	"craft_wall_arrow_tower": ["workshop", "item_wall_arrow_tower", 8]
+	"craft_bow": ["workshop", "item_bow", 3],
+	"craft_crossbow": ["workshop", "item_crossbow", 5],
+	"craft_wall_ballista": ["workshop", "item_wall_ballista", 9],
+	"craft_wall_arrow_tower": ["workshop", "item_wall_arrow_tower", 12]
 }
 const PRODUCTION_INFO_FIELDS := [
 	"target_item_id",
@@ -137,7 +137,7 @@ func _init() -> void:
 	crafting_system.set_target("blacksmith", "craft_iron_helmet", true)
 	var item_before := int(resource_system.get_resource("item_iron_helmet"))
 	var project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
-	for _stage in range(2):
+	for _stage in range(3):
 		var stage_result: Dictionary = crafting_system.complete_stage("blacksmith", int(project.get("project_revision", -1)), "")
 		if not bool(stage_result.get("ok", false)):
 			_fail("Direct stage completion failed: %s" % JSON.stringify(stage_result))
@@ -150,12 +150,12 @@ func _init() -> void:
 		_fail("Completed product should reset stages while retaining the selected target")
 		return
 
-	crafting_system.set_target("workshop", "craft_arrow_bundle", false)
-	var arrows_before := int(resource_system.get_resource("item_arrow_bundle"))
-	var workshop_project: Dictionary = crafting_system.get_project_snapshot("workshop")
-	var arrow_result: Dictionary = crafting_system.complete_stage("workshop", int(workshop_project.get("project_revision", -1)), "")
-	if not bool(arrow_result.get("ok", false)) or int(resource_system.get_resource("item_arrow_bundle")) != arrows_before + 1:
-		_fail("Workshop did not produce exact arrow-bundle inventory")
+	var hidden_arrow_result: Dictionary = crafting_system.set_target("workshop", "craft_arrow_bundle", false)
+	if bool(hidden_arrow_result.get("ok", false)) or str(hidden_arrow_result.get("reason", "")) != "recipe_unavailable":
+		_fail("Arrow-bundle recipe should be retained but unavailable until ammunition is implemented")
+		return
+	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
+		_fail("Unavailable arrow-bundle recipe leaked into the workshop target list")
 		return
 
 	var production_state: Dictionary = building_system.get_building_special_state_section("blacksmith", "production")

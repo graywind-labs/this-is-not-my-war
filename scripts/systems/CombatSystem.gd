@@ -53,7 +53,6 @@ const MORALE_BOOST_ATTACK_BONUS := 0.15
 const MORALE_BOOST_MOVE_SPEED_BONUS := 0.15
 const LOW_HP_JUDGEMENT_RATIO := 0.3
 const FAILURE_REASON_MAIN_HALL_DESTROYED := "main_hall_destroyed"
-const FAILURE_REASON_NO_AVAILABLE_COMBATANTS := "no_available_combatants"
 const VICTORY_REASON_FIVE_WAVES_SURVIVED := "five_waves_survived"
 const RALLY_TARGET_PREFIX := "combat_rally_"
 const AVOIDANCE_TARGET_PREFIX := "avoid_shelter_"
@@ -375,9 +374,15 @@ func get_npc_combat_level(npc_id: String) -> int:
 	if npc.is_empty():
 		return 1
 	var progression: Dictionary = npc.get("progression", {}) if npc.get("progression", {}) is Dictionary else {}
-	var total_experience := maxi(0, int(progression.get("total_experience", 0)))
+	var skill_experience: Dictionary = progression.get("skill_experience", {}) if progression.get("skill_experience", {}) is Dictionary else {}
+	var combat_experience := 0
+	var weapon_skill_names: Array[String] = []
+	if npc_system.has_method("get_weapon_skill_names"):
+		weapon_skill_names = npc_system.get_weapon_skill_names()
+	for skill_name in weapon_skill_names:
+		combat_experience = maxi(combat_experience, maxi(0, int(skill_experience.get(skill_name, 0))))
 	return clampi(
-		1 + int(floor(float(total_experience) / float(COMBAT_LEVEL_EXPERIENCE_STEP))),
+		1 + int(floor(float(combat_experience) / float(COMBAT_LEVEL_EXPERIENCE_STEP))),
 		1,
 		MAX_COMBAT_LEVEL
 	)
@@ -478,6 +483,7 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 		"npc_name": str(npc.get("name", npc_id)),
 		"level": level,
 		"total_experience": int((npc.get("progression", {}) as Dictionary).get("total_experience", 0)) if npc.get("progression", {}) is Dictionary else 0,
+		"combat_level_source": "highest_weapon_skill_experience",
 		"strength": strength,
 		"weapon_skill": weapon_skill,
 		"base": {
@@ -604,8 +610,9 @@ func apply_enemy_area_damage(
 	var source_name := str(context.get("source_name", "范围效果"))
 	var hit_results: Array[Dictionary] = []
 	var defeated_count := 0
-	var target_ids := get_active_enemy_ids()
-	for enemy_id in target_ids:
+	var max_targets := maxi(0, int(context.get("max_targets", 0)))
+	var eligible_targets: Array[Dictionary] = []
+	for enemy_id in get_active_enemy_ids():
 		if not _active_enemies.has(enemy_id):
 			continue
 		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
@@ -615,6 +622,23 @@ func apply_enemy_area_damage(
 		)
 		if horizontal_distance > radius:
 			continue
+		eligible_targets.append({
+			"enemy_id": enemy_id,
+			"distance_to_center": horizontal_distance
+		})
+	eligible_targets.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_distance := float(left.get("distance_to_center", 0.0))
+		var right_distance := float(right.get("distance_to_center", 0.0))
+		if not is_equal_approx(left_distance, right_distance):
+			return left_distance < right_distance
+		return str(left.get("enemy_id", "")) < str(right.get("enemy_id", ""))
+	)
+	var eligible_target_count := eligible_targets.size()
+	if max_targets > 0 and eligible_targets.size() > max_targets:
+		eligible_targets.resize(max_targets)
+	for target in eligible_targets:
+		var enemy_id := str(target.get("enemy_id", ""))
+		var horizontal_distance := float(target.get("distance_to_center", 0.0))
 		var target_defense := _calculate_enemy_defense(enemy_id)
 		var resolution := calculate_damage_resolution(
 			raw_attack_power,
@@ -654,6 +678,8 @@ func apply_enemy_area_damage(
 		"source_type": source_type,
 		"source_id": source_id,
 		"source_name": source_name,
+		"max_targets": max_targets,
+		"eligible_target_count": eligible_target_count,
 		"hit_count": hit_results.size(),
 		"defeated_count": defeated_count,
 		"hits": hit_results
@@ -761,7 +787,6 @@ func spawn_wave(wave_number: int, clear_existing: bool = false, reason: String =
 		"time_cap_result": time_cap_result,
 		"battle_start_result": battle_start_result
 	}
-	_evaluate_no_available_combatants_failure("wave_spawned")
 	return _last_spawn_result.duplicate(true)
 
 
@@ -893,7 +918,6 @@ func debug_step_enemy_ai(game_seconds: float = 60.0) -> Dictionary:
 	_advance_avoidance_units()
 	var result := _advance_combat_ai(seconds)
 	_advance_avoidance_units()
-	result["failure_check"] = _evaluate_no_available_combatants_failure("debug_step_enemy_ai")
 	return result
 
 
@@ -1184,9 +1208,6 @@ func start_npc_escape(
 	}
 	_active_escapes[npc_id] = result.duplicate(true)
 	_last_escape_result = result.duplicate(true)
-	result["failure_check"] = _evaluate_no_available_combatants_failure("npc_escape_started")
-	_active_escapes[npc_id] = result.duplicate(true)
-	_last_escape_result = result.duplicate(true)
 	return result
 
 
@@ -1198,8 +1219,6 @@ func handle_npc_escape_completed(npc_id: String, escaped_state: Dictionary = {})
 		"escaped_state": escaped_state.duplicate(true)
 	}
 	_active_escapes.erase(npc_id)
-	_last_escape_result = completion.duplicate(true)
-	completion["failure_check"] = _evaluate_no_available_combatants_failure("npc_escape_completed")
 	_last_escape_result = completion.duplicate(true)
 	return completion
 
@@ -1662,13 +1681,10 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
 		return
-	if bool(_evaluate_no_available_combatants_failure("logical_time_tick_start").get("triggered", false)):
-		return
 	_advance_behavior_mode_contacts()
 	_advance_avoidance_units()
 	_advance_combat_ai(game_delta_seconds)
 	_advance_avoidance_units()
-	_evaluate_no_available_combatants_failure("logical_time_tick_end")
 
 
 func _advance_combat_ai(game_delta_seconds: float) -> Dictionary:
@@ -3003,7 +3019,6 @@ func _on_npc_unconscious(npc_id: String) -> void:
 	_complete_npc_avoidance(npc_id, "npc_unconscious")
 	_pause_escape_for_unconscious(npc_id, "npc_unconscious")
 	_record_battle_npc_unconscious(npc_id, "npc_unconscious")
-	_evaluate_no_available_combatants_failure("npc_unconscious")
 
 
 func _route_revived_npc(npc_id: String) -> Dictionary:
@@ -4122,52 +4137,6 @@ func _trigger_main_hall_failure(enemy: Dictionary, damage_result: Dictionary) ->
 	var game_state := get_node_or_null("/root/GameState")
 	if game_state != null and game_state.has_method("set_game_over"):
 		game_state.set_game_over("failure", FAILURE_REASON_MAIN_HALL_DESTROYED)
-
-
-func _evaluate_no_available_combatants_failure(trigger_reason: String) -> Dictionary:
-	if not _last_failure_result.is_empty():
-		return {
-			"ok": true,
-			"triggered": false,
-			"reason": "failure_already_recorded",
-			"last_failure_result": _last_failure_result.duplicate(true)
-		}
-	if _active_enemies.is_empty():
-		return {"ok": true, "triggered": false, "reason": "no_active_enemies"}
-	var game_state := get_node_or_null("/root/GameState")
-	if game_state != null and bool(game_state.get("game_over")):
-		return {"ok": true, "triggered": false, "reason": "game_already_over"}
-	var availability := _get_combatant_availability_snapshot()
-	if int(availability.get("total_combatant_count", 0)) <= 0:
-		return {"ok": true, "triggered": false, "reason": "no_registered_combatants", "combatant_availability": availability}
-	if int(availability.get("available_combatant_count", 0)) > 0:
-		return {"ok": true, "triggered": false, "reason": "combatants_available", "combatant_availability": availability}
-	_trigger_no_available_combatants_failure(trigger_reason, availability)
-	return {
-		"ok": true,
-		"triggered": true,
-		"reason": FAILURE_REASON_NO_AVAILABLE_COMBATANTS,
-		"trigger_reason": trigger_reason,
-		"combatant_availability": availability
-	}
-
-
-func _trigger_no_available_combatants_failure(trigger_reason: String, availability: Dictionary) -> void:
-	if not _last_failure_result.is_empty():
-		return
-	_last_failure_result = {
-		"ok": true,
-		"result": "failure",
-		"reason": FAILURE_REASON_NO_AVAILABLE_COMBATANTS,
-		"trigger_reason": trigger_reason,
-		"active_enemy_count": get_active_enemy_count(),
-		"active_enemy_ids": get_active_enemy_ids(),
-		"combatant_availability": availability.duplicate(true),
-		"active_battle": _active_battle.duplicate(true)
-	}
-	var game_state := get_node_or_null("/root/GameState")
-	if game_state != null and game_state.has_method("set_game_over"):
-		game_state.set_game_over("failure", FAILURE_REASON_NO_AVAILABLE_COMBATANTS)
 
 
 func _evaluate_five_wave_victory(battle_end_result: Dictionary, trigger_reason: String) -> Dictionary:

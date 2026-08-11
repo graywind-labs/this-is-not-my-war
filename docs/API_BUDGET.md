@@ -1,5 +1,23 @@
 # API_BUDGET.md
 
+## T0120 NPC 可见文案润色真实 smoke
+
+本任务不改 Prompt、Schema、调用频率或行为规则，六份 Prompt hash 与 T0119 最终真实验收一致，因此未重跑 180 次完整行为矩阵。按 LLM 内容任务验收规则，2026-08-10 补跑 1 次莉娜 `/npc/daily_reflection`：DeepSeek `deepseek-v4-flash` 首次成功，5,117 input / 642 output tokens，估算 ¥0.00150884，`fallback_used=false`。结果继续正确记录诊所升级、皮甲 / 弓和后方医疗职责已经落实，并只把十份酒视作礼数，不替代医疗安排。
+
+## T0119 征募与逃离真实验收成本
+
+2026-08-10 在自动 Mock fallback 关闭的正式路径上，使用 DeepSeek `deepseek-v4-flash` 保存改动前基线并运行最终四套行为矩阵：
+
+| 阶段 | 调用 | input tokens | output tokens | 估算费用 |
+|---|---:|---:|---:|---:|
+| 改动前基线 | 24 | 240,748 | 5,485 | ¥0.10620760 |
+| 最终征募矩阵 | 86 | 1,009,685 | 9,998 | ¥0.19951908 |
+| 最终日计划逃离矩阵 | 32 | 346,080 | 18,484 | ¥0.15863584 |
+| 最终战时心理矩阵 | 32 | 288,432 | 3,074 | ¥0.22069584 |
+| 最终逃离挽留矩阵 | 30 | 370,152 | 3,421 | ¥0.12335432 |
+
+最终四套矩阵合计 180 次，2,014,349 input / 34,977 output tokens，估算 ¥0.70220508；180 / 180 HTTP 与真实 provider 成功，全部 `fallback_used=false`。基线与最终原始输入输出、request id、call type、NPC、场景、token、费用和 Prompt hash 保存在 `docs/audits/T0119_NPC_RECRUITMENT_ESCAPE/`，不含 API Key 或请求头。另行通过计划范围判别、正式修订和熟睡反思真实回归；这些辅助调用不计入上表 180 次正式矩阵。
+
 ## T0116 对话意图执行前复核
 
 - 每个实际开始执行的 `talk_to_npc / seek_guard_officer` 计划阶段最多增加 1 次正式 `dialogue_intent_revalidation`；同一日 / 小时 / 计划版本 / 计划项在途去重，迟到结果不重放。

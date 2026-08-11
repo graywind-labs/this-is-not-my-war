@@ -27,6 +27,7 @@
     "start_height": 20.0,
     "impact_damage": 48.0,
     "impact_penetration": 5.0,
+    "impact_max_targets": 12,
     "burn_duration_seconds": 10.0,
     "burn_tick_interval_seconds": 1.0,
     "burn_damage": 1.0,

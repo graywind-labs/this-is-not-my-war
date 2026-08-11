@@ -36,7 +36,7 @@
       "grain": 1
     },
     "output_resources": {
-      "meal": 1
+      "meal": 2
     },
     "needs_profile": "light_work"
   },
@@ -88,7 +88,7 @@
     "workstation_type": "forge",
     "skill": "打铁",
     "stat": "strength",
-    "duration_seconds": 3600,
+    "duration_seconds": 5400,
     "requires_crafting_target": true,
     "input_resources": {},
     "output_resources": {},
@@ -103,7 +103,7 @@
     "workstation_type": "engineering",
     "skill": "工程",
     "stat": "intelligence",
-    "duration_seconds": 3600,
+    "duration_seconds": 5400,
     "requires_crafting_target": true,
     "input_resources": {},
     "output_resources": {},

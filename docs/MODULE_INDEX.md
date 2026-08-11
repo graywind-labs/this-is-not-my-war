@@ -1,5 +1,35 @@
 # MODULE_INDEX.md
 
+## T0121 / T0122 全局数值难度模型与连续回放索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `docs/GAME_BALANCE.md` | 已确认并实施的全局玩法数值合同：第 3–7 日 18:00 五波、入伍 / 敌群 / 器械 / 装备、制造与经济人时、治疗 / 批次修复、工作 / 虔诚流、难度 KPI 和验证证据 |
+| `docs/TASKS.md` | T0121 已完成范围与验收；T0122 自动连续回放进展与仍待真实玩家 / LLM 分布验收的 Partial 边界 |
+| `docs/CURRENT_STATE.md`、`docs/DEV_LOG.md` | 记录实施后的唯一失败条件、波次 / 制造 / 经济 / 成长 / 修复 / 虔诚合同及自然 / 精细连续回放结果 |
+| `data/action_defs.json`、`data/crafting_recipes.json`、`data/building_defs.json`、`data/merchant_defs.json` | 5400 秒制造周期、阶段 / 材料、隐藏箭束、批次修复、餐食与交易权威配置 |
+| `data/enemy_waves.json`、`data/defense_device_defs.json`、`data/piety_ability.json` | 五波时间 / 构成、弩床 44 / 4.25、陨石冲击 12 目标权威配置 |
+| `scripts/systems/CombatSystem.gd`、`NPCSystem.gd`、`CraftingSystem.gd`、`BuildingSystem.gd`、`PietySystem.gd`、`MemorySystem.gd` | 唯一失败条件、战斗等级来源、隐藏配方、批次修复、冲击上限及陨石事件字段的权威结算 |
+| `tools/verify_t0121_game_balance.gd`、`tools/verify_t0121_fifth_wave_build.gd` | 全局配置 / 公式合同与第 7 日 48 敌成型构筑实战回归 |
+| `tools/verify_t0122_continuous_workflow.gd` | 第 1 日至第 7 日无资源发放连续回放；`natural` 验证第四 / 五波策略墙，`focused` 验证确认工作构筑可由实际制造、交易、治疗和加班闭合并通关 |
+
+下文按历史任务累积的长段落若仍提到 T1303 `no_available_combatants`、旧 `8 / 12 / 18 / 26 / 36` 波次或制造 3600 秒，均已由本节 T0121 当前合同取代；保留只用于解释旧任务来源，不再表示运行时现状。
+
+## T0119 NPC 征募难度与逃离倾向索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/npc_profiles.json` | 8 人公开人物线索、职业底线、有效准备方向与礼物态度；不公开内部难度、概率或完整答案 |
+| `data/npc_initial_long_memory.json` | 守备官开局前关系仅为基础印象；战时征募、装备与命令尚未经验证，后续实际事实决定关系 |
+| `data/prompts/dialogue_system_prompt.txt` | 严格已知事实、差异化征募路线、礼物作用、承诺兑现和逃离挽留决定 |
+| `data/prompts/daily_plan_system_prompt.txt`、`data/prompts/battle_judgement_system_prompt.txt` | 按人物和实际压力事实决定日常 / 战时逃离倾向，艾达保持稳定锚点 |
+| `data/prompts/plan_revision_judgement_system_prompt.txt`、`data/prompts/plan_revision_system_prompt.txt` | 只让与已解决 / 新增实际原因相关的计划阶段进入修订并恢复工作或继续逃离 |
+| `data/prompts/daily_reflection_system_prompt.txt` | 将建设、资源、装备、指令、攻击、承诺和礼物按实际经历写入主观长期记忆，不写隐藏指标 |
+| `tools/verify_npc_initial_long_memory.py` | 校验 8 人关系种子的战前 / 战时语义边界 |
+| `tools/verify_npc_recruitment_escape_real.py` | 基线及征募、日计划、战斗、挽留真实 provider 矩阵，保存逐次审计和行为断言 |
+| `tools/verify_daily_reflection_prompt_real.py` | 真实反思回归：诊所、装备 / 职责承诺兑现及无关酒礼边界 |
+| `docs/audits/T0119_NPC_RECRUITMENT_ESCAPE/` | 24 次基线、180 次最终矩阵的原始 JSONL、聚合结果、Prompt hash、token 与费用 |
+
 ## T0116 制造失败事实与计划对话执行前复核索引
 
 | 文件 | 当前职责 |
@@ -54,7 +84,7 @@
 |---|---|
 | `data/npc_profiles.json`、`data/weapon_defs.json`、`data/armor_defs.json`、`data/mount_defs.json` | NPC 差异化战斗基础、装备正负修正与骑兵冲锋参数 |
 | `data/defense_device_defs.json`、`data/building_defs.json` | 弩床 / 箭塔同级数值、围墙 / 主厅 8 个通用槽、六级错峰解锁、围墙 Lv.3 / Lv.5 射程增量与主厅 `2.0x` 射程 |
-| `data/enemy_waves.json` | 5 波 `8 / 12 / 18 / 26 / 36` 弱单体敌群，以及穿透、攻速、抬手配置 |
+| `data/enemy_waves.json` | 5 波 `8 / 16 / 24 / 36 / 48` 弱单体敌群，第 3–7 日每天 18:00 到达，以及穿透、攻速、抬手配置 |
 | `scripts/systems/CombatSystem.gd` | 统一属性快照与 `20 / (20 + 有效防御)` 曲线、当前武器熟练度攻速、骑术冲撞伤害、敌人抬手 / 僵直、远程距离带和骑兵冲锋状态机 |
 | `scripts/systems/DefenseDeviceSystem.gd` | 双建筑通用槽、器械库存 / HP / 防御 / 穿透 / 攻速、实时宿主射程倍率、自动攻击与敌方受击接口 |
 | `scripts/ui/DefenseSlotPresenter.gd`、`scenes/main/Main.tscn` | 仅显示已解锁空槽的世界圆形 `+`、自收束部署卡与实际射程提示 |
@@ -1004,7 +1034,7 @@ T0024 补充：最多 8 路首次睡眠总结同时在飞，`get_async_reflectio
 路径：`res://scripts/systems/CombatSystem.gd`
 用途：敌人波次读取、调试生成、目标选择、基础移动、双方基础攻击、战斗动作秒换算、不同兵种战斗策略和战斗调试快照系统，后续继续承接正式战斗流程。
 依赖：通过 `/root/ConfigLoader` 读取 `data/enemy_waves.json`；在 `Main/WorldRoot/Station/Enemies` 下生成运行时敌人节点。
-当前状态：T1101 已实现 5 波敌人配置读取、波次查询、`spawn_wave(...)`、`debug_spawn_wave(...)`、`debug_clear_enemies(...)` 和 `debug_get_combat_snapshot(...)`。T1301 后新增 `get_wave_schedule_snapshot()` / `debug_get_wave_schedule_snapshot()` / `debug_trigger_next_wave()`，按 TimeSystem `logical_time_tick` 与波次触发时间自动生成下一未触发波次，并记录 `triggered_wave_numbers`。生成的敌人是低模 `Area3D` 占位，保存 `enemy_id`、`wave_number`、HP、武器类型、单位类型、攻击、防御、移动速度、目标偏好和位置元数据，头顶显示名称 / HP / 单位类型标签。T1102 后，`CombatSystem` 监听 `logical_time_tick` 推进敌人目标选择、移动和敌方攻击；附近可行动 NPC 优先，否则按城门、仓库、主厅选择仍有 HP 的建筑。T1104C 后，围墙不再作为敌人攻击目标，旧配置中的 `wall` / `front_wall` 会在目标偏好规范化时过滤；城门被攻破后直接转向仓库，后续真实路径阻挡留给碰撞 / 导航任务。T1104 后，CombatSystem 会先推进 `combat` 模式入伍持武器 NPC 的基础自动攻击，再推进敌方攻击；我方攻击读取武器伤害 / 射程 / 攻击间隔、力量、熟练度、疲劳、饱食、坐骑和敌人防御，敌人 HP 清零后移除；敌人攻击 NPC 时读取 NPC 盔甲防御后复用 `NPCSystem.apply_damage_to_npc(...)`，攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)`。T1302 后，主厅清零会写入 `GameState` 失败状态、记录失败时间、广播 game-over、暂停 TimeSystem 并显示 HUD 失败占位界面；T1303 后，活动敌人在场且所有已入伍持主武器战斗人员都昏迷、逃离或正在逃离时，会写入 `failure/no_available_combatants`，并在快照中暴露 `combatant_availability`；T1304 后，包含最终波次的战斗清敌会写入 `victory/five_waves_survived`，保存资源 / 建筑 / NPC 结算快照，并在快照中暴露 `last_victory_result`。
+当前状态：`CombatSystem` 读取 5 波敌人配置并按 TimeSystem 在第 3–7 日每天 18:00 自动触发，支持波次查询、调试生成 / 清除 / 跳转和战斗快照。敌人与我方会按逻辑时间推进移动、寻敌、攻击、伤害、昏迷、逃离和器械作战；战时有效倍率上限为 x1。T0121 后 Demo 唯一失败条件是主厅 HP 清零；全部武装 NPC 昏迷或逃离时，敌军与幸存器械仍继续结算。最终波敌军全灭写入 `victory/five_waves_survived`，保存资源、建筑和 NPC 结局快照。
 
 T1104A 后，CombatSystem 不再把玩家 `x2` / `x4` 作为战斗伤害、攻速或战斗移动倍率；活动敌人存在时会通过 TimeSystem 注册 `combat_enemy_presence` `x1` 上限，清敌或最后一个敌人被移除时释放。T1104B 后，CombatSystem 把 `game_delta_seconds / 60` 折算为战斗动作秒推进攻击冷却，并在最近 AI / 我方攻击快照中暴露 `combat_seconds`；第一波敌人已按艾达持剑基准校准为低强度探路战。T1105 新增 `get_combat_strategy_options_for_unit_type(...)`、`get_npc_combat_strategy_options(...)`、`get_npc_combat_strategy(...)`、`set_npc_combat_strategy(...)` 和 `normalize_npc_combat_strategy(...)`，可按兵种提供策略选项、保存玩家手动选择、在换主武器 / 坐骑时重置默认策略，并执行主动进攻、最大化输出、保持距离射击、拉开距离冲击和战斗内避战；T1105A 后，战斗内避战只在最近敌人低于安全阈值时短步长远离，敌人已远离到阈值外时停止移动并保持 `combat_ready`。
 
@@ -1094,7 +1124,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 路径：`res://scripts/ui/GMPanel.gd`
 用途：GM 调试面板脚本，为 M1-M4 已完成但前端不易直接验证的系统能力提供可拖动按钮、命令输入框、调试按钮和结果输出。
 依赖：挂载到 `Main/UI/GMPanel`；调用 `TimeSystem`、`ResourceSystem`、`BuildingSystem`、`NPCSystem`、`ActionSystem`、`MemorySystem` 和 `CombatSystem` 的已有公开接口或 `debug_*` 接口；使用顶部 `GM_ENABLED` 常量控制开发/上线显示。
-当前状态：T0004 已实现；支持资源、时间、建筑、NPC、行动、记忆/见闻/广场公告等调试入口。T1104A 后时间分组新增 TimeSystem 倍率快照，`snapshot` / `time_snapshot` 可查看玩家选择倍率、有效倍率、LLM 慢速请求和 TimeSystem 上限请求。T0014 后行动区普通行动统一通过行动下拉和“指定行动”按钮触发，不再为工作、吃饭、睡觉、训练场教官/受训者保留并列快捷按钮；协助修复、协助升级、协助治疗等需要目标参数的入口继续保留。T0703 新增发布/查看指令和查看最近计划重评估请求入口；支持 `publish_order`、`order`、`plan_request`。T0705 新增主动交涉按钮和 `start_proactive` / `proactive` 命令，调用 `NPCSystem` 调试接口触发和查看问号气泡状态。T0904 新增技能点分配按钮和 `assign_attribute <npc_id> <strength|intelligence>` 命令，调用 NPCSystem 分配力量 / 智力。T0015 新增“设为入伍”按钮和 `recruit_npc <npc_id>` 命令，调用 NPCSystem 入伍权威接口。T1101 新增“战斗 / 敌人”分组、波次下拉、生成第一波 / 所选波次、敌人快照和清空按钮，并支持 `spawn_wave [wave_number]`、`enemy_wave [wave_number]`、`enemies`、`clear_enemies`；T1301 新增“跳到下一波”按钮和 `next_wave` / `jump_wave` 命令，调用 CombatSystem 的下一未触发波次调试入口；T1102 新增“推进敌人AI”按钮和 `step_enemies [game_seconds]` 命令，调用 CombatSystem 推进目标选择、移动和敌方攻击；T1103 新增“警铃集结”按钮和 `alarm` / `rally` 命令，调用 CombatSystem 触发同 HUD 的集结流程；T1103B/T1103C 新增“行为模式快照”“模拟避战”“推进集结等待”按钮和 `behavior_modes` / `avoid_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令，其中 `avoid_npc` 适用于非战斗人员并会拒绝已入伍且有主武器 NPC；T1203 新增“触发逃离”按钮和 `escape_npc <npc_id>` 命令，调用 CombatSystem 正式逃离入口；T1104 后，`step_enemies` 同时推进我方基础自动攻击并在敌人快照中暴露最近我方攻击结果；T1104A 后，敌人快照会暴露 TimeSystem 上限状态；T1204A 后，敌人快照的 `active_escapes` / `last_escape_result` 可观察逃离挽留轮次、速度倍率、暂停 / 恢复、留下 / 继续结果、逃离攻击无回复和昏迷暂停 / 复苏继续状态；T1301 后敌人快照包含 `wave_schedule`；T1303 后敌人快照包含 `combatant_availability`，可观察无可战斗人员失败原因。T0012 后 GM 面板会跟随 GM 按钮位置打开和重定位，并夹在可用屏幕范围内。GMPanel 不写入新的权威结算逻辑，只转发到已有系统。
+当前状态：GM 面板支持资源、时间、建筑、NPC、行动、记忆、公告、征募、技能点、战斗波次、警铃集结、策略、逃离和结算等已有系统的调试入口；`snapshot` / `time_snapshot` 可查看倍率与时间上限，战斗区支持生成、跳转、推进和清除敌人。T0121 没有新增按钮，既有入口已经可以验证五波、器械和主厅失败；旧 `combatant_availability` 只可作为观察性快照，不再触发失败。GMPanel 只转发现有权威接口，不自行结算资源、伤害或胜负。
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
@@ -1189,7 +1219,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 路径：`data/action_defs.json`
 用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出、唯一生活消耗档位和可选有效工时经验。
 依赖：由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
-当前状态：T0305 已由 `ActionSystem` 读取；T0098 移除独立参加弥撒后共 24 个行动定义，覆盖菜园工作、食堂加工餐食、酒窖酿酒、铁匠铺制造、工械坊制造、马厩照料、小诊所医生坐诊/研读医术、小诊所病床治疗、训练场教官、训练场受训者、吃饭、睡觉、祈祷、主持弥撒和三类协助等。2026-05-25 起优先使用 `duration_seconds` 表达持续时间：工作 3600 秒、吃饭 1200 秒、睡觉 23400 秒。T0803 后 `work_garden` 配置 `output_scaling`，基础产出 2 份粮食，并由耕种熟练度、力量和菜园等级提高实际产出。T0035 后 `work_blacksmith` / `work_workshop` 保留打铁 + 力量、工程 + 智力和 3600 秒基础周期，但 `input_resources` / `output_resources` 为空并设 `requires_crafting_target=true`，实际阶段材料与具体成品由 CraftingSystem 配方结算。T0037 后 `work_stable` 保留养马 + 力量和 3600 秒周期，但不再直接消耗粮食或产出 `horse_readiness`，其 active 状态作为 HorseSystem 照料资格。T0807 后 `work_tavern` 明确使用酿酒与智力，消耗 1 份粮食并产出酒派生库存，且通过 `output_scaling` 让酿酒、智力和酒窖等级提高实际产出；T1507 后酒由 MerchantSystem 在商人到访时按配置出售，酿酒行动仍不自动换钱。T0808 后 `work_clinic_doctor` 占用诊所医生工位，`receive_clinic_treatment` 占用诊所病床，二者同时满足时推进治疗并消耗第纳尔；医生无病人时缓慢研读医术。T0903 后 `work_training_instructor` 占用训练场教官工位，`receive_weapon_training` 占用训练场受训位，训练项目由 NPC 当前主武器 / 坐骑决定。T1204A 后补充 `escaping_station` 与 `escape_intervention_dialogue` 系统显示行动，用于地点快照和 UI 文案格式化，不作为普通行动下拉的可执行工作。T0081 后每条定义必须声明唯一 `needs_profile`，不得再出现旧生活状态 delta 字段；`assist_repair / assist_upgrade / assist_heal` 作为参数化定义保留在本表，并通过 `timed_experience` 分别累计工程 / 工程 / 医术。
+当前状态：`ActionSystem` 读取 24 个行动定义，覆盖生产、制造、照料、治疗、训练、吃饭、睡觉、祈祷和参数化协助。`work_blacksmith` / `work_workshop` 在 T0121 后为 5400 秒基础周期，阶段材料和成品由 CraftingSystem 结算；菜园、酒窖与马厩仍为 3600 秒基础工作周期，吃饭 1200 秒、睡觉 23400 秒。菜园产出受耕种 / 力量 / 建筑等级缩放，食堂一粮基础产两餐，酒窖一粮产酒且不自动换钱；治疗需要医生与病床同时工作并消耗第纳尔。所有定义声明唯一 `needs_profile`，协助行动通过 `timed_experience` 累计对应技能。
 
 路径：`data/activity_needs.json`
 用途：NPC 活动生活消耗配置，记录 0–100 边界、每小时饱食 / 疲劳速率、行为模式映射、动态 idle / movement / unconscious 档位和说明。
@@ -1216,7 +1246,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 路径：`data/enemy_waves.json`
 用途：敌人波次配置，记录波次编号、触发时间、正门外生成点、生成位置、生成散布和敌人组数值。
 依赖：由 `CombatSystem` 通过 `ConfigLoader.load_data_file("enemy_waves.json")` 读取。
-当前状态：T0107 后 5 波总数为 `8 / 12 / 18 / 26 / 36`，敌人个体整体弱于我方平均武装单位，后期主要增加数量与兵种组合。敌人组包含穿透、规范攻速、兼容间隔和攻击抬手；抬手可被僵直打断。自动来袭仍在第 3-7 天 18:00，目标仍过滤围墙并按附近单位 / 器械、城门、仓库、主厅推进。
+当前状态：T0121 后 5 波总数为 `8 / 16 / 24 / 36 / 48`，敌人个体整体弱于我方平均武装单位，后期主要靠人数、远程和骑兵混编提高压力；第二、四波是相对难度峰值。敌人组包含穿透、规范攻速、兼容间隔和攻击抬手，抬手可被僵直打断。自动来袭固定在第 3–7 天每天 18:00，目标过滤围墙并按附近单位 / 器械、城门、仓库、主厅推进。
 
 路径：`data/npc_initial_long_memory.json`
 用途：独立保存 8 名初始 NPC 的开局前日记和知识图谱，不与根本人设或运行时权威状态混写。
@@ -1378,7 +1408,9 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 敌人波次与生成验证 | `tools/verify_enemy_wave_generation.gd` |
 | 敌人波次倒计时与自动来袭验证 | `tools/verify_enemy_wave_schedule.gd` |
 | 主厅失败条件验证 | `tools/verify_main_hall_failure.gd` |
-| 无可战斗人员失败验证 | `tools/verify_no_available_combatants_failure.gd` |
+| 零可战人员仍继续战斗验证（保留旧文件名） | `tools/verify_no_available_combatants_failure.gd` |
+| T0121 全局数值合同验证 | `tools/verify_t0121_game_balance.gd` |
+| T0121 第七天第五波成型构筑验证 | `tools/verify_t0121_fifth_wave_build.gd` |
 | 第 5 波胜利条件验证 | `tools/verify_five_wave_victory.gd` |
 | 敌人目标优先级验证 | `tools/verify_enemy_target_priority.gd` |
 | 基础攻击与伤害验证 | `tools/verify_combat_damage.gd` |

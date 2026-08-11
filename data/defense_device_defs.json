@@ -11,10 +11,10 @@
       "defense": 1.0,
       "effect": {
         "kind": "auto_attack",
-        "damage": 36,
+        "damage": 44,
         "penetration": 8.0,
-        "attack_speed": 0.22,
-        "attack_interval": 4.55,
+        "attack_speed": 0.23529411764705882,
+        "attack_interval": 4.25,
         "range": 34.0,
         "minimum_forward_dot": 0.0,
         "max_attacks_per_tick": 16

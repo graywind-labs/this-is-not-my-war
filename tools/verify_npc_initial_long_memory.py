@@ -473,10 +473,28 @@ def _verify_knowledge_graph(
     assert any(marker in relationship_text for marker in ("和睦", "和气", "和谐")), (
         f"{npc_id} guard-officer pre-game relationship must preserve harmony"
     )
-    for marker in OPEN_GUARD_MARKERS:
-        assert marker not in guard_text, (
-            f"{npc_id} guard-officer knowledge adds an unnecessary assessment: {marker!r}"
+    non_relationship_guard_text = " ".join(
+        "%s %s" % (
+            str(record.get("value", "")),
+            str(record.get("value_label", "")),
         )
+        for relation, record in guard_relations.items()
+        if relation != "pre_game_relationship" and isinstance(record, dict)
+    )
+    for marker in OPEN_GUARD_MARKERS:
+        assert marker not in non_relationship_guard_text, (
+            f"{npc_id} guard-officer factual seed adds an unnecessary assessment: "
+            f"{marker!r}"
+        )
+    assert any(marker in relationship_text for marker in ("战时", "征召", "危险命令")), (
+        f"{npc_id} pre-game relationship must distinguish ordinary harmony from wartime trust"
+    )
+    assert any(marker in relationship_text for marker in ("检验", "考验")), (
+        f"{npc_id} pre-game relationship must state that wartime conduct is untested"
+    )
+    assert any(marker in relationship_text for marker in ("实际", "真实", "结果", "兑现")), (
+        f"{npc_id} pre-game relationship must defer later trust to observed facts"
+    )
     for phrase in PREJUDGED_GUARD_PHRASES:
         assert phrase not in guard_text, (
             f"{npc_id} guard-officer knowledge prejudges an interaction: {phrase!r}"

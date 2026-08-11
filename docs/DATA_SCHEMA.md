@@ -1,5 +1,12 @@
 # DATA_SCHEMA.md
 
+## T0121 全局数值字段变更
+
+- `CraftingRecipe.available: bool` 控制配方是否进入可选目标；缺失默认 `true`。合法阶段可使用空 `cost={}` 表示纯工时收尾，但无效非字典成本仍拒绝加载。
+- `BuildingDefinition.repair.hp_restore` 是单批回复量；`repair_batches=ceil(missing_hp/hp_restore)`，总成本为单批 `cost` 逐项乘批次数。
+- `PietyAbility.meteor.impact_max_targets=12` 只限制冲击，燃烧不继承该上限。
+- 商店允许基础资源买卖，且卖价低于买价；酒仅卖出。战斗等级读取最高单项武器 / 骑术 `skill_experience`，通用属性点每 10 总经验产生 1 点。
+
 ## T0116 对话意图复核与制造失败
 
 `DialogueIntentRevalidationRequest`：`meta / game_time / station_context / npc / planned_intent / current_plan[24] / allowed_actions / current_building_states / current_resource_states`。`planned_intent` 包含 `created_day / created_time / source / plan_item`，且计划项必须等于当前小时计划并仅可为 `talk_to_npc / seek_guard_officer`。
@@ -34,6 +41,7 @@
     "fall_duration_seconds": 1.15,
     "impact_damage": 48.0,
     "impact_penetration": 5.0,
+    "impact_max_targets": 12,
     "burn_duration_seconds": 10.0,
     "burn_tick_interval_seconds": 1.0,
     "burn_damage": 1.0,
@@ -44,7 +52,7 @@
 
 ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `3 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
 
-施放事件 `piety_meteor_cast` 至少保存 `cast_id / target_position / radius / piety_spent`；落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / hit_count / defeated_count / friendly_fire=false`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。
+施放事件 `piety_meteor_cast` 至少保存 `cast_id / target_position / radius / piety_spent`；落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / impact_damage / impact_max_targets / enemy_hit_count / enemy_defeated_count / burn_duration_seconds / friendly_fire=false`。冲击候选按水平距离、敌人 ID 稳定排序并截取最多 12 个；燃烧区域不传 `max_targets`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。
 
 ## T0113 对话训练权威实况
 
@@ -542,15 +550,22 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
     "departure_minute": 0
   },
   "buy_offers": [
-    {"resource_id": "grain", "unit_price": 2}
+    {"resource_id": "grain", "unit_price": 2},
+    {"resource_id": "wood", "unit_price": 3},
+    {"resource_id": "stone", "unit_price": 4},
+    {"resource_id": "iron", "unit_price": 5}
   ],
   "sell_offers": [
-    {"resource_id": "wine", "unit_price": 7}
+    {"resource_id": "grain", "unit_price": 1},
+    {"resource_id": "wood", "unit_price": 2},
+    {"resource_id": "stone", "unit_price": 3},
+    {"resource_id": "iron", "unit_price": 4},
+    {"resource_id": "wine", "unit_price": 4}
   ]
 }
 ```
 
-`buy_offers` 从驿站视角表示“买入商人的资源”，当前只允许粮食、木材、石料和铁；`sell_offers` 表示“向商人卖出驿站库存”，当前只允许酒。`unit_price` 是每份资源对应的整数第纳尔，必须大于 0。MerchantSystem 是时段、报价和交易结算权威；UI 不得复制另一份价格或直接修改资源。
+`buy_offers` 从驿站视角表示“买入商人的资源”，当前只允许粮食、木材、石料和铁；`sell_offers` 表示“向商人卖出驿站库存”，当前允许同四项基础资源与酒。基础资源必须满足同资源 `sell_price < buy_price`，当前均相差 1；酒不得出现在 `buy_offers`。`unit_price` 是每份资源对应的整数第纳尔，必须大于 0。MerchantSystem 是时段、报价和交易结算权威；UI 不得复制另一份价格或直接修改资源。
 
 ## T0059 NPC Initial Long Memory
 
@@ -665,7 +680,7 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
   },
   "progression": {
     "total_experience": 0,
-    "next_skill_point_xp": 5,
+    "next_skill_point_xp": 10,
     "unspent_skill_points": 0,
     "spent_skill_points": 0,
     "skill_experience": {
@@ -783,7 +798,7 @@ T1001 起，运行时 `plan` 可保存规则版每日计划。T1003/T0022 起，
 
 后端 `PlanItem` 在进入 Godot 前包含顶层 `action_kind` / `target_id` / `location_id`；`DailyPlanSystem` 校验后把目标组合归入运行时 `target` 字典，并从行动配置恢复显示名。计划由 `DailyPlanSystem` 生成和执行；正式输出必须精确复用动态候选的 action/kind/target/location 组合，执行时仍由 `ActionSystem` 校验地点、工位、资源、HP 和行动合法性。计划项 `source` 可为正式真实模型的 `llm_plan_day` / `llm_plan_revision`，或显式调试用的 `rule_default` / `mock_plan_day`。T0022/T0023 后不再产生每日计划 `rule_plan_fallback`、计划修订 `mock_revision` 或 `rule_revision_fallback`；正式每日计划失败时保持 `planning_day`，正式修订失败时保留当前计划。计划生成或修订可把当前小时改为 `idle` 安全等待项；`idle` 只表示计划层等待，不是生产行动定义。计划项不是已发生事实；只有实际执行的工作、吃饭、睡觉、祈祷、拜访、训练、治疗或对话事件才代表行动发生。
 
-T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
+T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数；T0121 后 `next_skill_point_xp` 为每 10 点总经验获得 1 个技能点。战斗等级另由 CombatSystem 读取剑盾、长杆、弓、弩、骑术五项中最高的 `skill_experience`，职业总经验不参与。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
 T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。T0031 起，初始档案可用 `initial_equipment` 保存“槽位 -> 正式定义 id”的故事装备引用，例如艾达使用 `{"main_weapon": "sword_shield"}`；`EquipmentSystem` 只在对应运行时槽位为空时装载正式定义，不消耗全局库存、不写守备官 `equipment_given` 事件。没有故事装备的 NPC 继续使用空对象 `{}`，运行时 `equipment` 初值也可保持 `{}`。T0902 起，兵种判定只读取运行时装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B/T1103C 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前按敌方方位生成的短步长避战方向。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。T1201 起，`states.morale_boost` 保存战时对话产生的 2 游戏小时斗志 buff；T1204A 起，`states.escape_intent` 保存逃离触发、移动目标、开始 / 完成时间、挽留轮次、对话暂停标记、最近挽留结果和逃离移动倍率，`status` 可为 `escaping`、`paused_unconscious`、`stayed` 或 `escaped`。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
 
@@ -917,7 +932,7 @@ T0904 起，属性成长不由 AI 自动分配。玩家通过 `NPCSystem.assign_
 }
 ```
 
-`repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。所有建筑都应具备 `upgrade` 最小配置；升级时长可由 `duration_seconds`，或 `seconds_per_current_level + level_time_factor` 配置，未配置时使用系统默认时长。升级在开始时一次性扣除资源并创建倒计时作业，升级期间 `is_enterable=false`、所有内部位置停用，完成后才应用等级、Max HP、非固定位置增量和效率奖励。
+`repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。T0121 后 `hp_restore` 表示单批可覆盖的缺失 HP，`repair_batches=ceil(missing_hp/hp_restore)`，每项总修复成本为 `repair.cost[resource] × repair_batches`；资源在修复开始时一次性扣除。`seconds_per_missing_hp` 和 `level_time_factor` 继续计算倒计时修复时长，不与批次数重复放大工期。所有建筑都应具备 `upgrade` 最小配置；升级时长可由 `duration_seconds`，或 `seconds_per_current_level + level_time_factor` 配置，未配置时使用系统默认时长。升级在开始时一次性扣除资源并创建倒计时作业，升级期间 `is_enterable=false`、所有内部位置停用，完成后才应用等级、Max HP、非固定位置增量和效率奖励。
 
 只有可进入建筑使用 `workstations` 表达内部状态。T0801 起，运行时位置占用和释放由 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 修改 `occupied_by`；地点信息节点只读取该状态并广播差量，不自行决定位置权威状态。T0043 后，小诊所使用 `clinic_doctor_station` / `clinic_patient_bed`，训练场使用 `training_instructor_station` / `training_practice_slot`；升级通过 `workstation_deltas` 增加未列入 `fixed_workstation_types` 的位置。主厅、围墙、城门、后门、仓库等不可进入建筑保留 HP、等级、修复/升级等权威状态，但 `workstations` 为空，也不会暴露内部 NPC 或位置。NPC 可传播外部状态包含等级、`condition`、`is_enterable` 和运行效率分档；可进入建筑的内部状态按位置 ID 传播新增、移除、改名、改类型和占用变化。运行时地点快照还会为广场和可进入建筑生成 `people_statuses`；它来自 NPC 运行时状态，不要求写入 `data/building_defs.json`。
 
@@ -1091,10 +1106,10 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
   "defense": 1.0,
   "effect": {
     "kind": "auto_attack",
-    "damage": 36,
+    "damage": 44,
     "penetration": 8.0,
-    "attack_speed": 0.22,
-    "attack_interval": 4.55,
+    "attack_speed": 0.23529411764705882,
+    "attack_interval": 4.25,
     "range": 34.0,
     "minimum_forward_dot": 0.0,
     "max_attacks_per_tick": 16
@@ -1147,7 +1162,7 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 ## Crafting Recipe（T0035 当前实现）
 
-`data/crafting_recipes.json` 的每条配方属于一个建筑，并以有序 `stages` 表达难度。阶段成本之和必须等于完整成品成本；材料只在对应阶段完整提交时原子扣除。
+`data/crafting_recipes.json` 的每条配方属于一个建筑，并以有序 `stages` 表达难度。可选 `available` 缺失时默认为 `true`；`false` 时保留数据但不进入建筑可选目标，直接设置也返回 `recipe_unavailable`。阶段成本之和必须等于完整成品成本；材料只在对应阶段完整提交时原子扣除。`cost={}` 是合法的纯工时收尾 / 校准阶段，不能被加载器误判为无效成本。
 
 ```json
 {
@@ -1155,11 +1170,13 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
   "building_id": "blacksmith",
   "output_item_id": "item_sword_shield",
   "output_amount": 1,
+  "available": true,
   "stages": [
     {"id": "forge_blade", "name": "锻刃", "cost": {"iron": 1}},
     {"id": "shape_shield", "name": "制盾", "cost": {"wood": 1}},
     {"id": "forge_fittings", "name": "锻造配件", "cost": {"iron": 1}},
-    {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}}
+    {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}},
+    {"id": "balance_and_test", "name": "配平试击", "cost": {}}
   ]
 }
 ```
@@ -1168,17 +1185,17 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 | 建筑 | 配方 id | 成品库存 id | 阶段数 | 材料总量 |
 |---|---|---|---:|---|
-| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 2 | 铁 2 |
-| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 2 | 铁 2 |
-| 铁匠铺 | `craft_polearm` | `item_polearm` | 3 | 铁 2、木材 1 |
-| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 3 | 铁 3 |
-| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 4 | 铁 3、木材 1 |
-| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 6 | 铁 6 |
-| 工械坊 | `craft_arrow_bundle` | `item_arrow_bundle` | 1 | 木材 1 |
-| 工械坊 | `craft_bow` | `item_bow` | 2 | 木材 2 |
-| 工械坊 | `craft_crossbow` | `item_crossbow` | 4 | 木材 3、铁 1 |
-| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 6 | 木材 5、铁 1 |
-| 工械坊 | `craft_wall_arrow_tower` | `item_wall_arrow_tower` | 8 | 木材 7、铁 1 |
+| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 3 | 铁 2 |
+| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 3 | 铁 2 |
+| 铁匠铺 | `craft_polearm` | `item_polearm` | 4 | 铁 2、木材 1 |
+| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 4 | 铁 3 |
+| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 5 | 铁 3、木材 1 |
+| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 8 | 铁 6 |
+| 工械坊 | `craft_arrow_bundle` | `item_arrow_bundle` | 1 | 木材 1；`available=false` |
+| 工械坊 | `craft_bow` | `item_bow` | 3 | 木材 2 |
+| 工械坊 | `craft_crossbow` | `item_crossbow` | 5 | 木材 3、铁 1 |
+| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 9 | 木材 6、铁 2 |
+| 工械坊 | `craft_wall_arrow_tower` | `item_wall_arrow_tower` | 12 | 木材 8、铁 2 |
 
 建筑级运行态保存当前 `recipe_id`、项目 `revision`、`completed_stages` 与 `total_stages`。同建筑多个工位可以并行推进各自工作周期，但完整周期提交时必须再次校验 `revision`、领取唯一的下一阶段并扣除该阶段材料。全部阶段完成后只增加 1 件 `output_item_id`，保留目标并把整数阶段重置为 0。更换目标会增加 `revision`、放弃旧项目全部整数阶段并中断旧版本周期；已经扣除的阶段材料不返还。`special_state.production.current_stage_index` 使用 1 起始，等于 `completed_stages + 1`；未选择目标或没有合法当前阶段时为 0，名称为空。小数周期进度只供建筑面板汇总显示，不属于上述 `special_state`。
 
@@ -1292,7 +1309,7 @@ HorseSystem 随 TimeSystem 逻辑时间推进：在厩 / 离厩饱食分别按�
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。T0107 后敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值并生成兼容间隔；抬手期间可被骑兵冲撞僵直打断。5 波总数固定为 `8 / 12 / 18 / 26 / 36`，敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。T0121 的五波时间固定为第 3–7 日每天 18:00，总数固定为 `8 / 16 / 24 / 36 / 48`。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值并生成兼容间隔；抬手期间可被骑兵冲撞僵直打断。敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量；第四、第五波用低阶兵补充蜂拥感，而不是把全部增援升级为最高阶。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
 
 ## Event Record
 

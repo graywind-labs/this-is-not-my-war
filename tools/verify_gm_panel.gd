@@ -312,7 +312,10 @@ func _init() -> void:
 		quit(1)
 		return
 	gm_panel._execute_command("craft_snapshot blacksmith")
-	gm_panel._execute_command("craft_stage blacksmith gm_verify")
+	var helmet_recipe: Dictionary = crafting_system.get_recipe("craft_iron_helmet")
+	var helmet_stage_count := (helmet_recipe.get("stages", []) as Array).size()
+	for _stage_index in range(1, helmet_stage_count):
+		gm_panel._execute_command("craft_stage blacksmith gm_verify")
 	if int(resource_system.get_resource("item_iron_helmet")) != helmet_stock_before + 1:
 		push_error("GM craft_stage should add the concrete finished item after the final stage")
 		quit(1)

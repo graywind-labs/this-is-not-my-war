@@ -151,13 +151,17 @@ func _init() -> void:
 		push_error("Repair status was not created.")
 		quit(1)
 		return
-	if resource_system.get_resource("stone") != original_stone - 1:
-		push_error("Repair did not spend stone up front.")
+	if resource_system.get_resource("stone") != original_stone - 2:
+		push_error("Forty missing wall HP should spend two repair batches up front.")
 		quit(1)
 		return
 	var repair_status: Dictionary = started.get("repair_status", {})
 	if (
-		not str(repair_status.get("duration_text", "")).contains("小时")
+		int(repair_status.get("missing_hp", 0)) != 40
+		or int(repair_status.get("repair_batches", 0)) != 2
+		or int(repair_status.get("hp_restore", 0)) != 20
+		or int((repair_status.get("cost", {}) as Dictionary).get("stone", 0)) != 2
+		or not str(repair_status.get("duration_text", "")).contains("小时")
 		or not str(repair_status.get("duration_text", "")).contains("分")
 		or not str(repair_status.get("duration_text", "")).contains("秒")
 		or not str(repair_status.get("remaining_text", "")).ends_with("00秒")

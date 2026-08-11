@@ -49,10 +49,11 @@ func _init() -> void:
 	if (
 		not is_equal_approx(float(meteor_config.get("radius", 0.0)), 5.5)
 		or not is_equal_approx(float(meteor_config.get("impact_damage", 0.0)), 48.0)
+		or int(meteor_config.get("impact_max_targets", 0)) != 12
 		or not is_equal_approx(float(meteor_config.get("burn_duration_seconds", 0.0)), 10.0)
 		or not is_equal_approx(float(meteor_config.get("burn_damage", 0.0)), 1.0)
 	):
-		_fail("Meteor radius, impact, or burn tuning contract regressed")
+		_fail("Meteor radius, 12-target impact cap, damage, or burn tuning contract regressed")
 		return
 
 	daily_plan_system.set_auto_execution_enabled(false)
@@ -191,9 +192,35 @@ func _init() -> void:
 	if (
 		impact_event.is_empty()
 		or bool(impact_event.get("payload", {}).get("friendly_fire", true))
+		or int(impact_event.get("payload", {}).get("impact_max_targets", 0)) != 12
 		or not str(impact_event.get("summary", "")).contains("没有伤及友方")
 	):
 		_fail("Meteor impact event does not preserve the no-friendly-fire rule")
+		return
+
+	combat_system.clear_spawned_enemies()
+	spawn_result = combat_system.debug_spawn_wave(4, true)
+	if not bool(spawn_result.get("ok", false)) or combat_system.get_active_enemy_count() < 13:
+		_fail("Could not spawn enough enemies for meteor impact-cap verification")
+		return
+	enemy_ids = combat_system.get_active_enemy_ids()
+	for index in range(enemy_ids.size()):
+		var offset := Vector3(float(index % 6) * 0.25, 0.0, float(index / 6) * 0.25)
+		_place_enemy(combat_system, enemy_ids[index], offset, 100)
+	piety_system.debug_fill_piety()
+	cast_result = piety_system.request_meteor_cast(Vector3.ZERO)
+	if not bool(cast_result.get("ok", false)):
+		_fail("Meteor cast failed during 12-target cap verification")
+		return
+	piety_system.debug_advance_effects(120.0)
+	var capped_impact: Dictionary = piety_system.get_piety_snapshot().get("last_impact_result", {})
+	var capped_damage: Dictionary = capped_impact.get("damage_result", {})
+	if (
+		int(capped_impact.get("hit_count", 0)) != 12
+		or int(capped_damage.get("max_targets", 0)) != 12
+		or int(capped_damage.get("eligible_target_count", 0)) <= 12
+	):
+		_fail("Meteor impact did not stop at the nearest 12 eligible enemies: %s" % JSON.stringify(capped_impact))
 		return
 
 	combat_system.clear_spawned_enemies()

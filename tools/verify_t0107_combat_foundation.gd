@@ -95,7 +95,7 @@ func _verify_wave_pressure(combat_system: Node) -> bool:
 				if not group.has(required_field):
 					return _fail("Wave %s group lacks %s." % [wave_number, required_field])
 		counts.append(count)
-	if counts != [8, 12, 18, 26, 36]:
+	if counts != [8, 16, 24, 36, 48]:
 		return _fail("Enemy pressure curve mismatch: %s" % str(counts))
 	for index in range(1, counts.size()):
 		if counts[index] <= counts[index - 1]:
@@ -226,7 +226,7 @@ func _verify_npc_stats_and_prompt_boundary(
 	npc_system.increase_npc_skill("veteran_deputy_01", "剑盾", 10)
 	var leveled_stats: Dictionary = combat_system.get_npc_combat_stats("veteran_deputy_01")
 	if int(leveled_stats.get("level", 1)) <= int(before_growth.get("level", 1)):
-		return _fail("Total experience must raise the deterministic combat level.")
+		return _fail("Ten points in one weapon-training track must raise combat level.")
 	var before_strength: Dictionary = leveled_stats.get("final", {}).duplicate(true)
 	var strength_result: Dictionary = npc_system.assign_npc_attribute_point(
 		"veteran_deputy_01",

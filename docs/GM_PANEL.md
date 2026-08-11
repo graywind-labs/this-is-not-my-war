@@ -1,5 +1,9 @@
 # GM_PANEL.md
 
+## T0121 全局数值验证入口
+
+本轮不新增重复 GM 按钮。既有资源、建筑损伤 / 修复、制造目标 / 单阶段、时间、波次生成 / 跳波、警铃、敌人快照、虔诚填满 / 推进和器械部署入口已经能观察全部权威变化。配置 / 公式由 `tools/verify_t0121_game_balance.gd` 验证，第七天第五波构筑由 `tools/verify_t0121_fifth_wave_build.gd` 验证。`tools/verify_no_available_combatants_failure.gd` 保留历史文件名，但 T0121 后改为断言零可战人员时不失败、战斗继续且 HUD 不显示结算；唯一失败结局仍由主厅摧毁专项验证。
+
 ## T0116 对话意图复核观察
 
 - 后端 / LLMBridge 区新增“对话意图复核”按钮，读取所选 NPC 的 pending request、一次性批准和最近 continue / modify / cancel 结果。

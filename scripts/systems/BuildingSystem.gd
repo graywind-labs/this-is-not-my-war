@@ -565,8 +565,8 @@ func can_repair_building(building_id: String) -> bool:
 	if int(building.get("hp", 0)) >= int(building.get("max_hp", 0)):
 		return false
 
-	var repair_config: Dictionary = building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var quote := get_repair_quote(building_id)
+	var cost: Dictionary = quote.get("cost", {})
 	if cost.is_empty():
 		return false
 
@@ -580,7 +580,8 @@ func repair_building(building_id: String) -> bool:
 
 	var building: Dictionary = _buildings[building_id]
 	var repair_config: Dictionary = building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var quote := get_repair_quote(building_id)
+	var cost: Dictionary = quote.get("cost", {})
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_system == null or not resource_system.spend_resources(cost):
 		return false
@@ -595,6 +596,10 @@ func repair_building(building_id: String) -> bool:
 		"remaining_seconds": duration_seconds,
 		"start_hp": current_hp,
 		"target_hp": max_hp,
+		"missing_hp": missing_hp,
+		"repair_batches": int(quote.get("repair_batches", 0)),
+		"hp_restore": int(quote.get("hp_restore", 0)),
+		"cost": cost.duplicate(true),
 		"helpers": {}
 	}
 	_buildings[building_id] = building
@@ -610,6 +615,38 @@ func is_repair_in_progress(building_id: String) -> bool:
 func get_repair_status(building_id: String) -> Dictionary:
 	_prune_invalid_repair_helpers(building_id)
 	return _get_repair_status(building_id)
+
+
+func get_repair_quote(building_id: String) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	var max_hp := int(building.get("max_hp", 0))
+	var current_hp := int(building.get("hp", 0))
+	var missing_hp := maxi(0, max_hp - current_hp)
+	var repair_config: Dictionary = building.get("repair", {})
+	var base_cost: Dictionary = repair_config.get("cost", {})
+	var hp_restore := int(repair_config.get("hp_restore", 0))
+	if missing_hp <= 0 or base_cost.is_empty() or hp_restore <= 0:
+		return {
+			"building_id": building_id,
+			"missing_hp": missing_hp,
+			"hp_restore": hp_restore,
+			"repair_batches": 0,
+			"cost": {}
+		}
+	var repair_batches := int(ceil(float(missing_hp) / float(hp_restore)))
+	var total_cost := {}
+	for raw_resource_id in base_cost.keys():
+		var resource_id := str(raw_resource_id)
+		total_cost[resource_id] = maxi(0, int(base_cost[raw_resource_id])) * repair_batches
+	return {
+		"building_id": building_id,
+		"missing_hp": missing_hp,
+		"hp_restore": hp_restore,
+		"repair_batches": repair_batches,
+		"cost": total_cost
+	}
 
 
 func add_repair_helper(building_id: String, npc_id: String, engineering_skill: int) -> bool:
@@ -992,7 +1029,11 @@ func _get_repair_status(building_id: String) -> Dictionary:
 		"speed_multiplier": _get_repair_speed_multiplier(job),
 		"helper_count": helpers.size(),
 		"helpers": helpers.duplicate(true),
-		"target_hp": int(job.get("target_hp", 0))
+		"target_hp": int(job.get("target_hp", 0)),
+		"missing_hp": int(job.get("missing_hp", 0)),
+		"repair_batches": int(job.get("repair_batches", 0)),
+		"hp_restore": int(job.get("hp_restore", 0)),
+		"cost": (job.get("cost", {}) as Dictionary).duplicate(true)
 	}
 
 

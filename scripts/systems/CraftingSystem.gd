@@ -79,9 +79,10 @@ func initialize() -> void:
 			continue
 		_recipes[recipe_id] = recipe
 		var building_id := str(recipe.get("building_id", ""))
-		var building_recipe_ids: Array = _recipe_ids_by_building.get(building_id, [])
-		building_recipe_ids.append(recipe_id)
-		_recipe_ids_by_building[building_id] = building_recipe_ids
+		if bool(recipe.get("available", true)):
+			var building_recipe_ids: Array = _recipe_ids_by_building.get(building_id, [])
+			building_recipe_ids.append(recipe_id)
+			_recipe_ids_by_building[building_id] = building_recipe_ids
 
 	for raw_building_id in SUPPORTED_BUILDING_IDS:
 		var building_id := str(raw_building_id)
@@ -172,6 +173,8 @@ func set_target(building_id: String, recipe_id: String, force: bool = false) -> 
 		next_recipe = get_recipe(normalized_recipe_id)
 		if next_recipe.is_empty():
 			return _target_result(false, "unknown_recipe", building_id, normalized_recipe_id)
+		if not bool(next_recipe.get("available", true)):
+			return _target_result(false, "recipe_unavailable", building_id, normalized_recipe_id)
 		if str(next_recipe.get("building_id", "")) != building_id:
 			return _target_result(false, "recipe_building_mismatch", building_id, normalized_recipe_id)
 
@@ -555,8 +558,9 @@ func _normalize_recipe(raw_recipe: Dictionary) -> Dictionary:
 		if stage_id.is_empty() or stage_name.is_empty() or stage_ids.has(stage_id):
 			_record_load_error("Crafting recipe %s has an empty or duplicate stage id: %s" % [recipe_id, stage_id])
 			return {}
+		var load_error_count := _load_errors.size()
 		var normalized_cost := _normalize_stage_cost(raw_stage.get("cost", {}), recipe_id, stage_id)
-		if normalized_cost.is_empty():
+		if _load_errors.size() > load_error_count:
 			return {}
 		stage_ids[stage_id] = true
 		stages.append({
@@ -571,14 +575,15 @@ func _normalize_recipe(raw_recipe: Dictionary) -> Dictionary:
 		"building_id": building_id,
 		"output_item_id": output_item_id,
 		"output_amount": output_amount,
+		"available": bool(raw_recipe.get("available", true)),
 		"ui_order": int(raw_recipe.get("ui_order", 0)),
 		"stages": stages
 	}
 
 
 func _normalize_stage_cost(raw_cost: Variant, recipe_id: String, stage_id: String) -> Dictionary:
-	if not raw_cost is Dictionary or raw_cost.is_empty():
-		_record_load_error("Crafting stage must have a non-empty cost: %s/%s" % [recipe_id, stage_id])
+	if not raw_cost is Dictionary:
+		_record_load_error("Crafting stage cost must be a dictionary: %s/%s" % [recipe_id, stage_id])
 		return {}
 	var normalized_cost := {}
 	for raw_resource_id in raw_cost.keys():

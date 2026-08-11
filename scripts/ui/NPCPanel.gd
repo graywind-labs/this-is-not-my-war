@@ -801,7 +801,7 @@ func _update_progression_controls(npc_system: Node, npc: Dictionary) -> void:
 		progression = npc_system.get_npc_progression(str(npc.get("id", _current_npc_id)))
 	var total_experience := int(progression.get("total_experience", 0))
 	var unspent_points := int(progression.get("unspent_skill_points", 0))
-	var next_point_xp := maxi(1, int(progression.get("next_skill_point_xp", 5)))
+	var next_point_xp := maxi(1, int(progression.get("next_skill_point_xp", 10)))
 	if _experience_label != null:
 		_experience_label.text = "经验：%d / %d" % [total_experience % next_point_xp, next_point_xp]
 	var stats: Dictionary = npc.get("stats", {})

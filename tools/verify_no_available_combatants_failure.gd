@@ -37,6 +37,7 @@ func _init() -> void:
 		return
 
 	time_system.set_current_time(5, 20, 10, 0)
+	time_system.set_paused(false)
 	npc_system.set_npc_recruited("stableman_01", true)
 	npc_system.set_npc_recruited("veteran_deputy_01", true)
 	resource_system.add_resource("item_sword_shield", 1)
@@ -54,7 +55,7 @@ func _init() -> void:
 		quit(1)
 		return
 	if bool(game_state.get("game_over")):
-		push_error("Armed combatants should prevent no-combatant failure before rally or contact")
+		push_error("Spawning a wave must not end the game before the main hall is destroyed")
 		quit(1)
 		return
 	if _mode(npc_system, "stableman_01") != "work" or _mode(npc_system, "veteran_deputy_01") != "work":
@@ -104,59 +105,56 @@ func _init() -> void:
 		return
 	await process_frame
 
-	if not bool(game_state.get("game_over")):
-		push_error("All available combatants gone should set GameState.game_over")
+	if bool(game_state.get("game_over")):
+		push_error("All combatants unavailable must not end the game while the main hall survives")
 		quit(1)
 		return
-	if str(game_state.get("game_result")) != "failure":
-		push_error("Game result should be failure")
+	if str(game_state.get("game_result")) != "":
+		push_error("Removing the legacy no-combatant ending must leave the game result unset")
 		quit(1)
 		return
-	if str(game_state.get("failure_reason")) != "no_available_combatants":
-		push_error("Failure reason should be no_available_combatants, got: %s" % str(game_state.get("failure_reason")))
+	if not str(game_state.get("failure_reason")).is_empty():
+		push_error("Removing the legacy no-combatant ending must leave failure_reason empty")
 		quit(1)
 		return
-	if int(game_state.get("game_over_day")) != 5 or int(game_state.get("game_over_hour")) != 20:
-		push_error("Failure timestamp should use current game time")
+	if bool(time_system.is_gameplay_paused()):
+		push_error("Gameplay must continue after all combatants become unavailable")
 		quit(1)
 		return
-	if not bool(time_system.is_gameplay_paused()):
-		push_error("TimeSystem should pause gameplay after no-combatant failure")
+
+	var combat_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
+	if combat_step.is_empty() or combat_system.get_active_enemy_count() <= 0:
+		push_error("Enemy and defense-device battle flow should continue without available NPC combatants")
 		quit(1)
 		return
 
 	var final_snapshot: Dictionary = combat_system.debug_get_combat_snapshot()
 	var failure_result: Dictionary = final_snapshot.get("last_failure_result", {}) if final_snapshot.get("last_failure_result", {}) is Dictionary else {}
-	if str(failure_result.get("reason", "")) != "no_available_combatants":
-		push_error("Combat snapshot should expose no-combatant failure: %s" % JSON.stringify(failure_result))
+	if not failure_result.is_empty():
+		push_error("Combat snapshot must not contain a legacy no-combatant failure: %s" % JSON.stringify(failure_result))
 		quit(1)
 		return
-	var final_availability: Dictionary = failure_result.get("combatant_availability", {}) if failure_result.get("combatant_availability", {}) is Dictionary else {}
+	var final_availability: Dictionary = _availability(combat_system)
 	if int(final_availability.get("available_combatant_count", -1)) != 0:
-		push_error("Failure availability should have zero available combatants: %s" % JSON.stringify(final_availability))
+		push_error("Diagnostic availability should still report zero available combatants: %s" % JSON.stringify(final_availability))
 		quit(1)
 		return
 	if _find_unavailable_reason(final_availability, "stableman_01") != "escaping":
-		push_error("Failure should record escaping combatant")
+		push_error("Diagnostic availability should record the escaping combatant")
 		quit(1)
 		return
 	if _find_unavailable_reason(final_availability, "veteran_deputy_01") != "unconscious":
-		push_error("Failure should record unconscious combatant")
+		push_error("Diagnostic availability should record the unconscious combatant")
 		quit(1)
 		return
 
 	var game_over_panel := hud.get_node_or_null("GameOverPanel") as PanelContainer
-	if game_over_panel == null or not game_over_panel.visible:
-		push_error("HUD should display game-over panel for no-combatant failure")
-		quit(1)
-		return
-	var reason_label := game_over_panel.find_child("GameOverReasonLabel", true, false) as Label
-	if reason_label == null or not reason_label.text.contains("无可战斗人员"):
-		push_error("HUD should show readable no-combatant failure reason")
+	if game_over_panel == null or game_over_panel.visible:
+		push_error("HUD must stay out of game-over state while the main hall survives")
 		quit(1)
 		return
 
-	print("No available combatants failure verification passed.")
+	print("Main-hall-only failure contract verification passed.")
 	quit(0)
 
 

@@ -785,8 +785,6 @@ func _format_game_over_reason(reason: String) -> String:
 	match reason:
 		"main_hall_destroyed":
 			return "主厅被摧毁"
-		"no_available_combatants":
-			return "无可战斗人员"
 		"five_waves_survived":
 			return "守住 5 波敌人"
 		_:

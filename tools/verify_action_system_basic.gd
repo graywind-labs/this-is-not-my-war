@@ -180,7 +180,7 @@ func _init() -> void:
 		push_error("Blacksmith work did not start")
 		quit(1)
 		return
-	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
 		push_error("Blacksmith first crafting stage did not complete")
 		quit(1)
@@ -198,9 +198,23 @@ func _init() -> void:
 		push_error("Final blacksmith crafting stage did not start")
 		quit(1)
 		return
-	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
-		push_error("Final blacksmith crafting stage did not complete")
+		push_error("Blacksmith second crafting stage did not complete")
+		quit(1)
+		return
+	npc_system.update_npc_state(blacksmith_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
+	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		push_error("Failed to assign labor-only blacksmith finishing stage")
+		quit(1)
+		return
+	if not await _wait_until_current_action(npc_system, blacksmith_id, "work_blacksmith"):
+		push_error("Blacksmith finishing stage did not start")
+		quit(1)
+		return
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
+		push_error("Blacksmith labor-only finishing stage did not complete")
 		quit(1)
 		return
 	if resource_system.get_resource("iron") != iron_before - 2 or resource_system.get_resource("wood") != wood_before_blacksmith:
@@ -218,39 +232,13 @@ func _init() -> void:
 
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(engineer_id, 80.0)
-	resource_system.add_resource("wood", 10)
-	var wood_before_workshop: int = resource_system.get_resource("wood")
-	var arrows_before: int = resource_system.get_resource("item_arrow_bundle")
-	var legacy_devices_before: int = resource_system.get_resource("defense_devices")
 	target_result = crafting_system.set_target("workshop", "craft_arrow_bundle", true)
-	if not bool(target_result.get("ok", false)):
-		push_error("Failed to select workshop crafting target")
+	if bool(target_result.get("ok", false)) or str(target_result.get("reason", "")) != "recipe_unavailable":
+		push_error("Arrow bundles should stay in data but be unavailable as a crafting target")
 		quit(1)
 		return
-	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if not action_system.debug_assign_work(engineer_id, "workshop"):
-		push_error("Failed to assign workshop work")
-		quit(1)
-		return
-	if not await _wait_until_current_action(npc_system, engineer_id, "work_workshop"):
-		push_error("Workshop work did not start")
-		quit(1)
-		return
-	_advance_action_time(needs_system, action_system, npc_system, engineer_id, 3600.0)
-	if not await _wait_until_action_result(npc_system, engineer_id, "completed_work_workshop"):
-		push_error("Workshop work did not complete")
-		quit(1)
-		return
-	if resource_system.get_resource("wood") != wood_before_workshop - 1:
-		push_error("Workshop exact stage material result mismatch")
-		quit(1)
-		return
-	if resource_system.get_resource("item_arrow_bundle") != arrows_before + 1:
-		push_error("Workshop product did not enter item_arrow_bundle inventory")
-		quit(1)
-		return
-	if resource_system.get_resource("weapons") != legacy_weapons_before or resource_system.get_resource("defense_devices") != legacy_devices_before:
-		push_error("Workshop work mutated deprecated aggregate inventory")
+	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
+		push_error("Unavailable arrow-bundle recipe leaked into the workshop target list")
 		quit(1)
 		return
 
@@ -262,7 +250,7 @@ func _init() -> void:
 		push_error("Failed to start wall repair")
 		quit(1)
 		return
-	if resource_system.get_resource("stone") != stone_before_wall - 1:
+	if resource_system.get_resource("stone") != stone_before_wall - 2:
 		push_error("Wall repair did not spend stone up front")
 		quit(1)
 		return

@@ -1,5 +1,15 @@
 # COMBAT_SYSTEM.md
 
+## T0121 全局数值合同与唯一失败条件
+
+五波现固定在第 3–7 日每天 18:00 到达，敌军总量为 `8 / 16 / 24 / 36 / 48`，对应基准入伍 `2 / 3 / 5 / 6 / 7` 与器械 `1 / 1 / 2 / 3 / 4`。第五波工作流以 7 武器、8 防具、2 马、1 弩床 + 3 箭塔对 48 敌；弩床为 44 伤害、4.25 秒间隔。具体兵种、装备、人时与恢复账见 `docs/GAME_BALANCE.md`。
+
+T1303 的 `no_available_combatants` 失败链已经删除。当前 Demo 唯一失败条件是主厅 HP 清零；全部 NPC 昏迷、逃离或无武器时不会立即结算，敌军与幸存器械继续推进。`tools/verify_t0121_fifth_wave_build.gd` 已验证 7 名 NPC 全部昏迷后器械完成 48 敌清理并进入最终胜利。
+
+T0122 连续回放进一步覆盖跨波战损：自然路线第四波清敌后 6 人全部昏迷、主厅剩 `112 / 220`，该波仍正确判过，随后第五波因累积损失摧毁主厅；精细路线两次以确认的 7 武器、8 防具、2 马、4 器械满员进入第五波，均清空 48 敌并保住 `236–250 / 250` 主厅。胜利时 7 人可全部昏迷且器械有损失，仍不产生第二失败条件。当前连续证据不要求调整敌军配置。
+
+陨石冲击按水平距离与敌人 ID 稳定排序，最多命中 12 个目标；燃烧仍可影响范围内其他敌人。战斗等级只读取最高单项武器 / 骑术训练经验，不读取职业总经验。
+
 ## T0118 斗志激昂对话内反馈
 
 `wartime_reaction=morale_boost` 的战时 NPC 回复会把 `wartime_reaction` 标记绑定到本轮 NPC history turn，DialogPanel 在该台词下显示绿色“↑ {NPC名}受到了激励，进入斗志激昂状态”。该反馈不改变 T1201 的权威边界：模型仍只表达意向，玩家完成对话后才由 `CombatSystem.apply_wartime_dialogue_reaction(...)` 应用 2 游戏小时 buff 并写入 `battle_psychology_result / morale_boost_started`；取消会话仍不应用被暂存的战时效果。
@@ -25,7 +35,7 @@
 
 ## T0114 虔诚陨石与无友伤边界
 
-守备官在共享虔诚满 100 后可选取合法地表召唤陨石。默认半径 5.5 米、下落 1.15 战斗动作秒；落地使用 48 点攻击力与 5 点穿透对范围内活动敌人结算一次冲击。随后地面燃烧 10 战斗动作秒，每 1 秒以 1 点攻击力、0 穿透对当时仍位于范围内的敌人结算一次。
+守备官在共享虔诚满 100 后可选取合法地表召唤陨石。默认半径 5.5 米、下落 1.15 战斗动作秒；落地使用 48 点攻击力与 5 点穿透，对范围内按距离和敌人 ID 稳定排序的最多 12 个目标结算一次冲击。随后地面燃烧 10 战斗动作秒，每 1 秒以 1 点攻击力、0 穿透对当时仍位于范围内的敌人结算一次；燃烧不受冲击 12 人上限限制。
 
 两段伤害均只经过 `CombatSystem.apply_enemy_area_damage(center, radius, raw_attack_power, context)`：该入口只遍历 `_active_enemies`，用水平距离判断范围，并复用 `有效防御=max(0, defense-penetration)` 与 `20/(20+有效防御)`、敌人死亡和正常清敌 / 战斗结束结算。它不枚举 NPC、建筑或我方工程器械，也不调用三者的伤害入口，因此陨石和燃烧严格没有友伤；友方站在落点内也不会损失 HP。
 
@@ -294,13 +304,13 @@ T0036 已把部署成本迁移为具体物品：弩床只扣除 `item_wall_balli
 
 Demo 阶段敌人使用规则 AI，不调用 LLM。
 
-T1101 已完成敌人波次配置与调试生成；T0107 将 5 波调整为 `8 / 12 / 18 / 26 / 36` 人，单个敌人的 HP、攻击、防御和穿透整体低于我方平均武装单位，以逐波人数增长制造杀敌反馈和数量压力。每个敌人组记录 HP、武器类型、单位类型、攻击、防御、穿透、攻击速度 / 间隔、攻击抬手、移动速度、攻击范围和目标偏好。`CombatSystem` 会读取该配置，并可通过 `spawn_wave(...)` / `debug_spawn_wave(...)` 在 `Main/WorldRoot/Station/Enemies` 下生成正门外低模敌人实体。
+T1101 已完成敌人波次配置与调试生成；T0121 将 5 波调整为 `8 / 16 / 24 / 36 / 48` 人，单个敌人的 HP、攻击、防御和穿透整体低于我方平均武装单位，以逐波人数增长制造杀敌反馈和数量压力。每个敌人组记录 HP、武器类型、单位类型、攻击、防御、穿透、攻击速度 / 间隔、攻击抬手、移动速度、攻击范围和目标偏好。`CombatSystem` 会读取该配置，并可通过 `spawn_wave(...)` / `debug_spawn_wave(...)` 在 `Main/WorldRoot/Station/Enemies` 下生成正门外低模敌人实体。
 
 T1301 已完成波次倒计时与自动来袭：每个波次配置可包含 `trigger_day`、`trigger_hour`、`trigger_minute` 和 `trigger_second`，当前 5 波默认分别在第 3-7 天 18:00 触发。`CombatSystem` 在 TimeSystem 的 `logical_time_tick` 中按逻辑时间比较配置触发点，只触发下一未触发波次，并记录 `triggered_wave_numbers`，避免同一波重复自动生成。`get_wave_schedule_snapshot()` 暴露下一波、已触发波次、待触发波次、活动敌人数量、最近自动触发结果和最近手动跳波结果；HUD 使用该快照显示下一波倒计时，GM “跳到下一波”按钮和 `next_wave` / `jump_wave` 命令调用 `debug_trigger_next_wave()` 触发下一未触发波次。T1304 后，包含最终配置波次（当前第 5 波）的战斗在敌人清空后触发 `victory/five_waves_survived`；`GameState.set_game_over(...)` 保存通用结算原因和 `settlement_snapshot`，快照记录剩余资源、建筑 HP / 损毁 / 摧毁、驿站是否仍可运转，以及 NPC 可行动 / 昏迷 / 逃离状态。胜利后 TimeSystem 停止推进，HUD 显示胜利占位界面，`spawn_wave(...)` 会因游戏已结算而拒绝继续生成敌人。
 
-T1303 已完成无可战斗人员失败条件：`CombatSystem` 的 `combatant_availability` 快照只把已入伍且持主武器、未昏迷、未逃离且未正在逃离的 NPC 视为当前可抵抗人员。该判定不要求 NPC 已经处于 `rally` 或 `combat`，因此工作中、尚未摇铃、尚未集结或尚未接敌的武装入伍 NPC 仍会计为可用，避免短暂未集结状态误判。活动敌人在场时，波次生成、逻辑推进、NPC 昏迷、逃离开始和逃离完成都会检查该快照；若存在可战斗人员但全部不可用，会写入 `failure/no_available_combatants`、保留不可用原因（`unconscious` / `escaped` / `escaping`）并复用 `GameState`、`TimeSystem` 和 HUD 的失败占位链路。
+T1303 曾实现无可战斗人员失败条件；T0121 已删除其常量、检查入口、结算函数和 HUD 原因映射。战斗快照不再需要 `combatant_availability` 来决定失败；旧名脚本 `verify_no_available_combatants_failure.gd` 现反向验证“零可战人员时不失败、敌军继续推进、HUD 不出现结算”。
 
-T1102 已完成敌人目标优先级、移动和敌方攻击，T1104 已把该推进扩展为双方基础攻击：`CombatSystem` 监听 `TimeSystem.logical_time_tick` 推进战斗 AI；敌人若在侦测范围内发现可行动 NPC，会优先攻击该 NPC，否则按目标偏好选择仍有 HP 的城门、仓库或主厅。T1104C 起，围墙不再作为敌人攻击目标：城门被攻破后敌人直接转向仓库，仓库被摧毁后再转向主厅；旧配置中的 `wall` / `front_wall` 会在目标偏好规范化时过滤。敌人移动按配置 `move_speed` 和 `game_delta_seconds / 60` 折算为战斗动作秒级位移；玩家 `x2` / `x4` 不额外提高敌人移动速度。进入 `attack_range` 后按战斗动作秒中的 `attack_interval` 和 `attack_power` 进行接触式攻击。攻击 NPC 时会先按 NPC 盔甲防御计算实际伤害，再调用 `NPCSystem.apply_damage_to_npc(...)`；攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)` 并写入 `building_damaged` 事件。T1302 后，主厅 HP 清零时 `GameState` 写入 `game_over=true`、`game_result="failure"`、`failure_reason="main_hall_destroyed"` 和失败时间，广播 `game_over_changed`，`TimeSystem` 自动暂停并停止逻辑推进，HUD 显示失败占位界面。T1303 后，活动敌人在场且所有已入伍持主武器战斗人员均不可用时，`GameState.failure_reason` 会写入 `no_available_combatants`。T1304 后，最终波次清敌时 `GameState.game_result` 会写入 `victory`，`game_over_reason` 写入 `five_waves_survived`，`failure_reason` 保持为空，并保存胜利 `settlement_snapshot`。T1104 后，`CombatSystem` 同时维护最近我方攻击快照 `last_friendly_attack_result`，并在最近 AI 推进结果中返回 `friendly_attacks`。T1104A 后，活动敌人存在期间 `debug_get_combat_snapshot()` 会包含 TimeSystem 时间倍率快照，GM 可观察 `combat_enemy_presence` 上限请求；T1104B 后快照会同时包含 `game_seconds` 与 `combat_seconds`，便于检查战斗动作秒换算；T1105 后快照包含 `combat_strategies`，用于查看每名入伍持武器 NPC 当前策略、可选策略和策略移动目标；T1204A 后快照包含 `active_escapes`、`last_escape_result`、已用 / 剩余挽留轮次、逃离速度倍率和暂停 / 恢复状态；T1303 后快照包含 `combatant_availability` 与 `last_failure_result` 供 GM / 自动化验证；T1304 后快照包含 `last_victory_result` 供 GM / 自动化验证。GM 面板提供“警铃集结”“推进敌人AI”“行为模式快照”“模拟避战”“触发逃离”“推进集结等待”按钮和 `alarm` / `rally` / `step_enemies [game_seconds]` / `behavior_modes` / `avoid_npc <npc_id>` / `escape_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令；敌人快照会显示目标、当前行动、最近 AI 推进结果、我方攻击结果、集结状态、避战目标、逃离目标、可战斗人员可用性、战斗策略、行为模式、失败 / 胜利结果和时间上限状态。
+T1102 已完成敌人目标优先级、移动和敌方攻击，T1104 已把该推进扩展为双方基础攻击：`CombatSystem` 监听 `TimeSystem.logical_time_tick` 推进战斗 AI；敌人若在侦测范围内发现可行动 NPC，会优先攻击该 NPC，否则按目标偏好选择仍有 HP 的城门、仓库或主厅。T1104C 起，围墙不再作为敌人攻击目标：城门被攻破后敌人直接转向仓库，仓库被摧毁后再转向主厅；旧配置中的 `wall` / `front_wall` 会在目标偏好规范化时过滤。敌人移动按配置 `move_speed` 和 `game_delta_seconds / 60` 折算为战斗动作秒级位移；玩家 `x2` / `x4` 不额外提高敌人移动速度。进入 `attack_range` 后按战斗动作秒中的 `attack_interval` 和 `attack_power` 进行接触式攻击。攻击 NPC 时会先按 NPC 盔甲防御计算实际伤害，再调用 `NPCSystem.apply_damage_to_npc(...)`；攻击建筑时调用 `BuildingSystem.apply_damage_to_building(...)` 并写入 `building_damaged` 事件。T1302 后，主厅 HP 清零时 `GameState` 写入 `game_over=true`、`game_result="failure"`、`failure_reason="main_hall_destroyed"` 和失败时间，广播 `game_over_changed`，`TimeSystem` 自动暂停并停止逻辑推进，HUD 显示失败占位界面；T0121 后这是唯一失败条件。T1304 后，最终波次清敌时 `GameState.game_result` 会写入 `victory`，`game_over_reason` 写入 `five_waves_survived`，`failure_reason` 保持为空，并保存胜利 `settlement_snapshot`。T1104 后，`CombatSystem` 同时维护最近我方攻击快照 `last_friendly_attack_result`，并在最近 AI 推进结果中返回 `friendly_attacks`。T1104A 后，活动敌人存在期间 `debug_get_combat_snapshot()` 会包含 TimeSystem 时间倍率快照，GM 可观察 `combat_enemy_presence` 上限请求；T1104B 后快照会同时包含 `game_seconds` 与 `combat_seconds`，便于检查战斗动作秒换算；T1105 后快照包含 `combat_strategies`，用于查看每名入伍持武器 NPC 当前策略、可选策略和策略移动目标；T1204A 后快照包含 `active_escapes`、`last_escape_result`、已用 / 剩余挽留轮次、逃离速度倍率和暂停 / 恢复状态；T1304 后快照包含 `last_victory_result` 供 GM / 自动化验证。GM 面板提供“警铃集结”“推进敌人AI”“行为模式快照”“模拟避战”“触发逃离”“推进集结等待”按钮和 `alarm` / `rally` / `step_enemies [game_seconds]` / `behavior_modes` / `avoid_npc <npc_id>` / `escape_npc <npc_id>` / `advance_rally_wait [game_seconds]` 命令；敌人快照会显示目标、当前行动、最近 AI 推进结果、我方攻击结果、集结状态、避战目标、逃离目标、战斗策略、行为模式、失败 / 胜利结果和时间上限状态。
 
 T0107 后敌人攻击变为“冷却 -> 抬手 -> 命中”两阶段。`attack_windup` 大于 0 时，目标在抬手结束前不会受伤；`apply_enemy_stagger(...)` 会清空当前抬手并暂停行动。近战骑兵冲撞使用该接口打断敌人，随后再结算增伤武器攻击。T0110 后骑术只进入 `charge_damage + riding_skill × charge_damage_riding_scale` 的马匹冲撞伤害，不提高骑乘攻击速度。敌人还会把附近有效器械列为候选目标；对 NPC、敌人和器械的伤害均使用同一有效防御 / 穿透递减曲线。`debug_get_combat_snapshot()` 额外暴露 `friendly_combat_stats`、`defense_devices`、敌人抬手 / 僵直与骑兵冲锋阶段。
 
