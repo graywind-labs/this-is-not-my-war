@@ -1,5 +1,13 @@
 # GODOT_ARCHITECTURE.md
 
+## T0123 美术重构目录与未来运行时边界
+
+Quaternius 美术升级已建立 `art_source -> assets -> scenes/resources -> Main` 的单向管线。`art_source/` 含 `.gdignore`，只保存原始下载、许可证和 DCC 工作文件；Godot 正式运行时只引用经筛选的 `assets/`、包装后的 `scenes/` 与项目维护的 `resources/`。第三方导入场景视为只读源，碰撞、挂点、导航、屋顶、升级部件和表现脚本通过继承 / 包装场景添加。
+
+后续表现脚本统一进入 `scripts/presentation/`，只消费 BuildingSystem、NPCSystem、ActionSystem、CombatSystem、EquipmentSystem、CameraRig 等权威快照或信号。表现层不得自行决定建筑等级、地点、工位、资源、HP、伤害、行动完成、事件或见闻。
+
+T0126 将新增统一相机缩放快照到屋顶透明度的表现链；T0127 才会把当前“到建筑入口即切换地点”的占位移动迁移为真实门口 / 室内导航 / 工位抵达链。迁移完成前，当前 Main 场景结构和地点逻辑保持不变。计划中的建筑与角色公共节点合同见 `docs/ART_PIPELINE.md`，铁匠铺是首个实现样本，T0129 用户验收前不得批量复制到全站。
+
 ## T0116 新运行时接口
 
 - `LLMBridge.build_dialogue_intent_revalidation_payload(...)`

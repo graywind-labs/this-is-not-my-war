@@ -1,5 +1,21 @@
 # TECH_ARCHITECTURE.md
 
+## T0123 美术表现与权威模拟的规划边界
+
+美术升级不建立第二套建筑、NPC、战斗或地点权威。Quaternius Mesh、Skeleton、AnimationTree、碰撞、导航、屋顶透明、粒子、贴花、布娃娃和 UI Theme 均属于表现 / 空间执行层；资源、HP、伤害、建筑等级、位置容量、行动进度、事件与记忆仍由现有系统决定。
+
+T0127 的真实室内迁移需要把物理位置与权威地点重新对齐，但不会让碰撞或动画成为事实源。目标数据流为：
+
+```text
+ActionSystem 请求并预留位置
+  -> NPCSystem / NavigationAgent3D 执行到门口和室内 Marker 的路径
+  -> 穿过门口时提交 current_location / people_present
+  -> 抵达具体 Marker 后把 reserved_by 提交为 occupied_by
+  -> ActionSystem 才开始权威行动计时与结算
+```
+
+离开、升级清退、行动失败、昏迷、战斗打断和逃离使用反向 / 中止事务，不能提前把仍在室内的 NPC 写成广场人员，也不能留下幽灵预留。该合同目前只登记为后续实现目标；T0127 前运行时仍沿用入口占位流程。
+
 ## T0116 对话执行前异步边界
 
 DailyPlanSystem 是计划对话预检编排器：执行签名通过后先发复核，不先中断 ActionSystem。LLMBridge 只负责构造上下文和 HTTP 生命周期；Backend 只校验模型决策；continue / modify 的最终 ActionSystem / NPCSystem 调用及 cancel 的计划重估都由 DailyPlanSystem 完成。请求上下文保存 day/hour/plan_version/item_identity，所有回调先比对再落地。

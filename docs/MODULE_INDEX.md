@@ -1,5 +1,24 @@
 # MODULE_INDEX.md
 
+## T0123–T0136 Quaternius 美术升级与真实空间重构索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `docs/ART_DIRECTION.md` | 统一低模风格、镜头距离屋顶透明、建筑 / 角色 / 动画 / 战斗 / UI / 环境最低标准与铁匠铺切片门槛 |
+| `docs/ART_PIPELINE.md` | Quaternius 资产来源、免费版先行、许可审计、源文件隔离、GLB 导入、命名、建筑 / 角色包装合同和逐步执行入口 |
+| `assets/THIRD_PARTY_ASSETS.md` | 实际进入项目和导出包的第三方资产、来源、许可证、用途与修改台账 |
+| `art_source/` | 原始下载、解包内容、许可证和 DCC 工作文件；根 `.gdignore` 阻止 Godot 导入，正式场景不得引用 |
+| `assets/3d/quaternius/` | T0124/T0125 后经筛选、许可登记和导入验证的 Quaternius 运行时 GLB / 纹理 / 动画来源 |
+| `assets/2d/`、`assets/materials/`、`assets/vfx/`、`assets/audio/` | UI / 头像 / 贴花、材质来源、VFX 来源与音频运行时资产 |
+| `scenes/art/` | 独立 ArtSandbox 和技术美术验证场景，避免在 Main 内直接试错 |
+| `scenes/buildings/`、`scenes/characters/`、`scenes/environment/`、`scenes/vfx/` | 正式建筑包装、共享角色 / NPC 外观、环境组合和 VFX 场景 |
+| `resources/materials/`、`resources/themes/` | Godot 可编辑材质 / Shader 参数和项目级 UI Theme / StyleBox / 图标映射 |
+| `data/presentation/` | 屋顶透明阈值、材质映射、角色外观与 VFX 预算等未来表现配置；不得保存权威玩法结算 |
+| `scripts/presentation/` | 只消费权威状态的屋顶、角色动画、装备挂点、VFX、环境和 UI 表现脚本；不得自行结算事实 |
+| `docs/TASKS.md` | T0123 已完成基础；T0124–T0136 按资产审计、导入、屋顶、真实室内、角色、切片、批量生产和整合顺序执行 |
+
+当前尚未下载第三方二进制资产，也未新增运行时表现脚本或场景；上述运行时目录是后续任务的稳定落点，不表示对应功能已经实现。
+
 ## T0121 / T0122 全局数值难度模型与连续回放索引
 
 | 文件 | 当前职责 |
