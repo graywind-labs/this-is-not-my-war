@@ -39,10 +39,14 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var building_panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if crafting_system == null or action_system == null or resource_system == null or building_system == null or npc_system == null or memory_system == null or building_panel == null:
+	if crafting_system == null or action_system == null or resource_system == null or building_system == null or npc_system == null or memory_system == null or time_system == null or building_panel == null:
 		_fail("Required crafting integration nodes are missing")
 		return
+	time_system.set_paused(false)
+	_set_debug_move_speed("blacksmith_01", 40.0)
+	_set_debug_move_speed("engineer_01", 40.0)
 
 	if not _verify_catalog(crafting_system):
 		return
@@ -85,7 +89,11 @@ func _init() -> void:
 		_fail("Crafting work did not start after selecting a target")
 		return
 	if not await _wait_until_current_action(npc_system, worker_id, "work_blacksmith"):
-		_fail("Blacksmith never entered active work")
+		_fail("Blacksmith never entered active work: state=%s spatial=%s runtime=%s" % [
+			JSON.stringify(npc_system.get_npc_state(worker_id)),
+			JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(worker_id)),
+			JSON.stringify(action_system.get_runtime_action_snapshot(worker_id))
+		])
 		return
 	var cycles: Array = action_system.get_active_work_cycle_snapshots("blacksmith", ["work_blacksmith"])
 	if cycles.is_empty():
@@ -669,9 +677,13 @@ func _verify_parallel_blacksmith_cycles_after_upgrade(
 		if not action_system.debug_assign_work(worker_id, "blacksmith"):
 			_fail("Could not start parallel blacksmith work for %s" % worker_id)
 			return false
-	for worker_id in worker_ids:
 		if not await _wait_until_current_action(npc_system, worker_id, "work_blacksmith"):
-			_fail("Parallel worker never entered blacksmith work: %s" % worker_id)
+			_fail("Parallel worker never entered blacksmith work: %s state=%s spatial=%s runtime=%s" % [
+				worker_id,
+				JSON.stringify(npc_system.get_npc_state(worker_id)),
+				JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(worker_id)),
+				JSON.stringify(action_system.get_runtime_action_snapshot(worker_id))
+			])
 			return false
 
 	var cycles: Array = action_system.get_active_work_cycle_snapshots("blacksmith", ["work_blacksmith"])
@@ -778,6 +790,16 @@ func _find_option_index_by_metadata(option: OptionButton, metadata: String) -> i
 	return -1
 
 
+func _set_debug_move_speed(npc_id: String, speed: float) -> void:
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	if npc_root == null:
+		return
+	for npc_node in npc_root.get_children():
+		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
+			npc_node.move_speed = speed
+			return
+
+
 func _contains_forbidden_production_runtime(value: Variant) -> bool:
 	if value is Dictionary:
 		for raw_key in value.keys():
@@ -794,7 +816,10 @@ func _contains_forbidden_production_runtime(value: Variant) -> bool:
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
 	for _frame in range(600):
-		await process_frame
+		# Formal workstation actions advance through CharacterBody3D physics;
+		# a short real timer prevents a tight signal loop from exhausting all
+		# retries inside only a handful of rendered/physics frames.
+		await create_timer(0.02).timeout
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

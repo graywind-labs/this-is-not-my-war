@@ -22,6 +22,7 @@ func _init() -> void:
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	if (
 		event_bus == null
 		or building_system == null
@@ -31,19 +32,21 @@ func _init() -> void:
 		or equipment_system == null
 		or memory_system == null
 		or llm_bridge == null
+		or time_system == null
 	):
 		_fail("Required systems are missing")
 		return
+	time_system.set_paused(false)
 
 	if not _verify_initial_positions(building_system, memory_system):
 		return
-	if not _verify_mass_eligibility(action_system, npc_system, building_system, llm_bridge):
+	if not await _verify_mass_eligibility(action_system, npc_system, building_system, llm_bridge, time_system):
 		return
-	if not _verify_life_positions_and_dining_upgrade(action_system, npc_system, building_system, resource_system, memory_system):
+	if not await _verify_life_positions_and_dining_upgrade(action_system, npc_system, building_system, resource_system, memory_system, time_system):
 		return
-	if not _verify_clinic_team(action_system, npc_system, building_system, resource_system, event_bus):
+	if not await _verify_clinic_team(action_system, npc_system, building_system, resource_system, event_bus, time_system):
 		return
-	if not _verify_training_team(action_system, npc_system, building_system, resource_system, equipment_system):
+	if not await _verify_training_team(action_system, npc_system, building_system, resource_system, equipment_system, time_system):
 		return
 
 	print("T0043 building service positions verification passed.")
@@ -87,7 +90,7 @@ func _verify_initial_positions(building_system: Node, memory_system: Node) -> bo
 	return true
 
 
-func _verify_mass_eligibility(action_system: Node, npc_system: Node, building_system: Node, llm_bridge: Node) -> bool:
+func _verify_mass_eligibility(action_system: Node, npc_system: Node, building_system: Node, llm_bridge: Node, time_system: Node) -> bool:
 	var cook_id := "cook_01"
 	var priest_id := "priest_01"
 	var cook_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(cook_id, {"requires_time_slowdown": false})
@@ -118,6 +121,9 @@ func _verify_mass_eligibility(action_system: Node, npc_system: Node, building_sy
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Eligible priest should be able to claim the altar")
 		return false
+	if not await _wait_for_active(action_system, time_system, priest_id, "lead_mass"):
+		_fail("Eligible priest did not physically reach the altar")
+		return false
 	if not _is_type_occupied_by(building_system.get_building("chapel").get("workstations", []), "chapel_altar", priest_id):
 		_fail("Mass should occupy the altar")
 		return false
@@ -126,6 +132,9 @@ func _verify_mass_eligibility(action_system: Node, npc_system: Node, building_sy
 	npc_system.update_npc_state(priest_id, {"escaped": true})
 	if not action_system.debug_assign_action(cook_id, "pray_at_chapel"):
 		_fail("Ordinary prayer must remain usable after the priest leaves")
+		return false
+	if not await _wait_for_active(action_system, time_system, cook_id, "pray_at_chapel"):
+		_fail("Ordinary prayer did not physically reach a prayer seat")
 		return false
 	if not _is_type_occupied_by(building_system.get_building("chapel").get("workstations", []), "chapel_prayer_seat", cook_id):
 		_fail("Prayer should occupy a prayer seat, not the altar")
@@ -139,7 +148,8 @@ func _verify_life_positions_and_dining_upgrade(
 	npc_system: Node,
 	building_system: Node,
 	resource_system: Node,
-	memory_system: Node
+	memory_system: Node,
+	time_system: Node
 ) -> bool:
 	for resource_id in ["wood", "stone", "money", "meal", "grain"]:
 		resource_system.add_resource(resource_id, 100)
@@ -173,6 +183,9 @@ func _verify_life_positions_and_dining_upgrade(
 	if not action_system.debug_assign_action(sleeper_id, "sleep_in_dormitory"):
 		_fail("Sleep should claim a dormitory bed")
 		return false
+	if not await _wait_for_active(action_system, time_system, sleeper_id, "sleep_in_dormitory"):
+		_fail("Sleeping NPC did not physically reach the assigned bed")
+		return false
 	if not _is_type_occupied_by(building_system.get_building("dormitory").get("workstations", []), "dormitory_bed", sleeper_id):
 		_fail("Sleeping NPC did not occupy a bed")
 		return false
@@ -186,8 +199,12 @@ func _verify_life_positions_and_dining_upgrade(
 	if not action_system.debug_assign_action(diner_id, "eat_at_dining_hall"):
 		_fail("Eating should claim a dining seat")
 		return false
+	if not await _wait_for_active(action_system, time_system, diner_id, "eat_at_dining_hall"):
+		_fail("Eating did not reach a real dining seat")
+		return false
 	var full_duration := float(action_system.get_runtime_action_snapshot(diner_id).get("duration_seconds", 0.0))
 	action_system.interrupt_npc_action(diner_id, "t0043_full_efficiency_checked")
+	await process_frame
 
 	var dining_full_hp := int(building_system.get_building("dining_hall").get("max_hp", 1))
 	building_system.debug_damage_building("dining_hall", int(round(float(dining_full_hp) * 0.5)))
@@ -203,16 +220,23 @@ func _verify_life_positions_and_dining_upgrade(
 	if not action_system.debug_assign_action(diner_id, "eat_at_dining_hall"):
 		_fail("Damaged but surviving dining hall should remain usable")
 		return false
+	if not await _wait_for_active(action_system, time_system, diner_id, "eat_at_dining_hall"):
+		_fail("Damaged dining action did not reach a real seat")
+		return false
 	var damaged_duration := float(action_system.get_runtime_action_snapshot(diner_id).get("duration_seconds", 0.0))
 	if damaged_duration <= full_duration:
 		_fail("Damage should lengthen the dining recovery cycle")
 		return false
 	action_system.interrupt_npc_action(diner_id, "t0043_damage_checked")
+	await process_frame
 	building_system.restore_building_hp("dining_hall", dining_full_hp)
 
 	npc_system.debug_enter_location_immediately(diner_id, "dining_hall")
 	if not action_system.debug_assign_action(diner_id, "eat_at_dining_hall"):
 		_fail("Failed to start dining before upgrade closure check")
+		return false
+	if not await _wait_for_active(action_system, time_system, diner_id, "eat_at_dining_hall"):
+		_fail("Dining action did not occupy a real seat before upgrade closure check")
 		return false
 	if not building_system.upgrade_building("dining_hall"):
 		_fail("Dining hall upgrade should start")
@@ -250,7 +274,8 @@ func _verify_clinic_team(
 	npc_system: Node,
 	building_system: Node,
 	resource_system: Node,
-	event_bus: Node
+	event_bus: Node,
+	time_system: Node
 ) -> bool:
 	for resource_id in ["wood", "stone", "money"]:
 		resource_system.add_resource(resource_id, 100)
@@ -269,9 +294,13 @@ func _verify_clinic_team(
 
 	var doctor_ids := ["doctor_01", "engineer_01"]
 	for doctor_id in doctor_ids:
-		npc_system.debug_enter_location_immediately(str(doctor_id), "clinic")
+		_get_npc_node(npc_system, str(doctor_id)).set("move_speed", 5.0)
 		if not action_system.debug_assign_action(str(doctor_id), "work_clinic_doctor"):
 			_fail("Both configured clinic positions should accept doctors")
+			return false
+	for doctor_id in doctor_ids:
+		if not await _wait_for_active(action_system, time_system, str(doctor_id), "work_clinic_doctor"):
+			_fail("Both doctors should physically reach their configured clinic positions")
 			return false
 	var first_rate := float(action_system._get_clinic_hp_per_hour(str(doctor_ids[0])))
 	var team_rate := float(action_system.get_clinic_team_hp_per_hour())
@@ -282,9 +311,13 @@ func _verify_clinic_team(
 	var patient_ids := ["cook_01", "stableman_01"]
 	for patient_id in patient_ids:
 		npc_system.update_npc_state(str(patient_id), {"hp": 40, "max_hp": 100, "unconscious": false})
-		npc_system.debug_enter_location_immediately(str(patient_id), "clinic")
+		_get_npc_node(npc_system, str(patient_id)).set("move_speed", 5.0)
 		if not action_system.debug_assign_action(str(patient_id), "receive_clinic_treatment"):
 			_fail("Both clinic beds should accept patients")
+			return false
+	for patient_id in patient_ids:
+		if not await _wait_for_active(action_system, time_system, str(patient_id), "receive_clinic_treatment"):
+			_fail("Both patients should physically reach and occupy clinic beds")
 			return false
 	event_bus.logical_time_tick.emit(1800.0, 1.0)
 	for patient_id in patient_ids:
@@ -303,12 +336,27 @@ func _verify_clinic_team(
 	return true
 
 
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		if str(action_system.get_active_action_id(npc_id)) == action_id:
+			return true
+	return false
+
+
 func _verify_training_team(
 	action_system: Node,
 	npc_system: Node,
 	building_system: Node,
 	resource_system: Node,
-	equipment_system: Node
+	equipment_system: Node,
+	time_system: Node
 ) -> bool:
 	for resource_id in ["wood", "stone", "item_sword_shield"]:
 		resource_system.add_resource(resource_id, 100)
@@ -339,13 +387,22 @@ func _verify_training_team(
 	_set_skill(npc_system, str(instructor_ids[1]), "教练", 35)
 	_set_skill(npc_system, student_id, "剑盾", 5)
 	for instructor_id in instructor_ids:
+		_get_npc_node(npc_system, str(instructor_id)).set("move_speed", 5.0)
 		npc_system.debug_enter_location_immediately(str(instructor_id), "training_ground")
 		if not action_system.debug_assign_action(str(instructor_id), "work_training_instructor"):
 			_fail("Both instructor positions should accept equipped instructors")
 			return false
+	_get_npc_node(npc_system, student_id).set("move_speed", 5.0)
 	npc_system.debug_enter_location_immediately(student_id, "training_ground")
 	if not action_system.debug_assign_action(student_id, "receive_weapon_training"):
 		_fail("Training position should accept equipped student")
+		return false
+	for instructor_id in instructor_ids:
+		if not await _wait_for_active(action_system, time_system, str(instructor_id), "work_training_instructor"):
+			_fail("Both instructors should physically reach their configured command posts")
+			return false
+	if not await _wait_for_active(action_system, time_system, student_id, "receive_weapon_training"):
+		_fail("Student should physically reach the configured practice slot")
 		return false
 	var student_action: Dictionary = action_system.get_action("receive_weapon_training")
 	var one_instructor_interval := float(action_system._get_training_team_skill_interval_seconds(

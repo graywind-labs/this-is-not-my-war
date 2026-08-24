@@ -18,7 +18,8 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -48,7 +49,8 @@ func _init() -> void:
 	var cook_id := "cook_01"
 	var blacksmith_id := "blacksmith_01"
 	var priest_id := "priest_01"
-	_set_debug_move_speed(cook_id, 100.0)
+	time_system.set_paused(false)
+	_set_debug_move_speed(cook_id, 5.0)
 
 	var base_duration := float(tavern_action.get("duration_seconds", 3600.0))
 	var cook_duration_level_1: float = action_system._get_effective_action_duration_seconds(tavern_action, cook_id)
@@ -100,7 +102,6 @@ func _init() -> void:
 	var money_before := int(resource_system.get_resource("money"))
 	var events_before := int(memory_system.get_npc_daily_events(cook_id).size())
 
-	npc_system.debug_enter_location_immediately(cook_id, "tavern")
 	npc_system.update_npc_state(cook_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(cook_id, "tavern"):
 		push_error("Failed to assign tavern work")
@@ -180,8 +181,8 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for frame in range(600):
-		await process_frame
+	for frame in range(1800):
+		await physics_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
 			return true

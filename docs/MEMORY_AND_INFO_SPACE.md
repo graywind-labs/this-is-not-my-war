@@ -1,5 +1,83 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0131-P1 工械坊建筑表现的信息边界
+
+- 墙体、屋顶透明、订单图板、工具 / 吊装 / 测量装饰和逐级外观都只是表现，不写事件、见闻、地点状态或制造事实；GM `workshop_art_level` 也只切换画面。
+- 工械坊 `people_present` 仍只在 NPC 实体真实跨过门内 / 门外边界后改变，工程位只有抵达并将 `reserved_by` 提交为 `occupied_by` 后才形成室内状态差量。透明后能点击欧文只改变 UI 选择目标，不改变 `current_location`。
+- Lv.2 不增加权威工位，因此信息节点仍只公开两个工程位；Lv.3 BuildingSystem 真正升级完成并新增 `workbench_03` 后，才按既有 `building_state_changed / location_status_changed` 链进入室内状态。本步未新增事件 Schema、Prompt、记忆字段或 LLM 请求。
+
+## T0129C-A5-P6d-3 协助治疗事件边界
+
+- 预留治疗名额、目标正式投影、跨门移动和接近站位都不是治疗事实；实体进入合法距离并成功扣除首枚第纳尔后，才写既有 `healing_started`。
+- active 治疗仍写既有 `healing_completed / healing_failed`；复苏导致的同步状态变化延迟清理，保证一次逻辑完成只生成既有私有治疗者、私有目标和公开载体三条投影，不重复写第二组完成事实。
+- 途中目标复苏 / 失效只写结构化失败并零收费，不把未发生的治疗传播给目标地点。事件类型、payload Schema、传播范围、Prompt 与记忆容器均未改变。
+
+## T0129C-A5-P6b 拜访与地点事件边界
+
+- 路线派发、门外移动和导航标签都不是地点事实。实体真实跨过来源 / 目标门路时，才分别写既有 `location_exited / location_entered`；抵达停留点后才写唯一 `visit_started`。
+- 建筑间移动只提交一次来源离开和一次目标进入；完成或停止时的兼容世界交接不补造离开 / 重新进入。途中目标替换、建筑失效或不可达不为未抵达目标写地点或拜访事件。
+- `visit_completed` 仍沿既有 3600 秒 active 生命周期写入；本步没有新增事件类型、改变传播范围或修改记忆 / Prompt Schema。
+
+## T0129C-A5-P6a 睡眠事件与首次反思边界
+
+- 固定床 reservation、去宿舍的移动和床边到达都不是睡眠事实；只有床位 occupancy 与 `sleeping_supine` 挂接成功后才写 `sleep_started`，完成时写既有 `sleep_ended`。
+- DailyReflectionSystem 仍只累计 NPC `current_action=sleep_in_dormitory` 的 active 时间。同一 21:00 窗口的跨中断累计、1 小时门槛、深睡锁、成功去重和短期记忆水位均未改变；途中不会创建窗口或触发模型请求。
+- 停止 / 对话打断不补发疲劳恢复，也不把空间姿态写成记忆。本步未修改事件 Schema、反思 Prompt 或 API。
+
+## T0129C-A5-P5i 礼拜事件边界
+
+- 祭坛 / 祈祷席 reservation、物理赶路和长凳姿态不是祈祷事实；实体到位并提交 occupancy 后，既有 `prayer_started / prayer_joined_mass / prayer_resumed_alone / prayer_completed` 生命周期才可发生。
+- 独祷↔参礼转换保留同一席位和累计秒数，不生成失败或重新进入地点；主持正常完成与异常离岗仍使用既有不同 trigger / summary。
+- `mass_leader / seated_prayer` 动画不写事件、见闻或虔诚。本步未修改事件 Schema、记忆投影、Prompt 或 LLM 请求。
+
+## T0129C-A5-P5h 训练事件边界
+
+- `work_started` 只在教官 / 学员实体到位并提交工位后写入；pending 路线不写技能成长事实。
+- `training_solo / training_coaching / training_student` 仍通过统一 `skill_improved` 管线入库。训练挥剑是表现循环，不写命中、受击或伤害事件。
+- 最后一名教官离岗沿用 `training_student_failed_instructor_left` 与 `required_active_action_id=work_training_instructor` 失败上下文，随后释放训练位并恢复旧空间。
+
+## T0129C-A5-P5g 正式诊所服务的信息边界
+
+诊疗桌 / 病床预留、空间路线和床面躺姿仍不是治疗完成事实。实体穿门后才提交地点；工位实际占用后才进入对应正式行动。治疗 HP、资金消耗、医术成长、满血完成和医生离岗失败继续写既有 ActionSystem / MemorySystem 事件，不因动画或 GM 快照额外造事件。患者解除挂接只反映服务已结束，不自行推断康复原因；本步未修改事件 Schema、Prompt 或 LLM 请求。
+
+## T0129C-A5-P1 避战与正式逃离的信息边界
+
+全员战时空间迁移、NavMesh 投影、avoidance 回调和物理坐标变化不新增见闻；非战斗人员仍只在既有规则真正进入 / 结束避战时写 `avoidance_started / avoidance_ended`。空间迁移本身不能被叙述成征召、参战、到达安全地点或离站。
+
+`escape_started.payload.exit_position` 与运行态 `escape_intent.exit_position` 现在记录 NPC 当前坐标世界实际使用的出口：正式战斗中为后门生产导航边界，非正式路径保持旧出口。事件类型和 Schema 未改变，只有实体到达后才继续写既有 `escaped`；对话暂停、复苏和快照不会生成新的逃离事实。本轮不修改 Prompt、LLM 请求或 API。
+
+## T0129C-A4-P4 主厅伤害与失败兼容
+
+仓库到主厅的物理路线和到达解锁不写见闻；只有 BuildingSystem 实际扣除主厅 HP 才产生既有 `building_damaged / payload.building_id=main_hall`。主厅清零继续由既有 GameState `game_over_changed(failure, main_hall_destroyed)` 驱动 HUD 与时间停止，没有新增事件 Schema、记忆事实、Prompt 或 LLM 调用。
+
+## T0129C-A4-P3 仓库伤害事件兼容
+
+破门后四段物理路线、门洞链接、阶段到达与仓库攻击解锁仍是运行调试状态，不写见闻。只有敌人实际抵达仓库并由 BuildingSystem 扣血后，才沿既有 `building_damaged` 写入 `payload.building_id=warehouse`；没有新增事件类型、记忆事实、Prompt 或 LLM 上下文。
+
+## T0129C-A4-P2 正式单敌事件兼容
+
+正式活动敌人出生仍使用既有 `combat_started`，抵门后的实际攻击仍由 BuildingSystem 产生 `building_damaged`，清敌 / 击败仍由 CombatSystem 产生 `combat_ended`。物理路线阶段、NavigationAgent 到达和 `attack_unlocked` 都是运行调试状态，不新增事件类型、不进入 NPC 记忆；因此不会把“正在赶路”误记成“已经攻击”。
+
+## T0129C-A2b-P2–P5 家具挂接正式路线的信息边界
+
+莉娜沿正式路线移动时，诊疗桌 / 病床的预留、床边到达和床面表现都不是地点事实。只有 CharacterBody 真正穿过诊所门内点，NPCSystem 才复用既有地点事务提交 `current_location=clinic` 与 `people_present`；BuildingSystem 的工位占用仍在实际到站后独立提交。
+
+病床 `occupant_anchor / lying_supine` 是提交占用后的表现投影，不写新的事件、见闻、治疗状态或 HP 变化。停止、不可达、建筑失效和昏迷释放占用 / 挂接时，MemorySystem 只接收既有地点与工位状态的真实变化，不根据模型姿态推断“已治疗”。本切片没有修改事件 Schema、Prompt 或 LLM 上下文结构。
+
+P3 对宿舍采用相同边界：艾达真实跨门后才提交 `current_location=dormitory`，床边抵达后才提交 `dormitory_bed_01` 占用，随后显示 `sleeping_supine`。固定床归属、床面姿态与 `current_action=idle` 不会生成“艾达已经睡眠”事件，也不会暂停见闻、恢复疲劳或推进时间；只有未来 ActionSystem 正式睡眠行动才能产生这些事实。本轮未修改 Prompt、模型请求或 API。
+
+P4 对食堂继续采用相同边界：布鲁诺真实跨门后才提交 `current_location=dining_hall`，椅边抵达后才提交具体用餐席占用，随后显示 `sitting`。首个空闲座位和椅面姿态不会生成“布鲁诺已经进食”事件，也不会扣除食物、恢复饱食或改变见闻接收；只有 ActionSystem 正式进食行动才能产生这些事实。本轮未修改 Prompt、模型请求或 API。
+
+P5 对小教堂继续采用相同边界：马塞尔真实跨门后才提交 `current_location=chapel`，长凳边抵达后才提交首个空闲 `chapel_prayer_seat` 占用，随后显示 `seated_prayer`。座位与姿态不会生成“马塞尔正在祈祷”事件、改变见闻或增加虔诚；只有 ActionSystem / PietySystem 的正式祈祷链可以产生这些事实。本轮未修改 Prompt、模型请求或 API。
+
+## T0127 铁匠铺跨门地点与工位见闻
+
+铁匠铺 `people_present` 只在 NPC 真正穿过门内 / 门外边界时变化。门外接近和工位预留不会生成 `location_entered`，穿门后才由既有 `move_npc_between_locations(...)` 写一次离开广场 / 进入铁匠铺事实；离开时直到穿过出口才写相反事实。NPC-NPC 同地点判断、`local_public` 路由、进入者地点快照和 LLM 地点上下文都继续读取这份已提交事实，不读取世界坐标。
+
+工位状态差量现在区分 `reserved_by` 与 `occupied_by`：预留摘要表达“已为某人预留”，抵达后转换为“某人占用中”；二者变化均沿既有 `location_status_changed` 字段级差量进入当时在铁匠铺且可接收见闻的 NPC 信息空间。门外 NPC 不会因为自己的预留收到室内状态快照。升级、失败、中断和昏迷释放预留 / 占用时也产生真实差量，不保留幽灵位置。
+
+昏迷者不会因为行动被终止而被瞬移出地点：若其已经穿门，`current_location=blacksmith` 与 `people_present` 保持，仍遵守昏迷期间不接收见闻、复苏后恢复的原规则。其他建筑尚未迁移，仍按入口抵达时切换地点。
+
 ## T0120 初始长期记忆中文润色
 
 已完整检查 8 人的 24 篇初始日记及全部知识图谱 `value_label`。原有主体、关系、置信度、事实、时间、内部 value、职业联系和建筑规则均未改变；只将省略成分、指代不清或搭配生硬的句子改为自然、完整的中文，同时保留各人物第一人称日记和主观知识标签的口吻差异。

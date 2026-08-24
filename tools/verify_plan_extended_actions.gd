@@ -21,11 +21,13 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or daily_plan_system == null or npc_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or daily_plan_system == null or npc_system == null or memory_system == null or time_system == null:
 		_fail("Required systems not found")
 		return
 
 	daily_plan_system.set_auto_execution_enabled(false)
+	time_system.set_paused(false)
 	_prepare_idle_npc(action_system, npc_system, PRIEST_ID, "chapel")
 	var prayer_item: Dictionary = daily_plan_system.call("_plan_item_from_schema", {
 		"hour": 8,
@@ -38,6 +40,9 @@ func _init() -> void:
 	}, "verify_plan_extended_actions", PRIEST_ID)
 	if prayer_item.is_empty() or not bool(daily_plan_system.call("_assign_plan_item", PRIEST_ID, prayer_item)):
 		_fail("DailyPlanSystem failed to execute pray_at_chapel")
+		return
+	if not await _wait_for_active(action_system, time_system, PRIEST_ID, "pray_at_chapel"):
+		_fail("Prayer actor did not physically reach a chapel seat")
 		return
 	if action_system.get_active_action_id(PRIEST_ID) != "pray_at_chapel":
 		_fail("Prayer did not become the priest's active runtime action")
@@ -55,6 +60,7 @@ func _init() -> void:
 		return
 
 	_prepare_idle_npc(action_system, npc_system, VISITOR_ID, "plaza")
+	_set_debug_move_speed(npc_system, VISITOR_ID, 5.0)
 	var visit_item: Dictionary = daily_plan_system.call("_plan_item_from_schema", {
 		"hour": 9,
 		"action_id": "visit_location",
@@ -70,12 +76,8 @@ func _init() -> void:
 	if action_system.get_pending_action_id(VISITOR_ID) != "visit_location":
 		_fail("Visit did not enter the movement-aware pending state")
 		return
-	if not npc_system.debug_enter_location_immediately(VISITOR_ID, "chapel"):
-		_fail("Failed to simulate arrival at the visit target")
-		return
-	await process_frame
-	if action_system.get_active_action_id(VISITOR_ID) != "visit_location":
-		_fail("Visit did not start after the NPC arrived at the planned target")
+	if not await _wait_for_active(action_system, time_system, VISITOR_ID, "visit_location", 2400):
+		_fail("Visit did not start after the NPC physically reached the planned target")
 		return
 	if str(npc_system.get_npc_state(VISITOR_ID).get("current_action", "")) != "visit_location_chapel":
 		_fail("Visit runtime state does not expose the target location")
@@ -98,6 +100,16 @@ func _init() -> void:
 	quit(0)
 
 
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+	return false
+
+
 func _prepare_idle_npc(action_system: Node, npc_system: Node, npc_id: String, location_id: String) -> void:
 	action_system.interrupt_npc_action(npc_id, "verify_plan_extended_actions_setup")
 	npc_system.update_npc_state(npc_id, {
@@ -108,6 +120,13 @@ func _prepare_idle_npc(action_system: Node, npc_system: Node, npc_id: String, lo
 		"escaped": false,
 	})
 	npc_system.debug_enter_location_immediately(npc_id, location_id)
+
+
+func _set_debug_move_speed(npc_system: Node, npc_id: String, speed: float) -> void:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	var npc_node := npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+	if npc_node != null and "move_speed" in npc_node:
+		npc_node.move_speed = speed
 
 
 func _find_latest_event(events: Array, event_type: String) -> Dictionary:

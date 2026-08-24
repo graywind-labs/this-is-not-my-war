@@ -7,6 +7,32 @@
 
 ---
 
+## T1705 建立 Git LFS 跨设备发布流程
+
+状态：Done
+优先级：P0
+前置任务：T1704
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `ART_PIPELINE.md`, `DEV_LOG.md`
+
+任务目标：
+
+将当前 Godot 项目的代码、场景、配置与正式运行时美术素材安全发布到 GitHub 私有仓库；正式二进制素材使用 Git LFS，原始下载包、DCC 工作文件、候选废稿、日志、缓存和视觉验收产物不进入项目仓库，保证新设备克隆后可直接取得运行时素材并继续开发。
+
+验收标准：
+
+- `.gitattributes` 保留跨平台文本换行规则，并让 `assets/` 下正式 GLB、FBX、PNG、JPG、WebP、WAV、OGG 进入 Git LFS。
+- `.gitignore` 排除原始素材源包、工作候选、退回素材、视觉验收产物、日志、缓存、密钥和本机编辑器配置，同时保留许可与清单。
+- 提交前完成密钥、超大普通 Git 文件和 LFS 指针审计；不上传 `backend/.env` 或第三方完整受限源包。
+- 在发布分支提交并推送到当前 GitHub 私有仓库，新设备可通过 `git clone` 与 `git lfs pull` 取得完整运行时项目。
+
+验收结果（2026-08-24）：
+
+- 当前私有仓库已在 `codex/publish-project-assets` 发布分支配置运行时资产 LFS；173 个正式 GLB、FBX 与 PNG 已生成 LFS 指针，最大普通 Git 暂存对象低于 10 MiB。
+- 完整源包、DCC 工作文件、候选废稿、退回素材、视觉 QA、日志、`.godot/`、真实 `.env` 与本机配置均被排除；许可、来源记录、清单和运行时素材保留。
+- `git lfs fsck`、暂存区密钥特征扫描、排除路径审计、`git diff --cached --check` 与 Godot 4.6.2 headless 编辑器解析通过；headless 退出阶段仅记录已有 Godot MCP 端口 6550 被现存实例占用，不影响项目解析或本次 Git 发布。
+
+---
+
 # 0. 使用方式
 
 ## 0.1 给 Agent 的固定启动指令
@@ -114,7 +140,7 @@
 
 ## T0124 获取 Quaternius 免费资产、记录许可并建立资产清单
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0123
 涉及文档：`ART_PIPELINE.md`, `THIRD_PARTY_ASSETS.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -132,11 +158,19 @@
 - 免费版不足的具体缺口单独列出；购买 Pro / Source 版前必须先向用户说明价值并取得确认。
 - 不修改游戏逻辑，不把压缩包或未筛选重复格式直接塞入正式运行时目录。
 
+完成记录（2026-08-11）：
+
+- 从六个 Quaternius 官方说明页对应的作者 itch.io 免费入口取得 Standard 包；保存公共 CC0 1.0 法律文本、逐包包内许可证路径、官方来源和本机页面快照，未取得 Pro / Source。
+- 六个 ZIP 均通过逐文件 CRC 校验并计算 SHA-256，隔离解包到 `art_source/quaternius/<pack_id>/standard/`；原始 ZIP、完整解包副本和页面快照由 `.gitignore` 排除，避免提交约 818 MB 压缩包及重复格式。
+- 新增 `docs/QUATERNIUS_ASSET_INVENTORY.md` 与机器清单，确认建筑 / 道具 / 自然实际为 176 / 94 / 68 份 glTF，角色 / 服装共用 65 关节骨骼，动画免费包实际有 43 个唯一片段。
+- 确认六包均未附命名碰撞资源或 Godot 工程；职业服装、完整职业动作、建筑碰撞 / 导航与 PhysicalBone 仍需项目制作或后续补充，暂不购买付费包。
+- 新增可复用官方下载脚本（支持 `127.0.0.1:7897` 代理和分片校验）及资产盘点脚本；当前没有第三方文件进入正式运行时，不修改 Main、游戏逻辑或权威数值。
+
 ---
 
 ## T0125 验证 GLB 导入管线并建立统一风格基线
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0124
 涉及文档：`ART_DIRECTION.md`, `ART_PIPELINE.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -154,11 +188,19 @@
 - 创建独立 `ArtSandbox.tscn`，不直接在 `Main.tscn` 内试错。
 - 输出明确的保留资产清单和淘汰原因；不同作者资产不得在无风格适配时混作核心建筑或角色。
 
+完成记录（2026-08-11）：
+
+- 六个 Standard 包各保留一个最小样本：圆门灰泥墙、铁砧、男性基础体、男性农民服装、UAL2 Standard 动画库和 CommonTree_1；GLB / 外置 PNG 均登记 CC0 来源并由 Git LFS 管理，FBX / OBJ / 重复候选继续隔离。
+- 固化 `1 unit = 1 m`、`+Y / -Z`、1.82 m 人形、2 m 建筑模块、3.125 m 层高、0.406 m 墙厚和 1.12 × 2.318 m 圆门参考；导入贴图使用 mipmap、2K 上限与 anisotropic 过滤，样本开启阴影。
+- 新增独立 `ArtSandbox.tscn`、表现配置、环境材质、角色边缘光和选中轮廓；Main、玩法权威和 GM 不变。自动化确认 12 Mesh、3 Skeleton、43 段动画，`Farm_Harvest` 编辑器预览与运行时播放正常。
+- 本机 120 帧采样约 180 FPS、P95 6.91 ms、95 draw calls、67,969 primitives、0 spike；引擎无导入 / 纹理 / 骨骼错误。树叶双面卡片 winding 与两个退化 UV 的源数据告警已在 `ART_BASELINE.md` 登记，当前画面无缺面 / 黑面，后续近景若暴露切线问题必须修源数据。
+- 保留 / 延后 / 淘汰清单及性能边界见 `docs/ART_BASELINE.md`；下一步为 T0126 屋顶渐隐，不提前修改真实地点与工位权威。
+
 ---
 
 ## T0126 实现镜头距离驱动的建筑屋顶透明系统
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0125
 涉及文档：`ART_DIRECTION.md`, `GODOT_ARCHITECTURE.md`, `UI_UX.md`, `MODULE_INDEX.md`, `DEV_LOG.md`, `GM_PANEL.md`
@@ -176,11 +218,19 @@
 - 近距离能清楚看见内部，远距离恢复完整驿站轮廓；阴影策略不会在透明过程中留下完全不匹配的实心屋顶阴影。
 - 新增 GM / 调试快照或可视化入口，用于观察相机距离、归一化缩放值和屋顶透明度。
 
+完成记录（2026-08-12）：
+
+- 新增唯一 `RoofVisibilityController`，统一读取相机距离和 `18–42 m` 归一化缩放；`BuildingArtView` 只声明各自 `near / far / minimum_opacity` 并使用 smoothstep，不各自读取输入或复制控制器逻辑。
+- 建立 Exterior、Roof、Interior / Furniture / WorkstationMarkers、UpgradeVisuals、Entry / Exit、InteriorTrigger、NavigationRegion3D、StaticCollision、ClickArea 和 DamageFXMounts 公共合同；导航区域在 T0127 前保持禁用占位，不提前迁移地点权威。
+- ArtSandbox 增加两座共享控制器、阈值不同的 Quaternius 建筑样本；近景屋顶分别到 `0.06 / 0.12`，远景均恢复 `1.0`，透明期间关闭屋顶实心阴影，外墙 / 室内 / 碰撞 / 点击 / 触发体始终保留。
+- Main 只新增表现控制器；GM 建筑分组增加只读“屋顶快照”，命令为 `roof_visibility`。Main 旧建筑尚未包装，当前快照 `registered_view_count=0` 属预期，T0127 / T0129 再逐座接入。
+- T0126、T0125 与 GM 自动回归通过；Godot MCP 远近实景、Mesh 检查和性能采样完成。新增屋顶源数据约 6% 退化 UV 已登记，当前无可见黑面 / 缺面；沙盒 P95 `10.73 ms`，维持 60 FPS 预算。
+
 ---
 
 ## T0127 以铁匠铺为首个样本实现真实室内导航与权威地点迁移
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0126
 涉及文档：`GODOT_ARCHITECTURE.md`, `TECH_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `DATA_SCHEMA.md`, `GM_PANEL.md`, `DEV_LOG.md`
@@ -200,11 +250,48 @@
 - LLM 地点上下文、NPC-NPC 同地点对话和本地公开事件读取迁移后的权威地点，不由模型或 UI 推测。
 - GM 面板可观察路径阶段、物理地点、预留位和占用位，但不自行修改权威事实。
 
+完成记录（2026-08-12）：
+
+- `Main.tscn` 已把铁匠铺旧方块表现隐藏并接入 Quaternius `BuildingArtView`；门外、门内、室内站位与 `forge_01 / forge_02` 均有稳定世界坐标，外墙静态碰撞和建筑点击区保持有效。
+- `work_blacksmith` 改为“派工预留 → 门外抵达 → 穿门提交地点 → 抵达具体锻造位提交占用 → 开始行动计时”；`reserved_by` 与 `occupied_by` 已拆分，其他建筑暂时保留旧入口流程。
+- 铁匠铺采用确定性门口 / 门内 / 工位 Marker 路线作为本轮等价稳定结构，实际绕过墙体并只从门洞进出；`NavigationRegion3D` 仍保留为禁用占位，不宣称已完成全站 NavMesh。
+- 改派、中断、昏迷、行动失败和升级封闭均释放预留 / 占用；已经穿门的 NPC 会先保持铁匠铺地点事实，再沿反向路线穿门后提交广场，避免幽灵占位和提前离场见闻。
+- GM 新增只读“空间快照”与 `spatial <npc_id>`；专项覆盖门外、门内、工位、离开、前 / 后门中断、昏迷和升级前 / 后门两类封闭。T0127、ActionSystem、制造产出、升级失败、地点见闻、工位面板、GM 与 T0126 屋顶回归通过；Godot MCP 运行态确认格伦进入 `forge_01` 后才成为 `occupied_by`。
+
+---
+
+## T0127A 修复暂停状态下 GM 移动伪成功
+
+状态：Done
+优先级：P0
+前置任务：T0127
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `AI_NPC_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复正式开局真实 LLM / 后端失败而保持暂停时，GM“移动到地点”仍写入 `moving_to_*` 并返回成功、但 NPC 世界坐标和地点事件永远不推进的问题。
+- 暂停期间发起新的 GM 移动必须原子拒绝，不改变行动、目标、路线、地点、预留、占用或事件；提示玩家点击主界面“继续”后重试。
+- 已经开始的移动在玩家暂停后仍应冻结并在恢复后续接，保持既有暂停语义。
+- 普通建筑和 T0127 铁匠铺路线都必须覆盖真实恢复、到达和地点事件提交。
+
+验收标准：
+
+- 暂停时 `debug_move_npc_to_building(...)` 与所选 NPC 调试入口返回失败，NPC 不进入幽灵 moving 状态。
+- GM 面板输出明确说明“游戏当前暂停”，不能只显示模糊失败或成功。
+- 恢复时间后，普通建筑与铁匠铺均能产生世界坐标变化、完成地点迁移并写入对应事件 / `people_present`。
+
+完成记录（2026-08-12）：
+
+- 根因已在正式非 headless 启动路径复现：本地后端未运行时 health check 返回 `backend_health_failed / http_timeout`，GameStartupSystem 按真实 LLM 失败合同保持暂停；旧 GM 移动仍返回成功并写 `moving_to_*`，造成状态与物理执行分裂。
+- `debug_move_npc_to_building(...)` 和所选 NPC 调试入口现在在暂停时于任何状态写入前返回失败；核心 `move_npc_to_building(...)` 不加该守卫，保留正式开局“暂停中准备 pending、统一恢复”的系统调用合同。
+- GM“移动到地点”与 `move_npc` 明确输出“游戏当前暂停；请点击主界面左上‘继续’后重试，未写入移动状态”，不再产生幽灵 moving、路线、预留、占用或地点事件。
+- 新增 `verify_t0127a_paused_debug_movement.gd`，覆盖暂停拒绝、GM 提示、途中暂停 / 恢复、普通食堂到达和铁匠铺真实穿门；两条恢复路径均确认世界坐标、`people_present` 与 `location_entered` 更新。MCP 用真实后端超时启动复验相同结果。
+
 ---
 
 ## T0128 建立低模人形角色、装备挂点与动画状态机
 
-状态：Todo
+状态：Done
 优先级：P0
 前置任务：T0125, T0127
 涉及文档：`ART_DIRECTION.md`, `ART_PIPELINE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -222,11 +309,47 @@
 - 动画只表现既有行动 / 战斗状态，不通过动画事件擅自决定资源、伤害、HP 或事件事实。
 - 格伦可完整播放进入铁匠铺、行走到工位、锤击工作、被打、昏迷倒地和复苏起身的表现链。
 
+完成记录（2026-08-12）：
+
+- 新增 `GlenArtView.tscn` 与统一 `NPCArtView.gd`，把男性基础体、农民服装、短发和 UAL2 非 root-motion 骨骼重绑定为首个正式角色；格伦拥有头身四肢、基础眼眉、服装、发型、锤子与现有 NPC 胶囊拾取体。
+- 建立 9 状态 AnimationTree 与 6 个 BoneAttachment3D 挂点。程序移动控制根坐标并驱动朝向 / locomotion 播放速率，锤子在 idle 背挂与 work 右手之间切换，动画预览不修改调用者权威 profile。
+- 免费 Standard 缺少独立 run / forge / fall，因此分别使用加速 `Walk_Carry`、`Farm_Harvest`、反向 `LayToIdle` 的已登记别名；没有把它们伪称为源包原生锻造 / 倒地动作。物理骨骼仅建立禁用接口占位，真实布娃娃仍属 T0133。
+- `NPC.tscn / NPC.gd` 新增 `ArtMount`、正式外观映射和只读状态投影；当前仅 `blacksmith_01` 替换外观，其他 7 人保留 legacy，等待 T0130 批量制作。
+- 两份 T0128 专项覆盖静态装配和真实权威联调；真实链确认格伦移动穿门、到 `forge_01` 后才拿锤工作，受击昏迷释放占用，复苏播放 get-up 后回 idle。T0127 / T0127A / 基础移动 / 自然恢复回归及 MCP 实景通过。
+
+---
+
+## T0128A 修复角色反向行走与工作动画不持续
+
+状态：Done
+优先级：P0
+前置任务：T0128
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `ART_DIRECTION.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修正格伦角色模型与程序移动方向相反的问题，保证身体正面始终朝向实际路径推进方向。
+- 把 `work_blacksmith` 的工作表现改为在整个权威工作阶段周期性重复，而不是只在开始时播放一次后停住。
+- 保持非 root-motion 和 presentation-only 边界，不由动画循环决定行动完成、资源或制造进度。
+
+验收标准：
+
+- 沿至少两个不同方向移动时，角色正面与世界坐标位移方向一致，不再倒着走。
+- 格伦抵达 `forge_01` 并保持 `work_blacksmith` 后，工作姿态在多个动画周期内重复，锤子始终位于右手。
+- 暂停冻结、恢复续播、昏迷和行动切换仍能正确中断或恢复工作表现。
+
+完成记录（2026-08-12）：
+
+- `GlenArtView.tscn` 在可见 Quaternius 源模型外增加独立 `SourceFacingCorrection`，统一旋转 180°；CharacterPivot 继续按项目 `-Z` 正面合同朝向路径，因此源模型不再反向行走。
+- `NPCArtView.gd` 为每个角色实例复制 AnimationLibrary，并把 idle / walk / run / talk / work 对应 Animation 的真实 `loop_mode` 设为 `LOOP_LINEAR`，不再只依赖 AnimationTree 节点标记。`Farm_Harvest` 现在每 2.5 秒持续回卷，权威行动不变时不会停在末帧。
+- 新增 `verify_t0128a_character_motion_loop.gd`，用东向与北向移动检查视觉正面，并在约 6 秒中观察到工作动画两次完整回卷、右手锤子持续有效。T0128 静态 / 权威联调和 T0127 室内回归通过。
+- Godot MCP 在正式 Main 派工后推进 5.4 秒，确认格伦仍处于 `work_blacksmith / active_workstation`，动画周期位于 `0.404 / 2.5 s`，证明已越过两次片段长度仍在循环；视觉正面最终与路径目标向量一致。
+
 ---
 
 ## T0129 完成铁匠铺美术垂直切片并设立批量生产门槛
 
-状态：Todo
+状态：Done（2026-08-19 用户最终视觉验收通过）
 优先级：P0
 前置任务：T0126, T0127, T0128
 涉及文档：`ART_DIRECTION.md`, `CURRENT_STATE.md`, `TASKS.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `COMBAT_SYSTEM.md`, `DEV_LOG.md`
@@ -244,23 +367,414 @@
 - 既有资源、制造、建筑、记忆、战斗和 LLM 权威流程回归通过。
 - 未得到用户明确通过时，T0130–T0136 不开始批量生产，只在本切片内迭代。
 
+当前完成记录（2026-08-12）：
+
+- 铁匠铺 1 级已具备真实炉膛、动态火光 / 烟 / 火星、手动风箱、铁砧、工具架、材料堆和两套可读锻造区；2 级增加烟囱、武器架与加固件，3 级增加第三权威工位、第二铁砧和雨棚，严格映射 `2 -> 2 -> 3` 容量。
+- BuildingArtView 监听 BuildingSystem 等级并切换累积升级组，生成室内 NavigationMesh；T0127 门外 → 门内 → 工位的权威提交不变，NPC 到站后面向工作对象。
+- 格伦新增权威 HP 下降驱动的血粒子、受击回弹和带物理冲量的受控倒地 / 复苏链；只把活动敌群中的第一名作为剑盾 Quaternius 正式样片，其余保留轻量表现，完整逐骨骼布娃娃与 48 敌预算仍留 T0133。
+- HUD、NPCPanel、BuildingPanel 已应用临时深木 / 黄铜 Theme；GM 新增 `smithy_art_level <1|2|3>` 和三枚只改表现的预览按钮，方便直接比较升级。
+- `verify_t0129_blacksmith_art_slice.gd` 及 T0126–T0128A、建筑升级、战斗、昏迷、HUD / 面板 / GM 回归通过；Godot MCP 已检查远近屋顶、三级室内和主题。自动验收已完成。
+- 用户首轮反馈指出暖橙高尖圆瓦顶更像民房，烟囱过低并与炉体重叠。当前迭代将屋顶横向收至 `0.88`、坡高压至 `0.42`、屋面基准降至 `3.18 m`，并使用冷灰蓝瓦面、灰紫外墙和蓝灰棚檐；烟囱已对准炉膛并从 `1.55 m` 起立，顶部高出 `4.75 m` 新屋脊。近景透明、碰撞、导航和权威流程不变。
+- 专项现锁定低坡尺寸、冷色材质实例、烟囱净空与炉膛对齐；T0126、T0127、T0129 回归及 Godot MCP 远近实景通过。T0129 继续保持 Partial，等待用户对本次造型迭代确认。
+- 用户第二轮反馈确认当前 `4 × 4 m` 室内和全站拥挤布局无法支撑三级三锻造位，更不能作为其他建筑的批量空间基线；现有铁匠铺只保留为权威进出、工位占用、动画和屋顶技术原型，不再视为最终造型 / 占地候选。T0129 必须先完成 T0129A 的全站空间灰盒与新铁匠铺最大等级地块验证，再重新接受视觉验收。
+- 2026-08-19 已完成正式地图返工：`FormalStationLayout/BuildingRoots/Blacksmith/BlacksmithArt` 使用 `16 × 16 m` 地块、`14 × 12 m` 房体与约 `13.1 × 11.1 m` 室内净空；冷灰墙体、深木结构、低坡冷灰蓝双坡板岩屋面、正式共享锻炉 / 烟囱、炉火 / 动态灯 / 烟 / 火星 / 风箱和逐锻造位工具陈设均已进入默认 Main。
+- 正式 fixture 表现按 `Lv.1=两铁砧+共享锻炉 / Lv.2=燃料储备且不扩工位 / Lv.3=第三铁砧` 切换，实际 `forge_01–03` 站位、格伦循环打铁、正式碰撞与生产导航继续一一对应；未来级表现隐藏但保留最高级碰撞净空。GM 和专项都已从旧 4×4 样板迁到正式节点。
+- 新 T0129 专项、格伦正式打铁、A3b1 工位、默认正式世界与 GM 回归通过；D3D12 远景 / 近景截图确认完整屋顶、0.08 近景透明和干净室内。实现已完成，仍按任务验收条款等待用户最终视觉确认；确认前不开始 T0130–T0136。
+- 2026-08-19 用户复验指出正式 Lv.1 缺烟囱、烟穿屋顶、室内过空、扩大地图后透明触发过近且透明墙仍阻挡室内 NPC 交互。本轮把烟囱改为 Lv.1 常驻并将烟源抬到屋脊上 `SmokeOutlet`；三级分别补齐基础炉体 / 材料与工具、Lv.2 磨刀石 / 成品架 / 燃料棚与烟道加固、Lv.3 第三锻造单元 / 吊装 / 锭料 / 主匠陈设，独立新增网格专项计数为 `29 / 21 / 21`，工位容量仍严格为 `2→2→3`。
+- 正式铁匠铺透明曲线改为 `70→58 m`，屋顶、四周墙体和附着件同步降至 `0.06`。新增建筑包围体与 NPC/建筑双向点击门禁：不透明时 BuildingPanel 优先；透明且射线命中室内实体 NPC 时 NPCPanel 优先；透明空点仍打开 BuildingPanel。专项已真实投射射线命中格伦并验证两种优先级，D3D12 已输出 Lv.1–3 远景 / 透明近景六张对照图。
+- 2026-08-19 用户确认通过，T0129 批量生产门槛解除；后续建筑继续使用既有 Quaternius 资产路线，角色进入 T0130 的独立两头身选型与试片，不要求角色继续沿用 Quaternius 可见模型。
+
+---
+
+## T0129A 重做驿站画面与空间总规划并建立可量化规格
+
+状态：Done（v0.9 独立灰盒、最高容量、21:9、48 敌与长逃离压力验收全部通过）
+优先级：P0
+前置任务：T0125, T0127, T0129（用户反馈触发的切片返工前置）
+涉及文档：`SCENE_SPACE_AND_VISUAL_PLAN.md`, `ART_DIRECTION.md`, `ART_PIPELINE.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `game_design.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 以 `1 Godot unit = 1 m` 为单位，测量当前地面、围墙、建筑、道路、镜头、敌人出生和铁匠铺室内的实际尺度，明确拥挤问题的量级。
+- 为全站确定地形画布、城墙范围、正 / 后门、广场、道路、全部建筑最大等级预留地块、自然边界、敌人出生林与入场线、商人 / 逃离路线、镜头边界和素材尺寸合同。
+- 根据 `building_defs.json` 的等级和功能位置上限，为每座建筑定义“一级开始保留最大等级地块、升级才增加对应实体”的表现映射；可见工位、同 ID Marker、实际 NPC 站位和权威占用必须一一对应。
+- 建立长期维护的画面与空间表现文档；以后任何场景、建筑、环境和镜头任务都先对照并在决策变化时回写该文档。
+
+验收标准：
+
+- 文档明确区分当前实测与目标规划，所有核心尺寸都有米制值、坐标或可验证的范围，不用“扩大一些”替代规格。
+- 12 个建筑地块、围墙 / 城门、广场、道路、自然阻挡环、敌人五波集结空间和镜头范围互不冲突，且能容纳各建筑最高等级的全部权威功能位置。
+- 铁匠铺至少预留三级 3 个独立锻造单元；Lv.1 显示 2 个、Lv.2 不虚构容量、Lv.3 才增加第三实体 / Marker / NPC 工作点。
+- 规划经用户确认后，先建立独立空间灰盒场景验证尺度和镜头，再迁移 `Main.tscn`；本规划任务不直接改动当前可运行地图。
+
+当前完成记录（2026-08-12）：
+
+- 新增 `docs/SCENE_SPACE_AND_VISUAL_PLAN.md` v0.1，登记现墙内约 `28 × 26 m / 728 m²`、正式铁匠铺室内约 `4 × 4 m`、当前地面 `58 × 68 m`、正门 / 敌人 / 镜头等实测值。
+- v0.1 / v0.2 历史方案曾把城墙内扩大为约 `82 × 78 m / 6396 m²`，建立 `152 × 168 m` 细节地形和 `220 × 240 m` 低细节绿色承底；12 个建筑从 Lv.1 起分别保留 `14–16 m × 12–18 m` 的最大等级地块。当前尺度与构图已由下方 v0.5 条目取代。
+- 文档为所有建筑列出最高等级外壳、权威位置上限和逐级可见增量，并建立通用工位单元、通道、门口、Marker / NPC 到位和升级一致性验收合同。
+- 规划前方 `24 × 16 m` 敌人林下集结区、林缘显现线、进攻路、城外集结线、正门、仓库和主厅路径；西侧河流、东侧岩脊、前后森林 / 悬崖 / 雾形成不可通行自然边界，后门另留商人 / 逃离通道。
+- v0.2 曾新增 `data/presentation/station_spatial_plan.json`、`StationSpatialSandbox.tscn / .gd` 与专项校验：当时生成三层地形、墙门、大广场、11 段道路、12 个最大地块 / 最大位置提示、自然边界、商路和 6 段敌军路线；旧 `28 × 26 m` 轮廓保留作尺度对照。当前生成合同已由下方 v0.5 条目取代。
+- v0.2 专项曾确认墙内 `82 × 78 m / 6396 m²`、12 地块零重叠 / 零越界、道路与地块零重叠、铁匠铺 `16 × 16 m` 且可标出 3 个最高位置、出生区距正门 `42 m`、镜头 `20–64 m`。这些历史值只保留迭代依据，当前值见 v0.5。
+- Godot 4.6.2 实机检查全景、铁匠铺聚焦和敌军来路通过；沙盒约 416 个调试 Mesh、25 个标签，性能快照约 179 FPS / 1032 draw calls。高 draw call 来自独立调试几何，正式环境阶段必须批处理 / MultiMesh，不能照搬。
+- v0.2 灰盒曾发现工械坊西侧紧邻诊所，因而把原 `-X` 入口改为 `-Z`；v0.3 重排后已恢复 `-X` 并留出独立支路。Main、正式坐标、导航、战斗、地点 / 工位权威和 GM 均未改变。
+- 用户已确认 v0.5 的 Main 相对构图方向。阶段 B 的逐建筑最高位置实物排布与 21:9 四角已在 v0.6 / v0.7 完成；v0.9 又完成 48 个带物理包络敌人的混编路线和长距离逃离运行态节奏压力验收，T0129A 已收口，下一步可进入阶段 C 的 Main 权威坐标迁移。
+- 用户否决 v0.2 的规则行列、中轴路和大广场，以及浅色城内草坪与只围中间一圈的自然物。v0.3 扩展为 `103 × 95 m / 9785 m²` 不规则规划包络，用 14 段折线墙、12 个全部带 `4–11°` 转角的错位地块、35 段弯曲驿路 / 支路和三个小型泥地口袋表达沿旧驿路自然生长的边境聚落；新增面积分散给道路弯曲、消防间距和工作院，不形成更大中心空场。
+- 地表改为唯一 `#405842` 深草层；自然散布范围 `212 × 232 m`，351 个 MultiMesh 树实例及贯穿承底的河流 / 岩脊 / 岩石 / 雾延伸到距地面四边约 `4 m`。专项确认一层地表、12 旋转地块零重叠 / 零越界、35 道路对非服务地块零侵占、交汇泥地配置面积 `113 m²`、森林实例不少于 250。
+- Godot 4.6.2 v0.3 全景检查通过，性能约 175 FPS / 922 draw calls / 266,502 primitives；T0129A、T0125 和 CameraRig 回归通过。Main、正式权威坐标、导航、战斗和 GM 不变。
+- 用户确认 v0.3 自然环境方向改善，并要求继续修正敌人近距生成、建筑任意小角度、建筑名称、后门逃离距离、河流高度与地图硬边。v0.4 把承底扩大到 `600 × 660 m`、森林散布扩大到 `588 × 648 m / 810` 个 MultiMesh 树实例；镜头平移极限到硬边的最小几何余量为 `90 m`。
+- 敌军出生区移至 `(2,300)` 地图边缘森林，距正门约 `246.02 m`、距北侧硬边 `55 m`；后门到逃离完成点 `(-54,-275)` 约 `231.08 m`，完成点距南侧硬边 `30 m`。当前只验证目标路线，正式 `escaped / in_station=false` 提交仍待 Main 坐标迁移时改为“抵达地图边缘才完成”。
+- 12 座建筑正面全部量化到八方向，模型局部 `+Z` 统一作为正面 / 入口；每座建筑新增常显中文名称，并校验入口到对应道路端点不超过 `2.5 m`。v0.5 内部 / 敌路 / 后门路共 41 段，地块零重叠、零越界，道路零非服务侵占。
+- 河谷改为东西两块同材质地岸之间的真实槽口：驿站地坪 `Y=0 m`、河面 `Y=-1.2 m`，专项锁定驿站比河面高至少 `1 m`。Godot 实机已检查全景、远方敌路和后门长路；Main、GM、导航和权威系统仍未修改。
+- v0.4 的 300 帧性能采样平均约 `156 FPS / 6.4 ms`、P95 `12.29 ms`，451 个节点、0 orphan；T0129A、T0125、CameraRig 和项目启动回归通过，编辑器没有新增错误。
+- 用户要求不同功能建筑沿用当前 Main 的熟悉相对位置。v0.5 将主厅放回墙内中央偏后并扩大为 `24 × 20 m` 地块 / `22 × 18 m` 最大包络 / `3 m` 灰盒高；广场位于主厅正前，后排四建筑、两翼生活建筑与前场生产 / 训练建筑按 Main 关系放大重排，铁匠铺新中心为 `(15,36)`。
+- `station_spatial_plan_v4` 与专项新增 Main 相对布局合同，锁定主厅最大、中央锚点和各建筑前后左右分区。Godot 4.6.2 自动校验通过：12 地块零重叠 / 零越界、41 道路零非服务侵占、入口全接路、Main 构图零漂移；Godot MCP 已重新运行 v0.5 灰盒。Main 与全部权威坐标仍未迁移。
+- `station_spatial_plan_v6` 为 12 座建筑登记 80 个最高等级真实占地；其中 61 个建筑工位和 4 个主厅器械槽逐 ID / 类型 / 解锁等级匹配权威数据，马厩总计 8 个马匹锚点。全部位置零越界、零同层重叠、零阻断 `2.4 m` 主通道；宿舍因十张 `1.3 × 2.4 m` 床的实排结果将包络从 `14 × 12 m` 修正为 `14 × 13 m`，马厩为八个 `4.8 × 3.0 m` 马栏修正为 `16 × 16 m` 地块 / `14 × 14 m` 包络。
+- 21:9 四角压力计算发现旧承底会在横向极限露出约 `19 m` 硬边，故扩大为 `700 × 720 m`，自然散布同步为 `688 × 708 m / 1043` 棵；最大镜头地面投影约 `338.84 × 124.78 m`，四个平移极限到硬边仍至少 `30.58 m`。敌军出生同步移至 `(2,335)`，逃离完成移至 `(-54,-305)`，继续保持地图边缘语义。专项 Godot 4.6.2 回归通过；Main 未修改。
+- `station_spatial_plan_v7` 新增第五波与逃离压力配置。独立模拟从 `enemy_waves.json` 实例化 48 个 `CharacterBody3D + CapsuleShape3D`（28 近战 / 4 长柄 / 10 弩手 / 6 骑射），依次通过 13 个队形节点 / 12 段路线；全程采样零包络重叠，最小净距 `>=0.12 m`，出生组阵位于保护林区且不在初始最远镜头内，路线不侵占无关建筑地块。
+- 后门逃离压力路径由 6 点 / 5 段组成，实长 `261.30 m`；按当前 `5 m/s` 基础速度，普通约 `52.26 s`、受击加速约 `41.81 s`，仍满足五轮、每轮至少 6 秒的干预窗口。自动采样确认抵达最终地图边缘点前不会提交完成。Godot 4.6.2 专项全绿；Main、GM、正式导航及权威坐标仍未修改。
+
+---
+
+## T0129B 分批迁移驿站权威空间、导航与边缘判定
+
+状态：Done（C1–C5 全部完成；A5-P8 已补齐正式空间检查点恢复）
+优先级：P0
+前置任务：T0129A
+涉及文档：`SCENE_SPACE_AND_VISUAL_PLAN.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 把 T0129A v0.9 已确认的空间规格从 presentation-only 灰盒迁入可审计的正式布局配置，消除 Main 场景、BuildingSystem、NPCSystem、CombatSystem 和 CameraRig 中散落且互相独立的旧坐标。
+- 按 `C1 布局配置与静态场景 -> C2 建筑 / 地点 / 工位与 NPC 导航 -> C3 敌军 / 集结 / 器械 -> C4 商人 / 逃离边缘判定 -> C5 五波与性能回归` 五个切片推进；每一片通过后再进入下一片，避免整图一次替换导致稳定流程同时失效。
+- 迁移只改变空间与通行事实，不改变资源、建筑等级、工位容量、伤害、敌人数量、NPC 人格、事件可见性或五波胜负规则。
+
+验收标准：
+
+- 正式 Main 使用与 v0.9 一致的 `700 × 720 m` 承底、`103 × 95 m` 驿站包络、12 建筑中心 / 八方向朝向、正后门、镜头边界与自然阻挡；道路由最初 41 段在 A1 增加酒窖正门避障折点后为 42 段，正式配置成为唯一权威坐标源，presentation 配置只保留验证 / 对照职责。
+- 8 名 NPC 的初始点、全部建筑入口 / 室内点 / 65 个权威位置、广场与公告牌地点能通过正式导航到达；移动完成后才提交地点 / 工位占用，途中、暂停、昏迷和改派均不产生后台假进入。
+- 第五波 48 敌能从边缘森林显现并依次攻击正门、仓库、主厅；集结位、器械槽和射界不穿墙、不穿建筑，正式碰撞 / 导航压力通过。
+- 商人与逃离者使用独立后路；逃离者在抵达 `(-54,-305)` 前保持 `escaping / in_station=true` 并可继续挽留，只有抵达地图边缘完成点才提交 `escaped / in_station=false`。
+- NPC 通勤、工作循环、建筑点击、屋顶透明、五波战斗、商人、逃离、保存 / 读取、GM 调试和 16:9 / 21:9 性能专项全部通过；新增或替换的不可见验证入口同步更新 `GM_PANEL.md`。
+
+实施顺序：
+
+1. `C1` 盘点旧坐标消费者，建立正式 `station_layout_v1` 数据合同和只读加载器；迁移地形、墙门、道路、12 建筑根与镜头，不迁移运行态 NPC / 战斗。
+2. `C2` 迁移地点、入口、室内点、权威工位、NPC 初始位置与导航网格，回归真实进入 / 退出 / 占用链。
+3. `C3` 迁移敌军出生 / 显现 / 攻击路线、我方集结和器械平台，重跑第五波与射界。
+4. `C4` 迁移商人停靠和逃离 6 点路径，把最终边缘抵达接入现有原子逃离提交。
+5. `C5` 做五波连续回放、16:9 / 21:9、运行性能、保存兼容与 GM 验收，清理被正式配置取代的旧坐标常量。
+
+当前完成记录（2026-08-14）：
+
+- `C1` 新增 `data/station_layout.json` / `station_layout_v1`，正式登记地形、河槽、14 段围墙、两门、3 个交汇泥地、41 段道路、12 建筑根 / 朝向 / 最大包络和 `20–70 m` 镜头；`c1_authority_boundary` 明确列出已迁移静态职责和 C2–C4 延后职责。
+- 新增 `StationLayoutController.gd` 并挂入 Main。C1 当时在 `(1000,0,0)` 生成 91 个静态 Mesh / 14 个标签且没有碰撞 / 导航；C2a 与 T0129C-A1–A3 已继续在同一隔离根增加空间 Marker、234 个静态碰撞、独立生产 NavigationMap 和 12 个门链接，当前覆盖 107 件配置物、61 个 NPC 站位、34 个表现锚点与 8 个 HorseAnchor。它仍不自行创建地点、工位或敌人事实，不重绑 BuildingSystem，默认旧玩法根和镜头完全不变。
+- GM 建筑区新增“预览新布局 / 返回玩法地图 / 布局快照”，命令 `station_layout preview|legacy|snapshot`。预览只把 CameraRig 移到 staging 坐标并应用正式镜头合同，返回逐值恢复旧位置、距离、旋转、FOV 与平移边界；不修改时间或玩法状态。
+- `verify_t0129b_c1_station_layout.gd` 逐项校验正式配置与 v7 灰盒规格一致、12 / 42 / 14 / 2 / 3 数量合同、staging 边界、12 建筑根局部坐标 / 朝向、镜头预览往返和旧 MainHall / 地面零变更；T0129C-A3a 后还锁定 78 个结构阻挡 + 1 个烘焙地面，避免历史测试错误要求碰撞永久为零。
+- `C2a` 将配置升级为 `station_layout_v2`，正式内嵌广场 / 公告牌、12 套门外 / 门内 / 室内 / 出口路线、8 个 NPC 初始点，以及从已验收最高等级排布复制的 `61` 个建筑工位和 `4` 个主厅器械槽。65 个位置保留 ID、类型、解锁等级、中心与真实占地；运行控制器不再读取 presentation 灰盒取得这些坐标。
+- `StationLayoutController` 为 C2a 生成 60 个进出路线 Marker、65 个权威位置 Marker、8 个 NPC 初始 Marker、2 个公共地点 Marker；T0129C-A3 后，`0.5 m / 11303` AStar 只负责 123 点合同对照，实际路径改用 234 个 StaticBody 烘焙的 `0.25 m / 788 vertex / 754 polygon` 生产 NavMesh 和 12 个门链接。预览外 Region / Link 禁用，预览或显式试点时临时启用，旧默认玩法根零移动。
+- 新增 `verify_t0129b_c2_spatial_contract.gd`：逐位置对照 v7 验收基线，确认 `61 + 4 = 65`、135 个权威 Marker、导航 staging 开关，并从广场验证 2 个公共地点、8 个 NPC 初始点、48 个建筑路线关键点和 65 个权威位置共 `123 / 123` 可达；A3a 后 Godot NavigationServer 在专属生产地图中逐一确认全部 65 个权威目标有路径。A3b1 / A3b2 后额外校验 9 个家具安全站位和 4 个患者锚点，总 Marker 为 148。C1、T0127、T0128、GM、CameraRig 回归通过。
+- C2b-P1–P6 已让六名代表 NPC 的七种显式试点消费正式路线并保持地点 / 工位原子提交；马厩额外锁定栏外站位与 HorseAnchor 净空。默认非战日常仍在旧根兼容移动；正式根继续位于 `(1000,0,0)`，最终默认根切换仍须与其余日常消费者协调。
+
+- `C3-P1 / A4-P1` 已登记正式十阶段敌路，并以独立 10 顶点 / 4 多边形导航带覆盖林下出生至正门；显式 `enemy_foot` 实体依次实际抵达 spawn / reveal / approach_mid / contact / front_gate。该样片不加入活动敌人集合、不扣正门 HP、不写事件，停止 / 清敌可移除；核心驿站 NavMesh 继续保持 788 / 754。C3-P2 再迁移一名真实活动波次敌人的正门攻击权威。
+- `C3-P2 / A4-P2` 已让一名第一波敌人成为真实活动敌人：抵门前禁止攻击，抵门后复用既有抬手、BuildingSystem 伤害及 `combat_started / building_damaged / combat_ended`；清敌、死亡、波次重置均清理正式实体。正门摧毁后保持在门内迁移边界之外，不攻击仓库。
+- `C3-P3 / A4-P3` 已让该敌人在正门摧毁后通过单向门洞 NavigationLink，沿 `gate_turn / north_junction / plaza_junction` 实体抵达仓库；到达前仓库 HP 不变，到达后复用原攻击链。仓库摧毁后明确 hold，不攻击主厅。
+- `C3-P4 / A4-P4` 已让该敌人在仓库摧毁后实体抵达主厅；到达前主厅 HP 不变，到达后复用既有攻击链，并在主厅摧毁时继续触发唯一 `main_hall_destroyed` 失败权威。
+
+---
+
+## T0129C 建立实体碰撞、NavigationAgent3D 与动态避障
+
+状态：Done（A1、A2a、A2b-P1–P6、A3、A4-P1–P7b、A5-P1–P8 全部完成）
+优先级：P0
+前置任务：T0129B-C2a
+涉及文档：`SCENE_SPACE_AND_VISUAL_PLAN.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 把当前 NPC / 敌人 `Area3D + global_position` 直线移动迁移为 `CharacterBody3D + CollisionShape3D + NavigationAgent3D + move_and_slide`，静态建筑 / 围墙 / 城门 / 自然阻挡使用可审计的 `StaticBody3D`，从物理与寻路两层同时禁止穿墙、穿建筑、穿人。
+- 静态绕障由与碰撞几何一致的 Godot NavigationMesh 负责；NPC / 敌人之间的移动避让由 NavigationAgent3D avoidance 负责；CharacterBody3D 碰撞作为最后物理保险。不得用动画、Area3D 点击体或权威位置 Marker 代替实体碰撞。
+- 保持现有地点 / 工位事务：路径规划只决定如何到达，穿门才提交地点，抵达具体位置才提交占用；不可达、动态堵塞、暂停、昏迷和改派均不得假到达或写幽灵占用。
+
+实施顺序：
+
+1. `A1` 建立 `physics_navigation_v1`：冻结碰撞层、NPC / 步兵 / 骑乘胶囊、门净宽、墙厚、导航烘焙和动态避障参数；在远端正式 staging 为 12 建筑外壳、14 墙段与两座城门生成 StaticBody / CollisionShape，门洞保持真实通行，预览外不影响旧世界。
+2. `A2` 新建可复用角色运动组件；把 NPC 根迁为 CharacterBody3D，保留独立 InteractionArea，接入 NavigationAgent3D 路径跟随、速度 / 加速度、到达容差、卡死重寻路和 avoidance 回调。先在独立运行场景验证，再替换 Main。
+3. `A3` 将 12 建筑真实墙体 / 家具、城墙 / 城门和自然阻挡加入正式碰撞源，按 `0.25 m` 生产烘焙精度生成 NavMesh；C2b 同批接入全部建筑入口 / 室内 / 位置路线，验证门洞排队、窄路会车和不可达失败。
+   - `A3a`（Done）：先把正式地面、60 段建筑外墙、14 段围墙和 4 个门柱登记为真实静态烘焙源，以 `physics_navigation_v1` 的 `0.25 m` 参数生成唯一生产 NavigationRegion；保留 `0.5 m` AStar 合同网格只做 123 点确定性对照，不再把它冒充生产 NavMesh。
+   - `A3b`（Done）：逐建筑按美术实物增加家具 / 设备碰撞与 NPC 落脚点偏移，再加入自然边界阻挡；不得直接把现有工位占地矩形整体设为碰撞，否则会堵死权威工作位置。
+     - `A3b1`（Done）：先以最大等级铁匠铺为样板，新增独立 `building_fixture_layout_v1` 家具合同；3 个锻造湾各自拆成“可见铁砧实体碰撞 + NPC 独立站位 / 朝向”，并补齐共享炉体与二级燃料储备的最坏占地。生产 NavMesh 已从这些实体碰撞重烘焙，`get_building_spatial_route()` 返回站位而不是家具中心，同时保留原工位湾中心用于容量 / 升级权威判定。该小步不迁移 Main NPC，也不改变 BuildingSystem 的工位数量与升级规则。
+     - `A3b2`（Done）：以最高等级小诊所为第二种样板，导入 Quaternius 病床 / 桌台素材，并将固定 2 个诊疗位与 `2 -> 3 -> 4` 病床逐项映射为可见家具和实体碰撞。诊疗位使用桌前工作站位；4 张病床同时登记床边上床点和床面患者锚点，生产寻路只抵达床边，并通过 `mount_after_arrival` 把后续表现挂接与路径到达分开。Main NPC、治疗结算和 BuildingSystem 等级 / 容量未改变。
+     - `A3b3`（Done）：以固定 10 床的宿舍验证密集睡眠位。每张床逐项映射固定 `assigned_npc_id`、床边到达点、床面睡眠锚点和实体碰撞；10 个床边点均由生产 NavMesh 可达，最近床体配置净空为 `0.06 m`，相邻床体零重叠。专项直接调用 BuildingSystem，确认 8 名初始 NPC 只能领取自己的 1–8 号床，未来 NPC 只会领取未分配的 9–10 号床；运动 / 表现层不重新分配床位。
+     - `A3b4`（Done）：食堂固定 10 个用餐席已逐项映射为真实椅子、椅边到达点与 `sitting` 锚点；2 张共享长桌只做家具 / 阻挡，不增加容量。三个灶台各有炖锅、炉座碰撞和家具外站位，其中第三个严格保持 `required_level=3`，形成 `2 -> 2 -> 3` 表现合同。BuildingSystem 仍按同类型首个空位分配，表现层不抢占或重建容量。
+    - `A3b5`（Done）：酒窖在 `12 × 10 m` 最高包络内生成 3 套可辨认的发酵桶架，逐项映射 `cellar_01–03`、实体碰撞、桶外 `0.45 m` 站位和面向；1 / 2 号为 Lv.1，3 号严格为 Lv.3，形成 `2 -> 2 -> 3`。Lv.2 只增加非权威熟成储酒架；共享空桶组和验酒桌同样没有 `workstation_id`。BuildingSystem 一级第三人满位与三级增至 3 位均已实测，三条生产 NavMesh 路径全部可达；Main NPC 与生产结算未迁移。
+    - `A3b6`（Done）：菜园在 `12 × 12 m` 包络内生成 3 块可辨认的作物田畦，逐项映射 `garden_plot_01–03` 与田边 `0.45 m` 站位；1 / 2 号为 Lv.1，3 号严格为 Lv.3。田畦使用正面敞开的三段式 `garden_u_border` 碰撞，泥土 / 作物工作面不设整块阻挡。Lv.2 水沟 / 堆肥箱和共享独轮车 / 农具架 / 围栏 / 菜筐均无 `workstation_id`；BuildingSystem 一级第三人满位与三级增至 3 位、三条生产路径、粮食产出均已实测。
+    - `A3b7`（Done）：训练场 6 个等级化位置已逐项映射。Lv.1 为 1 个教官位 + 2 个训练位，Lv.2 只新增第三训练位与沙袋表现，Lv.3 再新增第二教官位和第四训练位；木桩、武器架、箭靶、沙袋、边界栏和共享装备均不额外生成容量。每个训练者有独立站位、面对器械的朝向和无实体碰撞的 `3 × 3 m` 动作净空，六条生产路径全部可达。
+    - `A3b8`（Done）：马厩在 `14 × 14 m` 包络内生成左右各四个开放马栏、八个马匹实体净空和一个 Lv.2 草料 / 马具架。只有前三栏映射 `stall_01–03`，BuildingSystem 容量严格保持 `2 -> 2 -> 3`；其余五栏、八个 HorseAnchor、饲槽和共享储物均不创建照料容量。三条 NPC 站位与马匹 `1.4 × 2.2 m` 净空分离，中央通道、栏门和生产路径全部可达；HorseSystem 初始两匹成年马、位置和分配逻辑未改变。
+    - `A3b9`（Done，技术基线已由 A3b9R 取代）：曾以十个程序几何跪台验证固定十席、中央通道和十一条生产路径；该造型不再作为正式美术基线。
+    - `A3b9R`（Done）：按正式美术质量返工小教堂。以 Quaternius 长凳 / 书本 / 烛台 / 圣杯 / 读经台为主体，形成五排左右礼拜长凳、连续中央通道和完整圣坛；十个祈祷席与十个 `seated_prayer` 锚点一一对应，碰撞、导航、Lv.2 非扩容增量和 BuildingSystem 固定容量合同保持不变。
+    - `A3b10`（Done，技术基线已由 A3b10R 取代）：曾以程序几何验证工械坊两套 Lv.1 工程台、Lv.3 第三工程台与四件共享设施；碰撞、导航和容量合同保留，旧造型不再作为正式美术基线。
+    - `A3b10R`（Done）：单独精修工械坊。三套 Quaternius 工作台主体分别包装为 Lv.1 制弓台、Lv.1 机构装配台与 Lv.3 攻城器械总装台；工具墙、吊架、制图测量台和材料架改用 Quaternius 货架 / 绳卷 / 工作台 / 木箱组合。原 7 件配置物、7 个碰撞、3 个桌前站位和 `2 -> 2 -> 3` 权威容量不变，三条生产路线继续可达。
+    - `A3b11`（Done，技术基线已由 A3b11R 取代）：不可进入主厅的四个屋面平台逐项映射 `main_hall_slot_01–04`，解锁等级为 `1 / 3 / 5 / 6`；Lv.2 / 4 / 6 结构加固不生成 NPC 工位，DefenseDeviceSystem 等级合同通过。
+    - `A3b11R`（Done）：单独精修主厅。以 Quaternius 砖石门窗、圆瓦屋顶、外部台阶、旗帜、壁灯和石质平台组成边境守备指挥厅；四面外立面共 21 个门窗模块，正面中央入口形成清晰用途，四角器械平台继续逐项映射 `main_hall_slot_01–04 / 1、3、5、6 级`，Lv.2 / 4 / 6 分别表达墙体、信号屋面和塔楼加固。主厅仍不可进入、零 NPC 工位，表现不接管 HP、失败条件、槽位或射程权威。
+    - `A3b12`（Done，技术基线已由 A3b12R 取代）：曾以程序货架、货箱和托盘验证三级储藏增量、零 NPC 工位与敌军攻击路径；碰撞 / 导航合同保留，旧造型不再作为正式美术基线。
+    - `A3b12R`（Done）：单独精修仓库。以 Quaternius 木网格墙、坡屋顶、拱形货架、木箱 / 金属箱、桶、麻袋、钱箱与货运车组成边境储备仓；双开装卸门、雨棚 / 滑轮、车辙和中央通道建立清晰货物流线。Lv.1 / 2 / 3 储藏设施仍为 `5 / 1 / 1`，类别道具不镜像实时库存；仓库继续不可进入、零 NPC 工位，屋顶纳入统一近景透明控制，敌军攻击路径保持可达。
+    - `A3b13`（Done）：正式布局已生成 24 个自然 StaticBody（河岸 8、岩脊 4、密林 12），42 段道路零侵占，正门敌路与后门商路 / 逃离廊道保持开放；A3 全量回归完成。
+4. `A4` 把正式敌人迁为 CharacterBody3D + NavigationAgent3D；C3 敌路不再逐帧改字典坐标，而是从边缘森林沿可通行路线依次攻击正门、仓库、主厅。NPC 集结、避战、追击、逃离与商人路径复用同一运动服务，但使用独立目标选择与权威完成条件。
+   - `A4-P1 / C3-P1`（Done）：建立首个显式敌军正式导航切片。`station_layout` 正式登记地图边缘林下出生、林缘显现、接触区和正门攻击点；StationLayoutController 在不改变既有核心 NavMesh 计数的前提下，把独立敌军进军导航带接入同一生产 NavigationMap。CombatSystem 生成一个 `enemy_foot` CharacterBody3D 样片，逐段真实行进到正门攻击位；具备 `0.42 m / 1.8 m` 胶囊、NavigationAgent avoidance、停止清理和只读快照。本切片不生成完整波次、不攻击建筑、不扣 HP、不写战斗事件。专项与 MCP 均确认五阶段顺序到达、正门 HP 保持 160、活动敌人数为 0。
+   - `A4-P2 / C3-P2`（Done）：只迁移一名真实活动波次敌人到正式 Body / Agent 与正门攻击权威；到达正门前不得攻击，到达后继续复用 CombatSystem 既有抬手、伤害和目标选择。专项锁定首次 4 点伤害、三类战斗 / 建筑事件、清敌、死亡和正门摧毁后仓库 HP 不变。
+   - `A4-P3 / C3-P3`（Done）：正门摧毁后，同一活动敌人通过正式单向门洞链接，沿 gate_turn / north_junction / plaza_junction 实体抵达 warehouse 后才解锁仓库攻击；专项锁定九阶段顺序、仓库 `150 -> 146`、仓库到达前零伤害与仓库摧毁后主厅不受攻击。
+   - `A4-P4 / C3-P4`（Done）：仓库摧毁后，同一活动敌人实体抵达 main_hall 后才解锁主厅攻击；专项锁定十阶段、主厅到达前 180 HP、首次 `180 -> 176` 与最终 `main_hall_destroyed` 失败。
+   - `A4-P5 / C3-P5`（Done）：第一波配置中的 8 名剑盾敌人全部成为独立 Body / Agent；逐人保存十阶段、方向编队槽、可达点吸附、avoidance、物理到达攻击权威和死亡 / 清敌清理。专项多次实测均超过 2000 次 avoidance、门前最小中心距约 `0.950 m`，单独击杀 1 人后剩余 7 人仍完成十阶段。
+   - `A4-P5R / C3-P5R`（Done，主厅队形已由 P5R2 取代）：第一波不再消费表现道路 / 十阶段折点，只向正门、仓库、主厅当前目标请求最短可行路径；道路对敌我寻路均无权重。该步曾使用主厅外围攻击环验证多人可达；P5R2 已将其替换为同侧紧凑单排。删除碰撞边界超时假到达，目标切换可原子 supersede 途中请求。
+   - `A4-P5R2 / C3-P5R2`（Done）：纠正主厅攻击位过度分散。第一波 8 名近战敌人保持在来袭方向对应的主厅北侧正面，以单排紧凑攻击带横向错开；不得为了避堵绕到主厅四角或背面。专项实测存活 7 人全部实际到位并攻击，纵深差 `0 m`，相邻槽约 `2.4 m`，最大横向跨度约 `16.8 m`，零导航失败。
+   - `A4-P6 / C3-P6`（Done，运行策略由 P7 取代）：第二波 12 名剑盾与 4 名长杆复用可指定波次的正式实体工厂。其固定前后排攻击槽只保留为历史实现记录，不再作为当前群战目标。
+   - `A4-P7 / C3-P7`（Done）：已废弃显式正式波次的固定攻击槽与兵种预排，并把动态争抢 / 补位核心覆盖五波 `8 / 16 / 24 / 36 / 48` 个独立实体和 GM 入口。第二波多次实测为 10–11 人接触、5–6 人继续施压、最小中心距约 `0.840–0.848 m`、5530–6449 次 avoidance；移除一名前排后原后排实体实际补入攻击，没有实体穿透或永久导航失败。P7b 已补齐默认入口与正式可战斗 NPC 同世界、真实移动目标追击；A5-P2 已完成 8 NPC + 48 敌专项，但完整 Main 帧预算和剩余移动类别迁移前仍不得宣称全流程完成。
+   - `A4-P7R / C3-P7R`（Done）：修正动态拥堵中的偶发原地转圈和大距离横向弹出。ActorMotionBody 已把 NavigationAgent `max_speed` 绑定到角色 profile，并对 RVO safe velocity 再做最大速度与加速度约束；正式敌人移除 P6 遗留的按行列 avoidance priority。敌人朝向使用 `0.35 m/s` 速度阈值和 `360°/s` 有界转向，低速解穿透不再改变朝向，`pressing_to_*` 持续播放移动动画。专项记录单帧最大位移、最大实体速度、单帧转角、最小中心距与前排补位；第二波实测 10 接触 + 6 施压、最小中心距约 `0.846 m`、零超速，补位保持通过。
+   - `A4-P7b / C3-P7b`（Done）：默认 `spawn_wave()` 已复用 P7 五波动态实体工厂，不再在 `Station/Enemies` 创建旧 `Area3D`。波次开始时，当前符合参战条件的 NPC CharacterBody 由 NPCSystem 迁入同一正式 NavigationMap，保留实体胶囊并由 ActorMotionBody 接收集结 / 战术目标；敌人读取 NPC 真实 Body 坐标，目标移动超过 `0.35 m` 即重规划。默认波次可按日程叠加后续波次，清敌 / 战斗结束会恢复 NPC 原坐标、兼容运动和 Main 镜头。专项锁定同图、双方碰撞、移动目标追击与可逆清理；敌人波次、日程、警铃、战术、战斗节奏、公共事件、战斗结束和第五波胜利回归通过。非战斗人员日常 / 避战、逃离和商人仍留待后续逐类迁移，不能据此宣称 A4 / A5 全部完成。
+   - `A5-P1`（Done）：默认波次开始时全部当前可行动 NPC（不只已入伍持武器者）迁入同一正式 NavigationMap；非战斗人员接敌后继续复用 `avoid_combat` 权威模式，短步目标限制步长后吸附生产 NavMesh，并由 CharacterBody / NavigationAgent / avoidance / `move_and_slide` 实际执行。战斗清理可逆恢复 8 人原坐标与兼容运动。为避免战中逃离跨坐标世界，逃离开始、对话恢复和复苏恢复会解析正式后门导航边界，实体到达后才提交离站；C4 的 261.30 m 地图边缘长路线仍未迁移。本步不迁移日常建筑行动或商人，也不等同于 A5 的 48 敌全量压力验收。专项记录 8 人全部正式迁移、非战斗 NPC 实际避战超过 `1.2 m`、最大单帧约 `0.070 m`、清理后 8 人恢复；P7b、T1103B/C、T1203、T1204 与 T1205 回归通过。
+   - `A5-P2`（Done）：默认第五波 48 个正式敌人（含 6 名骑射）+ 8 名正式 NPC 压力通过。生成间距按最大胶囊动态计算为 `1.40 m`；RVO 使用额外 `0.10 m` 预判缓冲，物理胶囊不变。生产逐敌 AI 每帧轮转最多 8 人并分别累计跳过帧的游戏 / 战斗秒，接触扫描每 6 帧、避战复核每 3 帧；伤害、攻击间隔和移动 profile 未改。专项记录最大敌速 `5.40 m/s`、敌人 / NPC 最大单帧位移约 `0.090 / 0.083 m`、多次成功运行最小净距约 `0.0015–0.0078 m`、3 名非战斗人员 `70/70` 次持续避战、零导航失败、前排死亡后补位、全部存活敌人轮转覆盖、清理零孤儿；隔离 CombatSystem 生产入口 P95 主线程约为 headless `4.70–5.19 ms`、D3D12 窗口 `10.52 ms`。完整 TimeSystem + 全订阅者曾测得 P95 约 `49.62 ms`，未在本步越界修改日常 / 商人。
+   - `A5-P3`（Done）：已在默认第五波对完整 Main `logical_time_tick`、GameState 时间投影、HUD 与 Merchant 链分项采样。HUD 改用轻量波次快照，普通倍率的时间 / 倒计时与商人检查按游戏分钟去重，LLM 慢速精确秒仍逐秒刷新；未改变战斗数值、波次或商人时段。600 次可比采样中隔离 CombatSystem P95 `3.764 ms`，完整 Main 同步时间入口 P95 `4.383 ms`，约 `1.16×`，此前约 `49.62 ms` 长帧未复现。第五波压力、波次日程、商人交易和项目解析回归通过。
+   - `A5-P4a`（Done）：旧后门静态商人入口已替换为当前玩法地图可见的行商马车实体。每天 10:00 从配置固定路线生成 Quaternius 马匹、车夫与车厢，根为 `CharacterBody3D`，含多段碰撞、`NavigationAgent3D`、专属 NavMesh 和马匹步行动画；真实抵达后才显示头顶交易气泡、写到达事件并开放既有 MerchantPanel。16:00 立即关闭面板 / 交易、写离开事件并反向驶出，抵达路线边缘后释放。报价和资源权威未改。当前路线明确标为旧地图兼容坐标，C4 默认正式世界切换时再改接 `(-40,-120)` 停靠点与地图边缘远距商路，不重复改交易生命周期。
+   - `A5-P4a-R`（Done）：首版行商马车美术返工完成，未改 A5-P4a 的定时、抵达、交易、离场和资源权威。正式造型为 Quaternius 马匹牵引的长方形围板货车斗：修正马匹比例 / 朝向，补车辕、横担、缰绳、前置座板和专用车夫驾驶循环；车斗内逐件堆满木箱、果蔬筐、酒桶、苹果桶、粮袋、锁箱和布卷。遮挡画面的黄色球已替换为约 `1.15 m` 宽的羊皮纸钱袋 Sprite3D 和短“交易”标签。`verify_merchant_trade_system.gd` 现锁定货物数量、驾驶姿态与新标识；专项、GM 回归、项目加载和 Main 实机近景均通过。
+   - `A5-P4a-R2`（Done）：满载长车斗尾部已增加贯穿后轴和左右两只木辐条轮，每轮均有金属轮箍、木轮毂与四组辐条，形成前后两轴承重轮廓并消除尾部拖地观感；车体碰撞、导航半径、交易生命周期和资源权威未改。商人专项已锁定后轴、左右对称轮组及完整部件合同；GM 回归、项目加载与 Main 停靠态车尾斜俯视近景通过。
+   - `A5-P4b / C4-P1`（Done）：正式后路的可审计行商切片已完成，但没有在默认日常 NPC 尚未全量迁移时强制切换整张地图。`station_layout_v2` 登记地图边缘 `(-55,-315)`、沿 4.5 m 商旅廊道至 `(-40,-120)` 停靠点的 5 点路线；StationLayoutController 返回带 staging 偏移的世界坐标，MerchantSystem 生成 10 顶点 / 4 多边形折线 NavigationMesh，GM“正式商路”可显式运行完整进场 / 停靠 / 交易 / 原路离场。实测正常速度约 `43.3 s` 到站，抵达前不可交易，到站误差约 `0.245 m`，离场立即关闭交易并最终恢复旧图 / 2 点兼容路线。新增 C4-P1 专项，旧商人、GM、C1 回归与 MCP 停靠近景通过；旧地图每日 `10:00–16:00` 默认路线保持兼容，待 C4-P2 长逃离与日常 NPC 迁移完成后再做默认正式世界总切换。
+   - `A5-P4c / C4-P2`（Done）：正式战时逃离已从后门附近临时边界迁到地图边缘 `(-54,-305)`。6 点 / `261.302 m` 折线生成 12 顶点 / 5 多边形独立 NavigationRegion，并由后门单向 NavigationLink 接入驿站生产 NavigationMap；NPC 途中保持 `escaping / escaped=false`，对话暂停、恢复和战斗结束后的路线租约均不丢进度，只有实体抵达最终点才原子提交 `escaped / outside_station`。专项实测完成误差约 `0.186 m`，并覆盖战斗先结束时仅恢复其余 7 人、逃离者继续走完后再释放正式世界。给钱减速、攻击加速、昏迷暂停 / 复苏续行及五轮挽留沿既有回归通过。本步没有提前切换非战日常 NPC 默认世界。
+5. `A5` 做 8 NPC + 48 敌 + 骑乘单位压力回归：零穿墙 / 穿建筑、持续重叠为零、门口不永久死锁、路径重算有界、60 FPS 帧时 / 导航更新时间合格；保存 / 读取恢复目标和路线，不恢复陈旧 avoidance 速度。
+
+验收标准：
+
+- NPC、步兵敌人、骑乘单位分别具有与视觉尺度一致的实体胶囊；点击 / 对话 Area 与物理 Body 分层，射线选择不因碰撞迁移失效。
+- 全部建筑外墙、家具、围墙、城门柱、岩石与不可穿行树干有静态碰撞；屋顶透明不改变碰撞和导航。开门 / 门毁等动态通行变化必须同步更新障碍或导航链接。
+- 任一日常、战斗、避战、集结、追击、商人或逃离移动都不再直接写最终世界坐标；实际位移只经运动组件和 `move_and_slide`，权威系统仍只下发目标、读取到达 / 失败结果。
+- 两名角色对向通过 `2.4 m` 主通道、多人通过正式 `1.8 m` 建筑门口时能局部避让或有界等待；不会相互穿透，也不会因 avoidance 抖动越过墙体。
+- 自动化覆盖静态碰撞数量 / 尺寸 / 层、Godot NavigationServer 路径、动态避障、卡死重算、门洞通行、不可达失败、地点 / 工位原子提交和第五波性能；前端 GM 提供只读运动 / 导航快照，不提供传送式成功开关。
+
+当前完成记录（2026-08-14）：
+
+- `A1` 已新增 `data/physics_navigation.json / physics_navigation_v1`，冻结 `world_static / actor_body / interaction` 分层、三类实体胶囊、`0.4 m` 结构墙厚和 NavigationAgent avoidance 参数；A3a 为适配 `0.25 m` Recast 体素与八方向斜墙，把正式建筑门净宽从原 A1 的 `1.4 m` 修正为 `1.8 m`。
+- 正式 staging 已为 12 座建筑、围墙、城门、地面、全部家具和自然边界生成静态碰撞：78 个结构阻挡、1 个地面、131 个 fixture 碰撞部件和 24 个自然阻挡，当前共 234 个 Body / CollisionShape。碰撞位于远端 staging，不触碰旧 NPC / 敌人。
+- `verify_t0129c_a1_static_collision.gd` 验证配置、层、胶囊参数、78 个静态碰撞、12 个门洞、围墙 / 门柱、门外到室内的 12 条 Godot 路径和从侧墙外到室内不能直接穿墙。A1 只完成静态基础，正式 NPC / 敌人仍待 A2 / A4 迁移，不能宣称当前 Main 已消除穿人。
+- `A2a` 新增可复用 `ActorMotionBody.gd / .tscn`：根为 CharacterBody3D，实体胶囊与独立 InteractionArea 分层，NavigationAgent3D 每物理帧取下一路径点并通过 RVO safe velocity、加速度和 `move_and_slide` 执行；支持目标替换、暂停 / 恢复、到达、取消、不可达、有界重寻路和只按连续无进展累计的卡死失败。组件只发结果，不提交地点、工位、战斗或逃离事实。
+- `A2b-P1`（Done）：以 `blacksmith_01 / 格伦 -> blacksmith / 铁匠铺` 完成首个 Main 运行时切片。通用 NPC 根已迁为 `CharacterBody3D + NavigationAgent3D + 独立 InteractionArea`，但仅显式 GM 试运行把格伦送入远端正式 staging；路线只读消费 `StationLayoutController.get_building_spatial_route(...)`，穿过门内提交地点、抵达 `forge_01` 后提交既有工位预留。停止 / 返回旧图与不可达均释放预留 / 占用并还原旧世界状态。专项实测 94 次 avoidance 回调、最终距目标约 `0.188 m`，不可达零幽灵占用；默认旧地图与敌军空间未切换。
+- `A2b-P2`（Done）：以 `doctor_01 / 莉娜 -> clinic / 小诊所` 完成第二条独立切片。诊疗模式抵达 `doctor_desk_01` 后提交占用，并按 P7R 当前规则挂到椅子应用 `seated_study`；病床模式先抵达 `treatment_bed_01` 床边安全位，BuildingSystem 发出已提交占用后才挂到患者锚点并应用 `lying_supine`。挂接期间关闭实体 Body 碰撞但保留 InteractionArea 点击；停止、不可达、建筑失效和昏迷都原子释放预留 / 占用、解除挂接并恢复 Body。GM 不启动诊疗计时、扣费或 HP 结算；T0808 治疗回归保持通过。
+- `A2b-P3`（Done）：格伦 / 莉娜 / 艾达试点已整理为 `FORMAL_NAVIGATION_PILOT_SPECS` 数据驱动入口；`veteran_deputy_01 / 艾达 -> dormitory` 由 BuildingSystem 的 `assigned_npc_id` 精确选择 `dormitory_bed_01`，先抵达床边、提交占用后再应用 `sleeping_supine`。专项锁定提交先于挂接，并覆盖停止、不可达、改派、昏迷、建筑失效的零幽灵清理；GM 新增“艾达→固定床”及 `formal_nav_pilot dormitory_bed`。Godot MCP 实测 128 次 avoidance 回调、锚点 `(961.2, 0.72, -5.5)`，`current_action=idle`，没有启动睡眠恢复或时间结算。
+- `A2b-P4`（Done）：数据驱动登记表已增加 `cook_01 / 布鲁诺 -> dining_hall / dining_seat`。BuildingSystem 在空食堂选择 `dining_seat_01`，1 号席由托马占用时选择 `dining_seat_02`；布鲁诺先抵达椅边、提交占用后才应用 `sitting`，停止不会误清托马占用。专项覆盖提交先于挂接、停止、不可达、改派、昏迷和建筑失效清理；GM 新增“布鲁诺→用餐席”及 `formal_nav_pilot dining_seat`。MCP 实测 154 次 avoidance 回调、最小目标距约 `0.194 m`、锚点 `(1035.8, 0.5, -6.7)`，`current_action=idle`，没有进食、食物扣除或饱食恢复。
+   - `A2b-P5`（Done）：沿数据驱动登记表增加 `priest_01 / 马塞尔 -> chapel / chapel_prayer_seat` 单建筑切片。BuildingSystem 空场选择 1 号祈祷席、1 号被占时选择 2 号；NPC 先抵达长凳边，提交占用后才应用 `seated_prayer`。停止、不可达、改派、昏迷和建筑失效统一清理，且 `current_action=idle`，未启动祈祷行动或虔诚结算。
+   - `A2b-P6`（Done）：沿同一数据驱动入口增加 `stableman_01 / 托马 -> stable / horse_care` 单建筑切片。BuildingSystem 空场选择 `stall_01`、1 号被他人占用时选择 `stall_02`；NPC 实体实际穿门并停在栏外安全站位后才提交 `occupied_by`，两次实测与对应 HorseAnchor 的水平净空约 `1.79–2.03 m`。专项覆盖停止、不可达、改派、昏迷、建筑失效的零幽灵预留 / 占用；MCP 实测 578 次 avoidance 回调、最小目标距约 `0.190 m`。本步仍为显式 GM 空间试点，`current_action=idle`，未启动 `work_stable`、马匹喂养或生产结算。
+   - `A5-P5a`（Done）：在 A2b-P6 已验收的马厩空间事务上接入真实 `work_stable` 单建筑运行切片。显式 GM 派工先启用正式世界、由 ActionSystem 预留首个空闲 `horse_care`、让托马实际穿门并在栏外站位提交占用，之后才进入 active 工作与循环动作；HorseSystem 只在 active 窗口读取有效养马劳动力。同计划周期完成后原位续开同一栏位，不重复走门路或申请第二个位置；手动中断、计划切换、战斗接管、昏迷、建筑失效或不可达统一释放位置并可逆恢复旧世界。新增托马 Quaternius 低模角色包装与无铁锤工作循环、GM `formal_stable_work [run|stop|snapshot]` 及专项自动化；本步仍不默认迁移其他非战日常 NPC。
+   - `A5-P5b`（Done）：格伦的真实 `work_blacksmith` 已迁入正式铁匠铺。ActionSystem 在开启正式世界前先校验制造目标与当前阶段材料，仅在预检通过后预留 `forge_01`、让 CharacterBody 实际穿门到位并提交占用；抵达后才创建 active 制造周期、播放右手铁锤循环并由 CraftingSystem 扣除当前阶段材料 / 提交唯一阶段。同计划续周期保留同一正式会话和锻造位，不重走门路；目标切换、中断、战斗、昏迷、升级 / 失效与不可达会释放预留 / 占用并可逆恢复旧世界，已提交阶段仍不回滚。新增 GM `formal_blacksmith_work [run|stop|snapshot]` 及专项；A5-P5b、A5-P5a、制造流水线、金属装备、基础行动、室内权威、角色动画与 GM 八项回归均通过；Godot MCP 实机确认 `blacksmith / forge_01 / work / RightHand` 与制造进度同步。其他日常制造建筑仍未迁移。
+   - `A5-P5b-R`（Done）：已修复新局直接点击 GM“格伦→真实打铁”时无角色出现的验收入口。按钮在铁匠铺尚无目标时自动采用 GM 当前合法铁匠配方（无合法选择则使用第一个可用配方），成功派工后自动关闭 GM 窗口以露出正式场景；材料不足、格伦不可行动或建筑失效仍显式失败，不自动补资源、不传送或伪造制造进度。新增从新局发出实际 `FormalBlacksmithWorkButton.pressed` 信号的专项，验证自动目标、正式会话、窗口关闭、格伦可见并最终进入 `work_blacksmith`；A5-P5b 与 GM 回归通过，Godot MCP 实际按钮链确认 `craft_iron_helmet / forge_01`。
+   - `A5-P5c`（Done）：欧文 `engineer_01` 的真实 `work_workshop` 已接入正式工械坊。ActionSystem 在迁移前预检制造目标与当前阶段材料；通过后 NPCSystem 创建可逆会话、BuildingSystem 预留合法 `engineering` 工位，欧文 CharacterBody 实际穿门并抵达 `workbench_01`，占用提交后才 active。一个完整周期仍只由 CraftingSystem 原子提交一个整数阶段；同计划续周期原位复用会话 / 工位，目标切换、中断、战斗、昏迷、升级 / 失效和不可达统一清理。新增 `owen_engineer_v1` Quaternius 蓝灰工程师装配、无铁匠锤循环工作动作、GM `formal_workshop_work [run|stop|snapshot]` 和专项；工械坊器械、制造管线、基础行动、A3b10 工位、角色动画、A5-P5b 与 GM 回归通过。MCP 实机确认 `craft_bow / workshop / workbench_01 / workstation / work` 和活动工人小数进度；本步未迁移其他非战日常建筑。
+   - `A5-P5d`（Done）：布鲁诺 `cook_01` 的真实 `work_dining_hall` 已接到正式食堂。复用现有两口 Lv.1 灶台、第三口 Lv.3 灶台、CharacterBody 正式门路和 ActionSystem 连续生产权威：ActionSystem 在迁移前预检 1 份粮，失败不启用正式世界、不预留；通过后创建可逆会话并预留 `dining_kitchen_station_01`，布鲁诺实体穿门、抵达安全站位并提交占用后才 active。周期仍原子扣 1 粮、加 2 餐食，同计划原位续作；中断 / 缺粮 / 建筑失效 / 战斗 / 昏迷 / 不可达统一清理。新增 `bruno_cook_v1` 低模厨师装配、无锤循环烹饪、GM `formal_dining_work [run|stop|snapshot]` 与专项；食堂产出、A3b4、角色动画、GM、基础行动、A5-P5b / P5c 回归通过。MCP 实机按钮链约 `10.4 s / 170` 次 avoidance 后确认 `dining_hall / dining_kitchen_station_01 / workstation / work`，开工时粮食未提前扣除；本步未迁移其他建筑。
+   - `A5-P5e`（Done）：伊沃 `gardener_01` 的 `work_garden` 已迁入正式菜园。CharacterBody 实际进入菜园并领取当前等级首个空闲 `farm`；抵达田畦开放工作面并提交占用后才 active，完整周期按既有耕种技能、力量和建筑等级公式产粮。同计划原位复用同一 session / 田畦，中断、战斗、昏迷、建筑升级 / 失效和不可达统一清理。新增 `ivo_gardener_v1` 低模装配、无锤循环耕作、GM `formal_garden_work [run|stop|snapshot]` 与专项；菜园数值、A3b6 田畦、角色动画、GM、基础行动及 A5-P5d 回归通过。MCP 实机约 `9.1 s / 89` 次 avoidance 抵达 `garden_plot_01`，末端误差约 `0.249 m`，开工时粮食未提前增加。
+   - `A5-P5f`（Done）：马塞尔 `priest_01` 的 `work_tavern` 已迁入正式酒窖，作为叙事上会酿酒的代表人物而非酒窖专属工人。迁移前预检 1 份粮食；CharacterBody 实际进入酒窖，领取 Lv.1 已开放的 `cellar_01–02`（Lv.3 才开放 `cellar_03`），抵达发酵桶外站位并提交占用后才 active；完整周期仍按酿酒技能、智力和建筑等级公式原子执行 `grain -1 / wine +缩放产量`，且不自动出售或改钱。同计划续周期原位复用同一会话 / 酒桶；缺粮、中断、计划切换、战斗、昏迷、建筑升级 / 失效或不可达统一清理。新增 `marcel_priest_v1` 低模角色表现、无锤循环酿酒、GM `formal_tavern_work [run|stop|snapshot]` 和专项自动化；专项、酒生产、A3b5 酒窖家具、商人交易、角色动画、GM、基础行动、工作产出框架与 A5-P5e 回归通过。Godot MCP 实际按钮链约 `9.48 s / 82` 次 avoidance 后确认 `tavern / cellar_01 / workstation / work`，末端误差约 `0.221 m`，到位时粮食 / 酒未提前变化；编辑器仅有两条既有 UID 缓存错误，无新增错误。
+   - `A5-P5g`（Done）：莉娜 `doctor_01` 的 `work_clinic_doctor` 与伤员 `receive_clinic_treatment` 已迁入正式小诊所。医生 / 患者分别预留诊疗桌 / 病床，实体穿门、到站并提交占用后才 active；病床占用提交后才挂接 `lying_supine`。医生在途、患者在途或等待在途医生时零治疗 / 零扣费；无患者时医生可继续研读医术，不因 `input_resources.money=1` 被迁移前阻止。既有团队治疗率、1800 秒扣费、医术成长、满血完成、医生离岗失败和 Lv.1–3 `2→3→4` 病床容量保持权威。新增 `lina_doctor_v1`、GM `formal_clinic_work doctor|patient|stop|snapshot` 与专项；诊所治疗、服务依赖、服务容量、A2b-P2、A3b2、角色动画、GM、行动 / 需要 / 工作框架回归通过。MCP 实机确认 `doctor_desk_01 / treatment_bed_01` 双占用、床面挂接、HP `10→17`、资金 `30→29`，最后医生离岗后患者失败下床并零幽灵清理。
+   - `A5-P5h`（Done）：艾达 `veteran_deputy_01` 的 `work_training_instructor` 与已入伍、已装备格伦的 `receive_weapon_training` 已迁入正式训练场。两者分别预留教官位 / 训练位，实体抵达并提交占用后才 active；学员可在教官在途时保留依赖等待，在途 14400 秒专项零技能增长。既有装备技能匹配、多教官团队加速、单独训练、教练 / 学员成长与 Lv.1–3 `1→1→2 / 2→3→4` 容量未改。新增 `ada_veteran_deputy_v1`、教官示范 / 学员挥剑两个无伤害循环状态、GM `formal_training_work instructor|student|stop|snapshot` 与专项。训练、服务中断、服务容量、技能成长、角色动画、GM 回归通过；MCP 实机确认艾达 / 格伦占用 `training_instructor_01 / training_student_01`，3600 秒只增长艾达“教练”和格伦“剑盾”，最后教官离岗后学员以 `training_student_failed_instructor_left` 失败并零幽灵清理。
+   - `A5-P5i`（Done）：马塞尔 `lead_mass` 与伊沃 `pray_at_chapel` 已接到正式小教堂。两者分别预留祭坛 / 祈祷席，实体穿门、到站并提交占用后才 active，在途零祈祷时长 / 零虔诚；祈祷者占席后挂到长凳 `occupant_anchor`。固定 1 祭坛 + 10 席容量、独祷↔参礼原位转换、跨小时计划保护、主持正常完成 / 中断事件和 PietySystem 公式均未改。NPCArtView 新增 `mass_leader / seated_prayer` 循环，GM 新增 `formal_chapel_work leader|prayer|stop|snapshot`；专项及礼拜运行态、服务中断、建筑位置、虔诚、扩展计划、角色动画与 GM 回归通过，不改 Prompt 或模型候选。
+   - `A5-P5i-R`（Done，测试债）：`verify_plan_action_completion_policy.gd` 与 `verify_daily_plan_system.gd` 已移除 `work_garden`“派发即 active”的旧假设。两者使用生产可代表的 `5 m/s`，逐物理帧等待 ActionSystem 运行快照达到 `phase=active / action_id=work_garden`，即 NPC 实际抵达并占用正式田畦后，才断言连续生产、跨小时保留和幂等采用。两项目标测试、A5-P5e 正式菜园专项与计划单次派发回归通过；没有修改生产脚本、园艺数值、计划规则、Prompt 或 GM。
+   - `A5-P5i-R2`（Done，独立测试债）：`verify_daily_plan_reevaluation.gd` 的工械坊满位夹具已从 `available=false` 的 `craft_arrow_bundle` 改为合法 `craft_bow`，没有重新开放箭束。格伦 / 欧文的 `120 m/s` 极端调试速度已降为 `5 m/s`；审计确认缺材料和满工位都是迁移前失败，专项新增失败后 formal session 必须为空的断言，不等待不应产生的 active。专项、两项日计划、A5-P5b / P5c 正式制造与制造流水线回归通过；真实 provider 段因本机后端未运行按既有可选规则跳过，不改生产代码、制造 / 重估玩法、Prompt 或 GM。
+   - `A5-P5j`（Done）：`eat_at_dining_hall` 已接到正式食堂固定用餐席。迁移前无食物直接失败且不启用正式世界；有食物时 NPC 实体穿门、到椅边提交首个空闲座位并挂到 `sitting` 锚点后才按既有“餐食优先、粮食兜底”扣除资源并渐进恢复饱食。完成 / 中断统一离席、清会话并恢复 Body 碰撞，固定 10 席、恢复量、食堂效率、事件、日计划单次派发 / 重估均未改。NPCArtView 新增 `seated_eating / Consume` 循环，GM 新增 `formal_dining_eat run|stop|snapshot`；专项及餐食、基础行动、建筑服务位、计划单次派发、A5-P5d / P5i 回归通过，MCP 实机确认 `dining_seat_01 / occupant_anchor / occupied_by=cook_01` 与停止清理。
+   - `A5-P6a`（Done）：`sleep_in_dormitory` 已接入 A2b-P3 固定床路线；按 `assigned_npc_id` 预留、实体到床、提交占用并挂到 `sleeping_supine` 后才 active / 写 `sleep_started` / 恢复疲劳，途中零睡眠结算与零首次反思。完成及各类中断统一释放床、挂接、正式会话并恢复 Body；23400 秒时长、需要公式、跨夜累计、一次性计划与反思 Prompt 不变。新增 `formal_dormitory_sleep run|stop|snapshot` 和专项；固定床、需要、对话、跨夜反思、计划、广播、GM、基础行动、相邻用餐及 MCP 实机通过。
+   - `A5-P6a-R`（Done，测试债）：`verify_pending_action_pause_resume.gd` 已移除伪造花园抵达和“恢复两帧即 active”，改为让伊沃以 `5 m/s` 实际进入 `garden_plot_01` 最终路线，暂停时锁定位置 / pending / reservation / 零 occupancy / 零生产，恢复后等待真实提交 occupancy，并断言恰好一条 `work_started`。`verify_structured_memory_events.gd` 与相邻短期记忆容器测试也等待菜园、食堂、宿舍真实 active；缺材料打铁明确断言迁移前失败。目标、行动广播、宿舍、GM 与相邻行动 / 计划回归通过；MCP 实机确认暂停零漂移、恢复后 `active_workstation` 与单次事件。未修改生产玩法、数值、Prompt 或 GM。
+   - `A5-P6b`（Done）：`visit_location` 已成为无工位正式非战移动样板。建筑目标消费门外 / 门内 / 室内 NavigationServer 路线，广场消费正式公共锚点；NPC 真正跨门、抵达后才提交地点并 active / 写唯一 `visit_started`。室内换楼先真实出门，完成 / 停止切回兼容世界时保留最后物理提交地点且不补造地点事件；暂停、途中改派、建筑失效、昏迷或不可达统一清理正式会话，不申请工位。新增 `formal_visit run|stop|snapshot`、三个实际 GM 按钮和专项；扩展计划 / 暂停恢复 / 基础行动 / GM / 地点信息 / 日计划回归及 MCP 实机通过。本步未迁移三类室外协助、默认总世界或存读档；`talk_to_npc` 已由后续 A5-P6c 完成。
+   - `A5-P6b-R`（Done，独立测试债）：三份陈旧夹具已追上当前合同。`verify_plan_target_replacement.gd` 以确定性非 Mock 测试桥等待意图复核后再检查 NPC / 地点目标替换；`verify_npc_npc_plan_action.gd` 以 `5 m/s` 实际占满诊所两张医生桌、让跨小时旧祈祷真实到座，并等待后台自主对话接近完成；`verify_player_dialogue_plan_resume.gd` 先等待布鲁诺真实抵达食堂工位，再验证中断和跨小时恢复。三项目标、正式诊所 / 食堂 / 地点拜访及本地意图复核 Mock 通过；未修改生产逻辑、对话复核、Prompt、数值或 GM。真实 DeepSeek 非 Mock 调用暴露 modify 样例偶发选择 cancel，已独立登记 T0116-R。
+   - `A5-P6c`（Done）：日计划 / 修订的 `talk_to_npc` 已迁入正式实体寻路。发起者在意图复核通过后消费目标当前正式地点路线，再通过 NavigationServer / RVO 接近目标 CharacterBody 到约 `1.35 m`；广场锚点支持同 NavigationRegion 可达候选，目标地点变化最多重定向一次。邀请 pending 前不写对话事实，pending 时目标继续原工作并保留工位；接受时先转移目标空间权属，再由既有中断链释放工位，角色不跳回兼容坐标。拒绝、结束、目标失效、跨日、计划替换、战斗 / 逃离 / 昏迷、导航失败和手动停止统一清理正式会话及双方预约。保留目标计划等待、跨小时 deferred marker、双方独立判别 / 修订与真实 LLM 合同；新增 `formal_npc_dialogue` GM 入口和专项，NPC-NPC 主链 / 边界、正式拜访、GM 与 MCP 回归通过。
+   - `A5-P6d-1`（Done）：只迁移 `assist_repair`。NPC 必须先进入正式世界、从当前室内真实出门，并通过 NavigationAgent / RVO 抵达目标建筑最大包络外的独立可达维修槽，抵达前不得加入 BuildingSystem 修复 helpers、不得产生修复倍率 / 工程经验 / 开工事件。多个协助者使用不同维修槽但仍共同围绕目标建筑；完成、改派、手动停止、目标作业消失、昏迷、战斗接管或导航失败释放槽位与正式会话，不留幽灵 helper。保留既有工期、工程技能倍率、生活消耗、经验和事件 Schema；已增加 GM 运行 / 停止 / 快照与专项。`assist_upgrade / assist_heal` 留给后续独立小步。
+   - `A5-P6d-2`（Done）：只迁移 `assist_upgrade`。升级建筑保持封闭，NPC 不尝试进入室内，而是从当前地点真实出门并抵达目标最大等级包络外的独立施工槽；抵达前不得加入 BuildingSystem upgrade helpers、不得产生升级倍率 / 工程经验 / 开工事件。多人同一工程使用不同施工槽；完成、改派、手动停止、目标作业消失、昏迷、战斗接管或导航失败释放槽位、helper 与正式会话。保留既有升级资源预付、工期、工程技能倍率、生活消耗、经验、完成后计划重估和事件 Schema；已增加 GM 运行 / 停止 / 快照与专项。`assist_heal` 留给后续独立小步。
+   - `A5-P6d-3`（Done）：只迁移 `assist_heal`。治疗者必须进入正式世界并真实接近昏迷目标的 CharacterBody；派发时即预留每目标最多 2 名治疗者的名额，两人使用不同可达接近位。实体抵达合法治疗距离前不得扣除首枚第纳尔、不得加入 healing helpers、不得恢复 HP、不得累计医术经验或写 `healing_started`。抵达后保留既有首付 / 每 1800 游戏秒续费、医术恢复公式、30% 复苏、事件 Schema、有效工时和完成后计划重估；目标复苏 / 失效、改派、手动停止、治疗者昏迷、战斗接管、导航失败或途中缺钱统一清理正式会话、在途名额与 active helper。GM 已新增运行 / 停止 / 快照，专项、旧治疗、有效工时、P6d-1 / P6d-2 与 GM 回归通过；MCP 实机确认跨楼真实接近约 `1.21 m` 后才提交首付与 helper。不改 Prompt、provider 或治疗数值。
+   - `A5-P7`（Done）：默认正式世界总切换。`station_layout_v2` 已切为 `a5_p7_default_formal_world / formal_layout_active=true`；新局默认显示正式 StationLayout，8 名 NPC 从独立正式锚点常驻同一生产 NavigationMap。日常工作 / 服务 / 拜访 / 对话 / 协助结束后保留最后正式坐标，战斗接管与结束不再往返旧坐标；默认行商使用后门 5 点远距路线，非战逃离也使用 6 点地图边缘路线。首帧 NavServer 未同步时采用已审计出生锚点，避免 8 人坍缩到世界原点。GM 保留“临时旧图兼容 / 恢复默认正式世界”成对入口并同步 NPC、镜头、导航和行商路线。新增 A5-P7 专项并更新 C1/C2、A4-P7b、P5a–P5j、P6b 历史断言；P5/P6、战斗、逃离、GM 与 MCP 实机通过。存读档空间状态恢复独立进入 A5-P8。
+   - `A5-P8`（Done）：正式空间存读档恢复。新增 `SpatialSaveSystem / formal_spatial_save_v1` 磁盘检查点，保存 NPC 最后正式坐标、信息地点、物理阶段、生产导航权属和逃离意图；加载严格先启用并同步新建的生产 NavigationMap，再静默重建地点成员关系。进行中的路线、工位、挂接、工作 / 服务和对话不序列化 RID / NodePath，而是统一释放并在保存坐标安全回滚，零重复地点 / 行动事实；已逃离角色保持隐藏且不会复活。活动波次按波次配置重建实体，再按 `spawn_index` 恢复存活者坐标、HP 与攻击计时；逃离会话从保存坐标续接地图边缘目标；行商分别恢复 absent / arriving / parked / departing 与当前正式 6 点路线，恢复本身不重复广播到离场事件。GM 新增保存 / 读取 / 快照入口和 `formal_spatial_save save|load|snapshot`。专项覆盖 Main 销毁重建后的全新 RID / NodePath，8 NPC + 8 敌 + 在逃 NPC + 在途商车联合恢复；P7、P5e、P7b、长逃离、两套行商与 GM 回归通过。
+- 新增独立 `ActorMotionSandbox.tscn` 与 `verify_t0129c_a2_actor_motion.gd`：5 个实体同时验证静态绕障、2.4 m 对向会车、暂停零漂移、物理墙卡死 2 次重寻路和 NavMesh 外不可达。实测绕障侧移约 `2.69 m`、最小会车中心距约 `0.71 m`、暂停位移 `0`，三条正常路线到达，两条失败原因准确，authority commit 为 0。GM 新增 `motion_sandbox` / “运行运动沙盒（F8 返回）”。
+- `A3a` 的 79 个静态源基线为 422 顶点 / 440 多边形；A3 全量完成时 234 个静态源为 806 顶点 / 772 多边形，A3b9R 后为 800 / 766。A3b12R 将装卸货运车碰撞扩为真实 `2.2 × 1.7 × 4.2 m` 占地，当前重烘焙结果为 788 顶点 / 754 多边形。生产导航使用独立 NavigationMap 隔离旧地图；12 个双向 NavigationLink3D 负责跨越真实门洞窄连接，预览外与 Region 同时禁用。
+- `A3b1` 已新增 `data/building_fixture_layouts.json / building_fixture_layout_v1`，按铁匠铺最高等级最坏占地生成 3 个 Quaternius 铁砧、共享锻炉和二级燃料桶，各自具备可审计 BoxShape。3 个锻造位分别新增独立 NPC 站位 / 朝向 / `0.45 m` 净空；路线查询同时返回实际站位、原工位湾中心与目标家具 ID。84 个静态源重烘焙后生产网格为 452 顶点 / 474 多边形，三个站位路径末端误差均为 `0.2 m`。`verify_t0129c_a3b1_blacksmith_fixtures.gd` 覆盖可见物 / 碰撞 / 站位一一对应、物理不重叠、设备射线命中与真实 NavServer 可达；A1、A3a、C1、C2a、GM 回归通过，Godot MCP 编辑器错误日志为空。
+- `A3b2` 已把诊所 2 张诊疗桌和 4 张病床加入同一合同，形成 6 个家具碰撞、6 个床边 / 桌前站位和 4 个床面患者锚点。诊疗桌默认 `stand`；病床使用 `mount_after_arrival + occupant_anchor + lying_supine`，路线目标始终是床边，不把实体胶囊送入床体。总静态源 90，生产网格 482 顶点 / 496 多边形，六条门外路径均以 `0.2 m` 误差到达。`verify_t0129c_a3b2_clinic_fixtures.gd` 与 A3b1、A3a、A1、C1、C2a 回归全部通过；Godot MCP 可视检查和错误日志通过。
+- `A3b3` 已按宿舍 `14 × 13 m` 包络生成固定 10 张床、10 个中央过道侧到达点和 10 个床面 `sleeping_supine` 锚点。床碰撞沿两列排布且相邻零重叠；站位离最近床体配置净空 `0.06 m`，10 条门外路径为 5–9 点、末端误差约 `0.283 m`。家具归属字段只读镜像 BuildingSystem 做自动漂移审计；专项确认八名初始 NPC 的固定床与两个未来床位分配均由 BuildingSystem 正确选择。当前总静态源 100，生产网格 514 顶点 / 512 多边形；A3b3、A3b2、A3b1、A3a、A1、C1、C2a 七组回归与 Godot MCP 运行预览 / 错误日志全部通过。
+- `A3b4` 已在食堂 `14 × 12 m` 包络内生成三个低模炖锅灶台、两张共享长桌和十把一席一椅。10 个椅边点均先走生产路径并由 BuildingSystem 提交占用，成功后才可切到椅面 `sitting` 锚点；共享桌没有 `workstation_id`，不会把家具数量误作容量。一级实测只领取 1–2 号灶台，第三人返回 `no_free_workstation`；第 3 灶台实体与权威位置都保持 Lv.3。当前总静态源 115，生产网格 542 顶点 / 540 多边形；13 条门外路径均可达。A3b4 及 A3b3 / A3b2 / A3b1 / A3a / A1 / C2a 回归、项目 headless、Godot MCP 4.0.1 冻结运行和编辑器错误日志通过。
+- `A3b5` 已在酒窖 `12 × 10 m` 包络内生成三套带发酵封口 / 龙头 / 接液盘的横桶架、一个 Lv.2 熟成储酒架、一组共享空桶和一张带酒杯的验酒桌。三套主设备逐项映射 `cellar_01–03` 与桶外站位；一级第三人得到 `no_free_workstation`，三级效果才新增第三工位，Lv.2 设备与共享家具都没有权威 ID。当前总静态源 121，生产网格 569 顶点 / 565 多边形，三条门外路径为 13 / 16 / 8 点。A3b5、A3b4 / A3b3 / A3b2 / A3b1、A3a、A1、C2a、BuildingSystem 与酒生产回归通过；Godot MCP 4.0.1 冻结近景、编辑器错误日志通过，网格检查仅保留既有退化 UV 告警。
+- `A3b6` 已在菜园 `12 × 12 m` 包络内生成三块各有三排 Quaternius 胡萝卜的田畦、Lv.2 灌溉水沟 / 堆肥箱，以及共享独轮车、农具架、木围栏和收获菜筐。田畦只用左右 / 后侧木边形成 9 个碰撞部件，正面和泥土工作面保持开放；三站位全部在田边面向作物。一级第三人得到 `no_free_workstation`，三级效果才新增 `garden_plot_03`。当前总静态源 136，生产网格 596 顶点 / 590 多边形，三条门外路径为 12 / 14 / 9 点。A3b6、A3b5–A3b1、A3a、A1、C2a、BuildingSystem 与菜园产粮回归通过；Godot MCP 冻结近景和编辑器错误日志通过，网格检查没有新增问题。
+- `A3b7` 已在训练场 `14 × 16 m` 包络内生成 2 面教官旗、4 个 Quaternius 训练木桩、武器架、箭靶、Lv.2 沙袋和后侧边界栏。六个权威位置逐项映射 `training_instructor_01–02 / training_student_01–04`，等级序列精确为 `1+2 -> 1+3 -> 2+4`；四件共享设施没有 `workstation_id`。六块 `3 × 3 m` 动作净空不与任何 fixture 碰撞，六条门外生产路径为 17 / 10 / 16 / 9 / 12 / 8 点。A3b7、A3b6–A3b1、A3a、A1、C2a 与训练系统回归通过，训练场没有新增网格告警。
+- `A3b8` 已在马厩 `14 × 14 m` 包络内生成 8 个开放马栏和 1 个 Lv.2 草料 / 马具架。每栏由外栏、横向分隔栏和真实饲槽组成，最后一排补齐远端围栏；前三栏逐项映射 `stall_01–03` 与三个 NPC 站位，三号严格为 Lv.3。8 个 HorseAnchor 与 `station_spatial_plan_v7` 的三照料湾 + 五展示位逐项对齐，均保留 `1.4 × 2.2 m` 无碰撞实体空间，不能反推 HorseSystem 数量。A3b8 完成时累计 70 件配置物、47 个站位、24 个挂接锚点、8 个马匹锚点、94 个 fixture 碰撞体和 173 个静态源，生产网格为 676 顶点 / 676 多边形；三条照料路线为 19 / 19 / 14 点。
+- `A3b9–A3b13 / A3` 已收口，A3b9R 完成首个粗糙建筑的单体美术返工：全部 12 座建筑保持 107 件配置物、61 个 NPC 站位、34 个表现锚点、8 个 HorseAnchor 与 131 个家具碰撞部件；该阶段 234 个静态源的生产 NavMesh 为 800 顶点 / 766 多边形。教堂 5 排左右长凳映射 10 个真实座位，祭坛路线和十席路线全部可达；3 名 NPC 通过 `1.8 m` 门洞时全部到达，最小中心距 `0.744 m`。教堂专项、A3 全量、A3a 生产导航、A1 静态碰撞、C2 空间合同、弥撒运行态和正式窄门队列回归通过；Godot MCP 4.0.1 / Godot 4.6.2 重启导入缓存后错误为空。
+- `A3b10R` 已完成工械坊单体美术返工：从 Fantasy Props Standard 打包工作台、货架与绳卷，三张工作台分别表达制弓、机件和攻城器械总装，四件共享设施不增加容量。工械坊仍为 7 件配置物 / 7 个碰撞 / 3 个站位，BuildingSystem 实测容量保持 `2 -> 2 -> 3`，三条路线为 15 / 13 / 14 个路径点；A3b10R、A3 全量、A3a、A1、C2 与工械坊制造专项通过，网格检查没有新增工械坊问题。全量 `verify_crafting_pipeline.gd` 仍在既有铁匠铺“未选目标不得开工”断言失败，与本轮纯表现改动无关，登记为后续独立回归修复，不在 A3b10R 扩大范围。
+- `A3b11R` 已完成主厅单体美术返工：用 7 件 Medieval Village 建筑模块和 2 件 Fantasy Props 道具建立 `MainHallArt`，隐藏该建筑旧 Envelope；主厅形成加固基座、21 个砖石门窗模块、中央门厅 / 台阶、低矮中央屋顶、旗帜 / 壁灯 / 盾徽和四角器械平台。原 7 件配置物 / 7 个碰撞 / 0 个 NPC 站位不变，四平台等级仍为 `1 / 3 / 5 / 6`，Lv.2 / 4 / 6 加固不生成假工位。
+- `A3b12R` 已完成仓库单体美术返工：新增 8 个 Quaternius GLB，以木网格外墙、加固双开门、雨棚 / 滑轮、分坡后屋顶、车辙、三级分类货架 / 堆垛和货运车替换旧 Envelope / 程序储藏体；`BuildingArtView` 继续由统一控制器实现 `24–38 m / 0.08` 屋顶渐隐。专项锁定 7 件配置物 / 7 个碰撞 / 0 个 NPC 站位、`5 / 1 / 1` 等级增量、28 个类别细节节点、中央通道、货运车真实碰撞与 17 点敌军攻击路径。A3b12R、A3 全量、A3a、A1、C2、屋顶、仓库容量和敌人目标回归全部通过；全站为 107 / 131 / 61 / 34 / 8、234 个静态源和 788 / 754 NavMesh。
+- A4-P7b 已让普通 `spawn_wave()` / 定时波次复用正式实体工厂，A5-P1–P7 已完成战斗、日常、商旅、逃离和默认正式世界切换；A5-P8 又以独立空间检查点补齐全新 Main 重建后的 NPC、波次、逃离和行商恢复。T0129C 的实体碰撞、导航、动态避障与正式空间迁移至此完成；下一技术阶段候选为 T0130，但仍须先满足 T0129 的用户视觉验收门槛。
+- `A5-P6d-1` 验收通过：专项锁定 15 类修复目标都有外沿槽、两名协助者不抢槽、暂停零位移、途中零 helper / 零倍率 / 零事件、实体抵达后恰好提交一次，以及修复完成 / 途中目标消失后的会话与 helper 清零。基础行动、协助有效工时、暂停恢复、计划完成策略、正式拜访、正式对话、GM 与 headless 解析回归通过；Godot MCP 运行态复核 `main_hall_repair_01` 从 pending / helper 0 到实际抵达 / helper 1，编辑器错误为空。
+- `A5-P6d-2` 验收通过：专项锁定 15 类目标都有施工槽、两名协助者不抢槽、暂停零位移、升级进度广播不误停路线、途中零 helper / 零倍率 / 零事件、实体到位单次提交，以及工程完成 / 途中结束后的会话与 helper 清零。基础行动、GM、升级中断与计划重估、有效工时、暂停恢复和两类计划完成回归通过；Godot MCP 实机确认 `wall_upgrade_09` 从 pending / helper 0 到实际抵达 / helper 1，重启后编辑器错误为空。
+- `A5-P6d-3` 验收通过：专项锁定正式目标投影、两名治疗者不同接近位、第三人途中即拒绝、暂停零位移、抵达前零首付 / helper / HP / 医术工时 / 事件、约 `0.8–1.7 m` 到位原子提交、复苏与途中目标复苏后的零幽灵清理。旧昏迷治疗、有效工时、P6d-1 / P6d-2 与 GM 回归通过；Godot MCP 实机确认医生从宿舍实际抵达诊所目标约 `1.21 m` 后才由资金 `1029 -> 1028`、helper `[] -> [doctor_01]`，编辑器错误为空。
+
+- `A4-P1 / C3-P1` 已完成非权威敌军样片：独立敌路 Region 与核心 Region 共用生产 NavigationMap，样片从边缘林地走到正门，具有实体碰撞、avoidance 与清理接口；没有加入 `_active_enemies`，因此没有伤害或事件副作用。下一步执行 A4-P2 / C3-P2，把一名真实活动敌人接到正门攻击闭环。A2 默认 NPC 与其余敌军仍未切换，当前不能宣称旧玩法已全量消除穿建筑 / 穿人。
+- `A4-P2 / C3-P2` 已完成单活动敌人正门攻击闭环：自动化与 MCP 均确认抵门前零伤害，抵门后正门 `160 -> 156`、最后广场事件为 `building_damaged`；停止产生 `combat_ended` 并释放时间倍率上限。正门摧毁后仓库保持 150 HP，明确等待 P3。
+- `A4-P3 / C3-P3` 已完成破门后仓库闭环：自动化确认实际经过九阶段，门毁后到仓库前 HP 保持 150，实际到达后首次伤害为 `150 -> 146`；仓库摧毁后主厅保持不变。正门导航岛断点以单向 `EnemyFrontGateLink` 修复，没有用瞬移或字典坐标兜底。
+- `A4-P4 / C3-P4` 已完成仓库后主厅闭环：自动化确认十阶段完整到达，行军期间主厅保持 180 HP，实际抵达后首次 `180 -> 176`；主厅摧毁仍由既有 CombatSystem / GameState 提交 `failure / main_hall_destroyed`。
+- `A4-P5 / C3-P5` 已完成第一波 8 敌实体闭环：每名敌人都是独立 `CharacterBody3D + NavigationAgent3D`，只在自己的物理到达完成后取得对应建筑攻击权威；方向编队、可达点吸附和碰撞边界攻击位解决转弯 / 建筑外围拥堵，单体死亡和整波停止均无残留节点。
+- `A4-P5R2 / C3-P5R2` 已在 P5R 直攻基础上把主厅全环改为北侧正面单排攻击带：7 名存活敌人保持同一来袭方向，纵深差 `0 m`、相邻槽约 `2.4 m`，既不重叠堵死，也不绕到建筑四角或背面。
+- `A4-P6 / C3-P6` 的第二波固定前后排只保留为历史记录，运行策略已由 P7 取代。
+- `A4-P7 / C3-P7` 已让显式五波使用动态实体争抢 / 补位：所有单位独立索敌和追击，进入自身射程者攻击，后方继续向同一接触点施压；五波数量、实体碰撞、第二波拥挤与 GM 回归通过。默认世界仍待 P7b。
+
 ---
 
 ## T0130 制作 8 名 NPC 的职业化低模外观与生活 / 工作动作
 
-状态：Todo
+状态：Done（2026-08-21；P0、P1/P1R、P2 托马、P3 布鲁诺、P4/P4R/P4R2 伊沃、P5/P5R/P5R2/P5R3 艾达、P6/P6R 马塞尔、P7/P7R/P7R2/P7R3 莉娜与 P8 欧文均已完成）
 优先级：P0
 前置任务：T0129
 涉及文档：`ART_DIRECTION.md`, `AI_NPC_SYSTEM.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
 任务目标：
 
+- 先执行 `T0130-P0` 双角色试片：一名我方格伦与一名敌方剑盾兵使用同一套偏两头身、粗短四肢、简化面部的人形家族，验证远近景轮廓、骨骼重定向、装备挂点、碰撞 / 点击和批量性能；试片通过前不批量替换 8 NPC 与五波敌人。
+- 当前首选候选为 Synty `POLYGON MINI - Fantasy Characters` 可见模型配 KayKit Character Animations 动作库；Synty 原始模型须由用户合法取得后进入隔离源目录，KayKit 动作按 CC0 来源审计后导入。若不采用付费模型，则以 KayKit Adventurers 做免费备选，但不得把比例差异隐瞒为同等匹配。
 - 在同一骨骼、材质和动画体系上制作 8 名 NPC 的体型、肤色、发型、服装、职业工具和基础线条表情差异。
 - 补齐移动、交谈、吃饭、睡觉、祈祷、治疗、训练、耕作、做饭、锻造、机械装配和照料马匹的最小动作集。
 - 让装备、盔甲、武器和马匹在视觉上与权威槽位同步。
 
+完成进展（2026-08-21）：
+
+- 已审计并隔离 Synty Source Files v2 与 KayKit Character Animations 1.1；只把格伦、剑盾敌人、锤 / 剑 / 盾、18 张调色板和 Medium Rig 8 组 GLB 筛入运行时。
+- 已建立独立格伦 / 剑盾敌人包装与动作沙盒，使用 `RetargetModifier3D + SkeletonProfileHumanoid` 驱动 18 状态；已修正 Skin / 骨名缓存顺序、骨长压缩、剑轴、真实睡眠、医疗处置、坐姿研读与共享动画库。
+- 已在 Main 增加 presentation-only 双角色试片启停 / 快照和独立沙盒 GM 入口；启停不改变 NPC / 战斗权威数据。
+- 48 敌 headless 压力样片通过：两次观测初始化约 `195–205 ms`、180 帧平均约 `6.86 ms`、静态内存增量约 `44.92 MB`。这些是当前开发机观测值，不替代后续有渲染目标机性能验收。
+- 2026-08-20 用户已通过 P0 近景主观验收；允许从 P1 开始逐职业 / 敌种接线，但尚未允许把未完成的职业或敌种用错误模型批量填充。
+- P1/P1R 已接入正式格伦与剑盾敌人并修复 Synty 正面轴；P2–P8 已依次接入托马、布鲁诺、伊沃、艾达、马塞尔、莉娜与欧文。8/8 初始 NPC 均使用独立 Synty 两头身生产包装；其余敌种的职业模型与远程 / 骑乘装备表现留在后续战斗美术任务，不再阻塞 T0130。
+
+下一子任务（T0130-P1，2026-08-20）：
+
+- 用户已确认 P0 通过；把 `blacksmith_01` 的正式外观切为已验收的 Synty 格伦包装，并保持 NPCSystem 的移动、工位、HP、昏迷 / 复苏和点击权威不变。
+- 把 `unit_type=melee_infantry + weapon_type=sword_shield` 的正式敌人切为已验收的剑盾包装，并继续只读 CombatSystem 的移动、索敌、抬手、攻击、受击和存活状态；其他敌人类型暂不冒充剑盾兵。
+- 保留 Quaternius 角色和旧场景作为未迁移职业 / 敌种的回退；P1 不批量制作其余 7 名 NPC，也不修改战斗数值、导航、碰撞半径或事件。
+- 新增正式链路专项和可见 GM 验收入口；通过后再按职业逐人进入 P2，而不是一次性替换全部角色。
+
+P1 完成记录（2026-08-20）：
+
+- `blacksmith_01` 已切换 `GlenChibiArtView.tscn`；真实移动、穿门、工位、循环打铁、受击、昏迷 / 复苏与父级实体 / 交互碰撞回归通过。
+- CombatSystem 仅对 `melee_infantry + sword_shield` 装配 `EnemySwordShieldChibiArtView.tscn`；第一波 8 个正式 CharacterBody 均由权威移动状态驱动走 / 跑，剑盾已内建在同骨架挂点，未增加重复选择碰撞。
+- 长杆、弓弩、骑兵和其余 7 名 NPC 保留旧 Quaternius 回退；没有改波次数值、寻路、RVO、伤害、工位或事件。
+- GM 的 P0 临时 Main 开关已替换为正式格伦打铁、第一波剑盾敌军、动作沙盒和生产快照。新增 `verify_t0130_p1_formal_character_integration.gd`，并通过 T0128 / T0129C 格伦、敌人波次、48 敌性能及 GM 回归。
+
+P1R 朝向修复（2026-08-20）：
+
+- 用户实机发现格伦行走 / 打铁和剑盾敌军行进的可见正面与目标方向相反。Synty 当前角色的实际模型正面为本地 `+Z`，生产包装错误沿用了旧 Quaternius `-Z` 正面假设；统一增加 180°模型源朝向修正，并补充可见正面与路径 / 工位 / 攻击目标方向断言后再进入 P2。
+- 已在共享包装的可见层应用独立 `180°` 源模型修正，运行时路径目标仍使用原项目朝向；格伦到工位后的正面断言、东 / 北双方向移动断言和第一波 8 名敌人的动态朝向断言通过。第一波专项连续运行三次均通过，未修改 NavigationAgent、RVO、碰撞、工位或攻击权威；P1R 完成，可进入 P2。
+
+下一子任务（T0130-P2）：
+
+- 逐个制作托马的两头身马夫外观，验证日常行走、马厩照料、交谈、受击 / 昏迷和未来驾车坐姿；通过后再修改托马的生产映射。
+- 状态：Done（2026-08-20）。本步只选择并包装一个独立 Synty 劳动者角色，为 `work_stable` 配置不含铁锤的照料循环与职业工具，并复用既有父级实体、导航、工位和 HorseSystem 权威；其余角色未随本步替换。
+- 托马采用 Adventure Peasant 的棕白劳动者轮廓、头带与胡须，使用 `Working_B` 周期动作和只在真实照料 active 时出现的右手马刷式清洁工具。行走 / 工位朝向、交谈、驾车坐姿预留、受击、昏迷 / 起身、父级碰撞和零重复 SelectionArea 专项通过；动作沙盒扩为三角色近景对照。
+
+下一子任务（T0130-P3）：
+
+- 逐个制作布鲁诺的两头身厨师外观，选择与托马 / 格伦不同的体型、头部和暖色轮廓；验证日常行走、食堂灶台真实工作、就座进食、交谈、受击 / 昏迷。烹饪必须使用符合灶台语义的循环和厨具 / 食材表现，不能复用锤击或马厩清扫工具；验收后才修改布鲁诺生产映射。
+- 状态：Done（2026-08-20）。采用 Adventure ShopKeeper 的秃顶、浓胡须、白围裙、暖红衣袖和圆润体型；生产映射切到 `bruno_cook_chibi_v1`。真实抵达灶台并提交占用后才循环 `Working_C` 并显示右手木柄铜勺，行走、待机、就座进食、受击和昏迷时隐藏；不显示锤或马厩工具。
+- P3 专项覆盖父级碰撞、实际食堂路线、灶台朝向 / 占用、工作周期回卷、真实座位挂接、交谈、昏迷 / 起身和 GM 入口；四角色 OpenGL 近景通过。生产速度保持 `5 m/s`，避免狭窄灶台 stand-off 在测试加速时出现越界振荡。
+
+下一子任务（T0130-P4）：
+
+- 逐个制作伊沃的两头身园丁外观，选择朴素户外劳动者轮廓与低饱和绿 / 土色识别；验证日常行走、真实菜园田畦工作、祈祷坐姿、交谈、受击 / 昏迷。耕作工具和循环必须只在真实 `work_garden` 到岗后出现，不得复用铁锤、马刷或厨具；验收后才修改伊沃生产映射。
+- 状态：Done（2026-08-20）。采用 Synty Pirates Deckhand 的瘦削户外劳动者轮廓，以包装级 shader 将绿色调色板降到 `0.58` 饱和度 / `0.82` 明度；生产映射切到 `ivo_gardener_chibi_v1`。真实田畦到岗后才循环 `Digging` 并显示项目程序化木柄铁锄，移动、待机、祈祷、受击和昏迷时隐藏。
+- P4 专项覆盖父级实体 / 交互碰撞、真实菜园路线 / 朝向 / 占用、周期回卷、真实小教堂长凳挂接、交谈、昏迷 / 起身和 GM 入口；五角色 OpenGL 工作 / 坐姿近景通过，旧菜园生产、礼拜、角色动画和 P0–P3 回归保持通过。
+
+P4R 伊沃头部与园锄握持修复（2026-08-20）：
+
+- 状态：Done。用户实机指出伊沃头部呈整块绿色、`Digging` 时园锄拖在身后；根因分别是 `Green_C` 主题图集把 Deckhand 整块头巾调成同一绿色，以及旧园锄只验证 RightHand 父节点、没有按动画手轨迹校准轴向。
+- 伊沃改用保留皮肤、发色与中性土色头巾的 `PolygonMinis_Texture_01_C`，继续由包装 shader 做 `0.58 / 0.82` 低饱和压暗；不再使用会把头巾整块染绿的主题图集。
+- 园锄按完整 `Digging` 周期采样左右手轨迹，将锄柄固定轴重校为 RightHand 局部 `(-0.565, -0.174, -0.807)`；锄柄大部分周期进入双手工作区，锄刃始终保持在人物前方。专项新增中性色板路径、全周期最小锄刃前向距离与双手握持覆盖率断言，D3D12 四相位近景通过。
+
+P4R2 伊沃恢复 Deckhand 原生面部：
+
+- 状态：Done（2026-08-21）。材质审计确认与艾达 P5R2 同源：Deckhand 导入材质绑定 `PolygonMinis_Texture_01_A.png` 并启用 `vertex_color_use_as_albedo=true`，旧生产包装却使用共享 ShaderMaterial 与 `_01_C` 配色层，因而丢失作者的顶点色眼睛等面部细节。
+- 伊沃现复制 Deckhand 原导入 BaseMaterial3D、改用 `_01_A` 并保留 `vertex_color_use_as_albedo`，以作者的棕土头巾 / 肤色和 `0.82` 明度维持朴素园丁方向；不再以会抹去面部的自建分级 Shader 覆盖模型。
+- P4 专项新增作者材质、`_01_A` 与顶点色面部断言；D3D12 待机近景确认原生双眼恢复、头巾保持土黄色。完整回归园锄前向 / 双手握持、正式耕作、祈祷、碰撞、共享角色动画和 NPC 实时人物框均通过。
+
+下一子任务（T0130-P5）：
+
+- 逐个制作艾达的两头身老兵副官外观，选择女性、克制而有实战经验的轮廓，避免把她做成重甲贵族或普通村妇；验证日常行走、训练场真实执教、宿舍真实睡眠、交谈、装备同步、战斗、受击 / 昏迷与复苏。
+- P5 只迁移 `veteran_deputy_01`；应先审计女性候选模型与现有装备槽的兼容性，再决定常服 / 轻甲分层方式。训练、睡眠、战斗和装备继续只读现有 ActionSystem / NPCSystem / CombatSystem 权威，不在表现层创建第二套状态。
+- 状态：Done（2026-08-20）。同镜头排除了重甲女骑士、女海盗和普通村妇，采用 `SK_Vikings_ShieldMaiden_01` 的头带、束发、轻装护具与冷灰蓝轮廓；只把该模型筛入运行时，未把候选副本留在资产目录。
+- `veteran_deputy_01` 已切到 `ada_veteran_deputy_chibi_v1`。开局正式 `sword_shield` 驱动右手剑 / 左手盾显隐；换成长杆、弓弩或卸装时不会继续显示错误剑盾，真实卧床时收起。装备系统仍独占槽位和兵种事实，表现层不写装备。
+- 真实训练抵达教官位后循环 `Melee_Block_Attack` 剑盾示范；宿舍提交固定床并挂接 `sleeping_supine` 后循环 `Lie_Idle`，停止后解除姿态并恢复装备。NPC 父级睡眠姿态现区分能自行播放卧姿的 Chibi 包装与旧回退包装，避免双重旋转。
+- P5 专项覆盖行走 / 交谈预览、真实训练、真实固定床睡眠、实际换装同步、攻击、受击、昏迷 / 复苏、父级碰撞和零重复选择体；训练、睡眠、装备、T0128、P0–P4 回归及 D3D12 六角色工作 / 睡眠近景通过。下一名建议进入 P6 马塞尔。
+
+P5R 艾达面部可读性修正（2026-08-20）：
+
+- 状态：Done（表现方案已被 P5R2 取代）。用户实机发现当时错误材质覆盖下原生眼眉消失、嘴部色块像胡子；P5R 曾用程序化面部临时修正，随后被用户否决并由 P5R2 完整移除。
+- 保留已经通过的身体轮廓、动作、训练、睡眠和权威装备同步，只在表现层为艾达增加随 Head 骨骼运动的低多边形清晰眼睛与克制嘴线，并遮盖易误读的原嘴部色块；不得增加碰撞体或第二套 NPC 状态。
+- `readable_neutral` 面部模式以两个深色低模椭圆眼保证人物框尺度可读，以同受光的十二边平面肤色片遮住原宽嘴色块，再叠加短中性嘴线；全部挂在既有 Head socket，不生成碰撞或选择面。
+- P5 专项继续覆盖真实训练 / 睡眠 / 装备 / 战斗链；D3D12 正面近景与训练格挡远景确认眼睛在低头相位仍可见、嘴部不再读成胡子。下一步进入 P6 马塞尔。
+
+P5R2 艾达恢复 ShieldMaiden 原生面部（2026-08-21）：
+
+- 状态：Done。用户否决 P5R 自制椭圆眼，要求直接保留候选对照图中的 ShieldMaiden 原生细眼、眉毛和嘴部比例。
+- 删除艾达对 `readable_neutral` 覆盖的启用，不在原脸上叠加程序化眼睛、肤色遮盖或嘴线；冷灰蓝职业配色不能以牺牲原生脸为代价。
+- 根因不是 Head 重定向，而是共享包装用自建 ShaderMaterial 覆盖了 Synty 原材质，且把 `_C` 配色图误作最终 Albedo，丢失原材质的 `vertex_color_use_as_albedo` 面部细节。艾达现复制原导入 BaseMaterial3D 的全部设置，只把 Albedo 切到同系列 `PolygonMinis_Texture_Blue_A.png` 并按现有明度系数压暗。
+- 正面近景与训练格挡远景确认原生眉毛、细长眼和嘴部比例已恢复，蓝灰衣装保留，零 `FaceReadabilityOverlay`。P5 权威装备 / 睡眠 / 战斗及实时人物框回归均已通过；下一步进入 P6 马塞尔。
+
+P5R3 艾达档案外貌同步与伊沃面部材质诊断（2026-08-21）：
+
+- 状态：Done。`veteran_deputy_01.appearance` 已从灰白短发、旧军服和左眉浅疤的旧文案，改为与当前 ShieldMaiden 一致的赤褐束发、灰蓝头带、利落眉眼、蓝灰轻甲和护腕；保持原有一句三分句的简短写实文风，并由专项锁定档案与 `npc_setting` 一致性。
+- 伊沃确认与艾达此前的材质覆盖问题同源；本子任务没有修改伊沃已经验收的角色表现，后续修复已单独登记为 P4R2。
+
+下一子任务（T0130-P6 马塞尔）：
+
+- 状态：Done（2026-08-21）。逐个制作 `priest_01` 的两头身神父外观；从已购 Synty 包中同镜头审计 Wizard / Druid / Sorcerer / Sensei / Gentleman / MalePeasant 六名男性候选。采用唯一具有完整长袍、年长面孔和灰白胡须的 Wizard 身体，但按拓扑岛确定性移除与头脸分离的尖帽 114 个三角面；没有把法师帽或魔法道具带进生产角色，也没有自制替代整个人体。
+- 只迁移马塞尔。生产包装必须保留作者 `_A` Albedo 与顶点色面部，不因职业换色再次抹掉眼睛；不得携带铁锤、园锄、厨勺或战士装备，也不得增加独立 CharacterBody、导航或选择碰撞。
+- 验收覆盖日常行走 / 交谈、真实酒窖酿造、真实祭坛主持弥撒、真实长凳个人祈祷、受击 / 昏迷 / 复苏与 NPC 实时人物框。酿造和主持动作只读既有 `work_tavern / lead_mass` 权威，到达酒窖工位或祭坛之前不得提前表演已开始工作 / 主持。
+- `priest_01` 已切到 `marcel_priest_chibi_v1`：保留 Synty 原生脸 / 胡须 / 长袍、`Purple_A + vertex_color_use_as_albedo`，Body 骨挂无碰撞木质圣徽；档案外貌同步为灰白长发胡须、暗紫旧袍、褪色金边与圣徽。真实酿酒使用循环 `Working_A`，主持弥撒使用循环 `Ranged_Magic_Spellcasting_Long`，长凳祷告继续使用循环坐姿；所有其他职业工具均隐藏。
+- P6 专项覆盖帽子拓扑移除、作者材质、圣徽挂点、行走 / 交谈 / 三类职业生活姿态、受击 / 昏迷 / 复苏、父级碰撞和零重复选择体。正式酒窖与正式礼拜专项确认实体到位后才开工 / 主持，粮酒与虔诚权威未改；P0/P1、角色权威、实时人物框与 D3D12 七角色沙盒回归通过。T0130 当前 6/8 名初始 NPC 完成。
+
+修正子任务（T0130-P6R 马塞尔圆润头型）：
+
+- 状态：Done（2026-08-21）。只修正移除 Wizard 尖帽后暴露的平顶头型：在既有 Head 骨挂点补一层无碰撞、低多边形的灰白头发 / 头皮帽，恢复圆润头顶并保留轻微修士削发感。
+- 不重画脸、不恢复法师帽、不更换长袍或动作，不新增 CharacterBody、导航、选择碰撞或玩法权威。须验收正面、侧面、弥撒动作和 NPC 实时人物框；补件必须持续跟随头骨且不遮挡既有眼睛、胡须和表情。
+- 共享包装增加默认关闭的 `show_rounded_tonsure_hair`；只有马塞尔开启。补件为 `12 × 5` 分段的单个低模圆冠，按目标骨架模型空间校准后挂在 Head，下沿与原灰白长发相交而不覆盖眉眼，无碰撞 / Area / 选择面。D3D12 正面、侧面和弥撒手势实拍通过；P6、正式酒窖、正式礼拜、P0/P1、实时人物框、角色权威和角色动画回归通过。
+
+下一子任务（T0130-P7 莉娜）：
+
+- 状态：Done（2026-08-21）。逐个制作 `doctor_01` 的两头身女医生外观；先审计已购 Synty 女性候选，优先寻找克制、能通过围裙 / 药包 / 医疗配色读成边境医生且不与艾达 ShieldMaiden 重复的基础轮廓。
+- 只迁移莉娜。验收覆盖行走 / 交谈、真实诊疗位坐诊或研读、真实病床治疗、协助昏迷者、受击 / 昏迷 / 复苏和 NPC 实时人物框；到达诊疗位或治疗目标前不得提前播放已开始诊治的动作，医疗收费、恢复、医术和病床权威保持不变。
+- 六名女性候选同镜头审计后采用 `SK_Pirates_GovDaughter_01`：束发、完整作者眉眼、冷蓝长外衣与浅色围裙形成克制医生轮廓，不复用艾达轻甲。保留作者 BaseMaterial3D、`Blue_A` 与顶点色面部；程序化医疗包常驻 Body，病历册仅在真实 `work_clinic_doctor` active 后出现，绷带仅在正式 `assist_heal_<target>` 抵达并登记 helper 后出现。
+- 共享 Chibi 合同增至 17 状态，新增循环 `medical_treatment -> Working_A`；诊所研读使用循环 `Working_B`。在途动作不提前显示，病人复苏 / 行动中断后绷带立即收起。P7 专项、正式诊所、正式治疗接近、旧诊所治疗、共享角色、正式角色、NPC 实时人物框与 D3D 近景均通过；未修改治疗费用、HP 恢复、医术、工位、碰撞、导航或档案文案。
+
+返修子任务（T0130-P7R 诊所卧姿与医生动态巡床）：
+
+- 状态：Done（2026-08-21）。统一修正小诊所 `lying_supine` 病床挂接方向，确保患者头部位于枕头一侧、脚部位于床尾；修正来自四张病床的共享锚点 / 姿态合同，没有为单个 NPC 写例外。
+- `work_clinic_doctor` 无病人时改为实体坐在医生桌旁研读；有一名或多名 active 病人时，医生应在实际病床侧的可达治疗位之间轮换，抵达床边后循环包扎 / 治疗，再按可见节奏换到下一名仍需治疗的病人。病历册、绷带、坐姿和移动必须只读真实占用 / 到达状态，不能提前改变收费、HP、医术、病床或地点事实。
+- 验收至少覆盖：四张病床头脚方向一致；无病人研读时真实坐桌；单病人到床边治疗；双病人之间至少完成一次换床且不占用患者锚点、不穿床；病人离开 / 满血 / 医生中断时释放巡床表现并回到合法状态。
+- 完成记录：两张医生桌各补一把 Quaternius 椅和 `seated_study` 锚点，共享 Chibi 状态增至 18 个；无病人坐桌持病历册，有病人实体走到床边并持绷带治疗，双病人默认每 `300` 游戏秒轮换。主场景发现并修正床边旧站位与家具碰撞的卡滞，四站位统一外移 `0.5 m`；专项覆盖四床朝向、单 / 双病人、换床、回椅与零幽灵占用，既有团队治疗数值未改。
+
+返修子任务（T0130-P7R2 医生贴床治疗站位）：
+
+- 状态：Done（2026-08-21）。用户实机指出医生抵达安全床边位后仍离病人过远，治疗动作的手无法接触患者。现保留床外可达导航终点，另增加“向床外 `0.4 m`、沿床身镜像偏移 `0.65 m`”的贴床治疗表现锚点；只有真实抵达后才临时关闭医生 Body 碰撞并挂到该锚点，InteractionArea 始终保留。
+- 四张病床共用同一“安全寻路点 → 抵达 → 贴床表现点”合同；纵向偏移会随左右床侧镜像，使 `Working_A` 的右手都落向患者躯干。换床、回桌或中断先解除挂接、回到刚离开的床边安全点并恢复 Body 碰撞，再开始下一段生产导航。专项会采样完整治疗动作周期，要求右手骨点到患者躯干骨点的最小距离不超过 `0.75 m`，并覆盖贴床距离、朝向、治疗动作 / 绷带、换床碰撞恢复与回椅；正式诊所、旧治疗和莉娜角色回归通过，患者锚点、团队治疗、费用、HP、医术和工位权威未改。
+
+返修子任务（T0130-P7R3 医生床侧无穿模治疗位）：
+
+- 状态：Done（2026-08-21）。用户实机确认 P7R2 将医生整体推进病床碰撞包络，人物与床体发生重叠穿模。治疗位已改为数据驱动的病床侧边无重叠站位：从路线读取床体碰撞尺寸与全局轴，沿患者→安全站位方向计算床体投影半宽，再加 NPC `0.35 m` 实体半径与 `0.08 m` 净空；当前病床侧向中心距为 `1.22 m`、沿床身镜像偏移为 `0.35 m`。
+- 保留“先到安全导航点、抵达后进入治疗姿态”的阶段合同；`standing_treatment` 挂接显式保留医生 Body 碰撞，不再以关闭碰撞进入床内。左右两侧实际病床、零胶囊重叠、InteractionArea、面向患者、绷带 / 治疗循环、换床、回桌均通过；正式诊所、旧治疗和莉娜角色回归通过，治疗费用、HP、医术、病床 occupancy 和事件权威未改。
+
+测试债务（T0129B-C2-R 空间 Marker 计数同步）：
+
+- 状态：Todo（P2）。完整 C2 空间合同仍把生成 Marker 总数写死为 `238`，当前正式布局在此前 P7R 椅子 / 挂接锚点加入后实际为 `241`，导致其余空间断言执行前提前失败。后续应审计新增 3 个 Marker 的明确来源，并把固定总和改为按正式布局类别可解释地计算；本项不改变场景、导航或玩法。
+
+下一子任务（T0130-P8 欧文）：
+
+- 状态：Done（2026-08-21）。逐个制作 `engineer_01` 的两头身工程师外观，先审计已购 Synty 中能读成边境工匠 / 机械师而非铁匠、法师或贵族的男性候选；优先通过护目镜、工具带、卷尺 / 扳手式附件和低饱和工装建立轮廓。
+- 只迁移欧文。验收覆盖行走 / 交谈、真实工械坊装配工位、修复 / 升级协助、训练与战斗装备同步、受击 / 昏迷 / 复苏和 NPC 实时人物框；到达目标前不得提前播放装配或维修动作，产出、修复、升级、资源和技能仍由既有权威系统结算。
+- 五名男性候选同镜头审计后采用 `SK_Pirates_Firstmate_01`：短壮工头体型、围巾、皮带、原生眉眼与胡须能承接边境机械师语义，同时避开格伦铁匠、马塞尔长袍、贵族和法师轮廓。额前铜框护目镜、双侧工具袋、折尺 / 木楔常驻现有 Head / Body 骨挂点；短扳手只在真实 `work_workshop / assist_repair_<building> / assist_upgrade_<building>` active 后显示。
+- `engineer_01` 已切到 `owen_engineer_chibi_v1`。工械坊、外沿修复和升级专项均新增“在途不工作 / 到位才循环 `Working_A` 并显示扳手”断言；真实剑盾装备与卸装继续由 EquipmentSystem 驱动训练 / 战斗道具显隐。P8、P5c、P6d1、P6d2、T0128、P0/P1、艾达 / 莉娜回归、实时人物框和 D3D12 九角色沙盒均通过；档案外貌同步为当前护目镜与工具带，未修改制造、修复、升级、训练、资源、技能、碰撞或导航权威。
+
+返修子任务（T0130-P8R 工械坊贴桌制造站位）：
+
+- 状态：Done（2026-08-21）。用户实机确认欧文抵达工程台后仍离桌沿过远。1–3 号工程台的 `npc_stand` 已统一向桌边收近 `0.3 m`，根节点距桌沿由 `0.9 m` 收至 `0.6 m`；扣除 NPC `0.35 m` 胶囊后仍有 `0.25 m` 实体净空。工程台终段单独使用 `target_desired_distance=0.08`，不再因全局 `0.25 m` 到达容差提前停步；运行态实际到达误差约 `0.07 m`。工械坊家具 / NavMesh、真实制造、欧文角色专项和 Main 近景通过，制造、资源、碰撞体尺寸与占用权威未改。
+
+返修子任务（T0130-P8R2 欧文制造护目镜佩戴）：
+
+- 状态：Done（2026-08-21）。欧文平时仍将铜框护目镜架在额前；只有真实 `work_workshop` 抵达工程台并进入 active 后，护目镜才以 `0.16 s` 缓动下移覆盖双眼。佩戴姿态使用略放大的独立铜框、深青半透明双镜片与原镜带，正面 / 三分之四近景确认双镜片、鼻梁和侧带贴合 Head，不形成黑色整脸面罩。维修、升级、训练、行走、待机、受击和昏迷均保持 `forehead`。P8、P5c、P6d1、P6d2 与 Godot 解析通过；附件仍无碰撞 / Area，制造和导航权威未改。
+
 验收标准：
 
+- `T0130-P0` 必须先在独立角色沙盒与 Main 各通过一名友军 / 一名敌军：总高、头身比、前向、脚底、武器握点、循环工作、近战、受击 / 昏迷以及 48 敌性能均可接受，才允许进入八人批量生产。
 - 不看姓名标签也能通过轮廓、颜色和职业道具区分 8 人。
 - 动画复用优先，职业差异通过动作组合、工具和道具形成，不为每人复制独立状态机。
 - 昏迷、复苏、入伍色彩、武器、盔甲和坐骑变化与权威状态一致。
@@ -269,7 +783,7 @@
 
 ## T0131 制作全部可进入建筑的室内、工位与升级表现
 
-状态：Todo
+状态：Done（2026-08-22；十座可进入建筑 / 露天功能场所均已逐座验收）
 优先级：P0
 前置任务：T0129, T0130
 涉及文档：`ART_DIRECTION.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `MEMORY_AND_INFO_SPACE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -286,11 +800,302 @@
 - 建筑升级增量与 `upgrade.level_effects` 一致；固定容量建筑不凭模型多摆家具制造伪容量。
 - NPC 真正进入 / 离开后才改变地点和见闻；所有现有行动均可在对应物理位置播放表现。
 
+当前子任务（T0131-P1 工械坊完整建筑切片）：
+
+- 本轮只完成工械坊，不并行制作第二座建筑；完成后由用户逐座验收。
+- 1 级必须形成完整可识别的工程作坊：实体墙体与门洞、低坡屋顶、室内地面、两张真实工程台、共享材料架及基础工程杂物。
+- 2 级新增工具测量墙、传动吊架、测量制图台及对应结构强化，但不伪造第三个可工作工位。
+- 3 级才显示第三张攻城器械总装台，并增加与扩产相符的梁架、成品 / 材料储放和外部扩建表现。
+- 工位可见性必须跟随 BuildingSystem 的真实等级；现有 `2 -> 2 -> 3` 工位容量、欧文真实进入 / 制造、家具与墙体碰撞、正式导航及制造权威保持不变。
+- 镜头靠近时屋顶和四周墙体一起淡出；透明后内部 NPC 点击优先，点击空白区域仍打开建筑面板。
+
+实现结果（2026-08-21）：
+
+- 新增正式 `12 × 12 m` 工械坊外壳、低坡冷灰蓝 Quaternius 圆瓦屋顶、通风采光监楼、深木地板、实体门洞和基础工程杂物；现有精修工程台继续作为唯一工位家具源。
+- Lv.1 / 2 / 3 的可见 fixture 与启用碰撞严格为 `3 / 6 / 7`，权威工程位继续为 `2 / 2 / 3`；二级只增加工具 / 测量 / 吊装和结构强化，三级才显示攻城器械总装台。
+- `70→58 m` 内同步淡出屋顶、四周墙体和升级外墙附件；透明时内部欧文点击优先，空白处仍选建筑。隐藏的未来家具碰撞同步关闭，生产 NavMesh 继续保留最高等级空间。
+- GM 新增“工械坊美术预览（不改权威等级）”三级按钮与 `workshop_art_level <1|2|3>`；专项及旧工程台、欧文真实制造 / 角色、全建筑服务位、GM 回归通过。
+- 本轮未修改第二座建筑。用户确认本切片后，再单独登记并实现 T0131-P2。
+
+返修子任务（T0131-P1R，2026-08-21）：
+
+- 只返修工械坊，不提前进入第二座建筑；保留 `2 -> 2 -> 3` 权威工程位与 `3 / 6 / 7` fixture 合同。
+- 淘汰二、三级仅靠粗盒体表达的外部加固与雨棚，改为具有工械坊常识语义的收料、吊装、木料储放和有顶装配附属设施，并消除三级附属设施穿出主屋顶的问题。
+- 丰富一级常驻室内边缘陈设，增加工具、备件、绳具和材料收纳，但不得摆出可被误认作额外工位的完整工作台。
+- 所有贴近屋顶的升级梁架必须加入屋顶透明链；近景时与屋顶同步透明，不得在透明屋面内留下突兀的不透明横梁。
+- 逐级 GM 预览与真实制造、fixture 碰撞、导航和透明点击合同必须继续通过。
+
+返修结果：
+
+- Lv.2 粗糙门框式加固已替换为偏置收料架、Quaternius 绳具 / 周转箱、木制吊臂、滑轮、链条和吊钩；中央入口保持畅通。
+- Lv.3 过长侧雨棚已替换为西侧有顶装配 / 装卸湾，含深木平台、低矮圆瓦棚、立柱斜撑、成品架、绞盘、绳具和周转箱。整套外部增量位于 `14 × 14 m` 地块内；棚顶与主屋顶保留约 `0.123 m` 垂直净空。
+- 一级常驻室内增加两组靠墙 Quaternius 零件架、两卷绳具、小零件箱、铆钉桶和三格分类零件箱；均为非工位装饰，不改变制造容量。
+- `BuildingArtView` 新增可复用 `additional_roof_fade_paths`；工械坊二、三级贴近屋顶的传动梁 / 导轨 / 主装配桁架现与主屋顶同步 `1.0 ↔ 0.06` 渐隐和阴影切换。
+- 专项新增旧粗糙节点移除、棚顶—主屋顶净空、外部增量不越地块、升级梁架近 / 远透明断言；工械坊 fixture、欧文真实制造 / 角色、通用屋顶、GM 与全建筑服务位回归通过。
+
+用户验收：通过（2026-08-21）。后续建筑统一以 P1R 的表现密度为最低基线，同时必须通过不同主体轮廓、室内功能布局、材料配色和逐级新增设施保持建筑辨识度，不能只复制同一作坊模板。
+
+当前返修子任务（T0131-P1B 铁匠铺屋面与升级部件一致性）：
+
+- 本轮只返修铁匠铺，不开始下一座新建筑；保留 T0129 已验收的锻炉、烟囱、排烟、`2 -> 2 -> 3` 锻造位、真实打铁、导航、碰撞与透明点击合同。
+- 使用运行时实际 AABB 审计主屋顶、常驻烟囱、Lv.2 燃料棚和 Lv.3 侧雨棚 / 立柱 / 标志，消除非必要屋面相交、部件越出批准 `16 × 16 m` 地块及可见穿模；烟囱穿屋面属于排烟结构，必须保持炉膛对齐和屋脊上方出烟。
+- 将 Lv.3 `CeilingHoistBeam` 等贴近屋面的升级结构移入独立屋顶附属组，并使用 `additional_roof_fade_paths` 与主屋顶同步渐隐；吊链和吊钩作为室内工作装置继续可见。
+- 专项必须新增屋面净空、地块边界和升级横梁近 / 远透明断言，并回归三级 fixture、格伦真实打铁、烟囱排烟、透明 NPC 点击与全建筑服务位。
+
+返修结果（2026-08-21）：
+
+- Lv.2 越出东侧地块的薄板燃料棚已替换为石台、低坡板岩棚、外沿木柱、斜撑、横档、燃料桶和矿料箱组合；Lv.3 越出西侧且贴近主屋面的长薄雨棚已替换为较短的成品整理棚，增加武器架、淬火桶、发货箱与主匠标识，均不新增假工位。
+- 两级外部增量实际最外侧为 `X=±7.925 m`，收在 `16 × 16 m` 地块的 `±8 m` 边界内。Lv.2 / Lv.3 附属棚屋面最高点为 `2.456 / 2.536 m`，相对主屋面最低点 `3.128 m` 保留约 `0.67 / 0.59 m` 净空；只有常驻烟囱继续作为功能排烟结构穿出主屋面。
+- Lv.3 `CeilingHoistBeam` 已移入 `RoofStructureAdditions` 并登记 `additional_roof_fade_paths`；运行态近 / 远 alpha 为 `0.06 / 1.0`。吊链和吊钩留在室内，近景仍可读。
+- 铁匠铺美术专项新增旧薄板节点移除、两座附属棚存在、主 / 附属屋面净空、地块边界和升级梁架近 / 远透明断言；项目解析、正式打铁、格伦角色、通用屋顶、GM 与全建筑服务位回归通过，Godot MCP 编辑器错误为空。
+- `verify_t0129c_a3b1_blacksmith_fixtures.gd` 原先仍锁定诊所巡床前的全站 `107 / 34 / 234` 聚合数；现只同步测试常量到已批准且已登记的 `109 fixture / 36 occupant anchor / 236 static body / 133 fixture collision` 基线，没有修改配置、生成逻辑或工位 / 碰撞权威，铁匠铺三工位路线专项恢复通过。
+
+当前返修子任务（T0131-P1D 铁匠铺 / 工械坊自动门与入口净空）：
+
+- 先修复铁匠铺常驻吊灯与主屋面相交；吊灯必须整体低于主屋面最低点并保留可自动验收净空，不能简单隐藏或错误并入屋顶透明组。
+- 建立可复用的可进入建筑门表现组件。铁匠铺与工械坊各有一扇与正式入口对齐的双扇门；单扇绕门侧铰链旋转，NPC / 可移动角色接近时平滑打开，感应区内没有角色后延迟关闭。
+- 门只读取正式场景中实体 actor 的位置，不写 `current_location`、工位、行动或导航事实。正式 StaticCollision / NavigationMesh 继续提供至少 `1.8 m` 的权威门洞；门扇本轮作为无碰撞表现，不得形成导航已放行但物理门板拦住 NPC 的第二套权威。
+- 自动验收必须证明两座建筑的门洞宽度不小于 `1.8 m`、门洞中央无柱 / 家具阻挡、开门后双扇不侵入净通道；至少一名正式 NPC 实体接近可触发开门，离开感应范围后可自动关门。
+- 后续每座可进入建筑交付时都必须同时完成：足够实体胶囊通行的门洞、门口零立柱遮挡、自动开关门表现及对应专项；不能在最后批量补门。
+
+返修结果（2026-08-21）：
+
+- 铁匠铺和工械坊正门中心的装饰立柱已移除，左右门框形成 `2.08 m × 2.35 m` 可见净口；高于生产导航 `1.8 m × 2.2 m` 最低合同，门口无柱或新增家具侵占中心线。
+- 新增可复用 `BuildingAutoDoor` 双扇门。它以碰撞层 2 的真实 `CharacterBody3D` 为唯一接近输入，约 `0.4 s` 向两侧打开；感应区清空后保留 `0.7 s` 再关闭。门叶无阻挡碰撞，不参与地点提交、工位占用、行动、寻路或碰撞结算。
+- 铁匠铺吊灯下降到完整导入 AABB 低于主屋面最低点至少 `0.1 m`；没有隐藏吊灯，也没有把它并入屋顶透明组。
+- 新专项以格伦 / 欧文实体分别验证两扇门开关、净宽 / 净高、中央无柱和开启后门叶不侵入净通道；铁匠铺 / 工械坊建筑切片及两条正式制造路线回归通过。
+
+当前子任务（T0131-P2 小教堂完整建筑切片）：
+
+- 本轮只制作小教堂，不并行开始诊所、宿舍或其他建筑。使用已批准的 `14 × 14 m` 地块和约 `12 × 12 m` 房体；外观必须是边境小教堂而不是另一座作坊或民房，远景可通过中殿轮廓、圣坛端、钟架 / 十字标识和彩窗识别。
+- 权威等级只有 Lv.1 / Lv.2。Lv.1 固定显示一座祭坛、五排左右长凳对应十个祈祷席，以及中央连续走道；不得增加可误认的第十一祈祷席或第二祭坛。Lv.2 不扩容，只增加配置已有的钟架、祭坛彩窗、两侧扶壁和圣坛屋架，并用结构 / 照明 / 礼仪陈设表达耐久与宗教氛围提升。
+- 建筑壳必须包含完整地板、石灰墙 / 深木结构、与工械坊不同的坡屋顶和入口构图；室内增加烛台、奉献 / 圣水、小型礼器收纳、壁挂等非工位细节，但保持长凳中央过道、门到祭坛路线和全部祈祷席站位 / 挂接净空。
+- 接入 P1D 自动门合同：可见门净口不小于 `1.8 × 2.2 m`、门中心无立柱 / 家具、实体角色接近打开、离开延迟关闭。门叶只作表现，正式 StaticCollision / NavigationMesh 与穿门地点提交继续是权威。
+- 镜头使用正式 `70→58 m` 屋顶 / 四周墙体渐隐；Lv.2 圣坛屋架和任何贴近屋面的新增结构必须进入屋顶透明链。透明后点击内部 NPC 优先，点击空地 / 家具仍选建筑。
+- 专项必须覆盖两级真实 BuildingSystem 投影、`1 + 10` 固定工位、16 件 fixture / 碰撞、自动门、地块边界、屋面 / 升级件净空、透明点击，以及马塞尔主持和伊沃祈祷的正式实体路线与姿态。
+
+实现结果（2026-08-21）：
+
+- 新增 `FormalChapelArtView.gd`，在正式 `14 × 14 m` 地块内完成约 `12 × 12 m` 的完整边境小教堂：灰白石灰墙、深木地板、冷灰蓝陡坡中殿屋面、十字入口 / 圣坛端轮廓，以及烛台、奉献箱、圣水盆、祷告书 / 礼器收纳、壁挂和暖色圣坛光；旧 Envelope 隐藏。
+- Lv.1 启用祭坛与十席长凳共 `11` 件 fixture / 碰撞；Lv.2 累计 `16` 件，增加钟架、彩窗、两侧扶壁、圣坛屋架和相应礼仪 / 结构细节。BuildingSystem 仍固定 `1 祭坛 + 10 祈祷席`，不存在 Lv.3，也没有用装饰伪造容量。
+- 完整可见包络实测 `X[-6.314,6.314] / Z[-6.5,6.5] m`，未越出地块；壁挂旗帜按导入网格 AABB 抬离地面。正门使用 `2.08 × 2.35 m` 双扇自动门，中心无柱，马塞尔真实碰撞体接近 / 离开可完成开关。
+- 复用 `70→58 m / 0.06` 外壳渐隐；Lv.2 彩窗、扶壁和圣坛屋架同步透明并关闭阴影。通用 `BuildingArtView` 补齐 `material_override` 网格的本地材质复制，解决程序生成升级横梁登记后仍不透明的问题。
+- GM 新增“小教堂美术预览（不改权威等级）”两级按钮和 `chapel_art_level <1|2>`。新增专项并更新旧 A3b9 聚合基线；小教堂家具、真实主持 / 祈祷、自动门、通用屋顶和 GM 回归全部通过。当前等待用户视觉验收，不提前制作下一座建筑。
+
+返修子任务（T0131-P2R 小教堂外观与升级辨识度，2026-08-22）：
+
+- 用户认可现有祭坛、五排长凳、十席挂接和室内功能布局；本轮保留这些权威家具、站位、路线和动作，只返修建筑壳、颜色与 Lv.2 外观增量。
+- 淘汰横向连续模块墙、低辨识度箱式屋面和类似工厂附属棚的轮廓。Lv.1 必须形成中世纪边境小教堂常见语义：狭长中殿比例、陡坡深板岩屋顶、正立面山墙、尖拱入口 / 高窗、石质墙基 / 转角石、侧墙窄长窗与后部圣坛端；颜色以风化暖灰石、深灰蓝板岩、暗木和少量酒红 / 金色礼仪色为主。
+- Lv.2 必须比当前更丰富但不扩容：在配置已有钟架、彩窗、两侧扶壁、圣坛屋架之外，增加可读的屋脊钟亭 / 钟、窗棂与彩窗光色、扶壁压顶、墙体石带、圣坛端加固、屋面纹理 / 金属十字和更多礼仪陈设；不得摆出第二祭坛或额外长凳。
+- 保持 `14 × 14 m` 地块、`1+10` 固定容量、16 件 fixture / 碰撞、`2.08 × 2.35 m` 自动门、中央过道、正式导航、真实主持 / 祈祷和 `70→58 m` 外壳透明权威。所有新增山墙、钟亭、窗框、扶壁和贴屋面结构都要进入正确透明链并通过实际 AABB / 穿模审计。
+- 更新 T0131-P2 专项，增加教堂轮廓节点、Lv.2 丰富度、色板、坡度、钟亭、尖拱窗和旧工厂式节点淘汰断言；完成后仍只交付这一座建筑，等待用户视觉验收。
+
+返修结果：
+
+- Lv.1 已从 21° 低坡方盒重建为 `31°` 深板岩中殿顶、暖灰石基 / 转角石、阶梯山墙、尖拱门套、圆窗、六扇侧墙狭长窗、后部圣坛端和金属十字；酒红门、暗木、旧金色形成克制的礼仪色，不再使用整条横向工业石梁。
+- Lv.2 将旧地面钟棚改为西后侧高位石钟塔，真实钟体与碰撞同步抬高；增加塔顶 / 十字、扶壁压顶、墙面石带、彩窗窗棂、屋脊饰件、圣坛台阶、圣物箱和礼仪旗帜。该轮二级独立表现网格增量为 `35`；其中五根屋脊饰杆随后由 P2R2 删除，当前为 `30`。功能 fixture / 碰撞始终为 `11→16`，工位始终为 `1 祭坛 + 10 祈祷席`。
+- 新表现包络实测 `X[-6.5,6.5] / Z[-6.55,6.59] / Y[0,7.8] m`，位于 `14 × 14 m` 地块内。钟、钟塔、彩窗、扶壁和圣坛屋架均通过 `70→58 m / 0.06` 透明与阴影验收，正门仍为 `2.08 × 2.35 m` 自动门。
+- P2R 专项及教堂家具 / 正式导航 / 真实主持与祈祷 / 自动门 / 通用屋顶回归通过；Godot MCP 完成 Lv.1、Lv.2 远景与近景透明审查。当前实现完成，等待用户逐级视觉确认后再进入下一座建筑。
+
+返修子任务（T0131-P2R2 小教堂屋面明度与屋脊清理，2026-08-22）：
+
+- 主屋面和二级钟塔屋面改用主厅现有屋面的明亮冷灰蓝基色 `#65717a`，边缘与板缝只保留适度明暗差；不改变已验收的 `31°` 坡度、教堂轮廓或透明距离。
+- 移除二级屋脊上五根没有功能语义、远景呈尖刺状的金属饰杆；宗教识别只保留正立面山墙十字与钟塔十字，不额外堆叠装饰尖杆。
+- 保持 `1 祭坛 + 10 祈祷席`、`11→16` fixture / 碰撞、钟塔、彩窗、扶壁、自动门、正式导航和真实主持 / 祈祷逻辑不变。
+- 更新小教堂专项，锁定新屋面色板、屋脊饰杆彻底退出和两个有效十字仍存在；完成实机远景审查后继续等待用户验收，不开始下一座建筑。
+
+返修结果：
+
+- 主屋面与钟塔屋面已从 `#353c50` 调整为主厅同款 `#65717a`；`31°` 坡度、`70→58 m / 0.06` 透明曲线和完整包络不变。
+- `RoofCrest` 及五个 `RidgeFinial` 已从运行时模型树删除；正立面山墙十字和钟塔十字保留，二级独立表现网格为 `30`。
+- 小教堂专项、家具、正式导航、真实主持 / 祈祷、自动门和通用屋顶回归全部通过；Godot MCP Lv.2 远景确认屋面明度接近主厅且无重复尖杆。当前仍只等待本建筑视觉验收。
+
+返修子任务（T0131-P2R3 屋面十四根板岩拼缝穿刺，2026-08-22）：
+
+- 用户复验发现主屋面仍有两排共十四根长刺。根因定位为七组左右坡面的 `WestSlateJoint / EastSlateJoint`：它们本意是板岩横向拼缝，但旋转符号与对应屋面相反，细长盒体穿过屋面后形成长刺。
+- 修正左右拼缝与坡面完全同向，降低拼缝厚度并让它们贴合屋面；保留适度板岩分段，不把拼缝做成屋顶外轮廓装饰。
+- 专项必须锁定两侧拼缝与各自坡面的朝向一致、厚度不超过 `0.02 m`，并用 Godot MCP 近景 / 远景确认十四根长刺全部消失。
+- 用户进一步确认先前五根短金色 `RoofCrest / RidgeFinial` 不是十四根长刺，要求恢复该组屋脊饰杆；恢复后必须保持短小、垂直和金色，不得与灰色拼缝混为一组。
+- 不修改屋顶主色、`31°` 坡度、透明曲线、钟塔、十字、容量、碰撞、导航、自动门或礼拜逻辑。
+
+返修结果：
+
+- 十四根 `West/EastSlateJoint` 已改为与各自坡面同向：西侧 `+31°`、东侧 `-31°`；厚度 `0.045→0.018 m`，不再穿过屋面形成两排长刺。
+- 五根短金色 `RoofCrest / RidgeFinial` 已按用户要求恢复，继续随 Lv.2 屋顶透明链显示；二级独立表现网格恢复为 `35`。
+- 专项锁定左右各七根拼缝、与坡面方向点积 `>=0.999`、厚度 `<=0.02 m` 和五根金色饰杆。小教堂切片、家具、正式导航、真实主持 / 祈祷和通用屋顶回归通过；Godot MCP Lv.2 近景确认灰色长刺消失、金色短杆恢复。
+
+用户验收：通过（2026-08-22）。小教堂 P2 / P2R / P2R2 / P2R3 全部收口，下一座进入 T0131-P3 小诊所。
+
+当前子任务（T0131-P3 小诊所完整建筑切片，2026-08-22）：
+
+- 本轮只制作小诊所，不并行返工宿舍、食堂、酒窖、菜园、训练场、马厩、仓库或主厅。使用已批准的 `14 × 14 m` 地块和约 `12 × 12 m` 房体，远景必须能通过医舍 / 药房语义与其他建筑区分。
+- 保留现有莉娜真实坐诊、无病人读书、有病人巡床治疗、患者床面挂接及统一头脚方向。权威诊疗位固定 `2` 个，病床按 Lv.1 / 2 / 3 为 `2 / 3 / 4`；可见家具、碰撞、站位和实际占用必须逐级一致。
+- Lv.1 建立完整中世纪边境医舍：浅色石灰墙 / 石基、低中坡瓦顶、足够采光的窗、清晰正门、两张诊疗桌、两张病床，以及药柜、草药、绷带、清洗盆、器械收纳、屏风 / 布帘和照明等非工位陈设。中央与床侧治疗通道不得被装饰侵占。
+- Lv.2 随第三张病床增加独立病区表现、药材储备与通风 / 采光强化；Lv.3 随第四张病床增加完整扩展病区、更多器械 / 清洗 / 储药与外部识别增量。不得用额外完整诊疗桌伪造第三个医生位。
+- 接入 `2.08 × 2.35 m` 无中心立柱自动双扇门；门只作表现，正式碰撞 / NavigationMesh / 地点提交仍为权威。复用 `70→58 m / 0.06` 屋顶与四周墙体透明，所有升级屋架、檐部和外墙附件进入正确透明链；透明后室内 NPC 点击优先。
+- 新增三级 GM 美术预览和专项，至少覆盖 `2 doctor desk + 2→3→4 bed`、逐级 fixture / 碰撞、地块边界、门洞、贴屋面增量、透明点击、莉娜真实坐诊 / 巡床和患者挂接；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalClinicArtView.gd` 并接入默认正式地图；旧 Envelope 隐藏。完成浅灰石灰墙 / 蓝绿色木构 / 冷灰绿低坡瓦顶、十扇采光窗、药臼招牌、自动门，以及药柜、药瓶、干草药、绷带、清洗、医学书、照明与床侧隐私帘。装饰沿墙布置，不占中央路线、桌侧坐姿点和四个床侧治疗点。
+- Lv.1 / 2 / 3 分别投影 `6 / 7 / 8` 件功能 fixture / 碰撞；医生桌固定 2 张，病床准确为 `2 / 3 / 4`。Lv.2 增加第三床病区、扩充药柜、草药晾棚和西侧通风口；Lv.3 增加第四床病区、消毒 / 器械台、发药窗与东侧通风口。最高等级美术边界保持在 `14 × 14 m` 地块内。
+- 接入 `2.08 × 2.35 m` 自动双扇门与 `70→58 m / 0.06` 外壳渐隐；两级屋顶通风结构和外墙附件均进入透明链。透明状态保留 NPC 点击优先与空地建筑回退，门 / 美术不拥有地点、工位、导航或治疗权威。
+- GM 新增三级按钮和 `clinic_art_level <1|2|3>`。新增 `verify_t0131_p3_clinic_building_slice.gd`，并把 A3b2 最大等级家具审计及 A2b-P2 医生坐姿历史测试同步到现行规则。专项、A3b2、A2b-P2、真实诊所工作、莉娜巡床、GM 和 Godot MCP 运行态均通过；当前等待用户逐级视觉验收，不开始下一座建筑。
+
+返修子任务（T0131-P3R 小诊所辨识度与治愈感，2026-08-22）：
+
+- 状态：Done，用户视觉验收通过（2026-08-22）。本轮仍只返修小诊所，不开始下一座建筑；不修改医生 / 患者权威、病床数量、治疗站位、自动门、导航、碰撞和透明点击规则。
+- 解决现有 `12 m` 方形墙体加通用双坡瓦顶与工械坊轮廓过近的问题：改成宽缓的鼠尾草绿四坡屋顶与采光气楼，使远景剪影首先呈现“安静、通风、适合护理的边境医舍”，而不是又一座作坊。
+- 外墙调整为温暖象牙灰泥、鼠尾草绿木构和奶油色布艺；入口增加不挡门的护理雨棚、药草迎宾花箱与更清楚的药臼 / 叶片识别徽记。色彩保持克制、洁净和治愈，不使用现代红十字，也不做成明亮糖果屋。
+- 窗口增加百叶 / 花箱与药草护理语义；升级继续通过病区、储药、通风、消毒等实际增量表现，不用与其他建筑共用的粗重屋架堆料。所有新屋顶、气楼、雨棚、窗饰及升级附件必须进入 `70→58 m / 0.06` 透明链并留在 `14 × 14 m` 地块内。
+- 更新专项锁定新屋顶四坡、采光气楼、护理入口、药草花箱、治愈配色和“不得重新出现通用工坊瓦顶”；完成 Godot MCP 远 / 近景三级运行验收后等待用户确认。
+
+实现结果（2026-08-22）：
+
+- 移除通用 `roof_round_tiles_4x4` 双坡顶，新增程序化四坡屋面、短屋脊和玻璃采光气楼；修正 Godot 顺时针正面绕序，新增诊所 ArrayMesh 通过网格完整性审计。主体色改为暖象牙灰泥、鼠尾草绿木构 / 屋面、奶油布艺和柔和药草绿，不使用现代医院符号。
+- 正门新增无中心遮挡的奶油护理雨棚、两侧药草 / 小花石槽、百叶窗和叶片药臼圆徽记；雨棚支柱位于净口外，不修改既有自动门和生产导航。最高等级实际包络保持在 `14 × 14 m` 地块内。
+- 四坡顶、采光气楼、雨棚、窗饰、花箱和两级升级附件全部进入 `70→58 m / 0.06` 透明链。专项新增新轮廓 / 色板 / 旧屋顶缺席断言；诊所三级、家具、真实坐诊 / 巡床、病床挂接、通用自动门、工械坊、小教堂、GM 及 Godot MCP 远近景回归通过。
+
+用户验收：通过（2026-08-22）。小诊所 P3 / P3R 全部收口，下一座进入 T0131-P4 食堂。
+
+当前子任务（T0131-P4 食堂完整建筑切片，2026-08-22）：
+
+- 本轮只制作食堂，不并行开始宿舍、酒窖、菜园、训练场、马厩或其他建筑。使用已批准的 `16 × 14 m` 地块和最高约 `14 × 12 m` 房体；必须通过宽阔公共饭堂轮廓、后厨炉排、成组烟囱、食物 / 柴薪陈设和暖色灯火与诊所、教堂、工械坊区分。
+- 保留布鲁诺真实进入、周期烹饪和十席真实进食。权威灶台严格为 Lv.1 / 2 / 3 的 `2 / 2 / 3`，固定用餐席始终为 `10`；每口可工作灶台必须与独立炖锅、炉台、排烟罩 / 烟道和 NPC 站位一一对应，二级不得用完整第三灶伪造容量。
+- 淘汰两张共享长桌继续引用 `clinic_exam_table.glb` 的诊所代理外观；在不改变既有桌体碰撞、座椅位置、十席锚点和路线的前提下，改为厚木公共餐桌、桌腿 / 横撑及克制的餐具 / 面包陈设。装饰餐具不拥有库存、餐食或占用权威。
+- Lv.1 形成完整边境食堂：石基、暖灰泥 / 深木墙体、低中坡陶瓦饭堂屋顶、宽门、两口后厨炉、两张十席餐桌，以及柴薪、清水、面粉袋、餐具架、备餐 / 发餐边界等非工位陈设。门到餐桌和炉台的中央通道、十个椅边点及三口炉的前方站位必须保持畅通。
+- Lv.2 只用扩大储粮 / 香料 / 餐具收纳、备餐台、排烟强化和外部柴棚表达 `production +15% / meal_recovery +15%`；Lv.3 才增加第三口实际灶台对应的第三组排烟结构，并增加发餐能力、锅具和后厨扩展表现。所有外部增量保持在地块内，不与主屋顶穿模。
+- 接入 `2.08 × 2.35 m` 无中心立柱自动双扇门、`70→58 m / 0.06` 屋顶与四周墙体透明链，以及透明后的室内 NPC 点击优先。门、美术、烟火和餐具均只读 BuildingSystem / fixture 状态，不提交地点、资源、生产、进食或工位事实。
+- 新增三级 GM 美术预览和专项，至少覆盖 `2→2→3` 灶台、固定十席、逐级 fixture / 碰撞、正式长桌替换、地块包络、门洞、屋面 / 烟道净空、透明点击、布鲁诺真实烹饪和 NPC 真实进食；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalDiningHallArtView.gd`：约 `14 × 12 m` 的横向公共饭堂使用暖赭灰泥、深橡木构架、低缓陶瓦屋顶、后厨成组烟囱、汤勺餐盘徽记与暖灯形成食堂专属远景轮廓；室内沿边缘补齐食品柜、餐具、面粉袋、清水、洗涤、柴薪、发餐和照明陈设，中央通道保持净空。
+- 两张共享长桌不再导入 `clinic_exam_table.glb`，改为正式厚木公共餐桌；桌体碰撞、十把椅子、十个椅边到达点和 `sitting` 锚点保持原位。桌上餐具与面包只作装饰，不新增用餐位、餐食或库存事实。
+- 等级投影严格保持权威灶台 `2→2→3`、固定用餐席 `10` 和可见 / 可碰撞 fixture `14→14→15`。Lv.2 只增加收纳、备餐与燃料棚，不给前两根烟囱追加悬浮盖件；Lv.3 才显示第三口权威灶台、第三排烟罩 / 屋顶烟囱及发餐扩展。
+- 接入 `2.08 × 2.35 m` 自动双扇门和 `70→58 m / 0.06` 全外壳透明链；Lv.2 / Lv.3 烟道、棚体和屋面附件均同步渐隐。最高级可见包络约 `15.33 × 13.44 m`，未越过 `16 × 14 m` 地块。
+- GM 新增“食堂美术预览（不改权威等级）”三级按钮和 `dining_hall_art_level <1|2|3>`。P4 专项、A3b4 家具、布鲁诺真实烹饪、真实进食、入口服务点、正式导航、角色、自动门、通用屋顶与 GM 回归全部通过；当前等待用户逐级视觉验收。
+
+返修子任务（T0131-P4R 食堂升级柜体重叠，2026-08-22）：
+
+- 用户确认食堂其余表现通过，只修两处升级陈设穿模：Lv.2 `NonWorkstationPreparationCounter` 与基础 `EastServingCrockery` 重叠，Lv.3 `ExpandedServingCounter` 与基础 `WestServingCrockery` 重叠。
+- 将两座升级柜台从左右侧墙的同一纵向带迁到正面墙内侧，转为横向并左右对称布置；必须与基础碗橱保留可见间隔，不侵占中央 `2.08 m` 门口、餐桌座位、后厨灶台或既有通行路径。
+- 专项增加运行态包络零重叠和门口净空断言；容量、fixture / 碰撞、自动门、透明链、真实烹饪与进食权威保持不变。
+
+返修结果：
+
+- Lv.2 备餐柜迁到局部 `(4.15, 0, 5.22)`，Lv.3 发餐柜迁到 `(-4.15, 0, 5.22)`；两者均旋转 `90°` 沿正面墙左右对称横放。Lv.3 柜体、台面和杯具统一挂在 `ExpandedServingCounter` 根下，避免只挪柜体而遗留桌面陈设。
+- 专项新增基础东西碗橱与对应升级柜台 AABB 加 `0.05 m` 安全边距的零相交断言，并锁定中央 `2.4 × 1.35 m` 门前带净空。P4 建筑专项通过，运行态 Lv.3 坐标与可见性由 Godot MCP 复核。
+- 用户已确认食堂其余部分通过；当前只等待这两处柜体位置的最终视觉确认。
+
+用户验收：通过（2026-08-22）。食堂 P4 / P4R 全部收口，下一座进入 T0131-P5 宿舍。
+
+当前子任务（T0131-P5 宿舍完整建筑切片，2026-08-22）：
+
+- 本轮只制作宿舍，不并行开始酒窖、菜园、训练场、马厩或其他建筑。使用已批准的 `16 × 14 m` 地块和约 `14 × 13 m` 房体；远景必须通过长条集体住宿体量、五段重复床位窗、月牙 / 枕头标识和较安静的生活色板与食堂、诊所、教堂及作坊区分。
+- 十张权威床位从 Lv.1 起全部存在并始终固定为 `10`，其中 1–8 号维持既有 `assigned_npc_id`，9–10 号维持未来 NPC 预留。每张可见床、床边到达点、睡眠锚点和碰撞必须继续一一对应；升级不得摆出第十一张完整床、卧铺或可误认的睡眠位置。
+- Lv.1 形成完整边境集体宿舍：实体墙体 / 地板 / 屋顶、五排两列床位、连续中央通道、个人脚箱 / 挂钩、共用洗漱 / 布草、夜间照明和门口值日板。非工位陈设优先放在床外侧墙带或后端，不侵占十个床边到达点。
+- Lv.2 只以壁炉 / 烟道、保温护墙、修补梁、百叶 / 防风、扩充布草和个人储物表达 `sleep_recovery +20% / Max HP +20`；壁炉烟囱允许作为功能结构穿屋面，但必须与炉膛对齐，其他升级件不得穿模。十床、归属和睡眠周期保持不变。
+- 接入 `2.08 × 2.35 m` 无中心立柱自动双扇门、`70→58 m / 0.06` 屋顶与四周墙体透明链，以及透明后的室内 NPC 点击优先。所有门、标识、柜体、壁炉和灯具只作表现，不提交地点、床位、疲劳恢复或事件事实。
+- 新增 Lv.1 / Lv.2 GM 美术预览与专项，至少覆盖固定十床、逐级 fixture / 碰撞恒定、床位归属、最高包络、装饰—床 / 站位净空、壁炉—烟囱对齐、门洞、透明点击、艾达真实固定床睡眠与通用自动门；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalDormitoryArtView.gd` 并接入默认正式地图；旧 Envelope 隐藏。完成暖灰泥 / 深木五段长屋、深酒红低坡屋顶、五个低矮通风帽、月牙枕头徽记与自动门。室内沿两侧十张权威床补齐十套脚箱 / 折叠毯 / 挂衣位，并增加布草、洗漱、值日板与夜灯，未侵占床体或中央交通带。
+- Lv.1 / Lv.2 的可见 fixture 与碰撞都严格为 `10`；床位 1–8 的固定归属及 9–10 的未来预留不变。Lv.2 只增加壁炉—垂直烟道、保温护墙、百叶、修补撑 / 顶梁、备柴和扩充布草，对应既有 `sleep_recovery +20% / Max HP +20`，没有第十一张床或假卧铺。
+- 接入 `2.08 × 2.35 m` 自动双扇门和 `70→58 m / 0.06` 全外壳透明；二级烟道、顶梁和外部附件同步渐隐。最高级运行态包络为 `15.04 × 14.00 m`，保持在 `16 × 14 m` 地块内。床边 Marker 增加只读 `assigned_npc_id` 镜像，BuildingSystem 仍是床位选择与占用唯一权威。
+- GM 新增“宿舍美术预览（不改权威等级）”两级按钮和 `dormitory_art_level <1|2>`。P5 专项、A3b3 家具、固定床、正式宿舍寻路、真实睡眠、自动门、通用屋顶、艾达角色与 GM 回归通过；A3b3 的旧全站聚合测试常量同步到已登记的 `109 / 36 / 236` 基线，未修改配置或生成规则。当前等待用户逐级视觉验收。
+
+用户验收：通过（2026-08-22）。宿舍 P5 收口，下一座进入 T0131-P6 酒窖。
+
+当前子任务（T0131-P6 酒窖完整建筑切片，2026-08-22）：
+
+- 本轮只制作酒窖，不并行开始菜园、训练场、马厩或其他建筑。使用已批准的 `14 × 12 m` 地块和约 `12 × 10 m` 房体；远景必须通过半石砌窖体、低矮发酵作坊轮廓、装卸门、通风帽、桶箍 / 葡萄藤标识和酒红—青灰色板与食堂及普通民房区分。
+- 保留马塞尔真实进入、周期酿酒、粮食消耗和酒库存产出。权威酿酒位严格为 Lv.1 / 2 / 3 的 `2 / 2 / 3`；每个可工作酿酒位必须与独立发酵桶、桶外站位和碰撞一一对应。Lv.2 不得摆出第三套完整发酵设备或假工位，Lv.3 才显示 `cellar_03`。
+- Lv.1 形成完整边境酒窖：厚石基 / 灰泥墙、深酒红低坡屋顶、两套发酵桶、空桶架、验酒桌，以及靠墙瓶架、粮袋、漏斗 / 量具、清洗桶、排水沟和制桶维修杂物。新增陈设只作功能背景，不拥有库存、生产或占用权威，并保持门到三处预留工位的中央通道。
+- Lv.2 只以熟成储酒架、冷却水槽、铜管、壁面温度 / 批次记录、加固石带和外部遮阴储桶架表达效率与耐久提升；Lv.3 才增加第三套发酵位对应的导流 / 清洗支路、第三通风帽与装卸扩充。所有升级件须保持在地块内，不与屋面或 fixture 穿模。
+- 接入 `2.08 × 2.35 m` 无中心立柱自动双扇门、`70→58 m / 0.06` 屋顶与四周墙体透明链，以及透明后的室内 NPC 点击优先。门、烟气 / 蒸汽、标识与装饰均只作表现，不提交地点、资源、交易、生产或工位事实。
+- 新增三级 GM 美术预览和专项，至少覆盖 `2→2→3` 酿酒位、逐级 `4→5→6` fixture / 碰撞、地块包络、入口净空、升级件透明、马塞尔真实酿酒与既有出售酒回归；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalTavernArtView.gd` 并接入正式 Tavern；旧 Envelope 隐藏。完成半石砌窖基、灰泥 / 深木发酵作坊、深酒红低坡屋顶、两只基础发酵通风帽及桶箍 / 葡萄藤徽记。室内在既有权威家具之外增加瓶架、粮袋、量具、清洗排水、制桶维修与暖灯背景，中央门路和桶外站位保持可达。
+- 等级投影严格保持 fixture / 碰撞 `4→5→6`、酿酒位 `2→2→3`。Lv.2 只增加熟成架、冷却水槽、铜管 / 批次板、石砌加固和外部遮阴桶架；Lv.3 才显示 `cellar_03`、第三服务支管 / 清洗、第三通风帽与装卸扩充。最高级运行包络为 `X[-6.70,6.76] / Z[-5.49,5.92] m`，没有越过 `14 × 12 m` 地块。
+- 接入 `2.08 × 2.35 m` 自动双扇门和 `70→58 m / 0.06` 全外壳透明；两级屋顶 / 外墙附件同步渐隐。GM 新增 `tavern_art_level <1|2|3>`；P6 专项、旧家具、马塞尔真实酿酒、酒交易、全建筑服务位、自动门和 GM 回归通过。Godot MCP 完成 Lv.3 远 / 近景审查且编辑器错误为空；当前等待用户逐级视觉验收。
+
+返修子任务（T0131-P6R 酒桶储藏密度，2026-08-22）：
+
+- 用户要求酒桶再堆多一点。本轮只提高酒窖的酒桶储藏密度，不开始下一座建筑，也不改变 `2→2→3` 酿酒位、`4→5→6` 权威 fixture / 碰撞、库存或生产公式。
+- Lv.1 在后墙两角增加成组陈年桶堆；Lv.2 丰富外部遮阴熟成桶架；Lv.3 丰富正面西侧装卸桶堆。酒桶需形成底层承重、上层错缝的可读堆叠，而不是零散平铺。
+- 所有新增酒桶标记为非工位、非库存表现；不得侵占中央门路、三处桶外站位、现有家具或批准地块。专项锁定逐级装饰酒桶数、权威容量不变、地块边界和透明链，完成后继续等待用户视觉验收。
+- 完成结果：装饰储藏桶按 `6→11→14` 逐级显示；Lv.1 后墙两组三桶架、Lv.2 五桶遮阴熟成架、Lv.3 三桶装卸组均使用 Quaternius 酒桶主体与木架承重。新增桶全部携带 `non_workstation_non_inventory_decoration` 元数据。
+- P6 专项锁定桶数、`2→2→3` 酿酒位、`4→5→6` fixture / 碰撞和地块边界；旧酒窖家具、马塞尔真实酿酒、酒交易与 GM 回归通过。Godot MCP Lv.3 近景确认门路、工位和中央通道未被遮挡，编辑器错误为空。P6R Done，继续等待用户视觉验收。
+
+用户验收：通过（2026-08-22）。酒窖 P6 / P6R 全部收口，下一座进入 T0131-P7 菜园。
+
+当前子任务（T0131-P7 菜园完整建筑切片，2026-08-22）：
+
+- 本轮只制作菜园，不并行开始训练场、马厩或其他建筑。菜园是 `14 × 14 m` 露天生产区，不套用封闭房屋模板；远景必须通过成组田畦、低矮围栏 / 自动园门、农具棚、灌溉和收获陈设直接识别为边境驿站的实用菜园。
+- 保留伊沃真实进入、周期耕作、锄头循环与粮食产出。权威耕作位严格为 Lv.1 / 2 / 3 的 `2 / 2 / 3`：前两块田畦从一级存在，Lv.2 只增加灌溉水沟、堆肥与效率设施，Lv.3 才显示第三块可工作田畦及其对应站位、碰撞与灌溉支路。
+- Lv.1 完成两块真实抬高田畦、边境木篱 / 石基、宽园门、沿边农具棚，以及种子、浇水、收获筐、独轮车、农具、晾晒和防鸟设施。装饰不得占用第三块预留田畦、三个田边工作站位、中央进出路线或现有 fixture 碰撞。
+- Lv.2 增加蓄水桶 / 配水设施、灌溉支路、堆肥成熟度与苗种收纳，表达产量 / 耐久提升，但不得形成第三个完整耕作位。Lv.3 随 `garden_plot_03` 增加第三田畦的独立灌溉、作物支架与收获分拣扩展；所有增量留在批准地块内并与真实工位一一对应。
+- 入口使用不小于 `2.08 m` 的低矮双扇自动园门：真实角色接近开启、离开延迟关闭，门扇只作表现且不成为第二套碰撞 / 导航权威。菜园始终露天可见并始终允许内部 NPC 点击优先；仅农具棚顶在近景淡出，不让棚顶遮挡伊沃或工位。
+- 新增三级 GM 美术预览和专项，至少覆盖 `2→2→3` 耕作位、逐级 `6→8→9` fixture / `10→12→15` 碰撞、第三地块预留、地块包络、园门净空、露天选择优先、棚顶透明、伊沃真实耕作和菜园粮食产出回归；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalGardenArtView.gd` 并接入默认正式 Garden；旧 Envelope 隐藏。完成深色露天园土、低石基木篱、中央宽园门、东侧开放农具棚、种子 / 收获角、药草槽、稻草人和边缘照明，与封闭房屋及普通亮绿治愈地块形成明确区别。
+- 等级投影严格保持可见 fixture `6→8→9`、U 形田畦碰撞部件 `10→12→15` 和耕作位 `2→2→3`。Lv.2 只增加已有水沟 / 堆肥及蓄水、配水、育苗背景；Lv.3 才让 `garden_plot_03`、第三支路、作物架和收获分拣同步出现。最高级美术包络约 `X[-6.91,6.91] / Z[-6.91,6.96] / Y[0,3.02] m`，保持在 `14 × 14 m` 地块内。
+- `BuildingAutoDoor` 新增向后兼容的低门叶高度参数；菜园使用约 `1.02 m` 可见双扇园门和 `2.08 × 2.35 m` 净通行合同。菜园始终开放内部 NPC 点击优先，围栏保持可见，只有农具棚顶与两级遮棚进入 `70→58 m / 0.06` 透明链。
+- GM 新增“菜园美术预览（不改权威等级）”三级按钮和 `garden_art_level <1|2|3>`。P7 专项、A3b6 田畦、伊沃真实耕作、菜园粮食产出、自动门、GM 与项目加载回归通过；Godot MCP Lv.3 运行快照确认 3 个开放耕作位和 15 个有效碰撞部件，编辑器错误为空。当前等待用户逐级视觉验收，不提前制作训练场。
+
+用户验收：通过（2026-08-22）。菜园 P7 收口；用户明确训练场与马厩都应保持露天场所形态，下一座选择训练场进入 T0131-P8。
+
+当前子任务（T0131-P8 训练场完整建筑切片，2026-08-22）：
+
+- 本轮只制作训练场，不并行开始马厩或其他建筑。训练场是 `16 × 18 m` 地块内的 `14 × 16 m` 露天军训院，不套用封闭房屋模板；远景必须通过深色夯土、低矮石基木栅、宽训练门、教官旗位、训练木桩、武器架、盾墙和箭靶直接识别为边境驿站训练场。
+- 保留艾达真实进入 / 执教、格伦真实进入 / 受训和既有武器动作。权威容量严格为 Lv.1 `1 教官 + 2 训练`、Lv.2 `1 + 3`、Lv.3 `2 + 4`；六个位置的可见器械、站位、动作净空与碰撞继续和 `training_instructor_01..02 / training_student_01..04` 一一对应。
+- Lv.1 建立完整基础训练院：两个真实训练木桩位、一号教官旗位、共享武器架 / 箭靶、低矮围栏、训练门、教官遮棚、饮水 / 急救、兵器维护和夯土训练标记。装饰不得侵占六块 `3 × 3 m` 动作净空、门内纵向通道或现有 fixture 碰撞。
+- Lv.2 只随第三训练位增加对应训练标记，并用盾墙、挡箭网、护具 / 沙袋、兵器维护和遮棚强化表达 `training_gain +15% / Max HP +15`；不得出现第二面完整教官指挥旗或伪造第二教官位。Lv.3 才随二号教官位与第四训练位增加第二教官遮棚 / 指挥配套、第四训练区、进阶武器储放和场地扩建表现。
+- 入口使用不小于 `2.08 m` 的低矮双扇自动训练门；训练场始终露天可见并始终允许内部 NPC 点击优先，只有教官遮棚 / 升级遮棚在 `70→58 m` 近景进入透明链，围栏和训练器械保持可见。
+- 新增三级 GM 美术预览和专项，至少覆盖 `1+2→1+3→2+4` 权威容量、逐级 `6→8→10` fixture / 碰撞、六块动作净空、地块包络、训练门净空、露天选择优先、遮棚透明、艾达 / 格伦真实训练及训练成长回归；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalTrainingGroundArtView.gd` 并接入默认正式 TrainingGround；旧 Envelope 隐藏。完成深色夯土、磨损通路、低石基木栅、中央低训练门、交叉武器标识、一号教官棚、兵器维护、饮水急救和旗语背景；不套用封闭建筑壳。
+- 等级投影严格保持 fixture / 有效碰撞 `6→8→10`、教官 / 训练位 `1+2→1+3→2+4` 与六块 `3 × 3 m` 动作净空。Lv.2 只增加第三训练位、盾墙、挡箭网、护具和器材棚；Lv.3 才增加第二教官指挥配套、第四训练区、进阶兵器和入口荣誉旗。
+- 接入 `2.08 × 2.35 m` 净口、`1.05 m` 门叶的自动低门；训练场始终优先点击内部 NPC，围栏 / 器械保持可见，三个小遮棚使用 `70→58 m / 0.06` 渐隐。最高级包络约 `14.04 × 16.01 m`，保持在 `16 × 18 m` 地块内。
+- GM 新增 `training_ground_art_level <1|2|3>`；P8 专项、A3b7 家具 / 路线、艾达 / 格伦正式双实体训练、训练成长、自动门和 GM 回归通过。A3b7 历史聚合常量同步到既有 `109 / 36 / 236` 基线，并显式预览 Lv.3 后审计全部十件 fixture。当前等待用户逐级视觉验收，不提前制作马厩。
+
+用户验收：通过（2026-08-22）。训练场 P8 收口，下一座进入 T0131-P9 马厩。
+
+当前子任务（T0131-P9 马厩完整建筑切片，2026-08-22）：
+
+- 本轮只制作马厩，不并行开始其他建筑。使用既定 `16 × 16 m` 地块与 `14 × 14 m` 最大包络；马厩保持露天马院形态，不套用封闭民房外壳。远景必须通过成排开放马栏、马头 / 马蹄标识、中央牵马通道、饲料和鞍具设施直接识别用途。
+- 保留托马真实进入、周期照料与养马结算。权威照料位严格为 Lv.1 / 2 / 3 的 `2 / 2 / 3`；八个马匹锚点继续为最多八匹马的物理展示预留。场内马匹表现只读 HorseSystem 当前位于 `stable` 的真实马匹，不用装饰马伪造库存；骑乘离厩后隐藏，返回后恢复。
+- Lv.1 建立七个已开放马栏，其中两处对应 `stall_01 / stall_02` 真实照料位，并补齐中央牵马通道、低石基木围栏、宽自动马厩门、两匹初始马的真实锚点显示、基础水槽 / 草料 / 清扫 / 马具陈设。装饰不得侵占八个 `1.4 × 2.2 m` 马体净空、三个照料站位或中央 `2.4 m` 通道。
+- Lv.2 只启用既有共享草料架，并增加鞍具房、干草储备、通风遮棚、蹄铁 / 修蹄维护和饮水扩充，表达效率与耐久提升；不得提前显示 `stall_03` 或第三个完整照料工位。Lv.3 才同步启用第三照料马栏、独立照料标记、产驹 / 恢复角和后勤扩展。
+- 入口使用不小于 `2.08 m`、适合牵马通过的低矮双扇自动门；马院始终允许内部 NPC 点击优先。围栏、马栏和马匹保持可见，只有边缘遮棚使用 `70→58 m / 0.06` 渐隐，避免遮挡托马和真实马匹。
+- 新增三级 GM 美术预览和专项，至少覆盖照料位 `2→2→3`、可见 fixture `7→8→9`、有效碰撞部件 `23→24→27`、八个马匹锚点、真实马匹投影、地块包络、入口净空、露天选择、遮棚透明、托马真实照料和 HorseSystem 回归；完成后等待用户逐级视觉验收。
+
+实现结果（2026-08-22）：
+
+- 新增 `FormalStableArtView.gd` 并接入默认正式 Stable；旧 Envelope 隐藏。完成露天夯土马院、中央 `2.4 m` 牵马通道、低石基木围栏、`2.58 × 2.35 m` 宽自动低门、开放马栏、马头 / 马蹄标识及清扫、饮水、草料、鞍具、修蹄背景。
+- 等级投影严格保持 fixture `7→8→9`、有效碰撞 `23→24→27`、照料位 `2→2→3` 和可用马匹锚点 `7→7→8`。Lv.2 只增加共享草料 / 鞍具 / 干草 / 修蹄 / 饮水与后排饲料架；Lv.3 才增加第三照料位、产驹 / 恢复和后勤扩充。
+- `HorsePresentation` 只读 HorseSystem，将实际位于 stable 的马映射到八个既有锚点；当前两匹初始马显示在 `stall_01 / stall_02`，骑乘或离厩即隐藏，不创建装饰库存事实。最高级包络约 `13.96 × 14.02 m`，保持在 `16 × 16 m` 地块内。
+- GM 新增 `stable_art_level <1|2|3>`；P9 专项、A3b8、托马真实照料、自动门和 GM 回归通过。MCP 运行快照确认当前仅显示 HorseSystem 的两匹真实马，新增马厩网格无完整性问题。当前等待用户逐级视觉验收。
+
+用户返修（T0131-P9R，2026-08-22）：两侧马栏顶棚不能只覆盖外墙边缘，须向中央通道方向延长并覆盖八个马匹锚点的完整 `1.4 × 2.2 m` 马体净空；保持中央 `2.4 m` 牵马通道、棚顶透明、地块包络、工位容量和碰撞不变。完成后继续等待马厩视觉验收。
+
+返修结果：两侧顶棚宽度由 `2.2 m` 扩展为 `5.05 m`，内侧柱梁移至马栏分隔线，形成从外围栏到马栏内沿的连续遮蔽；专项新增逐锚点完整马体净空覆盖审计。最高级包络、中央通道、自动门、fixture / 碰撞和照料容量均未改变，继续等待用户视觉确认。
+
+用户验收：通过（2026-08-22）。马厩 P9 / P9R 收口；至此 T0131 覆盖的铁匠铺、工械坊、小教堂、小诊所、食堂、宿舍、酒窖、菜园、训练场和马厩均已完成逐座验收，T0131 标记 Done。下一阶段入口为 T0132，不在本次验收回写中提前实施。
+
 ---
 
 ## T0132 制作不可进入建筑、城防、器械、公告牌与商人表现
 
-状态：Todo
+状态：Done（2026-08-23；P1–P7、P7R 与 P7R2 均已完成并通过用户验收）
 优先级：P0
 前置任务：T0129
 涉及文档：`ART_DIRECTION.md`, `GODOT_ARCHITECTURE.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `UI_UX.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -307,6 +1112,224 @@
 - 城防升级、器械槽解锁、部署、建筑受损和修复有可见差异，但表现节点不拥有 HP、库存、射程或伤害权威。
 - 公告牌仍不进入 `building_defs.json`，点击与双页输入功能正常。
 
+### T0132-P1 主厅六级正式表现（2026-08-22）
+
+状态：Done
+
+本次仅处理主厅，不提前修改仓库、围墙、城门、道路、公告牌或商人。
+
+- 主厅继续是中央最大、最高的不可进入指挥核心；保持 `24 × 20 m` 地块和 `22 × 18 m` 最大建筑包络，不增加 NPC 工位，不使用可进入建筑的屋顶 / 外墙透明逻辑。
+- Lv.1 建立完整石木指挥厅、中央主门、双翼、指挥旗和首个器械平台；Lv.2 增加墙基 / 扶壁加固；Lv.3 增加第二平台与屋顶通道；Lv.4 增加屋脊防护和守备旗；Lv.5 增加第三平台与侦望扩展；Lv.6 增加第四平台、中央塔楼和铁制终局加固。
+- 权威器械容量严格保持 `1 / 1 / 2 / 2 / 3 / 4`；外部 fixture 累计显示数与有效碰撞保持 `1 / 2 / 3 / 4 / 5 / 7`，等级表现只读 BuildingSystem / DefenseDeviceSystem，不拥有 HP、伤害、射程或槽位权威。
+- 主厅受损时按 HP 比例分级显示裂纹、破损布幔与烟尘，修复后随权威状态消失；不修改主厅被摧毁即失败的逻辑。
+- GM 提供 `main_hall_art_level <1|2|3|4|5|6>` 纯表现预览，不改写存档与权威建筑等级。完成自动化、MCP 运行验收后仍需用户逐级视觉确认，确认前不进入 T0132-P2 仓库。
+
+实施结果：新增独立 `FormalMainHallArtView.gd`，主厅六级累计外观、平台 / 加固 fixture 碰撞、不透明屋顶、轻重受损 / 修复投影、镜头可见点击与 GM 预览均已落实。最高级包络为 `21.40 × 17.56 m`，器械容量 `1/1/2/2/3/4`、fixture / 碰撞 `1/2/3/4/5/7`。专项、历史 A3b11R 主厅、GM 和 MCP 运行验收通过；真实 BuildingSystem 仍为 Lv.1，预览未改权威。当前等待用户视觉验收，不进入仓库。
+
+用户返修（T0132-P1R，2026-08-22）：Lv.1 主厅从默认俯视镜头看仍是一条贯穿前后的淡蓝色白盒，与已验收建筑的屋顶、材质和立面丰富度不匹配。本轮必须拆分中央贯通盒体为前部门楼 + 中段指挥楼，用完整交叉坡屋面覆盖中轴，把墙体改为暖灰石 / 灰泥与深木构分段，主立面增加立柱、斜撑、墙带和石质门楼层次。不改地块、等级、fixture / 碰撞、点击、受损、器械或失败权威，修完后继续等待主厅视觉验收。
+
+返修结果：已删除旧 `CentralGatehouse` 贯通体量，将中轴拆成 `CentralCommandCore / CommandNeck / FrontGatehouse` 三段，并以 `CentralCrossRoof / FrontGatehouseRoof` 两组完整深灰蓝坡屋面覆盖；全楼取消默认淡蓝 tint，改用暖灰石 / 灰泥、深木正立面框架、斜撑、石质门楼带与阶梯山墙。专项新增“旧白盒不得存在”、三段体量纵深上限、双屋顶和十根正立面木柱硬断言。主厅地块、六级增量、fixture / 碰撞、点击、损伤和全部权威不变；继续等待用户视觉验收，不进入仓库。
+
+用户返修（T0132-P1R2，2026-08-22）：P1R 仍只是把无纹理程序盒体换色，门窗、木构和石带继续以附件形式贴在盒体外，和其他使用 Quaternius 模块化外墙 / 屋面的正式建筑不一致。此项按资产组合缺陷而非调色问题处理：Lv.1 玩家可见的四面主体必须由带原生纹理 / 材质的 Quaternius 墙体与门窗模块形成连续立面，程序 BoxMesh 只能退为看不见的填芯、地基、细木构或小型加固，不得再成为默认俯视下的最大可见墙面 / 顶面；中轴屋顶也应优先使用带瓦片纹理的正式屋面模块。专项必须审计可见主体中程序墙壳占比与模块化立面数量。保持地块、六级增量、fixture / 碰撞、点击、损伤、器械和失败权威不变，完成后仍等待主厅视觉验收，不进入仓库。
+
+返修结果：已移除五个承担主体的可见程序盒体。低厅四面、中央段、连接段和前门楼改由 53 个带 WoodTrim / Plaster / UnevenBrick 原生贴图的 Quaternius 墙 / 门模块连续组合；东西翼、中央交叉点和前门楼的四组屋面改用带 RoundTiles / RockTrim / MetalOrnaments 贴图的正式 Quaternius 屋面资产。运行态审计为 53 个墙模块、172 个外立面带贴图材质表面、10 个屋面带贴图材质表面、0 个大型可见程序墙壳。主厅包络宽度精确为 `22.0 m`，六级、fixture / 碰撞和全部权威不变；继续等待用户视觉验收，不进入仓库。
+
+用户返修（T0132-P1R3，2026-08-23）：P1R2 把无纹理实体盒错误替换成只有墙片与屋顶的空壳，主厅缺少连续实体建筑体量、屋面承重层和四个防御器械平台的可信结构关系；超大双屋顶还遮盖 / 挤占了位于 `(-7,-5) / (7,-5) / (-7,5) / (7,5)`、高度约 `3.05 m` 的正式器械平台。必须先核对本地 Quaternius 完整建筑候选和现有器械槽包络，再重做为有完整实心视觉体量、原生贴图立面、明确屋顶 / 女儿墙 / 平台承重结构的主厅。四个 `3.6 × 3.6 m` 平台必须在对应等级清楚可见、顶部无遮挡并与主体连接，不能埋进屋顶、悬空或只保留后台槽位。不得修改器械槽坐标、解锁等级 `1/3/5/6`、碰撞、射程、建筑 HP / 失败或部署权威；完成后继续等待用户视觉验收，不进入仓库。
+
+返修结果：核对确认本地 Quaternius 建筑包是模块套件，没有完整主厅成品 GLB；P1R2 的 53 个墙片与四个超大屋面确实构成空壳。现以同源 RockTrim / Plaster / UnevenBrick PBR 纹理建立封闭实体、连续承重屋面、女儿墙和垛口，保留 50 个原生墙 / 门模块负责立面细节；中央瓦顶缩到约 `7.8 × 5.6 m`，四个平台上方 `3.6 × 3.6 m` 净空均无屋顶或上层体量侵入。专项还发现并修复了另一条真实缺陷：正式平台已在远端地图，但 DefenseDeviceSystem 的 UI / 模型 / 攻击原点仍使用旧 Main 坐标。现在主厅四槽运行态统一绑定平台世界锚点，围墙槽同步绑定正式正门墙段；主厅局部坐标、`1/3/5/6` 解锁、`2.0x` 射程、库存、HP、失败与部署权威未改。P1R3 专项真实部署 Lv.1 箭塔到 `(993,3.93,-13)`，主厅 fixture、部署 / 自动攻击、部署 UI 和战斗基础回归通过；继续等待用户视觉验收，不进入仓库。
+
+用户验收：通过（2026-08-23）。T0132-P1/P1R/P1R2/P1R3 主厅收口，允许进入下一座仓库；主厅后续仅保留正式弩床 / 箭塔模型与攻击动作等 T0132 后续器械表现，不在仓库步骤中返改。
+
+### T0132-P2 仓库三级正式表现（2026-08-23）
+
+状态：Done
+
+本次仅处理仓库，不提前修改围墙、正后门、道路、公告牌、商人或正式塔防器械。
+
+- 仓库继续是不可进入、零 NPC 工位的实体建筑；保持 `16 × 16 m` 地块、`14 × 14 m` 最大包络、正式敌军攻击点、中央装卸通道及 ResourceSystem / BuildingSystem 的容量、HP、升级、受袭权威。
+- 以“边境商路加固货栈”为辨识目标：Lv.1 建立有连续实体体量和原生纹理立面的石基木构货栈、宽双扇装卸门、门楣吊运设施、主货棚与五组既有分类储藏 fixture；Lv.2 增加侧仓、外部高架、遮雨装卸扩展和结构加固；Lv.3 增加挑高安全仓、受保护的贵重 / 军需储藏、屋面通风与终级铁件加固。
+- 可见分类储藏 fixture 严格保持 `5→6→7`，只表达粮食、木石铁、装备和贵重物资等类别及升级后的容量感，不读取或复制 ResourceSystem 实时数量；不得伪造可用工位、额外仓储容量或商人物资。
+- 主体必须是封闭、承重、有纹理的模型组合，不能再次出现薄墙空壳或无纹理大白盒；仓库不可进入，因此屋顶与外墙保持不透明，任意可见包络点击仍打开 BuildingPanel。轻 / 重受损与修复只读 BuildingSystem HP。
+- GM 新增 `warehouse_art_level <1|2|3>` 纯表现预览，不修改真实等级、HP、容量、库存或敌军目标。专项与历史 A3b12R、容量、建筑点击 / 受击、GM 和 MCP 运行验收通过后，仍需用户逐级视觉确认；确认前不进入围墙。
+
+实施结果：新增独立 `FormalWarehouseArtView.gd`，以封闭 RockTrim / Plaster / UnevenBrick / WoodTrim PBR 实体替换近景会透明的木格栅空架；12 个 Quaternius 木格栅模块只负责立面细节，五段原生木屋顶形成连续不透明主屋面。Lv.1 具备石基、双扇装卸门、前后山墙、门楣 / 屋脊吊运架、装卸雨棚和五组分类储藏；Lv.2 增加东侧仓、高架、遮雨扩展和角部铁件；Lv.3 增加后部挑高安全仓、军需 / 贵重货物陈设、独立木顶与通风帽。分类 fixture / 碰撞严格为 `5→6→7`，只表达类别，不读取库存数量。
+
+最高级可见包络为局部 `X[-6.85,6.93] / Z[-6.85,6.85] / Y[0,6.76] m`，保持在 `14 × 14 m` 表现包络内；中央 `2.4 m` 装卸轴线、正式敌军攻击点与17点正门后攻击路线未改。专项、历史 A3b12R、六项容量 / 原子入库、真实仓库受击、修复升级、GM、主厅及战斗基础回归通过。当前等待用户 Lv.1–3 视觉确认，确认前不进入围墙。
+
+用户返修（T0132-P2R，2026-08-23）：当前把五个完整双坡屋顶模块沿纵深重复铺设，错误地产生五道平行屋脊和连续锯齿山墙，轮廓更像厂房而不是与既有驿站建筑同一风格的货栈。返修只处理仓库屋面：主仓改为单一连续双坡屋顶与一条主屋脊，瓦面材质、檐口厚度和色调须与已验收建筑统一；Lv.2 侧仓、Lv.3 挑高安全仓的新增屋面继续保留升级识别，但必须使用同一屋面语言且不得穿模。仓库主体、地块、fixture / 碰撞、容量、不可进入、点击、受击和攻击路线均不得改变。完成后继续等待仓库视觉验收，不进入围墙。
+
+返修结果：主仓五个 `warehouse_roof_wooden` 完整模块已替换为一个覆盖全体量的 `main_hall_roof` 深色瓦面模块，只保留一条连续屋脊；Lv.2 东侧仓改用 `roof_round_tiles_4x4` 同族小屋顶，Lv.3 挑高安全仓改用与主仓相同的单屋脊瓦顶。专项明确拒绝任何 `QuaterniusRoofBay*` 重复模块并锁定完整主屋顶数量为 1。最高级包络约为 `13.91 × 13.83 × 6.76 m`，主体、地块、`5→6→7` fixture / 碰撞、容量、点击、受击和攻击路线均未改变；运行态 Lv.1 / Lv.3 近景检查无屋面穿模，继续等待用户视觉验收。
+
+用户联合返修（T0132-P1R4 / P2R2，2026-08-23）：仓库 Lv.1 主屋顶、Lv.2 侧仓顶和 Lv.3 安全仓顶保留原生瓦片纹理，但统一压低饱和度与明度，改成与暖灰石基、旧木立面一致的烟熏灰褐色，不再出现鲜艳的新木 / 橙瓦感。主厅只返修三个升级增量：Lv.2 删除挡在正面窗前、悬空且不到檐口的灰色方柱，改为不遮窗且具备明确传力关系的墙基 / 侧后扶壁；Lv.4 删除中央屋顶无建筑语义的灰色方块，改为与屋脊结构结合的金属信号火台；Lv.6 将前上方鲜艳小阁楼重做为有实体墙身、木构、窗洞和同色瓦顶的门楼指挥塔。三个等级必须继续保持原 fixture / 碰撞累计数、器械槽、HP、失败、升级与点击权威，返修后重新逐级视觉验收。
+
+联合返修结果：仓库三组等级屋面已统一使用保留原纹理的 `#8a8179` 烟熏灰褐 tint。主厅 Lv.2 四根正面挡窗短柱已删除，只保留墙基与侧 / 后扶壁；Lv.4 fixture 已改为约 `1.18 × 1.24 m` 的屋脊金属信号火台；Lv.6 fixture 已改为六组原生贴图墙面、实体墙芯、深木构和同色瓦顶组成的门楼指挥塔，屋檐收敛后包络约 `5.18 × 3.96 × 3.48 m`。累计 fixture / 碰撞 `1/2/3/4/5/7`、器械容量 `1/1/2/2/3/4`、仓库分类 `5→6→7` 和全部权威未变；当前等待用户视觉验收，不进入围墙。
+
+用户返修（T0132-P1R5，2026-08-23）：主厅 Lv.4 的圆形火盆、上下球形发光体组合读成现代警灯，违背中世纪边境指挥建筑语义。只返修 Lv.4 屋脊增量：改成低矮石质鞍座、四脚黑铁火篮、外翻铁栏、交叉焦木与不规则低亮橙焰；禁止圆顶灯罩、红蓝高饱和球体、细长灯杆或悬浮结构。保留 Lv.4 fixture ID、碰撞、Max HP 升级、等级可见性、器械容量和 GM 预览权威，完成后单独验收 Lv.4。
+
+方案变更：用户在火篮运行验收前明确取消火具方案，Lv.4 最终改为一面中世纪守备旗。构件由与屋脊连接的低矮石质鞍座、铁箍、短木旗杆、绳结、酒红燕尾旗和克制的旧金纹章组成；禁止保留任何火焰、余烬、发光球或警示灯轮廓。旗面使用主厅既有酒红 / 旧金强调色，不抢过主体深灰蓝屋面。
+
+返修结果：Lv.4 fixture 最终生成约 `1.78 × 0.84 × 1.99 m` 的单面守备旗构件，包含石质屋脊鞍座、交叉铁箍、短木杆、双绳结、双面旧金纹章和自建低模燕尾旗面；火盆、火焰、余烬及所有发光节点均为零。新旗面网格通过运行态 mesh integrity 检查，专项、历史 A3b11R、修复升级、GM 与项目加载回归通过；fixture / 碰撞累计、Max HP、器械容量与全部权威未变，等待用户单独验收 Lv.4。
+
+用户验收：通过（2026-08-23）。T0132-P1 主厅与 P2 仓库收口，允许进入围墙和正后门。
+
+### T0132-P3 围墙六级、正门与后门正式表现（2026-08-23）
+
+状态：Done
+
+本次只处理围墙、正门和后门，不提前制作正式弩床 / 箭塔、道路、公告牌或商人入口装饰。
+
+- 14 段围墙保持 `station_layout_v2` 的不规则边界、既有静态碰撞和导航烘焙范围；正式表现改为有石纹、压顶、木质巡逻道和连续城垛的边境驿站防线，不改变道路、敌军路线或地图包络。
+- 围墙器械容量严格保持 Lv.1–6 的 `1 / 2 / 2 / 3 / 3 / 4`。四个实体器械台必须与 `wall_slot_01–04` 的正式世界锚点逐项重合，并只在 Lv.1 / 2 / 4 / 6 解锁；Lv.3 / 5 只增加与 `+5% / +10%` 射程权威对应的瞭望、测距和墙体加固表现，不生成假槽位。
+- 正门保持 `6.0 m` 净宽、`3.2 m` 既有门洞合同，制作更厚重、更高的双塔门楼与双扇包铁木门；后门保持 `5.0 m` 净宽、`2.8 m` 门洞合同，使用更低矮克制的商旅侧门。两者外观尺寸必须一眼可分辨正门大于后门。
+- 正后门在我方 NPC 接近时自动开门、离开后延时关闭；后门同时允许实体商队触发表现。敌军不得触发开门，正门遭敌军进攻时继续由 CombatSystem / BuildingSystem 的到达、受击、摧毁权威控制，门扇表现不开放敌军捷径，也不重算伤害。
+- GM 增加 `wall_art_level <1|2|3|4|5|6>` 纯表现预览和城门状态快照；自动化需锁定 14 墙段、四台与锚点 / 解锁等级、正后门大小差、友军触发 / 敌军排除、历史静态碰撞、敌路、商路 / 逃离和器械部署回归。完成后等待用户逐级视觉验收。
+
+实施结果：新增 `FormalFortificationArtView.gd` 与 `FormalGateArtView.gd`。14 段墙已改为有 RockTrim / UnevenBrick / WoodTrim 贴图的石墙、压顶、内侧木巡逻道和双侧城垛；四个 `3.6 × 3.4 m` 器械台与正式 `wall_slot_01–04` 世界锚点逐项重合，逐级数量实测为 `1/2/2/3/3/4`。Lv.3 / 5 只增加测距 / 标定与加固细节，不产生额外平台。
+
+正门保持 `6.0 m` 净宽和约 `5.65 m` 门楼高度，使用双守卫塔、守备旗与包铁双扇门；后门保持 `5.0 m` 净宽和约 `4.15 m` 门楼高度，使用低矮商旅侧门。四扇门叶均具有实体碰撞，我方 NPC 接近自动打开，后门商队可触发，敌军不能触发且战斗中正门锁闭；摧毁后的开放仍只读既有建筑权威。专项、正门真实受击、后门逃离、正式商路、器械部署、GM 与项目加载回归通过；当前等待用户 Lv.1–6 与正后门视觉确认，不进入正式器械表现。
+
+#### T0132-P3R 木栅寨墙与木制门楼返修（2026-08-23）
+
+状态：Done
+
+用户确认围墙、四个塔防台和正后门的结构、相对尺度及交互逻辑正确，但连续石墙与石塔把边境驿站读成了城堡。本轮保留 14 段墙线、四台正式槽位、逐级解锁、正后门净宽 / 高差、门叶碰撞与自动开闭逻辑，只将建筑语言返修为边境驿站的木栅寨墙：连续木墙板 / 原木立柱、横向束梁、内侧巡逻台、木制垛口和斜撑；正门为较厚重的木门楼，后门为低矮木制商旅侧门。石材仅允许作为贴地防潮基脚，不得继续构成连续墙身、塔身、门楣或塔防台主体。损伤表现同步改为倒木、断板和木屑，不再生成石砾。专项必须锁定木构节点与材质语义，并确认原有碰撞、导航、器械锚点、敌军排除、商路和逃离权威零变化。
+
+返修结果：14 段连续墙身已替换为 WoodTrim 贴图木板幕墙，并增加粗立柱、双面束梁、木压顶、木垛口、巡逻道和斜撑；石材只剩 `0.24 m` 高贴地基脚。四个器械台改为木制承重架、支柱、木甲板与木护栏；Lv.2 增量改为木扶撑，重损伤碎石改为倒木。正后门塔身、门楣、塔垛均已改成木构，外露角柱、横梁和交叉斜撑强化结构识别，两门只在塔脚保留低石垫。专项、正门真实受击、后门逃离、正式商路、器械部署和 GM 回归全部通过；当前等待木栅寨墙视觉确认。
+
+#### T0132-P3R2 围墙槽位与城门视觉归属拆分（2026-08-23）
+
+状态：Done
+
+用户确认权威设计应保持“围墙升级解锁围墙器械槽，城门升级只强化城门本体”，因此四个平台不得由城门塔身承托或在视觉上落入门洞 / 门楼包络。本轮将 `wall_slot_01–04` 从正门中心横向 `-2.5 / +2.5 / -8 / +8 m` 调整到正门左右连续前墙的 `-7.6 / +7.6 / -13 / +13 m`：前两台与门塔外缘保留明确缝隙，后两台继续向左右翼展开。`StationLayoutController` 正式槽位姿态、`FormalFortificationArtView` 平台、DefenseDeviceSystem 运行态部署位置与攻击原点必须同步迁移；槽位 ID、宿主 `wall`、解锁等级、容量、器械类型、射程、碰撞、敌路和城门逻辑不变。专项需断言四台均位于门楼包络外、同侧平台不重叠且仍与正式部署锚点逐项重合。
+
+实施结果：四台正式平台及 `StationLayoutController` 槽位姿态已同步迁移到 `-7.6 / +7.6 / -13 / +13 m`。以平台半宽 `1.8 m` 和正门楼外半宽 `5.45 m` 计算，中央两台内缘位于 `±5.8 m`，与门楼留出 `0.35 m` 明确缝隙；左右同侧平台中心相距 `5.4 m`，平台间留出 `1.8 m`。运行态每个 DefenseDeviceSystem 槽位继续以 `building_id=wall / formal_fixture_id=front_wall_defense_walkway` 绑定同一平台中心，部署模型和攻击原点随平台迁移。专项、器械部署、正门真实受击和 GM 回归通过；当前等待墙上平台视觉确认。
+
+#### T0132-P3R3 围墙升级冗余铁件清理（2026-08-23）
+
+状态：Done
+
+用户指出正门两侧随升级出现的灰色长柱 / 长方体板违和。排查确认灰件主要来自 Lv.4 `WallIronTie`：`0.15 × 2.55 × 1.46 m` 的外露铁板从正侧面分别读成长柱和板片；Lv.6 `FinalIronCoping` 同属无必要的外露灰色条板。第一次实机清理后又确认 Lv.2 `FrontWallTimberButtress` 是平台下方仍可见的大块深色悬挂板。三者都没有可信锚固或独立玩法语义，本轮全部删除，不以改色或缩小规避。Lv.2 / 4 / 6 已各自由新增墙上器械台表达升级，槽位、射程、HP、正式坐标、碰撞和城门逻辑不变；专项新增三类冗余节点必须为零的断言。
+
+实施结果：`FrontWallTimberButtress / WallIronTie / FinalIronCoping` 三类节点已从生成逻辑彻底删除。Lv.6 实机复查不再出现墙外悬挂的灰色长柱、正侧面切换成板片的薄铁盒或平台下的大块深色悬板；仅保留平台自身成体系的木承台、支柱与细斜撑。围墙等级容量、四台位置、正式部署 / 攻击原点和城门逻辑未变；专项通过，等待用户视觉确认。
+
+#### T0132-P3R4 左右前墙附加件逐段对齐（2026-08-23）
+
+状态：Done
+
+用户指出靠铁匠铺一侧的右墙实际沿 `north_east` 斜墙约 `+5.75°` 延伸，但平台和旗子仍统一使用城门 `-4°` 朝向，导致附件横穿墙线；左侧因 `north_west_a` 约为 `-4.61°` 而偶然近似正确。本轮停止用城门 Basis 统一平移：负横向附件吸附 `north_west_a`，正横向附件吸附 `north_east`，从各段临门端点沿真实墙切线量取距离，并用墙外法线作为器械朝向。四个平台、Lv.3 测距杆 / 横杆、Lv.5 标定杆 / 旗子、StationLayoutController 正式槽位、DefenseDeviceSystem 部署模型和攻击方向必须同步。槽位 ID、左右顺序、离门距离、解锁等级、容量、HP、碰撞和城门逻辑不变。
+
+实施结果：新增逐段吸附算法。左侧附件从 `north_west_a` 临门端沿墙段量距并使用 `-4.61°`，右侧从 `north_east` 临门端沿墙段量距并使用 `+5.75°`；不再复用城门 `-4°`。四个平台、两根 Lv.3 测距横杆、四面 Lv.5 标定旗均带墙段元数据并通过方向 / 数量断言。StationLayoutController 以相同墙段算法输出平台中心和朝外法线，DefenseDeviceSystem 运行态部署位置与攻击朝向同步。专项、器械部署 / 攻击与 GM 回归通过；完整第五波构建回归在并行命令中超过 120 秒，未计为通过，也未发现功能错误。当前等待右墙排列视觉确认。
+
+用户验收：通过（2026-08-23）。围墙、塔防台、正后门及左右墙段附件排列收口，允许进入正式塔防器械表现。
+
+### T0132-P4a 正式弩床模型与攻击表现（2026-08-23）
+
+状态：Done
+
+本次仍按“一件一件验收”推进，只完成弩床，不提前粗制箭塔。资源审计确认当前 Quaternius Medieval Village / Fantasy Props 包没有可直接使用的 ballista / crossbow siege 成品，因此使用同源 WoodTrim / MetalOrnaments PBR 贴图组合正式低模弩床；程序生成仅承担结构组装和活动部件驱动，不得回退到纯色占位盒。
+
+- 弩床最高可见占地必须适配围墙 `3.6 × 3.4 m` 与主厅 `3.6 × 3.6 m` 两类平台，底座、轮组、承重架、转台、弩臂、绞盘、弦、箭槽和重弩箭形成可信结构，朝向继续读取正式槽位朝外方向。
+- DefenseDeviceSystem 仍即时权威结算选敌、射程、攻速、伤害、穿透与击败；表现事件只追加本次射击的原点、目标快照与权威攻击间隔，不用动画或物理碰撞反算伤害。
+- 每次权威攻击事件必须驱动一次清楚的“瞄向目标—弓弦释放 / 机身后坐—可见弩箭飞行—按攻速重新张弦—新弩箭出现”循环；待机时床面必须已有装填箭，重装时不可提前显示下一支箭。
+- 专项验证正式场景替换、平台包络、木 / 金属贴图材质、朝向、事件表现元数据、发射后空槽和按间隔重装；通过自动化与运行检查后等待用户视觉验收，再单独制作 P4b 箭塔。
+
+实施结果：`wall_ballista.presentation.model_scene` 已切换到独立 `FormalBallistaArtView.tscn`。弩床以 WoodTrim / MetalOrnaments PBR 材质组合不少于 48 个结构网格，可见合同为 `2.92 × 1.72 × 3.08 m`；围墙与主厅仍共用同一模型和各自正式槽位朝向。每次权威攻击结果追加槽位原点、目标位置和 `attack_interval` 三项只读表现元数据，视图据此播放转台瞄准、动态弦释放、床身后坐、重弩箭飞行、绞盘 / 张弦和装填完成后新箭出现。伤害仍在动画前由 CombatSystem 即时结算。专项、器械部署 / 自动攻击、项目加载和 D3D12 待机 / 发射 / 重装 / 正式墙台画面均通过；当前等待用户视觉确认，确认前不制作 P4b 箭塔。
+
+用户验收：通过（2026-08-23）。正式弩床模型、平台适配与同步攻击 / 重装表现收口，允许进入 P4b 箭塔。
+
+### T0132-P4b 主厅木制器械台统一与正式箭塔（2026-08-23）
+
+状态：Done
+
+用户要求先把主厅四个 `3.6 × 3.6 m` 器械台从石制承台改成与围墙器械台一致的深色木制承台、甲板、护栏、垛口、支柱与斜撑，再制作箭塔。平台只改材质与可信木构，不改四槽坐标、`1/3/5/6` 解锁、`3.93 m` 器械锚点、fixture 碰撞或主厅权威。
+
+资源审计确认本地 Quaternius 包同样没有可直接使用的箭塔成品。正式箭塔应使用同源 WoodTrim / MetalOrnaments / RoundTiles PBR 纹理组合，形成能同时装入围墙 `3.6 × 3.4 m` 与主厅 `3.6 × 3.6 m` 平台的紧凑木制塔体；不得放置无权威操作者的假人。每次权威攻击事件驱动塔头瞄准、箭槽发射、可见箭矢飞行、机械回位及按 `1.39 s` 攻击间隔补入下一支箭；伤害、选敌、射程、攻速和击败继续由 DefenseDeviceSystem / CombatSystem 即时结算。
+
+实施结果：四个主厅 fixture 已统一切换 `FormalMainHallDefensePlatformArtView.tscn`，形成 `3.6 × 3.6 m` WoodTrim PBR 木承台、甲板、前后垛口、侧护栏、短支柱、斜撑和铁靴；旧石平台和灰色护墙不再生成，四槽中心、`1/3/5/6` 解锁、碰撞及 `3.93 m` 锚点未变。`wall_arrow_tower.presentation.model_scene` 已切换 `FormalArrowTowerArtView.tscn`：木塔可见合同为 `3.12 × 3.48 × 3.18 m`，含四柱承重架、交叉撑、射击层、低护板、圆瓦顶棚、双储箭架和中央速射机构，不生成假操作员。权威攻击后播放瞄准、放箭、弹体飞行、短后坐、回位轮 / 弓弦复位与补箭。专项、主厅 P1、围墙 P3、器械部署 / 自动攻击、项目解析及 D3D12 独立 / 主厅实装画面通过；当前等待用户视觉确认。
+
+#### T0132-P4bR 箭塔屋面坡向与屋脊贴合返修（2026-08-23）
+
+状态：Done
+
+用户实机指出箭塔双坡屋顶中央反而凹下，屋脊梁悬在凹槽上方。排查确认为左右坡面绕 Z 轴的旋转符号相反，使两片瓦面从外檐向中央下降。返修应恢复外檐低、中央屋脊高的正常人字顶，并让屋脊梁与两片瓦面的最高交线贴合；塔体、平台包络、攻击动作和全部权威不变。
+
+返修结果：左右坡面旋转符号已互换，瓦面现在从两侧外檐向中央上升；屋脊梁同步升到 `3.38 m` 并压在两片瓦面的最高交线上，四根棚柱继续接入檐下。真实主厅安装与独立近景 D3D12 画面均确认不再出现中央凹槽或悬空梁。专项新增 `closed_convex_gable`、左右坡向和屋脊最低高度断言，并已通过用户复验。
+
+用户验收：通过（2026-08-23）。P4b/P4bR 主厅木制平台、正式箭塔、攻击补箭循环与闭合人字顶收口，允许进入 P5 道路表现。
+
+### T0132-P5 正式道路主体表现（2026-08-23）
+
+状态：Done
+
+本次只处理 `station_layout_v2.roads` 已规划路段的正式可见主体，不提前制作公告牌或商人入口装饰，也不展开 T0135 的全地图草木、岩石、灯光和音效打磨。
+
+- 保留所有道路端点、宽度、用途分类与既有不规则路网；不得把建筑重新排成棋盘，也不得更改敌路、商路、逃离路线、NavigationMesh、AStar 网格或单位选路。
+- 道路只是表现贴花。以低饱和压实泥土为主体，增加有界的不规则边缘、分段磨损、车辙和少量嵌地碎石，使其不再是平直纯色长方体；道路不得生成会阻挡 NPC / 敌人或截获点击的碰撞。
+- 主路、服务路、贸易路和敌军接近路允许通过泥色、宽度、车辙密度与磨损程度区分，但不能用过亮色块重新制造人工园林感。路面必须略高于草地且低于建筑基座，交叉口不得明显闪烁或出现悬空接缝。
+- 专项锁定路段数量、端点 / 宽度、零碰撞、`roads_affect_navigation=false`、正式材质与细节密度；D3D12 检查默认远景和近景后等待用户视觉确认，再单独进入公告牌。
+
+实施结果：`StationLayoutController` 已用 `FormalRoadNetworkArtView` 替换旧的 42 块平直纯色道路矩形，严格复用 `station_layout_v2.roads` 的全部端点、宽度与 `10 main / 23 service / 4 enemy / 5 trade` 分类。每段道路由羽化泥土肩、压实核心、断续双车辙和少量嵌地边石组成；共享端点另生成 31 组圆钝泥地交汇补片，消除尖角草缝。最高级运行快照为 84 条泥土带、226 段车辙、63 块边石和 1060 个三角面。全部节点均为 presentation-only，零 `CollisionShape3D / StaticBody3D / NavigationRegion3D`，不拦截点击，也不改变 NPC、敌军、商人或逃离者的最短路径。专项、正式第一波直攻和商人后路回归通过；D3D12 已输出全站远景及广场近景，当前等待用户视觉验收。
+
+用户验收：通过（2026-08-23）。正式泥路主体与不规则路网收口，允许进入 P6 公告牌表现。
+
+### T0132-P6 主厅门旁正式公告牌（2026-08-23）
+
+状态：Done
+
+本次只处理公告牌世界模型及其正式布局投影，不重做公告牌 UI，不提前修改商人入口或商队。
+
+- 公告牌继续固定在主厅正面、主门左侧的 `public_locations.notice_board` 权威锚点附近；必须读成主厅门旁的附属公共设施，不能移到广场中央，也不能遮挡主门、台阶、主厅道路或器械平台。
+- 使用与主厅一致的深木、灰褐瓦、铁件和旧纸材质语言，建立双柱、横撑、有真实承托的遮雨小屋顶、公告框、数张纸页、固定钉 / 封蜡及小型守备标识；禁止继续使用一根柱子托纯色盒子的占位轮廓。
+- 保留既有 `NoticeBoard.gd -> notice_board_clicked -> NoticeBoardPanel`、通告短预览和 MemorySystem 两页发布权威。公告牌不是建筑，不得获得 HP、等级、工位、BuildingPanel 或升级层。
+- 正式实例必须进入 `FormalStationLayout`，点击区域贴合可见公告框并优先打开公告牌面板；不得新增妨碍 NPC、敌人或主厅门口通行的实体碰撞。专项与 D3D12 近远景通过后等待用户视觉验收。
+
+实施结果：`station_layout_v2.public_locations.notice_board` 微调为主厅局部前左侧 `(-3.6,2.6) m`，仍位于正门旁且可见包络右缘不侵入 `4.2 m` 主厅支路中心净空。`StationLayoutController` 新增 `FormalStationLayout/PublicProps/NoticeBoard`，正式世界不再只有隐藏定位点。共用 `NoticeBoard.tscn` 已替换为 `FormalNoticeBoardArtView`：双木柱、石脚 / 铁靴、下横梁与斜撑、深木公告框、三张旧纸、铁钉、封蜡、备用卷纸、守备徽记及闭合灰褐瓦遮雨顶形成 38 个网格，其中 19 个使用 Quaternius 同源木 / 瓦 / 石 PBR。仅保留一个贴合可见包络的 Area3D 点击热点，不生成 StaticBody 或导航阻挡；`NoticeBoard.gd`、NoticeBoardPanel 与 MemorySystem 权威不变。P6 专项、既有公告输入 / 全站广播、P5 道路、P1 主厅和项目解析回归通过；D3D12 已输出主厅关系与近景画面，当前等待用户视觉验收。
+
+用户验收：通过（2026-08-23）。主厅门旁正式公告牌收口，允许进入 P7 商人马车返工。
+
+### T0132-P7 双马满载商人板车整体返工（2026-08-23）
+
+状态：Done（2026-08-23；用户已验收）
+
+本次只返工商人马车的实体表现与表现碰撞包络，不改变每日 `10:00–16:00`、正式后路、实际抵达才开放交易、离场自动关面板、报价、库存或事件权威。
+
+- 删除当前以完整 `warehouse_wagon.glb`、额外后轮、围板、旧车夫和零散构件叠加形成的混乱组合；重建一辆方向统一、前后轴和四轮共线、底盘—车斗—车辕—双马轭具传力明确的中世纪敞口板车。所有车斗侧板、端板、立柱和车轮必须正交 / 对轴，不得出现车厢斜扭或相互穿插。
+- 挽马改为两匹同尺度 Quaternius 马并驾，左右对称、朝向一致、落地一致；中央车辕连接前轴与横轭，横轭分别连接两匹马肩部。碰撞体和 NavigationAgent 半径同步覆盖双马和满载车身，但仍必须通过 `5.0 m` 后门与正式商路。
+- 车夫必须改用 Synty POLYGON Mini Fantasy Characters 两头身角色，与现有 NPC / 敌人一致；坐在前座面向行进方向，两手通过骨骼 Hand socket 与左右缰绳端点相接。缰绳从手部经导向点连到两匹马头部，不得穿过车夫、车斗或连到马身错误位置。
+- 后斗保持敞口长方形板车，四周围板高度一致，并以木箱、果蔬筐、桶、粮袋、锁箱、布卷和捆扎包裹形成底层承重、中层填空、上层少量叠放的满载轮廓；货物只属表现，不镜像 MerchantSystem 库存。
+- 四轮应随行进速度滚动，两匹马同步 Walk / Idle；停靠时交易标记继续可点。专项锁定双马、四轮两轴、正交车斗、车夫两头身来源、双手—双缰绳—双马连接、满载密度、碰撞 / 门宽与权威边界；D3D12 检查前侧、后侧和停靠全貌后等待用户视觉验收。
+
+实施结果：已彻底移除 MerchantWagon 场景中完整 `warehouse_wagon.glb + 手工后轮 + 隐藏篷车 + 第二货台 + GlenArtView` 的叠层组合，改由 `FormalMerchantWagonArtView` 生成唯一一套同轴正交车架。车身为 `2.24 × 3.55 m` 敞口木板货台、前后两根贯穿轴和四个同规格木辐条铁箍轮；两匹 Quaternius 马以 `1.64 m` 中心间距并驾，车辕、横轭、肩圈和短牵索分别接到两侧马体。驾驶者改为 `SK_Adventure_ShopKeeper_01` 两头身商人，使用独立黄色色板和循环 `vehicle_seated`，校准后的前置驾驶凳让骨盆落座、躯干露出；左右 Hand socket 各自成为缰绳真实动态端点，四段皮缰经导向点连到对应马头。
+
+后斗当前装有 19 件独立货物语义（木箱、果蔬筐、桶、苹果桶、粮袋、锁箱、布卷和捆扎包裹），按底层承重 / 中层填空 / 上层少量叠放排列；表现快照明确 `presentation_inventory_authority=false`。双马 Walk / Idle、四轮滚动由 MerchantWagon 实际速度驱动。表现 / 导航最大横向包络控制在 `2.7 / 2.9 m` 内，继续通过 `5.0 m` 后门。P7 专项、完整交易闭环、正式商路和 GM 回归均通过；当前路线已由 P7R2 扩为六点近门停靠。D3D12 已输出前、侧、后、车夫近景与正式停靠俯视，后续用户视觉验收通过。
+
+#### T0132-P7R 货斗弧形车篷与车夫前檐（2026-08-23）
+
+状态：Done（2026-08-23；用户已验收）
+
+- 在现有满载货斗上增加中世纪商旅常见的弧形帆布车篷；车篷必须由多道弧形木肋、两侧立柱与纵向压条形成可读支撑，不能是悬空胶囊或一块平顶盒。
+- 主篷覆盖完整货斗，前端继续向 `-Z` 延伸到驾驶凳上方，为车夫遮雨；前后端与侧下缘保持开放，不新增封闭墙板，不遮死车夫、缰绳和全部货物。
+- 帆布使用低饱和灰蓝 / 灰褐色，边缘有深色包边和少量绑带；不得恢复已删除的旧篷车预制或第二套车身。
+- 车篷只属表现，不新增碰撞、库存、交易或路径权威；总宽不得扩大既有 `2.9 m` 导航包络，最高点与交易标记保持净空，并继续通过 `5.0 m` 后门。
+
+实施结果：`FormalMerchantWagonArtView` 已新增 `Canopy` 层。灰蓝帆布以 8 段低多边形圆拱组成 `CargoCanvas + DriverAwning` 两片连续曲面，局部覆盖范围为 `X=±1.22 m / Z[-2.12,2.78] m`，下檐 `Y=2.18 m`、篷顶 `Y=3.25 m`；其中货斗前缘到前檐形成 `1.28 m` 车夫遮雨延伸。五道弧形篷弓、四组共八根货斗侧柱、左右檐梁 / 屋脊纵梁和四道皮革绑带形成明确支撑，最前一组不再使用悬空竖柱，而由驾驶踏板两侧斜撑承托。前后端与侧下缘保持开放，车夫、缰绳和侧面货物仍可见。
+
+交易标记由 `Y=3.42 m` 抬到 `4.02 m`，与篷顶保留 `0.77 m` 净空；车篷零 CollisionShape / StaticBody，不改变 `2.65 m` 车体碰撞、`1.45 m` NavigationAgent 或后门。其当时沿用的五点商路已由 P7R2 改为六点近门停靠。P7R 专项、完整交易闭环、正式商路、GM 与项目启动回归通过；D3D12 前 / 侧 / 后 / 车夫近景和正式停靠俯视通过，后续用户视觉验收通过。
+
+#### T0132-P7R2 商人马车后门真实停靠点修复（2026-08-23）
+
+状态：Done（2026-08-23；用户已实机确认马车到达后门再停车）
+
+- 用户实机发现马车尚未到达后门便停止。排查确认不是碰撞卡死或错误抵达提交，而是正式路线把距后门中心约 `75.6 m` 的 `(-40,-120)` 直接登记成最终 `dock`；该点只能作为远端进门引导点，不能继续代表“已到后门”。
+- 保留地图边缘到 `(-40,-120)` 的既有折线路段，再增加一段沿后门来向延伸的近门路线；新 dock 必须按双马车局部 `-Z` 前向与真实马组包络计算，使马头靠近后门外侧、车体仍完整停在门外，不让车根节点、交易气泡或旧短车尺寸代替视觉接触判定。
+- 到达前交易继续关闭；只有实体根抵达新 dock 后才提交 `parked / merchant_active=true`。离场沿同一路线返回地图边缘。专项必须锁定新路线点数、dock 到后门距离、马组前缘到门距离、门外侧关系、抵达 / 离场闭环和既有交易 / GM 回归。
+
+实施结果：正式 `merchant_route` 由五点扩为六点，保留原 `(-40,-120)` 作为远端进门引导点，新增 `(-28.2,-52.4)` 为后门外真实 dock。StationLayoutController 现在校验六点、`dock_root_clearance_to_back_gate_m=7.0` 及实际几何误差，并将后门世界坐标与停靠净距一同投影给消费者。按当前双马碰撞中心 `Z=-4.45 m` 和纵深 `2.7 m`，配置静态值为车根—后门 `7.0036 m`、马组前缘—后门 `1.2036 m`；独立真实运动实测因最终朝向投影为 `1.423 m`，仍完整停在门外且保持后门自动开启。
+
+原 C4-P1 回归已升级为六点、近门净距和门体感应合同；新增 P7R2 隔离物理专项实际完成最后一段进场、开门与原路离场，零重寻路、零卡死，根节点到 dock 误差约 `0.222 m`。P7R 马车本体专项与全部修改脚本 `--check-only` 通过。完整 Main C4 长测在当前多实例重载环境中连续两次停留于全图初始化超过 `120 / 300 s`，未进入脚本断言，因此不把该项记作通过；已有 Main GM“强制正式商车到访”可供本轮用户直接复验，无需新增入口。
+
+用户验收：通过（2026-08-23）。商人马车外观、弧形车篷、双马车夫、满载货物与后门真实停靠共同收口，T0132 完成。
+
 ---
 
 ## T0133 完成战斗动作、物理反馈、血液 VFX 与布娃娃闭环
@@ -318,7 +1341,7 @@
 
 任务目标：
 
-- 为近战、长杆、弓、弩、骑兵、弩床、箭塔和敌人建立最小但清楚的攻击、命中、格挡、击退和受击表现。
+- 为近战、长杆、弓、弩、骑兵、弩床、箭塔和敌人建立最小但清楚的攻击、命中、和受击表现。
 - 加入攻击拖尾、命中闪光、血液粒子 / 地面贴花、脚步尘、碎屑、建筑受击和摧毁反馈。
 - NPC HP 归零后以布娃娃或受控倒地表现“昏迷”，复苏时可靠回到动画骨骼并播放起身；敌人清零后短暂倒地再移除。
 
@@ -326,14 +1349,13 @@
 
 - 所有表现都由 CombatSystem / BuildingSystem / NPCSystem 的权威结果触发，不用物理碰撞反算伤害或资源。
 - NPC 不出现死亡文案或永久尸体；昏迷、自然恢复、治疗和 30% 复苏规则不变。
-- 提供血液显示开关；关闭后仍保留命中闪光、音效和伤害反馈。
-- 典型 48 敌第五波场景保持可接受帧率，限制同时活跃的布娃娃、贴花和粒子数量。
+- 典型 48 敌第五波场景保持可接受帧率。
 
 ---
 
 ## T0134 建立正式 UI 主题、图标、头像与战斗信息层级
 
-状态：Todo
+状态：Partial（P1 NPC 面板实时实体镜头已完成；完整正式 UI 主题、图标与其他面板仍待后续）
 优先级：P0
 前置任务：T0129
 涉及文档：`ART_DIRECTION.md`, `ART_PIPELINE.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -343,6 +1365,21 @@
 - 用项目级 Godot `Theme` 替换当前纯线框表现，建立木、铁、羊皮纸和边境守备风格的九宫格面板、按钮、输入框、滚动条、Tooltip、进度条和弹窗。
 - 为资源、装备、建筑、状态、速度、警铃、虔诚和交互制作统一图标；为 8 名 NPC 提供一致风格头像或头像渲染。
 - 重排 HUD、NPC 面板、建筑面板、对话、公告牌、商人和结算界面的视觉层级，但不改变权威系统边界。
+
+当前子任务（T0134-P1 NPC 面板实时实体镜头，2026-08-20）：
+
+- 状态：Done。NPC 面板左侧增加与面板同开同关的实时人物框；使用共享 Main `World3D` 的独立 `SubViewport + Camera3D` 直接拍摄当前被选中的正式 NPC，不复制模型、不伪造动作、不创建第二套 NPC 状态。
+- 副镜头应持续跟随实体位置和可见正面，完整容纳脚底到头顶，并保留当前所在建筑 / 菜园 / 战场等真实周围场景；镜头射线遇到世界静态遮挡时缩短距离，避免穿墙后只看到墙面。
+- 切换 NPC、点击建筑、关闭 NPC 面板、NPC 逃离或目标无效时必须同步切换 / 停止渲染；1280×720 与 1920×1080 下人物框和信息区不得互相覆盖。表现控制器只读取 NPCSystem 提供的窄只读快照，不修改移动、朝向、动作、工位、碰撞或选择权威。
+- 完成记录：副镜头只在 NPCPanel 可见且目标有效时 `UPDATE_ALWAYS`，其余时间 `UPDATE_DISABLED`；世界标签使用副镜头排除层，地点显示读取 MemorySystem 中文名。专项及 NPCPanel 状态 / 交互、伊沃角色集成回归通过。
+
+返修子任务（T0134-P1R 人物框尺寸与构图，2026-08-20）：
+
+- 状态：Done。人物框缩到 P1 面积的一半以下，并贴合 NPC 信息列左侧偏上半区，不再占满面板全高；1280×720 为 `190 × 357.76 px`，1920×1080 为 `210 × 420 px`。副镜头从 `3.25 m / 38°` 调为 `3.9 m / 40°`，站立 NPC 的头顶、脚底和动作外沿均留有画面余量。
+
+返修子任务（T0134-P1R2 人物框去冗余文案，2026-08-20）：
+
+- 状态：Done。删除人物框顶部“实时形象”和底部当前地点文字及其布局占位，只保留边框、实时画面和目标不可用时的画面内错误提示；专项确认两个冗余 Label 节点均不存在。
 
 验收标准：
 
@@ -354,10 +1391,10 @@
 
 ## T0135 完成环境、灯光、镜头、音效与整体氛围打磨
 
-状态：Todo
-优先级：P1
-前置任务：T0131, T0132, T0133, T0134
-涉及文档：`ART_DIRECTION.md`, `GODOT_ARCHITECTURE.md`, `UI_UX.md`, `COMBAT_SYSTEM.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
+状态：Doing（P0/P0R、P1–P7、P4R 与 P8A 实体功能灯已完成；下一步为 P8B 烟火、生产粒子与剩余动态氛围）
+优先级：P0（按用户要求提前先看整体美术效果）
+前置任务：自然场景 / 灯光阶段仅依赖 T0131、T0132；音效整合仍在 T0133、T0134 后执行
+涉及文档：`ART_DIRECTION.md`, `SCENE_SPACE_AND_VISUAL_PLAN.md`, `GODOT_ARCHITECTURE.md`, `UI_UX.md`, `COMBAT_SYSTEM.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
 
 任务目标：
 
@@ -365,11 +1402,314 @@
 - 建立统一日夜 / 时间段灯光、阴影、环境雾、色彩和室内外明暗关系；保证屋顶透明时室内可读。
 - 补齐 UI、脚步、工作、武器、命中、建筑、警铃、火焰、环境和结算的最小音效反馈。
 
+### T0135-P0 自然场景生产方案与现状审计（2026-08-23）
+
+状态：Done
+
+- 冻结“低模实体轮廓 + 地表材质 / 贴花 + 粒子 / 雾 + 数据驱动散布”的混合生产管线；AI 图只用于概念、贴花或材质草案，不用于地形、山体、树木、碰撞或敌军遮蔽主体。
+- 现状审计确认正式地图仍由两个巨大地面盒、一个贯穿全图的平直河面盒、24 个自然碰撞段及约 71 棵程序圆柱树组成；右侧岩脊仅覆盖 `X[120,175]`，距地图右边界 `X=350` 仍空出 `175 m`。正式场景只有静态 `DirectionalLight3D`，没有 `WorldEnvironment`、统一雾或时间段灯光控制。
+- 本地 Quaternius Stylized Nature MegaKit Standard 已有 68 个可用 glTF：20 个树木、24 个岩石 / 卵石、24 个灌木 / 草 / 花 / 蕨类，但运行时目前只筛入 1 棵树。后续优先使用这些同风格资产，缺少的连续河岸、山体和地表过渡用项目自制低模网格 / Shader 补齐。
+- 将物理边界、导航排除和可见自然美术拆成三层数据；现有 24 个简化碰撞段继续服务导航 / 阻挡，不再直接兼任最终山体、树林和河岸外观。
+
+### T0135-P0R 全系统制作规格（2026-08-23）
+
+状态：Done
+
+- 驿站内地表纳入自然场景主系统，不能继续把统一深绿 BoxMesh、三块浅色 Plaza Box 和道路 ribbon 当成完整地面。正式地表分为深草基底、低频草色变化、压实泥土、建筑门前磨损、潮湿 / 排水、道路 / 车辙和稀疏实体草石七层；这些层共用世界坐标与排除蒙版，不产生第二套导航地面。
+- 广场保持 `public location=plaza / center=(0,10) / radius=4 m` 的信息权威，但可见造型改为三条道路自然汇合形成的约 `14 × 12 m` 不规则压实泥地口袋。旧三块浅色矩形退出表现；新广场以羽化泥边、车辙磨损、排水凹痕、嵌地卵石和边缘草簇收口，中心保留至少 `8 × 6 m` 无阻挡会面 / 集结区。
+- 昼夜不再按固定时间段硬切四套颜色。太阳从地图东侧 `+X` 升起，正午经过南侧天空 `-Z`，从西侧 `-X` 落下；月亮采用约 12 小时错相的独立东升西落轨道。太阳 / 月亮高度角连续决定方向光、色温、能量、阴影、天空、环境光、雾和功能灯权重，时间段名称只作调色锚点。
+- 太阳初始采用固定季节的 `05:30` 日出、`19:30` 日落、正午最高约 `52°`；月亮约 `18:30` 升、`06:30` 落、最高约 `42°`。太阳低于地平线后能量平滑归零，月亮再逐步接管；任意时刻最多一套主阴影占主导，避免日月双重硬阴影。以后若需要季节变化，再把日出 / 日落参数配置化，不在首轮加入历法系统。
+- 环境表现只读 `GameState` 绝对时刻和 `EventBus.time_changed`；暂停时冻结，x2 / x4 随游戏时间同步加速，GM 既有 `set_time` 可直接跳到验收时刻，读档后按存档时刻立即恢复。它不修改 TimeSystem、行动、波次、商人、资源或 NPC 权威。
+
+### T0135 分步实施顺序
+
+1. `P1 驿站内地表与广场样板`：建立环境配置和地表表现根；给城内深草增加低频色差 / 粗糙度变化，重做广场为道路自然汇合的不规则压实泥地，补门前磨损、排水凹痕、嵌地卵石和边缘草簇。先只处理地表，不放大型杂物；用户通过后将同一材质语言扩到全图。
+2. `P2 河谷与全图地形拓扑`：以不规则带状低模网格替换直线河面盒，生成真实断开的两岸、`24–34 m` 河槽、`7–11 m` 水面、土石坡 / 崖壁与河流 Shader；清除所有跨水无语义地面。保留现有河岸物理边界与导航排除。
+3. `P3 东侧三层山脉`：用项目自制分段低模 RidgeMesh 构建 `X[120,175]` 山脚、`X[165,255]` 中层叠岩、`X[235,350+]` 远层山脊；Quaternius `Rock_Medium_1–3` 和 `Pine_1–5` 只负责破形与尺度，中远层不生成逐件碰撞。
+4. `P4 前后密林与敌军显现`：筛入 Common / Twisted / Dead / Pine 20 树、Bush / Plant / Grass 等植被，用 `32–48 m` 分块 MultiMesh 建立近中远林带。前林保留 `28 × 18 m` 出生净空和 `8–12 m` 不规则出口，树冠 / 灌木 / 雾遮住 `(2,335)` 生成区，敌人到约 `Z=225` 才进入稳定可见区；后林保留六点商路和长逃离峡口。
+5. `P5 全图自然散布与地表衔接`：使用 24 岩 / 卵石和 24 植被建立河岸、山脚、林下、道路边缘和城内空地的分区散布；统一深草、泥土、湿痕、苔藓和道路材质过渡。所有实例按道路、门坪、工位、建筑点击、敌路和器械射线排除蒙版生成。
+6. `P6 真实太阳 / 月亮循环`：新增太阳与月亮 DirectionalLight、可选天空日月盘和天体控制器；按绝对游戏时间计算东升—南天—西落轨迹、地平线过渡和 12 小时月轨错相。先完成日月方向、阴影长度与能量连续性，不在本步添加火把和室内补光。
+7. `P7 天空、环境光、雾与室内可读`：增加 `WorldEnvironment` 和 ProceduralSky；由太阳高度连续插值白昼、黄金时段、暮光与夜色，月亮高度调节夜间冷光。低配使用深度 / 高度雾，高档在河谷、林缘和山脚增加少量 FogVolume；屋顶 / 外墙透明时启用克制的室内环境填光并避免雾侵入室内。
+8. `P8 驿站功能杂物与动态氛围`：逐功能区加入 Quaternius 木栅、箱桶、袋、推车、灯笼 / 火把，以及自制同材质草垛、柴堆、井、煤堆、药草架和晾晒；烟、火、火星、尘土用 GPUParticles。P8A 已按用户定案将实体灯启用窗口固定为 `18:00–06:00` 并按占用联动；炉火和生产烟继续只读建筑 / 行动状态。
+9. `P9 性能与全图联合验收`：近景实体按需碰撞 / 阴影，中景简化阴影，远景使用冠层体块 / 分块 MultiMesh / 雾。以 16:9、21:9、四个平移极限、最小 / 最大缩放、`05:30/06:30/12:30/18:30/19:30/00:30`、48 敌、商车、长逃离和透明屋顶联合验收。
+10. `P10 音效与整体混音`：在 T0133 / T0134 反馈与 UI 稳定后补齐，不阻塞 P1–P9 的自然场景和灯光交付。
+
+### T0135-P1 驿站内地表与广场样板（2026-08-23）
+
+状态：Partial（首版被用户否决，转入 P1R 返修）
+
+- 新建 `environment_art_v1` 纯表现配置和 `FormalGroundSurfaceArtView`；用一个贴合驿站内多边形的世界坐标深草材质替代“单一纯色地面”的城内阅读，但不替换或抬高既有导航地坪。
+- 将旧三块 Plaza Box 从运行时表现移除，生成约 `14 × 12 m` 的多环不规则压实泥地；外环向深草羽化，内层形成道路交汇磨损，中心保持至少 `8 × 6 m` 零实体装饰。
+- 由建筑既有 `entry_route` 派生门前磨损，以配置折线生成浅排水 / 潮湿痕迹；筛入少量 Quaternius Pebble / Short Grass / Clover，在道路、门坪、建筑地块和广场中心之外确定性散布。所有新增节点无碰撞、无导航、无点击热点。
+- 专项锁定旧 Plaza Box 数为零、广场中心 / 权威半径不变、地表多边形和色板、12 个门前磨损、排水、Quaternius 细节来源、中心净空、无碰撞 / 无 NavigationRegion，以及既有正式道路端点 / 数量不变。
+- 已实现：正式 15 点内场多边形生成 13 个深草三角面；广场为 100 三角多环泥地；生成 12 处门前磨损、3 条排水湿痕、12 块卵石和 42 簇短植被。旧 Plaza Box 仅保留历史配置，不再生成可见网格。
+- 已验证：P1 专项与 T0132-P5 道路回归通过，D3D12 全站 / 广场近景已检查；新增环境根快照确认无碰撞、无 StaticBody、无 NavigationRegion、无 Area3D。旧 T0129B-C1 / T0129C-A1 的精确碰撞计数因当前既有场景已从历史 `234 / fixture=131` 漂移到 `240 / fixture=133 / unknown=4` 而失败，P1 未修改该碰撞源，后续应单列回归基线清理，不在本步擅改历史断言。
+
+### T0135-P1R 驿站内地表专业化返修（2026-08-23）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 移除正式 Main 中仍可见的 12 块 `ReservedLot` 深色矩形；地块尺寸只保留为元数据 / 调试合同，不再作为最终地表网格渲染。
+- 废弃同心三环径向广场和规则环形卵石布置。广场改为沿既有道路方向自然扩张的非闭合、不对称泥地交汇，边界不可读成圆、祭坛或魔法阵。
+- 废弃 12 个同形椭圆门口磨损。返修试做的高流量楔形门坪仍有符号感，因此最终也取消；所有入口统一由已接到真实门路的道路泥肩自然过渡，不再叠加独立色斑。
+- 卵石改为 2–3 个局部碎石簇，数量、间距、尺度和方向均不规则，不围绕广场中心闭合；植被继续避开道路核心、门坪和集结中心。
+- 专项必须锁定零可见 ReservedLot、零径向同心环、零椭圆 DoorWear、零闭合卵石圈，同时保持广场权威、道路、碰撞、导航、点击、敌路、商路与逃离不变；必须重新做全站、广场近景和低角度 D3D12 视觉检查。
+- 已实现：12 个 ReservedLot 仅保留 `lot_size / planning_metadata_only`；广场独立网格与门口独立贴片均为零；7 块卵石只组成两处非闭合杂物簇；20 个植被簇实际生成 54 个实例，并以 alpha-scissor、双面无影材质消除黑片。深草增加连续微观明度 / 粗糙度变化。
+- 已验证：P1R 专项锁定 `plaza_triangles=0 / door_wear=0 / visible ReservedLot=0 / pebbles=7 / vegetation=54`，D3D12 全站、广场近景和低角度均无方形地块、石圈、椭圆门斑或放射尖角。功能在 Main 直接可见，不新增 GM 入口。
+
+### T0135-P1R2 驿站生活密度与功能杂物补强（2026-08-23）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 在不恢复方形地块、广场石圈和门口椭圆贴片的前提下，提高城内草簇与碎石簇密度；继续避开正式道路、建筑占地、出入口和广场集结中心，避免均匀撒点与装饰性环形构图。
+- 复用已登记的 Quaternius 运行时素材，按建筑功能增加仓储装卸、马厩照料、食堂供水、酒窖交付、工械坊材料、铁匠铺物料、主厅公共休息、诊所候诊、菜园收获与训练场器械等杂物组。
+- 所有新增环境杂物仅承担表现，不新增碰撞、导航、点击热点或玩法权威；布置不得堵塞道路、建筑门口、工位通道和塔防视线。
+- 专项验收锁定：至少 50 个植被簇、240 个植被实例、10 个非闭合碎石簇、40 块碎石、10 个功能杂物组和 35 个功能道具实例；Main 中可直接看见，无需新增 GM 入口。
+- 已实现：58 个植被簇实际生成 302 个草 / 三叶草实例；12 个非闭合碎石簇实际生成 53 块碎石。另按 10 个功能区生成 42 个 Quaternius 道具实例，并在视觉复查后从建筑包络内移至侧后勤区，确保远近景均能读到而不重复室内陈设。
+- 已验证：P1R2 专项、T0132-P5 正式道路和 T0129C-A5-P7 默认正式世界回归通过；D3D12 已检查全站、广场低角度、东西工作区和后部服务区。新增节点保持零碰撞、零导航、零点击热点。
+
+### T0135-P2 西侧河谷与全图地形拓扑（2026-08-23）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 以不规则带状低模网格替换贯穿全图的直线 `WestGround / EastGround / RiverSurface` 盒体外观；东西岸必须是彼此断开的地形，不允许任何无语义地面跨越水面。
+- 河谷贯穿 `Z[-335,385]`，真实河槽宽保持 `24–34 m`，弯曲常水面宽保持 `7–11 m`；驿站地坪为 `Y=0 m`，河面为 `Y=-1.2 m`。
+- 建立东西岸高地、土石缓坡 / 崖壁、低位河床、动态河水和克制岸泡；河流两端继续进入镜头边缘之外，不出现直线截断或孤立蓝色长方体。
+- 保留既有 8 段 `river_cliff` StaticBody、NavigationMesh 排除和路径权威；只隐藏它们原有灰盒 CliffFace / RockLip 表现，不新增第二套碰撞、导航、河流地点或时间权威。
+- 专项验收锁定河谷宽度、水面宽度、高差、全长连续、两岸断开、零旧河面盒、零新增碰撞 / 导航，并回归正式道路、默认正式世界、商路、敌路与逃离路径。
+- 已实现：21 个不等距横截面生成彼此断开的东西岸高地、320 三角四级岸坡、低位河床、40 三角动态水面、80 三角克制岸泡和 52 个无碰撞岸坡岩石；水流中心相对河槽中心独立偏移，避免两岸机械平行。
+- 已清理：旧 `WestGround / EastGround / RiverSurface` 保留稳定节点但全部隐藏；8 段 River Cliff 和 12 段 Dense Forest 继续保留碰撞，其中旧 CliffFace / RockLip / Understory 可见盒已退出，地图上零无语义跨河地面。
+- 已验证：P2 专项、P1R2、正式道路、默认正式世界、商车后门、第一波动态压力和长逃离路线全部通过；D3D12 已检查驿站—河谷关系、河谷中段低角度及南北河段。
+
+### T0135-P3 东侧三层山脉（2026-08-23）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 用项目生成的连续分段低模 RidgeMesh 替换东侧四段窄岩条外观，建立近层 `X[120,175]`、中层 `X[165,255]`、远层 `X[235,350+]` 的三层山体纵深，并贯穿 `Z[-360,385]` 及镜头边缘之外。
+- 近层控制为 `4–8 m` 山脚岩台，中层为 `10–18 m` 叠岩，远层为 `18–35 m` 连续山脊；山脊轮廓必须有不规则高低和前后错动，不能再读成一条直墙或孤立窄带。
+- 保留既有 4 段 `rock_ridge` StaticBody、导航排除和边界权威，仅隐藏旧 `RidgeMass / RidgeCrown` 盒体外观；中远层不生成逐件碰撞、导航或点击热点。
+- 本步使用项目网格完成山体主体，并复用已筛入的低模岩石作近中层破形；松林冠层与山脚植被在 P4/P5 接续，不提前建立第二套森林系统。
+- 专项验收锁定三层范围、高度、全长连续、远层延伸至镜头外、零新增碰撞 / 导航 / 交互，并回归 P2 河谷、正式道路、默认正式世界、敌路与逃离路径。
+- 已实现：21 个山脊控制截面经中点错位细分，生成近 / 中 / 远三层各 400 三角面的连续低模山体；最高点分别为 `7.6 / 17.5 / 35 m`，南北实际延伸至 `Z[-380,420]`，远层填至 `X=370 m`。
+- 已补形：近中层复用既有低模岩石生成 57 个无碰撞破形实例；旧四段 RidgeMass / RidgeCrown 盒退出显示，4 段 `rock_ridge` StaticBody 和导航权威完整保留。
+- 已验证：P3 专项、P2 河谷、P1R2、正式道路、默认正式世界、商车后门、第一波动态压力和长逃离路线全部通过；D3D12 已检查全站关系、低角度三层轮廓及南北延伸端。
+
+### T0135-P4 前后高密密林与敌军显现（2026-08-24）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 用 `32–48 m` 分块 MultiMesh 建立前后近 / 中 / 远三层密林，森林覆盖到 `X[-350,350]` 与 `Z=±385` 镜头边缘；树冠允许互相覆盖，必须形成连续林墙，不能再以几十棵稀疏程序树代表森林。
+- 密度作为硬合同：总树量不得低于 6000，前后各不得低于 2800；另建立高密林下灌木层。分块必须可独立裁剪，中远层不生成逐树碰撞、导航或交互热点。
+- 前林保留敌军 `28 × 18 m` 出生净空与约 `8–12 m` 曲折出口；树干不得侵占正式六横断面导航廊道，但重叠树冠与侧向林幕必须遮住 `(2,335)` 出生区，使敌人到约 `(8,225)` 才稳定进入视野。
+- 后林围绕既有六点商路 / 逃离折线形成连续密林峡口，树干与灌木不得侵占 `2.25 m` 权威走廊，也不得遮断后门近端点击和商车停靠区。
+- 隐藏旧 12 段 Dense Forest 的程序树外观，但保留全部 StaticBody、导航排除和两条功能峡口权威；专项验收锁定密度、分块、出生遮蔽带、通道净空及零新增玩法权威，并回归 P1–P3、道路、敌路、商路与逃离路线。
+- 已实现：前林 5353 棵、后林 5857 棵，共 11210 棵阔叶 / 低模松树；另有 6618 丛林下灌木。全部拆成 306 个 `40 × 40 m` MultiMesh 区块，近 / 中 / 远层分别为 3142 / 3818 / 4250 棵；稀释林带按山体高度爬升至 `X=350`。
+- 已遮蔽：敌军出生区保持零树干侵占，出生—显现段两侧有 94 棵专用林幕树；树干对敌路、商路 / 逃离路的实测最小净距为 `5.202 m`，曲折峡口继续开放。
+- 已清理：12 段旧 Dense Forest 稀疏程序树 / 冠层退出显示，原 StaticBody、导航排除和 corridor 元数据不变；新森林零新增碰撞、导航或交互。
+- 已验证：P1–P4 专项、正式道路、默认正式世界、商车后门、第一波动态压力和长逃离路线全部通过；D3D12 已检查驿站整体、前林显现段、真实敌军出生区、后林商旅峡口及东侧山林衔接。
+
+### T0135-P4R 统一树型与全周渐变林带返修（2026-08-24）
+
+状态：Done（开发与 D3D12 验收完成，等待用户实机确认）
+
+- 移除与当前低模建筑不协调的深色高细节阔叶树，替换为同一圆锥低多边形语言的高瘦松、标准松和宽冠冷杉三种轮廓；三种只在比例、层数与相邻冷绿色阶上变化，不再混用写实叶簇。
+- 取消“前矩形 + 后矩形”导致的 `Z[-60,70]` 整条空带，增加驿站东西两侧连续林区；树林包围整座驿站，但树干不得进入围墙内或贴墙形成整齐树列。
+- 密度改为连续地形规则：距驿站墙体 `8 m` 内无树，近侧疏、过渡带渐密、远处最密；河槽内无树、两岸接触带稀疏；东侧山体使用不高于平地 `20%` 的稀疏密度，并按山体高度落地。
+- 保持敌军出生净空、显现林幕、前门敌路、后门商路 / 逃离路以及 12 段 Dense Forest StaticBody 不变；专项新增统一树型、中央横带覆盖、驿站净距、山体密度和地形渐变验收。
+- 已统一：深色 Quaternius 阔叶树已从正式森林配置和实例链完全退出，7393 棵树全部由高瘦松 / 标准层叠松 / 宽冠冷杉三种同族低模圆锥轮廓组成，数量分别为 `2416 / 2503 / 2474`。
+- 已补带：原 `Z[-60,70]` 空白横带新增 952 棵侧向林木；树木覆盖前 / 后 / 侧 369 个区块，围墙多边形外保持至少 `8 m` 净距。
+- 已渐变：近驿站 / 过渡 / 远处密度计数为 `47 / 370 / 6976`；河岸接触带仅 320 棵，山体仅 1025 棵且密度因子为平地 `18%`，不再与远林等密。
+- 已验证：P4R 专项和 D3D12 全景、前林、东西侧横带、河岸疏林与山坡稀疏林通过；敌路、商路、逃离路与既有 12 段森林碰撞保持。
+
+### T0135-P5 全图自然散布与地表衔接（2026-08-24）
+
+状态：Done（开发、专项回归与 D3D12 验收完成，等待用户实机确认）
+
+- 在不改变 P1R2 城内功能杂物、P2 河谷、P3 山脉和 P4R 林带结构的前提下，建立河岸、山脚、林下、道路边缘和城内空地五类确定性自然散布；使用统一低多边形草、蕨、灌木与岩石语言，密度随地形和距驿站距离变化，不均匀撒点。
+- 河岸增加湿草、芦草、卵石和少量较大岩块，保持河槽与水面零实例；山脚以冷灰岩簇、苔藓和贴地灌木打断山体—草地硬接缝；林下增加蕨类、枯草和矮灌木团，树干通行净空不新增碰撞。
+- 道路只在泥肩外缘形成断续草侵入、碎石和潮湿带，不在路芯画规则边框；城内空地继续避开建筑最大地块、真实入口、广场集结中心、公告牌、工位、点击区和器械射线。
+- 所有新增网格仅为表现层，按分区 MultiMesh / 合并不规则贴地网格生成，不创建 StaticBody、CollisionShape、Area3D 或 NavigationRegion，不修改道路、敌路、商路、逃离、建筑与战斗权威。
+- 专项验收锁定五类分区均有内容、河槽零侵入、道路核心与正式路线净空、站内地块 / 广场净空、地表接缝数量与零新增玩法节点；并回归 P1–P4R、正式道路、默认正式世界、第一波、商车和长逃离。
+- 已实现：五类分区共生成 4375 个自然实例，其中河岸 759、山脚 720、林下 2450、道路边缘 256、城内空地 190；轮廓由低多边形锥叶草、五向蕨、矮灌木和七面冷灰岩组成，按分区使用相邻低饱和色板。
+- 已衔接：两岸共 40 段湿润渐隐带、山脚 25 块不规则苔藓过渡和道路泥肩 16 块断续土色过渡；河槽、42 段道路核心、12 个最高级建筑地块和广场净空的实例侵入均为零，敌 / 商 / 逃正式路线最小净距 `5.080 m`。
+- 已验证：P1–P5 专项、正式道路、默认正式世界、第一波动态压力、商车近门停靠和长逃离回归全部通过；D3D12 已检查全站、河岸、山脚、敌路林缘和林下，草 / 蕨程序网格补齐法线并使用无影低模材质，未保留黑色草片。
+
+### T0135-P6 真实太阳 / 月亮循环（2026-08-24）
+
+状态：Done（开发、专项回归与 D3D12 六时点验收完成，等待用户实机确认）
+
+- 新增只读 `CelestialCycleController`，由 `GameState day/hour/minute/second` 和 `EventBus.time_changed` 直接计算天体姿态；不得累计角度或维护第二套时钟，暂停、倍速、GM 跳时与读档均自然服从 TimeSystem 的绝对时间。
+- 太阳固定为 `05:30` 东升、`12:30` 南天最高 `52°`、`19:30` 西落；月亮固定为 `18:30` 东升、`00:30` 南天最高 `42°`、`06:30` 西落。地平线上下均采用连续球面轨迹，不允许只改亮度而让阴影方向不动。
+- 太阳 / 月亮在高度 `-6°–+10°` 内 smoothstep 过渡直射能量与色温，低于 `-6°` 直射归零；日月重叠时只允许能量较强者投主阴影，另一盏保留无影填光，避免双重硬阴影。
+- 运行态停用 Main 旧静态 `SunLight`，但不改 TimeSystem、存档、建筑、NPC、敌人、商人或战斗权威。本步不增加 `WorldEnvironment`、天空、雾、火把或室内补光，这些仍归 P7/P8。
+- 专项验收覆盖 `05:30 / 06:30 / 12:30 / 18:30 / 19:30 / 00:30` 六个时点、东西南天方向、高度 / 能量连续性、单主阴影、时间信号、暂停静止及旧光退役；功能可由现有 GM `set_time` 在 Main 直接观察，不新增重复 GM 入口。
+- 已实现：`CelestialCycleController` 在正式环境根内创建 `SunDirectionalLight / MoonDirectionalLight`，按配置的升起、南中和落下时刻计算完整昼夜球面方向。经 P7 亮度标定后太阳 / 月亮最高能量为 `1.65 / 0.40`，色温随高度连续插值，低于 `-6°` 后直射归零；当前 Main 固定 `SunLight` 已置零隐藏并带退役标记。
+- 已验证：六个时点的高度 / 方位分别命中太阳 `0°东 / 52°南 / 0°西` 与月亮 `0°东 / 42°南 / 0°西`；日出、日落前后 1 秒无方向或能量跳变，暂停八帧完全冻结，正式 Main 只保留一套主阴影。P1–P5、正式道路和默认正式世界回归通过；D3D12 六张同机位画面确认清晨与傍晚长阴影方向相反、正午阴影最短、午夜由月亮接管。
+- 边界说明：本步没有提前增加 WorldEnvironment、天空、雾、曝光、火把或室内补光，因此晨昏暗部仍偏黑；这些由 P7/P8 接续，不用抬高太阳能量掩盖。
+
+### T0135-P7 天空、环境光、雾与室内可读（2026-08-24）
+
+状态：Done（开发、专项回归与 D3D12 昼夜 / 室内验收完成，等待用户实机确认）
+
+- 在 P6 日月绝对轨道上增加唯一 `WorldEnvironment + ProceduralSkyMaterial`，连续插值白昼、黄金时段、暮光和夜晚的天空顶部 / 地平线 / 地面反照、环境色、环境能量、曝光与低密度雾；不得按整点切换预设。
+- 以用户提供的《奔奔王国》参考为亮度目标：白昼清晰明亮、颜色可辨但不过曝；晨昏保留暖色地平线且暗部仍能看清道路 / 建筑 / NPC；夜间转为冷蓝绿、整体比白昼暗，但不得黑成轮廓剪影。
+- 可进入的七座封闭建筑在屋顶与外墙渐隐后启用克制的暖色向下补光，并随太阳高度在白天 / 夜间连续调节。补光只服务室内人物与工位可读，不伪造炉火、蜡烛、生产状态或额外工位；屋顶恢复时关闭，避免光穿墙和全站灯笼化。
+- 近景出现已揭示室内时降低全局雾对近景的影响，避免透明建筑内部形成灰幕；远景仍保留河谷、林缘和山脉的轻微空气透视。本步不提前增加 P8 火把、灯笼、炊烟或生产粒子。
+- 专项验收六个关键时点的天空 / 环境 / 雾连续性、白昼与午夜亮度级差、夜间可读下限、唯一 WorldEnvironment、七座室内补光和屋顶显隐联动；继续使用现有 GM `set_time` 与屋顶距离调试，不新增重复入口。
+- 已实现：正式 Main 由唯一 `DynamicWorldEnvironment` 提供 ProceduralSky、ACES 色调、低密度指数雾和连续环境参数。白昼 / 黄金时段 / 夜晚环境光为 `0.88 / 1.02 / 0.72`，曝光为 `1.10 / 1.24 / 1.26`；黄昏不再压黑，午夜保持冷蓝绿且比白昼暗。
+- 已联动：铁匠铺、工械坊、小教堂、小诊所、食堂、宿舍和酒窖各有两盏暖色无影向下补光，共 `14` 盏；屋顶封闭时全关，显露室内时传统雾密度降到当前值的 `28%`，所有补光均为 presentation-only，零碰撞、导航、点击或玩法事实。P7 首版白天 `24%` 强度已被 P7R2 日照同步曲线替换。
+- 已验证：P7 专项锁定夜晚 / 暮光 / 黄金 / 白昼相位、白昼 / 夜晚亮度下限、唯一环境、14 盏灯、七座显隐联动与雾衰减；P1–P6、T0126 屋顶、正式道路、默认正式世界和第一波动态实体回归通过。D3D12 白昼、日落、午夜全站及昼夜诊所近景完成两轮亮度标定。
+
+#### T0135-P7R 透明建筑壳保持实体阴影（2026-08-24）
+
+状态：Done（开发、逐建筑回归与 D3D12 昼夜近景验收完成，等待用户实机确认）
+
+- 镜头拉近时，屋顶、外墙和随壳体淡出的升级结构继续只在主画面中透明；太阳 / 月亮阴影必须保持与远景实体建筑一致，不再随 alpha 阈值关闭。
+- 透明渲染网格与阴影投射职责分离：可见网格不重复投影，使用同变换、同可见层级的 shadows-only 代理维持实体轮廓阴影；代理不得出现在主画面、点击、碰撞、导航或工位系统中。
+- 专项覆盖近 / 中 / 远距离、屋顶和外墙、升级层级显隐、昼夜主阴影及可逆缩放；更新 T0126 与历史铁匠铺 / 教堂透明断言。
+- 已实现：`BuildingArtView` 为每个渐隐壳体 Mesh 创建 internal `SHADOWS_ONLY` 同 Mesh 子实例；它继承源网格的变换、动画门和升级父级显隐。可见源 Mesh 永久关闭投影以避免双影，透明 alpha 只改变主画面颜色，不再改变实体阴影。
+- 已隔离：阴影代理明确为 presentation-only，不含碰撞 / Area / NavigationRegion / 工位；所有 authored mesh 计数统一排除代理，建筑升级附加物数量与场景审计不漂移。
+- 已验证：七座封闭建筑共审计 `1263` 个当前 Lv.3 阴影代理，太阳 / 月亮接管时均保持 shadows-only，近 / 远可逆且零可见网格重复投影。T0126、铁匠铺、工械坊、教堂、诊所、食堂、宿舍、酒窖、菜园、训练场、马厩、主厅、仓库、P7 环境、默认正式世界和第一波实体回归通过；D3D12 昼夜诊所近景确认阴影不再消失。Main 600 帧预算仍通过，平均 `3.781 ms`、P95 `5.260 ms`。
+
+#### T0135-P7R2 室内日照同步亮度曲线（2026-08-24）
+
+状态：Done（开发、专项回归与 D3D12 正午 / 午夜诊所近景验收完成，等待用户实机确认）
+
+- 修正 P7 将白天室内补光压到夜间 `24%` 所造成的白天室内偏暗；保留 P7R 实体屋顶 / 外墙阴影，不通过移除阴影换取亮度。
+- 室内亮度从 `06:00` 开始连续增强，`12:00` 达到全天峰值，随后连续回落并在 `18:00` 返回夜间可读基线；必须按分钟 / 秒平滑变化，不按整点跳变。
+- 七座封闭可进入建筑使用同一时间倍率曲线，同时保留各建筑既有色温、最大能量、屋顶显露权重和两灯布局；屋顶封闭时仍保持补光关闭。
+- 专项覆盖 `00:00 / 06:00 / 07:00 / 09:00 / 12:00 / 15:00 / 17:00 / 18:00 / 20:00`，验证早间单调增亮、正午峰值、午后单调回落、早晚对称、关键边界连续及七座建筑一致联动；使用现有 GM `set_time` 与屋顶距离入口，不新增重复 GM 控件。
+- 已实现：配置源定义 `06:00 / 12:00 / 18:00` 三个锚点、夜间 `1.0` 基线、正午 `1.30` 峰值和 `0.72` 曲线指数；控制器按时分秒计算正弦缓入 / 余弦缓出，不再由太阳高度反向压暗白天。调试快照新增当前倍率、日照权重和照明阶段。
+- 已验证：P7R2 首版诊所单灯在 `06/07/09/12/15/17/18` 点依次为 `2.250 / 2.505 / 2.776 / 2.925 / 2.776 / 2.505 / 2.250`；P7R3 两灯方案当时按 `42%` 分配。P7R4 当前单灯值为 `1.395 / 1.553 / 1.721 / 1.814 / 1.721 / 1.553 / 1.395`，总照度曲线与 `1.0 → 1.30 → 1.0` 比例不变。`06/12/18` 前后 1 秒无跳变，远景封闭仍为零活动灯。
+
+#### T0135-P7R3 室内日光色温与无灯池漫射（2026-08-24）
+
+状态：Done（开发、专项回归与 D3D12 昼夜诊所同机位验收完成，等待用户实机确认）
+
+- 白天室内补光不得继续保持夜间橙黄灯色；按当前太阳方向光颜色与同一 WorldEnvironment 环境色派生低饱和日光漫射色，`06:00–12:00–18:00` 与 P7R2 日照权重连续混合，正午接近周边室外光色，夜间恢复各建筑既有暖色。
+- 消除两盏高衰减 SpotLight 在地面形成的独立圆形灯池。保留七座建筑两灯数量以控制性能和兼容节点合同，但将灯位收拢到室内中央上方、抬高并扩大覆盖角 / 范围，同时降低距离与边缘衰减，使两盏光重叠为近似均匀的无影面状漫射。
+- 日光漫射仍只在屋顶 / 外墙显露时启用，不代表门窗朝向、炉火或蜡烛事实；不得取消 P7R 实体壳阴影，不新增碰撞、导航、点击、工位或存档字段。
+- 专项验收午夜暖色、上午过渡、正午日光匹配、下午回落、关键边界连续、十四盏灯的柔和覆盖参数和封闭屋顶零漏光；D3D12 使用同机位昼夜室内画面对比，不新增重复 GM 入口。
+- 已实现：日光目标色按 `62%` 当前太阳色与 `38%` 当前环境色混合，再以 `10%` 中性色去饱和；各建筑夜间仍使用原有职业暖色，并按 P7R2 日照权重连续插值。快照新增七座实际颜色与当前日光目标色。
+- 已消池：十四盏灯统一抬至 `Y=8.2 m`、收拢到中心 `1.4 m` 范围，使用 `18 m / 88° / 0.12 距离衰减 / 0.08 边缘衰减`；两灯各使用基础能量 `42%` 并完全重叠覆盖，地面不再出现两个局部圆形亮斑。
+- 已验证：诊所午夜暖色为 `(1.000, 0.820, 0.561)`，正午颜色与派生室外日光 `(0.813, 0.868, 0.891)` 一致；09:00 / 15:00 对称过渡，`06/12/18` 前后 1 秒连续。P7R3、P7R2、P7、P7R 和项目启动回归通过；D3D12 昼夜同机位确认白天中性、夜间暖色、全室均匀且实体壳阴影仍在。
+- 后续替换：本任务记录的十四盏高位无影灯是 P7R3 当时实现，已由 P7R4 七盏屋檐下有影灯替换；色温派生、时间连续性和无明显灯池要求继续有效。
+
+#### T0135-P7R4 铁匠铺补光与实体墙体遮光（2026-08-24）
+
+状态：Done（开发、专项回归、D3D12 铁匠铺 / 诊所昼夜边界验收与 48 敌人性能回归完成，等待用户实机确认）
+
+- 修复铁匠铺虽存在补光节点 / 能量快照、但实际室内未获得与其他六座建筑一致可读光照的问题；必须对真实铁匠铺地板、两座锻造湾和格伦工位做运行态 / D3D12 验收，不能只以节点存在冒充画面通过。
+- 修复 P7R3 高位无影宽角光穿过透明墙体照亮室外的问题。室内补光源必须位于屋檐以下、建筑墙体包络内部并开启阴影，让 P7R 已存在的 opaque shadows-only 屋顶 / 外墙代理真实阻挡局部光；只有门洞允许出现受控的自然溢光。
+- 为控制成本并避免重新出现离散灯池，将每座两盏无影灯收敛为一盏中央低衰减宽角灯；七座灯均随屋顶显露、昼夜亮度和色温曲线联动。阴影灯不得照亮体积雾，也不得创建碰撞、导航、点击、工位或新玩法事实。
+- 专项覆盖七座各一盏灯、铁匠铺激活 / 能量 / 颜色、灯位低于屋面且位于室内、墙体阴影开启、持久壳代理存在、封闭零漏光及性能预算；D3D12 对比铁匠铺、诊所的室内外边界和昼夜画面。
+- 已修复：旧兼容铁匠铺和正式铁匠铺共享 `blacksmith` ID，旧逻辑按 group 顺序误选隐藏节点。控制器现对同 ID 候选按正式布局路径、运行态可见性与旧路径降权排序，补光稳定挂到 `/FormalStationLayout/BuildingRoots/Blacksmith/BlacksmithArt/`。
+- 已遮光：七座建筑由十四盏高位无影灯收敛为七盏本地中心 `Y=2.3 m` 的屋檐下有影灯；`13.5 m / 84° / 0.02 / 0.02 / 62%` 柔和覆盖继续避免离散灯池，P7R 屋顶 / 外墙 shadows-only 代理真实阻挡局部光，体积雾能量保持零。
+- 已验证：P7R4、P7R3、P7R2、P7、P7R 和项目启动全部通过；铁匠铺正式灯正午为 `1.9747` 且七座灯均低于最低屋面，封闭时活动灯为零。D3D12 昼夜铁匠铺 / 诊所确认室内可读而草地与道路不被染亮；48 敌人回归 `180` 帧平均 `6.861 ms`，通过现有预算。
+
+#### T0135-P8A 全建筑实体功能灯与夜间占用联动（2026-08-24）
+
+状态：Done（开发、专项 / 建筑 / 光照回归、D3D12 夜间验收与性能基线完成，等待用户实机确认）
+
+- 为正式驿站每座建筑配置符合结构常识的实体灯具位置：封闭建筑优先室内梁下、桌边、工位区和门廊；露天建筑使用棚下、围栏柱、训练区边缘；主厅、仓库、围墙平台及前后门使用入口、屋檐或守备节点。已有合适灯笼模型时复用其位置，缺失处使用同一 Quaternius 灯笼资产补齐，禁止悬空、穿墙、堵门和侵入工位。
+- 灯具模型永久可见，发光材质、火焰表现与局部灯只在 `18:00（含）–06:00（不含）` 启用。主厅、仓库、围墙、正门和后门属于不可进入守备结构，夜间常亮；其余建筑仅当 NPCSystem 权威 `current_location` 中至少一名 NPC 位于该建筑时亮灯。
+- 宿舍使用特殊占用规则：夜间只有室内至少一名 NPC 未处于 NPCSystem 权威睡眠状态时亮灯；室内所有 NPC 均已入睡或无人时熄灭。表现层只读 TimeSystem / NPCSystem，经现有 `time_changed / npc_state_changed` 信号刷新，不写 NPC 地点、睡眠、行动、建筑状态或资源消耗。
+- 功能灯是 P7R4 环境填光之外的暖色局部增量：亮起时达到可工作的室内可读度，但范围克制并开启阴影，让实体墙体 / 屋顶继续遮光；关闭时灯罩和火焰不得保持自发光。专项覆盖 `17:59 / 18:00 / 05:59 / 06:00`、常亮结构、普通空置 / 有人、宿舍清醒 / 全睡、全部建筑灯具数量、墙体遮光、零碰撞 / 导航 / 点击语义及性能预算。
+- 已实现：15 类正式宿主共解析 `27` 个实体灯具、`27` 个新发光核心 / OmniLight，并接管小教堂既有 `SanctuaryWarmLight`，合计 `28` 个光源。十二座建筑复用既有 Quaternius 灯笼；围墙、正门和后门新增同源灯笼与铁托，正门灯位落在驿站内侧守备面。
+- 已联动：`18:00–06:00` 精确边界由绝对时刻判断；主厅 / 仓库 / 围墙 / 前后门夜间常亮，九座普通建筑按权威地点占用点亮，宿舍按醒着的室内人数点亮。灯具模型永久可见，只有微型自发光核心和有影局部光启停；关闭不残留自发光。
+- 已隔离：控制器只监听既有时间与 NPC 状态信号，新增节点全部 presentation-only，剥离导入碰撞 / 导航且不截获点击。局部光开启阴影、体积雾贡献为零并使用距离阴影衰减，P7R/P7R4 实体遮光与白昼环境填光继续独立工作。
+- 已验证：专项逐一验证九座条件建筑、常亮五类结构、宿舍醒 / 睡、四个边界时刻、27/28 数量、信号接线、阴影 / 雾和零玩法节点；P7R4/P7R3/P7R2/P7/P7R、主厅、宿舍、酒馆与默认正式世界回归通过。D3D12 已检查全站、铁匠铺、宿舍醒 / 睡及前后门；48 敌人基准 `180` 帧平均 `6.861 ms`。
+
+#### T0135-P8AR 露天工作区照度、悬空灯具与主厅可见性返修（2026-08-24）
+
+状态：Done（开发、专项 / 五座建筑 / 光照 / 正式世界回归、D3D12 近景与性能基线完成，等待用户实机确认）
+
+- 菜园、马厩和训练场缺少 P7R4 封闭建筑基础补光，夜间有人工作时必须增加合理数量的实体灯具和局部光，覆盖真实工作位并把人物 / 动作可读度提升到接近室内建筑，但不得把整块室外地面均匀照白。
+- 训练场和酒窖既有灯具必须重新安装到棚柱、墙面、横梁或其他可信实体上；支架与灯笼朝向需匹配承重点，禁止悬空、反插或离墙。
+- 排查主厅夜间常亮灯不可见的根因；灯具应位于正门两侧或门廊等默认俯视镜头可读位置，模型、火芯和光池都能识别，同时不挡门、不侵占公告牌和塔防平台。
+- 返修后更新专项断言与 D3D12 近景截图，并回归 P8A 状态规则、三座建筑切片、主厅 / 酒窖切片和 48 敌人性能基线。
+- 已完成：菜园、训练场和马厩分别由一盏增至四盏。前两者增加四根带石 / 木结构语义的独立边界灯柱，灯臂成对朝内；马厩四灯挂到现有内侧棚柱并分别朝左右马栏。单灯能量 / 范围为菜园 `2.8 / 9.4 m`、训练场 `3.2 / 10.0 m`、马厩 `2.8 / 9.2 m`，仅在夜间真实占用时启用。
+- 已修正：酒窖两灯移到后墙内侧木背板并面向室内；主厅两灯改为正门道路两侧、带石脚 / 木柱 / 铁帽 / 横臂的常亮门廊灯。主厅灯柱根部收进原 `22×18 m` 包络，灯体可见但不改变塔防槽位和敌军攻击空间。
+- 已验证：功能灯总数更新为 `36` 个实体灯具 / `37` 个光源，专项锁定三处各四灯、最低总能量 / 范围、实体支撑元数据、时间 / 占用规则和零玩法几何。菜园、训练场、马厩、酒窖、主厅、P7R4、P8A、正式世界与启动回归通过；D3D12 五张近景确认照度和安装方向。48 敌人 `180` 帧平均 `6.861 ms`。
+
+#### T0135-P8AR2 远景常亮与露天灯具逐级解锁（2026-08-24）
+
+状态：Partial（开发、专项、三座建筑 / 正式世界 / 48 敌人回归完成；最大拉远离屏截图在当前多 Godot 实例环境超时，等待用户实机视觉确认）
+
+- 取消功能灯随相机距离淡出：在玩家允许的最大拉远镜头下，已满足夜间 / 占用条件的实体灯芯和局部照明仍须保持启用，不得因镜头距离自动熄灭。
+- 菜园、训练场、马厩的四盏灯改为等级投影：Lv.1 显示并启用覆盖初始工位的 2 盏，Lv.2 增加覆盖扩建服务区 / 新增训练位的第 3 盏，Lv.3 增加覆盖最终工位的第 4 盏；只有最高级达到当前四灯通明状态。
+- 灯柱 / 棚柱灯具模型、发光核心和 OmniLight 必须使用同一个 `required_level`，并随 BuildingArtView 当前等级同步；升级只影响表现，不新增建筑、NPC、行动或资源权威。
+- 增补专项断言和最大拉远夜景截图，回归 P8A 时间 / 占用规则、三座露天建筑切片、正式世界与性能基线。
+- 已实现：全部功能灯关闭距离淡出；菜园、训练场、马厩分别以 `2→3→4` 显示灯具并启用同数光源。Lv.2 灯覆盖灌溉 / 器材 / 饲料维护区，Lv.3 灯覆盖最终新增工位，未修改容量或升级数值。
+- 已验证：P8A 专项锁定 `building_state_changed` 接线、36 盏灯 `distance_fade_disabled=true`、三处等级元数据 `1:2 / 2:1 / 3:1` 与灯模 / 有效光源一致；三座建筑切片、默认正式世界、48 敌人通过，平均 `6.861 ms`。
+- 待视觉复验：已新增最大拉远与三处三级对照截图脚本，但在当前并存的 Godot 编辑器 / MCP 实例环境中两次运行超过 180 秒且未产出文件；不把未生成画面登记为通过。用户可直接在 Main 夜间升级三处建筑并拉到 `70 m` 验收。
+
+#### T0135-P8AR3 铁匠铺半开放结构、工位对位与炉火工作联动（2026-08-24）
+
+状态：Partial（实现、专项、D3D12 静态画面与跨系统自动回归完成，等待用户在 Main 中完成最终视觉验收）
+
+- 将正式铁匠铺从四面完整封闭的普通房屋重构为“后部石砌炉房＋前部有顶半开放锻造棚”：后墙 / 后侧墙、炉墙和高烟囱承担防火排烟，前部及侧前部用落地柱、横梁和低矮挡火墙形成通风工作面；保留正式门路由、自动门、`16×16 m` 地块、屋顶 / 外墙透明、碰撞、导航和点击权威。
+- 共享锻炉移到后部炉墙并让炉口朝向铁砧 / 中央工作区，烟罩、烟道、烟囱和 SmokeOutlet 必须同轴；禁止炉口继续面对实体墙面。
+- 逐一校准 `forge_01–03` 的铁砧模型、实体承台 / 木墩、热料和工具托架：所有可见部件有真实支撑并接触地面或承载面，不得悬空。NPC 安全站位收近至锤击动作能落在铁砧台面，同时维持胶囊—铁砧碰撞净空和正式导航可达。
+- 铁匠铺照明采用混合结构：后部炉房保留受实体壳遮挡的日间补光，前部工位灯按 Lv.1 / 2 / 3 随真实扩建逐级增加；夜间仍只有实际有人位于铁匠铺才启灯，最大拉远不淡出。
+- 炉膛高亮热料、火焰、火星、炉光、风箱动作和烟囱烟雾只在 BuildingSystem 权威 `forge` 工位至少一人 `occupied_by` 且对应 NPC 正在执行 `work_blacksmith` 时启用。预留 / 在途、普通拜访、空置、行动停止或工位释放均必须熄灭；表现层只读工位 / NPC 行动，不推进制造或写占用。
+- 新增专项覆盖半开放结构、炉口朝向、烟道对齐、全部三级工位支撑 / AABB、格伦真实锤击距离、空置 / 预留 / 到岗 / 停止炉火状态、逐级灯数、零新增玩法权威，并回归铁匠铺切片、正式制造、格伦角色、门、屋顶、P8A 功能灯、默认正式世界与性能基线。
+- 已实现：铁匠铺改为后部砌体炉区、前 / 侧通风棚面；共享锻炉与烟囱迁到局部 `(0,-4.85)` 并让炉口朝 `+Z` 的铁砧区。三个铁砧统一抬到实体木墩 / 石脚上，热铁贴合砧面，工具托架增加落地腿和下横撑；NPC 站位由 `1.40 m` 收近为 `1.10 m`，正式导航与格伦真实循环打铁均可达。
+- 已实现：`SmithyAmbientFX` 只读 BuildingSystem 工位占用和 NPCSystem `work_blacksmith`，仅实际到岗工作时显示炉床热光、火焰、炉光、火星、烟、风箱和对应砧面热铁；空置、在途和中断后全部熄灭。后炉区日间填光改为局部 `(0,2.3,-4.0)`，实体工作灯按 `2→3→4` 随等级解锁，夜间仍服从实际占用且最大拉远常亮。
+- 已验证：P8AR3 专项、T0129 铁匠铺切片、真实格伦制造、P8A 功能灯、P7R4 遮光、P7R3 色温、屋顶透明、自动门、角色朝向、默认正式世界和 48 敌人性能回归通过；当前功能灯合计 `39` 个实体灯具 / `40` 个受控光源，48 敌人平均 `6.861 ms`。旧 A3b1 精确聚合基线仍是此前已登记的历史漂移项，不以假通过覆盖。
+- 用户近景返修：最终移除四盏工作灯的专用落地柱、棚架和局部门架，全部改为后部 / 东西砌体内墙上的背板＋短挑臂＋斜撑壁灯；侧灯后移到 `z=-3.0`，避开货架、废料箱、工具架、工位和门路。三级吊链 / 吊钩与顶梁进入同一屋顶透明分支；脚踏磨轮从中央门路迁至东侧精加工区。P8AR3、自动门、真实格伦打铁和 P8A 功能灯回归再次通过，D3D12 三级近景已复核。
+
+#### T0135-P8AR4 食堂逐灶烹饪表现联动（2026-08-24）
+
+状态：Partial（实现、专项、真实布鲁诺烹饪回归和 D3D12 近景完成，等待用户在 Main 中视觉验收）
+
+- 三个 `dining_kitchen_station_01–03` 分别拥有独立灶火、锅内彩色食材、锅上蒸汽和对应烟囱出口烟雾；第三灶及第三烟囱继续服从 Lv.3 解锁。
+- 只有 BuildingSystem 对应灶台已 `occupied_by`，且同一 NPC 实际位于 `dining_hall` 并执行 `work_dining_hall` 时，该灶整套表现才启用。仅预留、在途、普通进食、拜访、空置或工作中断必须保持熄灭。
+- 表现层只读既有工位和 NPC 行动状态，不扣粮、不产餐食、不提交占用；增加专项验证三个灶台可独立启停、灶台—烟囱一一对应及真实布鲁诺烹饪链。
+- 已实现：三个灶分别具备余烬、三簇火焰、有影暖色小范围炉光、带五种彩色食材的炖汤、锅上浅色蒸汽和烟囱顶部深色烟雾；西 / 中 / 东灶分别映射 `WestKitchenChimney / CenterKitchenChimney / EastThirdKitchenChimney`，第三组保持 Lv.3。
+- 已验证：空置三灶全灭；布鲁诺真实抵达一号灶后只激活一号灶和西烟囱，另外两组保持关闭；权威中断后全部停止发射并释放工位。P8AR4、A5-P5d 真实烹饪、P4 食堂建筑切片、P8A 功能灯和默认正式世界通过，D3D12 近景已复核。旧 A3b4 精确全局聚合计数仍受既有后续夹具增长影响，不以本任务覆盖其历史漂移。
+- 用户返修：三根烟囱原先的 `StoneShaft / BrickCrown / OpenFlue` 实心叠层已改为四壁围合的中空筒身和中空砖冠；三级铁箍同样改为环形四段，中央孔洞没有 Mesh 占据。专项新增中央开孔断言，P8AR4 与 P4 食堂切片再次通过，D3D12 屋顶近景确认孔洞可读。
+- 用户二次返修（Done）：Lv.2 在西 / 中两根既有烟囱上方额外生成的 `WestSparkGuard / CenterSparkGuard` 悬浮防火帽整组已删除，包含盖板、支杆和围杆；空的 Lv.2 屋顶升级分支也不再登记到透明链。烟囱本体、中空烟道、逐灶排烟与 Lv.3 第三灶 / 第三烟囱解锁保持不变；P4 食堂切片新增旧节点必须不存在的断言并与 P8AR4 专项、D3D12 Lv.2 屋顶近景共同通过。
+
+#### T0135-P8AR5 宿舍 / 小诊所中世纪洗手池（2026-08-24）
+
+状态：Done
+
+- 在用户截图标注的宿舍西端床列之间、诊所北墙两张医生桌之间各放置一套一级常驻洗手池。两处复用同一低多边形木石盥洗架结构，至少包含接地支脚 / 下层板、承托台、可读的凹盆与水面、墙背板、储水罐、铜制出水嘴和毛巾，不使用现代独立陶瓷台盆造型。
+- 宿舍洗手池必须与 Lv.2 `WarmStoneHearth` 同时存在，且不侵入十张床、床边到达点或中央通道；诊所洗手池不得碰两张医生桌、椅子、病床或治疗站位。两者均为 presentation-only 非工位装饰，不新增用水资源、交互、碰撞、导航或清洁结算权威。
+- 更新宿舍 / 诊所建筑切片专项，锁定节点、结构件、局部坐标、地块边界和与既有 fixture / 壁炉零重叠；完成 D3D12 两建筑近景检查后回写文档。
+- 已实现：共享 `MedievalWashBasinBuilder` 生成约 `1.42 × 0.90 × 2.07 m` 的壁靠盥洗架，凹盆使用双层椭圆低模网格而非实心圆盘，水面位于盆腔内；宿舍使用深橡木 / 灰石 / 蓝绿水面，诊所使用鼠尾草绿 / 象牙石 / 青绿水面配色。
+- 已验证：宿舍洗手池位于 `(-1.9,0,-5.78)`，与十床 fixture 和 Lv.2 壁炉零 AABB 重叠；诊所洗手池位于 `(0,0,-5.42)`，与两医生桌、四病床 fixture 零重叠。两项建筑切片、结构 / 零碰撞导航断言和 D3D12 近景通过。
+- 用户位置返修（Done）：宿舍洗手池沿西端墙从 `(-1.9,0,-5.78)` 向两排床中线移动到 `(-1.0,0,-5.78)`；为保证 Lv.2 同屏不穿模，壁炉与烟囱同轴平移到 `(1.0,0,-5.78)`。诊所位置不变，十床 / 到达点 / 门路与玩法权威不变；宿舍专项和 D3D12 二级近景通过。
+
+#### T0135-P8AR6 宿舍后方封闭卫生间附属物（2026-08-24）
+
+状态：Done
+
+- 在宿舍西侧、围墙内侧、菜园北侧的用户截图标注空地增加一座小型封闭卫生间；外观须与既有低多边形中世纪驿站统一，包含接地石基、灰泥木框墙体、可读木门、通风构件和完整屋顶，不得表现为白盒或现代卫生间。
+- 卫生间只有室外模型，不创建室内场景、入口路线、可进入区域、自动门、工位、资源、升级、灯光、HP、建筑面板或点击交互；它不登记为 `BuildingSystem` 建筑。
+- 作为不可穿越的实体附属物，只登记一个与可见主体一致的静态占地碰撞并参与正式导航烘焙，防止 NPC / 敌人穿模；碰撞不得侵占宿舍、菜园、围墙、道路和门前通行带。
+- 新增专项结构 / 空间 / 非交互 / 碰撞导航断言并完成 D3D12 近景复核；通过后回写当前状态、空间规划、架构索引与开发日志。
+- 已实现：正式坐标 `(-47,0,-10) m / yaw=90°`，可见包络约 `3.28 × 3.41 × 3.93 m`；石基、灰泥木框、封闭拼板门、月牙通风标记、低缓双坡瓦顶、后百叶和排气管形成完整外观。门朝宿舍，屋顶常驻不透明。
+- 已验证：零 Area / Light3D / AnimationPlayer、零 BuildingSystem 登记；唯一 `2.8 × 3.2 × 2.4 m` 主体碰撞进入 `formal_navigation_source`。西侧围墙净距约 `6.40 m`，与宿舍 / 菜园最大包络不相交；专项、宿舍切片、默认正式世界与 D3D12 近景通过。
+
+#### T0135-P8AR6R 宿舍卫生间扩为并排双坑位（2026-08-24）
+
+状态：Done
+
+- 保留已验收卫生间，在其侧面紧邻复制一座完全同规格、同朝向的独立封闭卫生间，使远景明确读取为两个坑位，而不是扩大成一座可进入室内建筑。
+- 两座卫生间各自保留独立主体碰撞并共同参与正式导航烘焙；两者之间只留结构缝，不得互相穿模，也不得侵占围墙、宿舍、菜园或道路净空。
+- 两座继续保持零室内、零进入、零交互、零功能、零灯光和零 BuildingSystem 权威；更新专项和 D3D12 近景后收口。
+- 已实现：一号间保持 `(-47,-10) m`，二号间位于 `(-47,-13.6) m`；两者 `yaw=90°`、门同向，屋檐间结构缝约 `0.19 m`，模型完全同规格且无相互穿模。
+- 已验证：两个独立 StaticBody 均进入 `formal_navigation_source`，最近围墙净距约 `6.09 m`，与宿舍 / 菜园最大包络零重叠；双间专项、宿舍切片、默认正式世界及 D3D12 近景通过。
+
 验收标准：
 
 - 远景可读驿站结构，近景可读职业活动；装饰不阻断导航、点击或战斗视线。
+- 任意允许的镜头平移 / 缩放下都看不到直线硬边、孤立山条或自然物突然停止；右侧山体、前后密林和西侧河谷均延伸到镜头边缘之外。
+- 河面始终低于驿站地坪，水面上方不存在无设计语义的草地 / 地面块；敌军生成瞬间在默认和最大拉远镜头均不可见，只能从前方树林逐步出现。
+- `05:30 / 06:30 / 12:30 / 18:30 / 19:30 / 00:30` 六个关键时点均能读清道路、建筑入口、NPC 与敌我轮廓；太阳 / 月亮在东升、南天、西落的方向与阴影长度一致，黎明—白昼—黄昏—夜晚的颜色、雾、环境光和功能灯连续过渡且无跳变。近景透明屋顶 / 外墙时，室内人物和工作动作不被雾、死黑阴影或外墙点击遮蔽。
 - 音效有统一音量分组和开关，不因 x2 / x4 或 LLM 慢速产生不可控叠音。
-- 中低配置下可按质量档关闭高成本阴影、粒子、贴花和环境装饰。
 
 ---
 
@@ -598,6 +1938,19 @@
 - 两类计划对话项会记录意图制定元数据，并在执行前走异步复核；continue / modify / cancel_and_replan 分别原样执行、更新当前首句后执行、停止对话并请求当前小时重估。
 - 复核位于行动中断与对话落地之前，使用日期 / 小时 / 计划版本 / 计划项签名防迟到；请求期去重，计划变化时取消旧请求。
 - 后端新增严格 Schema、业务校验和一次纠错重试；Godot / Mock / 回归通过，真实 DeepSeek 三分支均通过且 `model_fallback_used=false`。
+
+### T0116-R 对话意图复核真实模型三分支稳定性复验
+
+状态：Todo
+优先级：P1
+前置任务：T0116
+涉及文档：`PROMPTS.md`, `AI_NPC_SYSTEM.md`, `API_BUDGET.md`, `TASKS.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 复核 `verify_dialogue_intent_revalidation_real.py` 的 modify 样例与 Prompt 边界。2026-08-19 实测 DeepSeek `fallback=false`，但“旧意图误称缺铁、当前实际缺木材”返回 `cancel_and_replan`，没有按既有验收选择修改首句。
+- 先确认这是样例表达歧义、模型漂移还是 Prompt 对 continue / modify / cancel 的区分不足；只在有证据时调整样例或 Prompt，不以放宽断言掩盖错误分支。
+- 使用真实 provider 连续覆盖 continue / modify / cancel 三分支，保留 request id、provider、model、fallback 和实际判断理由；不得输出 Key，也不得用 Mock 代替正式验收。
 
 ---
 
@@ -3575,6 +4928,24 @@
 
 ---
 
+## T0045A Shift 加速俯视镜头平移
+
+状态：Done
+优先级：P1
+前置任务：T0045
+涉及文档：`UI_UX.md`, `MODULE_INDEX.md`, `CURRENT_STATE.md`, `DEV_LOG.md`
+
+任务目标：
+
+在现有事件式 WASD 镜头输入上增加 Shift 加速；按住 Shift 与任一 WASD 组合时，键盘镜头平移速度为普通速度的 2 倍，同时保持按键释放、窗口失焦和文本输入聚焦时的清理边界。
+
+完成结果（2026-08-24）：
+
+- `CameraRig` 新增可配置的 `keyboard_pan_boost_multiplier=2.0`，事件式跟踪 Shift 按下 / 释放；仅加速 WASD 键盘平移，不改变中键拖动和滚轮缩放。
+- `verify_camera_rig_input.gd` 新增普通 S 与 Shift+S 等时长位移的精确 1:2 断言，并继续覆盖释放、窗口失焦、文本输入焦点和中键取消。
+
+---
+
 ## T0046 收敛长期记忆、注入动态驿站场景与扩展公告牌
 
 状态：Done
@@ -4934,7 +6305,7 @@ Main
 - 吃饭当前以 20 分钟恢复约 50 点饱食度为基准；睡觉以 6.5 小时降低 100 点疲劳为基准；工作当前仍以 1 小时为最小工作批次，批次完成时结算投入、产出、饱食和疲劳。
 - 行动开始事件仍即时写入；完成事件只在持续时间结束后写入。暂停时 active 行动不推进，恢复后继续。
 - 已更新 `tools/verify_action_system_basic.gd`、`tools/verify_structured_memory_events.gd`、`tools/verify_action_local_public_broadcast.gd` 和 `tools/verify_npc_short_term_memory_container.gd`，验证持续行动和事件广播。
-- `ActionSystem` 新增 `debug_assign_upgrade_assist(npc_id, building_id)`；协助修复/协助升级都是带建筑参数的广场行为，NPC 在室内时会先前往广场，再按工程熟练度加速目标建筑倒计时。
+- `ActionSystem` 新增 `debug_assign_upgrade_assist(npc_id, building_id)`；当时协助修复/协助升级采用带建筑参数的广场兼容行为。该历史口径已分别由 2026-08-19 的 A5-P6d-1 / P6d-2 替换为真实建筑外沿维修 / 施工槽，保留在此仅记录原任务演进。
 - 协助修复/协助升级开始会分别写入 `repair_assist_started` / `upgrade_assist_started` 广场本地公开事件，`location_id == "plaza"` 且 `visibility == "local_public"`；完成后协助 NPC 回到 idle，并写入 `completed_assist_*_<building_id>` 行动结果。
 - 已更新 `tools/verify_action_system_basic.gd`，验证协助修复/协助升级发生在广场、事件为广场公开、可提高速度倍率并推进作业完成。
 
@@ -6151,7 +7522,7 @@ NPC 可主动请求与玩家对话。这作为一个行为进入NPC的可选行�
 - 工作和吃饭事件进入结构化事件与 NPC 事件库。
 
 验收结果（2026-06-09）：
-- `data/action_defs.json` 中 `work_dining_hall` 已明确使用 `厨艺`，消耗 1 份粮食并产出 1 份餐食；食堂工位由 T0801 的 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 维护。
+- `data/action_defs.json` 中 `work_dining_hall` 已明确使用 `厨艺`，消耗 1 份粮食并产出 2 份餐食；食堂工位由 T0801 的 BuildingSystem 预留 / 提交 / 释放接口维护，A5-P5d 后正式空间必须在实体到达灶台并提交占用后才进入生产周期。
 - 食堂工作效率沿用统一公式：厨艺、智力和食堂建筑等级会缩短单位加工周期；食堂升级后同一厨子的加工时间会进一步缩短。
 - `eat_at_dining_hall.food_options` 按餐食优先于粮食排列；餐食恢复 50 点饱食度，粮食恢复 25 点饱食度。
 - 新增 `tools/verify_dining_hall_meals.gd`，验证粮食转餐食、厨艺/食堂等级效率、餐食优先吃、餐食性价比高于粮食，以及 `work_started` / `work_completed` / `eat_completed` 事件进入 NPC 事件库。

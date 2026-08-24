@@ -1,10 +1,177 @@
 # COMBAT_SYSTEM.md
 
+## T0132-P5 道路表现与战斗寻路边界
+
+- 正式 42 段泥路只由 `FormalRoadNetworkArtView` 显示，显式保持 `roads_affect_navigation=false`，且没有 CollisionObject 或 NavigationRegion。车辙、泥肩、碎石和交汇补片不能改变敌我单位的路径成本、目标选择、挤压、攻击距离或到达判定。
+- 当前正式波次继续按 NavigationMesh、CharacterBody 实体碰撞和 avoidance 寻找目标的最短可行路线；道路不是必须途经点。P5 后第一波动态直攻回归通过。
+
+## T0132-P4b 箭塔攻击表现与结算边界
+
+- DefenseDeviceSystem 继续按 `attack_interval=1.39 s`、伤害 16、穿透 4、基础射程 28 和宿主槽倍率即时选敌 / 结算；正式箭塔只消费既有 `origin_position / target_position / attack_interval` 表现快照。
+- 每次已结算攻击驱动一次转台瞄准、弓弦释放、已装填箭隐藏、可见飞行箭和约 `58%` 间隔的机械回位；飞行体与动作都不提交命中、伤害、穿透或击败。目标在箭飞行期间移动或失效，不改写已发生的结算。
+- 主厅木制平台替换只影响 Mesh / 材质。四槽坐标、`1/3/5/6` 解锁、`3.93 m` 锚点、碰撞、主厅 `2.0x` 射程和围墙槽加成都未改变。
+
+## T0132-P4a 弩床攻击表现与结算边界
+
+- DefenseDeviceSystem 仍按 `attack_interval=4.25 s`、伤害 44、穿透 8、基础射程 34 和宿主槽倍率即时选择目标并调用 CombatSystem 结算；动画完成、弩箭飞行时间和任何视觉碰撞都不提交伤害。
+- 单次 `defense_device_action_resolved` 追加 `origin_position / target_position / attack_interval`，三者是本次权威射击发生时的只读快照。目标之后移动、昏迷或被移除不会改写已经结算的事实；飞行弩箭只追到快照坐标并自动清理。
+- `DefenseDeviceView` 把同一事件交给正式弩床，按事件频率播放转台瞄准、弓弦释放、后坐、弹体飞行和重装；待机箭只在重装完成后出现。主厅 `2.0x` 射程与围墙 Lv.3 / 5 射程加成不改变攻速或表现层职责。
+
+## T0132-P2 仓库受击表现边界
+
+- 仓库实体美术没有修改敌人 `front_gate→warehouse→main_hall` 目标序列、正式攻击点或动态接触逻辑；正门到仓库的导航回归仍为17点，第一次有效攻击继续由 CombatSystem 扣减 BuildingSystem 仓库 HP。
+- 裂纹、松脱门板、碎石和烟尘只读 `hp/max_hp` 分级显示，修复后随权威 HP 清除。分类货物、侧仓与挑高安全仓不拥有库存损失、被掠夺比例、伤害或攻击完成权威；尚未实现的仓库受击资源流失规则仍不得由表现层推导为生效。
+
+## T0132-P1 主厅城防与损伤表现边界
+
+- 主厅器械槽位仍由 DefenseDeviceSystem 权威解锁，Lv.1–6 容量保持 `1/1/2/2/3/4`，平台对应解锁等级为 `1/3/5/6`；表现层不拥有部署、射程、器械 HP、攻击或命中。
+- P1R3 修复旧空间坐标分裂：主厅四槽的运行态攻击原点、世界部署模型和 UI 标记现在统一绑定正式平台世界锚点；围墙四槽也统一绑定正式正门墙段。主厅平台局部中心保持 `(-7,-5)/(7,-5)/(-7,5)/(7,5)`，安装高度为 `3.93 m`，不改变 `2.0x` 射程、伤害、攻速、穿透或目标选择公式。显式 GM legacy compatibility 才恢复配置中的旧地图位置。
+- 主厅裂纹、破损布幔、碎石与烟尘只读 BuildingSystem `hp/max_hp`；主厅 HP 归零的游戏失败仍由原有权威流程决定，表现节点不提交伤害、修复或失败事件。
+
+## T0130-P1 正式剑盾步兵表现接线
+
+- CombatSystem 仅在 `unit_type=melee_infantry` 且 `weapon_type=sword_shield` 时装配 `EnemySwordShieldChibiArtView.tscn`；第一波 8 人及后续同类个体使用 Synty Dark Knight、KayKit 动画和内建剑盾。长杆、弓弩、骑兵继续使用旧回退，不能用剑盾模型冒充。
+- 正式敌人仍是既有 `ActorMotionBody`：父级 CharacterBody / NavigationAgent / BodyCollision / InteractionArea 负责实体移动、拥挤、索敌和点击。生产美术包装不带 P0 沙盒 SelectionArea，不改变胶囊半径、RVO、攻击距离或路径。
+- CombatSystem 的 `current_action` 只读映射 walk / run / attack，HP / alive 只读映射受击 / 倒地；动画完成不提交命中、伤害、死亡或建筑破坏。`debug_get_enemy_art_snapshots()` 只供 GM 与专项观察。
+- Synty 剑盾兵的可见正面为本地 `+Z`；包装层用独立 `180°` 修正对齐项目 `-Z` 移动合同，并以 `0.10 s` 有界响应跟随 RVO 持续更新的行进方向。该表现插值不改变 ActorMotionBody 的路线、避障速度、挤压、索敌或攻击范围。
+- P1 专项确认第一波 8 个正式剑盾实体全部使用两头身家族并保留父级碰撞；敌人波次生成和 48 实例共享动画库回归通过。48 实例 headless 观测约 `6.86 ms/帧`、初始化 `210.50 ms`、静态内存 `+50.27 MB`，不替代渲染 / 导航 / VFX 联合预算。
+
+## T0130-P0 剑盾敌人两头身表现试片
+
+- `EnemySwordShieldChibiPilot.tscn` 使用 Synty Dark Knight 可见网格、KayKit Medium Rig 近战动作和 Synty 剑盾挂点，只验证外观、动作、选择体与并发成本；它没有加入 CombatSystem 活动敌人集合，也不计算索敌、射程、命中、伤害、阻挡或死亡。
+- 48 敌夹具只实例化 presentation-only 包装并轮换 idle / walk / run / attack / hit_react，验证共享 AnimationLibrary 和骨骼更新开销；本机 headless 180 帧平均约 `6.86 ms`。这不能替代完整 Main 的导航、RVO、战斗系统、渲染和 VFX 联合预算。
+- 用户视觉验收前，五波正式敌人继续使用既有生产表现；不得把 Main 的临时试片根视作刷波、战斗开始或目标可攻击实体。后续批量接线仍必须由 CombatSystem 权威状态驱动共享表现状态合同；P7 后 Chibi 包装为 17 状态。
+
+## T0129C-A5-P8 波次与逃离空间恢复
+
+- 活动正式波次保存波次号和存活敌人的 `spawn_index` 空间状态。加载从权威波次配置重建实体，删除存档中不存在的出生序号，再恢复坐标、HP、攻击冷却、抬手与硬直；目标选择和 NavigationAgent 路径随后继续实时计算。
+- 活动逃离保存于 NPC 的 `escape_intent`。加载 NPC 坐标后，清醒者重新请求正式地图边缘终点，昏迷者保持暂停，已完成逃离者保持隐藏且不会复活。
+
+## T0129C-A5-P7 默认正式居民与逃离
+
+- 战斗开始时 NPC 已常驻生产 NavigationMap；CombatSystem 原地接管可行动 Body，不再从旧坐标传送到初始锚点。战斗结束只撤销战斗权属，保留各 NPC 当时正式坐标并回到 `formal_world_resident`。
+- 默认正式居民在非战斗状态发起逃离时也使用后门至地图边缘的 6 点 / `261.302 m` 路线；只有实体抵达才提交 `escaped`。战斗中途结束不会把逃离者或其余 NPC 拉回旧图。
+- GM 临时旧图兼容是开发入口，不改变伤害、波次、逃离事件、昏迷 / 复苏或胜负权威。
+
+## T0129C-A5-P6d-3 昏迷实体与治疗接近边界
+
+- 昏迷 NPC 继续是不可行动但可碰撞 / 可交互的 CharacterBody；`assist_heal` 治疗者必须通过生产导航抵达其周围合法距离，不能用后台 `current_location` 代替接近。
+- 每个目标最多两名治疗者，各自有独立路线与站位。战斗接管、治疗者昏迷、目标复苏或导航失败都会撤销会话与 helper；CombatSystem 不接管治疗费用、HP 恢复、经验或事件结算。
+- 复苏阈值和“NPC 不死亡”核心规则不变；本步只把既有治疗链的空间前置条件落到实体世界。
+
+## T0129C-A5-P3 完整 Main 时间链预算
+
+- 默认第五波下分项采样 `logical_time_tick` 全订阅链，并用同一计时方式比较隔离 CombatSystem 与 `TimeSystem._advance_simulation_time()` 完整入口；600 次样本 P95 分别为 `3.764 / 4.383 ms`，综合约为隔离值的 `1.16×`，均低于 60 FPS 的 `16.67 ms` CPU 预算。
+- `CombatSystem.get_wave_hud_snapshot()` 只投影 HUD 需要的当前波次、敌人数、下一波与倒计时，不复制完整活动战斗、生成结果和历史结果；原 `get_wave_schedule_snapshot()` 保持完整调试 / 业务合同。
+- 普通时间倍率下 HUD 与商人忽略同一游戏分钟内的重复表现刷新；LLM 慢速需要精确秒时 HUD 仍按秒刷新。该优化不改变伤害、冷却、波次调度、商人到离时段或任何权威结算。
+
+## T0129C-A5-P2 默认第五波实体压力与生产预算
+
+- 正式生成阵列读取 `physics_navigation_v1.formal_wave_spawn` 与本波实际兵种半径；三列间距取配置下限和最大胶囊直径加净距的较大值。第五波骑射胶囊半径 `0.65 m`，因此使用 `1.40 m`，不再沿用会导致初始穿模的固定 `0.95 m`。
+- 默认正式波次的逐敌索敌 / 攻击逻辑按每帧最多 `8` 人轮转。每个敌人分别累计未更新帧的 `game_seconds / combat_seconds`，轮到时再结算，故攻击间隔、伤害、移动 profile 与每人独立索敌不变；48 人在 6 帧内全部更新。实体运动、RVO、碰撞与动画仍逐物理帧运行。
+- 正式战斗期接触扫描每 6 帧、避战目标复核每 3 帧；状态不变的正式敌人不重复刷新整套模型档案 / 标签，攻击动画由正常 profile 状态转换，不再反复调用返回完整快照的 debug 强制接口。
+- A5-P2 专项覆盖 48 敌 + 8 NPC、非战斗持续避战、零导航失败、速度 / 单帧位移、胶囊净距、前排死亡后补位、轮转覆盖与清理零残留。隔离 CombatSystem 生产入口 P95 主线程约为 headless `4.70–5.19 ms`、D3D12 窗口 `10.52 ms`；完整 TimeSystem 的跨模块 P95 长帧另由 A5-P3 审计，不能把本结果表述为 Main 全系统性能验收。
+
+## T0129C-A5-P1 全员正式战时空间与非战斗避战
+
+- 默认波次启动时，CombatSystem 向 NPCSystem 请求全部 NPC；NPCSystem 只迁移当前可行动者，并保存每个 Body 的原坐标、导航开关和 NavigationMap。初始正常状态下 8 人均进入生产 NavigationMap；暂时昏迷等不可行动者可合法跳过，不会阻断波次，锚点缺失或导航绑定失败仍属于真实失败。
+- `combatant_npc_ids` 继续只列入伍持主武器者；其余已迁移者列入 `noncombatant_npc_ids`，敌人可以按真实同图 Body 发现他们。未入伍或无主武器者仍由既有接敌规则进入 `avoid_combat`，没有被强制征召或赋予攻击能力。
+- 避战候选仍按敌方方位生成短步长散射目标；A5-P1 对正式 NPC 把目标投影到生产 NavMesh，NPCSystem 再通过 ActorMotionBody 请求真实运动。道路没有权重，静态碰撞、实体碰撞和 avoidance 决定路线；不以字典位置或后台地点代替到达。
+- 战中逃离出口动态解析到正式地图边缘 `(-54,-305)`；NPC 经后门单向链接进入 6 点 / `261.302 m` 后路 NavigationRegion。对话恢复和复苏恢复刷新并保存同一最终坐标，实体到达后才提交 `escaped`。
+
+## T0129C-A4-P7 / T0129B-C3-P7 五波动态接敌压力
+
+- `debug_run_formal_dynamic_wave_slice(wave_number)` 复用唯一正式实体工厂并覆盖 1–5 波。每个敌人独占 ActorMotionBody、实体胶囊、NavigationAgent、目标、射程与攻击状态；骑兵 / 骑射使用 `enemy_mounted` 体积，其余使用 `enemy_foot`。
+- P5/P6 的固定攻击位与剑盾 / 长杆预排不再参与当前运行逻辑。每个敌人独立查找侦测范围内最近可行动我方单位；没有单位目标时攻击当前未摧毁阶段建筑。所有追击者向目标自身或建筑接触点请求最短可行路径，道路仍没有权重。
+- 进入射程者暂停移动并按原 CombatSystem 抬手 / 冷却 / 伤害链攻击；未进入射程者继续向同一目标施压。被前方实体挡住产生的 `stuck_timeout` 只记为 `pressing_blocked` 并等待下一次重寻路，不能伪造到达或永久退出战斗；目标移动超过 `0.35 m` 或前方空间释放后会重新请求路径。
+- P7b 已把默认 `spawn_wave()` 接入正式坐标世界；A5-P1 又接入全部当前可行动 NPC与战斗期非战斗避战，A5-P4c / C4-P2 已接入正式战时长逃离。A5-P5a 已接入托马的单建筑正式 `work_stable`，其余非战日常建筑行动与默认商人仍待正式世界总切换。
+
+### A4-P7b / C3-P7b 默认敌我正式战斗世界
+
+- `spawn_wave()` 直接复用 `_spawn_formal_dynamic_wave()`；默认波次在 `FormalEnemies` 创建实体，显式 GM P7 切片仍走同一工厂但保持调试生命周期。默认日程允许在已有正式战斗中追加后续波次，ID 由运行序列保证唯一。
+- NPCSystem 的 `begin_formal_combat_world()` 在 A5-P1 起迁移全部当前可行动 NPC，保存原坐标与导航模式，绑定生产 NavigationMap；`end_formal_combat_world()` 统一停止运动、恢复原坐标和兼容模式。CombatSystem 不直接写 NPC 最终坐标。
+- 默认正式敌人只查询已迁入同图的 NPC，读取其 CharacterBody 实时位置；位移超过 `0.35 m` 时各敌人独立重规划。警铃阵位以正式正门内侧为基准，战术点吸附生产导航图。
+- 清敌、自然战斗结束或系统重置都会退出正式运行世界并恢复镜头。战斗期可行动非战斗人员与敌人同图；未迁移的不可行动者会被目标查询过滤，避免跨坐标世界追逐。
+
+### A4-P7R / C3-P7R 拥堵运动稳定性
+
+- 每个正式敌人的 NavigationAgent `max_speed` 等于 ActorMotion profile `base_speed`。RVO safe velocity 即使给出更快或反向的局部修正，也要先限速，再经过同一加速度约束后才能交给 `move_and_slide`；不能产生独立于兵种移动速度的横向弹射。
+- P6 固定队列遗留的行列 avoidance priority 已删除。正式敌人统一使用 `0.55`，`time_horizon_agents=0.6`、`time_horizon_obstacles=0.8`，保留实体碰撞和向目标持续施压。
+- 表现朝向只在水平速度不低于 `0.35 m/s` 时更新，并限制为 `360°/s`；低速碰撞恢复保持上一有效方向。`pressing_to_* / pressing_for_attack_space` 视为移动，攻击与抬手始终朝向权威目标。
+- P7 专项同时锁定 profile / Agent 速度一致、实际速度不越界、单帧位移不发生整个人体半径级弹出、单帧可见转角不超过约 `6°`、最小实体距离和前排空位补入。该稳定性修正没有降低碰撞、取消独立索敌或恢复固定攻击槽。
+
+## T0129C-A4-P6 / T0129B-C3-P6 第二波混编正式实体（历史，运行策略由 P7 取代）
+
+- `debug_run_formal_second_wave_slice()` 复用可指定波次的正式实体工厂，从 `enemy_waves.json / wave_02` 展开 12 名剑盾和 4 名长杆；每人仍独占 ActorMotionBody、NavigationAgent、碰撞胶囊、运行 slice 与死亡清理。
+- 三个建筑目标仍只走最短可行路径且道路无权重。正门和仓库因正面有限使用同侧紧凑多排；主厅把 12 名剑盾展开在来袭侧前排，把 4 名长杆放在同侧后排，配置排间距 `2.1 m`。两类单位按角色各自领取槽位，不会用同一索引互相覆盖。
+- 阶段建筑由先到者摧毁后，所有在途请求用 `superseded` 原子改向下一目标；不要求整波先在旧建筑前集合。第二波允许最长 60 秒有界拥堵恢复，宽松到达半径不超过对应武器射程，仍不得用超时伪造到达。
+- 仓库转向主厅时，剑盾按当前物理位置领取最近未占前排槽，避免为追逐出生编号槽横穿已经成形的队列；12 名剑盾全部实际到位后，4 名长杆才进入后排，不会从后方堵住前排进路。专项连续两次实测两排各自纵深差 `0 m`、排间距约 `2.1 m`、零导航失败、2311–2336 次 avoidance，停止后零活动敌人与零正式节点。第一波 P5R2 回归保持通过。
+
+## T0129C-A4-P5R2 / T0129B-C3-P5R2 第一波直攻与紧凑正面攻击位
+
+- 第一波正式实体只以 `front_gate -> warehouse -> main_hall` 作为玩法目标序列。每次只向当前目标下发一个 NavigationAgent 目标，NavigationServer 在可通行地面上选择最短路径；道路、广场泥地和历史阶段 Marker 都不参与成本或强制途经。
+- 城外仍受密林复合碰撞与正门开口约束，导航面改为 6 横断面的开放进军廊道；城内使用静态碰撞烘焙的生产 NavMesh。目标销毁时，尚在途中者允许用 `superseded` 原子替换为下一建筑目标，不把旧请求取消误记为导航失败。
+- 正门 / 仓库各有 8 个近战攻击位；主厅第一波使用北侧正面的 8 位单排攻击带，中心间距 `2.4 m`，不向四角、两侧或背面分配。第一波按稳定 formation index 领取独立位置并吸附到 NavigationMap；只有 ActorMotionBody 实际到达该位置后，CombatSystem 才设置 `attack_unlocked`。旧 P5 的碰撞边界超时假到达已经删除。
+- 道路只属于表现层。本地 AStar 可达性合同也把墙内开放地面视为等价可走区域；敌我正式运动仍以 CharacterBody 碰撞、NavigationMesh、NavigationLink 和 avoidance 为约束，不允许穿建筑、围墙、家具或其他实体。
+
+## T0129C-A4-P5 / T0129B-C3-P5 第一波正式实体
+
+`debug_run_formal_first_wave_slice()` 从第一波权威配置展开 8 名敌人，每名都进入 `_active_enemies` 并拥有独立 `ActorMotionBody`、NavigationAgent、十阶段状态与攻击提交标记。3 列方向编队随当前路段旋转，目标先吸附到正式 NavigationMap；建筑外围因实体碰撞形成队列时，只在配置限定的建筑边界半径且持续移动 6 秒或卡住 3 秒后，把实际当前位置登记为该敌人的可达攻击位，仍不允许后台字典提前进入或攻击。
+
+正门 / 仓库摧毁后，各敌人按自己的当前阶段继续推进；没有到达的后排不会继承前排的攻击权威。单体 HP 清零只删除自己的 Body、路径和 slice，最后一人或 `debug_stop_formal_first_wave_slice()` 继续复用既有时间倍率与战斗结束清理。本段是 P5 历史边界；P7 / P7b 已将五波、普通 `spawn_wave()` 与可战斗 NPC 接入动态正式链，器械和非战斗移动类别仍待后续迁移。
+
+## T0129C-A4-P4 / T0129B-C3-P4 单活动敌人推进主厅
+
+- `debug_run_formal_active_enemy_main_hall_slice()` 让一名正式活动敌人消费完整十阶段。仓库摧毁后清空旧攻击节奏并下发 `main_hall` 运动目标，实际到达前禁止选择 / 攻击主厅。
+- `motion_arrived(main_hall)` 才设置主厅攻击目标和解锁标记；首次攻击继续为原配置 4 点，`main_hall_combat_authority_committed` 单独记录提交证据。
+- 主厅最终伤害仍经过 `_apply_enemy_attack_to_building()` 和 `_trigger_main_hall_failure()`，由 GameState 提交 `failure / main_hall_destroyed`。P4 没有第二套失败条件；P3 / P2 API 只作兼容包装。
+
+## T0129C-A4-P3 / T0129B-C3-P3 单活动敌人破门攻仓
+
+- `debug_run_formal_active_enemy_warehouse_slice()` 创建一名真实活动剑盾敌人；P2 接口仅作兼容包装。其目标顺序为正门、仓库，但 CombatSystem 只在对应物理到达阶段允许选择目标。
+- 正门摧毁后清空抬手 / 冷却并下发 `gate_turn`，ActorMotionBody 依次实际抵达 `gate_turn / north_junction / plaza_junction / warehouse`。途中 `_advance_enemy_ai()` 只报告物理移动，仓库 HP 不变；`motion_arrived(warehouse)` 才设置 `attack_unlocked=true` 并允许既有攻击链扣血。
+- P3 当时的仓库后 hold 已由 P4 主厅实体路线取代；正门 / 仓库两项提交标记继续保留。
+
+## T0129C-A4-P2 / T0129B-C3-P2 单活动敌人正门攻击
+
+- `debug_run_formal_active_enemy_front_gate_slice()` 只创建第一波的一名真实活动剑盾敌人：进入 `_active_enemies`、启动时间倍率上限与 `combat_started`，实体位于正式根并沿 P1 路线运动。
+- `ActorMotionBody` 抵达 `front_gate` 前，`_advance_enemy_ai()` 只能报告物理路线阶段，不能选择目标、直接改坐标或攻击。抵达后才把正式正门攻击点投影给既有目标选择，继续使用原攻击抬手、冷却、BuildingSystem 扣血和 `building_damaged`。
+- P2 当时的正门后 hold 已由 P3 正式仓库路线取代；P2 专项仍锁定抵门前零伤害、首次正门伤害及清敌 / 死亡兼容。
+
+## T0129C-A4-P1 / T0129B-C3-P1 正式敌军导航样片
+
+- `CombatSystem.debug_run_formal_enemy_navigation_pilot()` 从第一波配置只读取得一名步兵样板，在远端正式根创建 `ActorMotionBody / enemy_foot`；它使用 `0.42 m / 1.8 m` 实体胶囊、layer 2 / mask 3、独立 interaction layer 4 和 NavigationAgent avoidance。
+- 样片逐段消费 `station_layout.combat_spatial.enemy_route`，本步只走 `spawn -> reveal -> approach_mid -> contact -> front_gate`。物理到达后才推进阶段；正门到达状态是 `ready_to_attack_front_gate` 的空间预备态，不是攻击提交。
+- P1 样片刻意不进入 `_active_enemies`，继续保留为无伤害空间基线；对外 GM 入口已由 P2 活动敌人攻门切片替换。
+
+## T0129A 战场空间灰盒（尚未迁移）
+
+- 当前 Main 敌人约在 `Z=29–31` 出生，距旧正门只有约 `17–19 m`；T0129A v0.9 灰盒把不规则前门放在 `(5,54)`、敌军林下出生区放在 `(2,335)`、远方林缘显现点放在 `(8,225)`，出生区距正门约 `281 m` 且嵌在地图边缘森林。仓库 / 主厅目标阶段点为 `(29,15)` / `(0,2)`，但尚未迁移正式 CombatSystem 坐标。
+- 规划路线为林下出生 -> 林缘显现 -> 城外接触区 -> 正门 -> 仓库西侧攻击点 -> 主厅正面攻击点，继续遵守既有“正门 / 仓库 / 主厅”目标权威，不改变伤害、波次或胜负规则。
+- 独立 `StationSpatialSandbox.tscn` 从第五波配置创建全部 48 个 `CharacterBody3D + CapsuleShape3D`（28 近战 / 4 长柄 / 10 弩手 / 6 骑射），沿细分后的 13 个队形节点 / 12 段路线从森林行进至主厅。全程压力采样零包络重叠、最小净距不低于 `0.12 m`，队形不越过配置道路 / 门宽，也不侵占无关建筑地块。该模拟不调用 CombatSystem，不结算伤害或胜负。
+- C4-P2 已把灰盒结论落入 Main 正式战斗世界：后门到逃离完成点为 6 点 / `261.302 m`，按 `5 m/s` 普通逃离约 `52.26 s`、受击 `1.25x` 加速约 `41.81 s`，仍覆盖五轮至少 `30 s` 的干预窗口。途中保持 `escaping / escaped=false`，挽留、给钱、攻击和昏迷复苏继续有效；战斗先结束时，正式世界只为逃离者保留到其完成或留下。只有地图边缘实体到达才提交 `escaped / in_station=false`。非战日常默认路径仍待全图切换。
+- 新距离会改变器械首射、敌我接触、集结和通勤时间。阶段 C 迁移正式坐标后，必须重跑五波平衡、敌人寻路、正门集结、后门逃离和器械射界；规划值当前没有进入 CombatSystem。
+- 详细坐标、自然遮挡、集结排和镜头见 `docs/SCENE_SPACE_AND_VISUAL_PLAN.md`。
+
+T0129C-A3 已在远端正式布局建立 234 个静态碰撞源：结构 78、地面 1、家具 131、自然边界 24，并生成独立 `0.25 m / 806 vertex / 772 polygon` 生产 NavigationMap；主厅四器械平台与 `main_hall_slot_01–04` 的 `1 / 3 / 5 / 6` 解锁一致，仓库外沿攻击路线保持可达。当前活动敌人仍由 CombatSystem 创建 `Area3D` 并直接回写位置，A4 才会把实际路径 / 速度 / 避让交给 `enemy_foot / enemy_mounted` profile；伤害、攻击距离、目标优先级和胜负继续由 CombatSystem 权威结算。
+
+## T0129 单敌战斗表现样片
+
+- 格伦每次权威 HP 下降都会触发一次 GPU 血粒子和 CharacterPivot 短促位移回弹；表现计数和粒子状态只用于调试，不反写 HP、伤害或命中。
+- HP 清零仍由 NPCSystem 提交 `unconscious=true`；表现层播放 `LayToIdle` 受控倒地，并叠加衰减的水平 / 垂直冲量和落地回稳。复苏沿原 30% 权威阈值播放起身。本轮没有创建逐骨骼 physical bones，因此应称“带物理反馈的受控倒地”，完整布娃娃仍在 T0133。
+- CombatSystem 每次波次只把第一名敌人替换为红褐色 Quaternius 人形并在手部挂载青铜剑 / 木盾，其余敌人保留原轻量胶囊；正式样片仍由原敌人状态驱动移动、攻击、受击和移除。敌人败退后仅分离 2.4 秒表现尸体，权威敌人会立即从活动集合移除。
+
+## T0128 格伦战斗状态表现接线
+
+格伦的统一状态机已经接收 `attack / hit_react / unconscious / get_up` 四类表现：攻击由既有 `attacking_* / winding_up_*` 行动选择，受击只在权威 HP 下降后触发，昏迷只在 NPCSystem 已提交 `unconscious=true` 后播放，复苏只在权威状态从昏迷切回清醒后播放。动画不拥有命中帧、伤害、HP 或复苏阈值。
+
+T0128 使用 UAL2 骨骼动画完成受控倒地 / 起身，并在骨架下建立禁用 `PhysicalBoneSimulator3D` 接口占位；T0129 已增加血粒子、位移冲击与落地回稳，但尚未创建 physical bones、碰撞关节、贴花或布娃娃姿态回收。上述完整内容仍由 T0133 批量实施，不能把当前受控倒地计为逐骨骼布娃娃完成。
+
 ## T0123–T0133 战斗美术表现边界
 
 后续战斗美术将补齐近战、长杆、弓、弩、骑兵、敌人和工程器械的攻击 / 命中 / 格挡 / 击退动作，以及命中闪光、火星、血液粒子 / 贴花、脚步尘、建筑碎屑和受损反馈。NPC HP 清零后可进入布娃娃或受控倒地表现，但权威结果始终是“昏迷”；恢复到 30% 后停止物理模拟、对齐角色并播放复苏起身，不出现死亡或永久尸体。
 
-物理骨骼、碰撞、动画、粒子和贴花只消费 CombatSystem / NPCSystem / BuildingSystem 已确认结果，不反向计算伤害、HP、命中或建筑摧毁。48 敌第五波是表现压力基准，必须限制同时活跃的布娃娃、贴花、动态灯和粒子，并提供关闭血液的选项。T0133 前当前战斗仍以基础自动攻击和占位表现为运行时事实。
+物理骨骼、碰撞、动画、粒子和贴花只消费 CombatSystem / NPCSystem / BuildingSystem 已确认结果，不反向计算伤害、HP、命中或建筑摧毁。48 敌第五波是表现压力基准，必须限制同时活跃的布娃娃、贴花、动态灯和粒子，并提供关闭血液的选项。T0133 前只有格伦与每波第一名敌人是正式样片，其余战斗仍以基础自动攻击和占位表现为运行时事实。
 
 ## T0121 全局数值合同与唯一失败条件
 
@@ -327,7 +494,7 @@ T0107 后敌人攻击变为“冷却 -> 抬手 -> 命中”两阶段。`attack_w
 3. 城门被攻破后攻击仓库
 4. 仓库被摧毁后攻击主厅
 
-当前规则敌人不攻击围墙。后续“敌人必须从城门进入、NPC / 敌人不能直接穿越围墙”的空间约束，留给碰撞体积、导航路径或不可进入对象阻挡任务实现。
+当前规则敌人不攻击围墙。T0129C-A1 已在远端 staging 建立围墙 / 城门静态碰撞，但正式敌人尚未接入；“敌人必须从城门进入、NPC / 敌人不能穿墙”要到 A4 + C3 将活动敌人迁为 CharacterBody3D / NavigationAgent3D 并启用正式根后才成立。
 
 ## 战场公开信息
 
@@ -350,3 +517,10 @@ T0107 后敌人攻击变为“冷却 -> 抬手 -> 命中”两阶段。`attack_w
 T1205 收尾检查已通过 `tools/verify_battlefield_public_info.gd` 综合验收：敌我人数、集结 / 必要模式切换、避战开始 / 结束、低血量、战时心理结果、击退敌人、昏迷、治疗、复苏、逃离、建筑受损和战斗结束均能进入广场或同地点见闻；后续 NPC 对话 payload 与 NPC 面板见闻库都能看到这些公开摘要。`work <-> combat` 与 `work <-> avoid_combat` 仍按 T1103D 规则降噪，不通过 `npc_mode_changed` 广播。
 
 战斗结束后，NPC 回到工作状态，并根据自身经历重新评估计划。
+## T0132-P3 正门动态门扇与敌军边界
+
+- 正门现在有两扇 world-static 层 `AnimatableBody3D` 实体门叶。和平时我方 NPC 接近可开门；只要 CombatSystem 存在活动敌军，正门保持锁闭，敌军自身也永远不能触发传感器。
+- 敌军仍必须物理抵达正式 `front_gate` 攻击点后才能伤害正门。门扇开合不发布“抵达 / 突破”事实、不改目标选择；只有 BuildingSystem 判定正门 HP 为 0，表现层才解除门叶碰撞，既有单向门洞链接和仓库攻击阶段继续生效。
+- 围墙平台仍只承载 DefenseDeviceSystem 的可见部署；平台、美术测距杆和城垛不参与伤害、射程、命中或目标选择计算。
+- P3R2 只把四个平台和器械攻击原点移到正门左右墙段；敌军建筑目标序列仍为 `front_gate → warehouse → main_hall`，不会因为平台远离门楼而改为攻击 `wall`。
+- P3R4 将右墙器械 facing 从城门统一轴改为 `north_east` 墙外法线，左墙使用 `north_west_a` 外法线；射程、扇区和目标选择公式未改，部署 / 攻击专项通过。

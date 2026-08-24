@@ -1,0 +1,53 @@
+{
+  "schema_version": "character_appearance_v1",
+  "characters": {
+    "stableman_01": {
+      "scene": "res://scenes/characters/TomaChibiArtView.tscn",
+      "appearance_id": "toma_stableman_chibi_v1",
+      "display_name": "托马",
+      "role": "stableman"
+    },
+    "blacksmith_01": {
+      "scene": "res://scenes/characters/GlenChibiArtView.tscn",
+      "appearance_id": "glen_blacksmith_chibi_v1",
+      "display_name": "格伦",
+      "role": "blacksmith"
+    },
+    "engineer_01": {
+      "scene": "res://scenes/characters/OwenChibiArtView.tscn",
+      "appearance_id": "owen_engineer_chibi_v1",
+      "display_name": "欧文",
+      "role": "engineer"
+    },
+    "cook_01": {
+      "scene": "res://scenes/characters/BrunoChibiArtView.tscn",
+      "appearance_id": "bruno_cook_chibi_v1",
+      "display_name": "布鲁诺",
+      "role": "cook"
+    },
+    "gardener_01": {
+      "scene": "res://scenes/characters/IvoChibiArtView.tscn",
+      "appearance_id": "ivo_gardener_chibi_v1",
+      "display_name": "伊沃",
+      "role": "gardener"
+    },
+    "priest_01": {
+      "scene": "res://scenes/characters/MarcelChibiArtView.tscn",
+      "appearance_id": "marcel_priest_chibi_v1",
+      "display_name": "马塞尔",
+      "role": "priest"
+    },
+    "doctor_01": {
+      "scene": "res://scenes/characters/LinaChibiArtView.tscn",
+      "appearance_id": "lina_doctor_chibi_v1",
+      "display_name": "莉娜",
+      "role": "doctor"
+    },
+    "veteran_deputy_01": {
+      "scene": "res://scenes/characters/AdaChibiArtView.tscn",
+      "appearance_id": "ada_veteran_deputy_chibi_v1",
+      "display_name": "艾达",
+      "role": "veteran_deputy"
+    }
+  }
+}

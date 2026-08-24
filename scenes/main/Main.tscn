@@ -33,6 +33,12 @@
 [ext_resource type="Script" path="res://scripts/systems/NPCNeedsSystem.gd" id="31_npc_needs"]
 [ext_resource type="Script" path="res://scripts/ui/DefenseSlotPresenter.gd" id="32_defense_slot_presenter"]
 [ext_resource type="Script" path="res://scripts/systems/PietySystem.gd" id="33_piety"]
+[ext_resource type="Script" path="res://scripts/presentation/buildings/RoofVisibilityController.gd" id="34_roof_visibility"]
+[ext_resource type="PackedScene" path="res://scenes/buildings/BuildingArtView.tscn" id="35_building_art_view"]
+[ext_resource type="Theme" path="res://resources/themes/blacksmith_vertical_slice_theme.tres" id="36_slice_theme"]
+[ext_resource type="Script" path="res://scripts/world/StationLayoutController.gd" id="37_station_layout"]
+[ext_resource type="Script" path="res://scripts/systems/SpatialSaveSystem.gd" id="38_spatial_save"]
+[ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilotPreviewController.gd" id="39_chibi_pilot_preview"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -78,6 +84,7 @@ albedo_color = Color(0.19, 0.43, 0.22, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_blacksmith"]
 size = Vector3(2.8, 1.35, 2.1)
+
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_blacksmith"]
 albedo_color = Color(0.28, 0.27, 0.29, 1)
@@ -149,6 +156,18 @@ size = Vector3(1.8, 0.25, 1.8)
 albedo_color = Color(0.23, 0.38, 0.36, 1)
 
 [node name="Main" type="Node3D" unique_id=986039696]
+
+[node name="Presentation" type="Node" parent="."]
+
+[node name="RoofVisibilityController" type="Node" parent="Presentation"]
+script = ExtResource("34_roof_visibility")
+camera_path = NodePath("../../CameraRig/Camera3D")
+
+[node name="StationLayoutController" type="Node" parent="Presentation"]
+script = ExtResource("37_station_layout")
+
+[node name="ChibiCharacterPilotPreviewController" type="Node" parent="Presentation"]
+script = ExtResource("39_chibi_pilot_preview")
 
 [node name="WorldRoot" type="Node3D" parent="." unique_id=1522394943]
 
@@ -228,11 +247,25 @@ text = "菜园"
 
 [node name="Blacksmith" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1037675601]
 transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, 0.675, 8.4)
+visible = false
 mesh = SubResource("BoxMesh_blacksmith")
 surface_material_override/0 = SubResource("StandardMaterial3D_blacksmith")
 
 [node name="BlacksmithLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Blacksmith" unique_id=576702843]
 transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.15, 0)
+pixel_size = 0.015
+billboard = 1
+text = "铁匠铺"
+
+[node name="BlacksmithArtView" parent="WorldRoot/Station/Buildings" instance=ExtResource("35_building_art_view")]
+position = Vector3(5.2, 0, 8.4)
+building_id = "blacksmith"
+roof_near_distance = 21.0
+roof_far_distance = 31.0
+minimum_roof_opacity = 0.08
+
+[node name="BlacksmithArtLabel" type="Label3D" parent="WorldRoot/Station/Buildings"]
+position = Vector3(5.2, 5.35, 8.4)
 pixel_size = 0.015
 billboard = 1
 text = "铁匠铺"
@@ -425,6 +458,9 @@ script = ExtResource("21_merchant")
 [node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
 script = ExtResource("7_combat")
 
+[node name="SpatialSaveSystem" type="Node" parent="Systems"]
+script = ExtResource("38_spatial_save")
+
 [node name="PietySystem" type="Node" parent="Systems"]
 script = ExtResource("33_piety")
 
@@ -457,7 +493,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("36_slice_theme")
 script = ExtResource("9_hud")
+
+[node name="HUDFrame" type="Panel" parent="UI/HUD"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = 536.0
+offset_bottom = 194.0
+mouse_filter = 2
 
 [node name="TitleLabel" type="Label" parent="UI/HUD" unique_id=1305608878]
 layout_mode = 0
@@ -590,6 +635,7 @@ offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 632.0
 grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
 script = ExtResource("12_npc_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/NPCPanel"]
@@ -846,6 +892,7 @@ offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 536.0
 grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
 script = ExtResource("11_building_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/BuildingPanel"]
@@ -1346,4 +1393,7 @@ current = true
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1889464672]
 transform = Transform3D(0.81915206, -0.4055798, 0.4055798, 0, 0.70710677, 0.70710677, -0.57357645, -0.579228, 0.579228, 0, 0, 0)
-light_energy = 2.0
+visible = false
+light_energy = 0.0
+shadow_enabled = false
+metadata/_retired_by = "T0135-P6 CelestialCycleController"

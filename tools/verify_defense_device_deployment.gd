@@ -212,22 +212,46 @@ func _init() -> void:
 	if arrow_tower_view == null or arrow_tower_view.get_node_or_null("ModelMount") == null or arrow_tower_view.get_node("ModelMount").get_child_count() == 0:
 		_fail("Arrow-tower placeholder or model contract is missing")
 		return
+	var arrow_view_snapshot: Dictionary = arrow_tower_view.get_debug_snapshot()
+	if not bool(arrow_view_snapshot.get("has_formal_model", false)) or str(arrow_view_snapshot.get("model_scene", "")) != "res://scenes/defense_devices/FormalArrowTowerArtView.tscn":
+		_fail("Arrow tower did not replace its placeholder with the formal model")
+		return
 
 	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
 	if not bool(spawn_result.get("ok", false)) or combat_system.get_active_enemy_count() <= 0:
 		_fail("Could not spawn an enemy wave for ballista verification")
 		return
+	_stage_enemies_for_device_range(combat_system, wall_ballista, main_hall_ballista)
 	var hp_before_attack := _sum_enemy_hp(combat_system.get_active_enemies())
 	var device_step: Dictionary = device_system.debug_advance_defense_devices(60.0)
 	var hp_after_attack := _sum_enemy_hp(combat_system.get_active_enemies())
 	if (device_step.get("actions", []) as Array).is_empty() or hp_after_attack >= hp_before_attack:
 		_fail("Deployed defense devices did not automatically damage an enemy")
 		return
-	if _find_device_action(device_step.get("actions", []), "wall_ballista").is_empty():
+	var resolved_ballista_action := _find_device_action(device_step.get("actions", []), "wall_ballista")
+	if resolved_ballista_action.is_empty():
 		_fail("Deployed ballista did not execute an automatic attack")
+		return
+	var ballista_shots: Array = resolved_ballista_action.get("attacks", []) if resolved_ballista_action.get("attacks", []) is Array else []
+	var ballista_shot: Dictionary = ballista_shots[0] if not ballista_shots.is_empty() and ballista_shots[0] is Dictionary else {}
+	if (
+		ballista_shot.is_empty()
+		or not ballista_shot.get("origin_position", {}) is Dictionary
+		or (ballista_shot.get("origin_position", {}) as Dictionary).is_empty()
+		or not ballista_shot.get("target_position", {}) is Dictionary
+		or (ballista_shot.get("target_position", {}) as Dictionary).is_empty()
+		or not is_equal_approx(float(ballista_shot.get("attack_interval", 0.0)), float(ballista_effect.get("attack_interval", -1.0)))
+	):
+		_fail("Ballista action is missing read-only origin/target/timing presentation metadata")
 		return
 	if _find_device_action(device_step.get("actions", []), "wall_arrow_tower").is_empty():
 		_fail("Deployed arrow tower did not execute an automatic attack")
+		return
+	await process_frame
+	arrow_view_snapshot = arrow_tower_view.get_debug_snapshot()
+	var arrow_model_snapshot: Dictionary = arrow_view_snapshot.get("model", {}) if arrow_view_snapshot.get("model", {}) is Dictionary else {}
+	if str(arrow_model_snapshot.get("formal_device_kind", "")) != "arrow_tower" or int(arrow_model_snapshot.get("shot_count", 0)) <= 0:
+		_fail("Resolved arrow-tower attacks were not forwarded to the formal firing animation")
 		return
 	var trigger_event := _find_latest_event(memory_system.get_all_events(), "defense_device_triggered")
 	if trigger_event.is_empty() or int(trigger_event.get("payload", {}).get("damage", 0)) <= 0:
@@ -278,6 +302,28 @@ func _sum_enemy_hp(enemies: Array) -> int:
 		if raw_enemy is Dictionary:
 			total += int(raw_enemy.get("hp", 0))
 	return total
+
+
+func _stage_enemies_for_device_range(combat_system: Node, wall_deployment: Dictionary, main_hall_deployment: Dictionary) -> void:
+	var active_enemies: Dictionary = combat_system.get("_active_enemies")
+	var enemy_ids: Array = active_enemies.keys()
+	var wall_origin := _to_vector3(wall_deployment.get("position", {}))
+	var hall_origin := _to_vector3(main_hall_deployment.get("position", {}))
+	for index in range(enemy_ids.size()):
+		var enemy_id := str(enemy_ids[index])
+		var enemy: Dictionary = active_enemies.get(enemy_id, {})
+		var origin := wall_origin if index % 2 == 0 else hall_origin
+		enemy["position"] = origin + Vector3(float(index % 3) * 0.35, 0.0, 4.0 + float(index % 2))
+		active_enemies[enemy_id] = enemy
+	combat_system.set("_active_enemies", active_enemies)
+
+
+func _to_vector3(raw: Variant) -> Vector3:
+	if raw is Vector3:
+		return raw
+	if not raw is Dictionary:
+		return Vector3.ZERO
+	return Vector3(float(raw.get("x", 0.0)), float(raw.get("y", 0.0)), float(raw.get("z", 0.0)))
 
 
 func _fail(message: String) -> void:

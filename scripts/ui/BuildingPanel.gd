@@ -1145,10 +1145,13 @@ func _format_workstations(raw_workstations: Variant) -> String:
 		if int(totals_by_type.get(station_type, 0)) > 1 and not _has_numeric_suffix(station_name):
 			station_name = "%s%d" % [station_name, station_index]
 		var occupied_by := str(station.get("occupied_by", ""))
-		if occupied_by.is_empty() or occupied_by == "<null>":
-			lines.append("%s：空闲" % station_name)
-		else:
+		var reserved_by := str(station.get("reserved_by", ""))
+		if not occupied_by.is_empty() and occupied_by != "<null>":
 			lines.append("%s：%s占用中" % [station_name, _format_npc_name(occupied_by)])
+		elif not reserved_by.is_empty() and reserved_by != "<null>":
+			lines.append("%s：已为%s预留" % [station_name, _format_npc_name(reserved_by)])
+		else:
+			lines.append("%s：空闲" % station_name)
 	if lines.is_empty():
 		return "位置：无"
 	return "\n".join(lines)

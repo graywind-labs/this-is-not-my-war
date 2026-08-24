@@ -20,9 +20,12 @@
         "max_attacks_per_tick": 16
       },
       "presentation": {
-        "model_scene": "",
+        "model_scene": "res://scenes/defense_devices/FormalBallistaArtView.tscn",
         "placeholder_kind": "ballista",
-        "placeholder_color": {"r": 0.38, "g": 0.22, "b": 0.10, "a": 1.0}
+        "placeholder_color": {"r": 0.38, "g": 0.22, "b": 0.10, "a": 1.0},
+        "projectile_speed": 52.0,
+        "reload_fraction": 0.62,
+        "status_label_height": 2.05
       }
     },
     {
@@ -45,9 +48,12 @@
         "max_attacks_per_tick": 24
       },
       "presentation": {
-        "model_scene": "",
+        "model_scene": "res://scenes/defense_devices/FormalArrowTowerArtView.tscn",
         "placeholder_kind": "arrow_tower",
-        "placeholder_color": {"r": 0.34, "g": 0.25, "b": 0.14, "a": 1.0}
+        "placeholder_color": {"r": 0.34, "g": 0.25, "b": 0.14, "a": 1.0},
+        "projectile_speed": 64.0,
+        "reload_fraction": 0.58,
+        "status_label_height": 3.75
       }
     }
   ],
@@ -98,7 +104,7 @@
     },
     {
       "id": "main_hall_slot_01",
-      "name": "主厅屋顶中央左位",
+      "name": "主厅屋顶西北器械台",
       "building_id": "main_hall",
       "required_building_level": 1,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
@@ -109,7 +115,7 @@
     },
     {
       "id": "main_hall_slot_02",
-      "name": "主厅屋顶中央右位",
+      "name": "主厅屋顶东北器械台",
       "building_id": "main_hall",
       "required_building_level": 3,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
@@ -120,7 +126,7 @@
     },
     {
       "id": "main_hall_slot_03",
-      "name": "主厅屋顶左翼位",
+      "name": "主厅屋顶西南器械台",
       "building_id": "main_hall",
       "required_building_level": 5,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
@@ -131,7 +137,7 @@
     },
     {
       "id": "main_hall_slot_04",
-      "name": "主厅屋顶右翼位",
+      "name": "主厅屋顶东南器械台",
       "building_id": "main_hall",
       "required_building_level": 6,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],

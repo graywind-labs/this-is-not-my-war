@@ -1,9 +1,13 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/npc/NPC.gd" id="1_npc_script"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_click"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.35
+height = 1.6
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_interaction"]
+radius = 0.41
 height = 1.6
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
@@ -17,22 +21,49 @@ albedo_color = Color(0.35, 0.45, 0.58, 1)
 radius = 0.22
 height = 0.44
 
-[node name="NPC" type="Area3D"]
+[node name="NPC" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 3
 script = ExtResource("1_npc_script")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-shape = SubResource("CapsuleShape3D_click")
+shape = SubResource("CapsuleShape3D_body")
 
-[node name="Body" type="MeshInstance3D" parent="."]
+[node name="InteractionArea" type="Area3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+monitoring = false
+input_ray_pickable = true
+
+[node name="InteractionCollision" type="CollisionShape3D" parent="InteractionArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("CapsuleShape3D_interaction")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.35
+target_desired_distance = 0.25
+avoidance_enabled = true
+radius = 0.35
+height = 1.6
+neighbor_distance = 3.5
+max_neighbors = 10
+time_horizon_agents = 0.9
+time_horizon_obstacles = 1.0
+
+[node name="LegacyVisuals" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="LegacyVisuals"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.58, 0)
 mesh = SubResource("CapsuleMesh_body")
 surface_material_override/0 = SubResource("StandardMaterial3D_body")
 
-[node name="Head" type="MeshInstance3D" parent="."]
+[node name="Head" type="MeshInstance3D" parent="LegacyVisuals"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
 mesh = SubResource("SphereMesh_head")
 surface_material_override/0 = SubResource("StandardMaterial3D_body")
+
+[node name="ArtMount" type="Node3D" parent="."]
 
 [node name="NameLabel" type="Label3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 2.08, 0)

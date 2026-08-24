@@ -131,7 +131,7 @@ func _init() -> void:
 		push_error("Enemy spawn failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
-	var enemy_id := _place_first_enemy(combat_system, Vector3(0.0, 0.0, 1.0))
+	var enemy_id := _place_first_enemy(combat_system, stableman_node.global_position + Vector3(0.0, 0.0, 1.0))
 	var enemy_before: Dictionary = combat_system.get_enemy(enemy_id)
 	var npc_hp_before := int(npc_system.get_npc_state("stableman_01").get("hp", 0))
 

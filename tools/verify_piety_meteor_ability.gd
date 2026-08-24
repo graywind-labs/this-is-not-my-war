@@ -66,22 +66,26 @@ func _init() -> void:
 		if not action_system.debug_assign_action(npc_id, "pray_at_chapel"):
 			_fail("Could not assign chapel prayer to %s" % npc_id)
 			return
+		if not await _wait_for_active(action_system, time_system, npc_id, "pray_at_chapel"):
+			_fail("%s did not physically reach a chapel prayer seat" % npc_id)
+			return
 
 	time_system.set_paused(true)
 	piety_system.debug_set_piety(0.0)
-	action_system._on_logical_time_tick(3600.0, 1.0)
+	var generated_before_tick: Dictionary = piety_system.get_piety_snapshot().get("generated_by_npc", {})
+	action_system._on_logical_time_tick(600.0, 1.0)
 	if not is_zero_approx(float(piety_system.get_current_piety())):
 		_fail("Paused prayer incorrectly generated piety")
 		return
 	time_system.set_paused(false)
-	action_system._on_logical_time_tick(3600.0, 1.0)
-	if not is_equal_approx(float(piety_system.get_current_piety()), 6.0):
-		_fail("Two simultaneous prayer-hours should generate exactly 6 shared piety")
+	action_system._on_logical_time_tick(600.0, 1.0)
+	if not is_equal_approx(float(piety_system.get_current_piety()), 1.0):
+		_fail("Two simultaneous ten-minute prayers should generate exactly 1 shared piety")
 		return
 	var generated_by_npc: Dictionary = piety_system.get_piety_snapshot().get("generated_by_npc", {})
 	if (
-		not is_equal_approx(float(generated_by_npc.get("priest_01", 0.0)), 3.0)
-		or not is_equal_approx(float(generated_by_npc.get("gardener_01", 0.0)), 3.0)
+		not is_equal_approx(float(generated_by_npc.get("priest_01", 0.0)) - float(generated_before_tick.get("priest_01", 0.0)), 0.5)
+		or not is_equal_approx(float(generated_by_npc.get("gardener_01", 0.0)) - float(generated_before_tick.get("gardener_01", 0.0)), 0.5)
 	):
 		_fail("Shared piety did not preserve per-NPC generation diagnostics")
 		return
@@ -312,6 +316,16 @@ func _find_latest_event(events: Array, event_type: String) -> Dictionary:
 		if event is Dictionary and str(event.get("type", "")) == event_type:
 			return event
 	return {}
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+	return false
 
 
 func _fail(message: String) -> void:

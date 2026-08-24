@@ -1,5 +1,116 @@
 # DATA_SCHEMA.md
 
+## formal_spatial_save_v1
+
+`SpatialSaveSystem` 的独立空间检查点包含 `npc_spatial / combat_spatial / merchant_spatial`。NPC 项保存稳定 `npc_id`、`position{x,y,z}`、信息地点、物理阶段、导航权属、昏迷 / 逃离与 `escape_intent`；在途动作只保存用于审计的 action / building / workstation ID 和 `restore_policy=rollback`，不保存会话 ID、RID 或 NodePath。
+
+战斗项保存活动波次号、已触发波次与存活敌人的 `spawn_index / group_index / unit_type / hp / position / cooldown / windup / stagger`；恢复时从 `enemy_waves.json` 重建实体，未保存的出生序号视为已阵亡。行商项保存 `wagon_state=absent|arriving|parked|departing`、坐标、访问日和正式路线模式；交易库存仍属于 ResourceSystem，不在该空间格式重复保存。
+
+## action_defs.formal_spatial_route
+
+`data/action_defs.json` 的工作行动可设置 `formal_spatial_route: true`，表示该行动在当前分步迁移期必须使用正式 staging 的门路、工位预留 / 占用和可逆会话。字段只选择空间执行策略，不改变 `type / location_required / workstation_type / requires_crafting_target / completion_policy` 的既有业务语义。当前启用于 `work_stable` 和 `work_blacksmith`；未标记行动仍走兼容链。
+
+启用该字段的会话运行时包含单调增 `session_id`，只用于防止旧延迟清理误操作新会话；不是存档 ID、不进入配置，也不取代 CraftingSystem 的 `project_revision`。
+
+## station_layout.rear_spatial / rear_spatial_v1
+
+`merchant_route` 保存正式行商路线：`coordinate_space=formal_station_local`，`spawn / dock / path_points[]` 均为 `[x,z]`，当前固定 6 点 `(-55,-315) -> (-52,-235) -> (-46,-185) -> (-42,-135) -> (-40,-120) -> (-28.2,-52.4)`；旧 `(-40,-120)` 只作远端引导，第 6 点才是后门外真实 dock。`dock_root_clearance_to_back_gate_m=7.0` 要求 dock 到 `rear_spatial.back_gate=(-27,-45.5)` 的实际距离误差不超过 `0.05 m`；`corridor_half_width=2.25` 对应 4.5 m 商旅通道。StationLayoutController 负责校验并叠加 staging 偏移，MerchantSystem 只据这些点生成折线 NavigationMesh，不从道路 Mesh 或标签反推路线。
+
+`escape_route` 登记 6 点、`corridor_half_width=2.25`、最终 `completion=(-54,-305)` 与 `authority_status=runtime_authoritative_c4_p2`。A5-P7 后默认正式居民无论战斗与否都读取该路线，只有实体到达 completion 才提交 `escaped / in_station=false`；仅 GM 临时旧图兼容使用旧短路径。商人 / 逃离路线只定义空间，不改变时段、交易、NPC 意图或事件权威。
+
+## station_layout.combat_spatial.c3_p7_dynamic_assault
+
+`target_sequence` 固定为 `front_gate / warehouse / main_hall`；`roads_affect_navigation=false`，`path_policy=shortest_navigable_path_to_current_combat_target`。`movement_model=dynamic_combat_pressure` 与 `fixed_attack_slots=false` 表示五波正式敌人不消费任何预分配攻击槽，而是逐实体追踪当前目标位置。`blocked_policy` 规定同伴拥堵只触发保持施压与重寻路，不能提交假到达；`target_policy` 规定优先最近可攻击我方单位，否则选择当前未摧毁阶段建筑。具体数量、兵种、射程、速度与目标偏好仍只来自 `enemy_waves.json`。
+
+## station_layout.combat_spatial.c3_p6_second_wave（历史）
+
+`wave_number=2` 绑定 `enemy_waves.json / wave_02`。`attack_slot_sets[building_id][role_id]` 按兵种角色保存攻击位；当前角色为 `melee_front` 与 `polearm_rear`，点位仍使用 `space=station|building_local`。Controller 转换为 `attack_slot_sets_world`，CombatSystem 依据 `unit_type` 确定角色，并在角色内部使用稳定 formation index。角色槽只定义空间，不修改 `attack_range`、伤害或攻击权威；第二波组成仍完全来自波次配置。
+
+正门 / 仓库允许 `formation=gate_compact_two_rank|compact_two_rank` 表达有限正面的同侧多排，主厅使用 `north_front_compact_line / north_front_reach_line` 表达同侧前后排。道路策略继续为 `roads_affect_navigation=false`。
+
+## station_layout.combat_spatial.c3_p5r_direct_assault
+
+`target_sequence` 只允许 `front_gate / warehouse / main_hall`；`roads_affect_navigation=false` 与 `path_policy=shortest_navigable_path_to_current_target` 明确道路不参与敌我寻路。`attack_slots` 以建筑 ID 分组：`space=station` 的点直接使用驿站坐标，`space=building_local` 的点随建筑中心与八方向朝向转换；`main_hall.formation=north_front_compact_line` 表示第一波 8 个点必须处于北侧正面同一纵深。Controller 统一输出 `attack_slots_world`，CombatSystem 按稳定 formation index 分配并吸附到生产 NavigationMap。槽位只定义可达攻击位置，不直接授予攻击权威。
+
+`enemy_route.navigation_cross_sections[]` 以 `z / x_min / x_max` 定义城外开放进军廊道横断面。历史 `stages[]` 仍保留给 P1–P4 回归，但第一波 P5R 不消费中间阶段。旧 `collision_boundary_arrival` 已删除，卡住或超时不能再伪造到达。
+
+## T0129B-C3-P4 权威边界
+
+`combat_spatial.c3_p4_authority_boundary` 登记仓库后主厅实体路线、物理到达攻击、主厅伤害与既有失败提交；`terminal_after=main_hall_destroyed` 表示单敌建筑目标链已经到达终点。多敌波次、集结与器械仍列入 deferred。
+
+## T0129B-C3-P3 权威边界
+
+`combat_spatial.c3_p3_authority_boundary` 登记破门后的 `gate_turn / north_junction / plaza_junction / warehouse` 实体路线、物理到仓后攻击与仓库伤害提交；`hold_after=warehouse_destroyed` 明确主厅仍未迁移。`c2_authority_boundary.c3_p3_migrated` 同步记录单活动敌人仓库攻击权威，不能从建筑中心或逻辑 AI 推断到达。
+
+## T0129B-C3-P2 权威边界
+
+`combat_spatial.c3_p2_authority_boundary` 保留当时的单活动波次敌人、物理抵门后攻击、正门伤害提交及事件兼容记录；其门后 hold 已被 C3-P3 正式路线取代。
+
+## T0129B-C3-P1 `combat_spatial`
+
+`data/station_layout.json / station_layout_v2` 新增顶层 `combat_spatial.enemy_route`：`spawn_zone_center / spawn_zone_size / approach_half_width / pilot_stop_stage_id / stages[]`。每个阶段保存稳定 `id / label / point[x,z]`，当前顺序为 spawn、reveal、approach_mid、contact、front_gate、gate_turn、north_junction、plaza_junction、warehouse、main_hall。P1 只消费到 `pilot_stop_stage_id=front_gate`；后五段为后续正门突破、仓库与主厅迁移预留，不代表已启用攻击。
+
+`c3_p1_authority_boundary` 明确本步只迁移出生 / 显现 / 接触 / 正门空间与外围导航；波次实例、攻击、HP、战斗事件和胜负仍延后。运行时不得从建筑中心猜测这些阶段点。
+
+## T0129B-C2a / T0129C-A1–A3b12R 正式驿站空间、家具与物理导航配置
+
+`data/station_layout.json` 使用 `station_layout_v2`，是阶段 C 正式空间迁移的数据合同。顶层在 `units / migration / terrain / station / buildings / roads / camera` 外新增 `public_locations / npc_initial_positions / building_spatial / navigation / authority_boundary`：
+
+- `units.godot_units_per_meter` 固定为 `1.0`；二维空间数组统一为 `[x,z]`，高度单独使用 `y / height / depth`。
+- `migration.phase=a5_p7_default_formal_world`、`formal_layout_active=true` 表示 Main 新局默认启用正式空间根和生产 NavigationMap；`preview_offset=[1000,0]` 仍是正式根的世界偏移，用于与暂存的旧兼容根物理隔离，不代表玩法仍处于预览模式。旧 `c2_spatial_contract_staged / false` 只保留为历史配置兼容。
+- `terrain` 保存承底、地坪、河槽和河面；`station` 保存不规则边界、墙段、城门和广场泥地；`roads` 每项保存 `id / from / to / width / kind / serves?`。
+- `buildings` 的 `id` 必须对应 `building_defs.json`，`node_name` 是未来正式场景绑定名；`center / rotation_degrees / orientation / lot_size / envelope_size / height` 只定义空间根和最大包络，不保存等级、HP、工位占用或升级状态。
+- `camera` 是正式布局的距离、俯角、FOV、焦点和平移边界合同，A5-P7 后新局默认应用；进入 GM 临时旧图兼容时才恢复旧 CameraRig 值。
+- `building_spatial[building_id].entry_route` 保存门外、门外侧、门内侧、室内与出口局部点；`positions[]` 保存同 ID 权威位置的 `type / authority / required_level / center / size / facing_degrees`。配置位置不等于运行时解锁、预留或占用。
+- `navigation` 保存 staging 合同栅格、边界、agent 半径、道路类型与入口连接宽度；当前 `0.5 m` AStar 栅格只做 123 个坐标的确定性可达对照，实际 Godot 路径使用物理配置烘焙的生产 NavMesh。
+- `c1_authority_boundary / c2_authority_boundary` 保留历史迁移审计；`a5_p7_authority_boundary` 记录默认总切换结果，A5-P8 的运行态空间则进入 `formal_spatial_save_v1`。任何消费者仍不得从建筑中心自行推断位置。
+
+`data/physics_navigation.json` 使用 `physics_navigation_v1`：
+
+- `collision_layers` 固定 `world_static / actor_body / interaction` 为 layer 1 / 2 / 3（bitmask `1 / 2 / 4`）。
+- `actor_profiles` 分别保存 NPC、步兵敌人与骑乘敌人的胶囊半径 / 高度、台阶、坡度、速度和加速度；它是后续角色 Body / Agent 的统一尺度源，不改变战斗数值配置中的权威移动意图。
+- `formal_wave_spawn` 保存正式波次的三列生成合同、最低间距、胶囊净距和生产调度预算。实际生成间距取 `minimum_spacing` 与“本波最大胶囊直径 + minimum_capsule_clearance”的较大值；第五波因骑射半径 `0.65 m` 得到 `1.40 m`。`ai_updates_per_frame=8 / contact_update_interval_frames=6 / avoidance_update_interval_frames=3` 只拆分索敌和复核负载，每名敌人的跳过时间单独累计，不改变伤害 / 冷却。
+- `structural_collision` 固定 `0.4 m` 墙厚、`1.8 m` 建筑门净宽、`2.2 m` 门高和门柱宽；A3 当前由 78 个结构阻挡、1 个烘焙地面、131 个 fixture 碰撞部件和 24 个自然边界组成 234 个静态源。`1.8 m` 净宽为斜墙体素化后的可靠通行值，不等于 NPC 的物理直径。
+- `navigation_mesh` 保存 `production_cell_size=0.25 / production_cell_height=0.1`、NPC 请求半径 `0.35 m`、体素对齐烘焙半径 `0.5 m`、静态碰撞 source group、烘焙 AABB / 高度 / 地面厚度。当前从 234 个 `formal_navigation_source` StaticBody 生成 788 顶点 / 754 多边形生产 NavMesh，并使用独立 NavigationMap；12 个建筑门由双向 NavigationLink3D 连接烘焙后门内外小岛。
+- `navigation_agent / stuck_recovery` 保存局部避障、到达容差、RVO `avoidance_layers / avoidance_mask`、邻居、时间窗、进度采样和有界重寻路参数；`avoidance_radius_padding=0.10 m` 只扩大 RVO 预判圆，不扩大物理胶囊或 NavMesh 烘焙半径。A2a 只按连续无进展采样累计 `fail_after_seconds`，不能把长路线总耗时当成卡死。`authority_boundary` 明确运动组件只拥有物理移动，玩法系统仍拥有地点 / 工位 / 战斗 / 逃离完成事实。
+
+`data/building_fixture_layouts.json` 使用 `building_fixture_layout_v1`，是逐建筑可见设备与实体碰撞合同：
+
+- `buildings[building_id].maximum_level` 表示该排布按最高等级最坏占地预验收；当前完整登记全部 12 座建筑：`blacksmith / clinic / dormitory / dining_hall / tavern / garden / training_ground / stable / chapel / workshop / main_hall / warehouse`。
+- `fixtures[]` 每项保存 `id / kind / required_level / center / rotation_degrees / collision_size / collision_center_y`，并且必须二选一提供 `asset_path` 或 `primitive_visual`。`center` 仍是建筑局部 `[x,z]`；`collision_size` 为 Godot `[x,y,z]` 米制尺寸。`collision_mode` 默认为 `solid_box`；菜园田畦可用 `garden_u_border` 生成左 / 右 / 后三段边框碰撞；马栏可用 `stable_open_bay + opening_side + close_far_end` 拆成外栏、分隔栏与饲槽，中央工作面和栏门侧保持可进入；`dining_table` 生成无工位权威的厚木共享餐桌，沿用该 fixture 的单一 BoxShape，不创建座位或 occupant anchor。复合部件可各自保存 `center_y`，不再被单一碰撞中心强制抬高。
+- 映射权威工位的家具还保存 `workstation_id` 与 `npc_stand.scope / center / facing_degrees / clearance_radius`，并可选声明仅作用于该路线终段的 `target_desired_distance`。`scope=workstation` 时站位必须位于对应逻辑工作湾；`scope=building` 允许病床等家具把到达点放在工作湾侧边，但仍须位于建筑包络。所有站位净空不得小于 NPC 物理半径，并且必须避开同建筑任意家具的放大碰撞；同一工位只能映射一件主设备。训练场站位另要求 `action_clearance_size=[3,3]`；马栏可带 `horse_anchor.id / center / facing_degrees / footprint_size`，当前最小净空为 `1.4 × 2.2 m`。马匹锚点只给未来 HorseSystem 实体投影使用，不是 NPC 到达点、挂接锚点或照料容量。
+- `arrival_mode` 当前只允许 `stand / mount_after_arrival`。后者必须带 `occupant_anchor.center / y / facing_degrees / pose`；anchor 必须落在对应家具碰撞表面，用于到达并提交占用后的表现挂接，禁止作为 NavigationAgent3D 目标。诊所四床使用 `lying_supine`，宿舍十床使用 `sleeping_supine`，食堂十把椅子使用 `sitting`；可选 `occupant_anchor.label` 只改变预览标签，可选正数 `footprint_size=[x,z]` 只调整预览锚点形状，不改变实体碰撞或容量。
+- 宿舍床可带可选 `assigned_npc_id`，但它只是 `building_defs.json / BuildingSystem` 固定归属的只读审计镜像。运行时申请床位仍必须调用 BuildingSystem；StationLayoutController、运动组件和表现层不得依据该字段分配或改写床位。当前 1–8 号床镜像八名初始 NPC，9–10 号不含归属。
+- 小教堂映射固定祭坛与十个祈祷席；十席分别挂在五排左右半长凳上，使用 `mount_after_arrival + seated_prayer`，每件 fixture 的 `workstation_id / npc_stand / occupant_anchor` 仍严格为一席，不按长凳长度推导容量。工械坊三工程位等级为 `1 / 1 / 3`，`workshop_role=bowyer / mechanism / siege_assembly` 只选择包装细节，不改变配方、阶段、等级或占用。主厅四个平台和 Lv.2 / 4 / 6 加固继续以 `spatial_position_id` 映射 `main_hall_slot_01–04 / 1、3、5、6`。A3b12R 仓库七件 fixture 均使用 `asset_path / visual_scale / cargo_categories`；`cargo_categories` 只控制食品、木石铁、钱箱、装备与混合装卸的类别符号，不是实时库存数量权威，且不允许 `workstation_id / npc_stand`。装卸货运车碰撞为 `2.2 × 1.7 × 4.2 m`。`scope.maximum_level_collision_staging=true` 表示当前预览始终烘焙最高等级的 107 件配置物 / 131 个碰撞部件，以提前证明最坏路径；`runtime_upgrade_visibility_enabled=false` 表示本步尚未把可升级家具显隐 / 碰撞切换接到 BuildingSystem。
+
+`data/station_layout.json.natural_collision / natural_collision_v1` 保存简化复合自然阻挡：每项含 `id / kind / center / size / rotation_degrees / corridor`。当前固定 24 项：`river_cliff=8 / rock_ridge=4 / dense_forest=12`；必须位于地形范围、不得与 42 段道路相交，并保留正门敌军与后门商人 / 逃离廊道。
+
+`data/presentation/station_spatial_plan.json` 继续作为设计灰盒与压力证明；`tools/verify_t0129b_c1_station_layout.gd` 在 C1 锁定两份数据的相关几何一致性。后续若正式实现需要调整坐标，必须先更新画面规划决策，再同步正式配置和对照测试，不能让两份数据静默漂移。
+
+## T0128 表现外观映射（非权威配置）
+
+`data/presentation/character_appearances.json` 使用 `character_appearance_v1`：顶层 `characters` 以 NPC ID 为键，每项可含 `scene / appearance_id / display_name / role`。当前只登记 `blacksmith_01`。该文件只选择表现场景，NPC 身份仍来自 `npc_profiles.json`，实时行动 / HP / 地点 / 装备仍来自对应权威系统；外观配置不得覆盖这些事实。
+
+## T0127 工位预留与 NPC 空间运行态
+
+BuildingSystem 规范化后的每个 `workstations[]` 运行态位置现在至少包含：
+
+```json
+{
+  "id": "forge_01",
+  "type": "blacksmith_forge",
+  "name": "锻造位1",
+  "assigned_npc_id": null,
+  "reserved_by": "blacksmith_01",
+  "occupied_by": null,
+  "status": "reserved"
+}
+```
+
+`status` 为派生值：`occupied_by` 非空时是 `occupied`，否则 `reserved_by` 非空时是 `reserved`，二者均空时是 `free`。预留提交必须把同一 NPC 的 `reserved_by` 清空并写入 `occupied_by`；释放接口可分别或同时清理两者。`building_defs.json` 不保存运行时占用，缺失 `reserved_by` 会规范化为 `null`。
+
+NPC 运行态新增 `spatial_route_phase / physical_location_phase / reserved_building_id / reserved_workstation_id / current_workstation_id`。它们用于执行和调试，不代替 `current_location`；地点事实仍由跨门事务写入。`debug_get_spatial_migration_snapshot(npc_id)` 只读投影逻辑地点、世界坐标、路线阶段、预留与占用，不进入 LLM Schema、Prompt 或保存数据。
+
 ## T0121 全局数值字段变更
 
 - `CraftingRecipe.available: bool` 控制配方是否进入可选目标；缺失默认 `true`。合法阶段可使用空 `cost={}` 表示纯工时收尾，但无效非字典成本仍拒绝加载。
@@ -986,7 +1097,7 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
 - `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳并消耗 13 点饱食。
 - `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`、不要求神父在场，并绑定 `needs_profile="prayer_rest"`；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`。参加弥撒不是独立 action definition，而是 `pray_at_chapel` active 数据中的 `prayer_mode="mass_attendance"`；弥撒结束后恢复 `personal_prayer`。
 - `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money`、`skill="医术"`、`needs_profile="light_work"` 和 `timed_experience` 作为行为声明；具体目标校验、费用扣除、医术加速、有效治疗时长、HP 恢复和成长由 `ActionSystem` / `NPCSystem` 结算。
-- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。
+- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds`、`clinic_round_dwell_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。`clinic_round_dwell_seconds` 当前为 300，只控制医生在真实病床侧的可见轮换间隔，不参与治疗率、收费或医术结算。
 - `clinic_patient`：读取 `location_required="clinic"`、`workstation_type="clinic_patient_bed"`、`required_active_action_id="work_clinic_doctor"` 和 `needs_profile="clinic_rest"`。只有受伤且未昏迷 NPC 可执行；无在岗医生时开始失败，活动中全部医生离岗时中断失败。团队、诊所升级与损伤效率由程序合成，不建立医生—病人一对一绑定。
 - `training_instructor`：读取 `location_required="training_ground"`、`workstation_type="training_instructor_station"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds` 和 `needs_profile="training_instructor"`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时参与全教官团队效率并提升“教练”。
 - `training_student`：读取 `location_required="training_ground"`、`workstation_type="training_practice_slot"`、`required_active_action_id="work_training_instructor"`、`student_skill_interval_seconds` 和 `needs_profile="training_student"`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；全部教官离岗时当前受训中断失败。训练项目由受训者当前主武器 / 坐骑决定。全部在岗教官的人数、“教练”和对应项目熟练度组成团队效率，与训练场升级、损伤效率一起作用于全部训练位。

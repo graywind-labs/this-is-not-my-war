@@ -18,20 +18,24 @@ func _init() -> void:
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
-	if action_system == null or npc_system == null or resource_system == null or memory_system == null or crafting_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	if action_system == null or npc_system == null or resource_system == null or memory_system == null or crafting_system == null or time_system == null or daily_plan_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_paused(false)
+	daily_plan_system.set_auto_execution_enabled(false)
 
 	var npc_id := "gardener_01"
-	_set_debug_move_speed(npc_id, 80.0)
+	_set_debug_move_speed(npc_id, 5.0)
 	npc_system.update_npc_state(npc_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	var grain_before: int = resource_system.get_resource("grain")
 	if not action_system.debug_assign_work(npc_id, "garden"):
 		push_error("Failed to assign garden work")
 		quit(1)
 		return
-	if not await _wait_until_current_action(npc_system, npc_id, "work_garden"):
+	if not await _wait_until_active_action(action_system, time_system, npc_id, "work_garden"):
 		push_error("Garden work did not start")
 		quit(1)
 		return
@@ -42,13 +46,13 @@ func _init() -> void:
 		return
 
 	var eater_id := "veteran_deputy_01"
-	_set_debug_move_speed(eater_id, 80.0)
+	_set_debug_move_speed(eater_id, 5.0)
 	npc_system.update_npc_state(eater_id, {"satiety": 40, "fatigue": 70, "last_action_result": ""})
 	if not action_system.debug_assign_eat(eater_id):
 		push_error("Failed to assign eat action")
 		quit(1)
 		return
-	if not await _wait_until_current_action(npc_system, eater_id, "eat_at_dining_hall"):
+	if not await _wait_until_active_action(action_system, time_system, eater_id, "eat_at_dining_hall"):
 		push_error("Eat action did not start")
 		quit(1)
 		return
@@ -63,7 +67,7 @@ func _init() -> void:
 		push_error("Failed to assign sleep action")
 		quit(1)
 		return
-	if not await _wait_until_current_action(npc_system, eater_id, "sleep_in_dormitory"):
+	if not await _wait_until_active_action(action_system, time_system, eater_id, "sleep_in_dormitory"):
 		push_error("Sleep action did not start")
 		quit(1)
 		return
@@ -82,8 +86,8 @@ func _init() -> void:
 	var blacksmith_id := "blacksmith_01"
 	_set_debug_move_speed(blacksmith_id, 80.0)
 	npc_system.update_npc_state(blacksmith_id, {"last_action_result": ""})
-	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
-		push_error("Failed to assign blacksmith work")
+	if action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		push_error("Resource-starved blacksmith work should fail before formal migration")
 		quit(1)
 		return
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "work_failed_insufficient_stage_resources"):
@@ -237,6 +241,25 @@ func _wait_until_current_action(npc_system: Node, npc_id: String, expected_actio
 		await process_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
+			return true
+	return false
+
+
+func _wait_until_active_action(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	expected_action: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == expected_action
+		):
 			return true
 	return false
 

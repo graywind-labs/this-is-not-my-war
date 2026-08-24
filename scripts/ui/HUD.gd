@@ -33,6 +33,7 @@ var _meteor_target_preview: MeshInstance3D
 var _meteor_targeting_active := false
 var _meteor_target_valid := false
 var _meteor_target_position := Vector3.ZERO
+var _last_clock_refresh_key := ""
 
 
 func _ready() -> void:
@@ -113,7 +114,17 @@ func _process(_delta: float) -> void:
 		_position_detail_panel_near(_detail_source_button)
 
 
-func _on_time_changed(_day: int, _hour: int, _minute: int, _second: int) -> void:
+func _on_time_changed(day: int, hour: int, minute: int, second: int) -> void:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	var precise_seconds := (
+		time_system != null
+		and time_system.has_method("should_show_precise_display_seconds")
+		and bool(time_system.should_show_precise_display_seconds())
+	)
+	var refresh_key := "%d:%d:%d:%d" % [day, hour, minute, second if precise_seconds else 0]
+	if refresh_key == _last_clock_refresh_key:
+		return
+	_last_clock_refresh_key = refresh_key
 	_refresh_time()
 	_refresh_wave_countdown()
 
@@ -160,6 +171,7 @@ func _on_time_scale_changed(
 	_numeric_multiplier: float,
 	_reason: String
 ) -> void:
+	_last_clock_refresh_key = ""
 	_refresh_time()
 	_refresh_wave_countdown()
 	_refresh_time_buttons()
@@ -707,15 +719,14 @@ func _refresh_wave_countdown() -> void:
 	if wave_countdown_label == null:
 		return
 	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
-	if combat_system == null or not combat_system.has_method("get_wave_schedule_snapshot"):
+	if combat_system == null or not combat_system.has_method("get_wave_hud_snapshot"):
 		wave_countdown_label.text = "下一波：未接入"
 		return
-	var snapshot: Dictionary = combat_system.get_wave_schedule_snapshot()
+	var snapshot: Dictionary = combat_system.get_wave_hud_snapshot()
 	var active_enemy_count := int(snapshot.get("active_enemy_count", 0))
-	var active_battle: Dictionary = snapshot.get("active_battle", {}) if snapshot.get("active_battle", {}) is Dictionary else {}
 	var prefix := ""
 	if active_enemy_count > 0:
-		var current_wave := int(active_battle.get("wave_number", 0))
+		var current_wave := int(snapshot.get("active_wave_number", 0))
 		prefix = "当前第%d波 敌人%d | " % [current_wave, active_enemy_count] if current_wave > 0 else "当前敌人%d | " % active_enemy_count
 	if bool(snapshot.get("all_waves_triggered", false)):
 		wave_countdown_label.text = "%s下一波：无" % prefix

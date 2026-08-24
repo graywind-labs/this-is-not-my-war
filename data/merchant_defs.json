@@ -6,7 +6,14 @@
     "arrival_hour": 10,
     "arrival_minute": 0,
     "departure_hour": 16,
-    "departure_minute": 0
+    "departure_minute": 0,
+    "physical_route": {
+      "coordinate_space": "legacy_world_compatibility_until_formal_cutover",
+      "spawn": [-10.0, -36.0],
+      "dock": [-10.0, -19.2],
+      "corridor_half_width": 3.2,
+      "bubble_height": 3.25
+    }
   },
   "buy_offers": [
     {

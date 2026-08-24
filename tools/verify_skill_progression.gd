@@ -21,6 +21,7 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	if (
 		event_bus == null
 		or action_system == null
@@ -30,17 +31,24 @@ func _init() -> void:
 		or memory_system == null
 		or npc_panel == null
 		or gm_panel == null
+		or time_system == null
 	):
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_paused(false)
 
 	var worker_id := "gardener_01"
 	var worker_before: Dictionary = npc_system.get_npc(worker_id)
 	var farming_before := int(worker_before.get("skills", {}).get("耕种", 0))
+	_get_npc_node(npc_system, worker_id).set("move_speed", 5.0)
 	npc_system.debug_enter_location_immediately(worker_id, "garden")
 	if not action_system.debug_assign_action(worker_id, "work_garden"):
 		push_error("Garden work should start")
+		quit(1)
+		return
+	if not await _wait_for_active(action_system, time_system, worker_id, "work_garden"):
+		push_error("Garden worker should physically reach the formal plot")
 		quit(1)
 		return
 	event_bus.logical_time_tick.emit(7200.0, 1.0)
@@ -67,9 +75,14 @@ func _init() -> void:
 		quit(1)
 		return
 	var trainee_xp_before := int(npc_system.get_npc_progression(trainee_id).get("total_experience", 0))
+	_get_npc_node(npc_system, trainee_id).set("move_speed", 5.0)
 	npc_system.debug_enter_location_immediately(trainee_id, "training_ground")
 	if not action_system.debug_assign_action(trainee_id, "work_training_instructor"):
 		push_error("Equipped NPC should start solo training")
+		quit(1)
+		return
+	if not await _wait_for_active(action_system, time_system, trainee_id, "work_training_instructor"):
+		push_error("Equipped NPC should physically reach the instructor station")
 		quit(1)
 		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
@@ -80,9 +93,14 @@ func _init() -> void:
 
 	var doctor_id := "doctor_01"
 	var doctor_xp_before := int(npc_system.get_npc_progression(doctor_id).get("total_experience", 0))
+	_get_npc_node(npc_system, doctor_id).set("move_speed", 5.0)
 	npc_system.debug_enter_location_immediately(doctor_id, "clinic")
 	if not action_system.debug_assign_action(doctor_id, "work_clinic_doctor"):
 		push_error("Clinic doctor work should start")
+		quit(1)
+		return
+	if not await _wait_for_active(action_system, time_system, doctor_id, "work_clinic_doctor"):
+		push_error("Clinic doctor should physically reach the formal desk")
 		quit(1)
 		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
@@ -246,3 +264,18 @@ func _set_profile_skill_and_progression(npc_system: Node, npc_id: String, skill_
 		"skill_experience": {}
 	}
 	npc_system._profiles[npc_id] = profile
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+	return false

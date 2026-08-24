@@ -85,10 +85,75 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		var art_hit := _pick_building_art_view_at_screen_position(event.position)
+		if not art_hit.is_empty():
+			var art_building_id := str(art_hit.get("building_id", ""))
+			if _should_defer_art_hit_to_foreground_npc(event.position, art_hit):
+				return
+			if bool(art_hit.get("interior_revealed", false)) and _try_select_interior_npc(event.position, art_building_id):
+				get_viewport().set_input_as_handled()
+				return
+			if not art_building_id.is_empty():
+				_select_building(art_building_id)
+				get_viewport().set_input_as_handled()
+				return
 		var building_id := _pick_building_at_screen_position(event.position)
 		if not building_id.is_empty():
 			_select_building(building_id)
 			get_viewport().set_input_as_handled()
+
+
+func _pick_building_art_view_at_screen_position(screen_position: Vector2) -> Dictionary:
+	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
+	if camera == null:
+		return {}
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * PICK_RAY_LENGTH
+	var closest_hit: Dictionary = {}
+	var closest_distance := INF
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or not view.has_method("get_building_interaction_ray_hit"):
+			continue
+		var hit: Variant = view.call("get_building_interaction_ray_hit", ray_origin, ray_end)
+		if not hit is Dictionary or (hit as Dictionary).is_empty():
+			continue
+		var distance := float((hit as Dictionary).get("distance", INF))
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_hit = (hit as Dictionary).duplicate(true)
+	return closest_hit
+
+
+func _try_select_interior_npc(screen_position: Vector2, building_id: String) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = npc_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "npc":
+		return false
+	var npc_id := str(interaction.get("npc_id", ""))
+	if npc_id.is_empty() or not npc_system.has_method("get_npc_state"):
+		return false
+	var state: Dictionary = npc_system.call("get_npc_state", npc_id)
+	if str(state.get("current_location", "")) != building_id:
+		return false
+	return npc_system.has_method("select_npc_from_world_click") and bool(npc_system.call("select_npc_from_world_click", npc_id))
+
+
+func _should_defer_art_hit_to_foreground_npc(screen_position: Vector2, art_hit: Dictionary) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = npc_system.call("get_world_click_interaction", screen_position)
+	var npc_id := str(interaction.get("npc_id", ""))
+	if npc_id.is_empty() or float(interaction.get("distance", INF)) >= float(art_hit.get("distance", 0.0)):
+		return false
+	var state: Dictionary = npc_system.call("get_npc_state", npc_id) if npc_system.has_method("get_npc_state") else {}
+	var same_building := str(state.get("current_location", "")) == str(art_hit.get("building_id", ""))
+	if not same_building:
+		return true
+	return bool(art_hit.get("interior_revealed", false)) and str(interaction.get("kind", "")) == "autonomous_dialogue_bubble"
 
 
 func get_building(building_id: String) -> Dictionary:
@@ -290,6 +355,135 @@ func set_building_special_state_section(
 	return true
 
 
+func reserve_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return {"ok": false, "reason": "invalid_workstation_request"}
+	var availability := get_building_availability(building_id)
+	if not bool(availability.get("is_activity_available", false)):
+		return {
+			"ok": false,
+			"reason": "building_unavailable",
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"building_id": building_id,
+			"preferred_type": preferred_type,
+			"blocked_workstations": [],
+			"blocked_by_npc_ids": []
+		}
+
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	var assigned_workstation_id := _find_assigned_workstation_id(workstations, npc_id, preferred_type)
+	var blocked_workstations: Array[Dictionary] = []
+	var blocked_by_npc_ids: Array[String] = []
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var workstation_id := str(workstation.get("id", ""))
+		var workstation_type := str(workstation.get("type", ""))
+		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		if not assigned_workstation_id.is_empty() and workstation_id != assigned_workstation_id:
+			continue
+		var assigned_npc_id := _clean_nullable_id(workstation.get("assigned_npc_id", ""))
+		if assigned_workstation_id.is_empty() and not assigned_npc_id.is_empty() and assigned_npc_id != npc_id:
+			continue
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
+		if occupied_by == npc_id or reserved_by == npc_id:
+			return {
+				"ok": true,
+				"building_id": building_id,
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"already_reserved": reserved_by == npc_id,
+				"already_occupied": occupied_by == npc_id
+			}
+		if not occupied_by.is_empty() or not reserved_by.is_empty():
+			var blocked_by := occupied_by if not occupied_by.is_empty() else reserved_by
+			blocked_workstations.append({
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"occupied_by": occupied_by,
+				"reserved_by": reserved_by,
+				"assigned_npc_id": assigned_npc_id
+			})
+			if not blocked_by.is_empty() and not blocked_by_npc_ids.has(blocked_by):
+				blocked_by_npc_ids.append(blocked_by)
+			continue
+		workstation["reserved_by"] = npc_id
+		workstations[index] = workstation
+		building["workstations"] = workstations
+		_buildings[building_id] = building
+		_emit_building_state_changed(building_id)
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"workstation_id": workstation_id,
+			"workstation_type": workstation_type,
+			"already_reserved": false,
+			"already_occupied": false
+		}
+
+	return {
+		"ok": false,
+		"reason": "no_free_workstation",
+		"building_id": building_id,
+		"preferred_type": preferred_type,
+		"assigned_workstation_id": assigned_workstation_id,
+		"blocked_workstations": blocked_workstations,
+		"blocked_by_npc_ids": blocked_by_npc_ids
+	}
+
+
+func commit_workstation_reservation(
+	building_id: String,
+	npc_id: String,
+	workstation_id: String = "",
+	preferred_type: String = ""
+) -> Dictionary:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return {"ok": false, "reason": "invalid_workstation_request"}
+	var availability := get_building_availability(building_id)
+	if not bool(availability.get("is_activity_available", false)):
+		return {
+			"ok": false,
+			"reason": "building_unavailable",
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"building_id": building_id
+		}
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var current_id := str(workstation.get("id", ""))
+		var workstation_type := str(workstation.get("type", ""))
+		if not workstation_id.is_empty() and current_id != workstation_id:
+			continue
+		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		if _clean_nullable_id(workstation.get("reserved_by", "")) != npc_id:
+			continue
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		if not occupied_by.is_empty() and occupied_by != npc_id:
+			return {"ok": false, "reason": "workstation_occupied", "occupied_by": occupied_by}
+		workstation["reserved_by"] = null
+		workstation["occupied_by"] = npc_id
+		workstations[index] = workstation
+		building["workstations"] = workstations
+		_buildings[building_id] = building
+		_emit_building_state_changed(building_id)
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"workstation_id": current_id,
+			"workstation_type": workstation_type
+		}
+	return {"ok": false, "reason": "workstation_reservation_missing", "building_id": building_id}
+
+
 func claim_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
 	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
 		return {"ok": false, "reason": "invalid_workstation_request"}
@@ -328,6 +522,7 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
 		var workstation_type := str(workstation.get("type", ""))
 		if not preferred_type.is_empty() and workstation_type != preferred_type:
 			continue
@@ -357,6 +552,18 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 			if not blocked_by_npc_ids.has(occupied_by):
 				blocked_by_npc_ids.append(occupied_by)
 			continue
+		if not reserved_by.is_empty() and reserved_by != npc_id:
+			blocked_workstations.append({
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"occupied_by": occupied_by,
+				"reserved_by": reserved_by,
+				"assigned_npc_id": assigned_npc_id
+			})
+			if not blocked_by_npc_ids.has(reserved_by):
+				blocked_by_npc_ids.append(reserved_by)
+			continue
+		workstation["reserved_by"] = null
 		workstation["occupied_by"] = npc_id
 		workstations[index] = workstation
 		building["workstations"] = workstations
@@ -394,12 +601,16 @@ func release_workstation(building_id: String, npc_id: String, workstation_id: St
 			continue
 		var workstation: Dictionary = workstations[index]
 		var current_id := str(workstation.get("id", ""))
-		var occupied_by := str(workstation.get("occupied_by", ""))
-		if occupied_by != npc_id:
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
+		if occupied_by != npc_id and reserved_by != npc_id:
 			continue
 		if not workstation_id.is_empty() and current_id != workstation_id:
 			continue
-		workstation["occupied_by"] = null
+		if occupied_by == npc_id:
+			workstation["occupied_by"] = null
+		if reserved_by == npc_id:
+			workstation["reserved_by"] = null
 		workstations[index] = workstation
 		changed = true
 		if not workstation_id.is_empty():
@@ -408,6 +619,33 @@ func release_workstation(building_id: String, npc_id: String, workstation_id: St
 	if not changed:
 		return false
 
+	building["workstations"] = workstations
+	_buildings[building_id] = building
+	_emit_building_state_changed(building_id)
+	return true
+
+
+func release_workstation_reservation(building_id: String, npc_id: String, workstation_id: String = "") -> bool:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return false
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	var changed := false
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		if not workstation_id.is_empty() and str(workstation.get("id", "")) != workstation_id:
+			continue
+		if _clean_nullable_id(workstation.get("reserved_by", "")) != npc_id:
+			continue
+		workstation["reserved_by"] = null
+		workstations[index] = workstation
+		changed = true
+		if not workstation_id.is_empty():
+			break
+	if not changed:
+		return false
 	building["workstations"] = workstations
 	_buildings[building_id] = building
 	_emit_building_state_changed(building_id)
@@ -431,6 +669,9 @@ func get_building_entry_position(building_id: String) -> Variant:
 	if not _buildings.has(building_id):
 		push_warning("Cannot get entry position for unknown building: %s" % building_id)
 		return null
+	var interior_route := get_building_interior_route(building_id)
+	if not interior_route.is_empty():
+		return interior_route.get("entry_outside_position")
 	if not _building_scene_nodes.has(building_id):
 		push_warning("Building has no bound scene nodes: %s" % building_id)
 		return null
@@ -455,6 +696,19 @@ func get_building_entry_position(building_id: String) -> Variant:
 	return null
 
 
+func get_building_interior_route(building_id: String, workstation_id: String = "") -> Dictionary:
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or str(view.get("building_id")) != building_id:
+			continue
+		if not view.has_method("get_interior_route_snapshot"):
+			continue
+		var snapshot: Variant = view.call("get_interior_route_snapshot", workstation_id)
+		if snapshot is Dictionary and not (snapshot as Dictionary).is_empty():
+			return (snapshot as Dictionary).duplicate(true)
+	return {}
+
+
 func get_building_location_context(building_id: String) -> Dictionary:
 	var building := get_building(building_id)
 	if building.is_empty():
@@ -466,13 +720,15 @@ func get_building_location_context(building_id: String) -> Dictionary:
 		if not raw_workstation is Dictionary:
 			continue
 		var workstation: Dictionary = raw_workstation
-		var occupied_by := str(workstation.get("occupied_by", ""))
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
 		visible_workstations.append({
 			"id": str(workstation.get("id", "")),
 			"name": str(workstation.get("name", workstation.get("id", ""))),
 			"type": str(workstation.get("type", "")),
 			"occupied_by": occupied_by,
-			"status": "free" if occupied_by.is_empty() or occupied_by == "<null>" else "occupied"
+			"reserved_by": reserved_by,
+			"status": "occupied" if not occupied_by.is_empty() else "reserved" if not reserved_by.is_empty() else "free"
 		})
 	var availability := get_building_availability(building_id)
 	var runtime_fields := {
@@ -1475,8 +1731,15 @@ func _normalize_workstations(building_id: String, raw_workstations: Array) -> Ar
 			workstation["assigned_npc_id"] = assigned_npc_id
 		if not workstation.has("occupied_by"):
 			workstation["occupied_by"] = null
+		if not workstation.has("reserved_by"):
+			workstation["reserved_by"] = null
 		normalized.append(workstation)
 	return normalized
+
+
+func _clean_nullable_id(value: Variant) -> String:
+	var clean_id := str(value).strip_edges()
+	return "" if clean_id == "<null>" else clean_id
 
 
 func _find_assigned_workstation_id(

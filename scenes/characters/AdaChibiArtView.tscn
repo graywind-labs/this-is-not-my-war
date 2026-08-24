@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilot.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/3d/synty/t0130_pilot/SK_Vikings_ShieldMaiden_01.fbx" id="2_character"]
+[ext_resource type="Texture2D" path="res://assets/3d/synty/t0130_pilot/PolygonMinis_Texture_Blue_A.png" id="3_palette"]
+
+[node name="AdaChibiArtView" type="Node3D"]
+script = ExtResource("1_script")
+character_scene = ExtResource("2_character")
+palette_texture = ExtResource("3_palette")
+equipment_mode = "synced_sword_shield"
+use_imported_character_material = true
+appearance_id = "ada_veteran_deputy_chibi_v1"
+playback_speed = 0.94
+palette_saturation = 0.62
+palette_value_scale = 0.82
+seated_pose_offset_y = -0.56

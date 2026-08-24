@@ -1,0 +1,599 @@
+{
+  "schema_version": "environment_art_v1",
+  "art_revision": "t0135_p8a",
+  "celestial_cycle": {
+    "twilight_start_altitude_degrees": -6.0,
+    "full_light_altitude_degrees": 10.0,
+    "shadow_min_energy": 0.03,
+    "directional_shadow_max_distance": 180.0,
+    "directional_shadow_fade_start": 0.86,
+    "shadow_blur": 1.25,
+    "legacy_light_paths": ["/root/Main/SunLight"],
+    "sun": {
+      "rise_time": [5, 30],
+      "transit_time": [12, 30],
+      "set_time": [19, 30],
+      "max_altitude_degrees": 52.0,
+      "below_horizon_depth_degrees": 42.0,
+      "max_energy": 1.65,
+      "horizon_color": "#efa36c",
+      "zenith_color": "#dce8f6"
+    },
+    "moon": {
+      "rise_time": [18, 30],
+      "transit_time": [0, 30],
+      "set_time": [6, 30],
+      "max_altitude_degrees": 42.0,
+      "below_horizon_depth_degrees": 38.0,
+      "max_energy": 0.40,
+      "horizon_color": "#8798b5",
+      "zenith_color": "#c2d3ec"
+    },
+    "environment": {
+      "adjustment_brightness": 1.03,
+      "adjustment_contrast": 0.98,
+      "adjustment_saturation": 1.06,
+      "fog_reveal_multiplier": 0.28,
+      "day": {
+        "sky_top_color": "#4b7895",
+        "sky_horizon_color": "#b4ced2",
+        "ground_bottom_color": "#354841",
+        "ground_horizon_color": "#7f9a88",
+        "sky_energy": 1.08,
+        "ground_energy": 0.74,
+        "background_energy": 1.06,
+        "ambient_color": "#b7c9c4",
+        "ambient_energy": 0.88,
+        "fog_color": "#8ca9a8",
+        "fog_energy": 0.76,
+        "fog_density": 0.00055,
+        "fog_sun_scatter": 0.08,
+        "fog_sky_affect": 0.22,
+        "exposure": 1.10
+      },
+      "golden": {
+        "sky_top_color": "#35566e",
+        "sky_horizon_color": "#d18d67",
+        "ground_bottom_color": "#3f4a43",
+        "ground_horizon_color": "#8d7162",
+        "sky_energy": 1.00,
+        "ground_energy": 0.82,
+        "background_energy": 1.02,
+        "ambient_color": "#baa19a",
+        "ambient_energy": 1.02,
+        "fog_color": "#92766e",
+        "fog_energy": 0.80,
+        "fog_density": 0.00064,
+        "fog_sun_scatter": 0.12,
+        "fog_sky_affect": 0.26,
+        "exposure": 1.24
+      },
+      "night": {
+        "sky_top_color": "#081827",
+        "sky_horizon_color": "#29445c",
+        "ground_bottom_color": "#14282d",
+        "ground_horizon_color": "#355262",
+        "sky_energy": 0.62,
+        "ground_energy": 0.52,
+        "background_energy": 0.56,
+        "ambient_color": "#7897b8",
+        "ambient_energy": 0.72,
+        "fog_color": "#365467",
+        "fog_energy": 0.68,
+        "fog_density": 0.00092,
+        "fog_sun_scatter": 0.02,
+        "fog_sky_affect": 0.32,
+        "exposure": 1.26
+      }
+    },
+    "interior_fill": {
+      "reveal_threshold": 0.72,
+      "daylight_start_time": [6, 0],
+      "daylight_peak_time": [12, 0],
+      "daylight_end_time": [18, 0],
+      "night_base_scale": 1.0,
+      "day_peak_scale": 1.30,
+      "daylight_curve_power": 0.72,
+      "daylight_sun_mix": 0.62,
+      "daylight_neutral_color": "#dbe8e4",
+      "daylight_neutral_mix": 0.10,
+      "soft_area_fill": {
+        "range": 13.5,
+        "angle": 84.0,
+        "distance_attenuation": 0.02,
+        "edge_attenuation": 0.02,
+        "per_light_energy_scale": 0.62,
+        "shadow_enabled": true,
+        "shadow_blur": 1.4
+      },
+      "buildings": {
+        "blacksmith": {
+          "color": "#ffb866",
+          "max_energy": 2.45,
+          "positions": [[0.0, 2.3, -4.0]],
+          "range": 8.0,
+          "angle": 72.0,
+          "distance_attenuation": 0.12,
+          "edge_attenuation": 0.10
+        },
+        "workshop": {
+          "color": "#ffc77f",
+          "max_energy": 2.20,
+          "positions": [[0.0, 2.3, 0.0]]
+        },
+        "chapel": {
+          "color": "#ffcd89",
+          "max_energy": 2.15,
+          "positions": [[0.0, 2.3, 0.0]]
+        },
+        "clinic": {
+          "color": "#ffd18f",
+          "max_energy": 2.25,
+          "positions": [[0.0, 2.3, 0.0]]
+        },
+        "dining_hall": {
+          "color": "#ffb966",
+          "max_energy": 2.35,
+          "positions": [[0.0, 2.3, 0.0]]
+        },
+        "dormitory": {
+          "color": "#ffcc86",
+          "max_energy": 2.10,
+          "positions": [[0.0, 2.3, 0.0]]
+        },
+        "tavern": {
+          "color": "#ffad5d",
+          "max_energy": 2.40,
+          "positions": [[0.0, 2.3, 0.0]]
+        }
+      }
+    },
+    "functional_lights": {
+      "night_start_time": [18, 0],
+      "night_end_time": [6, 0],
+      "default_fixture_asset": "res://assets/3d/quaternius/props/main_hall_lantern.glb",
+      "color": "#ffc06a",
+      "glow_color": "#ffd27a",
+      "energy": 1.10,
+      "glow_energy": 4.0,
+      "range": 5.2,
+      "attenuation": 1.35,
+      "shadow_blur": 1.2,
+      "buildings": {
+        "main_hall": {
+          "mode": "always_night",
+          "existing_fixture_names": ["GateLanternWest", "GateLanternEast"],
+          "energy": 1.80,
+          "range": 7.2
+        },
+        "warehouse": {
+          "mode": "always_night",
+          "existing_fixture_names": ["WestWallLantern", "EastWallLantern"],
+          "energy": 1.15,
+          "range": 5.4
+        },
+        "wall": {
+          "mode": "always_night",
+          "energy": 0.95,
+          "range": 4.8,
+          "spawned_fixtures": [
+            {"name": "WestPatrolLantern", "position": [-53.7, 2.18, 8.0], "rotation_degrees": [0.0, 90.0, 0.0], "scale": [0.48, 0.48, 0.48]},
+            {"name": "EastPatrolLantern", "position": [50.6, 2.18, 9.0], "rotation_degrees": [0.0, -90.0, 0.0], "scale": [0.48, 0.48, 0.48]}
+          ]
+        },
+        "front_gate": {
+          "mode": "always_night",
+          "energy": 1.20,
+          "range": 5.6,
+          "spawned_fixtures": [
+            {"name": "FrontGateWestLantern", "position": [-3.52, 2.20, -1.98], "rotation_degrees": [0.0, 180.0, 0.0], "scale": [0.56, 0.56, 0.56]},
+            {"name": "FrontGateEastLantern", "position": [3.52, 2.20, -1.98], "rotation_degrees": [0.0, 180.0, 0.0], "scale": [0.56, 0.56, 0.56]}
+          ]
+        },
+        "back_gate": {
+          "mode": "always_night",
+          "energy": 1.05,
+          "range": 4.8,
+          "spawned_fixtures": [
+            {"name": "BackGateWestLantern", "position": [-2.95, 1.72, 1.42], "rotation_degrees": [0.0, 0.0, 0.0], "scale": [0.48, 0.48, 0.48]},
+            {"name": "BackGateEastLantern", "position": [2.95, 1.72, 1.42], "rotation_degrees": [0.0, 0.0, 0.0], "scale": [0.48, 0.48, 0.48]}
+          ]
+        },
+        "blacksmith": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["RearForgeLantern", "SmithingBayLantern", "ServiceLantern", "Forge03Lantern"],
+          "energy": 1.25,
+          "range": 5.8,
+          "color": "#ffb45f"
+        },
+        "workshop": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["FrontLanternLeft", "FrontLanternRight"],
+          "energy": 1.10,
+          "range": 5.5
+        },
+        "chapel": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["EntryLanternLeft", "EntryLanternRight"],
+          "managed_existing_light_names": ["SanctuaryWarmLight"],
+          "energy": 0.90,
+          "range": 5.2,
+          "color": "#ffd08a"
+        },
+        "clinic": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["FrontLanternLeft", "FrontLanternRight"],
+          "energy": 1.05,
+          "range": 5.3,
+          "color": "#ffd49a"
+        },
+        "dining_hall": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["FrontLanternLeft", "FrontLanternRight"],
+          "energy": 1.10,
+          "range": 5.5,
+          "color": "#ffc06b"
+        },
+        "dormitory": {
+          "mode": "awake_occupied_night",
+          "existing_fixture_names": ["NightLanternRear", "NightLanternCenter", "NightLanternFront"],
+          "energy": 0.78,
+          "range": 4.7,
+          "color": "#ffc981"
+        },
+        "tavern": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["CellarLanternWest", "CellarLanternEast"],
+          "energy": 0.95,
+          "range": 4.8,
+          "color": "#ffad55"
+        },
+        "garden": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["GardenLanternWestRear", "GardenLanternEastRear", "GardenLanternWestFront", "GardenLanternEastFront"],
+          "energy": 2.80,
+          "range": 9.4,
+          "attenuation": 0.65,
+          "color": "#ffc777"
+        },
+        "training_ground": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["TrainingLanternWestRear", "TrainingLanternEastRear", "TrainingLanternWestFront", "TrainingLanternEastFront"],
+          "energy": 3.20,
+          "range": 10.0,
+          "attenuation": 0.62,
+          "color": "#ffc06a"
+        },
+        "stable": {
+          "mode": "occupied_night",
+          "existing_fixture_names": ["StableLanternWestRear", "StableLanternEastRear", "StableLanternWestFront", "StableLanternEastFront"],
+          "energy": 2.80,
+          "range": 9.2,
+          "attenuation": 0.68,
+          "color": "#ffc176"
+        }
+      }
+    }
+  },
+  "station_ground": {
+    "surface_y": 0.012,
+    "palette": {
+      "grass_dark": "#354c3a",
+      "grass_base": "#405842",
+      "grass_light": "#465f46",
+      "dirt_dark": "#584a3b",
+      "dirt_base": "#625847",
+      "dirt_light": "#70634f",
+      "wet": "#39443b"
+    },
+    "macro_noise_scale": 0.032,
+    "macro_noise_strength": 0.38,
+    "plaza": {
+      "visual_size": [14.0, 12.0],
+      "center_clear_size": [8.0, 6.0],
+      "render_mode": "road_network_junction_only"
+    },
+    "door_wear": {
+      "surface_y": 0.071,
+      "seed": 13511,
+      "traffic_aprons": {}
+    },
+    "drainage": {
+      "surface_y": 0.073,
+      "width": 0.14,
+      "alpha": 0.38,
+      "paths": [
+        [[-6.8, 7.5], [-7.2, 10.2], [-6.7, 13.2]],
+        [[6.8, 7.2], [7.2, 9.7], [6.8, 12.4]],
+        [[1.8, 15.8], [3.6, 15.5], [5.2, 14.6]]
+      ]
+    },
+    "embedded_details": {
+      "pebble_assets": [
+        "res://assets/3d/quaternius/nature/ground_detail/pebble_round_1.glb",
+        "res://assets/3d/quaternius/nature/ground_detail/pebble_square_1.glb"
+      ],
+      "vegetation_assets": [
+        "res://assets/3d/quaternius/nature/ground_detail/grass_common_short.glb",
+        "res://assets/3d/quaternius/nature/ground_detail/grass_wispy_short.glb",
+        "res://assets/3d/quaternius/nature/ground_detail/clover_1.glb"
+      ],
+      "debris_seed": 13522,
+      "debris_cluster_count": 12,
+      "stones_per_debris_cluster": [4, 6],
+      "debris_radius_range": [0.16, 1.10],
+      "pebble_scale_range": [0.44, 0.82],
+      "debris_min_spacing": 4.4,
+      "vegetation_seed": 13521,
+      "vegetation_cluster_count": 58,
+      "tufts_per_cluster": [4, 7],
+      "cluster_radius_range": [0.14, 1.20],
+      "vegetation_scale_range": [0.48, 0.82],
+      "road_clearance": 1.15,
+      "building_lot_clearance": 0.75,
+      "plaza_center_clear_radius": 7.4,
+      "min_spacing": 2.0
+    }
+  },
+  "terrain_topology": {
+    "river_profile": [
+      [-335.0, -102.0, 30.0, 9.0, -1.0],
+      [-299.0, -99.0, 28.0, 8.0, 0.5],
+      [-263.0, -95.0, 26.0, 7.5, 1.2],
+      [-227.0, -98.0, 30.0, 9.0, -0.6],
+      [-191.0, -102.0, 33.0, 10.5, -1.4],
+      [-155.0, -97.0, 29.0, 8.5, 0.7],
+      [-119.0, -93.0, 27.5, 8.0, 1.3],
+      [-83.0, -97.0, 30.0, 9.0, -0.8],
+      [-47.0, -100.0, 31.0, 9.5, -1.2],
+      [-11.0, -95.0, 27.0, 8.0, 0.4],
+      [25.0, -91.0, 24.5, 7.0, 1.1],
+      [61.0, -95.0, 27.0, 8.0, 0.2],
+      [97.0, -100.0, 31.0, 9.5, -1.5],
+      [133.0, -96.0, 34.0, 11.0, -0.4],
+      [169.0, -92.0, 31.0, 10.0, 1.4],
+      [205.0, -96.0, 29.0, 8.5, 0.8],
+      [241.0, -101.0, 28.0, 8.0, -1.0],
+      [277.0, -99.0, 30.0, 9.0, -0.3],
+      [313.0, -95.0, 32.0, 10.0, 1.2],
+      [349.0, -99.0, 31.0, 9.5, 0.5],
+      [385.0, -103.0, 29.5, 9.0, -1.1]
+    ],
+    "bank_shoulder_drop": 0.44,
+    "water_edge_drop": 0.08,
+    "water_deep_color": "#123d4a",
+    "water_shallow_color": "#286876",
+    "flow_speed": 0.42,
+    "riverbank_rock_assets": [
+      "res://assets/3d/quaternius/nature/ground_detail/pebble_round_1.glb",
+      "res://assets/3d/quaternius/nature/ground_detail/pebble_square_1.glb"
+    ],
+    "riverbank_rock_seed": 13523,
+    "legacy_terrain_boxes_visible": false,
+    "legacy_river_cliff_visuals_visible": false,
+    "legacy_dense_forest_understory_visible": false,
+    "legacy_dense_forest_tree_visuals_visible": false,
+    "legacy_rock_ridge_visuals_visible": false,
+    "east_mountain": {
+      "profile": [
+        [-380.0, 5.8, 13.0, 27.0, 0.0],
+        [-340.0, 6.5, 15.0, 31.0, -3.0],
+        [-300.0, 5.2, 12.0, 25.0, 1.0],
+        [-260.0, 7.2, 17.0, 34.0, 4.0],
+        [-220.0, 6.0, 14.0, 29.0, -2.0],
+        [-180.0, 4.8, 11.0, 24.0, -5.0],
+        [-140.0, 7.5, 16.0, 33.0, 2.0],
+        [-100.0, 6.3, 13.0, 28.0, 5.0],
+        [-60.0, 5.5, 15.0, 31.0, -1.0],
+        [-20.0, 7.0, 17.0, 35.0, -4.0],
+        [20.0, 6.2, 14.0, 30.0, 3.0],
+        [60.0, 4.9, 12.0, 26.0, 5.0],
+        [100.0, 7.6, 16.5, 34.0, -2.0],
+        [140.0, 6.7, 15.0, 32.0, -5.0],
+        [180.0, 5.4, 11.5, 25.0, 1.0],
+        [220.0, 7.3, 17.5, 35.0, 4.0],
+        [260.0, 6.0, 14.0, 29.0, -2.0],
+        [300.0, 4.7, 12.0, 24.0, -5.0],
+        [340.0, 7.2, 16.0, 33.0, 2.0],
+        [380.0, 6.1, 14.0, 30.0, 4.0],
+        [420.0, 5.5, 13.0, 28.0, -1.0]
+      ],
+      "near_x_range": [120.0, 175.0],
+      "mid_x_range": [165.0, 255.0],
+      "far_x_range": [235.0, 370.0],
+      "near_palette": ["#555a56", "#62635d", "#484f4b", "#6d6c62"],
+      "mid_palette": ["#454c4a", "#555b56", "#3e4746", "#60625a"],
+      "far_palette": ["#35413f", "#404a46", "#303b3b", "#4a514b"],
+      "boulder_assets": [
+        "res://assets/3d/quaternius/nature/ground_detail/pebble_round_1.glb",
+        "res://assets/3d/quaternius/nature/ground_detail/pebble_square_1.glb"
+      ],
+      "boulder_seed": 13524
+    },
+    "forest": {
+      "chunk_size": 40.0,
+      "front_bounds": [-350.0, 350.0, 70.0, 390.0],
+      "rear_bounds": [-350.0, 350.0, -390.0, -60.0],
+      "side_bounds": [-350.0, 350.0, -60.0, 70.0],
+      "trees_per_chunk": [34, 44],
+      "bushes_per_chunk": [18, 26],
+      "tree_scale_range": [0.88, 1.34],
+      "far_tree_scale_bonus": 0.16,
+      "mountain_tree_density": 0.18,
+      "mountain_bush_density": 0.14,
+      "station_clearance": 8.0,
+      "station_density_bands": [24.0, 52.0, 95.0],
+      "station_density_levels": [0.10, 0.30, 0.62, 1.0],
+      "riverbank_sparse_width": 24.0,
+      "riverbank_density": 0.26,
+      "tree_seed": 13525,
+      "bush_seed": 13526,
+      "corridor_clearance": 5.2,
+      "river_exclusion_x": [-122.0, -73.0],
+      "spawn_clear_center": [2.0, 335.0],
+      "spawn_clear_size": [28.0, 18.0],
+      "stable_reveal_z": 225.0,
+      "front_route": [[2.0,335.0],[8.0,225.0],[10.0,165.0],[6.0,105.0],[5.0,54.0]],
+      "rear_route": [[-55.0,-315.0],[-52.0,-235.0],[-46.0,-185.0],[-42.0,-135.0],[-40.0,-120.0],[-28.2,-52.4]],
+      "near_color": "#294331",
+      "mid_color": "#21382b",
+      "far_color": "#1b3026",
+      "bush_color": "#1f552d"
+    }
+  },
+  "natural_scatter": {
+    "full_map_bounds": [-350.0, 350.0, -390.0, 420.0],
+    "mountain_foot_bounds": [108.0, 188.0, -375.0, 415.0],
+    "station_outer_clearance": 4.0,
+    "riverbank_seed": 13531,
+    "riverbank_steps_per_segment": 7,
+    "mountain_foot_seed": 13532,
+    "mountain_foot_target": 720,
+    "forest_understory_seed": 13533,
+    "forest_understory_target": 2450,
+    "road_edge_seed": 13534,
+    "road_edge_spacing": 4.2,
+    "station_open_seed": 13535,
+    "station_open_target": 190,
+    "transition_patch_seed": 13536,
+    "river_wet_color": "#364a3f",
+    "mountain_moss_color": "#405447",
+    "road_soil_color": "#554d40",
+    "zone_palettes": {
+      "riverbank": {"grass":"#60785a", "fern":"#4e6950", "shrub":"#3b5843", "rock":"#68706a"},
+      "mountain_foot": {"grass":"#626f5a", "fern":"#536752", "shrub":"#435748", "rock":"#626762"},
+      "forest_understory": {"grass":"#3e5c42", "fern":"#31563a", "shrub":"#2d4b35", "rock":"#505951"},
+      "road_edge": {"grass":"#647653", "fern":"#536a4c", "shrub":"#405541", "rock":"#69675d"},
+      "station_open": {"grass":"#6b7e61", "fern":"#5d7358", "shrub":"#465b47", "rock":"#747169"}
+    }
+  },
+  "station_details": {
+    "asset_catalog": {
+      "barrel": "res://assets/3d/quaternius/props/barrel.glb",
+      "bucket": "res://assets/3d/quaternius/props/bucket_wooden.glb",
+      "crate": "res://assets/3d/quaternius/props/crate_wooden.glb",
+      "harvest_crate": "res://assets/3d/quaternius/props/garden_harvest_crate.glb",
+      "apple_barrel": "res://assets/3d/quaternius/props/warehouse_apple_barrel.glb",
+      "bag": "res://assets/3d/quaternius/props/warehouse_bag.glb",
+      "chest": "res://assets/3d/quaternius/props/warehouse_chest.glb",
+      "metal_crate": "res://assets/3d/quaternius/props/warehouse_metal_crate.glb",
+      "rope": "res://assets/3d/quaternius/props/workshop_rope.glb",
+      "bench": "res://assets/3d/quaternius/props/chapel_bench.glb",
+      "weapon_stand": "res://assets/3d/quaternius/props/weapon_stand.glb"
+    },
+    "clusters": [
+      {
+        "id": "warehouse_loading_yard",
+        "building_id": "warehouse",
+        "function": "freight_loading",
+        "items": [
+          {"asset":"crate","position":[-3.2,-8.2],"scale":0.62,"rotation_degrees":-14.0,"height":0.12},
+          {"asset":"crate","position":[-2.3,-8.7],"scale":0.54,"rotation_degrees":9.0,"height":0.10},
+          {"asset":"bag","position":[-1.5,-8.4],"scale":0.72,"rotation_degrees":22.0},
+          {"asset":"bag","position":[-0.8,-8.8],"scale":0.66,"rotation_degrees":-18.0},
+          {"asset":"apple_barrel","position":[-3.3,-7.1],"scale":0.70,"rotation_degrees":7.0},
+          {"asset":"chest","position":[-2.0,-7.3],"scale":0.62,"rotation_degrees":-8.0,"height":0.08}
+        ]
+      },
+      {
+        "id": "stable_care_supplies",
+        "building_id": "stable",
+        "function": "animal_care",
+        "items": [
+          {"asset":"bag","position":[-3.2,-8.5],"scale":0.74,"rotation_degrees":-15.0},
+          {"asset":"bag","position":[-2.5,-8.9],"scale":0.68,"rotation_degrees":18.0},
+          {"asset":"bucket","position":[-1.6,-9.1],"scale":0.50,"rotation_degrees":22.0,"height":0.08},
+          {"asset":"barrel","position":[-3.3,-7.3],"scale":0.68,"rotation_degrees":-5.0},
+          {"asset":"rope","position":[-2.0,-7.7],"scale":0.64,"rotation_degrees":36.0,"height":0.08}
+        ]
+      },
+      {
+        "id": "dining_water_and_stores",
+        "building_id": "dining_hall",
+        "function": "kitchen_supply",
+        "items": [
+          {"asset":"barrel","position":[-2.7,-7.5],"scale":0.66,"rotation_degrees":8.0},
+          {"asset":"bucket","position":[-1.7,-8.1],"scale":0.48,"rotation_degrees":-18.0,"height":0.08},
+          {"asset":"crate","position":[-2.5,-6.4],"scale":0.54,"rotation_degrees":16.0,"height":0.10},
+          {"asset":"bag","position":[-1.3,-6.9],"scale":0.66,"rotation_degrees":-12.0}
+        ]
+      },
+      {
+        "id": "tavern_delivery_stack",
+        "building_id": "tavern",
+        "function": "drink_delivery",
+        "items": [
+          {"asset":"barrel","position":[-2.0,-6.5],"scale":0.72,"rotation_degrees":-5.0},
+          {"asset":"barrel","position":[-1.0,-6.7],"scale":0.66,"rotation_degrees":12.0},
+          {"asset":"barrel","position":[-1.7,-5.6],"scale":0.62,"rotation_degrees":24.0},
+          {"asset":"crate","position":[-0.5,-5.9],"scale":0.50,"rotation_degrees":-14.0,"height":0.10}
+        ]
+      },
+      {
+        "id": "workshop_parts_corner",
+        "building_id": "workshop",
+        "function": "engineering_materials",
+        "items": [
+          {"asset":"metal_crate","position":[-2.3,-7.8],"scale":0.52,"rotation_degrees":-9.0,"height":0.08},
+          {"asset":"crate","position":[-1.3,-8.1],"scale":0.54,"rotation_degrees":17.0,"height":0.10},
+          {"asset":"rope","position":[-2.2,-6.7],"scale":0.62,"rotation_degrees":31.0,"height":0.08},
+          {"asset":"bucket","position":[-1.0,-7.0],"scale":0.48,"rotation_degrees":-21.0,"height":0.08}
+        ]
+      },
+      {
+        "id": "blacksmith_raw_materials",
+        "building_id": "blacksmith",
+        "function": "smithing_materials",
+        "items": [
+          {"asset":"metal_crate","position":[-2.8,-7.8],"scale":0.56,"rotation_degrees":13.0,"height":0.08},
+          {"asset":"metal_crate","position":[-1.9,-8.2],"scale":0.48,"rotation_degrees":-17.0,"height":0.08},
+          {"asset":"barrel","position":[-2.9,-6.6],"scale":0.64,"rotation_degrees":6.0},
+          {"asset":"bucket","position":[-1.7,-6.9],"scale":0.50,"rotation_degrees":29.0,"height":0.08}
+        ]
+      },
+      {
+        "id": "main_hall_public_edge",
+        "building_id": "main_hall",
+        "function": "public_waiting",
+        "items": [
+          {"asset":"bench","position":[12.3,7.4],"scale":0.66,"rotation_degrees":90.0,"height":0.06},
+          {"asset":"bench","position":[12.3,5.3],"scale":0.62,"rotation_degrees":90.0,"height":0.06},
+          {"asset":"crate","position":[13.9,6.9],"scale":0.48,"rotation_degrees":-12.0,"height":0.10},
+          {"asset":"barrel","position":[13.8,5.4],"scale":0.60,"rotation_degrees":9.0}
+        ]
+      },
+      {
+        "id": "clinic_waiting_corner",
+        "building_id": "clinic",
+        "function": "clinic_waiting",
+        "items": [
+          {"asset":"bench","position":[-7.6,4.5],"scale":0.62,"rotation_degrees":90.0,"height":0.06},
+          {"asset":"bucket","position":[-7.7,2.8],"scale":0.46,"rotation_degrees":-18.0,"height":0.08},
+          {"asset":"crate","position":[-7.1,1.9],"scale":0.46,"rotation_degrees":12.0,"height":0.10}
+        ]
+      },
+      {
+        "id": "garden_harvest_corner",
+        "building_id": "garden",
+        "function": "harvest_staging",
+        "items": [
+          {"asset":"harvest_crate","position":[-2.2,-7.7],"scale":0.62,"rotation_degrees":-8.0,"height":0.08},
+          {"asset":"harvest_crate","position":[-1.1,-8.1],"scale":0.56,"rotation_degrees":14.0,"height":0.08},
+          {"asset":"bucket","position":[-2.3,-6.5],"scale":0.48,"rotation_degrees":22.0,"height":0.08},
+          {"asset":"bag","position":[-0.9,-6.8],"scale":0.64,"rotation_degrees":-17.0}
+        ]
+      },
+      {
+        "id": "training_equipment_edge",
+        "building_id": "training_ground",
+        "function": "training_equipment",
+        "items": [
+          {"asset":"weapon_stand","position":[-8.3,-6.5],"scale":0.60,"rotation_degrees":90.0,"height":0.12},
+          {"asset":"weapon_stand","position":[-8.1,-4.6],"scale":0.56,"rotation_degrees":90.0,"height":0.12},
+          {"asset":"crate","position":[-7.1,-6.3],"scale":0.50,"rotation_degrees":13.0,"height":0.10},
+          {"asset":"barrel","position":[-6.9,-4.8],"scale":0.60,"rotation_degrees":-8.0}
+        ]
+      }
+    ]
+  }
+}

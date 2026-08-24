@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilot.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/3d/synty/t0130_pilot/SK_Fantasy_Wizard_01.fbx" id="2_character"]
+[ext_resource type="Texture2D" path="res://assets/3d/synty/t0130_pilot/PolygonMinis_Texture_Purple_A.png" id="3_palette"]
+
+[node name="MarcelChibiArtView" type="Node3D"]
+script = ExtResource("1_script")
+character_scene = ExtResource("2_character")
+palette_texture = ExtResource("3_palette")
+equipment_mode = "none"
+use_imported_character_material = true
+appearance_id = "marcel_priest_chibi_v1"
+work_clip = "Working_A"
+mass_leader_clip = "Ranged_Magic_Spellcasting_Long"
+remove_detached_headwear = true
+show_wooden_cross = true
+show_rounded_tonsure_hair = true
+playback_speed = 0.90
+palette_saturation = 0.56
+palette_value_scale = 0.72
+seated_pose_offset_y = -0.56

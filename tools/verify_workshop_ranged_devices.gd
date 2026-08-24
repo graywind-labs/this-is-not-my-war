@@ -58,7 +58,10 @@ func _init() -> void:
 
 	var engineer_id := "engineer_01"
 	var blacksmith_id := "blacksmith_01"
-	_set_debug_move_speed(engineer_id, 100.0)
+	# A5-P5c routes workshop work through the real diagonal doorway. Keep the
+	# production speed so this balance regression cannot orbit the narrow target
+	# at an artificial 100 m/s.
+	_set_debug_move_speed(engineer_id, 5.0)
 
 	var base_duration := float(workshop_action.get("duration_seconds", 3600.0))
 	var engineer_duration_level_1: float = action_system._get_effective_action_duration_seconds(workshop_action, engineer_id)
@@ -212,8 +215,8 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for _frame in range(600):
-		await process_frame
+	for _frame in range(1800):
+		await physics_frame
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

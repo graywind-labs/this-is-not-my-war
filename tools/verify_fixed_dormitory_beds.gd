@@ -28,10 +28,12 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if building_system == null or npc_system == null or action_system == null or panel == null:
+	if building_system == null or npc_system == null or action_system == null or time_system == null or panel == null:
 		_fail("Required fixed-bed verification systems are missing")
 		return
+	time_system.set_paused(false)
 
 	if not _verify_configured_assignments(building_system):
 		return
@@ -140,7 +142,7 @@ func _verify_sleep_action_reuses_bed(
 	action_system: Node
 ) -> bool:
 	var npc_id := "veteran_deputy_01"
-	_set_debug_move_speed(npc_id, 80.0)
+	_set_debug_move_speed(npc_id, 500.0)
 	for attempt in range(2):
 		npc_system.update_npc_state(npc_id, {
 			"fatigue": 70,
@@ -150,7 +152,12 @@ func _verify_sleep_action_reuses_bed(
 			_fail("Sleep assignment failed on attempt %d" % (attempt + 1))
 			return false
 		if not await _wait_until_current_action(npc_system, npc_id, "sleep_in_dormitory"):
-			_fail("Sleep action did not start on attempt %d" % (attempt + 1))
+			_fail("Sleep action did not start on attempt %d: runtime=%s migration=%s state=%s" % [
+				attempt + 1,
+				JSON.stringify(action_system.get_runtime_action_snapshot(npc_id)),
+				JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(npc_id)),
+				JSON.stringify(npc_system.get_npc_state(npc_id))
+			])
 			return false
 		var bed := _find_occupied_workstation(building_system, npc_id)
 		if str(bed.get("id", "")) != "dormitory_bed_01":
@@ -237,7 +244,7 @@ func _wait_until_current_action(
 	npc_system: Node,
 	npc_id: String,
 	expected_action: String,
-	max_frames: int = 240
+	max_frames: int = 1800
 ) -> bool:
 	for _frame in range(max_frames):
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:

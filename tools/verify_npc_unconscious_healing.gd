@@ -18,10 +18,18 @@ func _init() -> void:
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
-	if event_bus == null or npc_system == null or action_system == null or memory_system == null or resource_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
+	if event_bus == null or npc_system == null or action_system == null or memory_system == null or resource_system == null or time_system == null or controller == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_paused(false)
+	time_system.set_time_scale(0.0)
+	controller.debug_set_preview_enabled(true)
+	await physics_frame
+	await process_frame
+	controller.force_sync_production_navigation()
 
 	var target_id := "cook_01"
 	var healer_id := "doctor_01"
@@ -33,6 +41,7 @@ func _init() -> void:
 			push_error("Failed to place NPC in clinic: %s" % npc_id)
 			quit(1)
 			return
+		_set_debug_move_speed(npc_system, npc_id, 8.0)
 
 	var damage_result: Dictionary = npc_system.debug_damage_npc(target_id, 150, "local_public")
 	if damage_result.is_empty() or not bool(damage_result.get("ok", false)):
@@ -45,8 +54,8 @@ func _init() -> void:
 		push_error("Doctor should be able to assist healing an unconscious NPC")
 		quit(1)
 		return
-	if resource_system.get_resource("money") != money_before - 1:
-		push_error("Healing should spend initial money when started")
+	if resource_system.get_resource("money") != money_before:
+		push_error("Healing must not spend initial money before physical arrival")
 		quit(1)
 		return
 	if not action_system.debug_assign_heal_assist(second_healer_id, target_id):
@@ -55,6 +64,18 @@ func _init() -> void:
 		return
 	if action_system.debug_assign_heal_assist(third_healer_id, target_id):
 		push_error("Third healer should be rejected because target already has two helpers")
+		quit(1)
+		return
+	if not await _wait_for_healing_active(npc_system, healer_id, target_id):
+		push_error("Doctor did not physically reach the unconscious target")
+		quit(1)
+		return
+	if not await _wait_for_healing_active(npc_system, second_healer_id, target_id):
+		push_error("Second healer did not physically reach the unconscious target")
+		quit(1)
+		return
+	if resource_system.get_resource("money") != money_before - 2:
+		push_error("Each healer should spend initial money only after arrival")
 		quit(1)
 		return
 
@@ -140,8 +161,11 @@ func _init() -> void:
 		return
 
 	var no_money_target_id := "stableman_01"
-	if not npc_system.debug_enter_location_immediately(no_money_target_id, "clinic"):
-		push_error("Failed to place no-money target in clinic")
+	if (
+		not npc_system.debug_enter_location_immediately(no_money_target_id, "plaza")
+		or not npc_system.debug_enter_location_immediately(third_healer_id, "plaza")
+	):
+		push_error("Failed to place no-money target and healer in plaza")
 		quit(1)
 		return
 	npc_system.debug_damage_npc(no_money_target_id, 150, "local_public")
@@ -162,6 +186,10 @@ func _init() -> void:
 		push_error("Healer should start when exactly the initial payment is available")
 		quit(1)
 		return
+	if not await _wait_for_healing_active(npc_system, third_healer_id, no_money_target_id):
+		push_error("Funded healer did not physically reach the no-money target: state=%s formal=%s" % [JSON.stringify(npc_system.get_npc_state(third_healer_id)), JSON.stringify(npc_system.get_formal_healing_approach_snapshot(third_healer_id))])
+		quit(1)
+		return
 	event_bus.logical_time_tick.emit(1800.0, 1.0)
 	await process_frame
 	var depleted_state: Dictionary = npc_system.get_npc_state(third_healer_id)
@@ -176,6 +204,21 @@ func _init() -> void:
 
 	print("T0503 NPC unconscious healing verification passed.")
 	quit(0)
+
+
+func _set_debug_move_speed(npc_system: Node, npc_id: String, speed: float) -> void:
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath()))
+	if npc_node != null:
+		npc_node.move_speed = speed
+
+
+func _wait_for_healing_active(npc_system: Node, healer_npc_id: String, target_npc_id: String) -> bool:
+	for frame in range(2400):
+		await physics_frame
+		var state: Dictionary = npc_system.get_npc_state(healer_npc_id)
+		if str(state.get("last_action_result", "")) == "assist_heal_started_%s" % target_npc_id:
+			return true
+	return false
 
 
 func _has_event(events: Array, event_type: String) -> bool:

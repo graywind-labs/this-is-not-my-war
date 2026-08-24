@@ -6,6 +6,7 @@
     "completion_policy": "repeat_while_planned",
     "location_required": "garden",
     "workstation_type": "farm",
+    "formal_spatial_route": true,
     "skill": "耕种",
     "stat": "strength",
     "duration_seconds": 3600,
@@ -38,6 +39,7 @@
     "output_resources": {
       "meal": 2
     },
+    "formal_spatial_route": true,
     "needs_profile": "light_work"
   },
   {
@@ -47,6 +49,7 @@
     "completion_policy": "repeat_while_planned",
     "location_required": "stable",
     "workstation_type": "horse_care",
+    "formal_spatial_route": true,
     "skill": "养马",
     "stat": "strength",
     "duration_seconds": 3600,
@@ -61,6 +64,7 @@
     "completion_policy": "repeat_while_planned",
     "location_required": "tavern",
     "workstation_type": "brew",
+    "formal_spatial_route": true,
     "skill": "酿酒",
     "stat": "intelligence",
     "duration_seconds": 3600,
@@ -86,6 +90,7 @@
     "completion_policy": "repeat_while_planned",
     "location_required": "blacksmith",
     "workstation_type": "forge",
+    "formal_spatial_route": true,
     "skill": "打铁",
     "stat": "strength",
     "duration_seconds": 5400,
@@ -101,6 +106,7 @@
     "completion_policy": "repeat_while_planned",
     "location_required": "workshop",
     "workstation_type": "engineering",
+    "formal_spatial_route": true,
     "skill": "工程",
     "stat": "intelligence",
     "duration_seconds": 5400,
@@ -118,6 +124,7 @@
     "skill": "教练",
     "stat": "intelligence",
     "workstation_type": "training_instructor_station",
+    "formal_spatial_route": true,
     "solo_skill_interval_seconds": 14400,
     "coaching_skill_interval_seconds": 3600,
     "student_skill_interval_seconds": 3600,
@@ -130,6 +137,7 @@
     "completion_policy": "continuous_until_plan_changes",
     "location_required": "training_ground",
     "workstation_type": "training_practice_slot",
+    "formal_spatial_route": true,
     "required_active_action_id": "work_training_instructor",
     "student_skill_interval_seconds": 3600,
     "needs_profile": "training_student"
@@ -143,8 +151,11 @@
     "skill": "医术",
     "stat": "intelligence",
     "workstation_type": "clinic_doctor_station",
+    "formal_spatial_route": true,
+    "formal_preflight_input_resources": false,
     "study_skill_interval_seconds": 14400,
     "treatment_skill_interval_seconds": 3600,
+    "clinic_round_dwell_seconds": 300,
     "resource_cost_interval_seconds": 1800,
     "input_resources": {
       "money": 1
@@ -159,6 +170,7 @@
     "reevaluate_current_hour_on_completion": true,
     "location_required": "clinic",
     "workstation_type": "clinic_patient_bed",
+    "formal_spatial_route": true,
     "required_active_action_id": "work_clinic_doctor",
     "needs_profile": "clinic_rest"
   },
@@ -169,6 +181,7 @@
     "completion_policy": "once_per_plan_hour",
     "location_required": "dining_hall",
     "workstation_type": "dining_seat",
+    "formal_spatial_route": true,
     "building_efficiency_key": "meal_recovery",
     "duration_seconds": 1200,
     "needs_profile": "eat",
@@ -207,6 +220,7 @@
     "completion_policy": "once_per_plan_hour",
     "location_required": "dormitory",
     "workstation_type": "dormitory_bed",
+    "formal_spatial_route": true,
     "building_efficiency_key": "sleep_recovery",
     "duration_seconds": 23400,
     "needs_profile": "sleep"
@@ -218,6 +232,7 @@
     "completion_policy": "once_per_plan_hour",
     "location_required": "chapel",
     "workstation_type": "chapel_prayer_seat",
+    "formal_spatial_route": true,
     "description": "前往小教堂祈祷；如果有人正在主持弥撒，会自动参加弥撒，弥撒结束后继续独自祈祷。",
     "eligibility_hint": "不依赖神父；弥撒开始时程序会自动转为参加弥撒，弥撒结束后继续独自祈祷。",
     "duration_seconds": 3600,
@@ -231,6 +246,7 @@
     "completion_policy": "once_per_plan_hour",
     "location_required": "chapel",
     "workstation_type": "chapel_altar",
+    "formal_spatial_route": true,
     "required_ability": "主持弥撒",
     "eligibility_hint": "只有具备‘主持弥撒’能力的人才能执行；你没有该能力时不要把它加入计划。",
     "duration_seconds": 3600,
@@ -243,6 +259,8 @@
     "type": "npc_dialogue",
     "completion_policy": "once_per_plan_hour",
     "requires_target": "npc",
+    "formal_spatial_route": true,
+    "approach_distance": 1.35,
     "soft_round_threshold": 5,
     "visibility": "local_public",
     "needs_profile": "dialogue"
@@ -254,6 +272,7 @@
     "completion_policy": "once_per_plan_hour",
     "requires_target": "enterable_location",
     "duration_seconds": 3600,
+    "formal_spatial_route": true,
     "visibility": "local_public",
     "needs_profile": "visit"
   },

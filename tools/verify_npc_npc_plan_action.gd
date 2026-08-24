@@ -5,10 +5,12 @@ class FakeDialogueBridge:
 	extends Node
 
 	signal dialogue_async_response_received(result: Dictionary)
+	signal dialogue_intent_revalidation_async_response_received(result: Dictionary)
 	signal dialogue_plan_revision_judgement_async_response_received(result: Dictionary)
 	signal plan_revision_async_response_received(result: Dictionary)
 
 	var request_count := 0
+	var intent_request_count := 0
 	var cancelled_request_ids: Array[String] = []
 	var judgement_requests: Array[Dictionary] = []
 	var revision_requests: Array[Dictionary] = []
@@ -25,6 +27,32 @@ class FakeDialogueBridge:
 			int(options.get("current_round", 1))
 		)
 		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func request_npc_dialogue_intent_revalidation_async(
+		npc_id: String,
+		plan_item: Dictionary,
+		_options: Dictionary = {}
+	) -> Dictionary:
+		intent_request_count += 1
+		var request_id := "npc_npc_intent_%d" % intent_request_count
+		call_deferred("_answer_intent_continue", request_id, npc_id, plan_item.duplicate(true))
+		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func _answer_intent_continue(request_id: String, npc_id: String, plan_item: Dictionary) -> void:
+		dialogue_intent_revalidation_async_response_received.emit({
+			"ok": true,
+			"request_id": request_id,
+			"npc_id": npc_id,
+			"dialogue_intent_revalidation": {
+				"npc_id": npc_id,
+				"decision": "continue",
+				"dialogue_goal": str(plan_item.get("dialogue_goal", "")),
+				"summary": "测试夹具确认协调工位的对话意图仍然有效。",
+				"model_provider": "fake_real_provider",
+				"model_name": "functional-test",
+				"model_fallback_used": false
+			}
+		})
 
 	func cancel_npc_llm_requests(_npc_id: String, reason: String = "cancelled") -> Dictionary:
 		cancelled_request_ids.append(reason)
@@ -182,6 +210,7 @@ func _init() -> void:
 		_fail("NPC-NPC plan verification requires all scene systems")
 		return
 	time_system.set_time_scale(0.0)
+	time_system.set_paused(false)
 
 	var started_state := {}
 	var ended_state := {}
@@ -215,6 +244,9 @@ func _init() -> void:
 	fake_bridge.name = "LLMBridge"
 	systems.add_child(fake_bridge)
 	fake_bridge.dialogue_async_response_received.connect(Callable(dialog_system, "_on_dialogue_async_response_received"))
+	fake_bridge.dialogue_intent_revalidation_async_response_received.connect(
+		Callable(daily_plan_system, "_on_dialogue_intent_revalidation_async_response")
+	)
 	fake_bridge.dialogue_plan_revision_judgement_async_response_received.connect(
 		Callable(daily_plan_system, "_on_dialogue_plan_revision_judgement_async_response")
 	)
@@ -225,17 +257,34 @@ func _init() -> void:
 	if not npc_system.debug_enter_location_immediately("priest_01", "clinic"):
 		_fail("Could not place workstation blocker in clinic")
 		return
+	_set_debug_move_speed("priest_01", 5.0)
 	if not action_system.debug_assign_action("priest_01", "work_clinic_doctor"):
 		_fail("Could not make priest occupy the clinic doctor workstation")
 		return
+	if not await _wait_for_active_action(action_system, "priest_01", "work_clinic_doctor"):
+		_fail("Priest did not physically reach a clinic doctor workstation")
+		return
 	if not _workstation_owned_by(building_system.get_building("clinic"), "priest_01"):
 		_fail("Clinic workstation setup did not take effect")
+		return
+	if not npc_system.debug_enter_location_immediately("engineer_01", "clinic"):
+		_fail("Could not place the second clinic workstation blocker")
+		return
+	_set_debug_move_speed("engineer_01", 5.0)
+	if not action_system.debug_assign_action("engineer_01", "work_clinic_doctor"):
+		_fail("Could not fill the second clinic doctor workstation")
+		return
+	if not await _wait_for_active_action(action_system, "engineer_01", "work_clinic_doctor"):
+		_fail("Engineer did not physically reach the second clinic doctor workstation")
+		return
+	if not _workstation_owned_by(building_system.get_building("clinic"), "engineer_01"):
+		_fail("Second clinic workstation setup did not take effect")
 		return
 	if not npc_system.debug_enter_location_immediately("doctor_01", "clinic"):
 		_fail("Could not place doctor in clinic for workstation failure verification")
 		return
 	if action_system.debug_assign_action("doctor_01", "work_clinic_doctor"):
-		_fail("Doctor unexpectedly acquired Marcel's occupied clinic workstation")
+		_fail("Doctor unexpectedly acquired a workstation after both clinic desks were occupied")
 		return
 	var failure_context: Dictionary = npc_system.get_npc_state("doctor_01").get(
 		"last_action_failure_context",
@@ -281,7 +330,7 @@ func _init() -> void:
 	if not npc_system.debug_enter_location_immediately("doctor_01", "plaza"):
 		_fail("Could not place doctor in plaza")
 		return
-	_set_debug_move_speed("doctor_01", 250.0)
+	_set_debug_move_speed("doctor_01", 5.0)
 
 	var current_hour := int(root.get_node("GameState").current_hour)
 	var plan := _make_dialogue_plan(current_hour)
@@ -334,7 +383,10 @@ func _init() -> void:
 		_fail("Dialogue plan was not accepted for execution: %s" % str(execute_result))
 		return
 
-	var start_deadline := Time.get_ticks_msec() + 3000
+	# talk_to_npc now walks the production NavigationServer route and then closes
+	# to entity distance, so the previous legacy-location three-second deadline is
+	# no longer representative of the visible cross-building approach.
+	var start_deadline := Time.get_ticks_msec() + 15000
 	while started_state.is_empty() and Time.get_ticks_msec() < start_deadline:
 		await process_frame
 		await physics_frame
@@ -489,6 +541,9 @@ func _init() -> void:
 		if not bool(prayer_start.get("ok", false)):
 			_fail("Could not start old-hour action for %s: %s" % [participant_id, str(prayer_start)])
 			return
+		if not await _wait_for_active_action(action_system, participant_id, "pray_at_chapel"):
+			_fail("%s did not physically reach a chapel prayer seat before the boundary dialogue" % participant_id)
+			return
 	var actual_boundary_start: Dictionary = dialog_system.start_npc_dialogue(
 		"doctor_01",
 		"priest_01",
@@ -582,7 +637,16 @@ func _init() -> void:
 		not str(action_system.get_runtime_action_id(first_boundary_npc)).is_empty()
 		or not str(action_system.get_runtime_action_id(sibling_boundary_npc)).is_empty()
 	):
-		_fail("npc_state_changed bypassed the unresolved sibling judgement barrier")
+		_fail(
+			"npc_state_changed bypassed the unresolved sibling judgement barrier: runtimes=%s markers=%s"
+			% [
+				str({
+					first_boundary_npc: action_system.get_runtime_action_snapshot(first_boundary_npc),
+					sibling_boundary_npc: action_system.get_runtime_action_snapshot(sibling_boundary_npc)
+				}),
+				str(daily_plan_system.get("_deferred_current_revision_execution_by_npc"))
+			]
+		)
 		return
 
 	# Only the second completion may release both participants into the current-hour plan.
@@ -712,7 +776,7 @@ func _init() -> void:
 		if not low_priority_started:
 			_fail("A view-only player dialogue draft must not block background NPC dialogue")
 			return
-		await process_frame
+		background_state = await _wait_for_background_npc_dialogue(dialog_system)
 	if str(dialog_system.get_display_dialogue_state().get("target_npc_id", "")) != "cook_01":
 		_fail("Background NPC dialogue replaced the displayed player draft")
 		return
@@ -722,7 +786,10 @@ func _init() -> void:
 		or not bool(background_state.get("autonomous", false))
 		or not ["doctor_01", "priest_01"].has(str(background_state.get("target_npc_id", "")))
 	):
-		_fail("View-only draft did not preserve the authoritative background NPC dialogue")
+		_fail(
+			"View-only draft did not preserve the authoritative background NPC dialogue: %s"
+			% JSON.stringify(background_state)
+		)
 		return
 	dialog_system.end_displayed_dialogue(str(player_start.get("dialogue_state", {}).get("dialogue_id", "")))
 	dialog_system.end_dialogue("verify_npc_npc_plan_cleanup", {
@@ -850,6 +917,38 @@ func _set_debug_move_speed(npc_id: String, speed: float) -> void:
 		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
 			npc_node.move_speed = speed
 			return
+
+
+func _wait_for_active_action(
+	action_system: Node,
+	npc_id: String,
+	action_id: String,
+	max_frames: int = 2400
+) -> bool:
+	for _frame in range(max_frames):
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == action_id
+		):
+			return true
+		await physics_frame
+	return false
+
+
+func _wait_for_background_npc_dialogue(
+	dialog_system: Node,
+	max_frames: int = 900
+) -> Dictionary:
+	for _frame in range(max_frames):
+		var state: Dictionary = dialog_system.get_dialogue_state()
+		if (
+			str(state.get("dialogue_kind", "")) == "npc_npc"
+			and bool(state.get("autonomous", false))
+		):
+			return state
+		await physics_frame
+	return dialog_system.get_dialogue_state()
 
 
 func _fail(message: String) -> void:

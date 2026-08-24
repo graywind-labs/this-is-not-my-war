@@ -1,0 +1,367 @@
+{
+  "schema_version": "station_spatial_plan_v7",
+  "world_units": {
+    "godot_units_per_meter": 1.0,
+    "construction_grid_m": 2.0,
+    "origin_label": "road_junction_public_space",
+    "front_axis": "+Z"
+  },
+  "terrain": {
+    "detail_center": [0.0, 35.0],
+    "detail_size": [280.0, 360.0],
+    "underlay_center": [0.0, 25.0],
+    "underlay_size": [700.0, 720.0],
+    "continuous_ground_color": "#405842",
+    "ground_surface_elevation_m": 0.0,
+    "ground_depth_m": 2.4,
+    "terrain_tile_size_m": 6.0,
+    "river_channel_center_x": -97.0
+  },
+  "station": {
+    "interior_bounds": [-53.0, 50.0, -43.0, 52.0],
+    "interior_polygon": [[-50.0, -39.0], [-29.0, -43.0], [-24.0, -43.0], [3.0, -42.0], [32.0, -38.0], [48.0, -26.0], [50.0, 7.0], [46.0, 31.0], [36.0, 48.0], [8.0, 52.0], [2.0, 52.0], [-22.0, 50.0], [-42.0, 41.0], [-52.0, 22.0], [-53.0, -6.0]],
+    "wall_thickness": 1.2,
+    "wall_height": 2.4,
+    "wall_segments": [
+      {"id": "south_west_a", "from": [-53.0, -41.0], "to": [-31.0, -46.0]},
+      {"id": "south_west_b", "from": [-31.0, -46.0], "to": [-30.0, -46.0]},
+      {"id": "south_east_a", "from": [-24.0, -45.0], "to": [4.0, -44.0]},
+      {"id": "south_east_b", "from": [4.0, -44.0], "to": [34.0, -40.0]},
+      {"id": "south_east_c", "from": [34.0, -40.0], "to": [50.0, -27.0]},
+      {"id": "east_south", "from": [50.0, -27.0], "to": [53.0, 7.0]},
+      {"id": "east_mid", "from": [53.0, 7.0], "to": [49.0, 33.0]},
+      {"id": "east_north", "from": [49.0, 33.0], "to": [38.0, 51.0]},
+      {"id": "north_east", "from": [38.0, 51.0], "to": [8.2, 54.0]},
+      {"id": "north_west_a", "from": [1.8, 54.0], "to": [-23.0, 52.0]},
+      {"id": "north_west_b", "from": [-23.0, 52.0], "to": [-45.0, 43.0]},
+      {"id": "west_north", "from": [-45.0, 43.0], "to": [-55.0, 24.0]},
+      {"id": "west_mid", "from": [-55.0, 24.0], "to": [-56.0, -7.0]},
+      {"id": "west_south", "from": [-56.0, -7.0], "to": [-53.0, -41.0]}
+    ],
+    "front_gate": {"center": [5.0, 54.0], "clear_width": 6.0},
+    "back_gate": {"center": [-27.0, -45.5], "clear_width": 5.0},
+    "plaza": {
+      "center": [0.0, 10.0],
+      "label": "驿路交汇 / 公共见闻区",
+      "patches": [
+        {"center": [-2.0, 9.0], "size": [9.0, 6.0], "rotation_degrees": -8.0},
+        {"center": [3.0, 11.0], "size": [7.0, 5.0], "rotation_degrees": 12.0},
+        {"center": [-1.0, 14.0], "size": [6.0, 4.0], "rotation_degrees": 5.0}
+      ]
+    },
+    "layout_reference": "Main.tscn relative building composition / v1",
+    "current_reference": {
+      "center": [0.0, -1.0],
+      "size": [28.0, 26.0],
+      "area_m2": 728.0
+    }
+  },
+  "roads": [
+    {"id": "main_01", "from": [-27.0, -45.5], "to": [-29.0, -38.0], "width": 4.5, "kind": "main"},
+    {"id": "main_02", "from": [-29.0, -38.0], "to": [-27.5, -29.0], "width": 3.6, "kind": "main"},
+    {"id": "main_03", "from": [-27.5, -29.0], "to": [-27.5, -21.0], "width": 3.6, "kind": "main"},
+    {"id": "main_04", "from": [-27.5, -21.0], "to": [-20.0, -19.0], "width": 3.8, "kind": "main"},
+    {"id": "main_05", "from": [-20.0, -19.0], "to": [-16.0, -4.0], "width": 4.0, "kind": "main"},
+    {"id": "main_06", "from": [-16.0, -4.0], "to": [-15.0, 5.0], "width": 4.5, "kind": "main"},
+    {"id": "main_07", "from": [-15.0, 5.0], "to": [0.0, 10.0], "width": 5.0, "kind": "main"},
+    {"id": "main_08", "from": [0.0, 10.0], "to": [0.0, 22.0], "width": 5.0, "kind": "main"},
+    {"id": "main_09", "from": [0.0, 22.0], "to": [-1.0, 40.0], "width": 4.8, "kind": "main"},
+    {"id": "main_10", "from": [-1.0, 40.0], "to": [5.0, 54.0], "width": 5.2, "kind": "main"},
+    {"id": "main_hall_spur", "from": [0.0, 10.0], "to": [0.0, 1.8], "width": 4.2, "kind": "service", "serves": ["main_hall"]},
+    {"id": "workshop_spur", "from": [-27.5, -21.0], "to": [-35.2, -22.2], "width": 3.0, "kind": "service", "serves": ["workshop"]},
+    {"id": "chapel_spur", "from": [-27.5, -21.0], "to": [-18.0, -23.2], "width": 3.0, "kind": "service", "serves": ["chapel"]},
+    {"id": "rear_lane_a", "from": [-18.0, -23.2], "to": [-3.0, -24.0], "width": 3.0, "kind": "service", "serves": ["chapel"]},
+    {"id": "rear_lane_b", "from": [-3.0, -24.0], "to": [12.0, -23.2], "width": 3.0, "kind": "service", "serves": ["clinic"]},
+    {"id": "stable_lane_a", "from": [12.0, -23.2], "to": [21.0, -21.0], "width": 3.0, "kind": "service", "serves": ["clinic", "stable"]},
+    {"id": "stable_lane_b", "from": [21.0, -21.0], "to": [26.2, -18.2], "width": 3.0, "kind": "service", "serves": ["stable"]},
+    {"id": "dormitory_spur", "from": [-20.0, -19.0], "to": [-27.2, -9.0], "width": 3.0, "kind": "service", "serves": ["dormitory"]},
+    {"id": "dining_lane_a", "from": [0.0, 10.0], "to": [14.0, 8.0], "width": 3.2, "kind": "service"},
+    {"id": "dining_lane_b", "from": [14.0, 8.0], "to": [22.0, 2.0], "width": 3.2, "kind": "service"},
+    {"id": "dining_lane_c", "from": [22.0, 2.0], "to": [27.2, -3.0], "width": 3.2, "kind": "service", "serves": ["dining_hall"]},
+    {"id": "garden_lane_a", "from": [-15.0, 5.0], "to": [-22.0, 8.0], "width": 3.0, "kind": "service"},
+    {"id": "garden_lane_b", "from": [-22.0, 8.0], "to": [-35.2, 10.0], "width": 3.0, "kind": "service", "serves": ["garden"]},
+    {"id": "tavern_lane_a", "from": [0.0, 22.0], "to": [-12.0, 19.0], "width": 3.0, "kind": "service"},
+    {"id": "tavern_lane_b", "from": [-12.0, 19.0], "to": [-25.0, 22.0], "width": 3.0, "kind": "service"},
+    {"id": "tavern_lane_c", "from": [-25.0, 22.0], "to": [-27.5, 33.0], "width": 3.0, "kind": "service", "serves": ["tavern"]},
+    {"id": "tavern_lane_d", "from": [-27.5, 33.0], "to": [-29.6, 32.4], "width": 3.0, "kind": "service", "serves": ["tavern"]},
+    {"id": "training_lane_a", "from": [0.0, 22.0], "to": [-7.0, 24.0], "width": 3.0, "kind": "service"},
+    {"id": "training_lane_b", "from": [-7.0, 24.0], "to": [-15.0, 27.2], "width": 3.0, "kind": "service", "serves": ["training_ground"]},
+    {"id": "blacksmith_lane_a", "from": [0.0, 22.0], "to": [5.0, 27.0], "width": 3.2, "kind": "service"},
+    {"id": "blacksmith_lane_b", "from": [5.0, 27.0], "to": [10.2, 31.2], "width": 3.2, "kind": "service", "serves": ["blacksmith"]},
+    {"id": "warehouse_lane_a", "from": [0.0, 10.0], "to": [14.0, 11.0], "width": 3.2, "kind": "service"},
+    {"id": "warehouse_lane_b", "from": [14.0, 11.0], "to": [29.5, 14.5], "width": 3.2, "kind": "service", "serves": ["warehouse"]},
+    {"id": "front_approach_a", "from": [5.0, 54.0], "to": [6.0, 105.0], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_b", "from": [6.0, 105.0], "to": [10.0, 165.0], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_c", "from": [10.0, 165.0], "to": [8.0, 225.0], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_d", "from": [8.0, 225.0], "to": [2.0, 335.0], "width": 8.0, "kind": "enemy"},
+    {"id": "rear_trade_a", "from": [-27.0, -45.5], "to": [-35.0, -90.0], "width": 4.5, "kind": "trade"},
+    {"id": "rear_trade_b", "from": [-35.0, -90.0], "to": [-42.0, -135.0], "width": 4.5, "kind": "trade"},
+    {"id": "rear_trade_c", "from": [-42.0, -135.0], "to": [-46.0, -185.0], "width": 4.5, "kind": "trade"},
+    {"id": "rear_trade_d", "from": [-46.0, -185.0], "to": [-52.0, -235.0], "width": 4.5, "kind": "trade"},
+    {"id": "rear_trade_e", "from": [-52.0, -235.0], "to": [-55.0, -315.0], "width": 4.5, "kind": "trade"}
+  ],
+  "building_lots": [
+    {"id": "workshop", "label": "工械坊", "center": [-40.0, -27.0], "rotation_degrees": 45.0, "orientation_direction": "东北", "lot_size": [14.0, 14.0], "envelope_size": [12.0, 12.0], "graybox_height": 1.4, "entry_facing": "+Z", "capacity_summary": "工程位 2/2/3", "max_visual_positions": 3},
+    {"id": "chapel", "label": "小教堂", "center": [-18.0, -30.0], "rotation_degrees": 0.0, "orientation_direction": "北", "lot_size": [14.0, 14.0], "envelope_size": [12.0, 12.0], "graybox_height": 1.8, "entry_facing": "+Z", "capacity_summary": "祭坛 1 · 祈祷席 10", "max_visual_positions": 11},
+    {"id": "clinic", "label": "小诊所", "center": [12.0, -30.0], "rotation_degrees": 0.0, "orientation_direction": "北", "lot_size": [14.0, 14.0], "envelope_size": [12.0, 12.0], "graybox_height": 1.4, "entry_facing": "+Z", "capacity_summary": "诊疗位 2 · 病床 2/3/4", "max_visual_positions": 6},
+    {"id": "stable", "label": "马厩", "center": [31.0, -23.0], "rotation_degrees": -45.0, "orientation_direction": "西北", "lot_size": [16.0, 16.0], "envelope_size": [14.0, 14.0], "graybox_height": 1.4, "entry_facing": "+Z", "capacity_summary": "照料位 2/2/3 · 马锚点 8", "max_visual_positions": 3},
+    {"id": "dormitory", "label": "宿舍", "center": [-34.0, -9.0], "rotation_degrees": 90.0, "orientation_direction": "东", "lot_size": [16.0, 14.0], "envelope_size": [14.0, 13.0], "graybox_height": 1.4, "entry_facing": "+Z", "capacity_summary": "床位 10/10", "max_visual_positions": 10},
+    {"id": "main_hall", "label": "主厅", "center": [0.0, -8.0], "rotation_degrees": 0.0, "orientation_direction": "北", "lot_size": [24.0, 20.0], "envelope_size": [22.0, 18.0], "graybox_height": 3.0, "entry_facing": "+Z", "capacity_summary": "器械槽 1/1/2/2/3/4", "max_visual_positions": 4},
+    {"id": "dining_hall", "label": "食堂", "center": [34.0, -3.0], "rotation_degrees": -90.0, "orientation_direction": "西", "lot_size": [16.0, 14.0], "envelope_size": [14.0, 12.0], "graybox_height": 1.4, "entry_facing": "+Z", "capacity_summary": "灶台 2/2/3 · 座位 10", "max_visual_positions": 13},
+    {"id": "garden", "label": "菜园", "center": [-42.0, 10.0], "rotation_degrees": 90.0, "orientation_direction": "东", "lot_size": [14.0, 14.0], "envelope_size": [12.0, 12.0], "graybox_height": 0.7, "entry_facing": "+Z", "capacity_summary": "耕作位 2/2/3", "max_visual_positions": 3},
+    {"id": "tavern", "label": "酒窖", "center": [-34.0, 28.0], "rotation_degrees": 45.0, "orientation_direction": "东北", "lot_size": [14.0, 12.0], "envelope_size": [12.0, 10.0], "graybox_height": 1.3, "entry_facing": "+Z", "capacity_summary": "酿酒位 2/2/3", "max_visual_positions": 3},
+    {"id": "training_ground", "label": "训练场", "center": [-15.0, 36.0], "rotation_degrees": 180.0, "orientation_direction": "南", "lot_size": [16.0, 18.0], "envelope_size": [14.0, 16.0], "graybox_height": 0.6, "entry_facing": "+Z", "capacity_summary": "教官 1/1/2 · 训练 2/3/4", "max_visual_positions": 6},
+    {"id": "blacksmith", "label": "铁匠铺", "center": [15.0, 36.0], "rotation_degrees": -135.0, "orientation_direction": "西南", "lot_size": [16.0, 16.0], "envelope_size": [14.0, 12.0], "graybox_height": 1.6, "entry_facing": "+Z", "capacity_summary": "锻造位 2/2/3", "max_visual_positions": 3},
+    {"id": "warehouse", "label": "仓库", "center": [35.0, 20.0], "rotation_degrees": -135.0, "orientation_direction": "西南", "lot_size": [16.0, 16.0], "envelope_size": [14.0, 14.0], "graybox_height": 1.8, "entry_facing": "+Z", "capacity_summary": "储量/HP升级 · 无工位", "max_visual_positions": 0}
+  ],
+  "max_level_layouts": {
+    "workshop": {
+      "bounds_size": [12.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 11.0]}],
+      "positions": [
+        {"id": "workbench_01", "type": "engineering", "authority": "building_workstation", "required_level": 1, "center": [-3.6, -3.2], "size": [3.0, 3.0]},
+        {"id": "workbench_02", "type": "engineering", "authority": "building_workstation", "required_level": 1, "center": [3.6, -3.2], "size": [3.0, 3.0]},
+        {"id": "workbench_03", "type": "engineering", "authority": "building_workstation", "required_level": 3, "center": [-3.6, 0.6], "size": [3.0, 3.0]},
+        {"id": "workshop_tool_reserve", "type": "upgrade_module", "authority": "upgrade_module", "required_level": 2, "center": [3.6, 1.2], "size": [3.0, 2.4]}
+      ]
+    },
+    "chapel": {
+      "bounds_size": [12.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 1.2], "size": [2.4, 8.0]}],
+      "positions": [
+        {"id": "chapel_altar_01", "type": "chapel_altar", "authority": "building_workstation", "required_level": 1, "center": [0.0, -4.2], "size": [3.0, 2.0]},
+        {"id": "chapel_prayer_seat_01", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [-2.3, -1.9], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_02", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [2.3, -1.9], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_03", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [-2.3, -0.3], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_04", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [2.3, -0.3], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_05", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [-2.3, 1.3], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_06", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [2.3, 1.3], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_07", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [-2.3, 2.9], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_08", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [2.3, 2.9], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_09", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [-2.3, 4.5], "size": [0.9, 1.5]},
+        {"id": "chapel_prayer_seat_10", "type": "chapel_prayer_seat", "authority": "building_workstation", "required_level": 1, "center": [2.3, 4.5], "size": [0.9, 1.5]}
+      ]
+    },
+    "clinic": {
+      "bounds_size": [12.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.8], "size": [2.4, 9.4]}],
+      "positions": [
+        {"id": "doctor_desk_01", "type": "clinic_doctor_station", "authority": "building_workstation", "required_level": 1, "center": [-3.7, -4.0], "size": [2.5, 2.5]},
+        {"id": "doctor_desk_02", "type": "clinic_doctor_station", "authority": "building_workstation", "required_level": 1, "center": [3.7, -4.0], "size": [2.5, 2.5]},
+        {"id": "treatment_bed_01", "type": "clinic_patient_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.7, 3.2], "size": [2.2, 3.0]},
+        {"id": "treatment_bed_02", "type": "clinic_patient_bed", "authority": "building_workstation", "required_level": 1, "center": [3.7, 3.2], "size": [2.2, 3.0]},
+        {"id": "treatment_bed_03", "type": "clinic_patient_bed", "authority": "building_workstation", "required_level": 2, "center": [-3.7, -0.2], "size": [2.2, 3.0]},
+        {"id": "treatment_bed_04", "type": "clinic_patient_bed", "authority": "building_workstation", "required_level": 3, "center": [3.7, -0.2], "size": [2.2, 3.0]}
+      ]
+    },
+    "stable": {
+      "bounds_size": [14.0, 14.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 13.0]}],
+      "positions": [
+        {"id": "stall_01", "type": "horse_care", "authority": "building_workstation", "required_level": 1, "center": [-4.0, -4.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "stall_02", "type": "horse_care", "authority": "building_workstation", "required_level": 1, "center": [4.0, -4.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "stall_03", "type": "horse_care", "authority": "building_workstation", "required_level": 3, "center": [-4.0, -1.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "horse_anchor_04", "type": "horse_anchor", "authority": "presentation_anchor", "required_level": 1, "center": [4.0, -1.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "horse_anchor_05", "type": "horse_anchor", "authority": "presentation_anchor", "required_level": 1, "center": [-4.0, 1.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "horse_anchor_06", "type": "horse_anchor", "authority": "presentation_anchor", "required_level": 1, "center": [4.0, 1.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "horse_anchor_07", "type": "horse_anchor", "authority": "presentation_anchor", "required_level": 1, "center": [-4.0, 4.5], "size": [4.8, 3.0], "horse_anchor_capable": true},
+        {"id": "horse_anchor_08", "type": "horse_anchor", "authority": "presentation_anchor", "required_level": 1, "center": [4.0, 4.5], "size": [4.8, 3.0], "horse_anchor_capable": true}
+      ]
+    },
+    "dormitory": {
+      "bounds_size": [14.0, 13.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 12.0]}],
+      "positions": [
+        {"id": "dormitory_bed_01", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.5, -4.8], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_02", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [3.5, -4.8], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_03", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.5, -2.4], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_04", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [3.5, -2.4], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_05", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.5, 0.0], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_06", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [3.5, 0.0], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_07", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.5, 2.4], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_08", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [3.5, 2.4], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_09", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [-3.5, 4.8], "size": [1.3, 2.4]},
+        {"id": "dormitory_bed_10", "type": "dormitory_bed", "authority": "building_workstation", "required_level": 1, "center": [3.5, 4.8], "size": [1.3, 2.4]}
+      ]
+    },
+    "main_hall": {
+      "bounds_size": [22.0, 18.0], "edge_clearance_m": 0.8,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 16.4], "layer": "ground"}],
+      "positions": [
+        {"id": "main_hall_slot_01", "type": "defense_device_slot", "authority": "defense_device_slot", "required_level": 1, "center": [-7.0, -5.0], "size": [4.0, 4.0], "layer": "roof"},
+        {"id": "main_hall_slot_02", "type": "defense_device_slot", "authority": "defense_device_slot", "required_level": 3, "center": [7.0, -5.0], "size": [4.0, 4.0], "layer": "roof"},
+        {"id": "main_hall_slot_03", "type": "defense_device_slot", "authority": "defense_device_slot", "required_level": 5, "center": [-7.0, 5.0], "size": [4.0, 4.0], "layer": "roof"},
+        {"id": "main_hall_slot_04", "type": "defense_device_slot", "authority": "defense_device_slot", "required_level": 6, "center": [7.0, 5.0], "size": [4.0, 4.0], "layer": "roof"}
+      ]
+    },
+    "dining_hall": {
+      "bounds_size": [14.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [
+        {"id": "primary_entry", "kind": "primary", "center": [0.0, 4.2], "size": [2.4, 2.4]},
+        {"id": "front_cross", "kind": "secondary", "center": [0.0, 2.9], "size": [11.6, 1.2]},
+        {"id": "left_service", "kind": "secondary", "center": [-5.6, -0.5], "size": [0.8, 6.8]},
+        {"id": "right_service", "kind": "secondary", "center": [5.6, -0.5], "size": [0.8, 6.8]}
+      ],
+      "positions": [
+        {"id": "dining_kitchen_station_01", "type": "dining_kitchen_station", "authority": "building_workstation", "required_level": 1, "center": [-3.8, -4.0], "size": [2.8, 2.8]},
+        {"id": "dining_kitchen_station_02", "type": "dining_kitchen_station", "authority": "building_workstation", "required_level": 1, "center": [0.0, -4.0], "size": [2.8, 2.8]},
+        {"id": "dining_kitchen_station_03", "type": "dining_kitchen_station", "authority": "building_workstation", "required_level": 3, "center": [3.8, -4.0], "size": [2.8, 2.8]},
+        {"id": "dining_table_01", "type": "dining_table", "authority": "presentation_fixture", "required_level": 1, "center": [-2.4, -0.2], "size": [1.2, 4.6]},
+        {"id": "dining_table_02", "type": "dining_table", "authority": "presentation_fixture", "required_level": 1, "center": [2.4, -0.2], "size": [1.2, 4.6]},
+        {"id": "dining_seat_01", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, -1.8], "size": [0.9, 1.2]},
+        {"id": "dining_seat_02", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, -0.1], "size": [0.9, 1.2]},
+        {"id": "dining_seat_03", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, 1.6], "size": [0.9, 1.2]},
+        {"id": "dining_seat_04", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.1, -1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_05", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.1, 1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_06", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, -1.8], "size": [0.9, 1.2]},
+        {"id": "dining_seat_07", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, -0.1], "size": [0.9, 1.2]},
+        {"id": "dining_seat_08", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, 1.6], "size": [0.9, 1.2]},
+        {"id": "dining_seat_09", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.1, -1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_10", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.1, 1.0], "size": [0.9, 1.2]}
+      ]
+    },
+    "garden": {
+      "bounds_size": [12.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 11.0]}],
+      "positions": [
+        {"id": "garden_plot_01", "type": "farm", "authority": "building_workstation", "required_level": 1, "center": [-3.5, -2.5], "size": [3.5, 4.0]},
+        {"id": "garden_plot_02", "type": "farm", "authority": "building_workstation", "required_level": 1, "center": [3.5, -2.5], "size": [3.5, 4.0]},
+        {"id": "garden_plot_03", "type": "farm", "authority": "building_workstation", "required_level": 3, "center": [-3.5, 2.5], "size": [3.5, 4.0]},
+        {"id": "garden_irrigation_reserve", "type": "upgrade_module", "authority": "upgrade_module", "required_level": 2, "center": [3.5, 2.5], "size": [3.5, 3.5]}
+      ]
+    },
+    "tavern": {
+      "bounds_size": [12.0, 10.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 9.0]}],
+      "positions": [
+        {"id": "cellar_01", "type": "brew", "authority": "building_workstation", "required_level": 1, "center": [-3.5, -2.0], "size": [3.0, 3.0]},
+        {"id": "cellar_02", "type": "brew", "authority": "building_workstation", "required_level": 1, "center": [3.5, -2.0], "size": [3.0, 3.0]},
+        {"id": "cellar_03", "type": "brew", "authority": "building_workstation", "required_level": 3, "center": [-3.5, 2.0], "size": [3.0, 3.0]},
+        {"id": "tavern_cask_reserve", "type": "upgrade_module", "authority": "upgrade_module", "required_level": 2, "center": [3.5, 2.0], "size": [3.0, 2.5]}
+      ]
+    },
+    "training_ground": {
+      "bounds_size": [14.0, 16.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 15.0]}],
+      "positions": [
+        {"id": "training_instructor_01", "type": "training_instructor_station", "authority": "building_workstation", "required_level": 1, "center": [-3.8, -5.0], "size": [3.0, 3.0]},
+        {"id": "training_student_01", "type": "training_practice_slot", "authority": "building_workstation", "required_level": 1, "center": [3.8, -5.0], "size": [3.0, 3.0]},
+        {"id": "training_student_02", "type": "training_practice_slot", "authority": "building_workstation", "required_level": 1, "center": [-3.8, 0.0], "size": [3.0, 3.0]},
+        {"id": "training_student_03", "type": "training_practice_slot", "authority": "building_workstation", "required_level": 2, "center": [3.8, 0.0], "size": [3.0, 3.0]},
+        {"id": "training_instructor_02", "type": "training_instructor_station", "authority": "building_workstation", "required_level": 3, "center": [-3.8, 5.0], "size": [3.0, 3.0]},
+        {"id": "training_student_04", "type": "training_practice_slot", "authority": "building_workstation", "required_level": 3, "center": [3.8, 5.0], "size": [3.0, 3.0]}
+      ]
+    },
+    "blacksmith": {
+      "bounds_size": [14.0, 12.0], "edge_clearance_m": 0.5,
+      "circulation": [{"id": "primary_aisle", "kind": "primary", "center": [0.0, 0.0], "size": [2.4, 11.0]}],
+      "positions": [
+        {"id": "forge_01", "type": "forge", "authority": "building_workstation", "required_level": 1, "center": [-4.0, -2.8], "size": [3.2, 3.4]},
+        {"id": "forge_02", "type": "forge", "authority": "building_workstation", "required_level": 1, "center": [4.0, -2.8], "size": [3.2, 3.4]},
+        {"id": "forge_03", "type": "forge", "authority": "building_workstation", "required_level": 3, "center": [-4.0, 1.2], "size": [3.2, 3.4]},
+        {"id": "blacksmith_fuel_reserve", "type": "upgrade_module", "authority": "upgrade_module", "required_level": 2, "center": [4.0, 1.2], "size": [3.2, 3.0]}
+      ]
+    },
+    "warehouse": {
+      "bounds_size": [14.0, 14.0], "edge_clearance_m": 0.5,
+      "circulation": [
+        {"id": "primary_entry", "kind": "primary", "center": [0.0, 4.0], "size": [2.4, 5.0]},
+        {"id": "front_cross", "kind": "secondary", "center": [0.0, 1.2], "size": [11.8, 1.2]}
+      ],
+      "positions": [
+        {"id": "warehouse_storage_base", "type": "storage_module", "authority": "upgrade_module", "required_level": 1, "center": [-4.0, -3.8], "size": [5.0, 5.0]},
+        {"id": "warehouse_storage_level_2", "type": "storage_module", "authority": "upgrade_module", "required_level": 2, "center": [4.0, -3.8], "size": [5.0, 5.0]},
+        {"id": "warehouse_storage_level_3", "type": "storage_module", "authority": "upgrade_module", "required_level": 3, "center": [-4.0, 4.1], "size": [5.0, 3.4]},
+        {"id": "warehouse_loading_bay", "type": "loading_bay", "authority": "presentation_fixture", "required_level": 1, "center": [4.0, 4.1], "size": [5.0, 3.4]}
+      ]
+    }
+  },
+  "environment": {
+    "river_width": 9.0,
+    "river_channel_width": 30.0,
+    "river_surface_elevation_m": -1.2,
+    "river_points": [[-100.0, -335.0], [-96.0, -240.0], [-94.0, -160.0], [-99.0, -70.0], [-95.0, 0.0], [-99.0, 80.0], [-94.0, 160.0], [-98.0, 250.0], [-100.0, 385.0]],
+    "east_ridge_bounds": [120.0, 175.0, -300.0, 360.0],
+    "rear_boundary_bounds": [-344.0, 344.0, -329.0, -60.0],
+    "front_forest_bounds": [-344.0, 344.0, 70.0, 379.0],
+    "forest_scatter_bounds": [-344.0, 344.0, -329.0, 379.0],
+    "forest_grid_spacing_m": 20.0,
+    "rock_cluster_stride": 43,
+    "tree_clearance_from_wall_m": 3.0,
+    "tree_clearance_from_road_m": 3.0,
+    "edge_inset_m": 6.0
+  },
+  "enemy_route": {
+    "spawn_zone_center": [2.0, 335.0],
+    "spawn_zone_size": [28.0, 18.0],
+    "stages": [
+      {"id": "spawn", "label": "地图边缘林下出生/组阵", "point": [2.0, 335.0]},
+      {"id": "reveal", "label": "远方林缘显现", "point": [8.0, 225.0]},
+      {"id": "contact", "label": "城外接触区", "point": [6.0, 105.0]},
+      {"id": "front_gate", "label": "正门攻击点", "point": [5.0, 54.0]},
+      {"id": "warehouse", "label": "仓库攻击点", "point": [29.0, 15.0]},
+      {"id": "main_hall", "label": "主厅攻击点", "point": [0.0, 2.0]}
+    ],
+    "rally_rows": [[-2.0, 59.0, 7], [10.0, 57.0, 7]],
+    "rally_spacing_x": 2.1
+  },
+  "enemy_stress_test": {
+    "source_wave_number": 5,
+    "expected_enemy_count": 48,
+    "visual_speed_multiplier": 8.0,
+    "march_speed_mps": 3.0,
+    "minimum_body_gap_m": 0.12,
+    "body_profiles": {
+      "melee_infantry": {"radius": 0.42, "height": 1.8, "color": "#a24f46"},
+      "polearm_infantry": {"radius": 0.42, "height": 1.9, "color": "#8e6250"},
+      "crossbowman": {"radius": 0.42, "height": 1.8, "color": "#75506f"},
+      "mounted_ranged": {"radius": 0.65, "height": 2.5, "color": "#845d42"}
+    },
+    "stage_formations": [
+      {"stage_id": "spawn", "point": [2.0, 335.0], "columns": 7, "spacing_x": 2.0, "spacing_z": 2.15, "corridor_width": 28.0, "corridor_depth": 18.0, "centered_grid": true},
+      {"stage_id": "reveal", "point": [8.0, 225.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "approach_mid", "point": [10.0, 165.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "contact", "point": [6.0, 105.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "front_gate", "point": [5.0, 54.0], "columns": 4, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 6.0},
+      {"stage_id": "gate_turn", "point": [-1.0, 40.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 5.2},
+      {"stage_id": "north_junction", "point": [0.0, 22.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 4.8},
+      {"stage_id": "plaza_junction", "point": [0.0, 10.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 5.0},
+      {"stage_id": "warehouse_lane", "point": [14.0, 11.0], "columns": 2, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 3.2},
+      {"stage_id": "warehouse", "point": [29.0, 15.0], "columns": 2, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 3.2},
+      {"stage_id": "warehouse_return", "point": [14.0, 11.0], "columns": 2, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 3.2},
+      {"stage_id": "plaza_return", "point": [0.0, 10.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 5.0},
+      {"stage_id": "main_hall", "point": [0.0, 2.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 4.2}
+    ]
+  },
+  "rear_route": {
+    "back_gate": [-27.0, -45.5],
+    "merchant_approach": [-40.0, -120.0],
+    "merchant_stop": [-28.2, -52.4],
+    "escape_completion": [-54.0, -305.0],
+    "edge_entry": [-55.0, -315.0],
+    "escape_stress_test": {
+      "base_move_speed_mps": 5.0,
+      "default_speed_multiplier": 1.0,
+      "money_slow_multiplier": 0.65,
+      "attack_speed_multiplier": 1.25,
+      "minimum_speed_multiplier": 0.35,
+      "maximum_speed_multiplier": 2.5,
+      "intervention_rounds": 5,
+      "minimum_intervention_spacing_seconds": 6.0,
+      "visual_speed_multiplier": 12.0,
+      "path_points": [[-27.0, -45.5], [-35.0, -90.0], [-42.0, -135.0], [-46.0, -185.0], [-52.0, -235.0], [-54.0, -305.0]]
+    }
+  },
+  "camera": {
+    "min_distance": 20.0,
+    "max_distance": 70.0,
+    "initial_distance": 70.0,
+    "pitch_degrees": -55.0,
+    "vertical_fov_degrees": 62.0,
+    "stress_aspect_ratio": 2.3333333333,
+    "minimum_terrain_margin_m": 24.0,
+    "initial_focus": [-2.0, 18.0],
+    "x_limits": [-150.0, 150.0],
+    "z_limits": [-215.0, 240.0]
+  }
+}

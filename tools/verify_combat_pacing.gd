@@ -58,7 +58,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var enemy_ids := _place_first_wave_in_melee(combat_system)
+	var enemy_ids := _place_first_wave_in_melee(combat_system, ada_node.global_position)
 	if enemy_ids.size() != mini(3, expected_wave_count):
 		push_error("Pacing fixture should place up to three configured enemies in melee, got %d" % enemy_ids.size())
 		quit(1)
@@ -150,12 +150,12 @@ func _init() -> void:
 	quit(0)
 
 
-func _place_first_wave_in_melee(combat_system: Node) -> Array[String]:
+func _place_first_wave_in_melee(combat_system: Node, center: Vector3) -> Array[String]:
 	var enemy_ids: Array = combat_system.get_active_enemy_ids()
 	var positions: Array[Vector3] = [
-		Vector3(0.0, 0.0, 1.1),
-		Vector3(1.15, 0.0, 0.75),
-		Vector3(-1.15, 0.0, 0.75)
+		center + Vector3(0.0, 0.0, 1.1),
+		center + Vector3(1.15, 0.0, 0.75),
+		center + Vector3(-1.15, 0.0, 0.75)
 	]
 	var active_enemies: Dictionary = combat_system.get("_active_enemies")
 	var placed: Array[String] = []

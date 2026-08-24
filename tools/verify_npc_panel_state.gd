@@ -158,8 +158,8 @@ func _init() -> void:
 		push_error("NPCPanel memory summaries should follow the long-term buttons vertically")
 		quit(1)
 		return
-	if npc_panel.size.y <= npc_panel.size.x:
-		push_error("NPCPanel should be taller than it is wide: %s" % npc_panel.size)
+	if panel_container.size.y <= panel_container.size.x:
+		push_error("NPCPanel information column should remain taller than it is wide: %s" % panel_container.size)
 		quit(1)
 		return
 	var default_available_height := 616.0
@@ -188,7 +188,7 @@ func _init() -> void:
 	var large_available_height := 1077.0
 	var large_natural_height: float = float(content.get_combined_minimum_size().y) + 24.0
 	var large_expected_height: float = minf(large_available_height, large_natural_height)
-	if npc_panel.size.y <= npc_panel.size.x or absf(npc_panel.size.y - large_expected_height) > 3.0:
+	if panel_container.size.y <= panel_container.size.x or absf(npc_panel.size.y - large_expected_height) > 3.0:
 		push_error("NPCPanel large-window responsive size mismatch: panel=%s expected_height=%.2f natural=%.2f" % [npc_panel.size, large_expected_height, large_natural_height])
 		quit(1)
 		return

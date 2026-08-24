@@ -7,7 +7,12 @@ const EXPECTED_IDENTITIES := {
 	"cook_01": {"name": "布鲁诺", "job": "厨子", "keywords": ["食堂", "饭", "餐食", "口粮"]},
 	"gardener_01": {"name": "伊沃", "job": "园丁", "keywords": ["菜园", "土壤", "收成", "耕种"]},
 	"blacksmith_01": {"name": "格伦", "job": "铁匠", "keywords": ["铁", "工序", "装备", "修理"]},
-	"veteran_deputy_01": {"name": "艾达", "job": "老兵副官", "keywords": ["风险", "命令", "职责", "安排"]},
+	"veteran_deputy_01": {
+		"name": "艾达",
+		"job": "老兵副官",
+		"keywords": ["风险", "命令", "职责", "安排"],
+		"appearance": "赤褐色头发用灰蓝头带束起，眉眼利落，蓝灰色轻甲和护腕收拾得一丝不乱。",
+	},
 	"priest_01": {"name": "马塞尔", "job": "神父", "keywords": ["祈祷", "弥撒", "信仰", "残酷"]},
 	"doctor_01": {"name": "莉娜", "job": "医生", "keywords": ["伤", "病人", "药", "治疗"]},
 	"engineer_01": {"name": "欧文", "job": "工程师", "keywords": ["结构", "材料", "尺寸", "返工"]}
@@ -61,6 +66,9 @@ func _init() -> void:
 		if str(npc.get("background_job", "")) != str(expected.get("job", "")):
 			_fail("%s background_job mismatch: %s" % [npc_id, str(npc.get("background_job", ""))])
 			return
+		if expected.has("appearance") and str(npc.get("appearance", "")) != str(expected.get("appearance", "")):
+			_fail("%s appearance no longer matches the current production art" % npc_id)
+			return
 		if str(npc.get("religion", "")) != "天主教":
 			_fail("%s religion must be the concise shared value 天主教" % npc_id)
 			return
@@ -101,6 +109,9 @@ func _init() -> void:
 		var identity: Dictionary = payload.get("target_npc", {}).get("identity", {})
 		if npc_setting != NPCPromptProfile.build_setting(npc):
 			_fail("%s dialogue npc_setting diverged from the shared prompt profile" % npc_id)
+			return
+		if str(npc_setting.get("appearance", "")) != str(npc.get("appearance", "")):
+			_fail("%s dialogue npc_setting lost the profile appearance" % npc_id)
 			return
 		if npc_setting.get("speech_style", "") != speech_style or npc_setting.has("signature_lines"):
 			_fail("%s dialogue npc_setting did not keep the broad voice profile boundary" % npc_id)

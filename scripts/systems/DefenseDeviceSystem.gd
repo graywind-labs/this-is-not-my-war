@@ -15,11 +15,13 @@ const COMBAT_ACTION_GAME_SECONDS_PER_SECOND := 60.0
 var _definitions: Dictionary = {}
 var _device_order: Array[String] = []
 var _slots: Dictionary = {}
+var _configured_slots: Dictionary = {}
 var _slot_order: Array[String] = []
 var _deployments: Dictionary = {}
 var _slot_occupancy: Dictionary = {}
 var _last_deployment_result: Dictionary = {}
 var _last_action_result: Dictionary = {}
+var _slot_spatial_binding := "configured_legacy"
 
 
 func _ready() -> void:
@@ -33,11 +35,13 @@ func initialize() -> void:
 	_definitions.clear()
 	_device_order.clear()
 	_slots.clear()
+	_configured_slots.clear()
 	_slot_order.clear()
 	_deployments.clear()
 	_slot_occupancy.clear()
 	_last_deployment_result.clear()
 	_last_action_result.clear()
+	_slot_spatial_binding = "configured_legacy"
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
@@ -71,6 +75,7 @@ func initialize() -> void:
 			push_warning("Skipped invalid or duplicate defense device slot id: %s" % slot_id)
 			continue
 		_slots[slot_id] = slot
+		_configured_slots[slot_id] = slot.duplicate(true)
 		_slot_order.append(slot_id)
 
 
@@ -126,6 +131,57 @@ func get_slot(slot_id: String) -> Dictionary:
 	slot["host_available"] = host_available
 	slot["unlocked"] = host_available and current_level >= required_level
 	return slot
+
+
+func bind_formal_slot_positions(station_layout_controller: Node) -> Dictionary:
+	if station_layout_controller == null or not station_layout_controller.has_method("get_defense_device_slot_pose"):
+		return {"ok": false, "reason": "formal_slot_pose_provider_missing", "bound_slot_count": 0}
+	var bound_slot_ids: Array[String] = []
+	for slot_id in _slot_order:
+		var slot: Dictionary = _slots.get(slot_id, {})
+		var building_id := str(slot.get("building_id", ""))
+		var pose: Variant = station_layout_controller.call("get_defense_device_slot_pose", building_id, slot_id)
+		if not pose is Dictionary or (pose as Dictionary).is_empty():
+			continue
+		var pose_data := pose as Dictionary
+		if pose_data.has("required_level") and int(pose_data.get("required_level", -1)) != int(slot.get("required_building_level", -2)):
+			push_error("Defense slot level drift between runtime and formal layout: %s" % slot_id)
+			continue
+		var world_position: Variant = pose_data.get("position", null)
+		var facing_direction: Variant = pose_data.get("facing_direction", null)
+		if not world_position is Vector3 or not facing_direction is Vector3:
+			continue
+		slot["position"] = _vector3_to_dict(world_position as Vector3)
+		slot["facing_direction"] = _vector3_to_dict(facing_direction as Vector3)
+		slot["rotation_y_degrees"] = float(pose_data.get("rotation_y_degrees", 0.0))
+		slot["spatial_source"] = "formal_station_fixture"
+		slot["formal_fixture_id"] = str(pose_data.get("fixture_id", ""))
+		_slots[slot_id] = slot
+		bound_slot_ids.append(slot_id)
+	_slot_spatial_binding = "formal_station_fixture" if not bound_slot_ids.is_empty() else "configured_legacy"
+	_emit_state_changed()
+	return {
+		"ok": not bound_slot_ids.is_empty(),
+		"spatial_binding": _slot_spatial_binding,
+		"bound_slot_count": bound_slot_ids.size(),
+		"bound_slot_ids": bound_slot_ids
+	}
+
+
+func restore_configured_slot_positions() -> Dictionary:
+	for slot_id in _slot_order:
+		if not _configured_slots.has(slot_id) or not _slots.has(slot_id):
+			continue
+		var configured: Dictionary = _configured_slots.get(slot_id, {})
+		var slot: Dictionary = _slots.get(slot_id, {})
+		for field in ["position", "facing_direction", "rotation_y_degrees"]:
+			slot[field] = configured.get(field)
+		slot.erase("spatial_source")
+		slot.erase("formal_fixture_id")
+		_slots[slot_id] = slot
+	_slot_spatial_binding = "configured_legacy"
+	_emit_state_changed()
+	return {"ok": true, "spatial_binding": _slot_spatial_binding, "restored_slot_count": _slot_order.size()}
 
 
 func get_slots_for_device(
@@ -255,6 +311,7 @@ func get_state_snapshot() -> Dictionary:
 		"inventory_amounts": _get_inventory_amounts(resource_system),
 		"device_inventory": _get_device_inventory_snapshot(resource_system),
 		"device_ids": get_device_ids(),
+		"slot_spatial_binding": _slot_spatial_binding,
 		"slots": _get_all_slot_snapshots(),
 		"deployments": get_deployments(),
 		"last_deployment_result": _last_deployment_result.duplicate(true),
@@ -445,6 +502,9 @@ func _advance_auto_attack(deployment_id: String, action_seconds: float, combat_s
 			"hp_before": int(attack_result.get("hp_before", 0)),
 			"hp_after": int(attack_result.get("hp_after", 0)),
 			"defeated": bool(attack_result.get("defeated", false)),
+			"origin_position": _vector3_to_dict(_dict_to_vector3(slot.get("position", {}))),
+			"target_position": _vector3_to_dict(_dict_to_vector3(target.get("position", {}))),
+			"attack_interval": interval,
 			"combat_result": attack_result
 		}
 		resolved["event"] = _record_action_event(deployment, definition, resolved)

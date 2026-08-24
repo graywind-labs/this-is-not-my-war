@@ -1,5 +1,232 @@
 # AI_NPC_SYSTEM.md
 
+## T0130-P8 正式欧文两头身表现接线
+
+- `engineer_01` 的生产映射切到 `OwenChibiArtView.tscn`；NPCSystem / ActionSystem / BuildingSystem / CraftingSystem / EquipmentSystem 继续独占档案、移动、地点、工位、制造、修复 / 升级倍率、资源、技能与装备槽。模型、护目镜、工具带、扳手和动画只读这些事实。
+- `work_workshop` 只有实体抵达 `engineering` 工位并提交 occupancy 后才选择循环 `Working_A` 与扳手；`assist_repair_<building>` / `assist_upgrade_<building>` 只有抵达外沿服务位并登记 helper 后才使用相同工程动作。在途、目标消失或行动中断时不显示扳手，也不写开始事实。
+- `engineering_kit` 常驻护目镜和工具带；正式剑盾装备 / 卸装只由 EquipmentSystem 权威驱动剑盾显隐，职业附件不参与训练、伤害或兵种判定。档案 `appearance` 同步为铜框护目镜、折尺、炭笔和木楔；背景故事、Prompt Schema、计划候选和模型调用均未改变。
+
+## T0134-P1 NPC 实时镜头只读投影
+
+- NPCSystem 新增的人物镜头快照只读取正式实体位置、现有表现正面、动作 / 昏迷状态与地点名称；不触发 LLM，不写计划、行动、记忆或地点成员关系。
+- NPCPanel 的副镜头随实体实时拍摄，但画面中“已经在工作 / 已经进入建筑”仍以既有物理到达、工位提交和地点事实为准，镜头本身不能把后台状态变成成功事实。
+
+## T0130-P7 正式莉娜两头身表现接线
+
+- `doctor_01` 的生产映射切到 `LinaChibiArtView.tscn`；NPCSystem / ActionSystem / BuildingSystem 继续独占档案、移动、地点、诊疗桌 / 病床、HP、医术、费用、昏迷和复苏。医生模型、药包、病历册、绷带与动画只读这些事实。
+- `work_clinic_doctor` 只有真实抵达医生桌并提交占用后才选择循环 `Working_B` 与病历册；在途不显示已开诊。`assist_heal_<target>` 只有正式接近位到达、helper 登记与首付结算成功后才选择 `medical_treatment / Working_A` 并显示绷带，目标复苏或会话释放后立即退出。
+- 医疗附件都是既有骨挂点下的无碰撞 PrimitiveMesh，不参与射线、路径、治疗距离或状态判定。`medical_treatment` 是第 17 个共享表现状态，不会恢复 HP、扣费、增长医术或写事件。
+- P7 未改 `npc_profiles.json`、背景故事、Prompt、Schema、模型调用或计划规则；NPC 实时人物框直接拍摄同一正式莉娜实体与动作。
+
+## T0130-P7R 诊所医生动态巡床
+
+- `work_clinic_doctor` 仍是唯一医生值班权威。无 active 病人时，医生保留自身 `clinic_doctor_station` occupancy，并在对应 `seated_study` 锚点坐桌读书；出现 active `receive_clinic_treatment` 后，NPCSystem 解除座椅挂接并沿生产导航移动到真实占床者的床边。
+- 医生抵达床边才写只读表现态 `presentation_clinic_duty_mode=treatment`、播放 `medical_treatment` 并显示绷带；在途为 `travel`，不提前显示治疗动作。多个病人按稳定顺序、默认每床 300 游戏秒切换；当前病人失效时立即重选，全部病人离床后实体返回自己的诊疗椅。
+- 巡床目标只是表现绑定，不改变 T0808 的团队结算：所有 active 医生仍共同作用于全部 active 病床，HP、费用、医术、效率、满血完成与服务依赖均由 ActionSystem 原公式决定。NPCSystem 的路径 / 挂接状态不进入 Prompt、日计划、记忆或 LLM 决策。
+- P7R2 把每张床的安全导航终点与贴床治疗锚点分离：医生先以正常 Body 碰撞抵达安全点，随后才挂到“床外 `0.4 m` + 沿床镜像 `0.65 m`”的只读表现点并关闭 Body 碰撞；镜像偏移用于让右手在两侧床位都落向患者躯干，InteractionArea 保持可点。换床 / 回桌 / 中断先返回该床安全点并恢复碰撞，再开始下一段路径。该贴床关系不代表医生—病人的数值绑定，也不进入计划或 Prompt。
+- P7R3 取代上述过近锚点：治疗位改为床体投影半宽 + 医生实体半径 + `0.08 m` 净空，沿床仅保留 `0.35 m` 镜像校准；`standing_treatment` 挂接期间 Body 碰撞继续启用。该变化仍只控制实体站位和表现，不改变医生选择病人、团队治疗、日计划、Prompt 或记忆事实。
+
+## T0130-P6 正式马塞尔两头身表现接线
+
+- `priest_01` 的生产映射切到 `MarcelChibiArtView.tscn`；NPCSystem / ActionSystem / BuildingSystem / PietySystem 继续独占档案、移动、地点、工位、HP、粮酒与虔诚。长袍模型、木质圣徽和动画只读这些权威事实。
+- `work_tavern` 只有真实抵达发酵桶并提交占用后才选择循环 `Working_A`；`lead_mass` 只有抵达祭坛后才选择循环主持手势；`pray_at_chapel` 仍需祈祷席提交与长凳挂接后才进入坐姿。画面动作不能扣粮、产酒、增加虔诚或提交位置。
+- 已购包无直接 Priest 模型；P6 选择年长长袍基础并只移除分离尖帽拓扑岛，保留作者 `_A` Albedo、顶点色脸、胡须、骨骼和蒙皮。Body 木质圣徽无碰撞、无选择面，不参与身份或行为判定。
+- P6R 的 Head 灰白低模圆冠只补齐尖帽移除后暴露的平顶，并随现有骨骼动画运动；它没有碰撞、交互、状态或身份逻辑，不能影响 NPC 选择、地点、寻路、工作、弥撒或对话。
+- 档案 `appearance` 同步为实际灰白长发胡须、暗紫旧袍、褪色金边和木质圣徽；没有改变背景故事、Prompt Schema、行为候选、模型调用或人物决策规则。
+
+## T0130-P5 正式艾达两头身表现接线
+
+- `veteran_deputy_01` 的生产映射切到 `AdaChibiArtView.tscn`；NPCSystem / EquipmentSystem 继续独占档案、移动、地点、工位、HP、战斗与装备槽，包装只读 profile 和空间挂接。
+- `work_training_instructor` 只有真实抵达教官位并提交占用后才选择循环剑盾示范；画面动作不能增长技能或开始训练。`equipment.main_weapon.id=sword_shield` 才显示剑盾，换装后隐藏错误道具，不反写物品或兵种。
+- `sleep_in_dormitory` 只有固定床 occupancy 和 `sleeping_supine` 挂接成功后才选择 `Lie_Idle` 并收起剑盾；表现不恢复疲劳、不写睡眠事件。受击、昏迷与复苏继续由 NPCSystem 权威 HP 驱动。
+- P5R3 将 `appearance` 同步为当前 ShieldMaiden 的赤褐束发、灰蓝头带、利落眉眼、蓝灰轻甲和护腕；只修正档案事实，字段继续通过既有 NPC 面板与 `npc_setting` 管道读取，不改变 Prompt 结构、行为规则或人物决策。
+
+## T0130-P4 正式伊沃两头身表现接线
+
+- `gardener_01` 的生产映射切到 `IvoChibiArtView.tscn`，NPCSystem 继续独占档案、CharacterBody、NavigationAgent、地点、田畦 / 祈祷席、HP、昏迷和点击；外观包装只读既有状态。
+- `work_garden` 只有在真实抵达田畦并提交 `farm` 占用后才选择循环 `Digging` 并显示右手木柄铁锄。工具和动画不能反向产生粮食、提交田畦、写事件或更改耕种公式。
+- `pray_at_chapel` 仍由真实席位预留 / 提交与 `seated_prayer` 挂接驱动坐姿；园锄在祈祷、移动、受击和昏迷时隐藏。包装级色调与长凳下沉只影响可见网格，不改变虔诚、弥撒模式、碰撞或空间锚点。
+- P4R 只修正材质与工具姿态：中性土色头巾替代整块绿色主题图集，园锄轴向按 `Digging` 双手轨迹重校；NPC 行动、田畦抵达、工作周期和粮食结算没有变化。
+- P4R2 已让伊沃复制 Deckhand 原导入 BaseMaterial3D，使用 `_01_A` Albedo 并保留 `vertex_color_use_as_albedo`，恢复作者原生眼睛；表现材质仍不写 NPC 身份、行动或地点，既有园锄、耕作、祈祷和碰撞权威均未改变。
+
+## T0130-P3 正式布鲁诺两头身表现接线
+
+- `cook_01` 的生产映射切到 `BrunoChibiArtView.tscn`，NPCSystem 继续独占档案、CharacterBody、NavigationAgent、地点、灶台 / 座位、HP、昏迷和点击；外观包装只读既有状态。
+- `work_dining_hall` 只有在真实穿门、抵达灶台并提交 `dining_kitchen_station` 占用后才选择循环 `Working_C` 并显示右手木柄铜勺。表现不能扣粮、增加餐食、提交工位或写入工作事件。
+- `eat_at_dining_hall` 仍由真实座位预留 / 提交与 `sitting` 挂接驱动 `seated_eating`；灶台勺在进食、移动、受击和昏迷时隐藏。P3 不修改饱食恢复、食物优先级、事件或日计划。
+
+## T0130-P2 正式托马两头身表现接线
+
+- `stableman_01` 的生产映射切到 `TomaChibiArtView.tscn`，NPCSystem 仍独占托马的 profile、CharacterBody、NavigationAgent、地点、照料位、HP、昏迷和点击；新包装只读这些状态。
+- `work_stable` 在真实穿门、抵达栏外站位并提交 `horse_care` 占用后才选择 `Working_B` 循环并显示右手马刷式清洁工具。工具或动画不能反向产生照料劳动力、马匹成长、额外 HP、繁育概率、地点或工位事实。
+- `vehicle_seated` 继续是共享表现状态，便于未来可信驾车 / 骑乘接线；P2 没有把托马写成定时行商的权威驾驶者，也没有改变 MerchantSystem 或 HorseSystem 的个体归属。
+
+## T0130-P1 正式格伦两头身表现接线
+
+- `blacksmith_01` 的外观映射已从 Quaternius 包装切到 `GlenChibiArtView.tscn`。NPCSystem / NPC.gd 仍独占 profile、CharacterBody、NavigationAgent、地点、工位、HP、昏迷和点击；两头身包装只消费 `states.current_action / behavior_mode / hp / unconscious` 与父级移动信号。
+- `work_blacksmith` 只有在既有 ActionSystem 与正式工位事务提交后才使包装进入循环 `Hammering` 并把锤子从背部移到右手。画面上的锤击、进入室内或靠近铁砧均不能反向开始行动、占用工位或生成制造事实。
+- Synty 模型以本地 `+Z` 为可见正面，包装层独立叠加 `180°` 源朝向修正以适配项目角色根 `-Z` 合同。该修正只改变网格朝向；格伦的路径目标、CharacterBody 旋转、到站判断与面向铁砧的权威方向不变。
+- 受击 / 昏迷 / 复苏仍由权威 HP 变化触发表现；包装新增的血粒子和 `PhysicalBoneSimulator3D` 占位不计算伤害，也不表示 T0133 布娃娃已经完成。P8 后 8 名初始 NPC 均已迁移到各自 Synty 两头身包装。
+
+## T0129C-A5-P8 正式空间恢复
+
+NPC 的检查点恢复不调用 LLM，也不重放计划或行动开始。读取时中断当前对话 / 行动，释放工位和挂接，恢复最后安全坐标、信息地点、昏迷 / 逃离及行为模式；活动逃离按原 `escape_intent` 继续。地点成员由 MemorySystem 静默重建，不产生新的见闻快照。
+
+## T0129C-A5-P6d-3 正式实体治疗协助
+
+- 日计划 / 修订继续只输出 `assist_heal + target_npc_id`；模型不决定目标坐标、接近位、路线、两人名额、扣费、恢复、复苏或经验，Prompt 与候选字段不变。
+- pending 表示治疗者正在真实赶往并接近昏迷目标。目标信息地点相同不等于已经治疗；只有 CharacterBody 进入合法距离才 active、扣首付并写开始事实。
+- 目标途中复苏会失败并清理在途预约而不收费；active 复苏继续使用既有 `until_target_resolved` 和当前小时计划重估。空间迁移不增加 LLM 调用，也不把导航结果写入模型记忆。
+
+## T0129C-A5-P6d-2 正式实体升级协助
+
+- 日计划 / 修订继续输出 `assist_upgrade + building_id`，候选仍是建筑外劳动并计入工作阶段；Prompt 和 LLM 字段没有变化。模型不决定施工槽、路线、物理到达、工程倍率或升级完成。
+- pending 现在表示 NPC 正在真实赶往升级建筑外沿；建筑封闭只禁止进入室内，不会使合法施工候选失败。实体到位前不能生成个人协助事实或有效工时。
+- 到位后继续使用既有 `until_target_resolved` 与完成后当前小时计划重估。目标提前完成或失效会清理 formal session，不把途中状态伪装成成功完成。
+
+## T0129C-A5-P6d-1 正式实体修复协助
+
+- 日计划与模型候选仍只选择 `assist_repair + building_id`；模型不决定维修坐标、路线、槽位、到达、工程倍率或修复完成。
+- pending 表示 NPC 正在从当前地点实际赶往建筑外沿。只有实体到达独立维修位后才进入 helper 集合并产生既有有效工时；途中不能把后台 `current_location=plaza` 误当作已经开工。
+- 修复提前完成、改派、昏迷、战斗或不可达会统一清理空间会话。该迁移不改变完成后的计划重估，也不新增记忆 / LLM 事实。
+
+## T0129C-A5-P6c 正式实体找人对话
+
+- 日计划 / 修订仍只输出 `talk_to_npc + target_npc_id + dialogue_goal`；既有真实 LLM 意图复核仍发生在物理移动之前。模型不决定目标坐标、站位、路线、距离或工位释放。
+- 复核通过后，发起者按目标当前正式实体位置接近到约 `1.35 m`。目标仍在工作或计划思考时，邀请不会提前提交；目标正式工作只在邀请接受后才由既有 DialogSystem / ActionSystem 中断。
+- 目标移动最多触发一次有界重定向。拒绝、结束或任何失效会统一清理空间会话和双方预约；空间表现不新增记忆事实，也不改变邀请接受 / 拒绝、跨小时 carryover 或对话后双方独立计划判别。
+
+## T0129C-A5-P6b 正式地点拜访
+
+- 日计划与模型候选继续使用 `visit_location + location_id`，不修改 Prompt。模型只选择想去的合法地点，不决定路线、门槛、到达、地点事件或停留完成。
+- pending 表示实体仍在路上，不能写“已经在建筑内”或开始停留；只有实体抵达目标室内点 / 广场锚点后才 active。途中改换目标会取消旧路线，旧目标不得进入短期记忆或计划完成事实。
+- `visit_location` 不领取工位，也不会因身处训练场、诊所等功能建筑而自动升级为训练 / 治疗 / 工作事实；这些仍需各自的正式行动。
+
+## T0129C-A5-P6a 正式宿舍睡眠
+
+- 日计划与模型候选仍使用 `sleep_in_dormitory`，不修改 Prompt。模型只选择行动，不决定床号、物理到达、睡眠恢复或首次反思完成；固定床由 BuildingSystem 的 `assigned_npc_id` 决定。
+- pending 表示正在去自己的床，不能生成睡眠事实。只有 occupancy 提交与 `sleeping_supine` 挂接均成功后，ActionSystem 才创建 active、写 `sleep_started`，NPCNeedsSystem 与 DailyReflectionSystem 才把后续逻辑时间视为实际睡眠。
+- 对话 / 计划恢复会重新走正式床位路线；完成、战斗、昏迷、建筑失效或不可达统一清理。躺卧表现不反向产生需要值、事件或长期记忆。
+
+## T0129C-A5-P5j 正式食堂用餐
+
+- 日计划与模型候选仍使用 `eat_at_dining_hall`，食物优先级、座位选择、到达判定、库存扣除和饱食恢复都由程序决定；本步不修改 Prompt。
+- pending 只表示正在前往已预留座位，不能生成“开始进食”事实。只有 BuildingSystem 提交占用且 NPCSystem 完成 `sitting` 挂接后，ActionSystem 才创建 active、扣餐并写 `eat_started`。
+- `seated_eating` 只投影 active 权威行动；动画播放、手到口动作或画面位置都不能反向产生进食、资源或需要值事实。完成 / 中断由统一正式会话清理恢复旧世界与实体碰撞。
+
+## T0129C-A5-P5i 正式祈祷与主持
+
+- 日计划与模型候选仍只有 `pray_at_chapel / lead_mass`；“参礼”继续是前者的内部 `prayer_mode`，本步不新增行动，也不修改 Prompt。
+- NPC 只有实际到达祭坛 / 长凳并提交占用后才 active。模型不决定具体席位、物理到达、独祷↔参礼转换、虔诚产出或主持退出后的恢复。
+- `mass_leader / seated_prayer` 仅投影权威 action / mode；角色是否坐下、播放哪段循环不能产生祈祷事实。
+
+## T0129C-A5-P5h 训练行动与角色表现
+
+- 日计划和行动候选仍使用原 `work_training_instructor / receive_weapon_training`；本步只把执行阶段改为真实训练场路线，不改变模型可见行动、装备资格或计划语义。
+- `ada_veteran_deputy_chibi_v1` 将艾达的权威移动 / 执教状态投影为冷灰蓝轻装老兵和循环剑盾格挡示范；学员的 `training_practice` 循环只表达练习，不产生战斗事实。
+- 教官 pending 时学员可以 pending 等待；只有双方到岗且依赖有效时才增长技能。模型不决定工位、成长、团队倍率或最后教官离岗失败。
+
+## T0129C-A5-P5g 正式诊所行动权威
+
+- 每日计划 / LLM 仍只选择 `work_clinic_doctor` 或 `receive_clinic_treatment`；NPCSystem 负责实体路线和床面挂接，BuildingSystem 负责诊疗桌 / 病床占用，ActionSystem 只在到位后启动研读或治疗结算。模型、GM 和角色动画均不能直接写 HP、资金、医术或病床事实。
+- 在途医生可作为配对服务提供者，让已派出的患者抵达床边等待；医生真正 active 前患者保持 pending，零治疗 / 零扣费。最后一名 active 医生离岗时，所有 active 患者立即获得既有 `clinic_patient_failed_doctor_left`，释放病床、解除躺姿并恢复旧世界。
+- `lina_doctor_v1` 只把莉娜的权威移动 / `work_clinic_doctor` 状态投影为青灰低模外观和无锤循环 work 动画，不反写行动或空间状态。
+
+## T0129C-A5-P5f 正式酒窖工作权威
+
+- 马塞尔的 `work_tavern` 使用通用 `formal_spatial_route` 生命周期：计划 / GM 只提出工作，程序在迁移前检查粮食并由 BuildingSystem 分配当前等级首个空闲发酵桶；pending 只有预留与实体赶路，抵达桶外站位并提交占用后才 active。LLM 不决定坐标、酒桶、扣粮、酒产量或销售。
+- 真实日计划使用 `repeat_while_planned` 时，完整周期后在相同 session / 酒桶原位续作；直接 GM 派工只供视觉验收，不把马塞尔变成酒窖专属工人，其他 NPC 的酿酒资格不变。任何中断 / 失败都走统一工位与正式世界清理。
+- 当前 `marcel_priest_chibi_v1` 只读取 NPC 权威行动和移动状态，把 `work_tavern` 投影为无铁匠锤的循环 `Working_A`；表现不写地点、占用、资源、交易或事件。旧 `marcel_priest_v1` 仅保留为历史回退场景。
+
+## T0129C-A5-P5e 正式园丁工作权威
+
+- 伊沃的 `work_garden` 使用通用 `formal_spatial_route` 生命周期：计划 / GM 只提出工作，BuildingSystem 选择当前等级首个空闲田畦；pending 只有预留与实体赶路，抵达工作面并提交占用后才 active。LLM 不决定坐标、田畦或粮食产量。
+- 真实日计划使用 `repeat_while_planned` 时，完整周期后在相同 session / 田畦原位续作；直接 GM 派工只供视觉验收。任何中断 / 失败都走统一工位与正式世界清理。
+- 当前 `ivo_gardener_chibi_v1` 只读取 NPC 权威行动和移动状态，把 `work_garden` 投影为循环 `Digging` 与到岗后显示的园锄；表现不写地点、占用、粮食或事件。历史 `ivo_gardener_v1` 仅作 Quaternius 回退。
+
+## T0129C-A5-P5d 正式厨师工作权威
+
+- 布鲁诺的 `work_dining_hall` 使用通用 `formal_spatial_route` 生命周期：计划 / GM 只提出工作，程序在迁移前检查粮食并由 BuildingSystem 分配当前等级首个空闲灶台；pending 只有预留与赶路，真实到达并提交占用后才 active。
+- LLM 不决定坐标、灶台、扣粮或餐食产出。真实日计划使用 `repeat_while_planned` 时，完整生产周期后在相同 session / 灶台原位续作；直接 GM 派工只供视觉验收，不伪造日计划。
+- 当前 `bruno_cook_chibi_v1` 只读取权威行动和移动状态，把 `work_dining_hall` 投影为 `Working_C` 与到岗后显示的厨具；表现不写地点、工位、资源或事件。历史 `bruno_cook_v1` 仅作 Quaternius 回退。
+
+## T0129C-A5-P5c 正式工程师工作权威
+
+- 欧文的 `work_workshop` 与格伦锻造共享 `formal_spatial_route` 生命周期：计划 / GM 只能提出行动，pending 表示预留并赶路；只有实体到达工程位、地点与占用提交后才变为 active，LLM 不决定坐标、工位、材料或制造阶段。
+- 真实日计划使用 `repeat_while_planned` 时，完整阶段周期后在原 `workbench_01` 和同一 session ID 续作；GM 单次派工只用于视觉验收，不伪造后续日计划。任何失败 / 中断都走统一工位和正式世界清理。
+- 欧文角色表现只读取 NPC 权威状态：`work_workshop` 映射到循环 `work`，不挂铁匠锤；表现没有资源、制造或地点写权限。
+
+## T0129C-A5-P5b 正式铁匠工作权威
+
+- 格伦执行 `work_blacksmith` 时使用可逆正式工位会话：pending 只表示已预留 / 正在赶路，穿门后才进入铁匠铺地点，抵达 `forge_01` 并提交占用后才进入 active。计划 / LLM 只选择行动与制造目标，不直接决定路线、工位或阶段结算。
+- 同一计划的 `repeat_while_planned` 周期保留会话 ID 和锻造位，原位开始下一周期。每次延迟清理都携带会话 ID，旧周期的延迟回调不能清掉新周期。
+- NPC 表现不再由行动调用者猜测移动开始；`NPC.gd` 订阅 ActorMotionBody 的 `motion_started` 信号后驱动走 / 跑状态。调试快照保留移动激活计数与最近走 / 跑状态，不成为玩法权威。
+
+## T0129C-A5-P2 高密度战场避障预算
+
+- NPC、步兵与骑乘单位的物理胶囊尺寸不变；NavigationAgent 的 RVO 半径统一在物理半径外增加 `0.10 m` 预判缓冲，密集接敌时先协商速度，减少 CharacterBody 进入 safe margin 后的解穿透弹出。
+- 正式战斗接触扫描每 6 帧、`avoid_combat` 目标复核每 3 帧；NPC 的 ActorMotionBody 仍每个物理帧连续寻路 / 避障 / 碰撞移动，模式权威、目标选择和“实体抵达后才提交”规则不变。A5-P2 中 3 名非战斗 NPC 在 70 次采样中持续避战，最大单帧位移约 `0.083 m`。
+
+## T0129C-A5-P1 战斗期非战斗 NPC 正式避战
+
+- 默认波次期间，全部当前可行动 NPC 都进入正式空间；是否战斗仍由既有入伍、主武器、睡眠、昏迷和 `behavior_mode` 规则判断。迁移本身不会改变征召、装备、计划或人格控制权。
+- 未入伍或无主武器 NPC 接敌后继续进入 `avoid_combat`。程序根据最近敌人的真实 Body 方位生成短距离远离意图，正式空间中再投影生产 NavMesh，并让 NPC 自己的 CharacterBody / NavigationAgent / avoidance 实际执行；到达前不伪造地点或安全事实。
+- 清敌后避战 NPC 仍按原规则回到 `work` 且不因单纯避战结束触发计划重评估，随后正式世界统一恢复其战前坐标和兼容运动。日常建筑行动尚未全量迁移，因此本步没有让 LLM 或每日计划直接读取 / 决定 NavMesh 坐标。
+
+## T0129C-A2b-P1–P6 正式导航试点
+
+- 8 名 NPC 的场景根已统一为 `CharacterBody3D + CollisionShape3D + NavigationAgent3D`，点击 / 对话继续由独立 `InteractionArea` 承担。非战日常旧地图仍走兼容移动链；显式 GM `formal_nav_pilot` 可把格伦、莉娜、艾达、布鲁诺、马塞尔或托马绑定到远端正式 NavigationMap，默认战斗则迁移全部可行动 NPC。A5-P4c 后战中逃离者继续使用该图走完 6 点地图边缘后路；默认商人与非战日常尚未总切换。
+- 试点定义已收敛到 NPCSystem 的 `FORMAL_NAVIGATION_PILOT_SPECS`：NPC、建筑、工位类型、期望固定工位都由登记项驱动，开始前统一中断当前 ActionSystem 行动并登记正式导航锁，日计划与普通派工不能在半路覆盖路线。路线只读来自 `StationLayoutController.get_building_spatial_route(...)`；运动层只报告到达 / 失败，不直接写地点、记忆或工位。
+- 格伦物理穿过门内点后，NPCSystem 才通过既有 MemorySystem 地点事务提交 `current_location=blacksmith`；抵达 `forge_01` 后，BuildingSystem 才把先前的 `reserved_by` 转为 `occupied_by`。取消、返回旧地图或不可达会释放预留 / 占用并还原原位置，不留下幽灵占用。
+- A2b-P2 已以莉娜→小诊所覆盖 `stand` 诊疗桌和 `mount_after_arrival` 病床。诊疗位抵达后保持站立；病床必须先抵达床边、成功提交占用，才能把表现挂到床面锚点。挂接期间只关闭 Body 碰撞、保留 InteractionArea；停止、不可达、建筑失效和昏迷都会解除挂接并清空事务。该试点不启动治疗行动或结算。
+- A2b-P3 已以艾达→宿舍固定床验证 BuildingSystem 的 `assigned_npc_id`：预留结果必须精确为 `dormitory_bed_01`，NPC 先抵达床边、提交占用，随后才挂接 `sleeping_supine`。停止、不可达、改派、建筑失效和昏迷走同一清理入口；试点期间 `current_action` 保持 `idle`，空间表现不会提前生成“已睡眠”事实。
+- A2b-P4 已以布鲁诺→食堂用餐席验证非固定座位分配：空食堂选择 `dining_seat_01`，1 号席被占时选择 `dining_seat_02`；角色先到椅边、提交占用后才挂接 `sitting`。停止只清理布鲁诺自身位置，`current_action=idle`，不会生成“已进食”事实。
+- A2b-P5 已以马塞尔→小教堂祈祷席验证第二种首个空闲座位：空场选择 `chapel_prayer_seat_01`，1 号被占时选择 2 号；先提交地点，再抵达长凳边、提交占用并挂接 `seated_prayer`。停止只清理马塞尔自身位置，`current_action=idle`，不会生成祈祷事件或虔诚结算。下一步转入 C3 / A4 敌军正式实体导航。
+
+## T0129C-A3b1–A3b7 家具安全站位、床 / 椅挂接与固定位置权威（尚未接入 Main NPC）
+
+正式空间查询现在对前六座样板既有位置，以及训练场 `training_instructor_01–02 / training_student_01–04` 返回家具外独立站位与面向，而不是原工位湾或家具中心；同时保留 `logical_position_center_position / target_fixture_id / arrival_mode` 供容量、升级和调试审计。44 个站位已经过 `0.35 m` NPC 胶囊、配置净空与生产 NavigationServer 可达验证；训练场六个站位另返回 `action_clearance_size=3 × 3 m`，器械碰撞不进入这些动作范围。
+
+诊所诊疗桌与食堂灶台以 `arrival_mode=stand` 结束。四张病床、宿舍十张床与食堂十把用餐椅都以 `arrival_mode=mount_after_arrival` 返回家具边路径终点，并额外返回 `occupant_anchor_position / occupant_anchor_facing_direction / occupant_pose`；诊所姿态为 `lying_supine`，宿舍为 `sleeping_supine`，用餐椅为 `sitting`。C2b 必须先收到 CharacterBody 到达床边 / 椅边，再由 BuildingSystem 成功提交对应位置占用，最后才可把表现挂到床面 / 椅面；路径失败、改派或占用提交失败都不得挂接，也不得生成“已接受治疗 / 已入睡 / 已开始进食”的事实。
+
+宿舍 1–8 号床的 `assigned_npc_id` 继续由 BuildingSystem 权威保存，9–10 号只供未来无固定床 NPC。家具配置中的同名字段只是自动漂移审计镜像，StationLayoutController、NPCSystem 运动层、表现层和 LLM 都不得用它重新分配床位；专项已直接调用 BuildingSystem 证明八名初始 NPC 只获得自己的床，未来 NPC 只获得 9 / 10 号床。
+
+食堂共享长桌没有工位映射，不能被 NPCSystem、计划层或 LLM 选作位置；`dining_seat` 仍由 BuildingSystem 按同类型第一个空位原子分配。第三灶台的家具合同与权威位置都标为 Lv.3，Lv.1 / Lv.2 的第三名厨师仍应得到结构化满位失败，不能因为 staging 预先烘焙最高等级碰撞就视为已解锁。
+
+酒窖三个桶外站位都以 `arrival_mode=stand` 结束并朝向对应发酵桶；循环工作动画只可在 CharacterBody 真正到达且 BuildingSystem 提交 `occupied_by` 后播放。Lv.2 熟成架、空桶组与验酒桌没有 `workstation_id`，NPCSystem、计划层和 LLM 不得把它们选作酿酒容量；第三套发酵桶与 `cellar_03` 都属于 Lv.3，一级第三名酿酒者仍应得到 `no_free_workstation`。
+
+菜园三个站位分别朝向对应田畦，前两块从 Lv.1 开放，第三块与 `garden_plot_03` 同属 Lv.3；Lv.2 灌溉沟、堆肥箱及其他工具陈设没有 `workstation_id`。U 形边框只承担实体避障，不能仅因 NPC 跨过田床外接矩形就宣称其到岗；仍须抵达开放工作面中的具体站位，再由 BuildingSystem 提交占用。
+
+训练场的 `1 教官 + 2 学员 -> 1 + 3 -> 2 + 4` 只镜像 BuildingSystem 的等级容量。`action_clearance_size` 仅约束未来训练动作、武器挥动和角色间距；是否存在教官、训练消耗、技能成长和行动持续性仍由 ActionSystem / BuildingSystem 决定。共享武器架、箭靶、沙袋和边界栏不能成为计划目标或幽灵训练位。
+
+这些家具合同仍位于远端 staging。当前 Main 的 NPC 根虽已迁为 `CharacterBody3D + NavigationAgent3D + 独立 InteractionArea`，但默认非战日常仍执行旧坐标兼容链；A2b-P1–P6 的格伦 / 莉娜 / 艾达 / 布鲁诺 / 马塞尔 / 托马显式试点消费新站位 / 锚点，并仍须在真实穿门后提交地点、真实抵达站位后提交 `occupied_by`。托马的 `horse_care` 停在栏外 NPCStand，不挂到 HorseAnchor，也不因到位自动开始 `work_stable`。LLM、计划和 Prompt 不读取家具节点，也不能凭 `target_fixture_id / occupant_anchor / horse_anchor / action_clearance_size` 提前宣称 NPC 已进屋、已工作、已训练、已接受治疗、已在床上、已坐下用餐、已开始祈祷或已在照料马匹。
+
+## T0128 角色动画与 NPC 权威状态映射
+
+`NPCArtView` 不新增 LLM 行动、计划字段或角色决策。它只读取 NPCSystem 已保存的 `states.current_action / behavior_mode / hp / unconscious` 和 NPC 根节点现有移动状态：移动选择 walk / run，`work_blacksmith / work_stable / work_workshop / work_dining_hall / work_garden / work_tavern / work_clinic_doctor` 选择 work，`eat_at_dining_hall` 选择 seated_eating，攻击阶段选择 attack，对话阶段选择 talk，HP 下降选择 hit reaction，昏迷 / 复苏选择倒地 / 起身。铁锤只在 `work_blacksmith` 显示，其余已迁移工作循环均不携带铁匠工具。
+
+程序仍是世界坐标、跨门地点、工位、行动时长、HP 和事件的唯一权威；非 root-motion 动画不反写 profile。调试动画预览仅操作表现状态并在专项中确认调用者 profile 不变。当前正式外观映射覆盖格伦、托马、欧文、布鲁诺、伊沃、马塞尔与莉娜；艾达仍使用 legacy 占位，不得从视觉位置推导尚未迁移的行动已经完成。
+
+## T0130-P0 两头身角色技术试片
+
+`ChibiCharacterPilot` 保持 T0128 的 15 个表现状态名，不新增计划 action、Prompt 字段或 LLM 决策。KayKit 动画只驱动隐藏源骨架，Godot `RetargetModifier3D` 将相对姿态投影到 Synty 可见骨架；格伦锤子与敌人剑盾只是 `BoneAttachment3D` 子节点。动画、装备、碰撞和 Main 试片标签均为 presentation-only，不能证明 NPC 已进入建筑、占用工位、开始工作、命中目标、受伤、昏迷或复苏。
+
+本轮只建立格伦 + 剑盾敌人试片和 48 敌性能夹具。`data/presentation/character_appearances.json` 仍指向 Quaternius 正式包装，CombatSystem 五波也未切换；只有用户视觉验收通过后，后续 T0130 才能把同一表现合同接回 NPCSystem / CombatSystem 的既有权威状态。
+
+## T0127A 暂停状态下的 GM 移动合同
+
+正式系统仍可在暂停中建立 pending，再由统一恢复继续执行；这用于开局计划准备和既有 ActionSystem 生命周期，不能在核心 `move_npc_to_building(...)` 上一刀切拒绝。GM 的直接移动则是玩家要求立即观察的调试行为：若 TimeSystem 当前暂停，新命令必须在修改 NPC 状态前失败，并提示恢复后重试，不能写出不会推进的 `moving_to_*`。
+
+已经开始的移动随后遇到暂停仍保留目标与物理进度，恢复后从原坐标续接；暂停本身不取消行动、不提交地点事件。普通建筑只在到达后提交地点，铁匠铺继续在穿门后提交地点、抵达工位后提交占用。真实 LLM / 后端失败导致开局暂停时不允许 Mock 伪成功；用户可以修复后端后重新开局，或在 GM 调试场景点击主界面“继续”再重试手动移动。
+
+## T0127 铁匠铺真实室内行动生命周期
+
+`work_blacksmith` 现在有四个可观察阶段：在途预留、穿门提交地点、工位抵达提交占用、active 工作。派工不再把 NPC 提前算作铁匠铺人员或在岗工人；只有 `current_location=blacksmith` 且世界位置已经穿过门内 Marker 后，同地点对话、地点上下文和本地公开见闻才把他视为室内成员。只有抵达 `forge_01 / forge_02` 后行动计时、有效工作秒和制造阶段才可推进。
+
+NPCSystem 的 `spatial_route_phase / physical_location_phase` 是执行状态，不是第二套地点事实。正式地点仍由 MemorySystem 的移动事务提交，工位仍由 BuildingSystem 的 `reserved_by / occupied_by` 提交。LLM 只读取已经提交的 `current_location`、地点快照和工位状态，不根据世界坐标、移动目标、屋顶透明度或表现动画猜测“已进入 / 已开工”。
+
+门外改派 / 中断只取消预留并保留广场；穿门后改派会先释放预留 / 占用并沿出口退出，出门前保持铁匠铺地点。昏迷会立即停止行动并释放位置，但昏迷者若物理仍在室内，地点继续是铁匠铺，符合“昏迷后原地恢复”规则。升级封闭、失败、战斗打断、逃离和室内到室外移动复用相同清理合同，不能产生幽灵工位或用退出移动覆盖原失败原因。其他建筑仍沿用旧入口流程。
+
 ## T0120 玩家可见 NPC 文案润色边界
 
 `npc_profiles.json` 的背景、性格、欲望、恐惧、底线和说话方式已按玩家阅读体验逐句复核。润色只补全被压缩掉的主语、动作对象和条件关系，并调整不符合中文习惯的词语搭配；仍保留托马谈风险与退路、布鲁诺谈后勤、伊沃谈长期生产、格伦谈工艺、艾达谈组织、马塞尔谈权力边界、莉娜谈医疗责任、欧文谈工程安全的原有视角。
@@ -478,7 +705,7 @@ NPC 没有写死的程序职业。`background_job` 只记录叙事出身，工�
 
 ## 当前运行时实现
 
-T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和直线移动闭环：
+T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和直线移动闭环；该段仍是当前旧玩法事实，不是最终 3D 运动模型：
 
 - `NPCSystem` 从 `data/npc_profiles.json` 读取 8 名初始 NPC 档案。
 - 新游戏生成 8 人前装载独立初始长期记忆，NPC 面板从开局即可阅读 3 篇历史日记和中文知识图谱。
@@ -490,7 +717,9 @@ T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和�
 - `NPCSystem` 提供固定熟练度枚举与 `normalize_skills(...)`，确保每名 NPC 都拥有完整 13 维熟练度，且不会保留未定义技能。
 - NPC 状态修改后会通过 `EventBus.npc_state_changed(npc_id)` 通知 UI 刷新。
 - `NPCSystem.move_npc_to_building(...)` / `debug_move_npc_to_building(...)` 可让 NPC 前往指定建筑入口；当前用于调试验证和后续行动系统接入。
-- `NPC.gd` 负责简单直线移动，到达目标后发出 `movement_arrived`，由 `NPCSystem` 写回 `current_location`、`current_location_name` 和 `location_context` 地点信息占位。
+- `NPC.gd` 当前仍以 `Area3D` 为根，直接修改 `global_position` 做分段 / 直线移动；除铁匠铺已按穿门事务提交地点外，其他建筑到达后仍由 `NPCSystem` 写回地点。它没有实体阻挡和动态避让，会穿过建筑 / 角色，已由 T0129C 明确列为待迁移旧实现。
+
+T0129C-A1 已冻结 NPC 胶囊 `radius=0.35 m / height=1.6 m`、`actor_body` 层、NavigationAgent3D avoidance 和卡死恢复参数，并在远端正式布局生成静态碰撞。A2a 已完成独立 `InteractionArea` 的 CharacterBody3D 运动组件和五实体沙盒：NPC 尺度 Body 能绕静态阻挡、对向避让、暂停续接，对物理卡死执行有界重寻路，对导航岛外目标返回明确不可达；整个组件只发 `started / arrived / failed / cancelled / repath` 信号，零地点 / 工位提交。A3a 又完成独立 `0.25 m` 生产地图、12 门真实绕行和 65 个位置路径验证。当前 NPC 根尚未替换；A3b 完成家具 / 自然阻挡后，C2b + A2b 才接入 Main。届时 NPCSystem 只下发目标并接收结果，运动组件独占 `move_and_slide`、路径和避障，地点 / 工位仍只能在穿门 / 抵达具体位置后由既有事务提交。
 
 T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后进入持续行动状态，并随 `TimeSystem.logical_time_tick` 逐步推进，而不是瞬时完成。吃饭当前以 20 分钟为基准，完整进餐恢复约 50 点饱食度；睡觉以 6.5 小时消耗 100 点疲劳为基准，按逻辑秒细分结算。T0801 起，工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用建筑工位，周期时长会按 NPC 对应熟练度、力量 / 智力属性和建筑等级缩短；完成、失败或中断会释放工位并广播地点内部状态。T0804-T0806 的早期聚合制造 / 马匹整备路径已由 T0035-T0038 覆盖：铁匠铺与工械坊周期提交配置阶段，马厩周期只提供有效照料能力，不直接产出资源。T0807 的酒窖仍消耗粮食并产出 `wine`；行动开始、完成或失败继续写入 `MemorySystem` 的结构化事件。
 
@@ -577,7 +806,7 @@ NPC 进入地点时，系统生成 `location_entered` 事件并写入进入者�
 
 NPC 离开地点时，系统生成 `location_exited` 事件，`location_id` 使用其离开的地点；该事件写入离开者事件库，并以 `local_public` 广播给仍在该地点的 NPC。离开事件本身表达了“谁离开了这里”，不再额外广播完整 `people_present`。
 
-NPC 从一个室内信息地点前往另一个室内信息地点时，当前实现会在事件和地点信息层插入广场中转：离开原地点、进入广场、离开广场、进入目标地点。物理表现仍是低模阶段的直线移动占位，不代表最终导航模型。
+NPC 从一个室内信息地点前往另一个室内信息地点时，当前实现会在事件和地点信息层插入广场中转：离开原地点、进入广场、离开广场、进入目标地点。物理表现仍是旧 `Area3D + global_position` 分段直线移动，不代表最终导航模型；T0129C-A2 / A3 将替换位移实现，但不得改变这些事件的原子提交顺序。
 
 后续建筑或地点状态变化只进入字段级见闻，例如建筑受损、升级完成、公告变化或某个工位占用变化；未变化的建筑状态和在场人员不重复传递。对话全文也作为对话事件 `payload` 保存，供后续对话、计划和首次睡眠总结引用。
 

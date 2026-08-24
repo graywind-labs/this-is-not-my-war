@@ -1140,6 +1140,13 @@ func _activate_autonomous_dialogue_after_invitation() -> Dictionary:
 	var participant_ids: Array = _active_dialogue.get("participant_npc_ids", [])
 	if dialogue_id.is_empty() or participant_ids.size() != 2:
 		return _failure("invalid_participants", "NPC 对话邀请缺少双方参与者。")
+	if npc_system.has_method("prepare_formal_dialogue_activation"):
+		var spatial_transfer_result: Dictionary = npc_system.prepare_formal_dialogue_activation(dialogue_id)
+		if not bool(spatial_transfer_result.get("ok", false)):
+			return _failure(
+				str(spatial_transfer_result.get("reason", "formal_dialogue_spatial_transfer_failed")),
+				"NPC 对话的空间权属交接失败。"
+			)
 	var interrupted_actions: Dictionary = {}
 	for raw_participant_id in participant_ids:
 		var participant_id := str(raw_participant_id)

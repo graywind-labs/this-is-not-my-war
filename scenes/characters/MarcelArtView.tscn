@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/characters/GlenArtView.tscn" id="1_marcel_base"]
+
+[node name="MarcelArtView" instance=ExtResource("1_marcel_base")]
+appearance_id = "marcel_priest_v1"
+outfit_tint = Color(0.20, 0.16, 0.24, 1)
+hair_tint = Color(0.22, 0.18, 0.14, 1)
+show_smith_hammer = false

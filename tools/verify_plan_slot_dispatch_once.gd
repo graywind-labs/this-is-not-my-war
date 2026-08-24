@@ -23,8 +23,12 @@ func _init() -> void:
 
 	const NPC_ID := "veteran_deputy_01"
 	time_system.set_current_time(1, 8, 0, 0)
+	time_system.set_paused(false)
 	daily_plan_system.set_auto_execution_enabled(true)
 	resource_system.add_resource("meal", 8)
+	var npc_node := _get_npc_node(npc_system, NPC_ID)
+	if npc_node != null:
+		npc_node.set("move_speed", 5.0)
 	if not npc_system.debug_enter_location_immediately(NPC_ID, "dining_hall"):
 		_fail("Could not place plan actor in dining hall")
 		return
@@ -44,8 +48,8 @@ func _init() -> void:
 	if not bool(first_execute.get("ok", false)):
 		_fail("Initial plan slot did not dispatch: %s" % str(first_execute))
 		return
-	if str(action_system.get_runtime_action_id(NPC_ID)) != "eat_at_dining_hall":
-		_fail("Initial short action is not active")
+	if not await _wait_for_active(action_system, time_system, NPC_ID):
+		_fail("Initial short action did not reach a real dining seat")
 		return
 	action_system._on_logical_time_tick(1200.0, 1.0)
 	for _index in range(3):
@@ -93,8 +97,8 @@ func _init() -> void:
 	if not bool(next_hour_execute.get("ok", false)):
 		_fail("Unchanged plan_version did not dispatch in the next hour: %s" % str(next_hour_execute))
 		return
-	if str(action_system.get_runtime_action_id(NPC_ID)) != "eat_at_dining_hall":
-		_fail("Next-hour slot did not start the short action")
+	if not await _wait_for_active(action_system, time_system, NPC_ID):
+		_fail("Next-hour slot did not reach a real dining seat")
 		return
 	if _count_events(memory_system.get_npc_daily_events(NPC_ID), "eat_started") != started_after_completion + 1:
 		_fail("Next-hour slot did not create exactly one new eat_started event")
@@ -155,6 +159,21 @@ func _count_events(events: Array, event_type: String) -> int:
 		if raw_event is Dictionary and str((raw_event as Dictionary).get("type", "")) == event_type:
 			count += 1
 	return count
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == "eat_at_dining_hall":
+			return true
+	return false
 
 
 func _fail(message: String) -> void:

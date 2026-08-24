@@ -73,9 +73,12 @@ func _init() -> void:
 		return
 
 	var witness_count: int = memory_system.get_npc_witness_events(witness_id).size()
-	var revive_result: Dictionary = npc_system.debug_advance_unconscious_recovery(target_id, 14.0 * 3600.0)
+	var max_hp := int(partial_state.get("max_hp", 100))
+	var revive_threshold := maxi(1, int(ceil(float(max_hp) * 0.3)))
+	var remaining_recovery_hours := ceilf(float(revive_threshold - int(partial_state.get("hp", 0))) / 2.0)
+	var revive_result: Dictionary = npc_system.debug_advance_unconscious_recovery(target_id, remaining_recovery_hours * 3600.0)
 	var revived_state: Dictionary = npc_system.get_npc_state(target_id)
-	if int(revived_state.get("hp", -1)) != 30:
+	if int(revived_state.get("hp", -1)) != revive_threshold:
 		push_error("NPC should revive at 30 percent Max HP")
 		quit(1)
 		return

@@ -2,6 +2,7 @@ extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
+const NPCPortraitViewport = preload("res://scripts/ui/NPCPortraitViewport.gd")
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
@@ -29,6 +30,13 @@ const PANEL_MIN_WIDTH := 380.0
 const PANEL_MAX_WIDTH := 440.0
 const PANEL_VIEWPORT_WIDTH_RATIO := 0.22
 const PANEL_CONTENT_VERTICAL_PADDING := 24.0
+const PORTRAIT_GAP := 12.0
+const PORTRAIT_MIN_WIDTH := 190.0
+const PORTRAIT_MAX_WIDTH := 210.0
+const PORTRAIT_VIEWPORT_WIDTH_RATIO := 0.11
+const PORTRAIT_HEIGHT_RATIO := 0.52
+const PORTRAIT_MIN_HEIGHT := 300.0
+const PORTRAIT_MAX_HEIGHT := 420.0
 const RECRUITMENT_REQUIRED_TOOLTIP := "需先说服该人物应征入伍，才能进行这项操作。"
 const EQUIP_WEAPON_TOOLTIP := "消耗 1 件所选具体武器库存。"
 const UNEQUIP_WEAPON_TOOLTIP := "收回当前主武器并返还同一具体物品；已分配马匹会自动取消。"
@@ -223,6 +231,7 @@ var _panel_scroll: ScrollContainer
 var _panel_fit_queued := false
 var _layout_viewport_override := Vector2.ZERO
 var _drag_controller
+var _portrait_view
 
 @onready var name_label: Label = %NPCNameLabel
 @onready var background_button: Button = %NPCBackgroundButton
@@ -259,6 +268,7 @@ var _drag_controller
 
 func _ready() -> void:
 	visible = false
+	_setup_portrait_view()
 	_setup_panel_scroll()
 	_setup_memory_log_boxes()
 	_setup_header_status_label()
@@ -296,7 +306,19 @@ func _ready() -> void:
 	var viewport := get_viewport()
 	if viewport != null and not viewport.size_changed.is_connected(_queue_panel_fit):
 		viewport.size_changed.connect(_queue_panel_fit)
+	if not visibility_changed.is_connected(_on_panel_visibility_changed):
+		visibility_changed.connect(_on_panel_visibility_changed)
 	_queue_panel_fit()
+
+
+func _setup_portrait_view() -> void:
+	if _portrait_view != null:
+		return
+	_portrait_view = NPCPortraitViewport.new()
+	_portrait_view.name = "NPCPortraitView"
+	add_child(_portrait_view)
+	move_child(_portrait_view, 0)
+	_portrait_view.hide_preview()
 
 
 func _setup_panel_scroll() -> void:
@@ -357,13 +379,24 @@ func _fit_panel_width() -> void:
 	)
 	var available_height := maxf(1.0, viewport_size.y - PANEL_SCREEN_MARGIN * 2.0)
 	var preserved_height := clampf(maxf(1.0, size.y), 1.0, available_height)
-	var target_width := clampf(
+	var info_width := clampf(
 		viewport_size.x * PANEL_VIEWPORT_WIDTH_RATIO,
 		PANEL_MIN_WIDTH,
 		PANEL_MAX_WIDTH
 	)
+	var info_panel := get_node_or_null("PanelContainer") as Control
+	if info_panel != null:
+		info_width = maxf(info_width, info_panel.get_combined_minimum_size().x)
 	# 纵向信息面板始终保持“高于宽”；极矮窗口下优先保留上下安全边距。
-	target_width = minf(target_width, maxf(280.0, available_height - 1.0))
+	info_width = minf(info_width, maxf(280.0, available_height - 1.0))
+	var portrait_width := clampf(
+		viewport_size.x * PORTRAIT_VIEWPORT_WIDTH_RATIO,
+		PORTRAIT_MIN_WIDTH,
+		PORTRAIT_MAX_WIDTH
+	)
+	var available_width := maxf(1.0, viewport_size.x - PANEL_SCREEN_MARGIN * 2.0)
+	portrait_width = minf(portrait_width, maxf(180.0, available_width - info_width - PORTRAIT_GAP))
+	var target_width := info_width + PORTRAIT_GAP + portrait_width
 	set_anchors_preset(Control.PRESET_TOP_RIGHT, false)
 	offset_right = -PANEL_SCREEN_MARGIN
 	offset_left = offset_right - target_width
@@ -371,6 +404,21 @@ func _fit_panel_width() -> void:
 	# Preserve the visible height for the layout frame. Expanding to the full
 	# viewport here flashes an empty dark block below the panel on every refresh.
 	offset_bottom = offset_top + preserved_height
+	if info_panel != null:
+		info_panel.set_anchors_preset(Control.PRESET_FULL_RECT, false)
+		info_panel.offset_left = portrait_width + PORTRAIT_GAP
+		info_panel.offset_top = 0.0
+		info_panel.offset_right = 0.0
+		info_panel.offset_bottom = 0.0
+	if _portrait_view != null:
+		_portrait_view.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+		_portrait_view.offset_left = 0.0
+		_portrait_view.offset_top = 0.0
+		_portrait_view.offset_right = portrait_width
+		_portrait_view.offset_bottom = minf(
+			preserved_height,
+			clampf(preserved_height * PORTRAIT_HEIGHT_RATIO, PORTRAIT_MIN_HEIGHT, PORTRAIT_MAX_HEIGHT)
+		)
 	if preserved_drag_position != Vector2.INF:
 		_drag_controller.restore_user_position(preserved_drag_position)
 	await get_tree().process_frame
@@ -389,12 +437,18 @@ func _fit_panel_height() -> void:
 	var natural_height := content.get_combined_minimum_size().y + PANEL_CONTENT_VERTICAL_PADDING
 	var target_height := minf(available_height, natural_height)
 	offset_bottom = offset_top + target_height
+	if _portrait_view != null:
+		_portrait_view.offset_bottom = minf(
+			target_height,
+			clampf(target_height * PORTRAIT_HEIGHT_RATIO, PORTRAIT_MIN_HEIGHT, PORTRAIT_MAX_HEIGHT)
+		)
 
 
 func show_npc(npc_id: String) -> void:
 	if npc_id.is_empty():
 		_current_npc_id = ""
 		visible = false
+		_hide_portrait_view()
 		interaction_result_label.text = ""
 		interaction_result_label.visible = false
 		_close_memory_detail_popup()
@@ -404,6 +458,7 @@ func show_npc(npc_id: String) -> void:
 	if npc_system == null or not npc_system.get_npc_ids().has(npc_id):
 		_current_npc_id = ""
 		visible = false
+		_hide_portrait_view()
 		interaction_result_label.text = ""
 		interaction_result_label.visible = false
 		_close_memory_detail_popup()
@@ -413,6 +468,7 @@ func show_npc(npc_id: String) -> void:
 	if npc.is_empty():
 		_current_npc_id = ""
 		visible = false
+		_hide_portrait_view()
 		interaction_result_label.text = ""
 		interaction_result_label.visible = false
 		_close_memory_detail_popup()
@@ -456,8 +512,33 @@ func show_npc(npc_id: String) -> void:
 	_update_memory_labels(npc_id)
 	_update_interaction_controls(npc)
 	visible = true
+	if _portrait_view != null and _portrait_view.has_method("show_npc"):
+		_portrait_view.show_npc(npc_id)
 	_refresh_memory_detail_popup()
 	_queue_panel_fit()
+
+
+func _hide_portrait_view() -> void:
+	if _portrait_view != null and _portrait_view.has_method("hide_preview"):
+		_portrait_view.hide_preview()
+
+
+func _on_panel_visibility_changed() -> void:
+	if not visible or _current_npc_id.is_empty():
+		_hide_portrait_view()
+	elif _portrait_view != null and _portrait_view.has_method("show_npc"):
+		_portrait_view.show_npc(_current_npc_id)
+
+
+func debug_get_portrait_snapshot() -> Dictionary:
+	var snapshot := {}
+	if _portrait_view != null and _portrait_view.has_method("debug_get_snapshot"):
+		snapshot = _portrait_view.debug_get_snapshot()
+	var info_panel := get_node_or_null("PanelContainer") as Control
+	snapshot["panel_visible"] = visible
+	snapshot["panel_global_rect"] = get_global_rect()
+	snapshot["info_global_rect"] = info_panel.get_global_rect() if info_panel != null else Rect2()
+	return snapshot
 
 
 func debug_open_memory_detail(mode: String) -> Dictionary:
@@ -2249,11 +2330,13 @@ func _refresh_horse_assignment_controls() -> void:
 
 func _on_building_clicked(_building_id: String) -> void:
 	visible = false
+	_hide_portrait_view()
 	_close_memory_detail_popup()
 
 
 func _on_close_pressed() -> void:
 	visible = false
+	_hide_portrait_view()
 	_close_memory_detail_popup()
 
 

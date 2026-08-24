@@ -2,6 +2,7 @@ extends Node3D
 
 @export var camera_path: NodePath = NodePath("Camera3D")
 @export var keyboard_pan_speed := 14.0
+@export var keyboard_pan_boost_multiplier := 2.0
 @export var mouse_pan_speed := 0.035
 @export var zoom_step := 2.5
 @export var min_zoom_distance := 18.0
@@ -15,6 +16,7 @@ var _is_middle_dragging := false
 var _camera_offset_direction := Vector3.ZERO
 var _zoom_distance := 0.0
 var _pressed_pan_keys: Dictionary = {}
+var _is_keyboard_pan_boost_active := false
 
 
 func _ready() -> void:
@@ -40,16 +42,21 @@ func _process(delta: float) -> void:
 		pan_input.y -= 1.0
 
 	if pan_input != Vector2.ZERO:
-		_pan_by_vector(pan_input.normalized(), keyboard_pan_speed * delta)
+		var speed_multiplier := keyboard_pan_boost_multiplier if _is_keyboard_pan_boost_active else 1.0
+		_pan_by_vector(pan_input.normalized(), keyboard_pan_speed * speed_multiplier * delta)
 
 
 func _input(event: InputEvent) -> void:
 	if not event is InputEventKey:
 		return
 	var key_event := event as InputEventKey
+	if _is_shift_key(key_event):
+		_is_keyboard_pan_boost_active = key_event.pressed
+		return
 	var pan_key := _get_pan_key(key_event)
 	if pan_key == Key.KEY_NONE:
 		return
+	_is_keyboard_pan_boost_active = key_event.shift_pressed
 	if not key_event.pressed:
 		_pressed_pan_keys.erase(pan_key)
 		return
@@ -92,6 +99,10 @@ func _get_pan_key(event: InputEventKey) -> Key:
 	return Key.KEY_NONE
 
 
+func _is_shift_key(event: InputEventKey) -> bool:
+	return event.physical_keycode == KEY_SHIFT or event.keycode == KEY_SHIFT
+
+
 func _is_text_input_focused() -> bool:
 	if not is_inside_tree():
 		return false
@@ -101,6 +112,7 @@ func _is_text_input_focused() -> bool:
 
 func _reset_keyboard_pan() -> void:
 	_pressed_pan_keys.clear()
+	_is_keyboard_pan_boost_active = false
 
 
 func _reset_input_state() -> void:

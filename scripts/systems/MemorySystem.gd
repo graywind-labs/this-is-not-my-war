@@ -231,6 +231,28 @@ func remove_npc_from_all_locations(npc_id: String) -> bool:
 	return not removed_from.is_empty()
 
 
+func restore_npc_location_membership_silent(npc_id: String, location_id: String) -> Dictionary:
+	# Save restoration reconstructs current presence, not a new witnessed arrival.
+	# Keep this separate from move_npc_between_locations so loading cannot append
+	# duplicate entry snapshots to an NPC's witness log.
+	if npc_id.is_empty():
+		return {"ok": false, "reason": "npc_id_missing"}
+	var normalized_location := _normalize_location_id(location_id)
+	if not is_enterable_location(normalized_location):
+		normalized_location = DEFAULT_LOCATION_ID
+	for raw_location_id in _location_info_nodes.keys():
+		_remove_person_from_location(str(raw_location_id), npc_id, false)
+	_add_person_to_location(normalized_location, npc_id)
+	for raw_location_id in _location_info_nodes.keys():
+		_emit_location_info_changed(str(raw_location_id))
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"location_id": normalized_location,
+		"witness_event_created": false
+	}
+
+
 func _record_location_entry_snapshot_witness(npc_id: String, location_id: String, snapshot: Dictionary) -> void:
 	if npc_id.is_empty() or snapshot.is_empty():
 		return
@@ -1272,12 +1294,16 @@ func _normalize_workstations_for_info(workstations: Array) -> Array[Dictionary]:
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
+		var reserved_by := str(workstation.get("reserved_by", ""))
+		if reserved_by == "<null>":
+			reserved_by = ""
 		normalized.append({
 			"id": str(workstation.get("id", "")),
 			"name": str(workstation.get("name", workstation.get("id", workstation.get("type", "位置")))),
 			"type": str(workstation.get("type", "general")),
 			"occupied_by": occupied_by,
-			"status": "occupied" if not occupied_by.is_empty() else "free"
+			"reserved_by": reserved_by,
+			"status": "occupied" if not occupied_by.is_empty() else "reserved" if not reserved_by.is_empty() else "free"
 		})
 	return normalized
 
@@ -1476,6 +1502,7 @@ func _workstation_state_by_id(workstations: Array) -> Dictionary:
 			"name": str(workstation.get("name", workstation_id)),
 			"type": str(workstation.get("type", "general")),
 			"occupied_by": str(workstation.get("occupied_by", "")),
+			"reserved_by": str(workstation.get("reserved_by", "")),
 			"status": str(workstation.get("status", "free"))
 		}
 	return states
@@ -1495,6 +1522,7 @@ func _diff_workstation_states(previous_states: Dictionary, current_states: Dicti
 			previous_state.get("name") != current_state.get("name")
 			or previous_state.get("type") != current_state.get("type")
 			or previous_state.get("occupied_by") != current_state.get("occupied_by")
+			or previous_state.get("reserved_by") != current_state.get("reserved_by")
 			or previous_state.get("status") != current_state.get("status")
 		):
 			var updated_state := current_state.duplicate(true)
@@ -2381,7 +2409,12 @@ func _format_workstation_states(raw_workstations: Variant) -> String:
 			parts.append("%s已移除" % station_name)
 			continue
 		var occupied_by := str(workstation.get("occupied_by", ""))
-		var state_text := "空闲" if occupied_by.is_empty() or occupied_by == "<null>" else "被%s占用" % _get_npc_display_name(occupied_by)
+		var reserved_by := str(workstation.get("reserved_by", ""))
+		var state_text := "空闲"
+		if not occupied_by.is_empty() and occupied_by != "<null>":
+			state_text = "被%s占用" % _get_npc_display_name(occupied_by)
+		elif not reserved_by.is_empty() and reserved_by != "<null>":
+			state_text = "已为%s预留" % _get_npc_display_name(reserved_by)
 		if change == "added":
 			parts.append("新增%s，当前%s" % [station_name, state_text])
 		else:

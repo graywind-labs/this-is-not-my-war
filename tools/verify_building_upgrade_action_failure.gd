@@ -169,7 +169,7 @@ func _init() -> void:
 		_fail("assist_upgrade was not counted as a work phase by DailyPlanSystem")
 		return
 
-	if not _verify_travel_failure(
+	if not await _verify_travel_failure(
 		bridge,
 		daily_plan_system,
 		action_system,
@@ -177,7 +177,7 @@ func _init() -> void:
 		building_system
 	):
 		return
-	if not _verify_active_failure(
+	if not await _verify_active_failure(
 		bridge,
 		daily_plan_system,
 		action_system,
@@ -185,7 +185,7 @@ func _init() -> void:
 		building_system
 	):
 		return
-	if not _verify_completed_upgrade_followup(
+	if not await _verify_completed_upgrade_followup(
 		bridge,
 		daily_plan_system,
 		action_system,
@@ -222,6 +222,10 @@ func _verify_travel_failure(
 	if str(before_upgrade.get("phase", "")) != "pending":
 		_fail("Dining action was not pending while travelling: %s" % JSON.stringify(before_upgrade))
 		return false
+	for frame in range(12):
+		await physics_frame
+		if str(npc_system.get_npc_state(TRAVEL_NPC_ID).get("movement_target", "")) == "dining_hall":
+			break
 	if not building_system.upgrade_building("dining_hall"):
 		_fail("Could not start dining hall upgrade")
 		return false
@@ -242,7 +246,9 @@ func _verify_travel_failure(
 			})
 		)
 		return false
-	npc_system._on_npc_movement_arrived(TRAVEL_NPC_ID, "dining_hall")
+	if not _force_formal_entry_check(npc_system, TRAVEL_NPC_ID):
+		_fail("Could not advance the formal dining route to its door-entry check")
+		return false
 	if not _assert_upgrade_failure(
 		TRAVEL_NPC_ID,
 		"work_dining_hall",
@@ -283,10 +289,16 @@ func _verify_active_failure(
 	action_system.interrupt_npc_action(ACTIVE_NPC_ID, "t0057_active_reset", true)
 	npc_system.debug_enter_location_immediately(ACTIVE_NPC_ID, "garden")
 	daily_plan_system.set_auto_execution_enabled(true)
+	_set_debug_move_speed(npc_system, ACTIVE_NPC_ID, 8.0)
 	if not action_system.debug_assign_action(ACTIVE_NPC_ID, "work_garden"):
 		_fail("Could not start the active garden action")
 		return false
-	var before_upgrade: Dictionary = action_system.get_runtime_action_snapshot(ACTIVE_NPC_ID)
+	var before_upgrade: Dictionary = {}
+	for frame in range(1800):
+		await physics_frame
+		before_upgrade = action_system.get_runtime_action_snapshot(ACTIVE_NPC_ID)
+		if str(before_upgrade.get("phase", "")) == "active":
+			break
 	if str(before_upgrade.get("phase", "")) != "active":
 		_fail("Garden action did not become active: %s" % JSON.stringify(before_upgrade))
 		return false
@@ -367,6 +379,12 @@ func _verify_completed_upgrade_followup(
 		return false
 	if not action_system.debug_assign_upgrade_assist(COMPLETION_NPC_ID, "clinic"):
 		_fail("Doctor could not start assisting the clinic upgrade")
+		return false
+	_snap_formal_actor_to_service_target(npc_system, COMPLETION_NPC_ID)
+	for frame in range(6):
+		await physics_frame
+	if str(npc_system.get_npc_state(COMPLETION_NPC_ID).get("last_action_result", "")) != "assist_upgrade_started_clinic":
+		_fail("Doctor did not physically commit at the clinic construction slot")
 		return false
 	building_system._finish_upgrade("clinic")
 	var completed_state: Dictionary = npc_system.get_npc_state(COMPLETION_NPC_ID)
@@ -579,6 +597,35 @@ func _item(hour: int, action_kind: String, action_id: String, location_id: Strin
 		"expected_outcome": "verification",
 		"target": {}
 	}
+
+
+func _snap_formal_actor_to_service_target(npc_system: Node, npc_id: String) -> void:
+	var formal: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+	var target_position: Variant = session.get("service_target_position")
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath())) as Node3D
+	if npc_node != null and target_position is Vector3:
+		npc_node.global_position = target_position
+
+
+func _set_debug_move_speed(npc_system: Node, npc_id: String, speed: float) -> void:
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath()))
+	if npc_node != null:
+		npc_node.move_speed = speed
+
+
+func _force_formal_entry_check(npc_system: Node, npc_id: String) -> bool:
+	if not npc_system._building_interior_routes.has(npc_id):
+		return false
+	var route: Dictionary = npc_system._building_interior_routes[npc_id]
+	var steps: Array = route.get("steps", [])
+	for index in range(steps.size()):
+		if steps[index] is Dictionary and bool((steps[index] as Dictionary).get("check_entry", false)):
+			route["step_index"] = index
+			npc_system._building_interior_routes[npc_id] = route
+			npc_system._on_building_interior_route_arrived(npc_id, str((steps[index] as Dictionary).get("id", "")))
+			return true
+	return false
 
 
 func _fail(message: String) -> void:

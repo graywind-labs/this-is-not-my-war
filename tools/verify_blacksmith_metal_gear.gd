@@ -17,9 +17,11 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		_fail("Required blacksmith crafting systems not found")
 		return
+	time_system.set_paused(false)
 
 	var blacksmith_action: Dictionary = action_system.get_action("work_blacksmith")
 	if str(blacksmith_action.get("location_required", "")) != "blacksmith":
@@ -37,7 +39,7 @@ func _init() -> void:
 
 	var blacksmith_id := "blacksmith_01"
 	var engineer_id := "engineer_01"
-	_set_debug_move_speed(blacksmith_id, 100.0)
+	_set_debug_move_speed(blacksmith_id, 40.0)
 
 	var base_duration := float(blacksmith_action.get("duration_seconds", 3600.0))
 	var blacksmith_duration_level_1: float = action_system._get_effective_action_duration_seconds(blacksmith_action, blacksmith_id)
@@ -154,7 +156,7 @@ func _complete_work_cycle(action_system: Node, npc_system: Node, npc_id: String,
 		_fail("Failed to assign %s work" % building_id)
 		return false
 	if not await _wait_until_current_action(npc_system, npc_id, "work_%s" % building_id):
-		_fail("%s work did not start" % building_id)
+		_fail("%s work did not start: %s" % [building_id, JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(npc_id))])
 		return false
 	action_system._on_logical_time_tick(duration + 1.0, 1.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_work_%s" % building_id):
@@ -173,7 +175,7 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
 	for _frame in range(600):
-		await process_frame
+		await create_timer(0.02).timeout
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

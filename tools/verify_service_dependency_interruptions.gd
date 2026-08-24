@@ -32,6 +32,7 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	if (
 		event_bus == null
 		or action_system == null
@@ -42,6 +43,7 @@ func _init() -> void:
 		or memory_system == null
 		or llm_bridge == null
 		or daily_plan_system == null
+		or time_system == null
 	):
 		_fail("Required systems are missing")
 		return
@@ -58,6 +60,7 @@ func _init() -> void:
 			_fail("Dependency failure did not normalize to target_unavailable: %s" % dependency_failure_id)
 			return
 	daily_plan_system.set_auto_execution_enabled(false)
+	time_system.set_paused(false)
 
 	if not await _verify_chapel_lifecycle(
 		event_bus,
@@ -69,9 +72,9 @@ func _init() -> void:
 		daily_plan_system
 	):
 		return
-	if not _verify_clinic_dependency(action_system, building_system, npc_system, memory_system):
+	if not await _verify_clinic_dependency(action_system, building_system, npc_system, memory_system, time_system):
 		return
-	if not _verify_training_dependency(action_system, building_system, npc_system, resource_system, equipment_system, memory_system):
+	if not await _verify_training_dependency(action_system, building_system, npc_system, resource_system, equipment_system, memory_system, time_system):
 		return
 
 	print("T0043A service dependency interruption verification passed.")
@@ -90,6 +93,10 @@ func _verify_chapel_lifecycle(
 	var priest_id := "priest_01"
 	var prayer_id := "gardener_01"
 	var observer_id := "cook_01"
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if time_system == null:
+		_fail("TimeSystem is missing from chapel lifecycle verification")
+		return false
 	for npc_id in [priest_id, prayer_id, observer_id]:
 		action_system.interrupt_npc_action(npc_id, "t0043a_chapel_setup", true)
 		npc_system.debug_enter_location_immediately(npc_id, "chapel")
@@ -109,6 +116,9 @@ func _verify_chapel_lifecycle(
 	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
 		_fail("Prayer should start without a priest or Mass")
 		return false
+	if not await _wait_for_active(action_system, time_system, prayer_id, "pray_at_chapel"):
+		_fail("Prayer actor did not physically reach a chapel seat")
+		return false
 	var personal_snapshot: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
 	if (
 		str(personal_snapshot.get("action_id", "")) != "pray_at_chapel"
@@ -122,12 +132,15 @@ func _verify_chapel_lifecycle(
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Eligible priest should start Mass")
 		return false
+	if not await _wait_for_active(action_system, time_system, priest_id, "lead_mass"):
+		_fail("Eligible priest did not physically reach the altar")
+		return false
 	var joined_snapshot: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
 	if str(joined_snapshot.get("prayer_mode", "")) != "mass_attendance":
 		_fail("Starting Mass should convert active prayer to Mass attendance")
 		return false
-	if not is_equal_approx(float(joined_snapshot.get("elapsed_seconds", -2.0)), elapsed_before_mass):
-		_fail("Joining Mass must preserve elapsed prayer time")
+	if float(joined_snapshot.get("elapsed_seconds", -2.0)) < elapsed_before_mass:
+		_fail("Joining Mass must preserve elapsed prayer time accrued while the leader travelled")
 		return false
 	if not _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
 		_fail("Joining Mass must keep the same prayer seat")
@@ -156,7 +169,7 @@ func _verify_chapel_lifecycle(
 	if str(resumed_snapshot.get("prayer_mode", "")) != "personal_prayer":
 		_fail("Stopping Mass should resume personal prayer")
 		return false
-	if not is_equal_approx(float(resumed_snapshot.get("elapsed_seconds", -2.0)), elapsed_before_mass):
+	if absf(float(resumed_snapshot.get("elapsed_seconds", -2.0)) - float(joined_snapshot.get("elapsed_seconds", -3.0))) > 5.0:
 		_fail("Mass interruption must not reset prayer progress")
 		return false
 	if not _is_occupied_by(building_system.get_building("chapel").get("workstations", []), prayer_id):
@@ -192,9 +205,15 @@ func _verify_chapel_lifecycle(
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Priest should start Mass before a new prayer arrives")
 		return false
+	if not await _wait_for_active(action_system, time_system, priest_id, "lead_mass"):
+		_fail("Priest did not reach the altar before the new prayer")
+		return false
 	event_bus.logical_time_tick.emit(600.0, 1.0)
 	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
 		_fail("Merged prayer should start while Mass is already active")
+		return false
+	if not await _wait_for_active(action_system, time_system, prayer_id, "pray_at_chapel"):
+		_fail("Prayer did not physically reach a seat during Mass")
 		return false
 	var started_during_mass: Dictionary = action_system.get_runtime_action_snapshot(prayer_id)
 	if (
@@ -203,6 +222,7 @@ func _verify_chapel_lifecycle(
 	):
 		_fail("Prayer started during Mass should immediately become Mass attendance")
 		return false
+	var attendee_elapsed_before_completion := float(started_during_mass.get("elapsed_seconds", 0.0))
 	event_bus.logical_time_tick.emit(3000.0, 1.0)
 	if str(npc_system.get_npc_state(priest_id).get("last_action_result", "")) != "completed_mass":
 		_fail("Mass leader should complete after its configured duration")
@@ -211,7 +231,7 @@ func _verify_chapel_lifecycle(
 	if (
 		str(after_normal_mass.get("phase", "")) != "active"
 		or str(after_normal_mass.get("prayer_mode", "")) != "personal_prayer"
-		or not is_equal_approx(float(after_normal_mass.get("elapsed_seconds", -1.0)), 3000.0)
+		or absf(float(after_normal_mass.get("elapsed_seconds", -1.0)) - (attendee_elapsed_before_completion + 3000.0)) > 5.0
 	):
 		_fail("Normal Mass completion should resume the unfinished original prayer")
 		return false
@@ -238,9 +258,15 @@ func _verify_chapel_lifecycle(
 	if not action_system.debug_assign_action(prayer_id, "pray_at_chapel"):
 		_fail("Prayer should restart for the planned Mass boundary scenario")
 		return false
+	if not await _wait_for_active(action_system, time_system, prayer_id, "pray_at_chapel"):
+		_fail("Boundary prayer did not physically reach a seat")
+		return false
 	event_bus.logical_time_tick.emit(1800.0, 1.0)
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Priest should start Mass for the planned boundary scenario")
+		return false
+	if not await _wait_for_active(action_system, time_system, priest_id, "lead_mass"):
+		_fail("Boundary Mass leader did not physically reach the altar")
 		return false
 	var game_state := root.get_node_or_null("GameState")
 	if game_state == null:
@@ -395,6 +421,9 @@ func _verify_chapel_lifecycle(
 	if not action_system.debug_assign_action(observer_id, "work_dining_hall"):
 		_fail("Could not start ordinary work for boundary isolation")
 		return false
+	if not await _wait_for_active(action_system, time_system, observer_id, "work_dining_hall"):
+		_fail("Ordinary boundary work did not physically reach its workstation")
+		return false
 	if not daily_plan_system.set_npc_daily_plan(
 		observer_id,
 		_make_current_plan(current_hour, "idle", "idle", ""),
@@ -427,14 +456,17 @@ func _verify_clinic_dependency(
 	action_system: Node,
 	building_system: Node,
 	npc_system: Node,
-	memory_system: Node
+	memory_system: Node,
+	time_system: Node
 ) -> bool:
 	var doctor_id := "doctor_01"
 	var patient_id := "gardener_01"
 	for npc_id in [doctor_id, patient_id]:
 		action_system.interrupt_npc_action(npc_id, "t0043a_clinic_setup", true)
-	npc_system.debug_enter_location_immediately(doctor_id, "garden")
-	npc_system.debug_enter_location_immediately(patient_id, "stable")
+	var doctor_node := _get_npc_node(npc_system, doctor_id)
+	var patient_node := _get_npc_node(npc_system, patient_id)
+	doctor_node.set("move_speed", 2.0)
+	patient_node.set("move_speed", 8.0)
 	npc_system.apply_damage_to_npc(patient_id, 20, "guard_officer", "private")
 
 	# A paired plan is dispatched provider-first, but both NPCs can still be in
@@ -451,11 +483,21 @@ func _verify_clinic_dependency(
 	):
 		_fail("Travelling clinic pair did not preserve provider/dependent pending actions")
 		return false
-	npc_system.debug_enter_location_immediately(patient_id, "clinic")
-	if str(action_system.get_pending_action_id(patient_id)) != "receive_clinic_treatment":
+	if not await _wait_for_formal_workstation_arrival(action_system, npc_system, time_system, patient_id, "receive_clinic_treatment"):
+		_fail("Patient did not physically reach the reserved clinic bed")
+		return false
+	if (
+		str(action_system.get_pending_action_id(patient_id)) != "receive_clinic_treatment"
+		or str(npc_system.get_npc_state(patient_id).get("physical_location_phase", "")) != "workstation"
+	):
 		_fail("Patient should keep waiting after arriving before the doctor")
 		return false
-	npc_system.debug_enter_location_immediately(doctor_id, "clinic")
+	if not await _wait_for_active(action_system, time_system, doctor_id, "work_clinic_doctor"):
+		_fail("Doctor did not physically reach the reserved clinic desk")
+		return false
+	if not await _wait_for_active(action_system, time_system, patient_id, "receive_clinic_treatment", 120):
+		_fail("Patient did not commit after the doctor became active")
+		return false
 	if (
 		str(action_system.get_active_action_id(doctor_id)) != "work_clinic_doctor"
 		or str(action_system.get_active_action_id(patient_id)) != "receive_clinic_treatment"
@@ -464,8 +506,6 @@ func _verify_clinic_dependency(
 		return false
 	action_system.interrupt_npc_action(doctor_id, "t0043a_travel_pair_cleanup", true)
 	action_system.interrupt_npc_action(patient_id, "t0043a_travel_pair_cleanup", true)
-	for npc_id in [doctor_id, patient_id]:
-		npc_system.debug_enter_location_immediately(npc_id, "clinic")
 
 	if action_system.debug_assign_action(patient_id, "receive_clinic_treatment"):
 		_fail("Clinic treatment must fail when no doctor is active")
@@ -478,6 +518,14 @@ func _verify_clinic_dependency(
 		return false
 	if not action_system.debug_assign_action(patient_id, "receive_clinic_treatment"):
 		_fail("Injured patient should start treatment while a doctor is active")
+		return false
+	doctor_node.set("move_speed", 5.0)
+	patient_node.set("move_speed", 5.0)
+	if not await _wait_for_active(action_system, time_system, doctor_id, "work_clinic_doctor"):
+		_fail("Doctor should physically return to clinic duty")
+		return false
+	if not await _wait_for_active(action_system, time_system, patient_id, "receive_clinic_treatment"):
+		_fail("Injured patient should physically return to a clinic bed")
 		return false
 	action_system.interrupt_npc_action(doctor_id, "t0043a_doctor_left", true)
 	if str(npc_system.get_npc_state(patient_id).get("last_action_result", "")) != "clinic_patient_failed_doctor_left":
@@ -496,19 +544,48 @@ func _verify_clinic_dependency(
 	return true
 
 
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		if str(action_system.get_active_action_id(npc_id)) == action_id:
+			return true
+	return false
+
+
+func _wait_for_formal_workstation_arrival(action_system: Node, npc_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if (
+			str(action_system.get_pending_action_id(npc_id)) == action_id
+			and str(state.get("physical_location_phase", "")) == "workstation"
+		):
+			return true
+	return false
+
+
 func _verify_training_dependency(
 	action_system: Node,
 	building_system: Node,
 	npc_system: Node,
 	resource_system: Node,
 	equipment_system: Node,
-	memory_system: Node
+	memory_system: Node,
+	time_system: Node
 ) -> bool:
 	var instructor_id := "veteran_deputy_01"
 	var student_id := "stableman_01"
 	for npc_id in [instructor_id, student_id]:
 		action_system.interrupt_npc_action(npc_id, "t0043a_training_setup", true)
 		npc_system.debug_enter_location_immediately(npc_id, "training_ground")
+		_get_npc_node(npc_system, npc_id).set("move_speed", 5.0)
 	npc_system.set_npc_recruited(student_id, true)
 	resource_system.add_resource("item_sword_shield", 1)
 	resource_system.add_resource("item_bow", 1)
@@ -528,7 +605,13 @@ func _verify_training_dependency(
 		_fail("Equipped instructor should start duty")
 		return false
 	if not action_system.debug_assign_action(student_id, "receive_weapon_training"):
-		_fail("Equipped student should start while an instructor is active")
+		_fail("Equipped student should reserve a practice slot while the instructor is travelling")
+		return false
+	if not await _wait_for_active(action_system, time_system, instructor_id, "work_training_instructor"):
+		_fail("Training instructor did not physically reach the formal command post")
+		return false
+	if not await _wait_for_active(action_system, time_system, student_id, "receive_weapon_training"):
+		_fail("Training student did not physically reach the reserved practice slot")
 		return false
 	action_system.interrupt_npc_action(instructor_id, "t0043a_instructor_left", true)
 	if str(npc_system.get_npc_state(student_id).get("last_action_result", "")) != "training_student_failed_instructor_left":

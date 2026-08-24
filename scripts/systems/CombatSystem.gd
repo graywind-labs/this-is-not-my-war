@@ -2,6 +2,13 @@ extends Node
 
 const ENEMY_WAVES_FILE := "enemy_waves.json"
 const ENEMY_ROOT_PATH := "/root/Main/WorldRoot/Station/Enemies"
+const FORMAL_ENEMY_ROOT_PATH := "/root/Main/WorldRoot/FormalStationLayout/FormalEnemies"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
+const ACTOR_MOTION_SCENE := preload("res://scenes/debug/ActorMotionBody.tscn")
+const LEGACY_FORMAL_ENEMY_ART_SCENE_PATH := "res://scenes/characters/GlenArtView.tscn"
+const SWORD_SHIELD_CHIBI_ART_SCENE_PATH := "res://scenes/characters/EnemySwordShieldChibiArtView.tscn"
+const ENEMY_SWORD_SCENE_PATH := "res://assets/3d/quaternius/props/sword_bronze.glb"
+const ENEMY_SHIELD_SCENE_PATH := "res://assets/3d/quaternius/props/shield_wooden.glb"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
@@ -12,6 +19,8 @@ const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DEFAULT_SPAWN_POINT_ID := "front_forest"
+const FORMAL_ENEMY_NAVIGATION_PILOT_ID := "formal_enemy_foot_01"
+const FORMAL_ACTIVE_ENEMY_SLICE_ID := "wave_01_formal_enemy_001"
 const SYSTEM_ACTOR_ID := "system"
 const COMBAT_TIME_CAP_REQUEST_ID := "combat_enemy_presence"
 const COMBAT_TIME_CAP_SCALE := 1.0
@@ -185,6 +194,22 @@ var _last_wartime_dialogue_result: Dictionary = {}
 var _last_low_hp_judgement_result: Dictionary = {}
 var _pending_low_hp_judgement_by_request: Dictionary = {}
 var _last_escape_result: Dictionary = {}
+var _formal_enemy_navigation_pilot: Dictionary = {}
+var _formal_enemy_navigation_pilot_node_path := NodePath()
+var _formal_active_enemy_slice: Dictionary = {}
+var _formal_active_enemy_slice_node_path := NodePath()
+var _formal_first_wave_slices: Dictionary = {}
+var _formal_first_wave_node_paths: Dictionary = {}
+var _default_formal_wave_active := false
+var _formal_escape_world_hold := false
+var _default_formal_wave_number := 0
+var _formal_crowd_logic_frame := 0
+var _formal_enemy_ai_cursor := 0
+var _formal_enemy_ai_updates_per_frame := 8
+var _formal_contact_update_interval_frames := 6
+var _formal_avoidance_update_interval_frames := 3
+var _formal_enemy_game_seconds_accumulator: Dictionary = {}
+var _formal_enemy_combat_seconds_accumulator: Dictionary = {}
 var _triggered_wave_numbers: Array[int] = []
 var _last_auto_wave_result: Dictionary = {}
 var _last_manual_next_wave_result: Dictionary = {}
@@ -208,12 +233,23 @@ func _ready() -> void:
 		llm_bridge.battle_judgement_async_response_received.connect(_on_battle_judgement_async_response_received)
 
 
+func _physics_process(delta: float) -> void:
+	_sync_formal_enemy_navigation_pilot_presentation()
+	_sync_formal_active_enemy_slice_presentation()
+	_sync_formal_first_wave_presentation(delta)
+
+
 func initialize() -> void:
+	_exit_default_formal_combat_world("combat_initialize")
+	_clear_formal_enemy_navigation_pilot("combat_initialize")
+	_clear_formal_active_enemy_slice_node("combat_initialize")
+	_clear_formal_first_wave_nodes("combat_initialize")
 	_clear_spawned_enemy_nodes()
 	_waves.clear()
 	_wave_by_number.clear()
 	_active_enemies.clear()
 	_enemy_nodes.clear()
+	_reset_formal_crowd_ai_budget()
 	_active_rallies.clear()
 	_active_avoidances.clear()
 	_active_escapes.clear()
@@ -234,6 +270,9 @@ func initialize() -> void:
 	_last_low_hp_judgement_result.clear()
 	_pending_low_hp_judgement_by_request.clear()
 	_last_escape_result.clear()
+	_default_formal_wave_active = false
+	_formal_escape_world_hold = false
+	_default_formal_wave_number = 0
 	_triggered_wave_numbers.clear()
 	_last_auto_wave_result.clear()
 	_last_manual_next_wave_result.clear()
@@ -321,6 +360,23 @@ func get_wave_schedule_snapshot() -> Dictionary:
 		"last_victory_result": _last_victory_result.duplicate(true),
 		"last_auto_wave_result": _last_auto_wave_result.duplicate(true),
 		"last_manual_next_wave_result": _last_manual_next_wave_result.duplicate(true)
+	}
+
+
+func get_wave_hud_snapshot() -> Dictionary:
+	var next_wave := _get_next_pending_wave()
+	var next_info := {}
+	if not next_wave.is_empty():
+		var trigger_seconds := _get_wave_trigger_absolute_seconds(next_wave)
+		next_info = {
+			"wave_number": int(next_wave.get("wave_number", 0)),
+			"seconds_until": maxf(0.0, trigger_seconds - _get_current_absolute_seconds()),
+		}
+	return {
+		"next_wave": next_info,
+		"all_waves_triggered": next_wave.is_empty(),
+		"active_enemy_count": get_active_enemy_count(),
+		"active_wave_number": int(_active_battle.get("wave_number", 0)),
 	}
 
 
@@ -743,63 +799,29 @@ func spawn_wave(wave_number: int, clear_existing: bool = false, reason: String =
 			"game_over_reason": game_over_reason
 		})
 
-	var enemy_root := get_node_or_null(ENEMY_ROOT_PATH)
-	if enemy_root == null:
-		return _failure("enemy_root_missing", "敌人生成容器不存在。", {"wave_number": wave_number})
-
-	if clear_existing:
-		clear_spawned_enemies()
-
-	var wave: Dictionary = _wave_by_number[wave_number]
-	var enemies: Array = wave.get("enemies", [])
-	var total_count := _get_wave_enemy_count(wave)
-	var columns := maxi(1, ceili(sqrt(float(maxi(total_count, 1)))))
-	var spawn_index := 0
-	var spawned: Array[Dictionary] = []
-
-	for raw_enemy in enemies:
-		var enemy_template: Dictionary = raw_enemy if raw_enemy is Dictionary else {}
-		var count := maxi(0, int(enemy_template.get("count", 0)))
-		for group_index in range(count):
-			_spawn_sequence += 1
-			var enemy_id := "wave_%02d_enemy_%03d" % [wave_number, _spawn_sequence]
-			var enemy := _make_enemy_state(enemy_id, wave, enemy_template, group_index, spawn_index, columns)
-			_active_enemies[enemy_id] = enemy.duplicate(true)
-			var enemy_node := _create_enemy_node(enemy)
-			enemy_root.add_child(enemy_node)
-			enemy_node.global_position = enemy.get("position", Vector3.ZERO)
-			_enemy_nodes[enemy_id] = enemy_node.get_path()
-			spawned.append(enemy.duplicate(true))
-			spawn_index += 1
-
-	var time_cap_result := _sync_enemy_presence_time_cap("enemies_spawned")
-	var battle_start_result := _start_battle_for_wave(wave, spawned, reason)
-	_last_spawn_result = {
-		"ok": true,
-		"wave_number": wave_number,
-		"wave_id": str(wave.get("id", "")),
-		"spawned_count": spawned.size(),
-		"active_enemy_count": get_active_enemy_count(),
-		"spawned_enemy_ids": _extract_enemy_ids(spawned),
-		"spawn_point": str(wave.get("spawn_point", DEFAULT_SPAWN_POINT_ID)),
-		"spawn_position": _vector3_to_dict(_get_wave_spawn_position(wave)),
-		"reason": reason,
-		"time_cap_result": time_cap_result,
-		"battle_start_result": battle_start_result
-	}
-	return _last_spawn_result.duplicate(true)
+	return _spawn_formal_dynamic_wave(wave_number, clear_existing, reason, true)
 
 
 func clear_spawned_enemies() -> Dictionary:
 	var removed_count := _active_enemies.size()
+	var formal_pilot_was_active := not _formal_enemy_navigation_pilot.is_empty()
+	var formal_active_slice_was_active := not _formal_active_enemy_slice.is_empty()
+	var formal_first_wave_count := _formal_first_wave_slices.size()
+	_clear_formal_enemy_navigation_pilot("enemies_cleared")
+	_clear_formal_active_enemy_slice_node("enemies_cleared")
+	_clear_formal_first_wave_nodes("enemies_cleared")
 	_clear_spawned_enemy_nodes()
 	_active_enemies.clear()
 	_enemy_nodes.clear()
+	_reset_formal_crowd_ai_budget()
 	var time_cap_result := _sync_enemy_presence_time_cap("enemies_cleared")
 	var mode_exit_result := _handle_all_enemies_cleared("enemies_cleared")
 	_last_spawn_result = {
 		"ok": true,
 		"removed_count": removed_count,
+		"formal_enemy_pilot_removed": formal_pilot_was_active,
+		"formal_active_enemy_slice_removed": formal_active_slice_was_active,
+		"formal_first_wave_removed_count": formal_first_wave_count,
 		"active_enemy_count": 0,
 		"time_cap_result": time_cap_result,
 		"mode_exit_result": mode_exit_result
@@ -813,6 +835,625 @@ func debug_spawn_wave(wave_number: int = 1, clear_existing: bool = false) -> Dic
 
 func debug_clear_enemies() -> Dictionary:
 	return clear_spawned_enemies()
+
+
+func debug_run_formal_enemy_navigation_pilot() -> Dictionary:
+	_clear_formal_enemy_navigation_pilot("superseded")
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var formal_root := get_node_or_null("/root/Main/WorldRoot/FormalStationLayout") as Node3D
+	if (
+		controller == null
+		or formal_root == null
+		or not controller.has_method("debug_set_preview_enabled")
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_enemy_route_world")
+	):
+		return {"ok": false, "reason": "formal_enemy_pilot_dependencies_missing"}
+	var route: Dictionary = controller.get_enemy_route_world()
+	var stages := route.get("stages", []) as Array
+	if stages.size() < 2:
+		return {"ok": false, "reason": "formal_enemy_route_missing"}
+	var preview: Dictionary = controller.debug_set_preview_enabled(true)
+	if not bool(preview.get("preview_enabled", false)):
+		return {"ok": false, "reason": "formal_preview_unavailable"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_map_missing"}
+
+	var enemy_template := _get_formal_enemy_pilot_template()
+	if enemy_template.is_empty():
+		return {"ok": false, "reason": "enemy_template_missing"}
+	var spawn_stage := stages[0] as Dictionary
+	var enemy := enemy_template.duplicate(true)
+	enemy["id"] = FORMAL_ENEMY_NAVIGATION_PILOT_ID
+	enemy["enemy_id"] = FORMAL_ENEMY_NAVIGATION_PILOT_ID
+	enemy["wave_id"] = "formal_navigation_pilot"
+	enemy["wave_number"] = 0
+	enemy["position"] = spawn_stage.get("position", Vector3.ZERO)
+	enemy["current_action"] = "moving_to_%s" % str((stages[1] as Dictionary).get("id", "reveal"))
+	enemy["alive"] = true
+	enemy["target"] = {}
+
+	var pilot_root := formal_root.get_node_or_null("FormalEnemies") as Node3D
+	if pilot_root == null:
+		pilot_root = Node3D.new()
+		pilot_root.name = "FormalEnemies"
+		formal_root.add_child(pilot_root)
+	var actor := _create_formal_enemy_pilot_actor(enemy)
+	pilot_root.add_child(actor)
+	actor.global_position = spawn_stage.get("position", Vector3.ZERO)
+	actor.avoidance_priority_override = 0.55
+	actor.configure_profile("enemy_foot")
+	if not actor.set_navigation_map(navigation_map):
+		actor.queue_free()
+		return {"ok": false, "reason": "formal_enemy_navigation_bind_failed"}
+	actor.motion_arrived.connect(_on_formal_enemy_pilot_motion_arrived)
+	actor.motion_failed.connect(_on_formal_enemy_pilot_motion_failed)
+	actor.motion_cancelled.connect(_on_formal_enemy_pilot_motion_cancelled)
+	_formal_enemy_navigation_pilot_node_path = actor.get_path()
+	_formal_enemy_navigation_pilot = {
+		"pilot_id": FORMAL_ENEMY_NAVIGATION_PILOT_ID,
+		"active": true,
+		"completed": false,
+		"phase": "marching",
+		"route_source": str(route.get("route_source", "formal_station_layout")),
+		"route": route.duplicate(true),
+		"target_stage_index": 1,
+		"current_stage_id": str(spawn_stage.get("id", "spawn")),
+		"target_stage_id": str((stages[1] as Dictionary).get("id", "reveal")),
+		"completed_stage_ids": [str(spawn_stage.get("id", "spawn"))],
+		"stop_stage_id": str(route.get("pilot_stop_stage_id", "front_gate")),
+		"failure_reason": "",
+		"enemy": enemy,
+		"previous_position": actor.global_position,
+		"combat_authority_committed": false
+	}
+	if not _request_formal_enemy_pilot_stage(actor, 1):
+		var failed_snapshot := debug_get_formal_enemy_navigation_pilot_snapshot()
+		_clear_formal_enemy_navigation_pilot("route_start_failed")
+		failed_snapshot["ok"] = false
+		failed_snapshot["reason"] = "formal_enemy_route_start_failed"
+		return failed_snapshot
+	return {
+		"ok": true,
+		"pilot_id": FORMAL_ENEMY_NAVIGATION_PILOT_ID,
+		"actor_profile_id": "enemy_foot",
+		"route_source": str(route.get("route_source", "formal_station_layout")),
+		"spawn_stage_id": str(spawn_stage.get("id", "spawn")),
+		"target_stage_id": str((stages[1] as Dictionary).get("id", "reveal")),
+		"stop_stage_id": str(route.get("pilot_stop_stage_id", "front_gate")),
+		"stage_count": stages.size(),
+		"preview_enabled": true,
+		"combat_authority_committed": false
+	}
+
+
+func debug_stop_formal_enemy_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	var snapshot := debug_get_formal_enemy_navigation_pilot_snapshot()
+	_clear_formal_enemy_navigation_pilot(reason)
+	return {
+		"ok": true,
+		"active": false,
+		"reason": reason,
+		"previous_phase": str(snapshot.get("phase", "inactive"))
+	}
+
+
+func debug_get_formal_enemy_navigation_pilot_snapshot() -> Dictionary:
+	if _formal_enemy_navigation_pilot.is_empty():
+		return {
+			"ok": true,
+			"active": false,
+			"pilot_id": FORMAL_ENEMY_NAVIGATION_PILOT_ID,
+			"phase": "inactive",
+			"combat_authority_committed": false
+		}
+	var result := _formal_enemy_navigation_pilot.duplicate(true)
+	result.erase("route")
+	result.erase("enemy")
+	result.erase("previous_position")
+	var actor := get_node_or_null(_formal_enemy_navigation_pilot_node_path) as ActorMotionBody
+	result["node_available"] = actor != null
+	result["node_class"] = actor.get_class() if actor != null else ""
+	result["world_position"] = actor.global_position if actor != null else Vector3.ZERO
+	result["motion"] = actor.debug_get_motion_snapshot() if actor != null else {}
+	result["active_enemy_count"] = get_active_enemy_count()
+	return result
+
+
+func debug_run_formal_active_enemy_main_hall_slice() -> Dictionary:
+	clear_spawned_enemies()
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var formal_root := get_node_or_null("/root/Main/WorldRoot/FormalStationLayout") as Node3D
+	if (
+		controller == null
+		or formal_root == null
+		or not controller.has_method("debug_set_preview_enabled")
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_enemy_route_world")
+	):
+		return {"ok": false, "reason": "formal_active_enemy_dependencies_missing"}
+	var route: Dictionary = controller.get_enemy_route_world()
+	var stages := route.get("stages", []) as Array
+	if stages.size() < 10:
+		return {"ok": false, "reason": "formal_active_enemy_route_missing"}
+	var preview: Dictionary = controller.debug_set_preview_enabled(true)
+	if not bool(preview.get("preview_enabled", false)):
+		return {"ok": false, "reason": "formal_preview_unavailable"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_map_missing"}
+	if _waves.is_empty():
+		return {"ok": false, "reason": "wave_missing"}
+	var wave := (_waves[0] as Dictionary).duplicate(true)
+	var enemy_template := _get_formal_enemy_pilot_template()
+	if enemy_template.is_empty():
+		return {"ok": false, "reason": "enemy_template_missing"}
+	var spawn_stage := stages[0] as Dictionary
+	var enemy := _make_enemy_state(FORMAL_ACTIVE_ENEMY_SLICE_ID, wave, enemy_template, 0, 0, 1)
+	enemy["position"] = spawn_stage.get("position", Vector3.ZERO)
+	enemy["target_preference"] = ["front_gate", "warehouse", "main_hall"]
+	enemy["current_action"] = "moving_to_%s" % str((stages[1] as Dictionary).get("id", "reveal"))
+	enemy["formal_navigation_authority"] = true
+	enemy["formal_route_phase"] = "marching"
+
+	var pilot_root := formal_root.get_node_or_null("FormalEnemies") as Node3D
+	if pilot_root == null:
+		pilot_root = Node3D.new()
+		pilot_root.name = "FormalEnemies"
+		formal_root.add_child(pilot_root)
+	var actor := _create_formal_enemy_actor(enemy, "FormalActiveEnemyFoot01", false)
+	pilot_root.add_child(actor)
+	actor.global_position = spawn_stage.get("position", Vector3.ZERO)
+	actor.avoidance_priority_override = 0.55
+	actor.configure_profile("enemy_foot")
+	if not actor.set_navigation_map(navigation_map):
+		actor.queue_free()
+		return {"ok": false, "reason": "formal_active_enemy_navigation_bind_failed"}
+	actor.motion_arrived.connect(_on_formal_active_enemy_motion_arrived)
+	actor.motion_failed.connect(_on_formal_active_enemy_motion_failed)
+	actor.motion_cancelled.connect(_on_formal_active_enemy_motion_cancelled)
+
+	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+	_enemy_nodes[FORMAL_ACTIVE_ENEMY_SLICE_ID] = actor.get_path()
+	_formal_active_enemy_slice_node_path = actor.get_path()
+	_formal_active_enemy_slice = {
+		"enemy_id": FORMAL_ACTIVE_ENEMY_SLICE_ID,
+		"active": true,
+		"completed": false,
+		"phase": "marching",
+		"route": route.duplicate(true),
+		"target_stage_index": 1,
+		"current_stage_id": str(spawn_stage.get("id", "spawn")),
+		"target_stage_id": str((stages[1] as Dictionary).get("id", "reveal")),
+		"completed_stage_ids": [str(spawn_stage.get("id", "spawn"))],
+		"stop_stage_id": "main_hall",
+		"failure_reason": "",
+		"previous_position": actor.global_position,
+		"combat_authority_committed": false,
+		"front_gate_combat_authority_committed": false,
+		"warehouse_combat_authority_committed": false,
+		"main_hall_combat_authority_committed": false,
+		"attack_target_building_id": "",
+		"attack_unlocked": false
+	}
+	if not _request_formal_active_enemy_stage(actor, 1):
+		var failed := debug_get_formal_active_enemy_main_hall_slice_snapshot()
+		clear_spawned_enemies()
+		failed["ok"] = false
+		failed["reason"] = "formal_active_enemy_route_start_failed"
+		return failed
+	var spawned: Array[Dictionary] = [enemy.duplicate(true)]
+	var time_cap_result := _sync_enemy_presence_time_cap("formal_active_enemy_spawned")
+	var battle_start_result := _start_battle_for_wave(wave, spawned, "formal_active_enemy_slice")
+	_last_spawn_result = {
+		"ok": true,
+		"wave_number": int(wave.get("wave_number", 1)),
+		"wave_id": str(wave.get("id", "wave_01")),
+		"spawned_count": 1,
+		"active_enemy_count": 1,
+		"spawned_enemy_ids": [FORMAL_ACTIVE_ENEMY_SLICE_ID],
+		"spawn_point": "formal_front_forest",
+		"spawn_position": _vector3_to_dict(actor.global_position),
+		"reason": "formal_active_enemy_slice",
+		"time_cap_result": time_cap_result,
+		"battle_start_result": battle_start_result
+	}
+	return _last_spawn_result.duplicate(true)
+
+
+func debug_stop_formal_active_enemy_main_hall_slice(reason: String = "stopped") -> Dictionary:
+	var before := debug_get_formal_active_enemy_main_hall_slice_snapshot()
+	var clear_result := clear_spawned_enemies()
+	return {
+		"ok": true,
+		"reason": reason,
+		"previous_phase": str(before.get("phase", "inactive")),
+		"clear_result": clear_result
+	}
+
+
+func debug_get_formal_active_enemy_main_hall_slice_snapshot() -> Dictionary:
+	if _formal_active_enemy_slice.is_empty():
+		return {
+			"ok": true,
+			"active": false,
+			"enemy_id": FORMAL_ACTIVE_ENEMY_SLICE_ID,
+			"phase": "inactive",
+			"active_enemy_count": get_active_enemy_count()
+		}
+	var result := _formal_active_enemy_slice.duplicate(true)
+	result.erase("route")
+	result.erase("previous_position")
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	result["node_available"] = actor != null
+	result["world_position"] = actor.global_position if actor != null else Vector3.ZERO
+	result["motion"] = actor.debug_get_motion_snapshot() if actor != null else {}
+	result["enemy"] = get_enemy(FORMAL_ACTIVE_ENEMY_SLICE_ID)
+	result["active_enemy_count"] = get_active_enemy_count()
+	result["active_battle"] = _active_battle.duplicate(true)
+	return result
+
+
+func debug_run_formal_first_wave_slice() -> Dictionary:
+	return _debug_run_formal_wave_slice(1)
+
+
+func debug_run_formal_second_wave_slice() -> Dictionary:
+	return _debug_run_formal_wave_slice(2)
+
+
+func debug_run_formal_dynamic_wave_slice(wave_number: int = 1) -> Dictionary:
+	return _debug_run_formal_wave_slice(clampi(wave_number, 1, 5))
+
+
+func debug_get_formal_dynamic_wave_slice_snapshot() -> Dictionary:
+	return debug_get_formal_first_wave_slice_snapshot()
+
+
+func debug_stop_formal_dynamic_wave_slice(reason: String = "stopped") -> Dictionary:
+	return debug_stop_formal_first_wave_slice(reason)
+
+
+func _debug_run_formal_wave_slice(wave_number: int) -> Dictionary:
+	return _spawn_formal_dynamic_wave(wave_number, true, "formal_wave_slice", false)
+
+
+func _spawn_formal_dynamic_wave(
+	wave_number: int,
+	clear_existing: bool,
+	reason: String,
+	is_default_runtime: bool
+) -> Dictionary:
+	if clear_existing:
+		clear_spawned_enemies()
+	elif not _active_enemies.is_empty() and (not is_default_runtime or not _default_formal_wave_active):
+		return {
+			"ok": false,
+			"reason": "formal_wave_already_active",
+			"wave_number": wave_number,
+			"active_enemy_count": _active_enemies.size()
+		}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var formal_root := get_node_or_null("/root/Main/WorldRoot/FormalStationLayout") as Node3D
+	if (
+		controller == null
+		or formal_root == null
+		or not controller.has_method("debug_set_preview_enabled")
+		or not controller.has_method("set_runtime_formal_world_enabled")
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_enemy_route_world")
+		or not controller.has_method("get_formal_wave_navigation_config")
+		or not controller.has_method("get_actor_motion_profile")
+		or not controller.has_method("get_formal_wave_spawn_config")
+	):
+		return {"ok": false, "reason": "formal_wave_dependencies_missing", "wave_number": wave_number}
+	var route: Dictionary = controller.get_enemy_route_world()
+	var navigation_config: Dictionary = controller.get_formal_wave_navigation_config(wave_number)
+	var stages := route.get("stages", []) as Array
+	var target_sequence := navigation_config.get("target_sequence", []) as Array
+	var attack_slots_world := navigation_config.get("attack_slots_world", {}) as Dictionary
+	var attack_slot_sets_world := navigation_config.get("attack_slot_sets_world", {}) as Dictionary
+	var movement_model := str(navigation_config.get("movement_model", "fixed_attack_slots"))
+	if stages.size() < 10 or target_sequence != ["front_gate", "warehouse", "main_hall"]:
+		return {"ok": false, "reason": "formal_wave_route_missing", "wave_number": wave_number}
+	var preview: Dictionary = (
+		controller.set_runtime_formal_world_enabled(true)
+		if is_default_runtime
+		else controller.debug_set_preview_enabled(true)
+	)
+	if not bool(preview.get("preview_enabled", false)):
+		return {"ok": false, "reason": "formal_preview_unavailable"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_map_missing"}
+	if wave_number <= 0 or wave_number > _waves.size():
+		return {"ok": false, "reason": "wave_missing"}
+
+	var wave := (_waves[wave_number - 1] as Dictionary).duplicate(true)
+	var templates := wave.get("enemies", []) as Array
+	var expected_count := _get_wave_enemy_count(wave)
+	if expected_count <= 0:
+		return {"ok": false, "reason": "enemy_template_missing"}
+	var spawn_formation := _resolve_formal_wave_spawn_formation(controller, templates)
+	var spawn_columns := int(spawn_formation.get("columns", 3))
+	var spawn_spacing := float(spawn_formation.get("spacing", 0.95))
+	_formal_enemy_ai_updates_per_frame = maxi(1, int(spawn_formation.get("ai_updates_per_frame", 8)))
+	_formal_contact_update_interval_frames = maxi(1, int(spawn_formation.get("contact_update_interval_frames", 6)))
+	_formal_avoidance_update_interval_frames = maxi(1, int(spawn_formation.get("avoidance_update_interval_frames", 3)))
+	_reset_formal_crowd_ai_budget(false)
+	var expected_by_role: Dictionary = {}
+	for raw_template in templates:
+		var template := raw_template as Dictionary
+		var role_id := _get_formal_attack_slot_role(str(template.get("unit_type", "")))
+		expected_by_role[role_id] = int(expected_by_role.get(role_id, 0)) + maxi(0, int(template.get("count", 0)))
+	if movement_model != "dynamic_combat_pressure":
+		for building_id in target_sequence:
+			if attack_slot_sets_world.is_empty():
+				if (attack_slots_world.get(str(building_id), []) as Array).size() < expected_count:
+					return {"ok": false, "reason": "formal_wave_attack_slots_missing", "building_id": building_id}
+			else:
+				var building_sets := attack_slot_sets_world.get(str(building_id), {}) as Dictionary
+				for raw_role_id in expected_by_role.keys():
+					var role_id := str(raw_role_id)
+					if (building_sets.get(role_id, []) as Array).size() < int(expected_by_role[role_id]):
+						return {"ok": false, "reason": "formal_wave_role_slots_missing", "building_id": building_id, "role_id": role_id}
+	var actor_root := formal_root.get_node_or_null("FormalEnemies") as Node3D
+	if actor_root == null:
+		actor_root = Node3D.new()
+		actor_root.name = "FormalEnemies"
+		formal_root.add_child(actor_root)
+
+	var spawned: Array[Dictionary] = []
+	var spawn_index := 0
+	var role_spawn_counts: Dictionary = {}
+	for raw_template in templates:
+		var enemy_template: Dictionary = raw_template if raw_template is Dictionary else {}
+		var attack_slot_role := _get_formal_attack_slot_role(str(enemy_template.get("unit_type", "")))
+		var count := maxi(0, int(enemy_template.get("count", 0)))
+		for group_index in range(count):
+			spawn_index += 1
+			var role_formation_index := int(role_spawn_counts.get(attack_slot_role, 0))
+			role_spawn_counts[attack_slot_role] = role_formation_index + 1
+			_spawn_sequence += 1
+			var enemy_id := (
+				"wave_%02d_runtime_enemy_%03d" % [wave_number, _spawn_sequence]
+				if is_default_runtime
+				else "wave_%02d_formal_wave_enemy_%03d" % [wave_number, spawn_index]
+			)
+			var spawn_stage := stages[0] as Dictionary
+			var spawn_position := _get_route_formation_position(
+				route,
+				0,
+				spawn_index - 1,
+				spawn_stage.get("position", Vector3.ZERO),
+				spawn_columns,
+				spawn_spacing
+			)
+			var enemy := _make_enemy_state(enemy_id, wave, enemy_template, group_index, spawn_index - 1, 4)
+			enemy["position"] = spawn_position
+			enemy["target_preference"] = _normalize_enemy_target_preferences(enemy_template.get("target_preference", DEFAULT_TARGET_PREFERENCE))
+			enemy["current_action"] = "moving_to_front_gate"
+			enemy["formal_navigation_authority"] = true
+			enemy["formal_route_phase"] = "marching_to_front_gate"
+			var actor_name := "FormalWaveEnemyFoot%02d" % spawn_index if wave_number == 1 else "FormalWave%02dEnemyFoot%02d" % [wave_number, spawn_index]
+			var actor := _create_formal_enemy_actor(enemy, actor_name, false)
+			actor_root.add_child(actor)
+			actor.global_position = spawn_position
+			actor.set_meta("default_formal_runtime", is_default_runtime)
+			# P7 crowds no longer have privileged formation rows. Equal priority lets
+			# every actor negotiate locally instead of ejecting a designated rear rank.
+			actor.avoidance_priority_override = 0.55
+			var actor_profile := "enemy_mounted" if str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"] else "enemy_foot"
+			actor.configure_profile(actor_profile, {
+				"navigation_agent": {
+					"target_desired_distance": 0.18,
+					"neighbor_distance": 1.8,
+					"max_neighbors": 12,
+					"time_horizon_agents": 0.6,
+					"time_horizon_obstacles": 0.8
+				},
+				"stuck_recovery": {"fail_after_seconds": 4.5, "maximum_repaths_per_target": 3}
+			})
+			if not actor.set_navigation_map(navigation_map):
+				clear_spawned_enemies()
+				return {"ok": false, "reason": "formal_wave_navigation_bind_failed", "enemy_id": enemy_id, "wave_number": wave_number}
+			actor.motion_arrived.connect(_on_formal_first_wave_motion_arrived.bind(enemy_id))
+			actor.motion_failed.connect(_on_formal_first_wave_motion_failed.bind(enemy_id))
+			actor.motion_cancelled.connect(_on_formal_first_wave_motion_cancelled.bind(enemy_id))
+			_active_enemies[enemy_id] = enemy
+			_enemy_nodes[enemy_id] = actor.get_path()
+			_formal_first_wave_node_paths[enemy_id] = actor.get_path()
+			_formal_first_wave_slices[enemy_id] = {
+				"enemy_id": enemy_id,
+				"wave_number": wave_number,
+				"unit_type": str(enemy.get("unit_type", "")),
+				"attack_slot_role": attack_slot_role,
+				"active": true,
+				"completed": false,
+				"phase": "marching_to_front_gate",
+				"route": route.duplicate(true),
+				"target_sequence": target_sequence.duplicate(),
+				"roads_affect_navigation": bool(navigation_config.get("roads_affect_navigation", true)),
+				"path_policy": str(navigation_config.get("path_policy", "")),
+				"movement_model": movement_model,
+				"blocked_policy": str(navigation_config.get("blocked_policy", "")),
+				"target_policy": str(navigation_config.get("target_policy", "")),
+				"attack_slots_world": _resolve_formal_wave_role_slots(attack_slots_world, attack_slot_sets_world, attack_slot_role),
+				"formation_index": role_formation_index,
+				"formation_column": (spawn_index - 1) % spawn_columns,
+				"formation_row": (spawn_index - 1) / spawn_columns,
+				"spawn_formation_columns": spawn_columns,
+				"spawn_formation_spacing": spawn_spacing,
+				"resolved_stage_positions": {},
+				"target_stage_index": _find_route_stage_index(route, "front_gate"),
+				"current_stage_id": str(spawn_stage.get("id", "spawn")),
+				"target_stage_id": "front_gate",
+				"completed_stage_ids": [str(spawn_stage.get("id", "spawn"))],
+				"previous_position": spawn_position,
+				"combat_authority_committed": false,
+				"front_gate_combat_authority_committed": false,
+				"warehouse_combat_authority_committed": false,
+				"main_hall_combat_authority_committed": false,
+				"attack_target_building_id": "",
+				"attack_unlocked": false,
+				"combat_target_id": "front_gate",
+				"combat_target_type": "building",
+				"motion_target_position": Vector3.ZERO,
+				"pressure_repath_count": 0,
+				"blocked_count": 0,
+				"presentation_facing_direction": Vector3.ZERO,
+				"presentation_total_turn_radians": 0.0,
+				"presentation_max_turn_radians_per_frame": 0.0,
+				"failure_reason": ""
+			}
+			if not _request_formal_first_wave_stage(enemy_id, _find_route_stage_index(route, "front_gate")):
+				var failed := debug_get_formal_first_wave_slice_snapshot()
+				clear_spawned_enemies()
+				failed["ok"] = false
+				failed["reason"] = "formal_wave_route_start_failed"
+				failed["enemy_id"] = enemy_id
+				return failed
+			spawned.append(enemy.duplicate(true))
+
+	var formal_combat_world_result: Dictionary = {}
+	if is_default_runtime:
+		_default_formal_wave_active = true
+		_formal_escape_world_hold = false
+		_default_formal_wave_number = wave_number
+		formal_combat_world_result = _enter_default_formal_combat_world()
+		if not bool(formal_combat_world_result.get("ok", false)):
+			clear_spawned_enemies()
+			return {
+				"ok": false,
+				"reason": "formal_friendly_world_migration_failed",
+				"wave_number": wave_number,
+				"formal_combat_world_result": formal_combat_world_result
+			}
+	var time_cap_result := _sync_enemy_presence_time_cap("formal_wave_spawned")
+	var battle_start_result := _start_battle_for_wave(wave, spawned, reason)
+	_last_spawn_result = {
+		"ok": true,
+		"wave_number": int(wave.get("wave_number", 1)),
+		"wave_id": str(wave.get("id", "wave_01")),
+		"spawned_count": spawned.size(),
+		"expected_count": expected_count,
+		"active_enemy_count": get_active_enemy_count(),
+		"spawned_enemy_ids": _extract_enemy_ids(spawned),
+		"reason": reason,
+		"world_mode": "formal_runtime" if is_default_runtime else "formal_debug_slice",
+		"legacy_area3d_spawned_count": 0,
+		"formal_combat_world_result": formal_combat_world_result,
+		"spawn_formation": spawn_formation,
+		"time_cap_result": time_cap_result,
+		"battle_start_result": battle_start_result
+	}
+	return _last_spawn_result.duplicate(true)
+
+
+func debug_stop_formal_first_wave_slice(reason: String = "stopped") -> Dictionary:
+	var before := debug_get_formal_first_wave_slice_snapshot()
+	var clear_result := clear_spawned_enemies()
+	return {
+		"ok": true,
+		"reason": reason,
+		"previous_active_count": int(before.get("active_enemy_count", 0)),
+		"clear_result": clear_result
+	}
+
+
+func debug_stop_formal_second_wave_slice(reason: String = "stopped") -> Dictionary:
+	return debug_stop_formal_first_wave_slice(reason)
+
+
+func debug_get_formal_second_wave_slice_snapshot() -> Dictionary:
+	return debug_get_formal_first_wave_slice_snapshot()
+
+
+func debug_get_formal_first_wave_slice_snapshot() -> Dictionary:
+	var slices: Array[Dictionary] = []
+	var phase_counts: Dictionary = {}
+	var unit_type_counts: Dictionary = {}
+	var attack_slot_role_counts: Dictionary = {}
+	var positions: Array[Vector3] = []
+	var avoidance_callback_count := 0
+	var navigation_failure_count := 0
+	var active_wave_number := 0
+	if not _formal_first_wave_slices.is_empty():
+		active_wave_number = int((_formal_first_wave_slices.values()[0] as Dictionary).get("wave_number", 1))
+	var expected_enemy_count := _get_wave_enemy_count(_waves[active_wave_number - 1] as Dictionary) if active_wave_number > 0 and active_wave_number <= _waves.size() else 0
+	for raw_enemy_id in _formal_first_wave_slices.keys():
+		var enemy_id := str(raw_enemy_id)
+		var slice: Dictionary = (_formal_first_wave_slices[enemy_id] as Dictionary).duplicate(true)
+		slice.erase("route")
+		slice.erase("attack_slots_world")
+		slice.erase("previous_position")
+		var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+		var motion := actor.debug_get_motion_snapshot() if actor != null else {}
+		slice["node_available"] = actor != null
+		slice["node_class"] = actor.get_class() if actor != null else ""
+		slice["world_position"] = actor.global_position if actor != null else Vector3.ZERO
+		slice["motion"] = motion
+		slice["enemy"] = get_enemy(enemy_id)
+		if actor != null:
+			positions.append(actor.global_position)
+		avoidance_callback_count += int(motion.get("avoidance_callback_count", 0))
+		var phase := str(slice.get("phase", "inactive"))
+		phase_counts[phase] = int(phase_counts.get(phase, 0)) + 1
+		var unit_type := str(slice.get("unit_type", "unknown"))
+		unit_type_counts[unit_type] = int(unit_type_counts.get(unit_type, 0)) + 1
+		var role_id := str(slice.get("attack_slot_role", "default"))
+		attack_slot_role_counts[role_id] = int(attack_slot_role_counts.get(role_id, 0)) + 1
+		if phase == "navigation_failed":
+			navigation_failure_count += 1
+		slices.append(slice)
+	var minimum_pair_distance := -1.0
+	for first_index in range(positions.size()):
+		for second_index in range(first_index + 1, positions.size()):
+			var distance := positions[first_index].distance_to(positions[second_index])
+			minimum_pair_distance = distance if minimum_pair_distance < 0.0 else minf(minimum_pair_distance, distance)
+	return {
+		"ok": true,
+		"active": not _formal_first_wave_slices.is_empty(),
+		"wave_number": active_wave_number,
+		"expected_enemy_count": expected_enemy_count,
+		"active_enemy_count": get_active_enemy_count(),
+		"formal_actor_count": positions.size(),
+		"phase_counts": phase_counts,
+		"unit_type_counts": unit_type_counts,
+		"attack_slot_role_counts": attack_slot_role_counts,
+		"navigation_failure_count": navigation_failure_count,
+		"avoidance_callback_count": avoidance_callback_count,
+		"minimum_pair_distance": minimum_pair_distance,
+		"slices": slices,
+		"active_battle": _active_battle.duplicate(true)
+	}
+
+
+# A4-P3 / C3-P3 compatibility wrappers. The production debug slice now continues to the main hall.
+func debug_run_formal_active_enemy_warehouse_slice() -> Dictionary:
+	return debug_run_formal_active_enemy_main_hall_slice()
+
+
+func debug_stop_formal_active_enemy_warehouse_slice(reason: String = "stopped") -> Dictionary:
+	return debug_stop_formal_active_enemy_main_hall_slice(reason)
+
+
+func debug_get_formal_active_enemy_warehouse_slice_snapshot() -> Dictionary:
+	return debug_get_formal_active_enemy_main_hall_slice_snapshot()
+
+
+# A4-P2 / C3-P2 compatibility wrappers.
+func debug_run_formal_active_enemy_front_gate_slice() -> Dictionary:
+	return debug_run_formal_active_enemy_main_hall_slice()
+
+
+func debug_stop_formal_active_enemy_front_gate_slice(reason: String = "stopped") -> Dictionary:
+	return debug_stop_formal_active_enemy_main_hall_slice(reason)
+
+
+func debug_get_formal_active_enemy_front_gate_slice_snapshot() -> Dictionary:
+	return debug_get_formal_active_enemy_main_hall_slice_snapshot()
 
 
 func debug_trigger_next_wave(clear_existing: bool = false) -> Dictionary:
@@ -847,6 +1488,8 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"wave_schedule": get_wave_schedule_snapshot(),
 		"active_enemy_count": get_active_enemy_count(),
 		"active_enemy_ids": get_active_enemy_ids(),
+		"formal_enemy_navigation_pilot": debug_get_formal_enemy_navigation_pilot_snapshot(),
+		"formal_active_enemy_front_gate_slice": debug_get_formal_active_enemy_front_gate_slice_snapshot(),
 		"enemy_targets": _get_enemy_target_snapshot(),
 		"active_rallies": get_active_rallies(),
 		"active_avoidances": get_active_avoidances(),
@@ -873,6 +1516,131 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_escape_result": _last_escape_result.duplicate(true),
 		"time_scale": _get_time_scale_snapshot()
 	}
+
+
+func create_formal_spatial_checkpoint() -> Dictionary:
+	var enemies: Array[Dictionary] = []
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D if _enemy_nodes.has(enemy_id) else null
+		var position: Vector3 = actor.global_position if actor != null else enemy.get("position", Vector3.ZERO)
+		enemies.append({
+			"spawn_index": int(enemy.get("spawn_index", -1)),
+			"group_index": int(enemy.get("group_index", -1)),
+			"unit_type": str(enemy.get("unit_type", "")),
+			"hp": int(enemy.get("hp", 0)),
+			"max_hp": int(enemy.get("max_hp", 0)),
+			"position": _vector3_to_dict(position),
+			"current_action": str(enemy.get("current_action", "")),
+			"attack_cooldown": float(enemy.get("attack_cooldown", 0.0)),
+			"attack_windup_remaining": float(enemy.get("attack_windup_remaining", 0.0)),
+			"stagger_remaining": float(enemy.get("stagger_remaining", 0.0))
+		})
+	enemies.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return int(left.get("spawn_index", -1)) < int(right.get("spawn_index", -1)))
+	return {
+		"schema": "formal_combat_spatial_checkpoint_v1",
+		"active": _default_formal_wave_active and not enemies.is_empty(),
+		"wave_number": _default_formal_wave_number,
+		"enemy_count": enemies.size(),
+		"enemies": enemies,
+		"triggered_wave_numbers": _triggered_wave_numbers.duplicate(),
+		"restore_policy": "rebuild_wave_entities_then_apply_survivor_spatial_state"
+	}
+
+
+func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
+	if str(checkpoint.get("schema", "")) != "formal_combat_spatial_checkpoint_v1":
+		return {"ok": false, "reason": "combat_spatial_checkpoint_schema_mismatch"}
+	var restored_triggered: Array[int] = []
+	for raw_wave_number in checkpoint.get("triggered_wave_numbers", []):
+		var triggered_wave := int(raw_wave_number)
+		if triggered_wave > 0 and not restored_triggered.has(triggered_wave):
+			restored_triggered.append(triggered_wave)
+	_triggered_wave_numbers = restored_triggered
+	if not bool(checkpoint.get("active", false)):
+		if not _active_enemies.is_empty():
+			clear_spawned_enemies()
+		return {"ok": true, "active": false, "enemy_count": 0}
+	var wave_number := int(checkpoint.get("wave_number", 0))
+	if wave_number <= 0 or wave_number > _waves.size():
+		return {"ok": false, "reason": "combat_restore_wave_missing", "wave_number": wave_number}
+	var spawn_result := _spawn_formal_dynamic_wave(wave_number, true, "save_restore", true)
+	if not bool(spawn_result.get("ok", false)):
+		return {"ok": false, "reason": "combat_restore_spawn_failed", "spawn_result": spawn_result}
+	var saved_by_spawn_index: Dictionary = {}
+	for raw_enemy in checkpoint.get("enemies", []):
+		if raw_enemy is Dictionary:
+			saved_by_spawn_index[int((raw_enemy as Dictionary).get("spawn_index", -1))] = (raw_enemy as Dictionary).duplicate(true)
+	var restored_ids: Array[String] = []
+	var removed_ids: Array[String] = []
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var spawn_index := int(enemy.get("spawn_index", -1))
+		if not saved_by_spawn_index.has(spawn_index):
+			var obsolete_actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node if _enemy_nodes.has(enemy_id) else null
+			if obsolete_actor != null:
+				obsolete_actor.queue_free()
+			_enemy_nodes.erase(enemy_id)
+			_active_enemies.erase(enemy_id)
+			_formal_first_wave_slices.erase(enemy_id)
+			_formal_first_wave_node_paths.erase(enemy_id)
+			removed_ids.append(enemy_id)
+			continue
+		var saved: Dictionary = saved_by_spawn_index[spawn_index]
+		var saved_position := _vector3_from_dict(saved.get("position", {}), enemy.get("position", Vector3.ZERO))
+		var actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D if _enemy_nodes.has(enemy_id) else null
+		if actor != null:
+			actor.global_position = saved_position
+		enemy["position"] = saved_position
+		enemy["hp"] = clampi(int(saved.get("hp", enemy.get("hp", 1))), 1, int(enemy.get("max_hp", 1)))
+		enemy["alive"] = true
+		enemy["current_action"] = str(saved.get("current_action", enemy.get("current_action", "moving_to_front_gate")))
+		enemy["attack_cooldown"] = maxf(0.0, float(saved.get("attack_cooldown", 0.0)))
+		enemy["attack_windup_remaining"] = maxf(0.0, float(saved.get("attack_windup_remaining", 0.0)))
+		enemy["stagger_remaining"] = maxf(0.0, float(saved.get("stagger_remaining", 0.0)))
+		_active_enemies[enemy_id] = enemy
+		if _formal_first_wave_slices.has(enemy_id):
+			var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+			slice["previous_position"] = saved_position
+			_formal_first_wave_slices[enemy_id] = slice
+		restored_ids.append(enemy_id)
+	_sync_enemy_presence_time_cap("save_restored")
+	return {
+		"ok": restored_ids.size() == int(checkpoint.get("enemy_count", restored_ids.size())),
+		"active": true,
+		"wave_number": wave_number,
+		"enemy_count": restored_ids.size(),
+		"restored_enemy_ids": restored_ids,
+		"removed_unsaved_enemy_ids": removed_ids
+	}
+
+
+func restore_formal_escape_sessions_from_npc_checkpoint(npc_checkpoint: Dictionary) -> Dictionary:
+	_active_escapes.clear()
+	var resumed: Array[String] = []
+	var paused: Array[String] = []
+	var failed: Array[Dictionary] = []
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return {"ok": false, "reason": "npc_system_missing"}
+	for raw_actor in npc_checkpoint.get("actors", []):
+		if not raw_actor is Dictionary:
+			continue
+		var actor: Dictionary = raw_actor
+		var npc_id := str(actor.get("npc_id", ""))
+		var intent: Dictionary = actor.get("escape_intent", {}) if actor.get("escape_intent", {}) is Dictionary else {}
+		if not _is_escape_intent_resumable(intent) or bool(actor.get("escaped", false)):
+			continue
+		if bool(actor.get("unconscious", false)):
+			_sync_active_escape_from_state(npc_id)
+			paused.append(npc_id)
+			continue
+		var result := _resume_escape_after_revive(npc_id, npc_system)
+		if bool(result.get("ok", false)) and bool(result.get("active_escape", false)):
+			resumed.append(npc_id)
+		else:
+			failed.append({"npc_id": npc_id, "result": result})
+	return {"ok": failed.is_empty(), "resumed_npc_ids": resumed, "paused_npc_ids": paused, "failed": failed}
 
 
 func _get_all_npc_combat_stats() -> Array[Dictionary]:
@@ -1127,6 +1895,8 @@ func start_npc_escape(
 	if clean_source_event_id.is_empty():
 		clean_source_event_id = str(context.get("source_event_id", ""))
 	var previous_mode := _get_npc_behavior_mode(npc_system, npc_id)
+	var escape_exit_position := _get_escape_exit_position(npc_id, npc_system)
+	var escape_route_contract := _get_escape_route_contract(npc_id, npc_system)
 	var arrival_state := {
 		"escape_finalize": true,
 		"allow_escaping_movement": true,
@@ -1144,7 +1914,7 @@ func start_npc_escape(
 		"escape_started",
 		ESCAPE_TARGET_ID,
 		ESCAPE_TARGET_NAME,
-		ESCAPE_EXIT_POSITION,
+		escape_exit_position,
 		arrival_state,
 		{
 			"interrupt": true,
@@ -1165,7 +1935,7 @@ func start_npc_escape(
 			"mode_result": mode_result
 		})
 
-	var event := _log_escape_started(npc_id, clean_source_event_id, clean_trigger, context, previous_mode)
+	var event := _log_escape_started(npc_id, clean_source_event_id, clean_trigger, context, previous_mode, escape_exit_position)
 	var time_snapshot := _get_game_time_snapshot()
 	var escape_intent := {
 		"active": true,
@@ -1176,7 +1946,7 @@ func start_npc_escape(
 		"interaction_context": str(context.get("interaction_context", previous_mode)),
 		"exit_target_id": ESCAPE_TARGET_ID,
 		"exit_target_name": ESCAPE_TARGET_NAME,
-		"exit_position": _vector3_to_dict(ESCAPE_EXIT_POSITION),
+		"exit_position": _vector3_to_dict(escape_exit_position),
 		"intervention_rounds_used": 0,
 		"intervention_max_rounds": ESCAPE_INTERVENTION_MAX_ROUNDS,
 		"last_intervention_decision": "",
@@ -1187,6 +1957,11 @@ func start_npc_escape(
 		"started_day": int(time_snapshot.get("day", 1)),
 		"started_time": str(time_snapshot.get("time", "00:00:00"))
 	}
+	if not escape_route_contract.is_empty():
+		escape_intent["route_source"] = str(escape_route_contract.get("route_source", "formal_station_layout"))
+		escape_intent["route_point_count"] = (escape_route_contract.get("path_points", []) as Array).size()
+		escape_intent["route_length"] = float(escape_route_contract.get("route_length", 0.0))
+		escape_intent["completion_position"] = _vector3_to_dict(escape_exit_position)
 	npc_system.update_npc_state(npc_id, {
 		"escape_intent": escape_intent,
 		"current_action": "escaping_station",
@@ -1204,11 +1979,46 @@ func start_npc_escape(
 		"mode_result": mode_result,
 		"target_id": ESCAPE_TARGET_ID,
 		"target_name": ESCAPE_TARGET_NAME,
-		"target_position": _vector3_to_dict(ESCAPE_EXIT_POSITION)
+		"target_position": _vector3_to_dict(escape_exit_position)
 	}
 	_active_escapes[npc_id] = result.duplicate(true)
 	_last_escape_result = result.duplicate(true)
 	return result
+
+
+func _get_escape_exit_position(npc_id: String, npc_system: Node = null) -> Vector3:
+	var resolved_npc_system := npc_system if npc_system != null else get_node_or_null(NPC_SYSTEM_PATH)
+	if _npc_uses_formal_escape_world(resolved_npc_system, npc_id):
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		if controller != null and controller.has_method("get_escape_exit_world_position"):
+			var formal_exit: Variant = controller.get_escape_exit_world_position()
+			if formal_exit is Vector3:
+				return formal_exit
+	return ESCAPE_EXIT_POSITION
+
+
+func _get_escape_route_contract(npc_id: String, npc_system: Node = null) -> Dictionary:
+	var resolved_npc_system := npc_system if npc_system != null else get_node_or_null(NPC_SYSTEM_PATH)
+	if not _npc_uses_formal_escape_world(resolved_npc_system, npc_id):
+		return {}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("get_formal_escape_route_world"):
+		return controller.get_formal_escape_route_world()
+	return {}
+
+
+func _npc_uses_formal_escape_world(npc_system: Node, npc_id: String) -> bool:
+	if npc_system == null:
+		return false
+	if (
+		npc_system.has_method("is_npc_in_formal_combat_world")
+		and bool(npc_system.is_npc_in_formal_combat_world(npc_id))
+	):
+		return true
+	return (
+		npc_system.has_method("is_npc_in_default_formal_world")
+		and bool(npc_system.is_npc_in_default_formal_world(npc_id))
+	)
 
 
 func handle_npc_escape_completed(npc_id: String, escaped_state: Dictionary = {}) -> Dictionary:
@@ -1220,6 +2030,7 @@ func handle_npc_escape_completed(npc_id: String, escaped_state: Dictionary = {})
 	}
 	_active_escapes.erase(npc_id)
 	_last_escape_result = completion.duplicate(true)
+	call_deferred("_release_formal_escape_world_if_idle", "escape_completed")
 	return completion
 
 
@@ -1322,7 +2133,9 @@ func resume_escape_after_dialogue(npc_id: String, reason: String = "escape_dialo
 		"exit_target_id": ESCAPE_TARGET_ID,
 		"exit_target_name": ESCAPE_TARGET_NAME
 	}
-	var moved := bool(npc_system.move_npc_to_world_position(npc_id, ESCAPE_TARGET_ID, ESCAPE_TARGET_NAME, ESCAPE_EXIT_POSITION, arrival_state))
+	var resume_exit_position := _get_escape_exit_position(npc_id, npc_system)
+	intent["exit_position"] = _vector3_to_dict(resume_exit_position)
+	var moved := bool(npc_system.move_npc_to_world_position(npc_id, ESCAPE_TARGET_ID, ESCAPE_TARGET_NAME, resume_exit_position, arrival_state))
 	if not moved:
 		return _escape_failure("movement_failed", "无法让 NPC 继续前往后门出口。", npc_id, {"active_escape": true})
 	npc_system.update_npc_state(npc_id, {
@@ -1418,6 +2231,7 @@ func apply_escape_intervention_result(npc_id: String, response: Dictionary, cont
 			}
 		}) if npc_system.has_method("set_npc_behavior_mode") else {}
 		_active_escapes.erase(npc_id)
+		call_deferred("_release_formal_escape_world_if_idle", "escape_intervention_stayed")
 		result["state_result"] = mode_result
 		result["escape_intent"] = intent.duplicate(true)
 	else:
@@ -1681,16 +2495,28 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
 		return
+	if _default_formal_wave_active:
+		_formal_crowd_logic_frame += 1
+		if _formal_crowd_logic_frame % _formal_contact_update_interval_frames == 0:
+			_advance_behavior_mode_contacts()
+		if _formal_crowd_logic_frame % _formal_avoidance_update_interval_frames == 0:
+			_advance_avoidance_units()
+		_advance_combat_ai(game_delta_seconds, true)
+		return
 	_advance_behavior_mode_contacts()
 	_advance_avoidance_units()
 	_advance_combat_ai(game_delta_seconds)
 	_advance_avoidance_units()
 
 
-func _advance_combat_ai(game_delta_seconds: float) -> Dictionary:
+func _advance_combat_ai(game_delta_seconds: float, use_formal_crowd_budget: bool = false) -> Dictionary:
 	var combat_delta_seconds := _get_combat_action_seconds(game_delta_seconds)
 	var friendly_result := _advance_friendly_combat_ai(combat_delta_seconds, game_delta_seconds)
-	var enemy_result := _advance_enemy_ai(game_delta_seconds, combat_delta_seconds)
+	var enemy_result := (
+		_advance_formal_enemy_ai_budgeted(game_delta_seconds, combat_delta_seconds)
+		if use_formal_crowd_budget and _default_formal_wave_active
+		else _advance_enemy_ai(game_delta_seconds, combat_delta_seconds)
+	)
 	enemy_result["combat_seconds"] = combat_delta_seconds
 	enemy_result["friendly_attacks"] = friendly_result
 	_last_ai_step_result = enemy_result.duplicate(true)
@@ -2212,6 +3038,12 @@ func _get_keep_distance_min_distance(attack_range: float) -> float:
 
 
 func _constrain_combat_strategy_position(position: Vector3) -> Vector3:
+	if _default_formal_wave_active and position.x > 900.0:
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		if controller != null and controller.has_method("get_production_navigation_map_rid"):
+			var navigation_map: RID = controller.get_production_navigation_map_rid()
+			if navigation_map.is_valid():
+				return NavigationServer3D.map_get_closest_point(navigation_map, position)
 	return Vector3(
 		clampf(position.x, COMBAT_STRATEGY_MIN_X, COMBAT_STRATEGY_MAX_X),
 		0.0,
@@ -2443,9 +3275,16 @@ func _remove_enemy_from_combat(enemy_id: String) -> void:
 	if _enemy_nodes.has(enemy_id):
 		var enemy_node := get_node_or_null(_enemy_nodes[enemy_id]) as Node
 		if enemy_node != null:
+			_preserve_enemy_defeat_presentation(enemy_node, _active_enemies.get(enemy_id, {}))
 			enemy_node.queue_free()
 	_enemy_nodes.erase(enemy_id)
 	_active_enemies.erase(enemy_id)
+	if enemy_id == FORMAL_ACTIVE_ENEMY_SLICE_ID:
+		_formal_active_enemy_slice.clear()
+		_formal_active_enemy_slice_node_path = NodePath()
+	if _formal_first_wave_slices.has(enemy_id):
+		_formal_first_wave_slices.erase(enemy_id)
+		_formal_first_wave_node_paths.erase(enemy_id)
 	for raw_npc_id in _active_rallies.keys():
 		var npc_id := str(raw_npc_id)
 		var rally: Dictionary = _active_rallies.get(npc_id, {})
@@ -2454,6 +3293,24 @@ func _remove_enemy_from_combat(enemy_id: String) -> void:
 			_active_rallies[npc_id] = rally
 	if _active_enemies.is_empty():
 		_sync_enemy_presence_time_cap("last_enemy_removed")
+
+
+func _preserve_enemy_defeat_presentation(enemy_node: Node, enemy: Dictionary) -> void:
+	var enemy_root := get_node_or_null(ENEMY_ROOT_PATH)
+	if bool(enemy_node.get_meta("formal_active_enemy", false)):
+		enemy_root = enemy_node.get_parent()
+	var art_view := enemy_node.get_node_or_null("EnemyArtView") as Node3D
+	if enemy_root == null or art_view == null:
+		return
+	art_view.reparent(enemy_root, true)
+	art_view.name = "%sDefeatPresentation" % enemy_node.name
+	art_view.set_meta("presentation_only", true)
+	var defeated_state := enemy.duplicate(true)
+	defeated_state["hp"] = 0
+	defeated_state["alive"] = false
+	defeated_state["current_action"] = "unconscious"
+	_apply_enemy_art_state(art_view, defeated_state, Vector3.ZERO)
+	get_tree().create_timer(2.4).timeout.connect(art_view.queue_free)
 
 
 func _calculate_enemy_defense(enemy_id: String) -> float:
@@ -2516,7 +3373,62 @@ func _log_npc_attack_made(
 	})
 
 
-func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = -1.0) -> Dictionary:
+func _reset_formal_crowd_ai_budget(reset_configuration: bool = true) -> void:
+	_formal_crowd_logic_frame = 0
+	_formal_enemy_ai_cursor = 0
+	_formal_enemy_game_seconds_accumulator.clear()
+	_formal_enemy_combat_seconds_accumulator.clear()
+	if reset_configuration:
+		_formal_enemy_ai_updates_per_frame = 8
+		_formal_contact_update_interval_frames = 6
+		_formal_avoidance_update_interval_frames = 3
+
+
+func _advance_formal_enemy_ai_budgeted(game_delta_seconds: float, combat_delta_seconds: float) -> Dictionary:
+	var enemy_ids := get_active_enemy_ids()
+	if enemy_ids.is_empty():
+		return _advance_enemy_ai(game_delta_seconds, combat_delta_seconds)
+	for raw_enemy_id in _formal_enemy_game_seconds_accumulator.keys():
+		if not enemy_ids.has(str(raw_enemy_id)):
+			_formal_enemy_game_seconds_accumulator.erase(raw_enemy_id)
+			_formal_enemy_combat_seconds_accumulator.erase(raw_enemy_id)
+	for enemy_id in enemy_ids:
+		_formal_enemy_game_seconds_accumulator[enemy_id] = float(_formal_enemy_game_seconds_accumulator.get(enemy_id, 0.0)) + game_delta_seconds
+		_formal_enemy_combat_seconds_accumulator[enemy_id] = float(_formal_enemy_combat_seconds_accumulator.get(enemy_id, 0.0)) + combat_delta_seconds
+	var update_count := mini(_formal_enemy_ai_updates_per_frame, enemy_ids.size())
+	_formal_enemy_ai_cursor %= enemy_ids.size()
+	var selected_ids: Array[String] = []
+	var game_seconds_by_enemy: Dictionary = {}
+	var combat_seconds_by_enemy: Dictionary = {}
+	for offset in range(update_count):
+		var enemy_id := str(enemy_ids[(_formal_enemy_ai_cursor + offset) % enemy_ids.size()])
+		selected_ids.append(enemy_id)
+		game_seconds_by_enemy[enemy_id] = float(_formal_enemy_game_seconds_accumulator.get(enemy_id, game_delta_seconds))
+		combat_seconds_by_enemy[enemy_id] = float(_formal_enemy_combat_seconds_accumulator.get(enemy_id, combat_delta_seconds))
+		_formal_enemy_game_seconds_accumulator[enemy_id] = 0.0
+		_formal_enemy_combat_seconds_accumulator[enemy_id] = 0.0
+	_formal_enemy_ai_cursor = (_formal_enemy_ai_cursor + update_count) % enemy_ids.size()
+	var result := _advance_enemy_ai(
+		game_delta_seconds,
+		combat_delta_seconds,
+		selected_ids,
+		game_seconds_by_enemy,
+		combat_seconds_by_enemy
+	)
+	result["budgeted"] = true
+	result["updated_enemy_count"] = selected_ids.size()
+	result["total_enemy_count"] = enemy_ids.size()
+	result["next_cursor"] = _formal_enemy_ai_cursor
+	return result
+
+
+func _advance_enemy_ai(
+	game_delta_seconds: float,
+	combat_delta_seconds: float = -1.0,
+	enemy_ids_override: Array[String] = [],
+	game_seconds_by_enemy: Dictionary = {},
+	combat_seconds_by_enemy: Dictionary = {}
+) -> Dictionary:
 	if combat_delta_seconds < 0.0:
 		combat_delta_seconds = _get_combat_action_seconds(game_delta_seconds)
 	var result := {
@@ -2532,15 +3444,18 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 		_last_ai_step_result = result.duplicate(true)
 		return result
 
-	for enemy_id in get_active_enemy_ids():
+	var enemy_ids := enemy_ids_override if not enemy_ids_override.is_empty() else get_active_enemy_ids()
+	for enemy_id in enemy_ids:
 		if not _active_enemies.has(enemy_id):
 			continue
+		var enemy_game_delta_seconds := float(game_seconds_by_enemy.get(enemy_id, game_delta_seconds))
+		var enemy_combat_delta_seconds := float(combat_seconds_by_enemy.get(enemy_id, combat_delta_seconds))
 		var enemy: Dictionary = _active_enemies[enemy_id]
 		if not bool(enemy.get("alive", true)):
 			continue
 		var stagger_remaining := maxf(0.0, float(enemy.get("stagger_remaining", 0.0)))
 		if stagger_remaining > 0.0:
-			var stagger_after := maxf(0.0, stagger_remaining - combat_delta_seconds)
+			var stagger_after := maxf(0.0, stagger_remaining - enemy_combat_delta_seconds)
 			enemy["stagger_remaining"] = stagger_after
 			enemy["current_action"] = "staggered" if stagger_after > 0.0 else "recovering_from_stagger"
 			(result["staggered"] as Array).append({
@@ -2551,8 +3466,110 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 			_active_enemies[enemy_id] = enemy
 			_refresh_enemy_node(enemy_id)
 			continue
-
-		var target := _select_enemy_target(enemy)
+		if _formal_first_wave_slices.has(enemy_id):
+			var wave_slice: Dictionary = _formal_first_wave_slices[enemy_id]
+			var wave_phase := str(wave_slice.get("phase", "inactive"))
+			var dynamic_pressure := str(wave_slice.get("movement_model", "")) == "dynamic_combat_pressure"
+			if wave_phase in ["marching_to_front_gate", "front_gate_reached", "attacking_front_gate"] and _is_building_destroyed("front_gate"):
+				if not _begin_formal_first_wave_route(enemy_id, enemy, "warehouse", "marching_to_warehouse"):
+					_on_formal_first_wave_motion_failed("", "post_gate_route_start_failed", enemy_id)
+				else:
+					(result["moved"] as Array).append({"enemy_id": enemy_id, "movement_authority": "ActorMotionBody", "route_phase": "marching_to_warehouse", "target_stage_id": "warehouse"})
+				continue
+			if wave_phase in ["marching_to_warehouse", "warehouse_reached", "attacking_warehouse"] and _is_building_destroyed("warehouse"):
+				if (
+					not dynamic_pressure
+					and
+					int(wave_slice.get("wave_number", 1)) == 2
+					and str(wave_slice.get("attack_slot_role", "")) == "polearm_rear"
+					and not _is_formal_wave_role_ready_at_stage(2, "melee_front", "main_hall")
+				):
+					enemy["target"] = {}
+					enemy["current_action"] = "waiting_for_melee_front_main_hall"
+					enemy["formal_route_phase"] = wave_phase
+					_active_enemies[enemy_id] = enemy
+					(result["moved"] as Array).append({"enemy_id": enemy_id, "movement_authority": "formation_wait", "route_phase": wave_phase, "waiting_for_role": "melee_front"})
+					continue
+				if not _begin_formal_first_wave_route(enemy_id, enemy, "main_hall", "marching_to_main_hall"):
+					_on_formal_first_wave_motion_failed("", "main_hall_route_start_failed", enemy_id)
+				else:
+					(result["moved"] as Array).append({"enemy_id": enemy_id, "movement_authority": "ActorMotionBody", "route_phase": "marching_to_main_hall", "target_stage_id": "main_hall"})
+				continue
+			if wave_phase in ["main_hall_reached", "attacking_main_hall"] and _is_building_destroyed("main_hall"):
+				enemy["target"] = {}
+				enemy["current_action"] = "main_hall_destroyed_failure"
+				enemy["formal_route_phase"] = "main_hall_destroyed_failure"
+				_active_enemies[enemy_id] = enemy
+				wave_slice["phase"] = "main_hall_destroyed_failure"
+				wave_slice["attack_unlocked"] = false
+				wave_slice["attack_target_building_id"] = ""
+				_formal_first_wave_slices[enemy_id] = wave_slice
+				_refresh_enemy_node(enemy_id)
+				continue
+			if not dynamic_pressure and wave_phase not in ["front_gate_reached", "attacking_front_gate", "warehouse_reached", "attacking_warehouse", "main_hall_reached", "attacking_main_hall"]:
+				enemy["target"] = {}
+				enemy["formal_route_phase"] = wave_phase
+				_active_enemies[enemy_id] = enemy
+				(result["moved"] as Array).append({"enemy_id": enemy_id, "movement_authority": "ActorMotionBody", "route_phase": wave_phase, "position": _vector3_to_dict(enemy.get("position", Vector3.ZERO))})
+				_refresh_enemy_node(enemy_id)
+				continue
+		if enemy_id == FORMAL_ACTIVE_ENEMY_SLICE_ID:
+			var formal_phase := str(_formal_active_enemy_slice.get("phase", "inactive"))
+			if formal_phase in ["front_gate_reached", "attacking_front_gate"] and _is_building_destroyed("front_gate"):
+				if not _begin_formal_active_enemy_post_gate_route(enemy):
+					_on_formal_active_enemy_motion_failed("", "post_gate_route_start_failed")
+				else:
+					(result["moved"] as Array).append({
+						"enemy_id": enemy_id,
+						"movement_authority": "ActorMotionBody",
+						"route_phase": "marching_to_warehouse",
+						"target_stage_id": "gate_turn",
+						"position": _vector3_to_dict(enemy.get("position", Vector3.ZERO))
+					})
+				continue
+			if formal_phase in ["warehouse_reached", "attacking_warehouse"] and _is_building_destroyed("warehouse"):
+				if not _begin_formal_active_enemy_main_hall_route(enemy):
+					_on_formal_active_enemy_motion_failed("", "main_hall_route_start_failed")
+				else:
+					(result["moved"] as Array).append({
+						"enemy_id": enemy_id,
+						"movement_authority": "ActorMotionBody",
+						"route_phase": "marching_to_main_hall",
+						"target_stage_id": "main_hall",
+						"position": _vector3_to_dict(enemy.get("position", Vector3.ZERO))
+					})
+				continue
+			if formal_phase in ["main_hall_reached", "attacking_main_hall"] and _is_building_destroyed("main_hall"):
+				enemy["target"] = {}
+				enemy["current_action"] = "main_hall_destroyed_failure"
+				enemy["formal_route_phase"] = "main_hall_destroyed_failure"
+				_active_enemies[enemy_id] = enemy
+				var failure_slice := _formal_active_enemy_slice
+				failure_slice["phase"] = "main_hall_destroyed_failure"
+				failure_slice["attack_unlocked"] = false
+				failure_slice["attack_target_building_id"] = ""
+				_formal_active_enemy_slice = failure_slice
+				_refresh_enemy_node(enemy_id)
+				continue
+			if formal_phase not in ["front_gate_reached", "attacking_front_gate", "warehouse_reached", "attacking_warehouse", "main_hall_reached", "attacking_main_hall"]:
+				enemy["target"] = {}
+				enemy["formal_route_phase"] = formal_phase
+				_active_enemies[enemy_id] = enemy
+				(result["moved"] as Array).append({
+					"enemy_id": enemy_id,
+					"movement_authority": "ActorMotionBody",
+					"route_phase": formal_phase,
+					"position": _vector3_to_dict(enemy.get("position", Vector3.ZERO))
+				})
+				_refresh_enemy_node(enemy_id)
+				continue
+		var target := _select_formal_dynamic_enemy_target(enemy_id, enemy) if _is_formal_dynamic_pressure_enemy(enemy_id) else _select_enemy_target(enemy)
+		if _formal_first_wave_slices.has(enemy_id) and str(target.get("id", "")) in ["front_gate", "warehouse", "main_hall"]:
+			var wave_target_id := str(target.get("id", ""))
+			target["position"] = _get_formal_first_wave_stage_position(enemy_id, wave_target_id, target.get("position", enemy.get("position", Vector3.ZERO)))
+		elif enemy_id == FORMAL_ACTIVE_ENEMY_SLICE_ID and str(target.get("id", "")) in ["front_gate", "warehouse", "main_hall"]:
+			var formal_target_id := str(target.get("id", ""))
+			target["position"] = _get_formal_enemy_stage_position(formal_target_id, target.get("position", enemy.get("position", Vector3.ZERO)))
 		enemy["target"] = target.duplicate(true)
 		(result["targets"] as Array).append({
 			"enemy_id": enemy_id,
@@ -2568,9 +3585,22 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 		var target_position: Vector3 = target.get("position", enemy_position)
 		target_position.y = enemy_position.y
 		var attack_range := maxf(0.1, float(enemy.get("attack_range", 1.5)))
-		var distance := enemy_position.distance_to(target_position)
+		var distance := maxf(0.0, enemy_position.distance_to(target_position) - maxf(0.0, float(target.get("contact_radius", 0.0))))
 		if distance > attack_range:
-			var move_distance := maxf(0.0, float(enemy.get("move_speed", 2.5))) * game_delta_seconds / MOVE_SPEED_GAME_SECONDS_DIVISOR
+			if _is_formal_dynamic_pressure_enemy(enemy_id):
+				_ensure_formal_dynamic_pressure_motion(enemy_id, target)
+				enemy["current_action"] = "pressing_to_%s" % str(target.get("id", "target"))
+				(result["moved"] as Array).append({
+					"enemy_id": enemy_id,
+					"target_id": str(target.get("id", "")),
+					"movement_authority": "ActorMotionBody",
+					"pressure_state": "seeking_contact",
+					"remaining_distance": distance - attack_range
+				})
+				_active_enemies[enemy_id] = enemy
+				_refresh_enemy_node(enemy_id)
+				continue
+			var move_distance := maxf(0.0, float(enemy.get("move_speed", 2.5))) * enemy_game_delta_seconds / MOVE_SPEED_GAME_SECONDS_DIVISOR
 			var next_position := enemy_position.move_toward(target_position, move_distance)
 			enemy["position"] = next_position
 			enemy["current_action"] = "moving_to_%s" % str(target.get("id", "target"))
@@ -2582,15 +3612,116 @@ func _advance_enemy_ai(game_delta_seconds: float, combat_delta_seconds: float = 
 				"remaining_distance": next_position.distance_to(target_position)
 			})
 		else:
+			if _is_formal_dynamic_pressure_enemy(enemy_id):
+				_pause_formal_dynamic_pressure_motion(enemy_id)
+				_mark_formal_dynamic_contact(enemy_id, target)
 			enemy["current_action"] = "attacking_%s" % str(target.get("id", "target"))
-			var attack_result := _advance_enemy_attack(enemy, target, combat_delta_seconds)
+			var attack_result := _advance_enemy_attack(enemy, target, enemy_combat_delta_seconds)
 			if not attack_result.is_empty():
 				(result["attacks"] as Array).append(attack_result)
+				if _formal_first_wave_slices.has(enemy_id) and int(attack_result.get("attack_count", 0)) > 0:
+					var wave_attack_slice: Dictionary = _formal_first_wave_slices[enemy_id]
+					var wave_attacked_building_id := str(target.get("id", ""))
+					wave_attack_slice["combat_authority_committed"] = true
+					wave_attack_slice["attack_target_building_id"] = wave_attacked_building_id
+					match wave_attacked_building_id:
+						"main_hall":
+							wave_attack_slice["main_hall_combat_authority_committed"] = true
+							wave_attack_slice["phase"] = "main_hall_destroyed_failure" if _is_building_destroyed("main_hall") else "attacking_main_hall"
+						"warehouse":
+							wave_attack_slice["warehouse_combat_authority_committed"] = true
+							wave_attack_slice["phase"] = "attacking_warehouse"
+						_:
+							wave_attack_slice["front_gate_combat_authority_committed"] = true
+							wave_attack_slice["phase"] = "attacking_front_gate"
+					_formal_first_wave_slices[enemy_id] = wave_attack_slice
+				elif enemy_id == FORMAL_ACTIVE_ENEMY_SLICE_ID and int(attack_result.get("attack_count", 0)) > 0:
+					var slice := _formal_active_enemy_slice
+					var attacked_building_id := str(target.get("id", ""))
+					slice["combat_authority_committed"] = true
+					slice["attack_target_building_id"] = attacked_building_id
+					match attacked_building_id:
+						"main_hall":
+							slice["main_hall_combat_authority_committed"] = true
+							slice["phase"] = "main_hall_destroyed_failure" if _is_building_destroyed("main_hall") else "attacking_main_hall"
+						"warehouse":
+							slice["warehouse_combat_authority_committed"] = true
+							slice["phase"] = "attacking_warehouse"
+						_:
+							slice["front_gate_combat_authority_committed"] = true
+							slice["phase"] = "attacking_front_gate"
+					_formal_active_enemy_slice = slice
 		_active_enemies[enemy_id] = enemy
 		_refresh_enemy_node(enemy_id)
 
 	_last_ai_step_result = result.duplicate(true)
 	return result
+
+
+func _is_building_destroyed(building_id: String) -> bool:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building"):
+		return false
+	var building: Dictionary = building_system.get_building(building_id)
+	return building.is_empty() or int(building.get("hp", 0)) <= 0
+
+
+func _get_formal_enemy_stage_position(stage_id: String, fallback: Vector3) -> Vector3:
+	var route := _formal_active_enemy_slice.get("route", {}) as Dictionary
+	for raw_stage in route.get("stages", []):
+		if raw_stage is Dictionary and str((raw_stage as Dictionary).get("id", "")) == stage_id:
+			return (raw_stage as Dictionary).get("position", fallback)
+	return fallback
+
+
+func _get_formal_enemy_stage_index(stage_id: String) -> int:
+	var route := _formal_active_enemy_slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	for stage_index in range(stages.size()):
+		var stage := stages[stage_index] as Dictionary
+		if str(stage.get("id", "")) == stage_id:
+			return stage_index
+	return -1
+
+
+func _begin_formal_active_enemy_post_gate_route(enemy: Dictionary) -> bool:
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	var gate_turn_index := _get_formal_enemy_stage_index("gate_turn")
+	if actor == null or gate_turn_index < 0:
+		return false
+	enemy["target"] = {}
+	enemy["attack_cooldown"] = 0.0
+	enemy["attack_windup_remaining"] = 0.0
+	enemy["attack_windup_target"] = {}
+	enemy["formal_route_phase"] = "marching_to_warehouse"
+	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+	var slice := _formal_active_enemy_slice
+	slice["completed"] = false
+	slice["attack_unlocked"] = false
+	slice["attack_target_building_id"] = ""
+	slice["phase"] = "marching_to_warehouse"
+	_formal_active_enemy_slice = slice
+	return _request_formal_active_enemy_stage(actor, gate_turn_index)
+
+
+func _begin_formal_active_enemy_main_hall_route(enemy: Dictionary) -> bool:
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	var main_hall_index := _get_formal_enemy_stage_index("main_hall")
+	if actor == null or main_hall_index < 0:
+		return false
+	enemy["target"] = {}
+	enemy["attack_cooldown"] = 0.0
+	enemy["attack_windup_remaining"] = 0.0
+	enemy["attack_windup_target"] = {}
+	enemy["formal_route_phase"] = "marching_to_main_hall"
+	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+	var slice := _formal_active_enemy_slice
+	slice["completed"] = false
+	slice["attack_unlocked"] = false
+	slice["attack_target_building_id"] = ""
+	slice["phase"] = "marching_to_main_hall"
+	_formal_active_enemy_slice = slice
+	return _request_formal_active_enemy_stage(actor, main_hall_index)
 
 
 func _advance_rally_units(game_delta_seconds: float = 0.0) -> void:
@@ -2909,7 +4040,7 @@ func _select_avoidance_target(npc_id: String, encounter: Dictionary) -> Dictiona
 		if direction.length() <= 0.001:
 			continue
 		var unclamped_position := npc_position + direction * AVOIDANCE_STEP_DISTANCE
-		var position := _constrain_avoidance_step(npc_position, unclamped_position)
+		var position := _constrain_avoidance_step(npc_position, unclamped_position, npc_id)
 		var min_enemy_distance := _get_min_enemy_distance(position)
 		var travel_distance := npc_position.distance_to(position)
 		var contact_gain := min_enemy_distance - current_enemy_distance
@@ -2933,7 +4064,8 @@ func _select_avoidance_target(npc_id: String, encounter: Dictionary) -> Dictiona
 	if best.is_empty():
 		var fallback_position := _constrain_avoidance_step(
 			npc_position,
-			npc_position + _fallback_avoidance_direction(npc_id) * AVOIDANCE_STEP_DISTANCE
+			npc_position + _fallback_avoidance_direction(npc_id) * AVOIDANCE_STEP_DISTANCE,
+			npc_id
 		)
 		best = {
 			"target_id": "scatter_%d_fallback" % _stable_hash_text(npc_id),
@@ -2974,6 +4106,7 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_behavior_mode"):
 		result["battle_end_result"] = _finish_active_battle(reason)
 		result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
+		result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
 		return result
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
@@ -3006,8 +4139,116 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			(result["avoidance_ended"] as Array).append(ended_event)
 	result["battle_end_result"] = _finish_active_battle(reason)
 	result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
+	result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
 	_last_mode_transition_result = result.duplicate(true)
 	return result
+
+
+func _enter_default_formal_combat_world() -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("begin_formal_combat_world")
+		or not npc_system.has_method("get_npc_ids")
+	):
+		return {"ok": false, "reason": "npc_formal_combat_world_api_missing"}
+	var requested_ids: Array[String] = npc_system.get_npc_ids()
+	var combatant_ids: Array[String] = []
+	for entry in _build_friendly_combatant_roster():
+		var npc_id := str(entry.get("npc_id", ""))
+		if not npc_id.is_empty():
+			combatant_ids.append(npc_id)
+	var result: Dictionary = npc_system.begin_formal_combat_world(requested_ids)
+	var migrated_ids: Array = result.get("migrated_npc_ids", [])
+	var noncombatant_ids: Array[String] = []
+	for raw_npc_id in migrated_ids:
+		var npc_id := str(raw_npc_id)
+		if not combatant_ids.has(npc_id):
+			noncombatant_ids.append(npc_id)
+	# Keep the P7b key as a compatibility alias for callers that only need the
+	# armed roster, while A5-P1 exposes the full spatial population explicitly.
+	result["eligible_npc_ids"] = combatant_ids
+	result["requested_npc_ids"] = requested_ids
+	result["combatant_npc_ids"] = combatant_ids
+	result["noncombatant_npc_ids"] = noncombatant_ids
+	result["world_mode"] = "formal_runtime"
+	return result
+
+
+func _exit_default_formal_combat_world(reason: String) -> Dictionary:
+	if not _default_formal_wave_active:
+		return {"ok": true, "active": false, "reason": "formal_runtime_not_active"}
+	var npc_result: Dictionary = {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var preserved_escape_ids := _get_active_formal_escape_ids(npc_system)
+	if npc_system != null and npc_system.has_method("end_formal_combat_world"):
+		npc_result = npc_system.end_formal_combat_world(reason, preserved_escape_ids)
+	var preview_result: Dictionary = {}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if preserved_escape_ids.is_empty() and controller != null and controller.has_method("set_runtime_formal_world_enabled"):
+		preview_result = controller.set_runtime_formal_world_enabled(false)
+	_formal_escape_world_hold = not preserved_escape_ids.is_empty()
+	var previous_wave_number := _default_formal_wave_number
+	_default_formal_wave_active = false
+	_default_formal_wave_number = 0
+	return {
+		"ok": bool(npc_result.get("ok", true)),
+		"active": false,
+		"reason": reason,
+		"wave_number": previous_wave_number,
+		"escape_world_hold": _formal_escape_world_hold,
+		"preserved_escape_npc_ids": preserved_escape_ids,
+		"npc_result": npc_result,
+		"preview_result": preview_result
+	}
+
+
+func _get_active_formal_escape_ids(npc_system: Node = null) -> Array[String]:
+	var result: Array[String] = []
+	var resolved_npc_system := npc_system if npc_system != null else get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		resolved_npc_system == null
+		or not resolved_npc_system.has_method("get_npc_ids")
+		or not resolved_npc_system.has_method("is_npc_in_formal_combat_world")
+	):
+		return result
+	for npc_id in resolved_npc_system.get_npc_ids():
+		if (
+			resolved_npc_system.is_npc_in_formal_combat_world(npc_id)
+			and is_npc_escaping(npc_id)
+		):
+			result.append(npc_id)
+	return result
+
+
+func _release_formal_escape_world_if_idle(reason: String) -> void:
+	if not _formal_escape_world_hold or _default_formal_wave_active:
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if not _get_active_formal_escape_ids(npc_system).is_empty():
+		return
+	if npc_system != null and npc_system.has_method("end_formal_combat_world"):
+		npc_system.end_formal_combat_world(reason)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("set_runtime_formal_world_enabled"):
+		controller.set_runtime_formal_world_enabled(false)
+	_formal_escape_world_hold = false
+
+
+func debug_get_default_formal_combat_world_snapshot() -> Dictionary:
+	var npc_snapshot: Dictionary = {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("get_formal_combat_world_snapshot"):
+		npc_snapshot = npc_system.get_formal_combat_world_snapshot()
+	return {
+		"ok": true,
+		"active": _default_formal_wave_active,
+		"escape_world_hold": _formal_escape_world_hold,
+		"wave_number": _default_formal_wave_number,
+		"active_enemy_count": _active_enemies.size(),
+		"formal_enemy_count": _formal_first_wave_slices.size(),
+		"npc_world": npc_snapshot
+	}
 
 
 func _on_npc_revived(npc_id: String) -> void:
@@ -3438,9 +4679,31 @@ func _assign_rally_positions(entries: Array[Dictionary], row_name: String, z_pos
 			x_position = float(index % 5) * RALLY_COLUMN_SPACING - (float(mini(entries.size(), 5) - 1) * RALLY_COLUMN_SPACING) * 0.5
 		entry["formation_row"] = row_name
 		entry["formation_index"] = index
-		entry["position"] = Vector3(x_position, 0.0, z_position - row_offset)
+		entry["position"] = _get_rally_world_position(x_position, row_name, z_position, row_offset)
 		result.append(entry)
 	return result
+
+
+func _get_rally_world_position(x_position: float, row_name: String, legacy_z: float, row_offset: float) -> Vector3:
+	if not _default_formal_wave_active:
+		return Vector3(x_position, 0.0, legacy_z - row_offset)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_enemy_route_world"):
+		return Vector3(x_position, 0.0, legacy_z - row_offset)
+	var gate_position := Vector3.ZERO
+	for raw_stage in (controller.get_enemy_route_world() as Dictionary).get("stages", []):
+		if raw_stage is Dictionary and str((raw_stage as Dictionary).get("id", "")) == "front_gate":
+			gate_position = (raw_stage as Dictionary).get("position", Vector3.ZERO)
+			break
+	if gate_position == Vector3.ZERO:
+		return Vector3(x_position, 0.0, legacy_z - row_offset)
+	var inside_offset := 4.0 if row_name == "front" else 6.0
+	var target := gate_position + Vector3(x_position, 0.0, -inside_offset - row_offset)
+	if controller.has_method("get_production_navigation_map_rid"):
+		var navigation_map: RID = controller.get_production_navigation_map_rid()
+		if navigation_map.is_valid():
+			target = NavigationServer3D.map_get_closest_point(navigation_map, target)
+	return target
 
 
 func _start_npc_rally(entry: Dictionary) -> Dictionary:
@@ -3774,7 +5037,28 @@ func _clamp_avoidance_position(position: Vector3) -> Vector3:
 	)
 
 
-func _constrain_avoidance_step(npc_position: Vector3, proposed_position: Vector3) -> Vector3:
+func _constrain_avoidance_step(npc_position: Vector3, proposed_position: Vector3, npc_id: String = "") -> Vector3:
+	if _default_formal_wave_active and not npc_id.is_empty():
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		if (
+			npc_system != null
+			and npc_system.has_method("is_npc_in_formal_combat_world")
+			and npc_system.is_npc_in_formal_combat_world(npc_id)
+			and controller != null
+			and controller.has_method("get_production_navigation_map_rid")
+		):
+			var navigation_map: RID = controller.get_production_navigation_map_rid()
+			if navigation_map.is_valid():
+				var resolved := NavigationServer3D.map_get_closest_point(navigation_map, proposed_position)
+				if npc_position.distance_to(resolved) > AVOIDANCE_STEP_DISTANCE + 0.25:
+					var capped := npc_position.move_toward(resolved, AVOIDANCE_STEP_DISTANCE)
+					resolved = NavigationServer3D.map_get_closest_point(navigation_map, capped)
+				# Connectivity and bounded repath belong to ActorMotionBody. Performing a
+				# synchronous full path query for every scatter candidate stalls a contact
+				# involving several civilians, while the local closest-point projection is
+				# sufficient to keep the requested endpoint on the production NavMesh.
+				return resolved
 	var clamped_position := _clamp_avoidance_position(proposed_position)
 	var clamped_distance := npc_position.distance_to(clamped_position)
 	if clamped_distance > AVOIDANCE_STEP_DISTANCE + 0.25:
@@ -3830,6 +5114,84 @@ func _is_frontline_unit(unit_type: String) -> bool:
 	return ["melee_infantry", "polearm_infantry", "cavalry"].has(unit_type)
 
 
+func _is_formal_dynamic_pressure_enemy(enemy_id: String) -> bool:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return false
+	return str((_formal_first_wave_slices[enemy_id] as Dictionary).get("movement_model", "")) == "dynamic_combat_pressure"
+
+
+func _select_formal_dynamic_enemy_target(enemy_id: String, enemy: Dictionary) -> Dictionary:
+	var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+	var preferences := _normalize_enemy_target_preferences(enemy.get("target_preference", DEFAULT_TARGET_PREFERENCE))
+	if preferences.has(NEARBY_UNIT_TARGET_ID):
+		var nearby_unit := _find_nearby_unit_target(enemy, enemy_position)
+		if not nearby_unit.is_empty():
+			return nearby_unit
+	var slice := _formal_first_wave_slices.get(enemy_id, {}) as Dictionary
+	for raw_building_id in slice.get("target_sequence", ["front_gate", "warehouse", "main_hall"]):
+		var building_id := str(raw_building_id)
+		if _is_building_destroyed(building_id):
+			continue
+		var building_target := _make_building_target(building_id)
+		if not building_target.is_empty():
+			return building_target
+	return {}
+
+
+func _ensure_formal_dynamic_pressure_motion(enemy_id: String, target: Dictionary) -> void:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return
+	var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor == null:
+		return
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	var target_id := str(target.get("id", ""))
+	var target_type := str(target.get("type", ""))
+	var target_position: Vector3 = target.get("position", actor.global_position)
+	target_position.y = actor.global_position.y
+	var navigation_map := actor.get_navigation_map()
+	if navigation_map.is_valid():
+		target_position = NavigationServer3D.map_get_closest_point(navigation_map, target_position)
+	var previous_target_id := str(slice.get("combat_target_id", ""))
+	var previous_target_type := str(slice.get("combat_target_type", ""))
+	var previous_position: Vector3 = slice.get("motion_target_position", Vector3.INF)
+	var target_changed := previous_target_id != target_id or previous_target_type != target_type
+	var target_moved := previous_position == Vector3.INF or previous_position.distance_to(target_position) > 0.35
+	if actor.is_motion_active() and not target_changed and not target_moved:
+		actor.set_motion_paused(false)
+		return
+	actor.set_motion_paused(false)
+	var request_kind := "unit" if target_type in ["npc", "defense_device"] else "building"
+	if actor.request_motion(target_position, "formal_wave_pressure_%s:%s:%s" % [request_kind, enemy_id, target_id]):
+		slice["combat_target_id"] = target_id
+		slice["combat_target_type"] = target_type
+		slice["motion_target_position"] = target_position
+		slice["phase"] = "pressing_to_unit" if request_kind == "unit" else "marching_to_%s" % target_id
+		slice["pressure_repath_count"] = int(slice.get("pressure_repath_count", 0)) + 1
+		slice["failure_reason"] = ""
+		_formal_first_wave_slices[enemy_id] = slice
+
+
+func _pause_formal_dynamic_pressure_motion(enemy_id: String) -> void:
+	var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor != null and actor.is_motion_active():
+		actor.set_motion_paused(true)
+
+
+func _mark_formal_dynamic_contact(enemy_id: String, target: Dictionary) -> void:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	var target_id := str(target.get("id", ""))
+	var target_type := str(target.get("type", ""))
+	slice["attack_unlocked"] = true
+	slice["combat_target_id"] = target_id
+	slice["combat_target_type"] = target_type
+	slice["attack_target_building_id"] = target_id if target_type == "building" else ""
+	slice["phase"] = "attacking_%s" % target_id if target_type == "building" else "engaging_unit"
+	_formal_first_wave_slices[enemy_id] = slice
+
+
 func _select_enemy_target(enemy: Dictionary) -> Dictionary:
 	var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
 	var preferences := _normalize_enemy_target_preferences(enemy.get("target_preference", DEFAULT_TARGET_PREFERENCE))
@@ -3863,6 +5225,12 @@ func _find_nearby_unit_target(enemy: Dictionary, enemy_position: Vector3) -> Dic
 		and npc_system.has_method("get_npc_world_position")
 	):
 		for npc_id in npc_system.get_npc_ids():
+			if (
+				_default_formal_wave_active
+				and npc_system.has_method("is_npc_in_formal_combat_world")
+				and not npc_system.is_npc_in_formal_combat_world(npc_id)
+			):
+				continue
 			if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
 				continue
 			var raw_position: Variant = npc_system.get_npc_world_position(npc_id)
@@ -3879,6 +5247,7 @@ func _find_nearby_unit_target(enemy: Dictionary, enemy_position: Vector3) -> Dic
 				"id": npc_id,
 				"name": str(npc.get("name", npc_id)),
 				"position": npc_position,
+				"contact_radius": 0.35,
 				"distance": distance
 			}
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
@@ -4542,6 +5911,686 @@ func _make_enemy_state(
 	return state
 
 
+func _get_formal_enemy_pilot_template() -> Dictionary:
+	if _waves.is_empty():
+		return {}
+	var enemies := (_waves[0] as Dictionary).get("enemies", []) as Array
+	if enemies.is_empty() or not enemies[0] is Dictionary:
+		return {}
+	return (enemies[0] as Dictionary).duplicate(true)
+
+
+func _create_formal_enemy_pilot_actor(enemy: Dictionary) -> ActorMotionBody:
+	return _create_formal_enemy_actor(enemy, "FormalEnemyFoot01", true)
+
+
+func _create_formal_enemy_actor(
+	enemy: Dictionary,
+	node_name: String,
+	is_navigation_pilot: bool
+) -> ActorMotionBody:
+	var actor := ACTOR_MOTION_SCENE.instantiate() as ActorMotionBody
+	actor.name = node_name
+	actor.set_meta("enemy_id", str(enemy.get("id", "")))
+	actor.set_meta("formal_navigation_pilot", is_navigation_pilot)
+	actor.set_meta("formal_active_enemy", not is_navigation_pilot)
+	var mesh := actor.get_node_or_null("ActorMesh") as MeshInstance3D
+	if mesh != null:
+		mesh.material_override = _make_enemy_material(str(enemy.get("unit_type", "melee_infantry")))
+	var label := actor.get_node_or_null("DebugLabel") as Label3D
+	if label != null:
+		label.name = "EnemyLabel"
+		label.text = "%s\n正式进军试点" % str(enemy.get("name", "敌军步兵"))
+		label.position = Vector3(0.0, 2.05, 0.0)
+	var formal_art_attached := _attach_formal_enemy_art(actor, enemy)
+	if mesh != null:
+		mesh.visible = not formal_art_attached
+	return actor
+
+
+func _resolve_formal_wave_spawn_formation(controller: Node, templates: Array) -> Dictionary:
+	var config: Dictionary = controller.get_formal_wave_spawn_config()
+	var columns := maxi(1, int(config.get("columns", 3)))
+	var minimum_spacing := maxf(0.01, float(config.get("minimum_spacing", 0.95)))
+	var minimum_clearance := maxf(0.0, float(config.get("minimum_capsule_clearance", 0.0)))
+	var maximum_radius := 0.0
+	for raw_template in templates:
+		var enemy_template: Dictionary = raw_template if raw_template is Dictionary else {}
+		if int(enemy_template.get("count", 0)) <= 0:
+			continue
+		var unit_type := str(enemy_template.get("unit_type", ""))
+		var profile_id := "enemy_mounted" if unit_type in ["cavalry", "mounted_ranged"] else "enemy_foot"
+		var profile: Dictionary = controller.get_actor_motion_profile(profile_id)
+		var fallback_radius := 0.65 if profile_id == "enemy_mounted" else 0.42
+		maximum_radius = maxf(maximum_radius, float(profile.get("radius", fallback_radius)))
+	return {
+		"columns": columns,
+		"spacing": maxf(minimum_spacing, maximum_radius * 2.0 + minimum_clearance),
+		"maximum_actor_radius": maximum_radius,
+		"minimum_capsule_clearance": minimum_clearance,
+		"ai_updates_per_frame": maxi(1, int(config.get("ai_updates_per_frame", 8))),
+		"contact_update_interval_frames": maxi(1, int(config.get("contact_update_interval_frames", 6))),
+		"avoidance_update_interval_frames": maxi(1, int(config.get("avoidance_update_interval_frames", 3))),
+		"source": "physics_navigation_v1"
+	}
+
+
+func _get_route_formation_position(
+	route: Dictionary,
+	stage_index: int,
+	formation_index: int,
+	fallback: Vector3,
+	column_count: int = 3,
+	spacing: float = 0.95
+) -> Vector3:
+	var stages := route.get("stages", []) as Array
+	if stage_index < 0 or stage_index >= stages.size():
+		return fallback
+	var stage := stages[stage_index] as Dictionary
+	var stage_position: Vector3 = stage.get("position", fallback)
+	var direction := Vector3.FORWARD
+	if stage_index > 0:
+		var previous_stage := stages[stage_index - 1] as Dictionary
+		var previous_position: Vector3 = previous_stage.get("position", stage_position)
+		direction = stage_position - previous_position
+	elif stages.size() > 1:
+		var next_stage := stages[1] as Dictionary
+		var next_position: Vector3 = next_stage.get("position", stage_position)
+		direction = next_position - stage_position
+	direction.y = 0.0
+	if direction.length_squared() <= 0.0001:
+		direction = Vector3.FORWARD
+	else:
+		direction = direction.normalized()
+	var lateral := Vector3(-direction.z, 0.0, direction.x)
+	column_count = maxi(1, column_count)
+	spacing = maxf(0.01, spacing)
+	var column := formation_index % column_count
+	var row := formation_index / column_count
+	var center_column := float(column_count - 1) * 0.5
+	# Slots fan out on the approach side of a stage.  No row is pushed beyond
+	# the authoritative attack point into a building collider.
+	return stage_position + lateral * (float(column) - center_column) * spacing - direction * float(row) * spacing
+
+
+func _find_route_stage_index(route: Dictionary, stage_id: String) -> int:
+	var stages := route.get("stages", []) as Array
+	for stage_index in range(stages.size()):
+		var stage := stages[stage_index] as Dictionary
+		if str(stage.get("id", "")) == stage_id:
+			return stage_index
+	return -1
+
+
+func _get_formal_attack_slot_role(unit_type: String) -> String:
+	if unit_type == "polearm_infantry":
+		return "polearm_rear"
+	return "melee_front"
+
+
+func _is_formal_wave_role_ready_at_stage(wave_number: int, role_id: String, stage_id: String) -> bool:
+	var matched := 0
+	for raw_slice in _formal_first_wave_slices.values():
+		var slice := raw_slice as Dictionary
+		if int(slice.get("wave_number", 0)) != wave_number or str(slice.get("attack_slot_role", "")) != role_id:
+			continue
+		matched += 1
+		if str(slice.get("current_stage_id", "")) != stage_id or not bool(slice.get("attack_unlocked", false)):
+			return false
+	return matched > 0
+
+
+func _resolve_formal_wave_role_slots(
+	legacy_slots: Dictionary,
+	slot_sets: Dictionary,
+	role_id: String
+) -> Dictionary:
+	if slot_sets.is_empty():
+		return legacy_slots.duplicate(true)
+	var result: Dictionary = {}
+	for raw_building_id in slot_sets.keys():
+		var building_id := str(raw_building_id)
+		var building_sets := slot_sets.get(building_id, {}) as Dictionary
+		result[building_id] = (building_sets.get(role_id, []) as Array).duplicate(true)
+	return result
+
+
+func _get_formal_first_wave_stage_index(enemy_id: String, stage_id: String) -> int:
+	var slice: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
+	var route := slice.get("route", {}) as Dictionary
+	return _find_route_stage_index(route, stage_id)
+
+
+func _get_formal_first_wave_stage_position(enemy_id: String, stage_id: String, fallback: Vector3) -> Vector3:
+	var slice: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
+	if str(slice.get("movement_model", "")) == "dynamic_combat_pressure":
+		var dynamic_route := slice.get("route", {}) as Dictionary
+		for raw_stage in dynamic_route.get("stages", []):
+			var dynamic_stage := raw_stage as Dictionary
+			if str(dynamic_stage.get("id", "")) == stage_id:
+				return dynamic_stage.get("position", fallback)
+		return fallback
+	var resolved := slice.get("resolved_stage_positions", {}) as Dictionary
+	if resolved.has(stage_id):
+		return resolved[stage_id]
+	var slots_by_building := slice.get("attack_slots_world", {}) as Dictionary
+	var slots := slots_by_building.get(stage_id, []) as Array
+	if not slots.is_empty():
+		var slot_index := int(slice.get("formation_index", 0)) % slots.size()
+		if int(slice.get("wave_number", 1)) == 2 and stage_id == "main_hall":
+			var resolved_slot_indices := slice.get("resolved_slot_indices", {}) as Dictionary
+			if resolved_slot_indices.has(stage_id):
+				slot_index = int(resolved_slot_indices[stage_id])
+			else:
+				var claimed: Dictionary = {}
+				var role_id := str(slice.get("attack_slot_role", ""))
+				for raw_other_id in _formal_first_wave_slices.keys():
+					var other_id := str(raw_other_id)
+					if other_id == enemy_id:
+						continue
+					var other := _formal_first_wave_slices[other_id] as Dictionary
+					if str(other.get("attack_slot_role", "")) != role_id:
+						continue
+					var other_indices := other.get("resolved_slot_indices", {}) as Dictionary
+					if other_indices.has(stage_id):
+						claimed[int(other_indices[stage_id])] = true
+				var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+				var origin := actor.global_position if actor != null else fallback
+				var best_distance := INF
+				for candidate_index in range(slots.size()):
+					if claimed.has(candidate_index):
+						continue
+					var candidate: Vector3 = slots[candidate_index]
+					var distance := Vector2(origin.x, origin.z).distance_to(Vector2(candidate.x, candidate.z))
+					if distance < best_distance:
+						best_distance = distance
+						slot_index = candidate_index
+				resolved_slot_indices[stage_id] = slot_index
+				slice["resolved_slot_indices"] = resolved_slot_indices
+				_formal_first_wave_slices[enemy_id] = slice
+		return slots[slot_index]
+	var route := slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	for stage_index in range(stages.size()):
+		var stage := stages[stage_index] as Dictionary
+		if str(stage.get("id", "")) == stage_id:
+			return _get_route_formation_position(route, stage_index, int(slice.get("formation_index", 0)), fallback)
+	return fallback
+
+
+func _request_formal_first_wave_stage(enemy_id: String, stage_index: int) -> bool:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return false
+	var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor == null:
+		return false
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	var route := slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	if stage_index < 0 or stage_index >= stages.size():
+		return false
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var route_phase := "marching_to_front_gate"
+	if stage_id == "main_hall":
+		route_phase = "marching_to_main_hall"
+	elif stage_id == "warehouse":
+		route_phase = "marching_to_warehouse"
+	slice["target_stage_index"] = stage_index
+	slice["target_stage_id"] = stage_id
+	slice["phase"] = route_phase
+	_formal_first_wave_slices[enemy_id] = slice
+	if _active_enemies.has(enemy_id):
+		var enemy: Dictionary = _active_enemies[enemy_id]
+		enemy["current_action"] = "moving_to_%s" % stage_id
+		enemy["formal_route_phase"] = route_phase
+		_active_enemies[enemy_id] = enemy
+	var target_position := _get_formal_first_wave_stage_position(enemy_id, stage_id, actor.global_position)
+	slice = _formal_first_wave_slices[enemy_id]
+	var is_dynamic_pressure := str(slice.get("movement_model", "")) == "dynamic_combat_pressure"
+	var desired_distance := 0.18 if is_dynamic_pressure else 0.5
+	if not is_dynamic_pressure and int(slice.get("wave_number", 1)) == 2:
+		desired_distance = 0.85
+		if str(slice.get("attack_slot_role", "")) == "polearm_rear":
+			desired_distance = 1.5
+		if stage_id in ["front_gate", "warehouse"] and str(slice.get("attack_slot_role", "")) == "melee_front" and int(slice.get("formation_index", 0)) >= 6:
+			# The gate is only six metres wide. The second sword rank may stop up to
+			# one weapon reach behind its assigned point instead of pushing through
+			# an already occupied front rank.
+			desired_distance = 1.35
+	actor.navigation_agent.target_desired_distance = desired_distance
+	var navigation_map := actor.get_navigation_map()
+	if navigation_map.is_valid():
+		target_position = NavigationServer3D.map_get_closest_point(navigation_map, target_position)
+	var resolved := slice.get("resolved_stage_positions", {}) as Dictionary
+	resolved[stage_id] = target_position
+	slice["resolved_stage_positions"] = resolved
+	var target_slots := [] as Array if is_dynamic_pressure else (slice.get("attack_slots_world", {}) as Dictionary).get(stage_id, []) as Array
+	var assigned_slot_index := int(slice.get("formation_index", 0)) % target_slots.size() if not target_slots.is_empty() else -1
+	var resolved_slot_indices := slice.get("resolved_slot_indices", {}) as Dictionary
+	if resolved_slot_indices.has(stage_id):
+		assigned_slot_index = int(resolved_slot_indices[stage_id])
+	slice["attack_slot_index"] = assigned_slot_index
+	slice["attack_slot_position"] = target_position
+	slice["combat_target_id"] = stage_id
+	slice["combat_target_type"] = "building"
+	slice["motion_target_position"] = target_position
+	_formal_first_wave_slices[enemy_id] = slice
+	return actor.request_motion(target_position, "formal_wave_pressure:%s:%s" % [enemy_id, stage_id])
+
+
+func _on_formal_first_wave_motion_arrived(request_id: String, _target_position: Vector3, enemy_id: String) -> void:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	if request_id.begins_with("formal_wave_pressure_unit:"):
+		slice["phase"] = "engaging_unit"
+		slice["completed"] = true
+		slice["attack_unlocked"] = true
+		_formal_first_wave_slices[enemy_id] = slice
+		return
+	var route := slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	var stage_index := int(slice.get("target_stage_index", -1))
+	if stage_index < 0 or stage_index >= stages.size():
+		return
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var completed_ids := slice.get("completed_stage_ids", []) as Array
+	if stage_id not in completed_ids:
+		completed_ids.append(stage_id)
+	slice["completed_stage_ids"] = completed_ids
+	slice["current_stage_id"] = stage_id
+	slice["target_stage_id"] = ""
+	var building_id := ""
+	match stage_id:
+		"front_gate":
+			slice["phase"] = "front_gate_reached"
+			building_id = "front_gate"
+		"warehouse":
+			slice["phase"] = "warehouse_reached"
+			building_id = "warehouse"
+		"main_hall":
+			slice["phase"] = "main_hall_reached"
+			building_id = "main_hall"
+	if not building_id.is_empty():
+		slice["completed"] = true
+		slice["attack_unlocked"] = true
+		slice["attack_target_building_id"] = building_id
+		_formal_first_wave_slices[enemy_id] = slice
+		if _active_enemies.has(enemy_id):
+			var enemy: Dictionary = _active_enemies[enemy_id]
+			enemy["current_action"] = "ready_to_attack_%s" % building_id
+			enemy["formal_route_phase"] = str(slice.get("phase", ""))
+			_active_enemies[enemy_id] = enemy
+		return
+	_formal_first_wave_slices[enemy_id] = slice
+	if not _request_formal_first_wave_stage(enemy_id, stage_index + 1):
+		_on_formal_first_wave_motion_failed("", "next_stage_request_failed", enemy_id)
+
+
+func _on_formal_first_wave_motion_failed(_request_id: String, reason: String, enemy_id: String) -> void:
+	if not _formal_first_wave_slices.has(enemy_id):
+		return
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	if str(slice.get("movement_model", "")) == "dynamic_combat_pressure" and reason == "stuck_timeout":
+		slice["phase"] = "pressing_blocked"
+		slice["completed"] = false
+		slice["failure_reason"] = ""
+		slice["blocked_count"] = int(slice.get("blocked_count", 0)) + 1
+		_formal_first_wave_slices[enemy_id] = slice
+		if _active_enemies.has(enemy_id):
+			var blocked_enemy: Dictionary = _active_enemies[enemy_id]
+			blocked_enemy["current_action"] = "pressing_for_attack_space"
+			blocked_enemy["formal_route_phase"] = "pressing_blocked"
+			_active_enemies[enemy_id] = blocked_enemy
+		return
+	slice["phase"] = "navigation_failed"
+	slice["completed"] = false
+	slice["failure_reason"] = reason
+	_formal_first_wave_slices[enemy_id] = slice
+	if _active_enemies.has(enemy_id):
+		var enemy: Dictionary = _active_enemies[enemy_id]
+		enemy["current_action"] = "navigation_failed"
+		enemy["formal_route_phase"] = "navigation_failed"
+		_active_enemies[enemy_id] = enemy
+
+
+func _on_formal_first_wave_motion_cancelled(_request_id: String, reason: String, enemy_id: String) -> void:
+	if reason in ["formal_first_wave_stopped", "superseded"]:
+		return
+	_on_formal_first_wave_motion_failed("", reason, enemy_id)
+
+
+func _begin_formal_first_wave_route(enemy_id: String, enemy: Dictionary, stage_id: String, route_phase: String) -> bool:
+	var stage_index := _get_formal_first_wave_stage_index(enemy_id, stage_id)
+	if stage_index < 0:
+		return false
+	enemy["target"] = {}
+	enemy["attack_cooldown"] = 0.0
+	enemy["attack_windup_remaining"] = 0.0
+	enemy["attack_windup_target"] = {}
+	enemy["formal_route_phase"] = route_phase
+	_active_enemies[enemy_id] = enemy
+	var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+	slice["completed"] = false
+	slice["attack_unlocked"] = false
+	slice["attack_target_building_id"] = ""
+	slice["phase"] = route_phase
+	_formal_first_wave_slices[enemy_id] = slice
+	return _request_formal_first_wave_stage(enemy_id, stage_index)
+
+
+func _sync_formal_first_wave_presentation(delta: float) -> void:
+	for raw_enemy_id in _formal_first_wave_slices.keys():
+		var enemy_id := str(raw_enemy_id)
+		if not _active_enemies.has(enemy_id):
+			continue
+		var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+		if actor == null:
+			continue
+		var slice: Dictionary = _formal_first_wave_slices[enemy_id]
+		var movement_direction := Vector3.ZERO
+		slice["previous_position"] = actor.global_position
+		var facing_sample := Vector3(actor.velocity.x, 0.0, actor.velocity.z)
+		var previous_facing: Vector3 = slice.get("presentation_facing_direction", Vector3.ZERO)
+		if facing_sample.length() >= 0.35:
+			facing_sample = facing_sample.normalized()
+			var next_facing := facing_sample
+			if previous_facing.length_squared() > 0.0001:
+				next_facing = _turn_planar_direction_toward(previous_facing, facing_sample, delta)
+				var turn_radians := acos(clampf(previous_facing.normalized().dot(next_facing), -1.0, 1.0))
+				slice["presentation_total_turn_radians"] = float(slice.get("presentation_total_turn_radians", 0.0)) + turn_radians
+				slice["presentation_max_turn_radians_per_frame"] = maxf(float(slice.get("presentation_max_turn_radians_per_frame", 0.0)), turn_radians)
+			slice["presentation_facing_direction"] = next_facing
+			movement_direction = next_facing
+		elif previous_facing.length_squared() > 0.0001:
+			# Collision depenetration and near-zero RVO jitter are not intentional
+			# travel directions, so they must not rotate the visible character.
+			movement_direction = previous_facing
+		_formal_first_wave_slices[enemy_id] = slice
+		var enemy: Dictionary = _active_enemies[enemy_id]
+		enemy["position"] = actor.global_position
+		_active_enemies[enemy_id] = enemy
+		var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+		_apply_enemy_art_state(art_view, enemy, movement_direction)
+
+
+func _turn_planar_direction_toward(current_direction: Vector3, target_direction: Vector3, delta: float) -> Vector3:
+	var current := Vector3(current_direction.x, 0.0, current_direction.z).normalized()
+	var target := Vector3(target_direction.x, 0.0, target_direction.z).normalized()
+	if current.length_squared() <= 0.0001:
+		return target
+	if target.length_squared() <= 0.0001:
+		return current
+	var current_yaw := atan2(-current.x, -current.z)
+	var target_yaw := atan2(-target.x, -target.z)
+	var yaw_delta := wrapf(target_yaw - current_yaw, -PI, PI)
+	# Avoidance may alternate left/right every physics frame in a dense crowd.
+	# Visible bodies follow that intent at a bounded 360 degrees per second.
+	var turn_step := clampf(yaw_delta, -TAU * delta, TAU * delta)
+	var next_yaw := current_yaw + turn_step
+	return Vector3(-sin(next_yaw), 0.0, -cos(next_yaw))
+
+
+func _clear_formal_first_wave_nodes(_reason: String) -> void:
+	for raw_path in _formal_first_wave_node_paths.values():
+		var actor := get_node_or_null(raw_path) as ActorMotionBody
+		if actor != null:
+			if actor.is_motion_active():
+				actor.cancel_motion("formal_first_wave_stopped")
+			actor.queue_free()
+	_formal_first_wave_slices.clear()
+	_formal_first_wave_node_paths.clear()
+
+
+func _request_formal_active_enemy_stage(actor: ActorMotionBody, stage_index: int) -> bool:
+	if actor == null or _formal_active_enemy_slice.is_empty():
+		return false
+	var route := _formal_active_enemy_slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	if stage_index < 0 or stage_index >= stages.size():
+		return false
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var route_phase := "marching"
+	if stage_id == "main_hall":
+		route_phase = "marching_to_main_hall"
+	elif stage_index >= _get_formal_enemy_stage_index("gate_turn"):
+		route_phase = "marching_to_warehouse"
+	var slice := _formal_active_enemy_slice
+	slice["target_stage_index"] = stage_index
+	slice["target_stage_id"] = stage_id
+	slice["phase"] = route_phase
+	_formal_active_enemy_slice = slice
+	if _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+		var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+		enemy["current_action"] = "moving_to_%s" % stage_id
+		enemy["formal_route_phase"] = route_phase
+		_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+	return actor.request_motion(stage.get("position", actor.global_position), "formal_active_enemy:%s" % stage_id)
+
+
+func _on_formal_active_enemy_motion_arrived(request_id: String, _target_position: Vector3) -> void:
+	if _formal_active_enemy_slice.is_empty() or not request_id.begins_with("formal_active_enemy:"):
+		return
+	var slice := _formal_active_enemy_slice
+	var route := slice.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	var stage_index := int(slice.get("target_stage_index", -1))
+	if stage_index < 0 or stage_index >= stages.size():
+		return
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var completed_ids := slice.get("completed_stage_ids", []) as Array
+	if stage_id not in completed_ids:
+		completed_ids.append(stage_id)
+	slice["completed_stage_ids"] = completed_ids
+	slice["current_stage_id"] = stage_id
+	slice["target_stage_id"] = ""
+	if stage_id == "front_gate":
+		slice["phase"] = "front_gate_reached"
+		slice["completed"] = true
+		slice["attack_unlocked"] = true
+		slice["attack_target_building_id"] = "front_gate"
+		_formal_active_enemy_slice = slice
+		if _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+			var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+			enemy["current_action"] = "ready_to_attack_front_gate"
+			enemy["formal_route_phase"] = "front_gate_reached"
+			_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+		return
+	if stage_id == "warehouse":
+		slice["phase"] = "warehouse_reached"
+		slice["completed"] = true
+		slice["attack_unlocked"] = true
+		slice["attack_target_building_id"] = "warehouse"
+		_formal_active_enemy_slice = slice
+		if _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+			var warehouse_enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+			warehouse_enemy["current_action"] = "ready_to_attack_warehouse"
+			warehouse_enemy["formal_route_phase"] = "warehouse_reached"
+			_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = warehouse_enemy
+		return
+	if stage_id == "main_hall":
+		slice["phase"] = "main_hall_reached"
+		slice["completed"] = true
+		slice["attack_unlocked"] = true
+		slice["attack_target_building_id"] = "main_hall"
+		_formal_active_enemy_slice = slice
+		if _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+			var main_hall_enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+			main_hall_enemy["current_action"] = "ready_to_attack_main_hall"
+			main_hall_enemy["formal_route_phase"] = "main_hall_reached"
+			_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = main_hall_enemy
+		return
+	_formal_active_enemy_slice = slice
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	if not _request_formal_active_enemy_stage(actor, stage_index + 1):
+		_on_formal_active_enemy_motion_failed(request_id, "next_stage_request_failed")
+
+
+func _on_formal_active_enemy_motion_failed(_request_id: String, reason: String) -> void:
+	if _formal_active_enemy_slice.is_empty():
+		return
+	var slice := _formal_active_enemy_slice
+	slice["phase"] = "navigation_failed"
+	slice["completed"] = false
+	slice["failure_reason"] = reason
+	_formal_active_enemy_slice = slice
+	if _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+		var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+		enemy["current_action"] = "navigation_failed"
+		enemy["formal_route_phase"] = "navigation_failed"
+		_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+
+
+func _on_formal_active_enemy_motion_cancelled(_request_id: String, reason: String) -> void:
+	if _formal_active_enemy_slice.is_empty() or reason == "active_slice_stopped":
+		return
+	_on_formal_active_enemy_motion_failed("", reason)
+
+
+func _sync_formal_active_enemy_slice_presentation() -> void:
+	if _formal_active_enemy_slice.is_empty() or not _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
+		return
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	if actor == null:
+		return
+	var slice := _formal_active_enemy_slice
+	var previous_position: Vector3 = slice.get("previous_position", actor.global_position)
+	var movement_direction := actor.global_position - previous_position
+	slice["previous_position"] = actor.global_position
+	_formal_active_enemy_slice = slice
+	var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
+	enemy["position"] = actor.global_position
+	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
+	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+	_apply_enemy_art_state(art_view, enemy, movement_direction)
+
+
+func _clear_formal_active_enemy_slice_node(_reason: String) -> void:
+	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
+	if actor != null:
+		if actor.is_motion_active():
+			actor.cancel_motion("active_slice_stopped")
+		actor.queue_free()
+	_formal_active_enemy_slice.clear()
+	_formal_active_enemy_slice_node_path = NodePath()
+
+
+func _request_formal_enemy_pilot_stage(actor: ActorMotionBody, stage_index: int) -> bool:
+	if actor == null or _formal_enemy_navigation_pilot.is_empty():
+		return false
+	var route := _formal_enemy_navigation_pilot.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	if stage_index < 0 or stage_index >= stages.size():
+		return false
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var pilot := _formal_enemy_navigation_pilot
+	pilot["target_stage_index"] = stage_index
+	pilot["target_stage_id"] = stage_id
+	pilot["phase"] = "marching"
+	var enemy := pilot.get("enemy", {}) as Dictionary
+	enemy["current_action"] = "moving_to_%s" % stage_id
+	pilot["enemy"] = enemy
+	_formal_enemy_navigation_pilot = pilot
+	return actor.request_motion(stage.get("position", actor.global_position), "formal_enemy:%s" % stage_id)
+
+
+func _on_formal_enemy_pilot_motion_arrived(request_id: String, _target_position: Vector3) -> void:
+	if _formal_enemy_navigation_pilot.is_empty() or not request_id.begins_with("formal_enemy:"):
+		return
+	var pilot := _formal_enemy_navigation_pilot
+	var route := pilot.get("route", {}) as Dictionary
+	var stages := route.get("stages", []) as Array
+	var stage_index := int(pilot.get("target_stage_index", -1))
+	if stage_index < 0 or stage_index >= stages.size():
+		return
+	var stage := stages[stage_index] as Dictionary
+	var stage_id := str(stage.get("id", ""))
+	var completed_ids := pilot.get("completed_stage_ids", []) as Array
+	if stage_id not in completed_ids:
+		completed_ids.append(stage_id)
+	pilot["completed_stage_ids"] = completed_ids
+	pilot["current_stage_id"] = stage_id
+	pilot["target_stage_id"] = ""
+	var enemy := pilot.get("enemy", {}) as Dictionary
+	if stage_id == str(pilot.get("stop_stage_id", "front_gate")):
+		pilot["phase"] = "front_gate_reached"
+		pilot["completed"] = true
+		enemy["current_action"] = "ready_to_attack_front_gate"
+		pilot["enemy"] = enemy
+		_formal_enemy_navigation_pilot = pilot
+		return
+	pilot["enemy"] = enemy
+	_formal_enemy_navigation_pilot = pilot
+	var actor := get_node_or_null(_formal_enemy_navigation_pilot_node_path) as ActorMotionBody
+	if not _request_formal_enemy_pilot_stage(actor, stage_index + 1):
+		_on_formal_enemy_pilot_motion_failed(request_id, "next_stage_request_failed")
+
+
+func _on_formal_enemy_pilot_motion_failed(_request_id: String, reason: String) -> void:
+	if _formal_enemy_navigation_pilot.is_empty():
+		return
+	var pilot := _formal_enemy_navigation_pilot
+	pilot["phase"] = "navigation_failed"
+	pilot["completed"] = false
+	pilot["failure_reason"] = reason
+	var enemy := pilot.get("enemy", {}) as Dictionary
+	enemy["current_action"] = "navigation_failed"
+	pilot["enemy"] = enemy
+	_formal_enemy_navigation_pilot = pilot
+
+
+func _on_formal_enemy_pilot_motion_cancelled(_request_id: String, reason: String) -> void:
+	if _formal_enemy_navigation_pilot.is_empty() or reason == "pilot_stopped":
+		return
+	var pilot := _formal_enemy_navigation_pilot
+	pilot["phase"] = "navigation_cancelled"
+	pilot["completed"] = false
+	pilot["failure_reason"] = reason
+	_formal_enemy_navigation_pilot = pilot
+
+
+func _sync_formal_enemy_navigation_pilot_presentation() -> void:
+	if _formal_enemy_navigation_pilot.is_empty():
+		return
+	var actor := get_node_or_null(_formal_enemy_navigation_pilot_node_path) as ActorMotionBody
+	if actor == null:
+		return
+	var pilot := _formal_enemy_navigation_pilot
+	var previous_position: Vector3 = pilot.get("previous_position", actor.global_position)
+	var movement_direction := actor.global_position - previous_position
+	pilot["previous_position"] = actor.global_position
+	var enemy := pilot.get("enemy", {}) as Dictionary
+	enemy["position"] = actor.global_position
+	pilot["enemy"] = enemy
+	_formal_enemy_navigation_pilot = pilot
+	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+	_apply_enemy_art_state(art_view, enemy, movement_direction)
+	var label := actor.get_node_or_null("EnemyLabel") as Label3D
+	if label != null:
+		label.text = "%s\n%s -> %s" % [
+			str(enemy.get("name", "敌军步兵")),
+			str(pilot.get("current_stage_id", "spawn")),
+			str(pilot.get("target_stage_id", "front_gate"))
+		]
+
+
+func _clear_formal_enemy_navigation_pilot(reason: String) -> void:
+	var actor := get_node_or_null(_formal_enemy_navigation_pilot_node_path) as ActorMotionBody
+	if actor != null:
+		if actor.is_motion_active():
+			actor.cancel_motion("pilot_stopped")
+		actor.queue_free()
+	_formal_enemy_navigation_pilot.clear()
+	_formal_enemy_navigation_pilot_node_path = NodePath()
+	if not reason.is_empty():
+		_last_spawn_result["formal_enemy_pilot_stop_reason"] = reason
+
+
 func _create_enemy_node(enemy: Dictionary) -> Area3D:
 	var enemy_node := Area3D.new()
 	enemy_node.name = _make_node_name(str(enemy.get("id", "Enemy")))
@@ -4582,7 +6631,105 @@ func _create_enemy_node(enemy: Dictionary) -> Area3D:
 		_get_unit_type_label(str(enemy.get("unit_type", "")))
 	]
 	enemy_node.add_child(label)
+	var formal_art_attached := false
+	if _can_attach_formal_enemy_art_sample():
+		formal_art_attached = _attach_formal_enemy_art(enemy_node, enemy)
+	body.visible = not formal_art_attached
 	return enemy_node
+
+
+func _can_attach_formal_enemy_art_sample() -> bool:
+	for raw_path in _enemy_nodes.values():
+		var existing_enemy := get_node_or_null(raw_path)
+		if existing_enemy != null and existing_enemy.get_node_or_null("EnemyArtView") != null:
+			return false
+	return true
+
+
+func _attach_formal_enemy_art(enemy_node: Node3D, enemy: Dictionary) -> bool:
+	var use_sword_shield_chibi := (
+		str(enemy.get("unit_type", "")) == "melee_infantry"
+		and str(enemy.get("weapon_type", "")) == "sword_shield"
+	)
+	var scene_path := SWORD_SHIELD_CHIBI_ART_SCENE_PATH if use_sword_shield_chibi else LEGACY_FORMAL_ENEMY_ART_SCENE_PATH
+	var art_scene := load(scene_path) as PackedScene
+	if art_scene == null:
+		return false
+	var art_view := art_scene.instantiate() as Node3D
+	if art_view == null:
+		return false
+	art_view.name = "EnemyArtView"
+	if not use_sword_shield_chibi:
+		art_view.set("character_rim", null)
+		art_view.set("outfit_tint", Color(0.46, 0.22, 0.16, 1.0))
+		art_view.set("hair_tint", Color(0.11, 0.065, 0.04, 1.0))
+		art_view.set("show_smith_hammer", false)
+	enemy_node.add_child(art_view)
+	if not use_sword_shield_chibi:
+		_attach_enemy_equipment(art_view)
+	_apply_enemy_art_state(art_view, enemy, Vector3.FORWARD)
+	enemy_node.set_meta("enemy_art_family", "synty_chibi" if use_sword_shield_chibi else "quaternius_legacy")
+	return true
+
+
+func _attach_enemy_equipment(art_view: Node3D) -> void:
+	var right_hand := art_view.get_node_or_null("EquipmentSockets/RightHand") as Node3D
+	var left_hand := art_view.get_node_or_null("EquipmentSockets/LeftHand") as Node3D
+	var sword_scene := load(ENEMY_SWORD_SCENE_PATH) as PackedScene
+	var shield_scene := load(ENEMY_SHIELD_SCENE_PATH) as PackedScene
+	if right_hand != null and sword_scene != null:
+		var sword := sword_scene.instantiate() as Node3D
+		if sword != null:
+			sword.name = "BronzeSword"
+			sword.position = Vector3(0.0, 0.02, -0.04)
+			sword.rotation_degrees = Vector3(0.0, 0.0, 92.0)
+			sword.scale = Vector3.ONE * 0.82
+			right_hand.add_child(sword)
+	if left_hand != null and shield_scene != null:
+		var shield := shield_scene.instantiate() as Node3D
+		if shield != null:
+			shield.name = "WoodenShield"
+			shield.position = Vector3(0.03, 0.01, -0.08)
+			shield.rotation_degrees = Vector3(0.0, 90.0, 0.0)
+			shield.scale = Vector3.ONE * 0.78
+			left_hand.add_child(shield)
+
+
+func _apply_enemy_art_state(art_view: Node3D, enemy: Dictionary, movement_direction: Vector3) -> void:
+	if art_view == null:
+		return
+	var current_action := str(enemy.get("current_action", "idle"))
+	var profile := {
+		"id": str(enemy.get("id", "enemy")),
+		"states": {
+			"hp": int(enemy.get("hp", 1)),
+			"max_hp": int(enemy.get("max_hp", 1)),
+			"current_action": current_action,
+			"behavior_mode": "combat",
+			"unconscious": not bool(enemy.get("alive", true)),
+			"escaped": false
+		}
+	}
+	if art_view.has_method("apply_profile"):
+		art_view.apply_profile(profile)
+	var moving := (
+		current_action.begins_with("moving_to_")
+		or current_action.begins_with("pressing_to_")
+		or current_action == "pressing_for_attack_space"
+	)
+	if art_view.has_method("set_movement_active"):
+		art_view.set_movement_active(moving, float(enemy.get("move_speed", 2.8)))
+	# apply_profile() already resolves attacking_/winding_up_ to the attack state.
+	# Re-entering the debug force API here used to restart the clip and allocate a
+	# full diagnostic snapshot for every attacker on every 0.1 s AI tick.
+	var facing_direction := movement_direction
+	if current_action.begins_with("attacking_") or current_action.begins_with("winding_up_"):
+		var target := enemy.get("target", {}) as Dictionary
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var target_position: Vector3 = target.get("position", enemy_position)
+		facing_direction = target_position - enemy_position
+	if facing_direction.length_squared() > 0.0001 and art_view.has_method("set_facing_direction"):
+		art_view.set_facing_direction(facing_direction)
 
 
 func _make_enemy_material(unit_type: String) -> StandardMaterial3D:
@@ -5278,13 +7425,15 @@ func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary
 			"复苏 NPC 当前无法继续前往后门出口。",
 			{}
 		)
+	var revive_exit_position := _get_escape_exit_position(npc_id, npc_system)
+	intent["exit_position"] = _vector3_to_dict(revive_exit_position)
 	var mode_result: Dictionary = npc_system.set_npc_behavior_mode_and_move_to_world_position(
 		npc_id,
 		BEHAVIOR_MODE_ESCAPED,
 		"escape_resumed_after_revive",
 		ESCAPE_TARGET_ID,
 		ESCAPE_TARGET_NAME,
-		ESCAPE_EXIT_POSITION,
+		revive_exit_position,
 		arrival_state,
 		{
 			"interrupt": true,
@@ -5414,7 +7563,11 @@ func _sync_active_escape_from_state(npc_id: String) -> Dictionary:
 	snapshot["speed_multiplier"] = _get_escape_speed_multiplier(intent)
 	snapshot["target_id"] = str(intent.get("exit_target_id", ESCAPE_TARGET_ID))
 	snapshot["target_name"] = str(intent.get("exit_target_name", ESCAPE_TARGET_NAME))
-	snapshot["target_position"] = _vector3_to_dict(ESCAPE_EXIT_POSITION)
+	snapshot["target_position"] = (
+		(intent.get("exit_position", {}) as Dictionary).duplicate(true)
+		if intent.get("exit_position", {}) is Dictionary
+		else _vector3_to_dict(_get_escape_exit_position(npc_id, npc_system))
+	)
 	_active_escapes[npc_id] = snapshot.duplicate(true)
 	return snapshot
 
@@ -5522,7 +7675,8 @@ func _log_escape_started(
 	source_event_id: String,
 	trigger: String,
 	context: Dictionary,
-	previous_mode: String
+	previous_mode: String,
+	escape_exit_position: Vector3
 ) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -5543,7 +7697,7 @@ func _log_escape_started(
 			"from_mode": previous_mode,
 			"exit_target_id": ESCAPE_TARGET_ID,
 			"exit_target_name": ESCAPE_TARGET_NAME,
-			"exit_position": _vector3_to_dict(ESCAPE_EXIT_POSITION)
+			"exit_position": _vector3_to_dict(escape_exit_position)
 		}
 	})
 
@@ -5841,11 +7995,26 @@ func _refresh_enemy_node(enemy_id: String) -> void:
 	if enemy_node == null:
 		return
 	var enemy: Dictionary = _active_enemies[enemy_id]
-	enemy_node.global_position = enemy.get("position", enemy_node.global_position)
+	var previous_position := enemy_node.global_position
+	var is_formal_physical_actor := _formal_first_wave_slices.has(enemy_id) and enemy_node is ActorMotionBody
+	if not is_formal_physical_actor:
+		enemy_node.global_position = enemy.get("position", enemy_node.global_position)
+	var movement_direction := enemy_node.global_position - previous_position
+	var target: Dictionary = enemy.get("target", {}) if (enemy.get("target", {}) is Dictionary) else {}
+	var presentation_signature := "%d|%s|%s|%s" % [
+		int(enemy.get("hp", 0)),
+		str(enemy.get("current_action", "")),
+		str(target.get("type", "")),
+		str(target.get("id", ""))
+	]
+	if is_formal_physical_actor and str(enemy_node.get_meta("enemy_refresh_signature", "")) == presentation_signature:
+		return
+	enemy_node.set_meta("enemy_refresh_signature", presentation_signature)
+	var art_view := enemy_node.get_node_or_null("EnemyArtView") as Node3D
+	_apply_enemy_art_state(art_view, enemy, movement_direction)
 	var label := enemy_node.get_node_or_null("EnemyLabel") as Label3D
 	if label == null:
 		return
-	var target: Dictionary = enemy.get("target", {}) if (enemy.get("target", {}) is Dictionary) else {}
 	var target_name := str(target.get("name", "无目标"))
 	label.text = "%s\nHP %d/%d · %s\n%s -> %s" % [
 		str(enemy.get("name", "敌人")),
@@ -6022,6 +8191,24 @@ func _extract_enemy_ids(enemies: Array[Dictionary]) -> Array[String]:
 	for enemy in enemies:
 		result.append(str(enemy.get("id", "")))
 	return result
+
+
+func debug_get_enemy_art_snapshots() -> Array[Dictionary]:
+	var snapshots: Array[Dictionary] = []
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var enemy_node := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) if _enemy_nodes.has(enemy_id) else null
+		var art_view := enemy_node.get_node_or_null("EnemyArtView") if enemy_node != null else null
+		var art_snapshot: Dictionary = art_view.debug_get_snapshot() if art_view != null and art_view.has_method("debug_get_snapshot") else {}
+		snapshots.append({
+			"enemy_id": enemy_id,
+			"unit_type": str(enemy.get("unit_type", "")),
+			"weapon_type": str(enemy.get("weapon_type", "")),
+			"current_action": str(enemy.get("current_action", "")),
+			"art_family": str(enemy_node.get_meta("enemy_art_family", "capsule")) if enemy_node != null else "missing",
+			"art": art_snapshot,
+		})
+	return snapshots
 
 
 func _clear_spawned_enemy_nodes() -> void:

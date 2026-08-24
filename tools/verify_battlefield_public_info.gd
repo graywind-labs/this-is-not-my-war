@@ -150,7 +150,8 @@ func _init() -> void:
 	if enemy_id.is_empty():
 		_fail("Spawned wave should expose at least one enemy id")
 		return
-	_place_enemy(combat_system, enemy_id, Vector3(0.5, 0.0, 0.6), 1, 999.0)
+	var combatant_position: Vector3 = npc_system.get_npc_world_position(COMBATANT_ID)
+	_place_enemy(combat_system, enemy_id, combatant_position + Vector3(0.5, 0.0, 0.6), 1, 999.0)
 	var mode_result: Dictionary = npc_system.set_npc_behavior_mode(COMBATANT_ID, "combat", "verify_battlefield_public_attack", {
 		"state_changes": {
 			"current_action": "combat_ready",
@@ -235,12 +236,18 @@ func _init() -> void:
 		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "escape_started", ESCAPER_ID), "Witness should receive escape_started"):
 		return
-	for _i in range(160):
-		await process_frame
+	var escape_target := _dict_to_vector3(escape_result.get("target_position", {}))
+	var escape_frame_budget := 1200 if escape_target.x > 900.0 else 160
+	for _i in range(escape_frame_budget):
+		await physics_frame
 		var escaper_state: Dictionary = npc_system.get_npc_state(ESCAPER_ID)
 		if bool(escaper_state.get("escaped", false)):
 			break
-	if not _expect(bool(npc_system.get_npc_state(ESCAPER_ID).get("escaped", false)), "Escaper should leave station after reaching exit"):
+	var final_escape_state: Dictionary = npc_system.get_npc_state(ESCAPER_ID)
+	if not _expect(
+		bool(final_escape_state.get("escaped", false)),
+		"Escaper should leave station after reaching exit: %s" % JSON.stringify(final_escape_state)
+	):
 		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "escaped", ESCAPER_ID), "Witness should receive escaped"):
 		return
@@ -282,6 +289,15 @@ func _expect(condition: bool, message: String) -> bool:
 		_fail(message)
 		return false
 	return true
+
+
+func _dict_to_vector3(value: Variant) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Dictionary:
+		var data := value as Dictionary
+		return Vector3(float(data.get("x", 0.0)), float(data.get("y", 0.0)), float(data.get("z", 0.0)))
+	return Vector3.ZERO
 
 
 func _wait_for_low_hp_result(combat_system: Node, npc_id: String) -> bool:

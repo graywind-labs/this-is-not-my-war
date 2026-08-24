@@ -9,6 +9,7 @@ const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const PIETY_SYSTEM_PATH := "/root/Main/Systems/PietySystem"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
 const GAME_STATE_PATH := "/root/GameState"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_WORK_DURATION_HOURS := 1
@@ -18,6 +19,7 @@ const HEALING_RESOURCE_ID := "money"
 const HEALING_INITIAL_COST := 1
 const HEALING_COST_INTERVAL_SECONDS := 1800.0
 const HEALING_MAX_HELPERS_PER_TARGET := 2
+const FORMAL_HEALING_APPROACH_DISTANCE := 1.25
 const CLINIC_LOCATION_ID := "clinic"
 const CLINIC_DOCTOR_ACTION_ID := "work_clinic_doctor"
 const CLINIC_PATIENT_ACTION_ID := "receive_clinic_treatment"
@@ -45,6 +47,11 @@ const TRAINING_MIN_STUDENT_SKILL_INTERVAL_SECONDS := 600.0
 const NPC_DIALOGUE_ACTION_ID := "talk_to_npc"
 const NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD := 5
 const VISIT_LOCATION_ACTION_ID := "visit_location"
+const REPAIR_ASSIST_ACTION_ID := "assist_repair"
+const UPGRADE_ASSIST_ACTION_ID := "assist_upgrade"
+const FIRST_SPATIAL_WORK_ACTION_ID := "work_blacksmith"
+const FIRST_SPATIAL_BUILDING_ID := "blacksmith"
+const FORMAL_SPATIAL_ROUTE_FIELD := "formal_spatial_route"
 const PRAY_ACTION_ID := "pray_at_chapel"
 const MASS_ACTION_ID := "lead_mass"
 const PRAYER_MODE_PERSONAL := "personal_prayer"
@@ -160,6 +167,13 @@ func _ready() -> void:
 			and not event_bus.npc_building_entry_failed.is_connected(_on_npc_building_entry_failed)
 		):
 			event_bus.npc_building_entry_failed.connect(_on_npc_building_entry_failed)
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if (
+		dialog_system != null
+		and dialog_system.has_signal("dialogue_ended")
+		and not dialog_system.dialogue_ended.is_connected(_on_dialogue_ended)
+	):
+		dialog_system.dialogue_ended.connect(_on_dialogue_ended)
 
 
 func get_action(action_id: String) -> Dictionary:
@@ -450,6 +464,8 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
+	if _uses_spatial_workstation_authority(action):
+		return _assign_spatial_workstation_action(npc_id, action, npc_system)
 
 	if not location_id.is_empty():
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
@@ -480,9 +496,238 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 	return _execute_action(npc_id, action_id)
 
 
+func _assign_spatial_workstation_action(npc_id: String, action: Dictionary, npc_system: Node) -> bool:
+	# A formal route is a visible consequence of a valid work transaction. Reject
+	# missing targets/materials before migrating the actor into the staging world,
+	# then _start_work revalidates the same transaction after physical arrival.
+	if not _preflight_training_equipment(npc_id, action, npc_system):
+		return false
+	if str(action.get("type", "")) == "eat" and not _preflight_eating_food(npc_id, action):
+		return false
+	if bool(action.get("requires_crafting_target", false)):
+		var preflight_building_id := str(action.get("location_required", FIRST_SPATIAL_BUILDING_ID))
+		var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+		if crafting_system == null or not crafting_system.has_method("can_start_work_cycle"):
+			_update_action_failure(npc_id, "work_failed_no_crafting_system")
+			return false
+		var crafting_preflight: Dictionary = crafting_system.can_start_work_cycle(preflight_building_id, npc_id)
+		if not bool(crafting_preflight.get("ok", false)):
+			var crafting_failure := str(
+				crafting_preflight.get(
+					"error",
+					crafting_preflight.get("reason", "crafting_target_missing")
+				)
+			)
+			_update_action_failure(npc_id, "work_failed_%s" % crafting_failure, crafting_preflight)
+			_log_structured_action_event(
+				npc_id,
+				action,
+				"work_failed",
+				_build_crafting_failure_event_payload(
+					action,
+					preflight_building_id,
+					crafting_failure,
+					crafting_preflight
+				)
+			)
+			return false
+	var input_resources: Dictionary = action.get("input_resources", {})
+	var preflight_input_resources := bool(action.get("formal_preflight_input_resources", true))
+	if preflight_input_resources and not input_resources.is_empty():
+		var resource_system := _get_resource_system()
+		if resource_system == null or not resource_system.can_afford(input_resources):
+			_update_action_failure(npc_id, "work_failed_no_resources", {
+				"action_id": str(action.get("id", "")),
+				"reason": "资源不足",
+				"input_resources": input_resources.duplicate(true),
+				"preflight_before_formal_migration": true
+			})
+			_log_structured_action_event(npc_id, action, "work_failed", {
+				"action_id": str(action.get("id", "")),
+				"reason": "资源不足",
+				"input_resources": input_resources.duplicate(true)
+			})
+			return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("reserve_workstation"):
+		return false
+	var building_id := str(action.get("location_required", FIRST_SPATIAL_BUILDING_ID))
+	var uses_formal_route := _uses_formal_spatial_workstation_authority(action)
+	if uses_formal_route:
+		if not npc_system.has_method("begin_formal_workstation_action"):
+			return false
+		var begin_result: Dictionary = npc_system.begin_formal_workstation_action(
+			npc_id,
+			str(action.get("id", "")),
+			building_id
+		)
+		if not bool(begin_result.get("ok", false)):
+			_update_action_failure(npc_id, "work_failed_formal_world", begin_result)
+			return false
+	var reserve_result: Dictionary = building_system.reserve_workstation(
+		building_id,
+		npc_id,
+		str(action.get("workstation_type", ""))
+	)
+	if not bool(reserve_result.get("ok", false)):
+		if uses_formal_route and npc_system.has_method("end_formal_workstation_action"):
+			npc_system.end_formal_workstation_action(npc_id, "reservation_failed", true)
+		_update_action_failure(npc_id, "work_failed_no_workstation", _make_workstation_failure_context(action, reserve_result))
+		_log_structured_action_event(npc_id, action, "work_failed", {
+			"action_id": str(action.get("id", "")),
+			"reason": "没有可预留的空闲工位",
+			"building_id": building_id,
+			"blocked_by_npc_ids": reserve_result.get("blocked_by_npc_ids", [])
+		})
+		return false
+	var workstation_id := str(reserve_result.get("workstation_id", ""))
+	_pending_actions[npc_id] = str(action.get("id", FIRST_SPATIAL_WORK_ACTION_ID))
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options[npc_id] = {
+		"reserved_building_id": building_id,
+		"reserved_workstation_id": workstation_id,
+		"spatial_authority": true,
+		"formal_spatial_authority": uses_formal_route
+	}
+	if uses_formal_route:
+		var reusable_state: Dictionary = npc_system.get_npc_state(npc_id)
+		if (
+			str(reusable_state.get("current_location", "")) == building_id
+			and str(reusable_state.get("physical_location_phase", "")) == "workstation"
+			and str(reusable_state.get("current_workstation_id", "")) == workstation_id
+			and str(reusable_state.get("current_action", "")) == "idle"
+			and npc_system.has_method("move_npc_to_building_workstation")
+			and npc_system.move_npc_to_building_workstation(npc_id, building_id, workstation_id)
+		):
+			return true
+		# Region/link enable changes are published by NavigationServer on the
+		# following frame. Keep the action reserved/pending until that sync point
+		# instead of issuing a target against the just-re-enabled empty map.
+		call_deferred(
+			"_start_formal_spatial_workstation_route_after_preview_sync",
+			npc_id,
+			building_id,
+			workstation_id,
+			str(action.get("id", ""))
+		)
+		return true
+	if npc_system.has_method("move_npc_to_building_workstation") and npc_system.move_npc_to_building_workstation(
+		npc_id,
+		building_id,
+		workstation_id
+	):
+		return true
+	_release_pending_workstation_reservation(npc_id, _pending_action_options.get(npc_id, {}))
+	_pending_actions.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	_update_action_failure(npc_id, "work_failed_spatial_route", {
+		"action_id": str(action.get("id", "")),
+		"building_id": building_id,
+		"workstation_id": workstation_id,
+		"failure_summary": "无法建立从门口到工作位的室内路线。"
+	})
+	if uses_formal_route and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action(npc_id, "route_start_failed", true)
+	return false
+
+
+func _start_formal_spatial_workstation_route_after_preview_sync(
+	npc_id: String,
+	building_id: String,
+	workstation_id: String,
+	action_id: String
+) -> void:
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	if str(_pending_actions.get(npc_id, "")) != action_id:
+		return
+	var pending_options: Dictionary = (
+		_pending_action_options.get(npc_id, {})
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	if (
+		not bool(pending_options.get("formal_spatial_authority", false))
+		or str(pending_options.get("reserved_building_id", "")) != building_id
+		or str(pending_options.get("reserved_workstation_id", "")) != workstation_id
+	):
+		return
+	var npc_system := _get_npc_system()
+	if npc_system == null or not npc_system.has_method("get_formal_workstation_action_snapshot"):
+		return
+	var formal_snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	if not bool(formal_snapshot.get("active", false)):
+		return
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("debug_set_preview_enabled"):
+		controller.debug_set_preview_enabled(true)
+		# The first wait protects the session creation frame; this second wait
+		# protects a restart that raced with the previous session's preview exit.
+		await get_tree().physics_frame
+		await get_tree().process_frame
+		if controller.has_method("force_sync_production_navigation"):
+			controller.force_sync_production_navigation()
+	if str(_pending_actions.get(npc_id, "")) != action_id:
+		return
+	formal_snapshot = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	if not bool(formal_snapshot.get("active", false)):
+		return
+	# The building can become unavailable while NavigationServer publishes the
+	# formal regions. Preserve the domain-specific failure instead of reporting
+	# a misleading generic route error.
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if (
+		building_system != null
+		and building_system.has_method("is_building_accessible")
+		and not building_system.is_building_accessible(building_id)
+	):
+		var building: Dictionary = (
+			building_system.get_building(building_id)
+			if building_system.has_method("get_building")
+			else {}
+		)
+		_on_npc_building_entry_failed(npc_id, building_id, {
+			"condition": str(building.get("condition", "unavailable")),
+			"deferred_route_preflight_failed": true
+		})
+		return
+	if (
+		npc_system.has_method("move_npc_to_building_workstation")
+		and npc_system.move_npc_to_building_workstation(npc_id, building_id, workstation_id)
+	):
+		return
+	_release_pending_workstation_reservation(npc_id, pending_options)
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	_update_action_failure(npc_id, "work_failed_spatial_route", {
+		"action_id": action_id,
+		"building_id": building_id,
+		"workstation_id": workstation_id,
+		"failure_summary": "正式导航同步后仍无法建立从门口到工作位的室内路线。"
+	})
+	_end_formal_spatial_workstation_action(npc_id, "route_start_failed")
+
+
+func _uses_spatial_workstation_authority(action: Dictionary) -> bool:
+	return (
+		str(action.get("id", "")) == FIRST_SPATIAL_WORK_ACTION_ID
+		or _uses_formal_spatial_workstation_authority(action)
+	)
+
+
+func _uses_formal_spatial_workstation_authority(action: Dictionary) -> bool:
+	return bool(action.get(FORMAL_SPATIAL_ROUTE_FIELD, false))
+
+
 func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
 	if building_id.is_empty() or not _can_npc_act(npc_id):
 		return false
+	if (
+		str(_pending_actions.get(npc_id, "")) == REPAIR_ASSIST_ACTION_ID
+		and str(_pending_action_targets.get(npc_id, "")) == building_id
+	):
+		return true
 	if _active_actions.has(npc_id):
 		push_warning("NPC is already performing an active action: %s" % npc_id)
 		return false
@@ -497,26 +742,87 @@ func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
-
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) != PLAZA_LOCATION_ID:
-		_pending_actions[npc_id] = "assist_repair"
-		_pending_action_targets[npc_id] = building_id
-		_pending_action_options.erase(npc_id)
-		return npc_system.move_npc_to_building(npc_id, PLAZA_LOCATION_ID)
-
-	if _is_gameplay_paused():
-		_pending_actions[npc_id] = "assist_repair"
-		_pending_action_targets[npc_id] = building_id
-		_pending_action_options.erase(npc_id)
+	if str(state.get("current_action", "")) == "%s_%s" % [REPAIR_ASSIST_ACTION_ID, building_id]:
 		return true
+	if _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
+		interrupt_npc_action(npc_id, "repair_assist_target_replaced", true)
+	if not npc_system.has_method("begin_formal_building_exterior_action"):
+		_update_action_failure(npc_id, "assist_repair_failed_formal_world", {
+			"action_id": REPAIR_ASSIST_ACTION_ID,
+			"building_id": building_id,
+			"failure_reason": "formal_exterior_api_missing"
+		})
+		return false
+	_pending_actions[npc_id] = REPAIR_ASSIST_ACTION_ID
+	_pending_action_targets[npc_id] = building_id
+	_pending_action_options[npc_id] = {
+		"formal_spatial_authority": true,
+		"formal_location_authority": true,
+		"formal_exterior_authority": true,
+		"service_slot": {}
+	}
+	var begin_result: Dictionary = npc_system.begin_formal_building_exterior_action(
+		npc_id,
+		REPAIR_ASSIST_ACTION_ID,
+		building_id,
+		"repair"
+	)
+	if not bool(begin_result.get("ok", false)):
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_pending_action_options.erase(npc_id)
+		_update_action_failure(npc_id, "assist_repair_failed_formal_world", begin_result)
+		return false
+	var assigned_options: Dictionary = _pending_action_options[npc_id]
+	assigned_options["service_slot"] = (
+		begin_result.get("service_slot", {}).duplicate(true)
+		if begin_result.get("service_slot", {}) is Dictionary
+		else {}
+	)
+	_pending_action_options[npc_id] = assigned_options
+	call_deferred("_start_formal_repair_route_after_preview_sync", npc_id, building_id)
+	return true
 
-	return _execute_repair_assist(npc_id, building_id)
+
+func _start_formal_repair_route_after_preview_sync(npc_id: String, building_id: String) -> void:
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	if (
+		str(_pending_actions.get(npc_id, "")) != REPAIR_ASSIST_ACTION_ID
+		or str(_pending_action_targets.get(npc_id, "")) != building_id
+	):
+		return
+	var npc_system := _get_npc_system()
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	if (
+		npc_system != null
+		and npc_system.has_method("move_npc_to_formal_building_exterior")
+		and npc_system.move_npc_to_formal_building_exterior(npc_id)
+	):
+		return
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	_end_formal_location_action(npc_id, "route_start_failed")
+	_update_action_failure(npc_id, "assist_repair_failed_spatial_route", {
+		"action_id": REPAIR_ASSIST_ACTION_ID,
+		"building_id": building_id,
+		"failure_reason": "route_start_failed",
+		"failure_summary": "无法建立前往目标建筑外维修点的正式实体路线。"
+	})
 
 
 func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	if building_id.is_empty() or not _can_npc_act(npc_id):
 		return false
+	if (
+		str(_pending_actions.get(npc_id, "")) == UPGRADE_ASSIST_ACTION_ID
+		and str(_pending_action_targets.get(npc_id, "")) == building_id
+	):
+		return true
 	if _active_actions.has(npc_id):
 		push_warning("NPC is already performing an active action: %s" % npc_id)
 		return false
@@ -531,21 +837,77 @@ func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
-
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state.get("current_location", "")) != PLAZA_LOCATION_ID:
-		_pending_actions[npc_id] = "assist_upgrade"
-		_pending_action_targets[npc_id] = building_id
-		_pending_action_options.erase(npc_id)
-		return npc_system.move_npc_to_building(npc_id, PLAZA_LOCATION_ID)
-
-	if _is_gameplay_paused():
-		_pending_actions[npc_id] = "assist_upgrade"
-		_pending_action_targets[npc_id] = building_id
-		_pending_action_options.erase(npc_id)
+	if str(state.get("current_action", "")) == "%s_%s" % [UPGRADE_ASSIST_ACTION_ID, building_id]:
 		return true
+	if _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
+		interrupt_npc_action(npc_id, "upgrade_assist_target_replaced", true)
+	if not npc_system.has_method("begin_formal_building_exterior_action"):
+		_update_action_failure(npc_id, "assist_upgrade_failed_formal_world", {
+			"action_id": UPGRADE_ASSIST_ACTION_ID,
+			"building_id": building_id,
+			"failure_reason": "formal_exterior_api_missing"
+		})
+		return false
+	_pending_actions[npc_id] = UPGRADE_ASSIST_ACTION_ID
+	_pending_action_targets[npc_id] = building_id
+	_pending_action_options[npc_id] = {
+		"formal_spatial_authority": true,
+		"formal_location_authority": true,
+		"formal_exterior_authority": true,
+		"service_slot": {}
+	}
+	var begin_result: Dictionary = npc_system.begin_formal_building_exterior_action(
+		npc_id,
+		UPGRADE_ASSIST_ACTION_ID,
+		building_id,
+		"upgrade"
+	)
+	if not bool(begin_result.get("ok", false)):
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_pending_action_options.erase(npc_id)
+		_update_action_failure(npc_id, "assist_upgrade_failed_formal_world", begin_result)
+		return false
+	var assigned_options: Dictionary = _pending_action_options[npc_id]
+	assigned_options["service_slot"] = (
+		begin_result.get("service_slot", {}).duplicate(true)
+		if begin_result.get("service_slot", {}) is Dictionary
+		else {}
+	)
+	_pending_action_options[npc_id] = assigned_options
+	call_deferred("_start_formal_upgrade_route_after_preview_sync", npc_id, building_id)
+	return true
 
-	return _execute_upgrade_assist(npc_id, building_id)
+
+func _start_formal_upgrade_route_after_preview_sync(npc_id: String, building_id: String) -> void:
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	if (
+		str(_pending_actions.get(npc_id, "")) != UPGRADE_ASSIST_ACTION_ID
+		or str(_pending_action_targets.get(npc_id, "")) != building_id
+	):
+		return
+	var npc_system := _get_npc_system()
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	if (
+		npc_system != null
+		and npc_system.has_method("move_npc_to_formal_building_exterior")
+		and npc_system.move_npc_to_formal_building_exterior(npc_id)
+	):
+		return
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	_end_formal_location_action(npc_id, "route_start_failed")
+	_update_action_failure(npc_id, "assist_upgrade_failed_spatial_route", {
+		"action_id": UPGRADE_ASSIST_ACTION_ID,
+		"building_id": building_id,
+		"failure_reason": "route_start_failed",
+		"failure_summary": "无法建立前往目标建筑外施工点的正式实体路线。"
+	})
 
 
 func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
@@ -556,13 +918,26 @@ func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> b
 		return false
 	if not _can_npc_act(healer_npc_id):
 		return false
+	if (
+		str(_pending_actions.get(healer_npc_id, "")) == HEALING_ACTION_ID
+		and str(_pending_action_targets.get(healer_npc_id, "")) == target_npc_id
+	):
+		return true
 	if _active_actions.has(healer_npc_id):
+		var current_healing_action: Dictionary = _active_actions.get(healer_npc_id, {})
+		if (
+			str(current_healing_action.get("kind", "")) == HEALING_ACTION_ID
+			and str(current_healing_action.get("target_npc_id", "")) == target_npc_id
+		):
+			return true
 		push_warning("NPC is already performing an active action: %s" % healer_npc_id)
 		return false
 	if not _is_npc_unconscious(target_npc_id):
 		push_warning("Cannot assist healing because target is not unconscious: %s" % target_npc_id)
 		return false
-	if _get_healing_helper_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
+	if _pending_actions.has(healer_npc_id):
+		interrupt_npc_action(healer_npc_id, "healing_target_replaced", true)
+	if _get_healing_commitment_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
 		push_warning("Cannot assist healing because target already has max helpers: %s" % target_npc_id)
 		return false
 	if not _can_pay_healing_cost():
@@ -570,24 +945,57 @@ func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> b
 		return false
 
 	var npc_system := _get_npc_system()
-	if npc_system == null:
+	if npc_system == null or not npc_system.has_method("begin_formal_healing_approach"):
+		_update_action_failure(healer_npc_id, "assist_heal_failed_formal_world", {
+			"action_id": HEALING_ACTION_ID,
+			"target_npc_id": target_npc_id,
+			"failure_reason": "formal_healing_api_missing"
+		})
 		return false
+	_pending_actions[healer_npc_id] = HEALING_ACTION_ID
+	_pending_action_targets[healer_npc_id] = target_npc_id
+	_pending_action_options[healer_npc_id] = {
+		"formal_spatial_authority": true,
+		"formal_location_authority": true,
+		"formal_healing_authority": true,
+		"formal_healing_initializing": true,
+		"formal_target_location_id": _get_target_healing_location(target_npc_id),
+		"approach_distance": FORMAL_HEALING_APPROACH_DISTANCE
+	}
+	var begin_result: Dictionary = npc_system.begin_formal_healing_approach(
+		healer_npc_id,
+		target_npc_id,
+		HEALING_ACTION_ID,
+		FORMAL_HEALING_APPROACH_DISTANCE,
+		HEALING_MAX_HELPERS_PER_TARGET
+	)
+	if not _pending_actions.has(healer_npc_id):
+		return false
+	var assigned_options: Dictionary = _pending_action_options.get(healer_npc_id, {})
+	assigned_options["formal_healing_initializing"] = false
+	if not bool(begin_result.get("ok", false)):
+		_pending_action_options[healer_npc_id] = assigned_options
+		_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, str(begin_result.get("reason", "formal_world")), begin_result)
+		return false
+	assigned_options["formal_target_location_id"] = str(begin_result.get("target_location_id", assigned_options.get("formal_target_location_id", PLAZA_LOCATION_ID)))
+	assigned_options["approach_position"] = begin_result.get("approach_position")
+	_pending_action_options[healer_npc_id] = assigned_options
+	call_deferred("_continue_pending_healing_after_preview_sync", healer_npc_id, target_npc_id)
+	return true
 
-	var target_location_id := _get_target_healing_location(target_npc_id)
-	var healer_state: Dictionary = npc_system.get_npc_state(healer_npc_id)
-	if str(healer_state.get("current_location", "")) != target_location_id:
-		_pending_actions[healer_npc_id] = HEALING_ACTION_ID
-		_pending_action_targets[healer_npc_id] = target_npc_id
-		_pending_action_options.erase(healer_npc_id)
-		return npc_system.move_npc_to_building(healer_npc_id, target_location_id)
 
-	if _is_gameplay_paused():
-		_pending_actions[healer_npc_id] = HEALING_ACTION_ID
-		_pending_action_targets[healer_npc_id] = target_npc_id
-		_pending_action_options.erase(healer_npc_id)
-		return true
-
-	return _execute_heal_assist(healer_npc_id, target_npc_id)
+func _continue_pending_healing_after_preview_sync(healer_npc_id: String, target_npc_id: String) -> void:
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	if (
+		str(_pending_actions.get(healer_npc_id, "")) != HEALING_ACTION_ID
+		or str(_pending_action_targets.get(healer_npc_id, "")) != target_npc_id
+	):
+		return
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	_approach_or_start_heal_assist(healer_npc_id)
 
 
 func assign_npc_dialogue(
@@ -682,6 +1090,13 @@ func assign_visit_location(npc_id: String, location_id: String) -> bool:
 		return false
 	if _active_actions.has(npc_id):
 		return false
+	if _pending_actions.has(npc_id):
+		if (
+			str(_pending_actions.get(npc_id, "")) == VISIT_LOCATION_ACTION_ID
+			and str(_pending_action_targets.get(npc_id, "")) == location_id
+		):
+			return true
+		interrupt_npc_action(npc_id, "visit_target_replaced", true)
 	var action: Dictionary = _actions.get(VISIT_LOCATION_ACTION_ID, {})
 	if action.is_empty() or not _is_enterable_location(location_id):
 		_update_action_failure(npc_id, "visit_location_failed_invalid_target", {
@@ -692,6 +1107,30 @@ func assign_visit_location(npc_id: String, location_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
+	if bool(action.get(FORMAL_SPATIAL_ROUTE_FIELD, false)):
+		if not npc_system.has_method("begin_formal_location_action"):
+			return false
+		var begin_result: Dictionary = npc_system.begin_formal_location_action(
+			npc_id,
+			VISIT_LOCATION_ACTION_ID,
+			location_id
+		)
+		if not bool(begin_result.get("ok", false)):
+			_update_action_failure(npc_id, "visit_location_failed_formal_world", begin_result)
+			return false
+		_pending_actions[npc_id] = VISIT_LOCATION_ACTION_ID
+		_pending_action_targets[npc_id] = location_id
+		_pending_action_options[npc_id] = {
+			"formal_spatial_authority": true,
+			"formal_location_authority": true
+		}
+		if (
+			npc_system.has_method("move_npc_to_formal_location")
+			and npc_system.move_npc_to_formal_location(npc_id, location_id)
+		):
+			return true
+		call_deferred("_start_formal_visit_route_after_preview_sync", npc_id, location_id)
+		return true
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(state.get("current_location", "")) != location_id:
 		_pending_actions[npc_id] = VISIT_LOCATION_ACTION_ID
@@ -714,6 +1153,32 @@ func assign_visit_location(npc_id: String, location_id: String) -> bool:
 		_pending_action_options[npc_id] = {}
 		return true
 	return _start_visit(npc_id, action, location_id)
+
+
+func _start_formal_visit_route_after_preview_sync(npc_id: String, location_id: String) -> void:
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	if (
+		str(_pending_actions.get(npc_id, "")) != VISIT_LOCATION_ACTION_ID
+		or str(_pending_action_targets.get(npc_id, "")) != location_id
+	):
+		return
+	var npc_system := _get_npc_system()
+	if (
+		npc_system != null
+		and npc_system.has_method("move_npc_to_formal_location")
+		and npc_system.move_npc_to_formal_location(npc_id, location_id)
+	):
+		return
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	_end_formal_location_action(npc_id, "route_start_failed")
+	_update_action_failure(npc_id, "visit_location_failed_movement", {
+		"action_id": VISIT_LOCATION_ACTION_ID,
+		"location_id": location_id,
+		"failure_reason": "route_start_failed"
+	})
 
 
 func has_pending_action(npc_id: String) -> bool:
@@ -894,6 +1359,11 @@ func interrupt_npc_action(npc_id: String, reason: String = "interrupted", force:
 	if _is_first_sleep_summary_locked(npc_id) and not force:
 		return false
 	var interrupted_pending_action_id := str(_pending_actions.get(npc_id, ""))
+	var interrupted_pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
 	var had_action := _pending_actions.has(npc_id) or _active_actions.has(npc_id) or _dialogue_reservations.has(npc_id)
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null and dialog_system.has_method("is_npc_in_dialogue") and dialog_system.is_npc_in_dialogue(npc_id):
@@ -902,9 +1372,22 @@ func interrupt_npc_action(npc_id: String, reason: String = "interrupted", force:
 			dialog_system.force_end_dialogue_for_npc(npc_id, reason)
 			had_action = true
 	_cancel_dialogue_approach_for_participant(npc_id, reason)
+	_release_pending_workstation_reservation(npc_id, interrupted_pending_options)
 	_pending_actions.erase(npc_id)
 	_pending_action_targets.erase(npc_id)
 	_pending_action_options.erase(npc_id)
+	if bool(interrupted_pending_options.get("formal_healing_authority", false)):
+		_end_formal_heal_authority(npc_id, reason)
+	elif bool(interrupted_pending_options.get("formal_location_authority", false)):
+		var npc_system_for_location := _get_npc_system()
+		var committed_location_id := (
+			str(npc_system_for_location.get_npc_state(npc_id).get("current_location", ""))
+			if npc_system_for_location != null
+			else ""
+		)
+		_end_formal_location_action(npc_id, reason, committed_location_id)
+	elif bool(interrupted_pending_options.get("formal_spatial_authority", false)):
+		_end_formal_spatial_workstation_action(npc_id, reason)
 	if interrupted_pending_action_id in [CLINIC_DOCTOR_ACTION_ID, TRAINING_INSTRUCTOR_ACTION_ID, MASS_ACTION_ID]:
 		call_deferred("_fail_waiting_dependents_without_provider", interrupted_pending_action_id)
 	if _active_actions.has(npc_id):
@@ -971,17 +1454,103 @@ func get_healing_helpers_for_target(target_npc_id: String) -> Array[String]:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
+	_queue_healing_assist_cleanup_for_resolved_target(npc_id)
 	if _is_npc_unconscious_or_escaped(npc_id):
+		var incapacitated_options: Dictionary = (
+			(_pending_action_options.get(npc_id, {}) as Dictionary)
+			if _pending_action_options.get(npc_id, {}) is Dictionary
+			else {}
+		)
 		_cancel_dialogue_approach_for_participant(npc_id, "talk_to_npc_target_unavailable")
+		_release_pending_workstation_reservation(npc_id, incapacitated_options)
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
 		_stop_active_action(npc_id, "")
+		if bool(incapacitated_options.get("formal_healing_authority", false)):
+			_end_formal_heal_authority(npc_id, "incapacitated")
+		elif bool(incapacitated_options.get("formal_location_authority", false)):
+			var incapacitated_location_id := str(_get_npc_system().get_npc_state(npc_id).get("current_location", ""))
+			_end_formal_location_action(npc_id, "incapacitated", incapacitated_location_id)
+		elif bool(incapacitated_options.get("formal_spatial_authority", false)):
+			_end_formal_spatial_workstation_action(npc_id, "incapacitated")
+		var npc_system := _get_npc_system()
+		if npc_system != null and npc_system.has_method("cancel_spatial_route_for_incapacitation"):
+			npc_system.cancel_spatial_route_for_incapacitation(npc_id, "incapacitated")
+		return
+	_cleanup_resolved_formal_building_assist_session(npc_id, REPAIR_ASSIST_ACTION_ID)
+	_cleanup_resolved_formal_building_assist_session(npc_id, UPGRADE_ASSIST_ACTION_ID)
+	var pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	if (
+		bool(pending_options.get("formal_spatial_authority", false))
+		and str((_get_npc_system().get_npc_state(npc_id) as Dictionary).get("spatial_route_phase", "")) == "navigation_failed"
+	):
+		if bool(pending_options.get("formal_dialogue_authority", false)):
+			_fail_pending_npc_dialogue(npc_id, "talk_to_npc_failed_spatial_route", {
+				"failure_reason": "navigation_failed",
+				"failure_summary": "前往对话对象的正式导航路线不可达。"
+			})
+			return
+		var failed_action_id := str(_pending_actions.get(npc_id, ""))
+		_release_pending_workstation_reservation(npc_id, pending_options)
+		_pending_actions.erase(npc_id)
+		_pending_action_targets.erase(npc_id)
+		_pending_action_options.erase(npc_id)
+		if bool(pending_options.get("formal_healing_authority", false)):
+			_end_formal_heal_authority(npc_id, "navigation_failed")
+		elif bool(pending_options.get("formal_location_authority", false)):
+			var failed_location_id := str(_get_npc_system().get_npc_state(npc_id).get("current_location", ""))
+			_end_formal_location_action(npc_id, "navigation_failed", failed_location_id)
+		else:
+			_end_formal_spatial_workstation_action(npc_id, "navigation_failed")
+		_update_action_failure(npc_id, "%s_failed_spatial_route" % failed_action_id, {
+			"action_id": failed_action_id,
+			"failure_reason": "navigation_failed",
+			"failure_summary": "前往正式工作位的路线不可达。"
+		})
 		return
 	if _is_gameplay_paused():
 		return
 	_try_execute_pending_action(npc_id)
 	_retry_pending_npc_dialogue_for_target(npc_id)
+
+
+func _queue_healing_assist_cleanup_for_resolved_target(target_npc_id: String) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+	var target_state: Dictionary = npc_system.get_npc_state(target_npc_id)
+	if bool(target_state.get("unconscious", false)) and not bool(target_state.get("escaped", false)):
+		return
+	call_deferred("_cleanup_healing_assists_for_resolved_target", target_npc_id)
+
+
+func _cleanup_healing_assists_for_resolved_target(target_npc_id: String) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+	var target_state: Dictionary = npc_system.get_npc_state(target_npc_id)
+	if bool(target_state.get("unconscious", false)) and not bool(target_state.get("escaped", false)):
+		return
+	for raw_healer_id in _pending_actions.keys().duplicate():
+		var healer_npc_id := str(raw_healer_id)
+		if (
+			str(_pending_actions.get(healer_npc_id, "")) == HEALING_ACTION_ID
+			and str(_pending_action_targets.get(healer_npc_id, "")) == target_npc_id
+		):
+			_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, "target_not_unconscious")
+	for raw_healer_id in _active_actions.keys().duplicate():
+		var healer_npc_id := str(raw_healer_id)
+		var active_action: Dictionary = _active_actions.get(healer_npc_id, {})
+		if (
+			str(active_action.get("kind", "")) == HEALING_ACTION_ID
+			and str(active_action.get("target_npc_id", "")) == target_npc_id
+		):
+			_finish_healing_assist(healer_npc_id, target_npc_id, "target_no_longer_unconscious")
 
 
 func _on_building_state_changed(building_id: String) -> void:
@@ -991,6 +1560,22 @@ func _on_building_state_changed(building_id: String) -> void:
 	var npc_system := _get_npc_system()
 	if building_system == null or npc_system == null:
 		return
+	if building_system.has_method("is_repair_in_progress") and not building_system.is_repair_in_progress(building_id):
+		for raw_npc_id in _pending_actions.keys().duplicate():
+			var pending_npc_id := str(raw_npc_id)
+			if (
+				str(_pending_actions.get(pending_npc_id, "")) == REPAIR_ASSIST_ACTION_ID
+				and str(_pending_action_targets.get(pending_npc_id, "")) == building_id
+			):
+				_cancel_pending_formal_repair_assist(pending_npc_id, building_id, "no_active_repair")
+	if building_system.has_method("is_upgrade_in_progress") and not building_system.is_upgrade_in_progress(building_id):
+		for raw_npc_id in _pending_actions.keys().duplicate():
+			var pending_npc_id := str(raw_npc_id)
+			if (
+				str(_pending_actions.get(pending_npc_id, "")) == UPGRADE_ASSIST_ACTION_ID
+				and str(_pending_action_targets.get(pending_npc_id, "")) == building_id
+			):
+				_cancel_pending_formal_upgrade_assist(pending_npc_id, building_id, "no_active_upgrade")
 	var building: Dictionary = building_system.get_building(building_id)
 	if building.is_empty():
 		return
@@ -1013,6 +1598,17 @@ func _on_building_state_changed(building_id: String) -> void:
 		var pending_action_id := str(_pending_actions.get(npc_id, ""))
 		var pending_action: Dictionary = _actions.get(pending_action_id, {})
 		var pending_target_id := str(_pending_action_targets.get(npc_id, ""))
+		var pending_options: Dictionary = (
+			_pending_action_options.get(npc_id, {})
+			if _pending_action_options.get(npc_id, {}) is Dictionary
+			else {}
+		)
+		if (
+			bool(pending_options.get("formal_exterior_authority", false))
+			and pending_target_id == building_id
+			and pending_action_id in [REPAIR_ASSIST_ACTION_ID, UPGRADE_ASSIST_ACTION_ID]
+		):
+			continue
 		var pending_targets_building := (
 			not pending_action_id.is_empty()
 			and (
@@ -1035,17 +1631,28 @@ func _on_building_state_changed(building_id: String) -> void:
 		)
 		var targets_building := pending_targets_building or active_targets_building
 		if not targets_building:
-			if current_location == building_id and npc_system.has_method("debug_enter_location_immediately"):
-				npc_system.debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
+			if current_location == building_id:
+				if building_id == FIRST_SPATIAL_BUILDING_ID and movement_target == PLAZA_LOCATION_ID:
+					continue
+				if building_id == FIRST_SPATIAL_BUILDING_ID and npc_system.has_method("move_npc_to_building"):
+					npc_system.move_npc_to_building(npc_id, PLAZA_LOCATION_ID)
+				elif npc_system.has_method("debug_enter_location_immediately"):
+					npc_system.debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
 			elif (
 				movement_target == building_id
 				and npc_system.has_method("stop_npc_movement_for_system")
 			):
 				npc_system.stop_npc_movement_for_system(npc_id, "building_%s" % condition)
 			continue
-		if condition == "upgrading" and pending_targets_building and not active_targets_building:
-			# Travellers have not observed the closure yet. Their authoritative
-			# failure is produced only when NPCSystem rejects entry at the door.
+		if (
+			condition == "upgrading"
+			and pending_targets_building
+			and not active_targets_building
+			and current_location != building_id
+		):
+			# Travellers have not committed an indoor location yet. Their specific
+			# failure is produced by the deferred route preflight or by NPCSystem at
+			# the door, rather than by this broad eviction scan.
 			continue
 
 		var interrupted_action_id := pending_action_id if not pending_action_id.is_empty() else active_action_id
@@ -1066,8 +1673,6 @@ func _on_building_state_changed(building_id: String) -> void:
 			else "%s已经失效，依赖该建筑的“%s”行动无法继续。" % [building_name, action_name]
 		)
 		interrupt_npc_action(npc_id, "building_%s" % condition, true)
-		if current_location == building_id and npc_system.has_method("debug_enter_location_immediately"):
-			npc_system.debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
 		_update_action_failure(npc_id, "%s_failed_%s" % [interrupted_action_id, failure_reason], {
 			"action_id": interrupted_action_id,
 			"action_name": action_name,
@@ -1083,6 +1688,17 @@ func _on_building_state_changed(building_id: String) -> void:
 			"current_location_before_failure": current_location,
 			"movement_target_before_failure": movement_target
 		})
+		# Formal workstation cleanup may already have restored the NPC to the
+		# pre-session legacy location. Re-read authority before issuing an
+		# evacuation move, otherwise `movement_started` overwrites the specific
+		# building failure we just committed.
+		var post_interrupt_state: Dictionary = npc_system.get_npc_state(npc_id)
+		var post_interrupt_location := str(post_interrupt_state.get("current_location", ""))
+		if post_interrupt_location == building_id:
+			if building_id == FIRST_SPATIAL_BUILDING_ID and npc_system.has_method("move_npc_to_building"):
+				npc_system.move_npc_to_building(npc_id, PLAZA_LOCATION_ID)
+			elif npc_system.has_method("debug_enter_location_immediately"):
+				npc_system.debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
 	_building_eviction_guards.erase(building_id)
 
 
@@ -1105,9 +1721,25 @@ func _on_npc_building_entry_failed(
 	)
 	if not targets_building:
 		return
+	_release_pending_workstation_reservation(npc_id, _pending_action_options.get(npc_id, {}))
+	var failed_pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
 	_pending_actions.erase(npc_id)
 	_pending_action_targets.erase(npc_id)
 	_pending_action_options.erase(npc_id)
+	if bool(failed_pending_options.get("formal_location_authority", false)):
+		var npc_system := _get_npc_system()
+		var committed_location_id := (
+			str(npc_system.get_npc_state(npc_id).get("current_location", ""))
+			if npc_system != null
+			else ""
+		)
+		_end_formal_location_action(npc_id, "building_entry_failed", committed_location_id)
+	elif bool(failed_pending_options.get("formal_spatial_authority", false)):
+		_end_formal_spatial_workstation_action(npc_id, "building_entry_failed")
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	var building: Dictionary = (
 		building_system.get_building(building_id)
@@ -1119,13 +1751,20 @@ func _on_npc_building_entry_failed(
 	var unavailable_reason := "建筑正在升级" if condition == "upgrading" else "建筑已经失效"
 	var building_name := str(building.get("name", building_id))
 	var action_name := str(pending_action.get("name", pending_action_id))
-	var failure_summary := (
-		"到达%s入口后发现建筑正在升级，无法进入执行“%s”。"
-		% [building_name, action_name]
-		if condition == "upgrading"
-		else "到达%s入口后发现建筑已经失效，无法进入执行“%s”。"
-		% [building_name, action_name]
-	)
+	var failed_during_route_preflight := bool(entry_context.get("deferred_route_preflight_failed", false))
+	var failure_summary := ""
+	if failed_during_route_preflight:
+		failure_summary = (
+			"准备前往%s时发现建筑正在升级，无法执行“%s”。" % [building_name, action_name]
+			if condition == "upgrading"
+			else "准备前往%s时发现建筑已经失效，无法执行“%s”。" % [building_name, action_name]
+		)
+	else:
+		failure_summary = (
+			"到达%s入口后发现建筑正在升级，无法进入执行“%s”。" % [building_name, action_name]
+			if condition == "upgrading"
+			else "到达%s入口后发现建筑已经失效，无法进入执行“%s”。" % [building_name, action_name]
+		)
 	var failure_context := entry_context.duplicate(true)
 	failure_context.merge({
 		"action_id": pending_action_id,
@@ -1198,6 +1837,7 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		return
 	if not _can_npc_act(npc_id):
 		_cancel_dialogue_approach_for_participant(npc_id, "talk_to_npc_target_unavailable")
+		_release_pending_workstation_reservation(npc_id, _pending_action_options.get(npc_id, {}))
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
@@ -1224,6 +1864,7 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		return
 
 	if not _actions.has(action_id):
+		_release_pending_workstation_reservation(npc_id, _pending_action_options.get(npc_id, {}))
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
@@ -1240,10 +1881,16 @@ func _try_execute_pending_action(npc_id: String) -> void:
 		_is_action_commit_ready(npc_id, location_id, state)
 		and not _active_actions.has(npc_id)
 	):
+		var pending_options: Dictionary = (
+			(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+			if _pending_action_options.get(npc_id, {}) is Dictionary
+			else {}
+		)
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
-		_execute_action(npc_id, action_id)
+		if not _execute_action(npc_id, action_id):
+			_release_pending_workstation_reservation(npc_id, pending_options)
 
 
 func _try_execute_pending_repair_assist(npc_id: String) -> void:
@@ -1258,10 +1905,20 @@ func _try_execute_pending_repair_assist(npc_id: String) -> void:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
-
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if (
+		building_system == null
+		or not building_system.has_method("is_repair_in_progress")
+		or not building_system.is_repair_in_progress(building_id)
+	):
+		_cancel_pending_formal_repair_assist(npc_id, building_id, "no_active_repair")
+		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if (
 		_is_action_commit_ready(npc_id, PLAZA_LOCATION_ID, state)
+		and str(state.get("physical_location_phase", "")) == "building_exterior_service"
+		and str(state.get("formal_exterior_building_id", "")) == building_id
+		and str(state.get("formal_exterior_service_kind", "")) == "repair"
 		and not _active_actions.has(npc_id)
 	):
 		_pending_actions.erase(npc_id)
@@ -1282,10 +1939,20 @@ func _try_execute_pending_upgrade_assist(npc_id: String) -> void:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
-
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if (
+		building_system == null
+		or not building_system.has_method("is_upgrade_in_progress")
+		or not building_system.is_upgrade_in_progress(building_id)
+	):
+		_cancel_pending_formal_upgrade_assist(npc_id, building_id, "no_active_upgrade")
+		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if (
 		_is_action_commit_ready(npc_id, PLAZA_LOCATION_ID, state)
+		and str(state.get("physical_location_phase", "")) == "building_exterior_service"
+		and str(state.get("formal_exterior_building_id", "")) == building_id
+		and str(state.get("formal_exterior_service_kind", "")) == "upgrade"
 		and not _active_actions.has(npc_id)
 	):
 		_pending_actions.erase(npc_id)
@@ -1297,26 +1964,72 @@ func _try_execute_pending_upgrade_assist(npc_id: String) -> void:
 func _try_execute_pending_heal_assist(npc_id: String) -> void:
 	if _is_gameplay_paused():
 		return
-	var target_npc_id := str(_pending_action_targets.get(npc_id, ""))
+	_approach_or_start_heal_assist(npc_id)
+
+
+func _approach_or_start_heal_assist(healer_npc_id: String) -> bool:
+	var target_npc_id := str(_pending_action_targets.get(healer_npc_id, ""))
 	if target_npc_id.is_empty():
-		_pending_actions.erase(npc_id)
-		_pending_action_targets.erase(npc_id)
-		return
+		_pending_actions.erase(healer_npc_id)
+		_pending_action_targets.erase(healer_npc_id)
+		_pending_action_options.erase(healer_npc_id)
+		return false
+	if not _is_npc_unconscious(target_npc_id):
+		_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, "target_not_unconscious")
+		return false
 
 	var npc_system := _get_npc_system()
 	if npc_system == null:
-		return
-
+		return false
+	var options: Dictionary = _pending_action_options.get(healer_npc_id, {})
+	if bool(options.get("formal_healing_initializing", false)):
+		return true
 	var target_location_id := _get_target_healing_location(target_npc_id)
-	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(options.get("formal_target_location_id", target_location_id)) != target_location_id:
+		_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, "target_moved", {
+			"target_location_id": target_location_id,
+			"original_target_location_id": str(options.get("formal_target_location_id", ""))
+		})
+		return false
+	var state: Dictionary = npc_system.get_npc_state(healer_npc_id)
+	if str(state.get("current_action", "")).begins_with("moving_to_"):
+		return true
+	if str(state.get("current_location", "")) != target_location_id:
+		if (
+			not npc_system.has_method("move_npc_to_formal_location")
+			or not bool(npc_system.move_npc_to_formal_location(healer_npc_id, target_location_id))
+		):
+			_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, "movement", {
+				"target_location_id": target_location_id,
+				"movement_mode": "formal_location_route"
+			})
+			return false
+		return true
+	var approach_ready := (
+		bool(npc_system.is_formal_healing_approach_ready(healer_npc_id, target_npc_id))
+		if npc_system.has_method("is_formal_healing_approach_ready")
+		else false
+	)
+	if not approach_ready:
+		var move_result: Dictionary = (
+			npc_system.move_npc_to_formal_healing_target(healer_npc_id, target_npc_id)
+			if npc_system.has_method("move_npc_to_formal_healing_target")
+			else {"ok": false, "reason": "formal_healing_approach_api_missing"}
+		)
+		if not bool(move_result.get("ok", false)):
+			_cancel_pending_formal_heal_assist(healer_npc_id, target_npc_id, "spatial_route", move_result)
+			return false
+		return true
+
 	if (
-		_is_action_commit_ready(npc_id, target_location_id, state)
-		and not _active_actions.has(npc_id)
+		_is_action_commit_ready(healer_npc_id, target_location_id, state)
+		and not _active_actions.has(healer_npc_id)
 	):
-		_pending_actions.erase(npc_id)
-		_pending_action_targets.erase(npc_id)
-		_pending_action_options.erase(npc_id)
-		_execute_heal_assist(npc_id, target_npc_id)
+		_pending_actions.erase(healer_npc_id)
+		_pending_action_targets.erase(healer_npc_id)
+		_pending_action_options.erase(healer_npc_id)
+		return _execute_heal_assist(healer_npc_id, target_npc_id)
+	return true
 
 
 func _try_execute_pending_training_student(npc_id: String) -> void:
@@ -1357,6 +2070,8 @@ func _try_execute_pending_service_dependent(npc_id: String, action_id: String) -
 func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 	var target_npc_id := str(_pending_action_targets.get(speaker_npc_id, ""))
 	var options: Dictionary = _pending_action_options.get(speaker_npc_id, {})
+	if bool(options.get("formal_dialogue_initializing", false)):
+		return true
 	var invalid_plan_context := _get_invalid_daily_plan_dialogue_context(speaker_npc_id)
 	if not invalid_plan_context.is_empty():
 		_fail_pending_npc_dialogue(
@@ -1378,19 +2093,140 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 	if not _is_enterable_location(target_location_id):
 		_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_target_location")
 		return false
-	if str(speaker_state.get("current_location", "")) != target_location_id:
+	var action: Dictionary = _actions.get(NPC_DIALOGUE_ACTION_ID, {})
+	var uses_formal_dialogue := bool(action.get(FORMAL_SPATIAL_ROUTE_FIELD, false))
+	if uses_formal_dialogue:
+		if not bool(options.get("formal_dialogue_authority", false)):
+			if not npc_system.has_method("begin_formal_dialogue_approach"):
+				_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_formal_world")
+				return false
+			options["formal_dialogue_initializing"] = true
+			_pending_action_options[speaker_npc_id] = options
+			var begin_result: Dictionary = npc_system.begin_formal_dialogue_approach(
+				speaker_npc_id,
+				target_npc_id,
+				NPC_DIALOGUE_ACTION_ID
+			)
+			if not _pending_actions.has(speaker_npc_id):
+				return false
+			options = _pending_action_options.get(speaker_npc_id, {})
+			options["formal_dialogue_initializing"] = false
+			if not bool(begin_result.get("ok", false)):
+				_pending_action_options[speaker_npc_id] = options
+				_fail_pending_npc_dialogue(
+					speaker_npc_id,
+					"talk_to_npc_failed_formal_world",
+					begin_result
+				)
+				return false
+			options["formal_dialogue_authority"] = true
+			options["formal_spatial_authority"] = true
+			options["formal_location_authority"] = true
+			options["formal_target_location_id"] = target_location_id
+			options["approach_distance"] = clampf(float(action.get("approach_distance", 1.35)), 1.0, 2.0)
+			_pending_action_options[speaker_npc_id] = options
+			speaker_state = npc_system.get_npc_state(speaker_npc_id)
+		else:
+			var previous_target_location_id := str(options.get("formal_target_location_id", target_location_id))
+			if previous_target_location_id != target_location_id:
+				var chase_count := int(options.get("chase_count", 0))
+				if chase_count >= NPC_DIALOGUE_MAX_CHASES:
+					_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_target_moved", {
+						"previous_target_location_id": previous_target_location_id,
+						"target_location_id": target_location_id,
+						"chase_count": chase_count
+					})
+					return false
+				options["chase_count"] = chase_count + 1
+				options["formal_target_location_id"] = target_location_id
+				options["formal_dialogue_initializing"] = true
+				_pending_action_options[speaker_npc_id] = options
+				if npc_system.has_method("stop_npc_movement_for_system"):
+					npc_system.stop_npc_movement_for_system(
+						speaker_npc_id,
+						"formal_dialogue_target_redirected",
+						false
+					)
+				options = _pending_action_options.get(speaker_npc_id, options)
+				options["formal_dialogue_initializing"] = false
+				_pending_action_options[speaker_npc_id] = options
+				speaker_state = npc_system.get_npc_state(speaker_npc_id)
+
 		if str(speaker_state.get("current_action", "")).begins_with("moving_to_"):
 			return true
-		var chase_count := int(options.get("chase_count", 0))
-		if chase_count > NPC_DIALOGUE_MAX_CHASES:
-			_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_target_moved")
+		if str(speaker_state.get("current_location", "")) != target_location_id:
+			if (
+				not npc_system.has_method("move_npc_to_formal_location")
+				or not bool(npc_system.move_npc_to_formal_location(speaker_npc_id, target_location_id))
+			):
+				_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_movement", {
+					"target_location_id": target_location_id,
+					"movement_mode": "formal_location_route"
+				})
+				return false
+			return true
+		var sync_result: Dictionary = (
+			npc_system.sync_formal_dialogue_target(speaker_npc_id)
+			if npc_system.has_method("sync_formal_dialogue_target")
+			else {"ok": false, "reason": "formal_dialogue_sync_missing"}
+		)
+		if not bool(sync_result.get("ok", false)):
+			if str(sync_result.get("reason", "")) == "target_legacy_movement_active":
+				options["waiting_for_target_motion"] = true
+				_pending_action_options[speaker_npc_id] = options
+				return true
+			_fail_pending_npc_dialogue(
+				speaker_npc_id,
+				"talk_to_npc_failed_target_projection",
+				sync_result
+			)
 			return false
-		options["chase_count"] = chase_count + 1
+		options["waiting_for_target_motion"] = false
 		_pending_action_options[speaker_npc_id] = options
-		var moved := bool(npc_system.move_npc_to_building(speaker_npc_id, target_location_id))
-		if not moved:
-			_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_movement")
-		return moved
+		var speaker_position: Variant = npc_system.get_npc_world_position(speaker_npc_id)
+		var target_position: Variant = npc_system.get_npc_world_position(target_npc_id)
+		if not speaker_position is Vector3 or not target_position is Vector3:
+			_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_target_projection")
+			return false
+		var horizontal_distance := Vector2(
+			speaker_position.x - target_position.x,
+			speaker_position.z - target_position.z
+		).length()
+		var approach_distance := float(options.get("approach_distance", 1.35))
+		if horizontal_distance > approach_distance + 0.3 or horizontal_distance < 0.85:
+			var move_result: Dictionary = (
+				npc_system.move_npc_to_formal_dialogue_target(
+					speaker_npc_id,
+					target_npc_id,
+					approach_distance
+				)
+				if npc_system.has_method("move_npc_to_formal_dialogue_target")
+				else {"ok": false, "reason": "formal_dialogue_approach_missing"}
+			)
+			if not bool(move_result.get("ok", false)):
+				_fail_pending_npc_dialogue(
+					speaker_npc_id,
+					"talk_to_npc_failed_movement",
+					move_result
+				)
+				return false
+			return true
+		if npc_system.has_method("face_formal_dialogue_participants"):
+			npc_system.face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
+	else:
+		if str(speaker_state.get("current_location", "")) != target_location_id:
+			if str(speaker_state.get("current_action", "")).begins_with("moving_to_"):
+				return true
+			var chase_count := int(options.get("chase_count", 0))
+			if chase_count > NPC_DIALOGUE_MAX_CHASES:
+				_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_target_moved")
+				return false
+			options["chase_count"] = chase_count + 1
+			_pending_action_options[speaker_npc_id] = options
+			var moved := bool(npc_system.move_npc_to_building(speaker_npc_id, target_location_id))
+			if not moved:
+				_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_movement")
+			return moved
 	if str(speaker_state.get("current_action", "")) != "idle" or _is_gameplay_paused():
 		return true
 	if _is_npc_plan_generation_busy(target_npc_id, npc_system):
@@ -1414,6 +2250,15 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 		options.duplicate(true)
 	)
 	if bool(start_result.get("ok", false)):
+		if (
+			uses_formal_dialogue
+			and npc_system.has_method("bind_formal_dialogue_session")
+		):
+			var dialogue_state: Dictionary = start_result.get("dialogue_state", {}) if start_result.get("dialogue_state", {}) is Dictionary else {}
+			npc_system.bind_formal_dialogue_session(
+				speaker_npc_id,
+				str(dialogue_state.get("dialogue_id", ""))
+			)
 		_pending_actions.erase(speaker_npc_id)
 		_pending_action_targets.erase(speaker_npc_id)
 		_pending_action_options.erase(speaker_npc_id)
@@ -1423,13 +2268,7 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 		options["waiting_for_target_plan"] = true
 		_pending_action_options[speaker_npc_id] = options
 		return true
-	_pending_actions.erase(speaker_npc_id)
-	_pending_action_targets.erase(speaker_npc_id)
-	_pending_action_options.erase(speaker_npc_id)
-	_release_dialogue_reservations(speaker_npc_id)
-	_update_action_failure(speaker_npc_id, "talk_to_npc_failed_start", {
-		"action_id": NPC_DIALOGUE_ACTION_ID,
-		"target_npc_id": target_npc_id,
+	_fail_pending_npc_dialogue(speaker_npc_id, "talk_to_npc_failed_start", {
 		"error_code": str(start_result.get("error_code", "dialogue_start_failed")),
 		"message": str(start_result.get("message", "NPC 对话启动失败。"))
 	})
@@ -1445,10 +2284,14 @@ func _retry_pending_npc_dialogue_for_target(target_npc_id: String) -> void:
 	if str(_pending_action_targets.get(speaker_npc_id, "")) != target_npc_id:
 		return
 	var options: Dictionary = _pending_action_options.get(speaker_npc_id, {})
-	if not bool(options.get("waiting_for_target_plan", false)):
+	var waits_for_plan := bool(options.get("waiting_for_target_plan", false))
+	var uses_formal_dialogue := bool(options.get("formal_dialogue_authority", false))
+	if not waits_for_plan and not uses_formal_dialogue:
 		return
 	var npc_system := _get_npc_system()
-	if npc_system == null or _is_npc_plan_generation_busy(target_npc_id, npc_system):
+	if npc_system == null:
+		return
+	if waits_for_plan and _is_npc_plan_generation_busy(target_npc_id, npc_system):
 		return
 	call_deferred("_continue_pending_npc_dialogue_after_plan", speaker_npc_id, target_npc_id)
 
@@ -1459,12 +2302,28 @@ func _continue_pending_npc_dialogue_after_plan(speaker_npc_id: String, target_np
 	if str(_pending_action_targets.get(speaker_npc_id, "")) != target_npc_id:
 		return
 	var options: Dictionary = _pending_action_options.get(speaker_npc_id, {})
-	if not bool(options.get("waiting_for_target_plan", false)):
+	var waits_for_plan := bool(options.get("waiting_for_target_plan", false))
+	var uses_formal_dialogue := bool(options.get("formal_dialogue_authority", false))
+	if not waits_for_plan and not uses_formal_dialogue:
 		return
 	var npc_system := _get_npc_system()
-	if npc_system != null and _is_npc_plan_generation_busy(target_npc_id, npc_system):
+	if waits_for_plan and npc_system != null and _is_npc_plan_generation_busy(target_npc_id, npc_system):
 		return
 	_approach_or_start_npc_dialogue(speaker_npc_id)
+
+
+func _on_dialogue_ended(dialogue_state: Dictionary) -> void:
+	if str(dialogue_state.get("dialogue_kind", "")) != "npc_npc":
+		return
+	var dialogue_id := str(dialogue_state.get("dialogue_id", ""))
+	if dialogue_id.is_empty():
+		return
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("end_formal_dialogue_by_id"):
+		npc_system.end_formal_dialogue_by_id(
+			dialogue_id,
+			str(dialogue_state.get("end_reason", "dialogue_ended"))
+		)
 
 
 func expire_invalid_daily_plan_dialogues(current_day: int = -1, current_hour: int = -1) -> Array[String]:
@@ -1558,9 +2417,16 @@ func _try_execute_pending_visit(npc_id: String) -> void:
 	var location_id := str(_pending_action_targets.get(npc_id, ""))
 	var npc_system := _get_npc_system()
 	if location_id.is_empty() or npc_system == null or not _is_enterable_location(location_id):
+		var invalid_options: Dictionary = (
+			(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+			if _pending_action_options.get(npc_id, {}) is Dictionary
+			else {}
+		)
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
 		_pending_action_options.erase(npc_id)
+		if bool(invalid_options.get("formal_location_authority", false)):
+			_end_formal_location_action(npc_id, "invalid_target")
 		_update_action_failure(npc_id, "visit_location_failed_invalid_target", {
 			"action_id": VISIT_LOCATION_ACTION_ID,
 			"location_id": location_id
@@ -1572,10 +2438,21 @@ func _try_execute_pending_visit(npc_id: String) -> void:
 		or _active_actions.has(npc_id)
 	):
 		return
+	var pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
 	_pending_actions.erase(npc_id)
 	_pending_action_targets.erase(npc_id)
 	_pending_action_options.erase(npc_id)
-	_start_visit(npc_id, _actions.get(VISIT_LOCATION_ACTION_ID, {}), location_id)
+	if not _start_visit(npc_id, _actions.get(VISIT_LOCATION_ACTION_ID, {}), location_id, pending_options):
+		if bool(pending_options.get("formal_location_authority", false)):
+			_end_formal_location_action(npc_id, "commit_failed")
+		_update_action_failure(npc_id, "visit_location_failed_commit", {
+			"action_id": VISIT_LOCATION_ACTION_ID,
+			"location_id": location_id
+		})
 
 
 func _execute_action(npc_id: String, action_id: String) -> bool:
@@ -1626,6 +2503,25 @@ func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
 		or _active_actions.has(npc_id)
 	):
 		return false
+	var formal_snapshot: Dictionary = (
+		npc_system.get_formal_workstation_action_snapshot(npc_id)
+		if npc_system.has_method("get_formal_workstation_action_snapshot")
+		else {}
+	)
+	var formal_session: Dictionary = (
+		formal_snapshot.get("session", {})
+		if formal_snapshot.get("session", {}) is Dictionary
+		else {}
+	)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if (
+		not bool(formal_snapshot.get("active", false))
+		or str(formal_session.get("action_id", "")) != REPAIR_ASSIST_ACTION_ID
+		or str(formal_session.get("building_id", "")) != building_id
+		or str(state.get("physical_location_phase", "")) != "building_exterior_service"
+		or str(state.get("formal_exterior_building_id", "")) != building_id
+	):
+		return false
 	if not building_system.has_method("add_repair_helper") or not building_system.is_repair_in_progress(building_id):
 		_update_action_failure(npc_id, "assist_repair_failed_no_active_repair")
 		return false
@@ -1655,14 +2551,148 @@ func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
 	return true
 
 
+func _cancel_pending_formal_repair_assist(npc_id: String, building_id: String, reason: String) -> void:
+	var pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	if bool(pending_options.get("formal_location_authority", false)):
+		var npc_system := _get_npc_system()
+		var preserve_location_id := (
+			str(npc_system.get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID))
+			if npc_system != null
+			else PLAZA_LOCATION_ID
+		)
+		_end_formal_location_action(npc_id, "repair_assist_%s" % reason, preserve_location_id)
+	_update_action_failure(npc_id, "assist_repair_failed_%s" % reason, {
+		"action_id": REPAIR_ASSIST_ACTION_ID,
+		"building_id": building_id,
+		"failure_reason": reason,
+		"interrupted_phase": "pending"
+	})
+
+
+func _cancel_pending_formal_upgrade_assist(npc_id: String, building_id: String, reason: String) -> void:
+	var pending_options: Dictionary = (
+		(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	_pending_actions.erase(npc_id)
+	_pending_action_targets.erase(npc_id)
+	_pending_action_options.erase(npc_id)
+	if bool(pending_options.get("formal_location_authority", false)):
+		var npc_system := _get_npc_system()
+		var preserve_location_id := (
+			str(npc_system.get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID))
+			if npc_system != null
+			else PLAZA_LOCATION_ID
+		)
+		_end_formal_location_action(npc_id, "upgrade_assist_%s" % reason, preserve_location_id)
+	_update_action_failure(npc_id, "assist_upgrade_failed_%s" % reason, {
+		"action_id": UPGRADE_ASSIST_ACTION_ID,
+		"building_id": building_id,
+		"failure_reason": reason,
+		"interrupted_phase": "pending"
+	})
+
+
+func _cancel_pending_formal_heal_assist(
+	healer_npc_id: String,
+	target_npc_id: String,
+	reason: String,
+	extra_context: Dictionary = {}
+) -> void:
+	var pending_options: Dictionary = (
+		(_pending_action_options.get(healer_npc_id, {}) as Dictionary).duplicate(true)
+		if _pending_action_options.get(healer_npc_id, {}) is Dictionary
+		else {}
+	)
+	_pending_actions.erase(healer_npc_id)
+	_pending_action_targets.erase(healer_npc_id)
+	_pending_action_options.erase(healer_npc_id)
+	var npc_system := _get_npc_system()
+	if (
+		bool(pending_options.get("formal_healing_authority", false))
+		and npc_system != null
+		and npc_system.has_method("end_formal_healing_approach")
+	):
+		npc_system.end_formal_healing_approach(healer_npc_id, "heal_assist_%s" % reason, false)
+	elif bool(pending_options.get("formal_location_authority", false)):
+		_end_formal_location_action(
+			healer_npc_id,
+			"heal_assist_%s" % reason,
+			str(npc_system.get_npc_state(healer_npc_id).get("current_location", PLAZA_LOCATION_ID)) if npc_system != null else PLAZA_LOCATION_ID
+		)
+	var failure_context := {
+		"action_id": HEALING_ACTION_ID,
+		"target_npc_id": target_npc_id,
+		"failure_reason": reason,
+		"interrupted_phase": "pending"
+	}
+	for raw_key in extra_context.keys():
+		failure_context[str(raw_key)] = extra_context[raw_key]
+	_update_action_failure(healer_npc_id, "assist_heal_failed_%s" % reason, failure_context)
+
+
+func _end_formal_heal_authority(healer_npc_id: String, reason: String, emit_state_changed: bool = false) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("end_formal_healing_approach"):
+		npc_system.end_formal_healing_approach(healer_npc_id, reason, emit_state_changed)
+
+
+func _cleanup_resolved_formal_building_assist_session(npc_id: String, action_id: String) -> void:
+	if str(_pending_actions.get(npc_id, "")) == action_id:
+		return
+	var npc_system := _get_npc_system()
+	if npc_system == null or not npc_system.has_method("get_formal_workstation_action_snapshot"):
+		return
+	var snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	var session: Dictionary = snapshot.get("session", {}) if snapshot.get("session", {}) is Dictionary else {}
+	if (
+		not bool(snapshot.get("active", false))
+		or str(session.get("action_id", "")) != action_id
+	):
+		return
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if str(state.get("current_action", "")).begins_with("%s_" % action_id):
+		return
+	_end_formal_location_action(
+		npc_id,
+		"%s_resolved" % action_id,
+		str(state.get("current_location", PLAZA_LOCATION_ID))
+	)
+
+
 func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if npc_system == null or building_system == null:
 		return false
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var formal_snapshot: Dictionary = (
+		npc_system.get_formal_workstation_action_snapshot(npc_id)
+		if npc_system.has_method("get_formal_workstation_action_snapshot")
+		else {}
+	)
+	var formal_session: Dictionary = (
+		formal_snapshot.get("session", {})
+		if formal_snapshot.get("session", {}) is Dictionary
+		else {}
+	)
 	if (
-		not _is_action_commit_ready(npc_id, PLAZA_LOCATION_ID)
+		not _is_action_commit_ready(npc_id, PLAZA_LOCATION_ID, state)
 		or _active_actions.has(npc_id)
+		or not bool(formal_snapshot.get("active", false))
+		or str(formal_session.get("action_id", "")) != UPGRADE_ASSIST_ACTION_ID
+		or str(formal_session.get("building_id", "")) != building_id
+		or str(state.get("physical_location_phase", "")) != "building_exterior_service"
+		or str(state.get("formal_exterior_building_id", "")) != building_id
+		or str(state.get("formal_exterior_service_kind", "")) != "upgrade"
 	):
 		return false
 	if not building_system.has_method("add_upgrade_helper") or not building_system.is_upgrade_in_progress(building_id):
@@ -1704,22 +2734,28 @@ func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 			_get_target_healing_location(target_npc_id)
 		)
 		or _active_actions.has(healer_npc_id)
+		or not npc_system.has_method("is_formal_healing_approach_ready")
+		or not bool(npc_system.is_formal_healing_approach_ready(healer_npc_id, target_npc_id))
 	):
 		return false
 	if not _is_npc_unconscious(target_npc_id):
 		_update_action_failure(healer_npc_id, "assist_heal_failed_target_not_unconscious")
+		_end_formal_heal_authority(healer_npc_id, "target_not_unconscious")
 		return false
 	if _get_healing_helper_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
 		_update_action_failure(healer_npc_id, "assist_heal_failed_target_helper_limit")
+		_end_formal_heal_authority(healer_npc_id, "target_helper_limit")
 		return false
 	if not _spend_healing_cost():
 		_update_action_failure(healer_npc_id, "assist_heal_failed_no_money")
-		_log_healing_event(healer_npc_id, target_npc_id, "healing_completed", {
+		_log_healing_event(healer_npc_id, target_npc_id, "healing_failed", {
 			"action_id": HEALING_ACTION_ID,
 			"healer_npc_id": healer_npc_id,
 			"target_npc_id": target_npc_id,
-			"money_spent": 0
+			"money_spent": 0,
+			"reason": "assist_heal_failed_no_money"
 		})
+		_end_formal_heal_authority(healer_npc_id, "no_money")
 		return false
 
 	var healer: Dictionary = npc_system.get_npc(healer_npc_id)
@@ -1734,7 +2770,10 @@ func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 		"target_npc_id": target_npc_id,
 		"medical_skill": medical_skill,
 		"cost_timer_seconds": 0.0,
-		"money_spent": HEALING_INITIAL_COST
+		"money_spent": HEALING_INITIAL_COST,
+		"formal_spatial_authority": true,
+		"formal_location_authority": true,
+		"formal_healing_authority": true
 	}
 	_log_healing_event(healer_npc_id, target_npc_id, "healing_started", {
 		"action_id": HEALING_ACTION_ID,
@@ -1749,7 +2788,10 @@ func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 func _start_clinic_doctor(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_doctor_dependencies_missing")
 		return false
 
 	var claim_result: Dictionary = building_system.claim_workstation(
@@ -1758,6 +2800,8 @@ func _start_clinic_doctor(npc_id: String, action: Dictionary) -> bool:
 		str(action.get("workstation_type", CLINIC_DOCTOR_WORKSTATION_TYPE))
 	)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_doctor_workstation_commit_failed")
 		_update_action_failure(npc_id, "clinic_doctor_failed_no_workstation", _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
@@ -1769,21 +2813,45 @@ func _start_clinic_doctor(npc_id: String, action: Dictionary) -> bool:
 
 	var doctor: Dictionary = npc_system.get_npc(npc_id)
 	var medical_skill := _get_medical_skill(doctor)
+	var workstation_id := str(claim_result.get("workstation_id", ""))
+	if uses_formal_spatial_authority:
+		var attachment_result: Dictionary = (
+			npc_system.attach_formal_workstation_occupant(npc_id, CLINIC_LOCATION_ID, workstation_id)
+			if npc_system.has_method("attach_formal_workstation_occupant")
+			else {"ok": false, "reason": "formal_attachment_api_missing"}
+		)
+		if not bool(attachment_result.get("ok", false)):
+			building_system.release_workstation(CLINIC_LOCATION_ID, npc_id, workstation_id)
+			_end_formal_spatial_workstation_action(npc_id, "clinic_doctor_attachment_failed")
+			_update_action_failure(npc_id, "clinic_doctor_failed_attachment", attachment_result)
+			return false
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
-		"last_action_result": "started_%s" % str(action.get("id", CLINIC_DOCTOR_ACTION_ID))
+		"last_action_result": "started_%s" % str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("current_workstation_id", "")),
+		"spatial_route_phase": "occupant_attached" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("spatial_route_phase", "none")),
+		"physical_location_phase": "occupant_anchor" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("physical_location_phase", "legacy")),
+		"presentation_clinic_duty_mode": "study",
+		"presentation_clinic_patient_id": ""
 	})
 	_active_actions[npc_id] = {
 		"kind": "clinic_doctor",
 		"action": action.duplicate(true),
 		"building_id": CLINIC_LOCATION_ID,
-		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"workstation_id": workstation_id,
 		"medical_skill": medical_skill,
 		"money_spent": 0,
 		"cost_timer_seconds": 0.0,
 		"study_skill_timer_seconds": 0.0,
 		"treatment_skill_timer_seconds": 0.0,
-		"hp_recovery_remainders": {}
+		"hp_recovery_remainders": {},
+		"clinic_round_phase": "study",
+		"clinic_round_patient_id": "",
+		"clinic_round_dwell_seconds": 0.0,
+		"clinic_round_visit_count": 0,
+		"formal_spatial_authority": uses_formal_spatial_authority
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", CLINIC_DOCTOR_ACTION_ID)),
@@ -1797,16 +2865,23 @@ func _start_clinic_doctor(npc_id: String, action: Dictionary) -> bool:
 func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_patient_dependencies_missing")
 		return false
 
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var hp := int(state.get("hp", 0))
 	var max_hp := maxi(1, int(state.get("max_hp", 100)))
 	if hp >= max_hp:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_patient_not_injured")
 		_update_action_failure(npc_id, "clinic_patient_failed_not_injured")
 		return false
 	if _find_active_clinic_doctor_ids().is_empty():
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_patient_provider_missing")
 		_fail_action_before_start(npc_id, action, {
 			"building_id": CLINIC_LOCATION_ID,
 			"required_active_action_id": CLINIC_DOCTOR_ACTION_ID,
@@ -1820,6 +2895,8 @@ func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
 		str(action.get("workstation_type", CLINIC_PATIENT_BED_TYPE))
 	)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "clinic_patient_workstation_commit_failed")
 		_update_action_failure(npc_id, "clinic_patient_failed_no_bed", _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
@@ -1829,17 +2906,40 @@ func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
 		})
 		return false
 
+	var workstation_id := str(claim_result.get("workstation_id", ""))
+	if uses_formal_spatial_authority:
+		var attachment_result: Dictionary = (
+			npc_system.attach_formal_workstation_occupant(npc_id, CLINIC_LOCATION_ID, workstation_id)
+			if npc_system.has_method("attach_formal_workstation_occupant")
+			else {"ok": false, "reason": "formal_attachment_api_missing"}
+		)
+		if not bool(attachment_result.get("ok", false)):
+			building_system.release_workstation(CLINIC_LOCATION_ID, npc_id, workstation_id)
+			_end_formal_spatial_workstation_action(npc_id, "clinic_patient_attachment_failed")
+			_update_action_failure(npc_id, "clinic_patient_failed_attachment", attachment_result)
+			_log_structured_action_event(npc_id, action, "work_failed", {
+				"action_id": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
+				"reason": "病床挂接失败",
+				"building_id": CLINIC_LOCATION_ID,
+				"workstation_id": workstation_id
+			})
+			return false
+
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
-		"last_action_result": "started_%s" % str(action.get("id", CLINIC_PATIENT_ACTION_ID))
+		"last_action_result": "started_%s" % str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("current_workstation_id", ""))
 	})
 	_active_actions[npc_id] = {
 		"kind": "clinic_patient",
 		"action": action.duplicate(true),
 		"building_id": CLINIC_LOCATION_ID,
-		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"workstation_id": workstation_id,
 		"healer_npc_id": "",
-		"money_spent": 0
+		"money_spent": 0,
+		"formal_spatial_authority": uses_formal_spatial_authority
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", CLINIC_PATIENT_ACTION_ID)),
@@ -1852,11 +2952,16 @@ func _start_clinic_patient(npc_id: String, action: Dictionary) -> bool:
 func _start_training_instructor(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_instructor_dependencies_missing")
 		return false
 
 	var equipped_skills := _get_equipped_training_skills(npc_system.get_npc(npc_id))
 	if equipped_skills.is_empty():
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_instructor_equipment_missing")
 		_update_action_failure(npc_id, "training_instructor_failed_no_equipment")
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
@@ -1871,6 +2976,8 @@ func _start_training_instructor(npc_id: String, action: Dictionary) -> bool:
 		str(action.get("workstation_type", TRAINING_INSTRUCTOR_WORKSTATION_TYPE))
 	)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_instructor_workstation_commit_failed")
 		_update_action_failure(npc_id, "training_instructor_failed_no_workstation", _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
@@ -1880,17 +2987,24 @@ func _start_training_instructor(npc_id: String, action: Dictionary) -> bool:
 		})
 		return false
 
+	var workstation_id := str(claim_result.get("workstation_id", ""))
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
-		"last_action_result": "started_%s" % str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID))
+		"last_action_result": "started_%s" % str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("current_workstation_id", "")),
+		"spatial_route_phase": "active_workstation" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("spatial_route_phase", "none")),
+		"physical_location_phase": "workstation" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("physical_location_phase", "legacy"))
 	})
 	_active_actions[npc_id] = {
 		"kind": "training_instructor",
 		"action": action.duplicate(true),
 		"building_id": TRAINING_LOCATION_ID,
-		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"workstation_id": workstation_id,
 		"solo_skill_timer_seconds": {},
-		"coaching_skill_timer_seconds": 0.0
+		"coaching_skill_timer_seconds": 0.0,
+		"formal_spatial_authority": uses_formal_spatial_authority
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", TRAINING_INSTRUCTOR_ACTION_ID)),
@@ -1917,11 +3031,16 @@ func _fail_waiting_training_students_without_instructor() -> void:
 func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_student_dependencies_missing")
 		return false
 
 	var equipped_skills := _get_equipped_training_skills(npc_system.get_npc(npc_id))
 	if equipped_skills.is_empty():
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_student_equipment_missing")
 		_update_action_failure(npc_id, "training_student_failed_no_equipment")
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
@@ -1932,6 +3051,8 @@ func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 
 	var instructor_ids := _find_active_training_instructor_ids()
 	if instructor_ids.is_empty():
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_student_provider_missing")
 		_update_action_failure(npc_id, "training_student_failed_no_instructor")
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
@@ -1946,6 +3067,8 @@ func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 		str(action.get("workstation_type", TRAINING_STUDENT_WORKSTATION_TYPE))
 	)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "training_student_workstation_commit_failed")
 		_update_action_failure(npc_id, "training_student_failed_no_workstation", _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
@@ -1955,19 +3078,26 @@ func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 		})
 		return false
 
+	var workstation_id := str(claim_result.get("workstation_id", ""))
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
-		"last_action_result": "started_%s" % str(action.get("id", TRAINING_STUDENT_ACTION_ID))
+		"last_action_result": "started_%s" % str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("current_workstation_id", "")),
+		"spatial_route_phase": "active_workstation" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("spatial_route_phase", "none")),
+		"physical_location_phase": "workstation" if uses_formal_spatial_authority else str(npc_system.get_npc_state(npc_id).get("physical_location_phase", "legacy"))
 	})
 	_active_actions[npc_id] = {
 		"kind": "training_student",
 		"action": action.duplicate(true),
 		"building_id": TRAINING_LOCATION_ID,
-		"workstation_id": str(claim_result.get("workstation_id", "")),
+		"workstation_id": workstation_id,
 		"instructor_npc_id": str(instructor_ids[0]),
 		"instructor_npc_ids": instructor_ids.duplicate(),
 		"training_skills": equipped_skills,
-		"skill_timers": {}
+		"skill_timers": {},
+		"formal_spatial_authority": uses_formal_spatial_authority
 	}
 	_log_structured_action_event(npc_id, action, "work_started", {
 		"action_id": str(action.get("id", TRAINING_STUDENT_ACTION_ID)),
@@ -1981,21 +3111,32 @@ func _start_training_student(npc_id: String, action: Dictionary) -> bool:
 
 
 func _start_work(npc_id: String, action: Dictionary) -> bool:
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	var resource_system := _get_resource_system()
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if resource_system == null or npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "work_dependencies_missing")
 		return false
 
 	var building_id := str(action.get("location_required", ""))
+	var uses_spatial_authority := _uses_spatial_workstation_authority(action)
 	var crafting_context: Dictionary = {}
 	if bool(action.get("requires_crafting_target", false)):
 		var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 		if crafting_system == null or not crafting_system.has_method("can_start_work_cycle"):
+			if uses_formal_spatial_authority:
+				_end_formal_spatial_workstation_action(npc_id, "crafting_system_missing")
 			_update_action_failure(npc_id, "work_failed_no_crafting_system")
 			return false
 		crafting_context = crafting_system.can_start_work_cycle(building_id, npc_id)
 		if not bool(crafting_context.get("ok", false)):
+			if uses_spatial_authority:
+				_release_pending_workstation_reservation(npc_id)
+				_clear_pending_spatial_state(npc_id, "work_start_failed")
+			if uses_formal_spatial_authority:
+				_end_formal_spatial_workstation_action(npc_id, "crafting_target_missing")
 			var crafting_failure := str(crafting_context.get("error", crafting_context.get("reason", "crafting_target_missing")))
 			_update_action_failure(npc_id, "work_failed_%s" % crafting_failure, crafting_context)
 			_log_structured_action_event(
@@ -2013,6 +3154,11 @@ func _start_work(npc_id: String, action: Dictionary) -> bool:
 
 	var input_resources: Dictionary = action.get("input_resources", {})
 	if not resource_system.can_afford(input_resources):
+		if uses_spatial_authority:
+			_release_pending_workstation_reservation(npc_id)
+			_clear_pending_spatial_state(npc_id, "work_start_failed")
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "work_resources_missing")
 		_update_action_failure(npc_id, "work_failed_no_resources")
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", "")),
@@ -2023,9 +3169,22 @@ func _start_work(npc_id: String, action: Dictionary) -> bool:
 		return false
 
 	var claim_result: Dictionary = {}
-	if building_system.has_method("claim_workstation"):
+	if uses_spatial_authority and building_system.has_method("commit_workstation_reservation"):
+		var spatial_state: Dictionary = npc_system.get_npc_state(npc_id)
+		claim_result = building_system.commit_workstation_reservation(
+			building_id,
+			npc_id,
+			str(spatial_state.get("reserved_workstation_id", "")),
+			str(action.get("workstation_type", ""))
+		)
+	elif building_system.has_method("claim_workstation"):
 		claim_result = building_system.claim_workstation(building_id, npc_id, str(action.get("workstation_type", "")))
 	if not bool(claim_result.get("ok", false)):
+		if uses_spatial_authority:
+			_release_pending_workstation_reservation(npc_id)
+			_clear_pending_spatial_state(npc_id, "workstation_commit_failed")
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "workstation_commit_failed")
 		_update_action_failure(npc_id, "work_failed_no_workstation", _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "work_failed", {
 			"action_id": str(action.get("id", "")),
@@ -2053,12 +3212,18 @@ func _start_work(npc_id: String, action: Dictionary) -> bool:
 
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", "work")),
-		"last_action_result": "started_%s" % str(action.get("id", "work"))
+		"last_action_result": "started_%s" % str(action.get("id", "work")),
+		"reserved_building_id": "" if uses_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_spatial_authority else str(npc_system.get_npc_state(npc_id).get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_spatial_authority else str(npc_system.get_npc_state(npc_id).get("current_workstation_id", "")),
+		"spatial_route_phase": "active_workstation" if uses_spatial_authority else str(npc_system.get_npc_state(npc_id).get("spatial_route_phase", "none")),
+		"physical_location_phase": "workstation" if uses_spatial_authority else str(npc_system.get_npc_state(npc_id).get("physical_location_phase", "legacy"))
 	})
 	var active_action := _create_active_action(action, npc_id)
 	active_action["building_id"] = building_id
 	active_action["workstation_id"] = workstation_id
 	active_action["efficiency_multiplier"] = efficiency_multiplier
+	active_action["formal_spatial_authority"] = uses_formal_spatial_authority
 	if not crafting_context.is_empty():
 		active_action["crafting_project_revision"] = int(crafting_context.get("project_revision", -1))
 		active_action["crafting_recipe_id"] = str(crafting_context.get("recipe_id", ""))
@@ -2072,12 +3237,14 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 	var resource_system := _get_resource_system()
 	if resource_system == null:
 		_release_workstation_for_action(npc_id, active_action)
+		_end_formal_spatial_work_from_active(npc_id, active_action, "completion_resource_system_missing")
 		_update_action_failure(npc_id, "work_failed_no_resource_system")
 		return
 	if bool(action.get("requires_crafting_target", false)):
 		var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 		if crafting_system == null or not crafting_system.has_method("complete_stage"):
 			_release_workstation_for_action(npc_id, active_action)
+			_end_formal_spatial_work_from_active(npc_id, active_action, "completion_crafting_system_missing")
 			_update_action_failure(npc_id, "work_failed_no_crafting_system")
 			return
 		var building_id := str(active_action.get("building_id", action.get("location_required", "")))
@@ -2089,6 +3256,7 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		if not bool(crafting_result.get("ok", false)):
 			_clear_crafting_cycle_progress(npc_id, active_action)
 			_release_workstation_for_action(npc_id, active_action)
+			_end_formal_spatial_work_from_active(npc_id, active_action, "completion_crafting_failed")
 			var crafting_failure := str(crafting_result.get("error", crafting_result.get("reason", "crafting_stage_failed")))
 			_update_action_failure(npc_id, "work_failed_%s" % crafting_failure, crafting_result)
 			var failure_payload := _build_crafting_failure_event_payload(
@@ -2133,6 +3301,7 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 			"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action))),
 			"efficiency_multiplier": float(active_action.get("efficiency_multiplier", 1.0))
 		})
+		_schedule_formal_spatial_work_cleanup(npc_id, action)
 		return
 
 	var input_resources: Dictionary = action.get("input_resources", {})
@@ -2175,6 +3344,7 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 			for raw_resource_id in input_resources.keys():
 				resource_system.add_resource(str(raw_resource_id), int(input_resources[raw_resource_id]))
 			_release_workstation_for_action(npc_id, active_action)
+			_end_formal_spatial_work_from_active(npc_id, active_action, "completion_storage_capacity")
 			_update_action_failure(npc_id, "work_failed_storage_capacity", {
 				"output_resources": output_resources.duplicate(true),
 				"failure_reason": "warehouse_capacity_race"
@@ -2201,25 +3371,131 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action))),
 		"efficiency_multiplier": float(active_action.get("efficiency_multiplier", 1.0))
 	})
+	_schedule_formal_spatial_work_cleanup(npc_id, action)
 
 
 func _start_eat(npc_id: String, action: Dictionary) -> bool:
 	var resource_system := _get_resource_system()
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if resource_system == null or npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "eat_dependencies_missing")
 		return false
 
 	var building_id := str(action.get("location_required", "dining_hall"))
-	var claim_result: Dictionary = building_system.claim_workstation(
-		building_id,
-		npc_id,
-		str(action.get("workstation_type", "dining_seat"))
-	)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if uses_formal_spatial_authority and (
+		str(state.get("current_location", "")) != building_id
+		or not str(state.get("movement_target", "")).is_empty()
+		or str(state.get("current_action", "")).begins_with("moving_to_")
+	):
+		var arrival_failure := {
+			"action_id": str(action.get("id", "eat_at_dining_hall")),
+			"building_id": building_id,
+			"current_location": str(state.get("current_location", "")),
+			"movement_target": str(state.get("movement_target", "")),
+			"unavailable_reason": "尚未实际到达食堂座位，不能开始用餐"
+		}
+		_update_action_failure(npc_id, "eat_failed_not_arrived", arrival_failure)
+		_log_action_start_failure(npc_id, action, str(arrival_failure["unavailable_reason"]), arrival_failure)
+		_end_formal_spatial_workstation_action(npc_id, "eat_not_arrived")
+		return false
+
+	var food_option := _find_available_food_option(action, resource_system)
+	if food_option.is_empty():
+		_fail_eat_no_food(npc_id, action, uses_formal_spatial_authority)
+		return false
+
+	var claim_result: Dictionary = {}
+	if uses_formal_spatial_authority and building_system.has_method("commit_workstation_reservation"):
+		claim_result = building_system.commit_workstation_reservation(
+			building_id,
+			npc_id,
+			str(state.get("reserved_workstation_id", "")),
+			str(action.get("workstation_type", "dining_seat"))
+		)
+	else:
+		claim_result = building_system.claim_workstation(
+			building_id,
+			npc_id,
+			str(action.get("workstation_type", "dining_seat"))
+		)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "eat_workstation_commit_failed")
 		_update_action_failure(npc_id, "eat_failed_no_seat", _make_workstation_failure_context(action, claim_result))
 		return false
 
+	var workstation_id := str(claim_result.get("workstation_id", ""))
+	if uses_formal_spatial_authority:
+		var attachment_result: Dictionary = (
+			npc_system.attach_formal_workstation_occupant(npc_id, building_id, workstation_id)
+			if npc_system.has_method("attach_formal_workstation_occupant")
+			else {"ok": false, "reason": "formal_attachment_api_missing"}
+		)
+		if not bool(attachment_result.get("ok", false)):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+			_end_formal_spatial_workstation_action(npc_id, "eat_attachment_failed")
+			_update_action_failure(npc_id, "eat_failed_attachment", attachment_result)
+			_log_structured_action_event(npc_id, action, "work_failed", {
+				"action_id": str(action.get("id", "")),
+				"reason": "食堂座位挂接失败",
+				"building_id": building_id,
+				"workstation_id": workstation_id
+			})
+			return false
+
+	var resource_id := str(food_option.get("resource", ""))
+	var cost := maxi(1, int(food_option.get("amount", 1)))
+	if not resource_system.spend_resources({resource_id: cost}):
+		building_system.release_workstation(building_id, npc_id, workstation_id)
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "eat_food_changed_before_commit")
+		_fail_eat_no_food(npc_id, action, false)
+		return false
+
+	npc_system.update_npc_state(npc_id, {
+		"current_action": str(action.get("id", "eat")),
+		"last_action_result": "started_eat",
+		"last_action_failure_context": {},
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(state.get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(state.get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(state.get("current_workstation_id", "")),
+		"spatial_route_phase": "occupant_attached" if uses_formal_spatial_authority else str(state.get("spatial_route_phase", "none")),
+		"physical_location_phase": "occupant_anchor" if uses_formal_spatial_authority else str(state.get("physical_location_phase", "legacy"))
+	})
+	var active_action := _create_active_action(action, npc_id)
+	active_action["building_id"] = building_id
+	active_action["workstation_id"] = workstation_id
+	active_action["resource_id"] = resource_id
+	active_action["amount"] = cost
+	active_action["state_deltas"] = {"satiety": int(food_option.get("satiety_restore", 0))}
+	active_action["formal_spatial_authority"] = uses_formal_spatial_authority
+	_active_actions[npc_id] = active_action
+	_log_structured_action_event(npc_id, action, "eat_started", {
+		"action_id": str(action.get("id", "")),
+		"resource_id": resource_id,
+		"amount": cost,
+		"duration_seconds": _get_action_duration_seconds(action),
+		"building_id": building_id,
+		"workstation_id": workstation_id
+	})
+	return true
+
+
+func _preflight_eating_food(npc_id: String, action: Dictionary) -> bool:
+	var resource_system := _get_resource_system()
+	if resource_system != null and not _find_available_food_option(action, resource_system).is_empty():
+		return true
+	_fail_eat_no_food(npc_id, action, false, true)
+	return false
+
+
+func _find_available_food_option(action: Dictionary, resource_system: Node) -> Dictionary:
+	if resource_system == null:
+		return {}
 	var food_options: Array = action.get("food_options", [])
 	for raw_option in food_options:
 		if not raw_option is Dictionary:
@@ -2227,38 +3503,27 @@ func _start_eat(npc_id: String, action: Dictionary) -> bool:
 		var option: Dictionary = raw_option
 		var resource_id := str(option.get("resource", ""))
 		var cost := maxi(1, int(option.get("amount", 1)))
-		if resource_system.get_resource(resource_id) >= cost:
-			if not resource_system.spend_resources({resource_id: cost}):
-				building_system.release_workstation(building_id, npc_id, str(claim_result.get("workstation_id", "")))
-				return false
-			_log_structured_action_event(npc_id, action, "eat_started", {
-				"action_id": str(action.get("id", "")),
-				"resource_id": resource_id,
-				"amount": cost,
-				"duration_seconds": _get_action_duration_seconds(action)
-			})
-			if npc_system != null:
-				npc_system.update_npc_state(npc_id, {
-					"current_action": str(action.get("id", "eat")),
-					"last_action_result": "started_eat"
-				})
-			var active_action := _create_active_action(action, npc_id)
-			active_action["building_id"] = building_id
-			active_action["workstation_id"] = str(claim_result.get("workstation_id", ""))
-			active_action["resource_id"] = resource_id
-			active_action["amount"] = cost
-			active_action["state_deltas"] = {"satiety": int(option.get("satiety_restore", 0))}
-			_active_actions[npc_id] = active_action
-			return true
+		if not resource_id.is_empty() and resource_system.get_resource(resource_id) >= cost:
+			return option.duplicate(true)
+	return {}
 
-	building_system.release_workstation(building_id, npc_id, str(claim_result.get("workstation_id", "")))
-	_update_action_failure(npc_id, "eat_failed_no_food")
-	_log_structured_action_event(npc_id, action, "work_failed", {
+
+func _fail_eat_no_food(
+	npc_id: String,
+	action: Dictionary,
+	end_formal_session: bool,
+	preflight_before_formal_migration: bool = false
+) -> void:
+	var failure_context := {
 		"action_id": str(action.get("id", "")),
 		"reason": "没有可用食物",
-		"duration_seconds": _get_action_duration_seconds(action)
-	})
-	return false
+		"duration_seconds": _get_action_duration_seconds(action),
+		"preflight_before_formal_migration": preflight_before_formal_migration
+	}
+	_update_action_failure(npc_id, "eat_failed_no_food", failure_context)
+	_log_structured_action_event(npc_id, action, "work_failed", failure_context)
+	if end_formal_session:
+		_end_formal_spatial_workstation_action(npc_id, "eat_failed_no_food")
 
 
 func _complete_eat(npc_id: String, active_action: Dictionary) -> void:
@@ -2273,6 +3538,7 @@ func _complete_eat(npc_id: String, active_action: Dictionary) -> void:
 		"satiety_restore": int(active_action.get("state_deltas", {}).get("satiety", 0)),
 		"duration_seconds": _get_action_duration_seconds(action)
 	})
+	_end_formal_spatial_work_from_active(npc_id, active_action, "eat_completed")
 
 
 func _start_drink(npc_id: String, action: Dictionary) -> bool:
@@ -2327,29 +3593,90 @@ func _complete_drink(npc_id: String, _active_action: Dictionary) -> void:
 func _start_sleep(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "sleep_dependencies_missing")
 		return false
 	var building_id := str(action.get("location_required", "dormitory"))
-	var claim_result: Dictionary = building_system.claim_workstation(
-		building_id,
-		npc_id,
-		str(action.get("workstation_type", "dormitory_bed"))
-	)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if uses_formal_spatial_authority and (
+		str(state.get("current_location", "")) != building_id
+		or not str(state.get("movement_target", "")).is_empty()
+		or str(state.get("current_action", "")).begins_with("moving_to_")
+	):
+		var arrival_failure := {
+			"action_id": str(action.get("id", "sleep_in_dormitory")),
+			"building_id": building_id,
+			"current_location": str(state.get("current_location", "")),
+			"movement_target": str(state.get("movement_target", "")),
+			"unavailable_reason": "尚未实际到达自己的宿舍床位，不能开始睡眠"
+		}
+		_update_action_failure(npc_id, "sleep_failed_not_arrived", arrival_failure)
+		_log_action_start_failure(npc_id, action, str(arrival_failure["unavailable_reason"]), arrival_failure)
+		_end_formal_spatial_workstation_action(npc_id, "sleep_not_arrived")
+		return false
+
+	var claim_result: Dictionary = {}
+	if uses_formal_spatial_authority and building_system.has_method("commit_workstation_reservation"):
+		claim_result = building_system.commit_workstation_reservation(
+			building_id,
+			npc_id,
+			str(state.get("reserved_workstation_id", "")),
+			str(action.get("workstation_type", "dormitory_bed"))
+		)
+	else:
+		claim_result = building_system.claim_workstation(
+			building_id,
+			npc_id,
+			str(action.get("workstation_type", "dormitory_bed"))
+		)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "sleep_workstation_commit_failed")
 		_update_action_failure(npc_id, "sleep_failed_no_bed", _make_workstation_failure_context(action, claim_result))
 		return false
-	_log_structured_action_event(npc_id, action, "sleep_started", {
-		"action_id": str(action.get("id", "")),
-		"duration_seconds": _get_action_duration_seconds(action)
-	})
+
+	var workstation_id := str(claim_result.get("workstation_id", ""))
+	if uses_formal_spatial_authority:
+		var attachment_result: Dictionary = (
+			npc_system.attach_formal_workstation_occupant(npc_id, building_id, workstation_id)
+			if npc_system.has_method("attach_formal_workstation_occupant")
+			else {"ok": false, "reason": "formal_attachment_api_missing"}
+		)
+		if not bool(attachment_result.get("ok", false)):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+			_end_formal_spatial_workstation_action(npc_id, "sleep_attachment_failed")
+			_update_action_failure(npc_id, "sleep_failed_attachment", attachment_result)
+			_log_structured_action_event(npc_id, action, "sleep_failed", {
+				"action_id": str(action.get("id", "")),
+				"reason": "宿舍床位挂接失败",
+				"building_id": building_id,
+				"workstation_id": workstation_id
+			})
+			return false
+
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", "sleep")),
-		"last_action_result": "started_sleep"
+		"last_action_result": "started_sleep",
+		"last_action_failure_context": {},
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(state.get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(state.get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(state.get("current_workstation_id", "")),
+		"spatial_route_phase": "occupant_attached" if uses_formal_spatial_authority else str(state.get("spatial_route_phase", "none")),
+		"physical_location_phase": "occupant_anchor" if uses_formal_spatial_authority else str(state.get("physical_location_phase", "legacy"))
 	})
 	var active_action := _create_active_action(action, npc_id)
 	active_action["building_id"] = building_id
-	active_action["workstation_id"] = str(claim_result.get("workstation_id", ""))
+	active_action["workstation_id"] = workstation_id
+	active_action["formal_spatial_authority"] = uses_formal_spatial_authority
 	_active_actions[npc_id] = active_action
+	_log_structured_action_event(npc_id, action, "sleep_started", {
+		"action_id": str(action.get("id", "")),
+		"duration_seconds": _get_action_duration_seconds(action),
+		"building_id": building_id,
+		"workstation_id": workstation_id
+	})
 	return true
 
 
@@ -2366,6 +3693,7 @@ func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 		"needs_profile": str(action.get("needs_profile", "")),
 		"duration_seconds": _get_action_duration_seconds(action)
 	})
+	_end_formal_spatial_work_from_active(npc_id, active_action, "sleep_completed")
 	var npc_system := _get_npc_system()
 	if npc_system != null and npc_system.has_method("consume_deferred_plan_reevaluation_after_sleep"):
 		npc_system.consume_deferred_plan_reevaluation_after_sleep(npc_id)
@@ -2374,7 +3702,10 @@ func _complete_sleep(npc_id: String, active_action: Dictionary) -> void:
 func _start_pray(npc_id: String, action: Dictionary) -> bool:
 	var npc_system := _get_npc_system()
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var uses_formal_spatial_authority := _uses_formal_spatial_workstation_authority(action)
 	if npc_system == null or building_system == null:
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "prayer_dependencies_missing")
 		return false
 	var action_id := str(action.get("id", PRAY_ACTION_ID))
 	var building_id := str(action.get("location_required", "chapel"))
@@ -2399,6 +3730,8 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 			str(location_failure_context["unavailable_reason"]),
 			location_failure_context
 		)
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "prayer_not_arrived")
 		return false
 	var eligibility := get_action_eligibility(npc_id, action_id)
 	if not bool(eligibility.get("eligible", false)):
@@ -2413,16 +3746,31 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 			"reason": str(eligibility.get("unavailable_reason", "行动者没有资格")),
 			"building_id": building_id
 		})
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "prayer_ineligible")
 		return false
 	if not bool(eligibility.get("available_now", false)):
 		_fail_action_before_start(npc_id, action, eligibility)
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "prayer_unavailable")
 		return false
-	var claim_result: Dictionary = building_system.claim_workstation(
-		building_id,
-		npc_id,
-		str(action.get("workstation_type", "chapel_prayer_seat"))
-	)
+	var claim_result: Dictionary = {}
+	if uses_formal_spatial_authority and building_system.has_method("commit_workstation_reservation"):
+		claim_result = building_system.commit_workstation_reservation(
+			building_id,
+			npc_id,
+			str(state.get("reserved_workstation_id", "")),
+			str(action.get("workstation_type", "chapel_prayer_seat"))
+		)
+	else:
+		claim_result = building_system.claim_workstation(
+			building_id,
+			npc_id,
+			str(action.get("workstation_type", "chapel_prayer_seat"))
+		)
 	if not bool(claim_result.get("ok", false)):
+		if uses_formal_spatial_authority:
+			_end_formal_spatial_workstation_action(npc_id, "prayer_workstation_commit_failed")
 		var workstation_failure_id := "pray_failed_no_workstation" if action_id == PRAY_ACTION_ID else "%s_failed_no_workstation" % action_id
 		_update_action_failure(npc_id, workstation_failure_id, _make_workstation_failure_context(action, claim_result))
 		_log_structured_action_event(npc_id, action, "prayer_failed", {
@@ -2432,6 +3780,24 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 			"blocked_by_npc_ids": claim_result.get("blocked_by_npc_ids", [])
 		})
 		return false
+	var workstation_id := str(claim_result.get("workstation_id", ""))
+	if uses_formal_spatial_authority and action_id == PRAY_ACTION_ID:
+		var attachment_result: Dictionary = (
+			npc_system.attach_formal_workstation_occupant(npc_id, building_id, workstation_id)
+			if npc_system.has_method("attach_formal_workstation_occupant")
+			else {"ok": false, "reason": "formal_attachment_api_missing"}
+		)
+		if not bool(attachment_result.get("ok", false)):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+			_end_formal_spatial_workstation_action(npc_id, "prayer_attachment_failed")
+			_update_action_failure(npc_id, "pray_failed_attachment", attachment_result)
+			_log_structured_action_event(npc_id, action, "prayer_failed", {
+				"action_id": action_id,
+				"reason": "祈祷席挂接失败",
+				"building_id": building_id,
+				"workstation_id": workstation_id
+			})
+			return false
 	var started_result := "started_prayer"
 	var active_kind := "prayer"
 	if action_id == MASS_ACTION_ID:
@@ -2445,12 +3811,18 @@ func _start_pray(npc_id: String, action: Dictionary) -> bool:
 	npc_system.update_npc_state(npc_id, {
 		"current_action": action_id,
 		"last_action_result": started_result,
-		"last_action_failure_context": {}
+		"last_action_failure_context": {},
+		"reserved_building_id": "" if uses_formal_spatial_authority else str(state.get("reserved_building_id", "")),
+		"reserved_workstation_id": "" if uses_formal_spatial_authority else str(state.get("reserved_workstation_id", "")),
+		"current_workstation_id": workstation_id if uses_formal_spatial_authority else str(state.get("current_workstation_id", "")),
+		"spatial_route_phase": ("occupant_attached" if action_id == PRAY_ACTION_ID else "active_workstation") if uses_formal_spatial_authority else str(state.get("spatial_route_phase", "none")),
+		"physical_location_phase": ("occupant_anchor" if action_id == PRAY_ACTION_ID else "workstation") if uses_formal_spatial_authority else str(state.get("physical_location_phase", "legacy"))
 	})
 	var active_action := _create_active_action(action, npc_id)
 	active_action["kind"] = active_kind
 	active_action["building_id"] = building_id
-	active_action["workstation_id"] = str(claim_result.get("workstation_id", ""))
+	active_action["workstation_id"] = workstation_id
+	active_action["formal_spatial_authority"] = uses_formal_spatial_authority
 	if action_id == PRAY_ACTION_ID:
 		active_action["prayer_mode"] = (
 			PRAYER_MODE_MASS
@@ -2495,9 +3867,15 @@ func _complete_pray(npc_id: String, active_action: Dictionary) -> void:
 		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action))),
 		"prayer_mode": str(active_action.get("prayer_mode", ""))
 	})
+	_end_formal_spatial_work_from_active(npc_id, active_action, "prayer_completed")
 
 
-func _start_visit(npc_id: String, action: Dictionary, location_id: String) -> bool:
+func _start_visit(
+	npc_id: String,
+	action: Dictionary,
+	location_id: String,
+	options: Dictionary = {}
+) -> bool:
 	if action.is_empty() or not _is_enterable_location(location_id):
 		return false
 	if (
@@ -2518,6 +3896,8 @@ func _start_visit(npc_id: String, action: Dictionary, location_id: String) -> bo
 	var active_action := _create_active_action(runtime_action, npc_id)
 	active_action["kind"] = "visit"
 	active_action["location_id"] = location_id
+	active_action["formal_spatial_authority"] = bool(options.get("formal_spatial_authority", false))
+	active_action["formal_location_authority"] = bool(options.get("formal_location_authority", false))
 	_active_actions[npc_id] = active_action
 	_log_structured_action_event(npc_id, runtime_action, "visit_started", {
 		"action_id": VISIT_LOCATION_ACTION_ID,
@@ -2536,6 +3916,8 @@ func _complete_visit(npc_id: String, active_action: Dictionary) -> void:
 		"location_id": location_id,
 		"duration_seconds": float(active_action.get("duration_seconds", _get_action_duration_seconds(action)))
 	})
+	if bool(active_action.get("formal_location_authority", false)):
+		_end_formal_location_action(npc_id, "visit_completed", location_id)
 
 
 func _create_active_action(action: Dictionary, npc_id: String = "") -> Dictionary:
@@ -2651,6 +4033,12 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 		return
 
 	var patient_ids := _find_active_clinic_patient_ids()
+	active_action = _sync_formal_clinic_doctor_rounds(
+		doctor_npc_id,
+		active_action,
+		patient_ids,
+		game_delta_seconds
+	)
 	if patient_ids.is_empty():
 		_advance_clinic_study(doctor_npc_id, active_action, game_delta_seconds)
 		return
@@ -2703,6 +4091,91 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 		_improve_medical_skill(doctor_npc_id, 1, "clinic_treatment")
 	active_action["treatment_skill_timer_seconds"] = skill_timer
 	_active_actions[doctor_npc_id] = active_action
+
+
+func _sync_formal_clinic_doctor_rounds(
+	doctor_npc_id: String,
+	active_action: Dictionary,
+	patient_ids: Array[String],
+	game_delta_seconds: float
+) -> Dictionary:
+	if not bool(active_action.get("formal_spatial_authority", false)):
+		return active_action
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return active_action
+	var state: Dictionary = npc_system.get_npc_state(doctor_npc_id)
+	var presentation_mode := str(state.get("presentation_clinic_duty_mode", ""))
+	var phase := str(active_action.get("clinic_round_phase", "study"))
+	var current_patient_id := str(active_action.get("clinic_round_patient_id", ""))
+
+	if patient_ids.is_empty():
+		active_action["clinic_round_patient_id"] = ""
+		active_action["clinic_round_dwell_seconds"] = 0.0
+		if presentation_mode == "study" and str(state.get("physical_location_phase", "")) == "occupant_anchor":
+			active_action["clinic_round_phase"] = "study"
+			return active_action
+		if phase != "study_travel" and npc_system.has_method("move_formal_clinic_doctor_to_study_seat"):
+			var return_result: Dictionary = npc_system.move_formal_clinic_doctor_to_study_seat(doctor_npc_id)
+			if bool(return_result.get("ok", false)):
+				active_action["clinic_round_phase"] = "study_travel"
+		elif phase == "study_travel" and presentation_mode == "study":
+			active_action["clinic_round_phase"] = "study"
+		return active_action
+
+	if phase == "study_travel" or phase == "study":
+		return _send_formal_clinic_doctor_to_next_patient(doctor_npc_id, active_action, patient_ids)
+	if phase == "treatment_travel":
+		if not patient_ids.has(current_patient_id):
+			return _send_formal_clinic_doctor_to_next_patient(doctor_npc_id, active_action, patient_ids)
+		if (
+			presentation_mode == "treatment"
+			and str(state.get("presentation_clinic_patient_id", "")) == current_patient_id
+			and str(state.get("physical_location_phase", "")) == "clinic_bedside"
+		):
+			active_action["clinic_round_phase"] = "treatment"
+			active_action["clinic_round_dwell_seconds"] = 0.0
+		return active_action
+	if not patient_ids.has(current_patient_id):
+		return _send_formal_clinic_doctor_to_next_patient(doctor_npc_id, active_action, patient_ids)
+
+	var dwell_seconds := float(active_action.get("clinic_round_dwell_seconds", 0.0)) + game_delta_seconds
+	active_action["clinic_round_dwell_seconds"] = dwell_seconds
+	var action: Dictionary = active_action.get("action", {})
+	var dwell_limit := maxf(1.0, float(action.get("clinic_round_dwell_seconds", 300.0)))
+	if patient_ids.size() > 1 and dwell_seconds >= dwell_limit:
+		return _send_formal_clinic_doctor_to_next_patient(doctor_npc_id, active_action, patient_ids)
+	return active_action
+
+
+func _send_formal_clinic_doctor_to_next_patient(
+	doctor_npc_id: String,
+	active_action: Dictionary,
+	patient_ids: Array[String]
+) -> Dictionary:
+	if patient_ids.is_empty():
+		return active_action
+	var current_patient_id := str(active_action.get("clinic_round_patient_id", ""))
+	var target_index := patient_ids.find(current_patient_id)
+	if target_index < 0:
+		var doctor_ids := _find_active_clinic_doctor_ids()
+		target_index = doctor_ids.find(doctor_npc_id) % patient_ids.size()
+	else:
+		target_index = (target_index + 1) % patient_ids.size()
+	var target_patient_id := patient_ids[target_index]
+	var npc_system := _get_npc_system()
+	if npc_system == null or not npc_system.has_method("move_formal_clinic_doctor_to_patient_bed"):
+		return active_action
+	var movement_result: Dictionary = npc_system.move_formal_clinic_doctor_to_patient_bed(
+		doctor_npc_id,
+		target_patient_id
+	)
+	if bool(movement_result.get("ok", false)):
+		active_action["clinic_round_phase"] = "treatment_travel"
+		active_action["clinic_round_patient_id"] = target_patient_id
+		active_action["clinic_round_dwell_seconds"] = 0.0
+		active_action["clinic_round_visit_count"] = int(active_action.get("clinic_round_visit_count", 0)) + 1
+	return active_action
 
 
 func _advance_clinic_study(doctor_npc_id: String, active_action: Dictionary, game_delta_seconds: float) -> void:
@@ -2848,6 +4321,12 @@ func _advance_healing_assist(healer_npc_id: String, active_action: Dictionary, g
 		return
 	if str(npc_system.get_npc_state(healer_npc_id).get("current_location", "")) != _get_target_healing_location(target_npc_id):
 		_finish_healing_assist(healer_npc_id, target_npc_id, "assist_heal_failed_left_location")
+		return
+	if (
+		not npc_system.has_method("is_formal_healing_approach_ready")
+		or not bool(npc_system.is_formal_healing_approach_ready(healer_npc_id, target_npc_id))
+	):
+		_finish_healing_assist(healer_npc_id, target_npc_id, "assist_heal_failed_left_target")
 		return
 
 	var cost_timer := float(active_action.get("cost_timer_seconds", 0.0)) + game_delta_seconds
@@ -3039,6 +4518,98 @@ func _release_workstation_for_action(npc_id: String, active_action: Dictionary) 
 		building_system.release_workstation(building_id, npc_id, workstation_id)
 
 
+func _release_pending_workstation_reservation(npc_id: String, raw_options: Variant = {}) -> bool:
+	var options: Dictionary = raw_options if raw_options is Dictionary else {}
+	var building_id := str(options.get("reserved_building_id", ""))
+	var workstation_id := str(options.get("reserved_workstation_id", ""))
+	var npc_system := _get_npc_system()
+	if npc_system != null:
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if building_id.is_empty():
+			building_id = str(state.get("reserved_building_id", ""))
+		if workstation_id.is_empty():
+			workstation_id = str(state.get("reserved_workstation_id", ""))
+	if building_id.is_empty() or workstation_id.is_empty():
+		return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("release_workstation_reservation"):
+		return false
+	return bool(building_system.release_workstation_reservation(building_id, npc_id, workstation_id))
+
+
+func _end_formal_spatial_workstation_action(npc_id: String, reason: String) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action(npc_id, reason, true)
+
+
+func _end_formal_location_action(
+	npc_id: String,
+	reason: String,
+	preserve_location_id: String = ""
+) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+	if npc_system.has_method("end_formal_location_action"):
+		npc_system.end_formal_location_action(npc_id, reason, preserve_location_id)
+	elif npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action(npc_id, reason, true)
+
+
+func _end_formal_spatial_work_from_active(npc_id: String, active_action: Dictionary, reason: String) -> void:
+	if bool(active_action.get("formal_spatial_authority", false)):
+		_end_formal_spatial_workstation_action(npc_id, reason)
+
+
+func _schedule_formal_spatial_work_cleanup(npc_id: String, action: Dictionary) -> void:
+	if not _uses_formal_spatial_workstation_authority(action):
+		return
+	var session_id := 0
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot"):
+		var snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+		var session: Dictionary = snapshot.get("session", {}) if snapshot.get("session", {}) is Dictionary else {}
+		session_id = int(session.get("session_id", 0))
+	call_deferred(
+		"_cleanup_formal_spatial_work_if_idle",
+		npc_id,
+		str(action.get("id", "")),
+		session_id
+	)
+
+
+func _cleanup_formal_spatial_work_if_idle(npc_id: String, action_id: String, scheduled_session_id: int = 0) -> void:
+	var npc_system := _get_npc_system()
+	if scheduled_session_id > 0 and npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot"):
+		var snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+		var session: Dictionary = snapshot.get("session", {}) if snapshot.get("session", {}) is Dictionary else {}
+		if not session.is_empty() and int(session.get("session_id", 0)) != scheduled_session_id:
+			# A deferred cleanup from an earlier completed cycle must never tear
+			# down a newly started formal session for the same NPC/action.
+			return
+	if str(_pending_actions.get(npc_id, "")) == action_id:
+		return
+	if _active_actions.has(npc_id):
+		var active_action: Dictionary = _active_actions.get(npc_id, {})
+		var active_definition: Dictionary = active_action.get("action", {})
+		if str(active_definition.get("id", "")) == action_id:
+			return
+	_end_formal_spatial_workstation_action(npc_id, "cycle_complete")
+
+
+func _clear_pending_spatial_state(npc_id: String, phase: String) -> void:
+	var npc_system := _get_npc_system()
+	if npc_system == null:
+		return
+	npc_system.update_npc_state(npc_id, {
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": "",
+		"spatial_route_phase": phase
+	})
+
+
 func _get_engineering_skill(npc: Dictionary) -> int:
 	var skills: Dictionary = npc.get("skills", {})
 	for skill_key in ["工程", "宸ョ▼"]:
@@ -3083,11 +4654,15 @@ func _apply_single_state_delta(npc_id: String, state_key: String, delta: int) ->
 func _set_action_idle(npc_id: String, last_result: String) -> void:
 	var npc_system := _get_npc_system()
 	if npc_system != null:
-		npc_system.update_npc_state(npc_id, {
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		var changes := {
 			"current_action": "idle",
 			"last_action_result": last_result,
 			"last_action_failure_context": {}
-		})
+		}
+		if str(state.get("physical_location_phase", "")) == "workstation":
+			changes["spatial_route_phase"] = "workstation_idle"
+		npc_system.update_npc_state(npc_id, changes)
 
 
 func _update_action_failure(npc_id: String, failure_id: String, failure_context: Dictionary = {}) -> void:
@@ -3193,6 +4768,22 @@ func _stop_active_action(npc_id: String, last_result: String = "active_action_st
 	var has_workstation := not str(active_action.get("workstation_id", "")).is_empty()
 	if has_workstation:
 		_release_workstation_for_action(npc_id, active_action)
+	if bool(active_action.get("formal_healing_authority", false)):
+		_end_formal_heal_authority(npc_id, last_result if not last_result.is_empty() else "active_action_stopped")
+	elif bool(active_action.get("formal_location_authority", false)):
+		var npc_system := _get_npc_system()
+		var committed_location_id := (
+			str(npc_system.get_npc_state(npc_id).get("current_location", ""))
+			if npc_system != null
+			else str(active_action.get("location_id", ""))
+		)
+		_end_formal_location_action(
+			npc_id,
+			last_result if not last_result.is_empty() else "active_action_stopped",
+			committed_location_id
+		)
+	elif bool(active_action.get("formal_spatial_authority", false)):
+		_end_formal_spatial_workstation_action(npc_id, last_result if not last_result.is_empty() else "active_action_stopped")
 	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
 		var target_npc_id := str(active_action.get("target_npc_id", ""))
 		_remove_healing_helper(target_npc_id, npc_id)
@@ -3247,6 +4838,7 @@ func _finish_healing_assist(healer_npc_id: String, target_npc_id: String, reason
 	var money_spent := int(active_action.get("money_spent", 0))
 	_remove_healing_helper(target_npc_id, healer_npc_id)
 	_active_actions.erase(healer_npc_id)
+	_end_formal_heal_authority(healer_npc_id, reason)
 	var completed_normally := reason in ["target_revived", "target_no_longer_unconscious"]
 	if completed_normally:
 		_set_action_idle(healer_npc_id, "assist_heal_completed_%s" % target_npc_id)
@@ -3281,6 +4873,7 @@ func _finish_clinic_patient(patient_npc_id: String, doctor_npc_id: String, last_
 	_release_workstation_for_action(patient_npc_id, patient_action)
 	_active_actions.erase(patient_npc_id)
 	_set_action_idle(patient_npc_id, last_result)
+	_end_formal_spatial_work_from_active(patient_npc_id, patient_action, last_result)
 	if not doctor_npc_id.is_empty():
 		_log_healing_event(doctor_npc_id, patient_npc_id, "healing_completed", {
 			"action_id": CLINIC_PATIENT_ACTION_ID,
@@ -3397,9 +4990,17 @@ func _fail_waiting_dependents_without_provider(provider_action_id: String) -> vo
 			var npc_id := str(raw_npc_id)
 			if str(_pending_actions.get(npc_id, "")) != dependent_action_id:
 				continue
+			var pending_options: Dictionary = (
+				(_pending_action_options.get(npc_id, {}) as Dictionary).duplicate(true)
+				if _pending_action_options.get(npc_id, {}) is Dictionary
+				else {}
+			)
+			_release_pending_workstation_reservation(npc_id, pending_options)
 			_pending_actions.erase(npc_id)
 			_pending_action_targets.erase(npc_id)
 			_pending_action_options.erase(npc_id)
+			if bool(pending_options.get("formal_spatial_authority", false)):
+				_end_formal_spatial_workstation_action(npc_id, "service_provider_unavailable")
 			if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
 				npc_system.stop_npc_movement_for_system(
 					npc_id,
@@ -3470,6 +5071,7 @@ func _fail_active_service_dependent(
 	var action: Dictionary = active_action.get("action", {})
 	_release_workstation_for_action(npc_id, active_action)
 	_active_actions.erase(npc_id)
+	_end_formal_spatial_work_from_active(npc_id, active_action, failure_id)
 	var failure_context := {
 		"action_id": str(action.get("id", "")),
 		"building_id": str(active_action.get("building_id", action.get("location_required", ""))),
@@ -3798,6 +5400,24 @@ func _get_equipped_training_skills(npc: Dictionary) -> Array[String]:
 	return result
 
 
+func _preflight_training_equipment(npc_id: String, action: Dictionary, npc_system: Node) -> bool:
+	var action_type := str(action.get("type", ""))
+	if action_type not in ["training_instructor", "training_student"]:
+		return true
+	if not _get_equipped_training_skills(npc_system.get_npc(npc_id)).is_empty():
+		return true
+	var is_instructor := action_type == "training_instructor"
+	var failure_id := "training_instructor_failed_no_equipment" if is_instructor else "training_student_failed_no_equipment"
+	_update_action_failure(npc_id, failure_id)
+	_log_structured_action_event(npc_id, action, "work_failed", {
+		"action_id": str(action.get("id", "")),
+		"reason": "没有可训练的武器或坐骑",
+		"building_id": TRAINING_LOCATION_ID,
+		"preflight_before_formal_migration": true
+	})
+	return false
+
+
 func _find_active_training_instructor_id() -> String:
 	var instructor_ids := _find_active_training_instructor_ids()
 	return "" if instructor_ids.is_empty() else instructor_ids[0]
@@ -4114,6 +5734,8 @@ func _fail_pending_npc_dialogue(
 			"pending_dialogue_cancelled",
 			false
 		)
+	if npc_system != null and npc_system.has_method("end_formal_dialogue_approach"):
+		npc_system.end_formal_dialogue_approach(speaker_npc_id, failure_id, false)
 	var merged_failure_context := {
 		"action_id": NPC_DIALOGUE_ACTION_ID,
 		"target_npc_id": target_npc_id
@@ -4139,8 +5761,10 @@ func _cancel_dialogue_approach_for_participant(npc_id: String, reason: String) -
 	_pending_actions.erase(speaker_npc_id)
 	_pending_action_targets.erase(speaker_npc_id)
 	_pending_action_options.erase(speaker_npc_id)
+	var npc_system := _get_npc_system()
+	if npc_system != null and npc_system.has_method("end_formal_dialogue_approach"):
+		npc_system.end_formal_dialogue_approach(speaker_npc_id, reason, false)
 	if speaker_npc_id != npc_id:
-		var npc_system := _get_npc_system()
 		if npc_system != null and npc_system.has_method("stop_npc_movement_for_system"):
 			npc_system.stop_npc_movement_for_system(speaker_npc_id, reason, false)
 		_update_action_failure(speaker_npc_id, "talk_to_npc_failed_target_unavailable", {
@@ -4216,6 +5840,19 @@ func _get_target_healing_location(target_npc_id: String) -> String:
 
 func _get_healing_helper_count(target_npc_id: String) -> int:
 	return (_healing_helpers_by_target.get(target_npc_id, []) as Array).size()
+
+
+func _get_healing_commitment_count(target_npc_id: String) -> int:
+	var committed_ids: Array[String] = get_healing_helpers_for_target(target_npc_id)
+	for raw_healer_id in _pending_actions.keys():
+		var healer_npc_id := str(raw_healer_id)
+		if (
+			str(_pending_actions.get(healer_npc_id, "")) == HEALING_ACTION_ID
+			and str(_pending_action_targets.get(healer_npc_id, "")) == target_npc_id
+			and not committed_ids.has(healer_npc_id)
+		):
+			committed_ids.append(healer_npc_id)
+	return committed_ids.size()
 
 
 func _add_healing_helper(target_npc_id: String, healer_npc_id: String) -> void:

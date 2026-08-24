@@ -1,5 +1,25 @@
 # API_BUDGET.md
 
+## T0130-P5R3 艾达档案外貌同步验收成本
+
+本任务只替换既有 `npc_setting.appearance` 的内容，不新增 Prompt / Schema 字段、endpoint、重试或成品调用次数。先通过本地共享档案专项与 Mock 对话适配器；因环境已有真实 Key，2026-08-21 又运行 8 名 NPC 的正式 `/npc/dialogue` smoke：DeepSeek `deepseek-v4-flash` 共 8 次，全部成功且 `fallback_used=false`，艾达更新后的外貌字段随既有载荷正常进入请求。该旧 smoke 脚本只输出调用数、provider、model 与 fallback 汇总，未持久化本轮 token 合计；不据此虚构费用数字。
+
+## T0129C-A5-P6d-3 正式治疗接近调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。目标投影、NavigationAgent / RVO 接近、到位扣费、helper / HP / 经验结算和清理均为本地权威逻辑，产生 0 次模型调用；既有完成后计划重估调用合同未改变，因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6d-2 正式升级协助调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。施工槽选择、NavigationAgent / RVO 移动、到位提交、upgrade helper 清理和升级倒计时均为本地权威逻辑，产生 0 次模型调用；既有完成后计划重估调用合同未改变，因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6d-1 正式修复协助调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。维修槽选择、NavigationAgent / RVO 移动、到位提交、helper 清理和修复进度均为本地权威逻辑，产生 0 次模型调用；因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6c 正式实体接近调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或成功路径调用次数。日计划 `talk_to_npc` 仍先发生既有 1 次 `dialogue_intent_revalidation`，实体赶路、RVO 接近、目标重定向和等待工位均为 0 次模型调用；进入合法距离后才按既有合同发起 1 次 NPC-NPC 邀请。由于没有修改模型输入输出效果，本轮使用确定性非 Mock 测试桥验证邀请接受链，没有新增真实 provider 验收费用。
+
 ## T0120 NPC 可见文案润色真实 smoke
 
 本任务不改 Prompt、Schema、调用频率或行为规则，六份 Prompt hash 与 T0119 最终真实验收一致，因此未重跑 180 次完整行为矩阵。按 LLM 内容任务验收规则，2026-08-10 补跑 1 次莉娜 `/npc/daily_reflection`：DeepSeek `deepseek-v4-flash` 首次成功，5,117 input / 642 output tokens，估算 ¥0.00150884，`fallback_used=false`。结果继续正确记录诊所升级、皮甲 / 弓和后方医疗职责已经落实，并只把十份酒视作礼数，不替代医疗安排。

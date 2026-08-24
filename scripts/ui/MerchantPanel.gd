@@ -76,7 +76,10 @@ func _on_sell_pressed() -> void:
 	_show_trade_result(result)
 
 
-func _on_merchant_state_changed(_active: bool, _snapshot: Dictionary) -> void:
+func _on_merchant_state_changed(active: bool, _snapshot: Dictionary) -> void:
+	if not active:
+		close_panel()
+		return
 	_refresh_panel()
 
 

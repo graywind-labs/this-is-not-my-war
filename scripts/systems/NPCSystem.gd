@@ -6,12 +6,75 @@ const NPC_SCENE_PATH := "res://scenes/npc/NPC.tscn"
 const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
 const PLAZA_LOCATION_ID := "plaza"
+const FIRST_SPATIAL_INTERIOR_BUILDING_ID := "blacksmith"
+const FIRST_FORMAL_NAVIGATION_PILOT_NPC_ID := "blacksmith_01"
+const FIRST_FORMAL_NAVIGATION_PILOT_WORKSTATION_TYPE := "forge"
+const CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID := "doctor_01"
+const CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID := "clinic"
+const CLINIC_DOCTOR_WORKSTATION_TYPE := "clinic_doctor_station"
+const CLINIC_PATIENT_WORKSTATION_TYPE := "clinic_patient_bed"
+const CLINIC_TREATMENT_DOCTOR_BODY_RADIUS := 0.35
+const CLINIC_TREATMENT_BED_CLEARANCE := 0.08
+const CLINIC_TREATMENT_ANCHOR_LATERAL_OFFSET := 0.35
+const DORMITORY_FORMAL_NAVIGATION_PILOT_NPC_ID := "veteran_deputy_01"
+const DORMITORY_FORMAL_NAVIGATION_PILOT_BUILDING_ID := "dormitory"
+const DORMITORY_BED_WORKSTATION_TYPE := "dormitory_bed"
+const DINING_FORMAL_NAVIGATION_PILOT_NPC_ID := "cook_01"
+const DINING_FORMAL_NAVIGATION_PILOT_BUILDING_ID := "dining_hall"
+const DINING_SEAT_WORKSTATION_TYPE := "dining_seat"
+const CHAPEL_FORMAL_NAVIGATION_PILOT_NPC_ID := "priest_01"
+const CHAPEL_FORMAL_NAVIGATION_PILOT_BUILDING_ID := "chapel"
+const CHAPEL_PRAYER_SEAT_WORKSTATION_TYPE := "chapel_prayer_seat"
+const STABLE_FORMAL_NAVIGATION_PILOT_NPC_ID := "stableman_01"
+const STABLE_FORMAL_NAVIGATION_PILOT_BUILDING_ID := "stable"
+const STABLE_CARE_WORKSTATION_TYPE := "horse_care"
+const FORMAL_NAVIGATION_PILOT_SPECS := {
+	"glen": {
+		"npc_id": FIRST_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": FIRST_SPATIAL_INTERIOR_BUILDING_ID,
+		"workstation_type": FIRST_FORMAL_NAVIGATION_PILOT_WORKSTATION_TYPE
+	},
+	"clinic_doctor": {
+		"npc_id": CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": CLINIC_DOCTOR_WORKSTATION_TYPE
+	},
+	"clinic_bed": {
+		"npc_id": CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": CLINIC_PATIENT_WORKSTATION_TYPE
+	},
+	"dormitory_bed": {
+		"npc_id": DORMITORY_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": DORMITORY_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": DORMITORY_BED_WORKSTATION_TYPE,
+		"expected_workstation_id": "dormitory_bed_01"
+	},
+	"dining_seat": {
+		"npc_id": DINING_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": DINING_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": DINING_SEAT_WORKSTATION_TYPE
+	},
+	"chapel_prayer_seat": {
+		"npc_id": CHAPEL_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": CHAPEL_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": CHAPEL_PRAYER_SEAT_WORKSTATION_TYPE
+	},
+	"stable_care": {
+		"npc_id": STABLE_FORMAL_NAVIGATION_PILOT_NPC_ID,
+		"building_id": STABLE_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		"workstation_type": STABLE_CARE_WORKSTATION_TYPE
+	}
+}
 const PLAYER_ACTOR_ID := "guard_officer"
 const SYSTEM_ACTOR_ID := "system"
 const MONEY_RESOURCE_ID := "money"
@@ -74,6 +137,16 @@ var _profiles: Dictionary = {}
 var _npc_order: Array[String] = []
 var _npc_nodes: Dictionary = {}
 var _movement_arrival_contexts: Dictionary = {}
+var _building_interior_routes: Dictionary = {}
+var _formal_navigation_pilots: Dictionary = {}
+var _formal_workstation_action_sessions: Dictionary = {}
+var _formal_workstation_action_session_sequence := 0
+var _formal_dialogue_approach_sessions: Dictionary = {}
+var _formal_healing_target_projections: Dictionary = {}
+var _formal_combat_world_npcs: Dictionary = {}
+var _default_formal_world_npcs: Dictionary = {}
+var _default_formal_world_resume_positions: Dictionary = {}
+var _building_eviction_guards: Dictionary = {}
 var _selected_npc_id: String = ""
 var _unconscious_recovery_remainders: Dictionary = {}
 var _last_plan_reevaluation_request: Dictionary = {}
@@ -96,6 +169,16 @@ func initialize() -> void:
 	_npc_order.clear()
 	_npc_nodes.clear()
 	_movement_arrival_contexts.clear()
+	_building_interior_routes.clear()
+	_formal_navigation_pilots.clear()
+	_formal_workstation_action_sessions.clear()
+	_formal_workstation_action_session_sequence = 0
+	_formal_dialogue_approach_sessions.clear()
+	_formal_healing_target_projections.clear()
+	_formal_combat_world_npcs.clear()
+	_default_formal_world_npcs.clear()
+	_default_formal_world_resume_positions.clear()
+	_building_eviction_guards.clear()
 	_unconscious_recovery_remainders.clear()
 	_last_plan_reevaluation_request.clear()
 	_plan_reevaluation_requests_by_npc.clear()
@@ -158,16 +241,22 @@ func initialize() -> void:
 			npc_node.setup(profile)
 		if npc_node.has_signal("movement_arrived"):
 			npc_node.movement_arrived.connect(_on_npc_movement_arrived)
+		if npc_node.has_signal("movement_request_failed"):
+			npc_node.movement_request_failed.connect(_on_npc_movement_request_failed)
 
 		_profiles[npc_id] = profile.duplicate(true)
 		_ensure_runtime_state_defaults(npc_id)
 		_npc_order.append(npc_id)
 		_npc_nodes[npc_id] = npc_node.get_path()
+	call_deferred("_begin_default_formal_world_if_configured")
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var interaction := _pick_npc_interaction_at_screen_position(event.position)
+		var clicked_npc_id := str(interaction.get("npc_id", ""))
+		if not clicked_npc_id.is_empty() and _is_npc_hidden_by_opaque_building(clicked_npc_id):
+			return
 		if str(interaction.get("kind", "")) == "autonomous_dialogue_bubble":
 			var event_bus := get_node_or_null("/root/EventBus")
 			if event_bus != null and event_bus.has_signal("npc_dialogue_bubble_clicked"):
@@ -191,9 +280,10 @@ func get_npc(npc_id: String) -> Dictionary:
 
 
 func get_npc_state(npc_id: String) -> Dictionary:
-	var profile := get_npc(npc_id)
-	if profile.is_empty():
+	if not _profiles.has(npc_id):
+		push_warning("Unknown NPC id: %s" % npc_id)
 		return {}
+	var profile: Dictionary = _profiles[npc_id]
 	var states: Dictionary = profile.get("states", {})
 	return states.duplicate(true)
 
@@ -213,6 +303,427 @@ func get_npc_world_position(npc_id: String) -> Variant:
 	if npc_node == null:
 		return null
 	return npc_node.global_position
+
+
+func get_npc_portrait_snapshot(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("get_portrait_camera_snapshot"):
+		return {}
+	var snapshot: Dictionary = npc_node.get_portrait_camera_snapshot()
+	var location_id := str(snapshot.get("location_id", "")).strip_edges()
+	var location_name := str(snapshot.get("location_name", "")).strip_edges()
+	if location_name.is_empty() or location_name == location_id:
+		var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+		if memory_system != null and memory_system.has_method("get_location_snapshot"):
+			var location_snapshot: Dictionary = memory_system.get_location_snapshot(location_id)
+			snapshot["location_name"] = str(location_snapshot.get("name", "驿站内"))
+		else:
+			snapshot["location_name"] = "驿站内"
+	return snapshot.duplicate(true)
+
+
+func debug_get_spatial_migration_snapshot(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var state := get_npc_state(npc_id)
+	var route: Dictionary = _building_interior_routes.get(npc_id, {})
+	var step_snapshot: Dictionary = {}
+	var steps: Array = route.get("steps", [])
+	var step_index := int(route.get("step_index", -1))
+	if step_index >= 0 and step_index < steps.size() and steps[step_index] is Dictionary:
+		var step: Dictionary = steps[step_index]
+		step_snapshot = {
+			"id": str(step.get("id", "")),
+			"phase": str(step.get("phase", "")),
+			"position": step.get("position")
+		}
+	var reservation: Dictionary = {}
+	var occupancy: Dictionary = {}
+	var motion_snapshot: Dictionary = {}
+	var attachment_snapshot: Dictionary = {}
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+	if npc_node != null and npc_node.has_method("debug_get_motion_snapshot"):
+		motion_snapshot = npc_node.debug_get_motion_snapshot()
+	if npc_node != null and npc_node.has_method("debug_get_spatial_attachment_snapshot"):
+		attachment_snapshot = npc_node.debug_get_spatial_attachment_snapshot()
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null:
+		for raw_building_id in building_system.get_building_ids():
+			var building_id := str(raw_building_id)
+			var building: Dictionary = building_system.get_building(building_id)
+			for raw_workstation in building.get("workstations", []):
+				if not raw_workstation is Dictionary:
+					continue
+				var workstation: Dictionary = raw_workstation
+				if _clean_nullable_state_id(workstation.get("reserved_by", "")) == npc_id:
+					reservation = {
+						"building_id": building_id,
+						"workstation_id": str(workstation.get("id", "")),
+						"status": "reserved"
+					}
+				if _clean_nullable_state_id(workstation.get("occupied_by", "")) == npc_id:
+					occupancy = {
+						"building_id": building_id,
+						"workstation_id": str(workstation.get("id", "")),
+						"status": "occupied"
+					}
+	return {
+		"npc_id": npc_id,
+		"world_position": get_npc_world_position(npc_id),
+		"logical_location_id": str(state.get("current_location", "")),
+		"logical_location_name": str(state.get("current_location_name", "")),
+		"movement_target": str(state.get("movement_target", "")),
+		"path_phase": str(state.get("spatial_route_phase", "none")),
+		"physical_location_phase": str(state.get("physical_location_phase", "legacy")),
+		"current_workstation_id": str(state.get("current_workstation_id", "")),
+		"route_kind": str(route.get("kind", "")),
+		"route_step": step_snapshot,
+		"formal_navigation_pilot": _formal_navigation_pilots.has(npc_id),
+		"formal_navigation_pilot_state": (_formal_navigation_pilots.get(npc_id, {}) as Dictionary).duplicate(true),
+		"formal_workstation_action_session": (_formal_workstation_action_sessions.get(npc_id, {}) as Dictionary).duplicate(true),
+		"formal_dialogue_approach_session": get_formal_dialogue_approach_snapshot(npc_id),
+		"motion": motion_snapshot,
+		"attachment": attachment_snapshot,
+		"reservation": reservation,
+		"occupancy": occupancy
+	}
+
+
+func _begin_default_formal_world_if_configured() -> void:
+	await get_tree().process_frame
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if (
+		controller != null
+		and controller.has_method("is_default_formal_world_enabled")
+		and bool(controller.is_default_formal_world_enabled())
+	):
+		begin_default_formal_world()
+
+
+func begin_default_formal_world() -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if (
+		controller == null
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_npc_initial_world_position")
+	):
+		return {"ok": false, "reason": "default_formal_world_dependencies_missing"}
+	if (
+		controller.has_method("is_default_formal_world_enabled")
+		and not bool(controller.is_default_formal_world_enabled())
+	):
+		return {"ok": false, "reason": "default_formal_world_disabled"}
+	if controller.has_method("set_runtime_formal_world_enabled"):
+		controller.set_runtime_formal_world_enabled(true)
+	if controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "default_formal_navigation_map_missing"}
+	var activated: Array[String] = []
+	var skipped: Array[Dictionary] = []
+	for npc_id in _npc_order:
+		if _default_formal_world_npcs.has(npc_id):
+			activated.append(npc_id)
+			continue
+		var state := get_npc_state(npc_id)
+		if bool(state.get("escaped", false)):
+			skipped.append({"npc_id": npc_id, "reason": "npc_escaped"})
+			continue
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D
+		if npc_node == null or not npc_node.has_method("configure_navigation_motion"):
+			skipped.append({"npc_id": npc_id, "reason": "npc_formal_actor_missing"})
+			continue
+		var target_position: Variant = _default_formal_world_resume_positions.get(npc_id)
+		if not target_position is Vector3:
+			var location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
+			if location_id != PLAZA_LOCATION_ID and controller.has_method("get_building_spatial_route"):
+				var route: Dictionary = controller.get_building_spatial_route(location_id)
+				target_position = route.get("interior_target_position")
+			if not target_position is Vector3:
+				target_position = controller.get_npc_initial_world_position(npc_id)
+		if not target_position is Vector3:
+			skipped.append({"npc_id": npc_id, "reason": "npc_formal_anchor_missing"})
+			continue
+		var snapped_position := NavigationServer3D.map_get_closest_point(navigation_map, target_position)
+		var snap_error := Vector2(
+			snapped_position.x - target_position.x,
+			snapped_position.z - target_position.z
+		).length()
+		var actor_navigation_sync_pending := snap_error > 2.0
+		if actor_navigation_sync_pending:
+			# NavigationServer may still report Vector3.ZERO during the first frame in
+			# which the formal map is enabled. The authored anchors are already inside
+			# the audited walkable area, so they are safer than accepting that stale
+			# result and visibly collapsing every resident onto the world origin.
+			snapped_position = target_position
+		_default_formal_world_npcs[npc_id] = {
+			"legacy_position": npc_node.global_position,
+			"legacy_navigation_enabled": bool(npc_node.is_navigation_motion_enabled()) if npc_node.has_method("is_navigation_motion_enabled") else false,
+			"legacy_navigation_map": npc_node.get_navigation_map() if npc_node.has_method("get_navigation_map") else RID(),
+			"navigation_map": navigation_map,
+			"activated_at_msec": Time.get_ticks_msec(),
+		}
+		_cancel_building_interior_route(npc_id, true)
+		_movement_arrival_contexts.erase(npc_id)
+		_stop_npc_movement(npc_id)
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		npc_node.global_position = snapped_position
+		if not bool(npc_node.configure_navigation_motion(true, navigation_map)):
+			_default_formal_world_npcs.erase(npc_id)
+			skipped.append({"npc_id": npc_id, "reason": "npc_navigation_map_bind_failed"})
+			continue
+		_set_npc_state_without_signal(npc_id, {
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "default_formal_world_ready",
+			"physical_location_phase": "formal_world_resident",
+			"reserved_building_id": "",
+			"reserved_workstation_id": "",
+			"current_workstation_id": "",
+		})
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		activated.append(npc_id)
+	return {
+		"ok": skipped.is_empty(),
+		"active": not _default_formal_world_npcs.is_empty(),
+		"activated_count": activated.size(),
+		"activated_npc_ids": activated,
+		"skipped": skipped,
+		"snapshot": get_default_formal_world_snapshot(),
+	}
+
+
+func end_default_formal_world(reason: String = "legacy_compatibility") -> Dictionary:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	for raw_npc_id in _default_formal_world_npcs.keys().duplicate():
+		var active_npc_id := str(raw_npc_id)
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			action_system.interrupt_npc_action(active_npc_id, reason, true)
+	var restored: Array[String] = []
+	for raw_npc_id in _default_formal_world_npcs.keys().duplicate():
+		var npc_id := str(raw_npc_id)
+		var resident: Dictionary = _default_formal_world_npcs.get(npc_id, {})
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D
+		if npc_node != null:
+			_default_formal_world_resume_positions[npc_id] = npc_node.global_position
+			_stop_npc_movement(npc_id)
+			if npc_node.has_method("detach_from_spatial_anchor"):
+				npc_node.detach_from_spatial_anchor()
+			if npc_node.has_method("configure_navigation_motion"):
+				if bool(resident.get("legacy_navigation_enabled", false)):
+					npc_node.configure_navigation_motion(true, resident.get("legacy_navigation_map", RID()))
+				else:
+					npc_node.configure_navigation_motion(false)
+			var legacy_position: Variant = resident.get("legacy_position")
+			if legacy_position is Vector3:
+				npc_node.global_position = legacy_position
+		_set_npc_state_without_signal(npc_id, {
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "default_formal_world_%s" % reason,
+			"physical_location_phase": "legacy_location",
+			"reserved_building_id": "",
+			"reserved_workstation_id": "",
+			"current_workstation_id": "",
+		})
+		_default_formal_world_npcs.erase(npc_id)
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		restored.append(npc_id)
+	return {"ok": true, "active": false, "reason": reason, "restored_npc_ids": restored}
+
+
+func is_npc_in_default_formal_world(npc_id: String) -> bool:
+	return _default_formal_world_npcs.has(npc_id)
+
+
+func get_default_formal_world_snapshot() -> Dictionary:
+	var actors: Array[Dictionary] = []
+	for raw_npc_id in _default_formal_world_npcs.keys():
+		var npc_id := str(raw_npc_id)
+		var resident: Dictionary = _default_formal_world_npcs.get(npc_id, {})
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D
+		var expected_map: RID = resident.get("navigation_map", RID())
+		var actual_map: RID = npc_node.get_navigation_map() if npc_node != null and npc_node.has_method("get_navigation_map") else RID()
+		actors.append({
+			"npc_id": npc_id,
+			"world_position": npc_node.global_position if npc_node != null else Vector3.ZERO,
+			"navigation_motion_enabled": bool(npc_node.is_navigation_motion_enabled()) if npc_node != null and npc_node.has_method("is_navigation_motion_enabled") else false,
+			"navigation_map_matches": expected_map.is_valid() and expected_map == actual_map,
+			"physical_location_phase": str(get_npc_state(npc_id).get("physical_location_phase", "")),
+			"formal_action_session_active": _formal_workstation_action_sessions.has(npc_id),
+			"formal_combat_active": _formal_combat_world_npcs.has(npc_id),
+		})
+	return {
+		"ok": true,
+		"active": not _default_formal_world_npcs.is_empty(),
+		"actor_count": actors.size(),
+		"npc_ids": _default_formal_world_npcs.keys(),
+		"actors": actors,
+		"action_session_count": _formal_workstation_action_sessions.size(),
+		"combat_actor_count": _formal_combat_world_npcs.size(),
+	}
+
+
+func create_formal_spatial_checkpoint() -> Dictionary:
+	var actors: Array[Dictionary] = []
+	for npc_id in _npc_order:
+		var state := get_npc_state(npc_id)
+		var position_value: Variant = get_npc_world_position(npc_id)
+		var position: Vector3 = position_value if position_value is Vector3 else Vector3.ZERO
+		var formal_session: Dictionary = _formal_workstation_action_sessions.get(npc_id, {}) if _formal_workstation_action_sessions.get(npc_id, {}) is Dictionary else {}
+		actors.append({
+			"npc_id": npc_id,
+			"position": {"x": position.x, "y": position.y, "z": position.z},
+			"information_location_id": str(state.get("current_location", PLAZA_LOCATION_ID)),
+			"current_location_name": str(state.get("current_location_name", "")),
+			"physical_location_phase": str(state.get("physical_location_phase", "formal_world_resident")),
+			"spatial_route_phase": str(state.get("spatial_route_phase", "default_formal_world_ready")),
+			"navigation_authority": "production_formal" if _default_formal_world_npcs.has(npc_id) else "escaped_or_suspended",
+			"escaped": bool(state.get("escaped", false)),
+			"unconscious": bool(state.get("unconscious", false)),
+			"behavior_mode": str(state.get("behavior_mode", BEHAVIOR_MODE_WORK)),
+			"escape_intent": (state.get("escape_intent", {}) as Dictionary).duplicate(true) if state.get("escape_intent", {}) is Dictionary else {},
+			"in_flight_action": {
+				"active": not formal_session.is_empty(),
+				"action_id": str(formal_session.get("action_id", "")),
+				"building_id": str(formal_session.get("building_id", "")),
+				"workstation_id": str(formal_session.get("workstation_id", "")),
+				"restore_policy": "rollback"
+			},
+			"movement_was_active": not str(state.get("movement_target", "")).is_empty(),
+			"attachment_was_active": bool((debug_get_spatial_migration_snapshot(npc_id).get("attachment", {}) as Dictionary).get("active", false))
+		})
+	return {
+		"schema": "formal_npc_spatial_checkpoint_v1",
+		"actor_count": actors.size(),
+		"actors": actors,
+		"in_flight_policy": "rollback_to_saved_safe_position"
+	}
+
+
+func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
+	if str(checkpoint.get("schema", "")) != "formal_npc_spatial_checkpoint_v1":
+		return {"ok": false, "reason": "npc_spatial_checkpoint_schema_mismatch"}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_production_navigation_map_rid"):
+		return {"ok": false, "reason": "formal_navigation_controller_missing"}
+	if controller.has_method("set_runtime_formal_world_enabled"):
+		controller.set_runtime_formal_world_enabled(true)
+	if controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_map_missing"}
+
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var rolled_back_actions: Array[String] = []
+	for raw_actor in checkpoint.get("actors", []):
+		if not raw_actor is Dictionary:
+			continue
+		var actor: Dictionary = raw_actor
+		var npc_id := str(actor.get("npc_id", ""))
+		if not _profiles.has(npc_id):
+			continue
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			if bool(action_system.interrupt_npc_action(npc_id, "save_restore_rollback", true)):
+				rolled_back_actions.append(npc_id)
+		end_formal_workstation_action(npc_id, "save_restore_rollback", false, "", false)
+		_cancel_building_interior_route(npc_id, true)
+		_movement_arrival_contexts.erase(npc_id)
+		_stop_npc_movement(npc_id)
+
+	# A formerly escaped runtime actor must be made eligible before the formal
+	# resident lease is rebuilt. Saved escaped actors remain excluded below.
+	for raw_actor in checkpoint.get("actors", []):
+		if raw_actor is Dictionary and not bool((raw_actor as Dictionary).get("escaped", false)):
+			_set_npc_state_without_signal(str((raw_actor as Dictionary).get("npc_id", "")), {"escaped": false})
+	begin_default_formal_world()
+
+	var restored: Array[String] = []
+	var fallback_ids: Array[String] = []
+	var escaped_ids: Array[String] = []
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	for raw_actor in checkpoint.get("actors", []):
+		if not raw_actor is Dictionary:
+			continue
+		var actor: Dictionary = raw_actor
+		var npc_id := str(actor.get("npc_id", ""))
+		if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+			continue
+		var escaped := bool(actor.get("escaped", false))
+		var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+		if npc_node == null:
+			continue
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		var saved_position := _checkpoint_vector3(actor.get("position", {}), Vector3.ZERO)
+		var safe_position := NavigationServer3D.map_get_closest_point(navigation_map, saved_position)
+		var horizontal_error := Vector2(safe_position.x - saved_position.x, safe_position.z - saved_position.z).length()
+		if saved_position == Vector3.ZERO or horizontal_error > 3.0:
+			var location_id := str(actor.get("information_location_id", PLAZA_LOCATION_ID))
+			var route: Dictionary = controller.get_building_spatial_route(location_id) if location_id != PLAZA_LOCATION_ID and controller.has_method("get_building_spatial_route") else {}
+			var fallback: Variant = route.get("interior_target_position")
+			if not fallback is Vector3:
+				fallback = controller.get_npc_initial_world_position(npc_id)
+			safe_position = fallback if fallback is Vector3 else saved_position
+			fallback_ids.append(npc_id)
+		npc_node.global_position = safe_position
+		var location_id := str(actor.get("information_location_id", PLAZA_LOCATION_ID))
+		_set_npc_state_without_signal(npc_id, {
+			"current_action": "escaped" if escaped else ("unconscious" if bool(actor.get("unconscious", false)) else "idle"),
+			"current_location": "outside_station" if escaped else location_id,
+			"current_location_name": "驿站外" if escaped else str(actor.get("current_location_name", location_id)),
+			"movement_target": "",
+			"movement_target_name": "",
+			"physical_location_phase": "outside_station" if escaped else str(actor.get("physical_location_phase", "formal_world_resident")),
+			"spatial_route_phase": "save_restored_escaped" if escaped else "save_restored_safe_position",
+			"reserved_building_id": "",
+			"reserved_workstation_id": "",
+			"current_workstation_id": "",
+			"escaped": escaped,
+			"unconscious": bool(actor.get("unconscious", false)) and not escaped,
+			"behavior_mode": BEHAVIOR_MODE_ESCAPED if escaped else str(actor.get("behavior_mode", BEHAVIOR_MODE_WORK)),
+			"escape_intent": (actor.get("escape_intent", {}) as Dictionary).duplicate(true) if actor.get("escape_intent", {}) is Dictionary else {}
+		})
+		if escaped:
+			_default_formal_world_npcs.erase(npc_id)
+			if npc_node.has_method("configure_navigation_motion"):
+				npc_node.configure_navigation_motion(false)
+			escaped_ids.append(npc_id)
+		else:
+			if npc_node.has_method("configure_navigation_motion"):
+				npc_node.configure_navigation_motion(true, navigation_map)
+		if memory_system != null and memory_system.has_method("restore_npc_location_membership_silent"):
+			if escaped:
+				memory_system.remove_npc_from_all_locations(npc_id)
+			else:
+				memory_system.restore_npc_location_membership_silent(npc_id, location_id)
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		restored.append(npc_id)
+	return {
+		"ok": restored.size() == int(checkpoint.get("actor_count", restored.size())),
+		"restored_npc_ids": restored,
+		"escaped_npc_ids": escaped_ids,
+		"fallback_npc_ids": fallback_ids,
+		"rolled_back_action_npc_ids": rolled_back_actions,
+		"duplicate_location_or_action_events": 0
+	}
+
+
+func _checkpoint_vector3(raw_value: Variant, fallback: Vector3) -> Vector3:
+	if raw_value is Vector3:
+		return raw_value
+	if not raw_value is Dictionary:
+		return fallback
+	var data := raw_value as Dictionary
+	return Vector3(float(data.get("x", fallback.x)), float(data.get("y", fallback.y)), float(data.get("z", fallback.z)))
 
 
 func get_npc_behavior_mode_snapshot(npc_id: String) -> Dictionary:
@@ -525,6 +1036,71 @@ func debug_select_npc(npc_id: String) -> bool:
 
 
 func move_npc_to_building(npc_id: String, building_id: String) -> bool:
+	if _profiles.has(npc_id):
+		var state := get_npc_state(npc_id)
+		var current_location := str(state.get("current_location", PLAZA_LOCATION_ID))
+		var is_moving := not str(state.get("movement_target", "")).is_empty()
+		if _default_formal_world_npcs.has(npc_id):
+			var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+			if controller == null or not controller.has_method("get_building_spatial_route"):
+				return false
+			if current_location == building_id and not is_moving:
+				return true
+			var source_route: Dictionary = controller.get_building_spatial_route(current_location)
+			if current_location != PLAZA_LOCATION_ID and current_location != building_id and not source_route.is_empty():
+				return _start_building_exit_route(npc_id, building_id, current_location, source_route)
+			if building_id == PLAZA_LOCATION_ID:
+				return _start_formal_public_location_route(npc_id, PLAZA_LOCATION_ID)
+			var target_route: Dictionary = controller.get_building_spatial_route(building_id)
+			if target_route.is_empty():
+				return false
+			return _start_building_entry_route(npc_id, building_id, "", target_route)
+		if current_location == FIRST_SPATIAL_INTERIOR_BUILDING_ID and building_id != current_location:
+			return _start_building_exit_route(npc_id, building_id)
+		if building_id == FIRST_SPATIAL_INTERIOR_BUILDING_ID:
+			if current_location == building_id and not is_moving:
+				return true
+			return _start_building_entry_route(npc_id, building_id)
+	return _move_npc_to_building_direct(npc_id, building_id)
+
+
+func move_npc_to_building_workstation(npc_id: String, building_id: String, workstation_id: String) -> bool:
+	if workstation_id.is_empty():
+		return false
+	if _formal_workstation_action_sessions.has(npc_id):
+		var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+		session["workstation_id"] = workstation_id
+		_formal_workstation_action_sessions[npc_id] = session
+		var state := get_npc_state(npc_id)
+		if (
+			str(state.get("current_location", "")) == building_id
+			and str(state.get("physical_location_phase", "")) == "workstation"
+			and str(state.get("current_workstation_id", "")) == workstation_id
+			and str(state.get("current_action", "")) == "idle"
+		):
+			_set_npc_state_without_signal(npc_id, {
+				"reserved_building_id": building_id,
+				"reserved_workstation_id": workstation_id,
+				"spatial_route_phase": "workstation_arrived",
+				"last_action_result": "formal_workstation_reused"
+			})
+			_refresh_npc_node(npc_id)
+			_emit_npc_state_changed(npc_id)
+			return true
+	if _formal_navigation_pilots.has(npc_id) or _formal_workstation_action_sessions.has(npc_id):
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		if controller == null or not controller.has_method("get_building_spatial_route"):
+			return false
+		var formal_route: Dictionary = controller.get_building_spatial_route(building_id, workstation_id)
+		if formal_route.is_empty():
+			return false
+		return _start_building_entry_route(npc_id, building_id, workstation_id, formal_route)
+	if building_id != FIRST_SPATIAL_INTERIOR_BUILDING_ID:
+		return _move_npc_to_building_direct(npc_id, building_id)
+	return _start_building_entry_route(npc_id, building_id, workstation_id)
+
+
+func _move_npc_to_building_direct(npc_id: String, building_id: String, preserve_last_result: bool = false) -> bool:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot move unknown NPC: %s" % npc_id)
 		return false
@@ -558,18 +1134,234 @@ func move_npc_to_building(npc_id: String, building_id: String) -> bool:
 		return false
 
 	var building_name := "广场" if building_id == PLAZA_LOCATION_ID else str(building_system.get_building(building_id).get("name", building_id))
+	var previous_result := str(get_npc_state(npc_id).get("last_action_result", ""))
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "moving_to_%s" % building_id,
 		"movement_target": building_id,
 		"movement_target_name": building_name,
 		"location_context": {},
-		"last_action_result": "movement_started",
+		"last_action_result": previous_result if preserve_last_result else "movement_started",
 		"last_action_failure_context": {}
 	})
 	npc_node.move_to_location(building_id, target_position)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	return true
+
+
+func _start_building_entry_route(
+	npc_id: String,
+	building_id: String,
+	workstation_id: String = "",
+	route_override: Dictionary = {}
+) -> bool:
+	var is_formal_pilot_route := (
+		(_formal_navigation_pilots.has(npc_id) or _formal_workstation_action_sessions.has(npc_id))
+		and not route_override.is_empty()
+	)
+	if (
+		not _profiles.has(npc_id)
+		or (not can_npc_act(npc_id) and not is_formal_pilot_route)
+		or not _npc_nodes.has(npc_id)
+	):
+		return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building_interior_route"):
+		return false
+	if not _is_location_available_for_access(building_id, building_system):
+		return false
+	var route_snapshot: Dictionary = (
+		route_override.duplicate(true)
+		if not route_override.is_empty()
+		else building_system.get_building_interior_route(building_id, workstation_id)
+	)
+	if route_snapshot.is_empty():
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("move_to_location"):
+		return false
+
+	_stop_npc_movement(npc_id)
+	_movement_arrival_contexts.erase(npc_id)
+	_building_interior_routes.erase(npc_id)
+	var state := get_npc_state(npc_id)
+	var current_location := str(state.get("current_location", PLAZA_LOCATION_ID))
+	var location_context: Dictionary = (
+		(state.get("location_context", {}) as Dictionary).duplicate(true)
+		if state.get("location_context", {}) is Dictionary
+		else {}
+	)
+	if current_location != building_id and current_location != PLAZA_LOCATION_ID:
+		var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+		if memory_system != null:
+			location_context = _transition_npc_info_location(
+				npc_id,
+				_get_info_location_id(memory_system, current_location),
+				PLAZA_LOCATION_ID,
+				PLAZA_LOCATION_ID,
+				memory_system
+			)
+		current_location = PLAZA_LOCATION_ID
+
+	var steps: Array[Dictionary] = []
+	if current_location != building_id:
+		steps.append({
+			"id": "%s:door_outside" % building_id,
+			"phase": "approaching_door",
+			"physical_phase": "outdoor_path",
+			"position": route_snapshot.get("entry_outside_position"),
+			"check_entry": true
+		})
+		steps.append({
+			"id": "%s:door_inside" % building_id,
+			"phase": "crossing_entry",
+			"physical_phase": "door_threshold",
+			"position": route_snapshot.get("interior_position", route_snapshot.get("door_inside_position")),
+			"crosses_entry": true
+		})
+	steps.append({
+		"id": "%s:%s" % [building_id, workstation_id if not workstation_id.is_empty() else "interior"],
+		"phase": "moving_to_workstation" if not workstation_id.is_empty() else "moving_inside",
+		"physical_phase": "inside_path",
+		"position": route_snapshot.get("interior_target_position"),
+		"target_desired_distance": route_snapshot.get("target_desired_distance"),
+		"facing_direction": route_snapshot.get("interior_target_facing_direction", Vector3.ZERO),
+		"arrival_mode": str(route_snapshot.get("arrival_mode", "stand")),
+		"occupant_anchor_position": route_snapshot.get("occupant_anchor_position"),
+		"occupant_anchor_facing_direction": route_snapshot.get("occupant_anchor_facing_direction", Vector3.ZERO),
+		"occupant_pose": str(route_snapshot.get("occupant_pose", "")),
+		"completes_entry": true
+	})
+	if steps.is_empty() or not steps[0].get("position") is Vector3:
+		return false
+
+	_building_interior_routes[npc_id] = {
+		"kind": "entry",
+		"route_source": "formal_station_layout" if not route_override.is_empty() else "legacy_building_art",
+		"building_id": building_id,
+		"building_name": str(building_system.get_building(building_id).get("name", building_id)),
+		"workstation_id": workstation_id,
+		"steps": steps,
+		"step_index": 0
+	}
+	_set_npc_state_without_signal(npc_id, {
+		"current_location": current_location,
+		"current_location_name": str(location_context.get("name", "广场" if current_location == PLAZA_LOCATION_ID else building_id)),
+		"location_context": location_context,
+		"reserved_building_id": building_id if not workstation_id.is_empty() else "",
+		"reserved_workstation_id": workstation_id,
+		"current_workstation_id": "",
+		"last_action_result": "interior_route_started",
+		"last_action_failure_context": {}
+	})
+	_start_current_building_route_step(npc_id)
+	return true
+
+
+func _start_building_exit_route(
+	npc_id: String,
+	destination_building_id: String,
+	source_building_id: String = FIRST_SPATIAL_INTERIOR_BUILDING_ID,
+	route_override: Dictionary = {}
+) -> bool:
+	if not _profiles.has(npc_id) or not can_npc_act(npc_id) or not _npc_nodes.has(npc_id):
+		return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("get_building_interior_route"):
+		return false
+	var route_snapshot: Dictionary = (
+		route_override.duplicate(true)
+		if not route_override.is_empty()
+		else building_system.get_building_interior_route(source_building_id)
+	)
+	if route_snapshot.is_empty():
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("move_to_location"):
+		return false
+	_stop_npc_movement(npc_id)
+	_movement_arrival_contexts.erase(npc_id)
+	_release_npc_spatial_reservation(npc_id)
+	var destination_name := "广场"
+	if destination_building_id != PLAZA_LOCATION_ID:
+		destination_name = str(building_system.get_building(destination_building_id).get("name", destination_building_id))
+	var steps: Array[Dictionary] = [
+		{
+			"id": "%s:door_inside_exit" % source_building_id,
+			"phase": "moving_to_exit",
+			"physical_phase": "inside_path",
+			"position": route_snapshot.get("door_inside_position")
+		},
+		{
+			"id": "%s:door_outside_exit" % source_building_id,
+			"phase": "crossing_exit",
+			"physical_phase": "door_threshold",
+			"position": route_snapshot.get("entry_outside_position"),
+			"crosses_exit": true
+		},
+		{
+			"id": "%s:exit_path" % source_building_id,
+			"phase": "leaving_building",
+			"physical_phase": "outdoor_path",
+			"position": route_snapshot.get("exit_outside_position"),
+			"completes_exit": true
+		}
+	]
+	_building_interior_routes[npc_id] = {
+		"kind": "exit",
+		"route_source": "formal_station_layout" if not route_override.is_empty() else "legacy_building_art",
+		"building_id": source_building_id,
+		"building_name": str(building_system.get_building(source_building_id).get("name", source_building_id)),
+		"destination_building_id": destination_building_id,
+		"destination_name": destination_name,
+		"workstation_id": "",
+		"steps": steps,
+		"step_index": 0
+	}
+	_set_npc_state_without_signal(npc_id, {
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
+	})
+	_start_current_building_route_step(npc_id)
+	return true
+
+
+func _start_current_building_route_step(npc_id: String, extra_changes: Dictionary = {}) -> void:
+	if not _building_interior_routes.has(npc_id) or not _npc_nodes.has(npc_id):
+		return
+	var route: Dictionary = _building_interior_routes[npc_id]
+	var steps: Array = route.get("steps", [])
+	var step_index := int(route.get("step_index", 0))
+	if step_index < 0 or step_index >= steps.size() or not steps[step_index] is Dictionary:
+		return
+	var step: Dictionary = steps[step_index]
+	var target_position: Variant = step.get("position")
+	if not target_position is Vector3:
+		return
+	var movement_target := str(route.get("building_id", ""))
+	var movement_target_name := str(route.get("building_name", movement_target))
+	if str(route.get("kind", "")) == "exit":
+		movement_target = str(route.get("destination_building_id", PLAZA_LOCATION_ID))
+		movement_target_name = str(route.get("destination_name", movement_target))
+	var changes := {
+		"current_action": "moving_to_%s" % movement_target,
+		"movement_target": movement_target,
+		"movement_target_name": movement_target_name,
+		"spatial_route_phase": str(step.get("phase", "moving")),
+		"physical_location_phase": str(step.get("physical_phase", "path"))
+	}
+	for raw_key in extra_changes.keys():
+		changes[str(raw_key)] = extra_changes[raw_key]
+	_set_npc_state_without_signal(npc_id, changes)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node != null and npc_node.has_method("move_to_location"):
+		var motion_options := {}
+		if step.get("target_desired_distance") is float or step.get("target_desired_distance") is int:
+			motion_options["target_desired_distance"] = float(step.get("target_desired_distance"))
+		npc_node.move_to_location(str(step.get("id", movement_target)), target_position, motion_options)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
 
 
 func move_npc_to_world_position(
@@ -597,6 +1389,7 @@ func move_npc_to_world_position(
 	if npc_node == null or not npc_node.has_method("move_to_location"):
 		push_warning("Cannot move NPC because node has no movement API: %s" % npc_id)
 		return false
+	_cancel_building_interior_route(npc_id, true)
 
 	var clean_target_id := target_id.strip_edges()
 	if clean_target_id.is_empty():
@@ -611,18 +1404,221 @@ func move_npc_to_world_position(
 		"target_position": target_position,
 		"arrival_state": arrival_state.duplicate(true)
 	}
-	_set_npc_state_without_signal(npc_id, {
-		"current_action": "moving_to_%s" % clean_target_id,
+	var departure_current_action := str(arrival_state.get(
+		"departure_current_action",
+		"moving_to_%s" % clean_target_id
+	))
+	var departure_location_context: Dictionary = {}
+	if bool(arrival_state.get("preserve_location_context", false)):
+		var current_location_context: Variant = get_npc_state(npc_id).get("location_context", {})
+		if current_location_context is Dictionary:
+			departure_location_context = current_location_context.duplicate(true)
+	var departure_changes := {
+		"current_action": departure_current_action,
 		"movement_target": clean_target_id,
 		"movement_target_name": clean_target_name,
-		"location_context": {},
+		"location_context": departure_location_context,
 		"last_action_result": "movement_started",
 		"last_action_failure_context": {}
-	})
+	}
+	var requested_departure_state: Variant = arrival_state.get("departure_state", {})
+	if requested_departure_state is Dictionary:
+		for raw_key in requested_departure_state.keys():
+			departure_changes[str(raw_key)] = requested_departure_state[raw_key]
+	_set_npc_state_without_signal(npc_id, departure_changes)
 	npc_node.move_to_location(clean_target_id, target_position)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	return true
+
+
+func begin_formal_combat_world(npc_ids: Array[String]) -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if (
+		controller == null
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_npc_initial_world_position")
+	):
+		return {"ok": false, "reason": "formal_combat_world_dependencies_missing"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_combat_navigation_map_missing"}
+
+	# A workstation pilot owns the same physical body. End it before the combat
+	# world takes over so one NPC never has two spatial authorities.
+	debug_stop_all_formal_navigation_pilots("formal_combat_world_started")
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	for raw_session_npc_id in _formal_workstation_action_sessions.keys().duplicate():
+		var session_npc_id := str(raw_session_npc_id)
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			action_system.interrupt_npc_action(session_npc_id, "formal_combat_world_started", true)
+		end_formal_workstation_action(session_npc_id, "formal_combat_world_started", true)
+	var migrated: Array[String] = []
+	var skipped: Array[Dictionary] = []
+	var skipped_only_temporarily_unavailable := true
+	for npc_id in npc_ids:
+		if _formal_combat_world_npcs.has(npc_id):
+			migrated.append(npc_id)
+			continue
+		if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+			skipped_only_temporarily_unavailable = false
+			skipped.append({"npc_id": npc_id, "reason": "npc_formal_actor_missing"})
+			continue
+		if not can_npc_act(npc_id):
+			skipped.append({"npc_id": npc_id, "reason": "npc_not_combat_available"})
+			continue
+		var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+		var default_formal_resident := _default_formal_world_npcs.has(npc_id)
+		var initial_position: Variant = npc_node.global_position if default_formal_resident and npc_node != null else controller.get_npc_initial_world_position(npc_id)
+		if (
+			npc_node == null
+			or not initial_position is Vector3
+			or not npc_node.has_method("configure_navigation_motion")
+		):
+			skipped_only_temporarily_unavailable = false
+			skipped.append({"npc_id": npc_id, "reason": "npc_formal_anchor_missing"})
+			continue
+		var original_navigation_enabled := false
+		if npc_node.has_method("is_navigation_motion_enabled"):
+			original_navigation_enabled = bool(npc_node.is_navigation_motion_enabled())
+		var original_navigation_map: RID = npc_node.get_navigation_map() if npc_node.has_method("get_navigation_map") else RID()
+		_formal_combat_world_npcs[npc_id] = {
+			"original_position": npc_node.global_position,
+			"original_navigation_enabled": original_navigation_enabled,
+			"original_navigation_map": original_navigation_map,
+			"formal_initial_position": initial_position,
+			"navigation_map": navigation_map,
+			"default_formal_resident": default_formal_resident,
+			"started_at_msec": Time.get_ticks_msec()
+		}
+		_cancel_building_interior_route(npc_id, true)
+		_movement_arrival_contexts.erase(npc_id)
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		_stop_npc_movement(npc_id)
+		if not default_formal_resident:
+			npc_node.global_position = initial_position
+		if not bool(npc_node.configure_navigation_motion(true, navigation_map)):
+			skipped_only_temporarily_unavailable = false
+			var failed_state: Dictionary = _formal_combat_world_npcs[npc_id]
+			if bool(failed_state.get("original_navigation_enabled", false)):
+				npc_node.configure_navigation_motion(true, failed_state.get("original_navigation_map", RID()))
+			npc_node.global_position = failed_state.get("original_position", npc_node.global_position)
+			_formal_combat_world_npcs.erase(npc_id)
+			skipped.append({"npc_id": npc_id, "reason": "npc_navigation_map_bind_failed"})
+			continue
+		_set_npc_state_without_signal(npc_id, {
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "formal_combat_world_ready",
+			"physical_location_phase": "formal_combat_world",
+			"reserved_building_id": "",
+			"reserved_workstation_id": "",
+			"current_workstation_id": ""
+		})
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		migrated.append(npc_id)
+	return {
+		# A wave may legitimately start while every NPC is unconscious or otherwise
+		# unable to act. That is a valid empty migration, unlike a missing anchor or
+		# a failed navigation-map bind.
+		"ok": not migrated.is_empty() or npc_ids.is_empty() or skipped_only_temporarily_unavailable,
+		"active": not _formal_combat_world_npcs.is_empty(),
+		"requested_count": npc_ids.size(),
+		"migrated_count": migrated.size(),
+		"migrated_npc_ids": migrated,
+		"skipped": skipped,
+		"snapshot": get_formal_combat_world_snapshot()
+	}
+
+
+func end_formal_combat_world(
+	reason: String = "combat_ended",
+	preserve_npc_ids: Array[String] = []
+) -> Dictionary:
+	var restored: Array[String] = []
+	var preserved: Array[String] = []
+	for raw_npc_id in _formal_combat_world_npcs.keys().duplicate():
+		var npc_id := str(raw_npc_id)
+		if preserve_npc_ids.has(npc_id):
+			preserved.append(npc_id)
+			continue
+		var migration: Dictionary = _formal_combat_world_npcs.get(npc_id, {})
+		var keep_formal_resident := bool(migration.get("default_formal_resident", false)) and _default_formal_world_npcs.has(npc_id)
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D if _npc_nodes.has(npc_id) else null
+		_cancel_building_interior_route(npc_id, true)
+		_movement_arrival_contexts.erase(npc_id)
+		_stop_npc_movement(npc_id)
+		if npc_node != null:
+			if npc_node.has_method("detach_from_spatial_anchor"):
+				npc_node.detach_from_spatial_anchor()
+			if keep_formal_resident and npc_node.has_method("configure_navigation_motion"):
+				var resident: Dictionary = _default_formal_world_npcs.get(npc_id, {})
+				npc_node.configure_navigation_motion(true, resident.get("navigation_map", RID()))
+			elif npc_node.has_method("configure_navigation_motion"):
+				if bool(migration.get("original_navigation_enabled", false)):
+					npc_node.configure_navigation_motion(true, migration.get("original_navigation_map", RID()))
+				else:
+					npc_node.configure_navigation_motion(false)
+			if not keep_formal_resident:
+				var original_position: Variant = migration.get("original_position")
+				if original_position is Vector3:
+					npc_node.global_position = original_position
+		_set_npc_state_without_signal(npc_id, {
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "default_formal_world_after_combat" if keep_formal_resident else "formal_combat_world_restored",
+			"physical_location_phase": "formal_world_resident" if keep_formal_resident else "legacy_location",
+			"last_action_result": "formal_combat_world_%s" % reason
+		})
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		restored.append(npc_id)
+		_formal_combat_world_npcs.erase(npc_id)
+	return {
+		"ok": true,
+		"active": not _formal_combat_world_npcs.is_empty(),
+		"reason": reason,
+		"restored_count": restored.size(),
+		"restored_npc_ids": restored,
+		"preserved_count": preserved.size(),
+		"preserved_npc_ids": preserved
+	}
+
+
+func get_formal_combat_world_snapshot() -> Dictionary:
+	var actors: Array[Dictionary] = []
+	for raw_npc_id in _formal_combat_world_npcs.keys():
+		var npc_id := str(raw_npc_id)
+		var migration: Dictionary = _formal_combat_world_npcs.get(npc_id, {})
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+		var motion: Dictionary = {}
+		if npc_node != null and npc_node.has_method("debug_get_motion_snapshot"):
+			motion = npc_node.debug_get_motion_snapshot()
+		var expected_map: RID = migration.get("navigation_map", RID())
+		var actual_map: RID = npc_node.get_navigation_map() if npc_node != null and npc_node.has_method("get_navigation_map") else RID()
+		actors.append({
+			"npc_id": npc_id,
+			"world_position": npc_node.global_position if npc_node is Node3D else Vector3.ZERO,
+			"original_position": migration.get("original_position", Vector3.ZERO),
+			"navigation_motion_enabled": bool(npc_node.is_navigation_motion_enabled()) if npc_node != null and npc_node.has_method("is_navigation_motion_enabled") else false,
+			"navigation_map_matches": expected_map.is_valid() and actual_map == expected_map,
+			"body_collision_layer": int(motion.get("body_collision_layer", 0)),
+			"body_collision_mask": int(motion.get("body_collision_mask", 0)),
+			"motion": motion
+		})
+	return {
+		"ok": true,
+		"active": not _formal_combat_world_npcs.is_empty(),
+		"actor_count": actors.size(),
+		"npc_ids": _formal_combat_world_npcs.keys(),
+		"actors": actors
+	}
+
+
+func is_npc_in_formal_combat_world(npc_id: String) -> bool:
+	return _formal_combat_world_npcs.has(npc_id)
 
 
 func can_npc_move_to_world_position(npc_id: String, arrival_state: Dictionary = {}) -> bool:
@@ -648,7 +1644,7 @@ func can_npc_move_to_world_position(npc_id: String, arrival_state: Dictionary = 
 func stop_npc_movement_with_state(npc_id: String, changes: Dictionary = {}) -> bool:
 	if not _profiles.has(npc_id):
 		return false
-	_stop_npc_movement(npc_id)
+	_cancel_building_interior_route(npc_id, true)
 	_movement_arrival_contexts.erase(npc_id)
 	if not changes.is_empty():
 		_set_npc_state_without_signal(npc_id, changes)
@@ -657,7 +1653,29 @@ func stop_npc_movement_with_state(npc_id: String, changes: Dictionary = {}) -> b
 	return true
 
 
+func cancel_spatial_route_for_incapacitation(npc_id: String, reason: String) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	_cancel_building_interior_route(npc_id, true)
+	_movement_arrival_contexts.erase(npc_id)
+	var state := get_npc_state(npc_id)
+	_set_npc_state_without_signal(npc_id, {
+		"movement_target": "",
+		"movement_target_name": "",
+		"spatial_route_phase": reason,
+		"physical_location_phase": "interior" if str(state.get("current_location", "")) == FIRST_SPATIAL_INTERIOR_BUILDING_ID else "outdoor_path",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
+	})
+	_refresh_npc_node(npc_id)
+	return true
+
+
 func debug_move_npc_to_building(npc_id: String, building_id: String) -> bool:
+	if _is_gameplay_paused_for_debug_movement():
+		push_warning("Cannot start GM NPC movement while gameplay is paused. Resume time and retry.")
+		return false
 	return move_npc_to_building(npc_id, building_id)
 
 
@@ -665,8 +1683,1918 @@ func debug_move_selected_npc_to_building(building_id: String) -> bool:
 	if _selected_npc_id.is_empty():
 		push_warning("Cannot move selected NPC because no NPC is selected.")
 		return false
-	return move_npc_to_building(_selected_npc_id, building_id)
+	return debug_move_npc_to_building(_selected_npc_id, building_id)
 
+
+func begin_formal_workstation_action(
+	npc_id: String,
+	action_id: String,
+	building_id: String,
+	preserve_current_location: bool = false
+) -> Dictionary:
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {"ok": false, "reason": "npc_missing", "npc_id": npc_id}
+	if not can_npc_act(npc_id):
+		return {"ok": false, "reason": "npc_cannot_act", "npc_id": npc_id}
+	if _formal_workstation_action_sessions.has(npc_id):
+		var existing: Dictionary = _formal_workstation_action_sessions[npc_id]
+		if str(existing.get("action_id", "")) == action_id and str(existing.get("building_id", "")) == building_id:
+			return {
+				"ok": true,
+				"already_active": true,
+				"npc_id": npc_id,
+				"action_id": action_id,
+				"building_id": building_id,
+				"session": existing.duplicate(true)
+			}
+		end_formal_workstation_action(npc_id, "superseded", true)
+
+	debug_stop_all_formal_navigation_pilots("superseded_by_formal_work")
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if (
+		controller == null
+		or npc_node == null
+		or not controller.has_method("debug_set_preview_enabled")
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_npc_initial_world_position")
+		or not controller.has_method("get_building_spatial_route")
+		or not npc_node.has_method("configure_navigation_motion")
+	):
+		return {"ok": false, "reason": "formal_work_dependencies_missing", "npc_id": npc_id}
+
+	var original_state := get_npc_state(npc_id)
+	var original_location_id := str(original_state.get("current_location", PLAZA_LOCATION_ID))
+	var default_formal_resident := _default_formal_world_npcs.has(npc_id)
+	var preserve_existing_location := preserve_current_location or default_formal_resident
+	var formal_start_location_id := original_location_id if preserve_existing_location else PLAZA_LOCATION_ID
+	var initial_position: Variant = npc_node.global_position if default_formal_resident else controller.get_npc_initial_world_position(npc_id)
+	if preserve_existing_location and not default_formal_resident and formal_start_location_id != PLAZA_LOCATION_ID:
+		var current_route: Dictionary = controller.get_building_spatial_route(formal_start_location_id)
+		if current_route.is_empty() or not current_route.get("interior_target_position") is Vector3:
+			return {
+				"ok": false,
+				"reason": "formal_current_location_unavailable",
+				"npc_id": npc_id,
+				"location_id": formal_start_location_id
+			}
+		initial_position = current_route.get("interior_target_position")
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not initial_position is Vector3 or not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_unavailable", "npc_id": npc_id}
+	var preview_snapshot: Dictionary = controller.debug_set_preview_enabled(true)
+	if not bool(preview_snapshot.get("preview_enabled", false)):
+		return {"ok": false, "reason": "formal_preview_unavailable", "npc_id": npc_id}
+
+	_formal_workstation_action_session_sequence += 1
+	_formal_workstation_action_sessions[npc_id] = {
+		"npc_id": npc_id,
+		"session_id": _formal_workstation_action_session_sequence,
+		"action_id": action_id,
+		"building_id": building_id,
+		"workstation_id": "",
+		"original_position": npc_node.global_position,
+		"original_navigation_enabled": bool(npc_node.is_navigation_motion_enabled()) if npc_node.has_method("is_navigation_motion_enabled") else false,
+		"original_navigation_map": npc_node.get_navigation_map() if npc_node.has_method("get_navigation_map") else RID(),
+		"original_location_id": original_location_id,
+		"formal_start_location_id": formal_start_location_id,
+		"default_formal_resident": default_formal_resident,
+		"started_at_msec": Time.get_ticks_msec()
+	}
+	_cancel_building_interior_route(npc_id, true)
+	_movement_arrival_contexts.erase(npc_id)
+	if not preserve_existing_location:
+		if not debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID):
+			end_formal_workstation_action(npc_id, "plaza_reset_failed", true)
+			return {"ok": false, "reason": "formal_work_plaza_reset_failed", "npc_id": npc_id}
+	else:
+		_set_npc_state_without_signal(npc_id, {
+			"current_action": "idle",
+			"movement_target": "",
+			"movement_target_name": ""
+		})
+	if not default_formal_resident:
+		npc_node.global_position = initial_position
+	if not bool(npc_node.configure_navigation_motion(true, navigation_map)):
+		end_formal_workstation_action(npc_id, "navigation_map_bind_failed", true)
+		return {"ok": false, "reason": "navigation_map_bind_failed", "npc_id": npc_id}
+	_set_npc_state_without_signal(npc_id, {
+		"spatial_route_phase": "formal_work_ready",
+		"physical_location_phase": "formal_location_interior" if formal_start_location_id != PLAZA_LOCATION_ID else "formal_work_outdoor",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"already_active": false,
+		"npc_id": npc_id,
+		"action_id": action_id,
+		"building_id": building_id,
+		"initial_position": initial_position,
+		"preview_enabled": true
+	}
+
+
+func begin_formal_location_action(npc_id: String, action_id: String, building_id: String) -> Dictionary:
+	return begin_formal_workstation_action(npc_id, action_id, building_id, true)
+
+
+func begin_formal_building_exterior_action(
+	npc_id: String,
+	action_id: String,
+	building_id: String,
+	service_kind: String = "repair"
+) -> Dictionary:
+	var begin_result := begin_formal_location_action(npc_id, action_id, building_id)
+	if not bool(begin_result.get("ok", false)):
+		return begin_result
+	var session: Dictionary = _formal_workstation_action_sessions.get(npc_id, {})
+	if not str(session.get("service_slot_id", "")).is_empty():
+		begin_result["service_slot"] = {
+			"slot_id": str(session.get("service_slot_id", "")),
+			"position": session.get("service_target_position"),
+			"facing_direction": session.get("service_facing_direction", Vector3.ZERO),
+		}
+		return begin_result
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_exterior_service_slots"):
+		end_formal_location_action(npc_id, "exterior_service_provider_missing")
+		return {"ok": false, "reason": "formal_exterior_service_provider_missing", "npc_id": npc_id}
+	var occupied_slot_ids := {}
+	for raw_other_npc_id in _formal_workstation_action_sessions.keys():
+		var other_npc_id := str(raw_other_npc_id)
+		if other_npc_id == npc_id:
+			continue
+		var other_session: Dictionary = _formal_workstation_action_sessions.get(other_npc_id, {})
+		if str(other_session.get("building_id", "")) != building_id:
+			continue
+		var occupied_slot_id := str(other_session.get("service_slot_id", ""))
+		if not occupied_slot_id.is_empty():
+			occupied_slot_ids[occupied_slot_id] = true
+	var selected_slot: Dictionary = {}
+	var selected_distance_squared: float = INF
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D if _npc_nodes.has(npc_id) else null
+	for raw_slot in controller.get_building_exterior_service_slots(building_id, service_kind):
+		if not raw_slot is Dictionary:
+			continue
+		var slot: Dictionary = raw_slot
+		if occupied_slot_ids.has(str(slot.get("slot_id", ""))):
+			continue
+		var slot_position: Variant = slot.get("position")
+		if not slot_position is Vector3:
+			continue
+		var distance_squared: float = (
+			npc_node.global_position.distance_squared_to(slot_position)
+			if npc_node != null
+			else float(selected_slot.size())
+		)
+		if distance_squared >= selected_distance_squared:
+			continue
+		selected_distance_squared = distance_squared
+		selected_slot = slot.duplicate(true)
+	if selected_slot.is_empty() or not selected_slot.get("position") is Vector3:
+		end_formal_location_action(npc_id, "no_exterior_service_slot")
+		return {
+			"ok": false,
+			"reason": "formal_exterior_service_slot_unavailable",
+			"npc_id": npc_id,
+			"building_id": building_id,
+		}
+	session["service_kind"] = service_kind
+	session["service_slot_id"] = str(selected_slot.get("slot_id", ""))
+	session["service_target_position"] = selected_slot.get("position")
+	session["service_facing_direction"] = selected_slot.get("facing_direction", Vector3.ZERO)
+	session["service_route_started"] = false
+	_formal_workstation_action_sessions[npc_id] = session
+	begin_result["service_slot"] = selected_slot
+	return begin_result
+
+
+func move_npc_to_formal_building_exterior(npc_id: String) -> bool:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return false
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	if not session.get("service_target_position") is Vector3:
+		return false
+	var state := get_npc_state(npc_id)
+	if (
+		str(state.get("physical_location_phase", "")) == "building_exterior_service"
+		and str(state.get("formal_exterior_slot_id", "")) == str(session.get("service_slot_id", ""))
+	):
+		return true
+	var current_location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
+	if current_location_id != PLAZA_LOCATION_ID:
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var exit_route: Dictionary = (
+			controller.get_building_spatial_route(current_location_id)
+			if controller != null and controller.has_method("get_building_spatial_route")
+			else {}
+		)
+		if exit_route.is_empty():
+			return false
+		session["continue_to_exterior_after_exit"] = true
+		_formal_workstation_action_sessions[npc_id] = session
+		return _start_building_exit_route(
+			npc_id,
+			PLAZA_LOCATION_ID,
+			current_location_id,
+			exit_route
+		)
+	return _start_formal_exterior_service_route(npc_id)
+
+
+func _start_formal_exterior_service_route(npc_id: String) -> bool:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return false
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	var target_position: Variant = session.get("service_target_position")
+	if not target_position is Vector3:
+		return false
+	var building_id := str(session.get("building_id", ""))
+	var service_slot_id := str(session.get("service_slot_id", ""))
+	var service_kind := str(session.get("service_kind", "service"))
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var building_name := building_id
+	if building_system != null and building_system.has_method("get_building"):
+		building_name = str(building_system.get_building(building_id).get("name", building_id))
+	var service_point_name := (
+		"%s外施工点" % building_name
+		if service_kind == "upgrade"
+		else "%s外维修点" % building_name
+	)
+	session["continue_to_exterior_after_exit"] = false
+	session["service_route_started"] = true
+	_formal_workstation_action_sessions[npc_id] = session
+	return move_npc_to_world_position(
+		npc_id,
+		building_id,
+		service_point_name,
+		target_position,
+		{
+			"current_action": "idle",
+			"current_location": PLAZA_LOCATION_ID,
+			"current_location_name": "广场",
+			"preserve_location_context": true,
+			"spatial_route_phase": "exterior_service_arrived",
+			"physical_location_phase": "building_exterior_service",
+			"formal_exterior_building_id": building_id,
+			"formal_exterior_service_kind": service_kind,
+			"formal_exterior_slot_id": service_slot_id,
+			"arrival_facing_direction": session.get("service_facing_direction", Vector3.ZERO),
+			"last_action_result": "formal_exterior_service_arrived",
+		}
+	)
+
+
+func move_npc_to_formal_location(npc_id: String, building_id: String) -> bool:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return false
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_spatial_route"):
+		return false
+	var state := get_npc_state(npc_id)
+	var current_location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
+	if current_location_id != PLAZA_LOCATION_ID and current_location_id != building_id:
+		var exit_route: Dictionary = controller.get_building_spatial_route(current_location_id)
+		if exit_route.is_empty():
+			return false
+		return _start_building_exit_route(
+			npc_id,
+			building_id,
+			current_location_id,
+			exit_route
+		)
+	if building_id == PLAZA_LOCATION_ID:
+		return _start_formal_public_location_route(npc_id, PLAZA_LOCATION_ID)
+	var formal_route: Dictionary = controller.get_building_spatial_route(building_id)
+	if formal_route.is_empty():
+		return false
+	return _start_building_entry_route(npc_id, building_id, "", formal_route)
+
+
+func _start_formal_public_location_route(npc_id: String, location_id: String) -> bool:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if (
+		controller == null
+		or not controller.has_method("get_public_location_world_position")
+	):
+		return false
+	var target_position: Variant = controller.get_public_location_world_position(location_id)
+	if not target_position is Vector3:
+		return false
+	return move_npc_to_world_position(npc_id, location_id, "广场", target_position, {
+		"current_action": "idle",
+		"current_location": location_id,
+		"current_location_name": "广场",
+		"spatial_route_phase": "public_location_arrived",
+		"physical_location_phase": "formal_public_location",
+		"last_action_result": "formal_public_location_arrived"
+	})
+
+
+func end_formal_location_action(
+	npc_id: String,
+	reason: String = "stopped",
+	preserve_location_id: String = "",
+	emit_state_changed: bool = true
+) -> Dictionary:
+	return end_formal_workstation_action(npc_id, reason, true, preserve_location_id, emit_state_changed)
+
+
+func end_formal_workstation_action(
+	npc_id: String,
+	reason: String = "stopped",
+	restore_legacy: bool = true,
+	legacy_location_override: String = "",
+	emit_state_changed: bool = true
+) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return {"ok": true, "active": false, "npc_id": npc_id, "reason": reason}
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	_formal_workstation_action_sessions.erase(npc_id)
+	var keep_formal_resident := _default_formal_world_npcs.has(npc_id)
+	var should_restore_legacy := restore_legacy and not keep_formal_resident
+	var healing_target_npc_id := str(session.get("healing_target_npc_id", ""))
+	if not healing_target_npc_id.is_empty():
+		_release_formal_healing_target_projection(npc_id, healing_target_npc_id)
+	_cancel_building_interior_route(npc_id, true)
+	_movement_arrival_contexts.erase(npc_id)
+	_stop_npc_movement(npc_id)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var building_id := str(session.get("building_id", ""))
+	var workstation_id := str(session.get("workstation_id", ""))
+	if building_system != null and not building_id.is_empty() and not workstation_id.is_empty():
+		if building_system.has_method("release_workstation_reservation"):
+			building_system.release_workstation_reservation(building_id, npc_id, workstation_id)
+		if building_system.has_method("release_workstation"):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+	if npc_node != null:
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		if keep_formal_resident:
+			# Mounted beds, chairs and benches disable the Body at their display
+			# anchor. Return to the audited stand point before collision is restored.
+			if not building_id.is_empty() and not workstation_id.is_empty():
+				var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+				var safe_route: Dictionary = (
+					controller.get_building_spatial_route(building_id, workstation_id)
+					if controller != null and controller.has_method("get_building_spatial_route")
+					else {}
+				)
+				var safe_position: Variant = safe_route.get("interior_target_position")
+				if safe_position is Vector3:
+					npc_node.global_position = safe_position
+			var resident: Dictionary = _default_formal_world_npcs.get(npc_id, {})
+			var resident_map: RID = resident.get("navigation_map", RID())
+			if npc_node.has_method("configure_navigation_motion") and resident_map.is_valid():
+				npc_node.configure_navigation_motion(true, resident_map)
+		elif npc_node.has_method("configure_navigation_motion"):
+			npc_node.configure_navigation_motion(false)
+		if should_restore_legacy:
+			var restore_position: Variant = session.get("original_position")
+			if (
+				not legacy_location_override.is_empty()
+				and building_system != null
+				and building_system.has_method("get_building_entry_position")
+			):
+				var override_position: Variant = building_system.get_building_entry_position(legacy_location_override)
+				if override_position is Vector3:
+					restore_position = override_position
+			if restore_position is Vector3:
+				npc_node.global_position = restore_position
+	if should_restore_legacy:
+		var restored_location_id := (
+			legacy_location_override
+			if not legacy_location_override.is_empty()
+			else str(session.get("original_location_id", PLAZA_LOCATION_ID))
+		)
+		if not debug_enter_location_immediately(npc_id, restored_location_id, false):
+			debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID, false)
+	var resident_location_id := str(get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID))
+	_set_npc_state_without_signal(npc_id, {
+		"movement_target": "",
+		"movement_target_name": "",
+		"spatial_route_phase": ("default_formal_resident_%s" if keep_formal_resident else "formal_work_%s") % reason,
+		"physical_location_phase": (
+			"formal_location_interior"
+			if keep_formal_resident and resident_location_id != PLAZA_LOCATION_ID
+			else ("formal_public_location" if keep_formal_resident else ("legacy_location" if should_restore_legacy else "formal_work_stopped"))
+		),
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": "",
+		"formal_exterior_building_id": "",
+		"formal_exterior_service_kind": "",
+		"formal_exterior_slot_id": "",
+		"formal_healing_target_npc_id": "",
+		"presentation_clinic_duty_mode": "",
+		"presentation_clinic_patient_id": ""
+	})
+	_refresh_npc_node(npc_id)
+	if emit_state_changed:
+		_emit_npc_state_changed(npc_id)
+	_maybe_disable_formal_preview()
+	return {
+		"ok": true,
+		"active": false,
+		"npc_id": npc_id,
+		"action_id": str(session.get("action_id", "")),
+		"building_id": building_id,
+		"workstation_id": workstation_id,
+		"reason": reason,
+		"restored_legacy": should_restore_legacy,
+		"kept_default_formal_resident": keep_formal_resident,
+		"restored_location_id": (
+			legacy_location_override
+			if should_restore_legacy and not legacy_location_override.is_empty()
+			else (resident_location_id if keep_formal_resident else str(session.get("original_location_id", PLAZA_LOCATION_ID)))
+		)
+	}
+
+
+func get_formal_workstation_action_snapshot(npc_id: String = "") -> Dictionary:
+	if not npc_id.is_empty():
+		return {
+			"active": _formal_workstation_action_sessions.has(npc_id),
+			"npc_id": npc_id,
+			"session": (_formal_workstation_action_sessions.get(npc_id, {}) as Dictionary).duplicate(true),
+			"spatial": debug_get_spatial_migration_snapshot(npc_id)
+		}
+	var sessions := {}
+	for raw_npc_id in _formal_workstation_action_sessions.keys():
+		var active_npc_id := str(raw_npc_id)
+		sessions[active_npc_id] = get_formal_workstation_action_snapshot(active_npc_id)
+	return {"active": not sessions.is_empty(), "npc_ids": sessions.keys(), "sessions": sessions}
+
+
+func begin_formal_healing_approach(
+	healer_npc_id: String,
+	target_npc_id: String,
+	action_id: String,
+	approach_distance: float = 1.25,
+	max_helpers: int = 2
+) -> Dictionary:
+	if (
+		healer_npc_id.is_empty()
+		or target_npc_id.is_empty()
+		or healer_npc_id == target_npc_id
+		or not _profiles.has(healer_npc_id)
+		or not _profiles.has(target_npc_id)
+	):
+		return {"ok": false, "reason": "invalid_healing_participants"}
+	var target_state := get_npc_state(target_npc_id)
+	if not bool(target_state.get("unconscious", false)) or bool(target_state.get("escaped", false)):
+		return {"ok": false, "reason": "healing_target_unavailable", "target_npc_id": target_npc_id}
+	if _formal_workstation_action_sessions.has(healer_npc_id):
+		var existing: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
+		if (
+			str(existing.get("action_id", "")) == action_id
+			and str(existing.get("healing_target_npc_id", "")) == target_npc_id
+		):
+			return {"ok": true, "already_active": true, "session": existing.duplicate(true)}
+		end_formal_workstation_action(healer_npc_id, "healing_target_replaced", true)
+	var committed_healers := 0
+	for raw_other_healer_id in _formal_workstation_action_sessions.keys():
+		var other_session: Dictionary = _formal_workstation_action_sessions[raw_other_healer_id]
+		if (
+			str(other_session.get("action_id", "")) == action_id
+			and str(other_session.get("healing_target_npc_id", "")) == target_npc_id
+		):
+			committed_healers += 1
+	if committed_healers >= maxi(1, max_helpers):
+		return {"ok": false, "reason": "healing_target_helper_limit", "target_npc_id": target_npc_id}
+	var target_location_id := str(target_state.get("current_location", PLAZA_LOCATION_ID))
+	var begin_result := begin_formal_location_action(healer_npc_id, action_id, target_location_id)
+	if not bool(begin_result.get("ok", false)):
+		return begin_result
+	var projection_result := _acquire_formal_healing_target_projection(healer_npc_id, target_npc_id)
+	if not bool(projection_result.get("ok", false)):
+		end_formal_location_action(healer_npc_id, "healing_target_projection_failed")
+		return projection_result
+	var session: Dictionary = _formal_workstation_action_sessions.get(healer_npc_id, {})
+	session["healing_target_npc_id"] = target_npc_id
+	session["healing_target_location_id"] = target_location_id
+	_formal_workstation_action_sessions[healer_npc_id] = session
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var healer_position: Variant = get_npc_world_position(healer_npc_id)
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	var navigation_map: RID = (
+		controller.get_production_navigation_map_rid()
+		if controller != null and controller.has_method("get_production_navigation_map_rid")
+		else RID()
+	)
+	if not healer_position is Vector3 or not target_position is Vector3 or not navigation_map.is_valid():
+		end_formal_location_action(healer_npc_id, "healing_approach_dependencies_missing")
+		return {"ok": false, "reason": "healing_approach_dependencies_missing"}
+	var excluded_positions: Array = []
+	for raw_other_healer_id in _formal_workstation_action_sessions.keys():
+		var other_healer_id := str(raw_other_healer_id)
+		if other_healer_id == healer_npc_id:
+			continue
+		var other_session: Dictionary = _formal_workstation_action_sessions[other_healer_id]
+		if str(other_session.get("healing_target_npc_id", "")) != target_npc_id:
+			continue
+		var occupied_position: Variant = other_session.get("healing_approach_position")
+		if occupied_position is Vector3:
+			excluded_positions.append(occupied_position)
+	var clean_distance := clampf(approach_distance, 1.0, 1.8)
+	var approach_position: Variant = _find_formal_dialogue_approach_position(
+		navigation_map,
+		healer_position,
+		target_position,
+		clean_distance,
+		excluded_positions
+	)
+	session = _formal_workstation_action_sessions.get(healer_npc_id, {})
+	session["healing_approach_distance"] = clean_distance
+	if approach_position is Vector3:
+		session["healing_approach_position"] = approach_position
+	session["healing_route_started"] = false
+	_formal_workstation_action_sessions[healer_npc_id] = session
+	begin_result["target_npc_id"] = target_npc_id
+	begin_result["target_location_id"] = target_location_id
+	begin_result["target_world_position"] = target_position
+	begin_result["approach_position"] = approach_position
+	begin_result["approach_distance"] = clean_distance
+	return begin_result
+
+
+func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(healer_npc_id):
+		return {"ok": false, "reason": "formal_healing_session_missing"}
+	var session: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
+	if str(session.get("healing_target_npc_id", "")) != target_npc_id:
+		return {"ok": false, "reason": "formal_healing_target_mismatch"}
+	var target_state := get_npc_state(target_npc_id)
+	if not bool(target_state.get("unconscious", false)) or bool(target_state.get("escaped", false)):
+		return {"ok": false, "reason": "healing_target_unavailable"}
+	var approach_position: Variant = session.get("healing_approach_position")
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	if not target_position is Vector3:
+		return {"ok": false, "reason": "formal_healing_world_position_missing"}
+	if not approach_position is Vector3:
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var healer_position: Variant = get_npc_world_position(healer_npc_id)
+		var navigation_map: RID = (
+			controller.get_production_navigation_map_rid()
+			if controller != null and controller.has_method("get_production_navigation_map_rid")
+			else RID()
+		)
+		if not healer_position is Vector3 or not navigation_map.is_valid():
+			return {"ok": false, "reason": "formal_healing_navigation_map_missing"}
+		var excluded_positions: Array = []
+		for raw_other_healer_id in _formal_workstation_action_sessions.keys():
+			var other_healer_id := str(raw_other_healer_id)
+			if other_healer_id == healer_npc_id:
+				continue
+			var other_session: Dictionary = _formal_workstation_action_sessions[other_healer_id]
+			if str(other_session.get("healing_target_npc_id", "")) != target_npc_id:
+				continue
+			var occupied_position: Variant = other_session.get("healing_approach_position")
+			if occupied_position is Vector3:
+				excluded_positions.append(occupied_position)
+		approach_position = _find_formal_dialogue_approach_position(
+			navigation_map,
+			healer_position,
+			target_position,
+			float(session.get("healing_approach_distance", 1.25)),
+			excluded_positions
+		)
+		if not approach_position is Vector3:
+			return {"ok": false, "reason": "healing_approach_position_unreachable"}
+		session["healing_approach_position"] = approach_position
+		_formal_workstation_action_sessions[healer_npc_id] = session
+	var target_location_id := str(session.get("healing_target_location_id", PLAZA_LOCATION_ID))
+	var healer_state := get_npc_state(healer_npc_id)
+	if str(healer_state.get("current_location", "")) != target_location_id:
+		return {"ok": false, "reason": "formal_healing_location_not_reached"}
+	var facing_direction: Vector3 = target_position - approach_position
+	facing_direction.y = 0.0
+	if facing_direction.length_squared() > 0.0001:
+		facing_direction = facing_direction.normalized()
+	session["healing_route_started"] = true
+	_formal_workstation_action_sessions[healer_npc_id] = session
+	var moved := move_npc_to_world_position(
+		healer_npc_id,
+		"healing_target_%s" % target_npc_id,
+		str(get_npc(target_npc_id).get("name", target_npc_id)),
+		approach_position,
+		{
+			"current_action": "idle",
+			"current_location": target_location_id,
+			"current_location_name": str(target_state.get("current_location_name", target_location_id)),
+			"preserve_location_context": true,
+			"spatial_route_phase": "healing_approach_arrived",
+			"physical_location_phase": "formal_healing_approach",
+			"formal_healing_target_npc_id": target_npc_id,
+			"arrival_facing_direction": facing_direction,
+			"last_action_result": "formal_healing_approach_arrived"
+		}
+	)
+	return {
+		"ok": moved,
+		"reason": "" if moved else "formal_healing_approach_start_failed",
+		"target_npc_id": target_npc_id,
+		"target_world_position": target_position,
+		"approach_position": approach_position
+	}
+
+
+func is_formal_healing_approach_ready(healer_npc_id: String, target_npc_id: String) -> bool:
+	if not _formal_workstation_action_sessions.has(healer_npc_id):
+		return false
+	var session: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
+	if str(session.get("healing_target_npc_id", "")) != target_npc_id:
+		return false
+	var healer_state := get_npc_state(healer_npc_id)
+	var target_state := get_npc_state(target_npc_id)
+	if (
+		str(healer_state.get("physical_location_phase", "")) != "formal_healing_approach"
+		or str(healer_state.get("formal_healing_target_npc_id", "")) != target_npc_id
+		or str(healer_state.get("current_location", "")) != str(target_state.get("current_location", ""))
+		or not bool(target_state.get("unconscious", false))
+		or bool(target_state.get("escaped", false))
+	):
+		return false
+	var healer_position: Variant = get_npc_world_position(healer_npc_id)
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	if not healer_position is Vector3 or not target_position is Vector3:
+		return false
+	var horizontal_distance := Vector2(
+		healer_position.x - target_position.x,
+		healer_position.z - target_position.z
+	).length()
+	var desired_distance := float(session.get("healing_approach_distance", 1.25))
+	return horizontal_distance >= 0.8 and horizontal_distance <= desired_distance + 0.45
+
+
+func end_formal_healing_approach(
+	healer_npc_id: String,
+	reason: String = "stopped",
+	emit_state_changed: bool = true
+) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(healer_npc_id):
+		return {"ok": true, "active": false, "healer_npc_id": healer_npc_id}
+	var session: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
+	var target_location_id := str(session.get(
+		"healing_target_location_id",
+		get_npc_state(healer_npc_id).get("current_location", PLAZA_LOCATION_ID)
+	))
+	return end_formal_location_action(healer_npc_id, reason, target_location_id, emit_state_changed)
+
+
+func get_formal_healing_approach_snapshot(healer_npc_id: String = "") -> Dictionary:
+	if not healer_npc_id.is_empty():
+		var formal_snapshot := get_formal_workstation_action_snapshot(healer_npc_id)
+		var session: Dictionary = formal_snapshot.get("session", {}) if formal_snapshot.get("session", {}) is Dictionary else {}
+		var target_npc_id := str(session.get("healing_target_npc_id", ""))
+		return {
+			"active": bool(formal_snapshot.get("active", false)) and not target_npc_id.is_empty(),
+			"healer_npc_id": healer_npc_id,
+			"target_npc_id": target_npc_id,
+			"session": session.duplicate(true),
+			"ready": is_formal_healing_approach_ready(healer_npc_id, target_npc_id) if not target_npc_id.is_empty() else false,
+			"healer_world_position": get_npc_world_position(healer_npc_id),
+			"target_world_position": get_npc_world_position(target_npc_id) if not target_npc_id.is_empty() else null,
+			"target_projection": (_formal_healing_target_projections.get(target_npc_id, {}) as Dictionary).duplicate(true) if _formal_healing_target_projections.has(target_npc_id) else {}
+		}
+	var sessions := {}
+	for raw_healer_id in _formal_workstation_action_sessions.keys():
+		var active_healer_id := str(raw_healer_id)
+		var active_session: Dictionary = _formal_workstation_action_sessions[active_healer_id]
+		if str(active_session.get("healing_target_npc_id", "")).is_empty():
+			continue
+		sessions[active_healer_id] = get_formal_healing_approach_snapshot(active_healer_id)
+	return {"active": not sessions.is_empty(), "sessions": sessions}
+
+
+func _acquire_formal_healing_target_projection(healer_npc_id: String, target_npc_id: String) -> Dictionary:
+	if _formal_healing_target_projections.has(target_npc_id):
+		var existing: Dictionary = _formal_healing_target_projections[target_npc_id]
+		var healer_ids: Array = existing.get("healer_ids", []) if existing.get("healer_ids", []) is Array else []
+		if not healer_ids.has(healer_npc_id):
+			healer_ids.append(healer_npc_id)
+		existing["healer_ids"] = healer_ids
+		_formal_healing_target_projections[target_npc_id] = existing
+		return {"ok": true, "projection": existing.duplicate(true)}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	if (
+		controller == null
+		or target_node == null
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not target_node.has_method("configure_navigation_motion")
+	):
+		return {"ok": false, "reason": "formal_healing_target_dependencies_missing"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_healing_navigation_map_missing"}
+	var target_state := get_npc_state(target_npc_id)
+	var target_location_id := str(target_state.get("current_location", PLAZA_LOCATION_ID))
+	var target_already_formal: bool = (
+		_formal_workstation_action_sessions.has(target_npc_id)
+		or _formal_combat_world_npcs.has(target_npc_id)
+		or _default_formal_world_npcs.has(target_npc_id)
+		or (
+			target_node.has_method("is_navigation_motion_enabled")
+			and bool(target_node.is_navigation_motion_enabled())
+			and target_node.has_method("get_navigation_map")
+			and target_node.get_navigation_map() == navigation_map
+		)
+	)
+	var projection := {
+		"target_npc_id": target_npc_id,
+		"target_location_id": target_location_id,
+		"healer_ids": [healer_npc_id],
+		"owned": not target_already_formal,
+		"target_mode": "existing_formal_actor" if target_already_formal else "projected_static_actor"
+	}
+	if target_already_formal:
+		projection["target_world_position"] = target_node.global_position
+		_formal_healing_target_projections[target_npc_id] = projection
+		return {"ok": true, "projection": projection.duplicate(true)}
+	var target_position: Variant = null
+	if target_location_id == PLAZA_LOCATION_ID and controller.has_method("get_public_location_world_position"):
+		target_position = controller.get_public_location_world_position(PLAZA_LOCATION_ID)
+	elif controller.has_method("get_building_spatial_route"):
+		var target_route: Dictionary = controller.get_building_spatial_route(target_location_id)
+		target_position = target_route.get("interior_target_position")
+		var door_inside_position: Variant = target_route.get("door_inside_position")
+		if target_position is Vector3 and door_inside_position is Vector3:
+			var interior_depth: Vector3 = target_position - door_inside_position
+			interior_depth.y = 0.0
+			if interior_depth.length_squared() > 0.01:
+				# The generic interior marker sits directly behind the doorway. A prone
+				# body there would physically block every healer entering the room.
+				target_position += interior_depth.normalized() * 1.8
+	if not target_position is Vector3:
+		return {"ok": false, "reason": "formal_healing_target_anchor_missing", "target_location_id": target_location_id}
+	var snapped_target := NavigationServer3D.map_get_closest_point(navigation_map, target_position)
+	projection["original_position"] = target_node.global_position
+	projection["original_navigation_enabled"] = bool(target_node.is_navigation_motion_enabled()) if target_node.has_method("is_navigation_motion_enabled") else false
+	projection["original_navigation_map"] = target_node.get_navigation_map() if target_node.has_method("get_navigation_map") else RID()
+	projection["original_spatial_route_phase"] = str(target_state.get("spatial_route_phase", "none"))
+	projection["original_physical_location_phase"] = str(target_state.get("physical_location_phase", "legacy_location"))
+	projection["target_world_position"] = snapped_target
+	if not bool(target_node.configure_navigation_motion(true, navigation_map)):
+		return {"ok": false, "reason": "formal_healing_target_navigation_bind_failed"}
+	target_node.global_position = snapped_target
+	_set_npc_state_without_signal(target_npc_id, {
+		"spatial_route_phase": "formal_healing_target_ready",
+		"physical_location_phase": "formal_healing_target"
+	})
+	_refresh_npc_node(target_npc_id)
+	_formal_healing_target_projections[target_npc_id] = projection
+	return {"ok": true, "projection": projection.duplicate(true)}
+
+
+func _release_formal_healing_target_projection(healer_npc_id: String, target_npc_id: String) -> void:
+	if target_npc_id.is_empty() or not _formal_healing_target_projections.has(target_npc_id):
+		return
+	var projection: Dictionary = _formal_healing_target_projections[target_npc_id]
+	var healer_ids: Array = projection.get("healer_ids", []) if projection.get("healer_ids", []) is Array else []
+	healer_ids.erase(healer_npc_id)
+	if not healer_ids.is_empty():
+		projection["healer_ids"] = healer_ids
+		_formal_healing_target_projections[target_npc_id] = projection
+		return
+	_formal_healing_target_projections.erase(target_npc_id)
+	if not bool(projection.get("owned", false)):
+		return
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	if target_node == null or str(get_npc_state(target_npc_id).get("physical_location_phase", "")) != "formal_healing_target":
+		return
+	if target_node.has_method("configure_navigation_motion"):
+		if bool(projection.get("original_navigation_enabled", false)):
+			target_node.configure_navigation_motion(true, projection.get("original_navigation_map", RID()))
+		else:
+			target_node.configure_navigation_motion(false)
+	var original_position: Variant = projection.get("original_position")
+	if original_position is Vector3:
+		target_node.global_position = original_position
+	_set_npc_state_without_signal(target_npc_id, {
+		"spatial_route_phase": str(projection.get("original_spatial_route_phase", "none")),
+		"physical_location_phase": str(projection.get("original_physical_location_phase", "legacy_location"))
+	})
+	_refresh_npc_node(target_npc_id)
+
+
+func begin_formal_dialogue_approach(
+	speaker_npc_id: String,
+	target_npc_id: String,
+	action_id: String
+) -> Dictionary:
+	if (
+		speaker_npc_id.is_empty()
+		or target_npc_id.is_empty()
+		or speaker_npc_id == target_npc_id
+		or not _profiles.has(speaker_npc_id)
+		or not _profiles.has(target_npc_id)
+	):
+		return {"ok": false, "reason": "invalid_dialogue_participants"}
+	if _formal_dialogue_approach_sessions.has(speaker_npc_id):
+		var existing: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+		if str(existing.get("target_npc_id", "")) == target_npc_id:
+			return {"ok": true, "already_active": true, "session": existing.duplicate(true)}
+		end_formal_dialogue_approach(speaker_npc_id, "dialogue_target_replaced")
+	for raw_speaker_id in _formal_dialogue_approach_sessions.keys():
+		var other: Dictionary = _formal_dialogue_approach_sessions[raw_speaker_id]
+		if [str(other.get("speaker_npc_id", "")), str(other.get("target_npc_id", ""))].has(speaker_npc_id):
+			return {"ok": false, "reason": "speaker_already_in_formal_dialogue"}
+		if [str(other.get("speaker_npc_id", "")), str(other.get("target_npc_id", ""))].has(target_npc_id):
+			return {"ok": false, "reason": "target_already_in_formal_dialogue"}
+	var target_state := get_npc_state(target_npc_id)
+	var target_location_id := str(target_state.get("current_location", PLAZA_LOCATION_ID))
+	var begin_result := begin_formal_location_action(
+		speaker_npc_id,
+		action_id,
+		target_location_id
+	)
+	if not bool(begin_result.get("ok", false)):
+		return begin_result
+	_formal_dialogue_approach_sessions[speaker_npc_id] = {
+		"speaker_npc_id": speaker_npc_id,
+		"target_npc_id": target_npc_id,
+		"target_location_id": target_location_id,
+		"dialogue_id": "",
+		"target_migration": {},
+		"started_at_msec": Time.get_ticks_msec()
+	}
+	var sync_result := sync_formal_dialogue_target(speaker_npc_id)
+	if not bool(sync_result.get("ok", false)) and str(sync_result.get("reason", "")) != "target_legacy_movement_active":
+		end_formal_dialogue_approach(speaker_npc_id, "target_projection_failed")
+		return sync_result
+	return {
+		"ok": true,
+		"already_active": false,
+		"speaker_npc_id": speaker_npc_id,
+		"target_npc_id": target_npc_id,
+		"target_location_id": target_location_id,
+		"target_ready": bool(sync_result.get("ok", false)),
+		"session": (_formal_dialogue_approach_sessions[speaker_npc_id] as Dictionary).duplicate(true)
+	}
+
+
+func sync_formal_dialogue_target(speaker_npc_id: String) -> Dictionary:
+	if not _formal_dialogue_approach_sessions.has(speaker_npc_id):
+		return {"ok": false, "reason": "formal_dialogue_session_missing"}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	var target_npc_id := str(session.get("target_npc_id", ""))
+	if not _profiles.has(target_npc_id) or not _npc_nodes.has(target_npc_id):
+		return {"ok": false, "reason": "target_actor_missing"}
+	var target_state := get_npc_state(target_npc_id)
+	var target_location_id := str(target_state.get("current_location", PLAZA_LOCATION_ID))
+	var current_action := str(target_state.get("current_action", ""))
+	var migration: Dictionary = session.get("target_migration", {}) if session.get("target_migration", {}) is Dictionary else {}
+	if not migration.is_empty() and current_action.begins_with("moving_to_"):
+		_restore_formal_dialogue_target_actor(session, true)
+		session = _formal_dialogue_approach_sessions.get(speaker_npc_id, session)
+		session["target_location_id"] = target_location_id
+		_formal_dialogue_approach_sessions[speaker_npc_id] = session
+		return {"ok": false, "reason": "target_legacy_movement_active", "target_location_id": target_location_id}
+	if _formal_workstation_action_sessions.has(target_npc_id):
+		if not migration.is_empty():
+			_restore_formal_dialogue_target_actor(session, false)
+		session = _formal_dialogue_approach_sessions.get(speaker_npc_id, session)
+		session["target_location_id"] = target_location_id
+		session["target_mode"] = "existing_formal_actor"
+		_formal_dialogue_approach_sessions[speaker_npc_id] = session
+		return {
+			"ok": true,
+			"target_mode": "existing_formal_actor",
+			"target_location_id": target_location_id,
+			"target_world_position": get_npc_world_position(target_npc_id)
+		}
+	if current_action.begins_with("moving_to_"):
+		session["target_location_id"] = target_location_id
+		_formal_dialogue_approach_sessions[speaker_npc_id] = session
+		return {"ok": false, "reason": "target_legacy_movement_active", "target_location_id": target_location_id}
+	if not migration.is_empty() and str(migration.get("projected_location_id", "")) == target_location_id:
+		return {
+			"ok": true,
+			"target_mode": "projected_static_actor",
+			"target_location_id": target_location_id,
+			"target_world_position": get_npc_world_position(target_npc_id)
+		}
+	if not migration.is_empty():
+		_restore_formal_dialogue_target_actor(session, false)
+		session = _formal_dialogue_approach_sessions.get(speaker_npc_id, session)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var target_node := get_node_or_null(_npc_nodes[target_npc_id])
+	if (
+		controller == null
+		or target_node == null
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not target_node.has_method("configure_navigation_motion")
+	):
+		return {"ok": false, "reason": "formal_dialogue_target_dependencies_missing"}
+	var target_position: Variant = null
+	if target_location_id == PLAZA_LOCATION_ID and controller.has_method("get_public_location_world_position"):
+		target_position = controller.get_public_location_world_position(PLAZA_LOCATION_ID)
+	elif controller.has_method("get_building_spatial_route"):
+		var target_route: Dictionary = controller.get_building_spatial_route(target_location_id)
+		target_position = target_route.get("interior_target_position")
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not target_position is Vector3 or not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_dialogue_target_anchor_missing", "target_location_id": target_location_id}
+	var snapped_target := NavigationServer3D.map_get_closest_point(navigation_map, target_position)
+	var original_navigation_enabled := bool(target_node.is_navigation_motion_enabled()) if target_node.has_method("is_navigation_motion_enabled") else false
+	var original_navigation_map: RID = target_node.get_navigation_map() if target_node.has_method("get_navigation_map") else RID()
+	migration = {
+		"owned": true,
+		"source": "legacy_static_projection",
+		"original_position": target_node.global_position,
+		"original_navigation_enabled": original_navigation_enabled,
+		"original_navigation_map": original_navigation_map,
+		"original_spatial_route_phase": str(target_state.get("spatial_route_phase", "none")),
+		"original_physical_location_phase": str(target_state.get("physical_location_phase", "legacy_location")),
+		"projected_location_id": target_location_id
+	}
+	if not bool(target_node.configure_navigation_motion(true, navigation_map)):
+		return {"ok": false, "reason": "formal_dialogue_target_navigation_bind_failed"}
+	target_node.global_position = snapped_target
+	_set_npc_state_without_signal(target_npc_id, {
+		"spatial_route_phase": "formal_dialogue_target_ready",
+		"physical_location_phase": "formal_dialogue_target"
+	})
+	_refresh_npc_node(target_npc_id)
+	session["target_location_id"] = target_location_id
+	session["target_mode"] = "projected_static_actor"
+	session["target_migration"] = migration
+	_formal_dialogue_approach_sessions[speaker_npc_id] = session
+	return {
+		"ok": true,
+		"target_mode": "projected_static_actor",
+		"target_location_id": target_location_id,
+		"target_world_position": snapped_target
+	}
+
+
+func move_npc_to_formal_dialogue_target(
+	speaker_npc_id: String,
+	target_npc_id: String,
+	approach_distance: float
+) -> Dictionary:
+	var sync_result := sync_formal_dialogue_target(speaker_npc_id)
+	if not bool(sync_result.get("ok", false)):
+		return sync_result
+	if str((_formal_dialogue_approach_sessions.get(speaker_npc_id, {}) as Dictionary).get("target_npc_id", "")) != target_npc_id:
+		return {"ok": false, "reason": "formal_dialogue_target_mismatch"}
+	var speaker_position: Variant = get_npc_world_position(speaker_npc_id)
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if not speaker_position is Vector3 or not target_position is Vector3 or controller == null:
+		return {"ok": false, "reason": "formal_dialogue_world_position_missing"}
+	var navigation_map: RID = controller.get_production_navigation_map_rid() if controller.has_method("get_production_navigation_map_rid") else RID()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_dialogue_navigation_map_missing"}
+	var clean_distance := clampf(approach_distance, 1.0, 2.0)
+	var approach_position: Variant = _find_formal_dialogue_approach_position(
+		navigation_map,
+		speaker_position,
+		target_position,
+		clean_distance
+	)
+	if approach_position == null:
+		return {"ok": false, "reason": "formal_dialogue_approach_position_unreachable"}
+	var speaker_state := get_npc_state(speaker_npc_id)
+	var moved := move_npc_to_world_position(
+		speaker_npc_id,
+		"dialogue_target_%s" % target_npc_id,
+		str(get_npc(target_npc_id).get("name", target_npc_id)),
+		approach_position,
+		{
+			"current_action": "idle",
+			"current_location": str(speaker_state.get("current_location", PLAZA_LOCATION_ID)),
+			"current_location_name": str(speaker_state.get("current_location_name", "广场")),
+			"spatial_route_phase": "dialogue_approach_arrived",
+			"physical_location_phase": "formal_dialogue_approach",
+			"last_action_result": "formal_dialogue_approach_arrived",
+			"preserve_location_context": true
+		}
+	)
+	return {
+		"ok": moved,
+		"reason": "" if moved else "formal_dialogue_approach_start_failed",
+		"approach_position": approach_position,
+		"target_world_position": target_position,
+		"approach_distance": clean_distance
+	}
+
+
+func face_formal_dialogue_participants(speaker_npc_id: String, target_npc_id: String) -> void:
+	var speaker_node := get_node_or_null(_npc_nodes.get(speaker_npc_id, NodePath())) if _npc_nodes.has(speaker_npc_id) else null
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	if speaker_node == null or target_node == null:
+		return
+	var direction: Vector3 = target_node.global_position - speaker_node.global_position
+	direction.y = 0.0
+	if direction.length_squared() <= 0.0001:
+		return
+	if speaker_node.has_method("set_facing_direction"):
+		speaker_node.set_facing_direction(direction.normalized())
+	if target_node.has_method("set_facing_direction"):
+		target_node.set_facing_direction(-direction.normalized())
+
+
+func bind_formal_dialogue_session(speaker_npc_id: String, dialogue_id: String) -> Dictionary:
+	if not _formal_dialogue_approach_sessions.has(speaker_npc_id) or dialogue_id.is_empty():
+		return {"ok": false, "reason": "formal_dialogue_session_missing"}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	session["dialogue_id"] = dialogue_id
+	_formal_dialogue_approach_sessions[speaker_npc_id] = session
+	return {"ok": true, "session": session.duplicate(true)}
+
+
+func prepare_formal_dialogue_activation(dialogue_id: String) -> Dictionary:
+	var speaker_npc_id := _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id)
+	if speaker_npc_id.is_empty():
+		return {"ok": true, "active": false}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	var target_npc_id := str(session.get("target_npc_id", ""))
+	if not _formal_workstation_action_sessions.has(target_npc_id):
+		face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
+		return {"ok": true, "active": true, "transferred_target": false}
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if target_node == null or controller == null or not controller.has_method("get_production_navigation_map_rid"):
+		return {"ok": false, "reason": "formal_dialogue_target_transfer_dependencies_missing"}
+	var work_session: Dictionary = _formal_workstation_action_sessions[target_npc_id]
+	var current_position: Vector3 = target_node.global_position
+	var target_state := get_npc_state(target_npc_id)
+	var migration := {
+		"owned": true,
+		"source": "formal_action_transfer",
+		"original_position": work_session.get("original_position", current_position),
+		"original_navigation_enabled": bool(work_session.get("original_navigation_enabled", false)),
+		"original_navigation_map": work_session.get("original_navigation_map", RID()),
+		"original_spatial_route_phase": "none",
+		"original_physical_location_phase": "legacy_location",
+		"projected_location_id": str(target_state.get("current_location", PLAZA_LOCATION_ID))
+	}
+	end_formal_workstation_action(target_npc_id, "formal_dialogue_activation_transfer", false)
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not bool(target_node.configure_navigation_motion(true, navigation_map)):
+		return {"ok": false, "reason": "formal_dialogue_target_transfer_navigation_failed"}
+	target_node.global_position = current_position
+	session["target_migration"] = migration
+	session["target_mode"] = "transferred_formal_actor"
+	_formal_dialogue_approach_sessions[speaker_npc_id] = session
+	face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
+	return {"ok": true, "active": true, "transferred_target": true}
+
+
+func end_formal_dialogue_by_id(dialogue_id: String, reason: String = "dialogue_ended") -> Dictionary:
+	var speaker_npc_id := _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id)
+	if speaker_npc_id.is_empty():
+		return {"ok": true, "active": false, "dialogue_id": dialogue_id}
+	return end_formal_dialogue_approach(speaker_npc_id, reason)
+
+
+func end_formal_dialogue_approach(
+	speaker_npc_id: String,
+	reason: String = "stopped",
+	emit_state_changed: bool = true
+) -> Dictionary:
+	if not _formal_dialogue_approach_sessions.has(speaker_npc_id):
+		return {"ok": true, "active": false, "speaker_npc_id": speaker_npc_id}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	_formal_dialogue_approach_sessions.erase(speaker_npc_id)
+	_restore_formal_dialogue_target_actor(session, false)
+	var speaker_location_id := str(get_npc_state(speaker_npc_id).get("current_location", PLAZA_LOCATION_ID))
+	end_formal_location_action(speaker_npc_id, reason, speaker_location_id, emit_state_changed)
+	_maybe_disable_formal_preview()
+	return {
+		"ok": true,
+		"active": false,
+		"speaker_npc_id": speaker_npc_id,
+		"target_npc_id": str(session.get("target_npc_id", "")),
+		"dialogue_id": str(session.get("dialogue_id", "")),
+		"reason": reason
+	}
+
+
+func get_formal_dialogue_approach_snapshot(npc_id: String = "") -> Dictionary:
+	if not npc_id.is_empty():
+		if _formal_dialogue_approach_sessions.has(npc_id):
+			return {"active": true, "role": "speaker", "session": (_formal_dialogue_approach_sessions[npc_id] as Dictionary).duplicate(true)}
+		for raw_speaker_id in _formal_dialogue_approach_sessions.keys():
+			var session: Dictionary = _formal_dialogue_approach_sessions[raw_speaker_id]
+			if str(session.get("target_npc_id", "")) == npc_id:
+				return {"active": true, "role": "target", "session": session.duplicate(true)}
+		return {"active": false, "npc_id": npc_id}
+	var sessions := {}
+	for raw_speaker_id in _formal_dialogue_approach_sessions.keys():
+		sessions[str(raw_speaker_id)] = (_formal_dialogue_approach_sessions[raw_speaker_id] as Dictionary).duplicate(true)
+	return {"active": not sessions.is_empty(), "sessions": sessions}
+
+
+func _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id: String) -> String:
+	if dialogue_id.is_empty():
+		return ""
+	for raw_speaker_id in _formal_dialogue_approach_sessions.keys():
+		var speaker_npc_id := str(raw_speaker_id)
+		var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+		if str(session.get("dialogue_id", "")) == dialogue_id:
+			return speaker_npc_id
+	return ""
+
+
+func _restore_formal_dialogue_target_actor(session: Dictionary, resume_legacy_movement: bool) -> void:
+	var speaker_npc_id := str(session.get("speaker_npc_id", ""))
+	var target_npc_id := str(session.get("target_npc_id", ""))
+	var migration: Dictionary = session.get("target_migration", {}) if session.get("target_migration", {}) is Dictionary else {}
+	if migration.is_empty() or not bool(migration.get("owned", false)):
+		return
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	var movement_target_id := str(get_npc_state(target_npc_id).get("movement_target", ""))
+	if target_node != null:
+		if target_node.has_method("configure_navigation_motion"):
+			if bool(migration.get("original_navigation_enabled", false)):
+				target_node.configure_navigation_motion(true, migration.get("original_navigation_map", RID()))
+			else:
+				target_node.configure_navigation_motion(false)
+		var original_position: Variant = migration.get("original_position")
+		if original_position is Vector3:
+			target_node.global_position = original_position
+	_set_npc_state_without_signal(target_npc_id, {
+		"spatial_route_phase": str(migration.get("original_spatial_route_phase", "none")),
+		"physical_location_phase": str(migration.get("original_physical_location_phase", "legacy_location"))
+	})
+	_refresh_npc_node(target_npc_id)
+	session["target_migration"] = {}
+	session["target_mode"] = "legacy_actor"
+	if not speaker_npc_id.is_empty() and _formal_dialogue_approach_sessions.has(speaker_npc_id):
+		_formal_dialogue_approach_sessions[speaker_npc_id] = session
+	if resume_legacy_movement and not movement_target_id.is_empty():
+		call_deferred("_resume_formal_dialogue_target_legacy_movement", target_npc_id, movement_target_id)
+
+
+func _resume_formal_dialogue_target_legacy_movement(npc_id: String, target_location_id: String) -> void:
+	if not _profiles.has(npc_id) or target_location_id.is_empty():
+		return
+	move_npc_to_building(npc_id, target_location_id)
+
+
+func _find_formal_dialogue_approach_position(
+	navigation_map: RID,
+	speaker_position: Vector3,
+	target_position: Vector3,
+	approach_distance: float,
+	excluded_positions: Array = []
+) -> Variant:
+	var base_direction := speaker_position - target_position
+	base_direction.y = 0.0
+	if base_direction.length_squared() <= 0.0001:
+		base_direction = Vector3(0.0, 0.0, 1.0)
+	base_direction = base_direction.normalized()
+	var best_position: Variant = null
+	var best_score := INF
+	var snapped_speaker := NavigationServer3D.map_get_closest_point(navigation_map, speaker_position)
+	var speaker_region: RID = NavigationServer3D.map_get_closest_point_owner(
+		navigation_map,
+		snapped_speaker
+	)
+	for index in range(12):
+		var direction := base_direction.rotated(Vector3.UP, TAU * float(index) / 12.0)
+		var desired := target_position + direction * approach_distance
+		var candidate := NavigationServer3D.map_get_closest_point(navigation_map, desired)
+		var separation := Vector2(candidate.x - target_position.x, candidate.z - target_position.z).length()
+		if separation < 0.9 or separation > 2.15:
+			continue
+		var overlaps_reserved_position := false
+		for raw_excluded_position in excluded_positions:
+			if not raw_excluded_position is Vector3:
+				continue
+			var excluded_position: Vector3 = raw_excluded_position
+			if Vector2(candidate.x - excluded_position.x, candidate.z - excluded_position.z).length() < 0.85:
+				overlaps_reserved_position = true
+				break
+		if overlaps_reserved_position:
+			continue
+		var path := NavigationServer3D.map_get_path(navigation_map, speaker_position, candidate, true)
+		var path_length := 0.0
+		if path.is_empty():
+			var candidate_region: RID = NavigationServer3D.map_get_closest_point_owner(
+				navigation_map,
+				candidate
+			)
+			if not speaker_region.is_valid() or candidate_region != speaker_region:
+				continue
+			path_length = Vector2(
+				candidate.x - speaker_position.x,
+				candidate.z - speaker_position.z
+			).length()
+		else:
+			for path_index in range(1, path.size()):
+				path_length += path[path_index - 1].distance_to(path[path_index])
+		var score := path_length + absf(separation - approach_distance) * 4.0
+		if score < best_score:
+			best_score = score
+			best_position = candidate
+	if best_position != null:
+		return best_position
+	# Public anchors and tight interiors can sit close to a navigation polygon
+	# boundary. In that case every radial sample may collapse onto the same edge.
+	# The path itself is still authoritative, so walk backwards from its endpoint
+	# and choose the point that is approach_distance away from the target.
+	var target_path: PackedVector3Array = NavigationServer3D.map_get_path(
+		navigation_map,
+		speaker_position,
+		target_position,
+		true
+	)
+	if target_path.size() < 2:
+		return null
+	var remaining := approach_distance
+	for reverse_index in range(target_path.size() - 1, 0, -1):
+		var segment_end: Vector3 = target_path[reverse_index]
+		var segment_start: Vector3 = target_path[reverse_index - 1]
+		var segment_length := Vector2(
+			segment_end.x - segment_start.x,
+			segment_end.z - segment_start.z
+		).length()
+		if segment_length <= 0.001:
+			continue
+		if segment_length >= remaining:
+			var fallback := segment_end.lerp(segment_start, remaining / segment_length)
+			fallback = NavigationServer3D.map_get_closest_point(navigation_map, fallback)
+			var fallback_separation := Vector2(
+				fallback.x - target_position.x,
+				fallback.z - target_position.z
+			).length()
+			var fallback_reserved := false
+			for raw_excluded_position in excluded_positions:
+				if not raw_excluded_position is Vector3:
+					continue
+				var excluded_position: Vector3 = raw_excluded_position
+				if Vector2(fallback.x - excluded_position.x, fallback.z - excluded_position.z).length() < 0.85:
+					fallback_reserved = true
+					break
+			if fallback_separation >= 0.8 and fallback_separation <= 2.3 and not fallback_reserved:
+				return fallback
+			return null
+		remaining -= segment_length
+	return best_position
+
+
+func attach_formal_workstation_occupant(npc_id: String, building_id: String, workstation_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return {"ok": false, "reason": "formal_work_session_missing", "npc_id": npc_id}
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	if (
+		str(session.get("building_id", "")) != building_id
+		or str(session.get("workstation_id", "")) != workstation_id
+	):
+		return {"ok": false, "reason": "formal_work_session_mismatch", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	if (
+		str(state.get("current_location", "")) != building_id
+		or str(state.get("current_workstation_id", "")) != workstation_id
+		or str(state.get("physical_location_phase", "")) != "workstation"
+	):
+		return {"ok": false, "reason": "formal_workstation_not_reached", "npc_id": npc_id}
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_spatial_route"):
+		return {"ok": false, "reason": "formal_route_provider_missing", "npc_id": npc_id}
+	var route: Dictionary = controller.get_building_spatial_route(building_id, workstation_id)
+	if str(route.get("arrival_mode", "stand")) != "mount_after_arrival":
+		return {"ok": false, "reason": "formal_workstation_does_not_mount", "npc_id": npc_id}
+	var anchor_position: Variant = route.get("occupant_anchor_position")
+	var anchor_facing: Variant = route.get("occupant_anchor_facing_direction", Vector3.ZERO)
+	var occupant_pose := str(route.get("occupant_pose", ""))
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+	if (
+		npc_node == null
+		or not npc_node.has_method("attach_to_spatial_anchor")
+		or not anchor_position is Vector3
+		or not anchor_facing is Vector3
+		or not bool(npc_node.attach_to_spatial_anchor(anchor_position, anchor_facing, occupant_pose))
+	):
+		return {"ok": false, "reason": "formal_occupant_attachment_failed", "npc_id": npc_id}
+	session["attachment_committed"] = true
+	_formal_workstation_action_sessions[npc_id] = session
+	_set_npc_state_without_signal(npc_id, {
+		"spatial_route_phase": "occupant_attached",
+		"physical_location_phase": "occupant_anchor",
+		"last_action_result": "occupant_attached"
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"building_id": building_id,
+		"workstation_id": workstation_id,
+		"occupant_pose": occupant_pose,
+		"anchor_position": anchor_position
+	}
+
+
+func move_formal_clinic_doctor_to_patient_bed(doctor_npc_id: String, patient_npc_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(doctor_npc_id):
+		return {"ok": false, "reason": "formal_doctor_session_missing"}
+	if not _formal_workstation_action_sessions.has(patient_npc_id):
+		return {"ok": false, "reason": "formal_patient_session_missing"}
+	var doctor_session: Dictionary = _formal_workstation_action_sessions[doctor_npc_id]
+	var patient_session: Dictionary = _formal_workstation_action_sessions[patient_npc_id]
+	if (
+		str(doctor_session.get("building_id", "")) != CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID
+		or str(patient_session.get("building_id", "")) != CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID
+	):
+		return {"ok": false, "reason": "formal_clinic_session_mismatch"}
+	var patient_workstation_id := str(patient_session.get("workstation_id", ""))
+	var doctor_workstation_id := str(doctor_session.get("workstation_id", ""))
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_spatial_route"):
+		return {"ok": false, "reason": "formal_route_provider_missing"}
+	var patient_route: Dictionary = controller.get_building_spatial_route(
+		CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		patient_workstation_id
+	)
+	var target_position: Variant = patient_route.get("interior_target_position")
+	var patient_anchor_position: Variant = patient_route.get("occupant_anchor_position")
+	if not target_position is Vector3 or not patient_anchor_position is Vector3:
+		return {"ok": false, "reason": "clinic_patient_bedside_anchor_missing"}
+	var navigation_target: Vector3 = target_position
+	var patient_anchor: Vector3 = patient_anchor_position
+	var treatment_side: Vector3 = navigation_target - patient_anchor
+	treatment_side.y = 0.0
+	if treatment_side.length_squared() <= 0.0001:
+		return {"ok": false, "reason": "clinic_patient_bedside_direction_missing"}
+	treatment_side = treatment_side.normalized()
+	var fixture_collision_size: Variant = patient_route.get("target_fixture_collision_size")
+	var fixture_right_direction: Variant = patient_route.get("target_fixture_right_direction")
+	var fixture_forward_direction: Variant = patient_route.get("target_fixture_forward_direction")
+	if (
+		not fixture_collision_size is Vector3
+		or not fixture_right_direction is Vector3
+		or not fixture_forward_direction is Vector3
+	):
+		return {"ok": false, "reason": "clinic_patient_bed_collision_contract_missing"}
+	var bed_collision_size: Vector3 = fixture_collision_size
+	var bed_right_direction: Vector3 = fixture_right_direction
+	var bed_forward_direction: Vector3 = fixture_forward_direction
+	var bed_half_extent_toward_doctor: float = (
+		absf(treatment_side.dot(bed_right_direction)) * bed_collision_size.x * 0.5
+		+ absf(treatment_side.dot(bed_forward_direction)) * bed_collision_size.z * 0.5
+	)
+	var treatment_outward_distance: float = (
+		bed_half_extent_toward_doctor
+		+ CLINIC_TREATMENT_DOCTOR_BODY_RADIUS
+		+ CLINIC_TREATMENT_BED_CLEARANCE
+	)
+	# Working_A's right hand sweeps toward the character's local-left side. Mirror
+	# this small along-bed offset with the selected bedside so the hand lands over
+	# the patient's torso from either aisle instead of passing beside the mattress.
+	var treatment_lateral_direction := Vector3(-treatment_side.z, 0.0, treatment_side.x)
+	var treatment_anchor_position: Vector3 = (
+		patient_anchor
+		+ treatment_side * treatment_outward_distance
+		+ treatment_lateral_direction * CLINIC_TREATMENT_ANCHOR_LATERAL_OFFSET
+	)
+	treatment_anchor_position.y = navigation_target.y
+	var facing_direction: Vector3 = patient_anchor - treatment_anchor_position
+	facing_direction.y = 0.0
+	facing_direction = facing_direction.normalized()
+	_detach_formal_clinic_doctor_for_rounds(doctor_npc_id)
+	var patient_name := str(get_npc(patient_npc_id).get("name", patient_npc_id))
+	var moved := move_npc_to_world_position(
+		doctor_npc_id,
+		"clinic_bedside_%s" % patient_npc_id,
+		"%s的病床" % patient_name,
+		target_position,
+		{
+			"current_action": "work_clinic_doctor",
+			"current_location": CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+			"current_location_name": "小诊所",
+			"current_workstation_id": doctor_workstation_id,
+			"spatial_route_phase": "clinic_round_treatment",
+			"physical_location_phase": "clinic_bedside",
+			"presentation_clinic_duty_mode": "treatment",
+			"presentation_clinic_patient_id": patient_npc_id,
+			"last_action_result": "clinic_round_reached_%s" % patient_npc_id,
+			"preserve_location_context": true,
+			"departure_current_action": "work_clinic_doctor",
+			"departure_state": {
+				"spatial_route_phase": "clinic_round_travel",
+				"physical_location_phase": "clinic_round_path",
+				"presentation_clinic_duty_mode": "travel",
+				"presentation_clinic_patient_id": patient_npc_id
+			},
+			"arrival_facing_direction": facing_direction,
+			"attach_clinic_treatment_on_arrival": true,
+			"clinic_treatment_anchor_position": treatment_anchor_position,
+			"clinic_treatment_anchor_facing_direction": facing_direction
+		}
+	)
+	return {
+		"ok": moved,
+		"reason": "" if moved else "clinic_round_movement_rejected",
+		"doctor_npc_id": doctor_npc_id,
+		"patient_npc_id": patient_npc_id,
+		"patient_workstation_id": patient_workstation_id,
+		"target_position": target_position,
+		"treatment_anchor_position": treatment_anchor_position,
+		"treatment_outward_distance": treatment_outward_distance,
+		"bed_half_extent_toward_doctor": bed_half_extent_toward_doctor
+	}
+
+
+func move_formal_clinic_doctor_to_study_seat(doctor_npc_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(doctor_npc_id):
+		return {"ok": false, "reason": "formal_doctor_session_missing"}
+	var session: Dictionary = _formal_workstation_action_sessions[doctor_npc_id]
+	if str(session.get("building_id", "")) != CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID:
+		return {"ok": false, "reason": "formal_clinic_session_mismatch"}
+	var workstation_id := str(session.get("workstation_id", ""))
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_spatial_route"):
+		return {"ok": false, "reason": "formal_route_provider_missing"}
+	var study_route: Dictionary = controller.get_building_spatial_route(
+		CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+		workstation_id
+	)
+	var target_position: Variant = study_route.get("interior_target_position")
+	var facing_direction: Variant = study_route.get("interior_target_facing_direction", Vector3.ZERO)
+	if (
+		str(study_route.get("arrival_mode", "stand")) != "mount_after_arrival"
+		or not target_position is Vector3
+		or not facing_direction is Vector3
+	):
+		return {"ok": false, "reason": "clinic_study_seat_anchor_missing"}
+	_detach_formal_clinic_doctor_for_rounds(doctor_npc_id)
+	var moved := move_npc_to_world_position(
+		doctor_npc_id,
+		"clinic_study_%s" % workstation_id,
+		"医生书桌",
+		target_position,
+		{
+			"current_action": "work_clinic_doctor",
+			"current_location": CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID,
+			"current_location_name": "小诊所",
+			"current_workstation_id": workstation_id,
+			"spatial_route_phase": "clinic_study_seat_arrival",
+			"physical_location_phase": "workstation",
+			"presentation_clinic_duty_mode": "study",
+			"presentation_clinic_patient_id": "",
+			"last_action_result": "clinic_study_seat_reached",
+			"preserve_location_context": true,
+			"departure_current_action": "work_clinic_doctor",
+			"departure_state": {
+				"spatial_route_phase": "clinic_study_return_travel",
+				"physical_location_phase": "clinic_round_path",
+				"presentation_clinic_duty_mode": "study_travel",
+				"presentation_clinic_patient_id": ""
+			},
+			"arrival_facing_direction": facing_direction,
+			"attach_clinic_study_on_arrival": true
+		}
+	)
+	return {
+		"ok": moved,
+		"reason": "" if moved else "clinic_study_movement_rejected",
+		"doctor_npc_id": doctor_npc_id,
+		"workstation_id": workstation_id,
+		"target_position": target_position
+	}
+
+
+func _detach_formal_clinic_doctor_for_rounds(doctor_npc_id: String) -> void:
+	var npc_node := get_node_or_null(_npc_nodes.get(doctor_npc_id, NodePath())) if _npc_nodes.has(doctor_npc_id) else null
+	if npc_node != null and npc_node.has_method("detach_from_spatial_anchor"):
+		npc_node.detach_from_spatial_anchor()
+	if _formal_workstation_action_sessions.has(doctor_npc_id):
+		var session: Dictionary = _formal_workstation_action_sessions[doctor_npc_id]
+		var treatment_safe_position: Variant = session.get("clinic_treatment_safe_position")
+		session["attachment_committed"] = false
+		session.erase("clinic_treatment_safe_position")
+		session.erase("clinic_treatment_anchor_position")
+		# Mounted seats are inside their own collision footprint. Restore the doctor
+		# to the matching audited approach point before asking NavigationAgent3D
+		# for a route. A bedside attachment returns to that bed's safe point; a
+		# study-chair attachment returns to the doctor's workstation approach.
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var safe_route: Dictionary = (
+			controller.get_building_spatial_route(
+				str(session.get("building_id", CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID)),
+				str(session.get("workstation_id", ""))
+			)
+			if controller != null and controller.has_method("get_building_spatial_route")
+			else {}
+		)
+		var safe_position: Variant = (
+			treatment_safe_position
+			if treatment_safe_position is Vector3
+			else safe_route.get("interior_target_position")
+		)
+		if npc_node != null and safe_position is Vector3:
+			npc_node.global_position = safe_position
+		_formal_workstation_action_sessions[doctor_npc_id] = session
+
+
+func _maybe_disable_formal_preview() -> void:
+	if (
+		not _default_formal_world_npcs.is_empty()
+		or
+		not _formal_workstation_action_sessions.is_empty()
+		or not _formal_dialogue_approach_sessions.is_empty()
+		or not _formal_navigation_pilots.is_empty()
+		or not _formal_combat_world_npcs.is_empty()
+	):
+		return
+	call_deferred("_disable_formal_preview_if_still_idle_after_grace")
+
+
+func _disable_formal_preview_if_still_idle_after_grace() -> void:
+	# Avoid a close/open NavigationServer topology churn between consecutive
+	# crafting stages or immediately reassigned formal work. Authority and
+	# workstation cleanup have already completed; only presentation/nav hiding
+	# is debounced.
+	await get_tree().create_timer(0.15, true, false, true).timeout
+	if (
+		not _default_formal_world_npcs.is_empty()
+		or
+		not _formal_workstation_action_sessions.is_empty()
+		or not _formal_dialogue_approach_sessions.is_empty()
+		or not _formal_navigation_pilots.is_empty()
+		or not _formal_combat_world_npcs.is_empty()
+	):
+		return
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("set_runtime_formal_world_enabled"):
+		controller.set_runtime_formal_world_enabled(false)
+
+
+func debug_run_formal_navigation_pilot(pilot_id: String) -> Dictionary:
+	var clean_pilot_id := pilot_id.strip_edges().to_lower()
+	if not FORMAL_NAVIGATION_PILOT_SPECS.has(clean_pilot_id):
+		return {
+			"ok": false,
+			"reason": "unknown_formal_navigation_pilot",
+			"pilot_id": clean_pilot_id,
+			"registered_pilot_ids": FORMAL_NAVIGATION_PILOT_SPECS.keys()
+		}
+	var spec: Dictionary = (FORMAL_NAVIGATION_PILOT_SPECS[clean_pilot_id] as Dictionary).duplicate(true)
+	var npc_id := str(spec.get("npc_id", ""))
+	var building_id := str(spec.get("building_id", ""))
+	var workstation_type := str(spec.get("workstation_type", ""))
+	if npc_id.is_empty() or building_id.is_empty() or workstation_type.is_empty():
+		return {"ok": false, "reason": "invalid_formal_navigation_pilot_spec", "pilot_id": clean_pilot_id}
+	if _is_gameplay_paused_for_debug_movement():
+		return {"ok": false, "reason": "gameplay_paused", "pilot_id": clean_pilot_id, "npc_id": npc_id}
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {"ok": false, "reason": "pilot_npc_missing", "pilot_id": clean_pilot_id, "npc_id": npc_id}
+
+	debug_stop_all_formal_navigation_pilots("superseded_by_%s" % clean_pilot_id)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if (
+		controller == null
+		or building_system == null
+		or npc_node == null
+		or not controller.has_method("debug_set_preview_enabled")
+		or not controller.has_method("get_production_navigation_map_rid")
+		or not controller.has_method("get_npc_initial_world_position")
+		or not controller.has_method("get_building_spatial_route")
+		or not npc_node.has_method("configure_navigation_motion")
+	):
+		return {
+			"ok": false,
+			"reason": "pilot_dependencies_missing",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+
+	var initial_position: Variant = controller.get_npc_initial_world_position(npc_id)
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not initial_position is Vector3 or not navigation_map.is_valid():
+		return {
+			"ok": false,
+			"reason": "formal_navigation_unavailable",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+	var preview_snapshot: Dictionary = controller.debug_set_preview_enabled(true)
+	if not bool(preview_snapshot.get("preview_enabled", false)):
+		return {
+			"ok": false,
+			"reason": "formal_preview_unavailable",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		action_system.interrupt_npc_action(npc_id, "formal_navigation_pilot", true)
+	var original_state := get_npc_state(npc_id)
+	var original_location_id := str(original_state.get("current_location", PLAZA_LOCATION_ID))
+	var original_position: Vector3 = npc_node.global_position
+	_formal_navigation_pilots[npc_id] = {
+		"pilot_id": clean_pilot_id,
+		"building_id": building_id,
+		"workstation_id": "",
+		"workstation_type": workstation_type,
+		"expected_workstation_id": str(spec.get("expected_workstation_id", "")),
+		"original_position": original_position,
+		"original_location_id": original_location_id,
+		"commit_reservation_on_arrival": true,
+		"occupancy_committed": false,
+		"attachment_committed": false,
+		"setting_up": true
+	}
+	_cancel_building_interior_route(npc_id, true)
+	_movement_arrival_contexts.erase(npc_id)
+	if not debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID):
+		_rollback_formal_navigation_pilot_setup(npc_id)
+		return {
+			"ok": false,
+			"reason": "pilot_plaza_reset_failed",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+	npc_node.global_position = initial_position
+	if not bool(npc_node.configure_navigation_motion(true, navigation_map)):
+		_rollback_formal_navigation_pilot_setup(npc_id)
+		return {
+			"ok": false,
+			"reason": "navigation_map_bind_failed",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+
+	var reserve_result: Dictionary = building_system.reserve_workstation(building_id, npc_id, workstation_type)
+	if not bool(reserve_result.get("ok", false)):
+		_rollback_formal_navigation_pilot_setup(npc_id)
+		return {
+			"ok": false,
+			"reason": str(reserve_result.get("reason", "workstation_reservation_failed")),
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id,
+			"reservation": reserve_result
+		}
+	var workstation_id := str(reserve_result.get("workstation_id", ""))
+	var pilot: Dictionary = _formal_navigation_pilots[npc_id]
+	pilot["workstation_id"] = workstation_id
+	_formal_navigation_pilots[npc_id] = pilot
+	var expected_workstation_id := str(spec.get("expected_workstation_id", ""))
+	if not expected_workstation_id.is_empty() and workstation_id != expected_workstation_id:
+		_rollback_formal_navigation_pilot_setup(npc_id)
+		return {
+			"ok": false,
+			"reason": "assigned_workstation_mismatch",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id,
+			"expected_workstation_id": expected_workstation_id,
+			"workstation_id": workstation_id
+		}
+
+	var formal_route: Dictionary = controller.get_building_spatial_route(building_id, workstation_id)
+	if formal_route.is_empty():
+		_rollback_formal_navigation_pilot_setup(npc_id)
+		return {
+			"ok": false,
+			"reason": "formal_route_missing",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+
+	pilot = _formal_navigation_pilots[npc_id]
+	pilot.merge({
+		"arrival_mode": str(formal_route.get("arrival_mode", "stand")),
+		"occupant_pose": str(formal_route.get("occupant_pose", "")),
+		"setting_up": false
+	}, true)
+	_formal_navigation_pilots[npc_id] = pilot
+	if not _start_building_entry_route(npc_id, building_id, workstation_id, formal_route):
+		_debug_stop_formal_navigation_pilot_npc(npc_id, "route_start_failed")
+		return {
+			"ok": false,
+			"reason": "formal_route_start_failed",
+			"pilot_id": clean_pilot_id,
+			"npc_id": npc_id
+		}
+	var route: Dictionary = _building_interior_routes.get(npc_id, {})
+	route["commit_reservation_on_arrival"] = true
+	route["workstation_type"] = workstation_type
+	_building_interior_routes[npc_id] = route
+	return {
+		"ok": true,
+		"pilot_id": clean_pilot_id,
+		"npc_id": npc_id,
+		"building_id": building_id,
+		"workstation_id": workstation_id,
+		"workstation_type": workstation_type,
+		"expected_workstation_id": expected_workstation_id,
+		"arrival_mode": str(formal_route.get("arrival_mode", "stand")),
+		"occupant_pose": str(formal_route.get("occupant_pose", "")),
+		"route_source": "formal_station_layout",
+		"preview_enabled": true
+	}
+
+
+func _rollback_formal_navigation_pilot_setup(npc_id: String) -> void:
+	if not _formal_navigation_pilots.has(npc_id):
+		return
+	var pilot: Dictionary = _formal_navigation_pilots[npc_id]
+	var building_id := str(pilot.get("building_id", ""))
+	var workstation_id := str(pilot.get("workstation_id", ""))
+	_cancel_building_interior_route(npc_id, true)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null and not workstation_id.is_empty():
+		building_system.release_workstation_reservation(building_id, npc_id, workstation_id)
+		if bool(pilot.get("occupancy_committed", false)):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+	if npc_node != null:
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		if npc_node.has_method("configure_navigation_motion"):
+			npc_node.configure_navigation_motion(false)
+		var original_position: Variant = pilot.get("original_position")
+		if original_position is Vector3:
+			npc_node.global_position = original_position
+	_formal_navigation_pilots.erase(npc_id)
+	var original_location_id := str(pilot.get("original_location_id", PLAZA_LOCATION_ID))
+	if not debug_enter_location_immediately(npc_id, original_location_id):
+		debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
+
+
+func _debug_stop_formal_navigation_pilot_npc(npc_id: String, reason: String = "stopped") -> Dictionary:
+	if not _formal_navigation_pilots.has(npc_id):
+		return {"ok": true, "active": false, "npc_id": npc_id}
+	var pilot: Dictionary = _formal_navigation_pilots[npc_id]
+	var building_id := str(pilot.get("building_id", ""))
+	var workstation_id := str(pilot.get("workstation_id", ""))
+	var state_before_restore := get_npc_state(npc_id)
+	_cancel_building_interior_route(npc_id, true)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null:
+		if bool(pilot.get("occupancy_committed", false)):
+			building_system.release_workstation(building_id, npc_id, workstation_id)
+		elif not workstation_id.is_empty():
+			building_system.release_workstation_reservation(building_id, npc_id, workstation_id)
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+	if npc_node != null:
+		if npc_node.has_method("detach_from_spatial_anchor"):
+			npc_node.detach_from_spatial_anchor()
+		if npc_node.has_method("configure_navigation_motion"):
+			npc_node.configure_navigation_motion(false)
+		var original_position: Variant = pilot.get("original_position")
+		if original_position is Vector3:
+			npc_node.global_position = original_position
+	_formal_navigation_pilots.erase(npc_id)
+	var original_location_id := str(pilot.get("original_location_id", PLAZA_LOCATION_ID))
+	if not debug_enter_location_immediately(npc_id, original_location_id):
+		debug_enter_location_immediately(npc_id, PLAZA_LOCATION_ID)
+	var restored_action := "unconscious" if bool(state_before_restore.get("unconscious", false)) else "idle"
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": restored_action,
+		"last_action_result": "formal_navigation_pilot_%s" % reason,
+		"spatial_route_phase": "pilot_stopped",
+		"physical_location_phase": "legacy_location",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return {
+		"ok": true,
+		"active": false,
+		"pilot_id": str(pilot.get("pilot_id", "")),
+		"npc_id": npc_id,
+		"reason": reason
+	}
+
+
+func debug_stop_formal_navigation_pilot(pilot_id: String, reason: String = "stopped") -> Dictionary:
+	var clean_pilot_id := pilot_id.strip_edges().to_lower()
+	if not FORMAL_NAVIGATION_PILOT_SPECS.has(clean_pilot_id):
+		return {"ok": false, "reason": "unknown_formal_navigation_pilot", "pilot_id": clean_pilot_id}
+	var spec: Dictionary = FORMAL_NAVIGATION_PILOT_SPECS[clean_pilot_id]
+	return _debug_stop_formal_navigation_pilot_npc(str(spec.get("npc_id", "")), reason)
+
+
+func debug_get_formal_navigation_pilot_snapshot(pilot_id: String) -> Dictionary:
+	var clean_pilot_id := pilot_id.strip_edges().to_lower()
+	if not FORMAL_NAVIGATION_PILOT_SPECS.has(clean_pilot_id):
+		return {"ok": false, "reason": "unknown_formal_navigation_pilot", "pilot_id": clean_pilot_id}
+	var spec: Dictionary = FORMAL_NAVIGATION_PILOT_SPECS[clean_pilot_id]
+	var npc_id := str(spec.get("npc_id", ""))
+	var snapshot := debug_get_spatial_migration_snapshot(npc_id)
+	var active_pilot: Dictionary = _formal_navigation_pilots.get(npc_id, {})
+	snapshot["pilot_id"] = clean_pilot_id
+	snapshot["active"] = str(active_pilot.get("pilot_id", "")) == clean_pilot_id
+	snapshot["registered_spec"] = spec.duplicate(true)
+	return snapshot
+
+
+func debug_run_glen_blacksmith_navigation_pilot() -> Dictionary:
+	return debug_run_formal_navigation_pilot("glen")
+
+
+func debug_stop_glen_blacksmith_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(FIRST_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_glen_blacksmith_navigation_pilot_snapshot() -> Dictionary:
+	return debug_get_formal_navigation_pilot_snapshot("glen")
+
+
+func debug_run_clinic_navigation_pilot(pilot_mode: String = "doctor") -> Dictionary:
+	var clean_mode := pilot_mode.strip_edges().to_lower()
+	if clean_mode not in ["doctor", "bed"]:
+		return {"ok": false, "reason": "invalid_clinic_pilot_mode", "mode": clean_mode}
+	var pilot_id := "clinic_doctor" if clean_mode == "doctor" else "clinic_bed"
+	var result := debug_run_formal_navigation_pilot(pilot_id)
+	result["mode"] = clean_mode
+	return result
+
+
+func debug_stop_clinic_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_clinic_navigation_pilot_snapshot() -> Dictionary:
+	var snapshot := debug_get_spatial_migration_snapshot(CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID)
+	var active_pilot: Dictionary = _formal_navigation_pilots.get(CLINIC_FORMAL_NAVIGATION_PILOT_NPC_ID, {})
+	snapshot["active"] = not active_pilot.is_empty()
+	snapshot["active_pilot_id"] = str(active_pilot.get("pilot_id", ""))
+	return snapshot
+
+
+func debug_run_dormitory_navigation_pilot() -> Dictionary:
+	return debug_run_formal_navigation_pilot("dormitory_bed")
+
+
+func debug_stop_dormitory_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(DORMITORY_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_dormitory_navigation_pilot_snapshot() -> Dictionary:
+	return debug_get_formal_navigation_pilot_snapshot("dormitory_bed")
+
+
+func debug_run_dining_navigation_pilot() -> Dictionary:
+	return debug_run_formal_navigation_pilot("dining_seat")
+
+
+func debug_stop_dining_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(DINING_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_dining_navigation_pilot_snapshot() -> Dictionary:
+	return debug_get_formal_navigation_pilot_snapshot("dining_seat")
+
+
+func debug_run_chapel_navigation_pilot() -> Dictionary:
+	return debug_run_formal_navigation_pilot("chapel_prayer_seat")
+
+
+func debug_stop_chapel_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(CHAPEL_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_chapel_navigation_pilot_snapshot() -> Dictionary:
+	return debug_get_formal_navigation_pilot_snapshot("chapel_prayer_seat")
+
+
+func debug_run_stable_navigation_pilot() -> Dictionary:
+	return debug_run_formal_navigation_pilot("stable_care")
+
+
+func debug_stop_stable_navigation_pilot(reason: String = "stopped") -> Dictionary:
+	return _debug_stop_formal_navigation_pilot_npc(STABLE_FORMAL_NAVIGATION_PILOT_NPC_ID, reason)
+
+
+func debug_get_stable_navigation_pilot_snapshot() -> Dictionary:
+	return debug_get_formal_navigation_pilot_snapshot("stable_care")
+
+
+func debug_stop_all_formal_navigation_pilots(reason: String = "stopped") -> Dictionary:
+	var results: Array[Dictionary] = []
+	for raw_npc_id in _formal_navigation_pilots.keys().duplicate():
+		results.append(_debug_stop_formal_navigation_pilot_npc(str(raw_npc_id), reason))
+	return {"ok": true, "active": false, "results": results}
+
+
+func debug_get_formal_navigation_pilots_snapshot() -> Dictionary:
+	return {
+		"registered_pilot_ids": FORMAL_NAVIGATION_PILOT_SPECS.keys(),
+		"active_npc_ids": _formal_navigation_pilots.keys(),
+		"glen_blacksmith": debug_get_glen_blacksmith_navigation_pilot_snapshot(),
+		"clinic": debug_get_clinic_navigation_pilot_snapshot(),
+		"dormitory": debug_get_dormitory_navigation_pilot_snapshot(),
+		"dining_hall": debug_get_dining_navigation_pilot_snapshot(),
+		"chapel": debug_get_chapel_navigation_pilot_snapshot(),
+		"stable": debug_get_stable_navigation_pilot_snapshot()
+	}
 
 func update_npc_state(npc_id: String, changes: Dictionary) -> bool:
 	if not _profiles.has(npc_id):
@@ -779,8 +3707,15 @@ func stop_npc_movement_for_system(
 		not movement_target_id.is_empty()
 		or str(previous_state.get("current_action", "")).begins_with("moving_to_")
 	)
+	if _building_interior_routes.has(npc_id):
+		_release_npc_spatial_reservation(npc_id)
+		if previous_location_id == FIRST_SPATIAL_INTERIOR_BUILDING_ID and can_npc_act(npc_id):
+			_set_npc_state_without_signal(npc_id, {"last_action_result": last_result})
+			return _start_building_exit_route(npc_id, PLAZA_LOCATION_ID)
+		_cancel_building_interior_route(npc_id, false)
 	_stop_npc_movement(npc_id)
 	_movement_arrival_contexts.erase(npc_id)
+	_building_interior_routes.erase(npc_id)
 	var location_id := previous_location_id
 	var location_name := str(previous_state.get("current_location_name", previous_location_id))
 	var location_context: Dictionary = (
@@ -811,7 +3746,11 @@ func stop_npc_movement_for_system(
 		"movement_target": "",
 		"movement_target_name": "",
 		"location_context": location_context,
-		"last_action_result": last_result
+		"last_action_result": last_result,
+		"spatial_route_phase": "interrupted",
+		"physical_location_phase": "interior" if location_id == FIRST_SPATIAL_INTERIOR_BUILDING_ID else "outdoor_path",
+		"reserved_building_id": "",
+		"reserved_workstation_id": ""
 	})
 	_refresh_npc_node(npc_id)
 	if emit_state_changed:
@@ -1264,6 +4203,7 @@ func can_npc_act(npc_id: String) -> bool:
 		and not bool(state.get("escaped", false))
 		and not _is_npc_escaping_state(state)
 		and not bool(state.get("first_sleep_summary_active", false))
+		and not _formal_navigation_pilots.has(npc_id)
 	)
 
 
@@ -1309,7 +4249,10 @@ func apply_damage_to_npc(
 	_profiles[npc_id] = profile
 
 	if became_unconscious:
-		_stop_npc_movement(npc_id)
+		if _formal_navigation_pilots.has(npc_id):
+			_debug_stop_formal_navigation_pilot_npc(npc_id, "unconscious")
+		else:
+			_stop_npc_movement(npc_id)
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
@@ -1815,6 +4758,45 @@ func _stop_npc_movement(npc_id: String) -> void:
 		npc_node.stop_movement()
 
 
+func _cancel_building_interior_route(npc_id: String, release_reservation: bool) -> void:
+	if release_reservation:
+		_release_npc_spatial_reservation(npc_id)
+	_building_interior_routes.erase(npc_id)
+	_stop_npc_movement(npc_id)
+
+
+func _release_npc_spatial_reservation(npc_id: String) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	var state := get_npc_state(npc_id)
+	var building_id := str(state.get("reserved_building_id", ""))
+	var workstation_id := str(state.get("reserved_workstation_id", ""))
+	if building_id.is_empty() and _building_interior_routes.has(npc_id):
+		var route: Dictionary = _building_interior_routes[npc_id]
+		building_id = str(route.get("building_id", ""))
+		workstation_id = str(route.get("workstation_id", ""))
+	if building_id.is_empty() or workstation_id.is_empty():
+		return false
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("release_workstation_reservation"):
+		return false
+	return bool(building_system.release_workstation_reservation(building_id, npc_id, workstation_id))
+
+
+func _clean_nullable_state_id(value: Variant) -> String:
+	var clean_id := str(value).strip_edges()
+	return "" if clean_id == "<null>" else clean_id
+
+
+func _is_gameplay_paused_for_debug_movement() -> bool:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	return (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	)
+
+
 func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	var profile: Dictionary = _profiles[npc_id]
 	profile["skills"] = normalize_skills(profile.get("skills", {}))
@@ -1828,6 +4810,16 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 	states["wine"] = maxi(0, int(states.get("wine", 0)))
 	if not states.has("current_location"):
 		states["current_location"] = "plaza"
+	if not states.has("spatial_route_phase"):
+		states["spatial_route_phase"] = "none"
+	if not states.has("physical_location_phase"):
+		states["physical_location_phase"] = "plaza"
+	if not states.has("reserved_building_id"):
+		states["reserved_building_id"] = ""
+	if not states.has("reserved_workstation_id"):
+		states["reserved_workstation_id"] = ""
+	if not states.has("current_workstation_id"):
+		states["current_workstation_id"] = ""
 	if not states.has("location_context"):
 		states["location_context"] = {}
 	if not states.has("proactive_talk"):
@@ -2449,6 +5441,34 @@ func _pick_npc_at_screen_position(screen_position: Vector2) -> String:
 	return str(_pick_npc_interaction_at_screen_position(screen_position).get("npc_id", ""))
 
 
+func get_world_click_interaction(screen_position: Vector2) -> Dictionary:
+	return _pick_npc_interaction_at_screen_position(screen_position)
+
+
+func select_npc_from_world_click(npc_id: String) -> bool:
+	if not _profiles.has(npc_id):
+		return false
+	_select_npc(npc_id)
+	return true
+
+
+func _is_npc_hidden_by_opaque_building(npc_id: String) -> bool:
+	var state := get_npc_state(npc_id)
+	var location_id := str(state.get("current_location", ""))
+	if location_id.is_empty():
+		return false
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or str(view.get("building_id")) != location_id:
+			continue
+		var interaction_size: Vector3 = view.get("interaction_bounds_size")
+		if interaction_size.x <= 0.0 or interaction_size.y <= 0.0 or interaction_size.z <= 0.0:
+			continue
+		if view.has_method("is_interior_revealed_for_selection"):
+			return not bool(view.call("is_interior_revealed_for_selection"))
+	return false
+
+
 func _pick_npc_interaction_at_screen_position(screen_position: Vector2) -> Dictionary:
 	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
 	if camera == null:
@@ -2482,13 +5502,21 @@ func _pick_npc_interaction_at_screen_position(screen_position: Vector2) -> Dicti
 				"kind": "autonomous_dialogue_bubble",
 				"npc_id": bubble_npc_id,
 				"dialogue_id": dialogue_id,
-				"collider": collider
+				"collider": collider,
+				"distance": ray_origin.distance_to(result.get("position", ray_end)),
+				"global_position": result.get("position", ray_end)
 			}
 
 	while collider != null:
 		var npc_id := str(collider.get_meta("npc_id", ""))
 		if not npc_id.is_empty():
-			return {"kind": "npc", "npc_id": npc_id, "collider": result.get("collider")}
+			return {
+				"kind": "npc",
+				"npc_id": npc_id,
+				"collider": result.get("collider"),
+				"distance": ray_origin.distance_to(result.get("position", ray_end)),
+				"global_position": result.get("position", ray_end)
+			}
 		collider = collider.get_parent()
 
 	return {}
@@ -2871,7 +5899,12 @@ func _settle_failed_building_entry(
 		# ActionSystem owns any pending action failure and emits the final
 		# building-specific result after this arrival state has settled.
 		"last_action_result": "building_entry_rejected",
-		"last_action_failure_context": failure_context
+		"last_action_failure_context": failure_context,
+		"spatial_route_phase": "entry_rejected",
+		"physical_location_phase": "door_outside",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
 	})
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
@@ -2885,13 +5918,27 @@ func _settle_failed_building_entry(
 
 
 func _on_building_state_changed(building_id: String) -> void:
-	if building_id.is_empty():
+	if building_id.is_empty() or _building_eviction_guards.has(building_id):
 		return
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if _is_location_available_for_access(building_id, building_system):
 		return
+	_building_eviction_guards[building_id] = true
+	for raw_pilot_npc_id in _formal_navigation_pilots.keys().duplicate():
+		var pilot_npc_id := str(raw_pilot_npc_id)
+		var pilot: Dictionary = _formal_navigation_pilots.get(pilot_npc_id, {})
+		if str(pilot.get("building_id", "")) != building_id:
+			continue
+		_debug_stop_formal_navigation_pilot_npc(pilot_npc_id, "building_unavailable")
 	for raw_npc_id in _npc_order:
 		var npc_id := str(raw_npc_id)
+		if (
+			_formal_workstation_action_sessions.has(npc_id)
+			and str((_formal_workstation_action_sessions[npc_id] as Dictionary).get("building_id", "")) == building_id
+		):
+			# ActionSystem owns this work interruption and restores the formal
+			# session after releasing its reservation / occupancy.
+			continue
 		var state: Dictionary = get_npc_state(npc_id)
 		if str(state.get("current_location", "")) != building_id:
 			continue
@@ -2900,10 +5947,14 @@ func _on_building_state_changed(building_id: String) -> void:
 		if not can_npc_act(npc_id):
 			continue
 		_redirect_npc_to_plaza(npc_id, building_id, building_system)
+	_building_eviction_guards.erase(building_id)
 
 
 func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 	if not _profiles.has(npc_id):
+		return
+	if _building_interior_routes.has(npc_id):
+		_on_building_interior_route_arrived(npc_id, building_id)
 		return
 	if _movement_arrival_contexts.has(npc_id):
 		_on_custom_movement_arrived(npc_id, building_id)
@@ -2947,10 +5998,278 @@ func _on_npc_movement_arrived(npc_id: String, building_id: String) -> void:
 		"current_location_name": building_name,
 		"movement_target": "",
 		"movement_target_name": "",
-		"location_context": location_context
+		"location_context": location_context,
+		"spatial_route_phase": "none",
+		"physical_location_phase": "legacy_location",
+		"current_workstation_id": ""
 	})
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
+
+
+func _on_npc_movement_request_failed(npc_id: String, _target_id: String, reason: String) -> void:
+	if not _profiles.has(npc_id):
+		return
+	if _building_interior_routes.has(npc_id):
+		_settle_navigation_route_failure(npc_id, reason)
+		return
+	_movement_arrival_contexts.erase(npc_id)
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"movement_target": "",
+		"movement_target_name": "",
+		"last_action_result": "movement_failed_%s" % reason,
+		"last_action_failure_context": {"reason": reason},
+		"spatial_route_phase": "navigation_failed"
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+
+
+func _settle_navigation_route_failure(npc_id: String, reason: String) -> void:
+	var route: Dictionary = _building_interior_routes.get(npc_id, {})
+	_release_npc_spatial_reservation(npc_id)
+	_building_interior_routes.erase(npc_id)
+	_stop_npc_movement(npc_id)
+	if _formal_navigation_pilots.has(npc_id):
+		var pilot: Dictionary = _formal_navigation_pilots[npc_id]
+		if bool(pilot.get("occupancy_committed", false)):
+			var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+			if building_system != null:
+				building_system.release_workstation(
+					str(pilot.get("building_id", "")),
+					npc_id,
+					str(pilot.get("workstation_id", ""))
+				)
+		pilot["occupancy_committed"] = false
+		pilot["attachment_committed"] = false
+		_formal_navigation_pilots[npc_id] = pilot
+		var pilot_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+		if pilot_node != null and pilot_node.has_method("detach_from_spatial_anchor"):
+			pilot_node.detach_from_spatial_anchor()
+	var state := get_npc_state(npc_id)
+	var current_location_id := str(state.get("current_location", PLAZA_LOCATION_ID))
+	var route_building_id := str(route.get("building_id", ""))
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"movement_target": "",
+		"movement_target_name": "",
+		"last_action_result": "movement_failed_%s" % reason,
+		"last_action_failure_context": {
+			"reason": reason,
+			"building_id": str(route.get("building_id", "")),
+			"workstation_id": str(route.get("workstation_id", "")),
+			"route_source": str(route.get("route_source", ""))
+		},
+		"spatial_route_phase": "navigation_failed",
+		"physical_location_phase": "interior" if not route_building_id.is_empty() and current_location_id == route_building_id else "outdoor_path",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+
+
+func _on_building_interior_route_arrived(npc_id: String, target_id: String) -> void:
+	var route: Dictionary = _building_interior_routes.get(npc_id, {})
+	var steps: Array = route.get("steps", [])
+	var step_index := int(route.get("step_index", 0))
+	if step_index < 0 or step_index >= steps.size() or not steps[step_index] is Dictionary:
+		_cancel_building_interior_route(npc_id, true)
+		return
+	var step: Dictionary = steps[step_index]
+	if str(step.get("id", "")) != target_id:
+		return
+	var building_id := str(route.get("building_id", FIRST_SPATIAL_INTERIOR_BUILDING_ID))
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if bool(step.get("check_entry", false)):
+		var availability := _get_location_entry_availability(building_id, building_system)
+		if not bool(availability.get("is_accessible", availability.get("is_operational", false))):
+			_cancel_building_interior_route(npc_id, true)
+			_settle_failed_building_entry(npc_id, building_id, availability)
+			return
+
+	var transition_changes: Dictionary = {}
+	var state := get_npc_state(npc_id)
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if bool(step.get("crosses_entry", false)):
+		var location_context: Dictionary = {}
+		if memory_system != null:
+			location_context = _transition_npc_info_location(
+				npc_id,
+				_get_info_location_id(memory_system, str(state.get("current_location", PLAZA_LOCATION_ID))),
+				building_id,
+				building_id,
+				memory_system
+			)
+		var building_name := str(building_system.get_building(building_id).get("name", building_id)) if building_system != null else building_id
+		transition_changes = {
+			"current_location": building_id,
+			"current_location_name": building_name,
+			"location_context": location_context
+		}
+	elif bool(step.get("crosses_exit", false)):
+		var plaza_context: Dictionary = {}
+		if memory_system != null:
+			plaza_context = _transition_npc_info_location(
+				npc_id,
+				_get_info_location_id(memory_system, str(state.get("current_location", building_id))),
+				PLAZA_LOCATION_ID,
+				PLAZA_LOCATION_ID,
+				memory_system
+			)
+		transition_changes = {
+			"current_location": PLAZA_LOCATION_ID,
+			"current_location_name": str(plaza_context.get("name", "广场")),
+			"location_context": plaza_context,
+			"current_workstation_id": ""
+		}
+
+	route["step_index"] = step_index + 1
+	_building_interior_routes[npc_id] = route
+	if int(route.get("step_index", 0)) < steps.size():
+		_start_current_building_route_step(npc_id, transition_changes)
+		return
+
+	_building_interior_routes.erase(npc_id)
+	if str(route.get("kind", "")) == "entry":
+		var workstation_id := str(route.get("workstation_id", ""))
+		var workstation_type := str(route.get("workstation_type", FIRST_FORMAL_NAVIGATION_PILOT_WORKSTATION_TYPE))
+		if bool(route.get("commit_reservation_on_arrival", false)) and not workstation_id.is_empty():
+			var commit_result: Dictionary = (
+				building_system.commit_workstation_reservation(
+					building_id,
+					npc_id,
+					workstation_id,
+					workstation_type
+				)
+				if building_system != null and building_system.has_method("commit_workstation_reservation")
+				else {"ok": false, "reason": "building_system_missing"}
+			)
+			if not bool(commit_result.get("ok", false)):
+				_settle_navigation_route_failure(
+					npc_id,
+					str(commit_result.get("reason", "workstation_commit_failed"))
+				)
+				return
+			if _formal_navigation_pilots.has(npc_id):
+				var pilot: Dictionary = _formal_navigation_pilots[npc_id]
+				pilot["occupancy_committed"] = true
+				_formal_navigation_pilots[npc_id] = pilot
+		var final_facing: Variant = step.get("facing_direction", Vector3.ZERO)
+		var npc_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+		if final_facing is Vector3:
+			var final_facing_direction: Vector3 = final_facing
+			if final_facing_direction.length_squared() <= 0.0001:
+				final_facing_direction = Vector3.ZERO
+			if npc_node != null and npc_node.has_method("set_facing_direction"):
+				npc_node.set_facing_direction(final_facing_direction)
+		var arrival_mode := str(step.get("arrival_mode", "stand"))
+		var attachment_committed := false
+		# Formal gameplay actions let ActionSystem revalidate their service
+		# dependency and commit the reserved workstation first. Only the pure GM
+		# navigation pilot mounts here; gameplay patients mount through
+		# attach_formal_workstation_occupant() after occupancy becomes authoritative.
+		if arrival_mode == "mount_after_arrival" and not _formal_workstation_action_sessions.has(npc_id):
+			var anchor_position: Variant = step.get("occupant_anchor_position")
+			var anchor_facing: Variant = step.get("occupant_anchor_facing_direction", Vector3.ZERO)
+			var occupant_pose := str(step.get("occupant_pose", ""))
+			attachment_committed = (
+				npc_node != null
+				and npc_node.has_method("attach_to_spatial_anchor")
+				and anchor_position is Vector3
+				and anchor_facing is Vector3
+				and bool(npc_node.attach_to_spatial_anchor(anchor_position, anchor_facing, occupant_pose))
+			)
+			if not attachment_committed:
+				if building_system != null:
+					building_system.release_workstation(building_id, npc_id, workstation_id)
+				if _formal_navigation_pilots.has(npc_id):
+					var failed_pilot: Dictionary = _formal_navigation_pilots[npc_id]
+					failed_pilot["occupancy_committed"] = false
+					_formal_navigation_pilots[npc_id] = failed_pilot
+				_settle_navigation_route_failure(npc_id, "occupant_attachment_failed")
+				return
+			if _formal_navigation_pilots.has(npc_id):
+				var attached_pilot: Dictionary = _formal_navigation_pilots[npc_id]
+				attached_pilot["attachment_committed"] = true
+				_formal_navigation_pilots[npc_id] = attached_pilot
+		var final_changes := transition_changes.duplicate(true)
+		final_changes.merge({
+			"current_action": "idle",
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "occupant_attached" if attachment_committed else ("workstation_arrived" if not workstation_id.is_empty() else "interior_arrived"),
+			"physical_location_phase": "occupant_anchor" if attachment_committed else ("workstation" if not workstation_id.is_empty() else "interior"),
+			"current_workstation_id": workstation_id,
+			"last_action_result": "occupant_attached" if attachment_committed else ("workstation_arrived" if not workstation_id.is_empty() else "interior_arrived"),
+			"reserved_building_id": "" if bool(route.get("commit_reservation_on_arrival", false)) else str(state.get("reserved_building_id", "")),
+			"reserved_workstation_id": "" if bool(route.get("commit_reservation_on_arrival", false)) else str(state.get("reserved_workstation_id", ""))
+		}, true)
+		_set_npc_state_without_signal(npc_id, final_changes)
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
+		return
+
+	var destination_id := str(route.get("destination_building_id", PLAZA_LOCATION_ID))
+	_set_npc_state_without_signal(npc_id, transition_changes)
+	if _formal_workstation_action_sessions.has(npc_id):
+		if destination_id == PLAZA_LOCATION_ID:
+			var formal_session: Dictionary = _formal_workstation_action_sessions[npc_id]
+			if bool(formal_session.get("continue_to_exterior_after_exit", false)):
+				formal_session["continue_to_exterior_after_exit"] = false
+				_formal_workstation_action_sessions[npc_id] = formal_session
+				if _start_formal_exterior_service_route(npc_id):
+					return
+				_settle_navigation_route_failure(npc_id, "formal_exterior_destination_route_failed")
+				return
+			if _start_formal_public_location_route(npc_id, destination_id):
+				return
+			_settle_navigation_route_failure(npc_id, "formal_public_destination_route_failed")
+			return
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var destination_route: Dictionary = (
+			controller.get_building_spatial_route(destination_id)
+			if controller != null and controller.has_method("get_building_spatial_route")
+			else {}
+		)
+		if not destination_route.is_empty() and _start_building_entry_route(
+			npc_id,
+			destination_id,
+			"",
+			destination_route
+		):
+			return
+		_settle_navigation_route_failure(npc_id, "formal_destination_route_failed")
+		return
+	if _default_formal_world_npcs.has(npc_id):
+		if destination_id == PLAZA_LOCATION_ID:
+			if _start_formal_public_location_route(npc_id, destination_id):
+				return
+			_settle_navigation_route_failure(npc_id, "default_formal_public_route_failed")
+			return
+		var resident_controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var resident_route: Dictionary = (
+			resident_controller.get_building_spatial_route(destination_id)
+			if resident_controller != null and resident_controller.has_method("get_building_spatial_route")
+			else {}
+		)
+		if not resident_route.is_empty() and _start_building_entry_route(npc_id, destination_id, "", resident_route):
+			return
+		_settle_navigation_route_failure(npc_id, "default_formal_destination_route_failed")
+		return
+	if not _move_npc_to_building_direct(npc_id, destination_id, true):
+		_set_npc_state_without_signal(npc_id, {
+			"current_action": "idle",
+			"movement_target": "",
+			"movement_target_name": "",
+			"spatial_route_phase": "exit_complete",
+			"physical_location_phase": "outdoor_path",
+			"last_action_result": "exit_destination_unavailable"
+		})
+		_refresh_npc_node(npc_id)
+		_emit_npc_state_changed(npc_id)
 
 
 func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
@@ -2961,7 +6280,12 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 	var previous_state: Dictionary = get_npc_state(npc_id)
 	var previous_location_id := str(previous_state.get("current_location", PLAZA_LOCATION_ID))
 	var location_context: Dictionary = {}
-	if memory_system != null and memory_system.has_method("is_enterable_location"):
+	var arrival_state: Dictionary = context.get("arrival_state", {}) if (context.get("arrival_state", {}) is Dictionary) else {}
+	if (
+		not bool(arrival_state.get("preserve_location_context", false))
+		and memory_system != null
+		and memory_system.has_method("is_enterable_location")
+	):
 		var previous_info_location_id := _get_info_location_id(memory_system, previous_location_id)
 		location_context = _transition_npc_info_location(
 			npc_id,
@@ -2972,7 +6296,8 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 		)
 
 	var target_name := str(context.get("target_name", target_id))
-	var arrival_state: Dictionary = context.get("arrival_state", {}) if (context.get("arrival_state", {}) is Dictionary) else {}
+	if bool(arrival_state.get("preserve_location_context", false)):
+		location_context = previous_state.get("location_context", {}).duplicate(true) if previous_state.get("location_context", {}) is Dictionary else {}
 	var changes := {
 		"current_action": str(arrival_state.get("current_action", "idle")),
 		"current_location": str(arrival_state.get("current_location", target_id)),
@@ -2983,12 +6308,20 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 	}
 	for key in arrival_state.keys():
 		if [
+			"arrival_facing_direction",
+			"attach_clinic_study_on_arrival",
+			"attach_clinic_treatment_on_arrival",
+			"clinic_treatment_anchor_position",
+			"clinic_treatment_anchor_facing_direction",
+			"departure_current_action",
+			"departure_state",
 			"escape_finalize",
 			"escape_reason",
 			"escape_trigger",
 			"source_event_id",
 			"exit_target_id",
-			"exit_target_name"
+			"exit_target_name",
+			"preserve_location_context"
 		].has(str(key)):
 			continue
 		changes[str(key)] = arrival_state[key]
@@ -3001,6 +6334,7 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 		escape_intent["completed_time"] = str(time_snapshot.get("time", "00:00:00"))
 		escape_intent["exit_target_id"] = str(arrival_state.get("exit_target_id", target_id))
 		escape_intent["exit_target_name"] = str(arrival_state.get("exit_target_name", target_name))
+		escape_intent["completed_world_position"] = get_npc_world_position(npc_id)
 		changes["escape_intent"] = escape_intent
 		changes["escaped"] = true
 		changes["unconscious"] = false
@@ -3011,7 +6345,72 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 		changes["current_location_name"] = "驿站外"
 		changes["location_context"] = {}
 		changes["last_action_result"] = "escaped_station"
+	if bool(arrival_state.get("attach_clinic_study_on_arrival", false)):
+		var workstation_id := str(changes.get("current_workstation_id", ""))
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		var study_route: Dictionary = (
+			controller.get_building_spatial_route(CLINIC_FORMAL_NAVIGATION_PILOT_BUILDING_ID, workstation_id)
+			if controller != null and controller.has_method("get_building_spatial_route")
+			else {}
+		)
+		var anchor_position: Variant = study_route.get("occupant_anchor_position")
+		var anchor_facing: Variant = study_route.get("occupant_anchor_facing_direction", Vector3.ZERO)
+		var occupant_pose := str(study_route.get("occupant_pose", ""))
+		var study_npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+		var attached := (
+			study_npc_node != null
+			and study_npc_node.has_method("attach_to_spatial_anchor")
+			and anchor_position is Vector3
+			and anchor_facing is Vector3
+			and bool(study_npc_node.attach_to_spatial_anchor(anchor_position, anchor_facing, occupant_pose))
+		)
+		if attached:
+			changes["spatial_route_phase"] = "occupant_attached"
+			changes["physical_location_phase"] = "occupant_anchor"
+			changes["last_action_result"] = "clinic_study_seated"
+			if _formal_workstation_action_sessions.has(npc_id):
+				var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+				session["attachment_committed"] = true
+				_formal_workstation_action_sessions[npc_id] = session
+		else:
+			changes["spatial_route_phase"] = "clinic_study_attachment_failed"
+			changes["physical_location_phase"] = "workstation"
+			changes["last_action_result"] = "clinic_study_attachment_failed"
+	if bool(arrival_state.get("attach_clinic_treatment_on_arrival", false)):
+		var treatment_anchor_position: Variant = arrival_state.get("clinic_treatment_anchor_position")
+		var treatment_anchor_facing: Variant = arrival_state.get("clinic_treatment_anchor_facing_direction")
+		var treatment_npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+		var treatment_attached := (
+			treatment_npc_node != null
+			and treatment_npc_node.has_method("attach_to_spatial_anchor")
+			and treatment_anchor_position is Vector3
+			and treatment_anchor_facing is Vector3
+			and bool(treatment_npc_node.attach_to_spatial_anchor(
+				treatment_anchor_position,
+				treatment_anchor_facing,
+				"standing_treatment",
+				false
+			))
+		)
+		if treatment_attached:
+			changes["spatial_route_phase"] = "clinic_round_treatment_attached"
+			changes["physical_location_phase"] = "clinic_bedside"
+			changes["last_action_result"] = "clinic_treatment_anchor_attached"
+			if _formal_workstation_action_sessions.has(npc_id):
+				var treatment_session: Dictionary = _formal_workstation_action_sessions[npc_id]
+				treatment_session["attachment_committed"] = true
+				treatment_session["clinic_treatment_safe_position"] = context.get("target_position")
+				treatment_session["clinic_treatment_anchor_position"] = treatment_anchor_position
+				_formal_workstation_action_sessions[npc_id] = treatment_session
+		else:
+			changes["spatial_route_phase"] = "clinic_round_treatment_attachment_failed"
+			changes["last_action_result"] = "clinic_treatment_attachment_failed"
 	_set_npc_state_without_signal(npc_id, changes)
+	var arrival_facing: Variant = arrival_state.get("arrival_facing_direction")
+	if arrival_facing is Vector3:
+		var npc_node := get_node_or_null(_npc_nodes[npc_id]) if _npc_nodes.has(npc_id) else null
+		if npc_node != null and npc_node.has_method("set_facing_direction"):
+			npc_node.set_facing_direction(arrival_facing)
 	if (
 		bool(arrival_state.get("escape_finalize", false))
 		and memory_system != null
@@ -3027,10 +6426,15 @@ func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 			combat_system.handle_npc_escape_completed(npc_id, changes.duplicate(true))
 
 
-func debug_enter_location_immediately(npc_id: String, location_id: String) -> bool:
+func debug_enter_location_immediately(
+	npc_id: String,
+	location_id: String,
+	emit_state_changed: bool = true
+) -> bool:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot set location for unknown NPC: %s" % npc_id)
 		return false
+	_cancel_building_interior_route(npc_id, true)
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if not _is_location_available_for_entry(location_id, building_system):
 		var availability := _get_location_entry_availability(location_id, building_system)
@@ -3065,10 +6469,16 @@ func debug_enter_location_immediately(npc_id: String, location_id: String) -> bo
 		"current_location_name": str(location_context.get("name", location_id)),
 		"movement_target": "",
 		"movement_target_name": "",
-		"location_context": location_context
+		"location_context": location_context,
+		"spatial_route_phase": "debug_teleport",
+		"physical_location_phase": "debug_location",
+		"reserved_building_id": "",
+		"reserved_workstation_id": "",
+		"current_workstation_id": ""
 	})
 	_refresh_npc_node(npc_id)
-	_emit_npc_state_changed(npc_id)
+	if emit_state_changed:
+		_emit_npc_state_changed(npc_id)
 	return true
 
 
@@ -3163,3 +6573,14 @@ func _get_info_location_id(memory_system: Node, location_id: String) -> String:
 	if memory_system != null and memory_system.has_method("is_enterable_location") and memory_system.is_enterable_location(location_id):
 		return location_id
 	return PLAZA_LOCATION_ID
+
+
+func debug_get_npc_character_art_snapshot(npc_id: String) -> Dictionary:
+	if not _npc_nodes.has(npc_id):
+		return {"ok": false, "error": "npc_node_not_found", "npc_id": npc_id}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("debug_get_character_art_snapshot"):
+		return {"ok": false, "error": "character_art_snapshot_unavailable", "npc_id": npc_id}
+	var snapshot: Dictionary = npc_node.debug_get_character_art_snapshot()
+	snapshot["ok"] = bool(snapshot.get("ready", false))
+	return snapshot

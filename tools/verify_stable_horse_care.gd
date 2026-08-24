@@ -17,9 +17,11 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or horse_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or horse_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		_fail("Required stable horse-care systems not found")
 		return
+	time_system.set_paused(false)
 
 	var stable_action: Dictionary = action_system.get_action("work_stable")
 	if str(stable_action.get("location_required", "")) != "stable":
@@ -49,7 +51,9 @@ func _init() -> void:
 	var stableman_id := "stableman_01"
 	var cook_id := "cook_01"
 	var engineer_id := "engineer_01"
-	_set_debug_move_speed(stableman_id, 100.0)
+	# Formal NavigationAgent avoidance clamps safely around fixtures; an artificial
+	# 100 m/s speed can overshoot the short stall approach and orbit forever.
+	_set_debug_move_speed(stableman_id, 40.0)
 
 	var base_duration := float(stable_action.get("duration_seconds", 3600.0))
 	var stableman_duration_level_1: float = action_system._get_effective_action_duration_seconds(stable_action, stableman_id)
@@ -101,7 +105,11 @@ func _init() -> void:
 		_fail("Failed to assign stable work")
 		return
 	if not await _wait_until_current_action(npc_system, stableman_id, "work_stable"):
-		_fail("Stable work did not start")
+		_fail("Stable work did not start: state=%s runtime=%s spatial=%s" % [
+			JSON.stringify(npc_system.get_npc_state(stableman_id)),
+			JSON.stringify(action_system.get_runtime_action_snapshot(stableman_id)),
+			JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(stableman_id))
+		])
 		return
 
 	horse_system.debug_advance(600.0)
@@ -193,7 +201,7 @@ func _set_horse_runtime(horse_system: Node, horse_id: String, updates: Dictionar
 
 
 func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result: String) -> bool:
-	for _frame in range(600):
+	for _frame in range(1800):
 		await process_frame
 		if str(npc_system.get_npc_state(npc_id).get("last_action_result", "")) == expected_result:
 			return true
@@ -201,7 +209,7 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for _frame in range(600):
+	for _frame in range(1800):
 		await process_frame
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true

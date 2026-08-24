@@ -1,0 +1,60 @@
+{
+  "schema_version": "t0130_character_pilot_inventory_v1",
+  "recorded_at": "2026-08-21",
+  "source_archives": [
+    {
+      "id": "synty_polygon_mini_fantasy_characters_source_v2",
+      "path": "art_source/downloads/POLYGON_Mini_Fantasy_Characters_SourceFiles_v2.zip",
+      "size_bytes": 14679217,
+      "sha256": "9C800E9EFC065BDD9C446955F6166CED8694015B1F84D9CFF7C36DCDB4183DFB",
+      "license_record": "art_source/licenses/SYNTY_POLYGON_MINI_FANTASY_CHARACTERS_SOURCE_RECORD.md"
+    },
+    {
+      "id": "kaykit_character_animations_1_1",
+      "path": "art_source/downloads/KayKit_Character_Animations_1.1.zip",
+      "size_bytes": 14858957,
+      "sha256": "65882F31F905AD2E953819648A59287CDEAB8F623908D5EF701971D3758BE20F",
+      "license_record": "art_source/licenses/KAYKIT_CHARACTER_ANIMATIONS_CC0_SOURCE_RECORD.md"
+    }
+  ],
+  "runtime_selection": {
+    "synty_directory": "assets/3d/synty/t0130_pilot/",
+    "synty_characters": [
+      "SK_Adventure_Peasant_01.fbx",
+      "SK_Adventure_ShopKeeper_01.fbx",
+      "SK_Fantasy_MalePeasant_01.fbx",
+      "SK_Fantasy_Wizard_01.fbx",
+      "SK_Knights_Dark_01.fbx",
+      "SK_Pirates_Deckhand_01.fbx",
+      "SK_Pirates_GovDaughter_01.fbx",
+      "SK_Vikings_ShieldMaiden_01.fbx"
+    ],
+    "synty_props": [
+      "Prop_Broom_01.fbx",
+      "Prop_Hammer_01.fbx",
+      "Prop_Sword_01.fbx",
+      "Prop_ShieldKnight_01.fbx"
+    ],
+    "synty_palette_png_count": 18,
+    "kaykit_directory": "assets/3d/kaykit/animations/rig_medium/",
+    "kaykit_glb_count": 8,
+    "kaykit_sets": [
+      "CombatMelee",
+      "CombatRanged",
+      "General",
+      "MovementAdvanced",
+      "MovementBasic",
+      "Simulation",
+      "Special",
+      "Tools"
+    ]
+  },
+  "pilot_contract": {
+    "visible_characters": ["glen", "toma", "bruno", "ivo", "marcel", "ada", "lina", "sword_shield_enemy"],
+    "state_count": 17,
+    "retarget": "Godot 4.6 RetargetModifier3D + SkeletonProfileHumanoid",
+    "shared_animation_library": true,
+    "production_replacement_status": "partial_glen_toma_bruno_ivo_marcel_ada_lina_sword_shield_only",
+    "pending_gate": "each_remaining_role_requires_individual_visual_and_authority_acceptance"
+  }
+}

@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/characters/GlenArtView.tscn" id="1_owen_base"]
+
+[node name="OwenArtView" instance=ExtResource("1_owen_base")]
+appearance_id = "owen_engineer_v1"
+outfit_tint = Color(0.24, 0.31, 0.38, 1)
+hair_tint = Color(0.12, 0.065, 0.035, 1)
+show_smith_hammer = false

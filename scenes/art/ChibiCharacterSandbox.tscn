@@ -1,0 +1,246 @@
+[gd_scene load_steps=17 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/ChibiCharacterSandbox.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/characters/GlenChibiPilot.tscn" id="2_glen"]
+[ext_resource type="PackedScene" path="res://scenes/characters/EnemySwordShieldChibiPilot.tscn" id="3_enemy"]
+[ext_resource type="PackedScene" path="res://scenes/characters/TomaChibiArtView.tscn" id="4_toma"]
+[ext_resource type="PackedScene" path="res://scenes/characters/BrunoChibiArtView.tscn" id="5_bruno"]
+[ext_resource type="PackedScene" path="res://scenes/characters/IvoChibiArtView.tscn" id="6_ivo"]
+[ext_resource type="PackedScene" path="res://scenes/characters/AdaChibiArtView.tscn" id="7_ada"]
+[ext_resource type="PackedScene" path="res://scenes/characters/MarcelChibiArtView.tscn" id="8_marcel"]
+[ext_resource type="PackedScene" path="res://scenes/characters/LinaChibiArtView.tscn" id="9_lina"]
+[ext_resource type="PackedScene" path="res://scenes/characters/OwenChibiArtView.tscn" id="10_owen"]
+
+[sub_resource type="Environment" id="Environment_sandbox"]
+background_mode = 1
+background_color = Color(0.105, 0.132, 0.13, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.56, 0.65, 0.67, 1)
+ambient_light_energy = 0.72
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_ground"]
+albedo_color = Color(0.16, 0.245, 0.19, 1)
+roughness = 0.92
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+material = SubResource("StandardMaterial_ground")
+size = Vector2(30, 7)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_plinth"]
+albedo_color = Color(0.24, 0.205, 0.155, 1)
+roughness = 0.88
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_plinth"]
+material = SubResource("StandardMaterial_plinth")
+top_radius = 1.05
+bottom_radius = 1.12
+height = 0.12
+radial_segments = 12
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
+bg_color = Color(0.045, 0.055, 0.058, 0.94)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.64, 0.49, 0.27, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="LabelSettings" id="LabelSettings_title"]
+font_size = 24
+font_color = Color(0.94, 0.82, 0.56, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_body"]
+font_size = 18
+font_color = Color(0.88, 0.9, 0.87, 1)
+
+[node name="ChibiCharacterSandbox" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_sandbox")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-50, -32, 0)
+light_color = Color(1, 0.89, 0.72, 1)
+light_energy = 1.35
+shadow_enabled = true
+
+[node name="Fill" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-28, 142, 0)
+light_color = Color(0.45, 0.63, 0.82, 1)
+light_energy = 0.42
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="GlenPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(-8.8, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="TomaPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(-6.6, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="BrunoPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(-4.4, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="IvoPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(-2.2, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="MarcelPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="AdaPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(2.2, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="LinaPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(4.4, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="EnemyPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(8.8, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="OwenPlinth" type="MeshInstance3D" parent="."]
+position = Vector3(6.6, 0.06, 0)
+mesh = SubResource("CylinderMesh_plinth")
+
+[node name="Characters" type="Node3D" parent="."]
+position = Vector3(0, 0.12, 0)
+
+[node name="GlenChibiPilot" parent="Characters" instance=ExtResource("2_glen")]
+position = Vector3(-8.8, 0, 0)
+
+[node name="TomaChibiArtView" parent="Characters" instance=ExtResource("4_toma")]
+position = Vector3(-6.6, 0, 0)
+
+[node name="BrunoChibiArtView" parent="Characters" instance=ExtResource("5_bruno")]
+position = Vector3(-4.4, 0, 0)
+
+[node name="IvoChibiArtView" parent="Characters" instance=ExtResource("6_ivo")]
+position = Vector3(-2.2, 0, 0)
+
+[node name="MarcelChibiArtView" parent="Characters" instance=ExtResource("8_marcel")]
+position = Vector3(0, 0, 0)
+
+[node name="AdaChibiArtView" parent="Characters" instance=ExtResource("7_ada")]
+position = Vector3(2.2, 0, 0)
+
+[node name="LinaChibiArtView" parent="Characters" instance=ExtResource("9_lina")]
+position = Vector3(4.4, 0, 0)
+
+[node name="OwenChibiArtView" parent="Characters" instance=ExtResource("10_owen")]
+position = Vector3(6.6, 0, 0)
+
+[node name="EnemySwordShieldChibiPilot" parent="Characters" instance=ExtResource("3_enemy")]
+position = Vector3(8.8, 0, 0)
+
+[node name="GlenLabel" type="Label3D" parent="."]
+position = Vector3(-8.8, 2.3, 0)
+text = "格伦 · 铁匠试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="TomaLabel" type="Label3D" parent="."]
+position = Vector3(-6.6, 2.3, 0)
+text = "托马 · 马夫试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="BrunoLabel" type="Label3D" parent="."]
+position = Vector3(-4.4, 2.3, 0)
+text = "布鲁诺 · 厨师试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="IvoLabel" type="Label3D" parent="."]
+position = Vector3(-2.2, 2.3, 0)
+text = "伊沃 · 园丁试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="EnemyLabel" type="Label3D" parent="."]
+position = Vector3(8.8, 2.3, 0)
+text = "剑盾敌人 · 试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="AdaLabel" type="Label3D" parent="."]
+position = Vector3(2.2, 2.3, 0)
+text = "艾达 · 老兵副官试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="MarcelLabel" type="Label3D" parent="."]
+position = Vector3(0, 2.3, 0)
+text = "马塞尔 · 神父试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="LinaLabel" type="Label3D" parent="."]
+position = Vector3(4.4, 2.3, 0)
+text = "莉娜 · 医生试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="OwenLabel" type="Label3D" parent="."]
+position = Vector3(6.6, 2.3, 0)
+text = "欧文 · 工程师试片"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(0, 2.8, 19.5)
+current = true
+fov = 40.0
+near = 0.1
+far = 50.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Panel" type="PanelContainer" parent="CanvasLayer"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 805.0
+offset_bottom = 144.0
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="CanvasLayer/Panel"]
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/Panel/Margin"]
+theme_override_constants/separation = 5
+
+[node name="Title" type="Label" parent="CanvasLayer/Panel/Margin/VBox"]
+text = "T0130-P8 · 八名初始 NPC / 剑盾敌人动作对照"
+label_settings = SubResource("LabelSettings_title")
+
+[node name="State" type="Label" parent="CanvasLayer/Panel/Margin/VBox"]
+text = "加载中"
+label_settings = SubResource("LabelSettings_body")
+
+[node name="Detail" type="Label" parent="CanvasLayer/Panel/Margin/VBox"]
+text = "正在建立角色骨架"
+label_settings = SubResource("LabelSettings_body")

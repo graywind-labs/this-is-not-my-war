@@ -127,7 +127,7 @@ func _init() -> void:
 		return
 	daily_plan_system.set_auto_execution_enabled(false)
 
-	if not _verify_prayer_requires_arrival(
+	if not await _verify_prayer_requires_arrival(
 		action_system,
 		building_system,
 		memory_system,
@@ -149,7 +149,7 @@ func _init() -> void:
 	)
 
 	time_system.set_current_time(1, CURRENT_HOUR, 0, 0)
-	if not _verify_mass_transition_without_revision(
+	if not await _verify_mass_transition_without_revision(
 		action_system,
 		building_system,
 		npc_system,
@@ -157,7 +157,7 @@ func _init() -> void:
 		bridge
 	):
 		return
-	if not _verify_dialogue_commitment_revision(
+	if not await _verify_dialogue_commitment_revision(
 		action_system,
 		npc_system,
 		daily_plan_system,
@@ -214,14 +214,15 @@ func _verify_prayer_requires_arrival(
 		return false
 	var interrupted_state: Dictionary = npc_system.get_npc_state(PRAYER_NPC_ID)
 	if (
-		str(interrupted_state.get("current_location", "")) != "plaza"
+		str(interrupted_state.get("current_location", "")) != "chapel"
 		or not str(interrupted_state.get("movement_target", "")).is_empty()
+		or bool(npc_system.get_formal_workstation_action_snapshot(PRAYER_NPC_ID).get("active", true))
 	):
-		_fail("Interrupted building travel did not settle at the plaza")
+		_fail("Interrupted formal prayer route did not restore its pre-session location")
 		return false
 	if (
-		memory_system.get_location_people_present("chapel").has(PRAYER_NPC_ID)
-		or not memory_system.get_location_people_present("plaza").has(PRAYER_NPC_ID)
+		not memory_system.get_location_people_present("chapel").has(PRAYER_NPC_ID)
+		or memory_system.get_location_people_present("plaza").has(PRAYER_NPC_ID)
 	):
 		_fail("Interrupted travel left the location information nodes inconsistent")
 		return false
@@ -271,10 +272,7 @@ func _verify_mass_transition_without_revision(
 			npc_id,
 			true
 		)
-		if (
-			not bool(start_result.get("ok", false))
-			or action_system.get_active_action_id(npc_id) != "pray_at_chapel"
-		):
+		if not bool(start_result.get("ok", false)) or not await _wait_for_active(action_system, npc_id, "pray_at_chapel"):
 			_fail("Could not start planned prayer for %s: %s" % [
 				npc_id,
 				JSON.stringify(start_result)
@@ -301,7 +299,7 @@ func _verify_mass_transition_without_revision(
 		or action_system.get_pending_action_id(pending_prayer_id)
 		!= "pray_at_chapel"
 		or action_system.has_active_action(pending_prayer_id)
-		or str(pending_state_before_mass.get("movement_target", "")) != "chapel"
+		or not bool(npc_system.get_formal_workstation_action_snapshot(pending_prayer_id).get("active", false))
 	):
 		_fail("Could not keep planned prayer pending while travelling to chapel")
 		return false
@@ -310,6 +308,9 @@ func _verify_mass_transition_without_revision(
 	var judgement_start_index := bridge.judgement_requests.size()
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Priest could not start Mass")
+		return false
+	if not await _wait_for_active(action_system, priest_id, "lead_mass"):
+		_fail("Priest did not physically reach the altar")
 		return false
 	var new_judgements := bridge.judgement_requests.slice(judgement_start_index)
 	if not new_judgements.is_empty():
@@ -332,13 +333,13 @@ func _verify_mass_transition_without_revision(
 	var pending_state_after_mass: Dictionary = npc_system.get_npc_state(pending_prayer_id)
 	if (
 		action_system.get_pending_action_id(pending_prayer_id) != "pray_at_chapel"
-		or str(pending_state_after_mass.get("movement_target", "")) != "chapel"
 		or action_system.has_active_action(pending_prayer_id)
+		or not bool(npc_system.get_formal_workstation_action_snapshot(pending_prayer_id).get("active", false))
 	):
 		_fail("Mass start must preserve prayer that is still travelling")
 		return false
-	if not npc_system.debug_enter_location_immediately(pending_prayer_id, "chapel"):
-		_fail("Could not complete pending prayer arrival during Mass")
+	if not await _wait_for_active(action_system, pending_prayer_id, "pray_at_chapel"):
+		_fail("Pending prayer did not physically reach its seat during Mass")
 		return false
 	var arrived_runtime: Dictionary = action_system.get_runtime_action_snapshot(
 		pending_prayer_id
@@ -383,6 +384,9 @@ func _verify_dialogue_commitment_revision(
 			return false
 	if not action_system.debug_assign_action(priest_id, "lead_mass"):
 		_fail("Could not start Mass for dialogue commitment verification")
+		return false
+	if not await _wait_for_active(action_system, priest_id, "lead_mass"):
+		_fail("Mass leader did not reach the altar for dialogue verification")
 		return false
 	if str(npc_system.get_npc_state(npc_id).get("current_location", "")) != "chapel":
 		_fail("Could not place dialogue actor in chapel")
@@ -464,6 +468,9 @@ func _verify_dialogue_commitment_revision(
 		revision_request,
 		_item(CURRENT_HOUR, "pray_at_chapel", "pray", "chapel")
 	)
+	if not await _wait_for_active(action_system, npc_id, "pray_at_chapel"):
+		_fail("Revised prayer did not physically reach a seat during Mass")
+		return false
 	var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
 	if (
 		str(runtime.get("action_id", "")) != "pray_at_chapel"
@@ -520,6 +527,18 @@ func _is_occupied_by(raw_workstations: Variant, npc_id: String) -> bool:
 			raw_workstation is Dictionary
 			and str((raw_workstation as Dictionary).get("occupied_by", "")) == npc_id
 		):
+			return true
+	return false
+
+
+func _wait_for_active(action_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	for _frame in range(max_frames):
+		if time_system != null:
+			time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
 			return true
 	return false
 

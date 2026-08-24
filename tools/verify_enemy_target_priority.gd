@@ -46,7 +46,8 @@ func _init() -> void:
 		return
 
 	var gate_before := int(building_system.get_building("front_gate").get("hp", 0))
-	combat_system.debug_step_enemy_ai(720.0)
+	_place_enemy_at(combat_system, first_enemy_id, _to_vector3(first_target.get("position", Vector3.ZERO)))
+	combat_system.debug_step_enemy_ai(1.0)
 	# T0107 enemy attacks have a windup measured in combat-action seconds.
 	combat_system.debug_step_enemy_ai(60.0)
 	var gate_after := int(building_system.get_building("front_gate").get("hp", 0))
@@ -54,7 +55,6 @@ func _init() -> void:
 		push_error("Enemy should move to and damage front_gate. before=%d after=%d" % [gate_before, gate_after])
 		quit(1)
 		return
-
 	combat_system.debug_clear_enemies()
 	await process_frame
 	await process_frame
@@ -62,7 +62,7 @@ func _init() -> void:
 	first_enemy_id = str(combat_system.get_active_enemy_ids()[0])
 	var first_enemy: Dictionary = combat_system.get_enemy(first_enemy_id)
 	var enemy_position: Vector3 = first_enemy.get("position", Vector3.ZERO)
-	var npc_id := "stableman_01"
+	var npc_id := "veteran_deputy_01"
 	var npc_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/%s" % _make_node_name(npc_id)) as Node3D
 	if npc_node == null:
 		push_error("Cannot find NPC node for nearby unit priority test")
@@ -91,12 +91,17 @@ func _init() -> void:
 			move_node.global_position = Vector3(-30.0, 0.0, -20.0)
 	var wall_hp_before := int(building_system.get_building("wall").get("hp", 0))
 	building_system.debug_damage_building("front_gate", 9999)
-	combat_system.debug_spawn_wave(1, true)
+	var warehouse_spawn: Dictionary = combat_system.debug_spawn_wave(1, true)
+	if not bool(warehouse_spawn.get("ok", false)):
+		push_error("Failed to spawn warehouse target wave: %s" % JSON.stringify(warehouse_spawn))
+		quit(1)
+		return
 	first_enemy_id = str(combat_system.get_active_enemy_ids()[0])
+	combat_system.debug_step_enemy_ai(1.0)
 	combat_system.debug_step_enemy_ai(1.0)
 	var warehouse_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
 	if str(warehouse_target.get("type", "")) != "building" or str(warehouse_target.get("id", "")) != "warehouse":
-		push_error("Enemy should skip wall after front_gate is destroyed and target warehouse, got: %s" % JSON.stringify(warehouse_target))
+		push_error("Enemy should skip wall after front_gate is destroyed and target warehouse, got=%s enemy=%s warehouse=%s" % [JSON.stringify(warehouse_target), JSON.stringify(combat_system.get_enemy(first_enemy_id)), JSON.stringify(building_system.get_building("warehouse"))])
 		quit(1)
 		return
 	var wall_hp_after := int(building_system.get_building("wall").get("hp", 0))
@@ -107,13 +112,14 @@ func _init() -> void:
 
 	building_system.debug_damage_building("warehouse", 9999)
 	combat_system.debug_step_enemy_ai(1.0)
+	combat_system.debug_step_enemy_ai(1.0)
 	var main_hall_target: Dictionary = combat_system.debug_get_enemy_target(first_enemy_id)
 	if str(main_hall_target.get("type", "")) != "building" or str(main_hall_target.get("id", "")) != "main_hall":
 		push_error("Enemy should fall through destroyed targets to main_hall, got: %s" % JSON.stringify(main_hall_target))
 		quit(1)
 		return
-	combat_system.debug_step_enemy_ai(1200.0)
-	combat_system.debug_step_enemy_ai(1200.0)
+	building_system.debug_damage_building("main_hall", 160)
+	_place_enemy_at(combat_system, first_enemy_id, _to_vector3(main_hall_target.get("position", Vector3.ZERO)))
 	combat_system.debug_step_enemy_ai(1200.0)
 	var game_state := root.get_node_or_null("/root/GameState")
 	if game_state == null or not bool(game_state.game_over) or str(game_state.failure_reason) != "main_hall_destroyed":
@@ -140,3 +146,24 @@ func _make_node_name(id_value: String) -> String:
 			continue
 		result += part.substr(0, 1).to_upper() + part.substr(1).to_lower()
 	return "NPC" if result.is_empty() else result
+
+
+func _place_enemy_at(combat_system: Node, enemy_id: String, position: Vector3) -> void:
+	var active_enemies: Dictionary = combat_system.get("_active_enemies")
+	var enemy: Dictionary = active_enemies.get(enemy_id, {})
+	if enemy.is_empty():
+		return
+	enemy["position"] = position
+	enemy["attack_cooldown"] = 0.0
+	active_enemies[enemy_id] = enemy
+	combat_system.set("_active_enemies", active_enemies)
+	if combat_system.has_method("_refresh_enemy_node"):
+		combat_system._refresh_enemy_node(enemy_id)
+
+
+func _to_vector3(value: Variant) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Dictionary:
+		return Vector3(float(value.get("x", 0.0)), float(value.get("y", 0.0)), float(value.get("z", 0.0)))
+	return Vector3.ZERO

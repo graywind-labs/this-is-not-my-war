@@ -6,9 +6,11 @@ extends Node3D
 var _deployment_id := ""
 var _device_id := ""
 var _loaded_model_scene := ""
+var _latest_snapshot: Dictionary = {}
 
 
 func configure_device(snapshot: Dictionary) -> void:
+	_latest_snapshot = snapshot.duplicate(true)
 	_deployment_id = str(snapshot.get("deployment_id", ""))
 	_device_id = str(snapshot.get("device_id", ""))
 	set_meta("deployment_id", _deployment_id)
@@ -25,9 +27,11 @@ func configure_device(snapshot: Dictionary) -> void:
 	]
 
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
+	status_label.position.y = float(presentation.get("status_label_height", 1.45))
 	var model_scene_path := str(presentation.get("model_scene", ""))
 	if model_mount.get_child_count() == 0 or model_scene_path != _loaded_model_scene:
 		_rebuild_model(presentation)
+	_configure_active_model(snapshot)
 
 
 func play_device_action(action_result: Dictionary) -> void:
@@ -36,6 +40,27 @@ func play_device_action(action_result: Dictionary) -> void:
 		str(action_result.get("target_enemy_name", "敌人")),
 		int(action_result.get("damage", 0))
 	]
+	var active_model := _get_active_model()
+	if active_model != null and active_model.has_method("play_device_action"):
+		active_model.play_device_action(action_result)
+
+
+func get_debug_snapshot() -> Dictionary:
+	var result := {
+		"deployment_id": _deployment_id,
+		"device_id": _device_id,
+		"model_scene": _loaded_model_scene,
+		"position": _vector3_to_dict(position),
+		"rotation_y_degrees": rad_to_deg(rotation.y),
+		"has_formal_model": false,
+		"model": {}
+	}
+	var active_model := _get_active_model()
+	if active_model != null:
+		result["has_formal_model"] = active_model.has_method("get_debug_snapshot")
+		if active_model.has_method("get_debug_snapshot"):
+			result["model"] = active_model.get_debug_snapshot()
+	return result
 
 
 func _rebuild_model(presentation: Dictionary) -> void:
@@ -48,6 +73,18 @@ func _rebuild_model(presentation: Dictionary) -> void:
 			model_mount.add_child((resource as PackedScene).instantiate())
 			return
 	_build_placeholder(str(presentation.get("placeholder_kind", _device_id)), _read_color(presentation.get("placeholder_color", {})))
+
+
+func _configure_active_model(snapshot: Dictionary) -> void:
+	var active_model := _get_active_model()
+	if active_model != null and active_model.has_method("configure_device"):
+		active_model.configure_device(snapshot)
+
+
+func _get_active_model() -> Node:
+	if model_mount.get_child_count() <= 0:
+		return null
+	return model_mount.get_child(0)
 
 
 func _build_placeholder(kind: String, color: Color) -> void:
@@ -95,3 +132,7 @@ func _dict_to_vector3(raw: Variant) -> Vector3:
 	if not raw is Dictionary:
 		return Vector3.ZERO
 	return Vector3(float(raw.get("x", 0.0)), float(raw.get("y", 0.0)), float(raw.get("z", 0.0)))
+
+
+func _vector3_to_dict(value: Vector3) -> Dictionary:
+	return {"x": value.x, "y": value.y, "z": value.z}

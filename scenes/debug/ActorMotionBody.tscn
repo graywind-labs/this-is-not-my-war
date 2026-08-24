@@ -1,0 +1,56 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/ActorMotionBody.gd" id="1_motion"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_body"]
+radius = 0.35
+height = 1.6
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_interaction"]
+radius = 0.41
+height = 1.6
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_actor"]
+radius = 0.35
+height = 1.6
+
+[node name="ActorMotionBody" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 3
+script = ExtResource("1_motion")
+
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.8, 0)
+shape = SubResource("CapsuleShape_body")
+
+[node name="InteractionArea" type="Area3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+monitoring = false
+input_ray_pickable = true
+
+[node name="InteractionCollision" type="CollisionShape3D" parent="InteractionArea"]
+position = Vector3(0, 0.8, 0)
+shape = SubResource("CapsuleShape_interaction")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.35
+target_desired_distance = 0.25
+avoidance_enabled = true
+radius = 0.35
+height = 1.6
+neighbor_distance = 3.5
+max_neighbors = 10
+time_horizon_agents = 0.9
+time_horizon_obstacles = 1.0
+
+[node name="ActorMesh" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.8, 0)
+mesh = SubResource("CapsuleMesh_actor")
+
+[node name="DebugLabel" type="Label3D" parent="."]
+position = Vector3(0, 2.05, 0)
+text = "Actor"
+billboard = 1
+font_size = 28
+outline_size = 8

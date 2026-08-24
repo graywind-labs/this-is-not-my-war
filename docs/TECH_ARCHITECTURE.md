@@ -1,5 +1,349 @@
 # TECH_ARCHITECTURE.md
 
+## T0135-P8AR6 卫生间表现与权威边界
+
+- 两间卫生间属于正式空间配置中的非交互服务附属物，不是第十三 / 十四座玩法建筑；它们不拥有 HP、等级、库存、资源、工位、地点提交、NPC 行动、事件或 UI 权威，也不因外观节点存在而推断卫生状态。
+- 唯一玩法相关边界是物理实体性：`StationLayoutController` 为每一间负责与主体墙身一致的独立静态盒碰撞，并将两者纳入现有显式静态碰撞 NavMesh 烘焙。表现脚本不自行创建碰撞，从而避免视觉层与导航层重复登记。
+- 因没有室内和可进入语义，封闭门不响应角色，屋顶 / 墙体不加入近景透明链，也不创建夜间功能灯。若未来要增加如厕需求或卫生值，必须另立任务并通过系统数据与动作事务实现，不能复用当前表现元数据充当结算事实。
+
+## T0135-P8AR4 食堂工作表现只读边界
+
+- 食堂灶台状态继续由 BuildingSystem 占用与 NPCSystem 行动共同构成；`DiningKitchenWorkFX` 只把稳定事实投影为逐灶 VFX，不建立 `is_cooking` 副本，不根据粒子、灯光或模型反推生产事实。
+- 单灶控制粒度保证未来多个 NPC 同时烹饪时各自独立启停；发光、粒子和食物 Mesh 均无碰撞、导航、点击或资源接口。第三灶不能因表现节点预建而绕过三级容量解锁。
+- P8AR4R 的中空烟囱只把原实心表现 Mesh 拆成四壁围合，不改变烟雾绑定、屋顶渐隐、建筑碰撞、导航或灶台容量；中央孔洞没有新碰撞体，也不成为可通行空间。
+- P8AR4R2 删除的 Lv.2 `WestSparkGuard / CenterSparkGuard` 仅是表现节点；不替换为新碰撞、不调整烟雾出口，也不改变 BuildingSystem 等级、fixture 或餐食结算。Lv.2 无屋顶增量后从 `additional_roof_fade_paths` 移除该空路径。
+
+## T0135-P8AR5 洗手池表现边界
+
+- 宿舍 / 诊所洗手池是共享构建器生成的静态表现，不注册 BuildingSystem 工位，不读取或写入资源，不提供清洁、治疗、恢复、用水或交互接口。
+- 两个实例靠墙且位于现有通行区外，因此不新增碰撞或导航障碍；专项以最高建筑等级同时显示的真实 Mesh AABB 验证宿舍洗手池—十床 / 壁炉、诊所洗手池—医生桌 / 病床零重叠。未来若洗手成为玩法，必须另立权威任务和 fixture，而不能根据当前装饰节点推断状态。
+- P8AR5R 只调整宿舍表现 Transform：洗手池向中线移动 `0.9 m`，二级壁炉 / 烟囱向另一侧移动 `1.0 m`；不修改床位配置、NPC 到达点、StaticCollision、NavigationMesh 或睡眠恢复加成。
+
+## T0135-P8AR3 铁匠铺状态投影边界
+
+- 炉火启停合同为 `forge occupied_by != null` 且占用 NPC 同时满足 `current_location=blacksmith / current_action=work_blacksmith`。表现控制器监听现有事件后只读重算，不申请 / 释放工位，不写 NPC 状态，不推进 CraftingSystem，也不使用每帧权威轮询。
+- 工位的铁砧、承台、碰撞和 NPCStand 共享 `building_fixture_layout_v1` 坐标来源；正式 ArtView 只增加旁侧装饰和详细炉体。共享炉 primitive 在正式铁匠铺仅保留元数据根，由同坐标 fixture 碰撞提供物理权威，避免两个炉体叠加。
+- 半开放壳体通过同一 `StationLayoutController` 静态碰撞特例缩短侧墙、收窄前墙段；仍保留五段可审计 StaticBody、正式门路线和生产 NavMesh。视觉柱 / 灯支撑不注册碰撞或导航。
+- 后炉日间 SpotLight、四盏夜间功能灯、炉火 OmniLight 互不充当玩法权威：日间填光随屋顶显露与太阳色温，功能灯随夜间 / 建筑占用 / 等级，炉火只随真实打铁。三者都有实体阴影、零体积雾贡献或既有壳体遮光，且不按相机距离熄灭。
+- P8AR3R2 的壁灯托架和磨轮仍是 authored presentation-only Mesh，不注册碰撞、导航或点击；不再为铁匠铺灯具生成专用落地柱、跨梁或局部门架。吊链随屋顶透明是表现树归属修正，不改变吊装、升级或生产事实。
+
+## T0135-P8AR2 远景灯火与逐级灯具投影边界
+
+- 功能 OmniLight 与被接管的既有灯统一关闭 `distance_fade_enabled`；相机距离不再进入启灯判定。最大拉远仍亮不等于新增时间或照明权威，时间 / 占用规则保持 P8A 单一来源。
+- 菜园、训练场、马厩的 authored 灯具使用 `functional_lantern_required_level=1/2/3`，数量合同为 `2/1/1`。BuildingArtView 负责灯具 / 支撑可见性，控制器以同一源灯具 `is_visible_in_tree()` 决定发光核心和 OmniLight 是否解锁，避免两套等级判断漂移。
+- 控制器只新增 `building_state_changed` 只读监听，并延后一帧刷新以等待 BuildingArtView 完成投影；不调用升级、不写 BuildingSystem。快照提供 `unlocked_fixture_count / required_level_counts / distance_fade_disabled` 供自动审计。
+
+## T0135-P8AR 露天工作照明与安装支撑边界
+
+- 菜园、训练场和马厩仍沿用 P8A `occupied_night` 权威读取，没有新增“正在工作”时钟或工位占用结算；返修只把每处灯具从一盏增至四盏，并按开放场地尺寸提高表现能量、范围和低衰减覆盖。
+- 菜园 / 训练场灯柱与主厅门廊灯柱是无碰撞、无导航、无点击的 authored 表现结构；马厩复用已有棚柱，酒窖复用墙体并增加纯表现木背板。`mounted_to_structure / mount_surface` 只服务视觉审计，不构成建筑 fixture、工位或空间权威。
+- 主厅灯柱可见 AABB 继续受 `22×18 m` 既有包络测试约束，不能以照明为由扩大敌军接触面或占用塔防平台。新增 OmniLight 仍有影、零体积雾贡献；P8AR2 后不再按相机距离衰减。
+
+## T0135-P8A 实体功能灯的只读投影边界
+
+- `BuildingFunctionalLightController` 是 `CelestialCycleController` 的子表现控制器，只读 `GameState` 绝对时刻以及 NPCSystem 的 `current_location / is_npc_sleeping`；它监听既有 `EventBus.time_changed / npc_state_changed` 后全量重算，不推进时间、不缓存第二时钟，也不写 NPC、建筑、行动、资源或存档。
+- 配置把建筑分成 `always_night / occupied_night / awake_occupied_night` 三种模式。时间边界统一为 `18:00（含）–06:00（不含）`；常亮守备结构不依赖 NPC，普通建筑依赖实际地点占用，宿舍额外排除已睡 NPC。
+- 实体灯具、发光核心和 OmniLight 全部是 presentation-only。导入灯具剥离碰撞 / Navigation，局部光开启阴影、关闭体积雾贡献；P8AR2 已取消相机距离淡出。P7R4 环境填光继续负责基础可读度，P8A 只表达夜间真实灯具的局部增量，不把光亮解释为库存、燃料或生产结算。
+
+## T0135-P7R4 局部室内光与实体遮光边界
+
+- 室内填光仍是 `CelestialCycleController` 管理的纯表现节点，但由每座两盏无影灯收敛为一盏有影 SpotLight。光源位于正式建筑局部中心、屋檐以下；P7R opaque shadows-only 屋顶 / 外墙代理既阻挡日月方向光，也阻挡该局部光，因此镜头透明与物理遮光保持分离，只有真实门洞可能产生自然溢光。
+- `building_art_view` group 可能同时含正式节点与隐藏兼容节点。控制器不再以 group 遍历顺序决定同 ID 绑定，而是优先 `/FormalStationLayout/`、其次当前可见节点，并降权 `/WorldRoot/Station/` 旧路径；这只修正表现节点归属，不改变 BuildingSystem 的建筑 ID 或任何玩法权威。
+- 七盏灯关闭体积雾贡献，不持有碰撞、Area、导航、点击、工位、火源或资源语义。屋顶封闭仍由既有 reveal 权重隐藏补光；P7R4 不改材质 alpha、NPC 选择和日照 / 色温时间曲线。
+
+## T0135-P7R3 日光色温与柔和面状填光边界
+
+- 白昼室内颜色只读同一帧 `_sun_state.color` 与 `_environment_state.ambient_color`，再按表现配置混合 / 去饱和；不创建独立天气、太阳、环境或色温权威。夜间建筑暖色只是可读性表现，不声明实际蜡烛、炉火或资源消耗。
+- P7R3 当时使用两盏高位无影 SpotLight 近似面光；P7R4 已替换为单盏屋檐下有影灯。日光色温派生规则继续有效，节点数量与遮光规则以 P7R4 为准。
+- P7R shadows-only 壳体仍提供唯一建筑实体阴影；日光漫射只在屋顶显露权重非零时启用，不通过照明改写壳体 alpha 或 NPC 选择规则。
+
+## T0135-P7R2 室内日照同步曲线边界
+
+- `CelestialCycleController` 仍只读 TimeSystem 已写入 `GameState` 的绝对时刻；室内倍率由表现配置的 `06:00 / 12:00 / 18:00` 锚点直接重算，不累计亮度、不推进时间，也不增加存档字段或光照玩法事件。
+- 夜间可读基线与白昼增量分离：`06:00–12:00` 连续上升，`12:00–18:00` 连续回落，峰值只改变七座既有补光能量。屋顶显露权重继续与该倍率相乘，因此封闭建筑不会因正午峰值漏光。
+- P7R shadows-only 壳体继续独占建筑实体阴影；P7R2 不修改阴影、材质 alpha、点击、碰撞、导航、NPC 地点、工位、火源或生产事实。
+
+## T0135-P7R 透明壳体与阴影渲染职责分离
+
+- `BuildingArtView` 不再把 alpha 当作是否存在实体阴影的开关。每个屋顶 / 外墙 / 升级渐隐 Mesh 的可见实例固定 `cast_shadow=OFF`，其 internal 子实例复用原始 Mesh 与未渐隐材质并固定 `SHADOWS_ONLY`；因此颜色透明与阴影轮廓是两个渲染职责，不产生双影。
+- shadows-only 实例作为源 Mesh 的 internal 子节点，自动继承建筑旋转、门叶动画、升级父节点和整体显隐；它没有脚本、碰撞、Area、导航、点击、工位或玩法 ID。所有建筑美术计数只统计 authored Mesh，明确排除 `persistent_shell_shadow_proxy` 元数据实例。
+- 日月方向光仍是唯一阴影权威。P7R 不增加第三盏方向光、不修改 Environment、TimeSystem、BuildingSystem 或存档；太阳 / 月亮接管只改变照射方向与能量，同一套壳体代理自然继续投影。
+
+## T0135-P7 环境表现与室内补光权威边界
+
+- `CelestialCycleController` 继续是 `GameState / EventBus` 的只读表现消费者，并在 P6 两盏天体方向光之外拥有唯一动态 `WorldEnvironment`。天空、环境光、曝光、色调和雾都由同一太阳高度快照派生；控制器不推进时间、不写存档，也不生成天气或光照玩法事件。
+- `RoofVisibilityController` 新增只读 `roof_visibility_changed(camera_distance, zoom_normalized, view_snapshots)` 表现信号。室内补光只消费各建筑既有 `roof_opacity / exterior_opacity / interior_revealed_for_selection`，不会反向修改屋顶、点击优先级、NPC 地点或建筑状态。
+- 七座封闭可进入建筑的 `InteriorFillLights` 只含有影 SpotLight3D，并明确关闭体积雾能量；阴影只用于让建筑壳阻挡局部光，它们仍没有碰撞、Area、NavigationRegion 或工位元数据。显露室内时降低的是同一全局传统雾的表现密度，不创建第二套局部环境，也不更改相机、寻路或战斗视线权威。
+- P7 的暖光是可读性填光，不代表炉火、蜡烛、库存、生产状态或资源消耗。实际火把、灯笼、烟与生产粒子仍由 P8 读取真实时间 / 行动状态后实现。
+
+## T0135-P6 天体表现与时间权威边界
+
+- `CelestialCycleController` 是 `GameState / EventBus` 的纯表现消费者。它把绝对时刻映射为两盏 DirectionalLight 的 Transform、颜色、能量和阴影开关，不推进时间、不保存角度，也不生成日出 / 日落玩法事件。
+- TimeSystem 继续独占推进、暂停和倍速；GM `set_time` 仍只调用 TimeSystem。读档或跳时后控制器从当前日内秒数立即重算，因此没有需要迁移的存档字段。
+- 同时可见的太阳与月亮允许各自提供直射填光，但能量比较器最多只授予一盏主阴影。Main 的旧固定 SunLight 是被退役的兼容节点，不再构成第三个光照权威。
+
+## T0131-P9 马厩表现与马匹 / 照料权威边界
+
+- `FormalStableArtView` 只生成露天马院、遮棚、背景陈设、等级表现与 HorseSystem 的只读马匹投影；它不创建马、不改马匹位置 / 成长 / 驯化，不提交建筑等级、NPC 地点、工位、事件或资源。
+- `stall_01..03`、`2→2→3` 照料容量、八个 `HorseAnchors` 和马匹档案继续来自配置、BuildingSystem 与 HorseSystem。马槽、鞍具、干草和产驹用品只表达功能，不代表额外容量、草料库存或新马。
+- ActionSystem / NPCSystem 继续负责托马的实体路线、到达、占用与周期动作；HorseSystem 独占马匹位置、照料、骑乘和成长事实。GM `stable_art_level` 只改表现预览状态。
+- 自动低门只读取实体接近；露天点击优先与遮棚渐隐只影响显示和射线排序，不替代 StaticCollision、NavigationMap、工位提交或 HorseSystem 状态。
+
+## T0131-P8 训练场表现与训练权威边界
+
+- `FormalTrainingGroundArtView` 只生成露天地块、边界、遮棚、背景陈设与等级表现，并按只读预览等级同步既有 fixture 的显示和碰撞；它不提交建筑等级、地点、工位、装备、技能、疲劳、饱食、事件或记忆。
+- `training_instructor_01..02 / training_student_01..04`、六块 `3 × 3 m` 动作区和 `1+2→1+3→2+4` 容量继续来自 `building_defs.json / station_layout.json / building_fixture_layouts.json / BuildingSystem`。地面框、战术板和遮棚携带的 workstation 元数据只用于审计，不能反向创建位置。
+- ActionSystem / NPCSystem 继续负责真实会话、实体路线、到达与动作状态；BuildingSystem 独占预留 / 占用，训练成长继续由既有逻辑时间公式结算。GM `training_ground_art_level` 只改表现根预览状态。
+- 自动训练门只读取碰撞层 2 的角色接近；露天点击优先与遮棚渐隐只影响射线排序和显示。它们不替代正式 StaticCollision、NavigationMap、工位提交或训练依赖检查。
+
+## T0131-P6 酒窖表现与酿酒 / 交易权威边界
+
+- `FormalTavernArtView` 只生成建筑壳、酒窖背景陈设、等级结构增量，并按只读预览等级同步既有 fixture 的显示与碰撞；它不扣粮、不产酒、不换钱，也不提交地点、工位、等级、HP、事件或记忆。
+- `cellar_01..03`、发酵桶、站位和 `2→2→3` 容量继续来自 `building_defs.json / building_fixture_layouts.json / BuildingSystem`。Lv.2 铜管、冷却水槽和储桶架只表达效率，只有 Lv.3 第三发酵桶的同 ID fixture 才构成第三位置。
+- ActionSystem / NPCSystem 继续负责真实移动、预留、到达和占用，ResourceSystem 只在完整酿酒周期原子结算粮食与酒；MerchantSystem 是出售酒换钱的唯一权威。GM `tavern_art_level` 只改表现根预览状态。
+- P6R 新增的 `6→11→14` 装饰桶只由 `FormalTavernArtView` 生成和计数，并统一声明 `non_workstation_non_inventory_decoration`；它们没有 StaticBody、工位 Marker、库存绑定或路线成本，不能被任何系统当作容量 / 酒量事实。
+
+## T0131-P5 宿舍表现与睡眠权威边界
+
+- `FormalDormitoryArtView` 只生成壳体、生活陈设、二级结构增量并投影既有 fixture 的可见 / 碰撞状态；它不分配床号、不提交占用、不恢复疲劳，也不写建筑等级、HP、地点、事件或记忆。
+- 十床与固定归属继续来自 `building_defs.json / BuildingSystem`。`StationLayoutController` 将配置中的 `assigned_npc_id` 复制到床边 Marker 仅供只读快照审计；NPCSystem 与 ActionSystem 仍必须通过 BuildingSystem 预留、实体到达、提交占用并挂接床面后，才建立真实睡眠。
+- Lv.2 美术只读取等级并显示壁炉、烟道、保温和修补，不把 `sleep_recovery +0.2` 自行换算或结算；GM `dormitory_art_level` 不改变权威等级。
+
+## T0131-P4 食堂表现与玩法权威边界
+
+- `FormalDiningHallArtView` 与程序化 `dining_table` 只负责壳体、职业语义、装饰和等级可见性；它们不提交建筑等级、资源、餐食、饱食、地点、工位或事件。食堂生产 / 进食仍由 ActionSystem、BuildingSystem、ResourceSystem 与 NPCSystem 权威结算。
+- `kitchen_01/02/03`、`dining_seat_01..10` 和共享桌 ID 继续来自 `building_fixture_layouts.json`。表现层只按 BuildingSystem 等级同步现有 fixture 的可见性与碰撞；Lv.2 没有第三口完整灶台，Lv.3 的第三罩 / 烟囱也不能反向创建容量。
+- 自动门只读取碰撞层 2 的实体接近，屋顶 / 外墙渐隐只读取相机距离；两者都不代替 StaticCollision、NavigationMap、地点提交或点击优先级。GM 三级预览只覆盖显示层，验收结束后不改变权威 Lv.1。
+
+## T0134-P1 实时人物框权威边界
+
+- 实时人物框是纯表现消费者：`NPCPanel -> NPCPortraitViewport -> NPCSystem.get_npc_portrait_snapshot -> NPC.gd/ArtView` 单向读取。它不设置位置、朝向、动作、工位、HP、地点或选中状态，也不创建第二个 NPC。
+- 副镜头和主镜头共享 World3D，Camera3D 只属于 SubViewport，不会替换 Main 当前相机。射线遮挡修正只移动副镜头；人物框关闭后停渲染，避免常驻第二视图成本。
+- 地点名称由 MemorySystem 既有地点快照补全；UI 不维护另一份地点映射。表现正面分别由 Synty 包装和 Quaternius 回退包装报告，统一转换为世界方向后供镜头构图。
+
+## T0130-P7 医疗表现与治疗权威边界
+
+- `medical_kit` 只在共享 Chibi 包装内建立 Body 药包、LeftHand 病历册和 RightHand 绷带，均为无碰撞、无 Area、无选择面的表现附件；模型或道具接触不构成诊疗、收费、HP 恢复、医术增长或事件事实。
+- `work_clinic_doctor -> work / Working_B` 继续由正式工位 active 状态驱动；新增 `assist_heal` 与实际运行态 `assist_heal_<target>` 都只读映射到第 17 个 `medical_treatment / Working_A` 循环。前缀匹配仅消费 ActionSystem 已提交的当前行动，不解析目标或改变 helper 会话。
+- 病历册只在 active 诊所值班时显示，绷带只在 active 正式协助治疗时显示；药包作为身份轮廓持续跟随 Chest。行动在途、病人复苏、会话失败、移动、其他生活态与昏迷不会伪装成正在治疗。
+- `LinaChibiArtView.tscn` 不包含 CharacterBody、NavigationAgent、SelectionArea 或权威治疗组件；父级 NPC 继续拥有碰撞、点击、路径、治疗距离与空间提交。
+
+## T0130-P6 神父身份附件与职业动作边界
+
+- `remove_detached_headwear` 只在明确开启的包装实例上处理目标 ArrayMesh：以三角形连通与同位顶点重建拓扑岛，仅删除完全位于头脸上方的大型分离附件岛。马塞尔实测删除尖帽 114 个三角面；身体、脸、胡须、Skin 权重、原表面材质与骨骼不变。默认关闭，不影响其余角色。
+- `show_wooden_cross` 在既有 Body/Chest `BoneAttachment3D` 下创建两个无碰撞 PrimitiveMesh，只提供职业身份阅读；它不注册交互、导航、装备槽或选择体。`mass_leader_clip` 与已有 `work_clip` 同为包装级表现覆盖，仍复用进程共享 AnimationLibrary。
+- `show_rounded_tonsure_hair` 默认关闭；马塞尔开启后，包装按目标 Skeleton 的 Head global rest 把单个低分段 SphereMesh 反算到 Head `BoneAttachment3D` 局部空间。它只补齐原模型平顶，节点树没有 CollisionShape3D、Area3D、选择面或物理骨，不参与射线优先级与导航。
+- 马塞尔的 `Working_A / Ranged_Magic_Spellcasting_Long / Sit_Chair_Idle` 分别只投影已 active 的 `work_tavern / lead_mass / pray_at_chapel`。ActionSystem、BuildingSystem、ResourceSystem 与 PietySystem 仍按实体抵达、工位事务和逻辑时间结算；动画时刻和手势不回写权威。
+
+## T0130-P5 装备与卧姿表现边界
+
+- `synced_sword_shield` 只消费 `profile.equipment.main_weapon.id`，不持有库存、兵种或换装结果。当前艾达仅为剑盾提供匹配道具；其他武器装备时隐藏错误剑盾，长杆 / 弓弩可见模型留给通用装备表现后续任务。
+- P5R2 的 `use_imported_character_material` 只改变目标 Mesh 的表现材质：复制 FBX 导入 BaseMaterial3D 以保留顶点色面部合同，再替换获准的 `_A` Albedo 和明度；不得从材质反推身份、装备或状态。P5R 程序化面部已删除，不形成第二套面部状态。
+- `set_spatial_attachment_pose` 是父级空间挂接到表现层的只读语义投影。Chibi 包装用 `Lie_Idle` 表现 `sleeping_supine / lying_supine`，旧包装保留既有父级 Transform；两条路径都不能提交床位、恢复疲劳或生成睡眠事实。
+- 训练格挡、攻击、受击、昏迷与复苏仍只读 ActionSystem / CombatSystem / NPCSystem；Synty 模型、KayKit 动画、武器节点和血粒子都不拥有玩法结算。
+
+## T0130-P4 园丁表现与菜园 / 教堂权威边界
+
+- `garden_hoe` 是共享表现包装中的项目 PrimitiveMesh 附件，只由只读 `work_garden + work` 投影控制；它不调用 ActionSystem、ResourceSystem、BuildingSystem 或 PietySystem，也不因锄面接触土地而生成生产事实。
+- `Digging` 进入进程共享 AnimationLibrary 的循环白名单，不为伊沃复制独立动画库。包装新增可选 palette grade 与 seated offset，默认值保持前三名角色不变；伊沃专用参数只改变材质输出和可见网格局部坐姿。
+- P4R2 只为伊沃开启既有 `use_imported_character_material`：逐 Mesh 复制 Deckhand 导入 BaseMaterial3D，以 `_01_A` 替换 Albedo 并保留顶点色面部；材质不能反推园丁行动、工位、粮食或虔诚事实。
+- `IvoChibiArtView.tscn` 不包含 CharacterBody、NavigationAgent 或 SelectionArea。真实田畦、教堂长凳、挂接、碰撞开关、粮食和虔诚继续属于父级 NPC 与既有系统；园锄在 `seated_prayer`、移动、受击和昏迷时强制隐藏。
+
+## T0130-P3 厨师表现与食堂权威边界
+
+- `cook_spoon` 是共享表现包装内的低多边形职业附件，只由只读 `work_dining_hall + work` 投影控制；它不调用 ActionSystem、ResourceSystem 或 BuildingSystem，也不因动画接触锅具而产生烹饪事实。
+- 同一布鲁诺包装把真实 `eat_at_dining_hall` 映射为 `seated_eating`，但座位预留、占用、挂接、碰撞切换、食物扣除和饱食恢复仍属于既有权威链。灶台勺不会跟随到餐桌。
+- `BrunoChibiArtView.tscn` 不包含 CharacterBody、NavigationAgent 或 SelectionArea；生产实体继续使用父级碰撞。狭窄灶台路线保持生产速度与既有到达容差，本步不以表现测试加速值改变运动配置。
+
+## T0130-P2 职业动作与工具适配边界
+
+- `ChibiCharacterPilot` 的骨架、17 状态和共享动画库保持单一实现，但允许包装覆盖 `work_clip / medical_treatment_clip`；职业差异属于场景配置，不能把 NPC ID 或制造 / 照料规则写入动画系统。
+- 工具可见性由“只读权威 action -> 表现状态”单向投影：格伦只在 `work_blacksmith` 拿锤，托马只在 `work_stable` 拿马刷式工具，布鲁诺只在 `work_dining_hall` 拿木柄铜勺，伊沃只在 `work_garden` 拿木柄铁锄。工具节点、动画时间和 BoneAttachment 都不能提交 BuildingSystem、HorseSystem、PietySystem 或资源生产事实。
+- 托马的生产场景仍无 SelectionArea、BodyCollision 或 NavigationAgent，继续复用 NPC 父级。`vehicle_seated` 只证明表现合同可用，不建立托马与 MerchantWagon 的权威关系。
+
+## T0130-P1 生产角色表现适配边界
+
+- `ChibiCharacterPilot` 从纯试片扩展为可复用的只读表现适配器，接口与既有 NPCArtView 合同对齐：`apply_profile / set_movement_active / set_facing_direction / debug_get_snapshot`。它仍不注册 NPC / 敌人、不持有 HP、不调用行动或伤害接口。
+- 生产 NPC 包装和敌人包装不携带沙盒 SelectionArea；碰撞与点击继续属于父级 NPC / ActorMotionBody。试片场景保留自己的选择胶囊，生产场景与独立沙盒场景分离。
+- NPC 映射仍由 `character_appearances.json` 决定；敌种映射由 CombatSystem 按 `unit_type + weapon_type` 选择。当前放行格伦、托马、布鲁诺、伊沃、马塞尔、艾达、莉娜和步行剑盾兵，欧文及其他敌种保留 Quaternius 回退。
+- 共享 AnimationLibrary 继续避免每实例复制动画，但每个两头身角色仍有 KayKit 源骨架 + Synty 目标骨架。离线烘焙和完整目标机性能仍属于后续生产优化，不在 P1 改写。
+- 源资产轴与运行时朝向分层处理：Synty 可见模型的本地 `+Z` 正面在表现根固定补偿 `180°`，项目实体仍按 `-Z` 目标合同计算 yaw。测试读取补偿后的真实可见轴，不能再用未经补偿的逻辑轴代替画面朝向。
+
+## T0130-P0 角色试片表现边界
+
+- 第三方完整源固定走 `art_source -> 许可 / 清单 -> assets 筛选子集 -> 包装场景` 单向管线；Synty 商业原包不得进入仓库或导出包，KayKit CC0 也只复制实际使用的 Medium Rig GLB。
+- `ChibiCharacterPilot`、动作沙盒和 Main 预览控制器属于 presentation-only。它们可拥有 Skeleton、AnimationPlayer、RetargetModifier、Mesh、BoneAttachment、选择碰撞和诊断快照，但不能注册到 NPCSystem / CombatSystem 活动集合或写任何权威事实。
+- P0 用实时双骨架换取迭代速度，并通过静态共享 AnimationLibrary 控制内存；正式量产前另行评估导入期 / 离线烘焙，不能在未验证时直接把 48 份实时源骨架当最终架构。
+- GM `character_pilot` 只启停临时表现根或切换沙盒，不构造刷波、伤害、行动或地点接口。生产切换门槛仍是用户视觉验收后显式修改 `character_appearances.json` / CombatSystem 包装引用。
+
+## T0129C-A5-P8 正式空间检查点边界
+
+- `SpatialSaveSystem` 只协调空间权威，不成为 NPC、战斗、交易或行动的第二套结算器。格式为 `formal_spatial_save_v1`，消费者子结构分别由 NPCSystem、CombatSystem、MerchantSystem 产生和恢复。
+- 加载顺序固定为：正式根启用 → 生产 NavigationMap 强制同步 → 对话 / 在途行动回滚 → NPC 安全坐标与静默地点成员恢复 → 活动波次重建 → 逃离续接 → 行商阶段恢复。RID、NodePath、节点引用和工位会话 ID 均不入盘。
+- 活动事务采用释放后回到保存坐标，不重放 `location_entered / action_started`；波次按配置重建实体并按 `spawn_index` 套用存活者空间状态；行商恢复本身不广播到离场事件。
+
+## T0129C-A5-P6d-3 治疗协助空间事务边界
+
+- `ActionSystem` 独占 `assist_heal` pending / active、两人上限、首付 / 续费、helper、恢复、经验与事件；`NPCSystem` 独占可逆目标投影、正式地点路线、目标 Body 接近和空间会话；既有 NPC HP / 复苏入口仍是唯一生命权威。
+- 事务顺序固定为 `unconscious + money preflight -> reserve healer session/target projection -> formal location route -> distinct body approach -> arrival revalidation -> charge first coin -> add helper -> ordinary healing tick`。到位前不提交任何治疗事实。
+- 目标复苏信号延迟到当前 HP 事务结束后统一清理，避免同步回调重复写 `healing_completed`。所有中断先释放目标投影与 formal session，再移除 pending / active helper；没有新增存档事实、治疗公式或第二套结算。
+
+## T0129C-A5-P6d-2 升级协助空间事务边界
+
+- `assist_upgrade` 复用 formal exterior session，但使用独立 `service_kind=upgrade` 与施工槽占用。ActionSystem 独占 pending、upgrade helper、事件和目标失效；NPCSystem 独占实体路线；BuildingSystem 继续独占升级资源、倒计时、倍率和等级应用。
+- 事务顺序为 `active-upgrade preflight -> reserve construction slot -> physical route -> exterior arrival -> add upgrade helper -> ordinary upgrade tick`。升级建筑封闭不等于室外施工路线无效；建筑状态清退扫描会显式跳过目标一致的 formal exterior assist。
+- 完成或中断继续从既有 ActionSystem / BuildingSystem 出口清理 helper，再结束可逆空间会话。没有新增第二套升级结算或存档事实。
+
+## T0129C-A5-P6d-1 修复协助空间事务边界
+
+- `ActionSystem` 独占 `assist_repair` pending / active、目标有效性、helper 与事件；`NPCSystem` 独占可逆正式空间会话和实体移动；`StationLayoutController` 只提供按最大等级包络推导的外沿槽；`BuildingSystem` 继续独占修复进度与倍率。
+- 事务顺序固定为 `repair preflight -> reserve exterior slot -> physical route -> exterior arrival -> add helper -> ordinary repair tick`。到位前不得提交 helper、有效工时、工程经验或开工事件。
+- 维修位只是一段会话内的空间占用，不新增 BuildingSystem 工位或存档事实。完成、目标消失和任意中断都从既有 ActionSystem 出口移除 helper，再结束 formal session；GM 只调用公开事务接口。
+
+## T0129C-A5-P6c 对话空间事务边界
+
+- `ActionSystem` 独占 `talk_to_npc` pending、双方预约、一次重定向和失败；`NPCSystem` 独占双方 CharacterBody 投影、正式地点路线、NavigationAgent / RVO 接近与可逆空间会话；`DialogSystem` 仍独占邀请和正式会话。
+- 事务顺序固定为 `LLM 意图复核 -> formal location route -> entity approach -> invitation pending -> accept-time spatial transfer -> ordinary action interruption -> conversation`。拒绝或失败不会提前释放目标工作位，接受时先交接 Body 再释放工作会话。
+- 正式对话结束信号以 `dialogue_id` 回收空间会话。所有失败 / 中断出口复用同一清理函数；GM 只调用 ActionSystem / DialogSystem 接口并读取快照，不创建第二套对话或空间结算。
+
+## T0129C-A5-P6b 拜访空间事务边界
+
+- `visit_location` 使用 `ActionSystem pending -> NPCSystem formal location session -> physical route -> location commit -> ActionSystem active` 单一事务链；没有 BuildingSystem 工位 reservation / occupancy 阶段。
+- 物理门槛提交地点，目标室内点 / 公共锚点提交行动开始。途中改派先结束旧会话，再创建新目标会话；暂停、建筑失效、昏迷和不可达只清理尚未提交的路线，不伪造到达。
+- MemorySystem 继续接收既有 `location_exited / location_entered / visit_started / visit_completed`，事件 Schema 未变。GM 只调用 ActionSystem / NPCSystem 的公开或 debug 接口，不写地点或事件事实。
+
+## T0129C-A5-P5i 礼拜空间事务
+
+- 小教堂继续使用 `ActionSystem -> NPCSystem formal session -> BuildingSystem reservation -> physical arrival -> occupancy -> active` 单一事务链；在途不会进入 PietySystem 的 active 贡献集合。
+- 已占席祈祷者与主持弥撒之间只切换 `prayer_mode`，不销毁或重领祈祷席。跨小时计划延后、主持退出恢复独祷和完成 / 中断事件复用既有 T0098 / T0105B 状态机。
+- 表现层只读取 action / mode 并挂接姿态，不写虔诚、事件或计划；本步没有后端、Prompt、LLM provider 或 API 变化。
+
+## T0129C-A5-P5h 训练服务空间事务
+
+- 训练服务沿用 `ActionSystem -> NPCSystem formal session -> BuildingSystem reservation -> physical arrival -> occupancy -> active` 单一事务链，没有增加第二套训练结算。
+- 装备前检在创建正式会话前完成；到位后再次复验。教官 / 学员 active 记录 `formal_spatial_authority`，因此普通中断、昏迷、建筑失效和最后教官离岗均走同一会话 / 工位清理出口。
+- 该任务完全是 Godot 本地权威与表现迁移，不涉及后端、Prompt、LLM provider 或 API 调用。
+
+## T0129C-A5-P5b 真实打铁跨系统边界
+
+`work_blacksmith` 仍由 ActionSystem 负责行动生命周期，CraftingSystem 独占制造目标、项目 revision、阶段领取、材料扣除与产物，BuildingSystem 独占工位预留 / 占用，NPCSystem 独占角色地点、实体导航和可逆正式会话。业务预检发生在空间迁移之前，但到位后仍必须重校验，避免途中目标 / 材料变化造成过期提交。
+
+工作周期完成与正式会话结束是两个独立层次：`repeat_while_planned` 可在同一会话 / 工位上启动下一周期；只有确认没有同行动 pending / active 时才可结束会话。延迟清理携带 `session_id`，表现 / NavigationMap 隐藏延后且可被新会话取消，玩法权威清理不延后。GM 只调用上述公开 / `debug_*` 链，不复制任何结算。
+
+## T0129C-A5-P3 高频时间投影边界
+
+`logical_time_tick` 继续逐帧同步驱动权威模拟，不能为降低 UI 成本而降低战斗、需求、恢复或行动结算频率。表现层改为消费窄投影：HUD 使用 `CombatSystem.get_wave_hud_snapshot()`，不再通过完整 `get_wave_schedule_snapshot()` 深拷贝活动战斗和历史结果。普通倍率下 HUD / MerchantSystem 以 `day:hour:minute` 去重时间表现与到访检查；TimeSystem 处于 LLM 慢速、需要精确秒显示时，HUD key 包含秒。GameState 和完整 tick 的权威时间推进没有降采样。
+
+## T0129C-A5-P1 战时全员空间迁移边界
+
+CombatSystem 只决定一次默认战斗需要进入正式世界的 NPC 集合并区分战斗人员 / 非战斗人员；NPCSystem 仍独占 Body 迁移快照、NavigationMap 绑定、运动请求、状态提交与可逆恢复。`begin_formal_combat_world()` 允许“全部因昏迷等暂时不可行动而零迁移”的合法空结果，但锚点缺失或 NavigationMap 绑定失败不会被伪装成成功。
+
+避战的行为决定、退出条件与事件仍归 CombatSystem；正式目标只经过步长限制与生产 NavMesh 投影，真正路径、RVO、实体碰撞和 `move_and_slide` 仍由 ActorMotionBody 处理。`NPCSystem.get_npc_state()` 的高频读取只复制 states，而不再为每次战斗采样深拷贝整份静态 NPC 档案，返回值隔离语义不变。
+
+逃离出口由当前空间决定：正式战斗中的已迁移 NPC 从 StationLayoutController 取得地图边缘 `(-54,-305)`，通过同一生产 NavigationMap 上的后门单向链接与 6 点后路 Region 实际行进；其他非战日常路径暂保留旧常量。开始、对话恢复、复苏恢复和活动快照共享 `escape_intent.exit_position`；只有 NPCSystem 收到最终物理到达信号后才提交离站事实。战斗结束会保留仍在逃离的 NPC 及正式世界导航租约，其余 NPC 立即恢复，逃离完成或留下后再统一释放。
+
+## T0129C-A4-P7 动态接敌压力控制器
+
+正式敌军继续使用三层权威边界：CombatSystem 逐敌选择目标、判断射程并提交攻击；ActorMotionBody 独占路径、RVO、实体碰撞和 `move_and_slide`；表现只读取实际位移与战斗状态。P7 删除 CombatSystem 运行态的固定槽分配，改为多个 Agent 对同一目标接触点产生独立运动意图，拥堵形状由胶囊碰撞和局部 avoidance 自然形成。
+
+每次逻辑战斗步重新评估最近可行动我方单位，否则使用当前未摧毁建筑。目标变化或移动超过 `0.35 m` 时 supersede 原请求；进入各自武器射程后暂停运动并复用既有攻击链。ActorMotionBody 的真实不可达仍是失败，但同伴拥堵导致的 `stuck_timeout` 被 CombatSystem 解释为可恢复的 `pressing_blocked`，下个战斗步重新请求，因此前排移开 / 昏迷后后排可补位且不会用超时提交攻击权威。
+
+StationLayoutController 的 `get_formal_wave_navigation_config()` 对 1–5 波返回统一 `c3_p7_dynamic_assault`；旧攻击槽转换代码只供历史 P5/P6 兼容。P7b 后普通 `spawn_wave()` 也调用同一正式实体工厂，并先显式启用正式地图 / 镜头，再由 NPCSystem 迁移可战斗 NPC，避免不可见远端 staging 接管却没有我方实体。
+
+P7b 的运行边界为：CombatSystem 选择波次、敌人实体和目标；NPCSystem 独占 NPC 迁移记录、运动请求及恢复；StationLayoutController 独占正式 NavigationRegion / NavigationLink / 镜头启停。默认敌人查询 NPC 时必须通过 `is_npc_in_formal_combat_world()` 过滤另一坐标世界的日常 NPC。战斗结束顺序是行为模式收口 → NPC 正式运动停止与原坐标恢复 → 正式地图退出；不把临时正式坐标写回 NPC 档案。默认后续波次可以继续加入当前正式世界，显式 debug 切片仍拒绝与其他活动敌人混用。
+
+A4-P7R 补齐运动稳定合同：ActorMotionBody 在应用 profile 时同步设置 NavigationAgent `max_speed`，并把 RVO safe velocity 限制到 profile 上限后再走 `move_toward(..., acceleration * delta)`；最终 velocity 仍二次限速。CombatSystem 不再按旧 formation 行列设置不同 avoidance priority。表现方向属于独立只读滤波状态：忽略低于 `0.35 m/s` 的碰撞恢复，合法方向变化按 `360°/s` 夹取；它只驱动可见朝向，不反写路径、速度、索敌或攻击权威。
+
+## T0129C-A4-P6 可复用正式波次工厂与分角色槽位（历史）
+
+第一波入口现为 `_debug_run_formal_wave_slice(wave_number)` 的兼容包装，第二波通过同一工厂读取自己的权威波次模板、构造 ActorMotionBody、注册 `_active_enemies`、连接运动信号并启动既有战斗生命周期。没有复制第二套移动、伤害或清理系统。
+
+StationLayoutController 的 `get_formal_wave_navigation_config(wave_number)` 负责把 station / building-local 槽位转换到世界空间；CombatSystem 只把 `unit_type` 映射为 `melee_front / polearm_rear`。主厅阶段在角色内部按当前物理位置领取最近未占槽，剑盾前排形成后才放行长杆后排；目标摧毁仍由既有建筑权威触发请求替换，表现、运动、战斗和配置边界不变。
+
+## T0129C-A4-P5R2 多敌直攻与同侧攻击位权威
+
+第一波正式切片保持三层边界：`ActorMotionBody` 独占路径、速度、avoidance 与碰撞移动；CombatSystem 为每个敌人独立保存当前建筑目标、分配攻击位、物理到达和攻击许可；表现层只读取 Body 位移方向。道路只画材质 / 网格，不进入寻路权重；建筑 HP、事件、失败和战斗结束仍只走既有 BuildingSystem / CombatSystem / GameState 权威链。
+
+第一波不再消费十阶段折点，只向正门、仓库、主厅下发单一当前目标。目标摧毁时用 `superseded` 替换尚在运行的请求；这是有意重定向，不记为失败。每名敌人按稳定索引领取独立攻击位，主厅位置全部限制在北侧正面同一纵深，只做横向错位；NavigationMap 吸附后由 `motion_arrived` 唯一解锁攻击，旧超时假到达保持删除。
+
+## T0129B-C3-P4 主厅到达 / 失败权威桥接
+
+仓库到主厅均位于核心生产 NavMesh，不新增导航网或瞬移链接。CombatSystem 在仓毁后只请求完整敌路的 `main_hall` 阶段；ActorMotionBody 实际到达后才开放目标选择。运动层仍不拥有 HP 或失败结算，最终摧毁沿既有 BuildingSystem -> CombatSystem -> GameState 单向链提交失败。
+
+## T0129B-C3-P3 破门后导航 / 仓库权威桥接
+
+外围敌路 Region 与核心驿站 Region 原先在正门处属于两个导航岛。P3 在同一专属 NavigationMap 增加单向 `EnemyFrontGateLink`，从正式 `front_gate` 连接到 `gate_turn`；ActorMotionBody 仍沿链接端点执行实体位移，未瞬移或直接写最终坐标。链接只随正式预览 / 显式切片启用。
+
+CombatSystem 在正门摧毁后只下发下一物理阶段并锁住攻击，直到 `motion_arrived(warehouse)` 才恢复目标选择。BuildingSystem 继续独占正门 / 仓库 HP 与摧毁，MemorySystem 继续只接收实际伤害事件。仓库摧毁后不回退到旧主厅坐标。
+
+## T0129B-C3-P2 单敌空间 / 战斗权威桥接
+
+P2 没有复制攻击系统。正式 `ActorMotionBody` 只更新活动敌人字典中的实时位置和路线阶段；CombatSystem 仍是目标、抬手、冷却、伤害、战斗事件和结束清理的唯一权威。`attack_unlocked` 只能由 `motion_arrived(front_gate)` 设置，逻辑时间推进不能伪造到达。正门目标的空间位置来自正式路线，而建筑 HP / 名称 / 摧毁仍来自 BuildingSystem。
+
+P2 的门毁 hold 已由 P3 替换；主厅仍保持未迁移边界。
+
+## T0129B-C3-P1 敌军外围导航分层
+
+边缘林下出生点距驿站核心导航范围约 281 m，因此 C3-P1 没有扩大或重烘焙已经验收的核心 NavMesh。`StationLayoutController` 从正式敌路的 spawn 至 front_gate 生成一条独立导航带（10 顶点 / 4 多边形），与核心 Region 绑定同一个专属 NavigationMap，并随正式预览 / 显式试点启停。这样核心 788 顶点 / 754 多边形及 61 工位路线保持稳定，外围敌路又能直接使用统一 `ActorMotionBody`。
+
+CombatSystem 仍拥有敌人阶段与未来攻击提交，运动组件只拥有实体位移、路径、avoidance 和到达 / 失败结果。P1 样片不加入活动敌人集合；这是对空间和运动的隔离验收，不是第二套战斗系统。
+
+## T0129B 空间配置迁移架构
+
+正式空间现在以 `data/station_layout.json / station_layout_v2` 为目标数据合同，但采用分阶段切换而非一次性替换：C1 生成远端静态 staging；C2a 生成公共地点、12 套入口路线、65 个权威位置、8 个 NPC 初始点和确定性 AStar 合同网格；T0129C-A3 完成后，`physics_navigation_v1 + building_fixture_layout_v1 + natural_collision_v1` 共同生成 78 个结构阻挡、1 个烘焙地面、131 个家具碰撞和 24 个自然边界，共 234 个 StaticBody。A3b12R 货运车采用真实占地后，当前烘焙为 `0.25 m / 788 vertex / 754 polygon` 生产 NavMesh和 12 个门链接。主厅 `MainHallArt` 与仓库 `WarehouseArt` 都是纯表现组合；仓库以 `BuildingArtView` 接入统一屋顶渐隐，但不创建进入触发体、NPC 工位或库存事实。全部 12 座建筑的 107 件配置物提供 61 个 NPC 到达点、34 个表现锚点与 8 个 HorseAnchor；主厅和仓库不会伪造 NPC 工位。
+
+旧 `WorldRoot/Station` 只保留开发兼容；A5-P7 后正式 NavigationMap、Region、门链接、日常 NPC 与默认行商均随新局启用。NPCSystem / BuildingSystem 对可进入建筑消费正式路线和事务：物理穿门后提交地点，抵达后提交占用；床 / 椅 / 长凳位置再于提交后挂接，取消或失败均反向清理。A4 已迁移默认五波敌军，C4-P2 已让 NPC 消费 6 点地图边缘逃离路；P7R2 后 MerchantSystem 默认消费 `rear_spatial_v1` 六点商路，旧 `(-40,-120)` 仅为进门引导，只有到达距后门约 `7 m` 的 `(-28.2,-52.4)` 才提交停靠。
+
+任何系统都不能根据建筑中心猜测入口、工位、射界或完成点；必须读取正式配置的对应字段。`station_spatial_plan_v7` 只保留设计对照和压力验收，正式控制器不直接消费它；C2a 专项允许读取两份数据进行漂移检查，但运行时只读取 `station_layout_v2`。
+
+家具、落脚点与附着表现采用分层合同：`station_layout_v2.positions[].center / size` 是容量、升级和空间预留使用的逻辑工作湾；`building_fixture_layout_v1.fixtures[]` 是逐件可见设备及碰撞，`npc_stand` 是 CharacterBody 实际到达点，可选 `occupant_anchor` 只用于到达并提交占用后的床面 / 座位表现挂接，可选 `horse_anchor` 只为 HorseSystem 中实际在厩马匹预留独立实体净空。路线查询对已有实物合同的工位返回 `interior_target_position=站位`，并保留 `logical_position_center_position / target_fixture_id / arrival_mode`；需要挂接时再返回 occupant anchor，不能把任何锚点作为寻路终点。任何权威系统都不能从家具视觉节点反推占用或马匹数量，任何运动层也不能把逻辑湾中心、家具中心或马匹锚点重新当成 NPC 实体站位。
+
+A3b9R 将这套分层合同应用到教堂：每个 Quaternius 半排长凳只映射一个固定 `chapel_prayer_seat`，实体先抵达长凳侧前方 stand，BuildingSystem 提交占用后表现层才可使用 `seated_prayer` 锚点。长凳宽度、座垫数量或装饰书本都不能反向增加祈祷容量。
+
+A3b10R 对工械坊采用同一边界：`workshop_role` 只选择制弓 / 机构 / 总装的表现包装，`asset_path` 只实例化 Quaternius 主体；是否解锁、能否开工、制造目标、阶段、资源和 `reserved_by / occupied_by` 仍分别由 BuildingSystem、CraftingSystem 与 ActionSystem 决定。共享工具墙、吊架、测量台和材料架没有 `workstation_id`，不能因为视觉上可操作就被运动层当作新增工位。
+
+运动权威边界已经冻结：NPCSystem / CombatSystem / Merchant / Escape 只下发 movement intent、destination 和完成语义；运动组件独占路径、速度、avoidance、`move_and_slide`、卡死采样和重寻路；表现层只读取速度 / 朝向播放动画。NavigationAgent 到达不能自行提交地点、工位、伤害或逃离，仍由既有系统在物理门、具体位置或地图边缘完成条件满足后原子提交。
+
+A5-P2 为正式大波次增加了不改变数值结算的时间分片：CombatSystem 每帧轮转最多 8 名敌人，并为每个敌人独立累计未处理帧的游戏秒 / 战斗动作秒；因此索敌刷新可拆帧，而冷却和攻击次数仍使用完整累计时间。接触与避战复核采用 6 / 3 帧节奏，CharacterBody / NavigationAgent 的 `_physics_process` 不分片。该预算仅用于默认正式战斗世界；显式 debug 推进仍一次处理全部敌人，便于确定性回归。
+
+`ActorMotionBody` 是该边界的 A2a 参考实现。Body 使用 `actor_body=2`、mask `world_static|actor_body=3`；点击 / 对话 `InteractionArea` 使用 bitmask 4、mask 0。每物理帧必须调用 `get_next_path_position()`，候选速度先经加速度约束，再写入 NavigationAgent velocity，下一次 `velocity_computed` 的 safe velocity 必须再次受 profile 最大速度与加速度约束后才能交给 `move_and_slide`；NavigationAgent 自身 `max_speed` 也必须同步到该 profile。卡死超时只累计连续无进展采样时间，不用完整路线耗时；目标超出导航岛时返回 `target_unreachable`，物理阻挡持续存在时只做配置上限内的重寻路并返回 `stuck_timeout`。`motion_arrived / motion_failed / motion_cancelled` 是结果通知，不是玩法提交。
+
+P3 为室内狭窄终点补充平面可达性复核：NavigationAgent 初次同步后若报告不可达，运动层用同一 NavigationMap 的 `map_get_path` 重新取路径，并只在路径末端与目标的水平距离小于到达容差时接受。这样可忽略 Recast 路面高度与角色目标 Y 的小偏差；真正位于导航岛外的目标末端水平误差仍超限并返回 `target_unreachable`。
+
+A2b-P1 保持该边界：NPCSystem 在启用试点前强制中断格伦当前 ActionSystem 行动并登记试点锁，避免自动日计划覆盖正在执行的正式路线；NPC.gd 只把 NavigationAgent 的到达 / 失败翻译为 NPCSystem 结果。专属 NavigationMap 首次绑定允许约半秒同步宽限，再按 `is_target_reachable()` 判定不可达；失败处理只释放 pending reservation / occupancy 和路线状态，不伪造地点到达。
+
+A2b-P2 扩展同一边界：`arrival_mode=stand` 只在具体诊疗站位提交占用；`mount_after_arrival` 的路径终点仍是床边站位。NPCSystem 必须先调用 BuildingSystem 提交 `reserved_by -> occupied_by`，确认成功后才调用 NPC 的表现锚点接口；若挂接失败则反向释放已提交占用。躺卧期间禁用实体 Body 以避免床体持续推挤，但点击 InteractionArea 继续有效。昏迷、建筑失效、不可达、停止和返回旧图都经过同一事务清理；锚点姿态不启动 ActionSystem 治疗，也不是地点 / 工作事实源。
+
+A2b-P3 将上述事务泛化为按 `pilot_id` 查询的统一启动、停止和快照接口。宿舍试点在预留后额外校验返回 ID 必须为登记的 `dormitory_bed_01`，防止固定归属错误时静默占用其他空床；进门步骤以路线的 `interior_position` 落地，最终床边到达后沿既有先提交、后挂接顺序应用 `sleeping_supine`。试点不调用 ActionSystem 睡眠接口。
+
+A2b-P4 不设置 `expected_workstation_id`，让 BuildingSystem 成为非固定餐位排序的唯一权威。专项先验证空场返回 `dining_seat_01`，再由另一 NPC 占用 1 号席并验证返回 `dining_seat_02`；停止布鲁诺试点只按 NPC ID 和本次 workstation ID 释放自身事务。椅面 `sitting` 仍在占用提交后挂接，且不调用 ActionSystem 进食接口。
+
+## T0127 铁匠铺空间事务边界
+
+```text
+ActionSystem 派发 work_blacksmith
+  -> BuildingSystem.reserve_workstation：只写 reserved_by
+  -> NPCSystem：门外 -> 门内 -> 具体 Marker
+     -> 穿门：MemorySystem.move_npc_between_locations，提交 current_location / people_present
+     -> 抵达 Marker：ActionSystem 提交 reservation
+  -> BuildingSystem.commit_workstation_reservation：reserved_by -> occupied_by
+  -> ActionSystem 创建 active，才开始权威计时 / 制造结算
+```
+
+铁匠铺路线由 NPCSystem 维护单一阶段状态，BuildingArtView 只提供坐标，碰撞、屋顶和动画都不能自行提交事实。离开按反向路线，在门内阶段仍保持铁匠铺地点，穿过出口才提交广场。升级、行动失败、昏迷、战斗 / 对话改派和逃离都先释放预留 / 占用，再按物理阶段决定门外停止或真实退出；最终失败结果不能被退出移动的 start result 覆盖。
+
+本合同目前只对 `blacksmith / work_blacksmith` 生效。其他建筑继续使用旧的入口直达与到达提交，不得因为 BuildingSystem 已支持 `reserved_by` 就推断其已经拥有真实室内。LLM、NPC-NPC 对话与本地公开事件继续只读 NPCSystem / MemorySystem 已提交的逻辑地点，不读世界坐标或屋顶透明度。
+
+## T0126 屋顶透明的单向表现边界
+
+`RoofVisibilityController` 是唯一相机距离采样器，输出 `camera_distance / zoom_normalized` 并调用已注册 `BuildingArtView`；每座包装只把该输入映射为自身 smoothstep alpha 与屋顶阴影开关。该链路不向 BuildingSystem、NPCSystem、ActionSystem、MemorySystem 或 EventBus 回写，也不修改碰撞、点击区、导航、HP、等级、工位或地点事实。
+
+`BuildingArtView.tscn` 的 InteriorTrigger 与 NavigationRegion3D 在 T0126 只是空间合同：碰撞 shape 已存在，导航区域保持禁用。T0127 才允许通过既有 ActionSystem / NPCSystem 的事务式移动链把 EntryMarker、室内 Marker 和地点权威对齐；不得以“屋顶已透明”推断 NPC 已进入建筑。
+
+## T0125 导入基线的非权威边界
+
+`ArtSandbox.gd`、GLB、Skeleton、AnimationPlayer、材质 surface override、rim、outline、灯光和相机只属于技术美术验证。`art_scale_baseline.json` 只提供显示尺度、色板、过滤与性能软上限，不参与建筑、地点、工位、行动、资源、HP 或战斗结算。T0125 没有连接 EventBus、没有新增 Autoload / 系统节点，也没有修改 Main；正式包装场景仍须只读既有权威状态。
+
 ## T0123 美术表现与权威模拟的规划边界
 
 美术升级不建立第二套建筑、NPC、战斗或地点权威。Quaternius Mesh、Skeleton、AnimationTree、碰撞、导航、屋顶透明、粒子、贴花、布娃娃和 UI Theme 均属于表现 / 空间执行层；资源、HP、伤害、建筑等级、位置容量、行动进度、事件与记忆仍由现有系统决定。
@@ -14,7 +358,7 @@ ActionSystem 请求并预留位置
   -> ActionSystem 才开始权威行动计时与结算
 ```
 
-离开、升级清退、行动失败、昏迷、战斗打断和逃离使用反向 / 中止事务，不能提前把仍在室内的 NPC 写成广场人员，也不能留下幽灵预留。该合同目前只登记为后续实现目标；T0127 前运行时仍沿用入口占位流程。
+离开、升级清退、行动失败、昏迷、战斗打断和逃离使用反向 / 中止事务，不能提前把仍在室内的 NPC 写成广场人员，也不能留下幽灵预留。T0127 已按该合同完成铁匠铺首个样本；其他建筑仍沿用入口占位流程，等待 T0131 逐座迁移。
 
 ## T0116 对话执行前异步边界
 

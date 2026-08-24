@@ -16,15 +16,26 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
-	if npc_system == null or action_system == null or memory_system == null or npc_panel == null:
+	if (
+		npc_system == null
+		or action_system == null
+		or memory_system == null
+		or time_system == null
+		or daily_plan_system == null
+		or npc_panel == null
+	):
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_paused(false)
+	daily_plan_system.set_auto_execution_enabled(false)
 
 	var target_id := "cook_01"
 	var witness_id := "priest_01"
-	_set_debug_move_speed(target_id, 100.0)
+	_set_debug_move_speed(target_id, 5.0)
 	if not npc_system.debug_enter_location_immediately(target_id, "dining_hall"):
 		push_error("Failed to move target NPC into dining hall")
 		quit(1)
@@ -38,7 +49,12 @@ func _init() -> void:
 		push_error("Failed to assign eat action")
 		quit(1)
 		return
-	if not await _wait_until_current_action(npc_system, target_id, "eat_at_dining_hall"):
+	if not await _wait_until_active_action(
+		action_system,
+		time_system,
+		target_id,
+		"eat_at_dining_hall"
+	):
 		push_error("Eat action did not start")
 		quit(1)
 		return
@@ -151,11 +167,21 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 	return false
 
 
-func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for frame in range(300):
-		await process_frame
-		var state: Dictionary = npc_system.get_npc_state(npc_id)
-		if str(state.get("current_action", "")) == expected_action:
+func _wait_until_active_action(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	expected_action: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == expected_action
+		):
 			return true
 	return false
 

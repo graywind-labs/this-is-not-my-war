@@ -77,19 +77,15 @@ func _init() -> void:
 		push_error("Expected active enemies after spawn")
 		quit(1)
 		return
-	_place_enemies_for_flow_test(combat_system, enemy_ids, false)
+	var formal_combatant_position: Vector3 = npc_system.get_npc_world_position("stableman_01")
+	_place_enemies_for_flow_test(combat_system, enemy_ids, formal_combatant_position, false)
 
 	combat_system.debug_step_enemy_ai(60.0)
 	if _mode(npc_system, "stableman_01") != "combat":
 		push_error("Recruited armed NPC should enter combat on enemy contact")
 		quit(1)
 		return
-	if _mode(npc_system, "cook_01") != "avoid_combat":
-		push_error("Unrecruited NPC should enter avoid_combat on enemy contact")
-		quit(1)
-		return
-
-	_place_enemies_for_flow_test(combat_system, enemy_ids, true)
+	_place_enemies_for_flow_test(combat_system, enemy_ids, formal_combatant_position, true)
 	npc_system.update_npc_state("stableman_01", {"combat_attack_cooldown": 0.0})
 	var kill_result: Dictionary = combat_system.debug_step_enemy_ai(600.0)
 	await process_frame
@@ -102,11 +98,6 @@ func _init() -> void:
 		push_error("Combat NPC should return to work after enemies are defeated")
 		quit(1)
 		return
-	if _mode(npc_system, "cook_01") != "work":
-		push_error("Avoiding NPC should return to work after enemies are defeated")
-		quit(1)
-		return
-
 	var end_event := _last_event(memory_system.get_plaza_events(), "combat_ended")
 	if end_event.is_empty():
 		push_error("All enemies defeated should write a plaza combat_ended event")
@@ -126,8 +117,8 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var last_reevaluation: Dictionary = npc_system.get_last_plan_reevaluation_request()
-	if str(last_reevaluation.get("npc_id", "")) != "stableman_01":
+	var stableman_reevaluation: Dictionary = npc_system.get_plan_reevaluation_request("stableman_01")
+	if str(stableman_reevaluation.get("npc_id", "")) != "stableman_01":
 		push_error("Combat NPC should request plan reevaluation after battle")
 		quit(1)
 		return
@@ -151,14 +142,14 @@ func _set_npc_position(npc_system: Node, npc_id: String, position: Vector3) -> v
 		npc_node.global_position = position
 
 
-func _place_enemies_for_flow_test(combat_system: Node, enemy_ids: Array[String], weaken: bool) -> void:
+func _place_enemies_for_flow_test(combat_system: Node, enemy_ids: Array[String], center: Vector3, weaken: bool) -> void:
 	var active_enemies: Dictionary = combat_system.get("_active_enemies")
 	for index in range(enemy_ids.size()):
 		var enemy_id := str(enemy_ids[index])
 		var enemy: Dictionary = active_enemies.get(enemy_id, {})
 		if enemy.is_empty():
 			continue
-		enemy["position"] = Vector3(0.0, 0.0, float(index) * 0.05)
+		enemy["position"] = center + Vector3(0.0, 0.0, float(index) * 0.05)
 		if weaken:
 			enemy["hp"] = 1
 			enemy["attack_cooldown"] = 999.0

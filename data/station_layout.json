@@ -1,0 +1,382 @@
+{
+  "schema_version": "station_layout_v2",
+  "units": {
+    "godot_units_per_meter": 1.0,
+    "origin": "road_junction_public_space",
+    "front_axis": "+Z"
+  },
+  "migration": {
+    "phase": "a5_p7_default_formal_world",
+    "formal_layout_active": true,
+    "preview_offset": [1000.0, 0.0],
+    "legacy_gameplay_root": "WorldRoot/Station",
+    "formal_layout_root": "WorldRoot/FormalStationLayout"
+  },
+  "terrain": {
+    "center": [0.0, 25.0],
+    "size": [700.0, 720.0],
+    "ground_color": "#405842",
+    "ground_surface_y": 0.0,
+    "ground_depth": 2.4,
+    "river_center_x": -97.0,
+    "river_width": 30.0,
+    "river_surface_y": -1.2,
+    "river_color": "#2173ab"
+  },
+  "natural_collision": {
+    "schema_version": "natural_collision_v1",
+    "source_plan": "station_spatial_plan_v7.environment",
+    "simplified_compound_boundaries": true,
+    "barriers": [
+      {"id":"river_cliff_01","kind":"river_cliff","from":[-85.0,-335.0],"to":[-81.0,-240.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_02","kind":"river_cliff","from":[-81.0,-240.0],"to":[-79.0,-160.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_03","kind":"river_cliff","from":[-79.0,-160.0],"to":[-84.0,-70.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_04","kind":"river_cliff","from":[-84.0,-70.0],"to":[-80.0,0.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_05","kind":"river_cliff","from":[-80.0,0.0],"to":[-84.0,80.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_06","kind":"river_cliff","from":[-84.0,80.0],"to":[-79.0,160.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_07","kind":"river_cliff","from":[-79.0,160.0],"to":[-83.0,250.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_08","kind":"river_cliff","from":[-83.0,250.0],"to":[-85.0,385.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"east_ridge_01","kind":"rock_ridge","from":[147.5,-300.0],"to":[147.5,-135.0],"width":55.0,"height":5.5,"color":"#555b60"},
+      {"id":"east_ridge_02","kind":"rock_ridge","from":[147.5,-135.0],"to":[147.5,30.0],"width":55.0,"height":5.5,"color":"#596066"},
+      {"id":"east_ridge_03","kind":"rock_ridge","from":[147.5,30.0],"to":[147.5,195.0],"width":55.0,"height":5.5,"color":"#555b60"},
+      {"id":"east_ridge_04","kind":"rock_ridge","from":[147.5,195.0],"to":[147.5,360.0],"width":55.0,"height":5.5,"color":"#596066"},
+      {"id":"rear_forest_west_near","kind":"dense_forest","from":[-344.0,-70.0],"to":[-48.0,-70.0],"width":18.0,"height":4.5,"color":"#263f31","corridor":"rear_trade"},
+      {"id":"rear_forest_east_near","kind":"dense_forest","from":[-10.0,-70.0],"to":[344.0,-70.0],"width":18.0,"height":4.5,"color":"#263f31","corridor":"rear_trade"},
+      {"id":"rear_forest_west_mid","kind":"dense_forest","from":[-344.0,-180.0],"to":[-60.0,-180.0],"width":20.0,"height":4.8,"color":"#223a2d","corridor":"rear_trade"},
+      {"id":"rear_forest_east_mid","kind":"dense_forest","from":[-32.0,-180.0],"to":[344.0,-180.0],"width":20.0,"height":4.8,"color":"#223a2d","corridor":"rear_trade"},
+      {"id":"rear_forest_west_edge","kind":"dense_forest","from":[-344.0,-290.0],"to":[-68.0,-290.0],"width":22.0,"height":5.0,"color":"#20372a","corridor":"rear_trade"},
+      {"id":"rear_forest_east_edge","kind":"dense_forest","from":[-40.0,-290.0],"to":[344.0,-290.0],"width":22.0,"height":5.0,"color":"#20372a","corridor":"rear_trade"},
+      {"id":"front_forest_west_near","kind":"dense_forest","from":[-344.0,85.0],"to":[-15.0,85.0],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
+      {"id":"front_forest_east_near","kind":"dense_forest","from":[24.0,85.0],"to":[344.0,85.0],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
+      {"id":"front_forest_west_mid","kind":"dense_forest","from":[-344.0,220.0],"to":[-10.0,220.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
+      {"id":"front_forest_east_mid","kind":"dense_forest","from":[26.0,220.0],"to":[344.0,220.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
+      {"id":"front_forest_west_edge","kind":"dense_forest","from":[-344.0,330.0],"to":[-24.0,330.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"},
+      {"id":"front_forest_east_edge","kind":"dense_forest","from":[28.0,330.0],"to":[344.0,330.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"}
+    ]
+  },
+  "station": {
+    "interior_bounds": [-53.0, 50.0, -43.0, 52.0],
+    "interior_polygon": [[-50.0,-39.0],[-29.0,-43.0],[-24.0,-43.0],[3.0,-42.0],[32.0,-38.0],[48.0,-26.0],[50.0,7.0],[46.0,31.0],[36.0,48.0],[8.0,52.0],[2.0,52.0],[-22.0,50.0],[-42.0,41.0],[-52.0,22.0],[-53.0,-6.0]],
+    "wall_thickness": 1.2,
+    "wall_height": 2.4,
+    "wall_color": "#797b83",
+    "wall_segments": [
+      {"id":"south_west_a","from":[-53.0,-41.0],"to":[-31.0,-46.0]},
+      {"id":"south_west_b","from":[-31.0,-46.0],"to":[-30.0,-46.0]},
+      {"id":"south_east_a","from":[-24.0,-45.0],"to":[4.0,-44.0]},
+      {"id":"south_east_b","from":[4.0,-44.0],"to":[34.0,-40.0]},
+      {"id":"south_east_c","from":[34.0,-40.0],"to":[50.0,-27.0]},
+      {"id":"east_south","from":[50.0,-27.0],"to":[53.0,7.0]},
+      {"id":"east_mid","from":[53.0,7.0],"to":[49.0,33.0]},
+      {"id":"east_north","from":[49.0,33.0],"to":[38.0,51.0]},
+      {"id":"north_east","from":[38.0,51.0],"to":[8.2,54.0]},
+      {"id":"north_west_a","from":[1.8,54.0],"to":[-23.0,52.0]},
+      {"id":"north_west_b","from":[-23.0,52.0],"to":[-45.0,43.0]},
+      {"id":"west_north","from":[-45.0,43.0],"to":[-55.0,24.0]},
+      {"id":"west_mid","from":[-55.0,24.0],"to":[-56.0,-7.0]},
+      {"id":"west_south","from":[-56.0,-7.0],"to":[-53.0,-41.0]}
+    ],
+    "front_gate": {"id":"front_gate","display_name":"正门","center":[5.0,54.0],"clear_width":6.0,"height":3.2,"rotation_degrees":-4.0},
+    "back_gate": {"id":"back_gate","display_name":"后门","center":[-27.0,-45.5],"clear_width":5.0,"height":2.8,"rotation_degrees":0.0},
+    "plaza": {
+      "center": [0.0,10.0],
+      "display_name": "驿路交汇 / 公共见闻区",
+      "patches": [
+        {"center":[-2.0,9.0],"size":[9.0,6.0],"rotation_degrees":-8.0},
+        {"center":[3.0,11.0],"size":[7.0,5.0],"rotation_degrees":12.0},
+        {"center":[-1.0,14.0],"size":[6.0,4.0],"rotation_degrees":5.0}
+      ]
+    }
+  },
+  "buildings": [
+    {"id":"workshop","node_name":"Workshop","display_name":"工械坊","center":[-40.0,-27.0],"rotation_degrees":45.0,"orientation":"东北","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":1.4,"color":"#4f5463"},
+    {"id":"chapel","node_name":"Chapel","display_name":"小教堂","center":[-18.0,-30.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":1.8,"color":"#918c7d"},
+    {"id":"clinic","node_name":"Clinic","display_name":"小诊所","center":[12.0,-30.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":1.4,"color":"#788f87"},
+    {"id":"stable","node_name":"Stable","display_name":"马厩","center":[31.0,-23.0],"rotation_degrees":-45.0,"orientation":"西北","lot_size":[16.0,16.0],"envelope_size":[14.0,14.0],"height":1.4,"color":"#634a33"},
+    {"id":"dormitory","node_name":"Dormitory","display_name":"宿舍","center":[-34.0,-9.0],"rotation_degrees":90.0,"orientation":"东","lot_size":[16.0,14.0],"envelope_size":[14.0,13.0],"height":1.4,"color":"#5e6b7a"},
+    {"id":"main_hall","node_name":"MainHall","display_name":"主厅","center":[0.0,-8.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[24.0,20.0],"envelope_size":[22.0,18.0],"height":3.0,"color":"#8c6e52"},
+    {"id":"dining_hall","node_name":"DiningHall","display_name":"食堂","center":[34.0,-3.0],"rotation_degrees":-90.0,"orientation":"西","lot_size":[16.0,14.0],"envelope_size":[14.0,12.0],"height":1.4,"color":"#9c7545"},
+    {"id":"garden","node_name":"Garden","display_name":"菜园","center":[-42.0,10.0],"rotation_degrees":90.0,"orientation":"东","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":0.7,"color":"#306e38"},
+    {"id":"tavern","node_name":"Tavern","display_name":"酒窖","center":[-34.0,28.0],"rotation_degrees":45.0,"orientation":"东北","lot_size":[14.0,12.0],"envelope_size":[12.0,10.0],"height":1.3,"color":"#70382e"},
+    {"id":"training_ground","node_name":"TrainingGround","display_name":"训练场","center":[-15.0,36.0],"rotation_degrees":180.0,"orientation":"南","lot_size":[16.0,18.0],"envelope_size":[14.0,16.0],"height":0.6,"color":"#735c3d"},
+    {"id":"blacksmith","node_name":"Blacksmith","display_name":"铁匠铺","center":[15.0,36.0],"rotation_degrees":-135.0,"orientation":"西南","lot_size":[16.0,16.0],"envelope_size":[14.0,12.0],"height":1.6,"color":"#47454a"},
+    {"id":"warehouse","node_name":"Warehouse","display_name":"仓库","center":[35.0,20.0],"rotation_degrees":-135.0,"orientation":"西南","lot_size":[16.0,16.0],"envelope_size":[14.0,14.0],"height":1.8,"color":"#57503f"}
+  ],
+  "public_locations": [
+    {"id":"plaza","display_name":"广场","position":[0.0,10.0],"radius":4.0},
+    {"id":"notice_board","display_name":"主厅前公告牌","position":[-3.6,2.6],"radius":1.5,"facing_degrees":0.0,"placement":"main_hall_front_left"}
+  ],
+  "service_outbuildings": [
+    {"id":"dormitory_latrine","node_name":"DormitoryLatrine","display_name":"宿舍卫生间一号","kind":"latrine","position":[-47.0,-10.0],"rotation_degrees":90.0,"footprint":[3.4,3.0],"collision_size":[2.8,3.2,2.4],"enterable":false,"interactive":false,"functional":false,"has_interior":false},
+    {"id":"dormitory_latrine_02","node_name":"DormitoryLatrine02","display_name":"宿舍卫生间二号","kind":"latrine","position":[-47.0,-13.6],"rotation_degrees":90.0,"footprint":[3.4,3.0],"collision_size":[2.8,3.2,2.4],"enterable":false,"interactive":false,"functional":false,"has_interior":false}
+  ],
+  "npc_initial_positions": [
+    {"npc_id":"stableman_01","position":[2.0,12.0]},
+    {"npc_id":"cook_01","position":[-1.0,10.0]},
+    {"npc_id":"gardener_01","position":[-4.0,9.0]},
+    {"npc_id":"blacksmith_01","position":[1.0,16.0]},
+    {"npc_id":"veteran_deputy_01","position":[-1.0,13.0]},
+    {"npc_id":"priest_01","position":[-6.0,8.0]},
+    {"npc_id":"doctor_01","position":[4.0,9.0]},
+    {"npc_id":"engineer_01","position":[-3.0,16.0]}
+  ],
+  "building_spatial": {
+    "workshop": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"workbench_01","type":"engineering","authority":"building_workstation","required_level":1,"center":[-3.6,-3.2],"size":[3.0,3.0]},{"id":"workbench_02","type":"engineering","authority":"building_workstation","required_level":1,"center":[3.6,-3.2],"size":[3.0,3.0]},{"id":"workbench_03","type":"engineering","authority":"building_workstation","required_level":3,"center":[-3.6,0.6],"size":[3.0,3.0]}]
+    },
+    "chapel": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"chapel_altar_01","type":"chapel_altar","authority":"building_workstation","required_level":1,"center":[0.0,-4.2],"size":[3.0,2.0]},{"id":"chapel_prayer_seat_01","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[-2.3,-1.9],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_02","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[2.3,-1.9],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_03","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[-2.3,-0.3],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_04","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[2.3,-0.3],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_05","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[-2.3,1.3],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_06","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[2.3,1.3],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_07","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[-2.3,2.9],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_08","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[2.3,2.9],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_09","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[-2.3,4.5],"size":[0.9,1.5]},{"id":"chapel_prayer_seat_10","type":"chapel_prayer_seat","authority":"building_workstation","required_level":1,"center":[2.3,4.5],"size":[0.9,1.5]}]
+    },
+    "clinic": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"doctor_desk_01","type":"clinic_doctor_station","authority":"building_workstation","required_level":1,"center":[-3.7,-4.0],"size":[2.5,2.5]},{"id":"doctor_desk_02","type":"clinic_doctor_station","authority":"building_workstation","required_level":1,"center":[3.7,-4.0],"size":[2.5,2.5]},{"id":"treatment_bed_01","type":"clinic_patient_bed","authority":"building_workstation","required_level":1,"center":[-3.7,3.2],"size":[2.2,3.0]},{"id":"treatment_bed_02","type":"clinic_patient_bed","authority":"building_workstation","required_level":1,"center":[3.7,3.2],"size":[2.2,3.0]},{"id":"treatment_bed_03","type":"clinic_patient_bed","authority":"building_workstation","required_level":2,"center":[-3.7,-0.2],"size":[2.2,3.0]},{"id":"treatment_bed_04","type":"clinic_patient_bed","authority":"building_workstation","required_level":3,"center":[3.7,-0.2],"size":[2.2,3.0]}]
+    },
+    "stable": {
+      "entry_route":{"entry_outside":[0.0,8.2],"door_outside":[0.0,7.25],"door_inside":[0.0,6.25],"interior":[0.0,4.0],"exit_outside":[0.0,9.4]},
+      "positions":[{"id":"stall_01","type":"horse_care","authority":"building_workstation","required_level":1,"center":[-4.0,-4.5],"size":[4.8,3.0]},{"id":"stall_02","type":"horse_care","authority":"building_workstation","required_level":1,"center":[4.0,-4.5],"size":[4.8,3.0]},{"id":"stall_03","type":"horse_care","authority":"building_workstation","required_level":3,"center":[-4.0,-1.5],"size":[4.8,3.0]}]
+    },
+    "dormitory": {
+      "entry_route":{"entry_outside":[0.0,7.7],"door_outside":[0.0,6.75],"door_inside":[0.0,5.75],"interior":[0.0,3.8],"exit_outside":[0.0,8.9]},
+      "positions":[{"id":"dormitory_bed_01","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[-3.5,-4.8],"size":[1.3,2.4]},{"id":"dormitory_bed_02","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[3.5,-4.8],"size":[1.3,2.4]},{"id":"dormitory_bed_03","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[-3.5,-2.4],"size":[1.3,2.4]},{"id":"dormitory_bed_04","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[3.5,-2.4],"size":[1.3,2.4]},{"id":"dormitory_bed_05","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[-3.5,0.0],"size":[1.3,2.4]},{"id":"dormitory_bed_06","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[3.5,0.0],"size":[1.3,2.4]},{"id":"dormitory_bed_07","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[-3.5,2.4],"size":[1.3,2.4]},{"id":"dormitory_bed_08","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[3.5,2.4],"size":[1.3,2.4]},{"id":"dormitory_bed_09","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[-3.5,4.8],"size":[1.3,2.4]},{"id":"dormitory_bed_10","type":"dormitory_bed","authority":"building_workstation","required_level":1,"center":[3.5,4.8],"size":[1.3,2.4]}]
+    },
+    "main_hall": {
+      "entry_route":{"entry_outside":[0.0,10.2],"door_outside":[0.0,9.25],"door_inside":[0.0,8.25],"interior":[0.0,5.0],"exit_outside":[0.0,11.4]},
+      "positions":[{"id":"main_hall_slot_01","type":"defense_device_slot","authority":"defense_device_slot","required_level":1,"center":[-7.0,-5.0],"size":[4.0,4.0],"layer":"roof"},{"id":"main_hall_slot_02","type":"defense_device_slot","authority":"defense_device_slot","required_level":3,"center":[7.0,-5.0],"size":[4.0,4.0],"layer":"roof"},{"id":"main_hall_slot_03","type":"defense_device_slot","authority":"defense_device_slot","required_level":5,"center":[-7.0,5.0],"size":[4.0,4.0],"layer":"roof"},{"id":"main_hall_slot_04","type":"defense_device_slot","authority":"defense_device_slot","required_level":6,"center":[7.0,5.0],"size":[4.0,4.0],"layer":"roof"}]
+    },
+    "dining_hall": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"dining_kitchen_station_01","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[-3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_02","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[0.0,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_03","type":"dining_kitchen_station","authority":"building_workstation","required_level":3,"center":[3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_seat_01","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_02","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_03","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_04","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.1,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_05","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.1,1.0],"size":[0.9,1.2]},{"id":"dining_seat_06","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_07","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_08","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_09","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.1,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_10","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.1,1.0],"size":[0.9,1.2]}]
+    },
+    "garden": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"garden_plot_01","type":"farm","authority":"building_workstation","required_level":1,"center":[-3.5,-2.5],"size":[3.5,4.0]},{"id":"garden_plot_02","type":"farm","authority":"building_workstation","required_level":1,"center":[3.5,-2.5],"size":[3.5,4.0]},{"id":"garden_plot_03","type":"farm","authority":"building_workstation","required_level":3,"center":[-3.5,2.5],"size":[3.5,4.0]}]
+    },
+    "tavern": {
+      "entry_route":{"entry_outside":[0.0,6.2],"door_outside":[0.0,5.25],"door_inside":[0.0,4.25],"interior":[0.0,2.6],"exit_outside":[0.0,7.4]},
+      "positions":[{"id":"cellar_01","type":"brew","authority":"building_workstation","required_level":1,"center":[-3.5,-2.0],"size":[3.0,3.0]},{"id":"cellar_02","type":"brew","authority":"building_workstation","required_level":1,"center":[3.5,-2.0],"size":[3.0,3.0]},{"id":"cellar_03","type":"brew","authority":"building_workstation","required_level":3,"center":[-3.5,2.0],"size":[3.0,3.0]}]
+    },
+    "training_ground": {
+      "entry_route":{"entry_outside":[0.0,9.2],"door_outside":[0.0,8.25],"door_inside":[0.0,7.25],"interior":[0.0,4.5],"exit_outside":[0.0,10.4]},
+      "positions":[{"id":"training_instructor_01","type":"training_instructor_station","authority":"building_workstation","required_level":1,"center":[-3.8,-5.0],"size":[3.0,3.0]},{"id":"training_student_01","type":"training_practice_slot","authority":"building_workstation","required_level":1,"center":[3.8,-5.0],"size":[3.0,3.0]},{"id":"training_student_02","type":"training_practice_slot","authority":"building_workstation","required_level":1,"center":[-3.8,0.0],"size":[3.0,3.0]},{"id":"training_student_03","type":"training_practice_slot","authority":"building_workstation","required_level":2,"center":[3.8,0.0],"size":[3.0,3.0]},{"id":"training_instructor_02","type":"training_instructor_station","authority":"building_workstation","required_level":3,"center":[-3.8,5.0],"size":[3.0,3.0]},{"id":"training_student_04","type":"training_practice_slot","authority":"building_workstation","required_level":3,"center":[3.8,5.0],"size":[3.0,3.0]}]
+    },
+    "blacksmith": {
+      "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
+      "positions":[{"id":"forge_01","type":"forge","authority":"building_workstation","required_level":1,"center":[-4.0,-2.8],"size":[3.2,3.4]},{"id":"forge_02","type":"forge","authority":"building_workstation","required_level":1,"center":[4.0,-2.8],"size":[3.2,3.4]},{"id":"forge_03","type":"forge","authority":"building_workstation","required_level":3,"center":[-4.0,1.2],"size":[3.2,3.4]}]
+    },
+    "warehouse": {
+      "entry_route":{"entry_outside":[0.0,8.2],"door_outside":[0.0,7.25],"door_inside":[0.0,6.25],"interior":[0.0,4.0],"exit_outside":[0.0,9.4]},
+      "positions":[]
+    }
+  },
+  "combat_spatial": {
+    "enemy_route": {
+      "spawn_zone_center": [2.0,335.0],
+      "spawn_zone_size": [28.0,18.0],
+      "approach_half_width": 4.0,
+      "navigation_cross_sections": [
+        {"z":344.0,"x_min":-12.0,"x_max":16.0},
+        {"z":335.0,"x_min":-12.0,"x_max":16.0},
+        {"z":220.0,"x_min":-8.5,"x_max":24.5},
+        {"z":105.0,"x_min":-10.0,"x_max":22.0},
+        {"z":58.0,"x_min":0.8,"x_max":9.2},
+        {"z":54.0,"x_min":1.8,"x_max":8.2}
+      ],
+      "pilot_stop_stage_id": "front_gate",
+      "stages": [
+        {"id":"spawn","label":"地图边缘林下出生/组阵","point":[2.0,335.0]},
+        {"id":"reveal","label":"远方林缘显现","point":[8.0,225.0]},
+        {"id":"approach_mid","label":"林间进军中段","point":[10.0,165.0]},
+        {"id":"contact","label":"城外接触区","point":[6.0,105.0]},
+        {"id":"front_gate","label":"正门攻击点","point":[5.0,54.0]},
+        {"id":"gate_turn","label":"破门后转向点","point":[-1.0,40.0]},
+        {"id":"north_junction","label":"北侧路口","point":[0.0,22.0]},
+        {"id":"plaza_junction","label":"广场路口","point":[0.0,10.0]},
+        {"id":"warehouse","label":"仓库攻击点","point":[29.0,15.0]},
+        {"id":"main_hall","label":"主厅攻击点","point":[0.0,2.0]}
+      ]
+    },
+    "c3_p1_authority_boundary": {
+      "migrated": ["enemy_spawn_zone","enemy_reveal_point","enemy_contact_point","front_gate_attack_point","enemy_approach_navigation"],
+      "pilot_only": ["single_enemy_foot_motion"],
+      "deferred": ["wave_spawn_binding","front_gate_attack_commit","warehouse_attack_commit","main_hall_attack_commit","rally_runtime_binding","defense_device_runtime_binding"]
+    },
+    "c3_p2_authority_boundary": {
+      "migrated": ["single_active_wave_enemy","physical_arrival_attack_gate","front_gate_damage_commit","combat_started_event","building_damaged_event","combat_ended_event"],
+      "hold_after": "front_gate_destroyed",
+      "deferred": ["warehouse_route_and_attack","main_hall_route_and_attack","multi_enemy_wave_binding","rally_runtime_binding","defense_device_runtime_binding"]
+    },
+    "c3_p3_authority_boundary": {
+      "migrated": ["post_gate_physical_route","gate_turn","north_junction","plaza_junction","physical_arrival_attack_warehouse","warehouse_damage_commit"],
+      "hold_after": "warehouse_destroyed",
+      "deferred": ["main_hall_route_and_attack","multi_enemy_wave_binding","rally_runtime_binding","defense_device_runtime_binding"]
+    },
+    "c3_p4_authority_boundary": {
+      "migrated": ["post_warehouse_physical_route","physical_arrival_attack_main_hall","main_hall_damage_commit","main_hall_destroyed_failure"],
+      "terminal_after": "main_hall_destroyed",
+      "deferred": ["multi_enemy_wave_binding","rally_runtime_binding","defense_device_runtime_binding"]
+    },
+    "c3_p5_authority_boundary": {
+      "migrated": ["first_wave_eight_actor_bodies","per_enemy_navigation_agent","directional_formation_slots","navigation_map_slot_snap","physical_arrival_attack_authority","per_enemy_defeat_cleanup","multi_enemy_avoidance"],
+      "deferred": ["later_wave_formal_binding","friendly_rally_runtime_binding","defense_device_runtime_binding","default_world_route_switch"]
+    },
+    "c3_p6_authority_boundary": {
+      "migrated": ["second_wave_sixteen_actor_bodies","reusable_formal_wave_factory","unit_role_attack_slot_sets","melee_front_and_polearm_rear","destroyed_target_atomic_redirect","whole_wave_cleanup"],
+      "deferred": ["third_to_fifth_wave_formal_binding","friendly_rally_runtime_binding","defense_device_runtime_binding","default_world_route_switch"]
+    },
+    "c3_p7_authority_boundary": {
+      "migrated": ["five_wave_formal_actor_factory","per_actor_collision","per_actor_target_selection","dynamic_contact_pressure","blocked_actor_repath_and_refill","weapon_range_standoff"],
+      "deferred": ["default_world_route_switch","formal_friendly_combat_actor_binding","moving_friendly_target_chase","defense_device_runtime_binding"]
+    },
+    "c3_p7_dynamic_assault": {
+      "target_sequence": ["front_gate","warehouse","main_hall"],
+      "roads_affect_navigation": false,
+      "path_policy": "shortest_navigable_path_to_current_combat_target",
+      "movement_model": "dynamic_combat_pressure",
+      "fixed_attack_slots": false,
+      "blocked_policy": "keep_pressing_and_repath_until_contact_space_opens",
+      "target_policy": "nearest_attackable_friendly_else_current_objective"
+    },
+    "c3_p5r_direct_assault": {
+      "target_sequence": ["front_gate","warehouse","main_hall"],
+      "roads_affect_navigation": false,
+      "path_policy": "shortest_navigable_path_to_current_target",
+      "attack_slots": {
+        "front_gate": {"space":"station","points":[[1.6,57.0],[2.6,57.2],[3.6,57.3],[4.6,57.4],[5.6,57.4],[6.6,57.3],[7.6,57.2],[8.6,57.0]]},
+        "warehouse": {"space":"building_local","points":[[-5.4,8.5],[-3.8,8.5],[-2.2,8.5],[-0.7,8.5],[0.7,8.5],[2.2,8.5],[3.8,8.5],[5.4,8.5]]},
+        "main_hall": {"space":"building_local","formation":"north_front_compact_line","points":[[-8.4,10.5],[-6.0,10.5],[-3.6,10.5],[-1.2,10.5],[1.2,10.5],[3.6,10.5],[6.0,10.5],[8.4,10.5]]}
+      }
+    },
+    "c3_p6_second_wave": {
+      "wave_number": 2,
+      "target_sequence": ["front_gate","warehouse","main_hall"],
+      "roads_affect_navigation": false,
+      "path_policy": "shortest_navigable_path_to_current_target",
+      "attack_slot_sets": {
+        "front_gate": {
+          "melee_front": {"space":"station","formation":"gate_compact_two_rank","points":[[2.375,57.0],[3.425,57.0],[4.475,57.0],[5.525,57.0],[6.575,57.0],[7.625,57.0],[2.375,58.1],[3.425,58.1],[4.475,58.1],[5.525,58.1],[6.575,58.1],[7.625,58.1]]},
+          "polearm_rear": {"space":"station","formation":"gate_staggered_reach_rank","points":[[2.9,59.7],[4.0,59.7],[6.0,59.7],[7.1,59.7]]}
+        },
+        "warehouse": {
+          "melee_front": {"space":"building_local","formation":"compact_two_rank","points":[[-4.5,8.5],[-2.7,8.5],[-0.9,8.5],[0.9,8.5],[2.7,8.5],[4.5,8.5],[-4.5,9.8],[-2.7,9.8],[-0.9,9.8],[0.9,9.8],[2.7,9.8],[4.5,9.8]]},
+          "polearm_rear": {"space":"building_local","points":[[-3.3,11.6],[-1.1,11.6],[1.1,11.6],[3.3,11.6]]}
+        },
+        "main_hall": {
+          "melee_front": {"space":"building_local","formation":"north_front_compact_line","points":[[-8.8,10.5],[-7.2,10.5],[-5.6,10.5],[-4.0,10.5],[-2.4,10.5],[-0.8,10.5],[0.8,10.5],[2.4,10.5],[4.0,10.5],[5.6,10.5],[7.2,10.5],[8.8,10.5]]},
+          "polearm_rear": {"space":"building_local","formation":"north_front_reach_line","points":[[-3.6,12.6],[-1.2,12.6],[1.2,12.6],[3.6,12.6]]}
+        }
+      }
+    }
+  },
+  "rear_spatial": {
+    "schema_version": "rear_spatial_v1",
+    "back_gate": [-27.0,-45.5],
+    "merchant_route": {
+      "coordinate_space": "formal_station_local",
+      "path_policy": "physical_polyline_navigation",
+      "corridor_half_width": 2.25,
+      "spawn": [-55.0,-315.0],
+      "dock": [-28.2,-52.4],
+      "dock_root_clearance_to_back_gate_m": 7.0,
+      "path_points": [[-55.0,-315.0],[-52.0,-235.0],[-46.0,-185.0],[-42.0,-135.0],[-40.0,-120.0],[-28.2,-52.4]]
+    },
+    "escape_route": {
+      "coordinate_space": "formal_station_local",
+      "path_policy": "physical_polyline_navigation",
+      "corridor_half_width": 2.25,
+      "completion": [-54.0,-305.0],
+      "path_points": [[-27.0,-45.5],[-35.0,-90.0],[-42.0,-135.0],[-46.0,-185.0],[-52.0,-235.0],[-54.0,-305.0]],
+      "authority_status": "runtime_authoritative_c4_p2"
+    }
+  },
+  "navigation": {
+    "cell_size": 0.5,
+    "agent_radius": 0.35,
+    "grid_bounds": [-58.0,58.0,-50.0,58.0],
+    "roads_affect_navigation": false,
+    "entry_connector_width": 2.4,
+    "navigation_height": 0.12,
+    "enabled_by_default": false
+  },
+  "roads": [
+    {"id":"main_01","from":[-27.0,-45.5],"to":[-29.0,-38.0],"width":4.5,"kind":"main"},
+    {"id":"main_02","from":[-29.0,-38.0],"to":[-27.5,-29.0],"width":3.6,"kind":"main"},
+    {"id":"main_03","from":[-27.5,-29.0],"to":[-27.5,-21.0],"width":3.6,"kind":"main"},
+    {"id":"main_04","from":[-27.5,-21.0],"to":[-20.0,-19.0],"width":3.8,"kind":"main"},
+    {"id":"main_05","from":[-20.0,-19.0],"to":[-16.0,-4.0],"width":4.0,"kind":"main"},
+    {"id":"main_06","from":[-16.0,-4.0],"to":[-15.0,5.0],"width":4.5,"kind":"main"},
+    {"id":"main_07","from":[-15.0,5.0],"to":[0.0,10.0],"width":5.0,"kind":"main"},
+    {"id":"main_08","from":[0.0,10.0],"to":[0.0,22.0],"width":5.0,"kind":"main"},
+    {"id":"main_09","from":[0.0,22.0],"to":[-1.0,40.0],"width":4.8,"kind":"main"},
+    {"id":"main_10","from":[-1.0,40.0],"to":[5.0,54.0],"width":5.2,"kind":"main"},
+    {"id":"main_hall_spur","from":[0.0,10.0],"to":[0.0,1.8],"width":4.2,"kind":"service","serves":["main_hall"]},
+    {"id":"workshop_spur","from":[-27.5,-21.0],"to":[-35.2,-22.2],"width":3.0,"kind":"service","serves":["workshop"]},
+    {"id":"chapel_spur","from":[-27.5,-21.0],"to":[-18.0,-23.2],"width":3.0,"kind":"service","serves":["chapel"]},
+    {"id":"rear_lane_a","from":[-18.0,-23.2],"to":[-3.0,-24.0],"width":3.0,"kind":"service","serves":["chapel"]},
+    {"id":"rear_lane_b","from":[-3.0,-24.0],"to":[12.0,-23.2],"width":3.0,"kind":"service","serves":["clinic"]},
+    {"id":"stable_lane_a","from":[12.0,-23.2],"to":[21.0,-21.0],"width":3.0,"kind":"service","serves":["clinic","stable"]},
+    {"id":"stable_lane_b","from":[21.0,-21.0],"to":[26.2,-18.2],"width":3.0,"kind":"service","serves":["stable"]},
+    {"id":"dormitory_spur","from":[-20.0,-19.0],"to":[-27.2,-9.0],"width":3.0,"kind":"service","serves":["dormitory"]},
+    {"id":"dining_lane_a","from":[0.0,10.0],"to":[14.0,8.0],"width":3.2,"kind":"service"},
+    {"id":"dining_lane_b","from":[14.0,8.0],"to":[22.0,2.0],"width":3.2,"kind":"service"},
+    {"id":"dining_lane_c","from":[22.0,2.0],"to":[27.2,-3.0],"width":3.2,"kind":"service","serves":["dining_hall"]},
+    {"id":"garden_lane_a","from":[-15.0,5.0],"to":[-22.0,8.0],"width":3.0,"kind":"service"},
+    {"id":"garden_lane_b","from":[-22.0,8.0],"to":[-35.2,10.0],"width":3.0,"kind":"service","serves":["garden"]},
+    {"id":"tavern_lane_a","from":[0.0,22.0],"to":[-12.0,19.0],"width":3.0,"kind":"service"},
+    {"id":"tavern_lane_b","from":[-12.0,19.0],"to":[-25.0,22.0],"width":3.0,"kind":"service"},
+    {"id":"tavern_lane_c","from":[-25.0,22.0],"to":[-27.5,33.0],"width":3.0,"kind":"service","serves":["tavern"]},
+    {"id":"tavern_lane_d","from":[-27.5,33.0],"to":[-29.6,32.4],"width":3.0,"kind":"service","serves":["tavern"]},
+    {"id":"training_lane_a","from":[0.0,22.0],"to":[-7.0,24.0],"width":3.0,"kind":"service"},
+    {"id":"training_lane_b","from":[-7.0,24.0],"to":[-15.0,27.2],"width":3.0,"kind":"service","serves":["training_ground"]},
+    {"id":"blacksmith_lane_a","from":[0.0,22.0],"to":[5.0,27.0],"width":3.2,"kind":"service"},
+    {"id":"blacksmith_lane_b","from":[5.0,27.0],"to":[10.2,31.2],"width":3.2,"kind":"service","serves":["blacksmith"]},
+    {"id":"warehouse_lane_a","from":[0.0,10.0],"to":[14.0,11.0],"width":3.2,"kind":"service"},
+    {"id":"warehouse_lane_b","from":[14.0,11.0],"to":[29.5,14.5],"width":3.2,"kind":"service","serves":["warehouse"]},
+    {"id":"front_approach_a","from":[5.0,54.0],"to":[6.0,105.0],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_b","from":[6.0,105.0],"to":[10.0,165.0],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_c","from":[10.0,165.0],"to":[8.0,225.0],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_d","from":[8.0,225.0],"to":[2.0,335.0],"width":8.0,"kind":"enemy"},
+    {"id":"rear_trade_a","from":[-27.0,-45.5],"to":[-35.0,-90.0],"width":4.5,"kind":"trade"},
+    {"id":"rear_trade_b","from":[-35.0,-90.0],"to":[-42.0,-135.0],"width":4.5,"kind":"trade"},
+    {"id":"rear_trade_c","from":[-42.0,-135.0],"to":[-46.0,-185.0],"width":4.5,"kind":"trade"},
+    {"id":"rear_trade_d","from":[-46.0,-185.0],"to":[-52.0,-235.0],"width":4.5,"kind":"trade"},
+    {"id":"rear_trade_e","from":[-52.0,-235.0],"to":[-55.0,-315.0],"width":4.5,"kind":"trade"}
+  ],
+  "camera": {
+    "min_distance": 20.0,
+    "max_distance": 70.0,
+    "initial_distance": 70.0,
+    "pitch_degrees": -55.0,
+    "vertical_fov_degrees": 62.0,
+    "initial_focus": [-2.0,18.0],
+    "x_limits": [-150.0,150.0],
+    "z_limits": [-215.0,240.0]
+  },
+  "c1_authority_boundary": {
+    "migrated": ["terrain_visual","wall_visuals","gate_visuals","road_visuals","building_roots","camera_preview_contract"],
+    "deferred_to_c2_or_later": ["building_scene_binding","location_positions","workstation_positions","npc_initial_positions","navigation","enemy_route_authority","merchant_route_authority","escape_completion_authority","piety_ground_bounds","defense_device_positions"]
+  },
+  "c2_authority_boundary": {
+    "migrated_to_formal_contract": ["public_location_positions","building_entry_routes","building_interior_targets","61_building_workstations","4_main_hall_defense_slots","npc_initial_positions","navigation_grid"],
+    "staged_not_live": ["building_scene_binding","npc_spawn_binding","npc_movement_binding"],
+    "deferred_to_c3_or_later": ["rally_positions","defense_device_runtime_binding","escape_completion_authority","piety_ground_bounds"],
+    "c3_p1_migrated": ["enemy_spawn_zone","enemy_approach_route_through_front_gate_attack_point"],
+    "c3_p2_migrated": ["single_active_wave_enemy_front_gate_attack_authority"],
+    "c3_p3_migrated": ["single_active_wave_enemy_post_gate_warehouse_attack_authority"],
+    "c3_p4_migrated": ["single_active_wave_enemy_main_hall_attack_and_failure_authority"],
+    "c4_p1_migrated": ["formal_merchant_route_geometry","explicit_formal_merchant_arrival_and_departure"],
+    "cutover_guard": "satisfied by a5_p7_default_formal_world; retained as the historical C2 migration boundary"
+  },
+  "a5_p7_authority_boundary": {
+    "default_live": ["formal_camera_and_layout","production_navigation_map","eight_npc_bodies","noncombat_actions","combat_takeover","six_point_merchant_route","six_point_escape_route"],
+    "lifecycle_rule": "action and combat cleanup retain the actor's last committed formal position; only explicit GM legacy compatibility restores legacy coordinates",
+    "developer_compatibility": "station_layout legacy temporarily suspends formal residents and routes; station_layout preview restores the default formal world",
+    "deferred": ["save_load_formal_spatial_state"]
+  },
+  "t0132_p1r3_authority_boundary": {
+    "migrated": ["main_hall_defense_device_runtime_positions","front_wall_defense_device_runtime_positions"],
+    "position_rule": "world marker, deployed model and attack origin resolve from one runtime slot position; configured legacy coordinates are restored only by explicit legacy compatibility",
+    "main_hall_local_centers_unchanged": [[-7.0,-5.0],[7.0,-5.0],[-7.0,5.0],[7.0,5.0]]
+  }
+}

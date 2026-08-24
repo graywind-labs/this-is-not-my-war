@@ -5,8 +5,28 @@ const GM_ENABLED := true
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const ROOF_VISIBILITY_CONTROLLER_PATH := "/root/Main/Presentation/RoofVisibilityController"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
+const BLACKSMITH_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Blacksmith/BlacksmithArt"
+const WORKSHOP_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Workshop/WorkshopArt"
+const CHAPEL_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Chapel/ChapelArt"
+const CLINIC_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Clinic/ClinicArt"
+const DINING_HALL_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/DiningHall/DiningHallArt"
+const DORMITORY_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Dormitory/DormitoryArt"
+const TAVERN_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Tavern/TavernArt"
+const GARDEN_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Garden/GardenArt"
+const TRAINING_GROUND_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/TrainingGround/TrainingGroundArt"
+const STABLE_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Stable/StableArt"
+const MAIN_HALL_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/MainHall/MainHallArt"
+const WAREHOUSE_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots/Warehouse/WarehouseArt"
+const FORTIFICATION_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/WallsAndGates/FortificationArt"
+const LEGACY_BLACKSMITH_ART_VIEW_PATH := "/root/Main/WorldRoot/Station/Buildings/BlacksmithArtView"
+const ACTOR_MOTION_SANDBOX_PATH := "res://scenes/debug/ActorMotionSandbox.tscn"
+const CHIBI_CHARACTER_SANDBOX_PATH := "res://scenes/art/ChibiCharacterSandbox.tscn"
+const CHIBI_CHARACTER_PREVIEW_CONTROLLER_PATH := "/root/Main/Presentation/ChibiCharacterPilotPreviewController"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
@@ -16,6 +36,8 @@ const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const PIETY_SYSTEM_PATH := "/root/Main/Systems/PietySystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
+const MERCHANT_SYSTEM_PATH := "/root/Main/Systems/MerchantSystem"
+const SPATIAL_SAVE_SYSTEM_PATH := "/root/Main/Systems/SpatialSaveSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -39,6 +61,7 @@ var _resource_amount_input: LineEdit
 var _building_select: OptionButton
 var _building_amount_input: LineEdit
 var _npc_select: OptionButton
+var _npc_dialogue_target_select: OptionButton
 var _npc_state_key_input: LineEdit
 var _npc_state_value_input: LineEdit
 var _attribute_select: OptionButton
@@ -244,6 +267,14 @@ func _add_time_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(row, "清减速", _run_clear_slowdowns)
 	_add_button(row, "快照", _show_time_snapshot)
+	var merchant_row := _make_row(parent)
+	var merchant_label := Label.new()
+	merchant_label.text = "T0129C 行商马车"
+	merchant_row.add_child(merchant_label)
+	_add_button(merchant_row, "强制进场", _run_merchant_wagon_arrival)
+	_add_button(merchant_row, "正式商路", _run_formal_merchant_wagon_arrival)
+	_add_button(merchant_row, "强制离场", _run_merchant_wagon_departure)
+	_add_button(merchant_row, "马车快照", _show_merchant_wagon_snapshot)
 
 
 func _add_building_section(parent: VBoxContainer) -> void:
@@ -266,6 +297,304 @@ func _add_building_section(parent: VBoxContainer) -> void:
 	_add_button(row, "快照", func() -> void:
 		_show_building(_selected_id(_building_select))
 	)
+	var roof_snapshot_button := _add_button(row, "屋顶快照", _show_roof_visibility_snapshot)
+	roof_snapshot_button.name = "RoofVisibilitySnapshotButton"
+	var art_preview_row := _make_row(parent)
+	var art_preview_label := Label.new()
+	art_preview_label.text = "铁匠铺美术预览（不改权威等级）"
+	art_preview_row.add_child(art_preview_label)
+	for preview_level in [1, 2, 3]:
+		_add_button(
+			art_preview_row,
+			"等级 %d" % preview_level,
+			_run_smithy_art_level.bind(preview_level)
+		)
+	var workshop_art_preview_row := _make_row(parent)
+	var workshop_art_preview_label := Label.new()
+	workshop_art_preview_label.text = "工械坊美术预览（不改权威等级）"
+	workshop_art_preview_row.add_child(workshop_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var workshop_preview_button := _add_button(
+			workshop_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_workshop_art_level.bind(preview_level)
+		)
+		workshop_preview_button.name = "WorkshopArtLevel%dButton" % preview_level
+	var chapel_art_preview_row := _make_row(parent)
+	var chapel_art_preview_label := Label.new()
+	chapel_art_preview_label.text = "小教堂美术预览（不改权威等级）"
+	chapel_art_preview_row.add_child(chapel_art_preview_label)
+	for preview_level in [1, 2]:
+		var chapel_preview_button := _add_button(
+			chapel_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_chapel_art_level.bind(preview_level)
+		)
+		chapel_preview_button.name = "ChapelArtLevel%dButton" % preview_level
+	var clinic_art_preview_row := _make_row(parent)
+	var clinic_art_preview_label := Label.new()
+	clinic_art_preview_label.text = "小诊所美术预览（不改权威等级）"
+	clinic_art_preview_row.add_child(clinic_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var clinic_preview_button := _add_button(
+			clinic_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_clinic_art_level.bind(preview_level)
+		)
+		clinic_preview_button.name = "ClinicArtLevel%dButton" % preview_level
+	var dining_hall_art_preview_row := _make_row(parent)
+	var dining_hall_art_preview_label := Label.new()
+	dining_hall_art_preview_label.text = "食堂美术预览（不改权威等级）"
+	dining_hall_art_preview_row.add_child(dining_hall_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var dining_hall_preview_button := _add_button(
+			dining_hall_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_dining_hall_art_level.bind(preview_level)
+		)
+		dining_hall_preview_button.name = "DiningHallArtLevel%dButton" % preview_level
+	var dormitory_art_preview_row := _make_row(parent)
+	var dormitory_art_preview_label := Label.new()
+	dormitory_art_preview_label.text = "宿舍美术预览（不改权威等级）"
+	dormitory_art_preview_row.add_child(dormitory_art_preview_label)
+	for preview_level in [1, 2]:
+		var dormitory_preview_button := _add_button(
+			dormitory_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_dormitory_art_level.bind(preview_level)
+		)
+		dormitory_preview_button.name = "DormitoryArtLevel%dButton" % preview_level
+	var tavern_art_preview_row := _make_row(parent)
+	var tavern_art_preview_label := Label.new()
+	tavern_art_preview_label.text = "酒窖美术预览（不改权威等级）"
+	tavern_art_preview_row.add_child(tavern_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var tavern_preview_button := _add_button(
+			tavern_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_tavern_art_level.bind(preview_level)
+		)
+		tavern_preview_button.name = "TavernArtLevel%dButton" % preview_level
+	var garden_art_preview_row := _make_row(parent)
+	var garden_art_preview_label := Label.new()
+	garden_art_preview_label.text = "菜园美术预览（不改权威等级）"
+	garden_art_preview_row.add_child(garden_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var garden_preview_button := _add_button(
+			garden_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_garden_art_level.bind(preview_level)
+		)
+		garden_preview_button.name = "GardenArtLevel%dButton" % preview_level
+	var training_ground_art_preview_row := _make_row(parent)
+	var training_ground_art_preview_label := Label.new()
+	training_ground_art_preview_label.text = "训练场美术预览（不改权威等级）"
+	training_ground_art_preview_row.add_child(training_ground_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var training_ground_preview_button := _add_button(
+			training_ground_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_training_ground_art_level.bind(preview_level)
+		)
+		training_ground_preview_button.name = "TrainingGroundArtLevel%dButton" % preview_level
+	var stable_art_preview_row := _make_row(parent)
+	var stable_art_preview_label := Label.new()
+	stable_art_preview_label.text = "马厩美术预览（不改权威等级）"
+	stable_art_preview_row.add_child(stable_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var stable_preview_button := _add_button(
+			stable_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_stable_art_level.bind(preview_level)
+		)
+		stable_preview_button.name = "StableArtLevel%dButton" % preview_level
+	var main_hall_art_preview_row := _make_row(parent)
+	var main_hall_art_preview_label := Label.new()
+	main_hall_art_preview_label.text = "主厅美术预览（不改权威等级）"
+	main_hall_art_preview_row.add_child(main_hall_art_preview_label)
+	for preview_level in [1, 2, 3, 4, 5, 6]:
+		var main_hall_preview_button := _add_button(
+			main_hall_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_main_hall_art_level.bind(preview_level)
+		)
+		main_hall_preview_button.name = "MainHallArtLevel%dButton" % preview_level
+	var warehouse_art_preview_row := _make_row(parent)
+	var warehouse_art_preview_label := Label.new()
+	warehouse_art_preview_label.text = "仓库美术预览（不改权威等级）"
+	warehouse_art_preview_row.add_child(warehouse_art_preview_label)
+	for preview_level in [1, 2, 3]:
+		var warehouse_preview_button := _add_button(
+			warehouse_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_warehouse_art_level.bind(preview_level)
+		)
+		warehouse_preview_button.name = "WarehouseArtLevel%dButton" % preview_level
+	var wall_art_preview_row := _make_row(parent)
+	var wall_art_preview_label := Label.new()
+	wall_art_preview_label.text = "围墙美术预览（不改权威等级）"
+	wall_art_preview_row.add_child(wall_art_preview_label)
+	for preview_level in [1, 2, 3, 4, 5, 6]:
+		var wall_preview_button := _add_button(
+			wall_art_preview_row,
+			"等级 %d" % preview_level,
+			_run_wall_art_level.bind(preview_level)
+		)
+		wall_preview_button.name = "WallArtLevel%dButton" % preview_level
+	var gate_snapshot_button := _add_button(wall_art_preview_row, "城门快照", _show_gate_art_snapshot)
+	gate_snapshot_button.name = "GateArtSnapshotButton"
+	var layout_preview_row := _make_row(parent)
+	var layout_preview_label := Label.new()
+	layout_preview_label.text = "T0129C-A5-P7 默认正式空间"
+	layout_preview_row.add_child(layout_preview_label)
+	var preview_button := _add_button(
+		layout_preview_row,
+		"恢复默认正式世界",
+		_run_station_layout_preview.bind(true)
+	)
+	preview_button.name = "StationLayoutPreviewButton"
+	var legacy_button := _add_button(layout_preview_row, "临时旧图兼容", _run_station_layout_preview.bind(false))
+	legacy_button.name = "StationLayoutLegacyCompatibilityButton"
+	_add_button(layout_preview_row, "布局快照", _show_station_layout_snapshot)
+	var spatial_save_row := _make_row(parent)
+	var spatial_save_label := Label.new()
+	spatial_save_label.text = "T0129C-A5-P8 正式空间检查点"
+	spatial_save_row.add_child(spatial_save_label)
+	var spatial_save_button := _add_button(spatial_save_row, "保存空间", _run_formal_spatial_save)
+	spatial_save_button.name = "FormalSpatialSaveButton"
+	var spatial_load_button := _add_button(spatial_save_row, "读取空间", _run_formal_spatial_load)
+	spatial_load_button.name = "FormalSpatialLoadButton"
+	_add_button(spatial_save_row, "存档快照", _show_formal_spatial_save_snapshot)
+	var motion_sandbox_row := _make_row(parent)
+	var motion_sandbox_label := Label.new()
+	motion_sandbox_label.text = "T0129C-A2 实体运动（独立验证）"
+	motion_sandbox_row.add_child(motion_sandbox_label)
+	var motion_sandbox_button := _add_button(
+		motion_sandbox_row,
+		"运行运动沙盒（F8 返回）",
+		_run_actor_motion_sandbox
+	)
+	motion_sandbox_button.name = "ActorMotionSandboxButton"
+	var character_pilot_row := _make_row(parent)
+	var character_pilot_label := Label.new()
+	character_pilot_label.text = "T0130-P4 正式两头身角色"
+	character_pilot_row.add_child(character_pilot_label)
+	var character_glen_button := _add_button(character_pilot_row, "格伦真实打铁", _run_formal_blacksmith_work)
+	character_glen_button.name = "ChibiFormalGlenWorkButton"
+	var character_enemy_button := _add_button(character_pilot_row, "生成第一波剑盾敌军", _run_spawn_enemy_wave.bind(1))
+	character_enemy_button.name = "ChibiFormalSwordShieldWaveButton"
+	var character_sandbox_button := _add_button(character_pilot_row, "独立动作沙盒", _run_chibi_character_sandbox)
+	character_sandbox_button.name = "ChibiCharacterSandboxButton"
+	_add_button(character_pilot_row, "正式角色快照", _show_chibi_formal_character_snapshot)
+	var pilot_row := _make_row(parent)
+	var pilot_label := Label.new()
+	pilot_label.text = "A2b-P1–P6 正式导航试运行"
+	pilot_row.add_child(pilot_label)
+	var pilot_run_button := _add_button(pilot_row, "格伦→铁匠铺", _run_glen_navigation_pilot)
+	pilot_run_button.name = "GlenNavigationPilotButton"
+	var clinic_doctor_button := _add_button(pilot_row, "莉娜→诊疗位", _run_clinic_navigation_pilot.bind("doctor"))
+	clinic_doctor_button.name = "ClinicDoctorNavigationPilotButton"
+	var clinic_bed_button := _add_button(pilot_row, "莉娜→病床", _run_clinic_navigation_pilot.bind("bed"))
+	clinic_bed_button.name = "ClinicBedNavigationPilotButton"
+	var dormitory_bed_button := _add_button(pilot_row, "艾达→固定床", _run_dormitory_navigation_pilot)
+	dormitory_bed_button.name = "DormitoryNavigationPilotButton"
+	_add_button(pilot_row, "试运行快照", _show_formal_navigation_pilot_snapshot)
+	_add_button(pilot_row, "停止并还原", _stop_formal_navigation_pilots)
+	var dining_pilot_row := _make_row(parent)
+	var dining_pilot_label := Label.new()
+	dining_pilot_label.text = "A2b-P4 食堂餐位"
+	dining_pilot_row.add_child(dining_pilot_label)
+	var dining_seat_button := _add_button(dining_pilot_row, "布鲁诺→用餐席", _run_dining_navigation_pilot)
+	dining_seat_button.name = "DiningNavigationPilotButton"
+	var chapel_pilot_row := _make_row(parent)
+	var chapel_pilot_label := Label.new()
+	chapel_pilot_label.text = "A2b-P5 教堂祈祷席"
+	chapel_pilot_row.add_child(chapel_pilot_label)
+	var chapel_prayer_seat_button := _add_button(chapel_pilot_row, "马塞尔→祈祷席", _run_chapel_navigation_pilot)
+	chapel_prayer_seat_button.name = "ChapelNavigationPilotButton"
+	var stable_pilot_row := _make_row(parent)
+	var stable_pilot_label := Label.new()
+	stable_pilot_label.text = "A2b-P6 马厩照料位"
+	stable_pilot_row.add_child(stable_pilot_label)
+	var stable_care_button := _add_button(stable_pilot_row, "托马→马厩照料位", _run_stable_navigation_pilot)
+	stable_care_button.name = "StableNavigationPilotButton"
+	var formal_stable_work_button := _add_button(stable_pilot_row, "托马→真实照料", _run_formal_stable_work)
+	formal_stable_work_button.name = "FormalStableWorkButton"
+	_add_button(stable_pilot_row, "停止真实照料", _stop_formal_stable_work)
+	var formal_dining_row := _make_row(parent)
+	var formal_dining_label := Label.new()
+	formal_dining_label.text = "A5-P5d 食堂真实生产"
+	formal_dining_row.add_child(formal_dining_label)
+	var formal_dining_button := _add_button(formal_dining_row, "布鲁诺→真实烹饪", _run_formal_dining_work)
+	formal_dining_button.name = "FormalDiningWorkButton"
+	_add_button(formal_dining_row, "停止真实烹饪", _stop_formal_dining_work)
+	_add_button(formal_dining_row, "真实烹饪快照", _show_formal_dining_work_snapshot)
+	var formal_dining_eat_row := _make_row(parent)
+	var formal_dining_eat_label := Label.new()
+	formal_dining_eat_label.text = "A5-P5j 食堂真实用餐"
+	formal_dining_eat_row.add_child(formal_dining_eat_label)
+	var formal_dining_eat_button := _add_button(formal_dining_eat_row, "布鲁诺→真实用餐", _run_formal_dining_eat)
+	formal_dining_eat_button.name = "FormalDiningEatButton"
+	var formal_dining_eat_stop_button := _add_button(formal_dining_eat_row, "停止真实用餐", _stop_formal_dining_eat)
+	formal_dining_eat_stop_button.name = "FormalDiningEatStopButton"
+	var formal_dining_eat_snapshot_button := _add_button(formal_dining_eat_row, "真实用餐快照", _show_formal_dining_eat_snapshot)
+	formal_dining_eat_snapshot_button.name = "FormalDiningEatSnapshotButton"
+	var formal_dormitory_sleep_row := _make_row(parent)
+	var formal_dormitory_sleep_label := Label.new()
+	formal_dormitory_sleep_label.text = "A5-P6a 宿舍真实睡眠"
+	formal_dormitory_sleep_row.add_child(formal_dormitory_sleep_label)
+	var formal_dormitory_sleep_button := _add_button(formal_dormitory_sleep_row, "艾达→真实睡眠", _run_formal_dormitory_sleep)
+	formal_dormitory_sleep_button.name = "FormalDormitorySleepButton"
+	var formal_dormitory_sleep_stop_button := _add_button(formal_dormitory_sleep_row, "停止真实睡眠", _stop_formal_dormitory_sleep)
+	formal_dormitory_sleep_stop_button.name = "FormalDormitorySleepStopButton"
+	var formal_dormitory_sleep_snapshot_button := _add_button(formal_dormitory_sleep_row, "真实睡眠快照", _show_formal_dormitory_sleep_snapshot)
+	formal_dormitory_sleep_snapshot_button.name = "FormalDormitorySleepSnapshotButton"
+	var formal_garden_row := _make_row(parent)
+	var formal_garden_label := Label.new()
+	formal_garden_label.text = "A5-P5e 菜园真实生产"
+	formal_garden_row.add_child(formal_garden_label)
+	var formal_garden_button := _add_button(formal_garden_row, "伊沃→真实耕作", _run_formal_garden_work)
+	formal_garden_button.name = "FormalGardenWorkButton"
+	_add_button(formal_garden_row, "停止真实耕作", _stop_formal_garden_work)
+	_add_button(formal_garden_row, "真实耕作快照", _show_formal_garden_work_snapshot)
+	var formal_tavern_row := _make_row(parent)
+	var formal_tavern_label := Label.new()
+	formal_tavern_label.text = "A5-P5f 酒窖真实生产"
+	formal_tavern_row.add_child(formal_tavern_label)
+	var formal_tavern_button := _add_button(formal_tavern_row, "马塞尔→真实酿酒", _run_formal_tavern_work)
+	formal_tavern_button.name = "FormalTavernWorkButton"
+	_add_button(formal_tavern_row, "停止真实酿酒", _stop_formal_tavern_work)
+	_add_button(formal_tavern_row, "真实酿酒快照", _show_formal_tavern_work_snapshot)
+	var formal_clinic_row := _make_row(parent)
+	var formal_clinic_label := Label.new()
+	formal_clinic_label.text = "A5-P5g 小诊所真实服务"
+	formal_clinic_row.add_child(formal_clinic_label)
+	var formal_clinic_doctor_button := _add_button(formal_clinic_row, "莉娜→真实坐诊", _run_formal_clinic_doctor)
+	formal_clinic_doctor_button.name = "FormalClinicDoctorButton"
+	var formal_clinic_patient_button := _add_button(formal_clinic_row, "布鲁诺→真实病床", _run_formal_clinic_patient)
+	formal_clinic_patient_button.name = "FormalClinicPatientButton"
+	_add_button(formal_clinic_row, "停止诊所样片", _stop_formal_clinic_work)
+	_add_button(formal_clinic_row, "诊所真实快照", _show_formal_clinic_work_snapshot)
+	var formal_training_row := _make_row(parent)
+	var formal_training_label := Label.new()
+	formal_training_label.text = "A5-P5h 训练场真实训练"
+	formal_training_row.add_child(formal_training_label)
+	var formal_training_instructor_button := _add_button(formal_training_row, "艾达→真实执教", _run_formal_training_instructor)
+	formal_training_instructor_button.name = "FormalTrainingInstructorButton"
+	var formal_training_student_button := _add_button(formal_training_row, "格伦→真实受训", _run_formal_training_student)
+	formal_training_student_button.name = "FormalTrainingStudentButton"
+	_add_button(formal_training_row, "停止训练样片", _stop_formal_training_work)
+	_add_button(formal_training_row, "训练真实快照", _show_formal_training_work_snapshot)
+	var formal_chapel_row := _make_row(parent)
+	var formal_chapel_label := Label.new()
+	formal_chapel_label.text = "A5-P5i 小教堂真实礼拜"
+	formal_chapel_row.add_child(formal_chapel_label)
+	var formal_chapel_prayer_button := _add_button(formal_chapel_row, "伊沃→真实祈祷", _run_formal_chapel_prayer)
+	formal_chapel_prayer_button.name = "FormalChapelPrayerButton"
+	var formal_chapel_leader_button := _add_button(formal_chapel_row, "马塞尔→真实主持", _run_formal_chapel_leader)
+	formal_chapel_leader_button.name = "FormalChapelLeaderButton"
+	_add_button(formal_chapel_row, "停止礼拜样片", _stop_formal_chapel_work)
+	_add_button(formal_chapel_row, "教堂真实快照", _show_formal_chapel_work_snapshot)
 
 
 func _add_crafting_horse_section(parent: VBoxContainer) -> void:
@@ -301,6 +630,22 @@ func _add_crafting_horse_section(parent: VBoxContainer) -> void:
 	_add_button(crafting_row, "制造快照", func() -> void:
 		_show_craft_snapshot(_selected_id(_crafting_building_select))
 	)
+	var formal_blacksmith_row := _make_row(parent)
+	var formal_blacksmith_label := Label.new()
+	formal_blacksmith_label.text = "A5-P5b 正式铁匠制造"
+	formal_blacksmith_row.add_child(formal_blacksmith_label)
+	var formal_blacksmith_button := _add_button(formal_blacksmith_row, "格伦→真实打铁", _run_formal_blacksmith_work)
+	formal_blacksmith_button.name = "FormalBlacksmithWorkButton"
+	_add_button(formal_blacksmith_row, "停止真实打铁", _stop_formal_blacksmith_work)
+	_add_button(formal_blacksmith_row, "真实打铁快照", _show_formal_blacksmith_work_snapshot)
+	var formal_workshop_row := _make_row(parent)
+	var formal_workshop_label := Label.new()
+	formal_workshop_label.text = "A5-P5c 正式工械制造"
+	formal_workshop_row.add_child(formal_workshop_label)
+	var formal_workshop_button := _add_button(formal_workshop_row, "欧文→真实制造", _run_formal_workshop_work)
+	formal_workshop_button.name = "FormalWorkshopWorkButton"
+	_add_button(formal_workshop_row, "停止真实制造", _stop_formal_workshop_work)
+	_add_button(formal_workshop_row, "真实制造快照", _show_formal_workshop_work_snapshot)
 
 	var horse_row := _make_row(parent)
 	var horse_label := Label.new()
@@ -367,6 +712,9 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 	)
 	_add_button(state_row, "NPC 快照", func() -> void:
 		_show_npc(_selected_id(_npc_select))
+	)
+	_add_button(state_row, "空间快照", func() -> void:
+		_show_spatial_migration(_selected_id(_npc_select))
 	)
 	var recruit_button := _add_button(state_row, "设为入伍", func() -> void:
 		_run_recruit_npc(_selected_id(_npc_select))
@@ -469,9 +817,45 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	)
 	assign_action_button.name = "AssignActionButton"
 
+	var formal_visit_row := _make_row(parent)
+	var formal_visit_label := Label.new()
+	formal_visit_label.text = "A5-P6b 目标使用上方 NPC / 地点"
+	formal_visit_row.add_child(formal_visit_label)
+	var formal_visit_button := _add_button(formal_visit_row, "真实拜访", func() -> void:
+		_run_formal_visit_location(_selected_id(_npc_select), _selected_id(_location_select))
+	)
+	formal_visit_button.name = "FormalVisitLocationButton"
+	var formal_visit_stop_button := _add_button(formal_visit_row, "停止真实拜访", func() -> void:
+		_stop_formal_visit_location(_selected_id(_npc_select))
+	)
+	formal_visit_stop_button.name = "FormalVisitLocationStopButton"
+	var formal_visit_snapshot_button := _add_button(formal_visit_row, "真实拜访快照", func() -> void:
+		_show_formal_visit_location_snapshot(_selected_id(_npc_select))
+	)
+	formal_visit_snapshot_button.name = "FormalVisitLocationSnapshotButton"
+
+	var formal_dialogue_row := _make_row(parent)
+	var formal_dialogue_label := Label.new()
+	formal_dialogue_label.text = "A5-P6c 发起者使用上方 NPC / 对话目标"
+	formal_dialogue_row.add_child(formal_dialogue_label)
+	_npc_dialogue_target_select = _make_select(formal_dialogue_row)
+	_npc_dialogue_target_select.name = "FormalNpcDialogueTargetSelect"
+	var formal_dialogue_button := _add_button(formal_dialogue_row, "真实找人对话", func() -> void:
+		_run_formal_npc_dialogue(_selected_id(_npc_select), _selected_id(_npc_dialogue_target_select))
+	)
+	formal_dialogue_button.name = "FormalNpcDialogueButton"
+	var formal_dialogue_stop_button := _add_button(formal_dialogue_row, "停止真实对话", func() -> void:
+		_stop_formal_npc_dialogue(_selected_id(_npc_select))
+	)
+	formal_dialogue_stop_button.name = "FormalNpcDialogueStopButton"
+	var formal_dialogue_snapshot_button := _add_button(formal_dialogue_row, "真实对话快照", func() -> void:
+		_show_formal_npc_dialogue_snapshot(_selected_id(_npc_select))
+	)
+	formal_dialogue_snapshot_button.name = "FormalNpcDialogueSnapshotButton"
+
 	var repair_row := _make_row(parent)
 	var repair_target_label := Label.new()
-	repair_target_label.text = "修复目标"
+	repair_target_label.text = "A5-P6d-1 真实修复目标"
 	repair_row.add_child(repair_target_label)
 	_repair_building_select = _make_select(repair_row)
 	_repair_building_select.name = "RepairBuildingSelect"
@@ -479,10 +863,18 @@ func _add_action_section(parent: VBoxContainer) -> void:
 		_run_assist_repair(_selected_id(_npc_select), _selected_id(_repair_building_select))
 	)
 	assist_button.name = "AssistRepairButton"
+	var assist_stop_button := _add_button(repair_row, "停止真实修复", func() -> void:
+		_stop_formal_repair_assist(_selected_id(_npc_select))
+	)
+	assist_stop_button.name = "FormalRepairAssistStopButton"
+	var assist_snapshot_button := _add_button(repair_row, "真实修复快照", func() -> void:
+		_show_formal_repair_assist_snapshot(_selected_id(_npc_select), _selected_id(_repair_building_select))
+	)
+	assist_snapshot_button.name = "FormalRepairAssistSnapshotButton"
 
 	var upgrade_row := _make_row(parent)
 	var upgrade_target_label := Label.new()
-	upgrade_target_label.text = "升级目标"
+	upgrade_target_label.text = "A5-P6d-2 真实升级协助"
 	upgrade_row.add_child(upgrade_target_label)
 	_upgrade_building_select = _make_select(upgrade_row)
 	_upgrade_building_select.name = "UpgradeBuildingSelect"
@@ -490,10 +882,18 @@ func _add_action_section(parent: VBoxContainer) -> void:
 		_run_assist_upgrade(_selected_id(_npc_select), _selected_id(_upgrade_building_select))
 	)
 	assist_upgrade_button.name = "AssistUpgradeButton"
+	var assist_upgrade_stop_button := _add_button(upgrade_row, "停止真实升级", func() -> void:
+		_stop_formal_upgrade_assist(_selected_id(_npc_select))
+	)
+	assist_upgrade_stop_button.name = "FormalUpgradeAssistStopButton"
+	var assist_upgrade_snapshot_button := _add_button(upgrade_row, "真实升级快照", func() -> void:
+		_show_formal_upgrade_assist_snapshot(_selected_id(_npc_select), _selected_id(_upgrade_building_select))
+	)
+	assist_upgrade_snapshot_button.name = "FormalUpgradeAssistSnapshotButton"
 
 	var heal_row := _make_row(parent)
 	var heal_target_label := Label.new()
-	heal_target_label.text = "治疗目标"
+	heal_target_label.text = "A5-P6d-3 真实协助治疗"
 	heal_row.add_child(heal_target_label)
 	_heal_target_select = _make_select(heal_row)
 	_heal_target_select.name = "HealTargetSelect"
@@ -501,6 +901,14 @@ func _add_action_section(parent: VBoxContainer) -> void:
 		_run_assist_heal(_selected_id(_npc_select), _selected_id(_heal_target_select))
 	)
 	assist_heal_button.name = "AssistHealButton"
+	var assist_heal_stop_button := _add_button(heal_row, "停止真实治疗", func() -> void:
+		_stop_formal_heal_assist(_selected_id(_npc_select))
+	)
+	assist_heal_stop_button.name = "FormalHealAssistStopButton"
+	var assist_heal_snapshot_button := _add_button(heal_row, "真实治疗快照", func() -> void:
+		_show_formal_heal_assist_snapshot(_selected_id(_npc_select), _selected_id(_heal_target_select))
+	)
+	assist_heal_snapshot_button.name = "FormalHealAssistSnapshotButton"
 
 
 func _add_combat_section(parent: VBoxContainer) -> void:
@@ -525,6 +933,14 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 	)
 	step_enemy_ai_button.name = "StepEnemyAIButton"
 	_add_button(row, "清空敌人", _run_clear_enemies)
+	var formal_enemy_row := _make_row(parent)
+	var formal_enemy_label := Label.new()
+	formal_enemy_label.text = "C3-P7 / A4-P7 五波动态实体争抢 / 补位"
+	formal_enemy_row.add_child(formal_enemy_label)
+	var formal_enemy_attack_button := _add_button(formal_enemy_row, "所选波次动态群战", _run_formal_dynamic_wave_slice)
+	formal_enemy_attack_button.name = "FormalSecondWaveButton"
+	_add_button(formal_enemy_row, "动态群战快照", _show_formal_dynamic_wave_slice_snapshot)
+	_add_button(formal_enemy_row, "停止动态群战", _stop_formal_dynamic_wave_slice)
 	var mode_row := _make_row(parent)
 	_add_button(mode_row, "行为模式快照", _show_behavior_modes)
 	_add_button(mode_row, "模拟避战", func() -> void:
@@ -706,6 +1122,12 @@ func _fill_npc_select() -> void:
 			return "%s | %s" % [id, str(npc.get("name", id))]
 		return id
 	)
+	_fill_select(_npc_dialogue_target_select, ids, func(id: String) -> String:
+		if npc_system != null:
+			var npc: Dictionary = npc_system.get_npc(id)
+			return "%s | %s" % [id, str(npc.get("name", id))]
+		return id
+	)
 
 
 func _fill_attribute_select() -> void:
@@ -866,6 +1288,8 @@ func _execute_command(command: String) -> void:
 		"snapshot":
 			_show_time_snapshot()
 			_show_resource_snapshot()
+			_show_roof_visibility_snapshot()
+			_show_station_layout_snapshot()
 			_show_craft_snapshot()
 			_show_horse_snapshot()
 			_show_combat_snapshot()
@@ -873,6 +1297,312 @@ func _execute_command(command: String) -> void:
 			_show_events()
 		"time_snapshot":
 			_show_time_snapshot()
+		"merchant_wagon":
+			var merchant_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match merchant_mode:
+				"arrival", "arrive", "enter":
+					_run_merchant_wagon_arrival()
+				"formal_arrival", "formal", "long_route":
+					_run_formal_merchant_wagon_arrival()
+				"departure", "depart", "leave":
+					_run_merchant_wagon_departure()
+				_:
+					_show_merchant_wagon_snapshot()
+		"roof_visibility":
+			_show_roof_visibility_snapshot()
+		"station_layout":
+			var layout_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match layout_mode:
+				"preview", "formal", "new":
+					_run_station_layout_preview(true)
+				"legacy", "gameplay", "old", "return":
+					_run_station_layout_preview(false)
+				_:
+					_show_station_layout_snapshot()
+		"formal_spatial_save":
+			var save_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match save_mode:
+				"save", "write":
+					_run_formal_spatial_save()
+				"load", "read", "restore":
+					_run_formal_spatial_load()
+				_:
+					_show_formal_spatial_save_snapshot()
+		"motion_sandbox":
+			_run_actor_motion_sandbox()
+		"character_pilot":
+			var character_pilot_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match character_pilot_mode:
+				"glen", "work":
+					_run_formal_blacksmith_work()
+				"enemy", "wave":
+					_run_spawn_enemy_wave(1)
+				"sandbox":
+					_run_chibi_character_sandbox()
+				_:
+					_show_chibi_formal_character_snapshot()
+		"formal_nav_pilot":
+			var formal_pilot_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_pilot_mode:
+				"glen", "blacksmith":
+					_run_glen_navigation_pilot()
+				"clinic_doctor", "doctor":
+					_run_clinic_navigation_pilot("doctor")
+				"clinic_bed", "bed":
+					_run_clinic_navigation_pilot("bed")
+				"dormitory_bed", "dormitory", "sleep":
+					_run_dormitory_navigation_pilot()
+				"dining_seat", "dining", "seat":
+					_run_dining_navigation_pilot()
+				"chapel_prayer_seat", "chapel", "prayer_seat":
+					_run_chapel_navigation_pilot()
+				"stable_care", "stable", "horse_care":
+					_run_stable_navigation_pilot()
+				"stop", "restore":
+					_stop_formal_navigation_pilots()
+				_:
+					_show_formal_navigation_pilot_snapshot()
+		"formal_stable_work":
+			var formal_stable_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_stable_work_mode:
+				"run", "start":
+					_run_formal_stable_work()
+				"stop", "clear":
+					_stop_formal_stable_work()
+				_:
+					_show_formal_stable_work_snapshot()
+		"formal_dining_work":
+			var formal_dining_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_dining_work_mode:
+				"run", "start":
+					_run_formal_dining_work()
+				"stop", "clear":
+					_stop_formal_dining_work()
+				_:
+					_show_formal_dining_work_snapshot()
+		"formal_dining_eat":
+			var formal_dining_eat_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_dining_eat_mode:
+				"run", "start":
+					_run_formal_dining_eat()
+				"stop", "clear":
+					_stop_formal_dining_eat()
+				_:
+					_show_formal_dining_eat_snapshot()
+		"formal_dormitory_sleep":
+			var formal_dormitory_sleep_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_dormitory_sleep_mode:
+				"run", "start":
+					_run_formal_dormitory_sleep()
+				"stop", "clear":
+					_stop_formal_dormitory_sleep()
+				_:
+					_show_formal_dormitory_sleep_snapshot()
+		"formal_garden_work":
+			var formal_garden_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_garden_work_mode:
+				"run", "start":
+					_run_formal_garden_work()
+				"stop", "clear":
+					_stop_formal_garden_work()
+				_:
+					_show_formal_garden_work_snapshot()
+		"formal_visit":
+			var formal_visit_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			var formal_visit_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			match formal_visit_mode:
+				"run", "start":
+					if _require_args(parts, 4, "formal_visit run <npc_id> <location_id>"):
+						_run_formal_visit_location(formal_visit_npc_id, str(parts[3]))
+				"stop", "clear":
+					_stop_formal_visit_location(formal_visit_npc_id)
+				_:
+					_show_formal_visit_location_snapshot(formal_visit_npc_id)
+		"formal_npc_dialogue":
+			var formal_dialogue_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			var formal_dialogue_speaker_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			match formal_dialogue_mode:
+				"run", "start":
+					if _require_args(parts, 4, "formal_npc_dialogue run <speaker_npc_id> <target_npc_id> [opening_text]"):
+						var prefix := "formal_npc_dialogue %s %s %s" % [formal_dialogue_mode, formal_dialogue_speaker_id, str(parts[3])]
+						_run_formal_npc_dialogue(
+							formal_dialogue_speaker_id,
+							str(parts[3]),
+							command.substr(prefix.length()).strip_edges()
+						)
+				"stop", "clear":
+					_stop_formal_npc_dialogue(formal_dialogue_speaker_id)
+				_:
+					_show_formal_npc_dialogue_snapshot(formal_dialogue_speaker_id)
+		"formal_repair_assist":
+			var formal_repair_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			var formal_repair_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			match formal_repair_mode:
+				"run", "start":
+					if _require_args(parts, 4, "formal_repair_assist run <npc_id> <building_id>"):
+						_run_assist_repair(formal_repair_npc_id, str(parts[3]))
+				"stop", "clear":
+					_stop_formal_repair_assist(formal_repair_npc_id)
+				_:
+					var formal_repair_building_id := str(parts[3]) if parts.size() >= 4 else _selected_id(_repair_building_select)
+					_show_formal_repair_assist_snapshot(formal_repair_npc_id, formal_repair_building_id)
+		"formal_upgrade_assist":
+			var formal_upgrade_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			var formal_upgrade_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			match formal_upgrade_mode:
+				"run", "start":
+					if _require_args(parts, 4, "formal_upgrade_assist run <npc_id> <building_id>"):
+						_run_assist_upgrade(formal_upgrade_npc_id, str(parts[3]))
+				"stop", "clear":
+					_stop_formal_upgrade_assist(formal_upgrade_npc_id)
+				_:
+					var formal_upgrade_building_id := str(parts[3]) if parts.size() >= 4 else _selected_id(_upgrade_building_select)
+					_show_formal_upgrade_assist_snapshot(formal_upgrade_npc_id, formal_upgrade_building_id)
+		"formal_heal_assist":
+			var formal_heal_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			var formal_healer_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			match formal_heal_mode:
+				"run", "start":
+					if _require_args(parts, 4, "formal_heal_assist run <healer_npc_id> <target_npc_id>"):
+						_run_assist_heal(formal_healer_npc_id, str(parts[3]))
+				"stop", "clear":
+					_stop_formal_heal_assist(formal_healer_npc_id)
+				_:
+					var formal_heal_target_id := str(parts[3]) if parts.size() >= 4 else _selected_id(_heal_target_select)
+					_show_formal_heal_assist_snapshot(formal_healer_npc_id, formal_heal_target_id)
+		"formal_tavern_work":
+			var formal_tavern_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_tavern_work_mode:
+				"run", "start":
+					_run_formal_tavern_work()
+				"stop", "clear":
+					_stop_formal_tavern_work()
+				_:
+					_show_formal_tavern_work_snapshot()
+		"formal_clinic_work":
+			var formal_clinic_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_clinic_mode:
+				"doctor", "run", "start":
+					_run_formal_clinic_doctor()
+				"patient", "bed":
+					_run_formal_clinic_patient()
+				"stop", "clear":
+					_stop_formal_clinic_work()
+				_:
+					_show_formal_clinic_work_snapshot()
+		"formal_training_work":
+			var formal_training_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_training_mode:
+				"instructor", "coach":
+					_run_formal_training_instructor()
+				"student", "trainee":
+					_run_formal_training_student()
+				"stop", "clear":
+					_stop_formal_training_work()
+				_:
+					_show_formal_training_work_snapshot()
+		"formal_chapel_work":
+			var formal_chapel_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_chapel_mode:
+				"leader", "mass":
+					_run_formal_chapel_leader()
+				"prayer", "pray":
+					_run_formal_chapel_prayer()
+				"stop", "clear":
+					_stop_formal_chapel_work()
+				_:
+					_show_formal_chapel_work_snapshot()
+		"formal_blacksmith_work":
+			var formal_blacksmith_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_blacksmith_work_mode:
+				"run", "start":
+					_run_formal_blacksmith_work()
+				"stop", "clear":
+					_stop_formal_blacksmith_work()
+				_:
+					_show_formal_blacksmith_work_snapshot()
+		"formal_workshop_work":
+			var formal_workshop_work_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_workshop_work_mode:
+				"run", "start":
+					_run_formal_workshop_work()
+				"stop", "clear":
+					_stop_formal_workshop_work()
+				_:
+					_show_formal_workshop_work_snapshot()
+		"formal_enemy_pilot":
+			var enemy_pilot_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match enemy_pilot_mode:
+				"run", "start":
+					_run_formal_enemy_navigation_pilot()
+				"stop", "clear":
+					_stop_formal_enemy_navigation_pilot()
+				_:
+					_show_formal_enemy_navigation_pilot_snapshot()
+		"formal_enemy_attack_slice":
+			var attack_slice_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match attack_slice_mode:
+				"run", "start":
+					_run_formal_active_enemy_main_hall_slice()
+				"stop", "clear":
+					_stop_formal_active_enemy_main_hall_slice()
+				_:
+					_show_formal_active_enemy_main_hall_slice_snapshot()
+		"formal_enemy_warehouse_slice":
+			var warehouse_slice_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match warehouse_slice_mode:
+				"run", "start":
+					_run_formal_active_enemy_main_hall_slice()
+				"stop", "clear":
+					_stop_formal_active_enemy_main_hall_slice()
+				_:
+					_show_formal_active_enemy_main_hall_slice_snapshot()
+		"formal_enemy_main_hall_slice":
+			var main_hall_slice_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match main_hall_slice_mode:
+				"run", "start":
+					_run_formal_active_enemy_main_hall_slice()
+				"stop", "clear":
+					_stop_formal_active_enemy_main_hall_slice()
+				_:
+					_show_formal_active_enemy_main_hall_slice_snapshot()
+		"formal_first_wave_slice":
+			var formal_first_wave_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_first_wave_mode:
+				"run", "start":
+					_run_formal_first_wave_slice()
+				"stop", "clear":
+					_stop_formal_first_wave_slice()
+				_:
+					_show_formal_first_wave_slice_snapshot()
+		"formal_second_wave_slice":
+			var formal_second_wave_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match formal_second_wave_mode:
+				"run", "start":
+					_run_formal_second_wave_slice()
+				"stop", "clear":
+					_stop_formal_second_wave_slice()
+				_:
+					_show_formal_second_wave_slice_snapshot()
+		"formal_dynamic_wave":
+			var dynamic_wave_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match dynamic_wave_mode:
+				"run", "start":
+					var dynamic_wave_number := int(parts[2]) if parts.size() >= 3 else _int_from_selected_id(_combat_wave_select, 1)
+					_run_formal_dynamic_wave_slice(dynamic_wave_number)
+				"stop", "clear":
+					_stop_formal_dynamic_wave_slice()
+				_:
+					_show_formal_dynamic_wave_slice_snapshot()
+		"glen_nav_pilot":
+			var pilot_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match pilot_mode:
+				"run", "start":
+					_run_glen_navigation_pilot()
+				"stop", "restore":
+					_stop_glen_navigation_pilot()
+				_:
+					_show_glen_navigation_pilot_snapshot()
 		"add_resource":
 			if _require_args(parts, 3, "add_resource <resource_id> <amount>"):
 				_run_add_resource(str(parts[1]), int(parts[2]))
@@ -939,6 +1669,9 @@ func _execute_command(command: String) -> void:
 		"enter_location":
 			if _require_args(parts, 3, "enter_location <npc_id> <location_id>"):
 				_run_enter_location(str(parts[1]), str(parts[2]))
+		"spatial":
+			if _require_args(parts, 2, "spatial <npc_id>"):
+				_show_spatial_migration(str(parts[1]))
 		"set_npc_state":
 			if _require_args(parts, 4, "set_npc_state <npc_id> <key> <value>"):
 				_run_set_npc_state(str(parts[1]), str(parts[2]), _parse_value(str(parts[3])))
@@ -1096,6 +1829,47 @@ func _execute_command(command: String) -> void:
 		"upgrade_building":
 			if _require_args(parts, 2, "upgrade_building <building_id>"):
 				_run_upgrade_building(str(parts[1]))
+		"smithy_art_level":
+			if _require_args(parts, 2, "smithy_art_level <1|2|3>"):
+				_run_smithy_art_level(int(parts[1]))
+		"workshop_art_level":
+			if _require_args(parts, 2, "workshop_art_level <1|2|3>"):
+				_run_workshop_art_level(int(parts[1]))
+		"chapel_art_level":
+			if _require_args(parts, 2, "chapel_art_level <1|2>"):
+				_run_chapel_art_level(int(parts[1]))
+		"clinic_art_level":
+			if _require_args(parts, 2, "clinic_art_level <1|2|3>"):
+				_run_clinic_art_level(int(parts[1]))
+		"dining_hall_art_level":
+			if _require_args(parts, 2, "dining_hall_art_level <1|2|3>"):
+				_run_dining_hall_art_level(int(parts[1]))
+		"dormitory_art_level":
+			if _require_args(parts, 2, "dormitory_art_level <1|2>"):
+				_run_dormitory_art_level(int(parts[1]))
+		"tavern_art_level":
+			if _require_args(parts, 2, "tavern_art_level <1|2|3>"):
+				_run_tavern_art_level(int(parts[1]))
+		"garden_art_level":
+			if _require_args(parts, 2, "garden_art_level <1|2|3>"):
+				_run_garden_art_level(int(parts[1]))
+		"training_ground_art_level":
+			if _require_args(parts, 2, "training_ground_art_level <1|2|3>"):
+				_run_training_ground_art_level(int(parts[1]))
+		"stable_art_level":
+			if _require_args(parts, 2, "stable_art_level <1|2|3>"):
+				_run_stable_art_level(int(parts[1]))
+		"main_hall_art_level":
+			if _require_args(parts, 2, "main_hall_art_level <1|2|3|4|5|6>"):
+				_run_main_hall_art_level(int(parts[1]))
+		"warehouse_art_level":
+			if _require_args(parts, 2, "warehouse_art_level <1|2|3>"):
+				_run_warehouse_art_level(int(parts[1]))
+		"wall_art_level":
+			if _require_args(parts, 2, "wall_art_level <1|2|3|4|5|6>"):
+				_run_wall_art_level(int(parts[1]))
+		"gate_art_snapshot":
+			_show_gate_art_snapshot()
 		"plaza_notice":
 			_run_plaza_notice(command.substr("plaza_notice".length()).strip_edges())
 		"backend_health":
@@ -1310,6 +2084,38 @@ func _run_horse_unassign(npc_id: String, visibility: String) -> void:
 	_log("取消马匹分配 %s：%s" % [npc_id, _compact(result)])
 
 
+func _run_merchant_wagon_arrival() -> void:
+	var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
+	if merchant_system == null or not merchant_system.has_method("debug_force_wagon_arrival"):
+		_log("MerchantSystem 行商马车进场接口不可用。")
+		return
+	_log("行商马车开始进场：%s" % _compact(merchant_system.call("debug_force_wagon_arrival")))
+
+
+func _run_formal_merchant_wagon_arrival() -> void:
+	var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
+	if merchant_system == null or not merchant_system.has_method("debug_force_formal_wagon_arrival"):
+		_log("MerchantSystem 正式远距商路接口不可用。")
+		return
+	_log("行商马车开始正式远距进场：%s" % _compact(merchant_system.call("debug_force_formal_wagon_arrival")))
+
+
+func _run_merchant_wagon_departure() -> void:
+	var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
+	if merchant_system == null or not merchant_system.has_method("debug_force_wagon_departure"):
+		_log("MerchantSystem 行商马车离场接口不可用。")
+		return
+	_log("行商马车开始离场：%s" % _compact(merchant_system.call("debug_force_wagon_departure")))
+
+
+func _show_merchant_wagon_snapshot() -> void:
+	var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
+	if merchant_system == null or not merchant_system.has_method("get_market_snapshot"):
+		_log("MerchantSystem 行商马车快照接口不可用。")
+		return
+	_log("行商马车快照：%s" % _compact(merchant_system.call("get_market_snapshot")))
+
+
 func _run_set_time(day: int, hour: int, minute: int, second: int) -> void:
 	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
 	if time_system == null:
@@ -1401,6 +2207,1111 @@ func _show_building(building_id: String) -> void:
 	_log("建筑快照 %s：%s" % [building_id, _compact(building_system.get_building(building_id))])
 
 
+func _show_roof_visibility_snapshot() -> void:
+	var controller := get_node_or_null(ROOF_VISIBILITY_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("debug_get_snapshot"):
+		_log("RoofVisibilityController 不可用。")
+		return
+	_log("屋顶可见性快照：%s" % _compact(controller.call("debug_get_snapshot")))
+
+
+func _run_station_layout_preview(enabled: bool) -> void:
+	if not enabled:
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if npc_system != null and npc_system.has_method("debug_stop_all_formal_navigation_pilots"):
+			npc_system.call("debug_stop_all_formal_navigation_pilots", "preview_closed")
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null:
+		_log("StationLayoutController 不可用。")
+		return
+	var snapshot: Dictionary = {}
+	if controller.has_method("debug_set_legacy_compatibility_enabled"):
+		snapshot = controller.call("debug_set_legacy_compatibility_enabled", not enabled)
+	elif controller.has_method("debug_set_preview_enabled"):
+		snapshot = controller.call("debug_set_preview_enabled", enabled)
+	else:
+		_log("StationLayoutController 缺少空间切换接口。")
+		return
+	var state_text := "默认正式世界" if enabled else "临时旧图兼容模式"
+	_log("切换到%s：%s" % [state_text, _compact(snapshot)])
+
+
+func _show_station_layout_snapshot() -> void:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("debug_get_layout_snapshot"):
+		_log("StationLayoutController 不可用。")
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var snapshot := {
+		"layout": controller.call("debug_get_layout_snapshot"),
+		"default_npc_world": (
+			npc_system.get_default_formal_world_snapshot()
+			if npc_system != null and npc_system.has_method("get_default_formal_world_snapshot")
+			else {}
+		),
+	}
+	_log("A5-P7 默认正式世界快照：%s" % _compact(snapshot))
+
+
+func _run_formal_spatial_save() -> void:
+	var save_system := get_node_or_null(SPATIAL_SAVE_SYSTEM_PATH)
+	if save_system == null or not save_system.has_method("debug_save_formal_spatial_checkpoint"):
+		_log("SpatialSaveSystem 不可用。")
+		return
+	_log("A5-P8 保存正式空间：%s" % _compact(save_system.debug_save_formal_spatial_checkpoint()))
+
+
+func _run_formal_spatial_load() -> void:
+	var save_system := get_node_or_null(SPATIAL_SAVE_SYSTEM_PATH)
+	if save_system == null or not save_system.has_method("debug_load_formal_spatial_checkpoint"):
+		_log("SpatialSaveSystem 不可用。")
+		return
+	_log("A5-P8 读取正式空间：%s" % _compact(save_system.debug_load_formal_spatial_checkpoint()))
+
+
+func _show_formal_spatial_save_snapshot() -> void:
+	var save_system := get_node_or_null(SPATIAL_SAVE_SYSTEM_PATH)
+	if save_system == null or not save_system.has_method("debug_get_formal_spatial_checkpoint_snapshot"):
+		_log("SpatialSaveSystem 不可用。")
+		return
+	_log("A5-P8 正式空间存档快照：%s" % _compact(save_system.debug_get_formal_spatial_checkpoint_snapshot()))
+
+
+func _run_actor_motion_sandbox() -> void:
+	if not ResourceLoader.exists(ACTOR_MOTION_SANDBOX_PATH, "PackedScene"):
+		_log("运动沙盒场景不存在：%s" % ACTOR_MOTION_SANDBOX_PATH)
+		return
+	_log("正在打开 T0129C-A2 独立运动沙盒；按 F8 返回 Main。")
+	get_tree().call_deferred("change_scene_to_file", ACTOR_MOTION_SANDBOX_PATH)
+
+
+func _run_chibi_character_sandbox() -> void:
+	if not ResourceLoader.exists(CHIBI_CHARACTER_SANDBOX_PATH, "PackedScene"):
+		_log("T0130-P0 角色沙盒场景不存在：%s" % CHIBI_CHARACTER_SANDBOX_PATH)
+		return
+	_log("正在打开 T0130-P0 角色动作沙盒；Space / 方向键 / 数字 1–8 切换动作。")
+	get_tree().call_deferred("change_scene_to_file", CHIBI_CHARACTER_SANDBOX_PATH)
+
+
+func _run_chibi_character_main_preview(enabled: bool) -> void:
+	var controller := get_node_or_null(CHIBI_CHARACTER_PREVIEW_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("debug_set_preview_enabled"):
+		_log("T0130-P0 主场景试片控制器不可用。")
+		return
+	var snapshot: Dictionary = controller.call("debug_set_preview_enabled", enabled)
+	_log("T0130-P0 主场景角色试片：%s" % str(snapshot))
+	if enabled and _panel != null:
+		_panel.visible = false
+
+
+func _show_chibi_character_preview_snapshot() -> void:
+	var controller := get_node_or_null(CHIBI_CHARACTER_PREVIEW_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("debug_get_snapshot"):
+		_log("T0130-P0 主场景试片控制器不可用。")
+		return
+	_log("T0130-P0 角色试片快照：%s" % str(controller.call("debug_get_snapshot")))
+
+
+func _show_chibi_formal_character_snapshot() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var snapshot := {
+		"glen": npc_system.debug_get_npc_character_art_snapshot("blacksmith_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"toma": npc_system.debug_get_npc_character_art_snapshot("stableman_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"bruno": npc_system.debug_get_npc_character_art_snapshot("cook_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"ivo": npc_system.debug_get_npc_character_art_snapshot("gardener_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"active_enemies": combat_system.debug_get_enemy_art_snapshots() if combat_system != null and combat_system.has_method("debug_get_enemy_art_snapshots") else [],
+	}
+	_log("T0130-P4 正式角色快照：%s" % _compact(snapshot))
+
+
+func _run_glen_navigation_pilot() -> void:
+	_run_formal_navigation_pilot("glen", "格伦→铁匠铺")
+
+
+func _run_clinic_navigation_pilot(mode: String) -> void:
+	var pilot_id := "clinic_doctor" if mode == "doctor" else "clinic_bed"
+	var mode_label := "莉娜→诊疗位" if mode == "doctor" else "莉娜→病床"
+	_run_formal_navigation_pilot(pilot_id, mode_label)
+
+
+func _run_dormitory_navigation_pilot() -> void:
+	_run_formal_navigation_pilot("dormitory_bed", "艾达→固定床")
+
+
+func _run_dining_navigation_pilot() -> void:
+	_run_formal_navigation_pilot("dining_seat", "布鲁诺→用餐席")
+
+
+func _run_chapel_navigation_pilot() -> void:
+	_run_formal_navigation_pilot("chapel_prayer_seat", "马塞尔→祈祷席")
+
+
+func _run_stable_navigation_pilot() -> void:
+	_run_formal_navigation_pilot("stable_care", "托马→马厩照料位")
+
+
+func _run_formal_stable_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("托马→马厩真实照料：失败（游戏当前暂停；请点击主界面左上“继续”后重试，未创建正式路线或工位预留。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的马厩真实照料入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("stableman_01", "stable"))
+	_log("托马→马厩真实照料：%s" % _ok_text(started))
+	_show_formal_stable_work_snapshot()
+
+
+func _stop_formal_stable_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("stableman_01", "gm_formal_stable_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("stableman_01", "gm_stopped", true)
+	_log("停止托马真实照料：%s" % _ok_text(interrupted))
+	_show_formal_stable_work_snapshot()
+
+
+func _show_formal_stable_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "stableman_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("stableman_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("stableman_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"character_art": (
+			npc_system.debug_get_npc_character_art_snapshot("stableman_01")
+			if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot")
+			else {}
+		),
+		"stable_horses": (
+			horse_system.get_stable_horse_summary()
+			if horse_system != null and horse_system.has_method("get_stable_horse_summary")
+			else {}
+		)
+	}
+	_log("马厩真实照料快照：%s" % _compact(snapshot))
+
+
+func _run_formal_dining_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("布鲁诺→食堂真实烹饪：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的食堂真实烹饪入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("cook_01", "dining_hall"))
+	_log("布鲁诺→食堂真实烹饪：%s" % _ok_text(started))
+	_show_formal_dining_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_dining_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("cook_01", "gm_formal_dining_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("cook_01", "gm_stopped", true)
+	_log("停止布鲁诺食堂真实烹饪：%s" % _ok_text(interrupted))
+	_show_formal_dining_work_snapshot()
+
+
+func _show_formal_dining_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "cook_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("cook_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("cook_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"character_art": (
+			npc_system.debug_get_npc_character_art_snapshot("cook_01")
+			if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot")
+			else {}
+		),
+		"resources": {
+			"grain": resource_system.get_resource("grain") if resource_system != null else -1,
+			"meal": resource_system.get_resource("meal") if resource_system != null else -1
+		},
+		"dining_hall": (
+			building_system.get_building("dining_hall")
+			if building_system != null and building_system.has_method("get_building")
+			else {}
+		)
+	}
+	_log("食堂真实烹饪快照：%s" % _compact(snapshot))
+
+
+func _run_formal_dining_eat() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("布鲁诺→食堂真实用餐：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的食堂真实用餐入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("cook_01", "eat_at_dining_hall"))
+	_log("布鲁诺→食堂真实用餐：%s" % _ok_text(started))
+	_show_formal_dining_eat_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_dining_eat() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("cook_01", "gm_formal_dining_eat_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("cook_01", "gm_stopped", true)
+	_log("停止布鲁诺食堂真实用餐：%s" % _ok_text(interrupted))
+	_show_formal_dining_eat_snapshot()
+
+
+func _show_formal_dining_eat_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "cook_01",
+		"runtime_action": action_system.get_runtime_action_snapshot("cook_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": npc_system.get_formal_workstation_action_snapshot("cook_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"npc": npc_system.get_npc("cook_01") if npc_system != null else {},
+		"resources": {
+			"meal": resource_system.get_resource("meal") if resource_system != null else -1,
+			"grain": resource_system.get_resource("grain") if resource_system != null else -1
+		},
+		"dining_hall": building_system.get_building("dining_hall") if building_system != null else {}
+	}
+	_log("食堂真实用餐快照：%s" % _compact(snapshot))
+
+
+func _run_formal_dormitory_sleep() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("艾达→宿舍真实睡眠：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的宿舍真实睡眠入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("veteran_deputy_01", "sleep_in_dormitory"))
+	_log("艾达→宿舍真实睡眠：%s" % _ok_text(started))
+	_show_formal_dormitory_sleep_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_dormitory_sleep() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("veteran_deputy_01", "gm_formal_dormitory_sleep_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("veteran_deputy_01", "gm_stopped", true)
+	_log("停止艾达宿舍真实睡眠：%s" % _ok_text(interrupted))
+	_show_formal_dormitory_sleep_snapshot()
+
+
+func _show_formal_dormitory_sleep_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var reflection_system := get_node_or_null(DAILY_REFLECTION_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "veteran_deputy_01",
+		"runtime_action": action_system.get_runtime_action_snapshot("veteran_deputy_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": npc_system.get_formal_workstation_action_snapshot("veteran_deputy_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"npc": npc_system.get_npc("veteran_deputy_01") if npc_system != null else {},
+		"dormitory": building_system.get_building("dormitory") if building_system != null else {},
+		"first_sleep_summary": reflection_system.get_async_reflection_snapshot() if reflection_system != null and reflection_system.has_method("get_async_reflection_snapshot") else {}
+	}
+	_log("宿舍真实睡眠快照：%s" % _compact(snapshot))
+
+
+func _run_formal_garden_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("伊沃→菜园真实耕作：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的菜园真实耕作入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("gardener_01", "garden"))
+	_log("伊沃→菜园真实耕作：%s" % _ok_text(started))
+	_show_formal_garden_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_garden_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("gardener_01", "gm_formal_garden_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("gardener_01", "gm_stopped", true)
+	_log("停止伊沃菜园真实耕作：%s" % _ok_text(interrupted))
+	_show_formal_garden_work_snapshot()
+
+
+func _show_formal_garden_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "gardener_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("gardener_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("gardener_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"character_art": (
+			npc_system.debug_get_npc_character_art_snapshot("gardener_01")
+			if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot")
+			else {}
+		),
+		"grain": resource_system.get_resource("grain") if resource_system != null else -1,
+		"garden": (
+			building_system.get_building("garden")
+			if building_system != null and building_system.has_method("get_building")
+			else {}
+		)
+	}
+	_log("菜园真实耕作快照：%s" % _compact(snapshot))
+
+
+func _run_formal_tavern_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("马塞尔→酒窖真实酿酒：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的酒窖真实酿酒入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("priest_01", "tavern"))
+	_log("马塞尔→酒窖真实酿酒：%s" % _ok_text(started))
+	_show_formal_tavern_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_tavern_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("priest_01", "gm_formal_tavern_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("priest_01", "gm_stopped", true)
+	_log("停止马塞尔酒窖真实酿酒：%s" % _ok_text(interrupted))
+	_show_formal_tavern_work_snapshot()
+
+
+func _show_formal_tavern_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "priest_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("priest_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("priest_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"resources": {
+			"grain": resource_system.get_resource("grain") if resource_system != null else -1,
+			"wine": resource_system.get_resource("wine") if resource_system != null else -1
+		},
+		"tavern": (
+			building_system.get_building("tavern")
+			if building_system != null and building_system.has_method("get_building")
+			else {}
+		)
+	}
+	_log("酒窖真实酿酒快照：%s" % _compact(snapshot))
+
+
+func _run_formal_clinic_doctor() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("莉娜→小诊所真实坐诊：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的诊所真实坐诊入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("doctor_01", "work_clinic_doctor"))
+	_log("莉娜→小诊所真实坐诊：%s" % _ok_text(started))
+	_show_formal_clinic_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _run_formal_clinic_patient() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("布鲁诺→小诊所真实病床：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的诊所真实病床入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("cook_01", "receive_clinic_treatment"))
+	_log("布鲁诺→小诊所真实病床：%s%s" % [
+		_ok_text(started),
+		"（需先用既有 NPC 扣血入口制造真实伤情，并让至少一名医生在途或在岗。）" if not started else ""
+	])
+	_show_formal_clinic_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_clinic_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted_ids: Array[String] = []
+	for npc_id in ["doctor_01", "cook_01"]:
+		var interrupted := false
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_clinic_work_stopped", true))
+		if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+			npc_system.end_formal_workstation_action(npc_id, "gm_stopped", true)
+		if interrupted:
+			interrupted_ids.append(npc_id)
+	_log("停止小诊所真实服务：%s" % _compact(interrupted_ids))
+	_show_formal_clinic_work_snapshot()
+
+
+func _show_formal_clinic_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var snapshot := {
+		"doctor_runtime": action_system.get_runtime_action_snapshot("doctor_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"patient_runtime": action_system.get_runtime_action_snapshot("cook_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"doctor_formal": npc_system.get_formal_workstation_action_snapshot("doctor_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"patient_formal": npc_system.get_formal_workstation_action_snapshot("cook_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"doctor_state": npc_system.get_npc_state("doctor_01") if npc_system != null else {},
+		"patient_state": npc_system.get_npc_state("cook_01") if npc_system != null else {},
+		"clinic": building_system.get_building("clinic") if building_system != null else {},
+		"money": resource_system.get_resource("money") if resource_system != null else 0,
+		"team_hp_per_hour": action_system.get_clinic_team_hp_per_hour() if action_system != null and action_system.has_method("get_clinic_team_hp_per_hour") else 0.0
+	}
+	_log("小诊所真实服务快照：%s" % _compact(snapshot))
+
+
+func _run_formal_training_instructor() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("艾达→训练场真实执教：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的训练场真实执教入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("veteran_deputy_01", "work_training_instructor"))
+	_log("艾达→训练场真实执教：%s%s" % [
+		_ok_text(started),
+		"（艾达必须装备主武器或坐骑。）" if not started else ""
+	])
+	_show_formal_training_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _run_formal_training_student() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("格伦→训练场真实受训：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的训练场真实受训入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("blacksmith_01", "receive_weapon_training"))
+	_log("格伦→训练场真实受训：%s%s" % [
+		_ok_text(started),
+		"（格伦必须已入伍并装备主武器或坐骑；艾达需在途或在岗。）" if not started else ""
+	])
+	_show_formal_training_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_training_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted_ids: Array[String] = []
+	# 教官先离岗，以便沿用 ActionSystem 的“最后教官离开”失败事实；
+	# 随后的学员清理只负责兜底尚在途的会话。
+	for npc_id in ["veteran_deputy_01", "blacksmith_01"]:
+		var interrupted := false
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_training_work_stopped", true))
+		if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+			npc_system.end_formal_workstation_action(npc_id, "gm_stopped", true)
+		if interrupted:
+			interrupted_ids.append(npc_id)
+	_log("停止训练场真实训练：%s" % _compact(interrupted_ids))
+	_show_formal_training_work_snapshot()
+
+
+func _show_formal_training_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var snapshot := {
+		"instructor_runtime": action_system.get_runtime_action_snapshot("veteran_deputy_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"student_runtime": action_system.get_runtime_action_snapshot("blacksmith_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"instructor_formal": npc_system.get_formal_workstation_action_snapshot("veteran_deputy_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"student_formal": npc_system.get_formal_workstation_action_snapshot("blacksmith_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"instructor": npc_system.get_npc("veteran_deputy_01") if npc_system != null else {},
+		"student": npc_system.get_npc("blacksmith_01") if npc_system != null else {},
+		"training_ground": building_system.get_building("training_ground") if building_system != null else {}
+	}
+	_log("训练场真实训练快照：%s" % _compact(snapshot))
+
+
+func _run_formal_chapel_prayer() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("伊沃→小教堂真实祈祷：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的小教堂真实祈祷入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("gardener_01", "pray_at_chapel"))
+	_log("伊沃→小教堂真实祈祷：%s" % _ok_text(started))
+	_show_formal_chapel_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _run_formal_chapel_leader() -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("马塞尔→小教堂真实主持：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_action"):
+		_log("ActionSystem 的小教堂真实主持入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_action("priest_01", "lead_mass"))
+	_log("马塞尔→小教堂真实主持：%s" % _ok_text(started))
+	_show_formal_chapel_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_chapel_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted_ids: Array[String] = []
+	# 主持者先离坛，让仍在席位上的祈祷者先走既有“恢复独祷”转换；
+	# 随后的祈祷者中断只负责关闭完整 GM 样片。
+	for npc_id in ["priest_01", "gardener_01"]:
+		var interrupted := false
+		if action_system != null and action_system.has_method("interrupt_npc_action"):
+			interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_chapel_work_stopped", true))
+		if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+			npc_system.end_formal_workstation_action(npc_id, "gm_stopped", true)
+		if interrupted:
+			interrupted_ids.append(npc_id)
+	_log("停止小教堂真实礼拜：%s" % _compact(interrupted_ids))
+	_show_formal_chapel_work_snapshot()
+
+
+func _show_formal_chapel_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
+	var snapshot := {
+		"leader_runtime": action_system.get_runtime_action_snapshot("priest_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"prayer_runtime": action_system.get_runtime_action_snapshot("gardener_01") if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"leader_formal": npc_system.get_formal_workstation_action_snapshot("priest_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"prayer_formal": npc_system.get_formal_workstation_action_snapshot("gardener_01") if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"leader": npc_system.get_npc("priest_01") if npc_system != null else {},
+		"prayer": npc_system.get_npc("gardener_01") if npc_system != null else {},
+		"prayer_character_art": npc_system.debug_get_npc_character_art_snapshot("gardener_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"chapel": building_system.get_building("chapel") if building_system != null else {},
+		"piety": piety_system.get_piety_snapshot() if piety_system != null and piety_system.has_method("get_piety_snapshot") else {}
+	}
+	_log("小教堂真实礼拜快照：%s" % _compact(snapshot))
+
+
+func _is_gameplay_time_paused_for_formal_work() -> bool:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	return (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	)
+
+
+func _run_formal_blacksmith_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("格伦→正式铁匠制造：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if (
+		crafting_system == null
+		or not crafting_system.has_method("get_project_snapshot")
+		or not crafting_system.has_method("set_target")
+		or not crafting_system.has_method("can_start_work_cycle")
+	):
+		_log("格伦→正式铁匠制造：失败（CraftingSystem 接口不可用。）")
+		return
+	var target_prepare := _prepare_formal_crafting_target(crafting_system, "blacksmith")
+	if not bool(target_prepare.get("ok", false)):
+		_log("格伦→正式铁匠制造：失败（无法准备制造目标：%s）" % _compact(target_prepare))
+		return
+	if bool(target_prepare.get("auto_selected", false)):
+		_log("格伦→正式铁匠制造：已自动设置目标 %s。" % str(target_prepare.get("recipe_id", "")))
+	var crafting_preflight: Dictionary = crafting_system.can_start_work_cycle("blacksmith", "blacksmith_01")
+	if not bool(crafting_preflight.get("ok", false)):
+		_log("格伦→正式铁匠制造：失败（%s）" % _compact(crafting_preflight))
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的正式铁匠制造入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("blacksmith_01", "blacksmith"))
+	_log("格伦→正式铁匠制造：%s" % _ok_text(started))
+	_show_formal_blacksmith_work_snapshot()
+	if started and _panel != null:
+		# This button is a visual acceptance entry. Reveal the formal scene as
+		# soon as dispatch succeeds instead of leaving the large GM window over it.
+		_panel.visible = false
+
+
+func _prepare_formal_crafting_target(crafting_system: Node, building_id: String) -> Dictionary:
+	var project: Dictionary = crafting_system.get_project_snapshot(building_id)
+	var existing_recipe_id := str(project.get("target_recipe_id", ""))
+	if not existing_recipe_id.is_empty():
+		return {"ok": true, "auto_selected": false, "recipe_id": existing_recipe_id}
+	var recipe_id := ""
+	if (
+		_crafting_building_select != null
+		and _crafting_recipe_select != null
+		and _selected_id(_crafting_building_select) == building_id
+	):
+		recipe_id = _selected_id(_crafting_recipe_select)
+	if recipe_id.is_empty() and crafting_system.has_method("get_recipe_ids_for_building"):
+		var recipe_ids: Array = crafting_system.get_recipe_ids_for_building(building_id)
+		if not recipe_ids.is_empty():
+			recipe_id = str(recipe_ids[0])
+	if recipe_id.is_empty():
+		return {"ok": false, "reason": "%s_recipe_missing" % building_id}
+	var target_result: Dictionary = crafting_system.set_target(building_id, recipe_id, false)
+	if not bool(target_result.get("ok", false)):
+		return {
+			"ok": false,
+			"reason": "%s_target_rejected" % building_id,
+			"recipe_id": recipe_id,
+			"target_result": target_result
+		}
+	return {
+		"ok": true,
+		"auto_selected": true,
+		"recipe_id": recipe_id,
+		"target_result": target_result
+	}
+
+
+func _stop_formal_blacksmith_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("blacksmith_01", "gm_formal_blacksmith_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("blacksmith_01", "gm_stopped", true)
+	_log("停止格伦正式铁匠制造：%s" % _ok_text(interrupted))
+	_show_formal_blacksmith_work_snapshot()
+
+
+func _show_formal_blacksmith_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "blacksmith_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("blacksmith_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("blacksmith_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"crafting_project": (
+			crafting_system.get_project_snapshot("blacksmith")
+			if crafting_system != null and crafting_system.has_method("get_project_snapshot")
+			else {}
+		)
+	}
+	_log("正式铁匠制造快照：%s" % _compact(snapshot))
+
+
+func _run_formal_workshop_work() -> void:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("欧文→正式工械制造：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）")
+		return
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if (
+		crafting_system == null
+		or not crafting_system.has_method("get_project_snapshot")
+		or not crafting_system.has_method("set_target")
+		or not crafting_system.has_method("can_start_work_cycle")
+	):
+		_log("欧文→正式工械制造：失败（CraftingSystem 接口不可用。）")
+		return
+	var target_prepare := _prepare_formal_crafting_target(crafting_system, "workshop")
+	if not bool(target_prepare.get("ok", false)):
+		_log("欧文→正式工械制造：失败（无法准备制造目标：%s）" % _compact(target_prepare))
+		return
+	if bool(target_prepare.get("auto_selected", false)):
+		_log("欧文→正式工械制造：已自动设置目标 %s。" % str(target_prepare.get("recipe_id", "")))
+	var crafting_preflight: Dictionary = crafting_system.can_start_work_cycle("workshop", "engineer_01")
+	if not bool(crafting_preflight.get("ok", false)):
+		_log("欧文→正式工械制造：失败（%s）" % _compact(crafting_preflight))
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("debug_assign_work"):
+		_log("ActionSystem 的正式工械制造入口不可用。")
+		return
+	var started := bool(action_system.debug_assign_work("engineer_01", "workshop"))
+	_log("欧文→正式工械制造：%s" % _ok_text(started))
+	_show_formal_workshop_work_snapshot()
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_workshop_work() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action("engineer_01", "gm_formal_workshop_work_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_workstation_action"):
+		npc_system.end_formal_workstation_action("engineer_01", "gm_stopped", true)
+	_log("停止欧文正式工械制造：%s" % _ok_text(interrupted))
+	_show_formal_workshop_work_snapshot()
+
+
+func _show_formal_workshop_work_snapshot() -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": "engineer_01",
+		"runtime_action": (
+			action_system.get_runtime_action_snapshot("engineer_01")
+			if action_system != null and action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		),
+		"formal_session": (
+			npc_system.get_formal_workstation_action_snapshot("engineer_01")
+			if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+			else {}
+		),
+		"crafting_project": (
+			crafting_system.get_project_snapshot("workshop")
+			if crafting_system != null and crafting_system.has_method("get_project_snapshot")
+			else {}
+		)
+	}
+	_log("正式工械制造快照：%s" % _compact(snapshot))
+
+
+func _run_formal_navigation_pilot(pilot_id: String, label: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_run_formal_navigation_pilot"):
+		_log("NPCSystem 的 A2b-P1–P6 数据驱动试运行入口不可用。")
+		return
+	_log("%s正式导航试运行：%s" % [label, _compact(npc_system.call("debug_run_formal_navigation_pilot", pilot_id))])
+
+
+func _show_formal_navigation_pilot_snapshot() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_get_formal_navigation_pilots_snapshot"):
+		_log("NPCSystem 的正式导航试运行快照不可用。")
+		return
+	_log("正式导航试运行快照：%s" % _compact(npc_system.call("debug_get_formal_navigation_pilots_snapshot")))
+
+
+func _stop_formal_navigation_pilots() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_stop_all_formal_navigation_pilots"):
+		_log("NPCSystem 的正式导航停止入口不可用。")
+		return
+	_log("停止正式导航试运行：%s" % _compact(npc_system.call("debug_stop_all_formal_navigation_pilots", "gm_stop")))
+
+
+func _show_glen_navigation_pilot_snapshot() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_get_glen_blacksmith_navigation_pilot_snapshot"):
+		_log("NPCSystem 的 A2b-P1 快照不可用。")
+		return
+	_log("格伦正式导航快照：%s" % _compact(npc_system.call("debug_get_glen_blacksmith_navigation_pilot_snapshot")))
+
+
+func _stop_glen_navigation_pilot() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_stop_glen_blacksmith_navigation_pilot"):
+		_log("NPCSystem 的 A2b-P1 停止入口不可用。")
+		return
+	_log("停止格伦正式导航试运行：%s" % _compact(npc_system.call("debug_stop_glen_blacksmith_navigation_pilot", "gm_stop")))
+
+
+func _run_smithy_art_level(level: int) -> void:
+	var art_view := get_node_or_null(BLACKSMITH_ART_VIEW_PATH)
+	if art_view == null:
+		art_view = get_node_or_null(LEGACY_BLACKSMITH_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("BlacksmithArtView 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("铁匠铺美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_workshop_art_level(level: int) -> void:
+	var art_view := get_node_or_null(WORKSHOP_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("WorkshopArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("工械坊美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_chapel_art_level(level: int) -> void:
+	var art_view := get_node_or_null(CHAPEL_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("ChapelArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 2)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("小教堂美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_clinic_art_level(level: int) -> void:
+	var art_view := get_node_or_null(CLINIC_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("ClinicArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("小诊所美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_dining_hall_art_level(level: int) -> void:
+	var art_view := get_node_or_null(DINING_HALL_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("DiningHallArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("食堂美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_dormitory_art_level(level: int) -> void:
+	var art_view := get_node_or_null(DORMITORY_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("DormitoryArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 2)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("宿舍美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_tavern_art_level(level: int) -> void:
+	var art_view := get_node_or_null(TAVERN_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("TavernArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("酒窖美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_garden_art_level(level: int) -> void:
+	var art_view := get_node_or_null(GARDEN_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("GardenArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("菜园美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_training_ground_art_level(level: int) -> void:
+	var art_view := get_node_or_null(TRAINING_GROUND_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("TrainingGroundArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("训练场美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_stable_art_level(level: int) -> void:
+	var art_view := get_node_or_null(STABLE_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("StableArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("马厩美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_main_hall_art_level(level: int) -> void:
+	var art_view := get_node_or_null(MAIN_HALL_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("MainHallArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 6)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("主厅美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_warehouse_art_level(level: int) -> void:
+	var art_view := get_node_or_null(WAREHOUSE_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("WarehouseArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 3)
+	art_view.call("debug_force_visual_level", preview_level)
+	var snapshot: Dictionary = {}
+	if art_view.has_method("get_art_slice_snapshot"):
+		snapshot = art_view.call("get_art_slice_snapshot")
+	_log("仓库美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _run_wall_art_level(level: int) -> void:
+	var art_view := get_node_or_null(FORTIFICATION_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("debug_force_visual_level"):
+		_log("FortificationArt 不可用。")
+		return
+	var preview_level := clampi(level, 1, 6)
+	var snapshot: Dictionary = art_view.call("debug_force_visual_level", preview_level)
+	_log("围墙美术预览等级 %d（仅表现）：%s" % [preview_level, _compact(snapshot)])
+
+
+func _show_gate_art_snapshot() -> void:
+	var art_view := get_node_or_null(FORTIFICATION_ART_VIEW_PATH)
+	if art_view == null or not art_view.has_method("get_gate_snapshot"):
+		_log("FortificationArt 不可用。")
+		return
+	_log("正门表现：%s" % _compact(art_view.call("get_gate_snapshot", "front_gate")))
+	_log("后门表现：%s" % _compact(art_view.call("get_gate_snapshot", "back_gate")))
+
+
 func _run_select_npc(npc_id: String) -> void:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
@@ -1413,6 +3324,14 @@ func _run_move_npc(npc_id: String, building_id: String) -> void:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
 		_log("NPCSystem 不可用。")
+		return
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	):
+		_log("移动 NPC %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试，未写入移动状态。）" % [npc_id, building_id])
 		return
 	_log("移动 NPC %s -> %s：%s" % [npc_id, building_id, _ok_text(npc_system.debug_move_npc_to_building(npc_id, building_id))])
 
@@ -1439,6 +3358,14 @@ func _show_npc(npc_id: String) -> void:
 		_log("NPCSystem 不可用。")
 		return
 	_log("NPC 快照 %s：%s" % [npc_id, _compact(npc_system.get_npc(npc_id))])
+
+
+func _show_spatial_migration(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("debug_get_spatial_migration_snapshot"):
+		_log("NPC 空间迁移快照不可用。")
+		return
+	_log("空间迁移快照 %s：%s" % [npc_id, _compact(npc_system.debug_get_spatial_migration_snapshot(npc_id))])
 
 
 func _run_recruit_npc(npc_id: String) -> void:
@@ -1654,6 +3581,106 @@ func _run_assign_action(npc_id: String, action_id: String) -> void:
 	_log("指派行动 %s -> %s：%s" % [npc_id, action_id, _ok_text(action_system.debug_assign_action(npc_id, action_id))])
 
 
+func _run_formal_visit_location(npc_id: String, location_id: String) -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("真实拜访 %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）" % [npc_id, location_id])
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("assign_visit_location"):
+		_log("ActionSystem 的真实拜访入口不可用。")
+		return
+	var started := bool(action_system.assign_visit_location(npc_id, location_id))
+	_log("真实拜访 %s -> %s：%s" % [npc_id, location_id, _ok_text(started)])
+	_show_formal_visit_location_snapshot(npc_id)
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_visit_location(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_visit_stopped", true))
+	if npc_system != null and npc_system.has_method("end_formal_location_action"):
+		npc_system.end_formal_location_action(npc_id, "gm_stopped")
+	_log("停止真实拜访 %s：%s" % [npc_id, _ok_text(interrupted)])
+	_show_formal_visit_location_snapshot(npc_id)
+
+
+func _show_formal_visit_location_snapshot(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var snapshot := {
+		"npc_id": npc_id,
+		"runtime_action": action_system.get_runtime_action_snapshot(npc_id) if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": npc_system.get_formal_workstation_action_snapshot(npc_id) if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot") else {},
+		"spatial": npc_system.debug_get_spatial_migration_snapshot(npc_id) if npc_system != null and npc_system.has_method("debug_get_spatial_migration_snapshot") else {},
+		"npc": npc_system.get_npc(npc_id) if npc_system != null else {}
+	}
+	_log("真实拜访快照：%s" % _compact(snapshot))
+
+
+func _run_formal_npc_dialogue(
+	speaker_npc_id: String,
+	target_npc_id: String,
+	opening_text: String = ""
+) -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("真实找人对话 %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）" % [speaker_npc_id, target_npc_id])
+		return
+	_run_npc_talk(speaker_npc_id, target_npc_id, opening_text)
+	_show_formal_npc_dialogue_snapshot(speaker_npc_id)
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if (
+		action_system != null
+		and action_system.has_method("get_runtime_action_snapshot")
+		and str((action_system.get_runtime_action_snapshot(speaker_npc_id) as Dictionary).get("action_id", "")) == "talk_to_npc"
+		and _panel != null
+	):
+		_panel.visible = false
+
+
+func _stop_formal_npc_dialogue(speaker_npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action(speaker_npc_id, "gm_formal_npc_dialogue_stopped", true))
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system != null and dialog_system.has_method("force_end_dialogue_for_npc"):
+		var end_result: Dictionary = dialog_system.force_end_dialogue_for_npc(
+			speaker_npc_id,
+			"gm_formal_npc_dialogue_stopped"
+		)
+		interrupted = bool(end_result.get("ended", false)) or interrupted
+	_log("停止真实找人对话 %s：%s" % [speaker_npc_id, _ok_text(interrupted)])
+	_show_formal_npc_dialogue_snapshot(speaker_npc_id)
+
+
+func _show_formal_npc_dialogue_snapshot(speaker_npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	var formal_session: Dictionary = (
+		npc_system.get_formal_dialogue_approach_snapshot(speaker_npc_id)
+		if npc_system != null and npc_system.has_method("get_formal_dialogue_approach_snapshot")
+		else {}
+	)
+	var target_npc_id := ""
+	if bool(formal_session.get("active", false)):
+		target_npc_id = str((formal_session.get("session", {}) as Dictionary).get("target_npc_id", ""))
+	var snapshot := {
+		"speaker_npc_id": speaker_npc_id,
+		"target_npc_id": target_npc_id,
+		"runtime_action": action_system.get_runtime_action_snapshot(speaker_npc_id) if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_dialogue_session": formal_session,
+		"speaker_spatial": npc_system.debug_get_spatial_migration_snapshot(speaker_npc_id) if npc_system != null and npc_system.has_method("debug_get_spatial_migration_snapshot") else {},
+		"target_spatial": npc_system.debug_get_spatial_migration_snapshot(target_npc_id) if npc_system != null and npc_system.has_method("debug_get_spatial_migration_snapshot") and not target_npc_id.is_empty() else {},
+		"dialogue": dialog_system.get_dialogue_state() if dialog_system != null and dialog_system.has_method("get_dialogue_state") else {}
+	}
+	_log("真实找人对话快照：%s" % _compact(snapshot))
+
+
 func _run_work(npc_id: String, building_id: String) -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
@@ -1679,27 +3706,146 @@ func _run_training_student(npc_id: String) -> void:
 
 
 func _run_assist_repair(npc_id: String, building_id: String) -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("真实协助修复 %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）" % [npc_id, building_id])
+		return
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
 		_log("ActionSystem 不可用。")
 		return
-	_log("协助修复 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_repair_assist(npc_id, building_id))])
+	var started := bool(action_system.debug_assign_repair_assist(npc_id, building_id))
+	_log("真实协助修复 %s -> %s：%s" % [npc_id, building_id, _ok_text(started)])
+	_show_formal_repair_assist_snapshot(npc_id, building_id)
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_repair_assist(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_repair_assist_stopped", true))
+	_log("停止真实协助修复 %s：%s" % [npc_id, _ok_text(interrupted)])
+	_show_formal_repair_assist_snapshot(npc_id, "")
+
+
+func _show_formal_repair_assist_snapshot(npc_id: String, building_id: String = "") -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var formal: Dictionary = (
+		npc_system.get_formal_workstation_action_snapshot(npc_id)
+		if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+		else {}
+	)
+	var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+	var resolved_building_id := building_id
+	if resolved_building_id.is_empty():
+		resolved_building_id = str(session.get("building_id", ""))
+	var snapshot := {
+		"npc_id": npc_id,
+		"building_id": resolved_building_id,
+		"runtime_action": action_system.get_runtime_action_snapshot(npc_id) if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": formal,
+		"npc_state": npc_system.get_npc_state(npc_id) if npc_system != null else {},
+		"repair": building_system.get_repair_status(resolved_building_id) if building_system != null and not resolved_building_id.is_empty() else {}
+	}
+	_log("真实协助修复快照：%s" % _compact(snapshot))
 
 
 func _run_assist_upgrade(npc_id: String, building_id: String) -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("真实协助升级 %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）" % [npc_id, building_id])
+		return
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
 		_log("ActionSystem 不可用。")
 		return
-	_log("协助升级 %s -> %s：%s" % [npc_id, building_id, _ok_text(action_system.debug_assign_upgrade_assist(npc_id, building_id))])
+	var started := bool(action_system.debug_assign_upgrade_assist(npc_id, building_id))
+	_log("真实协助升级 %s -> %s：%s" % [npc_id, building_id, _ok_text(started)])
+	_show_formal_upgrade_assist_snapshot(npc_id, building_id)
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_upgrade_assist(npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action(npc_id, "gm_formal_upgrade_assist_stopped", true))
+	_log("停止真实协助升级 %s：%s" % [npc_id, _ok_text(interrupted)])
+	_show_formal_upgrade_assist_snapshot(npc_id, "")
+
+
+func _show_formal_upgrade_assist_snapshot(npc_id: String, building_id: String = "") -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var formal: Dictionary = (
+		npc_system.get_formal_workstation_action_snapshot(npc_id)
+		if npc_system != null and npc_system.has_method("get_formal_workstation_action_snapshot")
+		else {}
+	)
+	var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+	var resolved_building_id := building_id
+	if resolved_building_id.is_empty():
+		resolved_building_id = str(session.get("building_id", ""))
+	var snapshot := {
+		"npc_id": npc_id,
+		"building_id": resolved_building_id,
+		"runtime_action": action_system.get_runtime_action_snapshot(npc_id) if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": formal,
+		"npc_state": npc_system.get_npc_state(npc_id) if npc_system != null else {},
+		"upgrade": building_system.get_upgrade_status(resolved_building_id) if building_system != null and not resolved_building_id.is_empty() else {}
+	}
+	_log("真实协助升级快照：%s" % _compact(snapshot))
 
 
 func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
+	if _is_gameplay_time_paused_for_formal_work():
+		_log("真实协助治疗 %s -> %s：失败（游戏当前暂停；请点击主界面左上“继续”后重试。）" % [healer_npc_id, target_npc_id])
+		return
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null or not action_system.has_method("debug_assign_heal_assist"):
 		_log("ActionSystem 协助治疗接口不可用。")
 		return
-	_log("协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))])
+	var started := bool(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))
+	_log("真实协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(started)])
+	_show_formal_heal_assist_snapshot(healer_npc_id, target_npc_id)
+	if started and _panel != null:
+		_panel.visible = false
+
+
+func _stop_formal_heal_assist(healer_npc_id: String) -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var interrupted := false
+	if action_system != null and action_system.has_method("interrupt_npc_action"):
+		interrupted = bool(action_system.interrupt_npc_action(healer_npc_id, "gm_formal_heal_assist_stopped", true))
+	_log("停止真实协助治疗 %s：%s" % [healer_npc_id, _ok_text(interrupted)])
+	_show_formal_heal_assist_snapshot(healer_npc_id, "")
+
+
+func _show_formal_heal_assist_snapshot(healer_npc_id: String, target_npc_id: String = "") -> void:
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var formal: Dictionary = (
+		npc_system.get_formal_healing_approach_snapshot(healer_npc_id)
+		if npc_system != null and npc_system.has_method("get_formal_healing_approach_snapshot")
+		else {}
+	)
+	var resolved_target_id := target_npc_id
+	if resolved_target_id.is_empty():
+		resolved_target_id = str(formal.get("target_npc_id", ""))
+	var snapshot := {
+		"healer_npc_id": healer_npc_id,
+		"target_npc_id": resolved_target_id,
+		"runtime_action": action_system.get_runtime_action_snapshot(healer_npc_id) if action_system != null and action_system.has_method("get_runtime_action_snapshot") else {},
+		"formal_session": formal,
+		"healer_state": npc_system.get_npc_state(healer_npc_id) if npc_system != null else {},
+		"target_state": npc_system.get_npc_state(resolved_target_id) if npc_system != null and not resolved_target_id.is_empty() else {},
+		"active_helpers": action_system.get_healing_helpers_for_target(resolved_target_id) if action_system != null and action_system.has_method("get_healing_helpers_for_target") and not resolved_target_id.is_empty() else []
+	}
+	_log("真实协助治疗快照：%s" % _compact(snapshot))
 
 
 func _run_spawn_enemy_wave(wave_number: int) -> void:
@@ -1727,6 +3873,127 @@ func _run_clear_enemies() -> void:
 		return
 	var result: Dictionary = combat_system.debug_clear_enemies()
 	_log("清空敌人：%s" % _compact(result))
+
+
+func _run_formal_enemy_navigation_pilot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_run_formal_enemy_navigation_pilot"):
+		_log("CombatSystem 正式敌军导航试点接口不可用。")
+		return
+	_log("启动林下敌军→正门试点：%s" % _compact(combat_system.debug_run_formal_enemy_navigation_pilot()))
+
+
+func _show_formal_enemy_navigation_pilot_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_formal_enemy_navigation_pilot_snapshot"):
+		_log("CombatSystem 正式敌军导航试点快照不可用。")
+		return
+	_log("正式敌军导航试点：%s" % _compact(combat_system.debug_get_formal_enemy_navigation_pilot_snapshot()))
+
+
+func _stop_formal_enemy_navigation_pilot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_stop_formal_enemy_navigation_pilot"):
+		_log("CombatSystem 正式敌军导航试点停止接口不可用。")
+		return
+	_log("停止正式敌军导航试点：%s" % _compact(combat_system.debug_stop_formal_enemy_navigation_pilot()))
+
+
+func _run_formal_active_enemy_main_hall_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_run_formal_active_enemy_main_hall_slice"):
+		_log("CombatSystem 活动敌军推进主厅切片接口不可用。")
+		return
+	_log("启动活动敌军推进主厅切片：%s" % _compact(combat_system.debug_run_formal_active_enemy_main_hall_slice()))
+
+
+func _show_formal_active_enemy_main_hall_slice_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_formal_active_enemy_main_hall_slice_snapshot"):
+		_log("CombatSystem 活动敌军推进主厅切片快照不可用。")
+		return
+	_log("活动敌军推进主厅切片：%s" % _compact(combat_system.debug_get_formal_active_enemy_main_hall_slice_snapshot()))
+
+
+func _stop_formal_active_enemy_main_hall_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_stop_formal_active_enemy_main_hall_slice"):
+		_log("CombatSystem 活动敌军推进主厅切片停止接口不可用。")
+		return
+	_log("停止活动敌军推进主厅切片：%s" % _compact(combat_system.debug_stop_formal_active_enemy_main_hall_slice()))
+
+
+func _run_formal_first_wave_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_run_formal_first_wave_slice"):
+		_log("CombatSystem 第一波正式实体切片接口不可用。")
+		return
+	_log("启动第一波正式实体切片：%s" % _compact(combat_system.debug_run_formal_first_wave_slice()))
+
+
+func _show_formal_first_wave_slice_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_formal_first_wave_slice_snapshot"):
+		_log("CombatSystem 第一波正式实体快照不可用。")
+		return
+	_log("第一波正式实体切片：%s" % _compact(combat_system.debug_get_formal_first_wave_slice_snapshot()))
+
+
+func _stop_formal_first_wave_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_stop_formal_first_wave_slice"):
+		_log("CombatSystem 第一波正式实体停止接口不可用。")
+		return
+	_log("停止第一波正式实体切片：%s" % _compact(combat_system.debug_stop_formal_first_wave_slice()))
+
+
+func _run_formal_second_wave_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_run_formal_second_wave_slice"):
+		_log("CombatSystem 第二波正式实体切片接口不可用。")
+		return
+	_log("启动第二波混编正式实体切片：%s" % _compact(combat_system.debug_run_formal_second_wave_slice()))
+
+
+func _show_formal_second_wave_slice_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_formal_second_wave_slice_snapshot"):
+		_log("CombatSystem 第二波正式实体快照不可用。")
+		return
+	_log("第二波混编正式实体切片：%s" % _compact(combat_system.debug_get_formal_second_wave_slice_snapshot()))
+
+
+func _stop_formal_second_wave_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_stop_formal_second_wave_slice"):
+		_log("CombatSystem 第二波正式实体停止接口不可用。")
+		return
+	_log("停止第二波混编正式实体切片：%s" % _compact(combat_system.debug_stop_formal_second_wave_slice()))
+
+
+func _run_formal_dynamic_wave_slice(wave_number: int = -1) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_run_formal_dynamic_wave_slice"):
+		_log("CombatSystem 动态群战正式实体接口不可用。")
+		return
+	var resolved_wave_number := wave_number if wave_number > 0 else _int_from_selected_id(_combat_wave_select, 1)
+	_log("启动第 %d 波动态群战实体：%s" % [resolved_wave_number, _compact(combat_system.debug_run_formal_dynamic_wave_slice(resolved_wave_number))])
+
+
+func _show_formal_dynamic_wave_slice_snapshot() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_get_formal_dynamic_wave_slice_snapshot"):
+		_log("CombatSystem 动态群战快照不可用。")
+		return
+	_log("动态群战正式实体：%s" % _compact(combat_system.debug_get_formal_dynamic_wave_slice_snapshot()))
+
+
+func _stop_formal_dynamic_wave_slice() -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_stop_formal_dynamic_wave_slice"):
+		_log("CombatSystem 动态群战停止接口不可用。")
+		return
+	_log("停止动态群战正式实体：%s" % _compact(combat_system.debug_stop_formal_dynamic_wave_slice()))
 
 
 func _run_combat_alarm() -> void:
@@ -2229,13 +4496,14 @@ func _log(message: String) -> void:
 func _help_text() -> String:
 	return "\n".join([
 		"常用命令：",
-		"refresh | snapshot | events | plaza_events",
+		"空间检查点：formal_spatial_save [save|load|snapshot]",
+		"refresh | snapshot | events | plaza_events | roof_visibility | station_layout [preview|legacy|snapshot] | motion_sandbox | character_pilot [glen|enemy|sandbox|snapshot] | formal_nav_pilot [glen|clinic_doctor|clinic_bed|dormitory_bed|dining_seat|chapel_prayer_seat|stable_care|stop|snapshot] | formal_visit [run <npc_id> <location_id>|stop <npc_id>|snapshot <npc_id>] | formal_npc_dialogue [run <speaker_id> <target_id> [opening]|stop <speaker_id>|snapshot <speaker_id>] | formal_repair_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_upgrade_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_heal_assist [run <healer_id> <target_id>|stop <healer_id>|snapshot <healer_id> [target_id]] | formal_stable_work [run|stop|snapshot] | formal_dining_work [run|stop|snapshot] | formal_dining_eat [run|stop|snapshot] | formal_dormitory_sleep [run|stop|snapshot] | formal_garden_work [run|stop|snapshot] | formal_tavern_work [run|stop|snapshot] | formal_clinic_work [doctor|patient|stop|snapshot] | formal_training_work [instructor|student|stop|snapshot] | formal_chapel_work [leader|prayer|stop|snapshot] | formal_blacksmith_work [run|stop|snapshot] | formal_workshop_work [run|stop|snapshot] | formal_dynamic_wave [run <1-5>|stop|snapshot] | formal_second_wave_slice [run|stop|snapshot]（兼容）",
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
-		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot",
+		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot | merchant_wagon [arrival|formal_arrival|departure|snapshot]",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
 		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | intent_revalidation <npc_id> | last_order_injection | station_context",
 		"select_npc <npc_id> | select_building <building_id>",
-		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id>",
+		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id> | spatial <npc_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
 		"publish_order <npc_id> <text> | order <npc_id> | plan_request | dialogue_carryover | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
 		"reflect_npc <npc_id> [force] | long_memory <npc_id> | reflection_result",
@@ -2248,7 +4516,7 @@ func _help_text() -> String:
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | next_wave | jump_wave | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
 		"piety_fill | piety_set <value> | piety_snapshot | piety_step [game_seconds]",
-		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id>",
+		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id> | smithy_art_level <1|2|3> | workshop_art_level <1|2|3> | chapel_art_level <1|2> | clinic_art_level <1|2|3> | dining_hall_art_level <1|2|3> | dormitory_art_level <1|2> | tavern_art_level <1|2|3> | garden_art_level <1|2|3> | training_ground_art_level <1|2|3> | stable_art_level <1|2|3> | main_hall_art_level <1|2|3|4|5|6> | warehouse_art_level <1|2|3> | wall_art_level <1|2|3|4|5|6> | gate_art_snapshot（仅表现预览）",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",
 		"recover_npc <npc_id> <game_seconds> 会用自然恢复规则推进昏迷恢复。",
