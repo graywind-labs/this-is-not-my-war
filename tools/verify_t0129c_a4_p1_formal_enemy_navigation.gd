@@ -22,10 +22,7 @@ func _init() -> void:
 	var controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
-	var approach_region := root.get_node_or_null(
-		"Main/WorldRoot/FormalStationLayout/SpatialContract/EnemyApproachNavigation"
-	) as NavigationRegion3D
-	if controller == null or combat_system == null or building_system == null or approach_region == null:
+	if controller == null or combat_system == null or building_system == null:
 		_fail("C3-P1 runtime dependencies unavailable")
 		return
 
@@ -37,17 +34,25 @@ func _init() -> void:
 	if int(layout_snapshot.get("enemy_route_stage_count", 0)) != 10:
 		_fail("Formal enemy route must preserve all ten future C3 stages: %s" % layout_snapshot)
 		return
+	if str(production.get("enemy_exterior_mode", "")) != "shared_open_baked_space":
+		_fail("Enemy exterior must use the shared collider-baked navigation space: %s" % production)
+		return
 	if (
-		int(production.get("enemy_approach_vertex_count", 0)) != 12
-		or int(production.get("enemy_approach_polygon_count", 0)) != 5
+		bool(production.get("enemy_approach_region_available", true))
+		or int(production.get("enemy_approach_vertex_count", -1)) != 0
+		or int(production.get("enemy_approach_polygon_count", -1)) != 0
 	):
-		_fail("Enemy approach open-corridor geometry drifted: %s" % production)
+		_fail("Obsolete enemy approach corridor must not constrain production navigation: %s" % production)
 		return
-	if bool(production.get("enemy_approach_region_enabled", true)):
-		_fail("Staged enemy approach region should start disabled")
+	if bool(production.get("roads_affect_navigation", true)):
+		_fail("Road presentation must not affect navigation: %s" % production)
 		return
-	if int(production.get("vertex_count", 0)) != 788 or int(production.get("polygon_count", 0)) != 754:
-		_fail("C3-P1 must not mutate the proven core station bake: %s" % production)
+	var production_bounds := production.get("production_bounds", []) as Array
+	if production_bounds.size() < 4 or float(production_bounds[3]) < 344.0:
+		_fail("Production NavMesh does not cover the formal enemy exterior: %s" % production)
+		return
+	if int(production.get("vertex_count", 0)) <= 0 or int(production.get("polygon_count", 0)) <= 0:
+		_fail("Production station navigation bake is empty: %s" % production)
 		return
 
 	var front_gate_before: Dictionary = building_system.get_building("front_gate")

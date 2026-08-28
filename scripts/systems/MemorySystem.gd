@@ -8,6 +8,10 @@ const NOTICE_BOARD_DEFAULTS_FILE := "notice_board_defaults.json"
 const DEFAULT_LOCATION_ID := "plaza"
 const DEFAULT_VISIBILITY := "private"
 const LOCAL_PUBLIC_VISIBILITY := "local_public"
+const STATION_WIDE_PUBLIC_EVENT_TYPES: Array[String] = [
+	"plaza_notice_changed", "plaza_schedule_changed",
+	"piety_meteor_impact", "piety_meteor_enemy_defeated"
+]
 const PLAYER_ACTOR_ID := "guard_officer"
 const PLAYER_DISPLAY_NAME := "守备官"
 const ENTERABLE_LOCATION_IDS: Array[String] = [
@@ -29,14 +33,14 @@ const EVENT_TYPES: Array[String] = [
 	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
-	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "low_hp_triggered",
+	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_damaged", "horse_died", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "healing_failed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_schedule_changed", "plaza_status_changed", "location_status_changed",
 	"merchant_arrived", "merchant_departed", "merchant_trade_completed",
 	"defense_device_deployed", "defense_device_triggered",
-	"piety_meteor_cast", "piety_meteor_impact"
+	"piety_meteor_cast", "piety_meteor_impact", "piety_meteor_enemy_defeated"
 ]
 
 const REQUIRED_PAYLOAD_FIELDS := {
@@ -76,6 +80,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"attack_made": ["attacker_npc_id", "target_type", "target_enemy_id", "damage", "hp_before", "hp_after"],
 	"combat_strategy_selected": ["npc_id", "strategy_id", "strategy_label", "unit_type"],
 	"damage_taken": ["damage", "hp_before", "hp_after"],
+	"horse_damaged": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
+	"horse_died": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
@@ -94,7 +100,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"defense_device_deployed": ["deployment_id", "device_id", "device_name", "slot_id", "slot_name", "inventory_resource_id", "inventory_cost"],
 	"defense_device_triggered": ["deployment_id", "device_id", "device_name", "target_enemy_id", "damage", "hp_before", "hp_after"],
 	"piety_meteor_cast": ["cast_id", "target_position", "radius", "piety_spent"],
-	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "impact_max_targets", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"]
+	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "impact_max_targets", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"],
+	"piety_meteor_enemy_defeated": ["cast_id", "enemy_defeated_count"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -1094,7 +1101,7 @@ func _broadcast_public_event(event: Dictionary, location_id: String) -> void:
 		target_location_id = DEFAULT_LOCATION_ID
 
 	var recipient_ids: Array[String] = []
-	if str(event.get("type", "")) in ["plaza_notice_changed", "plaza_schedule_changed"]:
+	if STATION_WIDE_PUBLIC_EVENT_TYPES.has(str(event.get("type", ""))):
 		recipient_ids = _get_all_station_npc_ids()
 	else:
 		recipient_ids = get_location_people_present(target_location_id)
@@ -1390,8 +1397,14 @@ func _format_action_status(action_id: String) -> String:
 		return "在城门外集结"
 	if action_id == "combat_ready":
 		return "准备接敌"
+	if action_id == "meeting_assigned_horse":
+		return "前往会合马匹"
+	if action_id == "waiting_for_assigned_horse":
+		return "等待马匹会合"
 	if action_id.begins_with("attacking_"):
 		return "攻击敌人"
+	if action_id.begins_with("winding_up_"):
+		return "准备攻击敌人"
 	if action_id == "avoid_combat" or action_id == "avoiding_enemy":
 		return "避战"
 	if action_id.begins_with("moving_to_avoid_shelter_"):
@@ -1811,6 +1824,8 @@ func _format_summary(event: Dictionary) -> String:
 		"equipment_given":
 			return "%s把%s交给了%s。" % [PLAYER_DISPLAY_NAME, str(payload.get("equipment_name", "装备")), actor]
 		"equipment_changed":
+			if str(payload.get("slot", "")) == "mount" and str(payload.get("equipment_id", "")).is_empty():
+				return "%s收回了分配给%s的马匹。" % [PLAYER_DISPLAY_NAME, actor]
 			return "%s为%s更换了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("equipment_name", "装备"))]
 		"order_assigned":
 			return "守备官制定了新的指令。"
@@ -1915,10 +1930,9 @@ func _format_summary(event: Dictionary) -> String:
 		"piety_meteor_cast":
 			return "守备官消耗全部虔诚，指定了一处陨石落点。"
 		"piety_meteor_impact":
-			return "陨石砸向敌阵，命中%d名敌人、击退%d名，并点燃了地面；没有伤及友方。" % [
-				int(payload.get("enemy_hit_count", 0)),
-				int(payload.get("enemy_defeated_count", 0))
-			]
+			return "由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。"
+		"piety_meteor_enemy_defeated":
+			return "陨石以相当直接的正义砸死了%d名敌人；看来天意这次没有采用含蓄的表达方式。" % int(payload.get("enemy_defeated_count", 0))
 		"damage_taken":
 			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
 			var damage_actor_id := "" if damage_actor_ids.is_empty() else damage_actor_ids[0]
@@ -1928,6 +1942,20 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("damage", 0)),
 				int(payload.get("hp_before", 0)),
 				int(payload.get("hp_after", 0))
+			]
+		"horse_damaged":
+			return "%s骑乘的%s承受了%.1f点伤害，HP 从%.1f降到%.1f。" % [
+				actor,
+				str(payload.get("horse_name", "马匹")),
+				float(payload.get("damage", 0.0)),
+				float(payload.get("hp_before", 0.0)),
+				float(payload.get("hp_after", 0.0))
+			]
+		"horse_died":
+			return "%s骑乘的%s在战斗中阵亡，%s改为步战。" % [
+				actor,
+				str(payload.get("horse_name", "马匹")),
+				actor
 			]
 		"unconscious_started":
 			return "%s在%s昏迷了。" % [actor, location]
@@ -2469,7 +2497,7 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		target_ids.append(str(payload["source_event_id"]))
 	if event_type == "attack_made" and payload.has("target_enemy_id"):
 		target_ids.append(str(payload["target_enemy_id"]))
-	if ["damage_taken", "unconscious_started", "healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("target_npc_id"):
+	if ["damage_taken", "horse_damaged", "horse_died", "unconscious_started", "healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("target_npc_id"):
 		target_ids.append(str(payload["target_npc_id"]))
 	if ["healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("healer_npc_id"):
 		target_ids.append(str(payload["healer_npc_id"]))
@@ -2481,7 +2509,7 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		for key in ["deployment_id", "device_id", "slot_id", "target_enemy_id"]:
 			if payload.has(key):
 				target_ids.append(str(payload[key]))
-	if ["piety_meteor_cast", "piety_meteor_impact"].has(event_type) and payload.has("cast_id"):
+	if ["piety_meteor_cast", "piety_meteor_impact", "piety_meteor_enemy_defeated"].has(event_type) and payload.has("cast_id"):
 		target_ids.append(str(payload["cast_id"]))
 	return target_ids
 

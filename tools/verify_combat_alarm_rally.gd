@@ -91,8 +91,24 @@ func _init() -> void:
 		push_error("Weapon-only NPC should not show mounted combat visual")
 		quit(1)
 		return
+	if bool(veteran_state.get("combat_mounted", false)) or str(veteran_state.get("combat_mount_phase", "")) != "going_to_stable_horse":
+		push_error("Assigned rider should walk to the stable horse before becoming mounted")
+		quit(1)
+		return
+	var meeting_horse: Dictionary = horse_system.get_horse_snapshot(horse_id)
+	var meeting_movement: Dictionary = meeting_horse.get("movement_state", {})
+	if str(meeting_horse.get("location", "")) != "stable" or str(meeting_movement.get("phase", "")) != "waiting_for_rider_at_stable" or not bool(meeting_movement.get("horse_stationary", false)):
+		push_error("Assigned horse should remain stationary in its stable during rally")
+		quit(1)
+		return
+	if not bool(horse_system.debug_complete_horse_transition(horse_id).get("ok", false)):
+		push_error("Could not complete horse-rider rendezvous in rally verification")
+		quit(1)
+		return
+	await process_frame
+	veteran_state = npc_system.get_npc_state("veteran_deputy_01")
 	if not bool(veteran_state.get("combat_mounted", false)):
-		push_error("Mounted NPC should show mounted visual during rally")
+		push_error("NPC should become mounted after meeting the assigned horse")
 		quit(1)
 		return
 
@@ -103,14 +119,20 @@ func _init() -> void:
 		push_error("Active rally snapshot should include both responding NPCs")
 		quit(1)
 		return
-	if str(stableman_rally.get("formation_row", "")) != "front" or str(veteran_rally.get("formation_row", "")) != "back":
-		push_error("Melee should rally in front and ranged behind: %s" % JSON.stringify(rallies))
+	if (
+		str(stableman_rally.get("formation_row", "")) != "melee_front"
+		or not str(veteran_rally.get("formation_row", "")).begins_with("cavalry_")
+	):
+		push_error("Melee should rally in the center front and mounted units on a wing: %s" % JSON.stringify(rallies))
 		quit(1)
 		return
 	var stable_pos: Dictionary = stableman_rally.get("position", {})
 	var veteran_pos: Dictionary = veteran_rally.get("position", {})
-	if float(stable_pos.get("z", 0.0)) <= float(veteran_pos.get("z", 0.0)):
-		push_error("Frontline rally point should be closer to enemy direction than ranged row")
+	if (
+		float(stable_pos.get("z", 0.0)) <= float(veteran_pos.get("z", 0.0))
+		or absf(float(veteran_pos.get("x", 0.0)) - 5.0) < 4.0
+	):
+		push_error("Frontline should face the enemy while the mounted unit holds a side wing")
 		quit(1)
 		return
 
@@ -123,10 +145,11 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var veteran_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/VeteranDeputy01")
-	var mount_visual := veteran_node.get_node_or_null("CombatMountVisual") as MeshInstance3D if veteran_node != null else null
-	if mount_visual == null or not mount_visual.visible:
-		push_error("Mounted NPC should display mount visual during rally")
+	var npc_node_paths: Dictionary = npc_system.get("_npc_nodes")
+	var veteran_node := npc_system.get_node_or_null(npc_node_paths.get("veteran_deputy_01", NodePath("")))
+	var art_snapshot: Dictionary = veteran_node.debug_get_character_art_snapshot() if veteran_node != null and veteran_node.has_method("debug_get_character_art_snapshot") else {}
+	if not bool(art_snapshot.get("combat_mount_visual_visible", false)) or not bool(art_snapshot.get("combat_mount_uses_imported_horse", false)):
+		push_error("Mounted NPC should display the formal imported horse during rally: %s" % JSON.stringify(art_snapshot))
 		quit(1)
 		return
 
@@ -150,6 +173,7 @@ func _init() -> void:
 		or (
 			encounter_action != "combat_ready"
 			and not encounter_action.begins_with("attacking_")
+			and not encounter_action.begins_with("winding_up_")
 		)
 	):
 		push_error("NPC encountering enemy during rally should switch to combat readiness or attack: %s" % JSON.stringify(stableman_state))

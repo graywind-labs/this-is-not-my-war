@@ -39,6 +39,8 @@
 [ext_resource type="Script" path="res://scripts/world/StationLayoutController.gd" id="37_station_layout"]
 [ext_resource type="Script" path="res://scripts/systems/SpatialSaveSystem.gd" id="38_spatial_save"]
 [ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilotPreviewController.gd" id="39_chibi_pilot_preview"]
+[ext_resource type="Script" path="res://scripts/presentation/combat/AttackRangeIndicator.gd" id="40_attack_range_indicator"]
+[ext_resource type="Script" path="res://scripts/ui/HorsePanel.gd" id="41_horse_panel"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -378,6 +380,9 @@ text = "后门"
 [node name="Enemies" type="Node3D" parent="WorldRoot/Station" unique_id=1853672627]
 
 [node name="Effects" type="Node3D" parent="WorldRoot/Station"]
+
+[node name="AttackRangeIndicator" type="Node3D" parent="WorldRoot/Station/Effects"]
+script = ExtResource("40_attack_range_indicator")
 
 [node name="DefenseDevices" type="Node3D" parent="WorldRoot/Station"]
 script = ExtResource("26_defense_device_presenter")
@@ -880,6 +885,20 @@ visible = false
 layout_mode = 2
 tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。"
 text = "指令"
+
+[node name="HorsePanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -666.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 536.0
+grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
+script = ExtResource("41_horse_panel")
 
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false

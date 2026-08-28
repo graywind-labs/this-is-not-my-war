@@ -235,7 +235,7 @@ func _init() -> void:
 		var restored: Vector3 = npc_system.get_npc_world_position(npc_id)
 		var original: Vector3 = original_positions.get(npc_id, Vector3.INF)
 		if restored.distance_to(original) > 0.01:
-			_fail("NPC was not restored after fifth-wave pressure: %s" % npc_id)
+			_fail("NPC was not restored after fifth-wave pressure: %s original=%s restored=%s distance=%.3f" % [npc_id, original, restored, restored.distance_to(original)])
 			return
 	var orphan_count_after := int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
 	if orphan_count_after > orphan_count_before:

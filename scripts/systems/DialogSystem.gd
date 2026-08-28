@@ -453,6 +453,24 @@ func start_autonomous_npc_dialogue(
 		if plan_context.get("assigned_plan_item", {}) is Dictionary
 		else {}
 	)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system != null
+		and npc_system.has_method("get_formal_dialogue_approach_snapshot")
+		and npc_system.has_method("bind_formal_dialogue_session")
+	):
+		var formal_snapshot: Dictionary = npc_system.get_formal_dialogue_approach_snapshot(speaker_npc_id)
+		if bool(formal_snapshot.get("active", false)) and str(formal_snapshot.get("role", "")) == "speaker":
+			var bind_result: Dictionary = npc_system.bind_formal_dialogue_session(
+				speaker_npc_id,
+				str(_active_dialogue.get("dialogue_id", ""))
+			)
+			if not bool(bind_result.get("ok", false)):
+				end_dialogue("autonomous_dialogue_spatial_bind_failed")
+				return _failure(
+					str(bind_result.get("reason", "formal_dialogue_spatial_bind_failed")),
+					"NPC 对话邀请无法绑定正式空间会话。"
+				)
 	var send_result := _send_autonomous_dialogue_invitation(clean_opening, true)
 	if not bool(send_result.get("ok", false)):
 		var failure_message := str(send_result.get("message", "无法发起 NPC 对话邀请判定。"))
@@ -523,6 +541,12 @@ func _send_autonomous_dialogue_invitation(opening_text: String, async_request: b
 		"target_id": target_id,
 		"target_name": target_name
 	}
+	var presentation_result := _play_formal_dialogue_gesture(speaker_id, "invitation_sent")
+	if not bool(presentation_result.get("ok", false)):
+		return _failure(
+			str(presentation_result.get("reason", "formal_dialogue_invitation_gesture_failed")),
+			"NPC 已到达交谈位置，但邀请示意动作无法播放。"
+		)
 	_active_dialogue["waiting"] = true
 	_active_dialogue["dialogue_phase"] = "invitation"
 	if async_request and llm_bridge.has_method("request_npc_dialogue_async"):
@@ -1140,12 +1164,12 @@ func _activate_autonomous_dialogue_after_invitation() -> Dictionary:
 	var participant_ids: Array = _active_dialogue.get("participant_npc_ids", [])
 	if dialogue_id.is_empty() or participant_ids.size() != 2:
 		return _failure("invalid_participants", "NPC 对话邀请缺少双方参与者。")
-	if npc_system.has_method("prepare_formal_dialogue_activation"):
-		var spatial_transfer_result: Dictionary = npc_system.prepare_formal_dialogue_activation(dialogue_id)
-		if not bool(spatial_transfer_result.get("ok", false)):
+	if npc_system.has_method("stage_formal_dialogue_acceptance"):
+		var stage_result: Dictionary = npc_system.stage_formal_dialogue_acceptance(dialogue_id)
+		if not bool(stage_result.get("ok", false)):
 			return _failure(
-				str(spatial_transfer_result.get("reason", "formal_dialogue_spatial_transfer_failed")),
-				"NPC 对话的空间权属交接失败。"
+				str(stage_result.get("reason", "formal_dialogue_acceptance_stage_failed")),
+				"NPC 对话接受阶段无法保留受邀者的真实站位。"
 			)
 	var interrupted_actions: Dictionary = {}
 	for raw_participant_id in participant_ids:
@@ -1157,6 +1181,23 @@ func _activate_autonomous_dialogue_after_invitation() -> Dictionary:
 		if _interrupt_for_dialogue(participant_id) and not interrupted_action_id.is_empty():
 			interrupted_actions[participant_id] = interrupted_action_id
 	_active_dialogue["interrupted_plan_action_by_npc"] = interrupted_actions
+	# Acceptance is a strict authority/presentation boundary: ActionSystem stops
+	# the invitee's current work first, then the spatial layer faces both actors,
+	# then the invitee performs one authored gesture before conversation state is set.
+	if npc_system.has_method("prepare_formal_dialogue_activation"):
+		var spatial_transfer_result: Dictionary = npc_system.prepare_formal_dialogue_activation(dialogue_id)
+		if not bool(spatial_transfer_result.get("ok", false)):
+			return _failure(
+				str(spatial_transfer_result.get("reason", "formal_dialogue_spatial_transfer_failed")),
+				"NPC 对话的空间权属交接失败。"
+			)
+	var target_npc_id := str(_active_dialogue.get("target_npc_id", ""))
+	var presentation_result := _play_formal_dialogue_gesture(target_npc_id, "invitation_accepted")
+	if not bool(presentation_result.get("ok", false)):
+		return _failure(
+			str(presentation_result.get("reason", "formal_dialogue_acceptance_gesture_failed")),
+			"受邀 NPC 已接受对话，但接受示意动作无法播放。"
+		)
 	_active_dialogue["dialogue_phase"] = "conversation"
 	_active_dialogue["session_status"] = "active"
 	for raw_participant_id in participant_ids:
@@ -1167,6 +1208,17 @@ func _activate_autonomous_dialogue_after_invitation() -> Dictionary:
 			"last_action_result": "npc_dialogue_invitation_accepted"
 		})
 	return {"ok": true}
+
+
+func _play_formal_dialogue_gesture(npc_id: String, event_kind: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("play_formal_dialogue_presentation_event"):
+		return {"ok": false, "reason": "npc_presentation_event_system_missing"}
+	return npc_system.play_formal_dialogue_presentation_event(
+		str(_active_dialogue.get("dialogue_id", "")),
+		npc_id,
+		event_kind
+	)
 
 
 func send_npc_message(text: String, async_request: bool = false, speaker_text_already_recorded: bool = false) -> Dictionary:

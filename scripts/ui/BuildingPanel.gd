@@ -117,6 +117,10 @@ func _ready() -> void:
 		if event_bus.has_signal("time_scale_changed"):
 			event_bus.time_scale_changed.connect(_on_time_scale_changed)
 		event_bus.npc_clicked.connect(_on_npc_clicked)
+		if event_bus.has_signal("horse_clicked"):
+			event_bus.horse_clicked.connect(_on_horse_clicked)
+		if event_bus.has_signal("defense_device_clicked"):
+			event_bus.defense_device_clicked.connect(_on_defense_device_clicked)
 		if event_bus.has_signal("defense_device_state_changed"):
 			event_bus.defense_device_state_changed.connect(_on_defense_device_state_changed)
 		if event_bus.has_signal("crafting_state_changed"):
@@ -319,6 +323,19 @@ func _on_time_scale_changed(
 
 
 func _on_npc_clicked(_npc_id: String) -> void:
+	_hide_action_hint()
+	_cancel_pending_panel_fit()
+	_reveal_after_fit = false
+	modulate.a = 1.0
+	visible = false
+	_set_panel_interaction_enabled(false)
+
+
+func _on_horse_clicked(_horse_id: String) -> void:
+	_on_npc_clicked("")
+
+
+func _on_defense_device_clicked(_deployment_id: String) -> void:
 	_hide_action_hint()
 	_cancel_pending_panel_fit()
 	_reveal_after_fit = false
@@ -748,11 +765,14 @@ func _refresh_horse_section() -> void:
 		_horse_summary_label.text = "马匹系统不可用"
 		return
 	var summary: Dictionary = horse_system.get_stable_summary() if horse_system.has_method("get_stable_summary") else {}
-	_horse_summary_label.text = "在厩：%d 匹（成年 %d / 小马 %d）｜离厩：%d" % [
+	_horse_summary_label.text = "在厩：%d 匹（成年 %d / 小马 %d）｜离厩：%d｜马槽：%d / %d%s" % [
 		int(summary.get("total", summary.get("stable_total", 0))),
 		int(summary.get("adult", summary.get("stable_adult", 0))),
 		int(summary.get("foal", summary.get("stable_foal", 0))),
-		int(summary.get("outside", summary.get("ridden", 0)))
+		int(summary.get("outside", summary.get("ridden", 0))),
+		int(summary.get("occupied_slots", 0)),
+		int(summary.get("capacity", 0)),
+		"（已满，繁育暂停）" if bool(summary.get("full", false)) else ""
 	]
 	_clear_container(_horse_list)
 	if not horse_system.has_method("get_horse_ids"):
@@ -813,8 +833,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 	var assigned_npc_id := str(horse.get("assigned_npc_id", ""))
 	var location := str(horse.get("location", "stable"))
 	var feeding: Dictionary = horse.get("feeding", {}) if horse.get("feeding", {}) is Dictionary else {}
+	var alive := bool(horse.get("alive", true))
 	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马"]
-	status_parts.append("在厩" if location == "stable" else "骑乘中" if location == "ridden" else "位置未知")
+	status_parts.append(_format_horse_location(location))
 	if bool(feeding.get("active", false)):
 		status_parts.append("进食 %d%%" % int(round(float(feeding.get("progress", 0.0)) * 100.0)))
 	elif bool(feeding.get("waiting_for_grain", false)):
@@ -822,7 +843,13 @@ func _add_horse_card(horse: Dictionary) -> void:
 	if bool(horse.get("recovering", false)):
 		status_parts.append("缓慢恢复")
 	var header := Label.new()
-	header.text = "%s（%s）｜%s" % [str(horse.get("name", horse_id)), horse_id, "、".join(status_parts)]
+	header.text = "%s（%s）｜%s｜%s｜马槽 %s" % [
+		str(horse.get("name", horse_id)),
+		horse_id,
+		str(horse.get("coat_name", "未知毛色")),
+		"、".join(status_parts),
+		str(horse.get("stable_slot_id", "已释放"))
+	]
 	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(header)
 	var base_hp := float(horse.get("base_hp", maxf(0.0, float(horse.get("hp", 0.0)) - float(horse.get("care_bonus_hp", 0.0)))))
@@ -860,7 +887,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 	var breeding_probability := clampf(float(horse.get("breeding_probability", 0.0)), 0.0, 1.0)
 	var breeding_text := "繁育概率 %.2f%%" % (breeding_probability * 100.0)
 	var cooldown_seconds := maxf(0.0, float(horse.get("breeding_cooldown_remaining_seconds", 0.0)))
-	if cooldown_seconds > 0.0:
+	if not alive:
+		breeding_text += "（阵亡）"
+	elif cooldown_seconds > 0.0:
 		breeding_text += "（冷却 %s）" % _format_horse_cooldown(cooldown_seconds)
 	elif not bool(horse.get("is_adult", false)):
 		breeding_text += "（未成年）"
@@ -879,6 +908,22 @@ func _add_horse_card(horse: Dictionary) -> void:
 		"无" if assigned_npc_id.is_empty() else _format_npc_name(assigned_npc_id)
 	)
 	content.add_child(assignment)
+
+
+func _format_horse_location(location: String) -> String:
+	match location:
+		"stable":
+			return "在厩"
+		"approaching_rider":
+			return "奔向骑手"
+		"ridden":
+			return "骑乘中"
+		"returning_stable":
+			return "返厩中"
+		"dead":
+			return "已阵亡"
+		_:
+			return "位置未知"
 
 
 func _add_horse_progress(
@@ -1562,3 +1607,6 @@ func _on_close_pressed() -> void:
 	modulate.a = 1.0
 	visible = false
 	_set_panel_interaction_enabled(false)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("world_selection_cleared"):
+		event_bus.world_selection_cleared.emit()

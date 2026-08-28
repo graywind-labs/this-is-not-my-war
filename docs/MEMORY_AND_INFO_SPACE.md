@@ -1,5 +1,23 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0154 小窗与伤害表现的信息边界
+
+- 人物小窗的 `portrait_idle_talk_gesture` 是纯临时表现事件，不进入事件库、见闻、知识图谱、日记、地点传播或 Prompt。点击前后 MemorySystem 事件数不变。
+- 对话攻击继续只写既有唯一 `damage_taken` 事实；受击表现引用其 `event_id`，不新增第二条伤害记忆。随后若 HP 归零，既有 `unconscious_started` 仍独立记录并成为最终状态。
+- `damage_hit_react` 快照只用于表现去重和验收，包含 `damage_event_id / hp_before / hp_after / suppressed_by_unconscious`；UI 刷新、重复 event ID 和表现结束都不会写记忆或广播见闻。
+
+## T0152 邀请示意的信息边界
+
+- `invitation_sent / invitation_accepted` 临时表现事件只用于世界角色动画与验收快照，不写 NPC 事件库、见闻、知识、日记或地点传播。
+- 邀请是否接受、正式对话历史及行动中断继续沿既有 DialogSystem / ActionSystem 权威链记录；动作播放成功本身不等于对方接受，也不能生成新的对话事实。
+- 取消、路径失败、拒绝和重复 event ID 不补造示意记录；本任务没有新增记忆 Schema、传播范围或 LLM payload 字段。
+
+## T0142 攻击相位状态的信息边界
+
+- `winding_up_<target_id>` 与 `attacking_<target_id>` 是运行态 `current_action` 表现，分别格式化为“准备攻击敌人”和“攻击敌人”；它们不是 `action_defs.json` 中可计划、可执行的新行动，也不应触发未知 Action ID 查询。
+- 时间轴的 sequence、elapsed、impact 和 recovery 只用于战斗权威 / 调试观察，不写入 NPC 事件或见闻。只有 CombatSystem 在命中点实际结算后才沿既有 `attack_made / damage_taken / unconscious` 事件链记录事实，取消的起手不生成攻击事实。
+- 本任务没有新增事件类型、传播范围、Prompt 字段或 LLM 调用。
+
 ## T0131-P1 工械坊建筑表现的信息边界
 
 - 墙体、屋顶透明、订单图板、工具 / 吊装 / 测量装饰和逐级外观都只是表现，不写事件、见闻、地点状态或制造事实；GM `workshop_art_level` 也只切换画面。
@@ -377,6 +395,7 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 
 - `private`：只进入 `subject_npc_id` 的事件库。
 - `local_public`：进入 `subject_npc_id` 事件库，并即时广播到所属地点/建筑信息节点；节点转发给当时已经在场的 NPC 后不保存该事件。广场是普通地点，因此广场公开信息统一使用 `location_id == "plaza"` 的 `local_public`。
+- 全站公开例外仍使用 `local_public` 事件结构，但按明确事件类型绕过地点限制，向所有当前可接收见闻的在站 NPC 广播一次。当前例外仅有公告牌双页 `plaza_notice_changed / plaza_schedule_changed` 与虔诚陨石落地大事件 `piety_meteor_impact / piety_meteor_enemy_defeated`；睡眠、昏迷、已逃离过滤不变，地点节点仍不保存历史。
 
 ## Summary 生成规则
 
@@ -430,6 +449,8 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `merchant_trade_completed` | `守备官从商人处购买了{amount}份{resource_name}，支付了{total_price}枚第纳尔。` / `守备官向商人出售了{amount}份{resource_name}，获得了{total_price}枚第纳尔。` | `merchant_id`, `direction`, `resource_id`, `resource_name`, `amount`, `unit_price`, `total_price`, `money_delta`, `resource_delta`；T1507 已实现 |
 | `defense_device_deployed` | `守备官把{device_name}部署在{slot_name}，消耗了{inventory_cost}份工程器械库存。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `slot_name`, `building_id`, `inventory_resource_id`, `inventory_cost`；T1508 已实现 |
 | `defense_device_triggered` | `守备官部署的{device_name}攻击了{target_enemy_name}，造成{damage}点伤害。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `target_enemy_id`, `target_enemy_name`, `damage`, `hp_before`, `hp_after`, `defeated`；T1508 已实现弩床 / 箭塔触发 |
+| `piety_meteor_impact` | `由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。` | `cast_id`, `target_position`, `radius`, `impact_damage`, `impact_max_targets`, `enemy_hit_count`, `enemy_defeated_count`, `burn_duration_seconds`, `friendly_fire=false`；T0159 起全站公开，T0172 起选点时不另写施放事件 |
+| `piety_meteor_enemy_defeated` | `陨石以相当直接的正义砸死了{enemy_defeated_count}名敌人；看来天意这次没有采用含蓄的表达方式。` | `cast_id`, `enemy_defeated_count`；仅冲击实际击败至少一人时生成，T0159 起全站公开 |
 
 `actor_ids`、`target_ids` 和 `location_id` 负责保留稳定事实属性；summary 模板负责 UI、调试日志和 prompt 摘要。不要把事件系统做成试图从任意主宾关系自动生成句子的万能事件句子生成器。
 
@@ -442,12 +463,14 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 - 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`wine_consumed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`prayer_joined_mass`、`prayer_resumed_alone`、`visit_started`、`visit_completed`。
 - T0051 后，守备官-NPC 对话按完整会话记录：玩家发送的消息立即进入会话缓冲，“完成对话”时把当前完整历史写成一条 `dialogue_turn`；等待中的 NPC 回复会被取消且不补写。取消或无攻击的挂起超时不入库、不广播、不触发判别。NPC-NPC 自主对话仍按实际完成轮次记录。NPC 主动交涉的发起意图写入 `proactive_talk_started`，预设开场问题随完整会话在完成时入库，不再在点击气泡时单独写 `proactive_talk_message`。
 - 玩家交互：`money_given`、`wine_given`、`equipment_given`、`equipment_changed`、`order_assigned`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。正式守备官惩戒攻击写入 `damage_taken`，并在 payload 中保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
+- T0138 后，坐骑槽清空的 `equipment_changed` 摘要固定为“守备官收回了分配给 {NPC} 的马匹。”；马匹实际承伤 / 阵亡分别写 `horse_damaged / horse_died`，payload 保存 `horse_id / horse_name / npc_id / damage / hp_before / hp_after` 及敌军来源。事件只记录 HorseSystem 已提交的 HP / 死亡事实，不让 MemorySystem 参与分伤或解绑结算；系统强制解绑也不伪造成守备官手动收回事件。
 - 主动交涉：`proactive_talk_started` 记录 NPC 发起交涉及计划中确定的问题，固定为 `private`。`proactive_talk_message` 仅作为旧事件类型兼容保留；当前玩家点击气泡后的开场内容随完成会话的 `dialogue_turn` 入库。
 - 成长与状态：`skill_improved`、`attribute_improved`、`npc_recruited`、`npc_left_recruited_state`。
 - 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`。
 - 建筑与资源见闻：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`。
 - 公告与商人：`plaza_notice_changed`、`merchant_arrived`、`merchant_departed`、`merchant_trade_completed`。
 - 工程器械：`defense_device_deployed`、`defense_device_triggered`。
+- 虔诚权能：正式流程只生成 `piety_meteor_impact`、`piety_meteor_enemy_defeated`，两者均为全站公开例外。`piety_meteor_cast` 仅保留历史数据兼容，T0172 起不再生成。
 
 第一版实现可以只接入少量现有行动事件，但接口与数据结构不得把未来事件类型堵死。
 
@@ -480,6 +503,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - T0065 后，主厅前公告牌双页分别调用 `MemorySystem.set_plaza_notice(...)` / `set_plaza_reference_schedule(...)`：实际变更会更新广场当前状态，并生成一条 `plaza_notice_changed` / `plaza_schedule_changed`，由 MemorySystem 按事件类型向全站当前可接收见闻的 NPC 广播；相同内容不重复广播。summary 分别使用“守备官更新了通告”与“守备官更新了参考日程”，新内容保留在各自 payload 中。公告牌只是输入 / 显示接口，不是建筑信息节点。任一建筑的可传播外部状态变化仍生成带具体建筑名和具体状态的 `plaza_status_changed` 广场公开状态事件，只由当时在广场的 NPC 接收；summary 不使用“建筑状态更新”这类空泛前缀。
 - T1507 后，MerchantSystem 在商人到达、离开和成功交易时分别生成 `merchant_arrived`、`merchant_departed`、`merchant_trade_completed`，均为 `location_id == "plaza"` 的 `local_public` 事件。交易事件只记录 ResourceSystem 已完成的资源事实；余额/库存不足等失败不写成功事件。
 - T1508 修订后，DefenseDeviceSystem 成功部署时以 `guard_officer` 为 `subject_npc_id` 写入 `defense_device_deployed`，不绑定部署 NPC，也不进入任何 NPC 的亲历事件库；事件仍按广场 `local_public` 规则广播给当前在场 NPC，失败部署不写成功事件。弩床 / 箭塔实际造成程序伤害后再写 `defense_device_triggered`，payload 只记录 CombatSystem 已结算的敌人 HP 事实。
+- T0159 后，PietySystem 在陨石真正落地并取得 CombatSystem 冲击结果后写入 `piety_meteor_impact`；MemorySystem 将其向全站当前可接收见闻的 NPC 广播。T0172 起选点确认与虔诚消费不写正式事件，只保留落地事实。`defeated_count > 0` 时再写一条 `piety_meteor_enemy_defeated`，零击败不生成。两条摘要会随既有紧凑短期记忆进入后续 LLM 上下文，但 MemorySystem 不参与伤害、击杀或无友伤判断；持续燃烧仍不按 tick 写事件。
 - `location_entered` / `location_exited` 事件库记录只保留进入 / 离开的行动事实；完整地点状态不再重复塞入亲历事件。进入者通过见闻库获得一次当前状态快照：进入广场时接收广场当前在场 NPC、广场在场 NPC 的生命状态 / 行动状态和所有建筑外部状态，不接收公告牌当前通告、参考日程或非强制备注；进入可进入建筑时接收该建筑完整外部 + 内部状态，包括当前在场 NPC、建筑内 NPC 的生命状态 / 行动状态和工位占用。已经在场的 NPC 只接收“某人进入 / 离开某地”的 `local_public` 事件，不再额外收到完整在场 NPC 列表或完整人员状态列表。
 - 后续地点或建筑状态变化只写入变化字段对应的见闻，不重新广播完整地点快照。例如建筑受损只广播受损，升级只广播等级变化，单个工位占用变化只广播该工位变化；未变化的建筑等级、工位、公告和在场人员不重复进入见闻库。广场建筑状态见闻使用 `changed_fields`，可进入建筑内部工位变化使用 `changed_workstations`。
 - T0035/T0037 后，`MemorySystem` 已按白名单读取、缓存和比较 `special_state`，制造整数阶段 / 目标与在厩马匹数量只在对应室内形成进入快照和字段级差量；小数制造进度和逐匹马详情不进入信息节点。

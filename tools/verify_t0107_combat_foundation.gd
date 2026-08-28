@@ -341,7 +341,16 @@ func _verify_charge_impact(
 			0.0
 		)
 	)
-	var attack_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, 0.1)
+	var attack_context: Dictionary = combat_system._calculate_npc_attack_context(
+		npc_id,
+		npc_system.get_npc(npc_id),
+		npc_system.get_npc_state(npc_id)
+	)
+	var impact_seconds := float((attack_context.get("animation_timing", {}) as Dictionary).get("impact_seconds", 0.0))
+	var windup_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, maxf(0.001, impact_seconds - 0.01))
+	if int(windup_result.get("attack_count", 0)) != 0:
+		return _fail("Charge collision must wait for the approved weapon impact: %s" % JSON.stringify(windup_result))
+	var attack_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, 0.02)
 	if int(attack_result.get("attack_count", 0)) != 1:
 		return _fail("Charge impact must resolve exactly one attack: %s" % JSON.stringify(attack_result))
 	var attacks: Array = attack_result.get("attacks", [])
@@ -351,9 +360,9 @@ func _verify_charge_impact(
 		impact.is_empty()
 		or int(impact.get("collision_damage", 0)) <= 0
 		or float(impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
-		or float(attack.get("raw_attack_power", 0.0)) <= base_attack
+		or (int(attack.get("damage", 0)) > 0 and float(attack.get("raw_attack_power", 0.0)) <= base_attack)
 	):
-		return _fail("Charge must add horse collision and amplified weapon damage.")
+		return _fail("Charge must always add horse collision and amplify weapon damage only when the weapon actually contacts.")
 	if not bool(impact.get("interrupted_windup", false)):
 		return _fail("Horse collision stagger must interrupt an enemy windup.")
 	var enemy_after: Dictionary = combat_system.get_enemy(enemy_id)

@@ -19,6 +19,7 @@ const REQUIRED_STATES := [
 	"get_up",
 	"vehicle_seated"
 ]
+const COMBAT_PRESENTATION_STATES := ["attack", "hit_react", "unconscious", "get_up"]
 const LOOPING_STATES := ["idle", "walk", "run", "talk", "work", "training_instructor", "training_practice", "mass_leader", "seated_prayer", "seated_eating", "vehicle_seated"]
 const STATE_CLIPS := {
 	"idle": "Idle_FoldArms",
@@ -55,6 +56,7 @@ const SOCKET_BONES := {
 const DEFAULT_STATE := "idle"
 const HIT_REACT_SECONDS := 0.55
 const GET_UP_SECONDS := 1.25
+const TALK_GESTURE_FALLBACK_SECONDS := 1.25
 const DAMAGE_FLASH_SECONDS := 0.28
 const SEATED_PRAYER_POSE_OFFSET := Vector3(0.0, -0.60, 0.08)
 const SEATED_EATING_POSE_OFFSET := Vector3(0.0, -0.60, 0.08)
@@ -85,6 +87,10 @@ var _current_state := DEFAULT_STATE
 var _desired_state := DEFAULT_STATE
 var _is_moving := false
 var _movement_speed := 0.0
+var _locomotion_state := "walk"
+var _locomotion_reference_speed := 3.2
+var _locomotion_minimum_speed_scale := 0.35
+var _locomotion_maximum_speed_scale := 1.6
 var _movement_activation_count := 0
 var _last_locomotion_state := ""
 var _target_yaw := 0.0
@@ -102,6 +108,10 @@ var _damage_feedback_count := 0
 var _hit_offset := Vector3.ZERO
 var _hit_velocity := Vector3.ZERO
 var _vehicle_pose_applied := false
+var _last_temporary_presentation_event_id := ""
+var _temporary_presentation_event_count := 0
+var _processed_temporary_presentation_event_ids: Dictionary = {}
+var _temporary_presentation_event_order: Array[String] = []
 
 
 func _ready() -> void:
@@ -142,16 +152,33 @@ func apply_profile(npc_profile: Dictionary) -> void:
 		_start_transient("", 0.0)
 	elif revived:
 		_start_transient("get_up", GET_UP_SECONDS)
-	elif took_damage:
-		_start_transient("hit_react", HIT_REACT_SECONDS)
 	_apply_profile_state(false)
 
 
-func set_movement_active(active: bool, world_speed: float = 0.0) -> void:
+func set_movement_active(
+	active: bool,
+	world_speed: float = 0.0,
+	locomotion_state: String = "",
+	reference_speed: float = 0.0,
+	minimum_speed_scale: float = 0.35,
+	maximum_speed_scale: float = 1.6
+) -> void:
 	if active and not _is_moving:
 		_movement_activation_count += 1
 	_is_moving = active
 	_movement_speed = maxf(0.0, world_speed)
+	if locomotion_state in ["walk", "run"]:
+		_locomotion_state = locomotion_state
+	else:
+		var states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
+		var behavior_mode := str(states.get("behavior_mode", ""))
+		_locomotion_state = "run" if world_speed > 5.5 or ["rally", "combat", "avoid_combat", "escaped"].has(behavior_mode) else "walk"
+	if reference_speed > 0.0:
+		_locomotion_reference_speed = reference_speed
+	else:
+		_locomotion_reference_speed = 5.0 if _locomotion_state == "run" else 3.2
+	_locomotion_minimum_speed_scale = maxf(0.0, minimum_speed_scale)
+	_locomotion_maximum_speed_scale = maxf(_locomotion_minimum_speed_scale, maximum_speed_scale)
 	_apply_profile_state(false)
 	if active:
 		_last_locomotion_state = _desired_state
@@ -164,6 +191,43 @@ func set_facing_direction(direction: Vector3) -> void:
 	flat_direction = flat_direction.normalized()
 	_target_facing_direction = flat_direction
 	_target_yaw = atan2(-flat_direction.x, -flat_direction.z)
+
+
+func play_temporary_presentation_action(action_id: String, event_id: String) -> Dictionary:
+	if not action_id in ["talk_gesture", "hit_react"]:
+		return {"ok": false, "reason": "unsupported_temporary_presentation_action", "action_id": action_id}
+	if event_id.is_empty():
+		return {"ok": false, "reason": "temporary_presentation_event_id_missing"}
+	if _processed_temporary_presentation_event_ids.has(event_id):
+		return {
+			"ok": true,
+			"duplicate": true,
+			"event_id": event_id,
+			"presentation_state": "talk" if action_id == "talk_gesture" else "hit_react"
+		}
+	var states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
+	if bool(states.get("unconscious", false)) or bool(states.get("escaped", false)):
+		return {"ok": false, "reason": "npc_presentation_unavailable", "event_id": event_id}
+	var presentation_state := "talk" if action_id == "talk_gesture" else "hit_react"
+	var duration := TALK_GESTURE_FALLBACK_SECONDS if action_id == "talk_gesture" else HIT_REACT_SECONDS
+	var clip_name := str(STATE_CLIPS.get(presentation_state, ""))
+	if _animation_player != null and _animation_player.has_animation(clip_name):
+		duration = maxf(0.1, _animation_player.get_animation(clip_name).length)
+	_last_temporary_presentation_event_id = event_id
+	_temporary_presentation_event_count += 1
+	_processed_temporary_presentation_event_ids[event_id] = true
+	_temporary_presentation_event_order.append(event_id)
+	if _temporary_presentation_event_order.size() > 32:
+		_processed_temporary_presentation_event_ids.erase(_temporary_presentation_event_order.pop_front())
+	_start_transient(presentation_state, duration)
+	_apply_profile_state(true)
+	return {
+		"ok": true,
+		"duplicate": false,
+		"event_id": event_id,
+		"presentation_state": presentation_state,
+		"duration_seconds": duration
+	}
 
 
 func get_visible_forward() -> Vector3:
@@ -244,6 +308,9 @@ func debug_get_snapshot() -> Dictionary:
 		"desired_state": _desired_state,
 		"logical_moving": _is_moving,
 		"movement_speed": _movement_speed,
+		"locomotion_state": _locomotion_state,
+		"locomotion_reference_speed": _locomotion_reference_speed,
+		"locomotion_animation_speed_scale": _animation_player.speed_scale if _animation_player != null and _desired_state in ["walk", "run"] else 0.0,
 		"movement_activation_count": _movement_activation_count,
 		"last_locomotion_state": _last_locomotion_state,
 		"visual_forward": -_character_pivot.global_basis.z.normalized(),
@@ -272,12 +339,18 @@ func debug_get_snapshot() -> Dictionary:
 		"vehicle_seated_pose": vehicle_seated_pose,
 		"vehicle_pose_applied": _vehicle_pose_applied,
 		"damage_flash_remaining": _damage_flash_remaining,
+		"temporary_presentation_state": _transient_state,
+		"last_temporary_presentation_event_id": _last_temporary_presentation_event_id,
+		"temporary_presentation_event_count": _temporary_presentation_event_count,
 		"fall_feedback_mode": "animated_fall_with_physics_impulse",
 		"authority_role": "presentation_only"
 	}
 
 
 func _process(delta: float) -> void:
+	var combat_delta := _get_combat_frame_delta_seconds(delta)
+	if _blood_particles != null:
+		_blood_particles.speed_scale = _get_combat_frame_rate()
 	var gameplay_paused := _is_gameplay_paused()
 	if vehicle_seated_pose:
 		_animation_tree.active = not gameplay_paused
@@ -286,23 +359,24 @@ func _process(delta: float) -> void:
 		_vehicle_pose_applied = _get_playback_state() == "vehicle_seated"
 		if gameplay_paused:
 			return
-		_update_combat_feedback(delta)
+		_update_combat_feedback(combat_delta)
 		return
 	if gameplay_paused != _animation_paused:
 		_animation_paused = gameplay_paused
 		_animation_tree.active = not gameplay_paused
 		if not gameplay_paused:
 			_transition_to(_desired_state, true)
+	_sync_animation_speed(gameplay_paused)
 	if gameplay_paused:
 		return
-	_update_combat_feedback(delta)
+	_update_combat_feedback(combat_delta)
 	_character_pivot.rotation.y = lerp_angle(
 		_character_pivot.rotation.y,
 		_target_yaw,
 		clampf(delta / maxf(0.01, facing_turn_speed), 0.0, 1.0)
 	)
 	if not _transient_state.is_empty() and _transient_remaining > 0.0:
-		_transient_remaining = maxf(0.0, _transient_remaining - delta)
+		_transient_remaining = maxf(0.0, _transient_remaining - combat_delta)
 		if is_zero_approx(_transient_remaining):
 			_transient_state = ""
 			_apply_profile_state(false)
@@ -319,13 +393,20 @@ func _apply_profile_state(reset: bool) -> void:
 	_place_hammer(next_state == "work" and current_action == "work_blacksmith")
 	if _hammer != null and current_action == "receive_weapon_training":
 		_hammer.visible = false
-	if _animation_player != null:
-		if next_state == "run":
-			_animation_player.speed_scale = 1.45
-		elif next_state == "walk":
-			_animation_player.speed_scale = clampf(_movement_speed / 3.2, 0.85, 1.35)
-		else:
-			_animation_player.speed_scale = 1.0
+	_sync_animation_speed(_is_gameplay_paused())
+
+
+func _sync_animation_speed(gameplay_paused: bool) -> void:
+	if _animation_player == null:
+		return
+	if gameplay_paused:
+		_animation_player.speed_scale = 0.0
+	elif _desired_state in ["walk", "run"]:
+		_animation_player.speed_scale = clampf(_movement_speed / maxf(0.01, _locomotion_reference_speed), _locomotion_minimum_speed_scale, _locomotion_maximum_speed_scale)
+	elif _desired_state in COMBAT_PRESENTATION_STATES:
+		_animation_player.speed_scale = _get_combat_frame_rate()
+	else:
+		_animation_player.speed_scale = 1.0
 
 
 func _resolve_animation_state() -> String:
@@ -335,8 +416,7 @@ func _resolve_animation_state() -> String:
 	if not _transient_state.is_empty():
 		return _transient_state
 	if _is_moving:
-		var behavior_mode := str(states.get("behavior_mode", ""))
-		return "run" if _movement_speed > 5.5 or ["combat", "avoid_combat", "escaped"].has(behavior_mode) else "walk"
+		return _locomotion_state
 	var current_action := str(states.get("current_action", "idle"))
 	if current_action == "work_training_instructor":
 		return "training_instructor"
@@ -620,3 +700,14 @@ func _get_playback_state() -> String:
 func _is_gameplay_paused() -> bool:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
 	return time_system != null and time_system.has_method("is_gameplay_paused") and time_system.is_gameplay_paused()
+
+
+func _get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	if time_system != null and time_system.has_method("get_combat_frame_delta_seconds"):
+		return maxf(0.0, float(time_system.get_combat_frame_delta_seconds(real_delta_seconds)))
+	return maxf(0.0, real_delta_seconds)
+
+
+func _get_combat_frame_rate() -> float:
+	return _get_combat_frame_delta_seconds(1.0)

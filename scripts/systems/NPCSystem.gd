@@ -1,7 +1,11 @@
 extends Node
 
+
+signal npc_temporary_presentation_event_emitted(event: Dictionary)
+
 const NPC_PROFILES_FILE := "npc_profiles.json"
 const NPC_INITIAL_LONG_MEMORY_FILE := "npc_initial_long_memory.json"
+const NPC_INTERACTION_PRESENTATION_FILE := "npc_interaction_presentation.json"
 const NPC_SCENE_PATH := "res://scenes/npc/NPC.tscn"
 const NPC_ROOT_PATH := "/root/Main/WorldRoot/Station/NPCs"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
@@ -94,6 +98,8 @@ const UNCONSCIOUS_HEALING_MAX_BONUS_HP_PER_HOUR := 10.0
 const UNCONSCIOUS_HEALING_SKILL_THRESHOLD := 20.0
 const REVIVE_HP_RATIO := 0.3
 const PROACTIVE_TALK_DEFAULT_DURATION_SECONDS := 3600.0
+const PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS := 5.0
+const PROACTIVE_TALK_GESTURE_MIN_INTERVAL_REAL_SECONDS := 0.1
 const LLM_ACTIVITY_NONE := ""
 const LLM_ACTIVITY_DIALOGUE := "dialogue"
 const LLM_ACTIVITY_PLAN := "plan"
@@ -151,6 +157,11 @@ var _selected_npc_id: String = ""
 var _unconscious_recovery_remainders: Dictionary = {}
 var _last_plan_reevaluation_request: Dictionary = {}
 var _plan_reevaluation_requests_by_npc: Dictionary = {}
+var _temporary_presentation_event_sequence := 0
+var _temporary_presentation_event_history: Array[Dictionary] = []
+var _proactive_talk_presentation_sessions: Dictionary = {}
+var _proactive_talk_presentation_session_sequence := 0
+var _proactive_talk_gesture_interval_real_seconds := PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS
 
 
 func _ready() -> void:
@@ -161,6 +172,14 @@ func _ready() -> void:
 			event_bus.logical_time_tick.connect(_on_logical_time_tick)
 		if event_bus.has_signal("building_state_changed") and not event_bus.building_state_changed.is_connected(_on_building_state_changed):
 			event_bus.building_state_changed.connect(_on_building_state_changed)
+
+
+func _process(delta: float) -> void:
+	_advance_proactive_talk_presentations(delta)
+
+
+func _exit_tree() -> void:
+	_proactive_talk_presentation_sessions.clear()
 
 
 func initialize() -> void:
@@ -182,12 +201,18 @@ func initialize() -> void:
 	_unconscious_recovery_remainders.clear()
 	_last_plan_reevaluation_request.clear()
 	_plan_reevaluation_requests_by_npc.clear()
+	_temporary_presentation_event_sequence = 0
+	_temporary_presentation_event_history.clear()
+	_proactive_talk_presentation_sessions.clear()
+	_proactive_talk_presentation_session_sequence = 0
+	_proactive_talk_gesture_interval_real_seconds = PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS
 	_selected_npc_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
 		push_error("NPCSystem requires ConfigLoader autoload.")
 		return
+	_load_interaction_presentation_config(config_loader)
 
 	var loaded_profiles: Variant = config_loader.load_data_file(NPC_PROFILES_FILE, [])
 	if not loaded_profiles is Array:
@@ -305,6 +330,403 @@ func get_npc_world_position(npc_id: String) -> Variant:
 	return npc_node.global_position
 
 
+func displace_npcs_from_world_obstacle(
+	center: Vector3,
+	obstacle_radius: float,
+	source_id: String,
+	clearance_margin: float = 0.12
+) -> Dictionary:
+	var checked_obstacle_radius := maxf(0.0, obstacle_radius)
+	var checked_margin := maxf(0.02, clearance_margin)
+	var affected: Array[Dictionary] = []
+	var occupied: Array[Dictionary] = []
+	for npc_id in _npc_order:
+		var state := get_npc_state(npc_id)
+		if bool(state.get("escaped", false)) or str(state.get("current_location", "")) == "outside_station":
+			continue
+		var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D
+		if npc_node == null or not npc_node.visible:
+			continue
+		var body_radius := 0.35
+		if npc_node.has_method("debug_get_motion_snapshot"):
+			body_radius = maxf(
+				0.05,
+				float((npc_node.debug_get_motion_snapshot() as Dictionary).get("body_radius", body_radius))
+			)
+		if bool(state.get("combat_mounted", false)):
+			body_radius = maxf(body_radius, 0.65)
+		var planar_distance := Vector2(
+			npc_node.global_position.x - center.x,
+			npc_node.global_position.z - center.z
+		).length()
+		var entry := {
+			"npc_id": npc_id,
+			"node": npc_node,
+			"position": npc_node.global_position,
+			"body_radius": body_radius,
+		}
+		if planar_distance < checked_obstacle_radius + body_radius + checked_margin:
+			affected.append(entry)
+		else:
+			occupied.append(entry)
+
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var navigation_map := RID()
+	if controller != null and controller.has_method("get_production_navigation_map_rid"):
+		navigation_map = controller.get_production_navigation_map_rid()
+	var displaced: Array[Dictionary] = []
+	var failed: Array[Dictionary] = []
+	for affected_index in range(affected.size()):
+		var entry: Dictionary = affected[affected_index]
+		var npc_id := str(entry.get("npc_id", ""))
+		var npc_node := entry.get("node", null) as Node3D
+		var origin: Vector3 = entry.get("position", center)
+		var body_radius := float(entry.get("body_radius", 0.35))
+		if npc_node == null:
+			continue
+		var outward := Vector2(origin.x - center.x, origin.z - center.z)
+		if outward.length_squared() <= 0.0001:
+			var deterministic_angle := TAU * float(abs(npc_id.hash()) % 360) / 360.0
+			outward = Vector2(cos(deterministic_angle), sin(deterministic_angle))
+		else:
+			outward = outward.normalized()
+		var destination: Variant = _find_external_obstacle_displacement_position(
+			center,
+			origin.y,
+			outward,
+			checked_obstacle_radius + body_radius + checked_margin,
+			body_radius,
+			occupied,
+			navigation_map
+		)
+		if destination == null:
+			failed.append({"npc_id": npc_id, "reason": "safe_navigation_position_unavailable"})
+			continue
+		var displacement_result: Dictionary = (
+			npc_node.apply_external_displacement(destination, source_id)
+			if npc_node.has_method("apply_external_displacement")
+			else {}
+		)
+		if displacement_result.is_empty():
+			npc_node.global_position = destination
+			displacement_result = {"ok": true, "position": destination, "motion_preserved": false}
+		displacement_result["npc_id"] = npc_id
+		displacement_result["body_radius"] = body_radius
+		displaced.append(displacement_result)
+		occupied.append({
+			"npc_id": npc_id,
+			"position": destination,
+			"body_radius": body_radius,
+		})
+	return {
+		"ok": failed.is_empty(),
+		"source_id": source_id,
+		"center": center,
+		"obstacle_radius": checked_obstacle_radius,
+		"affected_count": affected.size(),
+		"displaced_count": displaced.size(),
+		"displaced": displaced,
+		"failed": failed,
+	}
+
+
+func _find_external_obstacle_displacement_position(
+	center: Vector3,
+	target_y: float,
+	outward: Vector2,
+	minimum_center_distance: float,
+	body_radius: float,
+	occupied: Array[Dictionary],
+	navigation_map: RID
+) -> Variant:
+	var base_angle := atan2(outward.y, outward.x)
+	var angular_step := deg_to_rad(15.0)
+	for ring_index in range(6):
+		var ring_distance := minimum_center_distance + float(ring_index) * 0.35
+		for candidate_index in range(25):
+			var signed_step := 0
+			if candidate_index > 0:
+				signed_step = int((candidate_index + 1) / 2)
+				if candidate_index % 2 == 0:
+					signed_step = -signed_step
+			var angle := base_angle + float(signed_step) * angular_step
+			var desired := Vector3(
+				center.x + cos(angle) * ring_distance,
+				target_y,
+				center.z + sin(angle) * ring_distance
+			)
+			var candidate := desired
+			if navigation_map.is_valid():
+				candidate = NavigationServer3D.map_get_closest_point(navigation_map, desired)
+				candidate.y = target_y
+				if Vector2(candidate.x - desired.x, candidate.z - desired.z).length() > 1.25:
+					continue
+			if Vector2(candidate.x - center.x, candidate.z - center.z).length() < minimum_center_distance - 0.01:
+				continue
+			var overlaps_actor := false
+			for raw_other in occupied:
+				var other: Dictionary = raw_other
+				var other_position: Vector3 = other.get("position", Vector3.ZERO)
+				var separation := body_radius + float(other.get("body_radius", 0.35)) + 0.08
+				if Vector2(candidate.x - other_position.x, candidate.z - other_position.z).length() < separation:
+					overlaps_actor = true
+					break
+			if not overlaps_actor:
+				return candidate
+	return null
+
+
+func get_npc_combat_projectile_release_transform(npc_id: String, weapon_type: String) -> Variant:
+	if not _npc_nodes.has(npc_id):
+		return null
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+	if npc_node == null:
+		return null
+	if npc_node.has_method("get_combat_projectile_release_transform"):
+		return npc_node.get_combat_projectile_release_transform(weapon_type)
+	return Transform3D(npc_node.global_basis, npc_node.global_position + Vector3.UP * 1.15)
+
+
+func get_npc_combat_projectile_release_snapshot(npc_id: String, weapon_type: String) -> Dictionary:
+	if not _npc_nodes.has(npc_id):
+		return {"ready": false, "reason": "npc_actor_unavailable", "npc_id": npc_id, "weapon_type": weapon_type}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+	if npc_node == null or not npc_node.has_method("get_combat_projectile_release_snapshot"):
+		return {"ready": false, "reason": "npc_projectile_origin_unavailable", "npc_id": npc_id, "weapon_type": weapon_type}
+	return npc_node.get_combat_projectile_release_snapshot(weapon_type)
+
+
+func get_npc_combat_melee_contact_segment(npc_id: String, weapon_type: String) -> Dictionary:
+	if not _npc_nodes.has(npc_id):
+		return {}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
+	if npc_node != null and npc_node.has_method("get_combat_melee_contact_segment"):
+		return npc_node.get_combat_melee_contact_segment(weapon_type)
+	return {}
+
+
+func get_npc_combat_collision_rid(npc_id: String) -> RID:
+	if not _npc_nodes.has(npc_id):
+		return RID()
+	var npc_body := get_node_or_null(_npc_nodes[npc_id]) as CollisionObject3D
+	return npc_body.get_rid() if npc_body != null else RID()
+
+
+func set_npc_facing_direction(npc_id: String, direction: Vector3) -> bool:
+	if not _npc_nodes.has(npc_id):
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("set_facing_direction"):
+		return false
+	var flat_direction := Vector3(direction.x, 0.0, direction.z)
+	if flat_direction.length_squared() <= 0.0001:
+		return false
+	npc_node.set_facing_direction(flat_direction.normalized())
+	return true
+
+
+func play_formal_dialogue_presentation_event(
+	dialogue_id: String,
+	npc_id: String,
+	event_kind: String
+) -> Dictionary:
+	if dialogue_id.is_empty() or npc_id.is_empty():
+		return {"ok": false, "reason": "formal_dialogue_presentation_identity_missing"}
+	if not event_kind in ["invitation_sent", "invitation_accepted"]:
+		return {"ok": false, "reason": "unsupported_formal_dialogue_presentation_event"}
+	var speaker_npc_id := _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id)
+	if speaker_npc_id.is_empty():
+		# Direct test/debug dialogue sessions without the production spatial route do
+		# not own a world presentation event.
+		return {"ok": true, "active": false, "reason": "formal_dialogue_spatial_session_missing"}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	var target_npc_id := str(session.get("target_npc_id", ""))
+	var expected_npc_id := speaker_npc_id if event_kind == "invitation_sent" else target_npc_id
+	if npc_id != expected_npc_id:
+		return {"ok": false, "reason": "formal_dialogue_presentation_role_mismatch"}
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {"ok": false, "reason": "npc_actor_unavailable", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return {"ok": false, "reason": "npc_presentation_unavailable", "npc_id": npc_id}
+	if event_kind == "invitation_sent":
+		var speaker_position: Variant = get_npc_world_position(speaker_npc_id)
+		var target_position: Variant = get_npc_world_position(target_npc_id)
+		if not speaker_position is Vector3 or not target_position is Vector3:
+			return {"ok": false, "reason": "formal_dialogue_world_position_missing"}
+		var horizontal_distance := Vector2(
+			speaker_position.x - target_position.x,
+			speaker_position.z - target_position.z
+		).length()
+		if horizontal_distance < 0.85 or horizontal_distance > 1.70:
+			return {
+				"ok": false,
+				"reason": "formal_dialogue_presentation_not_in_range",
+				"horizontal_distance": horizontal_distance
+			}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("play_temporary_presentation_action"):
+		return {"ok": false, "reason": "npc_presentation_bridge_missing", "npc_id": npc_id}
+	var event_id := "%s:%s:%s" % [dialogue_id, event_kind, npc_id]
+	var presentation_result: Dictionary = npc_node.play_temporary_presentation_action("talk_gesture", event_id)
+	if not bool(presentation_result.get("ok", false)):
+		return presentation_result
+	var duplicate := bool(presentation_result.get("duplicate", false))
+	if not duplicate:
+		_temporary_presentation_event_sequence += 1
+	var event := {
+		"sequence": _temporary_presentation_event_sequence,
+		"event_id": event_id,
+		"dialogue_id": dialogue_id,
+		"event_kind": event_kind,
+		"npc_id": npc_id,
+		"speaker_npc_id": speaker_npc_id,
+		"target_npc_id": target_npc_id,
+		"presentation_action": "talk_gesture",
+		"authority_action_at_emit": str(state.get("current_action", "idle")),
+		"duplicate": duplicate,
+		"duration_seconds": float(presentation_result.get("duration_seconds", 0.0))
+	}
+	if not duplicate:
+		_temporary_presentation_event_history.append(event.duplicate(true))
+		if _temporary_presentation_event_history.size() > 32:
+			_temporary_presentation_event_history.pop_front()
+		npc_temporary_presentation_event_emitted.emit(event.duplicate(true))
+	return {"ok": true, "active": true, "event": event}
+
+
+func get_temporary_presentation_event_snapshot() -> Dictionary:
+	return {
+		"sequence": _temporary_presentation_event_sequence,
+		"events": _temporary_presentation_event_history.duplicate(true)
+	}
+
+
+func play_idle_portrait_talk_gesture(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {"ok": false, "reason": "npc_actor_unavailable", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)):
+		return {"ok": false, "reason": "npc_unconscious", "npc_id": npc_id}
+	if bool(state.get("escaped", false)) or _is_npc_escaping_state(state):
+		return {"ok": false, "reason": "npc_escaped_or_escaping", "npc_id": npc_id}
+	if str(state.get("current_action", "idle")) != "idle":
+		return {"ok": false, "reason": "npc_not_idle", "npc_id": npc_id}
+	if not str(state.get("movement_target", "")).is_empty():
+		return {"ok": false, "reason": "npc_moving", "npc_id": npc_id}
+	if _get_current_behavior_mode(npc_id) != BEHAVIOR_MODE_WORK or not can_npc_act(npc_id):
+		return {"ok": false, "reason": "npc_not_in_idle_work_mode", "npc_id": npc_id}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("play_temporary_presentation_action"):
+		return {"ok": false, "reason": "npc_presentation_bridge_missing", "npc_id": npc_id}
+	var event_id := "portrait_idle:%s:%06d" % [npc_id, _temporary_presentation_event_sequence + 1]
+	var presentation_result: Dictionary = npc_node.play_temporary_presentation_action("talk_gesture", event_id)
+	if not bool(presentation_result.get("ok", false)):
+		return presentation_result
+	var event := {
+		"event_id": event_id,
+		"event_kind": "portrait_idle_talk_gesture",
+		"npc_id": npc_id,
+		"presentation_action": "talk_gesture",
+		"authority_action_at_emit": str(state.get("current_action", "idle")),
+		"source": "npc_panel_portrait"
+	}
+	return _record_temporary_presentation_event(event, presentation_result)
+
+
+func play_damage_presentation_event(damage_result: Dictionary) -> Dictionary:
+	if not bool(damage_result.get("ok", false)):
+		return {"ok": false, "reason": "damage_result_invalid"}
+	var npc_id := str(damage_result.get("npc_id", ""))
+	var damage_event: Dictionary = (
+		damage_result.get("damage_event", {})
+		if damage_result.get("damage_event", {}) is Dictionary
+		else {}
+	)
+	var damage_event_id := str(damage_event.get("event_id", damage_event.get("id", "")))
+	if npc_id.is_empty() or damage_event_id.is_empty():
+		return {"ok": false, "reason": "damage_presentation_identity_missing", "npc_id": npc_id}
+	var event_id := "%s:hit_react:%s" % [damage_event_id, npc_id]
+	var existing := _find_temporary_presentation_event(event_id)
+	if not existing.is_empty():
+		return {"ok": true, "active": true, "duplicate": true, "event": existing}
+	var hp_before := int(damage_result.get("hp_before", 0))
+	var hp_after := int(damage_result.get("hp_after", hp_before))
+	var unconscious := bool(damage_result.get("unconscious", false))
+	var event := {
+		"event_id": event_id,
+		"event_kind": "damage_hit_react",
+		"npc_id": npc_id,
+		"damage_event_id": damage_event_id,
+		"presentation_action": "hit_react",
+		"authority_action_at_emit": str(get_npc_state(npc_id).get("current_action", "idle")),
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"damage": int(damage_result.get("damage", 0)),
+		"source_actor_id": str(damage_result.get("actor_id", "")),
+		"suppressed_by_unconscious": unconscious,
+		"suppressed_by_no_hp_change": hp_after >= hp_before
+	}
+	if unconscious or hp_after >= hp_before:
+		return _record_temporary_presentation_event(event, {
+			"ok": true,
+			"duplicate": false,
+			"duration_seconds": 0.0,
+			"suppressed": true
+		})
+	if not _npc_nodes.has(npc_id):
+		return {"ok": false, "reason": "npc_actor_unavailable", "npc_id": npc_id}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("play_temporary_presentation_action"):
+		return {"ok": false, "reason": "npc_presentation_bridge_missing", "npc_id": npc_id}
+	var presentation_result: Dictionary = npc_node.play_temporary_presentation_action("hit_react", event_id)
+	if not bool(presentation_result.get("ok", false)):
+		return presentation_result
+	return _record_temporary_presentation_event(event, presentation_result)
+
+
+func _record_temporary_presentation_event(event: Dictionary, presentation_result: Dictionary) -> Dictionary:
+	var duplicate := bool(presentation_result.get("duplicate", false))
+	if not duplicate:
+		_temporary_presentation_event_sequence += 1
+	event["sequence"] = _temporary_presentation_event_sequence
+	event["duplicate"] = duplicate
+	event["duration_seconds"] = float(presentation_result.get("duration_seconds", 0.0))
+	event["suppressed"] = bool(presentation_result.get("suppressed", false))
+	if not duplicate:
+		_temporary_presentation_event_history.append(event.duplicate(true))
+		if _temporary_presentation_event_history.size() > 32:
+			_temporary_presentation_event_history.pop_front()
+		npc_temporary_presentation_event_emitted.emit(event.duplicate(true))
+	return {"ok": true, "active": true, "duplicate": duplicate, "event": event}
+
+
+func _find_temporary_presentation_event(event_id: String) -> Dictionary:
+	for index in range(_temporary_presentation_event_history.size() - 1, -1, -1):
+		var event: Dictionary = _temporary_presentation_event_history[index]
+		if str(event.get("event_id", "")) == event_id:
+			return event.duplicate(true)
+	return {}
+
+
+func get_proactive_talk_presentation_snapshot(npc_id: String = "") -> Variant:
+	var clean_npc_id := npc_id.strip_edges()
+	if not clean_npc_id.is_empty():
+		if not _proactive_talk_presentation_sessions.has(clean_npc_id):
+			return {}
+		return (_proactive_talk_presentation_sessions[clean_npc_id] as Dictionary).duplicate(true)
+	var sessions: Array[Dictionary] = []
+	for raw_npc_id in _proactive_talk_presentation_sessions:
+		var session: Dictionary = (_proactive_talk_presentation_sessions[raw_npc_id] as Dictionary).duplicate(true)
+		sessions.append(session)
+	sessions.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.get("npc_id", "")) < str(b.get("npc_id", "")))
+	return {
+		"gesture_interval_real_seconds": _proactive_talk_gesture_interval_real_seconds,
+		"active_count": sessions.size(),
+		"sessions": sessions
+	}
+
+
 func get_npc_portrait_snapshot(npc_id: String) -> Dictionary:
 	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
 		return {}
@@ -379,6 +801,8 @@ func debug_get_spatial_migration_snapshot(npc_id: String) -> Dictionary:
 		"physical_location_phase": str(state.get("physical_location_phase", "legacy")),
 		"current_workstation_id": str(state.get("current_workstation_id", "")),
 		"route_kind": str(route.get("kind", "")),
+		"passage_id": str(route.get("passage_id", "")),
+		"passage_status": str(route.get("passage_status", "")),
 		"route_step": step_snapshot,
 		"formal_navigation_pilot": _formal_navigation_pilots.has(npc_id),
 		"formal_navigation_pilot_state": (_formal_navigation_pilots.get(npc_id, {}) as Dictionary).duplicate(true),
@@ -571,6 +995,12 @@ func get_default_formal_world_snapshot() -> Dictionary:
 
 
 func create_formal_spatial_checkpoint() -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var world_origin: Vector3 = (
+		controller.get_formal_world_origin()
+		if controller != null and controller.has_method("get_formal_world_origin")
+		else Vector3.ZERO
+	)
 	var actors: Array[Dictionary] = []
 	for npc_id in _npc_order:
 		var state := get_npc_state(npc_id)
@@ -588,6 +1018,11 @@ func create_formal_spatial_checkpoint() -> Dictionary:
 			"escaped": bool(state.get("escaped", false)),
 			"unconscious": bool(state.get("unconscious", false)),
 			"behavior_mode": str(state.get("behavior_mode", BEHAVIOR_MODE_WORK)),
+			"combat_attack_sequence": maxi(0, int(state.get("combat_attack_sequence", 0))),
+			"combat_attack_sequence_lock_remaining": maxf(
+				0.0,
+				float(state.get("combat_attack_sequence_lock_remaining", 0.0))
+			),
 			"escape_intent": (state.get("escape_intent", {}) as Dictionary).duplicate(true) if state.get("escape_intent", {}) is Dictionary else {},
 			"in_flight_action": {
 				"active": not formal_session.is_empty(),
@@ -601,6 +1036,7 @@ func create_formal_spatial_checkpoint() -> Dictionary:
 		})
 	return {
 		"schema": "formal_npc_spatial_checkpoint_v1",
+		"world_origin": {"x": world_origin.x, "y": world_origin.y, "z": world_origin.z},
 		"actor_count": actors.size(),
 		"actors": actors,
 		"in_flight_policy": "rollback_to_saved_safe_position"
@@ -620,6 +1056,16 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 	var navigation_map: RID = controller.get_production_navigation_map_rid()
 	if not navigation_map.is_valid():
 		return {"ok": false, "reason": "formal_navigation_map_missing"}
+	var current_world_origin: Vector3 = (
+		controller.get_formal_world_origin()
+		if controller.has_method("get_formal_world_origin")
+		else Vector3.ZERO
+	)
+	var checkpoint_has_origin := checkpoint.get("world_origin") is Dictionary
+	var checkpoint_world_origin := _checkpoint_vector3(
+		checkpoint.get("world_origin", {}),
+		current_world_origin
+	)
 
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	var rolled_back_actions: Array[String] = []
@@ -663,6 +1109,10 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 		if npc_node.has_method("detach_from_spatial_anchor"):
 			npc_node.detach_from_spatial_anchor()
 		var saved_position := _checkpoint_vector3(actor.get("position", {}), Vector3.ZERO)
+		if checkpoint_has_origin:
+			saved_position += current_world_origin - checkpoint_world_origin
+		elif controller.has_method("migrate_legacy_formal_world_position"):
+			saved_position = controller.migrate_legacy_formal_world_position(saved_position)
 		var safe_position := NavigationServer3D.map_get_closest_point(navigation_map, saved_position)
 		var horizontal_error := Vector2(safe_position.x - saved_position.x, safe_position.z - saved_position.z).length()
 		if saved_position == Vector3.ZERO or horizontal_error > 3.0:
@@ -689,6 +1139,22 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 			"escaped": escaped,
 			"unconscious": bool(actor.get("unconscious", false)) and not escaped,
 			"behavior_mode": BEHAVIOR_MODE_ESCAPED if escaped else str(actor.get("behavior_mode", BEHAVIOR_MODE_WORK)),
+			"combat_attack_cooldown": maxf(0.0, float(actor.get("combat_attack_sequence_lock_remaining", 0.0))),
+			"combat_attack_target_enemy_id": "",
+			"combat_attack_phase": "idle",
+			"combat_attack_elapsed_seconds": 0.0,
+			"combat_attack_cycle_seconds": 0.0,
+			"combat_attack_impact_seconds": 0.0,
+			"combat_attack_playback_multiplier": 1.0,
+			"combat_attack_sequence": maxi(0, int(actor.get("combat_attack_sequence", 0))),
+			"combat_attack_impact_committed": false,
+			"combat_attack_last_sequence_time": -1.0,
+			"combat_attack_next_sequence_time": 0.0,
+			"combat_attack_sequence_lock_remaining": maxf(
+				0.0,
+				float(actor.get("combat_attack_sequence_lock_remaining", 0.0))
+			),
+			"combat_last_attack_result": {},
 			"escape_intent": (actor.get("escape_intent", {}) as Dictionary).duplicate(true) if actor.get("escape_intent", {}) is Dictionary else {}
 		})
 		if escaped:
@@ -742,7 +1208,10 @@ func get_npc_behavior_mode_snapshot(npc_id: String) -> Dictionary:
 		"current_action": str(state.get("current_action", "")),
 		"combat_mode": str(state.get("combat_mode", "")),
 		"combat_target_enemy_id": str(state.get("combat_target_enemy_id", "")),
+		"combat_target_selection_reason": str(state.get("combat_target_selection_reason", "")),
+		"combat_target_scope": str(state.get("combat_target_scope", "")),
 		"combat_strategy": state.get("combat_strategy", {}),
+		"combat_strategy_move_enemy_id": str(state.get("combat_strategy_move_enemy_id", "")),
 		"combat_strategy_move_target_id": str(state.get("combat_strategy_move_target_id", "")),
 		"combat_strategy_move_target_name": str(state.get("combat_strategy_move_target_name", "")),
 		"combat_strategy_move_target_position": state.get("combat_strategy_move_target_position", {}),
@@ -873,19 +1342,23 @@ func set_npc_behavior_mode(
 		BEHAVIOR_MODE_AVOID_COMBAT:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_mount_phase"] = "unmounted"
 			changes["combat_strategy_move_target_id"] = ""
 			changes["combat_strategy_move_target_name"] = ""
 			changes["combat_strategy_move_target_position"] = {}
+			changes["combat_strategy_move_enemy_id"] = ""
 			if not changes.has("current_action"):
 				changes["current_action"] = "avoid_combat"
 		BEHAVIOR_MODE_UNCONSCIOUS:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_mount_phase"] = "rider_unconscious"
 			changes["combat_attack_cooldown"] = 0.0
 			changes["combat_last_attack_result"] = {}
 			changes["combat_strategy_move_target_id"] = ""
 			changes["combat_strategy_move_target_name"] = ""
 			changes["combat_strategy_move_target_position"] = {}
+			changes["combat_strategy_move_enemy_id"] = ""
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
@@ -893,23 +1366,29 @@ func set_npc_behavior_mode(
 		BEHAVIOR_MODE_ESCAPED:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_mount_phase"] = "unmounted"
 			changes["combat_attack_cooldown"] = 0.0
 			changes["combat_last_attack_result"] = {}
 			changes["combat_strategy_move_target_id"] = ""
 			changes["combat_strategy_move_target_name"] = ""
 			changes["combat_strategy_move_target_position"] = {}
+			changes["combat_strategy_move_enemy_id"] = ""
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
 		BEHAVIOR_MODE_WORK:
 			changes["combat_mode"] = ""
 			changes["combat_mounted"] = false
+			changes["combat_mount_phase"] = "horse_returning" if bool(state.get("combat_mounted", false)) else "unmounted"
 			changes["combat_target_enemy_id"] = ""
+			changes["combat_target_selection_reason"] = ""
+			changes["combat_target_scope"] = ""
 			changes["combat_attack_cooldown"] = 0.0
 			changes["combat_last_attack_result"] = {}
 			changes["combat_strategy_move_target_id"] = ""
 			changes["combat_strategy_move_target_name"] = ""
 			changes["combat_strategy_move_target_position"] = {}
+			changes["combat_strategy_move_enemy_id"] = ""
 			changes["avoidance_target_id"] = ""
 			changes["avoidance_target_name"] = ""
 			changes["avoidance_target_position"] = {}
@@ -917,6 +1396,17 @@ func set_npc_behavior_mode(
 				changes["current_action"] = "idle"
 			if not changes.has("last_action_result"):
 				changes["last_action_result"] = reason
+
+	if clean_mode != BEHAVIOR_MODE_COMBAT or previous_mode != BEHAVIOR_MODE_COMBAT:
+		changes["combat_attack_cooldown"] = 0.0
+		changes["combat_attack_target_enemy_id"] = ""
+		changes["combat_attack_phase"] = "idle"
+		changes["combat_attack_elapsed_seconds"] = 0.0
+		changes["combat_attack_cycle_seconds"] = 0.0
+		changes["combat_attack_impact_seconds"] = 0.0
+		changes["combat_attack_playback_multiplier"] = 1.0
+		changes["combat_attack_impact_committed"] = false
+		changes["combat_last_attack_result"] = {}
 
 	if not world_movement.is_empty():
 		changes["current_action"] = "moving_to_%s" % movement_target_id
@@ -1369,7 +1859,8 @@ func move_npc_to_world_position(
 	target_id: String,
 	target_name: String,
 	target_position: Vector3,
-	arrival_state: Dictionary = {}
+	arrival_state: Dictionary = {},
+	motion_options: Dictionary = {}
 ) -> bool:
 	if not _profiles.has(npc_id):
 		push_warning("Cannot move unknown NPC: %s" % npc_id)
@@ -1402,7 +1893,8 @@ func move_npc_to_world_position(
 		"target_id": clean_target_id,
 		"target_name": clean_target_name,
 		"target_position": target_position,
-		"arrival_state": arrival_state.duplicate(true)
+		"arrival_state": arrival_state.duplicate(true),
+		"motion_options": motion_options.duplicate(true)
 	}
 	var departure_current_action := str(arrival_state.get(
 		"departure_current_action",
@@ -1426,7 +1918,7 @@ func move_npc_to_world_position(
 		for raw_key in requested_departure_state.keys():
 			departure_changes[str(raw_key)] = requested_departure_state[raw_key]
 	_set_npc_state_without_signal(npc_id, departure_changes)
-	npc_node.move_to_location(clean_target_id, target_position)
+	npc_node.move_to_location(clean_target_id, target_position, motion_options)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	return true
@@ -1561,10 +2053,13 @@ func end_formal_combat_world(
 					npc_node.configure_navigation_motion(true, migration.get("original_navigation_map", RID()))
 				else:
 					npc_node.configure_navigation_motion(false)
-			if not keep_formal_resident:
-				var original_position: Variant = migration.get("original_position")
-				if original_position is Vector3:
-					npc_node.global_position = original_position
+			# Default formal residents keep the production navigation map, but they
+			# still return to the exact pre-combat position. Keeping the map and the
+			# displaced battle position together left NPCs stranded on the defense
+			# line after a wave was cleared.
+			var original_position: Variant = migration.get("original_position")
+			if original_position is Vector3:
+				npc_node.global_position = original_position
 		_set_npc_state_without_signal(npc_id, {
 			"movement_target": "",
 			"movement_target_name": "",
@@ -1645,12 +2140,60 @@ func stop_npc_movement_with_state(npc_id: String, changes: Dictionary = {}) -> b
 	if not _profiles.has(npc_id):
 		return false
 	_cancel_building_interior_route(npc_id, true)
+	_stop_npc_movement(npc_id)
 	_movement_arrival_contexts.erase(npc_id)
 	if not changes.is_empty():
 		_set_npc_state_without_signal(npc_id, changes)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	return true
+
+
+func is_npc_world_movement_active(npc_id: String) -> bool:
+	if not _npc_nodes.has(npc_id):
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	return (
+		npc_node != null
+		and npc_node.has_method("is_world_movement_active")
+		and bool(npc_node.is_world_movement_active())
+	)
+
+
+func update_npc_world_movement_target(
+	npc_id: String,
+	target_position: Vector3,
+	state_changes: Dictionary = {}
+) -> bool:
+	if not _npc_nodes.has(npc_id):
+		return false
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("update_motion_target") or not is_npc_world_movement_active(npc_id):
+		return false
+	var updated := bool(npc_node.update_motion_target(target_position, "combat_target_moved"))
+	if not updated:
+		return false
+	if _movement_arrival_contexts.has(npc_id):
+		var context := _movement_arrival_contexts[npc_id] as Dictionary
+		context["target_position"] = target_position
+		_movement_arrival_contexts[npc_id] = context
+	if not state_changes.is_empty():
+		_set_npc_state_without_signal(npc_id, state_changes)
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+	return true
+
+
+func get_npc_navigation_closest_point(npc_id: String, world_position: Vector3) -> Variant:
+	if not _npc_nodes.has(npc_id):
+		return null
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("get_navigation_map"):
+		return null
+	var navigation_map: RID = npc_node.get_navigation_map()
+	if not navigation_map.is_valid():
+		return null
+	return NavigationServer3D.map_get_closest_point(navigation_map, world_position)
 
 
 func cancel_spatial_route_for_incapacitation(npc_id: String, reason: String) -> bool:
@@ -2701,6 +3244,14 @@ func face_formal_dialogue_participants(speaker_npc_id: String, target_npc_id: St
 		target_node.set_facing_direction(-direction.normalized())
 
 
+func face_formal_dialogue_speaker(speaker_npc_id: String, target_npc_id: String) -> bool:
+	var speaker_position: Variant = get_npc_world_position(speaker_npc_id)
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	if not speaker_position is Vector3 or not target_position is Vector3:
+		return false
+	return set_npc_facing_direction(speaker_npc_id, target_position - speaker_position)
+
+
 func bind_formal_dialogue_session(speaker_npc_id: String, dialogue_id: String) -> Dictionary:
 	if not _formal_dialogue_approach_sessions.has(speaker_npc_id) or dialogue_id.is_empty():
 		return {"ok": false, "reason": "formal_dialogue_session_missing"}
@@ -2710,12 +3261,61 @@ func bind_formal_dialogue_session(speaker_npc_id: String, dialogue_id: String) -
 	return {"ok": true, "session": session.duplicate(true)}
 
 
+func stage_formal_dialogue_acceptance(dialogue_id: String) -> Dictionary:
+	var speaker_npc_id := _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id)
+	if speaker_npc_id.is_empty():
+		return {"ok": true, "active": false}
+	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
+	var target_npc_id := str(session.get("target_npc_id", ""))
+	if not _formal_workstation_action_sessions.has(target_npc_id):
+		return {"ok": true, "active": true, "staged_target_action": false}
+	var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+	if target_node == null:
+		return {"ok": false, "reason": "formal_dialogue_target_transfer_dependencies_missing"}
+	session["acceptance_handoff"] = {
+		"target_world_position": target_node.global_position,
+		"work_session": (_formal_workstation_action_sessions[target_npc_id] as Dictionary).duplicate(true)
+	}
+	_formal_dialogue_approach_sessions[speaker_npc_id] = session
+	return {"ok": true, "active": true, "staged_target_action": true}
+
+
 func prepare_formal_dialogue_activation(dialogue_id: String) -> Dictionary:
 	var speaker_npc_id := _find_formal_dialogue_speaker_by_dialogue_id(dialogue_id)
 	if speaker_npc_id.is_empty():
 		return {"ok": true, "active": false}
 	var session: Dictionary = _formal_dialogue_approach_sessions[speaker_npc_id]
 	var target_npc_id := str(session.get("target_npc_id", ""))
+	var acceptance_handoff: Dictionary = session.get("acceptance_handoff", {}) if session.get("acceptance_handoff", {}) is Dictionary else {}
+	if not acceptance_handoff.is_empty():
+		if _formal_workstation_action_sessions.has(target_npc_id):
+			return {"ok": false, "reason": "formal_dialogue_target_action_not_interrupted"}
+		var target_node := get_node_or_null(_npc_nodes.get(target_npc_id, NodePath())) if _npc_nodes.has(target_npc_id) else null
+		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+		if target_node == null or controller == null or not controller.has_method("get_production_navigation_map_rid"):
+			return {"ok": false, "reason": "formal_dialogue_target_transfer_dependencies_missing"}
+		var navigation_map: RID = controller.get_production_navigation_map_rid()
+		if not bool(target_node.configure_navigation_motion(true, navigation_map)):
+			return {"ok": false, "reason": "formal_dialogue_target_transfer_navigation_failed"}
+		var current_position: Variant = acceptance_handoff.get("target_world_position")
+		if current_position is Vector3:
+			target_node.global_position = current_position
+		var work_session: Dictionary = acceptance_handoff.get("work_session", {}) if acceptance_handoff.get("work_session", {}) is Dictionary else {}
+		session["target_migration"] = {
+			"owned": true,
+			"source": "formal_action_transfer",
+			"original_position": work_session.get("original_position", target_node.global_position),
+			"original_navigation_enabled": bool(work_session.get("original_navigation_enabled", false)),
+			"original_navigation_map": work_session.get("original_navigation_map", RID()),
+			"original_spatial_route_phase": "none",
+			"original_physical_location_phase": "legacy_location",
+			"projected_location_id": str(get_npc_state(target_npc_id).get("current_location", PLAZA_LOCATION_ID))
+		}
+		session["target_mode"] = "transferred_formal_actor"
+		session.erase("acceptance_handoff")
+		_formal_dialogue_approach_sessions[speaker_npc_id] = session
+		face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
+		return {"ok": true, "active": true, "transferred_target": true}
 	if not _formal_workstation_action_sessions.has(target_npc_id):
 		face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
 		return {"ok": true, "active": true, "transferred_target": false}
@@ -3991,11 +4591,13 @@ func start_proactive_talk(npc_id: String, prompt_text: String, duration_seconds:
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 	_emit_npc_proactive_talk_changed(npc_id, true)
+	var presentation_result := _start_proactive_talk_presentation_session(npc_id)
 	return {
 		"ok": true,
 		"npc_id": npc_id,
 		"proactive_talk": proactive_state.duplicate(true),
-		"event": event
+		"event": event,
+		"presentation": presentation_result
 	}
 
 
@@ -4014,6 +4616,23 @@ func get_proactive_talk(npc_id: String) -> Dictionary:
 func has_active_proactive_talk(npc_id: String) -> bool:
 	var proactive := get_proactive_talk(npc_id)
 	return bool(proactive.get("active", false))
+
+
+func cancel_proactive_talk(npc_id: String, reason: String = "cancelled") -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {"ok": false, "reason": "unknown_npc", "npc_id": npc_id}
+	if not has_active_proactive_talk(npc_id):
+		_proactive_talk_presentation_sessions.erase(npc_id)
+		return {"ok": true, "changed": false, "npc_id": npc_id}
+	var clean_reason := reason.strip_edges()
+	if clean_reason.is_empty():
+		clean_reason = "cancelled"
+	_clear_proactive_talk(npc_id, clean_reason)
+	return {"ok": true, "changed": true, "npc_id": npc_id, "reason": clean_reason}
+
+
+func debug_cancel_proactive_talk(npc_id: String, reason: String = "cancelled") -> Dictionary:
+	return cancel_proactive_talk(npc_id, reason)
 
 
 func handle_npc_clicked(npc_id: String) -> bool:
@@ -4244,8 +4863,26 @@ func apply_damage_to_npc(
 		states["behavior_mode_entered_time"] = str(unconscious_time.get("time", "00:00:00"))
 		states["combat_mode"] = ""
 		states["combat_mounted"] = false
+		states["combat_mount_phase"] = "rider_unconscious"
+		states["combat_target_enemy_id"] = ""
+		states["combat_target_selection_reason"] = ""
+		states["combat_target_scope"] = ""
+		states["combat_attack_cooldown"] = 0.0
+		states["combat_attack_target_enemy_id"] = ""
+		states["combat_attack_phase"] = "idle"
+		states["combat_attack_elapsed_seconds"] = 0.0
+		states["combat_attack_cycle_seconds"] = 0.0
+		states["combat_attack_impact_seconds"] = 0.0
+		states["combat_attack_playback_multiplier"] = 1.0
+		states["combat_attack_impact_committed"] = false
+		states["combat_strategy_move_enemy_id"] = ""
+		states["combat_last_attack_result"] = {}
 		states["last_action_result"] = "became_unconscious"
 	profile["states"] = states
+	# The damage fact receives its unique MemorySystem event ID before any
+	# HP projection or presentation is dispatched. Character animation consumes
+	# that same ID and never becomes a second damage authority.
+	var damage_event := _log_damage_taken(npc_id, actor_id, damage, hp_before, hp_after, visibility, options)
 	_profiles[npc_id] = profile
 
 	if became_unconscious:
@@ -4257,7 +4894,16 @@ func apply_damage_to_npc(
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
 
-	var damage_event := _log_damage_taken(npc_id, actor_id, damage, hp_before, hp_after, visibility, options)
+	var presentation_result := play_damage_presentation_event({
+		"ok": true,
+		"npc_id": npc_id,
+		"actor_id": actor_id,
+		"damage": damage,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"unconscious": bool(states.get("unconscious", false)),
+		"damage_event": damage_event
+	})
 	var escape_speed_result := {}
 	if actor_id == PLAYER_ACTOR_ID:
 		escape_speed_result = _notify_escape_guard_attack(npc_id, damage, damage_event, became_unconscious)
@@ -4285,6 +4931,7 @@ func apply_damage_to_npc(
 		"max_hp": max_hp,
 		"unconscious": bool(states.get("unconscious", false)),
 		"damage_event": damage_event,
+		"presentation": presentation_result,
 		"unconscious_event": unconscious_event,
 		"escape_speed_result": escape_speed_result,
 		"options": options.duplicate(true)
@@ -4952,9 +5599,17 @@ func _route_enemy_attack_mode(npc_id: String, enemy_id: String) -> void:
 	if bool(states.get("unconscious", false)) or bool(states.get("escaped", false)):
 		return
 	var target_mode := BEHAVIOR_MODE_COMBAT if _is_npc_combat_eligible(npc_id) else BEHAVIOR_MODE_AVOID_COMBAT
+	var current_mode := _get_current_behavior_mode(npc_id)
+	# CombatSystem owns armed-NPC target selection. Re-entering the same behavior
+	# mode on every hit used to interrupt navigation/attack and force the exact
+	# attacker into state before the nearest-target selector could run.
+	if target_mode == BEHAVIOR_MODE_COMBAT and current_mode == BEHAVIOR_MODE_COMBAT:
+		update_npc_state(npc_id, {"last_action_result": "enemy_attack_combat_lock_preserved"})
+		return
+	var target_enemy_id := enemy_id if target_mode == BEHAVIOR_MODE_AVOID_COMBAT else ""
 	set_npc_behavior_mode(npc_id, target_mode, "enemy_attack", {
 		"state_changes": {
-			"combat_target_enemy_id": enemy_id,
+			"combat_target_enemy_id": target_enemy_id,
 			"last_action_result": "enemy_attack_mode_switch"
 		},
 		"request_plan_reevaluation": false
@@ -5377,6 +6032,144 @@ func _store_plan_reevaluation_request(npc_id: String, request_snapshot: Dictiona
 	_last_plan_reevaluation_request = request_snapshot.duplicate(true)
 
 
+func _load_interaction_presentation_config(config_loader: Node) -> void:
+	var loaded: Variant = config_loader.load_data_file(NPC_INTERACTION_PRESENTATION_FILE, {})
+	if not loaded is Dictionary:
+		push_error("NPC interaction presentation config must be a JSON object: %s" % NPC_INTERACTION_PRESENTATION_FILE)
+		return
+	var config: Dictionary = loaded
+	if str(config.get("schema_version", "")) != "npc_interaction_presentation_v1":
+		push_error("NPC interaction presentation config schema mismatch: %s" % NPC_INTERACTION_PRESENTATION_FILE)
+		return
+	var proactive_config: Dictionary = (
+		config.get("proactive_talk", {})
+		if config.get("proactive_talk", {}) is Dictionary
+		else {}
+	)
+	_proactive_talk_gesture_interval_real_seconds = maxf(
+		PROACTIVE_TALK_GESTURE_MIN_INTERVAL_REAL_SECONDS,
+		float(proactive_config.get(
+			"gesture_interval_real_seconds",
+			PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS
+		))
+	)
+
+
+func _start_proactive_talk_presentation_session(npc_id: String) -> Dictionary:
+	_proactive_talk_presentation_session_sequence += 1
+	var session_id := "proactive_talk:%s:%06d" % [
+		npc_id,
+		_proactive_talk_presentation_session_sequence
+	]
+	_proactive_talk_presentation_sessions[npc_id] = {
+		"npc_id": npc_id,
+		"session_id": session_id,
+		"gesture_count": 0,
+		"remaining_real_seconds": _proactive_talk_gesture_interval_real_seconds,
+		"gesture_interval_real_seconds": _proactive_talk_gesture_interval_real_seconds
+	}
+	return _emit_proactive_talk_gesture(npc_id)
+
+
+func _advance_proactive_talk_presentations(real_delta_seconds: float) -> void:
+	if _proactive_talk_presentation_sessions.is_empty():
+		return
+	var invalid_npc_ids: Array[String] = []
+	for raw_npc_id in _proactive_talk_presentation_sessions:
+		var npc_id := str(raw_npc_id)
+		if not _profiles.has(npc_id) or not has_active_proactive_talk(npc_id):
+			invalid_npc_ids.append(npc_id)
+			continue
+		var state := get_npc_state(npc_id)
+		if (
+			bool(state.get("unconscious", false))
+			or bool(state.get("escaped", false))
+			or not _npc_nodes.has(npc_id)
+		):
+			invalid_npc_ids.append(npc_id)
+	for npc_id in invalid_npc_ids:
+		if _profiles.has(npc_id) and has_active_proactive_talk(npc_id):
+			_clear_proactive_talk(npc_id, "actor_unavailable")
+		else:
+			_proactive_talk_presentation_sessions.erase(npc_id)
+	if _proactive_talk_presentation_sessions.is_empty() or _is_gameplay_paused_for_presentation():
+		return
+	var safe_delta := maxf(real_delta_seconds, 0.0)
+	for raw_npc_id in _proactive_talk_presentation_sessions.keys():
+		var npc_id := str(raw_npc_id)
+		if not _proactive_talk_presentation_sessions.has(npc_id):
+			continue
+		var session: Dictionary = _proactive_talk_presentation_sessions[npc_id]
+		var remaining := float(session.get("remaining_real_seconds", _proactive_talk_gesture_interval_real_seconds)) - safe_delta
+		if remaining > 0.0:
+			session["remaining_real_seconds"] = remaining
+			_proactive_talk_presentation_sessions[npc_id] = session
+			continue
+		# One process update may emit at most one gesture. Large frames and resume
+		# edges deliberately discard overflow instead of replaying accumulated waves.
+		session["remaining_real_seconds"] = _proactive_talk_gesture_interval_real_seconds
+		_proactive_talk_presentation_sessions[npc_id] = session
+		_emit_proactive_talk_gesture(npc_id)
+
+
+func _emit_proactive_talk_gesture(npc_id: String) -> Dictionary:
+	if not _proactive_talk_presentation_sessions.has(npc_id) or not has_active_proactive_talk(npc_id):
+		return {"ok": false, "reason": "proactive_talk_presentation_inactive", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return {"ok": false, "reason": "npc_presentation_unavailable", "npc_id": npc_id}
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath("")))
+	var camera := get_node_or_null(CAMERA_PATH) as Node3D
+	if npc_node == null or camera == null or not npc_node is Node3D:
+		return {"ok": false, "reason": "proactive_talk_camera_or_actor_missing", "npc_id": npc_id}
+	var facing_direction := camera.global_position - (npc_node as Node3D).global_position
+	facing_direction.y = 0.0
+	if not set_npc_facing_direction(npc_id, facing_direction):
+		return {"ok": false, "reason": "proactive_talk_camera_facing_failed", "npc_id": npc_id}
+	if not npc_node.has_method("play_temporary_presentation_action"):
+		return {"ok": false, "reason": "npc_presentation_bridge_missing", "npc_id": npc_id}
+	var session: Dictionary = _proactive_talk_presentation_sessions[npc_id]
+	var gesture_index := int(session.get("gesture_count", 0)) + 1
+	var event_id := "%s:gesture:%04d" % [str(session.get("session_id", "")), gesture_index]
+	var presentation_result: Dictionary = npc_node.play_temporary_presentation_action("talk_gesture", event_id)
+	if not bool(presentation_result.get("ok", false)):
+		return presentation_result
+	var duplicate := bool(presentation_result.get("duplicate", false))
+	if not duplicate:
+		session["gesture_count"] = gesture_index
+		_proactive_talk_presentation_sessions[npc_id] = session
+		_temporary_presentation_event_sequence += 1
+	var event := {
+		"sequence": _temporary_presentation_event_sequence,
+		"event_id": event_id,
+		"event_kind": "proactive_talk_gesture",
+		"npc_id": npc_id,
+		"presentation_session_id": str(session.get("session_id", "")),
+		"gesture_index": gesture_index,
+		"presentation_action": "talk_gesture",
+		"authority_action_at_emit": str(state.get("current_action", "idle")),
+		"facing_target": "current_game_camera",
+		"facing_direction": facing_direction.normalized(),
+		"duplicate": duplicate,
+		"duration_seconds": float(presentation_result.get("duration_seconds", 0.0))
+	}
+	if not duplicate:
+		_temporary_presentation_event_history.append(event.duplicate(true))
+		if _temporary_presentation_event_history.size() > 32:
+			_temporary_presentation_event_history.pop_front()
+		npc_temporary_presentation_event_emitted.emit(event.duplicate(true))
+	return {"ok": true, "active": true, "event": event}
+
+
+func _is_gameplay_paused_for_presentation() -> bool:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	return (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	)
+
+
 func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
 	for npc_id in _npc_order:
 		var proactive := get_proactive_talk(npc_id)
@@ -5394,6 +6187,7 @@ func _advance_proactive_talk_timers(game_delta_seconds: float) -> void:
 
 
 func _clear_proactive_talk(npc_id: String, clear_reason: String) -> void:
+	_proactive_talk_presentation_sessions.erase(npc_id)
 	if not _profiles.has(npc_id):
 		return
 	var state := get_npc_state(npc_id)
@@ -5405,7 +6199,12 @@ func _clear_proactive_talk(npc_id: String, clear_reason: String) -> void:
 		"last_action_result": "proactive_talk_%s" % clear_reason
 	}
 	if current_action == "proactive_talk":
-		changes["current_action"] = "idle"
+		if bool(state.get("unconscious", false)):
+			changes["current_action"] = "unconscious"
+		elif bool(state.get("escaped", false)):
+			changes["current_action"] = "escaped"
+		else:
+			changes["current_action"] = "idle"
 	_set_npc_state_without_signal(npc_id, changes)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
@@ -6125,7 +6924,6 @@ func _on_building_interior_route_arrived(npc_id: String, target_id: String) -> v
 			"location_context": plaza_context,
 			"current_workstation_id": ""
 		}
-
 	route["step_index"] = step_index + 1
 	_building_interior_routes[npc_id] = route
 	if int(route.get("step_index", 0)) < steps.size():

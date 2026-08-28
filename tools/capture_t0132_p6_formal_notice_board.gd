@@ -22,7 +22,7 @@ func _init() -> void:
 	var rig := root.get_node("Main/CameraRig") as Node3D
 	var camera := root.get_node("Main/CameraRig/Camera3D") as Camera3D
 	var direction := camera.position.normalized()
-	rig.global_position = Vector3(998.0, 0.0, 1.4)
+	rig.global_position = board.global_position + Vector3(1.6, 0.0, -1.2)
 	camera.position = direction * 27.0
 	camera.fov = 38.0
 	for _frame in range(14):

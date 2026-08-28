@@ -7,6 +7,9 @@ func _init() -> void:
 		_fail("Failed to load Main.tscn")
 		return
 	var main := main_scene.instantiate()
+	var startup := main.get_node_or_null("Systems/GameStartupSystem")
+	if startup != null:
+		startup._startup_running = true
 	root.add_child(main)
 	await process_frame
 	await physics_frame
@@ -222,11 +225,23 @@ func _init() -> void:
 		_fail("Could not spawn an enemy wave for ballista verification")
 		return
 	_stage_enemies_for_device_range(combat_system, wall_ballista, main_hall_ballista)
+	await physics_frame
 	var hp_before_attack := _sum_enemy_hp(combat_system.get_active_enemies())
-	var device_step: Dictionary = device_system.debug_advance_defense_devices(60.0)
+	var device_step: Dictionary = device_system.debug_advance_defense_devices(1.0)
+	var hp_after_release := _sum_enemy_hp(combat_system.get_active_enemies())
+	if (device_step.get("actions", []) as Array).is_empty() or combat_system.get_active_projectile_snapshots().is_empty():
+		_fail("Deployed defense devices did not release physical projectiles")
+		return
+	if hp_after_release != hp_before_attack:
+		_fail("Defense-device release still applied damage before physical collision")
+		return
+	for _step in range(240):
+		if combat_system.get_active_projectile_snapshots().is_empty():
+			break
+		combat_system.debug_advance_combat_projectiles(0.025)
 	var hp_after_attack := _sum_enemy_hp(combat_system.get_active_enemies())
-	if (device_step.get("actions", []) as Array).is_empty() or hp_after_attack >= hp_before_attack:
-		_fail("Deployed defense devices did not automatically damage an enemy")
+	if hp_after_attack >= hp_before_attack:
+		_fail("Defense-device physical projectiles did not damage an enemy after collision: %s" % JSON.stringify(combat_system.debug_get_combat_snapshot().get("last_projectile_result", {})))
 		return
 	var resolved_ballista_action := _find_device_action(device_step.get("actions", []), "wall_ballista")
 	if resolved_ballista_action.is_empty():
@@ -261,6 +276,9 @@ func _init() -> void:
 		_fail("Defense-device trigger event still depends on a deployer NPC")
 		return
 
+	for fixture in get_nodes_in_group("defense_device_test_fixture"):
+		fixture.queue_free()
+	await process_frame
 	print("T0036 concrete defense-device inventory verification passed.")
 	quit(0)
 
@@ -313,8 +331,32 @@ func _stage_enemies_for_device_range(combat_system: Node, wall_deployment: Dicti
 		var enemy_id := str(enemy_ids[index])
 		var enemy: Dictionary = active_enemies.get(enemy_id, {})
 		var origin := wall_origin if index % 2 == 0 else hall_origin
-		enemy["position"] = origin + Vector3(float(index % 3) * 0.35, 0.0, 4.0 + float(index % 2))
+		var staged_position := origin + Vector3(float(index % 3) * 0.35, 0.0, 4.0 + float(index % 2))
+		enemy["position"] = staged_position
 		active_enemies[enemy_id] = enemy
+		var enemy_paths: Dictionary = combat_system.get("_enemy_nodes")
+		var enemy_node := combat_system.get_node_or_null(enemy_paths.get(enemy_id, NodePath())) as Node3D if enemy_paths.has(enemy_id) else null
+		if enemy_node != null:
+			enemy_node.global_position = staged_position
+			enemy_node.force_update_transform()
+			if enemy_node is CollisionObject3D:
+				PhysicsServer3D.body_set_state(enemy_node.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, enemy_node.global_transform)
+		combat_system._refresh_enemy_node(enemy_id)
+		var hit_fixture := StaticBody3D.new()
+		hit_fixture.name = "DefenseDeviceEnemyHitFixture%02d" % index
+		hit_fixture.collision_layer = 2
+		hit_fixture.collision_mask = 0
+		hit_fixture.set_meta("enemy_id", enemy_id)
+		hit_fixture.add_to_group("defense_device_test_fixture")
+		var hit_shape := CollisionShape3D.new()
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.35
+		capsule.height = 1.6
+		hit_shape.shape = capsule
+		hit_shape.position.y = 0.8
+		hit_fixture.add_child(hit_shape)
+		combat_system.add_child(hit_fixture)
+		hit_fixture.global_position = staged_position
 	combat_system.set("_active_enemies", active_enemies)
 
 

@@ -29,6 +29,8 @@ var _level_two: Node3D
 var _open_fraction := 0.0
 var _close_hold_remaining := 0.0
 var _destroyed := false
+var _collapse_fraction := 0.0
+var _recovery_hp_ratio := 0.01
 var _material_cache: Dictionary = {}
 
 
@@ -53,9 +55,18 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_collapse_fraction = move_toward(_collapse_fraction, 1.0 if _destroyed else 0.0, delta * 1.7)
+	if _destroyed:
+		_open_fraction = move_toward(
+			_open_fraction,
+			0.0,
+			(OPEN_SPEED_DEGREES_PER_SECOND / OPEN_ANGLE_DEGREES) * delta
+		)
+		_apply_door_pose()
+		return
 	var friendly_near := _has_friendly_in_sensor()
 	var combat_locked := is_front_gate and _has_active_enemies()
-	var open_requested := _destroyed or (friendly_near and not combat_locked)
+	var open_requested := friendly_near and not combat_locked
 	if open_requested:
 		_close_hold_remaining = CLOSE_HOLD_SECONDS
 	elif _close_hold_remaining > 0.0:
@@ -87,8 +98,10 @@ func debug_get_snapshot() -> Dictionary:
 		"enemy_can_trigger": false,
 		"combat_locked": is_front_gate and _has_active_enemies(),
 		"destroyed": _destroyed,
+		"collapse_fraction": _collapse_fraction,
+		"recovery_hp_ratio": _recovery_hp_ratio,
 		"level_two_visible": _level_two != null and _level_two.visible,
-		"blocking_collision": true,
+		"blocking_collision": not _destroyed,
 		"authority_role": "presentation_and_physical_door_only"
 	}
 
@@ -301,7 +314,9 @@ func _refresh_building_state() -> void:
 	var building: Dictionary = building_system.call("get_building", gate_id)
 	if building.is_empty():
 		return
-	_destroyed = int(building.get("hp", 1)) <= 0
+	var destruction: Dictionary = building.get("destruction", {}) if building.get("destruction", {}) is Dictionary else {}
+	_recovery_hp_ratio = clampf(float(destruction.get("recovery_hp_ratio", 0.01)), 0.0, 1.0)
+	_destroyed = bool(building.get("destruction_latched", int(building.get("hp", 1)) <= 0))
 	if _level_two != null:
 		_level_two.visible = int(building.get("level", 1)) >= 2
 	_set_leaf_collisions_enabled(not _destroyed)
@@ -317,9 +332,17 @@ func _set_leaf_collisions_enabled(enabled: bool) -> void:
 
 func _apply_door_pose() -> void:
 	if _left_hinge != null:
-		_left_hinge.rotation.y = deg_to_rad(-OPEN_ANGLE_DEGREES * _open_fraction)
+		_left_hinge.rotation = Vector3(
+			deg_to_rad(86.0 * _collapse_fraction),
+			deg_to_rad(-OPEN_ANGLE_DEGREES * _open_fraction * (1.0 - _collapse_fraction)),
+			deg_to_rad(-5.0 * _collapse_fraction)
+		)
 	if _right_hinge != null:
-		_right_hinge.rotation.y = deg_to_rad(OPEN_ANGLE_DEGREES * _open_fraction)
+		_right_hinge.rotation = Vector3(
+			deg_to_rad(82.0 * _collapse_fraction),
+			deg_to_rad(OPEN_ANGLE_DEGREES * _open_fraction * (1.0 - _collapse_fraction)),
+			deg_to_rad(7.0 * _collapse_fraction)
+		)
 
 
 func _add_textured_box(parent: Node3D, node_name: String, center: Vector3, size: Vector3, texture_kind: String, tint: Color, density: float) -> MeshInstance3D:

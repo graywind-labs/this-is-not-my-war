@@ -3,7 +3,12 @@ extends Node
 const CONFIG_FILE := "piety_ability.json"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
 const EFFECTS_ROOT_PATH := "/root/Main/WorldRoot/Station/Effects"
+const CAMERA_RIG_PATH := "/root/Main/CameraRig"
+const METEOR_PRESENTATION_SCRIPT := preload("res://scripts/presentation/combat/MeteorPresentation.gd")
 const SYSTEM_ACTOR_ID := "guard_officer"
 const PLAZA_LOCATION_ID := "plaza"
 
@@ -16,6 +21,8 @@ var _pending_meteors: Dictionary = {}
 var _burn_zones: Dictionary = {}
 var _meteor_visuals: Dictionary = {}
 var _burn_visuals: Dictionary = {}
+var _landed_meteor_visuals: Dictionary = {}
+var _permanent_crater_visuals: Dictionary = {}
 var _last_generation_result: Dictionary = {}
 var _last_cast_result: Dictionary = {}
 var _last_impact_result: Dictionary = {}
@@ -30,6 +37,14 @@ func _ready() -> void:
 		and not event_bus.logical_time_tick.is_connected(_on_logical_time_tick)
 	):
 		event_bus.logical_time_tick.connect(_on_logical_time_tick)
+	if event_bus != null and not event_bus.event_recorded.is_connected(_on_event_recorded):
+		event_bus.event_recorded.connect(_on_event_recorded)
+
+
+func _process(real_delta_seconds: float) -> void:
+	if real_delta_seconds <= 0.0 or _pending_meteors.is_empty() or _is_gameplay_time_paused():
+		return
+	_advance_pending_meteors(real_delta_seconds)
 
 
 func initialize() -> void:
@@ -114,8 +129,12 @@ func request_meteor_cast(target_position: Vector3) -> Dictionary:
 	var game_state := get_node_or_null("/root/GameState")
 	if game_state != null and bool(game_state.get("game_over")):
 		return _failure("game_over", "游戏已经结算，不能施放陨石。")
-	if not is_target_position_allowed(target_position):
-		return _failure("invalid_target", "陨石落点必须位于驿站地表范围内。")
+	var validation := get_target_position_validation(target_position)
+	if not bool(validation.get("allowed", false)):
+		return _failure(
+			str(validation.get("reason", "invalid_target")),
+			str(validation.get("message", "陨石落点坐标无效。"))
+		)
 
 	var normalized_target := Vector3(
 		target_position.x,
@@ -133,42 +152,67 @@ func request_meteor_cast(target_position: Vector3) -> Dictionary:
 		"elapsed_seconds": 0.0,
 		"fall_duration_seconds": maxf(0.01, float(meteor_config.get("fall_duration_seconds", 1.0))),
 		"start_height": maxf(1.0, float(meteor_config.get("start_height", 20.0))),
+		"start_position": _get_meteor_start_position(normalized_target, meteor_config),
 		"radius": maxf(0.1, float(meteor_config.get("radius", 5.0))),
 		"piety_spent": piety_spent
 	}
 	_pending_meteors[cast_id] = state
 	_create_meteor_visual(state)
+	_request_camera_shake(
+		float(state["fall_duration_seconds"]),
+		maxf(0.0, float(meteor_config.get("descent_camera_shake_amplitude", 0.1))),
+		maxf(1.0, float(meteor_config.get("descent_camera_shake_frequency", 9.0)))
+	)
 	_emit_piety_changed(-piety_spent, "meteor_cast")
 	_emit_event_bus_signal("meteor_cast_started", [cast_id, normalized_target, float(state["radius"])])
-	var event := _record_meteor_cast_event(state)
 	_last_cast_result = {
 		"ok": true,
 		"cast_id": cast_id,
 		"target_position": _vector3_to_dict(normalized_target),
 		"radius": float(state["radius"]),
-		"piety_spent": piety_spent,
-		"event": event
+		"piety_spent": piety_spent
 	}
 	return _last_cast_result.duplicate(true)
 
 
 func is_target_position_allowed(target_position: Vector3) -> bool:
-	if (
+	return bool(get_target_position_validation(target_position).get("allowed", false))
+
+
+func get_target_position_validation(target_position: Vector3) -> Dictionary:
+	var finite := not (
 		is_nan(target_position.x)
 		or is_nan(target_position.y)
 		or is_nan(target_position.z)
 		or is_inf(target_position.x)
 		or is_inf(target_position.y)
 		or is_inf(target_position.z)
-	):
-		return false
-	var bounds: Dictionary = _config.get("target_bounds", {})
-	return (
-		target_position.x >= float(bounds.get("min_x", -28.5))
-		and target_position.x <= float(bounds.get("max_x", 28.5))
-		and target_position.z >= float(bounds.get("min_z", -33.5))
-		and target_position.z <= float(bounds.get("max_z", 33.5))
 	)
+	if not finite:
+		return {
+			"allowed": false,
+			"reason": "invalid_target",
+			"message": "陨石落点坐标无效。",
+		}
+	var meteor := get_meteor_config()
+	var radius := maxf(0.1, float(meteor.get("radius", 5.0)))
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("get_building_area_overlap"):
+		var blocker: Dictionary = controller.get_building_area_overlap(target_position, radius)
+		if not blocker.is_empty():
+			return {
+				"allowed": false,
+				"reason": "building_overlap",
+				"message": "赖天主仁慈，陨石不能砸到建筑",
+				"blocker": blocker,
+				"radius": radius,
+			}
+	return {
+		"allowed": true,
+		"reason": "",
+		"message": "",
+		"radius": radius,
+	}
 
 
 func get_current_piety() -> float:
@@ -193,7 +237,7 @@ func get_targeting_snapshot() -> Dictionary:
 	return {
 		"radius": maxf(0.1, float(meteor.get("radius", 5.0))),
 		"ground_y": float(_config.get("target_ground_y", 0.0)),
-		"bounds": (_config.get("target_bounds", {}) as Dictionary).duplicate(true)
+		"scope": "unbounded_ground_plane_except_buildings"
 	}
 
 
@@ -208,6 +252,8 @@ func get_piety_snapshot() -> Dictionary:
 		"generated_by_npc": _generated_by_npc.duplicate(true),
 		"pending_meteors": _serialize_effect_map(_pending_meteors),
 		"burn_zones": _serialize_effect_map(_burn_zones),
+		"landed_meteors": _get_landed_meteor_snapshots(),
+		"permanent_craters": _get_permanent_crater_snapshots(),
 		"last_generation_result": _last_generation_result.duplicate(true),
 		"last_cast_result": _last_cast_result.duplicate(true),
 		"last_impact_result": _last_impact_result.duplicate(true),
@@ -235,13 +281,25 @@ func debug_advance_effects(game_seconds: float) -> Dictionary:
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
 	if game_delta_seconds <= 0.0:
 		return
-	_advance_effects(_get_combat_action_seconds(game_delta_seconds))
+	_advance_burn_zones(_get_combat_action_seconds(game_delta_seconds))
+
+
+func _on_event_recorded(event: Dictionary) -> void:
+	if str(event.get("type", "")) != "combat_ended":
+		return
+	_remove_landed_meteor_bodies()
 
 
 func _advance_effects(combat_delta_seconds: float) -> void:
 	if combat_delta_seconds <= 0.0:
 		return
 	_advance_burn_zones(combat_delta_seconds)
+	_advance_pending_meteors(combat_delta_seconds)
+
+
+func _advance_pending_meteors(combat_delta_seconds: float) -> void:
+	if combat_delta_seconds <= 0.0:
+		return
 	var cast_ids := _pending_meteors.keys()
 	for raw_cast_id in cast_ids:
 		var cast_id := str(raw_cast_id)
@@ -257,6 +315,15 @@ func _advance_effects(combat_delta_seconds: float) -> void:
 			continue
 		_pending_meteors.erase(cast_id)
 		_resolve_meteor_impact(state)
+
+
+func _is_gameplay_time_paused() -> bool:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	return (
+		time_system != null
+		and time_system.has_method("is_gameplay_paused")
+		and bool(time_system.is_gameplay_paused())
+	)
 
 
 func _advance_burn_zones(combat_delta_seconds: float) -> void:
@@ -285,8 +352,27 @@ func _advance_burn_zones(combat_delta_seconds: float) -> void:
 
 func _resolve_meteor_impact(state: Dictionary) -> void:
 	var cast_id := str(state.get("cast_id", ""))
-	_remove_meteor_visual(cast_id)
 	var meteor := get_meteor_config()
+	var visual := _meteor_visuals.get(cast_id, null) as Node3D
+	var landed_collision_radius := maxf(0.1, float(meteor.get("body_radius", 4.2)) * 0.78)
+	if visual != null and visual.has_method("get_landed_collision_radius"):
+		landed_collision_radius = maxf(0.1, float(visual.get_landed_collision_radius()))
+	var friendly_displacement := _displace_friendly_npcs_for_landed_body(
+		state.get("target_position", Vector3.ZERO),
+		landed_collision_radius,
+		cast_id,
+		maxf(0.02, float(meteor.get("friendly_displacement_margin", 0.12)))
+	)
+	if visual != null and visual.has_method("impact_at"):
+		visual.impact_at(state.get("target_position", Vector3.ZERO))
+		_landed_meteor_visuals[cast_id] = visual
+		_permanent_crater_visuals[cast_id] = visual
+	_meteor_visuals.erase(cast_id)
+	_request_camera_shake(
+		maxf(0.1, float(meteor.get("impact_camera_shake_duration_seconds", 2.0))),
+		maxf(0.0, float(meteor.get("impact_camera_shake_amplitude", 0.82))),
+		maxf(1.0, float(meteor.get("impact_camera_shake_frequency", 23.0)))
+	)
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	var damage_result: Dictionary = {}
 	if combat_system != null and combat_system.has_method("apply_enemy_area_damage"):
@@ -312,6 +398,7 @@ func _resolve_meteor_impact(state: Dictionary) -> void:
 		defeated_count,
 		float(burn_zone.get("duration_seconds", 0.0))
 	)
+	var defeat_event := _record_meteor_defeat_event(state, defeated_count)
 	_last_impact_result = {
 		"ok": not damage_result.is_empty(),
 		"cast_id": cast_id,
@@ -321,10 +408,39 @@ func _resolve_meteor_impact(state: Dictionary) -> void:
 		"hit_count": hit_count,
 		"defeated_count": defeated_count,
 		"damage_result": damage_result,
+		"friendly_displacement": friendly_displacement,
 		"burn_zone": _serialize_effect_state(burn_zone),
-		"event": event
+		"presentation": (
+			visual.get_presentation_snapshot()
+			if visual != null and visual.has_method("get_presentation_snapshot")
+			else {}
+		),
+		"event": event,
+		"defeat_event": defeat_event
 	}
 	_emit_event_bus_signal("meteor_impacted", [cast_id, _last_impact_result.duplicate(true)])
+
+
+func _displace_friendly_npcs_for_landed_body(
+	center: Vector3,
+	obstacle_radius: float,
+	cast_id: String,
+	clearance_margin: float
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("displace_npcs_from_world_obstacle"):
+		return {
+			"ok": false,
+			"reason": "npc_displacement_authority_unavailable",
+			"affected_count": 0,
+			"displaced_count": 0,
+		}
+	return npc_system.displace_npcs_from_world_obstacle(
+		center,
+		obstacle_radius,
+		cast_id,
+		clearance_margin
+	)
 
 
 func _create_burn_zone(state: Dictionary, meteor: Dictionary) -> Dictionary:
@@ -379,18 +495,22 @@ func _load_config() -> void:
 			"contributing_action_ids": ["pray_at_chapel", "lead_mass"],
 			"action_multipliers": {},
 			"prayer_mode_multipliers": {},
-			"combat_action_game_seconds_per_second": 60.0,
+			"combat_action_game_seconds_per_second": 1.0,
 			"target_ground_y": 0.0,
-			"target_bounds": {
-				"min_x": -28.5,
-				"max_x": 28.5,
-				"min_z": -33.5,
-				"max_z": 33.5
-			},
 			"meteor": {
 				"radius": 5.5,
-				"fall_duration_seconds": 1.15,
-				"start_height": 20.0,
+				"fall_duration_seconds": 2.8,
+				"start_height": 30.0,
+				"start_horizontal_offset": 15.0,
+				"body_radius": 4.2,
+				"friendly_displacement_margin": 0.12,
+				"crater_radius": 4.8,
+				"descent_camera_shake_amplitude": 0.1,
+				"descent_camera_shake_frequency": 9.0,
+				"impact_camera_shake_duration_seconds": 2.0,
+				"impact_camera_shake_amplitude": 0.82,
+				"impact_camera_shake_frequency": 23.0,
+				"impact_vfx_duration_seconds": 2.0,
 				"impact_damage": 48.0,
 				"impact_penetration": 5.0,
 				"impact_max_targets": 12,
@@ -402,27 +522,6 @@ func _load_config() -> void:
 		}
 	_config["max_piety"] = maxf(1.0, float(_config.get("max_piety", 100.0)))
 	_config["piety_per_prayer_hour"] = maxf(0.0, float(_config.get("piety_per_prayer_hour", 3.0)))
-
-
-func _record_meteor_cast_event(state: Dictionary) -> Dictionary:
-	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
-	if memory_system == null or not memory_system.has_method("add_event"):
-		return {}
-	return memory_system.add_event({
-		"type": "piety_meteor_cast",
-		"subject_npc_id": SYSTEM_ACTOR_ID,
-		"actor_ids": [SYSTEM_ACTOR_ID],
-		"target_ids": [str(state.get("cast_id", ""))],
-		"location_id": PLAZA_LOCATION_ID,
-		"visibility": "local_public",
-		"importance": 90,
-		"payload": {
-			"cast_id": str(state.get("cast_id", "")),
-			"target_position": _vector3_to_dict(state.get("target_position", Vector3.ZERO)),
-			"radius": float(state.get("radius", 0.0)),
-			"piety_spent": float(state.get("piety_spent", 0.0))
-		}
-	})
 
 
 func _record_meteor_impact_event(
@@ -457,29 +556,37 @@ func _record_meteor_impact_event(
 	})
 
 
+func _record_meteor_defeat_event(state: Dictionary, defeated_count: int) -> Dictionary:
+	if defeated_count <= 0:
+		return {}
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "piety_meteor_enemy_defeated",
+		"subject_npc_id": SYSTEM_ACTOR_ID,
+		"actor_ids": [SYSTEM_ACTOR_ID],
+		"target_ids": [str(state.get("cast_id", ""))],
+		"location_id": PLAZA_LOCATION_ID,
+		"visibility": "local_public",
+		"importance": 98,
+		"payload": {
+			"cast_id": str(state.get("cast_id", "")),
+			"enemy_defeated_count": defeated_count
+		}
+	})
+
+
 func _create_meteor_visual(state: Dictionary) -> void:
 	var effects_root := get_node_or_null(EFFECTS_ROOT_PATH) as Node3D
 	if effects_root == null:
 		return
 	var cast_id := str(state.get("cast_id", ""))
-	var visual := Node3D.new()
+	var visual := METEOR_PRESENTATION_SCRIPT.new() as Node3D
 	visual.name = "%sVisual" % cast_id.to_pascal_case()
 	visual.set_meta("cast_id", cast_id)
-	var body := MeshInstance3D.new()
-	body.name = "MeteorBody"
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.48
-	sphere.height = 0.96
-	body.mesh = sphere
-	body.set_surface_override_material(0, _make_effect_material(Color(1.0, 0.24, 0.04, 1.0), false))
-	visual.add_child(body)
-	var light := OmniLight3D.new()
-	light.name = "MeteorLight"
-	light.light_color = Color(1.0, 0.34, 0.08, 1.0)
-	light.light_energy = 4.0
-	light.omni_range = 8.0
-	visual.add_child(light)
 	effects_root.add_child(visual)
+	visual.configure(get_meteor_config())
 	_meteor_visuals[cast_id] = visual
 	_update_meteor_visual(state)
 
@@ -492,8 +599,14 @@ func _update_meteor_visual(state: Dictionary) -> void:
 	var duration := maxf(0.01, float(state.get("fall_duration_seconds", 1.0)))
 	var progress := clampf(float(state.get("elapsed_seconds", 0.0)) / duration, 0.0, 1.0)
 	var target: Vector3 = state.get("target_position", Vector3.ZERO)
-	var start_height := float(state.get("start_height", 20.0))
-	visual.global_position = target + Vector3(0.0, lerpf(start_height, 0.45, progress), 0.0)
+	var start_position: Vector3 = state.get(
+		"start_position",
+		target + Vector3(0.0, float(state.get("start_height", 20.0)), 0.0)
+	)
+	var eased_progress := pow(progress, 1.35)
+	var landing_position := target + Vector3(0.0, 0.02, 0.0)
+	if visual.has_method("set_fall_transform"):
+		visual.set_fall_transform(start_position.lerp(landing_position, eased_progress), progress)
 
 
 func _create_burn_visual(zone: Dictionary) -> void:
@@ -512,7 +625,7 @@ func _create_burn_visual(zone: Dictionary) -> void:
 	mesh.height = 0.035
 	mesh.radial_segments = 64
 	disk.mesh = mesh
-	disk.set_surface_override_material(0, _make_effect_material(Color(1.0, 0.18, 0.015, 0.34), true))
+	disk.set_surface_override_material(0, _make_effect_material(Color(1.0, 0.13, 0.01, 0.16), true))
 	visual.add_child(disk)
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
@@ -521,6 +634,12 @@ func _create_burn_visual(zone: Dictionary) -> void:
 	light.light_energy = 1.5
 	light.omni_range = float(zone.get("radius", 5.0)) * 1.6
 	visual.add_child(light)
+	for index in range(14):
+		var angle := TAU * float(index) / 14.0 + 0.37 * float(index % 3)
+		var distance := float(zone.get("radius", 5.0)) * (0.22 + 0.055 * float(index % 7))
+		var flame := _make_ground_flame_particles(index)
+		flame.position = Vector3(cos(angle) * distance, 0.08, sin(angle) * distance)
+		visual.add_child(flame)
 	effects_root.add_child(visual)
 	visual.global_position = zone.get("target_position", Vector3.ZERO) + Vector3(0.0, 0.04, 0.0)
 	_burn_visuals[zone_id] = visual
@@ -546,6 +665,13 @@ func _remove_meteor_visual(cast_id: String) -> void:
 	_meteor_visuals.erase(cast_id)
 
 
+func _remove_landed_meteor_bodies() -> void:
+	for visual in _landed_meteor_visuals.values():
+		if visual is Node and is_instance_valid(visual) and visual.has_method("remove_landed_body"):
+			visual.remove_landed_body()
+	_landed_meteor_visuals.clear()
+
+
 func _remove_burn_visual(zone_id: String) -> void:
 	var visual := _burn_visuals.get(zone_id, null) as Node
 	if visual != null:
@@ -560,12 +686,17 @@ func _clear_effect_visuals() -> void:
 	for visual in _burn_visuals.values():
 		if visual is Node and is_instance_valid(visual):
 			(visual as Node).queue_free()
+	for visual in _permanent_crater_visuals.values():
+		if visual is Node and is_instance_valid(visual):
+			(visual as Node).queue_free()
 	_meteor_visuals.clear()
 	_burn_visuals.clear()
+	_landed_meteor_visuals.clear()
+	_permanent_crater_visuals.clear()
 
 
 func _get_combat_action_seconds(game_seconds: float) -> float:
-	var divisor := maxf(1.0, float(_config.get("combat_action_game_seconds_per_second", 60.0)))
+	var divisor := maxf(1.0, float(_config.get("combat_action_game_seconds_per_second", 1.0)))
 	return game_seconds / divisor
 
 
@@ -601,7 +732,92 @@ func _serialize_effect_state(state: Dictionary) -> Dictionary:
 	var result := state.duplicate(true)
 	if result.get("target_position") is Vector3:
 		result["target_position"] = _vector3_to_dict(result["target_position"])
+	if result.get("start_position") is Vector3:
+		result["start_position"] = _vector3_to_dict(result["start_position"])
 	return result
+
+
+func _get_meteor_start_position(target: Vector3, meteor: Dictionary) -> Vector3:
+	var horizontal_direction := Vector3(0.0, 0.0, -1.0)
+	var camera_rig := get_node_or_null(CAMERA_RIG_PATH) as Node3D
+	if camera_rig != null:
+		var camera := camera_rig.get_node_or_null("Camera3D") as Camera3D
+		if camera != null:
+			horizontal_direction = -camera.global_basis.z
+			horizontal_direction.y = 0.0
+			if horizontal_direction.length_squared() > 0.0001:
+				horizontal_direction = horizontal_direction.normalized()
+	var horizontal_offset := maxf(0.0, float(meteor.get("start_horizontal_offset", 15.0)))
+	var start_height := maxf(1.0, float(meteor.get("start_height", 30.0)))
+	return target + horizontal_direction * horizontal_offset + Vector3.UP * start_height
+
+
+func _request_camera_shake(duration: float, amplitude: float, frequency: float) -> void:
+	var camera_rig := get_node_or_null(CAMERA_RIG_PATH)
+	if camera_rig != null and camera_rig.has_method("request_camera_shake"):
+		camera_rig.request_camera_shake(duration, amplitude, frequency)
+
+
+func _get_landed_meteor_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for raw_cast_id in _landed_meteor_visuals.keys():
+		var visual := _landed_meteor_visuals.get(raw_cast_id, null) as Node
+		result.append({
+			"cast_id": str(raw_cast_id),
+			"presentation": (
+				visual.get_presentation_snapshot()
+				if visual != null and visual.has_method("get_presentation_snapshot")
+				else {}
+			)
+		})
+	return result
+
+
+func _get_permanent_crater_snapshots() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for raw_cast_id in _permanent_crater_visuals.keys():
+		var visual := _permanent_crater_visuals.get(raw_cast_id, null) as Node
+		result.append({
+			"cast_id": str(raw_cast_id),
+			"present": visual != null and is_instance_valid(visual),
+			"presentation": (
+				visual.get_presentation_snapshot()
+				if visual != null and visual.has_method("get_presentation_snapshot")
+				else {}
+			)
+		})
+	return result
+
+
+func _make_ground_flame_particles(index: int) -> GPUParticles3D:
+	var particles := GPUParticles3D.new()
+	particles.name = "GroundFlame%02d" % index
+	particles.amount = 12
+	particles.lifetime = 0.72 + 0.06 * float(index % 3)
+	particles.preprocess = 0.5
+	particles.visibility_aabb = AABB(Vector3(-2.0, -0.5, -2.0), Vector3(4.0, 6.0, 4.0))
+	var process := ParticleProcessMaterial.new()
+	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	process.emission_sphere_radius = 0.46
+	process.direction = Vector3.UP
+	process.spread = 24.0
+	process.initial_velocity_min = 1.0
+	process.initial_velocity_max = 2.6
+	process.gravity = Vector3(0.0, 0.55, 0.0)
+	process.scale_min = 0.65
+	process.scale_max = 1.5
+	particles.process_material = process
+	var flame_mesh := CylinderMesh.new()
+	flame_mesh.top_radius = 0.02
+	flame_mesh.bottom_radius = 0.18
+	flame_mesh.height = 0.72
+	flame_mesh.radial_segments = 10
+	flame_mesh.material = _make_effect_material(
+		Color(1.0, 0.12 + 0.035 * float(index % 4), 0.015, 0.78),
+		true
+	)
+	particles.draw_pass_1 = flame_mesh
+	return particles
 
 
 func _vector3_to_dict(value: Vector3) -> Dictionary:

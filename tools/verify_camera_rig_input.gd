@@ -34,6 +34,10 @@ func _init() -> void:
 		push_error("A received S press should move the camera.")
 		quit(1)
 		return
+	if not is_equal_approx(camera_rig.keyboard_pan_speed, 28.0) or not is_equal_approx(normal_displacement.length(), 7.0):
+		push_error("WASD should use the 28 m/s base speed: configured=%s displacement=%s." % [camera_rig.keyboard_pan_speed, normal_displacement.length()])
+		quit(1)
+		return
 
 	camera_rig._input(release_s)
 	camera_rig.global_position = baseline_position
@@ -44,7 +48,7 @@ func _init() -> void:
 	camera_rig._process(0.25)
 	var boosted_position := camera_rig.global_position
 	var boosted_displacement := boosted_position - baseline_position
-	if not is_equal_approx(boosted_displacement.length(), normal_displacement.length() * 2.0):
+	if not is_equal_approx(boosted_displacement.length(), 14.0) or not is_equal_approx(boosted_displacement.length(), normal_displacement.length() * 2.0):
 		push_error("Shift + WASD should move the camera at exactly 2x speed: normal=%s boosted=%s multiplier_active=%s." % [moved_position, boosted_position, camera_rig._is_keyboard_pan_boost_active])
 		quit(1)
 		return
@@ -96,7 +100,7 @@ func _init() -> void:
 
 	main.queue_free()
 	await process_frame
-	print("T0045 camera input lifecycle verification passed.")
+	print("T0045B camera input speed and lifecycle verification passed.")
 	quit(0)
 
 

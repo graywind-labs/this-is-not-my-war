@@ -9,6 +9,7 @@ const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_DAMAGE_VISIBILITY := "local_public"
@@ -62,6 +63,13 @@ func initialize() -> void:
 		definition["hp"] = hp
 		definition["max_hp"] = max_hp
 		definition["level"] = max(1, int(definition.get("level", 1)))
+		var destruction: Dictionary = (
+			definition.get("destruction", {}).duplicate(true)
+			if definition.get("destruction", {}) is Dictionary
+			else {}
+		)
+		definition["destruction"] = destruction
+		definition["destruction_latched"] = not destruction.is_empty() and hp <= 0
 		definition["workstations"] = _normalize_workstations(
 			building_id,
 			definition.get("workstations", []) if definition.get("workstations", []) is Array else []
@@ -85,6 +93,9 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if _try_route_stable_horse_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
 		var art_hit := _pick_building_art_view_at_screen_position(event.position)
 		if not art_hit.is_empty():
 			var art_building_id := str(art_hit.get("building_id", ""))
@@ -139,6 +150,62 @@ func _try_select_interior_npc(screen_position: Vector2, building_id: String) -> 
 	if str(state.get("current_location", "")) != building_id:
 		return false
 	return npc_system.has_method("select_npc_from_world_click") and bool(npc_system.call("select_npc_from_world_click", npc_id))
+
+
+func _try_select_interior_horse(screen_position: Vector2, building_id: String) -> bool:
+	if building_id != "stable":
+		return false
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = horse_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "horse":
+		return false
+	var horse_id := str(interaction.get("horse_id", ""))
+	if horse_id.is_empty() or not horse_system.has_method("get_horse_snapshot"):
+		return false
+	var horse: Dictionary = horse_system.call("get_horse_snapshot", horse_id)
+	if str(horse.get("location", "")) != "stable":
+		return false
+	return horse_system.has_method("select_horse_from_world_click") and bool(horse_system.call("select_horse_from_world_click", horse_id))
+
+
+func _try_route_stable_horse_click(screen_position: Vector2) -> bool:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = horse_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "horse":
+		return false
+	var horse_id := str(interaction.get("horse_id", ""))
+	if horse_id.is_empty() or not horse_system.has_method("get_horse_snapshot"):
+		return false
+	var horse: Dictionary = horse_system.call("get_horse_snapshot", horse_id)
+	if str(horse.get("location", "")) != "stable":
+		return false
+	var stable_hit := _pick_specific_building_art_view_at_screen_position(screen_position, "stable")
+	if stable_hit.is_empty():
+		return false
+	if bool(stable_hit.get("interior_revealed", false)):
+		return _try_select_interior_horse(screen_position, "stable")
+	_select_building("stable")
+	return true
+
+
+func _pick_specific_building_art_view_at_screen_position(screen_position: Vector2, building_id: String) -> Dictionary:
+	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
+	if camera == null:
+		return {}
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * PICK_RAY_LENGTH
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or str(view.get("building_id")) != building_id or not view.has_method("get_building_interaction_ray_hit"):
+			continue
+		var hit: Variant = view.call("get_building_interaction_ray_hit", ray_origin, ray_end)
+		if hit is Dictionary and not (hit as Dictionary).is_empty():
+			return (hit as Dictionary).duplicate(true)
+	return {}
 
 
 func _should_defer_art_hit_to_foreground_npc(screen_position: Vector2, art_hit: Dictionary) -> bool:
@@ -1066,6 +1133,8 @@ func apply_damage_to_building(
 	var hp_before := clampi(int(building.get("hp", max_hp)), 0, max_hp)
 	var hp_after := maxi(0, hp_before - amount)
 	building["hp"] = hp_after
+	if hp_after <= 0 and not (building.get("destruction", {}) as Dictionary).is_empty():
+		building["destruction_latched"] = true
 	if _active_repairs.has(building_id):
 		_release_repair_helpers(_active_repairs[building_id], building_id)
 		_active_repairs.erase(building_id)
@@ -1100,6 +1169,7 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 		return true
 
 	building["hp"] = mini(max_hp, current_hp + amount)
+	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
@@ -1220,6 +1290,7 @@ func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> v
 	var next_hp := mini(target_hp, int(floor(lerpf(float(start_hp), float(target_hp), progress))))
 	if next_hp > int(building.get("hp", 0)):
 		building["hp"] = next_hp
+		_refresh_destruction_latch(building)
 		_buildings[building_id] = building
 		_refresh_bound_scene_nodes(building_id)
 		if emit_changed:
@@ -1233,6 +1304,7 @@ func _finish_repair(building_id: String) -> void:
 	var job: Dictionary = _active_repairs[building_id]
 	var building: Dictionary = _buildings[building_id]
 	building["hp"] = int(job.get("target_hp", building.get("max_hp", 0)))
+	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_active_repairs.erase(building_id)
 	_release_repair_helpers(job, building_id)
@@ -1337,6 +1409,23 @@ func _get_building_condition(building_id: String) -> String:
 	return "damaged"
 
 
+func _refresh_destruction_latch(building: Dictionary) -> void:
+	if not bool(building.get("destruction_latched", false)):
+		return
+	var destruction: Dictionary = (
+		building.get("destruction", {})
+		if building.get("destruction", {}) is Dictionary
+		else {}
+	)
+	if destruction.is_empty() or not bool(destruction.get("recoverable", false)):
+		return
+	var maximum_hp := maxi(1, int(building.get("max_hp", 1)))
+	var recovery_ratio := clampf(float(destruction.get("recovery_hp_ratio", 1.0)), 0.0, 1.0)
+	var required_hp := maxi(1, int(ceil(float(maximum_hp) * recovery_ratio)))
+	if int(building.get("hp", 0)) >= required_hp:
+		building["destruction_latched"] = false
+
+
 func _finish_upgrade(building_id: String) -> void:
 	if not _buildings.has(building_id) or not _active_upgrades.has(building_id):
 		return
@@ -1348,6 +1437,7 @@ func _finish_upgrade(building_id: String) -> void:
 	building["level"] = int(job.get("target_level", int(building.get("level", 1)) + 1))
 	building["max_hp"] = int(building.get("max_hp", 0)) + max_hp_bonus
 	building["hp"] = int(building.get("max_hp", building.get("hp", 0)))
+	_refresh_destruction_latch(building)
 	_apply_workstation_upgrade(building, upgrade_config)
 	_apply_efficiency_upgrade(building, upgrade_config)
 	_buildings[building_id] = building

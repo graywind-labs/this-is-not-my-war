@@ -1,5 +1,171 @@
 # GM_PANEL.md
 
+## T0198 友方锁定只读验证
+
+- 不新增按钮；使用“一键征召&配装”“所选波次动态群战”、NPC 状态和现有战斗快照即可自然验收。`friendly_station_response` 应显示 `friendly_station_response_runtime_v2 / friendly_enemy_presence_lock_v1 / 37.2 m`，`locks[]` 可查看每名武装 NPC 的 `scope / target_enemy_id / target_present / pending`。
+- 站外 NPC 应只在 `37.2 m` 内进战并保持首次最近目标；站内 NPC 的 scope 应为 `entire_station`。异源实际伤害后，请求可能只存在一个 AI 预算帧；可结合 `different_attacker_damage_*` metrics 与 `target_selection_reason=different_attacker_damage_nearest_enemy_reacquire` 观察。
+- GMPanel 不强制友军目标、不伪造受击请求、不改 attack phase；现有入口已覆盖可见行为和只读诊断，因此没有增加第二套权威控制。
+
+## T0197 异源受击重锁只读验证
+
+- 不新增按钮；继续使用“一键征召&配装”、器械部署、“所选波次动态群战”和“敌人快照”。实际命中后，快照中的 `enemy_targeting.different_attacker_damage_reacquire_requests` 可短暂出现一次请求，`locks[].different_attacker_damage_reacquire_pending` 表示尚待下一次选择消费。
+- `different_attacker_damage_signals / different_attacker_damage_reacquisitions / different_attacker_damage_no_candidate_consumptions` 分别观察合法异源伤害、成功圈内重选和无圈内高威胁时的消费。由于正常 AI 会在下一预算帧消费，请求本身可能很短；目标上的 `target_selection_reason=different_attacker_damage_nearest_high_threat_reacquire` 保留最近一次选择证据。
+- GMPanel 仍不直接扣敌人 HP、不写请求、不强制目标；既有入口足以自然产生并观察该行为，因此没有增加调试按钮或权威接口。
+
+## T0196 统一敌军索敌只读验证
+
+- 不新增按钮；继续使用器械部署、“所选波次动态群战”和“敌人快照”。快照中的 `enemy_targeting.policy` 应为 `enemy_unified_presence_lock_v3 / 37.2 m`，metrics 可观察 `locked_high_target_holds / locked_unarmed_target_holds / high_threat_preemptions / fixed_target_full_skips / gate_full_holds`。全部活动敌人均使用该政策，不再因缺少动态压力标记退回旧索敌。
+- 实测时，圈内持武器 NPC 与塔防应按首次最近者锁定，锁存在时同级新目标不抢走；NPC 目标不得出现 attack-position lease / waiter。塔防满位可改选其他合法目标，完整城门 7 位满后第 8 人仍应显示城门 waiter，不能显示“攻击→仓库”。
+- GMPanel 只读现有快照并调用既有刷敌 / 部署入口，不强制目标、不填攻击位、不模拟命中，因此无需新增权威调试接口。
+
+## T0195 塔防严格优先自然路径验证（历史，已由 T0196 取代）
+
+- 不新增按钮；部署 `wall_slot_01` 弩床后使用“所选波次动态群战”生成完整第一波。无需传送敌人，满攻击位的敌人应显示塔防候补 / `waiting_for_attack_position`，不得出现“攻击→城门”。
+- “敌人快照”可观察 `strict_defense_waits`、塔防 waiter 与晋升；自然抵达后弩床 HP 应下降、城门 HP 保持。GMPanel 不修改目标、租约或 HP。
+
+## T0194 敌军反击与塔防感知验证（历史，已由 T0196 取代）
+
+- 不新增按钮；继续使用既有器械部署、生成所选波次 / 动态群战与“敌人快照”。把墙上箭塔或弩床部署后生成第 1 波，可直接观察敌军在器械射程内先选择优先级 2 塔防而非优先级 3 城门。
+- 敌人快照的 `enemy_targeting.metrics` 可观察 `recent_hit_preemptions / recent_hit_npc_target_holds`，目标可观察 `effective_attack_range / enemy_detection_range / target_selection_reason`。GMPanel 不制造命中、不强制目标，也不绕过攻击位与物理碰撞。
+
+## T0193 我方单位攻击节奏验证
+
+- 不新增按钮；使用“一键征召&配装”后选择第一波并执行“所选波次动态群战”，即可同时观察我方近战、远程和骑兵的正式攻击节奏。短暂追击、换目标或重新接敌不得让同一 NPC 提前重播攻击。
+- 联合存读档继续使用既有“正式空间保存 / 读取”入口；若保存时我方单位刚起手，读档后须保留剩余等待而不是立刻再挥一次。GMPanel 不计算周期、不写锁、不提交伤害。
+
+## T0192 正式动态波次的友军追击投影
+
+- 不新增按钮；继续使用“所选波次动态群战”复现站内拦截。该入口虽然不是默认日期波次，但敌我都位于正式生产世界，友军策略目标现在按 NPC 实际绑定的 NavigationMap 投影，不再被旧地图 `[-14,14] × [-12.5,18.5]` 边界截断。
+- 验收时选择第 1 波并让敌人进入仓库区域，主动攻击的艾达应追到敌人实际位置、结束“战术移动”并进入正式攻击；GMPanel 仍只调用 CombatSystem 调试接口，不拥有目标坐标、导航或伤害权威。
+
+## T0166 快捷入口与页签整理
+
+- “一键征召&配装”现固定在标题 / 命令行下方的“快捷操作”区，不属于任何滚动容器，打开面板即可看到；命令 `recruit_equip_all` 与原 EquipmentSystem 调用不变。
+- 原单列长面板拆为“常用 / 世界建筑 / 制造马匹 / 正式行动 / AI信息”五页，每页独立滚动。面板扩大为 `900×620`，空间不足时会自动放到 GM 按钮右侧或左侧并保持在视口内。
+- 已移除被通用入口覆盖的重复按钮：独立“生成第一波敌人”由“生成所选波次”选择第 1 波代替；7 个早期 A2b 导航试运行按钮由正式工作 / 服务入口代替；旧布局兼容、格伦试片和第一波剑盾试片保留命令但不再占用可见按钮。系统 debug 接口没有删除。
+
+## T0173 连续陨石与慢速验证
+
+- 不新增按钮；继续使用“充满虔诚”“虔诚 / 陨石快照”和“推进陨石 1 秒”。自然验证时可先通过 NPC 正式移动或 LLM 请求制造 `x0.02` 慢速，再充满并施放第二颗；待落陨石应仍约 2.8 秒现实时间落地。
+- 点击 HUD“暂停”后施放并等待，快照中的 pending `elapsed_seconds` 应不变；恢复后继续下落。`piety_step` 仍可在调试时显式推进，不代表自然时间源。
+
+## T0165 陨石表现生命周期验证
+
+- 不新增重复按钮；继续用“填满虔诚”施放，用“推进陨石 1 秒”观察 2.8 动作秒斜落、落地火场，并用“虔诚 / 陨石快照”查看 `pending_meteors / landed_meteors / permanent_craters`。
+- 生成一波敌军后施放可验证战中实体；清敌触发 `combat_ended` 后，快照应为 landed 为空、permanent crater 仍在。GM 仍不自行决定陨石伤害、碰撞或生命周期。
+
+## T0164 建筑名称镜头渐隐
+
+- 本功能在 Main 可直接观察，不新增 GM 按钮。GM 切换正式 / 旧兼容布局不写标签 Alpha；默认正式布局由 StationLayoutController 根据镜头运动自动控制。
+
+## T0163 陨石自由落点验证
+
+- 不新增 GM 按钮；继续使用“填满虔诚”进入 HUD 选点，并用既有“虔诚 / 陨石快照”“推进陨石 1 秒”观察驿站外落点的 pending / impact / burn 状态。
+- GMPanel 不保存或裁剪落点；任意有限地面坐标由 PietySystem 接受，伤害仍由 CombatSystem 结算。
+
+## T0162 马匹身份与满厩反馈
+
+- 不新增第二套马匹生成按钮；既有“强制出生”继续调用 HorseSystem `debug_force_birth()`，马槽满时明确显示 `stable_full`，不会越过容量或继续累积繁育概率。
+- “一键征召&配装”中的额外马改为引用 `horse_defs_v2` 模板，创建后与正常出生马一样占用真实马槽、显示唯一名称 / 毛色并参与点击面板和指定取马。GMPanel 不决定名称、颜色、槽位或坐骑分配。
+
+## T0161 一键征召&配装
+
+- 固定快捷区提供 `RecruitAndEquipAllButton`，显示“一键征召&配装”；命令行同义入口为 `recruit_equip_all`。
+- 固定测试映射来自 `data/gm_debug_presets.json`：艾达=全甲剑盾骑兵，布鲁诺=剑盾步兵，伊沃=全甲长杆步兵，格伦=长杆骑兵，马塞尔=步行弩手，莉娜=全甲步行弓手，托马=骑马弓手，欧文=全甲骑马弩手。
+- GMPanel 不直接写 `recruited`、装备槽、库存或马匹字典，只调用 EquipmentSystem `debug_apply_combat_loadout_preset(...)` 并刷新马匹选项。结果日志显示库存补缺、调试马创建和八人最终快照；完全匹配后再次点击显示 `already_applied=true`。
+- 该入口只用于快速战斗 / 集结验证。战时或逃离状态会被现有换装锁拒绝；不会跳过 HorseSystem 的成年、在厩和唯一分配校验，也不会触发 LLM。
+
+## T0160 正门外独立敌军测试生成区
+
+- 战斗分组使用“生成所选波次”“跳到下一波”和“所选波次动态群战”；选择第 1 波即可替代旧独立第一波按钮，不增加第二套刷怪入口。
+- 上述 GM 路径传入的兼容参数仍名为 `spawn_near_front_gate=true`，但 CombatSystem 会解析为 `gm_front_gate_enemy_spawn_zone`：最前排约 `(5,86)`、区域中心约 `(5,94)`、6 列编队，不再直接叠在 `(5,54)` 正门攻击点。快照同时显示 `spawn_in_gm_staging_zone=true` 与区域配置。
+- 第 1–5 波都使用该黄框测试区；按日期自动来袭和普通 `spawn_wave(...)` 仍从地图边缘 `spawn` 生成。GMPanel 不保存坐标，也不决定敌军导航、目标、攻击或伤害。
+
+## T0157 可摧毁单位验收入口
+
+- 战斗区“摧毁首个塔防”或 `destroy_defense_device [deployment_id]` 只调用 DefenseDeviceSystem `debug_destroy_*`，由正式伤害入口完成 HP 清零、槽位释放和废墟生成；不由 GM 直接删除节点。
+- “塔防废墟快照”或 `defense_device_ruins` 显示活动 deployments 与临时 ruins。先部署箭塔 / 弩床，再摧毁可观察断裂模型；等待现实 15 秒或同槽重新部署应自动清理。
+- 正门、仓库、主厅继续使用 `damage_building <id> <amount>` 与 `repair_building <id>` 验收。正门当前 0→1 HP 仍坍塌、到 2 HP 恢复；仓库 44 HP 仍坍塌、45 HP 恢复；主厅摧毁会立即失败且不恢复。
+
+## T0156 总回归入口
+
+- 不新增按任务编号堆叠的按钮。正式验证继续复用现有波次生成 / 清理、第五波、NPC 动作、器械部署和战斗 / 敌军快照入口。
+- `verify_gm_panel.gd` 已与 T0141–T0155、五波和 48 敌压力一起通过；GM 面板只调用现有生产 / `debug_*` 接口，不拥有命中、伤害、索敌、占位或胜负结算。
+- 完整无人值守矩阵使用 `tools/verify_t0156_full_regression.ps1 -GodotPath <godot executable>`；该脚本不增加游戏内按钮或调试权威。
+
+## T0153 主动呼叫循环示意验收
+
+- 不新增独立按钮。继续使用现有 `start_proactive <npc_id> [文本]` / `proactive` 入口生成正式问号气泡，在 Main 直接观察首次动作和每 5 个现实秒的重复动作。
+- 旋转或平移游戏镜头后等待下一次示意，NPC 应朝向新的镜头位置；切换 x1 / x2 / x4 不改变现实频率，暂停时零播放，恢复后不补播。
+- 点击问号接受可验证立即清理；既有推进逻辑时间、行为模式 / 战斗和主动交涉流程覆盖过期、昏迷与逃离。GMPanel 不直接播放动作、不重建请求、不改频率或调用 LLM；自动化补充验证取消与 scene cleanup。
+
+## T0152 NPC-NPC 邀请示意验收
+
+- 不新增独立按钮。继续使用现有“正式 NPC 对话”发起 / 停止 / 快照入口选择发起者和受邀者；发起者必须实际走到目标身边后才示意并提交请求。
+- 等待气泡期间观察受邀者继续原工作；真实 LLM 拒绝时不应停工或播放接受动作，接受时应先停工、转身相向、示意一次，再进入正式对话。GM 不强制接受 / 拒绝，也不直接调用表现事件。
+- 自动化使用 `verify_t0152_formal_dialogue_gestures.gd` 的受控 provider 验证两条分支和去重；它明确标记为 fake provider，仅用于基础合同，不作为真实模型验收。
+
+## T0151 攻击距离圈验收
+
+- 功能可直接在正式 Main 点击验证，不新增 GM 按钮。使用既有装备、警铃 / 行为模式与器械部署入口准备弓、弩、箭塔和弩床，再点击世界实体观察圆环。
+- NPC 只有处于集结 / 战斗且装备远程武器时显示；塔防显示包含围墙升级或主厅平台倍率后的实际射程。退出模式、换成近战、昏迷、器械摧毁、关闭面板或点击空地后必须隐藏。
+- GM 只可利用现有模式 / 装备 / 部署入口准备前置状态，不提供“强制显示 / 改半径”命令；圆环半径始终由 CombatSystem / DefenseDeviceSystem 快照决定。
+
+## T0150 / T0187 / T0194 敌军旧索敌只读验收（历史，当前见 T0196）
+
+- 不新增“强制指定目标 / 填满攻击位”按钮。继续使用现有波次、动态群战和“敌人快照”，让正式敌军按五级优先级自然索敌；GMPanel 不改写目标锁、反击关系、阻挡判断或攻击位可用性。
+- CombatSystem snapshot 的 `enemy_targeting` 可查看策略 schema、当前帧、五级优先级、短锁定参数、近期攻击关系和累计 metrics；每个敌人快照可查看 `target_priority / target_selection_reason / target_lock_until_frame / target_switch_count`。
+- 上述五级、攻击意图、近期命中、阻挡物抢占和塔防严格候补仅保留为历史。现行验收只看 T0196 的统一半径与在场锁；完整城门满位等待是唯一容量例外。
+
+## T0149 敌军攻击位租约验收
+
+- 不新增“强占攻击位 / 强制补员”按钮。继续使用现有波次、动态群战和“敌人快照”；NPC 不申请位置，塔防 / 建筑使用固定租约，完整城门可有 waiter。GMPanel 不改写 lease、可达性或候补顺序。
+- CombatSystem snapshot 新增 `enemy_attack_positions`：`leases[]` 查看 slot / enemy / target / role / position / radius / standoff / status，`waiters[]` 查看目标、武器位、稳定序号和后排位置；metrics 查看创建、释放、入队、补位与不可达拒绝累计。
+- 验收时同一 slot ID 只能出现一次，同一 enemy 只能在 lease 或 waiter 中出现一次；满位目标释放前排后应在同次快照刷新中看到兼容候补补上，死亡 / 僵直 / 清敌后旧 lease 必须消失。占位不等于命中，最终伤害仍结合近战接触或弹体终态查看。
+
+## T0148 塔防宿主代理验收
+
+- 不新增“攻击代理 / 强制扣塔血”按钮。继续通过现有部署、近门波次和“敌人快照”让敌军自然选择塔防；GMPanel 不决定墙段身份、碰撞结果或伤害归属。
+- DefenseDeviceSystem snapshot 的 deployment / active target 现可观察 `host_proxy`，重点检查 building、slot、wall/building segment、fixture、position / aim_position 和 hit radius；敌人 target 应指向低位宿主代理而不是悬空器械根。
+- Combat 最近 melee / projectile 结果的 collision identity 可查看 `wall_segment_id / building_segment_id / fixture_id`。命中正确代理时 target type 仍为 `defense_device`，器械 HP 下降而宿主建筑 HP 不变；命中相邻槽区域应为 blocked。
+- 器械摧毁后使用同一快照确认 deployment / active target 消失、槽位释放，而墙段 / 主厅仍保持原 HP 与碰撞。普通建筑攻击继续只显示 building damage。
+
+## T0147 塔防物理攻击验收
+
+- 不新增塔防强制命中按钮。继续使用现有建造 / 部署、近门波次和“敌人快照”入口，让正式 Main 的箭塔 / 弩炮自然索敌、转向、释放和碰撞；GMPanel 不直接改写 attack phase、弹体或 HP。
+- DefenseDeviceSystem 快照可观察部署实例的 `attack_phase / attack_phase_elapsed / attack_cycle_seconds / attack_release_seconds / attack_target_enemy_id / attack_committed / attack_sequence`；CombatSystem 的 `active_projectiles / last_projectile_result` 可确认 `source_side=defense_device`、正式 muzzle、`max_range`、唯一 `attack_id` 和终态 damage result。
+- 验收时释放前 HP 必须不变，释放后先出现活动弹体，实际 `hit` 后才更新 HP / 塔防累计伤害；`blocked / miss / range_exceeded` 零伤害。生产正式模型的内部 presentation projectile 数应保持为零。
+
+## T0146 敌我弓弩步骑验收
+
+- 不新增矩阵按钮。继续使用现有装备 / 马匹、近门波次和敌人快照入口，让正式 Main 自然生成步战或骑战远程攻击；骑乘弩敌人当前不在波次数据中，只由自动化验证共享包装兼容性。
+- `active_projectiles[] / last_projectile_result` 新增 `source_mounted / release_position / release_basis / release_origin_source / release_origin_node_path`。正式弓必须显示 `formal_loaded_arrow`，弩必须显示 `formal_loaded_bolt`，节点路径应落在对应角色包装的 Bow/LoadedArrow 或 Crossbow/LoadedBolt。
+- 若模型发射点不可用，最近结果显示 `release_rejected`，不得出现弹体或 HP 变化。GMPanel 不提供绕过该保护的身体高度发射 / 强制命中入口。
+
+## T0145 投射物 attack_id 验收
+
+- 不新增“重放碰撞 / 强制结算”按钮。继续使用现有波次、装备和敌人快照入口，让正式战斗创建弹体；GMPanel 不拥有 attack ID、碰撞或伤害权威。
+- “敌人快照”的 `active_projectiles[]` 现可查看 `attack_id / attack_sequence`；`last_projectile_result.resolution.hit_fact` 可查看终态、实际 collider、damage result 与是否伤害，顶层另有 `resolved_projectile_attack_count`。
+- 验收时确认 release、活动弹体和最终 fact 使用同一 ID，blocked / miss 没有 damage，hit 的顶层与嵌套 damage result 均带同一 ID。重复回调去重由专项测试覆盖，不在 GM 面板提供破坏正式流程的入口。
+
+## T0144 近战模型接触验收
+
+- 不新增“强制命中 / 强制挥空”按钮。使用战斗分组的近门生成、招募 / 装备和既有行为模式让 NPC 正常交战；移动目标或改变站位必须通过真实实体完成。
+- “敌人快照”对应的 CombatSystem snapshot 新增 `active_melee_swings` 与 `last_melee_contact_result`。重点观察 `sample_count / model_max_horizontal_reach / status / actual_target_* / collider_path / collision_position / authored_seconds / sweep_kind / damage_result`。
+- `hit` 必须对应实际 collider 且可有 damage result；`miss / blocked` 不得对锁定目标补伤害。GMPanel 只观察并调用既有系统入口，不直接设置碰撞结果或 HP 事实。
+
+## T0143 弓弩物理弹体验收
+
+- 不新增第二套“必中 / 强制落空”按钮。继续使用战斗分组的“生成所选波次”或“所选波次动态群战”，优先选择包含弓手 / 弩手的第 2–4 波，并用既有装备 / 招募入口准备我方弓或弩单位。
+- “敌人快照”对应的 CombatSystem debug snapshot 现在包含 `active_projectiles` 与 `last_projectile_result`。离弦时应看到 `status=in_flight / tracks_target_after_release=false / damage_authority=combat_system_swept_collision`；结束后应为 `hit / blocked / miss`，只有 hit 的 resolution 能包含权威 damage_result。
+- GM 近门出生只缩短接敌等待，不改变发射点、弹道、碰撞层或伤害。测试落空应通过真实移动目标 / 场景阻挡完成，不让 GMPanel 直接改写弹体结果。
+
+## T0140 敌军波次临时近前门出生
+
+- 战斗分组的“生成所选波次”“跳到下一波”和“所选波次动态群战”用于快速战斗测试；选择第 1 波即覆盖旧独立入口。T0160 后生成第 1–5 波时统一从正式正门外独立 `gm_front_gate_enemy_spawn_zone` 按编队出现，不再贴着 `front_gate` 攻击点，也不等待地图北侧林下长距离行军。
+- GMPanel 只向 CombatSystem 传入兼容参数 `spawn_near_front_gate=true`；敌军实体、导航、目标、伤害、建筑受击和胜负仍由既有系统结算。日志 / “敌人快照”的 `last_spawn_result` 应显示 `spawn_stage_id=gm_front_gate_enemy_spawn_zone`、`spawn_in_gm_staging_zone=true`。
+- 该调整不影响按日期自动来袭：正式 `spawn_wave(...)` 默认和 `scheduled_wave` 仍使用远端 `spawn` 阶段。需要恢复 GM 远端出生时，撤销 GMPanel 的第三个调试参数即可，不要修改正式路线数据。
+
 ## T0132-P3 围墙与正后门美术验收
 
 - 建筑分组新增“围墙美术预览（不改权威等级）”六个按钮，命令为 `wall_art_level 1|2|3|4|5|6`；只切换围墙平台与升级装饰，不修改 BuildingSystem 等级 / HP / 升级进度或 DefenseDeviceSystem 部署 / 射程。
@@ -54,7 +220,7 @@
 
 ## T0129C-A5-P7 默认正式世界总切换
 
-- 建筑分组显示“恢复默认正式世界 / 临时旧图兼容 / 布局快照”，命令继续使用 `station_layout preview|legacy|snapshot`。新局已经处于正式世界；`preview` 表示恢复默认正式权属，`legacy` 才是临时开发兼容。
+- 世界建筑页显示“恢复默认正式世界 / 布局快照”；命令继续支持 `station_layout preview|legacy|snapshot`。新局已经处于正式世界；`legacy` 仅作为命令行深层兼容入口，不再占用按钮。
 - `legacy` 会中断当前正式行动、保存各 NPC 最后正式坐标、恢复旧坐标 / 旧相机、停用正式 Region / Link，并令行商改用 2 点兼容路线；不回滚资源、事件或建筑状态。`preview` 重新启用正式图，把未逃离 NPC 放回保存点或正式初始锚点并绑定生产 NavigationMap，同时恢复 5 点商路。
 - `snapshot` 同时显示布局开关和默认正式居民快照；正常新局应为 8 个 actor、导航启用且地图匹配、坐标 `x>900`。
 
@@ -191,7 +357,7 @@
 ## T0129C-A4-P4 / T0129B-C3-P4 活动敌军推进主厅
 
 - 战斗区显示“活动敌军→正门→仓库→主厅 / 主厅切片快照 / 停止主厅切片”，命令为 `formal_enemy_main_hall_slice run|snapshot|stop`。旧 P2 / P3 命令和 API 只留隐藏兼容。
-- `run` 生成第一波的一名真实活动敌人。每抵达一个建筑后可用 `step_enemies 3600` 快速摧毁；实体自动继续下一段，到主厅前不会扣主厅 HP。实际抵达后用 `step_enemies 60` 观察首次 4 点伤害，继续摧毁会显示既有失败面板。
+- `run` 生成第一波的一名真实活动敌人。每抵达一个建筑后可用较大的 `step_enemies` 参数快速摧毁；实体自动继续下一段，到主厅前不会扣主厅 HP。实际抵达后用 `step_enemies 1` 逐秒观察攻击，继续摧毁会显示既有失败面板。
 - `snapshot` 显示三个建筑各自的权威提交标记、当前攻击目标、十阶段到达、实时运动与战斗实例。`stop` 统一清敌；失败状态属于 GameState，不由停止按钮回滚。
 
 ## T0129C-A2a 独立实体运动沙盒
@@ -201,17 +367,20 @@
 - 完成后按 `R` 重跑，按 `F8` 重新加载 Main。切换场景会重新创建 Main 当前运行态，因此不要把它当作保持存档内临时状态的弹窗。
 - 沙盒只验证 `CharacterBody3D + NavigationAgent3D + InteractionArea` 运动层，不调用 BuildingSystem / NPCSystem / MemorySystem / CombatSystem，不提交地点、工位、伤害或逃离完成。当前正式 NPC / 敌人仍是旧 Area3D；该入口不能证明 Main 已完成迁移。
 
-## T0130-P1–P5 正式两头身角色
+## T0130-D1 / T0130-P1–P8 两头身角色开发检视
 
-- 建筑分组中的 P0 临时 Main 开关已替换为“T0130 正式两头身角色”：格伦真实打铁、生成第一波剑盾敌军、独立动作沙盒、正式角色快照；命令为 `character_pilot glen|enemy|sandbox|snapshot`。P5 后独立沙盒并排显示格伦、托马、布鲁诺、伊沃、艾达和剑盾敌人；五名 NPC 继续复用既有真实生产、礼拜、训练与睡眠入口，不堆叠重复按钮。
+- 世界建筑页的角色入口保留“NPC 开发检视场景 / 正式角色快照”；真实打铁和敌军生成由正式行动、通用波次控件覆盖。命令仍支持 `character_pilot glen|enemy|dev_lab|sandbox|snapshot`，其中 `sandbox` 作为兼容别名进入开发检视场景。旧 `ChibiCharacterSandbox.tscn` 仅保留自动截图回归。
 - `glen` 复用既有正式制造入口，自动准备默认配方并由 ActionSystem 派格伦真实走入铁匠铺、提交工位后循环打铁；暂停中仍会明确拒绝，不由 GM 伪造地点或工作事实。
 - `enemy` 调用 CombatSystem `debug_spawn_wave(1)`，生成 8 个有 CharacterBody / NavigationAgent / 实体碰撞的正式剑盾敌人；它们正常索敌和攻击，不是临时展示模型。重复生成前应先用既有“清空敌人”入口清场。
 - `snapshot` 只读格伦、托马、布鲁诺、伊沃、艾达正式外观以及当前活动敌人的 `art_family / appearance_id / state / equipment`；不修改 HP、行动、工位、敌人或事件。
-- `sandbox` 继续切换到 `ChibiCharacterSandbox.tscn`，用于逐动作近景检查；切场景会重新创建 Main，不能保留当前未存运行态。
+- `dev_lab` / `sandbox` 切换到 `NPCDevLab.tscn`：可选 8 名 NPC 与全部去重敌种，切换友方工作 / 战斗模式，触发角色合法动作，并用六槽临时检查武器、护甲和坐骑；T0130-D1R 后可按住角色左右拖动，同步旋转人物、装备和坐骑检视。该场景不写正式库存 / 朝向 / 战斗权威；F8 或“返回 Main”会重新创建 Main，不能保留当前未存运行态。
+- T0130-D1R12 后，8 名友方在该入口共享除主持弥撒外的工作动作；剑盾、长杆、弓、弩可检查步战与骑乘握持 / 攻击，骑乘受击、训练和行走保持跨坐。模式和六槽装配跨 NPC 保留，装配或点击单模式动作会自动切换一次。
+- 推荐验收顺序为：正面检查手掌与人物中线，旋转约 `90°` 检查握点 / 盾背 / 坐席，再在攻击起始、蓄力和释放相位检查武器是否随手。头盔、胸甲、护腕、护腿仍是装配状态 / 文字占位验收；箭和弩矢仍是纯表现，不用本入口验证正式命中或伤害。
+- T0130-D1R13 后敌军装备不可编辑：剑盾手 / 头目、长杆兵、弓手、弩手、轻骑和骑马弓手分别读取波次配置的固定武器与坐骑，六槽全部只读。友方共享装配不投影到敌军，切回友方后原装配保持；需要看其他敌军组合时只切换左上敌种。
 
 ## T0129B-C2a / T0129C-A1–A3b12R 正式空间与生产导航预览
 
-- 建筑分组现为“恢复默认正式世界 / 临时旧图兼容 / 布局快照”；命令仍为 `station_layout preview|legacy|snapshot`。Main 默认显示和运行正式地图；本节其余 C2 内容保留为历史结构验收说明。
+- 世界建筑页现显示“恢复默认正式世界 / 布局快照”；命令仍支持 `station_layout preview|legacy|snapshot`，其中 `legacy` 为无按钮的兼容入口。Main 默认显示和运行正式地图；本节其余 C2 内容保留为历史结构验收说明。
 - `preview` 只调用 `StationLayoutController.debug_set_preview_enabled(true)`：把 CameraRig 临时移到 `(1000,0,0)` staging 根，使用新布局 `20–70 m`、FOV 62°和目标平移边界，并临时启用该远端根专属的生产 NavigationMap、Region 与 12 个门链接。78 个结构阻挡、1 个烘焙地面、全 12 座建筑的 107 件配置物 / 131 个 fixture 碰撞部件和 24 个自然阻挡始终留在远端隔离区，总计 234 个 StaticBody；入口不暂停时间、不隐藏或移动旧玩法根、不重绑 BuildingSystem / NPCSystem，也不写 NPC、地点、工位占用、战斗、商人或逃离事实。
 - `legacy` 恢复进入预览前保存的 CameraRig 位置、相机局部位置 / 旋转 / FOV、缩放范围和平移边界。它不回滚任何玩法状态，因为预览本身不修改这些状态。
 - `snapshot` 读取 `debug_get_layout_snapshot()`，除原地形 / 建筑 / 道路 / 镜头字段外，还显示 12 套空间合同、61 工位、4 主厅器械槽、8 个 NPC 初始点、2 个公共点、`11303` 格合同 AStar、107 个配置物 / 61 个安全站位 / 34 个床、椅或祈祷锚点 / 8 个 HorseAnchor、234 个 StaticBody / CollisionShape、生产 NavMesh 的 `0.25 m / 788 vertex / 754 polygon / 12 door links` 快照、135 个权威 Marker、1311 个生成 Mesh、117 个 Label 和配置错误。该入口不是空间权威切换开关。
@@ -259,7 +428,7 @@
 - 命令：`intent_revalidation <npc_id>`。
 - 触发仍使用既有 `plan_execute <npc_id>`：当当前计划项为带非空 `dialogue_goal` 的 `talk_to_npc / seek_guard_officer` 时，会先进入复核。面板不伪造模型响应、不修改计划或启动对话。
 
-T0114 在战斗调试区增加“填满虔诚”“虔诚快照”和“推进陨石 1 秒”，并支持 `piety_fill`、`piety_set <0-100>`、`piety_snapshot`、`piety_step <战斗动作秒>`。这些入口只调用 PietySystem 的 `debug_*` 接口：填满 / 设值用于进入 HUD 选点，快照显示累计来源、pending 陨石、燃烧区和最近施放结果，推进用于不等待实时 tick 验证落地与燃烧。GMPanel 不自行生成伤害、扣除虔诚或改敌人 / NPC / 建筑 / 器械 HP；无友伤必须从 PietySystem → CombatSystem 的真实路径验证。
+T0114 在战斗调试区增加“填满虔诚”“虔诚快照”和“推进陨石 1 秒”，并支持 `piety_fill`、`piety_set <0-100>`、`piety_snapshot`、`piety_step <战斗动作秒>`。这些入口只调用 PietySystem 的 `debug_*` 接口：填满 / 设值用于进入 HUD 选点，快照显示累计来源、pending 陨石、燃烧区和最近施放结果，推进用于不等待实时 tick 验证落地与燃烧。T0159 继续复用这些入口和既有“事件 / 短期记忆”查询，分别观察落地全站公开事件与条件式击杀事件，不新增重复按钮。GMPanel 不自行生成伤害、扣除虔诚或改敌人 / NPC / 建筑 / 器械 HP；无友伤与击败人数必须从 PietySystem → CombatSystem 的真实路径验证。
 
 T0106 用现有“短期记忆”按钮替换为“短期记忆 / LLM”，不堆叠新入口。点击后同时显示目标 NPC 权威原始事件 / 见闻计数，以及 `LLMBridge` 为正式调用构造的全部紧凑投影；可以直接确认第 8 条以前的关键事件仍存在，且模型侧没有 `event_id / payload / items / snapshot / roster`。该入口只读，不修改 MemorySystem、总结水位或 Prompt，也不自行压缩事件。
 
@@ -337,6 +506,8 @@ T0051 未新增专用 GM 命令：弹窗拖动、三种会话按钮、橙点与�
 
 ## T0129C-A2b-P1–P6 正式导航试运行
 
+> T0166 后，下列早期试运行仍可通过原命令和系统 debug 接口调用，但 7 个专用按钮已由正式工作 / 服务入口覆盖并从面板移除。
+
 - 建筑分组现有“格伦→铁匠铺”“莉娜→诊疗位”“莉娜→病床”“艾达→固定床”“布鲁诺→用餐席”“马塞尔→祈祷席”“托马→马厩照料位”“试运行快照”“停止并还原”；统一命令为 `formal_nav_pilot [glen|clinic_doctor|clinic_bed|dormitory_bed|dining_seat|chapel_prayer_seat|stable_care|stop|snapshot]`。旧 `glen_nav_pilot` 仅保留隐藏兼容别名，不再写入帮助。
 - 七种运行模式都经 NPCSystem 数据驱动试点登记表启用远端正式布局与专属 NavigationMap，把目标 NPC 从旧世界临时放到正式初始点，预留对应工位并沿正式门路执行 CharacterBody3D / NavigationAgent3D 运动。游戏时间必须处于运行状态；暂停时明确拒绝，且不写移动、地点或工位状态。
 - 格伦模式预留 `forge_01`；莉娜诊疗模式预留 `doctor_desk_01` 并在桌前站立；莉娜病床模式预留 `treatment_bed_01`，先抵达床边，BuildingSystem 成功提交占用后才挂到床面 `occupant_anchor` 并切换 `lying_supine`。
@@ -369,7 +540,7 @@ GM 面板用于把“已经实现但用户难以在主界面直接验证”的�
 - NPC 扣血、HP 清零昏迷、昏迷后行动阻断、昏迷自然恢复和复苏。
 - 昏迷或睡觉期间见闻暂停；睡觉 NPC 不会接收同地点/同建筑 public 见闻，睡醒后恢复。
 - 通过“指定行动”下拉统一指派工作、训练场教官/受训者、诊疗位/病床、祈祷、主持弥撒、吃饭、饮酒、睡觉等普通行动，并保留协助修复、协助升级、协助治疗昏迷者等带目标参数的行动调试入口；参加弥撒由祈祷运行态自动切换。
-- TimeSystem 设定时间、推进模拟小时、LLM 等待减速请求、有效倍率 / 慢速请求 / 时间上限请求快照。
+- TimeSystem 设定时间、推进模拟小时、LLM 等待减速请求、敌人在场 1:1 慢速、有效倍率 / 慢速请求 / 时间上限请求快照。
 - LLMBridge 后端 health check、开发期 NPC 对话 Mock、提出应征 Mock、正式请求共享驿站上下文快照，以及后端 LLM usage / 成本统计 / 预算状态 / 失败原因 / Godot LLM 等待运行态与逐请求慢速注册 / 释放查询。
 - 地点快照、广场公告、广场公开事件、守备官给钱/攻击等记忆事件。
 - NPC 短期记忆容器，区分事件库和见闻库。
@@ -429,7 +600,7 @@ const GM_ENABLED := true
 - 推进模拟 1 小时：调用 `TimeSystem.debug_advance_hour()`，即使当前暂停也会按真实逻辑时间发出一次 `logical_time_tick(3600.0, 1.0)`，让建筑升级、行动周期、NPC 状态等订阅系统同步推进；单次调试推进上限为 1 游戏小时，避免跨过中间结算。
 - 注册一次 GM 手动 LLM 减速。
 - 清空所有减速请求。
-- 查看时间倍率快照，包括玩家选择倍率、实际有效倍率、LLM 慢速请求和 TimeSystem 上限请求；T1104A 后生成敌人时可观察 `combat_enemy_presence` 上限，清敌后应消失。
+- 查看时间倍率快照，包括玩家选择倍率、实际有效倍率、慢速请求和 TimeSystem 上限请求；T0183 后生成敌人时可在慢速请求中观察 `combat_enemy_presence = 1/60`，此时现实 1 秒 = 游戏 1 秒，清敌后该请求应消失并恢复玩家倍率。
 
 建筑：
 
@@ -482,12 +653,13 @@ NPC：
 战斗 / 敌人：
 
 - 选择敌人波次。
-- “生成第一波敌人”固定调用 `CombatSystem.debug_spawn_wave(1)`；P7b 后会启用正式地图 / 镜头，在 `FormalEnemies` 生成 8 个动态实体，并把当前可战斗 NPC Body 迁入同一生产 NavigationMap。
+- 将波次选择器设为 1 后点击“生成所选波次”，调用 `CombatSystem.debug_spawn_wave(1)`；P7b 后会启用正式地图 / 镜头，在 `FormalEnemies` 生成 8 个动态实体，并把当前可战斗 NPC Body 迁入同一生产 NavigationMap。
 - “生成所选波次”按波次下拉调用 `CombatSystem.debug_spawn_wave(...)`；已有默认正式战斗时允许追加后续波次，不创建旧 `Station/Enemies` Area3D。
 - “跳到下一波”调用 `CombatSystem.debug_trigger_next_wave()`，按 `CombatSystem` 已记录的 `triggered_wave_numbers` 触发下一未触发波次，用于快速验证 T1301 自动波次日程；该入口不修改时间、不自行写战斗事件。
 - “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的集结流程：所有 NPC 写入警铃事件，入伍且有主武器的可行动 NPC 前往城门外防线。
 - “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、波次日程、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、逃离目标、逃离挽留轮次、逃离速度倍率、可战斗人员可用性 `combatant_availability`、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、最近逃离结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T0107 后还包含 `friendly_combat_stats` 的基础 / 成长 / 装备 / 最终值、`defense_devices` 的 HP / 防御 / 穿透 / 有效射程、敌人的 `penetration / attack_speed / attack_windup_remaining / stagger_remaining`，以及战斗策略中的冲锋阶段和最近冲撞结果。该快照可确认统一穿透结算、主厅射程翻倍、敌人抬手被僵直打断与骑兵冲锋循环；既有 T1104C-T1304 验证边界不变。
-- “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(60.0)`，用于手动推进 60 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T1104B 后这约等于 1 秒战斗动作。命名保留为兼容旧入口。
+- T0138/T0138-R1 后同一“敌人快照”额外包含 `horse_lifecycle`，可直接观察每匹马的 `location / movement_state / world_position / assigned_npc_id / ridden_by_npc_id / hp / alive`，用于核对在厩等待取用、骑乘、返厩、分伤和阵亡；“马匹查看”继续提供相同 HorseSystem 个体事实。取马流程可通过既有分配、警铃和快照在 Main 直接验收，GM 不新增上马、分伤或死亡结算按钮。
+- “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(1.0)`，用于手动推进 1 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T0183 后这也等于 1 秒战斗与动画权威时间。
 - “清空敌人”调用 `CombatSystem.debug_clear_enemies()`，删除当前正式敌人并让 NPC 原地恢复正式日常运动模式；默认正式地图镜头保持不变。
 - “行为模式快照”调用 `NPCSystem.debug_get_behavior_mode_snapshot()`，查看每名 NPC 的 `behavior_mode`、进入原因、进入时间、当前行动和兼容 `combat_mode`。
 - “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按敌方方位生成短步长四散移动目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
@@ -688,7 +860,7 @@ next_wave
 alarm
 enemies
 escape_npc priest_01
-step_enemies 60
+step_enemies 1
 clear_enemies
 memory cook_01
 location plaza
@@ -730,7 +902,7 @@ T0043 的五建筑位置、资格、团队效率、损伤与升级封闭由下�
 godot --headless --path . --script res://tools/verify_building_service_positions.gd
 ```
 
-该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、时间倍率快照、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动当前小时计划修订、首次睡眠总结入口、长期记忆查看、计划修订请求 / 结果、最近通用计划修改判别、最近 LLM 指令注入、训练场教官 / 受训者入口、敌人波次生成 / 跳到下一波按钮 / 警铃集结 / 快照 / AI 推进 / 清空、逃离命令、敌人在场 TimeSystem `x1` 上限注册 / 释放、记忆事件和广场公告。T0035-T0038 后还会验证资源选择器包含 11 个具体 `item_*` 且隐藏四个过期聚合键、制造目标 / 单阶段 / 成品入库，以及马匹快照 / 受伤 / 生态推进 / 强制繁育 / 具体分配 / 解除分配。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T0023/T0050 的资源不足 / 工位占用触发、判别为空 / 非空、精确小时修订、Mock 隔离、真实计划修订和慢速释放由 `tools/verify_daily_plan_reevaluation.gd` 与 `tools/verify_action_failure_plan_revision_judgement.gd` 覆盖；NPC 当前计划入口、事件 / 见闻详情首次定位最新记录与刷新滚动保持由 `tools/verify_npc_panel_state.gd` 覆盖；T0029/T0030/T0049 的邀请接受 / 拒绝、无硬上限、软轮次参考、任一方结束标记，以及拒绝 / 正式结束后的双方独立判别由 `tools/verify_dialogue_invitation_contract.gd` 和对话判别专项覆盖；T1003 的显式开发 Mock 日计划由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1301 的 HUD 倒计时、配置时间自动来袭、重复触发保护和 GM 跳波入口由 `tools/verify_enemy_wave_schedule.gd` 覆盖；T1102/T1104C 的目标优先级、跳过围墙、移动、敌方建筑攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖；T1104 的双方基础伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击由 `tools/verify_combat_damage.gd` 覆盖；T1104A 的战斗时间上限、LLM 慢速叠加和清敌恢复由 `tools/verify_combat_time_cap.gd` 覆盖；T1104B 的艾达持剑第一波节奏和战斗动作秒换算由 `tools/verify_combat_pacing.gd` 覆盖；T1105 的兵种策略选项、NPC 面板策略下拉框、策略事件、默认策略重置、战斗内避战和保持距离射击由 `tools/verify_combat_strategies.gd` 覆盖；T1106 的战斗开始 / 结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态由 `tools/verify_combat_flow.gd` 覆盖；T1203 的完整逃离移动、离站标记和事件由 `tools/verify_escape_station_behavior.gd` 覆盖；T1204A 的逃离警告、NPC 面板入口、对话打开暂停、关闭恢复、五轮置灰、给钱减速、逃离攻击无回复计轮、昏迷暂停和复苏继续由 `tools/verify_escape_intervention_dialogue.gd` 覆盖；T1303 的无可战斗人员失败、未集结误判边界和 HUD / 快照原因由 `tools/verify_no_available_combatants_failure.gd` 覆盖；T1304 的第 5 波胜利、结算快照、HUD 胜利占位和结算后拒绝刷波由 `tools/verify_five_wave_victory.gd` 覆盖。T0107 的统一属性、双建筑通用槽、主厅射程、器械 HP、弱敌人潮、远程距离带和骑兵冲锋 / 僵直由 `tools/verify_t0107_combat_foundation.gd` 及塔防、伤害、策略、波次专项共同覆盖；世界 `+` 直接在 Main 前端验收，不新增 GM 部署入口。
+该脚本会加载 `Main.tscn`，检查 GM 按钮和窗口，执行命令验证资源、建筑、时间、时间倍率快照、NPC 地点、GM 入伍按钮、自然语言指令、每日计划生成 / 查看 / 执行、手动当前小时计划修订、首次睡眠总结入口、长期记忆查看、计划修订请求 / 结果、最近通用计划修改判别、最近 LLM 指令注入、训练场教官 / 受训者入口、敌人波次生成 / 跳到下一波按钮 / 警铃集结 / 快照 / AI 推进 / 清空、逃离命令、敌人在场 TimeSystem `x1` 上限注册 / 释放、记忆事件和广场公告。T0035-T0038 后还会验证资源选择器包含 11 个具体 `item_*` 且隐藏四个过期聚合键、制造目标 / 单阶段 / 成品入库，以及马匹快照 / 受伤 / 生态推进 / 强制繁育 / 具体分配 / 解除分配。T0138 的会合、战时换装锁、30%-50% 分伤、马先阵亡转步战、骑手昏迷解绑返厩和正常返厩保留分配由 `tools/verify_mounted_combat_lifecycle.gd` 覆盖；既有 `verify_combat_alarm_rally.gd` 已改为先验会合再验骑乘。T0904 的成长与技能点分配由 `tools/verify_skill_progression.gd` 覆盖；T1001 的计划执行细节由 `tools/verify_daily_plan_system.gd` 覆盖；T0023/T0050 的资源不足 / 工位占用触发、判别为空 / 非空、精确小时修订、Mock 隔离、真实计划修订和慢速释放由 `tools/verify_daily_plan_reevaluation.gd` 与 `tools/verify_action_failure_plan_revision_judgement.gd` 覆盖；NPC 当前计划入口、事件 / 见闻详情首次定位最新记录与刷新滚动保持由 `tools/verify_npc_panel_state.gd` 覆盖；T0029/T0030/T0049 的邀请接受 / 拒绝、无硬上限、软轮次参考、任一方结束标记，以及拒绝 / 正式结束后的双方独立判别由 `tools/verify_dialogue_invitation_contract.gd` 和对话判别专项覆盖；T1003 的显式开发 Mock 日计划由 `tools/verify_daily_plan_llm.gd` 覆盖；T1004/T1005 的首次睡眠总结、NPC 面板日记、短期记忆清空和对话 / LLM 打断边界由 `tools/verify_daily_reflection_system.gd` 与 `tools/verify_dialogue_sleep_summary_boundaries.gd` 覆盖；T1101 的敌人波次数据、正门外生成位置、GM 入口和清理流程由 `tools/verify_enemy_wave_generation.gd` 覆盖；T1301 的 HUD 倒计时、配置时间自动来袭、重复触发保护和 GM 跳波入口由 `tools/verify_enemy_wave_schedule.gd` 覆盖；T1102/T1104C 的目标优先级、跳过围墙、移动、敌方建筑攻击和主厅失败状态由 `tools/verify_enemy_target_priority.gd` 覆盖；T1103 的 HUD 警铃、GM 命令、阵型、骑乘表现和遭遇敌人切换由 `tools/verify_combat_alarm_rally.gd` 覆盖；T1104 的双方基础伤害、盔甲减伤、攻击间隔、敌人移除、清敌退出和避战不攻击由 `tools/verify_combat_damage.gd` 覆盖；T1104A 的战斗时间上限、LLM 慢速叠加和清敌恢复由 `tools/verify_combat_time_cap.gd` 覆盖；T1104B 的艾达持剑第一波节奏和战斗动作秒换算由 `tools/verify_combat_pacing.gd` 覆盖；T1105 的兵种策略选项、NPC 面板策略下拉框、策略事件、默认策略重置、战斗内避战和保持距离射击由 `tools/verify_combat_strategies.gd` 覆盖；T1106 的战斗开始 / 结束广播、受伤 / 昏迷 / 击退统计和清敌回工作状态由 `tools/verify_combat_flow.gd` 覆盖；T1203 的完整逃离移动、离站标记和事件由 `tools/verify_escape_station_behavior.gd` 覆盖；T1204A 的逃离警告、NPC 面板入口、对话打开暂停、关闭恢复、五轮置灰、给钱减速、逃离攻击无回复计轮、昏迷暂停和复苏继续由 `tools/verify_escape_intervention_dialogue.gd` 覆盖；T1303 的无可战斗人员失败、未集结误判边界和 HUD / 快照原因由 `tools/verify_no_available_combatants_failure.gd` 覆盖；T1304 的第 5 波胜利、结算快照、HUD 胜利占位和结算后拒绝刷波由 `tools/verify_five_wave_victory.gd` 覆盖。T0107 的统一属性、双建筑通用槽、主厅射程、器械 HP、弱敌人潮、远程距离带和骑兵冲锋 / 僵直由 `tools/verify_t0107_combat_foundation.gd` 及塔防、伤害、策略、波次专项共同覆盖；世界 `+` 直接在 Main 前端验收，不新增 GM 部署入口。
 ## T0131-P2 小教堂逐级美术验收
 
 - 建筑分组新增“小教堂美术预览（不改权威等级）”Lv.1 / Lv.2，命令为 `chapel_art_level <1|2>`。它只调用 `ChapelArt.debug_force_visual_level(...)`，不会消耗升级资源、修改 HP、开放工位或生成虔诚。

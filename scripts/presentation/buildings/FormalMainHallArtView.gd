@@ -40,6 +40,7 @@ const BRICK_ROUGHNESS := "res://assets/3d/quaternius/buildings/wall_plaster_door
 
 var _material_cache: Dictionary = {}
 var _damage_ratio := 1.0
+var _destruction_latched := false
 
 
 func _ready() -> void:
@@ -70,6 +71,7 @@ func _refresh_building_state() -> void:
 		return
 	var maximum_hp := maxi(1, int(building.get("max_hp", 1)))
 	_apply_damage_ratio(float(building.get("hp", maximum_hp)) / float(maximum_hp))
+	_apply_destruction_state(bool(building.get("destruction_latched", false)))
 
 
 func _apply_visual_level(level: int, upgrade_in_progress: bool) -> void:
@@ -111,6 +113,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"interior_revealed_for_selection": is_interior_revealed_for_selection(),
 		"roof_opacity": _roof_opacity,
 		"damage_ratio": _damage_ratio,
+		"destruction_latched": _destruction_latched,
+		"ruin_visible": _is_visible(NodePath("DestroyedRuin")),
 		"mild_damage_visible": _is_visible(NodePath("DamageVisuals/Mild")),
 		"heavy_damage_visible": _is_visible(NodePath("DamageVisuals/Heavy")),
 		"active_fixture_visual_count": _active_fixture_visual_count(),
@@ -155,6 +159,8 @@ func _build_formal_main_hall() -> void:
 	_build_base_visuals()
 	_build_upgrade_visuals()
 	_build_damage_visuals()
+	_build_destroyed_ruin()
+	_apply_destruction_state(false)
 
 
 func _build_base_visuals() -> void:
@@ -409,6 +415,67 @@ func _build_damage_visuals() -> void:
 		_add_box(heavy, "FallenStone", Vector3(7.3 + float(index) * 0.46, 0.19, 8.35 + float(index % 2) * 0.28), Vector3(0.38, 0.3, 0.42), STONE.darkened(0.18))
 	for puff in [Vector3(7.2, 4.25, 1.5), Vector3(7.55, 4.85, 1.3), Vector3(7.05, 5.35, 1.1)]:
 		_add_sphere(heavy, "DamageSmoke", puff, 0.42, Color(0.16, 0.17, 0.18, 0.46))
+
+
+func _build_destroyed_ruin() -> void:
+	var ruin := Node3D.new()
+	ruin.name = "DestroyedRuin"
+	ruin.visible = false
+	ruin.set_meta("ruin_kind", "collapsed_command_hall")
+	ruin.set_meta("built_from_normal_material_language", true)
+	add_child(ruin)
+	_add_textured_box(ruin, "CommandFoundationRemains", Vector3(0.0, 0.20, 0.0), Vector3(20.9, 0.40, 16.9), "rock", Color("#55595d"), 0.56)
+	_add_textured_box(ruin, "RearCommandWallRemains", Vector3(0.0, 1.05, -7.25), Vector3(15.8, 1.72, 0.72), "plaster", Color("#82796c"), 0.54)
+	_add_textured_box(ruin, "WestCommandWallRemains", Vector3(-9.62, 0.86, -1.20), Vector3(0.70, 1.30, 10.8), "rock", Color("#5e6265"), 0.58)
+	_add_textured_box(ruin, "EastCommandWallRemains", Vector3(9.58, 0.70, 2.10), Vector3(0.70, 1.00, 7.4), "brick", Color("#66686a"), 0.62)
+	var keep_roof := _add_textured_box(ruin, "FallenCentralKeepRoof", Vector3(-0.75, 0.72, -1.35), Vector3(7.2, 0.24, 5.2), "brick", ROOF_BLUE.darkened(0.14), 0.54)
+	var hall_roof_west := _add_textured_box(ruin, "FallenWestHallRoof", Vector3(-5.70, 0.58, 2.30), Vector3(8.9, 0.22, 6.7), "brick", ROOF_BLUE.darkened(0.20), 0.52)
+	var hall_roof_east := _add_textured_box(ruin, "FallenEastHallRoof", Vector3(5.20, 0.50, 1.55), Vector3(8.5, 0.22, 6.3), "brick", ROOF_BLUE.darkened(0.24), 0.52)
+	keep_roof.rotation_degrees = Vector3(5.0, -12.0, 13.0)
+	hall_roof_west.rotation_degrees = Vector3(-4.0, 14.0, 9.0)
+	hall_roof_east.rotation_degrees = Vector3(4.0, -18.0, -10.0)
+	for roof_part in [keep_roof, hall_roof_west, hall_roof_east]:
+		roof_part.set_meta("collapsed_normal_roof_section", true)
+	for index in range(12):
+		var row := index / 4
+		var column := index % 4
+		var side := -1.0 if index % 2 == 0 else 1.0
+		var beam := _add_textured_box(
+			ruin,
+			"FallenCommandBeam%02d" % (index + 1),
+			Vector3(-6.2 + float(column) * 4.1 + side * 0.35, 0.32 + 0.07 * float(index % 3), -4.0 + float(row) * 3.8),
+			Vector3(0.30, 0.26, 4.2 - 0.18 * float(index % 3)),
+			"wood", Color("#48362f"), 0.84
+		)
+		beam.rotation_degrees = Vector3(4.0 * float(row), -42.0 + float(index) * 8.0, side * (8.0 + float(index % 4) * 3.0))
+	for index in range(14):
+		var x := -8.2 + float(index % 7) * 2.62
+		var z := 6.2 + float(index / 7) * 1.05 + 0.26 * float(index % 2)
+		_add_textured_box(
+			ruin,
+			"CommandMasonryRubble%02d" % (index + 1),
+			Vector3(x, 0.30, z), Vector3(0.72, 0.48, 0.78),
+			"rock", Color("#626467"), 0.66
+		)
+	_add_scene_prop(ruin, "FallenCommandBannerWest", BANNER, Vector3(-2.55, 0.34, 6.55), Vector3.ONE * 0.82, Vector3(78.0, -18.0, -12.0))
+	_add_scene_prop(ruin, "FallenCommandBannerEast", BANNER, Vector3(2.60, 0.30, 6.90), Vector3.ONE * 0.76, Vector3(84.0, 24.0, 10.0))
+	_add_scene_prop(ruin, "BrokenCommandShield", SHIELD, Vector3(0.2, 0.24, 7.15), Vector3.ONE * 0.88, Vector3(76.0, -10.0, 18.0))
+
+
+func _apply_destruction_state(latched: bool) -> void:
+	_destruction_latched = latched
+	for path in ["BaseVisuals", "Roof", "UpgradeVisuals", "DamageVisuals"]:
+		var normal_root := get_node_or_null(path) as Node3D
+		if normal_root != null:
+			normal_root.visible = not latched
+	var ruin := get_node_or_null("DestroyedRuin") as Node3D
+	if ruin != null:
+		ruin.visible = latched
+	var fixture_visuals := get_node_or_null("../FixtureLayout/Visuals") as Node3D
+	if fixture_visuals != null:
+		fixture_visuals.visible = not latched
+		if not latched:
+			_apply_external_fixture_level_visibility()
 
 
 func _apply_damage_ratio(ratio: float) -> void:

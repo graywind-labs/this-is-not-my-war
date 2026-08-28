@@ -8,7 +8,9 @@
   "migration": {
     "phase": "a5_p7_default_formal_world",
     "formal_layout_active": true,
-    "preview_offset": [1000.0, 0.0],
+    "preview_offset": [0.0, 0.0],
+    "previous_formal_world_offset": [1000.0, 0.0],
+    "world_origin_mode": "formal_default_at_origin",
     "legacy_gameplay_root": "WorldRoot/Station",
     "formal_layout_root": "WorldRoot/FormalStationLayout"
   },
@@ -171,6 +173,21 @@
     }
   },
   "combat_spatial": {
+    "friendly_station_response": {
+      "schema_version": "friendly_station_response_v2",
+      "normal_contact_range": 5.0,
+      "combat_targeting_schema": "friendly_enemy_presence_lock_v1",
+      "combat_target_detection_range": 37.2,
+      "combat_target_detection_range_basis": "shared_enemy_unified_range",
+      "inside_station_target_scope": "entire_station",
+      "locked_target_policy": "hold_until_invalid_or_outside_current_scope",
+      "different_attacker_damage_policy": "one_shot_nearest_enemy_reacquire_in_current_scope",
+      "avoidance_min_trigger_range": 8.0,
+      "avoidance_ranged_trigger_margin": 2.0,
+      "avoidance_min_safe_distance": 8.5,
+      "avoidance_ranged_safe_margin": 2.5,
+      "proactive_strategy_ids": ["attack", "charge_cycle"]
+    },
     "enemy_route": {
       "spawn_zone_center": [2.0,335.0],
       "spawn_zone_size": [28.0,18.0],
@@ -196,6 +213,32 @@
         {"id":"warehouse","label":"仓库攻击点","point":[29.0,15.0]},
         {"id":"main_hall","label":"主厅攻击点","point":[0.0,2.0]}
       ]
+    },
+    "friendly_rally": {
+      "schema_version": "friendly_rally_v1",
+      "area_id": "front_gate_rally_zone",
+      "display_name": "正门外集结区",
+      "center": [5.0,70.0],
+      "area_size": [20.0,14.0],
+      "enemy_direction": [0.02,1.0],
+      "melee_forward_offset": 2.5,
+      "ranged_forward_offset": -2.5,
+      "line_spacing": 1.6,
+      "line_row_spacing": 1.8,
+      "max_line_columns": 5,
+      "cavalry_lateral_offset": 5.2,
+      "cavalry_forward_offset": 0.0,
+      "cavalry_depth_spacing": 2.2
+    },
+    "gm_enemy_spawn": {
+      "schema_version": "gm_enemy_spawn_v1",
+      "area_id": "gm_front_gate_enemy_spawn_zone",
+      "display_name": "GM 正门外敌军生成区",
+      "formation_front_center": [5.0,86.0],
+      "area_center": [5.0,94.0],
+      "area_size": [28.0,20.0],
+      "travel_direction": [0.0,-1.0],
+      "columns": 6
     },
     "c3_p1_authority_boundary": {
       "migrated": ["enemy_spawn_zone","enemy_reveal_point","enemy_contact_point","front_gate_attack_point","enemy_approach_navigation"],
@@ -233,10 +276,65 @@
       "target_sequence": ["front_gate","warehouse","main_hall"],
       "roads_affect_navigation": false,
       "path_policy": "shortest_navigable_path_to_current_combat_target",
+      "combat_navigation_policy": {
+        "schema": "shared_combat_navigation_v1",
+        "target_authority": "target_lock_never_reordered_by_path",
+        "engagement_goal": "nearest_weapon_valid_point_on_navigation_map",
+        "static_obstacle_policy": "optimized_shortest_navigable_detour",
+        "dynamic_obstacle_policy": "rvo_then_persistent_repath_on_no_progress",
+        "persistent_repath": true,
+        "target_update_distance": 0.35,
+        "roads_affect_navigation": false
+      },
       "movement_model": "dynamic_combat_pressure",
+      "attack_position_mode": "leased_reachable_positions",
       "fixed_attack_slots": false,
-      "blocked_policy": "keep_pressing_and_repath_until_contact_space_opens",
-      "target_policy": "nearest_attackable_friendly_else_current_objective"
+      "blocked_policy": "reserve_reachable_position_or_wait_for_nearest_refill",
+      "target_policy": "unified_radius_presence_lock_targeting",
+      "targeting_policy": {
+        "schema": "enemy_unified_presence_lock_v3",
+        "priorities": ["armed_npc_or_defense_device","unarmed_npc","front_gate","warehouse","main_hall"],
+        "detection_range": 37.2,
+        "detection_range_basis": "wall_ballista_effective_range_35_7_plus_1_5",
+        "same_tier_selection": "nearest_horizontal_distance_on_acquire",
+        "locked_target_policy": "hold_until_out_of_range_or_invalid_except_high_threat_damage_reacquire",
+        "different_attacker_damage_policy": "one_shot_nearest_high_threat_reacquire",
+        "different_attacker_damage_sources": ["armed_npc","defense_device"],
+        "different_attacker_damage_selection": "nearest_horizontal_distance_within_detection_range",
+        "lower_priority_target_damage_policy": "armed_npc_or_defense_device_actual_damage_triggers_same_one_shot_reacquire",
+        "npc_attack_position_policy": "unrestricted_contact",
+        "fixed_target_full_policy": "treat_as_absent_except_front_gate",
+        "front_gate_full_policy": "hold_target_and_wait",
+        "obstruction_probe_height": 0.9,
+        "obstruction_probe_max_hits": 8
+      },
+      "attack_position_policy": {
+        "schema": "enemy_attack_position_leases_v1",
+        "applies_to": ["defense_device","building"],
+        "safety_margin": 0.08,
+        "navigation_snap_tolerance": 0.65,
+        "arrival_tolerance": 0.32,
+        "engagement_position_exit_margin": 0.18,
+        "engagement_range_exit_margin": 0.18,
+        "attack_range_arrival_margin": 0.02,
+        "front_gate_navigation_clearance_standoff": 1.10,
+        "front_gate_post_surface_offset": 0.70,
+        "front_gate_post_contact_reach_offset": 0.20,
+        "front_gate_flank_body_lateral_offset": 1.00,
+        "front_gate_flank_body_forward_adjustment": -0.60,
+        "melee_arrival_reserve_ratio": 0.4,
+        "melee_reach_ratio": 0.82,
+        "ranged_range_ratio": 0.72,
+        "queue_base_standoff": 0.0,
+        "unreachable_retry_frames": 120,
+        "defense_device_max_positions": 8,
+        "building_max_positions": 20,
+        "target_outlines": {
+          "front_gate": {"shape":"front_line","width":7.2,"position_count":7},
+          "warehouse": {"shape":"oriented_perimeter","width":10.8},
+          "main_hall": {"shape":"oriented_perimeter","width":17.6}
+        }
+      }
     },
     "c3_p5r_direct_assault": {
       "target_sequence": ["front_gate","warehouse","main_hall"],
@@ -294,6 +392,8 @@
     "cell_size": 0.5,
     "agent_radius": 0.35,
     "grid_bounds": [-58.0,58.0,-50.0,58.0],
+    "production_bounds": [-58.0,58.0,-50.0,350.0],
+    "enemy_exterior_mode": "shared_open_baked_space",
     "roads_affect_navigation": false,
     "entry_connector_width": 2.4,
     "navigation_height": 0.12,

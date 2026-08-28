@@ -112,7 +112,7 @@ func _init() -> void:
 	var addition_counts := level_3.get("level_visual_addition_counts", {}) as Dictionary
 	if not _expect(int(addition_counts.get("level_1", 0)) >= 29 and int(addition_counts.get("level_2", 0)) >= 21 and int(addition_counts.get("level_3", 0)) >= 21, "Smithy upgrade levels do not expose enough distinct visual additions: %s" % JSON.stringify(addition_counts)):
 		return
-	if not _expect(int(level_3.get("roof_structure_addition_count", 0)) == 1 and bool(level_3.get("roof_structure_additions_fade_with_roof", false)), "Smithy upgrade roof structure is not registered with the roof fade contract"):
+	if not _expect(int(level_3.get("roof_structure_addition_count", 0)) == 3 and bool(level_3.get("roof_structure_additions_fade_with_roof", false)), "Smithy hoist beam, chain and hook are not registered with the roof fade contract"):
 		return
 	art_view.apply_roof_camera_distance(70.0, 1.0)
 	if not _expect(_mesh_opacity(art_view, "UpgradeVisuals/Level3/RoofStructureAdditions/CeilingHoistBeam") >= 0.98, "Level-three ceiling hoist beam did not return with the distant roof"):
@@ -146,10 +146,16 @@ func _verify_level_one(art_view: Node, snapshot: Dictionary) -> bool:
 		return false
 	if not _expect(bool(snapshot.get("future_capacity_reserved", false)), "Formal smithy does not declare future upgrade capacity"):
 		return false
-	if not _expect(str(snapshot.get("roof_profile", "")) == "formal_low_pitch_cold_slate_modular", "Smithy roof is not the approved modular low-pitch cold slate profile"):
+	if not _expect(str(snapshot.get("roof_profile", "")) == "formal_flat_cold_slate_with_low_parapet", "Smithy roof is not the approved flat cold-slate profile"):
 		return false
-	if not _expect(int(snapshot.get("roof_module_count", 0)) >= 4, "Smithy roof does not cover the formal envelope"):
+	if not _expect(int(snapshot.get("roof_module_count", 0)) >= 12, "Smithy flat roof does not cover and edge the formal envelope"):
 		return false
+	for obsolete_path in ["Roof/NorthSlateSlope", "Roof/SouthSlateSlope", "Roof/ColdRidgeCap"]:
+		if not _expect(art_view.get_node_or_null(obsolete_path) == null, "Smithy still contains obsolete pitched-roof geometry: %s" % obsolete_path):
+			return false
+	for flat_path in ["Roof/FlatSlateDeck", "Roof/NorthParapetCap", "Roof/SouthParapetCap", "Roof/WestParapetCap", "Roof/EastParapetCap"]:
+		if not _expect(art_view.get_node_or_null(flat_path) != null, "Smithy flat roof is missing required geometry: %s" % flat_path):
+			return false
 	var roof_color := snapshot.get("roof_albedo_override", Color.WHITE) as Color
 	if not _expect(roof_color.b > roof_color.r, "Smithy roof palette is not cool-toned"):
 		return false

@@ -194,8 +194,8 @@ func _init() -> void:
 			quit(1)
 			return
 		var position: Vector3 = enemy.get("position", Vector3.ZERO)
-		if position.x < 900.0:
-			push_error("Enemy should spawn in the offset formal world: %s at %s" % [enemy_id, str(position)])
+		if absf(position.x) > 100.0 or position.z < 250.0:
+			push_error("Enemy should spawn at the origin-rebased formal forest edge: %s at %s" % [enemy_id, str(position)])
 			quit(1)
 			return
 		var enemy_node := _find_enemy_node(formal_enemy_root, enemy_id)

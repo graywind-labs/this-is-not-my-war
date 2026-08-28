@@ -75,7 +75,8 @@ func _init() -> void:
 	if (
 		gm_window.visible
 		or not marcel.visible
-		or marcel.global_position.x < 900.0
+		or absf(marcel.global_position.x) > 80.0
+		or absf(marcel.global_position.z) > 100.0
 		or str(pending.get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, FIRST_STATION_ID, NPC_ID)
 		or resource_system.get_resource("grain") != travel_grain

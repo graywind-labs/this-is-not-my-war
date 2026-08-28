@@ -73,7 +73,8 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_snapshot(INSTRUCTOR_ID).get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, INSTRUCTOR_STATION_ID, INSTRUCTOR_ID)
 		or not ada.visible
-		or ada.global_position.x < 900.0
+		or absf(ada.global_position.x) > 80.0
+		or absf(ada.global_position.z) > 100.0
 	):
 		_fail("Ada GM entry did not start a reservation-only visible instructor route")
 		return
@@ -86,7 +87,8 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_snapshot(STUDENT_ID).get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, STUDENT_STATION_ID, STUDENT_ID)
 		or not glen.visible
-		or glen.global_position.x < 900.0
+		or absf(glen.global_position.x) > 80.0
+		or absf(glen.global_position.z) > 100.0
 	):
 		_fail("Glen GM entry did not preserve the dependent reservation while Ada was travelling")
 		return

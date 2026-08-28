@@ -10,6 +10,16 @@ const EXPECTED_PHYSICS_NAVIGATION_SCHEMA := "physics_navigation_v1"
 const EXPECTED_FIXTURE_LAYOUTS_SCHEMA := "building_fixture_layout_v1"
 const EXPECTED_ENVIRONMENT_ART_SCHEMA := "environment_art_v1"
 const FORMAL_ROOT_NAME := "FormalStationLayout"
+const BUILDING_NAME_FONT_SIZE := 38
+const BUILDING_NAME_IDLE_DELAY_SECONDS := 0.55
+const BUILDING_NAME_FADE_SPEED := 0.9
+const BUILDING_NAME_REVEAL_SPEED := 7.5
+const CAMERA_MOTION_EPSILON_SQUARED := 0.000001
+const LEGACY_VISUAL_PATHS := [
+	NodePath("Station/Ground"),
+	NodePath("Station/Buildings"),
+	NodePath("Station/Props"),
+]
 const AUTHORITY_WORKSTATION := "building_workstation"
 const AUTHORITY_DEFENSE_SLOT := "defense_device_slot"
 const FORMAL_BLACKSMITH_ART_VIEW_SCRIPT := preload("res://scripts/presentation/buildings/FormalBlacksmithArtView.gd")
@@ -73,6 +83,14 @@ var _camera_restore: Dictionary = {}
 var _material_cache: Dictionary = {}
 var _configuration_errors: Array[String] = []
 var _building_roots: Dictionary = {}
+var _building_name_labels: Array[Label3D] = []
+var _building_name_label_alpha := 1.0
+var _camera_idle_seconds := 0.0
+var _camera_sample_valid := false
+var _last_camera_rig_position := Vector3.ZERO
+var _last_camera_local_position := Vector3.ZERO
+var _last_camera_rotation := Vector3.ZERO
+var _last_camera_fov := 0.0
 var _spatial_anchor_nodes: Dictionary = {}
 var _npc_initial_anchor_nodes: Dictionary = {}
 var _navigation_region: NavigationRegion3D
@@ -110,6 +128,10 @@ func _ready() -> void:
 		push_error("StationLayoutController config errors: %s" % str(_configuration_errors))
 
 
+func _process(delta: float) -> void:
+	_update_building_name_label_visibility(delta)
+
+
 func _exit_tree() -> void:
 	if _production_navigation_map.is_valid():
 		NavigationServer3D.free_rid(_production_navigation_map)
@@ -140,6 +162,31 @@ func is_runtime_formal_world_enabled() -> bool:
 	return _preview_enabled
 
 
+func debug_get_building_name_label_snapshot() -> Dictionary:
+	var labels: Array[Dictionary] = []
+	for label in _building_name_labels:
+		if not is_instance_valid(label):
+			continue
+		labels.append({
+			"path": str(label.get_path()),
+			"text": label.text,
+			"font_size": label.font_size,
+			"text_alpha": label.modulate.a,
+			"outline_alpha": label.outline_modulate.a,
+			"is_building_name": bool(label.get_meta("formal_building_name_label", false)),
+		})
+	return {
+		"label_count": labels.size(),
+		"labels": labels,
+		"alpha": _building_name_label_alpha,
+		"camera_idle_seconds": _camera_idle_seconds,
+		"idle_delay_seconds": BUILDING_NAME_IDLE_DELAY_SECONDS,
+		"fade_speed": BUILDING_NAME_FADE_SPEED,
+		"reveal_speed": BUILDING_NAME_REVEAL_SPEED,
+		"camera_sample_valid": _camera_sample_valid,
+	}
+
+
 func is_default_formal_world_enabled() -> bool:
 	return _default_formal_world_enabled and not _legacy_compatibility_override
 
@@ -148,11 +195,13 @@ func debug_set_legacy_compatibility_enabled(enabled: bool) -> Dictionary:
 	_legacy_compatibility_override = enabled
 	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
 	if enabled:
+		_set_legacy_visuals_enabled(true)
 		_sync_defense_device_runtime_binding(false)
 		if npc_system != null and npc_system.has_method("end_default_formal_world"):
 			npc_system.end_default_formal_world("gm_legacy_compatibility")
 		debug_set_preview_enabled(false)
 	else:
+		_set_legacy_visuals_enabled(false)
 		debug_set_preview_enabled(true)
 		force_sync_production_navigation()
 		_sync_defense_device_runtime_binding(true)
@@ -167,6 +216,7 @@ func debug_set_legacy_compatibility_enabled(enabled: bool) -> Dictionary:
 func _activate_default_formal_world() -> void:
 	if not _default_formal_world_enabled or _legacy_compatibility_override:
 		return
+	_set_legacy_visuals_enabled(false)
 	debug_set_preview_enabled(true)
 	force_sync_production_navigation()
 	_sync_defense_device_runtime_binding(true)
@@ -180,6 +230,51 @@ func _activate_default_formal_world() -> void:
 
 func debug_get_layout_snapshot() -> Dictionary:
 	return get_validation_snapshot()
+
+
+func get_formal_world_origin() -> Vector3:
+	return _formal_root.global_position if is_instance_valid(_formal_root) else Vector3.ZERO
+
+
+func is_world_position_inside_station(world_position: Vector3) -> bool:
+	if not is_instance_valid(_formal_root):
+		return false
+	var station := _layout.get("station", {}) as Dictionary
+	var polygon := PackedVector2Array()
+	for raw_point in station.get("interior_polygon", []):
+		polygon.append(_v2(raw_point))
+	if polygon.size() < 3:
+		return false
+	var local_position := _formal_root.to_local(world_position)
+	return Geometry2D.is_point_in_polygon(Vector2(local_position.x, local_position.z), polygon)
+
+
+func get_friendly_station_response_config() -> Dictionary:
+	var combat_spatial := _layout.get("combat_spatial", {}) as Dictionary
+	return (combat_spatial.get("friendly_station_response", {}) as Dictionary).duplicate(true)
+
+
+func migrate_legacy_formal_world_position(saved_position: Vector3) -> Vector3:
+	var migration := _layout.get("migration", {}) as Dictionary
+	var previous_offset := _v2(migration.get("previous_formal_world_offset", [0.0, 0.0]))
+	if previous_offset.length_squared() <= 0.001:
+		return saved_position
+	var terrain := _layout.get("terrain", {}) as Dictionary
+	var terrain_center := _v2(terrain.get("center", [0.0, 0.0]))
+	var terrain_size := _v2(terrain.get("size", [700.0, 720.0]))
+	var previous_local := Vector2(saved_position.x - previous_offset.x, saved_position.z - previous_offset.y)
+	var margin := 32.0
+	if (
+		absf(previous_local.x - terrain_center.x) > terrain_size.x * 0.5 + margin
+		or absf(previous_local.y - terrain_center.y) > terrain_size.y * 0.5 + margin
+	):
+		return saved_position
+	var current_origin := get_formal_world_origin()
+	return Vector3(
+		current_origin.x + previous_local.x,
+		saved_position.y,
+		current_origin.z + previous_local.y
+	)
 
 
 func debug_get_spatial_reachability_snapshot() -> Dictionary:
@@ -209,8 +304,172 @@ func get_actor_motion_profile(profile_id: String) -> Dictionary:
 	return (profiles.get(profile_id, {}) as Dictionary).duplicate(true)
 
 
+func get_building_combat_geometry(building_id: String) -> Dictionary:
+	if not is_instance_valid(_formal_root) or not _building_roots.has(building_id):
+		return {}
+	var building := _find_building_definition(building_id)
+	var building_root := _building_roots.get(building_id) as Node3D
+	if building.is_empty() or building_root == null:
+		return {}
+	var envelope := _v2(building.get("envelope_size", [0.0, 0.0]))
+	if envelope.x <= 0.0 or envelope.y <= 0.0:
+		return {}
+	var right_direction := building_root.global_basis * Vector3.RIGHT
+	# Layout-local positions store their second component on +Z (the authored
+	# entrance/front side), while Godot's Vector3.FORWARD constant is -Z.
+	var forward_direction := building_root.global_basis * Vector3.BACK
+	right_direction.y = 0.0
+	forward_direction.y = 0.0
+	if right_direction.length_squared() <= 0.0001 or forward_direction.length_squared() <= 0.0001:
+		return {}
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	return {
+		"schema": "oriented_building_combat_geometry_v1",
+		"building_id": building_id,
+		"center": building_root.global_position,
+		"size": envelope,
+		"right_direction": right_direction.normalized(),
+		"forward_direction": forward_direction.normalized(),
+		"front_door_clear_width": maxf(0.0, float(structural.get("building_door_clear_width", 1.4))),
+		"wall_thickness": maxf(0.0, float(structural.get("wall_thickness", 0.4)))
+	}
+
+
+func get_building_area_overlap(world_center: Vector3, radius: float) -> Dictionary:
+	if not is_instance_valid(_formal_root):
+		return {}
+	var checked_radius := maxf(0.0, radius)
+	for raw_building in _layout.get("buildings", []):
+		if not raw_building is Dictionary:
+			continue
+		var building: Dictionary = raw_building
+		var building_id := str(building.get("id", ""))
+		var building_root := _building_roots.get(building_id, null) as Node3D
+		if building_root == null:
+			continue
+		var envelope := _v2(building.get("envelope_size", [0.0, 0.0]))
+		if _circle_overlaps_local_rectangle(
+			building_root.to_local(world_center),
+			checked_radius,
+			envelope * 0.5
+		):
+			return {
+				"building_id": building_id,
+				"area_kind": "building_envelope",
+				"center": building_root.global_position,
+				"size": envelope,
+			}
+
+	var station := _layout.get("station", {}) as Dictionary
+	var station_point_3d := _formal_root.to_local(world_center)
+	var station_point := Vector2(station_point_3d.x, station_point_3d.z)
+	for raw_outbuilding in _layout.get("service_outbuildings", []):
+		if not raw_outbuilding is Dictionary:
+			continue
+		var outbuilding: Dictionary = raw_outbuilding
+		var outbuilding_center := _v2(outbuilding.get("position", []))
+		var outbuilding_basis := Basis(
+			Vector3.UP,
+			deg_to_rad(float(outbuilding.get("rotation_degrees", 0.0)))
+		)
+		var outbuilding_local := outbuilding_basis.inverse() * Vector3(
+			station_point.x - outbuilding_center.x,
+			0.0,
+			station_point.y - outbuilding_center.y
+		)
+		var outbuilding_size := _v2(outbuilding.get("footprint", [0.0, 0.0]))
+		if _circle_overlaps_local_rectangle(outbuilding_local, checked_radius, outbuilding_size * 0.5):
+			return {
+				"building_id": str(outbuilding.get("id", "")),
+				"area_kind": "service_outbuilding_envelope",
+				"center": _formal_root.to_global(Vector3(outbuilding_center.x, 0.0, outbuilding_center.y)),
+				"size": outbuilding_size,
+			}
+	var wall_half_width := maxf(0.0, float(station.get("wall_thickness", 0.0))) * 0.5
+	for raw_segment in station.get("wall_segments", []):
+		if not raw_segment is Dictionary:
+			continue
+		var segment: Dictionary = raw_segment
+		var point_a := _v2(segment.get("from", []))
+		var point_b := _v2(segment.get("to", []))
+		if station_point.distance_to(Geometry2D.get_closest_point_to_segment(station_point, point_a, point_b)) <= checked_radius + wall_half_width:
+			return {
+				"building_id": "wall",
+				"area_kind": "wall_segment",
+				"segment_id": str(segment.get("id", "")),
+			}
+
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	var gate_post_width := maxf(0.0, float(structural.get("gate_post_width", 1.2)))
+	for gate_key in ["front_gate", "back_gate"]:
+		var gate := station.get(gate_key, {}) as Dictionary
+		if gate.is_empty():
+			continue
+		var gate_center := _v2(gate.get("center", []))
+		var gate_basis := Basis(Vector3.UP, deg_to_rad(float(gate.get("rotation_degrees", 0.0))))
+		var gate_local_3d := gate_basis.inverse() * Vector3(
+			station_point.x - gate_center.x,
+			0.0,
+			station_point.y - gate_center.y
+		)
+		var gate_half_size := Vector2(
+			float(gate.get("clear_width", 0.0)) * 0.5 + gate_post_width,
+			0.7
+		)
+		if _circle_overlaps_local_rectangle(gate_local_3d, checked_radius, gate_half_size):
+			return {
+				"building_id": str(gate.get("id", gate_key)),
+				"area_kind": "gate_envelope",
+				"center": _formal_root.to_global(Vector3(gate_center.x, 0.0, gate_center.y)),
+				"size": gate_half_size * 2.0,
+			}
+	return {}
+
+
+func _circle_overlaps_local_rectangle(
+	local_center: Vector3,
+	radius: float,
+	half_size: Vector2
+) -> bool:
+	var outside_x := maxf(absf(local_center.x) - maxf(0.0, half_size.x), 0.0)
+	var outside_z := maxf(absf(local_center.z) - maxf(0.0, half_size.y), 0.0)
+	return outside_x * outside_x + outside_z * outside_z <= radius * radius
+
+
 func get_formal_wave_spawn_config() -> Dictionary:
 	return (_physics_navigation.get("formal_wave_spawn", {}) as Dictionary).duplicate(true)
+
+
+func get_friendly_rally_world_config() -> Dictionary:
+	return _combat_area_config_to_world("friendly_rally", "center", "enemy_direction")
+
+
+func get_gm_enemy_spawn_world_config() -> Dictionary:
+	var result := _combat_area_config_to_world("gm_enemy_spawn", "formation_front_center", "travel_direction")
+	var combat_spatial := _layout.get("combat_spatial", {}) as Dictionary
+	var config := combat_spatial.get("gm_enemy_spawn", {}) as Dictionary
+	if not result.is_empty():
+		var area_center := _v2(config.get("area_center", []))
+		result["area_center"] = _formal_root.to_global(Vector3(area_center.x, 0.0, area_center.y))
+	return result
+
+
+func _combat_area_config_to_world(config_key: String, position_key: String, direction_key: String) -> Dictionary:
+	if _formal_root == null:
+		return {}
+	var combat_spatial := _layout.get("combat_spatial", {}) as Dictionary
+	var config := (combat_spatial.get(config_key, {}) as Dictionary).duplicate(true)
+	if config.is_empty():
+		return {}
+	var point := _v2(config.get(position_key, []))
+	var direction_2d := _v2(config.get(direction_key, []))
+	var world_direction := _formal_root.global_basis * Vector3(direction_2d.x, 0.0, direction_2d.y)
+	world_direction.y = 0.0
+	if world_direction.length_squared() > 0.0001:
+		world_direction = world_direction.normalized()
+	config[position_key] = _formal_root.to_global(Vector3(point.x, 0.0, point.y))
+	config[direction_key] = world_direction
+	return config
 
 
 func get_enemy_route_world() -> Dictionary:
@@ -447,6 +706,29 @@ func get_defense_device_slot_pose(building_id: String, position_id: String) -> D
 	var facing_radians := deg_to_rad(local_facing_degrees)
 	var local_facing := Vector3(sin(facing_radians), 0.0, cos(facing_radians))
 	var world_facing := (building_root.global_basis * local_facing).normalized()
+	var building_definition := _find_building_definition(building_id)
+	var envelope := _v2(building_definition.get("envelope_size", [1.0, 1.0]))
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	var wall_thickness := float(structural.get("wall_thickness", 0.4))
+	var wall_height := maxf(
+		float(building_definition.get("height", 1.0)),
+		float(structural.get("minimum_wall_height", 1.2))
+	)
+	var building_segment_id := "back_wall" if center.y < 0.0 else ("front_left" if center.x < 0.0 else "front_right")
+	var proxy_local := Vector2(
+		center.x,
+		-envelope.y * 0.5 + wall_thickness * 0.5
+		if center.y < 0.0
+		else envelope.y * 0.5 - wall_thickness * 0.5
+	)
+	var proxy_position := _building_local_to_global(building_root, proxy_local, 0.0)
+	var proxy_aim_position := _building_local_to_global(building_root, proxy_local, wall_height * 0.55)
+	var proxy_fixture_aim_position := _building_local_to_global(
+		building_root,
+		center,
+		float(fixture.get("collision_center_y", anchor_y))
+	)
+	var platform_size := _v2(position_definition.get("size", [0.0, 0.0]))
 	return {
 		"schema_version": EXPECTED_SCHEMA,
 		"building_id": building_id,
@@ -456,7 +738,16 @@ func get_defense_device_slot_pose(building_id: String, position_id: String) -> D
 		"facing_direction": world_facing,
 		"rotation_y_degrees": rad_to_deg(atan2(world_facing.x, world_facing.z)),
 		"local_center": center,
-		"platform_size": _v2(position_definition.get("size", [0.0, 0.0])),
+		"platform_size": platform_size,
+		"host_proxy_kind": "building_wall_segment",
+		"host_proxy_id": "%s:%s:%s" % [building_id, building_segment_id, position_id],
+		"host_proxy_building_segment_id": building_segment_id,
+		"host_proxy_fixture_id": str(fixture.get("id", "")),
+		"host_proxy_position": proxy_position,
+		"host_proxy_aim_position": proxy_aim_position,
+		"host_proxy_fixture_aim_position": proxy_fixture_aim_position,
+		"host_proxy_contact_radius": wall_thickness * 0.5,
+		"host_proxy_hit_radius": maxf(0.75, platform_size.x * 0.5 + 0.25),
 		"required_level": int(position_definition.get("required_level", 1)),
 		"live_default": is_default_formal_world_enabled()
 	}
@@ -493,7 +784,11 @@ func _get_front_wall_defense_device_slot_pose(position_id: String) -> Dictionary
 	var high_x_point := point_b if point_a.x <= point_b.x else point_a
 	var wall_tangent := (high_x_point - low_x_point).normalized()
 	var anchor_height := float(gate.get("height", 3.2)) + 0.35
+	var wall_height := float(station.get("wall_height", 2.4))
+	var wall_thickness := float(station.get("wall_thickness", 1.2))
 	var station_position := Vector3(station_point.x, anchor_height, station_point.y)
+	var proxy_position := Vector3(station_point.x, 0.0, station_point.y)
+	var proxy_aim_position := Vector3(station_point.x, wall_height * 0.55, station_point.y)
 	var facing_direction := Vector3(-wall_tangent.y, 0.0, wall_tangent.x).normalized()
 	return {
 		"schema_version": EXPECTED_SCHEMA,
@@ -502,6 +797,13 @@ func _get_front_wall_defense_device_slot_pose(position_id: String) -> Dictionary
 		"fixture_id": "front_wall_defense_walkway",
 		"wall_segment_id": segment_id,
 		"position": _formal_root.to_global(station_position),
+		"host_proxy_kind": "wall_segment",
+		"host_proxy_id": "wall:%s:%s" % [segment_id, position_id],
+		"host_proxy_wall_segment_id": segment_id,
+		"host_proxy_position": _formal_root.to_global(proxy_position),
+		"host_proxy_aim_position": _formal_root.to_global(proxy_aim_position),
+		"host_proxy_contact_radius": wall_thickness * 0.5,
+		"host_proxy_hit_radius": 2.05,
 		"facing_direction": facing_direction,
 		"rotation_y_degrees": rad_to_deg(atan2(facing_direction.x, facing_direction.z)),
 		"live_default": is_default_formal_world_enabled()
@@ -727,12 +1029,14 @@ func get_validation_snapshot() -> Dictionary:
 		"legacy_compatibility_override": _legacy_compatibility_override,
 		"preview_enabled": _preview_enabled,
 		"preview_offset": _v2(migration.get("preview_offset", [0.0, 0.0])),
+		"world_origin_mode": str(migration.get("world_origin_mode", "")),
 		"formal_root_available": is_instance_valid(_formal_root),
 		"formal_root_visible": _formal_root.visible if is_instance_valid(_formal_root) else false,
 		"formal_root_position": (
 			_formal_root.position if is_instance_valid(_formal_root) else Vector3.ZERO
 		),
 		"legacy_gameplay_root_unchanged": true,
+		"legacy_visuals_hidden": _are_legacy_visuals_hidden(),
 		"terrain_size": _v2(terrain.get("size", [0.0, 0.0])),
 		"terrain_surface_y": float(terrain.get("ground_surface_y", 0.0)),
 		"river_surface_y": float(terrain.get("river_surface_y", 0.0)),
@@ -938,12 +1242,26 @@ func _validate_config() -> void:
 		_configuration_errors.append("missing_public_location_id")
 	var navigation: Dictionary = _layout.get("navigation", {})
 	var grid_bounds: Variant = navigation.get("grid_bounds", [])
-	if (
-		float(navigation.get("cell_size", 0.0)) <= 0.0
-		or not grid_bounds is Array
-		or (grid_bounds as Array).size() < 4
-	):
+	var production_bounds: Variant = navigation.get("production_bounds", [])
+	var grid_contract_valid := (
+		float(navigation.get("cell_size", 0.0)) > 0.0
+		and grid_bounds is Array
+		and (grid_bounds as Array).size() >= 4
+	)
+	if not grid_contract_valid:
 		_configuration_errors.append("invalid_navigation_contract")
+	if (
+		not grid_contract_valid
+		or not production_bounds is Array
+		or (production_bounds as Array).size() < 4
+		or float((production_bounds as Array)[0]) > float((grid_bounds as Array)[0])
+		or float((production_bounds as Array)[1]) < float((grid_bounds as Array)[1])
+		or float((production_bounds as Array)[2]) > float((grid_bounds as Array)[2])
+		or float((production_bounds as Array)[3]) < 344.0
+		or str(navigation.get("enemy_exterior_mode", "")) != "shared_open_baked_space"
+		or bool(navigation.get("roads_affect_navigation", true))
+	):
+		_configuration_errors.append("invalid_shared_production_navigation_contract")
 	_validate_combat_spatial_config()
 	_validate_rear_spatial_config()
 	_validate_natural_collision_config()
@@ -1000,13 +1318,17 @@ func _build_formal_layout() -> void:
 	var old_root := world_root.get_node_or_null(FORMAL_ROOT_NAME)
 	if old_root != null:
 		old_root.queue_free()
+	_building_name_labels.clear()
+	_building_name_label_alpha = 1.0
+	_camera_idle_seconds = 0.0
+	_camera_sample_valid = false
 	_formal_root = Node3D.new()
 	_formal_root.name = FORMAL_ROOT_NAME
 	_formal_root.set_meta("layout_schema", EXPECTED_SCHEMA)
 	_formal_root.set_meta("migration_phase", str((_layout.get("migration", {}) as Dictionary).get("phase", "")))
 	world_root.add_child(_formal_root)
 	var migration: Dictionary = _layout.get("migration", {})
-	var offset := _v2(migration.get("preview_offset", [1000.0, 0.0]))
+	var offset := _v2(migration.get("preview_offset", [0.0, 0.0]))
 	_formal_root.position = Vector3(offset.x, 0.0, offset.y)
 	_build_terrain()
 	_build_roads_and_plaza()
@@ -1069,7 +1391,13 @@ func _build_terrain() -> void:
 
 func _build_navigation_floor_collision(parent: Node3D, surface_y: float) -> void:
 	var navigation: Dictionary = _layout.get("navigation", {})
-	var bounds: Array = navigation.get("grid_bounds", [-58.0, 58.0, -50.0, 58.0])
+	# The contract grid remains station-local, while the production NavMesh also
+	# covers the exterior battlefield. Roads are presentation only: the broad
+	# floor plus static collision geometry decides where actors may walk.
+	var bounds: Array = navigation.get(
+		"production_bounds",
+		navigation.get("grid_bounds", [-58.0, 58.0, -50.0, 58.0])
+	)
 	var navigation_mesh: Dictionary = _physics_navigation.get("navigation_mesh", {})
 	var depth := float(navigation_mesh.get("baking_floor_depth", 0.2))
 	_add_static_box_collision(
@@ -1395,7 +1723,7 @@ func _build_building_roots() -> void:
 			root,
 			"NameLabel",
 			Vector3(0.0, label_y, 0.0),
-			"%s · %s" % [building.get("display_name", "建筑"), building.get("orientation", "")]
+			str(building.get("display_name", "建筑"))
 		)
 		_build_building_static_collision(root, building)
 		_build_building_fixtures(root, building)
@@ -1531,6 +1859,7 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	collision_root.name = "StaticCollision"
 	collision_root.set_meta("building_id", str(building.get("id", "")))
 	collision_root.set_meta("door_clear_width", door_width)
+	collision_root.set_meta("fully_open_front", building_id == "blacksmith")
 	building_root.add_child(collision_root)
 	var side_depth := maxf(0.1, envelope.y - thickness * 2.0)
 	var side_center_z := 0.0
@@ -1543,41 +1872,47 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 		side_center_z = -3.45
 		front_segment_width = 0.46
 		front_center_offset = door_width * 0.5 + front_segment_width * 0.5
-	_add_static_box_collision(
+	var left_wall := _add_static_box_collision(
 		collision_root,
 		"LeftWall",
 		Vector3(-envelope.x * 0.5 + thickness * 0.5, wall_height * 0.5, side_center_z),
 		Vector3(thickness, wall_height, side_depth),
 		"building_wall"
 	)
-	_add_static_box_collision(
+	left_wall.set_meta("building_segment_id", "left_wall")
+	var right_wall := _add_static_box_collision(
 		collision_root,
 		"RightWall",
 		Vector3(envelope.x * 0.5 - thickness * 0.5, wall_height * 0.5, side_center_z),
 		Vector3(thickness, wall_height, side_depth),
 		"building_wall"
 	)
-	_add_static_box_collision(
+	right_wall.set_meta("building_segment_id", "right_wall")
+	var back_wall := _add_static_box_collision(
 		collision_root,
 		"BackWall",
 		Vector3(0.0, wall_height * 0.5, -envelope.y * 0.5 + thickness * 0.5),
 		Vector3(envelope.x, wall_height, thickness),
 		"building_wall"
 	)
-	_add_static_box_collision(
-		collision_root,
-		"FrontLeft",
-		Vector3(-front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
-		Vector3(front_segment_width, wall_height, thickness),
-		"building_wall"
-	)
-	_add_static_box_collision(
-		collision_root,
-		"FrontRight",
-		Vector3(front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
-		Vector3(front_segment_width, wall_height, thickness),
-		"building_wall"
-	)
+	back_wall.set_meta("building_segment_id", "back_wall")
+	if building_id != "blacksmith":
+		var front_left := _add_static_box_collision(
+			collision_root,
+			"FrontLeft",
+			Vector3(-front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+			Vector3(front_segment_width, wall_height, thickness),
+			"building_wall"
+		)
+		front_left.set_meta("building_segment_id", "front_left")
+		var front_right := _add_static_box_collision(
+			collision_root,
+			"FrontRight",
+			Vector3(front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+			Vector3(front_segment_width, wall_height, thickness),
+			"building_wall"
+		)
+		front_right.set_meta("building_segment_id", "front_right")
 
 
 func _build_building_fixtures(building_root: Node3D, building: Dictionary) -> void:
@@ -2597,6 +2932,7 @@ func _build_fixture_horse_anchor_marker(
 	marker.set_meta("workstation_id", str(fixture.get("workstation_id", "")))
 	marker.set_meta("horse_anchor_id", anchor_id)
 	marker.set_meta("facing_degrees", float(horse_anchor.get("facing_degrees", 0.0)))
+	marker.set_meta("pickup_center", _v2(horse_anchor.get("pickup_center", horse_anchor.get("center", [0.0, 0.0]))))
 	var footprint_size := _v2(horse_anchor.get("footprint_size", [1.3, 2.1]))
 	marker.set_meta("footprint_size", footprint_size)
 	parent.add_child(marker)
@@ -2810,7 +3146,8 @@ func _build_navigation_contract(contract_root: Node3D) -> void:
 			else:
 				_navigation_grid.set_point_solid(cell_id, true)
 
-	var production_mesh := _create_production_navigation_mesh(bounds)
+	var production_bounds: Array = navigation.get("production_bounds", bounds)
+	var production_mesh := _create_production_navigation_mesh(production_bounds)
 	_navigation_region = NavigationRegion3D.new()
 	_navigation_region.name = "StationNavigation"
 	_navigation_region.navigation_mesh = production_mesh
@@ -2842,6 +3179,18 @@ func _build_enemy_approach_navigation() -> void:
 	var route := combat_spatial.get("enemy_route", {}) as Dictionary
 	var stages := route.get("stages", []) as Array
 	var stop_stage_id := str(route.get("pilot_stop_stage_id", "front_gate"))
+	var navigation := _layout.get("navigation", {}) as Dictionary
+	if str(navigation.get("enemy_exterior_mode", "")) == "shared_open_baked_space":
+		# T0200: enemy routes and roads are presentation/spawn staging data, never
+		# navigation authority. The production collider bake now owns the whole
+		# exterior battlefield, so a locked tower/NPC target can be approached
+		# directly instead of being forced through the front-gate corridor.
+		_enemy_approach_navigation_region = null
+		_build_enemy_front_gate_navigation_link(
+			stages,
+			_formal_root.get_node_or_null("SpatialContract") as Node3D
+		)
+		return
 	var cross_sections := route.get("navigation_cross_sections", []) as Array
 	if cross_sections.size() < 2 or not _production_navigation_map.is_valid():
 		return
@@ -3027,12 +3376,15 @@ func _build_enemy_front_gate_navigation_link(stages: Array, parent: Node3D) -> v
 	link.name = "EnemyFrontGateLink"
 	link.start_position = Vector3(front_gate_point.x, navigation_height, front_gate_point.y)
 	link.end_position = Vector3(gate_turn_point.x, navigation_height, gate_turn_point.y)
-	link.bidirectional = false
+	# The same physical gate crossing serves enemy ingress after the gate falls and
+	# friendly alarm responders moving out to the configured rally ground.
+	link.bidirectional = true
 	link.enter_cost = 0.1
 	link.travel_cost = 1.0
 	link.enabled = bool((_layout.get("navigation", {}) as Dictionary).get("enabled_by_default", false))
 	link.set_navigation_map(_production_navigation_map)
 	link.set_meta("route_phase", "front_gate_breach")
+	link.set_meta("supports_friendly_rally", true)
 	link.set_meta("staged", not _default_formal_world_enabled)
 	parent.add_child(link)
 	_enemy_front_gate_navigation_link = link
@@ -3219,7 +3571,7 @@ func _enter_preview() -> void:
 	}
 	var migration: Dictionary = _layout.get("migration", {})
 	var config: Dictionary = _layout.get("camera", {})
-	var offset := _v2(migration.get("preview_offset", [1000.0, 0.0]))
+	var offset := _v2(migration.get("preview_offset", [0.0, 0.0]))
 	var focus := _v2(config.get("initial_focus", [0.0, 0.0]))
 	var distance := float(config.get("initial_distance", 70.0))
 	var pitch_degrees := absf(float(config.get("pitch_degrees", -55.0)))
@@ -3233,6 +3585,8 @@ func _enter_preview() -> void:
 	camera.rotation_degrees = Vector3(-pitch_degrees, 0.0, 0.0)
 	camera.fov = float(config.get("vertical_fov_degrees", 62.0))
 	_formal_root.visible = true
+	if _default_formal_world_enabled and not _legacy_compatibility_override:
+		_set_legacy_visuals_enabled(false)
 	if is_instance_valid(_navigation_region):
 		_navigation_region.enabled = true
 	if is_instance_valid(_enemy_approach_navigation_region):
@@ -3264,6 +3618,8 @@ func _exit_preview() -> void:
 	_camera_restore.clear()
 	if is_instance_valid(_formal_root):
 		_formal_root.visible = false
+	if _legacy_compatibility_override or not _default_formal_world_enabled:
+		_set_legacy_visuals_enabled(true)
 	if is_instance_valid(_navigation_region):
 		_navigation_region.enabled = false
 	if is_instance_valid(_enemy_approach_navigation_region):
@@ -3278,6 +3634,48 @@ func _exit_preview() -> void:
 		if is_instance_valid(link):
 			link.enabled = false
 	_preview_enabled = false
+
+
+func _set_legacy_visuals_enabled(enabled: bool) -> void:
+	var world_root := get_node_or_null(world_root_path) as Node3D
+	if world_root == null:
+		return
+	for path in LEGACY_VISUAL_PATHS:
+		var visual := world_root.get_node_or_null(path) as Node3D
+		if visual != null:
+			visual.visible = enabled
+			_set_legacy_collision_branch_enabled(visual, enabled)
+
+
+func _set_legacy_collision_branch_enabled(branch: Node, enabled: bool) -> void:
+	var collision_objects: Array[Node] = []
+	if branch is CollisionObject3D:
+		collision_objects.append(branch)
+	collision_objects.append_array(branch.find_children("*", "CollisionObject3D", true, false))
+	for raw_object in collision_objects:
+		var collision_object := raw_object as CollisionObject3D
+		if collision_object == null:
+			continue
+		if not collision_object.has_meta("formal_origin_restore_collision_layer"):
+			collision_object.set_meta("formal_origin_restore_collision_layer", collision_object.collision_layer)
+			collision_object.set_meta("formal_origin_restore_collision_mask", collision_object.collision_mask)
+		if enabled:
+			collision_object.collision_layer = int(collision_object.get_meta("formal_origin_restore_collision_layer", 0))
+			collision_object.collision_mask = int(collision_object.get_meta("formal_origin_restore_collision_mask", 0))
+		else:
+			collision_object.collision_layer = 0
+			collision_object.collision_mask = 0
+
+
+func _are_legacy_visuals_hidden() -> bool:
+	var world_root := get_node_or_null(world_root_path) as Node3D
+	if world_root == null:
+		return false
+	for path in LEGACY_VISUAL_PATHS:
+		var visual := world_root.get_node_or_null(path) as Node3D
+		if visual != null and visual.visible:
+			return false
+	return true
 
 
 func _add_anchor_marker(
@@ -3523,6 +3921,22 @@ func _get_authority_position_counts() -> Dictionary:
 
 func _validate_combat_spatial_config() -> void:
 	var combat_spatial := _layout.get("combat_spatial", {}) as Dictionary
+	var friendly_response := combat_spatial.get("friendly_station_response", {}) as Dictionary
+	var proactive_strategies: Variant = friendly_response.get("proactive_strategy_ids", [])
+	if (
+		str(friendly_response.get("schema_version", "")) != "friendly_station_response_v2"
+		or float(friendly_response.get("normal_contact_range", 0.0)) <= 0.0
+		or str(friendly_response.get("combat_targeting_schema", "")) != "friendly_enemy_presence_lock_v1"
+		or float(friendly_response.get("combat_target_detection_range", 0.0)) <= 0.0
+		or str(friendly_response.get("inside_station_target_scope", "")) != "entire_station"
+		or float(friendly_response.get("avoidance_min_trigger_range", 0.0)) <= 0.0
+		or float(friendly_response.get("avoidance_ranged_trigger_margin", 0.0)) <= 0.0
+		or float(friendly_response.get("avoidance_min_safe_distance", 0.0)) <= 0.0
+		or float(friendly_response.get("avoidance_ranged_safe_margin", 0.0)) <= 0.0
+		or not proactive_strategies is Array
+		or (proactive_strategies as Array).is_empty()
+	):
+		_configuration_errors.append("invalid_friendly_station_response_contract")
 	var route := combat_spatial.get("enemy_route", {}) as Dictionary
 	if route.is_empty():
 		_configuration_errors.append("enemy_route_missing")
@@ -3556,6 +3970,29 @@ func _validate_combat_spatial_config() -> void:
 	var stop_stage_id := str(route.get("pilot_stop_stage_id", ""))
 	if stop_stage_id != "front_gate" or not stage_ids.has(stop_stage_id):
 		_configuration_errors.append("invalid_enemy_pilot_stop_stage")
+	var friendly_rally := combat_spatial.get("friendly_rally", {}) as Dictionary
+	if (
+		str(friendly_rally.get("schema_version", "")) != "friendly_rally_v1"
+		or not _is_v2_array(friendly_rally.get("center", null))
+		or not _is_v2_array(friendly_rally.get("area_size", null))
+		or not _is_v2_array(friendly_rally.get("enemy_direction", null))
+		or float(friendly_rally.get("line_spacing", 0.0)) <= 0.0
+		or float(friendly_rally.get("line_row_spacing", 0.0)) <= 0.0
+		or int(friendly_rally.get("max_line_columns", 0)) <= 0
+		or float(friendly_rally.get("cavalry_lateral_offset", 0.0)) <= 0.0
+		or float(friendly_rally.get("cavalry_depth_spacing", 0.0)) <= 0.0
+	):
+		_configuration_errors.append("invalid_friendly_rally_contract")
+	var gm_enemy_spawn := combat_spatial.get("gm_enemy_spawn", {}) as Dictionary
+	if (
+		str(gm_enemy_spawn.get("schema_version", "")) != "gm_enemy_spawn_v1"
+		or not _is_v2_array(gm_enemy_spawn.get("formation_front_center", null))
+		or not _is_v2_array(gm_enemy_spawn.get("area_center", null))
+		or not _is_v2_array(gm_enemy_spawn.get("area_size", null))
+		or not _is_v2_array(gm_enemy_spawn.get("travel_direction", null))
+		or int(gm_enemy_spawn.get("columns", 0)) <= 0
+	):
+		_configuration_errors.append("invalid_gm_enemy_spawn_contract")
 
 
 func _validate_natural_collision_config() -> void:
@@ -3816,6 +4253,20 @@ func _validate_fixture_layouts_config() -> void:
 				else:
 					var anchor_center := _v2(horse_anchor.get("center", []))
 					var footprint_size := _v2(horse_anchor.get("footprint_size", []))
+					var pickup_center_valid := _is_v2_array(horse_anchor.get("pickup_center", null))
+					if building_id == "stable" and not pickup_center_valid:
+						_configuration_errors.append("stable_horse_pickup_center_missing:%s" % fixture_id)
+					elif pickup_center_valid:
+						var pickup_center := _v2(horse_anchor.get("pickup_center", []))
+						var pickup_distance := pickup_center.distance_to(anchor_center)
+						var opening_side := str(fixture.get("opening_side", ""))
+						var pickup_on_open_side := (
+							pickup_center.x > anchor_center.x
+							if opening_side == "right"
+							else pickup_center.x < anchor_center.x
+						)
+						if pickup_distance < 1.2 or pickup_distance > 2.3 or not pickup_on_open_side:
+							_configuration_errors.append("invalid_stable_horse_pickup_center:%s" % fixture_id)
 					if footprint_size.x < 1.3 or footprint_size.y < 2.1:
 						_configuration_errors.append("fixture_horse_anchor_too_small:%s" % fixture_id)
 					if not _point_in_rotated_rect(anchor_center, center, Vector2(collision_size.x, collision_size.z), float(fixture.get("rotation_degrees", 0.0))):
@@ -4005,6 +4456,9 @@ func _build_production_navigation_snapshot() -> Dictionary:
 		"enabled_building_door_link_count": _count_enabled_building_navigation_links(),
 		"contract_grid_cell_size": float((_layout.get("navigation", {}) as Dictionary).get("cell_size", 0.0)),
 		"contract_walkable_cell_count": _navigation_walkable_cells.size(),
+		"production_bounds": (_layout.get("navigation", {}) as Dictionary).get("production_bounds", []),
+		"enemy_exterior_mode": str((_layout.get("navigation", {}) as Dictionary).get("enemy_exterior_mode", "")),
+		"roads_affect_navigation": bool((_layout.get("navigation", {}) as Dictionary).get("roads_affect_navigation", true)),
 		"enabled": _navigation_region.enabled if is_instance_valid(_navigation_region) else false,
 		"enemy_approach_region_available": is_instance_valid(_enemy_approach_navigation_region),
 		"enemy_approach_region_enabled": (
@@ -4195,7 +4649,61 @@ func _add_label(parent: Node3D, node_name: String, position: Vector3, text: Stri
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	parent.add_child(label)
+	if node_name == "NameLabel":
+		label.font_size = BUILDING_NAME_FONT_SIZE
+		label.set_meta("formal_building_name_label", true)
+		_building_name_labels.append(label)
+		_apply_building_name_label_alpha_to(label, _building_name_label_alpha)
 	return label
+
+
+func _update_building_name_label_visibility(delta: float) -> void:
+	if _building_name_labels.is_empty():
+		return
+	var camera_rig := get_node_or_null(camera_rig_path) as Node3D
+	var camera := get_node_or_null(camera_path) as Camera3D
+	if camera_rig == null or camera == null:
+		_set_building_name_label_alpha(1.0)
+		return
+	var camera_moved := (
+		not _camera_sample_valid
+		or camera_rig.global_position.distance_squared_to(_last_camera_rig_position) > CAMERA_MOTION_EPSILON_SQUARED
+		or camera.position.distance_squared_to(_last_camera_local_position) > CAMERA_MOTION_EPSILON_SQUARED
+		or camera.rotation.distance_squared_to(_last_camera_rotation) > CAMERA_MOTION_EPSILON_SQUARED
+		or not is_equal_approx(camera.fov, _last_camera_fov)
+	)
+	_last_camera_rig_position = camera_rig.global_position
+	_last_camera_local_position = camera.position
+	_last_camera_rotation = camera.rotation
+	_last_camera_fov = camera.fov
+	_camera_sample_valid = true
+	if camera_moved:
+		_camera_idle_seconds = 0.0
+	else:
+		_camera_idle_seconds += maxf(0.0, delta)
+	var target_alpha := 0.0 if _camera_idle_seconds >= BUILDING_NAME_IDLE_DELAY_SECONDS else 1.0
+	var speed := BUILDING_NAME_REVEAL_SPEED if target_alpha > _building_name_label_alpha else BUILDING_NAME_FADE_SPEED
+	_set_building_name_label_alpha(move_toward(
+		_building_name_label_alpha,
+		target_alpha,
+		speed * maxf(0.0, delta)
+	))
+
+
+func _set_building_name_label_alpha(alpha: float) -> void:
+	_building_name_label_alpha = clampf(alpha, 0.0, 1.0)
+	for label in _building_name_labels:
+		if is_instance_valid(label):
+			_apply_building_name_label_alpha_to(label, _building_name_label_alpha)
+
+
+func _apply_building_name_label_alpha_to(label: Label3D, alpha: float) -> void:
+	var text_color := label.modulate
+	text_color.a = alpha
+	label.modulate = text_color
+	var outline_color := label.outline_modulate
+	outline_color.a = alpha
+	label.outline_modulate = outline_color
 
 
 func _material(color: Color) -> StandardMaterial3D:

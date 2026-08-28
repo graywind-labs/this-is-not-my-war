@@ -70,7 +70,8 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_snapshot(PRAYER_ID).get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
 		or not prayer_node.visible
-		or prayer_node.global_position.x < 900.0
+		or absf(prayer_node.global_position.x) > 80.0
+		or absf(prayer_node.global_position.z) > 100.0
 	):
 		_fail("Prayer GM entry did not start a reservation-only formal route")
 		return

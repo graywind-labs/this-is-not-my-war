@@ -3,7 +3,6 @@ extends BuildingArtView
 
 
 const WALL_STRAIGHT := "res://assets/3d/quaternius/buildings/wall_plaster_straight.glb"
-const WALL_DOOR := "res://assets/3d/quaternius/buildings/wall_plaster_door_round.glb"
 const FLOOR_DARK := "res://assets/3d/quaternius/buildings/floor_wood_dark.glb"
 const CHIMNEY := "res://assets/3d/quaternius/buildings/prop_chimney.glb"
 const PEG_RACK := "res://assets/3d/quaternius/props/peg_rack.glb"
@@ -16,7 +15,6 @@ const WORKSHOP_SHELF := "res://assets/3d/quaternius/props/workshop_shelf.glb"
 const LANTERN := "res://assets/3d/quaternius/props/main_hall_lantern.glb"
 const SHIELD := "res://assets/3d/quaternius/props/shield_wooden.glb"
 const AMBIENT_FX_SCRIPT := preload("res://scripts/presentation/buildings/SmithyAmbientFX.gd")
-const AUTO_DOOR_SCRIPT := preload("res://scripts/presentation/buildings/BuildingAutoDoor.gd")
 
 const BUILDING_FOOTPRINT := Vector2(14.0, 12.0)
 const WALL_HEIGHT := 3.2
@@ -63,8 +61,10 @@ func get_art_slice_snapshot() -> Dictionary:
 		"ambient_fx": ambient_snapshot,
 		"auto_door": door_snapshot,
 		"navigation_ready": _formal_navigation_ready(),
-		"structure_profile": "rear_masonry_forge_with_roofed_open_smithing_shed",
-		"roof_profile": "formal_low_pitch_cold_slate_modular",
+		"structure_profile": "rear_masonry_forge_with_flat_roofed_fully_open_front_smithing_shed",
+		"front_enclosure_profile": "fully_open_with_four_original_roof_posts",
+		"front_support_post_count": _direct_child_prefix_count("Exterior", "FrontPost"),
+		"roof_profile": "formal_flat_cold_slate_with_low_parapet",
 		"roof_module_count": get_node("Roof").get_child_count(),
 		"roof_albedo_override": roof_albedo_override,
 		"exterior_material_count": _exterior_materials.size(),
@@ -113,7 +113,7 @@ func _build_formal_smithy() -> void:
 	exterior_albedo_tint = Color("#aeb5c7")
 	static_collision_path = NodePath("../StaticCollision")
 	workstation_markers_path = NodePath("../FixtureLayout/NPCStands")
-	set_meta("art_revision", "t0135_p8ar3")
+	set_meta("art_revision", "t0135_p8ar8")
 	set_meta("formal_vertical_slice", true)
 	set_meta("footprint_meters", BUILDING_FOOTPRINT)
 	_build_foundation_and_floor()
@@ -149,11 +149,9 @@ func _build_exterior() -> void:
 	var exterior := Node3D.new()
 	exterior.name = "Exterior"
 	add_child(exterior)
-	# Keep the rear furnace zone masonry-heavy, but open the long front and side
-	# bays so the forge reads as a ventilated border smithy rather than a house.
-	for x in [-6.0, 6.0]:
-		_add_scene_prop(exterior, "FrontWall", WALL_STRAIGHT, Vector3(x, 0.24, 6.0), Vector3(1.0, 1.02, 1.0), Vector3(0.0, 180.0, 0.0))
-	_add_scene_prop(exterior, "FrontDoor", WALL_DOOR, Vector3(0.0, 0.24, 6.0), Vector3(1.0, 1.02, 1.0), Vector3(0.0, 180.0, 0.0))
+	# Keep the rear furnace zone masonry-heavy while leaving the complete front
+	# elevation open. The original four timber posts alone carry the front roof
+	# line; there are no wall modules, door leaves, or dedicated door jambs.
 	for x in [-6.0, -4.0, -2.0, 0.0, 2.0, 4.0, 6.0]:
 		_add_scene_prop(exterior, "RearWall", WALL_STRAIGHT, Vector3(x, 0.24, -6.0), Vector3(1.0, 1.02, 1.0))
 	for side in [-1.0, 1.0]:
@@ -167,12 +165,11 @@ func _build_exterior() -> void:
 				Vector3(0.0, 90.0 if side < 0.0 else -90.0, 0.0)
 			)
 	var dark_timber := Color("#35313a")
-	for x in [-6.8, -3.5, 3.5, 6.8]:
-		_add_box(exterior, "FrontPost", Vector3(x, 1.72, 6.13), Vector3(0.28, 3.35, 0.3), dark_timber)
+	var longitudinal_post_x := [-6.8, -3.5, 3.5, 6.8]
+	for index in range(longitudinal_post_x.size()):
+		var x: float = longitudinal_post_x[index]
+		_add_box(exterior, "FrontPost%02d" % (index + 1), Vector3(x, 1.72, 6.13), Vector3(0.28, 3.35, 0.3), dark_timber)
 		_add_box(exterior, "RearPost", Vector3(x, 1.72, -6.13), Vector3(0.28, 3.35, 0.3), dark_timber)
-	for x in [-1.15, 1.15]:
-		var jamb_name := "DoorJambLeft" if x < 0.0 else "DoorJambRight"
-		_add_box(exterior, jamb_name, Vector3(x, 1.72, 6.13), Vector3(0.22, 3.35, 0.3), dark_timber)
 	for side in [-1.0, 1.0]:
 		for z in [-4.5, -1.0, 2.5, 5.4]:
 			_add_box(exterior, "SidePost", Vector3(side * 7.13, 1.72, z), Vector3(0.3, 3.35, 0.28), dark_timber)
@@ -182,12 +179,17 @@ func _build_exterior() -> void:
 	_add_box(exterior, "SmithySign", Vector3(0.0, 3.72, 6.24), Vector3(2.5, 0.66, 0.16), Color("#4b5269"))
 	_add_box(exterior, "AnvilEmblemTop", Vector3(0.0, 3.78, 6.34), Vector3(0.86, 0.16, 0.18), Color("#222830"))
 	_add_box(exterior, "AnvilEmblemStem", Vector3(0.0, 3.57, 6.34), Vector3(0.28, 0.28, 0.18), Color("#222830"))
-	var auto_door := Node3D.new()
-	auto_door.name = "AutoDoor"
-	auto_door.position = Vector3(0.0, 0.2, 6.2)
-	auto_door.set_script(AUTO_DOOR_SCRIPT)
-	auto_door.call("configure", Color("#465066"), Color("#2f3038"), Color("#77808c"))
-	exterior.add_child(auto_door)
+
+
+func _direct_child_prefix_count(parent_path: String, prefix: String) -> int:
+	var parent := get_node_or_null(parent_path)
+	if parent == null:
+		return 0
+	var count := 0
+	for child in parent.get_children():
+		if str(child.name).begins_with(prefix):
+			count += 1
+	return count
 
 
 func _build_roof() -> void:
@@ -197,16 +199,13 @@ func _build_roof() -> void:
 	add_child(roof)
 	var slate := Color("#4a5672")
 	var ridge := Color("#2f374b")
-	var north_slope := _add_box(roof, "NorthSlateSlope", Vector3(0.0, 3.62, -3.05), Vector3(14.8, 0.2, 6.45), slate)
-	north_slope.rotation_degrees.x = -7.0
-	var south_slope := _add_box(roof, "SouthSlateSlope", Vector3(0.0, 3.62, 3.05), Vector3(14.8, 0.2, 6.45), slate)
-	south_slope.rotation_degrees.x = 7.0
-	_add_box(roof, "ColdRidgeCap", Vector3(0.0, 4.02, 0.0), Vector3(15.0, 0.24, 0.34), ridge)
+	_add_box(roof, "FlatSlateDeck", Vector3(0.0, 3.52, 0.0), Vector3(14.8, 0.24, 12.8), slate)
+	_add_box(roof, "NorthParapetCap", Vector3(0.0, 3.72, -6.28), Vector3(14.9, 0.28, 0.32), ridge)
+	_add_box(roof, "SouthParapetCap", Vector3(0.0, 3.72, 6.28), Vector3(14.9, 0.28, 0.32), ridge)
+	_add_box(roof, "WestParapetCap", Vector3(-7.28, 3.72, 0.0), Vector3(0.32, 0.28, 12.3), ridge)
+	_add_box(roof, "EastParapetCap", Vector3(7.28, 3.72, 0.0), Vector3(0.32, 0.28, 12.3), ridge)
 	for x in [-6.5, -4.3, -2.15, 0.0, 2.15, 4.3, 6.5]:
-		var north_seam := _add_box(roof, "NorthSlateSeam", Vector3(x, 3.73, -3.05), Vector3(0.08, 0.06, 6.35), ridge)
-		north_seam.rotation_degrees.x = -7.0
-		var south_seam := _add_box(roof, "SouthSlateSeam", Vector3(x, 3.73, 3.05), Vector3(0.08, 0.06, 6.35), ridge)
-		south_seam.rotation_degrees.x = 7.0
+		_add_box(roof, "FlatSlateSeam", Vector3(x, 3.66, 0.0), Vector3(0.07, 0.04, 12.2), ridge)
 
 
 func _build_interior() -> void:
@@ -349,8 +348,16 @@ func _build_upgrade_visuals() -> void:
 	var level_2_exterior := Node3D.new()
 	level_2_exterior.name = "ExteriorAdditions"
 	level_2.add_child(level_2_exterior)
-	for x in [-6.5, 6.5]:
-		_add_box(level_2_exterior, "ReinforcedWallBrace", Vector3(x, 2.25, 0.0), Vector3(0.34, 4.0, 0.34), Color("#2e3038"))
+	for side_index in range(2):
+		var x := -6.5 if side_index == 0 else 6.5
+		var side_name := "West" if side_index == 0 else "East"
+		_add_box(
+			level_2_exterior,
+			"ReinforcedWallBrace%s" % side_name,
+			Vector3(x, 1.78, 0.0),
+			Vector3(0.34, 3.2, 0.34),
+			Color("#2e3038")
+		)
 	_add_box(level_2_exterior, "ChimneyCrown", Vector3(0.0, 5.55, -4.85), Vector3(1.1, 0.28, 1.1), Color("#343943"))
 	_add_box(level_2_exterior, "ChimneyBand", Vector3(0.0, 4.75, -4.85), Vector3(0.86, 0.15, 0.86), Color("#222730"))
 	var fuel_shelter := Node3D.new()

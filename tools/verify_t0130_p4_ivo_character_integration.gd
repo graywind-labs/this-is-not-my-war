@@ -90,12 +90,13 @@ func _init() -> void:
 	check(int(work_art.get("work_clip_loop_mode", Animation.LOOP_NONE)) == Animation.LOOP_LINEAR, "Ivo digging clip is not cyclic")
 	check(bool(work_art.get("garden_hoe_visible", false)), "Garden hoe is not visible after plot arrival")
 	check(str(work_art.get("garden_hoe_parent", "")) == "RightHand", "Garden hoe is not attached to RightHand")
+	check(float(work_art.get("garden_hoe_left_hand_distance", INF)) < 0.06 and float(work_art.get("garden_hoe_right_hand_distance", INF)) < 0.06, "Garden hoe did not move into both of Ivo's palms")
 	check(not bool(work_art.get("hammer_visible", true)) and not bool(work_art.get("stable_broom_visible", true)) and not bool(work_art.get("cook_spoon_visible", true)), "Ivo carries another profession's tool")
 	check(facing_dot(work_art) > 0.9, "Ivo visible front is opposite the garden plot")
 	var work_cycle_quality := await _observe_work_cycle_quality(ivo)
 	check(bool(work_cycle_quality.get("wrapped", false)), "Ivo digging did not repeat across an animation boundary")
 	check(float(work_cycle_quality.get("minimum_blade_front_offset", -1.0)) > 0.12, "Garden hoe blade trails behind Ivo during the digging cycle")
-	check(float(work_cycle_quality.get("two_hand_grip_ratio", 0.0)) >= 0.7, "Garden hoe shaft does not stay within Ivo's two-hand working area")
+	check(float(work_cycle_quality.get("two_hand_grip_ratio", 0.0)) >= 0.7, "Garden hoe shaft does not stay within Ivo's two-hand working area: %s" % JSON.stringify(work_cycle_quality))
 
 	action_system.interrupt_npc_action(NPC_ID, "verify_t0130_p4_switch_to_prayer", true)
 	await process_frame
@@ -157,12 +158,18 @@ func _observe_work_cycle_quality(ivo: Node) -> Dictionary:
 	var minimum_blade_front_offset := INF
 	var grip_samples := 0
 	var sample_count := 0
+	var maximum_left_hand_distance := 0.0
+	var maximum_right_hand_distance := 0.0
 	for _sample in range(320):
 		await create_timer(0.02).timeout
 		var snapshot: Dictionary = ivo.debug_get_character_art_snapshot()
 		var current := float(snapshot.get("work_cycle_position", -1.0))
 		minimum_blade_front_offset = minf(minimum_blade_front_offset, float(snapshot.get("garden_hoe_front_offset", -1.0)))
-		if float(snapshot.get("garden_hoe_left_hand_distance", INF)) <= 0.28:
+		var left_hand_distance := float(snapshot.get("garden_hoe_left_hand_distance", INF))
+		var right_hand_distance := float(snapshot.get("garden_hoe_right_hand_distance", INF))
+		maximum_left_hand_distance = maxf(maximum_left_hand_distance, left_hand_distance)
+		maximum_right_hand_distance = maxf(maximum_right_hand_distance, right_hand_distance)
+		if left_hand_distance <= 0.06 and right_hand_distance <= 0.06:
 			grip_samples += 1
 		sample_count += 1
 		if current >= 0.0 and previous >= 0.0 and current + 0.04 < previous:
@@ -174,6 +181,8 @@ func _observe_work_cycle_quality(ivo: Node) -> Dictionary:
 		"wrapped": wrapped,
 		"minimum_blade_front_offset": minimum_blade_front_offset,
 		"two_hand_grip_ratio": float(grip_samples) / maxf(1.0, float(sample_count)),
+		"maximum_left_hand_distance": maximum_left_hand_distance,
+		"maximum_right_hand_distance": maximum_right_hand_distance,
 	}
 
 

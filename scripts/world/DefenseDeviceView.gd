@@ -2,14 +2,22 @@ extends Node3D
 
 @onready var model_mount: Node3D = $ModelMount
 @onready var status_label: Label3D = $StatusLabel
+@onready var interaction_area: Area3D = $InteractionArea
 
 var _deployment_id := ""
 var _device_id := ""
 var _loaded_model_scene := ""
 var _latest_snapshot: Dictionary = {}
+var _is_ruin := false
+
+
+func _ready() -> void:
+	if interaction_area != null and not interaction_area.input_event.is_connected(_on_input_event):
+		interaction_area.input_event.connect(_on_input_event)
 
 
 func configure_device(snapshot: Dictionary) -> void:
+	_is_ruin = false
 	_latest_snapshot = snapshot.duplicate(true)
 	_deployment_id = str(snapshot.get("deployment_id", ""))
 	_device_id = str(snapshot.get("device_id", ""))
@@ -25,6 +33,9 @@ func configure_device(snapshot: Dictionary) -> void:
 		int(snapshot.get("max_hp", 0)),
 		float(effect.get("range", 0.0))
 	]
+	status_label.visible = true
+	interaction_area.collision_layer = 4
+	interaction_area.input_ray_pickable = true
 
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
 	status_label.position.y = float(presentation.get("status_label_height", 1.45))
@@ -34,15 +45,74 @@ func configure_device(snapshot: Dictionary) -> void:
 	_configure_active_model(snapshot)
 
 
+func configure_device_ruin(snapshot: Dictionary) -> void:
+	_is_ruin = true
+	_latest_snapshot = snapshot.duplicate(true)
+	_deployment_id = str(snapshot.get("deployment_id", ""))
+	_device_id = str(snapshot.get("device_id", ""))
+	set_meta("deployment_id", _deployment_id)
+	set_meta("device_id", _device_id)
+	set_meta("slot_id", str(snapshot.get("slot_id", "")))
+	set_meta("device_ruin", true)
+	position = _dict_to_vector3(snapshot.get("position", {}))
+	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
+	status_label.visible = false
+	interaction_area.collision_layer = 0
+	interaction_area.input_ray_pickable = false
+	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
+	var model_scene_path := str(presentation.get("model_scene", ""))
+	if model_mount.get_child_count() == 0 or model_scene_path != _loaded_model_scene:
+		_rebuild_model(presentation)
+	_configure_active_model(snapshot)
+	var active_model := _get_active_model()
+	if active_model != null and active_model.has_method("set_destroyed_visual"):
+		active_model.set_destroyed_visual(true)
+
+
 func play_device_action(action_result: Dictionary) -> void:
+	# Retained for isolated art previews. Production combat uses
+	# sync_device_attack_timeline() and CombatSystem's physical projectile.
+	show_device_action_result(action_result)
+	var active_model := _get_active_model()
+	if active_model != null and active_model.has_method("play_device_action"):
+		active_model.play_device_action(action_result)
+
+
+func show_device_action_result(action_result: Dictionary) -> void:
+	var status := str(action_result.get("projectile_status", "hit"))
+	var result_text := "%d 伤害" % int(action_result.get("damage", 0)) if status == "hit" else ("被阻挡" if status == "blocked" else "射空")
 	status_label.text = "%s\n命中 %s · %d 伤害" % [
 		str(action_result.get("device_name", "工程器械")),
 		str(action_result.get("target_enemy_name", "敌人")),
 		int(action_result.get("damage", 0))
 	]
+	if status != "hit":
+		status_label.text = "%s\n%s · %s" % [
+			str(action_result.get("device_name", "工程器械")),
+			str(action_result.get("target_enemy_name", "目标")),
+			result_text
+		]
+
+
+func sync_device_attack_timeline(phase_snapshot: Dictionary) -> void:
+	if _is_ruin:
+		return
 	var active_model := _get_active_model()
-	if active_model != null and active_model.has_method("play_device_action"):
-		active_model.play_device_action(action_result)
+	if active_model != null and active_model.has_method("sync_attack_timeline"):
+		active_model.sync_attack_timeline(phase_snapshot)
+
+
+func get_combat_projectile_release_snapshot(weapon_type: String) -> Dictionary:
+	if _is_ruin:
+		return {"ready": false, "reason": "defense_device_destroyed", "origin_source": "unavailable"}
+	var active_model := _get_active_model()
+	if active_model == null or not active_model.has_method("get_combat_projectile_release_snapshot"):
+		return {"ready": false, "reason": "formal_device_model_origin_unavailable", "origin_source": "unavailable"}
+	var snapshot: Dictionary = active_model.get_combat_projectile_release_snapshot(weapon_type)
+	if bool(snapshot.get("ready", false)):
+		snapshot["deployment_id"] = _deployment_id
+		snapshot["device_id"] = _device_id
+	return snapshot
 
 
 func get_debug_snapshot() -> Dictionary:
@@ -52,6 +122,7 @@ func get_debug_snapshot() -> Dictionary:
 		"model_scene": _loaded_model_scene,
 		"position": _vector3_to_dict(position),
 		"rotation_y_degrees": rad_to_deg(rotation.y),
+		"is_ruin": _is_ruin,
 		"has_formal_model": false,
 		"model": {}
 	}
@@ -61,6 +132,31 @@ func get_debug_snapshot() -> Dictionary:
 		if active_model.has_method("get_debug_snapshot"):
 			result["model"] = active_model.get_debug_snapshot()
 	return result
+
+
+func debug_emit_clicked() -> bool:
+	if _deployment_id.is_empty():
+		return false
+	_emit_clicked()
+	return true
+
+
+func _on_input_event(
+	_camera: Node,
+	event: InputEvent,
+	_position: Vector3,
+	_normal: Vector3,
+	_shape_idx: int
+) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_emit_clicked()
+
+
+func _emit_clicked() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("defense_device_clicked") and not _deployment_id.is_empty():
+		event_bus.defense_device_clicked.emit(_deployment_id)
+		get_viewport().set_input_as_handled()
 
 
 func _rebuild_model(presentation: Dictionary) -> void:

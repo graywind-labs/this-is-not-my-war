@@ -67,7 +67,8 @@ func _init() -> void:
 		or not bool(pending.get("options", {}).get("formal_location_authority", false))
 		or not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
 		or str(departure_state.get("current_location", "")) != "plaza"
-		or npc_node.global_position.x < 900.0
+		or absf(npc_node.global_position.x) > 80.0
+		or absf(npc_node.global_position.z) > 100.0
 		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "visit_started") != visit_started_before
 		or _count_location_event(memory_system.get_npc_daily_events(NPC_ID), "location_entered", FIRST_TARGET_ID) != chapel_entered_before
 	):

@@ -65,8 +65,12 @@ func _init() -> void:
 	if int(production.get("building_door_link_count", 0)) != 12:
 		_fail("Production map must expose one explicit transition per building door: %s" % production)
 		return
-	if int(production.get("enabled_building_door_link_count", -1)) != 0:
-		_fail("Staged building links must remain disabled outside preview: %s" % production)
+	if (
+		bool(production.get("staged", true))
+		or not bool(production.get("live_default", false))
+		or int(production.get("enabled_building_door_link_count", -1)) != 12
+	):
+		_fail("Production building links must remain live outside preview: %s" % production)
 		return
 	if not is_equal_approx(float(production.get("contract_grid_cell_size", 0.0)), 0.5):
 		_fail("The deterministic 0.5 m contract grid must remain available as a separate oracle: %s" % production)
@@ -74,21 +78,35 @@ func _init() -> void:
 
 	var source_group_name := str(production.get("source_group_name", ""))
 	var source_bodies := get_nodes_in_group(source_group_name)
-	if source_bodies.size() != 234:
-		_fail("Expected 78 structural blockers, 131 fixture collision parts, 24 natural blockers, and one floor in the production source group: %d" % source_bodies.size())
+	if source_bodies.size() != 236:
+		_fail("Expected 78 structural blockers, 133 fixture collision parts, 24 natural blockers, and one floor in the production source group: %d" % source_bodies.size())
 		return
 	var category_counts: Dictionary = {}
+	var navigation_excluded_count := 0
 	for raw_body in source_bodies:
 		var body := raw_body as StaticBody3D
-		if body == null or body.collision_layer != 1:
-			_fail("Production source contains a non-static or wrong-layer node")
+		if body == null:
+			_fail("Production source contains a non-static or wrong-layer node: %s type=%s layer=%s" % [
+				str(raw_body.get_path()) if raw_body is Node else str(raw_body),
+				str(raw_body.get_class()) if raw_body is Object else "unknown",
+				str(body.collision_layer) if body != null else "n/a"
+			])
 			return
 		var category := str(body.get_meta("collision_category", "unknown"))
 		category_counts[category] = int(category_counts.get(category, 0)) + 1
+		if body.collision_layer == 0:
+			navigation_excluded_count += 1
+			continue
+		if body.collision_layer != 1:
+			_fail("Production source contains a wrong-layer body: %s layer=%d" % [str(body.get_path()), body.collision_layer])
+			return
+	if navigation_excluded_count != 35:
+		_fail("Expected 35 intentionally navigation-excluded fixture bodies: %d" % navigation_excluded_count)
+		return
 	if int(category_counts.get("navigation_floor", 0)) != 1:
 		_fail("Production bake floor count drifted: %s" % category_counts)
 		return
-	if int(category_counts.get("building_fixture", 0)) != 131:
+	if int(category_counts.get("building_fixture", 0)) != 133:
 		_fail("Building fixture bake-source count drifted: %s" % category_counts)
 		return
 	if int(category_counts.get("natural_river_cliff", 0)) != 8 or int(category_counts.get("natural_rock_ridge", 0)) != 4 or int(category_counts.get("natural_dense_forest", 0)) != 12:
@@ -120,7 +138,10 @@ func _init() -> void:
 		if path.size() < 3:
 			_fail("Production navigation did not route around the side wall: %s / %s" % [building_id, path])
 			return
-		if not _path_crosses_front_door(building_root, path, envelope, 1.8):
+		# The blacksmith is now an intentionally open-front smithy, so it has no
+		# narrow door crossing to assert. Its valid side-to-interior path above is
+		# the production contract; enclosed buildings still require the real door.
+		if building_id != "blacksmith" and not _path_crosses_front_door(building_root, path, envelope, 1.8):
 			_fail("Production path did not enter through the real front door: %s / %s" % [building_id, path])
 			return
 		verified_doors += 1

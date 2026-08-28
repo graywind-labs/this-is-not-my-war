@@ -212,7 +212,7 @@ func _verify_level_two(art: Node3D, snapshot: Dictionary, visuals: Node, collisi
 	var roof_crest_authored_meshes := 0
 	if roof_crest != null:
 		for raw_mesh in roof_crest.find_children("*", "MeshInstance3D", true, false):
-			if not bool(raw_mesh.get_meta("persistent_shell_shadow_proxy", false)):
+			if not bool(raw_mesh.get_meta("persistent_shell_shadow_proxy", false)) and not bool(raw_mesh.get_meta("portrait_opaque_shell_proxy", false)):
 				roof_crest_authored_meshes += 1
 	if roof_crest == null or roof_crest_authored_meshes != 5:
 		return _expect(false, "Chapel must restore exactly five short gold ridge finials")
@@ -422,7 +422,7 @@ func _subtree_material_alpha_matches(root_node: Node, threshold: float, at_least
 		if not current is MeshInstance3D:
 			continue
 		var mesh := current as MeshInstance3D
-		if mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)):
+		if mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh.get_meta("portrait_opaque_shell_proxy", false)):
 			continue
 		mesh_count += 1
 		for surface_index in range(mesh.mesh.get_surface_count()):
@@ -448,7 +448,7 @@ func _subtree_alpha_failures(root_node: Node, threshold: float) -> Array:
 		if not current is MeshInstance3D:
 			continue
 		var mesh := current as MeshInstance3D
-		if mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)):
+		if mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh.get_meta("portrait_opaque_shell_proxy", false)):
 			continue
 		for surface_index in range(mesh.mesh.get_surface_count()):
 			var material := mesh.get_active_material(surface_index) as BaseMaterial3D
@@ -469,6 +469,8 @@ func _subtree_persistent_shadow_split(root_node: Node) -> bool:
 			nodes.append(child)
 		if current is MeshInstance3D and (current as MeshInstance3D).mesh != null:
 			var mesh := current as MeshInstance3D
+			if bool(mesh.get_meta("portrait_opaque_shell_proxy", false)):
+				continue
 			if bool(mesh.get_meta("persistent_shell_shadow_proxy", false)):
 				proxy_count += 1
 				if mesh.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:

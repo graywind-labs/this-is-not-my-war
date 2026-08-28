@@ -237,7 +237,7 @@ func _init() -> void:
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "escape_started", ESCAPER_ID), "Witness should receive escape_started"):
 		return
 	var escape_target := _dict_to_vector3(escape_result.get("target_position", {}))
-	var escape_frame_budget := 1200 if escape_target.x > 900.0 else 160
+	var escape_frame_budget := 1200 if absf(escape_target.z) > 200.0 else 160
 	for _i in range(escape_frame_budget):
 		await physics_frame
 		var escaper_state: Dictionary = npc_system.get_npc_state(ESCAPER_ID)

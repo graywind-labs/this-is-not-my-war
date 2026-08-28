@@ -93,6 +93,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"architectural_style": "medieval_border_half_masonry_winery_cellar",
 		"facade_profile": "stone_cellar_base_loading_door_barrel_hoop_and_vine_sign",
 		"roof_profile": "low_wine_shingle_gable_with_level_synced_fermentation_vents",
+		"gable_end_profile": "sealed_cellar_plaster_with_wine_dark_timber",
+		"sealed_gable_end_count": 2,
 		"functional_visual_language": "fermentation_casks_maturation_racks_copper_pipes_wash_water_and_cooper_tools",
 		"level_two_upgrade_profile": "maturation_cooling_piping_and_masonry_reinforcement_without_capacity_gain",
 		"level_three_upgrade_profile": "third_authoritative_fermentation_bay_with_branch_pipe_vent_and_loading_rack",
@@ -135,7 +137,7 @@ func _build_formal_tavern() -> void:
 	exterior_albedo_tint = CELLAR_PLASTER
 	static_collision_path = NodePath("../StaticCollision")
 	workstation_markers_path = NodePath("../FixtureLayout/NPCStands")
-	set_meta("art_revision", "t0131_p6r")
+	set_meta("art_revision", "t0135_p8ar7")
 	set_meta("formal_vertical_slice", true)
 	set_meta("architectural_style", "medieval_border_half_masonry_winery_cellar")
 	set_meta("footprint_meters", BUILDING_FOOTPRINT)
@@ -210,6 +212,19 @@ func _build_exterior() -> void:
 	for side in [-1.0, 1.0]:
 		for z in [-4.75, -2.4, 0.0, 2.4, 4.75]:
 			_add_box(timber, "SidePost", Vector3(side * 6.2, 2.05, z), Vector3(0.24, 3.1, 0.25), CELLAR_TIMBER)
+	var gable_ends := Node3D.new()
+	gable_ends.name = "SealedCellarGableEnds"
+	exterior.add_child(gable_ends)
+	for side in [-1.0, 1.0]:
+		var side_name := "West" if side < 0.0 else "East"
+		var end_x: float = float(side) * 6.08
+		_add_gable_wall(gable_ends, "%sCellarGableWall" % side_name, Vector3(end_x, 4.36, 0.0), Vector3(10.0, 1.72, 0.3), _material(CELLAR_PLASTER.darkened(0.04)), 90.0)
+		_add_box(gable_ends, "%sGableTie" % side_name, Vector3(end_x, 3.54, 0.0), Vector3(0.34, 0.22, 10.0), CELLAR_TIMBER)
+		_add_box(gable_ends, "%sKingPost" % side_name, Vector3(end_x, 4.35, 0.0), Vector3(0.34, 1.68, 0.24), CELLAR_TIMBER)
+		var front_rafter := _add_box(gable_ends, "%sFrontRakingBeam" % side_name, Vector3(end_x, 4.37, 2.5), Vector3(0.34, 0.2, 5.3), CELLAR_TIMBER)
+		front_rafter.rotation_degrees.x = 19.0
+		var rear_rafter := _add_box(gable_ends, "%sRearRakingBeam" % side_name, Vector3(end_x, 4.37, -2.5), Vector3(0.34, 0.2, 5.3), CELLAR_TIMBER)
+		rear_rafter.rotation_degrees.x = -19.0
 
 	var windows := Node3D.new()
 	windows.name = "HighCellarWindows"

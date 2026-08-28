@@ -16,16 +16,27 @@
         "attack_speed": 0.23529411764705882,
         "attack_interval": 4.25,
         "range": 34.0,
+        "attack_timing": {
+          "authored_cycle_seconds": 4.25,
+          "release_authored_seconds": 0.55
+        },
+        "projectile": {
+          "weapon_type": "crossbow",
+          "speed": 52.0,
+          "gravity": 9.8
+        },
         "minimum_forward_dot": 0.0,
         "max_attacks_per_tick": 16
       },
       "presentation": {
         "model_scene": "res://scenes/defense_devices/FormalBallistaArtView.tscn",
+        "icon": "res://assets/ui/item_icons/defense_device/wall_ballista.png",
         "placeholder_kind": "ballista",
         "placeholder_color": {"r": 0.38, "g": 0.22, "b": 0.10, "a": 1.0},
-        "projectile_speed": 52.0,
         "reload_fraction": 0.62,
-        "status_label_height": 2.05
+        "status_label_height": 2.05,
+        "ruin_lifetime_seconds": 15.0,
+        "ruin_kind": "collapsed_ballista"
       }
     },
     {
@@ -44,16 +55,27 @@
         "attack_speed": 0.72,
         "attack_interval": 1.39,
         "range": 28.0,
+        "attack_timing": {
+          "authored_cycle_seconds": 1.39,
+          "release_authored_seconds": 0.26
+        },
+        "projectile": {
+          "weapon_type": "bow",
+          "speed": 64.0,
+          "gravity": 9.8
+        },
         "minimum_forward_dot": -0.1,
         "max_attacks_per_tick": 24
       },
       "presentation": {
         "model_scene": "res://scenes/defense_devices/FormalArrowTowerArtView.tscn",
+        "icon": "res://assets/ui/item_icons/defense_device/wall_arrow_tower.png",
         "placeholder_kind": "arrow_tower",
         "placeholder_color": {"r": 0.34, "g": 0.25, "b": 0.14, "a": 1.0},
-        "projectile_speed": 64.0,
         "reload_fraction": 0.58,
-        "status_label_height": 3.75
+        "status_label_height": 3.75,
+        "ruin_lifetime_seconds": 15.0,
+        "ruin_kind": "collapsed_arrow_tower"
       }
     }
   ],

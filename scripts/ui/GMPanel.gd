@@ -22,7 +22,7 @@ const WAREHOUSE_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/Build
 const FORTIFICATION_ART_VIEW_PATH := "/root/Main/WorldRoot/FormalStationLayout/WallsAndGates/FortificationArt"
 const LEGACY_BLACKSMITH_ART_VIEW_PATH := "/root/Main/WorldRoot/Station/Buildings/BlacksmithArtView"
 const ACTOR_MOTION_SANDBOX_PATH := "res://scenes/debug/ActorMotionSandbox.tscn"
-const CHIBI_CHARACTER_SANDBOX_PATH := "res://scenes/art/ChibiCharacterSandbox.tscn"
+const NPC_DEV_LAB_PATH := "res://scenes/debug/NPCDevLab.tscn"
 const CHIBI_CHARACTER_PREVIEW_CONTROLLER_PATH := "/root/Main/Presentation/ChibiCharacterPilotPreviewController"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
@@ -33,6 +33,7 @@ const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const PIETY_SYSTEM_PATH := "/root/Main/Systems/PietySystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
@@ -137,7 +138,7 @@ func _build_ui() -> void:
 	_panel.name = "GMWindow"
 	_panel.visible = false
 	_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_panel.custom_minimum_size = Vector2(620, 440)
+	_panel.custom_minimum_size = Vector2(900, 620)
 	_panel.size = _panel.custom_minimum_size
 	_panel.position = Vector2(72, 72)
 	_panel.modulate = Color(1.0, 1.0, 1.0, 0.92)
@@ -203,32 +204,69 @@ func _build_ui() -> void:
 	execute_button.pressed.connect(_execute_command_from_input)
 	command_row.add_child(execute_button)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(596, 226)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(scroll)
+	var quick_row := HBoxContainer.new()
+	quick_row.name = "GMQuickActions"
+	quick_row.add_theme_constant_override("separation", 8)
+	content.add_child(quick_row)
+	var quick_label := Label.new()
+	quick_label.text = "快捷操作"
+	quick_label.add_theme_font_size_override("font_size", 15)
+	quick_row.add_child(quick_label)
+	var recruit_and_equip_all_button := _add_button(
+		quick_row,
+		"一键征召&配装",
+		_run_recruit_and_equip_all
+	)
+	recruit_and_equip_all_button.name = "RecruitAndEquipAllButton"
+	recruit_and_equip_all_button.custom_minimum_size = Vector2(180, 38)
+	recruit_and_equip_all_button.tooltip_text = "全员入伍并配置四名步兵、四名骑手及指定全甲组合"
+	var quick_hint := Label.new()
+	quick_hint.text = "用于八人阵型、取马和战斗回归；重复点击保持幂等"
+	quick_hint.modulate = Color(0.78, 0.82, 0.88, 1.0)
+	quick_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quick_row.add_child(quick_hint)
 
-	var sections := VBoxContainer.new()
-	sections.add_theme_constant_override("separation", 10)
-	sections.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(sections)
+	var tabs := TabContainer.new()
+	tabs.name = "GMSectionTabs"
+	tabs.custom_minimum_size = Vector2(876, 330)
+	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content.add_child(tabs)
+	var common_sections := _make_tab_sections(tabs, "常用")
+	var world_sections := _make_tab_sections(tabs, "世界建筑")
+	var crafting_sections := _make_tab_sections(tabs, "制造马匹")
+	var action_sections := _make_tab_sections(tabs, "正式行动")
+	var ai_sections := _make_tab_sections(tabs, "AI信息")
 
-	_add_resource_section(sections)
-	_add_time_section(sections)
-	_add_building_section(sections)
-	_add_crafting_horse_section(sections)
-	_add_npc_section(sections)
-	_add_action_section(sections)
-	_add_combat_section(sections)
-	_add_backend_section(sections)
-	_add_memory_section(sections)
+	_add_resource_section(common_sections)
+	_add_time_section(common_sections)
+	_add_npc_section(common_sections)
+	_add_combat_section(common_sections)
+	_add_building_section(world_sections)
+	_add_crafting_horse_section(crafting_sections)
+	_add_action_section(action_sections)
+	_add_backend_section(ai_sections)
+	_add_memory_section(ai_sections)
 
 	_result_text = TextEdit.new()
 	_result_text.editable = false
-	_result_text.custom_minimum_size = Vector2(596, 90)
+	_result_text.custom_minimum_size = Vector2(876, 100)
 	_result_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(_result_text)
 	_log("GM 面板已就绪。输入 help 查看命令。")
+
+
+func _make_tab_sections(tabs: TabContainer, tab_name: String) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.name = tab_name
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.add_child(scroll)
+	var sections := VBoxContainer.new()
+	sections.name = "%sSections" % tab_name
+	sections.add_theme_constant_override("separation", 10)
+	sections.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(sections)
+	return sections
 
 
 func _add_resource_section(parent: VBoxContainer) -> void:
@@ -453,8 +491,6 @@ func _add_building_section(parent: VBoxContainer) -> void:
 		_run_station_layout_preview.bind(true)
 	)
 	preview_button.name = "StationLayoutPreviewButton"
-	var legacy_button := _add_button(layout_preview_row, "临时旧图兼容", _run_station_layout_preview.bind(false))
-	legacy_button.name = "StationLayoutLegacyCompatibilityButton"
 	_add_button(layout_preview_row, "布局快照", _show_station_layout_snapshot)
 	var spatial_save_row := _make_row(parent)
 	var spatial_save_label := Label.new()
@@ -477,50 +513,19 @@ func _add_building_section(parent: VBoxContainer) -> void:
 	motion_sandbox_button.name = "ActorMotionSandboxButton"
 	var character_pilot_row := _make_row(parent)
 	var character_pilot_label := Label.new()
-	character_pilot_label.text = "T0130-P4 正式两头身角色"
+	character_pilot_label.text = "T0130-D1 角色与装备开发检视"
 	character_pilot_row.add_child(character_pilot_label)
-	var character_glen_button := _add_button(character_pilot_row, "格伦真实打铁", _run_formal_blacksmith_work)
-	character_glen_button.name = "ChibiFormalGlenWorkButton"
-	var character_enemy_button := _add_button(character_pilot_row, "生成第一波剑盾敌军", _run_spawn_enemy_wave.bind(1))
-	character_enemy_button.name = "ChibiFormalSwordShieldWaveButton"
-	var character_sandbox_button := _add_button(character_pilot_row, "独立动作沙盒", _run_chibi_character_sandbox)
-	character_sandbox_button.name = "ChibiCharacterSandboxButton"
+	var character_sandbox_button := _add_button(character_pilot_row, "NPC 开发检视场景", _run_npc_dev_lab)
+	character_sandbox_button.name = "NPCDevLabButton"
 	_add_button(character_pilot_row, "正式角色快照", _show_chibi_formal_character_snapshot)
-	var pilot_row := _make_row(parent)
-	var pilot_label := Label.new()
-	pilot_label.text = "A2b-P1–P6 正式导航试运行"
-	pilot_row.add_child(pilot_label)
-	var pilot_run_button := _add_button(pilot_row, "格伦→铁匠铺", _run_glen_navigation_pilot)
-	pilot_run_button.name = "GlenNavigationPilotButton"
-	var clinic_doctor_button := _add_button(pilot_row, "莉娜→诊疗位", _run_clinic_navigation_pilot.bind("doctor"))
-	clinic_doctor_button.name = "ClinicDoctorNavigationPilotButton"
-	var clinic_bed_button := _add_button(pilot_row, "莉娜→病床", _run_clinic_navigation_pilot.bind("bed"))
-	clinic_bed_button.name = "ClinicBedNavigationPilotButton"
-	var dormitory_bed_button := _add_button(pilot_row, "艾达→固定床", _run_dormitory_navigation_pilot)
-	dormitory_bed_button.name = "DormitoryNavigationPilotButton"
-	_add_button(pilot_row, "试运行快照", _show_formal_navigation_pilot_snapshot)
-	_add_button(pilot_row, "停止并还原", _stop_formal_navigation_pilots)
-	var dining_pilot_row := _make_row(parent)
-	var dining_pilot_label := Label.new()
-	dining_pilot_label.text = "A2b-P4 食堂餐位"
-	dining_pilot_row.add_child(dining_pilot_label)
-	var dining_seat_button := _add_button(dining_pilot_row, "布鲁诺→用餐席", _run_dining_navigation_pilot)
-	dining_seat_button.name = "DiningNavigationPilotButton"
-	var chapel_pilot_row := _make_row(parent)
-	var chapel_pilot_label := Label.new()
-	chapel_pilot_label.text = "A2b-P5 教堂祈祷席"
-	chapel_pilot_row.add_child(chapel_pilot_label)
-	var chapel_prayer_seat_button := _add_button(chapel_pilot_row, "马塞尔→祈祷席", _run_chapel_navigation_pilot)
-	chapel_prayer_seat_button.name = "ChapelNavigationPilotButton"
-	var stable_pilot_row := _make_row(parent)
-	var stable_pilot_label := Label.new()
-	stable_pilot_label.text = "A2b-P6 马厩照料位"
-	stable_pilot_row.add_child(stable_pilot_label)
-	var stable_care_button := _add_button(stable_pilot_row, "托马→马厩照料位", _run_stable_navigation_pilot)
-	stable_care_button.name = "StableNavigationPilotButton"
-	var formal_stable_work_button := _add_button(stable_pilot_row, "托马→真实照料", _run_formal_stable_work)
+	var formal_stable_row := _make_row(parent)
+	var formal_stable_label := Label.new()
+	formal_stable_label.text = "马厩真实照料"
+	formal_stable_row.add_child(formal_stable_label)
+	var formal_stable_work_button := _add_button(formal_stable_row, "托马→真实照料", _run_formal_stable_work)
 	formal_stable_work_button.name = "FormalStableWorkButton"
-	_add_button(stable_pilot_row, "停止真实照料", _stop_formal_stable_work)
+	_add_button(formal_stable_row, "停止真实照料", _stop_formal_stable_work)
+	_add_button(formal_stable_row, "真实照料快照", _show_formal_stable_work_snapshot)
 	var formal_dining_row := _make_row(parent)
 	var formal_dining_label := Label.new()
 	formal_dining_label.text = "A5-P5d 食堂真实生产"
@@ -916,23 +921,28 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 	var row := _make_row(parent)
 	_combat_wave_select = _make_select(row)
 	_combat_wave_select.name = "CombatWaveSelect"
-	var spawn_first_wave_button := _add_button(row, "生成第一波敌人", func() -> void:
-		_run_spawn_enemy_wave(1)
-	)
-	spawn_first_wave_button.name = "SpawnFirstWaveButton"
-	_add_button(row, "生成所选波次", func() -> void:
+	var spawn_selected_wave_button := _add_button(row, "生成所选波次", func() -> void:
 		_run_spawn_enemy_wave(_int_from_selected_id(_combat_wave_select, 1))
 	)
+	spawn_selected_wave_button.name = "SpawnSelectedWaveButton"
 	var next_wave_button := _add_button(row, "跳到下一波", _run_trigger_next_wave)
 	next_wave_button.name = "TriggerNextWaveButton"
 	var combat_alarm_button := _add_button(row, "警铃集结", _run_combat_alarm)
 	combat_alarm_button.name = "CombatAlarmButton"
 	_add_button(row, "敌人快照", _show_combat_snapshot)
 	var step_enemy_ai_button := _add_button(row, "推进敌人AI", func() -> void:
-		_run_step_enemy_ai(60.0)
+		_run_step_enemy_ai(1.0)
 	)
 	step_enemy_ai_button.name = "StepEnemyAIButton"
 	_add_button(row, "清空敌人", _run_clear_enemies)
+	var ruin_row := _make_row(parent)
+	var ruin_label := Label.new()
+	ruin_label.text = "T0157 塔防废墟验收"
+	ruin_row.add_child(ruin_label)
+	var destroy_device_button := _add_button(ruin_row, "摧毁首个塔防", _run_destroy_first_defense_device)
+	destroy_device_button.name = "DestroyFirstDefenseDeviceButton"
+	var device_ruin_snapshot_button := _add_button(ruin_row, "塔防废墟快照", _show_defense_device_ruins)
+	device_ruin_snapshot_button.name = "DefenseDeviceRuinSnapshotButton"
 	var formal_enemy_row := _make_row(parent)
 	var formal_enemy_label := Label.new()
 	formal_enemy_label.text = "C3-P7 / A4-P7 五波动态实体争抢 / 补位"
@@ -1337,8 +1347,8 @@ func _execute_command(command: String) -> void:
 					_run_formal_blacksmith_work()
 				"enemy", "wave":
 					_run_spawn_enemy_wave(1)
-				"sandbox":
-					_run_chibi_character_sandbox()
+				"sandbox", "lab", "dev_lab":
+					_run_npc_dev_lab()
 				_:
 					_show_chibi_formal_character_snapshot()
 		"formal_nav_pilot":
@@ -1678,6 +1688,8 @@ func _execute_command(command: String) -> void:
 		"recruit_npc":
 			if _require_args(parts, 2, "recruit_npc <npc_id>"):
 				_run_recruit_npc(str(parts[1]))
+		"recruit_equip_all":
+			_run_recruit_and_equip_all()
 		"assign_attribute":
 			if _require_args(parts, 3, "assign_attribute <npc_id> <strength|intelligence>"):
 				_run_assign_attribute(str(parts[1]), str(parts[2]))
@@ -1795,7 +1807,7 @@ func _execute_command(command: String) -> void:
 		"alarm", "rally":
 			_run_combat_alarm()
 		"step_enemies":
-			var step_seconds := float(parts[1]) if parts.size() >= 2 else 60.0
+			var step_seconds := float(parts[1]) if parts.size() >= 2 else 1.0
 			_run_step_enemy_ai(step_seconds)
 		"clear_enemies":
 			_run_clear_enemies()
@@ -1823,6 +1835,13 @@ func _execute_command(command: String) -> void:
 		"damage_building":
 			if _require_args(parts, 3, "damage_building <building_id> <amount>"):
 				_run_damage_building(str(parts[1]), int(parts[2]))
+		"destroy_defense_device":
+			if parts.size() >= 2:
+				_run_destroy_defense_device(str(parts[1]))
+			else:
+				_run_destroy_first_defense_device()
+		"defense_device_ruins":
+			_show_defense_device_ruins()
 		"repair_building":
 			if _require_args(parts, 2, "repair_building <building_id>"):
 				_run_repair_building(str(parts[1]))
@@ -2179,6 +2198,36 @@ func _run_damage_building(building_id: String, amount: int) -> void:
 	_show_building(building_id)
 
 
+func _run_destroy_defense_device(deployment_id: String) -> void:
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("debug_destroy_device"):
+		_log("DefenseDeviceSystem 塔防摧毁调试接口不可用。")
+		return
+	_log("摧毁塔防 %s：%s" % [deployment_id, _compact(device_system.debug_destroy_device(deployment_id))])
+	_show_defense_device_ruins()
+
+
+func _run_destroy_first_defense_device() -> void:
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("debug_destroy_first_device"):
+		_log("DefenseDeviceSystem 首个塔防摧毁调试接口不可用。")
+		return
+	_log("摧毁首个已部署塔防：%s" % _compact(device_system.debug_destroy_first_device()))
+	_show_defense_device_ruins()
+
+
+func _show_defense_device_ruins() -> void:
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("get_state_snapshot"):
+		_log("DefenseDeviceSystem 塔防废墟快照不可用。")
+		return
+	var snapshot: Dictionary = device_system.get_state_snapshot()
+	_log("塔防废墟：%s" % _compact({
+		"deployments": snapshot.get("deployments", []),
+		"ruins": snapshot.get("ruins", [])
+	}))
+
+
 func _run_repair_building(building_id: String) -> void:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null:
@@ -2285,12 +2334,12 @@ func _run_actor_motion_sandbox() -> void:
 	get_tree().call_deferred("change_scene_to_file", ACTOR_MOTION_SANDBOX_PATH)
 
 
-func _run_chibi_character_sandbox() -> void:
-	if not ResourceLoader.exists(CHIBI_CHARACTER_SANDBOX_PATH, "PackedScene"):
-		_log("T0130-P0 角色沙盒场景不存在：%s" % CHIBI_CHARACTER_SANDBOX_PATH)
+func _run_npc_dev_lab() -> void:
+	if not ResourceLoader.exists(NPC_DEV_LAB_PATH, "PackedScene"):
+		_log("T0130-D1 NPC 开发检视场景不存在：%s" % NPC_DEV_LAB_PATH)
 		return
-	_log("正在打开 T0130-P0 角色动作沙盒；Space / 方向键 / 数字 1–8 切换动作。")
-	get_tree().call_deferred("change_scene_to_file", CHIBI_CHARACTER_SANDBOX_PATH)
+	_log("正在打开 T0130-D1 NPC 开发检视场景；可切换角色、模式、动作、装备与坐骑，F8 返回 Main。")
+	get_tree().call_deferred("change_scene_to_file", NPC_DEV_LAB_PATH)
 
 
 func _run_chibi_character_main_preview(enabled: bool) -> void:
@@ -3558,6 +3607,16 @@ func _run_equip_armor(npc_id: String, slot: String, visibility: String) -> void:
 	_log("装备盔甲 %s -> %s：%s" % [npc_id, slot, _compact(result)])
 
 
+func _run_recruit_and_equip_all() -> void:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("debug_apply_combat_loadout_preset"):
+		_log("EquipmentSystem 一键征召配装接口不可用。")
+		return
+	var result: Dictionary = equipment_system.debug_apply_combat_loadout_preset()
+	_fill_horse_select()
+	_log("一键征召&配装：%s" % _compact(result))
+
+
 func _show_unit_type(npc_id: String) -> void:
 	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	if equipment_system == null or not equipment_system.has_method("get_npc_unit_type_label"):
@@ -3853,7 +3912,7 @@ func _run_spawn_enemy_wave(wave_number: int) -> void:
 	if combat_system == null or not combat_system.has_method("debug_spawn_wave"):
 		_log("CombatSystem 敌人生成接口不可用。")
 		return
-	var result: Dictionary = combat_system.debug_spawn_wave(wave_number)
+	var result: Dictionary = combat_system.debug_spawn_wave(wave_number, false, true)
 	_log("生成敌人波次 %d：%s" % [wave_number, _compact(result)])
 
 
@@ -3977,7 +4036,7 @@ func _run_formal_dynamic_wave_slice(wave_number: int = -1) -> void:
 		_log("CombatSystem 动态群战正式实体接口不可用。")
 		return
 	var resolved_wave_number := wave_number if wave_number > 0 else _int_from_selected_id(_combat_wave_select, 1)
-	_log("启动第 %d 波动态群战实体：%s" % [resolved_wave_number, _compact(combat_system.debug_run_formal_dynamic_wave_slice(resolved_wave_number))])
+	_log("启动第 %d 波动态群战实体：%s" % [resolved_wave_number, _compact(combat_system.debug_run_formal_dynamic_wave_slice(resolved_wave_number, true))])
 
 
 func _show_formal_dynamic_wave_slice_snapshot() -> void:
@@ -4411,7 +4470,14 @@ func _position_panel_near_button() -> void:
 		button_rect.position.y + button_rect.size.y + PANEL_BUTTON_GAP
 	)
 	if desired_position.y + panel_size.y > viewport_size.y:
-		desired_position.y = button_rect.position.y - panel_size.y - PANEL_BUTTON_GAP
+		var above_y := button_rect.position.y - panel_size.y - PANEL_BUTTON_GAP
+		if above_y >= 0.0:
+			desired_position.y = above_y
+		else:
+			var right_x := button_rect.position.x + button_rect.size.x + PANEL_BUTTON_GAP
+			var left_x := button_rect.position.x - panel_size.x - PANEL_BUTTON_GAP
+			desired_position.x = right_x if right_x + panel_size.x <= viewport_size.x else left_x
+			desired_position.y = button_rect.position.y + button_rect.size.y * 0.5 - panel_size.y * 0.5
 
 	_panel.global_position = _clamp_panel_position(desired_position, panel_size, viewport_size)
 
@@ -4504,7 +4570,7 @@ func _help_text() -> String:
 		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | intent_revalidation <npc_id> | last_order_injection | station_context",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id> | spatial <npc_id>",
-		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | assign_attribute <npc_id> <strength|intelligence>",
+		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | recruit_equip_all | assign_attribute <npc_id> <strength|intelligence>",
 		"publish_order <npc_id> <text> | order <npc_id> | plan_request | dialogue_carryover | plan_generate [npc_id|all] | plan_generate_rule [npc_id|all] | plan_execute [npc_id|all] | plan <npc_id> | plan_revise <npc_id> [reason]",
 		"reflect_npc <npc_id> [force] | long_memory <npc_id> | reflection_result",
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
@@ -4516,7 +4582,7 @@ func _help_text() -> String:
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | next_wave | jump_wave | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
 		"piety_fill | piety_set <value> | piety_snapshot | piety_step [game_seconds]",
-		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id> | smithy_art_level <1|2|3> | workshop_art_level <1|2|3> | chapel_art_level <1|2> | clinic_art_level <1|2|3> | dining_hall_art_level <1|2|3> | dormitory_art_level <1|2> | tavern_art_level <1|2|3> | garden_art_level <1|2|3> | training_ground_art_level <1|2|3> | stable_art_level <1|2|3> | main_hall_art_level <1|2|3|4|5|6> | warehouse_art_level <1|2|3> | wall_art_level <1|2|3|4|5|6> | gate_art_snapshot（仅表现预览）",
+		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id> | destroy_defense_device [deployment_id] | defense_device_ruins | smithy_art_level <1|2|3> | workshop_art_level <1|2|3> | chapel_art_level <1|2> | clinic_art_level <1|2|3> | dining_hall_art_level <1|2|3> | dormitory_art_level <1|2> | tavern_art_level <1|2|3> | garden_art_level <1|2|3> | training_ground_art_level <1|2|3> | stable_art_level <1|2|3> | main_hall_art_level <1|2|3|4|5|6> | warehouse_art_level <1|2|3> | wall_art_level <1|2|3|4|5|6> | gate_art_snapshot（仅表现预览）",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",
 		"damage_npc <npc_id> <damage> [visibility] 与 attack_npc 等价，会扣除 HP 并触发昏迷判定。",
 		"recover_npc <npc_id> <game_seconds> 会用自然恢复规则推进昏迷恢复。",

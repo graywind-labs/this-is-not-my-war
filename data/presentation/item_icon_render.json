@@ -1,0 +1,22 @@
+{
+  "schema_version": "item_icon_render_v1",
+  "size": 512,
+  "background_colors": {
+    "weapon": "#70423F",
+    "armor": "#40596B",
+    "horse": "#4F6648",
+    "defense_device": "#76603D"
+  },
+  "distance_multipliers": {
+    "weapon": 0.78,
+    "armor": 0.86,
+    "horse": 0.92,
+    "defense_device": 0.88
+  },
+  "camera": {
+    "fov_degrees": 30.0,
+    "frame_padding": 1.16,
+    "front_direction": {"x": 0.0, "y": 0.0, "z": -1.0},
+    "three_quarter_direction": {"x": 1.0, "y": 0.42, "z": -1.0}
+  }
+}

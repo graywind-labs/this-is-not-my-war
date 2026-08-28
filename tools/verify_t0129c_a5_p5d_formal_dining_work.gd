@@ -71,7 +71,8 @@ func _init() -> void:
 	if (
 		gm_window.visible
 		or not bruno.visible
-		or bruno.global_position.x < 900.0
+		or absf(bruno.global_position.x) > 80.0
+		or absf(bruno.global_position.z) > 100.0
 		or str(pending.get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, FIRST_STATION_ID, NPC_ID)
 		or resource_system.get_resource("grain") != travel_grain

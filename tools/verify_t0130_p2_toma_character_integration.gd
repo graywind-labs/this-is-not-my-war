@@ -85,6 +85,9 @@ func run_verification() -> void:
 	check(int(active_art.get("work_clip_loop_mode", Animation.LOOP_NONE)) == Animation.LOOP_LINEAR, "Toma stable care clip is not cyclic")
 	check(bool(active_art.get("stable_broom_visible", false)), "Toma stable tool is not visible during care")
 	check(str(active_art.get("stable_broom_parent", "")) == "RightHand", "Toma stable tool is not attached to RightHand")
+	check(float(active_art.get("stable_tool_grip_hand_distance", 1.0)) < 0.01, "Toma stable tool handle end is not seated in his hand")
+	check(float(active_art.get("stable_tool_forward_dot", -1.0)) > 0.85, "Toma stable tool head does not point forward")
+	check(float(active_art.get("stable_tool_down_dot", -1.0)) > 0.3, "Toma stable tool does not angle down toward the horse")
 	check(not bool(active_art.get("hammer_visible", true)), "Toma incorrectly carries Glen's hammer")
 	check(facing_dot(active_art) > 0.9, "Toma visible front is opposite the stable workstation")
 	var observed_wrap := false

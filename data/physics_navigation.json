@@ -44,6 +44,16 @@
       "acceleration": 5.5
     }
   },
+  "npc_locomotion": {
+    "schema_version": "npc_locomotion_v1",
+    "walk_speed": 3.2,
+    "run_speed": 5.0,
+    "walk_animation_reference_speed": 3.2,
+    "run_animation_reference_speed": 5.0,
+    "minimum_animation_speed_scale": 0.35,
+    "maximum_animation_speed_scale": 1.6,
+    "emergency_behavior_modes": ["rally", "combat", "avoid_combat", "escaped"]
+  },
   "formal_wave_spawn": {
     "columns": 3,
     "minimum_spacing": 0.95,
@@ -90,6 +100,20 @@
     "avoidance_layers": 1,
     "avoidance_mask": 1,
     "use_3d_avoidance": false
+  },
+  "path_progression": {
+    "adaptive_waypoint_enabled": true,
+    "maximum_intermediate_tolerance": 2.2,
+    "shortcut_path_length_ratio": 1.05,
+    "shortcut_path_length_margin": 0.15,
+    "waypoint_advance_epsilon": 0.02,
+    "reset_stale_avoidance_on_advance": true,
+    "missed_waypoint_advance_enabled": true,
+    "missed_waypoint_distance_growth": 0.25,
+    "missed_waypoint_minimum_speed": 0.5,
+    "maximum_avoidance_steering_degrees": 75.0,
+    "reject_backward_path_velocity": true,
+    "final_target_braking_enabled": true
   },
   "stuck_recovery": {
     "sample_seconds": 0.75,

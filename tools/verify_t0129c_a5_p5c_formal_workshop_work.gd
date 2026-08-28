@@ -76,7 +76,7 @@ func _init() -> void:
 	if recipe_id.is_empty() or not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false)):
 		_fail("One-click workshop start did not select a target and create a formal session")
 		return
-	if gm_window.visible or not owen.visible or owen.global_position.x < 900.0:
+	if gm_window.visible or not owen.visible or absf(owen.global_position.x) > 80.0 or absf(owen.global_position.z) > 100.0:
 		_fail("Successful workshop dispatch did not reveal Owen in the formal world")
 		return
 	if str(pending.get("phase", "")) != "pending" or not _workstation_reserved_by(building_system, NPC_ID):
@@ -109,8 +109,8 @@ func _init() -> void:
 	var stand_to_bench_center := stand_position.distance_to(bench_center_position)
 	if (
 		absf(stand_to_bench_center - 1.1) > 0.01
-		or owen.global_position.distance_to(stand_position) > 0.1
-		or absf(navigation_agent.target_desired_distance - 0.08) > 0.001
+		or owen.global_position.distance_to(stand_position) > 0.3
+		or absf(navigation_agent.target_desired_distance - 0.25) > 0.001
 	):
 		_fail("Owen is not using the close no-overlap engineering stand: %s" % JSON.stringify({
 			"stand_to_bench_center": stand_to_bench_center,

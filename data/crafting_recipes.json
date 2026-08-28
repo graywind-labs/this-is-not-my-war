@@ -15,14 +15,14 @@
     },
     {
       "id": "craft_iron_bracers",
-      "name": "铁护腕",
+      "name": "铁护臂",
       "building_id": "blacksmith",
       "output_item_id": "item_iron_bracers",
       "output_amount": 1,
       "ui_order": 20,
       "stages": [
-        {"id": "forge_bracer_plates", "name": "锻造护腕片", "cost": {"iron": 1}},
-        {"id": "rivet_bracers", "name": "铆接护腕", "cost": {"iron": 1}},
+        {"id": "forge_bracer_plates", "name": "锻造护臂片", "cost": {"iron": 1}},
+        {"id": "rivet_bracers", "name": "铆接护臂", "cost": {"iron": 1}},
         {"id": "fit_bracer_straps", "name": "装带试配", "cost": {}}
       ]
     },

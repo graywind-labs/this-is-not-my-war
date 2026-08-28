@@ -133,7 +133,10 @@ func _init() -> void:
 			_fail("Could not set %s strategy for %s: %s" % [strategy_id, npc_id, JSON.stringify(strategy_result)])
 			return
 
-	var spawn_result: Dictionary = combat_system.debug_spawn_wave(5, true)
+	# This is a confirmed-build combat fixture rather than a long-route travel
+	# test. Reuse the explicit GM near-gate spawn so its simulated seconds cover
+	# the 48-enemy fight itself after the formal-world coordinate migration.
+	var spawn_result: Dictionary = combat_system.debug_spawn_wave(5, true, true)
 	if not bool(spawn_result.get("ok", false)) or combat_system.get_active_enemy_count() != 48:
 		_fail("The day-7 fifth wave must spawn exactly 48 enemies: %s" % JSON.stringify(spawn_result))
 		return
@@ -153,6 +156,11 @@ func _init() -> void:
 	var elapsed_combat_seconds := 0
 	while combat_system.get_active_enemy_count() > 0 and not bool(game_state.get("game_over")) and elapsed_combat_seconds < 3600:
 		combat_system.debug_step_enemy_ai(60.0)
+		# Formal combatants are CharacterBody3D actors. Let the physics server
+		# publish their requested movement before sweeping the newly released
+		# projectile paths, matching the order used by the live scene.
+		await physics_frame
+		combat_system.debug_advance_combat_projectiles(1.0)
 		device_system.debug_advance_defense_devices(60.0)
 		elapsed_combat_seconds += 1
 

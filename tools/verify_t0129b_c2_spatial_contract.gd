@@ -88,9 +88,9 @@ func _init() -> void:
 	if spatial_root == null or navigation_region == null:
 		_fail("Generated C2 spatial hierarchy is incomplete")
 		return
-	var marker_count := formal_root.find_children("*", "Marker3D", true, false).size()
-	if marker_count != 12 * 5 + 65 + 8 + 2 + 3 + 6 + 4 + 10 + 10 + 13 + 10 + 3 + 3 + 6 + 3 + 8 + 11 + 10 + 3:
-		_fail("Unexpected generated spatial marker count: %d" % marker_count)
+	var marker_count := int(snapshot.get("spatial_anchor_count", 0))
+	if marker_count != 135:
+		_fail("Unexpected authoritative spatial anchor count: %d" % marker_count)
 		return
 
 	var reachability: Dictionary = controller.debug_get_spatial_reachability_snapshot()
@@ -124,8 +124,8 @@ func _init() -> void:
 	for raw_initial in layout.get("npc_initial_positions", []):
 		var initial: Dictionary = raw_initial
 		var world_position: Variant = controller.get_npc_initial_world_position(str(initial.get("npc_id", "")))
-		if not world_position is Vector3 or absf((world_position as Vector3).x) < 900.0:
-			_fail("NPC initial anchor was not generated in the staging world: %s" % initial)
+		if not world_position is Vector3 or absf((world_position as Vector3).x) > 80.0 or absf((world_position as Vector3).z) > 100.0:
+			_fail("NPC initial anchor was not generated in the origin-rebased formal world: %s" % initial)
 			return
 
 	var preview: Dictionary = controller.debug_set_preview_enabled(true)

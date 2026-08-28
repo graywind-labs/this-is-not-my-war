@@ -43,7 +43,8 @@ func _init() -> void:
 		var actor := raw_actor as Dictionary
 		var position := actor.get("world_position", Vector3.ZERO) as Vector3
 		if (
-			position.x < 900.0
+			absf(position.x) > 80.0
+			or absf(position.z) > 100.0
 			or not bool(actor.get("navigation_motion_enabled", false))
 			or not bool(actor.get("navigation_map_matches", false))
 			or str(actor.get("physical_location_phase", "")) != "formal_world_resident"
@@ -64,7 +65,8 @@ func _init() -> void:
 	if (
 		str(escape_route.get("route_source", "")) != "formal_station_layout"
 		or (escape_route.get("path_points", []) as Array).size() != 6
-		or escape_exit.x < 900.0
+		or absf(escape_exit.x) > 100.0
+		or absf(escape_exit.z) < 200.0
 	):
 		_fail("A non-combat default resident did not inherit the formal map-edge escape route")
 		return
@@ -132,7 +134,8 @@ func _init() -> void:
 		or not bool(restored_residents.get("active", false))
 		or int(restored_residents.get("actor_count", 0)) != 8
 		or str(merchant_system.get_market_snapshot().get("route_mode", "")) != "formal_rear_trade_default"
-		or actor_node.global_position.x < 900.0
+		or absf(actor_node.global_position.x) > 80.0
+		or absf(actor_node.global_position.z) > 100.0
 	):
 		_fail("Restoring the default formal world did not resume all spatial consumers")
 		return

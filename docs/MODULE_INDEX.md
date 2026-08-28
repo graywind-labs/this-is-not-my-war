@@ -1,9 +1,630 @@
 # MODULE_INDEX.md
 
+## T0200 敌我统一战斗寻路索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/station_layout.json` | 定义 `shared_combat_navigation_v1`、开放城外生产 NavMesh 范围、道路零导航权威及目标更新阈值 |
+| `scripts/world/StationLayoutController.gd` | 烘焙站内外共享静态碰撞导航空间，停用旧敌军正门狭廊，继续提供物理城墙 / 密林 / 建筑绕行 |
+| `scripts/world/ActorMotionBody.gd` | 敌我共享路径推进、同 request 目标更新、直达 / 绕行诊断、稳定身份 RVO tie-break 与战斗持续阻塞重规划 |
+| `scripts/npc/NPC.gd`、`scripts/systems/NPCSystem.gd` | 传递友军战斗运动选项并更新同一世界移动请求的目的地 |
+| `scripts/systems/CombatSystem.gd` | 在现行目标锁后按武器条件选择接敌点，为敌我下发统一战斗移动并在进入攻击条件后交接 |
+| `tools/verify_t0200_shared_combat_navigation.gd` | 覆盖直线、静态绕障、持续阻塞、敌我移动目标更新、近战 / 远程站距和进范围停步 |
+| `tools/verify_t0199_enemy_initial_defense_priority.gd` | 额外锁定墙弩路径不再穿正门入站折返 |
+| `tools/verify_t0180_gate_attack_positions.gd` | 覆盖八名敌人的稳定 RVO tie-break、七个城门攻击位自然到位 / 真实伤害及唯一候补 |
+
+稳定调用关系：`CombatSystem 目标锁 → 武器合法接敌点 → ActorMotionBody / NavigationAgent3D 最短路 → RVO / 持续阻塞重规划 → 进入攻击条件 → 既有攻击时间线`。道路与敌军阶段路线均不拥有导航权威。
+
+## T0199 全敌军统一调度与低优先级受击重扫索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 主 AI 对全部活动敌人无条件调用统一在场锁选择器；建筑 / 无武器 NPC 锁收到高威胁实际伤害也建立一次性最近重扫 |
+| `data/station_layout.json` | 声明 `enemy_unified_presence_lock_v3`、低优先级当前目标伤害政策及既有范围 / 满位 / 城门例外 |
+| `tools/verify_t0199_enemy_initial_defense_priority.gd` | 逐墙 / 主厅槽位验证首次进圈抢占城门，并故意移除动态标记验证主调度不再回退旧索敌 |
+| `tools/verify_t0197_enemy_damage_reacquire.gd` | 增加建筑 / 无武器 NPC 当前锁的实际伤害重扫与最近高威胁选择 |
+| `game_design.md` | 设计源完整记录敌我范围、候选池、在场锁、类别抢占、满位例外和异源受击重扫 |
+
+稳定调用关系：`全部活动敌人 AI 更新 -> 统一 37.2 m 候选池 -> 高威胁抢占低优先级 -> 在场锁；高威胁实际扣 HP -> 一次性圈内最近重扫`。动态压力标记只影响运动 / 攻击位，不再切换索敌算法。
+
+## T0198 友方分域在场锁索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 统一友方站外 `37.2 m` / 站内整站候选、在场锁、移动与攻击共锁、异源实际伤害一次性重扫及节奏锁保持 |
+| `scripts/systems/NPCSystem.gd` | 受击只路由行为模式并保留现行目标，暴露友方锁 / 策略移动目标诊断字段；不再精确强写攻击者或重复中断 combat |
+| `docs/AI_NPC_SYSTEM.md` | 记录友方目标属于程序权威、分域规则不进入 LLM / 计划，以及取马优先边界 |
+| `scripts/world/StationLayoutController.gd` | 校验并暴露 `friendly_station_response_v2` 与正式驿站多边形 |
+| `data/station_layout.json` | 声明 `friendly_enemy_presence_lock_v1`、精确 `37.2 m`、整站范围和异源伤害重扫政策 |
+| `tools/verify_t0198_friendly_target_lock.gd` | 覆盖站外边界 / 进战、站内跨半径、在场保持、异源真实伤害、分域重扫、节奏锁与存档排除 |
+
+稳定调用关系：`正式敌人 HP 伤害 -> 友方一次性重扫请求 -> 当前分域最近敌人 -> combat_target_enemy_id -> 策略移动 / 攻击共用 -> T0193 起手锁`。
+
+## T0197 异源受击最近重锁索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 在实际 HP 伤害提交点验证异源高威胁条件、记录 / 消费一次性请求、从现有 `37.2 m` 高威胁池最近重选，并保留攻击起手时间锁 |
+| `data/station_layout.json` | 历史 T0197 v2 已由 T0199 的 `enemy_unified_presence_lock_v3` 覆盖；声明异源受击一次性重评估政策、来源和选择范围 |
+| `tools/verify_t0197_enemy_damage_reacquire.gd` | 覆盖 NPC / 塔防交叉伤害、同目标 / 零伤害 / 非战斗 / 非高威胁排除、圈外来源不强锁、当前目标重新胜出、一次消费、节奏锁和存档排除 |
+| `tools/verify_t0195_natural_defense_device_engagement.gd` | 保留完整第一波自然塔防伤害回归，并区分“容量已满（必须重选）”与“尚有空位但对当前敌人暂不可达（属于寻路层等待）” |
+
+稳定调用关系：`正式模型接触 / 弹体 -> _apply_damage_to_enemy 实际扣 HP -> 一次性重评估请求 -> 下一次敌军 AI 选择 -> 圈内最近高威胁 -> 恢复在场锁`。
+
+## T0196 敌军统一范围锁定索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 统一 `37.2 m` 候选收集、持武器 NPC / 塔防同池最近首次锁定、无武器次级锁、单位在场保持、NPC 无攻击位、固定目标容量与完整城门例外 |
+| `data/station_layout.json` | 声明现行 `enemy_unified_presence_lock_v3`、统一半径、锁政策、NPC unrestricted contact、固定目标满位政策、城门满位等待及 T0197 / T0199 受击例外 |
+| `tools/verify_t0196_unified_enemy_targeting.gd` | 覆盖范围边界、首次最近、在场锁、抢占、多人围 NPC、塔防 / 仓库满位跳过、城门满位保持和建筑链 |
+| `tools/verify_t0180_gate_attack_positions.gd` | 验证第一波 7 个城门固定位置 + 1 个强制城门 waiter 及占位者真实伤害 |
+
+稳定调用关系：`单位有效事实 + 统一范围 -> CombatSystem 在场锁 -> NPC 直接接触 / 固定目标攻击位 -> ActorMotionBody 寻路 -> 模型接触 -> 权威伤害`。索敌不以路径可达性改写目标；完整城门容量是唯一固定目标例外。
+
+## T0195 塔防严格优先候补索引（历史，已由 T0196 取代）
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 塔防攻击位满员时停止建筑层降级，转入既有塔防 waiter / 晋升链 |
+| `data/station_layout.json` | 声明 `defense_device_full_policy=queue_before_buildings` |
+| `tools/verify_t0195_natural_defense_device_engagement.gd` | 完整第一波从正式测试区自然接近，覆盖零城门目标、塔防候补、自然模型命中和建筑零伤害 |
+
+## T0194 敌军受击反击与塔防射程覆盖索引（历史，已由 T0196 取代）
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DefenseDeviceSystem.gd` | 向活动塔防目标输出合并宿主倍率后的实际攻击射程 |
+| `scripts/systems/CombatSystem.gd` | 逐塔防扩展威胁感知；让攻击建筑的敌军精确反击最近实际伤害来源，并保持有效 NPC 目标 |
+| `data/station_layout.json` | 配置塔防实际射程外的敌军威胁感知余量 |
+| `tools/verify_t0194_enemy_retaliation_and_defense_awareness.gd` | 覆盖墙 / 主厅倍率射程、基础范围外塔防优先、NPC / 塔防精确反击和 NPC 目标保持 |
+| `tools/verify_t0150_enemy_target_priority.gd` | 在新塔防感知合同下继续覆盖纯建筑回退链 |
+
+## T0193 我方单位跨中断攻速锁索引
+
+| 文件 | 责任 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 让友军每次合法起手写入共享单调战斗时钟；取消 / 追击 / 模式切换保留 next sequence time；联合读档跨波次重建事务恢复相对锁，战斗结束清除 |
+| `scripts/systems/NPCSystem.gd` | 在正式 NPC 空间检查点保存 attack sequence 与相对 lock remaining，恢复为 idle 时间线并等待 CombatSystem 重建绝对点 |
+| `tools/verify_t0193_friendly_attack_cadence.gd` | 生产剑盾友军 0.2 秒中断压力、真实行为模式切换、正式动画回卷、真实伤害及 NPC+Combat 联合存读档回归 |
+| `tools/verify_t0142_combat_animation_timeline.gd` | 四武器独立 authored 边界夹具显式重置跨中断锁，继续锁定近战 / 远程表现与 impact |
+
+稳定调用关系：`友军装备 / 技能 -> CombatAnimationTiming 完整周期 -> _combat_timeline_seconds -> combat_attack_next_sequence_time -> windup / impact / recovery`；取消只结束当前阶段，正式联合存档只保存相对剩余量。
+
+## T0192 友军战术移动交接索引
+
+| 文件 | 责任 |
+|---|---|
+| `scripts/npc/NPC.gd` | 合成 NPC 本地移动标志与 ActorMotionBody request active 事实 |
+| `scripts/systems/NPCSystem.gd` | 向领域系统只读暴露逐 NPC 物理移动存活性与该 NPC 实际 NavigationMap 的最近可达点；继续统一停止请求、清理 arrival context 与状态 |
+| `scripts/systems/CombatSystem.gd` | 核对战术移动状态与真实 request；策略目的地按 NPC 实际 NavigationMap 投影；近战接近点预留导航到达容差，并进入射程内侧安全起手带后再释放移动权威 |
+| `tools/verify_t0192_friendly_warehouse_intercept.gd` | 正式第一波 + 仓库拦截几何，中途取消导航并验证自动恢复、攻击交接与模型接触掉血 |
+| `tools/verify_t0192b_friendly_occupied_approach.gd` | GM 正式动态波次 + 三名相邻静止仓库攻击者，必须击杀实际先接触的任意敌人、换向存活目标并再次以模型接触造成伤害；不写死相邻出生 ID，同时锁定精确到达与无静止战术移动 |
+
+稳定调用关系：`CombatSystem 战术状态 / 原始策略点 -> NPCSystem 只读查询 -> NPC / ActorMotionBody request 存活事实 + 实际 NavigationMap -> 预留到达容差的接近点 -> 近战内侧安全起手带交接 -> 攻击时间线 -> 模型接触伤害`。
+
+## T0191 敌军跨中断攻速锁索引
+
+| 文件 | 责任 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 从攻击者 / 武器读取完整周期；以单调战斗时间轴保存逐敌最早下次起手时刻，使接触、寻路和目标中断不能清冷却重播 |
+| `scripts/presentation/characters/CombatAnimationTiming.gd` | 将同一权威周期映射为固定 impact 比例与 authored 播放倍率 |
+| `tools/verify_t0191_enemy_npc_attack_cadence.gd` | 锁定生产第一波数值、NPC / 建筑时间轴一致性、0.2 秒中断压力、正式 AnimationPlayer 无单序列回卷、逐敌起手间隔及艾达真实还击 |
+
+稳定调用关系：`enemy attack_speed -> attack_interval -> CombatAnimationTiming -> attack_next_sequence_time -> 逐敌 windup / recovery`；取消当前相位不取消下一起手时刻，目标类型只在模型接触后选择 NPC、塔防或建筑伤害入口。
+
+## T0189 敌军暂停运动索引
+
+| 文件 | 责任 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 将 TimeSystem 全局暂停与正式敌军战术停步分层合成，下发所有敌军 ActorMotionBody；暂停近战采样 / 延迟伤害提交 |
+| `tools/verify_t0189_enemy_pause_motion.gd` | 生产 Main 覆盖单兵、含骑兵正式波次的暂停零位移 / 零速度、状态冻结、恢复续路和战术停步保留 |
+| `tools/verify_t0129c_a4_p7_dynamic_combat_pressure.gd` | 显式解除 headless / 重复战斗夹具暂停后再执行动态压力运动回归 |
+
+## T0188 友军站内响应索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/StationLayoutController.gd` | 以正式城内多边形提供世界坐标包含查询，并暴露友军响应配置 |
+| `scripts/systems/CombatSystem.gd` | 统一站内敌军事实、武装应征全域切战、主动策略站内目标过滤、骑乘等待与动态避战距离 |
+| `data/station_layout.json` | 声明向后升级后的 `friendly_station_response_v2`、友军分域锁定、避战余量与主动策略 ID |
+| `tools/verify_t0188_friendly_station_response.gd` | 生产 Main 覆盖站外 / 站内边界、远距追击、站内目标过滤、取马中转、上马后追击及远程射程外奔跑避战 |
+| `tools/verify_combat_strategies.gd` | 按 T0188 的 8.5 米最低安全距离更新既有避战策略回归 |
+
+稳定调用关系：`正式 interior_polygon -> 站内敌军事实 -> 武装响应 -> T0198 整站目标域`；`活动远程射程 -> 避战触发与安全距离 -> avoid_combat -> T0155 run profile`。
+
+## T0187 敌军五级索敌与塔防受击索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 执行五级类型优先级与三建筑白名单；合并同类反击候选；让城墙塔防直接使用城外 lease，并以物理接触半径生成真实受击点 |
+| `data/station_layout.json` | 声明 `enemy_target_priority_v2` 的五级顺序，保留范围、锁、反击寿命和阻挡探测参数 |
+| `tools/verify_t0150_enemy_target_priority.gd` | 覆盖五级逐层选择、满位回退、同级锁、反击证据、合法建筑链和清理 |
+| `tools/verify_t0187_enemy_target_contract.gd` | 生产 Main 覆盖普通建筑白名单、右侧城墙塔防自然选中、真实攻击序列与器械 HP 下降 |
+
+稳定调用关系：`NPC / 塔防 / 三建筑候选 -> 五级可达筛选 -> T0149 lease -> authored 武器扫掠 -> 宿主代理身份 -> DefenseDeviceSystem HP`。
+
+## T0186 近战接触稳定性索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 忽略非战斗导航地板的近战误阻挡；在敌我活动攻击周期锁定目标，并为已占攻击位提供退出滞回 |
+| `data/station_layout.json` | 数据化保存交战位置与攻击射程的 `0.18 m` 退出余量；严格进入容差和武器原始射程不变 |
+| `tools/verify_t0186_melee_engagement_stability.gd` | 以生产 Main 验证 7 人长期真实围城、逐人攻击 / 伤害比例，以及艾达与第一波剑盾敌人的双向真实掉血 |
+
+稳定调用关系：`严格攻击位 / 射程进入 -> authored windup -> 模型武器扫掠（跳过 navigation_floor）-> 合法碰撞身份 -> 权威伤害`；活动周期内只用退出余量抵抗单帧抖动，不能用它启动超距攻击。
+
+## T0185 全战斗表现时间合同索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/TimeSystem.gd` | 唯一提供现实帧到战斗表现秒 / 倍率的换算，并在快照暴露当前表现速率 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd`、`NPCArtView.gd` | 统一四武器步 / 骑攻击、受击、昏迷、起身、坠马、反馈与粒子时间 |
+| `scripts/npc/NPC.gd`、`scripts/presentation/characters/EnemyMountedArtView.gd` | 让友敌正式坐骑动画和逃马位移遵循相同暂停 / 1:1 合同 |
+| `scripts/systems/CombatSystem.gd` | 以共享战斗帧 delta 推进敌我 / 塔防通用物理弹体，不改变碰撞与伤害权威 |
+| `scripts/presentation/combat/MeteorPresentation.gd` | 统一陨石落地冲击波与粒子时间；不拥有冲击 / 燃烧伤害 |
+| `tools/verify_t0185_combat_presentation_time_contract.gd`、`tools/verify_time_system.gd` | 锁定战斗 1:1、非战斗 x4 上限、暂停 / 恢复、四武器步骑动画和弹体位移 |
+
+稳定调用关系：`real frame delta -> TimeSystem combat frame bridge -> AnimationPlayer / 粒子 / 表现根位移 / CombatSystem 弹体积分`。任何战斗表现不得再直接解释 `numeric_multiplier`；权威 attack timeline、模型接触和伤害入口保持独立。
+
+## T0182 仓库 / 主厅真实外墙攻击索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/StationLayoutController.gd` | 从正式建筑根节点输出真实中心、旋转基向量、包络、墙厚与正门缺口，不提供伤害权威 |
+| `scripts/systems/CombatSystem.gd` | 分离路线接近点和建筑中心；沿旋转外墙生成紧密攻击位、跳过门洞并将局部接触点传给到位 / 朝向 / 物理命中链 |
+| `data/station_layout.json` | 将仓库 / 主厅攻击轮廓声明为 `oriented_perimeter`，保留候选上限与通用租约参数 |
+| `tools/verify_t0182_building_attack_positions.gd` | 覆盖仓库旋转轮廓、主厅轮廓、门洞排除、八人租约和每人独立物理建筑命中 |
+
+稳定调用关系：`路线阶段点 -> 建筑邻域接近 / 阻挡预检`；`建筑真实 Transform + 包络 -> 外墙接触候选 -> NavigationMap 租约 -> 武器真实碰撞 -> BuildingSystem 伤害`。两类坐标不得互相覆盖。
+
+## T0181 陨石建筑禁投与友军排出索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/StationLayoutController.gd` | 查询陨石范围圆与旋转建筑 / 附属建筑占地、城墙线段、城门包络的相交事实 |
+| `scripts/systems/PietySystem.gd` | 施放前权威拒绝建筑冲突；落地前协调友军排出并记录诊断结果 |
+| `scripts/systems/NPCSystem.gd`、`scripts/world/ActorMotionBody.gd` | 按实体间距和生产 NavigationMap 选择安全点，以保留移动请求的外力位移执行排出 |
+| `scripts/ui/HUD.gd` | 显示权威建筑冲突状态与 1.6 秒指定提示，不消费虔诚 |
+| `scripts/presentation/combat/MeteorPresentation.gd`、`data/piety_ability.json` | 提供 StaticBody3D 同源碰撞半径及友军安全余量 |
+| `tools/verify_t0181_meteor_safety.gd` | 覆盖建筑 / 城墙 / 城门禁投、HUD 提示、移动与昏迷 NPC 排出和状态保持 |
+
+稳定调用关系：`HUD 地面点 -> PietySystem 验证 -> StationLayoutController 建筑相交`；合法落地时为 `表现碰撞半径 -> NPCSystem / NavigationMap 排出 -> StaticBody3D 创建`。
+
+## T0180 城门局部接触点与近场候补索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 为结构攻击位保存局部表面接触点，统一攻击解锁 / 朝向 / 扫掠目标；按前排实际深度生成近场候补并保持租约晋升权威 |
+| `data/station_layout.json` | 数据化保存攻击位到达余量与近场候补退让参数 |
+| `tools/verify_t0180_gate_attack_positions.gd` | 覆盖七槽最坏到达误差真实命中、第八人近场等待、租约释放补位及正式第一波路径 |
+
+稳定调用关系：`目标候选局部接触点 -> 攻击位租约 -> NavigationAgent 到位 -> CombatSystem 表面射程 -> T0144 武器扫掠 -> 建筑伤害`。候补只持有目标和近场等待点，不拥有攻击资格。
+
+## T0179 方向化骑姿鞍座坐标索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/characters/MountedPresentationReference.gd` | 保存已验收骑乘参数，并把任意骑手局部偏移按当帧可见前向转换到父坐标；Main 与 NPCDevLab 共用 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 在平滑 yaw 更新后投影完整骑手根 / 坐姿偏移；坠马起点和相对朝向落点复用同一坐标基准 |
+| `scripts/npc/NPC.gd` | 后置同步正式马匹到骑手同一可见前向，不拥有骑手鞍座数值 |
+| `scripts/debug/NPCDevLab.gd` | 骑乘检视直接调用共享方向化偏移，不复制生产公式 |
+| `tools/verify_t0179_friendly_mount_saddle_alignment.gd` | 覆盖 Main 四方向、逐帧 180° 转向、完整骑姿偏移、马匹前向及 NPCDevLab 同源结果 |
+
+稳定调用关系：`ActorMotion 朝向 -> ChibiCharacterPilot 当帧可见前向 -> MountedPresentationReference 方向化鞍座偏移 -> NPC 后置马匹朝向同步`。该链仅投影表现，不改变 NPC / Horse / Combat 权威。
+
+## T0178 共享路径点推进与避障速度合同索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/physics_navigation.json` | 数据化保存自适应中间点容差、合法捷径、错过点推进、RVO 最大偏转、反向速度拒绝与最终制动参数 |
+| `scripts/world/ActorMotionBody.gd` | 在 NPC / 敌军共享移动层推进错过的权威路径点，并让 RVO 速度服从路径方向与制动速度；快照暴露路径点诊断计数 |
+| `tools/verify_t0178_mounted_rally_departure.gd` | 走完整 GM 配装警铃路径，覆盖 8 名步行 / 骑乘 NPC 的有效转向、目标回退、路径效率、路径点推进与最终阵位 |
+
+## T0177 装备图标中线对齐索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/debug/NPCDevLab.gd` | 将非空装备图标强制在槽位内水平 / 垂直居中，四个中央槽与轮廓共用中线 |
+| `tools/verify_t0175_equipment_panel_icons.gd` | 断言图标对齐属性及头盔、胸甲、护腿、坐骑与轮廓的逐像素中心坐标 |
+| `tools/capture_t0175_equipment_panel.gd` | 输出更新后的全装截图，目视复核中央图标竖线 |
+
+## T0176 目标进展与实体阻挡寻路索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/world/ActorMotionBody.gd` | 幂等处理暂停状态；按剩余路径缩短量检测真实进展并暴露卡死诊断快照 |
+| `scripts/systems/CombatSystem.gd` | 对齐动态敌军 RVO / 攻击位到达合同；在索敌可达预检前解析完整城门与仓库阻挡 |
+| `tools/verify_t0176_navigation_recovery.gd` | 复现共享终点占用、城门 7 位 + 1 候补、门后目标阻断和紧密攻击位实际到达 |
+| `tools/verify_t0129c_a4_p1_formal_enemy_navigation.gd` | 按当前生产接近区常开与非空 NavMesh 合同验证早期正式敌军路径试片 |
+| `tools/verify_t0129c_a4_p7_dynamic_combat_pressure.gd` | 锁定完整城门满位后继续在城门候补、不得提前回退到仓库 / 主厅的新合同 |
+
+## T0175 装备轮廓窗纯图标索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/debug/NPCDevLab.gd` | 创建紧凑六槽轮廓窗；空槽只显示加号、装备槽只显示配置图标，文字只进入 Tooltip |
+| `scripts/ui/EquipmentSilhouette.gd` | 绘制无标题、无部位文字的两头身装备定位轮廓 |
+| `tools/verify_t0175_equipment_panel_icons.gd` | 锁定友军空槽 / 全装与敌军只读固定装备的纯图标显示合同 |
+| `tools/capture_t0175_equipment_panel.gd` | 输出空槽与全装两种装备窗实景截图供视觉 QA |
+
+## T0174 可装备物品摄影棚图标索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/presentation/item_icon_render.json` | 保存 512 方图、四类纯色背景、正面 / 三分之四摄影机与类别取景倍率 |
+| `assets/ui/item_icons/{weapon,armor,horse,defense_device}/` | 保存 34 张由正式 3D 模型生成的可装备物品 PNG |
+| `data/weapon_defs.json`、`data/armor_defs.json`、`data/horse_defs.json`、`data/mount_defs.json`、`data/defense_device_defs.json` | 显式登记物品图标路径，供装备选择器与后续背包只读复用 |
+| `scripts/debug/NPCDevLab.gd` | 用独立方形图标按钮 + 名称按钮显示配置物品；不拼接路径、不改变装配权威 |
+| `scripts/systems/HorseSystem.gd`、`scripts/systems/EquipmentSystem.gd` | 将马匹模板图标投影到具体马快照与 NPC 坐骑装备项 |
+| `tools/generate_item_icons.gd` | 从正式模型批量构图、按真实三角形包络取景、正方形裁切并输出视觉 QA 拼图 |
+| `tools/verify_t0174_item_icons.gd`、`tools/capture_t0174_item_picker.gd` | 校验数量 / 尺寸 / 背景 / 导入 / UI 消费，并截图检查装备选择器 |
+
+## T0171 马匹面板属性条告警索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/ui/HorsePanel.gd` | 运行时创建文字在上、进度条在下的五组属性，并局部处理基础 HP / 饱食的严格阈值警示色 |
+| `tools/verify_t0171_horse_panel_progress_alerts.gd` | 锁定正常、边界、低值与恢复状态的顺序、填充色和字体色合同 |
+
+## T0170 透明马厩马匹点击优先级索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/presentation/characters/HorseWorldView.gd` | 在马匹交互 Area 上登记稳定 horse ID 与交互类型 |
+| `scripts/systems/HorseSystem.gd` | 用主相机精确解析 horse Area 射线，并通过既有 horse_clicked 转发选择 |
+| `scripts/systems/BuildingSystem.gd` | 在建筑通用选择前按具体马所属马厩的透明状态路由 HorsePanel / BuildingPanel |
+| `scripts/presentation/buildings/FormalStableArtView.gd` | 让马厩单位优先状态与实际屋面 opacity threshold 同步 |
+| `tools/verify_t0170_transparent_stable_horse_click.gd` | 验证透明点马、透明空白和不透明点马三条真实相机射线路径 |
+
+## T0169 马匹面板紧凑镜头框索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/ui/HorsePanel.gd` | 按视口将马匹实时镜头限制在与 NPC 人物框一致的 `190–210 × 300–420 px`，顶边对齐信息栏 |
+| `scripts/ui/HorsePortraitViewport.gd` | 保留内部共享世界实时镜头、真实马匹跟随与关闭停渲染，不承担外框布局 |
+| `tools/verify_t0162_horse_identity_slots_panel.gd` | 锁定马匹镜头宽高范围、顶边对齐和非通高布局，并回归身份 / 槽位合同 |
+
+## T0168 Godot MCP 路径别名索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `AGENTS.md` | 登记规范工作区与 MCP Junction 别名，禁止仅按路径字符串误判副本 |
+| `tools/verify_project_path_alias.ps1` | 只读验证 Junction 目标、Git 根 / HEAD 与关键文件哈希一致性 |
+| `docs/CODING_RULES.md` | 要求路径身份比较先做规范化与 Junction 解析 |
+| `docs/GODOT_ARCHITECTURE.md` | 记录 MCP 通过别名连接同一 Godot 工程的运行拓扑 |
+
+## T0167 马匹毛色与取马路径索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/horse_defs.json` | 保存经实机审计的 24 套自然马毛颜色；灰鬃为暖烟灰 |
+| `data/building_fixture_layouts.json` | 为八个真实 `horse_anchor` 登记朝中央走道开放的 `pickup_center` |
+| `scripts/world/StationLayoutController.gd` | 校验接近点与槽位开放侧 / 距离关系，并投影为 Marker 元数据 |
+| `scripts/presentation/buildings/FormalStableArtView.gd` | 按具体 horse ID 返回其真实槽位开放侧世界接近点 |
+| `scripts/systems/HorseSystem.gd` | 校验接近点 NavMesh 吸附及完整路径，驱动骑手到马旁后上马 |
+| `tools/verify_t0167_horse_coats_and_stable_pickup.gd` | 审计模板色域、八槽合同及格伦骑灰鬃完成正门集结的整段物理流程 |
+| `tools/capture_t0167_horse_coat_palette.gd` | 输出 24 匹实际模型 / 材质同屏毛色验收图 |
+
+## T0166 GM 面板整理索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/ui/GMPanel.gd` | 提供固定一键征召快捷区、五页独立滚动分组、视口内自适应摆放，并收拢重复可见入口 |
+| `tools/verify_t0166_gm_panel_organization.gd` | 锁定固定按钮、页签结构、旧按钮移除与通用第一波入口 |
+| `tools/verify_gm_panel.gd` | 回归完整 GM 能力，并接受面板在按钮上下或左右相邻的合法布局 |
+
+## T0165 陨石冲击表现索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/piety_ability.json` | 配置斜落时长 / 高度 / 横向偏移、主体 / 弹坑半径、两段震屏与冲击表现时长 |
+| `scripts/presentation/combat/MeteorPresentation.gd` | 授权岩石主体、坑洼、火焰烟尘、爆炸碎屑、空气冲击波、临时碰撞实体与永久弹坑 / 灰烬 |
+| `scripts/systems/PietySystem.gd` | 推进斜落、触发表现与震屏、维护 landed / crater 诊断，并在 combat_ended 清除陨石本体 |
+| `scripts/camera/CameraRig.gd` | 在现有平移 / 缩放基准上提供可衰减的确定性镜头震动 |
+| `tools/verify_t0165_meteor_cinematic_presentation.gd` | 锁定尺寸、斜线起点、VFX 组件、2 秒强震、碰撞实体及战后只留坑生命周期 |
+
+## T0164 建筑名称与镜头渐隐索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `scripts/world/StationLayoutController.gd` | 生成仅含本名的 38px 正式建筑 / 门名标签，并按镜头运动实时控制文字与描边 Alpha |
+| `tools/verify_t0164_building_name_label_fade.gd` | 覆盖 14 个名称、字号、静止全隐、移动与缩放快速恢复 |
+| `tools/capture_t0164_building_name_fade.gd` | 输出同机位运动可见与静止全隐 D3D12 对照图 |
+
+## T0163 陨石自由落点索引
+
+| 文件 | 当前职责 |
+|---|---|
+| `data/piety_ability.json` | 保留水平地面高度与陨石数值，不再配置驿站落点矩形 |
+| `scripts/systems/PietySystem.gd` | 接受建筑排除区之外的任意有限 X/Z，拒绝 NaN / Inf，归一化 Y 后继续原施法结算；T0181 的建筑空间查询见本文件顶部索引 |
+| `scripts/ui/HUD.gd` | 将鼠标射线投到无限水平地面并提交落点，不再裁剪驿站范围 |
+| `tools/verify_t0163_unbounded_meteor_targeting.gd` | 覆盖远距离施法、坐标保真、无效坐标及提示文案 |
+
+## T0162 独立马匹、马槽与面板索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/horse_defs.json` | 定义 7/7/8 马槽位、唯一名称 / 毛色模板、初始马与生态数值 |
+| `scripts/systems/HorseSystem.gd` | 独占马匹身份、槽位、容量、繁育、成长、分配与死亡释放；向表现层提供只读快照 |
+| `scripts/presentation/characters/HorseAppearance.gd` | 将模板毛色稳定映射到马匹模型，不保存玩法状态 |
+| `scripts/presentation/characters/HorseWorldView.gd` | 包装单匹真实世界马、姓名浮层和点击区，转发 `horse_clicked` |
+| `scripts/presentation/buildings/FormalStableArtView.gd` | 按 `stable_slot_id` 投影马厩实体，并提供取马 / 特写所需世界位置 |
+| `scripts/ui/HorsePanel.gd`、`scripts/ui/HorsePortraitViewport.gd` | 展示单马只读信息与共享正式世界实时镜头 |
+| `scripts/npc/NPC.gd`、`scripts/systems/EquipmentSystem.gd` | 把被分配马的稳定 ID、模板、毛色和槽位传到取马及骑乘表现 |
+| `tools/verify_t0162_horse_identity_slots_panel.gd` | 覆盖身份、槽位、满厩、成长、点击面板、实时镜头与指定坐骑链路 |
+| `tools/capture_t0162_horse_panel.gd` | 生成马名、银灰马与独立面板的非 headless 验收截图 |
+
+## T0161 GM 一键征召与八人配装索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/gm_debug_presets.json` | 保存八名 NPC 的调试兵种、主武器、精确全甲部位和四匹马对应关系；不进入正常开局档案 |
+| `scripts/systems/EquipmentSystem.gd` | 加载并预检调试预设，协调征召、库存补缺、正式装备消费、清理旧配装和马匹分配，输出幂等结果快照 |
+| `scripts/systems/HorseSystem.gd` | 通过显式 `debug_ensure_horses(...)` 补建配置化成年测试马；继续独占马匹实体与唯一分配 |
+| `scripts/ui/GMPanel.gd` | 暴露 `RecruitAndEquipAllButton` / `recruit_equip_all`，只调用 EquipmentSystem 调试入口并显示结果 |
+| `tools/verify_t0161_gm_recruit_equip_all.gd` | 从真实按钮覆盖八人征召、精确配装、四马唯一分配、重复点击和 T0160 阵型 |
+
+## T0160 正门外集结与 GM 敌军生成区索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/station_layout.json` | 保存 `friendly_rally_v1` 的中心、方向、阵型间距与区域，以及 `gm_enemy_spawn_v1` 的独立黄框区域 / 6 列生成合同 |
+| `scripts/world/StationLayoutController.gd` | 把两份站内坐标配置投影为正式世界坐标，校验空间合同，并提供支持友军出站集结的双向正门 NavigationLink |
+| `scripts/systems/CombatSystem.gd` | 按实际兵种 / 数量生成近战前排、远程后排、左右骑兵翼；保留取马 reservation、接敌中断与战斗权威；GM 波次使用独立测试区 |
+| `scripts/ui/GMPanel.gd` | 继续只调用既有 `debug_spawn_wave(..., spawn_near_front_gate=true)`，不保存坐标、阵型、导航或战斗权威 |
+| `tools/verify_t0160_front_gate_rally_formation.gd` | 覆盖混合阵型、唯一阵位、生产导航实际到位、第 1–5 波 GM 区域与正式远端生成不变 |
+| `tools/verify_combat_alarm_rally.gd`、`verify_mounted_rally_after_stable_pickup.gd`、`verify_gm_panel.gd` | 分别回归接敌打断、取马后翼侧到位与 GM 入口 / 快照 |
+
+稳定调用关系：`station_layout spatial contract -> StationLayoutController world projection -> CombatSystem reservation/spawn -> NPC or enemy ActorMotionBody`。UI 和表现层不决定阵位到达、模式切换、敌军目标或伤害。
+
+## T0157 可摧毁单位与关键建筑废墟索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/building_defs.json`、`data/defense_device_defs.json` | 配置建筑废墟类型 / 恢复阈值和塔防废墟类型 / 现实时间寿命 |
+| `scripts/systems/BuildingSystem.gd` | 锁存建筑摧毁事实，并只在可恢复建筑达到配置 HP 阈值后解除 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 器械 HP、槽位释放、临时废墟快照、同槽替换与超时清理权威；提供窄 GM 摧毁接口 |
+| `scripts/world/DefenseDevicePresenter.gd`、`DefenseDeviceView.gd` | 在正式槽位投影活动器械或无点击 / 无攻击的废墟，并在宿主主厅摧毁时隐藏器械 |
+| `scripts/presentation/defense/FormalBallistaArtView.gd`、`FormalArrowTowerArtView.gd` | 复用正常模型材质生成断梁、倾倒武器、松脱轮和屋顶 / 平台碎件 |
+| `scripts/presentation/buildings/FormalGateArtView.gd`、`FormalWarehouseArtView.gd`、`FormalMainHallArtView.gd` | 分别负责门板倒塌与碰撞切换、30% 仓库废墟恢复、不可恢复主厅坍塌表现 |
+| `scripts/ui/GMPanel.gd` | 提供“摧毁首个塔防 / 塔防废墟快照”；建筑继续复用既有受损 / 修复入口 |
+| `tools/verify_t0157_destructible_ruins.gd`、`capture_t0157_destructible_ruins.gd` | 自动验证所有 HP / 清理边界，并输出四张 D3D12 视觉基线 |
+
+稳定调用关系：`Combat / GM damage -> BuildingSystem or DefenseDeviceSystem -> destruction latch / ruin snapshot -> presentation projection`。表现层不结算 HP、槽位、路径或胜负。
+
+## T0156 全量回归索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `tools/verify_t0156_full_regression.ps1` | 串行执行 T0141–T0155、生产导航 / NPCDevLab、战斗基础与胜负、五波 / 48 敌、存档、骑乘和 GM 共 33 项回归 |
+| `tools/verify_combat_flow.gd` | 用正式剑模型采样与真实接触建立首个击杀，再验证整场事件、伤员、击杀归属、模式退出和计划重评估 |
+| `tools/verify_combat_pacing.gd` | 验证攻击周期数量，并锁定缺少 authored 几何样本时 miss / 零伤害；测试余额推进显式标为 fixture |
+| `tools/verify_t0129c_a3a_production_navigation.gd` | 验证 live-default 门链接、导航排除 fixture、敞口铁匠铺与其余 11 座建筑真实门路径 |
+| `tools/verify_t0130_d1_npc_dev_lab.gd` | NPCDevLab 全量表现回归；受击路径遵守 T0154 唯一临时伤害事件合同 |
+
+## T0155 工作行走与紧急奔跑索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/physics_navigation.json` | 保存 NPC walk/run 基础速度、动画参考速度、步频范围与紧急模式集合 |
+| `scripts/npc/NPC.gd` | 选择并热更新权威移动 profile，量测实际水平位移，向表现层转发 locomotion 合同 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd`、`NPCArtView.gd` | 播放显式 walk/run/mounted 状态，并按实际速度与参考速度调整步频；不拥有位移 |
+| `tools/verify_t0155_npc_locomotion_modes.gd` | 覆盖工作、普通交谈、四类紧急路线、停止、倍速、暂停恢复及骑乘 |
+
+稳定调用关系：`NPC profile -> locomotion class -> ActorMotionBody/legacy displacement -> measured actual speed -> presentation cadence`。
+
+## T0154 人物小窗与受击反馈索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/ui/NPCPortraitViewport.gd`、`scripts/ui/NPCPanel.gd` | 提供透明人物小窗点击面并只转发当前有效 NPC ID，不自行判断动作或改状态 |
+| `scripts/systems/NPCSystem.gd` | 权威校验 idle 小窗请求；先生成唯一伤害事件，再以其 ID 派发 / 去重受击表现并处理昏迷压制 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd`、`NPCArtView.gd` | 支持 `talk_gesture / hit_react` 两类一次性事件；HP 差量保留视觉反馈但不重复启动受击动画 |
+| `scripts/systems/DialogSystem.gd`、`scripts/ui/DialogPanel.gd` | 继续拥有攻击确认和既有对话攻击入口；不成为受击动画触发源 |
+| `tools/verify_t0154_portrait_and_dialogue_hit_feedback.gd` | 覆盖小窗边界、零副作用、确认取消、唯一伤害关联、刷新去重和昏迷最终表现 |
+
+稳定调用关系：`portrait click -> NPCSystem idle validation -> temporary talk_gesture`；`attack confirmation -> NPCSystem damage event + HP settlement -> event-ID hit_react or unconscious suppression`。
+
+## T0153 主动呼叫循环示意索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/npc_interaction_presentation.json` | 配置主动问号示意的现实秒周期，不保存请求或动作权威 |
+| `scripts/systems/NPCSystem.gd` | 持有短生命周期 presentation session，按现实时间推进、每次面向当前相机并处理全部终止清理 |
+| `scripts/npc/NPC.gd`、`scripts/presentation/characters/ChibiCharacterPilot.gd`、`NPCArtView.gd` | 复用 T0152 `talk_gesture` 一次性表现及事件 ID 去重，不反写 NPC 状态 |
+| `tools/verify_t0153_proactive_talk_gestures.gd` | 覆盖周期、相机重采样、倍速、暂停、LLM 边界和接受 / 过期 / 状态 / 取消清理 |
+
+稳定调用关系：`existing proactive request -> real-time presentation session -> current camera facing -> temporary talk_gesture`。session 不进入存档、计划、记忆或模型请求。
+
+## T0152 NPC-NPC 邀请示意索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 保证发起者抵达真实交谈位后只让发起者面向目标；接受后继续作为停止原动作的唯一权威入口 |
+| `scripts/systems/DialogSystem.gd` | 在邀请实际提交和接受激活两个边界触发一次性表现，并维持拒绝 / 失败会话合同 |
+| `scripts/systems/NPCSystem.gd` | 绑定正式空间会话、保留接受前真实站位、校验角色 / 距离、派发并记录去重临时表现事件 |
+| `scripts/npc/NPC.gd`、`scripts/presentation/characters/ChibiCharacterPilot.gd`、`NPCArtView.gd` | 将 `talk_gesture` 播放为一个 authored clip 周期，再恢复权威动作投影；不反写 profile |
+| `tools/verify_t0152_formal_dialogue_gestures.gd` | 覆盖取消、到达发送、工作等待、拒绝、接受顺序、相向与重复事件 |
+
+稳定调用关系：`ActionSystem physical arrival -> DialogSystem invitation boundary -> NPCSystem validated temporary event -> character presentation one-shot`；接受路径为 `ActionSystem stop -> spatial handoff/facing -> invitee gesture -> authoritative dialogue activation`。
+
+## T0151 攻击距离圈索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/presentation/combat/AttackRangeIndicator.gd` | 消费选中对象的权威射程快照，生成 / 跟随淡蓝半透明无碰撞环带并处理隐藏清理 |
+| `scripts/systems/CombatSystem.gd` | 向集结 / 战斗远程 NPC 输出 `final.range` 只读快照 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 向活动 deployment 输出含宿主倍率的 `effect.range` 只读快照 |
+| `scripts/world/DefenseDeviceView.gd`、`scenes/defense_devices/DefenseDeviceView.tscn` | 为正式已部署器械提供只发选择事件的点击热区 |
+| `scripts/core/EventBus.gd`、`scripts/ui/NPCPanel.gd`、`scripts/ui/BuildingPanel.gd` | 广播器械选择 / 取消选择并保持对象面板互斥 |
+| `tools/verify_t0151_attack_range_indicator.gd`、`tools/capture_t0151_attack_range_indicator.gd` | 覆盖权威半径、状态边界、点击 / 跟随 / 清理、无碰撞与 Forward+ 视觉基线 |
+
+稳定调用关系：`world click -> selection event -> CombatSystem / DefenseDeviceSystem read-only range snapshot -> AttackRangeIndicator mesh`。圆环不进入攻击、弹体或伤害链。
+
+## T0150 敌军索敌框架索引（历史，已由 T0196 整体取代）
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/station_layout.json` | 历史五级顺序、短锁 / 重评估与近期命中配置，现行字段见 T0196 |
+| `scripts/systems/CombatSystem.gd` | 历史目标层 / 反击辅助仍兼容诊断，但现行裁决只走 T0196 统一选择器 |
+| `scripts/systems/NPCSystem.gd`、`scripts/systems/DefenseDeviceSystem.gd` | 通过既有状态 / deployment 快照提供攻击意图与有效来源，不保存敌军目标权威 |
+| `scripts/world/ActorMotionBody.gd` | 继续执行最终 lease / wait 位置的移动，并把路径失败交回 CombatSystem 释放和重选 |
+| `tools/verify_t0150_enemy_target_priority.gd` | 转发 T0196 当前统一索敌专项，防止旧断言恢复被替代合同 |
+
+历史调用关系不再是当前权威；当前调用关系见本文件顶部 T0196。
+
+## T0149 敌军攻击位租约索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/station_layout.json` | 配置租约 schema、安全余量、导航 / 到位容差、近战 / 远程纵深比例、容量与三类建筑正面轮廓 |
+| `scripts/systems/CombatSystem.gd` | 只为塔防与三座建筑动态生成结构正面位；查询可达性并建立唯一租约，塔防 / 仓库 / 主厅满位交回索敌重选，完整城门维护候补 / 补位 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 在既有宿主代理目标上补充正式槽位朝向，供 CombatSystem 生成墙段外侧攻击带 |
+| `scripts/world/ActorMotionBody.gd` | 继续独占租约目标点的 NavigationAgent 移动、避让、到达与失败信号；不保存占位权威 |
+| `tools/verify_t0149_enemy_attack_position_leases.gd` | 覆盖 48 敌固定租约 / 城门候补、近远程、塔防 / 建筑、NPC 零租约、可达过滤、换目标、僵直 / 死亡和清理 |
+
+稳定调用关系：`target geometry + enemy radius / weapon range -> CombatSystem candidate -> NavigationMap reachability -> unique lease -> ActorMotionBody -> T0144/T0145 physical hit`。租约只授予接近位置，不授予伤害。
+
+## T0148 塔防宿主受击代理索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/world/StationLayoutController.gd` | 从正式围墙段、主厅支撑墙和平台 fixture 生成每槽代理身份、接近点、瞄准点与局部命中半径；建筑墙 StaticBody 增加 segment metadata |
+| `scripts/systems/DefenseDeviceSystem.gd` | 将正式代理绑定到 slot / deployment，向敌军输出低位活动目标，并保持器械 HP / 销毁与宿主建筑生命周期解耦 |
+| `scripts/systems/CombatSystem.gd` | 提取 segment / fixture collider identity，统一校验近战和弹体代理命中，严格路由到器械或建筑伤害权威 |
+| `tools/verify_t0148_defense_device_host_proxy.gd` | 覆盖围墙同段多槽、不同墙段、主厅墙 / 平台、近战 / 弹体、建筑 HP 解耦、显式建筑伤害和摧毁清理 |
+
+稳定调用关系：`formal slot -> host_proxy -> enemy movement/facing/aim -> physical collider identity + local region -> DefenseDeviceSystem HP`。`target_type=building` 始终旁路代理并进入 BuildingSystem。
+
+## T0147 塔防动作与物理弹体索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/defense_device_defs.json` | 保存箭塔 / 弩炮 authored 周期、释放点、弹体速度 / 重力和共享有效射程 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 推进每个部署实例的权威攻击相位、选择目标、单次 release，并在物理终态后登记结果与累计伤害 |
+| `scripts/systems/CombatSystem.gd` | 从正式器械 muzzle 生成通用物理弹体，按重力 / sweep / 最大水平航程推进，并在实际敌军碰撞后唯一结算 |
+| `scripts/world/DefenseDevicePresenter.gd`、`scripts/world/DefenseDeviceView.gd` | 转发相位到正式器械表现，提供当前 muzzle 只读 snapshot，不拥有命中权威 |
+| `scripts/presentation/defense/FormalBallistaArtView.gd`、`scripts/presentation/defense/FormalArrowTowerArtView.gd` | 按权威相位瞄准、释放和装填；生产模式关闭内部假弹体并暴露真实发射点 |
+| `scripts/core/EventBus.gd` | 提供 `defense_device_action_phase` 只读表现事件 |
+| `tools/verify_t0147_defense_device_physical_attack.gd` | 覆盖两种器械的释放时序、朝向、模型发射点、碰撞唯一伤害、闪避、射程和攻速缩放 |
+
+稳定调用关系：`DefenseDeviceSystem timeline -> formal muzzle snapshot -> CombatSystem projectile -> swept collision -> existing defense damage authority -> unique terminal result`。生产表现不能自行生成伤害或飞行事实。
+
+## T0146 敌我弓弩步骑矩阵索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 从当前正式弓 / 弩的 LoadedArrow / LoadedBolt 输出只读 release snapshot，包含模型 Transform 与步 / 骑状态 |
+| `scripts/npc/NPC.gd`、`scripts/systems/NPCSystem.gd` | 转发我方正式角色的模型发射事实；包装缺失时返回不可用，不伪造身体高度发射点 |
+| `scripts/presentation/characters/EnemyMountedArtView.gd` | 转发骑射 rider 的模型发射事实并锁定 mounted wrapper 来源 |
+| `scripts/systems/CombatSystem.gd` | 只接受 ready 的正式发射 descriptor，记录 provenance；继续复用 T0142 时间轴、T0145 ID 与 T0143 物理碰撞伤害 |
+| `tools/verify_t0146_ranged_combat_matrix.gd` | 覆盖敌我 × 弓弩 × 步骑、真实 HorseSystem、攻速缩放、朝向、模型发射点、释放零伤害和实际碰撞唯一伤害 |
+
+稳定调用关系：`production loaded projectile -> release snapshot -> CombatSystem descriptor -> T0145 attack_id -> T0143 physics -> damage authority`。任何包装缺口在 descriptor 边界失败，禁止身体高度补射。
+
+## T0145 权威投射物攻击事实索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 为每次敌我远程 release 生成唯一 attack ID；在伤害回调前预留 ID，固化 hit / blocked / miss fact，并拒绝重复碰撞再次结算 |
+| `tools/verify_t0145_projectile_attack_id.gd` | 覆盖 release—弹体—终态—damage result 的 ID 关联、真实命中、重复回调、同 sequence 多弹体唯一性、遮挡 / 落空和清理 |
+| `tools/verify_t0142_combat_animation_timeline.gd` | 在原时间轴专项中补充远程 release 的 attack sequence、attack ID 与活动弹体关联断言 |
+
+稳定调用关系：`T0142 attack_sequence -> CombatSystem attack_id -> swept collision -> terminal fact -> existing damage authority`。ID 去重发生在伤害入口之前；表现节点不参与命中事实。
+
+## T0144 近战模型接触索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/weapon_defs.json` | 保存剑盾 / 长杆步战范围、骑战范围、扫掠半径与量测窗口 |
+| `scripts/presentation/characters/CombatAnimationTiming.gd` | 保存四武器 authored 周期；近战另区分步 / 骑真实接触秒 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 输出当前正式剑刃 / 长杆头世界端点和实际播放器片段；不判断命中或扣血 |
+| `scripts/npc/NPC.gd`、`scripts/systems/NPCSystem.gd`、`scripts/presentation/characters/EnemyMountedArtView.gd` | 将正式模型接触段只读转发给 CombatSystem |
+| `scripts/systems/CombatSystem.gd` | 维护敌我 swing、定密度当前段 / 帧间胶囊扫掠、物理帧唯一伤害提交、首碰身份分类、步 / 骑范围与调试快照 |
+| `tools/verify_t0144_melee_model_contact.gd` | 量测模型前向接触范围并覆盖剑盾 / 长杆、步 / 骑、敌我、闪避、非锁定实际目标与唯一伤害 |
+
+稳定调用关系：`NPCDevLab 同源正式模型端点 -> CombatSystem frame sweep -> first actual collider -> existing damage authority`。锁定目标、动画标签和配置距离均不能替代实际碰撞。
+
+## T0143 弓弩物理弹体索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `data/weapon_defs.json` | 为弓 / 弩配置正式弹体速度、重力和最长寿命；不保存命中概率或预结算伤害 |
+| `scripts/systems/CombatSystem.gd` | 在 authored release 创建敌我弹体，固定释放时瞄准点，按物理子步推进抛物线、扫掠碰撞并只在合法实际命中后调用既有权威伤害入口 |
+| `scripts/presentation/combat/CombatProjectileView.gd` | 显示由 CombatSystem 投影的位置 / 速度驱动的低模箭与弩矢；无碰撞体、无 HP / 伤害权威 |
+| `scripts/systems/NPCSystem.gd`、`scripts/npc/NPC.gd` | 提供 NPC 身体 RID 与角色包装发射 Transform 的只读桥接，不决定弹道或命中 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd`、`EnemyMountedArtView.gd` | 提供 loaded arrow / bolt 的正式释放 Transform；正式 profile 下禁用内部预览飞箭，DevLab 预览保持独立 |
+| `tools/verify_t0143_physical_ranged_projectiles.gd` | 覆盖弓 / 弩、敌我、释放零伤害、真实第一碰撞目标、目标横移落空和唯一伤害 |
+
+稳定调用关系：`CombatAnimationTiming release -> CombatSystem projectile -> physics sweep -> actual collider identity -> existing damage authority`。表现节点不报告命中，释放时锁定的 target 也不能覆盖实际碰撞事实。
+
+## T0142 敌我攻击动画时间轴索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/presentation/characters/CombatAnimationTiming.gd` | 四类 NPCDevLab 已验收武器动作的 authored 周期、命中 / 释放点和比例单一来源；按权威 `attack_interval` 返回缩放后周期与播放倍率 |
+| `scripts/systems/CombatSystem.gd` | 敌我共同维护攻击序号、windup、impact、recovery、目标和唯一提交；在命中相位结算伤害并持续下发目标朝向，敌军存档保存周期状态 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 只读权威周期 / elapsed / sequence，重启并定位已验收步战或骑战片段，按同一倍率播放；不自行决定伤害 |
+| `scripts/systems/NPCSystem.gd` | 提供正式 NPC 朝向入口，并在模式退出、重新入战或昏迷时原子清理旧攻击周期 |
+| `scripts/systems/MemorySystem.gd` | 将 `winding_up_*` 运行态显示为“准备攻击敌人”，不把动态战斗状态误查为静态 Action 定义 |
+| `tools/verify_t0142_combat_animation_timeline.gd` | 覆盖四武器步 / 骑 profile、攻速缩放、敌我命中边界、唯一伤害、目标朝向、粗步进与僵直中断 |
+
+稳定调用关系：`武器 / 敌军攻速 -> CombatSystem 完整周期 -> CombatAnimationTiming 相位比例 -> ChibiCharacterPilot 播放倍率与动作位置`。伤害只由 CombatSystem 在时间轴命中点提交；远程物理碰撞将在后续任务接管释放后的最终命中事实。
+
+## T0141 正式敌军复用 DevLab 已验收包装索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/systems/CombatSystem.gd` | 按 `enemy_waves.json` 的 `weapon_type / mount_type` 选择正式两头身步兵或骑兵包装，并通过生产 `apply_profile(...)` 投影固定武器；继续独占敌军实体、碰撞、导航、HP、攻击与胜负权威 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 在生产 profile 首次出现长杆、弓或弩时按需创建同一套已验收武器节点，并按权威战斗状态显隐；不依赖 DevLab debug 装配状态 |
+| `scripts/presentation/characters/EnemyMountedArtView.gd` | Main 与 DevLab 共用的轻骑 / 骑射包装；读取骑手正式 profile，保留既有坠亡逃马表现边界 |
+| `scripts/debug/NPCDevLab.gd`、`data/presentation/npc_dev_lab.json` | 继续作为同一生产包装的表现检视入口，并明确四类武器、步战 / 骑战和骑兵包装是 Main 的正式表现基准；不成为运行时服务 |
+| `tools/verify_t0141_formal_enemy_dev_lab_reuse.gd` | 在 Main 中生成代表波次，覆盖 7 个敌种、固定武器唯一显隐、步兵 / 骑兵包装、debug 状态隔离、碰撞 / 选择权威和旧 ActorMesh 隐藏 |
+
+稳定调用关系：`enemy_waves.json -> CombatSystem 权威敌军 profile -> ChibiCharacterPilot / EnemyMountedArtView`。`NPCDevLab` 仅以相同 profile 和生产包装做可视验收，正式战斗不得反向调用其 `debug_*` 接口。
+
+## T0130-D1R14 NPC 表现基准、护甲与开发检视索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scenes/debug/NPCDevLab.tscn`、`scripts/debug/NPCDevLab.gd` | 独立 NPC 表现检视台；提供角色选择、跨友方模式 / 六槽装配、四部位实际护甲预览、动作面板、坐席 / 坐骑参照和拖拽旋转，不拥有任何玩法权威 |
+| `data/presentation/npc_dev_lab.json` | 配置开发检视动作、模式、前置条件、共享友方动作及装备文字占位；8 名友方共享除主持弥撒外的工作动作 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 两头身角色统一表现适配器；管理四类武器、职业工具、四部位程序低模护甲、骨骼跟随、可逆头发过滤、坐姿、饮酒、步战 / 骑战动作、上下半身动画合成、握点校准与只读诊断快照 |
+| `scripts/presentation/characters/MountedPresentationReference.gd` | Main 与 DevLab 共用友方 / 敌方骑乘模型相对位置、缩放和骑手偏移基准，不持有骑乘状态或伤害权威 |
+| `tools/verify_t0130_d1_npc_dev_lab.gd` | 回归角色目录、共享模式 / 装配、四槽实际护甲 Mesh 与左右根、全友方工作动作与工具、四武器步战 / 骑战、坐姿 / 骑姿、关键骨轨、握点、前向和表现权威边界 |
+| `tools/capture_t0130_d1r14_armor.gd` | 永久护甲视觉 QA；批量输出八名友方正面与代表角色正面 / 侧面 / 背面截图，不创建另一套表现实现 |
+
+稳定调用关系：`NPC / Enemy wrapper 只读权威状态 -> ChibiCharacterPilot 表现投影`；`NPCDevLab -> 同一生产包装 / 共享参数`。禁止正式场景复制一套近似 Transform，也禁止 DevLab 反向成为 NPC、装备、马匹或战斗系统的数据源。
+
+T0130-D1R13 后，`NPCDevLab.gd` 对友军返回 `_shared_loadout`，对敌军只返回该 unit 的 `default_loadout`；后者由 `enemy_waves.json` 的 `weapon_type / mount_type` 构建。所有装备 UI 和 debug 装卸入口均在敌军分支拒绝写入，骑乘敌军仍复用 `EnemyMountedArtView`，并把固定武器投影给其中的骑手包装。
+
+T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `ChibiCharacterPilot.debug_set_armor_preview(...)`；正式包装则由 `apply_profile(...)` 读取同名槽位。两条入口只改变同一组 BoneAttachment 表现节点的可见性，不拥有库存、减伤或战斗结算。
+
+## T0138-R2 骑兵队形集结与 DevLab 骑姿基准索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/presentation/characters/MountedPresentationReference.gd` | Main 与 NPCDevLab 共用的骑乘表现常量；保存友方已验收马匹位置 / 缩放、骑手根偏移及敌方正式包装马匹参数，不拥有骑乘或伤害权威 |
+| `scripts/systems/CombatSystem.gd` | 在默认正式世界中生成近战前排、远程后排与左右骑兵翼阵位；骑兵取马完成后恢复预留翼侧阵位移动，并以 `0.3 m` 容差提交 `rallied` |
+| `scripts/npc/NPC.gd`、`scripts/presentation/characters/ChibiCharacterPilot.gd` | 正式友方骑姿读取共享基准，并在骑手平滑转向后同步马匹实际可见前向 |
+| `scripts/presentation/characters/EnemyMountedArtView.gd`、`scripts/debug/NPCDevLab.gd` | Main 与 DevLab 共用敌方骑兵包装；友方 DevLab 与 Main 读取同一骑姿参数，敌我骑乘均暴露位置、缩放和前向一致性快照 |
+| `tools/verify_mounted_rally_after_stable_pickup.gd` | 从真实警铃、马厩取马、上马到正式正门翼侧阵位的全程 NavMesh 回归 |
+
+## T0139 友方 NPC 坠马昏迷表现索引
+
+| 文件 / 目录 | 当前职责 |
+|---|---|
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 只读 `combat_mounted → unconscious` 边沿，驱动约 `0.92 s` 的侧向坠马弧线、`Death_A` 落地姿势及复苏时的落点回正；不拥有 HP、解绑或返厩权威 |
+| `scripts/npc/NPC.gd` | 正式战斗骑乘使用导入马匹、同步骑手抬高姿势与马匹 Idle / Walk 表现，并在权威骑乘状态清除后立即隐藏随身马模型 |
+| `tools/verify_mounted_fall_animation.gd` | 覆盖正式 Main 骑姿、导入马、受击瞬时结算、半空 / 落地相位、复苏衔接及无马昏迷隔离 |
+
 ## T0123–T0136 Quaternius 美术升级与真实空间重构索引
 
 | 文件 / 目录 | 当前职责 |
 |---|---|
+| `scripts/presentation/buildings/BuildingArtView.gd`、`FormalDiningHallArtView.gd`、`FormalTavernArtView.gd`、`FormalDormitoryArtView.gd`、`FormalWorkshopArtView.gd` | T0135-P8AR7/P8AR7R 可复用封闭 `PrismMesh` 山墙及四座建筑实例；P8AR7R 进一步把工械坊导入瓦顶抬高 / 转正，并把宿舍坡度、跨度、山墙和拼缝联动重算，使两栋屋面 X/Z 四边与墙顶连续贴合；全组仍属于 Exterior 透明 / 持久阴影链，不新增碰撞、导航或玩法权威 |
+| `scripts/presentation/buildings/FormalBlacksmithArtView.gd`、`tools/verify_t0135_p8ar7_building_roof_closure.gd`、`tools/capture_t0135_p8ar7_building_roofs.gd` | T0135-P8AR7/P8AR7R/R2/R3 铁匠铺冷灰蓝平顶及四座封闭山墙；专项包含四向 AABB、工械坊七段山墙—瓦面净空和正门徽牌—檐口净空；抓图脚本输出基础视图、两栋返修建筑山墙 / 长檐及工械坊同用户角度高俯视到忽略目录 `artifacts/visual_qa/` |
 | `scripts/presentation/buildings/DiningKitchenWorkFX.gd`、`scripts/presentation/buildings/FormalDiningHallArtView.gd` | T0135-P8AR4/P8AR4R/R2 三个食堂灶台独立的火焰 / 食材 / 蒸汽 / 专属烟囱烟表现，以及三根四壁围合中空烟囱；Lv.2 不再给前两根烟囱追加悬浮防火帽，只读真实 `occupied_by + work_dining_hall`，第三组保持 Lv.3，零餐食与占用权威 |
 | `tools/verify_t0135_p8ar4_dining_kitchen_work_fx.gd`、`tools/capture_t0135_p8ar4_dining_kitchen_work_fx.gd` | 锁定三灶—三烟囱一一映射、空置全灭、布鲁诺真实到岗仅点亮占用灶、中断全灭，并以 Lv.2 屋顶 D3D12 近景确认中空烟囱无悬浮盖件 |
 | `scripts/presentation/buildings/MedievalWashBasinBuilder.gd`、`scripts/presentation/buildings/FormalDormitoryArtView.gd`、`scripts/presentation/buildings/FormalClinicArtView.gd` | T0135-P8AR5/P8AR5R 宿舍 / 诊所共享木石盥洗架；凹盆、水面、铜储水罐 / 出水嘴与毛巾完整可读，宿舍实例向床列中线收拢并与偏置壁炉保持净空，presentation-only 且零碰撞 / 导航 / 工位权威 |
@@ -11,9 +632,10 @@
 | `scripts/presentation/environment/FormalDormitoryLatrineArtView.gd`、`data/station_layout.json.service_outbuildings`、`scripts/world/StationLayoutController.gd` | T0135-P8AR6/P8AR6R 宿舍西侧并排双卫生间：两套同规格外部木石低模壳、封闭门、常驻屋顶和通风结构；不进 BuildingSystem、不含室内 / 交互 / 功能，由布局控制器从两条配置分别登记静态导航障碍 |
 | `tools/verify_t0135_p8ar6_dormitory_latrine.gd`、`tools/capture_t0135_p8ar6_dormitory_latrine.gd` | 锁定双间位置 / 朝向 / 包络、`0.19 m` 结构缝、完整外部结构、零 Area / 灯 / 动画 / BuildingSystem、两个独立静态碰撞、围墙 / 宿舍 / 菜园净距及 D3D12 近景 |
 | `scripts/presentation/environment/BuildingFunctionalLightController.gd` | T0135-P8A/P8AR/P8AR2/P8AR3 全建筑实体功能灯：按 `18:00–06:00` 和三类占用规则接管 15 类正式宿主、39 个实体灯具 / 40 个局部光源；关闭相机距离淡出，并从源灯具可见性同步等级解锁；铁匠铺新增 `2→3→4` 工位灯，只读时间、NPC 地点 / 睡眠与建筑表现，零玩法权威 |
-| `data/presentation/environment_art.json`、`scripts/presentation/environment/CelestialCycleController.gd` | P8A 配置逐建筑既有灯名、补建灯位、模式、色温 / 范围，并由天体控制器组合功能灯子系统和快照；P8AR3 将铁匠铺基础日光收束到后炉区 `8 m / 72°` 有影光型；P6–P7R4 的日月、环境与其他室内填光独立保留 |
-| `scripts/presentation/buildings/FormalBlacksmithArtView.gd`、`scripts/presentation/buildings/SmithyAmbientFX.gd` | T0135-P8AR3/P8AR3R2 后炉砌体＋前侧通风棚铁匠铺、同轴炉体 / 烟囱、四盏逐级实体灯及内墙壁托；不生成专用落地灯架，吊链随顶梁透明，磨轮位于东侧服务区；炉火只读真实 forge 占用和 `work_blacksmith`，空置 / 在途 / 中断熄灭 |
-| `tools/verify_t0135_p8ar3_blacksmith_hybrid_forge.gd` | 锁定半开放壳体 / 碰撞一致、炉口朝向、烟囱同轴、三砧接地包络、工具架与四灯结构支撑、入口磨轮净空、吊链同分支、格伦 `1.10 m` 真实锤击站位、炉火空置→到岗→中断及灯 `2→3→4` |
+| `data/presentation/environment_art.json`、`scripts/presentation/environment/CelestialCycleController.gd` | P8A 配置逐建筑既有灯名、补建灯位、模式、色温 / 范围，并由天体控制器组合功能灯子系统和快照；P8AR3 将铁匠铺基础日光收束到后炉区 `8 m / 72°` 有影光型；P6R 保留 `120 m` 四级联 / 混合 / `0.12 / 0.30 / 0.60` 分割；P6R3 生产刷新间隔为 `0`，太阳 / 月亮 Basis 随每次时间信号连续更新，正值间隔只保留为可选低频降级 |
+| `tools/verify_t0135_p6r_directional_shadow_stability.gd`、`tools/verify_t0135_p6r2_shadow_direction_cadence.gd`、`tools/verify_t0135_p6r3_origin_smooth_shadows.gd` | 锁定级联配置、唯一阴影权属、暂停冻结、可选 60 秒分桶；P6R3 进一步锁定正式根 / 相机 / NPC 原点归位、旧碰撞停用、旧存档坐标迁移，以及生产 Light Basis 逐信号连续变化 |
+| `scripts/presentation/buildings/FormalBlacksmithArtView.gd`、`scripts/presentation/buildings/SmithyAmbientFX.gd`、`scripts/world/StationLayoutController.gd` | T0135-P8AR3/P8AR3R2/P8AR8 后炉砌体＋全敞开四柱正面铁匠铺；正面无墙 / 门 / 门框及隐形前墙碰撞，两根 Lv.2 加固柱接地且收在平顶底面下；同轴炉体 / 烟囱、逐级实体灯、吊装透明和只读炉火合同保持不变 |
+| `tools/verify_t0135_p8ar3_blacksmith_hybrid_forge.gd`、`tools/capture_t0135_p8ar8_open_front_smithy.gd` | 锁定全敞开正面、四根原承重柱、零前墙碰撞、两根加固柱屋面净空，并继续覆盖炉口 / 烟囱、三砧、灯架、真实打铁和炉火；D3D12 抓图输出铁匠铺正面近景至忽略目录 `artifacts/visual_qa/` |
 | `tools/verify_t0135_p8a_building_functional_lights.gd`、`tools/capture_t0135_p8a_building_functional_lights.gd`、`tools/capture_t0135_p8ar2_progressive_open_lights.gd` | 覆盖 15 类建筑、四个时间边界、九座条件建筑、宿舍醒 / 睡、39/40 数量、露天和铁匠铺逐级灯模 / 光源同步、距离淡出关闭、实体支撑、阴影 / 雾 / 零玩法节点；P8AR2 脚本用于最大拉远及三处三级对照 QA 图 |
 | `scripts/presentation/props/FormalNoticeBoardArtView.gd`、`scenes/props/NoticeBoard.tscn`、`scripts/world/NoticeBoard.gd` | T0132-P6 主厅门旁正式公告牌：Quaternius 同源木 / 瓦 / 石 PBR 的双柱遮雨告示架、三张纸页 / 钉 / 封蜡 / 徽记；FormalStationLayout 与旧兼容地图共用模型，保留独立 Area 点击、短预览及 NoticeBoardPanel 入口，不进入 BuildingSystem |
 | `tools/verify_t0132_p6_formal_notice_board.gd`、`tools/capture_t0132_p6_formal_notice_board.gd` | 锁定正式主厅前左侧位置、门 / 道路净空、模型细节、零实体导航阻挡、非建筑边界、真实点击开面板，并输出主厅关系 / 公告牌近景 D3D12 画面 |
@@ -28,7 +650,7 @@
 | `tools/verify_t0132_p2_warehouse_building_slice.gd` | 锁定仓库封闭贴图体量、12 个立面模块、唯一完整主屋顶且禁止重复屋脊模块、14×14 m 包络、`5→6→7` fixture / 碰撞、零工位、常显屋顶、轻重损伤 / 修复、镜头点击及 BuildingSystem / ResourceSystem 权威不变 |
 | `scripts/presentation/buildings/FormalMainHallArtView.gd` | T0132-P1/P1R3/P1R4/P1R5 主厅六级正式表现：24×20 m 中央指挥厅，封闭 PBR 实体、连续承重屋面 / 女儿墙 / 垛口、50 个原生墙门模块和不侵占四角平台的紧凑瓦顶；Lv.2 正面不再有挡窗短柱，Lv.4 使用屋脊守备旗，Lv.6 门楼基座改用贴图石材，逐级投影保持 presentation-only |
 | `tools/verify_t0132_p1_main_hall_building_slice.gd` | 锁定主厅六级层、器械容量、fixture / 碰撞累计、22×18 m 包络、不透明屋顶、受损 / 修复、镜头点击及 BuildingSystem 权威不变；P1R3 额外验证封闭贴图体量、四个 3.6×3.6 m 平台上方无遮挡、运行态槽位与平台世界锚点一致，并真实部署一座 Lv.1 箭塔 |
-| `scripts/presentation/buildings/FormalStableArtView.gd` | T0131-P9 正式马厩：16×16 m 地块内的露天马院、中央牵马通道、低石基木围栏、宽自动低门、开放马栏与饲喂 / 鞍具 / 修蹄 / 恢复背景；逐级投影 `7→8→9` fixture、`23→24→27` 碰撞、`2→2→3` 照料位和 `7→7→8` 马锚，并只读显示 HorseSystem 的真实在厩马，presentation-only |
+| `scripts/presentation/buildings/FormalStableArtView.gd` | T0131-P9/T0138 正式马厩：16×16 m 露天马院及逐级 fixture / 碰撞 / 照料位 / 马锚；只读显示 HorseSystem 的真实在厩马，并按权威世界位置投影会合 / 返厩中的马，骑乘 / 阵亡时隐藏，presentation-only |
 | `tools/verify_t0131_p9_stable_building_slice.gd` | 锁定马厩等级容量、fixture / 碰撞、八个马锚、逐锚点完整马体顶棚覆盖、真实马匹映射、16×16 m 地块、中央通道、宽自动低门、露天选择优先、遮棚透明与 BuildingSystem 权威不变 |
 | `scripts/presentation/buildings/FormalTrainingGroundArtView.gd` | T0131-P8 正式训练场：16×18 m 地块内的露天夯土军训院、低石基木栅、自动低训练门、教官遮棚及维护 / 饮水 / 盾墙 / 挡箭网 / 护具背景；逐级投影 `1+2→1+3→2+4` 权威位置和 `6→8→10` fixture / 碰撞，棚顶 70→58 m 渐隐，开放 NPC 点击优先，presentation-only |
 | `tools/verify_t0131_p8_training_ground_building_slice.gd` | 锁定训练场 `6→8→10` fixture / 碰撞、`1+2→1+3→2+4` 容量、六块 3×3 m 动作净空、等级增量绑定、16×18 m 地块、低矮自动门、露天选择优先与三组棚顶透明 |
@@ -36,9 +658,9 @@
 | `tools/verify_t0131_p7_garden_building_slice.gd` | 锁定菜园 `6→8→9` fixture、`10→12→15` 碰撞部件、`2→2→3` 耕作位、第三地块语义绑定、14×14 m 包络、低矮自动园门、露天选择优先与棚顶透明 |
 | `scripts/presentation/buildings/FormalTavernArtView.gd` | T0131-P6/P6R 正式酒窖：约 12×10 m 半石砌发酵作坊、深酒红低坡屋顶、桶箍葡萄藤徽记与瓶装 / 清洗 / 制桶背景；装饰储藏桶 `6→11→14`，Lv.2 增熟成冷却 / 管线但不扩容，Lv.3 才同步第三发酵位与装卸扩充；70→58 m 全外壳渐隐及自动门，presentation-only |
 | `tools/verify_t0131_p6_tavern_building_slice.gd` | 锁定酒窖 `4→5→6` fixture、`2→2→3` 酿酒位、装饰桶 `6→11→14`、非库存元数据、地块包络、第三工位语义绑定、自动门、升级透明与空地点击回退 |
-| `scripts/ui/NPCPortraitViewport.gd`、`scripts/ui/NPCPanel.gd` | T0134-P1/P1R/P1R2 NPCPanel 左上实时人物框：共享 Main World3D 的独立副镜头，只读跟随真实 NPC 正面 / 动作；与面板同步启停，收至信息列约 52% 高、190–210 px 宽并采用 3.9 m / 40° 全身构图；正常状态无标题或地点冗余文字 |
+| `scripts/ui/NPCPortraitViewport.gd`、`scripts/ui/NPCPanel.gd` | T0134-P1/P1R/P1R2/P1R3 NPCPanel 左上实时人物框：共享 Main World3D 的独立副镜头，只读跟随真实 NPC 正面 / 动作；与面板同步启停，收至信息列约 52% 高、190–210 px 宽并采用 3.9 m / 40° 全身构图；正常状态无标题或地点冗余文字；排除主镜头渐隐建筑壳层并只看人物框不透明壳层 |
 | `scripts/npc/NPC.gd`、`scripts/systems/NPCSystem.gd`、`scripts/presentation/characters/ChibiCharacterPilot.gd`、`scripts/presentation/characters/NPCArtView.gd` | 为实时人物框提供窄只读实体快照、中文地点补全和两类表现包装的实际可见 forward；T0130-P5/P7R 把 `sleeping_supine / lying_supine / seated_study` 只读投影给支持姿态动画的 Chibi 包装，旧包装保留卧姿父级旋转；不修改 NPC 权威状态 |
-| `tools/verify_t0134_p1_npc_portrait_view.gd` | 验证同一 World3D / 同一 NPC 实体、正面全身镜头、目标切换、停渲染、1280×720 / 1920×1080 布局、主镜头与 profile 零修改 |
+| `tools/verify_t0134_p1_npc_portrait_view.gd` | 验证同一 World3D / 同一 NPC 实体、正面全身镜头、目标切换、停渲染、1280×720 / 1920×1080 布局、两台相机建筑壳层互斥、渐隐建筑的不透明人物框副本，以及主镜头与 profile 零修改 |
 | `docs/SCENE_SPACE_AND_VISUAL_PLAN.md` | T0129A 起长期维护的画面与空间规格源；T0135-P0R 已补充城内七层地表、有机广场、自然地形 / 可见美术 / 物理边界分层、右侧 `X[120,350+]` 三层山脉、河槽、敌军林下显现、分块散布与连续日月轨道合同 |
 | `docs/ART_DIRECTION.md` | 统一低模风格、镜头距离屋顶透明、建筑 / 角色 / 动画 / 战斗 / UI 最低标准；T0135-P0R 冻结自然场景混合管线、分区资源语言、固定季节的太阳 / 月亮东升西落和低配灯光基线 |
 | `docs/ART_PIPELINE.md` | Quaternius 资产来源、免费版先行、许可审计、源文件隔离、GLB 导入、命名、建筑 / 角色包装合同和逐步执行入口 |
@@ -63,7 +685,7 @@
 | `tools/verify_t0130_p0_48_enemy_performance.gd` | 实例化 48 名剑盾试片，验证共享 AnimationLibrary、状态切换、初始化 / 180 帧 CPU 观测与静态内存增量 |
 | `tools/verify_t0130_p0_main_preview.gd` | 加载完整 Main，验证 presentation-only 试片启停、正式根层级、GM 按钮、双角色 ready、关闭清理与 NPC 权威集合不变；可选 D3D12 截图 |
 | `scripts/presentation/buildings/BuildingAutoDoor.gd` | T0131-P1D/P7 可复用双扇门 / 低园门：监测碰撞层 2 的真实 CharacterBody 接近，平滑开启、清空延迟关闭；`leaf_visual_height` 允许低矮门叶而保持净通行合同，无阻挡碰撞，不写地点 / 工位 / 行动 / 导航权威 |
-| `scripts/presentation/buildings/FormalBlacksmithArtView.gd` | T0129/T0131/T0135-P8AR3 正式地图铁匠铺：14×12 m 冷色低坡主体现为后炉砌体＋前侧通风棚；炉口 / 烟罩 / 烟道 / 烟囱同轴朝工作区，三级丰富度与 `2→3→4` 实体灯；附属棚收在 16×16 m 地块内，吊装梁走屋顶透明链，正门保持 2.08 m 净口自动双扇门 |
+| `scripts/presentation/buildings/FormalBlacksmithArtView.gd` | T0129/T0131/T0135-P8AR3/P8AR7/P8AR8 正式地图铁匠铺：14×12 m 后炉砌体＋全敞开四柱正面锻造区，冷灰蓝平顶、同轴炉口 / 烟道 / 烟囱、三级丰富度与 `2→3→4` 实体灯；附属棚收在 16×16 m 地块内，吊装梁走屋顶透明链，正面不再设置墙、门或专属门框 |
 | `tools/verify_t0129_blacksmith_art_slice.gd` | 只验正式铁匠铺的 footprint、三级 2→2→3 工位 / 资产增量、烟道、两侧附属棚地块边界与主屋面净空、升级梁架近 / 远透明、NPC / 建筑点击优先级、正式碰撞 / 导航、格伦 / 敌人反馈和临时 UI 主题 |
 | `scripts/presentation/buildings/FormalWorkshopArtView.gd` | T0131-P1/P1R/P1D 正式工械坊：12×12 m Quaternius 外壳 / 低坡冷色屋顶 / 丰富室内工程杂物、Lv.2 收料吊臂、Lv.3 西侧有顶装配湾、3→6→7 fixture 视觉与碰撞、2→2→3 权威工位投影、升级梁架透明及 2.08 m 净口自动双扇门 |
 | `scripts/presentation/buildings/FormalChapelArtView.gd` | T0131-P2R3 正式小教堂：12×12 m 暖灰石中殿、31° 主厅同款 `#65717a` 冷灰蓝板岩顶、山墙 / 尖拱门 / 圆窗 / 侧墙狭窗 / 圣坛端；主屋面十四根横向拼缝贴合坡面，Lv.2 恢复五根短金色屋脊饰杆并保留钟塔 / 彩窗 / 扶壁 / 礼仪陈设；70→58 m 外壳渐隐及 2.08 m 净口自动门；只投影表现，不拥有容量或礼拜结算 |
@@ -75,7 +697,7 @@
 | `scripts/presentation/buildings/FormalDormitoryArtView.gd` | T0131-P5 正式宿舍：约 14×13 m 暖灰泥 / 深木五段集体长屋、深酒红低坡屋顶、五个通风帽及月牙枕头徽记；沿十张固定床布置个人脚箱 / 挂衣 / 布草 / 洗漱 / 夜灯，Lv.2 增加壁炉烟道、保温、修补与备柴但不增加床位；70→58 m 全外壳渐隐及 2.08 m 自动门，presentation-only |
 | `tools/verify_t0131_p5_dormitory_building_slice.gd` | 覆盖宿舍两级固定 10 床 / 8 归属 / 2 未来预留、fixture 与碰撞恒定、职业轮廓和升级增量、装饰—床体零相交、16×14 m 地块、壁炉烟道对齐、透明点击及艾达触发自动门 |
 | `tools/verify_t0131_p1_workshop_building_slice.gd` | 覆盖工械坊三级外壳 / fixture / 碰撞、BuildingSystem 等级信号、正式路线、屋顶 + 墙体 + 升级梁架透明、主 / 附属屋面净空、14×14 m 地块边界、欧文点击优先和权威边界 |
-| `tools/verify_t0131_p1d_building_auto_doors.gd` | 以格伦 / 欧文真实 CharacterBody 验证铁匠铺与工械坊门洞净宽高、中央零立柱、接近开门、开启后中心净空、离开关门及铁匠铺吊灯—主屋面 AABB 净空 |
+| `tools/verify_t0131_p1d_building_auto_doors.gd` | 验证铁匠铺全敞开正面零门 / 零前墙碰撞且保留四柱，并以欧文真实 CharacterBody 继续验证工械坊门洞净宽高、接近开门、开启后中心净空、离开关门；铁匠铺吊灯—主屋面 AABB 净空继续覆盖 |
 | `tools/capture_t0129_blacksmith_visuals.gd` | D3D12 实机逐级抓取正式铁匠铺 Lv.1–3 远景完整外壳与近景透明室内至 `artifacts/visual_qa/` |
 | `tools/verify_t0129a_station_spatial_sandbox.gd` | 交叉读取空间配置、建筑 / 器械 / 波次权威数据，验证地形、12 地块、80 个最高等级占地、21:9 四角、48 人混编物理包络全路线、长逃离五轮窗口和地图边缘完成合同 |
 | `assets/3d/quaternius/` | 截至 A3b12R 已筛选 54 GLB + 75 外置 PNG；含建筑 / 角色 / 动画基线、逐建筑家具样板、主厅组合，以及仓库木网格墙 / 坡屋顶 / 货运车 / 分类储藏道具，GLB / PNG 使用 Git LFS，贴图上限 2K |
@@ -85,8 +707,15 @@
 | `scenes/art/StationSpatialSandbox.tscn` | T0129A v0.9 独立全站空间灰盒；在 v0.7 地形 / 地块 / 容量基础上接入 48 敌混编行军与长逃离压力体，不接入 Main 或权威系统 |
 | `scenes/buildings/BuildingArtView.tscn` | Exterior / Roof / Interior / Upgrade / Marker / Trigger / Navigation / Collision / Click / VFX 合同；T0129 补齐炉膛、风箱、工具 / 材料、三级升级增量和三工位门槛，并按用户反馈采用低坡冷灰蓝屋顶、灰紫主体及越过屋脊的炉膛烟囱；NavigationRegion3D 现有室内 + 门口漏斗 NavMesh |
 | `scenes/characters/GlenArtView.tscn` | 首个正式 NPC 外观：Quaternius 基础体 / 农民服 / 短发 / UAL2 rig、180°源朝向修正、AnimationTree、六挂点、低模锤子、血粒子与受控倒地接口；同时作为一名敌人样片基体 |
-| `scenes/characters/GlenChibiPilot.tscn`、`EnemySwordShieldChibiPilot.tscn`、`GlenChibiArtView.tscn`、`TomaChibiArtView.tscn`、`BrunoChibiArtView.tscn`、`IvoChibiArtView.tscn`、`MarcelChibiArtView.tscn`、`AdaChibiArtView.tscn`、`LinaChibiArtView.tscn`、`OwenChibiArtView.tscn`、`EnemySwordShieldChibiArtView.tscn`、`scripts/presentation/characters/ChibiCharacterPilot.gd` | T0130-P0–P8 两头身角色家族：Synty 可见模型、KayKit 隐藏驱动骨架、Godot 4.6 人形实时重定向、共享动画库、18 状态与六挂点；8 名初始 NPC 分别配置锤击、照料、烹饪、耕作、酿酒 / 弥撒、权威剑盾 / 格挡执教、诊所研读 / 巡床 / 治疗，以及工械装配 / 外沿修复 / 升级，步行剑盾敌人同样接入。作者 `_A` Albedo / 顶点色脸、父级碰撞和 P1R 可见层 180° 源轴修正保持不变 |
+| `scenes/characters/GlenChibiPilot.tscn`、`EnemySwordShieldChibiPilot.tscn`、`GlenChibiArtView.tscn`、`TomaChibiArtView.tscn`、`BrunoChibiArtView.tscn`、`IvoChibiArtView.tscn`、`MarcelChibiArtView.tscn`、`AdaChibiArtView.tscn`、`LinaChibiArtView.tscn`、`OwenChibiArtView.tscn`、`EnemySwordShieldChibiArtView.tscn`、`scripts/presentation/characters/ChibiCharacterPilot.gd` | T0130-P0–P8/D1R7/P1R2/P1R4 两头身角色家族：Synty 可见模型、KayKit 隐藏驱动骨架、Godot 4.6 人形实时重定向、共享动画库、18 状态与六挂点；8 名初始 NPC 分别配置职业与战斗表现，步行剑盾敌人同样接入。D1R7 统一校准剑盾握持；P1R2 将格伦非打铁锤改为髋部横挂，P1R4 依据真实网格分区把工作握点移到木柄后段并锁定手后柄尾与锤头分离。开发 / 正式包装不复制 Transform；作者材质、父级碰撞和 P1R 可见层 180° 源轴修正保持不变 |
 | `scenes/art/ChibiCharacterSandbox.tscn`、`scripts/presentation/ChibiCharacterSandbox.gd` | T0130-P0/P2–P8 八组动作自动轮播与按键切换沙盒，现并排显示 8 名初始 NPC 和剑盾敌人；第 4 / 6 组检查各职业工作与生活 / 治疗 / 训练，支持指定动作相位、艾达 / 伊沃原生脸、马塞尔头型、莉娜与欧文单人近景截图；不连接权威系统 |
+| `project.godot`、`scenes/debug/NPCDevLab.tscn`、`scripts/debug/NPCDevLab.gd`、`scripts/ui/EquipmentSilhouette.gd`、`data/presentation/npc_dev_lab.json` | T0130-D1/D1R/D1R4/D1R6/D1R8/D1R9/T0139-D1/D2 单角色开发检视场景：配置驱动选择 8 名 NPC 与全部去重敌种，以跨角色共享的工作 / 战斗模式和六槽临时装配预览装备、坐骑并支持拖转；装配自动进入战斗，敌军固定战斗。敌方骑兵 / 骑射兵复用 Main 的 `EnemyMountedArtView`；我方装马后可以正式 `combat_mounted → unconscious` 边沿重复检查 `mounted_fall / Death_A`。全部状态为场景本地，不写正式库存、朝向、伤害或玩法权威 |
+| `scripts/presentation/characters/EnemyMountedArtView.gd` | T0139 正式敌方骑兵表现包装：组合正式 Synty 骑手与 Quaternius 马匹，投影骑乘移动 / 攻击；敌方马无独立 HP，骑手阵亡时保留 `Death_A` 坠亡并让马以 `18 m/s` 逃向地图外后释放。Main 与 NPCDevLab 共用同一脚本 |
+| `tools/verify_t0130_d1_npc_dev_lab.gd` | T0130-D1/D1R/D1R4/D1R8/D1R9/T0139-D1 回归：覆盖友敌目录、共享模式 / 六槽装卸、动作切换、剑盾 / 友方临时坐骑、敌军战斗锁定、拖转与坐姿，并锁定敌方骑兵改用正式包装、无马 HP 和专属坠亡逃马入口 |
+| `tools/verify_npc_dev_lab_enemy_mounted_acceptance.gd` | T0139-D1 专项：覆盖骑兵与骑射兵的正式包装、待机 / 移动 / 攻击 / 受击、Death_A 坠亡与逃马同步、24 m 离场释放、点击动作重新生成，以及普通敌军隔离 |
+| `tools/verify_npc_dev_lab_friendly_mounted_fall.gd` | T0139-D2 专项：覆盖我方坐骑前置、正式 `mounted_fall / Death_A` 边沿、中段侧向离鞍、马匹 Gallop 参照、重播 / 切换重置和敌方隔离 |
+| `tools/verify_enemy_mounted_defeat_escape.gd` | T0139 Main 专项：锁定敌方伤害只扣单位 HP、骑兵阵亡立即退出权威战斗、骑手坠亡和无 HP 马匹向前门外边界逃离并释放、普通敌军隔离与骑射兵包装合同 |
+| `tools/verify_t0130_d1r2_sword_shield_alignment.gd` | T0130-D1R7 剑盾几何专项：覆盖开发预览、艾达、欧文与剑盾敌军共用左右手挂点、局部 Transform、剑柄 / 剑尖距离、盾面朝向、手部在盾背后的有符号净空、横向漂移、竖直轴及攻击状态不漂移 |
 | `scenes/characters/TomaArtView.tscn` | A5-P5a 的 Quaternius / UAL2 托马历史回退外观；P2 后生产映射已切换 `TomaChibiArtView.tscn`，本场景保留兼容而不再是当前托马外观 |
 | `scenes/characters/BrunoArtView.tscn` | A5-P5d 的 Quaternius / UAL2 布鲁诺历史回退外观；P3 后生产映射已切换 `BrunoChibiArtView.tscn`，本场景保留兼容而不再是当前布鲁诺外观 |
 | `scenes/characters/IvoArtView.tscn` | A5-P5e 的 Quaternius / UAL2 伊沃历史回退外观；P4 后生产映射已切换 `IvoChibiArtView.tscn`，本场景保留兼容而不再是当前伊沃外观 |
@@ -117,8 +746,8 @@
 | `data/presentation/art_scale_baseline.json` | 单位、朝向、人形 / 建筑 / 门尺度、贴图过滤、阴影、色板、继承与沙盒性能软上限；不保存权威玩法结算 |
 | `data/presentation/character_appearances.json` | NPC ID 到正式外观场景的表现映射；8 名初始 NPC 已全部使用各自 Synty 两头身生产包装；不保存 NPC 状态或装备事实 |
 | `data/presentation/station_spatial_plan.json` | T0129A `station_spatial_plan_v7` 米制目标配置：保留 v6 地形 / 12 地块 / 80 占地 / 21:9 合同，并新增第五波 48 人队形、13 节点敌路与 6 点逃离节奏配置；目前只供独立灰盒与校验读取 |
-| `data/station_layout.json` | T0129B/C `station_layout_v2` 正式空间合同；A5-P7 已设为 `formal_layout_active=true`，登记 12 建筑、61 工位、2 个非交互服务附属物、三块导航区域、十阶段敌路、5 点商路、6 点逃离路和默认总切换权威边界；远端偏移只隔离旧开发兼容根，不再表示 staging 未启用 |
-| `tools/verify_t0129c_a4_p1_formal_enemy_navigation.gd` | 验证外围导航带不改变核心 788 / 754 网格、敌人胶囊 / 分层、spawn→front_gate 五阶段实体到达、avoidance、零活动波次提交、正门 HP 不变与停止清理 |
+| `data/station_layout.json` | T0129B/C `station_layout_v2` 正式空间合同；A5-P7 已设为 `formal_layout_active=true`，登记 12 建筑、61 工位、2 个非交互服务附属物、站内外共享生产 NavMesh、独立后门逃离区域、十阶段敌路、5 点商路、6 点逃离路和默认总切换权威边界；P6R3 后正式根位于世界原点，旧 `(1000,0,0)` 偏移仅供无 `world_origin` 的旧空间存档迁移 |
+| `tools/verify_t0129c_a4_p1_formal_enemy_navigation.gd` | 验证开放城外生产 NavMesh、道路零导航权威、敌人胶囊 / 分层、spawn→front_gate 五阶段实体到达、avoidance、零活动波次提交、正门 HP 不变与停止清理 |
 | `tools/verify_t0129c_a4_p2_formal_active_enemy_front_gate.gd` | 保留 P2 边界回归：一名真实活动敌人抵门前零攻击、抵门后既有 4 点伤害与事件，以及清敌 / 死亡节点清理 |
 | `tools/verify_t0129c_a4_p3_formal_active_enemy_warehouse.gd` | 保留 P3 边界回归：验证破门后九阶段实体路线、门洞链接、到仓前零伤害、到仓后 `150 -> 146` 与停止清理 |
 | `tools/verify_t0129c_a4_p4_formal_active_enemy_main_hall.gd` | 验证十阶段实体路线、仓毁后到主厅前零伤害、首次 `180 -> 176`、最终 `failure / main_hall_destroyed` 与停止清理 |
@@ -142,8 +771,8 @@
 | `assets/3d/quaternius/animals/merchant_horse.glb` | Quaternius Ultimate Animated Animal Pack 的 CC0 马匹 glTF 打包件，供行商马车运行时实例化及 Walk / Idle 动画 |
 | `assets/2d/ui/merchant_trade_marker.svg` | A5-P4a-R 小型羊皮纸钱袋交易牌；Sprite3D billboard，仅表达可交易状态，不拥有交易权威 |
 | `scripts/debug/ActorMotionSandbox.gd`、`scenes/debug/ActorMotionSandbox.tscn` | 5 实体独立运动沙盒；并行覆盖静态绕障、2.4 m 对向会车、暂停恢复、物理阻挡卡死和 NavMesh 外不可达，不挂入 Main |
-| `scripts/presentation/buildings/RoofVisibilityController.gd` | 唯一相机距离采样、全局归一化与 BuildingArtView 注册 / 广播 / 只读快照 |
-| `scripts/presentation/buildings/BuildingArtView.gd`、`SmithyAmbientFX.gd` | scene-local 主屋顶 / 升级结构 / 外墙渐隐、internal shadows-only 持久阴影、交互包围体和真实等级投影；铁匠铺火焰 / 炉光 / 烟 / 火星 / 风箱只随真实占用＋打铁动作启停，阴影代理与炉火均 presentation-only |
+| `scripts/presentation/buildings/RoofVisibilityController.gd` | 唯一相机距离采样、全局归一化与 BuildingArtView 注册 / 广播 / 只读快照；T0134-P1R3 同步配置主镜头只看渐隐建筑壳层 19、排除人物框不透明壳层 18 |
+| `scripts/presentation/buildings/BuildingArtView.gd`、`SmithyAmbientFX.gd` | scene-local 主屋顶 / 升级结构 / 外墙渐隐、internal shadows-only 持久阴影、T0134-P1R3 internal 人物框不透明壳、交互包围体和真实等级投影；铁匠铺火焰 / 炉光 / 烟 / 火星 / 风箱只随真实占用＋打铁动作启停，所有副本与炉火均 presentation-only |
 | `scripts/presentation/characters/NPCArtView.gd` | 骨骼重绑、本地循环 AnimationLibrary、15 状态、六挂点、锤子、朝向 / 暂停、血粒子、受击回弹及带冲量受控倒地；训练示范 / 练习、站立主持、长凳坐姿祈祷与座椅坐姿进食均为只读循环，不产生伤害、事件、虔诚、资源或需要值事实；快照只供诊断，presentation-only |
 | `scripts/presentation/characters/ChibiCharacterPilotPreviewController.gd` | Main 中只读启停 T0130 P0 双角色历史预览；临时根固定在 FormalStationLayout，关闭整根释放，不改变 NPC / Combat 权威集合；独立动作沙盒在 P7 已扩为格伦 / 托马 / 布鲁诺 / 伊沃 / 马塞尔 / 艾达 / 莉娜 / 剑盾八角色 |
 | `scenes/characters/OwenArtView.tscn`、`scenes/characters/BrunoArtView.tscn`、`scenes/characters/IvoArtView.tscn`、`scenes/characters/MarcelArtView.tscn`、`scenes/characters/LinaArtView.tscn`、`scenes/characters/AdaArtView.tscn` | A5-P5c–P5h 建立的 6 名 Quaternius / UAL2 历史职业包装；T0130-P8 后均不再是生产映射，只保留兼容回退。所有包装只读 NPC 状态 |
@@ -166,13 +795,13 @@
 | `tools/verify_t0129c_a5_p6d1_formal_repair_assist.gd` | A5-P6d-1 专项：穷尽 15 类修复目标外沿槽，验证多人独立槽、暂停零移动、途中零 helper / 倍率 / 事件、实际到位单次提交，以及完成 / 目标途中消失后的统一清理 |
 | `tools/verify_t0129c_a5_p6d2_formal_upgrade_assist.gd` | A5-P6d-2 专项：穷尽 15 类升级施工目标外沿槽，验证多人独立槽、暂停零移动、途中零 helper / 倍率 / 事件、升级进度广播不打断合法路线、实际到位单次提交，以及完成 / 目标途中升级结束后的统一清理 |
 | `tools/verify_t0129c_a5_p6d3_formal_heal_assist.gd` | A5-P6d-3 专项：验证昏迷目标正式投影、两名治疗者独立接近位、第三人途中拒绝、暂停零移动、抵达前零首付 / helper / HP / 经验 / 事件、合法距离原子提交，以及复苏和途中目标复苏后的统一清理 |
-| `tools/verify_t0130_p1_formal_character_integration.gd` | T0130-P1/P1R 专项：验证正式格伦映射、真实工位循环锤击与面向铁砧、父级碰撞保留、第一波 8 个正式剑盾两头身实体、移动动画与动态可见朝向、无重复选择体和 GM 入口 |
+| `tools/verify_t0130_p1_formal_character_integration.gd` | T0130-P1/P1R/P1R2/P1R4 专项：验证正式格伦映射、待机锤髋部横挂及锤头朝前、真实工位切回右手后多个 Hammering 相位的后段锤柄握点、柄尾长度与锤头最小分离、循环锤击与面向铁砧、父级碰撞保留、第一波 8 个正式剑盾两头身实体、移动动画与动态可见朝向、无重复选择体和 GM 入口 |
 | `tools/verify_t0130_p2_toma_character_integration.gd` | T0130-P2 专项：验证托马独立模型 / 土色轮廓、父级碰撞、真实马厩路线 / 面向 / 工位、`Working_B` 周期回卷、照料工具时机、交谈、驾车坐姿预留、昏迷 / 起身和 GM 入口 |
 | `tools/verify_t0130_p3_bruno_character_integration.gd` | T0130-P3 专项：验证布鲁诺独立 ShopKeeper 厨师轮廓、父级碰撞、真实食堂灶台路线 / 面向 / 占用、`Working_C` 周期回卷、厨具时机、真实就座进食、交谈、昏迷 / 起身和 GM 入口 |
 | `tools/verify_t0130_p4_ivo_character_integration.gd` | T0130-P4/P4R/P4R2 专项：验证伊沃 Deckhand 作者 BaseMaterial、`_01_A + vertex_color_use_as_albedo` 原生脸、父级碰撞、真实菜园路线 / 面向 / 占用、`Digging` 周期回卷、园锄显隐、全周期锄刃前向距离 / 双手握持覆盖率、真实小教堂祈祷席、交谈、昏迷 / 起身和 GM 入口 |
 | `tools/verify_t0130_p5_ada_character_integration.gd` | T0130-P5/P5R2 专项：验证艾达 ShieldMaiden 轻装老兵轮廓、`Blue_A + vertex_color_use_as_albedo` 原生脸、零程序化面部节点、父级碰撞、权威剑盾换装显隐、真实训练格挡循环、固定床 `sleeping_supine -> Lie_Idle`、交谈 / 攻击、昏迷 / 起身和既有 GM 入口 |
 | `tools/verify_t0130_p5r3_ada_profile_sync.gd` | T0130-P5R3 专项：验证艾达玩家档案外貌与当前 ShieldMaiden 模型一致，并通过共享 `NPCPromptProfile` 原样进入 `npc_setting.appearance`；不调用模型或改变行为规则 |
-| `tools/verify_t0130_p6_marcel_character_integration.gd` | T0130-P6/P6R 专项：验证马塞尔 Wizard 长袍基础的分离尖帽拓扑移除、`Purple_A + vertex_color_use_as_albedo` 作者材质、Body 木质圣徽、Head 灰白圆冠及其零碰撞、行走 / 交谈 / 酿酒 / 弥撒 / 坐席祷告、受击 / 昏迷 / 复苏、父级碰撞和零重复选择体；正式酒窖与礼拜另由既有专项验证实体到位后才 active |
+| `tools/verify_t0130_p6_marcel_character_integration.gd` | T0130-P6/P6R/P6R2 专项：验证马塞尔 Wizard 长袍基础的分离尖帽拓扑移除、`Purple_A + vertex_color_use_as_albedo` 作者材质、Body 木质圣徽的竖直 / 朝外 Transform、Head 灰白圆冠及其零碰撞、行走 / 交谈 / 酿酒 / 弥撒 / 坐席祷告、受击 / 昏迷 / 复苏、父级碰撞和零重复选择体；正式酒窖与礼拜另由既有专项验证实体到位后才 active |
 | `tools/verify_t0130_p7_lina_character_integration.gd` | T0130-P7 专项：验证莉娜 GovDaughter 作者材质 / 原生脸、低饱和 `Blue_A`、父级碰撞、零重复选择体、Body 药包、诊所病历册、治疗绷带、共享状态、循环动作及受击 / 昏迷 / 复苏；正式诊所巡床与昏迷目标接近另由专项验证到位后才 active |
 | `tools/verify_t0130_p7r_clinic_rounds.gd` | T0130-P7R/P7R2/P7R3 专项：验证四张病床正确卧姿、无病人坐桌、双病人真实占床、左右床侧均以 `0.79 + 0.35 + 0.08 m` 形成无重叠治疗位、治疗时保留 Body / Interaction 碰撞、换床、300 游戏秒轮换及回椅 |
 | `tools/verify_t0130_p8_owen_character_integration.gd` | T0130-P8 专项：验证欧文 Firstmate 作者材质 / 原生脸、护目镜 / 工具带 / 扳手骨挂点、父级碰撞、职业动作、真实剑盾装备同步、受击 / 昏迷 / 复苏与档案外貌投影；正式工械坊、修复和升级另由 P5c / P6d1 / P6d2 锁定到位前后表现边界 |
@@ -275,15 +904,15 @@
 
 | 文件 | 当前职责 |
 |---|---|
-| `data/piety_ability.json` | 虔诚上限 / 祈祷产率、合法地面边界、陨石半径 / 时序 / 冲击与燃烧数值的唯一配置源 |
-| `scripts/systems/PietySystem.gd` | 共享虔诚累计与消耗、选点校验、陨石 / 燃烧时序、表现生命周期、事件及调试快照 |
+| `data/piety_ability.json` | 虔诚上限 / 祈祷产率、水平地面高度、陨石半径 / 时序 / 冲击与燃烧数值的唯一配置源 |
+| `scripts/systems/PietySystem.gd` | 共享虔诚累计与消耗、选点校验、现实时间陨石下落、逻辑时间燃烧、表现生命周期，以及仅在落地后生成影响 / 条件式击杀事件和调试快照 |
 | `scripts/systems/ActionSystem.gd`、`scripts/core/EventBus.gd` | 按 active 祈祷的实际有效逻辑秒提交产出；发布虔诚变化、施放与落地信号 |
 | `scripts/systems/CombatSystem.gd` | `apply_enemy_area_damage(...)` 只枚举活动敌人并复用既有防御、死亡和清敌结算 |
-| `scripts/ui/PietyAbilityButton.gd`、`scripts/ui/HUD.gd` | 左上圆形蓄能 / 满值发亮，以及地面范围预览、确认与取消交互 |
+| `scripts/ui/PietyAbilityButton.gd`、`scripts/ui/HUD.gd` | 左上十字架圆形蓄能 / 满值发亮，以及地面范围预览、确认与取消交互 |
 | `scenes/main/Main.tscn` | 注册 PietySystem 与世界 `Effects` 容器，保持结算系统先于 HUD 初始化 |
-| `scripts/systems/MemorySystem.gd` | 为 `piety_meteor_cast / piety_meteor_impact` 生成确定性公开事件摘要 |
+| `scripts/systems/MemorySystem.gd` | 为 `piety_meteor_impact / piety_meteor_enemy_defeated` 生成正式流程摘要并将其作为全站公开例外传播；旧 `piety_meteor_cast` 仅兼容历史数据 |
 | `scripts/ui/GMPanel.gd`、`docs/GM_PANEL.md` | 填满虔诚、读取快照和按战斗动作秒推进陨石的观察入口 |
-| `tools/verify_piety_meteor_ability.gd` | 覆盖产率、暂停 / 封顶、HUD、选点、敌人范围伤害、三类友方零伤害、燃烧和清敌 |
+| `tools/verify_piety_meteor_ability.gd` | 覆盖产率、暂停 / 封顶、十字架 HUD、选点、落地时序、全站见闻、条件式击杀事件、敌人范围伤害、三类友方零伤害、燃烧和清敌 |
 
 ## T0108 / T0109 稳定知识与 LLM 线程生命周期索引
 
@@ -916,9 +1545,9 @@
 | 路径 | 职责 |
 |---|---|
 | `scripts/ui/BuildingPanel.gd` | 按建筑缓存稳定自然高度，在容器排版后再应用修复 / 升级内容尺寸 |
-| `scripts/camera/CameraRig.gd` | 事件式跟踪 WASD 与 Shift，支持 Shift+WASD 2 倍速；按键释放、文本焦点或窗口失焦时清理平移 / 加速 / 拖拽状态 |
+| `scripts/camera/CameraRig.gd` | 事件式跟踪 WASD 与 Shift；基础 `28 m/s`、Shift+WASD `56 m/s`；按键释放、文本焦点或窗口失焦时清理平移 / 加速 / 拖拽状态 |
 | `scripts/systems/NPCSystem.gd`、`scripts/systems/MemorySystem.gd` | 保持技能点权威结算，把属性成长事件改为 NPC 锻炼体力 / 脑力叙事 |
-| `tools/verify_camera_rig_input.gd` | 覆盖 WASD 按下 / 释放、Shift 2 倍速、窗口失焦、中键取消和文本输入焦点 |
+| `tools/verify_camera_rig_input.gd` | 覆盖 WASD `28 m/s`、Shift `56 m/s`、精确 1:2、按键释放、窗口失焦、中键取消和文本输入焦点 |
 | `tools/verify_building_repair_upgrade.gd`、`tools/verify_skill_progression.gd` | 覆盖建筑进度面板无满高闪烁与力量 / 智力精确成长文案 |
 
 ## T0044 对话恢复与对象面板收敛索引（恢复触发已由 T0049 接管）
@@ -1117,7 +1746,7 @@ T0048 历史补充：`remaining_day` 曾从玩家对话专用范围提升为所�
 路径：`res://scenes/main/Main.tscn`
 用途：最小可运行主场景，包含 `WorldRoot/Station/Ground`、`WorldRoot/Station/Buildings`、`WorldRoot/Station/NPCs`、`WorldRoot/Station/Enemies`、`WorldRoot/Station/DefenseDevices`、`WorldRoot/Station/Props`、`Systems/*`、`UI/HUD`、`UI/NPCPanel`、`UI/BuildingPanel`、`UI/DefenseSlotPresenter`、`UI/DialogPanel`、`UI/OrderPanel`、`UI/NoticeBoardPanel`、`UI/MerchantPanel`、`UI/GMPanel`、`CameraRig/Camera3D`、`SunLight`。`Systems` 下已包含 `LLMBridge`、`MerchantSystem`、`CraftingSystem`、`HorseSystem` 与 `DefenseDeviceSystem`。`Buildings` 下已有主厅、宿舍、食堂、仓库、酒窖、菜园、铁匠铺、训练场、马厩、小教堂、小诊所、工械坊、围墙、城门、后门等低模建筑/门墙占位；主厅前 `NoticeBoard` 已有独立点击和公告预览，但不绑定建筑定义、不具备 HP / 等级 / 工作位。`DefenseDevices` 由 presenter 生成已部署器械表现；`DefenseSlotPresenter` 把围墙 / 主厅槽位投影成可点击圆形标记并打开部署卡。其余 HUD、对象面板、公告、交易、GM 与相机结构不变。
 依赖：绑定 `res://scripts/systems/TimeSystem.gd`、`NPCNeedsSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCSystem.gd`、`ActionSystem.gd`、`CraftingSystem.gd`、`HorseSystem.gd`、`MemorySystem.gd`、`MerchantSystem.gd`、`DefenseDeviceSystem.gd`、`CombatSystem.gd`、`EquipmentSystem.gd`、`LLMBridge.gd`、`DialogSystem.gd`、`DailyPlanSystem.gd`、`GameStartupSystem.gd`、`DailyReflectionSystem.gd` 作为系统脚本，绑定 `res://scripts/ui/HUD.gd`、`NoticeBoardPanel.gd`、`MerchantPanel.gd` 和 `GMPanel.gd` 作为 UI 脚本，并给主厅前公告牌绑定 `res://scripts/world/NoticeBoard.gd`、给器械表现容器绑定 `DefenseDevicePresenter.gd`，相机继续使用 `res://scripts/camera/CameraRig.gd`。
-当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0012 后 HUD 主栏按资源定义顺序显示非聚合资源库存，并提供装备/器械详情按钮，详情面板贴近各自按钮左下且夹在屏幕内；T1301 后 HUD 显示下一波倒计时，T1302-T1305 后 HUD 可显示主厅摧毁、无可战斗人员失败、第 5 波胜利和 NPC 结局总结，结局明细使用滚动区；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；T1506 后主厅公告牌可点击输入并显示当前广场公告；T1507 后后门商队每天 10:00-16:00 可买基础资源、卖酒并写入结构化公开事件。低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；T1101 后正门外地面和正门道路已扩大，`WorldRoot/Station/Enemies` 可由 CombatSystem 生成正门外低模敌人占位；T1103 后 HUD 警铃可触发入伍持武器 NPC 前往城门外防线集结，近战 / 骑兵在前、弓弩 / 骑射在后，集结 / 接敌时显示方向标记和坐骑表现；T1105 后已入伍持武器 NPC 可在 NPC 面板选择当前兵种可用战斗策略，T1105A 后战斗内避战够远时保持等待；T1106 后敌人波次开始 / 结束会写入广场公开事件并维护本场受伤、昏迷和击退统计；T1304/T1305 后包含第 5 波的战斗清敌会进入胜利结算，记录资源 / 建筑和 NPC 结局快照并停止继续刷波；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息、建筑状态、精确运作效率，以及按配置顺序逐项列出的具体位置名称与占用情况，并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑、战斗集结世界坐标或策略移动目标，或安排工作、协助修复、协助升级、训练、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉、工作和训练通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。T0035/T0036 后，铁匠铺 / 工械坊按 11 个分阶段配方产出具体 `item_*` 库存，制造工作必须先选目标，一个周期提交一个阶段，建筑面板显示阶段进度并在非零进度切换目标时确认；T0037/T0038/T0056 后，马厩由 HorseSystem 维护两匹初始 60% 刚成年马与后续小马的生态、成长、拆分 HP、累积繁育概率 / 冷却、分配和战时骑乘，NPC 面板只为已入伍且有主武器者提供成年马分配；EquipmentSystem / DefenseDeviceSystem 逐件消费具体库存，四类旧聚合 id 仅兼容保留；T0903 后，训练场可通过教官位和训练位提升当前装备对应的武器熟练度 / 骑术，并让教官提升“教练”；T0904 后，工作 / 诊所 / 训练的熟练度提升同步增加经验、产生未分配技能点；T0015 后 NPC 面板把经验显示在 HP 右侧，并只在有未分配技能点时显示属性旁 `+1`，GM 可把选中 NPC 设为入伍并由玩家分配力量或智力。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现复杂生产平衡、正式工程器械美术或命中/格挡；T1508 部署闭环已完成。
+当前状态：T0403/T0409 已完成地点信息节点与进入快照；T0401 已完成基础 TimeSystem，HUD 时间以 `HH:MM:SS` 推进，速度按钮可切换 `x1` / `x2` / `x4`，暂停按钮和空格可暂停/继续，空格不触发加速；T0012 后 HUD 主栏按资源定义顺序显示非聚合资源库存，并提供装备/器械详情按钮，详情面板贴近各自按钮左下且夹在屏幕内；T1301 后 HUD 显示下一波倒计时，T1302-T1305 后 HUD 可显示主厅摧毁、无可战斗人员失败、第 5 波胜利和 NPC 结局总结，结局明细使用滚动区；T0305 已完成 NPC 工作 / 吃饭 / 睡觉最小行动闭环，并按 `game_design.md` 补齐酒窖、铁匠铺、工械坊、马厩、协助修复和协助升级的最小效果；T1506 后主厅公告牌可点击输入并显示当前广场公告；T1507 后后门商队每天 10:00-16:00 可买基础资源、卖酒并写入结构化公开事件。低模驿站、HUD 信息、建筑调试标签和 NPC 调试标签可见，可用 WASD/鼠标中键/滚轮查看驿站；T1101 后正门外地面和正门道路已扩大，`WorldRoot/Station/Enemies` 可由 CombatSystem 生成正门外低模敌人占位；T1103 后 HUD 警铃可触发入伍持武器 NPC 前往城门外防线集结，步行近战居中在前、步行远程居中在后、骑兵与骑射分列左右翼，集结 / 接敌时显示方向标记和坐骑表现；T1105 后已入伍持武器 NPC 可在 NPC 面板选择当前兵种可用战斗策略，T1105A 后战斗内避战够远时保持等待；T1106 后敌人波次开始 / 结束会写入广场公开事件并维护本场受伤、昏迷和击退统计；T1304/T1305 后包含第 5 波的战斗清敌会进入胜利结算，记录资源 / 建筑和 NPC 结局快照并停止继续刷波；建筑节点运行时具备点击区并可发出 `building_clicked`，右上角建筑面板可显示被点击建筑的基础信息、建筑状态、精确运作效率，以及按配置顺序逐项列出的具体位置名称与占用情况，并触发倒计时修复/升级；NPC 点击可发出 `npc_clicked` 并打开 NPC 面板；可通过调试接口让 NPC 直线移动到指定建筑、战斗集结世界坐标或策略移动目标，或安排工作、协助修复、协助升级、训练、吃饭、睡觉，到达后更新地点 `people_present`、写入只含行动事实的 `location_entered` / `location_exited`，并给进入者写入一次地点快照见闻；室内到室内切换会在事件与地点信息层经由广场，再进入持续行动。吃饭、睡觉、工作和训练通过 `logical_time_tick` 推进，完成后结算资源/状态并写入结构化事件。T0035/T0036 后，铁匠铺 / 工械坊按 11 个分阶段配方产出具体 `item_*` 库存，制造工作必须先选目标，一个周期提交一个阶段，建筑面板显示阶段进度并在非零进度切换目标时确认；T0037/T0038/T0056 后，马厩由 HorseSystem 维护两匹初始 60% 刚成年马与后续小马的生态、成长、拆分 HP、累积繁育概率 / 冷却、分配和战时骑乘，NPC 面板只为已入伍且有主武器者提供成年马分配；EquipmentSystem / DefenseDeviceSystem 逐件消费具体库存，四类旧聚合 id 仅兼容保留；T0903 后，训练场可通过教官位和训练位提升当前装备对应的武器熟练度 / 骑术，并让教官提升“教练”；T0904 后，工作 / 诊所 / 训练的熟练度提升同步增加经验、产生未分配技能点；T0015 后 NPC 面板把经验显示在 HP 右侧，并只在有未分配技能点时显示属性旁 `+1`，GM 可把选中 NPC 设为入伍并由玩家分配力量或智力。暂停期间 NPC 移动与行动结算停止，未开始行动保持 pending，已开始行动保持 active，恢复后继续；建筑修复和升级进度也随逻辑时间暂停/加速。未实现复杂生产平衡、正式工程器械美术或命中/格挡；T1508 部署闭环已完成。
 T0132-P4a/P4b 状态补充：弩床与箭塔均已接入正式模型、可见弹体和攻速同步重装 / 补箭循环；两类器械继续共用 DefenseDeviceSystem 权威槽位与即时结算。
 T0107/T0110/T0112 当前补充：Main 世界可直接点击围墙 / 主厅已解锁空槽 `+` 部署弩床或箭塔，锁定槽不显示；已部署弩床使用正式 PBR 模型与攻速同步动作，箭塔仍显示低模回退；NPCPanel 显示最终战斗属性。围墙六级容量为 `1 / 2 / 2 / 3 / 3 / 4`，Lv.3 / Lv.5 各累计 `+5%` 器械射程；主厅容量为 `1 / 1 / 2 / 2 / 3 / 4` 且固定 `2.0x` 射程。BuildingPanel 的升级提示读取下一等级真实成本、工期、Max HP、器械射程和槽位收益。CombatSystem 使用递减防御曲线，武器熟练度只提高当前对应武器攻速，骑术只提高马匹冲撞伤害，并保留弱敌人潮、远程距离带、敌人抬手 / 僵直和骑兵冲锋循环。
 T0035-T0038/T0056 当前补充：`Main/Systems` 已挂载 CraftingSystem 与 HorseSystem。铁匠铺 / 工械坊由 11 个分阶段配方产出具体 `item_*` 库存，建筑面板提供目标下拉、阶段进度和非零进度切换确认；马厩初始化两匹 60% 刚成年马并逐个显示基础 / 照料额外 HP、成长、繁育概率 / 冷却等生态状态，HorseSystem 处理成长、繁育、喂食、恢复、分配和 `rally` / `combat` 战时离厩。装备 / 部署已逐件消耗具体库存，旧 `weapons` / `armor` / `defense_devices` / `horse_readiness` 仅兼容保留且不得正式消耗。依赖补充：`Main.tscn` 绑定 `res://scripts/systems/CraftingSystem.gd` 与 `res://scripts/systems/HorseSystem.gd`，ActionSystem、BuildingPanel、NPCPanel、HUD、EquipmentSystem、MemorySystem、CombatSystem 和 DefenseDeviceSystem 通过窄接口消费其权威状态。
@@ -1154,9 +1783,9 @@ T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按
 当前状态：T0101 已创建；文件缺失、打开失败、解析失败时会 `push_error` 并返回默认值。
 
 路径：`res://scripts/systems/TimeSystem.gd`
-用途：基础逻辑时间系统，负责 24 小时阶段、秒级显示、暂停、加速、跨天、LLM 等待减速和数值倍率出口。
-依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；监听 `/root/EventBus.game_over_changed` 在失败 / 结算时暂停；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；后续 LLMBridge / DialogSystem 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
-当前状态：T0401 已实现；默认现实 1 秒 = 游戏内 1 分钟，HUD 显示 `HH:MM:SS` 并随游戏秒刷新，支持 `x1` / `x2` / `x4` 速度切换和独立暂停/继续；空格只切换暂停，不改变速度倍率；已提供 LLM 等待时 `1/60` 有效逻辑倍率与 `get_numeric_delta_multiplier()` / `get_game_delta_seconds(...)` 接口；T0020 后对话、常规每日计划、计划修订、低血量心理判定和首次睡眠总结均接入慢速申请 / 释放，T0019 后正式开局的批量每日计划改由 `GameStartupSystem` 直接 `set_paused(true)`，整批完成后恢复，不为每个请求重复登记慢速；T1104A 新增 `request_time_scale_cap(...)` / `release_time_scale_cap(...)` / `get_time_scale_snapshot()`，CombatSystem 可在敌人在场时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；T1406 后 `get_time_scale_snapshot()` 暴露 `last_time_scale_reason`，供 GM / LLMBridge 调试当前有效倍率和最近慢速 / 上限原因；T1104B 后战斗攻速由 CombatSystem 内部把游戏秒折算为战斗动作秒，TimeSystem 不承担攻速倍率结算；T1302 后 `GameState.game_over` 为真时不再推进逻辑时间。
+用途：基础逻辑时间系统，负责 24 小时阶段、秒级显示、暂停、加速、跨天、LLM / NPC 移动减速和数值倍率出口。
+依赖：读取 `/root/GameState`，通过 `/root/EventBus.time_changed`、`time_scale_changed`、`logical_time_tick`、`hour_started` 与 `day_started` 广播时间变化；监听 `/root/EventBus.game_over_changed` 在失败 / 结算时暂停；由 `HUD.gd` 的 `SpeedButton` 调用 `cycle_speed()`，由 `PauseButton` 和空格调用 `toggle_paused()`；LLMBridge / DialogSystem 与 `NPC.gd` 调用 `request_time_slowdown(...)` 与 `release_time_slowdown(...)`。
+当前状态：T0401 已实现；默认无敌人时现实 1 秒 = 游戏内 1 分钟，支持 `x1` / `x2` / `x4` 与独立暂停。LLM 等待和 T0137 NPC 移动使用 `1/60` 慢速；T0183 后活动敌人在场也注册唯一 `combat_enemy_presence = 1/60` 请求，使现实 1 秒 = 游戏 1 秒，其他同倍率请求不会叠慢，最后一名敌人消失后恢复玩家已选倍率。`get_time_scale_snapshot()` 暴露玩家倍率、有效倍率、全部慢速 / 上限请求与最近原因；T1302 后 `GameState.game_over` 为真时不再推进逻辑时间。
 
 路径：`res://scripts/systems/NPCNeedsSystem.gd`
 用途：NPC 饱食 / 疲劳的统一持续结算权威。
@@ -1184,7 +1813,7 @@ T0129C-A2b-P1–P6 增量：格伦→铁匠铺、莉娜→诊疗位 / 病床、�
 路径：`res://scripts/systems/EquipmentSystem.gd`
 用途：正式装备系统，负责具体武器 / 盔甲库存与 NPC 装备槽交换、真实马匹分配桥接和兵种判定。
 依赖：读取 `data/weapon_defs.json`、`data/armor_defs.json` 和 `data/mount_defs.json`；调用 ResourceSystem 逐件结算定义中的 `source_resource_id`，调用 NPCSystem 写入槽位，调用 HorseSystem 分配 / 取消真实马匹，并通过 MemorySystem 写入 `equipment_given` / `equipment_changed`。
-当前状态：T0036 后主武器与四个盔甲部位只消耗各自具体 `item_*`，换装先消耗新物品再返还旧物品，卸装返还原物品；旧聚合库存不参与。T0038 后坐骑公开入口委托 HorseSystem，`equipment.mount` 只保存 `horse_id` / `horse_name` 和通用骑乘参数的兼容投影；收回主武器会自动取消马匹分配。T0031 的艾达故事初始剑盾仍不扣库存、不写守备官赠送事件。兵种、战斗数值读取和策略归一化继续沿用既有 T0902/T1103-T1105 接口；EquipmentSystem 不结算马匹生态、耐久、完整外观或战斗伤害。
+当前状态：T0036 后主武器与四个盔甲部位只消耗各自具体 `item_*`，换装先消耗新物品再返还旧物品，卸装返还原物品；旧聚合库存不参与。T0038 后坐骑公开入口委托 HorseSystem，`equipment.mount` 只保存 `horse_id` / `horse_name` 和通用骑乘参数的兼容投影；收回主武器会自动取消马匹分配。T0138 后所有玩家换装 / 分配 / 收回仅允许 `work` 模式，系统因马死亡、骑手昏迷或资格失效执行的内部清理使用显式 bypass，不开放给 UI。T0031 的艾达故事初始剑盾仍不扣库存、不写守备官赠送事件。兵种、战斗数值读取和策略归一化继续沿用既有接口；EquipmentSystem 不结算马匹生态、HP、死亡或战斗伤害。
 
 路径：`res://scripts/systems/CraftingSystem.gd`
 用途：铁匠铺 / 工械坊制造项目、配方阶段和具体成品入库的唯一权威。
@@ -1194,13 +1823,13 @@ T0129C-A2b-P1–P6 增量：格伦→铁匠铺、莉娜→诊疗位 / 病床、�
 路径：`res://scripts/systems/HorseSystem.gd`
 用途：真实马匹个体生态、马厩数量、成长 / 生育、分配与战时骑乘的唯一权威。
 依赖：读取 `data/horse_defs.json`；监听 TimeSystem / NPC 状态，读取 ActionSystem 的 active `work_stable` 养马人，调用 ResourceSystem 结算进食粮食、BuildingSystem 写入 `special_state.horses`、EquipmentSystem 同步坐骑投影。
-当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、可派生展示的基础 HP、照料额外 HP / 上限、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。马厩内可进食且慢速掉饱食，离厩加速消耗且不能进食；受损后消耗饱食缓慢恢复到自然上限。有效养马人按养马能力推进成长、照料额外 HP 和逐马繁育概率；至少两匹不在冷却的成年在厩马才累积并判定，每多一匹成年候选每分钟多一次判定，成功后候选归零并冷却 1 游戏日。成年、未分配、物理在厩的马可分配给已入伍且有主武器 NPC；日常仍在厩，`rally` / `combat` 时离厩，结束 / 昏迷回厩，失去资格或逃离自动解除。
+当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、基础 / 照料额外 HP、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。T0138 后仅 `work` 可手动分配 / 收回；T0138-R1 后 `rally / combat` 使用 `waiting_for_rider_at_stable`，马留在真实马厩锚点，只有 NPC 从实时位置经正式 NavMesh 前往马旁，到达后才 `ridden`。骑乘受击先随机扣马 `30%–50%` 结算后伤害；马死亡清分配并让 NPC 转步战，NPC 昏迷清分配并让存活马 `returning_stable`，正常退战返厩但保留分配。生态与繁育公式保持不变。
 
 路径：`res://scripts/npc/NPC.gd`
-用途：通用 NPC 占位实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，并处理点击。
-依赖：绑定到 `res://scenes/npc/NPC.tscn`，通过 `/root/EventBus.npc_clicked` 发出点击事件。
+用途：通用 NPC 实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，处理点击、实体运动表现与逐 NPC 移动慢速生命周期。
+依赖：绑定到 `res://scenes/npc/NPC.tscn`，通过 `/root/EventBus.npc_clicked` 发出点击事件；运动开始 / 结束时调用 `Main/Systems/TimeSystem` 的既有慢速请求接口。
 T0129C-A2b-P2–P4 增量：提供 `attach_to_spatial_anchor(...) / detach_from_spatial_anchor()`。家具锚点挂接只在权威占用提交后发生，诊所应用 `lying_supine`、宿舍应用 `sleeping_supine`、食堂应用 `sitting`；挂接时关闭 CharacterBody 实体碰撞、保留 InteractionArea 点击，解除时恢复碰撞和 LegacyVisuals / ArtMount 基础 Transform。空间姿态不自动启动治疗、睡眠或进食行动。
-当前状态：T0304 已创建；普通点击 NPC 会打印 ID 并发出 `npc_clicked(npc_id)`；头顶标签只显示短姓名、HP 和当前行动摘要；T0705 后若 NPC 有主动交涉状态，点击会优先交给 `NPCSystem.handle_npc_clicked(...)` 打开对话，不再先弹出 NPC 面板，并在运行时显示 `ProactiveTalkBubble` 问号气泡；T0028/T0029 后受邀者接受自主 NPC-NPC 会话后，双方运行时才显示浅色 `AutonomousDialogueBubble` 三点气泡与独立点击区；点击只发出带 `dialogue_id` 的旁听请求，结束 / 失败 / 中断后隐藏并禁用点击。邀请等待 / 拒绝阶段不显示正式对话气泡，已接受的自主对话期间气泡替代重复的通用三点 LLM 标记。T1103 后运行时创建 `CombatMountVisual` 和 `CombatFacingMarker`，T1103A 起优先按 `behavior_mode` 为 `rally` / `combat` 时显示集结/接敌方向标记，兼容旧 `combat_mode`，且只有 `combat_mounted == true` 的 NPC 显示低模坐骑；T1105 后策略移动中的 NPC 头顶行动摘要显示“战术移动”；T1204A 后逃离中的 NPC 头顶显示 `!` 警告标记，行动摘要显示“逃离”，逃离移动会读取 `escape_intent.speed_multiplier`；支持 `move_to_location(...)` 直线移动，到达后发出 `movement_arrived` 给 `NPCSystem` 写回地点状态。
+当前状态：T0304 已创建；普通点击 NPC 会打印 ID 并发出 `npc_clicked(npc_id)`；头顶标签只显示短姓名、HP 和当前行动摘要；T0705 后若 NPC 有主动交涉状态，点击会优先交给 `NPCSystem.handle_npc_clicked(...)` 打开对话，不再先弹出 NPC 面板，并在运行时显示 `ProactiveTalkBubble` 问号气泡；T0028/T0029 后受邀者接受自主 NPC-NPC 会话后，双方运行时才显示浅色 `AutonomousDialogueBubble` 三点气泡与独立点击区；点击只发出带 `dialogue_id` 的旁听请求，结束 / 失败 / 中断后隐藏并禁用点击。邀请等待 / 拒绝阶段不显示正式对话气泡，已接受的自主对话期间气泡替代重复的通用三点 LLM 标记。T1103 后运行时创建 `CombatMountVisual` 和 `CombatFacingMarker`，T1103A 起优先按 `behavior_mode` 为 `rally` / `combat` 时显示集结/接敌方向标记，兼容旧 `combat_mode`，且只有 `combat_mounted == true` 的 NPC 显示低模坐骑；T1105 后策略移动中的 NPC 头顶行动摘要显示“战术移动”；T1204A 后逃离中的 NPC 头顶显示 `!` 警告标记，行动摘要显示“逃离”，逃离移动会读取 `escape_intent.speed_multiplier`；支持 `move_to_location(...)` 实体移动，到达后发出 `movement_arrived` 给 `NPCSystem` 写回地点状态；T0137 后开始运动即持有逐 NPC `1/60` TimeSystem 慢速请求，停止、到达、失败、取消或退出时统一释放。
 
 路径：`res://scenes/npc/NPC.tscn`
 用途：通用 NPC 低模占位场景。
@@ -1253,13 +1882,13 @@ T0024 补充：正式批次快照新增 `max_observed_concurrent`，用于区分
 T0024 补充：最多 8 路首次睡眠总结同时在飞，`get_async_reflection_snapshot()` 暴露当前活动数、实际峰值、启动 / 完成计数和逐 NPC 结果。真实 provider 成功写为 `llm_daily_reflection`，显式 Mock provider 写为 `mock_daily_reflection`；缺少来源证明或模型 fallback 不会被猜成真实成功。
 
 路径：`res://scripts/systems/CombatSystem.gd`
-用途：敌人波次读取、调试生成、目标选择、基础移动、双方基础攻击、战斗动作秒换算、不同兵种战斗策略和战斗调试快照系统，后续继续承接正式战斗流程。
+用途：敌人波次读取、调试生成、目标选择、基础移动、双方基础攻击、敌人在场 1:1 时间、不同兵种战斗策略和战斗调试快照系统，后续继续承接正式战斗流程。
 依赖：通过 `/root/ConfigLoader` 读取 `data/enemy_waves.json`；在 `Main/WorldRoot/Station/Enemies` 下生成运行时敌人节点。
 当前状态：`CombatSystem` 读取 5 波敌人配置并按 TimeSystem 在第 3–7 日每天 18:00 自动触发，支持波次查询、调试生成 / 清除 / 跳转和战斗快照。敌人与我方会按逻辑时间推进移动、寻敌、攻击、伤害、昏迷、逃离和器械作战；战时有效倍率上限为 x1。T0121 后 Demo 唯一失败条件是主厅 HP 清零；全部武装 NPC 昏迷或逃离时，敌军与幸存器械仍继续结算。最终波敌军全灭写入 `victory/five_waves_survived`，保存资源、建筑和 NPC 结局快照。
 
-T1104A 后，CombatSystem 不再把玩家 `x2` / `x4` 作为战斗伤害、攻速或战斗移动倍率；活动敌人存在时会通过 TimeSystem 注册 `combat_enemy_presence` `x1` 上限，清敌或最后一个敌人被移除时释放。T1104B 后，CombatSystem 把 `game_delta_seconds / 60` 折算为战斗动作秒推进攻击冷却，并在最近 AI / 我方攻击快照中暴露 `combat_seconds`；第一波敌人已按艾达持剑基准校准为低强度探路战。T1105 新增 `get_combat_strategy_options_for_unit_type(...)`、`get_npc_combat_strategy_options(...)`、`get_npc_combat_strategy(...)`、`set_npc_combat_strategy(...)` 和 `normalize_npc_combat_strategy(...)`，可按兵种提供策略选项、保存玩家手动选择、在换主武器 / 坐骑时重置默认策略，并执行主动进攻、最大化输出、保持距离射击、拉开距离冲击和战斗内避战；T1105A 后，战斗内避战只在最近敌人低于安全阈值时短步长远离，敌人已远离到阈值外时停止移动并保持 `combat_ready`。
+T0183 后，CombatSystem 不把玩家 `x2` / `x4` 作为战斗倍率；活动敌人存在时通过 TimeSystem 注册 `combat_enemy_presence = 1/60`，清敌或最后一个敌人被移除时释放。CombatSystem、DefenseDeviceSystem 和 PietySystem 直接把游戏秒作为攻击、移动、塔防与持续效果秒，最近 AI / 我方攻击快照中的 `game_seconds` 与 `combat_seconds` 数值一致；第一波仍按艾达持剑基准校准。T1105 的兵种策略、换装重置和战斗内避战合同保持不变。
 
-T1103 新增 `trigger_combat_alarm(...)` / `debug_trigger_combat_alarm(...)`、`get_active_rallies(...)` 和 `get_last_alarm_result(...)`，警铃会写入全员警铃事件，并让入伍持武器 NPC 按前后排集结。T1103A 后，CombatSystem 通过 NPCSystem 的 `behavior_mode` 接口统一维护集结等待 1 小时超时、工作 / 集结 / 战斗 / 避战切换、敌军清空后的退出和昏迷复苏分流；T1103B/T1103C 后新增 `active_avoidances`、`debug_trigger_npc_avoidance(...)`、`get_active_avoidances(...)` 和避战中应征 / 装备分流，未入伍或已入伍但无主武器 NPC 会按敌方方位短步长四散移动，清敌后回到 `work` 且不请求计划重评估。T1106 后，CombatSystem 会在波次生成时写入广场 `combat_started`，在敌军全灭或 GM 清敌时写入广场 `combat_ended`，并维护本场受伤 / 昏迷 NPC、低血量判定与各 NPC 击退敌人统计；清敌时 `combat` 回 `work` 并请求计划重评估，`avoid_combat` 与未接敌 `rally` 回 `work` 且不强制重评估。
+T1103 新增 `trigger_combat_alarm(...)` / `debug_trigger_combat_alarm(...)`、`get_active_rallies(...)` 和 `get_last_alarm_result(...)`，警铃会写入全员警铃事件，并让入伍持武器 NPC 按前后排集结。T1103A 后，CombatSystem 通过 NPCSystem 的 `behavior_mode` 接口统一维护集结等待 1 小时超时、工作 / 集结 / 战斗 / 避战切换、敌军清空后的退出和昏迷复苏分流；T1103B/T1103C 后新增 `active_avoidances`、`debug_trigger_npc_avoidance(...)`、`get_active_avoidances(...)` 和避战中应征 / 装备分流，未入伍或已入伍但无主武器 NPC 会按敌方方位短步长四散移动，清敌后回到 `work` 且不请求计划重评估。T1106 后，CombatSystem 会在波次生成时写入广场 `combat_started`，在敌军全灭或 GM 清敌时写入广场 `combat_ended`，并维护本场受伤 / 昏迷 NPC、低血量判定与各 NPC 击退敌人统计；清敌时 `combat` 回 `work` 并请求计划重评估，`avoid_combat` 与未接敌 `rally` 回 `work` 且不强制重评估。T0138 后，分配马的响应者先等待物理会合，CombatSystem 在 `handle_npc_mount_ready(...)` 后才继续阵位 / `combat_ready`，会合中跳过友方攻击；敌军对实际骑乘 NPC 的结算后伤害经 HorseSystem 先扣马匹随机 `30%–50%`，再由 NPCSystem 扣剩余人物 HP。`debug_get_combat_snapshot()` 增加 `horse_lifecycle`。
 
 T1201 新增 `build_battlefield_context(...)` 与 `apply_wartime_dialogue_reaction(...)`，战时对话可写入 `battle_psychology_result` 和 2 游戏小时 `morale_boost` 攻击 / 移动加成。T1202 新增 `handle_npc_damage_applied(...)`、低血量判定记录、`low_hp_triggered` 事件写入、`/npc/battle_judgement` 请求应用和规则降级：参战且已入伍持主武器的 `combat` NPC 可继续参战、逃离或斗志激昂，避战 / 非战斗人员只能逃离或继续避战。T1203 新增 `start_npc_escape(...)` / `debug_start_npc_escape(...)` / `handle_npc_escape_completed(...)`，战时逃离意向和 GM 调试会写入 `escape_started`、移动到后门外出口，并在 NPC 离图后记录 `escaped`。T1204A/T1204B 已包含 `apply_escape_intervention_result(...)`、`get_escape_intervention_state(...)`、`pause_escape_for_dialogue(...)`、`resume_escape_after_dialogue(...)`、`handle_escape_money_given(...)`、`handle_escape_guard_attack(...)` 和 `record_escape_attack_intervention_round(...)`：逃离 NPC 最多接受 5 轮挽留，打开对话时暂停移动、关闭时恢复移动，结果只会是留下或继续逃离；给钱会降低逃离速度，逃离挽留攻击会提高逃离速度、计 1 轮并关闭面板但不请求 NPC 回复，也不写 `escape_intervention_result`，昏迷只暂停逃离并在复苏后继续前往后门。T1303 新增 `combatant_availability` 快照和无可战斗人员失败评估。T1304 新增最终波次胜利评估、胜利结算快照和结算后刷波拒绝；T1305 后胜利快照经 `GameState` 补齐 NPC 结局明细。`debug_get_combat_snapshot()` 包含行为模式快照、避战快照、逃离快照、逃离挽留轮次和速度倍率、可战斗人员可用性、战斗策略快照、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量判定结果、最近逃离结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果、最近我方攻击结果和 TimeSystem 倍率快照，`debug_advance_rally_wait(...)` 可供 GM / 自动化推进集结等待。当前仍不实现命中率。
 
@@ -1349,8 +1978,8 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 
 路径：`res://scripts/camera/CameraRig.gd`
 用途：基础俯视摄像机控制脚本，驱动 `Main/CameraRig` 的平移和 `CameraRig/Camera3D` 的本地距离缩放。
-依赖：绑定到 `res://scenes/main/Main.tscn` 的 `CameraRig`，读取键盘 WASD 按下 / 释放事件、鼠标中键拖拽和滚轮输入；查询当前 GUI 文本焦点以避免输入时平移。
-当前状态：T0105 已创建并绑定；支持 X/Z 边界限制、缩放距离限制，并保持高机位俯视角；T1101 后 Z 轴正向边界扩展到可查看正门外敌人生成区。不实现角色控制或第一人称自由视角。
+依赖：绑定到 `res://scenes/main/Main.tscn` 的 `CameraRig`，读取键盘 WASD / Shift 按下与释放事件、鼠标中键拖拽和滚轮输入；查询当前 GUI 文本焦点以避免输入时平移。
+当前状态：T0105 已创建并绑定；T0045B 后 WASD 基础速度为 `28 m/s`，Shift+WASD 为 `56 m/s`；支持 X/Z 边界限制、缩放距离限制，并保持高机位俯视角；T1101 后 Z 轴正向边界扩展到可查看正门外敌人生成区。不实现角色控制或第一人称自由视角。
 
 ## Godot 脚本规划
 
@@ -1359,7 +1988,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 | 事件总线 | `res://scripts/core/EventBus.gd` | 全局信号 |
 | 游戏状态 | `res://scripts/core/GameState.gd` | 全局状态 |
 | 配置加载 | `res://scripts/core/ConfigLoader.gd` | JSON 配置加载 |
-| 时间系统 | `res://scripts/systems/TimeSystem.gd` | 天数、阶段、加速 |
+| 时间系统 | `res://scripts/systems/TimeSystem.gd` | 天数、阶段、加速、慢速请求与敌人在场 1:1 逻辑时间 |
 | NPC 生活消耗 | `res://scripts/systems/NPCNeedsSystem.gd` | 饱食 / 疲劳档位、有效时间、小数余量与边界 |
 | 资源系统 | `res://scripts/systems/ResourceSystem.gd` | 金钱、粮食等 |
 | 建筑系统 | `res://scripts/systems/BuildingSystem.gd` | 建筑 HP、等级、逐位置状态、可进入性、损伤效率与升级封闭 |
@@ -1592,6 +2221,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 五建筑位置、资格、团队效率、升级封闭与损伤效率综合验证 | `tools/verify_building_service_positions.gd` |
 | NPC 面板与状态验证 | `tools/verify_npc_panel_state.gd` |
 | NPC 移动与地点验证 | `tools/verify_npc_movement_location.gd` |
+| NPC 移动期间统一时间慢速、并发 / LLM / 暂停叠加与逻辑时间消费者验证 | `tools/verify_npc_movement_time_slowdown.gd` |
 | NPC 熟练度 schema 验证 | `tools/verify_npc_skill_schema.gd` |
 | NPC 姓名、人设、宗教信仰、职业语气与 LLM 上下文验证 | `tools/verify_npc_character_profiles.gd` |
 | 简单行动系统验证 | `tools/verify_action_system_basic.gd` |
@@ -1601,6 +2231,8 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 旧 T0804-T0806 聚合生产历史回归 | `tools/verify_blacksmith_metal_gear.gd`、`tools/verify_workshop_ranged_devices.gd`、`tools/verify_stable_horse_care.gd` |
 | 具体配方与分阶段制造闭环验证 | `tools/verify_crafting_pipeline.gd` |
 | 真实马匹生态、分配与战时生命周期验证 | `tools/verify_horse_ecology_assignment.gd` |
+| T0138 骑战会合、战时换装锁、马匹分伤 / 阵亡、骑手昏迷解绑与返厩验证 | `tools/verify_mounted_combat_lifecycle.gd` |
+| T0138-R1 马留在厩、NPC 绕开主厅取马并实际抵达上马验证 | `tools/verify_stable_horse_pickup_navigation.gd` |
 | 马匹基础 / 额外 HP、初始成长、累积繁育概率、冷却与 UI 验证 | `tools/verify_horse_care_feedback.gd` |
 | 酒窖酿酒、出售与 NPC 个人饮酒边界验证 | `tools/verify_tavern_wine_trade.gd`、`tools/verify_npc_wine_drinking.gd` |
 | 公告牌输入与广场广播验证 | `tools/verify_notice_board_input.gd` |
@@ -1637,7 +2269,8 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 第 5 波胜利条件验证 | `tools/verify_five_wave_victory.gd` |
 | 敌人目标优先级验证 | `tools/verify_enemy_target_priority.gd` |
 | 基础攻击与伤害验证 | `tools/verify_combat_damage.gd` |
-| 战斗时间上限验证 | `tools/verify_combat_time_cap.gd` |
+| 敌人在场 1:1 战斗时间验证 | `tools/verify_combat_time_cap.gd` |
+| T0184 城门前排小步攻击动画与真实命中验证 | `tools/verify_t0184_gate_attack_timeline.gd` |
 | 战斗节奏验证 | `tools/verify_combat_pacing.gd` |
 | 兵种战斗策略与避战距离验证 | `tools/verify_combat_strategies.gd` |
 | 战斗开始 / 结束流程验证 | `tools/verify_combat_flow.gd` |

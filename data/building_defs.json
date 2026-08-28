@@ -10,6 +10,11 @@
     "workstations": [],
     "inputs": {},
     "outputs": {},
+    "destruction": {
+      "ruin_kind": "collapsed_command_hall",
+      "recoverable": false,
+      "recovery_hp_ratio": 1.0
+    },
     "repair": {
       "cost": {"stone": 1},
       "hp_restore": 25,
@@ -274,6 +279,11 @@
     "workstations": [],
     "inputs": {},
     "outputs": {},
+    "destruction": {
+      "ruin_kind": "collapsed_warehouse",
+      "recoverable": true,
+      "recovery_hp_ratio": 0.30
+    },
     "repair": {
       "cost": {"stone": 1},
       "hp_restore": 25,
@@ -353,6 +363,11 @@
     "workstations": [],
     "inputs": {},
     "outputs": {},
+    "destruction": {
+      "ruin_kind": "collapsed_gate_leaves",
+      "recoverable": true,
+      "recovery_hp_ratio": 0.01
+    },
     "repair": {
       "cost": {"stone": 2},
       "hp_restore": 40,

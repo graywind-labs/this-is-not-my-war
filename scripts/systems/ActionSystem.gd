@@ -2211,8 +2211,8 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 				)
 				return false
 			return true
-		if npc_system.has_method("face_formal_dialogue_participants"):
-			npc_system.face_formal_dialogue_participants(speaker_npc_id, target_npc_id)
+		if npc_system.has_method("face_formal_dialogue_speaker"):
+			npc_system.face_formal_dialogue_speaker(speaker_npc_id, target_npc_id)
 	else:
 		if str(speaker_state.get("current_location", "")) != target_location_id:
 			if str(speaker_state.get("current_action", "")).begins_with("moving_to_"):

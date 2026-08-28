@@ -3,6 +3,8 @@ extends Node3D
 
 
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER := 19
+const PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER := 18
 
 @export var building_id := "art_sample"
 @export var roof_path: NodePath = NodePath("Roof")
@@ -40,6 +42,9 @@ var _exterior_meshes: Array[MeshInstance3D] = []
 var _exterior_materials: Array[BaseMaterial3D] = []
 var _exterior_shadow_proxies: Array[MeshInstance3D] = []
 var _persistent_shadow_proxy_by_source: Dictionary = {}
+var _portrait_opaque_shell_proxies: Array[MeshInstance3D] = []
+var _portrait_opaque_shell_materials: Array[BaseMaterial3D] = []
+var _portrait_opaque_proxy_by_source: Dictionary = {}
 var _roof_opacity := 1.0
 var _exterior_opacity := 1.0
 var _camera_distance := -1.0
@@ -91,13 +96,21 @@ func get_roof_visibility_snapshot() -> Dictionary:
 		"roof_opacity": _roof_opacity,
 		"exterior_opacity": _exterior_opacity,
 		"exterior_fades_with_roof": fade_exterior_with_roof,
+		"minimum_exterior_opacity": minimum_exterior_opacity,
 		"interior_revealed_for_selection": is_interior_revealed_for_selection(),
 		"roof_shadow_enabled": _persistent_shadows_ready(_roof_shadow_proxies),
 		"exterior_shadow_enabled": not fade_exterior_with_roof or _persistent_shadows_ready(_exterior_shadow_proxies),
 		"roof_shadow_proxy_count": _roof_shadow_proxies.size(),
 		"exterior_shadow_proxy_count": _exterior_shadow_proxies.size(),
+		"portrait_opaque_shell_proxy_count": _portrait_opaque_shell_proxies.size(),
+		"portrait_opaque_shell_material_count": _portrait_opaque_shell_materials.size(),
+		"portrait_opaque_shells_ready": _portrait_opaque_shells_ready(),
+		"fading_shell_layers_ready": _fading_shell_layers_ready(),
+		"main_camera_fading_shell_visual_layer": MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER,
+		"portrait_opaque_shell_visual_layer": PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER,
 		"visible_shell_meshes_cast_shadow": _visible_shell_meshes_cast_shadow(),
 		"roof_mesh_count": _roof_meshes.size(),
+		"exterior_mesh_count": _exterior_meshes.size(),
 		"building_level": _building_level,
 		"level_2_visible": _is_visible(NodePath("UpgradeVisuals/Level2")),
 		"level_3_visible": _is_visible(NodePath("UpgradeVisuals/Level3")),
@@ -209,7 +222,7 @@ func _cache_roof_materials() -> void:
 
 
 func _cache_roof_mesh(mesh_instance: MeshInstance3D) -> void:
-	if mesh_instance == null or mesh_instance.mesh == null or bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)) or _roof_meshes.has(mesh_instance):
+	if mesh_instance == null or mesh_instance.mesh == null or bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh_instance.get_meta("portrait_opaque_shell_proxy", false)) or _roof_meshes.has(mesh_instance):
 		return
 	_roof_meshes.append(mesh_instance)
 	var shadow_proxy := _ensure_persistent_shadow_proxy(mesh_instance, "roof")
@@ -238,6 +251,8 @@ func _cache_roof_mesh(mesh_instance: MeshInstance3D) -> void:
 			)
 		mesh_instance.material_override = override_copy
 		_roof_materials.append(override_copy)
+		if minimum_roof_opacity < 0.999:
+			_ensure_portrait_opaque_shell_proxy(mesh_instance, "roof")
 		return
 	for surface_index in range(mesh_instance.mesh.get_surface_count()):
 		var source_material := mesh_instance.get_active_material(surface_index)
@@ -260,6 +275,8 @@ func _cache_roof_mesh(mesh_instance: MeshInstance3D) -> void:
 			material_copy.albedo_color = roof_albedo_override
 		mesh_instance.set_surface_override_material(surface_index, material_copy)
 		_roof_materials.append(material_copy)
+	if minimum_roof_opacity < 0.999:
+		_ensure_portrait_opaque_shell_proxy(mesh_instance, "roof")
 
 
 func _cache_exterior_materials() -> void:
@@ -272,11 +289,11 @@ func _cache_exterior_materials() -> void:
 		if extra_root != null and not fade_roots.has(extra_root):
 			fade_roots.append(extra_root)
 	for fade_root in fade_roots:
-		if fade_root is MeshInstance3D and not bool(fade_root.get_meta("persistent_shell_shadow_proxy", false)) and not _exterior_meshes.has(fade_root as MeshInstance3D):
+		if fade_root is MeshInstance3D and not bool(fade_root.get_meta("persistent_shell_shadow_proxy", false)) and not bool(fade_root.get_meta("portrait_opaque_shell_proxy", false)) and not _exterior_meshes.has(fade_root as MeshInstance3D):
 			_exterior_meshes.append(fade_root as MeshInstance3D)
 		for raw_mesh in fade_root.find_children("*", "MeshInstance3D", true, false):
 			var mesh_instance := raw_mesh as MeshInstance3D
-			if mesh_instance != null and not bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)) and not _exterior_meshes.has(mesh_instance):
+			if mesh_instance != null and not bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)) and not bool(mesh_instance.get_meta("portrait_opaque_shell_proxy", false)) and not _exterior_meshes.has(mesh_instance):
 				_exterior_meshes.append(mesh_instance)
 	for mesh_instance in _exterior_meshes:
 		if mesh_instance == null or mesh_instance.mesh == null:
@@ -299,6 +316,8 @@ func _cache_exterior_materials() -> void:
 			override_copy.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 			mesh_instance.material_override = override_copy
 			_exterior_materials.append(override_copy)
+			if fade_exterior_with_roof and minimum_exterior_opacity < 0.999:
+				_ensure_portrait_opaque_shell_proxy(mesh_instance, "exterior")
 			continue
 		for surface_index in range(mesh_instance.mesh.get_surface_count()):
 			var source_material := mesh_instance.get_active_material(surface_index)
@@ -318,6 +337,8 @@ func _cache_exterior_materials() -> void:
 			material_copy.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 			mesh_instance.set_surface_override_material(surface_index, material_copy)
 			_exterior_materials.append(material_copy)
+		if fade_exterior_with_roof and minimum_exterior_opacity < 0.999:
+			_ensure_portrait_opaque_shell_proxy(mesh_instance, "exterior")
 
 
 func _get_node_scale(path: NodePath) -> Vector3:
@@ -462,6 +483,60 @@ func _set_exterior_opacity(value: float) -> void:
 		shadow_proxy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 
 
+func _ensure_portrait_opaque_shell_proxy(source: MeshInstance3D, category: String) -> MeshInstance3D:
+	var source_id := source.get_instance_id()
+	if _portrait_opaque_proxy_by_source.has(source_id):
+		var existing := _portrait_opaque_proxy_by_source[source_id] as MeshInstance3D
+		if is_instance_valid(existing):
+			var categories := existing.get_meta("portrait_shell_categories", []) as Array
+			if not categories.has(category):
+				categories.append(category)
+				existing.set_meta("portrait_shell_categories", categories)
+			return existing
+	var proxy := MeshInstance3D.new()
+	proxy.name = "PortraitOpaqueShell"
+	proxy.mesh = source.mesh
+	proxy.layers = 1 << (PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER - 1)
+	proxy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	proxy.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	proxy.process_mode = Node.PROCESS_MODE_DISABLED
+	if source.material_override != null:
+		proxy.material_override = _duplicate_opaque_portrait_material(source.material_override)
+	else:
+		for surface_index in range(source.mesh.get_surface_count()):
+			var source_material := source.get_active_material(surface_index)
+			if source_material != null:
+				proxy.set_surface_override_material(
+					surface_index,
+					_duplicate_opaque_portrait_material(source_material)
+				)
+	proxy.set_meta("presentation_only", true)
+	proxy.set_meta("portrait_opaque_shell_proxy", true)
+	proxy.set_meta("portrait_shell_source", str(source.get_path()))
+	proxy.set_meta("portrait_shell_categories", [category])
+	# The source and proxy inherit the same authored transform and visibility.
+	# Separate visual layers let each camera render its own material state without
+	# duplicating building gameplay nodes or changing the shared World3D.
+	source.add_child(proxy, false, Node.INTERNAL_MODE_FRONT)
+	source.layers = 1 << (MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER - 1)
+	_portrait_opaque_shell_proxies.append(proxy)
+	_portrait_opaque_proxy_by_source[source_id] = proxy
+	return proxy
+
+
+func _duplicate_opaque_portrait_material(source_material: Material) -> Material:
+	var material_copy := source_material.duplicate() as Material
+	material_copy.resource_local_to_scene = true
+	if material_copy is BaseMaterial3D:
+		var base_material := material_copy as BaseMaterial3D
+		var color := base_material.albedo_color
+		color.a = 1.0
+		base_material.albedo_color = color
+		base_material.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		_portrait_opaque_shell_materials.append(base_material)
+	return material_copy
+
+
 func _ensure_persistent_shadow_proxy(source: MeshInstance3D, category: String) -> MeshInstance3D:
 	var source_id := source.get_instance_id()
 	if _persistent_shadow_proxy_by_source.has(source_id):
@@ -517,15 +592,75 @@ func _visible_shell_meshes_cast_shadow() -> bool:
 	return false
 
 
+func _portrait_opaque_shells_ready() -> bool:
+	for proxy in _portrait_opaque_shell_proxies:
+		if (
+			not is_instance_valid(proxy)
+			or proxy.layers != 1 << (PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER - 1)
+			or proxy.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		):
+			return false
+	for material in _portrait_opaque_shell_materials:
+		if (
+			not is_instance_valid(material)
+			or not is_equal_approx(material.albedo_color.a, 1.0)
+			or material.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
+		):
+			return false
+	return true
+
+
+func _fading_shell_layers_ready() -> bool:
+	if minimum_roof_opacity < 0.999:
+		for mesh_instance in _roof_meshes:
+			if is_instance_valid(mesh_instance) and mesh_instance.layers != 1 << (MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER - 1):
+				return false
+	if fade_exterior_with_roof and minimum_exterior_opacity < 0.999:
+		for mesh_instance in _exterior_meshes:
+			if is_instance_valid(mesh_instance) and mesh_instance.layers != 1 << (MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER - 1):
+				return false
+	return true
+
+
+func _add_gable_wall(
+	parent: Node3D,
+	node_name: String,
+	center: Vector3,
+	size: Vector3,
+	material: Material,
+	rotation_y_degrees: float = 0.0
+) -> MeshInstance3D:
+	var mesh := PrismMesh.new()
+	mesh.size = size
+	mesh.left_to_right = 0.5
+	mesh.material = material
+	var instance := MeshInstance3D.new()
+	instance.name = node_name
+	instance.position = center
+	instance.rotation_degrees.y = rotation_y_degrees
+	instance.mesh = mesh
+	instance.set_meta("sealed_gable_wall", true)
+	instance.set_meta("presentation_only", true)
+	parent.add_child(instance)
+	return instance
+
+
 func _count_authored_meshes_at(path: NodePath) -> int:
 	var root_node := get_node_or_null(path)
 	if root_node == null:
 		return 0
 	var count := 0
-	if root_node is MeshInstance3D and not bool(root_node.get_meta("persistent_shell_shadow_proxy", false)):
+	if (
+		root_node is MeshInstance3D
+		and not bool(root_node.get_meta("persistent_shell_shadow_proxy", false))
+		and not bool(root_node.get_meta("portrait_opaque_shell_proxy", false))
+	):
 		count += 1
 	for raw_mesh in root_node.find_children("*", "MeshInstance3D", true, false):
-		if not bool(raw_mesh.get_meta("persistent_shell_shadow_proxy", false)):
+		if (
+			not bool(raw_mesh.get_meta("persistent_shell_shadow_proxy", false))
+			and not bool(raw_mesh.get_meta("portrait_opaque_shell_proxy", false))
+		):
 			count += 1
 	return count
 

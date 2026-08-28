@@ -69,6 +69,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"interior_clear_size": INTERIOR_CLEAR_SIZE,
 		"future_capacity_reserved": true,
 		"roof_profile": "quaternius_low_pitch_round_tile_workshop",
+		"gable_end_profile": "sealed_cool_plaster_with_engineering_timber",
+		"sealed_gable_end_count": 2,
 		"roof_albedo_override": roof_albedo_override,
 		"roof_mesh_count": _roof_meshes.size(),
 		"roof_structure_addition_count": (
@@ -101,7 +103,7 @@ func _build_formal_workshop() -> void:
 	exterior_albedo_tint = Color("#aeb9c7")
 	static_collision_path = NodePath("../StaticCollision")
 	workstation_markers_path = NodePath("../FixtureLayout/NPCStands")
-	set_meta("art_revision", "t0131_p1d")
+	set_meta("art_revision", "t0135_p8ar7r3")
 	set_meta("formal_vertical_slice", true)
 	set_meta("footprint_meters", BUILDING_FOOTPRINT)
 	set_meta("upgrade_visual_authority", "building_system_level")
@@ -167,9 +169,22 @@ func _build_exterior() -> void:
 			_add_box(exterior, "SidePost", Vector3(side * 6.12, 1.7, z), Vector3(0.26, 3.25, 0.24), dark_timber)
 	_add_box(exterior, "FrontLintel", Vector3(0.0, 3.18, 6.11), Vector3(12.2, 0.28, 0.28), dark_timber)
 	_add_box(exterior, "RearLintel", Vector3(0.0, 3.18, -6.11), Vector3(12.2, 0.28, 0.28), dark_timber)
-	_add_box(exterior, "WorkshopSign", Vector3(0.0, 3.64, 6.23), Vector3(2.45, 0.62, 0.14), Color("#45536b"))
-	_add_box(exterior, "CompassBar", Vector3(0.0, 3.66, 6.32), Vector3(1.0, 0.11, 0.12), Color("#222a34"))
-	_add_box(exterior, "CompassStem", Vector3(0.0, 3.66, 6.32), Vector3(0.11, 0.72, 0.12), Color("#222a34"))
+	var gable_ends := Node3D.new()
+	gable_ends.name = "SealedWorkshopGableEnds"
+	exterior.add_child(gable_ends)
+	for side in [-1.0, 1.0]:
+		var side_name := "West" if side < 0.0 else "East"
+		var end_x: float = float(side) * 6.08
+		_add_gable_wall(gable_ends, "%sCoolPlasterGableWall" % side_name, Vector3(end_x, 4.17, 0.0), Vector3(12.2, 1.7, 0.3), _material(Color("#a8b2c0")), 90.0)
+		_add_box(gable_ends, "%sGableTie" % side_name, Vector3(end_x, 3.32, 0.0), Vector3(0.34, 0.2, 12.2), dark_timber)
+		_add_box(gable_ends, "%sKingPost" % side_name, Vector3(end_x, 4.17, 0.0), Vector3(0.34, 1.7, 0.24), dark_timber)
+		var front_rafter := _add_box(gable_ends, "%sFrontRakingBeam" % side_name, Vector3(end_x, 4.17, 3.0), Vector3(0.34, 0.16, 6.25), dark_timber)
+		front_rafter.rotation_degrees.x = 16.0
+		var rear_rafter := _add_box(gable_ends, "%sRearRakingBeam" % side_name, Vector3(end_x, 4.17, -3.0), Vector3(0.34, 0.16, 6.25), dark_timber)
+		rear_rafter.rotation_degrees.x = -16.0
+	_add_box(exterior, "WorkshopSign", Vector3(0.0, 3.15, 6.23), Vector3(2.45, 0.42, 0.14), Color("#45536b"))
+	_add_box(exterior, "CompassBar", Vector3(0.0, 3.16, 6.32), Vector3(1.0, 0.1, 0.12), Color("#222a34"))
+	_add_box(exterior, "CompassStem", Vector3(0.0, 3.16, 6.32), Vector3(0.1, 0.36, 0.12), Color("#222a34"))
 	var auto_door := Node3D.new()
 	auto_door.name = "AutoDoor"
 	auto_door.position = Vector3(0.0, 0.2, 6.2)
@@ -183,17 +198,22 @@ func _build_roof() -> void:
 	roof.name = "Roof"
 	roof.set_meta("roof_fade_candidate", true)
 	add_child(roof)
-	_add_scene_prop(roof, "RoundTileRoof", ROOF_TILES, Vector3(0.0, 3.2, 0.0), Vector3(2.82, 0.55, 2.82))
+	# The imported roof ridge runs along local Z. Rotate it to the authored X ridge,
+	# then lift the eaves just above all four wall-top courses.
+	_add_scene_prop(roof, "RoundTileRoof", ROOF_TILES, Vector3(0.0, 3.69, 0.0), Vector3(2.82, 0.55, 2.82), Vector3(0.0, 90.0, 0.0))
 	var ridge_color := Color("#30394d")
-	_add_box(roof, "ColdRidgeCap", Vector3(0.0, 4.05, 0.0), Vector3(12.4, 0.2, 0.28), ridge_color)
+	_add_box(roof, "ColdRidgeCap", Vector3(0.0, 5.77, 0.0), Vector3(12.6, 0.2, 0.28), ridge_color)
 	for x in [-5.7, -2.85, 0.0, 2.85, 5.7]:
-		_add_box(roof, "RafterCap", Vector3(x, 3.45, 0.0), Vector3(0.09, 0.12, 12.0), ridge_color)
+		var north_cap := _add_box(roof, "NorthRafterCap", Vector3(x, 4.58, -3.65), Vector3(0.09, 0.1, 7.75), ridge_color)
+		north_cap.rotation_degrees.x = -20.5
+		var south_cap := _add_box(roof, "SouthRafterCap", Vector3(x, 4.58, 3.65), Vector3(0.09, 0.1, 7.75), ridge_color)
+		south_cap.rotation_degrees.x = 20.5
 	# A low roof monitor makes the silhouette read as a ventilated engineering shop,
 	# while remaining part of the same fade group as the roof shell.
-	_add_box(roof, "MonitorBase", Vector3(0.0, 4.12, -0.2), Vector3(4.8, 0.48, 1.05), Color("#3d485d"))
-	_add_box(roof, "MonitorNorthWindow", Vector3(0.0, 4.15, -0.74), Vector3(4.25, 0.25, 0.06), Color("#70869a"))
-	_add_box(roof, "MonitorSouthWindow", Vector3(0.0, 4.15, 0.34), Vector3(4.25, 0.25, 0.06), Color("#70869a"))
-	_add_box(roof, "MonitorCap", Vector3(0.0, 4.42, -0.2), Vector3(5.2, 0.16, 1.35), Color("#2d3648"))
+	_add_box(roof, "MonitorBase", Vector3(0.0, 5.86, -0.2), Vector3(4.8, 0.48, 1.05), Color("#3d485d"))
+	_add_box(roof, "MonitorNorthWindow", Vector3(0.0, 5.89, -0.74), Vector3(4.25, 0.25, 0.06), Color("#70869a"))
+	_add_box(roof, "MonitorSouthWindow", Vector3(0.0, 5.89, 0.34), Vector3(4.25, 0.25, 0.06), Color("#70869a"))
+	_add_box(roof, "MonitorCap", Vector3(0.0, 6.16, -0.2), Vector3(5.2, 0.16, 1.35), Color("#2d3648"))
 
 
 func _build_level_one_details() -> void:

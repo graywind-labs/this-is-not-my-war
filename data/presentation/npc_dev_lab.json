@@ -1,0 +1,61 @@
+{
+  "schema_version": "npc_dev_lab_v2",
+  "actions": [
+    {"id":"idle","label":"待机","animation_state":"idle","modes":["work","combat"]},
+    {"id":"walk","label":"行走","animation_state":"walk","modes":["work","combat"]},
+    {"id":"run","label":"奔跑","animation_state":"run","modes":["work","combat"]},
+    {"id":"talk","label":"交谈 / 示意","animation_state":"talk","modes":["work"]},
+    {"id":"hit_react","label":"受击","animation_state":"hit_react","modes":["work","combat"]},
+    {"id":"unconscious","label":"倒地 / 昏迷","animation_state":"unconscious","modes":["work","combat"]},
+    {"id":"get_up","label":"复苏起身","animation_state":"get_up","modes":["work","combat"]},
+    {"id":"attack","label":"攻击","animation_state":"attack","modes":["combat"]},
+    {"id":"training_practice","label":"武器训练","animation_state":"training_practice","modes":["combat"]},
+    {"id":"mounted_pose","label":"骑乘持武器待机","animation_state":"vehicle_seated","modes":["combat"],"requires_mount":true},
+    {"id":"friendly_mounted_unconscious","label":"我方骑马昏迷（坠马）","animation_state":"mounted_fall","modes":["combat"],"requires_friendly_mount":true},
+    {"id":"mounted_defeat_escape","label":"骑手坠亡 + 马匹逃亡（实战）","animation_state":"mounted_fall","modes":["combat"],"requires_enemy_mount":true},
+    {"id":"work_blacksmith","label":"打铁","animation_state":"work","modes":["work"]},
+    {"id":"work_stable","label":"照料马匹","animation_state":"work","modes":["work"]},
+    {"id":"work_dining_hall","label":"烹饪","animation_state":"work","modes":["work"]},
+    {"id":"work_garden","label":"耕作","animation_state":"work","modes":["work"]},
+    {"id":"work_tavern","label":"酿酒","animation_state":"work","modes":["work"]},
+    {"id":"work_clinic_doctor","label":"诊所坐诊（空闲研读）","animation_state":"seated_study","modes":["work"]},
+    {"id":"work_workshop","label":"机械装配","animation_state":"work","modes":["work"]},
+    {"id":"training_instructor","label":"训练指导","animation_state":"training_instructor","modes":["work"]},
+    {"id":"medical_treatment","label":"治疗 / 包扎","animation_state":"medical_treatment","modes":["work"]},
+    {"id":"mass_leader","label":"主持弥撒","animation_state":"mass_leader","modes":["work"]},
+    {"id":"seated_prayer","label":"坐姿祈祷","animation_state":"seated_prayer","modes":["work"]},
+    {"id":"seated_study","label":"通用坐姿研读（姿势预览）","animation_state":"seated_study","modes":["work"]},
+    {"id":"seated_eating","label":"坐姿进食","animation_state":"seated_eating","modes":["work"]},
+    {"id":"drink_wine","label":"喝酒","animation_state":"drink","modes":["work"]},
+    {"id":"sleeping","label":"睡眠","animation_state":"sleeping","modes":["work"]},
+    {"id":"vehicle_seated","label":"驾车坐姿","animation_state":"vehicle_seated","modes":["work"]}
+  ],
+  "common_friendly_actions": ["idle","walk","run","talk","hit_react","unconscious","get_up","attack","training_practice","mounted_pose","friendly_mounted_unconscious","work_blacksmith","work_stable","work_dining_hall","work_garden","work_tavern","work_clinic_doctor","work_workshop","training_instructor","medical_treatment","seated_prayer","seated_study","seated_eating","drink_wine","sleeping","vehicle_seated"],
+  "enemy_actions": ["idle","walk","run","hit_react","unconscious","get_up","attack","mounted_pose"],
+  "mounted_enemy_actions": ["mounted_defeat_escape"],
+  "role_actions": {
+    "stableman": [],
+    "blacksmith": [],
+    "engineer": [],
+    "cook": [],
+    "gardener": [],
+    "priest": ["mass_leader"],
+    "doctor": [],
+    "veteran_deputy": []
+  },
+  "role_labels": {
+    "stableman":"马夫",
+    "blacksmith":"铁匠",
+    "engineer":"工程师",
+    "cook":"厨子",
+    "gardener":"园丁",
+    "priest":"神父",
+    "doctor":"医生",
+    "veteran_deputy":"老兵副官"
+  },
+  "enemy_preview": {
+    "default_scene":"res://scenes/characters/EnemySwordShieldChibiArtView.tscn",
+    "formal_3d_weapon_ids":["sword_shield","polearm","bow","crossbow"],
+    "note":"四类正式主武器、步战 / 骑战持握与攻击动作均作为 Main 正式敌军包装的表现基准；检视台只驱动表现，不拥有战斗权威。"
+  }
+}

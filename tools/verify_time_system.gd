@@ -72,6 +72,10 @@ func _init() -> void:
 	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 59, 0)
 	time_system.set_time_scale(4.0)
+	if not is_equal_approx(float(time_system.get_combat_frame_delta_seconds(1.0)), 1.0):
+		push_error("Combat presentation time must stay capped at authored x1 outside combat")
+		quit(1)
+		return
 	if not await _wait_until_hour(game_state, 8, 30):
 		push_error("Time did not advance after speed change")
 		quit(1)
@@ -200,6 +204,10 @@ func _init() -> void:
 		push_error("LLM slowdown should make one real second equal one game second")
 		quit(1)
 		return
+	if absf(float(time_system.get_combat_frame_delta_seconds(1.0)) - 1.0) > 0.001:
+		push_error("Combat presentation time must not reapply the slowdown multiplier")
+		quit(1)
+		return
 	var precise_clock_text := "%02d:%02d:%02d" % [
 		int(game_state.current_hour),
 		int(game_state.current_minute),
@@ -267,6 +275,10 @@ func _init() -> void:
 	pause_button.pressed.emit()
 	if not time_system.is_paused:
 		push_error("HUD pause button did not pause")
+		quit(1)
+		return
+	if not is_zero_approx(float(time_system.get_combat_frame_delta_seconds(1.0))):
+		push_error("Combat presentation time advanced while paused")
 		quit(1)
 		return
 	pause_button.pressed.emit()

@@ -1,8 +1,12 @@
 extends PanelContainer
 
+signal portrait_clicked(npc_id: String)
+
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const WORLD_STATIC_COLLISION_MASK := 1
 const PORTRAIT_EXCLUDED_VISUAL_LAYER := 20
+const MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER := 19
+const PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER := 18
 const VIEWPORT_SIZE := Vector2i(260, 480)
 const CAMERA_DISTANCE := 3.9
 const CAMERA_HEIGHT := 1.15
@@ -72,6 +76,8 @@ func _build_view() -> void:
 	_camera.near = 0.08
 	_camera.far = 180.0
 	_camera.set_cull_mask_value(PORTRAIT_EXCLUDED_VISUAL_LAYER, false)
+	_camera.set_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER, false)
+	_camera.set_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER, true)
 	_subviewport.add_child(_camera)
 
 	var status_overlay := CenterContainer.new()
@@ -86,6 +92,22 @@ func _build_view() -> void:
 	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status_label.custom_minimum_size = Vector2(120.0, 0.0)
 	status_overlay.add_child(_status_label)
+
+	var click_button := Button.new()
+	click_button.name = "PortraitClickButton"
+	click_button.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	click_button.flat = true
+	click_button.focus_mode = Control.FOCUS_NONE
+	click_button.tooltip_text = "空闲时点击人物可让其向你示意"
+	click_button.accessibility_name = "NPC 人物小窗"
+	click_button.pressed.connect(_on_portrait_pressed)
+	view_frame.add_child(click_button)
+
+
+func _on_portrait_pressed() -> void:
+	if not _active or _target_npc_id.is_empty():
+		return
+	portrait_clicked.emit(_target_npc_id)
 
 func show_npc(npc_id: String) -> void:
 	var clean_id := npc_id.strip_edges()
@@ -216,6 +238,8 @@ func debug_get_snapshot() -> Dictionary:
 		"viewport_size": _subviewport.size if _subviewport != null else Vector2i.ZERO,
 		"camera_position": _camera.global_position if _camera != null else Vector3.ZERO,
 		"configured_camera_distance": CAMERA_DISTANCE,
+		"hides_main_fading_shells": _camera != null and not _camera.get_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER),
+		"shows_portrait_opaque_shells": _camera != null and _camera.get_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER),
 		"camera_front_dot": _last_camera_front_dot,
 		"obstruction_adjusted": _last_obstruction_adjusted,
 		"target_snapshot": _last_target_snapshot.duplicate(true),

@@ -88,6 +88,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"architectural_style": "medieval_border_communal_bunkhouse",
 		"facade_profile": "five_bed_bays_moon_pillow_sign_and_repeated_windows",
 		"roof_profile": "long_low_wine_shingle_gable_with_five_ridge_vents",
+		"gable_end_profile": "sealed_warm_plaster_with_bunkhouse_timber",
+		"sealed_gable_end_count": 2,
 		"functional_visual_language": "ten_fixed_beds_personal_chests_pegs_linen_and_night_lanterns",
 		"level_two_upgrade_profile": "hearth_chimney_insulation_repairs_and_storage_without_bed_gain",
 		"palette": {
@@ -126,7 +128,7 @@ func _build_formal_dormitory() -> void:
 	exterior_albedo_tint = DORM_WALL
 	static_collision_path = NodePath("../StaticCollision")
 	workstation_markers_path = NodePath("../FixtureLayout/NPCStands")
-	set_meta("art_revision", "t0135_p8ar5")
+	set_meta("art_revision", "t0135_p8ar7r")
 	set_meta("formal_vertical_slice", true)
 	set_meta("architectural_style", "medieval_border_communal_bunkhouse")
 	set_meta("footprint_meters", BUILDING_FOOTPRINT)
@@ -189,6 +191,19 @@ func _build_exterior() -> void:
 			_add_box(frame, "BedBayPost", Vector3(side * 7.14, 1.74, z), Vector3(0.28, 3.22, 0.24), DORM_TIMBER)
 	_add_box(frame, "FrontLintel", Vector3(0.0, 3.22, 6.59), Vector3(14.15, 0.28, 0.24), DORM_TIMBER)
 	_add_box(frame, "RearLintel", Vector3(0.0, 3.22, -6.64), Vector3(14.15, 0.28, 0.28), DORM_TIMBER)
+	var gable_ends := Node3D.new()
+	gable_ends.name = "SealedDormitoryGableEnds"
+	exterior.add_child(gable_ends)
+	for side in [-1.0, 1.0]:
+		var side_name := "Rear" if side < 0.0 else "Front"
+		var end_z := -6.58 if side < 0.0 else 6.56
+		_add_gable_wall(gable_ends, "%sWarmPlasterGableWall" % side_name, Vector3(0.0, 4.55, end_z), Vector3(14.75, 2.46, 0.3), _material(DORM_WALL))
+		_add_box(gable_ends, "%sGableTie" % side_name, Vector3(0.0, 3.32, end_z), Vector3(14.75, 0.22, 0.34), DORM_TIMBER)
+		_add_box(gable_ends, "%sKingPost" % side_name, Vector3(0.0, 4.54, end_z), Vector3(0.3, 2.44, 0.34), DORM_TIMBER)
+		var west_rafter := _add_box(gable_ends, "%sWestRakingBeam" % side_name, Vector3(-3.6, 4.55, end_z), Vector3(7.7, 0.22, 0.34), DORM_TIMBER)
+		west_rafter.rotation_degrees.z = 17.0
+		var east_rafter := _add_box(gable_ends, "%sEastRakingBeam" % side_name, Vector3(3.6, 4.55, end_z), Vector3(7.7, 0.22, 0.34), DORM_TIMBER)
+		east_rafter.rotation_degrees.z = -17.0
 
 	var windows := Node3D.new()
 	windows.name = "TenBedBayWindows"
@@ -225,16 +240,16 @@ func _build_roof() -> void:
 	var main_roof := Node3D.new()
 	main_roof.name = "LongWineShingleRoof"
 	roof.add_child(main_roof)
-	var west := _add_box(main_roof, "WestShingleSlope", Vector3(-3.38, 4.22, 0.0), Vector3(7.45, 0.18, 13.55), DORM_ROOF)
-	west.rotation_degrees.z = 24.0
-	var east := _add_box(main_roof, "EastShingleSlope", Vector3(3.38, 4.22, 0.0), Vector3(7.45, 0.18, 13.55), DORM_ROOF.darkened(0.045))
-	east.rotation_degrees.z = -24.0
-	_add_cylinder(main_roof, "RoundedWineRidge", Vector3(0.0, 5.73, 0.0), 0.16, 13.78, DORM_ROOF_EDGE, Vector3(90.0, 0.0, 0.0))
+	var west := _add_box(main_roof, "WestShingleSlope", Vector3(-3.7, 4.585, 0.0), Vector3(7.78, 0.18, 13.84), DORM_ROOF)
+	west.rotation_degrees.z = 17.0
+	var east := _add_box(main_roof, "EastShingleSlope", Vector3(3.7, 4.585, 0.0), Vector3(7.78, 0.18, 13.84), DORM_ROOF.darkened(0.045))
+	east.rotation_degrees.z = -17.0
+	_add_cylinder(main_roof, "RoundedWineRidge", Vector3(0.0, 5.74, 0.0), 0.17, 13.9, DORM_ROOF_EDGE, Vector3(90.0, 0.0, 0.0))
 	for z in [-6.1, -4.8, -3.6, -2.4, -1.2, 0.0, 1.2, 2.4, 3.6, 4.8, 6.1]:
-		var west_band := _add_box(main_roof, "WestShingleCourse", Vector3(-3.38, 4.31, float(z)), Vector3(7.35, 0.045, 0.07), DORM_ROOF_EDGE.lightened(0.04))
-		west_band.rotation_degrees.z = 24.0
-		var east_band := _add_box(main_roof, "EastShingleCourse", Vector3(3.38, 4.31, float(z)), Vector3(7.35, 0.045, 0.07), DORM_ROOF_EDGE)
-		east_band.rotation_degrees.z = -24.0
+		var west_band := _add_box(main_roof, "WestShingleCourse", Vector3(-3.7, 4.675, float(z)), Vector3(7.7, 0.045, 0.07), DORM_ROOF_EDGE.lightened(0.04))
+		west_band.rotation_degrees.z = 17.0
+		var east_band := _add_box(main_roof, "EastShingleCourse", Vector3(3.7, 4.675, float(z)), Vector3(7.7, 0.045, 0.07), DORM_ROOF_EDGE)
+		east_band.rotation_degrees.z = -17.0
 	var vents := Node3D.new()
 	vents.name = "FiveLowRidgeVents"
 	roof.add_child(vents)

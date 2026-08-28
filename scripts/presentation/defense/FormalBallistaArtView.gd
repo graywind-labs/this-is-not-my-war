@@ -38,6 +38,9 @@ var _last_flight_seconds := 0.0
 var _last_reload_seconds := 0.0
 var _active_projectiles: Array[Node3D] = []
 var _static_structure_part_count := 0
+var _last_authoritative_release_sequence := -1
+var _timeline_phase := "idle"
+var _destroyed_visual := false
 
 
 func _ready() -> void:
@@ -54,8 +57,98 @@ func configure_device(snapshot: Dictionary) -> void:
 	var effect: Dictionary = snapshot.get("effect", {}) if snapshot.get("effect", {}) is Dictionary else {}
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
 	_attack_interval = maxf(0.1, float(effect.get("attack_interval", _attack_interval)))
-	_projectile_speed = maxf(1.0, float(presentation.get("projectile_speed", _projectile_speed)))
+	var projectile: Dictionary = effect.get("projectile", {}) if effect.get("projectile", {}) is Dictionary else {}
+	_projectile_speed = maxf(1.0, float(projectile.get("speed", presentation.get("projectile_speed", _projectile_speed))))
 	_reload_fraction = clampf(float(presentation.get("reload_fraction", _reload_fraction)), 0.2, 0.9)
+
+
+func set_destroyed_visual(destroyed: bool) -> void:
+	if not destroyed or _destroyed_visual:
+		return
+	_destroyed_visual = true
+	_timeline_phase = "destroyed"
+	for tween in [_reload_tween, _recoil_tween, _winch_tween]:
+		if tween != null and tween.is_valid():
+			tween.kill()
+	if is_instance_valid(_loaded_bolt):
+		_loaded_bolt.visible = false
+	if is_instance_valid(_string_left):
+		_string_left.visible = false
+	if is_instance_valid(_string_right):
+		_string_right.visible = false
+	var carriage := get_node_or_null("TexturedCarriage") as Node3D
+	if carriage != null:
+		carriage.position = Vector3(-0.10, -0.08, 0.06)
+		carriage.rotation_degrees = Vector3(3.0, -5.0, -8.0)
+	if is_instance_valid(_yaw_pivot):
+		_yaw_pivot.position = Vector3(0.38, 0.16, -0.18)
+		_yaw_pivot.rotation_degrees = Vector3(58.0, -16.0, 22.0)
+	if is_instance_valid(_firing_cradle):
+		_firing_cradle.position = Vector3(0.12, -0.12, 0.30)
+		_firing_cradle.rotation_degrees.z = -12.0
+	if is_instance_valid(_winch):
+		_winch.position += Vector3(0.22, -0.18, -0.10)
+		_winch.rotation_degrees = Vector3(42.0, 18.0, 74.0)
+	_build_ruin_debris()
+	set_meta("destroyed_visual", true)
+
+
+func _build_ruin_debris() -> void:
+	if get_node_or_null("RuinDebris") != null:
+		return
+	var debris := Node3D.new()
+	debris.name = "RuinDebris"
+	add_child(debris)
+	_add_box(debris, "BrokenBowArmLeft", Vector3(0.16, 0.14, 1.26), Vector3(-0.94, 0.11, 0.62), Vector3(0.0, 0.38, 1.36), _wood_material)
+	_add_box(debris, "BrokenBowArmRight", Vector3(0.16, 0.14, 1.08), Vector3(0.88, 0.12, 0.35), Vector3(0.12, -0.42, -1.18), _wood_material)
+	_add_box(debris, "SnappedRunner", Vector3(0.24, 0.20, 1.34), Vector3(-0.40, 0.10, -0.82), Vector3(0.08, 0.55, 0.16), _wood_dark_material)
+	_add_cylinder(debris, "LooseWheel", 0.43, 0.20, Vector3(1.03, 0.12, -0.56), Vector3(0.18, 0.22, PI * 0.43), _wood_dark_material, 12)
+
+
+func get_combat_projectile_release_snapshot(weapon_type: String) -> Dictionary:
+	if weapon_type != "crossbow":
+		return {"ready": false, "reason": "ballista_weapon_type_mismatch", "origin_source": "unavailable"}
+	if not is_instance_valid(_muzzle) or not is_instance_valid(_loaded_bolt) or not _loaded_bolt.visible:
+		return {"ready": false, "reason": "ballista_loaded_bolt_unavailable", "origin_source": "unavailable"}
+	return {
+		"ready": true,
+		"transform": _muzzle.global_transform,
+		"origin_source": "formal_ballista_muzzle",
+		"projectile_node_path": str(_loaded_bolt.get_path()),
+		"muzzle_node_path": str(_muzzle.get_path()),
+		"mounted": false
+	}
+
+
+func sync_attack_timeline(timeline: Dictionary) -> void:
+	var target := _dict_to_vector3(timeline.get("target_position", {}))
+	if not target.is_equal_approx(Vector3.ZERO):
+		_aim_at(target)
+	var phase := str(timeline.get("phase", "idle"))
+	_timeline_phase = phase
+	var interval := maxf(0.1, float(timeline.get("attack_interval", _attack_interval)))
+	var release_seconds := clampf(float(timeline.get("release_seconds", interval * 0.25)), 0.0, interval)
+	var elapsed := clampf(float(timeline.get("attack_elapsed", 0.0)), 0.0, interval)
+	if phase == "release":
+		var sequence := int(timeline.get("attack_sequence", -1))
+		if sequence != _last_authoritative_release_sequence:
+			_last_authoritative_release_sequence = sequence
+			_shot_count += 1
+			_last_target = target
+			_loaded_bolt.visible = false
+			_set_string_draw_z(STRING_REST_Z)
+		return
+	if phase == "recovery":
+		var progress := clampf((elapsed - release_seconds) / maxf(0.001, interval - release_seconds), 0.0, 1.0)
+		_set_string_draw_z(lerpf(STRING_REST_Z, STRING_DRAW_Z, progress))
+		_loaded_bolt.visible = progress >= 0.98
+		_firing_cradle.position.z = -0.15 * pow(1.0 - progress, 4.0)
+		_winch.rotation.x = TAU * 3.0 * progress
+		_last_reload_seconds = interval - release_seconds
+		return
+	_firing_cradle.position.z = 0.0
+	_set_string_draw_z(STRING_DRAW_Z)
+	_loaded_bolt.visible = true
 
 
 func play_device_action(action_result: Dictionary) -> void:
@@ -90,6 +183,9 @@ func get_debug_snapshot() -> Dictionary:
 		"last_target_position": _vector3_to_dict(_last_target),
 		"last_flight_seconds": _last_flight_seconds,
 		"last_reload_seconds": _last_reload_seconds,
+		"timeline_phase": _timeline_phase,
+		"destroyed_visual": _destroyed_visual,
+		"last_authoritative_release_sequence": _last_authoritative_release_sequence,
 		"yaw_degrees": rad_to_deg(_yaw_pivot.rotation.y) if is_instance_valid(_yaw_pivot) else 0.0,
 		"wood_texture": WOOD_BASE,
 		"metal_texture": METAL_BASE,

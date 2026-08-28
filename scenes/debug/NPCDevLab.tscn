@@ -1,0 +1,138 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://scripts/debug/NPCDevLab.gd" id="1_script"]
+
+[sub_resource type="Environment" id="Environment_lab"]
+background_mode = 1
+background_color = Color(0.075, 0.09, 0.085, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.56, 0.62, 0.60, 1)
+ambient_light_energy = 0.74
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="GroundMaterial"]
+albedo_color = Color(0.17, 0.24, 0.18, 1)
+roughness = 0.95
+
+[sub_resource type="PlaneMesh" id="GroundMesh"]
+material = SubResource("GroundMaterial")
+size = Vector2(16, 14)
+
+[sub_resource type="StandardMaterial3D" id="PlinthMaterial"]
+albedo_color = Color(0.25, 0.21, 0.15, 1)
+roughness = 0.88
+
+[sub_resource type="CylinderMesh" id="PlinthMesh"]
+material = SubResource("PlinthMaterial")
+top_radius = 1.18
+bottom_radius = 1.28
+height = 0.14
+radial_segments = 16
+
+[sub_resource type="StandardMaterial3D" id="RingMaterial"]
+albedo_color = Color(0.67, 0.49, 0.24, 1)
+emission_enabled = true
+emission = Color(0.16, 0.10, 0.035, 1)
+roughness = 0.58
+
+[sub_resource type="TorusMesh" id="RingMesh"]
+material = SubResource("RingMaterial")
+inner_radius = 1.14
+outer_radius = 1.25
+rings = 16
+ring_segments = 32
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_rotation_drag"]
+radius = 0.58
+height = 2.7
+
+[sub_resource type="StandardMaterial3D" id="SeatWoodMaterial"]
+albedo_color = Color(0.31, 0.19, 0.085, 1)
+roughness = 0.92
+
+[sub_resource type="BoxMesh" id="SeatTopMesh"]
+material = SubResource("SeatWoodMaterial")
+size = Vector3(0.72, 0.12, 0.62)
+
+[sub_resource type="BoxMesh" id="SeatLegMesh"]
+material = SubResource("SeatWoodMaterial")
+size = Vector3(0.1, 0.35, 0.1)
+
+[node name="NPCDevLab" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_lab")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -36, 0)
+light_color = Color(1, 0.88, 0.72, 1)
+light_energy = 1.38
+shadow_enabled = true
+
+[node name="Fill" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-24, 138, 0)
+light_color = Color(0.48, 0.64, 0.78, 1)
+light_energy = 0.46
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("GroundMesh")
+
+[node name="Plinth" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.07, 0)
+mesh = SubResource("PlinthMesh")
+
+[node name="PlinthRing" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.15, 0)
+mesh = SubResource("RingMesh")
+
+[node name="Stage" type="Node3D" parent="."]
+
+[node name="HorseMount" type="Node3D" parent="Stage"]
+position = Vector3(0, 0.13, 0)
+
+[node name="CharacterMount" type="Node3D" parent="Stage"]
+position = Vector3(0, 0.12, 0)
+
+[node name="SeatPreview" type="Node3D" parent="Stage"]
+visible = false
+
+[node name="SeatTop" type="MeshInstance3D" parent="Stage/SeatPreview"]
+position = Vector3(0, 0.55, 0.06)
+mesh = SubResource("SeatTopMesh")
+
+[node name="FrontLeftLeg" type="MeshInstance3D" parent="Stage/SeatPreview"]
+position = Vector3(-0.25, 0.315, 0.26)
+mesh = SubResource("SeatLegMesh")
+
+[node name="FrontRightLeg" type="MeshInstance3D" parent="Stage/SeatPreview"]
+position = Vector3(0.25, 0.315, 0.26)
+mesh = SubResource("SeatLegMesh")
+
+[node name="BackLeftLeg" type="MeshInstance3D" parent="Stage/SeatPreview"]
+position = Vector3(-0.25, 0.315, -0.14)
+mesh = SubResource("SeatLegMesh")
+
+[node name="BackRightLeg" type="MeshInstance3D" parent="Stage/SeatPreview"]
+position = Vector3(0.25, 0.315, -0.14)
+mesh = SubResource("SeatLegMesh")
+
+[node name="RotationDragArea" type="Area3D" parent="Stage"]
+position = Vector3(0, 1.47, 0)
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Stage/RotationDragArea"]
+shape = SubResource("CapsuleShape_rotation_drag")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(0, 2.05, 5.35)
+current = true
+fov = 35.0
+near = 0.08
+far = 40.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]

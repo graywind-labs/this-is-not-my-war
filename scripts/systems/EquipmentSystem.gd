@@ -3,6 +3,8 @@ extends Node
 const WEAPON_DEFS_FILE := "weapon_defs.json"
 const ARMOR_DEFS_FILE := "armor_defs.json"
 const MOUNT_DEFS_FILE := "mount_defs.json"
+const GM_DEBUG_PRESETS_FILE := "gm_debug_presets.json"
+const DEFAULT_GM_COMBAT_LOADOUT_PRESET_ID := "all_npc_recruit_and_equip"
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
@@ -168,6 +170,9 @@ func set_npc_horse_mount(
 	var states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
 	if bool(states.get("escaped", false)):
 		return _failure("npc_escaped", "逃离的 NPC 不能分配马匹。")
+	var mode_failure := _get_loadout_mode_failure(states)
+	if not mode_failure.is_empty():
+		return mode_failure
 	var equipment := _normalize_equipment(npc.get("equipment", {}))
 	if (equipment.get(SLOT_MAIN_WEAPON, {}) as Dictionary).is_empty():
 		return _failure("main_weapon_required", "NPC 必须先装备主武器才能分配马匹。")
@@ -198,6 +203,11 @@ func set_npc_horse_mount(
 	next_item["horse_id"] = horse_id
 	next_item["horse_name"] = horse_name
 	next_item["name"] = horse_name
+	next_item["horse_template_id"] = str(horse_snapshot.get("template_id", ""))
+	next_item["horse_coat_name"] = str(horse_snapshot.get("coat_name", ""))
+	next_item["horse_coat_color"] = str(horse_snapshot.get("coat_color", "#9B6846"))
+	next_item["icon"] = str(horse_snapshot.get("icon", mount_definition.get("icon", "")))
+	next_item["stable_slot_id"] = str(horse_snapshot.get("stable_slot_id", ""))
 	if not npc_system.set_npc_equipment_slot(npc_id, SLOT_MOUNT, next_item):
 		return _failure("equipment_write_failed", "写入 NPC 马匹引用失败。")
 
@@ -237,7 +247,8 @@ func clear_npc_horse_mount(
 	npc_id: String,
 	visibility: String = DEFAULT_VISIBILITY,
 	reason: String = "horse_unassigned",
-	record_event: bool = true
+	record_event: bool = true,
+	bypass_mode_lock: bool = false
 ) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("set_npc_equipment_slot"):
@@ -245,6 +256,10 @@ func clear_npc_horse_mount(
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
 		return _failure("unknown_npc", "NPC 不存在。")
+	var unequip_states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+	var unequip_mode_failure := _get_loadout_mode_failure(unequip_states)
+	if not bypass_mode_lock and not unequip_mode_failure.is_empty():
+		return unequip_mode_failure
 	var equipment := _normalize_equipment(npc.get("equipment", {}))
 	var previous_item: Dictionary = equipment.get(SLOT_MOUNT, {})
 	if previous_item.is_empty():
@@ -321,6 +336,10 @@ func unequip_npc_slot(
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
 		return _failure("unknown_npc", "NPC 不存在。")
+	var unequip_states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+	var unequip_mode_failure := _get_loadout_mode_failure(unequip_states)
+	if not unequip_mode_failure.is_empty():
+		return unequip_mode_failure
 	var equipment := _normalize_equipment(npc.get("equipment", {}))
 	var previous_item: Dictionary = equipment.get(normalized_slot, {})
 	if previous_item.is_empty():
@@ -477,6 +496,302 @@ func debug_equip_mount(npc_id: String, visibility: String = DEFAULT_VISIBILITY) 
 	return equip_npc_mount(npc_id, "", visibility)
 
 
+func debug_apply_combat_loadout_preset(
+	preset_id: String = DEFAULT_GM_COMBAT_LOADOUT_PRESET_ID
+) -> Dictionary:
+	var config_loader := get_node_or_null("/root/ConfigLoader")
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if config_loader == null or not config_loader.has_method("load_data_file"):
+		return _failure("config_loader_missing", "GM 配装配置加载器不可用。")
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_recruited"):
+		return _failure("npc_system_missing", "NPC 系统征召接口不可用。")
+	if resource_system == null or not resource_system.has_method("add_resources") or not resource_system.has_method("get_resource"):
+		return _failure("resource_system_missing", "资源系统库存接口不可用。")
+	if horse_system == null or not horse_system.has_method("debug_ensure_horses") or not horse_system.has_method("assign_horse_to_npc"):
+		return _failure("horse_system_missing", "马匹系统调试配装接口不可用。")
+
+	var loaded: Variant = config_loader.load_data_file(GM_DEBUG_PRESETS_FILE, {})
+	if not loaded is Dictionary or str((loaded as Dictionary).get("schema_version", "")) != "gm_debug_presets_v1":
+		return _failure("invalid_preset_schema", "GM 配装配置 Schema 无效。")
+	var preset := _find_debug_combat_loadout_preset(
+		(loaded as Dictionary).get("combat_loadout_presets", []),
+		preset_id
+	)
+	if preset.is_empty():
+		return _failure("unknown_preset", "GM 配装预设不存在：%s" % preset_id)
+	var preflight := _validate_debug_combat_loadout_preset(preset, npc_system, horse_system)
+	if not bool(preflight.get("ok", false)):
+		return preflight
+
+	var assignments: Array = preset.get("assignments", [])
+	if _is_debug_combat_loadout_preset_applied(assignments, npc_system, horse_system):
+		return {
+			"ok": true,
+			"changed": false,
+			"already_applied": true,
+			"preset_id": preset_id,
+			"display_name": str(preset.get("display_name", preset_id)),
+			"inventory_added": {},
+			"created_horse_ids": [],
+			"npc_loadouts": _make_debug_combat_loadout_snapshots(assignments, npc_system),
+		}
+
+	var ensure_horses: Dictionary = horse_system.debug_ensure_horses(preset.get("debug_horses", []))
+	if not bool(ensure_horses.get("ok", false)):
+		return _debug_preset_stage_failure("ensure_debug_horses", ensure_horses)
+	var visibility := str(preset.get("visibility", "private"))
+	var operation_results: Array[Dictionary] = []
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", ""))
+		var unmount_result := unequip_npc_slot(npc_id, SLOT_MOUNT, visibility, "gm_combat_loadout_preset")
+		operation_results.append(unmount_result)
+		if not bool(unmount_result.get("ok", false)):
+			return _debug_preset_stage_failure("clear_mounts", unmount_result, operation_results)
+
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", ""))
+		for slot in [SLOT_MAIN_WEAPON, SLOT_HELMET, SLOT_CHEST, SLOT_BRACERS, SLOT_GREAVES]:
+			var clear_result := unequip_npc_slot(npc_id, slot, visibility, "gm_combat_loadout_preset")
+			operation_results.append(clear_result)
+			if not bool(clear_result.get("ok", false)):
+				return _debug_preset_stage_failure("clear_equipment", clear_result, operation_results)
+
+	for raw_assignment in assignments:
+		var npc_id := str((raw_assignment as Dictionary).get("npc_id", ""))
+		if not bool(npc_system.set_npc_recruited(npc_id, true)):
+			return _debug_preset_stage_failure("recruit_npcs", {"npc_id": npc_id})
+
+	var required_resources := _get_debug_preset_required_resources(assignments)
+	var inventory_added := {}
+	for raw_resource_id in required_resources.keys():
+		var resource_id := str(raw_resource_id)
+		var missing := maxi(0, int(required_resources[raw_resource_id]) - int(resource_system.get_resource(resource_id)))
+		if missing > 0:
+			inventory_added[resource_id] = missing
+	if not inventory_added.is_empty() and not bool(resource_system.add_resources(inventory_added)):
+		return _debug_preset_stage_failure("top_up_inventory", {"required": required_resources, "missing": inventory_added})
+
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", ""))
+		var weapon_id := str(assignment.get("weapon_id", ""))
+		var weapon_result := equip_npc_main_weapon(npc_id, weapon_id, visibility)
+		operation_results.append(weapon_result)
+		if not bool(weapon_result.get("ok", false)):
+			return _debug_preset_stage_failure("equip_weapons", weapon_result, operation_results)
+		var armor: Dictionary = assignment.get("armor", {}) if assignment.get("armor", {}) is Dictionary else {}
+		for slot in ARMOR_SLOTS:
+			var armor_id := str(armor.get(slot, ""))
+			if armor_id.is_empty():
+				continue
+			var armor_result := equip_npc_armor(npc_id, slot, armor_id, visibility)
+			operation_results.append(armor_result)
+			if not bool(armor_result.get("ok", false)):
+				return _debug_preset_stage_failure("equip_armor", armor_result, operation_results)
+
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var horse_id := str(assignment.get("horse_id", ""))
+		if horse_id.is_empty():
+			continue
+		var npc_id := str(assignment.get("npc_id", ""))
+		var horse_result: Dictionary = horse_system.assign_horse_to_npc(npc_id, horse_id, visibility)
+		operation_results.append(horse_result)
+		if not bool(horse_result.get("ok", false)):
+			return _debug_preset_stage_failure("assign_horses", horse_result, operation_results)
+
+	return {
+		"ok": true,
+		"changed": true,
+		"already_applied": false,
+		"preset_id": preset_id,
+		"display_name": str(preset.get("display_name", preset_id)),
+		"inventory_added": inventory_added,
+		"created_horse_ids": ensure_horses.get("created_horse_ids", []),
+		"npc_loadouts": _make_debug_combat_loadout_snapshots(assignments, npc_system),
+	}
+
+
+func _find_debug_combat_loadout_preset(raw_presets: Variant, preset_id: String) -> Dictionary:
+	if not raw_presets is Array:
+		return {}
+	for raw_preset in raw_presets:
+		if raw_preset is Dictionary and str((raw_preset as Dictionary).get("id", "")) == preset_id:
+			return (raw_preset as Dictionary).duplicate(true)
+	return {}
+
+
+func _validate_debug_combat_loadout_preset(
+	preset: Dictionary,
+	npc_system: Node,
+	horse_system: Node
+) -> Dictionary:
+	var assignments: Variant = preset.get("assignments", [])
+	if not assignments is Array or (assignments as Array).is_empty():
+		return _failure("invalid_preset_assignments", "GM 配装预设没有合法 assignments。")
+	var npc_ids: Array = npc_system.get_npc_ids()
+	if (assignments as Array).size() != npc_ids.size():
+		return _failure("preset_npc_count_mismatch", "GM 配装预设必须覆盖全部 NPC。")
+
+	var debug_horse_ids := {}
+	var raw_debug_horses: Variant = preset.get("debug_horses", [])
+	if not raw_debug_horses is Array:
+		return _failure("invalid_debug_horses", "GM 配装测试马配置必须是数组。")
+	for raw_definition in raw_debug_horses:
+		if not raw_definition is Dictionary:
+			return _failure("invalid_debug_horse_definition", "GM 配装测试马配置无效。")
+		var debug_horse_id := str((raw_definition as Dictionary).get("horse_id", "")).strip_edges()
+		if debug_horse_id.is_empty() or debug_horse_ids.has(debug_horse_id):
+			return _failure("invalid_debug_horse_id", "GM 配装测试马 ID 缺失或重复。")
+		debug_horse_ids[debug_horse_id] = true
+
+	var assigned_npc_ids := {}
+	var assigned_horse_ids := {}
+	for raw_assignment in assignments:
+		if not raw_assignment is Dictionary:
+			return _failure("invalid_preset_assignment", "GM 配装 assignment 不是对象。")
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", "")).strip_edges()
+		if npc_id.is_empty() or assigned_npc_ids.has(npc_id) or not npc_ids.has(npc_id):
+			return _failure("invalid_or_duplicate_npc", "GM 配装 NPC 缺失、重复或不存在：%s" % npc_id)
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		var states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+		var mode_failure := _get_loadout_mode_failure(states)
+		if not mode_failure.is_empty():
+			mode_failure["npc_id"] = npc_id
+			return mode_failure
+		if bool(states.get("escaped", false)):
+			return _failure("npc_escaped", "逃离 NPC 不能应用 GM 配装：%s" % npc_id)
+		assigned_npc_ids[npc_id] = true
+
+		var weapon_id := str(assignment.get("weapon_id", "")).strip_edges()
+		if get_weapon_def(weapon_id).is_empty():
+			return _failure("unknown_preset_weapon", "GM 配装武器不存在：%s" % weapon_id)
+		var armor: Variant = assignment.get("armor", {})
+		if not armor is Dictionary:
+			return _failure("invalid_preset_armor", "GM 配装盔甲必须是对象：%s" % npc_id)
+		for raw_slot in (armor as Dictionary).keys():
+			var slot := _normalize_slot_id(str(raw_slot))
+			var armor_id := str((armor as Dictionary).get(raw_slot, ""))
+			var armor_def := get_armor_def(armor_id)
+			if not ARMOR_SLOTS.has(slot) or armor_def.is_empty() or str(armor_def.get("slot", "")) != slot:
+				return _failure("invalid_preset_armor_item", "GM 配装盔甲部位或装备无效：%s/%s" % [slot, armor_id])
+
+		var horse_id := str(assignment.get("horse_id", "")).strip_edges()
+		if horse_id.is_empty():
+			continue
+		if assigned_horse_ids.has(horse_id):
+			return _failure("duplicate_preset_horse", "GM 配装马匹被重复分配：%s" % horse_id)
+		assigned_horse_ids[horse_id] = true
+		if horse_system.has_method("has_horse") and bool(horse_system.has_horse(horse_id)):
+			var horse: Dictionary = horse_system.get_horse_snapshot(horse_id)
+			if not bool(horse.get("alive", false)) or not bool(horse.get("is_adult", false)):
+				return _failure("preset_horse_unavailable", "GM 配装马匹死亡或未成年：%s" % horse_id)
+			if str(horse.get("location", "stable")) != "stable":
+				return _failure("preset_horse_not_in_stable", "GM 配装马匹当前不在马厩：%s" % horse_id)
+		elif not debug_horse_ids.has(horse_id):
+			return _failure("unknown_preset_horse", "GM 配装马匹不存在且不是测试马：%s" % horse_id)
+
+	for raw_npc_id in npc_ids:
+		if not assigned_npc_ids.has(str(raw_npc_id)):
+			return _failure("preset_missing_npc", "GM 配装没有覆盖 NPC：%s" % str(raw_npc_id))
+	return {"ok": true}
+
+
+func _is_debug_combat_loadout_preset_applied(
+	assignments: Array,
+	npc_system: Node,
+	horse_system: Node
+) -> bool:
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", ""))
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		if not bool(npc.get("recruited", false)):
+			return false
+		var equipment := get_equipment_snapshot(npc_id)
+		if str((equipment.get(SLOT_MAIN_WEAPON, {}) as Dictionary).get("id", "")) != str(assignment.get("weapon_id", "")):
+			return false
+		var armor: Dictionary = assignment.get("armor", {}) if assignment.get("armor", {}) is Dictionary else {}
+		for slot in ARMOR_SLOTS:
+			var actual_id := str((equipment.get(slot, {}) as Dictionary).get("id", ""))
+			if actual_id != str(armor.get(slot, "")):
+				return false
+		var expected_horse_id := str(assignment.get("horse_id", ""))
+		var actual_horse_id := str((equipment.get(SLOT_MOUNT, {}) as Dictionary).get("horse_id", ""))
+		if actual_horse_id != expected_horse_id:
+			return false
+		if not expected_horse_id.is_empty():
+			var horse: Dictionary = horse_system.get_horse_snapshot(expected_horse_id)
+			if str(horse.get("assigned_npc_id", "")) != npc_id:
+				return false
+	return true
+
+
+func _get_debug_preset_required_resources(assignments: Array) -> Dictionary:
+	var required := {}
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var weapon_def := get_weapon_def(str(assignment.get("weapon_id", "")))
+		var weapon_resource_id := str(weapon_def.get("source_resource_id", ""))
+		if not weapon_resource_id.is_empty():
+			required[weapon_resource_id] = int(required.get(weapon_resource_id, 0)) + 1
+		var armor: Dictionary = assignment.get("armor", {}) if assignment.get("armor", {}) is Dictionary else {}
+		for raw_armor_id in armor.values():
+			var armor_def := get_armor_def(str(raw_armor_id))
+			var armor_resource_id := str(armor_def.get("source_resource_id", ""))
+			if not armor_resource_id.is_empty():
+				required[armor_resource_id] = int(required.get(armor_resource_id, 0)) + 1
+	return required
+
+
+func _make_debug_combat_loadout_snapshots(assignments: Array, npc_system: Node) -> Array[Dictionary]:
+	var snapshots: Array[Dictionary] = []
+	for raw_assignment in assignments:
+		var assignment: Dictionary = raw_assignment
+		var npc_id := str(assignment.get("npc_id", ""))
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		var equipment := get_equipment_snapshot(npc_id)
+		var armor_ids := {}
+		for slot in ARMOR_SLOTS:
+			armor_ids[slot] = str((equipment.get(slot, {}) as Dictionary).get("id", ""))
+		var unit_type := determine_unit_type(equipment)
+		snapshots.append({
+			"npc_id": npc_id,
+			"npc_name": str(npc.get("name", npc_id)),
+			"loadout_label": str(assignment.get("loadout_label", "")),
+			"recruited": bool(npc.get("recruited", false)),
+			"unit_type": unit_type,
+			"unit_type_label": get_unit_type_label(unit_type),
+			"weapon_id": str((equipment.get(SLOT_MAIN_WEAPON, {}) as Dictionary).get("id", "")),
+			"armor": armor_ids,
+			"full_armor": ARMOR_SLOTS.all(func(slot: String) -> bool: return not str(armor_ids.get(slot, "")).is_empty()),
+			"horse_id": str((equipment.get(SLOT_MOUNT, {}) as Dictionary).get("horse_id", "")),
+		})
+	return snapshots
+
+
+func _debug_preset_stage_failure(
+	stage: String,
+	failure: Dictionary,
+	operation_results: Array[Dictionary] = []
+) -> Dictionary:
+	return {
+		"ok": false,
+		"changed": not operation_results.is_empty(),
+		"partial": not operation_results.is_empty(),
+		"error": "gm_combat_loadout_preset_failed",
+		"message": "GM 一键征召配装在阶段 %s 失败。" % stage,
+		"stage": stage,
+		"failure": failure.duplicate(true),
+		"operation_results": operation_results.duplicate(true),
+	}
+
+
 func _equip_npc_item(
 	npc_id: String,
 	slot: String,
@@ -498,6 +813,9 @@ func _equip_npc_item(
 	var states: Dictionary = npc.get("states", {})
 	if bool(states.get("escaped", false)):
 		return _failure("npc_escaped", "逃离的 NPC 不能再分配装备。")
+	var mode_failure := _get_loadout_mode_failure(states)
+	if not mode_failure.is_empty():
+		return mode_failure
 
 	var definition := _get_item_def(item_kind, item_id)
 	if definition.is_empty():
@@ -728,6 +1046,13 @@ func _normalize_slot_id(slot: String) -> String:
 			return SLOT_GREAVES
 		_:
 			return slot
+
+
+func _get_loadout_mode_failure(states: Dictionary) -> Dictionary:
+	var behavior_mode := str(states.get("behavior_mode", "work"))
+	if behavior_mode == "work":
+		return {}
+	return _failure("loadout_locked_in_wartime", "只有工作模式下才能更换装备或马匹。")
 
 
 func _log_equipment_event(

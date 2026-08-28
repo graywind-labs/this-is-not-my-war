@@ -135,7 +135,7 @@ func _init() -> void:
 	var points: Dictionary = {}
 	for raw in stages:
 		points[str((raw as Dictionary).get("id", ""))] = _v2((raw as Dictionary).get("point", []))
-	var offset := Vector3(1000.0, 0.0, 0.0)
+	var offset := formal.global_position
 	var path := NavigationServer3D.map_get_path(
 		map,
 		offset + Vector3(points["front_gate"].x, 0.0, points["front_gate"].y),

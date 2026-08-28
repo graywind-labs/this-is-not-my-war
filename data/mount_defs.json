@@ -2,6 +2,7 @@
   {
     "id": "riding_horse",
     "name": "已分配马匹",
+    "icon": "res://assets/ui/item_icons/horse/chestnut_wind.png",
     "slot": "mount",
     "speed_bonus": 1.35,
     "attack_speed_modifier": 0.05,

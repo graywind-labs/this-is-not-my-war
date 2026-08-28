@@ -4,7 +4,6 @@ extends SceneTree
 const MAIN_SCENE_PATH := "res://scenes/main/Main.tscn"
 const BLACKSMITH_ART_PATH := "Main/WorldRoot/FormalStationLayout/BuildingRoots/Blacksmith/BlacksmithArt"
 const WORKSHOP_ART_PATH := "Main/WorldRoot/FormalStationLayout/BuildingRoots/Workshop/WorkshopArt"
-const BLACKSMITH_ACTOR_PATH := "Main/WorldRoot/Station/NPCs/Blacksmith01"
 const WORKSHOP_ACTOR_PATH := "Main/WorldRoot/Station/NPCs/Engineer01"
 
 var _failed := false
@@ -24,17 +23,14 @@ func _init() -> void:
 	var workshop_art := root.get_node_or_null(WORKSHOP_ART_PATH) as Node3D
 	if not _expect(blacksmith_art != null and workshop_art != null, "Formal building art views are missing"):
 		return
-	if not _verify_door_contract(blacksmith_art, "blacksmith"):
+	if not _verify_blacksmith_open_front(blacksmith_art):
 		return
 	if not _verify_door_contract(workshop_art, "workshop"):
 		return
 	if not _verify_lantern_roof_clearance(blacksmith_art):
 		return
-	var blacksmith_actor := root.get_node_or_null(BLACKSMITH_ACTOR_PATH) as CharacterBody3D
 	var workshop_actor := root.get_node_or_null(WORKSHOP_ACTOR_PATH) as CharacterBody3D
-	if not _expect(blacksmith_actor != null and workshop_actor != null, "Real NPC bodies are missing"):
-		return
-	if not await _verify_actor_operated_door(blacksmith_art, blacksmith_actor, "blacksmith"):
+	if not _expect(workshop_actor != null, "Real workshop NPC body is missing"):
 		return
 	if not await _verify_actor_operated_door(workshop_art, workshop_actor, "workshop"):
 		return
@@ -42,6 +38,23 @@ func _init() -> void:
 	main.queue_free()
 	await process_frame
 	quit(0)
+
+
+func _verify_blacksmith_open_front(art_view: Node3D) -> bool:
+	var exterior := art_view.get_node_or_null("Exterior") as Node3D
+	var collision_root := art_view.get_parent().get_node_or_null("StaticCollision") if art_view.get_parent() != null else null
+	if not _expect(exterior != null and collision_root != null, "Blacksmith open-front structure is missing"):
+		return false
+	for removed_name in ["FrontWall", "FrontDoor", "DoorJambLeft", "DoorJambRight", "AutoDoor"]:
+		if not _expect(exterior.get_node_or_null(removed_name) == null, "Blacksmith open front still contains %s" % removed_name):
+			return false
+	if not _expect(collision_root.get_node_or_null("FrontLeft") == null and collision_root.get_node_or_null("FrontRight") == null, "Blacksmith open front still has invisible wall collision"):
+		return false
+	var front_post_count := 0
+	for child in exterior.get_children():
+		if str(child.name).begins_with("FrontPost"):
+			front_post_count += 1
+	return _expect(front_post_count == 4, "Blacksmith did not retain its four original front roof posts")
 
 
 func _verify_door_contract(art_view: Node3D, building_label: String) -> bool:

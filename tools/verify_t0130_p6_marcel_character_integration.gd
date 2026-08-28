@@ -4,6 +4,8 @@ extends SceneTree
 const NPC_ID := "priest_01"
 const EXPECTED_APPEARANCE_ID := "marcel_priest_chibi_v1"
 const EXPECTED_PROFILE_APPEARANCE := "灰白长发和胡须修得整齐，暗紫旧袍压着褪色金边，胸前挂着木质圣徽，眼神温和但并不软弱。"
+const EXPECTED_CROSS_POSITION := Vector3(0.0, 0.01, 0.195)
+const EXPECTED_CROSS_ROTATION_DEGREES := Vector3(-4.946784, 0.614417, -90.05296)
 const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
 
 var _failures: Array[String] = []
@@ -50,6 +52,10 @@ func _init() -> void:
 	check(int(initial.get("removed_headwear_triangle_count", 0)) == 114, "Marcel's audited 114-triangle wizard hat topology changed or was not removed")
 	check(bool(initial.get("wooden_cross_visible", false)), "Marcel's wooden cross is missing")
 	check(str(initial.get("wooden_cross_parent", "")) == "Body", "Marcel's wooden cross does not follow the chest bone")
+	check(Vector3(initial.get("wooden_cross_local_position", Vector3.ZERO)).distance_to(EXPECTED_CROSS_POSITION) < 0.001, "Marcel's wooden cross position drifted")
+	check(Vector3(initial.get("wooden_cross_local_rotation_degrees", Vector3.ZERO)).distance_to(EXPECTED_CROSS_ROTATION_DEGREES) < 0.01, "Marcel's wooden cross rotation drifted")
+	check(float(initial.get("wooden_cross_up_dot", -1.0)) > 0.98, "Marcel's wooden cross long axis is not upright")
+	check(float(initial.get("wooden_cross_face_forward_dot", -1.0)) > 0.98, "Marcel's wooden cross face does not point outward")
 	check(bool(initial.get("rounded_tonsure_hair_visible", false)), "Marcel's rounded hair crown is missing")
 	check(str(initial.get("rounded_tonsure_hair_parent", "")) == "Head", "Marcel's rounded hair crown does not follow the head bone")
 	check(int(initial.get("rounded_tonsure_hair_mesh_count", 0)) == 1, "Marcel's rounded hair crown topology changed")

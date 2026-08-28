@@ -55,7 +55,7 @@ func _init() -> void:
 	if not bool(controller.is_runtime_formal_world_enabled()):
 		_fail("Successful GM start did not reveal the formal world")
 		return
-	if not glen.visible or glen.global_position.x < 900.0:
+	if not glen.visible or absf(glen.global_position.x) > 80.0 or absf(glen.global_position.z) > 100.0:
 		_fail("Glen was not visibly staged in the formal world: %s" % JSON.stringify(spatial))
 		return
 	if not await _wait_for_action(npc_system, ACTION_ID):

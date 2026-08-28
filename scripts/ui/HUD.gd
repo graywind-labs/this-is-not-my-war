@@ -33,6 +33,9 @@ var _meteor_target_preview: MeshInstance3D
 var _meteor_targeting_active := false
 var _meteor_target_valid := false
 var _meteor_target_position := Vector3.ZERO
+var _meteor_target_invalid_reason := ""
+var _meteor_target_invalid_message := ""
+var _meteor_target_feedback_until_msec := 0
 var _last_clock_refresh_key := ""
 
 
@@ -110,6 +113,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	_refresh_meteor_target_feedback()
 	if _detail_panel != null and _detail_panel.visible and _detail_source_button != null and (_detail_drag_controller == null or not _detail_drag_controller.has_user_position()):
 		_position_detail_panel_near(_detail_source_button)
 
@@ -580,6 +584,9 @@ func _begin_meteor_targeting() -> void:
 	_ensure_meteor_target_preview()
 	_meteor_targeting_active = true
 	_meteor_target_valid = false
+	_meteor_target_invalid_reason = ""
+	_meteor_target_invalid_message = ""
+	_meteor_target_feedback_until_msec = 0
 	if _piety_ability_button != null:
 		_piety_ability_button.set_targeting(true)
 	if _meteor_target_hint != null:
@@ -609,7 +616,15 @@ func _handle_meteor_targeting_input(event: InputEvent) -> bool:
 
 
 func _confirm_meteor_target() -> void:
-	if not _meteor_targeting_active or not _meteor_target_valid:
+	if not _meteor_targeting_active:
+		return
+	if not _meteor_target_valid:
+		if _meteor_target_invalid_reason == "building_overlap":
+			_show_meteor_target_feedback(
+				_meteor_target_invalid_message
+				if not _meteor_target_invalid_message.is_empty()
+				else "赖天主仁慈，陨石不能砸到建筑"
+			)
 		return
 	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
 	if piety_system == null or not piety_system.has_method("request_meteor_cast"):
@@ -619,12 +634,16 @@ func _confirm_meteor_target() -> void:
 	if bool(result.get("ok", false)):
 		_end_meteor_targeting()
 	else:
+		_show_meteor_target_feedback(str(result.get("message", "陨石无法在此处释放。")))
 		_refresh_piety_ability()
 
 
 func _end_meteor_targeting() -> void:
 	_meteor_targeting_active = false
 	_meteor_target_valid = false
+	_meteor_target_invalid_reason = ""
+	_meteor_target_invalid_message = ""
+	_meteor_target_feedback_until_msec = 0
 	if _piety_ability_button != null:
 		_piety_ability_button.set_targeting(false)
 	if _meteor_target_hint != null:
@@ -640,7 +659,7 @@ func _update_meteor_target_from_screen(screen_position: Vector2) -> void:
 	var camera := get_viewport().get_camera_3d()
 	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
 	if camera == null or piety_system == null:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var targeting_snapshot: Dictionary = (
 		piety_system.get_targeting_snapshot()
@@ -651,34 +670,64 @@ func _update_meteor_target_from_screen(screen_position: Vector2) -> void:
 	var ray_origin := camera.project_ray_origin(screen_position)
 	var ray_direction := camera.project_ray_normal(screen_position)
 	if absf(ray_direction.y) < 0.00001:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var distance := (ground_y - ray_origin.y) / ray_direction.y
 	if distance <= 0.0:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var target_position := ray_origin + ray_direction * distance
-	var valid := (
-		bool(piety_system.is_target_position_allowed(target_position))
-		if piety_system.has_method("is_target_position_allowed")
-		else false
+	var validation: Dictionary = (
+		piety_system.get_target_position_validation(target_position)
+		if piety_system.has_method("get_target_position_validation")
+		else {
+			"allowed": bool(piety_system.is_target_position_allowed(target_position))
+			if piety_system.has_method("is_target_position_allowed")
+			else false
+		}
 	)
 	_meteor_target_position = target_position
-	_set_meteor_target_valid(valid)
-	if valid and _meteor_target_preview != null:
+	_set_meteor_target_validation(validation)
+	if _meteor_target_valid and _meteor_target_preview != null:
 		_meteor_target_preview.global_position = target_position + Vector3(0.0, 0.055, 0.0)
+
+
+func _set_meteor_target_validation(validation: Dictionary) -> void:
+	_meteor_target_invalid_reason = str(validation.get("reason", ""))
+	_meteor_target_invalid_message = str(validation.get("message", ""))
+	_set_meteor_target_valid(bool(validation.get("allowed", false)))
 
 
 func _set_meteor_target_valid(valid: bool) -> void:
 	_meteor_target_valid = valid
 	if _meteor_target_preview != null:
 		_meteor_target_preview.visible = valid
-	if _meteor_target_hint != null:
+	if _meteor_target_hint != null and _meteor_target_feedback_until_msec <= Time.get_ticks_msec():
 		_meteor_target_hint.text = (
 			"选择陨石落点：左键确认，右键或 Esc 取消"
 			if valid
-			else "请把陨石圆圈放在驿站地表内；右键或 Esc 取消"
+			else (
+				"陨石范围与建筑区域重叠；左键查看提示，右键或 Esc 取消"
+				if _meteor_target_invalid_reason == "building_overlap"
+				else "当前没有可用地面落点；右键或 Esc 取消"
+			)
 		)
+
+
+func _show_meteor_target_feedback(message: String) -> void:
+	if _meteor_target_hint == null or message.is_empty():
+		return
+	_meteor_target_hint.visible = true
+	_meteor_target_hint.text = message
+	_meteor_target_feedback_until_msec = Time.get_ticks_msec() + 1600
+
+
+func _refresh_meteor_target_feedback() -> void:
+	if _meteor_target_feedback_until_msec <= 0 or Time.get_ticks_msec() < _meteor_target_feedback_until_msec:
+		return
+	_meteor_target_feedback_until_msec = 0
+	if _meteor_targeting_active:
+		_set_meteor_target_valid(_meteor_target_valid)
 
 
 func _ensure_meteor_target_preview() -> void:

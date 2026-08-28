@@ -158,6 +158,15 @@ func _init() -> void:
 			if str(route.get("arrival_mode", "")) != "mount_after_arrival" or str(route.get("occupant_pose", "")) != "seated_study":
 				_fail("Doctor chair must terminate at the seated-study anchor: %s" % workstation_id)
 				return
+			var occupant_anchor := fixture.get("occupant_anchor", {}) as Dictionary
+			var anchor_local := _v2(occupant_anchor.get("center", []))
+			if (
+				not is_equal_approx(float(fixture.get("rotation_degrees", 0.0)), 180.0)
+				or not is_equal_approx(anchor_local.x, fixture_local.x)
+				or not is_equal_approx(anchor_local.y, fixture_local.y - 0.12)
+			):
+				_fail("Doctor chair must face the desk with the seated anchor shifted 0.12m toward it: %s" % workstation_id)
+				return
 		elif str(fixture.get("kind", "")) == "clinic_bed":
 			bed_count += 1
 			if str(route.get("arrival_mode", "")) != "mount_after_arrival":

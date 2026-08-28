@@ -122,14 +122,14 @@
           "required_level": 1,
           "workstation_id": "doctor_desk_01",
           "arrival_mode": "mount_after_arrival",
-          "center": [-3.7, -3.35],
-          "rotation_degrees": 0.0,
+          "center": [-3.7, -3.61],
+          "rotation_degrees": 180.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
           "npc_stand": {"scope": "workstation", "center": [-2.9, -3.35], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.7, -3.35], "y": 0.5, "facing_degrees": 0.0, "pose": "seated_study"}
+          "occupant_anchor": {"center": [-3.7, -4.13], "y": 0.5, "facing_degrees": 0.0, "pose": "seated_study"}
         },
         {
           "id": "doctor_desk_02_table",
@@ -150,14 +150,14 @@
           "required_level": 1,
           "workstation_id": "doctor_desk_02",
           "arrival_mode": "mount_after_arrival",
-          "center": [3.7, -3.35],
-          "rotation_degrees": 0.0,
+          "center": [3.7, -3.61],
+          "rotation_degrees": 180.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
           "npc_stand": {"scope": "workstation", "center": [2.9, -3.35], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.7, -3.35], "y": 0.5, "facing_degrees": 0.0, "pose": "seated_study"}
+          "occupant_anchor": {"center": [3.7, -4.13], "y": 0.5, "facing_degrees": 0.0, "pose": "seated_study"}
         },
         {
           "id": "treatment_bed_01_bed",
@@ -521,10 +521,10 @@
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.6, -1.8], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.7, -1.8], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [-4.8, -1.8], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [-3.18, -1.8], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_02_chair",
@@ -537,10 +537,10 @@
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.6, -0.1], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.7, -0.1], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [-4.8, -0.1], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [-3.18, -0.1], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_03_chair",
@@ -553,10 +553,10 @@
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.6, 1.6], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.7, 1.6], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [-4.8, 1.6], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [-3.18, 1.6], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_04_chair",
@@ -569,10 +569,10 @@
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-0.2, -1.45], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-1.1, -1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [0.0, -1.0], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [-1.62, -1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_05_chair",
@@ -585,10 +585,10 @@
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-0.2, 0.55], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-1.1, 1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [0.0, 1.0], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [-1.62, 1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_06_chair",
@@ -601,10 +601,10 @@
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.6, -1.8], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.7, -1.8], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [4.8, -1.8], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [3.18, -1.8], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_07_chair",
@@ -617,10 +617,10 @@
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.6, -0.1], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.7, -0.1], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [4.8, -0.1], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [3.18, -0.1], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_08_chair",
@@ -633,10 +633,10 @@
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.6, 1.6], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.7, 1.6], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [4.8, 1.6], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [3.18, 1.6], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_09_chair",
@@ -649,10 +649,10 @@
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.2, -0.55], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [1.1, -1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [0.0, -1.0], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [1.62, -1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
           "id": "dining_seat_10_chair",
@@ -665,10 +665,10 @@
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 0.52],
+          "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.2, 1.45], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [1.1, 1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
+          "npc_stand": {"scope": "building", "center": [0.0, 1.0], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "occupant_anchor": {"center": [1.62, 1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         }
       ]
     },
@@ -1028,7 +1028,7 @@
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
           "npc_stand": {"scope": "workstation", "center": [-2.1, -4.5], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "horse_anchor": {"id": "stall_01", "center": [-4.0, -4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "stall_01", "center": [-4.0, -4.5], "pickup_center": [-2.1, -4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_stall_02_bay",
@@ -1045,7 +1045,7 @@
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
           "npc_stand": {"scope": "workstation", "center": [2.1, -4.5], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "horse_anchor": {"id": "stall_02", "center": [4.0, -4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "stall_02", "center": [4.0, -4.5], "pickup_center": [2.1, -4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_stall_03_bay",
@@ -1062,7 +1062,7 @@
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
           "npc_stand": {"scope": "workstation", "center": [-2.1, -1.5], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "horse_anchor": {"id": "stall_03", "center": [-4.0, -1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "stall_03", "center": [-4.0, -1.5], "pickup_center": [-2.1, -1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_horse_anchor_04_bay",
@@ -1077,7 +1077,7 @@
           "border_thickness": 0.18,
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
-          "horse_anchor": {"id": "horse_anchor_04", "center": [4.0, -1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "horse_anchor_04", "center": [4.0, -1.5], "pickup_center": [2.1, -1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_horse_anchor_05_bay",
@@ -1092,7 +1092,7 @@
           "border_thickness": 0.18,
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
-          "horse_anchor": {"id": "horse_anchor_05", "center": [-4.0, 1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "horse_anchor_05", "center": [-4.0, 1.5], "pickup_center": [-2.1, 1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_horse_anchor_06_bay",
@@ -1107,7 +1107,7 @@
           "border_thickness": 0.18,
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
-          "horse_anchor": {"id": "horse_anchor_06", "center": [4.0, 1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "horse_anchor_06", "center": [4.0, 1.5], "pickup_center": [2.1, 1.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_horse_anchor_07_bay",
@@ -1123,7 +1123,7 @@
           "close_far_end": true,
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
-          "horse_anchor": {"id": "horse_anchor_07", "center": [-4.0, 4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "horse_anchor_07", "center": [-4.0, 4.5], "pickup_center": [-2.1, 4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_horse_anchor_08_bay",
@@ -1139,7 +1139,7 @@
           "close_far_end": true,
           "collision_size": [4.8, 1.15, 3.0],
           "collision_center_y": 0.575,
-          "horse_anchor": {"id": "horse_anchor_08", "center": [4.0, 4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
+          "horse_anchor": {"id": "horse_anchor_08", "center": [4.0, 4.5], "pickup_center": [2.1, 4.5], "facing_degrees": 0.0, "footprint_size": [1.4, 2.2]}
         },
         {
           "id": "stable_level_two_feed_rack",

@@ -111,7 +111,6 @@ func _init() -> void:
 		quit(1)
 		return
 	var enemy_id := _place_first_enemy(combat_system, Vector3(0.0, 0.0, 3.0), 100)
-	_set_npc_world_position(npc_id, Vector3(0.0, 0.0, 1.0))
 	npc_system.set_npc_behavior_mode(npc_id, "combat", "verify_strategy_avoid", {
 		"state_changes": {
 			"current_action": "combat_ready",
@@ -120,9 +119,18 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
+	# This verifier isolates strategy behavior; the mounted lifecycle has its own
+	# real-navigation test, so finish the assigned-horse pickup fixture here.
+	npc_system.stop_npc_movement_with_state(npc_id, {
+		"combat_mounted": true,
+		"combat_mount_phase": "mounted",
+		"current_action": "combat_ready"
+	})
+	var ranged_origin: Vector3 = npc_system.get_npc_world_position(npc_id)
+	_place_first_enemy(combat_system, ranged_origin + Vector3(0.0, 0.0, 2.0), 100)
 	combat_system.set_npc_combat_strategy(npc_id, "avoid", "private")
 	var avoid_hp_before := int(combat_system.get_enemy(enemy_id).get("hp", 0))
-	var avoid_step: Dictionary = combat_system.debug_step_enemy_ai(60.0)
+	var avoid_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var avoid_hp_after := int(combat_system.get_enemy(enemy_id).get("hp", 0))
 	if avoid_hp_after != avoid_hp_before:
 		push_error("Combat avoid strategy should not attack while avoiding. step=%s" % JSON.stringify(avoid_step))
@@ -144,8 +152,8 @@ func _init() -> void:
 		quit(1)
 		return
 
-	_place_first_enemy(combat_system, Vector3(0.0, 0.0, 14.0), 100)
-	var avoid_stop_step: Dictionary = combat_system.debug_step_enemy_ai(60.0)
+	_place_first_enemy(combat_system, ranged_origin + Vector3(0.0, 0.0, 13.0), 100)
+	var avoid_stop_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var avoid_stop_state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(avoid_stop_state.get("current_action", "")) != "combat_ready":
 		push_error("Combat avoid strategy should stop moving and wait once enemy is far enough. step=%s state=%s" % [
@@ -162,8 +170,10 @@ func _init() -> void:
 
 	combat_system.debug_clear_enemies()
 	combat_system.debug_spawn_wave(1, true)
-	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 9.0), 100)
-	_set_npc_world_position(npc_id, Vector3(0.0, 0.0, 1.0))
+	# T0188 raises the minimum safe distance from the legacy 6.25 m to 8.5 m;
+	# use a point beyond the current data contract for the already-safe fixture.
+	enemy_id = _place_first_enemy(combat_system, ranged_origin + Vector3(0.0, 0.0, 10.0), 100)
+	_set_npc_world_position(npc_id, ranged_origin)
 	npc_system.set_npc_behavior_mode(npc_id, "combat", "verify_strategy_avoid_holding", {
 		"state_changes": {
 			"current_action": "combat_ready",
@@ -172,9 +182,16 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
+	npc_system.stop_npc_movement_with_state(npc_id, {
+		"combat_mounted": true,
+		"combat_mount_phase": "mounted",
+		"current_action": "combat_ready",
+		"combat_target_enemy_id": enemy_id
+	})
+	_set_npc_world_position(npc_id, ranged_origin)
 	combat_system.set_npc_combat_strategy(npc_id, "avoid", "private")
 	var avoid_hold_hp_before := int(combat_system.get_enemy(enemy_id).get("hp", 0))
-	var avoid_hold_step: Dictionary = combat_system.debug_step_enemy_ai(60.0)
+	var avoid_hold_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var avoid_hold_hp_after := int(combat_system.get_enemy(enemy_id).get("hp", 0))
 	if avoid_hold_hp_after != avoid_hold_hp_before:
 		push_error("Combat avoid holding should not attack. step=%s" % JSON.stringify(avoid_hold_step))
@@ -196,8 +213,8 @@ func _init() -> void:
 
 	combat_system.debug_clear_enemies()
 	combat_system.debug_spawn_wave(1, true)
-	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 3.0), 100)
-	_set_npc_world_position(npc_id, Vector3(0.0, 0.0, 1.0))
+	enemy_id = _place_first_enemy(combat_system, ranged_origin + Vector3(0.0, 0.0, 2.0), 100)
+	_set_npc_world_position(npc_id, ranged_origin)
 	npc_system.set_npc_behavior_mode(npc_id, "combat", "verify_keep_distance", {
 		"state_changes": {
 			"current_action": "combat_ready",
@@ -206,8 +223,15 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
+	npc_system.stop_npc_movement_with_state(npc_id, {
+		"combat_mounted": true,
+		"combat_mount_phase": "mounted",
+		"current_action": "combat_ready",
+		"combat_target_enemy_id": enemy_id
+	})
+	_set_npc_world_position(npc_id, ranged_origin)
 	combat_system.set_npc_combat_strategy(npc_id, "keep_distance", "private")
-	var keep_step: Dictionary = combat_system.debug_step_enemy_ai(60.0)
+	var keep_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var keep_state: Dictionary = npc_system.get_npc_state(npc_id)
 	if not str(keep_state.get("current_action", "")).begins_with("moving_to_combat_strategy_"):
 		push_error("Keep-distance shooting should move a short distance before shooting when enemy is too close. step=%s state=%s" % [
@@ -227,7 +251,6 @@ func _init() -> void:
 	combat_system.debug_clear_enemies()
 	combat_system.debug_spawn_wave(1, true)
 	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 1.2), 200)
-	_set_npc_world_position(cavalry_id, Vector3.ZERO)
 	var charge_select: Dictionary = combat_system.set_npc_combat_strategy(cavalry_id, "charge_cycle", "private")
 	if not bool(charge_select.get("ok", false)):
 		push_error("Failed to select cavalry charge-cycle strategy")
@@ -242,6 +265,15 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
+	npc_system.stop_npc_movement_with_state(cavalry_id, {
+		"combat_mounted": true,
+		"combat_mount_phase": "mounted",
+		"current_action": "combat_ready",
+		"combat_target_enemy_id": enemy_id,
+		"combat_charge_phase": "impact"
+	})
+	var cavalry_origin: Vector3 = npc_system.get_npc_world_position(cavalry_id)
+	_place_first_enemy(combat_system, cavalry_origin + Vector3(0.0, 0.0, 1.2), 200)
 	var active_enemies: Dictionary = combat_system.get("_active_enemies")
 	var winding_enemy: Dictionary = active_enemies.get(enemy_id, {})
 	winding_enemy["attack_windup_remaining"] = 0.4
@@ -254,10 +286,22 @@ func _init() -> void:
 	active_enemies[enemy_id] = winding_enemy
 	combat_system.set("_active_enemies", active_enemies)
 	var charge_hp_before := int(combat_system.get_enemy(enemy_id).get("hp", 0))
-	var charge_step: Dictionary = combat_system.debug_step_enemy_ai(0.1)
-	var charge_attack := _first_charge_attack(charge_step, cavalry_id)
+	var charge_context: Dictionary = combat_system._calculate_npc_attack_context(
+		cavalry_id,
+		npc_system.get_npc(cavalry_id),
+		npc_system.get_npc_state(cavalry_id)
+	)
+	var charge_impact_seconds := float((charge_context.get("animation_timing", {}) as Dictionary).get("impact_seconds", 0.0))
+	var charge_windup: Dictionary = combat_system._advance_single_npc_combat_attack(cavalry_id, maxf(0.001, charge_impact_seconds - 0.01))
+	if int(charge_windup.get("attack_count", 0)) != 0:
+		push_error("Charge-cycle collision must wait for the approved weapon impact: %s" % JSON.stringify(charge_windup))
+		quit(1)
+		return
+	var charge_result: Dictionary = combat_system._advance_single_npc_combat_attack(cavalry_id, 0.02)
+	var charge_attacks: Array = charge_result.get("attacks", [])
+	var charge_attack: Dictionary = charge_attacks[0] if not charge_attacks.is_empty() else {}
 	if charge_attack.is_empty():
-		push_error("Charge-cycle impact should produce a weapon attack plus horse collision: %s" % JSON.stringify(charge_step))
+		push_error("Charge-cycle impact should produce a weapon attack plus horse collision: %s" % JSON.stringify(charge_result))
 		quit(1)
 		return
 	var charge_impact: Dictionary = charge_attack.get("charge_impact", {})
@@ -273,11 +317,11 @@ func _init() -> void:
 	).get("damage", 0))
 	if (
 		collision_damage <= 0
-		or weapon_damage <= unboosted_weapon_damage
 		or float(charge_impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
 		or charge_hp_loss != collision_damage + weapon_damage
+		or (weapon_damage > 0 and weapon_damage <= unboosted_weapon_damage)
 	):
-		push_error("Mounted charge should combine boosted weapon damage with independent collision damage")
+		push_error("Mounted charge should always apply independent collision damage and only add boosted weapon damage on actual weapon contact")
 		quit(1)
 		return
 	if (

@@ -111,7 +111,7 @@ func _roof_minimum_local_y(view: Node3D) -> float:
 	var minimum_y := INF
 	for node in _all_descendants(roof):
 		var mesh_instance := node as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null or bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)):
+		if mesh_instance == null or mesh_instance.mesh == null or bool(mesh_instance.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh_instance.get_meta("portrait_opaque_shell_proxy", false)):
 			continue
 		var aabb := mesh_instance.get_aabb()
 		for endpoint in range(8):

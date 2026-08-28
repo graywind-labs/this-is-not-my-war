@@ -105,8 +105,10 @@ func clear_time_slowdowns() -> void:
 	_emit_time_scale_changed("slowdowns_cleared")
 
 
-func has_time_slowdown() -> bool:
-	return not _slowdown_requests.is_empty()
+func has_time_slowdown(request_id: String = "") -> bool:
+	if request_id.is_empty():
+		return not _slowdown_requests.is_empty()
+	return _slowdown_requests.has(request_id)
 
 
 func should_show_precise_display_seconds() -> bool:
@@ -190,6 +192,7 @@ func get_time_scale_snapshot() -> Dictionary:
 		"player_scale": time_scale,
 		"effective_scale": get_effective_time_scale(),
 		"numeric_multiplier": get_numeric_delta_multiplier(),
+		"combat_frame_rate": get_combat_frame_rate(),
 		"slowdown_requests": _slowdown_requests.duplicate(true),
 		"time_scale_cap_requests": _time_scale_cap_requests.duplicate(true),
 		"slowdown_count": _slowdown_requests.size(),
@@ -225,6 +228,20 @@ func _on_game_over_changed(_result: String, _reason: String) -> void:
 func get_game_delta_seconds(real_delta_seconds: float) -> float:
 	var seconds_per_minute := maxf(seconds_per_game_minute, 0.001)
 	return real_delta_seconds * (60.0 / seconds_per_minute) * get_numeric_delta_multiplier()
+
+
+func get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
+	# Physics and presentation callbacks receive real frame seconds, while combat
+	# authority consumes game seconds. During an active battle the shared 1/60
+	# request makes these equal. Capping at the real delta prevents synthetic or
+	# teardown combat visuals from accelerating at the out-of-combat x1/x2/x4
+	# simulation rate; pause and any stricter slowdown still return less or zero.
+	var real_seconds := maxf(0.0, real_delta_seconds)
+	return minf(real_seconds, get_game_delta_seconds(real_seconds))
+
+
+func get_combat_frame_rate() -> float:
+	return get_combat_frame_delta_seconds(1.0)
 
 
 func cycle_speed() -> void:

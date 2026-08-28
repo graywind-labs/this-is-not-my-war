@@ -96,6 +96,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"architectural_style": "medieval_border_refectory_with_rear_hearth_kitchen",
 		"facade_profile": "broad_ochre_plaster_oak_frame_meal_sign_and_firewood",
 		"roof_profile": "wide_low_terracotta_gable_with_clustered_kitchen_chimneys",
+		"gable_end_profile": "sealed_ochre_plaster_with_oak_frame",
+		"sealed_gable_end_count": 2,
 		"functional_visual_language": "shared_oak_tables_cauldron_hearths_pantry_and_hot_meals",
 		"level_two_upgrade_profile": "pantry_preparation_and_fuel_storage_without_capacity_gain",
 		"level_three_upgrade_profile": "third_authoritative_hearth_flue_and_expanded_serving_corner",
@@ -136,7 +138,7 @@ func _build_formal_dining_hall() -> void:
 	exterior_albedo_tint = HALL_WALL
 	static_collision_path = NodePath("../StaticCollision")
 	workstation_markers_path = NodePath("../FixtureLayout/NPCStands")
-	set_meta("art_revision", "t0135_p8ar4r2")
+	set_meta("art_revision", "t0135_p8ar7")
 	set_meta("formal_vertical_slice", true)
 	set_meta("architectural_style", "medieval_border_refectory_with_rear_hearth_kitchen")
 	set_meta("footprint_meters", BUILDING_FOOTPRINT)
@@ -204,6 +206,19 @@ func _build_exterior() -> void:
 			_add_box(timber, "SideOakPost", Vector3(side * 7.14, 1.75, z), Vector3(0.28, 3.25, 0.24), HALL_TIMBER)
 	_add_box(timber, "FrontOakLintel", Vector3(0.0, 3.22, 6.14), Vector3(14.15, 0.28, 0.28), HALL_TIMBER)
 	_add_box(timber, "RearOakLintel", Vector3(0.0, 3.22, -6.14), Vector3(14.15, 0.28, 0.28), HALL_TIMBER)
+	var gable_ends := Node3D.new()
+	gable_ends.name = "SealedOchreGableEnds"
+	exterior.add_child(gable_ends)
+	for side in [-1.0, 1.0]:
+		var side_name := "West" if side < 0.0 else "East"
+		var end_x: float = float(side) * 7.08
+		_add_gable_wall(gable_ends, "%sOchreGableWall" % side_name, Vector3(end_x, 4.32, 0.0), Vector3(12.0, 2.16, 0.3), _material(HALL_WALL), 90.0)
+		_add_box(gable_ends, "%sGableTie" % side_name, Vector3(end_x, 3.28, 0.0), Vector3(0.34, 0.22, 12.0), HALL_TIMBER)
+		_add_box(gable_ends, "%sKingPost" % side_name, Vector3(end_x, 4.31, 0.0), Vector3(0.34, 2.08, 0.24), HALL_TIMBER)
+		var front_rafter := _add_box(gable_ends, "%sFrontRakingBeam" % side_name, Vector3(end_x, 4.32, 3.0), Vector3(0.34, 0.22, 6.32), HALL_TIMBER)
+		front_rafter.rotation_degrees.x = 18.0
+		var rear_rafter := _add_box(gable_ends, "%sRearRakingBeam" % side_name, Vector3(end_x, 4.32, -3.0), Vector3(0.34, 0.22, 6.32), HALL_TIMBER)
+		rear_rafter.rotation_degrees.x = -18.0
 
 	var windows := Node3D.new()
 	windows.name = "WarmRefectoryWindows"

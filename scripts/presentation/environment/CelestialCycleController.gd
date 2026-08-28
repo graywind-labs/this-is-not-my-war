@@ -3,6 +3,7 @@ extends Node3D
 const SECONDS_PER_DAY := 86400.0
 const DEFAULT_TWILIGHT_START_DEGREES := -6.0
 const DEFAULT_FULL_LIGHT_DEGREES := 10.0
+const DEFAULT_DIRECTION_UPDATE_INTERVAL_GAME_SECONDS := 0.0
 const BUILDING_FUNCTIONAL_LIGHT_CONTROLLER_SCRIPT := preload("res://scripts/presentation/environment/BuildingFunctionalLightController.gd")
 
 var _config: Dictionary = {}
@@ -37,10 +38,22 @@ var _interior_daylight_weight := 0.0
 var _interior_lighting_phase := "night_base"
 var _interior_daylight_color := Color("#dbe8e4")
 var _building_functional_light_controller: Node3D
+var _last_direction_update_bucket := -1
+var _direction_update_count := 0
+var _applied_light_ray_directions := {
+	"sun": Vector3.ZERO,
+	"moon": Vector3.ZERO,
+}
 
 
 func configure(environment_config: Dictionary) -> void:
 	_config = (environment_config.get("celestial_cycle", {}) as Dictionary).duplicate(true)
+	_last_direction_update_bucket = -1
+	_direction_update_count = 0
+	_applied_light_ray_directions = {
+		"sun": Vector3.ZERO,
+		"moon": Vector3.ZERO,
+	}
 	if is_inside_tree():
 		_ensure_lights()
 		_ensure_world_environment()
@@ -110,6 +123,7 @@ func get_debug_snapshot() -> Dictionary:
 		"moon": _moon_state.duplicate(true),
 		"shadow_owner": _shadow_owner,
 		"active_shadow_count": int(_sun_light != null and _sun_light.shadow_enabled) + int(_moon_light != null and _moon_light.shadow_enabled),
+		"directional_shadow": _get_directional_shadow_snapshot(),
 		"sun_light_present": is_instance_valid(_sun_light),
 		"moon_light_present": is_instance_valid(_moon_light),
 		"world_environment_present": is_instance_valid(_world_environment),
@@ -176,8 +190,9 @@ func _apply_time(day: int, hour: int, minute: int, second: int) -> void:
 	_sun_state = _calculate_body_state("sun", _config.get("sun", {}) as Dictionary, seconds_into_day)
 	_moon_state = _calculate_body_state("moon", _config.get("moon", {}) as Dictionary, seconds_into_day)
 	_resolve_shadow_owner()
-	_apply_state_to_light(_sun_light, _sun_state, _shadow_owner == "sun")
-	_apply_state_to_light(_moon_light, _moon_state, _shadow_owner == "moon")
+	var update_light_directions := _consume_direction_update_due(int(_last_time.day), seconds_into_day)
+	_apply_state_to_light(_sun_light, _sun_state, _shadow_owner == "sun", update_light_directions)
+	_apply_state_to_light(_moon_light, _moon_state, _shadow_owner == "moon", update_light_directions)
 	_apply_environment_state()
 	_update_interior_lights()
 
@@ -334,15 +349,39 @@ func _resolve_shadow_owner() -> void:
 	_moon_state["casts_shadow"] = _shadow_owner == "moon"
 
 
-func _apply_state_to_light(light_node: DirectionalLight3D, state: Dictionary, casts_shadow: bool) -> void:
+func _apply_state_to_light(
+	light_node: DirectionalLight3D,
+	state: Dictionary,
+	casts_shadow: bool,
+	update_direction: bool
+) -> void:
 	if not is_instance_valid(light_node) or state.is_empty():
 		return
 	var ray_direction: Vector3 = state.get("light_ray_direction", Vector3(0.0, -1.0, 0.0))
-	if ray_direction.length_squared() > 0.0001:
+	if update_direction and ray_direction.length_squared() > 0.0001:
 		light_node.basis = Basis.looking_at(ray_direction.normalized(), Vector3.UP)
+		_applied_light_ray_directions[str(state.get("kind", ""))] = ray_direction.normalized()
 	light_node.light_color = state.get("color", Color.WHITE)
 	light_node.light_energy = float(state.get("energy", 0.0))
 	light_node.shadow_enabled = casts_shadow
+
+
+func _consume_direction_update_due(day: int, seconds_into_day: float) -> bool:
+	var interval := float(_config.get(
+		"directional_transform_update_interval_game_seconds",
+		DEFAULT_DIRECTION_UPDATE_INTERVAL_GAME_SECONDS
+	))
+	if interval <= 0.0:
+		_last_direction_update_bucket = -1
+		_direction_update_count += 1
+		return true
+	var absolute_game_seconds := float(maxi(day - 1, 0)) * SECONDS_PER_DAY + seconds_into_day
+	var bucket := floori(absolute_game_seconds / interval)
+	if bucket == _last_direction_update_bucket:
+		return false
+	_last_direction_update_bucket = bucket
+	_direction_update_count += 1
+	return true
 
 
 func _ensure_lights() -> void:
@@ -397,11 +436,45 @@ func _configure_light(light_node: DirectionalLight3D, kind: String) -> void:
 	light_node.light_energy = 0.0
 	light_node.shadow_enabled = false
 	light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	light_node.directional_shadow_max_distance = float(_config.get("directional_shadow_max_distance", 180.0))
+	light_node.directional_shadow_max_distance = float(_config.get("directional_shadow_max_distance", 120.0))
 	light_node.directional_shadow_fade_start = float(_config.get("directional_shadow_fade_start", 0.86))
+	light_node.directional_shadow_blend_splits = bool(_config.get("directional_shadow_blend_splits", true))
+	light_node.directional_shadow_split_1 = float(_config.get("directional_shadow_split_1", 0.12))
+	light_node.directional_shadow_split_2 = float(_config.get("directional_shadow_split_2", 0.30))
+	light_node.directional_shadow_split_3 = float(_config.get("directional_shadow_split_3", 0.60))
 	light_node.shadow_blur = float(_config.get("shadow_blur", 1.25))
 	light_node.set_meta("celestial_body", kind)
 	light_node.set_meta("presentation_only", true)
+
+
+func _get_directional_shadow_snapshot() -> Dictionary:
+	if not is_instance_valid(_sun_light) or not is_instance_valid(_moon_light):
+		return {}
+	return {
+		"mode": int(_sun_light.directional_shadow_mode),
+		"max_distance": _sun_light.directional_shadow_max_distance,
+		"fade_start": _sun_light.directional_shadow_fade_start,
+		"blend_splits": _sun_light.directional_shadow_blend_splits,
+		"split_1": _sun_light.directional_shadow_split_1,
+		"split_2": _sun_light.directional_shadow_split_2,
+		"split_3": _sun_light.directional_shadow_split_3,
+		"transform_update_interval_game_seconds": float(_config.get(
+			"directional_transform_update_interval_game_seconds",
+			DEFAULT_DIRECTION_UPDATE_INTERVAL_GAME_SECONDS
+		)),
+		"transform_update_bucket": _last_direction_update_bucket,
+		"transform_update_count": _direction_update_count,
+		"sun_applied_light_ray_direction": _applied_light_ray_directions.get("sun", Vector3.ZERO),
+		"moon_applied_light_ray_direction": _applied_light_ray_directions.get("moon", Vector3.ZERO),
+		"sun_moon_match": (
+			is_equal_approx(_sun_light.directional_shadow_max_distance, _moon_light.directional_shadow_max_distance)
+			and is_equal_approx(_sun_light.directional_shadow_fade_start, _moon_light.directional_shadow_fade_start)
+			and _sun_light.directional_shadow_blend_splits == _moon_light.directional_shadow_blend_splits
+			and is_equal_approx(_sun_light.directional_shadow_split_1, _moon_light.directional_shadow_split_1)
+			and is_equal_approx(_sun_light.directional_shadow_split_2, _moon_light.directional_shadow_split_2)
+			and is_equal_approx(_sun_light.directional_shadow_split_3, _moon_light.directional_shadow_split_3)
+		),
+	}
 
 
 func _connect_time_signal() -> void:

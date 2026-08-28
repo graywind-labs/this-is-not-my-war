@@ -78,7 +78,8 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_snapshot(DOCTOR_ID).get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, DOCTOR_STATION_ID, DOCTOR_ID)
 		or not lina.visible
-		or lina.global_position.x < 900.0
+		or absf(lina.global_position.x) > 80.0
+		or absf(lina.global_position.z) > 100.0
 	):
 		_fail("Lina's GM entry did not start a reservation-only visible clinic route: %s" % JSON.stringify({
 			"runtime": action_system.get_runtime_action_snapshot(DOCTOR_ID),
@@ -106,7 +107,8 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_snapshot(PATIENT_ID).get("phase", "")) != "pending"
 		or not _workstation_reserved_by(building_system, PATIENT_STATION_ID, PATIENT_ID)
 		or not bruno.visible
-		or bruno.global_position.x < 900.0
+		or absf(bruno.global_position.x) > 80.0
+		or absf(bruno.global_position.z) > 100.0
 	):
 		_fail("Bruno's GM entry did not start a reservation-only visible patient-bed route")
 		return

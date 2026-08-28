@@ -1,5 +1,260 @@
 # TECH_ARCHITECTURE.md
 
+## T0200 战斗目标与移动权威边界
+
+- CombatSystem 独占目标锁、武器攻击条件与接敌点选择；ActorMotionBody 独占 NavigationAgent3D 路径推进、RVO、速度、碰撞和无进展检测。NPCSystem 只转发友军世界移动请求及同请求目标更新，不能按路径结果重排战斗目标。
+- `motion_options.persistent_repath=true` 只用于目标仍有效的战斗接近。它绕过普通移动的最大重规划 / 卡死终止上限，但仍按数据化采样间隔重算，不逐帧寻路；目标变化通过 `update_motion_target(...)` 保留 request id，避免取消 / 重建引发状态与攻击时间线抖动。
+- ActorMotionBody 以角色稳定身份在阵营基础值附近生成小幅 `avoidance_priority` 差异，打破同优先级 RVO 对称死锁；这是局部避让的确定性 tie-break，不得被 CombatSystem 用作索敌、路径或攻击位排序输入。
+- StationLayoutController 的单一生产 NavigationMap 同时覆盖站内与北侧城外战场，并从 `formal_navigation_source` 静态碰撞烘焙。旧敌军进门廊道不再拥有导航权威；道路表现没有碰撞、区域成本或路径偏好。
+
+## T0198 友方目标与受击重扫权威边界
+
+- CombatSystem 是武装 NPC 战斗目标的唯一裁决者：从 NPCSystem 读取位置 / 状态、从自身读取活动敌人，按“站外 `37.2 m` 水平圈 / 站内 `interior_polygon` 整站”生成一个最近候选并维护在场锁。策略移动和攻击时间线只能消费该结果，不能独立重排。
+- NPCSystem 仍拥有 NPC 状态和行为模式，但敌人伤害只让未参战武装 NPC 进入 combat；已经参战时不重复中断，也不把攻击者写成权威目标。实际 HP 扣减返回后，CombatSystem 才能依据受击前锁 ID 创建一次性重扫请求。
+- 请求仅影响下一次目标选择，不产生仇恨表、精确反击、扩大范围或补伤；请求字典不序列化。目标变化重建移动 / 取消当前 phase 时，T0193 单调 next-sequence 时刻仍是唯一攻速权威。
+
+## T0197 受击重评估权威边界
+
+- CombatSystem 的 `_apply_damage_to_enemy(...)` 是唯一能产生异源受击重评估请求的位置；必须先有正整数 HP 扣减，再验证当前锁与伤害来源都是高威胁单位且两者 key 不同。动画、意图、弹体释放、GM 和 UI 都不能伪造该信号。
+- 请求只让下一次正式选择暂时绕过一次在场保持；候选仍完全来自 T0196 的 `37.2 m` 高威胁池并按水平距离排序。伤害来源没有独立仇恨层、范围扩张或精确反击权，消费后恢复普通在场锁。
+- 请求保存在 CombatSystem 独立短生命周期字典中，敌人移除 / 清场时清理，正式空间存档不序列化。攻击时间线的单调 next-sequence 权威、NPC / 塔防状态所有权和寻路边界均不变。
+
+## T0196 统一敌军目标权威
+
+- CombatSystem 是唯一目标裁决者：从 NPCSystem、EquipmentSystem 与 DefenseDeviceSystem 读取有效单位事实，在同一个 `37.2 m` 水平圈内生成“持武器 NPC + 塔防”池和无武器 NPC 池；同级首次按直线距离选择，后续只用目标有效性 / 是否离圈判断在场锁。
+- 目标选择层不再调用 NavigationMap 路径距离、阻挡抢占、近期命中或逐器械射程扩圈。它只决定“打谁”；ActorMotionBody、攻击位 NavMap 校验和后续寻路继续决定“怎样到达”，不得反写新的目标优先级。
+- NPC 明确不进入攻击位系统。固定位置容量只作用于塔防与建筑：塔防、仓库、主厅满位视为对该敌人消失；完整城门是强制破口例外，满位仍保持目标并使用现有 waiter。CombatSystem 之外的 GM / UI / 表现层不能写目标或容量事实。
+
+## T0195 塔防满位候补权威（历史，已由 T0196 取代）
+
+- CombatSystem 在目标可用性预检中把“可达塔防但攻击位已满”解释为严格候补，而非允许进入建筑层；排队、位置释放与晋升仍完全复用 T0149 lease / waiter 权威。
+- 该例外只存在于 `defense_device → building` 边界。塔防失效或确实不可达后才允许建筑回退；GM、DefenseDeviceSystem 和表现层仍不能强制敌军目标。
+
+## T0194 塔防威胁范围与受击抢占权威（历史，已由 T0196 取代）
+
+- DefenseDeviceSystem 负责把槽位与宿主倍率合并成 deployment 的最终 `effect.range`，并只读投影为活动目标 `effective_attack_range`；CombatSystem 负责据此计算逐目标敌军感知半径，配置只提供额外威胁余量。
+- CombatSystem 的伤害提交点记录 NPC / deployment 的近期命中序列。只有当前目标是建筑时，最近实际来源才走精确抢占；当前有效 NPC 目标保持、有效 impact 的 recovery 收尾、可达攻击位与路线阻挡仍由 CombatSystem 一处裁决。
+- DefenseDeviceSystem、NPCSystem、GM 与表现层不能直接写敌军目标。新增范围和关系字段是短生命周期决策证据，不改变投射物 / 近战碰撞与 HP 权威，也不进入正式空间存档。
+
+## T0193 双方共享的单调攻击起手权威
+
+- CombatSystem 的 `_combat_timeline_seconds` 现在同时是敌军与友军起手时间权威；双方都用“last start / earliest next start”表达攻速，目标、寻路和行为状态只能取消当前阶段，不能生产新的时间。
+- NPCSystem 仍拥有 NPC 状态与空间存档，但只保存相对 `lock_remaining`，不保存 CombatSystem 进程内绝对时刻。CombatSystem 在联合读档重建正式波次时暂存 / 恢复这个相对量，并在下一权威步映射回当前时钟。
+- `combat_attack_cooldown` 保留为兼容与观察字段；攻击 sequence 是否可增加只比较单调时钟和 next sequence time。战斗结束是清锁的唯一正常生命周期边界，短暂 work / avoid / unconscious 往返不能重置本场频率。
+
+## T0192 友军追击的状态 / 运动双权威交接
+
+- 坐标空间权威属于 actor 实际绑定的 NavigationMap，而不属于“默认波次 / GM 波次”等运行模式。NPCSystem 只读桥接 `NavigationAgent.get_navigation_map()` 的最近点查询；CombatSystem 负责把战斗语义目标投影后再提交运动。这样正式日期波次和使用同一生产世界的 GM 动态波次不能分叉到不同坐标边界。
+- NPCSystem 继续拥有 NPC 领域状态与 movement arrival context；ActorMotionBody 继续拥有 NavigationAgent / RVO / request 存活事实。新的 `is_npc_world_movement_active(...)` 只是只读桥接，不把战斗语义下沉到运动体。
+- CombatSystem 不再用 `current_action` 字符串替代 request 存活性。两层不一致时，先经 NPCSystem 停止 / 清理旧 arrival context，再按当前敌人坐标重新提交；这使丢失取消回调不会成为永久状态。
+- CombatSystem 在策略目标生成层消化 Navigation 容差：近战 approach standoff 从 `range * 0.85` 再内缩数据化 `arrival_tolerance`。这保证通用 ActorMotion 即使在合法容差边界到达，也位于战斗安全带内；无需改动 NPC 通用或工位导航配置。
+- 攻击交接按“进入近战内侧安全带→释放运动权威→建立 attack timeline”执行；安全带只决定何时停步，不改武器 range、动画、模型接触或 HP 伤害权威。
+
+## T0189 全局暂停与敌军战术停步分层
+
+- `TimeSystem` 仍是全局暂停唯一事实源，通过 `EventBus.gameplay_pause_changed` 即时通知 CombatSystem；CombatSystem 同时在物理帧入口重申当前事实，封住新建 actor 或新 navigation request 把暂停布尔重置后的单帧滑行窗口。
+- `ActorMotionBody` 仍是实体速度、NavigationAgent / RVO 与路径采样权威，不读取 CombatSystem 战术语义。CombatSystem 在正式敌军 slice 保存独立 `tactical_motion_paused`，再将“全局暂停 OR 战术停步”的合成结果下发运动体。
+- 暂停只冻结游戏权威和世界实体推进，不冻结 UI / LLM；运动请求、目标与路径保留。近战接触采样 / damage commit 与物理弹体同样遵守暂停，避免静止画面内延迟扣血。
+
+## T0188 友军战斗响应权威
+
+- 正式城内多边形归 StationLayoutController 所有；CombatSystem 只消费“某敌人是否在站内”，并把它作为全域友军响应与主动策略目标过滤的唯一事实。距离索敌只在站内无敌时生效。
+- 武装 / 应征、行为模式、策略、坐骑阶段和 locomotion 分属 EquipmentSystem / NPCSystem / CombatSystem / HorseSystem / NPC.gd 既有权威。全域响应只编排这些接口，不复制装备、骑乘、速度或伤害状态。
+- 避战距离由配置下限和活动敌人最大远程射程动态合成；NPCSystem 仍只接收短步世界目标，ActorMotionBody 执行 NavigationAgent / RVO 位移，T0155 run profile 决定速度与动画分类。
+
+## T0185 战斗权威秒与表现帧的单一桥接
+
+- TimeSystem 同时拥有逻辑游戏秒与战斗表现秒的换算权威。系统层继续消费 `get_game_delta_seconds(real_delta)` / `logical_time_tick`；逐帧动画、粒子、根位移与物理弹体只能消费 `get_combat_frame_delta_seconds(real_delta)` 或其倍率版本，禁止读取 `numeric_multiplier` 后自行推导。
+- 战斗表现换算定义为 `min(real_delta, game_delta)`：敌人在场 `game_delta == real_delta`，暂停为 0；无敌人的 x1 / x2 / x4 逻辑加速不会越过 authored x1。这样兼容调试 / 清场后的残余表现，也保留未来更严格慢速降低表现速率的能力。
+- CombatSystem 仍独占 attack sequence、impact、近战接触、弹体碰撞与伤害；DefenseDeviceSystem 仍独占器械 timeline；表现层只按统一秒制投影状态。PietySystem 的 pending meteor 是已明确的数据化例外：稳定现实战斗表现秒并显式检查主动暂停。
+
+## T0183 敌人在场统一 1:1 时间权威
+
+- CombatSystem 以活动敌人字典是否为空作为唯一战斗限速事实；首名敌人生成 / 读档恢复时向 TimeSystem 注册 `combat_enemy_presence = 1/60` 慢速，最后一名敌人移除 / 清空时只释放该请求。玩家选择倍率继续保留，战后恢复。
+- TimeSystem 仍是唯一逻辑时间生产者，不修改 `Engine.time_scale`。敌人在场时 `get_game_delta_seconds(1.0) = 1.0`；NPC 移动、LLM 等待与敌人在场请求取最小值，但三者当前均为 `1/60`，所以不会把战斗叠加降得更慢。
+- CombatSystem、DefenseDeviceSystem 与 PietySystem 的战时冷却 / 移动 / 持续效果直接消费 `game_delta_seconds`。逐帧攻击 clip 与物理弹体由 T0185 的专用战斗帧接口桥接，因此逻辑时间轴与表现同为一秒制。
+
+## T0181 陨石空间安全权威
+
+- StationLayoutController 独占正式建筑空间查询：将世界圆形范围转换到建筑局部坐标检查旋转矩形，并检查城墙线段厚度与城门包络。PietySystem 只消费查询结果，不维护第二份建筑位置。
+- PietySystem 在虔诚消费和 pending 创建前权威复验建筑冲突；HUD 只显示失败原因。地图仍是无限水平地面，但合法集合排除与完整陨石效果圆相交的建筑区域。
+- 合法落地时的数据流为 `MeteorPresentation 碰撞半径 -> PietySystem -> NPCSystem 安全点搜索 -> ActorMotionBody 外力位移 -> MeteorPresentation 创建 StaticBody3D`。排出发生在静态碰撞生成前，不经过伤害、AI 计划或 ActionSystem。
+
+## T0178 路径推进与避障运动权威
+
+- NPCSystem / CombatSystem 只提交目的地和领域状态；ActorMotionBody 统一拥有 NavigationAgent 路径索引、RVO 速度、制动和实体位移。马厩、广场、城门与普通工作路线不得各自复制“防绕圈”特判。
+- 中间路径点容差由 `2 × RVO radius + stopping_distance` 动态生成并受配置上限约束。提前推进前必须证明从当前位置到下一权威路径点的 NavMesh 路径近似直达；最终目标仍使用独立精确容差。
+- 若实体已经进入动态容差后被避障推出，或已经越过当前路径点的入射平面，ActorMotionBody 推进 NavigationAgent 现有路径索引并清除上一帧安全速度；不得重新规划到门洞内侧或直接跳向最终目标。
+- RVO 只提供避让方向：其输出速度必须服从当前路径制动上限，偏转角不得超过配置值，路径反向分量会被拒绝。不可前进时停下并沿用 T0176 有界卡死恢复，不以绕圈制造虚假位移。
+
+## T0176 导航进展与阻挡权威
+
+- `ActorMotionBody.set_motion_paused(...)` 是状态切换接口而非采样心跳。重复提交相同值不得清空卡死窗口；只有真实的暂停→恢复切换才重建采样基线。
+- 卡死恢复的权威进展是 NavigationAgent 当前路径从 actor 到终点的剩余长度下降量。实体发生位移只作诊断，不再证明请求有进展；因此绕圈、侧滑与抖动会进入既有重寻路 / 有界失败合同。
+- NavigationLink 只表达阻挡物开放后的可通行连接，不证明当前实体门板已经开放。CombatSystem 在候选目标机会评估前解析可攻击阻挡链；阻挡位满时沿用同一攻击位候补，不把门后目标误判为可用。
+- 动态敌军每侧 RVO padding 等于攻击位 `safety_margin / 2`，因此两个 agent 的有效直径与槽间距一致；攻击位判定和 NavigationAgent 使用同一 `arrival_tolerance`。
+
+## T0171 马匹属性告警表现边界
+
+- HorsePanel 只根据 HorseSystem 快照中的当前值 / 最大值计算显示比例，不修改 HP、饱食、成长或繁育权威；基础 HP 与饱食之外的属性不参与危险状态。
+- 进度条颜色通过 HorsePanel 局部 StyleBox override 实现，避免修改全局主题并误伤其他 ProgressBar。危险字体色同样只加在当前 Label，恢复后移除 override、回到主题文字色。
+- 阈值采用严格小于：饱食 `< 0.20`、基础 HP `< 0.30`；边界值不告警，显示判断不改变系统层的饥饿、受伤或战斗规则。
+
+## T0170 透明建筑内马匹点击权威边界
+
+- BuildingSystem 继续独占建筑与室内单位的世界点击编排；HorseSystem 只读物理射线、验证现存马匹并发出既有 `horse_clicked`，HorsePanel 不参与射线或透明度判断。
+- 精确命中在厩马时，以这匹马所属 `stable` 的 BuildingArtView opacity 为准：透明则单位优先，不透明则建筑优先。不能使用射线上“最近建筑 ID”代替所属建筑，因为俯视透视下多个透明 AABB 可能前后重叠。
+- 点击只改变互斥面板选择，不写马匹位置、槽位、分配、HP、行动或建筑状态；非马匹区域继续走原 BuildingSystem / NPCSystem 选择链。
+
+## T0169 马匹镜头布局边界
+
+- HorsePanel 独占外框尺寸与信息栏排布；HorsePortraitViewport 继续只负责共享 World3D、相机跟随和渲染生命周期。缩小外框不改变 HorseSystem、马匹实体、点击选择或相机目标权威。
+- 马匹与 NPC 镜头统一使用 `190–210 × 300–420 px` 的可见框范围；内部设计分辨率可独立保持 `260×480`，由 SubViewportContainer 拉伸适配，不把布局尺寸反向写入世界相机或马匹数据。
+
+## T0168 工程路径身份边界
+
+- 规范工作区为 `D:/这不是我的战争/`；`D:/MyGames/这不是我的战争/` 是指向它的 NTFS Junction，是同一物理工作树的受支持别名，不是同步副本。
+- 工程身份判断必须先解析 Junction，再核对 Git 根 / HEAD 和关键文件；不得把字符串相等当成身份权威。只有解析或一致性校验失败时，才停止使用该 MCP 连接。
+- 文件编辑与 CLI 命令优先使用规范路径；Godot MCP 可继续通过 Alias 使用 `res://`。本规则不引入文件同步、双写、第二个编辑器或第二套导入缓存。
+
+## T0167 毛色与取马导航边界
+
+- 毛色仍由 horse_defs 模板提供、HorseSystem 领取，HorseAppearance 只投影材质；本轮调整颜色数据，不把名称 / 颜色判断写入 GDScript。
+- `pickup_center` 是 fixture 空间合同，不是第二个马位。FormalStableArtView 只做 horse ID→槽位→世界坐标投影；HorseSystem 验证路径并管理上马状态；NPCSystem / ActorMotionBody 继续承担实际寻路和碰撞。
+- 路径不可达时明确失败，不移动马、不穿越隔栏、不偷偷改用其他马。CombatSystem 的阵位、接敌和战斗权威没有迁移。
+
+## T0166 GM 入口层整理边界
+
+- 本轮只调整 GMPanel 的可见控件树、分组和窗口定位；EquipmentSystem、CombatSystem、NPCSystem、BuildingSystem 等仍独占各自权威状态与结算。
+- 被移除按钮的能力由通用按钮或命令行覆盖；相关命令解析和 `debug_*` 接口保留，避免 UI 整理破坏自动化或深层诊断。
+
+## T0165 陨石表现、物理实体与权威边界
+
+- PietySystem 继续独占虔诚消费、逻辑时序、冲击 / 燃烧状态与 CombatSystem 伤害提交；`MeteorPresentation` 只消费目标、进度和配置，生成可重建的 Mesh、粒子、灯光、冲击波与弹坑，不计算 HP 或击杀。
+- 落地陨石的 `StaticBody3D` 是用户明确要求的临时 world_static 空间实体，生命周期由 PietySystem 监听既有 `event_recorded(type=combat_ended)` 后统一结束。弹坑 / 灰烬属于本次世界会话的永久表现态，不进入伤害、导航权威或结构化事件。
+- CameraRig 的震动只在 Camera3D 基准局部位置上施加确定性衰减偏移，结束后精确回到当前缩放基准；它不修改 CameraRig 世界位置、平移边界或缩放距离。
+
+## T0164 建筑名称镜头联动表现边界
+
+- StationLayoutController 只读 `display_name` 生成正式 NameLabel；`orientation` 继续用于布局旋转但不进入文案。CameraRig / Camera3D Transform 只作为透明度动画输入，不反向修改镜头或建筑。
+- 标签 Alpha 是可重建表现态，不进入 BuildingSystem、存档、点击、地点、制造或信息传播。文字与描边共用一个 Alpha，避免正文消失后残留黑色轮廓。
+
+## T0163 陨石自由选点权威边界
+
+- HUD 只负责相机射线与无限水平地面的交点计算；PietySystem 校验坐标有限性、归一化 Y，并继续独占虔诚消费和效果状态。T0181 起不恢复旧驿站矩形边界，但会通过 StationLayoutController 排除与完整效果圆相交的正式建筑、城墙和城门区域。
+- CombatSystem 的范围伤害入口、无友伤隔离、时序和事件链没有变化；解锁的是中心坐标范围，不是伤害对象或结算权限。
+
+## T0162 马匹权威与表现边界
+
+- HorseSystem 独占马匹模板领取、历史名称唯一性、马槽占用、容量、繁育、成长、死亡和 NPC 分配。BuildingSystem 只保留原 `total / adult / foal` 数量投影；UI、马厩 ArtView 与 NPC 骑乘模型不得反写马匹事实。
+- `FormalStableArtView -> HorseWorldView` 依据 `stable_slot_id` 把权威个体映射到真实实体；HorsePanel / HorsePortraitViewport 只共享主世界并读取选中 ID。`horse_clicked` 只表达选择，不授予喂养、成长、出生、分配或战斗权威。
+- 骑乘链路始终使用同一稳定 ID：EquipmentSystem 投影分配马身份，CombatSystem 请求该马表现位置，NPC 抵达后读取同一模板颜色生成骑乘外观。表现不可按槽位索引或当前列表顺序替换马。
+
+## T0161 GM 批量配装权威边界
+
+- `gm_debug_presets.json` 只描述调试目标；GMPanel 只发起一次请求。EquipmentSystem 负责预检和编排，但每项事实仍交给 NPCSystem、ResourceSystem、EquipmentSystem 正式单件接口与 HorseSystem 写入。
+- 流程顺序为：全员 / 模式 / 引用预检 → 确保调试马 → 归还旧配装 → 入伍 → 补足具体库存缺口 → 正式消费配装 → 唯一分配马匹。最终完全匹配时走只读幂等快照，不重放装备事件或库存变化。
+- 调试马创建是 HorseSystem 显式 `debug_*` 能力，不能被正常繁育或 NPC 计划调用。正常开局档案、战斗系统、Prompt 与存档没有反向依赖 GM 预设。
+
+## T0151 射程圈权威边界
+
+- CombatSystem / DefenseDeviceSystem 分别独占友方战斗属性与器械宿主加成后的有效射程；`AttackRangeIndicator` 只读快照、生成 Mesh 和跟随位置，不保存或反推射程。
+- EventBus 的 `npc_clicked / defense_device_clicked / world_selection_cleared` 只表达玩家选择，不授予攻击、目标或伤害权威。器械点击 Area 不属于战斗碰撞层，范围环本身没有 CollisionObject3D。
+- 选择、可见性和程序 Mesh 都是可重建表现态，不写入存档；读档后的模式、装备、deployment 与宿主状态仍由原系统决定下一次点击是否显示。
+
+## T0150 索敌与反击权威边界
+
+- CombatSystem 独占五级目标优先级、建筑白名单、目标锁、重评估、反击证据和阻挡物决策；LLM、NPC表现、塔防表现与 GM 均无权指定敌军目标或伤害。
+- NPCSystem / DefenseDeviceSystem 只提供当前可行动状态、世界位置与塔防事实；活动弹体、索敌与实际伤害仍由 CombatSystem 权威裁决。全部活动敌人进入同一统一范围 / 在场锁选择器；高威胁实际命中只生成一次圈内最近重扫，不提供精确来源抢占，也不改变伤害、命中或阵营规则。
+- 目标筛选先只读预检 T0149 空位和 NavigationMap 可达性，确定目标后才建立唯一 lease。满位回退与候补建立不能同时发生，避免落选高优目标留下幽灵候补。
+- 正式路线的可破坏 chokepoint 与 world-static 射线只用于确认白名单中的城门 / 仓库 / 主厅是否挡路；普通建筑不能被升级为战斗目标。最终占位、动作、碰撞和 HP 仍分别由既有系统负责。锁、反击和筛选缓存均不进存档，恢复后由当前世界事实重建。
+
+## T0149 攻击位租约权威边界
+
+- CombatSystem 独占攻击目标对应的 lease、enemy→slot 反向索引、候补队列和失败槽冷却；StationLayout 数据只提供生成政策与建筑正面轮廓，ActorMotionBody / NavigationServer 只负责物理移动与可达性事实。
+- 租约决定“谁可以向哪个接敌位置移动”，不决定目标优先级、动画命中、弹体碰撞或 HP。NPC / DefenseDeviceSystem / BuildingSystem 只提供当前目标位置、轮廓 / 代理和生命状态，不保存敌军占位。
+- 候补提升与释放是同一 CombatSystem 事务：先删除旧正向 / 反向索引，再按距离重验候补可达性并建立新租约。表现、UI 和 GM 只读 snapshot，不允许强制占位或绕过 NavigationMap。
+- lease 内含 Vector3、导航判定与运行帧，属于可重建瞬时态；存档继续只保存敌军实体空间 / 攻击周期，恢复后从正式地图重新分配，避免保存失效 NavMap / Node 关联。
+
+## T0148 塔防宿主代理权威边界
+
+- 空间权威由 StationLayoutController 从正式墙段、建筑墙段和平台 fixture 生成稳定代理身份；DefenseDeviceSystem 只绑定代理与器械 HP，CombatSystem 只负责碰撞身份校验和伤害路由。
+- 代理不是新建筑、第二个 HP 条或表现碰撞体。命中事实必须满足“当前锁定 deployment + 精确宿主身份 + 局部区域”，随后只进入 DefenseDeviceSystem；普通建筑目标只进入 BuildingSystem。
+- UI、GM、器械 Presenter 和正式模型只观察 `host_proxy` 快照，不创建、删除或改写代理。器械销毁释放部署目标，宿主 StaticBody3D 与建筑状态由原系统继续维护。
+
+## T0146 模型发射点权威边界
+
+- `ChibiCharacterPilot` 独占武器模型与 loaded arrow / bolt 的 Transform，只读返回发射事实；NPC、NPCSystem 和 EnemyMountedArtView 仅转发，不计算弹道或伤害。CombatSystem 独占是否接受 release、初速度、物理推进、碰撞和伤害。
+- 正式 release 不设身体中心 fallback。包装 / 武器 / loaded projectile 缺失属于可观察失败，必须零弹体零伤害；这避免画面没有箭、身体侧面却凭空产生权威攻击。
+- 步 / 骑只是同一攻击时间轴和弹体系统的 source profile，不复制 ProjectileSystem。当前数据没有 mounted crossbow 敌种，兼容验收不等于新增玩法单位。
+
+## T0145 弹体事实与去重权威边界
+
+- 攻击时间轴提供 `attack_sequence`，CombatSystem 在 release 时结合来源与单调 projectile sequence 生成唯一 `attack_id`；表现层、弹体 Mesh 和 collider 都无权自行生成伤害事实或修改 HP。
+- 首次物理终止碰撞会在任何伤害回调前预留 ID，随后把实际 collider、终态和唯一 damage result 固化为 fact。重复碰撞、回调重入或对同一 ID 的人工重放只读取已存 fact，不再次进入伤害权威。
+- 去重表与活动物理弹体同属短生命周期战斗运行态，清弹体、退出战斗或重建场景时一并丢弃；不跨存档保存包含 Node / RID 的半完成事实，避免恢复后的幽灵命中。
+
+## T0144 近战接触权威边界
+
+- 表现包装只输出当前真实武器端点与播放器片段；CombatSystem 独占 swing 生命周期、连续碰撞、阵营合法性、实际目标选择和伤害提交。动画 / Mesh 不能回调扣血。
+- `locked_target` 只决定起手、朝向和有效性检查。命中事实来自 world_static + actor_body 胶囊扫掠的第一终止 collider；实际先接触另一合法敌对单位时伤害转向实际实体，未接触时不做兼容补伤害。
+- 步 / 骑命中秒与范围分别来自同一生产模型量测。攻速缩放完整周期与接触秒，空间端点和扫掠半径不随攻速膨胀；范围使用面向目标方向的实际可接触距离，不使用横挥侧向半径。
+- 活动 swing 含 RID 排除列表、帧间几何、攻击上下文与一次性提交状态，不进入空间存档；表现帧命中只加入待提交 key，下一物理帧完成权威伤害。清敌 / 初始化同时丢弃 swing 与待提交队列，模式、目标或攻击周期中断清理对应 key，避免恢复后重复命中。
+
+## T0143 弹体命中权威边界
+
+- 攻击时间轴只负责确认“何时离弦”；释放目标只用于计算初速度，不是命中承诺。弹体创建后，CombatSystem 独占位置、速度、重力、寿命、扫掠碰撞和 hit / blocked / miss 状态。
+- `CombatProjectileView` 是无碰撞体的只读 Mesh 投影，不能发信号扣血。角色包装只提供已验收 loaded arrow / bolt 的发射 Transform，并通过 profile 字段关闭正式路径中的预览飞箭；NPCDevLab 不进入这条权威链。
+- 每个物理子步先积分抛物线，再对起终点执行 world_static + actor_body 连续查询。首个 collider 决定结果：合法敌对实体进入既有伤害权威，其他 collider 只阻挡。释放时目标 ID 不能在落空后触发兼容补伤害。
+- 弹体运行态包含 Node 与 RID 排除列表，因此不进入 formal spatial checkpoint。保存 / 重建发生在飞行中时丢弃弹体是显式策略，比序列化物理服务器对象后产生重复命中更安全。
+
+## T0142 战斗时间轴权威边界
+
+- `CombatAnimationTiming` 是四类已验收攻击动作的时间元数据源，但不拥有 HP 或战斗状态。CombatSystem 用权威 `attack_interval` 缩放 authored 周期，并独占 `idle -> windup -> impact -> recovery -> idle` 推进和伤害提交。
+- `combat_attack_sequence` 是表现重播边沿；`elapsed / cycle / impact / playback` 是同一周期的只读投影。`ChibiCharacterPilot` 在新序号到来时重启并 seek 到权威 elapsed，之后用同一倍率推进；角色用于日常动作差异的 `playback_speed` 不得参与正式攻击速度。
+- 目标有效性、射程、模式、运动、昏迷和敌军僵直在权威层中断周期；表现层不能因为动画已经开始而补造伤害。存档恢复保存敌军周期字段，避免恢复后幽灵命中或重复提交。
+- T0143 后远程 authored 释放点只创建弹体，最终伤害由 CombatSystem 物理碰撞结果提交；近战空间接触也不得回落为表现节点扣血。
+
+## T0141 正式敌军表现复用边界
+
+- 正式数据流固定为 `enemy_waves.json weapon_type / mount_type -> CombatSystem enemy profile -> ChibiCharacterPilot / EnemyMountedArtView`。NPCDevLab 只用同一生产包装验收效果，不进入 Main 的运行时依赖链。
+- CombatSystem 继续创建并维护 ActorMotionBody、NavigationAgent、碰撞、HP、目标、攻击和胜负事实；本次替换其子级表现包装，不改变权威实体标识、攻击节奏或结算顺序。
+- `ChibiCharacterPilot.apply_profile(...)` 可按生产 profile 延迟创建四类武器节点；节点显隐只读固定武器和战斗表现状态，不能把 `_debug_equipment_preview_active` 或 DevLab 临时 loadout 带入正式世界。
+- 骑兵继续通过 `EnemyMountedArtView` 组合同一骑手和马匹包装。马匹的敌方纯表现、无独立 HP及坠亡逃逸边界不变。
+- T0141 不实现动画事件驱动伤害、近战武器空间接触或物理弹体；这些能力必须在后续任务中由 CombatSystem 的权威时间轴 / 命中结果驱动表现，不能由表现节点自行扣血。
+
+## T0130-D1R12 角色表现、动画与玩法权威边界
+
+- `ChibiCharacterPilot` 只把 NPC / Combat / Equipment / Horse 状态投影为可见模型、动画和附件；工作工具接触砧、锅、土地、桌面或病床不产生生产 / 治疗事实，武器动画和可见投射物也不产生伤害事实。
+- `NPCDevLab` 的模式、动作和装配是场景级临时状态。它可以跨角色复用以便对照，但不写 NPCSystem、ActionSystem、EquipmentSystem、HorseSystem、CombatSystem、ResourceSystem 或存档；敌军动作目录也不能反向定义正式敌军能力。
+- 表现复用以“同一生产包装 / 同一共享参数”为边界，而不是把 DevLab 变成运行时服务。正式 Main 消费权威状态后调用包装，DevLab 构造只读测试 profile 调用同一包装，两者不得各自维护近似武器、坐席或骑姿 Transform。
+- 骨骼合成必须保持职责分层：Hips 决定骑乘下半身基座时，不允许为瞄准或前倾直接覆盖；步战源 Hips 中属于上半身构图的旋转应数学转移到 Spine。附件跟随必须由 BoneAttachment 的局部关系承担，动作期全局校准不得抵消骨动画。
+- 数值诊断是可重复回归，不是视觉合理性的替代品。每个附件至少暴露父骨、局部 Transform、真实握点距离及必要的工作端 / 前向点积；每个复合动作至少断言下半身基线、关键上半身骨轨和代表相位。最终仍需实景截图确认穿模、正反、接地、重心和动作意图。
+
+## T0138 骑战会合与马匹伤害权威边界
+
+- `HorseSystem` 继续独占马匹个体、分配、HP、死亡和世界位置。T0138-R1 当前上马流为 `stable + waiting_for_rider_at_stable -> ridden -> returning_stable -> stable`：马在取用前固定于真实马厩锚点，NPCSystem 独自执行到马旁最近 NavigationMap 点的导航请求，人物抵达后才提交 `combat_mounted=true`。旧 `approaching_rider` 仅保留运行态兼容，不再由新流程创建。
+- `CombatSystem` 只在目标确实 `ridden_by_npc_id` 且 NPC 为 `combat_mounted` 时，把已经完成防御结算的伤害交给 HorseSystem 拆分。HorseSystem 先扣马匹随机 `30%–50%`，CombatSystem 再把剩余整数伤害交给 NPCSystem；马死亡和 NPC 昏迷仍分别由 HorseSystem / NPCSystem 提交各自事实，UI 与表现层不参与结算。
+- 正常退出集结 / 战斗只清骑乘投影并让马实体返厩，保留分配；骑手昏迷、马死亡、取消入伍、失去武器或逃离会通过内部系统事务清空双方分配。内部清理可绕过玩家换装锁，但玩家公开入口只有 `work` 模式可调用。
+
+## T0135-P8AR8 铁匠铺敞开正面的权威边界
+
+- 正面围合删除同时发生在表现壳与正式静态碰撞源：表现层不再显示墙 / 门，导航烘焙源也不再包含两段前墙，避免“看起来敞开、实际有隐形墙”的双轨状态。
+- 此改动只扩大铁匠铺正面的物理开口，不新增第二套入口或地点权威。既有中央路线点继续决定 NPC 进入 / 离开和 `people_present` 提交；四根表现承重柱不自行生成碰撞。
+- 工械坊继续独占当前双扇自动门回归样本；铁匠铺不再实例化 `BuildingAutoDoor`，但其 BuildingSystem、CraftingSystem、fixture、炉火状态投影和存档 Schema 均不变。
+
+## T0135-P6R3 正式世界原点与连续阴影边界
+
+- `CelestialCycleController` 对每个 `time_changed` 从 GameState 绝对时刻重算并立即写入太阳 / 月亮 Basis、能量、颜色、主阴影、天空、环境、雾和室内光；生产 `directional_transform_update_interval_game_seconds=0` 表示不分桶。正值间隔仅是低频降级能力，不是默认表现。
+- 阴影稳定性由空间精度而非跳帧获得：默认正式世界根位于原点，CameraRig、生产 NavigationMap、NPC、敌军、商人和塔防都消费同一批原点附近的世界坐标。旧 `(1000,0,0)` 只作为无 `world_origin` 老存档的迁移源，不参与新运行态。
+- `StationLayoutController` 在正式模式禁用旧白盒视觉分支的显示与 CollisionObject3D layer / mask；GM 旧图兼容恢复原值。它不会禁用 NPC / Enemies / Effects 等仍被系统持有的运行根。P6R 的 `120 m` 级联和 P7R shadows-only 实体壳继续生效。
+
+## T0135-P6R 动态阴影稳定化边界
+
+- 稳定化只发生在 presentation 配置和两盏天体 `DirectionalLight3D` 上：阴影覆盖由 `180 m` 收紧为 `120 m`，四级联边界启用混合并使用 `0.12 / 0.30 / 0.60` 分割。它不改变太阳 / 月亮轨迹、方向计算频率、色温、能量或主阴影比较器。
+- `CelestialCycleController` 继续每次从 GameState 绝对时刻直接重算，不缓存第二套时钟；暂停和倍速仍由 TimeSystem 唯一决定。新增快照只公开实际渲染参数，不成为存档或玩法状态。
+- P6R 当时未启用 TAA、方向量化或低频跳步；用户实机确认高频波动仍存在后，P6R2 仅增加上述 `60` 游戏秒 Transform 采样。`120 m` 外仍只失去远景实时细节阴影，碰撞、导航、敌路、建筑透明壳持久阴影和室内遮光不受影响。
+
 ## T0135-P8AR6 卫生间表现与权威边界
 
 - 两间卫生间属于正式空间配置中的非交互服务附属物，不是第十三 / 十四座玩法建筑；它们不拥有 HP、等级、库存、资源、工位、地点提交、NPC 行动、事件或 UI 权威，也不因外观节点存在而推断卫生状态。
@@ -119,7 +374,15 @@
 
 - 实时人物框是纯表现消费者：`NPCPanel -> NPCPortraitViewport -> NPCSystem.get_npc_portrait_snapshot -> NPC.gd/ArtView` 单向读取。它不设置位置、朝向、动作、工位、HP、地点或选中状态，也不创建第二个 NPC。
 - 副镜头和主镜头共享 World3D，Camera3D 只属于 SubViewport，不会替换 Main 当前相机。射线遮挡修正只移动副镜头；人物框关闭后停渲染，避免常驻第二视图成本。
+- 共享 World3D 不再意味着共享建筑透明结果：实际会渐隐的屋顶 / 外墙源 Mesh 只进入主镜头视觉层 19，并在源节点下维护同 Mesh、同最终色板、禁用透明和阴影的 internal 纯渲染副本供人物框视觉层 18 使用。两台 Camera3D 通过互斥 cull mask 消除材质状态串扰；副本不带碰撞、导航、Area、地点、工位或建筑状态。
 - 地点名称由 MemorySystem 既有地点快照补全；UI 不维护另一份地点映射。表现正面分别由 Synty 包装和 Quaternius 回退包装报告，统一转换为世界方向后供镜头构图。
+
+## T0130-D1 开发检视与权威系统边界
+
+- NPC 开发检视场景是纯表现工具：可自由切换角色、动画、临时装备和坐骑，但不注册 NPC / 敌人实体，不调用 ActionSystem、EquipmentSystem、HorseSystem、CombatSystem 或 ResourceSystem，也不提交行动、伤害、库存和所有权事实。
+- 角色能力目录决定哪些动作永远可能出现，当前工作 / 战斗模式只决定按钮是否可用；它们都不反向修改正式 NPC 的职业、征召或行为模式。敌军战斗模式锁定同样只是检视约束，不成为 CombatSystem 的第二套 AI 状态机。
+- 工作 / 战斗模式与装备、坐骑选择作为一份跨预览角色共享的场景内存保存，离开场景即丢弃。共享角色包装的 debug 装备覆盖仍为逐实例字段，默认关闭；正式生产实例只读权威 `profile.equipment`。未建模护甲 / 武器只显示文字状态，不以占位 UI 冒充已有 3D 资产。
+- T0130-D1R9 只修正开发工具实例化的 `merchant_horse.glb` 局部源轴：马模型不再叠加 `180°` yaw，人物与马的根节点仍统一消费检视 yaw。快照以导入马的本地 `+Z` 正面和人物包装报告的实际可见前向计算点积；该度量与局部校准均不进入 HorseSystem、CombatSystem 或正式世界朝向。
 
 ## T0130-P7 医疗表现与治疗权威边界
 
@@ -137,7 +400,8 @@
 
 ## T0130-P5 装备与卧姿表现边界
 
-- `synced_sword_shield` 只消费 `profile.equipment.main_weapon.id`，不持有库存、兵种或换装结果。当前艾达仅为剑盾提供匹配道具；其他武器装备时隐藏错误剑盾，长杆 / 弓弩可见模型留给通用装备表现后续任务。
+- `synced_sword_shield` 与通用武器预览只消费 `profile.equipment.main_weapon.id` 或显式 debug preview，不持有库存、兵种或换装结果。当前剑盾、长杆、弓、弩均有匹配表现；切换武器时必须隐藏不匹配附件，正式装备事实仍属于 EquipmentSystem。
+- T0130-D1R7 将剑 / 盾实例化统一收敛到共享几何校准：剑柄采样点反算到 RightHand；盾面法线对齐角色可见正面、朝上轴对齐世界 Up，并沿盾面正向留出 `0.045 m` 手部净空，使 LeftHand 基准点保持在盾背后。开发预览、`synced_sword_shield`、敌军 `sword_shield` 与欧文隐藏预载不允许各自复制 Transform；这些数值和快照度量只属于 BoneAttachment 下的表现，不改变装备或战斗权威。
 - P5R2 的 `use_imported_character_material` 只改变目标 Mesh 的表现材质：复制 FBX 导入 BaseMaterial3D 以保留顶点色面部合同，再替换获准的 `_A` Albedo 和明度；不得从材质反推身份、装备或状态。P5R 程序化面部已删除，不形成第二套面部状态。
 - `set_spatial_attachment_pose` 是父级空间挂接到表现层的只读语义投影。Chibi 包装用 `Lie_Idle` 表现 `sleeping_supine / lying_supine`，旧包装保留既有父级 Transform；两条路径都不能提交床位、恢复疲劳或生成睡眠事实。
 - 训练格挡、攻击、受击、昏迷与复苏仍只读 ActionSystem / CombatSystem / NPCSystem；Synty 模型、KayKit 动画、武器节点和血粒子都不拥有玩法结算。
@@ -175,6 +439,7 @@
 - `ChibiCharacterPilot`、动作沙盒和 Main 预览控制器属于 presentation-only。它们可拥有 Skeleton、AnimationPlayer、RetargetModifier、Mesh、BoneAttachment、选择碰撞和诊断快照，但不能注册到 NPCSystem / CombatSystem 活动集合或写任何权威事实。
 - P0 用实时双骨架换取迭代速度，并通过静态共享 AnimationLibrary 控制内存；正式量产前另行评估导入期 / 离线烘焙，不能在未验证时直接把 48 份实时源骨架当最终架构。
 - GM `character_pilot` 只启停临时表现根或切换沙盒，不构造刷波、伤害、行动或地点接口。生产切换门槛仍是用户视觉验收后显式修改 `character_appearances.json` / CombatSystem 包装引用。
+- 表现附件的几何诊断必须来自真实网格分区，并与实际运行截图共同验收。T0130-P1R4 将格伦工作锤拆成柄尾、后段握点和最近锤头三个采样区，防止“错误点贴手但画面仍握锤头”的伪通过；所有模型 Transform 调整还须检查正面、侧面和必要动作相位的穿模、方向、接地与重心。
 
 ## T0129C-A5-P8 正式空间检查点边界
 
@@ -252,7 +517,7 @@ StationLayoutController 的 `get_formal_wave_navigation_config()` 对 1–5 波�
 
 P7b 的运行边界为：CombatSystem 选择波次、敌人实体和目标；NPCSystem 独占 NPC 迁移记录、运动请求及恢复；StationLayoutController 独占正式 NavigationRegion / NavigationLink / 镜头启停。默认敌人查询 NPC 时必须通过 `is_npc_in_formal_combat_world()` 过滤另一坐标世界的日常 NPC。战斗结束顺序是行为模式收口 → NPC 正式运动停止与原坐标恢复 → 正式地图退出；不把临时正式坐标写回 NPC 档案。默认后续波次可以继续加入当前正式世界，显式 debug 切片仍拒绝与其他活动敌人混用。
 
-A4-P7R 补齐运动稳定合同：ActorMotionBody 在应用 profile 时同步设置 NavigationAgent `max_speed`，并把 RVO safe velocity 限制到 profile 上限后再走 `move_toward(..., acceleration * delta)`；最终 velocity 仍二次限速。CombatSystem 不再按旧 formation 行列设置不同 avoidance priority。表现方向属于独立只读滤波状态：忽略低于 `0.35 m/s` 的碰撞恢复，合法方向变化按 `360°/s` 夹取；它只驱动可见朝向，不反写路径、速度、索敌或攻击权威。
+A4-P7R 补齐运动稳定合同：ActorMotionBody 在应用 profile 时同步设置 NavigationAgent `max_speed`，并把 RVO safe velocity 限制到 profile 上限后再走 `move_toward(..., acceleration * delta)`；最终 velocity 仍二次限速。CombatSystem 不再按旧 formation 行列设置不同 avoidance priority；T0200 后仅保留与编队无关的稳定身份微差来打破对称礼让。表现方向属于独立只读滤波状态：忽略低于 `0.35 m/s` 的碰撞恢复，合法方向变化按 `360°/s` 夹取；它只驱动可见朝向，不反写路径、速度、索敌或攻击权威。
 
 ## T0129C-A4-P6 可复用正式波次工厂与分角色槽位（历史）
 
@@ -272,7 +537,7 @@ StationLayoutController 的 `get_formal_wave_navigation_config(wave_number)` 负
 
 ## T0129B-C3-P3 破门后导航 / 仓库权威桥接
 
-外围敌路 Region 与核心驿站 Region 原先在正门处属于两个导航岛。P3 在同一专属 NavigationMap 增加单向 `EnemyFrontGateLink`，从正式 `front_gate` 连接到 `gate_turn`；ActorMotionBody 仍沿链接端点执行实体位移，未瞬移或直接写最终坐标。链接只随正式预览 / 显式切片启用。
+外围敌路 Region 与核心驿站 Region 原先在正门处属于两个导航岛。P3 在同一专属 NavigationMap 增加 `EnemyFrontGateLink`，连接正式 `front_gate` 与 `gate_turn`；T0160 将其扩为双向实体通行，使友军警铃响应者也能从站内走到正门外集结区。ActorMotionBody 仍沿链接端点执行实体位移，未瞬移或直接写最终坐标；敌军是否越门仍由正门摧毁后的目标阶段决定，链接不授予攻击或破门权威。链接只随正式世界 / 显式切片启用。
 
 CombatSystem 在正门摧毁后只下发下一物理阶段并锁住攻击，直到 `motion_arrived(warehouse)` 才恢复目标选择。BuildingSystem 继续独占正门 / 仓库 HP 与摧毁，MemorySystem 继续只接收实际伤害事件。仓库摧毁后不回退到旧主厅坐标。
 
@@ -397,14 +662,14 @@ ActionSystem active 祈祷有效秒
      -> EventBus.piety_changed
         -> HUD 圆环 / 满值发亮
 
-HUD 合法地面点
-  -> PietySystem 满值与边界校验、消费、效果时序
+HUD 任意有限水平地面点
+  -> PietySystem 满值与坐标有效性校验、消费、效果时序
      -> CombatSystem.apply_enemy_area_damage
         -> 仅活动敌人：防御、死亡、清敌 / 战斗结束
-     -> MemorySystem：施放 / 落地公开事件
+     -> MemorySystem：施放本地公开 / 落地全站公开 / 条件式击杀事件
 ```
 
-PietySystem 是新增的单一权威边界：配置加载、共享值、选点范围、陨石 / 燃烧状态和消费都在这里；ActionSystem 只提交已经发生的 active 时长，HUD 只显示和提交目标。CombatSystem 的范围入口刻意只接触 `_active_enemies`，从结构上隔离 NPC、建筑和我方器械伤害，因此“无友伤”不依赖阵营标签或 UI 过滤。表现节点挂在 `WorldRoot/Station/Effects`，不保存权威状态。
+PietySystem 是新增的单一权威边界：配置加载、共享值、落点有限性、陨石 / 燃烧状态和消费都在这里；T0163 起不再存在驿站选点范围。ActionSystem 只提交已经发生的 active 时长，HUD 只显示和提交目标。CombatSystem 的范围入口刻意只接触 `_active_enemies`，从结构上隔离 NPC、建筑和我方器械伤害，因此“无友伤”不依赖阵营标签或 UI 过滤。表现节点挂在 `WorldRoot/Station/Effects`，不保存权威状态。T0159 后，PietySystem 只在冲击结算返回后提交落地事件，并按 `defeated_count > 0` 条件提交独立击杀事件；MemorySystem 将这两类重大事件作为全站公开例外写入所有合格 NPC 见闻，仍不反向参与伤害或击杀判断。
 
 ## T0113 对话权威实况投影
 
@@ -1171,8 +1436,9 @@ CraftingSystem -> BuildingSystem.special_state.production
 logical_time_tick + 有效 work_stable -> HorseSystem
 HorseSystem -> ResourceSystem(马匹进食粮食)
 HorseSystem -> BuildingSystem.special_state.horses(仅数量)
-NPCPanel -> HorseSystem.assign/unassign -> EquipmentSystem mount 兼容快照
-NPC behavior_mode -> HorseSystem stable/ridden 位置切换
+NPCPanel(work only) -> HorseSystem.assign/unassign -> EquipmentSystem mount 兼容快照
+NPC behavior_mode -> HorseSystem 会合 / 骑乘 / 返厩状态机
+CombatSystem(结算后伤害) -> HorseSystem 先扣马 HP -> NPCSystem 再扣剩余 HP
 ```
 
 `MemorySystem` 只对白名单内部特殊状态做进入快照和室内字段级差量；不得把完整制造运行态或逐匹马详情加入全局建筑上下文或广场外部状态。面板可直接查询权威系统获得小数进度 / 个体详情，但不能据此写资源、阶段、HP 或分配事实。旧 `weapons / armor / defense_devices / horse_readiness` 聚合键只保留为弃用兼容数据，正式制造、装备、部署和马匹分配均已迁移到具体物品或马匹实体。
@@ -1279,8 +1545,8 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - 资源数值
 - 逻辑时间流逝与倍率
 - LLM 等待期间的 TimeSystem 慢速请求注册/释放
-- 敌人在场期间的 TimeSystem `x1` 有效倍率上限注册/释放
-- 战斗动作秒换算：在战斗系统内把 TimeSystem 游戏秒折算为攻速 / 位移表现基准
+- 敌人在场期间的 TimeSystem `combat_enemy_presence = 1/60` 慢速注册 / 释放
+- 统一战斗秒：攻击、位移、塔防、持续效果与攻击动画共用游戏秒 / 现实秒 1:1 基准
 - 工作产出
 - 广场公告当前状态、公告牌输入路由与在场 NPC 广播
 - 商人到访时段、交易报价校验和资源买卖结算
@@ -1393,7 +1659,7 @@ T0035-T0038 已按 T0034 冻结的设计完成系统与正式路径迁移：`Act
 - `ActionSystem` 仍权威管理 NPC 的工位、熟练度 / 属性 / 建筑等级耗时、行动打断和单个工人周期。完整周期只向 `CraftingSystem` 提交一次阶段请求；中断只清该工人未提交的小数进度。多工位可并行跑周期，但 `CraftingSystem` 必须串行校验并落账，避免同一阶段或成品重复结算。
 - `EquipmentSystem` 只扣除 / 返还当次装备的同一具体物品 ID；`DefenseDeviceSystem` 只扣弩床或箭塔自身 ID。箭束只入库，本轮未增加战斗弹药结算。故事初始装备仍可经 NPC 档案初始化，不伪造玩家库存消耗。
 - `HorseSystem` 是马匹个体、总 HP / 基础 HP 派生值 / 养马额外 HP、饱食、进食、自愈、成长、独立累积繁育概率 / 产后冷却、物理位置和分配映射的唯一事实源。它消费 `TimeSystem` 逻辑时间，在进食周期完成时调用 `ResourceSystem` 原子扣粮食，并从 `ActionSystem` / `BuildingSystem` 只读获取当前有效养马人与马厩等级。UI 只读取拆分后的公开快照，不写概率、冷却或 HP；`horse_readiness` 不再是马的数量、分配或骑乘事实。
-- 马匹分配使用单一交易边界：`HorseSystem` 复验 NPC 已入伍且有主武器、马匹成年 / 在厩 / 未分配，再让 `EquipmentSystem` 在 `equipment.mount` 保存具体 `horse_id` 的轻量投影。马的分配关系与物理位置仍只由 `HorseSystem` 修改；`CombatSystem` 只通知 `rally / combat` 进出，不直接搬移马或写马状态。收回主武器、取消入伍或逃离必须经同一边界自动解除分配。
+- 马匹分配使用单一交易边界：`HorseSystem` 复验 `work` 模式、NPC 已入伍且有主武器、马匹成年 / 在厩 / 未分配，再让 `EquipmentSystem` 在 `equipment.mount` 保存具体 `horse_id` 的轻量投影。马的分配关系、HP、死亡与物理位置仍只由 `HorseSystem` 修改；`CombatSystem` 通知 `rally / combat` 进出并消费马匹分伤结果，不直接搬移马或写马状态。收回主武器、取消入伍、马死亡、骑手昏迷或逃离必须经同一内部边界自动解除分配。
 
 当前制造数据流：
 
@@ -1413,11 +1679,15 @@ ActionSystem 完成一个工人周期
 TimeSystem 逻辑时间 + 马厩有效养马人快照
   -> HorseSystem 结算饱食、进食、非战斗自愈、繁育、成长与额外 HP
   -> 进食完成时 ResourceSystem 扣粮食
-NPCPanel 提交分配 / 取消分配
+NPCPanel 在 work 模式提交分配 / 取消分配
   -> HorseSystem 校验并更新分配事实
   -> EquipmentSystem 同步具体 horse_id 坐骑投影
 CombatSystem 切换 rally / combat
-  -> HorseSystem 更新离厩 / 返厩
+  -> HorseSystem 让分配马在真实马厩锚点等待
+  -> NPCSystem 导航到马旁，人物抵达后才进入 ridden
+结算后敌军伤害
+  -> HorseSystem 先扣随机 30%-50% 马匹 HP
+  -> CombatSystem 将剩余伤害交给 NPCSystem
 ```
 
 ### `internal_state.special_state` 当前传播实现
@@ -1608,9 +1878,9 @@ Godot 执行合法结果
 
 Godot 不使用后端结果直接决定时间倍率。后端只返回业务 JSON；是否申请慢速、慢速 request id、超时释放和恢复玩家速度，由 Godot 的 LLMBridge / DialogSystem / 计划系统负责。
 
-T1104A 起，TimeSystem 还支持“有效倍率上限”请求。CombatSystem 只在活动敌人存在时注册 `combat_enemy_presence` 上限，把有效倍率最高压到 `x1`；所有敌人消失后释放。该上限与 LLM 慢速取更慢者：玩家选择 `x4` 且有敌人时实际为 `x1`，战斗中若有 LLM 调用则实际可降到 `1/60`，调用结束后回到敌人在场的 `x1`。后端和 LLM 仍不直接决定时间倍率。
+T0183 起，CombatSystem 在活动敌人存在时注册 `combat_enemy_presence = 1/60` 慢速，使游戏内 1 秒等于现实 1 秒；所有敌人消失后释放。玩家选择 `x4` 时仍保存该选择，战后恢复；战斗中的 LLM / NPC 移动请求也是 `1/60`，不再进一步降低战斗速度。后端和 LLM 仍不直接决定时间倍率。
 
-T1104B 起，CombatSystem 不把 `logical_time_tick` 传入的原始游戏秒直接当作攻击冷却秒。战斗攻击冷却和敌人位移表现使用 `game_delta_seconds / 60` 得到的战斗动作秒，因此默认 `x1` 下现实 1 秒推进游戏内 1 分钟，也只推进约 1 秒战斗动作。工作、日常状态、治疗、建筑修复 / 升级等经营结算仍直接使用 TimeSystem 游戏秒。
+T0183 起，CombatSystem、DefenseDeviceSystem 与 PietySystem 直接把 `logical_time_tick` 的游戏秒作为战斗秒，不再除以 60。敌人在场慢速保证现实 1 秒只产生 1 游戏秒，攻击权威 elapsed/cycle、敌人移动、塔防冷却、陨石燃烧与动画现实播放时长因此保持同一尺度。工作、日常状态、治疗、建筑修复 / 升级等经营结算也继续直接使用 TimeSystem 游戏秒。
 
 ## Godot LLMBridge 当前实现
 
@@ -1654,3 +1924,14 @@ T0604 遇到的坑：
 真实供应商 API Key 默认只存在于服务器后端环境变量或后端 `.env`，并确保 `.gitignore` 忽略 `.env`。Godot 客户端不得保存、提交、导出或要求玩家在 Demo 阶段必须提供供应商 API Key。
 
 使用真实 API Key 完成测试后，不要提交 `.env`、日志中的 Key、请求头或供应商密钥片段。生产 / 演示环境应关闭自动 mock fallback；无 Key 时应暴露配置错误，而不是返回 mock 内容。
+## T0137 NPC 移动慢速权威边界
+
+- `NPC.gd` 只在真实移动生命周期开始 / 结束处为每名 NPC 注册或释放 `npc_movement:<npc_id>`；它不创建第二套时钟，也不把 `current_action` 文本或表现动画冒充为移动事实。日常、室内、战斗集结 / 战术 / 避战和逃离仍由 NPCSystem / ActorMotionBody 下发同一实体运动。
+- 移动请求复用 `TimeSystem.request_time_slowdown(..., -1.0, "npc_movement")`，因此倍率与 LLM 等待共享 `llm_wait_scale=1/60` 及最小值聚合。多 NPC、LLM 慢速和战斗上限可以并存；暂停只把 numeric multiplier 置零，不丢失尚未完成的移动请求。
+- 角色物理运动继续消费真实 physics delta，避免慢速后走路再变成原来的 `1/60`；资源生产、建筑 / 制造进度、生活消耗、恢复、波次与其他权威模拟继续只消费 TimeSystem 已缩放的 `logical_time_tick`，所以不需要各自增加移动效率分支。
+
+## T0173 陨石下落时间源边界
+
+- PietySystem 的待落陨石属于短时战斗表现与落地触发器，使用 `_process(real_delta_seconds)` 推进，不消费受 NPC / LLM 慢速影响的 `logical_time_tick`；否则 `1/60` 慢速与战斗秒换算会叠乘，把 2.8 秒下落放大到约 168 秒。
+- 现实时间推进前必须只读检查 TimeSystem `is_gameplay_paused()`，保证玩家主动暂停仍冻结陨石；燃烧区继续消费逻辑 tick，权威冲击 / 燃烧伤害继续只调用 CombatSystem。
+- GM `debug_advance_effects(game_seconds)` 保留显式确定性推进能力，同时推进待落陨石与燃烧区，仅用于测试和观察，不成为第二套自然运行时钟。

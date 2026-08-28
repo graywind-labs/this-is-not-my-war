@@ -177,37 +177,21 @@ func _init() -> void:
 		push_error("GM building section should expose the independent actor motion sandbox")
 		quit(1)
 		return
-	var glen_navigation_pilot_button := gm_window.find_child("GlenNavigationPilotButton", true, false) as Button
-	if glen_navigation_pilot_button == null:
-		push_error("GM building section should expose the Glen formal-navigation pilot")
+	var npc_dev_lab_button := gm_window.find_child("NPCDevLabButton", true, false) as Button
+	if npc_dev_lab_button == null:
+		push_error("GM building section should replace the fixed character sandbox with NPCDevLab")
 		quit(1)
 		return
-	var clinic_doctor_pilot_button := gm_window.find_child("ClinicDoctorNavigationPilotButton", true, false) as Button
-	var clinic_bed_pilot_button := gm_window.find_child("ClinicBedNavigationPilotButton", true, false) as Button
-	if clinic_doctor_pilot_button == null or clinic_bed_pilot_button == null:
-		push_error("GM building section should expose both clinic formal-navigation pilot modes")
-		quit(1)
-		return
-	var dormitory_pilot_button := gm_window.find_child("DormitoryNavigationPilotButton", true, false) as Button
-	if dormitory_pilot_button == null:
-		push_error("GM building section should expose the assigned dormitory-bed formal-navigation pilot")
-		quit(1)
-		return
-	var dining_pilot_button := gm_window.find_child("DiningNavigationPilotButton", true, false) as Button
-	if dining_pilot_button == null:
-		push_error("GM building section should expose the first-free dining-seat formal-navigation pilot")
-		quit(1)
-		return
-	var chapel_pilot_button := gm_window.find_child("ChapelNavigationPilotButton", true, false) as Button
-	if chapel_pilot_button == null:
-		push_error("GM building section should expose the first-free chapel prayer-seat formal-navigation pilot")
-		quit(1)
-		return
-	var stable_pilot_button := gm_window.find_child("StableNavigationPilotButton", true, false) as Button
-	if stable_pilot_button == null:
-		push_error("GM building section should expose the first-free stable care-position formal-navigation pilot")
-		quit(1)
-		return
+	for removed_button_name in [
+		"GlenNavigationPilotButton", "ClinicDoctorNavigationPilotButton",
+		"ClinicBedNavigationPilotButton", "DormitoryNavigationPilotButton",
+		"DiningNavigationPilotButton", "ChapelNavigationPilotButton",
+		"StableNavigationPilotButton"
+	]:
+		if gm_window.find_child(removed_button_name, true, false) != null:
+			push_error("GM panel should remove superseded navigation pilot button %s" % removed_button_name)
+			quit(1)
+			return
 	var formal_stable_work_button := gm_window.find_child("FormalStableWorkButton", true, false) as Button
 	if formal_stable_work_button == null:
 		push_error("GM building section should expose Toma's actual formal stable-work cycle")
@@ -707,6 +691,32 @@ func _init() -> void:
 		push_error("GM NPC section should include a recruit button")
 		quit(1)
 		return
+	var recruit_and_equip_all_button := gm_window.find_child("RecruitAndEquipAllButton", true, false) as Button
+	if recruit_and_equip_all_button == null or recruit_and_equip_all_button.text != "一键征召&配装":
+		push_error("GM quick actions should include the one-click recruit/equip preset button")
+		quit(1)
+		return
+	if recruit_and_equip_all_button.get_parent().name != "GMQuickActions":
+		push_error("One-click recruit/equip must stay in the fixed quick-actions row")
+		quit(1)
+		return
+	var quick_ancestor: Node = recruit_and_equip_all_button.get_parent()
+	while quick_ancestor != null and quick_ancestor != gm_window:
+		if quick_ancestor is ScrollContainer:
+			push_error("One-click recruit/equip should be visible without scrolling")
+			quit(1)
+			return
+		quick_ancestor = quick_ancestor.get_parent()
+	var section_tabs := gm_window.find_child("GMSectionTabs", true, false) as TabContainer
+	if section_tabs == null or section_tabs.get_tab_count() != 5:
+		push_error("GM panel should expose five focused section tabs")
+		quit(1)
+		return
+	for expected_tab in ["常用", "世界建筑", "制造马匹", "正式行动", "AI信息"]:
+		if section_tabs.find_child(expected_tab, false, false) == null:
+			push_error("GM panel is missing tab %s" % expected_tab)
+			quit(1)
+			return
 	var generate_plan_button := gm_window.find_child("GeneratePlanButton", true, false) as Button
 	var execute_plan_button := gm_window.find_child("ExecutePlanButton", true, false) as Button
 	var show_plan_button := gm_window.find_child("ShowPlanButton", true, false) as Button
@@ -731,17 +741,78 @@ func _init() -> void:
 		quit(1)
 		return
 	var combat_wave_select := gm_window.find_child("CombatWaveSelect", true, false) as OptionButton
-	var spawn_first_wave_button := gm_window.find_child("SpawnFirstWaveButton", true, false) as Button
+	var spawn_selected_wave_button := gm_window.find_child("SpawnSelectedWaveButton", true, false) as Button
 	var trigger_next_wave_button := gm_window.find_child("TriggerNextWaveButton", true, false) as Button
 	var step_enemy_ai_button := gm_window.find_child("StepEnemyAIButton", true, false) as Button
-	if combat_wave_select == null or spawn_first_wave_button == null or trigger_next_wave_button == null or step_enemy_ai_button == null:
-		push_error("GM combat section should include wave selector, first-wave spawn button, next-wave button and enemy AI step button")
+	if gm_window.find_child("SpawnFirstWaveButton", true, false) != null:
+		push_error("GM panel should remove the duplicate first-wave-only button")
+		quit(1)
+		return
+	if combat_wave_select == null or spawn_selected_wave_button == null or trigger_next_wave_button == null or step_enemy_ai_button == null:
+		push_error("GM combat section should include wave selector, generic spawn, next-wave and enemy AI step buttons")
 		quit(1)
 		return
 	if not _select_option_by_id(combat_wave_select, "1"):
 		push_error("GM combat wave selector should include wave 1")
 		quit(1)
 		return
+	combat_system.debug_clear_enemies()
+	spawn_selected_wave_button.pressed.emit()
+	await process_frame
+	var gm_spawn_result: Dictionary = combat_system.get_last_spawn_result()
+	if (
+		not bool(gm_spawn_result.get("ok", false))
+		or str(gm_spawn_result.get("spawn_stage_id", "")) != "gm_front_gate_enemy_spawn_zone"
+		or not bool(gm_spawn_result.get("spawn_near_front_gate", false))
+		or not bool(gm_spawn_result.get("spawn_in_gm_staging_zone", false))
+	):
+		push_error("GM enemy spawn should use the dedicated front-gate staging zone: %s" % JSON.stringify(gm_spawn_result))
+		quit(1)
+		return
+	var enemy_route: Dictionary = station_layout_controller.get_enemy_route_world()
+	var front_gate_position := Vector3.ZERO
+	for raw_stage in enemy_route.get("stages", []):
+		var route_stage := raw_stage as Dictionary
+		if str(route_stage.get("id", "")) == "front_gate":
+			front_gate_position = route_stage.get("position", Vector3.ZERO)
+			break
+	for enemy_id in combat_system.get_active_enemy_ids():
+		var enemy: Dictionary = combat_system.get_enemy(str(enemy_id))
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var gate_distance := enemy_position.distance_to(front_gate_position)
+		if gate_distance < 25.0 or gate_distance > 50.0:
+			push_error("GM enemy should spawn in the yellow-box staging band: %s at %s (gate distance %.2f)" % [enemy_id, enemy_position, gate_distance])
+			quit(1)
+			return
+	combat_system.debug_clear_enemies()
+	var fourth_wave_result: Dictionary = combat_system.debug_spawn_wave(4, true, true)
+	if (
+		not bool(fourth_wave_result.get("ok", false))
+		or int(fourth_wave_result.get("spawned_count", 0)) != 36
+		or str(fourth_wave_result.get("spawn_stage_id", "")) != "gm_front_gate_enemy_spawn_zone"
+	):
+		push_error("GM fourth wave should spawn all 36 enemies in the dedicated staging zone: %s" % JSON.stringify(fourth_wave_result))
+		quit(1)
+		return
+	for enemy_id in combat_system.get_active_enemy_ids():
+		var enemy: Dictionary = combat_system.get_enemy(str(enemy_id))
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var gate_distance := enemy_position.distance_to(front_gate_position)
+		if gate_distance < 25.0 or gate_distance > 50.0:
+			push_error("GM fourth-wave enemy left the staging band: %s at %s (gate distance %.2f)" % [enemy_id, enemy_position, gate_distance])
+			quit(1)
+			return
+	combat_system.debug_clear_enemies()
+	var normal_spawn_result: Dictionary = combat_system.spawn_wave(1, true, "verify_normal_spawn_unchanged")
+	if (
+		not bool(normal_spawn_result.get("ok", false))
+		or str(normal_spawn_result.get("spawn_stage_id", "")) != "spawn"
+		or bool(normal_spawn_result.get("spawn_near_front_gate", true))
+	):
+		push_error("Normal wave spawn should remain at the distant route start: %s" % JSON.stringify(normal_spawn_result))
+		quit(1)
+		return
+	combat_system.debug_clear_enemies()
 	var fill_piety_button := gm_window.find_child("FillPietyButton", true, false) as Button
 	var piety_snapshot_button := gm_window.find_child("PietySnapshotButton", true, false) as Button
 	if fill_piety_button == null or piety_snapshot_button == null:
@@ -1106,8 +1177,8 @@ func _init() -> void:
 		push_error("GM spawn_wave command should spawn enemies")
 		quit(1)
 		return
-	if not time_system.has_time_scale_cap("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - 1.0) > 0.001:
-		push_error("GM-spawned enemies should cap TimeSystem effective scale to x1")
+	if not time_system.has_time_slowdown("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - (1.0 / 60.0)) > 0.001:
+		push_error("GM-spawned enemies should force TimeSystem to one game second per real second")
 		quit(1)
 		return
 	gm_panel._execute_command("enemies")
@@ -1118,8 +1189,8 @@ func _init() -> void:
 		quit(1)
 		return
 	gm_panel._execute_command("clear_enemies")
-	if time_system.has_time_scale_cap("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
-		push_error("GM clear_enemies should release combat time cap and restore player speed")
+	if time_system.has_time_slowdown("combat_enemy_presence") or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
+		push_error("GM clear_enemies should release combat 1:1 slowdown and restore player speed")
 		quit(1)
 		return
 	time_system.set_time_scale(1.0)
@@ -1246,12 +1317,17 @@ func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:
 func _panel_tracks_button(panel: Control, button: Control) -> bool:
 	var panel_rect := panel.get_global_rect()
 	var button_rect := button.get_global_rect()
-	var expected_y := button_rect.position.y + button_rect.size.y
-	return (
+	var below := (
 		absf(panel_rect.position.x - button_rect.position.x) <= 2.0
-		and panel_rect.position.y >= expected_y
-		and panel_rect.position.y <= expected_y + 16.0
+		and absf(panel_rect.position.y - (button_rect.end.y + 8.0)) <= 2.0
 	)
+	var above := (
+		absf(panel_rect.position.x - button_rect.position.x) <= 2.0
+		and absf(panel_rect.end.y - (button_rect.position.y - 8.0)) <= 2.0
+	)
+	var right := absf(panel_rect.position.x - (button_rect.end.x + 8.0)) <= 2.0
+	var left := absf(panel_rect.end.x - (button_rect.position.x - 8.0)) <= 2.0
+	return below or above or right or left
 
 
 func _panel_inside_viewport(panel: Control, viewport_size: Vector2) -> bool:

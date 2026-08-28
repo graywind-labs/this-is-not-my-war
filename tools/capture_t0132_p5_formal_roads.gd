@@ -18,14 +18,15 @@ func _init() -> void:
 		(label as Label3D).visible = false
 	var rig := root.get_node("Main/CameraRig") as Node3D
 	var camera := root.get_node("Main/CameraRig/Camera3D") as Camera3D
+	var formal_root := root.get_node("Main/WorldRoot/FormalStationLayout") as Node3D
 	var direction := camera.position.normalized()
-	rig.global_position = Vector3(1000.0, 0.0, 8.0)
+	rig.global_position = formal_root.global_position + Vector3(0.0, 0.0, 8.0)
 	camera.position = direction * 112.0
 	camera.fov = 42.0
 	for _frame in range(16):
 		await process_frame
 	_capture("t0132_p5_formal_roads_station_overview.png")
-	rig.global_position = Vector3(1000.0, 0.0, 16.0)
+	rig.global_position = formal_root.global_position + Vector3(0.0, 0.0, 16.0)
 	camera.position = direction * 42.0
 	camera.fov = 40.0
 	for _frame in range(12):

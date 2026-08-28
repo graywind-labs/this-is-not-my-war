@@ -6,18 +6,31 @@ const STABLE_ACTION_ID := "work_stable"
 const HORSE_CARE_SKILL := "养马"
 const GRAIN_RESOURCE_ID := "grain"
 const LOCATION_STABLE := "stable"
+const LOCATION_APPROACHING_RIDER := "approaching_rider"
 const LOCATION_RIDDEN := "ridden"
+const LOCATION_RETURNING_STABLE := "returning_stable"
+const LOCATION_DEAD := "dead"
+const MOUNT_PICKUP_WAITING_PHASE := "waiting_for_rider_at_stable"
 const BEHAVIOR_MODE_RALLY := "rally"
 const BEHAVIOR_MODE_COMBAT := "combat"
+const BEHAVIOR_MODE_WORK := "work"
 const BEHAVIOR_MODE_UNCONSCIOUS := "unconscious"
 const BEHAVIOR_MODE_ESCAPED := "escaped"
 const FIXED_SIMULATION_STEP_SECONDS := 60.0
+const HORSE_PRESENTATION_GROUP := "horse_world_presentation"
+const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
+const WORLD_CLICK_COLLISION_MASK := 4
+const WORLD_CLICK_RAY_LENGTH := 1000.0
 
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
 
 const DEFAULT_BALANCE := {
 	"stable_satiety_loss_per_hour": 0.5,
@@ -39,10 +52,19 @@ const DEFAULT_BALANCE := {
 	"birth_cooldown_minutes": 1440.0,
 	"stable_level_birth_bonus_per_level": 0.1,
 	"care_skill_100_bonus_hp_cap": 20.0,
+	"mount_rendezvous_horse_speed": 7.0,
+	"mount_rendezvous_npc_share": 0.35,
+	"mount_rendezvous_arrival_distance": 0.35,
+	"return_to_stable_speed": 7.0,
+	"mounted_damage_share_min": 0.3,
+	"mounted_damage_share_max": 0.5,
 }
 
 var _horses: Dictionary = {}
 var _horse_order: Array[String] = []
+var _horse_templates: Dictionary = {}
+var _horse_template_order: Array[String] = []
+var _stable_slots_by_level: Dictionary = {}
 var _balance: Dictionary = DEFAULT_BALANCE.duplicate(true)
 var _simulation_accumulator_seconds: float = 0.0
 var _next_foal_serial: int = 1
@@ -51,10 +73,12 @@ var _building_summary_published: bool = false
 var _assignment_mutation_depth: int = 0
 var _rng := RandomNumberGenerator.new()
 var _event_bus: Node = null
+var _last_birth_failure_reason := ""
 
 
 func _ready() -> void:
 	initialize()
+	set_process(true)
 	_event_bus = get_node_or_null("/root/EventBus")
 	if _event_bus == null:
 		return
@@ -66,15 +90,25 @@ func _ready() -> void:
 		_event_bus.recruitment_changed.connect(_on_recruitment_changed)
 
 
+func _process(delta: float) -> void:
+	if delta <= 0.0 or _is_gameplay_paused():
+		return
+	_advance_horse_world_transitions(delta)
+
+
 func initialize() -> void:
 	_horses.clear()
 	_horse_order.clear()
+	_horse_templates.clear()
+	_horse_template_order.clear()
+	_stable_slots_by_level.clear()
 	_balance = DEFAULT_BALANCE.duplicate(true)
 	_simulation_accumulator_seconds = 0.0
 	_next_foal_serial = 1
 	_last_stable_summary.clear()
 	_building_summary_published = false
 	_assignment_mutation_depth = 0
+	_last_birth_failure_reason = ""
 	_rng.randomize()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -92,6 +126,8 @@ func initialize() -> void:
 		_apply_loaded_balance(loaded_balance)
 	else:
 		push_error("Horse balance must be a JSON object: %s" % HORSE_DEFS_FILE)
+	_load_stable_slots(loaded_defs.get("stable_slots_by_level", {}))
+	_load_horse_templates(loaded_defs.get("horse_templates", []))
 
 	var initial_horses: Variant = loaded_defs.get("initial_horses", [])
 	if not initial_horses is Array:
@@ -158,11 +194,89 @@ func get_balance_snapshot() -> Dictionary:
 	return _balance.duplicate(true)
 
 
+func get_stable_slot_ids(level: int = 0) -> Array[String]:
+	var resolved_level := _get_current_stable_level() if level <= 0 else clampi(level, 1, 3)
+	var raw_slots: Variant = _stable_slots_by_level.get(str(resolved_level), [])
+	var result: Array[String] = []
+	if raw_slots is Array:
+		for raw_slot_id in raw_slots:
+			var slot_id := str(raw_slot_id).strip_edges()
+			if not slot_id.is_empty() and not result.has(slot_id):
+				result.append(slot_id)
+	return result
+
+
+func get_stable_capacity(level: int = 0) -> int:
+	return get_stable_slot_ids(level).size()
+
+
+func get_horse_template_snapshot(template_id: String) -> Dictionary:
+	var template: Variant = _horse_templates.get(template_id, {})
+	return (template as Dictionary).duplicate(true) if template is Dictionary else {}
+
+
+func get_horse_presentation_snapshot(horse_id: String) -> Dictionary:
+	for raw_presenter in get_tree().get_nodes_in_group(HORSE_PRESENTATION_GROUP):
+		var presenter := raw_presenter as Node
+		if presenter != null and presenter.has_method("get_horse_presentation_snapshot"):
+			var raw_snapshot: Variant = presenter.call("get_horse_presentation_snapshot", horse_id)
+			if raw_snapshot is Dictionary and not (raw_snapshot as Dictionary).is_empty():
+				var snapshot := (raw_snapshot as Dictionary).duplicate(true)
+				snapshot["valid"] = true
+				return snapshot
+	return {}
+
+
+func get_world_click_interaction(screen_position: Vector2) -> Dictionary:
+	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
+	if camera == null:
+		return {}
+	var world_3d := get_viewport().world_3d
+	if world_3d == null:
+		return {}
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * WORLD_CLICK_RAY_LENGTH
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, WORLD_CLICK_COLLISION_MASK)
+	query.collide_with_areas = true
+	query.collide_with_bodies = false
+	var result := world_3d.direct_space_state.intersect_ray(query)
+	if result.is_empty():
+		return {}
+	var collider := result.get("collider") as Node
+	while collider != null:
+		var horse_id := str(collider.get_meta("horse_id", "")).strip_edges()
+		if not horse_id.is_empty() and _horses.has(horse_id):
+			var horse: Dictionary = _horses[horse_id]
+			if bool(horse.get("alive", true)):
+				return {
+					"kind": "horse",
+					"horse_id": horse_id,
+					"collider": result.get("collider"),
+					"distance": ray_origin.distance_to(result.get("position", ray_end)),
+					"global_position": result.get("position", ray_end),
+				}
+		collider = collider.get_parent()
+	return {}
+
+
+func select_horse_from_world_click(horse_id: String) -> bool:
+	if not _horses.has(horse_id) or not bool((_horses[horse_id] as Dictionary).get("alive", true)):
+		return false
+	if _event_bus == null:
+		_event_bus = get_node_or_null("/root/EventBus")
+	if _event_bus == null or not _event_bus.has_signal("horse_clicked"):
+		return false
+	_event_bus.horse_clicked.emit(horse_id)
+	return true
+
+
 func get_stable_horse_summary() -> Dictionary:
 	var total := 0
 	var adult := 0
 	for horse_id in _horse_order:
 		var horse: Dictionary = _horses.get(horse_id, {})
+		if not bool(horse.get("alive", true)):
+			continue
 		if str(horse.get("location", LOCATION_STABLE)) != LOCATION_STABLE:
 			continue
 		total += 1
@@ -172,18 +286,29 @@ func get_stable_horse_summary() -> Dictionary:
 		"total": total,
 		"adult": adult,
 		"foal": total - adult,
+		"occupied_slots": _get_alive_horse_count(),
+		"capacity": get_stable_capacity(),
+		"full": _is_stable_full(),
 	}
 
 
 func get_stable_summary() -> Dictionary:
 	var summary := get_stable_horse_summary()
+	var outside := 0
 	var ridden := 0
+	var dead := 0
 	for horse_id in _horse_order:
 		var horse: Dictionary = _horses.get(horse_id, {})
+		if not bool(horse.get("alive", true)):
+			dead += 1
+			continue
 		if str(horse.get("location", LOCATION_STABLE)) == LOCATION_RIDDEN:
 			ridden += 1
-	summary["outside"] = ridden
+		if str(horse.get("location", LOCATION_STABLE)) != LOCATION_STABLE:
+			outside += 1
+	summary["outside"] = outside
 	summary["ridden"] = ridden
+	summary["dead"] = dead
 	summary["total_count"] = int(summary.get("total", 0))
 	summary["adult_count"] = int(summary.get("adult", 0))
 	summary["foal_count"] = int(summary.get("foal", 0))
@@ -194,14 +319,22 @@ func get_horse_counts_snapshot() -> Dictionary:
 	var stable_summary := get_stable_horse_summary()
 	var ridden := 0
 	var assigned := 0
+	var alive := 0
+	var dead := 0
 	for horse_id in _horse_order:
 		var horse: Dictionary = _horses.get(horse_id, {})
+		if not bool(horse.get("alive", true)):
+			dead += 1
+			continue
+		alive += 1
 		if str(horse.get("location", LOCATION_STABLE)) == LOCATION_RIDDEN:
 			ridden += 1
 		if not str(horse.get("assigned_npc_id", "")).is_empty():
 			assigned += 1
 	return {
-		"total": _horse_order.size(),
+		"total": alive,
+		"records": _horse_order.size(),
+		"dead": dead,
 		"stable": stable_summary,
 		"ridden": ridden,
 		"assigned": assigned,
@@ -215,7 +348,10 @@ func get_assigned_horse_for_npc(npc_id: String) -> Dictionary:
 
 func get_available_horses_for_npc(npc_id: String) -> Array[Dictionary]:
 	var available: Array[Dictionary] = []
-	if not _get_npc_assignment_ineligibility_reason(npc_id).is_empty():
+	if (
+		not _get_npc_assignment_ineligibility_reason(npc_id).is_empty()
+		or not _get_npc_manual_loadout_ineligibility_reason(npc_id).is_empty()
+	):
 		return available
 	if not _find_assigned_horse_id(npc_id).is_empty():
 		return available
@@ -238,6 +374,8 @@ func assign_horse_to_npc(
 	visibility: String = "local_public"
 ) -> Dictionary:
 	var npc_reason := _get_npc_assignment_ineligibility_reason(npc_id)
+	if npc_reason.is_empty():
+		npc_reason = _get_npc_manual_loadout_ineligibility_reason(npc_id)
 	if not npc_reason.is_empty():
 		return _assignment_failure(npc_reason, npc_id, horse_id)
 
@@ -267,6 +405,8 @@ func assign_horse_to_npc(
 		return _assignment_failure("npc_already_has_horse", npc_id, resolved_horse_id)
 
 	var horse: Dictionary = _horses[resolved_horse_id]
+	if not bool(horse.get("alive", true)):
+		return _assignment_failure("horse_dead", npc_id, resolved_horse_id)
 	if not _is_horse_adult(horse):
 		return _assignment_failure("horse_not_adult", npc_id, resolved_horse_id)
 	if not str(horse.get("assigned_npc_id", "")).is_empty():
@@ -317,6 +457,9 @@ func unassign_horse_from_npc(
 	reason: String = "manual",
 	visibility: String = "local_public"
 ) -> Dictionary:
+	var mode_reason := _get_npc_manual_loadout_ineligibility_reason(npc_id)
+	if not mode_reason.is_empty():
+		return _assignment_failure(mode_reason, npc_id, _find_assigned_horse_id(npc_id))
 	var horse_id := _find_assigned_horse_id(npc_id)
 	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	var equipment_synced := false
@@ -346,7 +489,9 @@ func unassign_horse_from_npc(
 	var horse: Dictionary = _horses[horse_id]
 	horse["assigned_npc_id"] = ""
 	horse["ridden_by_npc_id"] = ""
-	horse["location"] = LOCATION_STABLE
+	if str(horse.get("location", LOCATION_STABLE)) != LOCATION_RETURNING_STABLE:
+		horse["location"] = LOCATION_STABLE
+		horse["movement_state"] = _make_idle_movement_state()
 	horse["feeding"] = _make_idle_feeding_state()
 	_horses[horse_id] = horse
 	_emit_horse_assignment_changed(horse_id, "")
@@ -375,28 +520,95 @@ func reconcile_npc_riding_state(npc_id: String) -> Dictionary:
 	}
 
 
-func apply_damage_to_horse(horse_id: String, damage: float) -> Dictionary:
+func apply_damage_to_horse(horse_id: String, damage: float, context: Dictionary = {}) -> Dictionary:
 	if not _horses.has(horse_id):
 		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
 	if damage <= 0.0:
 		return {"ok": false, "reason": "invalid_damage", "horse_id": horse_id}
 
 	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
 	var hp_before := float(horse.get("hp", 0.0))
 	var applied_damage := minf(damage, hp_before)
 	var bonus_before := float(horse.get("care_bonus_hp", 0.0))
 	var bonus_damage := minf(applied_damage, bonus_before)
 	horse["care_bonus_hp"] = maxf(0.0, bonus_before - bonus_damage)
 	horse["hp"] = maxf(0.0, hp_before - applied_damage)
+	var died := float(horse.get("hp", 0.0)) <= 0.0
+	var rider_npc_id := str(horse.get("ridden_by_npc_id", horse.get("assigned_npc_id", "")))
+	if rider_npc_id.is_empty():
+		rider_npc_id = str(horse.get("assigned_npc_id", ""))
 	_horses[horse_id] = horse
+	var death_result := {}
+	if died:
+		var death_context := context.duplicate(true)
+		death_context["horse_damage"] = applied_damage
+		death_context["horse_hp_before"] = hp_before
+		death_result = _handle_horse_death(horse_id, rider_npc_id, death_context)
+	else:
+		_log_horse_damage_event(horse_id, rider_npc_id, applied_damage, hp_before, float(horse.get("hp", 0.0)), false, context)
 	_emit_horse_state_changed(horse_id)
 	return {
 		"ok": true,
 		"horse_id": horse_id,
 		"damage": applied_damage,
 		"hp_before": hp_before,
-		"hp_after": float(horse.get("hp", 0.0)),
+		"hp_after": float(_horses.get(horse_id, {}).get("hp", 0.0)),
+		"died": died,
+		"rider_npc_id": rider_npc_id,
+		"death_result": death_result,
 		"horse": get_horse_snapshot(horse_id),
+	}
+
+
+func split_mounted_damage(npc_id: String, resolved_damage: int, context: Dictionary = {}) -> Dictionary:
+	var unchanged := {
+		"ok": true,
+		"split": false,
+		"npc_id": npc_id,
+		"incoming_damage": maxi(0, resolved_damage),
+		"npc_damage": maxi(0, resolved_damage),
+		"horse_damage": 0,
+		"share_ratio": 0.0,
+		"horse_result": {}
+	}
+	if resolved_damage <= 0:
+		return unchanged
+	var horse_id := _find_assigned_horse_id(npc_id)
+	if horse_id.is_empty() or not _horses.has(horse_id):
+		return unchanged
+	var horse: Dictionary = _horses[horse_id]
+	if (
+		not bool(horse.get("alive", true))
+		or str(horse.get("location", "")) != LOCATION_RIDDEN
+		or str(horse.get("ridden_by_npc_id", "")) != npc_id
+	):
+		return unchanged
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var npc_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system != null and npc_system.has_method("get_npc_state") else {}
+	if not bool(npc_state.get("combat_mounted", false)):
+		return unchanged
+	var min_share := clampf(_balance_float("mounted_damage_share_min"), 0.0, 1.0)
+	var max_share := clampf(_balance_float("mounted_damage_share_max"), min_share, 1.0)
+	var share_ratio := _rng.randf_range(min_share, max_share)
+	var horse_damage := clampi(int(round(float(resolved_damage) * share_ratio)), 0, resolved_damage)
+	var npc_damage := resolved_damage - horse_damage
+	var horse_context := context.duplicate(true)
+	horse_context["target_npc_id"] = npc_id
+	horse_context["incoming_damage"] = resolved_damage
+	horse_context["share_ratio"] = share_ratio
+	var horse_result := apply_damage_to_horse(horse_id, float(horse_damage), horse_context) if horse_damage > 0 else {}
+	return {
+		"ok": true,
+		"split": horse_damage > 0,
+		"npc_id": npc_id,
+		"horse_id": horse_id,
+		"incoming_damage": resolved_damage,
+		"npc_damage": npc_damage,
+		"horse_damage": horse_damage,
+		"share_ratio": share_ratio,
+		"horse_result": horse_result
 	}
 
 
@@ -417,11 +629,44 @@ func debug_damage(horse_id: String, damage: float) -> Dictionary:
 	return apply_damage_to_horse(horse_id, damage)
 
 
+func debug_set_random_seed(seed_value: int) -> void:
+	_rng.seed = seed_value
+
+
+func debug_complete_horse_transition(horse_id: String) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+	var phase := str(movement.get("phase", "idle"))
+	if phase in [MOUNT_PICKUP_WAITING_PHASE, LOCATION_APPROACHING_RIDER]:
+		var npc_id := str(horse.get("assigned_npc_id", ""))
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if npc_system != null and npc_system.has_method("stop_npc_movement_with_state"):
+			npc_system.stop_npc_movement_with_state(npc_id, {"movement_target": "", "movement_target_name": ""})
+		_complete_mount_rendezvous(horse_id)
+	elif phase == LOCATION_RETURNING_STABLE:
+		horse["world_position"] = movement.get("target_position", Vector3.ZERO)
+		_horses[horse_id] = horse
+		_complete_return_to_stable(horse_id)
+	else:
+		return {"ok": false, "reason": "horse_not_moving", "horse_id": horse_id, "phase": phase}
+	return {"ok": true, "horse_id": horse_id, "horse": get_horse_snapshot(horse_id)}
+
+
 func debug_force_birth() -> Dictionary:
+	var block_reason := _get_birth_block_reason()
+	if not block_reason.is_empty():
+		return {
+			"ok": false,
+			"reason": block_reason,
+			"capacity": get_stable_capacity(),
+			"occupied_slots": _get_alive_horse_count(),
+		}
 	var parent_ids := _get_stable_breeding_candidate_ids()
 	var horse_id := _spawn_foal()
 	if horse_id.is_empty():
-		return {"ok": false, "reason": "birth_failed"}
+		return {"ok": false, "reason": _last_birth_failure_reason if not _last_birth_failure_reason.is_empty() else "birth_failed"}
 	var changed_horse_ids := {}
 	changed_horse_ids[horse_id] = true
 	_start_birth_cooldown(parent_ids, changed_horse_ids)
@@ -435,6 +680,87 @@ func debug_force_birth() -> Dictionary:
 		"horse": get_horse_snapshot(horse_id),
 		"parent_horse_ids": parent_ids,
 	}
+
+
+func debug_ensure_horses(definitions: Array) -> Dictionary:
+	var normalized_definitions: Array[Dictionary] = []
+	var requested_ids := {}
+	for raw_definition in definitions:
+		if not raw_definition is Dictionary:
+			return {"ok": false, "reason": "invalid_horse_definition"}
+		var definition: Dictionary = (raw_definition as Dictionary).duplicate(true)
+		var horse_id := str(definition.get("horse_id", "")).strip_edges()
+		if horse_id.is_empty() or requested_ids.has(horse_id):
+			return {"ok": false, "reason": "invalid_or_duplicate_horse_id", "horse_id": horse_id}
+		if float(definition.get("growth", 0.0)) + 0.0001 < _balance_float("adult_growth_threshold"):
+			return {"ok": false, "reason": "debug_horse_not_adult", "horse_id": horse_id}
+		requested_ids[horse_id] = true
+		normalized_definitions.append(definition)
+	var missing_count := 0
+	for definition in normalized_definitions:
+		if not _horses.has(str(definition.get("horse_id", ""))):
+			missing_count += 1
+	if _get_alive_horse_count() + missing_count > get_stable_capacity():
+		return {
+			"ok": false,
+			"reason": "stable_full",
+			"capacity": get_stable_capacity(),
+			"occupied_slots": _get_alive_horse_count(),
+			"requested_new_horses": missing_count,
+		}
+
+	var created_ids: Array[String] = []
+	for definition in normalized_definitions:
+		var horse_id := str(definition.get("horse_id", ""))
+		if _horses.has(horse_id):
+			var existing: Dictionary = _horses[horse_id]
+			if not bool(existing.get("alive", true)) or not _is_horse_adult(existing):
+				return {"ok": false, "reason": "existing_debug_horse_unavailable", "horse_id": horse_id}
+			continue
+		var horse := _make_horse_from_definition(definition)
+		if horse.is_empty():
+			return {"ok": false, "reason": "debug_horse_creation_failed", "horse_id": horse_id}
+		horse["debug_created"] = true
+		_horses[horse_id] = horse
+		_horse_order.append(horse_id)
+		created_ids.append(horse_id)
+		_emit_horse_state_changed(horse_id)
+
+	if not created_ids.is_empty():
+		_publish_stable_summary(true)
+	var horses: Array[Dictionary] = []
+	for horse_id in requested_ids.keys():
+		horses.append(get_horse_snapshot(str(horse_id)))
+	return {
+		"ok": true,
+		"changed": not created_ids.is_empty(),
+		"created_horse_ids": created_ids,
+		"horses": horses,
+	}
+
+
+func debug_set_horse_growth(horse_id: String, growth: float) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	var identity_before := {
+		"template_id": str(horse.get("template_id", "")),
+		"name": str(horse.get("name", "")),
+		"coat_name": str(horse.get("coat_name", "")),
+		"coat_color": str(horse.get("coat_color", "")),
+		"stable_slot_id": str(horse.get("stable_slot_id", "")),
+	}
+	var previous_natural_max_hp := _calculate_natural_max_hp(float(horse.get("growth", 0.0)))
+	var hp_ratio := clampf(float(horse.get("hp", 0.0)) / maxf(1.0, previous_natural_max_hp + float(horse.get("care_bonus_hp", 0.0))), 0.0, 1.0)
+	horse["growth"] = clampf(growth, 0.0, 1.0)
+	_normalize_horse_runtime(horse)
+	horse["hp"] = hp_ratio * (float(_calculate_natural_max_hp(float(horse.get("growth", 0.0)))) + float(horse.get("care_bonus_hp", 0.0)))
+	for key in identity_before.keys():
+		horse[key] = identity_before[key]
+	_horses[horse_id] = horse
+	_emit_horse_state_changed(horse_id)
+	_publish_stable_summary()
+	return {"ok": true, "horse_id": horse_id, "horse": get_horse_snapshot(horse_id)}
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
@@ -451,9 +777,14 @@ func _on_npc_state_changed(npc_id: String) -> void:
 	var horse_id := _find_assigned_horse_id(npc_id)
 	if horse_id.is_empty():
 		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system != null and npc_system.has_method("get_npc_state") else {}
+	if bool(state.get("unconscious", false)) or str(state.get("behavior_mode", "")) == BEHAVIOR_MODE_UNCONSCIOUS:
+		_begin_return_to_stable(horse_id, true, "rider_unconscious")
+		return
 	var invalid_reason := _get_npc_assignment_ineligibility_reason(npc_id)
 	if not invalid_reason.is_empty():
-		unassign_horse_from_npc(npc_id, invalid_reason, "local_public")
+		_begin_return_to_stable(horse_id, true, invalid_reason)
 		return
 	_reconcile_npc_riding_state(npc_id)
 
@@ -482,6 +813,8 @@ func _advance_horse_ecology(game_seconds: float, changed_horse_ids: Dictionary) 
 		if not _horses.has(horse_id):
 			continue
 		var horse: Dictionary = _horses[horse_id]
+		if not bool(horse.get("alive", true)):
+			continue
 		var before := horse.duplicate(true)
 		var location := str(horse.get("location", LOCATION_STABLE))
 		var breeding_cooldown := maxf(
@@ -645,6 +978,10 @@ func _advance_care(
 
 
 func _roll_births_for_minute(caretaker: Dictionary, changed_horse_ids: Dictionary) -> void:
+	# A living horse keeps its assigned physical stall even while away or ridden.
+	# Full capacity pauses both probability growth and birth rolls.
+	if not _get_birth_block_reason().is_empty():
+		return
 	var candidate_ids := _get_stable_breeding_candidate_ids()
 	if candidate_ids.size() < 2:
 		return
@@ -776,30 +1113,424 @@ func _reconcile_npc_riding_state(npc_id: String) -> void:
 		return
 	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
 	var behavior_mode := str(states.get("behavior_mode", "work"))
-	var should_be_ridden := (
+	var should_mount := (
 		[BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(behavior_mode)
 		and not bool(states.get("unconscious", false))
 		and not bool(states.get("escaped", false))
 	)
 	var horse: Dictionary = _horses[horse_id]
-	var changed := false
-	if should_be_ridden:
-		if str(horse.get("location", LOCATION_STABLE)) != LOCATION_RIDDEN or str(horse.get("ridden_by_npc_id", "")) != npc_id:
-			horse["location"] = LOCATION_RIDDEN
-			horse["ridden_by_npc_id"] = npc_id
-			horse["feeding"] = _make_idle_feeding_state()
-			changed = true
-	else:
-		if str(horse.get("location", LOCATION_STABLE)) != LOCATION_STABLE or not str(horse.get("ridden_by_npc_id", "")).is_empty():
-			horse["location"] = LOCATION_STABLE
-			horse["ridden_by_npc_id"] = ""
-			horse["feeding"] = _make_idle_feeding_state()
-			changed = true
-	if not changed:
+	if not bool(horse.get("alive", true)):
 		return
+	var location := str(horse.get("location", LOCATION_STABLE))
+	if should_mount:
+		if location == LOCATION_RIDDEN and str(horse.get("ridden_by_npc_id", "")) == npc_id:
+			if not bool(states.get("combat_mounted", false)) and npc_system.has_method("update_npc_state"):
+				npc_system.update_npc_state(npc_id, {"combat_mounted": true, "combat_mount_phase": "mounted"})
+			return
+		if location == LOCATION_RETURNING_STABLE:
+			# The horse keeps returning to its assigned stall. Once it reaches the
+			# stable, _complete_return_to_stable starts the rider's pickup route.
+			return
+		elif location == LOCATION_STABLE:
+			var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+			if str(movement.get("phase", "idle")) == MOUNT_PICKUP_WAITING_PHASE:
+				return
+			_start_mount_rendezvous(horse_id, npc_id)
+		return
+	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+	if [LOCATION_RIDDEN, LOCATION_APPROACHING_RIDER].has(location) or str(movement.get("phase", "idle")) == MOUNT_PICKUP_WAITING_PHASE:
+		_begin_return_to_stable(horse_id, false, "wartime_ended")
+
+
+func _start_mount_rendezvous(horse_id: String, npc_id: String) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_world_position"):
+		return {"ok": false, "reason": "npc_system_unavailable", "horse_id": horse_id, "npc_id": npc_id}
+	var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id)
+	if not raw_npc_position is Vector3:
+		return {"ok": false, "reason": "npc_position_unavailable", "horse_id": horse_id, "npc_id": npc_id}
+	var npc_position: Vector3 = raw_npc_position
+	var horse_position := _resolve_horse_world_position(horse_id, horse)
+	var stable_position: Vector3 = horse.get("stable_world_position", horse_position)
+	if str(horse.get("location", LOCATION_STABLE)) == LOCATION_STABLE or stable_position == Vector3.ZERO:
+		stable_position = horse_position
+	# The horse remains at its actual stable anchor. Only the rider moves, toward
+	# that slot's configured open-side pickup point. Never snap from the horse
+	# center itself: its nearest NavMesh point can lie across a stall partition.
+	var raw_configured_pickup_position: Variant = _resolve_horse_pickup_world_position(horse_id)
+	if not raw_configured_pickup_position is Vector3:
+		return {"ok": false, "reason": "stable_pickup_anchor_unavailable", "horse_id": horse_id, "npc_id": npc_id}
+	var configured_pickup_position: Vector3 = raw_configured_pickup_position
+	var rendezvous_result := _resolve_navigable_rendezvous_position(npc_position, configured_pickup_position)
+	if not bool(rendezvous_result.get("ok", false)):
+		return {
+			"ok": false,
+			"reason": str(rendezvous_result.get("reason", "npc_rendezvous_path_unreachable")),
+			"horse_id": horse_id,
+			"npc_id": npc_id,
+			"horse_position": horse_position,
+			"configured_pickup_position": configured_pickup_position
+		}
+	var rendezvous: Vector3 = rendezvous_result.get("position", configured_pickup_position)
+	horse["stable_world_position"] = stable_position
+	horse["world_position"] = horse_position
+	horse["location"] = LOCATION_STABLE
+	horse["ridden_by_npc_id"] = ""
+	horse["feeding"] = _make_idle_feeding_state()
+	horse["movement_state"] = {
+		"phase": MOUNT_PICKUP_WAITING_PHASE,
+		"npc_id": npc_id,
+		"target_position": rendezvous,
+		"started_position": horse_position,
+		"horse_stationary": true,
+		"pickup_source": "stable_slot_open_side",
+		"navigation_path_point_count": int(rendezvous_result.get("path_point_count", 0)),
+		"pickup_policy": "rider_navigates_to_assigned_horse_at_stable",
+		"reason": "wartime_started"
+	}
 	_horses[horse_id] = horse
 	_emit_horse_state_changed(horse_id)
 	_publish_stable_summary()
+	if npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, {
+			"combat_mounted": false,
+			"combat_mount_phase": "going_to_stable_horse",
+			"current_action": "meeting_assigned_horse",
+			"last_action_result": "stable_horse_pickup_started"
+		})
+	if npc_system.has_method("move_npc_to_world_position"):
+		# Use the real stable location id so notice/memory projections can resolve
+		# the movement target without treating a synthetic horse id as a building.
+		var target_id := STABLE_BUILDING_ID
+		var moved: bool = npc_system.move_npc_to_world_position(npc_id, target_id, "前往马厩取马", rendezvous, {
+			"current_action": "waiting_for_assigned_horse",
+			"last_action_result": "rider_arrived_at_stable_horse",
+			"combat_mounted": false,
+			"combat_mount_phase": "beside_stable_horse",
+			"preserve_location_context": true
+		})
+		if not moved:
+			return {"ok": false, "reason": "npc_rendezvous_move_failed", "horse_id": horse_id, "npc_id": npc_id}
+	return {
+		"ok": true,
+		"horse_id": horse_id,
+		"npc_id": npc_id,
+		"horse_start_position": horse_position,
+		"npc_start_position": npc_position,
+		"rendezvous_position": rendezvous,
+		"horse_stationary": true,
+		"pickup_source": "stable_slot_open_side",
+		"navigation_path_point_count": int(rendezvous_result.get("path_point_count", 0)),
+		"pickup_policy": "rider_navigates_to_assigned_horse_at_stable"
+	}
+
+
+func _advance_horse_world_transitions(delta: float) -> void:
+	for horse_id in _horse_order:
+		if not _horses.has(horse_id):
+			continue
+		var horse: Dictionary = _horses[horse_id]
+		if not bool(horse.get("alive", true)):
+			continue
+		var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+		var phase := str(movement.get("phase", "idle"))
+		if not [MOUNT_PICKUP_WAITING_PHASE, LOCATION_APPROACHING_RIDER, LOCATION_RETURNING_STABLE].has(phase):
+			continue
+		if phase == MOUNT_PICKUP_WAITING_PHASE:
+			var npc_id := str(movement.get("npc_id", horse.get("assigned_npc_id", "")))
+			var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+			var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system != null and npc_system.has_method("get_npc_world_position") else null
+			var pickup_position: Vector3 = movement.get("target_position", horse.get("world_position", Vector3.ZERO))
+			if raw_npc_position is Vector3 and (raw_npc_position as Vector3).distance_to(pickup_position) <= _balance_float("mount_rendezvous_arrival_distance") + 0.15:
+				_complete_mount_rendezvous(horse_id)
+			continue
+		var current: Vector3 = horse.get("world_position", movement.get("started_position", Vector3.ZERO))
+		var target: Vector3 = movement.get("target_position", current)
+		var speed_key := "mount_rendezvous_horse_speed" if phase == LOCATION_APPROACHING_RIDER else "return_to_stable_speed"
+		current = current.move_toward(target, _balance_float(speed_key) * delta)
+		horse["world_position"] = current
+		_horses[horse_id] = horse
+		if current.distance_to(target) > _balance_float("mount_rendezvous_arrival_distance"):
+			continue
+		if phase == LOCATION_APPROACHING_RIDER:
+			var npc_id := str(movement.get("npc_id", horse.get("assigned_npc_id", "")))
+			var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+			var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system != null and npc_system.has_method("get_npc_world_position") else null
+			if raw_npc_position is Vector3 and (raw_npc_position as Vector3).distance_to(target) <= _balance_float("mount_rendezvous_arrival_distance") + 0.15:
+				_complete_mount_rendezvous(horse_id)
+		else:
+			_complete_return_to_stable(horse_id)
+
+
+func _complete_mount_rendezvous(horse_id: String) -> void:
+	if not _horses.has(horse_id):
+		return
+	var horse: Dictionary = _horses[horse_id]
+	var npc_id := str(horse.get("assigned_npc_id", ""))
+	if npc_id.is_empty() or not bool(horse.get("alive", true)):
+		_begin_return_to_stable(horse_id, false, "mount_rendezvous_invalid")
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system != null and npc_system.has_method("get_npc_state") else {}
+	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(str(state.get("behavior_mode", ""))) or bool(state.get("unconscious", false)):
+		_begin_return_to_stable(horse_id, false, "mount_rendezvous_cancelled")
+		return
+	horse["location"] = LOCATION_RIDDEN
+	horse["ridden_by_npc_id"] = npc_id
+	horse["movement_state"] = _make_idle_movement_state()
+	var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system != null and npc_system.has_method("get_npc_world_position") else null
+	if raw_npc_position is Vector3:
+		horse["world_position"] = raw_npc_position
+	_horses[horse_id] = horse
+	# The horse can enter the meeting tolerance just before ActorMotionBody emits
+	# its own arrival. Stop and clear that request so its waiting state cannot
+	# overwrite the mounted combat state on the following physics frame.
+	if npc_system != null and npc_system.has_method("stop_npc_movement_with_state"):
+		npc_system.stop_npc_movement_with_state(npc_id, {
+			"movement_target": "",
+			"movement_target_name": ""
+		})
+	if npc_system != null and npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, {
+			"combat_mounted": true,
+			"combat_mount_phase": "mounted",
+			"current_action": "combat_ready" if str(state.get("behavior_mode", "")) == BEHAVIOR_MODE_COMBAT else "rallying_defense_line",
+			"last_action_result": "horse_rendezvous_completed",
+			"movement_target": "",
+			"movement_target_name": ""
+		})
+	_emit_horse_state_changed(horse_id)
+	_publish_stable_summary()
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system != null and combat_system.has_method("handle_npc_mount_ready"):
+		combat_system.handle_npc_mount_ready(npc_id, horse_id)
+
+
+func _begin_return_to_stable(horse_id: String, clear_assignment: bool, reason: String) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
+	var npc_id := str(horse.get("assigned_npc_id", ""))
+	var current := _resolve_horse_world_position(horse_id, horse)
+	var stable_target: Vector3 = horse.get("stable_world_position", Vector3.ZERO)
+	if stable_target == Vector3.ZERO:
+		stable_target = _resolve_stable_world_position(horse_id, current)
+	if clear_assignment and not npc_id.is_empty():
+		_clear_equipment_mount_projection(npc_id, reason, false)
+		horse["assigned_npc_id"] = ""
+		_emit_horse_assignment_changed(horse_id, "")
+	horse["ridden_by_npc_id"] = ""
+	horse["location"] = LOCATION_RETURNING_STABLE
+	horse["world_position"] = current
+	horse["stable_world_position"] = stable_target
+	horse["feeding"] = _make_idle_feeding_state()
+	horse["movement_state"] = {
+		"phase": LOCATION_RETURNING_STABLE,
+		"target_position": stable_target,
+		"started_position": current,
+		"reason": reason,
+		"assignment_retained": not clear_assignment
+	}
+	_horses[horse_id] = horse
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if not npc_id.is_empty() and npc_system != null and npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, {
+			"combat_mounted": false,
+			"combat_mount_phase": "horse_returning" if not clear_assignment else "horse_released",
+			"last_action_result": reason
+		})
+	_emit_horse_state_changed(horse_id)
+	_publish_stable_summary()
+	if current.distance_to(stable_target) <= _balance_float("mount_rendezvous_arrival_distance"):
+		_complete_return_to_stable(horse_id)
+	return {"ok": true, "horse_id": horse_id, "npc_id": npc_id, "clear_assignment": clear_assignment, "reason": reason}
+
+
+func _complete_return_to_stable(horse_id: String) -> void:
+	if not _horses.has(horse_id):
+		return
+	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return
+	horse["location"] = LOCATION_STABLE
+	horse["ridden_by_npc_id"] = ""
+	horse["world_position"] = horse.get("stable_world_position", horse.get("world_position", Vector3.ZERO))
+	horse["movement_state"] = _make_idle_movement_state()
+	_horses[horse_id] = horse
+	_emit_horse_state_changed(horse_id)
+	_publish_stable_summary()
+	if not str(horse.get("assigned_npc_id", "")).is_empty():
+		_reconcile_npc_riding_state(str(horse.get("assigned_npc_id", "")))
+
+
+func _resolve_horse_world_position(horse_id: String, horse: Dictionary) -> Vector3:
+	var stored: Variant = horse.get("world_position", null)
+	if stored is Vector3:
+		return stored
+	return _resolve_stable_world_position(horse_id, Vector3.ZERO)
+
+
+func _resolve_navigable_rendezvous_position(npc_position: Vector3, desired_position: Vector3) -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_production_navigation_map_rid"):
+		return {"ok": false, "reason": "formal_navigation_controller_missing"}
+	if controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_navigation_map_missing"}
+	var snapped_start := NavigationServer3D.map_get_closest_point(navigation_map, npc_position)
+	var snapped_position := NavigationServer3D.map_get_closest_point(navigation_map, desired_position)
+	var planar_snap_error := Vector2(
+		snapped_position.x - desired_position.x,
+		snapped_position.z - desired_position.z
+	).length()
+	if planar_snap_error > 1.0:
+		return {"ok": false, "reason": "stable_pickup_point_off_navigation", "snap_error": planar_snap_error}
+	var path := NavigationServer3D.map_get_path(navigation_map, snapped_start, snapped_position, true)
+	if path.is_empty() and snapped_start.distance_to(snapped_position) > 0.5:
+		return {"ok": false, "reason": "stable_pickup_path_unreachable", "snap_error": planar_snap_error}
+	return {
+		"ok": true,
+		"position": snapped_position,
+		"snap_error": planar_snap_error,
+		"path_point_count": path.size()
+	}
+
+
+func _resolve_horse_pickup_world_position(horse_id: String) -> Variant:
+	for raw_presenter in get_tree().get_nodes_in_group(HORSE_PRESENTATION_GROUP):
+		var presenter := raw_presenter as Node
+		if presenter != null and presenter.has_method("get_horse_pickup_world_position"):
+			var raw_position: Variant = presenter.call("get_horse_pickup_world_position", horse_id)
+			if raw_position is Vector3:
+				return raw_position
+	return null
+
+
+func _resolve_stable_world_position(horse_id: String, fallback: Vector3) -> Vector3:
+	for raw_presenter in get_tree().get_nodes_in_group(HORSE_PRESENTATION_GROUP):
+		var presenter := raw_presenter as Node
+		if presenter != null and presenter.has_method("get_horse_world_position"):
+			var raw_position: Variant = presenter.call("get_horse_world_position", horse_id)
+			if raw_position is Vector3:
+				return raw_position
+	return fallback
+
+
+func _is_gameplay_paused() -> bool:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	return time_system != null and time_system.has_method("is_gameplay_paused") and bool(time_system.is_gameplay_paused())
+
+
+func _handle_horse_death(horse_id: String, rider_npc_id: String, context: Dictionary) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {}
+	var horse: Dictionary = _horses[horse_id]
+	var assigned_npc_id := str(horse.get("assigned_npc_id", rider_npc_id))
+	horse["alive"] = false
+	horse["hp"] = 0.0
+	horse["location"] = LOCATION_DEAD
+	horse["assigned_npc_id"] = ""
+	horse["ridden_by_npc_id"] = ""
+	horse["feeding"] = _make_idle_feeding_state()
+	horse["movement_state"] = _make_idle_movement_state()
+	horse["stable_slot_id"] = ""
+	_horses[horse_id] = horse
+	var projection_result := {}
+	if not assigned_npc_id.is_empty():
+		projection_result = _clear_equipment_mount_projection(assigned_npc_id, "horse_died", false)
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if npc_system != null and npc_system.has_method("update_npc_state"):
+			npc_system.update_npc_state(assigned_npc_id, {
+				"combat_mounted": false,
+				"combat_mount_phase": "horse_dead",
+				"combat_charge_phase": "",
+				"current_action": "combat_ready",
+				"last_action_result": "assigned_horse_died"
+			})
+	_emit_horse_assignment_changed(horse_id, "")
+	_publish_stable_summary()
+	var event := _log_horse_damage_event(
+		horse_id,
+		assigned_npc_id,
+		float(context.get("horse_damage", context.get("damage", 0.0))),
+		float(context.get("horse_hp_before", 0.0)),
+		0.0,
+		true,
+		context
+	)
+	return {
+		"ok": true,
+		"horse_id": horse_id,
+		"npc_id": assigned_npc_id,
+		"projection_result": projection_result,
+		"event": event
+	}
+
+
+func _clear_equipment_mount_projection(npc_id: String, reason: String, record_event: bool) -> Dictionary:
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system == null or not equipment_system.has_method("clear_npc_horse_mount"):
+		return {"ok": false, "reason": "equipment_system_unavailable", "npc_id": npc_id}
+	_assignment_mutation_depth += 1
+	var raw_result: Variant = equipment_system.call(
+		"clear_npc_horse_mount",
+		npc_id,
+		"local_public",
+		reason,
+		record_event,
+		true
+	)
+	_assignment_mutation_depth -= 1
+	return (raw_result as Dictionary).duplicate(true) if raw_result is Dictionary else {"ok": false, "reason": "equipment_sync_failed"}
+
+
+func _log_horse_damage_event(
+	horse_id: String,
+	npc_id: String,
+	damage: float,
+	hp_before: float,
+	hp_after: float,
+	died: bool,
+	context: Dictionary
+) -> Dictionary:
+	if npc_id.is_empty():
+		return {}
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var horse: Dictionary = _horses.get(horse_id, {})
+	var actor_id := str(context.get("enemy_id", context.get("actor_id", "system")))
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system != null and npc_system.has_method("get_npc_state") else {}
+	return memory_system.add_event({
+		"type": "horse_died" if died else "horse_damaged",
+		"subject_npc_id": npc_id,
+		"actor_ids": [actor_id],
+		"target_ids": [npc_id, horse_id],
+		"location_id": str(state.get("current_location", "plaza")),
+		"visibility": "local_public",
+		"importance": 90 if died else 65,
+		"payload": {
+			"target_npc_id": npc_id,
+			"horse_id": horse_id,
+			"horse_name": str(horse.get("name", horse_id)),
+			"damage": damage,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"share_ratio": float(context.get("share_ratio", 0.0)),
+			"enemy_id": str(context.get("enemy_id", "")),
+			"enemy_name": str(context.get("enemy_name", ""))
+		}
+	})
 
 
 func _get_npc_assignment_ineligibility_reason(npc_id: String) -> String:
@@ -823,6 +1554,19 @@ func _get_npc_assignment_ineligibility_reason(npc_id: String) -> String:
 	return ""
 
 
+func _get_npc_manual_loadout_ineligibility_reason(npc_id: String) -> String:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_state"):
+		return "npc_system_unavailable"
+	var states: Dictionary = npc_system.get_npc_state(npc_id)
+	if states.is_empty():
+		return "unknown_npc"
+	var behavior_mode := str(states.get("behavior_mode", BEHAVIOR_MODE_WORK))
+	if behavior_mode != BEHAVIOR_MODE_WORK:
+		return "loadout_locked_in_wartime"
+	return ""
+
+
 func _find_assigned_horse_id(npc_id: String) -> String:
 	if npc_id.is_empty():
 		return ""
@@ -834,19 +1578,28 @@ func _find_assigned_horse_id(npc_id: String) -> String:
 
 
 func _spawn_foal() -> String:
+	_last_birth_failure_reason = _get_birth_block_reason()
+	if not _last_birth_failure_reason.is_empty():
+		return ""
+	var template_id := _find_next_unused_template_id()
+	if template_id.is_empty():
+		_last_birth_failure_reason = "horse_template_pool_exhausted"
+		return ""
 	var horse_id := ""
 	while horse_id.is_empty() or _horses.has(horse_id):
 		horse_id = "horse_foal_%03d" % _next_foal_serial
 		_next_foal_serial += 1
 	var horse := _make_horse_from_definition({
 		"horse_id": horse_id,
-		"name": "幼马 %d" % (_next_foal_serial - 1),
+		"template_id": template_id,
 		"growth": 0.0,
 	})
 	if horse.is_empty():
+		_last_birth_failure_reason = "birth_failed"
 		return ""
 	_horses[horse_id] = horse
 	_horse_order.append(horse_id)
+	_last_birth_failure_reason = ""
 	return horse_id
 
 
@@ -854,6 +1607,24 @@ func _make_horse_from_definition(definition: Dictionary) -> Dictionary:
 	var horse_id := str(definition.get("horse_id", "")).strip_edges()
 	if horse_id.is_empty():
 		push_error("Skipped horse definition with empty horse_id.")
+		return {}
+	var template_id := str(definition.get("template_id", "")).strip_edges()
+	if template_id.is_empty():
+		template_id = _find_template_id_by_name(str(definition.get("name", "")))
+	if template_id.is_empty():
+		template_id = _find_next_unused_template_id()
+	var template: Dictionary = get_horse_template_snapshot(template_id)
+	if template.is_empty():
+		push_error("Skipped horse %s because template is unavailable: %s" % [horse_id, template_id])
+		return {}
+	if _is_template_in_use(template_id, horse_id):
+		push_error("Skipped horse %s because template is already used: %s" % [horse_id, template_id])
+		return {}
+	var stable_slot_id := str(definition.get("stable_slot_id", "")).strip_edges()
+	if stable_slot_id.is_empty():
+		stable_slot_id = _find_next_free_stable_slot_id()
+	if stable_slot_id.is_empty() or not get_stable_slot_ids().has(stable_slot_id) or _is_stable_slot_in_use(stable_slot_id, horse_id):
+		push_error("Skipped horse %s because no valid stable slot is available: %s" % [horse_id, stable_slot_id])
 		return {}
 	var growth := clampf(float(definition.get("growth", 0.0)), 0.0, 1.0)
 	var natural_max_hp := _calculate_natural_max_hp(growth)
@@ -866,7 +1637,13 @@ func _make_horse_from_definition(definition: Dictionary) -> Dictionary:
 	var care_bonus_hp := clampf(float(definition.get("care_bonus_hp", 0.0)), 0.0, care_bonus_cap)
 	var horse := {
 		"horse_id": horse_id,
-		"name": str(definition.get("name", horse_id)),
+		"template_id": template_id,
+		"name": str(template.get("name", horse_id)),
+		"coat_name": str(template.get("coat_name", "未知毛色")),
+		"coat_color": str(template.get("coat_color", "#9B6846")),
+		"icon": str(template.get("icon", "")),
+		"stable_slot_id": stable_slot_id,
+		"alive": bool(definition.get("alive", true)),
 		"growth": growth,
 		"hp": clampf(
 			float(definition.get("hp", natural_max_hp + care_bonus_hp)),
@@ -889,6 +1666,7 @@ func _make_horse_from_definition(definition: Dictionary) -> Dictionary:
 		"feeding": _make_idle_feeding_state(),
 		"assigned_npc_id": "",
 		"ridden_by_npc_id": "",
+		"movement_state": _make_idle_movement_state(),
 	}
 	_normalize_horse_runtime(horse)
 	return horse
@@ -933,13 +1711,19 @@ func _make_public_horse_snapshot(horse: Dictionary) -> Dictionary:
 	snapshot["breeding_cooldown_active"] = float(snapshot["breeding_cooldown_remaining_seconds"]) > 0.0
 	snapshot["feeding"] = feeding
 	snapshot["recovering"] = (
-		float(horse.get("hp", 0.0)) - float(horse.get("care_bonus_hp", 0.0)) + 0.0001 < natural_max_hp
+		bool(horse.get("alive", true))
+		and float(horse.get("hp", 0.0)) - float(horse.get("care_bonus_hp", 0.0)) + 0.0001 < natural_max_hp
 		and float(horse.get("satiety", 0.0)) > 0.0
 	)
+	snapshot["stable_capacity"] = get_stable_capacity()
+	snapshot["stable_occupied_slots"] = _get_alive_horse_count()
+	snapshot["stable_full"] = _is_stable_full()
 	return snapshot
 
 
 func _normalize_horse_runtime(horse: Dictionary) -> void:
+	var alive := bool(horse.get("alive", float(horse.get("hp", 0.0)) > 0.0))
+	horse["alive"] = alive
 	var growth := clampf(float(horse.get("growth", 0.0)), 0.0, 1.0)
 	horse["growth"] = growth
 	var natural_max_hp := _calculate_natural_max_hp(growth)
@@ -964,13 +1748,21 @@ func _normalize_horse_runtime(horse: Dictionary) -> void:
 	if breeding_cooldown > 0.0:
 		horse["breeding_probability"] = 0.0
 	var location := str(horse.get("location", LOCATION_STABLE))
-	if not [LOCATION_STABLE, LOCATION_RIDDEN].has(location):
+	if not [LOCATION_STABLE, LOCATION_APPROACHING_RIDER, LOCATION_RIDDEN, LOCATION_RETURNING_STABLE, LOCATION_DEAD].has(location):
 		location = LOCATION_STABLE
+	if not alive:
+		location = LOCATION_DEAD
+		horse["hp"] = 0.0
+		horse["assigned_npc_id"] = ""
+		horse["ridden_by_npc_id"] = ""
+		horse["stable_slot_id"] = ""
 	horse["location"] = location
 	if location == LOCATION_STABLE:
 		horse["ridden_by_npc_id"] = ""
 	if not horse.get("feeding", {}) is Dictionary:
 		horse["feeding"] = _make_idle_feeding_state()
+	if not horse.get("movement_state", {}) is Dictionary:
+		horse["movement_state"] = _make_idle_movement_state()
 
 
 func _calculate_natural_max_hp(growth: float) -> float:
@@ -999,6 +1791,142 @@ func _make_idle_feeding_state() -> Dictionary:
 		"elapsed_seconds": 0.0,
 		"waiting_for_grain": false,
 	}
+
+
+func _make_idle_movement_state() -> Dictionary:
+	return {
+		"phase": "idle",
+		"target_position": Vector3.ZERO,
+		"reason": ""
+	}
+
+
+func _load_stable_slots(raw_slots_by_level: Variant) -> void:
+	if not raw_slots_by_level is Dictionary:
+		push_error("Horse stable_slots_by_level must be a JSON object: %s" % HORSE_DEFS_FILE)
+		return
+	var previous_slots: Array[String] = []
+	for level in range(1, 4):
+		var level_key := str(level)
+		var raw_slots: Variant = raw_slots_by_level.get(level_key, [])
+		var slots: Array[String] = []
+		if raw_slots is Array:
+			for raw_slot_id in raw_slots:
+				var slot_id := str(raw_slot_id).strip_edges()
+				if not slot_id.is_empty() and not slots.has(slot_id):
+					slots.append(slot_id)
+		if slots.is_empty():
+			push_error("Horse stable slot level %d must not be empty." % level)
+			continue
+		for previous_slot_id in previous_slots:
+			if not slots.has(previous_slot_id):
+				push_error("Horse stable slots must be monotonic; level %d removed %s." % [level, previous_slot_id])
+		_stable_slots_by_level[level_key] = slots
+		previous_slots = slots
+
+
+func _load_horse_templates(raw_templates: Variant) -> void:
+	if not raw_templates is Array:
+		push_error("Horse horse_templates must be a JSON array: %s" % HORSE_DEFS_FILE)
+		return
+	var used_names := {}
+	for raw_template in raw_templates:
+		if not raw_template is Dictionary:
+			continue
+		var template: Dictionary = (raw_template as Dictionary).duplicate(true)
+		var template_id := str(template.get("template_id", "")).strip_edges()
+		var horse_name := str(template.get("name", "")).strip_edges()
+		var coat_color := str(template.get("coat_color", "")).strip_edges()
+		if template_id.is_empty() or horse_name.is_empty() or coat_color.is_empty():
+			push_error("Skipped incomplete horse template: %s" % JSON.stringify(template))
+			continue
+		if _horse_templates.has(template_id) or used_names.has(horse_name):
+			push_error("Skipped duplicate horse template id/name: %s / %s" % [template_id, horse_name])
+			continue
+		if not Color.html_is_valid(coat_color):
+			push_error("Skipped horse template with invalid coat color: %s" % template_id)
+			continue
+		template["template_id"] = template_id
+		template["name"] = horse_name
+		template["coat_color"] = Color.from_string(coat_color, Color("#9B6846")).to_html()
+		_horse_templates[template_id] = template
+		_horse_template_order.append(template_id)
+		used_names[horse_name] = true
+
+
+func _get_current_stable_level() -> int:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null and building_system.has_method("get_building"):
+		var stable: Variant = building_system.call("get_building", STABLE_BUILDING_ID)
+		if stable is Dictionary:
+			return clampi(int((stable as Dictionary).get("level", 1)), 1, 3)
+	return 1
+
+
+func _get_alive_horse_count() -> int:
+	var count := 0
+	for horse_id in _horse_order:
+		if bool((_horses.get(horse_id, {}) as Dictionary).get("alive", true)):
+			count += 1
+	return count
+
+
+func _is_stable_full() -> bool:
+	var capacity := get_stable_capacity()
+	return capacity <= 0 or _get_alive_horse_count() >= capacity
+
+
+func _get_birth_block_reason() -> String:
+	if _is_stable_full():
+		return "stable_full"
+	if _find_next_unused_template_id().is_empty():
+		return "horse_template_pool_exhausted"
+	if _find_next_free_stable_slot_id().is_empty():
+		return "stable_full"
+	return ""
+
+
+func _find_next_free_stable_slot_id() -> String:
+	for slot_id in get_stable_slot_ids():
+		if not _is_stable_slot_in_use(slot_id):
+			return slot_id
+	return ""
+
+
+func _is_stable_slot_in_use(slot_id: String, except_horse_id: String = "") -> bool:
+	for horse_id in _horse_order:
+		if horse_id == except_horse_id:
+			continue
+		var horse: Dictionary = _horses.get(horse_id, {})
+		if bool(horse.get("alive", true)) and str(horse.get("stable_slot_id", "")) == slot_id:
+			return true
+	return false
+
+
+func _find_next_unused_template_id() -> String:
+	for template_id in _horse_template_order:
+		if not _is_template_in_use(template_id):
+			return template_id
+	return ""
+
+
+func _is_template_in_use(template_id: String, except_horse_id: String = "") -> bool:
+	for horse_id in _horse_order:
+		if horse_id == except_horse_id:
+			continue
+		if str((_horses.get(horse_id, {}) as Dictionary).get("template_id", "")) == template_id:
+			return true
+	return false
+
+
+func _find_template_id_by_name(horse_name: String) -> String:
+	var clean_name := horse_name.strip_edges()
+	if clean_name.is_empty():
+		return ""
+	for template_id in _horse_template_order:
+		if str((_horse_templates.get(template_id, {}) as Dictionary).get("name", "")) == clean_name:
+			return template_id
+	return ""
 
 
 func _apply_loaded_balance(loaded_balance: Dictionary) -> void:
@@ -1030,11 +1958,21 @@ func _apply_loaded_balance(loaded_balance: Dictionary) -> void:
 		"birth_cooldown_minutes",
 		"stable_level_birth_bonus_per_level",
 		"care_skill_100_bonus_hp_cap",
+		"mount_rendezvous_horse_speed",
+		"mount_rendezvous_arrival_distance",
+		"return_to_stable_speed",
 	]:
 		_balance[key] = maxf(0.0, float(_balance.get(key, DEFAULT_BALANCE[key])))
 	_balance["feeding_duration_seconds"] = maxf(1.0, float(_balance["feeding_duration_seconds"]))
 	_balance["base_full_growth_care_minutes"] = maxf(1.0, float(_balance["base_full_growth_care_minutes"]))
 	_balance["feeding_grain_cost"] = maxi(0, int(_balance.get("feeding_grain_cost", 1)))
+	_balance["mount_rendezvous_npc_share"] = clampf(float(_balance.get("mount_rendezvous_npc_share", 0.35)), 0.1, 0.9)
+	_balance["mounted_damage_share_min"] = clampf(float(_balance.get("mounted_damage_share_min", 0.3)), 0.0, 1.0)
+	_balance["mounted_damage_share_max"] = clampf(
+		float(_balance.get("mounted_damage_share_max", 0.5)),
+		float(_balance["mounted_damage_share_min"]),
+		1.0
+	)
 
 
 func _balance_float(key: String) -> float:
@@ -1046,7 +1984,14 @@ func _balance_int(key: String) -> int:
 
 
 func _publish_stable_summary(force: bool = false) -> void:
-	var summary := get_stable_horse_summary()
+	var public_summary := get_stable_horse_summary()
+	# BuildingSystem's stable special-state contract intentionally remains the
+	# compact total/adult/foal projection. Slot occupancy stays HorseSystem-owned.
+	var summary := {
+		"total": int(public_summary.get("total", 0)),
+		"adult": int(public_summary.get("adult", 0)),
+		"foal": int(public_summary.get("foal", 0)),
+	}
 	if summary != _last_stable_summary:
 		_last_stable_summary = summary.duplicate(true)
 		_building_summary_published = false
@@ -1114,12 +2059,16 @@ func _get_assignment_failure_message(reason: String) -> String:
 			return "逃离的 NPC 不能分配马匹。"
 		"npc_has_no_main_weapon":
 			return "NPC 必须先装备主武器才能分配马匹。"
+		"loadout_locked_in_wartime":
+			return "只有工作模式下才能更换装备或马匹。"
 		"no_available_horse":
 			return "没有可分配的成年在厩马。"
 		"unknown_horse":
 			return "马匹不存在。"
 		"horse_not_adult":
 			return "幼马尚未成年，不能分配。"
+		"horse_dead":
+			return "阵亡马匹不能再被分配。"
 		"horse_already_assigned":
 			return "该马已分配给其他 NPC。"
 		"npc_already_has_horse":

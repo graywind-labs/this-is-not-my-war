@@ -125,10 +125,39 @@ func _verify_study_pose(npc_system: Node) -> bool:
 	if not bool(attachment.get("active", false)) or str(attachment.get("pose", "")) != "seated_study":
 		_fail("empty-clinic doctor was not attached to the study chair")
 		return false
-	if str(art.get("desired_state", "")) != "seated_study" or not bool(art.get("medical_book_visible", false)):
+	if str(art.get("desired_state", "")) != "seated_study" or str(art.get("current_clip", "")) != "Seated_Study_Idle" or not bool(art.get("medical_book_visible", false)) or bool(art.get("medical_bandage_visible", true)):
 		_fail("empty-clinic doctor did not sit and read: %s" % str({"state": art.get("desired_state", ""), "book": art.get("medical_book_visible", null), "pose": art.get("spatial_attachment_pose", "")}))
 		return false
+	var book := npc_node.find_child("MedicalBook", true, false) as Node3D
+	var table_forward := Vector3(art.get("target_facing_direction", Vector3.ZERO)).normalized()
+	var book_offset: Vector3 = book.global_position - npc_node.global_position if book != null else Vector3.ZERO
+	if book == null or book_offset.dot(table_forward) < 0.78 or book_offset.dot(table_forward) > 0.86 or book_offset.y < 0.12 or book_offset.y > 0.18:
+		_fail("empty-clinic medical book is not resting on the desk: %s" % str({"book_offset": book_offset, "table_forward": table_forward}))
+		return false
+	var table_collision := _find_fixture_node("StaticCollision", "doctor_desk_01_table") as StaticBody3D
+	var table_shape := table_collision.get_node_or_null("CollisionShape3D") as CollisionShape3D if table_collision != null else null
+	if table_shape == null or not table_shape.shape is BoxShape3D:
+		_fail("empty-clinic doctor desk collision is unavailable")
+		return false
+	var table_top_y := table_shape.global_position.y + (table_shape.shape as BoxShape3D).size.y * 0.5
+	var book_table_horizontal_distance := Vector2(book.global_position.x, book.global_position.z).distance_to(Vector2(table_collision.global_position.x, table_collision.global_position.z))
+	if book_table_horizontal_distance > 0.01 or absf(book.global_position.y - table_top_y) > 0.01:
+		_fail("empty-clinic medical book must lie on the real desk surface: %s" % str({
+			"horizontal_distance": book_table_horizontal_distance,
+			"height_delta": absf(book.global_position.y - table_top_y)
+		}))
+		return false
 	return true
+
+
+func _find_fixture_node(branch_name: String, fixture_id: String) -> Node:
+	var branch := root.get_node_or_null("Main/WorldRoot/FormalStationLayout/BuildingRoots/Clinic/FixtureLayout/%s" % branch_name)
+	if branch == null:
+		return null
+	for child in branch.get_children():
+		if str(child.get_meta("fixture_id", "")) == fixture_id:
+			return child
+	return null
 
 
 func _verify_treatment_pose(npc_system: Node, patient_id: String) -> bool:

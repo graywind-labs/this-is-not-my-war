@@ -50,7 +50,8 @@ func _init() -> void:
 			or not bool(actor.get("navigation_map_matches", false))
 			or int(actor.get("body_collision_layer", 0)) == 0
 			or int(actor.get("body_collision_mask", 0)) == 0
-			or (actor.get("world_position", Vector3.ZERO) as Vector3).x < 900.0
+			or absf((actor.get("world_position", Vector3.ZERO) as Vector3).x) > 80.0
+			or absf((actor.get("world_position", Vector3.ZERO) as Vector3).z) > 100.0
 		):
 			_fail("A migrated NPC lacks formal navigation or solid collision: %s" % JSON.stringify(actor))
 			return
@@ -74,8 +75,8 @@ func _init() -> void:
 		return
 	var avoidance: Dictionary = _find_avoidance(combat_system, npc_id)
 	var target_position := _as_vector3(avoidance.get("target_position", {}))
-	if target_position.x < 900.0:
-		_fail("Avoidance target remained in the legacy coordinate world: %s" % JSON.stringify(avoidance))
+	if absf(target_position.x) > 80.0 or absf(target_position.z) > 100.0:
+		_fail("Avoidance target left the origin-rebased formal station: %s" % JSON.stringify(avoidance))
 		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(state.get("behavior_mode", "")) != "avoid_combat":

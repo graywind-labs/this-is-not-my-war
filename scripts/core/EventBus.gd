@@ -14,6 +14,7 @@ signal npc_building_entry_failed(npc_id: String, building_id: String, context: D
 signal crafting_state_changed(building_id: String)
 signal horse_state_changed(horse_id: String)
 signal horse_assignment_changed(horse_id: String, npc_id: String)
+signal horse_clicked(horse_id: String)
 signal npc_clicked(npc_id: String)
 signal npc_dialogue_bubble_clicked(npc_id: String, dialogue_id: String)
 signal npc_state_changed(npc_id: String)
@@ -35,7 +36,10 @@ signal merchant_clicked
 signal merchant_state_changed(active: bool, snapshot: Dictionary)
 signal defense_device_deployed(deployment_id: String, snapshot: Dictionary)
 signal defense_device_state_changed(snapshot: Dictionary)
+signal defense_device_action_phase(deployment_id: String, phase_snapshot: Dictionary)
 signal defense_device_action_resolved(deployment_id: String, action_result: Dictionary)
+signal defense_device_clicked(deployment_id: String)
+signal world_selection_cleared
 signal piety_changed(current_piety: float, max_piety: float, delta: float, reason: String)
 signal meteor_cast_started(cast_id: String, target_position: Vector3, radius: float)
 signal meteor_impacted(cast_id: String, result: Dictionary)

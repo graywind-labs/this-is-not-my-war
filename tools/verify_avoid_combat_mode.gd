@@ -256,11 +256,21 @@ func _init() -> void:
 		quit(1)
 		return
 	resource_system.add_resource("item_sword_shield", 1)
-	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon("priest_01", "sword_shield", "private")
-	if not bool(equip_result.get("ok", false)):
-		push_error("Weapon equip during avoidance failed: %s" % JSON.stringify(equip_result))
+	var wartime_locked: Dictionary = equipment_system.equip_npc_main_weapon("priest_01", "sword_shield", "private")
+	if bool(wartime_locked.get("ok", false)) or str(wartime_locked.get("error", "")) != "loadout_locked_in_wartime":
+		push_error("Avoidance must keep the current work-mode-only equipment lock: %s" % JSON.stringify(wartime_locked))
 		quit(1)
 		return
+	npc_system.set_npc_behavior_mode("priest_01", "work", "verify_prepare_wartime_equip", {
+		"state_changes": {"current_action": "idle"},
+		"request_plan_reevaluation": false
+	})
+	var equip_result: Dictionary = equipment_system.equip_npc_main_weapon("priest_01", "sword_shield", "private")
+	if not bool(equip_result.get("ok", false)):
+		push_error("Weapon equip after explicitly returning to work failed: %s" % JSON.stringify(equip_result))
+		quit(1)
+		return
+	combat_system.debug_step_enemy_ai(0.0)
 	await process_frame
 	if _mode(npc_system, "priest_01") != "combat":
 		push_error("NPC armed during avoidance should enter combat while enemies remain")
@@ -336,13 +346,11 @@ func _dict_to_vector3(raw_value: Variant) -> Vector3:
 
 
 func _inside_station_avoidance_bounds(position: Vector3) -> bool:
-	if position.x > 900.0:
-		var controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
-		if controller != null and controller.has_method("get_production_navigation_map_rid"):
-			var navigation_map: RID = controller.get_production_navigation_map_rid()
-			if navigation_map.is_valid():
-				return NavigationServer3D.map_get_closest_point(navigation_map, position).distance_to(position) <= 0.2
-		return false
+	var controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
+	if controller != null and controller.has_method("get_production_navigation_map_rid"):
+		var navigation_map: RID = controller.get_production_navigation_map_rid()
+		if navigation_map.is_valid():
+			return NavigationServer3D.map_get_closest_point(navigation_map, position).distance_to(position) <= 0.2
 	return absf(position.x) <= 13.0 and position.z >= -12.5 and position.z <= 6.5
 
 

@@ -227,8 +227,16 @@ func _init() -> void:
 	npc_system.update_npc_state(rider_id, {"behavior_mode": "rally"})
 	await process_frame
 	first = horse_system.get_horse_snapshot(first_id)
+	var pickup_movement: Dictionary = first.get("movement_state", {})
+	if str(first.get("location", "")) != "stable" or str(pickup_movement.get("phase", "")) != "waiting_for_rider_at_stable" or not bool(pickup_movement.get("horse_stationary", false)) or bool(npc_system.get_npc_state(rider_id).get("combat_mounted", true)):
+		_fail("Assigned horse must wait in the stable while its rider approaches")
+		return
+	if not bool(horse_system.debug_complete_horse_transition(first_id).get("ok", false)):
+		_fail("Could not complete the horse-rider rendezvous")
+		return
+	first = horse_system.get_horse_snapshot(first_id)
 	if str(first.get("location", "")) != "ridden" or str(first.get("ridden_by_npc_id", "")) != rider_id:
-		_fail("Assigned adult horse must leave the stable only in rally/combat mode")
+		_fail("Assigned adult horse must become ridden after the rendezvous")
 		return
 	if not _assert_stable_special(building_system, 2, 1, 1):
 		return
@@ -250,8 +258,14 @@ func _init() -> void:
 
 	npc_system.update_npc_state(rider_id, {"behavior_mode": "work"})
 	await process_frame
+	if str(horse_system.get_horse_snapshot(first_id).get("location", "")) != "returning_stable":
+		_fail("Horse must run back toward the stable when wartime mode ends")
+		return
+	if not bool(horse_system.debug_complete_horse_transition(first_id).get("ok", false)):
+		_fail("Could not complete the horse return transition")
+		return
 	if str(horse_system.get_horse_snapshot(first_id).get("location", "")) != "stable":
-		_fail("Horse must return to the stable when wartime mode ends")
+		_fail("Horse must reach the stable after its return transition")
 		return
 	var unequip_result: Dictionary = equipment_system.unequip_npc_slot(rider_id, "main_weapon", "private")
 	if not bool(unequip_result.get("ok", false)):

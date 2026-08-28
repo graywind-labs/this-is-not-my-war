@@ -18,6 +18,7 @@ __pycache__/
 # Generated logs and visual QA captures
 *.log
 /artifacts/
+/nothing.avi
 
 # Third-party art intake (local source copies; tracked manifests and licenses stay outside these paths)
 /art_source/downloads/*

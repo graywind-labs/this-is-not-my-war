@@ -42,12 +42,32 @@ func _init() -> void:
 
 func _verify_structure(blacksmith: Node3D, art: Node, visuals: Node, collision_root: Node, ambient: Node) -> bool:
 	var snapshot := art.call("get_art_slice_snapshot") as Dictionary
-	if str(snapshot.get("structure_profile", "")) != "rear_masonry_forge_with_roofed_open_smithing_shed":
-		return _fail_bool("Blacksmith did not expose the approved semi-open structure profile")
+	if str(snapshot.get("structure_profile", "")) != "rear_masonry_forge_with_flat_roofed_fully_open_front_smithing_shed":
+		return _fail_bool("Blacksmith did not expose the approved fully open-front structure profile")
 	var side_shape := _collision_box_size(collision_root.get_node_or_null("LeftWall"))
-	var front_shape := _collision_box_size(collision_root.get_node_or_null("FrontLeft"))
-	if side_shape.z > 4.61 or front_shape.x > 0.47:
-		return _fail_bool("Semi-open visual shell and structural collision do not match")
+	if side_shape.z > 4.61 or collision_root.get_node_or_null("FrontLeft") != null or collision_root.get_node_or_null("FrontRight") != null:
+		return _fail_bool("Fully open front visual shell and structural collision do not match")
+	var exterior := art.get_node_or_null("Exterior")
+	if exterior == null:
+		return _fail_bool("Blacksmith exterior root is missing")
+	for removed_name in ["FrontWall", "FrontDoor", "DoorJambLeft", "DoorJambRight", "AutoDoor"]:
+		if exterior.get_node_or_null(removed_name) != null:
+			return _fail_bool("Open smithy front still contains enclosure part: %s" % removed_name)
+	if int(snapshot.get("front_support_post_count", 0)) != 4:
+		return _fail_bool("Open smithy front did not retain exactly four original roof posts")
+	var flat_deck := art.get_node_or_null("Roof/FlatSlateDeck") as MeshInstance3D
+	if flat_deck == null or not flat_deck.mesh is BoxMesh:
+		return _fail_bool("Blacksmith flat roof deck is missing")
+	var roof_bottom := flat_deck.position.y - (flat_deck.mesh as BoxMesh).size.y * 0.5
+	for brace_name in ["ReinforcedWallBraceWest", "ReinforcedWallBraceEast"]:
+		var brace := art.get_node_or_null("UpgradeVisuals/Level2/ExteriorAdditions/%s" % brace_name) as MeshInstance3D
+		if brace == null or not brace.mesh is BoxMesh:
+			return _fail_bool("Smithy side reinforcement column is missing: %s" % brace_name)
+		var brace_size := (brace.mesh as BoxMesh).size
+		var brace_bottom := brace.position.y - brace_size.y * 0.5
+		var brace_top := brace.position.y + brace_size.y * 0.5
+		if brace_bottom > 0.181 or brace_top > roof_bottom - 0.019:
+			return _fail_bool("Smithy side reinforcement column is not grounded below the flat roof: %s bottom=%.3f top=%.3f roof=%.3f" % [brace_name, brace_bottom, brace_top, roof_bottom])
 	var hearth := art.get_node_or_null("Interior/ForgeAmbient") as Node3D
 	var chimney := art.get_node_or_null("ChimneyAssembly/StoneChimney") as Node3D
 	if hearth == null or chimney == null:

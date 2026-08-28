@@ -1,5 +1,33 @@
 # API_BUDGET.md
 
+## T0167 马匹毛色与取马路径调用边界
+
+本任务只调整本地 JSON 毛色 / 空间合同及 Godot NavigationServer3D 路径验证，不新增 endpoint、Prompt、Schema、LLM 或远程 API 调用；专项和视觉验收产生 0 次供应商调用。
+
+## T0166 GM 面板整理调用边界
+
+本任务只调整 Godot 本地调试 UI 和回归脚本，不新增 endpoint、Prompt、Schema、LLM 或远程 API 调用；专项与回归产生 0 次供应商调用。
+
+## T0165 陨石奇观表现
+
+- 全部由 Godot 本地配置、程序网格、粒子与既有 CC0 岩石完成；不调用 LLM、图像生成或远程运行时 API，模型调用次数为 0。
+
+## T0164 建筑名称渐隐调用边界
+
+本任务只修改 Godot 本地 Label3D 与镜头运动采样，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。专项与视觉验收产生 0 次供应商调用。
+
+## T0163 陨石自由落点调用边界
+
+本任务只移除 Godot 本地落点矩形校验，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。专项及回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0162 马匹身份、槽位与面板调用边界
+
+本任务只新增 Godot 本地马匹配置、权威状态、世界投影与 UI，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。名称和毛色来自本地有限模板池，不由模型生成；专项与回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0161 GM 一键征召配装调用边界
+
+本任务只调用 Godot 本地 NPC、库存、装备和马匹接口，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。GM 调试征召不会请求或伪造 NPC 对话接受，因此专项和回归产生 0 次供应商调用，无需真实 provider 验收。
+
 ## T0130-P5R3 艾达档案外貌同步验收成本
 
 本任务只替换既有 `npc_setting.appearance` 的内容，不新增 Prompt / Schema 字段、endpoint、重试或成品调用次数。先通过本地共享档案专项与 Mock 对话适配器；因环境已有真实 Key，2026-08-21 又运行 8 名 NPC 的正式 `/npc/dialogue` smoke：DeepSeek `deepseek-v4-flash` 共 8 次，全部成功且 `fallback_used=false`，艾达更新后的外貌字段随既有载荷正常进入请求。该旧 smoke 脚本只输出调用数、provider、model 与 fallback 汇总，未持久化本轮 token 合计；不据此虚构费用数字。

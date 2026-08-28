@@ -80,11 +80,12 @@ func _init() -> void:
 	if float(snapshot.get("terrain_surface_y", -99.0)) <= float(snapshot.get("river_surface_y", 99.0)):
 		_fail("Formal river must remain lower than station ground")
 		return
-	_assert_vector3(formal_root.position, Vector3(1000.0, 0.0, 0.0), "staging root")
+	_assert_vector3(formal_root.position, Vector3.ZERO, "formal world origin")
 	if _failed:
 		return
-	if formal_root.find_children("*", "StaticBody3D", true, false).size() != 234:
-		_fail("T0129C-A3 must expose 78 structural blockers, 131 fixture blockers, 24 natural blockers, and one navigation bake floor")
+	var formal_static_body_count := formal_root.find_children("*", "StaticBody3D", true, false).size()
+	if formal_static_body_count != 240:
+		_fail("Formal layout static-body count changed unexpectedly: %d" % formal_static_body_count)
 		return
 	var staged_navigation := formal_root.find_children("*", "NavigationRegion3D", true, false)
 	if staged_navigation.size() != 3:
@@ -142,8 +143,8 @@ func _init() -> void:
 	if not bool(preview_snapshot.get("formal_root_visible", false)):
 		_fail("Formal staging root must become visible during preview")
 		return
-	_assert_vector3(camera_rig.global_position, Vector3(998.0, 0.0, 18.0), "preview camera focus")
-	_assert_vector2(camera_rig.get("x_limits"), Vector2(850.0, 1150.0), "preview camera x limits")
+	_assert_vector3(camera_rig.global_position, Vector3(-2.0, 0.0, 18.0), "formal camera focus")
+	_assert_vector2(camera_rig.get("x_limits"), Vector2(-150.0, 150.0), "formal camera x limits")
 	_assert_vector2(camera_rig.get("z_limits"), Vector2(-215.0, 240.0), "preview camera z limits")
 	if _failed:
 		return

@@ -68,6 +68,11 @@ func _init() -> void:
 		if accessory != null:
 			check(accessory.find_children("*", "CollisionShape3D", true, false).is_empty(), "Lina visual accessory added gameplay collision: %s" % accessory_name)
 			check(accessory.find_children("*", "Area3D", true, false).is_empty(), "Lina visual accessory added an interaction area: %s" % accessory_name)
+	var medicine_pouch := lina.find_child("WornMedicinePouch", true, false) as Node3D
+	var medical_mark := lina.find_child("LinenMarkVertical", true, false) as Node3D
+	check(medicine_pouch != null and medicine_pouch.position.distance_to(Vector3(0.25, 0.64, 0.03)) < 0.001, "Lina medical satchel is not fitted to the waist")
+	check(medicine_pouch != null and absf(medicine_pouch.rotation_degrees.y - 90.0) < 0.01, "Lina medical satchel is not turned sideways")
+	check(medical_mark != null and medicine_pouch != null and medical_mark.position.x > medicine_pouch.position.x, "Lina medical cross is not on the outward side face")
 
 	var action_before_preview := str(npc_system.get_npc_state(NPC_ID).get("current_action", ""))
 	var expected_states := {
@@ -84,7 +89,12 @@ func _init() -> void:
 	var clinic_work: Dictionary = lina.debug_force_character_animation("work")
 	check(str(clinic_work.get("current_clip", "")) == "Working_B", "Lina clinic-duty preview does not use Working_B")
 	check(bool(clinic_work.get("medical_book_visible", false)) and not bool(clinic_work.get("medical_bandage_visible", true)), "Lina clinic-duty preview does not show only the medical book")
+	check(str(clinic_work.get("medical_book_parent", "")) == "Mount", "Lina clinic book is still pinned to one wrist instead of centered between both hands")
+	check(int(clinic_work.get("medical_book_mesh_count", 0)) >= 10 and int(clinic_work.get("medical_book_cross_mark_count", 0)) == 2, "Lina clinic prop is not a recognizable open medical record book")
 	check(int(clinic_work.get("work_clip_loop_mode", Animation.LOOP_NONE)) == Animation.LOOP_LINEAR, "Lina clinic-duty animation is not cyclic")
+	var seated_study: Dictionary = lina.debug_force_character_animation("seated_study")
+	check(str(seated_study.get("current_clip", "")) == "Seated_Study_Idle", "Lina seated clinic study still uses the continuously gesturing chair clip")
+	check(bool(seated_study.get("medical_book_visible", false)) and not bool(seated_study.get("medical_bandage_visible", true)), "Lina seated clinic study does not show only the medical book")
 	var treatment: Dictionary = lina.debug_force_character_animation("medical_treatment")
 	check(str(treatment.get("current_clip", "")) == "Working_A", "Lina treatment preview does not use Working_A")
 	check(bool(treatment.get("medical_bandage_visible", false)) and not bool(treatment.get("medical_book_visible", true)), "Lina treatment preview does not show only the bandage roll")

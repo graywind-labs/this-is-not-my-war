@@ -503,5 +503,7 @@ func _connect_world_signals() -> void:
 		event_bus.location_info_changed.connect(_on_location_info_changed)
 	if event_bus.has_signal("npc_clicked"):
 		event_bus.npc_clicked.connect(_on_world_selection_changed)
+	if event_bus.has_signal("horse_clicked"):
+		event_bus.horse_clicked.connect(_on_world_selection_changed)
 	if event_bus.has_signal("building_clicked"):
 		event_bus.building_clicked.connect(_on_world_selection_changed)

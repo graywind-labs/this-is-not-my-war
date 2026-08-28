@@ -22,8 +22,9 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel") as Control
 	var event_bus := root.get_node_or_null("EventBus")
-	check(npc_system != null and npc_panel != null and event_bus != null, "Portrait verification dependencies are missing")
-	if npc_system == null or npc_panel == null or event_bus == null:
+	var roof_controller := root.get_node_or_null("Main/Presentation/RoofVisibilityController")
+	check(npc_system != null and npc_panel != null and event_bus != null and roof_controller != null, "Portrait verification dependencies are missing")
+	if npc_system == null or npc_panel == null or event_bus == null or roof_controller == null:
 		finish()
 		return
 
@@ -46,6 +47,8 @@ func _init() -> void:
 	check(bool(snapshot.get("shares_main_world", false)), "Portrait does not share Main World3D")
 	check(float(snapshot.get("camera_front_dot", -1.0)) > 0.95, "Portrait camera is not in front of the visible NPC")
 	check(float(snapshot.get("configured_camera_distance", 0.0)) >= 3.8, "Portrait camera was not pulled back for full-body margin")
+	check(bool(snapshot.get("hides_main_fading_shells", false)), "Portrait camera still renders the main-camera fading shell layer")
+	check(bool(snapshot.get("shows_portrait_opaque_shells", false)), "Portrait camera does not render the opaque portrait shell layer")
 	var target_snapshot: Dictionary = snapshot.get("target_snapshot", {}) if snapshot.get("target_snapshot", {}) is Dictionary else {}
 	check(str(target_snapshot.get("npc_id", "")) == "blacksmith_01", "Portrait is not reading Glen's real entity snapshot")
 	check(not bool(snapshot.get("status_visible", true)), "Portrait fallback text remained over a valid NPC")
@@ -55,6 +58,34 @@ func _init() -> void:
 	check(int(npc_system.get_npc_count()) == npc_count_before, "Portrait duplicated an NPC entity")
 	check(npc_system.get_npc("blacksmith_01") == glen_before, "Opening the portrait mutated Glen's authoritative profile")
 	check_layout(snapshot, Vector2(1280, 720), "1280x720")
+
+	var near_roof_snapshot := roof_controller.call("debug_apply_distance", 50.0) as Dictionary
+	check(bool(near_roof_snapshot.get("main_camera_shows_fading_shells", false)), "Main camera lost the fading building shell layer")
+	check(bool(near_roof_snapshot.get("main_camera_hides_portrait_opaque_shells", false)), "Main camera renders portrait-only opaque building shells")
+	var isolated_view_count := 0
+	for raw_view in near_roof_snapshot.get("views", []) as Array:
+		if not raw_view is Dictionary:
+			continue
+		var view := raw_view as Dictionary
+		var requires_isolation := (
+			(
+				int(view.get("roof_mesh_count", 0)) > 0
+				and float(view.get("minimum_roof_opacity", 1.0)) < 0.999
+			)
+			or (
+				int(view.get("exterior_mesh_count", 0)) > 0
+				and
+				bool(view.get("exterior_fades_with_roof", false))
+				and float(view.get("minimum_exterior_opacity", 1.0)) < 0.999
+			)
+		)
+		if not requires_isolation:
+			continue
+		isolated_view_count += 1
+		check(int(view.get("portrait_opaque_shell_proxy_count", 0)) > 0, "%s has no portrait-only opaque shell proxy" % str(view.get("building_id", "unknown")))
+		check(bool(view.get("portrait_opaque_shells_ready", false)), "%s portrait shell proxy is not fully opaque" % str(view.get("building_id", "unknown")))
+		check(bool(view.get("fading_shell_layers_ready", false)), "%s fading shell is not isolated to the main-camera layer" % str(view.get("building_id", "unknown")))
+	check(isolated_view_count > 0, "No fading building views were available for portrait opacity verification")
 
 	npc_panel.call("show_npc", "gardener_01")
 	for _frame in 4:

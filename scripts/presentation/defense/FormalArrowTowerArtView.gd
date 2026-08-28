@@ -42,6 +42,9 @@ var _last_flight_seconds := 0.0
 var _last_reload_seconds := 0.0
 var _active_projectiles: Array[Node3D] = []
 var _static_structure_part_count := 0
+var _last_authoritative_release_sequence := -1
+var _timeline_phase := "idle"
+var _destroyed_visual := false
 
 
 func _ready() -> void:
@@ -58,8 +61,115 @@ func configure_device(snapshot: Dictionary) -> void:
 	var effect: Dictionary = snapshot.get("effect", {}) if snapshot.get("effect", {}) is Dictionary else {}
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
 	_attack_interval = maxf(0.1, float(effect.get("attack_interval", _attack_interval)))
-	_projectile_speed = maxf(1.0, float(presentation.get("projectile_speed", _projectile_speed)))
+	var projectile: Dictionary = effect.get("projectile", {}) if effect.get("projectile", {}) is Dictionary else {}
+	_projectile_speed = maxf(1.0, float(projectile.get("speed", presentation.get("projectile_speed", _projectile_speed))))
 	_reload_fraction = clampf(float(presentation.get("reload_fraction", _reload_fraction)), 0.25, 0.85)
+
+
+func set_destroyed_visual(destroyed: bool) -> void:
+	if not destroyed or _destroyed_visual:
+		return
+	_destroyed_visual = true
+	_timeline_phase = "destroyed"
+	_kill_active_tweens()
+	if is_instance_valid(_loaded_arrow):
+		_loaded_arrow.visible = false
+	if is_instance_valid(_string_left):
+		_string_left.visible = false
+	if is_instance_valid(_string_right):
+		_string_right.visible = false
+	var tower := get_node_or_null("TexturedTimberTower") as Node3D
+	if tower != null:
+		var posts := tower.find_children("TowerPost", "MeshInstance3D", true, false)
+		for index in posts.size():
+			var post := posts[index] as MeshInstance3D
+			post.position.y = 0.34 + 0.05 * float(index % 2)
+			post.rotation_degrees = Vector3(4.0 * float(index % 2), -18.0 + 11.0 * float(index), 70.0 if index % 2 == 0 else -66.0)
+		for raw_part in tower.find_children("CanopyPost", "MeshInstance3D", true, false):
+			var canopy_post := raw_part as MeshInstance3D
+			canopy_post.position.y = 0.40
+			canopy_post.rotation_degrees.z = 76.0 if canopy_post.position.x < 0.0 else -72.0
+		_set_ruin_part_pose(tower, "LookoutFloorFrame", Vector3(-0.16, 0.38, 0.10), Vector3(8.0, -7.0, 13.0))
+		_set_ruin_part_pose(tower, "LookoutDeck", Vector3(0.10, 0.50, -0.18), Vector3(-5.0, 11.0, -10.0))
+		_set_ruin_part_pose(tower, "LeftRoofSlope", Vector3(-0.58, 0.55, -0.12), Vector3(11.0, -18.0, 63.0))
+		_set_ruin_part_pose(tower, "RightRoofSlope", Vector3(0.66, 0.43, 0.20), Vector3(-7.0, 22.0, -58.0))
+		_set_ruin_part_pose(tower, "RoofRidge", Vector3(0.10, 0.22, -0.62), Vector3(83.0, 12.0, 8.0))
+		for pattern in ["RearMantlet", "SideMantlet", "FrontShield"]:
+			for raw_part in tower.find_children(pattern, "MeshInstance3D", true, false):
+				var part := raw_part as MeshInstance3D
+				part.position.y = 0.28 + 0.08 * float(part.get_index() % 3)
+				part.rotation_degrees = Vector3(5.0, float(part.get_index() * 13), 72.0 if part.get_index() % 2 == 0 else -68.0)
+	if is_instance_valid(_yaw_pivot):
+		_yaw_pivot.position = Vector3(0.42, 0.28, 0.18)
+		_yaw_pivot.rotation_degrees = Vector3(64.0, -22.0, 18.0)
+	_build_ruin_debris()
+	set_meta("destroyed_visual", true)
+
+
+func _set_ruin_part_pose(parent: Node, part_name: String, target_position: Vector3, target_rotation_degrees: Vector3) -> void:
+	var part := parent.find_child(part_name, true, false) as Node3D
+	if part == null:
+		return
+	part.position = target_position
+	part.rotation_degrees = target_rotation_degrees
+
+
+func _build_ruin_debris() -> void:
+	if get_node_or_null("RuinDebris") != null:
+		return
+	var debris := Node3D.new()
+	debris.name = "RuinDebris"
+	add_child(debris)
+	_add_box(debris, "BrokenDeckPlankA", Vector3(1.55, 0.16, 0.34), Vector3(-0.58, 0.12, 0.86), Vector3(0.10, 0.34, -0.08), _wood_material)
+	_add_box(debris, "BrokenDeckPlankB", Vector3(1.34, 0.15, 0.30), Vector3(0.68, 0.10, -0.74), Vector3(-0.08, -0.44, 0.12), _wood_dark_material)
+	_add_box(debris, "SnappedSupportA", Vector3(0.20, 0.22, 1.42), Vector3(-0.92, 0.13, -0.18), Vector3(0.06, 0.82, 0.20), _wood_dark_material)
+	_add_box(debris, "SnappedSupportB", Vector3(0.20, 0.22, 1.18), Vector3(0.96, 0.12, 0.44), Vector3(-0.08, -0.72, -0.16), _wood_dark_material)
+
+
+func get_combat_projectile_release_snapshot(weapon_type: String) -> Dictionary:
+	if weapon_type != "bow":
+		return {"ready": false, "reason": "arrow_tower_weapon_type_mismatch", "origin_source": "unavailable"}
+	if not is_instance_valid(_muzzle) or not is_instance_valid(_loaded_arrow) or not _loaded_arrow.visible:
+		return {"ready": false, "reason": "arrow_tower_loaded_arrow_unavailable", "origin_source": "unavailable"}
+	return {
+		"ready": true,
+		"transform": _muzzle.global_transform,
+		"origin_source": "formal_arrow_tower_muzzle",
+		"projectile_node_path": str(_loaded_arrow.get_path()),
+		"muzzle_node_path": str(_muzzle.get_path()),
+		"mounted": false
+	}
+
+
+func sync_attack_timeline(timeline: Dictionary) -> void:
+	var target := _dict_to_vector3(timeline.get("target_position", {}))
+	if not target.is_equal_approx(Vector3.ZERO):
+		_aim_at(target)
+	var phase := str(timeline.get("phase", "idle"))
+	_timeline_phase = phase
+	var interval := maxf(0.1, float(timeline.get("attack_interval", _attack_interval)))
+	var release_seconds := clampf(float(timeline.get("release_seconds", interval * 0.25)), 0.0, interval)
+	var elapsed := clampf(float(timeline.get("attack_elapsed", 0.0)), 0.0, interval)
+	if phase == "release":
+		var sequence := int(timeline.get("attack_sequence", -1))
+		if sequence != _last_authoritative_release_sequence:
+			_last_authoritative_release_sequence = sequence
+			_shot_count += 1
+			_last_target = target
+			_loaded_arrow.visible = false
+			_set_string_draw_z(STRING_REST_Z)
+		return
+	if phase == "recovery":
+		var progress := clampf((elapsed - release_seconds) / maxf(0.001, interval - release_seconds), 0.0, 1.0)
+		_set_string_draw_z(lerpf(STRING_REST_Z, STRING_DRAW_Z, progress))
+		_loaded_arrow.visible = progress >= 0.98
+		_firing_slide.position.z = -0.10 * pow(1.0 - progress, 4.0)
+		_reload_wheel.rotation.x = TAU * 1.5 * progress
+		_last_reload_seconds = interval - release_seconds
+		return
+	_firing_slide.position.z = 0.0
+	_set_string_draw_z(STRING_DRAW_Z)
+	_loaded_arrow.visible = true
 
 
 func play_device_action(action_result: Dictionary) -> void:
@@ -94,6 +204,9 @@ func get_debug_snapshot() -> Dictionary:
 		"last_target_position": _vector3_to_dict(_last_target),
 		"last_flight_seconds": _last_flight_seconds,
 		"last_reload_seconds": _last_reload_seconds,
+		"timeline_phase": _timeline_phase,
+		"destroyed_visual": _destroyed_visual,
+		"last_authoritative_release_sequence": _last_authoritative_release_sequence,
 		"yaw_degrees": rad_to_deg(_yaw_pivot.rotation.y) if is_instance_valid(_yaw_pivot) else 0.0,
 		"wood_texture": WOOD_BASE,
 		"metal_texture": METAL_BASE,

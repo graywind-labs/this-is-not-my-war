@@ -7,10 +7,18 @@ const LABEL_NODE_PATH := "NameLabel"
 const STATUS_LABEL_NODE_PATH := "StatusLabel"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
+const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const CHARACTER_APPEARANCE_CONFIG_PATH := "res://data/presentation/character_appearances.json"
+const MOUNTED_PRESENTATION_REFERENCE := preload("res://scripts/presentation/characters/MountedPresentationReference.gd")
+const HORSE_APPEARANCE := preload("res://scripts/presentation/characters/HorseAppearance.gd")
+const COMBAT_HORSE_SCENE_PATH := "res://assets/3d/quaternius/animals/merchant_horse.glb"
 const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
 const DEFAULT_NAME_COLOR := Color.WHITE
 const PORTRAIT_OVERLAY_VISUAL_LAYER := 20
+const MOVEMENT_SLOWDOWN_REQUEST_PREFIX := "npc_movement:"
+const DEFAULT_WALK_SPEED := 3.2
+const DEFAULT_RUN_SPEED := 5.0
+const DEFAULT_EMERGENCY_BEHAVIOR_MODES := ["rally", "combat", "avoid_combat", "escaped"]
 
 @export var move_speed := 5.0
 
@@ -19,6 +27,7 @@ var profile: Dictionary = {}
 var _movement_target_id := ""
 var _movement_target_position := Vector3.ZERO
 var _is_moving := false
+var _movement_slowdown_request_id := ""
 var _navigation_motion_enabled := false
 var _spatial_attachment_active := false
 var _spatial_attachment_pose := ""
@@ -26,6 +35,10 @@ var _spatial_attachment_position := Vector3.ZERO
 var _legacy_visuals_base_transform := Transform3D.IDENTITY
 var _art_mount_base_transform := Transform3D.IDENTITY
 var _portrait_facing_direction := Vector3(0.0, 0.0, -1.0)
+var _locomotion_config: Dictionary = {}
+var _locomotion_state := "walk"
+var _locomotion_reference_speed := DEFAULT_WALK_SPEED
+var _actual_horizontal_speed := 0.0
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 @onready var _status_label := get_node_or_null(STATUS_LABEL_NODE_PATH) as Label3D
@@ -36,7 +49,13 @@ var _dialogue_bubble_label: Label3D
 var _dialogue_bubble_material: StandardMaterial3D
 var _llm_activity_marker: Label3D
 var _escape_warning_marker: Label3D
-var _mount_visual: MeshInstance3D
+var _mount_visual: Node3D
+var _mount_horse_model: Node3D
+var _mount_animation_player: AnimationPlayer
+var _mount_uses_imported_horse := false
+var _mount_applied_horse_id := ""
+var _mount_applied_coat_color := ""
+var _mount_applied_template_id := ""
 var _facing_marker: Label3D
 var _character_art_view: Node3D
 var _character_appearance_id := "legacy_placeholder"
@@ -47,6 +66,7 @@ func setup(npc_profile: Dictionary) -> void:
 	npc_id = str(profile.get("id", ""))
 	name = _make_node_name(npc_id)
 	set_meta("npc_id", npc_id)
+	configure_avoidance_identity("friendly:%s" % npc_id, 0.5)
 	_configure_character_art_view()
 	_apply_profile_to_character_art()
 	_refresh_label()
@@ -54,6 +74,7 @@ func setup(npc_profile: Dictionary) -> void:
 
 func update_profile(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
+	_refresh_active_locomotion_profile()
 	_apply_profile_to_character_art()
 	var states: Dictionary = profile.get("states", {})
 	if bool(states.get("escaped", false)):
@@ -71,31 +92,33 @@ func update_profile(npc_profile: Dictionary) -> void:
 func move_to_location(target_id: String, target_position: Vector3, motion_options: Dictionary = {}) -> void:
 	_movement_target_id = target_id
 	_movement_target_position = target_position
-	_is_moving = true
 	if _navigation_motion_enabled:
 		var runtime_overrides := {
-			"profile": {"base_speed": move_speed * _get_move_speed_multiplier()}
+			"profile": {"base_speed": _get_authoritative_move_speed()}
 		}
 		if motion_options.has("target_desired_distance"):
 			runtime_overrides["navigation_agent"] = {
 				"target_desired_distance": clampf(float(motion_options.get("target_desired_distance", 0.25)), 0.05, 0.5)
 			}
 		configure_profile("npc", runtime_overrides)
-		if not request_motion(target_position, target_id):
-			_is_moving = false
+		if not request_motion(target_position, target_id, motion_options):
+			_set_movement_active(false)
 		return
-	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(true, move_speed * _get_move_speed_multiplier())
+	_set_movement_active(true)
 
 
 func stop_movement() -> void:
 	if _navigation_motion_enabled and is_motion_active():
 		cancel_motion("stopped")
-	_is_moving = false
+	_set_movement_active(false)
 	_movement_target_id = ""
 	velocity = Vector3.ZERO
-	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(false, 0.0)
+
+
+func is_world_movement_active() -> bool:
+	if _navigation_motion_enabled:
+		return _is_moving and is_motion_active()
+	return _is_moving
 
 
 func configure_navigation_motion(enabled: bool, navigation_map: RID = RID()) -> bool:
@@ -124,6 +147,39 @@ func set_facing_direction(direction: Vector3) -> void:
 		_portrait_facing_direction = flat_direction.normalized()
 	if _character_art_view != null and _character_art_view.has_method("set_facing_direction"):
 		_character_art_view.set_facing_direction(direction)
+	_sync_combat_mount_facing()
+
+
+func play_temporary_presentation_action(action_id: String, event_id: String) -> Dictionary:
+	if _character_art_view == null or not _character_art_view.has_method("play_temporary_presentation_action"):
+		return {
+			"ok": false,
+			"reason": "formal_character_art_not_available",
+			"npc_id": npc_id,
+			"action_id": action_id,
+			"event_id": event_id
+		}
+	var result: Dictionary = _character_art_view.play_temporary_presentation_action(action_id, event_id)
+	result["npc_id"] = npc_id
+	return result
+
+
+func _process(_delta: float) -> void:
+	_sync_combat_mount_facing()
+	_refresh_combat_mount_animation()
+
+
+func _sync_combat_mount_facing() -> void:
+	if _mount_visual == null:
+		return
+	var visible_forward := _portrait_facing_direction
+	if _character_art_view != null and _character_art_view.has_method("get_visible_forward"):
+		var rider_forward: Vector3 = _character_art_view.get_visible_forward()
+		rider_forward.y = 0.0
+		if rider_forward.length_squared() > 0.0001:
+			visible_forward = rider_forward.normalized()
+	if visible_forward.length_squared() > 0.0001:
+		_mount_visual.look_at(_mount_visual.global_position + visible_forward, Vector3.UP, true)
 
 
 func get_portrait_camera_snapshot() -> Dictionary:
@@ -209,6 +265,10 @@ func debug_get_spatial_attachment_snapshot() -> Dictionary:
 
 func _ready() -> void:
 	super._ready()
+	_load_locomotion_config()
+	# Run the mount follow-up after the rider pilot's default-priority process so
+	# the horse copies the visible (smoothed) rider facing from this same frame.
+	process_priority = 10
 	var legacy_visuals := get_node_or_null("LegacyVisuals") as Node3D
 	var art_mount := get_node_or_null("ArtMount") as Node3D
 	if legacy_visuals != null:
@@ -236,12 +296,18 @@ func _ready() -> void:
 	_refresh_label()
 
 
+func _exit_tree() -> void:
+	_release_movement_time_slowdown(true)
+
+
 func _physics_process(delta: float) -> void:
+	var position_before_motion := global_position
 	if _navigation_motion_enabled:
 		set_motion_paused(_is_gameplay_paused())
 		super._physics_process(delta)
 		if velocity.length_squared() > 0.0001:
 			set_facing_direction(velocity)
+		_update_actual_movement_presentation(position_before_motion, delta)
 		return
 	if not _is_moving:
 		return
@@ -254,8 +320,9 @@ func _physics_process(delta: float) -> void:
 	velocity = Vector3.ZERO
 	global_position = global_position.move_toward(
 		_movement_target_position,
-		move_speed * _get_move_speed_multiplier() * delta
+		_get_authoritative_move_speed() * delta
 	)
+	_update_actual_movement_presentation(position_before_motion, delta)
 	if global_position.distance_to(_movement_target_position) <= 0.05:
 		global_position = _movement_target_position
 		var arrived_target_id := _movement_target_id
@@ -266,36 +333,155 @@ func _physics_process(delta: float) -> void:
 func _on_navigation_motion_started(_request_id: String, _target_position: Vector3) -> void:
 	if not _navigation_motion_enabled:
 		return
-	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(true, move_speed * _get_move_speed_multiplier())
+	_set_movement_active(true)
 
 
 func _on_navigation_motion_arrived(request_id: String, _target_position: Vector3) -> void:
 	if not _navigation_motion_enabled:
 		return
-	_is_moving = false
+	_set_movement_active(false)
 	_movement_target_id = ""
-	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(false, 0.0)
 	movement_arrived.emit(npc_id, request_id)
 
 
 func _on_navigation_motion_failed(request_id: String, reason: String) -> void:
 	if not _navigation_motion_enabled:
 		return
-	_is_moving = false
+	_set_movement_active(false)
 	_movement_target_id = ""
-	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(false, 0.0)
 	movement_request_failed.emit(npc_id, request_id, reason)
 
 
 func _on_navigation_motion_cancelled(_request_id: String, _reason: String) -> void:
 	if not _navigation_motion_enabled:
 		return
-	_is_moving = false
+	_set_movement_active(false)
+
+
+func _set_movement_active(active: bool) -> void:
+	_is_moving = active
+	_locomotion_state = _resolve_locomotion_state()
+	_locomotion_reference_speed = _get_locomotion_reference_speed(_locomotion_state)
+	if not active:
+		_actual_horizontal_speed = 0.0
+	if active:
+		_request_movement_time_slowdown()
+	else:
+		_release_movement_time_slowdown()
 	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
-		_character_art_view.set_movement_active(false, 0.0)
+		_character_art_view.set_movement_active(
+			active,
+			_get_authoritative_move_speed() if active else 0.0,
+			_locomotion_state,
+			_locomotion_reference_speed,
+			float(_locomotion_config.get("minimum_animation_speed_scale", 0.35)),
+			float(_locomotion_config.get("maximum_animation_speed_scale", 1.6))
+		)
+	_refresh_combat_mount_animation()
+
+
+func _update_actual_movement_presentation(position_before_motion: Vector3, delta: float) -> void:
+	if not _is_moving or delta <= 0.0 or _is_gameplay_paused():
+		return
+	var displacement := global_position - position_before_motion
+	displacement.y = 0.0
+	_actual_horizontal_speed = displacement.length() / delta
+	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
+		_character_art_view.set_movement_active(
+			true,
+			_actual_horizontal_speed,
+			_locomotion_state,
+			_locomotion_reference_speed,
+			float(_locomotion_config.get("minimum_animation_speed_scale", 0.35)),
+			float(_locomotion_config.get("maximum_animation_speed_scale", 1.6))
+		)
+	_refresh_combat_mount_animation()
+
+
+func _refresh_active_locomotion_profile() -> void:
+	var next_state := _resolve_locomotion_state()
+	var state_changed := next_state != _locomotion_state
+	_locomotion_state = next_state
+	_locomotion_reference_speed = _get_locomotion_reference_speed(next_state)
+	if _is_moving and _navigation_motion_enabled:
+		configure_profile("npc", {"profile": {"base_speed": _get_authoritative_move_speed()}})
+	if _is_moving and (state_changed or _character_art_view != null):
+		if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
+			_character_art_view.set_movement_active(
+				true,
+				_actual_horizontal_speed,
+				_locomotion_state,
+				_locomotion_reference_speed,
+				float(_locomotion_config.get("minimum_animation_speed_scale", 0.35)),
+				float(_locomotion_config.get("maximum_animation_speed_scale", 1.6))
+			)
+
+
+func _resolve_locomotion_state() -> String:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	var escape_intent: Dictionary = states.get("escape_intent", {}) if states.get("escape_intent", {}) is Dictionary else {}
+	if bool(escape_intent.get("active", false)) and str(escape_intent.get("status", "")) == "escaping":
+		return "run"
+	var emergency_modes: Array = _locomotion_config.get("emergency_behavior_modes", DEFAULT_EMERGENCY_BEHAVIOR_MODES)
+	return "run" if str(states.get("behavior_mode", "work")) in emergency_modes else "walk"
+
+
+func _get_locomotion_reference_speed(state_name: String) -> float:
+	var key := "%s_animation_reference_speed" % state_name
+	var fallback := DEFAULT_RUN_SPEED if state_name == "run" else DEFAULT_WALK_SPEED
+	return maxf(0.01, float(_locomotion_config.get(key, fallback)))
+
+
+func _get_authoritative_move_speed() -> float:
+	var state_name := _resolve_locomotion_state()
+	var fallback := DEFAULT_RUN_SPEED if state_name == "run" else DEFAULT_WALK_SPEED
+	var base_speed := float(_locomotion_config.get("%s_speed" % state_name, fallback))
+	return maxf(0.0, base_speed * _get_move_speed_multiplier())
+
+
+func _load_locomotion_config() -> void:
+	_locomotion_config = (_config.get("npc_locomotion", {}) as Dictionary).duplicate(true)
+	if str(_locomotion_config.get("schema_version", "")) != "npc_locomotion_v1":
+		push_warning("NPC locomotion config missing or invalid; using production defaults.")
+		_locomotion_config = {
+			"schema_version": "npc_locomotion_v1",
+			"walk_speed": DEFAULT_WALK_SPEED,
+			"run_speed": DEFAULT_RUN_SPEED,
+			"walk_animation_reference_speed": DEFAULT_WALK_SPEED,
+			"run_animation_reference_speed": DEFAULT_RUN_SPEED,
+			"minimum_animation_speed_scale": 0.35,
+			"maximum_animation_speed_scale": 1.6,
+			"emergency_behavior_modes": DEFAULT_EMERGENCY_BEHAVIOR_MODES.duplicate()
+		}
+	_locomotion_state = _resolve_locomotion_state()
+	_locomotion_reference_speed = _get_locomotion_reference_speed(_locomotion_state)
+
+
+func _request_movement_time_slowdown() -> void:
+	if npc_id.is_empty() or not _movement_slowdown_request_id.is_empty():
+		return
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system == null or not time_system.has_method("request_time_slowdown"):
+		return
+	_movement_slowdown_request_id = "%s%s" % [MOVEMENT_SLOWDOWN_REQUEST_PREFIX, npc_id]
+	time_system.request_time_slowdown(
+		_movement_slowdown_request_id,
+		-1.0,
+		"npc_movement"
+	)
+
+
+func _release_movement_time_slowdown(deferred: bool = false) -> void:
+	if _movement_slowdown_request_id.is_empty():
+		return
+	var request_id := _movement_slowdown_request_id
+	_movement_slowdown_request_id = ""
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("release_time_slowdown"):
+		if deferred:
+			time_system.call_deferred("release_time_slowdown", request_id)
+		else:
+			time_system.release_time_slowdown(request_id)
 
 
 func _apply_spatial_attachment_pose(pose: String) -> void:
@@ -394,6 +580,10 @@ func _refresh_label() -> void:
 		action_text = "集结防线"
 	elif action_text == "combat_ready":
 		action_text = "接敌"
+	elif action_text == "meeting_assigned_horse":
+		action_text = "会合马匹"
+	elif action_text == "waiting_for_assigned_horse":
+		action_text = "等待马匹"
 	elif action_text == "planning_day":
 		action_text = "制定计划"
 	elif action_text.begins_with("moving_to_combat_strategy_"):
@@ -585,17 +775,31 @@ func _ensure_escape_warning_marker() -> void:
 
 func _ensure_combat_visuals() -> void:
 	if _mount_visual == null:
-		_mount_visual = MeshInstance3D.new()
+		_mount_visual = Node3D.new()
 		_mount_visual.name = "CombatMountVisual"
-		var mount_mesh := BoxMesh.new()
-		mount_mesh.size = Vector3(0.85, 0.28, 1.05)
-		_mount_visual.mesh = mount_mesh
-		var material := StandardMaterial3D.new()
-		material.albedo_color = Color(0.36, 0.22, 0.13, 1.0)
-		_mount_visual.set_surface_override_material(0, material)
-		_mount_visual.position = Vector3(0.0, 0.34, 0.0)
 		_mount_visual.visible = false
 		add_child(_mount_visual)
+		var packed := load(COMBAT_HORSE_SCENE_PATH) as PackedScene
+		var horse_model := packed.instantiate() as Node3D if packed != null else null
+		if horse_model != null:
+			horse_model.name = "HorseModel"
+			horse_model.position = MOUNTED_PRESENTATION_REFERENCE.FRIENDLY_HORSE_ROOT_POSITION
+			horse_model.scale = MOUNTED_PRESENTATION_REFERENCE.FRIENDLY_HORSE_SCALE
+			_mount_visual.add_child(horse_model)
+			_mount_horse_model = horse_model
+			_mount_animation_player = horse_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			_mount_uses_imported_horse = true
+		else:
+			var fallback := MeshInstance3D.new()
+			fallback.name = "FallbackMountMesh"
+			var mount_mesh := BoxMesh.new()
+			mount_mesh.size = Vector3(0.85, 0.28, 1.05)
+			fallback.mesh = mount_mesh
+			var material := StandardMaterial3D.new()
+			material.albedo_color = Color(0.36, 0.22, 0.13, 1.0)
+			fallback.set_surface_override_material(0, material)
+			fallback.position = Vector3(0.0, 0.34, 0.0)
+			_mount_visual.add_child(fallback)
 	if _facing_marker == null:
 		_facing_marker = Label3D.new()
 		_facing_marker.name = "CombatFacingMarker"
@@ -614,9 +818,49 @@ func _refresh_combat_visuals(states: Dictionary) -> void:
 	var combat_mode := str(states.get("behavior_mode", states.get("combat_mode", "")))
 	var show_combat_visuals := ["rally", "combat"].has(combat_mode)
 	if _mount_visual != null:
+		_refresh_combat_mount_appearance()
 		_mount_visual.visible = show_combat_visuals and bool(states.get("combat_mounted", false))
+		_refresh_combat_mount_animation()
 	if _facing_marker != null:
 		_facing_marker.visible = show_combat_visuals
+
+
+func _refresh_combat_mount_appearance() -> void:
+	if _mount_horse_model == null:
+		return
+	var equipment: Dictionary = profile.get("equipment", {}) if profile.get("equipment", {}) is Dictionary else {}
+	var mount: Dictionary = equipment.get("mount", {}) if equipment.get("mount", {}) is Dictionary else {}
+	var horse_id := str(mount.get("horse_id", ""))
+	var coat_color := str(mount.get("horse_coat_color", "#9B6846"))
+	var template_id := str(mount.get("horse_template_id", ""))
+	if horse_id == _mount_applied_horse_id and coat_color == _mount_applied_coat_color and template_id == _mount_applied_template_id:
+		return
+	HORSE_APPEARANCE.apply_coat_color(_mount_horse_model, coat_color)
+	_mount_applied_horse_id = horse_id
+	_mount_applied_coat_color = coat_color
+	_mount_applied_template_id = template_id
+
+
+func _refresh_combat_mount_animation() -> void:
+	if _mount_animation_player == null or _mount_visual == null or not _mount_visual.visible:
+		return
+	var suffix := "Walk" if _is_moving else "Idle"
+	var clip := ""
+	for raw_clip in _mount_animation_player.get_animation_list():
+		var candidate := str(raw_clip)
+		if candidate == suffix or candidate.ends_with("|" + suffix) or candidate.ends_with("/" + suffix):
+			clip = candidate
+			break
+	if not clip.is_empty() and (_mount_animation_player.current_animation != clip or not _mount_animation_player.is_playing()):
+		_mount_animation_player.play(clip, 0.16)
+	var authored_speed := _get_locomotion_animation_speed_scale() if _is_moving else 1.0
+	_mount_animation_player.speed_scale = authored_speed * _get_combat_frame_rate()
+
+
+func _get_locomotion_animation_speed_scale() -> float:
+	var minimum_scale := float(_locomotion_config.get("minimum_animation_speed_scale", 0.35))
+	var maximum_scale := float(_locomotion_config.get("maximum_animation_speed_scale", 1.6))
+	return clampf(_actual_horizontal_speed / maxf(0.01, _locomotion_reference_speed), minimum_scale, maximum_scale)
 
 
 func _refresh_llm_activity_marker(states: Dictionary) -> void:
@@ -676,8 +920,15 @@ func _make_node_name(id_value: String) -> String:
 
 
 func _is_gameplay_paused() -> bool:
-	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
 	return time_system != null and time_system.is_gameplay_paused()
+
+
+func _get_combat_frame_rate() -> float:
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("get_combat_frame_rate"):
+		return maxf(0.0, float(time_system.get_combat_frame_rate()))
+	return 1.0
 
 
 func debug_get_character_art_snapshot() -> Dictionary:
@@ -689,6 +940,24 @@ func debug_get_character_art_snapshot() -> Dictionary:
 		}
 	var snapshot: Dictionary = _character_art_view.debug_get_snapshot()
 	snapshot["npc_id"] = npc_id
+	snapshot["combat_mount_visual_visible"] = _mount_visual != null and _mount_visual.visible
+	snapshot["combat_mount_uses_imported_horse"] = _mount_uses_imported_horse
+	snapshot["combat_mount_animation"] = _mount_animation_player.current_animation if _mount_animation_player != null else ""
+	snapshot["combat_mount_horse_local_position"] = _mount_horse_model.position if _mount_horse_model != null else Vector3.ZERO
+	snapshot["combat_mount_horse_scale"] = _mount_horse_model.scale if _mount_horse_model != null else Vector3.ZERO
+	var rider_forward := Vector3(snapshot.get("visual_forward", Vector3.ZERO)).normalized()
+	var horse_forward := (_mount_horse_model.global_basis * MOUNTED_PRESENTATION_REFERENCE.VISIBLE_FORWARD_LOCAL).normalized() if _mount_horse_model != null else Vector3.ZERO
+	snapshot["combat_mount_horse_visible_forward"] = horse_forward
+	snapshot["combat_mount_forward_dot"] = rider_forward.dot(horse_forward) if not rider_forward.is_zero_approx() and not horse_forward.is_zero_approx() else 0.0
+	snapshot["locomotion_state"] = _locomotion_state
+	snapshot["locomotion_reference_speed"] = _locomotion_reference_speed
+	snapshot["authoritative_move_speed"] = _get_authoritative_move_speed()
+	snapshot["actual_horizontal_speed"] = _actual_horizontal_speed
+	snapshot["navigation_motion_enabled"] = _navigation_motion_enabled
+	snapshot["combat_mount_animation_speed_scale"] = _mount_animation_player.speed_scale if _mount_animation_player != null else 0.0
+	snapshot["combat_mount_horse_id"] = _mount_applied_horse_id
+	snapshot["combat_mount_template_id"] = _mount_applied_template_id
+	snapshot["combat_mount_coat_color"] = _mount_applied_coat_color
 	return snapshot
 
 
@@ -728,6 +997,31 @@ func _configure_character_art_view() -> void:
 func _apply_profile_to_character_art() -> void:
 	if _character_art_view != null and _character_art_view.has_method("apply_profile"):
 		_character_art_view.apply_profile(profile)
+
+
+func get_combat_projectile_release_transform(weapon_type: String) -> Transform3D:
+	if _character_art_view != null and _character_art_view.has_method("get_combat_projectile_release_transform"):
+		return _character_art_view.get_combat_projectile_release_transform(weapon_type)
+	return Transform3D(global_basis, global_position + Vector3.UP * 1.15)
+
+
+func get_combat_projectile_release_snapshot(weapon_type: String) -> Dictionary:
+	if _character_art_view == null or not _character_art_view.has_method("get_combat_projectile_release_snapshot"):
+		return {
+			"ready": false,
+			"reason": "formal_character_art_unavailable",
+			"weapon_type": weapon_type,
+			"source_npc_id": npc_id,
+		}
+	var snapshot: Dictionary = _character_art_view.get_combat_projectile_release_snapshot(weapon_type)
+	snapshot["source_npc_id"] = npc_id
+	return snapshot
+
+
+func get_combat_melee_contact_segment(weapon_type: String) -> Dictionary:
+	if _character_art_view != null and _character_art_view.has_method("get_combat_melee_contact_segment"):
+		return _character_art_view.get_combat_melee_contact_segment(weapon_type)
+	return {}
 
 
 func _load_character_appearance_config() -> Dictionary:

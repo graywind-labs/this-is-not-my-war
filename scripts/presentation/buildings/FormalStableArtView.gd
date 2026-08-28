@@ -3,6 +3,7 @@ extends BuildingArtView
 
 
 const AUTO_DOOR_SCRIPT := preload("res://scripts/presentation/buildings/BuildingAutoDoor.gd")
+const HORSE_WORLD_VIEW_SCRIPT := preload("res://scripts/presentation/characters/HorseWorldView.gd")
 const HORSE_ASSET := "res://assets/3d/quaternius/animals/merchant_horse.glb"
 const BUCKET := "res://assets/3d/quaternius/props/bucket_wooden.glb"
 const BARREL := "res://assets/3d/quaternius/props/barrel.glb"
@@ -50,6 +51,7 @@ var _horse_idle_time := 0.0
 
 
 func _ready() -> void:
+	add_to_group("horse_world_presentation")
 	_build_formal_stable()
 	super._ready()
 	_bind_horse_state()
@@ -59,6 +61,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_horse_idle_time += delta
+	_sync_horse_presentation()
 	var index := 0
 	for raw_visual in _horse_visuals.values():
 		var visual := raw_visual as Node3D
@@ -71,7 +74,7 @@ func _process(delta: float) -> void:
 
 
 func is_interior_revealed_for_selection() -> bool:
-	return true
+	return _roof_opacity <= interior_reveal_opacity_threshold
 
 
 func _apply_visual_level(level: int, upgrade_in_progress: bool) -> void:
@@ -109,11 +112,20 @@ func get_art_slice_snapshot() -> Dictionary:
 		var horse_id := str(raw_horse_id)
 		var horse_visual := _horse_visuals[horse_id] as Node3D
 		if horse_visual != null:
+			var interaction_snapshot: Dictionary = horse_visual.debug_get_snapshot() if horse_visual.has_method("debug_get_snapshot") else {}
 			horse_visual_states[horse_id] = {
 				"visible": horse_visual.visible,
 				"anchor_id": str(horse_visual.get_meta("horse_anchor_id", "")),
+				"stable_slot_id": str(horse_visual.get_meta("stable_slot_id", "")),
 				"source_location": str(horse_visual.get_meta("source_location", "")),
-				"is_adult": bool(horse_visual.get_meta("is_adult", false))
+				"is_adult": bool(horse_visual.get_meta("is_adult", false)),
+				"name": str(interaction_snapshot.get("name", "")),
+				"name_visible": bool(interaction_snapshot.get("name_visible", false)),
+				"click_enabled": bool(interaction_snapshot.get("click_enabled", false)),
+				"template_id": str(interaction_snapshot.get("template_id", "")),
+				"coat_color": str(interaction_snapshot.get("coat_color", "")),
+				"motion_animation": str(horse_visual.get_meta("motion_animation", "")),
+				"moving_animation": bool(horse_visual.get_meta("moving_animation", false))
 			}
 	return {
 		"building_id": building_id,
@@ -451,15 +463,24 @@ func _sync_horse_presentation() -> void:
 	if presentation_root == null or anchor_root == null or horse_system == null or not horse_system.has_method("get_horses_snapshot"):
 		return
 	var anchors := _get_available_horse_anchors(anchor_root)
+	var anchors_by_id: Dictionary = {}
+	for marker in anchors:
+		anchors_by_id[str(marker.get_meta("horse_anchor_id", ""))] = marker
 	var stable_horses: Array[Dictionary] = []
+	var moving_horses: Array[Dictionary] = []
 	for raw_horse in horse_system.call("get_horses_snapshot"):
-		if raw_horse is Dictionary and str((raw_horse as Dictionary).get("location", "")) == "stable":
+		if not raw_horse is Dictionary or not bool((raw_horse as Dictionary).get("alive", true)):
+			continue
+		var location := str((raw_horse as Dictionary).get("location", ""))
+		if location == "stable":
 			stable_horses.append((raw_horse as Dictionary).duplicate(true))
+		elif location in ["approaching_rider", "returning_stable"]:
+			moving_horses.append((raw_horse as Dictionary).duplicate(true))
 	var active_ids: Dictionary = {}
-	for index in range(mini(stable_horses.size(), anchors.size())):
-		var horse: Dictionary = stable_horses[index]
+	for horse in stable_horses:
 		var horse_id := str(horse.get("horse_id", ""))
-		var marker := anchors[index] as Marker3D
+		var stable_slot_id := str(horse.get("stable_slot_id", ""))
+		var marker := anchors_by_id.get(stable_slot_id) as Marker3D
 		if horse_id.is_empty() or marker == null:
 			continue
 		active_ids[horse_id] = true
@@ -470,10 +491,45 @@ func _sync_horse_presentation() -> void:
 				continue
 			_horse_visuals[horse_id] = visual
 			presentation_root.add_child(visual)
+		if visual.has_method("refresh_horse"):
+			visual.refresh_horse(horse)
 		visual.visible = true
+		_set_horse_animation(visual, false)
 		visual.position = to_local(marker.global_position)
 		visual.rotation_degrees.y = float(marker.get_meta("facing_degrees", 0.0)) + 180.0
-		visual.set_meta("horse_anchor_id", str(marker.get_meta("horse_anchor_id", "")))
+		visual.set_meta("horse_anchor_id", stable_slot_id)
+		visual.set_meta("stable_slot_id", stable_slot_id)
+		visual.set_meta("source_location", str(horse.get("location", "")))
+		visual.set_meta("is_adult", bool(horse.get("is_adult", false)))
+		var growth := clampf(float(horse.get("growth", 0.6)) / 0.6, 0.58, 1.0)
+		visual.scale = Vector3.ONE * growth
+	for horse in moving_horses:
+		var horse_id := str(horse.get("horse_id", ""))
+		if horse_id.is_empty():
+			continue
+		active_ids[horse_id] = true
+		var visual := _horse_visuals.get(horse_id) as Node3D
+		if visual == null:
+			visual = _create_horse_visual(horse)
+			if visual == null:
+				continue
+			_horse_visuals[horse_id] = visual
+			presentation_root.add_child(visual)
+		if visual.has_method("refresh_horse"):
+			visual.refresh_horse(horse)
+		visual.visible = true
+		_set_horse_animation(visual, true)
+		var world_position: Variant = horse.get("world_position", null)
+		if world_position is Vector3:
+			visual.global_position = world_position
+		var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+		var target_position: Variant = movement.get("target_position", null)
+		if target_position is Vector3:
+			var direction: Vector3 = target_position - visual.global_position
+			if direction.length_squared() > 0.001:
+				visual.look_at(visual.global_position + direction, Vector3.UP, true)
+		visual.set_meta("horse_anchor_id", "")
+		visual.set_meta("stable_slot_id", str(horse.get("stable_slot_id", "")))
 		visual.set_meta("source_location", str(horse.get("location", "")))
 		visual.set_meta("is_adult", bool(horse.get("is_adult", false)))
 		var growth := clampf(float(horse.get("growth", 0.6)) / 0.6, 0.58, 1.0)
@@ -483,7 +539,77 @@ func _sync_horse_presentation() -> void:
 		var visual := _horse_visuals[horse_id] as Node3D
 		if visual != null and not active_ids.has(horse_id):
 			visual.visible = false
+			_set_horse_animation(visual, false, true)
 			visual.set_meta("horse_anchor_id", "")
+
+
+func get_horse_world_position(horse_id: String) -> Variant:
+	var visual := _horse_visuals.get(horse_id) as Node3D
+	if visual == null or not visual.is_inside_tree():
+		return null
+	return visual.global_position
+
+
+func get_horse_pickup_world_position(horse_id: String) -> Variant:
+	var visual := _horse_visuals.get(horse_id) as Node3D
+	var anchor_root := get_node_or_null("../FixtureLayout/HorseAnchors") as Node3D
+	if visual == null or anchor_root == null:
+		return null
+	var stable_slot_id := str(visual.get_meta("stable_slot_id", ""))
+	for raw_marker in anchor_root.get_children():
+		if not raw_marker is Marker3D:
+			continue
+		var marker := raw_marker as Marker3D
+		if str(marker.get_meta("horse_anchor_id", "")) != stable_slot_id:
+			continue
+		var pickup_center: Variant = marker.get_meta("pickup_center", null)
+		if pickup_center is Vector2:
+			return anchor_root.to_global(Vector3(pickup_center.x, 0.0, pickup_center.y))
+	return null
+
+
+func get_horse_presentation_snapshot(horse_id: String) -> Dictionary:
+	var visual := _horse_visuals.get(horse_id) as Node3D
+	if visual == null or not visual.is_inside_tree() or not visual.visible:
+		return {}
+	var snapshot: Dictionary = visual.debug_get_snapshot() if visual.has_method("debug_get_snapshot") else {}
+	snapshot["horse_anchor_id"] = str(visual.get_meta("horse_anchor_id", ""))
+	snapshot["source_location"] = str(visual.get_meta("source_location", ""))
+	var horse_scale := maxf(0.58, visual.scale.y)
+	snapshot["focus_height"] = 0.68 * horse_scale
+	snapshot["camera_height"] = 0.92 * horse_scale
+	if str(snapshot.get("source_location", "")) == "stable":
+		var aisle_direction := global_position - visual.global_position
+		aisle_direction.y = 0.0
+		if aisle_direction.length_squared() > 0.0001:
+			snapshot["portrait_camera_direction"] = aisle_direction.normalized()
+	return snapshot
+
+
+func _set_horse_animation(visual: Node3D, moving: bool, pause_when_idle: bool = false) -> void:
+	var player := visual.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if player == null:
+		return
+	var clip := _find_horse_animation_clip(player, "Walk" if moving else "Idle")
+	visual.set_meta("moving_animation", moving)
+	visual.set_meta("motion_animation", clip)
+	if pause_when_idle:
+		player.pause()
+		return
+	if clip.is_empty():
+		if not moving:
+			player.pause()
+		return
+	if player.current_animation != clip or not player.is_playing():
+		player.play(clip)
+
+
+func _find_horse_animation_clip(player: AnimationPlayer, suffix: String) -> String:
+	for raw_clip in player.get_animation_list():
+		var clip := str(raw_clip)
+		if clip == suffix or clip.ends_with("|" + suffix) or clip.ends_with("/" + suffix):
+			return clip
+	return ""
 
 
 func _get_available_horse_anchors(anchor_root: Node3D) -> Array[Marker3D]:
@@ -507,39 +633,13 @@ func _create_horse_visual(horse: Dictionary) -> Node3D:
 	var model := packed.instantiate() as Node3D
 	if model == null:
 		return null
-	var root := Node3D.new()
+	var root := HORSE_WORLD_VIEW_SCRIPT.new() as Node3D
 	root.name = "Horse_%s" % str(horse.get("horse_id", "unknown")).to_pascal_case()
-	root.set_meta("horse_id", str(horse.get("horse_id", "")))
-	root.set_meta("authority_role", "real_horse_read_only_projection")
 	model.name = "HorseModel"
 	model.position.y = 0.025
 	model.scale = Vector3(0.46, 0.36, 0.42)
-	root.add_child(model)
-	var tint := Color("#9b7653")
-	if str(horse.get("horse_id", "")).contains("gray"):
-		tint = Color("#a2a09a")
-	_tint_imported_model(model, tint)
+	root.setup_horse(horse, model)
 	return root
-
-
-func _tint_imported_model(model: Node3D, tint: Color) -> void:
-	for raw_mesh in model.find_children("*", "MeshInstance3D", true, false):
-		var mesh_instance := raw_mesh as MeshInstance3D
-		if mesh_instance == null or mesh_instance.mesh == null:
-			continue
-		for surface_index in range(mesh_instance.mesh.get_surface_count()):
-			var source := mesh_instance.get_active_material(surface_index)
-			if not source is BaseMaterial3D:
-				continue
-			var copy := (source as BaseMaterial3D).duplicate() as BaseMaterial3D
-			copy.resource_local_to_scene = true
-			copy.albedo_color = Color(
-				copy.albedo_color.r * tint.r,
-				copy.albedo_color.g * tint.g,
-				copy.albedo_color.b * tint.b,
-				copy.albedo_color.a
-			)
-			mesh_instance.set_surface_override_material(surface_index, copy)
 
 
 func _add_stable_sign(parent: Node3D) -> void:

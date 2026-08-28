@@ -1,0 +1,6 @@
+{
+  "schema_version": "npc_interaction_presentation_v1",
+  "proactive_talk": {
+    "gesture_interval_real_seconds": 5.0
+  }
+}

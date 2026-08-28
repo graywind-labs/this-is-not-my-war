@@ -185,7 +185,7 @@ func _combined_local_bounds(root_node: Node3D) -> AABB:
 	var maximum := Vector3.ZERO
 	for raw_mesh in root_node.find_children("*", "MeshInstance3D", true, false):
 		var mesh := raw_mesh as MeshInstance3D
-		if mesh == null or mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)):
+		if mesh == null or mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh.get_meta("portrait_opaque_shell_proxy", false)):
 			continue
 		var aabb := mesh.get_aabb()
 		for x in [aabb.position.x, aabb.end.x]:
@@ -206,7 +206,7 @@ func _subtree_uses_muted_textured_roof(root_node: Node3D) -> bool:
 	var checked := 0
 	for raw_mesh in root_node.find_children("*", "MeshInstance3D", true, false):
 		var mesh := raw_mesh as MeshInstance3D
-		if mesh == null or mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)):
+		if mesh == null or mesh.mesh == null or bool(mesh.get_meta("persistent_shell_shadow_proxy", false)) or bool(mesh.get_meta("portrait_opaque_shell_proxy", false)):
 			continue
 		for surface_index in range(mesh.mesh.get_surface_count()):
 			var material := mesh.get_active_material(surface_index) as BaseMaterial3D

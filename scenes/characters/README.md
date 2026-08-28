@@ -10,6 +10,10 @@ T0130-P1 新增不带独立碰撞的 `GlenChibiArtView.tscn` 与 `EnemySwordShie
 
 T0130-P1R 确认当前 Synty 可见模型以本地 `+Z` 为正面，而项目运行时合同使用角色根本地 `-Z` 指向目标。共享 `ChibiCharacterPilot.gd` 在 VisualRoot 层固定补偿 `180°`；后续包装不得把该差异写入父级导航、碰撞、工位或攻击朝向。
 
+T0130-P1R2 将格伦非打铁状态的铁锤从 Back/UpperChest 迁到 Mount/Hips，以共享 Transform 在右侧腰间水平收纳，模型正 Y 的锤头端朝角色正面；真实 `work_blacksmith` 仍重挂 RightHand，表现切换不承担行动或生产权威。
+
+T0130-P1R4 取代 P1R3 的颈部伪握点：打铁锤以真实细柄后段局部 `(0,-0.4,0)` 对齐 RightHand，手后保留短柄尾，最近锤头与手保持约 `0.368 m` 分离；非工作腰挂不变。
+
 T0130-P2 新增 `TomaChibiArtView.tscn`：Adventure Peasant 棕白劳动者模型、`Working_B` 循环与右手马刷式清洁工具。生产包装不带碰撞，只有正式 `work_stable` 到岗后显示工具；交谈、受击、昏迷 / 起身和未来 `vehicle_seated` 继续复用共享状态合同。
 
 T0130-P3 新增 `BrunoChibiArtView.tscn`：Adventure ShopKeeper 暖红白围裙厨师模型、`Working_C` 循环与右手木柄铜勺。生产包装不带碰撞，只有正式 `work_dining_hall` 到岗后显示厨具；真实 `seated_eating`、移动、受击和昏迷均隐藏厨具。
@@ -28,6 +32,12 @@ T0130-P6 新增 `MarcelChibiArtView.tscn`：Fantasy Wizard 的年长原生脸、
 
 T0130-P6R 为马塞尔单独开启默认关闭的 Head 灰白低模圆冠，补齐尖帽移除后暴露的平顶。圆冠按目标骨架模型空间校准并随 Head 动作，正面不遮眉眼、侧面与原长发相交；只有一个表现 Mesh，不带碰撞、Area、选择面或玩法状态。
 
+T0130-P6R2 为 Body 木质圣徽增加胸骨朝向补偿，使十字架长轴竖直、短轴水平、正面朝角色外侧；附件仍位于原胸前位置并随 Chest 动作，不带碰撞或玩法状态。
+
 T0130-P7 新增 `LinaChibiArtView.tscn`：Pirates GovDaughter 的束发、原生眉眼、冷蓝长外衣与浅色围裙形成医生轮廓；`medical_kit` 常驻 Body 药包，真实诊所值班以 `Working_B` 显示病历册，真实协助治疗以新增 `medical_treatment / Working_A` 显示绷带。三个附件均无碰撞，生产场景继续复用父级 NPC 实体、交互与导航。
 
 T0130-P8 新增 `OwenChibiArtView.tscn`：Pirates Firstmate 的短壮工头轮廓、原生眉眼 / 胡须与压暗土色工装；`engineering_kit` 常驻 Head 铜框护目镜及 Body 工具带，真实工械装配、外沿修复或升级到位后才以 `Working_A` 显示 RightHand 短扳手。正式剑盾装备继续只读 EquipmentSystem 显隐；场景不带碰撞、选择体、导航或工程结算。
+
+T0130-D1 新增 `NPCDevLab.tscn`，把 8 名初始 NPC 与全部现有敌种集中到单角色开发检视流程，并提供模式、动作、六槽装备和坐骑预览。`ChibiCharacterPilot` 的 `debug_set_equipment_preview(...)` 仅供该独立场景逐实例覆盖剑盾显隐，默认关闭；生产包装仍只读正式档案 / EquipmentSystem。
+
+T0130-D1R7 校准共享剑盾骨挂点：剑整体下移并用模型握柄采样点锁定 RightHand；盾面朝向角色可见正面，盾牌沿自身正面前移 `0.045 m`，使 LeftHand 基准点完整留在按网格半厚度计算的盾背后。开发预览、艾达 / 欧文的权威显隐与剑盾敌军均调用同一创建函数；局部 Transform 与几何快照只承担表现。

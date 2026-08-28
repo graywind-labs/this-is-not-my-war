@@ -24,8 +24,11 @@ func _init() -> void:
 	var fixture_root := clinic.get_node_or_null("FixtureLayout") if clinic != null else null
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
-	if [clinic, art, fixture_root, building_system, npc_system].has(null):
+	var layout_controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
+	if [clinic, art, fixture_root, building_system, npc_system, layout_controller].has(null):
 		_fail("T0131-P3 clinic runtime hierarchy is incomplete")
+		return
+	if not _verify_seated_anchor_offsets(layout_controller, fixture_root, "clinic", "doctor_desk", 2):
 		return
 	var envelope := clinic.get_node_or_null("Envelope") as Node3D
 	var visuals := fixture_root.get_node_or_null("Visuals")
@@ -121,6 +124,30 @@ func _init() -> void:
 	main.queue_free()
 	await process_frame
 	quit(0)
+
+
+func _verify_seated_anchor_offsets(controller: Node, fixture_root: Node, building_id: String, workstation_prefix: String, count: int) -> bool:
+	for index in range(1, count + 1):
+		var workstation_id := "%s_%02d" % [workstation_prefix, index]
+		var route: Dictionary = controller.call("get_building_spatial_route", building_id, workstation_id)
+		var anchor: Vector3 = route.get("occupant_anchor_position", Vector3.ZERO)
+		var fixture_id := str(route.get("target_fixture_id", ""))
+		var chair := fixture_root.get_node_or_null("Visuals/%s" % fixture_id.to_pascal_case()) as Node3D
+		var chair_center := chair.global_position if chair != null else Vector3.ZERO
+		var facing: Vector3 = route.get("occupant_anchor_facing_direction", Vector3.ZERO)
+		var horizontal_delta := anchor - chair_center
+		horizontal_delta.y = 0.0
+		facing.y = 0.0
+		if (
+			route.is_empty()
+			or chair == null
+			or facing.length_squared() <= 0.0001
+			or absf(horizontal_delta.dot(facing.normalized()) - 0.52) > 0.01
+			or (horizontal_delta - facing.normalized() * 0.52).length() > 0.01
+		):
+			_fail("Clinic doctor seat did not preserve the approved forward sitting offset: %s / %s" % [workstation_id, JSON.stringify(route)])
+			return false
+	return true
 
 
 func _verify_level(art: Node3D, snapshot: Dictionary, visuals: Node, collisions: Node, level: int) -> bool:

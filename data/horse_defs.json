@@ -1,15 +1,39 @@
 {
+  "schema_version": "horse_defs_v2",
+  "stable_slots_by_level": {
+    "1": ["stall_01", "stall_02", "horse_anchor_04", "horse_anchor_05", "horse_anchor_06", "horse_anchor_07", "horse_anchor_08"],
+    "2": ["stall_01", "stall_02", "horse_anchor_04", "horse_anchor_05", "horse_anchor_06", "horse_anchor_07", "horse_anchor_08"],
+    "3": ["stall_01", "stall_02", "stall_03", "horse_anchor_04", "horse_anchor_05", "horse_anchor_06", "horse_anchor_07", "horse_anchor_08"]
+  },
+  "horse_templates": [
+    {"template_id": "chestnut_wind", "name": "栗风", "coat_name": "栗褐", "coat_color": "#9B6846", "icon": "res://assets/ui/item_icons/horse/chestnut_wind.png"},
+    {"template_id": "gray_mane", "name": "灰鬃", "coat_name": "暖烟灰", "coat_color": "#645447", "icon": "res://assets/ui/item_icons/horse/gray_mane.png"},
+    {"template_id": "bay_runner", "name": "枣影", "coat_name": "枣红", "coat_color": "#754334", "icon": "res://assets/ui/item_icons/horse/bay_runner.png"},
+    {"template_id": "black_mane", "name": "墨鬃", "coat_name": "乌黑", "coat_color": "#302C2B", "icon": "res://assets/ui/item_icons/horse/black_mane.png"},
+    {"template_id": "snow_star", "name": "雪星", "coat_name": "象牙浅灰", "coat_color": "#AAA59C", "icon": "res://assets/ui/item_icons/horse/snow_star.png"},
+    {"template_id": "red_cloud", "name": "赤云", "coat_name": "红栗", "coat_color": "#8B4D3A", "icon": "res://assets/ui/item_icons/horse/red_cloud.png"},
+    {"template_id": "golden_reed", "name": "金芦", "coat_name": "金骝", "coat_color": "#96784E", "icon": "res://assets/ui/item_icons/horse/golden_reed.png"},
+    {"template_id": "frost_hoof", "name": "霜蹄", "coat_name": "霜褐灰", "coat_color": "#77726D", "icon": "res://assets/ui/item_icons/horse/frost_hoof.png"},
+    {"template_id": "night_arrow", "name": "夜箭", "coat_name": "玄黑", "coat_color": "#26282A", "icon": "res://assets/ui/item_icons/horse/night_arrow.png"},
+    {"template_id": "silver_bell", "name": "银铃", "coat_name": "亮米灰", "coat_color": "#999690", "icon": "res://assets/ui/item_icons/horse/silver_bell.png"},
+    {"template_id": "amber_eye", "name": "琥珀", "coat_name": "暖褐", "coat_color": "#8A5A3B", "icon": "res://assets/ui/item_icons/horse/amber_eye.png"},
+    {"template_id": "ash_tail", "name": "灰尾", "coat_name": "烟褐灰", "coat_color": "#625E59", "icon": "res://assets/ui/item_icons/horse/ash_tail.png"},
+    {"template_id": "copper_flame", "name": "铜焰", "coat_name": "铜栗", "coat_color": "#86513D", "icon": "res://assets/ui/item_icons/horse/copper_flame.png"},
+    {"template_id": "white_socks", "name": "白袜", "coat_name": "亮枣", "coat_color": "#86513C", "icon": "res://assets/ui/item_icons/horse/white_socks.png"},
+    {"template_id": "dune_wind", "name": "沙风", "coat_name": "沙黄", "coat_color": "#927D61", "icon": "res://assets/ui/item_icons/horse/dune_wind.png"},
+    {"template_id": "pine_shadow", "name": "松影", "coat_name": "深褐", "coat_color": "#514039", "icon": "res://assets/ui/item_icons/horse/pine_shadow.png"},
+    {"template_id": "moon_frost", "name": "月霜", "coat_name": "月白米灰", "coat_color": "#B3AFA7", "icon": "res://assets/ui/item_icons/horse/moon_frost.png"},
+    {"template_id": "autumn_fire", "name": "秋火", "coat_name": "橙栗", "coat_color": "#985C41", "icon": "res://assets/ui/item_icons/horse/autumn_fire.png"},
+    {"template_id": "iron_cloud", "name": "铁云", "coat_name": "铁褐灰", "coat_color": "#55524F", "icon": "res://assets/ui/item_icons/horse/iron_cloud.png"},
+    {"template_id": "honey_wind", "name": "蜜风", "coat_name": "蜜金", "coat_color": "#A78355", "icon": "res://assets/ui/item_icons/horse/honey_wind.png"},
+    {"template_id": "dark_tide", "name": "暗潮", "coat_name": "褐青黑", "coat_color": "#332F2C", "icon": "res://assets/ui/item_icons/horse/dark_tide.png"},
+    {"template_id": "maple_leaf", "name": "枫叶", "coat_name": "枫栗", "coat_color": "#82483A", "icon": "res://assets/ui/item_icons/horse/maple_leaf.png"},
+    {"template_id": "mist_step", "name": "雾步", "coat_name": "雾米灰", "coat_color": "#8E8A83", "icon": "res://assets/ui/item_icons/horse/mist_step.png"},
+    {"template_id": "wheat_wave", "name": "麦浪", "coat_name": "麦黄", "coat_color": "#9B855F", "icon": "res://assets/ui/item_icons/horse/wheat_wave.png"}
+  ],
   "initial_horses": [
-    {
-      "horse_id": "horse_chestnut_wind",
-      "name": "栗风",
-      "growth": 0.6
-    },
-    {
-      "horse_id": "horse_gray_mane",
-      "name": "灰鬃",
-      "growth": 0.6
-    }
+    {"horse_id": "horse_chestnut_wind", "template_id": "chestnut_wind", "growth": 0.6},
+    {"horse_id": "horse_gray_mane", "template_id": "gray_mane", "growth": 0.6}
   ],
   "balance": {
     "stable_satiety_loss_per_hour": 0.5,
@@ -30,6 +54,12 @@
     "birth_probability_cap": 1.0,
     "birth_cooldown_minutes": 1440,
     "stable_level_birth_bonus_per_level": 0.1,
-    "care_skill_100_bonus_hp_cap": 20
+    "care_skill_100_bonus_hp_cap": 20,
+    "mount_rendezvous_horse_speed": 7.0,
+    "mount_rendezvous_npc_share": 0.35,
+    "mount_rendezvous_arrival_distance": 0.35,
+    "return_to_stable_speed": 7.0,
+    "mounted_damage_share_min": 0.3,
+    "mounted_damage_share_max": 0.5
   }
 }

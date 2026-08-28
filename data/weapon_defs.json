@@ -2,40 +2,55 @@
   {
     "id": "sword_shield",
     "name": "剑盾",
+    "icon": "res://assets/ui/item_icons/weapon/sword_shield.png",
     "type": "melee",
     "weapon_class": "sword_shield",
     "combat_role": "melee_infantry",
     "equipment_slot": "main_weapon",
     "source_resource_id": "item_sword_shield",
-    "range": 1.6,
+    "range": 1.45,
     "damage": 13,
     "defense": 2.0,
     "penetration": 1.0,
     "attack_speed_modifier": 0.0,
     "attack_interval": 1.35,
+    "melee_contact": {
+      "radius": 0.10,
+      "mounted_range": 0.96,
+      "sample_window_authored_seconds": 0.24,
+      "sample_count": 7
+    },
     "required_skill": "剑盾",
     "tags": ["one_handed", "shield"]
   },
   {
     "id": "polearm",
     "name": "长杆武器",
+    "icon": "res://assets/ui/item_icons/weapon/polearm.png",
     "type": "melee",
     "weapon_class": "polearm",
     "combat_role": "polearm_infantry",
     "equipment_slot": "main_weapon",
     "source_resource_id": "item_polearm",
-    "range": 2.5,
+    "range": 2.98,
     "damage": 15,
     "defense": 0.0,
     "penetration": 3.0,
     "attack_speed_modifier": -0.08,
     "attack_interval": 1.65,
+    "melee_contact": {
+      "radius": 0.11,
+      "mounted_range": 2.66,
+      "sample_window_authored_seconds": 0.26,
+      "sample_count": 8
+    },
     "required_skill": "长杆",
     "tags": ["two_handed", "reach"]
   },
   {
     "id": "bow",
     "name": "弓",
+    "icon": "res://assets/ui/item_icons/weapon/bow.png",
     "type": "ranged",
     "weapon_class": "bow",
     "combat_role": "archer",
@@ -47,12 +62,18 @@
     "penetration": 1.5,
     "attack_speed_modifier": 0.06,
     "attack_interval": 1.5,
+    "projectile": {
+      "speed": 22.0,
+      "gravity": 9.8,
+      "max_lifetime": 3.0
+    },
     "required_skill": "弓",
     "tags": ["wooden", "ranged"]
   },
   {
     "id": "crossbow",
     "name": "弩",
+    "icon": "res://assets/ui/item_icons/weapon/crossbow.png",
     "type": "ranged",
     "weapon_class": "crossbow",
     "combat_role": "crossbowman",
@@ -64,6 +85,11 @@
     "penetration": 5.0,
     "attack_speed_modifier": -0.12,
     "attack_interval": 2.4,
+    "projectile": {
+      "speed": 30.0,
+      "gravity": 9.8,
+      "max_lifetime": 3.0
+    },
     "required_skill": "弩",
     "tags": ["wooden", "ranged"]
   }

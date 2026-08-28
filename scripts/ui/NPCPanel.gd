@@ -45,6 +45,7 @@ const EQUIP_ARMOR_TOOLTIP := "消耗 1 件所选具体盔甲库存。"
 const UNEQUIP_ARMOR_TOOLTIP := "收回当前部位的盔甲并返还同一具体物品。"
 const ASSIGN_HORSE_TOOLTIP := "分配一匹成年、未占用且当前在厩的马；NPC 还需持有主武器。"
 const UNASSIGN_HORSE_TOOLTIP := "取消该 NPC 当前的马匹分配。"
+const LOADOUT_LOCKED_TOOLTIP := "只有工作模式下才能更换装备或马匹。"
 const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
 const DEFAULT_NAME_COLOR := Color.WHITE
 const KNOWLEDGE_SUBJECT_LABELS := {
@@ -294,6 +295,10 @@ func _ready() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.npc_clicked.connect(_on_npc_clicked)
+		if event_bus.has_signal("horse_clicked"):
+			event_bus.horse_clicked.connect(_on_horse_clicked)
+		if event_bus.has_signal("defense_device_clicked"):
+			event_bus.defense_device_clicked.connect(_on_defense_device_clicked)
 		event_bus.npc_state_changed.connect(_on_npc_state_changed)
 		event_bus.npc_memory_changed.connect(_on_npc_memory_changed)
 		event_bus.npc_daily_plan_changed.connect(_on_npc_daily_plan_changed)
@@ -318,7 +323,18 @@ func _setup_portrait_view() -> void:
 	_portrait_view.name = "NPCPortraitView"
 	add_child(_portrait_view)
 	move_child(_portrait_view, 0)
+	if _portrait_view.has_signal("portrait_clicked"):
+		_portrait_view.portrait_clicked.connect(_on_portrait_clicked)
 	_portrait_view.hide_preview()
+
+
+func _on_portrait_clicked(npc_id: String) -> void:
+	if npc_id.is_empty() or npc_id != _current_npc_id or not visible:
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("play_idle_portrait_talk_gesture"):
+		return
+	npc_system.play_idle_portrait_talk_gesture(npc_id)
 
 
 func _setup_panel_scroll() -> void:
@@ -1017,6 +1033,7 @@ func _update_memory_labels(npc_id: String) -> void:
 func _update_interaction_controls(npc: Dictionary) -> void:
 	var states: Dictionary = npc.get("states", {})
 	var is_escaped := bool(states.get("escaped", false))
+	var is_work_mode := str(states.get("behavior_mode", "work")) == "work"
 	var is_deep_sleeping := bool(states.get("first_sleep_summary_active", false))
 	var llm_activity: Dictionary = states.get("llm_activity", {}) if states.get("llm_activity", {}) is Dictionary else {}
 	var is_planning := bool(llm_activity.get("active", false)) and str(llm_activity.get("kind", "")) == "plan"
@@ -1056,25 +1073,25 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	)
 	gift_money_button.disabled = is_escaped or not has_money
 	gift_wine_button.disabled = is_escaped or not has_wine
-	give_weapon_button.disabled = is_escaped or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
-	_set_recruitment_gate_tooltip(give_weapon_button, is_recruited, EQUIP_WEAPON_TOOLTIP)
+	give_weapon_button.disabled = is_escaped or not is_work_mode or not is_recruited or not has_weapon or _get_selected_weapon_id().is_empty()
+	_set_loadout_tooltip(give_weapon_button, is_recruited, is_work_mode, EQUIP_WEAPON_TOOLTIP)
 	if _unequip_weapon_button != null:
-		_unequip_weapon_button.disabled = is_escaped or not is_recruited or not has_main_weapon
-		_set_recruitment_gate_tooltip(_unequip_weapon_button, is_recruited, UNEQUIP_WEAPON_TOOLTIP)
+		_unequip_weapon_button.disabled = is_escaped or not is_work_mode or not is_recruited or not has_main_weapon
+		_set_loadout_tooltip(_unequip_weapon_button, is_recruited, is_work_mode, UNEQUIP_WEAPON_TOOLTIP)
 	if _armor_equip_button != null:
-		_armor_equip_button.disabled = is_escaped or not is_recruited or not has_armor_item or _get_selected_armor_id().is_empty()
-		_set_recruitment_gate_tooltip(_armor_equip_button, is_recruited, EQUIP_ARMOR_TOOLTIP)
+		_armor_equip_button.disabled = is_escaped or not is_work_mode or not is_recruited or not has_armor_item or _get_selected_armor_id().is_empty()
+		_set_loadout_tooltip(_armor_equip_button, is_recruited, is_work_mode, EQUIP_ARMOR_TOOLTIP)
 	if _armor_unequip_button != null:
-		_armor_unequip_button.disabled = is_escaped or not is_recruited or not has_selected_armor_equipped
-		_set_recruitment_gate_tooltip(_armor_unequip_button, is_recruited, UNEQUIP_ARMOR_TOOLTIP)
+		_armor_unequip_button.disabled = is_escaped or not is_work_mode or not is_recruited or not has_selected_armor_equipped
+		_set_loadout_tooltip(_armor_unequip_button, is_recruited, is_work_mode, UNEQUIP_ARMOR_TOOLTIP)
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	var assigned_horse: Dictionary = horse_system.get_assigned_horse_for_npc(str(npc.get("id", _current_npc_id))) if horse_system != null and horse_system.has_method("get_assigned_horse_for_npc") else {}
 	if _horse_assign_button != null:
-		_horse_assign_button.disabled = is_escaped or not is_recruited or not has_main_weapon or _get_selected_horse_id().is_empty()
-		_set_recruitment_gate_tooltip(_horse_assign_button, is_recruited, ASSIGN_HORSE_TOOLTIP)
+		_horse_assign_button.disabled = is_escaped or not is_work_mode or not is_recruited or not has_main_weapon or _get_selected_horse_id().is_empty()
+		_set_loadout_tooltip(_horse_assign_button, is_recruited, is_work_mode, ASSIGN_HORSE_TOOLTIP)
 	if _horse_unassign_button != null:
-		_horse_unassign_button.disabled = is_escaped or not is_recruited or assigned_horse.is_empty()
-		_set_recruitment_gate_tooltip(_horse_unassign_button, is_recruited, UNASSIGN_HORSE_TOOLTIP)
+		_horse_unassign_button.disabled = is_escaped or not is_work_mode or not is_recruited or assigned_horse.is_empty()
+		_set_loadout_tooltip(_horse_unassign_button, is_recruited, is_work_mode, UNASSIGN_HORSE_TOOLTIP)
 	if _strategy_select != null:
 		_strategy_select.disabled = is_escaped or not is_recruited or not has_strategy_options
 		_set_recruitment_gate_tooltip(_strategy_select, is_recruited, COMBAT_STRATEGY_TOOLTIP)
@@ -1084,6 +1101,17 @@ func _set_recruitment_gate_tooltip(control: Control, is_recruited: bool, default
 	if control == null:
 		return
 	control.tooltip_text = default_text if is_recruited else RECRUITMENT_REQUIRED_TOOLTIP
+
+
+func _set_loadout_tooltip(control: Control, is_recruited: bool, is_work_mode: bool, default_text: String) -> void:
+	if control == null:
+		return
+	if not is_recruited:
+		control.tooltip_text = RECRUITMENT_REQUIRED_TOOLTIP
+	elif not is_work_mode:
+		control.tooltip_text = LOADOUT_LOCKED_TOOLTIP
+	else:
+		control.tooltip_text = default_text
 
 
 func _get_escape_dialogue_state(npc_id: String) -> Dictionary:
@@ -1215,6 +1243,8 @@ func _fill_horse_select(npc: Dictionary) -> void:
 		var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
 		if bool(npc.get("states", {}).get("escaped", false)):
 			_set_horse_status("该 NPC 已逃离，不能分配马匹。")
+		elif str(npc.get("states", {}).get("behavior_mode", "work")) != "work":
+			_set_horse_status("战时无法更换装备或马匹。")
 		elif not bool(npc.get("recruited", false)):
 			_set_horse_status("")
 		elif (equipment.get("main_weapon", {}) as Dictionary).is_empty():
@@ -1227,8 +1257,24 @@ func _fill_horse_select(npc: Dictionary) -> void:
 		var location := str(assigned.get("location", "stable"))
 		_set_horse_status("当前分配：%s｜%s" % [
 			str(assigned.get("name", assigned.get("horse_id", "马"))),
-			"在马厩" if location == "stable" else "已骑乘离厩" if location == "ridden" else "位置未知"
+			_format_horse_location(location)
 		])
+
+
+func _format_horse_location(location: String) -> String:
+	match location:
+		"stable":
+			return "在马厩"
+		"approaching_rider":
+			return "正奔向骑手"
+		"ridden":
+			return "已骑乘离厩"
+		"returning_stable":
+			return "正返回马厩"
+		"dead":
+			return "已阵亡"
+		_:
+			return "位置未知"
 
 
 func _set_horse_status(text: String) -> void:
@@ -2247,6 +2293,12 @@ func _on_npc_clicked(npc_id: String) -> void:
 	show_npc(npc_id)
 
 
+func _on_horse_clicked(_horse_id: String) -> void:
+	visible = false
+	_hide_portrait_view()
+	_close_memory_detail_popup()
+
+
 func _on_npc_state_changed(npc_id: String) -> void:
 	if visible and npc_id == _current_npc_id:
 		show_npc(npc_id)
@@ -2334,10 +2386,19 @@ func _on_building_clicked(_building_id: String) -> void:
 	_close_memory_detail_popup()
 
 
+func _on_defense_device_clicked(_deployment_id: String) -> void:
+	visible = false
+	_hide_portrait_view()
+	_close_memory_detail_popup()
+
+
 func _on_close_pressed() -> void:
 	visible = false
 	_hide_portrait_view()
 	_close_memory_detail_popup()
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("world_selection_cleared"):
+		event_bus.world_selection_cleared.emit()
 
 
 func _on_dialogue_pressed() -> void:

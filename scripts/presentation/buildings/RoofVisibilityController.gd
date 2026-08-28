@@ -4,6 +4,9 @@ extends Node
 signal roof_visibility_changed(camera_distance: float, zoom_normalized: float, view_snapshots: Array)
 
 
+const MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER := 19
+const PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER := 18
+
 @export var camera_path: NodePath
 @export var source_near_distance := 18.0
 @export var source_far_distance := 42.0
@@ -55,6 +58,8 @@ func debug_get_snapshot() -> Dictionary:
 		"zoom_normalized": _last_zoom_normalized,
 		"source_near_distance": source_near_distance,
 		"source_far_distance": source_far_distance,
+		"main_camera_shows_fading_shells": _camera != null and _camera.get_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER),
+		"main_camera_hides_portrait_opaque_shells": _camera != null and not _camera.get_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER),
 		"registered_view_count": _views.size(),
 		"views": view_snapshots
 	}
@@ -67,6 +72,9 @@ func debug_apply_distance(camera_distance: float) -> Dictionary:
 
 func _resolve_camera() -> void:
 	_camera = get_node_or_null(camera_path) as Camera3D
+	if _camera != null:
+		_camera.set_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER, true)
+		_camera.set_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER, false)
 
 
 func _discover_views() -> void:
