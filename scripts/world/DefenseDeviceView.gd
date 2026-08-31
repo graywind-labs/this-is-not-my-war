@@ -1,5 +1,8 @@
 extends Node3D
 
+const ACTIVE_INTERACTION_AND_PROJECTILE_LAYER := 6
+const PROJECTILE_COLLISION_LAYER := 2
+
 @onready var model_mount: Node3D = $ModelMount
 @onready var status_label: Label3D = $StatusLabel
 @onready var interaction_area: Area3D = $InteractionArea
@@ -24,6 +27,8 @@ func configure_device(snapshot: Dictionary) -> void:
 	set_meta("deployment_id", _deployment_id)
 	set_meta("device_id", _device_id)
 	set_meta("slot_id", str(snapshot.get("slot_id", "")))
+	interaction_area.set_meta("deployment_id", _deployment_id)
+	interaction_area.set_meta("device_id", _device_id)
 	position = _dict_to_vector3(snapshot.get("position", {}))
 	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
 	var effect: Dictionary = snapshot.get("effect", {}) if snapshot.get("effect", {}) is Dictionary else {}
@@ -34,7 +39,7 @@ func configure_device(snapshot: Dictionary) -> void:
 		float(effect.get("range", 0.0))
 	]
 	status_label.visible = true
-	interaction_area.collision_layer = 4
+	interaction_area.collision_layer = ACTIVE_INTERACTION_AND_PROJECTILE_LAYER
 	interaction_area.input_ray_pickable = true
 
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
@@ -53,6 +58,8 @@ func configure_device_ruin(snapshot: Dictionary) -> void:
 	set_meta("deployment_id", _deployment_id)
 	set_meta("device_id", _device_id)
 	set_meta("slot_id", str(snapshot.get("slot_id", "")))
+	interaction_area.remove_meta("deployment_id")
+	interaction_area.remove_meta("device_id")
 	set_meta("device_ruin", true)
 	position = _dict_to_vector3(snapshot.get("position", {}))
 	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
@@ -113,6 +120,31 @@ func get_combat_projectile_release_snapshot(weapon_type: String) -> Dictionary:
 		snapshot["deployment_id"] = _deployment_id
 		snapshot["device_id"] = _device_id
 	return snapshot
+
+
+func get_combat_projectile_target_snapshot() -> Dictionary:
+	if _is_ruin or interaction_area == null or (interaction_area.collision_layer & PROJECTILE_COLLISION_LAYER) == 0:
+		return {
+			"ready": false,
+			"reason": "defense_device_projectile_target_unavailable",
+			"target_source": "unavailable"
+		}
+	var hit_shape := interaction_area.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if hit_shape == null or hit_shape.disabled or hit_shape.shape == null:
+		return {
+			"ready": false,
+			"reason": "defense_device_projectile_target_shape_unavailable",
+			"target_source": "unavailable"
+		}
+	return {
+		"ready": true,
+		"deployment_id": _deployment_id,
+		"device_id": _device_id,
+		"position": hit_shape.global_position,
+		"target_source": "defense_device_hit_area_center",
+		"target_node_path": str(hit_shape.get_path()),
+		"collision_layer": interaction_area.collision_layer
+	}
 
 
 func get_debug_snapshot() -> Dictionary:

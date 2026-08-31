@@ -15,8 +15,7 @@ const HORSE_VISIBLE_FORWARD_LOCAL := MOUNTED_PRESENTATION_REFERENCE.VISIBLE_FORW
 const MAIN_SCENE_PATH := "res://scenes/main/Main.tscn"
 const ENEMY_MOUNTED_UNIT_TYPES := ["cavalry", "mounted_ranged"]
 const FRIENDLY_MOUNTED_UNCONSCIOUS_ACTION_ID := "friendly_mounted_unconscious"
-const ENEMY_MOUNTED_DEFEAT_ACTION_ID := "mounted_defeat_escape"
-const ENEMY_MOUNTED_ESCAPE_DISTANCE := 24.0
+const ENEMY_MOUNTED_DEFEAT_ACTION_ID := "mounted_shared_defeat"
 
 const SLOT_ORDER := ["main_weapon", "helmet", "chest", "bracers", "greaves", "mount"]
 const SLOT_LABELS := {
@@ -76,7 +75,7 @@ var _mode := "work"
 var _selected_action_id := "idle"
 var _character: Node3D
 var _horse_model: Node3D
-var _last_enemy_mounted_escape_snapshot: Dictionary = {}
+var _last_enemy_mounted_defeat_cleanup_snapshot: Dictionary = {}
 var _rotation_drag_active := false
 var _preview_yaw_degrees := 0.0
 
@@ -266,6 +265,7 @@ func _build_enemy_units() -> void:
 				"side_label": "敌方单位",
 				"role": unit_type,
 				"role_label": _unit_type_label(unit_type),
+				"move_speed": maxf(0.1, float(enemy.get("move_speed", 4.0))),
 				"scene": preview_scene,
 				"action_ids": action_ids,
 				"default_mode": "combat",
@@ -492,9 +492,6 @@ func _build_picker_panel(overlay: Control) -> void:
 	close.focus_mode = Control.FOCUS_NONE
 	close.pressed.connect(func() -> void: _picker_panel.visible = false)
 	header.add_child(close)
-	var note := _new_label("正式模型截图图标｜点击装配", 12, Color("#aeb9b3"))
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	content.add_child(note)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(scroll)
@@ -546,10 +543,14 @@ func _spawn_character(unit: Dictionary) -> void:
 		var mounted_art := ENEMY_MOUNTED_ART_SCRIPT.new() as Node3D
 		mounted_art.name = "PreviewCharacter"
 		_character_mount.add_child(mounted_art)
-		mounted_art.setup(rider_or_character, str(unit.get("id", "enemy_preview")), str(unit.get("role", "cavalry")))
+		mounted_art.setup(
+			rider_or_character,
+			str(unit.get("id", "enemy_preview")),
+			str(unit.get("role", "cavalry"))
+		)
 		if rider_or_character.has_method("debug_set_equipment_preview"):
 			rider_or_character.call("debug_set_equipment_preview", fixed_weapon_id, true)
-		mounted_art.escape_completed.connect(_on_enemy_mounted_escape_completed)
+		mounted_art.defeat_cleanup_completed.connect(_on_enemy_mounted_defeat_cleanup_completed)
 		_character = mounted_art
 		_apply_enemy_mounted_profile(100, false, "idle")
 	else:
@@ -657,9 +658,7 @@ func _apply_enemy_mounted_action(unit: Dictionary) -> void:
 	if _selected_action_id == ENEMY_MOUNTED_DEFEAT_ACTION_ID:
 		_character.set_movement_active(false, 0.0)
 		_apply_enemy_mounted_profile(0, true, "unconscious")
-		var escape_direction := (_character_mount.global_basis * Vector3.RIGHT).normalized()
-		var escape_target := _character.global_position + escape_direction * ENEMY_MOUNTED_ESCAPE_DISTANCE
-		_character.begin_mounted_defeat_escape(escape_target)
+		_character.begin_mounted_shared_defeat()
 		return
 	_character.set_movement_active(false, 0.0)
 	match _selected_action_id:
@@ -681,7 +680,7 @@ func _apply_enemy_mounted_action(unit: Dictionary) -> void:
 func _ensure_enemy_mounted_preview(unit: Dictionary) -> bool:
 	if is_instance_valid(_character) and _character.has_method("debug_get_snapshot"):
 		var snapshot: Dictionary = _character.debug_get_snapshot()
-		if str(snapshot.get("escape_phase", "mounted")) == "mounted":
+		if str(snapshot.get("defeat_phase", "mounted")) == "mounted":
 			return true
 	_spawn_character(unit)
 	return is_instance_valid(_character)
@@ -704,11 +703,11 @@ func _apply_enemy_mounted_profile(hp: int, unconscious: bool, current_action: St
 	})
 
 
-func _on_enemy_mounted_escape_completed(snapshot: Dictionary) -> void:
-	_last_enemy_mounted_escape_snapshot = snapshot.duplicate(true)
+func _on_enemy_mounted_defeat_cleanup_completed(snapshot: Dictionary) -> void:
+	_last_enemy_mounted_defeat_cleanup_snapshot = snapshot.duplicate(true)
 	if str(snapshot.get("enemy_id", "")) == _selected_unit_id:
 		_character = null
-		_status_label.text = "%s｜骑手坠亡完成｜马匹已逃出检视范围并释放\n再次点击任一动作即可重新生成正式骑兵包装。" % str((_units_by_id.get(_selected_unit_id, {}) as Dictionary).get("display_name", "敌方骑兵"))
+		_status_label.text = "%s｜骑手与马匹原地阵亡｜尸体已同步清理\n再次点击任一动作即可重新生成正式骑兵包装。" % str((_units_by_id.get(_selected_unit_id, {}) as Dictionary).get("display_name", "敌方骑兵"))
 
 
 func _on_equipment_slot_pressed(slot: String) -> void:
@@ -1258,8 +1257,8 @@ func debug_get_snapshot() -> Dictionary:
 		"uses_formal_enemy_mount": formal_enemy_mount,
 		"enemy_mount_has_independent_hp": bool(character_snapshot.get("horse_has_independent_hp", false)) if formal_enemy_mount else null,
 		"enemy_mount_damage_routing": str(character_snapshot.get("damage_routing", "")) if formal_enemy_mount else "",
-		"enemy_mount_escape_phase": str(character_snapshot.get("escape_phase", "")) if formal_enemy_mount else "",
-		"last_enemy_mounted_escape": _last_enemy_mounted_escape_snapshot.duplicate(true),
+		"enemy_mount_defeat_phase": str(character_snapshot.get("defeat_phase", "")) if formal_enemy_mount else "",
+		"last_enemy_mounted_defeat_cleanup": _last_enemy_mounted_defeat_cleanup_snapshot.duplicate(true),
 		"horse_animation": horse_animation,
 		"horse_root_position": Vector3(character_snapshot.get("horse_local_position", Vector3.ZERO)) if formal_enemy_mount else _horse_mount.position,
 		"horse_model_scale": Vector3(character_snapshot.get("horse_scale", Vector3.ZERO)) if formal_enemy_mount else (_horse_model.scale if is_instance_valid(_horse_model) else Vector3.ZERO),
@@ -1302,7 +1301,7 @@ func debug_end_rotation_drag() -> Dictionary:
 	return debug_get_snapshot()
 
 
-func debug_advance_enemy_mounted_escape(seconds: float) -> Dictionary:
-	if is_instance_valid(_character) and _character.has_method("debug_advance_escape"):
-		_character.debug_advance_escape(seconds)
+func debug_advance_enemy_mounted_defeat(seconds: float) -> Dictionary:
+	if is_instance_valid(_character) and _character.has_method("debug_advance_defeat"):
+		_character.debug_advance_defeat(seconds)
 	return debug_get_snapshot()

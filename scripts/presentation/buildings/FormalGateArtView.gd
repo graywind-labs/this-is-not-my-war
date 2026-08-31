@@ -4,6 +4,7 @@ extends Node3D
 
 const ACTOR_COLLISION_MASK := 2
 const WORLD_COLLISION_LAYER := 1
+const ENEMY_GATE_COMBAT_CONTACT_LAYER := 8
 const OPEN_ANGLE_DEGREES := 92.0
 const OPEN_SPEED_DEGREES_PER_SECOND := 105.0
 const CLOSE_HOLD_SECONDS := 1.15
@@ -22,7 +23,10 @@ var display_name := "正门"
 var clear_width := 6.0
 var clear_height := 3.2
 var is_front_gate := true
+var disable_leaf_collision_while_enemy_present := false
 var _sensor: Area3D
+var _combat_contact_area: Area3D
+var _door_plane_local_z := 0.0
 var _left_hinge: AnimatableBody3D
 var _right_hinge: AnimatableBody3D
 var _level_two: Node3D
@@ -31,6 +35,7 @@ var _close_hold_remaining := 0.0
 var _destroyed := false
 var _collapse_fraction := 0.0
 var _recovery_hp_ratio := 0.01
+var _leaf_collisions_enabled := true
 var _material_cache: Dictionary = {}
 
 
@@ -40,18 +45,42 @@ func configure(config: Dictionary) -> void:
 	clear_width = float(config.get("clear_width", 5.0))
 	clear_height = float(config.get("height", 2.8))
 	is_front_gate = gate_id == "front_gate"
+	disable_leaf_collision_while_enemy_present = bool(
+		config.get("disable_leaf_collision_while_enemy_present", false)
+	)
 
 
 func _ready() -> void:
+	add_to_group("building_art_view")
 	set_meta("building_id", gate_id)
 	set_meta("art_revision", "t0132_p3r_timber_stockade")
 	set_meta("authority_role", "presentation_and_physical_door_only")
 	set_meta("enemy_can_trigger", false)
 	_build_gatehouse()
 	_build_actor_sensor()
+	_build_combat_contact_area()
 	_bind_building_state()
 	call_deferred("_refresh_building_state")
 	set_physics_process(true)
+
+
+func get_building_interaction_ray_hit(ray_origin: Vector3, ray_end: Vector3) -> Dictionary:
+	var bounds_size := Vector3(
+		10.9 if is_front_gate else 8.5,
+		5.9 if is_front_gate else 4.4,
+		4.1 if is_front_gate else 3.1
+	)
+	var bounds := AABB(Vector3(-bounds_size.x * 0.5, 0.0, -bounds_size.z * 0.5), bounds_size)
+	var local_hit: Variant = bounds.intersects_segment(to_local(ray_origin), to_local(ray_end))
+	if local_hit == null:
+		return {}
+	var global_hit := to_global(local_hit as Vector3)
+	return {
+		"building_id": gate_id,
+		"distance": ray_origin.distance_to(global_hit),
+		"global_position": global_hit,
+		"interior_revealed": false
+	}
 
 
 func _physics_process(delta: float) -> void:
@@ -65,8 +94,7 @@ func _physics_process(delta: float) -> void:
 		_apply_door_pose()
 		return
 	var friendly_near := _has_friendly_in_sensor()
-	var combat_locked := is_front_gate and _has_active_enemies()
-	var open_requested := friendly_near and not combat_locked
+	var open_requested := friendly_near
 	if open_requested:
 		_close_hold_remaining = CLOSE_HOLD_SECONDS
 	elif _close_hold_remaining > 0.0:
@@ -82,6 +110,10 @@ func _physics_process(delta: float) -> void:
 
 
 func debug_get_snapshot() -> Dictionary:
+	var active_enemy_count := _get_active_enemy_count()
+	var enemy_presence_collision_override := (
+		disable_leaf_collision_while_enemy_present and active_enemy_count > 0
+	)
 	return {
 		"gate_id": gate_id,
 		"display_name": display_name,
@@ -96,7 +128,13 @@ func debug_get_snapshot() -> Dictionary:
 		"open_fraction": _open_fraction,
 		"friendly_near": _has_friendly_in_sensor(),
 		"enemy_can_trigger": false,
-		"combat_locked": is_front_gate and _has_active_enemies(),
+		"combat_locked": false,
+		"friendly_sensor_active_during_combat": true,
+		"disable_leaf_collision_while_enemy_present": disable_leaf_collision_while_enemy_present,
+		"active_enemy_count": active_enemy_count,
+		"enemy_presence_collision_override": enemy_presence_collision_override,
+		"fixed_combat_contact_area": _combat_contact_area != null,
+		"leaf_collisions_enabled": _leaf_collisions_enabled,
 		"destroyed": _destroyed,
 		"collapse_fraction": _collapse_fraction,
 		"recovery_hp_ratio": _recovery_hp_ratio,
@@ -214,8 +252,9 @@ func _build_tower_timber_frame(parent: Node3D, center_x: float, tower_height: fl
 func _build_door_leaves(wood: Color, iron: Color, tower_depth: float) -> void:
 	var leaf_width := clear_width * 0.5 - 0.035
 	var leaf_height := clear_height - (0.22 if is_front_gate else 0.08)
-	_left_hinge = _make_hinge("LeftDoorHinge", Vector3(-clear_width * 0.5, 0.0, tower_depth * 0.12))
-	_right_hinge = _make_hinge("RightDoorHinge", Vector3(clear_width * 0.5, 0.0, tower_depth * 0.12))
+	_door_plane_local_z = tower_depth * 0.12
+	_left_hinge = _make_hinge("LeftDoorHinge", Vector3(-clear_width * 0.5, 0.0, _door_plane_local_z))
+	_right_hinge = _make_hinge("RightDoorHinge", Vector3(clear_width * 0.5, 0.0, _door_plane_local_z))
 	_build_door_leaf(_left_hinge, "LeftDoorLeaf", leaf_width, leaf_height, leaf_width * 0.5, wood, iron)
 	_build_door_leaf(_right_hinge, "RightDoorLeaf", leaf_width, leaf_height, -leaf_width * 0.5, wood, iron)
 	_apply_door_pose()
@@ -268,9 +307,35 @@ func _build_actor_sensor() -> void:
 	shape_node.name = "SensorShape"
 	shape_node.position = Vector3(0.0, 1.35, 0.0)
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(clear_width + 3.4, 3.0, 8.2 if is_front_gate else 7.0)
+	# Give the front leaves enough lead time to rotate clear before an unmounted
+	# horse reaches their sweep. This also keeps the door from adding a physical
+	# shove above HorseSystem's configured walking/running speed.
+	shape.size = Vector3(clear_width + 3.4, 3.0, 14.0 if is_front_gate else 7.0)
 	shape_node.shape = shape
 	_sensor.add_child(shape_node)
+
+
+func _build_combat_contact_area() -> void:
+	if not is_front_gate:
+		return
+	_combat_contact_area = Area3D.new()
+	_combat_contact_area.name = "FixedGateCombatContactArea"
+	_combat_contact_area.collision_layer = ENEMY_GATE_COMBAT_CONTACT_LAYER
+	_combat_contact_area.collision_mask = 0
+	_combat_contact_area.monitoring = false
+	_combat_contact_area.monitorable = true
+	_combat_contact_area.input_ray_pickable = false
+	_combat_contact_area.set_meta("building_id", gate_id)
+	_combat_contact_area.set_meta("collision_category", "gate_combat_contact")
+	_combat_contact_area.set_meta("physical_blocking", false)
+	add_child(_combat_contact_area)
+	var shape_node := CollisionShape3D.new()
+	shape_node.name = "CombatContactShape"
+	shape_node.position = Vector3(0.0, (clear_height - 0.22) * 0.5, _door_plane_local_z)
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(clear_width, clear_height - 0.22, 0.24)
+	shape_node.shape = shape
+	_combat_contact_area.add_child(shape_node)
 
 
 func _has_friendly_in_sensor() -> bool:
@@ -287,12 +352,9 @@ func _is_friendly_body(body: Node) -> bool:
 		return false
 	if body.has_meta("enemy_id"):
 		return false
-	return body.has_meta("npc_id") or body is MerchantWagon
-
-
-func _has_active_enemies() -> bool:
-	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
-	return combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.call("get_active_enemy_count")) > 0
+	if body.has_meta("npc_id"):
+		return not body.has_method("is_unconscious") or not bool(body.call("is_unconscious"))
+	return body.has_meta("horse_id") or body is MerchantWagon
 
 
 func _bind_building_state() -> void:
@@ -319,10 +381,13 @@ func _refresh_building_state() -> void:
 	_destroyed = bool(building.get("destruction_latched", int(building.get("hp", 1)) <= 0))
 	if _level_two != null:
 		_level_two.visible = int(building.get("level", 1)) >= 2
-	_set_leaf_collisions_enabled(not _destroyed)
+	_set_leaf_collisions_enabled(_should_enable_leaf_collisions())
 
 
 func _set_leaf_collisions_enabled(enabled: bool) -> void:
+	if _leaf_collisions_enabled == enabled:
+		return
+	_leaf_collisions_enabled = enabled
 	for hinge in [_left_hinge, _right_hinge]:
 		if hinge == null:
 			continue
@@ -330,7 +395,26 @@ func _set_leaf_collisions_enabled(enabled: bool) -> void:
 			(raw_shape as CollisionShape3D).set_deferred("disabled", not enabled)
 
 
+func _should_enable_leaf_collisions() -> bool:
+	if _destroyed:
+		return false
+	if disable_leaf_collision_while_enemy_present and _get_active_enemy_count() > 0:
+		return false
+	return not is_front_gate or _open_fraction <= 0.0001
+
+
+func _get_active_enemy_count() -> int:
+	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
+	if combat_system == null or not combat_system.has_method("get_active_enemy_count"):
+		return 0
+	return maxi(0, int(combat_system.call("get_active_enemy_count")))
+
+
 func _apply_door_pose() -> void:
+	# Rotating AnimatableBody leaves can push actors sideways or add velocity.
+	# Keep them non-physical for the entire open/close motion and while open;
+	# the isolated fixed combat Area remains authoritative for enemy gate hits.
+	_set_leaf_collisions_enabled(_should_enable_leaf_collisions())
 	if _left_hinge != null:
 		_left_hinge.rotation = Vector3(
 			deg_to_rad(86.0 * _collapse_fraction),

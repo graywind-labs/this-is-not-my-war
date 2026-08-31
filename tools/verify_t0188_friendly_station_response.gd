@@ -91,6 +91,11 @@ func _run_verification() -> void:
 
 	# Assigned riders must enter combat but keep the horse pickup route as the only
 	# action allowed before mounted readiness is reported.
+	combat_system._complete_npc_avoidance(MOUNTED_NPC_ID, "t0188_mounted_fixture_reset")
+	npc_system.set_npc_behavior_mode(MOUNTED_NPC_ID, "work", "t0188_mounted_fixture_reset", {
+		"force_idle": true,
+		"request_plan_reevaluation": false
+	})
 	npc_system.set_npc_recruited(MOUNTED_NPC_ID, true)
 	_check(bool(equipment_system.equip_npc_main_weapon(MOUNTED_NPC_ID, "sword_shield", "private").get("ok", false)), "T0188 failed to arm mounted responder")
 	var mount_result: Dictionary = equipment_system.equip_npc_mount(MOUNTED_NPC_ID, "", "private")

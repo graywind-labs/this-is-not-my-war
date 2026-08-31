@@ -57,40 +57,48 @@ func _init() -> void:
 	snapshot = lab.debug_trigger_action("hit_react")
 	await process_frame
 	snapshot = lab.debug_get_snapshot()
-	_assert(str((snapshot.get("character", {}) as Dictionary).get("desired_state", "")) == "mounted_hit_react", "cavalry hit preview should use the production mounted hit reaction")
+	cavalry_character = snapshot.get("character", {})
+	_assert(int(cavalry_character.get("damage_feedback_count", 0)) >= 1, "cavalry hit preview should trigger the production mounted impact feedback")
+	_assert(str(cavalry_character.get("desired_state", "")) == "vehicle_seated", "mounted impact feedback should not counterfeit locomotion before defeat")
 
-	snapshot = lab.debug_trigger_action("mounted_defeat_escape")
+	snapshot = lab.debug_trigger_action("mounted_shared_defeat")
 	await process_frame
 	snapshot = lab.debug_get_snapshot()
 	var defeat: Dictionary = snapshot.get("character", {})
-	_assert(str(defeat.get("escape_phase", "")) == "fleeing_to_map_edge", "defeat acceptance action should start the real horse escape state")
-	_assert(bool(defeat.get("mounted_fall_active", false)), "defeat acceptance action should start the rider fall at the same time")
+	_assert(str(defeat.get("defeat_phase", "")) == "bodies_lingering", "defeat acceptance action should start the shared corpse linger state")
+	_assert(bool(defeat.get("mounted_fall_active", false)), "defeat acceptance action should start the rider fall")
 	_assert(str(defeat.get("current_clip", "")) == "Death_A", "mounted enemy defeat should reuse the agreed Death_A clip")
+	_assert(str(defeat.get("horse_animation", "")) == "Death", "mounted enemy horse should play its real Death clip")
+	var defeat_root_origin := Vector3(defeat.get("defeat_world_origin", Vector3.ZERO))
+	var horse_origin := Vector3(defeat.get("horse_defeat_world_origin", Vector3.ZERO))
 
 	await create_timer(0.46).timeout
 	snapshot = lab.debug_get_snapshot()
 	defeat = snapshot.get("character", {})
 	_assert(float(defeat.get("mounted_fall_progress", 0.0)) >= 0.35, "DevLab should expose a readable airborne rider phase")
-	_assert(float(defeat.get("escape_distance", 0.0)) > 2.0, "horse should visibly leave the rider while the fall advances")
+	_assert(Vector3(defeat.get("root_world_position", Vector3.ZERO)).distance_to(defeat_root_origin) <= 0.001, "rider corpse root should remain at the defeat location")
+	_assert(Vector3(defeat.get("horse_world_position", Vector3.ZERO)).distance_to(horse_origin) <= 0.001, "horse corpse should remain at the defeat location")
+	_assert(str(defeat.get("horse_animation", "")) == "Death", "horse must not return to Walk / Gallop while lingering")
+	_assert(not defeat.has("escape_target") and not defeat.has("escape_speed_mps"), "retired horse escape authority should not remain in the snapshot")
 
-	snapshot = lab.debug_advance_enemy_mounted_escape(60.0)
-	var released: Dictionary = snapshot.get("last_enemy_mounted_escape", {})
-	_assert(str(released.get("escape_phase", "")) == "released_outside_map", "formal wrapper should release the horse after it leaves the DevLab view")
-	_assert(bool(released.get("released_outside_map", false)), "released snapshot should retain the outside-map fact")
+	snapshot = lab.debug_advance_enemy_mounted_defeat(60.0)
+	var cleaned: Dictionary = snapshot.get("last_enemy_mounted_defeat_cleanup", {})
+	_assert(str(cleaned.get("defeat_phase", "")) == "cleaned_up", "formal wrapper should clean both bodies after the shared linger time")
+	_assert(bool(cleaned.get("cleanup_completed", false)), "cleanup snapshot should retain the shared completion fact")
 
 	snapshot = lab.debug_trigger_action("mounted_pose")
 	for _frame in 30:
 		await process_frame
 	snapshot = lab.debug_get_snapshot()
 	_assert_formal_mount(snapshot, "replayed cavalry")
-	_assert(str((snapshot.get("character", {}) as Dictionary).get("escape_phase", "")) == "mounted", "clicking another action should respawn the formal mounted wrapper for replay")
+	_assert(str((snapshot.get("character", {}) as Dictionary).get("defeat_phase", "")) == "mounted", "clicking another action should respawn the formal mounted wrapper for replay")
 
 	snapshot = lab.debug_select_unit("enemy:raider_archer")
 	await process_frame
 	snapshot = lab.debug_get_snapshot()
 	_assert(not bool(snapshot.get("mount_visible", false)), "ordinary ranged enemy must not inherit a horse")
 	_assert(not bool(snapshot.get("uses_formal_enemy_mount", false)), "ordinary ranged enemy must not use EnemyMountedArtView")
-	_assert(not (snapshot.get("usable_actions", []) as Array).has("mounted_defeat_escape"), "ordinary enemy must not expose mounted defeat acceptance")
+	_assert(not (snapshot.get("usable_actions", []) as Array).has("mounted_shared_defeat"), "ordinary enemy must not expose mounted defeat acceptance")
 
 	snapshot = lab.debug_select_unit("enemy:raider_mounted_archer")
 	for _frame in 30:

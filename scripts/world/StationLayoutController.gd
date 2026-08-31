@@ -239,14 +239,203 @@ func get_formal_world_origin() -> Vector3:
 func is_world_position_inside_station(world_position: Vector3) -> bool:
 	if not is_instance_valid(_formal_root):
 		return false
-	var station := _layout.get("station", {}) as Dictionary
-	var polygon := PackedVector2Array()
-	for raw_point in station.get("interior_polygon", []):
-		polygon.append(_v2(raw_point))
+	var polygon := _get_station_interior_polygon()
 	if polygon.size() < 3:
 		return false
 	var local_position := _formal_root.to_local(world_position)
 	return Geometry2D.is_point_in_polygon(Vector2(local_position.x, local_position.z), polygon)
+
+
+func get_front_gate_inside_avoidance_target() -> Dictionary:
+	if not is_instance_valid(_formal_root) or not _production_navigation_map.is_valid():
+		return {"ok": false, "reason": "station_navigation_unavailable"}
+	var response := get_friendly_station_response_config()
+	var reentry := response.get("outside_avoidance_reentry", {}) as Dictionary
+	if str(reentry.get("schema", "")) != "front_gate_inside_reentry_v1":
+		return {"ok": false, "reason": "outside_avoidance_reentry_config_missing"}
+	var gate_id := str(reentry.get("gate_id", "front_gate"))
+	var station := _layout.get("station", {}) as Dictionary
+	var gate := station.get(gate_id, {}) as Dictionary
+	var gate_root := _formal_root.get_node_or_null(
+		"WallsAndGates/%s" % str(gate.get("id", gate_id)).to_pascal_case()
+	) as Node3D
+	if gate.is_empty() or gate_root == null:
+		return {"ok": false, "reason": "front_gate_geometry_missing"}
+	var inside_direction := gate_root.global_basis * Vector3.FORWARD
+	inside_direction.y = 0.0
+	if inside_direction.length_squared() <= 0.0001:
+		return {"ok": false, "reason": "front_gate_inside_direction_invalid"}
+	inside_direction = inside_direction.normalized()
+	var inside_offset := maxf(0.5, float(reentry.get("inside_offset", 5.0)))
+	var desired_position := gate_root.global_position + inside_direction * inside_offset
+	var resolved_position := NavigationServer3D.map_get_closest_point(
+		_production_navigation_map,
+		desired_position
+	)
+	if not is_world_position_inside_station(resolved_position):
+		return {
+			"ok": false,
+			"reason": "front_gate_inside_target_outside_station",
+			"desired_position": desired_position,
+			"position": resolved_position
+		}
+	if not get_building_area_overlap(resolved_position, 0.4).is_empty():
+		return {
+			"ok": false,
+			"reason": "front_gate_inside_target_overlaps_entity",
+			"desired_position": desired_position,
+			"position": resolved_position
+		}
+	return {
+		"ok": true,
+		"schema": "front_gate_inside_avoidance_target_v1",
+		"reason": "front_gate_inside_navigation_resolved",
+		"gate_id": gate_id,
+		"position": resolved_position,
+		"desired_position": desired_position,
+		"inside_direction": inside_direction,
+		"inside_offset": inside_offset,
+		"navigation_adjusted": resolved_position.distance_to(desired_position) > 0.05
+	}
+
+
+func resolve_station_avoidance_navigation_target(
+	origin_world_position: Vector3,
+	desired_world_position: Vector3,
+	boundary_inset: float = 1.25
+) -> Dictionary:
+	if not is_instance_valid(_formal_root) or not _production_navigation_map.is_valid():
+		return {"ok": false, "reason": "station_navigation_unavailable"}
+	var polygon := _get_station_interior_polygon()
+	if polygon.size() < 3:
+		return {"ok": false, "reason": "station_interior_polygon_missing"}
+	var origin_local_3d := _formal_root.to_local(origin_world_position)
+	var desired_local_3d := _formal_root.to_local(desired_world_position)
+	var origin_local := Vector2(origin_local_3d.x, origin_local_3d.z)
+	var desired_local := Vector2(desired_local_3d.x, desired_local_3d.z)
+	var safe_origin := origin_local
+	if not Geometry2D.is_point_in_polygon(safe_origin, polygon):
+		var closest_origin_boundary := _get_closest_point_on_polygon(safe_origin, polygon)
+		var polygon_center := _get_polygon_average(polygon)
+		var inward_from_boundary := polygon_center - closest_origin_boundary
+		if inward_from_boundary.length_squared() <= 0.0001:
+			inward_from_boundary = polygon_center - safe_origin
+		safe_origin = closest_origin_boundary + inward_from_boundary.normalized() * maxf(0.1, boundary_inset)
+	var boundary_limited := not Geometry2D.is_point_in_polygon(desired_local, polygon)
+	var interior_candidate := desired_local
+	if boundary_limited:
+		var segment_direction := desired_local - safe_origin
+		var closest_intersection: Variant = null
+		var closest_intersection_distance := INF
+		for index in range(polygon.size()):
+			var edge_start := polygon[index]
+			var edge_end := polygon[(index + 1) % polygon.size()]
+			var intersection: Variant = Geometry2D.segment_intersects_segment(
+				safe_origin,
+				desired_local,
+				edge_start,
+				edge_end
+			)
+			if not intersection is Vector2:
+				continue
+			var intersection_point: Vector2 = intersection
+			var intersection_distance := safe_origin.distance_to(intersection_point)
+			if intersection_distance <= 0.001 or intersection_distance >= closest_intersection_distance:
+				continue
+			closest_intersection = intersection_point
+			closest_intersection_distance = intersection_distance
+		if closest_intersection is Vector2 and segment_direction.length_squared() > 0.0001:
+			var inset_distance := minf(maxf(0.1, boundary_inset), maxf(0.1, closest_intersection_distance - 0.1))
+			interior_candidate = closest_intersection - segment_direction.normalized() * inset_distance
+		else:
+			interior_candidate = safe_origin
+	var origin_navigation := NavigationServer3D.map_get_closest_point(
+		_production_navigation_map,
+		origin_world_position
+	)
+	var resolved_position := origin_navigation
+	var resolved := false
+	var attempts := 0
+	# The first sample preserves the full weighted flee direction. Later samples
+	# only retreat toward the NPC when a building, wall edge, or disconnected
+	# polygon makes that point unusable.
+	for attempt in range(13):
+		attempts = attempt + 1
+		var blend := float(attempt) / 12.0
+		var sample_local := interior_candidate.lerp(safe_origin, blend)
+		var sample_world := _formal_root.to_global(Vector3(sample_local.x, origin_local_3d.y, sample_local.y))
+		var snapped := NavigationServer3D.map_get_closest_point(_production_navigation_map, sample_world)
+		if not is_world_position_inside_station(snapped):
+			continue
+		# The production NavigationMap can intentionally include enterable building
+		# floors. Avoidance destinations are outdoor holding points, so reject every
+		# authored solid envelope and keep sampling back toward the NPC until the
+		# target sits beside the obstruction.
+		if not get_building_area_overlap(snapped, 0.4).is_empty():
+			continue
+		var path := NavigationServer3D.map_get_path(
+			_production_navigation_map,
+			origin_navigation,
+			snapped,
+			true
+		)
+		if path.is_empty() and origin_navigation.distance_to(snapped) > 0.25:
+			continue
+		resolved_position = snapped
+		resolved = true
+		break
+	if not resolved:
+		return {
+			"ok": false,
+			"reason": "station_avoidance_navigation_target_unreachable",
+			"desired_position": desired_world_position,
+			"boundary_limited": boundary_limited,
+			"attempts": attempts
+		}
+	return {
+		"ok": true,
+		"reason": "station_navigation_resolved",
+		"position": resolved_position,
+		"desired_position": desired_world_position,
+		"boundary_limited": boundary_limited,
+		"navigation_adjusted": Vector2(resolved_position.x, resolved_position.z).distance_to(
+			Vector2(desired_world_position.x, desired_world_position.z)
+		) > 0.05,
+		"attempts": attempts
+	}
+
+
+func _get_station_interior_polygon() -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	var station := _layout.get("station", {}) as Dictionary
+	for raw_point in station.get("interior_polygon", []):
+		polygon.append(_v2(raw_point))
+	return polygon
+
+
+func _get_closest_point_on_polygon(point: Vector2, polygon: PackedVector2Array) -> Vector2:
+	var closest := point
+	var closest_distance := INF
+	for index in range(polygon.size()):
+		var candidate := Geometry2D.get_closest_point_to_segment(
+			point,
+			polygon[index],
+			polygon[(index + 1) % polygon.size()]
+		)
+		var distance := point.distance_squared_to(candidate)
+		if distance < closest_distance:
+			closest_distance = distance
+			closest = candidate
+	return closest
+
+
+func _get_polygon_average(polygon: PackedVector2Array) -> Vector2:
+	if polygon.is_empty():
+		return Vector2.ZERO
+	var total := Vector2.ZERO
+	for point in polygon:
+		total += point
+	return total / float(polygon.size())
 
 
 func get_friendly_station_response_config() -> Dictionary:
@@ -305,7 +494,42 @@ func get_actor_motion_profile(profile_id: String) -> Dictionary:
 
 
 func get_building_combat_geometry(building_id: String) -> Dictionary:
-	if not is_instance_valid(_formal_root) or not _building_roots.has(building_id):
+	if not is_instance_valid(_formal_root):
+		return {}
+	var station := _layout.get("station", {}) as Dictionary
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	if building_id in ["front_gate", "back_gate"]:
+		var gate := station.get(building_id, {}) as Dictionary
+		var gate_root := _formal_root.get_node_or_null(
+			"WallsAndGates/%s" % str(gate.get("id", building_id)).to_pascal_case()
+		) as Node3D
+		if gate.is_empty() or gate_root == null:
+			return {}
+		var gate_right := gate_root.global_basis * Vector3.RIGHT
+		var gate_forward := gate_root.global_basis * Vector3.BACK
+		gate_right.y = 0.0
+		gate_forward.y = 0.0
+		if gate_right.length_squared() <= 0.0001 or gate_forward.length_squared() <= 0.0001:
+			return {}
+		var tower_collision := gate.get("tower_collision", {}) as Dictionary
+		var tower_size := _v3(tower_collision.get(
+			"size",
+			[float(structural.get("gate_post_width", 1.2)), float(gate.get("height", 1.4)), 1.4]
+		))
+		return {
+			"schema": "gate_combat_geometry_v1",
+			"building_id": building_id,
+			"center": gate_root.global_position,
+			"size": Vector2(
+				float(gate.get("clear_width", 0.0)) + tower_size.x * 2.0,
+				maxf(1.4, tower_size.z)
+			),
+			"right_direction": gate_right.normalized(),
+			"forward_direction": gate_forward.normalized(),
+			"front_door_clear_width": maxf(0.0, float(gate.get("clear_width", 0.0))),
+			"wall_thickness": maxf(1.4, tower_size.z),
+		}
+	if not _building_roots.has(building_id):
 		return {}
 	var building := _find_building_definition(building_id)
 	var building_root := _building_roots.get(building_id) as Node3D
@@ -322,7 +546,6 @@ func get_building_combat_geometry(building_id: String) -> Dictionary:
 	forward_direction.y = 0.0
 	if right_direction.length_squared() <= 0.0001 or forward_direction.length_squared() <= 0.0001:
 		return {}
-	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
 	return {
 		"schema": "oriented_building_combat_geometry_v1",
 		"building_id": building_id,
@@ -684,6 +907,138 @@ func get_building_spatial_route(building_id: String, position_id: String = "") -
 	return result
 
 
+func get_enterable_building_at_world_position(world_position: Vector3) -> Dictionary:
+	for raw_building in _layout.get("buildings", []):
+		if not raw_building is Dictionary:
+			continue
+		var building: Dictionary = raw_building
+		var building_id := str(building.get("id", ""))
+		if is_world_position_inside_enterable_building(building_id, world_position):
+			var building_root := _building_roots.get(building_id, null) as Node3D
+			return {
+				"schema": "enterable_building_containment_v1",
+				"building_id": building_id,
+				"world_position": world_position,
+				"local_position": building_root.to_local(world_position) if building_root != null else Vector3.ZERO,
+			}
+	return {}
+
+
+func is_world_position_inside_enterable_building(building_id: String, world_position: Vector3) -> bool:
+	if not _building_roots.has(building_id):
+		return false
+	var building := _find_building_definition(building_id)
+	var spatial_contract := (_layout.get("building_spatial", {}) as Dictionary).get(building_id, {}) as Dictionary
+	var route := spatial_contract.get("entry_route", {}) as Dictionary
+	var blocker_config := building.get("solid_interior_blocker", {}) as Dictionary
+	if building.is_empty() or route.is_empty() or bool(blocker_config.get("enabled", false)):
+		return false
+	var building_root := _building_roots.get(building_id, null) as Node3D
+	if building_root == null:
+		return false
+	var envelope := _v2(building.get("envelope_size", [0.0, 0.0]))
+	if envelope.x <= 0.0 or envelope.y <= 0.0:
+		return false
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	# The half-wall inset keeps a body just outside a doorway from being classified
+	# as indoors while still including every authored door_inside point.
+	var interior_inset := maxf(0.05, float(structural.get("wall_thickness", 0.4)) * 0.5)
+	var interior_half := envelope * 0.5 - Vector2(interior_inset, interior_inset)
+	if interior_half.x <= 0.0 or interior_half.y <= 0.0:
+		return false
+	var local_position := building_root.to_local(world_position)
+	return (
+		absf(local_position.x) <= interior_half.x
+		and absf(local_position.z) <= interior_half.y
+	)
+
+
+func get_indoor_exit_navigation_prefix(
+	world_origin: Vector3,
+	final_world_target: Vector3,
+	reached_tolerance: float = 0.45
+) -> Dictionary:
+	var origin_building := get_enterable_building_at_world_position(world_origin)
+	if origin_building.is_empty():
+		return {}
+	var building_id := str(origin_building.get("building_id", ""))
+	if is_world_position_inside_enterable_building(building_id, final_world_target):
+		return {}
+	var route := get_building_spatial_route(building_id)
+	if route.is_empty():
+		return {}
+	var ordered_keys: Array[String] = [
+		"interior_position",
+		"door_inside_position",
+		"door_outside_position",
+		"entry_outside_position",
+	]
+	var ordered_ids: Array[String] = [
+		"interior",
+		"door_inside",
+		"door_outside",
+		"entry_outside",
+	]
+	var points: Array[Vector3] = []
+	var point_ids: Array[String] = []
+	var checked_tolerance := maxf(0.05, reached_tolerance)
+	for index in range(ordered_keys.size()):
+		var raw_point: Variant = route.get(ordered_keys[index])
+		if not raw_point is Vector3:
+			continue
+		var point: Vector3 = raw_point
+		if not points.is_empty() and _horizontal_world_distance(points.back(), point) <= 0.05:
+			continue
+		points.append(point)
+		point_ids.append(ordered_ids[index])
+	if points.is_empty():
+		return {}
+	# Exit routes are authored from the interior towards the exterior. Treat that
+	# direction as monotonic progress: avoidance can push a body sideways past a
+	# route point without ever bringing it within the point radius, and a later
+	# request/rebuild must not send that body back into the building.
+	var exit_forward_direction := Vector3.ZERO
+	if points.size() >= 2:
+		exit_forward_direction = points.back() - points.front()
+		exit_forward_direction.y = 0.0
+		if exit_forward_direction.length_squared() > 0.0001:
+			exit_forward_direction = exit_forward_direction.normalized()
+	var reached_point_index := -1
+	var skipped_point_ids: Array[String] = []
+	var pass_margin := maxf(0.08, checked_tolerance * 0.25)
+	for index in range(points.size()):
+		if _horizontal_world_distance(world_origin, points[index]) <= checked_tolerance:
+			reached_point_index = index
+			continue
+		if exit_forward_direction.length_squared() <= 0.5:
+			continue
+		var outward_progress := world_origin - points[index]
+		outward_progress.y = 0.0
+		if outward_progress.dot(exit_forward_direction) >= pass_margin:
+			reached_point_index = index
+	for _index in range(reached_point_index + 1):
+		skipped_point_ids.append(point_ids.front())
+		points.pop_front()
+		point_ids.pop_front()
+	if points.is_empty():
+		return {}
+	return {
+		"schema": "indoor_exit_navigation_prefix_v1",
+		"building_id": building_id,
+		"origin_position": world_origin,
+		"final_target_position": final_world_target,
+		"point_ids": point_ids,
+		"points": points,
+		"skipped_point_ids": skipped_point_ids,
+		"exit_forward_direction": exit_forward_direction,
+		"route_source": "formal_station_layout_reverse_entry",
+	}
+
+
+func _horizontal_world_distance(from_position: Vector3, to_position: Vector3) -> float:
+	return Vector2(from_position.x, from_position.z).distance_to(Vector2(to_position.x, to_position.z))
+
+
 func get_defense_device_slot_pose(building_id: String, position_id: String) -> Dictionary:
 	if building_id == "wall":
 		return _get_front_wall_defense_device_slot_pose(position_id)
@@ -714,21 +1069,46 @@ func get_defense_device_slot_pose(building_id: String, position_id: String) -> D
 		float(building_definition.get("height", 1.0)),
 		float(structural.get("minimum_wall_height", 1.2))
 	)
-	var building_segment_id := "back_wall" if center.y < 0.0 else ("front_left" if center.x < 0.0 else "front_right")
-	var proxy_local := Vector2(
-		center.x,
-		-envelope.y * 0.5 + wall_thickness * 0.5
-		if center.y < 0.0
-		else envelope.y * 0.5 - wall_thickness * 0.5
-	)
-	var proxy_position := _building_local_to_global(building_root, proxy_local, 0.0)
-	var proxy_aim_position := _building_local_to_global(building_root, proxy_local, wall_height * 0.55)
 	var proxy_fixture_aim_position := _building_local_to_global(
 		building_root,
 		center,
 		float(fixture.get("collision_center_y", anchor_y))
 	)
 	var platform_size := _v2(position_definition.get("size", [0.0, 0.0]))
+	var proxy_hit_radius := maxf(0.75, minf(platform_size.x, platform_size.y) * 0.5 + 0.25)
+	var longitudinal_sign := -1.0 if center.y < 0.0 else 1.0
+	var lateral_sign := -1.0 if center.x < 0.0 else 1.0
+	var primary_segment_id := "back_wall" if longitudinal_sign < 0.0 else ("front_left" if lateral_sign < 0.0 else "front_right")
+	var side_segment_id := "left_wall" if lateral_sign < 0.0 else "right_wall"
+	var host_proxy_regions: Array[Dictionary] = [
+		_make_main_hall_host_proxy_region(
+			building_root,
+			building_id,
+			position_id,
+			str(fixture.get("id", "")),
+			primary_segment_id,
+			Vector2(center.x, longitudinal_sign * (envelope.y * 0.5 - wall_thickness * 0.5)),
+			Vector3(0.0, 0.0, longitudinal_sign),
+			wall_height,
+			wall_thickness,
+			proxy_hit_radius,
+			proxy_fixture_aim_position
+		),
+		_make_main_hall_host_proxy_region(
+			building_root,
+			building_id,
+			position_id,
+			str(fixture.get("id", "")),
+			side_segment_id,
+			Vector2(lateral_sign * (envelope.x * 0.5 - wall_thickness * 0.5), center.y),
+			Vector3(lateral_sign, 0.0, 0.0),
+			wall_height,
+			wall_thickness,
+			proxy_hit_radius,
+			proxy_fixture_aim_position
+		)
+	]
+	var primary_proxy := host_proxy_regions[0]
 	return {
 		"schema_version": EXPECTED_SCHEMA,
 		"building_id": building_id,
@@ -739,17 +1119,53 @@ func get_defense_device_slot_pose(building_id: String, position_id: String) -> D
 		"rotation_y_degrees": rad_to_deg(atan2(world_facing.x, world_facing.z)),
 		"local_center": center,
 		"platform_size": platform_size,
-		"host_proxy_kind": "building_wall_segment",
-		"host_proxy_id": "%s:%s:%s" % [building_id, building_segment_id, position_id],
-		"host_proxy_building_segment_id": building_segment_id,
+		"host_proxy_schema": "main_hall_corner_host_proxy_regions_v1",
+		"host_proxy_regions": host_proxy_regions,
+		"host_proxy_kind": str(primary_proxy.get("kind", "building_wall_segment")),
+		"host_proxy_id": str(primary_proxy.get("id", "")),
+		"host_proxy_building_segment_id": str(primary_proxy.get("building_segment_id", "")),
 		"host_proxy_fixture_id": str(fixture.get("id", "")),
-		"host_proxy_position": proxy_position,
-		"host_proxy_aim_position": proxy_aim_position,
+		"host_proxy_position": primary_proxy.get("position", Vector3.ZERO),
+		"host_proxy_aim_position": primary_proxy.get("aim_position", Vector3.ZERO),
 		"host_proxy_fixture_aim_position": proxy_fixture_aim_position,
-		"host_proxy_contact_radius": wall_thickness * 0.5,
-		"host_proxy_hit_radius": maxf(0.75, platform_size.x * 0.5 + 0.25),
+		"host_proxy_outward_direction": primary_proxy.get("outward_direction", Vector3.FORWARD),
+		"host_proxy_contact_radius": float(primary_proxy.get("contact_radius", wall_thickness * 0.5)),
+		"host_proxy_hit_radius": float(primary_proxy.get("hit_radius", proxy_hit_radius)),
 		"required_level": int(position_definition.get("required_level", 1)),
 		"live_default": is_default_formal_world_enabled()
+	}
+
+
+func _make_main_hall_host_proxy_region(
+	building_root: Node3D,
+	building_id: String,
+	position_id: String,
+	fixture_id: String,
+	building_segment_id: String,
+	proxy_local: Vector2,
+	local_outward: Vector3,
+	wall_height: float,
+	wall_thickness: float,
+	hit_radius: float,
+	fixture_aim_position: Vector3
+) -> Dictionary:
+	var proxy_position := _building_local_to_global(building_root, proxy_local, 0.0)
+	var proxy_aim_position := _building_local_to_global(building_root, proxy_local, wall_height * 0.55)
+	var outward_direction := (building_root.global_basis * local_outward).normalized()
+	return {
+		"kind": "building_wall_segment",
+		"id": "%s:%s:%s" % [building_id, building_segment_id, position_id],
+		"building_id": building_id,
+		"slot_id": position_id,
+		"building_segment_id": building_segment_id,
+		"fixture_id": fixture_id,
+		"position": proxy_position,
+		"aim_position": proxy_aim_position,
+		"fixture_aim_position": fixture_aim_position,
+		"outward_direction": outward_direction,
+		"contact_radius": wall_thickness * 0.5,
+		"hit_radius": hit_radius,
+		"strict_collision_identity": true
 	}
 
 
@@ -802,6 +1218,7 @@ func _get_front_wall_defense_device_slot_pose(position_id: String) -> Dictionary
 		"host_proxy_wall_segment_id": segment_id,
 		"host_proxy_position": _formal_root.to_global(proxy_position),
 		"host_proxy_aim_position": _formal_root.to_global(proxy_aim_position),
+		"host_proxy_outward_direction": facing_direction,
 		"host_proxy_contact_radius": wall_thickness * 0.5,
 		"host_proxy_hit_radius": 2.05,
 		"facing_direction": facing_direction,
@@ -1649,22 +2066,30 @@ func _build_gate(parent: Node3D, gate: Dictionary) -> void:
 	legacy_lintel.visible = false
 	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
 	var post_width := float(structural.get("gate_post_width", 1.2))
+	var tower_collision := gate.get("tower_collision", {}) as Dictionary
+	var tower_size := _v3(tower_collision.get("size", [post_width, height, 1.4]))
+	if tower_size.x <= 0.0 or tower_size.y <= 0.0 or tower_size.z <= 0.0:
+		tower_size = Vector3(post_width, height, 1.4)
+	var tower_center_y := float(tower_collision.get("center_y", tower_size.y * 0.5))
+	var tower_center_x := width * 0.5 + tower_size.x * 0.5
 	var left_collision := _add_static_box_collision(
 		root,
 		"LeftPostCollision",
-		Vector3(-width * 0.5 - post_width * 0.5, height * 0.5, 0.0),
-		Vector3(post_width, height, 1.4),
+		Vector3(-tower_center_x, tower_center_y, 0.0),
+		tower_size,
 		"gate_post"
 	)
 	var right_collision := _add_static_box_collision(
 		root,
 		"RightPostCollision",
-		Vector3(width * 0.5 + post_width * 0.5, height * 0.5, 0.0),
-		Vector3(post_width, height, 1.4),
+		Vector3(tower_center_x, tower_center_y, 0.0),
+		tower_size,
 		"gate_post"
 	)
 	left_collision.set_meta("building_id", str(gate.get("id", "")))
 	right_collision.set_meta("building_id", str(gate.get("id", "")))
+	left_collision.set_meta("gate_structure_role", "side_tower_body" if not tower_collision.is_empty() else "gate_post")
+	right_collision.set_meta("gate_structure_role", "side_tower_body" if not tower_collision.is_empty() else "gate_post")
 	_add_label(root, "NameLabel", Vector3(0.0, height + 1.1, 0.0),
 		str(gate.get("display_name", "城门")))
 
@@ -1859,19 +2284,13 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	collision_root.name = "StaticCollision"
 	collision_root.set_meta("building_id", str(building.get("id", "")))
 	collision_root.set_meta("door_clear_width", door_width)
-	collision_root.set_meta("fully_open_front", building_id == "blacksmith")
+	collision_root.set_meta("fully_open_front", false)
+	collision_root.set_meta("transparent_perimeter", building_id == "blacksmith")
 	building_root.add_child(collision_root)
 	var side_depth := maxf(0.1, envelope.y - thickness * 2.0)
 	var side_center_z := 0.0
 	var front_segment_width := maxf(0.1, (envelope.x - door_width) * 0.5)
 	var front_center_offset := door_width * 0.5 + front_segment_width * 0.5
-	if building_id == "blacksmith":
-		# The smithy is a roofed, ventilated work shed with a masonry rear forge bay.
-		# Keep collision only where structural walls/posts are visibly present.
-		side_depth = 4.6
-		side_center_z = -3.45
-		front_segment_width = 0.46
-		front_center_offset = door_width * 0.5 + front_segment_width * 0.5
 	var left_wall := _add_static_box_collision(
 		collision_root,
 		"LeftWall",
@@ -1896,23 +2315,41 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 		"building_wall"
 	)
 	back_wall.set_meta("building_segment_id", "back_wall")
-	if building_id != "blacksmith":
-		var front_left := _add_static_box_collision(
-			collision_root,
-			"FrontLeft",
-			Vector3(-front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
-			Vector3(front_segment_width, wall_height, thickness),
-			"building_wall"
+	var front_left := _add_static_box_collision(
+		collision_root,
+		"FrontLeft",
+		Vector3(-front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+		Vector3(front_segment_width, wall_height, thickness),
+		"building_wall"
+	)
+	front_left.set_meta("building_segment_id", "front_left")
+	var front_right := _add_static_box_collision(
+		collision_root,
+		"FrontRight",
+		Vector3(front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+		Vector3(front_segment_width, wall_height, thickness),
+		"building_wall"
+	)
+	front_right.set_meta("building_segment_id", "front_right")
+	var blocker_config := building.get("solid_interior_blocker", {}) as Dictionary
+	if bool(blocker_config.get("enabled", false)):
+		var maximum_inset := maxf(0.0, minf(envelope.x, envelope.y) * 0.5 - 0.1)
+		var inset := clampf(float(blocker_config.get("inset", thickness * 0.5)), 0.0, maximum_inset)
+		var blocker_size := Vector3(
+			maxf(0.1, envelope.x - inset * 2.0),
+			wall_height,
+			maxf(0.1, envelope.y - inset * 2.0)
 		)
-		front_left.set_meta("building_segment_id", "front_left")
-		var front_right := _add_static_box_collision(
+		var interior_blocker := _add_static_box_collision(
 			collision_root,
-			"FrontRight",
-			Vector3(front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
-			Vector3(front_segment_width, wall_height, thickness),
-			"building_wall"
+			"InteriorBlocker",
+			Vector3(0.0, wall_height * 0.5, 0.0),
+			blocker_size,
+			"building_interior_blocker"
 		)
-		front_right.set_meta("building_segment_id", "front_right")
+		interior_blocker.set_meta("building_id", building_id)
+		interior_blocker.set_meta("transparent_entity", true)
+		interior_blocker.set_meta("blocks_navigation", true)
 
 
 func _build_building_fixtures(building_root: Node3D, building: Dictionary) -> void:
@@ -3400,6 +3837,9 @@ func _build_building_navigation_links(contract_root: Node3D) -> void:
 	for raw_building in _layout.get("buildings", []):
 		var building: Dictionary = raw_building
 		var building_id := str(building.get("id", ""))
+		var blocker_config := building.get("solid_interior_blocker", {}) as Dictionary
+		if bool(blocker_config.get("enabled", false)) and bool(blocker_config.get("blocks_navigation_link", true)):
+			continue
 		var route: Dictionary = (spatial_contracts.get(building_id, {}) as Dictionary).get("entry_route", {})
 		var outside := _building_local_to_station(building, route.get("door_outside", []))
 		var inside := _building_local_to_station(building, route.get("door_inside", []))
@@ -3477,6 +3917,9 @@ func _classify_building_navigation_point(point: Vector2, building: Dictionary) -
 	var half_size := envelope * 0.5
 	if absf(local.x) > half_size.x or absf(local.y) > half_size.y:
 		return 0
+	var blocker_config := building.get("solid_interior_blocker", {}) as Dictionary
+	if bool(blocker_config.get("enabled", false)):
+		return -1
 	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
 	var navigation := _layout.get("navigation", {}) as Dictionary
 	var shell_depth := maxf(
@@ -3923,14 +4366,27 @@ func _validate_combat_spatial_config() -> void:
 	var combat_spatial := _layout.get("combat_spatial", {}) as Dictionary
 	var friendly_response := combat_spatial.get("friendly_station_response", {}) as Dictionary
 	var proactive_strategies: Variant = friendly_response.get("proactive_strategy_ids", [])
+	var avoidance_reentry := friendly_response.get("outside_avoidance_reentry", {}) as Dictionary
 	if (
-		str(friendly_response.get("schema_version", "")) != "friendly_station_response_v2"
+		str(friendly_response.get("schema_version", "")) != "friendly_station_response_v4"
 		or float(friendly_response.get("normal_contact_range", 0.0)) <= 0.0
 		or str(friendly_response.get("combat_targeting_schema", "")) != "friendly_enemy_presence_lock_v1"
 		or float(friendly_response.get("combat_target_detection_range", 0.0)) <= 0.0
 		or str(friendly_response.get("inside_station_target_scope", "")) != "entire_station"
-		or float(friendly_response.get("avoidance_min_trigger_range", 0.0)) <= 0.0
-		or float(friendly_response.get("avoidance_ranged_trigger_margin", 0.0)) <= 0.0
+		or str(friendly_response.get("avoidance_policy_schema", "")) != "weighted_enemy_repulsion_v1"
+		or float(friendly_response.get("avoidance_detection_range_margin", 0.0)) <= 0.0
+		or str(friendly_response.get("avoidance_weight_formula", "")) != "inverse_distance_power"
+		or float(friendly_response.get("avoidance_weight_exponent", 0.0)) <= 0.0
+		or float(friendly_response.get("avoidance_min_weight_distance", 0.0)) <= 0.0
+		or float(friendly_response.get("avoidance_boundary_inset", 0.0)) <= 0.0
+		or str(friendly_response.get("keep_distance_retreat_policy_schema", "")) != "weighted_close_threat_retreat_v1"
+		or float(friendly_response.get("keep_distance_retreat_trigger_range_ratio", 0.0)) <= 0.0
+		or float(friendly_response.get("keep_distance_retreat_trigger_range_ratio", 0.0)) >= 1.0
+		or float(friendly_response.get("keep_distance_retreat_segment_range_ratio", 0.0)) <= 0.0
+		or float(friendly_response.get("keep_distance_retreat_arrival_tolerance", 0.0)) <= 0.0
+		or str(avoidance_reentry.get("schema", "")) != "front_gate_inside_reentry_v1"
+		or str(avoidance_reentry.get("gate_id", "")) != "front_gate"
+		or float(avoidance_reentry.get("inside_offset", 0.0)) <= 0.0
 		or float(friendly_response.get("avoidance_min_safe_distance", 0.0)) <= 0.0
 		or float(friendly_response.get("avoidance_ranged_safe_margin", 0.0)) <= 0.0
 		or not proactive_strategies is Array
@@ -4404,6 +4860,7 @@ func _build_physics_navigation_snapshot() -> Dictionary:
 		),
 		"collision_category_counts": category_counts,
 		"building_shell_count": int(category_counts.get("building_wall", 0)),
+		"building_interior_blocker_count": int(category_counts.get("building_interior_blocker", 0)),
 		"station_wall_count": int(category_counts.get("station_wall", 0)),
 		"gate_post_count": int(category_counts.get("gate_post", 0)),
 		"building_fixture_count": int(category_counts.get("building_fixture", 0)),

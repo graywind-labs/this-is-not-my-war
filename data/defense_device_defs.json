@@ -128,45 +128,45 @@
       "id": "main_hall_slot_01",
       "name": "主厅屋顶西北器械台",
       "building_id": "main_hall",
-      "required_building_level": 1,
+      "required_building_level": 5,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
       "position": {"x": -0.65, "y": 2.52, "z": -7.0},
       "rotation_y_degrees": 0.0,
       "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-      "effect_modifiers": {"range_multiplier": 2.0}
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
       "id": "main_hall_slot_02",
       "name": "主厅屋顶东北器械台",
       "building_id": "main_hall",
-      "required_building_level": 3,
+      "required_building_level": 6,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
       "position": {"x": 0.65, "y": 2.52, "z": -7.0},
       "rotation_y_degrees": 0.0,
       "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-      "effect_modifiers": {"range_multiplier": 2.0}
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
       "id": "main_hall_slot_03",
       "name": "主厅屋顶西南器械台",
       "building_id": "main_hall",
-      "required_building_level": 5,
+      "required_building_level": 1,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
       "position": {"x": -1.75, "y": 2.52, "z": -7.0},
       "rotation_y_degrees": 0.0,
       "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-      "effect_modifiers": {"range_multiplier": 2.0}
+      "effect_modifiers": {"range_multiplier": 1.0}
     },
     {
       "id": "main_hall_slot_04",
       "name": "主厅屋顶东南器械台",
       "building_id": "main_hall",
-      "required_building_level": 6,
+      "required_building_level": 3,
       "allowed_device_ids": ["wall_ballista", "wall_arrow_tower"],
       "position": {"x": 1.75, "y": 2.52, "z": -7.0},
       "rotation_y_degrees": 0.0,
       "facing_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-      "effect_modifiers": {"range_multiplier": 2.0}
+      "effect_modifiers": {"range_multiplier": 1.0}
     }
   ]
 }

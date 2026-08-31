@@ -16,7 +16,6 @@ const EXPECTED_RECIPE_CONTRACT := {
 	"craft_iron_greaves": [4, {"iron": 3}, true],
 	"craft_sword_shield": [5, {"iron": 3, "wood": 1}, true],
 	"craft_mail_chest": [8, {"iron": 6}, true],
-	"craft_arrow_bundle": [1, {"wood": 1}, false],
 	"craft_bow": [3, {"wood": 2}, true],
 	"craft_crossbow": [5, {"iron": 1, "wood": 3}, true],
 	"craft_wall_ballista": [9, {"iron": 2, "wood": 6}, true],
@@ -112,8 +111,6 @@ func _verify_recipes(crafting_system: Node) -> bool:
 			return _fail("Recipe material total mismatch for %s: %s" % [recipe_id, JSON.stringify(_sum_recipe_cost(recipe))])
 		if bool(recipe.get("available", true)) != bool(expected[2]):
 			return _fail("Recipe availability mismatch for %s" % recipe_id)
-	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
-		return _fail("Arrow bundles must stay hidden until ammunition consumption exists")
 	return true
 
 

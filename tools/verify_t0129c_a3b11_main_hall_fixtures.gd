@@ -56,10 +56,10 @@ func _init() -> void:
 		platform_levels[position_id] = int(fixture.get("required_level",0))
 		var shape := body.get_node_or_null("CollisionShape3D") as CollisionShape3D
 		var box := shape.shape as BoxShape3D if shape != null else null
-		if str(fixture.get("asset_path", "")) != "res://assets/3d/quaternius/buildings/main_hall_platform_floor.glb" or visual.get_node_or_null("DeviceMount") == null or _count_prefix(visual, "PlatformSupport") != 4 or box == null or body.global_position.y - box.size.y * 0.5 < 3.0: _fail("A3b11R main hall platform is not a detailed roof entity: %s" % position_id); return
+		if str(fixture.get("asset_path", "")) != "res://scenes/defense_devices/FormalMainHallDefensePlatformArtView.tscn" or not bool(visual.get_meta("formal_main_hall_wood_platform", false)) or visual.get_node_or_null("TimberStructure/TimberCorbelFrame") == null or box == null or body.global_position.y - box.size.y * 0.5 < 3.0: _fail("A3b11R main hall platform is not a detailed roof entity: %s" % position_id); return
 		var route: Dictionary = controller.get_building_spatial_route("main_hall",position_id)
 		if str(route.get("target_fixture_id","")) != fixture_id or str(route.get("arrival_mode","")) != "stand": _fail("Main hall spatial platform mapping drifted: %s" % position_id); return
-	if platform_levels != {"main_hall_slot_01":1,"main_hall_slot_02":3,"main_hall_slot_03":5,"main_hall_slot_04":6} or reinforcement_levels != [2,4,6]: _fail("Main hall 1/3/5/6 platform sequence drifted: %s / %s" % [platform_levels,reinforcement_levels]); return
+	if platform_levels != {"main_hall_slot_01":5,"main_hall_slot_02":6,"main_hall_slot_03":1,"main_hall_slot_04":3} or reinforcement_levels != [2,4,6]: _fail("Main hall front-first 1/3 then rear 5/6 platform sequence drifted: %s / %s" % [platform_levels,reinforcement_levels]); return
 	var runtime_levels: Dictionary = {}
 	for slot in defense_system.get_slots_for_building("main_hall", true): runtime_levels[str(slot.get("id",""))] = int(slot.get("required_building_level",0))
 	if runtime_levels != platform_levels: _fail("DefenseDeviceSystem main hall level contract drifted: %s" % runtime_levels); return

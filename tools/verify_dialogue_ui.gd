@@ -66,6 +66,10 @@ func _init() -> void:
 		push_error("Dialogue public toggle should be enabled before the first turn")
 		quit(1)
 		return
+	if public_toggle.text != "公开":
+		push_error("Dialogue public toggle should use the concise public label")
+		quit(1)
+		return
 	if obsolete_plan_reevaluation_toggle != null and obsolete_plan_reevaluation_toggle.visible:
 		push_error("Guard-officer dialogue should not expose the removed plan reevaluation toggle")
 		quit(1)

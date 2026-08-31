@@ -333,13 +333,9 @@ func _rebuild_popup() -> void:
 		int(slot.get("current_building_level", 0))
 	]
 	var range_multiplier := _get_range_multiplier(slot)
-	if str(slot.get("building_id", "")) == "main_hall":
-		_popup_bonus_label.text = "主厅高台加成：射程×%s（下方射程已计入）" % _format_number(
-			range_multiplier
-		)
-		_popup_bonus_label.visible = true
-	elif not is_equal_approx(range_multiplier, 1.0):
-		_popup_bonus_label.text = "围墙加固：射程×%s（下方射程已计入）" % _format_number(range_multiplier)
+	if not is_equal_approx(range_multiplier, 1.0):
+		var source_label := "围墙加固" if str(slot.get("building_id", "")) == "wall" else "宿主加成"
+		_popup_bonus_label.text = "%s：射程×%s（下方射程已计入）" % [source_label, _format_number(range_multiplier)]
 		_popup_bonus_label.visible = true
 	else:
 		_popup_bonus_label.text = ""

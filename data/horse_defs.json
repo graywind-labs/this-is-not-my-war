@@ -58,7 +58,7 @@
     "mount_rendezvous_horse_speed": 7.0,
     "mount_rendezvous_npc_share": 0.35,
     "mount_rendezvous_arrival_distance": 0.35,
-    "return_to_stable_speed": 7.0,
+    "return_to_stable_speed": 3.2,
     "mounted_damage_share_min": 0.3,
     "mounted_damage_share_max": 0.5
   }

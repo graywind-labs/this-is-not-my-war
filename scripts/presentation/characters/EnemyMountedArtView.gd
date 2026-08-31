@@ -2,14 +2,13 @@ class_name EnemyMountedArtView
 extends Node3D
 
 
-signal escape_completed(snapshot: Dictionary)
+signal defeat_cleanup_completed(snapshot: Dictionary)
 
 const MOUNTED_PRESENTATION_REFERENCE := preload("res://scripts/presentation/characters/MountedPresentationReference.gd")
 const HORSE_SCENE_PATH := MOUNTED_PRESENTATION_REFERENCE.HORSE_SCENE_PATH
 const HORSE_SCALE := MOUNTED_PRESENTATION_REFERENCE.ENEMY_HORSE_SCALE
-const ESCAPE_SPEED_METERS_PER_SECOND := 18.0
-const ESCAPE_ARRIVAL_TOLERANCE := 0.8
-const RIDER_BODY_VISIBLE_SECONDS := 3.2
+const DEFAULT_CORPSE_LINGER_SECONDS := 2.4
+const HORSE_DEATH_ANIMATION := "Death"
 
 var _rider: Node3D
 var _horse: Node3D
@@ -19,16 +18,21 @@ var _unit_type := ""
 var _alive := true
 var _moving := false
 var _facing_direction := Vector3(0.0, 0.0, -1.0)
-var _escape_phase := "mounted"
-var _escape_target := Vector3.ZERO
-var _escape_start := Vector3.ZERO
-var _escape_elapsed := 0.0
-var _escape_distance := 0.0
-var _rider_body_hidden := false
-var _released := false
+var _defeat_phase := "mounted"
+var _defeat_elapsed := 0.0
+var _corpse_linger_seconds := DEFAULT_CORPSE_LINGER_SECONDS
+var _defeat_world_origin := Vector3.ZERO
+var _horse_defeat_world_origin := Vector3.ZERO
+var _horse_defeat_local_position := Vector3.ZERO
+var _horse_death_pose_held := false
+var _cleanup_completed := false
 
 
-func setup(rider: Node3D, enemy_id: String, unit_type: String) -> void:
+func setup(
+	rider: Node3D,
+	enemy_id: String,
+	unit_type: String
+) -> void:
 	process_priority = 10
 	_rider = rider
 	_enemy_id = enemy_id
@@ -53,7 +57,7 @@ func apply_profile(profile: Dictionary) -> void:
 	_alive = next_alive
 	if not _alive:
 		_moving = false
-		_play_horse_animation("Walk")
+		begin_mounted_shared_defeat()
 
 
 func set_movement_active(active: bool, world_speed: float = 0.0) -> void:
@@ -101,19 +105,30 @@ func set_facing_direction(direction: Vector3) -> void:
 	_sync_horse_to_rider_facing()
 
 
-func begin_mounted_defeat_escape(target_world_position: Vector3) -> Dictionary:
-	if _released:
+func get_visible_forward() -> Vector3:
+	if _rider != null and _rider.has_method("get_visible_forward"):
+		var rider_forward: Vector3 = _rider.get_visible_forward()
+		rider_forward.y = 0.0
+		if rider_forward.length_squared() > 0.0001:
+			return rider_forward.normalized()
+	return _facing_direction
+
+
+func begin_mounted_shared_defeat(corpse_linger_seconds: float = DEFAULT_CORPSE_LINGER_SECONDS) -> Dictionary:
+	if _cleanup_completed:
+		return debug_get_snapshot()
+	if _defeat_phase == "bodies_lingering":
 		return debug_get_snapshot()
 	_alive = false
-	_escape_phase = "fleeing_to_map_edge"
-	_escape_target = target_world_position
-	_escape_start = _horse.global_position if _horse != null else global_position
-	_escape_elapsed = 0.0
-	_escape_distance = 0.0
-	_play_horse_animation("Walk")
-	var flee_direction := _escape_target - _escape_start
-	if flee_direction.length_squared() > 0.0001:
-		_face_horse_toward(flee_direction.normalized())
+	_moving = false
+	_defeat_phase = "bodies_lingering"
+	_defeat_elapsed = 0.0
+	_corpse_linger_seconds = maxf(0.1, corpse_linger_seconds)
+	_defeat_world_origin = global_position
+	_horse_defeat_world_origin = _horse.global_position if _horse != null else global_position
+	_horse_defeat_local_position = _horse.position if _horse != null else Vector3.ZERO
+	_horse_death_pose_held = false
+	_play_horse_death_animation()
 	return debug_get_snapshot()
 
 
@@ -126,43 +141,52 @@ func debug_get_snapshot() -> Dictionary:
 	rider_snapshot["horse_animation"] = _horse_animation_player.current_animation if _horse_animation_player != null else ""
 	rider_snapshot["horse_has_independent_hp"] = false
 	rider_snapshot["damage_routing"] = "enemy_unit_only"
-	rider_snapshot["escape_phase"] = _escape_phase
-	rider_snapshot["escape_target"] = _escape_target
-	rider_snapshot["escape_start"] = _escape_start
-	rider_snapshot["escape_distance"] = _escape_distance
-	rider_snapshot["escape_elapsed"] = _escape_elapsed
+	rider_snapshot["defeat_phase"] = _defeat_phase
+	rider_snapshot["defeat_elapsed"] = _defeat_elapsed
+	rider_snapshot["corpse_linger_seconds"] = _corpse_linger_seconds
+	rider_snapshot["corpse_linger_remaining_seconds"] = maxf(0.0, _corpse_linger_seconds - _defeat_elapsed)
+	rider_snapshot["defeat_world_origin"] = _defeat_world_origin
+	rider_snapshot["root_world_position"] = global_position
+	rider_snapshot["root_position_drift"] = global_position.distance_to(_defeat_world_origin) if _defeat_phase != "mounted" else 0.0
+	rider_snapshot["horse_defeat_world_origin"] = _horse_defeat_world_origin
 	rider_snapshot["horse_world_position"] = _horse.global_position if _horse != null else Vector3.ZERO
+	rider_snapshot["horse_position_drift"] = _horse.global_position.distance_to(_horse_defeat_world_origin) if _horse != null and _defeat_phase != "mounted" else 0.0
 	rider_snapshot["horse_visible_forward"] = (_horse.global_basis * Vector3.BACK).normalized() if _horse != null else Vector3.ZERO
 	rider_snapshot["horse_local_position"] = _horse.position if _horse != null else Vector3.ZERO
 	rider_snapshot["horse_scale"] = _horse.scale if _horse != null else Vector3.ZERO
+	rider_snapshot["horse_death_clip_available"] = _horse_animation_player != null and _horse_animation_player.has_animation(HORSE_DEATH_ANIMATION)
+	rider_snapshot["horse_death_clip_length"] = _get_horse_death_clip_length()
+	rider_snapshot["horse_death_pose_held"] = _horse_death_pose_held
 	var rider_forward := Vector3(rider_snapshot.get("visual_forward", Vector3.ZERO)).normalized()
 	var horse_forward := Vector3(rider_snapshot.get("horse_visible_forward", Vector3.ZERO)).normalized()
 	rider_snapshot["mounted_forward_dot"] = rider_forward.dot(horse_forward) if not rider_forward.is_zero_approx() and not horse_forward.is_zero_approx() else 0.0
-	rider_snapshot["rider_body_hidden"] = _rider_body_hidden
-	rider_snapshot["released_outside_map"] = _released
+	rider_snapshot["rider_body_visible"] = _rider != null and _rider.visible
+	rider_snapshot["cleanup_completed"] = _cleanup_completed
 	return rider_snapshot
 
 
-func debug_advance_escape(seconds: float) -> Dictionary:
+func debug_advance_defeat(seconds: float) -> Dictionary:
 	if seconds > 0.0:
-		_advance_escape(seconds)
+		_advance_defeat(seconds)
 	return debug_get_snapshot()
 
 
 func _process(delta: float) -> void:
-	if _released:
+	if _cleanup_completed:
 		return
 	var combat_delta := _get_combat_frame_delta_seconds(delta)
 	if _horse_animation_player != null:
 		_horse_animation_player.speed_scale = _get_combat_frame_rate()
 	if combat_delta <= 0.0:
 		return
-	if _escape_phase == "mounted":
+	if _defeat_phase == "mounted":
 		_sync_horse_to_rider_facing()
 		return
-	if _escape_phase != "fleeing_to_map_edge":
+	if _defeat_phase != "bodies_lingering":
 		return
-	_advance_escape(combat_delta)
+	if _horse != null:
+		_horse.position = _horse_defeat_local_position
+	_advance_defeat(combat_delta)
 
 
 func _get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
@@ -174,25 +198,16 @@ func _get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
 
 func _get_combat_frame_rate() -> float:
 	return _get_combat_frame_delta_seconds(1.0)
-func _advance_escape(delta: float) -> void:
-	if _released or _escape_phase != "fleeing_to_map_edge":
+
+
+func _advance_defeat(delta: float) -> void:
+	if _cleanup_completed or _defeat_phase != "bodies_lingering":
 		return
-	_escape_elapsed += delta
-	if not _rider_body_hidden and _escape_elapsed >= RIDER_BODY_VISIBLE_SECONDS and _rider != null:
-		_rider.visible = false
-		_rider_body_hidden = true
-	if _horse == null:
-		_complete_escape()
-		return
-	var before := _horse.global_position
-	var flat_target := Vector3(_escape_target.x, before.y, _escape_target.z)
-	var remaining := flat_target - before
-	if remaining.length_squared() > 0.0001:
-		_face_horse_toward(remaining.normalized())
-		_horse.global_position = before.move_toward(flat_target, ESCAPE_SPEED_METERS_PER_SECOND * delta)
-	_escape_distance += before.distance_to(_horse.global_position)
-	if _horse.global_position.distance_to(flat_target) <= ESCAPE_ARRIVAL_TOLERANCE:
-		_complete_escape()
+	_defeat_elapsed += delta
+	if _horse != null:
+		_horse.position = _horse_defeat_local_position
+	if _defeat_elapsed >= _corpse_linger_seconds:
+		_complete_defeat_cleanup()
 
 
 func _build_horse() -> void:
@@ -207,6 +222,8 @@ func _build_horse() -> void:
 	_horse.scale = HORSE_SCALE
 	add_child(_horse)
 	_horse_animation_player = _horse.find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if _horse_animation_player != null and not _horse_animation_player.animation_finished.is_connected(_on_horse_animation_finished):
+		_horse_animation_player.animation_finished.connect(_on_horse_animation_finished)
 	_play_horse_animation("Idle")
 
 
@@ -215,6 +232,32 @@ func _play_horse_animation(animation_name: String) -> void:
 		return
 	if _horse_animation_player.current_animation != animation_name or not _horse_animation_player.is_playing():
 		_horse_animation_player.play(animation_name)
+
+
+func _play_horse_death_animation() -> void:
+	if _horse_animation_player == null or not _horse_animation_player.has_animation(HORSE_DEATH_ANIMATION):
+		return
+	var death_animation := _horse_animation_player.get_animation(HORSE_DEATH_ANIMATION)
+	if death_animation != null:
+		death_animation.loop_mode = Animation.LOOP_NONE
+	_horse_animation_player.play(HORSE_DEATH_ANIMATION)
+
+
+func _get_horse_death_clip_length() -> float:
+	if _horse_animation_player == null or not _horse_animation_player.has_animation(HORSE_DEATH_ANIMATION):
+		return 0.0
+	var death_animation := _horse_animation_player.get_animation(HORSE_DEATH_ANIMATION)
+	return death_animation.length if death_animation != null else 0.0
+
+
+func _on_horse_animation_finished(animation_name: StringName) -> void:
+	if str(animation_name) != HORSE_DEATH_ANIMATION or _defeat_phase != "bodies_lingering":
+		return
+	var clip_length := _get_horse_death_clip_length()
+	if clip_length > 0.0:
+		_horse_animation_player.seek(clip_length, true)
+	_horse_animation_player.pause()
+	_horse_death_pose_held = true
 
 
 func _face_horse_toward(direction: Vector3) -> void:
@@ -240,13 +283,11 @@ func _sync_horse_to_rider_facing() -> void:
 		_face_horse_toward(rider_forward.normalized())
 
 
-func _complete_escape() -> void:
-	if _released:
+func _complete_defeat_cleanup() -> void:
+	if _cleanup_completed:
 		return
-	_released = true
-	_escape_phase = "released_outside_map"
-	if _horse != null:
-		_horse.visible = false
+	_cleanup_completed = true
+	_defeat_phase = "cleaned_up"
 	var snapshot := debug_get_snapshot()
-	escape_completed.emit(snapshot)
+	defeat_cleanup_completed.emit(snapshot)
 	queue_free()

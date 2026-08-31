@@ -9,7 +9,6 @@ const SPECIFIC_ITEM_IDS := [
 	"item_mail_chest",
 	"item_iron_bracers",
 	"item_iron_greaves",
-	"item_arrow_bundle",
 	"item_wall_ballista",
 	"item_wall_arrow_tower"
 ]
@@ -619,9 +618,39 @@ func _init() -> void:
 		quit(1)
 		return
 	var action_select := gm_window.find_child("ActionSelect", true, false) as OptionButton
+	var formal_action_npc_select := gm_window.find_child("FormalActionNpcSelect", true, false) as OptionButton
+	var formal_action_location_select := gm_window.find_child("FormalActionLocationSelect", true, false) as OptionButton
 	var assign_action_button := gm_window.find_child("AssignActionButton", true, false) as Button
-	if action_select == null or assign_action_button == null:
-		push_error("GM action controls should keep action selector and assign button")
+	var formal_visit_button := gm_window.find_child("FormalVisitLocationButton", true, false) as Button
+	var formal_visit_stop_button := gm_window.find_child("FormalVisitLocationStopButton", true, false) as Button
+	var formal_dialogue_target_select := gm_window.find_child("FormalNpcDialogueTargetSelect", true, false) as OptionButton
+	var formal_dialogue_button := gm_window.find_child("FormalNpcDialogueButton", true, false) as Button
+	var formal_dialogue_stop_button := gm_window.find_child("FormalNpcDialogueStopButton", true, false) as Button
+	if formal_action_npc_select == null or formal_action_location_select == null or action_select == null or assign_action_button == null:
+		push_error("GM formal action controls should expose NPC, location, action selectors, and assign button")
+		quit(1)
+		return
+	if (
+		formal_visit_button == null
+		or formal_visit_stop_button == null
+		or formal_dialogue_target_select == null
+		or formal_dialogue_button == null
+		or formal_dialogue_stop_button == null
+	):
+		push_error("GM formal visit/dialogue controls should expose visible targets and run/stop buttons")
+		quit(1)
+		return
+	for npc_id in npc_system.get_npc_ids():
+		if not _select_option_by_id(formal_action_npc_select, str(npc_id)):
+			push_error("GM formal action NPC selector should include %s" % str(npc_id))
+			quit(1)
+			return
+	if not _select_option_by_id(gm_panel._npc_select, "cook_01"):
+		push_error("GM common NPC selector should include cook_01")
+		quit(1)
+		return
+	if not _select_option_by_id(formal_action_npc_select, "gardener_01"):
+		push_error("GM formal action NPC selector should include gardener_01")
 		quit(1)
 		return
 	if _select_option_by_id(action_select, "attend_mass"):
@@ -630,6 +659,89 @@ func _init() -> void:
 		return
 	if not _select_option_by_id(action_select, "pray_at_chapel"):
 		push_error("GM action selector should expose merged pray_at_chapel")
+		quit(1)
+		return
+	for invalid_direct_action_id in [
+		"talk_to_npc", "visit_location", "assist_repair", "assist_upgrade", "assist_heal",
+		"seek_guard_officer", "escaping_station", "escape_intervention_dialogue", "talk_to_guard_officer"
+	]:
+		if _select_option_by_id(action_select, invalid_direct_action_id):
+			push_error("GM direct action selector should hide target/system action: %s" % invalid_direct_action_id)
+			quit(1)
+			return
+	if not _select_option_by_id(formal_action_location_select, "chapel"):
+		push_error("GM formal action location selector should include chapel")
+		quit(1)
+		return
+	npc_system.update_npc_state("gardener_01", {"wine": 1})
+	if not action_system.debug_assign_action("gardener_01", "drink_wine"):
+		push_error("Failed to prepare an active daily action for GM replacement")
+		quit(1)
+		return
+	if str(action_system.get_runtime_action_snapshot("gardener_01").get("phase", "")) != "active":
+		push_error("GM replacement fixture should begin with an active daily action")
+		quit(1)
+		return
+	if not _select_option_by_id(action_select, "lead_mass"):
+		push_error("GM direct action selector should expose ability-gated lead_mass")
+		quit(1)
+		return
+	assign_action_button.pressed.emit()
+	if action_system.get_runtime_action_id("gardener_01") != "drink_wine":
+		push_error("An ineligible GM action should preserve the selected NPC's prior valid action")
+		quit(1)
+		return
+	if not _select_option_by_id(action_select, "pray_at_chapel"):
+		push_error("GM action selector should still expose pray_at_chapel after the ability-gate check")
+		quit(1)
+		return
+	assign_action_button.pressed.emit()
+	if action_system.get_runtime_action_id("gardener_01") != "pray_at_chapel":
+		push_error("GM formal action buttons should command the NPC selected on the formal-action tab")
+		quit(1)
+		return
+	if action_system.get_runtime_action_id("cook_01") == "pray_at_chapel":
+		push_error("GM formal action buttons should not read the hidden common-tab NPC selection")
+		quit(1)
+		return
+	action_system.interrupt_npc_action("gardener_01", "gm_formal_action_selector_verified", true)
+	time_system.set_paused(false)
+	npc_system.update_npc_state("gardener_01", {"wine": 1})
+	if not action_system.debug_assign_action("gardener_01", "drink_wine"):
+		push_error("Failed to prepare active action before GM formal visit replacement")
+		quit(1)
+		return
+	formal_visit_button.pressed.emit()
+	await process_frame
+	if action_system.get_runtime_action_id("gardener_01") != "visit_location":
+		push_error("GM formal visit should replace the selected NPC's active daily action")
+		quit(1)
+		return
+	formal_visit_stop_button.pressed.emit()
+	await process_frame
+	npc_system.update_npc_state("gardener_01", {"wine": 1})
+	if not action_system.debug_assign_action("gardener_01", "drink_wine"):
+		push_error("Failed to prepare active action before GM formal dialogue replacement")
+		quit(1)
+		return
+	if not _select_option_by_id(formal_dialogue_target_select, "stableman_01"):
+		push_error("GM formal dialogue target selector should include stableman_01")
+		quit(1)
+		return
+	formal_dialogue_button.pressed.emit()
+	await process_frame
+	if action_system.get_runtime_action_id("gardener_01") != "talk_to_npc":
+		push_error("GM formal NPC dialogue should replace the speaker's active daily action")
+		quit(1)
+		return
+	formal_dialogue_stop_button.pressed.emit()
+	await process_frame
+	var dialogue_stopped_state: Dictionary = npc_system.get_npc_state("gardener_01")
+	if (
+		str(dialogue_stopped_state.get("current_location", "")).begins_with("dialogue_target_")
+		or str(dialogue_stopped_state.get("current_action", "")).contains("dialogue_target_")
+	):
+		push_error("Stopping a GM formal dialogue should not retain its synthetic movement target")
 		quit(1)
 		return
 	for redundant_text in ["工作", "当教官", "当受训者", "吃饭", "睡觉"]:
@@ -641,8 +753,8 @@ func _init() -> void:
 		push_error("GM repair target selector should include wall")
 		quit(1)
 		return
-	if not _select_option_by_id(upgrade_building_select, "garden"):
-		push_error("GM upgrade target selector should include garden")
+	if not _select_option_by_id(upgrade_building_select, "main_hall"):
+		push_error("GM upgrade target selector should include main_hall")
 		quit(1)
 		return
 	var equipment_weapon_select := gm_window.find_child("EquipmentWeaponSelect", true, false) as OptionButton
@@ -900,12 +1012,17 @@ func _init() -> void:
 		push_error("GM-recruited NPC should be able to receive orders")
 		quit(1)
 		return
-	if not _select_option_by_id(gm_panel._npc_select, "engineer_01"):
-		push_error("GM NPC selector should include engineer_01")
+	if not _select_option_by_id(formal_action_npc_select, "engineer_01"):
+		push_error("GM formal action NPC selector should include engineer_01")
 		quit(1)
 		return
 	if not npc_system.debug_enter_location_immediately("engineer_01", "plaza"):
 		push_error("Failed to place engineer at plaza for GM assist test")
+		quit(1)
+		return
+	npc_system.update_npc_state("engineer_01", {"wine": 1})
+	if not action_system.debug_assign_action("engineer_01", "drink_wine"):
+		push_error("Failed to prepare engineer active action before GM repair replacement")
 		quit(1)
 		return
 	assist_repair_button.pressed.emit()
@@ -927,16 +1044,25 @@ func _init() -> void:
 		push_error("GM formal repair stop left its session active")
 		quit(1)
 		return
-	if not building_system.upgrade_building("garden"):
-		push_error("Failed to start garden upgrade for GM assist test")
+	if not building_system.upgrade_building("main_hall"):
+		push_error("Failed to start main-hall upgrade for GM assist test")
 		quit(1)
 		return
-	if not _select_option_by_id(gm_panel._npc_select, "doctor_01"):
-		push_error("GM NPC selector should include doctor_01")
+	if not _select_option_by_id(formal_action_npc_select, "doctor_01"):
+		push_error("GM formal action NPC selector should include doctor_01")
 		quit(1)
 		return
 	if not npc_system.debug_enter_location_immediately("doctor_01", "plaza"):
 		push_error("Failed to place doctor at plaza for GM assist upgrade test")
+		quit(1)
+		return
+	npc_system.update_npc_state("doctor_01", {"wine": 1})
+	if not action_system.debug_assign_action("doctor_01", "drink_wine"):
+		push_error("Failed to prepare doctor active action before GM upgrade replacement")
+		quit(1)
+		return
+	if str(action_system.get_runtime_action_snapshot("doctor_01").get("phase", "")) != "active":
+		push_error("Doctor should be in an active daily action before GM upgrade replacement")
 		quit(1)
 		return
 	assist_upgrade_button.pressed.emit()
@@ -946,9 +1072,9 @@ func _init() -> void:
 	if (
 		not bool(gm_upgrade_formal.get("active", false))
 		or str(gm_upgrade_session.get("action_id", "")) != "assist_upgrade"
-		or str(gm_upgrade_session.get("building_id", "")) != "garden"
+		or str(gm_upgrade_session.get("building_id", "")) != "main_hall"
 		or str(gm_upgrade_session.get("service_kind", "")) != "upgrade"
-		or int(building_system.get_upgrade_status("garden").get("helper_count", 0)) != 0
+		or int(building_system.get_upgrade_status("main_hall").get("helper_count", 0)) != 0
 	):
 		push_error("GM assist upgrade button did not start a pending formal construction route")
 		quit(1)
@@ -960,6 +1086,22 @@ func _init() -> void:
 		push_error("GM formal upgrade stop left its session active")
 		quit(1)
 		return
+	npc_system.update_npc_state("doctor_01", {"wine": 1})
+	if not action_system.debug_assign_action("doctor_01", "drink_wine"):
+		push_error("Failed to prepare active action for invalid-upgrade preservation")
+		quit(1)
+		return
+	if not _select_option_by_id(upgrade_building_select, "clinic"):
+		push_error("GM upgrade target selector should include clinic")
+		quit(1)
+		return
+	assist_upgrade_button.pressed.emit()
+	await process_frame
+	if action_system.get_runtime_action_id("doctor_01") != "drink_wine":
+		push_error("Invalid GM upgrade command should preserve the NPC's prior valid action")
+		quit(1)
+		return
+	action_system.interrupt_npc_action("doctor_01", "gm_invalid_upgrade_preservation_verified", true)
 	if (
 		not npc_system.debug_enter_location_immediately("doctor_01", "plaza")
 		or not npc_system.debug_enter_location_immediately("cook_01", "plaza")
@@ -969,6 +1111,11 @@ func _init() -> void:
 		quit(1)
 		return
 	npc_system.debug_damage_npc("cook_01", 999, "local_public")
+	npc_system.update_npc_state("doctor_01", {"wine": 1})
+	if not action_system.debug_assign_action("doctor_01", "drink_wine"):
+		push_error("Failed to prepare doctor active action before GM healing replacement")
+		quit(1)
+		return
 	var gm_heal_money_before := int(resource_system.get_resource("money"))
 	assist_heal_button.pressed.emit()
 	await process_frame

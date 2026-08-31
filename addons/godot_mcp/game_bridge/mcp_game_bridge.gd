@@ -4,10 +4,6 @@ class_name MCPGameBridge
 const DEFAULT_MAX_WIDTH := 1024
 const Onscreen := preload("onscreen.gd")
 const MeshValidator := preload("mesh_validator.gd")
-const RuntimeStateSampler := preload("mcp_runtime_state_sampler.gd")
-const MCPKeyNames := preload("key_names.gd")
-const MCPJoyNames := preload("joy_names.gd")
-const MCPExecGuard := preload("mcp_exec_guard.gd")
 
 # Cap on frames waited for the main scene to appear before announcing ready
 # anyway. The scene is normally added within a frame or two of the bridge
@@ -17,7 +13,7 @@ const READY_SCENE_WAIT_FRAMES := 600
 
 var _logger: _MCPGameLogger
 var _profiler: MCPFrameProfiler
-var _sampler = null
+var _sampler: MCPRuntimeStateSampler
 
 # Set once the bridge has told the editor the game is ready to drive. Guards the
 # announcement against firing twice and lets the headless test observe it.
@@ -49,7 +45,7 @@ func _ready() -> void:
 	OS.add_logger(_logger)
 	_profiler = MCPFrameProfiler.new()
 	EngineDebugger.register_profiler("mcp_frame_profiler", _profiler)
-	_sampler = RuntimeStateSampler.new()
+	_sampler = MCPRuntimeStateSampler.new()
 	add_child(_sampler)
 	EngineDebugger.register_message_capture("godot_mcp", _on_debugger_message)
 	set_physics_process(false)  # only counts ticks during a step window
@@ -268,7 +264,10 @@ func _compute_report_deltas(before: Dictionary, after: Dictionary) -> Dictionary
 	for src in before:
 		var b: Variant = before[src]
 		var a: Variant = after.get(src, null)
-		var changed: bool = b != a
+		# Compare type first: `!=` across Variant types (a String reading that
+		# turned into an {error} Dictionary) raises in GDScript 4 and would abort
+		# the emit, leaving the caller to time out (#358).
+		var changed: bool = typeof(a) != typeof(b) or a != b
 		if changed:
 			any_changed = true
 		deltas[src] = {"before": b, "after": a, "changed": changed}
@@ -563,10 +562,34 @@ func _get_node_from_path(path: String, scene_root: Node) -> Node:
 				return scene_root
 			return scene_root.get_node_or_null(relative)
 
+	if path.begins_with("/root/") or path == "/root":
+		# Absolute path beside the scene: an autoload, the exec holder, etc. (#369)
+		var tree := get_tree()
+		return tree.root.get_node_or_null(path.trim_prefix("/root").trim_prefix("/")) if tree else null
+
 	if path.begins_with("/"):
 		path = path.substr(1)
 
 	return scene_root.get_node_or_null(path)
+
+
+# Where a node lives relative to the running scene: "scene", "autoload", "exec"
+# (attached by godot_exec under the holder), or "root" (anything else beside
+# the scene). The bridge's own node is filtered out by callers.
+func _node_location(node: Node, scene_root: Node) -> String:
+	var tree := get_tree()
+	var n := node
+	while n != null and n.get_parent() != tree.root:
+		n = n.get_parent()
+	if n == null:
+		return "root"
+	if n == scene_root:
+		return "scene"
+	if n == _exec_holder:
+		return "exec"
+	if ProjectSettings.has_setting("autoload/" + String(n.name)):
+		return "autoload"
+	return "root"
 
 
 func _find_recursive(node: Node, scene_root: Node, name_pattern: String, type_filter: String, results: Array) -> void:
@@ -574,11 +597,7 @@ func _find_recursive(node: Node, scene_root: Node, name_pattern: String, type_fi
 	var type_matches := type_filter.is_empty() or node.is_class(type_filter)
 
 	if name_matches and type_matches:
-		var path := "/root/" + scene_root.name
-		var relative := scene_root.get_path_to(node)
-		if relative != NodePath("."):
-			path += "/" + str(relative)
-		results.append({"path": path, "type": node.get_class()})
+		results.append({"path": _node_path_string(node, scene_root), "type": node.get_class()})
 
 	for child in node.get_children():
 		_find_recursive(child, scene_root, name_pattern, type_filter, results)
@@ -646,8 +665,13 @@ func _handle_get_active_processes() -> void:
 		EngineDebugger.send_message("godot_mcp:game_response", ["get_active_processes", {"processes": []}])
 		return
 
+	# Walk the whole tree, not just the scene: autoloads and exec-attached
+	# nodes are exactly the per-frame cost sources a scene walk misses (#369).
 	var script_map: Dictionary = {}
-	_collect_processes(scene_root, scene_root, script_map)
+	for child in tree.root.get_children():
+		if child == self:
+			continue
+		_collect_processes(child, scene_root, script_map)
 
 	var processes: Array = []
 	for script_path in script_map:
@@ -679,6 +703,7 @@ func _collect_processes(node: Node, scene_root: Node, script_map: Dictionary) ->
 				"has_physics_process": false,
 				"instance_count": 0,
 				"example_paths": [],
+				"locations": [],
 			}
 
 		var entry: Dictionary = script_map[script_path]
@@ -688,11 +713,10 @@ func _collect_processes(node: Node, scene_root: Node, script_map: Dictionary) ->
 			entry.has_physics_process = true
 		entry.instance_count += 1
 		if entry.example_paths.size() < 3:
-			var path := "/root/" + scene_root.name
-			var relative := scene_root.get_path_to(node)
-			if relative != NodePath("."):
-				path += "/" + str(relative)
-			entry.example_paths.append(path)
+			entry.example_paths.append(_node_path_string(node, scene_root))
+		var loc := _node_location(node, scene_root)
+		if not entry.locations.has(loc):
+			entry.locations.append(loc)
 
 	for child in node.get_children():
 		_collect_processes(child, scene_root, script_map)
@@ -707,15 +731,20 @@ func _handle_get_signal_connections(data: Array) -> void:
 		EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": []}])
 		return
 
-	var search_root: Node = scene_root
-	if not node_path.is_empty():
-		search_root = _get_node_from_path(node_path, scene_root)
+	var connections: Array = []
+	if node_path.is_empty():
+		# Whole tree minus the bridge: an autoload's outgoing connections (a beat
+		# clock driving scene nodes) are invisible to a scene-rooted walk (#369).
+		for child in tree.root.get_children():
+			if child == self:
+				continue
+			_collect_signal_connections(child, scene_root, connections, 0)
+	else:
+		var search_root := _get_node_from_path(node_path, scene_root)
 		if not search_root:
 			EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": [], "error": "Node not found: " + node_path}])
 			return
-
-	var connections: Array = []
-	_collect_signal_connections(search_root, scene_root, connections, 0)
+		_collect_signal_connections(search_root, scene_root, connections, 0)
 
 	EngineDebugger.send_message("godot_mcp:game_response", ["get_signal_connections", {"connections": connections}])
 
@@ -754,12 +783,11 @@ func _collect_signal_connections(node: Node, scene_root: Node, connections: Arra
 		_collect_signal_connections(child, scene_root, connections, depth + 1)
 
 
-func _node_path_string(node: Node, scene_root: Node) -> String:
-	var path := "/root/" + scene_root.name
-	var relative := scene_root.get_path_to(node)
-	if relative != NodePath("."):
-		path += "/" + str(relative)
-	return path
+# Absolute tree path. Identical to the old "/root/<scene>/<relative>" form for
+# scene nodes, and correct (not "/root/Main/../Conductor") for autoloads and
+# other nodes beside the scene now that walkers can reach them (#369).
+func _node_path_string(node: Node, _scene_root: Node) -> String:
+	return str(node.get_path())
 
 
 func _handle_get_runtime_state(data: Array) -> void:
@@ -793,7 +821,11 @@ func _handle_get_runtime_state(data: Array) -> void:
 
 	# Determine which selection tier to use
 	var actual_selection: String = select_mode
-	if select_mode == "auto":
+	if select_mode == "visible":
+		# Explicit request for the visibility tier (#360): reaches runtime-spawned
+		# UI and world nodes even when an mcp_watch group or _mcp_state() exists.
+		actual_selection = "fallback"
+	elif select_mode == "auto":
 		if _has_group_members(scene_root, group_name):
 			actual_selection = "group"
 		elif _has_mcp_state_nodes(scene_root):
@@ -803,10 +835,15 @@ func _handle_get_runtime_state(data: Array) -> void:
 
 	# Collect entities (skipped entirely when select="none" — explicit paths only)
 	var entities: Array = []
+	# Matches past the max_nodes cap are counted, not collected, so the
+	# response can say how much was left out (#327).
+	var walk_stats: Dictionary = {"matched": 0}
 	if actual_selection != "none":
 		_collect_runtime_state(scene_root, scene_root, actual_selection, group_name,
 			name_filter, type_filter, include_fields,
-			max_nodes, entities)
+			max_nodes, entities, walk_stats)
+	var nodes_returned: int = entities.size()
+	var nodes_total_matched: int = walk_stats["matched"]
 
 	# Explicit paths: include nodes the scene walk cannot reach (e.g. autoload
 	# singletons under /root). For each, return _mcp_state() if present, else a
@@ -844,6 +881,14 @@ func _handle_get_runtime_state(data: Array) -> void:
 
 	var autoloads := _list_autoload_paths(scene_root)
 
+	# Which Control has keyboard/controller focus, for UI navigation checks (#360).
+	var focus_owner_path := ""
+	var scene_viewport := scene_root.get_viewport()
+	if scene_viewport != null:
+		var focus_owner := scene_viewport.gui_get_focus_owner()
+		if focus_owner != null:
+			focus_owner_path = _node_path_string(focus_owner, scene_root)
+
 	var hint := ""
 	if actual_selection == "fallback":
 		hint = ("No nodes found in group '%s' and no _mcp_state() methods detected; " +
@@ -865,11 +910,16 @@ func _handle_get_runtime_state(data: Array) -> void:
 		"selection": actual_selection,
 		"entity_count": entities.size(),
 		"entities": entities,
+		"nodes_returned": nodes_returned,
+		"nodes_total_matched": nodes_total_matched,
+		"nodes_truncated": nodes_total_matched > nodes_returned,
 	}
 	if not autoloads.is_empty():
 		result["available_autoloads"] = autoloads
 	if camera_entity:
 		result["camera"] = camera_entity
+	if not focus_owner_path.is_empty():
+		result["focus_owner"] = focus_owner_path
 	if not hint.is_empty():
 		result["hint"] = hint
 	if not unresolved_paths.is_empty():
@@ -894,11 +944,15 @@ func _has_mcp_state_nodes(node: Node) -> bool:
 	return false
 
 
+## Walks the tree collecting up to max_nodes matching entities into results.
+## Every match is counted in stats["matched"] whether or not it fit under the
+## cap, so callers can report truncation instead of presenting a partial list
+## as the whole scene (#327). The walk keeps going past the cap purely to count.
 func _collect_runtime_state(node: Node, scene_root: Node, selection: String, group_name: String,
 		name_filter: String, type_filter: String, include_fields: Array,
-		max_nodes: int, results: Array) -> void:
-	if results.size() >= max_nodes:
-		return
+		max_nodes: int, results: Array, stats: Dictionary = {}) -> void:
+	if not stats.has("matched"):
+		stats["matched"] = 0
 
 	var include_node := false
 	match selection:
@@ -942,16 +996,16 @@ func _collect_runtime_state(node: Node, scene_root: Node, selection: String, gro
 			include_node = false
 
 	if include_node:
-		var entity := _extract_node_state(node, scene_root, include_fields)
-		if entity != null:
-			results.append(entity)
+		stats["matched"] += 1
+		if results.size() < max_nodes:
+			var entity := _extract_node_state(node, scene_root, include_fields)
+			if entity != null:
+				results.append(entity)
 
 	for child in node.get_children():
-		if results.size() >= max_nodes:
-			return
 		_collect_runtime_state(child, scene_root, selection, group_name,
 			name_filter, type_filter, include_fields,
-			max_nodes, results)
+			max_nodes, results, stats)
 
 
 # _mcp_state() contract: return a Dictionary with two categories —
@@ -970,6 +1024,7 @@ func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
 	var want_groups := want or include_fields.has("groups")
 	var want_onscreen := want or include_fields.has("onscreen")
 	var want_state := want or include_fields.has("state")
+	var want_ui := want or include_fields.has("ui")
 
 	var entity: Dictionary = {
 		"path": _node_path_string(node, scene_root),
@@ -1029,6 +1084,9 @@ func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
 			entity["anim"] = asp.animation
 			entity["anim_frame"] = asp.frame
 
+	if want_ui and node is Control:
+		entity["ui"] = _control_ui_state(node as Control)
+
 	if want_onscreen:
 		# Resolve the camera from the node's own viewport (handles SubViewport
 		# cameras) and use the correct geometry per dimension — 3D frustum, 2D
@@ -1050,6 +1108,26 @@ func _extract_node_state(node: Node, scene_root: Node, include_fields: Array,
 				entity["state"] = snap
 
 	return entity
+
+
+# Layout-engine facts about a Control that only the running process can
+# answer (#360): where it actually landed, whether it is shown, what it says,
+# and whether it holds focus. `text` covers Label, Button, LineEdit,
+# RichTextLabel and anything else exposing a String `text` property.
+func _control_ui_state(c: Control) -> Dictionary:
+	var r := c.get_global_rect()
+	var ui: Dictionary = {
+		"global_rect": {
+			"x": snapped(r.position.x, 0.01), "y": snapped(r.position.y, 0.01),
+			"w": snapped(r.size.x, 0.01), "h": snapped(r.size.y, 0.01),
+		},
+		"visible_in_tree": c.is_visible_in_tree(),
+		"has_focus": c.has_focus(),
+	}
+	var text: Variant = c.get("text")
+	if text is String:
+		ui["text"] = (text as String).substr(0, 200)
+	return ui
 
 
 const _MCP_STATE_MAX_BYTES := 1024
@@ -1180,10 +1258,11 @@ func _handle_watch_start(data: Array) -> void:
 	var hz: int = data[1] if data.size() > 1 else 20
 	var duration_ms: int = data[2] if data.size() > 2 else 1000
 	var signal_specs: Array = data[3] if data.size() > 3 else []
-	var start_result: Dictionary = _sampler.start(specs, hz, duration_ms, signal_specs)
+	var start_result := _sampler.start(specs, hz, duration_ms, signal_specs)
 	EngineDebugger.send_message("godot_mcp:game_response", ["watch_start", {
 		"started": true,
 		"resolved_fields": start_result.get("resolved_fields", 0),
+		"unresolved_fields": start_result.get("unresolved_fields", []),
 		"connected_signals": start_result.get("connected_signals", 0),
 		"unresolved_signals": start_result.get("unresolved_signals", []),
 	}])
@@ -1239,10 +1318,19 @@ class _MCPGameLogger extends Logger:
 		return _dropped
 
 
+# Builtin ui_* actions worth listing: the ones an agent can inject for menu
+# navigation. Keep in sync with INJECTABLE_UI_ACTIONS in input_commands.gd so
+# the game-sourced and project-sourced maps agree (#348).
+const INJECTABLE_UI_ACTIONS: Array[String] = [
+	"ui_up", "ui_down", "ui_left", "ui_right",
+	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",
+]
+
+
 func _handle_get_input_map() -> void:
 	var actions: Array = []
 	for action_name in InputMap.get_actions():
-		if action_name.begins_with("ui_"):
+		if action_name.begins_with("ui_") and not action_name in INJECTABLE_UI_ACTIONS:
 			continue
 		var events := InputMap.action_get_events(action_name)
 		var event_strings: Array = []
@@ -1478,6 +1566,18 @@ var _freeze_started_ticks := 0
 var _freeze_transition_count := 0
 
 var _step_active := false
+
+
+## Public: true while a godot_game_time step / step_until window is advancing
+## the tree, including the report evaluation at its end (#355). Game code that
+## corrects itself against a wall-clock source (audio position, network time)
+## should hold off while this is true, since wall time kept running through
+## the freeze that preceded the step. Read it as
+## `get_node("/root/MCPGameBridge").is_stepping()` (guard with
+## has_node so the game runs without the addon). Frozen-but-not-stepping is
+## just `get_tree().paused`.
+func is_stepping() -> bool:
+	return _step_active
 var _step_finish_pending := false
 var _step_needs_settle := false
 var _step_wall_exceeded := false
@@ -1498,7 +1598,8 @@ var _step_last_tree_paused := false
 # fixed-budget step, set for step_until; _step_response_type routes _finish_step's
 # reply to the matching command (the relay correlates by message type). _step_report
 # is the optional readings the agent wants back at stop time (in one round-trip,
-# instead of a separate observation call) — each is [{src: String, expr: Expression}].
+# instead of a separate observation call), for both step kinds — each is
+# [{src: String, expr: Expression}]; _step_predicate_inputs is their context.
 var _step_predicate: Expression = null
 var _step_predicate_inputs: Array = []
 var _step_predicate_met := false
@@ -1634,6 +1735,19 @@ func _handle_game_time_step(data: Array) -> void:
 		return
 	_step_input_kinds = compiled["kinds"]
 
+	# Optional readings at stop time, same contract as step_until's report (#388):
+	# parsed up front in the predicate context, evaluated on the window's last frame.
+	var report_compiled: Array = []
+	var report_inputs: Array = []
+	if not (params.get("report", []) as Array).is_empty():
+		var ctx := _build_predicate_context()
+		var report_result := _compile_report(params.get("report", []), ctx["names"], ctx["inputs"])
+		if report_result.has("error"):
+			_send_game_time_response("game_time_step", {"error": report_result["error"]})
+			return
+		report_compiled = report_result["report"]
+		report_inputs = ctx["inputs"]
+
 	# Step from a running game is allowed — it freezes first, so "advance
 	# 500ms then wait for me" is a single atomic call.
 	_engage_freeze()
@@ -1653,6 +1767,8 @@ func _handle_game_time_step(data: Array) -> void:
 	_step_wall_start = Time.get_ticks_msec()
 	_step_wall_budget_ms = int(params.get("wall_budget_ms", STEP_WALL_BUDGET_MS))
 	_step_predicate = null
+	_step_predicate_inputs = report_inputs
+	_step_report = report_compiled
 	_step_response_type = "game_time_step"
 	_step_active = true
 
@@ -1939,6 +2055,14 @@ func _apply_key_modifiers(ke: InputEventKey, mask: int) -> void:
 	ke.meta_pressed = (mask & int(KEY_MASK_META)) != 0
 
 
+# Keep the server-side scope descriptions (game-time.ts, input.ts) in sync.
+var EXPRESSION_SINGLETONS: Array = [
+	["Engine", Engine], ["Time", Time], ["Performance", Performance],
+	["AudioServer", AudioServer], ["Input", Input], ["DisplayServer", DisplayServer],
+	["OS", OS],
+]
+
+
 func _build_predicate_context() -> Dictionary:
 	# Exposes the running game to a step_until predicate: every autoload by its
 	# own name (so `G.wave > 1` just works), plus `tree` (SceneTree) and `root`
@@ -1964,6 +2088,16 @@ func _build_predicate_context() -> Dictionary:
 	if not names.has("root"):
 		names.append("root")
 		inputs.append(tree.root)
+	# Engine singletons (#354): Expression cannot see globals, so
+	# `Engine.get_frames_per_second()` or `Time.get_ticks_msec()` only work
+	# when they ride in as named inputs like everything else. An autoload
+	# that shadows one of these names keeps its slot.
+	for entry in EXPRESSION_SINGLETONS:
+		var sname: String = entry[0]
+		if names.has(sname):
+			continue
+		names.append(sname)
+		inputs.append(entry[1])
 	return {"names": PackedStringArray(names), "inputs": inputs}
 
 
@@ -1979,8 +2113,12 @@ func _sanitize_value(v: Variant) -> Variant:
 
 
 func _compile_report(report: Array, names: PackedStringArray, inputs: Array) -> Dictionary:
-	# Compile + validate each report expression in the predicate context. Returns
-	# {"error": ...} if any fails up front, else {"report": [{src, expr}, ...]}.
+	# Parse each report expression in the predicate context. Returns
+	# {"error": ...} if any fails to parse, else {"report": [{src, expr}, ...]}.
+	# Deliberately NOT dry-run executed (#353): the state a report reads is
+	# often created by the step itself (a spawned node), so evaluating against
+	# the pre-step tree would reject exactly the expressions report is for.
+	# Evaluation failures surface per expression at stop time instead.
 	var compiled: Array = []
 	for item in report:
 		var s := str(item).strip_edges()
@@ -1989,21 +2127,20 @@ func _compile_report(report: Array, names: PackedStringArray, inputs: Array) -> 
 		var e := Expression.new()
 		if e.parse(s, names) != OK:
 			return {"error": "report expression parse error (%s): %s" % [s, e.get_error_text()]}
-		e.execute(inputs, self)
-		if e.has_execute_failed():
-			return {"error": "report expression failed to evaluate (%s): %s" % [s, e.get_error_text()]}
 		compiled.append({"src": s, "expr": e})
 	return {"report": compiled}
 
 
 func _evaluate_report(report_exprs: Array, inputs: Array) -> Dictionary:
 	# Evaluate the compiled report expressions at stop time into {src: value}.
+	# An expression that fails maps to {"error": message} rather than failing
+	# the call, so the readings that did work still come back.
 	var out: Dictionary = {}
 	for item in report_exprs:
 		var e: Expression = item["expr"]
 		var v: Variant = e.execute(inputs, self)
 		if e.has_execute_failed():
-			out[item["src"]] = "<error: %s>" % e.get_error_text()
+			out[item["src"]] = {"error": e.get_error_text()}
 		else:
 			out[item["src"]] = _sanitize_value(v)
 	return out
@@ -2183,6 +2320,14 @@ func _finish_step() -> void:
 
 	get_tree().paused = true  # the freeze layer re-engages
 	_step_last_tree_paused = true
+
+	# Read the report while is_stepping() is still true (#355): game code that
+	# gates wall-clock resyncs on it must see the same answer during the last
+	# processed frame and at report time.
+	var report_values: Dictionary = {}
+	if not _step_report.is_empty():
+		report_values = _evaluate_report(_step_report, _step_predicate_inputs)
+
 	_step_active = false
 	_step_finish_pending = false
 	set_physics_process(false)
@@ -2208,13 +2353,14 @@ func _finish_step() -> void:
 		result["pause_transitions"] = _step_transitions
 	if _step_wall_exceeded:
 		result["wall_budget_exceeded"] = true
+	# report carries the readings the agent asked for (the "what advanced" hint,
+	# so it need not re-observe), for step and step_until alike (#388).
+	if not _step_report.is_empty():
+		result["report"] = report_values
 	if _step_predicate != null:
-		# step_until: predicate_met is the headline. report carries the readings the
-		# agent asked for (the "what advanced" hint, so it need not re-observe). A
-		# non-met return means the cap or wall budget ran out first.
+		# step_until: predicate_met is the headline. A non-met return means the
+		# cap or wall budget ran out first.
 		result["predicate_met"] = _step_predicate_met
-		if not _step_report.is_empty():
-			result["report"] = _evaluate_report(_step_report, _step_predicate_inputs)
 		if not _step_predicate_error.is_empty():
 			result["predicate_error"] = _step_predicate_error
 

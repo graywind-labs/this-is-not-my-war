@@ -36,7 +36,6 @@ func _init() -> void:
 		return
 
 	var expected_catalog := {
-		"craft_arrow_bundle": ["item_arrow_bundle", 1],
 		"craft_bow": ["item_bow", 3],
 		"craft_crossbow": ["item_crossbow", 5],
 		"craft_wall_ballista": ["item_wall_ballista", 9],
@@ -48,14 +47,6 @@ func _init() -> void:
 		if str(recipe.get("building_id", "")) != "workshop" or str(recipe.get("output_item_id", "")) != str(expected[0]) or (recipe.get("stages", []) as Array).size() != int(expected[1]):
 			_fail("Workshop recipe catalog mismatch for %s" % recipe_id)
 			return
-	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
-		_fail("Arrow bundles must be hidden from selectable workshop targets")
-		return
-	var hidden_arrow_result: Dictionary = crafting_system.set_target("workshop", "craft_arrow_bundle", false)
-	if bool(hidden_arrow_result.get("ok", false)) or str(hidden_arrow_result.get("reason", "")) != "recipe_unavailable":
-		_fail("Hidden arrow-bundle recipe should reject direct target selection")
-		return
-
 	var engineer_id := "engineer_01"
 	var blacksmith_id := "blacksmith_01"
 	# A5-P5c routes workshop work through the real diagonal doorway. Keep the

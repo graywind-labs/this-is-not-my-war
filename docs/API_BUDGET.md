@@ -1,5 +1,21 @@
 # API_BUDGET.md
 
+## T0254 攻击 / 对话事件分离调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt、Schema、重试或供应商调用。普通对话攻击仍沿既有 `/npc/dialogue` 请求一次 NPC 反应，逃离攻击仍为 0 次；变化只在 Godot 本地会话 history 与事件提交。纯攻击结束时不再发送空的对话判别，而是调用既有 `guard_attack` 计划重评估入口，因此不会为了伪对话额外消耗一次对话判别预算。本地 Mock / 生命周期回归不产生真实供应商调用，无需真实 provider 效果验收。
+
+## T0251 建筑受损见闻字段调用边界
+
+本任务只在 Godot 本地过滤受损建筑状态差量中的 `operational_efficiency`，不新增 endpoint、`call_type`、Prompt、Schema、重试或远程模型调用；本地回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0238 陨石坑淡化调用边界
+
+本任务只修改 Godot 本地配置、逻辑时间表现状态和材质 Alpha，不新增 endpoint、`call_type`、Prompt / Schema、重试或远程 API 调用；专项、回归与 Godot MCP 验收产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0237 避战事件摘要调用边界
+
+本任务只修改 Godot 本地确定性事件摘要模板与回归断言，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或远程 API 调用；专项与 Godot MCP 验收产生 0 次供应商调用，无需真实 provider 验收。
+
 ## T0167 马匹毛色与取马路径调用边界
 
 本任务只调整本地 JSON 毛色 / 空间合同及 Godot NavigationServer3D 路径验证，不新增 endpoint、Prompt、Schema、LLM 或远程 API 调用；专项和视觉验收产生 0 次供应商调用。
@@ -488,7 +504,7 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - T0604A 已将 Godot 侧传输层改为原生 `HTTPClient`，不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件，并继续保证失败、超时和降级路径都会释放慢速请求。
 - T0109 不新增 endpoint、call_type、重试或供应商调用。显式取消和场景退出现在会协作终止仍在等待的 Godot `HTTPClient` 传输并 join 工作线程；已经发送到后端 / 供应商的尝试仍按后端真实 usage 与审计记录保留，客户端取消不会伪造成功、抹掉成本或触发 Mock fallback。
 - T0108 只更新既有长期记忆内容，不增加正常运行调用次数。2026-07-30 最终真实验收使用 DeepSeek `deepseek-v4-flash` 完成 3 次对话，29,784 input / 459 output tokens、估算 ¥0.00185080，全部 `fallback_used=false`；包含一次为放宽表面措辞断言而重跑的完整迭代后，本任务共发生 6 次成功 provider 调用，59,568 input / 888 output tokens、估算 ¥0.02132864。
-- T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入历史的守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消。逃离挽留攻击不调用 LLM，不申请慢速，不计入 API 成本，并自动完成会话。
+- T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入 history 的真实守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消；T0254 后固定攻击说明不进入 history，纯攻击结束不发空对话判别而走既有 `guard_attack` 重评估。逃离挽留攻击不调用 LLM、不申请慢速、不计入 API 成本，并自动完成会话但不生成无台词 `dialogue_turn`。
 - T0050/T0085 后，日常行动异常、NPC-NPC 和守备官-NPC 实际对话都先请求异步 `/npc/plan_revision_judgement`，仅非空判别再请求 `/npc/revise_plan`。T0086/T0093 的五类成功完成事件属于确定性后续安排，跳过判别并直接修订当前小时起连续相同 action + target 的计划段。修订输出与 `revision_hours` 完全一致；精确小时、白名单或目标组合不合法时后端可携带业务错误让同一真实 provider 纠正一次，Godot 也会拒绝当前小时原样重复已完成的 action + target。工作阶段较少不再触发纠错或 Godot 重试。正式路径仍拒绝 Mock / fallback，最终失败保留原计划。
 - T1003/T1403/T0022/T0085 后，每日计划通过 `/npc/plan_day` 走 Model Adapter。正式开局和新一天会暂停时间并同时发起 8 个真实请求。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段是 Prompt 建议，不是重试来源。Godot 正式路径只接受 `llm_plan_day`，其他真实失败仍保持暂停且不使用 Mock / 规则计划。
 - T1004/T1005/T1405/T0024 起，首次睡眠总结可通过异步 `/npc/daily_reflection` 走 Model Adapter。Godot 侧默认 `requires_time_slowdown=true`，不设置业务响应总时长；总结发起到完成期间 NPC 处于不可打断的深度睡眠锁，因此它不是后台无感调用。符合条件的 8 名 NPC 最多 8 路并发，快照记录实际峰值。后端成功体携带 provider / model / fallback 元数据；真实结果写为 `llm_daily_reflection`，显式开发 Mock 才写 `mock_daily_reflection`。真实 provider 不可用、未配置、缺少来源证明或输出不合法时，`DailyReflectionSystem` 使用本地模板兜底，仍会追加日记、替换式更新知识图谱当前键值并清空该 NPC 当天短期记忆；模板来源和原始失败原因必须可查。

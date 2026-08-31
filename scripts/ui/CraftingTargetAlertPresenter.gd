@@ -1,6 +1,7 @@
 extends Control
 
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
+const FORMAL_BUILDING_ROOT_PATH := "/root/Main/WorldRoot/FormalStationLayout/BuildingRoots"
 const BUILDING_ROOT_PATH := "/root/Main/WorldRoot/Station/Buildings"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
@@ -139,12 +140,9 @@ func _position_alerts() -> void:
 			maxf(SCREEN_MARGIN, viewport_size.y - ALERT_DISPLAY_SIZE.y - SCREEN_MARGIN)
 		)
 		alert.position = top_left.clamp(Vector2(SCREEN_MARGIN, SCREEN_MARGIN), max_position)
-		alert.visible = (
-			label_screen_position.x >= -ALERT_DISPLAY_SIZE.x
-			and label_screen_position.y >= -ALERT_DISPLAY_SIZE.y
-			and label_screen_position.x <= viewport_size.x + ALERT_DISPLAY_SIZE.x
-			and label_screen_position.y <= viewport_size.y + ALERT_DISPLAY_SIZE.y
-		)
+		# Do not pin a crafting warning to a screen edge after its building has
+		# moved off camera; that makes the warning appear to belong to another lot.
+		alert.visible = Rect2(Vector2.ZERO, viewport_size).has_point(label_screen_position)
 
 
 func _get_building_label(building_id: String) -> Label3D:
@@ -152,6 +150,19 @@ func _get_building_label(building_id: String) -> Label3D:
 	if is_instance_valid(cached):
 		return cached
 
+	var formal_buildings_root := get_node_or_null(FORMAL_BUILDING_ROOT_PATH)
+	if formal_buildings_root != null:
+		for raw_building_root in formal_buildings_root.get_children():
+			var formal_building_root := raw_building_root as Node3D
+			if formal_building_root == null or str(formal_building_root.get_meta("building_id", "")) != building_id:
+				continue
+			var formal_label := formal_building_root.get_node_or_null("NameLabel") as Label3D
+			if formal_label != null:
+				_building_labels[building_id] = formal_label
+				return formal_label
+
+	# Keep the legacy lookup as a compatibility fallback for scenes that do not
+	# instantiate the formal station layout.
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	var building_root := get_node_or_null(BUILDING_ROOT_PATH)
 	if building_system == null or building_root == null or not building_system.has_method("get_building"):

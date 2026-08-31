@@ -40,6 +40,7 @@ const LOOPING_STATES := [
 	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_eating",
 	"drink", "medical_treatment", "vehicle_seated", "mounted_walk", "mounted_training", "sleeping",
 ]
+const HOLD_FINAL_POSE_STATES := ["unconscious", "mounted_fall"]
 const EXTRA_LOOPING_CLIPS := [
 	"Working_A", "Working_B", "Working_C", "Digging",
 	"Ranged_Magic_Spellcasting_Long", "Ranged_Magic_Raise",
@@ -2217,8 +2218,20 @@ func _play_state(state_name: String, reset: bool = false) -> bool:
 	var clip_name := _get_state_clip(state_name)
 	if _animation_player == null or not _animation_player.has_animation(clip_name):
 		return false
-	if _current_state == state_name and _current_clip == clip_name and not reset and _animation_player.is_playing():
-		return true
+	if _current_state == state_name and _current_clip == clip_name and not reset:
+		if _animation_player.is_playing():
+			return true
+		if state_name in HOLD_FINAL_POSE_STATES:
+			# Death_A is a one-shot fall. Profile refreshes while authority still says
+			# unconscious must keep its final pose; replaying from frame zero briefly
+			# stands the NPC up before dropping them again.
+			return true
+		if state_name in ["attack", "mounted_attack"] and _combat_attack_phase in ["windup", "recovery"]:
+			# Attack clips are authored as one-shot animations. Authority state can
+			# remain in recovery for a fractional frame after the clip reaches its
+			# end; profile refreshes must hold that final pose instead of replaying
+			# the same sequence. Only a changed combat_attack_sequence passes reset.
+			return true
 	_restore_cached_sword_attack_attachment(state_name)
 	# A blended transition keeps the previous action's hand-bone basis alive for
 	# several rendered frames. Unlike the procedural weapons, the sword must then
@@ -3101,15 +3114,26 @@ func _sync_sword_shield_visibility(state_name: String) -> void:
 		return
 	var active_weapon_id := _active_preview_weapon_id()
 	_ensure_combat_weapon_node(active_weapon_id)
+	var combat_visible := (
+		_debug_preview_combat_visible
+		if _debug_equipment_preview_active
+		else _authority_combat_visible or state_name in [
+			"attack",
+			"training_instructor",
+			"training_practice",
+			"mounted_attack",
+			"mounted_training",
+		]
+	)
 	var authority_allows := (
 		_debug_preview_combat_visible and _debug_preview_main_weapon_id == "sword_shield"
 		if _debug_equipment_preview_active
-		else equipment_mode == "sword_shield" or active_weapon_id == "sword_shield"
+		else combat_visible and (equipment_mode == "sword_shield" or active_weapon_id == "sword_shield")
 	)
 	var state_allows := state_name != "sleeping"
 	_set_equipment_visible("sword", authority_allows and state_allows)
 	_set_equipment_visible("shield", authority_allows and state_allows)
-	var ranged_or_polearm_visible := _debug_preview_combat_visible if _debug_equipment_preview_active else _authority_combat_visible
+	var ranged_or_polearm_visible := combat_visible
 	for weapon_id in ["polearm", "bow", "crossbow"]:
 		_set_equipment_visible(weapon_id, ranged_or_polearm_visible and active_weapon_id == weapon_id and state_allows)
 	_update_preview_polearm_alignment()
@@ -3857,6 +3881,9 @@ func debug_get_snapshot() -> Dictionary:
 		"current_state": _current_state,
 		"desired_state": _desired_state,
 		"current_clip": _current_clip,
+		"current_animation_playing": _animation_player.is_playing() if _animation_player != null else false,
+		"current_animation_position": _animation_player.current_animation_position if _animation_player != null else 0.0,
+		"current_animation_length": _animation_player.current_animation_length if _animation_player != null else 0.0,
 		"temporary_presentation_state": _transient_state,
 		"last_temporary_presentation_event_id": _last_temporary_presentation_event_id,
 		"temporary_presentation_event_count": _temporary_presentation_event_count,

@@ -330,6 +330,24 @@ func get_npc_world_position(npc_id: String) -> Variant:
 	return npc_node.global_position
 
 
+func get_npc_locomotion_needs_snapshot(npc_id: String) -> Dictionary:
+	if not _npc_nodes.has(npc_id):
+		return {}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("get_locomotion_needs_snapshot"):
+		return {}
+	return npc_node.get_locomotion_needs_snapshot()
+
+
+func consume_npc_unmounted_actual_run_seconds(npc_id: String) -> float:
+	if not _npc_nodes.has(npc_id):
+		return 0.0
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("consume_unmounted_actual_run_seconds"):
+		return 0.0
+	return maxf(0.0, float(npc_node.consume_unmounted_actual_run_seconds()))
+
+
 func displace_npcs_from_world_obstacle(
 	center: Vector3,
 	obstacle_radius: float,
@@ -1215,6 +1233,15 @@ func get_npc_behavior_mode_snapshot(npc_id: String) -> Dictionary:
 		"combat_strategy_move_target_id": str(state.get("combat_strategy_move_target_id", "")),
 		"combat_strategy_move_target_name": str(state.get("combat_strategy_move_target_name", "")),
 		"combat_strategy_move_target_position": state.get("combat_strategy_move_target_position", {}),
+		"combat_strategy_move_recovery_count": int(state.get("combat_strategy_move_recovery_count", 0)),
+		"combat_strategy_last_stall": state.get("combat_strategy_last_stall", {}),
+		"world_movement_progress": get_npc_world_movement_progress(npc_id),
+		"keep_distance_retreat_active": bool(state.get("keep_distance_retreat_active", false)),
+		"keep_distance_retreat_sequence": int(state.get("keep_distance_retreat_sequence", 0)),
+		"keep_distance_retreat_target_id": str(state.get("keep_distance_retreat_target_id", "")),
+		"keep_distance_retreat_target_position": state.get("keep_distance_retreat_target_position", {}),
+		"keep_distance_retreat_threat_ids": state.get("keep_distance_retreat_threat_ids", []),
+		"keep_distance_retreat_recovery_count": int(state.get("keep_distance_retreat_recovery_count", 0)),
 		"avoidance_target_id": str(state.get("avoidance_target_id", "")),
 		"avoidance_target_name": str(state.get("avoidance_target_name", "")),
 		"avoidance_target_position": state.get("avoidance_target_position", {}),
@@ -1299,6 +1326,11 @@ func set_npc_behavior_mode(
 			}
 
 	var previous_mode := _get_current_behavior_mode(npc_id)
+	var plan_interruption_status := {}
+	if previous_mode == BEHAVIOR_MODE_WORK and [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT].has(clean_mode):
+		var plan_system_for_interruption := get_node_or_null("/root/Main/Systems/DailyPlanSystem")
+		if plan_system_for_interruption != null and plan_system_for_interruption.has_method("capture_current_plan_for_behavior_mode_interruption"):
+			plan_interruption_status = plan_system_for_interruption.capture_current_plan_for_behavior_mode_interruption(npc_id, reason)
 	var interrupt_modes := [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_AVOID_COMBAT]
 	var should_interrupt := bool(options.get("interrupt", interrupt_modes.has(clean_mode)))
 	var interrupt_result := {}
@@ -1407,6 +1439,15 @@ func set_npc_behavior_mode(
 		changes["combat_attack_playback_multiplier"] = 1.0
 		changes["combat_attack_impact_committed"] = false
 		changes["combat_last_attack_result"] = {}
+		changes["combat_strategy_move_recovery_count"] = 0
+		changes["combat_strategy_last_stall"] = {}
+		changes["keep_distance_retreat_active"] = false
+		changes["keep_distance_retreat_target_id"] = ""
+		changes["keep_distance_retreat_target_position"] = {}
+		changes["keep_distance_retreat_desired_position"] = {}
+		changes["keep_distance_retreat_direction"] = {}
+		changes["keep_distance_retreat_threat_ids"] = []
+		changes["keep_distance_retreat_threats"] = []
 
 	if not world_movement.is_empty():
 		changes["current_action"] = "moving_to_%s" % movement_target_id
@@ -1434,6 +1475,21 @@ func set_npc_behavior_mode(
 	var reevaluation_status := {}
 	if bool(options.get("request_plan_reevaluation", false)):
 		reevaluation_status = _request_plan_reevaluation_or_defer(npc_id, reason)
+	var plan_resume_status := {}
+	if clean_mode == BEHAVIOR_MODE_WORK and bool(options.get("resume_current_plan", false)):
+		var daily_plan_system := get_node_or_null("/root/Main/Systems/DailyPlanSystem")
+		if daily_plan_system != null and daily_plan_system.has_method("resume_current_plan_after_behavior_mode"):
+			# A battle-clear caller still has to release the formal combat-world
+			# lease after this transition returns. Resume on the deferred boundary so
+			# that cleanup cannot cancel the newly started plan route.
+			daily_plan_system.call_deferred("resume_current_plan_after_behavior_mode", npc_id, reason)
+			plan_resume_status = {
+				"ok": true,
+				"npc_id": npc_id,
+				"status": "scheduled",
+				"resumed_after_behavior_mode": true,
+				"behavior_mode_end_reason": reason
+			}
 	return {
 		"ok": true,
 		"npc_id": npc_id,
@@ -1442,8 +1498,10 @@ func set_npc_behavior_mode(
 		"reason": reason,
 		"changed": previous_mode != clean_mode,
 		"interrupt_result": interrupt_result,
+		"plan_interruption_status": plan_interruption_status,
 		"event": mode_event,
 		"plan_reevaluation_status": reevaluation_status,
+		"plan_resume_status": plan_resume_status,
 		"movement_started": not world_movement.is_empty()
 	}
 
@@ -1935,6 +1993,11 @@ func begin_formal_combat_world(npc_ids: Array[String]) -> Dictionary:
 	var navigation_map: RID = controller.get_production_navigation_map_rid()
 	if not navigation_map.is_valid():
 		return {"ok": false, "reason": "formal_combat_navigation_map_missing"}
+	var entry_world_positions := {}
+	for npc_id in npc_ids:
+		var entry_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D if _npc_nodes.has(npc_id) else null
+		if entry_node != null:
+			entry_world_positions[npc_id] = entry_node.global_position
 
 	# A workstation pilot owns the same physical body. End it before the combat
 	# world takes over so one NPC never has two spatial authorities.
@@ -1961,6 +2024,12 @@ func begin_formal_combat_world(npc_ids: Array[String]) -> Dictionary:
 			continue
 		var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
 		var default_formal_resident := _default_formal_world_npcs.has(npc_id)
+		var preserved_entry_position: Variant = entry_world_positions.get(npc_id)
+		if default_formal_resident and npc_node != null and preserved_entry_position is Vector3:
+			# Workstation/seat cleanup may choose an authored stand point. Entering
+			# the combat world is only an authority handoff, so retain the physical
+			# body's exact pre-transition position.
+			npc_node.global_position = preserved_entry_position
 		var initial_position: Variant = npc_node.global_position if default_formal_resident and npc_node != null else controller.get_npc_initial_world_position(npc_id)
 		if (
 			npc_node == null
@@ -2053,12 +2122,11 @@ func end_formal_combat_world(
 					npc_node.configure_navigation_motion(true, migration.get("original_navigation_map", RID()))
 				else:
 					npc_node.configure_navigation_motion(false)
-			# Default formal residents keep the production navigation map, but they
-			# still return to the exact pre-combat position. Keeping the map and the
-			# displaced battle position together left NPCs stranded on the defense
-			# line after a wave was cleared.
+			# Legacy actors return to their pre-combat compatibility space. Default
+			# formal residents already share the production world/map and must keep
+			# their battle-end position; their resumed plan supplies the next route.
 			var original_position: Variant = migration.get("original_position")
-			if original_position is Vector3:
+			if not keep_formal_resident and original_position is Vector3:
 				npc_node.global_position = original_position
 		_set_npc_state_without_signal(npc_id, {
 			"movement_target": "",
@@ -2158,6 +2226,15 @@ func is_npc_world_movement_active(npc_id: String) -> bool:
 		and npc_node.has_method("is_world_movement_active")
 		and bool(npc_node.is_world_movement_active())
 	)
+
+
+func get_npc_world_movement_progress(npc_id: String) -> Dictionary:
+	if not _npc_nodes.has(npc_id):
+		return {}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("get_motion_progress_snapshot"):
+		return {}
+	return npc_node.get_motion_progress_snapshot()
 
 
 func update_npc_world_movement_target(
@@ -2721,6 +2798,11 @@ func begin_formal_healing_approach(
 	var session: Dictionary = _formal_workstation_action_sessions.get(healer_npc_id, {})
 	session["healing_target_npc_id"] = target_npc_id
 	session["healing_target_location_id"] = target_location_id
+	# Healing follows the casualty's physical body, not the semantic location that
+	# was current before a battle. Combat keeps unconscious residents where they
+	# fell, so routing through that old building first can strand the healer at a
+	# doorway or send them away from the patient entirely.
+	session["healing_direct_world_route"] = true
 	_formal_workstation_action_sessions[healer_npc_id] = session
 	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
 	var healer_position: Variant = get_npc_world_position(healer_npc_id)
@@ -2744,6 +2826,7 @@ func begin_formal_healing_approach(
 		var occupied_position: Variant = other_session.get("healing_approach_position")
 		if occupied_position is Vector3:
 			excluded_positions.append(occupied_position)
+	_append_formal_healing_occupied_positions(excluded_positions, healer_npc_id, target_npc_id, target_position)
 	var clean_distance := clampf(approach_distance, 1.0, 1.8)
 	var approach_position: Variant = _find_formal_dialogue_approach_position(
 		navigation_map,
@@ -2763,6 +2846,7 @@ func begin_formal_healing_approach(
 	begin_result["target_world_position"] = target_position
 	begin_result["approach_position"] = approach_position
 	begin_result["approach_distance"] = clean_distance
+	begin_result["direct_world_route"] = true
 	return begin_result
 
 
@@ -2800,6 +2884,7 @@ func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: Str
 			var occupied_position: Variant = other_session.get("healing_approach_position")
 			if occupied_position is Vector3:
 				excluded_positions.append(occupied_position)
+		_append_formal_healing_occupied_positions(excluded_positions, healer_npc_id, target_npc_id, target_position)
 		approach_position = _find_formal_dialogue_approach_position(
 			navigation_map,
 			healer_position,
@@ -2812,15 +2897,13 @@ func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: Str
 		session["healing_approach_position"] = approach_position
 		_formal_workstation_action_sessions[healer_npc_id] = session
 	var target_location_id := str(session.get("healing_target_location_id", PLAZA_LOCATION_ID))
-	var healer_state := get_npc_state(healer_npc_id)
-	if str(healer_state.get("current_location", "")) != target_location_id:
-		return {"ok": false, "reason": "formal_healing_location_not_reached"}
 	var facing_direction: Vector3 = target_position - approach_position
 	facing_direction.y = 0.0
 	if facing_direction.length_squared() > 0.0001:
 		facing_direction = facing_direction.normalized()
 	session["healing_route_started"] = true
 	_formal_workstation_action_sessions[healer_npc_id] = session
+	var crowd_recovery_active := bool(session.get("healing_crowd_recovery_active", false))
 	var moved := move_npc_to_world_position(
 		healer_npc_id,
 		"healing_target_%s" % target_npc_id,
@@ -2835,8 +2918,13 @@ func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: Str
 			"physical_location_phase": "formal_healing_approach",
 			"formal_healing_target_npc_id": target_npc_id,
 			"arrival_facing_direction": facing_direction,
-			"last_action_result": "formal_healing_approach_arrived"
-		}
+			"last_action_result": "formal_healing_approach_arrived",
+			"departure_state": {
+				"spatial_route_phase": "formal_healing_approach_moving",
+				"physical_location_phase": "formal_healing_world_route"
+			}
+		},
+		{"healing_crowd_recovery": true} if crowd_recovery_active else {}
 	)
 	return {
 		"ok": moved,
@@ -2845,6 +2933,111 @@ func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: Str
 		"target_world_position": target_position,
 		"approach_position": approach_position
 	}
+
+
+func retry_formal_healing_approach(healer_npc_id: String, target_npc_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(healer_npc_id):
+		return {"ok": false, "reason": "formal_healing_session_missing"}
+	var session: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
+	if str(session.get("healing_target_npc_id", "")) != target_npc_id:
+		return {"ok": false, "reason": "formal_healing_target_mismatch"}
+	var retry_count := int(session.get("healing_route_retry_count", 0))
+	if retry_count >= 3:
+		return {"ok": false, "reason": "formal_healing_retry_limit", "retry_count": retry_count}
+	var healer_position: Variant = get_npc_world_position(healer_npc_id)
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var navigation_map: RID = (
+		controller.get_production_navigation_map_rid()
+		if controller != null and controller.has_method("get_production_navigation_map_rid")
+		else RID()
+	)
+	if not healer_position is Vector3 or not target_position is Vector3 or not navigation_map.is_valid():
+		return {"ok": false, "reason": "formal_healing_retry_dependencies_missing"}
+	var excluded_positions: Array = (
+		(session.get("healing_failed_approach_positions", []) as Array).duplicate()
+		if session.get("healing_failed_approach_positions", []) is Array
+		else []
+	)
+	var failed_position: Variant = session.get("healing_approach_position")
+	if failed_position is Vector3:
+		excluded_positions.append(failed_position)
+	for raw_other_healer_id in _formal_workstation_action_sessions.keys():
+		var other_healer_id := str(raw_other_healer_id)
+		if other_healer_id == healer_npc_id:
+			continue
+		var other_session: Dictionary = _formal_workstation_action_sessions[other_healer_id]
+		if str(other_session.get("healing_target_npc_id", "")) != target_npc_id:
+			continue
+		var occupied_position: Variant = other_session.get("healing_approach_position")
+		if occupied_position is Vector3:
+			excluded_positions.append(occupied_position)
+	_append_formal_healing_occupied_positions(excluded_positions, healer_npc_id, target_npc_id, target_position)
+	var approach_position: Variant = _find_formal_dialogue_approach_position(
+		navigation_map,
+		healer_position,
+		target_position,
+		float(session.get("healing_approach_distance", 1.25)),
+		excluded_positions
+	)
+	if not approach_position is Vector3:
+		return {"ok": false, "reason": "healing_retry_position_unreachable", "retry_count": retry_count}
+	retry_count += 1
+	session["healing_failed_approach_positions"] = excluded_positions
+	session["healing_approach_position"] = approach_position
+	session["healing_route_retry_count"] = retry_count
+	session["healing_route_started"] = false
+	# A retry is only entered after the normal RVO/capsule route has genuinely
+	# stalled. Let this one healer pass through actor capsules while retaining
+	# world/navmesh collision, so a post-battle crowd cannot make a valid rescue
+	# command permanently impossible.
+	session["healing_crowd_recovery_active"] = true
+	_formal_workstation_action_sessions[healer_npc_id] = session
+	var move_result := move_npc_to_formal_healing_target(healer_npc_id, target_npc_id)
+	# Movement startup refreshes the actor from authoritative state, which restores
+	# its ordinary RVO setting. Apply the bounded recovery override afterwards.
+	if bool(move_result.get("ok", false)):
+		_set_healing_crowd_recovery_enabled(healer_npc_id, true)
+	move_result["retried"] = true
+	move_result["retry_count"] = retry_count
+	return move_result
+
+
+func _append_formal_healing_occupied_positions(
+	excluded_positions: Array,
+	healer_npc_id: String,
+	target_npc_id: String,
+	_target_position: Vector3
+) -> void:
+	for raw_npc_id in _npc_order:
+		var npc_id := str(raw_npc_id)
+		if npc_id == healer_npc_id or npc_id == target_npc_id:
+			continue
+		var occupied_position: Variant = get_npc_world_position(npc_id)
+		if not occupied_position is Vector3:
+			continue
+		excluded_positions.append(occupied_position)
+
+
+func _set_healing_crowd_recovery_enabled(npc_id: String, enabled: bool) -> void:
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+	if npc_node == null:
+		return
+	if npc_node.has_method("set_runtime_actor_collision_enabled"):
+		npc_node.set_runtime_actor_collision_enabled(not enabled, "formal_healing_crowd_recovery" if enabled else "")
+	if npc_node.has_method("set_runtime_avoidance_enabled"):
+		npc_node.set_runtime_avoidance_enabled(not enabled, "formal_healing_crowd_recovery" if enabled else "")
+
+
+func _restore_healing_crowd_recovery_from_movement_context(npc_id: String, context: Dictionary) -> void:
+	var motion_options: Dictionary = context.get("motion_options", {}) if context.get("motion_options", {}) is Dictionary else {}
+	if not bool(motion_options.get("healing_crowd_recovery", false)):
+		return
+	_set_healing_crowd_recovery_enabled(npc_id, false)
+	if _formal_workstation_action_sessions.has(npc_id):
+		var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+		session["healing_crowd_recovery_active"] = false
+		_formal_workstation_action_sessions[npc_id] = session
 
 
 func is_formal_healing_approach_ready(healer_npc_id: String, target_npc_id: String) -> bool:
@@ -2880,6 +3073,7 @@ func end_formal_healing_approach(
 	reason: String = "stopped",
 	emit_state_changed: bool = true
 ) -> Dictionary:
+	_set_healing_crowd_recovery_enabled(healer_npc_id, false)
 	if not _formal_workstation_action_sessions.has(healer_npc_id):
 		return {"ok": true, "active": false, "healer_npc_id": healer_npc_id}
 	var session: Dictionary = _formal_workstation_action_sessions[healer_npc_id]
@@ -3366,6 +3560,16 @@ func end_formal_dialogue_approach(
 	_formal_dialogue_approach_sessions.erase(speaker_npc_id)
 	_restore_formal_dialogue_target_actor(session, false)
 	var speaker_location_id := str(get_npc_state(speaker_npc_id).get("current_location", PLAZA_LOCATION_ID))
+	if speaker_location_id.begins_with("dialogue_target_"):
+		# A same-frame stop can observe the synthetic movement target after the
+		# arrival signal but before formal cleanup. Restore a real information
+		# location instead of publishing the synthetic id as a building.
+		speaker_location_id = str(session.get("target_location_id", PLAZA_LOCATION_ID))
+	_set_npc_state_without_signal(speaker_npc_id, {
+		"current_action": "idle",
+		"movement_target": "",
+		"movement_target_name": ""
+	})
 	end_formal_location_action(speaker_npc_id, reason, speaker_location_id, emit_state_changed)
 	_maybe_disable_formal_preview()
 	return {
@@ -4876,6 +5080,15 @@ func apply_damage_to_npc(
 		states["combat_attack_playback_multiplier"] = 1.0
 		states["combat_attack_impact_committed"] = false
 		states["combat_strategy_move_enemy_id"] = ""
+		states["combat_strategy_move_recovery_count"] = 0
+		states["combat_strategy_last_stall"] = {}
+		states["keep_distance_retreat_active"] = false
+		states["keep_distance_retreat_target_id"] = ""
+		states["keep_distance_retreat_target_position"] = {}
+		states["keep_distance_retreat_desired_position"] = {}
+		states["keep_distance_retreat_direction"] = {}
+		states["keep_distance_retreat_threat_ids"] = []
+		states["keep_distance_retreat_threats"] = []
 		states["combat_last_attack_result"] = {}
 		states["last_action_result"] = "became_unconscious"
 	profile["states"] = states
@@ -5485,6 +5698,16 @@ func _ensure_runtime_state_defaults(npc_id: String) -> void:
 		states["pending_plan_reevaluation_after_sleep"] = {}
 	if not states.has("combat_strategy"):
 		states["combat_strategy"] = {}
+	if not states.has("combat_strategy_move_recovery_count"):
+		states["combat_strategy_move_recovery_count"] = 0
+	if not states.has("combat_strategy_last_stall"):
+		states["combat_strategy_last_stall"] = {}
+	if not states.has("keep_distance_retreat_active"):
+		states["keep_distance_retreat_active"] = false
+	if not states.has("keep_distance_retreat_sequence"):
+		states["keep_distance_retreat_sequence"] = 0
+	if not states.has("keep_distance_retreat_recovery_count"):
+		states["keep_distance_retreat_recovery_count"] = 0
 	if not states.has("behavior_mode"):
 		if bool(states.get("escaped", false)):
 			states["behavior_mode"] = BEHAVIOR_MODE_ESCAPED
@@ -5560,12 +5783,16 @@ func _route_recruited_from_avoidance(npc_id: String) -> void:
 
 
 func _interrupt_for_behavior_mode(npc_id: String, mode: String, reason: String, options: Dictionary = {}) -> Dictionary:
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) as Node3D if _npc_nodes.has(npc_id) else null
+	var world_position_before: Variant = npc_node.global_position if npc_node != null else null
 	var result := {
 		"dialogue": {},
 		"llm": {},
 		"action_interrupted": false,
 		"movement_stopped": false,
-		"proactive_cleared": false
+		"proactive_cleared": false,
+		"world_position_preserved": npc_node != null,
+		"world_position_restored": false
 	}
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null and dialog_system.has_method("force_end_dialogue_for_npc"):
@@ -5588,6 +5815,17 @@ func _interrupt_for_behavior_mode(npc_id: String, mode: String, reason: String, 
 		_stop_npc_movement(npc_id)
 		_movement_arrival_contexts.erase(npc_id)
 		result["movement_stopped"] = true
+	# Interrupting a chair/bed/workstation action may detach the presentation
+	# anchor through an older cleanup path. A behavior-mode change owns no spatial
+	# relocation: the next rally/combat/avoid/work route must start at this exact
+	# world position.
+	if npc_node != null and world_position_before is Vector3:
+		var displacement := npc_node.global_position.distance_to(world_position_before)
+		if displacement > 0.0001:
+			npc_node.global_position = world_position_before
+			result["world_position_restored"] = true
+		result["world_position_before"] = world_position_before
+		result["world_position_after"] = npc_node.global_position
 	return result
 
 
@@ -6812,7 +7050,9 @@ func _on_npc_movement_request_failed(npc_id: String, _target_id: String, reason:
 	if _building_interior_routes.has(npc_id):
 		_settle_navigation_route_failure(npc_id, reason)
 		return
+	var failed_context: Dictionary = _movement_arrival_contexts.get(npc_id, {})
 	_movement_arrival_contexts.erase(npc_id)
+	_restore_healing_crowd_recovery_from_movement_context(npc_id, failed_context)
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "idle",
 		"movement_target": "",
@@ -7073,6 +7313,7 @@ func _on_building_interior_route_arrived(npc_id: String, target_id: String) -> v
 func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 	var context: Dictionary = _movement_arrival_contexts.get(npc_id, {})
 	_movement_arrival_contexts.erase(npc_id)
+	_restore_healing_crowd_recovery_from_movement_context(npc_id, context)
 
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var previous_state: Dictionary = get_npc_state(npc_id)

@@ -1,14 +1,308 @@
 # GODOT_ARCHITECTURE.md
 
+## T0271 NPC / 马匹状态与 HUD 有效倍率接线
+
+- `NPCPanel.gd` 在原 `NPCSatietyLabel / NPCFatigueLabel` 位置动态创建两个 VBox 行，顺序均为 Label → ProgressBar；进度范围通过 `NPCNeedsSystem.get_need_bounds(...)` 读取 `activity_needs.json`，危险色只属于 UI 投影。
+- `HorsePanel.gd` 与 `BuildingPanel.gd` 只格式化既有 horse snapshot：模板、逐匹位置和内部 horse id 不进入玩家文本，稳定槽位后缀映射为中文“X号”；HorseSystem 数据与马厩顶部总量不变。
+- `TimeSystem.format_time_scale_label(...)` 统一把可识别的小数倍率显示为分数（`1/60`）；`HUD.gd` 比较 snapshot 的 player / effective scale，只在外部约束确实降低倍率时禁用按钮并筛出最严格请求的显示原因。暂停按钮、TimeSystem 请求集合与数值推进权威不变。
+- `verify_npc_panel_state.gd`、`verify_time_system.gd`、`verify_t0250_stable_horse_ui_and_click.gd` 覆盖结构、阈值、中文槽位、按钮锁定和释放恢复；正式前端可直接观察，不新增 GM 入口。
+
+## T0270 HUDFrame 内容适配接线
+
+- `Main/UI/HUD/HUDFrame` 的场景初始右下边界改为 `(629, 232)`；标题、资源条、倒计时、后端状态、底部按钮和能力按钮的位置均未移动。
+- `HUD._get_hud_frame_content_end()` 只枚举常驻控件，并以 `max(size, combined_minimum_size)` 处理主题造成的按钮 / 文本扩张；`_fit_hud_frame_to_content()` 在右、下各增加 `12px` 后写回背景边界。
+- `_build_resource_strip()`、资源刷新、后端状态刷新及动态倒计时 / 虔诚控件构建会合并请求 deferred 适配。`debug_get_hud_frame_layout_snapshot()` 只读暴露边界给专项和 MCP，不提供 UI 或玩法写入口。
+- `tools/verify_t0270_hud_frame_content_bounds.gd` 在正式 Main `1280×720` 下断言器械 / 虔诚控件不越界、内容完整包含及稳定留白；功能可直接在正式前端观察，不新增 GM 入口。
+
+## T0269 敌方远程建筑命中接线
+
+- `CombatSystem._trace_combat_projectile_segment(...)` 把完整 projectile 交给建筑透明判断；判断从 `target_at_release.type/id` 读取释放时目标，不依赖当前锁或后续 AI 状态。
+- 敌方弹体的目标为同一 `building/front_gate` 或 `building/main_hall` 时，对应 collider 不加入透明排除集，碰撞身份继续由 `_resolve_projectile_collision_identity(...)` 解析并提交既有建筑伤害入口。仓库沿用普通实体碰撞。
+- `tools/verify_t0269_enemy_ranged_building_damage.gd` 在正式 Main 中分别保留一名正式弓手 / 弩手，以生产 selector → windup → release → projectile sweep 覆盖三座建筑；`verify_t0260...` 同时锁定后方单位 / 器械穿透语义。
+
+## T0268 HUD / NPCPanel 精简接线
+
+- `Main/UI/NPCPanel/.../Header` 在背景按钮后直接挂载 `NPCActionLabel` 与 `NPCBehaviorModeLabel`；`NPCPanel.gd` 分别格式化 `current_action` 和 `behavior_mode`，后者只在显示层降低颜色对比度。
+- `NPCInteractionVisibilitySelect` 已由同一 `ButtonGroup` 管理的 `NPCInteractionPublicRadio / NPCInteractionPrivateRadio` 替代；CheckBox 加入组后使用圆形单选外观，`allow_unpress=false` 保证始终有一项选中。
+- `HUD.gd` 的 `_format_next_wave_arrival()` 负责把既有权威 `seconds_until` 包装为自然来袭句式；倒计时精度仍由 `_format_wave_countdown()` 和当前时间倍率决定。
+- 相关专项覆盖节点位置、互斥状态、语义映射、精简文案、状态刷新和倒计时；功能均可在正式 Main 直接观察，不新增 GM 入口。
+
+## T0266 移除无效弹药占位接线
+
+- ResourceSystem 不再加载独立弹药商品，CraftingSystem 的正式配方集合也不再包含隐藏弹药配方；弓、弩、箭塔和弩床继续直接使用既有攻击节奏与物理弹体链。
+- HUD 装备投影仅收集 `detail_group=weapon|armor` 的具体库存，再与 NPC 装备槽和存活马匹组合；不再创建空的弹药分类或图标资源依赖。
+- 现有远程命中、塔防部署和战斗结算接口未新增替代库存，避免 UI 或调试层形成第二套弹药权威。
+
+## T0265 HUD 库存图标窗接线
+
+- `HUD.gd` 动态创建 `ResourceDetailPanel/ResourceDetailScroll/ResourceDetailGrid`：面板最小尺寸 `500×430`，内容为六列 `68×68` 图标按钮，横向滚动关闭、纵向滚动自动开启。原 `ResourceDetailText` 不再创建。
+- 装备投影按 ResourceSystem 的 `detail_group=weapon|armor` 具体库存、NPCSystem 五个装备槽和 HorseSystem 全部存活马匹组合；器械投影按 DefenseDeviceSystem definition 的单项库存成本与活动 deployment 组合。每条投影带 icon / assigned / tooltip，但按钮不渲染文字。
+- HUD 监听 `resource_changed / npc_state_changed / horse_state_changed / horse_assignment_changed / defense_device_state_changed`，只在对应详情窗打开时重建图标并保留滚动位置。`debug_get_resource_detail_snapshot()` 仅提供自动化 / MCP 只读 UI 投影，不修改库存或分配。
+- `tools/verify_hud_resources.gd` 覆盖具体库存逐件数、剧情初装、马匹、穿盔 / 分马 / 部署实时刷新、灰暗态、精确 Tooltip、无 RichText 与滚动范围；功能直接在 Main 前端可见，不新增 GM 入口。
+
+## T0264 NPCPanel 装备窗口接线
+
+- `Main/UI/NPCPanel/NPCGiveWeaponButton` 保留稳定节点名但玩家文案改为“装备”；`NPCEquipmentLabel` 静态隐藏，旧运行时 weapon / armor / horse 行不再创建。`NPCCombatStrategyRow` 继续独立存在。
+- `NPCPanel.gd` 在 `Main/UI` 下动态创建 `NPCEquipmentWindow`，使 `316×332` 窗口不参与右侧信息面板的 minimum-size 计算；窗口右缘对齐人物副镜头右缘、顶部接在副镜头下方，并随 NPCPanel 拖动 / 响应式布局更新。
+- `NPCEquipmentWindow.gd` 复用 `EquipmentSilhouette.gd`，六槽顺序和坐标与 NPCDevLab 一致；选择窗位于装备窗左侧。确认 / 提示 Dialog 作为窗口子节点，只在用户操作时出现。
+- `tools/verify_t0264_npc_equipment_window.gd` 通过 NPCPanel debug 投影覆盖 UI 与权威状态；`verify_equipment_system`、`verify_npc_panel_interactions` 和骑乘回归已迁移到单按钮合同。
+
+## T0263 全槽位瞄准矩阵接线
+
+- `tools/verify_t0263_enemy_ranged_all_defense_slots.gd` 读取 `T0263_SLOT_ID / T0263_DEVICE_ID`，每次实例化正式 Main，只部署一个活动器械并保留一名正式第三波弓手；测试夹具仅选择合法射程 / 无遮挡射线，索敌、windup、release、物理 sweep 与扣血均走生产链。
+- `tools/verify_t0263_enemy_ranged_all_defense_slots.ps1` 枚举 8 个正式槽位和 `wall_arrow_tower / wall_ballista`，形成 16 个隔离进程用例，避免前一器械、残箭、敌军状态或废墟影响后续项。
+- 主厅东北位的北侧射线会被诊所正式 collider 合法阻挡，因此该用例使用东侧无遮挡射线；没有关闭诊所碰撞、扩展透明建筑列表或绕过物理弹体。
+- Godot MCP 正式 Main 同时部署 8 座箭塔，并通过 CombatSystem / Presenter 生产快照确认每个槽位 `aim position == InteractionArea/CollisionShape3D global position`。
+
+## T0262 主厅塔防远程受击接线
+
+- `DefenseDeviceView.get_combat_projectile_target_snapshot()` 从活动 `InteractionArea/CollisionShape3D` 返回真实世界中心、deployment 身份和节点路径；Area 仍使用 interaction + projectile layer 6，不新增会阻挡角色的 Body。
+- `DefenseDevicePresenter.get_projectile_target_snapshot(...)` 只接受可见、活动且 HP 大于零的 deployment。CombatSystem 在敌方远程 release 时读取该快照，并将 `aim_target_source / aim_target_node_path` 写入活动与终态弹体诊断。
+- 若正式器械受击视图暂不可用，保留旧宿主代理点作为兼容瞄准回退；近战 target position、敌军攻击位和主厅 / 正门的实体碰撞没有改动。
+- `tools/verify_t0262_enemy_ranged_main_hall_device_hit.gd` 使用正式 Main 部署主厅箭塔和正式第三波弓手，覆盖直接 release 诊断以及生产 selector → windup → release → sweep → deployment HP 的自然链。
+
+## T0261 已部署塔防点击与面板接线
+
+- `DefenseDeviceView/InteractionArea` 在活动状态写入 `deployment_id / device_id` metadata；废墟状态移除 metadata、关闭 collision layer 和 `input_ray_pickable`。不新增 Body、碰撞层或权威数据。
+- `Main/WorldRoot/Station/DefenseDevices` 的 DefenseDevicePresenter 提供 interaction layer 4 的 area-only 屏幕射线，跳过其他 Area 后只接受仍有效且可见的 deployment。`Main/Systems/BuildingSystem._unhandled_input(...)` 在正式建筑美术拾取前调用该接口并转发既有点击事件，解决围墙 / 主厅外壳抢占。
+- `Main/UI/DefenseDevicePanel` 绑定 `scripts/ui/DefenseDevicePanel.gd`，运行时生成紧凑只读字段并监听选择 / 状态信号。`Main/WorldRoot/Station/Effects/AttackRangeIndicator` 接线不变，同一 `defense_device_clicked` 事件刷新权威有效射程。
+- `tools/verify_t0261_defense_device_selection_panel.gd` 在正式 Main 用生产相机、物理 Area 和 `SceneTree.push_input(...)` 覆盖围墙 / 主厅器械选择、面板互斥、六项属性与范围圈；功能可直接前端验证，不新增 GM 入口。
+
+## T0260 正门 / 主厅弹体透明接线
+
+- `Main/Systems/CombatSystem` 的通用弹体 ray sweep 在命中继承 `building_id=front_gate / main_hall` 的 collider 后，先核对本发 `target_at_release`；只有宿主不是本发敌方建筑目标时才排除该 RID 并沿原子步线段继续查询。`transparent_building_skip_count / transparent_building_skipped_ids` 写入活动、终态与残箭快照。
+- 正门与主厅原有 `StaticBody3D` 仍保持 world-static layer 1 / actor-body mask 2，并继续进入生产 NavigationMap；没有关闭 `CollisionShape3D`，NPC、敌军、马匹和商车不能因本次修改穿过实体。
+- `DefenseDeviceView/InteractionArea` 使用 layer 6（interaction 4 + projectile 2），仍是没有阻挡 Body 的 `Area3D`。活动器械直接携带 deployment 身份；敌方弹体可命中，友方 / 塔防弹体跳过同阵营器械，废墟状态仍关闭该 Area。
+- `tools/verify_t0260_projectile_transparent_gate_main_hall.gd` 在正式 Main 同时验证 raw physics ray 先撞实体、Combat sweep 穿透、后方敌人命中、主厅箭塔直接扣血及主厅 HP 隔离。
+
+## T0259 取马路线与正式战斗世界交接
+
+- CombatSystem 的空 `clear_spawned_enemies()` 不再执行战后行为模式退出；波次替换仍清理真实敌军 / battle / formal runtime，但“生成前场上为空”不会解散预战集结。
+- HorseSystem 以 assigned horse 的 pickup waiting phase 为权威，公开 `ensure_wartime_mount_route(...)`。正式世界迁移、rally→combat 或其他状态写入停掉 NPC ActorMotion 后，只重建骑手到原 `target_position` 的 NavigationAgent 路线，不改人物 / 马匹世界坐标、分配或目标锁。
+- CombatSystem 的 mounting watchdog、接敌交接和重复警铃复用该接口；同步完成上马时始终读取回调后的最新 rally，避免旧 `mounting` 快照覆盖 `moving / combat_ready`。
+- `tools/verify_t0259_mount_pickup_enemy_handoff.gd` 使用正式 Main 与 GM 波次参数覆盖导航图迁移、接敌、目标锁、重复警铃恢复和最终上马。
+
+## T0258 正式治疗 pending 空间交接
+
+- ActionSystem 不再用任意 `current_action.begins_with("moving_to_")` 判断治疗路线已启动；必须同时匹配当前伤员的 `healing_target_<npc_id>` movement target 与 formal session 的 `healing_route_started`。战后日程、集结回收或旧地点移动因此不能冒充治疗路线。
+- 同一治疗 pending 的重复派发通过 deferred preview/navigation 同步重新调用幂等接近逻辑。NPCSystem 仍是路线、实体运动、到位与 formal session 权威；GMPanel 只在 route started / active 后显示成功。
+- `tools/verify_t0258_heal_pending_handoff.gd` 使用正式 Main 和真实战斗世界覆盖单次命令、旧移动竞态、重复命令及最终实体到位，不新增场景节点、Autoload 或结算接口。
+
+## T0257 战后治疗路线与装备表现投影
+
+- NPCSystem 的 formal healing session 保存 `healing_direct_world_route`，接近目标读取伤员 CharacterBody 当前世界坐标，不再以战前语义地点作为第一段路线。候选站位排除其他角色；导航卡死后有限换位并临时关闭治疗者对 actor 层碰撞 / RVO，世界层与生产 NavigationMap 始终保留，到达 / 失败 / 中断恢复默认设置。
+- ActionSystem 只在实际到位后提交 helper、首付与治疗；GMPanel 和计划派发共用该接口。MemorySystem 在 generic `moving_to_*` 前识别 `moving_to_healing_target_*`，避免合成 target id 进入 BuildingSystem。
+- ChibiCharacterPilot 的装备节点继续只读 EquipmentSystem。主武器显隐要求战斗权威或 `attack / training_instructor / training_practice / mounted_attack / mounted_training`，工作移动及循环隐藏主武器；既有 action-specific 汤勺、扫帚、锄、锤、医疗包和扳手继续按工作状态显示。
+
+## T0256 行为模式空间连续性交接
+
+- `Main/UI/HUD/DismissRallyButton` 与 AlarmButton 同层相邻；HUD 只调用 `CombatSystem.dismiss_combat_rally("hud")`，不自行筛 NPC、恢复计划或写位置。
+- CombatSystem 只把权威模式仍为 `rally` 的 NPC 交给 NPCSystem 返回工作；战斗 / 避战不响应解散。rally timeout 和敌军清空的 rally / avoid 退出也请求 DailyPlanSystem 恢复已捕获的当前计划，combat 退出继续走既有战后重评估。
+- NPCSystem 在工作→rally / combat / avoid 打断前让 DailyPlanSystem 捕获运行中的计划项，并在任何行为模式打断内部锁定 / 恢复同一世界坐标。正式战斗世界开始前同样快照默认正式居民坐标；结束时只为旧兼容 actor 恢复旧空间，默认正式居民保留结束位置和生产 NavigationMap。
+- `tools/verify_t0256_mode_transition_continuity.gd` 使用正式 Main、实际 HUD signal、正式波次 / 索敌 / 清敌接口覆盖六类转换、计划续接、按钮范围与首帧移动上界。
+
+## T0255 NPC 姿态化交互碰撞接线
+
+- `scenes/npc/NPC.tscn/InteractionArea` 保留原 `InteractionCollision` 站立胶囊，并新增同层 `UnconsciousInteractionCollision`：沿角色局部 X 轴水平放置、贴近地面，仍只使用 interaction layer 4，不参与实体碰撞、导航或战斗射线。
+- `NPC.gd._sync_unconscious_physical_entity()` 在投影权威昏迷状态时互斥启用两种点击形状；昏迷仍关闭 `BodyCollision` 与 RVO，交互 Area 保持可拾取。复苏恢复原站立形状。
+- NPCSystem 的生产相机拾取、`EventBus.npc_clicked` 与 NPCPanel 接线不变。`tools/verify_t0255_unconscious_npc_body_click.gd` 覆盖形状轴向、倒地身体 / 旧站立热区射线、面板选择与复苏恢复。
+
+## T0250 马厩卡片与马匹点击接线
+
+- 不新增场景节点、Autoload、碰撞层或 GM 控件。`Main/UI/BuildingPanel` 从既有 HorseSystem 快照构建实际在厩卡片，并为动态 ProgressBar 应用局部样式；`Main/UI/HorsePanel` 仅删除冗余说明 Label。
+- `Main/Systems/BuildingSystem._unhandled_input(...)` 先调用统一马匹路由：离厩命中直接转发到 HorseSystem 选择，在厩命中继续结合 `StableArt.is_interior_revealed_for_selection()`；随后才进入建筑 / 室内 NPC 拾取。
+- `tools/verify_t0250_stable_horse_ui_and_click.gd` 在正式 Main 覆盖离厩过滤、五类颜色、冗余节点删除与离厩马点击互斥；T0170 继续覆盖透明 / 不透明马厩三路径。
+
+## T0249 固定目标近战引导恢复接线
+
+- 不新增场景节点、Autoload、NavigationMap 或 GM 控件。`Main/Systems/CombatSystem` 从既有引导 target 计算 request 级到点余量，并将其通过 `_get_combat_motion_options(...) / update_motion_target(...)` 同步到正式敌军 ActorMotionBody。
+- `ActorMotionBody.request_motion(...)` 对 enemy combat supersede 保留独立静止采样；`set_runtime_actor_collision_enabled(...)` 在脱困窗口把 body mask 从 `world_static|actor_body` 暂时切为 `world_static`，完成 / 取消 / 清敌时恢复。调试快照公开覆盖原因。
+- `tools/verify_t0180_gate_attack_positions.gd` 使用正式 Main 和 GM 第一波覆盖 8 人自然接近、全员真实伤门和恢复还原；T0243 覆盖自占区排除与跨 request 静止计时，T0186 的隔离门面夹具适配非独占引导语义。
+
+## T0248 物理箭矢穿透与附着接线
+
+- `Main/Systems/CombatSystem` 继续在 `_physics_process` 推进 `Main/WorldRoot/CombatProjectiles/*`。活动 ray query 仍使用 mask `3` 并查询 body / area；每次命中同阵营角色时把该 collider RID 加入当前 projectile exclusion 后继续扫完余下线段，不改场景碰撞层。
+- `CombatProjectileView.stick_at(...)` 在终态保留箭节点。世界命中重挂到实际 collider Node3D；NPC 命中重挂到 `Main/WorldRoot/Station/NPCs/*`；敌军命中在伤害前重挂到其 `EnemyArtView`，所以既有 `_preserve_enemy_defeat_presentation(...)` 会把箭连同步行 / 骑乘尸体包装一起保留。
+- 不新增场景节点、Autoload、资源或 GM 控件。`tools/verify_t0248_projectile_friendly_pass_through_and_stick.gd` 覆盖双向同阵营穿透与附着清理，`tools/verify_t0248_ranged_release_lock_and_interrupt.gd` 覆盖目标移出射程和受击 release 边界；T0143 夹具改用生产 NavigationMap 开放区以避开主厅真实碰撞。
+
+## T0244 后门战时碰撞运行接线
+
+- `Main/WorldRoot/FormalStationLayout/WallsAndGates/FortificationArt/GateArt/BackGateArt` 继续由 FormalGateArtView 生成两扇 AnimatableBody 门叶；不新增场景节点、Autoload、碰撞层或 NavigationRegion。
+- 每个物理更新只为配置开启的后门读取 `Main/Systems/CombatSystem.get_active_enemy_count()`。大于 0 时对两个 `DoorLeafCollision` deferred disable，回到 0 时恢复；FrontGateArt 不启用该配置。
+- `tools/verify_t0244_rear_gate_combat_passthrough.gd` 在正式 Main 覆盖 0 / 8 / 0 敌军边沿、两块真实 CollisionShape、敌我 CharacterBody 双向通行和正门不受影响。
+
+## T0243 动态攻击引导运行接线
+
+- 不新增场景节点、Autoload、NavigationMap、碰撞层或伤害 Area。`Main/Systems/CombatSystem` 复用 StationLayoutController 已提供的建筑包络、正门门板和塔防 `host_proxy_regions`，把原候选位置装饰为竖直圆柱引导区。
+- 正式敌军继续由 `Main/WorldRoot/FormalStationLayout/FormalEnemies/*` 下的 ActorMotionBody 提供实际 Transform；占区读取 `data/physics_navigation.json` 的 `enemy_foot / enemy_mounted` 半径与高度，移动仍走同一生产 NavigationMap。
+- `data/station_layout.json.c3_p7_dynamic_assault.attack_position_policy` schema 升为 `enemy_attack_guidance_zones_v2`。`tools/verify_t0243_guided_attack_zones.gd` 在正式 Main 覆盖正门、城墙塔防、真实体积计数、动态换区和未到圆心的射程交接。
+
+## T0241 敌军重定向动量接线
+
+- 不新增节点、Autoload、信号或导航资源。CombatSystem 只在既有 `_get_combat_motion_options(...)` 中为 `enemy_*` 请求声明替换时保留速度；ActorMotionBody 仍独占 CharacterBody velocity、NavigationAgent RVO、路径、碰撞、制动和到达。
+- request 替换仍发送既有取消 / 开始信号并重建目标合同，但在新请求初始化完成后恢复受 profile 上限限制的水平速度。该速度在下一物理帧进入原有路径和避障流水线，不改变攻击位租约、候补优先级、精确到位恢复或攻击交接。
+- 现有正式动态波次快照已经嵌入每个 Actor 的 `debug_get_motion_snapshot()`，因此新增速度字段自动出现在 GM / 测试读取路径，不需要新面板节点。
+
+## T0240 战斗避战接线
+
+- 不新增节点、Autoload、信号或导航资源。`Main/Systems/CombatSystem` 从现有活动敌军构建避战威胁场，以最近威胁触发、以全部威胁加权选点，并通过 `Main/Systems/NPCSystem.move_npc_to_world_position(...)` 提交给 NPC 原有 `ActorMotionBody / NavigationAgent3D`。
+- CombatSystem 同时读取 `NPCSystem.is_npc_world_movement_active(...)`，使避战策略状态与底层物理请求保持一致；中断恢复仍走同一 NPCSystem / ActorMotionBody 权威，不在 UI 或 GM 中复制位移。
+- `NPC.gd` 与 `MemorySystem.gd` 只把 `moving_to_combat_strategy_avoid_* / combat_strategy_avoid_holding` 投影为“正在避战 / 避战待命”。`tools/verify_t0240_combat_avoid_strategy_threat_trigger.gd` 直接实例化正式 Main 覆盖近敌触发、锁定保持、策略切换与中断恢复。
+
+## T0242 敌方骑兵人马原地共同阵亡接线
+
+- `CombatSystem._preserve_enemy_defeat_presentation(...)` 仍在权威敌军移除前把 `EnemyArtView` 重挂到敌军表现根，但骑兵分支改为调用 `begin_mounted_shared_defeat(2.4)`；已删除前门、出生区和地图边缘逃跑目标计算。
+- `EnemyMountedArtView` 在阵亡边沿记录包装根、马匹本地根和马匹世界坐标，播放骑手 `Death_A` 与 `merchant_horse.glb/Death`。`_process` 只按 TimeSystem 战斗秒推进尸体保留计时并固定马根，不再提交任何 Transform 逃离位移；马匹 Death 强制非循环并在完成信号后 seek / pause 于末帧。
+- `defeat_cleanup_completed` 在统一保留时间到期时携带最后零漂移快照并释放整个包装，人马不会分开清理。NPCDevLab 使用同一方法与信号，旧 `mounted_defeat_escape`、逃跑速度 / 方向 / 距离接口均已移除。
+
+## T0236 敌军移动表现接线
+
+- `Main/Systems/CombatSystem` 在 `_physics_process(delta)` 中读取正式敌军 `ActorMotionBody` 所在 CharacterBody 的全局位置，缓存水平位移 / 速度 / 方向，并把结果送入既有敌军表现刷新。
+- 步兵继续调用 `ChibiCharacterPilot.apply_profile(... moving, movement_speed ...)`；骑兵继续调用 `EnemyMountedArtView.apply_state(...)`，同步骑手 `mounted_walk` 与马匹 Walk。场景树、AnimationPlayer 资源和骑乘绑定未改。
+- `tools/verify_t0236_enemy_locomotion_presentation.gd` 实例化正式 Main 并覆盖步骑错位、`0.06 m/s` 拥挤爬行、真实 AnimationPlayer 片段 / playing / 播放倍率、停止和攻击优先级；现有第五波 GM 入口足以直接观察，因此未新增按钮或调试节点。
+
+## T0235 远程战术移动恢复接线
+
+- `Main/Systems/CombatSystem` 继续选择我方远程攻击点，经 `Main/Systems/NPCSystem.move_npc_to_world_position(...)` 提交给现有 NPC `ActorMotionBody`；NPCSystem 新增只读 `get_npc_world_movement_progress(...)` 转发最小运动进展，不取得物理控制权。
+- `ActorMotionBody` 的独立静止采样跨 `update_motion_target(...)` 保留。CombatSystem 在 `2.25 s` 门槛后排除旧点、重走既有圆弧 / NavigationMap / 攻击线筛选；目标锁和伤害结算路径不变。
+- `tools/verify_t0235_friendly_ranged_tactical_recovery.gd` 在正式 Main 覆盖步行 / 骑乘弓弩、动态目标更新不清静止证据、换点距离、到达容差和真实攻击 handoff；没有新增场景节点或信号。
+
+## T0233 固定目标远程攻击位接线
+
+- `CombatSystem._get_enemy_attack_position_row_specs(...)` 对远程 `building / defense_device` 读取统一六排配置；`_get_oriented_building_attack_position_candidates(...)` 和 `_get_defense_device_attack_position_candidates(...)` 沿既有受击表面展开，不改场景碰撞体或器械展示节点。
+- 正门继续使用现有 `target_outlines.front_gate.position_count=5` 门板表面点；仓库 / 主厅继续读取 BuildingSystem 提供的旋转包络，主厅角落塔防继续读取 StationLayoutController / DefenseDeviceSystem 的双墙 `host_proxy_regions[]`。
+- 没有新增节点、信号、Autoload 或 NavigationMap。现有 `debug_get_enemy_attack_position_snapshot()` 可直接观察六排 slot、租约、候补和区域身份。
+
+## T0232 保持距离撤离接线
+
+- `Main/Systems/CombatSystem` 在 `_advance_single_npc_combat_attack(...)` 的目标锁之前处理撤离优先级，并把段运行态写入 `Main/Systems/NPCSystem` 的 NPC states。NPCSystem 仍通过 `move_npc_to_world_position(...)` 连接 NPC CharacterBody 下的 ActorMotionBody / NavigationAgent3D。
+- `Main/Presentation/StationLayoutController.resolve_station_avoidance_navigation_target(...)` 同时服务非战斗避战和保持距离撤离，负责 `interior_polygon`、实体包络与生产 NavigationMap 修正。没有新增场景节点或专用导航资源。
+- 撤离途中动作名为 `keep_distance_retreating`，目标 ID 保存在 `movement_target / keep_distance_retreat_target_id`；不使用 `moving_to_<building>` 文案，避免信息地点格式器把战术点误认成建筑。
+
+## T0231 运行节点与调试字段
+
+- `Main/Systems/CombatSystem` 管理 `_enemy_precise_arrival_recoveries`，并把活动项与计数投影到既有攻击位调试快照。
+- 正式敌军 `ActorMotionBody` 新增 `set_runtime_avoidance_enabled(...)`；它只切换子节点 `NavigationAgent3D.avoidance_enabled` 并清空陈旧 safe velocity，不换导航图、不瞬移、不改碰撞层。
+- 生产场景树与 `.tscn` 无变化；新专项直接实例化 `Main.tscn`，用正式主厅 slot03、正式敌军 Actor 和生产攻击位租约验证交接。
+
+## T0230 主厅角落双墙代理运行接线
+
+- 不新增节点、碰撞体、NavigationMap、信号或 Autoload。`Main/Presentation/StationLayoutController` 复用 `MainHall/StaticCollision` 现有 `back_wall / front_left / front_right / left_wall / right_wall`，为四个角槽各生成两组只读墙面代理。
+- `Main/Systems/DefenseDeviceSystem` 将区域列表投影到活动塔防目标；`Main/Systems/CombatSystem` 在原 8 位租约上限内按两面墙生成 `4 + 4` 候选，并让真实近战 / 弹体碰撞匹配任一区域。屋顶 DefenseDeviceView、发射点和主厅碰撞均未移动。
+- `tools/verify_t0230_main_hall_corner_dual_wall_contact.gd` 覆盖四槽双墙、候选分布、两墙扣血、远端拒绝和主厅 HP 隔离；T0228 专项改为按候选所属区域验证墙面。
+
+## T0229 远程攻击位运行接线
+
+- 不新增节点、信号、Autoload、NavigationMap 或配置字段。`Main/Systems/CombatSystem` 在既有友军攻击预算中生成 `range × 0.95` 圆弧攻击位，并继续调用 `Main/Systems/NPCSystem.move_npc_to_world_position(...) → NPC / ActorMotionBody`。
+- 圆弧候选使用 `Main/Presentation/StationLayoutController` 的生产 NavigationMap，通过 NavigationServer3D 吸附 / 验路；正式 world-static 射线只用于筛选攻击线，不承担伤害。现有弹体 / 近战接触仍是唯一命中结算入口。
+- `tools/verify_t0225_station_breach_global_friendly_targeting.gd` 增加步行弓 / 弩攻击位和 stale request 恢复；`tools/verify_t0229_mounted_gate_wave_handoff.gd` 自然覆盖四骑手集结、正门切敌、第五波与重复警铃。
+
+## T0228 主厅墙面代理与槽位等级接线
+
+- 不新增场景节点、碰撞体、NavigationMap、信号或 Autoload。`Main/Presentation/StationLayoutController` 从现有 `MainHall/StaticCollision` 的 `back_wall / front_left / front_right` 生成四槽宿主代理，向 DefenseDeviceSystem 追加只读墙面外向方向。
+- `Main/Systems/CombatSystem` 继续使用原攻击位租约、ActorMotionBody 和真实模型接触链；仅将主厅塔防的接敌法线从器械展示朝向切换为宿主墙面法线。屋顶 `DefenseDeviceView` 的位置、旋转、发射点和攻击表现均不移动。
+- `data/defense_device_defs.json`、`data/station_layout.json` 与 `data/building_fixture_layouts.json` 同步改为前侧 `slot_03/04` 先出现、背侧 `slot_01/02` 后出现；`tools/verify_t0228_main_hall_defense_wall_contact.gd` 覆盖四墙段真实碰撞与扣血。
+
+## T0227 刚上马集结运行接线
+
+- 不新增节点、信号、Autoload 或数据字段。`Main/Systems/HorseSystem` 仍在上马完成时调用 `Main/Systems/CombatSystem.handle_npc_mount_ready(...)`；该回调现在统一进入现有 `_start_npc_rally(...)`。
+- 集结依然通过 `NPCSystem.move_npc_to_world_position(...) -> NPC.move_to_location(...) -> ActorMotionBody` 使用 `combat_rally_<npc_id>` 请求，新增 `movement_purpose=friendly_rally` 只作运行诊断。正门自动开合、骑手 / 马匹实体、RVO 和 T0221 单调出门前缀均不变。
+- `tools/verify_t0227_mount_auto_rally_and_recovery.gd` 在正式 Main 自然跑通站外接敌取马、正门内侧中断恢复、门外到位和遇敌切换。
+
+## T0226 避战移动恢复接线
+
+- 不新增节点、信号、Autoload 或配置。`Main/Systems/CombatSystem` 读取 `Main/Systems/NPCSystem.is_npc_world_movement_active(...)`，并仍经 NPCSystem 向原 NPC ActorMotionBody 补发 `avoid_shelter_<npc_id>` 请求。
+- 新诊断字段位于现有 `debug_get_combat_snapshot().active_avoidances[]`，GMPanel 无新写入接口。`tools/verify_t0226_avoidance_motion_recovery.gd` 在正式 Main 中中断 Actor 请求并验证圈内 / 离圈恢复和自然位移。
+
+## T0225 第五波破防友军索敌接线
+
+- 场景树与信号不变：`Main/Presentation/StationLayoutController.is_world_position_inside_station(...)` 继续提供唯一站内事实，`Main/Systems/CombatSystem` 在接触扫描和友军攻击预算中把该事实投影为共享 `station_breach_global` scope。
+- `debug_get_friendly_targeting_snapshot()` 的每名锁增加 `station_breached / station_enemy_only`，顶层增加 `station_breach_target_scope`；现有 GM“一键征召&配装”“所选波次动态群战”和敌人快照即可观察，不新增写目标的节点或按钮。
+
+## T0224 警铃集结运行接线
+
+- 不新增场景节点、信号、Autoload 或配置字段。`HUD/AlarmButton` 与 `GMPanel/CombatAlarmButton` 继续调用同一个 CombatSystem 接口；最后警铃快照新增 `target_locked_count` 并在 `ignored[]` 中给出 `target_locked / locked_enemy_id`。
+- `CombatSystem._get_rally_eligibility(...)` 读取 NPCSystem / EquipmentSystem 快照并保留已上马事实；`_start_npc_rally(...)` 对响应者清理旧模式运行态，已骑乘者直接发 `combat_rally_*` 世界移动，未骑乘者等待 HorseSystem 完成会合后由原回调发起移动。
+- `tools/verify_t0224_unified_alarm_rally.gd` 在正式 Main 同时覆盖睡眠日常、避战、旧集结、无目标战斗、已锁目标、未上马、已上马以及 5 米外正常索敌打断。
+
+## T0223 主厅部署 UI 与昏迷动画接线
+
+- `Main/Systems/DefenseDeviceSystem` 从主厅槽配置读取 `1.0x` 基础倍率；`Main/UI/DefenseSlotPresenter` 沿用通用“倍率为 1 时隐藏”规则，主厅弹窗不再创建可见高台加成说明。场景节点、器械 Presenter 和攻击圈节点不变。
+- `ChibiCharacterPilot._play_state(...)` 对已经完成的 `unconscious / mounted_fall` 非循环状态直接保持当前末帧，不再因 `NPC.update_profile(...)` 重复调用 `AnimationPlayer.play(Death_A)`。复苏仍由 `apply_profile(...)` 检测权威昏迷边沿并启动原 `get_up / Lie_StandUp` transient。
+- `tools/verify_t0223_main_hall_range_and_unconscious_pose.gd` 在正式 Main 校验六级主厅倍率 / 弹窗，再用正式 NPC 包装验证倒地末帧、重复刷新零回卷和真实复苏片段。
+
+## T0222 EnemyPanel 与共享世界人物窗接线
+
+- `Main/UI/EnemyPanel` 绑定 `scripts/ui/EnemyPanel.gd`，运行时创建左侧 `NPCPortraitViewport` 与右侧纯属性列；它与 NPCPanel 共用 UI 主题、右上对象面板层级和响应尺寸合同。
+- `NPCPortraitViewport.gd` 不复制敌军模型，而是让 SubViewport 共享 Main World3D，并按 `target_kind` 从 NPCSystem 或 CombatSystem 读取人物快照。骑乘只改变局部相机焦点 / 高度，不更改世界 Camera3D 或 Actor Transform。
+- 敌军选择由正式 Actor 的既有 InteractionArea 发出 `EventBus.enemy_clicked`；NPCPanel、HorsePanel、BuildingPanel、MerchantPanel、NoticeBoardPanel 与 AttackRangeIndicator 监听该事件完成互斥收口。没有新增 Autoload、碰撞层、存档字段或权威结算节点。
+
+## T0221 通用出口前缀运行接线
+
+- 不新增场景节点、NavigationMap、Link 或 Autoload。`StationLayoutController.get_indoor_exit_navigation_prefix(...)` 在原字典中增加 `exit_forward_direction / skipped_point_ids`；所有使用 ActorMotionBody 的 NPC、敌军和独立马匹自动继承。
+- ActorMotionBody 保存归一化出口方向，`update_motion_target(...)` 对室外新目标保留活动点列，`_physics_process(...)` 在取 NavigationAgent 当前腿前推进已经越过的路线横截面。快照新增 `indoor_exit_prefix_target_update_preserved_count`，可区分正常保留与新请求重建。
+- `tools/verify_t0221_monotonic_building_exit.gd` 覆盖全部建筑矩阵与真实 NPC 的刷新 / 外力位移；`tools/verify_t0221_mounted_stable_exit.gd` 驱动四名正式骑手自然上马、离厩和集结，并记录阶段回退与门外纵向回退。
+
+## T0220 敌方远程建筑多排接线
+
+> 历史基线：T0233 已把此接线扩为建筑 / 塔防统一六排，未改变下述节点边界。
+
+- 不新增场景节点、NavigationMap、信号或 Autoload。`CombatSystem._get_enemy_attack_position_row_specs(...)` 读取 `ranged_building_row_range_ratios`，并由原正门前线 / 旋转建筑四面候选生成器展开多排。
+- `Main/Systems/CombatSystem` 的既有敌军 ActorMotionBody 继续向选中的吸附槽位移动；租约 slot id 的 row 段保证各排独立预约。GM 动态第 3～5 波与现有敌人 / attack-position 快照可直接观察三排，无需新增 GM 按钮。
+- `tools/verify_t0220_enemy_ranged_multirank_building_positions.gd` 验证三建筑数量、三类远程角色、排距 / 胶囊间隔、近处选择内排，以及近战与塔防单排不变。
+
+## T0214 正门回站与战时开门接线
+
+- `StationLayoutController.get_front_gate_inside_avoidance_target()` 读取 `friendly_station_response.outside_avoidance_reentry`，沿实际 FrontGate 根的局部 `-Z` 内侧方向取点、吸附生产 NavigationMap，并复验站内多边形与实体包络。未新增 NavigationMap、Link 或位移节点。
+- `FormalGateArtView/FriendlyApproachSensor` 在战时仍只接受 `npc_id / MerchantWagon`，继续排除 `enemy_id`。`LeftDoorHinge / RightDoorHinge` 保持 AnimatableBody3D 实体门叶；新增 `FixedGateCombatContactArea` 使用独立第 4 碰撞层（bitmask `8`）、无 mask、非阻挡，只在敌军当前攻击 `front_gate` 时加入近战 / 弹体查询 mask，友军攻击不会碰到该层。
+- 正门攻击候选仍从 StationLayoutController 的静态门体轴向和 CombatSystem 五槽配置生成，不引用活动门叶 Transform 或 Area 状态。
+
+## T0212 骑兵败退速度接线（已由 T0242 废止）
+
+- 历史实现曾把 `enemy_waves.move_speed` 传入包装推进逃马；T0242 后 `setup(...)` 不再接收速度，正式与 DevLab 均反向验证阵亡坐骑零位移。TimeSystem 战斗帧桥现只推进共同尸体保留计时与动画倍率。
+
+## T0210 室内出口前缀运行结构
+
+- 不新增节点、Autoload 或 NavigationMap。`Main/Presentation/StationLayoutController` 新增 `get_enterable_building_at_world_position(...)`、`is_world_position_inside_enterable_building(...)` 和 `get_indoor_exit_navigation_prefix(...)`，返回已有世界路线点。
+- 所有友方 NPC CharacterBody 与正式敌军 ActorMotionBody 在 `request_motion(...)` 时检查前缀；NavigationAgent3D 的活动 target 在四个 authored 点之间切换，公开快照中的 `target_position` 始终是最终目标，`navigation_leg_target_position` 才是当前腿。
+- 取消 / 失败 / 最终抵达清理前缀；外部位移在仍处室内时重建、已移出建筑时清除。现有敌人快照和 NPC motion 快照即可观察，无需场景节点或专用 GM 权威。
+
+## T0209 站内避战运行结构
+
+- 不新增节点、Autoload 或信号。`Main/Systems/CombatSystem` 负责圈内敌军采样、逆平方方向和避战运行态；`Main/Presentation/StationLayoutController.resolve_station_avoidance_navigation_target(...)` 负责多边形、实体包络、生产 NavigationMap 与路径可达修正。
+- `Main/Systems/NPCSystem.move_npc_to_world_position(...)` 仍把最终点交给 NPC CharacterBody 下的 ActorMotionBody / NavigationAgent3D。`active_avoidances` 只保存运行态目标与诊断，不建立第二张导航图，也不进入逃离状态机。
+
+## T0208 正门五槽接线
+
+- 不新增节点、信号或场景资源。`StationLayoutController.get_building_combat_geometry("front_gate")` 继续输出门体轴向；CombatSystem 从 `attack_position_policy.target_outlines.front_gate` 读取五槽 / `4.8 m` 宽度并生成门板平面候选。
+- `LeftPostCollision / RightPostCollision` 继续作为双塔实体和导航烘焙源，但候选生成不再读取塔面偏移或专用站距。现有 GM 动态第一波与敌人快照直接显示 5 个 `front_*_of_05` 租约和 3 个 waiter。
+
+## T0204 正门塔体与攻击位接线
+
+- `StationLayoutController._build_gate(...)` 读取 `front_gate.tower_collision`，在既有 `LeftPostCollision / RightPostCollision` 节点生成 `2.35 × 5.05 × 3.55 m` BoxShape，局部中心为 `x=±4.175, y=2.525`。节点保持 layer 1 / mask 2、`formal_navigation_source` 与 `building_id=front_gate`，并标记 `gate_structure_role=side_tower_body`。
+- `get_building_combat_geometry(...)` 对前后门返回 `gate_combat_geometry_v1`，轴向直接读取旋转后门根 basis；无专用塔配置的后门回退既有 `gate_post_width`。CombatSystem 的建筑目标和正门候选因此正对正式门体，而不是正对路线阶段点。
+- 正门门洞仍由两塔碰撞内沿 `±3.0 m` 保持 `6.0 m` 净宽；塔体加入现有 collider-baked NavigationMesh 后，角色路径绕过塔体，门 Link 与破门状态机无需新增节点或信号。
+
+## T0202 友军攻击表现与战斗结束接线
+
+- `ChibiCharacterPilot._play_state(...)` 对 `attack / mounted_attack` 增加单 sequence 末帧保持：AnimationPlayer 的 one-shot clip 已停止、但权威 phase 仍为 windup / recovery 时不再次 `play()`；下一 sequence 由 `apply_profile(...)` 检测序号变化并以 reset 重启。
+- `CombatSystem._on_logical_time_tick(...)` 与 `_advance_friendly_combat_ai(...)` 在活动战斗尚未结算而 `_active_enemies` 已空时调用统一收口。`_handle_all_enemies_cleared(...)` 额外清空 `_active_melee_swings / _pending_melee_damage_commits`，NPCSystem 既有 mode transition 随后清空 attack target / phase / elapsed / cycle 和 current action。
+
+## T0201 主厅透明实体接线
+
+- `StationLayoutController._build_building_static_collision(...)` 读取主厅 `solid_interior_blocker`，在 `BuildingRoots/MainHall/StaticCollision/InteriorBlocker` 生成无 Mesh 的 `StaticBody3D + CollisionShape3D`。节点使用 layer 1 / mask 2，带 `building_id=main_hall`、`transparent_entity=true` 与 `blocks_navigation=true` 元数据，并加入 `formal_navigation_source`。
+- `_build_building_navigation_links(...)` 不再生成 `MainHallDoorLink`；`_classify_building_navigation_point(...)` 同步把内部阻挡足迹判为 blocked。既有四面外墙 Body、`building_segment_id`、主厅攻击位、器械平台及表现树不变。
+
 ## T0200 统一战斗导航实现
 
 - `data/station_layout.json.navigation.production_bounds` 将正式 collider-baked NavMesh 扩展到北侧敌军生成区；站内 AStar 合同网格仍保持原范围，避免把调试可达性合同与生产战场范围混为一体。`enemy_exterior_mode=shared_open_baked_space` 禁止创建旧 `EnemyApproachNavigation` 导航带。
 - `ActorMotionBody.request_motion(...)` 接受战斗运动选项；`update_motion_target(...)` 在同一活动请求内更新移动目标。调试快照公开 `path_plan_mode=direct|detour`、路径长度、直线距离、目标更新次数和持续重规划状态。
 - 敌我仍共用 `NavigationAgent3D` 与 RVO。`ActorMotionBody.configure_avoidance_identity(...)` 为每个角色设置稳定的微小 priority 差，防止多人同优先级时互相礼让不前；战斗请求在持续阻塞时重新设置相同权威目标，普通 NPC 行动继续按旧次数 / 时间失败。CombatSystem 在目标进入武器条件后停止请求，并由既有攻击时间线独占身体和伤害提交。
+- `ActorMotionBody.request_motion(...)` 的 `motion_options.target_desired_distance` 可按请求覆盖 profile 最终到达半径，并统一用于 NavigationAgent、物理到达、直连捷径与平面可达复核。CombatSystem 仅为 `type=defense_device`、已取得租约且使用近战武器的请求传入 `station_layout.json` 的 `melee_attack_position_arrival_tolerance=0.06`；建筑租约仍用 `arrival_tolerance=0.32`。
 
 ## T0198 友方分域锁定接线
 
-- `StationLayoutController.is_world_position_inside_station(...)` 与 `friendly_station_response_v2` 提供友军当前分域；没有新增节点、Autoload 或信号。CombatSystem 每次友军 AI 步先解析一个战略锁，再把同一 enemy ID 交给策略移动和攻击复验。
+- `StationLayoutController.is_world_position_inside_station(...)` 与当前 `friendly_station_response_v4` 提供友军分域、加权避战和保持距离撤离配置；没有新增节点、Autoload 或信号。除 T0232 近身撤离会在锁定前清锁并独占一段移动外，CombatSystem 仍把同一 enemy ID 交给策略移动和攻击复验。
 - 正式敌军近战 / 弹体最终仍汇入 `_apply_enemy_attack_to_npc(...)`。该入口在 NPC HP 实际下降后，用受击前锁与来源 enemy ID 生成一次性请求；NPCSystem 不再因同模式受击重复停止 ActorMotionBody。
 - `debug_get_combat_snapshot().friendly_station_response` / `debug_get_friendly_targeting_snapshot()` 可观察分域、锁、pending 请求和 metrics。现有 GM 波次、一键配装、NPC / 敌人快照足够验收，无需新增场景或面板按钮。
 
@@ -59,7 +353,7 @@
 ## T0185 战斗表现时间接线
 
 - `Main/Systems/TimeSystem` 新增 `get_combat_frame_delta_seconds(...) / get_combat_frame_rate()`，并在 `get_time_scale_snapshot()` 暴露 `combat_frame_rate`。没有修改 Engine.time_scale、Autoload、Main.tscn 或存档 Schema。
-- `ChibiCharacterPilot.gd / NPCArtView.gd` 用该倍率驱动攻击、受击、昏迷、起身、骑乘坠落与血液反馈；`NPC.gd / EnemyMountedArtView.gd` 同步正式马匹 AnimationPlayer 和逃马位移。主动暂停统一冻结，恢复不重建攻击 sequence。
+- `ChibiCharacterPilot.gd / NPCArtView.gd` 用该倍率驱动攻击、受击、昏迷、起身、骑乘坠落与血液反馈；`NPC.gd / EnemyMountedArtView.gd` 同步正式马匹 AnimationPlayer，敌方阵亡包装仅推进共同尸体保留计时。主动暂停统一冻结，恢复不重建攻击 sequence。
 - `CombatSystem._advance_combat_projectiles(...)` 以共享战斗帧 delta 推进敌我 / 塔防通用弹体，内部 `1/120 s` 子步、ray sweep、attack id 和伤害入口不变。`MeteorPresentation.gd` 同样以共享 delta 推进落地冲击波并同步粒子 speed scale。
 - DefenseDeviceView 的生产机构仍只消费 DefenseDeviceSystem timeline snapshot；隔离开发预览中的 Tween / 假弹体不进入 Main 权威战斗。现有 Main 与 GM 入口已能直接观察本次行为，因此未新增调试节点或按钮。
 
@@ -69,6 +363,12 @@
 - `Main/Systems/PietySystem.get_target_position_validation(...)` 是 HUD 与施放请求共用入口；`request_meteor_cast(...)` 必须再次调用，保证 UI 绕过也无法向建筑施放。
 - 落地帧先调用 `NPCSystem.displace_npcs_from_world_obstacle(...)`。安全点从生产 NavigationMap 取得，并按实体半径避免友军重叠；`ActorMotionBody.apply_external_displacement(...)` 保留活动 request id / target。之后 `MeteorPresentation.impact_at(...)` 才添加 `MeteorStaticBody`。
 - Main 不新增节点或 GM 按钮；既有虔诚填满与正式选点入口可直接验收。
+
+## T0238 陨石坑淡化接线
+
+- `Main/Systems/PietySystem` 在落地时创建 `_crater_lifetimes[cast_id]`，由既有 `EventBus.logical_time_tick` 更新 `elapsed_game_seconds / fade_progress / opacity`；24 小时到期调用同一 MeteorPresentation 的 `remove_crater()`。
+- `MeteorPresentation.gd` 收集凹坑、灰床、焦土、灰烬块和坑缘共享材质，通过 `set_crater_fade_progress(...)` 统一更新 Alpha。陨石本体仍位于独立 `_body_root`，弹坑删除不触碰 `MeteorStaticBody`。
+- Main.tscn、Autoload、导航与 GM 节点均未改变；`PietySystem.get_piety_snapshot().craters[]` 提供只读验收数据。
 
 ## T0179 友军骑手与马匹共享鞍座坐标
 
@@ -250,7 +550,7 @@
 - `CombatSystem._attach_formal_enemy_art(...)` 对 `sword_shield / polearm / bow / crossbow` 统一实例化 `EnemySwordShieldChibiArtView.tscn`；`cavalry / mounted_ranged` 继续实例化 `EnemyMountedArtView`。只有未知武器类型才保留旧表现回退。
 - 每个正式敌军仍以原 ActorMotionBody 为运动、碰撞和选择根；新包装只是其表现子节点，旧 `ActorMesh` 隐藏但不替代权威节点。
 - `_apply_enemy_art_state(...)` 把敌军 `weapon_type` 放入 `equipment.main_weapon.id` 后调用生产 `apply_profile(...)`。`ChibiCharacterPilot` 会按需建立长杆、弓、弩附件，并依据权威战斗可见性显示唯一固定武器；正式路径不调用 `debug_set_equipment_preview(...)`。
-- 骑兵包装把同一 profile 继续转交骑手，因此轻骑显示剑盾 + 马，骑射显示弓 + 马；骑乘朝向、坠亡和逃马仍由既有 `EnemyMountedArtView` 实现。
+- 骑兵包装把同一 profile 继续转交骑手，因此轻骑显示剑盾 + 马，骑射显示弓 + 马；骑乘朝向与 T0242 的人马共同阵亡由 `EnemyMountedArtView` 实现。
 - `debug_get_enemy_art_snapshots()` 新增只读 `enemy_type_id / mount_type`，用于确认波次兵种与包装映射，不成为存档字段或第二套敌军状态。
 
 ## T0130-D1R14 四部位低模护甲接线
@@ -274,17 +574,17 @@
 
 - `MountedPresentationReference.gd` 是骑乘模型相对 Transform 的共享生产常量；`NPCDevLab` 是这些值的视觉验收场所，但不是运行时权威依赖。正式 Main 与 DevLab 必须读取同一常量或实例化同一生产包装，禁止复制一组“看起来接近”的位置 / 缩放 / 朝向参数。
 - 友方链路由 `NPC.gd + ChibiCharacterPilot.gd` 读取 DevLab 已确认的马根 `(0,0.13,0)`、马缩放 `(0.50,0.39,0.46)` 和骑手根偏移 `(0,1.30,0.35)`。`NPC.gd` 的后置 `_process` 在人物平滑转向完成后读取 `get_visible_forward()` 并同步马根，避免人物与马采用不同转向时间常数。
-- 敌方 Main 与 DevLab 都实例化 `EnemyMountedArtView`；包装的马位置 / 缩放同样来自共享引用，并在骑乘阶段后置同步骑手实际可见前向。进入坠亡逃马阶段后恢复马匹独立逃逸朝向，不再跟随落马骑手。
+- 敌方 Main 与 DevLab 都实例化 `EnemyMountedArtView`；包装的马位置 / 缩放同样来自共享引用，并在骑乘阶段后置同步骑手实际可见前向。进入共同阵亡阶段后冻结人马包装朝向与根位置，不再产生独立逃逸朝向。
 - 后续 DevLab 已存在的模型、动作和姿势应视为正式场景验收参照：新增正式用法时先复用生产脚本 / 资源 / 共享参数，再由 DevLab 做可视确认；不得让 DevLab 调用 HP、伤害、装备、马匹或战斗结算接口成为权威。
 
-## T0139 友方坠马与敌方骑兵坠亡逃马接线
+## T0242 / T0139 友方坠马与敌方骑兵共同阵亡接线
 
 - `NPC.gd` 仍是正式角色节点与表现桥。其战斗坐骑子树实例化 `res://assets/3d/quaternius/animals/merchant_horse.glb`，只在 `combat_mounted=true` 时显示，并按角色移动切换马匹 `Idle / Walk`。
 - `ChibiCharacterPilot.gd` 根据上一帧已骑乘、当前已昏迷的状态边沿启动 `mounted_fall`。人物根表现从正式骑姿偏移沿侧向抛物线移动到地面落点，同时播放 `Death_A`；状态机权威不等待动画。
 - T0139-D2 的 `NPCDevLab` 动作仅向同一 `ChibiCharacterPilot` 先后投影已骑乘和已昏迷的本地 profile，因此与 Main 共用上述边沿检测、`Death_A` 和位移曲线。离开动作时重建角色预览以清理局部坠马姿态；不调用任何权威系统。
 - 落地偏移保持到 NPC 复苏；复苏继续使用既有 `get_up / Lie_StandUp`，并在动作期间将表现偏移平滑收回人物权威根节点。步战昏迷继续走普通 `unconscious`。
 - `CombatSystem._attach_formal_enemy_art(...)` 对 `cavalry / mounted_ranged` 创建 `EnemyMountedArtView`：内部持有同一 Synty 骑手和 `merchant_horse.glb`，只向骑手投影 `combat_mounted`。包装显式声明敌方马无独立 HP，CombatSystem 仍把全部伤害直接结算 `_active_enemies` 中的敌军单位。
-- 敌军阵亡先从活动敌人与 ActorMotionBody 权威链移除；`_preserve_enemy_defeat_presentation(...)` 仅把表现包装重挂到敌军表现根，投影 `hp=0 / alive=false` 后调用 `begin_mounted_defeat_escape(...)`。骑手留在阵亡点执行 `Death_A`，马匹独立向 `front_gate → spawn_zone_center` 的地图外方向移动，到达边界目标后 `queue_free`；普通敌军走原延时释放分支。
+- 敌军阵亡先从活动敌人与 ActorMotionBody 权威链移除；`_preserve_enemy_defeat_presentation(...)` 仅把表现包装重挂到敌军表现根，投影 `hp=0 / alive=false` 后调用 `begin_mounted_shared_defeat(2.4)`。骑手留在阵亡点执行 `Death_A`，马匹原地执行 `Death` 并保持末帧，保留时间到期后包装整体 `queue_free`；普通敌军继续走原延时释放分支。
 
 ## T0138 正式骑战运行时接线
 
@@ -528,6 +828,7 @@
 ## T0131-P5 正式宿舍建筑切片
 
 - `StationLayoutController` 在 Dormitory 的正式 `StaticCollision / FixtureLayout` 完成后实例化 `FormalDormitoryArtView.gd` 并隐藏旧 Envelope。宿舍长屋占约 `14 × 13 m`，最高级可见包络限制在 `16 × 14 m` 地块内。
+- T0239 后 `FormalDormitoryArtView` 从已经生成的床 fixture 只读筛选非空 `assigned_npc_id`，按 `workstation_id` 排序并为床位 1–8 生成八座程序化双门个人衣柜；床位 9–10 不生成空归属柜。柜体只镜像 `assigned_npc_id / workstation_id / fixture_id` 元数据，标记为非工位、非库存陈设且不创建碰撞、导航或点击权威。
 - 等级同步在 Lv.1 / Lv.2 都保持 10 件床 fixture 与 10 件碰撞；1–8 号床的 `assigned_npc_id`、9–10 号空归属、床边 Marker、床面锚点与睡眠路径不变。床边 Marker 新增同名只读元数据，只用于表现快照 / 测试，不参与分配。
 - 二级 `RoofStructureAdditions` 和 `ExteriorAdditions` 分别进入附加屋顶 / 外墙透明路径；主屋顶、墙体、烟道、修补梁与窗板统一使用 `70→58 m / 0.06`。自动门沿局部 `+Z` 对齐，净口 `2.08 × 2.35 m`。
 - GM `dormitory_art_level <1|2>` 只调用表现根 `debug_force_visual_level`；BuildingSystem、ActionSystem、NPCSystem 与 NPCNeedsSystem 继续拥有等级、床位、到达、睡眠和恢复权威。
@@ -544,7 +845,7 @@
 - T0130-D1R4 在 `Stage` 下新增默认隐藏的 `SeatPreview`，仅由五个无碰撞 BoxMesh 组成。非乘骑坐姿时，场景读取当前包装的 `seated_pose_offset_y` 并把其绝对值加到 `CharacterMount` 基础高度，抵消正式空间坐席锚点才需要的下沉量；凳子留在平台固定高度并单独同步预览 yaw。普通动作、战斗或坐骑显示时恢复基础 / 骑乘高度并隐藏凳子，不改 `ChibiCharacterPilot` 的正式偏移和状态映射。
 - T0130-D1R9 移除 `PreviewHorse` 曾叠加的 `180°` 局部 yaw；导入马的可见正面使用本地 `+Z`，与稳定后人物包装的可见正面同向。`debug_get_snapshot()` 报告双方世界前向、点积和马模型局部 yaw，专项在初始骑乘与拖转后均校验点积大于 `0.99`；`HorseMount` 与 `CharacterMount` 的公共 yaw 同步路径不变。
 - T0139-D1 对敌方 `cavalry / mounted_ranged` 绕过上述友方临时 `HorseMount`：`_spawn_character(...)` 直接创建与 Main 同一 `EnemyMountedArtView`，骑兵骑手使用剑盾、骑射兵保持 `equipment_mode=none`。其固有马不写 `_shared_loadout`，坐骑槽只显示不可卸下的说明。
-- `mounted_defeat_escape` 动作先通过正式 `apply_profile(hp=0, unconscious=true)` 触发骑手 `mounted_fall / Death_A`，再调用包装的 `begin_mounted_defeat_escape(...)`，向检视台世界 X 方向移动 `24 m` 后走正式释放。释放信号只缓存 debug 快照；下一次动作按需重建同一包装，因此可重复验收而不创建第二套逃马状态机。
+- `mounted_shared_defeat` 动作先通过正式 `apply_profile(hp=0, unconscious=true)` 触发骑手 `mounted_fall / Death_A`，再调用包装的 `begin_mounted_shared_defeat(...)`；马匹同时播放 `Death`，人马原地保留并由同一清理信号释放。下一次动作按需重建同一包装，因此可重复验收而不创建第二套阵亡状态机。
 
 ## T0130-P8R2 欧文护目镜双姿态
 
@@ -810,13 +1111,13 @@ T0200 起不再创建 `EnemyApproachNavigation` 横断面廊道；核心生产 N
 
 - `data/station_layout.json / station_layout_v2` 是阶段 C 的正式空间迁移合同；`station_spatial_plan_v7` 退回设计 / 压力证明职责。运行控制器只读正式配置，专项才同时读取两者做漂移校验。
 - `Main/Presentation/StationLayoutController` 在 `Main/WorldRoot/FormalStationLayout` 下生成 Terrain、Roads、Plaza、WallsAndGates、BuildingRoots 和 SpatialContract。后者含广场 / 公告牌、8 个 NPC 初始 Marker、每座建筑 5 个进出 Marker、61 个工位 Marker、4 个主厅器械槽 Marker与 StationNavigation。
-- StationNavigation 已改为从 `formal_navigation_source` 的 234 个 StaticBody 同步烘焙：`0.25 × 0.1 m`，A3b12R 货运车真实碰撞后为 788 顶点 / 754 多边形，解析 mask 只含 `world_static=1`。来源包含 78 个结构阻挡、1 个地面、131 个逐建筑 fixture 碰撞部件和 24 个自然边界阻挡。它使用专属 NavigationMap；12 个双向 NavigationLink3D 跨过 `1.8 m` 实体门洞，Region / Link 在预览外一起禁用。另保留 `0.5 m / 11303` AStarGrid2D，只作为 123 个合同坐标的确定性对照。
+- StationNavigation 从 `formal_navigation_source` 的 237 个 StaticBody 同步烘焙：`0.25 × 0.1 m`，T0201 后为 928 顶点 / 862 多边形，解析 mask 只含 `world_static=1`。全站实际生成 241 个 StaticBody / 255 个 CollisionShape；导航源包含建筑外墙与主厅内部阻挡、围墙 / 门柱、地面、133 个逐建筑 fixture 碰撞部件和 24 个自然边界阻挡。它使用专属 NavigationMap；11 个双向 NavigationLink3D 跨过可进入建筑的 `1.8 m` 实体门洞，主厅不创建 Link，Region / Link 在预览外一起禁用。另保留 `0.5 m / 11303` AStarGrid2D，只作为合同坐标的确定性对照。
 - C1 当时曾把 staging 根暂放在 `(1000,0,0)`；P6R3 已在正式世界默认化后将其归位 `(0,0,0)`。当前 CameraRig 直接套用正式 `20–70 m`、FOV 62°、`X[-150,150] / Z[-215,240]` 合同；显式 GM 旧图兼容才隐藏正式根并恢复旧相机值。
 - `get_building_spatial_route(building_id, position_id)` 返回正式门外、门内、室内 / 具体位置、出口和面向方向；已有家具合同的位置还返回 `target_fixture_id / logical_position_center_position / arrival_mode`，而 `interior_target_position` 始终是家具外安全站位。病床额外返回床面 `occupant_anchor_position / occupant_anchor_facing_direction / occupant_pose`，供抵达并提交占用后的表现挂接使用；它不是路径目标。`get_npc_initial_world_position` 与 `get_navigation_path_local` 提供后续 C2b 的窄查询面。这些 API 只返回坐标，不提交地点、不占工位、不移动 NPC。
 - 默认相机和全部系统仍面向 `WorldRoot/Station`。C2b 必须把 BuildingSystem / NPCSystem 的站内路线与地点事务接到上述接口；C3 / C4 继续迁移 CombatSystem、器械、MerchantSystem、逃离和虔诚合法地表。所有活动消费者完成前，不得把 FormalStationLayout 移回原点，否则旧敌人出生 / 攻击点会落入新墙内。
 - 未来建筑场景先按最高等级包络放下全部权威功能位置，再拆为逐级 `UpgradeVisuals`；可见设备、同 ID Marker、NPC 站位 / 朝向与 `reserved_by / occupied_by` 保持一一对应。
 
-`data/physics_navigation.json / physics_navigation_v1` 是实体运动的统一尺度与参数合同。`project.godot` 的 3D 物理层 1–3 分别命名为 `world_static / actor_body / interaction`。A5-P2 增加正式波次生成 / 调度合同：生成间距按本波最大胶囊计算，RVO 半径比物理胶囊多 `0.10 m` 预判缓冲，默认逐敌 AI 每帧轮转 8 人；物理胶囊、NavMesh 烘焙半径和战斗数值不变。A5-P3 新增 `CombatSystem.get_wave_hud_snapshot()` 作为高频 HUD 窄投影，完整波次快照继续用于低频业务 / 调试；HUD 和 MerchantSystem 只去重表现刷新，不降低权威 `logical_time_tick` 频率。A3 读取全 12 建筑的 `data/building_fixture_layouts.json`，生成 107 件配置物、61 个 NPCStand、34 个 OccupantAnchor、8 个 HorseAnchor和 131 个复合碰撞部件；再读取 `station_layout.natural_collision` 生成 24 个河岸 / 岩脊 / 密林阻挡。A3b9R–A3b12R 已组合教堂、工械坊、主厅和仓库 Quaternius 资产；仓库生成 `WarehouseArt` 并隐藏旧 Envelope，七件 fixture 的 `cargo_categories` 仅控制类别装饰。导入 GLB 只读，`asset_path / visual_scale` 只影响表现；碰撞仍由配置尺寸生成，库存、主厅槽位、HP、失败条件和射程仍在权威系统。全站保持 234 个 `StaticBody3D + CollisionShape3D`；屋顶、Marker 和点击表现不控制碰撞。
+`data/physics_navigation.json / physics_navigation_v1` 是实体运动的统一尺度与参数合同。`project.godot` 的 3D 物理层 1–3 分别命名为 `world_static / actor_body / interaction`。A5-P2 增加正式波次生成 / 调度合同：生成间距按本波最大胶囊计算，RVO 半径比物理胶囊多 `0.10 m` 预判缓冲，默认逐敌 AI 每帧轮转 8 人；物理胶囊、NavMesh 烘焙半径和战斗数值不变。A5-P3 新增 `CombatSystem.get_wave_hud_snapshot()` 作为高频 HUD 窄投影，完整波次快照继续用于低频业务 / 调试；HUD 和 MerchantSystem 只去重表现刷新，不降低权威 `logical_time_tick` 频率。A3 读取全 12 建筑的 `data/building_fixture_layouts.json`，当前生成 107 件配置物、61 个 NPCStand、36 个 OccupantAnchor、8 个 HorseAnchor 和 133 个复合碰撞部件；再读取 `station_layout.natural_collision` 生成 24 个河岸 / 岩脊 / 密林阻挡。A3b9R–A3b12R 已组合教堂、工械坊、主厅和仓库 Quaternius 资产；仓库生成 `WarehouseArt` 并隐藏旧 Envelope，七件 fixture 的 `cargo_categories` 仅控制类别装饰。导入 GLB 只读，`asset_path / visual_scale` 只影响表现；碰撞仍由配置尺寸生成，库存、主厅槽位、HP、失败条件和射程仍在权威系统。T0201 后全站为 241 个 `StaticBody3D` / 255 个 `CollisionShape3D`；屋顶、Marker 和点击表现不控制碰撞。
 
 仓库 `WarehouseArt` 使用同一 `BuildingArtView` 类注册到 `RoofVisibilityController`，但不配置 `InteriorTrigger / ClickArea / NavigationRegion3D`，因此不会把不可进入建筑伪装成室内地点。`preserve_roof_albedo_texture=true` 时，屋顶材质仍逐实例复制并乘冷灰色，但保留原始木纹贴图；默认 `false` 保持铁匠铺纯色覆盖合同。两种模式都只改 scene-local 材质 alpha，透明时关闭屋顶阴影。
 
@@ -935,7 +1236,7 @@ DailyPlanSystem 保存复核 request-id / NPC 去重表、一次性批准签名�
 
 ## T0108 Godot 侧稳定知识迁移职责
 
-- `data/npc_initial_long_memory.json` 仍是 8 人开局前建筑知识的唯一数据源；围墙 / 主厅两条六级器械位置曲线和主厅 `2.0x` 射程只写入该图谱。
+- `data/npc_initial_long_memory.json` 仍是 8 人开局前建筑知识的唯一数据源；围墙 / 主厅两条六级器械位置曲线写入该图谱，T0223 已删除主厅射程加成知识。
 - `NPCSystem` 的加载、深拷贝和幂等初始化不变；`LLMBridge` 仍通过既有 `long_memory / long_term_memory` 原样投影，NPCPanel 仍只读中文知识标签。
 - 没有新增事件、广播、短期记忆、Prompt 字段、Schema、节点或权威结算。Python / Godot 专项负责锁定旧“只能上墙 / 永不增槽”文本已消失。
 
@@ -1523,7 +1824,7 @@ P7R 在同一表现视图内以两个 ArrayMesh 曲面生成货斗主篷和车�
 
 T0901 已新增 `res://scripts/systems/EquipmentSystem.gd`：系统读取武器、盔甲和坐骑定义，消耗具体库存，把装备写入已入伍 NPC 的 `equipment` 槽位，并通过 `MemorySystem.record_player_interaction(...)` 记录玩家给予或更换事件。T0031 起，NPC 档案的 `initial_equipment` 会在定义加载后装载到空槽；该故事初始化不扣库存、不写玩家交互事件，当前用于让艾达开局持有正式剑盾。T0902 起，兵种判定只根据 `equipment.main_weapon` 与 `equipment.mount` 返回分类标签和只读快照；旧 `horse_readiness` 库存本身不会让 NPC 被判定为骑兵。T0107 后 CombatSystem 读取 NPC `combat_base`、主武器、四甲与坐骑定义，生成统一基础 / 成长 / 装备 / 状态 / 最终属性，并负责远程距离带、敌人抬手 / 僵直和骑兵冲锋状态机；EquipmentSystem 本身仍不执行伤害结算、耐久或完整外观换装。
 
-T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 NPC 点击与状态变化，显示目标的权威状态、成长、装备、行动和记忆入口；T0107 后额外只读 CombatSystem 最终快照，显示战斗等级、攻击、防御、穿透和攻速。切换建筑时隐藏自身。T0042 后标题行“背景”按钮复用详情弹窗展示 `NPCPromptProfile` 人设。T0024/T0049 后，事件库上方并排显示“当前计划 / 日记 / 知识”；事件库和见闻库详情首次打开自动滚到最底部的最新记录，已打开时刷新保留玩家当前位置，日记与知识图谱继续在独立详情弹窗查看。T1103A 后当前行动同时显示行为模式；T1204A 后逃离 NPC 仍可从该面板进入挽留对话。`BuildingPanel` 在 `npc_clicked` 时隐藏，确保对象面板互斥。
+T0303 已将 `Main/UI/NPCPanel` 绑定 `res://scripts/ui/NPCPanel.gd`：监听 NPC 点击与状态变化，显示目标的权威状态、成长、装备、行动和记忆入口；T0107 后额外只读 CombatSystem 最终快照，显示战斗等级、攻击、防御、穿透和攻速。切换建筑时隐藏自身。T0042 后标题行“背景”按钮复用详情弹窗展示 `NPCPromptProfile` 人设。T0268 后标题行背景按钮右侧直接显示行动值与灰暗行为模式值；记忆入口显示“当前计划 / 日记 / 认识”和“事件 / 见闻”，不显示库名与条数。事件和见闻详情首次打开自动滚到最底部的最新记录，已打开时刷新保留玩家当前位置，日记与底层知识图谱继续在独立详情弹窗查看。T1204A 后逃离 NPC 仍可从该面板进入挽留对话。`BuildingPanel` 在 `npc_clicked` 时隐藏，确保对象面板互斥。
 
 T0079 后，`NPCPanel` 的当前计划详情会在只读展示层合并连续且完整展示语义相同的小时项，并隐藏与行动名完全相同的重复 `reason`；当前时段标记和首次滚动按合并后的可见分组计算。DailyPlanSystem / NPCSystem 的 24 小时权威计划、来源、Prompt、Schema 与执行均不受影响。
 
@@ -1600,7 +1901,7 @@ signal merchant_state_changed(active: bool, snapshot: Dictionary)
 
 - `StationLayoutController._build_walls_and_gates()` 继续生成 14 段 `StaticBody3D` 墙碰撞、4 个门柱碰撞及既有导航源；旧 `Wall_* / LeftPost / RightPost / Lintel` Mesh 仅隐藏，结构权威不迁移。
 - 同一控制器在 `WallsAndGates/FortificationArt` 实例化 `FormalFortificationArtView`。P3R 的视图只读 `station_layout` 和 BuildingSystem，生成 WoodTrim 贴图木板幕墙、立柱 / 束梁 / 斜撑、巡逻道、木垛口、六级升级组及四个木制正式器械台；RockTrim 只用于低防潮基脚。平台坐标继续由 `get_defense_device_slot_pose("wall", slot_id)` 绑定 DefenseDeviceSystem。
-- `FormalGateArtView` 的 P3R 塔身、门楣、垛口和外露框架均为木制，仅塔脚使用低石垫；正后门仍各生成两个 `AnimatableBody3D` 门叶，每叶持有 world-static 层碰撞。碰撞只负责真实阻挡 / 开合，不决定敌军到达、建筑受击或突破；敌军 `enemy_id` 被传感器过滤，正门有活动敌军时锁闭，BuildingSystem HP 清零后禁用门叶碰撞并打开。
+- `FormalGateArtView` 的 P3R 塔身、门楣、垛口和外露框架均为木制，仅塔脚使用低石垫；正后门仍各生成两个 `AnimatableBody3D` 门叶，每叶持有 world-static 层碰撞。碰撞只负责真实阻挡 / 开合，不决定敌军到达、建筑受击或突破；敌军 `enemy_id` 被传感器过滤，友军在战时仍能触发开门，BuildingSystem HP 清零后禁用门叶碰撞并打开。
 - 门传感器只读取 actor-body 层：`npc_id` 为我方，`MerchantWagon` 仅可作为商队触发者，`enemy_id` 永远排除。门状态不写地点、工位、事件、HP 或导航事实。
 - P3R2 将 `wall_slot_01–04` 的正式横向偏移统一改为 `-7.6 / +7.6 / -13 / +13 m`。`StationLayoutController._get_front_wall_defense_device_slot_pose()` 和 `FormalFortificationArtView.PLATFORM_LATERAL_OFFSETS` 使用相同合同；DefenseDeviceSystem 默认正式绑定后把部署位置与攻击原点覆盖到这些世界坐标。所有平台元数据均为 `building_id=wall / host_structure=front_wall`，不读取 `front_gate` 等级，也不成为门楼子槽。
 - P3R3 从 `FormalFortificationArtView._build_upgrade_visuals()` 删除 `FrontWallTimberButtress / WallIronTie / FinalIronCoping`。Level2 / 4 / 6 根仍参与等级切换但不再生成独立墙外盒体；对应等级的平台显隐继续由 `_apply_visual_level()` 和 `PLATFORM_REQUIRED_LEVELS` 驱动，因此清理不影响槽位或碰撞权威。
@@ -1608,3 +1909,8 @@ signal merchant_state_changed(active: bool, snapshot: Dictionary)
 ## T0137 NPC 移动期间统一时间慢速
 
 `res://scripts/npc/NPC.gd` 在 `move_to_location(...)` 或 `ActorMotionBody.motion_started` 确认真正进入运动生命周期后，向 `Main/Systems/TimeSystem` 注册 `npc_movement:<npc_id>`；`stop_movement`、`motion_arrived`、`motion_failed`、`motion_cancelled` 与节点退出统一释放。请求使用 TimeSystem 的默认慢速值 `1/60`，多名 NPC 各有独立 id，因此任一移动者仍存在时不会提前恢复玩家倍率。运动动画与实体位移仍按原真实帧速度运行；TimeSystem 发出的有效游戏秒同步约束 Resource / Action / Building / Needs / Combat 等既有逻辑时间消费者。Main 的 HUD 已能直接显示 `x0.02` 与精确秒，GM 既有指定移动和时间倍率快照足够辅助验证，不新增面板入口。
+## T0213 马匹返厩 ActorMotionBody 生命周期
+
+- `Main/Systems/HorseSystem` 在已骑乘马脱离战时状态时，读取 `NPCSystem.get_npc_world_position(rider)` 作为真实下马点，在自身下创建隐藏 `ActorMotionBody`，配置与 `enemy_mounted` 同胶囊但属于友方 RVO 层的 `horse` profile，并用 `horse_defs.return_to_stable_speed=3.2` 覆盖速度。该节点绑定 StationLayoutController 的 production NavigationMap，抵达马厩开放侧后释放并将只读表现归位到原 `stable_slot_id`。
+- FormalStableArtView 仍是马匹可见模型唯一来源：`returning_stable` 读取 HorseSystem 同步的 Body 世界位置 / velocity，播放 Walk 并按实际速度转向；`waiting_for_rider_at_return_position` 保持原位置并播放 Idle。隐藏 Body 不创建第二匹可见马，也不接管点击、HP 或分配。
+- 返厩中 NPC 再进 `rally` / `combat` 时，HorseSystem 取消 Body request、在马旁环形采样生产 NavMap 可达会合点，并调用既有 `NPCSystem.move_npc_to_world_position(...)`。NPC 抵达后释放隐藏 Body，设置 `ridden`，再调用 `CombatSystem.handle_npc_mount_ready(...)` 恢复集结。

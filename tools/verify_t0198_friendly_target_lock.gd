@@ -68,7 +68,7 @@ func _run_verification() -> void:
 	})
 
 	var response: Dictionary = combat_system.debug_get_friendly_targeting_snapshot()
-	_check(str(response.get("schema_version", "")) == "friendly_station_response_runtime_v2", "T0198 runtime schema mismatch: %s" % response)
+	_check(str(response.get("schema_version", "")) == "friendly_station_response_runtime_v4", "T0198 runtime schema mismatch: %s" % response)
 	_check(str(response.get("combat_targeting_schema", "")) == "friendly_enemy_presence_lock_v1", "T0198 targeting schema missing: %s" % response)
 	_check(absf(float(response.get("combat_target_detection_range", 0.0)) - UNIFIED_RANGE) <= 0.0001, "T0198 outside detection range mismatch: %s" % response)
 
@@ -111,7 +111,8 @@ func _run_verification() -> void:
 	npc_system.set_npc_behavior_mode(NPC_ID, "work", "t0198_outside_station_breach", {"force_idle": true, "request_plan_reevaluation": false})
 	combat_system._advance_behavior_mode_contacts()
 	_check(str(npc_system.get_npc_behavior_mode_snapshot(NPC_ID).get("behavior_mode", "")) == "combat", "T0198 outside armed NPC did not wake for station breach")
-	_check(str(npc_system.get_npc_state(NPC_ID).get("combat_target_enemy_id", "")).is_empty(), "T0198 outside NPC cross-map locked station enemy beyond its domain")
+	_check(str(npc_system.get_npc_state(NPC_ID).get("combat_target_enemy_id", "")) == enemy_a, "T0225 outside responder did not lock the station intruder globally")
+	_check(str(combat_system._get_friendly_target_scope(NPC_ID).get("scope", "")) == "station_breach_global", "T0225 station breach global scope missing for outside responder")
 
 	# Inside: the entire station is one scope. The far enemy remains eligible
 	# beyond 37.2 m, while an enemy outside the polygon is never a candidate.

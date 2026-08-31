@@ -142,8 +142,8 @@ func _init() -> void:
 		push_error("NPCPanel memory labels not found")
 		quit(1)
 		return
-	if not event_label.text.begins_with("事件库：") or not witness_label.text.begins_with("见闻库："):
-		push_error("NPCPanel does not distinguish event_log and witness_log")
+	if event_label.text != "事件" or witness_label.text != "见闻":
+		push_error("NPCPanel should distinguish event_log and witness_log with concise labels")
 		quit(1)
 		return
 

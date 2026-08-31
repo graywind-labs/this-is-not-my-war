@@ -17,7 +17,9 @@
       "step_height": 0.3,
       "max_slope_degrees": 45.0,
       "base_speed": 5.0,
-      "acceleration": 14.0
+      "acceleration": 14.0,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
     },
     "enemy_foot": {
       "radius": 0.42,
@@ -25,7 +27,9 @@
       "step_height": 0.3,
       "max_slope_degrees": 45.0,
       "base_speed": 3.4,
-      "acceleration": 12.0
+      "acceleration": 12.0,
+      "avoidance_layers": 2,
+      "avoidance_mask": 2
     },
     "enemy_mounted": {
       "radius": 0.65,
@@ -33,7 +37,19 @@
       "step_height": 0.35,
       "max_slope_degrees": 40.0,
       "base_speed": 5.4,
-      "acceleration": 10.0
+      "acceleration": 10.0,
+      "avoidance_layers": 2,
+      "avoidance_mask": 2
+    },
+    "horse": {
+      "radius": 0.65,
+      "height": 2.25,
+      "step_height": 0.35,
+      "max_slope_degrees": 40.0,
+      "base_speed": 5.4,
+      "acceleration": 10.0,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
     },
     "merchant_wagon": {
       "radius": 1.1,
@@ -41,7 +57,9 @@
       "step_height": 0.25,
       "max_slope_degrees": 32.0,
       "base_speed": 4.6,
-      "acceleration": 5.5
+      "acceleration": 5.5,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
     }
   },
   "npc_locomotion": {
@@ -50,6 +68,7 @@
     "run_speed": 5.0,
     "walk_animation_reference_speed": 3.2,
     "run_animation_reference_speed": 5.0,
+    "actual_run_speed_margin": 0.05,
     "minimum_animation_speed_scale": 0.35,
     "maximum_animation_speed_scale": 1.6,
     "emergency_behavior_modes": ["rally", "combat", "avoid_combat", "escaped"]

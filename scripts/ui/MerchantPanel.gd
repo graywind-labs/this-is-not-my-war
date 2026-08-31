@@ -36,6 +36,8 @@ func _ready() -> void:
 			event_bus.notice_board_clicked.connect(close_panel)
 		if event_bus.has_signal("npc_clicked"):
 			event_bus.npc_clicked.connect(_on_world_selection_changed)
+		if event_bus.has_signal("enemy_clicked"):
+			event_bus.enemy_clicked.connect(_on_world_selection_changed)
 		if event_bus.has_signal("horse_clicked"):
 			event_bus.horse_clicked.connect(_on_world_selection_changed)
 		if event_bus.has_signal("building_clicked"):

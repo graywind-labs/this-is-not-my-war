@@ -1024,12 +1024,14 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
+		_strip_damaged_building_efficiency(external_snapshot, plaza_changed_fields)
 		_last_plaza_external_states[building_id] = external_snapshot.duplicate(true)
-		_broadcast_plaza_state_changed("building_external_state_changed", {
-			"building_id": building_id,
-			"building_name": str(external_snapshot.get("name", building_id)),
-			"changed_fields": plaza_changed_fields
-		})
+		if not plaza_changed_fields.is_empty():
+			_broadcast_plaza_state_changed("building_external_state_changed", {
+				"building_id": building_id,
+				"building_name": str(external_snapshot.get("name", building_id)),
+				"changed_fields": plaza_changed_fields
+			})
 
 	if not is_enterable_location(building_id):
 		return
@@ -1048,12 +1050,14 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
+		_strip_damaged_building_efficiency(location_external_state, location_changed_fields)
 		_last_location_external_states[building_id] = location_external_state.duplicate(true)
-		_broadcast_location_state_changed(building_id, "building_external_state_changed", {
-			"building_id": building_id,
-			"building_name": str(external_snapshot.get("name", building_id)),
-			"changed_fields": location_changed_fields
-		})
+		if not location_changed_fields.is_empty():
+			_broadcast_location_state_changed(building_id, "building_external_state_changed", {
+				"building_id": building_id,
+				"building_name": str(external_snapshot.get("name", building_id)),
+				"changed_fields": location_changed_fields
+			})
 
 	var workstations := _normalize_workstations_for_info(location_snapshot.get("workstations", []))
 	var workstation_state := _workstation_state_by_id(workstations)
@@ -1391,10 +1395,16 @@ func _format_action_status(action_id: String) -> String:
 		return "主动找守备官交涉"
 	if action_id.begins_with("moving_to_combat_rally"):
 		return "前往城门外防线"
+	if action_id.begins_with("moving_to_combat_strategy_avoid_"):
+		return "正在避战"
 	if action_id.begins_with("moving_to_combat_strategy_"):
 		return "进行战术移动"
+	if action_id == "keep_distance_retreating":
+		return "拉开距离"
 	if action_id == "rallying_defense_line":
 		return "在城门外集结"
+	if action_id == "combat_strategy_avoid_holding":
+		return "避战待命"
 	if action_id == "combat_ready":
 		return "准备接敌"
 	if action_id == "meeting_assigned_horse":
@@ -1415,6 +1425,8 @@ func _format_action_status(action_id: String) -> String:
 		return "已离开驿站"
 	if action_id.begins_with("visit_location_"):
 		return "停留在%s" % _get_location_name(action_id.trim_prefix("visit_location_"))
+	if action_id.begins_with("moving_to_healing_target_"):
+		return "前往协助治疗%s" % _get_npc_display_name(action_id.trim_prefix("moving_to_healing_target_"))
 	if action_id.begins_with("moving_to_"):
 		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
 	if action_id.begins_with("assist_heal_"):
@@ -1438,6 +1450,11 @@ func _diff_state_fields(previous_state: Dictionary, current_state: Dictionary, f
 		if previous_state.get(field_name) != current_state.get(field_name):
 			changed[field_name] = current_state.get(field_name)
 	return changed
+
+
+func _strip_damaged_building_efficiency(current_state: Dictionary, changed_fields: Dictionary) -> void:
+	if str(current_state.get("condition", "")) == "damaged":
+		changed_fields.erase("operational_efficiency")
 
 
 func _normalize_special_state_for_info(building_id: String, raw_state: Variant) -> Dictionary:
@@ -1870,11 +1887,7 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("reason", "mode_changed"))
 			]
 		"avoidance_started":
-			return "%s发现%s接近，正朝%s避战。" % [
-				actor,
-				str(payload.get("enemy_name", payload.get("enemy_id", "敌人"))),
-				str(payload.get("target_name", "避战方向"))
-			]
+			return "%s发现敌军正在接近，正在避战。" % actor
 		"avoidance_ended":
 			return "%s不再避战，回到驿站日常安排。" % actor
 		"escape_started":

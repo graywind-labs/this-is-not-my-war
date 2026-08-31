@@ -53,7 +53,7 @@ func _init() -> void:
 	check(bool(initial_art.get("use_imported_character_material", false)), "Ada does not preserve the authored ShieldMaiden material settings")
 	check(ada.find_child("FaceReadabilityOverlay", true, false) == null, "Ada still contains the rejected procedural face overlay")
 	check(str(initial_art.get("authority_main_weapon_id", "")) == "sword_shield", "Ada initial story weapon did not reach presentation")
-	check(bool(initial_art.get("sword_visible", false)) and bool(initial_art.get("shield_visible", false)), "Ada initial sword and shield are not visible")
+	check(not bool(initial_art.get("sword_visible", true)) and not bool(initial_art.get("shield_visible", true)), "Ada displays her story weapon while in work mode")
 	check(str(initial_art.get("sword_parent", "")) == "RightHand" and str(initial_art.get("shield_parent", "")) == "LeftHand", "Ada weapon props are not attached to hand sockets")
 	check(float(initial_art.get("palette_saturation", 1.0)) <= 0.65, "Ada palette is not restrained enough")
 	check(str(initial_art.get("palette_path", "")).ends_with("PolygonMinis_Texture_Blue_A.png"), "Ada does not use the authored blue Albedo palette")
@@ -85,7 +85,7 @@ func _init() -> void:
 	var sword_result: Dictionary = equipment_system.equip_npc_main_weapon(NPC_ID, "sword_shield", "private")
 	check(bool(sword_result.get("ok", false)), "Could not restore Ada sword and shield")
 	await process_frame
-	check(bool(ada.debug_get_character_art_snapshot().get("sword_visible", false)), "Restored sword and shield did not reappear")
+	check(not bool(ada.debug_get_character_art_snapshot().get("sword_visible", true)), "Restored sword appeared before a weapon-using state")
 
 	var training_button := gm.find_child("FormalTrainingInstructorButton", true, false) as Button
 	check(training_button != null, "GM formal training instructor entry is missing")
@@ -101,6 +101,7 @@ func _init() -> void:
 			check(str(training_art.get("desired_state", "")) == "training_instructor", "Real training did not select instructor animation")
 			check(str(training_art.get("current_clip", "")) == "Melee_Block_Attack", "Ada instructor animation is not the sword-and-shield demonstration")
 			check(int(training_art.get("training_instructor_clip_loop_mode", Animation.LOOP_NONE)) == Animation.LOOP_LINEAR, "Ada instructor demonstration is not cyclic")
+			check(bool(training_art.get("sword_visible", false)) and bool(training_art.get("shield_visible", false)), "Weapon training did not draw Ada's sword and shield")
 		action_system.interrupt_npc_action(NPC_ID, "verify_t0130_p5_training_complete", true)
 		await process_frame
 
@@ -129,7 +130,7 @@ func _init() -> void:
 		await physics_frame
 		var awake_art: Dictionary = ada.debug_get_character_art_snapshot()
 		check(str(awake_art.get("spatial_attachment_pose", "")) == "", "Ada art kept the bed attachment after sleep stopped")
-		check(bool(awake_art.get("sword_visible", false)) and bool(awake_art.get("shield_visible", false)), "Ada equipment did not return after waking")
+		check(not bool(awake_art.get("sword_visible", true)) and not bool(awake_art.get("shield_visible", true)), "Ada woke into work mode while still holding combat equipment")
 
 	var damage_result: Dictionary = npc_system.debug_damage_npc(NPC_ID, 9999)
 	check(bool(damage_result.get("ok", false)), "Ada authoritative damage entry failed")

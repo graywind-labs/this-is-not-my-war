@@ -91,8 +91,12 @@ func _init() -> void:
 		push_error("Avoidance target should stay inside the station bounds: %s" % str(target_position))
 		quit(1)
 		return
-	if travel_distance < 0.8 or travel_distance > 4.1:
-		push_error("Avoidance should move in a short step instead of jumping to a corner: %s" % str(travel_distance))
+	if travel_distance < 0.8:
+		push_error("Avoidance should produce a distinct navigable destination: %s" % str(travel_distance))
+		quit(1)
+		return
+	if absf(float(cook_avoidance.get("desired_target_distance", 0.0)) - float(cook_avoidance.get("trigger_range", -1.0))) > 0.01:
+		push_error("Avoidance raw target distance must equal the avoidance radius: %s" % JSON.stringify(cook_avoidance))
 		quit(1)
 		return
 	if target_position.distance_to(enemy_position) <= contact_position.distance_to(enemy_position):
@@ -103,8 +107,18 @@ func _init() -> void:
 		push_error("Work-to-avoid_combat should not write npc_mode_changed")
 		quit(1)
 		return
-	if not _npc_has_event(memory_system, "cook_01", "avoidance_started"):
+	var avoidance_event := _find_npc_event(memory_system, "cook_01", "avoidance_started")
+	if avoidance_event.is_empty():
 		push_error("Avoidance start should write avoidance_started")
+		quit(1)
+		return
+	if str(avoidance_event.get("summary", "")) != "布鲁诺发现敌军正在接近，正在避战。":
+		push_error("Avoidance summary should use the concise player-facing wording: %s" % str(avoidance_event.get("summary", "")))
+		quit(1)
+		return
+	var avoidance_payload: Dictionary = avoidance_event.get("payload", {})
+	if str(avoidance_payload.get("enemy_id", "")).is_empty() or str(avoidance_payload.get("target_name", "")).is_empty():
+		push_error("Concise avoidance summary must keep enemy and target details in payload: %s" % JSON.stringify(avoidance_payload))
 		quit(1)
 		return
 	print("[T1103B] proximity avoidance checked")
@@ -360,6 +374,14 @@ func _npc_has_event(memory_system: Node, npc_id: String, event_type: String) -> 
 		if str(event.get("type", "")) == event_type:
 			return true
 	return false
+
+
+func _find_npc_event(memory_system: Node, npc_id: String, event_type: String) -> Dictionary:
+	for raw_event in memory_system.get_npc_daily_events(npc_id):
+		var event: Dictionary = raw_event
+		if str(event.get("type", "")) == event_type:
+			return event
+	return {}
 
 
 func _npc_has_mode_event(memory_system: Node, npc_id: String, from_mode: String, to_mode: String) -> bool:

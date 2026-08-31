@@ -3,6 +3,7 @@ extends PanelContainer
 signal portrait_clicked(npc_id: String)
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const WORLD_STATIC_COLLISION_MASK := 1
 const PORTRAIT_EXCLUDED_VISUAL_LAYER := 20
 const MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER := 19
@@ -16,6 +17,8 @@ const CAMERA_WALL_MARGIN := 0.24
 const CAMERA_FOLLOW_SPEED := 10.0
 
 var _target_npc_id := ""
+var _target_enemy_id := ""
+var _target_kind := "npc"
 var _active := false
 var _camera_initialized := false
 var _subviewport: SubViewport
@@ -27,7 +30,6 @@ var _last_obstruction_adjusted := false
 
 
 func _ready() -> void:
-	name = "NPCPortraitView"
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_view()
 	_set_rendering_enabled(false)
@@ -105,7 +107,7 @@ func _build_view() -> void:
 
 
 func _on_portrait_pressed() -> void:
-	if not _active or _target_npc_id.is_empty():
+	if not _active or _target_kind != "npc" or _target_npc_id.is_empty():
 		return
 	portrait_clicked.emit(_target_npc_id)
 
@@ -114,9 +116,29 @@ func show_npc(npc_id: String) -> void:
 	if clean_id.is_empty():
 		hide_preview()
 		return
-	if _target_npc_id != clean_id:
+	if _target_kind != "npc" or _target_npc_id != clean_id:
 		_camera_initialized = false
+	_target_kind = "npc"
 	_target_npc_id = clean_id
+	_target_enemy_id = ""
+	_active = true
+	_status_label.text = ""
+	_status_label.visible = true
+	_set_rendering_enabled(true)
+	set_process(true)
+	_update_camera(0.0)
+
+
+func show_enemy(enemy_id: String) -> void:
+	var clean_id := enemy_id.strip_edges()
+	if clean_id.is_empty():
+		hide_preview()
+		return
+	if _target_kind != "enemy" or _target_enemy_id != clean_id:
+		_camera_initialized = false
+	_target_kind = "enemy"
+	_target_npc_id = ""
+	_target_enemy_id = clean_id
 	_active = true
 	_status_label.text = ""
 	_status_label.visible = true
@@ -128,6 +150,8 @@ func show_npc(npc_id: String) -> void:
 func hide_preview() -> void:
 	_active = false
 	_target_npc_id = ""
+	_target_enemy_id = ""
+	_target_kind = "npc"
 	_camera_initialized = false
 	_last_target_snapshot.clear()
 	_last_camera_front_dot = -1.0
@@ -153,13 +177,12 @@ func _process(delta: float) -> void:
 func _update_camera(delta: float) -> void:
 	if not _active or _camera == null or _subviewport == null:
 		return
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if npc_system == null or not npc_system.has_method("get_npc_portrait_snapshot"):
+	var snapshot := _get_target_snapshot()
+	if snapshot.is_empty():
 		_show_unavailable("实时镜头暂不可用")
 		return
-	var snapshot: Dictionary = npc_system.get_npc_portrait_snapshot(_target_npc_id)
 	if snapshot.is_empty() or not bool(snapshot.get("valid", false)) or not bool(snapshot.get("visible", false)):
-		_show_unavailable("该 NPC 当前不在可见场景中")
+		_show_unavailable("目标当前不在可见场景中")
 		return
 	_last_target_snapshot = snapshot.duplicate(true)
 	_status_label.visible = false
@@ -191,6 +214,18 @@ func _update_camera(delta: float) -> void:
 		if npc_to_camera.length_squared() > 0.0001
 		else -1.0
 	)
+
+
+func _get_target_snapshot() -> Dictionary:
+	if _target_kind == "enemy":
+		var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+		if combat_system == null or not combat_system.has_method("get_enemy_portrait_snapshot"):
+			return {}
+		return combat_system.get_enemy_portrait_snapshot(_target_enemy_id)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_portrait_snapshot"):
+		return {}
+	return npc_system.get_npc_portrait_snapshot(_target_npc_id)
 
 
 func _resolve_camera_obstruction(focus_position: Vector3, desired_position: Vector3) -> Vector3:
@@ -232,7 +267,9 @@ func debug_get_snapshot() -> Dictionary:
 	var main_viewport := get_viewport()
 	return {
 		"active": _active,
+		"target_kind": _target_kind,
 		"target_npc_id": _target_npc_id,
+		"target_enemy_id": _target_enemy_id,
 		"rendering_enabled": _subviewport != null and _subviewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
 		"shares_main_world": _subviewport != null and main_viewport != null and _subviewport.world_3d == main_viewport.world_3d,
 		"viewport_size": _subviewport.size if _subviewport != null else Vector2i.ZERO,

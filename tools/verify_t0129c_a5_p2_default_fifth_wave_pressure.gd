@@ -19,6 +19,7 @@ var _physics_frame_samples_ms: Array[float] = []
 var _navigation_frame_samples_ms: Array[float] = []
 var _frame_pacing_samples_ms: Array[float] = []
 var _minimum_clearance := INF
+var _minimum_clearance_pair := ""
 var _maximum_enemy_speed := 0.0
 var _maximum_enemy_frame_displacement := 0.0
 var _maximum_npc_frame_displacement := 0.0
@@ -111,7 +112,7 @@ func _init() -> void:
 				avoidance_sample_count += 1
 
 	if _minimum_clearance < dynamic_clearance_tolerance:
-		_fail("Fifth-wave pressure produced persistent capsule penetration: clearance=%.3f" % _minimum_clearance)
+		_fail("Fifth-wave pressure produced persistent capsule penetration: clearance=%.3f pair=%s" % [_minimum_clearance, _minimum_clearance_pair])
 		return
 	if avoidance_sample_count < int(pressure_sample_count * 0.5):
 		_fail("Noncombatants did not sustain avoidance under fifth-wave pressure: %d/%d" % [avoidance_sample_count, pressure_sample_count])
@@ -409,7 +410,9 @@ func _sample_spatial_contract(combat_system: Node) -> void:
 				- float(first.get("radius", 0.0))
 				- float(second.get("radius", 0.0))
 			)
-			_minimum_clearance = minf(_minimum_clearance, clearance)
+			if clearance < _minimum_clearance:
+				_minimum_clearance = clearance
+				_minimum_clearance_pair = "%s/%s" % [str(first.get("id", "")), str(second.get("id", ""))]
 
 
 func _all_npcs_are_avoiding(combat_system: Node, npc_ids: Array) -> bool:

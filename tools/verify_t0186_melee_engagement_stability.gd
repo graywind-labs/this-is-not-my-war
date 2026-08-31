@@ -66,29 +66,38 @@ func _verify_building_assault(combat_system: Node, building_system: Node, npc_sy
 	var initial_sequences: Dictionary = {}
 	var last_observed_attack_sequence: Dictionary = {}
 	var contacts_by_enemy: Dictionary = {}
-	for raw_lease in combat_system.debug_get_enemy_attack_position_snapshot().get("leases", []):
-		var lease := raw_lease as Dictionary
-		if str(lease.get("target_key", "")) != "building:front_gate":
-			continue
-		var enemy_id := str(lease.get("enemy_id", ""))
+	var active_enemy_ids: Array[String] = combat_system.get_active_enemy_ids()
+	var fixture_target: Dictionary = combat_system._make_building_target("front_gate")
+	for fixture_index in range(mini(5, active_enemy_ids.size())):
+		var enemy_id := active_enemy_ids[fixture_index]
 		var actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
 		if actor == null:
 			continue
-		var attack_position := _to_vector3(lease.get("position", actor.global_position))
-		var contact_position := _to_vector3(lease.get("contact_position", attack_position))
+		var enemy: Dictionary = combat_system._active_enemies.get(enemy_id, {})
+		var fixture_candidates: Array[Dictionary] = combat_system._get_enemy_attack_position_candidates(enemy_id, enemy, fixture_target)
+		if fixture_candidates.size() <= fixture_index:
+			continue
+		# Guidance zones are non-exclusive. Give this isolated timeline fixture one
+		# real body per authored door contact; T0180 covers the natural eight-body
+		# crowd and its stall recovery separately.
+		var fixture_candidate := fixture_candidates[fixture_index]
+		var attack_position := _to_vector3(fixture_candidate.get("position", actor.global_position))
+		var contact_position := _to_vector3(fixture_candidate.get("contact_position", attack_position))
 		var outward := attack_position - contact_position
 		outward.y = 0.0
 		outward = outward.normalized() if outward.length_squared() > 0.0001 else Vector3.FORWARD
 		actor.cancel_motion("superseded")
 		actor.global_position = attack_position + outward * 0.30
 		actor.velocity = Vector3.ZERO
-		var enemy: Dictionary = combat_system._active_enemies.get(enemy_id, {})
 		enemy["position"] = actor.global_position
 		combat_system._active_enemies[enemy_id] = enemy
 		attackers.append(enemy_id)
 		initial_sequences[enemy_id] = int(enemy.get("attack_sequence", 0))
 		last_observed_attack_sequence[enemy_id] = int(enemy.get("attack_sequence", 0))
-	_check(attackers.size() == 7, "T0186 expected seven gate attackers, got %d" % attackers.size())
+	_check(attackers.size() == 5, "T0186 expected five door-panel attackers, got %d" % attackers.size())
+	for active_enemy_id in combat_system.get_active_enemy_ids():
+		if not attackers.has(active_enemy_id):
+			combat_system._remove_enemy_from_combat(active_enemy_id)
 	combat_system.debug_step_enemy_ai(0.01)
 	time_system.set_paused(false)
 	for _frame in range(BUILDING_SAMPLE_FRAMES):
@@ -146,7 +155,7 @@ func _verify_building_assault(combat_system: Node, building_system: Node, npc_sy
 		})
 		_check(attempts >= 3, "T0186 building attacker did not sustain its timeline: %s" % building_diagnostics[-1])
 		_check(hits >= maxi(2, attempts - 1), "T0186 building attacker produced too many visible misses: %s" % building_diagnostics[-1])
-	_check(int(building_system.get_building("front_gate").get("hp", 100000)) <= 99888, "T0186 building assault damage remained abnormally low: %s" % [building_diagnostics])
+	_check(int(building_system.get_building("front_gate").get("hp", 100000)) <= 99920, "T0186 five-attacker building assault damage remained abnormally low: %s" % [building_diagnostics])
 	print("T0186_BUILDING_DIAGNOSTICS %s" % JSON.stringify(building_diagnostics))
 	combat_system.clear_spawned_enemies()
 	for _frame in range(3):

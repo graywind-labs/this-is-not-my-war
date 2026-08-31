@@ -56,6 +56,8 @@ func _ready() -> void:
 		if event_bus.has_signal("horse_assignment_changed"):
 			event_bus.horse_assignment_changed.connect(_on_horse_assignment_changed)
 		event_bus.npc_clicked.connect(_on_other_world_selection)
+		if event_bus.has_signal("enemy_clicked"):
+			event_bus.enemy_clicked.connect(_on_other_world_selection)
 		event_bus.building_clicked.connect(_on_other_world_selection)
 		if event_bus.has_signal("defense_device_clicked"):
 			event_bus.defense_device_clicked.connect(_on_other_world_selection)
@@ -134,12 +136,6 @@ func _build_panel() -> void:
 	var breeding_pair := _make_progress(content, "HorseBreedingProbability")
 	_breeding = breeding_pair[0]
 	_breeding_label = breeding_pair[1]
-	var note := Label.new()
-	note.name = "HorseAuthorityNote"
-	note.text = "名称、毛色、马槽、成长与分配均读取马匹系统；此面板不参与结算。"
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	note.modulate = Color(0.75, 0.78, 0.75, 1.0)
-	content.add_child(note)
 
 
 func _make_info_label(parent: VBoxContainer, control_name: String) -> Label:
@@ -181,9 +177,9 @@ func show_horse(horse_id: String) -> void:
 func _refresh(horse: Dictionary) -> void:
 	var horse_id := str(horse.get("horse_id", _current_horse_id))
 	_name_label.text = str(horse.get("name", horse_id))
-	_identity_label.text = "毛色：%s｜模板：%s" % [str(horse.get("coat_name", "未知")), str(horse.get("template_id", "--"))]
+	_identity_label.text = "毛色：%s" % str(horse.get("coat_name", "未知"))
 	var feeding: Dictionary = horse.get("feeding", {}) if horse.get("feeding", {}) is Dictionary else {}
-	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马", _format_location(str(horse.get("location", "stable")))]
+	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马"]
 	if bool(feeding.get("active", false)):
 		status_parts.append("进食 %d%%" % int(round(float(feeding.get("progress", 0.0)) * 100.0)))
 	elif bool(feeding.get("waiting_for_grain", false)):
@@ -192,7 +188,7 @@ func _refresh(horse: Dictionary) -> void:
 		status_parts.append("缓慢恢复")
 	_status_label.text = "状态：%s" % "、".join(status_parts)
 	_slot_label.text = "马槽：%s｜占用 %d / %d%s" % [
-		str(horse.get("stable_slot_id", "已释放")),
+		_format_stable_slot_id(str(horse.get("stable_slot_id", ""))),
 		int(horse.get("stable_occupied_slots", 0)),
 		int(horse.get("stable_capacity", 0)),
 		"（已满，繁育暂停）" if bool(horse.get("stable_full", false)) else ""
@@ -211,8 +207,6 @@ func _refresh(horse: Dictionary) -> void:
 		_breeding_label.text += "｜冷却 %s" % _format_cooldown(cooldown)
 	elif not bool(horse.get("is_adult", false)):
 		_breeding_label.text += "｜未成年"
-	elif str(horse.get("location", "stable")) != "stable":
-		_breeding_label.text += "｜离厩暂停"
 
 
 func _set_progress(
@@ -256,14 +250,16 @@ func _make_progress_fill_style(color: Color) -> StyleBoxFlat:
 	return style
 
 
-func _format_location(location: String) -> String:
-	match location:
-		"stable": return "在厩"
-		"approaching_rider": return "奔向骑手"
-		"ridden": return "骑乘中"
-		"returning_stable": return "返厩中"
-		"dead": return "已阵亡"
-		_: return "位置未知"
+func _format_stable_slot_id(slot_id: String) -> String:
+	var normalized := slot_id.strip_edges()
+	if normalized.is_empty() or normalized == "已释放":
+		return "无"
+	var parts := normalized.split("_", false)
+	if not parts.is_empty():
+		var suffix := str(parts[parts.size() - 1])
+		if suffix.is_valid_int():
+			return "%d号" % int(suffix)
+	return "未知"
 
 
 func _format_npc_name(npc_id: String) -> String:
@@ -365,6 +361,7 @@ func debug_get_snapshot() -> Dictionary:
 		"horse_id": _current_horse_id,
 		"name": _name_label.text if _name_label != null else "",
 		"identity": _identity_label.text if _identity_label != null else "",
+		"status": _status_label.text if _status_label != null else "",
 		"slot": _slot_label.text if _slot_label != null else "",
 		"portrait": _portrait_view.debug_get_snapshot() if _portrait_view != null else {},
 		"progress_rows": {

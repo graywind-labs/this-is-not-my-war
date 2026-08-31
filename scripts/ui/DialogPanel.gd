@@ -375,9 +375,9 @@ func _refresh(state: Dictionary) -> void:
 	var escape_decision := str(escape_result.get("decision", ""))
 	var escape_status := "NPC 已停下，准备回到工作安排。" if escape_decision == "stay" else "NPC 仍在继续逃离。" if escape_decision == "continue" else "逃离挽留：剩余 %d 轮。" % maxi(0, int(state.get("max_rounds", 5)) - int(state.get("current_round", 0)))
 	if _observer_mode:
-		status_label.text = ("本轮自主对话已结束。" if last_error.is_empty() else "对话已结束：%s" % last_error) if _observer_dialogue_ended else ("等待第 %d 轮 LLM 回复……" % (int(state.get("current_round", 0)) + 1) if waiting else "旁听中 · %s" % ("同地点公开" if str(state.get("visibility", "local_public")) == "local_public" else "私下对话"))
+		status_label.text = ("本轮自主对话已结束。" if last_error.is_empty() else "对话已结束：%s" % last_error) if _observer_dialogue_ended else ("等待第 %d 轮 LLM 回复……" % (int(state.get("current_round", 0)) + 1) if waiting else "旁听中 · %s" % ("公开" if str(state.get("visibility", "local_public")) == "local_public" else "私下"))
 	else:
-		status_label.text = last_error if not last_error.is_empty() else ("守备官消息已发送，正在等待回复……" if waiting else "逃离挽留轮次已用完。" if round_limit_reached else escape_status if dialogue_kind == "escape_intervention" else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "战时同地点公开对话" if force_public else "私人对话" if str(state.get("visibility", "private")) == "private" else "同地点公开对话")
+		status_label.text = last_error if not last_error.is_empty() else ("守备官消息已发送，正在等待回复……" if waiting else "逃离挽留轮次已用完。" if round_limit_reached else escape_status if dialogue_kind == "escape_intervention" else "下次发送将提出应征。" if recruitment_pending else recruitment_status if not recruitment_status.is_empty() else "战时公开对话" if force_public else "私下对话" if str(state.get("visibility", "private")) == "private" else "公开对话")
 	var lines: Array[String] = []
 	for raw_turn in state.get("history", []):
 		if not raw_turn is Dictionary:

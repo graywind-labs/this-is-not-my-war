@@ -105,31 +105,28 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var weapon_select := npc_panel.find_child("NPCWeaponSelect", true, false) as OptionButton
 	var weapon_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
 	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
-	if weapon_select == null or weapon_button == null or equipment_label == null:
-		push_error("NPCPanel formal equipment controls are missing: select=%s button=%s label=%s" % [weapon_select != null, weapon_button != null, equipment_label != null])
+	if weapon_button == null or equipment_label == null:
+		push_error("NPCPanel equipment entry is missing")
 		quit(1)
 		return
-	if not equipment_label.text.contains("剑盾") or not equipment_label.text.contains("近战步兵"):
-		push_error("NPCPanel did not display Ada's initial sword and shield: %s" % equipment_label.text)
+	if weapon_button.text != "装备" or weapon_button.disabled or equipment_label.visible:
+		push_error("NPCPanel should expose only one equipment button")
 		quit(1)
 		return
-	if not _select_option_by_id(weapon_select, "polearm"):
-		push_error("NPC weapon selector should include polearm")
-		quit(1)
-		return
-	weapon_select.item_selected.emit(weapon_select.selected)
-	await process_frame
-	if weapon_button.disabled:
-		push_error("Selecting an in-stock concrete weapon must immediately enable the NPCPanel equip button")
+	if npc_panel.find_child("NPCWeaponSelect", true, false) != null or npc_panel.find_child("NPCUnequipWeaponButton", true, false) != null:
+		push_error("Legacy NPCPanel weapon controls should be removed")
 		quit(1)
 		return
 
 	var polearm_before := int(resource_system.get_resource("item_polearm"))
 	var sword_shield_before := int(resource_system.get_resource("item_sword_shield"))
 	weapon_button.pressed.emit()
+	npc_panel.debug_press_equipment_slot("main_weapon")
+	npc_panel.debug_confirm_equipment_unequip()
+	npc_panel.debug_press_equipment_slot("main_weapon")
+	npc_panel.debug_select_equipment_item("main_weapon", "polearm")
 	await process_frame
 	var equipment: Dictionary = npc_system.get_npc(target_id).get("equipment", {})
 	if str(equipment.get("main_weapon", {}).get("id", "")) != "polearm":
@@ -148,12 +145,8 @@ func _init() -> void:
 		push_error("Polearm should classify as polearm infantry")
 		quit(1)
 		return
-	if not equipment_label.text.contains("长杆武器") or not equipment_label.text.contains("长杆步兵"):
-		push_error("NPCPanel did not display weapon and unit type: %s" % equipment_label.text)
-		quit(1)
-		return
 	if not _has_event(memory_system.get_npc_daily_events(target_id), "equipment_changed"):
-		push_error("Replacing Ada's initial weapon should write equipment_changed")
+		push_error("Confirming weapon collection should write equipment_changed")
 		quit(1)
 		return
 	if not _has_event(memory_system.get_npc_witness_events(witness_id), "equipment_changed"):
@@ -191,7 +184,6 @@ func _init() -> void:
 		quit(1)
 		return
 	var assigned_horse_id := str(available_horses[0].get("horse_id", ""))
-	var assigned_horse_name := str(available_horses[0].get("name", assigned_horse_id))
 	var mount_result: Dictionary = horse_system.assign_horse_to_npc(target_id, assigned_horse_id, "local_public")
 	if not bool(mount_result.get("ok", false)):
 		push_error("Failed to assign initial adult horse: %s" % JSON.stringify(mount_result))
@@ -255,8 +247,10 @@ func _init() -> void:
 
 	npc_system.debug_select_npc(target_id)
 	await process_frame
-	if not equipment_label.text.contains("锁子甲") or not equipment_label.text.contains(assigned_horse_name) or not equipment_label.text.contains("骑射单位"):
-		push_error("NPCPanel should display armor, mount and mounted unit type: %s" % equipment_label.text)
+	var panel_snapshot: Dictionary = npc_panel.debug_get_equipment_window_snapshot()
+	var panel_slots: Dictionary = panel_snapshot.get("slots", {})
+	if str((panel_slots.get("chest", {}) as Dictionary).get("item_id", "")) != "mail_chest" or str((panel_slots.get("mount", {}) as Dictionary).get("item_id", "")) != assigned_horse_id:
+		push_error("NPCPanel equipment window did not refresh armor and mount: %s" % JSON.stringify(panel_snapshot))
 		quit(1)
 		return
 
@@ -297,14 +291,6 @@ func _init() -> void:
 
 	print("T0036 concrete equipment inventory verification passed.")
 	quit(0)
-
-
-func _select_option_by_id(select: OptionButton, expected_id: String) -> bool:
-	for index in range(select.get_item_count()):
-		if str(select.get_item_metadata(index)) == expected_id:
-			select.select(index)
-			return true
-	return false
 
 
 func _has_event(events: Array, event_type: String) -> bool:

@@ -58,20 +58,23 @@ func _init() -> void:
 	if not is_equal_approx(float(snapshot.get("production_cell_size", 0.0)), 0.25):
 		_fail("Production navigation resolution drifted: %s" % snapshot)
 		return
-	if int(snapshot.get("static_body_count", 0)) != 234 or int(snapshot.get("collision_shape_count", 0)) != 234:
-		_fail("Expected 78 structural blockers, 131 fixture collision parts, 24 natural blockers, and one production navigation floor: %s" % snapshot)
+	if int(snapshot.get("static_body_count", 0)) != 243 or int(snapshot.get("collision_shape_count", 0)) != 258:
+		_fail("Current formal collision totals drifted after adding the main-hall interior blocker: %s" % snapshot)
 		return
 	if int(snapshot.get("building_shell_count", 0)) != 60:
-		_fail("Expected five wall bodies for each of 12 buildings: %s" % snapshot)
+		_fail("Expected five wall bodies for all 12 buildings, including the smithy's transparent perimeter: %s" % snapshot)
+		return
+	if int(snapshot.get("building_interior_blocker_count", 0)) != 1:
+		_fail("Expected one transparent main-hall interior blocker: %s" % snapshot)
 		return
 	if int(snapshot.get("station_wall_count", 0)) != 14 or int(snapshot.get("gate_post_count", 0)) != 4:
 		_fail("Station wall or gate-post collision count drifted: %s" % snapshot)
 		return
-	if int(snapshot.get("building_fixture_count", 0)) != 131 or int(snapshot.get("natural_boundary_count", 0)) != 24:
+	if int(snapshot.get("building_fixture_count", 0)) != 133 or int(snapshot.get("natural_boundary_count", 0)) != 24:
 		_fail("Building fixture collision count drifted: %s" % snapshot)
 		return
-	if bool(snapshot.get("live_actor_bodies_migrated", true)):
-		_fail("A1 must not claim that live NPC/enemy bodies are already migrated")
+	if not bool(snapshot.get("live_actor_bodies_migrated", false)):
+		_fail("Default formal world must keep live NPC/enemy bodies on the production navigation map")
 		return
 
 	for raw_building in layout.get("buildings", []):
@@ -79,7 +82,8 @@ func _init() -> void:
 		var building_id := str(building.get("id", ""))
 		var building_root := building_roots.get_node_or_null(str(building.get("node_name", ""))) as Node3D
 		var collision_root := building_root.get_node_or_null("StaticCollision") if building_root != null else null
-		if building_root == null or collision_root == null or collision_root.get_child_count() != 5:
+		var expected_collision_count := 6 if building_id == "main_hall" else 5
+		if building_root == null or collision_root == null or collision_root.get_child_count() != expected_collision_count:
 			_fail("Building shell is incomplete: %s" % building_id)
 			return
 		if not is_equal_approx(float(collision_root.get_meta("door_clear_width", 0.0)), 1.8):
@@ -96,9 +100,10 @@ func _init() -> void:
 				return
 
 		var envelope := _v2(building.get("envelope_size", [1.0, 1.0]))
+		var side_probe_z := 0.0
 		var side_hit := _ray_world_static(
-			building_root.to_global(Vector3(-envelope.x * 0.5 - 1.0, 0.8, 0.0)),
-			building_root.to_global(Vector3(0.0, 0.8, 0.0))
+			building_root.to_global(Vector3(-envelope.x * 0.5 - 1.0, 0.8, side_probe_z)),
+			building_root.to_global(Vector3(0.0, 0.8, side_probe_z))
 		)
 		if side_hit.is_empty() or str((side_hit.get("collider") as StaticBody3D).get_meta("collision_category", "")) != "building_wall":
 			_fail("Side wall failed to block direct entry: %s" % building_id)
@@ -107,7 +112,12 @@ func _init() -> void:
 			building_root.to_global(Vector3(0.0, 0.8, envelope.y * 0.5 + 1.0)),
 			building_root.to_global(Vector3(0.0, 0.8, 0.0))
 		)
-		if not door_hit.is_empty():
+		if building_id == "main_hall":
+			var blocker := door_hit.get("collider") as StaticBody3D
+			if blocker == null or str(blocker.get_meta("collision_category", "")) != "building_interior_blocker":
+				_fail("Main hall door must lead into its transparent solid blocker: %s" % door_hit)
+				return
+		elif not door_hit.is_empty():
 			_fail("Formal door opening is physically blocked: %s / %s" % [building_id, door_hit])
 			return
 
@@ -124,6 +134,8 @@ func _init() -> void:
 	var building_path_count := 0
 	for raw_building in layout.get("buildings", []):
 		var building_id := str((raw_building as Dictionary).get("id", ""))
+		if building_id == "main_hall":
+			continue
 		var route: Dictionary = controller.get_building_spatial_route(building_id)
 		var path := NavigationServer3D.map_get_path(
 			navigation_map,
@@ -135,8 +147,8 @@ func _init() -> void:
 			_fail("Godot navigation cannot pass the formal door: %s" % building_id)
 			return
 		building_path_count += 1
-	if building_path_count != 12:
-		_fail("Expected 12 verified building door paths")
+	if building_path_count != 11:
+		_fail("Expected 11 verified building door paths; main hall must stay blocked")
 		return
 	controller.debug_set_preview_enabled(false)
 

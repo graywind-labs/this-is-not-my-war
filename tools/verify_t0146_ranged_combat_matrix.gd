@@ -19,6 +19,7 @@ const ENEMY_VARIANTS := [
 ]
 const EPSILON_SECONDS := 0.001
 const PROJECTILE_STEP_SECONDS := 0.05
+const FIXTURE_TARGET_POSITION := Vector3(0.0, 0.0, 20.0)
 
 var _failures: PackedStringArray = []
 var _sequence := 14600
@@ -135,8 +136,8 @@ func _run_verification() -> void:
 func _verify_friendly_variant(combat_system: Node, npc_system: Node, npc_id: String, weapon: String, mounted: bool, enemy_id: String) -> void:
 	combat_system._clear_combat_projectiles("verify_t0146_friendly_variant")
 	_move_all_npcs_except(npc_system, npc_id, Vector3(40.0, 0.0, -40.0))
-	_set_npc_position(npc_system, npc_id, Vector3.ZERO)
-	_set_enemy_fixture(combat_system, enemy_id, Vector3(0.0, 0.0, 8.0), 10000)
+	_set_npc_position(npc_system, npc_id, FIXTURE_TARGET_POSITION)
+	_set_enemy_fixture(combat_system, enemy_id, FIXTURE_TARGET_POSITION + Vector3(0.0, 0.0, 8.0), 10000)
 	npc_system.update_npc_state(npc_id, {
 		"behavior_mode": "combat",
 		"combat_mode": "combat",
@@ -210,11 +211,11 @@ func _verify_enemy_variant(combat_system: Node, npc_system: Node, variant: Dicti
 	enemy["attack_speed"] = 1.0 / float(enemy.get("attack_interval", 1.0))
 	combat_system._cancel_enemy_attack_timeline(enemy)
 	_set_active_enemy(combat_system, enemy_id, enemy)
-	_set_enemy_fixture(combat_system, enemy_id, Vector3(0.0, 0.0, 7.0), 10000)
+	_set_enemy_fixture(combat_system, enemy_id, FIXTURE_TARGET_POSITION + Vector3(0.0, 0.0, 7.0), 10000)
 	_move_all_npcs_except(npc_system, "stableman_01", Vector3(40.0, 0.0, -40.0))
-	_set_npc_position(npc_system, "stableman_01", Vector3.ZERO)
+	_set_npc_position(npc_system, "stableman_01", FIXTURE_TARGET_POSITION)
 	npc_system.update_npc_state("stableman_01", {"hp": 1000, "max_hp": 1000, "unconscious": false, "escaped": false})
-	var target := {"type": "npc", "id": "stableman_01", "name": "托马", "position": Vector3.ZERO, "distance": 7.0}
+	var target := {"type": "npc", "id": "stableman_01", "name": "托马", "position": FIXTURE_TARGET_POSITION, "distance": 7.0}
 	enemy = combat_system.get_enemy(enemy_id)
 	enemy["target"] = target.duplicate(true)
 	_set_active_enemy(combat_system, enemy_id, enemy)

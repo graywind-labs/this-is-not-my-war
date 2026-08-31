@@ -7,7 +7,6 @@ const EXPECTED_RECIPES := {
 	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 4],
 	"craft_sword_shield": ["blacksmith", "item_sword_shield", 5],
 	"craft_mail_chest": ["blacksmith", "item_mail_chest", 8],
-	"craft_arrow_bundle": ["workshop", "item_arrow_bundle", 1],
 	"craft_bow": ["workshop", "item_bow", 3],
 	"craft_crossbow": ["workshop", "item_crossbow", 5],
 	"craft_wall_ballista": ["workshop", "item_wall_ballista", 9],
@@ -158,14 +157,6 @@ func _init() -> void:
 		_fail("Completed product should reset stages while retaining the selected target")
 		return
 
-	var hidden_arrow_result: Dictionary = crafting_system.set_target("workshop", "craft_arrow_bundle", false)
-	if bool(hidden_arrow_result.get("ok", false)) or str(hidden_arrow_result.get("reason", "")) != "recipe_unavailable":
-		_fail("Arrow-bundle recipe should be retained but unavailable until ammunition is implemented")
-		return
-	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
-		_fail("Unavailable arrow-bundle recipe leaked into the workshop target list")
-		return
-
 	var production_state: Dictionary = building_system.get_building_special_state_section("blacksmith", "production")
 	for key in ["target_item_id", "target_name", "completed_stages", "total_stages", "current_stage_index", "current_stage_name"]:
 		if not production_state.has(key):
@@ -197,8 +188,8 @@ func _verify_catalog(crafting_system: Node) -> bool:
 			_fail("Crafting catalog mismatch for %s: %s" % [recipe_id, JSON.stringify(recipe)])
 			return false
 		found += 1
-	if found != 11:
-		_fail("Expected exactly 11 frozen crafting recipes")
+	if found != 10:
+		_fail("Expected exactly 10 frozen crafting recipes")
 		return false
 	return true
 

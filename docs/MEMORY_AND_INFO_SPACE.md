@@ -1,5 +1,33 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0268 认识 / 事件 / 见闻显示名
+
+- NPCPanel 面向玩家的入口和详情标题使用“认识 / 事件 / 见闻”，不显示“知识图谱 / 事件库 / 见闻库”的开发式名称或条数。
+- 这只是 UI 显示名：底层知识图谱、`event_log / witness_log` 容器、事件数量、传播范围、总结轮转和 LLM 记忆合同均保持不变。
+
+## T0266 NPC 初始知识收口
+
+- 工坊相关 NPC 的初始长期知识只描述弓、弩、弩床和箭塔四类正式远程产物；阶段标识同步移除无效弹药占位。
+- 本次不改记忆事件类型、传播范围、Prompt 拼装或 LLM Schema。
+
+## T0254 惩戒攻击与对话事件分离
+
+- 每次对话内攻击继续即时生成独立 `damage_taken` 权威事件，摘要保留“守备官攻击了某 NPC 以示惩戒，造成 N 点伤害”；攻击次数不会被合并或撤销。
+- 攻击说明不再写入 `dialogue_turn.payload.dialogue_text`。完成时只有至少一句真实守备官 / NPC 发言才生成“守备官与 XX 对话”事件；连续攻击、挂起超时或逃离攻击均不会补造无台词对话。
+- 混合会话仍保留 `attack_committed` 与攻击事件关联元数据，但 transcript 和 summary 只展开真实发言，公开传播与短期记忆也遵守同一边界。
+
+## T0251 建筑受损状态差量字段
+
+- `building_damaged` 仍是实际扣除建筑 HP 后产生的权威伤害事实，继续按既有地点公开规则进入见闻；建筑首次从完好进入受损时，外部状态差量仍传播具体建筑的 `condition=damaged`。
+- 当当前建筑状态为受损时，广场与建筑内部状态差量在进入 NPC 见闻前移除 `operational_efficiency`，summary 不再追加“运作效率”。受损后继续掉血并仅跨越效率分档时不生成空的状态变化见闻。
+- MemorySystem 的当前地点状态快照仍可保留效率分档供即时上下文查询；本次只收紧受损变化写入见闻库的字段，不改变 BuildingSystem 精确倍率或玩家 UI。
+
+## T0237 避战事件摘要边界
+
+- `avoidance_started.summary` 固定为“{actor}发现敌军正在接近，正在避战。”，玩家可见文本不再展开具体敌军名称、敌军数量或加权避战方向。
+- `enemy_id / enemy_name / distance / reason / target_id / target_name / target_position` 继续保留在结构化 payload 中；亲历事件和旁观见闻引用同一规范化事件，因此显示同一句精简摘要。
+- 本任务不新增事件类型，不改变地点传播、短期记忆容器、Prompt、LLM payload 或避战权威逻辑。
+
 ## T0154 小窗与伤害表现的信息边界
 
 - 人物小窗的 `portrait_idle_talk_gesture` 是纯临时表现事件，不进入事件库、见闻、知识图谱、日记、地点传播或 Prompt。点击前后 MemorySystem 事件数不变。
@@ -241,7 +269,7 @@ T0061 当时守备官种子知识只有一条技术键为 `role` 的职责事实
 
 `npc_initial_long_memory.json` 表达第 1 天开始前已经形成的长期内容，不是新游戏启动时发生的一批事件。三篇 `day=0` 日记保留第一人称感受、语气与人生切片；`updated_day=0 / updated_time=开局前` 的知识图谱保留相对客观的当前认知。它们不进入当天 `event_log / witness_log`，也不会因为装载而广播人物、建筑或关系事件。
 
-T0108 只迁移这份开局前图谱中的稳定建筑认知：删除“器械只能部署围墙 / 围墙升级永不增加位置”的旧事实，改为围墙与主厅都拥有弩床 / 箭塔通用位置，围墙六级为 `1 / 2 / 2 / 3 / 3 / 4`、主厅为 `1 / 1 / 2 / 2 / 3 / 4`，每次升级最多增加一个，主厅位置提供 `2.0x` 射程。装载边界不变：不生成事件、不广播、不写短期记忆，也不新增器械升级事件类型。
+T0108 只迁移这份开局前图谱中的稳定建筑认知：删除“器械只能部署围墙 / 围墙升级永不增加位置”的旧事实，改为围墙与主厅都拥有弩床 / 箭塔通用位置，围墙六级为 `1 / 2 / 2 / 3 / 3 / 4`、主厅为 `1 / 1 / 2 / 2 / 3 / 4`，每次升级最多增加一个。T0223 已从图谱中删除主厅射程加成知识。装载边界不变：不生成事件、不广播、不写短期记忆，也不新增器械升级事件类型。
 
 初始图谱中的人物印象允许带 NPC 自身视角；守备官条目固定防务职责、三年前到站、来站前经历未知和开局前低细节尽责和睦背景，不伪造具体旧事、承诺、伤害、信任或敌意。建筑条目只是 NPC 对既有规则的理解；实时 HP、资源、建筑状态、工位、装备、入伍、移动和行动结果仍以 Godot 权威系统为准。
 
@@ -428,7 +456,7 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `combat_started` | `敌军来袭：第{wave_number}波，{enemy_count}名敌人逼近驿站。` | `wave_number`, `enemy_count`, `enemy_roster`, `friendly_combatant_count`, `friendly_roster`；T1106 已实现 |
 | `combat_ended` | `敌人已经全被消灭，第{wave_number}波战斗结束。受伤：{injured_npcs}。昏迷：{unconscious_npcs}。击退敌人：{defeated_by_npc}。` | `wave_number`, `enemy_count`, `injured_npcs`, `unconscious_npcs`, `low_hp_judgements`, `defeated_by_npc`, `reason`；T1106 已实现，T1202 起可包含低血量判定记录 |
 | `npc_mode_changed` | `{actor}从{from_mode_label}切换到{to_mode_label}，原因：{reason}。` | `npc_id`, `from_mode`, `from_mode_label`, `to_mode`, `to_mode_label`, `reason`；T1103A 已实现，T1103D 起不覆盖 `work <-> combat` 与 `work <-> avoid_combat` |
-| `avoidance_started` | `{actor}发现{enemy_name}接近，正朝{target_name}避战。` | `enemy_id`, `enemy_name`, `distance`, `reason`, `target_id`, `target_name`, `target_position`；T1103B/T1103C 已实现 |
+| `avoidance_started` | `{actor}发现敌军正在接近，正在避战。` | `enemy_id`, `enemy_name`, `distance`, `reason`, `target_id`, `target_name`, `target_position`；T1103B/T1103C 已实现，T0237 精简玩家可见摘要 |
 | `avoidance_ended` | `{actor}不再避战，回到驿站日常安排。` | `reason`, `active_enemy_count`, `target_id`, `target_name`；T1103B/T1103C 已实现 |
 | `escape_started` | `{actor}开始朝{exit_target_name}逃离驿站。` | `npc_id`, `source_event_id`, `trigger`, `interaction_context`, `from_mode`, `exit_target_id`, `exit_target_name`, `exit_position`；T1203 已实现 |
 | `escaped` | `{actor}已经从{exit_target_name}离开了驿站。` | `npc_id`, `exit_target_id`, `exit_target_name`, `source_event_id`, `trigger`, `reason`；T1203 已实现 |
@@ -522,7 +550,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 2. 状态变化时，只给当时仍在该建筑、未昏迷且未睡觉的 NPC 写入 `location_status_changed` 字段级见闻；`reason=building_internal_special_state_changed`，差量放在 `changed_special_state`。没有变化的字段不得重复写入。
 3. 状态不复制到广场 `building_external_states`，不生成 `plaza_status_changed`，不向建筑外 NPC 实时广播。NPC 离开后只能保留自己已经接收的见闻，不能继续获得该建筑后续实时差量。
 4. 制造工作周期的小数进度只供玩家建筑面板显示，不进入 NPC 信息空间，避免逐秒刷写见闻。马名、个体 HP、饱食度、成长、进食状态、分配 NPC 和骑乘者同样不进入马厩信息节点；玩家面板直接读取 HorseSystem。
-5. 具体武器、盔甲、箭束和工程器械库存仍由 ResourceSystem / 制造系统权威保存，不作为铁匠铺或工械坊 `special_state` 的附加字段。NPC 只有在其他合法事件、对话或后续专门信息入口中得知库存变化，不能因位于建筑外而自动获得制造项目实时状态。
+5. 具体武器、盔甲和工程器械库存仍由 ResourceSystem / 制造系统权威保存，不作为铁匠铺或工械坊 `special_state` 的附加字段。NPC 只有在其他合法事件、对话或后续专门信息入口中得知库存变化，不能因位于建筑外而自动获得制造项目实时状态。
 
 制造或马匹系统只提交权威当前状态，MemorySystem 负责白名单裁剪、快照、差量比较、接收者资格和中文摘要；UI 不得自行写见闻。昏迷 / 睡觉接收禁令与当前地点广播规则完全一致，不补收错过的差量。
 

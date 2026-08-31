@@ -26,6 +26,8 @@ func _ready() -> void:
 		return
 	if event_bus.has_signal("npc_clicked"):
 		event_bus.npc_clicked.connect(_on_npc_clicked)
+	if event_bus.has_signal("enemy_clicked"):
+		event_bus.enemy_clicked.connect(_on_non_combat_world_selection)
 	if event_bus.has_signal("defense_device_clicked"):
 		event_bus.defense_device_clicked.connect(_on_defense_device_clicked)
 	if event_bus.has_signal("world_selection_cleared"):

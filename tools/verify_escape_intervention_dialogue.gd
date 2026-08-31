@@ -292,6 +292,7 @@ func _init() -> void:
 		return
 	var attack_before: float = float(npc_system.get_npc_state("gardener_01").get("escape_intent", {}).get("speed_multiplier", 1.0))
 	var dialogue_turns_before := _count_events(memory_system.get_npc_daily_events("gardener_01"), "dialogue_turn")
+	var damage_events_before := _count_events(memory_system.get_npc_daily_events("gardener_01"), "damage_taken")
 	var intervention_results_before := _count_events(memory_system.get_npc_daily_events("gardener_01"), "escape_intervention_result")
 	var attack_result: Dictionary = dialog_system.attack_target_npc(10, true)
 	if not bool(attack_result.get("ok", false)):
@@ -318,8 +319,12 @@ func _init() -> void:
 		push_error("Escape dialogue attack should speed escape: before=%f after=%f" % [attack_before, attack_after])
 		quit(1)
 		return
-	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "dialogue_turn") != dialogue_turns_before + 1:
-		push_error("Escape dialogue attack should complete and preserve one no-reply dialogue session")
+	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "dialogue_turn") != dialogue_turns_before:
+		push_error("Escape dialogue attack without spoken lines should not create a dialogue transcript")
+		quit(1)
+		return
+	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "damage_taken") != damage_events_before + 1:
+		push_error("Escape dialogue attack should preserve its independent damage event")
 		quit(1)
 		return
 	if _count_events(memory_system.get_npc_daily_events("gardener_01"), "escape_intervention_result") != intervention_results_before:

@@ -19,7 +19,9 @@ outline_modulate = Color(0.04, 0.03, 0.02, 1)
 text = "工程器械"
 
 [node name="InteractionArea" type="Area3D" parent="."]
-collision_layer = 4
+# Layer 4 keeps world selection; layer 2 gives physical combat projectiles an
+# independent device hit target without adding any body collision for actors.
+collision_layer = 6
 collision_mask = 0
 monitoring = false
 input_ray_pickable = true

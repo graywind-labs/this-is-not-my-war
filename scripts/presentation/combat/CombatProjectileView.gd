@@ -3,6 +3,8 @@ extends Node3D
 const ARROW_LENGTH := 0.82
 const BOLT_LENGTH := 0.58
 
+var _projectile_length := ARROW_LENGTH
+
 
 func configure(projectile_id: String, weapon_type: String) -> void:
 	name = _make_node_name(projectile_id)
@@ -26,9 +28,27 @@ func project(position: Vector3, velocity: Vector3) -> void:
 	global_basis = Basis(right, forward, depth)
 
 
+func stick_at(position: Vector3, incoming_velocity: Vector3, surface_normal: Vector3 = Vector3.ZERO) -> void:
+	var direction := incoming_velocity.normalized()
+	if direction.length_squared() <= 0.000001:
+		direction = -surface_normal.normalized()
+	if direction.length_squared() <= 0.000001:
+		direction = Vector3.DOWN
+	project(position, direction)
+	# The Node3D origin is the shaft centre. Keep the metal tip slightly inside
+	# the actual swept-collision point instead of leaving half the arrow beyond it.
+	var tip_distance := _projectile_length * 0.5 + 0.13
+	global_position = position - direction * maxf(0.0, tip_distance - 0.035)
+	set_meta("projectile_state", "stuck")
+	set_meta("collision_position", position)
+	set_meta("incoming_direction", direction)
+	set_meta("surface_normal", surface_normal)
+
+
 func _build_projectile(weapon_type: String) -> void:
 	var is_bolt := weapon_type == "crossbow"
 	var length := BOLT_LENGTH if is_bolt else ARROW_LENGTH
+	_projectile_length = length
 	var shaft_material := StandardMaterial3D.new()
 	shaft_material.albedo_color = Color(0.34, 0.16, 0.055, 1.0) if not is_bolt else Color(0.44, 0.22, 0.07, 1.0)
 	shaft_material.roughness = 0.88

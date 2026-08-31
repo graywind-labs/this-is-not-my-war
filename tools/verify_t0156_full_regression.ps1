@@ -36,7 +36,7 @@ $verificationScripts = @(
     "verify_t0129c_a5_p8_formal_spatial_save.gd",
     "verify_mounted_combat_lifecycle.gd",
     "verify_mounted_fall_animation.gd",
-    "verify_enemy_mounted_defeat_escape.gd",
+    "verify_t0242_enemy_mounted_shared_defeat.gd",
     "verify_gm_panel.gd"
 )
 

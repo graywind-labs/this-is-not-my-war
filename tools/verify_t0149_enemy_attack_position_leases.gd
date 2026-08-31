@@ -48,6 +48,19 @@ func _run_verification() -> void:
 	await physics_frame
 
 	var snapshot: Dictionary = combat_system.debug_get_enemy_attack_position_snapshot()
+	if str(snapshot.get("schema", "")) == "enemy_attack_guidance_zones_v2":
+		_check(int(snapshot.get("guidance_count", 0)) > 0, "T0149/T0243 produced no live fixed-target guidance")
+		_check(int(snapshot.get("waiter_count", -1)) == 0, "T0149/T0243 retained a fixed-capacity waiter queue")
+		for raw_guidance in snapshot.get("guidance_assignments", []):
+			var guidance := raw_guidance as Dictionary
+			_check(str(guidance.get("status", "")) in ["guiding", "engaging"], "T0149/T0243 invalid guidance state: %s" % guidance)
+			_check(float(guidance.get("guidance_zone_radius", 0.0)) > 0.0, "T0149/T0243 guidance omitted body-sized radius: %s" % guidance)
+		combat_system.debug_stop_formal_dynamic_wave_slice("t0149_guidance_replacement_complete")
+		await process_frame
+		var guidance_cleared: Dictionary = combat_system.debug_get_enemy_attack_position_snapshot()
+		_check(int(guidance_cleared.get("guidance_count", -1)) == 0, "T0149/T0243 clear left guidance residue")
+		_finish()
+		return
 	_check(str(snapshot.get("schema", "")) == "enemy_attack_position_leases_v1", "T0149 lease schema missing")
 	_check(int(snapshot.get("lease_count", 0)) + int(snapshot.get("waiter_count", 0)) == 48, "T0149 every wave-5 enemy must own a fixed lease or an unreachable-path wait entry")
 	_check(int(snapshot.get("lease_count", 0)) > 0, "T0149 produced no attack-position leases")
@@ -88,7 +101,7 @@ func _run_verification() -> void:
 	_check(str(defense_assigned.get("attack_position_status", "")) == "reserved", "T0149 defense host proxy did not provide a reachable front position")
 	_check(str(defense_assigned.get("attack_position_target_key", "")) == "defense_device:t0149_defense_target", "T0149 defense lease key mismatch")
 	var defense_position := defense_assigned.get("attack_position", target_anchor) as Vector3
-	_check(defense_position.z > target_anchor.z, "T0149 defense attack position ignored host facing direction")
+	_check(defense_position.z > target_anchor.z, "T0149 defense attack position ignored host facing direction: anchor=%s assigned=%s target=%s" % [target_anchor, defense_position, defense_assigned])
 
 	var unreachable_target := {
 		"type": "defense_device",
@@ -119,7 +132,10 @@ func _run_verification() -> void:
 	var stagger_slot := str(stagger_lease.get("slot_id", ""))
 	combat_system.apply_enemy_stagger(stagger_id, 0.8, {"source_type": "t0149_test"})
 	var stagger_after: Dictionary = combat_system.debug_get_enemy_attack_position_snapshot()
-	_check(not _snapshot_has_slot(stagger_after, stagger_slot), "T0149 stagger retained its old lease")
+	# Releasing a slot may synchronously promote a waiter into the same physical
+	# slot. Audit ownership, not slot existence: the staggered actor must lose its
+	# lease while a valid waiter is allowed to reuse the freed position immediately.
+	_check(not _snapshot_has_enemy(stagger_after, stagger_id), "T0149 staggered enemy retained a lease or wait entry at %s" % stagger_slot)
 
 	var defeat_leases := stagger_after.get("leases", []) as Array
 	var defeat_lease := defeat_leases[0] as Dictionary if not defeat_leases.is_empty() else {}
@@ -128,8 +144,7 @@ func _run_verification() -> void:
 	var defeat_enemy: Dictionary = combat_system.get_enemy(defeat_id)
 	combat_system._apply_damage_to_enemy(defeat_id, int(defeat_enemy.get("hp", 1)), "", {"source_type": "t0149_test"})
 	var defeat_after: Dictionary = combat_system.debug_get_enemy_attack_position_snapshot()
-	_check(not _snapshot_has_slot(defeat_after, defeat_slot), "T0149 defeated enemy retained its lease")
-	_check(not _snapshot_has_enemy(defeat_after, defeat_id), "T0149 defeated enemy retained a lease or wait entry")
+	_check(not _snapshot_has_enemy(defeat_after, defeat_id), "T0149 defeated enemy retained a lease or wait entry at %s" % defeat_slot)
 	_check(old_slot_id != "", "T0149 building lease identity was empty")
 
 	combat_system.debug_stop_formal_dynamic_wave_slice("t0149_complete")

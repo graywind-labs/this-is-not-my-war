@@ -7,7 +7,6 @@ const WALL_DOOR := "res://assets/3d/quaternius/buildings/wall_plaster_door_round
 const FLOOR_DARK := "res://assets/3d/quaternius/buildings/floor_wood_dark.glb"
 const CHEST := "res://assets/3d/quaternius/props/warehouse_chest.glb"
 const SHELF := "res://assets/3d/quaternius/props/workshop_shelf.glb"
-const PEG_RACK := "res://assets/3d/quaternius/props/peg_rack.glb"
 const LANTERN := "res://assets/3d/quaternius/props/main_hall_lantern.glb"
 const AUTO_DOOR_SCRIPT := preload("res://scripts/presentation/buildings/BuildingAutoDoor.gd")
 const WASH_BASIN_BUILDER := preload("res://scripts/presentation/buildings/MedievalWashBasinBuilder.gd")
@@ -28,6 +27,16 @@ const DORM_LINEN := Color("#c7bda7")
 const DORM_IRON := Color("#34383d")
 const DORM_FIRE := Color("#d96732")
 const DORM_AMBER := Color("#d8ad61")
+const PERSONAL_WARDROBE_ACCENTS := [
+	Color("#647c91"),
+	Color("#8b766f"),
+	Color("#758a6f"),
+	Color("#837994"),
+	Color("#9a855f"),
+	Color("#708289"),
+	Color("#89715f"),
+	Color("#6e7f73")
+]
 
 var _material_cache: Dictionary = {}
 
@@ -90,7 +99,8 @@ func get_art_slice_snapshot() -> Dictionary:
 		"roof_profile": "long_low_wine_shingle_gable_with_five_ridge_vents",
 		"gable_end_profile": "sealed_warm_plaster_with_bunkhouse_timber",
 		"sealed_gable_end_count": 2,
-		"functional_visual_language": "ten_fixed_beds_personal_chests_pegs_linen_and_night_lanterns",
+		"functional_visual_language": "ten_fixed_beds_eight_assigned_personal_wardrobes_linen_and_night_lanterns",
+		"personal_wardrobes": _personal_wardrobe_snapshot(),
 		"level_two_upgrade_profile": "hearth_chimney_insulation_repairs_and_storage_without_bed_gain",
 		"palette": {
 			"wall": DORM_WALL.to_html(false),
@@ -265,14 +275,7 @@ func _build_level_one_details() -> void:
 	var outer_storage := Node3D.new()
 	outer_storage.name = "OuterWallPersonalStorage"
 	details.add_child(outer_storage)
-	var textile_colors := [DORM_TEXTILE, Color("#806b66"), Color("#66765f"), Color("#746b84"), Color("#8a7657")]
-	for bay_index in range(BED_BAY_Z.size()):
-		var z := float(BED_BAY_Z[bay_index])
-		for side in [-1.0, 1.0]:
-			var side_name := "West" if side < 0.0 else "East"
-			_add_scene_prop(outer_storage, "%sChest%02d" % [side_name, bay_index + 1], CHEST, Vector3(side * 5.35, 0.18, z), Vector3.ONE * 0.48, Vector3(0.0, -90.0 if side < 0.0 else 90.0, 0.0))
-			_add_box(outer_storage, "%sFoldedBlanket%02d" % [side_name, bay_index + 1], Vector3(side * 5.15, 0.78, z), Vector3(0.62, 0.12, 0.72), textile_colors[bay_index])
-			_add_scene_prop(outer_storage, "%sPegRack%02d" % [side_name, bay_index + 1], PEG_RACK, Vector3(side * 6.62, 1.74, z), Vector3.ONE * 0.58, Vector3(0.0, 90.0 if side < 0.0 else -90.0, 0.0))
+	_build_assigned_personal_wardrobes(outer_storage)
 
 	var linen := Node3D.new()
 	linen.name = "RearLinenStorage"
@@ -344,6 +347,83 @@ func _build_upgrade_visuals() -> void:
 	_add_hearth_chimney(roof_additions)
 	for z in [-3.6, 0.0, 3.6]:
 		_add_box(roof_additions, "CeilingRepairTie", Vector3(0.0, 3.42, z), Vector3(13.15, 0.18, 0.22), DORM_TIMBER)
+
+
+func _build_assigned_personal_wardrobes(parent: Node3D) -> void:
+	var fixture_visuals := get_node_or_null("../FixtureLayout/Visuals") as Node3D
+	if fixture_visuals == null:
+		push_warning("Dormitory personal wardrobes could not resolve the fixed-bed fixture visuals")
+		return
+	var assigned_beds: Array[Node3D] = []
+	for raw_visual in fixture_visuals.get_children():
+		if not raw_visual is Node3D:
+			continue
+		var visual := raw_visual as Node3D
+		if str(visual.get_meta("fixture_kind", "")) != "dormitory_bed":
+			continue
+		if str(visual.get_meta("assigned_npc_id", "")).is_empty():
+			continue
+		assigned_beds.append(visual)
+	assigned_beds.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		return str(a.get_meta("workstation_id", "")) < str(b.get_meta("workstation_id", ""))
+	)
+	for wardrobe_index in range(assigned_beds.size()):
+		var bed := assigned_beds[wardrobe_index]
+		var side := -1.0 if bed.position.x < 0.0 else 1.0
+		var wardrobe := _add_personal_wardrobe(
+			parent,
+			"PersonalWardrobe%02d" % (wardrobe_index + 1),
+			Vector3(side * 5.82, 0.0, bed.position.z),
+			side,
+			PERSONAL_WARDROBE_ACCENTS[wardrobe_index % PERSONAL_WARDROBE_ACCENTS.size()]
+		)
+		wardrobe.set_meta("authority_role", "non_workstation_non_inventory_decoration")
+		wardrobe.set_meta("prop_type", "assigned_personal_wardrobe")
+		wardrobe.set_meta("workstation_id", str(bed.get_meta("workstation_id", "")))
+		wardrobe.set_meta("assigned_npc_id", str(bed.get_meta("assigned_npc_id", "")))
+		wardrobe.set_meta("bed_fixture_id", str(bed.get_meta("fixture_id", "")))
+
+
+func _add_personal_wardrobe(parent: Node3D, node_name: String, center: Vector3, side: float, accent: Color) -> Node3D:
+	var wardrobe := Node3D.new()
+	wardrobe.name = node_name
+	wardrobe.position = center
+	parent.add_child(wardrobe)
+	var front_x := -side * 0.39
+	_add_box(wardrobe, "OakCarcass", Vector3(0.0, 1.24, 0.0), Vector3(0.76, 2.28, 1.44), DORM_OAK.darkened(0.08))
+	_add_box(wardrobe, "RaisedTopCornice", Vector3(0.0, 2.43, 0.0), Vector3(0.94, 0.16, 1.68), DORM_TIMBER)
+	_add_box(wardrobe, "BroadPlinth", Vector3(0.0, 0.14, 0.0), Vector3(0.9, 0.22, 1.62), DORM_TIMBER.darkened(0.03))
+	for z in [-0.69, 0.69]:
+		_add_box(wardrobe, "FrontFrameStile", Vector3(front_x, 1.25, z), Vector3(0.1, 2.14, 0.1), DORM_TIMBER)
+	for y in [0.31, 2.18]:
+		_add_box(wardrobe, "FrontFrameRail", Vector3(front_x, y, 0.0), Vector3(0.1, 0.12, 1.46), DORM_TIMBER)
+	for door_side in [-1.0, 1.0]:
+		var door_z: float = door_side * 0.345
+		_add_box(wardrobe, "WardrobeDoor", Vector3(front_x - side * 0.012, 1.25, door_z), Vector3(0.09, 1.75, 0.62), DORM_OAK.lightened(0.025))
+		_add_box(wardrobe, "RecessedDoorPanel", Vector3(front_x - side * 0.066, 1.28, door_z), Vector3(0.035, 1.3, 0.42), DORM_TIMBER.lightened(0.1))
+		for hinge_y in [0.68, 1.82]:
+			_add_box(wardrobe, "IronHinge", Vector3(front_x - side * 0.09, hinge_y, door_z + door_side * 0.25), Vector3(0.04, 0.1, 0.13), DORM_IRON)
+		_add_cylinder(wardrobe, "IronHandle", Vector3(front_x - side * 0.12, 1.29, door_side * 0.1), 0.045, 0.1, DORM_IRON, Vector3(0.0, 0.0, 90.0))
+	_add_box(wardrobe, "PersonalClothMark", Vector3(front_x - side * 0.095, 1.78, 0.0), Vector3(0.035, 0.32, 0.74), accent)
+	return wardrobe
+
+
+func _personal_wardrobe_snapshot() -> Dictionary:
+	var storage := get_node_or_null("Interior/Level1Details/OuterWallPersonalStorage") as Node3D
+	var assignments: Array[String] = []
+	var workstation_ids: Array[String] = []
+	if storage != null:
+		for raw_child in storage.get_children():
+			if not raw_child is Node3D or str(raw_child.get_meta("prop_type", "")) != "assigned_personal_wardrobe":
+				continue
+			assignments.append(str(raw_child.get_meta("assigned_npc_id", "")))
+			workstation_ids.append(str(raw_child.get_meta("workstation_id", "")))
+	return {
+		"count": assignments.size(),
+		"assigned_npc_ids": assignments,
+		"workstation_ids": workstation_ids,
+		"authority_role": "presentation_only"
+	}
 
 
 func _add_bed_bay_window(parent: Node3D, center: Vector3, side: float) -> void:

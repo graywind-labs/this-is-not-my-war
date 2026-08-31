@@ -1,9 +1,231 @@
 # GM_PANEL.md
 
+## T0269 敌方远程攻击三类建筑复验
+
+- 不新增直接扣血或强制命中入口。沿用“生成所选波次 / 动态群战”、战斗快照和建筑快照，即可观察正式远程敌军自然攻击正门、仓库、主厅以及各自 HP 变化。
+- 建筑自身是目标时，`last_projectile_result.actual_target_id` 应为对应 `front_gate / warehouse / main_hall`，且 `transparent_building_skipped_ids` 不应包含该目标；射向门后角色或主厅器械时仍应记录宿主透明跳过。
+- 自动专项 `tools/verify_t0269_enemy_ranged_building_damage.gd` 同时覆盖正式弓 / 弩 3×2 矩阵。GM 面板继续只暴露既有正式生成和只读快照，不新增伤害权威。
+
+## T0263 全塔防槽位瞄准复验
+
+- 不新增按钮或结算入口。现有塔防部署、正式波次与战斗快照足以手动观察任意槽位；自动矩阵使用 `tools/verify_t0263_enemy_ranged_all_defense_slots.ps1` 一次覆盖 8 槽位 × 2 器械。
+- 每项日志包含槽位、器械、真实受击中心、release aim、偏差、碰撞身份、器械 HP 与宿主 HP。若射线被诊所、其他建筑或地形挡住，应显示真实 `blocked / collision_identity`，不视为瞄准点漂移。
+- 矩阵只使用正式系统接口和测试进程环境变量，不向 GM 面板增加直接命中、直接扣血或关闭建筑碰撞的旁路。
+
+## T0262 敌方远程自然命中主厅塔防验证
+
+- 不新增按钮。沿用塔防部署、正式波次生成与战斗快照：在主厅槽位部署箭塔 / 弩床，生成包含远程敌人的波次并让游戏继续，敌方自然锁定并释放后，对应 deployment HP 应下降而主厅 HP 不变。
+- `combat_snapshot.active_projectiles / last_projectile_result` 可观察 `aim_target_source=defense_device_hit_area_center`、`aim_target_node_path`、`aim_position_at_release`、碰撞位置和 `actual_target_id`；命中身份应为主厅上的 deployment，而不是 `main_hall` 或地形。
+- GM 仍不直接指定弹体命中或扣除 HP；专项入口 `tools/verify_t0262_enemy_ranged_main_hall_device_hit.gd` 覆盖生产 selector、windup、release、物理 sweep 与伤害全链。
+
+## T0260 正门 / 主厅弹体穿透验证
+
+- 不新增按钮。沿用“一键征召&配装”、塔防部署、生成 / 清空波次和战斗快照即可观察自然射击；正门 / 主厅仍挡角色移动，箭矢以其后方角色或宿主塔防为目标时不会停在建筑 collider 上，明确攻击建筑自身时则正常碰撞。
+- `combat_snapshot.active_projectiles / last_projectile_result / stuck_projectiles` 新增 `transparent_building_skip_count / transparent_building_skipped_ids`。箭经过正门或主厅时应记录对应 ID，之后仍在后方敌对角色、塔防、其他建筑 / 墙体或地形的第一处合法表面终止。
+- 敌方远程命中主厅塔防时只减少 deployment HP，不同时减少主厅 HP；友军 / 塔防箭不会被友方塔防的新增受击 Area 截停。专项入口为 `tools/verify_t0260_projectile_transparent_gate_main_hall.gd`。
+
+## T0259 集结取马中生成敌军
+
+- 沿用已有“警铃”和“生成所选波次 / 第一波”，不新增 GM 专用战斗权威。复验顺序为：给已入伍持武器 NPC 分配马匹，点击警铃，确认其正在去马厩取马，再点击生成波次。
+- 生成按钮的 `clear_existing=true` 在场上本无敌人时不再触发战后解散。骑手应保持 `rally` 或因合法接敌进入 `combat`，同时继续 `going_to_stable_horse` / `going_to_returning_horse` 的实体路线。
+- 若路线被导航接管打断，再点警铃会通过正式 HorseSystem 接口恢复路线；已有攻击目标锁保持不变。GM 结果不直接移动 NPC、不上马、不创建马匹。
+
+## T0258 真实协助治疗执行回执
+
+- 点击“正式行动 → 真实协助治疗”后，GM 会等待正式路线的下一次物理 / 过程交接。只有治疗者已经开始走向 `healing_target_<目标>` 时显示“成功（已开始前往伤员）”，已经到位则显示“成功（已到位并开始治疗）”。
+- 若底层只建立了会话而 `healing_route_started=false`，结果显示“等待（治疗会话已建立，但路线尚未启动；可再次点击重试）”，面板保持打开，不再输出容易误判的裸“成功”。重复点击复用同一 formal session 并重新驱动路线，不重复扣费或登记 helper。
+- 可在正式行动页选择 `gardener_01`，治疗目标选择已昏迷的 `cook_01` 复验；快照应先出现 `movement_target=healing_target_cook_01` / `healing_route_started=true`，到位后为 `assist_heal_cook_01`。
+
+## T0257 战后治疗与工作装备复验
+
+- “正式行动 → 真实协助治疗”仍调用 `ActionSystem.debug_assign_heal_assist(...)`，但正式系统现在直接追踪昏迷者身体坐标；目标保留战前建筑语义也不会先把治疗者送错地点。拥堵重试、接近距离、首付、helper、恢复与失败均由 NPCSystem / ActionSystem 决定。
+- “一键应征配装”只改变权威征召 / 装备。工作模式下主武器应收起，指定 `work_dining_hall` 到岗后显示汤勺；警铃集结 / 战斗或武器训练才重新显示武器。GM 不直接切可见节点。
+
+## T0253 正式行动命令替换与前提反馈
+
+- “指定行动”、真实拜访、真实找人对话、协助修复、协助升级和协助治疗都是显式 GM 命令：目标行为前提满足时会替换“行动 NPC”当前可中断日常行动，不再因为其正在工作、吃饭、饮酒、睡觉或祈祷而直接失败。
+- 该替换不绕过权威规则。昏迷、逃离、战斗 / 避战模式、首次睡眠总结、能力、建筑可用性、工位、资源、活动工程、目标状态、施工 / 治疗容量仍会拒绝；拒绝时尽量在结果区显示原因，且已在执行的旧行动保持不变。
+- 普通行动下拉只列出无需 NPC / 地点 / 建筑 / 昏迷者目标的可派发行动。拜访使用本页可见“拜访地点”下拉；NPC 对话、三类协助继续使用各自目标下拉。主厅升级测试流程为：在“世界建筑”开始主厅升级，回到本页选择行动 NPC 与主厅，保持游戏继续后点击“协助升级”。
+
+## T0252 正式行动页 NPC 选择
+
+- “正式行动”页顶部新增“行动 NPC”下拉框，直接显示全部配置 NPC 的 id 与姓名。本页不再读取“常用”页不可见的 NPC 选择。
+- “指定行动”、真实拜访、真实找人对话、协助修复、协助升级、协助治疗，以及各流程的停止 / 快照按钮，均使用“行动 NPC”当前选择作为发起者；对话目标、建筑目标和治疗目标仍由各自下拉框决定。
+- “常用”页 NPC 下拉继续服务选中、状态、计划、装备等入口，两个下拉可以选择不同 NPC。GMPanel 仍只调用 ActionSystem / NPCSystem 既有公开或 `debug_*` 接口，不新增行动结算权威。
+
+## T0249 第一波自然攻空城门验证
+
+- 不新增按钮。沿用“生成所选波次 / 第一波”“清空敌人”和攻击位 / 敌人快照；空城门自然接近时应保持 `8 guidance / 0 waiter`，最终八名敌人都进入城门 windup / attack / recovery 并各自产生真实城门伤害。
+- `target.attack_guidance_arrival_tolerance` 与对应 ActorMotion `target_desired_distance` 应一致，当前正门约 `0.062～0.069 m`；`attack_guidance_occupant_enemy_ids` 不应包含该 assignment 自身。
+- `metrics.guidance_stall_recoveries_* / guidance_stall_reselections` 与 `guidance_stall_recoveries[]` 可观察脱困；ActorMotion 的 `runtime_actor_collision_override_reason=enemy_guidance_stall_recovery` 只会在恢复窗口出现，入射程后必须恢复为空。持续专项为 `tools/verify_t0180_gate_attack_positions.gd`。
+
+## T0248 箭矢穿透、附着与战后清理验证
+
+- 不新增权威按钮。沿用“一键征召&配装”、生成 / 清空波次和现有敌人 / NPC 快照即可观察自然射击：同阵营角色站在线上时箭应穿过，墙体 / 建筑 / 地形与敌对单位仍应在真实落点拦截。
+- `combat_snapshot.active_projectiles / last_projectile_result / stuck_projectiles` 可查看 `same_side_skip_count / same_side_skipped_ids / collision_position / anchor_kind / anchor_target_id / parent_path`。命中存活角色后移动角色，箭应随其移动；致死箭应位于敌军尸体包装下并随尸体消失。
+- 最后一名敌军自然清除后，世界和 NPC 残箭应清空；敌军尸体箭可保留到尸体到期。GM“清空敌人”属于强制清场，会立即清理全部在途 / 残留箭。`tools/verify_t0248_projectile_friendly_pass_through_and_stick.gd` 与 `tools/verify_t0248_ranged_release_lock_and_interrupt.gd` 不绕过碰撞或伤害入口。
+
+## T0247 活体目标追击速度验证
+
+- 不新增按钮。沿用“一键征召&配装”“生成所选波次”、NPC 战斗策略和现有敌人 / NPC 快照；让第一波破门后与艾达相向接战，双方应持续跑到真实近战交接距离再停步起手，不再反复走慢。
+- ActorMotion 只读快照可观察 `requested / desired / actual_speed`、`speed_limit_reason`、`target_update_count`、`avoidance_layers / avoidance_mask` 与 `final_target_braking_enabled`。活体追击应为 false；NPC 阵营为 `1/1`，敌军为 `2/2`。
+- `tools/verify_t0247_locked_actor_pursuit_speed.gd` 使用正式 Main、第一波实体和艾达自然验证多次移动目标刷新、巡航速度、敌我分层、实体净距及双向 windup；GM 不直接改速度、Transform、攻击距离或伤害。
+
+## T0246 战时奔跑饱食验证
+
+- 不新增按钮。沿用“一键征召&配装”、生成 / 清空敌人、警铃、NPC 战斗策略与通用 NPC 状态修改；NPC 面板可直接观察饱食，世界角色可直接观察跑 / 走速度与动画。
+- 生成敌人后让未骑乘 NPC 连续奔跑，约 10 游戏秒应额外减少 1 点饱食；站定、堵住、仅行走或清空敌人后不应继续产生该追加扣除。把 NPC `satiety` 设为 0 后，不论集结、接敌、避战或逃离都应改用行走档；恢复到 1 后可再次跑动。
+- 只读 `get_npc_needs_snapshot(id).combat_sprint` 可查看 sampled / charged / discarded 秒数与扣除；locomotion 快照可查看 `zero_satiety_walk_limited / walk_speed / authoritative_move_speed`。GM 不直接伪造跑动秒数或绕过 NPCNeedsSystem 结算。
+- `tools/verify_t0246_combat_sprint_satiety.gd` 覆盖无敌、真实跑动 10 秒、静止、行走、骑乘、四类战时模式、逃离倍率及恢复解锁。
+
+## T0245 移动角色近战伤害点 / 受击打断验证
+
+- 不新增“强制命中”按钮。沿用“一键征召&配装”、生成波次、NPC / 敌人快照观察自然近战；起手时目标须在范围内，进入 windup 后即使双方移动拉开，原目标仍应在 authored impact 点掉血一次。
+- `active_melee_swings[].impact_authority=locked_actor_timeline` 表示移动角色锁定伤害点；`last_melee_contact_result.reason=locked_actor_impact_phase` 且 `range_rechecked_at_impact=false`。敌人快照另显示 `damage_*_interrupt_count / last_damage_attack_interrupt`；NPC 状态显示对应 `combat_damage_*` 字段。
+- impact 前用既有伤害入口打到攻击者，应看到 phase 归 idle、`interrupted_before_impact=true` 且目标不掉血；impact 后打断 recovery 时该值为 false，既有伤害保留。固定建筑 / 塔防仍查看真实 collider / 宿主墙段，远程仍查看 projectile fact。
+- `tools/verify_t0245_locked_melee_impact.gd` 覆盖敌我双向、目标出圈、impact 前 / 后中断与单次结算；GM 面板不直接设置 phase、impact committed 或 HP 事实。
+
+## T0244 后门战时无碰撞验证
+
+- 不新增按钮。先查看“城门快照”：和平态后门应为 `active_enemy_count=0 / enemy_presence_collision_override=false / leaf_collisions_enabled=true`；使用现有“生成所选波次”后应变为 `>0 / true / false`，清空敌人后恢复。
+- 后门门叶仍可保持关闭视觉；这里验证的是混战通行碰撞覆盖，不是让敌军触发开门。正门同一快照中的 `disable_leaf_collision_while_enemy_present=false`，不会因敌军在场而自行开放。
+- `tools/verify_t0244_rear_gate_combat_passthrough.gd` 使用真实 Main 门叶和 actor 碰撞层验证敌我双向穿门及清敌恢复，GM / UI 不直接修改碰撞。
+
+## T0243 动态稀疏攻击引导验证
+
+- 不新增权威按钮。沿用建筑升级 / 塔防部署、“生成所选波次”和敌人 / 攻击位快照；第五波中同一建筑或塔防目标不应再出现 `waiting_for_attack_position`，敌人可在保持同一目标锁时改向更稀疏的同类引导圆。
+- `enemy_attack_positions.schema=enemy_attack_guidance_zones_v2`；读取 `guidance_assignments[]` 的 `slot_id / guidance_class / guidance_zone_radius / guidance_zone_height / guidance_occupancy_count / guidance_occupant_enemy_ids / status`。`metrics.guidance_zone_switches` 记录换区，`guidance_in_range_handoffs` 记录未要求到圆心的射程交接；`waiter_count` 正常为 0。
+- 快照只读，不占区、不传送、不强制目标或攻击。真实圆柱重叠、正门 / 塔防同源和距圆心仍约 `1.2 m` 的攻击交接由 `tools/verify_t0243_guided_attack_zones.gd` 覆盖。
+
+## T0242 敌方骑兵共同阵亡验证
+
+- 不新增 GM 按钮；现有“一键征召&配装”配合第四 / 第五波动态群战即可分别观察轻骑与骑射阵亡。敌人快照继续证明敌军 HP 与活动列表已即时结算，尸体表现不反向写权威。
+- NPCDevLab 的“敌方骑兵人马原地阵亡（实战）”是更稳定的动画验收入口；GM“清空敌人”仍可立即清理全部敌人及残留表现，属于显式调试清场，不承诺保留尸体计时。
+
+## T0241 敌军接近速度连续性验证
+
+- 不新增按钮。沿用“生成所选波次”、敌人快照和攻击位快照；观察 `slices[].motion` 的 `requested / desired / rvo_safe / applied / actual_speed` 与 `speed_limit_reason`。目标身份切换且下一目标仍在前方时，`last_motion_preserved_velocity=true`、交接计数增加，`actual_speed` 不应突然从巡航值跌到接近零。
+- `profile_cruise` 表示开放路径正常巡航；`final_target_braking` 是合法到点制动；`rvo_avoidance` 是邻近单位避让；`physical_collision_slide` 表示期望速度存在但实体被碰撞阻住。候补在前排后方出现后两类原因仍属正常，不用强制提速或清碰撞。
+- GMPanel 不改速度、不关闭 RVO、不强制换锁。步兵 / 骑兵开放路段重定向与最终制动由 `tools/verify_t0241_enemy_combat_retarget_speed.gd` 覆盖。
+
+## T0240 战斗避战近敌触发验证
+
+- 不新增权威按钮。沿用“一键征召&配装”、NPC 战斗策略下拉框、“生成所选波次”、警铃及 NPC / 敌人快照：给武装 NPC 选择“避战”，让任一敌军接近安全阈值，应立即显示“正在避战”并产生真实导航位移；威胁均在阈值外时显示“避战待命”，行为模式仍为 `combat`。
+- 若 NPC 原先锁定较远敌军，再让另一名敌军从侧面靠近，近敌必须触发避战，但原 `combat_target_enemy_id` 不应被替换；快照中的 `combat_strategy_move_enemy_id / combat_strategy_avoid_nearest_enemy_id / combat_strategy_avoid_threat_count / combat_strategy_avoid_threats` 用于区分触发威胁、持久锁和全部加权威胁。
+- GMPanel 不清目标锁、不传送、不补发移动。旧战术移动切换、底层请求中断后续走和精确目标锁合同由 `tools/verify_t0240_combat_avoid_strategy_threat_trigger.gd` 覆盖。
+
+## T0238 陨石坑 24 小时淡化验证
+
+- 不新增按钮。先用“充满虔诚”在合法空地施放，以“推进陨石 1 秒”完成下落；随后使用时间页“推进模拟 1 小时”推进弹坑生命周期，并用“虔诚 / 陨石快照”的 `craters[]` 查看 `elapsed_game_seconds / duration_game_seconds / fade_progress / opacity`。
+- 落地时 opacity 为 `1.0`，连续推进 12 小时后约为 `0.5`，第 23 小时仍有记录，第 24 小时后 `craters[]` 清空。旧 `permanent_craters[]` 只作兼容别名并同步清空。
+- “推进陨石 1 秒 / piety_step”只显式推进下落与燃烧，不伪造世界时钟，因此不老化弹坑；普通暂停等待也不推进。若战斗仍在，弹坑到期后 `landed_meteors[]` 的 body 仍存在，直到清敌触发 `combat_ended`。
+
+## T0235 我方远程战术接近恢复验证
+
+- 不新增权威按钮。沿用“一键征召&配装”、NPC 战斗策略、警铃、“生成所选波次”和 NPC / 敌人快照；生成第五波后观察步行弓 / 弩与骑射，目标在 `95%` 射程外时应有活动 `moving_to_combat_strategy_*`，拥堵原地超过有界门槛后会自动换攻击点，而不是永久 active。
+- NPC 行为快照新增 `combat_strategy_move_recovery_count / combat_strategy_last_stall / world_movement_progress`。后者可区分 request 是否 active、实体连续静止时间、重寻路次数和目标更新次数；换点后 recovery count 增加，目标锁保持不变。
+- GMPanel 不清锁、不传送、不强制换点或攻击。`0.08 m` 到达余量、`2.25 s` 卡住门槛、四种步骑弓弩与真实攻击起手由 `tools/verify_t0235_friendly_ranged_tactical_recovery.gd` 覆盖。
+
+## T0233 后期波次远程固定目标容量验证
+
+- 不新增重复按钮。沿用建筑升级 / 资源、围墙与主厅塔防部署、“生成所选波次”和敌人 / 攻击位快照：部署弩床或箭塔后生成第五波，可直接观察弓手、弩手和骑射沿墙面与不同射程纵深分散。
+- 快照中远程固定目标 slot 应带 `range_row_count=6`；正门 / 仓库 / 主厅的候选容量分别为 `30 / 192 / 192`，当前城墙单墙与主厅角落双墙塔防代表容量为 `30 / 60`。实际可租数量仍会按 NavigationMap 与实体半径过滤。
+- GMPanel 不强制分配攻击位、不传送、不补伤。候选射程合法性、双墙区域身份、近战五位 / 八位边界和真实到位合同由 `tools/verify_t0233_ranged_fixed_target_position_capacity.gd` 覆盖。
+
+## T0232 保持距离射击验证
+
+- 不新增权威按钮。沿用“一键征召&配装”、NPC 战斗策略下拉框、警铃和“生成所选波次”：把弓手 / 弩手 / 骑射设为“保持距离射击”，让敌军进入其 `1/3` 射程，应看到单位状态变为“拉开距离”、目标锁清空并开始奔跑。
+- 现有敌人 / 战斗快照的 `friendly_station_response.keep_distance_retreats[]` 可观察 sequence、固定 target、direction、threat_ids、期望 / 实际段长、边界 / 导航修正和 recovery 计数。途中新增敌人不应改变本段 target；到点后才会续段或恢复普通目标锁。
+- GMPanel 不直接清锁、选撤离点、传送、补导航或禁用攻击。精确 `1/3 / 2/3`、加权方向、段内不改令、到点循环与步行 / 骑射一致性由 `tools/verify_t0232_keep_distance_retreat_cycle.gd` 覆盖。
+
+## T0231 主厅弩床 pressing 修复验证
+
+- 无需新增权威 GM 按钮。沿用现有“建筑等级 / 资源与塔防部署”和“生成一波敌人”入口：把主厅升到可用等级，在前左 `main_hall_slot_03` 部署弩床，再生成第五波即可观察两面墙的拥挤接敌。
+- 已持租约者允许短暂显示 `pressing_to_deployed_main_hall_slot_03`；进入最后接近带并确认无进展后应继续贴近墙面，随后切换为攻击。未持租约者保持 `waiting_for_attack_position`，不会攻击。
+- 需要后端诊断时读取现有战斗快照的 `enemy_attack_positions.precise_arrival_recoveries / metrics`，以及 ActorMotion 的 `avoidance_enabled / runtime_avoidance_override_reason`。没有新增 GM 结算接口，器械扣血仍只能来自真实近战 / 弹体碰撞。
+
+## T0230 主厅角落塔防双墙受击验证
+
+- 不新增按钮；沿用主厅升级、器械部署和“生成所选波次”。敌人锁定角落器械后，应分散到该角前 / 后墙与同侧侧墙，而不是全部挤在单一墙面中央。
+- 敌人 / 攻击位快照中，同一器械的候选应出现两个不同 `host_proxy_building_segment_id`；当前近战配置下正式 Main 每面各 4 位。任一对应墙面实际受击都应降低器械 HP，主厅 HP 保持不变。
+- GMPanel 仍不强制目标、站位、碰撞或伤害。四槽精确映射、双面候选、同墙远端拒绝和 HP 隔离由 `tools/verify_t0230_main_hall_corner_dual_wall_contact.gd` 覆盖。
+
+## T0229 远程接敌静止与正门切战验证
+
+- 不新增按钮；现有“一键征召&配装”“警铃集结”“生成所选波次”和 NPC / 敌人快照已覆盖用户复现。让骑手正经过正门时生成第五波，弓 / 弩 / 骑射若目标在 `95%` 射程外，应显示 `moving_to_combat_strategy_*`、活动 motion 与 `combat_strategy_move_target_position`，而不是只有 `combat_ready`。
+- 让敌人进入驿站后，步行弓手 / 弩手也必须锁定站内目标并取得攻击位；目标移动、换锁或底层 request 中断后应自动重选 / 补发。已有合法锁时再次点击警铃仍应计入 `target_locked_count` 且不改 rally，单位由战斗 AI 继续推进。
+- GMPanel 不计算圆弧、不强制路径、不清目标也不直接攻击。精确的 `95%` 半径、NavMap 可达过滤、四骑手真实位移和 stale request 恢复由 T0225 / T0229 专项覆盖。
+
+## T0228 主厅塔防墙面受击与解锁顺序验证
+
+- 不新增按钮；使用既有建筑升级、器械部署、生成所选波次和敌人快照即可自然验收。主厅 Lv.1 / Lv.3 应先显示临近广场的前侧左 / 右平台 `+`，Lv.5 / Lv.6 再显示背侧左 / 右平台。
+- 部署弩床后，敌人快照中的塔防 target 应显示对应 `host_proxy.building_segment_id`、低位 `position / aim_position` 和 `outward_direction`；攻击位应位于主厅墙外，不在不可进入实体内部。
+- 敌军真实命中对应墙面时，最近 melee / projectile 结果仍为 `actual_target_type=defense_device`；弩床 HP 下降而主厅 HP 不变。GMPanel 不强制目标、不伪造碰撞，也不直接扣器械 HP。
+
+## T0227 刚上马集结与门洞恢复验证
+
+- 不新增按钮；现有“一键征召&配装”、波次、警铃和敌人 / NPC 快照已能观察。让分配马匹的 NPC 在未摇铃时直接接敌，他应先去马厩；若上马时已无合法目标，`active_rallies[]` 应显示 `command_reason=horse_mounted_auto_rally / status=moving / formation_row=cavalry_*`。
+- 骑手在正门前导航中断后，下一次集结推进应让 motion 重新 active，`movement_recovery_count` 增加且原阵位不变。途中放入合法敌人后应改为 `combat_ready` 并有 `combat_target_enemy_id`。
+- 精确自然取马、门内中断、到位与接敌由 `tools/verify_t0227_mount_auto_rally_and_recovery.gd` 覆盖；GM 不直接上马、改 Transform 或决定目标。
+
+## T0226 避战卡死恢复验证
+
+- 不新增按钮；现有“模拟避战 / `avoid_npc`”、所选波次与敌人快照已能观察。正常避战应同时显示 `behavior_mode=avoid_combat`、`active_avoidances[].status=moving` 且 NPC motion 为 active。
+- 如果导航被外部中断而 NPC 还未到点，下一次推进后 `movement_recovery_count` 应增加，`last_movement_recovery_reason` 为 `avoidance_movement_recovered` 或 `avoidance_movement_recovered_without_current_threat`，motion 重新 active。
+- GM 仍只调用正式避战入口，不自行补位移或改状态。精确中断复现由 `tools/verify_t0226_avoidance_motion_recovery.gd` 覆盖。
+
+## T0225 第五波破防全员索敌验证
+
+- 不新增按钮；使用现有“一键征召&配装”后生成第 5 波，并通过正式战斗让至少一名敌人进入 `interior_polygon`。敌人快照的 `friendly_station_response.locks[]` 中，全部 8 名武装 NPC 应显示 `scope=station_breach_global / station_enemy_only=true` 并持有某个站内敌人目标。
+- 仍在正门外阵位或取马路线的 NPC 也应锁定站内敌人；更近的站外敌人不能抢锁。4 名分配坐骑者仍先显示取马动作，未分配坐骑者按当前策略追击或攻击；T0229 起远程“最大化输出”在 `95%` 射程外必须选择攻击位并移动，目标锁与活动 motion 应同时检查。
+- 最后一名站内敌人消失后，站外 NPC 的 scope 应恢复 `unified_radius`。GMPanel 只调用现有正式入口并读取诊断，不新增强写目标、位置或行为模式的权威。
+
+## T0224 统一警铃规则验证
+
+- 不新增按钮；现有 HUD 警铃、GM“警铃集结”、行为模式快照与敌人快照已覆盖完整入口。给多个入伍持武器 NPC 分别制造避战、旧集结、无目标战斗和已锁目标战斗状态后摇铃：前三者应取得新 rally，已锁目标者的目标 / sequence / movement 均不变。
+- 已分配未上马者应显示 `mounting / going_to_stable_horse`，已上马无目标者应保持 `moving / combat_mounted=true`；把集结者放到站外距敌人 5 米以上、正常索敌半径以内后推进 AI，应转为 `combat_ready` 并写入目标锁。
+- GM 仍只调用正式 CombatSystem 接口，不自行清目标、改模式、设阵位、上马或决定索敌。精确矩阵由 `tools/verify_t0224_unified_alarm_rally.gd` 覆盖。
+
+## T0214 站外避战与战时正门验证
+
+- 不新增按钮；现有“所选波次动态群战”“模拟避战 / `avoid_npc`”“敌人快照”和建筑 HP 已能触发并观察完整闭环。把非战斗 NPC 放在正门外触发避战时，`active_avoidances[]` 应显示 `movement_phase=returning_to_station / target_policy=front_gate_inside_reentry / reentry_gate_id=front_gate`，实体自然穿门后才恢复 `station_weighted_avoidance`。
+- 活动敌军存在时让友军靠近正门，门叶仍应打开；敌军单独靠近不会打开。敌人快照继续显示五个 `front_*_of_05` 租约与三个正门 waiter，门开期间正门 HP 仍由真实模型接触下降。
+- 现有入口只触发正式波次、避战和快照，不需要增加能直接改门角度、租约或伤害的第二套 GM 权威。
+
+## T0211 等待攻击位施压验证
+
+- 不新增按钮；用现有“所选波次动态群战”生成第一波，再查看“敌人快照”。三名正门候补应继续显示 `waiting_for_attack_position`，同时具有 `attack_position_wait_target_id=...front_XX_of_05` 与 `attack_position_wait_movement_policy=pressure_assigned_attack_position`，并实际向门板位靠近。
+- 候补靠近后应被前排实体挡住，不得出现自身租约、`occupied` 或攻击 phase；五名前排应保持原位并持续扣正门 HP。释放位置或前排消失时，现有晋升会把一名候补改为 `reserved`；若出现既有规则认定的更高优先级目标，则允许正常换锁。
+- 现有入口已能直接观察目标、移动、租约、攻击阶段和建筑 HP，不增加第二套移动或伤害权威。
+
+## T0210 室内出口前缀验证
+
+- 不新增按钮；现有“所选波次动态群战”、指定 NPC 行动和敌人 / NPC 快照已能自然触发与观察。让敌人追入诊所后使原目标昏迷，再观察其重新锁定室外目标；motion 快照应依次显示 `indoor_exit_prefix_current_point_id=interior / door_inside / door_outside / entry_outside`。
+- `target_position` 始终保持实际最终目标，`navigation_leg_target_position` 显示当前门路点；目标移动时 request id 与当前点不变，`indoor_exit_prefix_completed_point_count=4` 后前缀关闭并继续追击。友方从诊所被派往广场时得到相同结果。
+- 入口只读取 ActorMotionBody / CombatSystem 正式快照，不传送角色、不改目标、不创建路线或提交地点事实，因此沿用现有 GM 权威即可。
+
+## T0209 多敌加权避战验证
+
+- 不新增按钮；先生成敌军，选择未入伍或无主武器 NPC，使用现有“模拟避战”或 `avoid_npc <npc_id>`。敌人快照的 `active_avoidances[]` 应显示 `trigger_range=39.2`、`weight_formula=inverse_distance_power`、`weight_exponent=2.0`、全部圈内 `threats[]`、合成 `avoidance_direction`、原始与实际目标。
+- 单敌时方向应严格背离敌人；多敌时较近敌人的 `weight` 更大。`desired_target_distance` 始终为 `39.2`，实际点因墙 / 建筑修正时查看 `boundary_limited / navigation_adjusted / navigation_resolution_reason`。
+- 现有入口只触发 CombatSystem 的正式避战模式并读取快照，不计算方向、不改 NavMesh、不伪造逃离；因此不新增第二套 GM 权威。
+
+## T0208 正门五个门板位验证
+
+- 不新增按钮；选择第一波运行“所选波次动态群战”，再查看“敌人快照”。完整正门应只出现 `front_00_of_05` 至 `front_04_of_05` 五个租约，另外三名敌人均显示正门 waiter。
+- 画面中五名攻击者应站在门板正前方，左右门塔不再有人占位；门塔仍阻挡 NPC / 敌人穿行。五人应持续真实扣除正门 HP，三名候补不得显示“攻击→仓库”。
+- 现有入口已能观察站位、目标、租约 / waiter 与正门 HP，不新增改写战斗权威的调试命令。
+
+## T0207 攻击位实际占用验证
+
+- 不新增按钮；继续部署弩床 / 箭塔后运行“所选波次动态群战”，并查看“敌人快照”。`enemy_attack_positions.leases[]` 在敌人赶路时应为 `reserved`，实体抵达后才变成 `occupied`；因在途预留等待者显示 `waiting_for_attack_position / wait_reason=reserved_in_transit`。
+- 仅在途预留占完时，后来敌人仍应保持该塔防目标，不能提前显示“攻击→城门”；T0211 起候补会压向期望槽位并对租约持有者让行。全部兼容租约真正变为 `occupied` 后，塔防 / 仓库 / 主厅才允许按统一索敌规则消失；正门满位仍保持城门 waiter。
+- 现有入口已经能直接观察目标标签、实体位置、租约 / waiter 和建筑 HP，不需要新增修改权威状态的调试命令。
+
 ## T0198 友方锁定只读验证
 
-- 不新增按钮；使用“一键征召&配装”“所选波次动态群战”、NPC 状态和现有战斗快照即可自然验收。`friendly_station_response` 应显示 `friendly_station_response_runtime_v2 / friendly_enemy_presence_lock_v1 / 37.2 m`，`locks[]` 可查看每名武装 NPC 的 `scope / target_enemy_id / target_present / pending`。
-- 站外 NPC 应只在 `37.2 m` 内进战并保持首次最近目标；站内 NPC 的 scope 应为 `entire_station`。异源实际伤害后，请求可能只存在一个 AI 预算帧；可结合 `different_attacker_damage_*` metrics 与 `target_selection_reason=different_attacker_damage_nearest_enemy_reacquire` 观察。
+- 不新增按钮；使用“一键征召&配装”“所选波次动态群战”、NPC 状态和现有战斗快照即可自然验收。`friendly_station_response` 应显示 `friendly_station_response_runtime_v3 / friendly_enemy_presence_lock_v1 / 37.2 m`，`locks[]` 可查看每名武装 NPC 的 `scope / target_enemy_id / target_present / pending`。
+- 正常未破防时，站外 NPC 只在 `37.2 m` 内进战并保持首次最近目标，站内 NPC 的 scope 为 `entire_station`；T0225 起破防期间全员改为 `station_breach_global`。异源实际伤害后，请求可能只存在一个 AI 预算帧；可结合 `different_attacker_damage_*` metrics 与 `target_selection_reason=different_attacker_damage_nearest_enemy_reacquire` 观察。
 - GMPanel 不强制友军目标、不伪造受击请求、不改 attack phase；现有入口已覆盖可见行为和只读诊断，因此没有增加第二套权威控制。
 
 ## T0197 异源受击重锁只读验证
@@ -15,7 +237,7 @@
 ## T0196 统一敌军索敌只读验证
 
 - 不新增按钮；继续使用器械部署、“所选波次动态群战”和“敌人快照”。快照中的 `enemy_targeting.policy` 应为 `enemy_unified_presence_lock_v3 / 37.2 m`，metrics 可观察 `locked_high_target_holds / locked_unarmed_target_holds / high_threat_preemptions / fixed_target_full_skips / gate_full_holds`。全部活动敌人均使用该政策，不再因缺少动态压力标记退回旧索敌。
-- 实测时，圈内持武器 NPC 与塔防应按首次最近者锁定，锁存在时同级新目标不抢走；NPC 目标不得出现 attack-position lease / waiter。塔防满位可改选其他合法目标，完整城门 7 位满后第 8 人仍应显示城门 waiter，不能显示“攻击→仓库”。
+- 实测时，圈内持武器 NPC 与塔防应按首次最近者锁定，锁存在时同级新目标不抢走；NPC 目标不得出现 attack-position lease / waiter。塔防攻击位全部实际 `occupied` 后可改选其他合法目标，仅 `reserved` 时不得提前改锁；完整城门 5 位满后其余 3 人仍应显示城门 waiter，不能显示“攻击→仓库”。
 - GMPanel 只读现有快照并调用既有刷敌 / 部署入口，不强制目标、不填攻击位、不模拟命中，因此无需新增权威调试接口。
 
 ## T0195 塔防严格优先自然路径验证（历史，已由 T0196 取代）
@@ -51,8 +273,8 @@
 
 ## T0165 陨石表现生命周期验证
 
-- 不新增重复按钮；继续用“填满虔诚”施放，用“推进陨石 1 秒”观察 2.8 动作秒斜落、落地火场，并用“虔诚 / 陨石快照”查看 `pending_meteors / landed_meteors / permanent_craters`。
-- 生成一波敌军后施放可验证战中实体；清敌触发 `combat_ended` 后，快照应为 landed 为空、permanent crater 仍在。GM 仍不自行决定陨石伤害、碰撞或生命周期。
+- 不新增重复按钮；继续用“填满虔诚”施放，用“推进陨石 1 秒”观察 2.8 动作秒斜落、落地火场，并用“虔诚 / 陨石快照”查看 `pending_meteors / landed_meteors / craters`（`permanent_craters` 仅为旧兼容别名）。
+- 生成一波敌军后施放可验证战中实体；清敌触发 `combat_ended` 后，快照应为 landed 为空、未满 24 游戏小时的 crater 仍在并继续淡化。GM 仍不自行决定陨石伤害、碰撞或生命周期。
 
 ## T0164 建筑名称镜头渐隐
 
@@ -148,11 +370,11 @@
 - “敌人快照”的 `active_projectiles[]` 现可查看 `attack_id / attack_sequence`；`last_projectile_result.resolution.hit_fact` 可查看终态、实际 collider、damage result 与是否伤害，顶层另有 `resolved_projectile_attack_count`。
 - 验收时确认 release、活动弹体和最终 fact 使用同一 ID，blocked / miss 没有 damage，hit 的顶层与嵌套 damage result 均带同一 ID。重复回调去重由专项测试覆盖，不在 GM 面板提供破坏正式流程的入口。
 
-## T0144 近战模型接触验收
+## T0144 近战模型接触验收（固定目标 / 角色模型诊断）
 
 - 不新增“强制命中 / 强制挥空”按钮。使用战斗分组的近门生成、招募 / 装备和既有行为模式让 NPC 正常交战；移动目标或改变站位必须通过真实实体完成。
 - “敌人快照”对应的 CombatSystem snapshot 新增 `active_melee_swings` 与 `last_melee_contact_result`。重点观察 `sample_count / model_max_horizontal_reach / status / actual_target_* / collider_path / collision_position / authored_seconds / sweep_kind / damage_result`。
-- `hit` 必须对应实际 collider 且可有 damage result；`miss / blocked` 不得对锁定目标补伤害。GMPanel 只观察并调用既有系统入口，不直接设置碰撞结果或 HP 事实。
+- 建筑、城门和塔防的 `hit` 必须对应实际 collider 且可有 damage result；`miss / blocked` 不得补固定目标伤害。普通移动角色近战按 T0245 的 `locked_actor_timeline` 在 authored impact 命中原锁定目标，模型 contact 只作诊断。GMPanel 只观察并调用既有系统入口，不直接设置碰撞结果或 HP 事实。
 
 ## T0143 弓弩物理弹体验收
 
@@ -227,7 +449,7 @@
 ## T0129C-A5-P6d-3 真实协助治疗
 
 - 行动分组复用治疗者 / 昏迷目标选择器，提供“真实协助治疗 / 停止真实治疗 / 真实治疗快照”；命令为 `formal_heal_assist run <healer_npc_id> <target_npc_id>`、`stop <healer_npc_id>`、`snapshot <healer_npc_id> [target_npc_id]`。
-- `run` 要求游戏已继续，只调用 `ActionSystem.debug_assign_heal_assist(...)`。治疗者会真实进入目标信息地点并接近目标 Body；途中不扣首枚第纳尔、不加入 helper、不恢复 HP 或写开始事件。
+- `run` 要求游戏已继续，只调用 `ActionSystem.debug_assign_heal_assist(...)`。治疗者会直接前往昏迷目标当前 Body 的世界位置，不先追随战前残留信息地点；途中不扣首枚第纳尔、不加入 helper、不恢复 HP 或写开始事件。
 - `snapshot` 同时显示运行态、formal healing session、双方 NPC、helper、资金和距离；`stop` 走既有中断接口。GM 不传送、不添加 helper、不扣费、不恢复 HP，也不自行选择接近位。
 
 ## T0129C-A5-P6d-2 真实升级协助
@@ -656,15 +878,15 @@ NPC：
 - 将波次选择器设为 1 后点击“生成所选波次”，调用 `CombatSystem.debug_spawn_wave(1)`；P7b 后会启用正式地图 / 镜头，在 `FormalEnemies` 生成 8 个动态实体，并把当前可战斗 NPC Body 迁入同一生产 NavigationMap。
 - “生成所选波次”按波次下拉调用 `CombatSystem.debug_spawn_wave(...)`；已有默认正式战斗时允许追加后续波次，不创建旧 `Station/Enemies` Area3D。
 - “跳到下一波”调用 `CombatSystem.debug_trigger_next_wave()`，按 `CombatSystem` 已记录的 `triggered_wave_numbers` 触发下一未触发波次，用于快速验证 T1301 自动波次日程；该入口不修改时间、不自行写战斗事件。
-- “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的集结流程：所有 NPC 写入警铃事件，入伍且有主武器的可行动 NPC 前往城门外防线。
-- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、波次日程、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、逃离目标、逃离挽留轮次、逃离速度倍率、可战斗人员可用性 `combatant_availability`、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、最近逃离结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T0107 后还包含 `friendly_combat_stats` 的基础 / 成长 / 装备 / 最终值、`defense_devices` 的 HP / 防御 / 穿透 / 有效射程、敌人的 `penetration / attack_speed / attack_windup_remaining / stagger_remaining`，以及战斗策略中的冲锋阶段和最近冲撞结果。该快照可确认统一穿透结算、主厅射程翻倍、敌人抬手被僵直打断与骑兵冲锋循环；既有 T1104C-T1304 验证边界不变。
-- T0138/T0138-R1 后同一“敌人快照”额外包含 `horse_lifecycle`，可直接观察每匹马的 `location / movement_state / world_position / assigned_npc_id / ridden_by_npc_id / hp / alive`，用于核对在厩等待取用、骑乘、返厩、分伤和阵亡；“马匹查看”继续提供相同 HorseSystem 个体事实。取马流程可通过既有分配、警铃和快照在 Main 直接验收，GM 不新增上马、分伤或死亡结算按钮。
+- “警铃集结”调用 `CombatSystem.debug_trigger_combat_alarm()`，触发与 HUD 警铃相同的统一集结流程：所有 NPC 写入警铃事件；入伍且有主武器的可行动 NPC 只在已有合法攻击目标锁时保持原战斗，其余无论地点或原工作 / 睡眠 / 避战 / 集结 / 无目标战斗模式都重新前往城门外防线。
+- “敌人快照”读取 `CombatSystem.debug_get_combat_snapshot()`，显示当前活动敌人数量、波次、波次日程、敌人目标、当前行动、NPC 集结状态、非战斗人员避战目标、逃离目标、逃离挽留轮次、逃离速度倍率、可战斗人员可用性 `combatant_availability`、入伍持武器 NPC 战斗策略、当前战斗 `active_battle`、最近战斗开始 / 结束结果、最近战时对话结果、最近低血量自身心理判定结果、最近逃离结果、行为模式快照、最近警铃结果、最近生成结果、最近 AI 推进结果、最近我方攻击结果、最近失败结果、最近胜利结果、最近模式切换结果、最近避战结果和 TimeSystem 倍率快照；T0107 后还包含 `friendly_combat_stats` 的基础 / 成长 / 装备 / 最终值、`defense_devices` 的 HP / 防御 / 穿透 / 有效射程、敌人的 `penetration / attack_speed / attack_windup_remaining / stagger_remaining`，以及战斗策略中的冲锋阶段和最近冲撞结果。该快照可确认统一穿透结算、更新后的主厅基础射程、敌人抬手被僵直打断与骑兵冲锋循环；既有 T1104C-T1304 验证边界不变。
+- T0138/T0138-R1 后同一“敌人快照”额外包含 `horse_lifecycle`，可直接观察每匹马的 `location / movement_state / world_position / assigned_npc_id / ridden_by_npc_id / hp / alive`，用于核对在厩等待取用、骑乘、返厩、分伤和阵亡；“马匹查看”继续提供相同 HorseSystem 个体事实。T0213 可在骑马单位到达集合点后依次使用“推进集结等待”与“警铃集结”：第一次应看到 `returning_stable / locomotion_mode=walk / navigation_authority=ActorMotionBody`，返途中再次警铃应变为 `waiting_for_rider_at_return_position / horse_stationary=true`，骑手抵达后恢复 `ridden` 与 rally `moving`。GM 不新增上马、返厩、分伤或死亡结算按钮。
 - “推进敌人AI”调用 `CombatSystem.debug_step_enemy_ai(1.0)`，用于手动推进 1 游戏秒的目标选择、移动、我方基础自动攻击和敌方攻击；T0183 后这也等于 1 秒战斗与动画权威时间。
 - “清空敌人”调用 `CombatSystem.debug_clear_enemies()`，删除当前正式敌人并让 NPC 原地恢复正式日常运动模式；默认正式地图镜头保持不变。
 - “行为模式快照”调用 `NPCSystem.debug_get_behavior_mode_snapshot()`，查看每名 NPC 的 `behavior_mode`、进入原因、进入时间、当前行动和兼容 `combat_mode`。
-- “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按敌方方位生成短步长四散移动目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
+- “模拟避战”调用 `CombatSystem.debug_trigger_npc_avoidance(selected_npc_id)`，用于让当前选中的非战斗人员（未入伍，或已入伍但无主武器）在已有活动敌人时进入避战，并按 `39.2 m` 圈内全部敌军的距离逆平方反向合成站内可达目标；已入伍且有主武器的 NPC 会被拒绝，按战斗逻辑处理。
 - “触发逃离”调用 `CombatSystem.debug_start_npc_escape(selected_npc_id)`。默认正式世界中无论是否正在战斗，选中且未昏迷、未逃离的 NPC 都沿 6 点 / `261.302 m` 后路前往地图边缘 `(-54,-305)`；只有临时旧图兼容使用短路线。入口只触发逃离系统，`escape_started` / `escaped` 事件和 `escaped=true` 标记仍由系统结算。可在主界面点击途中 NPC 进入五轮挽留，也可用 `give_money` 或逃离挽留面板里的攻击按钮验证速度变化；清空敌人不会中断尚未完成的正式长逃离。
-- “推进集结等待”调用 `CombatSystem.debug_advance_rally_wait(3600.0)`，用于快速验证 NPC 到达集合点后等待 1 游戏小时仍未接敌会返回工作模式且不触发计划重评估。
+- “推进集结等待”调用 `CombatSystem.debug_advance_rally_wait(3600.0)`，用于快速验证 NPC 到达集合点后等待 1 游戏小时仍未接敌会返回工作模式且不触发计划重评估；骑马 NPC 会在当前集合位置下马，马匹以 `3.2 m/s` Walk 正式寻路返厩，返途中再次点击“警铃集结”会让马原地等主人而不是先回马厩。
 - 该分组不自行结算伤害、集结结果、逃离结果或时间倍率，只调用 CombatSystem / NPCSystem / TimeSystem 的公开 / `debug_*` 接口；警铃集结会经 CombatSystem 调用 ActionSystem / NPCSystem / MemorySystem。T0110 后 NPC、敌人和器械统一按 `max(0, defense - penetration)` 得到有效防御，再按 `20 / (20 + effective_defense)` 得到伤害倍率，由 CombatSystem / DefenseDeviceSystem 的窄接口扣除各自权威 HP；GM 不读取“只看盔甲”的旧口径，也不自行生成冲锋、抬手或僵直结果。既有时间上限、战斗事件、心理、逃离与胜负职责不变。
 
 行为模式后续调试入口：
@@ -924,5 +1146,5 @@ godot --headless --path . --script res://tools/verify_building_service_positions
 ## T0131-P5 宿舍逐级美术验收
 
 - 建筑分组新增“宿舍美术预览（不改权威等级）”Lv.1 / Lv.2，命令为 `dormitory_art_level <1|2>`。它只切换 `DormitoryArt` 表现组，不消耗升级资源，不修改建筑等级、HP、睡眠恢复、疲劳、固定床归属或占用。
-- Lv.1 检查五段集体长屋、深酒红低坡顶、五个通风帽、月牙枕头徽记，以及两列五排十张床、十套个人脚箱 / 挂衣位、布草、洗漱、值日板和夜灯；Lv.2 应增加后墙壁炉 / 垂直烟道、保温护墙、窗板、修补撑 / 顶梁、备柴与扩充布草，但床位仍为 10，归属仍为 8+2 预留。
+- Lv.1 检查五段集体长屋、深酒红低坡顶、五个通风帽、月牙枕头徽记，以及两列五排十张床、床位 1–8 对应的左右各四座大个人衣柜、布草、洗漱、值日板和夜灯；9–10 号预留床应没有当前住户衣柜。Lv.2 应增加后墙壁炉 / 垂直烟道、保温护墙、窗板、修补撑 / 顶梁、备柴与扩充布草，但床位仍为 10，归属仍为 8+2 预留。
 - 自动门用“艾达→固定床”或 `formal_dormitory_sleep run` 验收；实体接近门口开门，真实到床并挂接后才算睡眠。配合滚轮检查主屋面、墙体、二级烟道 / 顶梁 / 外部附件同步透明，透明后点击艾达打开 NPCPanel，点击空地仍打开 BuildingPanel。

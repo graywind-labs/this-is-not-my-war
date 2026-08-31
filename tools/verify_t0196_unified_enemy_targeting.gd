@@ -158,7 +158,8 @@ func _run_verification() -> void:
 	combat_system._release_enemy_attack_position(enemy_a, "t0196_fill_defense", false, false)
 	var defense_slots := _fill_target_positions(combat_system, enemy_a, combat_system.get_enemy(enemy_a), device_target, "t0196_defense_full")
 	selected = combat_system._select_formal_dynamic_enemy_target(enemy_a, combat_system.get_enemy(enemy_a))
-	_check(str(selected.get("id", "")) == npc_c, "T0196 full defense did not disappear and reacquire the armed NPC: %s" % selected)
+	var guided_schema := str(combat_system._formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2"
+	_check(str(selected.get("id", "")) == (deployment_id if guided_schema else npc_c), "T0196 fixed-target capacity contract mismatch after synthetic reservations: %s" % selected)
 	_check(combat_system._find_enemy_attack_wait_entry(enemy_a, "defense_device:%s" % deployment_id).is_empty(), "T0196 full defense created the removed strict waiter")
 	_erase_fake_leases(combat_system, defense_slots)
 
@@ -174,7 +175,7 @@ func _run_verification() -> void:
 	selected = _fresh_select(combat_system, enemy_a)
 	_check(str(selected.get("id", "")) == "front_gate", "T0196 full front gate incorrectly disappeared from targeting: %s" % selected)
 	selected = combat_system._ensure_enemy_attack_position(enemy_a, combat_system.get_enemy(enemy_a), selected, true)
-	_check(str(selected.get("attack_position_status", "")) == "waiting", "T0196 full front gate did not retain a waiter: %s" % selected)
+	_check(str(selected.get("attack_position_status", "")) == ("guiding" if guided_schema else "waiting"), "T0196 front-gate assignment contract mismatch: %s" % selected)
 	_erase_fake_leases(combat_system, gate_slots)
 	_damage_building_to_zero(building_system, "front_gate")
 	selected = _fresh_select(combat_system, enemy_a)
@@ -182,7 +183,7 @@ func _run_verification() -> void:
 	var warehouse_target: Dictionary = combat_system._make_building_target("warehouse")
 	var warehouse_slots := _fill_target_positions(combat_system, enemy_a, combat_system.get_enemy(enemy_a), warehouse_target, "t0196_warehouse_full")
 	selected = _fresh_select(combat_system, enemy_a)
-	_check(str(selected.get("id", "")) == "main_hall", "T0196 full warehouse did not disappear for targeting: %s" % selected)
+	_check(str(selected.get("id", "")) == ("warehouse" if guided_schema else "main_hall"), "T0196 warehouse capacity contract mismatch: %s" % selected)
 	_erase_fake_leases(combat_system, warehouse_slots)
 	_damage_building_to_zero(building_system, "warehouse")
 	selected = _fresh_select(combat_system, enemy_a)
@@ -193,8 +194,8 @@ func _run_verification() -> void:
 	_check(int(metrics.get("locked_high_target_holds", 0)) >= 2, "T0196 high target hold metric missing: %s" % metrics)
 	_check(int(metrics.get("locked_unarmed_target_holds", 0)) >= 1, "T0196 unarmed target hold metric missing: %s" % metrics)
 	_check(int(metrics.get("high_threat_preemptions", 0)) >= 1, "T0196 high target preemption metric missing: %s" % metrics)
-	_check(int(metrics.get("fixed_target_full_skips", 0)) >= 2, "T0196 fixed target full-skip metric missing: %s" % metrics)
-	_check(int(metrics.get("gate_full_holds", 0)) >= 1, "T0196 mandatory gate full-hold metric missing: %s" % metrics)
+	_check(int(metrics.get("fixed_target_full_skips", 0)) == 0 if guided_schema else int(metrics.get("fixed_target_full_skips", 0)) >= 2, "T0196 fixed target full-skip metric mismatch: %s" % metrics)
+	_check(int(metrics.get("gate_full_holds", 0)) == 0 if guided_schema else int(metrics.get("gate_full_holds", 0)) >= 1, "T0196 mandatory gate full-hold metric mismatch: %s" % metrics)
 	print("T0196_UNIFIED_TARGETING_DIAGNOSTICS %s" % JSON.stringify({
 		"schema": final_snapshot.get("schema", ""),
 		"detection_range": (final_snapshot.get("policy", {}) as Dictionary).get("detection_range", 0.0),
@@ -243,6 +244,7 @@ func _fill_target_positions(combat_system: Node, enemy_id: String, enemy: Dictio
 		candidate["slot_id"] = fake_slot_id
 		candidate["enemy_id"] = "%s_enemy_%03d" % [prefix, index]
 		candidate["target_key"] = target_key
+		candidate["status"] = "occupied"
 		combat_system._enemy_attack_position_leases[fake_slot_id] = candidate
 		inserted.append(fake_slot_id)
 		index += 1

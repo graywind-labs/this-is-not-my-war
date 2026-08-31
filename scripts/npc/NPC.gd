@@ -15,6 +15,12 @@ const COMBAT_HORSE_SCENE_PATH := "res://assets/3d/quaternius/animals/merchant_ho
 const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
 const DEFAULT_NAME_COLOR := Color.WHITE
 const PORTRAIT_OVERLAY_VISUAL_LAYER := 20
+const PORTRAIT_STANDING_FOCUS_HEIGHT := 0.92
+const PORTRAIT_STANDING_CAMERA_HEIGHT := 1.15
+const PORTRAIT_MOUNTED_FOCUS_HEIGHT := 1.72
+const PORTRAIT_MOUNTED_CAMERA_HEIGHT := 2.02
+const PORTRAIT_LYING_FOCUS_HEIGHT := 0.42
+const PORTRAIT_LYING_CAMERA_HEIGHT := 1.45
 const MOVEMENT_SLOWDOWN_REQUEST_PREFIX := "npc_movement:"
 const DEFAULT_WALK_SPEED := 3.2
 const DEFAULT_RUN_SPEED := 5.0
@@ -39,9 +45,11 @@ var _locomotion_config: Dictionary = {}
 var _locomotion_state := "walk"
 var _locomotion_reference_speed := DEFAULT_WALK_SPEED
 var _actual_horizontal_speed := 0.0
+var _pending_unmounted_actual_run_seconds := 0.0
 
 @onready var _name_label := get_node_or_null(LABEL_NODE_PATH) as Label3D
 @onready var _status_label := get_node_or_null(STATUS_LABEL_NODE_PATH) as Label3D
+@onready var _unconscious_interaction_collision := get_node_or_null("InteractionArea/UnconsciousInteractionCollision") as CollisionShape3D
 var _proactive_bubble: Label3D
 var _dialogue_bubble_area: Area3D
 var _dialogue_bubble_collision: CollisionShape3D
@@ -59,16 +67,19 @@ var _mount_applied_template_id := ""
 var _facing_marker: Label3D
 var _character_art_view: Node3D
 var _character_appearance_id := "legacy_placeholder"
+var _interaction_pose := "standing"
 
 
 func setup(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
 	npc_id = str(profile.get("id", ""))
+	_pending_unmounted_actual_run_seconds = 0.0
 	name = _make_node_name(npc_id)
 	set_meta("npc_id", npc_id)
 	configure_avoidance_identity("friendly:%s" % npc_id, 0.5)
 	_configure_character_art_view()
 	_apply_profile_to_character_art()
+	_sync_unconscious_physical_entity()
 	_refresh_label()
 
 
@@ -86,6 +97,7 @@ func update_profile(npc_profile: Dictionary) -> void:
 	_set_interaction_enabled(true)
 	if bool(states.get("unconscious", false)):
 		stop_movement()
+	_sync_unconscious_physical_entity()
 	_refresh_label()
 
 
@@ -130,7 +142,7 @@ func configure_navigation_motion(enabled: bool, navigation_map: RID = RID()) -> 
 		if not set_navigation_map(navigation_map):
 			_navigation_motion_enabled = false
 			return false
-		navigation_agent.avoidance_enabled = true
+		navigation_agent.avoidance_enabled = not _is_profile_unconscious()
 	elif is_inside_tree() and get_world_3d() != null:
 		navigation_agent.avoidance_enabled = false
 		navigation_agent.set_navigation_map(get_world_3d().navigation_map)
@@ -139,6 +151,10 @@ func configure_navigation_motion(enabled: bool, navigation_map: RID = RID()) -> 
 
 func is_navigation_motion_enabled() -> bool:
 	return _navigation_motion_enabled
+
+
+func is_unconscious() -> bool:
+	return _is_profile_unconscious()
 
 
 func set_facing_direction(direction: Vector3) -> void:
@@ -192,6 +208,15 @@ func get_portrait_camera_snapshot() -> Dictionary:
 		if art_forward.length_squared() > 0.0001:
 			visible_forward = art_forward.normalized()
 	var lying_pose := _spatial_attachment_pose in ["lying_supine", "sleeping_supine"] or bool(states.get("unconscious", false))
+	var mounted_pose := not lying_pose and bool(states.get("combat_mounted", false))
+	var focus_height := PORTRAIT_STANDING_FOCUS_HEIGHT
+	var camera_height := PORTRAIT_STANDING_CAMERA_HEIGHT
+	if lying_pose:
+		focus_height = PORTRAIT_LYING_FOCUS_HEIGHT
+		camera_height = PORTRAIT_LYING_CAMERA_HEIGHT
+	elif mounted_pose:
+		focus_height = PORTRAIT_MOUNTED_FOCUS_HEIGHT
+		camera_height = PORTRAIT_MOUNTED_CAMERA_HEIGHT
 	var location_id := str(states.get("current_location", ""))
 	var location_name := str(states.get("current_location_name", "")).strip_edges()
 	if location_name.is_empty():
@@ -203,8 +228,9 @@ func get_portrait_camera_snapshot() -> Dictionary:
 		"display_name": str(profile.get("name", npc_id)),
 		"world_position": global_position,
 		"visual_forward": visible_forward,
-		"focus_height": 0.42 if lying_pose else 0.92,
-		"camera_height": 1.45 if lying_pose else 1.15,
+		"focus_height": focus_height,
+		"camera_height": camera_height,
+		"mounted": mounted_pose,
 		"location_id": location_id,
 		"location_name": location_name,
 		"current_action": str(states.get("current_action", "idle")),
@@ -247,20 +273,59 @@ func detach_from_spatial_anchor() -> void:
 	_spatial_attachment_active = false
 	_spatial_attachment_pose = ""
 	_spatial_attachment_position = Vector3.ZERO
-	body_collision.set_deferred("disabled", false)
-	navigation_agent.avoidance_enabled = _navigation_motion_enabled
+	var unconscious := _is_profile_unconscious()
+	body_collision.set_deferred("disabled", unconscious)
+	navigation_agent.avoidance_enabled = _navigation_motion_enabled and not unconscious
 	_restore_spatial_attachment_pose()
 
 
 func debug_get_spatial_attachment_snapshot() -> Dictionary:
+	var active_interaction_collision := (
+		_unconscious_interaction_collision
+		if _interaction_pose == "unconscious_horizontal"
+		else interaction_collision
+	)
+	var interaction_capsule := active_interaction_collision.shape as CapsuleShape3D if active_interaction_collision != null else null
 	return {
 		"active": _spatial_attachment_active,
 		"pose": _spatial_attachment_pose,
 		"anchor_position": _spatial_attachment_position,
 		"world_position": global_position,
 		"body_collision_disabled": body_collision.disabled,
-		"interaction_enabled": interaction_collision != null and not interaction_collision.disabled
+		"navigation_avoidance_enabled": navigation_agent.avoidance_enabled,
+		"unconscious_physical_entity_suppressed": _is_profile_unconscious() and body_collision.disabled and not navigation_agent.avoidance_enabled,
+		"interaction_enabled": active_interaction_collision != null and not active_interaction_collision.disabled,
+		"interaction_pose": _interaction_pose,
+		"interaction_local_position": active_interaction_collision.position if active_interaction_collision != null else Vector3.ZERO,
+		"interaction_long_axis": active_interaction_collision.basis.y.normalized() if active_interaction_collision != null else Vector3.UP,
+		"interaction_capsule_radius": interaction_capsule.radius if interaction_capsule != null else 0.0,
+		"interaction_capsule_height": interaction_capsule.height if interaction_capsule != null else 0.0
 	}
+
+
+func _sync_unconscious_physical_entity() -> void:
+	if not is_node_ready() or body_collision == null or navigation_agent == null:
+		return
+	var unconscious := _is_profile_unconscious()
+	_sync_interaction_collision_pose(unconscious)
+	if unconscious:
+		# Keep the fallen model and InteractionArea so the player can inspect it
+		# and helpers can still target it, but remove both physical and RVO body
+		# presence. Enemies changing target can therefore leave the exact knockout
+		# point instead of running against an upright invisible capsule.
+		body_collision.set_deferred("disabled", true)
+		navigation_agent.avoidance_enabled = false
+		navigation_agent.set_velocity_forced(Vector3.ZERO)
+		return
+	if _spatial_attachment_active:
+		return
+	body_collision.set_deferred("disabled", false)
+	navigation_agent.avoidance_enabled = _navigation_motion_enabled
+
+
+func _is_profile_unconscious() -> bool:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	return bool(states.get("unconscious", false))
 
 
 func _ready() -> void:
@@ -276,6 +341,7 @@ func _ready() -> void:
 	if art_mount != null:
 		_art_mount_base_transform = art_mount.transform
 	_set_interaction_enabled(true)
+	_sync_unconscious_physical_entity()
 	if interaction_area != null and not interaction_area.input_event.is_connected(_on_input_event):
 		interaction_area.input_event.connect(_on_input_event)
 	if not motion_started.is_connected(_on_navigation_motion_started):
@@ -386,6 +452,16 @@ func _update_actual_movement_presentation(position_before_motion: Vector3, delta
 	var displacement := global_position - position_before_motion
 	displacement.y = 0.0
 	_actual_horizontal_speed = displacement.length() / delta
+	var actual_run_speed_margin := maxf(
+		0.0,
+		float(_locomotion_config.get("actual_run_speed_margin", 0.05))
+	)
+	if (
+		_locomotion_state == "run"
+		and not _is_combat_mounted()
+		and _actual_horizontal_speed > _get_walk_speed() + actual_run_speed_margin
+	):
+		_pending_unmounted_actual_run_seconds += delta
 	if _character_art_view != null and _character_art_view.has_method("set_movement_active"):
 		_character_art_view.set_movement_active(
 			true,
@@ -418,6 +494,8 @@ func _refresh_active_locomotion_profile() -> void:
 
 
 func _resolve_locomotion_state() -> String:
+	if _is_zero_satiety_walk_limited():
+		return "walk"
 	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
 	var escape_intent: Dictionary = states.get("escape_intent", {}) if states.get("escape_intent", {}) is Dictionary else {}
 	if bool(escape_intent.get("active", false)) and str(escape_intent.get("status", "")) == "escaping":
@@ -436,7 +514,46 @@ func _get_authoritative_move_speed() -> float:
 	var state_name := _resolve_locomotion_state()
 	var fallback := DEFAULT_RUN_SPEED if state_name == "run" else DEFAULT_WALK_SPEED
 	var base_speed := float(_locomotion_config.get("%s_speed" % state_name, fallback))
-	return maxf(0.0, base_speed * _get_move_speed_multiplier())
+	var resolved_speed := maxf(0.0, base_speed * _get_move_speed_multiplier())
+	if _is_zero_satiety_walk_limited():
+		return minf(resolved_speed, _get_walk_speed())
+	return resolved_speed
+
+
+func _get_walk_speed() -> float:
+	return maxf(0.0, float(_locomotion_config.get("walk_speed", DEFAULT_WALK_SPEED)))
+
+
+func _is_combat_mounted() -> bool:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	return bool(states.get("combat_mounted", false))
+
+
+func _is_zero_satiety_walk_limited() -> bool:
+	if _is_combat_mounted():
+		return false
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	return float(states.get("satiety", 0.0)) <= 0.0
+
+
+func consume_unmounted_actual_run_seconds() -> float:
+	var consumed := maxf(0.0, _pending_unmounted_actual_run_seconds)
+	_pending_unmounted_actual_run_seconds = 0.0
+	return consumed
+
+
+func get_locomotion_needs_snapshot() -> Dictionary:
+	return {
+		"npc_id": npc_id,
+		"locomotion_state": _locomotion_state,
+		"movement_active": is_world_movement_active(),
+		"actual_horizontal_speed": _actual_horizontal_speed,
+		"walk_speed": _get_walk_speed(),
+		"authoritative_move_speed": _get_authoritative_move_speed(),
+		"combat_mounted": _is_combat_mounted(),
+		"zero_satiety_walk_limited": _is_zero_satiety_walk_limited(),
+		"pending_unmounted_actual_run_seconds": _pending_unmounted_actual_run_seconds
+	}
 
 
 func _load_locomotion_config() -> void:
@@ -449,6 +566,7 @@ func _load_locomotion_config() -> void:
 			"run_speed": DEFAULT_RUN_SPEED,
 			"walk_animation_reference_speed": DEFAULT_WALK_SPEED,
 			"run_animation_reference_speed": DEFAULT_RUN_SPEED,
+			"actual_run_speed_margin": 0.05,
 			"minimum_animation_speed_scale": 0.35,
 			"maximum_animation_speed_scale": 1.6,
 			"emergency_behavior_modes": DEFAULT_EMERGENCY_BEHAVIOR_MODES.duplicate()
@@ -519,7 +637,26 @@ func _set_interaction_enabled(enabled: bool) -> void:
 	if interaction_area != null:
 		interaction_area.input_ray_pickable = enabled
 	if interaction_collision != null:
-		interaction_collision.set_deferred("disabled", not enabled)
+		interaction_collision.set_deferred("disabled", not enabled or _interaction_pose != "standing")
+	if _unconscious_interaction_collision != null:
+		_unconscious_interaction_collision.set_deferred(
+			"disabled",
+			not enabled or _interaction_pose != "unconscious_horizontal"
+		)
+
+
+func _sync_interaction_collision_pose(unconscious: bool) -> void:
+	if interaction_collision == null or _unconscious_interaction_collision == null:
+		return
+	if unconscious:
+		_interaction_pose = "unconscious_horizontal"
+	else:
+		_interaction_pose = "standing"
+	interaction_collision.set_deferred("disabled", _interaction_pose != "standing")
+	_unconscious_interaction_collision.set_deferred(
+		"disabled",
+		_interaction_pose != "unconscious_horizontal"
+	)
 
 
 func _get_move_speed_multiplier() -> float:
@@ -578,6 +715,8 @@ func _refresh_label() -> void:
 		action_text = "逃离"
 	elif action_text == "rallying_defense_line":
 		action_text = "集结防线"
+	elif action_text == "combat_strategy_avoid_holding":
+		action_text = "避战待命"
 	elif action_text == "combat_ready":
 		action_text = "接敌"
 	elif action_text == "meeting_assigned_horse":
@@ -586,8 +725,12 @@ func _refresh_label() -> void:
 		action_text = "等待马匹"
 	elif action_text == "planning_day":
 		action_text = "制定计划"
+	elif action_text.begins_with("moving_to_combat_strategy_avoid_"):
+		action_text = "正在避战"
 	elif action_text.begins_with("moving_to_combat_strategy_"):
 		action_text = "战术移动"
+	elif action_text == "keep_distance_retreating":
+		action_text = "拉开距离"
 	elif str(states.get("behavior_mode", "")) == "avoid_combat":
 		action_text = "避战"
 	_name_label.text = display_name
@@ -953,6 +1096,9 @@ func debug_get_character_art_snapshot() -> Dictionary:
 	snapshot["locomotion_reference_speed"] = _locomotion_reference_speed
 	snapshot["authoritative_move_speed"] = _get_authoritative_move_speed()
 	snapshot["actual_horizontal_speed"] = _actual_horizontal_speed
+	snapshot["walk_speed"] = _get_walk_speed()
+	snapshot["zero_satiety_walk_limited"] = _is_zero_satiety_walk_limited()
+	snapshot["pending_unmounted_actual_run_seconds"] = _pending_unmounted_actual_run_seconds
 	snapshot["navigation_motion_enabled"] = _navigation_motion_enabled
 	snapshot["combat_mount_animation_speed_scale"] = _mount_animation_player.speed_scale if _mount_animation_player != null else 0.0
 	snapshot["combat_mount_horse_id"] = _mount_applied_horse_id

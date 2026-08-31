@@ -540,9 +540,9 @@ def _verify_knowledge_graph(
         marker in main_hall_text
         for marker in ("弩床", "箭塔", "1、1、2、2、3、4")
     ), f"{npc_id} main-hall knowledge must preserve the delayed six-level slot curve"
-    assert "射程" in main_hall_text and any(
-        marker in main_hall_text for marker in ("两倍", "翻倍", "加倍")
-    ), f"{npc_id} main-hall knowledge must preserve the 2x device range"
+    assert not any(
+        marker in main_hall_text for marker in ("两倍", "翻倍", "加倍", "2.0x")
+    ), f"{npc_id} retained the removed main-hall device range bonus"
     assert not any(
         stale_phrase in f"{wall_text} {main_hall_text}"
         for stale_phrase in (

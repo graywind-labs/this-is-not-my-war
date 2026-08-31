@@ -47,8 +47,8 @@ func _init() -> void:
 		"last_action_result": "verify_a5_p6b_ready"
 	})
 
-	var npc_select := gm_panel.get("_npc_select") as OptionButton
-	var location_select := gm_panel.get("_location_select") as OptionButton
+	var npc_select := gm_panel.get("_formal_action_npc_select") as OptionButton
+	var location_select := gm_panel.get("_formal_action_location_select") as OptionButton
 	if not _select_id(npc_select, NPC_ID) or not _select_id(location_select, FIRST_TARGET_ID):
 		_fail("Could not select the GM visit NPC and target")
 		return

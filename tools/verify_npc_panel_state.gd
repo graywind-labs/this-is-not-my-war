@@ -1,6 +1,11 @@
 extends SceneTree
 
 
+const NORMAL_FILL := "71865aff"
+const DANGER_FILL := "a7433bff"
+const DANGER_LABEL := "dc6157ff"
+
+
 func _init() -> void:
 	var main_scene := load("res://scenes/main/Main.tscn") as PackedScene
 	if main_scene == null:
@@ -56,6 +61,8 @@ func _init() -> void:
 	var header := npc_panel.find_child("Header", true, false) as HBoxContainer
 	var name_label := npc_panel.find_child("NPCNameLabel", true, false) as Label
 	var background_button := npc_panel.find_child("NPCBackgroundButton", true, false) as Button
+	var header_action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
+	var behavior_mode_label := npc_panel.find_child("NPCBehaviorModeLabel", true, false) as Label
 	var hp_experience_row := npc_panel.find_child("NPCHPExperienceRow", true, false) as HBoxContainer
 	var experience_label := npc_panel.find_child("NPCExperienceLabel", true, false) as Label
 	var attributes_label := npc_panel.find_child("NPCAttributesLabel", true, false) as Label
@@ -65,6 +72,11 @@ func _init() -> void:
 	var strength_value_label := npc_panel.find_child("NPCStrengthValueLabel", true, false) as Label
 	var intelligence_value_label := npc_panel.find_child("NPCIntelligenceValueLabel", true, false) as Label
 	var combat_stats_label := npc_panel.find_child("NPCCombatStatsLabel", true, false) as Label
+	var satiety_label := npc_panel.find_child("NPCSatietyLabel", true, false) as Label
+	var fatigue_label := npc_panel.find_child("NPCFatigueLabel", true, false) as Label
+	var satiety_progress := npc_panel.find_child("NPCSatietyProgress", true, false) as ProgressBar
+	var fatigue_progress := npc_panel.find_child("NPCFatigueProgress", true, false) as ProgressBar
+	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
 	var specialties_label := npc_panel.find_child("NPCJobLabel", true, false) as Label
 	var panel_scroll := npc_panel.find_child("NPCPanelScroll", true, false) as ScrollContainer
 	var long_term_button_row := npc_panel.find_child("NPCLongTermInfoButtonRow", true, false) as HBoxContainer
@@ -81,6 +93,20 @@ func _init() -> void:
 		push_error("NPC background button should be placed beside the NPC name in the top header")
 		quit(1)
 		return
+	if (
+		header_action_label == null
+		or behavior_mode_label == null
+		or header_action_label.get_parent() != header
+		or behavior_mode_label.get_parent() != header
+		or header_action_label.get_index() != background_button.get_index() + 1
+		or behavior_mode_label.get_index() != header_action_label.get_index() + 1
+		or header_action_label.text.contains("当前行动")
+		or behavior_mode_label.text.contains("行为模式")
+		or behavior_mode_label.modulate.r >= header_action_label.modulate.r
+	):
+		push_error("NPC action and dimmed behavior mode should follow the background button in the header")
+		quit(1)
+		return
 	if hp_experience_row == null or hp_label.get_parent() != hp_experience_row:
 		push_error("NPCPanel HP and experience should share one row")
 		quit(1)
@@ -89,7 +115,7 @@ func _init() -> void:
 		push_error("NPCPanel experience text mismatch: %s" % (experience_label.text if experience_label != null else "<missing>"))
 		quit(1)
 		return
-	if attributes_label == null or attributes_label.text != "属性：":
+	if attributes_label == null or attributes_label.visible or not attributes_label.text.is_empty():
 		push_error("NPCPanel attributes text mismatch: %s" % (attributes_label.text if attributes_label != null else "<missing>"))
 		quit(1)
 		return
@@ -107,11 +133,42 @@ func _init() -> void:
 		return
 	if (
 		combat_stats_label == null
-		or not combat_stats_label.text.begins_with("战斗 Lv.")
+		or not combat_stats_label.text.begins_with("攻击 ")
+		or combat_stats_label.text.contains("战斗")
+		or combat_stats_label.text.contains("Lv.")
 		or not combat_stats_label.text.contains("穿透")
 		or not combat_stats_label.text.contains("攻速")
 	):
 		push_error("NPCPanel combat stats text mismatch: %s" % (combat_stats_label.text if combat_stats_label != null else "<missing>"))
+		quit(1)
+		return
+	if (
+		satiety_label == null
+		or fatigue_label == null
+		or satiety_progress == null
+		or fatigue_progress == null
+		or satiety_label.get_parent() != satiety_progress.get_parent()
+		or fatigue_label.get_parent() != fatigue_progress.get_parent()
+		or satiety_label.get_index() >= satiety_progress.get_index()
+		or fatigue_label.get_index() >= fatigue_progress.get_index()
+		or not satiety_label.text.begins_with("饱食度 ")
+		or not fatigue_label.text.begins_with("疲劳度 ")
+	):
+		push_error("NPCPanel need labels should sit above their progress bars")
+		quit(1)
+		return
+	if equipment_label == null or equipment_label.visible or not equipment_label.text.is_empty():
+		push_error("NPCPanel should not retain the old current-equipment summary")
+		quit(1)
+		return
+	npc_system.update_npc_state(npc_id, {"satiety": 19, "fatigue": 81})
+	await process_frame
+	if not _verify_need_progress(satiety_progress, satiety_label, true, "low satiety") or not _verify_need_progress(fatigue_progress, fatigue_label, true, "high fatigue"):
+		quit(1)
+		return
+	npc_system.update_npc_state(npc_id, {"satiety": 20, "fatigue": 80})
+	await process_frame
+	if not _verify_need_progress(satiety_progress, satiety_label, false, "satiety boundary") or not _verify_need_progress(fatigue_progress, fatigue_label, false, "fatigue boundary"):
 		quit(1)
 		return
 	if specialties_label == null or not specialties_label.text.begins_with("专长："):
@@ -128,6 +185,10 @@ func _init() -> void:
 		return
 	if current_plan_button.get_parent() != long_term_button_row or diary_button.get_parent() != long_term_button_row or knowledge_button.get_parent() != long_term_button_row:
 		push_error("Current plan, diary, and knowledge buttons should share one row")
+		quit(1)
+		return
+	if knowledge_button.text != "认识" or event_log_label.text != "事件" or witness_log_label.text != "见闻":
+		push_error("NPCPanel should use concise recognition/event/witness labels without counts")
 		quit(1)
 		return
 	if npc_panel.find_child("NPCDiaryBox", true, false) != null or npc_panel.find_child("NPCDiaryText", true, false) != null:
@@ -454,7 +515,7 @@ func _init() -> void:
 	await process_frame
 	if (
 		not memory_detail_popup.visible
-		or not memory_detail_title.text.contains("知识图谱")
+		or not memory_detail_title.text.contains("认识")
 		or not memory_detail_text.text.contains("【守备官】")
 		or not memory_detail_text.text.contains("界面验证")
 		or not memory_detail_text.text.contains("守备官要求")
@@ -475,7 +536,7 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	if not memory_detail_popup.visible or not memory_detail_title.text.contains("事件库") or not memory_detail_text.text.contains("测试事件摘要内容变长"):
+	if not memory_detail_popup.visible or not memory_detail_title.text.contains("事件") or memory_detail_title.text.contains("事件库") or not memory_detail_text.text.contains("测试事件摘要内容变长"):
 		push_error("Event log detail popup did not show expected content")
 		quit(1)
 		return
@@ -527,7 +588,7 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	if not memory_detail_popup.visible or not memory_detail_title.text.contains("见闻库") or not memory_detail_text.text.contains("测试见闻摘要内容变长"):
+	if not memory_detail_popup.visible or not memory_detail_title.text.contains("见闻") or memory_detail_title.text.contains("见闻库") or not memory_detail_text.text.contains("测试见闻摘要内容变长"):
 		push_error("Witness log detail popup did not show expected content")
 		quit(1)
 		return
@@ -577,7 +638,7 @@ func _init() -> void:
 	await process_frame
 
 	var action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
-	if hp_label.text != "HP：64 / 120" or action_label == null or not action_label.text.begins_with("当前行动：未知行动"):
+	if hp_label.text != "HP：64 / 120" or action_label == null or action_label.text != "未知行动" or action_label.get_parent() != header:
 		push_error("NPCPanel did not refresh after state update")
 		quit(1)
 		return
@@ -791,6 +852,23 @@ func _contains_internal_event_fields(text: String) -> bool:
 		if text.contains(marker):
 			return true
 	return false
+
+
+func _verify_need_progress(progress: ProgressBar, label: Label, expected_danger: bool, phase: String) -> bool:
+	var fill := progress.get_theme_stylebox("fill") as StyleBoxFlat
+	var fill_color := fill.bg_color.to_html(true) if fill != null else ""
+	var expected_fill := DANGER_FILL if expected_danger else NORMAL_FILL
+	if bool(progress.get_meta("danger_state", false)) != expected_danger or fill_color != expected_fill:
+		push_error("NPCPanel need progress mismatch during %s: danger=%s fill=%s" % [phase, progress.get_meta("danger_state", false), fill_color])
+		return false
+	var label_color := label.get_theme_color("font_color").to_html(true)
+	if expected_danger and label_color != DANGER_LABEL:
+		push_error("NPCPanel need label should be red during %s: %s" % [phase, label_color])
+		return false
+	if not expected_danger and label_color == DANGER_LABEL:
+		push_error("NPCPanel need label stayed red during %s" % phase)
+		return false
+	return true
 
 
 func _is_text_edit_scrolled_near_bottom(text_edit: TextEdit) -> bool:

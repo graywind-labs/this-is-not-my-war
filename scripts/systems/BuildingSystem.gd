@@ -4,6 +4,7 @@ const BUILDING_DEFS_FILE := "building_defs.json"
 const BUILDING_ROOT_PATH := "/root/Main/WorldRoot/Station/Buildings"
 const PROPS_ROOT_PATH := "/root/Main/WorldRoot/Station/Props"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
+const DEFENSE_DEVICE_PRESENTER_PATH := "/root/Main/WorldRoot/Station/DefenseDevices"
 const CLICK_AREA_NAME := "ClickArea"
 const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
@@ -93,7 +94,10 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		if _try_route_stable_horse_click(event.position):
+		if _try_route_horse_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
+		if _try_route_defense_device_click(event.position):
 			get_viewport().set_input_as_handled()
 			return
 		var art_hit := _pick_building_art_view_at_screen_position(event.position)
@@ -112,6 +116,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not building_id.is_empty():
 			_select_building(building_id)
 			get_viewport().set_input_as_handled()
+
+
+func _try_route_defense_device_click(screen_position: Vector2) -> bool:
+	var presenter := get_node_or_null(DEFENSE_DEVICE_PRESENTER_PATH)
+	if presenter == null or not presenter.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = presenter.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "defense_device":
+		return false
+	var deployment_id := str(interaction.get("deployment_id", ""))
+	return (
+		not deployment_id.is_empty()
+		and presenter.has_method("select_defense_device_from_world_click")
+		and bool(presenter.call("select_defense_device_from_world_click", deployment_id))
+	)
 
 
 func _pick_building_art_view_at_screen_position(screen_position: Vector2) -> Dictionary:
@@ -170,7 +189,7 @@ func _try_select_interior_horse(screen_position: Vector2, building_id: String) -
 	return horse_system.has_method("select_horse_from_world_click") and bool(horse_system.call("select_horse_from_world_click", horse_id))
 
 
-func _try_route_stable_horse_click(screen_position: Vector2) -> bool:
+func _try_route_horse_click(screen_position: Vector2) -> bool:
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	if horse_system == null or not horse_system.has_method("get_world_click_interaction"):
 		return false
@@ -182,7 +201,7 @@ func _try_route_stable_horse_click(screen_position: Vector2) -> bool:
 		return false
 	var horse: Dictionary = horse_system.call("get_horse_snapshot", horse_id)
 	if str(horse.get("location", "")) != "stable":
-		return false
+		return horse_system.has_method("select_horse_from_world_click") and bool(horse_system.call("select_horse_from_world_click", horse_id))
 	var stable_hit := _pick_specific_building_art_view_at_screen_position(screen_position, "stable")
 	if stable_hit.is_empty():
 		return false

@@ -136,7 +136,7 @@ func _verify_device_balance_and_slots(
 			if not (slot.get("allowed_device_ids", []) as Array).has("wall_arrow_tower"):
 				return _fail("%s slot must accept arrow tower." % building_id)
 			var range_multiplier := float((slot.get("effect_modifiers", {}) as Dictionary).get("range_multiplier", 0.0))
-			var expected_multiplier := 2.0 if building_id == "main_hall" else 1.0
+			var expected_multiplier := 1.0
 			if not is_equal_approx(range_multiplier, expected_multiplier):
 				return _fail("%s slot range multiplier mismatch." % building_id)
 		required_levels.sort()
@@ -265,7 +265,7 @@ func _verify_deployment_and_range(
 ) -> bool:
 	resource_system.add_resource("item_wall_ballista", 2)
 	var wall_result: Dictionary = device_system.deploy_device("wall_ballista", "wall_slot_01")
-	var hall_result: Dictionary = device_system.deploy_device("wall_ballista", "main_hall_slot_01")
+	var hall_result: Dictionary = device_system.deploy_device("wall_ballista", "main_hall_slot_03")
 	if not bool(wall_result.get("ok", false)) or not bool(hall_result.get("ok", false)):
 		return _fail("Wall and main hall deployment should both succeed.")
 	await process_frame
@@ -273,8 +273,8 @@ func _verify_deployment_and_range(
 	var hall: Dictionary = device_system.get_deployment(str(hall_result.get("deployment_id", "")))
 	var wall_range := float((wall.get("effect", {}) as Dictionary).get("range", 0.0))
 	var hall_range := float((hall.get("effect", {}) as Dictionary).get("range", 0.0))
-	if not is_equal_approx(hall_range, wall_range * 2.0):
-		return _fail("Main hall deployment must double effective range.")
+	if not is_equal_approx(hall_range, wall_range):
+		return _fail("Main hall deployment must preserve the device's base effective range.")
 	if bool(slot_presenter.debug_get_marker_snapshot("wall_slot_01").get("visible", true)):
 		return _fail("Occupied world slot must hide its + marker.")
 

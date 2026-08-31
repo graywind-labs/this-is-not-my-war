@@ -26,11 +26,13 @@ func _run_verification() -> void:
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	var station_layout := root.get_node_or_null("Main/Presentation/StationLayoutController")
 	_check(combat_system != null, "CombatSystem missing")
 	_check(npc_system != null, "NPCSystem missing")
 	_check(equipment_system != null, "EquipmentSystem missing")
 	_check(resource_system != null, "ResourceSystem missing")
 	_check(time_system != null, "TimeSystem missing")
+	_check(station_layout != null, "StationLayoutController missing")
 	if not _failures.is_empty():
 		_finish()
 		return
@@ -44,7 +46,9 @@ func _run_verification() -> void:
 	if npc_actor == null:
 		_finish()
 		return
-	npc_actor.global_position = Vector3.ZERO
+	var navigation_map: RID = station_layout.get_production_navigation_map_rid()
+	var fixture_origin := NavigationServer3D.map_get_closest_point(navigation_map, Vector3(-3.0, 0.0, 22.0))
+	npc_actor.global_position = fixture_origin
 	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
 	_check(bool(spawn_result.get("ok", false)), "Could not spawn projectile target wave")
 	var enemy_ids: Array = combat_system.get_active_enemy_ids()
@@ -60,8 +64,8 @@ func _run_verification() -> void:
 	# A released arrow stores the current aim point, does not deal release-time
 	# damage, and can hit a different enemy that actually crosses its path.
 	_check(_equip_weapon(npc_system, equipment_system, "bow"), "Could not equip bow")
-	_set_enemy_fixture(combat_system, target_id, Vector3(0.0, 0.0, 8.0), 500)
-	_set_enemy_fixture(combat_system, crossing_id, Vector3(0.0, 0.0, 4.0), 500)
+	_set_enemy_fixture(combat_system, target_id, fixture_origin + Vector3(0.0, 0.0, 8.0), 500)
+	_set_enemy_fixture(combat_system, crossing_id, fixture_origin + Vector3(0.0, 0.0, 4.0), 500)
 	await physics_frame
 	var target_before := int(combat_system.get_enemy(target_id).get("hp", 0))
 	var crossing_before := int(combat_system.get_enemy(crossing_id).get("hp", 0))
@@ -79,25 +83,25 @@ func _run_verification() -> void:
 
 	# Moving the target after release must not bend the trajectory or apply a
 	# late compatibility hit.
-	_set_enemy_fixture(combat_system, target_id, Vector3(0.0, 0.0, 8.0), 500)
-	_set_enemy_fixture(combat_system, crossing_id, Vector3(6.0, 0.0, 4.0), 500)
+	_set_enemy_fixture(combat_system, target_id, fixture_origin + Vector3(0.0, 0.0, 8.0), 500)
+	_set_enemy_fixture(combat_system, crossing_id, fixture_origin + Vector3(6.0, 0.0, 4.0), 500)
 	await physics_frame
 	var dodge_hp_before := int(combat_system.get_enemy(target_id).get("hp", 0))
 	var dodge_release := _release_friendly(combat_system, npc_system, target_id)
 	var released_aim: Vector3 = (dodge_release.get("projectile", {}) as Dictionary).get("aim_position_at_release", Vector3.ZERO)
-	_set_enemy_fixture(combat_system, target_id, Vector3(5.0, 0.0, 8.0), 500)
+	_set_enemy_fixture(combat_system, target_id, fixture_origin + Vector3(5.0, 0.0, 8.0), 500)
 	await physics_frame
 	_advance_until_resolved(combat_system)
 	var dodge_result := combat_system.debug_get_combat_snapshot().get("last_projectile_result", {}) as Dictionary
 	_check(str(dodge_result.get("status", "")) in ["blocked", "miss"], "Moved target did not evade the released arrow")
 	_check(int(combat_system.get_enemy(target_id).get("hp", 0)) == dodge_hp_before, "Moved target received compatibility damage after evading")
-	_check((released_aim as Vector3).distance_to(Vector3(0.0, 0.9, 8.0)) < 0.25, "Release aim did not capture the target's current position")
+	_check((released_aim as Vector3).distance_to(fixture_origin + Vector3(0.0, 0.9, 8.0)) < 0.25, "Release aim did not capture the target's current position")
 	_check(bool(dodge_result.get("tracks_target_after_release", true)) == false, "Projectile snapshot claims post-release tracking")
 
 	# Crossbow uses the same collision authority and an enemy ranged projectile
 	# only damages the NPC once the capsule is physically reached.
 	_check(_equip_weapon(npc_system, equipment_system, "crossbow"), "Could not equip crossbow")
-	_set_enemy_fixture(combat_system, target_id, Vector3(0.0, 0.0, 8.0), 500)
+	_set_enemy_fixture(combat_system, target_id, fixture_origin + Vector3(0.0, 0.0, 8.0), 500)
 	await physics_frame
 	var crossbow_hp_before := int(combat_system.get_enemy(target_id).get("hp", 0))
 	var crossbow_release := _release_friendly(combat_system, npc_system, target_id)
@@ -111,11 +115,11 @@ func _run_verification() -> void:
 	enemy["attack_power"] = 4
 	enemy["penetration"] = 1.0
 	_set_active_enemy(combat_system, target_id, enemy)
-	_set_enemy_fixture(combat_system, target_id, Vector3(0.0, 0.0, 7.0), 500)
+	_set_enemy_fixture(combat_system, target_id, fixture_origin + Vector3(0.0, 0.0, 7.0), 500)
 	npc_system.update_npc_state(NPC_ID, {"hp": 100, "max_hp": 100, "unconscious": false})
 	await physics_frame
 	var npc_hp_before := int(npc_system.get_npc_state(NPC_ID).get("hp", 0))
-	var enemy_target := {"type": "npc", "id": NPC_ID, "name": "托马", "position": Vector3.ZERO, "distance": 7.0}
+	var enemy_target := {"type": "npc", "id": NPC_ID, "name": "托马", "position": fixture_origin, "distance": 7.0}
 	var enemy_release: Dictionary = combat_system._apply_enemy_attack(combat_system.get_enemy(target_id), enemy_target)
 	_check(str(enemy_release.get("projectile_status", "")) == "in_flight", "Enemy bow did not create a formal projectile")
 	_check(int(npc_system.get_npc_state(NPC_ID).get("hp", 0)) == npc_hp_before, "Enemy bow damaged NPC at release")

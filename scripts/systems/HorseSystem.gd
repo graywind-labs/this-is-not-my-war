@@ -1,5 +1,6 @@
 extends Node
 
+const ACTOR_MOTION_SCENE := preload("res://scenes/debug/ActorMotionBody.tscn")
 const HORSE_DEFS_FILE := "horse_defs.json"
 const STABLE_BUILDING_ID := "stable"
 const STABLE_ACTION_ID := "work_stable"
@@ -11,6 +12,7 @@ const LOCATION_RIDDEN := "ridden"
 const LOCATION_RETURNING_STABLE := "returning_stable"
 const LOCATION_DEAD := "dead"
 const MOUNT_PICKUP_WAITING_PHASE := "waiting_for_rider_at_stable"
+const RETURN_PATH_PICKUP_WAITING_PHASE := "waiting_for_rider_at_return_position"
 const BEHAVIOR_MODE_RALLY := "rally"
 const BEHAVIOR_MODE_COMBAT := "combat"
 const BEHAVIOR_MODE_WORK := "work"
@@ -21,6 +23,8 @@ const HORSE_PRESENTATION_GROUP := "horse_world_presentation"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const WORLD_CLICK_COLLISION_MASK := 4
 const WORLD_CLICK_RAY_LENGTH := 1000.0
+const RETURN_PATH_PICKUP_SEPARATION := 1.25
+const RIDER_ROUTE_RECOVERY_RETRY_MSEC := 500
 
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
@@ -55,7 +59,7 @@ const DEFAULT_BALANCE := {
 	"mount_rendezvous_horse_speed": 7.0,
 	"mount_rendezvous_npc_share": 0.35,
 	"mount_rendezvous_arrival_distance": 0.35,
-	"return_to_stable_speed": 7.0,
+	"return_to_stable_speed": 3.2,
 	"mounted_damage_share_min": 0.3,
 	"mounted_damage_share_max": 0.5,
 }
@@ -74,6 +78,7 @@ var _assignment_mutation_depth: int = 0
 var _rng := RandomNumberGenerator.new()
 var _event_bus: Node = null
 var _last_birth_failure_reason := ""
+var _horse_motion_actors: Dictionary = {}
 
 
 func _ready() -> void:
@@ -91,12 +96,17 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if delta <= 0.0 or _is_gameplay_paused():
+	if delta <= 0.0:
+		return
+	var paused := _is_gameplay_paused()
+	_set_horse_motion_paused(paused)
+	if paused:
 		return
 	_advance_horse_world_transitions(delta)
 
 
 func initialize() -> void:
+	_clear_all_horse_motion_actors("horse_system_initialized")
 	_horses.clear()
 	_horse_order.clear()
 	_horse_templates.clear()
@@ -490,6 +500,7 @@ func unassign_horse_from_npc(
 	horse["assigned_npc_id"] = ""
 	horse["ridden_by_npc_id"] = ""
 	if str(horse.get("location", LOCATION_STABLE)) != LOCATION_RETURNING_STABLE:
+		_release_horse_motion_actor(horse_id, "horse_unassigned_in_stable")
 		horse["location"] = LOCATION_STABLE
 		horse["movement_state"] = _make_idle_movement_state()
 	horse["feeding"] = _make_idle_feeding_state()
@@ -639,7 +650,7 @@ func debug_complete_horse_transition(horse_id: String) -> Dictionary:
 	var horse: Dictionary = _horses[horse_id]
 	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
 	var phase := str(movement.get("phase", "idle"))
-	if phase in [MOUNT_PICKUP_WAITING_PHASE, LOCATION_APPROACHING_RIDER]:
+	if _is_mount_pickup_waiting_phase(phase) or phase == LOCATION_APPROACHING_RIDER:
 		var npc_id := str(horse.get("assigned_npc_id", ""))
 		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 		if npc_system != null and npc_system.has_method("stop_npc_movement_with_state"):
@@ -1122,30 +1133,122 @@ func _reconcile_npc_riding_state(npc_id: String) -> void:
 	if not bool(horse.get("alive", true)):
 		return
 	var location := str(horse.get("location", LOCATION_STABLE))
+	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+	var movement_phase := str(movement.get("phase", "idle"))
 	if should_mount:
 		if location == LOCATION_RIDDEN and str(horse.get("ridden_by_npc_id", "")) == npc_id:
 			if not bool(states.get("combat_mounted", false)) and npc_system.has_method("update_npc_state"):
 				npc_system.update_npc_state(npc_id, {"combat_mounted": true, "combat_mount_phase": "mounted"})
 			return
+		if _is_mount_pickup_waiting_phase(movement_phase):
+			ensure_wartime_mount_route(npc_id, "npc_state_reconciled")
+			return
 		if location == LOCATION_RETURNING_STABLE:
-			# The horse keeps returning to its assigned stall. Once it reaches the
-			# stable, _complete_return_to_stable starts the rider's pickup route.
+			_start_return_path_mount_rendezvous(horse_id, npc_id)
 			return
 		elif location == LOCATION_STABLE:
-			var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
-			if str(movement.get("phase", "idle")) == MOUNT_PICKUP_WAITING_PHASE:
-				return
 			_start_mount_rendezvous(horse_id, npc_id)
 		return
-	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
-	if [LOCATION_RIDDEN, LOCATION_APPROACHING_RIDER].has(location) or str(movement.get("phase", "idle")) == MOUNT_PICKUP_WAITING_PHASE:
+	if [LOCATION_RIDDEN, LOCATION_APPROACHING_RIDER].has(location) or _is_mount_pickup_waiting_phase(movement_phase):
 		_begin_return_to_stable(horse_id, false, "wartime_ended")
+
+
+func ensure_wartime_mount_route(npc_id: String, reason: String = "wartime_mount_route_recovery") -> Dictionary:
+	var horse_id := _find_assigned_horse_id(npc_id)
+	if horse_id.is_empty() or not _horses.has(horse_id):
+		return {"ok": false, "reason": "no_assigned_horse", "npc_id": npc_id}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_state"):
+		return {"ok": false, "reason": "npc_system_unavailable", "npc_id": npc_id, "horse_id": horse_id}
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var behavior_mode := str(state.get("behavior_mode", "work"))
+	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(behavior_mode):
+		return {"ok": false, "reason": "npc_not_in_wartime_mode", "npc_id": npc_id, "horse_id": horse_id}
+	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
+		return {"ok": false, "reason": "npc_unavailable", "npc_id": npc_id, "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return {"ok": false, "reason": "horse_dead", "npc_id": npc_id, "horse_id": horse_id}
+	var location := str(horse.get("location", LOCATION_STABLE))
+	if location == LOCATION_RIDDEN and str(horse.get("ridden_by_npc_id", "")) == npc_id:
+		return {"ok": true, "reason": "already_mounted", "npc_id": npc_id, "horse_id": horse_id}
+	var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+	var phase := str(movement.get("phase", "idle"))
+	if not _is_mount_pickup_waiting_phase(phase):
+		if location == LOCATION_RETURNING_STABLE:
+			return _start_return_path_mount_rendezvous(horse_id, npc_id)
+		if location == LOCATION_STABLE:
+			return _start_mount_rendezvous(horse_id, npc_id)
+		return {"ok": false, "reason": "horse_not_ready_for_pickup", "npc_id": npc_id, "horse_id": horse_id, "horse_location": location}
+
+	var pickup_position: Vector3 = movement.get("target_position", horse.get("world_position", Vector3.ZERO))
+	var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system.has_method("get_npc_world_position") else null
+	if raw_npc_position is Vector3 and (raw_npc_position as Vector3).distance_to(pickup_position) <= _balance_float("mount_rendezvous_arrival_distance") + 0.15:
+		_complete_mount_rendezvous(horse_id)
+		return {"ok": true, "completed": true, "reason": "rider_already_at_pickup", "npc_id": npc_id, "horse_id": horse_id}
+	var rider_route_active := (
+		npc_system.has_method("is_npc_world_movement_active")
+		and bool(npc_system.is_npc_world_movement_active(npc_id))
+		and str(state.get("movement_target", "")) == STABLE_BUILDING_ID
+	)
+	if rider_route_active:
+		return {"ok": true, "already_active": true, "reason": "rider_route_active", "npc_id": npc_id, "horse_id": horse_id}
+	var now_msec := Time.get_ticks_msec()
+	if now_msec < int(movement.get("rider_route_recovery_next_msec", 0)):
+		return {"ok": false, "reason": "rider_route_recovery_cooldown", "npc_id": npc_id, "horse_id": horse_id}
+
+	var returning_pickup := phase == RETURN_PATH_PICKUP_WAITING_PHASE
+	movement["rider_route_recovery_count"] = int(movement.get("rider_route_recovery_count", 0)) + 1
+	movement["last_rider_route_recovery_reason"] = reason
+	# A successful request can still be cancelled later in the same frame by the
+	# formal-world migration tail. Let the next watchdog frame retry immediately;
+	# throttle only requests that genuinely failed to start.
+	movement["rider_route_recovery_next_msec"] = 0
+	horse["movement_state"] = movement
+	_horses[horse_id] = horse
+	var moved := false
+	if npc_system.has_method("move_npc_to_world_position"):
+		moved = bool(npc_system.move_npc_to_world_position(
+			npc_id,
+			STABLE_BUILDING_ID,
+			"前往途中马匹" if returning_pickup else "前往马厩取马",
+			pickup_position,
+			{
+				"current_action": "waiting_for_assigned_horse",
+				"last_action_result": "rider_arrived_at_returning_horse" if returning_pickup else "rider_arrived_at_stable_horse",
+				"combat_mounted": false,
+				"combat_mount_phase": "beside_returning_horse" if returning_pickup else "beside_stable_horse",
+				"preserve_location_context": true,
+				"departure_state": {
+					"combat_mounted": false,
+					"combat_mount_phase": "going_to_returning_horse" if returning_pickup else "going_to_stable_horse",
+					"last_action_result": reason
+				}
+			}
+		))
+	movement = (_horses[horse_id] as Dictionary).get("movement_state", {})
+	movement["last_rider_route_recovery_ok"] = moved
+	movement["rider_route_recovery_next_msec"] = 0 if moved else now_msec + RIDER_ROUTE_RECOVERY_RETRY_MSEC
+	var latest_horse: Dictionary = _horses[horse_id]
+	latest_horse["movement_state"] = movement
+	_horses[horse_id] = latest_horse
+	return {
+		"ok": moved,
+		"recovered": moved,
+		"reason": reason if moved else "npc_rendezvous_move_failed",
+		"npc_id": npc_id,
+		"horse_id": horse_id,
+		"pickup_position": pickup_position,
+		"pickup_source": str(movement.get("pickup_source", "")),
+		"recovery_count": int(movement.get("rider_route_recovery_count", 0))
+	}
 
 
 func _start_mount_rendezvous(horse_id: String, npc_id: String) -> Dictionary:
 	if not _horses.has(horse_id):
 		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
 	var horse: Dictionary = _horses[horse_id]
+	_release_horse_motion_actor(horse_id, "stable_mount_rendezvous")
 	if not bool(horse.get("alive", true)):
 		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
@@ -1230,7 +1333,85 @@ func _start_mount_rendezvous(horse_id: String, npc_id: String) -> Dictionary:
 	}
 
 
-func _advance_horse_world_transitions(delta: float) -> void:
+func _start_return_path_mount_rendezvous(horse_id: String, npc_id: String) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {"ok": false, "reason": "unknown_horse", "horse_id": horse_id}
+	var horse: Dictionary = _horses[horse_id]
+	if not bool(horse.get("alive", true)):
+		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_world_position"):
+		return {"ok": false, "reason": "npc_system_unavailable", "horse_id": horse_id, "npc_id": npc_id}
+	var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id)
+	if not raw_npc_position is Vector3:
+		return {"ok": false, "reason": "npc_position_unavailable", "horse_id": horse_id, "npc_id": npc_id}
+	var npc_position: Vector3 = raw_npc_position
+	var horse_position := _get_current_horse_motion_position(horse_id, horse)
+	var rendezvous_result := _resolve_return_path_pickup_position(npc_position, horse_position)
+	if not bool(rendezvous_result.get("ok", false)):
+		return {
+			"ok": false,
+			"reason": str(rendezvous_result.get("reason", "return_path_pickup_unreachable")),
+			"horse_id": horse_id,
+			"npc_id": npc_id,
+			"horse_position": horse_position
+		}
+	var rendezvous: Vector3 = rendezvous_result.get("position", horse_position)
+	var previous_movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+	_cancel_horse_motion_actor(horse_id, "wartime_restarted_wait_for_rider")
+	horse["world_position"] = horse_position
+	horse["location"] = LOCATION_RETURNING_STABLE
+	horse["ridden_by_npc_id"] = ""
+	horse["movement_state"] = {
+		"phase": RETURN_PATH_PICKUP_WAITING_PHASE,
+		"npc_id": npc_id,
+		"target_position": rendezvous,
+		"started_position": horse_position,
+		"return_target_position": previous_movement.get("target_position", horse.get("stable_world_position", Vector3.ZERO)),
+		"horse_stationary": true,
+		"pickup_source": "return_path_current_position",
+		"navigation_path_point_count": int(rendezvous_result.get("path_point_count", 0)),
+		"pickup_policy": "horse_stops_and_rider_navigates_to_return_path_position",
+		"reason": "wartime_restarted_during_return"
+	}
+	_horses[horse_id] = horse
+	_emit_horse_state_changed(horse_id)
+	_publish_stable_summary()
+	if npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, {
+			"combat_mounted": false,
+			"combat_mount_phase": "going_to_returning_horse",
+			"current_action": "meeting_assigned_horse",
+			"last_action_result": "returning_horse_stopped_for_pickup"
+		})
+	if npc_system.has_method("move_npc_to_world_position"):
+		# Keep the information-space target on a real location id; the supplied
+		# world point remains the stopped horse beside the rider's return route.
+		var target_id := STABLE_BUILDING_ID
+		var moved: bool = npc_system.move_npc_to_world_position(npc_id, target_id, "前往途中马匹", rendezvous, {
+			"current_action": "waiting_for_assigned_horse",
+			"last_action_result": "rider_arrived_at_returning_horse",
+			"combat_mounted": false,
+			"combat_mount_phase": "beside_returning_horse",
+			"preserve_location_context": true
+		})
+		if not moved:
+			return {"ok": false, "reason": "npc_rendezvous_move_failed", "horse_id": horse_id, "npc_id": npc_id}
+	return {
+		"ok": true,
+		"horse_id": horse_id,
+		"npc_id": npc_id,
+		"horse_start_position": horse_position,
+		"npc_start_position": npc_position,
+		"rendezvous_position": rendezvous,
+		"horse_stationary": true,
+		"pickup_source": "return_path_current_position",
+		"navigation_path_point_count": int(rendezvous_result.get("path_point_count", 0)),
+		"pickup_policy": "horse_stops_and_rider_navigates_to_return_path_position"
+	}
+
+
+func _advance_horse_world_transitions(_delta: float) -> void:
 	for horse_id in _horse_order:
 		if not _horses.has(horse_id):
 			continue
@@ -1239,23 +1420,51 @@ func _advance_horse_world_transitions(delta: float) -> void:
 			continue
 		var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
 		var phase := str(movement.get("phase", "idle"))
-		if not [MOUNT_PICKUP_WAITING_PHASE, LOCATION_APPROACHING_RIDER, LOCATION_RETURNING_STABLE].has(phase):
+		if not (_is_mount_pickup_waiting_phase(phase) or phase in [LOCATION_APPROACHING_RIDER, LOCATION_RETURNING_STABLE]):
 			continue
-		if phase == MOUNT_PICKUP_WAITING_PHASE:
+		if _is_mount_pickup_waiting_phase(phase):
 			var npc_id := str(movement.get("npc_id", horse.get("assigned_npc_id", "")))
 			var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 			var raw_npc_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system != null and npc_system.has_method("get_npc_world_position") else null
 			var pickup_position: Vector3 = movement.get("target_position", horse.get("world_position", Vector3.ZERO))
 			if raw_npc_position is Vector3 and (raw_npc_position as Vector3).distance_to(pickup_position) <= _balance_float("mount_rendezvous_arrival_distance") + 0.15:
 				_complete_mount_rendezvous(horse_id)
+			else:
+				ensure_wartime_mount_route(npc_id, "horse_pickup_watchdog")
 			continue
-		var current: Vector3 = horse.get("world_position", movement.get("started_position", Vector3.ZERO))
+		var current: Vector3 = _get_current_horse_motion_position(horse_id, horse)
 		var target: Vector3 = movement.get("target_position", current)
 		var speed_key := "mount_rendezvous_horse_speed" if phase == LOCATION_APPROACHING_RIDER else "return_to_stable_speed"
-		current = current.move_toward(target, _balance_float(speed_key) * delta)
+		var actor := _get_horse_motion_actor(horse_id)
+		if actor == null:
+			actor = _request_horse_navigation(
+				horse_id,
+				current,
+				target,
+				_balance_float(speed_key),
+				"horse_mount_rendezvous" if phase == LOCATION_APPROACHING_RIDER else "horse_return_to_stable"
+			)
+		if actor == null:
+			continue
+		current = actor.global_position
 		horse["world_position"] = current
+		var motion_snapshot := actor.debug_get_motion_snapshot()
+		movement["navigation_authority"] = "ActorMotionBody"
+		movement["navigation_state"] = str(motion_snapshot.get("state", "pending"))
+		movement["navigation_request_id"] = str(motion_snapshot.get("request_id", ""))
+		movement["navigation_path_plan_mode"] = str(motion_snapshot.get("path_plan_mode", "pending"))
+		movement["navigation_maximum_observed_speed"] = float(motion_snapshot.get("maximum_observed_speed", 0.0))
+		movement["navigation_maximum_frame_displacement"] = float(motion_snapshot.get("maximum_frame_displacement", 0.0))
+		movement["velocity"] = motion_snapshot.get("velocity", Vector3.ZERO)
+		horse["movement_state"] = movement
 		_horses[horse_id] = horse
-		if current.distance_to(target) > _balance_float("mount_rendezvous_arrival_distance"):
+		var navigation_state := str(motion_snapshot.get("state", ""))
+		if navigation_state == "failed":
+			movement["navigation_failure_reason"] = str(motion_snapshot.get("last_result", "navigation_failed"))
+			horse["movement_state"] = movement
+			_horses[horse_id] = horse
+			continue
+		if navigation_state != "arrived":
 			continue
 		if phase == LOCATION_APPROACHING_RIDER:
 			var npc_id := str(movement.get("npc_id", horse.get("assigned_npc_id", "")))
@@ -1280,6 +1489,7 @@ func _complete_mount_rendezvous(horse_id: String) -> void:
 	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(str(state.get("behavior_mode", ""))) or bool(state.get("unconscious", false)):
 		_begin_return_to_stable(horse_id, false, "mount_rendezvous_cancelled")
 		return
+	_release_horse_motion_actor(horse_id, "horse_mounted")
 	horse["location"] = LOCATION_RIDDEN
 	horse["ridden_by_npc_id"] = npc_id
 	horse["movement_state"] = _make_idle_movement_state()
@@ -1318,14 +1528,48 @@ func _begin_return_to_stable(horse_id: String, clear_assignment: bool, reason: S
 	if not bool(horse.get("alive", true)):
 		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
 	var npc_id := str(horse.get("assigned_npc_id", ""))
-	var current := _resolve_horse_world_position(horse_id, horse)
+	var current := _get_current_horse_motion_position(horse_id, horse)
 	var stable_target: Vector3 = horse.get("stable_world_position", Vector3.ZERO)
 	if stable_target == Vector3.ZERO:
 		stable_target = _resolve_stable_world_position(horse_id, current)
+	var was_already_stable := str(horse.get("location", LOCATION_STABLE)) == LOCATION_STABLE
 	if clear_assignment and not npc_id.is_empty():
 		_clear_equipment_mount_projection(npc_id, reason, false)
 		horse["assigned_npc_id"] = ""
 		_emit_horse_assignment_changed(horse_id, "")
+	if was_already_stable:
+		_release_horse_motion_actor(horse_id, "stable_horse_return_not_needed")
+		horse["ridden_by_npc_id"] = ""
+		horse["location"] = LOCATION_STABLE
+		horse["world_position"] = stable_target
+		horse["stable_world_position"] = stable_target
+		horse["feeding"] = _make_idle_feeding_state()
+		horse["movement_state"] = _make_idle_movement_state()
+		_horses[horse_id] = horse
+		var stable_npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if not npc_id.is_empty() and stable_npc_system != null and stable_npc_system.has_method("update_npc_state"):
+			stable_npc_system.update_npc_state(npc_id, {
+				"combat_mounted": false,
+				"combat_mount_phase": "horse_released" if clear_assignment else "unmounted",
+				"last_action_result": reason
+			})
+		_emit_horse_state_changed(horse_id)
+		_publish_stable_summary()
+		return {
+			"ok": true,
+			"horse_id": horse_id,
+			"npc_id": npc_id,
+			"clear_assignment": clear_assignment,
+			"reason": reason,
+			"navigation_started": false,
+			"already_stable": true
+		}
+	var navigation_target := stable_target
+	var raw_stable_pickup: Variant = _resolve_horse_pickup_world_position(horse_id)
+	if raw_stable_pickup is Vector3:
+		var return_target_result := _resolve_navigable_rendezvous_position(current, raw_stable_pickup)
+		if bool(return_target_result.get("ok", false)):
+			navigation_target = return_target_result.get("position", raw_stable_pickup)
 	horse["ridden_by_npc_id"] = ""
 	horse["location"] = LOCATION_RETURNING_STABLE
 	horse["world_position"] = current
@@ -1333,12 +1577,22 @@ func _begin_return_to_stable(horse_id: String, clear_assignment: bool, reason: S
 	horse["feeding"] = _make_idle_feeding_state()
 	horse["movement_state"] = {
 		"phase": LOCATION_RETURNING_STABLE,
-		"target_position": stable_target,
+		"target_position": navigation_target,
+		"stable_slot_position": stable_target,
 		"started_position": current,
 		"reason": reason,
-		"assignment_retained": not clear_assignment
+		"assignment_retained": not clear_assignment,
+		"locomotion_mode": "walk",
+		"navigation_authority": "ActorMotionBody"
 	}
 	_horses[horse_id] = horse
+	var actor := _request_horse_navigation(
+		horse_id,
+		current,
+		navigation_target,
+		_balance_float("return_to_stable_speed"),
+		"horse_return_to_stable"
+	)
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if not npc_id.is_empty() and npc_system != null and npc_system.has_method("update_npc_state"):
 		npc_system.update_npc_state(npc_id, {
@@ -1348,9 +1602,18 @@ func _begin_return_to_stable(horse_id: String, clear_assignment: bool, reason: S
 		})
 	_emit_horse_state_changed(horse_id)
 	_publish_stable_summary()
-	if current.distance_to(stable_target) <= _balance_float("mount_rendezvous_arrival_distance"):
+	if current.distance_to(navigation_target) <= _balance_float("mount_rendezvous_arrival_distance"):
 		_complete_return_to_stable(horse_id)
-	return {"ok": true, "horse_id": horse_id, "npc_id": npc_id, "clear_assignment": clear_assignment, "reason": reason}
+	return {
+		"ok": actor != null,
+		"horse_id": horse_id,
+		"npc_id": npc_id,
+		"clear_assignment": clear_assignment,
+		"reason": reason,
+		"navigation_started": actor != null,
+		"navigation_target": navigation_target,
+		"stable_slot_position": stable_target
+	}
 
 
 func _complete_return_to_stable(horse_id: String) -> void:
@@ -1359,6 +1622,7 @@ func _complete_return_to_stable(horse_id: String) -> void:
 	var horse: Dictionary = _horses[horse_id]
 	if not bool(horse.get("alive", true)):
 		return
+	_release_horse_motion_actor(horse_id, "horse_arrived_at_stable")
 	horse["location"] = LOCATION_STABLE
 	horse["ridden_by_npc_id"] = ""
 	horse["world_position"] = horse.get("stable_world_position", horse.get("world_position", Vector3.ZERO))
@@ -1370,7 +1634,166 @@ func _complete_return_to_stable(horse_id: String) -> void:
 		_reconcile_npc_riding_state(str(horse.get("assigned_npc_id", "")))
 
 
+func get_horse_motion_snapshot(horse_id: String) -> Dictionary:
+	var actor := _get_horse_motion_actor(horse_id)
+	if actor == null:
+		return {}
+	var snapshot := actor.debug_get_motion_snapshot()
+	snapshot["horse_id"] = horse_id
+	snapshot["movement_authority"] = "ActorMotionBody"
+	return snapshot
+
+
+func _request_horse_navigation(
+	horse_id: String,
+	start_position: Vector3,
+	target_position: Vector3,
+	speed: float,
+	movement_purpose: String
+) -> ActorMotionBody:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_production_navigation_map_rid"):
+		push_error("Horse navigation requires StationLayoutController for %s." % horse_id)
+		return null
+	if controller.has_method("force_sync_production_navigation"):
+		controller.force_sync_production_navigation()
+	var navigation_map: RID = controller.get_production_navigation_map_rid()
+	if not navigation_map.is_valid():
+		push_error("Horse navigation map is unavailable for %s." % horse_id)
+		return null
+	var actor := _get_horse_motion_actor(horse_id)
+	if actor == null:
+		actor = ACTOR_MOTION_SCENE.instantiate() as ActorMotionBody
+		actor.name = "HorseMotion_%s" % horse_id
+		actor.set_meta("horse_id", horse_id)
+		actor.set_meta("horse_motion_authority", true)
+		add_child(actor)
+		_horse_motion_actors[horse_id] = actor
+		var mesh := actor.get_node_or_null("ActorMesh") as MeshInstance3D
+		if mesh != null:
+			mesh.visible = false
+		var label := actor.get_node_or_null("DebugLabel") as Label3D
+		if label != null:
+			label.visible = false
+		var interaction_area := actor.get_interaction_area()
+		if interaction_area != null:
+			interaction_area.input_ray_pickable = false
+			interaction_area.collision_layer = 0
+	actor.global_position = start_position
+	actor.configure_profile("horse", {
+		"profile": {"base_speed": maxf(0.1, speed)}
+	})
+	# A ridden horse and its rider share one physical origin until the dismount
+	# frame. Let the horse body collide authoritatively with world geometry while
+	# RVO handles actors, otherwise CharacterBody depenetration ejects the newly
+	# separated horse almost a metre and looks like a teleport.
+	actor.collision_mask &= ~actor.collision_layer
+	actor.configure_avoidance_identity("horse:%s" % horse_id, 0.48, 0.04)
+	if not actor.set_navigation_map(navigation_map):
+		_release_horse_motion_actor(horse_id, "horse_navigation_map_rejected")
+		return null
+	var request_id := "%s:%s:%d" % [movement_purpose, horse_id, Time.get_ticks_msec()]
+	if not actor.request_motion(target_position, request_id, {
+		"persistent_repath": true,
+		"movement_purpose": movement_purpose,
+		"target_desired_distance": _balance_float("mount_rendezvous_arrival_distance")
+	}):
+		_release_horse_motion_actor(horse_id, "horse_navigation_request_rejected")
+		return null
+	actor.set_motion_paused(_is_gameplay_paused())
+	return actor
+
+
+func _get_horse_motion_actor(horse_id: String) -> ActorMotionBody:
+	var raw_actor: Variant = _horse_motion_actors.get(horse_id)
+	if raw_actor is ActorMotionBody and is_instance_valid(raw_actor):
+		return raw_actor as ActorMotionBody
+	_horse_motion_actors.erase(horse_id)
+	return null
+
+
+func _get_current_horse_motion_position(horse_id: String, horse: Dictionary) -> Vector3:
+	var actor := _get_horse_motion_actor(horse_id)
+	if actor != null:
+		return actor.global_position
+	return _resolve_horse_world_position(horse_id, horse)
+
+
+func _cancel_horse_motion_actor(horse_id: String, reason: String) -> void:
+	var actor := _get_horse_motion_actor(horse_id)
+	if actor == null:
+		return
+	if actor.is_motion_active():
+		actor.cancel_motion(reason)
+	actor.set_motion_paused(true)
+
+
+func _release_horse_motion_actor(horse_id: String, reason: String) -> void:
+	var actor := _get_horse_motion_actor(horse_id)
+	_horse_motion_actors.erase(horse_id)
+	if actor == null:
+		return
+	if actor.is_motion_active():
+		actor.cancel_motion(reason)
+	actor.collision_layer = 0
+	actor.collision_mask = 0
+	var navigation_agent := actor.get_node_or_null("NavigationAgent3D") as NavigationAgent3D
+	if navigation_agent != null:
+		navigation_agent.avoidance_enabled = false
+	actor.queue_free()
+
+
+func _clear_all_horse_motion_actors(reason: String) -> void:
+	for raw_horse_id in _horse_motion_actors.keys():
+		_release_horse_motion_actor(str(raw_horse_id), reason)
+	_horse_motion_actors.clear()
+
+
+func _set_horse_motion_paused(paused: bool) -> void:
+	for raw_horse_id in _horse_motion_actors.keys():
+		var actor := _get_horse_motion_actor(str(raw_horse_id))
+		if actor != null and actor.is_motion_active():
+			actor.set_motion_paused(paused)
+
+
+func _is_mount_pickup_waiting_phase(phase: String) -> bool:
+	return phase in [MOUNT_PICKUP_WAITING_PHASE, RETURN_PATH_PICKUP_WAITING_PHASE]
+
+
+func _resolve_return_path_pickup_position(npc_position: Vector3, horse_position: Vector3) -> Dictionary:
+	var to_npc := npc_position - horse_position
+	to_npc.y = 0.0
+	if to_npc.length() <= RETURN_PATH_PICKUP_SEPARATION:
+		var immediate_result := _resolve_navigable_rendezvous_position(npc_position, npc_position)
+		if bool(immediate_result.get("ok", false)):
+			immediate_result["immediate_pickup"] = true
+			return immediate_result
+	var base_direction := to_npc.normalized() if to_npc.length_squared() > 0.0001 else Vector3.RIGHT
+	for angle_degrees in [0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0]:
+		var direction_2d := Vector2(base_direction.x, base_direction.z).rotated(deg_to_rad(angle_degrees))
+		var desired := horse_position + Vector3(direction_2d.x, 0.0, direction_2d.y) * RETURN_PATH_PICKUP_SEPARATION
+		var result := _resolve_navigable_rendezvous_position(npc_position, desired)
+		if not bool(result.get("ok", false)):
+			continue
+		var resolved_position: Vector3 = result.get("position", desired)
+		if Vector2(resolved_position.x - horse_position.x, resolved_position.z - horse_position.z).length() < 0.9:
+			continue
+		result["pickup_angle_degrees"] = angle_degrees
+		return result
+	return {"ok": false, "reason": "return_path_pickup_unreachable"}
+
+
 func _resolve_horse_world_position(horse_id: String, horse: Dictionary) -> Vector3:
+	if str(horse.get("location", LOCATION_STABLE)) == LOCATION_RIDDEN:
+		var rider_npc_id := str(horse.get("ridden_by_npc_id", horse.get("assigned_npc_id", "")))
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		var raw_rider_position: Variant = (
+			npc_system.get_npc_world_position(rider_npc_id)
+			if not rider_npc_id.is_empty() and npc_system != null and npc_system.has_method("get_npc_world_position")
+			else null
+		)
+		if raw_rider_position is Vector3:
+			return raw_rider_position
 	var stored: Variant = horse.get("world_position", null)
 	if stored is Vector3:
 		return stored
@@ -1434,6 +1857,7 @@ func _handle_horse_death(horse_id: String, rider_npc_id: String, context: Dictio
 	if not _horses.has(horse_id):
 		return {}
 	var horse: Dictionary = _horses[horse_id]
+	_release_horse_motion_actor(horse_id, "horse_died")
 	var assigned_npc_id := str(horse.get("assigned_npc_id", rider_npc_id))
 	horse["alive"] = false
 	horse["hp"] = 0.0
@@ -1674,6 +2098,9 @@ func _make_horse_from_definition(definition: Dictionary) -> Dictionary:
 
 func _make_public_horse_snapshot(horse: Dictionary) -> Dictionary:
 	var snapshot := horse.duplicate(true)
+	var horse_id := str(horse.get("horse_id", ""))
+	if not horse_id.is_empty():
+		snapshot["world_position"] = _resolve_horse_world_position(horse_id, horse)
 	var growth := clampf(float(horse.get("growth", 0.0)), 0.0, 1.0)
 	var natural_max_hp := _calculate_natural_max_hp(growth)
 	var max_satiety := _calculate_max_satiety(growth)

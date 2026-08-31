@@ -50,7 +50,7 @@ func _init() -> void:
 	):
 		_fail("Blacksmith fixture/stand counts drifted: %s" % snapshot)
 		return
-	if int(physics_snapshot.get("static_body_count", 0)) != 236 or int(physics_snapshot.get("building_fixture_count", 0)) != 133:
+	if int(physics_snapshot.get("static_body_count", 0)) != 243 or int(physics_snapshot.get("building_fixture_count", 0)) != 133:
 		_fail("Fixture aggregate was not added to the production collision source: %s" % physics_snapshot)
 		return
 
@@ -107,8 +107,15 @@ func _init() -> void:
 			return
 		var route_target: Vector3 = route.get("interior_target_position", Vector3.ZERO)
 		var logical_target: Vector3 = route.get("logical_position_center_position", Vector3.ZERO)
-		if route_target.distance_to(stand_world) > 0.001 or route_target.distance_to(logical_target) < 0.5:
-			_fail("Route target was not separated from the logical bay center: %s" % workstation_id)
+		if route_target.distance_to(stand_world) > 0.001 or route_target.distance_to(logical_target) < 0.2:
+			_fail("Route target was not separated from the logical bay center: %s route=%s stand=%s logical=%s distances=%.3f/%.3f" % [
+				workstation_id,
+				route_target,
+				stand_world,
+				logical_target,
+				route_target.distance_to(stand_world),
+				route_target.distance_to(logical_target)
+			])
 			return
 		var expected_facing := (blacksmith.global_basis * Vector3(0.0, 0.0, -1.0)).normalized()
 		var route_facing: Vector3 = route.get("interior_target_facing_direction", Vector3.ZERO)

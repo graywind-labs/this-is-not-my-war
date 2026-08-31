@@ -6,7 +6,7 @@ const MAIN_SCENE := preload("res://scenes/main/Main.tscn")
 var _failures: PackedStringArray = []
 
 
-func _initialize() -> void:
+func _init() -> void:
 	call_deferred("_run_verification")
 
 
@@ -35,7 +35,7 @@ func _run_verification() -> void:
 		time_system.set_paused(true)
 
 	_set_building_level(building_system, "wall", 4)
-	_set_building_level(building_system, "main_hall", 1)
+	_set_building_level(building_system, "main_hall", 5)
 	resource_system.add_resource("item_wall_ballista", 3)
 	var wall_left_inner: Dictionary = device_system.deploy_device("wall_ballista", "wall_slot_01")
 	var wall_left_outer: Dictionary = device_system.deploy_device("wall_ballista", "wall_slot_03")

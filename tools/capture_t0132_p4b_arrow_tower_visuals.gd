@@ -74,7 +74,7 @@ func _capture_formal_main_hall_installation() -> void:
 	var resource_system := root.get_node("Main/Systems/ResourceSystem")
 	var device_system := root.get_node("Main/Systems/DefenseDeviceSystem")
 	resource_system.add_resource("item_wall_arrow_tower", 1)
-	var result: Dictionary = device_system.deploy_device("wall_arrow_tower", "main_hall_slot_01")
+	var result: Dictionary = device_system.deploy_device("wall_arrow_tower", "main_hall_slot_03")
 	if not bool(result.get("ok", false)):
 		push_error("Could not deploy arrow tower on main hall: %s" % str(result))
 		return

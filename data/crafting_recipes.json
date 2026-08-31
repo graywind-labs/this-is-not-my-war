@@ -88,18 +88,6 @@
       ]
     },
     {
-      "id": "craft_arrow_bundle",
-      "name": "箭束",
-      "building_id": "workshop",
-      "output_item_id": "item_arrow_bundle",
-      "output_amount": 1,
-      "available": false,
-      "ui_order": 10,
-      "stages": [
-        {"id": "make_arrow_bundle", "name": "削杆制羽", "cost": {"wood": 1}}
-      ]
-    },
-    {
       "id": "craft_bow",
       "name": "弓",
       "building_id": "workshop",

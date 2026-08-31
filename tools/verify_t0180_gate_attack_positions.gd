@@ -46,16 +46,26 @@ func _run_verification() -> void:
 		var lease := raw_lease as Dictionary
 		if str(lease.get("target_key", "")) == "building:front_gate":
 			gate_leases.append(lease)
-	_check(gate_leases.size() == 7, "T0180 expected seven front-gate leases: %s" % positions)
-	_check(int(positions.get("waiter_count", 0)) == 1, "T0180 mandatory front gate must retain one overflow waiter: %s" % positions)
+	var guided_schema := str(positions.get("schema", "")) == "enemy_attack_guidance_zones_v2"
+	var expected_gate_assignments := 8 if guided_schema else 5
+	var expected_waiters := 0 if guided_schema else 3
+	_check(gate_leases.size() == expected_gate_assignments, "T0180 expected %d front-gate assignments: %s" % [expected_gate_assignments, positions])
+	_check(int(positions.get("waiter_count", 0)) == expected_waiters, "T0180 front-gate waiter contract mismatch: %s" % positions)
 	for raw_waiter in positions.get("waiters", []):
 		_check(str((raw_waiter as Dictionary).get("target_key", "")) == "building:front_gate", "T0180 overflow waiter left the intact front gate: %s" % raw_waiter)
 	var avoidance_priorities: Dictionary = {}
 	for enemy_id in combat_system.get_active_enemy_ids():
 		var priority_actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
 		if priority_actor != null:
-			var priority := float(priority_actor.debug_get_motion_snapshot().get("avoidance_priority", -1.0))
+			var motion_snapshot: Dictionary = priority_actor.debug_get_motion_snapshot()
+			var priority := float(motion_snapshot.get("avoidance_priority", -1.0))
 			avoidance_priorities["%.6f" % priority] = true
+			var enemy_snapshot: Dictionary = combat_system.get_enemy(enemy_id)
+			var target_snapshot: Dictionary = enemy_snapshot.get("target", {}) if enemy_snapshot.get("target", {}) is Dictionary else {}
+			if str(target_snapshot.get("id", "")) == "front_gate" and str(enemy_snapshot.get("weapon_type", "")) in ["sword_shield", "polearm"]:
+				var dynamic_tolerance := float(target_snapshot.get("attack_guidance_arrival_tolerance", -1.0))
+				_check(dynamic_tolerance >= 0.05 and dynamic_tolerance <= 0.08, "T0180 front-gate melee tolerance did not use effective reach slack: enemy=%s tolerance=%.4f target=%s" % [enemy_id, dynamic_tolerance, target_snapshot])
+				_check(absf(float(motion_snapshot.get("target_desired_distance", -1.0)) - dynamic_tolerance) <= 0.002, "T0180 ActorMotion did not receive dynamic gate tolerance: enemy=%s motion=%s target=%s" % [enemy_id, motion_snapshot, target_snapshot])
 	_check(avoidance_priorities.size() == 8, "T0180 crowded wave lacks stable per-actor RVO tie-breaks: %s" % [avoidance_priorities.keys()])
 
 	var lease_holders: Array[String] = []
@@ -78,6 +88,43 @@ func _run_verification() -> void:
 		var enemy: Dictionary = combat_system._active_enemies.get(enemy_id, {})
 		enemy["position"] = navigation_arrival_position
 		combat_system._active_enemies[enemy_id] = enemy
+
+	# T0243 guidance intentionally re-evaluates crowd density after every body move.
+	# Isolate one physical handoff probe here; testing all eight at the former fixed
+	# slot centers would itself change occupancy and invalidate those destinations.
+	if guided_schema and not lease_holders.is_empty():
+		var probe_id := lease_holders[0]
+		for index in range(1, lease_holders.size()):
+			var remote_id := lease_holders[index]
+			var remote_actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(remote_id, NodePath())) as ActorMotionBody
+			if remote_actor == null:
+				continue
+			var remote_position := Vector3(80.0 + float(index) * 3.0, remote_actor.global_position.y, 80.0)
+			remote_actor.cancel_motion("superseded")
+			remote_actor.global_position = remote_position
+			remote_actor.velocity = Vector3.ZERO
+			var remote_enemy: Dictionary = combat_system._active_enemies.get(remote_id, {})
+			remote_enemy["position"] = remote_position
+			combat_system._active_enemies[remote_id] = remote_enemy
+		var probe_enemy: Dictionary = combat_system._active_enemies.get(probe_id, {})
+		var probe_target: Dictionary = probe_enemy.get("target", {}) if probe_enemy.get("target", {}) is Dictionary else {}
+		probe_target = combat_system._ensure_enemy_attack_position(probe_id, probe_enemy, probe_target, true)
+		var probe_actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(probe_id, NodePath())) as ActorMotionBody
+		if probe_actor != null:
+			var probe_contact := _to_vector3(probe_target.get("attack_contact_position", probe_target.get("position", probe_actor.global_position)))
+			var probe_center := _to_vector3(probe_target.get("attack_position", probe_contact))
+			var probe_outward := probe_center - probe_contact
+			probe_outward.y = 0.0
+			probe_outward = probe_outward.normalized() if probe_outward.length_squared() > 0.0001 else Vector3.FORWARD
+			var probe_handoff := float(probe_target.get("attack_guidance_handoff_range", probe_enemy.get("attack_range", 1.0)))
+			var probe_position := probe_contact + probe_outward * probe_handoff * 0.85
+			probe_actor.cancel_motion("superseded")
+			probe_actor.global_position = probe_position
+			probe_actor.velocity = Vector3.ZERO
+			probe_enemy["position"] = probe_position
+			combat_system._active_enemies[probe_id] = probe_enemy
+		lease_holders.clear()
+		lease_holders.append(probe_id)
 
 	combat_system.debug_step_enemy_ai(0.1)
 	var unlocked: Array[String] = []
@@ -128,10 +175,12 @@ func _run_verification() -> void:
 	time_system.set_paused(false)
 	var natural_complete := false
 	var natural_snapshot := {}
+	var natural_attackers_seen: Dictionary = {}
+	var maximum_stationary_outside_range: Dictionary = {}
 	# The production collider-baked navigation route includes real crowd avoidance and
 	# gate-post clearance, so allow the rear of the first wave to finish settling.
-	# The acceptance condition remains strict: seven leases, one waiter, and every
-	# occupied attacker must have delivered real physical melee damage.
+	# Guidance has no exclusive capacity: all eight must remain guided without a
+	# waiter, while natural crowd flow must produce real physical gate damage.
 	for _frame in range(2400):
 		await physics_frame
 		if _frame % 6 != 0:
@@ -145,19 +194,49 @@ func _run_verification() -> void:
 			var target_key := str(lease.get("target_key", ""))
 			if target_key == "building:front_gate":
 				gate_lease_count += 1
-				if str(lease.get("status", "")) == "occupied":
+				if str(lease.get("status", "")) == "occupied" or (guided_schema and str(lease.get("status", "")) in ["guiding", "engaging"]):
 					occupied_gate_lease_ids.append(str(lease.get("enemy_id", "")))
 		for raw_waiter in natural_snapshot.get("waiters", []):
 			if str((raw_waiter as Dictionary).get("target_key", "")) == "building:front_gate":
 				has_gate_waiter = true
-		var all_occupied_holders_hit := occupied_gate_lease_ids.size() >= 6
-		for enemy_id in occupied_gate_lease_ids:
-			if not _gate_damage_sources.has(enemy_id):
-				all_occupied_holders_hit = false
-		if all_occupied_holders_hit and gate_lease_count == 7 and has_gate_waiter and int(natural_snapshot.get("waiter_count", 0)) == 1:
+		for enemy_id in combat_system.get_active_enemy_ids():
+			var enemy: Dictionary = combat_system.get_enemy(enemy_id)
+			var action := str(enemy.get("current_action", ""))
+			if action.begins_with("winding_up_front_gate") or action.begins_with("attacking_front_gate") or action.begins_with("recovering_from_front_gate"):
+				natural_attackers_seen[enemy_id] = true
+			var actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+			if actor != null and action == "pressing_to_front_gate":
+				var stationary_seconds := float(actor.debug_get_motion_snapshot().get("stationary_elapsed_seconds", 0.0))
+				maximum_stationary_outside_range[enemy_id] = maxf(float(maximum_stationary_outside_range.get(enemy_id, 0.0)), stationary_seconds)
+		var all_occupied_holders_hit := occupied_gate_lease_ids.size() == expected_gate_assignments
+		if guided_schema:
+			all_occupied_holders_hit = (
+				all_occupied_holders_hit
+				and natural_attackers_seen.size() == expected_gate_assignments
+				and _gate_damage_sources.size() == expected_gate_assignments
+			)
+		else:
+			for enemy_id in occupied_gate_lease_ids:
+				if not _gate_damage_sources.has(enemy_id):
+					all_occupied_holders_hit = false
+		var waiter_contract_ok := (
+			not has_gate_waiter and int(natural_snapshot.get("waiter_count", 0)) == 0
+			if guided_schema
+			else has_gate_waiter and int(natural_snapshot.get("waiter_count", 0)) == 3
+		)
+		if all_occupied_holders_hit and gate_lease_count == expected_gate_assignments and waiter_contract_ok:
 			natural_complete = true
 			break
-	_check(natural_complete, "T0180 natural GM first wave did not settle into seven damaging gate attackers plus one mandatory gate waiter: damage_sources=%s positions=%s movement=%s" % [_gate_damage_sources.keys(), natural_snapshot, combat_system.debug_get_formal_first_wave_slice_snapshot()])
+	_check(natural_complete, "T0180 natural GM first wave did not keep %d guided attackers waiter-free while every attacker entered its timeline and produced physical gate damage: attackers=%s damage_sources=%s max_stationary=%s positions=%s movement=%s" % [expected_gate_assignments, natural_attackers_seen.keys(), _gate_damage_sources.keys(), maximum_stationary_outside_range, natural_snapshot, combat_system.debug_get_formal_first_wave_slice_snapshot()])
+	if guided_schema and natural_complete:
+		var natural_metrics: Dictionary = natural_snapshot.get("metrics", {}) as Dictionary
+		_check(int(natural_metrics.get("guidance_stall_recoveries_started", 0)) >= 1, "T0180 natural crowd did not exercise continuous guidance-stall recovery: %s" % natural_metrics)
+		_check(int(natural_metrics.get("guidance_stall_recoveries_completed", 0)) >= 1, "T0180 guidance-stall recovery did not complete after movement/range handoff: %s" % natural_metrics)
+		_check(int(natural_metrics.get("guidance_stall_reselections", 0)) >= 1, "T0180 stalled attacker never reselected a guidance zone: %s" % natural_metrics)
+		for enemy_id in combat_system.get_active_enemy_ids():
+			var recovered_actor := combat_system.get_node_or_null(combat_system._formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+			if recovered_actor != null:
+				_check(bool(recovered_actor.debug_get_motion_snapshot().get("runtime_actor_collision_enabled", false)), "T0180 recovery left actor collision disabled: %s" % enemy_id)
 
 	combat_system.clear_spawned_enemies()
 	_finish()

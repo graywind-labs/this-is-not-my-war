@@ -85,11 +85,23 @@ func _init() -> void:
 		return
 	npc_panel.show_npc(npc_id)
 	await process_frame
-	for control_name in ["NPCGiveWeaponButton", "NPCUnequipWeaponButton", "NPCEquipArmorButton", "NPCUnequipArmorButton", "NPCAssignHorseButton", "NPCUnassignHorseButton"]:
-		var button := npc_panel.find_child(control_name, true, false) as Button
-		if button == null or not button.disabled or button.tooltip_text != "只有工作模式下才能更换装备或马匹。":
-			_fail("NPCPanel did not lock %s during combat" % control_name)
+	var equipment_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
+	if equipment_button == null or equipment_button.disabled or equipment_button.text != "装备":
+		_fail("NPCPanel equipment window entry must remain available during combat")
+		return
+	var equipment_snapshot: Dictionary = npc_panel.debug_toggle_equipment_window()
+	if not bool(equipment_snapshot.get("visible", false)) or not bool(equipment_snapshot.get("locked", false)):
+		_fail("NPCPanel equipment window did not open in locked combat state")
+		return
+	for raw_slot in (equipment_snapshot.get("slots", {}) as Dictionary).values():
+		var slot: Dictionary = raw_slot if raw_slot is Dictionary else {}
+		if not bool(slot.get("clickable", false)) or not bool(slot.get("dimmed", false)):
+			_fail("Locked equipment slots must remain clickable for the refusal notice")
 			return
+	var locked_press: Dictionary = npc_panel.debug_press_equipment_slot("main_weapon")
+	if not bool(locked_press.get("notice_visible", false)):
+		_fail("Combat equipment slot click did not show the lock notice")
+		return
 
 	if not bool(horse_system.debug_complete_horse_transition(first_horse_id).get("ok", false)):
 		_fail("Could not complete the first horse rendezvous")

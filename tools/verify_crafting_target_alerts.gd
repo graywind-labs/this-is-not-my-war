@@ -33,8 +33,11 @@ func _init() -> void:
 		if snapshot.is_empty():
 			_fail("Missing crafting alert snapshot for %s" % building_id)
 			return
-		if not bool(snapshot.get("needs_alert", false)) or not bool(snapshot.get("visible", false)):
-			_fail("Empty crafting target should show its alert: %s" % JSON.stringify(snapshot))
+		if not bool(snapshot.get("needs_alert", false)):
+			_fail("Empty crafting target should require its alert: %s" % JSON.stringify(snapshot))
+			return
+		if not str(snapshot.get("label_path", "")).contains("/FormalStationLayout/BuildingRoots/"):
+			_fail("Crafting alert is not anchored to the formal building label: %s" % JSON.stringify(snapshot))
 			return
 		if str(snapshot.get("text", "")) != "!" or str(snapshot.get("tooltip", "")) != ALERT_TOOLTIP:
 			_fail("Crafting alert text or tooltip contract mismatch: %s" % JSON.stringify(snapshot))
@@ -49,7 +52,11 @@ func _init() -> void:
 			_fail("Crafting alert is not visually red for %s: %s" % [building_id, font_color])
 			return
 		var label_screen_position := camera.unproject_position(label.global_position)
-		if alert.position.y + alert.size.y * alert.scale.y * 0.5 >= label_screen_position.y:
+		var label_on_screen := Rect2(Vector2.ZERO, Vector2(1152.0, 648.0)).has_point(label_screen_position)
+		if alert.visible != label_on_screen:
+			_fail("Crafting alert visibility does not follow its formal label: %s" % JSON.stringify(snapshot))
+			return
+		if label_on_screen and alert.position.y + alert.size.y * alert.scale.y * 0.5 >= label_screen_position.y:
 			_fail("Crafting alert is not positioned above the %s name label: alert=%s size=%s label=%s" % [
 				building_id, alert.position, alert.size, label_screen_position
 			])
@@ -82,7 +89,7 @@ func _init() -> void:
 	if bool(hidden_snapshot.get("needs_alert", true)) or bool(hidden_snapshot.get("visible", true)):
 		_fail("Selecting a target did not hide the matching alert: %s" % JSON.stringify(hidden_snapshot))
 		return
-	if not bool(workshop_snapshot.get("needs_alert", false)) or not bool(workshop_snapshot.get("visible", false)):
+	if not bool(workshop_snapshot.get("needs_alert", false)):
 		_fail("Selecting the blacksmith target incorrectly changed the workshop alert")
 		return
 
@@ -92,7 +99,7 @@ func _init() -> void:
 		return
 	await process_frame
 	var restored_snapshot: Dictionary = presenter.debug_get_alert_snapshot("blacksmith")
-	if not bool(restored_snapshot.get("needs_alert", false)) or not bool(restored_snapshot.get("visible", false)):
+	if not bool(restored_snapshot.get("needs_alert", false)):
 		_fail("Clearing the target did not restore the alert: %s" % JSON.stringify(restored_snapshot))
 		return
 

@@ -307,7 +307,7 @@ func _init() -> void:
 	await process_frame
 	if (
 		not detail_popup.visible
-		or not detail_title.text.contains("知识图谱")
+		or not detail_title.text.contains("认识")
 		or not detail_text.text.contains("【驿站】")
 		or not detail_text.text.contains("当日压力")
 		or not detail_text.text.contains("第二次总结覆盖")

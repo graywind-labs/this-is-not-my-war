@@ -1502,9 +1502,9 @@
       "fixtures": [
         {
           "id": "main_hall_slot_01_platform",
-          "display_name": "一级器械平台",
+          "display_name": "五级新增器械平台",
           "kind": "main_hall_device_platform",
-          "required_level": 1,
+          "required_level": 5,
           "spatial_position_id": "main_hall_slot_01",
           "center": [-7.0, -5.0],
           "rotation_degrees": 0.0,
@@ -1518,9 +1518,9 @@
         },
         {
           "id": "main_hall_slot_02_platform",
-          "display_name": "三级新增器械平台",
+          "display_name": "六级新增器械平台",
           "kind": "main_hall_device_platform",
-          "required_level": 3,
+          "required_level": 6,
           "spatial_position_id": "main_hall_slot_02",
           "center": [7.0, -5.0],
           "rotation_degrees": 0.0,
@@ -1534,9 +1534,9 @@
         },
         {
           "id": "main_hall_slot_03_platform",
-          "display_name": "五级新增器械平台",
+          "display_name": "一级器械平台",
           "kind": "main_hall_device_platform",
-          "required_level": 5,
+          "required_level": 1,
           "spatial_position_id": "main_hall_slot_03",
           "center": [-7.0, 5.0],
           "rotation_degrees": 180.0,
@@ -1550,9 +1550,9 @@
         },
         {
           "id": "main_hall_slot_04_platform",
-          "display_name": "六级新增器械平台",
+          "display_name": "三级新增器械平台",
           "kind": "main_hall_device_platform",
-          "required_level": 6,
+          "required_level": 3,
           "spatial_position_id": "main_hall_slot_04",
           "center": [7.0, 5.0],
           "rotation_degrees": 180.0,

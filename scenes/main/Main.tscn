@@ -41,6 +41,7 @@
 [ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilotPreviewController.gd" id="39_chibi_pilot_preview"]
 [ext_resource type="Script" path="res://scripts/presentation/combat/AttackRangeIndicator.gd" id="40_attack_range_indicator"]
 [ext_resource type="Script" path="res://scripts/ui/HorsePanel.gd" id="41_horse_panel"]
+[ext_resource type="Script" path="res://scripts/ui/EnemyPanel.gd" id="42_enemy_panel"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -505,8 +506,8 @@ script = ExtResource("9_hud")
 layout_mode = 0
 offset_left = 12.0
 offset_top = 8.0
-offset_right = 536.0
-offset_bottom = 194.0
+offset_right = 629.0
+offset_bottom = 232.0
 mouse_filter = 2
 
 [node name="TitleLabel" type="Label" parent="UI/HUD" unique_id=1305608878]
@@ -543,7 +544,7 @@ offset_left = 242.0
 offset_top = 52.0
 offset_right = 350.0
 offset_bottom = 76.0
-text = "阶段：清晨"
+text = "清晨"
 
 [node name="ResourceStrip" type="HBoxContainer" parent="UI/HUD" unique_id=398678590]
 layout_mode = 0
@@ -615,6 +616,16 @@ offset_right = 330.0
 offset_bottom = 184.0
 text = "警铃"
 
+[node name="DismissRallyButton" type="Button" parent="UI/HUD"]
+focus_mode = 0
+layout_mode = 0
+offset_left = 342.0
+offset_top = 152.0
+offset_right = 436.0
+offset_bottom = 184.0
+tooltip_text = "让仍在集结、尚未接敌的 NPC 回到当前日程。"
+text = "解散"
+
 [node name="CraftingTargetAlerts" type="Control" parent="UI"]
 mouse_filter = 2
 script = ExtResource("30_crafting_alert")
@@ -677,6 +688,16 @@ layout_mode = 2
 text = "背景"
 tooltip_text = "查看该 NPC 同步提供给 LLM Prompt 的人物设定。"
 
+[node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "--"
+
+[node name="NPCBehaviorModeLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "--"
+
 [node name="NPCHeaderSpacer" type="Control" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -696,7 +717,7 @@ text = "HP：-- / --"
 [node name="NPCAttributesLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "属性：力量 --，智力 --"
+text = ""
 
 [node name="NPCJobLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -706,12 +727,12 @@ text = "专长：--"
 [node name="NPCSatietyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "饱食度：--"
+text = "饱食度 -- / --"
 
 [node name="NPCFatigueLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "疲劳度：--"
+text = "疲劳度 -- / --"
 
 [node name="NPCMoneyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -726,7 +747,7 @@ text = "持有酒：--"
 [node name="NPCEquipmentLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "当前装备：--"
+text = ""
 autowrap_mode = 3
 
 [node name="NPCUnconsciousLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
@@ -738,11 +759,6 @@ text = "昏迷：--"
 unique_name_in_owner = true
 layout_mode = 2
 text = "已入伍：--"
-
-[node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "当前行动：--"
 
 [node name="NPCSkillsLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -772,19 +788,19 @@ tooltip_text = "查看该 NPC 每次首次睡眠总结追加的日记。"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "知识"
-tooltip_text = "查看该 NPC 当前生效的知识图谱。"
+text = "认识"
+tooltip_text = "查看该 NPC 当前形成的认识。"
 
 [node name="NPCEventLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "事件库：暂无"
+text = "事件"
 autowrap_mode = 3
 
 [node name="NPCWitnessLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "见闻库：暂无"
+text = "见闻"
 autowrap_mode = 3
 
 [node name="NPCInteractionRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
@@ -795,11 +811,22 @@ theme_override_constants/separation = 6
 layout_mode = 2
 text = "交互"
 
-[node name="NPCInteractionVisibilitySelect" type="OptionButton" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
-unique_name_in_owner = true
+[node name="NPCInteractionVisibilityOptions" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-tooltip_text = "选择本次非对话交互是否被同地点 NPC 听见或看见。"
+theme_override_constants/separation = 8
+tooltip_text = "选择本次交互是否公开。"
+
+[node name="NPCInteractionPublicRadio" type="CheckBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow/NPCInteractionVisibilityOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "公开"
+
+[node name="NPCInteractionPrivateRadio" type="CheckBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow/NPCInteractionVisibilityOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "私下"
 
 [node name="NPCInteractionButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
@@ -899,6 +926,20 @@ offset_bottom = 536.0
 grow_horizontal = 0
 theme = ExtResource("36_slice_theme")
 script = ExtResource("41_horse_panel")
+
+[node name="EnemyPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -666.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 436.0
+grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
+script = ExtResource("42_enemy_panel")
 
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false
@@ -1042,7 +1083,7 @@ theme_override_constants/separation = 0
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
-text = "同地点公开"
+text = "公开"
 
 [node name="DialogRecruitmentToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
 unique_name_in_owner = true

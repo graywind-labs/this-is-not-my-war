@@ -179,8 +179,8 @@ func _init() -> void:
 	var main_hall_ballista: Dictionary = device_system.get_deployment(str(main_hall_ballista_result.get("deployment_id", "")))
 	var wall_range := float(wall_ballista.get("effect", {}).get("range", 0.0))
 	var main_hall_range := float(main_hall_ballista.get("effect", {}).get("range", 0.0))
-	if wall_range <= 0.0 or not is_equal_approx(main_hall_range, wall_range * 2.0):
-		_fail("Main-hall deployment should double the same device's effective range")
+	if wall_range <= 0.0 or not is_equal_approx(main_hall_range, wall_range):
+		_fail("Main-hall deployment should preserve the same device's base effective range")
 		return
 	if int(wall_ballista.get("hp", 0)) != int(ballista_definition.get("max_hp", 0)):
 		_fail("Deployed defense device should expose configured HP")

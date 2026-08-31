@@ -66,10 +66,10 @@ const WORKSHOP_QUEUE := [
 ]
 
 const DEVICE_PLAN := [
-	{"wave": 1, "device": "wall_arrow_tower", "slot": "main_hall_slot_01"},
+	{"wave": 1, "device": "wall_arrow_tower", "slot": "main_hall_slot_03"},
 	{"wave": 3, "device": "wall_ballista", "slot": "wall_slot_01"},
 	{"wave": 4, "device": "wall_arrow_tower", "slot": "wall_slot_02"},
-	{"wave": 5, "device": "wall_arrow_tower", "slot": "main_hall_slot_02"}
+	{"wave": 5, "device": "wall_arrow_tower", "slot": "main_hall_slot_04"}
 ]
 
 const ITEM_TO_RECIPE := {

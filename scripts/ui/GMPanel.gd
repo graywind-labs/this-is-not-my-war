@@ -62,6 +62,7 @@ var _resource_amount_input: LineEdit
 var _building_select: OptionButton
 var _building_amount_input: LineEdit
 var _npc_select: OptionButton
+var _formal_action_npc_select: OptionButton
 var _npc_dialogue_target_select: OptionButton
 var _npc_state_key_input: LineEdit
 var _npc_state_value_input: LineEdit
@@ -69,6 +70,7 @@ var _attribute_select: OptionButton
 var _order_text_input: LineEdit
 var _proactive_talk_input: LineEdit
 var _location_select: OptionButton
+var _formal_action_location_select: OptionButton
 var _action_select: OptionButton
 var _combat_wave_select: OptionButton
 var _equipment_weapon_select: OptionButton
@@ -814,47 +816,61 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 
 func _add_action_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("行动"))
+	var npc_row := _make_row(parent)
+	var npc_label := Label.new()
+	npc_label.text = "行动 NPC"
+	npc_row.add_child(npc_label)
+	_formal_action_npc_select = _make_select(npc_row)
+	_formal_action_npc_select.name = "FormalActionNpcSelect"
+	_formal_action_npc_select.tooltip_text = "本页下方全部行动、停止和快照按钮都以此 NPC 为发起者"
+	var location_label := Label.new()
+	location_label.text = "拜访地点"
+	npc_row.add_child(location_label)
+	_formal_action_location_select = _make_select(npc_row)
+	_formal_action_location_select.name = "FormalActionLocationSelect"
+	_formal_action_location_select.tooltip_text = "本页“真实拜访”使用的目标地点"
+
 	var row := _make_row(parent)
 	_action_select = _make_select(row)
 	_action_select.name = "ActionSelect"
 	var assign_action_button := _add_button(row, "指定行动", func() -> void:
-		_run_assign_action(_selected_id(_npc_select), _selected_id(_action_select))
+		_run_assign_action(_selected_id(_formal_action_npc_select), _selected_id(_action_select))
 	)
 	assign_action_button.name = "AssignActionButton"
 
 	var formal_visit_row := _make_row(parent)
 	var formal_visit_label := Label.new()
-	formal_visit_label.text = "A5-P6b 目标使用上方 NPC / 地点"
+	formal_visit_label.text = "A5-P6b 使用行动 NPC / 拜访地点"
 	formal_visit_row.add_child(formal_visit_label)
 	var formal_visit_button := _add_button(formal_visit_row, "真实拜访", func() -> void:
-		_run_formal_visit_location(_selected_id(_npc_select), _selected_id(_location_select))
+		_run_formal_visit_location(_selected_id(_formal_action_npc_select), _selected_id(_formal_action_location_select))
 	)
 	formal_visit_button.name = "FormalVisitLocationButton"
 	var formal_visit_stop_button := _add_button(formal_visit_row, "停止真实拜访", func() -> void:
-		_stop_formal_visit_location(_selected_id(_npc_select))
+		_stop_formal_visit_location(_selected_id(_formal_action_npc_select))
 	)
 	formal_visit_stop_button.name = "FormalVisitLocationStopButton"
 	var formal_visit_snapshot_button := _add_button(formal_visit_row, "真实拜访快照", func() -> void:
-		_show_formal_visit_location_snapshot(_selected_id(_npc_select))
+		_show_formal_visit_location_snapshot(_selected_id(_formal_action_npc_select))
 	)
 	formal_visit_snapshot_button.name = "FormalVisitLocationSnapshotButton"
 
 	var formal_dialogue_row := _make_row(parent)
 	var formal_dialogue_label := Label.new()
-	formal_dialogue_label.text = "A5-P6c 发起者使用上方 NPC / 对话目标"
+	formal_dialogue_label.text = "A5-P6c 使用行动 NPC / 对话目标"
 	formal_dialogue_row.add_child(formal_dialogue_label)
 	_npc_dialogue_target_select = _make_select(formal_dialogue_row)
 	_npc_dialogue_target_select.name = "FormalNpcDialogueTargetSelect"
 	var formal_dialogue_button := _add_button(formal_dialogue_row, "真实找人对话", func() -> void:
-		_run_formal_npc_dialogue(_selected_id(_npc_select), _selected_id(_npc_dialogue_target_select))
+		_run_formal_npc_dialogue(_selected_id(_formal_action_npc_select), _selected_id(_npc_dialogue_target_select))
 	)
 	formal_dialogue_button.name = "FormalNpcDialogueButton"
 	var formal_dialogue_stop_button := _add_button(formal_dialogue_row, "停止真实对话", func() -> void:
-		_stop_formal_npc_dialogue(_selected_id(_npc_select))
+		_stop_formal_npc_dialogue(_selected_id(_formal_action_npc_select))
 	)
 	formal_dialogue_stop_button.name = "FormalNpcDialogueStopButton"
 	var formal_dialogue_snapshot_button := _add_button(formal_dialogue_row, "真实对话快照", func() -> void:
-		_show_formal_npc_dialogue_snapshot(_selected_id(_npc_select))
+		_show_formal_npc_dialogue_snapshot(_selected_id(_formal_action_npc_select))
 	)
 	formal_dialogue_snapshot_button.name = "FormalNpcDialogueSnapshotButton"
 
@@ -865,15 +881,15 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	_repair_building_select = _make_select(repair_row)
 	_repair_building_select.name = "RepairBuildingSelect"
 	var assist_button := _add_button(repair_row, "协助修复", func() -> void:
-		_run_assist_repair(_selected_id(_npc_select), _selected_id(_repair_building_select))
+		_run_assist_repair(_selected_id(_formal_action_npc_select), _selected_id(_repair_building_select))
 	)
 	assist_button.name = "AssistRepairButton"
 	var assist_stop_button := _add_button(repair_row, "停止真实修复", func() -> void:
-		_stop_formal_repair_assist(_selected_id(_npc_select))
+		_stop_formal_repair_assist(_selected_id(_formal_action_npc_select))
 	)
 	assist_stop_button.name = "FormalRepairAssistStopButton"
 	var assist_snapshot_button := _add_button(repair_row, "真实修复快照", func() -> void:
-		_show_formal_repair_assist_snapshot(_selected_id(_npc_select), _selected_id(_repair_building_select))
+		_show_formal_repair_assist_snapshot(_selected_id(_formal_action_npc_select), _selected_id(_repair_building_select))
 	)
 	assist_snapshot_button.name = "FormalRepairAssistSnapshotButton"
 
@@ -884,15 +900,15 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	_upgrade_building_select = _make_select(upgrade_row)
 	_upgrade_building_select.name = "UpgradeBuildingSelect"
 	var assist_upgrade_button := _add_button(upgrade_row, "协助升级", func() -> void:
-		_run_assist_upgrade(_selected_id(_npc_select), _selected_id(_upgrade_building_select))
+		_run_assist_upgrade(_selected_id(_formal_action_npc_select), _selected_id(_upgrade_building_select))
 	)
 	assist_upgrade_button.name = "AssistUpgradeButton"
 	var assist_upgrade_stop_button := _add_button(upgrade_row, "停止真实升级", func() -> void:
-		_stop_formal_upgrade_assist(_selected_id(_npc_select))
+		_stop_formal_upgrade_assist(_selected_id(_formal_action_npc_select))
 	)
 	assist_upgrade_stop_button.name = "FormalUpgradeAssistStopButton"
 	var assist_upgrade_snapshot_button := _add_button(upgrade_row, "真实升级快照", func() -> void:
-		_show_formal_upgrade_assist_snapshot(_selected_id(_npc_select), _selected_id(_upgrade_building_select))
+		_show_formal_upgrade_assist_snapshot(_selected_id(_formal_action_npc_select), _selected_id(_upgrade_building_select))
 	)
 	assist_upgrade_snapshot_button.name = "FormalUpgradeAssistSnapshotButton"
 
@@ -903,15 +919,15 @@ func _add_action_section(parent: VBoxContainer) -> void:
 	_heal_target_select = _make_select(heal_row)
 	_heal_target_select.name = "HealTargetSelect"
 	var assist_heal_button := _add_button(heal_row, "协助治疗", func() -> void:
-		_run_assist_heal(_selected_id(_npc_select), _selected_id(_heal_target_select))
+		_run_assist_heal(_selected_id(_formal_action_npc_select), _selected_id(_heal_target_select))
 	)
 	assist_heal_button.name = "AssistHealButton"
 	var assist_heal_stop_button := _add_button(heal_row, "停止真实治疗", func() -> void:
-		_stop_formal_heal_assist(_selected_id(_npc_select))
+		_stop_formal_heal_assist(_selected_id(_formal_action_npc_select))
 	)
 	assist_heal_stop_button.name = "FormalHealAssistStopButton"
 	var assist_heal_snapshot_button := _add_button(heal_row, "真实治疗快照", func() -> void:
-		_show_formal_heal_assist_snapshot(_selected_id(_npc_select), _selected_id(_heal_target_select))
+		_show_formal_heal_assist_snapshot(_selected_id(_formal_action_npc_select), _selected_id(_heal_target_select))
 	)
 	assist_heal_snapshot_button.name = "FormalHealAssistSnapshotButton"
 
@@ -1126,6 +1142,12 @@ func _fill_npc_select() -> void:
 			return "%s | %s" % [id, str(npc.get("name", id))]
 		return id
 	)
+	_fill_select(_formal_action_npc_select, ids, func(id: String) -> String:
+		if npc_system != null:
+			var npc: Dictionary = npc_system.get_npc(id)
+			return "%s | %s" % [id, str(npc.get("name", id))]
+		return id
+	)
 	_fill_select(_heal_target_select, ids, func(id: String) -> String:
 		if npc_system != null:
 			var npc: Dictionary = npc_system.get_npc(id)
@@ -1153,7 +1175,9 @@ func _fill_attribute_select() -> void:
 func _fill_action_select() -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	var ids: Array = []
-	if action_system != null and action_system.has_method("get_action_ids"):
+	if action_system != null and action_system.has_method("get_direct_debug_action_ids"):
+		ids = action_system.get_direct_debug_action_ids()
+	elif action_system != null and action_system.has_method("get_action_ids"):
 		ids = action_system.get_action_ids()
 	_fill_select(_action_select, ids, func(id: String) -> String:
 		if action_system != null:
@@ -1239,6 +1263,9 @@ func _fill_horse_select() -> void:
 
 func _fill_location_select() -> void:
 	_fill_select(_location_select, DEFAULT_LOCATION_IDS, func(id: String) -> String:
+		return id
+	)
+	_fill_select(_formal_action_location_select, DEFAULT_LOCATION_IDS, func(id: String) -> String:
 		return id
 	)
 
@@ -1419,7 +1446,7 @@ func _execute_command(command: String) -> void:
 					_show_formal_garden_work_snapshot()
 		"formal_visit":
 			var formal_visit_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
-			var formal_visit_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			var formal_visit_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_formal_action_npc_select)
 			match formal_visit_mode:
 				"run", "start":
 					if _require_args(parts, 4, "formal_visit run <npc_id> <location_id>"):
@@ -1430,7 +1457,7 @@ func _execute_command(command: String) -> void:
 					_show_formal_visit_location_snapshot(formal_visit_npc_id)
 		"formal_npc_dialogue":
 			var formal_dialogue_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
-			var formal_dialogue_speaker_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			var formal_dialogue_speaker_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_formal_action_npc_select)
 			match formal_dialogue_mode:
 				"run", "start":
 					if _require_args(parts, 4, "formal_npc_dialogue run <speaker_npc_id> <target_npc_id> [opening_text]"):
@@ -1446,7 +1473,7 @@ func _execute_command(command: String) -> void:
 					_show_formal_npc_dialogue_snapshot(formal_dialogue_speaker_id)
 		"formal_repair_assist":
 			var formal_repair_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
-			var formal_repair_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			var formal_repair_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_formal_action_npc_select)
 			match formal_repair_mode:
 				"run", "start":
 					if _require_args(parts, 4, "formal_repair_assist run <npc_id> <building_id>"):
@@ -1458,7 +1485,7 @@ func _execute_command(command: String) -> void:
 					_show_formal_repair_assist_snapshot(formal_repair_npc_id, formal_repair_building_id)
 		"formal_upgrade_assist":
 			var formal_upgrade_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
-			var formal_upgrade_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			var formal_upgrade_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_formal_action_npc_select)
 			match formal_upgrade_mode:
 				"run", "start":
 					if _require_args(parts, 4, "formal_upgrade_assist run <npc_id> <building_id>"):
@@ -1470,7 +1497,7 @@ func _execute_command(command: String) -> void:
 					_show_formal_upgrade_assist_snapshot(formal_upgrade_npc_id, formal_upgrade_building_id)
 		"formal_heal_assist":
 			var formal_heal_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
-			var formal_healer_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_npc_select)
+			var formal_healer_npc_id := str(parts[2]) if parts.size() >= 3 else _selected_id(_formal_action_npc_select)
 			match formal_heal_mode:
 				"run", "start":
 					if _require_args(parts, 4, "formal_heal_assist run <healer_npc_id> <target_npc_id>"):
@@ -3566,9 +3593,20 @@ func _run_npc_talk(speaker_npc_id: String, target_npc_id: String, opening_text: 
 		target_npc_id,
 		clean_opening,
 		5,
+		true,
+		{},
 		true
 	))
-	_log("NPC-NPC 对话 %s -> %s：%s" % [speaker_npc_id, target_npc_id, _ok_text(ok)])
+	var failure_reason := _npc_action_block_reason(speaker_npc_id)
+	if failure_reason.is_empty():
+		failure_reason = _npc_action_block_reason(target_npc_id)
+	if failure_reason.is_empty():
+		failure_reason = "发起者或目标已被其他对话占用，或当前对话系统正忙"
+	_log("NPC-NPC 对话 %s -> %s：%s" % [
+		speaker_npc_id,
+		target_npc_id,
+		_action_command_result_text(speaker_npc_id, ok, failure_reason)
+	])
 
 
 func _show_dialogue_carryover() -> void:
@@ -3637,7 +3675,23 @@ func _run_assign_action(npc_id: String, action_id: String) -> void:
 	if action_system == null:
 		_log("ActionSystem 不可用。")
 		return
-	_log("指派行动 %s -> %s：%s" % [npc_id, action_id, _ok_text(action_system.debug_assign_action(npc_id, action_id))])
+	var eligibility: Dictionary = (
+		action_system.get_action_eligibility(npc_id, action_id)
+		if action_system.has_method("get_action_eligibility")
+		else {}
+	)
+	var unavailable_reason := _npc_action_block_reason(npc_id)
+	if unavailable_reason.is_empty() and not eligibility.is_empty() and (
+		not bool(eligibility.get("eligible", false))
+		or not bool(eligibility.get("available_now", false))
+	):
+		unavailable_reason = str(eligibility.get("unavailable_reason", "行动前提不满足"))
+	var started := bool(action_system.debug_assign_action(npc_id, action_id, true))
+	_log("指派行动 %s -> %s：%s" % [
+		npc_id,
+		action_id,
+		_action_command_result_text(npc_id, started, unavailable_reason)
+	])
 
 
 func _run_formal_visit_location(npc_id: String, location_id: String) -> void:
@@ -3648,8 +3702,15 @@ func _run_formal_visit_location(npc_id: String, location_id: String) -> void:
 	if action_system == null or not action_system.has_method("assign_visit_location"):
 		_log("ActionSystem 的真实拜访入口不可用。")
 		return
-	var started := bool(action_system.assign_visit_location(npc_id, location_id))
-	_log("真实拜访 %s -> %s：%s" % [npc_id, location_id, _ok_text(started)])
+	var started := bool(action_system.assign_visit_location(npc_id, location_id, true))
+	var failure_reason := _npc_action_block_reason(npc_id)
+	if failure_reason.is_empty():
+		failure_reason = "目标地点当前不可进入或正式路线不可用"
+	_log("真实拜访 %s -> %s：%s" % [
+		npc_id,
+		location_id,
+		_action_command_result_text(npc_id, started, failure_reason)
+	])
 	_show_formal_visit_location_snapshot(npc_id)
 	if started and _panel != null:
 		_panel.visible = false
@@ -3772,8 +3833,20 @@ func _run_assist_repair(npc_id: String, building_id: String) -> void:
 	if action_system == null:
 		_log("ActionSystem 不可用。")
 		return
-	var started := bool(action_system.debug_assign_repair_assist(npc_id, building_id))
-	_log("真实协助修复 %s -> %s：%s" % [npc_id, building_id, _ok_text(started)])
+	var started := bool(action_system.debug_assign_repair_assist(npc_id, building_id, true))
+	var failure_reason := _npc_action_block_reason(npc_id)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if not started and failure_reason.is_empty() and (
+		building_system == null
+		or not building_system.has_method("is_repair_in_progress")
+		or not bool(building_system.is_repair_in_progress(building_id))
+	):
+		failure_reason = "目标建筑没有进行中的修复工程"
+	_log("真实协助修复 %s -> %s：%s" % [
+		npc_id,
+		building_id,
+		_action_command_result_text(npc_id, started, failure_reason)
+	])
 	_show_formal_repair_assist_snapshot(npc_id, building_id)
 	if started and _panel != null:
 		_panel.visible = false
@@ -3820,8 +3893,20 @@ func _run_assist_upgrade(npc_id: String, building_id: String) -> void:
 	if action_system == null:
 		_log("ActionSystem 不可用。")
 		return
-	var started := bool(action_system.debug_assign_upgrade_assist(npc_id, building_id))
-	_log("真实协助升级 %s -> %s：%s" % [npc_id, building_id, _ok_text(started)])
+	var started := bool(action_system.debug_assign_upgrade_assist(npc_id, building_id, true))
+	var failure_reason := _npc_action_block_reason(npc_id)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if not started and failure_reason.is_empty() and (
+		building_system == null
+		or not building_system.has_method("is_upgrade_in_progress")
+		or not bool(building_system.is_upgrade_in_progress(building_id))
+	):
+		failure_reason = "目标建筑没有进行中的升级工程"
+	_log("真实协助升级 %s -> %s：%s" % [
+		npc_id,
+		building_id,
+		_action_command_result_text(npc_id, started, failure_reason)
+	])
 	_show_formal_upgrade_assist_snapshot(npc_id, building_id)
 	if started and _panel != null:
 		_panel.visible = false
@@ -3868,10 +3953,57 @@ func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
 	if action_system == null or not action_system.has_method("debug_assign_heal_assist"):
 		_log("ActionSystem 协助治疗接口不可用。")
 		return
-	var started := bool(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id))
-	_log("真实协助治疗 %s -> %s：%s" % [healer_npc_id, target_npc_id, _ok_text(started)])
+	var started := bool(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id, true))
+	var failure_reason := _npc_action_block_reason(healer_npc_id)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if not started and failure_reason.is_empty() and npc_system != null:
+		var target_state: Dictionary = npc_system.get_npc_state(target_npc_id)
+		if not bool(target_state.get("unconscious", false)):
+			failure_reason = "治疗目标没有昏迷"
+	if started:
+		# The formal route is intentionally launched after the preview/navigation
+		# map has had one physics + process handoff. Do not print a bare success for
+		# the preparatory session before that handoff has actually happened.
+		await get_tree().physics_frame
+		await get_tree().process_frame
+	var route_confirmed := false
+	var active_confirmed := false
+	if started and npc_system != null:
+		var runtime: Dictionary = (
+			action_system.get_runtime_action_snapshot(healer_npc_id)
+			if action_system.has_method("get_runtime_action_snapshot")
+			else {}
+		)
+		active_confirmed = (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == "assist_heal"
+		)
+		var formal: Dictionary = (
+			npc_system.get_formal_healing_approach_snapshot(healer_npc_id)
+			if npc_system.has_method("get_formal_healing_approach_snapshot")
+			else {}
+		)
+		var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+		var healer_state: Dictionary = npc_system.get_npc_state(healer_npc_id)
+		route_confirmed = (
+			bool(session.get("healing_route_started", false))
+			and str(healer_state.get("movement_target", "")) == "healing_target_%s" % target_npc_id
+		)
+	var result_text := _action_command_result_text(healer_npc_id, started, failure_reason)
+	if started:
+		if active_confirmed:
+			result_text = "成功（已到位并开始治疗）"
+		elif route_confirmed:
+			result_text = "成功（已开始前往伤员）"
+		else:
+			result_text = "等待（治疗会话已建立，但路线尚未启动；可再次点击重试）"
+	_log("真实协助治疗 %s -> %s：%s" % [
+		healer_npc_id,
+		target_npc_id,
+		result_text
+	])
 	_show_formal_heal_assist_snapshot(healer_npc_id, target_npc_id)
-	if started and _panel != null:
+	if started and (route_confirmed or active_confirmed) and _panel != null:
 		_panel.visible = false
 
 
@@ -4548,6 +4680,48 @@ func _compact(value: Variant) -> String:
 
 func _ok_text(ok: bool) -> String:
 	return "成功" if ok else "失败"
+
+
+func _action_command_result_text(npc_id: String, ok: bool, fallback_reason: String = "") -> String:
+	if ok:
+		return "成功"
+	var clean_fallback := fallback_reason.strip_edges()
+	if not clean_fallback.is_empty():
+		return "失败（%s）" % clean_fallback
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null:
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		var context: Dictionary = (
+			state.get("last_action_failure_context", {})
+			if state.get("last_action_failure_context", {}) is Dictionary
+			else {}
+		)
+		for key in ["failure_summary", "unavailable_reason", "failure_reason", "reason", "message"]:
+			var detail := str(context.get(key, "")).strip_edges()
+			if not detail.is_empty():
+				return "失败（%s）" % detail
+	return "失败（请查看紧随其后的正式行动快照）"
+
+
+func _npc_action_block_reason(npc_id: String) -> String:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return "NPCSystem 不可用"
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if state.is_empty():
+		return "NPC 不存在"
+	if bool(state.get("unconscious", false)):
+		return "NPC 已昏迷"
+	if bool(state.get("escaped", false)):
+		return "NPC 已逃离驿站"
+	if bool(state.get("first_sleep_summary_active", false)):
+		return "NPC 正在完成首次睡眠总结"
+	if npc_system.has_method("get_npc_behavior_mode_snapshot"):
+		var mode: Dictionary = npc_system.get_npc_behavior_mode_snapshot(npc_id)
+		var behavior_mode := str(mode.get("behavior_mode", "work"))
+		if behavior_mode != "work":
+			return "NPC 当前处于 %s 行为模式，不能执行日常正式行动" % behavior_mode
+	return ""
 
 
 func _log(message: String) -> void:

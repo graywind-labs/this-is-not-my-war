@@ -218,21 +218,77 @@ func _init() -> void:
 		_fail("Recruitment-locked dialogue did not complete after an explicit rejection")
 		return
 
-	# Attack is authoritative immediately and locks cancellation; completion then
-	# stores the conversation session independently from the damage event.
+	# Attack is authoritative immediately and locks cancellation, but it is not a
+	# spoken line. An attack-only session must not create a dialogue transcript.
 	dialogue_events_before = _count_events(memory_system, "blacksmith_01", "dialogue_turn")
+	var damage_events_before := _count_events(memory_system, "blacksmith_01", "damage_taken")
 	start_result = dialog_system.start_player_dialogue("blacksmith_01")
 	var attack_result: Dictionary = dialog_system.attack_target_npc(1, true)
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
+	dialog_system.call("_apply_attack_response", {
+		"ok": false,
+		"message": "fixture leaves the first punishment attack without spoken reply"
+	}, pending)
+	var second_attack_result: Dictionary = dialog_system.attack_target_npc(1, true)
 	var attack_state: Dictionary = dialog_system.get_dialogue_state()
 	dialog_panel.call("_refresh", attack_state)
 	cancel_button = dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var locked_cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
-	if not bool(attack_result.get("ok", false)) or not bool(attack_state.get("attack_committed", false)) or cancel_button == null or not cancel_button.disabled or bool(locked_cancel_result.get("ok", false)):
+	if (
+		not bool(attack_result.get("ok", false))
+		or not bool(second_attack_result.get("ok", false))
+		or not bool(attack_state.get("attack_committed", false))
+		or not (attack_state.get("history", []) as Array).is_empty()
+		or cancel_button == null
+		or not cancel_button.disabled
+		or bool(locked_cancel_result.get("ok", false))
+	):
 		_fail("Attack did not lock the cancel action")
 		return
 	complete_result = dialog_system.complete_displayed_dialogue()
-	if not bool(complete_result.get("ok", false)) or _count_events(memory_system, "blacksmith_01", "dialogue_turn") != dialogue_events_before + 1:
-		_fail("Attack dialogue was not stored on completion")
+	if (
+		not bool(complete_result.get("ok", false))
+		or complete_result.has("dialogue_event")
+		or not complete_result.has("attack_only_plan_reevaluation")
+		or complete_result.has("resume_plan_result")
+		or _count_events(memory_system, "blacksmith_01", "dialogue_turn") != dialogue_events_before
+		or _count_events(memory_system, "blacksmith_01", "damage_taken") != damage_events_before + 2
+	):
+		_fail("Attack-only completion should keep only the independent damage event")
+		return
+
+	# If real speech also occurs, the one completed transcript keeps those words
+	# while excluding the attack action text.
+	dialogue_events_before = _count_events(memory_system, "priest_01", "dialogue_turn")
+	start_result = dialog_system.start_player_dialogue("priest_01")
+	attack_result = dialog_system.attack_target_npc(1, true)
+	pending = dialog_system.get_dialogue_state().get("pending_llm", {})
+	dialog_system.call("_apply_attack_response", {
+		"ok": true,
+		"dialogue": {
+			"replyer_id": "priest_01",
+			"reply_text": "你为何如此？",
+			"emotion": "hurt",
+			"recruitment_result": "none",
+			"wartime_reaction": "none",
+		}
+	}, pending)
+	send_result = dialog_system.send_player_message("这是最后警告。", false, true)
+	complete_result = dialog_system.complete_displayed_dialogue()
+	var mixed_event: Dictionary = complete_result.get("dialogue_event", {}) if complete_result.get("dialogue_event", {}) is Dictionary else {}
+	var mixed_payload: Dictionary = mixed_event.get("payload", {}) if mixed_event.get("payload", {}) is Dictionary else {}
+	var mixed_history: Array = mixed_payload.get("dialogue_text", [])
+	var mixed_summary := str(mixed_event.get("summary", ""))
+	if (
+		not bool(attack_result.get("ok", false))
+		or not bool(send_result.get("ok", false))
+		or mixed_history.size() != 2
+		or mixed_summary.contains("守备官攻击了你以示惩戒")
+		or not mixed_summary.contains("你为何如此？")
+		or not mixed_summary.contains("这是最后警告。")
+		or _count_events(memory_system, "priest_01", "dialogue_turn") != dialogue_events_before + 1
+	):
+		_fail("Mixed attack/dialogue transcript should contain only real spoken lines")
 		return
 
 	# Suspending a draft must actually pause the NPC, hide the window, show both the
@@ -293,14 +349,19 @@ func _init() -> void:
 		return
 
 	# An attack cannot be erased by the same timeout: it auto-completes and keeps the
-	# authoritative attack/session evidence instead of taking the cancel path.
+	# authoritative damage event, but an attack-only session still has no transcript.
 	dialogue_events_before = _count_events(memory_system, "engineer_01", "dialogue_turn")
+	damage_events_before = _count_events(memory_system, "engineer_01", "damage_taken")
 	dialog_system.start_player_dialogue("engineer_01")
 	dialog_system.attack_target_npc(1, true)
 	dialog_system.suspend_displayed_dialogue()
 	dialog_system.call("_on_logical_time_tick", 7200.0, 1.0)
-	if dialog_system.has_active_dialogue() or _count_events(memory_system, "engineer_01", "dialogue_turn") != dialogue_events_before + 1:
-		_fail("Attack-locked suspension timeout did not preserve and complete the session")
+	if (
+		dialog_system.has_active_dialogue()
+		or _count_events(memory_system, "engineer_01", "dialogue_turn") != dialogue_events_before
+		or _count_events(memory_system, "engineer_01", "damage_taken") != damage_events_before + 1
+	):
+		_fail("Attack-locked suspension timeout did not preserve only the damage evidence")
 		return
 
 	print("DIALOGUE_SESSION_LIFECYCLE_VERIFY_OK")

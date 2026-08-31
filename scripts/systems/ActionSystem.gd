@@ -71,6 +71,10 @@ const COMPLETION_POLICY_UNTIL_TARGET_RESOLVED := "until_target_resolved"
 const COMPLETION_POLICY_ONCE_PER_PLAN_HOUR := "once_per_plan_hour"
 const COMPLETION_POLICY_TERMINAL := "terminal"
 const COMPLETION_POLICY_NOT_PLAN_SELECTABLE := "not_plan_selectable"
+const DIRECT_DEBUG_ACTION_TYPES := [
+	"work", "eat", "drink", "sleep", "pray", "clinic_doctor", "clinic_patient",
+	"training_instructor", "training_student"
+]
 const VALID_COMPLETION_POLICIES := {
 	COMPLETION_POLICY_REPEAT_WHILE_PLANNED: true,
 	COMPLETION_POLICY_CONTINUOUS_UNTIL_PLAN_CHANGES: true,
@@ -212,6 +216,20 @@ func get_action_ids() -> Array[String]:
 	var ids: Array[String] = []
 	for action_id in _actions.keys():
 		ids.append(str(action_id))
+	ids.sort()
+	return ids
+
+
+func get_direct_debug_action_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for action_id in _actions.keys():
+		var action: Dictionary = _actions[action_id]
+		if (
+			DIRECT_DEBUG_ACTION_TYPES.has(str(action.get("type", "")))
+			and str(action.get("requires_target", "")).is_empty()
+			and bool(action.get("plan_selectable", true))
+		):
+			ids.append(str(action_id))
 	ids.sort()
 	return ids
 
@@ -423,7 +441,7 @@ func debug_assign_sleep(npc_id: String) -> bool:
 	return debug_assign_action(npc_id, "sleep_in_dormitory")
 
 
-func debug_assign_action(npc_id: String, action_id: String) -> bool:
+func debug_assign_action(npc_id: String, action_id: String, replace_current_action: bool = false) -> bool:
 	if not _actions.has(action_id):
 		push_warning("Cannot assign unknown action: %s" % action_id)
 		return false
@@ -441,9 +459,6 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 		return false
 	if not _can_npc_act(npc_id):
 		return false
-	if _active_actions.has(npc_id):
-		push_warning("NPC is already performing an active action: %s" % npc_id)
-		return false
 
 	var action: Dictionary = _actions[action_id]
 	var eligibility := get_action_eligibility(npc_id, action_id)
@@ -459,6 +474,13 @@ func debug_assign_action(npc_id: String, action_id: String) -> bool:
 	if not bool(eligibility.get("available_now", false)) and not can_wait_for_pending_provider:
 		_fail_action_before_start(npc_id, action, eligibility)
 		return false
+	if get_runtime_action_id(npc_id) == action_id:
+		return true
+	if _has_action_commitment(npc_id):
+		if not replace_current_action:
+			push_warning("NPC is already performing an action: %s" % npc_id)
+			return false
+		interrupt_npc_action(npc_id, "gm_formal_action_replaced")
 
 	var location_id := str(action.get("location_required", ""))
 	var npc_system := _get_npc_system()
@@ -720,7 +742,7 @@ func _uses_formal_spatial_workstation_authority(action: Dictionary) -> bool:
 	return bool(action.get(FORMAL_SPATIAL_ROUTE_FIELD, false))
 
 
-func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
+func debug_assign_repair_assist(npc_id: String, building_id: String, replace_current_action: bool = false) -> bool:
 	if building_id.is_empty() or not _can_npc_act(npc_id):
 		return false
 	if (
@@ -728,10 +750,6 @@ func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
 		and str(_pending_action_targets.get(npc_id, "")) == building_id
 	):
 		return true
-	if _active_actions.has(npc_id):
-		push_warning("NPC is already performing an active action: %s" % npc_id)
-		return false
-
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("is_repair_in_progress"):
 		return false
@@ -745,7 +763,12 @@ func debug_assign_repair_assist(npc_id: String, building_id: String) -> bool:
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(state.get("current_action", "")) == "%s_%s" % [REPAIR_ASSIST_ACTION_ID, building_id]:
 		return true
-	if _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
+	if _active_actions.has(npc_id):
+		if not replace_current_action:
+			push_warning("NPC is already performing an active action: %s" % npc_id)
+			return false
+		interrupt_npc_action(npc_id, "gm_formal_repair_assist_replaced")
+	elif _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
 		interrupt_npc_action(npc_id, "repair_assist_target_replaced", true)
 	if not npc_system.has_method("begin_formal_building_exterior_action"):
 		_update_action_failure(npc_id, "assist_repair_failed_formal_world", {
@@ -815,7 +838,7 @@ func _start_formal_repair_route_after_preview_sync(npc_id: String, building_id: 
 	})
 
 
-func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
+func debug_assign_upgrade_assist(npc_id: String, building_id: String, replace_current_action: bool = false) -> bool:
 	if building_id.is_empty() or not _can_npc_act(npc_id):
 		return false
 	if (
@@ -823,10 +846,6 @@ func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
 		and str(_pending_action_targets.get(npc_id, "")) == building_id
 	):
 		return true
-	if _active_actions.has(npc_id):
-		push_warning("NPC is already performing an active action: %s" % npc_id)
-		return false
-
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("is_upgrade_in_progress"):
 		return false
@@ -840,7 +859,12 @@ func debug_assign_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(state.get("current_action", "")) == "%s_%s" % [UPGRADE_ASSIST_ACTION_ID, building_id]:
 		return true
-	if _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
+	if _active_actions.has(npc_id):
+		if not replace_current_action:
+			push_warning("NPC is already performing an active action: %s" % npc_id)
+			return false
+		interrupt_npc_action(npc_id, "gm_formal_upgrade_assist_replaced")
+	elif _pending_actions.has(npc_id) or str(state.get("current_action", "")).begins_with("assist_"):
 		interrupt_npc_action(npc_id, "upgrade_assist_target_replaced", true)
 	if not npc_system.has_method("begin_formal_building_exterior_action"):
 		_update_action_failure(npc_id, "assist_upgrade_failed_formal_world", {
@@ -910,7 +934,11 @@ func _start_formal_upgrade_route_after_preview_sync(npc_id: String, building_id:
 	})
 
 
-func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
+func debug_assign_heal_assist(
+	healer_npc_id: String,
+	target_npc_id: String,
+	replace_current_action: bool = false
+) -> bool:
 	if healer_npc_id.is_empty() or target_npc_id.is_empty():
 		return false
 	if healer_npc_id == target_npc_id:
@@ -922,6 +950,10 @@ func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> b
 		str(_pending_actions.get(healer_npc_id, "")) == HEALING_ACTION_ID
 		and str(_pending_action_targets.get(healer_npc_id, "")) == target_npc_id
 	):
+		# A repeated command must also recover an accepted session whose deferred
+		# spatial handoff was swallowed by a same-frame post-battle movement state.
+		# The continuation is idempotent once the correct healing route is active.
+		call_deferred("_continue_pending_healing_after_preview_sync", healer_npc_id, target_npc_id)
 		return true
 	if _active_actions.has(healer_npc_id):
 		var current_healing_action: Dictionary = _active_actions.get(healer_npc_id, {})
@@ -930,19 +962,22 @@ func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> b
 			and str(current_healing_action.get("target_npc_id", "")) == target_npc_id
 		):
 			return true
-		push_warning("NPC is already performing an active action: %s" % healer_npc_id)
-		return false
 	if not _is_npc_unconscious(target_npc_id):
 		push_warning("Cannot assist healing because target is not unconscious: %s" % target_npc_id)
 		return false
-	if _pending_actions.has(healer_npc_id):
-		interrupt_npc_action(healer_npc_id, "healing_target_replaced", true)
 	if _get_healing_commitment_count(target_npc_id) >= HEALING_MAX_HELPERS_PER_TARGET:
 		push_warning("Cannot assist healing because target already has max helpers: %s" % target_npc_id)
 		return false
 	if not _can_pay_healing_cost():
 		_update_action_failure(healer_npc_id, "assist_heal_failed_no_money")
 		return false
+	if _pending_actions.has(healer_npc_id):
+		interrupt_npc_action(healer_npc_id, "healing_target_replaced")
+	if _active_actions.has(healer_npc_id):
+		if not replace_current_action:
+			push_warning("NPC is already performing an active action: %s" % healer_npc_id)
+			return false
+		interrupt_npc_action(healer_npc_id, "gm_formal_heal_assist_replaced")
 
 	var npc_system := _get_npc_system()
 	if npc_system == null or not npc_system.has_method("begin_formal_healing_approach"):
@@ -979,6 +1014,7 @@ func debug_assign_heal_assist(healer_npc_id: String, target_npc_id: String) -> b
 		return false
 	assigned_options["formal_target_location_id"] = str(begin_result.get("target_location_id", assigned_options.get("formal_target_location_id", PLAZA_LOCATION_ID)))
 	assigned_options["approach_position"] = begin_result.get("approach_position")
+	assigned_options["direct_world_route"] = bool(begin_result.get("direct_world_route", false))
 	_pending_action_options[healer_npc_id] = assigned_options
 	call_deferred("_continue_pending_healing_after_preview_sync", healer_npc_id, target_npc_id)
 	return true
@@ -1004,7 +1040,8 @@ func assign_npc_dialogue(
 	opening_text: String,
 	soft_round_threshold: int = NPC_DIALOGUE_DEFAULT_SOFT_ROUND_THRESHOLD,
 	require_real_provider: bool = true,
-	plan_context: Dictionary = {}
+	plan_context: Dictionary = {},
+	replace_current_action: bool = false
 ) -> bool:
 	if speaker_npc_id.is_empty() or target_npc_id.is_empty() or speaker_npc_id == target_npc_id:
 		_update_action_failure(speaker_npc_id, "talk_to_npc_failed_invalid_target", {
@@ -1017,8 +1054,6 @@ func assign_npc_dialogue(
 			"action_id": NPC_DIALOGUE_ACTION_ID,
 			"target_npc_id": target_npc_id
 		})
-		return false
-	if _active_actions.has(speaker_npc_id):
 		return false
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null or not dialog_system.has_method("start_autonomous_npc_dialogue"):
@@ -1039,6 +1074,10 @@ func assign_npc_dialogue(
 			"target_npc_id": target_npc_id
 		})
 		return false
+	if _has_action_commitment(speaker_npc_id):
+		if not replace_current_action:
+			return false
+		interrupt_npc_action(speaker_npc_id, "gm_formal_npc_dialogue_replaced")
 
 	var npc_system := _get_npc_system()
 	if npc_system == null:
@@ -1085,18 +1124,9 @@ func report_autonomous_dialogue_action_failure(
 	})
 
 
-func assign_visit_location(npc_id: String, location_id: String) -> bool:
+func assign_visit_location(npc_id: String, location_id: String, replace_current_action: bool = false) -> bool:
 	if npc_id.is_empty() or location_id.is_empty() or not _can_npc_act(npc_id):
 		return false
-	if _active_actions.has(npc_id):
-		return false
-	if _pending_actions.has(npc_id):
-		if (
-			str(_pending_actions.get(npc_id, "")) == VISIT_LOCATION_ACTION_ID
-			and str(_pending_action_targets.get(npc_id, "")) == location_id
-		):
-			return true
-		interrupt_npc_action(npc_id, "visit_target_replaced", true)
 	var action: Dictionary = _actions.get(VISIT_LOCATION_ACTION_ID, {})
 	if action.is_empty() or not _is_enterable_location(location_id):
 		_update_action_failure(npc_id, "visit_location_failed_invalid_target", {
@@ -1104,6 +1134,17 @@ func assign_visit_location(npc_id: String, location_id: String) -> bool:
 			"location_id": location_id
 		})
 		return false
+	if _active_actions.has(npc_id):
+		if not replace_current_action:
+			return false
+		interrupt_npc_action(npc_id, "gm_formal_visit_replaced")
+	if _pending_actions.has(npc_id):
+		if (
+			str(_pending_actions.get(npc_id, "")) == VISIT_LOCATION_ACTION_ID
+			and str(_pending_action_targets.get(npc_id, "")) == location_id
+		):
+			return true
+		interrupt_npc_action(npc_id, "visit_target_replaced", true)
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return false
@@ -1355,6 +1396,14 @@ func interrupt_work_actions_for_building(
 	return interrupted
 
 
+func _has_action_commitment(npc_id: String) -> bool:
+	return (
+		_pending_actions.has(npc_id)
+		or _active_actions.has(npc_id)
+		or _dialogue_reservations.has(npc_id)
+	)
+
+
 func interrupt_npc_action(npc_id: String, reason: String = "interrupted", force: bool = false) -> bool:
 	if _is_first_sleep_summary_locked(npc_id) and not force:
 		return false
@@ -1496,6 +1545,16 @@ func _on_npc_state_changed(npc_id: String) -> void:
 			})
 			return
 		var failed_action_id := str(_pending_actions.get(npc_id, ""))
+		if bool(pending_options.get("formal_healing_authority", false)):
+			var healing_target_npc_id := str(_pending_action_targets.get(npc_id, ""))
+			var npc_system := _get_npc_system()
+			var retry_result: Dictionary = (
+				npc_system.retry_formal_healing_approach(npc_id, healing_target_npc_id)
+				if npc_system != null and npc_system.has_method("retry_formal_healing_approach")
+				else {"ok": false, "reason": "formal_healing_retry_api_missing"}
+			)
+			if bool(retry_result.get("ok", false)):
+				return
 		_release_pending_workstation_reservation(npc_id, pending_options)
 		_pending_actions.erase(npc_id)
 		_pending_action_targets.erase(npc_id)
@@ -1992,9 +2051,29 @@ func _approach_or_start_heal_assist(healer_npc_id: String) -> bool:
 		})
 		return false
 	var state: Dictionary = npc_system.get_npc_state(healer_npc_id)
+	var expected_movement_target := "healing_target_%s" % target_npc_id
 	if str(state.get("current_action", "")).begins_with("moving_to_"):
-		return true
-	if str(state.get("current_location", "")) != target_location_id:
+		var formal_snapshot: Dictionary = (
+			npc_system.get_formal_healing_approach_snapshot(healer_npc_id)
+			if npc_system.has_method("get_formal_healing_approach_snapshot")
+			else {}
+		)
+		var formal_session: Dictionary = (
+			formal_snapshot.get("session", {})
+			if formal_snapshot.get("session", {}) is Dictionary
+			else {}
+		)
+		var owns_current_movement := (
+			str(state.get("movement_target", "")) == expected_movement_target
+			and bool(formal_session.get("healing_route_started", false))
+		)
+		if owns_current_movement:
+			return true
+		# Any other moving_to_* label belongs to an interrupted plan, a combat-end
+		# handoff, or stale state. It must not masquerade as this treatment route;
+		# move_npc_to_formal_healing_target() below supersedes it through the same
+		# formal movement authority.
+	if not bool(options.get("direct_world_route", false)) and str(state.get("current_location", "")) != target_location_id:
 		if (
 			not npc_system.has_method("move_npc_to_formal_location")
 			or not bool(npc_system.move_npc_to_formal_location(healer_npc_id, target_location_id))

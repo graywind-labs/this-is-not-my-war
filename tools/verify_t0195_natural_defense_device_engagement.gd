@@ -57,17 +57,25 @@ func _run_verification() -> void:
 	time_system.set_paused(false)
 
 	var first_device_damage_frame := -1
+	var device_damage_frames: Array[int] = []
+	var previous_device_hp := device_hp_before
 	var target_device_frames := 0
 	var target_gate_frames := 0
 	var minimum_attack_position_distance := INF
 	var closest_enemy_id := ""
 	var action_counts: Dictionary = {}
 	var last_attack_positions: Dictionary = {}
+	var observed_defense_waiter_reasons: Dictionary = {}
 	for frame in range(SAMPLE_FRAMES):
 		await physics_frame
 		var deployment: Dictionary = device_system.get_deployment(deployment_id)
-		if deployment.is_empty() or int(deployment.get("hp", device_hp_before)) < device_hp_before:
-			first_device_damage_frame = frame
+		var current_device_hp := int(deployment.get("hp", 0)) if not deployment.is_empty() else 0
+		if current_device_hp < previous_device_hp:
+			device_damage_frames.append(frame)
+			previous_device_hp = current_device_hp
+			if first_device_damage_frame < 0:
+				first_device_damage_frame = frame
+		if device_damage_frames.size() >= 3 or deployment.is_empty():
 			break
 		for enemy_id in combat_system.get_active_enemy_ids():
 			var enemy: Dictionary = combat_system.get_enemy(enemy_id)
@@ -79,6 +87,13 @@ func _run_verification() -> void:
 				target_gate_frames += 1
 			var action := str(enemy.get("current_action", ""))
 			action_counts[action] = int(action_counts.get(action, 0)) + 1
+			if action == "waiting_for_attack_position" and target_id == deployment_id:
+				observed_defense_waiter_reasons[enemy_id] = {
+					"enemy_id": enemy_id,
+					"reason": str(target.get("attack_position_wait_reason", "")),
+					"movement_policy": str(target.get("attack_position_wait_movement_policy", "")),
+					"desired_attack_position_id": str(target.get("attack_position_wait_target_id", ""))
+				}
 			if target.get("attack_position", null) is Vector3:
 				var distance := Vector2((enemy.get("position", Vector3.ZERO) as Vector3).x, (enemy.get("position", Vector3.ZERO) as Vector3).z).distance_to(Vector2((target.get("attack_position") as Vector3).x, (target.get("attack_position") as Vector3).z))
 				if distance < minimum_attack_position_distance:
@@ -98,6 +113,8 @@ func _run_verification() -> void:
 	var targeting_metrics := (combat_system.debug_get_enemy_targeting_snapshot().get("metrics", {}) as Dictionary).duplicate(true)
 	var attack_position_snapshot: Dictionary = combat_system.debug_get_enemy_attack_position_snapshot()
 	var defense_waiter_reasons: Array[Dictionary] = []
+	for observed in observed_defense_waiter_reasons.values():
+		defense_waiter_reasons.append((observed as Dictionary).duplicate(true))
 	var full_defense_waiter_count := 0
 	for raw_waiter in attack_position_snapshot.get("waiters", []):
 		var waiter := raw_waiter as Dictionary
@@ -115,7 +132,8 @@ func _run_verification() -> void:
 			waiter_target
 		)
 		var waiter_reason: String = str(waiter_opportunity.get("reason", ""))
-		defense_waiter_reasons.append({"enemy_id": waiter_enemy_id, "reason": waiter_reason})
+		if not observed_defense_waiter_reasons.has(waiter_enemy_id):
+			defense_waiter_reasons.append({"enemy_id": waiter_enemy_id, "reason": waiter_reason})
 		if waiter_reason == "full":
 			full_defense_waiter_count += 1
 	var diagnostics := {
@@ -125,6 +143,7 @@ func _run_verification() -> void:
 		"gate_hp_before": gate_hp_before,
 		"gate_hp_after": gate_hp_after,
 		"first_device_damage_frame": first_device_damage_frame,
+		"device_damage_frames": device_damage_frames,
 		"target_device_frames": target_device_frames,
 		"target_gate_frames": target_gate_frames,
 		"minimum_attack_position_distance": minimum_attack_position_distance,
@@ -139,10 +158,14 @@ func _run_verification() -> void:
 	}
 	print("T0195_NATURAL_ENGAGEMENT_DIAGNOSTICS %s" % JSON.stringify(diagnostics))
 	_check(target_device_frames > 0, "T0195 enemies never selected the defense device: %s" % diagnostics)
-	_check(target_gate_frames > 0, "T0195 full defense positions did not disappear into the building fallback: %s" % diagnostics)
-	_check(int(targeting_metrics.get("fixed_target_full_skips", 0)) > 0, "T0195 fixed-target full skip metric did not advance: %s" % diagnostics)
-	_check(full_defense_waiter_count == 0, "T0195 full defense recreated the removed strict capacity queue: %s" % diagnostics)
+	_check(target_gate_frames == 0, "T0195/T0207 in-transit reservations prematurely redirected enemies to the gate: %s" % diagnostics)
+	_check(int(targeting_metrics.get("fixed_target_full_skips", 0)) == 0, "T0195/T0207 reserved attack positions were counted as actual full occupancy: %s" % diagnostics)
+	var guided_schema := str(attack_position_snapshot.get("schema", "")) == "enemy_attack_guidance_zones_v2"
+	_check(defense_waiter_reasons.is_empty() if guided_schema else not defense_waiter_reasons.is_empty() and full_defense_waiter_count == 0, "T0195/T0243 defense waiter contract mismatch: %s" % diagnostics)
 	_check(first_device_damage_frame >= 0 and device_hp_after < device_hp_before, "T0195 enemies selected defense but never naturally damaged it: %s" % diagnostics)
+	_check(device_damage_frames.size() >= 3, "T0195 natural melee stopped applying damage after the first device hit: %s" % diagnostics)
+	if not guided_schema:
+		_check(minimum_attack_position_distance <= 0.08, "T0195 melee navigation stopped at the ordinary arrival radius instead of the precise contact radius: %s" % diagnostics)
 	combat_system.clear_spawned_enemies()
 	_finish()
 

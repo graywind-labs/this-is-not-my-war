@@ -804,17 +804,12 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 	var damage_event: Dictionary = damage_result.get("damage_event", {}) if (damage_result.get("damage_event", {}) is Dictionary) else {}
 	var attack_event_id := str(damage_event.get("event_id", damage_event.get("id", "")))
 	_active_dialogue["last_attack_event_id"] = attack_event_id
-	var attack_turn := _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
 	var history_before: Array = _active_dialogue.get("history", []).duplicate(true)
-	history_before.append(attack_turn)
-	_active_dialogue["history"] = history_before.duplicate(true)
-	_active_dialogue["last_player_text"] = GUARD_ATTACK_EVENT_TEXT
 	var pending := {
 		"kind": "guard_attack",
 		"dialogue_kind": dialogue_kind,
 		"target_npc_id": target_npc_id,
 		"npc_name": npc_name,
-		"attack_turn": attack_turn,
 		"attack_event_id": attack_event_id,
 		"next_round": next_round,
 		"damage": damage_result
@@ -890,11 +885,6 @@ func _apply_escape_attack_without_reply(pending: Dictionary) -> Dictionary:
 			"damage": pending.get("damage", {}),
 			"dialogue_state": {}
 		}
-	var attack_turn: Dictionary = pending.get("attack_turn", {})
-	if attack_turn.is_empty():
-		var target_npc_id := str(pending.get("target_npc_id", _active_dialogue.get("target_npc_id", "")))
-		var npc_name := str(pending.get("npc_name", _active_dialogue.get("target_npc_name", target_npc_id)))
-		attack_turn = _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["waiting"] = false
 	_active_dialogue.erase("pending_llm")
@@ -959,9 +949,6 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 
 	var target_npc_id := str(pending.get("target_npc_id", _active_dialogue.get("target_npc_id", "")))
 	var npc_name := str(pending.get("npc_name", _active_dialogue.get("target_npc_name", target_npc_id)))
-	var attack_turn: Dictionary = pending.get("attack_turn", {})
-	if attack_turn.is_empty():
-		attack_turn = _make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, target_npc_id, npc_name, GUARD_ATTACK_EVENT_TEXT)
 	var attack_event_id := str(pending.get("attack_event_id", ""))
 	var npc_turn := _make_history_turn(target_npc_id, npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
 	if (
@@ -1638,6 +1625,7 @@ func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -
 	dialogue_ended.emit(ended_state)
 	var escape_resume_result := _resume_escape_dialogue_if_needed(ended_state, reason)
 	var plan_judgement_queued := false
+	var attack_only_plan_reevaluation: Dictionary = {}
 	if not suppress_plan_reevaluation:
 		var judgement_state := ended_state.duplicate(true)
 		if suppress_dialogue_resume:
@@ -1647,6 +1635,7 @@ func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -
 		plan_judgement_queued = _queue_dialogue_plan_judgements(judgement_state, [])
 		if not plan_judgement_queued:
 			_report_failed_autonomous_dialogue_action_if_needed(ended_state, reason)
+			attack_only_plan_reevaluation = _request_attack_only_plan_reevaluation(ended_state)
 	var result := {"ok": true, "dialogue_state": ended_state}
 	if not dialogue_event.is_empty():
 		result["dialogue_event"] = dialogue_event
@@ -1656,7 +1645,13 @@ func end_dialogue(reason: String = "dialogue_ended", options: Dictionary = {}) -
 		result["escape_resume_result"] = escape_resume_result
 	if plan_judgement_queued:
 		result["plan_judgement_queued"] = true
-	if not plan_judgement_queued and not suppress_dialogue_resume:
+	if not attack_only_plan_reevaluation.is_empty():
+		result["attack_only_plan_reevaluation"] = attack_only_plan_reevaluation
+	if (
+		not plan_judgement_queued
+		and attack_only_plan_reevaluation.is_empty()
+		and not suppress_dialogue_resume
+	):
 		var resume_plan_result := _resume_existing_player_plan_after_dialogue(ended_state)
 		if not resume_plan_result.is_empty():
 			result["resume_plan_result"] = resume_plan_result
@@ -1963,6 +1958,22 @@ func _queue_dialogue_plan_judgements(
 	return true
 
 
+func _request_attack_only_plan_reevaluation(ended_state: Dictionary) -> Dictionary:
+	var history: Variant = ended_state.get("history", [])
+	if (
+		not _is_player_controlled_dialogue(ended_state)
+		or not bool(ended_state.get("attack_committed", false))
+		or not history is Array
+		or not (history as Array).is_empty()
+	):
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var npc_id := str(ended_state.get("target_npc_id", ""))
+	if npc_system == null or npc_id.is_empty() or not npc_system.has_method("request_plan_reevaluation"):
+		return {}
+	return npc_system.request_plan_reevaluation(npc_id, "guard_attack")
+
+
 func _report_failed_autonomous_dialogue_action_if_needed(
 	ended_state: Dictionary,
 	reason: String
@@ -2130,39 +2141,7 @@ func _build_completed_dialogue_history_for_judgement(ended_state: Dictionary) ->
 		has_completed_exchange = not history.is_empty()
 	if not has_completed_exchange:
 		return []
-	if bool(ended_state.get("attack_committed", false)) and not _history_contains_guard_attack(history):
-		var pending: Dictionary = (
-			ended_state.get("pending_llm", {})
-			if ended_state.get("pending_llm", {}) is Dictionary
-			else {}
-		)
-		var attack_turn: Dictionary = (
-			pending.get("attack_turn", {})
-			if pending.get("attack_turn", {}) is Dictionary
-			else {}
-		)
-		if attack_turn.is_empty():
-			attack_turn = {
-				"speaker_id": GUARD_OFFICER_ID,
-				"speaker_name": GUARD_OFFICER_NAME,
-				"listener_id": str(ended_state.get("target_npc_id", "")),
-				"listener_name": str(ended_state.get("target_npc_name", "NPC")),
-				"text": GUARD_ATTACK_EVENT_TEXT,
-				"visibility": str(ended_state.get("visibility", "private"))
-			}
-		history.append(attack_turn)
 	return history
-
-
-func _history_contains_guard_attack(history: Array) -> bool:
-	for raw_turn in history:
-		if (
-			raw_turn is Dictionary
-			and str((raw_turn as Dictionary).get("speaker_id", "")) == GUARD_OFFICER_ID
-			and str((raw_turn as Dictionary).get("text", "")) == GUARD_ATTACK_EVENT_TEXT
-		):
-			return true
-	return false
 
 
 func _resume_existing_player_plan_after_dialogue(ended_state: Dictionary) -> Dictionary:
@@ -2709,7 +2688,7 @@ func set_dialogue_visibility(visibility: String) -> Dictionary:
 		else:
 			_active_dialogue = dialogue_state
 		dialogue_updated.emit(get_display_dialogue_state())
-		var message := "逃离挽留必须保持同地点公开。" if str(dialogue_state.get("dialogue_kind", "")) == ESCAPE_INTERVENTION_DIALOGUE_KIND else "战时对话必须保持同地点公开。"
+		var message := "逃离挽留必须公开。" if str(dialogue_state.get("dialogue_kind", "")) == ESCAPE_INTERVENTION_DIALOGUE_KIND else "战时对话必须公开。"
 		return _failure("visibility_forced_local_public", message)
 	if bool(dialogue_state.get("waiting", false)) or int(dialogue_state.get("current_round", 0)) > 0:
 		return _failure("visibility_locked", "对话开始发送后不能修改公开性。")

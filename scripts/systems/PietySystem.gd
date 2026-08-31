@@ -23,6 +23,7 @@ var _meteor_visuals: Dictionary = {}
 var _burn_visuals: Dictionary = {}
 var _landed_meteor_visuals: Dictionary = {}
 var _permanent_crater_visuals: Dictionary = {}
+var _crater_lifetimes: Dictionary = {}
 var _last_generation_result: Dictionary = {}
 var _last_cast_result: Dictionary = {}
 var _last_impact_result: Dictionary = {}
@@ -253,6 +254,7 @@ func get_piety_snapshot() -> Dictionary:
 		"pending_meteors": _serialize_effect_map(_pending_meteors),
 		"burn_zones": _serialize_effect_map(_burn_zones),
 		"landed_meteors": _get_landed_meteor_snapshots(),
+		"craters": _get_crater_snapshots(),
 		"permanent_craters": _get_permanent_crater_snapshots(),
 		"last_generation_result": _last_generation_result.duplicate(true),
 		"last_cast_result": _last_cast_result.duplicate(true),
@@ -281,6 +283,7 @@ func debug_advance_effects(game_seconds: float) -> Dictionary:
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
 	if game_delta_seconds <= 0.0:
 		return
+	_advance_crater_lifetimes(game_delta_seconds)
 	_advance_burn_zones(_get_combat_action_seconds(game_delta_seconds))
 
 
@@ -367,6 +370,16 @@ func _resolve_meteor_impact(state: Dictionary) -> void:
 		visual.impact_at(state.get("target_position", Vector3.ZERO))
 		_landed_meteor_visuals[cast_id] = visual
 		_permanent_crater_visuals[cast_id] = visual
+		_crater_lifetimes[cast_id] = {
+			"cast_id": cast_id,
+			"elapsed_game_seconds": 0.0,
+			"duration_game_seconds": maxf(
+				1.0,
+				float(meteor.get("crater_lifetime_game_seconds", 86400.0))
+			),
+			"fade_progress": 0.0,
+			"opacity": 1.0,
+		}
 	_meteor_visuals.erase(cast_id)
 	_request_camera_shake(
 		maxf(0.1, float(meteor.get("impact_camera_shake_duration_seconds", 2.0))),
@@ -505,6 +518,7 @@ func _load_config() -> void:
 				"body_radius": 4.2,
 				"friendly_displacement_margin": 0.12,
 				"crater_radius": 4.8,
+				"crater_lifetime_game_seconds": 86400.0,
 				"descent_camera_shake_amplitude": 0.1,
 				"descent_camera_shake_frequency": 9.0,
 				"impact_camera_shake_duration_seconds": 2.0,
@@ -666,9 +680,17 @@ func _remove_meteor_visual(cast_id: String) -> void:
 
 
 func _remove_landed_meteor_bodies() -> void:
-	for visual in _landed_meteor_visuals.values():
+	for raw_cast_id in _landed_meteor_visuals.keys():
+		var cast_id := str(raw_cast_id)
+		var visual := _landed_meteor_visuals.get(raw_cast_id, null) as Node
 		if visual is Node and is_instance_valid(visual) and visual.has_method("remove_landed_body"):
 			visual.remove_landed_body()
+		if (
+			visual != null
+			and is_instance_valid(visual)
+			and not _permanent_crater_visuals.has(cast_id)
+		):
+			visual.queue_free()
 	_landed_meteor_visuals.clear()
 
 
@@ -687,12 +709,16 @@ func _clear_effect_visuals() -> void:
 		if visual is Node and is_instance_valid(visual):
 			(visual as Node).queue_free()
 	for visual in _permanent_crater_visuals.values():
-		if visual is Node and is_instance_valid(visual):
+		if visual is Node and is_instance_valid(visual) and not visual.is_queued_for_deletion():
+			(visual as Node).queue_free()
+	for visual in _landed_meteor_visuals.values():
+		if visual is Node and is_instance_valid(visual) and not visual.is_queued_for_deletion():
 			(visual as Node).queue_free()
 	_meteor_visuals.clear()
 	_burn_visuals.clear()
 	_landed_meteor_visuals.clear()
 	_permanent_crater_visuals.clear()
+	_crater_lifetimes.clear()
 
 
 func _get_combat_action_seconds(game_seconds: float) -> float:
@@ -773,13 +799,19 @@ func _get_landed_meteor_snapshots() -> Array[Dictionary]:
 	return result
 
 
-func _get_permanent_crater_snapshots() -> Array[Dictionary]:
+func _get_crater_snapshots() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for raw_cast_id in _permanent_crater_visuals.keys():
+		var cast_id := str(raw_cast_id)
 		var visual := _permanent_crater_visuals.get(raw_cast_id, null) as Node
+		var lifetime: Dictionary = _crater_lifetimes.get(cast_id, {})
 		result.append({
-			"cast_id": str(raw_cast_id),
+			"cast_id": cast_id,
 			"present": visual != null and is_instance_valid(visual),
+			"elapsed_game_seconds": float(lifetime.get("elapsed_game_seconds", 0.0)),
+			"duration_game_seconds": float(lifetime.get("duration_game_seconds", 0.0)),
+			"fade_progress": float(lifetime.get("fade_progress", 0.0)),
+			"opacity": float(lifetime.get("opacity", 1.0)),
 			"presentation": (
 				visual.get_presentation_snapshot()
 				if visual != null and visual.has_method("get_presentation_snapshot")
@@ -787,6 +819,50 @@ func _get_permanent_crater_snapshots() -> Array[Dictionary]:
 			)
 		})
 	return result
+
+
+func _get_permanent_crater_snapshots() -> Array[Dictionary]:
+	# Compatibility alias for T0165-era GM/tests. Entries now expire after 24 game hours.
+	return _get_crater_snapshots()
+
+
+func _advance_crater_lifetimes(game_delta_seconds: float) -> void:
+	if game_delta_seconds <= 0.0 or _crater_lifetimes.is_empty():
+		return
+	for raw_cast_id in _crater_lifetimes.keys():
+		var cast_id := str(raw_cast_id)
+		if not _crater_lifetimes.has(cast_id):
+			continue
+		var lifetime: Dictionary = _crater_lifetimes.get(cast_id, {})
+		var duration := maxf(1.0, float(lifetime.get("duration_game_seconds", 86400.0)))
+		var elapsed := minf(
+			duration,
+			float(lifetime.get("elapsed_game_seconds", 0.0)) + game_delta_seconds
+		)
+		var fade_progress := clampf(elapsed / duration, 0.0, 1.0)
+		lifetime["elapsed_game_seconds"] = elapsed
+		lifetime["fade_progress"] = fade_progress
+		lifetime["opacity"] = 1.0 - fade_progress
+		_crater_lifetimes[cast_id] = lifetime
+		var visual := _permanent_crater_visuals.get(cast_id, null) as Node
+		if visual != null and is_instance_valid(visual) and visual.has_method("set_crater_fade_progress"):
+			visual.set_crater_fade_progress(fade_progress)
+		if elapsed >= duration:
+			_remove_expired_crater(cast_id)
+
+
+func _remove_expired_crater(cast_id: String) -> void:
+	var visual := _permanent_crater_visuals.get(cast_id, null) as Node
+	if visual != null and is_instance_valid(visual) and visual.has_method("remove_crater"):
+		visual.remove_crater()
+	_permanent_crater_visuals.erase(cast_id)
+	_crater_lifetimes.erase(cast_id)
+	if (
+		visual != null
+		and is_instance_valid(visual)
+		and not _landed_meteor_visuals.has(cast_id)
+	):
+		visual.queue_free()
 
 
 func _make_ground_flame_particles(index: int) -> GPUParticles3D:

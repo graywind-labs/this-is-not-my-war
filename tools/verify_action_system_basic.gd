@@ -234,16 +234,6 @@ func _init() -> void:
 
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(engineer_id, 80.0)
-	target_result = crafting_system.set_target("workshop", "craft_arrow_bundle", true)
-	if bool(target_result.get("ok", false)) or str(target_result.get("reason", "")) != "recipe_unavailable":
-		push_error("Arrow bundles should stay in data but be unavailable as a crafting target")
-		quit(1)
-		return
-	if crafting_system.get_recipe_ids_for_building("workshop").has("craft_arrow_bundle"):
-		push_error("Unavailable arrow-bundle recipe leaked into the workshop target list")
-		quit(1)
-		return
-
 	var wall_before: Dictionary = building_system.get_building("wall")
 	var wall_max_hp := int(wall_before.get("max_hp", 0))
 	# Formal travel consumes real physics frames. Freeze automatic simulation so

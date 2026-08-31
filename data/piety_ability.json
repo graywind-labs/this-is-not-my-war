@@ -23,6 +23,7 @@
     "body_radius": 4.2,
     "friendly_displacement_margin": 0.12,
     "crater_radius": 4.8,
+    "crater_lifetime_game_seconds": 86400.0,
     "descent_camera_shake_amplitude": 0.1,
     "descent_camera_shake_frequency": 9.0,
     "impact_camera_shake_duration_seconds": 2.0,

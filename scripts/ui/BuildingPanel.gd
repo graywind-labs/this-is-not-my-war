@@ -16,6 +16,11 @@ const PANEL_CONTENT_VERTICAL_PADDING := 24.0
 const PANEL_LAYOUT_SETTLE_FRAME_LIMIT := 4
 const HORSE_LIST_MIN_HEIGHT := 120.0
 const HORSE_LIST_MAX_HEIGHT := 620.0
+const HORSE_NORMAL_PROGRESS_FILL_COLOR := Color("#71865a")
+const HORSE_DANGER_PROGRESS_FILL_COLOR := Color("#a7433b")
+const HORSE_DANGER_LABEL_COLOR := Color("#dc6157")
+const HORSE_SATIETY_DANGER_RATIO := 0.20
+const HORSE_BASE_HP_DANGER_RATIO := 0.30
 const WORKSTATION_TYPE_LABELS := {
 	"rest": "床位",
 	"cook": "厨师",
@@ -73,6 +78,8 @@ var _horse_summary_label: Label
 var _horse_scroll: ScrollContainer
 var _horse_list: VBoxContainer
 var _horse_refresh_queued := false
+var _horse_normal_progress_fill_style: StyleBoxFlat
+var _horse_danger_progress_fill_style: StyleBoxFlat
 var _panel_scroll: ScrollContainer
 var _panel_fit_queued := false
 var _layout_viewport_override := Vector2.ZERO
@@ -117,6 +124,8 @@ func _ready() -> void:
 		if event_bus.has_signal("time_scale_changed"):
 			event_bus.time_scale_changed.connect(_on_time_scale_changed)
 		event_bus.npc_clicked.connect(_on_npc_clicked)
+		if event_bus.has_signal("enemy_clicked"):
+			event_bus.enemy_clicked.connect(_on_npc_clicked)
 		if event_bus.has_signal("horse_clicked"):
 			event_bus.horse_clicked.connect(_on_horse_clicked)
 		if event_bus.has_signal("defense_device_clicked"):
@@ -442,6 +451,7 @@ func show_building(building_id: String) -> void:
 	]
 	workstation_label.text = _format_workstations(building.get("workstations", []))
 	location_label.text = _format_location_placeholder(building)
+	location_label.visible = not location_label.text.is_empty()
 	_update_action_buttons(building_system, building_id, building)
 	_refresh_warehouse_capacity_label()
 	_refresh_crafting_section()
@@ -504,17 +514,13 @@ func _build_crafting_section() -> void:
 	content.move_child(_crafting_section, repair_button.get_parent().get_index())
 
 	_crafting_section.add_child(HSeparator.new())
-	var title := Label.new()
-	title.text = "制造项目"
-	title.add_theme_font_size_override("font_size", 16)
-	_crafting_section.add_child(title)
 
 	var target_row := HBoxContainer.new()
 	target_row.add_theme_constant_override("separation", 6)
 	_crafting_section.add_child(target_row)
 	var target_label := Label.new()
-	target_label.text = "目标："
-	target_label.custom_minimum_size.x = 54.0
+	target_label.text = "制造目标："
+	target_label.custom_minimum_size.x = 78.0
 	target_row.add_child(target_label)
 	_crafting_target_select = OptionButton.new()
 	_crafting_target_select.name = "CraftingTargetSelect"
@@ -780,6 +786,8 @@ func _refresh_horse_section() -> void:
 	for raw_horse_id in horse_system.get_horse_ids():
 		var horse_id := str(raw_horse_id)
 		var horse: Dictionary = horse_system.get_horse_snapshot(horse_id) if horse_system.has_method("get_horse_snapshot") else {}
+		if not bool(horse.get("alive", true)) or str(horse.get("location", "stable")) != "stable":
+			continue
 		_add_horse_card(horse)
 	call_deferred("_fit_horse_list_and_panel")
 
@@ -831,11 +839,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 	margin.add_child(content)
 	var horse_id := str(horse.get("horse_id", horse.get("id", "")))
 	var assigned_npc_id := str(horse.get("assigned_npc_id", ""))
-	var location := str(horse.get("location", "stable"))
 	var feeding: Dictionary = horse.get("feeding", {}) if horse.get("feeding", {}) is Dictionary else {}
 	var alive := bool(horse.get("alive", true))
 	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马"]
-	status_parts.append(_format_horse_location(location))
 	if bool(feeding.get("active", false)):
 		status_parts.append("进食 %d%%" % int(round(float(feeding.get("progress", 0.0)) * 100.0)))
 	elif bool(feeding.get("waiting_for_grain", false)):
@@ -843,12 +849,11 @@ func _add_horse_card(horse: Dictionary) -> void:
 	if bool(horse.get("recovering", false)):
 		status_parts.append("缓慢恢复")
 	var header := Label.new()
-	header.text = "%s（%s）｜%s｜%s｜马槽 %s" % [
+	header.text = "%s｜%s｜%s｜马槽 %s" % [
 		str(horse.get("name", horse_id)),
-		horse_id,
 		str(horse.get("coat_name", "未知毛色")),
 		"、".join(status_parts),
-		str(horse.get("stable_slot_id", "已释放"))
+		_format_stable_slot_id(str(horse.get("stable_slot_id", "")))
 	]
 	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(header)
@@ -861,7 +866,8 @@ func _add_horse_card(horse: Dictionary) -> void:
 		"基础 HP %.1f / %.1f" % [base_hp, natural_max_hp],
 		base_hp,
 		maxf(1.0, natural_max_hp),
-		"HorseBaseHP_%s" % horse_id
+		"HorseBaseHP_%s" % horse_id,
+		HORSE_BASE_HP_DANGER_RATIO
 	)
 	_add_horse_progress(
 		content,
@@ -875,7 +881,8 @@ func _add_horse_card(horse: Dictionary) -> void:
 		"饱食 %.1f / %.1f" % [float(horse.get("satiety", 0.0)), float(horse.get("max_satiety", 0.0))],
 		float(horse.get("satiety", 0.0)),
 		maxf(1.0, float(horse.get("max_satiety", 0.0))),
-		"HorseSatiety_%s" % horse_id
+		"HorseSatiety_%s" % horse_id,
+		HORSE_SATIETY_DANGER_RATIO
 	)
 	_add_horse_progress(
 		content,
@@ -893,8 +900,6 @@ func _add_horse_card(horse: Dictionary) -> void:
 		breeding_text += "（冷却 %s）" % _format_horse_cooldown(cooldown_seconds)
 	elif not bool(horse.get("is_adult", false)):
 		breeding_text += "（未成年）"
-	elif location != "stable":
-		breeding_text += "（离厩暂停）"
 	_add_horse_progress(
 		content,
 		breeding_text,
@@ -910,20 +915,16 @@ func _add_horse_card(horse: Dictionary) -> void:
 	content.add_child(assignment)
 
 
-func _format_horse_location(location: String) -> String:
-	match location:
-		"stable":
-			return "在厩"
-		"approaching_rider":
-			return "奔向骑手"
-		"ridden":
-			return "骑乘中"
-		"returning_stable":
-			return "返厩中"
-		"dead":
-			return "已阵亡"
-		_:
-			return "位置未知"
+func _format_stable_slot_id(slot_id: String) -> String:
+	var normalized := slot_id.strip_edges()
+	if normalized.is_empty() or normalized == "已释放":
+		return "无"
+	var parts := normalized.split("_", false)
+	if not parts.is_empty():
+		var suffix := str(parts[parts.size() - 1])
+		if suffix.is_valid_int():
+			return "%d号" % int(suffix)
+	return "未知"
 
 
 func _add_horse_progress(
@@ -931,7 +932,8 @@ func _add_horse_progress(
 	tooltip: String,
 	value: float,
 	max_value: float,
-	control_name: String = ""
+	control_name: String = "",
+	danger_below_ratio: float = -1.0
 ) -> void:
 	var progress := ProgressBar.new()
 	if not control_name.is_empty():
@@ -942,13 +944,37 @@ func _add_horse_progress(
 	progress.value = clampf(value, 0.0, max_value)
 	progress.show_percentage = false
 	progress.tooltip_text = tooltip
-	parent.add_child(progress)
+	var ratio := clampf(value / maxf(0.001, max_value), 0.0, 1.0)
+	var danger := danger_below_ratio >= 0.0 and ratio < danger_below_ratio
+	progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(danger))
+	progress.set_meta("danger_state", danger)
 	var label := Label.new()
 	if not control_name.is_empty():
 		label.name = "%sLabel" % control_name
 	label.text = tooltip
 	label.add_theme_font_size_override("font_size", 11)
+	if danger:
+		label.add_theme_color_override("font_color", HORSE_DANGER_LABEL_COLOR)
 	parent.add_child(label)
+	parent.add_child(progress)
+
+
+func _get_horse_progress_fill_style(danger: bool) -> StyleBoxFlat:
+	if _horse_normal_progress_fill_style == null:
+		_horse_normal_progress_fill_style = _make_horse_progress_fill_style(HORSE_NORMAL_PROGRESS_FILL_COLOR)
+	if _horse_danger_progress_fill_style == null:
+		_horse_danger_progress_fill_style = _make_horse_progress_fill_style(HORSE_DANGER_PROGRESS_FILL_COLOR)
+	return _horse_danger_progress_fill_style if danger else _horse_normal_progress_fill_style
+
+
+func _make_horse_progress_fill_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 3
+	style.corner_radius_top_right = 3
+	style.corner_radius_bottom_right = 3
+	style.corner_radius_bottom_left = 3
+	return style
 
 
 func _format_horse_cooldown(seconds: float) -> String:
@@ -1242,17 +1268,6 @@ func _format_location_placeholder(building: Dictionary) -> String:
 	var upgrade_status: Dictionary = building.get("upgrade_status", {})
 	var lines: Array[String] = []
 
-	var condition := str(building.get("condition", "unknown"))
-	var condition_label: String = str({
-		"intact": "完好",
-		"damaged": "受损",
-		"repairing": "正在修复",
-		"upgrading": "正在升级"
-	}.get(condition, "未知"))
-	lines.append("建筑状态：%s" % condition_label)
-	lines.append("当前运行效率：%d%%" % int(round(
-		float(building.get("operational_efficiency_multiplier", building.get("operational_efficiency", 1.0))) * 100.0
-	)))
 	if not bool(building.get("is_enterable", true)) and bool(building.get("has_enterable_interior", false)):
 		lines.append("内部状态：封闭，无法进入或使用位置")
 

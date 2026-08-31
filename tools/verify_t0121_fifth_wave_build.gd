@@ -107,8 +107,8 @@ func _init() -> void:
 	var deployments := [
 		["wall_ballista", "wall_slot_01"],
 		["wall_arrow_tower", "wall_slot_02"],
-		["wall_arrow_tower", "main_hall_slot_01"],
-		["wall_arrow_tower", "main_hall_slot_02"]
+		["wall_arrow_tower", "main_hall_slot_03"],
+		["wall_arrow_tower", "main_hall_slot_04"]
 	]
 	for deployment in deployments:
 		var deploy_result: Dictionary = device_system.deploy_device(str(deployment[0]), str(deployment[1]))

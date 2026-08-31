@@ -518,16 +518,22 @@ func _sync_horse_presentation() -> void:
 		if visual.has_method("refresh_horse"):
 			visual.refresh_horse(horse)
 		visual.visible = true
-		_set_horse_animation(visual, true)
+		var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
+		var horse_stationary := bool(movement.get("horse_stationary", false))
+		_set_horse_animation(visual, not horse_stationary)
 		var world_position: Variant = horse.get("world_position", null)
 		if world_position is Vector3:
 			visual.global_position = world_position
-		var movement: Dictionary = horse.get("movement_state", {}) if horse.get("movement_state", {}) is Dictionary else {}
-		var target_position: Variant = movement.get("target_position", null)
-		if target_position is Vector3:
-			var direction: Vector3 = target_position - visual.global_position
-			if direction.length_squared() > 0.001:
-				visual.look_at(visual.global_position + direction, Vector3.UP, true)
+		var movement_velocity: Variant = movement.get("velocity", null)
+		var direction := Vector3.ZERO
+		if movement_velocity is Vector3:
+			direction = movement_velocity
+		if direction.length_squared() <= 0.001:
+			var target_position: Variant = movement.get("target_position", null)
+			if target_position is Vector3:
+				direction = target_position - visual.global_position
+		if not horse_stationary and direction.length_squared() > 0.001:
+			visual.look_at(visual.global_position + direction, Vector3.UP, true)
 		visual.set_meta("horse_anchor_id", "")
 		visual.set_meta("stable_slot_id", str(horse.get("stable_slot_id", "")))
 		visual.set_meta("source_location", str(horse.get("location", "")))
@@ -575,6 +581,8 @@ func get_horse_presentation_snapshot(horse_id: String) -> Dictionary:
 	var snapshot: Dictionary = visual.debug_get_snapshot() if visual.has_method("debug_get_snapshot") else {}
 	snapshot["horse_anchor_id"] = str(visual.get_meta("horse_anchor_id", ""))
 	snapshot["source_location"] = str(visual.get_meta("source_location", ""))
+	snapshot["moving_animation"] = bool(visual.get_meta("moving_animation", false))
+	snapshot["motion_animation"] = str(visual.get_meta("motion_animation", ""))
 	var horse_scale := maxf(0.58, visual.scale.y)
 	snapshot["focus_height"] = 0.68 * horse_scale
 	snapshot["camera_height"] = 0.92 * horse_scale

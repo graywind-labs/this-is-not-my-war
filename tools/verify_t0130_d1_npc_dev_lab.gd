@@ -575,7 +575,7 @@ func _init() -> void:
 	_assert(bool(snapshot.get("uses_formal_enemy_mount", false)), "mounted enemy preview should use EnemyMountedArtView instead of the shared temporary mount")
 	_assert(not bool(snapshot.get("enemy_mount_has_independent_hp", true)), "mounted enemy preview horse must not expose independent HP")
 	_assert(str(snapshot.get("enemy_mount_damage_routing", "")) == "enemy_unit_only", "mounted enemy preview must display the real enemy-only damage routing")
-	_assert((snapshot.get("usable_actions", []) as Array).has("mounted_defeat_escape"), "mounted enemy preview should expose the real defeat-and-escape acceptance action")
+	_assert((snapshot.get("usable_actions", []) as Array).has("mounted_shared_defeat"), "mounted enemy preview should expose the real shared rider-and-horse defeat acceptance action")
 	_assert(str(((snapshot.get("loadout", {}) as Dictionary).get("main_weapon", {}) as Dictionary).get("id", "")) == "bow", "mounted archer should always use its configured bow")
 	_assert(not (snapshot.get("usable_actions", []) as Array).has("work_dining_hall"), "enemy units should never expose cooking")
 	snapshot = lab.debug_set_mode("work")

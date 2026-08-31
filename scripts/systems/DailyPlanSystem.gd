@@ -44,6 +44,7 @@ var _last_completed_result_by_npc: Dictionary = {}
 var _last_failure_result_by_npc: Dictionary = {}
 var _plan_owned_action_by_npc: Dictionary = {}
 var _plan_execution_signature_by_npc: Dictionary = {}
+var _behavior_mode_interrupted_plan_by_npc: Dictionary = {}
 var _one_shot_execution_keys_by_npc: Dictionary = {}
 var _repeat_continuation_generation_by_npc: Dictionary = {}
 var _completion_reevaluation_generation_by_npc: Dictionary = {}
@@ -384,6 +385,7 @@ func set_npc_daily_plan(npc_id: String, plan: Array, record_event: bool = true, 
 		return false
 	_bump_plan_version(npc_id)
 	_plan_execution_signature_by_npc.erase(npc_id)
+	_behavior_mode_interrupted_plan_by_npc.erase(npc_id)
 	_approved_dialogue_intent_by_npc.erase(npc_id)
 	_deferred_current_revision_execution_by_npc.erase(npc_id)
 	if source != LLM_REVISION_SOURCE:
@@ -663,6 +665,67 @@ func execute_current_plan_for_npc(
 
 func resume_current_plan_after_player_dialogue(npc_id: String, interrupted_action_id: String) -> Dictionary:
 	return resume_current_plan_after_dialogue(npc_id, interrupted_action_id)
+
+
+func capture_current_plan_for_behavior_mode_interruption(npc_id: String, reason: String) -> Dictionary:
+	var item := get_current_plan_item(npc_id)
+	if item.is_empty():
+		_behavior_mode_interrupted_plan_by_npc.erase(npc_id)
+		return _result(false, npc_id, "", "no_plan_item")
+	var action_id := str(item.get("action_id", ""))
+	var signature := _make_plan_execution_signature(npc_id, item)
+	var running_plan_owned := (
+		str(_plan_execution_signature_by_npc.get(npc_id, "")) == signature
+		and str(_plan_owned_action_by_npc.get(npc_id, "")) == action_id
+	)
+	if not running_plan_owned:
+		_behavior_mode_interrupted_plan_by_npc.erase(npc_id)
+		return _result(true, npc_id, action_id, "current_plan_not_running")
+	_behavior_mode_interrupted_plan_by_npc[npc_id] = {
+		"signature": signature,
+		"action_id": action_id,
+		"reason": reason
+	}
+	return _result(true, npc_id, action_id, "captured_running_plan")
+
+
+func resume_current_plan_after_behavior_mode(npc_id: String, reason: String = "behavior_mode_ended") -> Dictionary:
+	var item := get_current_plan_item(npc_id)
+	if item.is_empty():
+		return _result(false, npc_id, "", "no_plan_item")
+	var action_id := str(item.get("action_id", ""))
+	var npc_system := _get_npc_system()
+	if npc_system == null or not _is_npc_in_work_behavior_mode(npc_id, npc_system):
+		return _result(false, npc_id, action_id, "authoritative_behavior_mode_active")
+	var current_signature := _make_plan_execution_signature(npc_id, item)
+	var captured: Dictionary = (
+		(_behavior_mode_interrupted_plan_by_npc.get(npc_id, {}) as Dictionary).duplicate(true)
+		if _behavior_mode_interrupted_plan_by_npc.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	_behavior_mode_interrupted_plan_by_npc.erase(npc_id)
+	var interrupted_running_plan := (
+		(
+			str(captured.get("signature", "")) == current_signature
+			and str(captured.get("action_id", "")) == action_id
+		)
+		or (
+			str(_plan_execution_signature_by_npc.get(npc_id, "")) == current_signature
+			and str(_plan_owned_action_by_npc.get(npc_id, "")) == action_id
+		)
+	)
+	if interrupted_running_plan:
+		# Rally/avoidance interrupted this exact phase before completion. Permit
+		# the same plan item to continue once from the NPC's current world position.
+		_plan_execution_signature_by_npc.erase(npc_id)
+		_plan_owned_action_by_npc.erase(npc_id)
+		if _get_action_completion_policy(action_id) == COMPLETION_POLICY_ONCE_PER_PLAN_HOUR:
+			_erase_one_shot_plan_item_execution(npc_id, item)
+	var result := execute_current_plan_for_npc(npc_id, true)
+	result["resumed_after_behavior_mode"] = true
+	result["behavior_mode_end_reason"] = reason
+	result["interrupted_running_plan"] = interrupted_running_plan
+	return result
 
 
 func resume_saved_plan_after_dialogue(npc_id: String) -> Dictionary:

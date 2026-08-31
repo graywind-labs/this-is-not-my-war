@@ -96,6 +96,25 @@ func _init() -> void:
 	await process_frame
 	if not _expect(str(glen.debug_get_character_art_snapshot().get("desired_state", "")) == "unconscious", "Authoritative unconscious state did not select fall presentation"):
 		return
+	await create_timer(1.8).timeout
+	var settled_unconscious: Dictionary = glen.debug_get_character_art_snapshot()
+	if not _expect(not bool(settled_unconscious.get("current_animation_playing", true)), "Unconscious fall clip did not settle on its final pose"):
+		return
+	var settled_position := float(settled_unconscious.get("current_animation_position", 0.0))
+	var settled_length := float(settled_unconscious.get("current_animation_length", 0.0))
+	for _refresh in range(3):
+		glen.update_profile(profile)
+		await process_frame
+	var refreshed_unconscious: Dictionary = glen.debug_get_character_art_snapshot()
+	if not _expect(
+		not bool(refreshed_unconscious.get("current_animation_playing", true))
+		and str(refreshed_unconscious.get("desired_state", "")) == "unconscious"
+		and is_equal_approx(float(refreshed_unconscious.get("current_animation_position", -1.0)), settled_position)
+		and settled_length > 0.0
+		and settled_position >= settled_length - 0.05,
+		"Repeated unconscious profile refresh replayed the one-shot fall clip"
+	):
+		return
 
 	profile.states.hp = 30
 	profile.states.unconscious = false

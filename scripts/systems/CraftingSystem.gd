@@ -18,7 +18,6 @@ const EXPECTED_RECIPE_IDS := [
 	"craft_iron_greaves",
 	"craft_sword_shield",
 	"craft_mail_chest",
-	"craft_arrow_bundle",
 	"craft_bow",
 	"craft_crossbow",
 	"craft_wall_ballista",

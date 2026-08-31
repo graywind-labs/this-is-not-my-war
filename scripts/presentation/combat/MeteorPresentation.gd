@@ -7,11 +7,13 @@ var _body_root: Node3D
 var _crater_root: Node3D
 var _impact_root: Node3D
 var _shockwave_materials: Array[StandardMaterial3D] = []
+var _crater_materials: Array[StandardMaterial3D] = []
 var _particle_emitters: Array[GPUParticles3D] = []
 var _impact_elapsed := 0.0
 var _impact_duration := 2.0
 var _body_radius := 4.2
 var _crater_radius := 4.8
+var _crater_fade_progress := 0.0
 var _landed := false
 var _body_present := false
 
@@ -46,6 +48,7 @@ func impact_at(target_position: Vector3) -> void:
 		_add_body_collider()
 	if _crater_root != null:
 		_crater_root.visible = true
+	set_crater_fade_progress(0.0)
 	_build_impact_vfx()
 
 
@@ -68,14 +71,41 @@ func get_landed_collision_radius() -> float:
 	return _body_radius * 0.78
 
 
-func has_permanent_crater() -> bool:
+func has_crater() -> bool:
 	return _crater_root != null and is_instance_valid(_crater_root) and _crater_root.visible
+
+
+func has_permanent_crater() -> bool:
+	# Compatibility alias for T0165-era diagnostics. The crater now expires.
+	return has_crater()
+
+
+func set_crater_fade_progress(progress: float) -> void:
+	_crater_fade_progress = clampf(progress, 0.0, 1.0)
+	var opacity := 1.0 - _crater_fade_progress
+	for material in _crater_materials:
+		if material == null:
+			continue
+		var color := material.albedo_color
+		color.a = opacity
+		material.albedo_color = color
+
+
+func remove_crater() -> void:
+	if _crater_root != null and is_instance_valid(_crater_root):
+		_crater_root.queue_free()
+	_crater_root = null
+	_crater_materials.clear()
+	_crater_fade_progress = 1.0
 
 
 func get_presentation_snapshot() -> Dictionary:
 	return {
 		"landed": _landed,
 		"body_present": has_body(),
+		"crater_present": has_crater(),
+		"crater_fade_progress": _crater_fade_progress,
+		"crater_opacity": 1.0 - _crater_fade_progress,
 		"permanent_crater": has_permanent_crater(),
 		"body_radius": _body_radius,
 		"crater_radius": _crater_radius,
@@ -216,6 +246,7 @@ func _build_body() -> void:
 
 
 func _build_crater() -> void:
+	_crater_materials.clear()
 	_crater_root = Node3D.new()
 	_crater_root.name = "PermanentCraterAndAsh"
 	_crater_root.position.y = 0.12
@@ -224,7 +255,7 @@ func _build_crater() -> void:
 	var bowl := MeshInstance3D.new()
 	bowl.name = "DepressedCrater"
 	bowl.mesh = _make_crater_mesh(_crater_radius)
-	bowl.set_surface_override_material(0, _ash_material(Color(0.095, 0.07, 0.055, 1.0)))
+	bowl.set_surface_override_material(0, _register_crater_material(_ash_material(Color(0.095, 0.07, 0.055, 1.0))))
 	_crater_root.add_child(bowl)
 
 	var ash := MeshInstance3D.new()
@@ -236,7 +267,7 @@ func _build_crater() -> void:
 	ash_mesh.radial_segments = 48
 	ash.mesh = ash_mesh
 	ash.position.y = 0.035
-	ash.set_surface_override_material(0, _ash_material(Color(0.07, 0.058, 0.052, 1.0)))
+	ash.set_surface_override_material(0, _register_crater_material(_ash_material(Color(0.07, 0.058, 0.052, 1.0))))
 	_crater_root.add_child(ash)
 	var scorch := MeshInstance3D.new()
 	scorch.name = "PermanentScorchedGround"
@@ -247,10 +278,10 @@ func _build_crater() -> void:
 	scorch_mesh.radial_segments = 64
 	scorch.mesh = scorch_mesh
 	scorch.position.y = 0.018
-	scorch.set_surface_override_material(0, _ash_material(Color(0.105, 0.073, 0.052, 1.0)))
+	scorch.set_surface_override_material(0, _register_crater_material(_ash_material(Color(0.105, 0.073, 0.052, 1.0))))
 	_crater_root.add_child(scorch)
 	_crater_root.move_child(scorch, 0)
-	var scorch_material := _ash_material(Color(0.085, 0.057, 0.043, 1.0))
+	var scorch_material := _register_crater_material(_ash_material(Color(0.085, 0.057, 0.043, 1.0)))
 	for index in range(11):
 		var angle := TAU * float(index) / 11.0 + 0.14 * sin(float(index) * 1.7)
 		var edge_patch := MeshInstance3D.new()
@@ -264,7 +295,7 @@ func _build_crater() -> void:
 		edge_patch.position = Vector3(cos(angle), 0.035, sin(angle)) * _crater_radius * 0.9
 		edge_patch.set_surface_override_material(0, scorch_material)
 		_crater_root.add_child(edge_patch)
-	var ash_clump_material := _ash_material(Color(0.22, 0.205, 0.19, 1.0))
+	var ash_clump_material := _register_crater_material(_ash_material(Color(0.22, 0.205, 0.19, 1.0)))
 	for index in range(18):
 		var angle := float(index) * 2.39996
 		var distance := _crater_radius * (0.15 + 0.035 * float(index % 10))
@@ -280,7 +311,7 @@ func _build_crater() -> void:
 		ash_clump.set_surface_override_material(0, ash_clump_material)
 		_crater_root.add_child(ash_clump)
 
-	var rim_material := _ash_material(Color(0.16, 0.115, 0.08, 1.0))
+	var rim_material := _register_crater_material(_ash_material(Color(0.16, 0.115, 0.08, 1.0)))
 	for index in range(16):
 		var angle := TAU * float(index) / 16.0
 		var rim_rock := ROCK_SCENE.instantiate() as Node3D
@@ -445,6 +476,13 @@ func _ash_material(color: Color) -> StandardMaterial3D:
 	material.albedo_color = color
 	material.roughness = 1.0
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return material
+
+
+func _register_crater_material(material: StandardMaterial3D) -> StandardMaterial3D:
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_crater_materials.append(material)
 	return material
 
 

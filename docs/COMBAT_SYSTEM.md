@@ -1,19 +1,322 @@
 # COMBAT_SYSTEM.md
 
+## T0269 敌方远程对正门 / 仓库 / 主厅的建筑伤害
+
+- 生产基线确认三类建筑都能被正式远程 selector 自然选中并完成 windup / release；仓库原本可正常受伤，正门和主厅失败在弹体 sweep：T0260 的透明过滤没有区分“宿主挡住后方目标”和“宿主就是目标”。
+- 正门 / 主厅现在只在不是本发敌方弹体明确建筑目标时透明。敌军远程明确攻击 `front_gate / main_hall` 时，箭矢实际撞击其 collider，再按 collision identity 调用既有建筑伤害入口；射向门后角色或主厅器械时仍继续原线段 sweep。
+- 正式弓 / 弩矩阵结果：正门 `160 → 154 → 147`，仓库 `150 → 144 → 137`，主厅 `180 → 174 → 167`。六项均自然选中、释放、命中对应 building id；透明跳过为空。仓库仍是普通阻挡建筑，不新增白名单或特殊瞄准。
+
+## T0266 远程战斗不依赖额外弹药库存
+
+- 弓、弩、箭塔与弩床继续按武器 / 器械定义执行攻击冷却、装填表现、物理弹体和命中结算，不读取或扣除独立弹药商品。
+- 本次只删除无效资源占位，不修改射程、伤害、攻速、弹道、遮挡或塔防 HP 路由。
+
+## T0263 全槽位敌方远程命中矩阵
+
+- 现有 4 个围墙槽位和 4 个主厅槽位均对箭塔、弩床完成正式敌方自然攻击验证，共 16 项；每项 release aim 与实时 projectile Area 中心偏差均为 `0.0 m`，实际碰撞身份均为目标 deployment。
+- 每发敌箭造成 4 点有效伤害：箭塔 `110 → 106`、弩床 `55 → 51`。围墙 `240`、主厅 `180` 在所有对应用例中保持不变，证明器械 / 宿主 HP 路由隔离。
+- 合法遮挡仍生效：从主厅东北器械位北侧隔着诊所射击会命中诊所外墙；矩阵改用东侧无遮挡射线验证目标，不把诊所加入弹体透明列表，也不将 blocked 结果伪装成命中。
+
+## T0262 敌方远程瞄准主厅塔防
+
+- 敌方远程锁定 defense device 后，攻击位与近战距离判断仍使用宿主墙面代理；真正生成箭矢 / 弩箭时，瞄准点改为当前活动器械 `InteractionArea/CollisionShape3D` 的世界中心，不再射向主厅墙面旧代理。
+- 瞄准点只在 release 时采样一次，弹体仍不追踪移动目标。之后必须通过 T0260 的主厅透明 sweep 实际碰撞器械 Area，才能按 deployment 身份减少器械 HP；主厅 HP 不联动，也没有逻辑补伤。
+- 弹体快照新增 `aim_target_source=defense_device_hit_area_center` 与 `aim_target_node_path`，可区分真实器械受击点和兼容回退。专项自然链确认弓手自行选中器械并完成 windup / release，器械 HP `106 → 102`、主厅 HP 不变。
+
+## T0261 塔防选择与射程投影
+
+- 已部署塔防的 interaction Area 携带 deployment 身份，世界点击只选择 `status=active、hp>0` 且宿主可见的器械；点击不改变器械 HP、目标、攻击时间线或宿主建筑状态。
+- DefenseDevicePanel 与 AttackRangeIndicator 共用 `EventBus.defense_device_clicked`。面板读取 deployment 的有效 effect，圆圈继续读取 `get_attack_range_indicator_snapshot(...)`，两者均不复制或修改战斗数值。
+- 废墟关闭 Area 并清除交互身份；deployment 失效后面板和圆圈按既有状态信号隐藏，不产生攻击或结算旁路。
+
+## T0260 正门 / 主厅只对弹体透明
+
+- 正门与主厅仍是 world-static 实体与 NavigationMap 阻挡；本规则只作用于 CombatSystem 管理的敌军、友军和塔防物理箭矢 / 弩箭，不改变角色、马匹、商车或近战武器的实体接触。
+- 弹体子步命中 `front_gate / main_hall` 建筑身份时，若该建筑不是本发敌方弹体的明确建筑目标，则排除该 collider 并继续原线段 sweep；建筑自身是目标时正常碰撞受伤。围墙、仓库、其他建筑、地形、敌对角色和昏迷角色仍正常挡箭；最多 32 次透明跳过的有界保护继续覆盖重叠 collider。
+- 塔防器械拥有独立、非阻挡的 projectile Area。敌箭穿过主厅可命中其上器械，并经既有 deployment 身份只扣器械 HP；友方 / 塔防箭跳过同阵营器械。直接器械身份优先于继承的主厅建筑身份，避免目标被透明规则吞掉。
+- 调试快照新增 `transparent_building_skip_count / transparent_building_skipped_ids`，与既有同阵营跳过、碰撞位置和残箭字段并列；没有 release-time 逻辑补伤或第二套建筑结算。
+
+## T0259 集结取马遇敌接管
+
+- `spawn_wave(clear_existing=true)` 在没有敌军、active battle 或 formal enemy runtime 时不再把空清理解释为战斗结束，因此预战 `rally` 和正在进行的指定马匹会合不会在新波次生成前被切回工作。
+- 正式战斗世界迁移会停止旧导航请求，但 HorseSystem 随后按 pickup waiting phase 验证真实移动；路线 inactive 或指向错误目标时，从 NPC 当前坐标重建到同一马旁接近点。接敌切为 `combat` 后 `combat_mount_phase` 保持 `going_to_*_horse`，友方攻击 AI 继续等上马完成。
+- 重复警铃对合法 target lock 保持无副作用边界，只额外调用幂等取马路线恢复；结果中的 `mount_route_recovered_count` 可观察本轮修复数。没有传送、马匹重分配、重复生成或目标锁重置。
+
+## T0257 战后伤员治疗与工作武器表现
+
+- 正式战斗结束后昏迷者继续留在实际倒地点；治疗系统以该身体坐标为权威空间目标，战前 `current_location` 只保留信息语义，不再把治疗者送回旧工作建筑。
+- 战后人群不会永久阻断合法治疗：常规导航失败后有限更换伤员身边站位，并仅在恢复请求中忽略 actor 胶囊；地形、建筑和 NavigationMap 不放宽，治疗会话收口时恢复常规碰撞。
+- NPC 的主武器槽在返回工作后仍保留，但人物表现收起武器并显示当前职业工具；重新集结、接敌或执行武器训练时再显示主武器。此规则不改变兵种、索敌或伤害结算。
+
+## T0256 警铃解散与模式切换位置连续性
+
+- `dismiss_combat_rally(source)` 枚举 NPCSystem 权威模式，只将 `rally` 切回 `work`；活动 rally 记录随成功转换清除。`combat`、`avoid_combat`、昏迷、逃离和普通工作 NPC 只进入 ignored，不被解散。
+- 工作→集结 / 直接战斗 / 避战的转换帧保持实体世界坐标；从 rally / combat / avoid 返回工作同样不回写出生点、地点锚点或开战前缓存位置。新目标只通过 NPC 正式移动接口从当前坐标平滑寻路。
+- 正式战斗世界的默认居民始终使用生产 NavigationMap。开战时工位 / 坐席权威释放不改变切换前坐标；战斗结束时保留战场结束坐标。旧非正式兼容 actor 仍可恢复其原空间，避免破坏隔离测试 / 旧入口。
+- rally 解散 / 超时与 avoid 清场续接当前计划且不重评估；combat 清场保持既有战后重评估。骑手回马厩仍走 HorseSystem 物理返程，原地解除骑乘的切换帧不移动马匹。
+
+## T0249 固定目标近战到位与持续静止脱困
+
+- `enemy_attack_guidance_zones_v2` 的近战移动到点半径按 `有效交接距离 - attack_range_arrival_margin - 所选圆心到其对应接触点距离` 逐敌计算，并钳制在 `0.01～arrival_tolerance`；第一波正门为 `0.062～0.069 m`，不再使用通用 `0.32 m`。
+- 为敌人选择引导圆时，占区圆柱统计排除该敌人自身，只统计其他存活敌军真实胶囊；调试快照中的 occupant ids 因而不会把选择者自己当作拥堵来源。
+- enemy combat motion 的独立静止计时跨同请求目标更新与活动 request 替换保留。固定目标仍在攻击范围外且连续静止 `guidance_stall_recovery_seconds=0.75` 后，系统排除当前圆并重选；恢复窗口临时关闭该 Actor 对 actor-body 的物理碰撞，仅保留 world-static 碰撞，移动恢复或入射程立即还原。真实模型 / 弹体接触、HP、速度、NavMap 与攻击范围不变。
+
+## T0248 箭矢同阵营穿透、释放锁与落点附着
+
+- 敌我角色与正式塔防继续共用 CombatSystem 物理弹体。每个 `1/120 s` 子步在原线段上重复 ray sweep：我方 / `defense_device` 排除带 `npc_id` 的角色，敌方排除带 `enemy_id` 的角色；排除只限同阵营角色，墙体、建筑、地形、敌对角色和昏迷 NPC 仍在原 mask 上阻挡。每子步最多跳过 32 个同阵营 collider，避免异常重叠无限循环。
+- `max_range` 只记录 `authored_range_crossed`，不再把箭停在空中；弹体保持释放瞬间的 origin、velocity、gravity 与 aim snapshot，直到第一处合法碰撞或 lifetime 终态。没有目标追踪、release-time 伤害或移动目标兼容补伤，attack id 仍保证只提交一次实际碰撞伤害。
+- 远程 windup 一旦起手便持有 cycle target 到 authored release；目标移出射程不取消动作。正伤害在 release 前中断则不生成弹体，在 release 后中断只结束 recovery，活动弹体不被回收。目标死亡 / 昏迷 / 离场在 release 前仍按无效目标取消。
+- 终态调用 `CombatProjectileView.stick_at(...)` 保留真实入射方向并把箭头略插入表面。世界 / 建筑以 collider Node3D 为 anchor，NPC 以角色根为 anchor，敌军在伤害前以美术根为 anchor，使致死箭随尸体表现重挂。活动敌军清空时清世界 / NPC 箭，敌军尸体箭随尸体清理；初始化与 GM 强制清场清全部。
+
+## T0247 活体目标全速追击与敌我 RVO 分层
+
+- 敌军追 NPC、我方近战 / 冲锋追敌军属于持续刷新终点的活体追击，不再使用固定落点的 `final_target_braking`。CombatSystem 继续按锁定目标位置更新接敌点，并在真实武器交接距离内停止 ActorMotion、进入原 windup / impact / recovery；基础速度、攻击范围和到点容差没有扩大。
+- RVO 只处理同阵营局部人群：NPC、友方马匹与商车位于层 1，步行 / 骑乘敌军位于层 2，各自 mask 只包含本层。敌我相向时不再在攻击范围外互相预测让路；最终仍共享 `actor_body` CharacterBody 碰撞，无法穿过对方、同阵营前排或墙体。
+- 普通工作、集结、避战、远程攻击点、建筑 / 塔防引导区和其他固定终点继续使用最终制动。ActorMotion 快照新增 `avoidance_layers / avoidance_mask / final_target_braking_enabled`，用于区分阵营避让与活体追击合同。
+
+## T0246 友方战时奔跑饱食规则
+
+- CombatSystem 只提供 `get_active_enemy_count()>0` 的存活敌军事实，不扣饱食、不判断真实位移。NPC 实体累计未骑乘且实际超过行走档的跑动秒数，NPCNeedsSystem 在逻辑 tick 中消费并以 `-0.1 / 游戏秒`结算。
+- 每 tick 可计费秒数不超过该 tick 的游戏秒，且真实跑动样本消费后清空。因此路径重算不重复计费，堵路 / 站定不计费，GM 瞬间推进数小时也不会放大上一帧运动。
+- `satiety=0` 的速度钳制位于 NPC 统一 locomotion / ActorMotion profile 边界，所以集结、战斗追击、远程攻击位、保持距离、战斗避战和逃离无需各自实现限速分支。敌军速度、攻击节奏与伤害规则不受影响。
+
+## T0245 移动角色近战锁定伤害点与受击打断
+
+- 普通剑盾 / 长杆对移动角色仍只在目标进入有效范围、攻击线合法且移动权威已释放后起手。`windup` 开始即把本次角色目标写入既有 cycle target；从此到 recovery 结束，目标位置、射程、接敌点或普通索敌刷新不再取消动作。目标死亡 / 昏迷 / 离场仍会使本次目标失效。
+- 到 authored impact 秒时，CombatSystem 以 `locked_actor_timeline` 对仍有效的原 cycle target 直接提交一次既有防御 / 穿透伤害，不在 impact 再检查距离，也不依赖该帧模型扫掠。模型端点仍可采样到 `sampled_model_contact` 供表现与量测诊断，但不能提前扣血、换伤害目标或重复提交。
+- 攻击者受到正伤害时同步中断当前 `windup / recovery`，并清理 active swing 与 pending commit。`windup` 且 impact 尚未提交时中断为零伤害；recovery 或已提交后中断只终止余下动作，已扣 HP 不回滚。下一次起手仍受原单调 cadence 锁约束。
+- 固定建筑 / 城门 / 塔防目标继续走 T0243 引导区与 T0144 模型接触；骑兵冲锋继续走独立碰撞 / 僵直；弓弩继续走物理弹体。这三类不会被移动角色锁定命中旁路。
+
+## T0243 建筑 / 塔防动态稀疏攻击引导区
+
+- `front_gate / warehouse / main_hall / defense_device` 的旧独占 lease、满位回退、waiter 与精确到点攻击门槛已由引导区替代。现有表面采样继续以近战单排、远程六排作为 authored 候选源，但每个候选是 `melee / ranged` 分类的竖直圆柱引导区；圆面半径取执行敌军物理半径，高度当前为 `2.6 m`，同类圆按 `2 × radius + safety_margin` 去重。骑乘敌军因此会比步兵自动保留更少但物理上不重叠的圆。
+- 每个敌军权威 AI 更新都用活动 Actor 的实际位置、`enemy_foot / enemy_mounted` 胶囊半径与高度计算圆柱重叠名单。选择顺序固定为“实际重叠人数最少 → 水平距离自身最近 → slot id 稳定排序”，再由生产 NavigationMap 吸附 / 验路；人数变化可在同一目标锁内改写活动移动终点，不排队、不占满，也不按预约计数。
+- 引导圆不是攻击许可。系统同时从同类候选的真实 `contact_position` 选择离攻击者最近的合法受击接触点；该点进入有效攻击带后立即暂停 ActorMotion 并进入既有 windup / release / recovery，即使尚未到圆心。远程有效带为当前攻击范围，近战有效带为 `attack_range × melee_reach_ratio`，用于与实际模型扫掠触达保持一致。近战扫掠、远程弹体、宿主墙段身份和 BuildingSystem / DefenseDeviceSystem HP 仍是唯一命中与伤害权威。
+- `debug_get_enemy_attack_position_snapshot()` schema 为 `enemy_attack_guidance_zones_v2`，保留 `leases[]` 兼容镜像并新增 `guidance_count / guidance_assignments[]`；记录所选圆、分类、半径、高度、实时重叠人数 / id、换区与射程交接指标。正常运行不再产生固定目标 waiter 或精确到位恢复。
+
+## T0241 敌军战斗重定向速度连续性
+
+- 敌军从一个目标身份切换到另一个 NPC / 建筑 / 塔防目标时，CombatSystem 仍替换 request id、目标坐标、移动用途和到达容差，但 `enemy_*` 运动选项现在声明 `preserve_velocity_on_supersede=true`。ActorMotionBody 仅继承替换瞬间的水平速度，并再次限制到当前物理 profile 上限。
+- 继承速度不是最低速度保证。下一帧仍执行路径方向、加速度、RVO、CharacterBody 碰撞与最终落点制动；换到身后目标时反向分量会被剔除，前方拥堵时仍可合法降速。普通 NPC、日常行动与非战斗 request 不启用该选项，继续从静止起步。
+- `motion` 快照新增 `requested_speed / desired_speed / candidate_speed / rvo_safe_speed / applied_speed / actual_speed / speed_limit_reason`，以及 `last_motion_preserved_velocity / last_preserved_velocity_speed / preserved_velocity_handoff_count`。原因可为 `profile_cruise / accelerating / intermediate_waypoint_braking / final_target_braking / rvo_avoidance / backward_path_velocity_rejected / physical_collision_slide / paused / arrived / cancelled / failed`，用于区分真正的速度控制与拥堵位移损失。
+
+## T0240 战斗避战的近敌触发与移动权威
+
+- 武装应征 NPC 的“避战”是 `behavior_mode=combat` 内的战术，不进入非战斗 `avoid_combat` 模式。每个战斗步以避战威胁场的 `nearest_encounter` 判断安全阈值；持久 `combat_target_enemy_id` 即使仍锁着远处敌人，也不能压住另一名近敌的避战触发。
+- 触发与选点分工明确：最近实际威胁决定“是否需要避战”，圈内全部威胁继续按 T0209 的逆距离平方合成方向，再经站内边界、实体包络和正式 NavigationMap 解析落点。避战路段不攻击、不清除或改写既有攻击目标锁，最近威胁只记录在 `combat_strategy_move_enemy_id` 和 `combat_strategy_avoid_*` 诊断字段。
+- `combat_strategy_move_strategy_id=avoid` 标识避战移动权威。切换策略时先结算其他战术的旧请求；活动路段按底层 `is_npc_world_movement_active(...)` 判定，状态文本残留但物理请求丢失时恢复同一已提交终点。到点后重新采样威胁；最近威胁达到安全距离时停止并进入 `combat_strategy_avoid_holding`。
+- 世界头顶与地点行动摘要把活动 / 待命分别显示为“正在避战”与“避战待命”。这两个文本是只读投影，不参与触发、移动或目标锁结算。
+
+## T0236 敌军实际移动驱动表现
+
+- 正式敌军步行 / 骑乘移动动画不再只读取 `current_action`。CombatSystem 在物理帧比较 Actor 的实际水平 Transform，记录位移、平面速度、移动方向和停止累计时间；逻辑动作文本只作为尚未获得两帧位置样本时的兼容回退。
+- 移动表现采用低速迟滞：活动 ActorMotion 请求的实测速度达到 `0.01 m/s` 即开始移动，已移动者只有在低于 `0.003 m/s` 持续 `0.18 s` 后才停。这样约 `0.06 m/s` 的拥挤 / RVO 爬行仍播放走动；初次激活必须有活动运动请求，无请求的碰撞去穿透不会独自启动走动片段。
+- 步行包装以实测速度驱动 run；骑乘包装同步使用 `mounted_walk` 和马匹 Walk。攻击时间线、受击、昏迷、死亡与败退会覆盖普通移动投影；该层不提交移动请求、不选目标、不决定命中或伤害。
+
+## T0235 我方远程战术接近停滞恢复
+
+- `max_output / attack / keep_distance` 的普通远程接近继续使用 T0229 的目标锁与 32 点攻击圆。ActorMotionBody 新增独立 `stationary_elapsed_seconds`：按实体净位移采样，移动目标调用 `update_motion_target(...)` 或 persistent repath 都不会清零，只有新请求 / 新导航腿或真实移动恢复才重置。
+- 活动攻击位请求连续 `friendly_strategy_stalled_reselect_seconds=2.25` 无有效位移时，CombatSystem 保留锁定目标，排除当前终点 `friendly_strategy_reselect_min_separation=0.8`，优先选择另一个可导航、可达且攻击线清晰的圆弧点。运行态记录 `combat_strategy_move_recovery_count / combat_strategy_last_stall`，不需要警铃重置。
+- 交接安全带仍为实际武器射程 `95%`。攻击点向内预留 `friendly_ranged_attack_position_arrival_tolerance=0.08`，ActorMotion 同一请求使用 `target_desired_distance=0.08`；吸附后必须满足 `endpoint_distance + tolerance <= range × 0.95`。到达容差外沿即可先停止移动再进入真实攻击时间线，射程和静态攻击线均未放宽。
+- 保持距离的活动 `1/3` 近身撤离段不进入该状态机；脚步 / 骑乘、弓 / 弩只在恢复普通远程接近后共用本合同。
+
+## T0233 固定目标远程攻击位扩容
+
+> T0243 保留本节六排容量与受击表面几何，但把租约 / 实际到位门槛改为动态稀疏引导与受击体射程交接。
+
+- 敌方弓 / 弩 / 骑射攻击 `front_gate / warehouse / main_hall / defense_device` 时统一使用实际武器射程 `0.90 / 0.76 / 0.62 / 0.48 / 0.34 / 0.20` 的六排。排距同时满足最短远程射程下最大骑乘敌人 `2 × radius + safety_margin`，避免新增纵深位自身发生租约冲突。
+- 表面采样与纵深排数分离。正门仍沿门板净宽每排 5 位、总计 30；仓库 / 主厅按四面包络每排最多 32、总计最多 192。城墙塔防单墙代理当前约 5 位 / 排、总计 30；主厅角落塔防在两面相邻墙上各约 5 位 / 排、总计 60。
+- `ranged_building_max_positions / ranged_defense_device_max_positions` 只作用于远程每排表面预算。近战仍读取 `building_max_positions=20 / defense_device_max_positions=8`，正门近战五位及塔防 `0.06 m` 精确到位不变。
+- 候选不是命中许可。每个位置仍须通过生产 NavigationMap 吸附 / 路径、实体半径租约冲突和实际到位；远程攻击仍复核接触点距离并由物理弹体真实碰撞，建筑 / 器械 HP 权威没有旁路。
+
+## T0232 我方远程保持距离撤离循环
+
+- `keep_distance` 只改变主动远程链的最高优先级前置判断：普通目标域、最近目标锁、射程外 `95%` 攻击圆选点、射线复核与攻击时间线继续复用 T0198 / T0229。步行弓 / 弩与骑射共用同一实现。
+- 每次没有活动撤离段、或上一段实际到达后，以最终攻击范围 `1/3` 构建 T0209 同款威胁场：`normalize(Σ ((R/max(d_i,1.0))² × away_i))`。圈内有任意敌军就清空战略锁、攻击目标、重扫请求和未完成攻击相位；原始目标为 `npc_position + direction × attack_range × 2/3`。
+- 目标由 `resolve_station_avoidance_navigation_target(...)` 修正到站内、实体外且生产 NavigationMap 可达的位置。活动段保存 target / direction / threats / sequence；物理 request 有效时不重扫，失活且未到点时恢复同一目标。到点后才复扫并续段；安全时清理撤离状态，同一战斗步回到普通目标选择。
+- 撤离使用独立 `keep_distance_retreating` 动作状态，移动期间始终保持空目标且攻击数为 0。`friendly_station_response_runtime_v4.keep_distance_retreats[]` 只提供诊断，不成为第二套位移或伤害权威。
+
+## T0231 塔防近战最后到位恢复
+
+> 历史合同：T0243 已取消塔防固定目标的精确到点攻击门槛与 waiter；本节恢复机制只保留为旧 schema 兼容路径。
+
+- 塔防目标的近战攻击位仍以 `melee_attack_position_arrival_tolerance=0.06` 作为攻击许可。普通 `arrival_tolerance=0.32` 只是最后接近恢复带，不能把租约改为 occupied，也不能绕过真实武器扫掠碰撞。
+- reserved 租约持有者进入 `melee_precise_arrival_recovery_radius=0.32` 且 ActorMotionBody 连续 `melee_precise_arrival_recovery_stuck_seconds=0.75` 无路径进展后，CombatSystem 暂时关闭该 Actor 的 RVO 避让，让 CharacterBody 沿原 NavigationMap 路径与实体碰撞完成最后接近。路径、速度、墙碰撞和伤害权威均不变。
+- 精确到位后立即恢复 RVO 并标记 `arrival_mode=precise_after_avoidance_recovery`；离开恢复带、进入 waiting、释放 / 换目标、受控清理时也恢复。`waiting_for_attack_position` 候补没有租约和攻击权限，不会触发恢复。
+- `debug_get_enemy_attack_position_snapshot()` 公开活动恢复与 started / completed / cancelled 指标；ActorMotion 快照公开 `avoidance_enabled / runtime_avoidance_override_reason`。
+
+## T0230 主厅角落塔防双墙受击与分散站位
+
+- 每个主厅角落器械目标同时公开前 / 后墙与同侧侧墙两个局部宿主区域。四槽依次为 `back+left / back+right / front_left+left / front_right+right`；单值 `host_proxy` 继续保留原前 / 后墙主区域以兼容旧调用方。
+- 敌军攻击位按两个区域独立取墙面位置、外向法线和局部 `hit_radius`。单器械既有 8 位上限均分为每面 4 位，槽 id 包含区域与采样点；候选继续通过 NavigationMap 可达校验、租约冲突和实体占用，等待者沿已分配区域施压。
+- 近战扫掠与弹体碰撞逐区域匹配 `building_id + building_segment_id/fixture_id + hit_radius`。任一相邻墙面局部命中只扣同一器械 HP；同墙远端、无关墙面和主厅其他碰撞不算器械命中，主厅 HP 不连带下降。
+
+## T0229 远程攻击位与战斗移动自恢复
+
+- 弓、弩和骑射持有合法目标锁时，以最终武器射程的 `95%` 作为移动 / 攻击交接安全带。目标在该距离外时，无论当前策略为 `max_output / keep_distance / attack`，都必须生成远程攻击位，不能保持 `combat_ready` 原地等待。
+- 攻击位以目标为圆心采样 32 个圆弧候选。每个候选必须能吸附到执行 NPC 的生产 NavigationMap、存在从 NPC 到候选的路径，且优先要求候选到目标的正式 world-static 射线畅通；从合法候选中选择水平距离 NPC 最近者。若暂时没有无遮挡候选，仍向最近可达圆弧点推进并在后续战斗步复核。
+- 活动策略移动会随锁定目标移动更新攻击位；目标更换时收束旧请求并为新目标重建。到位后仍超过 `95%` 射程、攻击线被墙 / 门阻断，或 `moving_to_combat_strategy_*` 文本仍在但 ActorMotionBody request 已失活时，下一权威战斗步重新选择 / 补发，不释放穿墙弹体。
+- 未破防的 rally 路线按普通 `37.2 m` 半径跨正门边界发现敌人；破防时仍以 `station_breach_global / station_enemy_only` 为最高优先级。合法目标锁继续阻止警铃重派，战斗移动恢复不依赖铃声。
+
+## T0228 主厅塔防墙面接敌与受击
+
+- 主厅器械继续从屋顶平台射击，但作为敌军目标时使用该槽对应的 `back_wall / front_left / front_right` 低位宿主代理。代理提供独立 `outward_direction`，攻击位、接触点和敌军朝向均落在对应外墙外侧，不读取屋顶器械的展示朝向。
+- 近战扫掠或敌方弹体必须真实碰到相同主厅墙段且处于该槽局部 `hit_radius` 内，才解析为 `defense_device` 命中；伤害只提交给 DefenseDeviceSystem，主厅 HP 不变。屋顶平台自身仍可作为同一器械的合法远程碰撞代理。
+- 四槽当前解锁为前侧 `slot_03/04=Lv.1/3`、背侧 `slot_01/02=Lv.5/6`，六级容量继续为 `1/1/2/2/3/4`。
+
+## T0227 上马回调与集结导航恢复
+
+- `handle_npc_mount_ready(...)` 不再对 `combat` 分支只写 `combat_ready`。`rally / combat` 来源都生成一次刚上马集结命令；`_start_npc_rally(...)` 先用 `_find_rally_combat_encounter(...)` 检查当前目标，无目标才切 `rally` 和发起世界移动。
+- 无旧 reservation 的直接接敌骑手使用 `_build_mount_completion_rally_entry(...)`；该入口只忽略其他 NPC 的目标锁来构建稳定阵形，仍保留入伍、主武器和可行动资格。
+- `_advance_rally_units()` 对 `status=moving` 的未到位者校验 `current_action + is_npc_world_movement_active(...)`。导航失活时 `_request_rally_movement(...)` 补发同一 target id / position，并记录 `movement_recovery_count / last_movement_recovery_reason`。
+
+## T0226 避战导航活性与恢复
+
+- `_advance_avoidance_units()` 将状态文本与物理移动分开：只有 `moving_to_avoid_shelter_*` 且 `NPCSystem.is_npc_world_movement_active(...) == true` 时才继续等待到达。
+- 若 NPC 未到避战点而物理请求已失活，圈内有敌时重新计算加权目标并发起移动；圈内暂无敌时使用运行态保存的原目标恢复路段。
+- `active_avoidances[]` 保留 `movement_recovery_count / last_movement_recovery_reason`，仅作 GM / 测试诊断。HP、行为模式、威胁半径、加权方向、导航和逃离权威均不变。
+
+## T0225 驿站破防全体武装应征者全局索敌
+
+- `interior_polygon` 内只要存在一名存活活动敌人，全部已入伍、持主武器且可行动的 NPC 都使用 `station_breach_global` 目标域，不再根据 NPC 本人是否仍在站外集结位、取马路线或其他地点回退到 `37.2 m`。
+- 该目标域只收集站内敌人并按水平距离首次锁定最近者；更近的站外敌人不能抢锁。当前站内锁仍有效时继续保持，失效或异源受击重扫也只在站内集合中选择。
+- 最后一名站内敌人离开 / 消失后，友军恢复 T0198 普通分域。坐骑会合、最大化输出、保持距离、主动进攻、战斗避战、射程、寻路与攻击结算仍由原系统处理；T0229 起远程最大化输出在射程外也必须先取得攻击位。“已锁目标”不等于已经满足攻击起手条件。
+
+## T0224 统一警铃集结与目标锁边界
+
+- HUD / GM 警铃共用 `CombatSystem.trigger_combat_alarm(...)`。响应集合为“已入伍 + 有主武器 + 可行动 + 当前无合法攻击目标锁”，不再排除睡眠者，也不按工作、避战、旧集结或无目标战斗模式过滤。
+- 只有 `combat` 模式中指向仍存活活动敌人的 `combat_target_enemy_id / combat_attack_target_enemy_id / combat_strategy_move_enemy_id` 会阻止警铃重派。该 NPC 的模式、目标、移动、攻击 sequence 和旧 rally 记录保持原样；其他响应者原子清理旧避战、战术移动、目标锁与未提交近战运行态，再建立本轮阵位。
+- 已上马响应者保持骑乘并直接向正门阵位移动；有坐骑分配但未上马者保留 HorseSystem 会合链。集结即时检查与逐步检查均复用 `_get_friendly_target_scope(...) + _find_nearest_friendly_combat_enemy(...)`，不再使用独立 5 米接触圈；发现合法敌人后写入目标锁并转正常战斗。
+
+## T0223 主厅器械射程与昏迷表现边界
+
+- 主厅四个通用器械槽的基础 `range_multiplier` 统一为 `1.0`；弩床 / 箭塔部署在主厅时保持定义中的基础有效射程，不再获得高台加成。围墙 Lv.3 / Lv.5 的累计 `+5%` 宿主加固收益保持原样。
+- DefenseDeviceSystem 仍独占最终有效射程、自动选敌和攻击结算；UI、世界圆环与敌军威胁感知只读更新后的 deployment 快照。取消主厅倍率不改变伤害、穿透、攻速、器械 HP、槽位曲线或目标优先级。
+- NPC 昏迷权威仍只来自 NPCSystem 的 HP 与 `30%` 复苏门槛。ChibiCharacterPilot 仅让非循环 `Death_A` 在首次倒地后保持末帧；昏迷期间的 profile 刷新不得重播倒地，只有 `unconscious=true → false` 的权威边沿才播放 `Lie_StandUp`。
+
+## T0222 敌军选择与只读观察边界
+
+- 正式敌军 Actor 继续使用既有 interaction-only `InteractionArea`，仅新增左键选择并发送 `enemy_clicked(enemy_id)`；该 Area 不参与武器、弹体、冲撞或世界碰撞查询。
+- CombatSystem 公开敌军详情与人物构图只读快照，详情来自 `_active_enemies`，人物位置与朝向来自正式 Actor；EnemyPanel 不取得写接口，不改变 HP、索敌、攻击相位、攻速、租约、移动或骑乘状态。
+- 骑兵人物快照使用较高焦点 / 相机高度，让共享世界小窗对准骑手；下马后回到普通构图。选择切换仅控制 UI 可见性和 SubViewport 更新，不打断敌军当前行动。
+
+## T0221 骑乘集结离厩不折返
+
+- HorseSystem 完成真实马旁会合后仍由 CombatSystem 恢复原 `combat_rally_*` 阵位；移动层现在保留已开始的马厩出口阶段，集结目标刷新不会把骑手重新拉向 `interior / door_inside`。
+- 四名骑手同时离厩继续保留 `0.65 m` 实体胶囊、RVO、正式门洞和真实碰撞。已经越过门外横截面的骑手不会与后续骑手对顶；专项记录四人门外向内回退均为 `0.0 m` 且全部集结完成。
+- 本次不改变上马资格、骑乘速度、阵位、门体开合、攻速、伤害或敌方索敌；相同单调出口规则也覆盖敌军从任何可进入建筑重新追击室外目标。
+
+## T0220 敌方远程建筑多排攻击位
+
+> 历史基线：本节的三排 / 60 位上限已由 T0233 六排固定目标规则取代；其余租约与近排优先合同继续有效。
+
+- 敌方弓、弩和骑射攻击正门 / 仓库 / 主厅时，固定候选由单排扩为射程 `72% / 50% / 30%` 的外、中、内三排。每排共享同一建筑表面接触点，只有站位纵深不同；攻击射程、弹体、起手间隔和真实碰撞伤害不变。
+- 正门每排沿门板净宽生成 5 位，共 15 个远程位；仓库 / 主厅先按原四面包络挑选最多 20 个表面样本，再逐排展开为最多 60 位。`building_max_positions=20` 现在表示每排表面样本上限。近战仍为单排，正门仍是五个门板位。
+- 每排候选独立验路和租约，分配继续按车道稳定性 / NavigationMap 路径距离选择。已在内排附近的敌人会取得内排；每个候选仍须实际抵达后才从 `reserved` 变为 `occupied`，因此扩排不改变 T0207 的实际占满规则或 T0211 waiter 政策。
+- NPC 目标仍无固定槽位；塔防代理仍为单排。运行态租约 / 目标增加 `range_row_index / range_row_count / range_row_ratio`（目标装饰前缀为 `attack_position_`）用于诊断，不授予额外攻击权限。
+
+## T0218 正门友军传感的昏迷边界
+
+- 带 `npc_id` 的友方只有当前未昏迷时才触发正门；在传感范围内被击昏会立即退出友军判定，门按既有保持时间关闭，不等待物理碰撞更新。
+- 原地复苏后恢复正常开门。该过滤不影响友方马匹 / 商队车、敌军拒绝、五个攻门位、固定门板战斗 Area 或伤害结算。
+
+## T0217 友方马匹开门与活动门叶无碰撞
+
+- 正门友军传感现接受 `npc_id`、无敌军身份的 `horse_id` 和 MerchantWagon；`enemy_id` 仍先行排除，因此敌方骑兵 / 马匹不能触发开门。
+- 正门活动门叶从开始开启到完全关闭期间关闭物理碰撞，只在完全闭合且未摧毁时恢复。回站 NPC / 马匹不会再被旋转门叶横向推挤、加速或卡死。
+- 敌军攻门不读取活动门叶碰撞，仍由 T0214 固定门板战斗 Area、五个门板攻击位、租约和真实武器接触结算；活动门叶对敌我双方均无物理碰撞，但不会改变敌军攻门目标或授予额外伤害。
+
+## T0215 击昏目标后的实体交接
+
+- 敌军击昏 NPC 后仍由统一索敌器在下一战斗步释放旧目标、清除旧攻击相位并选择建筑或其他单位；`pressing_to_warehouse` 等移动请求继续由 ActorMotionBody 执行，未新增传送或战斗特例。
+- 昏迷 NPC 的倒地模型和 InteractionArea 保留，但 BodyCollision 与 NavigationAgent 避障实体关闭。紧贴原目标的敌军不再被一枚不可见的直立胶囊挡住，可以沿新目标路径离开；复苏后两者恢复。
+- 该规则不改变伤害、昏迷、30% 复苏、治疗人数、攻击位租约、攻速或建筑优先级。专项同时断言目标切到仓库、战术暂停清除、真实位移、速度上限、昏迷可交互和复苏实体恢复。
+
+## T0214 战时正门通行与攻击权威分离
+
+- 活动敌军不再锁闭正门自动门。友军进入传感范围照常开门，敌军 `enemy_id` 仍被过滤；门叶离开 / 回到门洞只改变物理通行，不写索敌、突破、租约或 HP 状态。
+- CombatSystem 的 `front_gate` 优先级、5 个门板位、5 租约 + 3 waiter 规则不读取 `open_fraction`。打开状态与关闭状态生成同一组实际旋转门体候选。
+- 正门门板平面新增固定非阻挡战斗接触 Area。它使用独立的敌军攻门查询层并携带 `building_id=front_gate`，但不阻挡 CharacterBody，也不会截断友军穿过开门射击；敌人仍须先有正门目标、合法攻击位和真实武器 / 弹体接触，开门不会提供逻辑补伤。
+
+## T0213 集结超时下马返厩与重新鸣警
+
+- `rally` 到点等待 1 游戏小时未接敌后，CombatSystem 仍将 NPC 切回 `work`、删除 active rally 且不请求计划重评估。若该 NPC 已骑马，HorseSystem 以骑手此刻物理位置作为下马点，保留分配并启动正式导航返厩；不再使用上马时缓存位置或直线插值。
+- 返厩速度由 `horse_defs.return_to_stable_speed=3.2 m/s` 单独定义为步行，不复用敌方逃马、骑兵冲锋或集结奔跑速度。移动权威是与 NPC 共用的 ActorMotionBody，表现层只播放 `Walk` 并按实际速度转向。
+- 返厩途中再次触发警铃时，HorseSystem 先冻结马匹当前位置，并让骑手寻路到马旁可达点。完成上马后调用 `handle_npc_mount_ready(...)`，CombatSystem 才将本轮 rally 从 `mounting` 改回 `moving` 并恢复既定阵位；马匹等待期间不自行靠近骑手。
+
+## T0212 骑兵败退坐骑正常奔跑速度
+
+- 骑马敌军 HP 清零后，敌军单位仍立即退出活动战斗；保留的纯表现包装继续播放骑手 `Death_A` 坠马并让马向地图外逃离。
+- T0212 的逃马速度合同已由 T0242 废止：CombatSystem 不再把 `move_speed` 传给阵亡包装，敌方马匹阵亡后保持零位移并与骑手一起延时清理。
+- 快照公开 `escape_speed_mps / escape_speed_source=enemy_move_speed / maximum_escape_frame_displacement`。路线、边界释放、暂停冻结、骑手可见时间和所有 HP / 伤害 / 胜负权威不变。
+
+## T0211 等待攻击位持续施压
+
+- `waiting_for_attack_position` 仍保留当前索敌目标，并从该目标的兼容攻击位中稳定选一个 `desired_attack_position_id`；快照以 `attack_position_wait_movement_policy=pressure_assigned_attack_position` 标识。移动终点是该真实候选的 NavMap 吸附位置，而非入队位置或后排队形点。
+- 期望位置不创建租约、不写 `occupied`、不开放攻击时间线。候补只能由现有实体碰撞停在前排后方；槽位释放仍按距离 / 入队 sequence 调用原晋升流程，更高优先级目标仍可由 T0196 索敌器抢占并清理旧队列。
+- `attack_position_policy` 将候补 / 正常攻击者 RVO 基准优先级分别设为 `0.20 / 0.55`，并保留 `0.08` 身份微差。候补因此对在途租约持有者和已占位攻击者让行；前排静止攻击者不会被挤走，同阵营候补也不会阻挡既有近战扫掠的真实建筑接触。
+- `verify_t0211_attack_wait_pressure.gd` 锁定 4.00→0.88 m 施压、前排零位移、胶囊净阻挡、候补零租约 / 零攻击及释放后晋升；T0195 同时记录自然弩床候补的期望槽位与移动政策。
+
+## T0210 敌我共用室内出口前缀
+
+- CombatSystem 继续独占索敌、目标锁和接敌点；若敌军或友军 ActorMotionBody 当前在可进入建筑室内、战斗最终目标在建筑外，移动层先执行该建筑正式反向门路，再追同一目标。诊所内原目标昏迷 / 失效后，重新锁定室外目标会因此先出门，不再尝试从室内直接连接远端接敌点。
+- 前缀点与最终目标在同一个 motion request 中推进。对同一目标的实时位置更新不改变当前前缀腿或 request id；最后 `entry_outside` 完成后才恢复动态接敌终点。攻击周期、目标优先级、武器距离和伤害提交均未改变。
+
+## T0209 站内多敌加权避战
+
+- 避战圈 `R=39.2 m`，来自敌军统一索敌 `37.2 m` 加 `2.0 m` 余量。圈内每名敌军 `i` 贡献水平反向单位向量 `u_i=(npc-enemy_i)/d_i` 与权重 `w_i=(R/max(d_i,1.0))²`，最终方向为 `normalize(Σw_i u_i)`；抵消时回退最近敌人反向。
+- 原始目标固定为 `npc + direction × R`。StationLayoutController 沿该射线限制到 `interior_polygon` 内，再从目标向原点有界采样生产 NavigationMap，拒绝建筑 / 附属物 / 墙 / 门包络。修正只影响实际目标，不改变原始方向和半径诊断。
+- 自动非战斗避战与显式 `avoid_combat` 共用该算法；`active_avoidances` 记录 `threat_count / threats[].distance / weight / away_direction / avoidance_direction / desired_target_position / boundary_limited / navigation_adjusted`。移动仍由 NPCSystem / ActorMotionBody 执行，避战不离站。
+
+## T0208 正门五个门板攻击位
+
+- 正门固定近战带当前为五槽，`target_outlines.front_gate` 使用 `width=4.8 / position_count=5`，沿实际门体局部横轴生成 `2.4/1.2/0/-1.2/-2.4 m`。五个接触点都在门板平面和门洞范围内。
+- 左右门塔继续拥有物理碰撞与导航阻挡，但不再是正门攻击面。候选生成器已删除“最外槽攻击塔面”的前移、专用站距和接触偏移；碰到相邻墙段也不再通过旧七槽 ID 代算正门命中。
+- 第一波 8 人当前为 5 个独占门板租约 + 3 个正门 waiter。五个租约全部实际占用后，正门仍按强制破口例外保持三个候补，不越门选择仓库。
+
+## T0207 固定攻击位的预留与实际占用
+
+- 固定目标攻击位保留两阶段状态：分配成功后为 `reserved`，敌人实体进入该租约的到达容差后才由 `_has_enemy_reached_attack_position(...)` 提交为 `occupied`。目标快照同步投影真实租约状态。
+- 租约分配继续让 `reserved` 与 `occupied` 都参与空间冲突，保证同一槽位不会发给两名敌人；索敌预览使用同一冲突几何的 `occupied_only` 视图，只有实际占用才消耗目标容量。全槽仅在途预留时返回 `available / reserved_in_transit`，全槽实际占用时才返回 `full`。
+- 塔防、仓库和主厅仅在实际满位后对后来敌人视为消失；完整正门仍是强制破口例外。T0211 起 `reserved_in_transit` 候补压向真实槽位并以较低 RVO 优先级让行；槽位释放后仍复用原候补晋升。
+- `verify_t0207_attack_position_actual_occupancy.gd` 覆盖全预留、部分占用、全占用、索敌降级和候补期望槽位；T0195 自然整波继续验证精确到位与连续真实塔防伤害。
+
+## T0204 正门对称几何与双塔实体（攻击槽数量已由 T0208 覆盖）
+
+- 正门攻击几何以 `StationLayoutController.get_building_combat_geometry("front_gate")` 返回的实际门体中心、右轴与外法线为准，不再用偏斜的路线 staging 向量决定攻击朝向。当前五槽沿门体局部横轴严格对称；中槽位于门洞中心，左右成对槽位互为镜像。
+- T0204 曾让最外两槽落在塔面；T0208 已删除这两个槽和全部塔面接触特例。双塔碰撞与导航绕行仍保留。
+- 正门槽位仍按可达性和租约分配。分配排序先把敌人的入场车道投影到门平面，再在五个合法门板候选中取最近横向槽；这只决定“选哪个空槽”，不改变目标、攻击位容量或路径权威。
+- `verify_t0204_front_gate_alignment_and_tower_collision.gd` 当前锁定五个门板槽镜像、门法线、双塔射线命中、生产导航绕塔、`6.0 m` 门洞净宽及 5 租约 + 3 waiter；T0203 / T0180 / T0186 继续锁定五人全部真实伤害。
+
+## T0203 正门攻击位导航落点权威
+
+- 固定目标攻击位候选在租用前先吸附 NavigationMap 并完成路径可达性验证；该已吸附 `position` 是本次租约从移动到攻击交接的唯一权威终点，不能在后续 AI 刷新中被未吸附的 authored candidate 覆盖。
+- 原始候选位置仅保存在 `authored_position` 供诊断；静态建筑 / 塔防租约继续刷新 `contact_position` 与目标事实。敌人失去目标、角色改变、目标失效或路径失败时仍按既有合同释放并重新申请租约。
+- 这项修复不增加 `arrival_tolerance`，也不改变武器射程、攻击周期、门柱碰撞和 T0144 真实模型接触。`verify_t0203_front_gate_attack_handoff.gd` 从自然第一波生成到真实攻击，要求当前 5 个正门门板租约持有者全部实际扣门血。
+
+## T0202 友军单序列表现与清敌收口
+
+- 艾达的权威伤害起手仍由 T0193 `combat_attack_next_sequence_time` 限制；本次没有调整剑盾 `attack_interval`、技能倍率、impact 比例或伤害。60 Hz 实测约 `1.048 s` 完整周期，连续起手落在 `1.033–1.050 s` 的一帧采样误差内。
+- 攻速异常来自表现层：非循环攻击 clip 已播放完，但 CombatSystem 仍处于同一 sequence 的 recovery 尾部；NPC profile 再刷新时，旧 `_play_state` 因 AnimationPlayer 已停止而重新播放该 clip。现在同一 sequence 的 windup / recovery 在末帧保持，只有 sequence 变化才 reset 并开始下一剑。
+- 活动战斗仍存在但 `_active_enemies` 已空时，逻辑 tick 和友军攻击步都必须进入 `_handle_all_enemies_cleared(...)`，不得提前返回。收口清空友军近战 sweep / pending damage、战略锁、攻击锁、phase / elapsed / cycle 与可见行动，再按既有规则让 combat / rally / avoid_combat NPC 返回工作。
+- `verify_t0202_friendly_attack_cleanup.gd` 锁定“艾达 windup 中由外部入口移除最后敌人”的边界；`verify_t0193_friendly_attack_cadence.gd` 继续锁定真实 sequence 间隔、跨中断时间锁、T0245 角色 impact 伤害与单 sequence 零回卷。
+
 ## T0200 敌我统一战斗寻路
 
 - CombatSystem 继续先按 T0196 / T0198 锁定“打谁”，再按单位当前武器解析距离、近战接触或远程弹道条件。未满足攻击条件时，只向该目标周围距离自身最近且可达的合法接敌点移动；路径长短、道路、门和暂时拥堵不得反写目标优先级。
 - 敌我战斗请求统一携带 `shared_combat_navigation_v1`：无遮挡时 NavigationMap 给出近似直线最短路，静态建筑 / 围墙 / 家具 / 自然阻挡由 collider-baked NavMesh 绕行，活动实体先由 NavigationAgent3D RVO 局部避让。目标显著移动时更新同一个 request 的终点；路径失效或持续无进展时按既有限频率重规划，直到进入攻击条件或目标失效。
 - 普通生活 / 工作移动仍保留最大重规划次数与卡死超时；战斗追击不会因为达到该普通上限而永久停住。进入武器有效条件后先释放移动权威，再进入既有起手锁与模型接触 / 弹体时间线，不允许边移动边攻击。
 - 城外生产 NavMesh 现覆盖正式敌军生成区到驿站外墙，旧 `EnemyApproachNavigation` 狭长廊道不再创建。敌军路线数据只用于生成 / 阶段表现，道路只用于美术；墙体、密林和其他正式静态碰撞仍是实际阻挡。
-- 正门七个独占攻击位按 collider-baked NavMesh 的真实门柱净空布置；首波 7 人均须到位并通过模型接触造成伤害，第 8 人继续遵守完整城门 waiter 规则。敌我每个角色使用稳定身份哈希产生的微小 RVO 优先级差以打破对称礼让，它不改变目标、路径或攻击位。同阵营活动角色交由 RVO / 接敌移动处理，不作为近战武器扫掠的世界阻挡；静态场景与敌对实体仍按首个真实接触裁决。
+- 正门五个独占攻击位按门板净宽布置；首波 5 人均须到位并通过模型接触造成伤害，其余 3 人继续遵守完整城门 waiter 规则。敌我每个角色使用稳定身份哈希产生的微小 RVO 优先级差以打破对称礼让，它不改变目标、路径或攻击位。同阵营活动角色交由 RVO / 接敌移动处理，不作为近战武器扫掠的世界阻挡；静态场景与敌对实体仍按首个真实接触裁决。
+- 塔防宿主代理的近战租约使用数据化 `0.06 m` 最终到达半径，由 ActorMotionBody 的 per-request `target_desired_distance` 执行；它防止普通 `0.32 m` 到达容差让敌人在真实剑模型扫掠之外提前停步。三座建筑保留各自已校准的普通到达合同，武器射程、攻击周期、伤害和代理碰撞身份不变。
+- T0195 自然整波回归现在必须观察至少三个独立器械 HP 下降帧，并断言塔防近战实际到位不超过 `0.08 m`；首次扣血不再足以通过。
 
 ## T0198 友方分域在场锁与异源受击重扫
 
-- 全部持武器友方 NPC 只使用 `friendly_enemy_presence_lock_v1`。NPC 位于驿站外时，候选是水平直线距离不超过精确 `37.2 m` 的活动敌人；NPC 位于驿站内时，候选扩展为 `interior_polygon` 内的全部活动敌人，站外敌人不进入整站候选。
-- T0188 的“驿站破防时全部武装应征者立即切入 combat”继续有效；若响应者当时位于站外且圈内无敌人，只切换行为模式并保持空目标，不把远处站内敌人越域写入锁。
+- 全部持武器友方 NPC 只使用 `friendly_enemy_presence_lock_v1`。正常情况下，NPC 位于驿站外时使用精确 `37.2 m` 水平圈；NPC 位于驿站内时使用 `interior_polygon` 内全部活动敌人。
+- T0225 起，只要驿站内仍有敌人，全部武装应征者无论自身地点统一改用 `station_breach_global`，只从整座驿站内锁敌。站内清空后再恢复上述普通分域。
 - 没有有效锁时按水平距离选择最近敌人；当前敌人仍有效且仍在当前分域时持续保持，不因另一敌人后来出现或变近而跳锁。`combat_target_enemy_id` 同时约束策略移动、武器射程复核、windup / impact 和状态显示，不能在移动层与攻击层各选一个目标。
-- 当前锁定期间，另一个敌人经 `_apply_enemy_attack_to_npc(...)` 正式链实际扣除 NPC HP 后，记录一次 `friendly_enemy_damage_reacquire_request_v1`。下一次选择只绕过在场锁一次：站外重扫 `37.2 m` 圈，站内重扫整座驿站，并按当前距离取最近者；不强制精确反击伤害来源，圈 / 站外来源可触发重扫但不能越过分域成为目标。
+- 当前锁定期间，另一个敌人经 `_apply_enemy_attack_to_npc(...)` 正式链实际扣除 NPC HP 后，记录一次 `friendly_enemy_damage_reacquire_request_v1`。下一次选择只绕过在场锁一次：普通站外重扫 `37.2 m` 圈，普通站内或破防全局域重扫整座驿站，并按当前距离取最近者；不强制精确反击伤害来源，目标域外来源可触发重扫但不能越域成为目标。
 - NPCSystem 受击路由只负责进入战斗模式，不再在每次受击时重进 combat、打断导航或把目标强写成攻击者。异源换锁可取消当前动作阶段与重建追击，但不能清除 T0193 `combat_attack_next_sequence_time`；瞬时请求不进入正式空间存档。
 
 ## T0197 / T0199 实际伤害的一次性最近重锁
@@ -47,7 +350,7 @@
 
 - 全部我方武装 NPC 与敌军共用 CombatSystem 单调战斗时钟。每次友军合法起手写入 `combat_attack_last_sequence_time`，并按该 NPC 当前装备 / 技能 / 骑乘状态解析出的完整 `cycle_seconds` 计算 `combat_attack_next_sequence_time`。
 - 接触丢失、目标变化、策略移动、windup / recovery 取消或短暂行为模式切换只清当前 phase、elapsed、锁定目标与模型接触采样；只要本场敌人仍在，next sequence time 不得清零。旧 `combat_attack_cooldown` 仅投影剩余等待并兼容旧状态，不再决定新 sequence。
-- 近战仍须在 authored impact 窗由真实模型接触提交伤害；弓 / 弩仍只在 impact 释放带 attack id / sequence 的正式弹体。时间锁不会补伤、延长射程或改变播放倍率。
+- 普通角色近战仍只在合法范围内起手，并于 authored impact 对原 cycle target 提交一次伤害；固定目标仍须模型接触。弓 / 弩仍只在 impact 释放带 attack id / sequence 的正式弹体。时间锁不会开放超距起手、改变播放倍率或让一次动作重复伤害。
 - 战斗真正结束时清除全部 NPC 的 last / next / remaining，下一波独立开始。正式空间存档保存 `combat_attack_sequence` 与相对 `combat_attack_sequence_lock_remaining`；联合读档跨中间清场事务恢复相对量，下一友军步再对当前单调时钟重建绝对时间。
 - `verify_t0193_friendly_attack_cadence.gd` 锁定每 0.2 秒取消压力、一次真实 behavior mode 往返、正式角色同 sequence 不回卷、压力后真实伤害以及联合存读档不赠送起手。
 
@@ -79,9 +382,9 @@
 ## T0188 站内敌军全域响应与避战射程
 
 - StationLayoutController 的正式 `interior_polygon` 是“敌人已进入驿站”的唯一空间事实。只要至少一名活动敌人在多边形内，全部可响应的武装应征 NPC 立即从工作 / 集结进入战斗，不要求敌人先进入该 NPC 的 5 米接触圈。
-- T0198 起，站内武装 NPC 的新目标、首选目标与追击目标统一限定为整座驿站内的敌人，不能被更近的站外敌人截走；站外武装 NPC 则按统一 `37.2 m` 圈接敌。旧 `normal_contact_range=5 m` 不再决定武装 NPC 索敌，只保留为非战斗接触 / 避战兼容下限。
+- T0225 起，只要站内仍有敌人，所有武装应征 NPC 的新目标、首选目标与追击目标都限定为整座驿站内的敌人，不受本人地点影响，也不能被更近的站外敌人截走；站内清空后，站外 NPC 才恢复统一 `37.2 m` 圈。旧 `normal_contact_range=5 m` 不再决定武装 NPC 索敌，只保留为非战斗接触 / 避战兼容下限。
 - 分配坐骑不会绕过取马流程：进入战斗只设置 `going_to_stable_horse`，HorseSystem 完成指定马匹会合前友军 AI 跳过攻击；上马回调把状态改为 `mounted / combat_ready` 后再执行策略。
-- 非战斗避战的触发半径为 `max(8 m, 当前活动敌军最大远程攻击距离 + 2 m)`，持续安全距离为 `max(8.5 m, 最大远程攻击距离 + 2.5 m)`。短步目标、导航和清敌返回工作合同不变；`avoid_combat` 的实际位移档位由 T0155 固定为 run。
+- T0209 后非战斗避战检测半径固定为敌军统一索敌 `37.2 m + 2.0 m = 39.2 m`，不再随活动敌军最大远程射程变化；原始目标距离同为 `39.2 m`。站内目标修正、清敌返回工作合同不变，`avoid_combat` 的实际位移档位由 T0155 固定为 run。
 
 ## T0187 五级索敌白名单与塔防真实受击（历史分类，现行规则见 T0196）
 
@@ -100,7 +403,7 @@
 ## T0185 全战斗表现统一时间合同
 
 - `TimeSystem.get_combat_frame_delta_seconds(real_delta)` 是现实帧转换为战斗表现秒的唯一入口；`get_combat_frame_rate()` 供 AnimationPlayer / 粒子倍率使用。敌人在场时两者为现实 1:1，暂停为 0，非战斗 x2 / x4 不会把战斗表现加速。
-- ChibiCharacterPilot 的四武器步战 / 骑战攻击、受击、昏迷、起身和坠马，旧 NPCArtView 的战斗状态、友敌坐骑 / 逃马及相关粒子共同消费该合同。逻辑 attack elapsed、真实武器扫掠和伤害提交边界没有迁入表现层。
+- ChibiCharacterPilot 的四武器步战 / 骑战攻击、受击、昏迷、起身和坠马，旧 NPCArtView 的战斗状态、友敌坐骑 / 敌方坐骑共同阵亡及相关粒子共同消费该合同。逻辑 attack elapsed、真实武器扫掠和伤害提交边界没有迁入表现层。
 - CombatSystem 的友军、敌军与 DefenseDeviceSystem 弹体统一以战斗表现秒积分速度 / 重力；不得再将 `numeric_multiplier=1/60` 直接乘到物理 delta。暂停保持弹体原位置，恢复后继续同一 attack id 与轨迹。
 - 正式塔防机构仍由 DefenseDeviceSystem 权威 attack timeline 驱动，MeteorPresentation 的冲击波 / 粒子走统一表现秒；PietySystem 的陨石下落维持 T0173 已定义的稳定现实秒 + 主动暂停合同。开发场景独立动作预览不参与生产伤害。
 
@@ -122,6 +425,12 @@
 - 陨石伤害圆与任何正式建筑、城墙或城门区域相交时，PietySystem 在消费虔诚和创建 pending 状态前拒绝施放；建筑 HP 仍不会进入陨石伤害结算。
 - 合法空地落地时，MeteorPresentation 提供与 StaticBody3D 完全一致的碰撞半径。PietySystem 先请求 NPCSystem 排出体积内友军，再创建静态碰撞，避免无伤友军被实体包住。
 - 排出不属于伤害、击退或行为切换：HP、昏迷、骑乘、当前模式和移动目标不变。冲击与燃烧仍只调用 `CombatSystem.apply_enemy_area_damage(...)`。
+
+## T0238 陨石坑 24 游戏小时生命周期
+
+- 弹坑、焦土与灰烬只属于表现，不拥有 HP、伤害、导航或占位权威；它们从落地起随逻辑游戏秒线性淡化，并在 `86400` 游戏秒边界移除。
+- 战中陨石 `StaticBody3D` 仍由 `combat_ended` 独立清理。弹坑先到期不能移除仍在战斗中的岩体，战斗先结束也不能提前抹除未到期弹坑。
+- 冲击、燃烧、最近 12 目标、无友伤、NPC 安全排出与事件链均未改变。
 
 ## T0180 结构局部接触点与固定目标容量
 
@@ -157,7 +466,7 @@
 ## T0165 陨石落地实体与战斗结束生命周期
 
 - 伤害合同不变：5.5 米冲击仍只调用 `apply_enemy_area_damage(...)`，48 攻击力 / 5 穿透 / 最近 12 目标；10 动作秒燃烧仍每秒 1 攻击力且无友伤。变化仅是下落表现时长从 1.15 调为 2.8 动作秒。
-- 落地后的 4.2 米陨石带 world_static `StaticBody3D`，在本场战斗内形成真实碰撞；CombatSystem 写出既有 `combat_ended` 事件后，PietySystem 移除所有落地陨石实体。弹坑与灰烬没有 HP、伤害或占位权威，不随清敌消失。
+- 落地后的 4.2 米陨石带 world_static `StaticBody3D`，在本场战斗内形成真实碰撞；CombatSystem 写出既有 `combat_ended` 事件后，PietySystem 移除所有落地陨石实体。弹坑与灰烬没有 HP、伤害或占位权威，不随清敌立即消失；T0238 起它们改由独立的 24 游戏小时淡化生命周期清理。
 
 ## T0163 陨石落点范围解锁
 
@@ -196,7 +505,7 @@
 
 - T0141–T0155 的生产链已作为一个整体通过自动矩阵；其中旧七层与后续五级分类均已由 T0196 统一在场锁合同取代，其余模型接触、弹体、代理、固定目标攻击位与 locomotion 权威边界不变。
 - 没有 authored 武器几何样本的逻辑步必须返回 `melee_geometry_unavailable`，伤害为 0；测试不得再用 `_apply_npc_attack_to_enemy` 把未采样动画伪装成命中。战斗生命周期测试先完成一次正式角色剑模型接触，余额清理才使用显式测试 fixture 的权威 damage sink。
-- 正式第五波 48 敌压力通过，CPU p95 `7.436 ms`、导航 p95 `0.333 ms`、零 orphan；五波胜利、主厅失败、无可用战斗员失败、暂停 / 存档、骑乘坠落 / 逃马和战后清理均通过。
+- 正式第五波 48 敌压力通过，CPU p95 `7.436 ms`、导航 p95 `0.333 ms`、零 orphan；五波胜利、主厅失败、无可用战斗员失败、暂停 / 存档、骑乘坠落 / 敌方坐骑共同阵亡和战后清理均通过。
 
 ## T0151 权威有效射程的只读表现
 
@@ -224,7 +533,7 @@
 
 - DefenseDeviceSystem 的活动塔防目标不再把高处器械根节点直接当作敌军接触点，而是输出 `host_proxy`：宿主建筑、槽位、墙段 / 建筑墙段 / 平台 fixture、低位移动目标、瞄准点、接触半径和局部命中半径。
 - 围墙槽 01/03 共用 `north_west_a` 物理墙体、02/04 共用 `north_east`，但每槽用自身平台中心和 `2.05 m` 命中半径进一步分区；碰到同一长墙的另一个槽位区域不算当前器械命中。
-- 主厅槽按位置映射到 `back_wall / front_left / front_right`，并同时接受对应唯一 `main_hall_slot_*_platform` fixture。地面近战可以攻击支撑墙，远程弹体也可实际碰中支撑墙或平台，二者都解析为锁定器械。
+- 主厅槽的兼容主代理按位置映射到 `back_wall / front_left / front_right`，并同时接受对应唯一 `main_hall_slot_*_platform` fixture；T0230 起实际接敌 / 命中再展开同角 `left_wall / right_wall` 第二区域。地面近战可以攻击两条相邻支撑墙，远程弹体也可实际碰中支撑墙或平台，均解析为锁定器械。
 - 敌军近战 sweep 和远程 projectile 共用 `_is_defense_device_proxy_contact(...)`。只有 deployment 或严格的 building + segment/fixture + 局部位置匹配后，才调用 `_apply_enemy_attack_to_defense_device(...)`；旧的“命中宿主建筑任意 collider 都算器械命中”路径已删除。
 - 代理命中只调用 DefenseDeviceSystem，宿主建筑 HP 不变；`target_type=building` 仍只调用 BuildingSystem。器械摧毁后活动目标立即消失，但现有墙体 / 平台碰撞与建筑 HP 不随之删除。
 
@@ -250,12 +559,12 @@
 - CombatSystem 在调用 NPC、敌军、塔防或建筑伤害入口前先把 ID 置为 resolving；同一 ID 的重复碰撞或重入只返回首个终态 fact 并标记 `duplicate_ignored`，不能再次结算。投射物表现节点仍只消费位置 / 速度，不创建或上报 HP 变化。
 - 清空活动弹体时同步清空终态 fact 表；在途弹体、RID 和去重表不进入空间存档。T0146 将继续审计敌我 × 弓弩 × 步骑矩阵，本节不将矩阵覆盖提前视为完成。
 
-## T0144 近战模型接触权威
+## T0144 近战模型接触权威（T0245 后用于固定目标与角色模型诊断）
 
 - 剑盾 / 长杆攻击起手只建立 CombatSystem swing；正式包装逐帧提供当前可见刃段 / 杆头端点。CombatSystem 按武器配置的样本数优先查询当前武器胶囊，未命中时再扫相邻样本的刀尖 / 中段运动轨迹；首个终止碰撞决定 `hit / blocked`，没有碰撞为 `miss`。
-- 锁定目标只负责朝向与起手，不是命中承诺。友军只可命中活动敌军，敌军只可命中实际 NPC 或锁定器械 / 建筑宿主；实际先碰到另一合法敌对单位时，既有伤害链作用于实际 collider 身份。
+- 对建筑、城门和塔防宿主，锁定目标只负责朝向与起手，命中继续读取实际 collider；实际先碰到合法宿主受击体时按其身份结算。T0245 起普通角色对角色近战改为 cycle target 的 authored impact 承诺，不再由扫掠改伤害目标。
 - 步战 / 骑战按各自动画量测接触点和范围：剑盾 `1.45 / 0.96 m`、长杆 `2.98 / 2.66 m`。距离表示面朝目标时目标碰撞体中心可被当前模型触及的前向范围，不使用横挥侧向半径冒充射程。
-- 伤害仍只由 CombatSystem 提交。表现帧只登记首个接触，紧接的物理帧消费唯一 damage commit；若权威攻击边界先到，则读取同一 swing 的接触结果，不能重复结算。模型包装、BoneAttachment、武器 Mesh 与 AnimationPlayer 都不拥有 HP；攻击中断、模式退出或清敌会清理未结算 swing 与待提交队列。
+- 伤害仍只由 CombatSystem 提交。固定目标的表现帧登记首个接触并由物理帧消费唯一 damage commit；移动角色 swing 的模型接触仅作诊断，权威时间线到 impact 才提交锁定目标伤害。模型包装、BoneAttachment、武器 Mesh 与 AnimationPlayer 都不拥有 HP；攻击中断、模式退出或清敌会清理未结算 swing 与待提交队列。
 
 ## T0143 弓弩正式物理弹体
 
@@ -277,7 +586,7 @@
 
 - Main 的剑盾、长杆、弓、弩步兵现统一使用 NPCDevLab 已验收的 `ChibiCharacterPilot` 生产包装；轻骑和骑射继续使用 Main / DevLab 共用的 `EnemyMountedArtView`，固定装备分别为剑盾 + 马和弓 + 马。
 - 武器与坐骑来源仍是 `enemy_waves.json`。CombatSystem 将其投影到正式 profile，表现层只按 profile 显示唯一武器和动作，不读取 DevLab 临时装配，也不改变敌军伤害、攻速、攻击距离、目标或占位逻辑。
-- ActorMotionBody、碰撞、NavigationAgent、HP、受击、击退统计、坠亡逃马和胜负流程全部保留；旧 ActorMesh 仅在正式包装存在时隐藏。
+- ActorMotionBody、碰撞、NavigationAgent、HP、受击、击退统计、坠亡共同尸体和胜负流程全部保留；旧 ActorMesh 仅在正式包装存在时隐藏。
 - 当前弓 / 弩可见弹体仍是包装内部的动作预览，不是正式物理箭矢。攻击动作周期与攻速对齐、近战武器实际接触、实时瞄准、抛物线飞行、碰撞命中后伤害及射程提示圈均尚未由 T0141 实现。
 - `verify_t0141_formal_enemy_dev_lab_reuse.gd` 生成代表波次并验证 7 个敌种、四类固定武器、步兵 / 骑兵包装、debug 隔离以及原碰撞 / 选择根保留。
 
@@ -293,16 +602,16 @@
 
 - 警铃建立队形时，默认正式世界直接读取 `StationLayoutController.get_enemy_route_world()` 的 `front_gate` 世界坐标，不再依赖敌军正式波次已经生成。旧原型坐标只在显式旧场景兼容模式使用。
 - 已分配马 NPC 仍先到马厩取马；`HorseSystem` 提交上马后，`CombatSystem.handle_npc_mount_ready(...)` 用警铃时已预留的 `formation_row / formation_index / position` 重新发起集结移动。T0160 后所有骑乘单位分列左右翼，步行近战居中前排、步行远程居中后排。
-- 集结到达判定使用 `0.3 m`，覆盖 ActorMotionBody / NavigationAgent 的停止容差；人物停止时必能被提交为 `rallied`。本修正不改变接敌距离、骑兵伤害、马匹分伤、昏迷或逃马权威。
+- 集结到达判定使用 `0.3 m`，覆盖 ActorMotionBody / NavigationAgent 的停止容差；人物停止时必能被提交为 `rallied`。本修正不改变接敌距离、骑兵伤害、我方马匹分伤、昏迷或敌方共同阵亡权威。
 
-## T0139 友方骑手坠马与敌方骑兵逃马表现边界
+## T0242 / T0139 友方骑手坠马与敌方骑兵共同阵亡表现边界
 
 - 骑乘 NPC 的 HP 归零、昏迷事实、双方马匹分配清理和存活马返厩仍由 CombatSystem / NPCSystem / HorseSystem 在同一受击结算中立即完成。
 - 角色表现仅从 `combat_mounted=true` 到 `unconscious=true` 的边沿触发一次坠马：约 `0.92 s` 侧向翻落并播放 `Death_A`，落地后停留；它不提交伤害、不延迟解绑、不控制马匹返厩。
 - 复苏继续遵守 30% HP 权威门槛并播放 `Lie_StandUp`；无马昏迷保持原表现。
 - 敌方骑兵 / 骑射兵的马匹是纯表现节点，没有独立 HP、分伤、HorseSystem 记录或装备所有权；我方伤害完整进入敌军单位 HP，避免额外血池改变波次数值。
-- 敌军 HP 清零时权威敌军立即移除并照常推进击退统计、清敌与胜负判断。随后保留的表现包装只负责骑手 `Death_A` 坠亡和马匹以 `18 m/s` 逃向前门外地图边界，离场后释放；动画不会延迟、撤销或重复任何结算。
-- `NPCDevLab` 的敌方骑兵验收也直接调用 `EnemyMountedArtView.apply_profile / set_movement_active / begin_mounted_defeat_escape`，仅改变独立开发场景表现，不向 CombatSystem 提交模拟伤害。
+- 敌军 HP 清零时权威敌军立即移除并照常推进击退统计、清敌与胜负判断。随后保留的表现包装只负责骑手 `Death_A` 坠亡与马匹 `Death`：人马根位置固定、动画结束后保持尸体姿态，并在统一 `2.4 s` 保留时间后整体释放；不再存在逃跑目标、速度、距离或地图外释放。
+- `NPCDevLab` 的敌方骑兵验收直接调用 `EnemyMountedArtView.apply_profile / set_movement_active / begin_mounted_shared_defeat`，仅改变独立开发场景表现，不向 CombatSystem 提交模拟伤害。
 - T0139-D2 的我方 DevLab 入口以两次本地 `apply_profile` 复制正式骑乘到昏迷边沿，不扣 HP、不解除马匹分配、不发送事件；马匹 `Gallop` 仅是检视台上的返厩语义参照。
 
 ## T0132-P5 道路表现与战斗寻路边界
@@ -314,13 +623,13 @@
 
 - DefenseDeviceSystem 继续按 `attack_interval=1.39 s`、伤害 16、穿透 4、基础射程 28 和宿主槽倍率即时选敌 / 结算；正式箭塔只消费既有 `origin_position / target_position / attack_interval` 表现快照。
 - 每次已结算攻击驱动一次转台瞄准、弓弦释放、已装填箭隐藏、可见飞行箭和约 `58%` 间隔的机械回位；飞行体与动作都不提交命中、伤害、穿透或击败。目标在箭飞行期间移动或失效，不改写已发生的结算。
-- 主厅木制平台替换只影响 Mesh / 材质。四槽坐标、`1/3/5/6` 解锁、`3.93 m` 锚点、碰撞、主厅 `2.0x` 射程和围墙槽加成都未改变。
+- 主厅木制平台替换只影响 Mesh / 材质。四槽坐标与 `3.93 m` 锚点保持不变；T0228 后前侧 `slot_03/04` 为 Lv.1/3、背侧 `slot_01/02` 为 Lv.5/6，T0223 的主厅 `1.0x` 射程与围墙槽加固收益不变。
 
 ## T0132-P4a 弩床攻击表现与结算边界
 
 - DefenseDeviceSystem 仍按 `attack_interval=4.25 s`、伤害 44、穿透 8、基础射程 34 和宿主槽倍率即时选择目标并调用 CombatSystem 结算；动画完成、弩箭飞行时间和任何视觉碰撞都不提交伤害。
 - 单次 `defense_device_action_resolved` 追加 `origin_position / target_position / attack_interval`，三者是本次权威射击发生时的只读快照。目标之后移动、昏迷或被移除不会改写已经结算的事实；飞行弩箭只追到快照坐标并自动清理。
-- `DefenseDeviceView` 把同一事件交给正式弩床，按事件频率播放转台瞄准、弓弦释放、后坐、弹体飞行和重装；待机箭只在重装完成后出现。主厅 `2.0x` 射程与围墙 Lv.3 / 5 射程加成不改变攻速或表现层职责。
+- `DefenseDeviceView` 把同一事件交给正式弩床，按事件频率播放转台瞄准、弓弦释放、后坐、弹体飞行和重装；待机箭只在重装完成后出现。主厅 `1.0x` 基础射程与围墙 Lv.3 / 5 射程加成都不改变攻速或表现层职责。
 
 ## T0132-P2 仓库受击表现边界
 
@@ -329,8 +638,8 @@
 
 ## T0132-P1 主厅城防与损伤表现边界
 
-- 主厅器械槽位仍由 DefenseDeviceSystem 权威解锁，Lv.1–6 容量保持 `1/1/2/2/3/4`，平台对应解锁等级为 `1/3/5/6`；表现层不拥有部署、射程、器械 HP、攻击或命中。
-- P1R3 修复旧空间坐标分裂：主厅四槽的运行态攻击原点、世界部署模型和 UI 标记现在统一绑定正式平台世界锚点；围墙四槽也统一绑定正式正门墙段。主厅平台局部中心保持 `(-7,-5)/(7,-5)/(-7,5)/(7,5)`，安装高度为 `3.93 m`，不改变 `2.0x` 射程、伤害、攻速、穿透或目标选择公式。显式 GM legacy compatibility 才恢复配置中的旧地图位置。
+- 主厅器械槽位仍由 DefenseDeviceSystem 权威解锁，Lv.1–6 容量保持 `1/1/2/2/3/4`；T0228 后平台映射为前侧 `slot_03/04=1/3`、背侧 `slot_01/02=5/6`。表现层不拥有部署、射程、器械 HP、攻击或命中。
+- P1R3 修复旧空间坐标分裂：主厅四槽的运行态攻击原点、世界部署模型和 UI 标记现在统一绑定正式平台世界锚点；围墙四槽也统一绑定正式正门墙段。主厅平台局部中心保持 `(-7,-5)/(7,-5)/(-7,5)/(7,5)`，安装高度为 `3.93 m`；T0223 后使用 `1.0x` 基础射程，伤害、攻速、穿透或目标选择公式不变。显式 GM legacy compatibility 才恢复配置中的旧地图位置。
 - 主厅裂纹、破损布幔、碎石与烟尘只读 BuildingSystem `hp/max_hp`；主厅 HP 归零的游戏失败仍由原有权威流程决定，表现节点不提交伤害、修复或失败事件。
 
 ## T0130-P1 正式剑盾步兵表现接线
@@ -360,7 +669,7 @@
 
 ## T0129C-A5-P6d-3 昏迷实体与治疗接近边界
 
-- 昏迷 NPC 继续是不可行动但可碰撞 / 可交互的 CharacterBody；`assist_heal` 治疗者必须通过生产导航抵达其周围合法距离，不能用后台 `current_location` 代替接近。
+- T0215 后，昏迷 NPC 仍是不可行动、可见且可交互的世界角色，但不再保留 BodyCollision / RVO 阻挡实体；`assist_heal` 仍必须通过生产导航抵达其世界位置周围合法距离，不能用后台 `current_location` 代替接近。
 - 每个目标最多两名治疗者，各自有独立路线与站位。战斗接管、治疗者昏迷、目标复苏或导航失败都会撤销会话与 helper；CombatSystem 不接管治疗费用、HP 恢复、经验或事件结算。
 - 复苏阈值和“NPC 不死亡”核心规则不变；本步只把既有治疗链的空间前置条件落到实体世界。
 
@@ -381,7 +690,7 @@
 
 - 默认波次启动时，CombatSystem 向 NPCSystem 请求全部 NPC；NPCSystem 只迁移当前可行动者，并保存每个 Body 的原坐标、导航开关和 NavigationMap。初始正常状态下 8 人均进入生产 NavigationMap；暂时昏迷等不可行动者可合法跳过，不会阻断波次，锚点缺失或导航绑定失败仍属于真实失败。
 - `combatant_npc_ids` 继续只列入伍持主武器者；其余已迁移者列入 `noncombatant_npc_ids`，敌人可以按真实同图 Body 发现他们。未入伍或无主武器者仍由既有接敌规则进入 `avoid_combat`，没有被强制征召或赋予攻击能力。
-- 避战候选仍按敌方方位生成短步长散射目标；A5-P1 对正式 NPC 把目标投影到生产 NavMesh，NPCSystem 再通过 ActorMotionBody 请求真实运动。道路没有权重，静态碰撞、实体碰撞和 avoidance 决定路线；不以字典位置或后台地点代替到达。
+- 避战候选按圈内全部敌军的距离逆平方合成反方向，并在一个完整避战半径外生成原始目标；A5-P1/T0209 对正式 NPC 把目标限制到驿站内实体旁可达 NavMesh，NPCSystem 再通过 ActorMotionBody 请求真实运动。道路没有权重，静态碰撞、实体碰撞和 avoidance 决定路线；不以字典位置或后台地点代替到达。
 - 战中逃离出口动态解析到正式地图边缘 `(-54,-305)`；NPC 经后门单向链接进入 6 点 / `261.302 m` 后路 NavigationRegion。对话恢复和复苏恢复刷新并保存同一最终坐标，实体到达后才提交 `escaped`。
 
 ## T0129C-A4-P7 / T0129B-C3-P7 五波动态接敌压力
@@ -458,7 +767,7 @@
 - 新距离会改变器械首射、敌我接触、集结和通勤时间。阶段 C 迁移正式坐标后，必须重跑五波平衡、敌人寻路、正门集结、后门逃离和器械射界；规划值当前没有进入 CombatSystem。
 - 详细坐标、自然遮挡、集结排和镜头见 `docs/SCENE_SPACE_AND_VISUAL_PLAN.md`。
 
-T0129C-A3 已在远端正式布局建立 234 个静态碰撞源：结构 78、地面 1、家具 131、自然边界 24，并生成独立 `0.25 m / 806 vertex / 772 polygon` 生产 NavigationMap；主厅四器械平台与 `main_hall_slot_01–04` 的 `1 / 3 / 5 / 6` 解锁一致，仓库外沿攻击路线保持可达。当前活动敌人仍由 CombatSystem 创建 `Area3D` 并直接回写位置，A4 才会把实际路径 / 速度 / 避让交给 `enemy_foot / enemy_mounted` profile；伤害、攻击距离、目标优先级和胜负继续由 CombatSystem 权威结算。
+T0129C-A3 已在远端正式布局建立 234 个静态碰撞源：结构 78、地面 1、家具 131、自然边界 24，并生成独立 `0.25 m / 806 vertex / 772 polygon` 生产 NavigationMap；T0228 后主厅四器械平台与 `main_hall_slot_01–04` 的 `5 / 6 / 1 / 3` 解锁一致，仓库外沿攻击路线保持可达。当前活动敌人仍由 CombatSystem 创建 `Area3D` 并直接回写位置，A4 才会把实际路径 / 速度 / 避让交给 `enemy_foot / enemy_mounted` profile；伤害、攻击距离、目标优先级和胜负继续由 CombatSystem 权威结算。
 
 ## T0129 单敌战斗表现样片
 
@@ -573,7 +882,7 @@ T1103A 起，战斗相关运行时以 NPC 行为模式为主线，而不是“�
 | 模式 | 适用范围 | 行为 | 进入条件 | 退出 / 切换 |
 |---|---|---|---|---|
 | 工作模式 / 日常模式 | 所有未昏迷、未逃离 NPC | 按计划行动、处理异常、被对话打断、计划重评估 | 默认模式；其他模式结束后返回 | 警铃、接敌、非战斗人员遇敌、昏迷、逃离等高优先级事件打断 |
-| 集结模式 | 已入伍、有主武器、当前可行动 NPC | 前往城门外防线并等待接敌 | 守备官摇响警铃 | 集结途中或集合点敌人进入一定范围后进入战斗模式；到达集合点等待 1 游戏小时仍未接敌，返回工作模式且不重评估计划 |
+| 集结模式 | 已入伍、有主武器、当前可行动且没有合法攻击目标锁的 NPC | 前往城门外防线并等待接敌 | 守备官摇响警铃；原工作、睡眠、避战、旧集结或无目标战斗模式均可被同一次命令覆盖 | 集结开始时、途中或集合点按正常友军索敌域发现敌人后进入战斗模式；到达集合点等待 1 游戏小时仍未接敌，返回工作模式且不重评估计划 |
 | 战斗模式 | 已入伍且有主武器的可战斗 NPC | 按兵种和战斗策略自动战斗 | 从集结模式接敌；或工作模式中敌人进入一定范围；正在睡觉的持武器入伍 NPC 只有被敌人攻击才进入 | 场上敌人全部消失后返回工作模式并重评估计划；HP 清零进入昏迷 |
 | 避战模式 | 非战斗人员：未入伍 NPC，或已入伍但无主武器 NPC | 按敌人接近方位逐步远离，尝试离开接敌范围，不攻击敌人 | 非战斗人员附近出现敌人；正在睡觉的非战斗人员只有被敌人攻击才进入 | 场上敌人全部消失后返回工作模式；避战中应征但仍无主武器时继续避战，装备主武器且仍有敌人时进入战斗模式 |
 | 逃离驿站 | 逃离意向已被程序应用、尚未离图的 NPC | 朝后门外出口移动；可被玩家进行最多 5 轮挽留 | 战时对话、低血量判定、逃离挽留失败或 GM 调试触发 | 到达出口后标记 `escaped=true`；挽留结果为留下时返回工作模式并重评估计划；昏迷后暂停，复苏继续逃离 |
@@ -588,10 +897,12 @@ T1103A 已实现模式切换的权威边界：进入集结 / 战斗 / 避战时�
 
 触发入口：
 
-1. 守备官手动摇响警铃，符合条件的已入伍持武器 NPC 进入集结模式。
+1. 守备官手动摇响警铃，所有已入伍持主武器、当前可行动且没有合法攻击目标锁的 NPC 进入集结模式；已锁定目标者保持原战斗状态。
 2. 已入伍且有主武器 NPC 在工作模式或集结模式中接敌，进入战斗模式。
 3. 未入伍 NPC、已入伍但无主武器 NPC 在工作模式中遇敌，进入避战模式。
 4. 睡觉中的 NPC 只有被敌人攻击时才从睡觉进入战斗 / 避战。
+
+> 历史说明：下段保留 T1103 当时的实现记录，其中“睡觉不响应”和独立近距接敌规则已由本页顶部 T0224 统一规则替代，不再代表当前警铃行为。
 
 T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模式切换和非战斗人员避战闭环：HUD `AlarmButton` 和 GM `alarm` / `rally` 都调用 `CombatSystem.trigger_combat_alarm(...)`。警铃会给所有 NPC 写入 `combat_alarm_rang` 结构化事件；随后只有已入伍、已装备主武器、当前可行动且非睡觉的 NPC 响应集结并进入 `behavior_mode == "rally"`。响应者的普通日常行动会通过 `NPCSystem.set_npc_behavior_mode(...)` 的中断边界打断并释放工位，再移动到城门外防线。T0160 后阵型按步行近战居中前排、步行弓弩居中后排、所有骑乘单位分列左右翼，方向标记面向正门外敌人来袭方向。T0138-R1 后，已分配成年马在警铃 / 接敌时仍留在马厩，响应 NPC 先导航到马旁，实际抵达并标记 `ridden` 后 CombatSystem 才显示坐骑并继续集结 / 参战；日常工作模式下同样不显示骑乘。若集结途中或集合点附近遭遇敌人，只有已入伍且有主武器 NPC 会停止集结并进入 `behavior_mode == "combat"` 与 `combat_ready` 占位状态，写入 `combat_rally_encountered_enemy` 和必要的 `npc_mode_changed`。未入伍或已入伍但无主武器 NPC 在工作模式中接敌会进入 `behavior_mode == "avoid_combat"`，按最近敌人方位生成短距离散射移动目标，不设置战斗 `combat_mode`，也不攻击敌人；睡觉中的非战斗人员只有被敌人攻击才进入避战。集结到点后等待 1 游戏小时仍未接敌会返回 `work` 且不触发计划重评估；场上敌人清空时，`combat` NPC 返回 `work` 并触发计划重评估，`avoid_combat` NPC 返回 `work` 且不触发计划重评估。T1103D 起，工作 / 战斗和工作 / 避战互转不再写 `npc_mode_changed`，具体战斗和避战事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended` 等事件表达。T1104 后，`combat` 模式中的入伍持主武器 NPC 已能执行基础自动攻击、扣除敌人 HP 并在敌人 HP 清零后移除敌人。T1105 后，战斗模式会按 NPC 当前手动选择的兵种策略决定基础攻击前的战术移动与攻击节奏。T1106 后，波次生成和敌军清空会分别写入广场 `combat_started` / `combat_ended`，并维护本场受伤、昏迷和击退统计；T1201 后，战时公开对话可应用斗志 buff 或触发逃离；T1202 后，战时低血量自身心理判定已接入；T1203 后，逃离会移动到后门外出口并在离图后标记 `escaped`；T1204A 后，逃离过程中可通过 NPC 面板进行最多 5 轮挽留，打开对话暂停逃离移动，未满 5 轮关闭恢复，给钱减速，逃离攻击加速且不请求 NPC 回复，并在昏迷复苏后继续逃离；T1302 后，主厅被摧毁会进入失败占位结算并停止正常推进；T1303 后，活动敌人在场且所有已入伍持主武器战斗人员均昏迷、已逃离或正在逃离时，会进入无可战斗人员失败；T1304 后，包含第 5 波的战斗清敌会进入 Demo 胜利占位结算并停止继续刷波。NPC 结局总结和命中 / 格挡仍留给后续任务。
 
@@ -616,13 +927,13 @@ T1103/T1103A/T1103B/T1103C 已完成玩家手动摇响警铃后的集结、模�
 | 远程武器 + 马 | 骑射单位 |
 | 无武器 | 非战斗人员 / 避战单位 |
 
-T0804-T0806 曾使用 `weapons` / `armor` / `defense_devices` / `horse_readiness` 聚合库存作为最小占位；T0035-T0038 已完成正式迁移，这四个 id 只保留兼容且不得正式消耗。铁匠铺 / 工械坊现在按分阶段配方产出剑盾、长杆、弓、弩、四个盔甲部位、箭束、弩床和箭塔各自的 `item_*` 库存，EquipmentSystem 逐件消耗 / 返还武器与盔甲的具体来源。坐骑由 HorseSystem 中的真实成年马分配，`equipment.mount` 只是带 `horse_id` 的兼容投影。T0031 后，艾达在新游戏初始化时从正式武器定义直接装载剑盾，开局兵种为近战步兵；这份故事装备不扣库存、不记录守备官赠送事件。T0902 后，兵种判定通过 `get_unit_type_snapshot(...)` 供 GM 与 CombatSystem 读取。T0107 后 CombatSystem 以 NPC 配置 `combat_base` 为人物差异起点，读取主武器伤害 / 射程 / 间隔、武器与盔甲的攻击 / 防御 / 穿透 / 攻速修正，以及坐骑战斗参数，统一生成基础、成长、装备、状态和最终战斗属性快照。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；器械部署仍由 DefenseDeviceSystem 权威处理。
+T0804-T0806 曾使用 `weapons` / `armor` / `defense_devices` / `horse_readiness` 聚合库存作为最小占位；T0035-T0038 已完成正式迁移，这四个 id 只保留兼容且不得正式消耗。铁匠铺 / 工械坊现在按分阶段配方产出剑盾、长杆、弓、弩、四个盔甲部位、弩床和箭塔各自的 `item_*` 库存，EquipmentSystem 逐件消耗 / 返还武器与盔甲的具体来源。坐骑由 HorseSystem 中的真实成年马分配，`equipment.mount` 只是带 `horse_id` 的兼容投影。T0031 后，艾达在新游戏初始化时从正式武器定义直接装载剑盾，开局兵种为近战步兵；这份故事装备不扣库存、不记录守备官赠送事件。T0902 后，兵种判定通过 `get_unit_type_snapshot(...)` 供 GM 与 CombatSystem 读取。T0107 后 CombatSystem 以 NPC 配置 `combat_base` 为人物差异起点，读取主武器伤害 / 射程 / 间隔、武器与盔甲的攻击 / 防御 / 穿透 / 攻速修正，以及坐骑战斗参数，统一生成基础、成长、装备、状态和最终战斗属性快照。EquipmentSystem 本身仍不结算攻击、防御、耐久或策略行为；器械部署仍由 DefenseDeviceSystem 权威处理。
 
 T0903 后，训练场可以提升后续战斗会读取的武器熟练度和骑术。训练项目由受训 NPC 当前装备决定：主武器对应剑盾、长杆、弓或弩，坐骑对应骑术。T0043 后，全部有效教官位上的 NPC 以人数、“教练”和对应项目熟练度组成共享团队效率，同时作用于全部训练位；受训者按自己的装备成长，在岗教官提升“教练”。训练只改变 NPC 熟练度和基础状态消耗，不直接结算攻击、命中、伤害、防御、骑乘表现或当前战斗策略选择。
 
 ## T0034/T0036/T0038 具体库存与马匹战时生命周期（当前已实现）
 
-具体库存迁移已落地：剑盾、长杆、弓、弩、四个盔甲部位、弩床和箭塔都必须消耗各自具体 `item_*` 库存；`weapons`、`armor`、`defense_devices` 聚合库存不再是可互换的正式结算来源。箭束 `item_arrow_bundle` 当前已作为具体库存显示和制造，但尚未新增弓 / 弩逐次弹药消耗。
+具体库存迁移已落地：剑盾、长杆、弓、弩、四个盔甲部位、弩床和箭塔都必须消耗各自具体 `item_*` 库存；`weapons`、`armor`、`defense_devices` 聚合库存不再是可互换的正式结算来源。弓、弩、箭塔和弩床按既有攻击节奏与实体弹体工作，不读取或扣除额外弹药库存。
 
 坐骑已由 HorseSystem 中的真实马匹实体承担，不再由 `horse_readiness` 生成匿名槽位。分配与战时切换规则如下：
 
@@ -723,16 +1034,16 @@ T1105 后，某名 NPC 可用哪些策略只由当前主武器和坐骑判定出
 当前策略语义：
 
 - 主动进攻：近战步兵 / 长杆步兵 / 近战骑兵主动接近敌人，进入武器射程后攻击。
-- 最大化输出：远程兵种站桩射击，不为了保持距离主动移动。
-- 保持距离射击：远程兵种使用武器射程的 `45% / 72% / 90%` 作为最小、理想和最远控制带；太近时退到理想距离，太远时接近，位于安全带内才稳定射击。
+- 最大化输出：远程兵种在 `95%` 武器射程内尽快持续射击；目标在安全射程外时选择最近可达攻击位并接近，不执行保持距离策略的主动后撤。
+- 保持距离射击：该旧 `45% / 72% / 90%` 控制带已由 T0232 废止。当前以 `1/3` 射程近身圈触发最高优先级清锁撤离，单段原始长度为 `2/3` 射程；安全后恢复普通远程攻击位接近与射击。
 - 拉开距离冲击：近战骑兵执行 `withdraw -> ready -> charging -> impact` 循环。先拉到重置距离，再以坐骑冲锋速度接近；命中时先结算马匹独立冲撞与僵直，再用冲锋倍率结算武器攻击，随后重新脱离。
-- 避战：入伍持武器 NPC 的战斗策略，复用非战斗人员短步长避战目标算法，但保持 `behavior_mode == "combat"`；该策略只在最近敌人低于避战安全阈值时按敌人来袭方向短距离远离，敌人已经远离到阈值外时保持 `combat_ready` 等待，不继续退向驿站边界或角落；该策略不主动攻击，清敌后按战斗模式退出规则回到工作模式。
+- 避战：入伍持武器 NPC 的战斗策略，复用非战斗人员的多敌加权站内目标算法，但保持 `behavior_mode == "combat"`；该策略只在最近敌人低于战斗避战安全阈值时启动，敌人已经远离到阈值外时保持 `combat_ready` 等待，不继续退向驿站边界或角落；该策略不主动攻击，清敌后按战斗模式退出规则回到工作模式。
 
 ## 非战斗人员避战模式
 
-未入伍 NPC、以及已入伍但没有主武器的 NPC 都属于非战斗人员，不进入集结和战斗模式。敌人进入一定范围后进入避战模式，按最近敌人的接近方位生成短距离远离目标，并用 NPC / 敌人组合生成稳定散射角，让不同 NPC 向不同方向四散移动。避战会尝试逐步退到接敌范围之外，但不会一步挪到驿站角落，也不会离开驿站太远。只有当场上没有敌军后，避战 NPC 才退出避战回到工作模式。
+未入伍 NPC、以及已入伍但没有主武器的 NPC 都属于非战斗人员，不进入集结和战斗模式。敌人进入 `39.2 m` 避战范围后进入避战模式；程序对圈内全部敌军的反向单位向量做距离逆平方加权，目标距离等于避战半径。目标越界会沿原射线收回站内，落在实体中会修正到实体旁可达点，因此不会进入逃离驿站流程。只有当场上没有敌军后，避战 NPC 才退出避战回到工作模式。
 
-T1103B/T1103C 当前实现：`CombatSystem` 在敌人接触扫描中检测工作模式非战斗人员，调用 `NPCSystem.set_npc_behavior_mode(..., "avoid_combat")` 并通过 `move_npc_to_world_position(...)` 移动到按敌方方位计算出的短步长目标。避战快照保存在 `active_avoidances`，包含敌人、距离、目标点、移动步长、目标点敌距、原因和最近结果。敌军清空时避战 NPC 回到 `work` 且不触发计划重评估。若避战中的 NPC 被征召成功但仍没有主武器，继续避战；若随后装备主武器且仍有敌军，切入 `combat`；若无敌军则回到 `work`。T1103D 起，`work -> avoid_combat` 和 `avoid_combat -> work` 的模式切换本身不写事件，避战信息只由 `avoidance_started` / `avoidance_ended` 记录。
+T0209 当前实现：`CombatSystem` 在敌人接触扫描中检测工作模式非战斗人员，调用 `NPCSystem.set_npc_behavior_mode(..., "avoid_combat")` 并通过 `move_npc_to_world_position(...)` 移动到加权且已修正的站内目标。避战快照保存在 `active_avoidances`，包含全部圈内威胁、距离、权重、合成方向、原始 / 实际目标、边界和导航修正。敌军清空时避战 NPC 回到 `work` 且不触发计划重评估。若避战中的 NPC 被征召成功但仍没有主武器，继续避战；若随后装备主武器且仍有敌军，切入 `combat`；若无敌军则回到 `work`。T1103D 起，`work -> avoid_combat` 和 `avoid_combat -> work` 的模式切换本身不写事件，避战信息只由 `avoidance_started` / `avoidance_ended` 记录。
 
 避战模式不得被实现为逃离驿站。逃离驿站是独立行为，需要明确的 LLM / 对话 / 调试结果触发，并会让 NPC 前往后门或小门离开地图。
 
@@ -781,7 +1092,7 @@ T1106 已实现战斗开始和结束的最小闭环。`spawn_wave(...)` 成功�
 T0036 已把部署成本迁移为具体物品：弩床只扣除 `item_wall_ballista`，箭塔只扣除 `item_wall_arrow_tower`。部署后的攻击、冷却和伤害接口未因库存迁移而改变；旧 `defense_devices` 仅作兼容保留，不参与正式部署结算。
 
 - 弩床与箭塔同为 1 级工械坊可制造 / 部署的同级器械。弩床为高伤害、高穿透、远射程、慢攻速、低 HP；箭塔为较低伤害 / 穿透、稍近射程、高攻速、高 HP / 防御。
-- 围墙与主厅都使用通用槽并提高到 6 级，每次升级最多解锁 1 个。围墙 1–6 级容量为 `1 / 2 / 2 / 3 / 3 / 4`，主厅为 `1 / 1 / 2 / 2 / 3 / 4`。围墙 Lv.3 / Lv.5 虽不扩槽，但各从建筑逐级配置累计 `+5%` 器械射程；最终倍率依次为 `1.0 / 1.0 / 1.05 / 1.05 / 1.10 / 1.10`。主厅固定 `range_multiplier=2.0`，不使用围墙加固收益。DefenseDeviceSystem 每次生成槽位、部署与选敌快照时按宿主当前等级解析倍率，因此升级前已部署的器械也会立即获得收益。
+- 围墙与主厅都使用通用槽并提高到 6 级，每次升级最多解锁 1 个。围墙 1–6 级容量为 `1 / 2 / 2 / 3 / 3 / 4`，主厅为 `1 / 1 / 2 / 2 / 3 / 4`。围墙 Lv.3 / Lv.5 虽不扩槽，但各从建筑逐级配置累计 `+5%` 器械射程；最终倍率依次为 `1.0 / 1.0 / 1.05 / 1.05 / 1.10 / 1.10`。主厅固定 `range_multiplier=1.0`，不使用围墙加固收益。DefenseDeviceSystem 每次生成槽位、部署与选敌快照时按宿主当前等级解析倍率，因此升级前已部署的围墙器械也会立即获得收益。
 - 器械按统一游戏秒推进冷却，在有效射程和前向射界内选择最近敌人，再调用 `CombatSystem.apply_defense_device_attack(...)`。该接口复用敌人有效防御、HP 扣除、清零移除、击退归属和最终波次结算。
 - 敌人可把附近有效器械作为战斗目标，通过 `DefenseDeviceSystem.apply_damage_to_device(...)` 扣除器械 HP；HP 清零会释放槽位并移除部署。宿主建筑 HP 为 0 或处于不可用状态时，器械不攻击也不暴露为活动目标。
 
@@ -837,8 +1148,8 @@ T1205 收尾检查已通过 `tools/verify_battlefield_public_info.gd` 综合验�
 战斗结束后，NPC 回到工作状态，并根据自身经历重新评估计划。
 ## T0132-P3 正门动态门扇与敌军边界
 
-- 正门现在有两扇 world-static 层 `AnimatableBody3D` 实体门叶。和平时我方 NPC 接近可开门；只要 CombatSystem 存在活动敌军，正门保持锁闭，敌军自身也永远不能触发传感器。
-- 敌军仍必须物理抵达正式 `front_gate` 攻击点后才能伤害正门。门扇开合不发布“抵达 / 突破”事实、不改目标选择；只有 BuildingSystem 判定正门 HP 为 0，表现层才解除门叶碰撞，既有单向门洞链接和仓库攻击阶段继续生效。
+- 正门现在有两扇 world-static 层 `AnimatableBody3D` 实体门叶。我方 NPC 在和平或战斗中接近都可开门；敌军自身永远不能触发传感器。
+- 敌军仍必须物理抵达正式 `front_gate` 攻击位并由模型接触固定门板战斗面后才能伤害正门。门扇开合不发布“抵达 / 突破”事实、不改目标选择；只有 BuildingSystem 判定正门 HP 为 0，表现层才解除门叶碰撞，既有门洞链接和仓库攻击阶段继续生效。
 - 围墙平台仍只承载 DefenseDeviceSystem 的可见部署；平台、美术测距杆和城垛不参与伤害、射程、命中或目标选择计算。
 - P3R2 只把四个平台和器械攻击原点移到正门左右墙段；敌军建筑目标序列仍为 `front_gate → warehouse → main_hall`，不会因为平台远离门楼而改为攻击 `wall`。
 - P3R4 将右墙器械 facing 从城门统一轴改为 `north_east` 墙外法线，左墙使用 `north_west_a` 外法线；射程、扇区和目标选择公式未改，部署 / 攻击专项通过。

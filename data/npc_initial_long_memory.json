@@ -180,7 +180,7 @@
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅统筹全站，大家平日不在那里干活。敌人若毁掉主厅，这座驿站便算守不住了；这里也能安放弩床和箭塔，六级槽位依次为1、1、2、2、3、4个，架在这里的器械射程是原来的两倍。",
+            "value_label": "守备官在主厅统筹全站，大家平日不在那里干活。敌人若毁掉主厅，这座驿站便算守不住了；这里也能安放弩床和箭塔，六级槽位依次为1、1、2、2、3、4个。",
             "day": 0,
             "time": "开局前"
           }
@@ -550,7 +550,7 @@
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅拿主意，大家不把那里当饭堂或工房。主厅要是被毁了，这站也就守不成了；它从一级到六级能架1、1、2、2、3、4件弩床或箭塔，而且器械射程是平常的两倍。",
+            "value_label": "守备官在主厅拿主意，大家不把那里当饭堂或工房。主厅要是被毁了，这站也就守不成了；它从一级到六级能架1、1、2、2、3、4件弩床或箭塔。",
             "day": 0,
             "time": "开局前"
           }
@@ -925,11 +925,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_failure_target_and_long_range_device_slots",
+            "value": "command_center_failure_target_and_device_slots",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅处理全站事务，普通成员不在那里安排日常工作。若主厅被毁，驿站便失去了必须守住的中心；主厅六级的器械槽按1、1、2、2、3、4增长，装在那里的弩床和箭塔射程翻倍。",
+            "value_label": "守备官在主厅处理全站事务，普通成员不在那里安排日常工作。若主厅被毁，驿站便失去了必须守住的中心；主厅可安放弩床和箭塔，六级器械槽按1、1、2、2、3、4增长。",
             "day": 0,
             "time": "开局前"
           }
@@ -1286,11 +1286,11 @@
         },
         "main_hall": {
           "operational_role": {
-            "value": "command_center_final_objective_and_double_range_device_host",
+            "value": "command_center_final_objective_and_device_host",
             "confidence": 0.96,
             "subject_label": "主厅",
             "relation_label": "在站里的作用",
-            "value_label": "守备官在主厅统筹全站，平日没人把那里当工房。主厅一旦被毁，驿站也就守不住了；它的六级器械位按1、1、2、2、3、4开放，弩床或箭塔装上去能获得两倍射程。",
+            "value_label": "守备官在主厅统筹全站，平日没人把那里当工房。主厅一旦被毁，驿站也就守不住了；弩床或箭塔的六级器械位按1、1、2、2、3、4开放。",
             "day": 0,
             "time": "开局前"
           }
@@ -1647,11 +1647,11 @@
         },
         "main_hall": {
           "strategic_role": {
-            "value": "station_command_center_and_long_range_device_host",
+            "value": "station_command_center_and_device_host",
             "confidence": 0.98,
             "subject_label": "主厅",
             "relation_label": "调度中枢",
-            "value_label": "主厅是守备官汇总消息、发出安排的地方，也能作为纵深器械阵位。六级槽位按1、1、2、2、3、4开放，架在这里的弩床和箭塔有效射程为普通位置的两倍。",
+            "value_label": "主厅是守备官汇总消息、发出安排的地方，也能作为弩床或箭塔的纵深器械阵位。六级槽位按1、1、2、2、3、4开放。",
             "day": 0,
             "time": "开局前"
           },
@@ -1841,7 +1841,7 @@
             "confidence": 0.92,
             "subject_label": "工械坊",
             "relation_label": "远射与器械",
-            "value_label": "工械坊按具体图纸制作弓、弩、箭束、弩床和箭塔。器械做好后先入库，再由守备官安排到围墙上合适的位置。",
+            "value_label": "工械坊按具体图纸制作弓、弩、弩床和箭塔。器械做好后先入库，再由守备官安排到围墙上合适的位置。",
             "day": 0,
             "time": "开局前"
           }
@@ -2026,11 +2026,11 @@
         },
         "main_hall": {
           "operational_role": {
-            "value": "command_center_loss_condition_and_double_range_device_host",
+            "value": "command_center_loss_condition_and_device_host",
             "confidence": 0.93,
             "subject_label": "主厅",
             "relation_label": "驿站中枢",
-            "value_label": "主厅是守备官料理全站事务的地方。它若倒下，驿站便无从维持；平日也不是居民消磨时间的房间。这里另有按1、1、2、2、3、4随六级开放的器械槽，弩床和箭塔能获得两倍射程。",
+            "value_label": "主厅是守备官料理全站事务的地方。它若倒下，驿站便无从维持；平日也不是居民消磨时间的房间。这里另有供弩床或箭塔使用、按1、1、2、2、3、4随六级开放的器械槽。",
             "day": 0,
             "time": "开局前"
           }
@@ -2396,11 +2396,11 @@
         },
         "main_hall": {
           "function": {
-            "value": "command_center_failure_critical_and_double_range_device_host",
+            "value": "command_center_failure_critical_and_device_host",
             "confidence": 0.97,
             "subject_label": "主厅",
             "relation_label": "驿站中枢",
-            "value_label": "主厅是守备官统筹驿站的地方，也是不能失去的中枢。它不是成员日常活动或工作的场所，伤员也不该被送往那里；从一级到六级，器械槽按1、1、2、2、3、4开放，部署的弩床和箭塔射程加倍。",
+            "value_label": "主厅是守备官统筹驿站的地方，也是不能失去的中枢。它不是成员日常活动或工作的场所，伤员也不该被送往那里；弩床或箭塔的器械槽从一级到六级按1、1、2、2、3、4开放。",
             "day": 0,
             "time": "开局前"
           }
@@ -2770,7 +2770,7 @@
             "confidence": 0.97,
             "subject_label": "主厅",
             "relation_label": "结构与用途",
-            "value_label": "主厅汇总全站的消息，也负责协调各项安排，是驿站不能失去的核心。它不当普通工作间使用；从一级到六级，器械槽按1、1、2、2、3、4开放，部署在这里的弩床和箭塔射程为围墙位置的两倍。",
+            "value_label": "主厅汇总全站的消息，也负责协调各项安排，是驿站不能失去的核心。它不当普通工作间使用；弩床或箭塔的器械槽从一级到六级按1、1、2、2、3、4开放。",
             "day": 0,
             "time": "开局前"
           }
@@ -2832,7 +2832,7 @@
             "confidence": 0.99,
             "subject_label": "围墙",
             "relation_label": "安放器械",
-            "value_label": "弩床和箭塔可安在围墙或主厅已解锁的通用槽里，由守备官直接选定并安排；不需要再让某个成员把部署当成一份日常工作，主厅位置会把器械射程提高到两倍。",
+            "value_label": "弩床和箭塔可安在围墙或主厅已解锁的通用槽里，由守备官直接选定并安排；不需要再让某个成员把部署当成一份日常工作。",
             "day": 0,
             "time": "开局前"
           },
@@ -2947,11 +2947,11 @@
         },
         "workshop": {
           "production_scope": {
-            "value": "staged_bow_crossbow_arrow_ballista_and_tower_production",
+            "value": "staged_bow_crossbow_ballista_and_tower_production",
             "confidence": 0.99,
             "subject_label": "工械坊",
             "relation_label": "图纸范围",
-            "value_label": "工械坊用木料做主体、用少量铁做要害，只按图纸制造弓、弩、箭束、弩床和箭塔。“随便来件器械”既没有尺寸，也不能当成品入库。",
+            "value_label": "工械坊用木料做主体、用少量铁做要害，只按图纸制造弓、弩、弩床和箭塔。“随便来件器械”既没有尺寸，也不能当成品入库。",
             "day": 0,
             "time": "开局前"
           },

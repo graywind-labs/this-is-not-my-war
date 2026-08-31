@@ -134,6 +134,11 @@ func _init() -> void:
 		push_error("Building state witness should carry only changed external fields")
 		quit(1)
 		return
+	var changed_fields: Dictionary = latest_payload.get("changed_fields", {})
+	if changed_fields.has("operational_efficiency"):
+		push_error("Damaged building witness should not carry operational_efficiency")
+		quit(1)
+		return
 	if latest_payload.has("building_snapshot") or latest_payload.has("building_external_states") or latest_payload.has("plaza_snapshot"):
 		push_error("Building state witness should not duplicate full building or plaza state")
 		quit(1)
@@ -142,7 +147,11 @@ func _init() -> void:
 		push_error("Building state witness summary did not name the changed building")
 		quit(1)
 		return
-	if str(latest_witness.get("summary", "")).contains("状态更新") or str(latest_witness.get("summary", "")).contains("HP"):
+	if (
+		str(latest_witness.get("summary", "")).contains("状态更新")
+		or str(latest_witness.get("summary", "")).contains("HP")
+		or str(latest_witness.get("summary", "")).contains("运作效率")
+	):
 		push_error("Building state witness summary should keep only concrete propagated state")
 		quit(1)
 		return

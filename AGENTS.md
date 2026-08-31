@@ -15,12 +15,12 @@
 
 ## 0.1 项目路径与 Godot MCP 别名（必须识别）
 
-- 本项目规范路径是 `D:/这不是我的战争/`。
-- `D:/MyGames/这不是我的战争/` 是 Windows NTFS Junction，目标就是 `D:/这不是我的战争/`；两者是同一物理目录，不是工程副本。
-- Godot 编辑器 / Godot MCP 可能返回 Junction 别名。看到该别名时必须继续把 MCP 当作当前工程使用，不得仅比较路径字符串后报告“连接了其他副本”、停用 MCP 或改用 CLI 冒充 MCP 验收。
-- 需要复核时运行 `powershell -ExecutionPolicy Bypass -File tools/verify_project_path_alias.ps1`。只要 Junction 目标、Git 根 / HEAD 与关键文件校验通过，就视为同一工程。
-- 只有校验脚本失败、Junction 目标改变，或 MCP 返回上述两条路径之外的工程时，才按真正的工程不匹配处理并报告。
-- 文件编辑和命令仍优先使用当前 Codex 工作区 / 规范路径；MCP 的 `res://` 操作可经别名正常作用于同一批文件，无需为了显示路径统一而重启编辑器。
+- 本项目不绑定盘符或固定绝对路径；当前 Codex 工作区中同时包含 `project.godot`、`AGENTS.md` 且属于当前 Git 根的目录，就是本机规范路径。
+- `D:/这不是我的战争/` 与 `D:/MyGames/这不是我的战争/` 是旧设备曾使用的规范路径 / NTFS Junction 示例，不要求在其他设备存在，也不得因盘符或目录名不同判定工程不匹配。
+- Godot 编辑器 / Godot MCP 返回当前工作区路径时，直接视为当前工程。返回 Junction、符号链接、大小写或分隔符不同的路径时，应按物理目录、Git 根 / HEAD 与关键文件判断，不得只比较路径字符串。
+- 仅在本机确实配置了项目路径别名时，才运行 `powershell -ExecutionPolicy Bypass -File tools/verify_project_path_alias.ps1`；没有别名不是错误，也不得因此停用 MCP。
+- 只有 MCP 指向不同的物理工作树，或 Git 根 / HEAD 与关键文件校验表明它不是当前工作区时，才按真正的工程不匹配处理并报告。
+- 文件编辑和命令优先使用当前 Codex 工作区；MCP 的 `res://` 操作可经任何已验证的本机路径或别名正常作用于同一批文件，无需为了显示路径统一而重启编辑器。
 
 ---
 
@@ -250,7 +250,7 @@ Mock 只用于开发期快速验证 Schema、前后端通信和自动化脚本�
 - 查询错误日志
 - 创建或修改简单节点
 
-MCP `get_info.path` 返回 `D:/MyGames/这不是我的战争/` 时，按 0.1 节认定为当前工程的合法 Junction 别名并正常使用。
+MCP `get_info.path` 返回当前工作区或按 0.1 节验证为同一物理工作树的路径时，应认定为当前工程并正常使用；不得绑定特定盘符。
 
 但不要在不了解现有结构时大规模重写 `.tscn` 文件。  
 复杂场景变更应先说明计划，再分步执行。

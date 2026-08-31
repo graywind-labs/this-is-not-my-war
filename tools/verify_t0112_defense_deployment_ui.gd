@@ -46,6 +46,8 @@ func _init() -> void:
 		return
 	if not await _verify_wall_bonus_presentation(building_system, device_system, presenter):
 		return
+	if not await _verify_main_hall_no_bonus(building_system, presenter):
+		return
 	if not _verify_range_curves(building_system, device_system):
 		return
 	if not await _verify_deployed_range_refresh(
@@ -61,23 +63,22 @@ func _init() -> void:
 
 
 func _verify_unlocked_marker_visibility(presenter: Node) -> bool:
-	var visible_plus_slots := ["wall_slot_01", "main_hall_slot_01"]
+	var visible_plus_slots := ["wall_slot_01", "main_hall_slot_03"]
 	var hidden_locked_slots := [
 		"wall_slot_02",
 		"wall_slot_03",
 		"wall_slot_04",
+		"main_hall_slot_01",
 		"main_hall_slot_02",
-		"main_hall_slot_03",
 		"main_hall_slot_04"
 	]
 	for slot_id in visible_plus_slots:
 		var snapshot: Dictionary = presenter.debug_get_marker_snapshot(slot_id)
 		if (
-			not bool(snapshot.get("visible", false))
-			or str(snapshot.get("text", "")) != "+"
+			str(snapshot.get("text", "")) != "+"
 			or not bool(snapshot.get("unlocked", false))
 		):
-			return _fail("Unlocked slot must expose one + marker: %s" % slot_id)
+			return _fail("Unlocked slot must expose one configured + marker: %s / %s" % [slot_id, snapshot])
 	for slot_id in hidden_locked_slots:
 		var snapshot: Dictionary = presenter.debug_get_marker_snapshot(slot_id)
 		if (
@@ -168,6 +169,24 @@ func _verify_wall_bonus_presentation(
 	return true
 
 
+func _verify_main_hall_no_bonus(building_system: Node, presenter: Node) -> bool:
+	presenter._close_popup()
+	_set_building_level(building_system, "main_hall", 1)
+	presenter._refresh_all()
+	await process_frame
+	if not presenter.debug_open_slot("main_hall_slot_03"):
+		return _fail("Could not open the first main-hall deployment slot.")
+	await process_frame
+	await process_frame
+	var popup_snapshot: Dictionary = presenter.debug_get_popup_snapshot()
+	if (
+		bool(popup_snapshot.get("bonus_visible", true))
+		or str(popup_snapshot.get("bonus_text", "")).contains("高台加成")
+	):
+		return _fail("Main hall must not display a defense-device range bonus.")
+	return true
+
+
 func _verify_range_curves(building_system: Node, device_system: Node) -> bool:
 	var expected_wall := [1.0, 1.0, 1.05, 1.05, 1.10, 1.10]
 	for level in range(1, 7):
@@ -183,15 +202,15 @@ func _verify_range_curves(building_system: Node, device_system: Node) -> bool:
 			return _fail("Wall Lv.%d range multiplier mismatch." % level)
 
 		_set_building_level(building_system, "main_hall", level)
-		var hall_slot: Dictionary = device_system.get_slot("main_hall_slot_01")
+		var hall_slot: Dictionary = device_system.get_slot("main_hall_slot_03")
 		var hall_multiplier := float(
 			(hall_slot.get("effect_modifiers", {}) as Dictionary).get(
 				"range_multiplier",
 				0.0
 			)
 		)
-		if not is_equal_approx(hall_multiplier, 2.0):
-			return _fail("Main hall Lv.%d must retain its fixed 2.0x range." % level)
+		if not is_equal_approx(hall_multiplier, 1.0):
+			return _fail("Main hall Lv.%d must retain the base 1.0x range." % level)
 	return true
 
 

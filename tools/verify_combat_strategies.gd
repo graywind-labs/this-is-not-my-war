@@ -138,13 +138,13 @@ func _init() -> void:
 		return
 	var avoid_state: Dictionary = npc_system.get_npc_state(npc_id)
 	if not str(avoid_state.get("current_action", "")).begins_with("moving_to_combat_strategy_"):
-		push_error("Combat avoid strategy should reuse short-step avoidance movement without leaving combat mode: %s" % JSON.stringify(avoid_state))
+		push_error("Combat avoid strategy should reuse weighted station avoidance movement without leaving combat mode: %s" % JSON.stringify(avoid_state))
 		quit(1)
 		return
 	var avoid_movement := _first_strategy_movement(avoid_step)
 	var avoid_travel := float(avoid_movement.get("travel_distance", 999.0))
-	if avoid_travel > 3.4:
-		push_error("Combat avoid strategy should move by a short avoidance step, not run to a corner. movement=%s" % JSON.stringify(avoid_movement))
+	if avoid_travel < 0.8 or float(avoid_movement.get("target_enemy_distance", 0.0)) <= float(avoid_movement.get("enemy_distance", 0.0)):
+		push_error("Combat avoid strategy should choose a distinct station target farther from the threat. movement=%s" % JSON.stringify(avoid_movement))
 		quit(1)
 		return
 	if str(npc_system.get_npc_behavior_mode_snapshot(npc_id).get("behavior_mode", "")) != "combat":
@@ -155,7 +155,7 @@ func _init() -> void:
 	_place_first_enemy(combat_system, ranged_origin + Vector3(0.0, 0.0, 13.0), 100)
 	var avoid_stop_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var avoid_stop_state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(avoid_stop_state.get("current_action", "")) != "combat_ready":
+	if str(avoid_stop_state.get("current_action", "")) != "combat_strategy_avoid_holding":
 		push_error("Combat avoid strategy should stop moving and wait once enemy is far enough. step=%s state=%s" % [
 			JSON.stringify(avoid_stop_step),
 			JSON.stringify(avoid_stop_state)
@@ -198,7 +198,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var avoid_hold_state: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(avoid_hold_state.get("current_action", "")) != "combat_ready":
+	if str(avoid_hold_state.get("current_action", "")) != "combat_strategy_avoid_holding":
 		push_error("Combat avoid strategy should wait in place when enemy is already far enough. step=%s state=%s" % [
 			JSON.stringify(avoid_hold_step),
 			JSON.stringify(avoid_hold_state)
@@ -233,18 +233,22 @@ func _init() -> void:
 	combat_system.set_npc_combat_strategy(npc_id, "keep_distance", "private")
 	var keep_step: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var keep_state: Dictionary = npc_system.get_npc_state(npc_id)
-	if not str(keep_state.get("current_action", "")).begins_with("moving_to_combat_strategy_"):
-		push_error("Keep-distance shooting should move a short distance before shooting when enemy is too close. step=%s state=%s" % [
+	if (
+		not bool(keep_state.get("keep_distance_retreat_active", false))
+		or str(keep_state.get("current_action", "")) != "keep_distance_retreating"
+		or not str(keep_state.get("movement_target", "")).begins_with("keep_distance_retreat_")
+		or not str(keep_state.get("combat_target_enemy_id", "")).is_empty()
+	):
+		push_error("Keep-distance shooting should clear its lock and start a committed retreat leg when enemy is inside one-third range. step=%s state=%s" % [
 			JSON.stringify(keep_step),
 			JSON.stringify(keep_state)
 		])
 		quit(1)
 		return
 	var keep_target := _first_strategy_movement(keep_step)
-	var target_distance := float(keep_target.get("target_enemy_distance", 999.0))
-	var keep_min_distance := float(combat_system._get_keep_distance_min_distance(12.0))
-	if target_distance < keep_min_distance or target_distance > 12.0:
-		push_error("Keep-distance shooting should move into its configured min/range band, target distance %.2f" % target_distance)
+	var desired_travel_distance := float(keep_target.get("desired_travel_distance", 0.0))
+	if not is_equal_approx(desired_travel_distance, 8.0):
+		push_error("Keep-distance retreat should author one leg at two-thirds of the 12 m range, movement=%s" % JSON.stringify(keep_target))
 		quit(1)
 		return
 

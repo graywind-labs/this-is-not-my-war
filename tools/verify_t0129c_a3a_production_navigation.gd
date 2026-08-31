@@ -62,13 +62,13 @@ func _init() -> void:
 	if int(production.get("bake_msec", -1)) < 0:
 		_fail("Production bake timing was not recorded: %s" % production)
 		return
-	if int(production.get("building_door_link_count", 0)) != 12:
-		_fail("Production map must expose one explicit transition per building door: %s" % production)
+	if int(production.get("building_door_link_count", 0)) != 11:
+		_fail("Production map must expose transitions only for buildings without a solid interior blocker: %s" % production)
 		return
 	if (
 		bool(production.get("staged", true))
 		or not bool(production.get("live_default", false))
-		or int(production.get("enabled_building_door_link_count", -1)) != 12
+		or int(production.get("enabled_building_door_link_count", -1)) != 11
 	):
 		_fail("Production building links must remain live outside preview: %s" % production)
 		return
@@ -78,8 +78,8 @@ func _init() -> void:
 
 	var source_group_name := str(production.get("source_group_name", ""))
 	var source_bodies := get_nodes_in_group(source_group_name)
-	if source_bodies.size() != 236:
-		_fail("Expected 78 structural blockers, 133 fixture collision parts, 24 natural blockers, and one floor in the production source group: %d" % source_bodies.size())
+	if source_bodies.size() != 239:
+		_fail("Expected current structural blockers, one main-hall interior blocker, 133 fixture collision parts, 24 natural blockers, and one floor in the production source group: %d" % source_bodies.size())
 		return
 	var category_counts: Dictionary = {}
 	var navigation_excluded_count := 0
@@ -109,6 +109,9 @@ func _init() -> void:
 	if int(category_counts.get("building_fixture", 0)) != 133:
 		_fail("Building fixture bake-source count drifted: %s" % category_counts)
 		return
+	if int(category_counts.get("building_interior_blocker", 0)) != 1:
+		_fail("Main-hall interior blocker bake-source count drifted: %s" % category_counts)
+		return
 	if int(category_counts.get("natural_river_cliff", 0)) != 8 or int(category_counts.get("natural_rock_ridge", 0)) != 4 or int(category_counts.get("natural_dense_forest", 0)) != 12:
 		_fail("Natural collision bake-source counts drifted: %s" % category_counts)
 		return
@@ -120,13 +123,15 @@ func _init() -> void:
 	var navigation_map := navigation_region.get_navigation_map()
 	NavigationServer3D.map_force_update(navigation_map)
 	production = controller.debug_get_production_navigation_snapshot()
-	if int(production.get("enabled_building_door_link_count", 0)) != 12:
-		_fail("Preview did not enable every production door link: %s" % production)
+	if int(production.get("enabled_building_door_link_count", 0)) != 11:
+		_fail("Preview did not enable every permitted production door link: %s" % production)
 		return
 	var verified_doors := 0
 	for raw_building in layout.get("buildings", []):
 		var building: Dictionary = raw_building
 		var building_id := str(building.get("id", ""))
+		if building_id == "main_hall":
+			continue
 		var building_root := formal_root.get_node(
 			"BuildingRoots/%s" % str(building.get("node_name", ""))
 		) as Node3D
@@ -138,16 +143,13 @@ func _init() -> void:
 		if path.size() < 3:
 			_fail("Production navigation did not route around the side wall: %s / %s" % [building_id, path])
 			return
-		# The blacksmith is now an intentionally open-front smithy, so it has no
-		# narrow door crossing to assert. Its valid side-to-interior path above is
-		# the production contract; enclosed buildings still require the real door.
-		if building_id != "blacksmith" and not _path_crosses_front_door(building_root, path, envelope, 1.8):
+		if not _path_crosses_front_door(building_root, path, envelope, 1.8):
 			_fail("Production path did not enter through the real front door: %s / %s" % [building_id, path])
 			return
 		verified_doors += 1
 	controller.debug_set_preview_enabled(false)
-	if verified_doors != 12:
-		_fail("Expected all 12 real doors to be verified")
+	if verified_doors != 11:
+		_fail("Expected 11 traversable building doors; main hall must remain solid")
 		return
 
 	print("T0129C A3a production navigation verification passed: %s" % JSON.stringify({

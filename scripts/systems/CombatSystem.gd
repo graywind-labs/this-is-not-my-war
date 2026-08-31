@@ -41,7 +41,6 @@ const MAIN_HALL_ID := "main_hall"
 const PLAZA_LOCATION_ID := "plaza"
 const ENEMY_DAMAGE_VISIBILITY := "local_public"
 const DEFAULT_NEARBY_UNIT_DETECTION_RANGE := 6.0
-const RALLY_ENCOUNTER_RANGE := 5.0
 const FRIENDLY_CONTACT_RANGE := 5.0
 const FRIENDLY_TARGET_DETECTION_RANGE_FALLBACK := 37.2
 const RALLY_WAIT_TIMEOUT_SECONDS := 3600.0
@@ -49,14 +48,20 @@ const RALLY_ARRIVAL_TOLERANCE := 0.3
 const MAX_ATTACKS_PER_AI_STEP := 100
 const MAX_FRIENDLY_ATTACKS_PER_AI_STEP := 100
 const PROJECTILE_COLLISION_MASK := 3
+const ENEMY_GATE_COMBAT_CONTACT_LAYER := 8
 const PROJECTILE_MAX_SUBSTEP_SECONDS := 1.0 / 120.0
 const PROJECTILE_RANGE_EPSILON := 0.000001
+const PROJECTILE_MAX_TRANSPARENT_SKIPS_PER_SUBSTEP := 32
+const PROJECTILE_TRANSPARENT_BUILDING_IDS: Array[String] = ["front_gate", "main_hall"]
 const PROJECTILE_TARGET_HEIGHT_NPC := 0.8
 const PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT := 0.9
 const PROJECTILE_TARGET_HEIGHT_ENEMY_MOUNTED := 1.25
 const PROJECTILE_TARGET_HEIGHT_STRUCTURE := 1.1
 const MELEE_COLLISION_MASK := 3
 const MELEE_IGNORED_COLLISION_CATEGORIES := ["navigation_floor"]
+const ENEMY_PRESENTATION_MOVE_START_SPEED := 0.01
+const ENEMY_PRESENTATION_MOVE_STOP_SPEED := 0.003
+const ENEMY_PRESENTATION_MOVE_STOP_GRACE_SECONDS := 0.18
 const DEFENSE_CURVE_SCALE := 20.0
 const STRENGTH_ATTACK_BASELINE := 5.0
 const STRENGTH_ATTACK_BONUS_PER_POINT := 0.08
@@ -111,26 +116,26 @@ const RALLY_BACK_Z := 14.2
 const RALLY_COLUMN_SPACING := 2.1
 const RALLY_ROW_SPACING := 1.25
 const AVOIDANCE_DESIRED_DISTANCE := 6.25
-const AVOIDANCE_TRIGGER_RANGE_FALLBACK := 8.0
-const AVOIDANCE_RANGED_TRIGGER_MARGIN_FALLBACK := 2.0
+const AVOIDANCE_DETECTION_MARGIN_FALLBACK := 2.0
+const AVOIDANCE_WEIGHT_EXPONENT_FALLBACK := 2.0
+const AVOIDANCE_MIN_WEIGHT_DISTANCE_FALLBACK := 1.0
+const AVOIDANCE_BOUNDARY_INSET_FALLBACK := 1.25
 const AVOIDANCE_SAFE_DISTANCE_FALLBACK := 8.5
 const AVOIDANCE_RANGED_SAFE_MARGIN_FALLBACK := 2.5
-const AVOIDANCE_STEP_DISTANCE := 3.2
-const AVOIDANCE_MIN_STEP_DISTANCE := 0.8
-const AVOIDANCE_SCATTER_DEGREES := 38.0
-const AVOIDANCE_SIDE_STEP_DEGREES := 22.0
-const AVOIDANCE_MIN_X := -13.0
-const AVOIDANCE_MAX_X := 13.0
-const AVOIDANCE_MIN_Z := -12.5
-const AVOIDANCE_MAX_Z := 6.5
 const COMBAT_STRATEGY_MIN_X := -14.0
 const COMBAT_STRATEGY_MAX_X := 14.0
 const COMBAT_STRATEGY_MIN_Z := -12.5
 const COMBAT_STRATEGY_MAX_Z := 18.5
-const KEEP_DISTANCE_MIN_RANGE_RATIO := 0.45
-const KEEP_DISTANCE_TARGET_RANGE_RATIO := 0.72
-const KEEP_DISTANCE_MAX_RANGE_RATIO := 0.9
+const KEEP_DISTANCE_RETREAT_TRIGGER_RANGE_RATIO_FALLBACK := 1.0 / 3.0
+const KEEP_DISTANCE_RETREAT_SEGMENT_RANGE_RATIO_FALLBACK := 2.0 / 3.0
+const KEEP_DISTANCE_RETREAT_ARRIVAL_TOLERANCE_FALLBACK := 0.35
 const COMBAT_APPROACH_RANGE_RATIO := 0.85
+const RANGED_ATTACK_POSITION_RANGE_RATIO := 0.95
+const RANGED_ATTACK_POSITION_SAMPLE_COUNT := 32
+const RANGED_ATTACK_POSITION_SNAP_TOLERANCE := 0.65
+const RANGED_ATTACK_POSITION_ARRIVAL_TOLERANCE_FALLBACK := 0.08
+const FRIENDLY_STRATEGY_STALLED_RESELECT_SECONDS_FALLBACK := 2.25
+const FRIENDLY_STRATEGY_RESELECT_MIN_SEPARATION_FALLBACK := 0.8
 const CAVALRY_CHARGE_CLOSE_DISTANCE := 3.0
 const CAVALRY_CHARGE_RESET_DISTANCE := 5.5
 const CAVALRY_CHARGE_IMPACT_TOLERANCE := 0.9
@@ -193,6 +198,10 @@ const FALLBACK_SPAWN_POINTS := {
 	"front_gate": Vector3(0.0, 0.0, 24.0),
 	"front_forest": Vector3(0.0, 0.0, 29.0)
 }
+const PORTRAIT_STANDING_FOCUS_HEIGHT := 0.92
+const PORTRAIT_STANDING_CAMERA_HEIGHT := 1.15
+const PORTRAIT_MOUNTED_FOCUS_HEIGHT := 1.72
+const PORTRAIT_MOUNTED_CAMERA_HEIGHT := 2.02
 
 var _waves: Array[Dictionary] = []
 var _wave_by_number: Dictionary = {}
@@ -241,13 +250,25 @@ var _enemy_attack_position_leases: Dictionary = {}
 var _enemy_attack_position_by_enemy: Dictionary = {}
 var _enemy_attack_wait_queues: Dictionary = {}
 var _enemy_attack_unreachable_until_frame: Dictionary = {}
+var _enemy_precise_arrival_recoveries: Dictionary = {}
+var _enemy_guidance_stall_recoveries: Dictionary = {}
 var _enemy_attack_wait_sequence := 0
 var _enemy_attack_position_metrics := {
 	"reservations_created": 0,
 	"reservations_released": 0,
+	"guidance_assignments_created": 0,
+	"guidance_zone_switches": 0,
+	"guidance_in_range_handoffs": 0,
 	"waiters_enqueued": 0,
 	"waiters_promoted": 0,
-	"unreachable_candidates_rejected": 0
+	"unreachable_candidates_rejected": 0,
+	"precise_arrival_recoveries_started": 0,
+	"precise_arrival_recoveries_completed": 0,
+	"precise_arrival_recoveries_cancelled": 0,
+	"guidance_stall_recoveries_started": 0,
+	"guidance_stall_recoveries_completed": 0,
+	"guidance_stall_recoveries_cancelled": 0,
+	"guidance_stall_reselections": 0
 }
 var _enemy_retaliation_relations: Dictionary = {}
 var _enemy_retaliation_sequence := 0
@@ -282,8 +303,9 @@ var _enemy_targeting_metrics := {
 var _triggered_wave_numbers: Array[int] = []
 var _last_auto_wave_result: Dictionary = {}
 var _last_manual_next_wave_result: Dictionary = {}
-var _last_enemy_mounted_escape_result: Dictionary = {}
+var _last_enemy_mounted_defeat_cleanup_result: Dictionary = {}
 var _active_projectiles: Dictionary = {}
+var _stuck_projectiles: Dictionary = {}
 var _last_projectile_result: Dictionary = {}
 var _projectile_sequence := 0
 var _resolved_projectile_attack_facts: Dictionary = {}
@@ -324,8 +346,8 @@ func _physics_process(delta: float) -> void:
 	_sync_enemy_motion_pause(_is_gameplay_paused())
 	_commit_pending_melee_contact_damage()
 	_advance_combat_projectiles(delta)
-	_sync_formal_enemy_navigation_pilot_presentation()
-	_sync_formal_active_enemy_slice_presentation()
+	_sync_formal_enemy_navigation_pilot_presentation(delta)
+	_sync_formal_active_enemy_slice_presentation(delta)
 	_sync_formal_first_wave_presentation(delta)
 
 
@@ -360,7 +382,7 @@ func initialize() -> void:
 	_last_avoidance_result.clear()
 	_last_friendly_attack_result.clear()
 	_last_area_damage_result.clear()
-	_last_enemy_mounted_escape_result.clear()
+	_last_enemy_mounted_defeat_cleanup_result.clear()
 	_last_projectile_result.clear()
 	_projectile_sequence = 0
 	_last_melee_contact_result.clear()
@@ -517,6 +539,67 @@ func get_combat_time_slowdown_snapshot() -> Dictionary:
 
 func get_enemy(enemy_id: String) -> Dictionary:
 	return _active_enemies.get(enemy_id, {}).duplicate(true)
+
+
+func get_enemy_detail_snapshot(enemy_id: String) -> Dictionary:
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+	if enemy.is_empty() or not bool(enemy.get("alive", true)):
+		return {}
+	return {
+		"valid": true,
+		"enemy_id": enemy_id,
+		"name": str(enemy.get("name", enemy_id)),
+		"hp": int(enemy.get("hp", 0)),
+		"max_hp": int(enemy.get("max_hp", 0)),
+		"unit_type": str(enemy.get("unit_type", "")),
+		"unit_type_label": _get_unit_type_label(str(enemy.get("unit_type", ""))),
+		"weapon_type": str(enemy.get("weapon_type", "")),
+		"weapon_name": _get_enemy_weapon_name(str(enemy.get("weapon_type", ""))),
+		"attack_power": int(enemy.get("attack_power", 0)),
+		"defense": int(enemy.get("defense", 0)),
+		"penetration": float(enemy.get("penetration", 0.0)),
+		"attack_speed": float(enemy.get("attack_speed", 0.0)),
+		"attack_range": float(enemy.get("attack_range", 0.0)),
+		"move_speed": float(enemy.get("move_speed", 0.0)),
+		"current_action": str(enemy.get("current_action", "idle")),
+		"action_label": _format_enemy_action(str(enemy.get("current_action", "idle"))),
+		"mounted": str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"],
+		"wave_number": int(enemy.get("wave_number", 0)),
+	}
+
+
+func get_enemy_portrait_snapshot(enemy_id: String) -> Dictionary:
+	var detail := get_enemy_detail_snapshot(enemy_id)
+	if detail.is_empty() or not _enemy_nodes.has(enemy_id):
+		return {}
+	var actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D
+	if actor == null:
+		return {}
+	var forward := Vector3(0.0, 0.0, -1.0)
+	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+	if art_view != null and art_view.has_method("get_visible_forward"):
+		forward = art_view.get_visible_forward()
+	elif _formal_first_wave_slices.has(enemy_id):
+		var slice: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
+		forward = slice.get("presentation_facing_direction", forward)
+	forward.y = 0.0
+	if forward.length_squared() <= 0.0001:
+		forward = Vector3(0.0, 0.0, -1.0)
+	else:
+		forward = forward.normalized()
+	var mounted := bool(detail.get("mounted", false))
+	return {
+		"valid": true,
+		"visible": actor.visible and actor.is_visible_in_tree(),
+		"enemy_id": enemy_id,
+		"display_name": str(detail.get("name", enemy_id)),
+		"world_position": actor.global_position,
+		"visual_forward": forward,
+		"focus_height": PORTRAIT_MOUNTED_FOCUS_HEIGHT if mounted else PORTRAIT_STANDING_FOCUS_HEIGHT,
+		"camera_height": PORTRAIT_MOUNTED_CAMERA_HEIGHT if mounted else PORTRAIT_STANDING_CAMERA_HEIGHT,
+		"current_action": str(detail.get("current_action", "idle")),
+		"mounted": mounted,
+	}
 
 
 func get_active_enemies() -> Array[Dictionary]:
@@ -1005,6 +1088,17 @@ func spawn_wave(
 
 func clear_spawned_enemies() -> Dictionary:
 	var removed_count := _active_enemies.size()
+	# Clearing an empty staging area is not a battle-end event. In particular,
+	# GM/formal wave replacement calls this before spawning; treating that no-op
+	# as victory cleanup used to dismiss an in-progress prebattle rally.
+	var had_combat_runtime := (
+		removed_count > 0
+		or not _active_battle.is_empty()
+		or _default_formal_wave_active
+		or not _formal_enemy_navigation_pilot.is_empty()
+		or not _formal_active_enemy_slice.is_empty()
+		or not _formal_first_wave_slices.is_empty()
+	)
 	_clear_combat_projectiles("enemies_cleared")
 	_active_melee_swings.clear()
 	_pending_melee_damage_commits.clear()
@@ -1021,7 +1115,15 @@ func clear_spawned_enemies() -> Dictionary:
 	_clear_enemy_targeting_runtime()
 	_reset_formal_crowd_ai_budget()
 	var time_slowdown_result := _sync_enemy_presence_time_slowdown("enemies_cleared")
-	var mode_exit_result := _handle_all_enemies_cleared("enemies_cleared")
+	var mode_exit_result := (
+		_handle_all_enemies_cleared("enemies_cleared")
+		if had_combat_runtime
+		else {
+			"ok": true,
+			"skipped": true,
+			"reason": "no_active_combat"
+		}
+	)
 	_last_spawn_result = {
 		"ok": true,
 		"removed_count": removed_count,
@@ -1775,6 +1877,7 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"last_ai_step_result": _last_ai_step_result.duplicate(true),
 		"last_friendly_attack_result": _last_friendly_attack_result.duplicate(true),
 		"active_projectiles": get_active_projectile_snapshots(),
+		"stuck_projectiles": get_stuck_projectile_snapshots(),
 		"last_projectile_result": _last_projectile_result.duplicate(true),
 		"resolved_projectile_attack_count": _resolved_projectile_attack_facts.size(),
 		"active_melee_swings": get_active_melee_swing_snapshots(),
@@ -2077,9 +2180,12 @@ func debug_trigger_npc_avoidance(npc_id: String) -> Dictionary:
 		return _avoidance_failure("npc_combat_eligible", "已入伍且有主武器的 NPC 会进入战斗，不进入非战斗避战模式。", {"npc_id": npc_id})
 	if _active_enemies.is_empty():
 		return _avoidance_failure("no_active_enemies", "当前没有敌军，无法触发避战。", {"npc_id": npc_id})
-	var encounter := _nearest_enemy_for_npc(npc_id)
+	var encounter := _find_nearest_enemy(_get_npc_position(npc_id), _get_avoidance_trigger_range())
 	if encounter.is_empty():
-		return _avoidance_failure("enemy_missing", "找不到可用于避战的敌人。", {"npc_id": npc_id})
+		return _avoidance_failure("enemy_outside_avoidance_range", "避战范围内没有敌军。", {
+			"npc_id": npc_id,
+			"avoidance_range": _get_avoidance_trigger_range()
+		})
 	return _enter_npc_avoid_from_contact(npc_id, encounter, "gm_avoidance")
 
 
@@ -2096,7 +2202,6 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 	if npc_system == null or not npc_system.has_method("get_npc_ids"):
 		return _alarm_failure("npc_system_missing", "NPC 系统不可用。")
 
-	_active_rallies.clear()
 	var npc_ids: Array = npc_system.get_npc_ids()
 	var alarm_events: Array[Dictionary] = []
 	for raw_npc_id in npc_ids:
@@ -2114,6 +2219,11 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 			eligible.append(eligibility)
 		else:
 			ignored.append(eligibility)
+			# A bell command must have no side effects on a combatant who already
+			# owns a valid attack-target lock. Other stale rally records are not
+			# authoritative once their owner is no longer a responder.
+			if str(eligibility.get("reason", "")) != "target_locked":
+				_active_rallies.erase(npc_id)
 
 	var formation := _build_rally_formation(eligible)
 	var rallied: Array[Dictionary] = []
@@ -2121,6 +2231,20 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 		var rally_result := _start_npc_rally(entry)
 		if not rally_result.is_empty():
 			rallied.append(rally_result)
+	var target_locked_count := 0
+	var mount_route_recovered_count := 0
+	for item in ignored:
+		if str(item.get("reason", "")) == "target_locked":
+			target_locked_count += 1
+			# Repeated bells must not replace a valid attack lock, but they may heal
+			# the wartime rider-to-horse route that a world/mode handoff interrupted.
+			var mount_route_result := _ensure_wartime_mount_route(
+				str(item.get("npc_id", "")),
+				"combat_alarm_target_locked_recovery"
+			)
+			item["mount_route_result"] = mount_route_result
+			if bool(mount_route_result.get("recovered", false)):
+				mount_route_recovered_count += 1
 
 	_last_alarm_result = {
 		"ok": true,
@@ -2128,6 +2252,8 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 		"heard_count": alarm_events.size(),
 		"eligible_count": eligible.size(),
 		"rallied_count": rallied.size(),
+		"target_locked_count": target_locked_count,
+		"mount_route_recovered_count": mount_route_recovered_count,
 		"ignored_count": ignored.size(),
 		"rallied": rallied,
 		"ignored": ignored
@@ -2137,6 +2263,47 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 
 func debug_trigger_combat_alarm() -> Dictionary:
 	return trigger_combat_alarm("gm_panel")
+
+
+func dismiss_combat_rally(source: String = "hud") -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_behavior_mode"):
+		return {"ok": false, "error": "npc_system_missing", "source": source}
+	var dismissed: Array[Dictionary] = []
+	var ignored: Array[Dictionary] = []
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var mode := _get_npc_behavior_mode(npc_system, npc_id)
+		if mode != BEHAVIOR_MODE_RALLY:
+			ignored.append({"npc_id": npc_id, "behavior_mode": mode})
+			continue
+		var position_before := _get_npc_position(npc_id)
+		var transition: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, "rally_dismissed", {
+			"interrupt": true,
+			"force_idle": true,
+			"request_plan_reevaluation": false,
+			"resume_current_plan": true,
+			"state_changes": {
+				"last_action_result": "rally_dismissed",
+				"movement_target": "",
+				"movement_target_name": ""
+			}
+		})
+		if bool(transition.get("ok", false)):
+			_active_rallies.erase(npc_id)
+		transition["world_position_before"] = position_before
+		transition["world_position_after_transition"] = _get_npc_position(npc_id)
+		dismissed.append(transition)
+	var result := {
+		"ok": true,
+		"source": source,
+		"dismissed_count": dismissed.size(),
+		"ignored_count": ignored.size(),
+		"dismissed": dismissed,
+		"ignored": ignored
+	}
+	_last_mode_transition_result = result.duplicate(true)
+	return result
 
 
 func get_last_alarm_result() -> Dictionary:
@@ -2687,6 +2854,14 @@ func record_escape_attack_intervention_round(npc_id: String, current_round: int,
 func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = {}) -> Dictionary:
 	if damage_result.is_empty() or not bool(damage_result.get("ok", false)):
 		return _low_hp_judgement_skip("invalid_damage_result", "", damage_result, context)
+	_interrupt_npc_attack_from_damage(
+		str(damage_result.get("npc_id", "")),
+		int(damage_result.get("damage", 0)),
+		{
+			"source_id": str(damage_result.get("actor_id", "")),
+			"damage_event": damage_result.get("damage_event", {}).duplicate(true) if damage_result.get("damage_event", {}) is Dictionary else {}
+		}
+	)
 	if _active_battle.is_empty() or get_active_enemy_count() <= 0:
 		return _low_hp_judgement_skip("no_active_battle", str(damage_result.get("npc_id", "")), damage_result, context)
 	var npc_id := str(damage_result.get("npc_id", ""))
@@ -2860,6 +3035,8 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	_advance_wave_schedule(game_delta_seconds)
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
+		if not _active_battle.is_empty():
+			_handle_all_enemies_cleared("enemies_removed_before_combat_step")
 		return
 	if _default_formal_wave_active:
 		_formal_crowd_logic_frame += 1
@@ -2960,7 +3137,12 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 		"ready_count": 0,
 		"skipped": []
 	}
-	if combat_delta_seconds <= 0.0 or _active_enemies.is_empty():
+	if combat_delta_seconds <= 0.0:
+		_last_friendly_attack_result = result.duplicate(true)
+		return result
+	if _active_enemies.is_empty():
+		if not _active_battle.is_empty():
+			result["mode_exit_result"] = _handle_all_enemies_cleared("enemies_removed_before_friendly_step")
 		_last_friendly_attack_result = result.duplicate(true)
 		return result
 
@@ -2976,9 +3158,16 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 		var mode := _get_npc_behavior_mode(npc_system, npc_id)
 		if mode != BEHAVIOR_MODE_COMBAT:
 			_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
+			var noncombat_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+			if bool(noncombat_state.get("keep_distance_retreat_active", false)):
+				var settled_action := "unconscious" if mode == BEHAVIOR_MODE_UNCONSCIOUS else ("avoid_combat" if mode == BEHAVIOR_MODE_AVOID_COMBAT else "idle")
+				_clear_keep_distance_retreat(npc_id, noncombat_state, "keep_distance_retreat_combat_mode_exited", true, false, settled_action)
 			continue
 		if not _is_npc_combat_eligible(npc_id, npc_system):
 			_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
+			var ineligible_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+			if bool(ineligible_state.get("keep_distance_retreat_active", false)):
+				_clear_keep_distance_retreat(npc_id, ineligible_state, "keep_distance_retreat_no_longer_eligible", true)
 			(result["skipped"] as Array).append({"npc_id": npc_id, "reason": "not_combat_eligible"})
 			continue
 		if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
@@ -2987,6 +3176,8 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 			continue
 		var npc_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
 		if str(npc_state.get("combat_mount_phase", "")) in ["approaching_horse", "waiting_for_horse", "going_to_stable_horse", "beside_stable_horse"]:
+			if bool(npc_state.get("keep_distance_retreat_active", false)):
+				_clear_keep_distance_retreat(npc_id, npc_state, "keep_distance_retreat_mount_pickup_started", false, true)
 			(result["skipped"] as Array).append({"npc_id": npc_id, "reason": "waiting_for_assigned_horse"})
 			continue
 		var attack_result := _advance_single_npc_combat_attack(npc_id, combat_delta_seconds)
@@ -3019,6 +3210,62 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		attack_context["strategy_label"] = str(strategy.get("label", ""))
 		attack_context["unit_type"] = str(strategy.get("unit_type", ""))
 		attack_context["unit_type_label"] = str(strategy.get("unit_type_label", ""))
+
+	# T0232: a close threat owns the whole keep-distance decision before target
+	# acquisition, attack-position movement, windup, or projectile release. A
+	# committed retreat leg is immutable until arrival, even when its threats
+	# move or a more attractive target appears in the meantime.
+	var existing_attack_phase := str(state.get("combat_attack_phase", "idle"))
+	var existing_cycle_target_enemy_id := str(state.get("combat_attack_target_enemy_id", ""))
+	var completing_locked_melee_action := (
+		existing_attack_phase in ["windup", "recovery"]
+		and str(attack_context.get("weapon_id", "")) in MELEE_WEAPON_TYPES
+		and not existing_cycle_target_enemy_id.is_empty()
+		and not (
+			str(attack_context.get("strategy_id", "")) == STRATEGY_CHARGE_CYCLE
+			and str(state.get("combat_charge_phase", "")) == CHARGE_PHASE_IMPACT
+		)
+	)
+	var completing_locked_projectile_action := (
+		existing_attack_phase in ["windup", "recovery"]
+		and _is_ranged_weapon_type(str(attack_context.get("weapon_id", "")))
+		and not existing_cycle_target_enemy_id.is_empty()
+	)
+	var keep_distance_retreat := (
+		{}
+		if completing_locked_melee_action
+		else _advance_keep_distance_retreat_priority(npc_id, state, attack_context)
+	)
+	state = npc_system.get_npc_state(npc_id)
+	if not keep_distance_retreat.is_empty():
+		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
+		_pending_melee_damage_commits.erase(_melee_swing_key("friendly", npc_id))
+		var retreat_cooldown := maxf(0.0, float(state.get("combat_attack_cooldown", 0.0)))
+		if npc_system.has_method("update_npc_state"):
+			npc_system.update_npc_state(npc_id, {
+				"combat_target_enemy_id": "",
+				"combat_target_selection_reason": "keep_distance_close_threat_retreat",
+				"combat_target_scope": "",
+				"combat_attack_phase": "idle",
+				"combat_attack_elapsed_seconds": 0.0,
+				"combat_attack_cycle_seconds": 0.0,
+				"combat_attack_impact_seconds": 0.0,
+				"combat_attack_target_enemy_id": "",
+				"combat_attack_impact_committed": false,
+				"combat_last_attack_result": {},
+				"last_action_result": str(keep_distance_retreat.get("reason", "keep_distance_retreat"))
+			})
+		return {
+			"npc_id": npc_id,
+			"npc_name": str(npc.get("name", npc_id)),
+			"attack_count": 0,
+			"target": {},
+			"attack_context": attack_context,
+			"combat_seconds": combat_delta_seconds,
+			"cooldown": retreat_cooldown,
+			"strategy_movement": keep_distance_retreat,
+			"reason": str(keep_distance_retreat.get("reason", "keep_distance_retreat"))
+		}
 
 	# One selector owns both strategic movement and attack contact. The existing
 	# state ID is the durable presence lock; only invalidation or a one-shot
@@ -3078,6 +3325,22 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		strategic_target_enemy_id,
 		engagement_range_margin if phase != "idle" and cycle_target_enemy_id == strategic_target_enemy_id else 0.0
 	)
+	# Once a melee action or ranged release animation starts, range and line of
+	# fire are no longer re-evaluated. A still-valid actor target owns the action
+	# through authored impact/release; only an actual interruption may cancel it.
+	var completing_locked_actor_action := completing_locked_melee_action or completing_locked_projectile_action
+	if completing_locked_actor_action:
+		target = _make_enemy_attack_target(cycle_target_enemy_id, _get_npc_position(npc_id))
+	var attack_path_blocked := (
+		not completing_locked_actor_action
+		and
+		not target.is_empty()
+		and not _is_friendly_attack_path_clear(
+			npc_id,
+			target,
+			str(attack_context.get("weapon_id", ""))
+		)
+	)
 	# Once an authored attack has started, movement strategy may not replace it
 	# before impact/recovery has finished. This is especially important for the
 	# cavalry charge strategy, whose cooldown now represents the active cycle.
@@ -3121,6 +3384,10 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 			"strategy_movement": strategy_movement,
 			"reason": str(strategy_movement.get("reason", "combat_strategy_movement"))
 		}
+	if attack_path_blocked:
+		# Range alone is not an attack opportunity. Keep the strategic lock, but
+		# never release a projectile or melee sweep into formal world geometry.
+		target = {}
 
 	if target.is_empty():
 		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
@@ -3144,7 +3411,7 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 				"combat_attack_next_sequence_time": next_sequence_time,
 				"combat_attack_sequence_lock_remaining": cooldown,
 				"combat_last_attack_result": {},
-				"last_action_result": "combat_no_enemy_in_range",
+				"last_action_result": "combat_attack_path_blocked" if attack_path_blocked else "combat_no_enemy_in_range",
 				"current_action": "combat_ready"
 			})
 		return {
@@ -3154,7 +3421,7 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 			"attack_context": attack_context,
 			"combat_seconds": combat_delta_seconds,
 			"cooldown": cooldown,
-			"reason": "no_enemy_in_range"
+			"reason": "attack_path_blocked" if attack_path_blocked else "no_enemy_in_range"
 		}
 
 	while remaining > 0.000001 and attacks.size() < MAX_FRIENDLY_ATTACKS_PER_AI_STEP and not _active_enemies.is_empty():
@@ -3222,11 +3489,23 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 			break
 
 		if phase == "windup":
-			var impact_target := _select_npc_attack_target(
-				npc_id,
-				attack_context,
-				cycle_target_enemy_id,
-				engagement_range_margin
+			var normal_locked_melee_impact := (
+				str(attack_context.get("weapon_id", "")) in MELEE_WEAPON_TYPES
+				and not (
+					str(attack_context.get("strategy_id", "")) == STRATEGY_CHARGE_CYCLE
+					and str(state.get("combat_charge_phase", "")) == CHARGE_PHASE_IMPACT
+				)
+			)
+			var locked_projectile_release := _is_ranged_weapon_type(str(attack_context.get("weapon_id", "")))
+			var impact_target := (
+				_make_enemy_attack_target(cycle_target_enemy_id, _get_npc_position(npc_id))
+				if normal_locked_melee_impact or locked_projectile_release
+				else _select_npc_attack_target(
+					npc_id,
+					attack_context,
+					cycle_target_enemy_id,
+					engagement_range_margin
+				)
 			)
 			if impact_target.is_empty() or str(impact_target.get("id", "")) != cycle_target_enemy_id:
 				_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
@@ -3322,7 +3601,7 @@ func _resolve_npc_attack_impact(
 	if not is_charge_impact:
 		if _is_ranged_weapon_type(str(attack_context.get("weapon_id", ""))):
 			return _release_npc_projectile(npc_id, npc, target, attack_context)
-		return _resolve_npc_melee_contact(npc_id, npc, target, attack_context)
+		return _resolve_npc_locked_actor_melee_impact(npc_id, npc, target, attack_context)
 	var swing_key := _melee_swing_key("friendly", npc_id)
 	var active_swing: Dictionary = _active_melee_swings.get(swing_key, {}) if _active_melee_swings.get(swing_key, {}) is Dictionary else {}
 	if bool(active_swing.get("damage_committed", false)):
@@ -3430,6 +3709,13 @@ func _advance_npc_combat_strategy_movement(
 	strategic_target: Dictionary = {}
 ) -> Dictionary:
 	var strategy_id := str(attack_context.get("strategy_id", STRATEGY_ATTACK))
+	# Combat avoidance is threat-field driven, not target-lock driven. A durable
+	# attack lock may legitimately point at a distant enemy while another enemy
+	# closes from a different angle; using that lock as the avoidance trigger
+	# strands the unit in combat_ready. Keep the attack lock for combat identity,
+	# but let the nearest live threat trigger the shared weighted avoidance leg.
+	if strategy_id == STRATEGY_AVOID:
+		return _advance_combat_avoid_strategy_movement(npc_id, state)
 	var attack_range := maxf(0.1, float(attack_context.get("range", 1.5)))
 	var current_action := str(state.get("current_action", ""))
 	var is_strategy_moving := current_action.begins_with("moving_to_%s" % STRATEGY_MOVE_TARGET_PREFIX)
@@ -3441,9 +3727,14 @@ func _advance_npc_combat_strategy_movement(
 			return _stop_combat_strategy_move(npc_id, strategy_id, "combat_strategy_no_enemy_in_detection_range")
 		return {}
 	var distance := float(nearest.get("distance", INF))
-	var avoidance_safe_distance := _get_avoidance_safe_distance()
-	var attack_handoff_range := attack_range
-	if not _is_ranged_weapon_type(str(attack_context.get("weapon_id", ""))):
+	var weapon_id := str(attack_context.get("weapon_id", ""))
+	var is_ranged_weapon := _is_ranged_weapon_type(weapon_id)
+	var attack_path_blocked := (
+		not target_in_range.is_empty()
+		and not _is_friendly_attack_path_clear(npc_id, target_in_range, weapon_id)
+	)
+	var attack_handoff_range := attack_range * RANGED_ATTACK_POSITION_RANGE_RATIO if is_ranged_weapon else attack_range
+	if not is_ranged_weapon:
 		# The configured melee range is the outer acquisition boundary. Do not
 		# cancel an active approach on that exact edge: the authored blade sweep
 		# can legitimately miss there after animation/body clearance is applied.
@@ -3471,8 +3762,9 @@ func _advance_npc_combat_strategy_movement(
 		# the inner handoff band so movement and attack never control the body at
 		# the same time and the authored blade is not left on the outer edge.
 		if (
-			strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE]
+			strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE, STRATEGY_MAX_OUTPUT]
 			and not target_in_range.is_empty()
+			and not attack_path_blocked
 			and float(target_in_range.get("distance", INF)) <= attack_handoff_range
 		):
 			_settle_combat_strategy_move_handoff(
@@ -3482,8 +3774,6 @@ func _advance_npc_combat_strategy_movement(
 				"combat_strategy_attack_range_reached"
 			)
 			return {}
-		if strategy_id == STRATEGY_AVOID and distance >= avoidance_safe_distance:
-			return _hold_combat_strategy_avoid(npc_id, state, nearest, true)
 		if (
 			physical_movement_active
 			and not moving_enemy_id.is_empty()
@@ -3497,14 +3787,73 @@ func _advance_npc_combat_strategy_movement(
 			)
 			physical_movement_active = false
 			is_strategy_moving = false
+		var movement_progress: Dictionary = (
+			npc_system.get_npc_world_movement_progress(npc_id)
+			if physical_movement_active and npc_system.has_method("get_npc_world_movement_progress")
+			else {}
+		)
+		var stationary_elapsed := float(movement_progress.get("stationary_elapsed_seconds", 0.0))
+		if (
+			physical_movement_active
+			and is_ranged_weapon
+			and strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE, STRATEGY_MAX_OUTPUT]
+			and stationary_elapsed >= _get_friendly_strategy_stalled_reselect_seconds()
+		):
+			var stalled_position := _vector3_from_dict(
+				state.get("combat_strategy_move_target_position", {}),
+				_get_npc_position(npc_id)
+			)
+			var recovery_count := int(state.get("combat_strategy_move_recovery_count", 0)) + 1
+			var recovered_target := _select_ranged_attack_position(
+				npc_id,
+				nearest,
+				attack_range,
+				weapon_id,
+				stalled_position,
+				_get_friendly_strategy_reselect_min_separation()
+			)
+			_settle_combat_strategy_move_handoff(
+				npc_id,
+				strategy_id,
+				nearest,
+				"combat_strategy_stalled_position_reselected"
+			)
+			var recovery_state := {
+				"combat_strategy_move_recovery_count": recovery_count,
+				"combat_strategy_last_stall": {
+					"stationary_elapsed_seconds": stationary_elapsed,
+					"repath_count": int(movement_progress.get("repath_count", 0)),
+					"target_update_count": int(movement_progress.get("target_update_count", 0)),
+					"previous_target_position": _vector3_to_dict(stalled_position)
+				}
+			}
+			var recovery_result := _start_combat_strategy_move(
+				npc_id,
+				strategy_id,
+				nearest,
+				recovered_target,
+				"combat_strategy_stalled_position_reselected",
+				recovery_state,
+				recovery_state
+			)
+			recovery_result["stationary_elapsed_seconds"] = stationary_elapsed
+			recovery_result["previous_target_position"] = _vector3_to_dict(stalled_position)
+			recovery_result["recovery_count"] = recovery_count
+			return recovery_result
 		if physical_movement_active:
 			if (
-				strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE]
-				and target_in_range.is_empty()
-				and distance > attack_range
+				strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE, STRATEGY_MAX_OUTPUT]
+				and (target_in_range.is_empty() or attack_path_blocked or distance > attack_handoff_range)
+				and (distance > attack_handoff_range or attack_path_blocked)
 				and npc_system.has_method("update_npc_world_movement_target")
 			):
-				var updated_approach := _select_approach_target(npc_id, nearest, attack_range)
+				var updated_approach := (
+					_select_ranged_attack_position(npc_id, nearest, attack_range, weapon_id)
+					if is_ranged_weapon
+					else _select_blocked_attack_approach_target(npc_id, nearest, attack_range, weapon_id)
+					if attack_path_blocked
+					else _select_approach_target(npc_id, nearest, attack_range)
+				)
 				var updated_position: Vector3 = updated_approach.get("position", _get_npc_position(npc_id))
 				var stored_position := _vector3_from_dict(
 					state.get("combat_strategy_move_target_position", {}),
@@ -3542,25 +3891,54 @@ func _advance_npc_combat_strategy_movement(
 			"combat_strategy_stale_movement_recovered"
 		)
 		is_strategy_moving = false
+		if is_ranged_weapon and strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE, STRATEGY_MAX_OUTPUT]:
+			var stale_position := _vector3_from_dict(
+				state.get("combat_strategy_move_target_position", {}),
+				_get_npc_position(npc_id)
+			)
+			return _start_combat_strategy_move(
+				npc_id,
+				strategy_id,
+				nearest,
+				_select_ranged_attack_position(
+					npc_id,
+					nearest,
+					attack_range,
+					weapon_id,
+					stale_position,
+					_get_friendly_strategy_reselect_min_separation()
+				),
+				"combat_strategy_stale_movement_recovered"
+			)
+
+	if attack_path_blocked and strategy_id in [STRATEGY_MAX_OUTPUT, STRATEGY_KEEP_DISTANCE, STRATEGY_ATTACK, STRATEGY_CHARGE_CYCLE]:
+		return _start_combat_strategy_move(
+			npc_id,
+			strategy_id,
+			nearest,
+			_select_ranged_attack_position(npc_id, nearest, attack_range, weapon_id)
+			if is_ranged_weapon
+			else _select_blocked_attack_approach_target(npc_id, nearest, attack_range, weapon_id),
+			"combat_strategy_attack_path_blocked"
+		)
+	if (
+		is_ranged_weapon
+		and strategy_id in [STRATEGY_MAX_OUTPUT, STRATEGY_KEEP_DISTANCE, STRATEGY_ATTACK]
+		and distance > attack_handoff_range
+	):
+		return _start_combat_strategy_move(
+			npc_id,
+			strategy_id,
+			nearest,
+			_select_ranged_attack_position(npc_id, nearest, attack_range, weapon_id),
+			"combat_strategy_ranged_attack_position"
+		)
 
 	match strategy_id:
-		STRATEGY_AVOID:
-			if distance >= avoidance_safe_distance:
-				return _hold_combat_strategy_avoid(npc_id, state, nearest, false)
-			var avoid_target := _select_avoidance_target(npc_id, nearest)
-			var move_result := _start_combat_strategy_move(npc_id, strategy_id, nearest, avoid_target, "combat_strategy_avoid")
-			if move_result.is_empty():
-				return _hold_combat_strategy_avoid(npc_id, state, nearest, false)
-			return move_result
 		STRATEGY_KEEP_DISTANCE:
-			if distance < _get_keep_distance_min_distance(attack_range):
-				return _start_combat_strategy_move(
-					npc_id,
-					strategy_id,
-					nearest,
-					_select_keep_distance_target(npc_id, nearest, attack_range),
-					"combat_strategy_keep_distance"
-				)
+			# Close-range withdrawal is handled before target acquisition by
+			# _advance_keep_distance_retreat_priority(). Once safe, this branch only
+			# preserves the ordinary ranged approach behavior.
 			if target_in_range.is_empty() and distance > attack_range:
 				return _start_combat_strategy_move(
 					npc_id,
@@ -3568,6 +3946,15 @@ func _advance_npc_combat_strategy_movement(
 					nearest,
 					_select_approach_target(npc_id, nearest, attack_range),
 					"combat_strategy_keep_in_range"
+				)
+		STRATEGY_MAX_OUTPUT:
+			if target_in_range.is_empty() and distance > attack_range:
+				return _start_combat_strategy_move(
+					npc_id,
+					strategy_id,
+					nearest,
+					_select_approach_target(npc_id, nearest, attack_range),
+					"combat_strategy_max_output_approach"
 				)
 		STRATEGY_ATTACK:
 			if target_in_range.is_empty() and distance > attack_range:
@@ -3618,6 +4005,150 @@ func _advance_npc_combat_strategy_movement(
 	return {}
 
 
+func _advance_combat_avoid_strategy_movement(npc_id: String, state: Dictionary) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_world_position"):
+		return {}
+	var npc_position := _get_npc_position(npc_id)
+	var trigger_range := _get_avoidance_trigger_range()
+	var safe_distance := _get_avoidance_safe_distance()
+	var threat_field := _build_avoidance_threat_field(npc_position, trigger_range, npc_id)
+	var encounter: Dictionary = threat_field.get("nearest_encounter", {})
+	var current_action := str(state.get("current_action", ""))
+	var is_any_strategy_moving := current_action.begins_with("moving_to_%s" % STRATEGY_MOVE_TARGET_PREFIX)
+	var is_avoid_strategy_moving := current_action.begins_with("moving_to_%s%s_" % [STRATEGY_MOVE_TARGET_PREFIX, STRATEGY_AVOID])
+	var physical_movement_active := (
+		npc_system.has_method("is_npc_world_movement_active")
+		and bool(npc_system.is_npc_world_movement_active(npc_id))
+	)
+
+	# A request authored by attack/keep-distance/charge is not an avoidance leg.
+	# Stop it before selecting the weighted point, otherwise changing strategy can
+	# leave the NPC walking toward the enemy while the UI already says "avoid".
+	if is_any_strategy_moving and not is_avoid_strategy_moving:
+		_settle_combat_strategy_move_handoff(
+			npc_id,
+			STRATEGY_AVOID,
+			{"enemy_id": str(state.get("combat_target_enemy_id", ""))},
+			"combat_strategy_changed_to_avoid"
+		)
+		state = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else state
+		current_action = str(state.get("current_action", ""))
+		is_any_strategy_moving = false
+		is_avoid_strategy_moving = false
+		physical_movement_active = false
+
+	var nearest_distance := float(encounter.get("distance", INF))
+	if is_avoid_strategy_moving:
+		# Preserve the existing contract: once the closest actual threat is outside
+		# the safe threshold, stop immediately and wait. Crucially, this distance is
+		# no longer taken from a potentially distant durable attack lock.
+		if encounter.is_empty() or nearest_distance >= safe_distance:
+			return _hold_combat_strategy_avoid(npc_id, state, encounter, true, threat_field)
+		if physical_movement_active:
+			return {
+				"ok": true,
+				"npc_id": npc_id,
+				"strategy_id": STRATEGY_AVOID,
+				"strategy_label": _get_combat_strategy_label(STRATEGY_AVOID),
+				"reason": "combat_strategy_avoid_movement_in_progress",
+				"enemy_id": str(encounter.get("enemy_id", "")),
+				"enemy_name": str(encounter.get("enemy_name", "")),
+				"enemy_distance": nearest_distance,
+				"safe_distance": safe_distance,
+				"threat_count": (threat_field.get("threats", []) as Array).size(),
+				"threats": (threat_field.get("threats", []) as Array).duplicate(true)
+			}
+		var committed_position := _vector3_from_dict(
+			state.get("combat_strategy_move_target_position", {}),
+			npc_position
+		)
+		if _horizontal_vector_distance(npc_position, committed_position) > 0.35:
+			var recovery_count := int(state.get("combat_strategy_avoid_movement_recovery_count", 0)) + 1
+			var committed_target := {
+				"target_id": str(state.get("combat_strategy_move_target_id", "combat_strategy_avoid_recovery")),
+				"target_name": str(state.get("combat_strategy_move_target_name", "继续前往避战点")),
+				"position": committed_position,
+				"enemy_distance_after": float(state.get("combat_strategy_avoid_enemy_distance_after_target", 0.0))
+			}
+			var recovery_state := _make_combat_avoid_runtime_state(
+				encounter,
+				threat_field,
+				committed_target,
+				safe_distance,
+				"combat_strategy_avoid_movement_recovered"
+			)
+			recovery_state["combat_strategy_avoid_movement_recovery_count"] = recovery_count
+			var recovery := _start_combat_strategy_move(
+				npc_id,
+				STRATEGY_AVOID,
+				encounter,
+				committed_target,
+				"combat_strategy_avoid_movement_recovered",
+				recovery_state,
+				recovery_state
+			)
+			recovery["movement_recovery_count"] = recovery_count
+			return recovery
+		_settle_combat_strategy_move_handoff(
+			npc_id,
+			STRATEGY_AVOID,
+			encounter,
+			"combat_strategy_avoid_leg_arrived"
+		)
+		state = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else state
+
+	if encounter.is_empty() or nearest_distance >= safe_distance:
+		return _hold_combat_strategy_avoid(npc_id, state, encounter, false, threat_field)
+	var avoid_target := _select_avoidance_target(npc_id, encounter)
+	if avoid_target.is_empty():
+		return _hold_combat_strategy_avoid(npc_id, state, encounter, false, threat_field)
+	var avoid_state := _make_combat_avoid_runtime_state(
+		encounter,
+		threat_field,
+		avoid_target,
+		safe_distance,
+		"combat_strategy_avoid"
+	)
+	var move_result := _start_combat_strategy_move(
+		npc_id,
+		STRATEGY_AVOID,
+		encounter,
+		avoid_target,
+		"combat_strategy_avoid",
+		avoid_state,
+		avoid_state
+	)
+	if not bool(move_result.get("ok", false)):
+		return _hold_combat_strategy_avoid(npc_id, state, encounter, false, threat_field)
+	move_result["safe_distance"] = safe_distance
+	move_result["threat_count"] = (threat_field.get("threats", []) as Array).size()
+	move_result["threats"] = (threat_field.get("threats", []) as Array).duplicate(true)
+	move_result["avoidance_direction"] = _vector3_to_dict(avoid_target.get("direction", Vector3.ZERO))
+	return move_result
+
+
+func _make_combat_avoid_runtime_state(
+	encounter: Dictionary,
+	threat_field: Dictionary,
+	target: Dictionary,
+	safe_distance: float,
+	reason: String
+) -> Dictionary:
+	return {
+		"combat_strategy_move_strategy_id": STRATEGY_AVOID,
+		"combat_strategy_avoid_nearest_enemy_id": str(encounter.get("enemy_id", "")),
+		"combat_strategy_avoid_nearest_enemy_name": str(encounter.get("enemy_name", "")),
+		"combat_strategy_avoid_nearest_enemy_distance": float(encounter.get("distance", INF)),
+		"combat_strategy_avoid_safe_distance": safe_distance,
+		"combat_strategy_avoid_threat_count": (threat_field.get("threats", []) as Array).size(),
+		"combat_strategy_avoid_threats": (threat_field.get("threats", []) as Array).duplicate(true),
+		"combat_strategy_avoid_direction": _vector3_to_dict(target.get("direction", threat_field.get("direction", Vector3.ZERO))),
+		"combat_strategy_avoid_enemy_distance_after_target": float(target.get("enemy_distance_after", 0.0)),
+		"combat_strategy_avoid_last_reason": reason
+	}
+
+
 func _settle_combat_strategy_move_handoff(
 	npc_id: String,
 	strategy_id: String,
@@ -3627,20 +4158,27 @@ func _settle_combat_strategy_move_handoff(
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("stop_npc_movement_with_state"):
 		return
+	var target_enemy_id := str(target.get("id", target.get("enemy_id", "")))
+	if strategy_id == STRATEGY_AVOID and npc_system.has_method("get_npc_state"):
+		var current_state: Dictionary = npc_system.get_npc_state(npc_id)
+		var locked_enemy_id := str(current_state.get("combat_target_enemy_id", ""))
+		if not locked_enemy_id.is_empty():
+			target_enemy_id = locked_enemy_id
 	npc_system.stop_npc_movement_with_state(npc_id, {
 		"current_action": "combat_ready",
 		"movement_target": "",
 		"movement_target_name": "",
 		"last_action_result": reason,
-		"combat_target_enemy_id": str(target.get("id", target.get("enemy_id", ""))),
+		"combat_target_enemy_id": target_enemy_id,
 		"combat_strategy_move_target_id": "",
 		"combat_strategy_move_target_name": "",
 		"combat_strategy_move_target_position": {},
 		"combat_strategy_move_enemy_id": "",
+		"combat_strategy_move_strategy_id": "",
 		"combat_strategy_last_handoff": {
 			"reason": reason,
 			"strategy_id": strategy_id,
-			"enemy_id": str(target.get("id", target.get("enemy_id", "")))
+			"enemy_id": target_enemy_id
 		}
 	})
 
@@ -3665,32 +4203,56 @@ func _start_combat_strategy_move(
 		return {}
 	var target_id := "%s%s_%s" % [STRATEGY_MOVE_TARGET_PREFIX, strategy_id, npc_id]
 	var target_name := str(target.get("target_name", _get_combat_strategy_label(strategy_id)))
+	var movement_enemy_id := str(encounter.get("enemy_id", encounter.get("id", "")))
+	var current_state: Dictionary = (
+		npc_system.get_npc_state(npc_id)
+		if npc_system.has_method("get_npc_state")
+		else {}
+	)
+	var combat_target_enemy_id := movement_enemy_id
+	if strategy_id == STRATEGY_AVOID:
+		var locked_enemy_id := str(current_state.get("combat_target_enemy_id", ""))
+		if not locked_enemy_id.is_empty():
+			combat_target_enemy_id = locked_enemy_id
 	var arrival_state := {
 		"current_action": "combat_ready",
 		"current_location": RALLY_LOCATION_ID,
 		"current_location_name": RALLY_LOCATION_NAME,
 		"last_action_result": reason,
-		"combat_target_enemy_id": str(encounter.get("enemy_id", encounter.get("id", ""))),
+		"combat_target_enemy_id": combat_target_enemy_id,
 		"combat_strategy_move_target_id": str(target.get("target_id", target_id)),
 		"combat_strategy_move_target_name": target_name,
 		"combat_strategy_move_target_position": _vector3_to_dict(target_position),
-		"combat_strategy_move_enemy_id": str(encounter.get("enemy_id", encounter.get("id", "")))
+		"combat_strategy_move_enemy_id": movement_enemy_id,
+		"combat_strategy_move_strategy_id": strategy_id
 	}
 	arrival_state["departure_state"] = {
-		"combat_target_enemy_id": str(encounter.get("enemy_id", encounter.get("id", ""))),
+		"combat_target_enemy_id": combat_target_enemy_id,
 		"combat_strategy_move_target_id": str(target.get("target_id", target_id)),
 		"combat_strategy_move_target_name": target_name,
 		"combat_strategy_move_target_position": _vector3_to_dict(target_position),
-		"combat_strategy_move_enemy_id": str(encounter.get("enemy_id", encounter.get("id", "")))
+		"combat_strategy_move_enemy_id": movement_enemy_id,
+		"combat_strategy_move_strategy_id": strategy_id
 	}
 	arrival_state.merge(arrival_state_overrides, true)
+	var motion_options := _get_combat_motion_options("friendly_%s_approach" % strategy_id)
+	if bool(target.get("tracks_live_target", false)):
+		# CombatSystem, not a fixed destination radius, owns the handoff for a live
+		# opponent. Braking against every refreshed predicted point makes two actors
+		# repeatedly decelerate while they are still outside melee range.
+		motion_options["final_target_braking_enabled"] = false
+	if target.get("target_desired_distance") is float or target.get("target_desired_distance") is int:
+		motion_options["target_desired_distance"] = maxf(
+			0.01,
+			float(target.get("target_desired_distance", RANGED_ATTACK_POSITION_ARRIVAL_TOLERANCE_FALLBACK))
+		)
 	var moved := bool(npc_system.move_npc_to_world_position(
 		npc_id,
 		target_id,
 		target_name,
 		target_position,
 		arrival_state,
-		_get_combat_motion_options("friendly_%s_approach" % strategy_id)
+		motion_options
 	))
 	if moved and not moving_state_overrides.is_empty() and npc_system.has_method("update_npc_state"):
 		npc_system.update_npc_state(npc_id, moving_state_overrides)
@@ -3732,7 +4294,8 @@ func _stop_combat_strategy_move(npc_id: String, strategy_id: String, reason: Str
 		"combat_strategy_move_target_id": "",
 		"combat_strategy_move_target_name": "",
 		"combat_strategy_move_target_position": {},
-		"combat_strategy_move_enemy_id": ""
+		"combat_strategy_move_enemy_id": "",
+		"combat_strategy_move_strategy_id": ""
 	}
 	if npc_system != null and npc_system.has_method("stop_npc_movement_with_state"):
 		npc_system.stop_npc_movement_with_state(npc_id, state_changes)
@@ -3750,25 +4313,37 @@ func _hold_combat_strategy_avoid(
 	npc_id: String,
 	state: Dictionary,
 	encounter: Dictionary,
-	stop_movement: bool
+	stop_movement: bool,
+	threat_field: Dictionary = {}
 ) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var current_action := str(state.get("current_action", ""))
+	var locked_enemy_id := str(state.get("combat_target_enemy_id", ""))
+	var threat_count := (threat_field.get("threats", []) as Array).size()
+	var safe_distance := _get_avoidance_safe_distance()
 	var state_changes := {
-		"current_action": "combat_ready",
+		"current_action": "combat_strategy_avoid_holding",
 		"movement_target": "",
 		"movement_target_name": "",
 		"last_action_result": "combat_strategy_avoid_holding",
-		"combat_target_enemy_id": str(encounter.get("enemy_id", "")),
+		"combat_target_enemy_id": locked_enemy_id if not locked_enemy_id.is_empty() else str(encounter.get("enemy_id", "")),
 		"combat_strategy_move_target_id": "",
 		"combat_strategy_move_target_name": "",
 		"combat_strategy_move_target_position": {},
-		"combat_strategy_move_enemy_id": ""
+		"combat_strategy_move_enemy_id": "",
+		"combat_strategy_move_strategy_id": "",
+		"combat_strategy_avoid_nearest_enemy_id": str(encounter.get("enemy_id", "")),
+		"combat_strategy_avoid_nearest_enemy_name": str(encounter.get("enemy_name", "")),
+		"combat_strategy_avoid_nearest_enemy_distance": float(encounter.get("distance", INF)),
+		"combat_strategy_avoid_safe_distance": safe_distance,
+		"combat_strategy_avoid_threat_count": threat_count,
+		"combat_strategy_avoid_threats": (threat_field.get("threats", []) as Array).duplicate(true),
+		"combat_strategy_avoid_last_reason": "combat_strategy_avoid_holding"
 	}
 	var should_update := stop_movement
 	if not should_update:
 		should_update = (
-			current_action != "combat_ready"
+			current_action != "combat_strategy_avoid_holding"
 			or not str(state.get("movement_target", "")).is_empty()
 			or not str(state.get("combat_strategy_move_target_id", "")).is_empty()
 		)
@@ -3786,33 +4361,379 @@ func _hold_combat_strategy_avoid(
 		"enemy_id": str(encounter.get("enemy_id", "")),
 		"enemy_name": str(encounter.get("enemy_name", "")),
 		"enemy_distance": float(encounter.get("distance", 0.0)),
+		"safe_distance": safe_distance,
+		"threat_count": threat_count,
+		"threats": (threat_field.get("threats", []) as Array).duplicate(true),
 		"holding": true,
 		"stopped_movement": stop_movement
 	}
 
 
-func _select_keep_distance_target(npc_id: String, encounter: Dictionary, attack_range: float) -> Dictionary:
+func _advance_keep_distance_retreat_priority(
+	npc_id: String,
+	state: Dictionary,
+	attack_context: Dictionary
+) -> Dictionary:
+	var strategy_id := str(attack_context.get("strategy_id", ""))
+	var weapon_id := str(attack_context.get("weapon_id", ""))
+	var retreat_active := bool(state.get("keep_distance_retreat_active", false))
+	if strategy_id != STRATEGY_KEEP_DISTANCE or not _is_ranged_weapon_type(weapon_id):
+		if retreat_active:
+			_clear_keep_distance_retreat(npc_id, state, "keep_distance_retreat_strategy_changed", true)
+		return {}
+
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_world_position"):
+		return {}
 	var npc_position := _get_npc_position(npc_id)
-	var enemy_position: Vector3 = encounter.get("position", npc_position + Vector3(0.0, 0.0, 1.0))
-	var away_direction := npc_position - enemy_position
-	away_direction.y = 0.0
-	if away_direction.length() <= 0.001:
-		away_direction = _fallback_avoidance_direction(npc_id)
-	else:
-		away_direction = away_direction.normalized()
-	var target_distance := clampf(
-		attack_range * KEEP_DISTANCE_TARGET_RANGE_RATIO,
-		_get_keep_distance_min_distance(attack_range) + 0.6,
-		attack_range * KEEP_DISTANCE_MAX_RANGE_RATIO
+	var attack_range := maxf(0.1, float(attack_context.get("range", 1.5)))
+	var trigger_range := attack_range * _get_keep_distance_retreat_trigger_range_ratio()
+	var arrival_tolerance := _get_keep_distance_retreat_arrival_tolerance()
+	if retreat_active:
+		var stored_target_position := _vector3_from_dict(
+			state.get("keep_distance_retreat_target_position", {}),
+			npc_position
+		)
+		var stored_target_id := str(state.get("keep_distance_retreat_target_id", ""))
+		var physical_movement_active := (
+			npc_system.has_method("is_npc_world_movement_active")
+			and bool(npc_system.is_npc_world_movement_active(npc_id))
+		)
+		var owns_physical_movement := (
+			physical_movement_active
+			and not stored_target_id.is_empty()
+			and str(state.get("movement_target", "")) == stored_target_id
+		)
+		if owns_physical_movement:
+			_enforce_keep_distance_retreat_attack_lock(npc_id, state)
+			return {
+				"ok": true,
+				"npc_id": npc_id,
+				"strategy_id": STRATEGY_KEEP_DISTANCE,
+				"strategy_label": _get_combat_strategy_label(STRATEGY_KEEP_DISTANCE),
+				"reason": "keep_distance_retreat_movement_in_progress",
+				"target_id": stored_target_id,
+				"target_position": _vector3_to_dict(stored_target_position),
+				"trigger_range": trigger_range,
+				"committed_leg": true
+			}
+		if _horizontal_vector_distance(npc_position, stored_target_position) > arrival_tolerance:
+			# The request was cancelled or replaced before arrival. Restore the
+			# exact committed endpoint; do not rescan and silently bend the leg.
+			return _start_keep_distance_retreat_segment(
+				npc_id,
+				state,
+				_keep_distance_retreat_target_from_state(state, stored_target_position),
+				attack_range,
+				"keep_distance_retreat_movement_recovered",
+				true
+			)
+
+	# A new scan is legal only before the first leg or after the committed leg
+	# has physically arrived. This is what makes new enemies irrelevant in transit.
+	var threat_field := _build_avoidance_threat_field(npc_position, trigger_range, npc_id)
+	var threats: Array = threat_field.get("threats", [])
+	if threats.is_empty():
+		if retreat_active:
+			_clear_keep_distance_retreat(npc_id, state, "keep_distance_retreat_safe", false)
+		return {}
+	var retreat_target := _select_keep_distance_retreat_target(
+		npc_id,
+		npc_position,
+		attack_range,
+		threat_field
 	)
-	var unclamped_position := enemy_position + away_direction * target_distance
-	var position := _constrain_combat_strategy_position(unclamped_position, npc_id)
+	if retreat_target.is_empty():
+		_enforce_keep_distance_retreat_attack_lock(npc_id, state)
+		return {
+			"ok": false,
+			"npc_id": npc_id,
+			"strategy_id": STRATEGY_KEEP_DISTANCE,
+			"strategy_label": _get_combat_strategy_label(STRATEGY_KEEP_DISTANCE),
+			"reason": "keep_distance_retreat_target_unavailable",
+			"trigger_range": trigger_range,
+			"threat_count": threats.size()
+		}
+	return _start_keep_distance_retreat_segment(
+		npc_id,
+		state,
+		retreat_target,
+		attack_range,
+		"keep_distance_retreat_started" if not retreat_active else "keep_distance_retreat_repeated",
+		false
+	)
+
+
+func _select_keep_distance_retreat_target(
+	npc_id: String,
+	npc_position: Vector3,
+	attack_range: float,
+	threat_field: Dictionary
+) -> Dictionary:
+	var threats: Array = threat_field.get("threats", [])
+	if threats.is_empty():
+		return {}
+	var direction: Vector3 = threat_field.get("direction", _fallback_avoidance_direction(npc_id))
+	direction.y = 0.0
+	if direction.length_squared() <= 0.000001:
+		direction = _fallback_avoidance_direction(npc_id)
+	else:
+		direction = direction.normalized()
+	var desired_travel_distance := attack_range * _get_keep_distance_retreat_segment_range_ratio()
+	var desired_position := npc_position + direction * desired_travel_distance
+	var resolution := _resolve_avoidance_navigation_target(npc_position, desired_position)
+	if not bool(resolution.get("ok", false)):
+		return {}
+	var position: Vector3 = resolution.get("position", npc_position)
+	# A direct ray can terminate at the origin when a building envelope occupies
+	# the weighted direction. In that case fan around the same direction and pick
+	# a nearby reachable point that still does not reduce threat clearance. This
+	# is an obstacle correction only; the authored weighted direction is retained.
+	if _horizontal_vector_distance(npc_position, position) <= _get_keep_distance_retreat_arrival_tolerance():
+		var alternate := _resolve_keep_distance_retreat_alternate_target(
+			npc_position,
+			direction,
+			desired_travel_distance
+		)
+		if alternate.is_empty():
+			return {}
+		resolution = alternate
+		position = resolution.get("position", npc_position)
+		desired_position = resolution.get("desired_position", desired_position)
+	var nearest: Dictionary = threat_field.get("nearest_encounter", {})
+	var threat_ids: Array[String] = []
+	var serialized_threats: Array[Dictionary] = []
+	for raw_threat in threats:
+		var threat := raw_threat as Dictionary
+		var enemy_id := str(threat.get("enemy_id", ""))
+		threat_ids.append(enemy_id)
+		serialized_threats.append({
+			"enemy_id": enemy_id,
+			"enemy_name": str(threat.get("enemy_name", enemy_id)),
+			"distance": float(threat.get("distance", 0.0)),
+			"weight": float(threat.get("weight", 0.0))
+		})
 	return {
-		"target_id": "keep_distance_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", ""))]),
-		"target_name": "保持距离射击点",
+		"target_name": "保持距离撤离点",
 		"position": position,
-		"enemy_distance_after": position.distance_to(enemy_position)
+		"desired_position": desired_position,
+		"direction": direction,
+		"threat_ids": threat_ids,
+		"threats": serialized_threats,
+		"threat_count": serialized_threats.size(),
+		"nearest_enemy_id": str(nearest.get("enemy_id", "")),
+		"nearest_enemy_name": str(nearest.get("enemy_name", "")),
+		"desired_travel_distance": desired_travel_distance,
+		"travel_distance": _horizontal_vector_distance(npc_position, position),
+		"boundary_limited": bool(resolution.get("boundary_limited", false)),
+		"navigation_adjusted": bool(resolution.get("navigation_adjusted", false)),
+		"navigation_resolution_reason": str(resolution.get("reason", "")),
+		"weight_formula": "inverse_distance_power",
+		"weight_exponent": _get_avoidance_weight_exponent()
 	}
+
+
+func _resolve_keep_distance_retreat_alternate_target(
+	npc_position: Vector3,
+	weighted_direction: Vector3,
+	desired_travel_distance: float
+) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := -INF
+	var origin_threat_distance := _get_min_enemy_distance(npc_position)
+	for angle_degrees in [22.5, -22.5, 45.0, -45.0, 67.5, -67.5, 90.0, -90.0, 112.5, -112.5, 135.0, -135.0, 157.5, -157.5, 180.0]:
+		var candidate_direction := weighted_direction.rotated(Vector3.UP, deg_to_rad(float(angle_degrees))).normalized()
+		var alternate_desired := npc_position + candidate_direction * desired_travel_distance
+		var resolution := _resolve_avoidance_navigation_target(npc_position, alternate_desired)
+		if not bool(resolution.get("ok", false)):
+			continue
+		var candidate: Vector3 = resolution.get("position", npc_position)
+		var travel_distance := _horizontal_vector_distance(npc_position, candidate)
+		if travel_distance <= _get_keep_distance_retreat_arrival_tolerance():
+			continue
+		if _get_min_enemy_distance(candidate) + 0.05 < origin_threat_distance:
+			continue
+		var actual_direction := candidate - npc_position
+		actual_direction.y = 0.0
+		if actual_direction.length_squared() <= 0.000001:
+			continue
+		actual_direction = actual_direction.normalized()
+		var alignment := actual_direction.dot(weighted_direction)
+		var score := travel_distance * (0.75 + maxf(-0.5, alignment) * 0.25)
+		if score <= best_score:
+			continue
+		best_score = score
+		best = resolution.duplicate(true)
+		best["desired_position"] = alternate_desired
+		best["reason"] = "station_navigation_resolved_with_keep_distance_side_offset"
+		best["side_offset_degrees"] = float(angle_degrees)
+	return best
+
+
+func _start_keep_distance_retreat_segment(
+	npc_id: String,
+	state: Dictionary,
+	target: Dictionary,
+	attack_range: float,
+	reason: String,
+	is_recovery: bool
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("move_npc_to_world_position"):
+		return {}
+	var sequence := maxi(1, int(state.get("keep_distance_retreat_sequence", 0)) + (0 if is_recovery else 1))
+	var target_id := str(target.get("target_id", ""))
+	if target_id.is_empty():
+		target_id = "keep_distance_retreat_%s_%d" % [npc_id, sequence]
+	var target_position: Vector3 = target.get("position", _get_npc_position(npc_id))
+	var target_name := str(target.get("target_name", "保持距离撤离点"))
+	var target_state := {
+		"keep_distance_retreat_active": true,
+		"keep_distance_retreat_sequence": sequence,
+		"keep_distance_retreat_target_id": target_id,
+		"keep_distance_retreat_target_position": _vector3_to_dict(target_position),
+		"keep_distance_retreat_desired_position": _vector3_to_dict(target.get("desired_position", target_position)),
+		"keep_distance_retreat_direction": _vector3_to_dict(target.get("direction", Vector3.ZERO)),
+		"keep_distance_retreat_threat_ids": (target.get("threat_ids", []) as Array).duplicate(),
+		"keep_distance_retreat_threats": (target.get("threats", []) as Array).duplicate(true),
+		"keep_distance_retreat_desired_travel_distance": float(target.get("desired_travel_distance", attack_range * _get_keep_distance_retreat_segment_range_ratio())),
+		"keep_distance_retreat_actual_travel_distance": float(target.get("travel_distance", 0.0)),
+		"keep_distance_retreat_boundary_limited": bool(target.get("boundary_limited", false)),
+		"keep_distance_retreat_navigation_adjusted": bool(target.get("navigation_adjusted", false)),
+		"keep_distance_retreat_recovery_count": int(state.get("keep_distance_retreat_recovery_count", 0)) + (1 if is_recovery else 0),
+		"combat_target_enemy_id": "",
+		"combat_target_selection_reason": "keep_distance_close_threat_retreat",
+		"combat_target_scope": "",
+		"combat_attack_target_enemy_id": "",
+		"combat_attack_phase": "idle",
+		"combat_attack_elapsed_seconds": 0.0,
+		"combat_attack_cycle_seconds": 0.0,
+		"combat_attack_impact_seconds": 0.0,
+		"combat_attack_impact_committed": false,
+		"combat_last_attack_result": {},
+		"combat_strategy_move_target_id": target_id,
+		"combat_strategy_move_target_name": target_name,
+		"combat_strategy_move_target_position": _vector3_to_dict(target_position),
+		"combat_strategy_move_enemy_id": "",
+		"last_action_result": reason
+	}
+	var arrival_state := target_state.duplicate(true)
+	arrival_state.merge({
+		"current_action": "combat_ready",
+		"departure_current_action": "keep_distance_retreating",
+		"current_location": RALLY_LOCATION_ID,
+		"current_location_name": RALLY_LOCATION_NAME,
+		"movement_target": "",
+		"movement_target_name": "",
+		"departure_state": target_state.duplicate(true)
+	}, true)
+	_friendly_enemy_reacquire_requests.erase(npc_id)
+	var moved := bool(npc_system.move_npc_to_world_position(
+		npc_id,
+		target_id,
+		target_name,
+		target_position,
+		arrival_state,
+		_get_combat_motion_options("friendly_keep_distance_retreat")
+	))
+	if not moved and npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, target_state)
+	return {
+		"ok": moved,
+		"npc_id": npc_id,
+		"strategy_id": STRATEGY_KEEP_DISTANCE,
+		"strategy_label": _get_combat_strategy_label(STRATEGY_KEEP_DISTANCE),
+		"reason": reason,
+		"target_id": target_id,
+		"target_name": target_name,
+		"target_position": _vector3_to_dict(target_position),
+		"desired_position": _vector3_to_dict(target.get("desired_position", target_position)),
+		"direction": _vector3_to_dict(target.get("direction", Vector3.ZERO)),
+		"trigger_range": attack_range * _get_keep_distance_retreat_trigger_range_ratio(),
+		"desired_travel_distance": float(target_state.get("keep_distance_retreat_desired_travel_distance", 0.0)),
+		"travel_distance": float(target_state.get("keep_distance_retreat_actual_travel_distance", 0.0)),
+		"threat_count": (target.get("threats", []) as Array).size(),
+		"threats": (target.get("threats", []) as Array).duplicate(true),
+		"boundary_limited": bool(target.get("boundary_limited", false)),
+		"navigation_adjusted": bool(target.get("navigation_adjusted", false)),
+		"committed_leg": true,
+		"movement_recovery": is_recovery
+	}
+
+
+func _keep_distance_retreat_target_from_state(state: Dictionary, position: Vector3) -> Dictionary:
+	return {
+		"target_id": str(state.get("keep_distance_retreat_target_id", "")),
+		"target_name": "保持距离撤离点",
+		"position": position,
+		"desired_position": _vector3_from_dict(state.get("keep_distance_retreat_desired_position", {}), position),
+		"direction": _vector3_from_dict(state.get("keep_distance_retreat_direction", {}), Vector3.ZERO),
+		"threat_ids": (state.get("keep_distance_retreat_threat_ids", []) as Array).duplicate(),
+		"threats": (state.get("keep_distance_retreat_threats", []) as Array).duplicate(true),
+		"desired_travel_distance": float(state.get("keep_distance_retreat_desired_travel_distance", 0.0)),
+		"travel_distance": float(state.get("keep_distance_retreat_actual_travel_distance", 0.0)),
+		"boundary_limited": bool(state.get("keep_distance_retreat_boundary_limited", false)),
+		"navigation_adjusted": bool(state.get("keep_distance_retreat_navigation_adjusted", false))
+	}
+
+
+func _enforce_keep_distance_retreat_attack_lock(npc_id: String, state: Dictionary) -> void:
+	_friendly_enemy_reacquire_requests.erase(npc_id)
+	if (
+		str(state.get("combat_target_enemy_id", "")).is_empty()
+		and str(state.get("combat_attack_target_enemy_id", "")).is_empty()
+		and str(state.get("combat_attack_phase", "idle")) == "idle"
+	):
+		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, {
+			"combat_target_enemy_id": "",
+			"combat_target_selection_reason": "keep_distance_close_threat_retreat",
+			"combat_target_scope": "",
+			"combat_attack_target_enemy_id": "",
+			"combat_attack_phase": "idle",
+			"combat_attack_elapsed_seconds": 0.0,
+			"combat_attack_cycle_seconds": 0.0,
+			"combat_attack_impact_seconds": 0.0,
+			"combat_attack_impact_committed": false,
+			"combat_last_attack_result": {}
+		})
+
+
+func _clear_keep_distance_retreat(
+	npc_id: String,
+	state: Dictionary,
+	reason: String,
+	stop_movement: bool,
+	preserve_current_movement: bool = false,
+	settled_action: String = "combat_ready"
+) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return
+	var changes := {
+		"last_action_result": reason,
+		"keep_distance_retreat_active": false,
+		"keep_distance_retreat_target_id": "",
+		"keep_distance_retreat_target_position": {},
+		"keep_distance_retreat_desired_position": {},
+		"keep_distance_retreat_direction": {},
+		"keep_distance_retreat_threat_ids": [],
+		"keep_distance_retreat_threats": [],
+		"combat_strategy_move_target_id": "",
+		"combat_strategy_move_target_name": "",
+		"combat_strategy_move_target_position": {},
+		"combat_strategy_move_enemy_id": ""
+	}
+	if not preserve_current_movement:
+		changes["current_action"] = settled_action
+		changes["movement_target"] = ""
+		changes["movement_target_name"] = ""
+	if stop_movement and npc_system.has_method("stop_npc_movement_with_state"):
+		npc_system.stop_npc_movement_with_state(npc_id, changes)
+	elif npc_system.has_method("update_npc_state"):
+		npc_system.update_npc_state(npc_id, changes)
 
 
 func _select_charge_reset_target(npc_id: String, encounter: Dictionary, attack_range: float) -> Dictionary:
@@ -3864,12 +4785,185 @@ func _select_approach_target(
 		"target_id": "approach_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", ""))]),
 		"target_name": "接近攻击距离",
 		"position": position,
+		"enemy_distance_after": position.distance_to(enemy_position),
+		"tracks_live_target": true
+	}
+
+
+func _select_blocked_attack_approach_target(
+	npc_id: String,
+	encounter: Dictionary,
+	attack_range: float,
+	weapon_id: String
+) -> Dictionary:
+	var npc_position := _get_npc_position(npc_id)
+	var enemy_position: Vector3 = encounter.get("position", npc_position + Vector3(0.0, 0.0, 1.0))
+	var away_from_enemy := npc_position - enemy_position
+	away_from_enemy.y = 0.0
+	if away_from_enemy.length() <= 0.001:
+		away_from_enemy = _fallback_avoidance_direction(npc_id)
+	else:
+		away_from_enemy = away_from_enemy.normalized()
+	var arrival_reserve := maxf(0.0, float(_formal_attack_position_policy.get("arrival_tolerance", 0.32)))
+	var standoff_ratio := 0.5 if _is_ranged_weapon_type(weapon_id) else COMBAT_APPROACH_RANGE_RATIO
+	var desired_distance := maxf(0.2, attack_range * standoff_ratio - arrival_reserve)
+	var position := _constrain_combat_strategy_position(enemy_position + away_from_enemy * desired_distance, npc_id)
+	return {
+		"target_id": "clear_attack_path_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]),
+		"target_name": "移动到可攻击位置",
+		"position": position,
 		"enemy_distance_after": position.distance_to(enemy_position)
 	}
 
 
-func _get_keep_distance_min_distance(attack_range: float) -> float:
-	return clampf(attack_range * KEEP_DISTANCE_MIN_RANGE_RATIO, 2.8, attack_range * 0.8)
+func _select_ranged_attack_position(
+	npc_id: String,
+	encounter: Dictionary,
+	attack_range: float,
+	weapon_id: String,
+	excluded_position: Vector3 = Vector3(INF, INF, INF),
+	excluded_radius: float = 0.0
+) -> Dictionary:
+	var npc_position := _get_npc_position(npc_id)
+	var enemy_position: Vector3 = encounter.get("position", npc_position + Vector3(0.0, 0.0, 1.0))
+	var arrival_tolerance := _get_friendly_ranged_attack_position_arrival_tolerance()
+	# ActorMotion may finish anywhere inside target_desired_distance. Put the
+	# physical endpoint one tolerance inside the 95% handoff boundary so an
+	# outward-edge arrival still transfers authority to the attack timeline.
+	var attack_position_radius := maxf(
+		0.2,
+		attack_range * RANGED_ATTACK_POSITION_RANGE_RATIO - arrival_tolerance
+	)
+	var maximum_endpoint_distance := attack_range * RANGED_ATTACK_POSITION_RANGE_RATIO - arrival_tolerance
+	var direct_direction := npc_position - enemy_position
+	direct_direction.y = 0.0
+	if direct_direction.length() <= 0.001:
+		direct_direction = _fallback_avoidance_direction(npc_id)
+	else:
+		direct_direction = direct_direction.normalized()
+	var base_angle := atan2(direct_direction.z, direct_direction.x)
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	var navigation_map := RID()
+	if controller != null and controller.has_method("get_production_navigation_map_rid"):
+		navigation_map = controller.get_production_navigation_map_rid()
+	var best_clear := {}
+	var best_reachable := {}
+	var best_clear_distance := INF
+	var best_reachable_distance := INF
+	if navigation_map.is_valid():
+		for sample_index in range(RANGED_ATTACK_POSITION_SAMPLE_COUNT):
+			var angle := base_angle + TAU * float(sample_index) / float(RANGED_ATTACK_POSITION_SAMPLE_COUNT)
+			var authored_position := enemy_position + Vector3(cos(angle), 0.0, sin(angle)) * attack_position_radius
+			var snapped := NavigationServer3D.map_get_closest_point(navigation_map, authored_position)
+			if _horizontal_vector_distance(authored_position, snapped) > RANGED_ATTACK_POSITION_SNAP_TOLERANCE:
+				continue
+			if excluded_position != Vector3(INF, INF, INF) and _horizontal_vector_distance(snapped, excluded_position) < excluded_radius:
+				continue
+			if _horizontal_vector_distance(snapped, enemy_position) > maximum_endpoint_distance + 0.001:
+				continue
+			var path := NavigationServer3D.map_get_path(navigation_map, npc_position, snapped, true)
+			var travel_distance := _horizontal_vector_distance(npc_position, snapped)
+			if path.is_empty() and travel_distance > 0.2:
+				continue
+			if not path.is_empty() and _horizontal_vector_distance(path[path.size() - 1], snapped) > RANGED_ATTACK_POSITION_SNAP_TOLERANCE:
+				continue
+			var candidate := {
+				"target_id": "ranged_attack_position_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]),
+				"target_name": "选择远程攻击点",
+				"position": snapped,
+				"enemy_distance_after": _horizontal_vector_distance(snapped, enemy_position),
+				"line_of_fire_clear": _is_friendly_attack_path_clear_from_position(npc_id, snapped, encounter, weapon_id),
+				"target_desired_distance": arrival_tolerance
+			}
+			if travel_distance < best_reachable_distance:
+				best_reachable = candidate
+				best_reachable_distance = travel_distance
+			if bool(candidate.get("line_of_fire_clear", false)) and travel_distance < best_clear_distance:
+				best_clear = candidate
+				best_clear_distance = travel_distance
+	if not best_clear.is_empty():
+		return best_clear
+	if not best_reachable.is_empty():
+		return best_reachable
+	# Navigation data can be unavailable during the first synchronization frame.
+	# Keep the combat loop live with the direct 95%-range point; the movement
+	# request and the next combat tick will constrain/reselect it again.
+	var fallback_position := _constrain_combat_strategy_position(
+		enemy_position + direct_direction * attack_position_radius,
+		npc_id
+	)
+	if excluded_position != Vector3(INF, INF, INF) and _horizontal_vector_distance(fallback_position, excluded_position) < excluded_radius:
+		for offset_index in range(1, 9):
+			var rotated_direction := direct_direction.rotated(Vector3.UP, float(offset_index) * PI / 4.0)
+			var rotated_position := _constrain_combat_strategy_position(
+				enemy_position + rotated_direction * attack_position_radius,
+				npc_id
+			)
+			if _horizontal_vector_distance(rotated_position, excluded_position) >= excluded_radius:
+				fallback_position = rotated_position
+				break
+	var fallback_offset := fallback_position - enemy_position
+	fallback_offset.y = 0.0
+	if fallback_offset.length() > maximum_endpoint_distance and fallback_offset.length() > 0.001:
+		fallback_position = enemy_position + fallback_offset.normalized() * maximum_endpoint_distance
+	return {
+		"target_id": "ranged_attack_position_fallback_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]),
+		"target_name": "选择远程攻击点",
+		"position": fallback_position,
+		"enemy_distance_after": _horizontal_vector_distance(fallback_position, enemy_position),
+		"line_of_fire_clear": false,
+		"target_desired_distance": arrival_tolerance
+	}
+
+
+func _is_friendly_attack_path_clear(npc_id: String, target: Dictionary, weapon_id: String) -> bool:
+	if target.is_empty():
+		return false
+	var origin := _get_npc_position(npc_id) + Vector3.UP * PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT
+	var destination: Vector3 = target.get("position", origin)
+	destination.y = origin.y
+	if _is_ranged_weapon_type(weapon_id):
+		var release := _get_projectile_release_descriptor("friendly", npc_id, weapon_id)
+		if bool(release.get("ready", false)) and release.get("transform") is Transform3D:
+			origin = (release.get("transform") as Transform3D).origin
+		destination = _get_projectile_target_aim_position(target)
+	return _is_static_attack_segment_clear(npc_id, origin, destination)
+
+
+func _is_friendly_attack_path_clear_from_position(
+	npc_id: String,
+	origin_ground: Vector3,
+	target: Dictionary,
+	weapon_id: String
+) -> bool:
+	var current_ground := _get_npc_position(npc_id)
+	var origin_height := PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT
+	if _is_ranged_weapon_type(weapon_id):
+		var release := _get_projectile_release_descriptor("friendly", npc_id, weapon_id)
+		if bool(release.get("ready", false)) and release.get("transform") is Transform3D:
+			origin_height = maxf(0.1, (release.get("transform") as Transform3D).origin.y - current_ground.y)
+	var origin := origin_ground + Vector3.UP * origin_height
+	var destination := _get_projectile_target_aim_position(target)
+	return _is_static_attack_segment_clear(npc_id, origin, destination)
+
+
+func _is_static_attack_segment_clear(npc_id: String, origin: Vector3, destination: Vector3) -> bool:
+	if origin.distance_to(destination) <= 0.05:
+		return true
+	var world := get_viewport().world_3d
+	if world == null:
+		return true
+	var excluded: Array[RID] = []
+	var shooter_rid := _get_projectile_shooter_rid("friendly", npc_id)
+	if shooter_rid.is_valid():
+		excluded.append(shooter_rid)
+	# Layer 1 is formal world-static geometry. Same-side actors and the target
+	# remain outside this probe so a crowd overlap is not mistaken for a wall.
+	var query := PhysicsRayQueryParameters3D.create(origin, destination, 1, excluded)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	query.hit_from_inside = false
+	return world.direct_space_state.intersect_ray(query).is_empty()
 
 
 func _constrain_combat_strategy_position(position: Vector3, npc_id: String = "") -> Vector3:
@@ -4026,6 +5120,129 @@ func _resolve_npc_melee_contact(
 	return result
 
 
+func _resolve_npc_locked_actor_melee_impact(
+	npc_id: String,
+	npc: Dictionary,
+	locked_target: Dictionary,
+	attack_context: Dictionary
+) -> Dictionary:
+	var target_enemy_id := str(locked_target.get("id", ""))
+	if target_enemy_id.is_empty() or not _active_enemies.has(target_enemy_id):
+		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
+		_pending_melee_damage_commits.erase(_melee_swing_key("friendly", npc_id))
+		return {}
+	var live_target := _make_enemy_attack_target(target_enemy_id, _get_npc_position(npc_id))
+	if live_target.is_empty():
+		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
+		_pending_melee_damage_commits.erase(_melee_swing_key("friendly", npc_id))
+		return {}
+	var swing_key := _melee_swing_key("friendly", npc_id)
+	var contact := _build_locked_actor_melee_impact_contact(
+		"friendly",
+		npc_id,
+		str(attack_context.get("weapon_id", "")),
+		live_target,
+		"enemy",
+		target_enemy_id
+	)
+	var result := _apply_npc_attack_to_enemy(npc_id, npc, live_target, attack_context)
+	if result.is_empty():
+		_active_melee_swings.erase(swing_key)
+		_pending_melee_damage_commits.erase(swing_key)
+		return {}
+	result["actual_target_enemy_id"] = target_enemy_id
+	result["weapon_id"] = str(attack_context.get("weapon_id", ""))
+	result["melee_status"] = "hit"
+	result["melee_contact"] = contact.duplicate(true)
+	contact["damage_result"] = (result.get("damage_result", {}) as Dictionary).duplicate(true)
+	_last_melee_contact_result = contact.duplicate(true)
+	_pending_melee_damage_commits.erase(swing_key)
+	_active_melee_swings.erase(swing_key)
+	return result
+
+
+func _resolve_enemy_locked_actor_melee_impact(enemy: Dictionary, locked_target: Dictionary) -> Dictionary:
+	var enemy_id := str(enemy.get("id", ""))
+	var npc_id := str(locked_target.get("id", ""))
+	var swing_key := _melee_swing_key("enemy", enemy_id)
+	if npc_id.is_empty() or _is_target_defeated({"type": "npc", "id": npc_id}):
+		_active_melee_swings.erase(swing_key)
+		_pending_melee_damage_commits.erase(swing_key)
+		return {}
+	var live_target := _make_npc_enemy_target(npc_id, enemy.get("position", Vector3.ZERO))
+	if live_target.is_empty():
+		_active_melee_swings.erase(swing_key)
+		_pending_melee_damage_commits.erase(swing_key)
+		return {}
+	var weapon_type := str(enemy.get("weapon_type", ""))
+	var contact := _build_locked_actor_melee_impact_contact(
+		"enemy",
+		enemy_id,
+		weapon_type,
+		live_target,
+		"npc",
+		npc_id
+	)
+	var raw_attack_power := maxf(1.0, float(enemy.get("attack_power", 1.0)))
+	var penetration := maxf(0.0, float(enemy.get("penetration", 0.0)))
+	var target_defense := _calculate_npc_defense(npc_id)
+	var resolution := calculate_damage_resolution(raw_attack_power, target_defense, penetration)
+	var result := _apply_enemy_attack_to_npc(
+		enemy,
+		npc_id,
+		int(resolution.get("damage", 1)),
+		raw_attack_power,
+		target_defense,
+		penetration,
+		float(resolution.get("effective_defense", target_defense))
+	)
+	if result.is_empty():
+		_active_melee_swings.erase(swing_key)
+		_pending_melee_damage_commits.erase(swing_key)
+		return {}
+	result["enemy_id"] = enemy_id
+	result["target_type"] = "npc"
+	result["target_id"] = npc_id
+	result["actual_target_type"] = "npc"
+	result["actual_target_id"] = npc_id
+	result["weapon_id"] = weapon_type
+	result["melee_status"] = "hit"
+	result["melee_contact"] = contact.duplicate(true)
+	contact["damage_result"] = (result.get("result", {}) as Dictionary).duplicate(true)
+	_last_melee_contact_result = contact.duplicate(true)
+	_pending_melee_damage_commits.erase(swing_key)
+	_active_melee_swings.erase(swing_key)
+	return result
+
+
+func _build_locked_actor_melee_impact_contact(
+	source_side: String,
+	source_id: String,
+	weapon_type: String,
+	locked_target: Dictionary,
+	actual_target_type: String,
+	actual_target_id: String
+) -> Dictionary:
+	var swing_key := _melee_swing_key(source_side, source_id)
+	var swing: Dictionary = _active_melee_swings.get(swing_key, {}) if _active_melee_swings.get(swing_key, {}) is Dictionary else {}
+	var sampled_contact: Dictionary = swing.get("terminal_contact", {}) if swing.get("terminal_contact", {}) is Dictionary else {}
+	return {
+		"status": "hit",
+		"reason": "locked_actor_impact_phase",
+		"source_side": source_side,
+		"source_id": source_id,
+		"weapon_type": weapon_type,
+		"locked_target": _serialize_target(locked_target),
+		"actual_target_type": actual_target_type,
+		"actual_target_id": actual_target_id,
+		"sample_count": int(swing.get("sample_count", 0)),
+		"model_max_horizontal_reach": float(swing.get("model_max_horizontal_reach", 0.0)),
+		"sampled_model_contact": sampled_contact.duplicate(true),
+		"impact_authority": "locked_actor_timeline",
+		"range_rechecked_at_impact": false
+	}
+
+
 func _resolve_enemy_melee_contact(enemy: Dictionary, locked_target: Dictionary) -> Dictionary:
 	var enemy_id := str(enemy.get("id", ""))
 	var weapon_type := str(enemy.get("weapon_type", ""))
@@ -4151,6 +5368,7 @@ func get_active_melee_swing_snapshots() -> Array[Dictionary]:
 			"source_id": str(swing.get("source_id", "")),
 			"weapon_type": str(swing.get("weapon_type", "")),
 			"sequence": int(swing.get("sequence", -1)),
+			"impact_authority": str(swing.get("impact_authority", "model_contact")),
 			"sample_count": int(swing.get("sample_count", 0)),
 			"model_max_horizontal_reach": float(swing.get("model_max_horizontal_reach", 0.0)),
 			"terminal_contact": (swing.get("terminal_contact", {}) as Dictionary).duplicate(true),
@@ -4192,6 +5410,14 @@ func _begin_melee_swing(
 		"locked_target": locked_target.duplicate(true),
 		"attack_context": attack_context.duplicate(true),
 		"is_charge_impact": is_charge_impact,
+		"impact_authority": (
+			"locked_actor_timeline"
+			if not is_charge_impact and (
+				(source_side == "friendly" and str(locked_target.get("type", "")) == "enemy")
+				or (source_side == "enemy" and str(locked_target.get("type", "")) == "npc")
+			)
+			else "model_contact"
+		),
 		"contact_radius": maxf(0.01, float(config.get("radius", 0.1))),
 		"contact_window_start_authored_seconds": maxf(0.0, impact_authored_seconds - window),
 		"impact_authored_seconds": impact_authored_seconds,
@@ -4289,7 +5515,10 @@ func _sample_melee_swing(swing_key: String) -> void:
 	swing["last_sample_authored_seconds"] = authored_seconds
 	swing["sample_count"] = int(swing.get("sample_count", 0)) + 1
 	_active_melee_swings[swing_key] = swing
-	if str((swing.get("terminal_contact", {}) as Dictionary).get("status", "")) == "hit":
+	if (
+		str(swing.get("impact_authority", "model_contact")) == "model_contact"
+		and str((swing.get("terminal_contact", {}) as Dictionary).get("status", "")) == "hit"
+	):
 		if not _pending_melee_damage_commits.has(swing_key):
 			_pending_melee_damage_commits.append(swing_key)
 
@@ -4433,7 +5662,7 @@ func _apply_enemy_melee_contact_damage(
 				int(resolution.get("damage", 1)),
 				resolution,
 				{
-					"host_proxy_id": str(locked_target.get("host_proxy_id", "")),
+					"host_proxy_id": str(locked_target.get("attack_host_proxy_region_id", locked_target.get("host_proxy_id", ""))),
 					"collision_identity": contact.get("collision_identity", {}).duplicate(true) if contact.get("collision_identity", {}) is Dictionary else {}
 				}
 			)
@@ -4475,6 +5704,12 @@ func _query_melee_segment_contact(
 	query.shape = capsule
 	query.transform = Transform3D(Basis(basis_x, direction, basis_z), segment_start.lerp(segment_end, 0.5))
 	query.collision_mask = MELEE_COLLISION_MASK
+	if (
+		source_side == "enemy"
+		and str(locked_target.get("type", "")) == "building"
+		and str(locked_target.get("id", "")) == "front_gate"
+	):
+		query.collision_mask |= ENEMY_GATE_COMBAT_CONTACT_LAYER
 	query.exclude = excluded_rids
 	query.collide_with_areas = true
 	query.collide_with_bodies = true
@@ -4555,24 +5790,6 @@ func _classify_melee_collider(
 		result["actual_target_type"] = "building"
 		result["actual_target_id"] = intended_id
 		return result
-	if (
-		intended_type == "building"
-		and intended_id == "front_gate"
-		and str(identity.get("building_id", "")) == "wall"
-		and str(identity.get("wall_segment_id", "")) in ["north_west_a", "north_east"]
-		and (
-			str(locked_target.get("attack_position_id", "")).contains("front_00_of_07")
-			or str(locked_target.get("attack_position_id", "")).contains("front_06_of_07")
-		)
-	):
-		# The two outer gate slots stand against the timber-post abutments. On the
-		# rotated formal wall the real sword sweep can touch the immediately joined
-		# wall segment before the post collider; that contact still belongs to the
-		# authored front-gate assembly and damages only the gate HP authority.
-		result["status"] = "hit"
-		result["reason"] = "actual_front_gate_abutment_contact"
-		result["actual_target_type"] = "building"
-		result["actual_target_id"] = intended_id
 	return result
 
 
@@ -4584,7 +5801,18 @@ func _is_defense_device_proxy_contact(
 	var deployment_id := str(target.get("id", ""))
 	if not deployment_id.is_empty() and str(identity.get("deployment_id", "")) == deployment_id:
 		return true
-	var proxy: Dictionary = target.get("host_proxy", {}) if target.get("host_proxy", {}) is Dictionary else {}
+	for proxy in _get_defense_device_host_proxy_regions(target):
+		if _is_single_defense_device_proxy_contact(target, proxy, identity, collision_position):
+			return true
+	return false
+
+
+func _is_single_defense_device_proxy_contact(
+	target: Dictionary,
+	proxy: Dictionary,
+	identity: Dictionary,
+	collision_position: Vector3
+) -> bool:
 	var proxy_kind := str(proxy.get("kind", target.get("host_proxy_kind", "")))
 	var building_id := str(proxy.get("building_id", target.get("building_id", "")))
 	if building_id.is_empty() or str(identity.get("building_id", "")) != building_id:
@@ -4615,6 +5843,56 @@ func _is_defense_device_proxy_contact(
 	var proxy_position: Vector3 = raw_proxy_position if raw_proxy_position is Vector3 else _vector3_from_dict(raw_proxy_position, Vector3.ZERO)
 	var hit_radius := maxf(0.1, float(proxy.get("hit_radius", target.get("host_proxy_hit_radius", 2.0))))
 	return _horizontal_vector_distance(collision_position, proxy_position) <= hit_radius
+
+
+func _get_defense_device_host_proxy_regions(target: Dictionary) -> Array[Dictionary]:
+	var proxy: Dictionary = target.get("host_proxy", {}) if target.get("host_proxy", {}) is Dictionary else {}
+	var raw_regions: Variant = target.get("host_proxy_regions", proxy.get("regions", []))
+	var regions: Array[Dictionary] = []
+	if raw_regions is Array:
+		for raw_region in raw_regions as Array:
+			if not raw_region is Dictionary:
+				continue
+			var region := (raw_region as Dictionary).duplicate(true)
+			region["kind"] = str(region.get("kind", proxy.get("kind", target.get("host_proxy_kind", ""))))
+			region["id"] = str(region.get("id", proxy.get("id", target.get("host_proxy_id", ""))))
+			region["building_id"] = str(region.get("building_id", proxy.get("building_id", target.get("building_id", ""))))
+			region["slot_id"] = str(region.get("slot_id", proxy.get("slot_id", target.get("slot_id", ""))))
+			region["wall_segment_id"] = str(region.get("wall_segment_id", ""))
+			region["building_segment_id"] = str(region.get("building_segment_id", ""))
+			region["fixture_id"] = str(region.get("fixture_id", proxy.get("fixture_id", target.get("host_proxy_fixture_id", ""))))
+			region["position"] = _vector3_from_dict(region.get("position", target.get("position", Vector3.ZERO)), target.get("position", Vector3.ZERO))
+			region["aim_position"] = _vector3_from_dict(region.get("aim_position", target.get("aim_position", region["position"])), region["position"])
+			region["fixture_aim_position"] = _vector3_from_dict(region.get("fixture_aim_position", region["aim_position"]), region["aim_position"])
+			region["outward_direction"] = _vector3_from_dict(
+				region.get("outward_direction", target.get("host_proxy_outward_direction", target.get("facing_direction", Vector3.FORWARD))),
+				Vector3.FORWARD
+			)
+			region["contact_radius"] = maxf(0.0, float(region.get("contact_radius", target.get("contact_radius", 0.0))))
+			region["hit_radius"] = maxf(0.1, float(region.get("hit_radius", target.get("host_proxy_hit_radius", 2.0))))
+			regions.append(region)
+	if not regions.is_empty():
+		return regions
+	var fallback := proxy.duplicate(true)
+	fallback.erase("regions")
+	fallback["kind"] = str(fallback.get("kind", target.get("host_proxy_kind", "legacy_host_building")))
+	fallback["id"] = str(fallback.get("id", target.get("host_proxy_id", "")))
+	fallback["building_id"] = str(fallback.get("building_id", target.get("building_id", "")))
+	fallback["slot_id"] = str(fallback.get("slot_id", target.get("slot_id", "")))
+	fallback["wall_segment_id"] = str(fallback.get("wall_segment_id", target.get("host_proxy_wall_segment_id", "")))
+	fallback["building_segment_id"] = str(fallback.get("building_segment_id", target.get("host_proxy_building_segment_id", "")))
+	fallback["fixture_id"] = str(fallback.get("fixture_id", target.get("host_proxy_fixture_id", "")))
+	fallback["position"] = _vector3_from_dict(fallback.get("position", target.get("position", Vector3.ZERO)), target.get("position", Vector3.ZERO))
+	fallback["aim_position"] = _vector3_from_dict(fallback.get("aim_position", target.get("aim_position", fallback["position"])), fallback["position"])
+	fallback["fixture_aim_position"] = _vector3_from_dict(fallback.get("fixture_aim_position", fallback["aim_position"]), fallback["aim_position"])
+	fallback["outward_direction"] = _vector3_from_dict(
+		fallback.get("outward_direction", target.get("host_proxy_outward_direction", target.get("facing_direction", Vector3.FORWARD))),
+		Vector3.FORWARD
+	)
+	fallback["contact_radius"] = maxf(0.0, float(fallback.get("contact_radius", target.get("contact_radius", 0.0))))
+	fallback["hit_radius"] = maxf(0.1, float(fallback.get("hit_radius", target.get("host_proxy_hit_radius", 2.0))))
+	regions.append(fallback)
+	return regions
 
 
 func _melee_collider_sort_distance(collider: Variant, origin: Vector3) -> float:
@@ -4799,11 +6077,16 @@ func _spawn_combat_projectile(
 		return {}
 	var release_transform: Transform3D = release_descriptor.get("transform", Transform3D.IDENTITY)
 	var release_position := release_transform.origin
-	var aim_position := (
-		_get_defense_device_target_aim_position(target)
+	var aim_target_snapshot := (
+		{
+			"ready": true,
+			"position": _get_defense_device_target_aim_position(target),
+			"target_source": "live_enemy_body"
+		}
 		if source_side == "defense_device"
-		else _get_projectile_target_aim_position(target)
+		else _get_projectile_target_aim_snapshot(target)
 	)
+	var aim_position: Vector3 = aim_target_snapshot.get("position", Vector3.ZERO)
 	var speed := maxf(0.1, float(projectile_config.get("speed", 20.0)))
 	var gravity := maxf(0.01, float(projectile_config.get("gravity", 9.8)))
 	var velocity := _calculate_ballistic_velocity(release_position, aim_position, speed, gravity)
@@ -4851,6 +6134,8 @@ func _spawn_combat_projectile(
 		"max_lifetime": maxf(0.1, float(projectile_config.get("max_lifetime", 3.0))),
 		"target_at_release": target.duplicate(true),
 		"aim_position_at_release": aim_position,
+		"aim_target_source": str(aim_target_snapshot.get("target_source", "target_snapshot")),
+		"aim_target_node_path": str(aim_target_snapshot.get("target_node_path", "")),
 		"attack_context": projectile_attack_context,
 		"source_snapshot": source_snapshot.duplicate(true),
 		"excluded_rids": excluded_rids,
@@ -4926,6 +6211,10 @@ func _get_projectile_shooter_rid(source_side: String, source_id: String) -> RID:
 
 
 func _get_projectile_target_aim_position(target: Dictionary) -> Vector3:
+	return _get_projectile_target_aim_snapshot(target).get("position", Vector3.ZERO)
+
+
+func _get_projectile_target_aim_snapshot(target: Dictionary) -> Dictionary:
 	var target_type := str(target.get("type", ""))
 	var target_id := str(target.get("id", ""))
 	match target_type:
@@ -4934,18 +6223,44 @@ func _get_projectile_target_aim_position(target: Dictionary) -> Vector3:
 			var enemy_node := get_node_or_null(_enemy_nodes.get(target_id, NodePath())) as Node3D if _enemy_nodes.has(target_id) else null
 			var base_position: Vector3 = enemy_node.global_position if enemy_node != null else enemy.get("position", target.get("position", Vector3.ZERO))
 			var height := PROJECTILE_TARGET_HEIGHT_ENEMY_MOUNTED if str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"] else PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT
-			return base_position + Vector3.UP * height
+			return {
+				"ready": true,
+				"position": base_position + Vector3.UP * height,
+				"target_source": "live_enemy_body"
+			}
 		"npc":
 			var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 			if npc_system != null and npc_system.has_method("get_npc_world_position"):
 				var value: Variant = npc_system.get_npc_world_position(target_id)
 				if value is Vector3:
-					return value + Vector3.UP * PROJECTILE_TARGET_HEIGHT_NPC
+					return {
+						"ready": true,
+						"position": value + Vector3.UP * PROJECTILE_TARGET_HEIGHT_NPC,
+						"target_source": "live_npc_body"
+					}
 		"defense_device", "building":
-			if target_type == "defense_device" and target.get("aim_position") is Vector3:
-				return target.get("aim_position")
-			return _get_enemy_attack_contact_position(target, Vector3(target.get("position", Vector3.ZERO))) + Vector3.UP * PROJECTILE_TARGET_HEIGHT_STRUCTURE
-	return Vector3(target.get("position", Vector3.ZERO)) + Vector3.UP * PROJECTILE_TARGET_HEIGHT_NPC
+			if target_type == "defense_device":
+				var presenter := get_node_or_null(DEFENSE_DEVICE_PRESENTER_PATH)
+				if presenter != null and presenter.has_method("get_projectile_target_snapshot"):
+					var device_snapshot: Dictionary = presenter.get_projectile_target_snapshot(target_id)
+					if bool(device_snapshot.get("ready", false)) and device_snapshot.get("position") is Vector3:
+						return device_snapshot
+				if target.get("aim_position") is Vector3:
+					return {
+						"ready": true,
+						"position": target.get("aim_position"),
+						"target_source": "legacy_defense_host_proxy_fallback"
+					}
+			return {
+				"ready": true,
+				"position": _get_enemy_attack_contact_position(target, Vector3(target.get("position", Vector3.ZERO))) + Vector3.UP * PROJECTILE_TARGET_HEIGHT_STRUCTURE,
+				"target_source": "structure_contact"
+			}
+	return {
+		"ready": true,
+		"position": Vector3(target.get("position", Vector3.ZERO)) + Vector3.UP * PROJECTILE_TARGET_HEIGHT_NPC,
+		"target_source": "target_snapshot_fallback"
+	}
 
 
 func _get_defense_device_target_aim_position(target: Dictionary) -> Vector3:
@@ -4999,29 +6314,42 @@ func _advance_single_combat_projectile(projectile_id: String, delta: float) -> v
 	var gravity := maxf(0.01, float(projectile.get("gravity", 9.8)))
 	var next_velocity := previous_velocity + Vector3.DOWN * gravity * delta
 	var next_position := previous_position + (previous_velocity + next_velocity) * 0.5 * delta
-	var range_exhausted := false
 	var max_range := maxf(0.0, float(projectile.get("max_range", 0.0)))
 	if max_range > 0.0:
 		var release_position: Vector3 = projectile.get("release_position", previous_position)
-		var previous_horizontal := Vector2(previous_position.x - release_position.x, previous_position.z - release_position.z).length()
 		var next_horizontal := Vector2(next_position.x - release_position.x, next_position.z - release_position.z).length()
 		if next_horizontal > max_range + PROJECTILE_RANGE_EPSILON:
-			var distance_step := maxf(PROJECTILE_RANGE_EPSILON, next_horizontal - previous_horizontal)
-			var range_fraction := clampf((max_range - previous_horizontal) / distance_step, 0.0, 1.0)
-			next_position = previous_position.lerp(next_position, range_fraction)
-			next_velocity = previous_velocity.lerp(next_velocity, range_fraction)
-			range_exhausted = true
-	var query := PhysicsRayQueryParameters3D.create(
+			projectile["authored_range_crossed"] = true
+	var projectile_collision_mask := PROJECTILE_COLLISION_MASK
+	var release_target: Dictionary = projectile.get("target_at_release", {}) if projectile.get("target_at_release", {}) is Dictionary else {}
+	if (
+		str(projectile.get("source_side", "")) == "enemy"
+		and str(release_target.get("type", "")) == "building"
+		and str(release_target.get("id", "")) == "front_gate"
+	):
+		projectile_collision_mask |= ENEMY_GATE_COMBAT_CONTACT_LAYER
+	var trace := _trace_combat_projectile_segment(
+		projectile,
 		previous_position,
 		next_position,
-		PROJECTILE_COLLISION_MASK,
-		projectile.get("excluded_rids", [])
+		projectile_collision_mask
 	)
-	query.collide_with_areas = true
-	query.collide_with_bodies = true
-	query.hit_from_inside = false
-	var world := get_viewport().world_3d
-	var collision := world.direct_space_state.intersect_ray(query) if world != null else {}
+	var collision: Dictionary = trace.get("collision", {}) if trace.get("collision", {}) is Dictionary else {}
+	projectile["excluded_rids"] = trace.get("excluded_rids", projectile.get("excluded_rids", []))
+	projectile["same_side_skip_count"] = int(projectile.get("same_side_skip_count", 0)) + int(trace.get("same_side_skip_count", 0))
+	var skipped_ids: PackedStringArray = projectile.get("same_side_skipped_ids", PackedStringArray())
+	for raw_skipped_id in trace.get("same_side_skipped_ids", PackedStringArray()):
+		var skipped_id := str(raw_skipped_id)
+		if not skipped_id.is_empty() and not skipped_ids.has(skipped_id):
+			skipped_ids.append(skipped_id)
+	projectile["same_side_skipped_ids"] = skipped_ids
+	projectile["transparent_building_skip_count"] = int(projectile.get("transparent_building_skip_count", 0)) + int(trace.get("transparent_building_skip_count", 0))
+	var skipped_building_ids: PackedStringArray = projectile.get("transparent_building_skipped_ids", PackedStringArray())
+	for raw_building_id in trace.get("transparent_building_skipped_ids", PackedStringArray()):
+		var skipped_building_id := str(raw_building_id)
+		if not skipped_building_id.is_empty() and not skipped_building_ids.has(skipped_building_id):
+			skipped_building_ids.append(skipped_building_id)
+	projectile["transparent_building_skipped_ids"] = skipped_building_ids
 	projectile["age"] = float(projectile.get("age", 0.0)) + delta
 	projectile["velocity"] = next_velocity
 	projectile["position"] = collision.get("position", next_position) if not collision.is_empty() else next_position
@@ -5030,6 +6358,8 @@ func _advance_single_combat_projectile(projectile_id: String, delta: float) -> v
 		view.project(projectile.get("position", next_position), next_velocity)
 	_active_projectiles[projectile_id] = projectile
 	if not collision.is_empty():
+		projectile = _prepare_projectile_stick(projectile, collision)
+		_active_projectiles[projectile_id] = projectile
 		var resolution := _resolve_combat_projectile_collision(projectile, collision)
 		var status := str(
 			resolution.get(
@@ -5039,11 +6369,193 @@ func _advance_single_combat_projectile(projectile_id: String, delta: float) -> v
 		)
 		_finish_combat_projectile(projectile_id, status, collision, resolution)
 		return
-	if range_exhausted:
-		_finish_combat_projectile(projectile_id, "miss", {}, {"reason": "authoritative_range_exhausted"})
-		return
 	if float(projectile.get("age", 0.0)) >= float(projectile.get("max_lifetime", 3.0)):
 		_finish_combat_projectile(projectile_id, "miss", {}, {"reason": "lifetime_expired"})
+
+
+func _trace_combat_projectile_segment(
+	projectile: Dictionary,
+	from_position: Vector3,
+	to_position: Vector3,
+	collision_mask: int
+) -> Dictionary:
+	var excluded_rids: Array[RID] = []
+	for raw_rid in projectile.get("excluded_rids", []):
+		if raw_rid is RID and (raw_rid as RID).is_valid() and not excluded_rids.has(raw_rid):
+			excluded_rids.append(raw_rid)
+	var skipped_ids := PackedStringArray()
+	var skipped_count := 0
+	var skipped_building_ids := PackedStringArray()
+	var skipped_building_count := 0
+	var world := get_viewport().world_3d
+	if world == null:
+		return {
+			"collision": {},
+			"excluded_rids": excluded_rids,
+			"same_side_skip_count": skipped_count,
+			"same_side_skipped_ids": skipped_ids,
+			"transparent_building_skip_count": skipped_building_count,
+			"transparent_building_skipped_ids": skipped_building_ids
+		}
+	for _skip_index in range(PROJECTILE_MAX_TRANSPARENT_SKIPS_PER_SUBSTEP + 1):
+		var query := PhysicsRayQueryParameters3D.create(
+			from_position,
+			to_position,
+			collision_mask,
+			excluded_rids
+		)
+		query.collide_with_areas = true
+		query.collide_with_bodies = true
+		query.hit_from_inside = false
+		var collision: Dictionary = world.direct_space_state.intersect_ray(query)
+		if collision.is_empty():
+			return {
+				"collision": {},
+				"excluded_rids": excluded_rids,
+				"same_side_skip_count": skipped_count,
+				"same_side_skipped_ids": skipped_ids,
+				"transparent_building_skip_count": skipped_building_count,
+				"transparent_building_skipped_ids": skipped_building_ids
+			}
+		var identity := _extract_projectile_collision_identity(collision.get("collider"))
+		var same_side_actor := _is_projectile_same_side_actor(projectile, identity)
+		var transparent_building := _is_projectile_transparent_building(projectile, identity)
+		if not same_side_actor and not transparent_building:
+			return {
+				"collision": collision,
+				"excluded_rids": excluded_rids,
+				"same_side_skip_count": skipped_count,
+				"same_side_skipped_ids": skipped_ids,
+				"transparent_building_skip_count": skipped_building_count,
+				"transparent_building_skipped_ids": skipped_building_ids
+			}
+		var collider := collision.get("collider") as CollisionObject3D
+		if collider == null or not collider.get_rid().is_valid() or excluded_rids.has(collider.get_rid()):
+			# A transparent hit without an excludable collision RID cannot safely be
+			# retraced forever. Treat this one surface as transparent for this step.
+			from_position = collision.get("position", from_position) + (to_position - from_position).normalized() * 0.01
+			if from_position.distance_squared_to(to_position) <= 0.000001:
+				break
+		else:
+			excluded_rids.append(collider.get_rid())
+		if same_side_actor:
+			var skipped_id := str(identity.get("npc_id", identity.get("enemy_id", identity.get("deployment_id", ""))))
+			if not skipped_id.is_empty() and not skipped_ids.has(skipped_id):
+				skipped_ids.append(skipped_id)
+			skipped_count += 1
+		if transparent_building:
+			var building_id := str(identity.get("building_id", ""))
+			if not building_id.is_empty() and not skipped_building_ids.has(building_id):
+				skipped_building_ids.append(building_id)
+			skipped_building_count += 1
+	return {
+		"collision": {},
+		"excluded_rids": excluded_rids,
+		"same_side_skip_count": skipped_count,
+		"same_side_skipped_ids": skipped_ids,
+		"transparent_building_skip_count": skipped_building_count,
+		"transparent_building_skipped_ids": skipped_building_ids,
+		"skip_limit_reached": true
+	}
+
+
+func _is_projectile_same_side_actor(projectile: Dictionary, identity: Dictionary) -> bool:
+	var source_side := str(projectile.get("source_side", ""))
+	if source_side == "enemy":
+		return not str(identity.get("enemy_id", "")).is_empty()
+	if source_side in ["friendly", "defense_device"]:
+		return (
+			not str(identity.get("npc_id", "")).is_empty()
+			or not str(identity.get("deployment_id", "")).is_empty()
+		)
+	return false
+
+
+func _is_projectile_transparent_building(projectile: Dictionary, identity: Dictionary) -> bool:
+	# This is projectile-only filtering. The StaticBody and navigation source stay
+	# enabled, so actors and horses still collide with and route around the host.
+	var building_id := str(identity.get("building_id", ""))
+	if (
+		building_id.is_empty()
+		or not str(identity.get("deployment_id", "")).is_empty()
+		or not PROJECTILE_TRANSPARENT_BUILDING_IDS.has(building_id)
+	):
+		return false
+	# Gate/main-hall transparency exists so an arrow aimed at a unit or hosted
+	# defense device behind the shell can reach that target. When an enemy has
+	# selected the building itself, the same shell is the intended hit surface and
+	# must remain collidable so BuildingSystem receives the physical hit fact.
+	var intended: Dictionary = (
+		projectile.get("target_at_release", {})
+		if projectile.get("target_at_release", {}) is Dictionary
+		else {}
+	)
+	return not (
+		str(projectile.get("source_side", "")) == "enemy"
+		and str(intended.get("type", "")) == "building"
+		and str(intended.get("id", "")) == building_id
+	)
+
+
+func _prepare_projectile_stick(projectile: Dictionary, collision: Dictionary) -> Dictionary:
+	if bool(projectile.get("stick_prepared", false)):
+		return projectile
+	var view := projectile.get("view") as Node3D
+	if view == null or not is_instance_valid(view):
+		return projectile
+	var collision_position: Vector3 = collision.get("position", projectile.get("position", Vector3.ZERO))
+	var collision_normal: Vector3 = collision.get("normal", Vector3.ZERO)
+	var incoming_velocity: Vector3 = projectile.get("velocity", Vector3.DOWN)
+	if view.has_method("stick_at"):
+		view.stick_at(collision_position, incoming_velocity, collision_normal)
+	else:
+		view.project(collision_position, incoming_velocity)
+	var identity := _extract_projectile_collision_identity(collision.get("collider"))
+	var anchor := _resolve_projectile_stick_anchor(collision.get("collider"), identity)
+	var anchor_kind := "world"
+	var anchor_target_id := ""
+	if not str(identity.get("enemy_id", "")).is_empty():
+		anchor_kind = "enemy"
+		anchor_target_id = str(identity.get("enemy_id", ""))
+	elif not str(identity.get("npc_id", "")).is_empty():
+		anchor_kind = "npc"
+		anchor_target_id = str(identity.get("npc_id", ""))
+	elif not str(identity.get("building_id", "")).is_empty():
+		anchor_kind = "building"
+		anchor_target_id = str(identity.get("building_id", ""))
+	elif not str(identity.get("deployment_id", "")).is_empty():
+		anchor_kind = "defense_device"
+		anchor_target_id = str(identity.get("deployment_id", ""))
+	if anchor != null and is_instance_valid(anchor) and view.get_parent() != anchor:
+		view.reparent(anchor, true)
+	projectile["stick_prepared"] = true
+	projectile["stick_anchor_kind"] = anchor_kind
+	projectile["stick_anchor_target_id"] = anchor_target_id
+	projectile["stick_anchor_node"] = anchor
+	projectile["stick_collision_position"] = collision_position
+	projectile["stick_collision_normal"] = collision_normal
+	projectile["stick_world_position"] = view.global_position
+	return projectile
+
+
+func _resolve_projectile_stick_anchor(collider: Variant, identity: Dictionary) -> Node3D:
+	var enemy_id := str(identity.get("enemy_id", ""))
+	if not enemy_id.is_empty() and _enemy_nodes.has(enemy_id):
+		var enemy_actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D
+		if enemy_actor != null:
+			var art_view := enemy_actor.get_node_or_null("EnemyArtView") as Node3D
+			if art_view != null:
+				return art_view
+	var expected_npc_id := str(identity.get("npc_id", ""))
+	var current := collider as Node
+	var nearest_node_3d := current as Node3D
+	while current != null:
+		if nearest_node_3d == null and current is Node3D:
+			nearest_node_3d = current as Node3D
+		if not expected_npc_id.is_empty() and str(current.get_meta("npc_id", "")) == expected_npc_id:
+			return current as Node3D
+		current = current.get_parent()
+	return nearest_node_3d
 
 
 func _resolve_combat_projectile_collision(projectile: Dictionary, collision: Dictionary) -> Dictionary:
@@ -5227,7 +6739,7 @@ func _apply_enemy_projectile_damage_to_device(
 		resolution,
 		{
 			"attack_id": str(attack_context.get("attack_id", "")),
-			"host_proxy_id": str(intended_target.get("host_proxy_id", ""))
+			"host_proxy_id": str(intended_target.get("attack_host_proxy_region_id", intended_target.get("host_proxy_id", "")))
 		}
 	)
 
@@ -5278,7 +6790,13 @@ func _make_projectile_terminal_fact(
 		"actual_target_id": str(resolution.get("actual_target_id", "")),
 		"damage_applied": bool(resolution.get("damage_applied", false)),
 		"reason": str(resolution.get("reason", "")),
-		"duplicate_ignored": bool(resolution.get("duplicate_ignored", false))
+		"duplicate_ignored": bool(resolution.get("duplicate_ignored", false)),
+		"same_side_skip_count": int(projectile.get("same_side_skip_count", 0)),
+		"same_side_skipped_ids": projectile.get("same_side_skipped_ids", PackedStringArray()),
+		"transparent_building_skip_count": int(projectile.get("transparent_building_skip_count", 0)),
+		"transparent_building_skipped_ids": projectile.get("transparent_building_skipped_ids", PackedStringArray()),
+		"stick_anchor_kind": str(projectile.get("stick_anchor_kind", "world_endpoint")),
+		"stick_anchor_target_id": str(projectile.get("stick_anchor_target_id", ""))
 	}
 	var damage_result: Dictionary = resolution.get("damage_result", {}) if resolution.get("damage_result", {}) is Dictionary else {}
 	if not damage_result.is_empty():
@@ -5295,6 +6813,21 @@ func _finish_combat_projectile(
 	var projectile: Dictionary = _active_projectiles.get(projectile_id, {})
 	if projectile.is_empty():
 		return
+	if not bool(projectile.get("stick_prepared", false)):
+		projectile = _prepare_projectile_stick(projectile, collision)
+		if not bool(projectile.get("stick_prepared", false)):
+			var endpoint_view := projectile.get("view") as Node3D
+			if endpoint_view != null and is_instance_valid(endpoint_view):
+				var endpoint: Vector3 = projectile.get("position", Vector3.ZERO)
+				var endpoint_velocity: Vector3 = projectile.get("velocity", Vector3.DOWN)
+				if endpoint_view.has_method("stick_at"):
+					endpoint_view.stick_at(endpoint, endpoint_velocity, Vector3.ZERO)
+				projectile["stick_prepared"] = true
+				projectile["stick_anchor_kind"] = "world_endpoint"
+				projectile["stick_anchor_target_id"] = ""
+				projectile["stick_collision_position"] = endpoint
+				projectile["stick_collision_normal"] = Vector3.ZERO
+				projectile["stick_world_position"] = endpoint_view.global_position
 	projectile["status"] = status
 	var attack_id := str(projectile.get("attack_id", ""))
 	var terminal_resolution := resolution.duplicate(true)
@@ -5310,10 +6843,13 @@ func _finish_combat_projectile(
 	result["collision_normal"] = collision.get("normal", Vector3.ZERO)
 	result["resolution"] = terminal_resolution
 	result["hit_fact"] = fact.duplicate(true)
-	_last_projectile_result = result
 	var view := projectile.get("view") as Node3D
 	if view != null and is_instance_valid(view):
-		view.queue_free()
+		_register_stuck_projectile(projectile, status)
+	result["stuck_projectile"] = _make_stuck_projectile_snapshot(
+		_stuck_projectiles.get(projectile_id, {})
+	)
+	_last_projectile_result = result
 	_active_projectiles.erase(projectile_id)
 	if str(projectile.get("source_side", "")) == "defense_device":
 		var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
@@ -5347,9 +6883,16 @@ func _make_projectile_snapshot(projectile: Dictionary) -> Dictionary:
 		"max_lifetime": float(projectile.get("max_lifetime", 0.0)),
 		"target_at_release": _serialize_target(projectile.get("target_at_release", {})),
 		"aim_position_at_release": projectile.get("aim_position_at_release", Vector3.ZERO),
+		"aim_target_source": str(projectile.get("aim_target_source", "")),
+		"aim_target_node_path": str(projectile.get("aim_target_node_path", "")),
 		"status": str(projectile.get("status", "in_flight")),
 		"damage_authority": "combat_system_swept_collision",
-		"tracks_target_after_release": false
+		"tracks_target_after_release": false,
+		"authored_range_crossed": bool(projectile.get("authored_range_crossed", false)),
+		"same_side_skip_count": int(projectile.get("same_side_skip_count", 0)),
+		"same_side_skipped_ids": projectile.get("same_side_skipped_ids", PackedStringArray()),
+		"transparent_building_skip_count": int(projectile.get("transparent_building_skip_count", 0)),
+		"transparent_building_skipped_ids": projectile.get("transparent_building_skipped_ids", PackedStringArray())
 	}
 
 
@@ -5359,6 +6902,88 @@ func get_active_projectile_snapshots() -> Array[Dictionary]:
 		result.append(_make_projectile_snapshot(_active_projectiles.get(projectile_id, {})))
 	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return str(left.get("id", "")) < str(right.get("id", "")))
 	return result
+
+
+func get_stuck_projectile_snapshots() -> Array[Dictionary]:
+	_prune_stuck_projectiles()
+	var result: Array[Dictionary] = []
+	for projectile_id in _stuck_projectiles.keys():
+		var snapshot := _make_stuck_projectile_snapshot(_stuck_projectiles.get(projectile_id, {}))
+		if not snapshot.is_empty():
+			result.append(snapshot)
+	result.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return str(left.get("id", "")) < str(right.get("id", "")))
+	return result
+
+
+func _register_stuck_projectile(projectile: Dictionary, status: String) -> void:
+	var projectile_id := str(projectile.get("id", ""))
+	var view := projectile.get("view") as Node3D
+	if projectile_id.is_empty() or view == null or not is_instance_valid(view):
+		return
+	view.set_meta("projectile_state", "stuck")
+	view.set_meta("projectile_status", status)
+	view.set_meta("stick_anchor_kind", str(projectile.get("stick_anchor_kind", "world_endpoint")))
+	view.set_meta("stick_anchor_target_id", str(projectile.get("stick_anchor_target_id", "")))
+	_stuck_projectiles[projectile_id] = {
+		"id": projectile_id,
+		"attack_id": str(projectile.get("attack_id", "")),
+		"source_side": str(projectile.get("source_side", "")),
+		"source_id": str(projectile.get("source_id", "")),
+		"weapon_type": str(projectile.get("weapon_type", "")),
+		"status": status,
+		"anchor_kind": str(projectile.get("stick_anchor_kind", "world_endpoint")),
+		"anchor_target_id": str(projectile.get("stick_anchor_target_id", "")),
+		"collision_position": projectile.get("stick_collision_position", projectile.get("position", Vector3.ZERO)),
+		"collision_normal": projectile.get("stick_collision_normal", Vector3.ZERO),
+		"same_side_skip_count": int(projectile.get("same_side_skip_count", 0)),
+		"same_side_skipped_ids": projectile.get("same_side_skipped_ids", PackedStringArray()),
+		"transparent_building_skip_count": int(projectile.get("transparent_building_skip_count", 0)),
+		"transparent_building_skipped_ids": projectile.get("transparent_building_skipped_ids", PackedStringArray()),
+		"view": view
+	}
+	if not view.tree_exiting.is_connected(_on_stuck_projectile_tree_exiting.bind(projectile_id)):
+		view.tree_exiting.connect(_on_stuck_projectile_tree_exiting.bind(projectile_id), CONNECT_ONE_SHOT)
+
+
+func _make_stuck_projectile_snapshot(stuck: Dictionary) -> Dictionary:
+	if stuck.is_empty():
+		return {}
+	var view := stuck.get("view") as Node3D
+	if view == null or not is_instance_valid(view):
+		return {}
+	return {
+		"id": str(stuck.get("id", "")),
+		"attack_id": str(stuck.get("attack_id", "")),
+		"source_side": str(stuck.get("source_side", "")),
+		"source_id": str(stuck.get("source_id", "")),
+		"weapon_type": str(stuck.get("weapon_type", "")),
+		"status": str(stuck.get("status", "")),
+		"anchor_kind": str(stuck.get("anchor_kind", "")),
+		"anchor_target_id": str(stuck.get("anchor_target_id", "")),
+		"collision_position": stuck.get("collision_position", Vector3.ZERO),
+		"collision_normal": stuck.get("collision_normal", Vector3.ZERO),
+		"same_side_skip_count": int(stuck.get("same_side_skip_count", 0)),
+		"same_side_skipped_ids": stuck.get("same_side_skipped_ids", PackedStringArray()),
+		"transparent_building_skip_count": int(stuck.get("transparent_building_skip_count", 0)),
+		"transparent_building_skipped_ids": stuck.get("transparent_building_skipped_ids", PackedStringArray()),
+		"world_position": view.global_position,
+		"parent_path": str(view.get_parent().get_path()) if view.get_parent() != null else "",
+		"visible": view.visible,
+		"presentation_only": bool(view.get_meta("presentation_only", false))
+	}
+
+
+func _on_stuck_projectile_tree_exiting(projectile_id: String) -> void:
+	_stuck_projectiles.erase(projectile_id)
+
+
+func _prune_stuck_projectiles() -> void:
+	for raw_projectile_id in _stuck_projectiles.keys().duplicate():
+		var projectile_id := str(raw_projectile_id)
+		var stuck: Dictionary = _stuck_projectiles.get(projectile_id, {}) if _stuck_projectiles.get(projectile_id, {}) is Dictionary else {}
+		var view := stuck.get("view") as Node3D
+		if view == null or not is_instance_valid(view):
+			_stuck_projectiles.erase(projectile_id)
 
 
 func debug_advance_combat_projectiles(seconds: float) -> Dictionary:
@@ -5377,6 +7002,19 @@ func debug_advance_combat_projectiles(seconds: float) -> Dictionary:
 
 
 func _clear_combat_projectiles(reason: String) -> void:
+	_clear_active_combat_projectiles(reason)
+	_clear_stuck_projectiles(reason, true)
+	_resolved_projectile_attack_facts.clear()
+	if not reason.is_empty():
+		_last_projectile_result = {
+			"status": "cleared",
+			"reason": reason,
+			"active_attack_ids_cleared": true,
+			"stuck_projectiles_cleared": true
+		}
+
+
+func _clear_active_combat_projectiles(reason: String) -> void:
 	for projectile in _active_projectiles.values():
 		if not projectile is Dictionary:
 			continue
@@ -5392,13 +7030,37 @@ func _clear_combat_projectiles(reason: String) -> void:
 		if view != null and is_instance_valid(view):
 			view.queue_free()
 	_active_projectiles.clear()
+
+
+func _clear_stuck_projectiles(reason: String, include_enemy_attachments: bool) -> int:
+	var cleared_count := 0
+	for raw_projectile_id in _stuck_projectiles.keys().duplicate():
+		var projectile_id := str(raw_projectile_id)
+		var stuck: Dictionary = _stuck_projectiles.get(projectile_id, {}) if _stuck_projectiles.get(projectile_id, {}) is Dictionary else {}
+		if not include_enemy_attachments and str(stuck.get("anchor_kind", "")) == "enemy":
+			continue
+		var view := stuck.get("view") as Node3D
+		_stuck_projectiles.erase(projectile_id)
+		if view != null and is_instance_valid(view):
+			view.set_meta("projectile_clear_reason", reason)
+			view.queue_free()
+		cleared_count += 1
+	return cleared_count
+
+
+func _clear_battlefield_projectiles(reason: String) -> Dictionary:
+	var active_count := _active_projectiles.size()
+	_clear_active_combat_projectiles(reason)
+	var stuck_count := _clear_stuck_projectiles(reason, false)
 	_resolved_projectile_attack_facts.clear()
-	if not reason.is_empty():
-		_last_projectile_result = {
-			"status": "cleared",
-			"reason": reason,
-			"active_attack_ids_cleared": true
-		}
+	return {
+		"reason": reason,
+		"active_projectiles_cleared": active_count,
+		"world_and_npc_arrows_cleared": stuck_count,
+		"enemy_corpse_arrows_preserved": get_stuck_projectile_snapshots().filter(
+			func(entry: Dictionary) -> bool: return str(entry.get("anchor_kind", "")) == "enemy"
+		).size()
+	}
 
 
 func _apply_cavalry_charge_impact(
@@ -5481,6 +7143,10 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 	var hp_before := clampi(int(enemy.get("hp", max_hp)), 0, max_hp)
 	var hp_after := maxi(0, hp_before - damage)
 	var defeated := hp_after <= 0
+	var attack_interrupt := _interrupt_enemy_attack_from_damage(enemy, damage, {
+		"source_type": "npc" if not actor_npc_id.is_empty() else str(context.get("source_type", "")),
+		"source_id": actor_npc_id if not actor_npc_id.is_empty() else str(context.get("deployment_id", context.get("source_id", "")))
+	})
 	var result := {
 		"ok": true,
 		"enemy_id": enemy_id,
@@ -5494,7 +7160,8 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		"hp_after": hp_after,
 		"max_hp": max_hp,
 		"defeated": defeated,
-		"actor_npc_id": actor_npc_id
+		"actor_npc_id": actor_npc_id,
+		"attack_interrupt": attack_interrupt
 	}
 	var damage_source_type := ""
 	var damage_source_id := ""
@@ -5572,33 +7239,14 @@ func _preserve_enemy_defeat_presentation(enemy_node: Node, enemy: Dictionary) ->
 	defeated_state["alive"] = false
 	defeated_state["current_action"] = "unconscious"
 	_apply_enemy_art_state(art_view, defeated_state, Vector3.ZERO)
-	if art_view.has_method("begin_mounted_defeat_escape"):
-		art_view.begin_mounted_defeat_escape(_get_enemy_mount_escape_target(art_view.global_position))
+	if art_view.has_method("begin_mounted_shared_defeat"):
+		art_view.begin_mounted_shared_defeat(2.4)
 	else:
 		get_tree().create_timer(2.4).timeout.connect(art_view.queue_free)
 
 
-func _get_enemy_mount_escape_target(death_position: Vector3) -> Vector3:
-	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
-	if controller != null and controller.has_method("get_enemy_route_world"):
-		var route: Dictionary = controller.get_enemy_route_world()
-		var spawn_center: Vector3 = route.get("spawn_zone_center", Vector3.ZERO)
-		var outward := Vector3.ZERO
-		var stages: Array = route.get("stages", [])
-		for raw_stage in stages:
-			var stage: Dictionary = raw_stage if raw_stage is Dictionary else {}
-			if str(stage.get("id", "")) == "front_gate":
-				outward = spawn_center - (stage.get("position", death_position) as Vector3)
-				break
-		if outward.length_squared() <= 0.0001:
-			outward = Vector3(0.0, 0.0, 1.0)
-		if outward.length_squared() > 0.0001:
-			return spawn_center + outward.normalized() * 45.0
-	return death_position + Vector3(0.0, 0.0, 55.0)
-
-
-func _on_enemy_mount_escape_completed(snapshot: Dictionary) -> void:
-	_last_enemy_mounted_escape_result = snapshot.duplicate(true)
+func _on_enemy_mounted_defeat_cleanup_completed(snapshot: Dictionary) -> void:
+	_last_enemy_mounted_defeat_cleanup_result = snapshot.duplicate(true)
 
 
 func _calculate_enemy_defense(enemy_id: String) -> float:
@@ -5859,6 +7507,27 @@ func _advance_enemy_ai(
 		# dynamic marker; those actors could ignore an in-range defense device and
 		# continue straight to the gate.
 		var target := _select_formal_dynamic_enemy_target(enemy_id, enemy)
+		var active_cycle_target: Dictionary = enemy.get("attack_cycle_target", {}) if enemy.get("attack_cycle_target", {}) is Dictionary else {}
+		var completing_locked_actor_melee := (
+			str(enemy.get("attack_cycle_phase", "idle")) in ["windup", "recovery"]
+			and str(enemy.get("weapon_type", "")) in MELEE_WEAPON_TYPES
+			and str(active_cycle_target.get("type", "")) == "npc"
+		)
+		var completing_locked_projectile_action := (
+			str(enemy.get("attack_cycle_phase", "idle")) in ["windup", "recovery"]
+			and _is_ranged_weapon_type(str(enemy.get("weapon_type", "")))
+			and str(active_cycle_target.get("type", "")) == "npc"
+		)
+		var completing_locked_actor_action := completing_locked_actor_melee or completing_locked_projectile_action
+		if completing_locked_actor_action:
+			var locked_npc_target := _make_npc_enemy_target(
+				str(active_cycle_target.get("id", "")),
+				enemy.get("position", Vector3.ZERO)
+			)
+			if not locked_npc_target.is_empty():
+				target = locked_npc_target
+			else:
+				completing_locked_actor_action = false
 		if _formal_first_wave_slices.has(enemy_id) and str(target.get("id", "")) in ["front_gate", "warehouse", "main_hall"]:
 			var wave_target_id := str(target.get("id", ""))
 			var wave_approach_position := _get_formal_first_wave_stage_position(
@@ -5878,6 +7547,10 @@ func _advance_enemy_ai(
 			target["route_approach_position"] = formal_approach_position
 			target["position"] = formal_approach_position
 		target = _ensure_enemy_attack_position(enemy_id, enemy, target)
+		_configure_enemy_attack_wait_avoidance(
+			enemy_id,
+			str(target.get("attack_position_status", "")) == "waiting"
+		)
 		enemy["target"] = target.duplicate(true)
 		(result["targets"] as Array).append({
 			"enemy_id": enemy_id,
@@ -5899,8 +7572,9 @@ func _advance_enemy_ai(
 			(result["moved"] as Array).append({
 				"enemy_id": enemy_id,
 				"target_id": str(target.get("id", "")),
-				"movement_authority": "attack_position_wait_queue",
+				"movement_authority": "attack_position_wait_pressure",
 				"pressure_state": "waiting_for_lease",
+				"desired_attack_position_id": str(target.get("attack_position_wait_target_id", "")),
 				"queue_sequence": int(target.get("attack_position_queue_sequence", 0))
 			})
 			_active_enemies[enemy_id] = enemy
@@ -5910,7 +7584,7 @@ func _advance_enemy_ai(
 		target_position.y = enemy_position.y
 		var attack_contact_position := _get_enemy_attack_contact_position(target, target_position)
 		attack_contact_position.y = enemy_position.y
-		var attack_range := maxf(0.1, float(enemy.get("attack_range", 1.5)))
+		var attack_range := _get_enemy_guided_attack_handoff_range(enemy, target)
 		var center_distance := enemy_position.distance_to(target_position)
 		var distance := (
 			enemy_position.distance_to(attack_contact_position)
@@ -5928,10 +7602,23 @@ func _advance_enemy_ai(
 			if attack_phase in ["windup", "recovery"]
 			else 0.0
 		)
-		if distance > attack_range + engagement_range_margin or not attack_position_reached:
+		if (
+			not completing_locked_actor_action
+			and (distance > attack_range + engagement_range_margin or not attack_position_reached)
+		):
 			_cancel_enemy_attack_timeline(enemy)
 			if _is_formal_dynamic_pressure_enemy(enemy_id):
 				_ensure_formal_dynamic_pressure_motion(enemy_id, target)
+				var pressure_actor := get_node_or_null(
+					_formal_first_wave_node_paths.get(enemy_id, NodePath())
+				) as ActorMotionBody
+				_update_enemy_guidance_stall_recovery(
+					enemy_id,
+					target,
+					pressure_actor,
+					distance,
+					attack_range + engagement_range_margin
+				)
 				enemy["current_action"] = "pressing_to_%s" % str(target.get("id", "target"))
 				(result["moved"] as Array).append({
 					"enemy_id": enemy_id,
@@ -5956,9 +7643,30 @@ func _advance_enemy_ai(
 				"remaining_distance": next_position.distance_to(target_position)
 			})
 		else:
+			_end_enemy_guidance_stall_recovery(enemy_id, "completed:attack_range_reached")
 			if _is_formal_dynamic_pressure_enemy(enemy_id):
 				_pause_formal_dynamic_pressure_motion(enemy_id)
 				_mark_formal_dynamic_contact(enemy_id, target)
+			if _uses_enemy_attack_guidance(enemy_id, target):
+				var prior_action := str(enemy.get("current_action", ""))
+				var was_already_in_attack_timeline := (
+					prior_action.begins_with("winding_up_")
+					or prior_action.begins_with("attacking_")
+					or prior_action.begins_with("recovering_")
+				)
+				if not was_already_in_attack_timeline:
+					_enemy_attack_position_metrics["guidance_in_range_handoffs"] = int(
+						_enemy_attack_position_metrics.get("guidance_in_range_handoffs", 0)
+					) + 1
+				target["attack_position_status"] = "in_range"
+				target["attack_guidance_handoff"] = "hurtbox_in_weapon_range"
+				enemy["target"] = target.duplicate(true)
+				if _enemy_attack_position_by_enemy.has(enemy_id):
+					var guidance_key := str(_enemy_attack_position_by_enemy[enemy_id])
+					var guidance_record := _enemy_attack_position_leases.get(guidance_key, {}) as Dictionary
+					guidance_record["status"] = "engaging"
+					guidance_record["in_range_frame"] = _formal_crowd_logic_frame
+					_enemy_attack_position_leases[guidance_key] = guidance_record
 			enemy["current_action"] = "attacking_%s" % str(target.get("id", "target"))
 			var attack_result := _advance_enemy_attack(
 				enemy,
@@ -6091,9 +7799,18 @@ func _advance_rally_units(game_delta_seconds: float = 0.0) -> void:
 		if raw_position == null:
 			continue
 		var npc_position: Vector3 = raw_position
-		var encounter := _find_nearest_enemy(npc_position, RALLY_ENCOUNTER_RANGE)
+		var encounter := _find_rally_combat_encounter(npc_id)
 		if not encounter.is_empty():
 			_switch_rally_to_combat(npc_id, rally, encounter)
+			continue
+		if str(rally.get("status", "")) == "mounting":
+			var mount_recovery := _ensure_wartime_mount_route(npc_id, "rally_mount_route_watchdog")
+			# Completing the rendezvous invokes handle_npc_mount_ready synchronously,
+			# which may replace this record with a moving/combat-ready rally. Never
+			# write the stale pre-callback `mounting` snapshot back over that result.
+			var current_rally: Dictionary = _active_rallies.get(npc_id, {})
+			current_rally["mount_route_result"] = mount_recovery
+			_active_rallies[npc_id] = current_rally
 			continue
 		var target_position: Vector3 = rally.get("position", npc_position)
 		if npc_position.distance_to(target_position) <= RALLY_ARRIVAL_TOLERANCE:
@@ -6104,6 +7821,28 @@ func _advance_rally_units(game_delta_seconds: float = 0.0) -> void:
 			_active_rallies[npc_id] = rally
 			if elapsed >= RALLY_WAIT_TIMEOUT_SECONDS:
 				_complete_rally_timeout(npc_id, rally)
+			continue
+		if str(rally.get("status", "")) != "moving":
+			continue
+		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+		var current_action := str(state.get("current_action", ""))
+		var physical_movement_active := (
+			npc_system.has_method("is_npc_world_movement_active")
+			and bool(npc_system.is_npc_world_movement_active(npc_id))
+		)
+		if current_action.begins_with("moving_to_%s" % RALLY_TARGET_PREFIX) and physical_movement_active:
+			continue
+		# Rally state is only movement intent. A mounted body can time out while
+		# negotiating the gate or have its navigation request replaced without an
+		# arrival callback. Restore the same reserved formation point instead of
+		# leaving a visually rallying rider stationary before the destination.
+		var recovery := _request_rally_movement(
+			npc_id,
+			rally,
+			"rally_movement_recovered",
+			true
+		)
+		_last_mode_transition_result = recovery.duplicate(true)
 
 
 func _advance_behavior_mode_contacts() -> void:
@@ -6134,21 +7873,12 @@ func _advance_behavior_mode_contacts() -> void:
 		var encounter := (
 			(
 				_find_nearest_station_enemy(npc_position)
-				if bool(friendly_scope.get("npc_inside_station", false))
+				if bool(friendly_scope.get("station_enemy_only", false))
 				else _find_nearest_enemy(npc_position, _get_friendly_target_detection_range())
 			)
 			if combat_eligible
 			else _find_nearest_enemy(npc_position, avoidance_trigger_range)
 		)
-		# A station breach still wakes every armed recruit and changes their mode,
-		# including one currently outside. T0198 only changes that outside NPC's
-		# target domain: if no enemy is inside its 37.2 m circle, enter combat with
-		# an empty lock and wait for a legal candidate instead of cross-map locking.
-		if combat_eligible and encounter.is_empty() and station_breached:
-			var station_activation := _find_nearest_station_enemy(npc_position)
-			if not station_activation.is_empty():
-				encounter = station_activation.duplicate(true)
-				encounter["combat_target_enemy_id"] = ""
 		if (
 			npc_system.has_method("is_npc_sleeping")
 			and npc_system.is_npc_sleeping(npc_id)
@@ -6177,6 +7907,7 @@ func _complete_rally_timeout(npc_id: String, rally: Dictionary) -> void:
 		var result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, "rally_wait_timeout", {
 			"force_idle": true,
 			"request_plan_reevaluation": false,
+			"resume_current_plan": true,
 			"state_changes": {
 				"last_action_result": "rally_wait_timeout",
 				"movement_target": "",
@@ -6246,13 +7977,14 @@ func handle_npc_recruited_during_avoidance(npc_id: String) -> Dictionary:
 		var ended_event := _complete_npc_avoidance(npc_id, "recruited_no_enemies")
 		var work_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, "recruited_no_enemies", {
 			"force_idle": true,
-			"request_plan_reevaluation": false
+			"request_plan_reevaluation": false,
+			"resume_current_plan": true
 		})
 		work_result["avoidance_ended_event"] = ended_event
 		_last_mode_transition_result = work_result.duplicate(true)
 		return work_result
 	if not _is_npc_combat_eligible(npc_id, npc_system):
-		var encounter := _nearest_enemy_for_npc(npc_id)
+		var encounter := _find_nearest_enemy(_get_npc_position(npc_id), _get_avoidance_trigger_range())
 		var result := {
 			"ok": true,
 			"npc_id": npc_id,
@@ -6283,7 +8015,7 @@ func _advance_avoidance_units() -> void:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("get_npc_world_position"):
 		return
-	var safe_distance := _get_avoidance_safe_distance()
+	var avoidance_range := _get_avoidance_trigger_range()
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
 		var mode := _get_npc_behavior_mode(npc_system, npc_id)
@@ -6297,28 +8029,69 @@ func _advance_avoidance_units() -> void:
 		if raw_position == null:
 			continue
 		var npc_position: Vector3 = raw_position
-		var encounter := _find_nearest_enemy(npc_position, INF)
-		if encounter.is_empty():
-			continue
 		var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
 		var current_action := str(state.get("current_action", ""))
-		if not _active_avoidances.has(npc_id):
+		var physical_movement_active := (
+			npc_system.has_method("is_npc_world_movement_active")
+			and bool(npc_system.is_npc_world_movement_active(npc_id))
+		)
+		var has_active_avoidance := _active_avoidances.has(npc_id)
+		var avoidance: Dictionary = _active_avoidances.get(npc_id, {}) if has_active_avoidance else {}
+		var target_position: Vector3 = avoidance.get("target_position", npc_position)
+		var threat_field := _build_avoidance_threat_field(npc_position, avoidance_range, npc_id)
+		var encounter: Dictionary = threat_field.get("nearest_encounter", {})
+		if encounter.is_empty():
+			if not has_active_avoidance:
+				continue
+			avoidance["enemy_distance"] = INF
+			avoidance["threat_count"] = 0
+			avoidance["threats"] = []
+			if npc_position.distance_to(target_position) <= 0.35:
+				avoidance["status"] = "no_threat_in_range"
+				_active_avoidances[npc_id] = avoidance
+				continue
+			if current_action.begins_with("moving_to_%s" % AVOIDANCE_TARGET_PREFIX) and physical_movement_active:
+				avoidance["status"] = "moving_without_current_threat"
+				_active_avoidances[npc_id] = avoidance
+				continue
+			# A threat leaving the detection radius does not cancel a committed
+			# re-entry/avoidance leg. If another system or a failed navigation
+			# request stopped the body, restore that exact destination.
+			_last_avoidance_result = _start_or_update_npc_avoidance(
+				npc_id,
+				_avoidance_encounter_from_runtime(avoidance),
+				_avoidance_target_from_runtime(avoidance),
+				"avoidance_movement_recovered_without_current_threat",
+				false
+			)
+			continue
+		if not has_active_avoidance:
 			var target := _select_avoidance_target(npc_id, encounter)
 			_last_avoidance_result = _start_or_update_npc_avoidance(npc_id, encounter, target, "avoidance_tracking", true)
 			continue
-		var avoidance: Dictionary = _active_avoidances.get(npc_id, {})
-		var target_position: Vector3 = avoidance.get("target_position", npc_position)
 		avoidance["enemy_distance"] = float(encounter.get("distance", INF))
-		if current_action.begins_with("moving_to_%s" % AVOIDANCE_TARGET_PREFIX):
+		if current_action.begins_with("moving_to_%s" % AVOIDANCE_TARGET_PREFIX) and physical_movement_active:
 			avoidance["status"] = "moving"
 			_active_avoidances[npc_id] = avoidance
 			continue
 		if npc_position.distance_to(target_position) <= 0.35:
-			avoidance["status"] = "keeping_distance" if float(encounter.get("distance", INF)) >= safe_distance else "ready_to_scatter"
+			avoidance["status"] = "ready_to_retarget"
 			_active_avoidances[npc_id] = avoidance
-		if float(encounter.get("distance", INF)) < safe_distance:
 			var next_target := _select_avoidance_target(npc_id, encounter)
-			_last_avoidance_result = _start_or_update_npc_avoidance(npc_id, encounter, next_target, "enemy_too_close", false)
+			_last_avoidance_result = _start_or_update_npc_avoidance(npc_id, encounter, next_target, "enemy_in_avoidance_range", false)
+			continue
+		# The state label is not physical movement authority. Navigation can fail
+		# to start or be cancelled without an arrival callback, leaving the old
+		# moving_to_* text behind. Re-resolve against the current threat field and
+		# reissue the leg instead of stranding the NPC in avoid_combat forever.
+		var recovered_target := _select_avoidance_target(npc_id, encounter)
+		_last_avoidance_result = _start_or_update_npc_avoidance(
+			npc_id,
+			encounter,
+			recovered_target,
+			"avoidance_movement_recovered",
+			false
+		)
 
 
 func _start_or_update_npc_avoidance(
@@ -6336,6 +8109,12 @@ func _start_or_update_npc_avoidance(
 	var target_position: Vector3 = target.get("position", Vector3.ZERO)
 	var target_id := "%s%s" % [AVOIDANCE_TARGET_PREFIX, npc_id]
 	var target_name := str(target.get("target_name", AVOIDANCE_LOCATION_NAME))
+	var previous_avoidance: Dictionary = (
+		_active_avoidances.get(npc_id, {})
+		if _active_avoidances.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	var is_movement_recovery := reason.begins_with("avoidance_movement_recovered")
 	var event := {}
 	if log_started:
 		event = _log_avoidance_started(npc_id, encounter, target, reason)
@@ -6363,15 +8142,66 @@ func _start_or_update_npc_avoidance(
 		"target_name": target_name,
 		"target_position": target_position,
 		"target_travel_distance": float(target.get("travel_distance", 0.0)),
+		"desired_target_distance": float(target.get("desired_travel_distance", 0.0)),
+		"desired_target_position": target.get("desired_position", target_position),
+		"movement_phase": str(target.get("movement_phase", "station_weighted_avoidance")),
+		"target_policy": str(target.get("target_policy", "weighted_enemy_repulsion")),
+		"reentry_gate_id": str(target.get("reentry_gate_id", "")),
+		"avoidance_direction": target.get("direction", Vector3.ZERO),
+		"threat_count": int(target.get("threat_count", 0)),
+		"threats": (target.get("threats", []) as Array).duplicate(true),
+		"weight_formula": str(target.get("weight_formula", "inverse_distance_power")),
+		"weight_exponent": float(target.get("weight_exponent", _get_avoidance_weight_exponent())),
+		"boundary_limited": bool(target.get("boundary_limited", false)),
+		"navigation_adjusted": bool(target.get("navigation_adjusted", false)),
+		"navigation_resolution_reason": str(target.get("navigation_resolution_reason", "")),
 		"enemy_distance_after_target": float(target.get("enemy_distance_after", 0.0)),
 		"enemy_distance_before_target": float(target.get("enemy_distance_before", float(encounter.get("distance", 0.0)))),
 		"trigger_range": _get_avoidance_trigger_range(),
-		"safe_distance": _get_avoidance_safe_distance(),
+		"safe_distance": _get_avoidance_target_distance(),
+		"movement_recovery_count": (
+			int(previous_avoidance.get("movement_recovery_count", 0)) + 1
+			if is_movement_recovery
+			else int(previous_avoidance.get("movement_recovery_count", 0))
+		),
+		"last_movement_recovery_reason": reason if is_movement_recovery else str(previous_avoidance.get("last_movement_recovery_reason", "")),
 		"started_event_id": str(event.get("event_id", "")),
 		"event": event
 	}
 	_active_avoidances[npc_id] = avoidance
 	return _serialize_avoidance(avoidance)
+
+
+func _avoidance_encounter_from_runtime(avoidance: Dictionary) -> Dictionary:
+	return {
+		"enemy_id": str(avoidance.get("enemy_id", "")),
+		"enemy_name": str(avoidance.get("enemy_name", "")),
+		"distance": float(avoidance.get("enemy_distance", INF))
+	}
+
+
+func _avoidance_target_from_runtime(avoidance: Dictionary) -> Dictionary:
+	return {
+		"target_id": str(avoidance.get("safe_target_id", "")),
+		"target_name": str(avoidance.get("target_name", AVOIDANCE_LOCATION_NAME)),
+		"position": avoidance.get("target_position", Vector3.ZERO),
+		"desired_position": avoidance.get("desired_target_position", avoidance.get("target_position", Vector3.ZERO)),
+		"direction": avoidance.get("avoidance_direction", Vector3.ZERO),
+		"movement_phase": str(avoidance.get("movement_phase", "station_weighted_avoidance")),
+		"target_policy": str(avoidance.get("target_policy", "weighted_enemy_repulsion")),
+		"reentry_gate_id": str(avoidance.get("reentry_gate_id", "")),
+		"travel_distance": float(avoidance.get("target_travel_distance", 0.0)),
+		"desired_travel_distance": float(avoidance.get("desired_target_distance", 0.0)),
+		"threat_count": int(avoidance.get("threat_count", 0)),
+		"threats": (avoidance.get("threats", []) as Array).duplicate(true),
+		"weight_formula": str(avoidance.get("weight_formula", "inverse_distance_power")),
+		"weight_exponent": float(avoidance.get("weight_exponent", _get_avoidance_weight_exponent())),
+		"boundary_limited": bool(avoidance.get("boundary_limited", false)),
+		"navigation_adjusted": bool(avoidance.get("navigation_adjusted", false)),
+		"navigation_resolution_reason": str(avoidance.get("navigation_resolution_reason", "")),
+		"enemy_distance_after": float(avoidance.get("enemy_distance_after_target", 0.0)),
+		"enemy_distance_before": float(avoidance.get("enemy_distance_before_target", 0.0))
+	}
 
 
 func _complete_npc_avoidance(npc_id: String, reason: String) -> Dictionary:
@@ -6392,70 +8222,151 @@ func _complete_npc_avoidance(npc_id: String, reason: String) -> Dictionary:
 
 func _select_avoidance_target(npc_id: String, encounter: Dictionary) -> Dictionary:
 	var npc_position := _get_npc_position(npc_id)
-	var enemy_id := str(encounter.get("enemy_id", ""))
-	var enemy_name := str(encounter.get("enemy_name", "敌军"))
-	if enemy_name.is_empty():
-		enemy_name = "敌军"
-	var enemy_position: Vector3 = encounter.get("position", npc_position + Vector3(0.0, 0.0, 1.0))
-	var away_direction := npc_position - enemy_position
-	away_direction.y = 0.0
-	if away_direction.length() <= 0.001:
-		away_direction = _fallback_avoidance_direction(npc_id)
-	else:
-		away_direction = away_direction.normalized()
-	var scatter_angle := _get_avoidance_scatter_angle(npc_id, enemy_id)
-	var angle_candidates := [
-		scatter_angle,
-		scatter_angle + deg_to_rad(AVOIDANCE_SIDE_STEP_DEGREES),
-		scatter_angle - deg_to_rad(AVOIDANCE_SIDE_STEP_DEGREES),
-		scatter_angle + deg_to_rad(AVOIDANCE_SIDE_STEP_DEGREES * 2.0),
-		scatter_angle - deg_to_rad(AVOIDANCE_SIDE_STEP_DEGREES * 2.0)
-	]
-	var best := {}
-	var best_score := -INF
-	var current_enemy_distance := float(encounter.get("distance", npc_position.distance_to(enemy_position)))
-	for index in range(angle_candidates.size()):
-		var direction := _rotate_direction_y(away_direction, float(angle_candidates[index]))
-		if direction.length() <= 0.001:
+	var avoidance_range := _get_avoidance_trigger_range()
+	var threat_field := _build_avoidance_threat_field(npc_position, avoidance_range, npc_id)
+	var threats: Array = threat_field.get("threats", [])
+	if threats.is_empty():
+		return {}
+	var nearest_encounter: Dictionary = threat_field.get("nearest_encounter", encounter)
+	if not _is_world_position_inside_station(npc_position):
+		return _select_outside_avoidance_reentry_target(npc_id, npc_position, nearest_encounter, threats)
+	var direction: Vector3 = threat_field.get("direction", _fallback_avoidance_direction(npc_id))
+	var desired_position := npc_position + direction * _get_avoidance_target_distance()
+	var resolution := _resolve_avoidance_navigation_target(npc_position, desired_position)
+	if not bool(resolution.get("ok", false)):
+		return {}
+	var position: Vector3 = resolution.get("position", npc_position)
+	var threat_ids: Array[String] = []
+	for raw_threat in threats:
+		threat_ids.append(str((raw_threat as Dictionary).get("enemy_id", "")))
+	var nearest_name := str(nearest_encounter.get("enemy_name", "敌军"))
+	return {
+		"target_id": "weighted_%d" % _stable_hash_text("%s:%s" % [npc_id, ",".join(threat_ids)]),
+		"movement_phase": "station_weighted_avoidance",
+		"target_policy": "weighted_enemy_repulsion",
+		"target_name": (
+			"远离%s的避战方向" % nearest_name
+			if threats.size() == 1
+			else "远离%d名敌军的加权避战方向" % threats.size()
+		),
+		"position": position,
+		"desired_position": desired_position,
+		"direction": direction,
+		"threat_count": threats.size(),
+		"threats": threats,
+		"weight_formula": "inverse_distance_power",
+		"weight_exponent": _get_avoidance_weight_exponent(),
+		"enemy_distance_after": _get_min_enemy_distance(position),
+		"enemy_distance_before": float(nearest_encounter.get("distance", 0.0)),
+		"travel_distance": npc_position.distance_to(position),
+		"desired_travel_distance": _get_avoidance_target_distance(),
+		"boundary_limited": bool(resolution.get("boundary_limited", false)),
+		"navigation_adjusted": bool(resolution.get("navigation_adjusted", false)),
+		"navigation_resolution_reason": str(resolution.get("reason", ""))
+	}
+
+
+func _select_outside_avoidance_reentry_target(
+	npc_id: String,
+	npc_position: Vector3,
+	nearest_encounter: Dictionary,
+	threats: Array
+) -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_front_gate_inside_avoidance_target"):
+		return {}
+	var resolution: Dictionary = controller.get_front_gate_inside_avoidance_target()
+	if not bool(resolution.get("ok", false)):
+		return {}
+	var target_position: Vector3 = resolution.get("position", npc_position)
+	var direction := target_position - npc_position
+	direction.y = 0.0
+	if direction.length_squared() > 0.0001:
+		direction = direction.normalized()
+	var serialized_threats: Array[Dictionary] = []
+	for raw_threat in threats:
+		serialized_threats.append((raw_threat as Dictionary).duplicate(true))
+	return {
+		"target_id": "front_gate_inside_reentry",
+		"target_name": "正门内侧回站点",
+		"movement_phase": "returning_to_station",
+		"target_policy": "front_gate_inside_reentry",
+		"reentry_gate_id": str(resolution.get("gate_id", "front_gate")),
+		"position": target_position,
+		"desired_position": resolution.get("desired_position", target_position),
+		"direction": direction,
+		"threat_count": serialized_threats.size(),
+		"threats": serialized_threats,
+		"weight_formula": "reentry_overrides_repulsion_until_inside",
+		"weight_exponent": _get_avoidance_weight_exponent(),
+		"enemy_distance_after": _get_min_enemy_distance(target_position),
+		"enemy_distance_before": float(nearest_encounter.get("distance", 0.0)),
+		"travel_distance": npc_position.distance_to(target_position),
+		"desired_travel_distance": npc_position.distance_to(
+			resolution.get("desired_position", target_position)
+		),
+		"boundary_limited": true,
+		"navigation_adjusted": bool(resolution.get("navigation_adjusted", false)),
+		"navigation_resolution_reason": str(resolution.get("reason", ""))
+	}
+
+
+func _build_avoidance_threat_field(
+	npc_position: Vector3,
+	detection_range: float,
+	npc_id: String = ""
+) -> Dictionary:
+	var threats: Array[Dictionary] = []
+	var weighted_direction := Vector3.ZERO
+	var weight_exponent := _get_avoidance_weight_exponent()
+	var minimum_weight_distance := _get_avoidance_min_weight_distance()
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		if enemy.is_empty() or not bool(enemy.get("alive", true)):
 			continue
-		var unclamped_position := npc_position + direction * AVOIDANCE_STEP_DISTANCE
-		var position := _constrain_avoidance_step(npc_position, unclamped_position, npc_id)
-		var min_enemy_distance := _get_min_enemy_distance(position)
-		var travel_distance := npc_position.distance_to(position)
-		var contact_gain := min_enemy_distance - current_enemy_distance
-		var clamp_penalty := position.distance_to(unclamped_position)
-		var step_penalty := absf(travel_distance - AVOIDANCE_STEP_DISTANCE)
-		var score := min_enemy_distance * 2.0 + contact_gain * 4.0 - clamp_penalty * 3.0 - step_penalty * 0.25 - float(index) * 0.05
-		if travel_distance < AVOIDANCE_MIN_STEP_DISTANCE:
-			score -= 20.0
-		if score > best_score:
-			best_score = score
-			best = {
-				"target_id": "scatter_%d_%d" % [_stable_hash_text("%s:%s" % [npc_id, enemy_id]), index],
-				"target_name": "远离%s的避战方向" % enemy_name,
-				"position": position,
-				"direction": direction,
-				"score": score,
-				"enemy_distance_after": min_enemy_distance,
-				"enemy_distance_before": current_enemy_distance,
-				"travel_distance": travel_distance
-			}
-	if best.is_empty():
-		var fallback_position := _constrain_avoidance_step(
-			npc_position,
-			npc_position + _fallback_avoidance_direction(npc_id) * AVOIDANCE_STEP_DISTANCE,
-			npc_id
-		)
-		best = {
-			"target_id": "scatter_%d_fallback" % _stable_hash_text(npc_id),
-			"target_name": "远离敌人的避战方向",
-			"position": fallback_position,
-			"score": best_score,
-			"enemy_distance_after": _get_min_enemy_distance(fallback_position),
-			"enemy_distance_before": current_enemy_distance,
-			"travel_distance": npc_position.distance_to(fallback_position)
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var away_direction := npc_position - enemy_position
+		away_direction.y = 0.0
+		var distance := away_direction.length()
+		if distance > detection_range:
+			continue
+		if distance <= 0.001:
+			away_direction = _fallback_avoidance_direction("%s:%s" % [npc_id, enemy_id])
+		else:
+			away_direction /= distance
+		var weighted_distance := maxf(minimum_weight_distance, distance)
+		var weight := pow(detection_range / weighted_distance, weight_exponent)
+		weighted_direction += away_direction * weight
+		threats.append({
+			"enemy_id": enemy_id,
+			"enemy_name": str(enemy.get("name", enemy_id)),
+			"position": enemy_position,
+			"distance": distance,
+			"weight": weight,
+			"away_direction": away_direction
+		})
+	threats.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_distance := float(left.get("distance", INF))
+		var right_distance := float(right.get("distance", INF))
+		return str(left.get("enemy_id", "")) < str(right.get("enemy_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
+	)
+	if threats.is_empty():
+		return {"threats": [], "direction": Vector3.ZERO, "nearest_encounter": {}}
+	if weighted_direction.length_squared() <= 0.000001:
+		weighted_direction = threats[0].get("away_direction", _fallback_avoidance_direction(npc_id))
+	weighted_direction.y = 0.0
+	weighted_direction = weighted_direction.normalized()
+	var nearest: Dictionary = threats[0]
+	return {
+		"threats": threats,
+		"direction": weighted_direction,
+		"nearest_encounter": {
+			"enemy_id": str(nearest.get("enemy_id", "")),
+			"enemy_name": str(nearest.get("enemy_name", "")),
+			"position": nearest.get("position", Vector3.ZERO),
+			"distance": float(nearest.get("distance", 0.0))
 		}
-	return best
+	}
 
 
 func _get_min_enemy_distance(position: Vector3) -> float:
@@ -6471,10 +8382,14 @@ func _get_min_enemy_distance(position: Vector3) -> float:
 
 func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 	_clear_friendly_targeting_runtime()
+	_active_melee_swings.clear()
+	_pending_melee_damage_commits.clear()
+	var projectile_cleanup_result := _clear_battlefield_projectiles(reason)
 	var time_slowdown_result := _sync_enemy_presence_time_slowdown(reason)
 	var result := {
 		"ok": true,
 		"reason": reason,
+		"projectile_cleanup_result": projectile_cleanup_result,
 		"time_slowdown_result": time_slowdown_result,
 		"combat_to_work": [],
 		"rally_to_work": [],
@@ -6509,7 +8424,8 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			var rally_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, reason, {
 				"interrupt": true,
 				"force_idle": true,
-				"request_plan_reevaluation": false
+				"request_plan_reevaluation": false,
+				"resume_current_plan": true
 			})
 			(result["rally_to_work"] as Array).append(rally_result)
 			_active_rallies.erase(npc_id)
@@ -6518,7 +8434,8 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			var avoid_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, reason, {
 				"interrupt": true,
 				"force_idle": true,
-				"request_plan_reevaluation": false
+				"request_plan_reevaluation": false,
+				"resume_current_plan": true
 			})
 			avoid_result["avoidance_ended_event"] = ended_event
 			(result["avoid_to_work"] as Array).append(avoid_result)
@@ -7006,7 +8923,7 @@ func _get_npc_name(npc_id: String) -> String:
 	return npc_id
 
 
-func _get_rally_eligibility(npc_id: String) -> Dictionary:
+func _get_rally_eligibility(npc_id: String, ignore_target_lock: bool = false) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	if npc_system == null or equipment_system == null:
@@ -7017,8 +8934,6 @@ func _get_rally_eligibility(npc_id: String) -> Dictionary:
 	if not bool(npc.get("recruited", false)):
 		return {"ok": false, "npc_id": npc_id, "reason": "not_recruited"}
 	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
-	if npc_system.has_method("is_npc_sleeping") and npc_system.is_npc_sleeping(npc_id):
-		return {"ok": false, "npc_id": npc_id, "reason": "sleeping"}
 	if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
 		return {"ok": false, "npc_id": npc_id, "reason": "cannot_act"}
 	if bool(state.get("unconscious", false)):
@@ -7026,6 +8941,15 @@ func _get_rally_eligibility(npc_id: String) -> Dictionary:
 	var snapshot: Dictionary = equipment_system.get_unit_type_snapshot(npc_id)
 	if not bool(snapshot.get("has_main_weapon", false)):
 		return {"ok": false, "npc_id": npc_id, "reason": "no_main_weapon"}
+	var locked_target_id := _get_alarm_blocking_target_lock(state)
+	if not ignore_target_lock and not locked_target_id.is_empty():
+		return {
+			"ok": false,
+			"npc_id": npc_id,
+			"reason": "target_locked",
+			"locked_enemy_id": locked_target_id,
+			"behavior_mode": str(state.get("behavior_mode", ""))
+		}
 	return {
 		"ok": true,
 		"npc_id": npc_id,
@@ -7033,9 +8957,27 @@ func _get_rally_eligibility(npc_id: String) -> Dictionary:
 		"unit_type": str(snapshot.get("unit_type", "")),
 		"unit_type_label": str(snapshot.get("unit_type_label", "")),
 		"has_mount": bool(snapshot.get("has_mount", false)),
+		"is_mounted": bool(state.get("combat_mounted", false)),
+		"previous_behavior_mode": str(state.get("behavior_mode", BEHAVIOR_MODE_WORK)),
 		"main_weapon_id": str(snapshot.get("main_weapon_id", "")),
 		"main_weapon_name": str(snapshot.get("main_weapon_name", ""))
-	}
+}
+
+
+func _get_alarm_blocking_target_lock(state: Dictionary) -> String:
+	if str(state.get("behavior_mode", "")) != BEHAVIOR_MODE_COMBAT:
+		return ""
+	for state_key in [
+		"combat_target_enemy_id",
+		"combat_attack_target_enemy_id",
+		"combat_strategy_move_enemy_id"
+	]:
+		var enemy_id := str(state.get(state_key, "")).strip_edges()
+		if not enemy_id.is_empty() and _active_enemies.has(enemy_id):
+			var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+			if bool(enemy.get("alive", true)) and int(enemy.get("hp", 1)) > 0:
+				return enemy_id
+	return ""
 
 
 func _build_rally_formation(eligible: Array[Dictionary]) -> Array[Dictionary]:
@@ -7107,6 +9049,29 @@ func _get_rally_formation_world_config() -> Dictionary:
 		"cavalry_forward_offset": 0.0,
 		"cavalry_depth_spacing": 2.2
 	}
+
+
+func _build_mount_completion_rally_entry(npc_id: String, horse_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		return {}
+	# Build against the complete currently actionable armed roster while ignoring
+	# combat locks. This keeps cavalry-wing slots deterministic as riders mount at
+	# different times instead of assigning every late rider the same one-unit slot.
+	var roster: Array[Dictionary] = []
+	for raw_npc_id in npc_system.get_npc_ids():
+		var eligibility := _get_rally_eligibility(str(raw_npc_id), true)
+		if bool(eligibility.get("ok", false)):
+			roster.append(eligibility)
+	for raw_entry in _build_rally_formation(roster):
+		var entry: Dictionary = raw_entry
+		if str(entry.get("npc_id", "")) != npc_id:
+			continue
+		entry["has_mount"] = true
+		entry["is_mounted"] = true
+		entry["horse_id"] = horse_id
+		return entry
+	return {}
 
 
 func _assign_rally_line_positions(
@@ -7194,23 +9159,40 @@ func _snap_rally_position(target: Vector3) -> Vector3:
 	return target
 
 
-func _start_npc_rally(entry: Dictionary) -> Dictionary:
+func _start_npc_rally(entry: Dictionary, mode_reason: String = "combat_alarm") -> Dictionary:
 	var npc_id := str(entry.get("npc_id", ""))
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_id.is_empty() or npc_system == null:
 		return {}
 
+	entry = entry.duplicate(true)
+	entry["command_reason"] = mode_reason
+	_active_rallies.erase(npc_id)
+	if _active_avoidances.has(npc_id):
+		_complete_npc_avoidance(npc_id, "combat_alarm_rally_command")
+	_clear_npc_attack_runtime_for_rally(npc_id)
 	var position: Vector3 = entry.get("position", Vector3.ZERO)
-	var encounter := _find_nearest_enemy(_get_npc_position(npc_id), RALLY_ENCOUNTER_RANGE)
+	var encounter := _find_rally_combat_encounter(npc_id)
 	var has_mount := bool(entry.get("has_mount", false))
+	var is_mounted := has_mount and bool(entry.get("is_mounted", false))
 	var rally_state := {
-		"current_action": "meeting_assigned_horse" if has_mount else "rallying_defense_line",
+		"current_action": "meeting_assigned_horse" if has_mount and not is_mounted else "rallying_defense_line",
 		"current_location": RALLY_LOCATION_ID,
 		"current_location_name": RALLY_LOCATION_NAME,
 		"last_action_result": "combat_rally_arrived",
 		"combat_mode": "rally",
-		"combat_mounted": false,
-		"combat_mount_phase": "going_to_stable_horse" if has_mount else "unmounted",
+		"combat_mounted": is_mounted,
+		"combat_mount_phase": "mounted" if is_mounted else ("going_to_stable_horse" if has_mount else "unmounted"),
+		"combat_target_enemy_id": "",
+		"combat_target_selection_reason": "",
+		"combat_target_scope": "",
+		"combat_strategy_move_target_id": "",
+		"combat_strategy_move_target_name": "",
+		"combat_strategy_move_target_position": {},
+		"combat_strategy_move_enemy_id": "",
+		"avoidance_target_id": "",
+		"avoidance_target_name": "",
+		"avoidance_target_position": {},
 		"facing_direction": "front_forest"
 	}
 	var target_id := "%s%s" % [RALLY_TARGET_PREFIX, npc_id]
@@ -7218,13 +9200,13 @@ func _start_npc_rally(entry: Dictionary) -> Dictionary:
 		_switch_rally_to_combat(npc_id, entry, encounter)
 		return _serialize_rally(_active_rallies.get(npc_id, {}))
 	if npc_system.has_method("set_npc_behavior_mode"):
-		var mode_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_RALLY, "combat_alarm", {
+		var mode_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_RALLY, mode_reason, {
 			"state_changes": rally_state,
 			"request_plan_reevaluation": false
 		})
 		if not bool(mode_result.get("ok", false)):
 			return {}
-	if has_mount:
+	if has_mount and not is_mounted:
 		var mounting_rally := entry.duplicate(true)
 		mounting_rally["status"] = "mounting"
 		mounting_rally["target_id"] = target_id
@@ -7236,13 +9218,21 @@ func _start_npc_rally(entry: Dictionary) -> Dictionary:
 		return _serialize_rally(mounting_rally)
 	if not npc_system.has_method("move_npc_to_world_position"):
 		return {}
-	var moved: bool = npc_system.move_npc_to_world_position(npc_id, target_id, RALLY_LOCATION_NAME, position, rally_state)
+	var moved: bool = npc_system.move_npc_to_world_position(
+		npc_id,
+		target_id,
+		RALLY_LOCATION_NAME,
+		position,
+		rally_state,
+		{"movement_purpose": "friendly_rally"}
+	)
 	if not moved:
 		return {}
 	if npc_system.has_method("update_npc_state"):
 		npc_system.update_npc_state(npc_id, {
 			"combat_mode": "rally",
-			"combat_mounted": false,
+			"combat_mounted": is_mounted,
+			"combat_mount_phase": "mounted" if is_mounted else "unmounted",
 			"facing_direction": "front_forest",
 			"last_action_result": "combat_rally_started"
 		})
@@ -7255,6 +9245,76 @@ func _start_npc_rally(entry: Dictionary) -> Dictionary:
 	rally["rally_wait_remaining_seconds"] = RALLY_WAIT_TIMEOUT_SECONDS
 	_active_rallies[npc_id] = rally
 	return _serialize_rally(rally)
+
+
+func _request_rally_movement(
+	npc_id: String,
+	rally: Dictionary,
+	reason: String,
+	is_recovery: bool
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("move_npc_to_world_position"):
+		return {"ok": false, "reason": "npc_movement_system_missing", "npc_id": npc_id}
+	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+	var is_mounted := bool(state.get("combat_mounted", false))
+	var target_id := str(rally.get("target_id", "%s%s" % [RALLY_TARGET_PREFIX, npc_id]))
+	var target_position: Vector3 = rally.get("position", _get_npc_position(npc_id))
+	var arrival_state := {
+		"current_action": "rallying_defense_line",
+		"current_location": RALLY_LOCATION_ID,
+		"current_location_name": RALLY_LOCATION_NAME,
+		"last_action_result": "combat_rally_arrived",
+		"combat_mode": "rally",
+		"combat_mounted": is_mounted,
+		"combat_mount_phase": "mounted" if is_mounted else "unmounted",
+		"facing_direction": "front_forest"
+	}
+	var moved := bool(npc_system.move_npc_to_world_position(
+		npc_id,
+		target_id,
+		RALLY_LOCATION_NAME,
+		target_position,
+		arrival_state,
+		{"movement_purpose": "friendly_rally"}
+	))
+	var next_rally := rally.duplicate(true)
+	next_rally["status"] = "moving" if moved else "unavailable"
+	next_rally["target_id"] = target_id
+	if is_recovery:
+		next_rally["movement_recovery_count"] = int(rally.get("movement_recovery_count", 0)) + 1
+		next_rally["last_movement_recovery_reason"] = reason
+	if not moved:
+		next_rally["movement_failure_reason"] = reason
+	else:
+		next_rally.erase("movement_failure_reason")
+	_active_rallies[npc_id] = next_rally
+	return {
+		"ok": moved,
+		"npc_id": npc_id,
+		"reason": reason,
+		"rally": _serialize_rally(next_rally)
+	}
+
+
+func _clear_npc_attack_runtime_for_rally(npc_id: String) -> void:
+	var swing_key := _melee_swing_key("friendly", npc_id)
+	_active_melee_swings.erase(swing_key)
+	_pending_melee_damage_commits.erase(swing_key)
+	_friendly_enemy_reacquire_requests.erase(npc_id)
+
+
+func _find_rally_combat_encounter(npc_id: String) -> Dictionary:
+	var scope := _get_friendly_target_scope(npc_id)
+	if not bool(scope.get("station_breached", false)):
+		# A rally route intentionally crosses the front-gate station boundary.
+		# Preserve ordinary radius perception during the crossing so an inside
+		# combatant can engage a nearby outside wave instead of pushing into an
+		# occupied doorway with an empty target lock.
+		scope["scope"] = "rally_transition_radius"
+		scope["station_enemy_only"] = false
+		scope["detection_range"] = _get_friendly_target_detection_range()
+	return _find_nearest_friendly_combat_enemy(npc_id, scope)
 
 
 func _switch_rally_to_combat(npc_id: String, rally: Dictionary, encounter: Dictionary) -> void:
@@ -7298,7 +9358,25 @@ func _switch_rally_to_combat(npc_id: String, rally: Dictionary, encounter: Dicti
 	next_rally["encounter_enemy_id"] = enemy_id
 	next_rally["encounter_distance"] = float(encounter.get("distance", 0.0))
 	_active_rallies[npc_id] = next_rally
+	if has_mount and not is_mounted:
+		var mount_route_result := _ensure_wartime_mount_route(
+			npc_id,
+			"rally_enemy_contact_handoff"
+		)
+		# The ensure call may synchronously complete mounting and replace the rally.
+		next_rally = _active_rallies.get(npc_id, next_rally)
+		next_rally["mount_route_result"] = mount_route_result
+		_active_rallies[npc_id] = next_rally
 	_log_combat_rally_encounter(npc_id, next_rally, encounter)
+
+
+func _ensure_wartime_mount_route(npc_id: String, reason: String) -> Dictionary:
+	if npc_id.is_empty():
+		return {"ok": false, "reason": "npc_id_missing"}
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("ensure_wartime_mount_route"):
+		return {"ok": false, "reason": "horse_mount_route_api_missing", "npc_id": npc_id}
+	return horse_system.ensure_wartime_mount_route(npc_id, reason)
 
 
 func handle_npc_mount_ready(npc_id: String, horse_id: String) -> Dictionary:
@@ -7307,54 +9385,37 @@ func handle_npc_mount_ready(npc_id: String, horse_id: String) -> Dictionary:
 		return {"ok": false, "reason": "npc_system_missing", "npc_id": npc_id, "horse_id": horse_id}
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var mode := str(state.get("behavior_mode", ""))
-	if mode == BEHAVIOR_MODE_RALLY and _active_rallies.has(npc_id):
-		var rally: Dictionary = _active_rallies[npc_id]
-		rally["status"] = "moving"
-		rally["horse_id"] = horse_id
-		var moved := npc_system.has_method("move_npc_to_world_position") and bool(npc_system.move_npc_to_world_position(
-			npc_id,
-			str(rally.get("target_id", "%s%s" % [RALLY_TARGET_PREFIX, npc_id])),
-			RALLY_LOCATION_NAME,
-			rally.get("position", Vector3.ZERO),
-			{
-				"current_action": "rallying_defense_line",
-				"current_location": RALLY_LOCATION_ID,
-				"current_location_name": RALLY_LOCATION_NAME,
-				"last_action_result": "horse_mounted_rally_started",
-				"combat_mode": "rally",
-				"combat_mounted": true,
-				"combat_mount_phase": "mounted",
-				"facing_direction": "front_forest"
+	if [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
+		var entry: Dictionary = (
+			(_active_rallies.get(npc_id, {}) as Dictionary).duplicate(true)
+			if _active_rallies.get(npc_id, {}) is Dictionary
+			else {}
+		)
+		if entry.is_empty():
+			entry = _build_mount_completion_rally_entry(npc_id, horse_id)
+		if entry.is_empty():
+			return {
+				"ok": false,
+				"reason": "mount_completion_rally_entry_missing",
+				"npc_id": npc_id,
+				"horse_id": horse_id,
+				"mode": mode
 			}
-		))
-		if not moved:
-			rally["status"] = "unavailable"
-			rally["movement_failure_reason"] = "mounted_rally_move_rejected"
-		_active_rallies[npc_id] = rally
+		entry["has_mount"] = true
+		entry["is_mounted"] = true
+		entry["horse_id"] = horse_id
+		var rally_result := _start_npc_rally(entry, "horse_mounted_auto_rally")
 		return {
-			"ok": moved,
+			"ok": bool(rally_result.get("ok", false)),
 			"npc_id": npc_id,
 			"horse_id": horse_id,
-			"mode": mode,
-			"rally": _serialize_rally(_active_rallies.get(npc_id, rally))
+			"mode_before_mount_command": mode,
+			"mode": str(npc_system.get_npc_state(npc_id).get("behavior_mode", mode)),
+			"rally": rally_result
 		}
-	if mode == BEHAVIOR_MODE_COMBAT:
-		if npc_system.has_method("update_npc_state"):
-			npc_system.update_npc_state(npc_id, {
-				"combat_mounted": true,
-				"combat_mount_phase": "mounted",
-				"current_action": "combat_ready",
-				"last_action_result": "horse_mounted_combat_ready",
-				"movement_target": "",
-				"movement_target_name": ""
-			})
-		if _active_rallies.has(npc_id):
-			var rally: Dictionary = _active_rallies[npc_id]
-			rally["status"] = "combat_ready"
-			rally["horse_id"] = horse_id
-			_active_rallies[npc_id] = rally
-		return {"ok": true, "npc_id": npc_id, "horse_id": horse_id, "mode": mode}
 	return {"ok": false, "reason": "npc_not_in_wartime_mode", "npc_id": npc_id, "horse_id": horse_id, "mode": mode}
+
+
 func _find_nearest_enemy(position: Vector3, max_distance: float) -> Dictionary:
 	var nearest := {}
 	var nearest_distance := INF
@@ -7456,10 +9517,25 @@ func _is_npc_inside_station(npc_id: String) -> bool:
 
 func _get_friendly_target_scope(npc_id: String) -> Dictionary:
 	var inside_station := _is_npc_inside_station(npc_id)
+	var station_breached := _has_station_enemy()
+	var rally: Dictionary = _active_rallies.get(npc_id, {}) if _active_rallies.get(npc_id, {}) is Dictionary else {}
+	var rally_transition := str(rally.get("status", "")) == "combat_ready"
+	# Station breach is a shared emergency fact, not a perception radius centered
+	# on each defender. A responder may still be at an outside rally position or
+	# on the way to an assigned horse when the enemy crosses the gate; it must
+	# nevertheless lock a station intruder and continue the normal combat chain.
+	var station_enemy_only := station_breached or (inside_station and not rally_transition)
 	return {
-		"scope": "entire_station" if inside_station else "unified_radius",
+		"scope": (
+			"station_breach_global"
+			if station_breached
+			else ("rally_transition_radius" if rally_transition else ("entire_station" if inside_station else "unified_radius"))
+		),
 		"npc_inside_station": inside_station,
-		"detection_range": INF if inside_station else _get_friendly_target_detection_range()
+		"station_breached": station_breached,
+		"rally_transition": rally_transition,
+		"station_enemy_only": station_enemy_only,
+		"detection_range": INF if station_enemy_only else _get_friendly_target_detection_range()
 	}
 
 
@@ -7477,22 +9553,23 @@ func _is_friendly_enemy_target_present(npc_id: String, enemy_id: String, scope: 
 	var target := _make_friendly_enemy_target(enemy_id, _get_npc_position(npc_id))
 	if target.is_empty():
 		return false
-	if bool(scope.get("npc_inside_station", false)):
+	if bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false))):
 		return _is_enemy_inside_station(enemy_id)
 	return float(target.get("distance", INF)) <= float(scope.get("detection_range", 0.0)) + 0.000001
 
 
 func _find_nearest_friendly_combat_enemy(npc_id: String, scope: Dictionary) -> Dictionary:
 	var origin := _get_npc_position(npc_id)
+	var station_enemy_only := bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false)))
 	var candidates: Array[Dictionary] = []
 	for enemy_id in get_active_enemy_ids():
-		if bool(scope.get("npc_inside_station", false)) and not _is_enemy_inside_station(enemy_id):
+		if station_enemy_only and not _is_enemy_inside_station(enemy_id):
 			continue
 		var target := _make_friendly_enemy_target(enemy_id, origin)
 		if target.is_empty():
 			continue
 		if (
-			not bool(scope.get("npc_inside_station", false))
+			not station_enemy_only
 			and float(target.get("distance", INF)) > float(scope.get("detection_range", 0.0)) + 0.000001
 		):
 			continue
@@ -7519,7 +9596,7 @@ func _mark_friendly_target_choice(
 	chosen["target_scope"] = str(scope.get("scope", ""))
 	chosen["target_detection_range"] = (
 		-1.0
-		if bool(scope.get("npc_inside_station", false))
+		if bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false)))
 		else float(scope.get("detection_range", _get_friendly_target_detection_range()))
 	)
 	if not previous_target_id.is_empty() and previous_target_id != str(chosen.get("id", "")):
@@ -7656,15 +9733,90 @@ func _get_max_active_enemy_ranged_attack_range() -> float:
 
 func _get_avoidance_trigger_range() -> float:
 	var config := _get_friendly_station_response_config()
-	var minimum_range := maxf(
-		_get_normal_contact_range(),
-		float(config.get("avoidance_min_trigger_range", AVOIDANCE_TRIGGER_RANGE_FALLBACK))
-	)
-	var ranged_margin := maxf(
+	var detection_margin := maxf(
 		0.1,
-		float(config.get("avoidance_ranged_trigger_margin", AVOIDANCE_RANGED_TRIGGER_MARGIN_FALLBACK))
+		float(config.get("avoidance_detection_range_margin", AVOIDANCE_DETECTION_MARGIN_FALLBACK))
 	)
-	return maxf(minimum_range, _get_max_active_enemy_ranged_attack_range() + ranged_margin)
+	return _get_enemy_target_detection_range({}) + detection_margin
+
+
+func _get_avoidance_target_distance() -> float:
+	return _get_avoidance_trigger_range()
+
+
+func _get_avoidance_weight_exponent() -> float:
+	return maxf(
+		0.1,
+		float(
+			_get_friendly_station_response_config().get(
+				"avoidance_weight_exponent",
+				AVOIDANCE_WEIGHT_EXPONENT_FALLBACK
+			)
+		)
+	)
+
+
+func _get_keep_distance_retreat_trigger_range_ratio() -> float:
+	return clampf(
+		float(
+			_get_friendly_station_response_config().get(
+				"keep_distance_retreat_trigger_range_ratio",
+				KEEP_DISTANCE_RETREAT_TRIGGER_RANGE_RATIO_FALLBACK
+			)
+		),
+		0.05,
+		0.95
+	)
+
+
+func _get_keep_distance_retreat_segment_range_ratio() -> float:
+	return clampf(
+		float(
+			_get_friendly_station_response_config().get(
+				"keep_distance_retreat_segment_range_ratio",
+				KEEP_DISTANCE_RETREAT_SEGMENT_RANGE_RATIO_FALLBACK
+			)
+		),
+		0.1,
+		2.0
+	)
+
+
+func _get_keep_distance_retreat_arrival_tolerance() -> float:
+	return clampf(
+		float(
+			_get_friendly_station_response_config().get(
+				"keep_distance_retreat_arrival_tolerance",
+				KEEP_DISTANCE_RETREAT_ARRIVAL_TOLERANCE_FALLBACK
+			)
+		),
+		0.05,
+		1.0
+	)
+
+
+func _get_avoidance_min_weight_distance() -> float:
+	return maxf(
+		0.1,
+		float(
+			_get_friendly_station_response_config().get(
+				"avoidance_min_weight_distance",
+				AVOIDANCE_MIN_WEIGHT_DISTANCE_FALLBACK
+			)
+		)
+	)
+
+
+func _get_avoidance_boundary_inset() -> float:
+	return maxf(
+		0.1,
+		float(
+			_get_friendly_station_response_config().get(
+				"avoidance_boundary_inset",
+				AVOIDANCE_BOUNDARY_INSET_FALLBACK
+			)
+		)
+	)
 
 
 func _get_avoidance_safe_distance() -> float:
@@ -7696,6 +9848,7 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 		if _is_enemy_inside_station(enemy_id):
 			station_enemy_ids.append(enemy_id)
 	var locks: Array[Dictionary] = []
+	var keep_distance_retreats: Array[Dictionary] = []
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system != null and npc_system.has_method("get_npc_ids") and npc_system.has_method("get_npc_state"):
 		for raw_npc_id in npc_system.get_npc_ids():
@@ -7709,11 +9862,32 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 				"npc_id": npc_id,
 				"scope": str(scope.get("scope", "")),
 				"npc_inside_station": bool(scope.get("npc_inside_station", false)),
+				"station_breached": bool(scope.get("station_breached", false)),
+				"station_enemy_only": bool(scope.get("station_enemy_only", false)),
 				"target_enemy_id": target_enemy_id,
 				"target_present": _is_friendly_enemy_target_present(npc_id, target_enemy_id, scope),
 				"target_selection_reason": str(state.get("combat_target_selection_reason", "")),
 				"different_attacker_damage_reacquire_pending": _friendly_enemy_reacquire_requests.has(npc_id)
 			})
+			if bool(state.get("keep_distance_retreat_active", false)):
+				keep_distance_retreats.append({
+					"npc_id": npc_id,
+					"sequence": int(state.get("keep_distance_retreat_sequence", 0)),
+					"target_id": str(state.get("keep_distance_retreat_target_id", "")),
+					"target_position": state.get("keep_distance_retreat_target_position", {}),
+					"desired_position": state.get("keep_distance_retreat_desired_position", {}),
+					"direction": state.get("keep_distance_retreat_direction", {}),
+					"threat_ids": state.get("keep_distance_retreat_threat_ids", []),
+					"desired_travel_distance": float(state.get("keep_distance_retreat_desired_travel_distance", 0.0)),
+					"actual_travel_distance": float(state.get("keep_distance_retreat_actual_travel_distance", 0.0)),
+					"boundary_limited": bool(state.get("keep_distance_retreat_boundary_limited", false)),
+					"navigation_adjusted": bool(state.get("keep_distance_retreat_navigation_adjusted", false)),
+					"movement_recovery_count": int(state.get("keep_distance_retreat_recovery_count", 0)),
+					"physical_movement_active": (
+						npc_system.has_method("is_npc_world_movement_active")
+						and bool(npc_system.is_npc_world_movement_active(npc_id))
+					)
+				})
 	var reacquire_requests: Array[Dictionary] = []
 	for raw_npc_id in _friendly_enemy_reacquire_requests.keys():
 		var request_npc_id := str(raw_npc_id)
@@ -7722,7 +9896,7 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 		reacquire_requests.append(request)
 	reacquire_requests.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return int(left.get("sequence", 0)) < int(right.get("sequence", 0)))
 	return {
-		"schema_version": "friendly_station_response_runtime_v2",
+		"schema_version": "friendly_station_response_runtime_v4",
 		"combat_targeting_schema": str(
 			_get_friendly_station_response_config().get(
 				"combat_targeting_schema",
@@ -7734,10 +9908,31 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 		"normal_contact_range": _get_normal_contact_range(),
 		"combat_target_detection_range": _get_friendly_target_detection_range(),
 		"inside_station_target_scope": "entire_station",
+		"station_breach_target_scope": "station_breach_global",
 		"combat_navigation_policy": _combat_navigation_policy.duplicate(true),
 		"maximum_active_enemy_ranged_attack_range": _get_max_active_enemy_ranged_attack_range(),
 		"avoidance_trigger_range": _get_avoidance_trigger_range(),
+		"avoidance_target_distance": _get_avoidance_target_distance(),
+		"avoidance_policy_schema": str(
+			_get_friendly_station_response_config().get(
+				"avoidance_policy_schema",
+				"weighted_enemy_repulsion_v1"
+			)
+		),
+		"avoidance_weight_formula": "inverse_distance_power",
+		"avoidance_weight_exponent": _get_avoidance_weight_exponent(),
+		"avoidance_boundary_inset": _get_avoidance_boundary_inset(),
 		"avoidance_safe_distance": _get_avoidance_safe_distance(),
+		"keep_distance_retreat_policy_schema": str(
+			_get_friendly_station_response_config().get(
+				"keep_distance_retreat_policy_schema",
+				"weighted_close_threat_retreat_v1"
+			)
+		),
+		"keep_distance_retreat_trigger_range_ratio": _get_keep_distance_retreat_trigger_range_ratio(),
+		"keep_distance_retreat_segment_range_ratio": _get_keep_distance_retreat_segment_range_ratio(),
+		"keep_distance_retreat_arrival_tolerance": _get_keep_distance_retreat_arrival_tolerance(),
+		"keep_distance_retreats": keep_distance_retreats,
 		"proactive_strategy_ids": _get_friendly_station_response_config().get(
 			"proactive_strategy_ids",
 			[STRATEGY_ATTACK, STRATEGY_CHARGE_CYCLE]
@@ -7835,7 +10030,8 @@ func _set_npc_combat_strategy(
 		}
 
 	var previous := get_npc_combat_strategy(npc_id)
-	var previous_id := _extract_combat_strategy_id(_get_npc_state(npc_id).get("combat_strategy", {}))
+	var state_before_change := _get_npc_state(npc_id)
+	var previous_id := _extract_combat_strategy_id(state_before_change.get("combat_strategy", {}))
 	var strategy_state := _make_combat_strategy_state(npc_id, clean_strategy_id, snapshot, reason)
 	var changed := previous_id != clean_strategy_id
 	var state_changes := {
@@ -7845,6 +10041,18 @@ func _set_npc_combat_strategy(
 		"combat_charge_last_impact": {}
 	}
 	npc_system.update_npc_state(npc_id, state_changes)
+	if (
+		changed
+		and clean_strategy_id == STRATEGY_AVOID
+		and str(state_before_change.get("current_action", "")).begins_with("moving_to_%s" % STRATEGY_MOVE_TARGET_PREFIX)
+		and not str(state_before_change.get("current_action", "")).begins_with("moving_to_%s%s_" % [STRATEGY_MOVE_TARGET_PREFIX, STRATEGY_AVOID])
+	):
+		_settle_combat_strategy_move_handoff(
+			npc_id,
+			STRATEGY_AVOID,
+			{"enemy_id": str(state_before_change.get("combat_target_enemy_id", ""))},
+			"combat_strategy_changed_to_avoid"
+		)
 	var event := {}
 	if should_log and changed:
 		event = _log_combat_strategy_selected(npc_id, previous, strategy_state, reason, visibility)
@@ -7937,62 +10145,24 @@ func _is_npc_combat_eligible(npc_id: String, npc_system: Node = null) -> bool:
 	return not main_weapon.is_empty()
 
 
-func _rotate_direction_y(direction: Vector3, radians: float) -> Vector3:
-	var normalized := direction
-	normalized.y = 0.0
-	if normalized.length() <= 0.001:
-		return Vector3.ZERO
-	normalized = normalized.normalized()
-	var cos_value := cos(radians)
-	var sin_value := sin(radians)
-	return Vector3(
-		normalized.x * cos_value - normalized.z * sin_value,
-		0.0,
-		normalized.x * sin_value + normalized.z * cos_value
-	).normalized()
-
-
-func _clamp_avoidance_position(position: Vector3) -> Vector3:
-	return Vector3(
-		clampf(position.x, AVOIDANCE_MIN_X, AVOIDANCE_MAX_X),
-		0.0,
-		clampf(position.z, AVOIDANCE_MIN_Z, AVOIDANCE_MAX_Z)
+func _resolve_avoidance_navigation_target(
+	npc_position: Vector3,
+	desired_position: Vector3
+) -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if (
+		controller == null
+		or not controller.has_method("resolve_station_avoidance_navigation_target")
+	):
+		return {
+			"ok": false,
+			"reason": "station_avoidance_navigation_resolver_missing"
+		}
+	return controller.resolve_station_avoidance_navigation_target(
+		npc_position,
+		desired_position,
+		_get_avoidance_boundary_inset()
 	)
-
-
-func _constrain_avoidance_step(npc_position: Vector3, proposed_position: Vector3, npc_id: String = "") -> Vector3:
-	if _default_formal_wave_active and not npc_id.is_empty():
-		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-		var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
-		if (
-			npc_system != null
-			and npc_system.has_method("is_npc_in_formal_combat_world")
-			and npc_system.is_npc_in_formal_combat_world(npc_id)
-			and controller != null
-			and controller.has_method("get_production_navigation_map_rid")
-		):
-			var navigation_map: RID = controller.get_production_navigation_map_rid()
-			if navigation_map.is_valid():
-				var resolved := NavigationServer3D.map_get_closest_point(navigation_map, proposed_position)
-				if npc_position.distance_to(resolved) > AVOIDANCE_STEP_DISTANCE + 0.25:
-					var capped := npc_position.move_toward(resolved, AVOIDANCE_STEP_DISTANCE)
-					resolved = NavigationServer3D.map_get_closest_point(navigation_map, capped)
-				# Connectivity and bounded repath belong to ActorMotionBody. Performing a
-				# synchronous full path query for every scatter candidate stalls a contact
-				# involving several civilians, while the local closest-point projection is
-				# sufficient to keep the requested endpoint on the production NavMesh.
-				return resolved
-	var clamped_position := _clamp_avoidance_position(proposed_position)
-	var clamped_distance := npc_position.distance_to(clamped_position)
-	if clamped_distance > AVOIDANCE_STEP_DISTANCE + 0.25:
-		return npc_position.move_toward(clamped_position, AVOIDANCE_STEP_DISTANCE)
-	return clamped_position
-
-
-func _get_avoidance_scatter_angle(npc_id: String, enemy_id: String) -> float:
-	var hash_value := _stable_hash_text("%s:%s" % [npc_id, enemy_id])
-	var normalized := float((hash_value % 2001) - 1000) / 1000.0
-	return deg_to_rad(normalized * AVOIDANCE_SCATTER_DEGREES)
 
 
 func _fallback_avoidance_direction(npc_id: String) -> Vector3:
@@ -8044,10 +10214,19 @@ func _is_formal_dynamic_pressure_enemy(enemy_id: String) -> bool:
 
 
 func _uses_enemy_attack_position_leases(enemy_id: String) -> bool:
+	var schema := str(_formal_attack_position_policy.get("schema", ""))
 	return (
 		_is_formal_dynamic_pressure_enemy(enemy_id)
-		and str(_formal_attack_position_policy.get("schema", "")) == "enemy_attack_position_leases_v1"
+		and schema in ["enemy_attack_position_leases_v1", "enemy_attack_guidance_zones_v2"]
 	)
+
+
+func _uses_enemy_attack_guidance(enemy_id: String, target: Dictionary = {}) -> bool:
+	if not _uses_enemy_attack_position_leases(enemy_id):
+		return false
+	if str(_formal_attack_position_policy.get("schema", "")) != "enemy_attack_guidance_zones_v2":
+		return false
+	return target.is_empty() or str(target.get("type", "")) in ["building", "defense_device"]
 
 
 func _enemy_attack_target_key(target: Dictionary) -> String:
@@ -8082,16 +10261,25 @@ func _get_max_enemy_attack_position_radius() -> float:
 	return maximum_radius
 
 
-func _get_enemy_attack_position_standoff(enemy: Dictionary, target: Dictionary) -> float:
+func _get_enemy_attack_position_standoff(
+	enemy: Dictionary,
+	target: Dictionary,
+	ranged_range_ratio_override: float = -1.0
+) -> float:
 	var enemy_radius := _get_enemy_attack_position_radius(enemy)
 	var target_radius := maxf(0.0, float(target.get("contact_radius", 0.0)))
 	if str(target.get("type", "")) == "npc":
 		target_radius = maxf(target_radius, 0.35)
 	var safety_margin := maxf(0.0, float(_formal_attack_position_policy.get("safety_margin", 0.08)))
 	var attack_range := maxf(0.1, float(enemy.get("attack_range", 1.5)))
+	var is_ranged := str(enemy.get("weapon_type", "")) in RANGED_WEAPON_TYPES
 	var reach_ratio := (
-		float(_formal_attack_position_policy.get("ranged_range_ratio", 0.72))
-		if str(enemy.get("weapon_type", "")) in RANGED_WEAPON_TYPES
+		(
+			ranged_range_ratio_override
+			if ranged_range_ratio_override > 0.0
+			else float(_formal_attack_position_policy.get("ranged_range_ratio", 0.72))
+		)
+		if is_ranged
 		else float(_formal_attack_position_policy.get("melee_reach_ratio", 0.82))
 	)
 	var arrival_tolerance := maxf(0.05, float(_formal_attack_position_policy.get("arrival_tolerance", 0.32)))
@@ -8120,7 +10308,52 @@ func _get_enemy_attack_position_standoff(enemy: Dictionary, target: Dictionary) 
 	return maxf(enemy_radius + target_radius + safety_margin, standoff)
 
 
+func _get_enemy_attack_position_row_specs(enemy: Dictionary, target: Dictionary) -> Array[Dictionary]:
+	var fallback_standoff := _get_enemy_attack_position_standoff(enemy, target)
+	if (
+		str(target.get("type", "")) not in ["building", "defense_device"]
+		or str(enemy.get("weapon_type", "")) not in RANGED_WEAPON_TYPES
+	):
+		return [{
+			"index": 0,
+			"count": 1,
+			"range_ratio": -1.0,
+			"standoff": fallback_standoff
+		}]
+	var configured_ratios := _formal_attack_position_policy.get(
+		"ranged_fixed_target_row_range_ratios",
+		_formal_attack_position_policy.get(
+			"ranged_building_row_range_ratios",
+			[_formal_attack_position_policy.get("ranged_range_ratio", 0.72)]
+		)
+	) as Array
+	var normalized_ratios: Array[float] = []
+	for raw_ratio in configured_ratios:
+		var ratio := clampf(float(raw_ratio), 0.2, 0.95)
+		if normalized_ratios.any(func(existing_ratio: float) -> bool: return is_equal_approx(existing_ratio, ratio)):
+			continue
+		normalized_ratios.append(ratio)
+	if normalized_ratios.is_empty():
+		normalized_ratios.append(clampf(float(_formal_attack_position_policy.get("ranged_range_ratio", 0.72)), 0.2, 0.95))
+	var row_specs: Array[Dictionary] = []
+	for row_index in range(normalized_ratios.size()):
+		var range_ratio := normalized_ratios[row_index]
+		row_specs.append({
+			"index": row_index,
+			"count": normalized_ratios.size(),
+			"range_ratio": range_ratio,
+			"standoff": _get_enemy_attack_position_standoff(enemy, target, range_ratio)
+		})
+	return row_specs
+
+
 func _get_enemy_attack_position_outward(enemy_id: String, target: Dictionary) -> Vector3:
+	var proxy_outward: Variant = target.get("host_proxy_outward_direction", null)
+	if proxy_outward is Vector3:
+		var proxy_outward_vector := proxy_outward as Vector3
+		proxy_outward_vector.y = 0.0
+		if proxy_outward_vector.length_squared() > 0.0001:
+			return proxy_outward_vector.normalized()
 	var facing: Variant = target.get("facing_direction", null)
 	if facing is Vector3:
 		var facing_vector := facing as Vector3
@@ -8147,6 +10380,46 @@ func _get_enemy_attack_position_outward(enemy_id: String, target: Dictionary) ->
 	return fallback.normalized() if fallback.length_squared() > 0.0001 else Vector3.FORWARD
 
 
+func _get_front_gate_attack_lane_distance(
+	enemy_id: String,
+	enemy: Dictionary,
+	target: Dictionary,
+	candidate: Dictionary
+) -> float:
+	if str(target.get("type", "")) != "building" or str(target.get("id", "")) != "front_gate":
+		return INF
+	var outward := _get_enemy_attack_position_outward(enemy_id, target)
+	var tangent := Vector3(-outward.z, 0.0, outward.x)
+	var target_position: Vector3 = target.get("position", Vector3.ZERO)
+	var enemy_position: Vector3 = enemy.get("position", target_position)
+	var approach_direction := Vector3.ZERO
+	var slice := _formal_first_wave_slices.get(enemy_id, {}) as Dictionary
+	var stages := (slice.get("route", {}) as Dictionary).get("stages", []) as Array
+	for stage_index in range(1, stages.size()):
+		var stage := stages[stage_index] as Dictionary
+		if str(stage.get("id", "")) != "front_gate":
+			continue
+		var previous_stage := stages[stage_index - 1] as Dictionary
+		approach_direction = stage.get("position", target_position) - previous_stage.get("position", enemy_position)
+		approach_direction.y = 0.0
+		break
+	if approach_direction.length_squared() <= 0.0001:
+		approach_direction = target_position - enemy_position
+		approach_direction.y = 0.0
+	if approach_direction.length_squared() > 0.0001:
+		approach_direction = approach_direction.normalized()
+	var projected_position := enemy_position
+	var approach_dot := approach_direction.dot(outward)
+	if absf(approach_dot) > 0.05:
+		var travel_distance := (target_position - enemy_position).dot(outward) / approach_dot
+		if travel_distance > 0.0:
+			projected_position += approach_direction * travel_distance
+	var projected_lateral := (projected_position - target_position).dot(tangent)
+	var candidate_position: Vector3 = candidate.get("position", target_position)
+	var candidate_lateral := (candidate_position - target_position).dot(tangent)
+	return absf(candidate_lateral - projected_lateral)
+
+
 func _get_oriented_building_attack_position_candidates(
 	enemy: Dictionary,
 	target: Dictionary,
@@ -8154,7 +10427,7 @@ func _get_oriented_building_attack_position_candidates(
 	role: String,
 	enemy_radius: float,
 	spacing: float,
-	standoff: float,
+	row_specs: Array[Dictionary],
 	max_positions: int
 ) -> Array[Dictionary]:
 	var candidates: Array[Dictionary] = []
@@ -8175,7 +10448,7 @@ func _get_oriented_building_attack_position_candidates(
 	var approach_position: Vector3 = target.get("route_approach_position", enemy.get("position", center + forward))
 	approach_position.y = center.y
 	var front_door_half_width := maxf(0.0, float(target.get("building_front_door_clear_width", 0.0))) * 0.5
-	var raw_candidates: Array[Dictionary] = []
+	var raw_surface_samples: Array[Dictionary] = []
 	var faces: Array[Dictionary] = [
 		{"id": "front", "normal": forward, "tangent": right, "normal_extent": half_z, "tangent_extent": half_x, "door_half_width": front_door_half_width},
 		{"id": "right", "normal": right, "tangent": -forward, "normal_extent": half_x, "tangent_extent": half_z, "door_half_width": 0.0},
@@ -8197,26 +10470,114 @@ func _get_oriented_building_attack_position_candidates(
 				continue
 			var contact_position := center + normal * normal_extent + tangent * lateral_offset
 			contact_position.y = center.y
-			raw_candidates.append({
-				"slot_id": "%s:%s:%s_%02d_of_%02d" % [target_key, role, str(face.get("id", "face")), index, face_count],
-				"position": contact_position + normal * standoff,
+			raw_surface_samples.append({
+				"surface_slot_id": "%s_%02d_of_%02d" % [str(face.get("id", "face")), index, face_count],
 				"contact_position": contact_position,
 				"face_id": str(face.get("id", "")),
+				"outward_direction": normal,
+				"approach_distance": _horizontal_vector_distance(contact_position, approach_position)
+			})
+	raw_surface_samples.sort_custom(func(left: Dictionary, right_candidate: Dictionary) -> bool:
+		var left_distance := float(left.get("approach_distance", INF))
+		var right_distance := float(right_candidate.get("approach_distance", INF))
+		return str(left.get("surface_slot_id", "")) < str(right_candidate.get("surface_slot_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
+	)
+	var selected_surface_count := mini(maxi(1, max_positions), raw_surface_samples.size())
+	for row_spec in row_specs:
+		var row_index := int(row_spec.get("index", 0))
+		var row_count := maxi(1, int(row_spec.get("count", row_specs.size())))
+		var standoff := maxf(0.0, float(row_spec.get("standoff", 0.0)))
+		for index in range(selected_surface_count):
+			var sample := raw_surface_samples[index] as Dictionary
+			var surface_slot_id := str(sample.get("surface_slot_id", "surface"))
+			var slot_suffix := (
+				"row_%02d_of_%02d:%s" % [row_index, row_count, surface_slot_id]
+				if row_count > 1
+				else surface_slot_id
+			)
+			var normal: Vector3 = sample.get("outward_direction", Vector3.FORWARD)
+			var contact_position: Vector3 = sample.get("contact_position", center)
+			candidates.append({
+				"slot_id": "%s:%s:%s" % [target_key, role, slot_suffix],
+				"position": contact_position + normal * standoff,
+				"contact_position": contact_position,
+				"face_id": str(sample.get("face_id", "")),
 				"outward_direction": normal,
 				"role": role,
 				"enemy_radius": enemy_radius,
 				"standoff": standoff,
-				"approach_distance": _horizontal_vector_distance(contact_position, approach_position)
+				"range_row_index": row_index,
+				"range_row_count": row_count,
+				"range_row_ratio": float(row_spec.get("range_ratio", -1.0))
 			})
-	raw_candidates.sort_custom(func(left: Dictionary, right_candidate: Dictionary) -> bool:
-		var left_distance := float(left.get("approach_distance", INF))
-		var right_distance := float(right_candidate.get("approach_distance", INF))
-		return str(left.get("slot_id", "")) < str(right_candidate.get("slot_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
-	)
-	for index in range(mini(maxi(1, max_positions), raw_candidates.size())):
-		var candidate := raw_candidates[index].duplicate(true)
-		candidate.erase("approach_distance")
-		candidates.append(candidate)
+	return candidates
+
+
+func _get_defense_device_attack_position_candidates(
+	enemy: Dictionary,
+	target: Dictionary,
+	target_key: String,
+	role: String,
+	enemy_radius: float,
+	spacing: float,
+	row_specs: Array[Dictionary],
+	max_positions: int
+) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	var regions := _get_defense_device_host_proxy_regions(target)
+	if regions.is_empty():
+		return candidates
+	var total_budget := maxi(regions.size(), max_positions)
+	var base_region_budget := int(total_budget / regions.size())
+	var extra_region_budget := total_budget % regions.size()
+	for region_index in range(regions.size()):
+		var region := regions[region_index] as Dictionary
+		var proxy_position: Vector3 = region.get("position", target.get("position", Vector3.ZERO))
+		var outward: Vector3 = region.get("outward_direction", Vector3.FORWARD)
+		outward.y = 0.0
+		if outward.length_squared() <= 0.0001:
+			continue
+		outward = outward.normalized()
+		var tangent := Vector3(-outward.z, 0.0, outward.x)
+		var hit_radius := maxf(0.1, float(region.get("hit_radius", target.get("host_proxy_hit_radius", 2.0))))
+		var edge_inset := minf(hit_radius * 0.25, maxf(0.12, enemy_radius * 0.35))
+		var usable_half_width := maxf(0.1, hit_radius - edge_inset)
+		var natural_count := maxi(1, int(floor(usable_half_width * 2.0 / maxf(0.1, spacing))) + 1)
+		var region_budget := maxi(1, base_region_budget + (1 if region_index < extra_region_budget else 0))
+		var count := mini(natural_count, region_budget)
+		var lateral_spacing := usable_half_width * 2.0 / float(count - 1) if count > 1 else 0.0
+		var contact_radius := maxf(0.0, float(region.get("contact_radius", target.get("contact_radius", 0.0))))
+		var surface_center := proxy_position + outward * contact_radius
+		for row_spec in row_specs:
+			var row_index := int(row_spec.get("index", 0))
+			var row_count := maxi(1, int(row_spec.get("count", row_specs.size())))
+			var standoff := maxf(0.0, float(row_spec.get("standoff", 0.0)))
+			for index in range(count):
+				var lateral_offset := -usable_half_width + lateral_spacing * float(index) if count > 1 else 0.0
+				var contact_position := surface_center + tangent * lateral_offset
+				var candidate_standoff := maxf(0.0, standoff - contact_radius)
+				var candidate_position := contact_position + outward * candidate_standoff
+				var region_id := str(region.get("id", "region_%02d" % region_index))
+				var slot_suffix := (
+					"row_%02d_of_%02d:region_%02d:point_%02d_of_%02d" % [row_index, row_count, region_index, index, count]
+					if row_count > 1
+					else "region_%02d:point_%02d_of_%02d" % [region_index, index, count]
+				)
+				candidates.append({
+					"slot_id": "%s:%s:%s" % [target_key, role, slot_suffix],
+					"position": candidate_position,
+					"contact_position": contact_position,
+					"host_proxy_region_id": region_id,
+					"host_proxy_wall_segment_id": str(region.get("wall_segment_id", "")),
+					"host_proxy_building_segment_id": str(region.get("building_segment_id", "")),
+					"host_proxy_outward_direction": outward,
+					"role": role,
+					"enemy_radius": enemy_radius,
+					"standoff": standoff,
+					"range_row_index": row_index,
+					"range_row_count": row_count,
+					"range_row_ratio": float(row_spec.get("range_ratio", -1.0))
+				})
 	return candidates
 
 
@@ -8232,12 +10593,12 @@ func _get_enemy_attack_position_candidates(enemy_id: String, enemy: Dictionary, 
 	var enemy_radius := _get_enemy_attack_position_radius(enemy)
 	var safety_margin := maxf(0.0, float(_formal_attack_position_policy.get("safety_margin", 0.08)))
 	var spacing := enemy_radius * 2.0 + safety_margin
-	var standoff := _get_enemy_attack_position_standoff(enemy, target)
 	var target_type := str(target.get("type", ""))
 	if target_type == "npc":
 		# NPC targets deliberately have no authored attack-position capacity. Enemy
 		# bodies pursue the live NPC position and may crowd around it naturally.
 		return candidates
+	var row_specs := _get_enemy_attack_position_row_specs(enemy, target)
 
 	var outward := _get_enemy_attack_position_outward(enemy_id, target)
 	var tangent := Vector3(-outward.z, 0.0, outward.x)
@@ -8254,22 +10615,40 @@ func _get_enemy_attack_position_candidates(enemy_id: String, enemy: Dictionary, 
 			float(target.get("contact_radius", 0.0))
 		)
 		width = maxf(spacing * 2.0, proxy_radius * 2.0)
-	var max_positions := (
-		int(_formal_attack_position_policy.get("building_max_positions", 20))
-		if target_type == "building"
-		else int(_formal_attack_position_policy.get("defense_device_max_positions", 8))
-	)
+	var is_ranged := str(enemy.get("weapon_type", "")) in RANGED_WEAPON_TYPES
+	var max_positions := 0
+	if target_type == "building":
+		max_positions = int(_formal_attack_position_policy.get(
+			"ranged_building_max_positions" if is_ranged else "building_max_positions",
+			32 if is_ranged else 20
+		))
+	else:
+		max_positions = int(_formal_attack_position_policy.get(
+			"ranged_defense_device_max_positions" if is_ranged else "defense_device_max_positions",
+			12 if is_ranged else 8
+		))
 	if target_type == "building" and str(target.get("building_geometry_schema", "")) == "oriented_building_combat_geometry_v1":
-		return _get_oriented_building_attack_position_candidates(
+		return _decorate_enemy_attack_guidance_zones(_get_oriented_building_attack_position_candidates(
 			enemy,
 			target,
 			target_key,
 			role,
 			enemy_radius,
 			spacing,
-			standoff,
+			row_specs,
 			max_positions
-		)
+		), enemy)
+	if target_type == "defense_device" and not _get_defense_device_host_proxy_regions(target).is_empty():
+		return _decorate_enemy_attack_guidance_zones(_get_defense_device_attack_position_candidates(
+			enemy,
+			target,
+			target_key,
+			role,
+			enemy_radius,
+			spacing,
+			row_specs,
+			max_positions
+		), enemy)
 	var count := clampi(
 		authored_position_count if authored_position_count > 0 else int(floor(width / spacing)) + 1,
 		1,
@@ -8284,69 +10663,107 @@ func _get_enemy_attack_position_candidates(enemy_id: String, enemy: Dictionary, 
 		# forward offset places both the contact point and the snapped lease in
 		# empty space, so authored melee sweeps visibly miss every device attack.
 		surface_offset = maxf(0.0, float(target.get("contact_radius", 0.0)))
-	for index in range(count):
-		var lateral_offset := (float(index) - center_index) * lateral_spacing
-		var contact_position := target_position + outward * surface_offset + tangent * lateral_offset
-		var is_front_gate_outer := (
-			target_type == "building"
-			and str(target.get("id", "")) == "front_gate"
-			and index in [0, count - 1]
-		)
-		var is_front_gate_flank := is_front_gate_outer and index == count - 1
-		if is_front_gate_flank:
-			# The rotated left abutment has no seventh sword-reachable NavMesh point.
-			# Keep the seventh capacity as a genuine right-flank approach to the same
-			# exposed right post, separated laterally from the front-line post slot.
-			contact_position = (
-				target_position
-				+ outward * surface_offset
-				+ tangent * (-center_index * lateral_spacing)
+	for row_spec in row_specs:
+		var row_index := int(row_spec.get("index", 0))
+		var row_count := maxi(1, int(row_spec.get("count", row_specs.size())))
+		var standoff := maxf(0.0, float(row_spec.get("standoff", 0.0)))
+		for index in range(count):
+			var lateral_offset := (float(index) - center_index) * lateral_spacing
+			var contact_position := target_position + outward * surface_offset + tangent * lateral_offset
+			var candidate_standoff := maxf(0.0, standoff - surface_offset)
+			var candidate_position := contact_position + outward * candidate_standoff
+			var slot_suffix := (
+				"row_%02d_of_%02d:front_%02d_of_%02d" % [row_index, row_count, index, count]
+				if row_count > 1
+				else "front_%02d_of_%02d" % [index, count]
 			)
-		if is_front_gate_outer:
-			# The outer two slots strike the physical gate posts, whose attackable
-			# exterior face is ahead of the abstract gate-center contact line.
-			contact_position += outward * maxf(
-				0.0,
-				float(_formal_attack_position_policy.get("front_gate_post_surface_offset", 0.0))
-			)
-		var candidate_position := contact_position + outward * maxf(0.0, standoff - surface_offset)
-		if is_front_gate_flank:
-			var flank_direction := contact_position - target_position
-			flank_direction.y = 0.0
-			if flank_direction.length_squared() > 0.0001:
-				candidate_position += flank_direction.normalized() * maxf(
-					0.0,
-					float(_formal_attack_position_policy.get("front_gate_flank_body_lateral_offset", 0.0))
-				)
-			candidate_position += outward * float(
-				_formal_attack_position_policy.get("front_gate_flank_body_forward_adjustment", 0.0)
-			)
-		if is_front_gate_outer:
-			# Aim the weapon at the outside face rather than the post centre. The
-			# navigation destination stays unchanged, so this only aligns the real
-			# sword sweep with the collision surface on both rotated posts.
-			contact_position += outward * maxf(
-				0.0,
-				float(_formal_attack_position_policy.get("front_gate_post_contact_reach_offset", 0.0))
-			)
-		candidates.append({
-			"slot_id": "%s:%s:front_%02d_of_%02d" % [target_key, role, index, count],
-			"position": candidate_position,
-			"contact_position": contact_position,
-			"role": role,
-			"enemy_radius": enemy_radius,
-			"standoff": standoff
-		})
-	return candidates
+			candidates.append({
+				"slot_id": "%s:%s:%s" % [target_key, role, slot_suffix],
+				"position": candidate_position,
+				"contact_position": contact_position,
+				"role": role,
+				"enemy_radius": enemy_radius,
+				"standoff": standoff,
+				"range_row_index": row_index,
+				"range_row_count": row_count,
+				"range_row_ratio": float(row_spec.get("range_ratio", -1.0))
+			})
+	return _decorate_enemy_attack_guidance_zones(candidates, enemy)
 
 
-func _is_enemy_attack_position_conflict(target_key: String, candidate: Dictionary, own_enemy_id: String) -> bool:
+func _decorate_enemy_attack_guidance_zones(
+	candidates: Array[Dictionary],
+	enemy: Dictionary
+) -> Array[Dictionary]:
+	if str(_formal_attack_position_policy.get("schema", "")) != "enemy_attack_guidance_zones_v2":
+		return candidates
+	var guidance_class := "ranged" if str(enemy.get("weapon_type", "")) in RANGED_WEAPON_TYPES else "melee"
+	var zone_radius := _get_enemy_attack_position_radius(enemy)
+	var zone_height := maxf(
+		0.1,
+		float(_formal_attack_position_policy.get("guidance_zone_height", 2.6))
+	)
+	var safety_margin := maxf(0.0, float(_formal_attack_position_policy.get("safety_margin", 0.08)))
+	var cell_size := maxf(0.1, zone_radius * 2.0 + safety_margin)
+	var decorated: Array[Dictionary] = []
+	var spatial_cells: Dictionary = {}
+	for raw_candidate in candidates:
+		var candidate := raw_candidate.duplicate(true)
+		candidate["guidance_class"] = guidance_class
+		candidate["guidance_zone_radius"] = zone_radius
+		candidate["guidance_zone_height"] = zone_height
+		candidate["guidance_volume_shape"] = "vertical_cylinder"
+		var candidate_position: Vector3 = candidate.get("position", Vector3.ZERO)
+		var overlaps_existing := false
+		var cell_x := floori(candidate_position.x / cell_size)
+		var cell_z := floori(candidate_position.z / cell_size)
+		for offset_x in range(-1, 2):
+			if overlaps_existing:
+				break
+			for offset_z in range(-1, 2):
+				var cell_key := "%d:%d" % [cell_x + offset_x, cell_z + offset_z]
+				for raw_existing in spatial_cells.get(cell_key, []):
+					var existing := raw_existing as Dictionary
+					var existing_position: Vector3 = existing.get("position", Vector3.ZERO)
+					var required_separation := (
+						zone_radius
+						+ maxf(0.1, float(existing.get("guidance_zone_radius", zone_radius)))
+						+ safety_margin
+					)
+					if Vector2(candidate_position.x, candidate_position.z).distance_to(
+						Vector2(existing_position.x, existing_position.z)
+					) + 0.0001 < required_separation:
+						overlaps_existing = true
+						break
+				if overlaps_existing:
+					break
+		if not overlaps_existing:
+			decorated.append(candidate)
+			var own_cell_key := "%d:%d" % [cell_x, cell_z]
+			var cell_entries := spatial_cells.get(own_cell_key, []) as Array
+			cell_entries.append(candidate)
+			spatial_cells[own_cell_key] = cell_entries
+	return decorated
+
+
+func _is_enemy_attack_position_conflict(
+	target_key: String,
+	candidate: Dictionary,
+	own_enemy_id: String,
+	occupied_only: bool = false
+) -> bool:
 	var safety_margin := maxf(0.0, float(_formal_attack_position_policy.get("safety_margin", 0.08)))
 	var candidate_position: Vector3 = candidate.get("position", Vector3.ZERO)
 	var candidate_radius := maxf(0.1, float(candidate.get("enemy_radius", 0.42)))
 	for raw_lease in _enemy_attack_position_leases.values():
 		var lease := raw_lease as Dictionary
 		if str(lease.get("enemy_id", "")) == own_enemy_id or str(lease.get("target_key", "")) != target_key:
+			continue
+		# Reservations prevent two enemies from being routed into the same physical
+		# slot, but only an actor that has actually arrived consumes targeting
+		# capacity.  Target selection uses occupied_only=true; lease allocation keeps
+		# the default and therefore still treats in-transit reservations as conflicts.
+		if occupied_only and str(lease.get("status", "reserved")) != "occupied":
 			continue
 		if str(lease.get("slot_id", "")) == str(candidate.get("slot_id", "")):
 			return true
@@ -8391,6 +10808,7 @@ func _resolve_reachable_enemy_attack_position(enemy_id: String, candidate: Dicti
 		path_distance += Vector2(previous.x, previous.z).distance_to(Vector2(point.x, point.z))
 		previous = point
 	var resolved := candidate.duplicate(true)
+	resolved["authored_position"] = candidate_position
 	resolved["position"] = snapped
 	resolved["path_distance"] = path_distance
 	return resolved
@@ -8398,12 +10816,18 @@ func _resolve_reachable_enemy_attack_position(enemy_id: String, candidate: Dicti
 
 func _decorate_target_with_enemy_attack_position(target: Dictionary, lease: Dictionary) -> Dictionary:
 	var decorated := target.duplicate(true)
-	decorated["attack_position_status"] = "reserved"
+	decorated["attack_position_status"] = str(lease.get("status", "reserved"))
 	decorated["attack_position_id"] = str(lease.get("slot_id", ""))
 	decorated["attack_position"] = lease.get("position", decorated.get("position", Vector3.ZERO))
 	decorated["attack_contact_position"] = lease.get("contact_position", decorated.get("position", Vector3.ZERO))
 	decorated["attack_position_role"] = str(lease.get("role", ""))
 	decorated["attack_position_target_key"] = str(lease.get("target_key", ""))
+	decorated["attack_position_range_row_index"] = int(lease.get("range_row_index", 0))
+	decorated["attack_position_range_row_count"] = int(lease.get("range_row_count", 1))
+	decorated["attack_position_range_row_ratio"] = float(lease.get("range_row_ratio", -1.0))
+	decorated["attack_host_proxy_region_id"] = str(lease.get("host_proxy_region_id", target.get("host_proxy_id", "")))
+	decorated["attack_host_proxy_wall_segment_id"] = str(lease.get("host_proxy_wall_segment_id", ""))
+	decorated["attack_host_proxy_building_segment_id"] = str(lease.get("host_proxy_building_segment_id", ""))
 	return decorated
 
 
@@ -8415,7 +10839,13 @@ func _find_enemy_attack_wait_entry(enemy_id: String, target_key: String) -> Dict
 	return {}
 
 
-func _refresh_enemy_attack_wait_entry(enemy_id: String, enemy: Dictionary, target: Dictionary, existing: Dictionary) -> Dictionary:
+func _refresh_enemy_attack_wait_entry(
+	enemy_id: String,
+	enemy: Dictionary,
+	target: Dictionary,
+	existing: Dictionary,
+	wait_reason: String = ""
+) -> Dictionary:
 	var target_key := _enemy_attack_target_key(target)
 	var queue := _enemy_attack_wait_queues.get(target_key, []) as Array
 	for index in range(queue.size()):
@@ -8423,12 +10853,19 @@ func _refresh_enemy_attack_wait_entry(enemy_id: String, enemy: Dictionary, targe
 		if str(entry.get("enemy_id", "")) != enemy_id:
 			continue
 		entry["target"] = target.duplicate(true)
-		entry["queue_position"] = _get_enemy_attack_wait_position(
+		entry["wait_reason"] = wait_reason
+		var pressure_target := _get_enemy_attack_wait_pressure_target(
 			enemy_id,
 			enemy,
 			target,
-			maxi(0, int(entry.get("queue_slot_index", 0)))
+			maxi(0, int(entry.get("queue_slot_index", 0))),
+			str(entry.get("desired_attack_position_id", ""))
 		)
+		entry["queue_position"] = pressure_target.get(
+			"position",
+			_get_enemy_attack_wait_position(enemy_id, enemy, target, maxi(0, int(entry.get("queue_slot_index", 0))))
+		)
+		entry["desired_attack_position_id"] = str(pressure_target.get("slot_id", ""))
 		queue[index] = entry
 		_enemy_attack_wait_queues[target_key] = queue
 		return entry
@@ -8467,7 +10904,76 @@ func _get_enemy_attack_wait_position(enemy_id: String, enemy: Dictionary, target
 	return wait_position
 
 
-func _enqueue_enemy_attack_position_waiter(enemy_id: String, enemy: Dictionary, target: Dictionary) -> Dictionary:
+func _get_enemy_attack_wait_pressure_target(
+	enemy_id: String,
+	enemy: Dictionary,
+	target: Dictionary,
+	queue_index: int,
+	preferred_slot_id: String = ""
+) -> Dictionary:
+	var candidates := _get_enemy_attack_position_candidates(enemy_id, enemy, target)
+	if candidates.is_empty():
+		return {}
+	var reachable: Array[Dictionary] = []
+	for raw_candidate in candidates:
+		var candidate := raw_candidate as Dictionary
+		var resolved := _resolve_reachable_enemy_attack_position(enemy_id, candidate)
+		if resolved.is_empty():
+			continue
+		if not preferred_slot_id.is_empty() and str(resolved.get("slot_id", "")) == preferred_slot_id:
+			return resolved
+		var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+		var candidate_position: Vector3 = resolved.get("position", enemy_position)
+		resolved["wait_distance"] = Vector2(enemy_position.x, enemy_position.z).distance_squared_to(
+			Vector2(candidate_position.x, candidate_position.z)
+		)
+		reachable.append(resolved)
+	if reachable.is_empty():
+		return {}
+	reachable.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_distance := float(left.get("wait_distance", INF))
+		var right_distance := float(right.get("wait_distance", INF))
+		return str(left.get("slot_id", "")) < str(right.get("slot_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
+	)
+	# A waiter owns no lease and therefore no combat permission. This stable
+	# desired slot is only a pressure destination: NavigationAgent/RVO and the
+	# physical capsules stop it behind the reservation owner or occupied attacker.
+	# Rotating by the stable queue index keeps several waiters from all selecting
+	# the same nearest slot while preserving the existing promotion order.
+	var chosen := reachable[posmod(queue_index, reachable.size())].duplicate(true)
+	chosen.erase("wait_distance")
+	return chosen
+
+
+func _configure_enemy_attack_wait_avoidance(enemy_id: String, waiting: bool) -> void:
+	var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor == null:
+		return
+	if waiting:
+		_end_enemy_precise_arrival_recovery(enemy_id, "cancelled:waiting_for_lease", actor)
+	var base_priority := float(_formal_attack_position_policy.get(
+		"waiting_attacker_avoidance_priority" if waiting else "active_attacker_avoidance_priority",
+		0.20 if waiting else 0.55
+	))
+	var spread := maxf(0.0, float(_formal_attack_position_policy.get("attack_avoidance_priority_spread", 0.08)))
+	actor.configure_avoidance_identity(
+		"enemy_attack_wait:%s" % enemy_id if waiting else "enemy:%s" % enemy_id,
+		base_priority,
+		spread
+	)
+	var precise_recovery_active := _enemy_precise_arrival_recoveries.has(enemy_id)
+	actor.set_runtime_avoidance_enabled(
+		not precise_recovery_active,
+		"melee_precise_arrival_recovery" if precise_recovery_active else ""
+	)
+
+
+func _enqueue_enemy_attack_position_waiter(
+	enemy_id: String,
+	enemy: Dictionary,
+	target: Dictionary,
+	wait_reason: String = ""
+) -> Dictionary:
 	var target_key := _enemy_attack_target_key(target)
 	var existing := _find_enemy_attack_wait_entry(enemy_id, target_key)
 	if not existing.is_empty():
@@ -8480,6 +10986,16 @@ func _enqueue_enemy_attack_position_waiter(enemy_id: String, enemy: Dictionary, 
 	var queue_slot_index := 0
 	while used_queue_slots.has(queue_slot_index):
 		queue_slot_index += 1
+	var pressure_target := _get_enemy_attack_wait_pressure_target(
+		enemy_id,
+		enemy,
+		target,
+		queue_slot_index
+	)
+	var queue_position: Vector3 = pressure_target.get(
+		"position",
+		_get_enemy_attack_wait_position(enemy_id, enemy, target, queue_slot_index)
+	)
 	var entry := {
 		"enemy_id": enemy_id,
 		"target_key": target_key,
@@ -8487,7 +11003,9 @@ func _enqueue_enemy_attack_position_waiter(enemy_id: String, enemy: Dictionary, 
 		"target": target.duplicate(true),
 		"sequence": _enemy_attack_wait_sequence,
 		"queue_slot_index": queue_slot_index,
-		"queue_position": _get_enemy_attack_wait_position(enemy_id, enemy, target, queue_slot_index)
+		"queue_position": queue_position,
+		"desired_attack_position_id": str(pressure_target.get("slot_id", "")),
+		"wait_reason": wait_reason
 	}
 	queue.append(entry)
 	_enemy_attack_wait_queues[target_key] = queue
@@ -8500,7 +11018,10 @@ func _decorate_target_for_enemy_attack_wait(target: Dictionary, entry: Dictionar
 	decorated["attack_position_status"] = "waiting"
 	decorated["attack_position_target_key"] = str(entry.get("target_key", ""))
 	decorated["attack_position"] = entry.get("queue_position", decorated.get("position", Vector3.ZERO))
+	decorated["attack_position_wait_target_id"] = str(entry.get("desired_attack_position_id", ""))
+	decorated["attack_position_wait_movement_policy"] = "pressure_assigned_attack_position"
 	decorated["attack_position_queue_sequence"] = int(entry.get("sequence", 0))
+	decorated["attack_position_wait_reason"] = str(entry.get("wait_reason", ""))
 	return decorated
 
 
@@ -8520,15 +11041,217 @@ func _remove_enemy_from_attack_wait_queues(enemy_id: String, except_target_key: 
 			_enemy_attack_wait_queues[target_key] = filtered
 
 
+func _get_enemy_guidance_body_profile(enemy: Dictionary) -> Dictionary:
+	var mounted := str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"]
+	var fallback_radius := 0.65 if mounted else 0.42
+	var fallback_height := 2.25 if mounted else 1.8
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller != null and controller.has_method("get_actor_motion_profile"):
+		var profile_id := "enemy_mounted" if mounted else "enemy_foot"
+		var profile: Dictionary = controller.get_actor_motion_profile(profile_id)
+		return {
+			"radius": maxf(0.1, float(profile.get("radius", fallback_radius))),
+			"height": maxf(0.1, float(profile.get("height", fallback_height)))
+		}
+	return {"radius": fallback_radius, "height": fallback_height}
+
+
+func _get_enemy_guided_attack_handoff_range(enemy: Dictionary, target: Dictionary) -> float:
+	var attack_range := maxf(0.1, float(enemy.get("attack_range", 1.5)))
+	if (
+		str(_formal_attack_position_policy.get("schema", "")) != "enemy_attack_guidance_zones_v2"
+		or str(target.get("type", "")) not in ["building", "defense_device"]
+	):
+		return attack_range
+	if str(enemy.get("weapon_type", "")) in MELEE_WEAPON_TYPES:
+		# Logical ranges include animation/model slack. The fixed-target guide center
+		# was calibrated to the authored melee sweep; hand off before the center only
+		# inside that same real-reach safety band, otherwise a sword can stop while
+		# its sweep still hits a neighboring post instead of the locked wall proxy.
+		return maxf(
+			0.1,
+			attack_range * clampf(float(_formal_attack_position_policy.get("melee_reach_ratio", 0.82)), 0.2, 0.95)
+		)
+	return attack_range
+
+
+func _get_enemy_guidance_zone_occupancy(candidate: Dictionary, excluded_enemy_id: String = "") -> Dictionary:
+	var zone_position: Vector3 = candidate.get("position", Vector3.ZERO)
+	var zone_radius := maxf(0.1, float(candidate.get(
+		"guidance_zone_radius",
+		candidate.get("enemy_radius", 0.42)
+	)))
+	var zone_height := maxf(0.1, float(candidate.get(
+		"guidance_zone_height",
+		_formal_attack_position_policy.get("guidance_zone_height", 2.6)
+	)))
+	var zone_min_y := zone_position.y
+	var zone_max_y := zone_min_y + zone_height
+	var occupants: Array[String] = []
+	for raw_enemy_id in _active_enemies.keys():
+		var enemy_id := str(raw_enemy_id)
+		if not excluded_enemy_id.is_empty() and enemy_id == excluded_enemy_id:
+			continue
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {}) as Dictionary
+		if enemy.is_empty() or int(enemy.get("hp", 0)) <= 0:
+			continue
+		var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+		var enemy_position: Vector3 = actor.global_position if actor != null else enemy.get("position", Vector3.INF)
+		if enemy_position == Vector3.INF:
+			continue
+		var body_profile := _get_enemy_guidance_body_profile(enemy)
+		var body_radius := maxf(0.1, float(body_profile.get("radius", 0.42)))
+		var body_height := maxf(0.1, float(body_profile.get("height", 1.8)))
+		var body_min_y := enemy_position.y
+		var body_max_y := body_min_y + body_height
+		if body_max_y < zone_min_y or body_min_y > zone_max_y:
+			continue
+		if Vector2(enemy_position.x, enemy_position.z).distance_to(
+			Vector2(zone_position.x, zone_position.z)
+		) <= zone_radius + body_radius:
+			occupants.append(enemy_id)
+	occupants.sort()
+	return {
+		"count": occupants.size(),
+		"enemy_ids": occupants,
+		"zone_radius": zone_radius,
+		"zone_height": zone_height
+	}
+
+
+func _ensure_enemy_guided_attack_position(
+	enemy_id: String,
+	enemy: Dictionary,
+	target: Dictionary
+) -> Dictionary:
+	var target_key := _enemy_attack_target_key(target)
+	var role := _enemy_attack_position_role(enemy)
+	if target_key.is_empty():
+		_release_enemy_attack_position(enemy_id, "guidance_target_missing", false, false)
+		return target
+	_remove_enemy_from_attack_wait_queues(enemy_id)
+	var enemy_position: Vector3 = enemy.get("position", Vector3.ZERO)
+	var candidates := _get_enemy_attack_position_candidates(enemy_id, enemy, target)
+	var excluded_stall_slots := PackedStringArray()
+	if _enemy_guidance_stall_recoveries.has(enemy_id):
+		excluded_stall_slots = PackedStringArray(
+			(_enemy_guidance_stall_recoveries.get(enemy_id, {}) as Dictionary).get("excluded_slot_ids", [])
+		)
+		var remaining_candidate_count := candidates.filter(
+			func(candidate: Dictionary) -> bool:
+				return not excluded_stall_slots.has(str(candidate.get("slot_id", "")))
+		).size()
+		if remaining_candidate_count == 0:
+			excluded_stall_slots.clear()
+			var reset_recovery := (_enemy_guidance_stall_recoveries.get(enemy_id, {}) as Dictionary).duplicate(true)
+			reset_recovery["excluded_slot_ids"] = PackedStringArray()
+			_enemy_guidance_stall_recoveries[enemy_id] = reset_recovery
+	var ranked: Array[Dictionary] = []
+	for raw_candidate in candidates:
+		var candidate := raw_candidate.duplicate(true)
+		if excluded_stall_slots.has(str(candidate.get("slot_id", ""))):
+			continue
+		var occupancy := _get_enemy_guidance_zone_occupancy(candidate, enemy_id)
+		candidate["guidance_occupancy_count"] = int(occupancy.get("count", 0))
+		candidate["guidance_occupant_enemy_ids"] = (occupancy.get("enemy_ids", []) as Array).duplicate()
+		var candidate_position: Vector3 = candidate.get("position", enemy_position)
+		candidate["guidance_distance_to_attacker"] = Vector2(enemy_position.x, enemy_position.z).distance_to(
+			Vector2(candidate_position.x, candidate_position.z)
+		)
+		ranked.append(candidate)
+	ranked.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_count := int(left.get("guidance_occupancy_count", 0))
+		var right_count := int(right.get("guidance_occupancy_count", 0))
+		if left_count != right_count:
+			return left_count < right_count
+		var left_distance := float(left.get("guidance_distance_to_attacker", INF))
+		var right_distance := float(right.get("guidance_distance_to_attacker", INF))
+		return str(left.get("slot_id", "")) < str(right.get("slot_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
+	)
+	var chosen: Dictionary = {}
+	for candidate in ranked:
+		var resolved := _resolve_reachable_enemy_attack_position(enemy_id, candidate)
+		if not resolved.is_empty():
+			chosen = resolved
+			break
+	if chosen.is_empty():
+		_release_enemy_attack_position(enemy_id, "guidance_unreachable", false, false)
+		var unavailable := target.duplicate(true)
+		unavailable["attack_position_status"] = "guidance_unavailable"
+		unavailable["attack_position_role"] = role
+		unavailable["attack_position_target_key"] = target_key
+		return unavailable
+
+	var previous_slot_id := ""
+	var record_key := "guidance:%s" % enemy_id
+	if _enemy_attack_position_by_enemy.has(enemy_id):
+		var previous_key := str(_enemy_attack_position_by_enemy[enemy_id])
+		var previous := _enemy_attack_position_leases.get(previous_key, {}) as Dictionary
+		if str(previous.get("target_key", "")) == target_key and str(previous.get("role", "")) == role:
+			previous_slot_id = str(previous.get("slot_id", ""))
+		else:
+			_release_enemy_attack_position(enemy_id, "guidance_target_or_role_changed", false, false)
+	chosen["enemy_id"] = enemy_id
+	chosen["target_key"] = target_key
+	chosen["target_type"] = str(target.get("type", ""))
+	chosen["target_id"] = str(target.get("id", ""))
+	chosen["target_position"] = target.get("position", Vector3.ZERO)
+	chosen["status"] = "guiding"
+	chosen["guidance_selected_frame"] = _formal_crowd_logic_frame
+	_enemy_attack_position_leases[record_key] = chosen
+	_enemy_attack_position_by_enemy[enemy_id] = record_key
+	if previous_slot_id.is_empty():
+		_enemy_attack_position_metrics["guidance_assignments_created"] = int(
+			_enemy_attack_position_metrics.get("guidance_assignments_created", 0)
+		) + 1
+	elif previous_slot_id != str(chosen.get("slot_id", "")):
+		_enemy_attack_position_metrics["guidance_zone_switches"] = int(
+			_enemy_attack_position_metrics.get("guidance_zone_switches", 0)
+		) + 1
+
+	var decorated := _decorate_target_with_enemy_attack_position(target, chosen)
+	decorated["attack_position_status"] = "guiding"
+	decorated["attack_guidance_class"] = str(chosen.get("guidance_class", ""))
+	decorated["attack_guidance_zone_radius"] = float(chosen.get("guidance_zone_radius", 0.0))
+	decorated["attack_guidance_zone_height"] = float(chosen.get("guidance_zone_height", 0.0))
+	decorated["attack_guidance_occupancy_count"] = int(chosen.get("guidance_occupancy_count", 0))
+	decorated["attack_guidance_occupant_enemy_ids"] = (chosen.get("guidance_occupant_enemy_ids", []) as Array).duplicate()
+	decorated["attack_guidance_selection_policy"] = "minimum_live_cylinder_overlap_then_nearest"
+	decorated["attack_guidance_handoff_range"] = _get_enemy_guided_attack_handoff_range(enemy, decorated)
+	var selected_zone_position: Vector3 = chosen.get("position", enemy_position)
+	var selected_zone_contact: Vector3 = chosen.get("contact_position", target.get("position", enemy_position))
+	decorated["attack_guidance_selected_zone_contact_distance"] = Vector2(
+		selected_zone_position.x,
+		selected_zone_position.z
+	).distance_to(Vector2(selected_zone_contact.x, selected_zone_contact.z))
+
+	var nearest_contact: Variant = null
+	var nearest_contact_distance := INF
+	for candidate in candidates:
+		var contact: Vector3 = candidate.get("contact_position", target.get("position", enemy_position))
+		var contact_distance := Vector2(enemy_position.x, enemy_position.z).distance_to(Vector2(contact.x, contact.z))
+		if contact_distance < nearest_contact_distance:
+			nearest_contact_distance = contact_distance
+			nearest_contact = contact
+	if nearest_contact is Vector3:
+		decorated["attack_contact_position"] = nearest_contact
+		decorated["attack_guidance_nearest_contact_distance"] = nearest_contact_distance
+		decorated["attack_guidance_selected_zone_contact_position"] = chosen.get("contact_position", nearest_contact)
+	decorated["attack_guidance_arrival_tolerance"] = _get_enemy_attack_position_arrival_tolerance(enemy_id, decorated)
+	return decorated
+
+
 func _ensure_enemy_attack_position(enemy_id: String, enemy: Dictionary, target: Dictionary, force_waiter_retry: bool = false) -> Dictionary:
 	if not _uses_enemy_attack_position_leases(enemy_id):
 		return target
 	if str(target.get("type", "")) == "npc":
 		_release_enemy_attack_position(enemy_id, "npc_unrestricted_contact")
 		var unrestricted := target.duplicate(true)
-		for field in ["attack_position_status", "attack_position_id", "attack_position", "attack_contact_position", "attack_position_role", "attack_position_target_key", "attack_position_queue_sequence"]:
+		for field in ["attack_position_status", "attack_position_id", "attack_position", "attack_contact_position", "attack_position_role", "attack_position_target_key", "attack_position_range_row_index", "attack_position_range_row_count", "attack_position_range_row_ratio", "attack_position_queue_sequence", "attack_position_wait_reason", "attack_position_wait_target_id", "attack_position_wait_movement_policy"]:
 			unrestricted.erase(field)
 		return unrestricted
+	if _uses_enemy_attack_guidance(enemy_id, target):
+		return _ensure_enemy_guided_attack_position(enemy_id, enemy, target)
 	var target_key := _enemy_attack_target_key(target)
 	var role := _enemy_attack_position_role(enemy)
 	if target_key.is_empty():
@@ -8543,15 +11266,27 @@ func _ensure_enemy_attack_position(enemy_id: String, enemy: Dictionary, target: 
 			for candidate in _get_enemy_attack_position_candidates(enemy_id, enemy, target):
 				if str(candidate.get("slot_id", "")) != current_slot_id:
 					continue
-				current_lease["position"] = candidate.get("position", current_lease.get("position", Vector3.ZERO))
+				# The reserved position was already snapped and path-validated by
+				# _resolve_reachable_enemy_attack_position(). Replacing it every AI
+				# refresh with the authored, unsnapped candidate makes ActorMotionBody
+				# arrive at one point while the combat handoff measures another. A
+				# millimetre-scale difference at the gate was enough to leave one enemy
+				# permanently pressing after its motion had reported arrived.
+				current_lease["authored_position"] = candidate.get(
+					"position",
+					current_lease.get("authored_position", current_lease.get("position", Vector3.ZERO))
+				)
+				if not current_lease.get("position", null) is Vector3:
+					current_lease["position"] = candidate.get("position", Vector3.ZERO)
 				current_lease["contact_position"] = candidate.get("contact_position", target.get("position", Vector3.ZERO))
 				current_lease["target_position"] = target.get("position", Vector3.ZERO)
 				_enemy_attack_position_leases[current_slot_id] = current_lease
 				break
 			return _decorate_target_with_enemy_attack_position(target, current_lease)
 	var existing_wait := _find_enemy_attack_wait_entry(enemy_id, target_key)
+	var wait_reason := str(_preview_enemy_target_opportunity(enemy_id, enemy, target).get("reason", ""))
 	if not existing_wait.is_empty() and not force_waiter_retry:
-		existing_wait = _refresh_enemy_attack_wait_entry(enemy_id, enemy, target, existing_wait)
+		existing_wait = _refresh_enemy_attack_wait_entry(enemy_id, enemy, target, existing_wait, wait_reason)
 		return _decorate_target_for_enemy_attack_wait(target, existing_wait)
 	_remove_enemy_from_attack_wait_queues(enemy_id, target_key)
 	var candidates := _get_enemy_attack_position_candidates(enemy_id, enemy, target)
@@ -8561,14 +11296,28 @@ func _ensure_enemy_attack_position(enemy_id: String, enemy: Dictionary, target: 
 			continue
 		var resolved := _resolve_reachable_enemy_attack_position(enemy_id, candidate)
 		if not resolved.is_empty():
+			resolved["allocation_lane_distance"] = _get_front_gate_attack_lane_distance(
+				enemy_id,
+				enemy,
+				target,
+				resolved
+			)
 			reachable.append(resolved)
 	reachable.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_lane_distance := float(left.get("allocation_lane_distance", INF))
+		var right_lane_distance := float(right.get("allocation_lane_distance", INF))
+		if not is_equal_approx(left_lane_distance, right_lane_distance):
+			return left_lane_distance < right_lane_distance
 		var left_distance := float(left.get("path_distance", INF))
 		var right_distance := float(right.get("path_distance", INF))
 		return str(left.get("slot_id", "")) < str(right.get("slot_id", "")) if is_equal_approx(left_distance, right_distance) else left_distance < right_distance
 	)
 	if reachable.is_empty():
-		var wait_entry := existing_wait if not existing_wait.is_empty() else _enqueue_enemy_attack_position_waiter(enemy_id, enemy, target)
+		var wait_entry := (
+			_refresh_enemy_attack_wait_entry(enemy_id, enemy, target, existing_wait, wait_reason)
+			if not existing_wait.is_empty()
+			else _enqueue_enemy_attack_position_waiter(enemy_id, enemy, target, wait_reason)
+		)
 		return _decorate_target_for_enemy_attack_wait(target, wait_entry)
 	var chosen := reachable[0].duplicate(true)
 	var slot_id := str(chosen.get("slot_id", ""))
@@ -8590,6 +11339,8 @@ func _ensure_enemy_attack_position(enemy_id: String, enemy: Dictionary, target: 
 
 func _release_enemy_attack_position(enemy_id: String, reason: String, mark_unreachable: bool = false, promote_waiters: bool = true) -> Dictionary:
 	var released: Dictionary = {}
+	_end_enemy_precise_arrival_recovery(enemy_id, "cancelled:%s" % reason)
+	_end_enemy_guidance_stall_recovery(enemy_id, "cancelled:%s" % reason)
 	if _enemy_attack_position_by_enemy.has(enemy_id):
 		var slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
 		released = (_enemy_attack_position_leases.get(slot_id, {}) as Dictionary).duplicate(true)
@@ -8633,6 +11384,7 @@ func _promote_enemy_attack_position_waiter(target_key: String, released_position
 		var target := entry.get("target", {}) as Dictionary
 		var promoted_target := _ensure_enemy_attack_position(enemy_id, enemy, target, true)
 		if str(promoted_target.get("attack_position_status", "")) == "reserved":
+			_configure_enemy_attack_wait_avoidance(enemy_id, false)
 			enemy["target"] = promoted_target
 			enemy["current_action"] = "pressing_to_%s" % str(target.get("id", "target"))
 			_active_enemies[enemy_id] = enemy
@@ -8655,41 +11407,375 @@ func _has_enemy_reached_attack_position(enemy_id: String, target: Dictionary) ->
 		return true
 	if not _uses_enemy_attack_position_leases(enemy_id):
 		return true
-	if str(target.get("attack_position_status", "")) != "reserved":
+	# Guidance zones are navigation hints, never an attack-permission gate. The
+	# authoritative range check against attack_contact_position in the combat step
+	# decides when motion yields to the existing melee/projectile timeline.
+	if _uses_enemy_attack_guidance(enemy_id, target):
+		return true
+	if str(target.get("attack_position_status", "")) not in ["reserved", "occupied"]:
 		return false
 	var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
 	if actor == null:
 		return false
 	var attack_position: Vector3 = target.get("attack_position", actor.global_position)
-	var tolerance := maxf(0.05, float(_formal_attack_position_policy.get("arrival_tolerance", 0.32)))
+	var tolerance := _get_enemy_attack_position_arrival_tolerance(enemy_id, target)
+	var position_distance := Vector2(actor.global_position.x, actor.global_position.z).distance_to(
+		Vector2(attack_position.x, attack_position.z)
+	)
 	if _enemy_attack_position_by_enemy.has(enemy_id):
 		var existing_slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
 		var existing_lease := _enemy_attack_position_leases.get(existing_slot_id, {}) as Dictionary
 		if str(existing_lease.get("status", "")) == "occupied":
 			tolerance += maxf(0.0, float(_formal_attack_position_policy.get("engagement_position_exit_margin", 0.18)))
-	var reached := Vector2(actor.global_position.x, actor.global_position.z).distance_to(Vector2(attack_position.x, attack_position.z)) <= tolerance
+	var reached := position_distance <= tolerance
 	if reached and _enemy_attack_position_by_enemy.has(enemy_id):
 		var slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
+		var recovered := _enemy_precise_arrival_recoveries.has(enemy_id)
+		_end_enemy_precise_arrival_recovery(enemy_id, "completed", actor, position_distance)
 		var lease := _enemy_attack_position_leases.get(slot_id, {}) as Dictionary
 		lease["status"] = "occupied"
-		lease["occupied_frame"] = _formal_crowd_logic_frame
+		if not lease.has("occupied_frame"):
+			lease["occupied_frame"] = _formal_crowd_logic_frame
+		lease["arrival_mode"] = "precise_after_avoidance_recovery" if recovered else "precise"
+		lease["arrival_distance"] = position_distance
 		_enemy_attack_position_leases[slot_id] = lease
+		return true
+	_update_enemy_precise_arrival_recovery(enemy_id, target, actor, position_distance, tolerance)
 	return reached
 
 
+func _update_enemy_guidance_stall_recovery(
+	enemy_id: String,
+	target: Dictionary,
+	actor: ActorMotionBody,
+	contact_distance: float,
+	effective_attack_range: float
+) -> void:
+	var eligible := (
+		actor != null
+		and _uses_enemy_attack_guidance(enemy_id, target)
+		and str(target.get("type", "")) in ["building", "defense_device"]
+		and contact_distance > effective_attack_range
+	)
+	if not eligible:
+		_end_enemy_guidance_stall_recovery(enemy_id, "completed:no_longer_outside_attack_range", actor)
+		return
+	var motion := actor.debug_get_motion_snapshot()
+	var required_stationary_seconds := maxf(
+		0.1,
+		float(_formal_attack_position_policy.get("guidance_stall_recovery_seconds", 0.75))
+	)
+	if _enemy_guidance_stall_recoveries.has(enemy_id):
+		var active_recovery := (_enemy_guidance_stall_recoveries.get(enemy_id, {}) as Dictionary).duplicate(true)
+		var stationary_elapsed := float(motion.get("stationary_elapsed_seconds", 0.0))
+		if stationary_elapsed < required_stationary_seconds * 0.5:
+			_end_enemy_guidance_stall_recovery(enemy_id, "completed:movement_resumed", actor)
+			return
+		active_recovery["target_key"] = _enemy_attack_target_key(target)
+		active_recovery["contact_distance"] = contact_distance
+		active_recovery["effective_attack_range"] = effective_attack_range
+		active_recovery["stationary_elapsed_seconds"] = stationary_elapsed
+		active_recovery["stationary_supersede_preserve_count"] = int(motion.get("stationary_supersede_preserve_count", 0))
+		_enemy_guidance_stall_recoveries[enemy_id] = active_recovery
+		if stationary_elapsed >= float(active_recovery.get("last_reselect_stationary_seconds", 0.0)) + required_stationary_seconds:
+			_exclude_current_enemy_guidance_slot_for_stall(enemy_id, target, stationary_elapsed)
+		return
+	if (
+		not bool(motion.get("active", false))
+		or bool(motion.get("paused", false))
+		or float(motion.get("stationary_elapsed_seconds", 0.0)) < required_stationary_seconds
+	):
+		return
+	_begin_enemy_guidance_stall_recovery(
+		enemy_id,
+		target,
+		actor,
+		contact_distance,
+		effective_attack_range,
+		motion
+	)
+
+
+func _begin_enemy_guidance_stall_recovery(
+	enemy_id: String,
+	target: Dictionary,
+	actor: ActorMotionBody,
+	contact_distance: float,
+	effective_attack_range: float,
+	motion: Dictionary
+) -> void:
+	if _enemy_guidance_stall_recoveries.has(enemy_id) or _enemy_precise_arrival_recoveries.has(enemy_id):
+		return
+	var recovery := {
+		"enemy_id": enemy_id,
+		"target_key": _enemy_attack_target_key(target),
+		"started_frame": _formal_crowd_logic_frame,
+		"started_contact_distance": contact_distance,
+		"effective_attack_range": effective_attack_range,
+		"stationary_elapsed_seconds": float(motion.get("stationary_elapsed_seconds", 0.0)),
+		"stationary_supersede_preserve_count": int(motion.get("stationary_supersede_preserve_count", 0)),
+		"repath_count": int(motion.get("repath_count", 0)),
+		"last_reselect_stationary_seconds": float(motion.get("stationary_elapsed_seconds", 0.0)),
+		"excluded_slot_ids": PackedStringArray(),
+		"reselection_count": 0,
+		"active": true
+	}
+	_enemy_guidance_stall_recoveries[enemy_id] = recovery
+	actor.set_runtime_actor_collision_enabled(false, "enemy_guidance_stall_recovery")
+	_enemy_attack_position_metrics["guidance_stall_recoveries_started"] = int(
+		_enemy_attack_position_metrics.get("guidance_stall_recoveries_started", 0)
+	) + 1
+	if _enemy_attack_position_by_enemy.has(enemy_id):
+		var record_key := str(_enemy_attack_position_by_enemy[enemy_id])
+		var lease := _enemy_attack_position_leases.get(record_key, {}) as Dictionary
+		lease["guidance_stall_recovery"] = recovery.duplicate(true)
+		lease["guidance_stall_recovery_active"] = true
+		_enemy_attack_position_leases[record_key] = lease
+	_exclude_current_enemy_guidance_slot_for_stall(
+		enemy_id,
+		target,
+		float(motion.get("stationary_elapsed_seconds", 0.0))
+	)
+
+
+func _exclude_current_enemy_guidance_slot_for_stall(
+	enemy_id: String,
+	target: Dictionary,
+	stationary_elapsed_seconds: float
+) -> void:
+	if not _enemy_guidance_stall_recoveries.has(enemy_id):
+		return
+	var slot_id := str(target.get("attack_position_id", ""))
+	if slot_id.is_empty():
+		return
+	var recovery := (_enemy_guidance_stall_recoveries.get(enemy_id, {}) as Dictionary).duplicate(true)
+	var excluded := PackedStringArray(recovery.get("excluded_slot_ids", []))
+	if not excluded.has(slot_id):
+		excluded.append(slot_id)
+		recovery["reselection_count"] = int(recovery.get("reselection_count", 0)) + 1
+		_enemy_attack_position_metrics["guidance_stall_reselections"] = int(
+			_enemy_attack_position_metrics.get("guidance_stall_reselections", 0)
+		) + 1
+	recovery["excluded_slot_ids"] = excluded
+	recovery["last_excluded_slot_id"] = slot_id
+	recovery["last_reselect_stationary_seconds"] = stationary_elapsed_seconds
+	_enemy_guidance_stall_recoveries[enemy_id] = recovery
+
+
+func _end_enemy_guidance_stall_recovery(
+	enemy_id: String,
+	outcome: String,
+	actor_override: ActorMotionBody = null
+) -> void:
+	if not _enemy_guidance_stall_recoveries.has(enemy_id):
+		return
+	var actor := actor_override
+	if actor == null:
+		actor = get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor != null and not _enemy_precise_arrival_recoveries.has(enemy_id):
+		actor.set_runtime_avoidance_enabled(true)
+	if actor != null:
+		actor.set_runtime_actor_collision_enabled(true)
+	var recovery := (_enemy_guidance_stall_recoveries.get(enemy_id, {}) as Dictionary).duplicate(true)
+	recovery["active"] = false
+	recovery["outcome"] = outcome
+	recovery["ended_frame"] = _formal_crowd_logic_frame
+	_enemy_guidance_stall_recoveries.erase(enemy_id)
+	var metric_key := (
+		"guidance_stall_recoveries_completed"
+		if outcome.begins_with("completed:")
+		else "guidance_stall_recoveries_cancelled"
+	)
+	_enemy_attack_position_metrics[metric_key] = int(_enemy_attack_position_metrics.get(metric_key, 0)) + 1
+	if _enemy_attack_position_by_enemy.has(enemy_id):
+		var record_key := str(_enemy_attack_position_by_enemy[enemy_id])
+		var lease := _enemy_attack_position_leases.get(record_key, {}) as Dictionary
+		lease["guidance_stall_recovery"] = recovery
+		lease["guidance_stall_recovery_active"] = false
+		_enemy_attack_position_leases[record_key] = lease
+
+
+func _update_enemy_precise_arrival_recovery(
+	enemy_id: String,
+	target: Dictionary,
+	actor: ActorMotionBody,
+	position_distance: float,
+	precise_tolerance: float
+) -> void:
+	var recovery_radius := maxf(
+		precise_tolerance,
+		float(_formal_attack_position_policy.get("melee_precise_arrival_recovery_radius", 0.32))
+	)
+	if _enemy_precise_arrival_recoveries.has(enemy_id):
+		if (
+			str(target.get("attack_position_status", "")) != "reserved"
+			or position_distance > recovery_radius
+		):
+			_end_enemy_precise_arrival_recovery(enemy_id, "cancelled:left_recovery_radius", actor, position_distance)
+		return
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {}) if _active_enemies.get(enemy_id, {}) is Dictionary else {}
+	if (
+		str(target.get("attack_position_status", "")) != "reserved"
+		or str(target.get("type", "")) != "defense_device"
+		or str(enemy.get("weapon_type", "")) not in MELEE_WEAPON_TYPES
+		or position_distance > recovery_radius
+	):
+		return
+	var motion := actor.debug_get_motion_snapshot()
+	var required_stuck_seconds := maxf(
+		0.1,
+		float(_formal_attack_position_policy.get("melee_precise_arrival_recovery_stuck_seconds", 0.75))
+	)
+	if (
+		not bool(motion.get("active", false))
+		or bool(motion.get("paused", false))
+		or float(motion.get("stuck_elapsed_seconds", 0.0)) < required_stuck_seconds
+	):
+		return
+	_begin_enemy_precise_arrival_recovery(enemy_id, actor, position_distance, motion)
+
+
+func _begin_enemy_precise_arrival_recovery(
+	enemy_id: String,
+	actor: ActorMotionBody,
+	position_distance: float,
+	motion: Dictionary
+) -> void:
+	if _enemy_precise_arrival_recoveries.has(enemy_id):
+		return
+	var recovery := {
+		"enemy_id": enemy_id,
+		"started_frame": _formal_crowd_logic_frame,
+		"started_distance": position_distance,
+		"stuck_elapsed_seconds": float(motion.get("stuck_elapsed_seconds", 0.0)),
+		"repath_count": int(motion.get("repath_count", 0))
+	}
+	_enemy_precise_arrival_recoveries[enemy_id] = recovery
+	_enemy_attack_position_metrics["precise_arrival_recoveries_started"] = int(
+		_enemy_attack_position_metrics.get("precise_arrival_recoveries_started", 0)
+	) + 1
+	if _enemy_attack_position_by_enemy.has(enemy_id):
+		var slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
+		var lease := _enemy_attack_position_leases.get(slot_id, {}) as Dictionary
+		lease["precise_arrival_recovery"] = recovery.duplicate(true)
+		lease["precise_arrival_recovery_active"] = true
+		_enemy_attack_position_leases[slot_id] = lease
+	actor.set_runtime_avoidance_enabled(false, "melee_precise_arrival_recovery")
+
+
+func _end_enemy_precise_arrival_recovery(
+	enemy_id: String,
+	outcome: String,
+	actor_override: ActorMotionBody = null,
+	final_distance: float = -1.0
+) -> void:
+	var actor := actor_override
+	if actor == null:
+		actor = get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+	if actor != null:
+		actor.set_runtime_avoidance_enabled(true)
+	if not _enemy_precise_arrival_recoveries.has(enemy_id):
+		return
+	var recovery := (_enemy_precise_arrival_recoveries.get(enemy_id, {}) as Dictionary).duplicate(true)
+	recovery["active"] = false
+	recovery["outcome"] = outcome
+	recovery["ended_frame"] = _formal_crowd_logic_frame
+	if final_distance >= 0.0:
+		recovery["final_distance"] = final_distance
+	_enemy_precise_arrival_recoveries.erase(enemy_id)
+	var metric_key := (
+		"precise_arrival_recoveries_completed"
+		if outcome == "completed"
+		else "precise_arrival_recoveries_cancelled"
+	)
+	_enemy_attack_position_metrics[metric_key] = int(_enemy_attack_position_metrics.get(metric_key, 0)) + 1
+	if _enemy_attack_position_by_enemy.has(enemy_id):
+		var slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
+		var lease := _enemy_attack_position_leases.get(slot_id, {}) as Dictionary
+		lease["precise_arrival_recovery"] = recovery
+		lease["precise_arrival_recovery_active"] = false
+		_enemy_attack_position_leases[slot_id] = lease
+
+
+func _get_enemy_attack_position_arrival_tolerance(enemy_id: String, target: Dictionary) -> float:
+	var default_tolerance := maxf(0.05, float(_formal_attack_position_policy.get("arrival_tolerance", 0.32)))
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {}) if _active_enemies.get(enemy_id, {}) is Dictionary else {}
+	if str(enemy.get("weapon_type", "")) not in MELEE_WEAPON_TYPES:
+		return default_tolerance
+	if (
+		str(_formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2"
+		and str(target.get("type", "")) in ["building", "defense_device"]
+		and target.get("attack_position", null) is Vector3
+	):
+		var guide_position: Vector3 = target.get("attack_position", Vector3.ZERO)
+		var guide_contact: Variant = target.get(
+			"attack_guidance_selected_zone_contact_position",
+			target.get("attack_contact_position", null)
+		)
+		if guide_contact is Vector3:
+			var guidance_distance := Vector2(guide_position.x, guide_position.z).distance_to(
+				Vector2((guide_contact as Vector3).x, (guide_contact as Vector3).z)
+			)
+			var arrival_margin := maxf(
+				0.0,
+				float(_formal_attack_position_policy.get("attack_range_arrival_margin", 0.02))
+			)
+			var effective_attack_distance := maxf(
+				0.1,
+				_get_enemy_guided_attack_handoff_range(enemy, target) - arrival_margin
+			)
+			# Navigation may stop anywhere inside target_desired_distance. The only
+			# safe radius is the reach left between the selected guide centre and its
+			# corresponding hurtbox contact; the generic 0.32 m would let gate attackers
+			# finish motion while still outside the real melee handoff band. Keep the
+			# authored range-arrival margin inside that remaining slack as well.
+			return clampf(
+				effective_attack_distance - guidance_distance,
+				0.01,
+				default_tolerance
+			)
+	if (
+		str(target.get("attack_position_status", "")) != "reserved"
+		or str(target.get("type", "")) != "defense_device"
+	):
+		return default_tolerance
+	# Legacy lease schema keeps the previously calibrated precise device arrival.
+	return clampf(
+		float(_formal_attack_position_policy.get("melee_attack_position_arrival_tolerance", 0.06)),
+		0.01,
+		default_tolerance
+	)
+
+
 func _clear_enemy_attack_positions() -> void:
+	for raw_enemy_id in _enemy_precise_arrival_recoveries.keys():
+		_end_enemy_precise_arrival_recovery(str(raw_enemy_id), "cancelled:attack_positions_cleared")
+	for raw_enemy_id in _enemy_guidance_stall_recoveries.keys():
+		_end_enemy_guidance_stall_recovery(str(raw_enemy_id), "cancelled:attack_positions_cleared")
 	_enemy_attack_position_leases.clear()
 	_enemy_attack_position_by_enemy.clear()
 	_enemy_attack_wait_queues.clear()
 	_enemy_attack_unreachable_until_frame.clear()
+	_enemy_precise_arrival_recoveries.clear()
+	_enemy_guidance_stall_recoveries.clear()
 	_enemy_attack_wait_sequence = 0
 	_formal_attack_position_policy.clear()
 	_enemy_attack_position_metrics = {
 		"reservations_created": 0,
 		"reservations_released": 0,
+		"guidance_assignments_created": 0,
+		"guidance_zone_switches": 0,
+		"guidance_in_range_handoffs": 0,
 		"waiters_enqueued": 0,
 		"waiters_promoted": 0,
-		"unreachable_candidates_rejected": 0
+		"unreachable_candidates_rejected": 0,
+		"precise_arrival_recoveries_started": 0,
+		"precise_arrival_recoveries_completed": 0,
+		"precise_arrival_recoveries_cancelled": 0,
+		"guidance_stall_recoveries_started": 0,
+		"guidance_stall_recoveries_completed": 0,
+		"guidance_stall_recoveries_cancelled": 0,
+		"guidance_stall_reselections": 0
 	}
 
 
@@ -8786,7 +11872,12 @@ func debug_get_enemy_targeting_snapshot() -> Dictionary:
 func debug_get_enemy_attack_position_snapshot() -> Dictionary:
 	var leases: Array[Dictionary] = []
 	for raw_lease in _enemy_attack_position_leases.values():
-		leases.append(_serialize_target((raw_lease as Dictionary).duplicate(true)))
+		var record := (raw_lease as Dictionary).duplicate(true)
+		if str(_formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2":
+			var occupancy := _get_enemy_guidance_zone_occupancy(record, str(record.get("enemy_id", "")))
+			record["guidance_occupancy_count"] = int(occupancy.get("count", 0))
+			record["guidance_occupant_enemy_ids"] = (occupancy.get("enemy_ids", []) as Array).duplicate()
+		leases.append(_serialize_target(record))
 	leases.sort_custom(func(left: Dictionary, right: Dictionary) -> bool: return str(left.get("slot_id", "")) < str(right.get("slot_id", "")))
 	var waiters: Array[Dictionary] = []
 	for raw_queue in _enemy_attack_wait_queues.values():
@@ -8799,9 +11890,13 @@ func debug_get_enemy_attack_position_snapshot() -> Dictionary:
 	return {
 		"schema": str(_formal_attack_position_policy.get("schema", "")),
 		"lease_count": leases.size(),
+		"guidance_count": leases.size() if str(_formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2" else 0,
 		"waiter_count": waiters.size(),
 		"leases": leases,
+		"guidance_assignments": leases if str(_formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2" else [],
 		"waiters": waiters,
+		"precise_arrival_recoveries": _enemy_precise_arrival_recoveries.values().duplicate(true),
+		"guidance_stall_recoveries": _enemy_guidance_stall_recoveries.values().duplicate(true),
 		"metrics": _enemy_attack_position_metrics.duplicate(true)
 	}
 
@@ -8906,6 +12001,21 @@ func _preview_enemy_target_opportunity(enemy_id: String, enemy: Dictionary, targ
 			"reason": "legacy_without_lease",
 			"path_distance": _horizontal_vector_distance(enemy.get("position", Vector3.ZERO), target.get("position", Vector3.ZERO))
 		}
+	if _uses_enemy_attack_guidance(enemy_id, target):
+		var best_path_distance := INF
+		for candidate in _get_enemy_attack_position_candidates(enemy_id, enemy, target):
+			var resolved := _resolve_reachable_enemy_attack_position(enemy_id, candidate)
+			if not resolved.is_empty():
+				best_path_distance = minf(best_path_distance, float(resolved.get("path_distance", INF)))
+		return (
+			{
+				"available": true,
+				"reason": "reachable_guidance_zone",
+				"path_distance": best_path_distance
+			}
+			if best_path_distance < INF
+			else {"available": false, "reason": "guidance_unreachable"}
+		)
 	var target_key := _enemy_attack_target_key(target)
 	if _enemy_attack_position_by_enemy.has(enemy_id):
 		var current_slot_id := str(_enemy_attack_position_by_enemy[enemy_id])
@@ -8916,21 +12026,33 @@ func _preview_enemy_target_opportunity(enemy_id: String, enemy: Dictionary, targ
 				"reason": "existing_lease",
 				"path_distance": _horizontal_vector_distance(enemy.get("position", Vector3.ZERO), current_lease.get("position", Vector3.ZERO))
 			}
-	var open_candidate_seen := false
+	var candidate_not_occupied_seen := false
+	var unreserved_candidate_seen := false
+	var reserved_in_transit_conflict_seen := false
 	var best_path_distance := INF
 	for candidate in _get_enemy_attack_position_candidates(enemy_id, enemy, target):
-		if _is_enemy_attack_position_conflict(target_key, candidate, enemy_id):
+		if _is_enemy_attack_position_conflict(target_key, candidate, enemy_id, true):
 			continue
-		open_candidate_seen = true
+		candidate_not_occupied_seen = true
+		if _is_enemy_attack_position_conflict(target_key, candidate, enemy_id):
+			reserved_in_transit_conflict_seen = true
+			continue
+		unreserved_candidate_seen = true
 		var resolved := _resolve_reachable_enemy_attack_position(enemy_id, candidate)
 		if resolved.is_empty():
 			continue
 		best_path_distance = minf(best_path_distance, float(resolved.get("path_distance", INF)))
 	if best_path_distance < INF:
 		return {"available": true, "reason": "reachable_open_position", "path_distance": best_path_distance}
+	if candidate_not_occupied_seen and reserved_in_transit_conflict_seen:
+		return {
+			"available": true,
+			"reason": "reserved_in_transit",
+			"path_distance": _horizontal_vector_distance(enemy.get("position", Vector3.ZERO), target.get("position", Vector3.ZERO))
+		}
 	return {
 		"available": false,
-		"reason": "unreachable" if open_candidate_seen else "full"
+		"reason": "unreachable" if unreserved_candidate_seen else "full"
 	}
 
 
@@ -9521,20 +12643,36 @@ func _ensure_formal_dynamic_pressure_motion(enemy_id: String, target: Dictionary
 	var previous_target_type := str(slice.get("combat_target_type", ""))
 	var previous_position: Vector3 = slice.get("motion_target_position", Vector3.INF)
 	var target_changed := previous_target_id != target_id or previous_target_type != target_type
-	var target_update_distance := maxf(0.05, float(_combat_navigation_policy.get("target_update_distance", 0.35)))
+	var target_update_distance := (
+		0.01
+		if _uses_enemy_attack_guidance(enemy_id, target)
+		else maxf(0.05, float(_combat_navigation_policy.get("target_update_distance", 0.35)))
+	)
 	var target_moved := previous_position == Vector3.INF or previous_position.distance_to(target_position) > target_update_distance
-	if actor.is_motion_active() and not target_changed:
-		if target_moved and actor.has_method("update_motion_target"):
-			actor.update_motion_target(target_position, "combat_target_moved")
-			slice["motion_target_position"] = target_position
-			slice["pressure_repath_count"] = int(slice.get("pressure_repath_count", 0)) + 1
-			_formal_first_wave_slices[enemy_id] = slice
-		return
 	var request_kind := "unit" if target_type in ["npc", "defense_device"] else "building"
+	var motion_options := _get_combat_motion_options("enemy_%s_approach" % request_kind)
+	motion_options["target_desired_distance"] = _get_enemy_attack_position_arrival_tolerance(enemy_id, target)
+	if target_type == "npc":
+		# The target position is refreshed while the NPC moves. The combat range
+		# check above owns stopping; generic fixed-point braking would otherwise
+		# restart on every refresh and create a saw-tooth chase speed.
+		motion_options["final_target_braking_enabled"] = false
+	if actor.is_motion_active() and not target_changed:
+		if actor.has_method("update_motion_target"):
+			var motion_updated := actor.update_motion_target(
+				target_position,
+				"combat_target_moved" if target_moved else "combat_target_contract_refreshed",
+				motion_options
+			)
+			if motion_updated or target_moved:
+				slice["motion_target_position"] = target_position
+				slice["pressure_repath_count"] = int(slice.get("pressure_repath_count", 0)) + (1 if target_moved else 0)
+				_formal_first_wave_slices[enemy_id] = slice
+		return
 	if actor.request_motion(
 		target_position,
 		"formal_wave_pressure_%s:%s:%s" % [request_kind, enemy_id, target_id],
-		_get_combat_motion_options("enemy_%s_approach" % request_kind)
+		motion_options
 	):
 		slice["combat_target_id"] = target_id
 		slice["combat_target_type"] = target_type
@@ -9550,8 +12688,55 @@ func _get_combat_motion_options(purpose: String) -> Dictionary:
 	return {
 		"movement_purpose": purpose,
 		"persistent_repath": bool(_combat_navigation_policy.get("persistent_repath", true)),
-		"target_update_distance": maxf(0.05, float(_combat_navigation_policy.get("target_update_distance", 0.35)))
+		"target_update_distance": maxf(0.05, float(_combat_navigation_policy.get("target_update_distance", 0.35))),
+		# A target-identity handoff is a combat decision, not a physical stop. Enemy
+		# approaches often replace an active NPC/building/device request while the
+		# next destination remains ahead on the same route. Carry the bounded planar
+		# velocity into that replacement; ActorMotionBody still applies acceleration,
+		# path-direction rejection, RVO, collision and final-target braking next tick.
+		"preserve_velocity_on_supersede": purpose.begins_with("enemy_"),
+		# Fixed-target guidance can legitimately replace the request when density or
+		# target identity changes. Preserve physical immobility evidence across that
+		# replacement so repeated tactical decisions cannot postpone unstick forever.
+		"preserve_stationary_progress_on_supersede": purpose.begins_with("enemy_")
 	}
+
+
+func _get_friendly_ranged_attack_position_arrival_tolerance() -> float:
+	return clampf(
+		float(
+			_combat_navigation_policy.get(
+				"friendly_ranged_attack_position_arrival_tolerance",
+				RANGED_ATTACK_POSITION_ARRIVAL_TOLERANCE_FALLBACK
+			)
+		),
+		0.01,
+		0.25
+	)
+
+
+func _get_friendly_strategy_stalled_reselect_seconds() -> float:
+	return maxf(
+		0.75,
+		float(
+			_combat_navigation_policy.get(
+				"friendly_strategy_stalled_reselect_seconds",
+				FRIENDLY_STRATEGY_STALLED_RESELECT_SECONDS_FALLBACK
+			)
+		)
+	)
+
+
+func _get_friendly_strategy_reselect_min_separation() -> float:
+	return maxf(
+		0.2,
+		float(
+			_combat_navigation_policy.get(
+				"friendly_strategy_reselect_min_separation",
+				FRIENDLY_STRATEGY_RESELECT_MIN_SEPARATION_FALLBACK
+			)
+		)
+	)
 
 
 func _pause_formal_dynamic_pressure_motion(enemy_id: String) -> void:
@@ -9684,10 +12869,15 @@ func _make_building_target(building_id: String) -> Dictionary:
 			result["building_right_direction"] = right_direction
 			result["building_forward_direction"] = forward_direction
 			result["building_front_door_clear_width"] = float(geometry.get("front_door_clear_width", 0.0))
-			var outward := (raw_position as Vector3) - center
-			outward.y = 0.0
-			if outward.length_squared() > 0.0001:
-				result["facing_direction"] = outward.normalized()
+			if str(geometry.get("schema", "")) == "gate_combat_geometry_v1":
+				# Gate attacks face the rotated visible/collision gatehouse itself.
+				# Route approach points are staging data and may sit off its normal.
+				result["facing_direction"] = forward_direction
+			else:
+				var outward := (raw_position as Vector3) - center
+				outward.y = 0.0
+				if outward.length_squared() > 0.0001:
+					result["facing_direction"] = outward.normalized()
 	return result
 
 
@@ -9717,6 +12907,23 @@ func _advance_enemy_attack(
 	var cycle_target: Dictionary = enemy.get("attack_cycle_target", {}) if enemy.get("attack_cycle_target", {}) is Dictionary else {}
 	var impact_committed := bool(enemy.get("attack_impact_committed", phase == "recovery"))
 	var sequence := maxi(0, int(enemy.get("attack_sequence", 0)))
+	var completing_locked_actor_melee := (
+		phase in ["windup", "recovery"]
+		and str(enemy.get("weapon_type", "")) in MELEE_WEAPON_TYPES
+		and str(cycle_target.get("type", "")) == "npc"
+	)
+	var completing_locked_projectile_action := (
+		phase in ["windup", "recovery"]
+		and _is_ranged_weapon_type(str(enemy.get("weapon_type", "")))
+		and str(cycle_target.get("type", "")) == "npc"
+	)
+	if completing_locked_actor_melee or completing_locked_projectile_action:
+		var locked_npc_target := _make_npc_enemy_target(
+			str(cycle_target.get("id", "")),
+			enemy.get("position", Vector3.ZERO)
+		)
+		if not locked_npc_target.is_empty():
+			target = locked_npc_target
 	var current_target_id := str(target.get("id", ""))
 	if phase != "idle" and str(cycle_target.get("id", "")) != current_target_id:
 		phase = "idle"
@@ -9825,7 +13032,9 @@ func _advance_enemy_attack(
 
 
 func _cancel_enemy_attack_timeline(enemy: Dictionary) -> void:
-	_active_melee_swings.erase(_melee_swing_key("enemy", str(enemy.get("id", ""))))
+	var swing_key := _melee_swing_key("enemy", str(enemy.get("id", "")))
+	_active_melee_swings.erase(swing_key)
+	_pending_melee_damage_commits.erase(swing_key)
 	enemy["attack_cooldown"] = 0.0
 	enemy["attack_windup_remaining"] = 0.0
 	enemy["attack_windup_target"] = {}
@@ -9837,6 +13046,105 @@ func _cancel_enemy_attack_timeline(enemy: Dictionary) -> void:
 	enemy["attack_impact_committed"] = false
 
 
+func _interrupt_enemy_attack_from_damage(
+	enemy: Dictionary,
+	damage: int,
+	context: Dictionary = {}
+) -> Dictionary:
+	if damage <= 0 or enemy.is_empty():
+		return {}
+	if not str(enemy.get("weapon_type", "")) in MELEE_WEAPON_TYPES + RANGED_WEAPON_TYPES:
+		return {}
+	var phase := str(enemy.get("attack_cycle_phase", "idle"))
+	if not phase in ["windup", "recovery"]:
+		return {}
+	var elapsed := maxf(0.0, float(enemy.get("attack_cycle_elapsed", 0.0)))
+	var impact_seconds := maxf(0.0, float(enemy.get("attack_impact_seconds", 0.0)))
+	var impact_committed := bool(enemy.get("attack_impact_committed", phase == "recovery"))
+	var before_impact := phase == "windup" and not impact_committed and elapsed + 0.000001 < impact_seconds
+	var result := {
+		"ok": true,
+		"attacker_side": "enemy",
+		"attacker_id": str(enemy.get("id", "")),
+		"phase_before": phase,
+		"elapsed_before": elapsed,
+		"impact_seconds": impact_seconds,
+		"impact_committed_before": impact_committed,
+		"interrupted_before_impact": before_impact,
+		"damage": damage,
+		"source_type": str(context.get("source_type", "")),
+		"source_id": str(context.get("source_id", ""))
+	}
+	_cancel_enemy_attack_timeline(enemy)
+	enemy["current_action"] = "combat_ready"
+	enemy["damage_attack_interrupt_count"] = int(enemy.get("damage_attack_interrupt_count", 0)) + 1
+	if before_impact:
+		enemy["damage_windup_interrupt_count"] = int(enemy.get("damage_windup_interrupt_count", 0)) + 1
+	enemy["last_damage_attack_interrupt"] = result.duplicate(true)
+	return result
+
+
+func _interrupt_npc_attack_from_damage(
+	npc_id: String,
+	damage: int,
+	context: Dictionary = {}
+) -> Dictionary:
+	if npc_id.is_empty() or damage <= 0:
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("get_npc_state")
+		or not npc_system.has_method("update_npc_state")
+	):
+		return {}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	var main_weapon := _get_npc_main_weapon(npc)
+	if not str(main_weapon.get("id", main_weapon.get("type", ""))) in MELEE_WEAPON_TYPES + RANGED_WEAPON_TYPES:
+		return {}
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var phase := str(state.get("combat_attack_phase", "idle"))
+	if not phase in ["windup", "recovery"]:
+		return {}
+	var elapsed := maxf(0.0, float(state.get("combat_attack_elapsed_seconds", 0.0)))
+	var impact_seconds := maxf(0.0, float(state.get("combat_attack_impact_seconds", 0.0)))
+	var impact_committed := bool(state.get("combat_attack_impact_committed", phase == "recovery"))
+	var before_impact := phase == "windup" and not impact_committed and elapsed + 0.000001 < impact_seconds
+	var result := {
+		"ok": true,
+		"attacker_side": "friendly",
+		"attacker_id": npc_id,
+		"phase_before": phase,
+		"elapsed_before": elapsed,
+		"impact_seconds": impact_seconds,
+		"impact_committed_before": impact_committed,
+		"interrupted_before_impact": before_impact,
+		"damage": damage,
+		"source_id": str(context.get("source_id", "")),
+		"damage_event": context.get("damage_event", {}).duplicate(true) if context.get("damage_event", {}) is Dictionary else {}
+	}
+	var swing_key := _melee_swing_key("friendly", npc_id)
+	_active_melee_swings.erase(swing_key)
+	_pending_melee_damage_commits.erase(swing_key)
+	var current_action := "unconscious" if bool(state.get("unconscious", false)) else "combat_ready"
+	npc_system.update_npc_state(npc_id, {
+		"combat_attack_phase": "idle",
+		"combat_attack_elapsed_seconds": 0.0,
+		"combat_attack_cycle_seconds": 0.0,
+		"combat_attack_impact_seconds": 0.0,
+		"combat_attack_target_enemy_id": "",
+		"combat_attack_impact_committed": false,
+		"combat_last_attack_result": {},
+		"current_action": current_action,
+		"last_action_result": "combat_attack_interrupted_by_damage",
+		"combat_damage_attack_interrupt_count": int(state.get("combat_damage_attack_interrupt_count", 0)) + 1,
+		"combat_damage_windup_interrupt_count": int(state.get("combat_damage_windup_interrupt_count", 0)) + (1 if before_impact else 0),
+		"combat_last_damage_attack_interrupt": result.duplicate(true)
+	})
+	return result
+
+
 func _apply_enemy_attack(enemy: Dictionary, target: Dictionary) -> Dictionary:
 	var target_type := str(target.get("type", ""))
 	var target_id := str(target.get("id", ""))
@@ -9845,6 +13153,8 @@ func _apply_enemy_attack(enemy: Dictionary, target: Dictionary) -> Dictionary:
 	if _is_ranged_weapon_type(str(enemy.get("weapon_type", ""))):
 		return _release_enemy_projectile(enemy, target)
 	if str(enemy.get("weapon_type", "")) in MELEE_WEAPON_TYPES:
+		if target_type == "npc":
+			return _resolve_enemy_locked_actor_melee_impact(enemy, target)
 		return _resolve_enemy_melee_contact(enemy, target)
 	var raw_attack_power := maxf(1.0, float(enemy.get("attack_power", 1.0)))
 	var penetration := maxf(0.0, float(enemy.get("penetration", 0.0)))
@@ -9942,6 +13252,15 @@ func _apply_enemy_attack_to_npc(
 				"horse_damage_share_ratio": float(mounted_split.get("share_ratio", 0.0))
 			}
 		)
+	# NPCSystem also reports damage back on a deferred low-HP hook. Interrupt the
+	# active attack synchronously here so this same combat step cannot advance a
+	# pre-impact swing after its owner has already been hit. The deferred call is
+	# intentionally idempotent because the phase is idle by then.
+	if damage > 0:
+		_interrupt_npc_attack_from_damage(npc_id, damage, {
+			"source_id": enemy_id,
+			"damage_event": damage_result.get("damage_event", {}).duplicate(true) if damage_result.get("damage_event", {}) is Dictionary else {}
+		})
 	if not damage_result.is_empty() and npc_damage > 0:
 		_record_battle_npc_damage(npc_id, npc_name, enemy, damage_result)
 		_record_friendly_enemy_damage_reacquire_request(
@@ -10471,6 +13790,9 @@ func _make_enemy_state(
 	state["stagger_count"] = 0
 	state["windup_interrupt_count"] = 0
 	state["last_stagger_result"] = {}
+	state["damage_attack_interrupt_count"] = 0
+	state["damage_windup_interrupt_count"] = 0
+	state["last_damage_attack_interrupt"] = {}
 	state["last_attack_result"] = {}
 	state["alive"] = true
 	return state
@@ -10510,7 +13832,39 @@ func _create_formal_enemy_actor(
 	var formal_art_attached := _attach_formal_enemy_art(actor, enemy)
 	if mesh != null:
 		mesh.visible = not formal_art_attached
+	_configure_enemy_selection(actor, str(enemy.get("id", "")))
 	return actor
+
+
+func _configure_enemy_selection(actor: ActorMotionBody, enemy_id: String) -> void:
+	if actor == null or enemy_id.is_empty():
+		return
+	var interaction_area := actor.get_node_or_null("InteractionArea") as Area3D
+	if interaction_area == null:
+		return
+	interaction_area.input_ray_pickable = true
+	interaction_area.input_event.connect(_on_enemy_interaction_input.bind(enemy_id))
+
+
+func _on_enemy_interaction_input(
+	_camera: Node,
+	event: InputEvent,
+	_event_position: Vector3,
+	_event_normal: Vector3,
+	_shape_index: int,
+	enemy_id: String
+) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse_event := event as InputEventMouseButton
+	if mouse_event.button_index != MOUSE_BUTTON_LEFT or not mouse_event.pressed:
+		return
+	if not _active_enemies.has(enemy_id):
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("enemy_clicked"):
+		event_bus.enemy_clicked.emit(enemy_id)
+		get_viewport().set_input_as_handled()
 
 
 func _resolve_formal_wave_spawn_formation(controller: Node, templates: Array) -> Dictionary:
@@ -10881,6 +14235,55 @@ func _begin_formal_first_wave_route(enemy_id: String, enemy: Dictionary, stage_i
 	return _request_formal_first_wave_stage(enemy_id, stage_index)
 
 
+func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBody, delta: float) -> Vector3:
+	var current_position := actor.global_position
+	var previous_position: Vector3 = runtime.get("presentation_previous_position", current_position)
+	var planar_displacement := Vector3(
+		current_position.x - previous_position.x,
+		0.0,
+		current_position.z - previous_position.z
+	)
+	var safe_delta := maxf(0.000001, delta)
+	var planar_speed := planar_displacement.length() / safe_delta
+	var actor_motion_active := actor.is_motion_active()
+	var was_active := bool(runtime.get("presentation_movement_active", false))
+	var stationary_seconds := float(runtime.get("presentation_stationary_seconds", 0.0))
+	var moving := false
+	# Dense RVO queues can advance a valid navigation request far below normal
+	# profile speed. Treat that measured crawl as travel, while requiring an active
+	# request on initial activation so idle collision depenetration does not start a
+	# walk cycle by itself.
+	if actor_motion_active and planar_speed >= ENEMY_PRESENTATION_MOVE_START_SPEED:
+		moving = true
+		stationary_seconds = 0.0
+	elif was_active and planar_speed >= ENEMY_PRESENTATION_MOVE_STOP_SPEED:
+		moving = true
+		stationary_seconds = 0.0
+	elif was_active and actor_motion_active:
+		stationary_seconds += maxf(0.0, delta)
+		moving = stationary_seconds < ENEMY_PRESENTATION_MOVE_STOP_GRACE_SECONDS
+	else:
+		stationary_seconds = 0.0
+	var cadence_speed := planar_speed
+	if moving and planar_speed < ENEMY_PRESENTATION_MOVE_STOP_SPEED:
+		cadence_speed = maxf(
+			planar_speed,
+			float(runtime.get("presentation_last_moving_speed", ENEMY_PRESENTATION_MOVE_START_SPEED))
+		)
+	if moving and planar_speed >= ENEMY_PRESENTATION_MOVE_STOP_SPEED:
+		runtime["presentation_last_moving_speed"] = planar_speed
+	elif not moving:
+		cadence_speed = 0.0
+	runtime["presentation_previous_position"] = current_position
+	runtime["presentation_planar_displacement"] = planar_displacement
+	runtime["presentation_planar_speed"] = planar_speed
+	runtime["presentation_cadence_speed"] = cadence_speed
+	runtime["presentation_movement_active"] = moving
+	runtime["presentation_stationary_seconds"] = stationary_seconds
+	runtime["presentation_actor_motion_active"] = actor_motion_active
+	return planar_displacement
+
+
 func _sync_formal_first_wave_presentation(delta: float) -> void:
 	for raw_enemy_id in _formal_first_wave_slices.keys():
 		var enemy_id := str(raw_enemy_id)
@@ -10890,11 +14293,14 @@ func _sync_formal_first_wave_presentation(delta: float) -> void:
 		if actor == null:
 			continue
 		var slice: Dictionary = _formal_first_wave_slices[enemy_id]
-		var movement_direction := Vector3.ZERO
-		slice["previous_position"] = actor.global_position
-		var facing_sample := Vector3(actor.velocity.x, 0.0, actor.velocity.z)
+		var movement_direction := _sample_enemy_presentation_motion(slice, actor, delta)
+		var facing_sample := movement_direction
+		var facing_speed := float(slice.get("presentation_planar_speed", 0.0))
+		if facing_sample.length() < 0.0001:
+			facing_sample = Vector3(actor.velocity.x, 0.0, actor.velocity.z)
+			facing_speed = facing_sample.length()
 		var previous_facing: Vector3 = slice.get("presentation_facing_direction", Vector3.ZERO)
-		if facing_sample.length() >= 0.35:
+		if facing_speed >= 0.35 and facing_sample.length_squared() > 0.0001:
 			facing_sample = facing_sample.normalized()
 			var next_facing := facing_sample
 			if previous_facing.length_squared() > 0.0001:
@@ -10913,7 +14319,14 @@ func _sync_formal_first_wave_presentation(delta: float) -> void:
 		enemy["position"] = actor.global_position
 		_active_enemies[enemy_id] = enemy
 		var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
-		_apply_enemy_art_state(art_view, enemy, movement_direction)
+		_apply_enemy_art_state(
+			art_view,
+			enemy,
+			movement_direction,
+			bool(slice.get("presentation_movement_active", false)),
+			float(slice.get("presentation_cadence_speed", 0.0)),
+			true
+		)
 
 
 func _turn_planar_direction_toward(current_direction: Vector3, target_direction: Vector3, delta: float) -> Vector3:
@@ -11057,22 +14470,27 @@ func _on_formal_active_enemy_motion_cancelled(_request_id: String, reason: Strin
 	_on_formal_active_enemy_motion_failed("", reason)
 
 
-func _sync_formal_active_enemy_slice_presentation() -> void:
+func _sync_formal_active_enemy_slice_presentation(delta: float) -> void:
 	if _formal_active_enemy_slice.is_empty() or not _active_enemies.has(FORMAL_ACTIVE_ENEMY_SLICE_ID):
 		return
 	var actor := get_node_or_null(_formal_active_enemy_slice_node_path) as ActorMotionBody
 	if actor == null:
 		return
 	var slice := _formal_active_enemy_slice
-	var previous_position: Vector3 = slice.get("previous_position", actor.global_position)
-	var movement_direction := actor.global_position - previous_position
-	slice["previous_position"] = actor.global_position
+	var movement_direction := _sample_enemy_presentation_motion(slice, actor, delta)
 	_formal_active_enemy_slice = slice
 	var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
 	enemy["position"] = actor.global_position
 	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
 	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
-	_apply_enemy_art_state(art_view, enemy, movement_direction)
+	_apply_enemy_art_state(
+		art_view,
+		enemy,
+		movement_direction,
+		bool(slice.get("presentation_movement_active", false)),
+		float(slice.get("presentation_cadence_speed", 0.0)),
+		true
+	)
 
 
 func _clear_formal_active_enemy_slice_node(_reason: String) -> void:
@@ -11166,22 +14584,27 @@ func _on_formal_enemy_pilot_motion_cancelled(_request_id: String, reason: String
 	_formal_enemy_navigation_pilot = pilot
 
 
-func _sync_formal_enemy_navigation_pilot_presentation() -> void:
+func _sync_formal_enemy_navigation_pilot_presentation(delta: float) -> void:
 	if _formal_enemy_navigation_pilot.is_empty():
 		return
 	var actor := get_node_or_null(_formal_enemy_navigation_pilot_node_path) as ActorMotionBody
 	if actor == null:
 		return
 	var pilot := _formal_enemy_navigation_pilot
-	var previous_position: Vector3 = pilot.get("previous_position", actor.global_position)
-	var movement_direction := actor.global_position - previous_position
-	pilot["previous_position"] = actor.global_position
+	var movement_direction := _sample_enemy_presentation_motion(pilot, actor, delta)
 	var enemy := pilot.get("enemy", {}) as Dictionary
 	enemy["position"] = actor.global_position
 	pilot["enemy"] = enemy
 	_formal_enemy_navigation_pilot = pilot
 	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
-	_apply_enemy_art_state(art_view, enemy, movement_direction)
+	_apply_enemy_art_state(
+		art_view,
+		enemy,
+		movement_direction,
+		bool(pilot.get("presentation_movement_active", false)),
+		float(pilot.get("presentation_cadence_speed", 0.0)),
+		true
+	)
 	var label := actor.get_node_or_null("EnemyLabel") as Label3D
 	if label != null:
 		label.text = "%s\n%s -> %s" % [
@@ -11278,9 +14701,13 @@ func _attach_formal_enemy_art(enemy_node: Node3D, enemy: Dictionary) -> bool:
 		var mounted_art := ENEMY_MOUNTED_ART_SCRIPT.new() as Node3D
 		mounted_art.name = "EnemyArtView"
 		enemy_node.add_child(mounted_art)
-		mounted_art.setup(rider_view, str(enemy.get("id", "enemy")), unit_type)
-		if mounted_art.has_signal("escape_completed"):
-			mounted_art.escape_completed.connect(_on_enemy_mount_escape_completed)
+		mounted_art.setup(
+			rider_view,
+			str(enemy.get("id", "enemy")),
+			unit_type
+		)
+		if mounted_art.has_signal("defeat_cleanup_completed"):
+			mounted_art.defeat_cleanup_completed.connect(_on_enemy_mounted_defeat_cleanup_completed)
 		_apply_enemy_art_state(mounted_art, enemy, Vector3.FORWARD)
 		enemy_node.set_meta("enemy_art_family", "synty_mounted_chibi")
 		return true
@@ -11324,7 +14751,14 @@ func _attach_enemy_equipment(art_view: Node3D) -> void:
 			left_hand.add_child(shield)
 
 
-func _apply_enemy_art_state(art_view: Node3D, enemy: Dictionary, movement_direction: Vector3) -> void:
+func _apply_enemy_art_state(
+	art_view: Node3D,
+	enemy: Dictionary,
+	movement_direction: Vector3,
+	movement_override_active: bool = false,
+	movement_override_speed: float = 0.0,
+	has_movement_override: bool = false
+) -> void:
 	if art_view == null:
 		return
 	var current_action := str(enemy.get("current_action", "idle"))
@@ -11360,12 +14794,33 @@ func _apply_enemy_art_state(art_view: Node3D, enemy: Dictionary, movement_direct
 		or current_action.begins_with("pressing_to_")
 		or current_action == "pressing_for_attack_space"
 	)
+	var presentation_speed := float(enemy.get("move_speed", 2.8))
+	if has_movement_override:
+		moving = movement_override_active
+		presentation_speed = maxf(0.0, movement_override_speed)
+	# Locomotion consumes actual body travel, but authored attack and defeat states
+	# remain explicit higher-priority presentation facts. Collision depenetration on
+	# the attack frame must never replace the weapon clip with a run cycle.
+	if _enemy_presentation_blocks_locomotion(enemy):
+		moving = false
+		presentation_speed = 0.0
 	if art_view.has_method("set_movement_active"):
-		art_view.set_movement_active(moving, float(enemy.get("move_speed", 2.8)))
+		art_view.set_movement_active(moving, presentation_speed)
 	# apply_profile() already resolves attacking_/winding_up_ to the attack state.
 	# Re-entering the debug force API here used to restart the clip and allocate a
 	# full diagnostic snapshot for every attacker on every 0.1 s AI tick.
 	_update_enemy_art_facing(art_view, enemy, movement_direction)
+
+
+func _enemy_presentation_blocks_locomotion(enemy: Dictionary) -> bool:
+	if not bool(enemy.get("alive", true)) or int(enemy.get("hp", 1)) <= 0:
+		return true
+	var current_action := str(enemy.get("current_action", "idle"))
+	if current_action.begins_with("attacking_") or current_action.begins_with("winding_up_"):
+		return true
+	if current_action in ["staggered", "recovering_from_stagger", "unconscious"]:
+		return true
+	return str(enemy.get("attack_cycle_phase", "idle")) in ["windup", "recovery"]
 
 
 func _update_enemy_art_facing(art_view: Node3D, enemy: Dictionary, movement_direction: Vector3) -> void:
@@ -11430,6 +14885,8 @@ func _normalize_vector3_dict(raw_value: Variant, fallback: Vector3) -> Dictionar
 
 
 func _vector3_from_dict(raw_value: Variant, fallback: Vector3) -> Vector3:
+	if raw_value is Vector3:
+		return raw_value as Vector3
 	var data: Dictionary = raw_value if raw_value is Dictionary else {}
 	return Vector3(
 		float(data.get("x", fallback.x)),
@@ -11496,6 +14953,20 @@ func _get_unit_type_label(unit_type: String) -> String:
 			return "骑射单位"
 		_:
 			return "敌人"
+
+
+func _get_enemy_weapon_name(weapon_type: String) -> String:
+	match weapon_type:
+		"sword_shield":
+			return "剑盾"
+		"polearm":
+			return "长杆武器"
+		"bow":
+			return "弓"
+		"crossbow":
+			return "弩"
+		_:
+			return weapon_type if not weapon_type.is_empty() else "无"
 
 
 func _normalize_building_target_id(raw_target_id: String) -> String:
@@ -11570,7 +15041,10 @@ func _get_enemy_target_snapshot() -> Array[Dictionary]:
 			"stagger_remaining": float(enemy.get("stagger_remaining", 0.0)),
 			"stagger_count": int(enemy.get("stagger_count", 0)),
 			"windup_interrupt_count": int(enemy.get("windup_interrupt_count", 0)),
-			"last_stagger_result": enemy.get("last_stagger_result", {}).duplicate(true) if enemy.get("last_stagger_result", {}) is Dictionary else {}
+			"last_stagger_result": enemy.get("last_stagger_result", {}).duplicate(true) if enemy.get("last_stagger_result", {}) is Dictionary else {},
+			"damage_attack_interrupt_count": int(enemy.get("damage_attack_interrupt_count", 0)),
+			"damage_windup_interrupt_count": int(enemy.get("damage_windup_interrupt_count", 0)),
+			"last_damage_attack_interrupt": enemy.get("last_damage_attack_interrupt", {}).duplicate(true) if enemy.get("last_damage_attack_interrupt", {}) is Dictionary else {}
 		})
 	return result
 
@@ -11579,7 +15053,7 @@ func _serialize_target(target: Dictionary) -> Dictionary:
 	if target.is_empty():
 		return {}
 	var result := target.duplicate(true)
-	for field in ["position", "aim_position", "attack_position", "attack_contact_position", "contact_position", "queue_position", "target_position", "route_approach_position", "building_right_direction", "building_forward_direction", "facing_direction"]:
+	for field in ["position", "aim_position", "attack_position", "attack_contact_position", "contact_position", "queue_position", "target_position", "route_approach_position", "building_right_direction", "building_forward_direction", "facing_direction", "host_proxy_outward_direction"]:
 		if result.has(field) and result[field] is Vector3:
 			result[field] = _vector3_to_dict(result[field])
 	return result
@@ -11589,7 +15063,7 @@ func _deserialize_target(target: Dictionary) -> Dictionary:
 	if target.is_empty():
 		return {}
 	var result := target.duplicate(true)
-	for field in ["position", "aim_position", "attack_position", "attack_contact_position", "contact_position", "queue_position", "target_position", "route_approach_position", "building_right_direction", "building_forward_direction", "facing_direction"]:
+	for field in ["position", "aim_position", "attack_position", "attack_contact_position", "contact_position", "queue_position", "target_position", "route_approach_position", "building_right_direction", "building_forward_direction", "facing_direction", "host_proxy_outward_direction"]:
 		if result.has(field) and result[field] is Dictionary:
 			result[field] = _vector3_from_dict(result[field], Vector3.ZERO)
 	return result
@@ -11609,8 +15083,17 @@ func _serialize_avoidance(avoidance: Dictionary) -> Dictionary:
 	if avoidance.is_empty():
 		return {}
 	var result := avoidance.duplicate(true)
-	if result.has("target_position") and result["target_position"] is Vector3:
-		result["target_position"] = _vector3_to_dict(result["target_position"])
+	for field in ["target_position", "desired_target_position", "avoidance_direction"]:
+		if result.has(field) and result[field] is Vector3:
+			result[field] = _vector3_to_dict(result[field])
+	var serialized_threats: Array[Dictionary] = []
+	for raw_threat in result.get("threats", []):
+		var threat := (raw_threat as Dictionary).duplicate(true)
+		for field in ["position", "away_direction"]:
+			if threat.has(field) and threat[field] is Vector3:
+				threat[field] = _vector3_to_dict(threat[field])
+		serialized_threats.append(threat)
+	result["threats"] = serialized_threats
 	return result
 
 
@@ -12701,7 +16184,15 @@ func _refresh_enemy_node(enemy_id: String) -> void:
 	if is_formal_physical_actor and str(enemy_node.get_meta("enemy_refresh_signature", "")) == presentation_signature:
 		return
 	enemy_node.set_meta("enemy_refresh_signature", presentation_signature)
-	_apply_enemy_art_state(art_view, enemy, movement_direction)
+	var presentation_runtime: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
+	_apply_enemy_art_state(
+		art_view,
+		enemy,
+		movement_direction,
+		bool(presentation_runtime.get("presentation_movement_active", false)),
+		float(presentation_runtime.get("presentation_cadence_speed", 0.0)),
+		is_formal_physical_actor
+	)
 	var label := enemy_node.get_node_or_null("EnemyLabel") as Label3D
 	if label == null:
 		return
@@ -12894,6 +16385,7 @@ func debug_get_enemy_art_snapshots() -> Array[Dictionary]:
 		var enemy_node := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) if _enemy_nodes.has(enemy_id) else null
 		var art_view := enemy_node.get_node_or_null("EnemyArtView") if enemy_node != null else null
 		var art_snapshot: Dictionary = art_view.debug_get_snapshot() if art_view != null and art_view.has_method("debug_get_snapshot") else {}
+		var presentation_runtime: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
 		snapshots.append({
 			"enemy_id": enemy_id,
 			"enemy_type_id": str(enemy.get("enemy_type_id", "")),
@@ -12907,6 +16399,11 @@ func debug_get_enemy_art_snapshots() -> Array[Dictionary]:
 			"attack_cycle_seconds": float(enemy.get("attack_cycle_duration", 0.0)),
 			"attack_impact_seconds": float(enemy.get("attack_impact_seconds", 0.0)),
 			"attack_playback_multiplier": float(enemy.get("attack_playback_multiplier", 1.0)),
+			"presentation_motion_source": "actual_planar_displacement" if not presentation_runtime.is_empty() else "action_fallback",
+			"presentation_planar_speed": float(presentation_runtime.get("presentation_planar_speed", 0.0)),
+			"presentation_movement_active": bool(presentation_runtime.get("presentation_movement_active", false)),
+			"presentation_stationary_seconds": float(presentation_runtime.get("presentation_stationary_seconds", 0.0)),
+			"actor_motion_active": bool(presentation_runtime.get("presentation_actor_motion_active", false)),
 			"art_family": str(enemy_node.get_meta("enemy_art_family", "capsule")) if enemy_node != null else "missing",
 			"art": art_snapshot,
 		})
@@ -12919,11 +16416,11 @@ func debug_get_enemy_mounted_defeat_snapshots() -> Dictionary:
 		var mounted_art := raw_node as Node
 		if mounted_art != null and mounted_art.has_method("debug_get_snapshot"):
 			var snapshot: Dictionary = mounted_art.debug_get_snapshot()
-			if str(snapshot.get("escape_phase", "")) != "mounted":
+			if str(snapshot.get("defeat_phase", "")) != "mounted":
 				active_presentations.append(snapshot)
 	return {
 		"active": active_presentations,
-		"last_completed": _last_enemy_mounted_escape_result.duplicate(true)
+		"last_completed": _last_enemy_mounted_defeat_cleanup_result.duplicate(true)
 	}
 
 

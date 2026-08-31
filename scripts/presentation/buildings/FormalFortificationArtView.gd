@@ -32,6 +32,7 @@ var _material_cache: Dictionary = {}
 var _level_roots: Dictionary = {}
 var _platform_roots: Dictionary = {}
 var _gate_views: Dictionary = {}
+var _wall_segment_roots: Array[Node3D] = []
 var _damage_ratio := 1.0
 
 
@@ -54,6 +55,35 @@ func apply_roof_camera_distance(camera_distance: float, zoom_normalized: float) 
 
 func is_interior_revealed_for_selection() -> bool:
 	return false
+
+
+func get_building_interaction_ray_hit(ray_origin: Vector3, ray_end: Vector3) -> Dictionary:
+	var closest_hit: Dictionary = {}
+	var closest_distance := INF
+	for segment_root in _wall_segment_roots:
+		if not is_instance_valid(segment_root):
+			continue
+		var length := float(segment_root.get_meta("interaction_length", 0.0))
+		if length <= 0.0:
+			continue
+		var local_hit: Variant = AABB(
+			Vector3(-0.9, 0.0, -length * 0.5 - 0.15),
+			Vector3(1.8, 3.9, length + 0.3)
+		).intersects_segment(segment_root.to_local(ray_origin), segment_root.to_local(ray_end))
+		if local_hit == null:
+			continue
+		var global_hit := segment_root.to_global(local_hit as Vector3)
+		var distance := ray_origin.distance_to(global_hit)
+		if distance >= closest_distance:
+			continue
+		closest_distance = distance
+		closest_hit = {
+			"building_id": "wall",
+			"distance": distance,
+			"global_position": global_hit,
+			"interior_revealed": false
+		}
+	return closest_hit
 
 
 func debug_force_visual_level(level: int) -> Dictionary:
@@ -137,6 +167,7 @@ func _build_formal_fortifications() -> void:
 
 
 func _build_wall_segments(parent: Node3D) -> void:
+	_wall_segment_roots.clear()
 	var walls := Node3D.new()
 	walls.name = "TexturedWallSegments"
 	parent.add_child(walls)
@@ -156,7 +187,9 @@ func _build_wall_segments(parent: Node3D) -> void:
 		root.position = Vector3(middle.x, 0.0, middle.y)
 		root.rotation.y = atan2(delta.x, delta.y)
 		root.set_meta("wall_segment_id", str(segment.get("id", "")))
+		root.set_meta("interaction_length", length)
 		walls.add_child(root)
+		_wall_segment_roots.append(root)
 		_add_textured_box(root, "LowStoneFooting", Vector3(0.0, 0.12, 0.0), Vector3(1.38, 0.24, length + 0.08), "rock", Color("#686a66"), 0.68)
 		_add_textured_box(root, "TimberCurtain", Vector3(0.0, 1.62, 0.0), Vector3(1.02, 2.78, length), "wood", Color("#6c503b"), 0.88)
 		_add_textured_box(root, "UpperTimberCap", Vector3(0.0, 3.05, 0.0), Vector3(1.30, 0.22, length + 0.04), "wood", Color("#4d382d"), 0.92)

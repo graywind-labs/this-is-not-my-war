@@ -258,7 +258,7 @@ func cycle_speed() -> void:
 
 
 func get_speed_label() -> String:
-	return "x%.0f" % time_scale
+	return format_time_scale_label(time_scale)
 
 
 func get_pause_label() -> String:
@@ -268,10 +268,17 @@ func get_pause_label() -> String:
 
 
 func get_effective_speed_label() -> String:
-	var effective_scale := get_effective_time_scale()
-	if effective_scale < 1.0:
-		return "x%.2f" % effective_scale
-	return "x%.0f" % effective_scale
+	return format_time_scale_label(get_effective_time_scale())
+
+
+func format_time_scale_label(scale: float) -> String:
+	var normalized := maxf(0.0, scale)
+	if normalized > 0.0 and normalized < 1.0:
+		var denominator := maxi(2, int(round(1.0 / normalized)))
+		if is_equal_approx(normalized, 1.0 / float(denominator)):
+			return "x1/%d" % denominator
+		return "x%.2f" % normalized
+	return "x%.0f" % normalized
 
 
 func get_progress_to_next_hour() -> float:

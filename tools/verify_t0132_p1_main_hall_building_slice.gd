@@ -153,7 +153,7 @@ func _init() -> void:
 			_fail("Defense slot does not land on its visible platform: %s / %s != %s" % [slot_id, slot_position, expected_position])
 			return
 	resource_system.add_resource("item_wall_arrow_tower", 1)
-	var deployment_result: Dictionary = defense_system.deploy_device("wall_arrow_tower", "main_hall_slot_01")
+	var deployment_result: Dictionary = defense_system.deploy_device("wall_arrow_tower", "main_hall_slot_03")
 	if not bool(deployment_result.get("ok", false)):
 		_fail("Could not deploy a tower onto the Lv.1 visible platform: %s" % JSON.stringify(deployment_result))
 		return

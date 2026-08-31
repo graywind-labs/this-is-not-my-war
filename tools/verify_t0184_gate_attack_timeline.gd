@@ -60,7 +60,8 @@ func _run_verification() -> void:
 		enemy["position"] = actor.global_position
 		combat_system._active_enemies[enemy_id] = enemy
 		lease_holders.append(enemy_id)
-	_check(lease_holders.size() == 7, "T0184 expected seven occupied gate attackers, got %d" % lease_holders.size())
+	var expected_attackers := 8 if str(combat_system._formal_attack_position_policy.get("schema", "")) == "enemy_attack_guidance_zones_v2" else 5
+	_check(lease_holders.size() == expected_attackers, "T0184 expected %d guided door-panel attackers, got %d" % [expected_attackers, lease_holders.size()])
 
 	combat_system.debug_step_enemy_ai(0.01)
 	if not event_bus.event_recorded.is_connected(_on_event_recorded):

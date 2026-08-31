@@ -17,8 +17,15 @@ var _duration_ms: int = 1000
 # godot_game_time freeze the tree is paused between steps, and counting wall time
 # there would run the window down / log stale samples before the step that moves.
 var _elapsed_ms: float = 0.0
-var _frame_index: int = 0
-var _sample_interval: int = 1  # sample every N frames
+# Next sample is due when _elapsed_ms reaches this. Sampling is scheduled in GAME
+# time (1000 / hz ms apart), never as a frame stride: a stride derived from one
+# fps reading at start() is wrong whenever the frame rate during the window
+# differs from it -- launched frozen the reading is 0, after a long freeze it is
+# stale -- and the window then fills 2-4x faster or slower than asked (#378).
+var _next_sample_ms: float = 0.0
+# True once game time has advanced past the last recorded sample, so stop() and
+# collect() know the recorded `end` is stale and take one more (#389).
+var _advanced_since_sample: bool = false
 var _samples: Dictionary = {}  # field_key -> Array of {t_ms, value}
 var _events: Array = []        # [{t_ms, source, signal, args?}] -- signal emissions this window
 var _events_truncated: bool = false
@@ -28,6 +35,14 @@ var _signal_counts: Dictionary = {}    # "source:signal" -> kept count (enforces
 var _signal_dropped: Dictionary = {}   # "source:signal" -> dropped count (reported to the agent)
 var _field_truncated: Dictionary = {}  # full_key -> true once MAX_SAMPLES_PER_FIELD was hit
 var _connections: Array = []   # [{node, sig_name, callable}] -- live connections to tear down
+
+
+func _ready() -> void:
+	# Autoloads (and their children) are processed BEFORE scene nodes, so a
+	# sample taken at default priority reflects the state from before this
+	# frame's game logic ran and every reading is one frame stale. Run late in
+	# the frame so a sample stamped at frame N shows what frame N did (#389).
+	process_priority = 1000
 
 
 func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) -> Dictionary:
@@ -44,10 +59,16 @@ func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) ->
 	_hz = clampi(hz, 1, 60)
 	_duration_ms = clampi(duration_ms, 100, 5000)
 	_elapsed_ms = 0.0
-	_frame_index = 0
-	_sample_interval = max(1, int(Engine.get_frames_per_second() / _hz)) if Engine.get_frames_per_second() > 0 else max(1, int(60.0 / _hz))
+	_next_sample_ms = 0.0  # first unpaused frame samples immediately (t ~= one delta)
+	_advanced_since_sample = false
 
+	# resolved_fields counts fields that are READABLE at start (node found and a
+	# probe read returned a value), not node lookups. Every field that isn't is
+	# listed in unresolved_fields with a reason, the same way signals are: a
+	# missing node or an inapplicable key (pos.y on a node with no position) used
+	# to be a silent gap in the result while still counted as resolved (#383).
 	var field_count := 0
+	var unresolved_fields: Array = []
 	for spec in specs:
 		if field_count >= MAX_FIELDS:
 			break
@@ -58,16 +79,24 @@ func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) ->
 
 		var node := _resolve_node(node_path)
 		if node == null:
+			for field_key in fields:
+				unresolved_fields.append({"path": node_path, "field": str(field_key), "reason": "node_not_found"})
 			continue
 
 		var resolved_fields: Array = []
 		for field_key in fields:
 			if field_count >= MAX_FIELDS:
-				break
+				unresolved_fields.append({"path": node_path, "field": str(field_key), "reason": "field_cap"})
+				continue
 			var full_key: String = node_path + ":" + str(field_key)
+			if _read_field(node, str(field_key)) == null:
+				# Still sampled (a _mcp_state key may appear later), but not counted
+				# as resolved and named in the reply so the gap is not a surprise.
+				unresolved_fields.append({"path": node_path, "field": str(field_key), "reason": "not_readable"})
+			else:
+				field_count += 1
 			_samples[full_key] = []
 			resolved_fields.append({"key": field_key, "full_key": full_key})
-			field_count += 1
 
 		if not resolved_fields.is_empty():
 			_specs.append({"node": node, "node_path": node_path, "fields": resolved_fields})
@@ -137,6 +166,7 @@ func start(specs: Array, hz: int, duration_ms: int, signal_specs: Array = []) ->
 
 	return {
 		"resolved_fields": field_count,
+		"unresolved_fields": unresolved_fields,
 		"connected_signals": connected,
 		"unresolved_signals": unresolved,
 	}
@@ -242,10 +272,25 @@ func _process(delta: float) -> void:
 		_disconnect_all()
 		return
 
-	_frame_index += 1
-	if _frame_index % _sample_interval != 0:
+	if _elapsed_ms < _next_sample_ms:
+		_advanced_since_sample = true
 		return
+	var interval_ms := 1000.0 / float(_hz)
+	_next_sample_ms += interval_ms
+	if _next_sample_ms <= _elapsed_ms:
+		# A frame longer than the interval (stall, or a big single step): take one
+		# sample now and resync rather than bursting to make up the missed ticks.
+		_next_sample_ms = _elapsed_ms + interval_ms
+	_sample_fields()
 
+
+# One sample of every field at the current game time. Called on schedule from
+# _process, and once more by stop()/collect() when frames ran after the last
+# scheduled sample, so `end` is the value at the moment of the read (under a
+# freeze, the exact frame the game is sitting on) and not the last thing the
+# schedule happened to catch.
+func _sample_fields() -> void:
+	_advanced_since_sample = false
 	for spec in _specs:
 		# Untyped: a typed assignment of a freed instance is a script error that
 		# would abort the whole sampling pass (same hazard as _disconnect_all).
@@ -272,6 +317,8 @@ func _process(delta: float) -> void:
 
 
 func collect() -> Dictionary:
+	if _active and _advanced_since_sample:
+		_sample_fields()
 	var elapsed := int(_elapsed_ms)
 	var total_samples := 0
 	for key in _samples:
@@ -293,6 +340,8 @@ func collect() -> Dictionary:
 func stop() -> Dictionary:
 	# _elapsed_ms already holds the game-time window and freezes once _active is
 	# false, so a late manual stop can't inflate window_ms past the real window end.
+	if _active and _advanced_since_sample:
+		_sample_fields()  # `end` is the frame the game is sitting on (#389)
 	_active = false
 	set_process(false)
 	_disconnect_all()
@@ -347,11 +396,23 @@ func _read_field(node: Node, key: String) -> Variant:
 				return snapped((node as Node2D).global_position.x, 0.01)
 			if node is Node3D:
 				return snapped((node as Node3D).global_position.x, 0.01)
+			if node is Control:
+				# Post-layout global rect: the value a "did the HUD move" question
+				# is about, and the same shape as the digest `ui` block (#383).
+				return snapped((node as Control).get_global_rect().position.x, 0.01)
 		"pos.y":
 			if node is Node2D:
 				return snapped((node as Node2D).global_position.y, 0.01)
 			if node is Node3D:
 				return snapped((node as Node3D).global_position.y, 0.01)
+			if node is Control:
+				return snapped((node as Control).get_global_rect().position.y, 0.01)
+		"size.x":
+			if node is Control:
+				return snapped((node as Control).get_global_rect().size.x, 0.01)
+		"size.y":
+			if node is Control:
+				return snapped((node as Control).get_global_rect().size.y, 0.01)
 		"pos.z":
 			if node is Node3D:
 				return snapped((node as Node3D).global_position.z, 0.01)

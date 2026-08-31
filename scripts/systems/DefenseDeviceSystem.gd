@@ -182,6 +182,8 @@ func bind_formal_slot_positions(station_layout_controller: Node) -> Dictionary:
 		slot["spatial_source"] = "formal_station_fixture"
 		slot["formal_fixture_id"] = str(pose_data.get("fixture_id", ""))
 		for proxy_field in [
+			"host_proxy_schema",
+			"host_proxy_regions",
 			"host_proxy_kind",
 			"host_proxy_id",
 			"host_proxy_wall_segment_id",
@@ -190,6 +192,7 @@ func bind_formal_slot_positions(station_layout_controller: Node) -> Dictionary:
 			"host_proxy_position",
 			"host_proxy_aim_position",
 			"host_proxy_fixture_aim_position",
+			"host_proxy_outward_direction",
 			"host_proxy_contact_radius",
 			"host_proxy_hit_radius"
 		]:
@@ -222,6 +225,8 @@ func restore_configured_slot_positions() -> Dictionary:
 		slot.erase("spatial_source")
 		slot.erase("formal_fixture_id")
 		for proxy_field in [
+			"host_proxy_schema",
+			"host_proxy_regions",
 			"host_proxy_kind",
 			"host_proxy_id",
 			"host_proxy_wall_segment_id",
@@ -230,6 +235,7 @@ func restore_configured_slot_positions() -> Dictionary:
 			"host_proxy_position",
 			"host_proxy_aim_position",
 			"host_proxy_fixture_aim_position",
+			"host_proxy_outward_direction",
 			"host_proxy_contact_radius",
 			"host_proxy_hit_radius"
 		]:
@@ -345,8 +351,10 @@ func get_active_defense_targets() -> Array[Dictionary]:
 		):
 			continue
 		var host_proxy := _make_host_proxy_snapshot(slot, deployment)
+		var host_proxy_regions: Array = host_proxy.get("regions", []) as Array
 		var proxy_position := _dict_to_vector3(host_proxy.get("position", deployment.get("position", {})))
 		var proxy_aim_position := _dict_to_vector3(host_proxy.get("aim_position", proxy_position))
+		var proxy_outward_direction := _dict_to_vector3(host_proxy.get("outward_direction", slot.get("facing_direction", {"z": 1.0})))
 		var effect: Dictionary = deployment.get("effect", {}) if deployment.get("effect", {}) is Dictionary else {}
 		result.append({
 			"type": "defense_device",
@@ -354,6 +362,7 @@ func get_active_defense_targets() -> Array[Dictionary]:
 			"name": str(deployment.get("device_name", "工程器械")),
 			"position": proxy_position,
 			"aim_position": proxy_aim_position,
+			"host_proxy_outward_direction": proxy_outward_direction,
 			"facing_direction": _dict_to_vector3(slot.get("facing_direction", {"z": 1.0})),
 			"contact_radius": float(host_proxy.get("contact_radius", 0.0)),
 			"hp": int(deployment.get("hp", 0)),
@@ -363,6 +372,8 @@ func get_active_defense_targets() -> Array[Dictionary]:
 			"building_id": str(deployment.get("building_id", "")),
 			"slot_id": str(deployment.get("slot_id", "")),
 			"host_proxy": host_proxy,
+			"host_proxy_schema": str(host_proxy.get("schema", "")),
+			"host_proxy_regions": host_proxy_regions.duplicate(true),
 			"host_proxy_kind": str(host_proxy.get("kind", "")),
 			"host_proxy_id": str(host_proxy.get("id", "")),
 			"host_proxy_wall_segment_id": str(host_proxy.get("wall_segment_id", "")),
@@ -1143,7 +1154,11 @@ func _make_host_proxy_snapshot(slot: Dictionary, deployment: Dictionary = {}) ->
 	var proxy_fixture_aim_position := _dict_to_vector3(
 		slot.get("host_proxy_fixture_aim_position", proxy_aim_position)
 	)
-	return {
+	var proxy_outward_direction := _dict_to_vector3(
+		slot.get("host_proxy_outward_direction", slot.get("facing_direction", {"z": 1.0}))
+	)
+	var snapshot := {
+		"schema": str(slot.get("host_proxy_schema", "single_host_proxy_v1")),
 		"kind": proxy_kind,
 		"id": proxy_id,
 		"building_id": building_id,
@@ -1154,10 +1169,45 @@ func _make_host_proxy_snapshot(slot: Dictionary, deployment: Dictionary = {}) ->
 		"position": _vector3_to_dict(proxy_position),
 		"aim_position": _vector3_to_dict(proxy_aim_position),
 		"fixture_aim_position": _vector3_to_dict(proxy_fixture_aim_position),
+		"outward_direction": _vector3_to_dict(proxy_outward_direction),
 		"contact_radius": maxf(0.0, float(slot.get("host_proxy_contact_radius", 0.0))),
 		"hit_radius": maxf(0.1, float(slot.get("host_proxy_hit_radius", 2.0))),
 		"strict_collision_identity": proxy_kind != "legacy_host_building"
 	}
+	var region_snapshots: Array[Dictionary] = []
+	var raw_regions: Variant = slot.get("host_proxy_regions", [])
+	if raw_regions is Array:
+		for raw_region in raw_regions as Array:
+			if not raw_region is Dictionary:
+				continue
+			var region := raw_region as Dictionary
+			var region_position := _dict_to_vector3(region.get("position", proxy_position))
+			var region_aim_position := _dict_to_vector3(region.get("aim_position", region_position + Vector3.UP * 1.15))
+			var region_fixture_aim_position := _dict_to_vector3(region.get("fixture_aim_position", proxy_fixture_aim_position))
+			var region_outward_direction := _dict_to_vector3(region.get("outward_direction", proxy_outward_direction))
+			region_snapshots.append({
+				"kind": str(region.get("kind", proxy_kind)),
+				"id": str(region.get("id", proxy_id)),
+				"building_id": str(region.get("building_id", building_id)),
+				"slot_id": str(region.get("slot_id", slot_id)),
+				"wall_segment_id": str(region.get("wall_segment_id", "")),
+				"building_segment_id": str(region.get("building_segment_id", "")),
+				"fixture_id": str(region.get("fixture_id", slot.get("host_proxy_fixture_id", ""))),
+				"position": _vector3_to_dict(region_position),
+				"aim_position": _vector3_to_dict(region_aim_position),
+				"fixture_aim_position": _vector3_to_dict(region_fixture_aim_position),
+				"outward_direction": _vector3_to_dict(region_outward_direction),
+				"contact_radius": maxf(0.0, float(region.get("contact_radius", snapshot.get("contact_radius", 0.0)))),
+				"hit_radius": maxf(0.1, float(region.get("hit_radius", snapshot.get("hit_radius", 2.0)))),
+				"strict_collision_identity": bool(region.get("strict_collision_identity", proxy_kind != "legacy_host_building"))
+			})
+	if region_snapshots.is_empty():
+		var fallback_region := snapshot.duplicate(true)
+		fallback_region.erase("schema")
+		fallback_region.erase("regions")
+		region_snapshots.append(fallback_region)
+	snapshot["regions"] = region_snapshots
+	return snapshot
 
 
 func _make_effective_effect(definition: Dictionary, slot: Dictionary) -> Dictionary:
