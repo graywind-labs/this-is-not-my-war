@@ -2,11 +2,12 @@ extends SceneTree
 
 
 const MAIN_SCENE := preload("res://scenes/main/Main.tscn")
+# Mounted pickup/mount authority has its own lifecycle regression. This focused
+# recovery fixture keeps actors on foot so an assigned horse cannot replace the
+# deliberately stalled tactical movement request under test.
 const TEST_CASES := [
-	{"npc_id": "doctor_01", "mounted": false, "strategy_id": "max_output", "x": -5.0},
-	{"npc_id": "priest_01", "mounted": false, "strategy_id": "keep_distance", "x": -2.0},
-	{"npc_id": "stableman_01", "mounted": true, "strategy_id": "max_output", "x": 2.0},
-	{"npc_id": "engineer_01", "mounted": true, "strategy_id": "keep_distance", "x": 5.0}
+	{"npc_id": "doctor_01", "mounted": false, "strategy_id": "attack", "x": -5.0},
+	{"npc_id": "priest_01", "mounted": false, "strategy_id": "keep_distance", "x": -2.0}
 ]
 
 var _failures: PackedStringArray = []
@@ -66,7 +67,7 @@ func _verify_case(
 ) -> Dictionary:
 	var npc_id := str(test_case.get("npc_id", ""))
 	var mounted := bool(test_case.get("mounted", false))
-	var strategy_id := str(test_case.get("strategy_id", "max_output"))
+	var strategy_id := str(test_case.get("strategy_id", "attack"))
 	var actor := _get_npc_actor(npc_system, npc_id)
 	_check(actor != null, "T0235 NPC actor missing: %s" % npc_id)
 	if actor == null:

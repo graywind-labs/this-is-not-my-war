@@ -1,5 +1,35 @@
 # TECH_ARCHITECTURE.md
 
+## T0299 运行态诊断与叙事事件分层
+
+`NPCSystem.set_npc_behavior_mode(...)` 仍原子更新 current / previous / reason 与进入时间，但返回的 `event` 固定为空；各业务系统只为警铃、集结、避战、伤害、昏迷、复苏和逃离等具体事实调用 MemorySystem。MemorySystem 另设开发专用事件拒绝表，阻止旧 `npc_mode_changed` 调用重新进入全局、亲历、见闻和 LLM 记忆链。
+
+必要失败与计划修订事件在入库归一化层净化原因：只有自然中文叙述进入 `payload.reason / payload.summary` 和事件 summary；内部英文枚举、路径式标识和未知 action id 使用稳定中文兜底。仍需查询的 action / source 等结构化索引可以保留，但不以未知 ID 生成玩家 / NPC 可见文本。
+
+## T0289 情绪合同与表现边界
+
+后端 `DialogueEmotion` 是非权威但受限的响应枚举。模型输出先经别名 / 未知值归一化，再进入 Pydantic；归一化记录并入既有 `model_normalizations`，不会改变 `recruitment_result / wartime_reaction / combat_strategy_decision / work_encouragement_reaction / escape_intervention_result`。Godot 的 `DialogueEmotionCatalog` 集中维护 UI 所需映射与时长，DialogSystem 对规则降级和 GM 预览也使用同一目录。
+
+数据流严格单向：`provider → HTTP response → LLMBridge → DialogSystem turn → EventBus → 两类表现消费者`。Emoji 气泡是瞬时 presentation，不回写 NPC profile、MemorySystem、CombatSystem 或 ActionSystem。活动对话历史可携带表现元数据，完成守备官会话的事件净化继续只保存纯台词；这避免 UI 后缀变成 Prompt 记忆中的伪台词。
+
+## T0288 会话锁与事件单一事实边界
+
+- “是否允许取消”由已经发送的动作事实决定，而不是当前 checkbox 视觉状态或模型是否已返回。四类 request session flag 单向置真，直到会话收口。
+- “特殊结果”与“说过的话”分属两类事件：结果在模型回复业务校验后立即写 `dialogue_special_interaction_result`；完成会话只写净化后的 `dialogue_turn`。普通对话事件不再复制结构化结果，避免事件库、见闻和后续记忆把同一结果理解为发生两次。
+- UI 仍可在运行态读取带结果的 turn 生成彩色反馈，但持久化边界由 DialogSystem 在进入 MemorySystem 前统一白名单化，MemorySystem 不依赖 UI 清理。
+
+## T0287 调试入口与状态投影边界
+
+GMPanel 不直接写征召、buff、策略、逃离或记忆；它只选择枚举并调用 DialogSystem 的调试编排。DialogSystem 复用正式结果事件和 UI 信号，NPCSystem / CombatSystem 的薄 `debug_*` 包装复用既有权威私有方法。NPCPanel 只读当前 buff 字典，因此图标显隐、Tooltip 与跨日清除不会形成第二份状态。
+
+## T0286 结果事件与 UI 权威边界
+
+四类模型结果先由 DialogSystem 按现有业务规则合法化和应用，再作为 `dialogue_special_interaction_result` 进入 MemorySystem；公开传播也由 MemorySystem 执行。成功弹窗只订阅结果，不写入伍、buff 或策略。逃离警报只订阅 CombatSystem 已成功开始行为后的 EventBus 信号，不把 LLM 意向、计划或 UI 点击视为逃离事实。
+
+## T0285 工作鼓励权威边界
+
+`DialogSystem` 只管理四选一特殊对话意图和模型结果暂存；`NPCSystem` 管理工作鼓励资格、buff 生命周期与统一倍率；`ActionSystem / BuildingSystem` 读取倍率后仍自行结算工作；`CombatSystem` 管理逃离。后端只在开关开启时拼接对应 Prompt / Schema，不能写资源、HP、技能、建筑或行动事实。GM 与 UI 只调用这些接口，不建立第二套结算。
+
 ## T0271 状态展示与有效倍率边界
 
 - NPCNeedsSystem 继续独占饱食 / 疲劳的配置边界和持续结算，仅新增只读 `get_need_bounds(...)`；NPCPanel 负责比例、颜色和文案，不写回需求值。

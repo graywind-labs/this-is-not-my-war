@@ -48,6 +48,32 @@ except ModuleNotFoundError:
 
 SERVICE_NAME = "war-not-mine-backend"
 
+DIALOGUE_EMOTION_IDS = {
+    "none", "happy", "relieved", "angry", "sad", "afraid",
+    "surprised", "confused", "determined",
+}
+DIALOGUE_EMOTION_ALIASES = {
+    "": "none", "neutral": "none", "calm": "none", "steady": "none",
+    "wary": "none", "平静": "none", "谨慎": "none", "无": "none",
+    "无明显情绪": "none", "开心": "happy", "高兴": "happy",
+    "joyful": "happy", "pleased": "happy", "放松": "relieved",
+    "释然": "relieved", "relaxed": "relieved", "愤怒": "angry",
+    "生气": "angry", "hostile": "angry", "难过": "sad",
+    "悲伤": "sad", "upset": "sad", "害怕": "afraid",
+    "恐惧": "afraid", "fearful": "afraid", "shaken": "afraid",
+    "tense": "afraid", "惊讶": "surprised", "震惊": "surprised",
+    "shocked": "surprised", "困惑": "confused", "疑惑": "confused",
+    "uncertain": "confused", "坚定": "determined", "坚决": "determined",
+    "resolved": "determined", "resolute": "determined",
+}
+
+
+def normalize_dialogue_emotion(raw_value) -> str:
+    clean_value = str(raw_value or "").strip().lower()
+    if clean_value in DIALOGUE_EMOTION_IDS:
+        return clean_value
+    return DIALOGUE_EMOTION_ALIASES.get(clean_value, "none")
+
 
 def create_app() -> Flask:
     load_dotenv()
@@ -107,6 +133,8 @@ def create_app() -> Flask:
     def model_request_payload(request_model) -> dict:
         """Remove fields that are not choices for target-driven plan actions."""
         payload = request_model.model_dump()
+        if not bool(payload.get("is_combat_strategy_request", False)):
+            payload.pop("combat_strategy_context", None)
         for candidate in payload.get("allowed_actions", []):
             if (
                 isinstance(candidate, dict)
@@ -274,6 +302,12 @@ def create_app() -> Flask:
 
             if dialogue_request.is_recruitment_request:
                 details.append("npc_npc dialogue cannot be a recruitment request.")
+            if dialogue_request.is_morale_encouragement_request:
+                details.append("npc_npc dialogue cannot be a morale encouragement request.")
+            if dialogue_request.is_combat_strategy_request:
+                details.append("npc_npc dialogue cannot be a combat strategy request.")
+            if dialogue_request.is_work_encouragement_request:
+                details.append("npc_npc dialogue cannot be a work encouragement request.")
             if dialogue_request.escape_intervention_round is not None:
                 details.append("escape_intervention_round is only valid for escape_intervention.")
             return details
@@ -290,6 +324,12 @@ def create_app() -> Flask:
                 details.append("non npc_npc dialogue max_rounds must be at least 1.")
             if dialogue_request.is_recruitment_request:
                 details.append("escape_intervention cannot be a recruitment request.")
+            if dialogue_request.is_morale_encouragement_request:
+                details.append("escape_intervention cannot be a morale encouragement request.")
+            if dialogue_request.is_combat_strategy_request:
+                details.append("escape_intervention cannot be a combat strategy request.")
+            if dialogue_request.is_work_encouragement_request:
+                details.append("escape_intervention cannot be a work encouragement request.")
             if dialogue_request.escape_intervention_round is None:
                 details.append("escape_intervention requires escape_intervention_round.")
             elif dialogue_request.escape_intervention_round != dialogue_request.current_round:
@@ -306,28 +346,93 @@ def create_app() -> Flask:
         if dialogue_request.escape_intervention_round is not None:
             details.append("escape_intervention_round is only valid for escape_intervention.")
         if dialogue_request.is_recruitment_request:
-            if response_model.recruitment_result not in {"accept", "reject"}:
-                details.append("recruitment request requires recruitment_result accept or reject.")
+            if response_model.recruitment_result not in {"accept", "reject", "none"}:
+                details.append("recruitment request requires recruitment_result accept, reject or none.")
         elif response_model.recruitment_result != "none":
             details.append(
                 "dialogue without a recruitment request must use recruitment_result=none."
             )
 
         interaction_context = dialogue_request.interaction_context
-        if interaction_context in {"work", "avoid_combat"}:
+        special_request_count = sum((
+            dialogue_request.is_recruitment_request,
+            dialogue_request.is_morale_encouragement_request,
+            dialogue_request.is_combat_strategy_request,
+            dialogue_request.is_work_encouragement_request,
+        ))
+        if special_request_count > 1:
+            details.append("recruitment, morale, combat strategy and work encouragement requests are mutually exclusive.")
+        if not dialogue_request.is_morale_encouragement_request:
             if response_model.wartime_reaction != "none":
                 details.append(
-                    "%s dialogue must use wartime_reaction=none." % interaction_context
+                    "dialogue without morale encouragement enabled must use wartime_reaction=none."
                 )
-        elif interaction_context in {"rally", "combat"}:
+        elif interaction_context not in {"rally", "combat"}:
+            details.append("morale encouragement is only valid in rally/combat dialogue.")
+        else:
             npc_state = dialogue_request.npc_state
             equipment = npc_state.get("equipment", {})
             main_weapon = equipment.get("main_weapon") if isinstance(equipment, dict) else None
             combat_eligible = bool(npc_state.get("recruited", False)) and bool(main_weapon)
-            if not combat_eligible and response_model.wartime_reaction != "none":
+            if not combat_eligible:
                 details.append(
-                    "rally/combat dialogue without recruited status and a main weapon must use wartime_reaction=none."
+                    "morale encouragement requires recruited status and a main weapon."
                 )
+            morale_boost = npc_state.get("morale_boost", {})
+            if isinstance(morale_boost, dict) and bool(morale_boost.get("active", False)):
+                details.append("morale encouragement cannot be requested while its buff is active.")
+
+        strategy_context = dialogue_request.combat_strategy_context
+        strategy_decision = response_model.combat_strategy_decision
+        if not dialogue_request.is_combat_strategy_request:
+            if strategy_context is not None:
+                details.append("combat_strategy_context requires combat strategy request enabled.")
+            if strategy_decision is not None:
+                details.append("dialogue without combat strategy enabled must not return a strategy decision.")
+        elif interaction_context not in {"rally", "combat"}:
+            details.append("combat strategy adjustment is only valid in rally/combat dialogue.")
+        else:
+            npc_state = dialogue_request.npc_state
+            equipment = npc_state.get("equipment", {})
+            main_weapon = equipment.get("main_weapon") if isinstance(equipment, dict) else None
+            if not bool(npc_state.get("recruited", False)) or not bool(main_weapon):
+                details.append("combat strategy adjustment requires recruited status and a main weapon.")
+            if strategy_context is None:
+                details.append("combat strategy request requires combat_strategy_context.")
+            elif strategy_decision is None:
+                details.append("combat strategy request requires combat_strategy_decision.")
+            else:
+                current_id = strategy_context.current_strategy.id
+                available_ids = {option.id for option in strategy_context.available_strategies}
+                if strategy_decision.strategy_id not in available_ids:
+                    details.append("combat strategy decision must select an available strategy id.")
+                if strategy_decision.decision == "keep" and strategy_decision.strategy_id != current_id:
+                    details.append("keep decision must return the current strategy id.")
+                if strategy_decision.decision == "change" and strategy_decision.strategy_id == current_id:
+                    details.append("change decision must select a different strategy id.")
+
+        work_reaction = response_model.work_encouragement_reaction
+        if not dialogue_request.is_work_encouragement_request:
+            if work_reaction != "none":
+                details.append(
+                    "dialogue without work encouragement enabled must use work_encouragement_reaction=none."
+                )
+        elif interaction_context != "work":
+            details.append("work encouragement is only valid in work dialogue.")
+        else:
+            npc_state = dialogue_request.npc_state
+            if str(npc_state.get("behavior_mode", "work")) != "work":
+                details.append("work encouragement requires the NPC to be in work behavior mode.")
+            if bool(npc_state.get("unconscious", False)):
+                details.append("work encouragement cannot target an unconscious NPC.")
+            if bool(npc_state.get("escaped", False)):
+                details.append("work encouragement cannot target an escaped NPC.")
+            escape_state = npc_state.get("escape_state", {})
+            if isinstance(escape_state, dict) and bool(escape_state.get("active", False)):
+                details.append("work encouragement cannot target an escaping NPC.")
+            work_boost = npc_state.get("work_encouragement_boost", {})
+            if isinstance(work_boost, dict) and bool(work_boost.get("active", False)):
+                details.append("work encouragement cannot be requested while its buff is active.")
         return details
 
     def validate_daily_plan_business_rules(plan_request: DailyPlanRequest, response_model: DailyPlanResponse) -> list[str]:
@@ -613,7 +718,7 @@ def create_app() -> Flask:
         dialogue_output = dict(result.content)
         dialogue_normalizations: list[dict] = []
         for field_name, default_value in (
-            ("emotion", "neutral"),
+            ("emotion", "none"),
             ("suggested_event_type", "dialogue_turn"),
             ("debug_reason", ""),
         ):
@@ -625,6 +730,16 @@ def create_app() -> Flask:
                     "to": default_value,
                     "source": "nullable_non_authoritative_metadata_default",
                 })
+        raw_emotion = dialogue_output.get("emotion", "none")
+        normalized_emotion = normalize_dialogue_emotion(raw_emotion)
+        if raw_emotion != normalized_emotion:
+            dialogue_output["emotion"] = normalized_emotion
+            dialogue_normalizations.append({
+                "path": "emotion",
+                "from": raw_emotion,
+                "to": normalized_emotion,
+                "source": "dialogue_emotion_alias_or_unknown_default",
+            })
         try:
             response_model = response_model_type.model_validate(dialogue_output)
         except ValidationError as exc:
@@ -646,9 +761,12 @@ def create_app() -> Flask:
                 business_errors,
             )
 
-        return jsonify(
-            model_success_payload(response_model, result, dialogue_normalizations)
-        )
+        response_payload = model_success_payload(response_model, result, dialogue_normalizations)
+        if not dialogue_request.is_combat_strategy_request:
+            response_payload.pop("combat_strategy_decision", None)
+        if not dialogue_request.is_work_encouragement_request:
+            response_payload.pop("work_encouragement_reaction", None)
+        return jsonify(response_payload)
 
     @app.post("/npc/dialogue_plan_revision_judgement")
     @app.post("/npc/plan_revision_judgement")

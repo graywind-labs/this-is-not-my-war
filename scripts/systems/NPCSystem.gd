@@ -97,6 +97,8 @@ const UNCONSCIOUS_HEALING_BASE_HP_PER_HOUR := 2.0
 const UNCONSCIOUS_HEALING_MAX_BONUS_HP_PER_HOUR := 10.0
 const UNCONSCIOUS_HEALING_SKILL_THRESHOLD := 20.0
 const REVIVE_HP_RATIO := 0.3
+const WORK_ENCOURAGEMENT_OUTPUT_BONUS := 0.20
+const WORK_ENCOURAGEMENT_OUTPUT_MULTIPLIER := 1.0 + WORK_ENCOURAGEMENT_OUTPUT_BONUS
 const PROACTIVE_TALK_DEFAULT_DURATION_SECONDS := 3600.0
 const PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS := 5.0
 const PROACTIVE_TALK_GESTURE_MIN_INTERVAL_REAL_SECONDS := 0.1
@@ -1466,12 +1468,9 @@ func set_npc_behavior_mode(
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
 
+	# 行为模式与 reason 是运行时 / GM 诊断状态，不是 NPC 经历的事实。
+	# 警铃、避战、昏迷、逃离等可叙事结果由各自的具体事件负责入库。
 	var mode_event := {}
-	if (
-		(previous_mode != clean_mode or bool(options.get("log_if_same", false)))
-		and _should_log_npc_mode_changed(previous_mode, clean_mode, options)
-	):
-		mode_event = _log_npc_mode_changed(npc_id, previous_mode, clean_mode, reason, options)
 	var reevaluation_status := {}
 	if bool(options.get("request_plan_reevaluation", false)):
 		reevaluation_status = _request_plan_reevaluation_or_defer(npc_id, reason)
@@ -5123,10 +5122,6 @@ func apply_damage_to_npc(
 	var unconscious_event := {}
 	if became_unconscious:
 		unconscious_event = _log_unconscious_started(npc_id, actor_id, damage, hp_before, hp_after, "local_public")
-		_log_npc_mode_changed(npc_id, previous_behavior_mode, BEHAVIOR_MODE_UNCONSCIOUS, "hp_zero", {
-			"visibility": "local_public",
-			"trigger_actor_id": actor_id
-		})
 		_emit_npc_unconscious(npc_id)
 	elif bool(options.get("enemy_attack", false)):
 		_route_enemy_attack_mode(npc_id, actor_id)
@@ -5443,6 +5438,227 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 		return
 	_advance_unconscious_recovery(game_delta_seconds)
 	_advance_proactive_talk_timers(game_delta_seconds)
+	_advance_work_encouragement_boosts(game_delta_seconds)
+
+
+func get_work_encouragement_eligibility(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {"eligible": false, "reason": "unknown_npc", "message": "NPC 不存在。"}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.get_active_enemy_count()) > 0:
+		return {"eligible": false, "reason": "active_enemies", "message": "场上仍有敌人，不能鼓励日常工作。"}
+	var state := get_npc_state(npc_id)
+	if bool(state.get("unconscious", false)):
+		return {"eligible": false, "reason": "npc_unconscious", "message": "昏迷中的 NPC 不能被鼓励工作。"}
+	if bool(state.get("escaped", false)) or str(state.get("behavior_mode", BEHAVIOR_MODE_WORK)) == "escaped":
+		return {"eligible": false, "reason": "npc_escaped", "message": "正在逃离或已经离站的 NPC 不能被鼓励工作。"}
+	var mode := str(state.get("behavior_mode", BEHAVIOR_MODE_WORK))
+	if mode != BEHAVIOR_MODE_WORK:
+		return {"eligible": false, "reason": "not_work_mode", "message": "只有和平工作模式中的 NPC 可以被鼓励工作。", "behavior_mode": mode}
+	var boost: Dictionary = state.get("work_encouragement_boost", {}) if state.get("work_encouragement_boost", {}) is Dictionary else {}
+	if bool(boost.get("active", false)):
+		return {"eligible": false, "reason": "work_boost_active", "message": "该 NPC 的工作鼓励增益正在生效，跨天后才能再次鼓励。", "behavior_mode": mode}
+	return {"eligible": true, "reason": "eligible", "message": "可对该 NPC 发起一次工作鼓励判定。", "behavior_mode": mode}
+
+
+func get_npc_work_output_multiplier(npc_id: String) -> float:
+	if not _profiles.has(npc_id):
+		return 1.0
+	var state := get_npc_state(npc_id)
+	var boost: Dictionary = state.get("work_encouragement_boost", {}) if state.get("work_encouragement_boost", {}) is Dictionary else {}
+	if not bool(boost.get("active", false)):
+		return 1.0
+	return maxf(1.0, float(boost.get("output_multiplier", WORK_ENCOURAGEMENT_OUTPUT_MULTIPLIER)))
+
+
+func apply_work_encouragement_reaction(npc_id: String, reaction: String, context: Dictionary = {}) -> Dictionary:
+	var clean_reaction := reaction.strip_edges()
+	if not clean_reaction in ["none", "escape", "work_boost"]:
+		clean_reaction = "none"
+	var eligibility := get_work_encouragement_eligibility(npc_id)
+	if not bool(eligibility.get("eligible", false)):
+		return {
+			"ok": false,
+			"applied": false,
+			"npc_id": npc_id,
+			"reaction": clean_reaction,
+			"error": str(eligibility.get("reason", "work_encouragement_unavailable")),
+			"message": str(eligibility.get("message", "当前不能鼓励工作。"))
+		}
+	var result_event := _log_work_encouragement_result(npc_id, clean_reaction, context)
+	var state_result := {"ok": true, "applied": false, "reason": "none"}
+	match clean_reaction:
+		"work_boost":
+			state_result = _start_work_encouragement_boost(npc_id, context)
+		"escape":
+			var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+			if combat_system == null or not combat_system.has_method("start_npc_escape"):
+				state_result = {"ok": false, "applied": false, "error": "combat_system_missing"}
+			else:
+				state_result = combat_system.start_npc_escape(
+					npc_id,
+					str(result_event.get("event_id", context.get("source_event_id", ""))),
+					"work_encouragement_dialogue",
+					context
+				)
+	return {
+		"ok": bool(state_result.get("ok", true)),
+		"applied": bool(state_result.get("applied", false)),
+		"npc_id": npc_id,
+		"npc_name": str(get_npc(npc_id).get("name", npc_id)),
+		"reaction": clean_reaction,
+		"result_event": result_event,
+		"state_result": state_result
+	}
+
+
+func debug_start_work_encouragement_boost(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {"ok": false, "applied": false, "error": "unknown_npc", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	var boost: Dictionary = state.get("work_encouragement_boost", {}) if state.get("work_encouragement_boost", {}) is Dictionary else {}
+	if bool(boost.get("active", false)):
+		return {
+			"ok": false,
+			"applied": false,
+			"error": "work_boost_active",
+			"message": "该 NPC 的工作效率增益正在生效。",
+			"npc_id": npc_id
+		}
+	return _start_work_encouragement_boost(npc_id, {
+		"source_event_id": "gm_special_result_preview",
+		"dialogue_id": "gm_special_result_preview",
+		"visibility": "private"
+	})
+
+
+func debug_clear_work_encouragement_boost(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {"ok": false, "applied": false, "error": "unknown_npc", "npc_id": npc_id}
+	var state := get_npc_state(npc_id)
+	var boost: Dictionary = state.get("work_encouragement_boost", {}) if state.get("work_encouragement_boost", {}) is Dictionary else {}
+	if not bool(boost.get("active", false)):
+		return {"ok": true, "applied": false, "reason": "no_active_work_boost", "npc_id": npc_id}
+	_log_work_encouragement_boost_ended(npc_id, boost)
+	update_npc_state(npc_id, {
+		"work_encouragement_boost": {},
+		"last_action_result": "work_encouragement_boost_cleared_by_gm"
+	})
+	return {"ok": true, "applied": true, "npc_id": npc_id}
+
+
+func _start_work_encouragement_boost(npc_id: String, context: Dictionary) -> Dictionary:
+	var time_snapshot := _get_game_time_snapshot()
+	var remaining_until_midnight := _get_game_seconds_until_midnight()
+	var boost := {
+		"active": true,
+		"source_event_id": str(context.get("source_event_id", "")),
+		"dialogue_id": str(context.get("dialogue_id", "")),
+		"duration_seconds": remaining_until_midnight,
+		"remaining_game_seconds": remaining_until_midnight,
+		"output_bonus": WORK_ENCOURAGEMENT_OUTPUT_BONUS,
+		"output_multiplier": WORK_ENCOURAGEMENT_OUTPUT_MULTIPLIER,
+		"started_day": int(time_snapshot.get("day", 1)),
+		"started_time": str(time_snapshot.get("time", "00:00:00")),
+		"expires_day": int(time_snapshot.get("day", 1)) + 1,
+		"expires_time": "00:00:00",
+		"visibility": str(context.get("visibility", "private"))
+	}
+	update_npc_state(npc_id, {
+		"work_encouragement_boost": boost,
+		"last_action_result": "work_encouragement_boost_started"
+	})
+	var event := _log_work_encouragement_boost_started(npc_id, boost)
+	return {"ok": true, "applied": true, "npc_id": npc_id, "work_encouragement_boost": boost, "event": event}
+
+
+func _advance_work_encouragement_boosts(game_delta_seconds: float) -> void:
+	for npc_id in _npc_order:
+		if not _profiles.has(npc_id):
+			continue
+		var state := get_npc_state(npc_id)
+		var boost: Dictionary = state.get("work_encouragement_boost", {}) if state.get("work_encouragement_boost", {}) is Dictionary else {}
+		if not bool(boost.get("active", false)):
+			continue
+		var remaining := maxf(0.0, float(boost.get("remaining_game_seconds", 0.0)) - game_delta_seconds)
+		if remaining > 0.0:
+			boost["remaining_game_seconds"] = remaining
+			update_npc_state(npc_id, {"work_encouragement_boost": boost})
+			continue
+		_log_work_encouragement_boost_ended(npc_id, boost)
+		update_npc_state(npc_id, {
+			"work_encouragement_boost": {},
+			"last_action_result": "work_encouragement_boost_ended"
+		})
+
+
+func _get_game_seconds_until_midnight() -> float:
+	var snapshot := _get_game_time_snapshot()
+	var parts := str(snapshot.get("time", "00:00:00")).split(":")
+	var hour := int(parts[0]) if parts.size() > 0 else 0
+	var minute := int(parts[1]) if parts.size() > 1 else 0
+	var second := int(parts[2]) if parts.size() > 2 else 0
+	return maxf(1.0, 86400.0 - float(hour * 3600 + minute * 60 + second))
+
+
+func _log_work_encouragement_result(npc_id: String, reaction: String, context: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "work_encouragement_result",
+		"subject_npc_id": npc_id,
+		"actor_ids": [PLAYER_ACTOR_ID],
+		"target_ids": [npc_id],
+		"location_id": str(get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID)),
+		"visibility": str(context.get("visibility", "private")),
+		"importance": 60 if reaction == "work_boost" else 75 if reaction == "escape" else 35,
+		"payload": {
+			"decision": reaction,
+			"dialogue_id": str(context.get("dialogue_id", "")),
+			"source_event_id": str(context.get("source_event_id", ""))
+		}
+	})
+
+
+func _log_work_encouragement_boost_started(npc_id: String, boost: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "work_encouragement_boost_started",
+		"subject_npc_id": npc_id,
+		"actor_ids": [PLAYER_ACTOR_ID],
+		"target_ids": [npc_id],
+		"location_id": str(get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID)),
+		"visibility": str(boost.get("visibility", "private")),
+		"importance": 60,
+		"payload": {
+			"source_event_id": str(boost.get("source_event_id", "")),
+			"duration_seconds": float(boost.get("duration_seconds", 0.0)),
+			"output_bonus": float(boost.get("output_bonus", WORK_ENCOURAGEMENT_OUTPUT_BONUS)),
+			"output_multiplier": float(boost.get("output_multiplier", WORK_ENCOURAGEMENT_OUTPUT_MULTIPLIER))
+		}
+	})
+
+
+func _log_work_encouragement_boost_ended(npc_id: String, boost: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	return memory_system.add_event({
+		"type": "work_encouragement_boost_ended",
+		"subject_npc_id": npc_id,
+		"actor_ids": [SYSTEM_ACTOR_ID],
+		"target_ids": [npc_id],
+		"location_id": str(get_npc_state(npc_id).get("current_location", PLAZA_LOCATION_ID)),
+		"visibility": str(boost.get("visibility", "private")),
+		"importance": 40,
+		"payload": {
+			"source_event_id": str(boost.get("source_event_id", "")),
+			"duration_seconds": float(boost.get("duration_seconds", 0.0))
+		}
+	})
 
 
 func _advance_unconscious_recovery(game_delta_seconds: float, only_npc_id: String = "") -> Dictionary:
@@ -5795,12 +6011,40 @@ func _interrupt_for_behavior_mode(npc_id: String, mode: String, reason: String, 
 		"world_position_restored": false
 	}
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
-	if dialog_system != null and dialog_system.has_method("force_end_dialogue_for_npc"):
+	var preserve_player_dialogue := (
+		dialog_system != null
+		and dialog_system.has_method("should_preserve_player_dialogue_for_behavior_mode_transition")
+		and bool(dialog_system.should_preserve_player_dialogue_for_behavior_mode_transition(
+			npc_id,
+			mode
+		))
+	)
+	if (
+		not preserve_player_dialogue
+		and dialog_system != null
+		and dialog_system.has_method("force_end_dialogue_for_npc")
+	):
 		result["dialogue"] = dialog_system.force_end_dialogue_for_npc(npc_id, reason)
+	elif preserve_player_dialogue:
+		result["dialogue"] = {
+			"ok": true,
+			"ended": false,
+			"reason": "player_dialogue_parallel_with_combat"
+		}
 
 	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
-	if llm_bridge != null and llm_bridge.has_method("cancel_npc_llm_requests"):
+	if (
+		not preserve_player_dialogue
+		and llm_bridge != null
+		and llm_bridge.has_method("cancel_npc_llm_requests")
+	):
 		result["llm"] = llm_bridge.cancel_npc_llm_requests(npc_id, reason)
+	elif preserve_player_dialogue:
+		result["llm"] = {
+			"ok": true,
+			"cancelled": false,
+			"reason": "player_dialogue_parallel_with_combat"
+		}
 
 	var state := get_npc_state(npc_id)
 	var proactive: Dictionary = state.get("proactive_talk", {}) if (state.get("proactive_talk", {}) is Dictionary) else {}
@@ -5909,9 +6153,12 @@ func _normalize_progression(raw_progression: Variant) -> Dictionary:
 		normalized_skill_experience[skill_name] = maxi(0, int(skill_experience.get(skill_name, 0)))
 
 	var total_experience := maxi(0, int(source.get("total_experience", 0)))
+	var current_level_experience_max := maxi(1, SKILL_POINT_EXPERIENCE_THRESHOLD)
 	return {
 		"total_experience": total_experience,
 		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD,
+		"current_level_experience": total_experience % current_level_experience_max,
+		"current_level_experience_max": current_level_experience_max,
 		"unspent_skill_points": maxi(0, int(source.get("unspent_skill_points", source.get("skill_points", 0)))),
 		"spent_skill_points": maxi(0, int(source.get("spent_skill_points", 0))),
 		"skill_experience": normalized_skill_experience
@@ -6737,39 +6984,6 @@ func _log_revived(npc_id: String, hp_before: int, hp_after: int, recovery_source
 	})
 
 
-func _log_npc_mode_changed(
-	npc_id: String,
-	from_mode: String,
-	to_mode: String,
-	reason: String,
-	options: Dictionary = {}
-) -> Dictionary:
-	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
-	if memory_system == null or not memory_system.has_method("add_event"):
-		return {}
-	var visibility := str(options.get("visibility", "local_public"))
-	if not ["private", "local_public"].has(visibility):
-		visibility = "local_public"
-	var location_id := _get_current_info_location(npc_id, memory_system)
-	return memory_system.add_event({
-		"type": "npc_mode_changed",
-		"subject_npc_id": npc_id,
-		"actor_ids": [str(options.get("trigger_actor_id", SYSTEM_ACTOR_ID))],
-		"target_ids": [npc_id, to_mode],
-		"location_id": location_id,
-		"visibility": visibility,
-		"importance": int(options.get("importance", 70)),
-		"payload": {
-			"npc_id": npc_id,
-			"from_mode": from_mode,
-			"from_mode_label": _get_behavior_mode_label(from_mode),
-			"to_mode": to_mode,
-			"to_mode_label": _get_behavior_mode_label(to_mode),
-			"reason": reason
-		}
-	})
-
-
 func _log_npc_escaped(npc_id: String, arrival_state: Dictionary = {}) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -6793,25 +7007,6 @@ func _log_npc_escaped(npc_id: String, arrival_state: Dictionary = {}) -> Diction
 			"reason": str(arrival_state.get("escape_reason", "escape_completed"))
 		}
 	})
-
-
-func _should_log_npc_mode_changed(from_mode: String, to_mode: String, options: Dictionary = {}) -> bool:
-	if bool(options.get("force_mode_event", false)):
-		return true
-	if bool(options.get("suppress_mode_event", false)):
-		return false
-	if _is_quiet_behavior_mode_transition(from_mode, to_mode):
-		return false
-	return true
-
-
-func _is_quiet_behavior_mode_transition(from_mode: String, to_mode: String) -> bool:
-	return (
-		(from_mode == BEHAVIOR_MODE_WORK and to_mode == BEHAVIOR_MODE_COMBAT)
-		or (from_mode == BEHAVIOR_MODE_COMBAT and to_mode == BEHAVIOR_MODE_WORK)
-		or (from_mode == BEHAVIOR_MODE_WORK and to_mode == BEHAVIOR_MODE_AVOID_COMBAT)
-		or (from_mode == BEHAVIOR_MODE_AVOID_COMBAT and to_mode == BEHAVIOR_MODE_WORK)
-	)
 
 
 func _get_current_info_location(npc_id: String, memory_system: Node) -> String:

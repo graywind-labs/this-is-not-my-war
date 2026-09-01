@@ -50,23 +50,23 @@ func _init() -> void:
 
 	npc_system.debug_select_npc(npc_id)
 	await process_frame
-	var strategy_select := root.find_child("NPCCombatStrategySelect", true, false) as OptionButton
-	if strategy_select == null:
-		push_error("NPCPanel should create combat strategy selector beside weapon equip controls")
+	var strategy_label := root.find_child("NPCCombatStrategyValue", true, false) as Label
+	if strategy_label == null or root.find_child("NPCCombatStrategySelect", true, false) != null:
+		push_error("NPCPanel should show a read-only combat strategy label without a selector")
 		quit(1)
 		return
-	if not _select_option_by_id(strategy_select, "avoid"):
-		push_error("NPC strategy selector should include avoid for sword shield")
+	if strategy_label.text != "主动进攻":
+		push_error("NPCPanel read-only strategy label should show the current default")
 		quit(1)
 		return
-	strategy_select.item_selected.emit(strategy_select.selected)
+	var dialogue_strategy_change: Dictionary = combat_system.set_npc_combat_strategy(npc_id, "avoid", "private", "verify_dialogue_strategy")
 	await process_frame
-	if str(combat_system.get_npc_combat_strategy(npc_id).get("id", "")) != "avoid":
-		push_error("NPCPanel strategy selector did not apply avoid strategy")
+	if not bool(dialogue_strategy_change.get("ok", false)) or str(combat_system.get_npc_combat_strategy(npc_id).get("id", "")) != "avoid":
+		push_error("CombatSystem dialogue-facing strategy interface did not apply avoid strategy")
 		quit(1)
 		return
 	if not _has_event(memory_system.get_npc_daily_events(npc_id), "combat_strategy_selected"):
-		push_error("Manual combat strategy selection should write combat_strategy_selected")
+		push_error("Dialogue strategy selection should write combat_strategy_selected")
 		quit(1)
 		return
 
@@ -75,32 +75,23 @@ func _init() -> void:
 		push_error("Failed to equip bow: %s" % JSON.stringify(bow_result))
 		quit(1)
 		return
-	if not _assert_strategy_ids(combat_system.get_npc_combat_strategy_options(npc_id), ["max_output", "keep_distance", "avoid"], "bow options"):
+	if not _assert_strategy_ids(combat_system.get_npc_combat_strategy_options(npc_id), ["attack", "keep_distance", "avoid"], "bow options"):
 		quit(1)
 		return
-	if str(combat_system.get_npc_combat_strategy(npc_id).get("id", "")) != "max_output":
-		push_error("Bow should normalize invalid melee strategy to max_output")
-		quit(1)
-		return
-
-	var mount_result: Dictionary = equipment_system.equip_npc_mount(npc_id, "", "local_public")
-	if not bool(mount_result.get("ok", false)):
-		push_error("Failed to equip mount: %s" % JSON.stringify(mount_result))
-		quit(1)
-		return
-	if not _assert_strategy_ids(combat_system.get_npc_combat_strategy_options(npc_id), ["max_output", "keep_distance", "avoid"], "mounted ranged options"):
+	if str(combat_system.get_npc_combat_strategy(npc_id).get("id", "")) != "attack":
+		push_error("Bow should normalize invalid melee strategy to attack")
 		quit(1)
 		return
 
-	var cavalry_id := "stableman_01"
-	npc_system.set_npc_recruited(cavalry_id, true)
-	var cavalry_weapon: Dictionary = equipment_system.equip_npc_main_weapon(cavalry_id, "sword_shield", "local_public")
-	var cavalry_mount: Dictionary = equipment_system.equip_npc_mount(cavalry_id, "", "local_public")
-	if not bool(cavalry_weapon.get("ok", false)) or not bool(cavalry_mount.get("ok", false)):
-		push_error("Failed to equip cavalry test NPC")
+	if not _assert_strategy_ids(combat_system.get_combat_strategy_options_for_unit_type("mounted_ranged"), ["attack", "keep_distance", "avoid"], "mounted ranged options"):
 		quit(1)
 		return
-	if not _assert_strategy_ids(combat_system.get_npc_combat_strategy_options(cavalry_id), ["attack", "charge_cycle", "avoid"], "cavalry options"):
+	if not _assert_strategy_ids(combat_system.get_combat_strategy_options_for_unit_type("cavalry"), ["attack", "avoid"], "cavalry options"):
+		quit(1)
+		return
+	var removed_charge: Dictionary = combat_system.set_npc_combat_strategy(npc_id, "charge_cycle", "private")
+	if bool(removed_charge.get("ok", false)):
+		push_error("Removed cavalry charge-cycle strategy must not be selectable")
 		quit(1)
 		return
 
@@ -249,96 +240,6 @@ func _init() -> void:
 	var desired_travel_distance := float(keep_target.get("desired_travel_distance", 0.0))
 	if not is_equal_approx(desired_travel_distance, 8.0):
 		push_error("Keep-distance retreat should author one leg at two-thirds of the 12 m range, movement=%s" % JSON.stringify(keep_target))
-		quit(1)
-		return
-
-	combat_system.debug_clear_enemies()
-	combat_system.debug_spawn_wave(1, true)
-	enemy_id = _place_first_enemy(combat_system, Vector3(0.0, 0.0, 1.2), 200)
-	var charge_select: Dictionary = combat_system.set_npc_combat_strategy(cavalry_id, "charge_cycle", "private")
-	if not bool(charge_select.get("ok", false)):
-		push_error("Failed to select cavalry charge-cycle strategy")
-		quit(1)
-		return
-	npc_system.set_npc_behavior_mode(cavalry_id, "combat", "verify_charge_impact", {
-		"state_changes": {
-			"current_action": "combat_ready",
-			"combat_target_enemy_id": enemy_id,
-			"combat_attack_cooldown": 0.0,
-			"combat_charge_phase": "impact"
-		},
-		"request_plan_reevaluation": false
-	})
-	npc_system.stop_npc_movement_with_state(cavalry_id, {
-		"combat_mounted": true,
-		"combat_mount_phase": "mounted",
-		"current_action": "combat_ready",
-		"combat_target_enemy_id": enemy_id,
-		"combat_charge_phase": "impact"
-	})
-	var cavalry_origin: Vector3 = npc_system.get_npc_world_position(cavalry_id)
-	_place_first_enemy(combat_system, cavalry_origin + Vector3(0.0, 0.0, 1.2), 200)
-	var active_enemies: Dictionary = combat_system.get("_active_enemies")
-	var winding_enemy: Dictionary = active_enemies.get(enemy_id, {})
-	winding_enemy["attack_windup_remaining"] = 0.4
-	winding_enemy["attack_windup_target"] = {
-		"type": "npc",
-		"id": cavalry_id,
-		"name": "托马"
-	}
-	winding_enemy["current_action"] = "winding_up_%s" % cavalry_id
-	active_enemies[enemy_id] = winding_enemy
-	combat_system.set("_active_enemies", active_enemies)
-	var charge_hp_before := int(combat_system.get_enemy(enemy_id).get("hp", 0))
-	var charge_context: Dictionary = combat_system._calculate_npc_attack_context(
-		cavalry_id,
-		npc_system.get_npc(cavalry_id),
-		npc_system.get_npc_state(cavalry_id)
-	)
-	var charge_impact_seconds := float((charge_context.get("animation_timing", {}) as Dictionary).get("impact_seconds", 0.0))
-	var charge_windup: Dictionary = combat_system._advance_single_npc_combat_attack(cavalry_id, maxf(0.001, charge_impact_seconds - 0.01))
-	if int(charge_windup.get("attack_count", 0)) != 0:
-		push_error("Charge-cycle collision must wait for the approved weapon impact: %s" % JSON.stringify(charge_windup))
-		quit(1)
-		return
-	var charge_result: Dictionary = combat_system._advance_single_npc_combat_attack(cavalry_id, 0.02)
-	var charge_attacks: Array = charge_result.get("attacks", [])
-	var charge_attack: Dictionary = charge_attacks[0] if not charge_attacks.is_empty() else {}
-	if charge_attack.is_empty():
-		push_error("Charge-cycle impact should produce a weapon attack plus horse collision: %s" % JSON.stringify(charge_result))
-		quit(1)
-		return
-	var charge_impact: Dictionary = charge_attack.get("charge_impact", {})
-	var charged_enemy: Dictionary = combat_system.get_enemy(enemy_id)
-	var charge_hp_loss := charge_hp_before - int(charged_enemy.get("hp", 0))
-	var collision_damage := int(charge_impact.get("collision_damage", 0))
-	var weapon_damage := int(charge_attack.get("damage", 0))
-	var base_context: Dictionary = charge_impact.get("base_attack_context", {})
-	var unboosted_weapon_damage := int(combat_system.calculate_damage_resolution(
-		float(base_context.get("raw_attack_power", 0.0)),
-		float(charge_attack.get("target_defense", 0.0)),
-		float(charge_attack.get("penetration", 0.0))
-	).get("damage", 0))
-	if (
-		collision_damage <= 0
-		or float(charge_impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
-		or charge_hp_loss != collision_damage + weapon_damage
-		or (weapon_damage > 0 and weapon_damage <= unboosted_weapon_damage)
-	):
-		push_error("Mounted charge should always apply independent collision damage and only add boosted weapon damage on actual weapon contact")
-		quit(1)
-		return
-	if (
-		not bool(charge_impact.get("interrupted_windup", false))
-		or float(charged_enemy.get("stagger_remaining", 0.0)) <= 0.0
-		or float(charged_enemy.get("attack_windup_remaining", -1.0)) != 0.0
-		or int(charged_enemy.get("windup_interrupt_count", 0)) <= 0
-	):
-		push_error("Horse collision should stagger the enemy and interrupt its active windup: %s" % JSON.stringify(charged_enemy))
-		quit(1)
-		return
-	if str(npc_system.get_npc_state(cavalry_id).get("combat_charge_phase", "")) != "withdraw":
-		push_error("Cavalry should return to withdraw phase after an impact")
 		quit(1)
 		return
 

@@ -313,6 +313,7 @@ def main() -> None:
     )
     wartime_payload.update({
         "is_recruitment_request": False,
+        "is_morale_encouragement_request": True,
         "interaction_context": "combat",
         "npc_state": wartime_payload["npc_state"] | {
             "recruited": True,

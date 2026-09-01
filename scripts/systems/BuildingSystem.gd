@@ -1285,14 +1285,22 @@ func _calculate_repair_helper_bonus(engineering_skill: int) -> float:
 func _get_repair_speed_multiplier(job: Dictionary) -> float:
 	var multiplier := 1.0
 	var helpers: Dictionary = job.get("helpers", {})
-	for helper in helpers.values():
+	for raw_npc_id in helpers.keys():
+		var helper: Variant = helpers[raw_npc_id]
 		if helper is Dictionary:
-			multiplier += float((helper as Dictionary).get("speed_bonus", 0.0))
+			multiplier += float((helper as Dictionary).get("speed_bonus", 0.0)) * _get_npc_work_output_multiplier(str(raw_npc_id))
 	return multiplier
 
 
 func _get_upgrade_speed_multiplier(job: Dictionary) -> float:
 	return _get_repair_speed_multiplier(job)
+
+
+func _get_npc_work_output_multiplier(npc_id: String) -> float:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_work_output_multiplier"):
+		return 1.0
+	return maxf(1.0, float(npc_system.get_npc_work_output_multiplier(npc_id)))
 
 
 func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> void:

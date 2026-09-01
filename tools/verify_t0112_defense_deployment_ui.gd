@@ -3,8 +3,9 @@ extends SceneTree
 
 const COMPACT_VIEWPORT := Vector2i(1152, 648)
 const LARGE_VIEWPORT := Vector2i(2400, 1350)
-const MAX_POPUP_WIDTH := 460.0
-const MAX_POPUP_HEIGHT := 560.0
+const MAX_POPUP_WIDTH := 245.0
+const MAX_POPUP_HEIGHT := 330.0
+const ICON_BUTTON_SIZE := Vector2(68.0, 68.0)
 
 
 func _init() -> void:
@@ -35,6 +36,8 @@ func _init() -> void:
 	].has(null):
 		_fail("T0112 required runtime nodes are missing.")
 		return
+	resource_system.add_resource("item_wall_ballista", 2)
+	resource_system.add_resource("item_wall_arrow_tower", 1)
 
 	_set_building_level(building_system, "wall", 1)
 	_set_building_level(building_system, "main_hall", 1)
@@ -44,9 +47,7 @@ func _init() -> void:
 		return
 	if not await _verify_compact_popup(presenter):
 		return
-	if not await _verify_wall_bonus_presentation(building_system, device_system, presenter):
-		return
-	if not await _verify_main_hall_no_bonus(building_system, presenter):
+	if not await _verify_main_hall_icon_deployment(building_system, device_system, resource_system, presenter):
 		return
 	if not _verify_range_curves(building_system, device_system):
 		return
@@ -102,24 +103,34 @@ func _verify_compact_popup(presenter: Node) -> bool:
 			% JSON.stringify(compact_snapshot)
 		)
 	if (
-		bool(compact_snapshot.get("bonus_visible", true))
-		or bool(compact_snapshot.get("status_visible", true))
+		str(compact_snapshot.get("title", "")) != "选择防御器械"
+		or int(compact_snapshot.get("icon_count", 0)) != 3
 	):
-		return _fail("Wall Lv.1 must not show a fake bonus or default status note.")
+		return _fail("Wall slot popup did not expose the expected pure inventory icons.")
 
 	var popup := presenter.get_node_or_null("DefenseDeploymentPanel")
 	if popup == null:
 		return _fail("Deployment popup node is missing.")
-	var forbidden_fragments := [
-		"每次部署消耗",
-		"同级横向选择",
-		"库存与槽位由系统实时校验"
-	]
+	var allowed_label_texts := ["选择防御器械"]
 	for label_node in popup.find_children("*", "Label", true, false):
 		var text := str((label_node as Label).text)
-		for fragment in forbidden_fragments:
-			if text.contains(fragment):
-				return _fail("Deployment popup still contains redundant text: %s" % fragment)
+		if not text.is_empty() and not allowed_label_texts.has(text):
+			return _fail("Deployment popup still contains non-picker text: %s" % text)
+	var picker_buttons: Array[Button] = _get_picker_buttons(popup)
+	if picker_buttons.size() != 3:
+		return _fail("Deployment popup should contain one icon per undeployed inventory item.")
+	var tooltip_counts := {"弩床": 0, "箭塔": 0}
+	for button in picker_buttons:
+		if (
+			button.custom_minimum_size != ICON_BUTTON_SIZE
+			or button.icon == null
+			or not tooltip_counts.has(button.tooltip_text)
+			or not button.text.is_empty()
+		):
+			return _fail("Deployment picker icon contract mismatch: %s" % button.name)
+		tooltip_counts[button.tooltip_text] = int(tooltip_counts[button.tooltip_text]) + 1
+	if int(tooltip_counts["弩床"]) != 2 or int(tooltip_counts["箭塔"]) != 1:
+		return _fail("Deployment picker did not mirror exact undeployed inventory counts.")
 
 	var compact_size: Vector2 = compact_snapshot.get("size", Vector2.ZERO)
 	root.size = LARGE_VIEWPORT
@@ -138,38 +149,12 @@ func _verify_compact_popup(presenter: Node) -> bool:
 	return true
 
 
-func _verify_wall_bonus_presentation(
+func _verify_main_hall_icon_deployment(
 	building_system: Node,
 	device_system: Node,
+	resource_system: Node,
 	presenter: Node
 ) -> bool:
-	presenter._close_popup()
-	_set_building_level(building_system, "wall", 3)
-	presenter._refresh_all()
-	await process_frame
-	if not presenter.debug_open_slot("wall_slot_01"):
-		return _fail("Could not reopen the wall slot at Lv.3.")
-	await process_frame
-	await process_frame
-	var popup_snapshot: Dictionary = presenter.debug_get_popup_snapshot()
-	if (
-		not bool(popup_snapshot.get("bonus_visible", false))
-		or not str(popup_snapshot.get("bonus_text", "")).contains("射程×1.05")
-	):
-		return _fail("Wall Lv.3 range reward is missing from the deployment popup.")
-	var slot: Dictionary = device_system.get_slot("wall_slot_01")
-	if not is_equal_approx(
-		float((slot.get("effect_modifiers", {}) as Dictionary).get(
-			"range_multiplier",
-			0.0
-		)),
-		1.05
-	):
-		return _fail("Wall Lv.3 slot did not resolve to a 1.05x range multiplier.")
-	return true
-
-
-func _verify_main_hall_no_bonus(building_system: Node, presenter: Node) -> bool:
 	presenter._close_popup()
 	_set_building_level(building_system, "main_hall", 1)
 	presenter._refresh_all()
@@ -178,13 +163,46 @@ func _verify_main_hall_no_bonus(building_system: Node, presenter: Node) -> bool:
 		return _fail("Could not open the first main-hall deployment slot.")
 	await process_frame
 	await process_frame
-	var popup_snapshot: Dictionary = presenter.debug_get_popup_snapshot()
+	var popup := presenter.get_node_or_null("DefenseDeploymentPanel")
+	var picker_buttons := _get_picker_buttons(popup)
+	var arrow_button: Button
+	for button in picker_buttons:
+		if str(button.get_meta("device_picker_id", "")) == "wall_arrow_tower":
+			arrow_button = button
+			break
+	if arrow_button == null:
+		return _fail("Main-hall slot did not show its undeployed arrow-tower icon.")
+	var inventory_before := int(resource_system.get_resource("item_wall_arrow_tower"))
+	arrow_button.pressed.emit()
+	await process_frame
 	if (
-		bool(popup_snapshot.get("bonus_visible", true))
-		or str(popup_snapshot.get("bonus_text", "")).contains("高台加成")
+		presenter.debug_get_popup_snapshot().get("visible", true)
+		or int(resource_system.get_resource("item_wall_arrow_tower")) != inventory_before - 1
+		or not bool(device_system.get_slot("main_hall_slot_03").get("occupied", false))
 	):
-		return _fail("Main hall must not display a defense-device range bonus.")
+		return _fail("Clicking a defense icon did not deploy through the authority and close the picker.")
+	if not presenter.debug_open_slot("wall_slot_01"):
+		return _fail("Could not reopen the wall slot after consuming arrow-tower inventory.")
+	await process_frame
+	var remaining_buttons := _get_picker_buttons(presenter.get_node_or_null("DefenseDeploymentPanel"))
+	if remaining_buttons.size() != 2:
+		return _fail("Zero-stock defense devices must disappear from the picker.")
+	for button in remaining_buttons:
+		if str(button.get_meta("device_picker_id", "")) != "wall_ballista":
+			return _fail("The picker retained a zero-stock arrow-tower icon.")
+	presenter._close_popup()
 	return true
+
+
+func _get_picker_buttons(popup: Node) -> Array[Button]:
+	var result: Array[Button] = []
+	if popup == null:
+		return result
+	for node in popup.find_children("*", "Button", true, false):
+		var button := node as Button
+		if button != null and button.has_meta("device_picker_id"):
+			result.append(button)
+	return result
 
 
 func _verify_range_curves(building_system: Node, device_system: Node) -> bool:
@@ -253,8 +271,10 @@ func _verify_deployed_range_refresh(
 	):
 		return _fail("Existing wall deployments did not inherit later range rewards.")
 	var status_label := device_view.get_node_or_null("StatusLabel") as Label3D
-	if status_label == null or not status_label.text.contains("射程 37.4"):
-		return _fail("World device view did not refresh its upgraded effective range.")
+	if status_label == null or status_label.text != "弩床":
+		return _fail("World device view must keep a name-only overhead label after range refresh.")
+	if status_label.text.contains("HP") or status_label.text.contains("射程"):
+		return _fail("World device view leaked HP or range text into its overhead label.")
 	return true
 
 

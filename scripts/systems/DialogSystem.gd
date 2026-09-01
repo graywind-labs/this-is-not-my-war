@@ -1,8 +1,11 @@
 extends Node
 
+const DialogueEmotionCatalog = preload("res://scripts/core/DialogueEmotionCatalog.gd")
+
 signal dialogue_started(dialogue_state: Dictionary)
 signal dialogue_updated(dialogue_state: Dictionary)
 signal dialogue_ended(dialogue_state: Dictionary)
+signal special_interaction_result(result: Dictionary)
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
@@ -23,6 +26,13 @@ const GUARD_ATTACK_EVENT_TEXT := "守备官攻击了你以示惩戒"
 const GUARD_ATTACK_PROMPT := "守备官攻击了你以示惩戒，你要说些什么？"
 const WARTIME_DIALOGUE_CONTEXTS: Array[String] = ["rally", "combat", "avoid_combat"]
 const WARTIME_REACTIONS: Array[String] = ["none", "escape", "morale_boost"]
+const WORK_ENCOURAGEMENT_REACTIONS: Array[String] = ["none", "escape", "work_boost"]
+const SPECIAL_INTERACTION_SESSION_FLAGS: Array[String] = [
+	"session_had_recruitment_request",
+	"session_had_morale_encouragement_request",
+	"session_had_combat_strategy_request",
+	"session_had_work_encouragement_request"
+]
 
 var _dialogue_counter := 0
 var _active_dialogue: Dictionary = {}
@@ -101,6 +111,12 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 		"last_error": "",
 		"recruitment_request_pending": false,
 		"last_recruitment_result": "none",
+		"morale_encouragement_request_pending": false,
+		"last_morale_encouragement_reaction": "none",
+		"combat_strategy_request_pending": false,
+		"last_combat_strategy_result": {},
+		"work_encouragement_request_pending": false,
+		"last_work_encouragement_reaction": "none",
 		"interaction_context": interaction_context,
 		"force_local_public": force_local_public,
 		"wartime_dialogue": force_local_public,
@@ -114,8 +130,13 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 		"attack_committed": false,
 		"completed_attack_llm_turns": 0,
 		"session_had_recruitment_request": false,
+		"session_had_morale_encouragement_request": false,
+		"session_had_combat_strategy_request": false,
+		"session_had_work_encouragement_request": false,
+		"session_had_special_interaction_result": false,
 		"deferred_recruitment_result": "none",
 		"deferred_wartime_response": {},
+		"deferred_work_encouragement_response": {},
 		"deferred_escape_response": {},
 		"last_player_text": "",
 		"last_reply_text": "",
@@ -603,12 +624,49 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 	_active_dialogue["last_player_text"] = clean_text
 	_active_dialogue["waiting"] = true
 	_active_dialogue["last_error"] = ""
-	var effective_recruitment_request := false if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND else is_recruitment_request or bool(_active_dialogue.get("recruitment_request_pending", false))
+	var recruitment_requested := is_recruitment_request or bool(_active_dialogue.get("recruitment_request_pending", false))
+	var effective_recruitment_request := (
+		dialogue_kind == "player_npc"
+		and recruitment_requested
+		and _is_recruitment_request_eligible(_active_dialogue)
+	)
+	if bool(_active_dialogue.get("recruitment_request_pending", false)) and not effective_recruitment_request:
+		_active_dialogue["recruitment_request_pending"] = false
+	var effective_morale_encouragement_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("morale_encouragement_request_pending", false))
+		and _is_morale_encouragement_eligible(_active_dialogue)
+	)
+	if bool(_active_dialogue.get("morale_encouragement_request_pending", false)) and not effective_morale_encouragement_request:
+		_active_dialogue["morale_encouragement_request_pending"] = false
+	var effective_combat_strategy_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("combat_strategy_request_pending", false))
+		and _is_combat_strategy_request_eligible(_active_dialogue)
+	)
+	var combat_strategy_context := _get_combat_strategy_request_context(_active_dialogue) if effective_combat_strategy_request else {}
+	if effective_combat_strategy_request and combat_strategy_context.is_empty():
+		effective_combat_strategy_request = false
+	if bool(_active_dialogue.get("combat_strategy_request_pending", false)) and not effective_combat_strategy_request:
+		_active_dialogue["combat_strategy_request_pending"] = false
+	var effective_work_encouragement_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("work_encouragement_request_pending", false))
+		and _is_work_encouragement_eligible(_active_dialogue)
+	)
+	if bool(_active_dialogue.get("work_encouragement_request_pending", false)) and not effective_work_encouragement_request:
+		_active_dialogue["work_encouragement_request_pending"] = false
 	if effective_recruitment_request:
 		_active_dialogue["session_had_recruitment_request"] = true
 		# “提出应征”是当前会话内的持续选项；玩家主动关闭前，
 		# 后续消息继续携带同一意图，避免每轮都要重新勾选。
 		_active_dialogue["recruitment_request_pending"] = true
+	if effective_morale_encouragement_request:
+		_active_dialogue["session_had_morale_encouragement_request"] = true
+	if effective_combat_strategy_request:
+		_active_dialogue["session_had_combat_strategy_request"] = true
+	if effective_work_encouragement_request:
+		_active_dialogue["session_had_work_encouragement_request"] = true
 	dialogue_updated.emit(get_dialogue_state())
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null:
@@ -622,6 +680,9 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 		"current_round": next_round,
 		"max_rounds": int(_active_dialogue.get("max_rounds", PLAYER_DIALOGUE_MAX_ROUNDS)),
 		"is_recruitment_request": effective_recruitment_request,
+		"is_morale_encouragement_request": effective_morale_encouragement_request,
+		"is_combat_strategy_request": effective_combat_strategy_request,
+		"is_work_encouragement_request": effective_work_encouragement_request,
 		"conversation_history": history_before,
 		"dialogue_state": {
 			"visibility": str(_active_dialogue.get("visibility", "private")),
@@ -636,6 +697,8 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 		),
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
+	if effective_combat_strategy_request:
+		request_options["combat_strategy_context"] = combat_strategy_context.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		request_options["escape_intervention_round"] = next_round
 		request_options["constraints"] = [
@@ -647,6 +710,10 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 		"clean_text": clean_text,
 		"next_round": next_round,
 		"effective_recruitment_request": effective_recruitment_request,
+		"effective_morale_encouragement_request": effective_morale_encouragement_request,
+		"effective_combat_strategy_request": effective_combat_strategy_request,
+		"effective_work_encouragement_request": effective_work_encouragement_request,
+		"combat_strategy_context": combat_strategy_context.duplicate(true),
 		"dialogue_kind": dialogue_kind,
 		"player_turn": player_turn
 	}
@@ -704,28 +771,57 @@ func _apply_player_message_response(result: Dictionary, pending: Dictionary) -> 
 	var clean_text := str(pending.get("clean_text", ""))
 	_ensure_pending_player_turn_in_history(pending)
 	var npc_turn := _make_history_turn(str(_active_dialogue.get("target_npc_id", "")), npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
-	if ["accept", "reject"].has(recruitment_result):
+	_attach_and_present_npc_emotion(npc_turn, response, str(_active_dialogue.get("target_npc_id", "")))
+	if effective_recruitment_request:
 		# 结果跟随产生它的具体回复，后续普通回合不会覆盖历史提示；
 		# 展示文案由 UI 生成，不污染 NPC 的真实 reply_text。
 		npc_turn["recruitment_result"] = recruitment_result
-	if (
-		bool(_active_dialogue.get("wartime_dialogue", false))
-		and str(response.get("wartime_reaction", "none")) == "morale_boost"
-	):
-		npc_turn["wartime_reaction"] = "morale_boost"
+		if recruitment_result == "accept":
+			_active_dialogue["recruitment_request_pending"] = false
+	var effective_morale_encouragement_request := bool(pending.get("effective_morale_encouragement_request", false))
+	if effective_morale_encouragement_request:
+		var wartime_reaction := _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
+		npc_turn["morale_encouragement_request"] = true
+		npc_turn["wartime_reaction"] = wartime_reaction
+		_active_dialogue["last_morale_encouragement_reaction"] = wartime_reaction
+		if wartime_reaction == "morale_boost":
+			_active_dialogue["morale_encouragement_request_pending"] = false
+	var effective_combat_strategy_request := bool(pending.get("effective_combat_strategy_request", false))
+	if effective_combat_strategy_request:
+		var combat_strategy_result := _apply_combat_strategy_dialogue_decision(
+			response.get("combat_strategy_decision", {}),
+			pending.get("combat_strategy_context", {}) if pending.get("combat_strategy_context", {}) is Dictionary else {}
+		)
+		npc_turn["combat_strategy_request"] = true
+		npc_turn["combat_strategy_result"] = combat_strategy_result.duplicate(true)
+		_active_dialogue["last_combat_strategy_result"] = combat_strategy_result.duplicate(true)
+		if bool(combat_strategy_result.get("changed", false)):
+			_active_dialogue["combat_strategy_request_pending"] = false
+	var effective_work_encouragement_request := bool(pending.get("effective_work_encouragement_request", false))
+	if effective_work_encouragement_request:
+		var work_reaction := _normalize_work_encouragement_reaction(str(response.get("work_encouragement_reaction", "none")))
+		npc_turn["work_encouragement_request"] = true
+		npc_turn["work_encouragement_reaction"] = work_reaction
+		_active_dialogue["last_work_encouragement_reaction"] = work_reaction
+		_active_dialogue["deferred_work_encouragement_response"] = response.duplicate(true)
+		if work_reaction == "work_boost":
+			_active_dialogue["work_encouragement_request_pending"] = false
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		npc_turn["escape_intervention_result"] = str(response.get("escape_intervention_result", "leave"))
 	var history: Array = _active_dialogue.get("history", [])
 	history.append(npc_turn)
 	_active_dialogue["history"] = history
 	_active_dialogue["last_reply_text"] = reply_text
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["completed_player_llm_turns"] = int(_active_dialogue.get("completed_player_llm_turns", 0)) + 1
+	_publish_special_interaction_results(pending, npc_turn, reply_text)
 	var recruitment_applied_immediately := false
 	if recruitment_result == "accept":
 		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 		var target_npc_id := str(_active_dialogue.get("target_npc_id", ""))
 		if npc_system != null and npc_system.has_method("set_npc_recruited"):
 			recruitment_applied_immediately = bool(npc_system.set_npc_recruited(target_npc_id, true))
-	if bool(_active_dialogue.get("wartime_dialogue", false)):
+	if effective_morale_encouragement_request:
 		_active_dialogue["deferred_wartime_response"] = response.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		_active_dialogue["deferred_escape_response"] = response.duplicate(true)
@@ -814,6 +910,40 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		"next_round": next_round,
 		"damage": damage_result
 	}
+	var effective_morale_encouragement_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("morale_encouragement_request_pending", false))
+		and _is_morale_encouragement_eligible(_active_dialogue)
+	)
+	if bool(_active_dialogue.get("morale_encouragement_request_pending", false)) and not effective_morale_encouragement_request:
+		_active_dialogue["morale_encouragement_request_pending"] = false
+	pending["effective_morale_encouragement_request"] = effective_morale_encouragement_request
+	if effective_morale_encouragement_request:
+		_active_dialogue["session_had_morale_encouragement_request"] = true
+	var effective_combat_strategy_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("combat_strategy_request_pending", false))
+		and _is_combat_strategy_request_eligible(_active_dialogue)
+	)
+	var combat_strategy_context := _get_combat_strategy_request_context(_active_dialogue) if effective_combat_strategy_request else {}
+	if effective_combat_strategy_request and combat_strategy_context.is_empty():
+		effective_combat_strategy_request = false
+	if bool(_active_dialogue.get("combat_strategy_request_pending", false)) and not effective_combat_strategy_request:
+		_active_dialogue["combat_strategy_request_pending"] = false
+	pending["effective_combat_strategy_request"] = effective_combat_strategy_request
+	pending["combat_strategy_context"] = combat_strategy_context.duplicate(true)
+	if effective_combat_strategy_request:
+		_active_dialogue["session_had_combat_strategy_request"] = true
+	var effective_work_encouragement_request := (
+		dialogue_kind == "player_npc"
+		and bool(_active_dialogue.get("work_encouragement_request_pending", false))
+		and _is_work_encouragement_eligible(_active_dialogue)
+	)
+	if bool(_active_dialogue.get("work_encouragement_request_pending", false)) and not effective_work_encouragement_request:
+		_active_dialogue["work_encouragement_request_pending"] = false
+	pending["effective_work_encouragement_request"] = effective_work_encouragement_request
+	if effective_work_encouragement_request:
+		_active_dialogue["session_had_work_encouragement_request"] = true
 
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		return _apply_escape_attack_without_reply(pending)
@@ -838,6 +968,9 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		"current_round": next_round,
 		"max_rounds": int(_active_dialogue.get("max_rounds", PLAYER_DIALOGUE_MAX_ROUNDS)),
 		"is_recruitment_request": false,
+		"is_morale_encouragement_request": effective_morale_encouragement_request,
+		"is_combat_strategy_request": effective_combat_strategy_request,
+		"is_work_encouragement_request": effective_work_encouragement_request,
 		"related_event_id": attack_event_id,
 		"conversation_history": history_before,
 		"constraints": [
@@ -857,6 +990,8 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		),
 		"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
 	}
+	if effective_combat_strategy_request:
+		request_options["combat_strategy_context"] = combat_strategy_context.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		request_options["escape_intervention_round"] = next_round
 		request_options["constraints"].append("本轮攻击发生在逃离挽留中；攻击已由程序造成 HP 伤害，并会让逃离速度更快。若请求模型，NPC 只能通过 escape_intervention_result 表达 stay 或 leave。")
@@ -951,19 +1086,48 @@ func _apply_attack_response(result: Dictionary, pending: Dictionary) -> Dictiona
 	var npc_name := str(pending.get("npc_name", _active_dialogue.get("target_npc_name", target_npc_id)))
 	var attack_event_id := str(pending.get("attack_event_id", ""))
 	var npc_turn := _make_history_turn(target_npc_id, npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
-	if (
-		bool(_active_dialogue.get("wartime_dialogue", false))
-		and str(response.get("wartime_reaction", "none")) == "morale_boost"
-	):
-		npc_turn["wartime_reaction"] = "morale_boost"
+	_attach_and_present_npc_emotion(npc_turn, response, target_npc_id)
+	var effective_morale_encouragement_request := bool(pending.get("effective_morale_encouragement_request", false))
+	if effective_morale_encouragement_request:
+		var wartime_reaction := _normalize_wartime_reaction(str(response.get("wartime_reaction", "none")))
+		npc_turn["morale_encouragement_request"] = true
+		npc_turn["wartime_reaction"] = wartime_reaction
+		_active_dialogue["last_morale_encouragement_reaction"] = wartime_reaction
+		if wartime_reaction == "morale_boost":
+			_active_dialogue["morale_encouragement_request_pending"] = false
+	var effective_combat_strategy_request := bool(pending.get("effective_combat_strategy_request", false))
+	if effective_combat_strategy_request:
+		var combat_strategy_result := _apply_combat_strategy_dialogue_decision(
+			response.get("combat_strategy_decision", {}),
+			pending.get("combat_strategy_context", {}) if pending.get("combat_strategy_context", {}) is Dictionary else {}
+		)
+		npc_turn["combat_strategy_request"] = true
+		npc_turn["combat_strategy_result"] = combat_strategy_result.duplicate(true)
+		_active_dialogue["last_combat_strategy_result"] = combat_strategy_result.duplicate(true)
+		if bool(combat_strategy_result.get("changed", false)):
+			_active_dialogue["combat_strategy_request_pending"] = false
+	var effective_work_encouragement_request := bool(pending.get("effective_work_encouragement_request", false))
+	if effective_work_encouragement_request:
+		var work_reaction := _normalize_work_encouragement_reaction(str(response.get("work_encouragement_reaction", "none")))
+		npc_turn["work_encouragement_request"] = true
+		npc_turn["work_encouragement_reaction"] = work_reaction
+		_active_dialogue["last_work_encouragement_reaction"] = work_reaction
+		_active_dialogue["deferred_work_encouragement_response"] = response.duplicate(true)
+		if work_reaction == "work_boost":
+			_active_dialogue["work_encouragement_request_pending"] = false
+	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
+		npc_turn["escape_intervention_result"] = str(response.get("escape_intervention_result", "leave"))
 	var history: Array = _active_dialogue.get("history", [])
 	history.append(npc_turn)
 	_active_dialogue["history"] = history
 	_active_dialogue["last_reply_text"] = reply_text
 	_active_dialogue["current_round"] = int(pending.get("next_round", int(_active_dialogue.get("current_round", 0)) + 1))
 	_active_dialogue["completed_attack_llm_turns"] = int(_active_dialogue.get("completed_attack_llm_turns", 0)) + 1
-	if bool(_active_dialogue.get("wartime_dialogue", false)):
+	_publish_special_interaction_results(pending, npc_turn, reply_text)
+	if effective_morale_encouragement_request:
 		_active_dialogue["deferred_wartime_response"] = response.duplicate(true)
+	if effective_work_encouragement_request:
+		_active_dialogue["deferred_work_encouragement_response"] = response.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
 		_active_dialogue["deferred_escape_response"] = response.duplicate(true)
 	var escape_intervention_result := str(response.get("escape_intervention_result", ""))
@@ -1094,6 +1258,7 @@ func _apply_autonomous_dialogue_invitation_response(result: Dictionary, pending:
 	_ensure_active_dialogue_epoch_for_npc(target_id)
 	var opening_turn := _make_history_turn(speaker_id, speaker_name, target_id, target_name, opening_text)
 	var reply_turn := _make_history_turn(target_id, target_name, speaker_id, speaker_name, reply_text)
+	_attach_and_present_npc_emotion(reply_turn, response, target_id)
 	_active_dialogue["history"] = [opening_turn, reply_turn]
 	_active_dialogue["invitation_result"] = invitation_result
 	_record_dialogue_event("dialogue_turn", {
@@ -1106,7 +1271,7 @@ func _apply_autonomous_dialogue_invitation_response(result: Dictionary, pending:
 		"dialogue_text": [opening_turn, reply_turn],
 		"is_recruitment_request": false,
 		"recruitment_result": "none",
-		"emotion": str(response.get("emotion", "neutral")),
+		"emotion": str(reply_turn.get("emotion_id", "none")),
 		"should_end_dialogue": bool(response.get("should_end_dialogue", false))
 	})
 	if invitation_result == "reject":
@@ -1350,6 +1515,7 @@ func _apply_npc_message_response(result: Dictionary, pending: Dictionary) -> Dic
 	var target_name := str(pending.get("target_name", _active_dialogue.get("target_npc_name", target_id)))
 	var speaker_turn := _make_history_turn(speaker_id, speaker_name, target_id, target_name, clean_text)
 	var reply_turn := _make_history_turn(target_id, target_name, speaker_id, speaker_name, reply_text)
+	_attach_and_present_npc_emotion(reply_turn, response, target_id)
 	var should_end := bool(response.get("should_end_dialogue", false))
 	var history: Array = _active_dialogue.get("history", [])
 	if not bool(pending.get("speaker_text_already_recorded", false)):
@@ -1371,7 +1537,7 @@ func _apply_npc_message_response(result: Dictionary, pending: Dictionary) -> Dic
 			"is_autonomous_continuation": true,
 			"is_recruitment_request": false,
 			"recruitment_result": "none",
-			"emotion": str(response.get("emotion", "neutral")),
+			"emotion": str(reply_turn.get("emotion_id", "none")),
 			"should_end_dialogue": should_end
 		}, {
 			"subject_npc_id": target_id,
@@ -1388,7 +1554,7 @@ func _apply_npc_message_response(result: Dictionary, pending: Dictionary) -> Dic
 			"dialogue_text": [speaker_turn, reply_turn],
 			"is_recruitment_request": false,
 			"recruitment_result": "none",
-			"emotion": str(response.get("emotion", "neutral")),
+			"emotion": str(reply_turn.get("emotion_id", "none")),
 			"should_end_dialogue": should_end
 		})
 	if should_end:
@@ -1445,8 +1611,6 @@ func _activate_player_dialogue_draft(reason: String) -> Dictionary:
 	if _is_active_escape_dialogue_target(latest_state):
 		return _failure("escape_intervention_required", "NPC 已开始逃离，请重新打开对话进入挽留流程。")
 	var latest_context := _get_player_dialogue_interaction_context(target_npc_id, latest_state, npc_system)
-	if latest_context != str(draft.get("interaction_context", "work")):
-		return _failure("dialogue_context_changed", "NPC 的行为模式已经变化，请重新打开对话。")
 	draft["location_id"] = str(latest_state.get("current_location", "plaza"))
 	draft["location_name"] = str(latest_state.get("current_location_name", "广场"))
 	draft["interaction_context"] = latest_context
@@ -1507,10 +1671,15 @@ func cancel_displayed_dialogue(dialogue_id: String = "") -> Dictionary:
 		)
 	if bool(_active_dialogue.get("attack_committed", false)):
 		return _failure("dialogue_cancel_locked_by_attack", "守备官已经攻击 NPC，本次对话不能取消。")
-	if bool(_active_dialogue.get("session_had_recruitment_request", false)):
+	if _session_has_sent_special_interaction_request(_active_dialogue):
 		return _failure(
-			"dialogue_cancel_locked_by_recruitment_request",
-			"守备官已经在本次会话中提出应征，只能完成对话。"
+			"dialogue_cancel_locked_by_special_interaction_request",
+			"守备官已经在本次会话中发送过特殊交互消息，只能完成对话。"
+		)
+	if bool(_active_dialogue.get("session_had_special_interaction_result", false)):
+		return _failure(
+			"dialogue_cancel_locked_by_special_interaction",
+			"本次会话已经产生特殊交互结果并写入事件库，只能完成对话。"
 		)
 	return _cancel_active_player_dialogue("player_cancelled_dialogue")
 
@@ -1575,9 +1744,10 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	if (
 		bool(_active_dialogue.get("attack_committed", false))
 		or _is_npc_initiated_proactive_player_dialogue(_active_dialogue)
-		or bool(_active_dialogue.get("session_had_recruitment_request", false))
+		or _session_has_sent_special_interaction_request(_active_dialogue)
+		or bool(_active_dialogue.get("session_had_special_interaction_result", false))
 	):
-		var timeout_reason := "suspended_dialogue_timeout_after_recruitment_request"
+		var timeout_reason := "suspended_dialogue_timeout_after_special_interaction_request"
 		if bool(_active_dialogue.get("attack_committed", false)):
 			timeout_reason = "suspended_dialogue_timeout_after_attack"
 		elif _is_npc_initiated_proactive_player_dialogue(_active_dialogue):
@@ -1721,12 +1891,16 @@ func _set_player_dialogue_npc_runtime_state(suspended: bool) -> void:
 		return
 	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", ""))
 	var current_action := "escape_intervention_dialogue" if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND else "talk_to_guard_officer"
-	npc_system.update_npc_state(npc_id, {
-		"current_action": current_action,
+	var updates := {
 		"active_dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
-		"player_dialogue_suspended": suspended,
-		"last_action_result": "player_dialogue_suspended" if suspended else "player_dialogue_active"
-	})
+		"player_dialogue_suspended": suspended
+	}
+	# 战时守备官对话只占用会话层。集结、战斗和避战的动作标签、移动、
+	# 攻击阶段都继续由 CombatSystem 独占，不能被表现用的 talk 状态覆盖。
+	if not _is_parallel_wartime_player_dialogue(_active_dialogue):
+		updates["current_action"] = current_action
+		updates["last_action_result"] = "player_dialogue_suspended" if suspended else "player_dialogue_active"
+	npc_system.update_npc_state(npc_id, updates)
 
 
 func _release_player_dialogue_target(ended_state: Dictionary) -> void:
@@ -1756,11 +1930,12 @@ func _release_player_dialogue_target(ended_state: Dictionary) -> void:
 func _commit_player_dialogue_session_event() -> Dictionary:
 	if _active_dialogue.is_empty() or not _is_player_controlled_dialogue(_active_dialogue):
 		return {}
-	var history: Array = (
+	var runtime_history: Array = (
 		(_active_dialogue.get("history", []) as Array).duplicate(true)
 		if _active_dialogue.get("history", []) is Array
 		else []
 	)
+	var history := _sanitize_completed_dialogue_history(runtime_history)
 	if history.is_empty():
 		return {}
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
@@ -1809,8 +1984,6 @@ func _commit_player_dialogue_session_event() -> Dictionary:
 			"speaker_text": event_speaker_text,
 			"reply_text": event_reply_text,
 			"dialogue_text": history,
-			"is_recruitment_request": bool(_active_dialogue.get("session_had_recruitment_request", false)),
-			"recruitment_result": str(_active_dialogue.get("deferred_recruitment_result", "none")),
 			"interaction_context": str(_active_dialogue.get("interaction_context", "work")),
 			"interaction_kind": interaction_kind,
 			"related_event_id": str(_active_dialogue.get("last_attack_event_id", "")),
@@ -1826,6 +1999,25 @@ func _commit_player_dialogue_session_event() -> Dictionary:
 	return event
 
 
+func _sanitize_completed_dialogue_history(runtime_history: Array) -> Array:
+	var sanitized_history: Array = []
+	for raw_turn in runtime_history:
+		if not raw_turn is Dictionary:
+			continue
+		var source_turn: Dictionary = raw_turn
+		var text := str(source_turn.get("text", ""))
+		if text.is_empty():
+			continue
+		sanitized_history.append({
+			"speaker_id": str(source_turn.get("speaker_id", "")),
+			"speaker_name": str(source_turn.get("speaker_name", "")),
+			"listener_id": str(source_turn.get("listener_id", "")),
+			"listener_name": str(source_turn.get("listener_name", "")),
+			"text": text
+		})
+	return sanitized_history
+
+
 func _apply_deferred_player_dialogue_effects(dialogue_event: Dictionary) -> Dictionary:
 	if _active_dialogue.is_empty() or not _is_player_controlled_dialogue(_active_dialogue):
 		return {}
@@ -1833,6 +2025,9 @@ func _apply_deferred_player_dialogue_effects(dialogue_event: Dictionary) -> Dict
 	var wartime_response: Dictionary = _active_dialogue.get("deferred_wartime_response", {}) if _active_dialogue.get("deferred_wartime_response", {}) is Dictionary else {}
 	if not wartime_response.is_empty():
 		results["wartime_result"] = _apply_wartime_reaction(wartime_response, dialogue_event)
+	var work_response: Dictionary = _active_dialogue.get("deferred_work_encouragement_response", {}) if _active_dialogue.get("deferred_work_encouragement_response", {}) is Dictionary else {}
+	if not work_response.is_empty():
+		results["work_encouragement_result"] = _apply_work_encouragement_reaction(work_response, dialogue_event)
 	var escape_response: Dictionary = _active_dialogue.get("deferred_escape_response", {}) if _active_dialogue.get("deferred_escape_response", {}) is Dictionary else {}
 	if not escape_response.is_empty():
 		var event_context := dialogue_event.duplicate(true)
@@ -2259,7 +2454,6 @@ func _on_npc_state_changed(npc_id: String) -> void:
 		if (
 			draft_npc_system == null
 			or not draft_npc_system.can_npc_act(npc_id)
-			or not _is_npc_in_work_behavior_mode(npc_id, draft_npc_system)
 			or _is_npc_plan_request_active(npc_id, draft_npc_system)
 			or (
 				draft_npc_system.has_method("is_npc_dialogue_blocked")
@@ -2267,6 +2461,24 @@ func _on_npc_state_changed(npc_id: String) -> void:
 			)
 		):
 			end_displayed_dialogue(str(_player_dialogue_draft.get("dialogue_id", "")))
+		else:
+			_refresh_player_dialogue_interaction_context(_player_dialogue_draft, npc_id, draft_npc_system)
+	if (
+		not _active_dialogue.is_empty()
+		and _is_player_controlled_dialogue(_active_dialogue)
+		and str(_active_dialogue.get("target_npc_id", "")) == npc_id
+	):
+		var active_npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		var context_changed := (
+			active_npc_system != null
+			and _refresh_player_dialogue_interaction_context(
+				_active_dialogue,
+				npc_id,
+				active_npc_system
+			)
+		)
+		if context_changed or _synchronize_special_interaction_pending_validity(_active_dialogue):
+			dialogue_updated.emit(_decorate_dialogue_state(_active_dialogue))
 	if _active_dialogue.is_empty() or not bool(_active_dialogue.get("autonomous", false)):
 		return
 	var participant_ids: Array = _active_dialogue.get("participant_npc_ids", [])
@@ -2352,18 +2564,28 @@ func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
 	if npc_system != null and _is_npc_plan_request_active(target_npc_id, npc_system):
 		return _failure("npc_planning", "NPC正在思考，暂时无法对话。")
 	_ensure_active_dialogue_epoch_for_npc(target_npc_id)
-	var cancel_result := _cancel_npc_llm_request(target_npc_id, reason)
-	if not bool(cancel_result.get("ok", true)):
-		return cancel_result
+	var parallel_wartime := _is_parallel_wartime_player_dialogue(_active_dialogue)
+	var cancel_result := {
+		"ok": true,
+		"cancelled": false,
+		"reason": "player_dialogue_parallel_with_combat"
+	}
+	if not parallel_wartime:
+		cancel_result = _cancel_npc_llm_request(target_npc_id, reason)
+		if not bool(cancel_result.get("ok", true)):
+			return cancel_result
 	var interrupted_action_id := ""
-	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
-	if action_system != null and action_system.has_method("get_runtime_action_id"):
-		interrupted_action_id = str(action_system.get_runtime_action_id(target_npc_id))
-	var interruption_context := _build_player_dialogue_interruption_context(
-		target_npc_id,
-		interrupted_action_id
-	)
-	var interrupted_action := _interrupt_for_dialogue(target_npc_id)
+	var interruption_context := {}
+	var interrupted_action := false
+	if not parallel_wartime:
+		var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+		if action_system != null and action_system.has_method("get_runtime_action_id"):
+			interrupted_action_id = str(action_system.get_runtime_action_id(target_npc_id))
+		interruption_context = _build_player_dialogue_interruption_context(
+			target_npc_id,
+			interrupted_action_id
+		)
+		interrupted_action = _interrupt_for_dialogue(target_npc_id)
 	_active_dialogue["player_dialogue_effect_started"] = true
 	_active_dialogue["session_status"] = "active"
 	_active_dialogue["player_dialogue_interrupted_action"] = interrupted_action
@@ -2381,10 +2603,66 @@ func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
 	return {
 		"ok": true,
 		"already_started": false,
+		"parallel_wartime": parallel_wartime,
 		"cancel_result": cancel_result,
 		"interrupted_action": interrupted_action,
 		"interrupted_action_id": interrupted_action_id if interrupted_action else ""
 	}
+
+
+func should_preserve_player_dialogue_for_behavior_mode_transition(
+	npc_id: String,
+	next_mode: String
+) -> bool:
+	if npc_id.is_empty() or (next_mode != "work" and not WARTIME_DIALOGUE_CONTEXTS.has(next_mode)):
+		return false
+	if (
+		not _active_dialogue.is_empty()
+		and str(_active_dialogue.get("dialogue_kind", "")) == "player_npc"
+		and str(_active_dialogue.get("target_npc_id", "")) == npc_id
+	):
+		return true
+	return false
+
+
+func _is_parallel_wartime_player_dialogue(dialogue_state: Dictionary) -> bool:
+	return (
+		str(dialogue_state.get("dialogue_kind", "")) == "player_npc"
+		and WARTIME_DIALOGUE_CONTEXTS.has(str(dialogue_state.get("interaction_context", "")))
+	)
+
+
+func _refresh_player_dialogue_interaction_context(
+	dialogue_state: Dictionary,
+	npc_id: String,
+	npc_system: Node
+) -> bool:
+	if (
+		dialogue_state.is_empty()
+		or str(dialogue_state.get("dialogue_kind", "")) != "player_npc"
+		or str(dialogue_state.get("target_npc_id", "")) != npc_id
+		or npc_system == null
+	):
+		return false
+	var npc_state: Dictionary = npc_system.get_npc_state(npc_id)
+	var interaction_context := _get_player_dialogue_interaction_context(
+		npc_id,
+		npc_state,
+		npc_system
+	)
+	var force_local_public := WARTIME_DIALOGUE_CONTEXTS.has(interaction_context)
+	var changed := (
+		str(dialogue_state.get("interaction_context", "work")) != interaction_context
+		or bool(dialogue_state.get("force_local_public", false)) != force_local_public
+		or bool(dialogue_state.get("wartime_dialogue", false)) != force_local_public
+	)
+	dialogue_state["interaction_context"] = interaction_context
+	dialogue_state["force_local_public"] = force_local_public
+	dialogue_state["wartime_dialogue"] = force_local_public
+	if force_local_public and str(dialogue_state.get("visibility", "private")) != "local_public":
+		dialogue_state["visibility"] = "local_public"
+		changed = true
+	return changed
 
 
 func _is_npc_plan_request_active(npc_id: String, npc_system: Node = null) -> bool:
@@ -2639,12 +2917,15 @@ func _resume_escape_dialogue_if_needed(ended_state: Dictionary, reason: String) 
 
 func get_dialogue_state() -> Dictionary:
 	if _active_dialogue.is_empty() and not _player_dialogue_draft.is_empty():
+		_synchronize_special_interaction_pending_validity(_player_dialogue_draft)
 		return _decorate_dialogue_state(_player_dialogue_draft)
+	_synchronize_special_interaction_pending_validity(_active_dialogue)
 	return _decorate_dialogue_state(_active_dialogue)
 
 
 func get_display_dialogue_state() -> Dictionary:
 	if not _player_dialogue_draft.is_empty():
+		_synchronize_special_interaction_pending_validity(_player_dialogue_draft)
 		return _decorate_dialogue_state(_player_dialogue_draft)
 	return get_dialogue_state()
 
@@ -2673,7 +2954,44 @@ func _decorate_dialogue_state(source: Dictionary) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var target_npc_id := str(state.get("target_npc_id", ""))
 	state["target_recruited"] = npc_system != null and bool(npc_system.get_npc(target_npc_id).get("recruited", false))
+	var morale_eligibility := _get_morale_encouragement_eligibility(state)
+	state["morale_encouragement_eligible"] = bool(morale_eligibility.get("eligible", false))
+	state["morale_encouragement_ineligible_reason"] = str(morale_eligibility.get("message", ""))
+	var strategy_eligibility := _get_combat_strategy_request_eligibility(state)
+	state["combat_strategy_request_eligible"] = bool(strategy_eligibility.get("eligible", false))
+	state["combat_strategy_request_ineligible_reason"] = str(strategy_eligibility.get("message", ""))
+	state["combat_strategy_context"] = _get_combat_strategy_request_context(state)
+	var work_eligibility := _get_work_encouragement_eligibility(state)
+	state["work_encouragement_eligible"] = bool(work_eligibility.get("eligible", false))
+	state["work_encouragement_ineligible_reason"] = str(work_eligibility.get("message", ""))
+	state["session_had_special_interaction_request"] = _session_has_sent_special_interaction_request(state)
 	return state
+
+
+func _synchronize_special_interaction_pending_validity(dialogue_state: Dictionary) -> bool:
+	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return false
+	var changed := false
+	if bool(dialogue_state.get("recruitment_request_pending", false)) and not _is_recruitment_request_eligible(dialogue_state):
+		dialogue_state["recruitment_request_pending"] = false
+		changed = true
+	if bool(dialogue_state.get("morale_encouragement_request_pending", false)) and not _is_morale_encouragement_eligible(dialogue_state):
+		dialogue_state["morale_encouragement_request_pending"] = false
+		changed = true
+	if bool(dialogue_state.get("combat_strategy_request_pending", false)) and not _is_combat_strategy_request_eligible(dialogue_state):
+		dialogue_state["combat_strategy_request_pending"] = false
+		changed = true
+	if bool(dialogue_state.get("work_encouragement_request_pending", false)) and not _is_work_encouragement_eligible(dialogue_state):
+		dialogue_state["work_encouragement_request_pending"] = false
+		changed = true
+	return changed
+
+
+func _session_has_sent_special_interaction_request(dialogue_state: Dictionary) -> bool:
+	for flag in SPECIAL_INTERACTION_SESSION_FLAGS:
+		if bool(dialogue_state.get(flag, false)):
+			return true
+	return false
 
 
 func set_dialogue_visibility(visibility: String) -> Dictionary:
@@ -2720,6 +3038,10 @@ func set_recruitment_request_pending(enabled: bool = true) -> Dictionary:
 	if bool(npc_system.get_npc(target_npc_id).get("recruited", false)):
 		return _failure("npc_already_recruited", "该 NPC 已经入伍。")
 	dialogue_state["recruitment_request_pending"] = enabled
+	if enabled:
+		dialogue_state["morale_encouragement_request_pending"] = false
+		dialogue_state["combat_strategy_request_pending"] = false
+		dialogue_state["work_encouragement_request_pending"] = false
 	if editing_draft:
 		_player_dialogue_draft = dialogue_state
 	else:
@@ -2727,6 +3049,168 @@ func set_recruitment_request_pending(enabled: bool = true) -> Dictionary:
 	var display_state := get_display_dialogue_state()
 	dialogue_updated.emit(display_state)
 	return {"ok": true, "dialogue_state": display_state}
+
+
+func set_morale_encouragement_request_pending(enabled: bool = true) -> Dictionary:
+	var editing_draft := not _player_dialogue_draft.is_empty()
+	var dialogue_state: Dictionary = _player_dialogue_draft if editing_draft else _active_dialogue
+	if dialogue_state.is_empty():
+		return _failure("dialogue_not_started", "当前没有进行中的对话。")
+	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以尝试鼓舞士气。")
+	if bool(dialogue_state.get("waiting", false)):
+		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+	if enabled:
+		var eligibility := _get_morale_encouragement_eligibility(dialogue_state)
+		if not bool(eligibility.get("eligible", false)):
+			return _failure(
+				str(eligibility.get("reason", "morale_encouragement_unavailable")),
+				str(eligibility.get("message", "当前场景不能鼓舞士气。"))
+			)
+	dialogue_state["morale_encouragement_request_pending"] = enabled
+	if enabled:
+		dialogue_state["recruitment_request_pending"] = false
+		dialogue_state["combat_strategy_request_pending"] = false
+		dialogue_state["work_encouragement_request_pending"] = false
+	if editing_draft:
+		_player_dialogue_draft = dialogue_state
+	else:
+		_active_dialogue = dialogue_state
+	var display_state := get_display_dialogue_state()
+	dialogue_updated.emit(display_state)
+	return {"ok": true, "dialogue_state": display_state}
+
+
+func set_combat_strategy_request_pending(enabled: bool = true) -> Dictionary:
+	var editing_draft := not _player_dialogue_draft.is_empty()
+	var dialogue_state: Dictionary = _player_dialogue_draft if editing_draft else _active_dialogue
+	if dialogue_state.is_empty():
+		return _failure("dialogue_not_started", "当前没有进行中的对话。")
+	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以调整战斗策略。")
+	if bool(dialogue_state.get("waiting", false)):
+		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+	if enabled:
+		var eligibility := _get_combat_strategy_request_eligibility(dialogue_state)
+		if not bool(eligibility.get("eligible", false)):
+			return _failure(
+				str(eligibility.get("reason", "combat_strategy_unavailable")),
+				str(eligibility.get("message", "当前场景不能调整战斗策略。"))
+			)
+	dialogue_state["combat_strategy_request_pending"] = enabled
+	if enabled:
+		dialogue_state["recruitment_request_pending"] = false
+		dialogue_state["morale_encouragement_request_pending"] = false
+		dialogue_state["work_encouragement_request_pending"] = false
+	if editing_draft:
+		_player_dialogue_draft = dialogue_state
+	else:
+		_active_dialogue = dialogue_state
+	var display_state := get_display_dialogue_state()
+	dialogue_updated.emit(display_state)
+	return {"ok": true, "dialogue_state": display_state}
+
+
+func set_work_encouragement_request_pending(enabled: bool = true) -> Dictionary:
+	var editing_draft := not _player_dialogue_draft.is_empty()
+	var dialogue_state: Dictionary = _player_dialogue_draft if editing_draft else _active_dialogue
+	if dialogue_state.is_empty():
+		return _failure("dialogue_not_started", "当前没有进行中的对话。")
+	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以鼓励工作。")
+	if bool(dialogue_state.get("waiting", false)):
+		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+	if enabled:
+		var eligibility := _get_work_encouragement_eligibility(dialogue_state)
+		if not bool(eligibility.get("eligible", false)):
+			return _failure(
+				str(eligibility.get("reason", "work_encouragement_unavailable")),
+				str(eligibility.get("message", "当前不能鼓励工作。"))
+			)
+	dialogue_state["work_encouragement_request_pending"] = enabled
+	if enabled:
+		dialogue_state["recruitment_request_pending"] = false
+		dialogue_state["morale_encouragement_request_pending"] = false
+		dialogue_state["combat_strategy_request_pending"] = false
+	if editing_draft:
+		_player_dialogue_draft = dialogue_state
+	else:
+		_active_dialogue = dialogue_state
+	var display_state := get_display_dialogue_state()
+	dialogue_updated.emit(display_state)
+	return {"ok": true, "dialogue_state": display_state}
+
+
+func _is_work_encouragement_eligible(dialogue_state: Dictionary) -> bool:
+	return bool(_get_work_encouragement_eligibility(dialogue_state).get("eligible", false))
+
+
+func _is_recruitment_request_eligible(dialogue_state: Dictionary) -> bool:
+	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return false
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var target_npc_id := str(dialogue_state.get("target_npc_id", ""))
+	return (
+		npc_system != null
+		and not npc_system.get_npc(target_npc_id).is_empty()
+		and not bool(npc_system.get_npc(target_npc_id).get("recruited", false))
+	)
+
+
+func _get_work_encouragement_eligibility(dialogue_state: Dictionary) -> Dictionary:
+	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以鼓励工作。"}
+	if str(dialogue_state.get("last_work_encouragement_reaction", "none")) == "work_boost":
+		return {"eligible": false, "reason": "work_boost_staged", "message": "本次对话已经成功鼓励该 NPC 工作。"}
+	if str(dialogue_state.get("interaction_context", "work")) != "work":
+		return {"eligible": false, "reason": "not_work_mode", "message": "只有和平工作模式中的 NPC 可以被鼓励工作。"}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_work_encouragement_eligibility"):
+		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用，无法鼓励工作。"}
+	return npc_system.get_work_encouragement_eligibility(str(dialogue_state.get("target_npc_id", "")))
+
+
+func _is_morale_encouragement_eligible(dialogue_state: Dictionary) -> bool:
+	return bool(_get_morale_encouragement_eligibility(dialogue_state).get("eligible", false))
+
+
+func _get_morale_encouragement_eligibility(dialogue_state: Dictionary) -> Dictionary:
+	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以鼓舞士气。"}
+	if str(dialogue_state.get("last_morale_encouragement_reaction", "none")) == "morale_boost":
+		return {"eligible": false, "reason": "morale_boost_staged", "message": "本次对话已经成功鼓舞该 NPC。"}
+	var interaction_context := str(dialogue_state.get("interaction_context", "work"))
+	if not ["rally", "combat"].has(interaction_context):
+		return {"eligible": false, "reason": "not_rally_or_combat", "message": "只有集结或战斗中的 NPC 可以被鼓舞。"}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("get_wartime_dialogue_reaction_eligibility"):
+		return {"eligible": false, "reason": "combat_system_missing", "message": "战斗系统不可用，无法鼓舞士气。"}
+	return combat_system.get_wartime_dialogue_reaction_eligibility(str(dialogue_state.get("target_npc_id", "")))
+
+
+func _is_combat_strategy_request_eligible(dialogue_state: Dictionary) -> bool:
+	return bool(_get_combat_strategy_request_eligibility(dialogue_state).get("eligible", false))
+
+
+func _get_combat_strategy_request_eligibility(dialogue_state: Dictionary) -> Dictionary:
+	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以调整战斗策略。"}
+	var interaction_context := str(dialogue_state.get("interaction_context", "work"))
+	if not ["rally", "combat"].has(interaction_context):
+		return {"eligible": false, "reason": "not_rally_or_combat", "message": "只有集结或战斗中的 NPC 可以调整战斗策略。"}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("get_combat_strategy_dialogue_eligibility"):
+		return {"eligible": false, "reason": "combat_system_missing", "message": "战斗系统不可用，无法调整战斗策略。"}
+	return combat_system.get_combat_strategy_dialogue_eligibility(str(dialogue_state.get("target_npc_id", "")))
+
+
+func _get_combat_strategy_request_context(dialogue_state: Dictionary) -> Dictionary:
+	if not _is_combat_strategy_request_eligible(dialogue_state):
+		return {}
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("get_npc_combat_strategy_dialogue_context"):
+		return {}
+	return combat_system.get_npc_combat_strategy_dialogue_context(str(dialogue_state.get("target_npc_id", "")))
 
 
 func is_dialogue_active() -> bool:
@@ -2782,11 +3266,74 @@ func _normalize_wartime_reaction(reaction: String) -> String:
 	return "none"
 
 
+func _normalize_work_encouragement_reaction(reaction: String) -> String:
+	var clean_reaction := reaction.strip_edges()
+	if WORK_ENCOURAGEMENT_REACTIONS.has(clean_reaction):
+		return clean_reaction
+	return "none"
+
+
+func _apply_combat_strategy_dialogue_decision(raw_decision: Variant, request_context: Dictionary) -> Dictionary:
+	var current: Dictionary = request_context.get("current_strategy", {}) if request_context.get("current_strategy", {}) is Dictionary else {}
+	var current_id := str(current.get("id", "attack"))
+	var current_label := str(current.get("label", "主动进攻"))
+	var available: Array = request_context.get("available_strategies", []) if request_context.get("available_strategies", []) is Array else []
+	var available_by_id := {}
+	for raw_option in available:
+		if raw_option is Dictionary:
+			var option: Dictionary = raw_option
+			available_by_id[str(option.get("id", ""))] = option.duplicate(true)
+	var decision: Dictionary = raw_decision if raw_decision is Dictionary else {}
+	var requested_decision := str(decision.get("decision", "keep"))
+	var requested_id := str(decision.get("strategy_id", current_id))
+	var keep_result := {
+		"ok": true,
+		"decision": "keep",
+		"changed": false,
+		"previous_strategy_id": current_id,
+		"previous_strategy_label": current_label,
+		"strategy_id": current_id,
+		"strategy_label": current_label,
+		"requested_decision": requested_decision,
+		"requested_strategy_id": requested_id
+	}
+	if requested_decision != "change" or requested_id == current_id or not available_by_id.has(requested_id):
+		return keep_result
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("set_npc_combat_strategy"):
+		keep_result["ok"] = false
+		keep_result["error"] = "combat_system_missing"
+		return keep_result
+	var apply_result: Dictionary = combat_system.set_npc_combat_strategy(
+		str(_active_dialogue.get("target_npc_id", "")),
+		requested_id,
+		str(_active_dialogue.get("visibility", "local_public")),
+		"guard_dialogue_request"
+	)
+	if not bool(apply_result.get("ok", false)) or not bool(apply_result.get("changed", false)):
+		keep_result["ok"] = bool(apply_result.get("ok", false))
+		keep_result["error"] = str(apply_result.get("error", "strategy_unchanged"))
+		return keep_result
+	var applied_strategy: Dictionary = apply_result.get("strategy", {}) if apply_result.get("strategy", {}) is Dictionary else {}
+	return {
+		"ok": true,
+		"decision": "change",
+		"changed": true,
+		"previous_strategy_id": current_id,
+		"previous_strategy_label": current_label,
+		"strategy_id": str(applied_strategy.get("id", requested_id)),
+		"strategy_label": str(applied_strategy.get("label", (available_by_id[requested_id] as Dictionary).get("label", requested_id))),
+		"requested_decision": requested_decision,
+		"requested_strategy_id": requested_id,
+		"event": apply_result.get("event", {})
+	}
+
+
 func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dictionary) -> Dictionary:
 	var clean_text := str(pending.get("clean_text", GUARD_ATTACK_EVENT_TEXT))
 	var reaction := "none"
 	var interaction_context := str(_active_dialogue.get("interaction_context", "work"))
-	if interaction_context != "avoid_combat":
+	if bool(pending.get("effective_morale_encouragement_request", false)) and interaction_context != "avoid_combat":
 		if _text_contains_any(clean_text, ["逃", "跑", "撤", "保命", "自己活", "别管"]):
 			reaction = "escape"
 		elif _text_contains_any(clean_text, ["守住", "保护", "坚持", "撑住", "拦住", "挡住", "一起", "别怕"]):
@@ -2794,10 +3341,10 @@ func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dic
 	var recruitment_result := "none"
 	if bool(pending.get("effective_recruitment_request", false)):
 		recruitment_result = "accept" if _text_contains_any(clean_text, ["应征", "入伍", "守住", "保护", "帮忙", "一起", "救"]) else "reject"
-	return {
+	var fallback_response := {
 		"replyer_id": str(_active_dialogue.get("target_npc_id", "")),
 		"reply_text": "守备官，我听见了。现在先按你说的做。",
-		"emotion": "tense",
+		"emotion": "afraid",
 		"attitude_delta": 0,
 		"relationship_delta": 0,
 		"recruitment_result": recruitment_result,
@@ -2806,6 +3353,14 @@ func _make_wartime_rule_fallback_response(pending: Dictionary, error_result: Dic
 		"fallback_error_code": str(error_result.get("error_code", "")),
 		"fallback_message": str(error_result.get("message", "后端请求失败。"))
 	}
+	if bool(pending.get("effective_combat_strategy_request", false)):
+		var strategy_context: Dictionary = pending.get("combat_strategy_context", {}) if pending.get("combat_strategy_context", {}) is Dictionary else {}
+		var current_strategy: Dictionary = strategy_context.get("current_strategy", {}) if strategy_context.get("current_strategy", {}) is Dictionary else {}
+		fallback_response["combat_strategy_decision"] = {
+			"decision": "keep",
+			"strategy_id": str(current_strategy.get("id", "attack"))
+		}
+	return fallback_response
 
 
 func _make_escape_intervention_rule_fallback_response(pending: Dictionary, error_result: Dictionary) -> Dictionary:
@@ -2818,7 +3373,7 @@ func _make_escape_intervention_rule_fallback_response(pending: Dictionary, error
 	return {
 		"replyer_id": str(_active_dialogue.get("target_npc_id", "")),
 		"reply_text": "我听见了。那我留下，但你得记住今天说过的话。" if stay else "你现在说什么都太迟了。我还是要离开这里。",
-		"emotion": "shaken" if stay else "fearful",
+		"emotion": "relieved" if stay else "afraid",
 		"attitude_delta": 0,
 		"relationship_delta": 0,
 		"escape_intervention_result": "stay" if stay else "leave",
@@ -2852,6 +3407,27 @@ func _apply_wartime_reaction(response: Dictionary, dialogue_event: Dictionary) -
 	})
 	_active_dialogue["last_wartime_reaction"] = reaction
 	_active_dialogue["last_wartime_result"] = result.duplicate(true)
+	return result
+
+
+func _apply_work_encouragement_reaction(response: Dictionary, dialogue_event: Dictionary) -> Dictionary:
+	if _active_dialogue.is_empty() or str(_active_dialogue.get("dialogue_kind", "")) != "player_npc":
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("apply_work_encouragement_reaction"):
+		return {}
+	var reaction := _normalize_work_encouragement_reaction(str(response.get("work_encouragement_reaction", "none")))
+	var result: Dictionary = npc_system.apply_work_encouragement_reaction(
+		str(_active_dialogue.get("target_npc_id", "")),
+		reaction,
+		{
+			"source_event_id": str(dialogue_event.get("event_id", "")),
+			"dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
+			"visibility": str(_active_dialogue.get("visibility", "private")),
+			"interaction_context": str(_active_dialogue.get("interaction_context", "work"))
+		}
+	)
+	_active_dialogue["last_work_encouragement_reaction"] = reaction
 	return result
 
 
@@ -2951,6 +3527,278 @@ func _record_dialogue_event(
 	})
 
 
+func _publish_special_interaction_results(pending: Dictionary, npc_turn: Dictionary, reply_text: String) -> void:
+	if _active_dialogue.is_empty() or str(_active_dialogue.get("dialogue_kind", "")) != "player_npc":
+		return
+	var entries: Array[Dictionary] = []
+	if npc_turn.has("recruitment_result"):
+		var recruitment_outcome := str(npc_turn.get("recruitment_result", "none"))
+		entries.append({
+			"special_type": "recruitment",
+			"outcome": recruitment_outcome,
+			"success": recruitment_outcome == "accept"
+		})
+	if bool(npc_turn.get("morale_encouragement_request", false)):
+		var morale_outcome := str(npc_turn.get("wartime_reaction", "none"))
+		entries.append({
+			"special_type": "morale_encouragement",
+			"outcome": morale_outcome,
+			"success": morale_outcome == "morale_boost"
+		})
+	if bool(npc_turn.get("work_encouragement_request", false)):
+		var work_outcome := str(npc_turn.get("work_encouragement_reaction", "none"))
+		entries.append({
+			"special_type": "work_encouragement",
+			"outcome": work_outcome,
+			"success": work_outcome == "work_boost"
+		})
+	if bool(npc_turn.get("combat_strategy_request", false)):
+		var strategy_result: Dictionary = npc_turn.get("combat_strategy_result", {}) if npc_turn.get("combat_strategy_result", {}) is Dictionary else {}
+		var strategy_changed := bool(strategy_result.get("changed", false))
+		entries.append({
+			"special_type": "combat_strategy",
+			"outcome": "change" if strategy_changed else "keep",
+			"success": strategy_changed,
+			"previous_strategy_id": str(strategy_result.get("previous_strategy_id", "")),
+			"previous_strategy_label": str(strategy_result.get("previous_strategy_label", "")),
+			"strategy_id": str(strategy_result.get("strategy_id", "")),
+			"strategy_label": str(strategy_result.get("strategy_label", ""))
+		})
+	if entries.is_empty():
+		return
+	_active_dialogue["session_had_special_interaction_result"] = true
+
+	var npc_id := str(_active_dialogue.get("target_npc_id", ""))
+	var npc_name := str(_active_dialogue.get("target_npc_name", npc_id))
+	for raw_entry in entries:
+		var entry := raw_entry.duplicate(true)
+		entry["dialogue_id"] = str(_active_dialogue.get("dialogue_id", ""))
+		entry["npc_id"] = npc_id
+		entry["npc_name"] = npc_name
+		entry["visibility"] = str(_active_dialogue.get("visibility", "private"))
+		entry["location_id"] = str(_active_dialogue.get("location_id", "plaza"))
+		entry["current_round"] = int(_active_dialogue.get("current_round", 0))
+		entry["guard_text"] = str(pending.get("clean_text", ""))
+		entry["npc_reply"] = reply_text
+		var event := _record_dialogue_event("dialogue_special_interaction_result", entry)
+		entry["event_id"] = str(event.get("event_id", ""))
+		special_interaction_result.emit(entry.duplicate(true))
+
+
+func debug_preview_special_interaction_result(
+	npc_id: String,
+	special_type: String,
+	outcome: String,
+	visibility: String = "local_public"
+) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		return _failure("npc_system_missing", "NPC 系统不可用。")
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return _failure("unknown_npc", "NPC 不存在。")
+	var allowed := {
+		"recruitment": ["accept", "reject", "none"],
+		"morale_encouragement": ["morale_boost", "none", "escape"],
+		"work_encouragement": ["work_boost", "none", "escape"],
+		"combat_strategy": ["change", "keep"]
+	}
+	if not allowed.has(special_type) or not (allowed[special_type] as Array).has(outcome):
+		return _failure("invalid_special_result", "未知的特殊交互结果。")
+	var reuse_active := (
+		not _active_dialogue.is_empty()
+		and str(_active_dialogue.get("dialogue_kind", "")) == "player_npc"
+		and str(_active_dialogue.get("target_npc_id", "")) == npc_id
+	)
+	if not reuse_active:
+		if not _active_dialogue.is_empty():
+			end_dialogue("gm_special_result_preview_replaced", {"suppress_plan_reevaluation": true})
+		var start_result := start_player_dialogue(npc_id, visibility)
+		if not bool(start_result.get("ok", false)):
+			return start_result
+	if _active_dialogue.is_empty() and not _player_dialogue_draft.is_empty():
+		var activation_result := _activate_player_dialogue_draft("gm_special_result_preview")
+		if not bool(activation_result.get("ok", false)):
+			return activation_result
+	if str(_active_dialogue.get("dialogue_kind", "")) != "player_npc":
+		return _failure("player_dialogue_required", "当前 NPC 只能进入其他类型的对话。")
+
+	var npc_name := str(npc.get("name", npc_id))
+	var guard_text := "我想和你谈一项安排。"
+	var reply_text := "我已经作出决定。"
+	var state_result: Dictionary = {"ok": true, "applied": false}
+	var npc_turn := _make_history_turn(npc_id, npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
+	match special_type:
+		"recruitment":
+			guard_text = "我希望你加入守备队。"
+			npc_turn["recruitment_result"] = outcome
+			match outcome:
+				"accept":
+					reply_text = "好，我愿意加入守备队。"
+					state_result = {"ok": bool(npc_system.set_npc_recruited(npc_id, true)), "applied": true}
+				"reject":
+					reply_text = "不，我不能答应应征。"
+				_:
+					reply_text = "我没听出你是在谈应征，还是说眼前的事吧。"
+		"morale_encouragement":
+			guard_text = "稳住阵线，我们能守住这里。"
+			npc_turn["morale_encouragement_request"] = true
+			npc_turn["wartime_reaction"] = outcome
+			match outcome:
+				"morale_boost":
+					reply_text = "你说得对，我会振作起来继续战斗。"
+					var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+					state_result = combat_system.debug_start_morale_boost(npc_id) if combat_system != null and combat_system.has_method("debug_start_morale_boost") else _failure("combat_system_missing", "CombatSystem 鼓舞调试接口不可用。")
+				"escape":
+					reply_text = "够了，我不会再留在这里送命。"
+				_:
+					reply_text = "我听见了，但我只会按原来的方式继续参战。"
+		"work_encouragement":
+			guard_text = "你的工作很重要，我相信你能把今天的事情做好。"
+			npc_turn["work_encouragement_request"] = true
+			npc_turn["work_encouragement_reaction"] = outcome
+			match outcome:
+				"work_boost":
+					reply_text = "谢谢，我会更专注地把工作做好。"
+					state_result = npc_system.debug_start_work_encouragement_boost(npc_id) if npc_system.has_method("debug_start_work_encouragement_boost") else _failure("npc_system_missing", "NPCSystem 工作增益调试接口不可用。")
+				"escape":
+					reply_text = "这不是鼓励，我不愿再留在这里。"
+				_:
+					reply_text = "我知道了，还是照常把手头的工作做完吧。"
+		"combat_strategy":
+			guard_text = "我想调整你接下来的战斗方式。"
+			var strategy_result := _debug_apply_combat_strategy_result(npc_id, outcome, visibility)
+			if not bool(strategy_result.get("ok", false)):
+				return strategy_result
+			npc_turn["combat_strategy_request"] = true
+			npc_turn["combat_strategy_result"] = strategy_result.duplicate(true)
+			state_result = strategy_result.duplicate(true)
+			reply_text = (
+				"明白，我会把战斗策略改为%s。" % str(strategy_result.get("strategy_label", "新策略"))
+				if bool(strategy_result.get("changed", false))
+				else "我会保持当前的战斗策略。"
+			)
+	if not bool(state_result.get("ok", false)):
+		return state_result
+	npc_turn["text"] = reply_text
+	var preview_emotion := "none"
+	if outcome in ["accept", "morale_boost", "change"]:
+		preview_emotion = "determined"
+	elif outcome == "work_boost":
+		preview_emotion = "happy"
+	elif outcome == "escape":
+		preview_emotion = "afraid"
+	elif outcome == "reject":
+		preview_emotion = "sad"
+	_attach_and_present_npc_emotion(npc_turn, {"emotion": preview_emotion}, npc_id)
+	var history: Array = _active_dialogue.get("history", [])
+	history.append(_make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, npc_id, npc_name, guard_text))
+	history.append(npc_turn)
+	_active_dialogue["history"] = history
+	_active_dialogue["last_player_text"] = guard_text
+	_active_dialogue["last_reply_text"] = reply_text
+	_active_dialogue["current_round"] = int(_active_dialogue.get("current_round", 0)) + 1
+	_publish_special_interaction_results({"clean_text": guard_text}, npc_turn, reply_text)
+	dialogue_updated.emit(get_dialogue_state())
+
+	var escape_result: Dictionary = {}
+	if outcome == "escape":
+		var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+		if combat_system == null or not combat_system.has_method("start_npc_escape"):
+			escape_result = _failure("combat_system_missing", "CombatSystem 逃离接口不可用。")
+		else:
+			escape_result = combat_system.start_npc_escape(npc_id, "", "gm_special_result_preview", {
+				"interaction_context": special_type,
+				"visibility": visibility
+			})
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"special_type": special_type,
+		"outcome": outcome,
+		"state_result": state_result,
+		"escape_result": escape_result
+	}
+
+
+func _debug_apply_combat_strategy_result(npc_id: String, outcome: String, visibility: String) -> Dictionary:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("get_npc_combat_strategy"):
+		return _failure("combat_system_missing", "CombatSystem 策略接口不可用。")
+	var current: Dictionary = combat_system.get_npc_combat_strategy(npc_id)
+	var options: Array[Dictionary] = combat_system.get_npc_combat_strategy_options(npc_id) if combat_system.has_method("get_npc_combat_strategy_options") else []
+	if current.is_empty() or options.is_empty():
+		return _failure("combat_strategy_unavailable", "所选 NPC 没有可预览的战斗策略；请先征召并配装。")
+	var previous_id := str(current.get("id", ""))
+	var previous_label := str(current.get("label", "主动进攻"))
+	var target_id := previous_id
+	if outcome == "change":
+		for option in options:
+			if str(option.get("id", "")) != previous_id:
+				target_id = str(option.get("id", ""))
+				break
+		if target_id == previous_id:
+			return _failure("no_alternative_strategy", "当前兵种没有另一个可切换策略。")
+		var apply_result: Dictionary = combat_system.set_npc_combat_strategy(npc_id, target_id, visibility, "gm_special_result_preview")
+		if not bool(apply_result.get("ok", false)):
+			return apply_result
+	var current_after: Dictionary = combat_system.get_npc_combat_strategy(npc_id)
+	return {
+		"ok": true,
+		"applied": outcome == "change",
+		"changed": outcome == "change" and str(current_after.get("id", "")) != previous_id,
+		"previous_strategy_id": previous_id,
+		"previous_strategy_label": previous_label,
+		"strategy_id": str(current_after.get("id", previous_id)),
+		"strategy_label": str(current_after.get("label", previous_label))
+	}
+
+
+func debug_preview_escape_intervention_result(npc_id: String, outcome: String) -> Dictionary:
+	if not ["stay", "leave"].has(outcome):
+		return _failure("invalid_escape_intervention_result", "挽留结果只能是 stay 或 leave。")
+	var start_result := start_escape_intervention_dialogue(npc_id)
+	if not bool(start_result.get("ok", false)):
+		return start_result
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("apply_escape_intervention_result"):
+		return _failure("combat_system_missing", "CombatSystem 挽留接口不可用。")
+	var npc_name := str(_active_dialogue.get("target_npc_name", npc_id))
+	var guard_text := "留下来，我们会解决让你想离开的原因。"
+	var reply_text := "好，我决定留下。" if outcome == "stay" else "不，我还是要离开这里。"
+	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
+	var result: Dictionary = combat_system.apply_escape_intervention_result(npc_id, {
+		"reply_text": reply_text,
+		"escape_intervention_result": outcome
+	}, {
+		"dialogue_id": str(_active_dialogue.get("dialogue_id", "")),
+		"current_round": next_round,
+		"max_rounds": int(_active_dialogue.get("max_rounds", ESCAPE_INTERVENTION_MAX_ROUNDS)),
+		"interaction_kind": "gm_special_result_preview"
+	})
+	if not bool(result.get("ok", false)):
+		return result
+	var npc_turn := _make_history_turn(npc_id, npc_name, GUARD_OFFICER_ID, GUARD_OFFICER_NAME, reply_text)
+	_attach_and_present_npc_emotion(
+		npc_turn,
+		{"emotion": "relieved" if outcome == "stay" else "afraid"},
+		npc_id
+	)
+	npc_turn["escape_intervention_result"] = outcome
+	npc_turn["escape_intervention_decision"] = str(result.get("decision", ""))
+	npc_turn["escape_intervention_rounds_left"] = int(result.get("rounds_left", 0))
+	var history: Array = _active_dialogue.get("history", [])
+	history.append(_make_history_turn(GUARD_OFFICER_ID, GUARD_OFFICER_NAME, npc_id, npc_name, guard_text))
+	history.append(npc_turn)
+	_active_dialogue["history"] = history
+	_active_dialogue["last_player_text"] = guard_text
+	_active_dialogue["last_reply_text"] = reply_text
+	_active_dialogue["current_round"] = next_round
+	_active_dialogue["last_escape_intervention_result"] = result.duplicate(true)
+	dialogue_updated.emit(get_dialogue_state())
+	return result
+
+
 func _record_proactive_talk_message(opening_text: String) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or _active_dialogue.is_empty():
@@ -2987,6 +3835,41 @@ func _make_history_turn(speaker_id: String, speaker_name: String, listener_id: S
 		"text": text,
 		"visibility": str(_active_dialogue.get("visibility", "private"))
 	}
+
+
+func _attach_and_present_npc_emotion(turn: Dictionary, response: Dictionary, npc_id: String) -> Dictionary:
+	var presentation := DialogueEmotionCatalog.get_presentation(str(response.get("emotion", "none")))
+	turn["emotion_id"] = str(presentation.get("emotion_id", "none"))
+	turn["emotion_label"] = str(presentation.get("emotion_label", "无明显情绪"))
+	turn["emotion_emoji"] = str(presentation.get("emoji", "…"))
+	return _present_npc_dialogue_emotion(npc_id, presentation)
+
+
+func _present_npc_dialogue_emotion(npc_id: String, raw_presentation: Dictionary) -> Dictionary:
+	if npc_id.is_empty():
+		return _failure("invalid_npc_id", "缺少需要展示情绪的 NPC。")
+	var presentation := DialogueEmotionCatalog.get_presentation(str(raw_presentation.get(
+		"emotion_id",
+		raw_presentation.get("emotion", "none")
+	)))
+	presentation["npc_id"] = npc_id
+	presentation["dialogue_id"] = str(_active_dialogue.get("dialogue_id", ""))
+	presentation["presented_at_msec"] = Time.get_ticks_msec()
+	var event_bus := get_node_or_null(EVENT_BUS_PATH)
+	if event_bus != null and event_bus.has_signal("npc_dialogue_emotion_presented"):
+		event_bus.npc_dialogue_emotion_presented.emit(npc_id, presentation.duplicate(true))
+	return {"ok": true, "presentation": presentation}
+
+
+func debug_present_npc_dialogue_emotion(npc_id: String, emotion_id: String) -> Dictionary:
+	return _present_npc_dialogue_emotion(
+		npc_id,
+		DialogueEmotionCatalog.get_presentation(emotion_id)
+	)
+
+
+func debug_get_dialogue_emotion_presentations() -> Array[Dictionary]:
+	return DialogueEmotionCatalog.get_all_presentations()
 
 
 func _build_npc_dialogue_soft_round_guidance(soft_round_threshold: int) -> String:

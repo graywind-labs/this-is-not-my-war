@@ -42,17 +42,42 @@ func _init() -> void:
 	var gift_wine_button := npc_panel.find_child("NPCGiftWineButton", true, false) as Button
 	var wine_label := npc_panel.find_child("NPCWineLabel", true, false) as Label
 	var weapon_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
-	var strategy_select := npc_panel.find_child("NPCCombatStrategySelect", true, false) as OptionButton
+	var order_button := npc_panel.find_child("NPCAssignButton", true, false) as Button
+	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
+	var management_row := npc_panel.find_child("NPCManagementButtonRow", true, false) as HBoxContainer
+	var strategy_value := npc_panel.find_child("NPCCombatStrategyValue", true, false) as Label
 	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
 	var result_label := npc_panel.find_child("NPCInteractionResultLabel", true, false) as Label
-	if [public_visibility_radio, private_visibility_radio, money_spin, gift_button, wine_spin, gift_wine_button, wine_label, weapon_button, strategy_select, equipment_label, result_label].has(null):
+	if [public_visibility_radio, private_visibility_radio, money_spin, gift_button, wine_spin, gift_wine_button, wine_label, weapon_button, order_button, dialogue_button, management_row, strategy_value, equipment_label, result_label].has(null):
 		push_error("NPC interaction controls are missing")
+		quit(1)
+		return
+	if npc_panel.find_child("NPCCombatStrategySelect", true, false) != null:
+		push_error("NPCPanel must not expose a manual combat strategy selector")
 		quit(1)
 		return
 	if npc_panel.find_child("NPCInteractionVisibilitySelect", true, false) != null:
 		push_error("Legacy interaction visibility dropdown should be removed")
 		quit(1)
 		return
+	if npc_panel.find_child("NPCDialogueHistoryButton", true, false) != null:
+		push_error("NPCPanel should no longer contain the dialogue history button")
+		quit(1)
+		return
+	if weapon_button.get_parent() != management_row or order_button.get_parent() != management_row:
+		push_error("Equipment and order should share the management row")
+		quit(1)
+		return
+	if dialogue_button.get_parent() != management_row.get_parent() or dialogue_button.get_index() <= management_row.get_index():
+		push_error("Dialogue should be a full-width control below the management row")
+		quit(1)
+		return
+	for radio in [public_visibility_radio, private_visibility_radio]:
+		for style_name in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			if not radio.get_theme_stylebox(style_name) is StyleBoxEmpty:
+				push_error("NPC visibility radio should not draw %s highlight frames" % style_name)
+				quit(1)
+				return
 	if (
 		public_visibility_radio.text != "公开"
 		or private_visibility_radio.text != "私下"
@@ -211,23 +236,22 @@ func _init() -> void:
 
 	resource_system.add_resource("item_bow", 1)
 	await process_frame
-	if weapon_button.disabled or weapon_button.text != "装备":
-		push_error("Equipment window entry should remain enabled for unrecruited NPC")
+	if not weapon_button.disabled or weapon_button.text != "装备" or weapon_button.tooltip_text != "还未征召，无法配装。":
+		push_error("Unrecruited equipment entry should remain visible, disabled, and explain recruitment")
+		quit(1)
+		return
+	if not order_button.disabled or order_button.tooltip_text != "还未征召，无法命令。":
+		push_error("Unrecruited order entry should remain visible, disabled, and explain recruitment")
 		quit(1)
 		return
 	var recruitment_hint := "需先说服该人物应征入伍，才能进行这项操作。"
-	if not strategy_select.disabled or strategy_select.tooltip_text != recruitment_hint:
-		push_error("Unrecruited combat strategy should remain recruitment-gated")
+	if strategy_value.tooltip_text != recruitment_hint or strategy_value.modulate.a > 0.5:
+		push_error("Unrecruited read-only combat strategy should remain visibly recruitment-gated")
 		quit(1)
 		return
-	weapon_button.pressed.emit()
 	var locked_snapshot: Dictionary = npc_panel.debug_get_equipment_window_snapshot()
-	if not bool(locked_snapshot.get("visible", false)) or not bool(locked_snapshot.get("locked", false)):
-		push_error("Unrecruited NPC equipment window should open in locked state")
-		quit(1)
-		return
-	if not bool(npc_panel.debug_press_equipment_slot("main_weapon").get("notice_visible", false)):
-		push_error("Unrecruited equipment slot should show the unavailable notice")
+	if bool(locked_snapshot.get("visible", false)):
+		push_error("Disabled unrecruited equipment entry should not open the equipment window")
 		quit(1)
 		return
 
@@ -238,6 +262,7 @@ func _init() -> void:
 		push_error("Equipment window entry stayed disabled for recruited NPC")
 		quit(1)
 		return
+	weapon_button.pressed.emit()
 	if bool(npc_panel.debug_get_equipment_window_snapshot().get("locked", true)):
 		push_error("Recruited work-mode equipment window should be interactive")
 		quit(1)

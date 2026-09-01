@@ -95,6 +95,33 @@ func _init() -> void:
 		push_error("GM button was not created")
 		quit(1)
 		return
+	for required_dialogue_button in [
+		"MoraleEncouragementMockButton",
+		"OpenMoraleEncouragementDialogueButton",
+		"CombatStrategyDialogueMockButton",
+		"OpenCombatStrategyDialogueButton",
+		"WorkEncouragementDialogueMockButton",
+		"OpenWorkEncouragementDialogueButton",
+		"RecruitmentAcceptPreviewButton",
+		"RecruitmentRejectPreviewButton",
+		"RecruitmentNonePreviewButton",
+		"MoraleBoostPreviewButton",
+		"MoraleNonePreviewButton",
+		"MoraleEscapePreviewButton",
+		"WorkBoostPreviewButton",
+		"WorkNonePreviewButton",
+		"WorkEscapePreviewButton",
+		"StrategyChangePreviewButton",
+		"StrategyKeepPreviewButton",
+		"ClearDialogueBuffsButton",
+		"StartEscapePreviewButton",
+		"EscapeStayPreviewButton",
+		"EscapeLeavePreviewButton"
+	]:
+		if gm_window.find_child(required_dialogue_button, true, false) == null:
+			push_error("GM AI dialogue section is missing %s" % required_dialogue_button)
+			quit(1)
+			return
 	var roof_snapshot_button := gm_window.find_child("RoofVisibilitySnapshotButton", true, false) as Button
 	if roof_snapshot_button == null:
 		push_error("GM building section should expose the roof visibility snapshot")
@@ -618,7 +645,9 @@ func _init() -> void:
 		quit(1)
 		return
 	var action_select := gm_window.find_child("ActionSelect", true, false) as OptionButton
+	var common_npc_select := gm_window.find_child("CommonNpcSelect", true, false) as OptionButton
 	var formal_action_npc_select := gm_window.find_child("FormalActionNpcSelect", true, false) as OptionButton
+	var ai_npc_select := gm_window.find_child("AINpcSelect", true, false) as OptionButton
 	var formal_action_location_select := gm_window.find_child("FormalActionLocationSelect", true, false) as OptionButton
 	var assign_action_button := gm_window.find_child("AssignActionButton", true, false) as Button
 	var formal_visit_button := gm_window.find_child("FormalVisitLocationButton", true, false) as Button
@@ -626,7 +655,11 @@ func _init() -> void:
 	var formal_dialogue_target_select := gm_window.find_child("FormalNpcDialogueTargetSelect", true, false) as OptionButton
 	var formal_dialogue_button := gm_window.find_child("FormalNpcDialogueButton", true, false) as Button
 	var formal_dialogue_stop_button := gm_window.find_child("FormalNpcDialogueStopButton", true, false) as Button
-	if formal_action_npc_select == null or formal_action_location_select == null or action_select == null or assign_action_button == null:
+	if common_npc_select == null or formal_action_npc_select == null or ai_npc_select == null:
+		push_error("GM common, formal-action, and AI-info tabs should expose three independent NPC selectors")
+		quit(1)
+		return
+	if formal_action_location_select == null or action_select == null or assign_action_button == null:
 		push_error("GM formal action controls should expose NPC, location, action selectors, and assign button")
 		quit(1)
 		return
@@ -645,12 +678,47 @@ func _init() -> void:
 			push_error("GM formal action NPC selector should include %s" % str(npc_id))
 			quit(1)
 			return
-	if not _select_option_by_id(gm_panel._npc_select, "cook_01"):
+		if not _select_option_by_id(ai_npc_select, str(npc_id)):
+			push_error("GM AI-info NPC selector should include %s" % str(npc_id))
+			quit(1)
+			return
+	if not _select_option_by_id(common_npc_select, "cook_01"):
 		push_error("GM common NPC selector should include cook_01")
 		quit(1)
 		return
 	if not _select_option_by_id(formal_action_npc_select, "gardener_01"):
 		push_error("GM formal action NPC selector should include gardener_01")
+		quit(1)
+		return
+	if not _select_option_by_id(ai_npc_select, "doctor_01"):
+		push_error("GM AI-info NPC selector should include doctor_01")
+		quit(1)
+		return
+	if (
+		str(common_npc_select.get_item_metadata(common_npc_select.selected)) != "cook_01"
+		or str(formal_action_npc_select.get_item_metadata(formal_action_npc_select.selected)) != "gardener_01"
+		or str(ai_npc_select.get_item_metadata(ai_npc_select.selected)) != "doctor_01"
+	):
+		push_error("GM tab-specific NPC selectors should preserve independent selections")
+		quit(1)
+		return
+	var happy_preview_button := gm_window.find_child("DialogueEmotionHappyPreviewButton", true, false) as Button
+	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
+	if happy_preview_button == null or npc_panel == null:
+		push_error("GM AI-info routing verification requires the happy preview and NPC panel")
+		quit(1)
+		return
+	happy_preview_button.pressed.emit()
+	await process_frame
+	if str(npc_panel._current_npc_id) != "doctor_01":
+		push_error("GM AI-info emotion preview should target the AI-info selector, not another tab")
+		quit(1)
+		return
+	if (
+		str(common_npc_select.get_item_metadata(common_npc_select.selected)) != "cook_01"
+		or str(formal_action_npc_select.get_item_metadata(formal_action_npc_select.selected)) != "gardener_01"
+	):
+		push_error("Running an AI-info command should not mutate other tabs' NPC selections")
 		quit(1)
 		return
 	if _select_option_by_id(action_select, "attend_mass"):

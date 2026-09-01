@@ -183,6 +183,9 @@ func _on_alert_pressed(building_id: String) -> void:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system != null and building_system.has_method("select_building"):
 		building_system.select_building(building_id)
+	var building_panel := get_node_or_null("/root/Main/UI/BuildingPanel")
+	if building_panel != null and building_panel.has_method("open_crafting_target_selector"):
+		building_panel.open_crafting_target_selector(building_id)
 
 
 func debug_get_alert_snapshot(building_id: String) -> Dictionary:

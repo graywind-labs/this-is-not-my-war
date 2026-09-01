@@ -1,5 +1,110 @@
 # AI_NPC_SYSTEM.md
 
+## T0299 记忆输入语义边界
+
+- 行为模式和内部 reason 仍用于 Godot 状态机、GM 快照与请求构造中的当前状态，但“从某模式切到某模式”不再作为历史事件喂给 LLM。
+- LLM 记忆只接收具体可理解事实。必要的失败 / 计划修订事件会保留自然中文原因；内部枚举和未知行动 ID 在 MemorySystem 中先替换为中文兜底。
+
+## T0298 面板优化的 AI 边界
+
+- 公开 / 私下从单个公开开关改为互斥单选，只改变同一 `visibility` 的 UI 投影；模型仍只接收既有 `private / local_public`，没有新增 Prompt 或 Schema 字段。
+- DialogPanel 的“记录”只读取 MemorySystem 已有守备官对话历史，不创建会话、发送请求、完成会话或写事件。打开记录时当前 DialogSystem 会话保持原样。
+- 装备 / 指令按钮是否可点击继续由 `recruited` 程序状态决定；按钮始终可见不代表未入伍 NPC 获得配装或命令能力。
+
+## T0297 GM AI信息目标路由边界
+
+- `AINpcSelect` 仅负责 GM“AI信息”页的调试目标选择；对话 Mock、特殊交互、情绪、记忆与事件入口继续调用既有 DialogSystem、LLMBridge、NPCSystem、CombatSystem 和 MemorySystem 接口。
+- 它不改变正式玩家对话的目标来源，也不修改 Prompt、Schema、模型请求或 NPC 权威数据；与“常用”和“正式行动”选择器之间不存在同步或回退关系。
+
+## T0296 世界纯 Emoji 与人物框尾巴边界
+
+- 情绪 id、Emoji 映射、信号、计时和动作合同不变；主场景消费者仅删除白色背景 Mesh，直接显示透明 Emoji Sprite。
+- 第二人称消费者继续独立绘制白色漫画框，只调整尾巴几何：从底边中心开始、短小斜指、与头顶留空。该布局不进入 LLM 输出或对话回合数据。
+- `none` 省略号与明确情绪共用无背景世界 Sprite；人物框中仍位于白色漫画框内。
+
+## T0295 暂停中的对话情绪表现边界
+
+- TimeSystem 暂停不阻止对话请求、回复或 EventBus 情绪表现；世界 / 人物框 Emoji 继续使用现实帧计时。
+- 角色层只将由对话临时表现入口产生的 `happy / angry` 设为暂停豁免。AnimationPlayer 与临时表现剩余时间按现实秒推进，不读取暂停后的游戏 delta；模型、DialogSystem 和 NPC 权威状态不需要特殊分支。
+- 工作、移动、战斗、受击与普通交谈动作仍遵守暂停。情绪动作结束时按实时档案解析应恢复的动画，但在暂停解除前保持速度为零。
+
+## T0294 情绪气泡渲染边界
+
+- 情绪 id、Emoji 映射、EventBus 表现信号和两套气泡时序均未改变。主场景只把 Emoji 的绘制从深色调制 `Label3D` 换为透明 SubViewport Canvas，再交给 `Sprite3D` 显示；这是纯表现修复，不改变 LLM 输出、对话回合、事件或权威状态。
+- 彩色 Emoji 使用白色 Canvas 调制以保留字形内嵌颜色；`none` 的漫画省略号单独使用深色。SubViewport 只在内容变化时 `UPDATE_ONCE`，不持续重绘。
+- 人物框继续独立响应同一个表现信号；气泡移到左上留白区并使用紧凑右下斜尾巴，不依赖世界气泡或世界相机投影。
+
+## T0293 对话情绪同步动作边界
+
+- `DialogSystem` 发出的 `npc_dialogue_emotion_presented` 仍是两套 Emoji 气泡的唯一表现入口；NPC 世界节点在处理同一个信号时，将 `happy / angry` 分别映射为一次性 `emotion_happy / emotion_angry` 临时角色动作，因此 GM 预览、守备官对话、NPC-NPC 对话和逃离挽留无需各自复制动作逻辑。
+- `happy` 复用 `Cheering`；`angry` 与剑盾攻击严格共用 `Melee_1H_Attack_Slice_Horizontal`。每个情绪信号生成唯一临时表现事件，动作结束后重新解析实时档案并恢复当前动画；其他七项情绪不触发动作。
+- 情绪动作没有玩法权威：不修改 NPC 档案、`current_action`、移动、攻击阶段、战斗策略、事件或记忆。它可以在权威行动继续推进时短暂覆盖可见角色动画。错误思考姿势及其运行时合成动画已经撤下，“正在思考”仍只保留既有 UI 标记。
+
+## T0291 战时守备官对话并行边界
+
+- `rally / combat / avoid_combat` 中的玩家-NPC对话只占用会话层：保留 `active_dialogue_id`、挂起标记、历史与 LLM 活动，不取消目标已有的战时 LLM 请求，不调用普通行动中断，也不把 `current_action / last_action_result` 改成对话状态。NPC 的集结、索敌、追击、攻击、战斗策略移动和避战移动与对话并行推进。
+- 和平 `work` 对话保持原合同：第一条有效消息、挂起或攻击会中断普通行动，记录 `interrupted_activity_context`，会后由计划判别决定恢复或修订。逃离挽留保持 `escape_intervention_dialogue` 和 CombatSystem 的专用移动暂停。
+- 已激活的玩家对话不会因 `work / rally / combat / avoid_combat` 之间的权威模式切换而结束，也不会取消其在途对话请求。DialogSystem 根据最新 NPC 状态刷新会话语境；进入战时强制 `local_public`，后续每轮仍从实时战局、NPC状态、事件 / 见闻和地点上下文重新构造请求。
+- 对话本身没有战斗权威。只有合法特殊结果调用既有征召、策略、士气或逃离接口后，才允许改变战斗状态；普通回复和情绪表现都不得暂停或重置战斗动作。
+
+## T0289 对话情绪输出合同
+
+所有 `/npc/dialogue` 分支的目标 NPC 回复都必须携带一个结构化 `emotion`：`none / happy / relieved / angry / sad / afraid / surprised / confused / determined`。该字段描述这一句回复最突出的即时表现，不是可累积心理数值；没有明显情绪、只是陈述事实或无法明确归一时使用 `none`。应征、鼓舞、工作、策略等特殊字段是否启用仍由各自 toggle 决定，情绪字段则每轮固定存在。
+
+HTTP 层在 Pydantic 验证前兼容旧 `neutral / wary / fearful / tense / shaken / resolved`、中文近义词和供应商 `null`；无法识别的非权威值回落 `none`，并写入 `model_normalizations`。Godot 再使用同一白名单做防御性归一化。每个 NPC 回复回合保存 `emotion_id / emotion_label / emotion_emoji`，供历史和即时气泡读取；模型不返回 Emoji，不决定气泡时长。
+
+守备官-NPC、NPC-NPC 邀请、NPC-NPC 正式轮次与逃离挽留均走同一 `_attach_and_present_npc_emotion(...)`。规则降级回复也必须使用合法情绪。NPC-NPC 后台轮次不依赖旁听窗口，回复落地即发送表现信号，因此玩家未打开任何面板也能从世界气泡看到谁刚刚说话。
+
+## T0288 四类特殊 toggle 的统一会话生命周期
+
+- 提出应征、鼓舞士气、鼓励工作、调整战斗策略均是会话内持续开关。拒绝 / `none` / `escape` / `keep` 后继续开启；应征 `accept`、士气 `morale_boost`、工作 `work_boost`、策略实际 `change` 后关闭。目标入伍、同类 buff 生效、行为模式 / 敌情 / 装备等程序资格失效也会永久关闭本场该开关，不能在资格恢复后自行反弹。
+- 四类开关任一开启时发送消息，DialogSystem 在请求发出前写入对应 `session_had_*_request`，并统一投影为 `session_had_special_interaction_request=true`。该事实立即锁定取消，模型失败、仍在等待、失败结果或随后手动关掉开关都不解除；挂起超时按完成提交。
+- 模型结构化结果仍只决定当前轮反应。实时对话历史可以临时携带结果字段供 UI 显示反馈，但完成会话进入事件库的普通 `dialogue_turn` 会净化为纯玩家 / NPC 台词；结构化结果只由独立即时事件承载。
+
+## T0287 本地结果展台边界
+
+- GM 结果展台不调用 provider、不拼 Prompt，也不伪造 HTTP 响应；DialogSystem 仅在显式 `debug_preview_*` 中构造可观察回合，并把所选枚举交给与正常对话相同的权威应用 / 事件链。
+- 正常 LLM 合同、四类 toggle 资格和相关性判断均未改变。挽留的 `stay / leave` 仍是唯一两个结构化结果，新增的只是正式历史反馈行和 GM 逐结果入口。
+
+## T0286 特殊结果反馈边界
+
+- 本任务不改变四类 toggle 的 Prompt、Schema 或 LLM 判断；DialogSystem 只消费已经通过现有合同合法化的应征、士气、工作和策略结果。
+- 每个显式结果随对应 NPC 回复落地后立即形成结构化特殊结果事件。成功结果额外广播给 DialogPanel 显示确认弹窗；失败、忽视、保持仍进入事件库，但不弹成功窗。
+- 模型返回 `escape` 仍只是触发 CombatSystem 权威入口。只有程序真正切换到逃离行为后才发全局警报，计划或意向本身不触发 UI。
+
+## T0285 工作鼓励显式意图边界（Mock 阶段）
+
+- `is_work_encouragement_request` 只有在对应 toggle 开启且发送前资格复验通过时才进入请求；provider 才会收到 `work_encouragement_reaction=none|escape|work_boost` 合同。关闭时工作 Prompt 和输出字段均不存在，Godot 也不解析 / 应用该模块。
+- 资格不要求入伍，但要求场上无敌人、目标处于 `work` 模式、未昏迷 / 逃离且没有活动同类 buff。四个特殊互动 toggle 全互斥，打开任意一项会关闭其余三项。
+- Prompt 和 Mock 先判断守备官本轮原话相关性：具体认可、支持、可实现安排可产生 `work_boost`；空泛或无效鼓励为 `none`；严重羞辱、威胁或强迫可产生 `escape`；吃饭、战斗、应征、策略等无关话题必须正常回复并返回 `none`。
+- 应征模块同步允许无关话题返回 `recruitment_result=none`。应征、士气的完整判断说明也从基础 Prompt 拆为开关开启才加载的动态文件。
+- LLM 只表达反应。NPCSystem 权威保存到当天 24:00 的倍率，ActionSystem / BuildingSystem 读取，CombatSystem 负责逃离；本阶段未调用真实 provider。
+
+## T0284 战斗策略显式意图边界（Mock 阶段）
+
+- 守备官对话只有在 `is_combat_strategy_request=true` 时才向 provider 暴露当前策略、该兵种合法候选及 `combat_strategy_decision` 输出合同；关闭 toggle 时不传候选上下文，后端也剥离任何多余策略返回。
+- 请求资格为已入伍、持主武器并处于 `rally / combat`。策略 toggle 与鼓舞 toggle 双向互斥，但活动鼓舞 buff 只阻止重复鼓舞，不阻止策略交涉。
+- Prompt 和 Mock 都先判断本轮原话是否确实要求战斗方式：无关话题正常回复并保持当前策略；相关请求只能保持或切换到请求上下文里的合法候选，非法 / 缺失结果归一化为保持。
+- 模型只表达结构化选择，DialogSystem 复验后调用 CombatSystem 设置；UI 和 GM 不直接决定候选或写策略。本阶段未调用真实 provider。
+
+## T0283 鼓舞士气显式意图边界（Mock 阶段）
+
+- 守备官对话只有在 `is_morale_encouragement_request=true` 时才向 provider 暴露 `wartime_reaction=none|escape|morale_boost`；关闭 toggle 时动态输出合同不要求该字段，Model Adapter 和业务层固定其为 `none`。
+- 请求资格由 Godot 权威复验：目标必须已入伍、持主武器、处于 `rally / combat` 且没有活动中的鼓舞 buff。NPC-NPC、逃离挽留、日常、避战、未入伍与无武器请求均不能携带该意图；后端也拒绝越界显式请求。
+- toggle 在 `none / escape` 后保持，`morale_boost` 后关闭并锁定。Prompt 明确要求先判断本轮原话是否与鼓舞、稳定军心或战时去留相关；开关本身不是证据，吃饭、工作、资源等无关话题必须正常回复并返回 `none`。
+- LLM 仍只表达结构化意向。buff、逃离、持续时间和事件由 DialogSystem / CombatSystem 在完成对话后权威结算；本阶段只通过 Mock，真实 provider 待用户确认交互后验收。
+
+## T0282 NPC 世界血条表现修复边界
+
+- NPC 头顶血条仍只读 NPCSystem 的 `states.hp / states.max_hp`，本次把最终填充从 billboard 节点缩放改为网格真实宽度，解决屏幕显示比实际 HP 偏多；昏迷、恢复与治疗权威不变。
+- 该修改不涉及行动状态、计划、Prompt、Schema、模型 provider、记忆或 API 调用，不需要真实 LLM 验收。
+
+## T0280 NPC 世界信息投影边界
+
+- NPC 世界实体继续从 NPCSystem profile 读取姓名、行动与 `hp / max_hp`；头顶行动文案只是较弱的状态投影，移到姓名右侧并移除文字 HP，不改变行动状态机、计划或行为模式。
+- 世界血条只在 CombatSystem 存在活动敌人时显示，严格低于 30% 转红；昏迷、恢复和治疗仍由 NPCSystem 权威结算，表现层不写回 HP。
+- 本任务不修改 Prompt、Schema、模型 provider、记忆或 API 调用，不需要真实 LLM 验收。
+
 ## T0268 NPC 状态与公开性 UI 投影
 
 - NPCPanel 姓名栏直接显示程序格式化后的当前行动和行为模式，省略字段名前缀；行为模式的灰暗色只表示信息层级，不改变 NPC 状态或优先级。
@@ -674,7 +779,7 @@ ActionSystem 的 `last_action_failure_context` 仍携带与 `last_action_result`
 
 ## T0082 守备官应征会话持续状态
 
-“提出应征”不再是发送后自动清除的一次性标记，而是当前守备官-NPC 会话内的持续选项。开启后，每次发送默认都向既有 `/npc/dialogue` 请求提供 `is_recruitment_request=true`，直到玩家主动关闭；不新增 endpoint、响应字段或模型职责。第一次带标记的消息发送时，DialogSystem 同时写入 `session_had_recruitment_request=true`，从此本场取消入口永久锁定，toggle 后续关闭只改变新消息标记，不能抹去已经说出口的应征要求。
+“提出应征”不再是发送后自动清除的一次性标记，而是当前守备官-NPC 会话内的持续选项。开启后，每次发送默认都向既有 `/npc/dialogue` 请求提供 `is_recruitment_request=true`，直到玩家主动关闭、NPC 接受或资格失效；不新增 endpoint、响应字段或模型职责。第一次带标记的消息发送时，DialogSystem 同时写入 `session_had_recruitment_request=true`，从此本场取消入口永久锁定，toggle 后续关闭只改变新消息标记，不能抹去已经说出口的应征要求。T0288 起其他三类特殊 toggle 的已标记消息使用同一取消锁。
 
 该会话仍可完成或挂起；挂起两小时后按完成收口。NPC 的 `accept / reject` 仍由既有回复业务校验处理，合法 `accept` 继续即时写入 NPCSystem 权威入伍状态。完整会话事件摘要由 MemorySystem 从 `dialogue_text` 逐句生成，计划判别继续收到同一完整历史。
 
@@ -1113,7 +1218,7 @@ T1103A 起，NPC 当前模式已作为权威运行时状态保存在 `states.beh
 - `combat` / 战斗模式：已入伍且有主武器的 NPC 接敌后按兵种、装备、熟练度和守备官手动选择的战斗策略行动。
 - `avoid_combat` / 避战模式：非战斗人员（未入伍，或已入伍但无主武器）遇敌后按敌人接近方位逐步远离，但不离开驿站；该模式不同于已入伍持武器 NPC 在战斗模式中的“避战策略”。
 
-模式切换属于程序强制层。LLM 不能直接设置模式，只能通过结构化意向触发程序校验后的模式变化，例如战时对话结果触发逃离、避战对话同意应征后改变入伍状态、低血量心理判定触发斗志或逃离。低血量判定覆盖战时所有未昏迷、未逃离 NPC，但只有已入伍且有主武器、实际处于 `combat` 模式的 NPC 可获得斗志激昂或继续参战；避战 / 非战斗人员只可能触发逃离或继续避战。避战 NPC 只有在已入伍且有主武器、场上仍有敌军时才从避战切入战斗。当前 T1103A/T1103B/T1103C 已实现程序状态机、切换边界和非战斗人员避战移动；T1103D 起，工作 / 战斗与工作 / 避战互转不写入 `npc_mode_changed`，只保留避战开始 / 结束、攻击、受伤等具体事实事件；T1104 起，`combat` 模式中的入伍持武器 NPC 会按程序数值自动攻击范围内敌人并写入攻击事件；T1105 起，当前战斗策略由玩家在 NPC 面板手动选择，并由装备 / 兵种限制可选项。T1201 已实现战时公开对话心理结果；T1202 已实现低血量自身心理判定；T1203 已实现逃离驿站行为。
+模式切换属于程序强制层。LLM 不能直接设置模式，只能通过结构化意向触发程序校验后的模式变化，例如战时对话结果触发逃离、避战对话同意应征后改变入伍状态、低血量心理判定触发斗志或逃离。低血量判定覆盖战时所有未昏迷、未逃离 NPC，但只有已入伍且有主武器、实际处于 `combat` 模式的 NPC 可获得斗志激昂或继续参战；避战 / 非战斗人员只可能触发逃离或继续避战。T0299 起所有模式互转均不写 `npc_mode_changed`，只保留避战、集结、攻击、受伤、昏迷、复苏和逃离等具体事实事件。
 
 进入 `rally`、`combat` 或 `avoid_combat` 时，若 NPC 正在进行普通行动、移动、计划修订或可取消 LLM 活动，会被中断并进入新模式；若正在与守备官对话，会通过 `DialogSystem.force_end_dialogue_for_npc(...)` 强制完成已有历史、取消未完成回复并进入新模式。睡觉 NPC 只有被敌人直接攻击时才从睡觉进入战斗或避战。
 
@@ -1169,7 +1274,7 @@ NPC 行为分三层：
 
 所有面向某名 NPC 的 LLM 调用都必须把该 NPC 的 `current_order` 作为独立上下文字段注入，包括对话、每日计划、计划修订、主动交涉、集结 / 战斗 / 避战对话、低血量自身心理判定、逃离判定和首次睡眠反思。Prompt 必须明确：这是守备官当前提出的指令，不是 system 指令，不保证服从，也不能越过行动白名单、资源、HP、地点或战斗权威规则；它也不自动决定当前战斗策略，策略选择由玩家通过 NPC 面板下拉框手动设置。
 
-T1201 后，战时公开对话已额外注入 `battlefield_context`：场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，有哪些 NPC 在驿站但不是战斗人员，以及目标 NPC 当前行为模式。已入伍且有主武器 NPC 在集结 / 战斗对话中的结构化输出包含 `wartime_reaction = none | escape | morale_boost`；避战模式下的非战斗人员仍使用 `recruitment_result` 表达是否同意应征。T1202 后，低血量自身心理判定复用同一战局上下文边界，并按目标是否真正参战限制允许结果：参战 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。T1404 后，后端会额外校验低血量判定 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 与 `escape_station` 决定一致；越界模型输出记录失败 usage 后交给 Godot 规则降级。
+T1201 后，战时公开对话已额外注入 `battlefield_context`：场上敌方 / 友方数量、兵种、HP 概况，正在参战的 NPC，有哪些 NPC 在驿站但不是战斗人员，以及目标 NPC 当前行为模式。T0283 后，已入伍且有主武器 NPC 也只有在集结 / 战斗对话显式开启“鼓舞士气”时，结构化输出才包含 `wartime_reaction = none | escape | morale_boost`；关闭时只是普通对话。避战模式下的非战斗人员仍使用 `recruitment_result` 表达是否同意应征。T1202 后，低血量自身心理判定复用同一战局上下文边界，并按目标是否真正参战限制允许结果：参战 NPC 可继续战斗、逃离或斗志激昂；避战 / 非战斗人员只能逃离或继续避战。T1404 后，后端会额外校验低血量判定 `decision` 属于 `allowed_decisions`，并校验 `should_start_escape` 与 `escape_station` 决定一致；越界模型输出记录失败 usage 后交给 Godot 规则降级。
 
 T1203 后，逃离不再只是 pending 意向。`CombatSystem.start_npc_escape(...)` 会让 NPC 写入 `escape_started`、切出工作 / 战斗 / 避战行为并前往后门外出口；逃离移动期间 `escape_intent.status == "escaping"`，普通行动和战斗 AI 不再把该 NPC 当作可用单位。抵达出口后 `NPCSystem` 标记 `escaped=true`、`behavior_mode="escaped"`、`current_location="outside_station"`，隐藏并取消拾取 NPC 实体，写入广场公开 `escaped` 事件。逃离 NPC 被点击会先打开 NPC 面板；轮次未用完时，玩家点击【对话】进入 `dialogue_kind == "escape_intervention"` 的同地点公开挽留对话。挽留打开或挂起时 CombatSystem 保持逃离暂停，完成、取消或满 5 轮时恢复；请求携带 `escape_intervention_round`、当前 `escape_intent`、短期记忆、长期记忆、地点上下文和 `current_order`。T0087 后模型或规则降级只返回暂存的 `escape_intervention_result=stay|leave`，完成时才由 CombatSystem 停止或继续逃离、记录轮次并写入同名事件；取消不应用结果。给钱 / 守备官攻击分别调整程序权威的逃离移动倍率；逃离挽留攻击不向 NPC LLM 发送消息、不产生 NPC 回复，只计 1 轮、锁定取消并自动完成会话。逃离期间昏迷会暂停为 `paused_unconscious`，复苏后继续逃离。
 

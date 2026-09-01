@@ -180,7 +180,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var bubble := cook_node.get_node_or_null("ProactiveTalkBubble") as Label3D
-	if bubble == null or not bubble.visible or bubble.text != "?":
+	if bubble == null or not bubble.visible or bubble.text != "?" or bubble.position.y < 2.9:
 		push_error("Proactive talk question bubble is not visible")
 		quit(1)
 		return

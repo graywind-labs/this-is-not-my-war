@@ -136,7 +136,7 @@ func _init() -> void:
 		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "combat_rally_started", COMBATANT_ID), "Witness should receive combat_rally_started"):
 		return
-	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "npc_mode_changed", COMBATANT_ID), "Rally mode change should leave a public trace"):
+	if not _expect(not _has_event(memory_system.get_all_events(), "npc_mode_changed"), "Internal rally mode changes must stay out of event memory"):
 		return
 
 	var avoid_result: Dictionary = combat_system.debug_trigger_npc_avoidance(AVOIDER_ID)
@@ -264,13 +264,7 @@ func _init() -> void:
 		return
 	if not _expect(_has_event(memory_system.get_npc_witness_events(WITNESS_ID), "combat_ended"), "Witness should receive combat_ended"):
 		return
-	if not _expect(not _has_mode_transition(memory_system.get_all_events(), "work", "combat"), "work -> combat should not broadcast npc_mode_changed"):
-		return
-	if not _expect(not _has_mode_transition(memory_system.get_all_events(), "combat", "work"), "combat -> work should not broadcast npc_mode_changed"):
-		return
-	if not _expect(not _has_mode_transition(memory_system.get_all_events(), "work", "avoid_combat"), "work -> avoid_combat should not broadcast npc_mode_changed"):
-		return
-	if not _expect(not _has_mode_transition(memory_system.get_all_events(), "avoid_combat", "work"), "avoid_combat -> work should not broadcast npc_mode_changed"):
+	if not _expect(not _has_event(memory_system.get_all_events(), "npc_mode_changed"), "No behavior mode transition should broadcast npc_mode_changed"):
 		return
 	if not await _wait_for_llm_cleanup(llm_bridge):
 		return
@@ -372,18 +366,5 @@ func _summaries_have_type(raw_entries: Variant, event_type: String) -> bool:
 			continue
 		var entry: Dictionary = raw_entry
 		if str(entry.get("type", "")) == event_type:
-			return true
-	return false
-
-
-func _has_mode_transition(events: Array, from_mode: String, to_mode: String) -> bool:
-	for raw_event in events:
-		if not raw_event is Dictionary:
-			continue
-		var event: Dictionary = raw_event
-		if str(event.get("type", "")) != "npc_mode_changed":
-			continue
-		var payload: Dictionary = event.get("payload", {})
-		if str(payload.get("from_mode", "")) == from_mode and str(payload.get("to_mode", "")) == to_mode:
 			return true
 	return false

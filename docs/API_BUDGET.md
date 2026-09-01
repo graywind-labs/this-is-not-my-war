@@ -1,5 +1,45 @@
 # API_BUDGET.md
 
+## T0299 事件语义降噪成本
+
+本任务只调整 Godot 本地事件写入与确定性摘要，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。专项和运行态验收不发起 LLM 请求，真实 API 调用为 0；移除模式事件还会减少后续对话 / 计划 payload 中的冗余记忆文本。
+
+## T0296 情绪气泡几何调整成本
+
+本任务只删除 Godot 世界背景 Mesh 并调整人物框 Polygon2D 尾巴，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。自动化与 Godot MCP 验收真实 API 调用为 0；删除世界背景 Mesh 还减少了每个 NPC 情绪节点的一份网格和材质实例。
+
+## T0295 暂停情绪动作成本
+
+本任务只调整 Godot 本地 AnimationPlayer 和临时表现计时的暂停边界，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。暂停时对话仍沿既有每轮请求，不会因动画豁免产生额外请求；自动化与 Godot MCP 验收真实 API 调用为 0。
+
+## T0294 情绪气泡视觉修复成本
+
+本任务只修改 Godot 本地 Emoji 绘制方式和人物框气泡布局，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。GM 预览、自动化和 Godot MCP 验收均不调用供应商，真实 API 调用为 0；世界 SubViewport 只在 Emoji 变化时刷新一次，不产生持续远程或渲染请求。
+
+## T0293 对话情绪同步动作成本
+
+本任务只让既有 `happy / angry` 结构化情绪在 Godot 本地同步触发临时动作，并撤下错误思考试片；不修改 Prompt、Schema、endpoint、provider、重试或成功路径调用次数。自动化和 Godot MCP 验收不调用供应商，真实 API 调用为 0。
+
+## T0291 战时对话并行调用边界
+
+本任务只调整Godot客户端的会话 / 战斗状态所有权，不修改 Prompt、Schema、endpoint、`call_type`、重试或每轮调用次数。战斗模式切换不再取消已经在途的玩家对话请求，但不会额外发起请求；后续轮次继续沿既有一次 `/npc/dialogue` 合同读取最新战局上下文。本地 HTTP Mock 用于通信回归，真实供应商调用为 0，无新增 token 或费用。
+
+## T0289 对话情绪字段成本
+
+本任务不新增 endpoint、`call_type`、触发次数或重试；每次既有 `/npc/dialogue` 只增加一个短枚举选择规则，输出继续使用原有 `emotion` 字段，因此调用次数不变、输出 token 增量接近 0。Mock / 本地表现验收不调用真实供应商。2026-08-31 检查进程环境与项目 `.env` 均未发现可用 API Key，故没有真实 provider 调用、token 或费用可记录，T0289 保持 Partial。
+
+## T0285 工作鼓励与四类动态模块（Mock 阶段）
+
+本任务不新增 endpoint、call_type、重试或二次判定，仍复用每轮一次 `/npc/dialogue`。四个特殊 toggle 最多开启一个；关闭时不把对应判断 Prompt / 输出字段加入 provider 请求，工作开启时仅增加一个三值字段，不增加调用次数。GM 与自动化使用 `LLM_PROVIDER=mock`，真实供应商调用为 0、费用为 0；用户确认交互后再单独记录真实 API 验收与 usage。
+
+## T0284 策略 toggle 调用边界（Mock 阶段）
+
+本任务不新增 endpoint 或 call_type，仍复用每轮一次 `/npc/dialogue`。toggle 关闭时不向 provider 发送策略上下文，也不把 `combat_strategy_decision` 加入动态输出合同；开启时只在同一请求增加当前策略、合法候选和一个保持 / 切换结构，不增加调用次数、重试或二次判断。自动化及 GM 使用显式 Mock，本阶段真实供应商调用为 0、费用为 0；用户确认交互后再单独做真实 API 验收并记录 usage。
+
+## T0283 鼓舞 toggle 调用边界（Mock 阶段）
+
+本任务不新增 endpoint 或 call_type，仍复用每轮一次 `/npc/dialogue`。toggle 关闭时不把 `wartime_reaction` 放入 provider 动态输出合同；开启时仅增加 `is_morale_encouragement_request` 与一个三值结构字段，不增加调用次数、重试或第二次判定。GM 与自动化均使用显式 `LLM_PROVIDER=mock`，本阶段真实供应商调用为 0、费用为 0；用户确认 Mock 交互后再单独记录真实 API 验收与 usage。
+
 ## T0254 攻击 / 对话事件分离调用边界
 
 本任务不新增 endpoint、`call_type`、Prompt、Schema、重试或供应商调用。普通对话攻击仍沿既有 `/npc/dialogue` 请求一次 NPC 反应，逃离攻击仍为 0 次；变化只在 Godot 本地会话 history 与事件提交。纯攻击结束时不再发送空的对话判别，而是调用既有 `guard_attack` 计划重评估入口，因此不会为了伪对话额外消耗一次对话判别预算。本地 Mock / 生命周期回归不产生真实供应商调用，无需真实 provider 效果验收。

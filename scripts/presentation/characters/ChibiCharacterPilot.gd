@@ -10,6 +10,8 @@ const REQUIRED_STATES := [
 	"walk",
 	"run",
 	"talk",
+	"happy",
+	"angry",
 	"work",
 	"training_instructor",
 	"training_practice",
@@ -38,7 +40,7 @@ const COMBAT_PRESENTATION_STATES := [
 const LOOPING_STATES := [
 	"idle", "walk", "run", "talk", "work", "training_instructor",
 	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_eating",
-	"drink", "medical_treatment", "vehicle_seated", "mounted_walk", "mounted_training", "sleeping",
+	"drink", "happy", "medical_treatment", "vehicle_seated", "mounted_walk", "mounted_training", "sleeping",
 ]
 const HOLD_FINAL_POSE_STATES := ["unconscious", "mounted_fall"]
 const EXTRA_LOOPING_CLIPS := [
@@ -253,6 +255,8 @@ const STATE_CLIPS := {
 	"walk": "Walking_A",
 	"run": "Running_A",
 	"talk": "Waving",
+	"happy": "Cheering",
+	"angry": "Melee_1H_Attack_Slice_Horizontal",
 	"work": "Hammering",
 	"training_instructor": "Melee_Block_Attack",
 	"training_practice": "Melee_1H_Attack_Slice_Diagonal",
@@ -385,7 +389,7 @@ void fragment() {
 @export_enum(
 	"idle", "walk", "run", "talk", "work", "training_instructor",
 	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_eating",
-	"drink",
+	"drink", "happy", "angry",
 	"attack", "medical_treatment", "hit_react", "unconscious", "get_up", "vehicle_seated", "mounted_attack",
 	"mounted_walk", "mounted_hit_react", "mounted_training", "mounted_fall", "sleeping"
 ) var initial_state := "idle"
@@ -2044,24 +2048,36 @@ func set_facing_direction(direction: Vector3) -> void:
 
 
 func play_temporary_presentation_action(action_id: String, event_id: String) -> Dictionary:
-	if not action_id in ["talk_gesture", "hit_react"]:
+	if not action_id in ["talk_gesture", "hit_react", "emotion_happy", "emotion_angry"]:
 		return {"ok": false, "reason": "unsupported_temporary_presentation_action", "action_id": action_id}
 	if event_id.is_empty():
 		return {"ok": false, "reason": "temporary_presentation_event_id_missing"}
 	if _processed_temporary_presentation_event_ids.has(event_id):
+		var duplicate_state := str({
+			"talk_gesture": "talk",
+			"hit_react": "hit_react",
+			"emotion_happy": "happy",
+			"emotion_angry": "angry",
+		}.get(action_id, ""))
 		return {
 			"ok": true,
 			"duplicate": true,
 			"event_id": event_id,
-			"presentation_state": "talk" if action_id == "talk_gesture" else "hit_react"
+			"action_id": action_id,
+			"presentation_state": duplicate_state
 		}
 	var states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
 	if bool(states.get("unconscious", false)) or bool(states.get("escaped", false)):
 		return {"ok": false, "reason": "npc_presentation_unavailable", "event_id": event_id}
-	var presentation_state := "talk"
+	var presentation_state := {
+		"talk_gesture": "talk",
+		"hit_react": "mounted_hit_react" if bool(states.get("combat_mounted", false)) else "hit_react",
+		"emotion_happy": "happy",
+		"emotion_angry": "angry",
+	}.get(action_id, "talk") as String
+	var duration := TALK_GESTURE_FALLBACK_SECONDS
 	if action_id == "hit_react":
-		presentation_state = "mounted_hit_react" if bool(states.get("combat_mounted", false)) else "hit_react"
-	var duration := TALK_GESTURE_FALLBACK_SECONDS if action_id == "talk_gesture" else HIT_REACT_SECONDS
+		duration = HIT_REACT_SECONDS
 	var clip_name := str(STATE_CLIPS.get(presentation_state, ""))
 	if _animation_player != null and _animation_player.has_animation(clip_name):
 		duration = maxf(0.1, _animation_player.get_animation(clip_name).length / maxf(0.01, playback_speed))
@@ -2072,11 +2088,16 @@ func play_temporary_presentation_action(action_id: String, event_id: String) -> 
 	if _temporary_presentation_event_order.size() > 32:
 		_processed_temporary_presentation_event_ids.erase(_temporary_presentation_event_order.pop_front())
 	_start_transient(presentation_state, duration)
+	# Dialogue remains interactive during the player's gameplay pause. Happy and
+	# angry are reply feedback, so start them immediately even when all authority
+	# movement/combat/work animation remains frozen.
+	_animation_paused = _is_gameplay_paused() and not _is_pause_exempt_dialogue_emotion_action()
 	_apply_profile_state(true)
 	return {
 		"ok": true,
 		"duplicate": false,
 		"event_id": event_id,
+		"action_id": action_id,
 		"presentation_state": presentation_state,
 		"duration_seconds": duration
 	}
@@ -2101,10 +2122,14 @@ func _process(delta: float) -> void:
 	if _blood_particles != null:
 		_blood_particles.speed_scale = _get_combat_time_multiplier()
 	var gameplay_paused := _is_gameplay_paused()
-	if gameplay_paused != _animation_paused:
-		_animation_paused = gameplay_paused
+	var pause_exempt_emotion_action := gameplay_paused and _is_pause_exempt_dialogue_emotion_action()
+	var should_pause_animation := gameplay_paused and not pause_exempt_emotion_action
+	if should_pause_animation != _animation_paused:
+		_animation_paused = should_pause_animation
 		_update_playback_speed()
 	if gameplay_paused:
+		if pause_exempt_emotion_action:
+			_advance_temporary_presentation(maxf(0.0, delta))
 		return
 	if _desired_state in COMBAT_PRESENTATION_STATES:
 		_update_playback_speed()
@@ -2130,13 +2155,26 @@ func _process(delta: float) -> void:
 	_update_preview_crossbow_alignment()
 	_update_preview_arrow_projectiles(delta)
 	_update_mounted_sword_shield_alignment()
-	if not _transient_state.is_empty() and _transient_remaining > 0.0:
-		_transient_remaining = maxf(0.0, _transient_remaining - combat_frame_delta)
-		if is_zero_approx(_transient_remaining):
-			_transient_state = ""
-			_mounted_fall_recovering = false
-			_mounted_fall_landing_offset = Vector3.ZERO
-			_apply_profile_state(false)
+	_advance_temporary_presentation(combat_frame_delta)
+
+
+func _advance_temporary_presentation(delta: float) -> void:
+	if _transient_state.is_empty() or _transient_remaining <= 0.0:
+		return
+	_transient_remaining = maxf(0.0, _transient_remaining - maxf(0.0, delta))
+	if not is_zero_approx(_transient_remaining):
+		return
+	_transient_state = ""
+	_mounted_fall_recovering = false
+	_mounted_fall_landing_offset = Vector3.ZERO
+	# If a dialogue emotion finishes while gameplay is paused, the restored
+	# authority animation must return frozen instead of advancing for one frame.
+	_animation_paused = _is_gameplay_paused()
+	_apply_profile_state(false)
+
+
+func _is_pause_exempt_dialogue_emotion_action() -> bool:
+	return _transient_state in ["happy", "angry"]
 
 
 func _apply_profile_state(reset: bool) -> void:
@@ -2238,7 +2276,7 @@ func _play_state(state_name: String, reset: bool = false) -> bool:
 	# remain rigidly parented to that hand, so the stale basis visibly twists the
 	# restored grip. Start sword attacks from their authored first pose; subsequent
 	# frames remain fully attachment-driven and require no world-space correction.
-	var blend_time := 0.0 if _uses_sword_shield_weapon() and state_name in ["attack", "training_practice", "mounted_attack", "mounted_training"] else 0.16
+	var blend_time := 0.0 if _uses_sword_shield_weapon() and state_name in ["attack", "angry", "training_practice", "mounted_attack", "mounted_training"] else 0.16
 	_animation_player.play(clip_name, blend_time)
 	_current_state = state_name
 	_current_clip = clip_name
@@ -3885,6 +3923,10 @@ func debug_get_snapshot() -> Dictionary:
 		"current_animation_position": _animation_player.current_animation_position if _animation_player != null else 0.0,
 		"current_animation_length": _animation_player.current_animation_length if _animation_player != null else 0.0,
 		"temporary_presentation_state": _transient_state,
+		"temporary_presentation_remaining_seconds": _transient_remaining,
+		"gameplay_paused": _is_gameplay_paused(),
+		"animation_paused": _animation_paused,
+		"pause_exempt_dialogue_emotion_action": _is_pause_exempt_dialogue_emotion_action(),
 		"last_temporary_presentation_event_id": _last_temporary_presentation_event_id,
 		"temporary_presentation_event_count": _temporary_presentation_event_count,
 		"combat_attack_sequence": _combat_attack_sequence,

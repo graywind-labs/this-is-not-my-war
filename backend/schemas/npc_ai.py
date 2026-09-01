@@ -20,9 +20,52 @@ DialogueKind = Literal["player_npc", "npc_npc", "escape_intervention"]
 PlanRevisionJudgementTriggerKind = Literal["dialogue", "action_failure"]
 DialoguePhase = Literal["conversation", "invitation"]
 DialogueVisibility = Literal["private", "local_public"]
+DialogueEmotion = Literal[
+    "none",
+    "happy",
+    "relieved",
+    "angry",
+    "sad",
+    "afraid",
+    "surprised",
+    "confused",
+    "determined",
+]
 InteractionContext = Literal["work", "rally", "combat", "avoid_combat", "escape_intervention"]
 WartimeReaction = Literal["none", "escape", "morale_boost"]
+WorkEncouragementReaction = Literal["none", "escape", "work_boost"]
 PlanHour = Annotated[int, Field(ge=0, le=23)]
+
+
+class CombatStrategyOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    is_default: bool = False
+
+
+class CombatStrategyDialogueContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_strategy: CombatStrategyOption
+    available_strategies: list[CombatStrategyOption] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def validate_current_strategy_is_available(self):
+        option_ids = [option.id for option in self.available_strategies]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError("available combat strategies must have unique ids.")
+        if self.current_strategy.id not in option_ids:
+            raise ValueError("current combat strategy must be present in available_strategies.")
+        return self
+
+
+class CombatStrategyDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["keep", "change"]
+    strategy_id: str = Field(min_length=1)
 
 
 class StationAwareNPCRequest(BaseModel):
@@ -154,6 +197,10 @@ class NPCDialogueRequest(StationAwareNPCRequest):
         default=False,
         validation_alias=AliasChoices("is_recruitment_request", "propose_recruitment"),
     )
+    is_morale_encouragement_request: bool = False
+    is_combat_strategy_request: bool = False
+    is_work_encouragement_request: bool = False
+    combat_strategy_context: CombatStrategyDialogueContext | None = None
     current_round: int = Field(default=1, ge=0)
     max_rounds: int = Field(default=0, ge=0)
     soft_round_threshold: int = Field(default=5, ge=1)
@@ -200,7 +247,7 @@ class DialogueResponseBase(BaseModel):
     ok: Literal[True] = True
     replyer_id: str
     reply_text: str
-    emotion: str = "neutral"
+    emotion: DialogueEmotion = "none"
     suggested_event_type: str = "dialogue_turn"
     debug_reason: str = ""
 
@@ -209,6 +256,8 @@ class PlayerNPCDialogueResponse(DialogueResponseBase):
     response_kind: Literal["reply_to_player"] = "reply_to_player"
     recruitment_result: Literal["accept", "reject", "none"] = "none"
     wartime_reaction: WartimeReaction = "none"
+    combat_strategy_decision: CombatStrategyDecision | None = None
+    work_encouragement_reaction: WorkEncouragementReaction = "none"
 
 
 class NPCNPCDialogueResponse(DialogueResponseBase):

@@ -1,5 +1,97 @@
 # GODOT_ARCHITECTURE.md
 
+## T0301 NPC 世界头顶层接线
+
+`NPC.gd` 集中使用五个局部 Y 常量：友军血条 `2.62`、思考 / 主动交涉 `2.95`、自主 / 挂起对话与逃离警示 `3.12`、情绪 Emoji `3.72`；姓名 / 行动仍由 `_refresh_label` 固定为 `2.08`。`debug_get_overhead_ui_snapshot` 公开所有层的位置，测试不依赖截图猜测。
+
+`CombatSystem.gd` 的 `_create_enemy_node` 与 `_create_formal_enemy_actor` 共用 `ENEMY_NAME_LABEL_HEIGHT=2.10`，`_ensure_enemy_world_health_bar` 使用 `ENEMY_HEALTH_BAR_OFFSET=0.34`，避免正式 Actor 再覆盖成另一套高度。
+
+## T0300 DialogPanel 紧凑 Header 接线
+
+`Header` 直接包含 `DialogHeaderLeft` 与 `DialogHeaderToggles`。左侧 VBox 内依次是 `DialogTitleRow(DialogNPCNameLabel + DialogHistoryButton)` 和 `DialogVisibilityOptions`；右侧 GridContainer 仅承载四类特殊交互。旧的 `DialogHeaderControls` 层已移除，避免右侧两行控件决定左侧标题的垂直位置。
+
+`DialogPanel._refresh` 只在 `dialogue_kind=escape_intervention` 时显示 `DialogRoundLabel`，公开性始终由同组两个 CheckBox 投影并按 force / waiting / 已发首轮锁定。`_apply_plain_toggle_style` 清空 CheckButton 六种状态框；`_apply_stable_input_style` 从主题复制 normal StyleBox 同时覆盖 normal / focus，保留全局主题所有其他属性。
+
+## T0299 模式快照与记忆节点接线
+
+`NPCSystem → npc states / debug_get_behavior_mode_snapshot` 保存行为模式 previous / reason；`NPCSystem / CombatSystem / ActionSystem → MemorySystem` 只提交具体世界事实。MemorySystem 在 `add_event` 入口拒绝开发专用 `npc_mode_changed`，因此 EventBus、NPCPanel 记录、地点广播与 LLMBridge 短期记忆均不会收到模式日志。
+
+## T0298 NPC / DialogPanel 节点接线
+
+`Main.tscn` 的 NPCPanel 内容树以 `NPCCombatStrategyRow → NPCManagementButtonRow → NPCDialogueButton` 收尾；管理行只含等宽 `NPCGiveWeaponButton / NPCAssignButton`，对话按钮是 Content 的直接子节点并横向填满。旧 `NPCDialogueButtonRow / NPCDialogueHistoryButton` 已移除。
+
+DialogPanel 的 Header 包含标题、`DialogHistoryButton`、公开性单选和独立特殊交互 Grid。公开性由同一 ButtonGroup 中的 `DialogPublicToggle / DialogPrivateRadio` 两个 CheckBox 表达，运行时把各状态 StyleBox 覆盖为空；四类特殊交互 CheckButton 不与公开性单选组混用。DialogPanel 根引用现有 `blacksmith_vertical_slice_theme.tres`，没有复制第二套主题资源。
+
+历史按钮调用 `NPCPanel.open_dialogue_history(target_npc_id)`，继续复用 MemorySystem 的只读详情渲染；这是 UI 间导航，不新增事件写入或会话所有权。
+
+## T0296 世界纯 Emoji 与人物框尾巴接线
+
+`NPC.gd` 的运行时 `DialogueEmotionBubble` 不再创建 MeshInstance3D `BubbleBody` 或白色材质；节点树只有位于视觉层 20 的 `EmojiSprite`，纹理来自透明 `128×96 SubViewport`。渐隐只修改 Sprite3D alpha，人物副镜头排除逻辑不变。
+
+`NPCPortraitViewport.gd` 继续在人物框 Overlay 内组合 PanelContainer 与两层 Polygon2D 尾巴。尾巴外轮廓从主体底边中心附近 `(34,57)–(46,57)` 收束到 `(55,70)`，Panel 后绘制会遮住基部内侧，使可见尾巴自然从底边中点露出；尖端不进入人物头部区域。
+
+## T0295 暂停情绪动作接线
+
+`TimeSystem.set_paused(true)` 继续只冻结游戏时间与权威模拟，不暂停 SceneTree。`NPC.gd` 仍通过 `EventBus.npc_dialogue_emotion_presented` 同步启动 Emoji 和角色临时表现；`ChibiCharacterPilot` 在自己的 `_process(real_delta)` 中仅识别临时 `happy / angry` 为暂停豁免，并用 real delta 推进其倒计时。
+
+AnimationPlayer 的暂停速度由 `gameplay_paused && !pause_exempt_dialogue_emotion_action` 决定。暂停中情绪结束时先清理 transient，再将 `_animation_paused` 恢复为 TimeSystem 暂停值后解析权威状态，保证底层动画从第一帧开始就是冻结的。其他表现与权威系统无需改变 process mode。
+
+## T0290 世界血条网格空间左对齐
+
+`WorldHealthBar3D` 的 Track 与 Fill 是两个独立 `MeshInstance3D` billboard，必须共享完全相同的节点原点。Fill 宽度继续直接写入 `QuadMesh.size.x`；左对齐改为写入该网格的 `center_offset.x`，公式为 `-bar_width * (1.0 - ratio) * 0.5`。不得再用 Fill 节点的本地 X 位置表达左对齐，否则旋转父节点会让两个 billboard 获得不同世界原点。
+
+组件调试快照额外公开 Track / Fill 位置和 Fill 网格中心偏移，供旋转父节点专项与 MCP 运行态验收使用；这些字段只读，不参与 HP 权威。
+
+## T0289 对话情绪表现节点
+
+`DialogSystem` 是回复情绪进入 Godot 的单一编排点：规范化后把 `emotion_id / emotion_label / emotion_emoji` 附加到 NPC 回合，并发出 `EventBus.npc_dialogue_emotion_presented(npc_id, presentation)`。`NPC.gd` 的运行时 `DialogueEmotionBubble` 只消费此信号并画世界气泡；`NPCPortraitViewport.gd` 在自己的 Control 树画第二人称气泡。二者不查询对话历史、不结算状态，也不互相控制生命周期。
+
+世界气泡的 MeshInstance3D 与 Label3D 使用视觉层 20；`NPCPortraitViewport` 的相机已经排除该层，所以共享 World3D 仍不会把世界气泡重复拍进人物框。人物框气泡位于 SubViewportContainer 上方的独立 UI Overlay，主相机不可见。两个消费者都使用信号携带的 `hold_seconds=5.0 / fade_seconds=0.75`，后一条信号重置本 NPC 自己的显示计时。
+
+## T0288 特殊请求状态与事件净化接线
+
+- `DialogSystem.send_player_message(...)` 在请求前设置四类 `session_had_*_request`；`get_dialogue_state()` 统一投影 `session_had_special_interaction_request` 给 DialogPanel。
+- `DialogPanel._refresh(...)` 只读取统一投影禁用取消，不自行判断哪类开关已经发送。
+- `DialogSystem._publish_special_interaction_results(...)` 在回复落地时写独立结果；`end_dialogue(...)` 经过 `_sanitize_completed_dialogue_history(...)` 后再向 MemorySystem 写普通会话。
+- `MemorySystem.REQUIRED_PAYLOAD_FIELDS.dialogue_turn` 不再要求特殊交互字段；`dialogue_special_interaction_result` 合同保持独立。
+
+## T0287 GM 结果展台与 NPC 状态图标接线
+
+- `GMPanel.gd` 创建命名结果按钮，统一调用 `DialogSystem.debug_preview_special_interaction_result(...)` 或 `debug_preview_escape_intervention_result(...)`；后者再进入 NPCSystem / CombatSystem。
+- NPCPanel 的两个 TextureRect 是只读投影，随既有 `npc_state_changed` 刷新 `states.morale_boost / work_encouragement_boost`。SVG 只负责表现，不承载数值或状态。
+- 正常逃离挽留响应把 `escape_intervention_result` 附在产生它的 NPC history turn 上，DialogPanel 据此生成结果行；模型原文保持不变。
+
+## T0286 特殊反馈与逃离警报接线
+
+- `DialogSystem.special_interaction_result` 广播已合法化的逐轮结果；`DialogPanel.gd` 只筛选 `success=true` 并驱动 `DialogSpecialSuccessDialog` 队列。
+- `CombatSystem.start_npc_escape(...)` 在行为切换和 `escape_started` 入库成功后发出 `EventBus.npc_escape_started`；`HUD.gd` 驱动 `EscapeStartedAlertDialog` 队列。启动前校验失败、pending 与 already escaping 分支不会发信号。
+- 两个 AcceptDialog 均属于正式 `Main.tscn` UI：成功窗按钮为“太好了”，逃离警报按钮为“好的”。业务状态仍由系统层拥有。
+
+## T0285 工作鼓励接线
+
+- `DialogPanel.gd` 只投影 DialogSystem 的四类 toggle 状态与 NPCSystem / CombatSystem 资格；`Main.tscn` 将特殊 toggle 放入 2×2 GridContainer，公开开关仍独立。
+- `DialogSystem.gd` 保存工作请求持续状态、发送前复验并只在开启时交给 LLMBridge；回复结果绑定 history，完成对话后调用 NPCSystem。`none / escape` 保持 toggle，成功后关闭锁定。
+- `NPCSystem.gd` 保存至当天 24:00 的工作 buff 并提供单一倍率查询；ActionSystem 与 BuildingSystem 只读取倍率，不复制状态。逃离继续复用 CombatSystem 正式出口流程。
+- `GMPanel.gd` 只提供正式开窗和显式 Mock 请求；本地 HTTP 专项覆盖四选一、字段关闭、无关忽略、未入伍资格、1.2 倍率和失效。
+
+## T0284 战斗策略对话接线
+
+- `NPCPanel.gd` 仅通过 `NPCCombatStrategyValue` 投影 CombatSystem 当前策略，不再创建或连接 OptionButton。`DialogPanel.gd` 绑定 `DialogCombatStrategyToggle`，负责资格 / 互斥投影和每轮反馈。
+- `DialogSystem.gd` 持有会话内策略请求状态，发送前复验资格，仅在开启时经 LLMBridge 携带上下文；收到结果后归一化并调用 CombatSystem。策略变更立即生效，因此本会话后续轮次读取新当前值。
+- `GMPanel.gd` 只暴露正式开窗和同一 Mock 请求链；`tools/verify_wartime_dialogue.gd` 与本地 HTTP Mock 专项覆盖 toggle 持续、互斥、无关保持、合法切换及 NPC 面板只读边界。
+
+## T0282 世界血条网格填充与敌军接线
+
+- `WorldHealthBar3D.gd` 通过 Fill `QuadMesh.size.x` 表达归一化比例，节点 scale 恒为 `Vector3.ONE`；零比例隐藏 Fill，并在调试快照中公开实际填充宽度、网格宽度、可见性与 scale，避免 billboard 变换再次掩盖视觉误差。
+- 组件新增实例级健康 / 危险颜色配置。CombatSystem 在普通 Area3D 敌军和正式 ActorMotionBody 敌军创建时统一挂载组件，使用同一橙色覆盖两档颜色，并在敌军 HP 刷新时同步。
+- `tools/verify_t0282_world_health_fill_and_enemy_overhead.gd` 覆盖共享网格几何、NPC / 建筑权威比例、零血隐藏、敌军具体名称、名称上方位置与低血恒定橙色。功能可在正式 Main 直接观察，不新增 GM 入口。
+
+## T0280 世界战时血条接线
+
+- `scripts/world/WorldHealthBar3D.gd` 是共享 billboard 组件：暗色固定槽、左对齐填充、统一绿 / 红阈值，并提供只读调试快照。
+- `NPC.gd` 与 `DefenseDeviceView.gd` 在自身实体下挂载组件，轮询活动敌人数处理和平 / 战时边界；状态快照刷新时同步比例。`StationLayoutController.gd` 仅在仓库、正门、主厅 NameLabel 创建时挂载组件，并从 BuildingSystem 刷新。
+- `tools/verify_t0280_world_combat_health_bars.gd` 覆盖三座建筑白名单、NPC 文案布局、塔防名称、战时显隐和低血颜色；功能在正式 Main 可见，不新增 GM 入口。
+
 ## T0271 NPC / 马匹状态与 HUD 有效倍率接线
 
 - `NPCPanel.gd` 在原 `NPCSatietyLabel / NPCFatigueLabel` 位置动态创建两个 VBox 行，顺序均为 Label → ProgressBar；进度范围通过 `NPCNeedsSystem.get_need_bounds(...)` 读取 `activity_needs.json`，危险色只属于 UI 投影。
@@ -22,7 +114,7 @@
 
 ## T0268 HUD / NPCPanel 精简接线
 
-- `Main/UI/NPCPanel/.../Header` 在背景按钮后直接挂载 `NPCActionLabel` 与 `NPCBehaviorModeLabel`；`NPCPanel.gd` 分别格式化 `current_action` 和 `behavior_mode`，后者只在显示层降低颜色对比度。
+- `Main/UI/NPCPanel/.../Header` 在背景按钮后直接挂载 `NPCActionLabel` 与 `NPCBehaviorModeLabel`；`NPCPanel.gd` 分别格式化 `current_action` 和 `behavior_mode`，后者只在显示层降低颜色对比度。行动标签每次刷新都会重置颜色，仅 `current_action=escaping_station` 投影为警示红 `#dc6157`，其余恢复白色，避免切换状态或 NPC 后残色。
 - `NPCInteractionVisibilitySelect` 已由同一 `ButtonGroup` 管理的 `NPCInteractionPublicRadio / NPCInteractionPrivateRadio` 替代；CheckBox 加入组后使用圆形单选外观，`allow_unpress=false` 保证始终有一项选中。
 - `HUD.gd` 的 `_format_next_wave_arrival()` 负责把既有权威 `seconds_until` 包装为自然来袭句式；倒计时精度仍由 `_format_wave_countdown()` 和当前时间倍率决定。
 - 相关专项覆盖节点位置、互斥状态、语义映射、精简文案、状态刷新和倒计时；功能均可在正式 Main 直接观察，不新增 GM 入口。

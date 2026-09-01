@@ -542,6 +542,66 @@ func deploy_device(device_id: String, slot_id: String) -> Dictionary:
 	return result
 
 
+func undeploy_device(deployment_id: String, confirm_damaged_destruction: bool = false) -> Dictionary:
+	var deployment := get_deployment(deployment_id)
+	if deployment.is_empty() or str(deployment.get("status", "")) != "active":
+		return _deployment_error("unknown_deployment", "该工程器械已经不在部署槽中。")
+	var hp := maxi(0, int(deployment.get("hp", 0)))
+	var max_hp := maxi(1, int(deployment.get("max_hp", 1)))
+	var damaged := hp < max_hp
+	if damaged and not confirm_damaged_destruction:
+		return {
+			"ok": false,
+			"code": "damaged_device_confirmation_required",
+			"message": "该器械已经受损，卸下会直接销毁且不会返回库存。",
+			"requires_confirmation": true,
+			"deployment_id": deployment_id,
+			"deployment": deployment.duplicate(true)
+		}
+
+	var device_id := str(deployment.get("device_id", ""))
+	var slot_id := str(deployment.get("slot_id", ""))
+	var definition: Dictionary = _definitions.get(device_id, {})
+	var inventory_return: Dictionary = (
+		definition.get("inventory_cost", {}).duplicate(true)
+		if not damaged and definition.get("inventory_cost", {}) is Dictionary
+		else {}
+	)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if not inventory_return.is_empty() and (
+		resource_system == null
+		or not resource_system.has_method("can_store_resources")
+		or not resource_system.has_method("add_resources")
+	):
+		return _deployment_error("resource_system_missing", "资源系统不可用，不能安全归还器械。")
+	if not inventory_return.is_empty() and not bool(resource_system.can_store_resources(inventory_return)):
+		return _deployment_error("inventory_return_failed", "器械库存空间不足，无法卸下。")
+
+	_deployments.erase(deployment_id)
+	_slot_occupancy.erase(slot_id)
+	if not inventory_return.is_empty() and not bool(resource_system.add_resources(inventory_return)):
+		_deployments[deployment_id] = deployment.duplicate(true)
+		_slot_occupancy[slot_id] = deployment_id
+		return _deployment_error("inventory_return_failed", "器械库存归还失败，部署未改变。")
+	_remove_pending_projectiles_for_deployment(deployment_id)
+
+	var result := {
+		"ok": true,
+		"deployment_id": deployment_id,
+		"device_id": device_id,
+		"device_name": str(deployment.get("device_name", device_id)),
+		"slot_id": slot_id,
+		"damaged": damaged,
+		"destroyed": damaged,
+		"returned_to_inventory": not damaged,
+		"returned_inventory": inventory_return.duplicate(true),
+		"deployment": deployment.duplicate(true)
+	}
+	_last_deployment_result = result.duplicate(true)
+	_emit_state_changed()
+	return result
+
+
 func debug_deploy_device(device_id: String, slot_id: String) -> Dictionary:
 	return deploy_device(device_id, slot_id)
 
@@ -825,6 +885,14 @@ func _reset_attack_timeline(deployment: Dictionary) -> void:
 	deployment["attack_target"] = {}
 	deployment["attack_release_committed"] = false
 	deployment["attack_cooldown"] = 0.0
+
+
+func _remove_pending_projectiles_for_deployment(deployment_id: String) -> void:
+	for raw_attack_id in _pending_projectile_attacks.keys():
+		var attack_id := str(raw_attack_id)
+		var pending: Dictionary = _pending_projectile_attacks.get(attack_id, {})
+		if str(pending.get("deployment_id", "")) == deployment_id:
+			_pending_projectile_attacks.erase(attack_id)
 
 
 func _reset_all_attack_timelines() -> void:

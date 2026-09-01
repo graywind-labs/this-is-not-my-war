@@ -289,7 +289,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var marker := _find_npc_marker(npc_id)
-	if marker == null or not marker.visible or marker.text != "...":
+	if marker == null or not marker.visible or marker.text != "..." or marker.position.y < 2.9:
 		push_error("NPC scene marker should show thinking dots")
 		quit(1)
 		return

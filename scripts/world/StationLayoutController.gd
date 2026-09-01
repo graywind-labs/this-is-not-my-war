@@ -14,6 +14,10 @@ const BUILDING_NAME_FONT_SIZE := 38
 const BUILDING_NAME_IDLE_DELAY_SECONDS := 0.55
 const BUILDING_NAME_FADE_SPEED := 0.9
 const BUILDING_NAME_REVEAL_SPEED := 7.5
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
+const STRATEGIC_WORLD_HEALTH_BUILDINGS := ["warehouse", "front_gate", "main_hall"]
 const CAMERA_MOTION_EPSILON_SQUARED := 0.000001
 const LEGACY_VISUAL_PATHS := [
 	NodePath("Station/Ground"),
@@ -84,6 +88,7 @@ var _material_cache: Dictionary = {}
 var _configuration_errors: Array[String] = []
 var _building_roots: Dictionary = {}
 var _building_name_labels: Array[Label3D] = []
+var _building_health_bars: Dictionary = {}
 var _building_name_label_alpha := 1.0
 var _camera_idle_seconds := 0.0
 var _camera_sample_valid := false
@@ -130,6 +135,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_building_name_label_visibility(delta)
+	_refresh_strategic_building_health_bars()
 
 
 func _exit_tree() -> void:
@@ -185,6 +191,16 @@ func debug_get_building_name_label_snapshot() -> Dictionary:
 		"reveal_speed": BUILDING_NAME_REVEAL_SPEED,
 		"camera_sample_valid": _camera_sample_valid,
 	}
+
+
+func debug_get_strategic_building_health_bar_snapshot() -> Dictionary:
+	var result: Dictionary = {}
+	for raw_building_id in _building_health_bars.keys():
+		var building_id := str(raw_building_id)
+		var bar := _building_health_bars.get(building_id) as WorldHealthBar3D
+		if bar != null:
+			result[building_id] = bar.get_debug_snapshot()
+	return result
 
 
 func is_default_formal_world_enabled() -> bool:
@@ -5111,7 +5127,41 @@ func _add_label(parent: Node3D, node_name: String, position: Vector3, text: Stri
 		label.set_meta("formal_building_name_label", true)
 		_building_name_labels.append(label)
 		_apply_building_name_label_alpha_to(label, _building_name_label_alpha)
+		var building_id := str(parent.get_meta("building_id", parent.get_meta("layout_id", "")))
+		if building_id in STRATEGIC_WORLD_HEALTH_BUILDINGS:
+			_ensure_strategic_building_health_bar(parent, label, building_id)
 	return label
+
+
+func _ensure_strategic_building_health_bar(parent: Node3D, label: Label3D, building_id: String) -> void:
+	if _building_health_bars.has(building_id):
+		return
+	var bar := WORLD_HEALTH_BAR.new() as WorldHealthBar3D
+	bar.name = "WorldHealthBar"
+	bar.position = label.position + Vector3(0.0, 0.58, 0.0)
+	parent.add_child(bar)
+	bar.configure_size(2.4, 0.18)
+	bar.visible = false
+	_building_health_bars[building_id] = bar
+
+
+func _refresh_strategic_building_health_bars() -> void:
+	if _building_health_bars.is_empty():
+		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var wartime := combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.get_active_enemy_count()) > 0
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	for raw_building_id in _building_health_bars.keys():
+		var building_id := str(raw_building_id)
+		var bar := _building_health_bars.get(building_id) as WorldHealthBar3D
+		if bar == null:
+			continue
+		var building: Dictionary = building_system.get_building(building_id) if building_system != null and building_system.has_method("get_building") else {}
+		bar.set_health(
+			int(building.get("hp", 0)),
+			int(building.get("max_hp", 1)),
+			wartime and not building.is_empty()
+		)
 
 
 func _update_building_name_label_visibility(delta: float) -> void:

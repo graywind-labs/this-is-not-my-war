@@ -18,7 +18,9 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var workstation_label: Label = panel.get("workstation_label") as Label if panel != null else null
 	var location_label: Label = panel.get("location_label") as Label if panel != null else null
-	if panel == null or building_system == null or npc_system == null or workstation_label == null or location_label == null:
+	var hp_label := panel.find_child("BuildingHPLabel", true, false) as Label if panel != null else null
+	var hp_progress := panel.find_child("BuildingHPProgress", true, false) as ProgressBar if panel != null else null
+	if panel == null or building_system == null or npc_system == null or workstation_label == null or location_label == null or hp_label == null or hp_progress == null:
 		push_error("Required building panel systems are missing")
 		quit(1)
 		return
@@ -32,6 +34,21 @@ func _init() -> void:
 	for raw_building_id in building_system.get_building_ids():
 		var tag_building_id := str(raw_building_id)
 		panel.show_building(tag_building_id)
+		var tag_building: Dictionary = building_system.get_building(tag_building_id)
+		var tag_workstations: Array = tag_building.get("workstations", []) if tag_building.get("workstations", []) is Array else []
+		if tag_workstations.is_empty():
+			if workstation_label.visible or not workstation_label.text.is_empty():
+				push_error("Buildings without positions must hide the workstation row: %s / %s" % [tag_building_id, workstation_label.text])
+				quit(1)
+				return
+		elif not workstation_label.visible or workstation_label.text.is_empty():
+			push_error("Buildings with positions must show the workstation row: %s" % tag_building_id)
+			quit(1)
+			return
+		if int(hp_progress.value) != int(tag_building.get("hp", 0)) or int(hp_progress.max_value) != int(tag_building.get("max_hp", 0)) or bool(hp_progress.get_meta("danger_state", true)):
+			push_error("Building HP progress mismatch: %s / %.1f / %.1f" % [tag_building_id, hp_progress.value, hp_progress.max_value])
+			quit(1)
+			return
 		if location_label.text.contains("地点标签"):
 			push_error("Building panel should hide metadata tags: %s / %s" % [tag_building_id, location_label.text])
 			quit(1)
@@ -41,6 +58,13 @@ func _init() -> void:
 				push_error("Building panel leaked metadata tag '%s': %s / %s" % [token, tag_building_id, location_label.text])
 				quit(1)
 				return
+
+	panel.call("_update_hp_progress_control", {"hp": 29, "max_hp": 100})
+	var danger_fill := hp_progress.get_theme_stylebox("fill") as StyleBoxFlat
+	if not bool(hp_progress.get_meta("danger_state", false)) or danger_fill == null or danger_fill.bg_color.to_html(true) != "a7433bff":
+		push_error("Building HP progress did not enter the red critical state")
+		quit(1)
+		return
 
 	var expected_legacy_position_names := {
 		"tavern": ["酿酒位1", "酿酒位"],
@@ -212,8 +236,14 @@ func _init() -> void:
 		return
 
 	panel.show_building("wall")
-	if workstation_label.text != "位置：无":
-		push_error("Buildings without positions should use the concrete empty-state label: %s" % workstation_label.text)
+	if workstation_label.visible or not workstation_label.text.is_empty():
+		push_error("Buildings without positions should hide the empty workstation row: %s" % workstation_label.text)
+		quit(1)
+		return
+
+	panel.show_building("dining_hall")
+	if not workstation_label.visible or workstation_label.text.is_empty():
+		push_error("Switching back to a building with positions should restore its workstation row")
 		quit(1)
 		return
 

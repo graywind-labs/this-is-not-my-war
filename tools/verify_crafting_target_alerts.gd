@@ -70,7 +70,8 @@ func _init() -> void:
 	# visibility contract is asserted above; emit the same Button signal here to
 	# verify the stable semantic click path into BuildingSystem and BuildingPanel.
 	blacksmith_alert.pressed.emit()
-	await process_frame
+	for _frame in range(8):
+		await process_frame
 	var panel_snapshot: Dictionary = building_panel.debug_get_crafting_panel_snapshot()
 	if not building_panel.visible or str(panel_snapshot.get("building_id", "")) != "blacksmith":
 		_fail("Clicking the blacksmith alert did not open the matching building panel")
@@ -78,12 +79,34 @@ func _init() -> void:
 	if str(building_system.get_selected_building_id()) != "blacksmith":
 		_fail("Crafting alert click did not use BuildingSystem selection state")
 		return
+	if not bool(panel_snapshot.get("target_popup_visible", false)):
+		_fail("Clicking the blacksmith alert did not expand the crafting target popup: %s" % JSON.stringify(panel_snapshot))
+		return
+	if not bool(panel_snapshot.get("missing_target_alert_visible", false)):
+		_fail("Empty crafting target does not show the matching panel alert: %s" % JSON.stringify(panel_snapshot))
+		return
+	var target_select := building_panel.get_node_or_null("%CraftingTargetSelect") as OptionButton
+	if target_select == null:
+		target_select = building_panel.find_child("CraftingTargetSelect", true, false) as OptionButton
+	var panel_alert := building_panel.find_child("CraftingTargetMissingAlert", true, false) as Button
+	if target_select == null or panel_alert == null:
+		_fail("Crafting target selector or its missing-target alert is absent")
+		return
+	if panel_alert.text != "!" or panel_alert.tooltip_text != ALERT_TOOLTIP:
+		_fail("Panel crafting alert text or tooltip does not match the world alert")
+		return
+	var panel_alert_color := panel_alert.get_theme_color("font_color")
+	if panel_alert_color.r <= panel_alert_color.g or panel_alert_color.r <= panel_alert_color.b:
+		_fail("Panel crafting alert is not visually red: %s" % panel_alert_color)
+		return
+	target_select.get_popup().hide()
 
 	var selected: Dictionary = crafting_system.set_target("blacksmith", "craft_iron_helmet", false)
 	if not bool(selected.get("ok", false)):
 		_fail("Could not select blacksmith fixture target: %s" % JSON.stringify(selected))
 		return
 	await process_frame
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
 	var hidden_snapshot: Dictionary = presenter.debug_get_alert_snapshot("blacksmith")
 	var workshop_snapshot: Dictionary = presenter.debug_get_alert_snapshot("workshop")
 	if bool(hidden_snapshot.get("needs_alert", true)) or bool(hidden_snapshot.get("visible", true)):
@@ -91,6 +114,9 @@ func _init() -> void:
 		return
 	if not bool(workshop_snapshot.get("needs_alert", false)):
 		_fail("Selecting the blacksmith target incorrectly changed the workshop alert")
+		return
+	if bool(panel_snapshot.get("missing_target_alert_visible", true)):
+		_fail("Selecting a target did not hide the panel alert: %s" % JSON.stringify(panel_snapshot))
 		return
 
 	var cleared: Dictionary = crafting_system.set_target("blacksmith", "", false)
@@ -101,6 +127,26 @@ func _init() -> void:
 	var restored_snapshot: Dictionary = presenter.debug_get_alert_snapshot("blacksmith")
 	if not bool(restored_snapshot.get("needs_alert", false)):
 		_fail("Clearing the target did not restore the alert: %s" % JSON.stringify(restored_snapshot))
+		return
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
+	if not bool(panel_snapshot.get("missing_target_alert_visible", false)):
+		_fail("Clearing the target did not restore the panel alert: %s" % JSON.stringify(panel_snapshot))
+		return
+
+	var workshop_alert := presenter.get_node_or_null("WorkshopCraftingTargetAlert") as Button
+	if workshop_alert == null:
+		_fail("Workshop alert button is missing")
+		return
+	workshop_alert.pressed.emit()
+	for _frame in range(8):
+		await process_frame
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
+	if (
+		str(building_system.get_selected_building_id()) != "workshop"
+		or str(panel_snapshot.get("building_id", "")) != "workshop"
+		or not bool(panel_snapshot.get("target_popup_visible", false))
+	):
+		_fail("Clicking the workshop alert did not select it and expand its target popup: %s" % JSON.stringify(panel_snapshot))
 		return
 
 	print("Crafting target alert verification passed.")

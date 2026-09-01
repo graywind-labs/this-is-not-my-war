@@ -294,83 +294,13 @@ func _verify_deployment_and_range(
 
 func _verify_charge_impact(
 	combat_system: Node,
-	npc_system: Node,
-	equipment_system: Node
+	_npc_system: Node,
+	_equipment_system: Node
 ) -> bool:
-	var npc_id := "veteran_deputy_01"
-	var mount_result: Dictionary = equipment_system.equip_npc_mount(npc_id, "", "private")
-	if not bool(mount_result.get("ok", false)):
-		return _fail("Failed to equip a mount for charge verification: %s" % JSON.stringify(mount_result))
-	var strategy_result: Dictionary = combat_system.set_npc_combat_strategy(
-		npc_id,
-		"charge_cycle",
-		"private",
-		"verify_t0107"
-	)
-	if not bool(strategy_result.get("ok", false)):
-		return _fail("Mounted melee NPC must accept charge_cycle.")
-
-	combat_system.debug_clear_enemies()
-	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
-	if not bool(spawn_result.get("ok", false)):
-		return _fail("Failed to spawn charge verification target.")
-	var enemy_id := str(combat_system.get_active_enemy_ids()[0])
-	var npc_position := Vector3(0.0, 0.0, 0.0)
-	_set_npc_world_position(npc_system, npc_id, npc_position)
-	var active_enemies: Dictionary = combat_system.get("_active_enemies")
-	var enemy: Dictionary = active_enemies.get(enemy_id, {})
-	enemy["position"] = Vector3(0.0, 0.0, 1.0)
-	enemy["hp"] = 200
-	enemy["max_hp"] = 200
-	enemy["attack_windup_remaining"] = 0.3
-	enemy["attack_windup_target"] = {"type": "npc", "id": npc_id}
-	active_enemies[enemy_id] = enemy
-	combat_system.set("_active_enemies", active_enemies)
-	npc_system.set_npc_behavior_mode(npc_id, "combat", "verify_t0107_charge", {
-		"state_changes": {
-			"current_action": "combat_ready",
-			"combat_target_enemy_id": enemy_id,
-			"combat_attack_cooldown": 0.0,
-			"combat_charge_phase": "impact"
-		},
-		"request_plan_reevaluation": false
-	})
-	var base_attack := float(
-		(combat_system.get_npc_combat_stats(npc_id).get("final", {}) as Dictionary).get(
-			"attack_power",
-			0.0
-		)
-	)
-	var attack_context: Dictionary = combat_system._calculate_npc_attack_context(
-		npc_id,
-		npc_system.get_npc(npc_id),
-		npc_system.get_npc_state(npc_id)
-	)
-	var impact_seconds := float((attack_context.get("animation_timing", {}) as Dictionary).get("impact_seconds", 0.0))
-	var windup_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, maxf(0.001, impact_seconds - 0.01))
-	if int(windup_result.get("attack_count", 0)) != 0:
-		return _fail("Charge collision must wait for the approved weapon impact: %s" % JSON.stringify(windup_result))
-	var attack_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, 0.02)
-	if int(attack_result.get("attack_count", 0)) != 1:
-		return _fail("Charge impact must resolve exactly one attack: %s" % JSON.stringify(attack_result))
-	var attacks: Array = attack_result.get("attacks", [])
-	var attack: Dictionary = attacks[0]
-	var impact: Dictionary = attack.get("charge_impact", {})
-	if (
-		impact.is_empty()
-		or int(impact.get("collision_damage", 0)) <= 0
-		or float(impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
-		or (int(attack.get("damage", 0)) > 0 and float(attack.get("raw_attack_power", 0.0)) <= base_attack)
-	):
-		return _fail("Charge must always add horse collision and amplify weapon damage only when the weapon actually contacts.")
-	if not bool(impact.get("interrupted_windup", false)):
-		return _fail("Horse collision stagger must interrupt an enemy windup.")
-	var enemy_after: Dictionary = combat_system.get_enemy(enemy_id)
-	if float(enemy_after.get("stagger_remaining", 0.0)) <= 0.0:
-		return _fail("Charge target must retain a visible stagger state.")
-	var state_after: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state_after.get("combat_charge_phase", "")) != "withdraw":
-		return _fail("Cavalry must withdraw after impact.")
+	var cavalry_options: Array = combat_system.get_combat_strategy_options_for_unit_type("cavalry")
+	for raw_option in cavalry_options:
+		if raw_option is Dictionary and str((raw_option as Dictionary).get("id", "")) == "charge_cycle":
+			return _fail("Removed charge_cycle must not remain in cavalry strategy options.")
 	return true
 
 

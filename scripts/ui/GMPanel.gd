@@ -1,6 +1,7 @@
 extends Control
 
 const GM_ENABLED := true
+const DialogueEmotionCatalog = preload("res://scripts/core/DialogueEmotionCatalog.gd")
 
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
@@ -63,6 +64,7 @@ var _building_select: OptionButton
 var _building_amount_input: LineEdit
 var _npc_select: OptionButton
 var _formal_action_npc_select: OptionButton
+var _ai_npc_select: OptionButton
 var _npc_dialogue_target_select: OptionButton
 var _npc_state_key_input: LineEdit
 var _npc_state_value_input: LineEdit
@@ -696,6 +698,7 @@ func _add_npc_section(parent: VBoxContainer) -> void:
 	parent.add_child(_make_section_title("NPC"))
 	var row := _make_row(parent)
 	_npc_select = _make_select(row)
+	_npc_select.name = "CommonNpcSelect"
 	_location_select = _make_select(row)
 	_add_button(row, "选中", func() -> void:
 		_run_select_npc(_selected_id(_npc_select))
@@ -972,9 +975,6 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 	_add_button(mode_row, "模拟避战", func() -> void:
 		_run_avoid_npc(_selected_id(_npc_select))
 	)
-	_add_button(mode_row, "触发逃离", func() -> void:
-		_run_escape_npc(_selected_id(_npc_select))
-	)
 	_add_button(mode_row, "推进集结等待", func() -> void:
 		_run_advance_rally_wait(3600.0)
 	)
@@ -989,25 +989,150 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 
 
 func _add_backend_section(parent: VBoxContainer) -> void:
-	parent.add_child(_make_section_title("后端 / LLMBridge"))
+	var npc_row := _make_row(parent)
+	var npc_label := Label.new()
+	npc_label.text = "AI 指令目标"
+	npc_row.add_child(npc_label)
+	_ai_npc_select = _make_select(npc_row)
+	_ai_npc_select.name = "AINpcSelect"
+	_ai_npc_select.tooltip_text = "AI信息页全部 NPC 指令都作用于此人；与常用页、正式行动页的选择相互独立。"
+	_ai_npc_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	parent.add_child(_make_section_title("AI 对话 / LLMBridge"))
 	var row := _make_row(parent)
 	_dialogue_text_input = _make_input(row, "对话文本", "守备官需要你帮忙守住这里。", 300)
 	_add_button(row, "健康检查", _run_backend_health)
 	_add_button(row, "对话 Mock", func() -> void:
-		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, false)
+		_run_dialogue_mock(_selected_id(_ai_npc_select), _dialogue_text_input.text, false)
 	)
 	_add_button(row, "应征 Mock", func() -> void:
-		_run_dialogue_mock(_selected_id(_npc_select), _dialogue_text_input.text, true)
+		_run_dialogue_mock(_selected_id(_ai_npc_select), _dialogue_text_input.text, true)
 	)
 	_add_button(row, "LLM 状态", func() -> void:
-		_show_llm_state(_selected_id(_npc_select))
+		_show_llm_state(_selected_id(_ai_npc_select))
 	)
 	_add_button(row, "对话意图复核", func() -> void:
-		_show_dialogue_intent_revalidation(_selected_id(_npc_select))
+		_show_dialogue_intent_revalidation(_selected_id(_ai_npc_select))
 	)
 	_add_button(row, "成本统计", _show_llm_usage)
 	_add_button(row, "最近指令注入", _show_last_npc_context_injection)
 	_add_button(row, "驿站上下文", _show_station_context)
+	var work_row := _make_row(parent)
+	var work_label := Label.new()
+	work_label.text = "特殊交互：鼓励工作"
+	work_row.add_child(work_label)
+	var work_mock_button := _add_button(work_row, "工作鼓励 Mock", func() -> void:
+		_run_dialogue_mock(_selected_id(_ai_npc_select), _dialogue_text_input.text, false, false, false, true)
+	)
+	work_mock_button.name = "WorkEncouragementDialogueMockButton"
+	var work_dialogue_button := _add_button(work_row, "打开工作鼓励对话", func() -> void:
+		_run_open_work_encouragement_dialogue(_selected_id(_ai_npc_select))
+	)
+	work_dialogue_button.name = "OpenWorkEncouragementDialogueButton"
+	var morale_row := _make_row(parent)
+	var morale_label := Label.new()
+	morale_label.text = "特殊交互：鼓舞士气"
+	morale_row.add_child(morale_label)
+	var morale_mock_button := _add_button(morale_row, "鼓舞 Mock", func() -> void:
+		_run_dialogue_mock(_selected_id(_ai_npc_select), _dialogue_text_input.text, false, true)
+	)
+	morale_mock_button.name = "MoraleEncouragementMockButton"
+	var morale_dialogue_button := _add_button(morale_row, "打开鼓舞对话", func() -> void:
+		_run_open_morale_encouragement_dialogue(_selected_id(_ai_npc_select))
+	)
+	morale_dialogue_button.name = "OpenMoraleEncouragementDialogueButton"
+	var strategy_row := _make_row(parent)
+	var strategy_label := Label.new()
+	strategy_label.text = "特殊交互：调整战斗策略"
+	strategy_row.add_child(strategy_label)
+	var strategy_mock_button := _add_button(strategy_row, "策略 Mock", func() -> void:
+		_run_dialogue_mock(_selected_id(_ai_npc_select), _dialogue_text_input.text, false, false, true)
+	)
+	strategy_mock_button.name = "CombatStrategyDialogueMockButton"
+	var strategy_dialogue_button := _add_button(strategy_row, "打开策略对话", func() -> void:
+		_run_open_combat_strategy_dialogue(_selected_id(_ai_npc_select))
+	)
+	strategy_dialogue_button.name = "OpenCombatStrategyDialogueButton"
+
+	parent.add_child(_make_section_title("特殊交互结果展台（本地，不调用 LLM）"))
+	var recruitment_result_row := _make_row(parent)
+	var recruitment_result_label := Label.new()
+	recruitment_result_label.text = "提出应征"
+	recruitment_result_row.add_child(recruitment_result_label)
+	_add_named_special_result_button(recruitment_result_row, "同意入伍", "RecruitmentAcceptPreviewButton", "recruitment", "accept")
+	_add_named_special_result_button(recruitment_result_row, "拒绝入伍", "RecruitmentRejectPreviewButton", "recruitment", "reject")
+	_add_named_special_result_button(recruitment_result_row, "忽略应征", "RecruitmentNonePreviewButton", "recruitment", "none")
+
+	var morale_result_row := _make_row(parent)
+	var morale_result_label := Label.new()
+	morale_result_label.text = "鼓舞士气"
+	morale_result_row.add_child(morale_result_label)
+	_add_named_special_result_button(morale_result_row, "士气提升", "MoraleBoostPreviewButton", "morale_encouragement", "morale_boost")
+	_add_named_special_result_button(morale_result_row, "继续参战", "MoraleNonePreviewButton", "morale_encouragement", "none")
+	_add_named_special_result_button(morale_result_row, "决定逃离", "MoraleEscapePreviewButton", "morale_encouragement", "escape")
+
+	var work_result_row := _make_row(parent)
+	var work_result_label := Label.new()
+	work_result_label.text = "鼓励工作"
+	work_result_row.add_child(work_result_label)
+	_add_named_special_result_button(work_result_row, "效率提升", "WorkBoostPreviewButton", "work_encouragement", "work_boost")
+	_add_named_special_result_button(work_result_row, "无事发生", "WorkNonePreviewButton", "work_encouragement", "none")
+	_add_named_special_result_button(work_result_row, "决定逃离", "WorkEscapePreviewButton", "work_encouragement", "escape")
+
+	var strategy_result_row := _make_row(parent)
+	var strategy_result_label := Label.new()
+	strategy_result_label.text = "战斗策略"
+	strategy_result_row.add_child(strategy_result_label)
+	_add_named_special_result_button(strategy_result_row, "改变策略", "StrategyChangePreviewButton", "combat_strategy", "change")
+	_add_named_special_result_button(strategy_result_row, "保持策略", "StrategyKeepPreviewButton", "combat_strategy", "keep")
+	var clear_buff_button := _add_button(strategy_result_row, "清除两类增益", func() -> void:
+		_run_clear_dialogue_buffs(_selected_id(_ai_npc_select))
+	)
+	clear_buff_button.name = "ClearDialogueBuffsButton"
+
+	var escape_result_row := _make_row(parent)
+	var escape_result_label := Label.new()
+	escape_result_label.text = "逃离 / 挽留"
+	escape_result_row.add_child(escape_result_label)
+	var start_escape_button := _add_button(escape_result_row, "开始逃离", func() -> void:
+		_run_escape_npc(_selected_id(_ai_npc_select))
+	)
+	start_escape_button.name = "StartEscapePreviewButton"
+	var stay_button := _add_button(escape_result_row, "挽留成功", func() -> void:
+		_run_escape_intervention_preview(_selected_id(_ai_npc_select), "stay")
+	)
+	stay_button.name = "EscapeStayPreviewButton"
+	var leave_button := _add_button(escape_result_row, "继续逃离", func() -> void:
+		_run_escape_intervention_preview(_selected_id(_ai_npc_select), "leave")
+	)
+	leave_button.name = "EscapeLeavePreviewButton"
+
+	parent.add_child(_make_section_title("NPC 回复情绪气泡（本地，不调用 LLM）"))
+	var emotion_presentations := DialogueEmotionCatalog.get_all_presentations()
+	for row_index in range(2):
+		var emotion_row := _make_row(parent)
+		if row_index == 0:
+			var emotion_label := Label.new()
+			emotion_label.text = "世界 + 第二人称"
+			emotion_row.add_child(emotion_label)
+		var start_index := row_index * 5
+		var end_index := mini(start_index + 5, emotion_presentations.size())
+		for presentation_index in range(start_index, end_index):
+			var presentation: Dictionary = emotion_presentations[presentation_index]
+			var emotion_id := str(presentation.get("emotion_id", "none"))
+			var button := _add_button(
+				emotion_row,
+				"%s %s" % [str(presentation.get("emoji", "…")), str(presentation.get("emotion_label", ""))],
+				func() -> void:
+					_run_dialogue_emotion_preview(_selected_id(_ai_npc_select), emotion_id)
+			)
+			button.name = "DialogueEmotion%sPreviewButton" % emotion_id.capitalize()
+			button.tooltip_text = "打开所选 NPC 人物框，并复用正式信号同时展示世界与第二人称气泡。"
+		if row_index == 1:
+			var sequence_button := _add_button(emotion_row, "快速替换演示", func() -> void:
+				_run_dialogue_emotion_sequence(_selected_id(_ai_npc_select))
+			)
+			sequence_button.name = "DialogueEmotionSequencePreviewButton"
 
 
 func _add_memory_section(parent: VBoxContainer) -> void:
@@ -1021,7 +1146,7 @@ func _add_memory_section(parent: VBoxContainer) -> void:
 		_show_location(_selected_id(_location_select))
 	)
 	_add_button(row, "短期记忆 / LLM", func() -> void:
-		_show_memory(_selected_id(_npc_select))
+		_show_memory(_selected_id(_ai_npc_select))
 	)
 
 	var event_row := _make_row(parent)
@@ -1029,13 +1154,13 @@ func _add_memory_section(parent: VBoxContainer) -> void:
 	_memory_amount_input = _make_input(event_row, "数值", "5", 70)
 	_event_type_input = _make_input(event_row, "事件类型", "plaza_status_changed", 170)
 	_add_button(event_row, "给钱事件", func() -> void:
-		_run_give_money(_selected_id(_npc_select), _int_from_input(_memory_amount_input, 0), _selected_id(_visibility_select))
+		_run_give_money(_selected_id(_ai_npc_select), _int_from_input(_memory_amount_input, 0), _selected_id(_visibility_select))
 	)
 	_add_button(event_row, "攻击事件", func() -> void:
-		_run_attack_npc(_selected_id(_npc_select), _int_from_input(_memory_amount_input, 0), _selected_id(_visibility_select))
+		_run_attack_npc(_selected_id(_ai_npc_select), _int_from_input(_memory_amount_input, 0), _selected_id(_visibility_select))
 	)
 	_add_button(event_row, "广场广播", func() -> void:
-		_run_public_event(_event_type_input.text.strip_edges(), _selected_id(_npc_select))
+		_run_public_event(_event_type_input.text.strip_edges(), _selected_id(_ai_npc_select))
 	)
 	_add_button(event_row, "事件列表", _show_events)
 
@@ -1143,6 +1268,12 @@ func _fill_npc_select() -> void:
 		return id
 	)
 	_fill_select(_formal_action_npc_select, ids, func(id: String) -> String:
+		if npc_system != null:
+			var npc: Dictionary = npc_system.get_npc(id)
+			return "%s | %s" % [id, str(npc.get("name", id))]
+		return id
+	)
+	_fill_select(_ai_npc_select, ids, func(id: String) -> String:
 		if npc_system != null:
 			var npc: Dictionary = npc_system.get_npc(id)
 			return "%s | %s" % [id, str(npc.get("name", id))]
@@ -1926,6 +2057,15 @@ func _execute_command(command: String) -> void:
 		"dialogue_recruit":
 			if _require_args(parts, 3, "dialogue_recruit <npc_id> <text>"):
 				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_recruit %s" % str(parts[1])).length()).strip_edges(), true)
+		"dialogue_morale":
+			if _require_args(parts, 3, "dialogue_morale <npc_id> <text>"):
+				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_morale %s" % str(parts[1])).length()).strip_edges(), false, true)
+		"dialogue_strategy":
+			if _require_args(parts, 3, "dialogue_strategy <npc_id> <text>"):
+				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_strategy %s" % str(parts[1])).length()).strip_edges(), false, false, true)
+		"dialogue_work":
+			if _require_args(parts, 3, "dialogue_work <npc_id> <text>"):
+				_run_dialogue_mock(str(parts[1]), command.substr(("dialogue_work %s" % str(parts[1])).length()).strip_edges(), false, false, false, true)
 		"last_order_injection":
 			_show_last_npc_context_injection()
 		"give_money":
@@ -4230,6 +4370,82 @@ func _run_escape_npc(npc_id: String) -> void:
 	_log("触发逃离 %s：%s" % [npc_id, _compact(result)])
 
 
+func _add_named_special_result_button(
+	row: HBoxContainer,
+	button_text: String,
+	button_name: String,
+	special_type: String,
+	outcome: String
+) -> Button:
+	var button := _add_button(row, button_text, func() -> void:
+		_run_special_result_preview(_selected_id(_ai_npc_select), special_type, outcome)
+	)
+	button.name = button_name
+	button.tooltip_text = "通过正式系统接口应用该结果并在对话框中展示；不调用 LLM。"
+	return button
+
+
+func _run_special_result_preview(npc_id: String, special_type: String, outcome: String) -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("debug_preview_special_interaction_result"):
+		_log("DialogSystem 特殊交互结果展台不可用。")
+		return
+	var result: Dictionary = dialog_system.debug_preview_special_interaction_result(
+		npc_id,
+		special_type,
+		outcome,
+		"local_public"
+	)
+	_log("特殊交互结果 %s/%s %s：%s" % [special_type, outcome, npc_id, _compact(result)])
+
+
+func _run_escape_intervention_preview(npc_id: String, outcome: String) -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("debug_preview_escape_intervention_result"):
+		_log("DialogSystem 挽留结果展台不可用。")
+		return
+	var result: Dictionary = dialog_system.debug_preview_escape_intervention_result(npc_id, outcome)
+	_log("挽留结果 %s %s：%s" % [outcome, npc_id, _compact(result)])
+
+
+func _run_dialogue_emotion_preview(npc_id: String, emotion_id: String) -> Dictionary:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("debug_present_npc_dialogue_emotion"):
+		var missing_result := {"ok": false, "error": "dialogue_emotion_preview_missing"}
+		_log("DialogSystem 情绪气泡展台不可用。")
+		return missing_result
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_clicked"):
+		event_bus.npc_clicked.emit(npc_id)
+	var result: Dictionary = dialog_system.debug_present_npc_dialogue_emotion(npc_id, emotion_id)
+	_log("情绪气泡 %s/%s：%s" % [npc_id, emotion_id, _compact(result)])
+	return result
+
+
+func _run_dialogue_emotion_sequence(npc_id: String) -> void:
+	for emotion_id in ["happy", "surprised", "angry", "determined"]:
+		var result := _run_dialogue_emotion_preview(npc_id, emotion_id)
+		if not bool(result.get("ok", false)):
+			return
+		await get_tree().create_timer(0.65).timeout
+
+
+func _run_clear_dialogue_buffs(npc_id: String) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var morale_result: Dictionary = (
+		combat_system.debug_clear_morale_boost(npc_id)
+		if combat_system != null and combat_system.has_method("debug_clear_morale_boost")
+		else {"ok": false, "error": "combat_system_missing"}
+	)
+	var work_result: Dictionary = (
+		npc_system.debug_clear_work_encouragement_boost(npc_id)
+		if npc_system != null and npc_system.has_method("debug_clear_work_encouragement_boost")
+		else {"ok": false, "error": "npc_system_missing"}
+	)
+	_log("清除对话增益 %s：士气=%s 工作=%s" % [npc_id, _compact(morale_result), _compact(work_result)])
+
+
 func _run_advance_rally_wait(game_seconds: float) -> void:
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("debug_advance_rally_wait"):
@@ -4374,7 +4590,14 @@ func _format_token_count(value: int) -> String:
 	return ",".join(parts)
 
 
-func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bool) -> void:
+func _run_dialogue_mock(
+	npc_id: String,
+	text: String,
+	is_recruitment_request: bool,
+	is_morale_encouragement_request: bool = false,
+	is_combat_strategy_request: bool = false,
+	is_work_encouragement_request: bool = false
+) -> void:
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	if llm_bridge == null or not llm_bridge.has_method("debug_request_dialogue"):
 		_log("LLMBridge 对话接口不可用。")
@@ -4382,8 +4605,69 @@ func _run_dialogue_mock(npc_id: String, text: String, is_recruitment_request: bo
 	var clean_text := text.strip_edges()
 	if clean_text.is_empty():
 		clean_text = "守备官需要你帮忙守住这里。"
-	var result: Dictionary = llm_bridge.debug_request_dialogue(npc_id, clean_text, is_recruitment_request, "private")
-	_log("对话 Mock %s：%s" % [npc_id, _compact(result)])
+	var combat_strategy_context := {}
+	if is_combat_strategy_request:
+		var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+		if combat_system == null or not combat_system.has_method("get_npc_combat_strategy_dialogue_context"):
+			_log("CombatSystem 策略对话接口不可用。")
+			return
+		combat_strategy_context = combat_system.get_npc_combat_strategy_dialogue_context(npc_id)
+		if combat_strategy_context.is_empty():
+			var eligibility: Dictionary = combat_system.get_combat_strategy_dialogue_eligibility(npc_id) if combat_system.has_method("get_combat_strategy_dialogue_eligibility") else {}
+			_log("策略 Mock %s 不可用：%s" % [npc_id, str(eligibility.get("message", "当前 NPC 不符合条件。"))])
+			return
+	var result: Dictionary = llm_bridge.debug_request_dialogue(
+		npc_id,
+		clean_text,
+		is_recruitment_request,
+		"local_public" if is_morale_encouragement_request or is_combat_strategy_request else "private",
+		is_morale_encouragement_request,
+		"",
+		is_combat_strategy_request,
+		combat_strategy_context,
+		is_work_encouragement_request
+	)
+	var mock_label := "工作鼓励 Mock" if is_work_encouragement_request else "策略 Mock" if is_combat_strategy_request else "鼓舞 Mock" if is_morale_encouragement_request else "对话 Mock"
+	_log("%s %s：%s" % [mock_label, npc_id, _compact(result)])
+
+
+func _run_open_work_encouragement_dialogue(npc_id: String) -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("start_player_dialogue") or not dialog_system.has_method("set_work_encouragement_request_pending"):
+		_log("DialogSystem 工作鼓励对话接口不可用。")
+		return
+	var start_result: Dictionary = dialog_system.start_player_dialogue(npc_id, "private")
+	if not bool(start_result.get("ok", false)):
+		_log("打开工作鼓励对话 %s：%s" % [npc_id, _compact(start_result)])
+		return
+	var toggle_result: Dictionary = dialog_system.set_work_encouragement_request_pending(true)
+	_log("打开工作鼓励对话 %s：%s" % [npc_id, _compact(toggle_result)])
+
+
+func _run_open_morale_encouragement_dialogue(npc_id: String) -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("start_player_dialogue") or not dialog_system.has_method("set_morale_encouragement_request_pending"):
+		_log("DialogSystem 鼓舞对话接口不可用。")
+		return
+	var start_result: Dictionary = dialog_system.start_player_dialogue(npc_id, "local_public")
+	if not bool(start_result.get("ok", false)):
+		_log("打开鼓舞对话 %s：%s" % [npc_id, _compact(start_result)])
+		return
+	var toggle_result: Dictionary = dialog_system.set_morale_encouragement_request_pending(true)
+	_log("打开鼓舞对话 %s：%s" % [npc_id, _compact(toggle_result)])
+
+
+func _run_open_combat_strategy_dialogue(npc_id: String) -> void:
+	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
+	if dialog_system == null or not dialog_system.has_method("start_player_dialogue") or not dialog_system.has_method("set_combat_strategy_request_pending"):
+		_log("DialogSystem 策略对话接口不可用。")
+		return
+	var start_result: Dictionary = dialog_system.start_player_dialogue(npc_id, "local_public")
+	if not bool(start_result.get("ok", false)):
+		_log("打开策略对话 %s：%s" % [npc_id, _compact(start_result)])
+		return
+	var toggle_result: Dictionary = dialog_system.set_combat_strategy_request_pending(true)
+	_log("打开策略对话 %s：%s" % [npc_id, _compact(toggle_result)])
 
 
 func _show_last_npc_context_injection() -> void:
@@ -4741,7 +5025,7 @@ func _help_text() -> String:
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot | merchant_wagon [arrival|formal_arrival|departure|snapshot]",
 		"slowdown [id] [scale] [reason] | release_slowdown <id> | clear_slowdowns",
-		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | llm_state <npc_id> | intent_revalidation <npc_id> | last_order_injection | station_context",
+		"backend_health | llm_usage | dialogue_mock <npc_id> <text> | dialogue_recruit <npc_id> <text> | dialogue_morale <npc_id> <text> | dialogue_strategy <npc_id> <text> | dialogue_work <npc_id> <text> | llm_state <npc_id> | intent_revalidation <npc_id> | last_order_injection | station_context",
 		"select_npc <npc_id> | select_building <building_id>",
 		"move_npc <npc_id> <building_id> | enter_location <npc_id> <location_id> | spatial <npc_id>",
 		"set_npc_state <npc_id> <key> <value> | recruit_npc <npc_id> | recruit_equip_all | assign_attribute <npc_id> <strength|intelligence>",

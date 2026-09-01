@@ -202,6 +202,10 @@ def main() -> None:
     assert dialogue_request.npc_setting["speech_style"] == "直率絮叨，常用锅和口粮作比。"
     assert "signature_lines" not in dialogue_request.npc_setting
     assert dialogue_request.interaction_context == "combat"
+    assert dialogue_request.is_morale_encouragement_request is False
+    assert dialogue_request.is_combat_strategy_request is False
+    assert dialogue_request.is_work_encouragement_request is False
+    assert dialogue_request.combat_strategy_context is None
     assert dialogue_request.battlefield_context["active_enemy_count"] == 2
     assert dialogue_request.interrupted_activity_context is not None
     assert (
@@ -250,6 +254,24 @@ def main() -> None:
     )
     assert response.replyer_id == "cook_01"
     assert response.wartime_reaction == "morale_boost"
+    strategy_response = PlayerNPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="我会按新的打法执行。",
+        recruitment_result="none",
+        combat_strategy_decision={
+            "decision": "change",
+            "strategy_id": "avoid",
+        },
+    )
+    assert strategy_response.combat_strategy_decision is not None
+    assert strategy_response.combat_strategy_decision.strategy_id == "avoid"
+    work_response = PlayerNPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="今天剩下的活我会更用心做好。",
+        recruitment_result="none",
+        work_encouragement_reaction="work_boost",
+    )
+    assert work_response.work_encouragement_reaction == "work_boost"
     try:
         PlayerNPCDialogueResponse(
             replyer_id="cook_01",

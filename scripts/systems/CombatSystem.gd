@@ -10,6 +10,9 @@ const SWORD_SHIELD_CHIBI_ART_SCENE_PATH := "res://scenes/characters/EnemySwordSh
 const ENEMY_MOUNTED_ART_SCRIPT := preload("res://scripts/presentation/characters/EnemyMountedArtView.gd")
 const COMBAT_ANIMATION_TIMING := preload("res://scripts/presentation/characters/CombatAnimationTiming.gd")
 const COMBAT_PROJECTILE_VIEW_SCRIPT := preload("res://scripts/presentation/combat/CombatProjectileView.gd")
+const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
+const ENEMY_NAME_LABEL_HEIGHT := 2.10
+const ENEMY_HEALTH_BAR_OFFSET := 0.34
 const FORMAL_CHIBI_WEAPON_TYPES := ["sword_shield", "polearm", "bow", "crossbow"]
 const RANGED_WEAPON_TYPES := ["bow", "crossbow"]
 const MELEE_WEAPON_TYPES := ["sword_shield", "polearm"]
@@ -82,10 +85,11 @@ const LEVEL_PENETRATION_BONUS := 0.2
 const LEVEL_ATTACK_SPEED_BONUS := 0.015
 const STRENGTH_DEFENSE_BONUS_PER_POINT := 0.15
 const STRENGTH_PENETRATION_BONUS_PER_POINT := 0.08
-const MORALE_BOOST_DURATION_SECONDS := 7200.0
+const MORALE_BOOST_DURATION_SECONDS := 86400.0
 const MORALE_BOOST_ATTACK_BONUS := 0.15
 const MORALE_BOOST_MOVE_SPEED_BONUS := 0.15
 const LOW_HP_JUDGEMENT_RATIO := 0.3
+const ENEMY_WORLD_HEALTH_COLOR := Color("#c97832")
 const FAILURE_REASON_MAIN_HALL_DESTROYED := "main_hall_destroyed"
 const VICTORY_REASON_FIVE_WAVES_SURVIVED := "five_waves_survived"
 const RALLY_TARGET_PREFIX := "combat_rally_"
@@ -181,17 +185,17 @@ const STRATEGY_AVOID := "avoid"
 const COMBAT_STRATEGY_LABELS := {
 	"attack": "主动进攻",
 	"max_output": "最大化输出",
-	"keep_distance": "保持距离射击",
+	"keep_distance": "拉开距离射击",
 	"charge_cycle": "拉开距离冲击",
 	"avoid": "避战"
 }
 const COMBAT_STRATEGY_OPTIONS_BY_UNIT_TYPE := {
 	"melee_infantry": ["attack", "avoid"],
 	"polearm_infantry": ["attack", "avoid"],
-	"archer": ["max_output", "keep_distance", "avoid"],
-	"crossbowman": ["max_output", "keep_distance", "avoid"],
-	"cavalry": ["attack", "charge_cycle", "avoid"],
-	"mounted_ranged": ["max_output", "keep_distance", "avoid"]
+	"archer": ["attack", "keep_distance", "avoid"],
+	"crossbowman": ["attack", "keep_distance", "avoid"],
+	"cavalry": ["attack", "avoid"],
+	"mounted_ranged": ["attack", "keep_distance", "avoid"]
 }
 
 const FALLBACK_SPAWN_POINTS := {
@@ -599,6 +603,26 @@ func get_enemy_portrait_snapshot(enemy_id: String) -> Dictionary:
 		"camera_height": PORTRAIT_MOUNTED_CAMERA_HEIGHT if mounted else PORTRAIT_STANDING_CAMERA_HEIGHT,
 		"current_action": str(detail.get("current_action", "idle")),
 		"mounted": mounted,
+	}
+
+
+func debug_get_enemy_overhead_snapshot(enemy_id: String) -> Dictionary:
+	if not _active_enemies.has(enemy_id) or not _enemy_nodes.has(enemy_id):
+		return {}
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+	var actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D
+	if actor == null:
+		return {}
+	var label := actor.get_node_or_null("EnemyLabel") as Label3D
+	var bar := actor.get_node_or_null("WorldHealthBar") as WorldHealthBar3D
+	return {
+		"enemy_id": enemy_id,
+		"authority_name": str(enemy.get("name", enemy_id)),
+		"authority_hp": int(enemy.get("hp", 0)),
+		"authority_max_hp": int(enemy.get("max_hp", 0)),
+		"name_text": label.text if label != null else "",
+		"name_position": label.position if label != null else Vector3.ZERO,
+		"health_bar": bar.get_debug_snapshot() if bar != null else {},
 	}
 
 
@@ -2349,6 +2373,112 @@ func build_battlefield_context(target_npc_id: String = "", interaction_context: 
 	}
 
 
+func get_wartime_dialogue_reaction_eligibility(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用。"}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {"eligible": false, "reason": "unknown_npc", "message": "NPC 不存在。"}
+	var mode := _get_npc_behavior_mode(npc_system, npc_id)
+	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
+		return {
+			"eligible": false,
+			"reason": "not_rally_or_combat",
+			"message": "只有集结或战斗中的 NPC 可以被鼓舞。",
+			"behavior_mode": mode
+		}
+	if not bool(npc.get("recruited", false)):
+		return {
+			"eligible": false,
+			"reason": "not_recruited",
+			"message": "只有已入伍的 NPC 可以被鼓舞。",
+			"behavior_mode": mode
+		}
+	var npc_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
+	var morale_state: Dictionary = npc_state.get("morale_boost", {}) if npc_state.get("morale_boost", {}) is Dictionary else {}
+	if bool(morale_state.get("active", false)):
+		return {
+			"eligible": false,
+			"reason": "morale_boost_active",
+			"message": "该 NPC 的鼓舞士气增益正在生效，跨天后才能再次鼓舞。",
+			"behavior_mode": mode
+		}
+	if not _is_npc_combat_eligible(npc_id, npc_system):
+		return {
+			"eligible": false,
+			"reason": "no_main_weapon",
+			"message": "NPC 没有主武器，不能进行战时鼓舞。",
+			"behavior_mode": mode
+		}
+	return {
+		"eligible": true,
+		"reason": "eligible",
+		"message": "可对该 NPC 发起一次鼓舞士气判定。",
+		"behavior_mode": mode
+	}
+
+
+func get_combat_strategy_dialogue_eligibility(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc"):
+		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用。"}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	if npc.is_empty():
+		return {"eligible": false, "reason": "unknown_npc", "message": "NPC 不存在。"}
+	var mode := _get_npc_behavior_mode(npc_system, npc_id)
+	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
+		return {
+			"eligible": false,
+			"reason": "not_rally_or_combat",
+			"message": "只有集结或战斗中的 NPC 可以调整战斗策略。",
+			"behavior_mode": mode
+		}
+	if not bool(npc.get("recruited", false)):
+		return {
+			"eligible": false,
+			"reason": "not_recruited",
+			"message": "只有已入伍的 NPC 可以调整战斗策略。",
+			"behavior_mode": mode
+		}
+	if not _is_npc_combat_eligible(npc_id, npc_system):
+		return {
+			"eligible": false,
+			"reason": "no_main_weapon",
+			"message": "NPC 没有主武器，不能调整战斗策略。",
+			"behavior_mode": mode
+		}
+	var options := get_npc_combat_strategy_options(npc_id)
+	if options.size() < 2:
+		return {
+			"eligible": false,
+			"reason": "no_alternative_strategy",
+			"message": "当前兵种没有可切换的其他战斗策略。",
+			"behavior_mode": mode
+		}
+	return {
+		"eligible": true,
+		"reason": "eligible",
+		"message": "可通过对话请求该 NPC 调整战斗策略。",
+		"behavior_mode": mode
+	}
+
+
+func get_npc_combat_strategy_dialogue_context(npc_id: String) -> Dictionary:
+	var eligibility := get_combat_strategy_dialogue_eligibility(npc_id)
+	if not bool(eligibility.get("eligible", false)):
+		return {}
+	var current := get_npc_combat_strategy(npc_id)
+	var options := get_npc_combat_strategy_options(npc_id)
+	return {
+		"current_strategy": {
+			"id": str(current.get("id", "attack")),
+			"label": str(current.get("label", "主动进攻"))
+		},
+		"available_strategies": options.duplicate(true)
+	}
+
+
 func apply_wartime_dialogue_reaction(npc_id: String, reaction: String, context: Dictionary = {}) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("update_npc_state"):
@@ -2385,6 +2515,41 @@ func apply_wartime_dialogue_reaction(npc_id: String, reaction: String, context: 
 		"state_result": state_result
 	}
 	return _last_wartime_dialogue_result.duplicate(true)
+
+
+func debug_start_morale_boost(npc_id: String, source_event_id: String = "gm_special_result_preview") -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
+		return {"ok": false, "applied": false, "error": "npc_system_missing", "npc_id": npc_id}
+	if (npc_system.get_npc(npc_id) as Dictionary).is_empty():
+		return {"ok": false, "applied": false, "error": "unknown_npc", "npc_id": npc_id}
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var morale: Dictionary = state.get("morale_boost", {}) if state.get("morale_boost", {}) is Dictionary else {}
+	if bool(morale.get("active", false)):
+		return {
+			"ok": false,
+			"applied": false,
+			"error": "morale_boost_active",
+			"message": "该 NPC 的鼓舞士气增益正在生效。",
+			"npc_id": npc_id
+		}
+	return _start_morale_boost(npc_id, source_event_id, "gm_special_result_preview")
+
+
+func debug_clear_morale_boost(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_state") or not npc_system.has_method("update_npc_state"):
+		return {"ok": false, "applied": false, "error": "npc_system_missing", "npc_id": npc_id}
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var morale: Dictionary = state.get("morale_boost", {}) if state.get("morale_boost", {}) is Dictionary else {}
+	if not bool(morale.get("active", false)):
+		return {"ok": true, "applied": false, "reason": "no_active_morale_boost", "npc_id": npc_id}
+	_log_morale_boost_ended(npc_id, morale)
+	npc_system.update_npc_state(npc_id, {
+		"morale_boost": {},
+		"last_action_result": "morale_boost_cleared_by_gm"
+	})
+	return {"ok": true, "applied": true, "npc_id": npc_id}
 
 
 func start_npc_escape(
@@ -2452,7 +2617,6 @@ func start_npc_escape(
 		{
 			"interrupt": true,
 			"stop_movement": true,
-			"suppress_mode_event": true,
 			"request_plan_reevaluation": false,
 			"state_changes": {
 				"escaped": false,
@@ -2516,6 +2680,9 @@ func start_npc_escape(
 	}
 	_active_escapes[npc_id] = result.duplicate(true)
 	_last_escape_result = result.duplicate(true)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_escape_started"):
+		event_bus.npc_escape_started.emit(npc_id, result.duplicate(true))
 	return result
 
 
@@ -9835,7 +10002,7 @@ func _get_avoidance_safe_distance() -> float:
 func _is_proactive_combat_strategy(strategy_id: String) -> bool:
 	var configured: Variant = _get_friendly_station_response_config().get(
 		"proactive_strategy_ids",
-		[STRATEGY_ATTACK, STRATEGY_CHARGE_CYCLE]
+		[STRATEGY_ATTACK]
 	)
 	if not configured is Array:
 		return false
@@ -9935,7 +10102,7 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 		"keep_distance_retreats": keep_distance_retreats,
 		"proactive_strategy_ids": _get_friendly_station_response_config().get(
 			"proactive_strategy_ids",
-			[STRATEGY_ATTACK, STRATEGY_CHARGE_CYCLE]
+			[STRATEGY_ATTACK]
 		),
 		"locks": locks,
 		"different_attacker_damage_reacquire_requests": reacquire_requests,
@@ -13827,8 +13994,9 @@ func _create_formal_enemy_actor(
 	var label := actor.get_node_or_null("DebugLabel") as Label3D
 	if label != null:
 		label.name = "EnemyLabel"
-		label.text = "%s\n正式进军试点" % str(enemy.get("name", "敌军步兵"))
-		label.position = Vector3(0.0, 2.05, 0.0)
+		label.text = str(enemy.get("name", "敌军步兵"))
+		label.position = Vector3(0.0, ENEMY_NAME_LABEL_HEIGHT, 0.0)
+	_ensure_enemy_world_health_bar(actor, enemy, label)
 	var formal_art_attached := _attach_formal_enemy_art(actor, enemy)
 	if mesh != null:
 		mesh.visible = not formal_art_attached
@@ -14607,11 +14775,10 @@ func _sync_formal_enemy_navigation_pilot_presentation(delta: float) -> void:
 	)
 	var label := actor.get_node_or_null("EnemyLabel") as Label3D
 	if label != null:
-		label.text = "%s\n%s -> %s" % [
-			str(enemy.get("name", "敌军步兵")),
-			str(pilot.get("current_stage_id", "spawn")),
-			str(pilot.get("target_stage_id", "front_gate"))
-		]
+		label.text = str(enemy.get("name", "敌军步兵"))
+	var bar := actor.get_node_or_null("WorldHealthBar") as WorldHealthBar3D
+	if bar != null:
+		bar.set_health(int(enemy.get("hp", 0)), int(enemy.get("max_hp", 1)), true)
 
 
 func _clear_formal_enemy_navigation_pilot(reason: String) -> void:
@@ -14658,14 +14825,10 @@ func _create_enemy_node(enemy: Dictionary) -> Area3D:
 	label.pixel_size = 0.014
 	label.outline_size = 6
 	label.outline_modulate = Color(0.04, 0.02, 0.02, 1.0)
-	label.position = Vector3(0.0, 1.75, 0.0)
-	label.text = "%s\nHP %d/%d · %s" % [
-		str(enemy.get("name", "敌人")),
-		int(enemy.get("hp", 0)),
-		int(enemy.get("max_hp", 0)),
-		_get_unit_type_label(str(enemy.get("unit_type", "")))
-	]
+	label.position = Vector3(0.0, ENEMY_NAME_LABEL_HEIGHT, 0.0)
+	label.text = str(enemy.get("name", "敌人"))
 	enemy_node.add_child(label)
+	_ensure_enemy_world_health_bar(enemy_node, enemy, label)
 	var formal_art_attached := false
 	if _can_attach_formal_enemy_art_sample():
 		formal_art_attached = _attach_formal_enemy_art(enemy_node, enemy)
@@ -15492,16 +15655,19 @@ func _start_morale_boost(npc_id: String, source_event_id: String, trigger: Strin
 	if npc_system == null or not npc_system.has_method("update_npc_state"):
 		return {"ok": false, "error": "npc_system_missing", "npc_id": npc_id}
 	var time_snapshot := _get_game_time_snapshot()
+	var remaining_until_midnight := _get_game_seconds_until_midnight()
 	var morale_state := {
 		"active": true,
 		"source_event_id": source_event_id,
-		"duration_seconds": MORALE_BOOST_DURATION_SECONDS,
-		"remaining_game_seconds": MORALE_BOOST_DURATION_SECONDS,
+		"duration_seconds": remaining_until_midnight,
+		"remaining_game_seconds": remaining_until_midnight,
 		"attack_bonus": MORALE_BOOST_ATTACK_BONUS,
 		"move_speed_bonus": MORALE_BOOST_MOVE_SPEED_BONUS,
 		"trigger": trigger,
 		"started_day": int(time_snapshot.get("day", 1)),
-		"started_time": str(time_snapshot.get("time", "00:00:00"))
+		"started_time": str(time_snapshot.get("time", "00:00:00")),
+		"expires_day": int(time_snapshot.get("day", 1)) + 1,
+		"expires_time": "00:00:00"
 	}
 	npc_system.update_npc_state(npc_id, {
 		"morale_boost": morale_state,
@@ -15606,7 +15772,6 @@ func _resume_escape_after_revive(npc_id: String, npc_system: Node) -> Dictionary
 		{
 			"interrupt": true,
 			"stop_movement": true,
-			"suppress_mode_event": true,
 			"request_plan_reevaluation": false,
 			"state_changes": {
 				"escaped": false,
@@ -16194,17 +16359,25 @@ func _refresh_enemy_node(enemy_id: String) -> void:
 		is_formal_physical_actor
 	)
 	var label := enemy_node.get_node_or_null("EnemyLabel") as Label3D
-	if label == null:
+	if label != null:
+		label.text = str(enemy.get("name", "敌人"))
+	var bar := enemy_node.get_node_or_null("WorldHealthBar") as WorldHealthBar3D
+	if bar != null:
+		bar.set_health(int(enemy.get("hp", 0)), int(enemy.get("max_hp", 1)), true)
+
+
+func _ensure_enemy_world_health_bar(enemy_node: Node3D, enemy: Dictionary, label: Label3D) -> void:
+	if enemy_node == null:
 		return
-	var target_name := str(target.get("name", "无目标"))
-	label.text = "%s\nHP %d/%d · %s\n%s -> %s" % [
-		str(enemy.get("name", "敌人")),
-		int(enemy.get("hp", 0)),
-		int(enemy.get("max_hp", 0)),
-		_get_unit_type_label(str(enemy.get("unit_type", ""))),
-		_format_enemy_action(str(enemy.get("current_action", ""))),
-		target_name
-	]
+	var bar := enemy_node.get_node_or_null("WorldHealthBar") as WorldHealthBar3D
+	if bar == null:
+		bar = WORLD_HEALTH_BAR.new() as WorldHealthBar3D
+		bar.name = "WorldHealthBar"
+		enemy_node.add_child(bar)
+		bar.configure_size(1.35, 0.12)
+		bar.configure_fill_colors(ENEMY_WORLD_HEALTH_COLOR, ENEMY_WORLD_HEALTH_COLOR)
+	bar.position = (label.position if label != null else Vector3(0.0, ENEMY_NAME_LABEL_HEIGHT, 0.0)) + Vector3(0.0, ENEMY_HEALTH_BAR_OFFSET, 0.0)
+	bar.set_health(int(enemy.get("hp", 0)), int(enemy.get("max_hp", 1)), true)
 
 
 func _format_enemy_action(action: String) -> String:
@@ -16369,6 +16542,18 @@ func _get_game_time_snapshot() -> Dictionary:
 			int(game_state.current_second)
 		]
 	}
+
+
+func _get_game_seconds_until_midnight() -> float:
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state == null:
+		return MORALE_BOOST_DURATION_SECONDS
+	var elapsed_today := (
+		clampi(int(game_state.current_hour), 0, 23) * 3600
+		+ clampi(int(game_state.current_minute), 0, 59) * 60
+		+ clampi(int(game_state.current_second), 0, 59)
+	)
+	return maxf(1.0, MORALE_BOOST_DURATION_SECONDS - float(elapsed_today))
 
 
 func _extract_enemy_ids(enemies: Array[Dictionary]) -> Array[String]:

@@ -8,12 +8,16 @@ const STATUS_LABEL_NODE_PATH := "StatusLabel"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
+const DialogueEmotionCatalog = preload("res://scripts/core/DialogueEmotionCatalog.gd")
 const CHARACTER_APPEARANCE_CONFIG_PATH := "res://data/presentation/character_appearances.json"
 const MOUNTED_PRESENTATION_REFERENCE := preload("res://scripts/presentation/characters/MountedPresentationReference.gd")
 const HORSE_APPEARANCE := preload("res://scripts/presentation/characters/HorseAppearance.gd")
 const COMBAT_HORSE_SCENE_PATH := "res://assets/3d/quaternius/animals/merchant_horse.glb"
 const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
 const DEFAULT_NAME_COLOR := Color.WHITE
+const ACTION_STATUS_COLOR := Color(0.62, 0.64, 0.66, 1.0)
 const PORTRAIT_OVERLAY_VISUAL_LAYER := 20
 const PORTRAIT_STANDING_FOCUS_HEIGHT := 0.92
 const PORTRAIT_STANDING_CAMERA_HEIGHT := 1.15
@@ -25,6 +29,11 @@ const MOVEMENT_SLOWDOWN_REQUEST_PREFIX := "npc_movement:"
 const DEFAULT_WALK_SPEED := 3.2
 const DEFAULT_RUN_SPEED := 5.0
 const DEFAULT_EMERGENCY_BEHAVIOR_MODES := ["rally", "combat", "avoid_combat", "escaped"]
+const FRIENDLY_HEALTH_BAR_HEIGHT := 2.62
+const FRIENDLY_ACTIVITY_MARKER_HEIGHT := 2.95
+const FRIENDLY_DIALOGUE_BUBBLE_HEIGHT := 3.12
+const FRIENDLY_ESCAPE_MARKER_HEIGHT := 3.12
+const FRIENDLY_EMOTION_BUBBLE_HEIGHT := 3.72
 
 @export var move_speed := 5.0
 
@@ -55,6 +64,16 @@ var _dialogue_bubble_area: Area3D
 var _dialogue_bubble_collision: CollisionShape3D
 var _dialogue_bubble_label: Label3D
 var _dialogue_bubble_material: StandardMaterial3D
+var _emotion_bubble: Node3D
+var _emotion_bubble_viewport: SubViewport
+var _emotion_bubble_sprite: Sprite3D
+var _emotion_bubble_label: Label
+var _emotion_bubble_elapsed := 0.0
+var _emotion_bubble_hold_seconds := DialogueEmotionCatalog.HOLD_SECONDS
+var _emotion_bubble_fade_seconds := DialogueEmotionCatalog.FADE_SECONDS
+var _emotion_bubble_presentation: Dictionary = {}
+var _emotion_action_sequence := 0
+var _emotion_action_result: Dictionary = {}
 var _llm_activity_marker: Label3D
 var _escape_warning_marker: Label3D
 var _mount_visual: Node3D
@@ -68,6 +87,8 @@ var _facing_marker: Label3D
 var _character_art_view: Node3D
 var _character_appearance_id := "legacy_placeholder"
 var _interaction_pose := "standing"
+var _world_health_bar: WorldHealthBar3D
+var _last_world_health_wartime := false
 
 
 func setup(npc_profile: Dictionary) -> void:
@@ -183,6 +204,11 @@ func play_temporary_presentation_action(action_id: String, event_id: String) -> 
 func _process(_delta: float) -> void:
 	_sync_combat_mount_facing()
 	_refresh_combat_mount_animation()
+	_advance_dialogue_emotion_bubble(_delta)
+	var wartime := _is_world_health_wartime()
+	if wartime != _last_world_health_wartime:
+		_last_world_health_wartime = wartime
+		_refresh_world_health_bar()
 
 
 func _sync_combat_mount_facing() -> void:
@@ -354,10 +380,18 @@ func _ready() -> void:
 		motion_cancelled.connect(_on_navigation_motion_cancelled)
 	_ensure_proactive_bubble()
 	_ensure_dialogue_bubble()
+	_ensure_dialogue_emotion_bubble()
 	_ensure_llm_activity_marker()
 	_ensure_escape_warning_marker()
 	_ensure_combat_visuals()
 	_configure_portrait_overlay_layers()
+	var event_bus := get_node_or_null("/root/EventBus")
+	if (
+		event_bus != null
+		and event_bus.has_signal("npc_dialogue_emotion_presented")
+		and not event_bus.npc_dialogue_emotion_presented.is_connected(_on_dialogue_emotion_presented)
+	):
+		event_bus.npc_dialogue_emotion_presented.connect(_on_dialogue_emotion_presented)
 	_configure_character_art_view()
 	_refresh_label()
 
@@ -706,8 +740,6 @@ func _refresh_label() -> void:
 
 	var display_name := str(profile.get("name", npc_id))
 	var states: Dictionary = profile.get("states", {})
-	var hp := int(states.get("hp", 0))
-	var max_hp := int(states.get("max_hp", 0))
 	var action_text := str(states.get("current_action", "idle"))
 	if bool(states.get("unconscious", false)):
 		action_text = "昏迷"
@@ -735,12 +767,16 @@ func _refresh_label() -> void:
 		action_text = "避战"
 	_name_label.text = display_name
 	_name_label.modulate = RECRUITED_NAME_COLOR if bool(profile.get("recruited", false)) else DEFAULT_NAME_COLOR
+	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_name_label.position = Vector3(-0.05, 2.08, 0.0)
 	if _status_label != null:
-		_status_label.text = "HP %d/%d · %s" % [
-		hp,
-		max_hp,
-		action_text
-	]
+		_status_label.text = action_text
+		_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_status_label.position = Vector3(0.08, 2.08, 0.0)
+		_status_label.pixel_size = 0.010
+		_status_label.modulate = ACTION_STATUS_COLOR
+		_status_label.outline_modulate = Color(0.04, 0.04, 0.04, 0.80)
+	_refresh_world_health_bar()
 	_ensure_proactive_bubble()
 	_ensure_dialogue_bubble()
 	_ensure_llm_activity_marker()
@@ -754,6 +790,51 @@ func _refresh_label() -> void:
 	_refresh_combat_visuals(states)
 
 
+func debug_get_overhead_ui_snapshot() -> Dictionary:
+	return {
+		"name_text": _name_label.text if _name_label != null else "",
+		"name_position": _name_label.position if _name_label != null else Vector3.ZERO,
+		"name_pixel_size": _name_label.pixel_size if _name_label != null else 0.0,
+		"action_text": _status_label.text if _status_label != null else "",
+		"action_position": _status_label.position if _status_label != null else Vector3.ZERO,
+		"action_pixel_size": _status_label.pixel_size if _status_label != null else 0.0,
+		"action_color": _status_label.modulate if _status_label != null else Color.TRANSPARENT,
+		"health_bar": _world_health_bar.get_debug_snapshot() if _world_health_bar != null else {},
+		"proactive_marker_position": _proactive_bubble.position if _proactive_bubble != null else Vector3.ZERO,
+		"dialogue_bubble_position": _dialogue_bubble_area.position if _dialogue_bubble_area != null else Vector3.ZERO,
+		"llm_activity_marker_position": _llm_activity_marker.position if _llm_activity_marker != null else Vector3.ZERO,
+		"escape_marker_position": _escape_warning_marker.position if _escape_warning_marker != null else Vector3.ZERO,
+		"emotion_bubble_position": _emotion_bubble.position if _emotion_bubble != null else Vector3(0.0, FRIENDLY_EMOTION_BUBBLE_HEIGHT, 0.0),
+	}
+
+
+func _refresh_world_health_bar() -> void:
+	_ensure_world_health_bar()
+	if _world_health_bar == null:
+		return
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	_world_health_bar.set_health(
+		int(states.get("hp", 0)),
+		int(states.get("max_hp", 1)),
+		_is_world_health_wartime()
+	)
+
+
+func _ensure_world_health_bar() -> void:
+	if _world_health_bar != null:
+		return
+	_world_health_bar = WORLD_HEALTH_BAR.new() as WorldHealthBar3D
+	_world_health_bar.name = "WorldHealthBar"
+	_world_health_bar.position = Vector3(0.0, FRIENDLY_HEALTH_BAR_HEIGHT, 0.0)
+	add_child(_world_health_bar)
+	_world_health_bar.configure_size(1.25, 0.11)
+
+
+func _is_world_health_wartime() -> bool:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	return combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.get_active_enemy_count()) > 0
+
+
 func _ensure_proactive_bubble() -> void:
 	if _proactive_bubble != null:
 		return
@@ -765,7 +846,7 @@ func _ensure_proactive_bubble() -> void:
 	_proactive_bubble.modulate = Color(1.0, 0.92, 0.24, 1.0)
 	_proactive_bubble.outline_size = 8
 	_proactive_bubble.outline_modulate = Color(0.08, 0.07, 0.02, 1.0)
-	_proactive_bubble.position = Vector3(0.0, 2.45, 0.0)
+	_proactive_bubble.position = Vector3(0.0, FRIENDLY_ACTIVITY_MARKER_HEIGHT, 0.0)
 	_proactive_bubble.visible = false
 	add_child(_proactive_bubble)
 
@@ -776,7 +857,7 @@ func _ensure_dialogue_bubble() -> void:
 	_dialogue_bubble_area = Area3D.new()
 	_dialogue_bubble_area.name = "AutonomousDialogueBubble"
 	_dialogue_bubble_area.set_meta("interaction_kind", "autonomous_dialogue_bubble")
-	_dialogue_bubble_area.position = Vector3(0.0, 2.62, 0.0)
+	_dialogue_bubble_area.position = Vector3(0.0, FRIENDLY_DIALOGUE_BUBBLE_HEIGHT, 0.0)
 	_dialogue_bubble_area.input_ray_pickable = true
 	_dialogue_bubble_area.collision_layer = interaction_area.collision_layer if interaction_area != null else 4
 	_dialogue_bubble_area.collision_mask = 0
@@ -817,6 +898,130 @@ func _ensure_dialogue_bubble() -> void:
 	_dialogue_bubble_label.outline_size = 3
 	_dialogue_bubble_label.outline_modulate = Color(0.96, 0.93, 0.78, 1.0)
 	_dialogue_bubble_area.add_child(_dialogue_bubble_label)
+
+
+func _ensure_dialogue_emotion_bubble() -> void:
+	if _emotion_bubble != null:
+		return
+	_emotion_bubble = Node3D.new()
+	_emotion_bubble.name = "DialogueEmotionBubble"
+	_emotion_bubble.position = Vector3(0.0, FRIENDLY_EMOTION_BUBBLE_HEIGHT, 0.0)
+	_emotion_bubble.visible = false
+	add_child(_emotion_bubble)
+
+	_emotion_bubble_viewport = SubViewport.new()
+	_emotion_bubble_viewport.name = "EmojiViewport"
+	_emotion_bubble_viewport.size = Vector2i(128, 96)
+	_emotion_bubble_viewport.transparent_bg = true
+	_emotion_bubble_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(_emotion_bubble_viewport)
+
+	_emotion_bubble_label = Label.new()
+	_emotion_bubble_label.name = "Emoji"
+	_emotion_bubble_label.text = "…"
+	_emotion_bubble_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_emotion_bubble_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_emotion_bubble_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_emotion_bubble_label.add_theme_font_size_override("font_size", 52)
+	# Keep colored emoji glyphs untinted. A dark font/modulate multiplies their
+	# embedded colors and turns the whole face into the black disk reported in Main.
+	_emotion_bubble_label.add_theme_color_override("font_color", Color.WHITE)
+	_emotion_bubble_label.add_theme_color_override("font_outline_color", Color(0.10, 0.09, 0.07, 0.92))
+	_emotion_bubble_label.add_theme_constant_override("outline_size", 2)
+	_emotion_bubble_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_emotion_bubble_viewport.add_child(_emotion_bubble_label)
+
+	_emotion_bubble_sprite = Sprite3D.new()
+	_emotion_bubble_sprite.name = "EmojiSprite"
+	_emotion_bubble_sprite.texture = _emotion_bubble_viewport.get_texture()
+	_emotion_bubble_sprite.pixel_size = 0.007
+	_emotion_bubble_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_emotion_bubble_sprite.no_depth_test = true
+	_emotion_bubble_sprite.layers = 1 << (PORTRAIT_OVERLAY_VISUAL_LAYER - 1)
+	_emotion_bubble.add_child(_emotion_bubble_sprite)
+
+
+func _on_dialogue_emotion_presented(target_npc_id: String, presentation: Dictionary) -> void:
+	if target_npc_id != npc_id:
+		return
+	_ensure_dialogue_emotion_bubble()
+	_emotion_bubble_presentation = presentation.duplicate(true)
+	_emotion_bubble_hold_seconds = maxf(0.0, float(presentation.get("hold_seconds", DialogueEmotionCatalog.HOLD_SECONDS)))
+	_emotion_bubble_fade_seconds = maxf(0.01, float(presentation.get("fade_seconds", DialogueEmotionCatalog.FADE_SECONDS)))
+	_emotion_bubble_elapsed = 0.0
+	var emotion_id := str(presentation.get("emotion_id", "none"))
+	_emotion_bubble_label.text = str(presentation.get("emoji", "…"))
+	_emotion_bubble_label.add_theme_color_override(
+		"font_color",
+		Color(0.10, 0.09, 0.07, 1.0) if emotion_id == "none" else Color.WHITE
+	)
+	_emotion_bubble_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_set_dialogue_emotion_bubble_alpha(1.0)
+	_emotion_bubble.visible = true
+	var action_id := str({
+		"happy": "emotion_happy",
+		"angry": "emotion_angry",
+	}.get(emotion_id, ""))
+	if action_id.is_empty():
+		_emotion_action_result = {
+			"ok": true,
+			"active": false,
+			"emotion_id": emotion_id,
+			"reason": "emotion_has_no_presentation_action",
+		}
+		return
+	_emotion_action_sequence += 1
+	var event_id := "dialogue_emotion:%s:%06d:%s" % [npc_id, _emotion_action_sequence, emotion_id]
+	_emotion_action_result = play_temporary_presentation_action(action_id, event_id)
+	_emotion_action_result["active"] = bool(_emotion_action_result.get("ok", false))
+	_emotion_action_result["emotion_id"] = emotion_id
+	_emotion_action_result["sequence"] = _emotion_action_sequence
+
+
+func _advance_dialogue_emotion_bubble(delta: float) -> void:
+	if _emotion_bubble == null or not _emotion_bubble.visible:
+		return
+	_emotion_bubble_elapsed += maxf(0.0, delta)
+	if _emotion_bubble_elapsed <= _emotion_bubble_hold_seconds:
+		return
+	var fade_progress := (_emotion_bubble_elapsed - _emotion_bubble_hold_seconds) / _emotion_bubble_fade_seconds
+	if fade_progress >= 1.0:
+		_emotion_bubble.visible = false
+		_set_dialogue_emotion_bubble_alpha(0.0)
+		return
+	_set_dialogue_emotion_bubble_alpha(1.0 - fade_progress)
+
+
+func _set_dialogue_emotion_bubble_alpha(alpha: float) -> void:
+	var clean_alpha := clampf(alpha, 0.0, 1.0)
+	if _emotion_bubble_sprite != null:
+		var sprite_color := _emotion_bubble_sprite.modulate
+		sprite_color.a = clean_alpha
+		_emotion_bubble_sprite.modulate = sprite_color
+
+
+func debug_get_dialogue_emotion_bubble_snapshot() -> Dictionary:
+	return {
+		"visible": _emotion_bubble != null and _emotion_bubble.visible,
+		"emoji": _emotion_bubble_label.text if _emotion_bubble_label != null else "",
+		"elapsed_seconds": _emotion_bubble_elapsed,
+		"hold_seconds": _emotion_bubble_hold_seconds,
+		"fade_seconds": _emotion_bubble_fade_seconds,
+		"visual_layer": PORTRAIT_OVERLAY_VISUAL_LAYER,
+		"emoji_renderer": "subviewport_color_sprite",
+		"direct_emoji_only": true,
+		"background_mesh_present": _emotion_bubble != null and _emotion_bubble.find_child("BubbleBody", true, false) != null,
+		"emoji_viewport_size": _emotion_bubble_viewport.size if _emotion_bubble_viewport != null else Vector2i.ZERO,
+		"emoji_sprite_visible": _emotion_bubble_sprite != null and _emotion_bubble_sprite.visible,
+		"presentation": _emotion_bubble_presentation.duplicate(true),
+		"emotion_action_sequence": _emotion_action_sequence,
+		"emotion_action_result": _emotion_action_result.duplicate(true),
+		"character": (
+			_character_art_view.debug_get_snapshot()
+			if _character_art_view != null and _character_art_view.has_method("debug_get_snapshot")
+			else {}
+		),
+	}
 
 
 func _refresh_dialogue_bubble(states: Dictionary) -> void:
@@ -895,7 +1100,7 @@ func _ensure_llm_activity_marker() -> void:
 	_llm_activity_marker.pixel_size = 0.032
 	_llm_activity_marker.outline_size = 8
 	_llm_activity_marker.outline_modulate = Color(0.04, 0.04, 0.04, 1.0)
-	_llm_activity_marker.position = Vector3(0.0, 2.45, 0.0)
+	_llm_activity_marker.position = Vector3(0.0, FRIENDLY_ACTIVITY_MARKER_HEIGHT, 0.0)
 	_llm_activity_marker.visible = false
 	add_child(_llm_activity_marker)
 
@@ -911,7 +1116,7 @@ func _ensure_escape_warning_marker() -> void:
 	_escape_warning_marker.modulate = Color(1.0, 0.22, 0.12, 1.0)
 	_escape_warning_marker.outline_size = 9
 	_escape_warning_marker.outline_modulate = Color(0.08, 0.02, 0.0, 1.0)
-	_escape_warning_marker.position = Vector3(0.0, 2.75, 0.0)
+	_escape_warning_marker.position = Vector3(0.0, FRIENDLY_ESCAPE_MARKER_HEIGHT, 0.0)
 	_escape_warning_marker.visible = false
 	add_child(_escape_warning_marker)
 

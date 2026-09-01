@@ -12,12 +12,15 @@ const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd"
 @onready var pause_button: Button = $PauseButton
 @onready var wave_countdown_label: Label = get_node_or_null("WaveCountdownLabel") as Label
 @onready var hud_frame: Panel = $HUDFrame
+@onready var escape_started_alert_dialog: AcceptDialog = %EscapeStartedAlertDialog
 
 const DETAIL_PANEL_OFFSET := Vector2(0.0, 6.0)
 const DETAIL_PANEL_MINIMUM_SIZE := Vector2(500.0, 430.0)
 const DETAIL_SCROLL_MINIMUM_SIZE := Vector2(470.0, 360.0)
 const DETAIL_ITEM_BUTTON_SIZE := Vector2(68.0, 68.0)
-const DETAIL_ITEM_ICON_MAX_WIDTH := 60
+const DETAIL_ITEM_ICON_MAX_WIDTH := 66
+const DETAIL_ITEM_CONTENT_MARGIN := 1.0
+const DETAIL_ITEM_BORDER_WIDTH := 1
 const DETAIL_GRID_COLUMNS := 6
 const ASSIGNED_ITEM_MODULATE := Color(0.44, 0.44, 0.44, 0.78)
 const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
@@ -49,6 +52,7 @@ var _meteor_target_invalid_message := ""
 var _meteor_target_feedback_until_msec := 0
 var _last_clock_refresh_key := ""
 var _hud_frame_fit_pending := false
+var _escape_alert_queue: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -66,6 +70,9 @@ func _ready() -> void:
 	if pause_button != null:
 		pause_button.focus_mode = Control.FOCUS_NONE
 		pause_button.pressed.connect(_on_pause_button_pressed)
+	if escape_started_alert_dialog != null:
+		escape_started_alert_dialog.confirmed.connect(_on_escape_alert_closed)
+		escape_started_alert_dialog.close_requested.connect(_on_escape_alert_closed)
 	var alarm_button := get_node_or_null("AlarmButton") as Button
 	if alarm_button != null:
 		alarm_button.focus_mode = Control.FOCUS_NONE
@@ -96,6 +103,8 @@ func _ready() -> void:
 			event_bus.game_over_changed.connect(_on_game_over_changed)
 		if event_bus.has_signal("npc_state_changed"):
 			event_bus.npc_state_changed.connect(_on_npc_state_changed)
+		if event_bus.has_signal("npc_escape_started"):
+			event_bus.npc_escape_started.connect(_on_npc_escape_started)
 		if event_bus.has_signal("horse_state_changed"):
 			event_bus.horse_state_changed.connect(_on_horse_state_changed)
 		if event_bus.has_signal("horse_assignment_changed"):
@@ -178,6 +187,26 @@ func _on_building_state_changed(building_id: String) -> void:
 func _on_npc_state_changed(_npc_id: String) -> void:
 	_refresh_escape_warning()
 	_refresh_open_inventory_detail("equipment")
+
+
+func _on_npc_escape_started(_npc_id: String, escape_result: Dictionary) -> void:
+	if not bool(escape_result.get("ok", false)) or not bool(escape_result.get("applied", false)):
+		return
+	_escape_alert_queue.append(escape_result.duplicate(true))
+	_show_next_escape_alert()
+
+
+func _show_next_escape_alert() -> void:
+	if escape_started_alert_dialog == null or escape_started_alert_dialog.visible or _escape_alert_queue.is_empty():
+		return
+	var escape_result: Dictionary = _escape_alert_queue.pop_front()
+	var npc_name := str(escape_result.get("npc_name", "该NPC"))
+	escape_started_alert_dialog.dialog_text = "%s正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！" % npc_name
+	escape_started_alert_dialog.popup_centered()
+
+
+func _on_escape_alert_closed() -> void:
+	call_deferred("_show_next_escape_alert")
 
 
 func _on_horse_state_changed(_horse_id: String) -> void:
@@ -1326,7 +1355,9 @@ func _rebuild_detail_grid(items: Array[Dictionary]) -> void:
 		child.free()
 	_detail_item_snapshots = items.duplicate(true)
 	for index in range(items.size()):
-		_detail_grid.add_child(_make_detail_item_button(items[index], index))
+		var button := _make_detail_item_button(items[index], index)
+		_detail_grid.add_child(button)
+		_apply_detail_item_button_style(button)
 	if _detail_scroll != null:
 		_detail_scroll.set_deferred("scroll_vertical", previous_scroll)
 
@@ -1348,6 +1379,23 @@ func _make_detail_item_button(item: Dictionary, index: int) -> Button:
 		button.self_modulate = ASSIGNED_ITEM_MODULATE
 	button.set_meta("inventory_item", item.duplicate(true))
 	return button
+
+
+func _apply_detail_item_button_style(button: Button) -> void:
+	# The shared button theme is text-oriented; its 11 px horizontal padding made
+	# the square inventory art much smaller than the existing 68 px slot.
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var source_style := button.get_theme_stylebox(state)
+		if source_style == null:
+			continue
+		var compact_style := source_style.duplicate() as StyleBox
+		compact_style.content_margin_left = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_top = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_right = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_bottom = DETAIL_ITEM_CONTENT_MARGIN
+		if compact_style is StyleBoxFlat:
+			(compact_style as StyleBoxFlat).set_border_width_all(DETAIL_ITEM_BORDER_WIDTH)
+		button.add_theme_stylebox_override(state, compact_style)
 
 
 func _build_equipment_detail_items() -> Array[Dictionary]:
@@ -1373,6 +1421,7 @@ func _build_equipment_detail_items() -> Array[Dictionary]:
 					resource_id,
 					str(item.get("icon", _resolve_equipment_resource_icon(equipment_system, resource_id))),
 					true,
+					str(item.get("name", _resource_display_name_from_system(resource_system, resource_id))),
 					"已分配给%s" % _npc_display_name(npc_system, npc_id),
 					"equipment",
 					npc_id
@@ -1394,7 +1443,8 @@ func _build_equipment_detail_items() -> Array[Dictionary]:
 				resource_id,
 				icon_path,
 				int(resource_system.get_resource(resource_id)),
-				detail_group
+				detail_group,
+				str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id)))
 			)
 			for raw_assigned_item in assigned_by_resource.get(resource_id, []):
 				if raw_assigned_item is Dictionary:
@@ -1419,6 +1469,7 @@ func _build_equipment_detail_items() -> Array[Dictionary]:
 				str(horse.get("horse_id", "")),
 				str(horse.get("icon", "")),
 				assigned,
+				str(horse.get("name", "马匹")),
 				"已分配给%s" % _npc_display_name(npc_system, assigned_npc_id) if assigned else "未分配",
 				"horse",
 				assigned_npc_id
@@ -1445,7 +1496,14 @@ func _build_device_detail_items() -> Array[Dictionary]:
 			if resource_system != null and not resource_id.is_empty() and resource_system.has_method("get_resource")
 			else 0
 		)
-		_append_unassigned_inventory_items(result, resource_id, icon_path, inventory_amount, "defense_device")
+		_append_unassigned_inventory_items(
+			result,
+			resource_id,
+			icon_path,
+			inventory_amount,
+			"defense_device",
+			str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id)))
+		)
 		for raw_deployment in deployments:
 			var deployment: Dictionary = raw_deployment if raw_deployment is Dictionary else {}
 			if str(deployment.get("device_id", "")) != device_id:
@@ -1454,6 +1512,7 @@ func _build_device_detail_items() -> Array[Dictionary]:
 				str(deployment.get("deployment_id", "")),
 				icon_path,
 				true,
+				str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id))),
 				"已部署到%s" % str(deployment.get("slot_name", deployment.get("slot_id", ""))),
 				"defense_device",
 				str(deployment.get("slot_id", ""))
@@ -1466,13 +1525,15 @@ func _append_unassigned_inventory_items(
 	item_id: String,
 	icon_path: String,
 	amount: int,
-	category: String
+	category: String,
+	item_name: String
 ) -> void:
 	for _index in range(maxi(0, amount)):
 		target.append(_make_inventory_item_snapshot(
 			item_id,
 			icon_path,
 			false,
+			item_name,
 			"未分配",
 			category,
 			""
@@ -1483,7 +1544,8 @@ func _make_inventory_item_snapshot(
 	item_id: String,
 	icon_path: String,
 	assigned: bool,
-	tooltip: String,
+	item_name: String,
+	status_text: String,
 	category: String,
 	assignment_target_id: String
 ) -> Dictionary:
@@ -1491,10 +1553,17 @@ func _make_inventory_item_snapshot(
 		"item_id": item_id,
 		"icon_path": icon_path,
 		"assigned": assigned,
-		"tooltip": tooltip,
+		"item_name": item_name,
+		"tooltip": "%s %s" % [item_name, status_text],
 		"category": category,
 		"assignment_target_id": assignment_target_id
 	}
+
+
+func _resource_display_name_from_system(resource_system: Node, resource_id: String) -> String:
+	if resource_system != null and resource_system.has_method("get_resource_name"):
+		return str(resource_system.get_resource_name(resource_id))
+	return resource_id
 
 
 func _resolve_equipment_resource_icon(equipment_system: Node, resource_id: String) -> String:

@@ -659,7 +659,7 @@ func _try_recruit_and_prepare(day: int, hour: int, minute: int) -> void:
 		alarm_days[day] = true
 		for npc_id in RECRUIT_BY_WAVE.get(wave, []):
 			var unit_type := str(systems.equipment.get_npc_unit_type(str(npc_id)))
-			var strategy := "max_output" if ["archer", "crossbowman", "mounted_ranged"].has(unit_type) else "attack"
+			var strategy := "attack"
 			systems.combat.set_npc_combat_strategy(str(npc_id), strategy, "private", "t0122_continuous")
 		var alarm_result: Dictionary = systems.combat.trigger_combat_alarm("t0122_continuous")
 		var expected_count := (RECRUIT_BY_WAVE.get(wave, []) as Array).size()

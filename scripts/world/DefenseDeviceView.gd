@@ -2,6 +2,8 @@ extends Node3D
 
 const ACTIVE_INTERACTION_AND_PROJECTILE_LAYER := 6
 const PROJECTILE_COLLISION_LAYER := 2
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
 
 @onready var model_mount: Node3D = $ModelMount
 @onready var status_label: Label3D = $StatusLabel
@@ -12,11 +14,21 @@ var _device_id := ""
 var _loaded_model_scene := ""
 var _latest_snapshot: Dictionary = {}
 var _is_ruin := false
+var _world_health_bar: WorldHealthBar3D
+var _last_world_health_wartime := false
 
 
 func _ready() -> void:
 	if interaction_area != null and not interaction_area.input_event.is_connected(_on_input_event):
 		interaction_area.input_event.connect(_on_input_event)
+	_ensure_world_health_bar()
+
+
+func _process(_delta: float) -> void:
+	var wartime := _is_world_health_wartime()
+	if wartime != _last_world_health_wartime:
+		_last_world_health_wartime = wartime
+		_refresh_world_health_bar()
 
 
 func configure_device(snapshot: Dictionary) -> void:
@@ -31,19 +43,14 @@ func configure_device(snapshot: Dictionary) -> void:
 	interaction_area.set_meta("device_id", _device_id)
 	position = _dict_to_vector3(snapshot.get("position", {}))
 	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
-	var effect: Dictionary = snapshot.get("effect", {}) if snapshot.get("effect", {}) is Dictionary else {}
-	status_label.text = "%s\nHP %d/%d · 射程 %.1f" % [
-		str(snapshot.get("device_name", "工程器械")),
-		int(snapshot.get("hp", 0)),
-		int(snapshot.get("max_hp", 0)),
-		float(effect.get("range", 0.0))
-	]
+	status_label.text = str(snapshot.get("device_name", "工程器械"))
 	status_label.visible = true
 	interaction_area.collision_layer = ACTIVE_INTERACTION_AND_PROJECTILE_LAYER
 	interaction_area.input_ray_pickable = true
 
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
 	status_label.position.y = float(presentation.get("status_label_height", 1.45))
+	_refresh_world_health_bar()
 	var model_scene_path := str(presentation.get("model_scene", ""))
 	if model_mount.get_child_count() == 0 or model_scene_path != _loaded_model_scene:
 		_rebuild_model(presentation)
@@ -64,6 +71,7 @@ func configure_device_ruin(snapshot: Dictionary) -> void:
 	position = _dict_to_vector3(snapshot.get("position", {}))
 	rotation.y = deg_to_rad(float(snapshot.get("rotation_y_degrees", 0.0)))
 	status_label.visible = false
+	_refresh_world_health_bar()
 	interaction_area.collision_layer = 0
 	interaction_area.input_ray_pickable = false
 	var presentation: Dictionary = snapshot.get("presentation", {}) if snapshot.get("presentation", {}) is Dictionary else {}
@@ -86,19 +94,9 @@ func play_device_action(action_result: Dictionary) -> void:
 
 
 func show_device_action_result(action_result: Dictionary) -> void:
-	var status := str(action_result.get("projectile_status", "hit"))
-	var result_text := "%d 伤害" % int(action_result.get("damage", 0)) if status == "hit" else ("被阻挡" if status == "blocked" else "射空")
-	status_label.text = "%s\n命中 %s · %d 伤害" % [
-		str(action_result.get("device_name", "工程器械")),
-		str(action_result.get("target_enemy_name", "敌人")),
-		int(action_result.get("damage", 0))
-	]
-	if status != "hit":
-		status_label.text = "%s\n%s · %s" % [
-			str(action_result.get("device_name", "工程器械")),
-			str(action_result.get("target_enemy_name", "目标")),
-			result_text
-		]
+	# Combat feedback belongs to projectiles and panels; the world label stays a
+	# stable, low-noise device name.
+	status_label.text = str(action_result.get("device_name", _latest_snapshot.get("device_name", "工程器械")))
 
 
 func sync_device_attack_timeline(phase_snapshot: Dictionary) -> void:
@@ -158,12 +156,42 @@ func get_debug_snapshot() -> Dictionary:
 		"has_formal_model": false,
 		"model": {}
 	}
+	result["overhead_ui"] = {
+		"name_text": status_label.text if status_label != null else "",
+		"health_bar": _world_health_bar.get_debug_snapshot() if _world_health_bar != null else {},
+	}
 	var active_model := _get_active_model()
 	if active_model != null:
 		result["has_formal_model"] = active_model.has_method("get_debug_snapshot")
 		if active_model.has_method("get_debug_snapshot"):
 			result["model"] = active_model.get_debug_snapshot()
 	return result
+
+
+func _refresh_world_health_bar() -> void:
+	_ensure_world_health_bar()
+	if _world_health_bar == null:
+		return
+	_world_health_bar.position.y = status_label.position.y + 0.34 if status_label != null else 1.79
+	_world_health_bar.set_health(
+		int(_latest_snapshot.get("hp", 0)),
+		int(_latest_snapshot.get("max_hp", 1)),
+		not _is_ruin and _is_world_health_wartime()
+	)
+
+
+func _ensure_world_health_bar() -> void:
+	if _world_health_bar != null:
+		return
+	_world_health_bar = WORLD_HEALTH_BAR.new() as WorldHealthBar3D
+	_world_health_bar.name = "WorldHealthBar"
+	add_child(_world_health_bar)
+	_world_health_bar.configure_size(1.35, 0.12)
+
+
+func _is_world_health_wartime() -> bool:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	return combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.get_active_enemy_count()) > 0
 
 
 func debug_emit_clicked() -> bool:

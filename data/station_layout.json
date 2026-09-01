@@ -200,7 +200,7 @@
       },
       "avoidance_min_safe_distance": 8.5,
       "avoidance_ranged_safe_margin": 2.5,
-      "proactive_strategy_ids": ["attack", "charge_cycle"]
+      "proactive_strategy_ids": ["attack"]
     },
     "enemy_route": {
       "spawn_zone_center": [2.0,335.0],

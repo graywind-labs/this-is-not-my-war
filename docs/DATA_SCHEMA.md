@@ -1,5 +1,47 @@
 # DATA_SCHEMA.md
 
+## T0299 行为模式与事件 Schema 边界
+
+`npc_mode_changed` 已退出正式事件类型。行为模式的 previous / current / reason 只属于 NPC 运行态与 GM 诊断快照；事件 Schema 只保留警铃、集结、避战、攻击、伤害、昏迷、复苏和逃离等具体事实。失败 / 计划的 `payload.reason / payload.summary` 与事件摘要若收到内部英文标识，统一写成稳定中文兜底。
+
+## T0289 DialogueEmotion
+
+`PlayerNPCDialogueResponse`、`NPCNPCDialogueResponse` 与 `EscapeInterventionDialogueResponse` 继承的 `DialogueResponseBase.emotion` 现在是必有枚举：
+
+```text
+none | happy | relieved | angry | sad | afraid | surprised | confused | determined
+```
+
+Godot 活动回合为 NPC 回复额外投影 `emotion_id / emotion_label / emotion_emoji`，仅供表现。完成守备官会话的 `dialogue_turn.payload.dialogue_text[]` 仍只保留 `speaker_id / speaker_name / listener_id / listener_name / text`。HTTP 兼容归一化记录使用 `path=emotion`、`source=dialogue_emotion_alias_or_unknown_default`。
+
+## T0288 完成会话与特殊结果事件合同
+
+`dialogue_turn.payload` 的最低必需字段收敛为：`dialogue_id`, `participant_npc_ids`, `dialogue_text`, `speaker_name`, `listener_name`, `visibility`, `current_round`, `max_rounds`。完成守备官会话不再写入四类特殊请求 / 结果字段。
+
+完成会话的 `dialogue_text[]` 只允许保存真实台词字段：`speaker_id`, `speaker_name`, `listener_id`, `listener_name`, `text`。四类结构化结果单独使用 `dialogue_special_interaction_result.payload`，其中保留 `dialogue_id`, `participant_npc_ids`, `special_type`, `outcome`, `success`, `npc_id`, `npc_name`, `visibility`, `current_round` 及适用的策略前后值、玩家原话和 NPC 回复。
+
+## T0286 特殊结果事件载荷
+
+- `dialogue_special_interaction_result` 必含 `dialogue_id / participant_npc_ids / special_type / outcome / success / npc_id / npc_name / visibility / current_round`，并可携带 `location_id / guard_text / npc_reply`。
+- 策略结果额外携带 `previous_strategy_id / previous_strategy_label / strategy_id / strategy_label`。该事件是程序从已验证对话响应派生的记忆载荷，不扩展 HTTP 请求或 LLM 输出 Schema。
+
+## T0285 工作鼓励请求、结果与状态
+
+- `/npc/dialogue` 请求新增可选 `is_work_encouragement_request`，玩家回复仅在开启时包含 `work_encouragement_reaction=none|escape|work_boost`；关闭时 provider 合同与 HTTP 成功响应均剥离该字段。
+- `is_recruitment_request / is_morale_encouragement_request / is_combat_strategy_request / is_work_encouragement_request` 最多一个为 true。应征开启时 `recruitment_result` 允许 `none`，表示本轮原话无关。
+- `states.work_encouragement_boost` 活动时记录 `duration_seconds / remaining_game_seconds`、`output_bonus=0.20 / output_multiplier=1.20`、开始日时与 `expires_day / expires_time=00:00:00`。活动状态不能重复鼓励。
+- 新增记忆事件 `work_encouragement_result`、`work_encouragement_boost_started`、`work_encouragement_boost_ended`；分别记录三值决定、来源 / 对话和持续时间 / 倍率，不让 LLM 写资源或工作结算。
+
+## T0284 对话策略请求与候选
+
+- `/npc/dialogue` 请求新增可选 `is_combat_strategy_request` 与 `combat_strategy_context`。上下文包含 `current_strategy{id,label}` 和至少两个唯一 `available_strategies[]`；当前 id 必须存在于候选中。关闭开关时上下文必须缺席。
+- 玩家回复仅在开关开启时允许 `combat_strategy_decision{decision=keep|change,strategy_id}`。`keep` 必须返回当前 id，`change` 必须返回另一个合法候选；关闭时该字段被剥离且不应用。
+- `states.combat_strategy` 仍是 CombatSystem 权威运行态。所有兵种缺省 id 为 `attack`；合法候选不再包含 `charge_cycle`，弓 / 弩 / 骑射才额外包含 `keep_distance`。
+
+## T0283 鼓舞状态期限
+
+`states.morale_boost` 的 `duration_seconds / remaining_game_seconds` 表示从生效时刻到当天 24:00 的剩余逻辑秒，并记录 `started_day / started_time / expires_day / expires_time=00:00:00`、`attack_bonus=0.15 / move_speed_bonus=0.15`。活动状态不允许重复鼓舞。
+
 ## T0266 资源与配方 Schema 收口
 
 - `resource_defs.json` 的具体库存目录为 10 项：5 类武器、4 类盔甲、1 类第纳尔；装备详情分类仅接受 `weapon|armor`，器械继续由 DefenseDeviceSystem definitions 投影。
@@ -1242,15 +1284,15 @@ T0033 起，马塞尔的 `background_story` 只补充简短的“他擅长酿酒
 ```json
 {
   "id": "keep_distance",
-  "label": "保持距离射击",
+  "label": "拉开距离射击",
   "unit_type": "archer",
   "unit_type_label": "弓箭兵",
-  "selected_by": "player",
-  "selected_reason": "manual"
+  "selected_by": "dialogue",
+  "selected_reason": "guard_dialogue_request"
 }
 ```
 
-可用策略由当前装备 / 兵种决定；当前策略由玩家在 NPC 面板手动选择，默认使用该兵种第一项进攻 / 输出策略。`current_order` 不自动改写该字段。
+可用策略由当前装备 / 兵种决定；当前策略由合法战时对话的结构化结果经 CombatSystem 复验后设置，默认统一使用“主动进攻”。`current_order` 不自动改写该字段。
 
 `states.behavior_mode` 允许值至少为 `work`、`rally`、`combat`、`avoid_combat`、`unconscious`、`escaped`。T1103 现有 `combat_mode` 仍作为兼容字段服务旧集结 / 坐骑视觉；后续应继续以 `behavior_mode` 表达工作 / 集结 / 战斗 / 避战同级关系。战时斗志激昂 buff 可保存为运行时状态，例如：
 
@@ -1897,7 +1939,7 @@ T1002 `plan_revised` 事件 payload：
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`；`order_assigned` 固定为 `private`。正式守备官惩戒攻击写入战斗 / 伤害类 `damage_taken`，payload 保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`training_kind`；actor 为实际成长的 NPC
-- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`horse_damaged`、`horse_died`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
+- 战斗与行为事实：`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`horse_damaged`、`horse_died`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 - 公告与商人：`plaza_notice_changed`、`merchant_arrived`、`merchant_departed`、`merchant_trade_completed`
 
@@ -2044,9 +2086,9 @@ T1103 已接入的警铃与集结事件 payload：
 }
 ```
 
-T1103A 已实现的 `npc_mode_changed` 使用 `npc_id`、`from_mode`、`from_mode_label`、`to_mode`、`to_mode_label`、`reason`。T1103D 起，`npc_mode_changed` 不再覆盖 `work <-> combat` 与 `work <-> avoid_combat` 的互转，这些互转也不通过该事件广播；战斗和避战信息由更具体的攻击、伤害、避战开始 / 结束等事件表达。T1103B/T1103C 已实现的 `avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录非战斗人员开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff，T1202 起 `morale_boost_started.trigger` 可为 `low_hp`。`battle_psychology_result.trigger` 可为 `wartime_dialogue`、`low_hp` 或后续逃离挽留来源。低血量自身心理判定没有守备官本轮文本，需通过 `battlefield_context_summary` 保留简化战局依据。
+T0299 起 `npc_mode_changed` 不再是正式事件，旧调用由 MemorySystem 拒绝。`avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录非战斗人员开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff。
 
-T1105 已实现的 `combat_strategy_selected` 使用 `npc_id`、`strategy_id`、`strategy_label`、`unit_type` 和 `unit_type_label`，记录守备官通过 NPC 面板或装备变更默认化流程为某名入伍持武器 NPC 设置当前战斗策略。该事件只表达策略选择事实，不直接结算移动、攻击、HP 或资源。
+`combat_strategy_selected` 使用 `npc_id`、`strategy_id`、`strategy_label`、`unit_type` 和 `unit_type_label`，记录守备官对话调整或装备变化默认化流程为某名入伍持武器 NPC 设置当前战斗策略。该事件只表达策略选择事实，不直接结算移动、攻击、HP 或资源。
 
 T0502 已接入的复苏事件 payload：
 

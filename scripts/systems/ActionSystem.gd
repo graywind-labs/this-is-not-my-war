@@ -4026,15 +4026,18 @@ func _advance_active_action(npc_id: String, game_delta_seconds: float) -> void:
 		_advance_clinic_patient(npc_id, active_action, game_delta_seconds)
 		return
 	if str(active_action.get("kind", "")) == "training_instructor":
-		_advance_training_instructor(npc_id, active_action, game_delta_seconds)
+		_advance_training_instructor(npc_id, active_action, game_delta_seconds * _get_npc_work_output_multiplier(npc_id))
 		return
 	if str(active_action.get("kind", "")) == "training_student":
-		_advance_training_student(npc_id, active_action, game_delta_seconds)
+		_advance_training_student(npc_id, active_action, game_delta_seconds * _get_npc_work_output_multiplier(npc_id))
 		return
+	var action: Dictionary = active_action.get("action", {})
+	var effective_game_delta := game_delta_seconds
+	if str(action.get("type", "")) == "work":
+		effective_game_delta *= _get_npc_work_output_multiplier(npc_id)
 	var duration := maxf(0.001, float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS)))
 	var elapsed_before := clampf(float(active_action.get("elapsed_seconds", 0.0)), 0.0, duration)
-	var elapsed := clampf(elapsed_before + game_delta_seconds, 0.0, duration)
-	var action: Dictionary = active_action.get("action", {})
+	var elapsed := clampf(elapsed_before + effective_game_delta, 0.0, duration)
 	if str(action.get("type", "")) == "pray":
 		_add_piety_from_prayer(
 			npc_id,
@@ -4112,6 +4115,7 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 		return
 
 	var patient_ids := _find_active_clinic_patient_ids()
+	var output_game_seconds := game_delta_seconds * _get_npc_work_output_multiplier(doctor_npc_id)
 	active_action = _sync_formal_clinic_doctor_rounds(
 		doctor_npc_id,
 		active_action,
@@ -4119,7 +4123,7 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 		game_delta_seconds
 	)
 	if patient_ids.is_empty():
-		_advance_clinic_study(doctor_npc_id, active_action, game_delta_seconds)
+		_advance_clinic_study(doctor_npc_id, active_action, output_game_seconds)
 		return
 
 	var resource_system := _get_resource_system()
@@ -4142,7 +4146,7 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 	for patient_id in patient_ids:
 		if not _active_actions.has(patient_id):
 			continue
-		var accumulated := float(remainders.get(patient_id, 0.0)) + hp_per_hour / 3600.0 * game_delta_seconds
+		var accumulated := float(remainders.get(patient_id, 0.0)) + hp_per_hour / 3600.0 * output_game_seconds
 		var hp_to_restore := int(floor(accumulated))
 		if hp_to_restore > 0:
 			accumulated -= float(hp_to_restore)
@@ -4163,7 +4167,7 @@ func _advance_clinic_doctor(doctor_npc_id: String, active_action: Dictionary, ga
 	active_action["cost_timer_seconds"] = cost_timer
 	active_action["money_spent"] = money_spent
 
-	var skill_timer := float(active_action.get("treatment_skill_timer_seconds", 0.0)) + game_delta_seconds
+	var skill_timer := float(active_action.get("treatment_skill_timer_seconds", 0.0)) + output_game_seconds
 	var skill_interval := maxf(1.0, float(action.get("treatment_skill_interval_seconds", CLINIC_TREATMENT_SKILL_INTERVAL_SECONDS)))
 	while skill_timer >= skill_interval:
 		skill_timer -= skill_interval
@@ -4422,7 +4426,7 @@ func _advance_healing_assist(healer_npc_id: String, active_action: Dictionary, g
 
 	var recovery_result: Dictionary = npc_system.assist_unconscious_recovery(
 		target_npc_id,
-		game_delta_seconds,
+		game_delta_seconds * _get_npc_work_output_multiplier(healer_npc_id),
 		healer_npc_id,
 		int(active_action.get("medical_skill", 0))
 	)
@@ -5548,13 +5552,14 @@ func _get_training_team_skill_interval_seconds(instructor_ids: Array, student_id
 		var instructor: Dictionary = npc_system.get_npc(instructor_id)
 		var instructor_skill := _get_action_skill_value(instructor, skill_name)
 		var coaching_value := _get_action_skill_value(instructor, "教练")
+		var instructor_output_multiplier := _get_npc_work_output_multiplier(instructor_id)
 		if instructor_skill < student_skill:
 			var weak_multiplier := 1.0 + float(coaching_value) / 100.0 * 0.20
-			team_speed_multiplier += weak_multiplier / TRAINING_LOW_TEACHER_INTERVAL_MULTIPLIER
+			team_speed_multiplier += weak_multiplier / TRAINING_LOW_TEACHER_INTERVAL_MULTIPLIER * instructor_output_multiplier
 		else:
 			var skill_gap_bonus := minf(1.0, float(instructor_skill - student_skill) / 100.0) * TRAINING_GAP_SPEED_SCALE
 			var coaching_bonus := float(coaching_value) / 100.0 * TRAINING_COACHING_SPEED_SCALE
-			team_speed_multiplier += 1.0 + skill_gap_bonus + coaching_bonus
+			team_speed_multiplier += (1.0 + skill_gap_bonus + coaching_bonus) * instructor_output_multiplier
 
 	var building_bonus := maxf(0.0, float(_get_training_ground_level() - 1)) * TRAINING_BUILDING_LEVEL_SPEED_SCALE
 	var building_efficiency := _get_building_activity_efficiency_multiplier(TRAINING_LOCATION_ID, "training_gain")
@@ -5568,6 +5573,13 @@ func _get_training_ground_level() -> int:
 		return 1
 	var building: Dictionary = building_system.get_building(TRAINING_LOCATION_ID)
 	return maxi(1, int(building.get("level", 1)))
+
+
+func _get_npc_work_output_multiplier(npc_id: String) -> float:
+	var npc_system := _get_npc_system()
+	if npc_system == null or not npc_system.has_method("get_npc_work_output_multiplier"):
+		return 1.0
+	return maxf(1.0, float(npc_system.get_npc_work_output_multiplier(npc_id)))
 
 
 func _log_structured_action_event(npc_id: String, action: Dictionary, event_type: String, payload: Dictionary) -> void:

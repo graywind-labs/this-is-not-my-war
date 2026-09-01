@@ -1514,13 +1514,30 @@ class ModelAdapter:
                         hydrated["recruitment_result"] = "none"
                     else:
                         hydrated.setdefault("recruitment_result", "none")
-                    if str(payload.get("interaction_context", "work")) not in {
-                        "rally",
-                        "combat",
-                    }:
+                    if not bool(payload.get("is_morale_encouragement_request", False)):
                         hydrated["wartime_reaction"] = "none"
                     else:
                         hydrated.setdefault("wartime_reaction", "none")
+                    if not bool(payload.get("is_combat_strategy_request", False)):
+                        hydrated.pop("combat_strategy_decision", None)
+                    else:
+                        strategy_context = payload.get("combat_strategy_context", {})
+                        if not isinstance(strategy_context, dict):
+                            strategy_context = {}
+                        current_strategy = strategy_context.get("current_strategy", {})
+                        if not isinstance(current_strategy, dict):
+                            current_strategy = {}
+                        hydrated.setdefault(
+                            "combat_strategy_decision",
+                            {
+                                "decision": "keep",
+                                "strategy_id": str(current_strategy.get("id", "attack")),
+                            },
+                        )
+                    if not bool(payload.get("is_work_encouragement_request", False)):
+                        hydrated["work_encouragement_reaction"] = "none"
+                    else:
+                        hydrated.setdefault("work_encouragement_reaction", "none")
             return hydrated
 
         hydrated["npc_id"] = npc_id
@@ -1815,10 +1832,50 @@ class ModelAdapter:
         template_text = self._prompt_template_for_call_type(call_type)
         if template_text:
             prompt_parts.append(template_text)
+        if call_type == "dialogue":
+            special_interaction_prompt = self._dialogue_special_interaction_prompt(payload or {})
+            if special_interaction_prompt:
+                prompt_parts.append(special_interaction_prompt)
         prompt_parts.append(
             self._schema_hint_for_call_type(call_type, payload or {}),
         )
         return "\n".join(prompt_parts)
+
+    def _dialogue_special_interaction_prompt(self, payload: dict[str, Any]) -> str:
+        prompt_parts: list[str] = []
+        if bool(payload.get("is_recruitment_request", False)):
+            prompt_parts.append(self._read_dialogue_special_prompt("dialogue_recruitment_special_prompt.txt"))
+        if bool(payload.get("is_morale_encouragement_request", False)):
+            prompt_parts.append(self._read_dialogue_special_prompt("dialogue_morale_special_prompt.txt"))
+        if bool(payload.get("is_combat_strategy_request", False)):
+            prompt_parts.append(
+                "本轮 is_combat_strategy_request=true，才读取 combat_strategy_context 并输出 "
+                "combat_strategy_decision。combat_strategy_context.current_strategy 是当前权威策略，"
+                "available_strategies 是该 NPC 当前兵种唯一合法候选；decision=keep 时 strategy_id "
+                "必须等于当前策略，decision=change 时必须选择另一个 available_strategies 中的 ID，"
+                "不得创造策略。即使开关已开启，也必须先判断守备官本轮是否明确在讨论进攻、避战"
+                "或远程拉开距离；吃饭、工作、资源、问候、单纯鼓舞等无关内容必须正常回复，并返回 "
+                "keep + 当前策略，开关本身不是调整策略的证据。要求不存在或当前兵种不可用的策略时"
+                "保持当前策略。策略移动、攻击和事件由程序权威结算，模型只返回本轮意向。"
+            )
+        if bool(payload.get("is_work_encouragement_request", False)):
+            prompt_parts.append(
+                "本轮 is_work_encouragement_request=true，才输出 work_encouragement_reaction。"
+                "该请求只会在无敌人、目标处于 work 行为模式且没有同类增益时发出，不要求 NPC 已入伍。"
+                "先判断守备官本轮是否确实在鼓励、认可、安抚或以可实现的具体安排激励目标继续工作；"
+                "若谈的是吃饭、闲聊、应征、战斗士气、战斗策略、单纯询问资源或其他无关话题，必须"
+                "忽略开关、按原话正常回复并返回 none。相关且真诚有力、结合目标处境并能提升投入时"
+                "返回 work_boost；相关但空泛、无说服力或未改变工作状态时返回 none；以羞辱、威胁、"
+                "惩罚、强迫不可能的工作量或否定其价值施压，且足以让目标放弃驿站时返回 escape。"
+                "模型只判断本轮反应；全部工作产出效率+20%、持续至当天24:00、逃离和事件均由程序权威结算。"
+            )
+        return "\n".join(prompt_parts)
+
+    def _read_dialogue_special_prompt(self, template_name: str) -> str:
+        try:
+            return (PROMPT_TEMPLATE_DIR / template_name).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
 
     def _prompt_template_for_call_type(self, call_type: str) -> str:
         template_name = PROMPT_TEMPLATE_BY_CALL_TYPE.get(call_type)
@@ -1836,6 +1893,10 @@ class ModelAdapter:
         payload: dict[str, Any] | None = None,
     ) -> str:
         if call_type == "dialogue":
+            emotion_rule = (
+                "emotion 每次必填，且只能从 none、happy、relieved、angry、sad、"
+                "afraid、surprised、confused、determined 中选一个；没有明显情绪用 none。"
+            )
             dialogue_kind = str((payload or {}).get("dialogue_kind", "player_npc"))
             if dialogue_kind == "npc_npc":
                 dialogue_phase = str((payload or {}).get("dialogue_phase", "conversation"))
@@ -1843,34 +1904,59 @@ class ModelAdapter:
                     return (
                         "当前只输出 reply_text、invitation_result、emotion、debug_reason。"
                         "invitation_result 只能是 accept 或 reject；"
-                        "后端会据此生成回复者、响应类型和结束标记。"
+                        "后端会据此生成回复者、响应类型和结束标记。" + emotion_rule
                     )
                 return (
                     "当前只输出 reply_text、should_end_dialogue、emotion、debug_reason。"
                     "should_end_dialogue 表示本句是否自然结束正式会话；"
-                    "后端会生成回复者、响应类型和固定 invitation_result。"
+                    "后端会生成回复者、响应类型和固定 invitation_result。" + emotion_rule
                 )
             if dialogue_kind == "escape_intervention":
                 return (
                     "当前只输出 reply_text、escape_intervention_result、emotion、debug_reason。"
                     "escape_intervention_result 只能是 stay 或 leave。"
-                    "后端会生成回复者和响应类型。"
+                    "后端会生成回复者和响应类型。" + emotion_rule
                 )
             active_fields = ["reply_text", "emotion", "debug_reason"]
             active_rules = []
             if bool((payload or {}).get("is_recruitment_request", False)):
                 active_fields.append("recruitment_result")
                 active_rules.append(
-                    "recruitment_result 只能是 accept 或 reject"
+                    "recruitment_result 只能是 accept、reject 或 none；none 表示本轮话题与应征无关"
                 )
-            if str((payload or {}).get("interaction_context", "work")) in {
-                "rally",
-                "combat",
-            }:
+            if bool((payload or {}).get("is_morale_encouragement_request", False)):
                 active_fields.append("wartime_reaction")
                 active_rules.append(
                     "wartime_reaction 只能是 none、escape 或 morale_boost"
                 )
+            if bool((payload or {}).get("is_combat_strategy_request", False)):
+                active_fields.append("combat_strategy_decision")
+                strategy_context = (payload or {}).get("combat_strategy_context", {})
+                if not isinstance(strategy_context, dict):
+                    strategy_context = {}
+                current_strategy = strategy_context.get("current_strategy", {})
+                if not isinstance(current_strategy, dict):
+                    current_strategy = {}
+                available_strategies = strategy_context.get("available_strategies", [])
+                if not isinstance(available_strategies, list):
+                    available_strategies = []
+                current_id = str(current_strategy.get("id", ""))
+                available_ids = [
+                    str(option.get("id", ""))
+                    for option in available_strategies
+                    if isinstance(option, dict) and str(option.get("id", ""))
+                ]
+                active_rules.append(
+                    "combat_strategy_decision 只能是 {decision: keep|change, strategy_id: 合法策略ID}；"
+                    "当前策略为 %s，可选策略为 %s；keep 必须返回当前 ID，change 必须返回另一个可选 ID"
+                    % (current_id, available_ids)
+                )
+            if bool((payload or {}).get("is_work_encouragement_request", False)):
+                active_fields.append("work_encouragement_reaction")
+                active_rules.append(
+                    "work_encouragement_reaction 只能是 none、escape 或 work_boost"
+                )
+            active_rules.append(emotion_rule)
             rule_text = "；".join(active_rules)
             return (
                 "当前只输出 %s。%s%s"
@@ -2005,6 +2091,15 @@ class ModelAdapter:
             is_recruitment_request = bool(
                 payload.get("is_recruitment_request", payload.get("propose_recruitment", False))
             )
+            is_morale_encouragement_request = bool(
+                payload.get("is_morale_encouragement_request", False)
+            )
+            is_combat_strategy_request = bool(
+                payload.get("is_combat_strategy_request", False)
+            )
+            is_work_encouragement_request = bool(
+                payload.get("is_work_encouragement_request", False)
+            )
             dialogue_kind = str(payload.get("dialogue_kind", "player_npc"))
             dialogue_phase = str(payload.get("dialogue_phase", "conversation"))
             current_round, max_rounds = self._read_dialogue_rounds(payload)
@@ -2025,7 +2120,7 @@ class ModelAdapter:
                     "reply_text": reply_text,
                     "response_kind": "reply_to_player",
                     "escape_intervention_result": "stay" if stay else "leave",
-                    "emotion": "shaken" if stay else "fearful",
+                    "emotion": "relieved" if stay else "afraid",
                     "suggested_event_type": "dialogue_turn",
                     "debug_reason": f"mock_escape_intervention_by_keywords_and_round_limit{order_suffix}",
                 }
@@ -2038,13 +2133,20 @@ class ModelAdapter:
                     "reply_text": "我手上的事不能停，这次先不谈。" if reject_invitation else "好，我先停一下，听你把事情说完。",
                     "response_kind": "reply_to_npc",
                     "invitation_result": "reject" if reject_invitation else "accept",
-                    "emotion": "wary",
+                    "emotion": "angry" if reject_invitation else "none",
                     "should_end_dialogue": reject_invitation,
                     "suggested_event_type": "dialogue_turn",
                     "debug_reason": f"mock_npc_dialogue_invitation_by_keywords{order_suffix}",
                 }
-            accepts = is_recruitment_request and any(word in text for word in ["守住", "保护", "应征", "帮忙", "一起", "救"])
-            rejects = is_recruitment_request and not accepts
+            recruitment_related = is_recruitment_request and any(
+                word in text
+                for word in ["应征", "入伍", "参战", "加入防线", "成为战斗人员", "守卫驿站", "加入我们守", "拿起武器"]
+            )
+            recruitment_coercive = recruitment_related and any(
+                word in text for word in ["立刻拿起武器", "不许拒绝", "否则", "强迫", "命令你参战"]
+            )
+            accepts = recruitment_related and not recruitment_coercive
+            rejects = recruitment_related and recruitment_coercive
             soft_round_threshold = self._read_dialogue_soft_round_threshold(payload)
             urgent_or_necessary = any(
                 word in text
@@ -2060,11 +2162,69 @@ class ModelAdapter:
             )
             interaction_context = str(payload.get("interaction_context", "work"))
             wartime_reaction = "none"
-            if interaction_context in {"rally", "combat"} and not is_npc_reply:
+            if (
+                is_morale_encouragement_request
+                and interaction_context in {"rally", "combat"}
+                and not is_npc_reply
+            ):
                 if any(word in text for word in ["逃", "跑", "撤", "自己活", "别管"]):
                     wartime_reaction = "escape"
-                elif any(word in text for word in ["守住", "保护", "坚持", "拦住", "挡住", "一起"]):
+                elif any(word in text for word in ["守住", "保护", "坚持", "撑住", "稳住", "别怕", "拦住", "挡住", "鼓起勇气", "我们一起"]):
                     wartime_reaction = "morale_boost"
+            combat_strategy_decision = None
+            if (
+                is_combat_strategy_request
+                and interaction_context in {"rally", "combat"}
+                and not is_npc_reply
+            ):
+                strategy_context = payload.get("combat_strategy_context", {})
+                if not isinstance(strategy_context, dict):
+                    strategy_context = {}
+                current_strategy = strategy_context.get("current_strategy", {})
+                if not isinstance(current_strategy, dict):
+                    current_strategy = {}
+                available_strategies = strategy_context.get("available_strategies", [])
+                if not isinstance(available_strategies, list):
+                    available_strategies = []
+                current_id = str(current_strategy.get("id", "attack"))
+                available_ids = {
+                    str(option.get("id", ""))
+                    for option in available_strategies
+                    if isinstance(option, dict)
+                }
+                requested_id = ""
+                if any(word in text for word in ["避战", "躲开", "不要接敌", "保存实力", "先保命"]):
+                    requested_id = "avoid"
+                elif any(word in text for word in ["保持距离", "拉开距离", "边退边射", "远距离射击"]):
+                    requested_id = "keep_distance"
+                elif any(word in text for word in ["主动进攻", "进攻", "接敌", "冲上去", "杀敌", "冲锋", "最大化输出"]):
+                    requested_id = "attack"
+                if requested_id in available_ids and requested_id != current_id:
+                    combat_strategy_decision = {
+                        "decision": "change",
+                        "strategy_id": requested_id,
+                    }
+                else:
+                    combat_strategy_decision = {
+                        "decision": "keep",
+                        "strategy_id": current_id,
+                    }
+            work_encouragement_reaction = "none"
+            if (
+                is_work_encouragement_request
+                and interaction_context == "work"
+                and not is_npc_reply
+            ):
+                work_escape_keywords = [
+                    "不干就滚", "做不完就滚", "没用", "废物", "惩罚", "鞭子", "杀了你", "逼你", "不许休息"
+                ]
+                work_boost_keywords = [
+                    "辛苦了", "做得好", "相信你", "加油", "谢谢你", "靠你了", "一起把工作做好", "会给你休息", "会给你奖励", "你的工作很重要"
+                ]
+                if any(word in text for word in work_escape_keywords):
+                    work_encouragement_reaction = "escape"
+                elif any(word in text for word in work_boost_keywords):
+                    work_encouragement_reaction = "work_boost"
             if is_npc_reply:
                 reply_text = (
                     "我听明白了。那就先谈到这里，我回去把手上的事做好。"
@@ -2079,12 +2239,27 @@ class ModelAdapter:
                     reply_text = "守备官，说得够明白了。我会把他们拦在门外。"
                 elif wartime_reaction == "escape":
                     reply_text = "守备官，我撑不住这套说法。我要先想办法离开这里。"
+                elif work_encouragement_reaction == "work_boost":
+                    reply_text = "守备官，我听进去了。今天剩下的活，我会更用心做好。"
+                elif work_encouragement_reaction == "escape":
+                    reply_text = "这不是鼓励，是逼迫。我不想再留在这里了。"
+            mock_emotion = "none"
+            if accepts or wartime_reaction == "morale_boost":
+                mock_emotion = "determined"
+            elif rejects:
+                mock_emotion = "sad"
+            elif wartime_reaction == "escape" or work_encouragement_reaction == "escape":
+                mock_emotion = "afraid"
+            elif work_encouragement_reaction == "work_boost":
+                mock_emotion = "happy"
+            elif is_npc_reply and should_end:
+                mock_emotion = "relieved"
             response = {
                 "ok": True,
                 "replyer_id": npc_id,
                 "reply_text": reply_text,
                 "response_kind": "reply_to_npc" if is_npc_reply else "reply_to_player",
-                "emotion": "wary",
+                "emotion": mock_emotion,
                 "suggested_event_type": "dialogue_turn",
                 "debug_reason": f"mock_dialogue_by_keywords_and_soft_round_guidance{order_suffix}",
             }
@@ -2094,6 +2269,10 @@ class ModelAdapter:
             else:
                 response["recruitment_result"] = "accept" if accepts else "reject" if rejects else "none"
                 response["wartime_reaction"] = wartime_reaction
+                if combat_strategy_decision is not None:
+                    response["combat_strategy_decision"] = combat_strategy_decision
+                if is_work_encouragement_request:
+                    response["work_encouragement_reaction"] = work_encouragement_reaction
             return response
 
         if call_type == "dialogue_intent_revalidation":

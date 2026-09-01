@@ -24,16 +24,17 @@ const PRODUCTION_SPECIAL_FIELDS: Array[String] = [
 	"current_stage_index", "current_stage_name"
 ]
 const HORSE_COUNT_SPECIAL_FIELDS: Array[String] = ["total", "adult", "foal"]
+const DEVELOPMENT_ONLY_EVENT_TYPES: Array[String] = ["npc_mode_changed"]
 
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
 	"prayer_started", "prayer_joined_mass", "prayer_resumed_alone", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
-	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
+	"dialogue_turn", "dialogue_special_interaction_result", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
-	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
-	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_damaged", "horse_died", "low_hp_triggered",
+	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state", "work_encouragement_result", "work_encouragement_boost_started", "work_encouragement_boost_ended",
+	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_damaged", "horse_died", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "healing_failed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
@@ -45,7 +46,8 @@ const EVENT_TYPES: Array[String] = [
 
 const REQUIRED_PAYLOAD_FIELDS := {
 	"wake_up": ["day", "hour", "reason"],
-	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds", "is_recruitment_request", "recruitment_result"],
+	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds"],
+	"dialogue_special_interaction_result": ["dialogue_id", "participant_npc_ids", "special_type", "outcome", "success", "npc_id", "npc_name", "visibility", "current_round"],
 	"proactive_talk_started": ["prompt_text", "duration_seconds"],
 	"proactive_talk_message": ["dialogue_id", "speaker_name", "listener_name", "speaker_text"],
 	"plan_created": ["plan_day", "items"],
@@ -74,7 +76,9 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"low_hp_triggered": ["hp_before", "hp_after", "max_hp"],
 	"morale_boost_started": ["source_event_id", "trigger", "duration_seconds", "attack_bonus", "move_speed_bonus"],
 	"morale_boost_ended": ["source_event_id", "duration_seconds"],
-	"npc_mode_changed": ["npc_id", "from_mode", "to_mode", "reason"],
+	"work_encouragement_result": ["decision", "dialogue_id"],
+	"work_encouragement_boost_started": ["source_event_id", "duration_seconds", "output_bonus", "output_multiplier"],
+	"work_encouragement_boost_ended": ["source_event_id", "duration_seconds"],
 	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
 	"avoidance_ended": ["reason", "active_enemy_count"],
 	"attack_made": ["attacker_npc_id", "target_type", "target_enemy_id", "damage", "hp_before", "hp_after"],
@@ -152,6 +156,9 @@ func _ready() -> void:
 
 func add_event(event: Dictionary) -> Dictionary:
 	if event.is_empty():
+		return {}
+	if DEVELOPMENT_ONLY_EVENT_TYPES.has(str(event.get("type", ""))):
+		# 模式切换和内部 reason 只供运行时状态 / GM 快照诊断，禁止进入事件、见闻与 LLM 记忆。
 		return {}
 
 	var normalized := _normalize_event(event)
@@ -1600,9 +1607,14 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 		push_warning("MemorySystem changed invalid visibility '%s' to private." % visibility)
 		visibility = DEFAULT_VISIBILITY
 
-	var payload: Dictionary = event.get("payload", {})
+	var payload: Dictionary = (
+		(event.get("payload", {}) as Dictionary).duplicate(true)
+		if event.get("payload", {}) is Dictionary
+		else {}
+	)
 	if payload.is_empty():
 		payload = _legacy_payload_from_event(event)
+	payload = _sanitize_narrative_event_payload(event_type, payload)
 
 	if visibility == LOCAL_PUBLIC_VISIBILITY and not is_enterable_location(location_id):
 		if not payload.has("source_location_id"):
@@ -1635,6 +1647,26 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 	if str(normalized["summary"]).is_empty():
 		normalized["summary"] = _format_summary(normalized)
 	return normalized
+
+
+func _sanitize_narrative_event_payload(event_type: String, payload: Dictionary) -> Dictionary:
+	var sanitized := payload.duplicate(true)
+	match event_type:
+		"work_failed", "prayer_failed":
+			sanitized["reason"] = _format_memory_reason(
+				sanitized.get("reason", ""),
+				"行动条件不满足"
+			)
+		"plan_revised":
+			sanitized["reason"] = _format_memory_reason(
+				sanitized.get("reason", ""),
+				"原计划需要重新评估"
+			)
+			sanitized["summary"] = _format_memory_reason(
+				sanitized.get("summary", sanitized.get("reason", "")),
+				"原计划已经不再适用"
+			)
+	return sanitized
 
 
 func _legacy_payload_from_event(event: Dictionary) -> Dictionary:
@@ -1741,7 +1773,7 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s未能完成%s：%s。" % [
 				actor,
 				_get_action_name(str(payload.get("action_id", ""))),
-				str(payload.get("reason", "原因不明"))
+				_format_memory_reason(payload.get("reason", ""), "行动条件不满足")
 			]
 		"skill_improved":
 			return _format_skill_improved_summary(actor, payload, location)
@@ -1799,7 +1831,7 @@ func _format_summary(event: Dictionary) -> String:
 				actor,
 				location,
 				_get_action_name(str(payload.get("action_id", "pray_at_chapel"))),
-				str(payload.get("reason", "行动条件不满足"))
+				_format_memory_reason(payload.get("reason", ""), "行动条件不满足")
 			]
 		"visit_started":
 			return "%s抵达%s并准备暂时停留。" % [actor, location]
@@ -1822,6 +1854,8 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("listener_name", actor)),
 				str(payload.get("reply_text", ""))
 			]
+		"dialogue_special_interaction_result":
+			return _format_dialogue_special_interaction_result(actor, payload)
 		"proactive_talk_started":
 			return "%s想主动找守备官交涉。" % actor
 		"proactive_talk_message":
@@ -1833,7 +1867,11 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("work_phase_count", 0))
 			]
 		"plan_revised":
-			return "%s重新评估了当前计划：%s。" % [actor, str(payload.get("summary", payload.get("reason", "计划异常")))]
+			var revision_text := _format_memory_reason(
+				payload.get("summary", payload.get("reason", "")),
+				"原计划已经不再适用"
+			)
+			return "%s重新评估了当前计划：%s。" % [actor, revision_text]
 		"money_given":
 			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"wine_given":
@@ -1879,13 +1917,18 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s被守备官的话激起了斗志，攻击和移动暂时提升。" % actor
 		"morale_boost_ended":
 			return "%s的斗志激昂状态消退了。" % actor
-		"npc_mode_changed":
-			return "%s从%s切换到%s，原因：%s。" % [
-				actor,
-				str(payload.get("from_mode_label", _format_behavior_mode_label(str(payload.get("from_mode", ""))))),
-				str(payload.get("to_mode_label", _format_behavior_mode_label(str(payload.get("to_mode", ""))))),
-				str(payload.get("reason", "mode_changed"))
-			]
+		"work_encouragement_result":
+			match str(payload.get("decision", "none")):
+				"work_boost":
+					return "%s受到守备官鼓励，决定更积极地投入工作。" % actor
+				"escape":
+					return "%s听完守备官的话后决定逃离驿站。" % actor
+				_:
+					return "%s听完守备官的话后仍照常工作。" % actor
+		"work_encouragement_boost_started":
+			return "%s受到鼓励，当天工作产出效率提高了。" % actor
+		"work_encouragement_boost_ended":
+			return "%s的工作鼓励状态在跨天后结束了。" % actor
 		"avoidance_started":
 			return "%s发现敌军正在接近，正在避战。" % actor
 		"avoidance_ended":
@@ -1996,7 +2039,32 @@ func _format_summary(event: Dictionary) -> String:
 		"sleep_ended":
 			return "%s在%s休息后恢复了些精神。" % [actor, location]
 		_:
-			return "%s发生了%s事件。" % [actor, event_type]
+			return "%s经历了一件值得记录的事。" % actor
+
+
+func _format_memory_reason(raw_value: Variant, fallback: String) -> String:
+	var text_value := str(raw_value).strip_edges()
+	if (
+		text_value.is_empty()
+		or not _contains_cjk_text(text_value)
+		or text_value.contains("_")
+		or text_value.contains("res://")
+		or text_value.contains("\\")
+		or text_value.contains("::")
+		or text_value.contains("=")
+	):
+		return fallback
+	while text_value.ends_with("。") or text_value.ends_with("."):
+		text_value = text_value.left(-1).strip_edges()
+	return fallback if text_value.is_empty() else text_value
+
+
+func _contains_cjk_text(text_value: String) -> bool:
+	for index in range(text_value.length()):
+		var codepoint := text_value.unicode_at(index)
+		if (codepoint >= 0x3400 and codepoint <= 0x4DBF) or (codepoint >= 0x4E00 and codepoint <= 0x9FFF):
+			return true
+	return false
 
 
 func _format_completed_player_dialogue_transcript(payload: Dictionary) -> String:
@@ -2023,6 +2091,33 @@ func _format_completed_player_dialogue_transcript(payload: Dictionary) -> String
 	if not speaker_name.is_empty() and not listener_name.is_empty():
 		heading = "%s与%s对话" % [speaker_name, listener_name]
 	return "%s：\n%s" % [heading, "\n".join(transcript_lines)]
+
+
+func _format_dialogue_special_interaction_result(npc_name: String, payload: Dictionary) -> String:
+	var outcome := str(payload.get("outcome", "none"))
+	match str(payload.get("special_type", "")):
+		"recruitment":
+			if outcome == "accept":
+				return "守备官成功说服了%s，%s同意入伍。" % [npc_name, npc_name]
+			return "守备官尝试说服%s入伍，%s没有同意。" % [npc_name, npc_name]
+		"morale_encouragement":
+			if outcome == "morale_boost":
+				return "守备官成功鼓舞了%s的士气。" % npc_name
+			if outcome == "escape":
+				return "%s没有被守备官鼓舞，决定逃离驿站。" % npc_name
+			return "%s没有受到守备官的鼓舞，继续参战。" % npc_name
+		"work_encouragement":
+			if outcome == "work_boost":
+				return "守备官成功鼓励了%s，%s决定更积极地工作。" % [npc_name, npc_name]
+			if outcome == "escape":
+				return "%s没有接受守备官的工作鼓励，决定逃离驿站。" % npc_name
+			return "%s没有受到守备官的工作鼓励，照常工作。" % npc_name
+		"combat_strategy":
+			var strategy_label := str(payload.get("strategy_label", "当前策略"))
+			if outcome == "change":
+				return "守备官成功说服%s将战斗策略改变为“%s”。" % [npc_name, strategy_label]
+			return "%s没有改变战斗策略，继续采用“%s”。" % [npc_name, strategy_label]
+	return "%s对守备官的特殊交涉作出了回应。" % npc_name
 
 
 func _format_combat_started_summary(payload: Dictionary) -> String:
@@ -2198,24 +2293,6 @@ func _format_skill_improved_summary(actor: String, payload: Dictionary, location
 	if reason == "work_completed":
 		return "%s在%s工作后，%s略有长进。" % [actor, location, skill_name]
 	return "%s的%s略有长进。" % [actor, skill_name]
-
-
-func _format_behavior_mode_label(mode: String) -> String:
-	match mode:
-		"work":
-			return "工作模式"
-		"rally":
-			return "集结模式"
-		"combat":
-			return "战斗模式"
-		"avoid_combat":
-			return "避战模式"
-		"unconscious":
-			return "昏迷"
-		"escaped":
-			return "逃离"
-		_:
-			return mode
 
 
 func _format_battle_psychology_decision(decision: String) -> String:
@@ -2664,9 +2741,12 @@ func _get_action_name(action_id: String) -> String:
 		return "行动"
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
-		return action_id
+		return "当前行动"
+	if action_system.has_method("get_action_ids") and not action_system.get_action_ids().has(action_id):
+		return "当前行动"
 	var action: Dictionary = action_system.get_action(action_id)
-	return str(action.get("name", action_id))
+	var action_name := str(action.get("name", "")).strip_edges()
+	return "当前行动" if action_name.is_empty() else action_name
 
 
 func _get_resource_name(resource_id: String) -> String:

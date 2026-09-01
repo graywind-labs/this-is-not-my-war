@@ -81,7 +81,8 @@ billboard = 1
 text = "NPC"
 
 [node name="StatusLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.62, 0)
-pixel_size = 0.014
+position = Vector3(0.08, 2.08, 0)
+modulate = Color(0.62, 0.64, 0.66, 1)
+pixel_size = 0.01
 billboard = 1
-text = "HP 100/100 · 待命"
+text = "待命"

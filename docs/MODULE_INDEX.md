@@ -1,5 +1,236 @@
 # MODULE_INDEX.md
 
+## T0302 NPC 面板逃离行动警示索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/NPCPanel.gd` | 按当前行动投影姓名旁文字颜色；逃离驿站为红色，其余为默认白色 |
+| `tools/verify_escape_intervention_dialogue.gd` | 覆盖逃离红色警示与成功挽留后的颜色恢复 |
+
+稳定关系：`NPCSystem.current_action → NPCPanel 文案 / 颜色`；UI 不读取内部 reason，也不改变逃离移动、挽留或事件权威。
+
+## T0301 NPC 头顶信息纵向分层索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/npc/NPC.gd` | 集中定义我方姓名上方的血条、思考 / 问号、逃离 / 对话与 Emoji 高度，并在调试快照公开位置 |
+| `scripts/systems/CombatSystem.gd` | 统一普通 / 正式敌人姓名高度及血条相对偏移 |
+| `tools/verify_t0280_world_combat_health_bars.gd` | 验证我方各头顶信息层之间的最小垂直间隔 |
+| `tools/verify_t0282_world_health_fill_and_enemy_overhead.gd` | 验证敌方姓名 / 血条同步上移且颜色、比例和名称合同不变 |
+| `tools/verify_escape_intervention_dialogue.gd`、`verify_npc_proactive_talk.gd`、`verify_dialogue_sleep_summary_boundaries.gd` | 覆盖逃离、主动交涉和思考标记的新高度门槛 |
+
+稳定关系：NPC / CombatSystem 只决定表现节点局部高度；状态显隐、点击、HP 与行为仍由原权威链驱动。
+
+## T0300 对话面板紧凑页眉索引
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/main/Main.tscn` | 将 DialogPanel 页眉拆成左侧标题 / 记录 / 公开性与右侧特殊 toggle，并让普通状态 / 轮次默认隐藏 |
+| `scripts/ui/DialogPanel.gd` | 投影有限轮次与强制公开状态，统一特殊 toggle 无框样式和输入框稳定聚焦底色 |
+| `tools/verify_dialogue_ui.gd` | 覆盖标题间距、公开性位置、toggle 全状态无框、普通轮次隐藏和输入聚焦色 |
+| `tools/verify_wartime_dialogue.gd`、`tools/verify_escape_intervention_dialogue.gd` | 分别覆盖强制公开锁定和有限挽留轮次 |
+| `tools/verify_npc_npc_dialogue_observer_ui.gd` | 更新无限轮旁听不显示轮次的 UI 合同 |
+
+稳定投影关系：`DialogSystem 会话语义 → DialogPanel 单选 / 有限轮状态`；布局和焦点样式只负责显示，不修改会话权威。
+
+## T0299 事件库开发语义降噪索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/NPCSystem.gd` | 只在权威运行态保存行为模式 previous / reason，不再把模式转换写成 NPC 世界事件 |
+| `scripts/systems/MemorySystem.gd` | 拒绝开发专用 `npc_mode_changed`，并净化失败 / 计划摘要中的内部枚举与未知行动 ID |
+| `tools/verify_t0299_memory_event_hygiene.gd` | 覆盖全模式转换零入库、GM reason 保留、旧类型拒绝及必要事件中文兜底 |
+| `tools/verify_escape_intervention_dialogue.gd` | 覆盖挽留留下只记录具体结果、内部 `escape_intervention_stayed` 不泄漏 |
+| `tools/verify_behavior_mode_state_machine.gd`、`tools/verify_battlefield_public_info.gd` | 将旧“集结写模式事件”预期更新为所有模式转换均不入库 |
+
+稳定调用关系：`NPCSystem 模式转换 → 运行态 / GM 快照`；`具体玩法结果 → MemorySystem 事件 / 见闻 / LLM 记忆`。两条链不再通过通用模式事件混合。
+
+## T0298 NPC / 对话面板布局与主题索引
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/main/Main.tscn` | 重排 NPC 底部按钮，创建对话公开 / 私下单选和页眉记录入口，并让 DialogPanel 接入棕金切片主题 |
+| `scripts/ui/NPCPanel.gd` | 统一无框公开性单选样式，投影装备 / 指令征召门槛，并提供当前 NPC 的只读对话历史入口 |
+| `scripts/ui/DialogPanel.gd` | 管理公开 / 私下互斥与锁定状态，将记录按钮路由到 NPCPanel 的只读历史接口 |
+| `tools/verify_npc_panel_interactions.gd`、`tools/verify_npc_order.gd`、`tools/verify_npc_dialogue_history_ui.gd` | 覆盖底部布局、征召灰态、Tooltip、记录迁移与会话隔离 |
+| `tools/verify_dialogue_ui.gd`、`tools/verify_wartime_dialogue.gd` | 覆盖无框单选、互斥、首轮 / 战时锁定、记录按钮尺寸和完整对话回归 |
+
+稳定调用关系：`NPCPanel 对话 → DialogSystem 会话 → DialogPanel`；`DialogPanel 记录 → NPCPanel.open_dialogue_history → MemorySystem 只读投影`。UI 不写对话历史、事件或 NPC 权威。
+
+## T0297 GM AI信息独立选人索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/GMPanel.gd` | 创建并填充独立 `AINpcSelect`，将 AI信息页全部 NPC 定向按钮统一路由到该选择 |
+| `tools/verify_gm_panel.gd` | 断言常用 / 正式行动 / AI信息三个选择器独立，并验证情绪按钮作用于 AI 所选 NPC |
+| `tools/verify_t0289_dialogue_emotion_bubbles.gd` | 情绪展台专项改为通过 `AINpcSelect` 选择目标 |
+
+稳定调用关系：`AI信息页 AINpcSelect → 既有调试按钮 → 对应权威系统 / 表现接口`；其他页签选择不参与该路由。
+
+## T0296 世界纯 Emoji 与人物框短尾巴索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/npc/NPC.gd` | 移除世界情绪白色背景 Mesh，仅保留透明视口 Emoji Sprite 与 Sprite alpha 渐隐 |
+| `scripts/ui/NPCPortraitViewport.gd` | 从白框底边中点绘制更小的斜尾巴，并与 NPC 头顶保持间隙 |
+| `tools/verify_t0289_dialogue_emotion_bubbles.gd` | 断言世界无 BubbleBody、纯 Emoji 子树及人物框中底短尾巴尺寸 / 位置合同 |
+
+稳定调用关系仍为：`情绪信号 → NPC 世界纯 Emoji Sprite + NPCPortraitViewport 白框 / 中底短尾巴`。几何表现不影响暂停、动作、对话或 NPC 权威。
+
+## T0295 暂停情绪动作索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 仅让对话 `happy / angry` 临时动作绕过 TimeSystem 暂停，以现实秒推进并在结束后恢复冻结权威动画 |
+| `tools/verify_t0289_dialogue_emotion_bubbles.gd` | 覆盖暂停前开始、暂停后触发、动画 / Emoji 推进、游戏秒冻结与结束恢复冻结 |
+
+稳定调用关系：`暂停中 DialogSystem 回复 → EventBus 情绪信号 → NPC 双 Emoji + ChibiCharacterPilot pause-exempt transient → transient 结束 → 冻结的实时权威动画`。暂停豁免不进入 NPCSystem、CombatSystem 或 TimeSystem 权威结算。
+
+## T0294 情绪气泡视觉修复索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/npc/NPC.gd` | 以透明 SubViewport Canvas + Sprite3D 保留世界 Emoji 彩色字形，并维持人物副镜头排除层与原计时合同 |
+| `scripts/ui/NPCPortraitViewport.gd` | 将人物框气泡放到左上留白区，使用不遮挡 NPC 的紧凑右下漫画尾巴 |
+| `tools/verify_t0289_dialogue_emotion_bubbles.gd` | 回归彩色安全渲染器、Sprite、视口尺寸、左上位置、紧凑尾巴与既有双视图 / 动作合同 |
+
+稳定调用关系仍为：`DialogSystem → EventBus → NPC 世界 SubViewport/Sprite3D + NPCPortraitViewport Canvas 气泡`。两套显示独立，Emoji 颜色和布局不反向影响对话或 NPC 权威。
+
+## T0293 对话情绪同步动作索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/npc/NPC.gd` | 在世界 Emoji 信号处理入口同步派发开心 / 愤怒临时动作，并保持一次性事件去重与调试快照 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 承接 `emotion_happy / emotion_angry`，映射 `Cheering` / 剑盾横斩并在片段结束后恢复实时状态 |
+| `data/presentation/npc_dev_lab.json` | 保留开心、愤怒两个直接试片按钮，移除错误思考动作 |
+| `tools/verify_t0289_dialogue_emotion_bubbles.gd` / `tools/verify_t0130_d1_npc_dev_lab.gd` | 覆盖 Emoji 同帧动作、单次序号、权威行动不变、具体 clip 与思考入口撤除 |
+
+稳定调用关系：`LLM / GM emotion → DialogSystem → EventBus.npc_dialogue_emotion_presented → NPC Emoji + 临时表现动作 → ChibiCharacterPilot → 实时档案动画恢复`。动作层不反向写入对话、NPC计划、移动、战斗或事件权威。
+
+## T0290 世界血条 billboard 对齐索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/WorldHealthBar3D.gd` | 共享 Track / Fill 原点，以 QuadMesh 宽度和中心偏移表达归一化、左对齐填充 |
+| `tools/verify_t0290_world_health_bar_billboard_alignment.gd` | 在 `-135°` 旋转父节点下验证满血、部分血量、零血、网格偏移与两层世界原点一致 |
+
+稳定调用关系：`权威 hp/max_hp → WorldHealthBar3D.set_health → Fill QuadMesh.size.x + center_offset.x`。MeshInstance3D 节点本身不再承担填充偏移，建筑父变换不会拆开两层 billboard 原点。
+
+## T0289 对话情绪与双视图气泡索引
+
+| 模块 | 文件 | 职责 |
+|---|---|---|
+| 情绪目录 | `scripts/core/DialogueEmotionCatalog.gd` | 9 项 id、中文标签、Emoji、旧值归一化及 5 秒保持 / 渐隐参数 |
+| 后端合同 | `backend/schemas/npc_ai.py` / `backend/app.py` | `DialogueEmotion` 枚举、供应商别名 / 未知值非权威归一化与审计 |
+| Prompt / Mock | `data/prompts/dialogue_system_prompt.txt` / `backend/services/model_adapter.py` | 每轮必选情绪、动态输出提示及各对话结果的合法 Mock 情绪 |
+| 回合编排 | `scripts/systems/DialogSystem.gd` | 所有 NPC 回复附加表现元数据，并通过 EventBus 发出同一份气泡快照 |
+| 主场景表现 | `scripts/npc/NPC.gd` | 世界头顶气泡、人物副镜头排除层、保持 / 渐隐 / 替换 |
+| 第二人称与历史 | `scripts/ui/NPCPortraitViewport.gd` / `scripts/ui/DialogPanel.gd` | 独立人物框气泡与 NPC 台词尾部中文情绪标签 |
+| GM / 验证 | `scripts/ui/GMPanel.gd` / `tools/verify_t0289_dialogue_emotion_*` | 9 项逐按钮、快速替换、后端合同和双视图计时回归 |
+
+稳定调用关系：`LLM / Mock emotion → HTTP 枚举归一化 → DialogSystem 回合元数据 → EventBus.npc_dialogue_emotion_presented → NPC 世界气泡 + NPCPortraitViewport 独立气泡`。显示层不结算情绪数值、士气、工作效率或记忆；完成会话的纯台词不包含括号显示后缀。
+
+## T0288 特殊开关生命周期与事件去重索引
+
+| 模块 | 文件 | 职责 |
+|---|---|---|
+| 特殊请求状态机 | `scripts/systems/DialogSystem.gd` | 统一四类成功 / 资格失效关闭规则、发送后取消锁，以及完成会话 transcript 净化 |
+| 取消状态投影 | `scripts/ui/DialogPanel.gd` | 根据统一 `session_had_special_interaction_request` 禁用取消并显示原因 |
+| 普通对话事件合同 | `scripts/systems/MemorySystem.gd` | `dialogue_turn` 不再要求或承载特殊交互结果字段；独立结果仍使用 `dialogue_special_interaction_result` |
+| 专项验证 | `tools/verify_t0288_special_toggle_lifecycle_and_event_dedup.gd` | 覆盖四类 sticky / success / invalidation、取消锁、即时结果与完成事件净化 |
+
+稳定调用关系：特殊 toggle 开启 → `send_player_message(...)` 写会话锁 → LLM / Mock 返回 → `_publish_special_interaction_results(...)` 即时写独立结果事件 → 玩家完成会话 → `_sanitize_completed_dialogue_history(...)` → `MemorySystem.add_event(dialogue_turn)` 只保存真实台词。
+
+## T0287 GM 结果展台与增益图标索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/GMPanel.gd` | AI 对话区全部特殊结果、逃离 / 挽留和 buff 清除按钮；只调用系统 `debug_*` / 正式接口 |
+| `scripts/systems/DialogSystem.gd` | 本地结果预览回合、正式反馈行、T0286 结果事件 / 成功窗复用及挽留预览 |
+| `scripts/systems/CombatSystem.gd` / `scripts/systems/NPCSystem.gd` | 士气 / 工作 buff 的薄调试启动与清除包装；继续调用既有权威状态和事件方法 |
+| `scripts/ui/NPCPanel.gd` / `scenes/main/Main.tscn` / `assets/ui/status_icons/*.svg` | 标题栏金色宝剑 / 锄头、实时效果与剩余时间 Tooltip |
+| `scripts/ui/DialogPanel.gd` | 挽留留下 / 继续逃离的结构化对话反馈行 |
+| `tools/verify_t0287_gm_special_results_and_buff_icons.gd` / `tools/verify_gm_panel.gd` | 全结果矩阵、状态效果、弹窗、事件、图标、Tooltip 和 GM 入口回归 |
+
+稳定调用关系：`GM 结果按钮 → DialogSystem debug_preview → NPCSystem / CombatSystem 权威方法 → MemorySystem / EventBus → 正式 DialogPanel / HUD / NPCPanel`。结果展台不调用 LLM，也不在 GMPanel 保存业务状态。
+
+## T0286 特殊对话反馈与逃离警报索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DialogSystem.gd` / `scripts/systems/MemorySystem.gd` | 把四类逐轮结构化结果转为即时事件、目标 NPC 事件与公开同地点见闻，并广播只读 UI 结果 |
+| `scripts/core/EventBus.gd` / `scripts/systems/CombatSystem.gd` | 只在实际逃离行为成功开始并写入事实后广播一次 `npc_escape_started` |
+| `scripts/ui/DialogPanel.gd` / `scripts/ui/HUD.gd` / `scenes/main/Main.tscn` | 成功说服与逃离开始两类居中队列弹窗，以及“太好了 / 好的”确认按钮 |
+| `tools/verify_morale_encouragement_mock.gd` / `tools/verify_t0286_escape_alert.gd` | 四类结果事件、成功窗、公开见闻及逃离开始 / 失败 / 重复 / 排队边界验收 |
+
+稳定调用关系：`LLM 显式结果 → DialogSystem 归一化与权威应用 → 即时结果事件 / UI 成功窗`；`CombatSystem 实际进入逃离 → escape_started 事件 → EventBus → HUD 警报`。UI 不决定成功、buff、策略或逃离事实。
+
+## T0285 对话鼓励工作索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/DialogPanel.gd` / `scenes/main/Main.tscn` | 公开开关分区、四个特殊 toggle 2×2 布局、资格投影、互斥与三类反馈 |
+| `scripts/systems/DialogSystem.gd` / `scripts/systems/LLMBridge.gd` | 会话持续状态、发送前资格复验、条件载荷、结果暂存与完成时权威调用 |
+| `scripts/systems/NPCSystem.gd` / `scripts/systems/MemorySystem.gd` | 和平工作资格、至当天 24:00 的统一 1.2 倍率、工作结果 / buff 事件与逃离入口 |
+| `scripts/systems/ActionSystem.gd` / `scripts/systems/BuildingSystem.gd` | 生产、训练、诊疗 / 协助治疗及修复 / 升级协助贡献读取统一工作倍率 |
+| `backend/schemas/npc_ai.py` / `backend/app.py` | 条件请求 / 响应字段、四类互斥与越界业务校验、关闭字段剥离 |
+| `backend/services/model_adapter.py` / `data/prompts/dialogue_*_special_prompt.txt` | 四类动态 Prompt / 输出合同、相关性忽略和 Mock 三值判定 |
+| `scripts/ui/GMPanel.gd` | AI信息页“工作鼓励 Mock / 打开工作鼓励对话”与 `dialogue_work` |
+| `tools/verify_morale_encouragement_mock.gd` / `tools/verify_dialogue_*.py` | UI、资格、互斥、字段按需、反馈、倍率、失效和本地 HTTP Mock 验收 |
+
+稳定调用关系：`DialogPanel 四选一 toggle → DialogSystem / NPCSystem 资格复验 → LLMBridge 条件载荷 → 后端动态特殊模块 → DialogSystem 暂存 → 完成对话 → NPCSystem buff / CombatSystem 逃离`。工作系统只读 `NPCSystem.get_npc_work_output_multiplier()`，LLM 与 UI 不结算产出。
+
+## T0284 对话调整战斗策略索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/NPCPanel.gd` / `scripts/ui/DialogPanel.gd` / `scenes/main/Main.tscn` | NPC 策略只读投影、策略 toggle 资格 / 互斥与保持 / 切换反馈 |
+| `scripts/systems/CombatSystem.gd` / `data/station_layout.json` | 兵种合法候选、统一主动进攻默认、对话资格与策略权威应用 |
+| `scripts/systems/DialogSystem.gd` / `scripts/systems/LLMBridge.gd` | 会话持续状态、条件请求上下文、结果归一化与合法变更调用 |
+| `backend/schemas/npc_ai.py` / `backend/app.py` | 条件 Schema、互斥与业务合同、关闭时剥离模块字段 |
+| `backend/services/model_adapter.py` / `data/prompts/dialogue_system_prompt.txt` | 动态 provider 合同、Mock 相关性判定与合法候选约束 |
+| `scripts/ui/GMPanel.gd` | AI信息页“策略 Mock / 打开策略对话”与 `dialogue_strategy` 命令 |
+| `tools/verify_combat_strategies.gd` / `tools/verify_wartime_dialogue.gd` / `tools/verify_morale_encouragement_mock.gd` | 候选、互斥、反馈、权威变更与本地 HTTP Mock 验收 |
+
+稳定调用关系：`DialogPanel toggle → DialogSystem 资格复验 → LLMBridge 条件载荷 → 后端动态合同 → DialogSystem 合法化 → CombatSystem 权威设置`。toggle 关闭时只是普通对话。
+
+## T0283 鼓舞士气显式开关索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/DialogPanel.gd` / `scenes/main/Main.tscn` | toggle 资格投影、持续开关状态与三类结果反馈 |
+| `scripts/systems/DialogSystem.gd` | 请求标记、发送前资格复验、结果暂存与完成时应用 |
+| `scripts/systems/CombatSystem.gd` | 战斗资格权威、活动 buff 防重与当天 24:00 失效 |
+| `scripts/systems/LLMBridge.gd` / `backend/schemas/npc_ai.py` | `is_morale_encouragement_request` 端到端载荷与 Schema |
+| `backend/services/model_adapter.py` / `backend/app.py` | 动态 provider 字段、Mock 判定、结果归一化与业务拒绝 |
+| `data/prompts/dialogue_system_prompt.txt` | 相关性优先、无关话题不加 buff 的提示合同 |
+| `scripts/ui/GMPanel.gd` | AI信息页“鼓舞 Mock / 打开鼓舞对话”入口与命令 |
+| `tools/verify_morale_encouragement_mock.gd` | 本地 HTTP Mock 的 UI、请求、反馈、buff 和 GM 端到端验收 |
+
+稳定调用关系：`DialogPanel toggle → DialogSystem 资格复验 → LLMBridge /npc/dialogue → 后端动态合同 → DialogSystem 暂存 → 完成对话 → CombatSystem 权威结算`。关闭 toggle 时链路止于普通对话。
+
+## T0282 世界血条真实填充与敌军头顶索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/WorldHealthBar3D.gd` | 用 Fill 网格真实宽度表达归一化比例，处理零血隐藏与实例级颜色配置 |
+| `scripts/systems/CombatSystem.gd` | 为敌军创建 / 刷新橙色血条，并把头顶标签收敛为具体敌人名称 |
+| `tools/verify_t0282_world_health_fill_and_enemy_overhead.gd` | 覆盖共享网格、NPC / 建筑权威比例、敌军名称 / 位置 / 颜色与零血结果 |
+
+稳定调用关系：`NPCSystem / BuildingSystem / DefenseDeviceSystem / CombatSystem 权威 hp / max_hp → WorldHealthBar3D QuadMesh 可见宽度`。世界组件不修改 HP；敌军详情数据仍由 CombatSystem 维护。
+
+## T0280 主场景战时头顶血条索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/WorldHealthBar3D.gd` | 提供 billboard 固定槽、归一化填充和统一绿 / 红阈值 |
+| `scripts/world/StationLayoutController.gd` | 仅为仓库、正门、主厅创建并刷新战时世界血条 |
+| `scripts/world/DefenseDeviceView.gd` | 将塔防头顶收敛为名称，并维护活动器械战时血条 |
+| `scripts/npc/NPC.gd`、`scenes/npc/NPC.tscn` | 移除文字 HP、并排行动状态并维护 NPC 战时血条 |
+| `tools/verify_t0280_world_combat_health_bars.gd` | 覆盖和平、敌军入场、低血转红和清敌隐藏完整链 |
+
+稳定调用关系：`CombatSystem 活动敌人数 → 世界血条显隐`；`NPCSystem / BuildingSystem / DefenseDeviceSystem hp / max_hp → WorldHealthBar3D 只读填充`。组件不拥有 HP 或战斗结算。
+
 ## T0270 左上 HUD 背景包裹索引
 
 | 文件 | 职责 |

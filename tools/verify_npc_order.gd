@@ -35,8 +35,8 @@ func _init() -> void:
 
 	npc_system.debug_select_npc("cook_01")
 	await process_frame
-	if order_button.visible:
-		push_error("Unrecruited NPC should not show the order button")
+	if not order_button.visible or not order_button.disabled or order_button.tooltip_text != "还未征召，无法命令。":
+		push_error("Unrecruited NPC should keep a disabled order button with a recruitment tooltip")
 		quit(1)
 		return
 	var rejected: Dictionary = npc_system.publish_npc_order("cook_01", "去守城门。")

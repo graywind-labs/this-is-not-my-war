@@ -648,6 +648,7 @@ def _dialogue_payload(
             state={},
         ).model_dump(),
         "is_recruitment_request": is_recruitment_request,
+        "is_morale_encouragement_request": interaction_context in {"rally", "combat"},
         "current_round": current_round,
         "max_rounds": 5,
         "soft_round_threshold": 5,

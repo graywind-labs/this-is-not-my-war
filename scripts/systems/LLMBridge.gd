@@ -63,7 +63,6 @@ const SHORT_MEMORY_OMITTED_PAYLOAD_KEYS: Array[String] = [
 	"participant_npc_ids",
 	"dialogue_id",
 	"source_event_id",
-	"deployment_id",
 	"session_completed",
 	"ended_while_waiting",
 	"completed_reply_count",
@@ -74,6 +73,39 @@ const SHORT_MEMORY_OMITTED_PAYLOAD_KEYS: Array[String] = [
 	"actor_display_name",
 	"order_revision"
 ]
+const AGGREGATABLE_MEMORY_EVENT_TYPES: Array[String] = [
+	"attack_made",
+	"damage_taken",
+	"building_damaged",
+	"defense_device_triggered",
+	"horse_damaged"
+]
+const MEMORY_AGGREGATION_DYNAMIC_DETAIL_KEYS: Array[String] = [
+	"damage",
+	"damage_after_defense",
+	"hp_before",
+	"hp_after",
+	"defeated"
+]
+const MEMORY_AGGREGATION_SIGNATURE_FIELDS := {
+	"attack_made": [
+		"attacker_npc_id", "target_type", "target_enemy_id", "weapon_id", "weapon_name",
+		"required_skill", "weapon_skill", "strength", "base_damage", "strength_multiplier",
+		"raw_attack_power", "attack_speed_multiplier", "attack_interval", "target_defense"
+	],
+	"damage_taken": [
+		"damage_source", "interaction_kind", "event_text", "attack_prompt",
+		"raw_attack_power", "target_defense"
+	],
+	"building_damaged": ["building_id", "building_name", "damage_source"],
+	"defense_device_triggered": [
+		"deployment_id", "device_id", "device_name", "slot_id",
+		"target_enemy_id", "target_enemy_name"
+	],
+	"horse_damaged": [
+		"target_npc_id", "horse_id", "horse_name", "share_ratio", "enemy_id", "enemy_name"
+	]
+}
 const BASIC_RESOURCE_RESERVE_IDS: Array[String] = [
 	"grain",
 	"meal",
@@ -821,14 +853,27 @@ func debug_request_dialogue(
 	npc_id: String,
 	speaker_text: String = "守备官需要你帮忙守住这里。",
 	is_recruitment_request: bool = false,
-	visibility: String = "private"
+	visibility: String = "private",
+	is_morale_encouragement_request: bool = false,
+	interaction_context: String = "",
+	is_combat_strategy_request: bool = false,
+	combat_strategy_context: Dictionary = {},
+	is_work_encouragement_request: bool = false
 ) -> Dictionary:
-	return request_npc_dialogue(npc_id, speaker_text, {
+	var options := {
 		"is_recruitment_request": is_recruitment_request,
+		"is_morale_encouragement_request": is_morale_encouragement_request,
+		"is_combat_strategy_request": is_combat_strategy_request,
+		"is_work_encouragement_request": is_work_encouragement_request,
 		"dialogue_state": {
 			"visibility": visibility
 		}
-	})
+	}
+	if is_combat_strategy_request and not combat_strategy_context.is_empty():
+		options["combat_strategy_context"] = combat_strategy_context.duplicate(true)
+	if not interaction_context.is_empty():
+		options["interaction_context"] = interaction_context
+	return request_npc_dialogue(npc_id, speaker_text, options)
 
 
 func debug_request_plan_revision(npc_id: String, failure_type: String = "unknown", failure_summary: String = "GM 调试触发计划重评估。") -> Dictionary:
@@ -1099,6 +1144,9 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"interaction_context": interaction_context,
 		"battlefield_context": _build_battlefield_context(npc_id, interaction_context),
 		"is_recruitment_request": bool(options.get("is_recruitment_request", false)),
+		"is_morale_encouragement_request": bool(options.get("is_morale_encouragement_request", false)),
+		"is_combat_strategy_request": bool(options.get("is_combat_strategy_request", false)),
+		"is_work_encouragement_request": bool(options.get("is_work_encouragement_request", false)),
 		"current_round": current_round,
 		"max_rounds": max_rounds,
 		"soft_round_threshold": soft_round_threshold,
@@ -1126,6 +1174,10 @@ func build_npc_dialogue_payload(npc_id: String, speaker_text: String, options: D
 		"allowed_actions": _build_allowed_action_candidates(npc_id, true),
 		"constraints": options.get("constraints", [])
 	}
+	if bool(payload.get("is_combat_strategy_request", false)):
+		var combat_strategy_context: Dictionary = options.get("combat_strategy_context", {}) if options.get("combat_strategy_context", {}) is Dictionary else {}
+		if not combat_strategy_context.is_empty():
+			payload["combat_strategy_context"] = combat_strategy_context.duplicate(true)
 	if not interrupted_activity_context.is_empty():
 		payload["interrupted_activity_context"] = interrupted_activity_context.duplicate(true)
 	if dialogue_kind == ESCAPE_INTERVENTION_DIALOGUE_KIND:
@@ -2838,6 +2890,7 @@ func _build_npc_state_context(npc: Dictionary, npc_state: Dictionary) -> Diction
 		"combat_mode": str(npc_state.get("combat_mode", "")),
 		"combat_strategy": npc_state.get("combat_strategy", {}),
 		"morale_boost": npc_state.get("morale_boost", {}),
+		"work_encouragement_boost": npc_state.get("work_encouragement_boost", {}),
 		"escape_intent": npc_state.get("escape_intent", {}),
 		"current_location": str(npc_state.get("current_location", "plaza")),
 		"current_location_name": str(npc_state.get("current_location_name", "广场")),
@@ -2924,8 +2977,12 @@ func _build_short_memory_context(npc_id: String) -> Dictionary:
 
 	var memory: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
 	return {
-		"experienced_events": _events_to_summaries(memory.get("event_log", [])),
-		"witnessed_events": _events_to_summaries(memory.get("witness_log", []))
+		"experienced_events": _events_to_summaries(
+			memory.get("event_log", [])
+		),
+		"witnessed_events": _events_to_summaries(
+			memory.get("witness_log", [])
+		)
 	}
 
 
@@ -3185,6 +3242,32 @@ func debug_build_short_memory_context(npc_id: String) -> Dictionary:
 	return _build_short_memory_context(npc_id)
 
 
+func debug_build_short_memory_projection_report(npc_id: String) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("get_npc_short_term_memory"):
+		return {}
+	var memory: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
+	var event_log: Variant = memory.get("event_log", [])
+	var witness_log: Variant = memory.get("witness_log", [])
+	var experienced := build_memory_event_projection(event_log, "experienced")
+	var witnessed := build_memory_event_projection(witness_log, "witnessed")
+	return {
+		"experienced": _build_memory_projection_stats(event_log, experienced),
+		"witnessed": _build_memory_projection_stats(witness_log, witnessed),
+		"projection": {
+			"experienced_events": experienced,
+			"witnessed_events": witnessed
+		}
+	}
+
+
+func debug_build_memory_projection_report(raw_events: Variant, memory_kind: String = "") -> Dictionary:
+	var projection := build_memory_event_projection(raw_events, memory_kind)
+	var report := _build_memory_projection_stats(raw_events, projection)
+	report["projection"] = projection
+	return report
+
+
 func _record_npc_context_injection(npc_id: String, call_type: String, current_order: Dictionary, request_id: String, extra: Dictionary = {}) -> void:
 	_last_npc_context_injection = {
 		"npc_id": npc_id,
@@ -3197,15 +3280,266 @@ func _record_npc_context_injection(npc_id: String, call_type: String, current_or
 
 
 func _events_to_summaries(raw_events: Variant) -> Array:
-	var summaries: Array = []
+	return build_memory_event_projection(raw_events)
+
+
+func build_memory_event_projection(raw_events: Variant, memory_kind: String = "") -> Array:
+	var projection: Array = []
 	if not raw_events is Array:
-		return summaries
-	var events: Array = raw_events
-	for raw_event in events:
+		return projection
+	# A non-whitelisted narrative event is a hard boundary. This keeps two battles,
+	# an unconscious transition, dialogue, and other causally important moments
+	# from being collapsed merely because their semantic keys happen to match.
+	var aggregate_indices: Dictionary = {}
+	for raw_event in raw_events as Array:
 		if not raw_event is Dictionary:
 			continue
-		summaries.append(build_compact_memory_event(raw_event as Dictionary))
-	return summaries
+		var event: Dictionary = raw_event
+		var event_type := str(event.get("type", ""))
+		var compact := build_compact_memory_event(event)
+		if ["experienced", "witnessed"].has(memory_kind):
+			compact["memory_kind"] = memory_kind
+		if not AGGREGATABLE_MEMORY_EVENT_TYPES.has(event_type):
+			aggregate_indices.clear()
+			projection.append(compact)
+			continue
+		var signature := _build_memory_aggregation_signature(event)
+		if signature.is_empty():
+			projection.append(compact)
+			continue
+		if not aggregate_indices.has(signature):
+			aggregate_indices[signature] = projection.size()
+			projection.append(compact)
+			continue
+		var projection_index := int(aggregate_indices[signature])
+		projection[projection_index] = _merge_memory_aggregate(
+			projection[projection_index],
+			event
+		)
+	return projection
+
+
+func _build_memory_aggregation_signature(event: Dictionary) -> String:
+	var event_type := str(event.get("type", ""))
+	if not AGGREGATABLE_MEMORY_EVENT_TYPES.has(event_type):
+		return ""
+	# Raw identity fields are mandatory. Already compacted events deliberately do
+	# not get guessed into a group because their subject/object boundary is gone.
+	for required_key in ["subject_npc_id", "actor_ids", "target_ids", "location_id", "visibility"]:
+		if not event.has(required_key):
+			return ""
+	var payload: Dictionary = event.get("payload", {}) if event.get("payload", {}) is Dictionary else {}
+	var signature := {
+		"type": event_type,
+		"day": event.get("day", null),
+		"subject_npc_id": str(event.get("subject_npc_id", "")),
+		"actor_ids": _memory_string_array(event.get("actor_ids", [])),
+		"target_ids": _memory_string_array(event.get("target_ids", [])),
+		"location_id": str(event.get("location_id", "")),
+		"visibility": str(event.get("visibility", ""))
+	}
+	var semantic_fields: Array = MEMORY_AGGREGATION_SIGNATURE_FIELDS.get(event_type, [])
+	for raw_field in semantic_fields:
+		var field := str(raw_field)
+		signature[field] = payload.get(field, null)
+	return JSON.stringify(signature)
+
+
+func _memory_string_array(raw_value: Variant) -> Array[String]:
+	var values: Array[String] = []
+	if not raw_value is Array:
+		return values
+	for raw_item in raw_value as Array:
+		values.append(str(raw_item))
+	return values
+
+
+func _merge_memory_aggregate(current: Dictionary, next_raw_event: Dictionary) -> Dictionary:
+	var merged := current.duplicate(true)
+	var details: Dictionary = merged.get("details", {}) if merged.get("details", {}) is Dictionary else {}
+	var aggregation: Dictionary = (
+		details.get("aggregation", {}).duplicate(true)
+		if details.get("aggregation", {}) is Dictionary
+		else {}
+	)
+	if aggregation.is_empty():
+		aggregation = _new_memory_aggregation(merged, details)
+	var next_payload: Dictionary = (
+		next_raw_event.get("payload", {})
+		if next_raw_event.get("payload", {}) is Dictionary
+		else {}
+	)
+	aggregation["event_count"] = int(aggregation.get("event_count", 1)) + 1
+	aggregation["total_damage"] = _add_memory_numbers(
+		aggregation.get("total_damage", 0),
+		next_payload.get("damage", 0)
+	)
+	aggregation["last_day"] = next_raw_event.get("day", merged.get("day", null))
+	aggregation["last_time"] = next_raw_event.get("time", merged.get("time", null))
+	aggregation["hp_after_last"] = next_payload.get(
+		"hp_after",
+		aggregation.get("hp_after_last", null)
+	)
+	if next_payload.has("hp_after"):
+		var previous_low: Variant = aggregation.get("lowest_hp", next_payload.get("hp_after"))
+		aggregation["lowest_hp"] = minf(float(previous_low), float(next_payload.get("hp_after", previous_low)))
+	if next_payload.has("damage_after_defense"):
+		aggregation["total_damage_after_defense"] = _add_memory_numbers(
+			aggregation.get("total_damage_after_defense", 0),
+			next_payload.get("damage_after_defense", 0)
+		)
+	aggregation["defeated_any"] = (
+		bool(aggregation.get("defeated_any", false))
+		or bool(next_payload.get("defeated", false))
+	)
+	aggregation["last_defeated"] = bool(next_payload.get("defeated", false))
+	for key in MEMORY_AGGREGATION_DYNAMIC_DETAIL_KEYS:
+		details.erase(key)
+	details["aggregation"] = aggregation
+	merged["details"] = details
+	merged["importance"] = maxi(
+		int(merged.get("importance", 50)),
+		clampi(int(next_raw_event.get("importance", 50)), 0, 100)
+	)
+	merged["summary"] = _build_memory_aggregate_summary(
+		str(merged.get("type", "")),
+		str(current.get("summary", "")),
+		details,
+		aggregation
+	)
+	return merged
+
+
+func _new_memory_aggregation(first_compact: Dictionary, first_details: Dictionary) -> Dictionary:
+	var first_hp_after: Variant = first_details.get("hp_after", null)
+	var aggregation := {
+		"scope": "same_day_contiguous_combat_run",
+		"event_count": 1,
+		"first_day": first_compact.get("day", null),
+		"first_time": first_compact.get("time", null),
+		"last_day": first_compact.get("day", null),
+		"last_time": first_compact.get("time", null),
+		"total_damage": first_details.get("damage", 0),
+		"hp_before_first": first_details.get("hp_before", null),
+		"hp_after_last": first_hp_after,
+		"lowest_hp": first_hp_after,
+		"defeated_any": bool(first_details.get("defeated", false)),
+		"last_defeated": bool(first_details.get("defeated", false))
+	}
+	if first_details.has("damage_after_defense"):
+		aggregation["total_damage_after_defense"] = first_details.get("damage_after_defense", 0)
+	return aggregation
+
+
+func _add_memory_numbers(left: Variant, right: Variant) -> Variant:
+	if left is int and right is int:
+		return int(left) + int(right)
+	return float(left) + float(right)
+
+
+func _build_memory_aggregate_summary(
+	event_type: String,
+	first_summary: String,
+	details: Dictionary,
+	aggregation: Dictionary
+) -> String:
+	var count := int(aggregation.get("event_count", 1))
+	var total_damage := _format_memory_number(aggregation.get("total_damage", 0))
+	var hp_before := _format_memory_number(aggregation.get("hp_before_first", 0))
+	var hp_after := _format_memory_number(aggregation.get("hp_after_last", 0))
+	var lowest_hp := _format_memory_number(aggregation.get("lowest_hp", 0))
+	var terminal_text := "，期间击退目标" if bool(aggregation.get("defeated_any", false)) else ""
+	match event_type:
+		"attack_made":
+			return "%s使用%s攻击%s%d次，共造成%s点伤害，目标HP从%s降到%s，最低%s%s。" % [
+				str(details.get("attacker_name", details.get("attacker_npc_id", "NPC"))),
+				str(details.get("weapon_name", "武器")),
+				str(details.get("target_enemy_name", details.get("target_enemy_id", "敌人"))),
+				count, total_damage, hp_before, hp_after, lowest_hp, terminal_text
+			]
+		"damage_taken":
+			return "%s受到%s的同类伤害%d次，共失去%s点HP，HP从%s降到%s，最低%s。" % [
+				_memory_summary_prefix(first_summary, "受到", str(details.get("target_npc_id", "NPC"))),
+				str(details.get("damage_source", "未知来源")),
+				count, total_damage, hp_before, hp_after, lowest_hp
+			]
+		"building_damaged":
+			return "%s攻击%s%d次，共造成%s点建筑伤害，HP从%s降到%s，最低%s。" % [
+				_memory_summary_prefix(first_summary, "攻击", str(details.get("damage_source", "敌人"))),
+				str(details.get("building_name", details.get("building_id", "建筑"))),
+				count, total_damage, hp_before, hp_after, lowest_hp
+			]
+		"defense_device_triggered":
+			return "%s（部署%s）攻击%s%d次，共造成%s点伤害，目标HP从%s降到%s，最低%s%s。" % [
+				str(details.get("device_name", "防御器械")),
+				str(details.get("deployment_id", "未知")),
+				str(details.get("target_enemy_name", details.get("target_enemy_id", "敌人"))),
+				count, total_damage, hp_before, hp_after, lowest_hp, terminal_text
+			]
+		"horse_damaged":
+			return "%s骑乘的%s承受同类伤害%d次，共失去%s点HP，HP从%s降到%s，最低%s。" % [
+				_memory_summary_prefix(first_summary, "骑乘", str(details.get("target_npc_id", "NPC"))),
+				str(details.get("horse_name", details.get("horse_id", "马匹"))),
+				count, total_damage, hp_before, hp_after, lowest_hp
+			]
+	return first_summary
+
+
+func _memory_summary_prefix(summary: String, separator: String, fallback: String) -> String:
+	var separator_index := summary.find(separator)
+	if separator_index <= 0:
+		return fallback
+	return summary.left(separator_index).strip_edges()
+
+
+func _format_memory_number(value: Variant) -> String:
+	var number := float(value) if value != null else 0.0
+	if is_equal_approx(number, round(number)):
+		return str(int(round(number)))
+	return "%.2f" % number
+
+
+func _build_memory_projection_stats(raw_events: Variant, projection: Array) -> Dictionary:
+	var raw_count := 0
+	var by_type: Dictionary = {}
+	if raw_events is Array:
+		for raw_event in raw_events as Array:
+			if not raw_event is Dictionary:
+				continue
+			raw_count += 1
+			var event_type := str((raw_event as Dictionary).get("type", ""))
+			if AGGREGATABLE_MEMORY_EVENT_TYPES.has(event_type):
+				var type_stats: Dictionary = by_type.get(event_type, {
+					"raw_count": 0,
+					"projected_count": 0,
+					"aggregated_group_count": 0
+				})
+				type_stats["raw_count"] = int(type_stats.get("raw_count", 0)) + 1
+				by_type[event_type] = type_stats
+	for raw_projected in projection:
+		if not raw_projected is Dictionary:
+			continue
+		var projected_event: Dictionary = raw_projected
+		var event_type := str(projected_event.get("type", ""))
+		if not AGGREGATABLE_MEMORY_EVENT_TYPES.has(event_type):
+			continue
+		var type_stats: Dictionary = by_type.get(event_type, {
+			"raw_count": 0,
+			"projected_count": 0,
+			"aggregated_group_count": 0
+		})
+		type_stats["projected_count"] = int(type_stats.get("projected_count", 0)) + 1
+		var details: Dictionary = projected_event.get("details", {}) if projected_event.get("details", {}) is Dictionary else {}
+		var aggregation: Dictionary = details.get("aggregation", {}) if details.get("aggregation", {}) is Dictionary else {}
+		if int(aggregation.get("event_count", 1)) > 1:
+			type_stats["aggregated_group_count"] = int(type_stats.get("aggregated_group_count", 0)) + 1
+		by_type[event_type] = type_stats
+	return {
+		"raw_count": raw_count,
+		"projected_count": projection.size(),
+		"saved_count": raw_count - projection.size(),
+		"by_type": by_type
+	}
 
 
 func build_compact_memory_event(event: Dictionary) -> Dictionary:

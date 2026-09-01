@@ -3,6 +3,8 @@ extends SceneTree
 
 const NORMAL_FILL := "71865aff"
 const DANGER_FILL := "a7433bff"
+const EXPERIENCE_FILL := "8f5a2dff"
+const FATIGUE_FILL := "777777ff"
 const DANGER_LABEL := "dc6157ff"
 
 
@@ -63,7 +65,10 @@ func _init() -> void:
 	var background_button := npc_panel.find_child("NPCBackgroundButton", true, false) as Button
 	var header_action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
 	var behavior_mode_label := npc_panel.find_child("NPCBehaviorModeLabel", true, false) as Label
-	var hp_experience_row := npc_panel.find_child("NPCHPExperienceRow", true, false) as HBoxContainer
+	var hp_progress_row := npc_panel.find_child("NPCHPProgressRow", true, false) as VBoxContainer
+	var experience_progress_row := npc_panel.find_child("NPCExperienceProgressRow", true, false) as VBoxContainer
+	var hp_progress := npc_panel.find_child("NPCHPProgress", true, false) as ProgressBar
+	var experience_progress := npc_panel.find_child("NPCExperienceProgress", true, false) as ProgressBar
 	var experience_label := npc_panel.find_child("NPCExperienceLabel", true, false) as Label
 	var attributes_label := npc_panel.find_child("NPCAttributesLabel", true, false) as Label
 	var attribute_point_row := npc_panel.find_child("NPCAttributePointRow", true, false) as HBoxContainer
@@ -89,6 +94,9 @@ func _init() -> void:
 	var witness_log_box := npc_panel.find_child("NPCWitnessLogBox", true, false) as PanelContainer
 	var event_log_text := npc_panel.find_child("NPCEventLogText", true, false) as TextEdit
 	var witness_log_text := npc_panel.find_child("NPCWitnessLogText", true, false) as TextEdit
+	if not _verify_need_progress(hp_progress, hp_label, false, "healthy HP"):
+		quit(1)
+		return
 	if header == null or name_label == null or background_button == null or background_button.get_parent() != header or background_button.get_index() != name_label.get_index() + 1:
 		push_error("NPC background button should be placed beside the NPC name in the top header")
 		quit(1)
@@ -107,11 +115,19 @@ func _init() -> void:
 		push_error("NPC action and dimmed behavior mode should follow the background button in the header")
 		quit(1)
 		return
-	if hp_experience_row == null or hp_label.get_parent() != hp_experience_row:
-		push_error("NPCPanel HP and experience should share one row")
+	if hp_progress_row == null or experience_progress_row == null or hp_label.get_parent() != hp_progress_row or experience_label.get_parent() != experience_progress_row:
+		push_error("NPCPanel HP and experience should each use a label-above-progress row")
 		quit(1)
 		return
-	if experience_label == null or not experience_label.text.begins_with("经验：") or not experience_label.text.contains(" / "):
+	if hp_progress == null or experience_progress == null or hp_label.get_index() >= hp_progress.get_index() or experience_label.get_index() >= experience_progress.get_index():
+		push_error("NPCPanel HP / experience labels should sit above their progress bars")
+		quit(1)
+		return
+	var progression: Dictionary = npc_system.get_npc_progression(npc_id)
+	var expected_level_xp := int(progression.get("current_level_experience", -1))
+	var expected_level_xp_max := int(progression.get("current_level_experience_max", -1))
+	var experience_fill := experience_progress.get_theme_stylebox("fill") as StyleBoxFlat
+	if experience_label == null or experience_label.text != "经验：%d / %d" % [expected_level_xp, expected_level_xp_max] or int(experience_progress.value) != expected_level_xp or int(experience_progress.max_value) != expected_level_xp_max or experience_fill == null or experience_fill.bg_color.to_html(true) != EXPERIENCE_FILL:
 		push_error("NPCPanel experience text mismatch: %s" % (experience_label.text if experience_label != null else "<missing>"))
 		quit(1)
 		return
@@ -163,12 +179,22 @@ func _init() -> void:
 		return
 	npc_system.update_npc_state(npc_id, {"satiety": 19, "fatigue": 81})
 	await process_frame
-	if not _verify_need_progress(satiety_progress, satiety_label, true, "low satiety") or not _verify_need_progress(fatigue_progress, fatigue_label, true, "high fatigue"):
+	if not _verify_need_progress(satiety_progress, satiety_label, true, "low satiety") or not _verify_need_progress(fatigue_progress, fatigue_label, true, "high fatigue", FATIGUE_FILL):
 		quit(1)
 		return
 	npc_system.update_npc_state(npc_id, {"satiety": 20, "fatigue": 80})
 	await process_frame
-	if not _verify_need_progress(satiety_progress, satiety_label, false, "satiety boundary") or not _verify_need_progress(fatigue_progress, fatigue_label, false, "fatigue boundary"):
+	if not _verify_need_progress(satiety_progress, satiety_label, false, "satiety boundary") or not _verify_need_progress(fatigue_progress, fatigue_label, false, "fatigue boundary", FATIGUE_FILL):
+		quit(1)
+		return
+	npc_system.update_npc_state(npc_id, {"hp": 35})
+	await process_frame
+	if not _verify_need_progress(hp_progress, hp_label, true, "critical HP"):
+		quit(1)
+		return
+	npc_system.update_npc_state(npc_id, {"hp": 36})
+	await process_frame
+	if not _verify_need_progress(hp_progress, hp_label, false, "HP boundary"):
 		quit(1)
 		return
 	if specialties_label == null or not specialties_label.text.begins_with("专长："):
@@ -207,8 +233,17 @@ func _init() -> void:
 		push_error("NPCPanel must remain a single-column vertical information panel")
 		quit(1)
 		return
-	if hp_experience_row.get_parent() != content or attribute_point_row.get_parent() != content or specialties_label.get_parent() != content:
+	if hp_progress_row.get_parent() != content or experience_progress_row.get_parent() != content or attribute_point_row.get_parent() != content or specialties_label.get_parent() != content:
 		push_error("NPCPanel overview fields should stay in the main single-column content flow")
+		quit(1)
+		return
+	if not (
+		combat_stats_label.get_index() < specialties_label.get_index()
+		and specialties_label.get_index() < hp_progress_row.get_index()
+		and hp_progress_row.get_index() < experience_progress_row.get_index()
+		and experience_progress_row.get_index() < satiety_label.get_parent().get_index()
+	):
+		push_error("NPCPanel combat / specialty / HP / experience / satiety order mismatch")
 		quit(1)
 		return
 	if long_term_button_row.get_parent() != content or event_log_box.get_parent() != content or witness_log_box.get_parent() != content:
@@ -814,6 +849,7 @@ func _init() -> void:
 
 func _verify_recruited_name_color(npc_system: Node, npc_panel: Control) -> bool:
 	const EXPECTED_FRIENDLY_COLOR := Color(0.64, 0.92, 0.68, 1.0)
+	const EXPECTED_ACTION_COLOR := Color(0.62, 0.64, 0.66, 1.0)
 	var target_npc_id := "stableman_01"
 	if not npc_system.set_npc_recruited(target_npc_id, true):
 		push_error("Failed to recruit NPC for friendly name color verification")
@@ -838,11 +874,17 @@ func _verify_recruited_name_color(npc_system: Node, npc_panel: Control) -> bool:
 	if world_name == null or not world_name.modulate.is_equal_approx(EXPECTED_FRIENDLY_COLOR):
 		push_error("Recruited NPC world name should refresh to light green")
 		return false
-	if world_status == null or not world_status.modulate.is_equal_approx(Color.WHITE):
-		push_error("Only the recruited NPC name should be green; status text should remain neutral")
+	if world_status == null or not world_status.modulate.is_equal_approx(EXPECTED_ACTION_COLOR):
+		push_error("Only the recruited NPC name should be green; action text should remain subdued gray")
 		return false
-	if world_name.text.contains("\n") or not world_status.text.begins_with("HP "):
-		push_error("World NPC name and status labels should be visually separable")
+	if (
+		world_name.text.contains("\n")
+		or world_status.text.contains("HP")
+		or world_status.pixel_size >= world_name.pixel_size
+		or world_status.position.x <= world_name.position.x
+		or not is_equal_approx(world_status.position.y, world_name.position.y)
+	):
+		push_error("World NPC action must be smaller, HP-free, and positioned to the right of the name")
 		return false
 	return true
 
@@ -854,10 +896,10 @@ func _contains_internal_event_fields(text: String) -> bool:
 	return false
 
 
-func _verify_need_progress(progress: ProgressBar, label: Label, expected_danger: bool, phase: String) -> bool:
+func _verify_need_progress(progress: ProgressBar, label: Label, expected_danger: bool, phase: String, normal_fill: String = NORMAL_FILL) -> bool:
 	var fill := progress.get_theme_stylebox("fill") as StyleBoxFlat
 	var fill_color := fill.bg_color.to_html(true) if fill != null else ""
-	var expected_fill := DANGER_FILL if expected_danger else NORMAL_FILL
+	var expected_fill := DANGER_FILL if expected_danger else normal_fill
 	if bool(progress.get_meta("danger_state", false)) != expected_danger or fill_color != expected_fill:
 		push_error("NPCPanel need progress mismatch during %s: danger=%s fill=%s" % [phase, progress.get_meta("danger_state", false), fill_color])
 		return false

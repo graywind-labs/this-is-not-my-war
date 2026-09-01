@@ -196,7 +196,7 @@ def _base_payload() -> dict:
 def _valid_player_response(**overrides: object) -> dict:
     response = {
         "reply_text": "守备官，我听见了。要我站出来，就别把食堂里的人当成柴火。",
-        "emotion": "wary",
+        "emotion": "none",
         "recruitment_result": "accept",
         "debug_reason": "职业、人设、记忆和 current_order 共同影响应征判断。",
     }
@@ -207,7 +207,7 @@ def _valid_player_response(**overrides: object) -> dict:
 def _valid_npc_response(**overrides: object) -> dict:
     response = {
         "reply_text": "好，我先听你说。",
-        "emotion": "neutral",
+        "emotion": "none",
         "invitation_result": "not_applicable",
         "should_end_dialogue": False,
         "debug_reason": "NPC 对话轮次判断。",
@@ -219,7 +219,7 @@ def _valid_npc_response(**overrides: object) -> dict:
 def _valid_escape_response(**overrides: object) -> dict:
     response = {
         "reply_text": "我再信你一次，留下。",
-        "emotion": "wary",
+        "emotion": "none",
         "escape_intervention_result": "stay",
         "debug_reason": "逃离挽留选择留下。",
     }
@@ -328,7 +328,6 @@ def main() -> None:
         "列表外行动",
         "当前做不到",
         "提出应征",
-        "wartime_reaction",
         "avoid_combat",
         "escape_intervention",
         "escape_intervention_result 只能是 stay 或 leave",
@@ -368,6 +367,24 @@ def main() -> None:
     assert "speaker_name" not in provider_payload["speaker_context"]
     for fragment in required_prompt_fragments:
         assert fragment in system_prompt, fragment
+    for inactive_strategy_fragment in [
+        "is_combat_strategy_request=true",
+        "combat_strategy_context.current_strategy",
+        "combat_strategy_decision",
+    ]:
+        assert inactive_strategy_fragment not in system_prompt, inactive_strategy_fragment
+    for inactive_work_fragment in [
+        "is_work_encouragement_request=true",
+        "work_encouragement_reaction",
+        "全部工作产出效率+20%",
+    ]:
+        assert inactive_work_fragment not in system_prompt, inactive_work_fragment
+    for inactive_morale_fragment in [
+        "is_morale_encouragement_request=true",
+        "wartime_reaction",
+        "开关本身不是鼓舞成功的证据",
+    ]:
+        assert inactive_morale_fragment not in system_prompt, inactive_morale_fragment
     assert "attend_mass" not in system_prompt
     assert "玩家" not in content["reply_text"]
     assert content["recruitment_result"] == "accept"
@@ -419,7 +436,7 @@ def main() -> None:
             "resume_expected_if_plan_unchanged": True,
         },
     })
-    sleep_content, _, sleep_provider_payload = _run_real_adapter_with_fake_provider(
+    sleep_content, sleep_prompt, sleep_provider_payload = _run_real_adapter_with_fake_provider(
         sleep_payload,
         _valid_player_response(
             reply_text="我刚才还在睡，是你把我叫醒的。要是计划没变，谈完我还得回去把这一觉睡完。",
@@ -437,10 +454,18 @@ def main() -> None:
         == "sleep_in_dormitory"
     )
     assert "刚才还在睡" in sleep_content["reply_text"]
+    for inactive_recruitment_fragment in [
+        "is_recruitment_request=true",
+        "recruitment_result",
+        "提出应征",
+        "应征校准",
+    ]:
+        assert inactive_recruitment_fragment not in sleep_prompt, inactive_recruitment_fragment
 
     wartime_payload = _base_payload()
     wartime_payload.update({
         "is_recruitment_request": False,
+        "is_morale_encouragement_request": True,
         "interaction_context": "combat",
         "speaker_text": "守住门口，别让他们进来。你不是一个人。",
         "npc_state": _base_payload()["npc_state"] | {
@@ -462,6 +487,69 @@ def main() -> None:
         ),
     )
     assert wartime_content["wartime_reaction"] == "morale_boost"
+    wartime_prompt = ModelAdapter(
+        ModelAdapterConfig(provider="mock")
+    )._system_prompt_for_call_type("dialogue", wartime_payload)
+    for morale_fragment in [
+        "is_morale_encouragement_request=true",
+        "开关本身不是鼓舞成功的证据",
+        "wartime_reaction",
+        "无关",
+        "morale_boost",
+        "escape",
+        "none",
+    ]:
+        assert morale_fragment in wartime_prompt, morale_fragment
+
+    strategy_payload = _base_payload()
+    strategy_payload.update({
+        "is_recruitment_request": False,
+        "is_combat_strategy_request": True,
+        "interaction_context": "combat",
+        "combat_strategy_context": {
+            "current_strategy": {"id": "attack", "label": "主动进攻"},
+            "available_strategies": [
+                {"id": "attack", "label": "主动进攻"},
+                {"id": "avoid", "label": "避战"},
+            ],
+        },
+    })
+    strategy_prompt = ModelAdapter(
+        ModelAdapterConfig(provider="mock")
+    )._system_prompt_for_call_type("dialogue", strategy_payload)
+    for strategy_fragment in [
+        "is_combat_strategy_request=true",
+        "combat_strategy_context.current_strategy",
+        "combat_strategy_decision",
+        "无关内容必须正常回复",
+    ]:
+        assert strategy_fragment in strategy_prompt, strategy_fragment
+
+    work_payload = _base_payload()
+    work_payload.update({
+        "is_recruitment_request": False,
+        "is_work_encouragement_request": True,
+        "interaction_context": "work",
+        "speaker_text": "辛苦了，你的工作很重要，我相信你。",
+        "npc_state": _base_payload()["npc_state"] | {
+            "behavior_mode": "work",
+            "work_encouragement_boost": {},
+        },
+    })
+    work_prompt = ModelAdapter(
+        ModelAdapterConfig(provider="mock")
+    )._system_prompt_for_call_type("dialogue", work_payload)
+    for work_fragment in [
+        "is_work_encouragement_request=true",
+        "work_encouragement_reaction",
+        "无关话题",
+        "none",
+        "work_boost",
+        "escape",
+        "全部工作产出效率+20%",
+        "持续至当天24:00",
+    ]:
+        assert work_fragment in work_prompt, work_fragment
 
     invitation_payload = _base_payload()
     invitation_payload.update({

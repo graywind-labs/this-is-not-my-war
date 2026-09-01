@@ -5,6 +5,8 @@
     {"id":"walk","label":"行走","animation_state":"walk","modes":["work","combat"]},
     {"id":"run","label":"奔跑","animation_state":"run","modes":["work","combat"]},
     {"id":"talk","label":"交谈 / 示意","animation_state":"talk","modes":["work"]},
+    {"id":"happy","label":"开心 / 欢呼","animation_state":"happy","modes":["work","combat"]},
+    {"id":"angry","label":"愤怒（剑盾横斩）","animation_state":"angry","modes":["work","combat"]},
     {"id":"hit_react","label":"受击","animation_state":"hit_react","modes":["work","combat"]},
     {"id":"unconscious","label":"倒地 / 昏迷","animation_state":"unconscious","modes":["work","combat"]},
     {"id":"get_up","label":"复苏起身","animation_state":"get_up","modes":["work","combat"]},
@@ -30,7 +32,7 @@
     {"id":"sleeping","label":"睡眠","animation_state":"sleeping","modes":["work"]},
     {"id":"vehicle_seated","label":"驾车坐姿","animation_state":"vehicle_seated","modes":["work"]}
   ],
-  "common_friendly_actions": ["idle","walk","run","talk","hit_react","unconscious","get_up","attack","training_practice","mounted_pose","friendly_mounted_unconscious","work_blacksmith","work_stable","work_dining_hall","work_garden","work_tavern","work_clinic_doctor","work_workshop","training_instructor","medical_treatment","seated_prayer","seated_study","seated_eating","drink_wine","sleeping","vehicle_seated"],
+  "common_friendly_actions": ["idle","walk","run","talk","happy","angry","hit_react","unconscious","get_up","attack","training_practice","mounted_pose","friendly_mounted_unconscious","work_blacksmith","work_stable","work_dining_hall","work_garden","work_tavern","work_clinic_doctor","work_workshop","training_instructor","medical_treatment","seated_prayer","seated_study","seated_eating","drink_wine","sleeping","vehicle_seated"],
   "enemy_actions": ["idle","walk","run","hit_react","unconscious","get_up","attack","mounted_pose"],
   "mounted_enemy_actions": ["mounted_shared_defeat"],
   "role_actions": {

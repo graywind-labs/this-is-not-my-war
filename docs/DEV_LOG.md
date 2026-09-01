@@ -1,5 +1,199 @@
 # DEV_LOG.md
 
+## 2026-09-01 — T0302 NPC 面板逃离行动红色警示
+
+- NPC 面板姓名旁仅在 `current_action=escaping_station` 时以 `#dc6157` 显示“逃离驿站”，每次刷新对其他行动恢复默认白色。
+- 逃离挽留专项新增逃离红色与成功挽留后恢复断言；专项、NPC 面板与 Main headless 通过。Godot MCP 正式 Main 已确认运行态文字 / 颜色，错误游标 190 后无新增错误。
+- 未修改逃离结算、事件、AI、Prompt 或 provider，真实 API 调用为 0。版本推进到 `0.0.585-t0302-escape-action-warning`。
+
+## 2026-09-01 — T0301 NPC 头顶信息分层上移
+
+- 我方战时血条、思考 / 问号、逃离 / 对话气泡分别上移到独立高度；同步抬高世界 Emoji，保留 NPC-NPC 回复时的上下层间隔。
+- 敌方普通与正式生成路径统一姓名高度 `2.10m`、血条高度 `2.44m`，整体上移 `0.35m`，不改名称、颜色或 HP 比例。
+- T0280、T0282、逃离、主动交涉、T0289 与 Main headless 通过；思考综合专项停在既有纯攻击计划判别前置断言。Godot MCP 正式 Main 已核对运行态坐标和画面，错误游标 190 后无新增错误。版本推进到 `0.0.584-t0301-overhead-ui-spacing`。
+
+## 2026-09-01 — T0300 对话面板紧凑页眉与无框输入交互
+
+- 重排 DialogPanel 页眉为左侧标题 / 邻近记录 / 下一行公开性和右侧四类特殊 toggle，移除标题上方视觉空洞；特殊 toggle 全状态不再绘制高亮框。
+- 删除普通公开性状态文案与无限轮次字段；强制公开由锁定单选表达，仅逃离挽留显示有限轮次。输入框 normal / focus 固定使用相同深色背景。
+- Dialog UI HTTP Mock、战时、逃离、记录、NPC 面板与 Main headless 通过；旁听专项仍被既有气泡投影点击未命中阻塞。Godot MCP 运行态确认页眉间距、聚焦底色和零新增编辑器错误。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.583-t0300-dialog-panel-compact-header`。
+
+## 2026-09-01 · T0299 事件库开发语义降噪与原因润色
+
+- 行为模式 previous / reason 保留在 NPC 运行态和 GM 快照，但 NPCSystem 不再写 `npc_mode_changed`；MemorySystem 入口同步拒绝该开发专用旧类型，阻断亲历、见闻、UI 记录和 LLM 短期记忆传播。
+- 逃离挽留成功继续写“被守备官挽留下来，停止逃离驿站”的具体事件；警铃、集结、避战、攻击、伤害、昏迷、复苏、逃离等玩法事实不变。
+- 工作 / 祈祷失败与计划修订的入库 payload / 摘要增加中文净化，内部枚举、路径式标识及未知 action / event type 不再直接出现在事件或后续记忆文本。
+- 新增 `verify_t0299_memory_event_hygiene.gd`，并更新逃离、状态机与战场公开信息预期。T0299、逃离挽留、避战与 Main headless 通过；三个旧综合专项仍分别受既有睡眠接敌、敌军测试位置和睡眠行动启动问题影响，均未到达或不涉及本次失败点。Godot MCP 正式 Main 无新增错误。真实 API 调用为 0。
+
+## 2026-09-01 — T0298 NPC 与对话面板交互布局统一
+
+- 公开 / 私下统一为只显示圆点和文字的互斥单选，移除所有状态框；对话面板补齐明确“私下”选项并保留首轮 / 战时锁定。
+- NPC 面板收尾改为半宽装备 / 指令和通栏对话；未入伍者可见但禁用并显示征召提示。记录入口从 NPC 面板迁入 DialogPanel 页眉，打开只读历史不影响当前会话。
+- DialogPanel 接入棕金切片主题；相关六项专项、完整 HTTP Mock 对话和 Main headless 通过。Godot MCP 实机确认布局、`68×35` 记录按钮、历史 / 会话并存及零新增错误。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.581-t0298-npc-dialogue-panel-layout-theme`。
+
+## 2026-09-01 — T0297 GM AI信息页独立 NPC 目标选择
+
+- 在 AI信息页顶部新增独立 `AINpcSelect`，将本页所有 NPC 定向的对话、特殊结果、逃离 / 挽留、情绪、记忆和事件入口从 `CommonNpcSelect` 切换到新选择器。
+- 三个页签分别选择厨子 / 园丁 / 托马时互不覆盖；正式 Main 中 AI 页“开心”预览准确打开厨子人物框。
+- GM 全面回归、T0289 情绪专项、Main headless 与 Godot MCP 运行态检查通过，无新增编辑器错误。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.580-t0297-ai-info-independent-npc-selector`。
+
+## 2026-09-01 — T0296 世界纯 Emoji 与人物框中底短尾巴
+
+- 删除世界情绪气泡的白色椭圆 SphereMesh 与材质，主场景现在直接显示透明背景 Emoji / 省略号。
+- 人物框尾巴从白框底边中点起笔，缩至约 `21×13`，尖端与 NPC 头顶保留约 9px 留白；主体和 Emoji 大小不变。
+- T0289 专项与 Main headless 通过；Godot MCP 正式 Main 确认世界情绪根只有 `EmojiSprite`、人物框主体 `80×63` 和新尾巴几何。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.579-t0296-direct-world-emoji-centered-tail`。
+
+## 2026-09-01 — T0295 暂停时对话情绪动作继续播放
+
+- 将对话临时表现中的开心 / 愤怒设为 TimeSystem 暂停豁免：AnimationPlayer 和 transient 倒计时按现实秒继续，双 Emoji 原有现实时间合同保持不变。
+- 暂停前开始、暂停后触发均可播放；情绪结束后恢复的工作 / 移动 / 战斗动画立即重新冻结，权威游戏时间不推进。
+- T0289、TimeSystem、NPCDevLab 与 Main headless 通过；Godot MCP 正式 Main 确认暂停时 `Cheering` 和 Emoji 都持续推进、游戏秒不变。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.578-t0295-paused-dialogue-emotion-actions`。
+
+## 2026-09-01 — T0294 彩色情绪 Emoji 与人物框漫画气泡
+
+- 将世界情绪 Emoji 从深色调制 `Label3D` 改为透明 SubViewport Canvas 后经 Sprite3D 显示，修复彩色字形被乘成黑圈；保留世界气泡底、人物副镜头排除层和既有时序。
+- 人物框气泡移到左上留白区，主体和 Emoji 大小不变；尾巴缩短、收窄并指向头部上缘外侧，避免遮挡 NPC。
+- 扩充 T0289 专项；专项与 Main headless 通过，Godot MCP 正式 Main 运行态确认双视图结构、内容和位置。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.577-t0294-dialogue-emotion-bubble-visuals`。
+
+## 2026-09-01 — T0293 对话开心 / 愤怒同步动作
+
+- 将正式 `npc_dialogue_emotion_presented` 表现信号同时接入角色临时动作：`happy` 与 `😊` 同帧播放一次 `Cheering`，`angry` 与 `😠` 同帧播放一次剑盾横斩；GM 情绪按钮和所有 AI 对话回复自动共用。
+- 情绪动作拥有唯一事件 id，只改临时动画，结束后恢复实时档案状态；NPC 的 `current_action`、移动和战斗权威不变。其余七种情绪不触发动作。
+- 撤下错误的思考按钮、状态和运行时合成姿势。T0289、NPCDevLab、战时对话、Main headless 及 `git diff --check` 通过；Godot MCP 正式 Main 运行态确认开心 / 愤怒动作与 Emoji 同步。Prompt / Schema / provider 未改，真实 API 调用为 0。版本推进到 `0.0.576-t0293-dialogue-emotion-actions`。
+
+## 2026-09-01 — T0292 NPCDevLab 开心、思考与愤怒动作试片
+
+- NPCDevLab 我方动作板新增开心、思考、愤怒：开心复用 KayKit `Cheering`，愤怒严格复用剑盾 `Melee_1H_Attack_Slice_Horizontal`。
+- 共享角色包装新增单关键帧 `Thinking_Standing_Pose`，以正常站姿为基底固定右手托腮、左手托右肘；不循环、不逐帧 IK，并保持到离开思考状态。
+- NPCDevLab 全量专项及 Main headless 通过；Godot MCP 实景逐项截图确认三个动作。旧 P0 包装专项仍有既存的 6/10 挂点数量过期断言。本次未接正式情绪状态机或 LLM，API 调用为 0。版本推进到 `0.0.575-t0292-npc-dev-lab-emotion-actions`。
+
+## 2026-09-01 — T0291 战时对话与战斗行动并行
+
+- 将 `rally / combat / avoid_combat` 守备官对话改为纯会话层并行：不取消已有战时 LLM 请求，不调用普通行动中断，不写对话行动 / 结果，不覆盖集结、攻击、索敌、战术移动或避战状态；挂起、恢复、完成、取消同样不写回 `idle`。
+- 战斗行为模式切换保留激活中的玩家对话和在途LLM请求；会话语境随实时模式刷新，进入战时强制公开。和平工作中断 / 计划恢复和逃离挽留专用暂停保持不变。
+- 战时专项扩充攻击 / 移动逐字段快照、生命周期与集结转战斗断言；相关回归、HTTP Mock、Main headless和Godot MCP正式运行态通过。未改Prompt / Schema / API次数，真实provider调用为0。版本推进到 `0.0.574-t0291-wartime-dialogue-parallel`。
+
+## 2026-09-01 — T0290 仓库世界血条 billboard 对齐
+
+- 定位仓库父节点 `-135°` 旋转下，Fill 本地横移被转换为世界 X/Z 位移，使灰槽与绿条分别围绕不同原点 billboard 的根因。
+- Track / Fill 节点统一保持零位置；填充继续使用真实 QuadMesh 宽度，左对齐改由 `center_offset` 完成，零血、颜色、战时显隐和 HP 权威不变。
+- 新增旋转父节点专项；T0290、T0282、T0280 与 Main headless 通过。Godot MCP 正式 Main 在仓库 `75/150` HP 下确认两层世界原点一致、宽度与偏移正确，热加载复验无新增编辑器错误。版本推进到 `0.0.573-t0290-world-health-bar-billboard-alignment`。
+
+## 2026-08-31 — T0289 NPC 对话情绪标记与双视图 Emoji 气泡（Mock / 本地表现阶段）
+
+- 将全部 NPC 对话回复的 `emotion` 收紧为 9 项枚举，Prompt 固定候选与选择规则；HTTP 层兼容归一化旧值 / 中文 / 未知值，Mock 各结果返回合法情绪。
+- DialogSystem 给 NPC 回合附加 id、中文标签与 Emoji；DialogPanel 只在显示时追加括号标签，不污染真实台词。
+- EventBus 同步驱动世界 NPC 头顶和人物副镜头两套独立气泡：保持 5 秒、0.75 秒渐隐、下一条即时替换；世界气泡使用副镜头排除视觉层。
+- GM AI 对话区新增 9 项预览和快速替换演示；Python 合同 / Prompt / HTTP Mock、T0289、对话 UI、邀请、逃离、T0287/T0288、GM 全面回归与 Main headless 通过。Godot MCP 正式 Main 已从真实 GM 按钮确认世界 / 人物副镜头同步替换、独立绘制且无编辑器错误。当前无真实 API Key，未调用真实 provider，任务保持 Partial。版本推进到 `0.0.572-t0289-dialogue-emotion-bubbles`。
+
+## 2026-08-31 — T0288 特殊 toggle 生命周期、取消锁与事件去重
+
+- 四类特殊 toggle 统一为失败 / 忽略 / 逃离 / 保持后继续开启，成功或资格失效关闭；策略改变与应征接受补齐自动关闭。
+- 任一开关开启并发送后立即锁定取消，统一状态投影驱动 DialogPanel；挂起超时改为特殊请求会话完成。
+- 四类结果即时写独立事件，应征 `none` 补齐入库；完成 `dialogue_turn` 删除特殊 payload 字段并将 transcript 白名单化为纯台词。
+- 新增 T0288 专项并更新 Mock、Dialog UI、战时对话回归；专项、HTTP Mock、UI、生命周期、战时与 T0287 通过。版本推进到 `0.0.571-t0288-special-toggle-lifecycle-event-dedup`。
+
+## 2026-08-31 — T0287 GM 全结果展台与 NPC 增益图标
+
+- GM AI 对话区新增四类特殊 toggle 的全部结果按钮，以及开始逃离、挽留成功 / 继续逃离和两类 buff 清除；结果展台明确为本地、不调用 LLM，原战斗区重复逃离按钮已移动。
+- DialogSystem 调试预览写入真实对话 history，并复用 T0286 特殊事件、公开见闻和成功弹窗；NPCSystem / CombatSystem 的薄调试包装继续使用既有 buff、策略、逃离和事件权威。
+- NPCPanel 关闭按钮左侧新增金色宝剑 / 锄头 SVG，活动时显示真实加成、覆盖范围、当天 24:00 和剩余时间 Tooltip；正常挽留回复补齐留下 / 继续逃离结果行。
+- T0287 全结果矩阵、GM、NPCPanel、T0286、HTTP Mock 和 Main headless 通过；Godot MCP 正式 Main 实看 AI 结果行、宝剑 / 锄头布局，无新增编辑器错误。未改 Prompt / Schema，真实 API 调用为 0。版本推进到 `0.0.570-t0287-gm-special-results-buff-icons`。
+
+## 2026-08-31 — T0286 特殊对话结果弹窗、事件见闻与逃离开始警报
+
+- 四类特殊 toggle 的每个显式结果改为随回复即时写入 `dialogue_special_interaction_result`；目标 NPC 获得事件，公开对话按同地点规则产生其他 NPC 见闻。结果落地后锁定取消，防止已提交事实被丢弃。
+- 应征接受、士气 / 工作鼓励成功、策略实际改变新增居中队列弹窗，正文明确 NPC 与结果，由“太好了”关闭；失败、忽视和保持不误弹。
+- CombatSystem 在实际逃离行为成功开始并写入 `escape_started` 后发送唯一信号，HUD 以“好的”居中队列警报提醒；意向、失败、重复请求均不触发。
+- 本地 HTTP Mock、逃离警报、公开见闻、GM 和 Main headless 专项通过；Godot MCP 正式 Main 已实测两类弹窗。未改 Prompt / Schema，未调用真实 API。版本推进到 `0.0.569-t0286-special-dialogue-feedback`。
+
+## 2026-08-31 — T0285 对话鼓励工作与四类特殊开关（Mock 阶段）
+
+- 对话右上角重排为独立公开开关和 2×2 特殊 toggle：提出应征、鼓励工作、鼓舞士气、调整战斗策略全互斥。工作只在无敌和平工作状态可用，不要求入伍，活动 buff 时禁用。
+- 新增工作三值结果、回复反馈与至当天 24:00 的 1.2 倍统一工作产出倍率；生产、训练、诊疗 / 协助治疗、修复 / 升级协助贡献接入，资源与完成事实仍由原系统权威结算。
+- 应征 / 士气完整判断从基础 Prompt 拆为动态文件；四类模块仅在开关开启时进入 provider 合同。应征和工作无关话题均允许 `none`，不误判结果。
+- GM AI信息页新增工作 Mock、正式开窗与 `dialogue_work`。Python Schema / Prompt / 业务合同 / Mock endpoint、本地 HTTP Godot 专项、Main headless 与 Godot MCP 正式布局通过；真实 API 未调用、费用为 0，T0285 标记 Partial。版本推进到 `0.0.568-t0285-work-encouragement-mock`。
+
+## 2026-08-31 — T0284 对话调整战斗策略显式开关（Mock 阶段）
+
+- NPC 面板策略下拉框改为只读标签；所有兵种默认“主动进攻”。近战 / 长杆 / 近战骑兵仅允许主动进攻和避战，弓 / 弩 / 骑射额外允许拉开距离射击；骑兵拉开距离冲击退出合法候选。
+- 对话新增“调整战斗策略”持续 toggle，与鼓舞双向互斥并复用入伍、主武器、集结 / 战斗资格。只有开启时发送当前值和合法候选、解析保持 / 切换；无关表达保持，所有显式请求均显示结果。
+- 后端新增条件 Schema / 动态 Prompt 合同与 Mock 判定；关闭时 provider 不收到策略说明或候选，响应也剥离策略模块。合法切换由 DialogSystem 调用 CombatSystem 权威设置。GM AI信息页新增两个策略入口和 `dialogue_strategy`。
+- Python 与 Godot 专项、本地 HTTP Mock 端到端和 Main headless 通过；真实 API 未调用、费用为 0，T0284 标记 Partial。
+
+## 2026-08-31 — T0283 对话鼓舞士气显式开关（Mock 阶段）
+
+- 对话面板新增持续“鼓舞士气”toggle，仅对已入伍、持主武器、集结 / 战斗且无现存 buff 的 NPC 开放；其他场景关闭、半透明。`none / escape` 后保持，成功后关闭锁定。
+- 新增 `is_morale_encouragement_request` 端到端合同。关闭时只是普通对话；开启时才让模型判断 `none / escape / morale_boost`。Prompt 与 Mock 均要求无关话题正常回复且不加 buff。
+- 三类反馈绑定回复显示；攻击 / 移动仍各 +15%，期限改为当天 24:00，跨日清除，活动 buff 不可重复鼓舞。GM AI信息页新增两个按钮和 `dialogue_morale` 命令。
+- Python Schema / Prompt / 业务合同 / Mock endpoint、Godot 战时 fallback、本地 HTTP Mock 端到端及脚本加载通过。按用户要求未调用真实 API，T0283 标记 Partial。
+
+## 2026-08-31 — T0282 世界血条真实填充与敌军头顶信息收敛
+
+- 定位到建筑 / NPC 头顶血条偏长的根因是 billboard 材质下用 `MeshInstance3D.scale.x` 模拟填充。共享组件改为直接设置 Fill `QuadMesh` 的真实宽度并保持左对齐，零血隐藏 Fill；建筑、NPC 与塔防同步修正。
+- 敌军头顶删除文字 HP、大类兵种、行动和目标，只显示“劫掠剑盾手”等具体名称；名称上方新增按敌军权威 HP 归一化的世界血条，健康 / 低血均固定为橙色 `#c97832`。
+- T0282、T0280 与 Main headless 回归通过。Godot MCP 正式 Main 实测 NPC `43/108 → 39.81%`、敌军 `6/32 → 18.75%` 与仓库 `0 HP → 无可见填充`，敌军名称 / 颜色 / 上下位置正确；编辑器类缓存二次加载后错误游标 185 无新增错误。功能直接可见，未新增 GM 入口。版本推进到 `0.0.565-t0282-world-health-fill-enemy-overhead`。
+
+## 2026-08-31 — T0281 无工位建筑隐藏位置行
+
+- BuildingPanel 新增统一工位标签刷新：`workstations` 为空或没有有效展示行时清空文本并隐藏控件；有工位时恢复逐位置显示。城墙、主厅、正门 / 后门和仓库不再出现“位置：无”。
+- 工位专项扩展为逐一校验全部建筑的空 / 非空显隐，并锁定城墙隐藏后切回食堂恢复；仓库容量和 Main headless 回归通过。
+- Godot MCP 正式 Main 实测城墙、主厅、正门、仓库均为 `visible=false / text=""`，食堂恢复 12 条位置，仓库面板为 `360×453px` 且错误游标 170 后无新增错误。功能直接可见，未新增 GM 入口。版本推进到 `0.0.564-t0281-hide-empty-workstations`。
+
+## 2026-08-31 — T0280 主场景战时头顶血条与信息降噪
+
+- 新增共享 `WorldHealthBar3D` billboard 组件；仓库、正门、主厅、NPC 和活动塔防只在敌人实际在场时显示固定长度血条，健康为 `#71865a`，严格低于 30% 转 `#a7433b`，清敌后即时隐藏。其他建筑不生成该组件。
+- 塔防头顶移除 HP、射程与命中结果，只保留名称；NPC 头顶移除文字 HP，行动状态缩小、灰化并移到姓名右侧。三个系统的 HP 权威与结算均未改变。
+- T0280、NPCPanel、T0240、T0112、塔防部署和 Main headless 回归通过；Godot MCP 正式 Main 实测三类 `100%` 绿条、约 `18%–20%` 红条和清敌隐藏，错误游标 170 后无新增错误。功能直接可见，未新增 GM 入口。版本推进到 `0.0.563-t0280-world-combat-health-bars`。
+
+## 2026-08-31 — T0279 塔防空槽纯图标部署与建筑面板入口收敛
+
+- DefenseSlotPresenter 删除旧库存 / 描述 / 属性卡、槽位与射程说明及部署按钮，改为 `245px` 宽三列纯图标选择窗。每件具体未部署库存对应一个 `68×68` 图标，零库存不显示，Tooltip 只有正式名称，点击直接调用既有权威部署接口。
+- 围墙 / 主厅 BuildingPanel 删除“防御器械部署”标题、库存、器械 / 槽位下拉框、部署按钮和状态文案，只保留当前建筑“已部署”汇总并实时刷新。
+- T0112、具体器械库存、建筑工位、HUD 器械库存、T0261 与 Main headless 回归通过。Godot MCP 正式 Main 实测选择窗 `245×294px`，2 个弩床 + 1 个箭塔显示三个图标；点击后库存 `2→1`、槽位占用、弹窗关闭、汇总刷新，错误游标 170 后无新增错误。功能直接可见，未新增 GM 入口。版本推进到 `0.0.562-t0279-defense-slot-icon-picker`。
+
+## 2026-08-31 — T0278 仓库逐资源储存状况进度条
+
+- 仓库 BuildingPanel 将单行“储存上限”替换为“储存状况”，按权威顺序逐项显示粮食、餐食、酒、木材、石料、铁的“当前/上限”，并在每项下方加入固定宽度、`16px` 高的容量条。
+- 容量条直接读取 ResourceSystem 实时库存与当前等级容量；低于 80% 为橄榄绿，达到 80% 及以上转暗红。资源变化、仓库升级和建筑切换均同步刷新 / 隐藏，未新增 UI 结算权威。
+- 仓库容量专项、建筑工位、HUD 资源与 Main headless 回归通过；Godot MCP 正式 Main 确认六项顺序、初始值、`332×16px` 条槽，并实测粮食 `96/120` 转红。功能直接可见，未新增 GM 入口。版本推进到 `0.0.561-t0278-warehouse-storage-bars`。
+
+## 2026-08-31 — T0277 NPC / 建筑 / 塔防血量与经验进度条
+
+- NPCPanel 将 HP / 经验移动到战斗最终值与专长之后、饱食度之前，并拆成两组标签在上、条在下的展示。NPCSystem 进阶快照新增当前等级经验 / 上限字段，经验条按该动态区间归一化并使用褐色。
+- NPC HP、全部建筑与活动塔防器械新增绿色 / 濒危红色血条，阈值为严格低于 30%；疲劳常态条由橄榄绿改为灰色，严格高于 80% 仍转红，饱食规则不变。
+- NPCPanel、建筑工位、T0261 塔防面板、成长、建筑修复升级与 Main headless 回归通过。Godot MCP 正式 Main 实测 NPC / 建筑 / 塔防条为 `374×16 / 332×16 / 328×16px`，HP / 经验上限和颜色正确。功能可直接验证，未新增 GM 入口。版本推进到 `0.0.560-t0277-status-progress-bars`。
+
+## 2026-08-31 — T0276 NPC 装备槽与可用物品图标化
+
+- 六个装备 / 坐骑槽由 `70×58` 改为 `68×68` 正方形，槽位按钮内容边距和边框归零，图标最大宽度提升至 `68px`；人体部位中心关系保持，非空槽不再露出宽按钮框。
+- 左侧选择窗删除“图标按钮 + 名称按钮”双框行，改为 HUD 库存式三列纯图标网格；候选按钮使用 `68×68 / 66px` 图标和 `1px` 细框，Tooltip 仅显示名称。
+- 候选继续只读取具体可用库存和 HorseSystem 未占用马匹，专项新增已分配盔甲 / 坐骑排除断言。T0264、装备系统、HUD 库存与 Main headless 通过；Godot MCP 正式 Main 确认槽位尺寸 / 样式、坐骑网格与“栗风 / 灰鬃”名称 Tooltip。版本推进到 `0.0.559-t0276-equipment-icon-grid`。
+
+## 2026-08-31 — T0275 制造目标缺失警示与快捷展开
+
+- 铁匠铺 / 工械坊 BuildingPanel 的空制造目标 OptionButton 新增同款红色小感叹号；警示随 CraftingSystem 目标状态显示 / 隐藏，并忽略鼠标以保留下拉框完整交互。
+- 世界建筑警示点击现在经 BuildingSystem 选中建筑后，等待响应式面板布局稳定并自动展开制造目标菜单；切换建筑会取消陈旧请求。
+- 双建筑专项、制造管线与建筑工位回归通过。Godot MCP 正式 Main 使用真实鼠标精准点击铁匠铺 `24×24px` 警示，运行态确认 `selected=blacksmith`、面板可见、空目标警示可见、目标 Popup 已展开。版本推进到 `0.0.558-t0275-crafting-target-alert-shortcut`。
+
+## 2026-08-31 — T0274 已部署塔防点选与卸下规则
+
+- 定位到已部署塔防无法弹面板的根因是 `Main.tscn` 丢失正式 `DefenseDevicePanel` 节点；塔防 Area、Presenter area-only 射线和 BuildingSystem 的器械优先转发原本仍有效。恢复节点后，活动器械点击再次显示属性面板与范围圈。
+- 面板新增“卸下”。DefenseDeviceSystem 权威处理满血返还具体物品库存，以及受损时必须确认、确认后销毁且不返库的分支；取消不改部署 / 槽位 / 库存，手动销毁不留阻塞槽位的废墟。
+- T0261 扩展专项、具体器械库存、部署 UI、范围圈、HUD 库存和 Main headless 通过。Godot MCP 正式 Main 真实点击弩床打开面板；满血真实按钮点击验证库存 `0 → 1`，受损 `54/55` 验证确认文案出现且状态不提前改变。版本推进到 `0.0.557-t0274-defense-device-undeploy`。
+
+## 2026-08-31 — T0273 NPC 装备槽真实点击与空库存选择窗
+
+- 修复 NPCPanel 透明响应根覆盖左侧装备窗造成的真实 GUI 点击丢失：装备窗改入 NPCPanel 输入分支，透明根自身忽略鼠标，同时保留子控件交互与现有视觉层级。
+- 已入伍 NPC 点击零库存空槽仍打开选择窗并显示“暂无可用装备。”；点击已有装备稳定弹出收回确认。未入伍 NPC 只提示“尚未入伍，不能装备。”，逃离 / 非工作模式也使用各自原因。
+- 选择窗新增视口内左右自适应定位。T0264 专项、装备系统、NPCPanel 状态 / 交互和 Main headless 通过；Godot MCP 正式 Main 以真实 GUI 鼠标事件验证空槽、已有装备、未入伍三条路径。马匹生态旧专项仍停在既有 active-work 时序断言。版本推进到 `0.0.556-t0273-npc-equipment-slot-input`。
+
+## 2026-08-31 — T0272 HUD 库存图标可读性优化
+
+- 保持 HUD 装备 / 器械库存窗 `500×430`、六列和 `68×68` 单格不变；图标最大宽度从 `60px` 提升到 `66px`，文本按钮主题的内容边距压缩为四向 `1px`，各交互态边框统一为 `1px`。
+- Tooltip 统一加入正式物品名称前缀，覆盖武器、盔甲、马匹与器械的未分配、已分配给 NPC 和已部署到槽位状态；HUD 仍只做权威状态投影。
+- HUD 专项、装备、塔防、T0270 HUD 背景包裹和 Main headless 通过。Godot MCP 正式 Main 视觉确认图标明显增大且窗口不变，运行态快照得到“剑盾 已分配给艾达 / 栗风 未分配”，本次操作后无新增编辑器错误。版本推进到 `0.0.555-t0272-hud-inventory-icon-readability`。
+
 ## 2026-08-31 — T0271 NPC / 马匹状态精简与 HUD 有效倍速锁定
 
 - NPCPanel 属性与战斗文案移除字段前缀和等级，旧装备摘要清空；饱食 / 疲劳按马匹面板结构改为标签在上、条在下，并使用 `<20% / >80%` 危险色阈值。

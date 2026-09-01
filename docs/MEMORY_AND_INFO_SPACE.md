@@ -1,5 +1,35 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0299 开发状态与世界事实分层
+
+- 行为模式的 `from / to / reason` 是状态机诊断信息，只保留在 NPC 运行态和 GM 快照；`npc_mode_changed` 已退出正式事件类型，MemorySystem 对旧调用直接拒绝，不进入亲历、见闻或 LLM 记忆。
+- 有认知价值的结果继续使用具体事件：警铃 / 集结、避战开始 / 结束、攻击 / 受伤、昏迷 / 复苏、逃离开始 / 完成及挽留结果。模式变化本身不再重复叙述同一事实。
+- 工作失败、祈祷失败和计划修订仍有后续决策价值，因此保留；入库 payload.reason / summary 与显示摘要都只使用自然中文原因。蛇形英文、路径式标识、未知 action id 与未知 event type 均使用中文兜底。
+
+## T0289 情绪表现与事件文本边界
+
+对话情绪是回复级结构化元数据，不把 `(开心)` 等显示后缀拼入 NPC 原始 `text`。DialogPanel 只在渲染时追加括号；T0288 的守备官完成会话仍把 `dialogue_text` 白名单化为纯台词，避免气泡 / 显示标记成为重复的叙事事实。既有 NPC-NPC 逐轮事件可继续在 payload 的独立 `emotion` 字段保存规范 id，但 summary、speaker_text、reply_text 和 dialogue_text 正文保持原话。
+
+`npc_dialogue_emotion_presented` 只是一条瞬时 UI 信号，不进入事件库、见闻传播或长期记忆，也不改变士气 / 工作 buff。公开 / 私下信息规则继续只由正式对话事件决定，不能根据玩家是否看见世界气泡反推 NPC 获得见闻。
+
+## T0288 特殊结果与完成会话事件分离
+
+- 四类 toggle 每次收到结构化结果后立即写入独立 `dialogue_special_interaction_result`；包括应征 `accept / reject / none`、士气与工作三种结果、策略 `change / keep`。公开结果仍在发生时传播，完成对话不重复生成第二条特殊结果。
+- 完成守备官会话生成的 `dialogue_turn` 只记录真实对话。顶层 payload 删除 `is_recruitment_request / recruitment_result / is_morale_encouragement_request / wartime_reaction / is_combat_strategy_request / combat_strategy_result / is_work_encouragement_request / work_encouragement_reaction`；`dialogue_text` 每轮只保留 `speaker_id / speaker_name / listener_id / listener_name / text`。
+- 运行态历史仍可携带结构化结果供 DialogPanel 显示绿字、红字或中性反馈，但这些字段不是 NPC 或守备官说出的内容，完成时不会再次进入事件库、见闻或短期记忆。
+
+## T0286 四类特殊对话结果事件
+
+- 新增即时事件 `dialogue_special_interaction_result`。每次开启特殊 toggle 并收到显式结果时，分别记录 `special_type`、`outcome`、`success`、NPC、对话轮次、可见性、地点和策略前后值等适用字段；一场会话中的多次结果不会被结束时聚合覆盖。
+- 目标 NPC 总会收到个人事件。`visibility=local_public` 时，MemorySystem 复用现有公开传播规则，把结果写入结果发生时同地点、清醒且未逃离的其他 NPC 见闻；私下结果不传播。
+- 结果事件记录的是已经发生的交流反应，不替代应征、buff、策略变更或逃离的各自权威事件。显式结果落地后会话锁定取消，避免已提交事实与“丢弃会话”语义冲突。
+
+## T0285 工作鼓励事件
+
+- 工作鼓励完成时写入 `work_encouragement_result`，记录 `decision=work_boost|none|escape`、对话 / 来源事件和既有可见性；成功另写 `work_encouragement_boost_started`，跨日失效写 `work_encouragement_boost_ended`。
+- 事件摘要只叙述守备官鼓励、NPC 反应、20% 工作效率和当天 24:00 期限，不把 Prompt、内部推理或未发生的资源 / 治疗 / 建筑完成事实写入记忆。
+- 逃离结果继续由 CombatSystem 产生正式逃离事件；工作结果事件不替代移动、离站或挽留权威事实。
+
 ## T0268 认识 / 事件 / 见闻显示名
 
 - NPCPanel 面向玩家的入口和详情标题使用“认识 / 事件 / 见闻”，不显示“知识图谱 / 事件库 / 见闻库”的开发式名称或条数。
@@ -219,13 +249,13 @@ provider 请求只删除同值副本，不删除记忆事实。`npc.long_term_me
 
 完成守备官会话的确定性 summary 标题统一为“守备官与 XX 对话”，不再显示“的完整对话”；标题下仍按 `dialogue_text` 顺序转写所有有效 `speaker_name / text`。
 
-NPC turn 可携带 `recruitment_result=accept|reject`，用于把 UI 结果提示绑定到具体回复。该枚举可以随完整历史保存在事件 payload 中，但“✓ XX接受……” / “× XX拒绝……”表现文案不进入 turn `text`，也不进入事件 summary、短期记忆正文或 NPC 说过的话。
+NPC turn 在运行态可携带 `recruitment_result=accept|reject|none`，用于把 UI 结果提示与即时特殊结果事件绑定到具体回复；T0288 起完成会话净化 `dialogue_text` 时会移除该枚举。“✓ XX接受……” / “× XX拒绝……”表现文案仍不进入 turn `text`、普通对话事件 summary、短期记忆正文或 NPC 说过的话。
 
 ## T0082 完整守备官会话摘要与应征锁
 
 守备官-NPC 完成会话仍只提交一条 `dialogue_turn`，不改为逐轮创建多条事件。此前 `payload.dialogue_text` 已保存整场历史，但 `summary` 只读取最后一条守备官发言与最后一条 NPC 回复，导致 NPC 面板事件库以及使用 summary 的短期记忆表面上只剩最后一轮。现在 `session_completed=true` 时，MemorySystem 按 `dialogue_text` 原顺序确定性展开每个说话者和正文；事件计数、公开广播次数和 payload 结构不变。
 
-守备官第一次在“提出应征”开启时发送消息后，`session_had_recruitment_request=true` 成为本场会话不可撤销的生命周期事实。随后关闭 toggle 只影响后续消息是否继续带应征标记，不允许取消并抹去先前已提出的应征；挂起超时按完成提交完整会话。该锁不新增独立事件类型，最终仍由同一 `dialogue_turn.is_recruitment_request` 表达本场曾提出应征。
+守备官在任一特殊 toggle 开启时发送消息后，对应 `session_had_*_request=true` 成为本场会话不可撤销的生命周期事实。随后关闭 toggle 只影响后续消息是否继续带该模块，不允许取消并抹去先前已经发送的特殊交互消息；挂起超时按完成提交。该生命周期锁只存在于会话状态，不写入完成后的普通 `dialogue_turn`；每轮结构化结果由独立 `dialogue_special_interaction_result` 表达。
 
 ## T0078 主动交涉的入库边界
 
@@ -301,7 +331,7 @@ T0108 只迁移这份开局前图谱中的稳定建筑认知：删除“器械�
 
 守备官-NPC 对话不再在每次模型回复后立刻生成 `dialogue_turn`。会话历史先保存在 DialogSystem 运行态；玩家选择“完成对话”时，把全文一次性提交为一个 `dialogue_turn`，payload 额外记录 `session_completed`、`ended_while_waiting`、`attack_committed`、完成回复计数和 `interaction_kind`。若最后一条是尚未获回复的守备官消息，`reply_text` 为空但 `dialogue_text` 保留该消息，仍是有效完成会话。
 
-“取消对话”不会调用 `MemorySystem.add_event(...)`，因此目标 NPC 事件库、同地点第三者见闻库和广场公开流都没有本次会话内容；战时 / 逃离结构化结果仍在完成前保持暂存。T0072 后，NPC 已经明确返回的合法应征接受会立即提交 `recruited` 权威状态。T0082 起，任何已发送应征消息的会话都不再允许取消，因此不会出现“已经提出应征却把会话记录丢弃”的分裂状态。完整 `dialogue_turn` 仍只有完成会话时才入库。攻击的 `damage_taken` 是对话外先行权威事实，所以攻击后取消被禁用；逃离挽留无回复攻击会自动完成一条会话事件，同时保留原伤害、逃离加速与轮次事件。NPC-NPC 自主会话仍按既有每轮 `dialogue_turn` 写入，未改成整场提交。
+“取消对话”不会调用 `MemorySystem.add_event(...)`，因此普通可取消会话的目标 NPC 事件库、同地点第三者见闻库和广场公开流都没有本次会话内容。T0072 后，NPC 已经明确返回的合法应征接受会立即提交 `recruited` 权威状态；T0286 后四类显式特殊结果也会即时独立入库，所以 T0288 统一规定任一特殊 toggle 开启并发送后都不能取消。完整纯台词 `dialogue_turn` 仍只有完成会话时才入库。攻击的 `damage_taken` 是对话外先行权威事实，所以攻击后取消被禁用；逃离挽留无回复攻击会自动完成会话，同时保留原伤害、逃离加速与轮次事件，但没有真实台词时不生成 `dialogue_turn`。NPC-NPC 自主会话仍按既有每轮 `dialogue_turn` 写入，未改成整场提交。
 
 ## T0049/T0050 通用判别输入与详情阅读位置
 
@@ -455,7 +485,6 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `combat_rally_encountered_enemy` | `{actor}在集结途中遭遇{enemy_name}，放弃集结并准备接敌。` | `enemy_id`, `enemy_name`, `distance`, `has_mount`；T1103 已实现 |
 | `combat_started` | `敌军来袭：第{wave_number}波，{enemy_count}名敌人逼近驿站。` | `wave_number`, `enemy_count`, `enemy_roster`, `friendly_combatant_count`, `friendly_roster`；T1106 已实现 |
 | `combat_ended` | `敌人已经全被消灭，第{wave_number}波战斗结束。受伤：{injured_npcs}。昏迷：{unconscious_npcs}。击退敌人：{defeated_by_npc}。` | `wave_number`, `enemy_count`, `injured_npcs`, `unconscious_npcs`, `low_hp_judgements`, `defeated_by_npc`, `reason`；T1106 已实现，T1202 起可包含低血量判定记录 |
-| `npc_mode_changed` | `{actor}从{from_mode_label}切换到{to_mode_label}，原因：{reason}。` | `npc_id`, `from_mode`, `from_mode_label`, `to_mode`, `to_mode_label`, `reason`；T1103A 已实现，T1103D 起不覆盖 `work <-> combat` 与 `work <-> avoid_combat` |
 | `avoidance_started` | `{actor}发现敌军正在接近，正在避战。` | `enemy_id`, `enemy_name`, `distance`, `reason`, `target_id`, `target_name`, `target_position`；T1103B/T1103C 已实现，T0237 精简玩家可见摘要 |
 | `avoidance_ended` | `{actor}不再避战，回到驿站日常安排。` | `reason`, `active_enemy_count`, `target_id`, `target_name`；T1103B/T1103C 已实现 |
 | `escape_started` | `{actor}开始朝{exit_target_name}逃离驿站。` | `npc_id`, `source_event_id`, `trigger`, `interaction_context`, `from_mode`, `exit_target_id`, `exit_target_name`, `exit_position`；T1203 已实现 |
@@ -494,7 +523,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 - T0138 后，坐骑槽清空的 `equipment_changed` 摘要固定为“守备官收回了分配给 {NPC} 的马匹。”；马匹实际承伤 / 阵亡分别写 `horse_damaged / horse_died`，payload 保存 `horse_id / horse_name / npc_id / damage / hp_before / hp_after` 及敌军来源。事件只记录 HorseSystem 已提交的 HP / 死亡事实，不让 MemorySystem 参与分伤或解绑结算；系统强制解绑也不伪造成守备官手动收回事件。
 - 主动交涉：`proactive_talk_started` 记录 NPC 发起交涉及计划中确定的问题，固定为 `private`。`proactive_talk_message` 仅作为旧事件类型兼容保留；当前玩家点击气泡后的开场内容随完成会话的 `dialogue_turn` 入库。
 - 成长与状态：`skill_improved`、`attribute_improved`、`npc_recruited`、`npc_left_recruited_state`。
-- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`。
+- 战斗与行为事实：`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`。
 - 建筑与资源见闻：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`。
 - 公告与商人：`plaza_notice_changed`、`merchant_arrived`、`merchant_departed`、`merchant_trade_completed`。
 - 工程器械：`defense_device_deployed`、`defense_device_triggered`。
@@ -518,8 +547,8 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - T1103 起，`CombatSystem.trigger_combat_alarm(...)` 会给所有 NPC 写入 `combat_alarm_rang` 私有事件；只有入伍、持主武器且当前可行动的 NPC 会继续写入 `combat_rally_started`，并被移动到城门外防线。若集结途中遇到敌人，系统写入 `combat_rally_encountered_enemy` 并将 NPC 切到 `combat_ready` 占位。上述事件只记录警铃、集结和接敌事实，不代表战斗已经完成。
 - T1104 起，`attack_made` 记录我方 NPC 对敌人完成的一次程序结算攻击，payload 包含攻击者、目标敌人、武器、力量 / 熟练度输入、原始攻击力、防御、实际伤害、敌人 HP 前后值和是否击退敌人。敌人攻击 NPC 仍复用 `damage_taken`，并可在 payload 中保留 `raw_attack_power`、`target_defense` 和 `damage_after_defense`。这些事件只记录程序已应用的 HP 事实，不让 LLM 决定攻击力、防御或扣血。
 - T1106 起，敌人波次生成后写入广场 `combat_started`，payload 记录波次、敌军 roster、我方已入伍持主武器战斗人员 roster 和非战斗人员数量；敌军全灭、撤退或 GM 清敌后写入广场 `combat_ended`，payload 记录本场受伤 / 昏迷 NPC、各 NPC 击退敌人数量和结束原因。两类事件都使用确定性 summary，不让 LLM 决定敌人、伤害、HP 或胜负。
-- T1103A 起，`npc_mode_changed` 记录需要留痕的程序权威模式切换；事件只记录程序已应用的事实，LLM 输出本身不直接写入权威数值。T1103D 起，`work <-> combat` 与 `work <-> avoid_combat` 的互转不再写入 `npc_mode_changed`，也不因该事件向地点广播；具体事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended`、警铃、集结、昏迷和复苏等事件表达。T1103B/T1103C 起，`avoidance_started` / `avoidance_ended` 记录非战斗人员的避战移动阶段、按敌方方位生成的短步长目标、触发敌人和退出原因。T1201 起，战时公开对话的结构化结果写入 `battle_psychology_result`，斗志激昂 buff 的开始和结束写入 `morale_boost_started` / `morale_boost_ended`；T1202 起，低血量事实写入 `low_hp_triggered`，低血量自身心理判定结果写入 `battle_psychology_result`，低血量来源的斗志激昂同样写入 `morale_boost_started(trigger=low_hp)`；T1203 起，逃离开始 / 离站完成分别写入广场公开 `escape_started` / `escaped`；T1204A 起，逃离挽留 stay/continue 结果写入 `escape_intervention_result`，给钱减速和守备官攻击加速写入 `escape_speed_changed`；T1204B 起，逃离攻击只写速度变化，不再额外生成 `escape_intervention_result` 或攻击回复对话事件。
-- T1205 起，`tools/verify_battlefield_public_info.gd` 作为战场公开信息综合验收脚本，覆盖广场旁观者见闻、NPC 面板见闻显示、LLMBridge 对话 payload 的 `witnessed_events`、敌我人数、集结 / 避战 / 低血 / 战时心理 / 击退 / 昏迷 / 治疗 / 复苏 / 逃离 / 建筑受损 / 战斗结束事件，并确认 `work <-> combat` 与 `work <-> avoid_combat` 仍按降噪规则不广播 `npc_mode_changed`。
+- T0299 起，所有行为模式切换及其内部 reason 只保留为运行态 / GM 诊断，不进入事件系统；具体事实由 `attack_made`、`damage_taken`、`avoidance_started`、`avoidance_ended`、警铃、集结、昏迷、复苏和逃离事件表达。T1201 起，战时公开对话的结构化结果写入 `battle_psychology_result`；T1203 起，逃离开始 / 离站完成分别写入 `escape_started` / `escaped`；T1204A 起，逃离挽留结果写入 `escape_intervention_result`。
+- T1205/T0299 的战场公开信息验收覆盖具体战斗事实，并确认所有行为模式互转都不生成或广播 `npc_mode_changed`。
 - T0502A/T0046 起，`add_witness_event(...)` 会拒绝给昏迷或已经离站的 NPC 写入见闻，因此昏迷者不会收到地点 / 广场公开广播、状态广播、公告或进入快照，复苏后自动恢复；`escaped / outside_station` 则永久停止接收，逃离完成时同时从全部地点 `people_present` 移除。
 - 玩家非对话交互的运行时 actor id 通常使用 `guard_officer`，summary 使用“守备官”，避免把“玩家”写入 NPC 记忆或后续 LLM 参考文本；T0045 的 `attribute_improved` 是成长事实例外，actor 为成长的 NPC 自身。
 - T0701/T0051 已由 Godot `DialogSystem` 接入后端对话文本并写入事件库。NPC-NPC 每个实际完成轮次是一条 `dialogue_turn`；守备官-NPC 则在“完成对话”时把完整历史写成一条会话事件。若 `visibility == "local_public"`，事件地点只向同地点非参与者广播一次，避免重复见闻。

@@ -127,7 +127,7 @@ func _init() -> void:
 		else:
 			front_index += 1
 		_set_npc_world_position(npc_system, npc_id, position)
-		var strategy_id := "max_output" if is_ranged else "attack"
+		var strategy_id := "attack"
 		var strategy_result: Dictionary = combat_system.set_npc_combat_strategy(npc_id, strategy_id, "private", "verify_t0121_fifth_wave")
 		if not bool(strategy_result.get("ok", false)):
 			_fail("Could not set %s strategy for %s: %s" % [strategy_id, npc_id, JSON.stringify(strategy_result)])

@@ -72,7 +72,18 @@ func _init() -> void:
 	_assert((snapshot.get("usable_actions", []) as Array).has("work_dining_hall"), "Toma should expose cross-profession cooking")
 	_assert((snapshot.get("usable_actions", []) as Array).has("work_blacksmith"), "Toma should expose cross-profession blacksmith work")
 	_assert((snapshot.get("usable_actions", []) as Array).has("drink_wine"), "friendly NPCs should expose the work-mode drinking action")
+	for emotion_action in ["happy", "angry"]:
+		_assert((snapshot.get("usable_actions", []) as Array).has(emotion_action), "friendly NPCs should expose %s in the developer lab" % emotion_action)
+	_assert(not (snapshot.get("usable_actions", []) as Array).has("thinking"), "the rejected thinking pose should no longer be exposed in the developer lab")
 	_assert(not (snapshot.get("usable_actions", []) as Array).has("mass_leader"), "Toma must not expose priest-only mass leadership")
+	snapshot = lab.debug_trigger_action("happy")
+	var emotion_character := snapshot.get("character", {}) as Dictionary
+	_assert(str(emotion_character.get("current_state", "")) == "happy", "happy preview should use the dedicated presentation state")
+	_assert(str(emotion_character.get("current_clip", "")) == "Cheering", "happy preview should reuse the KayKit cheering clip")
+	snapshot = lab.debug_trigger_action("angry")
+	emotion_character = snapshot.get("character", {}) as Dictionary
+	_assert(str(emotion_character.get("current_state", "")) == "angry", "angry preview should use the dedicated presentation state")
+	_assert(str(emotion_character.get("current_clip", "")) == "Melee_1H_Attack_Slice_Horizontal", "angry preview should exactly reuse the sword-shield horizontal attack clip")
 	snapshot = lab.debug_set_mode("combat")
 	snapshot = lab.debug_trigger_action("talk")
 	var talk_character := snapshot.get("character", {}) as Dictionary

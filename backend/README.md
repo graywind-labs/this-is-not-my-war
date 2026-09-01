@@ -1,5 +1,11 @@
 # Backend README
 
+## T0289 对话情绪合同
+
+`/npc/dialogue` 的三类响应现在统一要求 `emotion` 为：`none / happy / relieved / angry / sad / afraid / surprised / confused / determined`。基础 Prompt 和动态 schema hint 都会给出该白名单。HTTP 层会把旧 `neutral / wary / fearful / tense / shaken / resolved`、已知中文近义词、`null` 或未知值归一化为合法 id，并把变化写入 `model_normalizations`；情绪不是权威数值，不影响特殊交互结算。
+
+T0285 起，玩家对话的应征、鼓舞士气、调整战斗策略、鼓励工作为最多开启一个的动态特殊模块。只有请求 flag 为 true 时，Model Adapter 才拼入对应判断 Prompt 和输出字段；工作返回 `work_encouragement_reaction=none|escape|work_boost`，应征允许无关发言返回 `recruitment_result=none`。HTTP 只校验意向，20% 工作倍率、当天 24:00 失效、资源 / 治疗 / 建筑结算和逃离均由 Godot 权威系统处理。
+
 T0116 新增 `/npc/dialogue_intent_revalidation`。它在计划对话执行前接收旧意图制定时间、当前完整计划和计划同级 NPC / 驿站 / 建筑 / 资源上下文，只返回 continue / modify / cancel_and_replan。HTTP 层严格约束首句字段并可对业务矛盾使用同一真实 provider 纠错一次；失败不转 Mock。
 
 T0106 起，正式 NPC 请求的短期记忆在供应商边界统一为全量紧凑投影；T0116 加入执行前复核后当前共七类。每条只允许 `type / summary / importance / day / time / details`，不转发 `event_id / payload / extra`。普通调用保留当前索引全部 `experienced_events / witnessed_events`；`daily_reflection` 保留带 `memory_kind` 的全部 `day_events`，并删除同批 `npc.short_term_memory`。这层清洗是 Godot 压缩后的防御边界，不改变 MemorySystem 权威事件或 HTTP 业务事实。

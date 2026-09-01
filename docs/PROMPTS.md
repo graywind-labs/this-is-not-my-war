@@ -1,5 +1,30 @@
 # PROMPTS.md
 
+## T0299 事件摘要输入净化
+
+本任务不修改任何模型 Prompt 或响应合同。进入对话 / 计划上下文的事件摘要由 Godot 先净化：模式切换和内部 reason 不入库，工作 / 祈祷失败及计划修订中的内部枚举使用中文兜底；模型仍可从当前 NPC state 读取实时行为模式，但不会把开发日志当作历史经历。
+
+## T0289 每轮对话情绪选择
+
+基础 `dialogue_system_prompt.txt` 为所有对话类型固定增加短情绪合同。模型在生成 `reply_text` 后，从 `none / happy / relieved / angry / sad / afraid / surprised / confused / determined` 中只选一个最突出的即时情绪；没有明显情绪、仅陈述事实或感受混杂时选择 `none`。模型只返回英文 id，不返回中文、近义词、多个值或 Emoji。
+
+该合同不是特殊 toggle 模块：普通对话及应征 / 士气 / 工作 / 策略开关关闭时仍要求 `emotion`，但不会激活任何特殊结果字段。情绪只服务表现，不得声称改变士气 buff、工作倍率、记忆或数值状态。动态 schema hint 在玩家-NPC、NPC-NPC 邀请 / 正式轮次和逃离挽留分支重复给出相同白名单，减少供应商漏选或自由发挥。
+
+## T0285 四类特殊互动动态模块
+
+- 基础 `dialogue_system_prompt.txt` 不再常驻应征、士气、策略或工作鼓励判断规则。Model Adapter 只按本轮唯一开启的 flag 拼接对应特殊 Prompt 和最小输出合同；关闭模块的字段不进入 provider 合同，也不会被游戏应用。
+- `dialogue_recruitment_special_prompt.txt` 保留人物差异化应征校准，并新增相关性闸门：本轮未明确谈应征 / 入伍 / 加入防线时返回 `recruitment_result=none`，只正常回复原话。
+- `dialogue_morale_special_prompt.txt` 仅在士气 toggle 开启时加载；无关话题返回 `wartime_reaction=none`。战斗策略继续由 Model Adapter 动态生成当前值与合法候选合同。
+- 工作鼓励模块仅在 `is_work_encouragement_request=true` 时动态生成：真诚具体鼓励可为 `work_boost`，无效 / 无关为 `none`，严重羞辱、威胁或强迫可为 `escape`。20% 与当天 24:00 期限只是程序规则说明，不由模型结算。Mock 已验收，真实 provider 未执行。
+
+## T0284 条件战斗策略字段
+
+基础 `dialogue_system_prompt.txt` 不包含战斗策略说明；Model Adapter 仅在 `is_combat_strategy_request=true` 时动态附加策略 Prompt，要求模型读取 `combat_strategy_context` 并输出 `combat_strategy_decision`。上下文明确给出当前策略和当前兵种唯一合法候选；模型只能返回 `keep + 当前 id` 或 `change + 另一个合法 id`。守备官本轮原话与战术调整无关时必须正常作答并保持当前策略，开关本身不能作为换策略证据。关闭时 provider 不收到策略说明或候选，输出合同也不包含该模块，后端不解析 / 应用多余结果。Mock 已验收，真实 provider 尚未执行。
+
+## T0283 显式鼓舞士气字段
+
+`dialogue_system_prompt.txt` 仅在 `is_morale_encouragement_request=true` 时要求模型输出 `wartime_reaction`。模型必须先判断守备官本轮原话是否真的在鼓舞、稳军心、要求坚守或要求撤离；无关的吃饭、工作、资源、问候等内容应忽略开关、正常作答并返回 `none`。`morale_boost / escape / none` 只表达受到鼓舞、决定逃离或继续参战，15% 数值与当日 24:00 失效均由 Godot 结算。Mock 已验收，真实 provider 尚未执行。
+
 ## T0152 邀请示意与模型边界
 
 NPC-NPC `invitation` Prompt、接受 / 拒绝 Schema 和真实 provider 要求保持不变。发起示意发生在 Godot 已完成空间接近并实际提交既有请求时；接受示意只消费模型已通过业务校验的 `invitation_result=accept`，动作不能影响、替代或伪造模型决定。拒绝、超时、HTTP / Schema 失败均不调用接受表现。

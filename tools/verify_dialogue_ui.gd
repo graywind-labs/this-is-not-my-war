@@ -25,19 +25,36 @@ func _init() -> void:
 	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
 	var assign_button := npc_panel.find_child("NPCAssignButton", true, false) as Button
 	var recruited_label := npc_panel.find_child("NPCRecruitedLabel", true, false) as Label
-	var public_toggle := dialog_panel.find_child("DialogPublicToggle", true, false) as CheckButton
+	var public_toggle := dialog_panel.find_child("DialogPublicToggle", true, false) as CheckBox
+	var private_visibility_radio := dialog_panel.find_child("DialogPrivateRadio", true, false) as CheckBox
+	var header := dialog_panel.find_child("Header", true, false) as HBoxContainer
+	var title_row := dialog_panel.find_child("DialogTitleRow", true, false) as HBoxContainer
+	var title_label := dialog_panel.find_child("DialogNPCNameLabel", true, false) as Label
+	var visibility_options := dialog_panel.find_child("DialogVisibilityOptions", true, false) as HBoxContainer
+	var header_toggles := dialog_panel.find_child("DialogHeaderToggles", true, false) as GridContainer
+	var dialogue_history_button := dialog_panel.find_child("DialogHistoryButton", true, false) as Button
 	var recruitment_toggle := dialog_panel.find_child("DialogRecruitmentToggle", true, false) as CheckButton
+	var work_toggle := dialog_panel.find_child("DialogWorkEncouragementToggle", true, false) as CheckButton
+	var morale_toggle := dialog_panel.find_child("DialogMoraleEncouragementToggle", true, false) as CheckButton
+	var strategy_toggle := dialog_panel.find_child("DialogCombatStrategyToggle", true, false) as CheckButton
+	var status_label := dialog_panel.find_child("DialogStatusLabel", true, false) as Label
+	var round_label := dialog_panel.find_child("DialogRoundLabel", true, false) as Label
 	var obsolete_plan_reevaluation_toggle := dialog_panel.find_child("DialogPlanReevaluationToggle", true, false) as CheckButton
 	var send_button := dialog_panel.find_child("DialogSendButton", true, false) as Button
 	var attack_button := dialog_panel.find_child("DialogAttackButton", true, false) as Button
 	var attack_confirmation_dialog := dialog_panel.find_child("DialogAttackConfirmationDialog", true, false) as ConfirmationDialog
+	var special_success_dialog := dialog_panel.find_child("DialogSpecialSuccessDialog", true, false) as AcceptDialog
 	var complete_button := dialog_panel.find_child("DialogEndButton", true, false) as Button
 	var cancel_button := dialog_panel.find_child("DialogCancelButton", true, false) as Button
 	var suspend_button := dialog_panel.find_child("DialogSuspendButton", true, false) as Button
 	var input_edit := dialog_panel.find_child("DialogInputEdit", true, false) as LineEdit
 	var history_text := dialog_panel.find_child("DialogHistoryText", true, false) as RichTextLabel
-	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or recruitment_toggle == null or send_button == null or attack_button == null or attack_confirmation_dialog == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null or history_text == null:
+	if npc_system == null or dialog_system == null or memory_system == null or npc_panel == null or dialog_panel == null or llm_bridge == null or dialogue_button == null or assign_button == null or recruited_label == null or public_toggle == null or private_visibility_radio == null or header == null or title_row == null or title_label == null or visibility_options == null or header_toggles == null or dialogue_history_button == null or recruitment_toggle == null or work_toggle == null or morale_toggle == null or strategy_toggle == null or status_label == null or round_label == null or send_button == null or attack_button == null or attack_confirmation_dialog == null or special_success_dialog == null or complete_button == null or cancel_button == null or suspend_button == null or input_edit == null or history_text == null:
 		push_error("Dialogue UI verification required nodes not found")
+		quit(1)
+		return
+	if dialogue_history_button.size_flags_vertical != Control.SIZE_SHRINK_CENTER:
+		push_error("DialogHistoryButton should stay vertically centered instead of stretching with header toggles")
 		quit(1)
 		return
 	if not test_backend_url.is_empty():
@@ -57,6 +74,24 @@ func _init() -> void:
 		push_error("DialogPanel layout size is too small: %s" % str(dialog_panel.size))
 		quit(1)
 		return
+	if title_row.global_position.y > header.global_position.y + 2.0:
+		push_error("Dialogue title row should begin at the header top: header=%s title=%s" % [header.global_position, title_row.global_position])
+		quit(1)
+		return
+	var title_gap := dialogue_history_button.global_position.x - (title_label.global_position.x + title_label.size.x)
+	if title_gap < 0.0 or title_gap > 12.0:
+		push_error("DialogHistoryButton should sit close to the title: gap=%.2f" % title_gap)
+		quit(1)
+		return
+	var visibility_gap := visibility_options.global_position.y - (title_row.global_position.y + title_row.size.y)
+	if visibility_gap < 0.0 or visibility_gap > 4.0:
+		push_error("Visibility radios should sit directly below title: gap=%.2f" % visibility_gap)
+		quit(1)
+		return
+	if header_toggles.global_position.x <= title_row.global_position.x + title_row.size.x:
+		push_error("Special interaction toggles should stay in the header's top-right area")
+		quit(1)
+		return
 	var state: Dictionary = dialog_system.get_dialogue_state()
 	if str(state.get("target_npc_id", "")) != "cook_01" or int(state.get("max_rounds", 0)) < 1000:
 		push_error("Player dialogue state target or unlimited round semantics mismatch")
@@ -68,6 +103,46 @@ func _init() -> void:
 		return
 	if public_toggle.text != "公开":
 		push_error("Dialogue public toggle should use the concise public label")
+		quit(1)
+		return
+	if private_visibility_radio.text != "私下" or public_toggle.button_group != private_visibility_radio.button_group:
+		push_error("Dialogue visibility should use a public/private radio pair")
+		quit(1)
+		return
+	for radio in [public_toggle, private_visibility_radio]:
+		for style_name in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			if not radio.get_theme_stylebox(style_name) is StyleBoxEmpty:
+				push_error("Dialogue visibility radio should not draw %s highlight frames" % style_name)
+				quit(1)
+				return
+	for special_toggle in [recruitment_toggle, work_toggle, morale_toggle, strategy_toggle]:
+		for style_name in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+			if not special_toggle.get_theme_stylebox(style_name) is StyleBoxEmpty:
+				push_error("Special interaction toggle should not draw %s highlight frames" % style_name)
+				quit(1)
+				return
+	if round_label.visible or not round_label.text.is_empty():
+		push_error("Unlimited ordinary dialogue should not show a round field")
+		quit(1)
+		return
+	if status_label.visible or not status_label.text.is_empty():
+		push_error("Ordinary dialogue should not repeat private/public status text")
+		quit(1)
+		return
+	var normal_input_style := input_edit.get_theme_stylebox("normal") as StyleBoxFlat
+	var focus_input_style := input_edit.get_theme_stylebox("focus") as StyleBoxFlat
+	if normal_input_style == null or focus_input_style == null or normal_input_style.bg_color != focus_input_style.bg_color:
+		push_error("Dialogue input normal/focus backgrounds should stay identical")
+		quit(1)
+		return
+	input_edit.grab_focus()
+	await process_frame
+	if not input_edit.has_focus() or (input_edit.get_theme_stylebox("focus") as StyleBoxFlat).bg_color != normal_input_style.bg_color:
+		push_error("Focused dialogue input should preserve its normal dark background")
+		quit(1)
+		return
+	if not morale_toggle.disabled or morale_toggle.button_pressed or morale_toggle.modulate.a > 0.5:
+		push_error("Ordinary work dialogue must show morale toggle as off, disabled and translucent")
 		quit(1)
 		return
 	if obsolete_plan_reevaluation_toggle != null and obsolete_plan_reevaluation_toggle.visible:
@@ -108,7 +183,7 @@ func _init() -> void:
 		push_error("Dialogue public toggle did not update DialogSystem visibility")
 		quit(1)
 		return
-	public_toggle.button_pressed = false
+	private_visibility_radio.button_pressed = true
 	await process_frame
 	if str(dialog_system.get_dialogue_state().get("visibility", "")) != "private":
 		push_error("Dialogue public toggle did not switch back to private")
@@ -146,7 +221,7 @@ func _init() -> void:
 		push_error("Dialogue history or round count did not update after Mock reply")
 		quit(1)
 		return
-	if not public_toggle.disabled:
+	if not public_toggle.disabled or not private_visibility_radio.disabled:
 		push_error("Dialogue public toggle should lock after the first turn")
 		quit(1)
 		return
@@ -168,7 +243,7 @@ func _init() -> void:
 		return
 	var turn_event := _get_event(events, "dialogue_turn")
 	var payload: Dictionary = turn_event.get("payload", {})
-	for field in ["dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds", "is_recruitment_request", "recruitment_result"]:
+	for field in ["dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds"]:
 		if not payload.has(field):
 			push_error("Dialogue turn payload missing %s" % field)
 			quit(1)
@@ -283,10 +358,10 @@ func _init() -> void:
 		quit(1)
 		return
 	if (
-		not bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
-		or not recruitment_toggle.button_pressed
+		bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false))
+		or recruitment_toggle.button_pressed
 	):
-		push_error("Recruitment toggle should remain armed for the current session after sending")
+		push_error("Recruitment toggle should close after an accepted request")
 		quit(1)
 		return
 	if not recruitment_toggle.disabled:
@@ -297,6 +372,9 @@ func _init() -> void:
 		push_error("Accepted recruitment reply did not show its green check result line")
 		quit(1)
 		return
+	if special_success_dialog.visible:
+		special_success_dialog.get_ok_button().pressed.emit()
+		await process_frame
 	dialog_system.end_dialogue()
 	if not bool(npc_system.get_npc("cook_01").get("recruited", false)):
 		push_error("Completing dialogue rolled back the already accepted recruitment")
@@ -313,8 +391,12 @@ func _init() -> void:
 	order_panel.visible = false
 	var recruitment_event := _get_last_event(memory_system.get_npc_daily_events("cook_01"), "dialogue_turn")
 	var recruitment_payload: Dictionary = recruitment_event.get("payload", {})
-	if not bool(recruitment_payload.get("is_recruitment_request", false)) or str(recruitment_payload.get("recruitment_result", "")) != "accept":
-		push_error("Accepted recruitment was not recorded in dialogue_turn payload")
+	if _payload_has_special_interaction_marker(recruitment_payload):
+		push_error("Completed recruitment dialogue_turn repeated special interaction markers")
+		quit(1)
+		return
+	if _get_last_special_result(memory_system.get_npc_daily_events("cook_01"), "recruitment", "accept").is_empty():
+		push_error("Accepted recruitment result was not recorded as an immediate special event")
 		quit(1)
 		return
 	npc_system.debug_select_npc("cook_01")
@@ -385,8 +467,12 @@ func _init() -> void:
 	dialog_system.end_dialogue()
 	var reject_event := _get_last_event(memory_system.get_npc_daily_events("stableman_01"), "dialogue_turn")
 	var reject_payload: Dictionary = reject_event.get("payload", {})
-	if not bool(reject_payload.get("is_recruitment_request", false)) or str(reject_payload.get("recruitment_result", "")) != "reject":
-		push_error("Rejected recruitment was not recorded in dialogue_turn payload")
+	if _payload_has_special_interaction_marker(reject_payload):
+		push_error("Completed rejected recruitment dialogue_turn repeated special interaction markers")
+		quit(1)
+		return
+	if _get_last_special_result(memory_system.get_npc_daily_events("stableman_01"), "recruitment", "reject").is_empty():
+		push_error("Rejected recruitment result was not recorded as an immediate special event")
 		quit(1)
 		return
 
@@ -463,8 +549,8 @@ func _init() -> void:
 	dialog_system.end_dialogue()
 	var attack_dialogue_event := _get_last_event(memory_system.get_npc_daily_events("blacksmith_01"), "dialogue_turn")
 	var attack_payload: Dictionary = attack_dialogue_event.get("payload", {})
-	if str(attack_payload.get("interaction_kind", "")) != "guard_attack" or not str(attack_payload.get("speaker_text", "")).contains("以示惩戒"):
-		push_error("Dialogue attack reply was not recorded as guard_attack dialogue payload")
+	if str(attack_payload.get("interaction_kind", "")) != "guard_attack" or not bool(attack_payload.get("attack_committed", false)):
+		push_error("Dialogue attack reply was not recorded with guard_attack authority metadata")
 		quit(1)
 		return
 	await process_frame
@@ -518,6 +604,40 @@ func _get_last_event(events: Array, event_type: String) -> Dictionary:
 		if event is Dictionary and str(event.get("type", "")) == event_type:
 			return event
 	return {}
+
+
+func _get_last_special_result(events: Array, special_type: String, outcome: String) -> Dictionary:
+	for index in range(events.size() - 1, -1, -1):
+		var event: Dictionary = events[index] if events[index] is Dictionary else {}
+		if str(event.get("type", "")) != "dialogue_special_interaction_result":
+			continue
+		var payload: Dictionary = event.get("payload", {}) if event.get("payload", {}) is Dictionary else {}
+		if str(payload.get("special_type", "")) == special_type and str(payload.get("outcome", "")) == outcome:
+			return event
+	return {}
+
+
+func _payload_has_special_interaction_marker(payload: Dictionary) -> bool:
+	for field in [
+		"is_recruitment_request", "recruitment_result",
+		"is_morale_encouragement_request", "wartime_reaction",
+		"is_combat_strategy_request", "combat_strategy_result",
+		"is_work_encouragement_request", "work_encouragement_reaction"
+	]:
+		if payload.has(field):
+			return true
+	for raw_turn in payload.get("dialogue_text", []):
+		if not raw_turn is Dictionary:
+			continue
+		for field in [
+			"recruitment_result", "morale_encouragement_request", "wartime_reaction",
+			"combat_strategy_request", "combat_strategy_result",
+			"work_encouragement_request", "work_encouragement_reaction",
+			"escape_intervention_result"
+		]:
+			if (raw_turn as Dictionary).has(field):
+				return true
+	return false
 
 
 func _wait_for_llm_cleanup(llm_bridge: Node) -> bool:

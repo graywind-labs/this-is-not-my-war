@@ -98,12 +98,39 @@ func _init() -> void:
 	await process_frame
 	var device_section := building_panel.find_child("DefenseDeviceSection", true, false) as Control
 	if device_section == null or not device_section.visible:
-		_fail("Wall building panel does not expose the defense-device deployment UI")
+		_fail("Wall building panel does not expose the deployed-device summary")
 		return
-	for label_node in device_section.find_children("*", "Label", true, false):
-		if label_node is Label and (label_node as Label).text.contains("部署者"):
-			_fail("Wall deployment UI still exposes a deployer selector")
+	var deployment_summary := device_section.find_child("DefenseDeviceDeploymentSummary", true, false) as Label
+	if deployment_summary == null or deployment_summary.text != "已部署：无":
+		_fail("Wall building panel did not preserve the empty deployed-device summary")
+		return
+	if not device_section.find_children("*", "OptionButton", true, false).is_empty():
+		_fail("Wall building panel still exposes a defense-device dropdown")
+		return
+	for button_node in device_section.find_children("*", "Button", true, false):
+		var button := button_node as Button
+		if button != null and button.text.contains("部署"):
+			_fail("Wall building panel still exposes a duplicate deployment button")
 			return
+	for label_node in device_section.find_children("*", "Label", true, false):
+		if label_node is Label and (
+			(label_node as Label).text.contains("库存")
+			or (label_node as Label).text.contains("防御器械部署")
+		):
+			_fail("Wall building panel still exposes the removed deployment form")
+			return
+	building_panel.show_building("main_hall")
+	await process_frame
+	if (
+		not device_section.visible
+		or deployment_summary.text != "已部署：无"
+		or not device_section.find_children("*", "OptionButton", true, false).is_empty()
+		or not device_section.find_children("*", "Button", true, false).is_empty()
+	):
+		_fail("Main-hall building panel did not retain the same summary-only contract")
+		return
+	building_panel.show_building("wall")
+	await process_frame
 
 	var unrelated_npc_id := "engineer_01"
 	var plaza_witness_id := "priest_01"
@@ -137,6 +164,14 @@ func _init() -> void:
 		return
 	if resource_system.get_resource("defense_devices") != legacy_inventory_before:
 		_fail("Ballista deployment consumed deprecated defense_devices inventory")
+		return
+	await process_frame
+	if (
+		not deployment_summary.text.contains("已部署：")
+		or not deployment_summary.text.contains("弩床")
+		or not deployment_summary.text.contains(str(device_system.get_slot(wall_level_one_slot_id).get("name", "")))
+	):
+		_fail("Wall building panel did not refresh its retained deployed-device summary")
 		return
 	var deploy_event := _find_latest_event(memory_system.get_all_events(), "defense_device_deployed")
 	if deploy_event.is_empty() or str(deploy_event.get("payload", {}).get("slot_id", "")) != wall_level_one_slot_id:

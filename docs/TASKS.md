@@ -6,6 +6,771 @@
 
 ---
 
+## T0303 五类高频战斗事件的 LLM 聚合投影
+
+状态：In Progress
+优先级：P0
+前置任务：T0106, T0299
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `PROMPTS.md`, `API_BUDGET.md`, `GM_PANEL.md`, `DATA_SCHEMA.md`, `TECH_ARCHITECTURE.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`, `backend/README.md`, `backend/schemas/README.md`
+
+任务目标：
+
+- 保持 MemorySystem 权威事件档案、NPC 事件库、见闻库和玩家面板逐条记录完全不变，只在正式 LLM 短期记忆投影中聚合高频战斗事件。
+- 聚合白名单仅包含 `attack_made`、`damage_taken`、`building_damaged`、`defense_device_triggered`、`horse_damaged`；其他事件继续逐条投影。
+- 每类事件使用自己的关键字段签名；只有事件类型、主体、客体、地点、可见性、战斗场次及该类必要语义字段一致时才合并，关键字段不同的事件不得误合并。
+- 聚合结果保留发生次数、首尾时间、累计伤害、首个 HP、最后 HP、最低 HP、最大重要度和终结结果等必要事实，并使用程序确定性中文摘要，不调用 LLM 做压缩。
+- 熟睡总结与其余正式 NPC LLM 调用共用同一聚合投影；总结成功后仍按原始事件 / 见闻快照 ID 轮转，不按聚合条目清理。
+
+验收标准：
+
+- 五类事件分别具备至少一组可合并夹具和一组关键字段不同的不可合并夹具；测试输出可直接对照压缩前、压缩后及聚合统计。
+- 原始事件库 / 见闻库数量、事件 ID、payload、顺序和 NPCPanel 展示不变；仅 LLM 投影条数减少。
+- 聚合项能从 `summary + details` 恢复次数、累计伤害、HP 首尾 / 最低值、终结标记和关键字段；不同攻击者、目标、武器、伤害来源、建筑、器械部署、马匹、地点、可见性或战斗场次不会误合并。
+- 对话、日计划、对话意图复核、计划修改判别、正式计划修订、低血量判定和熟睡总结全部使用相同结果；Model Adapter 二次投影不得删除聚合信息。
+- GM 既有“短期记忆 / LLM”入口显示原始条数、投影条数及五类聚合前后统计；专项、旧全量紧凑记忆、provider 投影、Schema / Prompt、Main headless 和 Godot MCP 验证通过。
+
+---
+
+## T0302 NPC 面板逃离行动红色警示
+
+状态：Done
+优先级：P1
+前置任务：T0268, T1204A
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `GM_PANEL.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- NPC 面板姓名旁的当前行动为“逃离驿站”时，将该行动文字显示为红色警示。
+- NPC 被挽留、完成逃离、切换行动或切换查看对象后，当前行动文字立即恢复默认颜色，不能残留红色。
+
+验收标准：
+
+- 权威 `current_action=escaping_station` 在面板投影为红色“逃离驿站”。
+- 普通行动以及逃离停止后的行动继续使用原有默认颜色；逃离流程与挽留结算不变。
+- NPC 面板、逃离挽留与 Main headless 回归通过，并通过正式 Main 运行态检查颜色。
+
+完成记录（2026-09-01）：
+
+- `NPCPanel` 每次刷新都按当前行动重设文字颜色：`escaping_station` 使用 `#dc6157`，其余行动恢复白色。
+- 逃离挽留专项覆盖逃离中的红色“逃离驿站”与成功挽留后的颜色恢复；NPC 面板专项、Main headless 和 Godot MCP 正式 Main 均通过，错误游标 190 后无新增错误。
+- 本任务只改变 UI 投影，不新增 GM 入口，不修改逃离权威、事件、Prompt 或 API 调用。
+
+---
+
+## T0301 主场景 NPC 头顶信息分层上移
+
+状态：Done
+优先级：P1
+前置任务：T0280, T0282, T0289
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `GM_PANEL.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 上移我方 NPC 的逃离、思考、主动交涉与 NPC-NPC 对话头顶标记，避免与姓名 / 行动文字重叠。
+- 上移我方 NPC 战时世界血条；不改变姓名 / 行动文字的既有同排布局。
+- 将敌方 NPC 的具体姓名和常显血条作为一组整体上移，保持血条仍位于姓名上方。
+
+验收标准：
+
+- 正式 Main 中我方姓名与各状态标记、战时血条之间有清晰垂直间隔；标记点击、显隐和颜色不变。
+- 敌方姓名 / 血条同步上移相同高度，具体名称、橙色血条与 HP 比例合同不变。
+- 世界头顶 UI 专项、逃离 / 思考 / 对话入口、Main headless 与 Godot MCP 可见验收通过。
+
+完成记录（2026-09-01）：
+
+- 我方头顶建立姓名 `2.08m`、血条 `2.62m`、思考 / 问号 `2.95m`、逃离 / 对话 `3.12m`、Emoji `3.72m` 的分层；调试快照补充各层位置供自动回归。
+- 敌方普通与正式 Actor 的姓名统一为 `2.10m`，血条为 `2.44m`，两者整体较旧位置上移 `0.35m`。
+- T0280、T0282、逃离、主动交涉、T0289 和 Main headless 通过；思考综合专项仍被既有纯攻击计划判别断言阻塞在本次检查之前。Godot MCP 正式 Main 已核对运行态坐标和画面，无新增编辑器错误。
+
+---
+
+## T0300 对话面板紧凑页眉与无框输入交互
+
+状态：Done
+优先级：P1
+前置任务：T0298, T0288
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `GM_PANEL.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 将“与 XX 对话”和邻近的“记录”固定在面板左上角，公开 / 私下单选紧贴标题下一行；四类特殊互动保持右上角排列。
+- 移除公开性重复状态文案；普通无限轮对话不显示轮次，仅逃离挽留等明确有限轮会话显示已用 / 总轮次。
+- 四类特殊 toggle 的普通、悬停、按下、选中、禁用与焦点状态均不绘制高亮边框；资格和选中状态继续通过圆点、文字与透明度表达。
+- 输入框在获得焦点和编辑文字时保持与普通状态一致的深色背景与清晰文字，不切换为灰色焦点样式。
+
+验收标准：
+
+- 正式 Main 中页眉无多余顶部空白，标题 / 记录靠左相邻，公开性位于其下，特殊 toggle 位于右上且不挤高标题。
+- 普通、战时强制公开与逃离挽留会话分别正确投影公开性锁定、轮次显隐和状态文案；无“私下对话 / 公开对话 / 战时公开对话”重复行。
+- UI 专项、逃离 / 战时对话回归、Main headless 与 Godot MCP 可见验收通过。
+
+完成记录（2026-09-01）：
+
+- DialogPanel 页眉拆为左侧标题 / 记录紧凑行、其下公开性单选，以及右上角独立 `2×2` 特殊交互区；四类 toggle 全状态 StyleBox 为空，输入框 normal / focus 共用相同深色背景。
+- 普通与自主对话隐藏状态 / 轮次冗余；强制公开由锁定单选表达，仅逃离挽留显示“挽留轮次：当前 / 5”。
+- Dialog UI 隔离 HTTP Mock、战时、逃离、记录、NPC 面板和 Main headless 通过；旁听专项仍停在既有世界气泡鼠标投影未命中前置步骤。Godot MCP 正式 Main 已实看布局与聚焦输入态，错误游标 190 后无新增错误。未修改 AI 合同，真实 API 调用为 0。
+
+---
+
+## T0299 事件库开发语义降噪与原因润色
+
+状态：Done
+优先级：P1
+前置任务：T0402, T1103D, T1204A, T0298
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `MEMORY_AND_INFO_SPACE.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 行为模式切换及其内部 reason 只保留在运行态 / GM 调试快照，不再写入 NPC 事件库、见闻库或后续 LLM 短期记忆。
+- 排查确定性事件摘要中直接暴露内部枚举、英文 reason、action id 或调试来源的路径；纯开发事实停止入库，必要玩法事实使用稳定中文语义润色。
+- 保留逃离开始、挽留结果、避战、警铃、集结、昏迷、复苏、攻击和行动失败等玩家 / NPC 可理解的具体事实，不改变任何权威状态转换。
+
+验收标准：
+
+- `escape_intervention_stayed` 仍让 NPC 正常停止逃离并返回工作模式，但事件库只保留“被守备官挽留下来”的具体事实，不出现 `npc_mode_changed` 或内部 reason。
+- 所有新行为模式互转均不写入 `npc_mode_changed`；GM 行为模式快照继续保留 previous mode / reason 供开发排查。
+- 必须留存的失败 / 计划事件摘要不直接显示蛇形英文枚举；专项、事件 / 记忆回归与 Main headless 通过。
+
+完成记录（2026-09-01）：
+
+- NPCSystem 停止生成通用模式事件，MemorySystem 在入口拒绝旧 `npc_mode_changed`；previous / reason / entered time 仍保留在运行态与 GM 行为快照。挽留、警铃、集结、避战、昏迷、复苏和逃离继续由具体事件表达。
+- 工作失败、祈祷失败、计划修订的入库 payload 与摘要，以及未知事件摘要增加叙事净化：自然中文保留，蛇形英文、路径式标识、未知 action id / event type 使用中文兜底。
+- `verify_t0299_memory_event_hygiene.gd` 与 `verify_escape_intervention_dialogue.gd` 通过；`verify_avoid_combat_mode.gd` 通过。Main headless 与 Godot MCP 正式运行态通过。既有 `verify_behavior_mode_state_machine.gd` 仍停在已记录的睡眠近距接敌旧断言，`verify_battlefield_public_info.gd` 仍受敌军测试位置不在避战范围影响，`verify_structured_memory_events.gd` 仍受睡眠行动未启动影响；三者失败均发生在本次事件断言之外。未修改模型合同，真实 API 调用为 0。
+
+---
+
+## T0298 NPC 与对话面板交互布局统一
+
+状态：Done
+优先级：P1
+前置任务：T0264, T0269, T0285, T0297
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 将 NPC 面板与对话面板的公开 / 私下控制统一为只显示圆点和文字的互斥单选项，移除悬停、按下和焦点高亮框。
+- 重排 NPC 面板底部：战斗策略下方显示各占一半的“装备 / 指令”，最底部显示通栏“对话”；未入伍 NPC 仍看见装备 / 指令，但以灰态禁用并提示征召门槛。
+- 从 NPC 面板移除“记录”按钮，将独立只读对话记录入口迁入对话面板。
+- 让 DialogPanel 接入现有棕金切片主题并优化层级、间距与核心对话区可读性，不改变对话、事件和权威结算合同。
+
+验收标准：
+
+- 两处公开 / 私下选择器悬停和选择时均无背景 / 边框高亮，只有选中圆点变化；对话首轮后两项一起锁定。
+- 已入伍 NPC 的装备 / 指令可点，未入伍 NPC 两项始终可见、灰态禁用且 Tooltip 分别说明无法配装 / 无法命令；对话按钮始终位于最底部并通栏。
+- 对话面板内“记录”可打开当前对话 NPC 的只读历史，不启动、结束或写入任何对话；相关 UI 专项、Main headless 与 Godot MCP 正式界面验收通过。
+
+完成记录（2026-09-01）：
+
+- NPCPanel 与 DialogPanel 的公开 / 私下控件统一为无状态框的互斥 CheckBox 单选组，悬停、按下、焦点和选中均不改变背景；对话面板新增明确“私下”项并保持既有首轮锁定 / 战时强制公开合同。
+- NPCPanel 底部重排为战斗策略、半宽装备 / 指令、通栏对话；未入伍者两项可见但禁用并显示征召提示。删除 NPCPanel 记录按钮，在 DialogPanel 页眉新增只读记录入口；DialogPanel 接入棕金切片主题。
+- NPC 面板、指令、历史、状态、战时对话专项、完整 HTTP Mock 对话与 Main headless 通过；Godot MCP 正式 Main 确认运行态尺寸、禁用提示、记录与会话并存且无新增编辑器错误。未修改 AI / 事件 / 结算合同，真实 provider 调用为 0。
+
+---
+
+## T0297 GM AI信息页独立 NPC 目标选择
+
+状态：Done
+优先级：P1
+前置任务：T0166, T0287, T0289
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `GM_PANEL.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 在 GM“AI信息”页增加独立 NPC 下拉框，覆盖该页的对话、特殊交互、情绪预览、记忆与事件指令。
+- 不再复用“常用”页默认落在托马的 `CommonNpcSelect`，并与“正式行动”页的 NPC 下拉框分别保存选择。
+- 保持现有权威系统接口与 AI 合同不变，只修正 GM 调试命令的目标路由。
+
+验收标准：
+
+- `AI信息` 页可从 8 名初始 NPC 中独立选人，选择不会改变“常用”或“正式行动”页选择。
+- 该页所有需要 NPC 目标的按钮均作用于 AI 页所选 NPC；全局健康检查、成本、公告、地点和事件列表等无 NPC 目标按钮保持原行为。
+- GM 全面回归、T0289 情绪专项、Main headless 与 Godot MCP 正式 Main 交互验证通过。
+
+完成记录（2026-09-01）：
+
+- AI信息页顶部新增独立 `AINpcSelect`，填充与其他页相同的 8 名 NPC，但单独保存当前项；普通 / 特殊对话、结果展台、逃离 / 挽留、情绪、记忆与事件入口全部切换到该目标。
+- GM 回归增加三页分别选择厨子、园丁和医生的独立性断言，并通过“开心”按钮验证人物框实际打开 AI 页所选医生；T0289 专项同步改用新选择器。
+- GM 全面回归、T0289 情绪专项与 Main headless 通过；Godot MCP 正式 Main 再以 AI=厨子、常用=托马、正式行动=园丁完成可见交互验证，无新增编辑器错误。未修改 AI 合同或调用真实 provider。
+
+---
+
+## T0296 世界纯 Emoji 与人物框中底短尾巴
+
+状态：Done
+优先级：P1
+前置任务：T0294, T0295
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `GM_PANEL.md`, `API_BUDGET.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 主场景情绪表现移除 Emoji 下方的白色椭圆背景，世界中只显示 Emoji / `none` 省略号。
+- 第二人称漫画框尾巴从白框底边中点起笔，缩得更短更窄，继续斜指向 NPC，但尖端与头顶之间保留可见间隙。
+- 保持 Emoji 大小、白框主体、位置、双视图计时、暂停播放和情绪动作合同不变。
+
+验收标准：
+
+- 世界 `DialogueEmotionBubble` 不再创建 `BubbleBody` 或其他背景 Mesh，只保留透明视口 Emoji Sprite。
+- 人物框尾巴锚点位于底边中点附近，尺寸小于上一版，尖端停在人物头顶上方而非插入头部。
+- T0289 专项、Main headless、Godot MCP 正式 Main 双视图截图与错误检查通过。
+
+完成记录（2026-09-01）：
+
+- 删除世界 `DialogueEmotionBubble` 的 SphereMesh `BubbleBody`、白色材质及对应渐隐分支；节点现在只显示透明 SubViewport 生成的 `EmojiSprite`，Emoji 字号、位置、颜色和计时不变。
+- 人物框尾巴改从主体底边中心 `(40,57)` 起笔，外轮廓缩为约 `21×13`，斜向右下的尖端停在 `(55,70)`；结合根位置后与 NPC 头顶保留约 9px 留白。
+- T0289 专项新增世界无背景 Mesh、纯 Emoji 和中底短尾巴范围断言。专项与 Main headless 通过；Godot MCP 正式 Main 确认世界情绪根仅有 `EmojiSprite`、人物框主体 `80×63` 且尾巴未接触头部。未修改 AI 合同，真实 API 调用为 0。
+
+---
+
+## T0295 暂停时对话情绪动作继续播放
+
+状态：Done
+优先级：P1
+前置任务：T0293, T0294
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `GM_PANEL.md`, `API_BUDGET.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 玩家暂停游戏时仍允许正常对话，并让对话回复产生的 Emoji、开心动作和愤怒动作按现实时间正常播放。
+- 只豁免 `happy / angry` 对话情绪临时表现；工作、移动、战斗、受击等玩法或战斗动画继续遵守暂停。
+- 情绪动作在暂停中结束后，恢复到的权威动作仍保持冻结，直到玩家解除暂停。
+
+验收标准：
+
+- 暂停前已开始或暂停后新触发的开心 / 愤怒动作都能推进 AnimationPlayer 时间与临时表现倒计时。
+- Emoji 双视图继续出现、计时、替换和渐隐；NPC 权威行动与游戏时间不推进。
+- T0289 专项覆盖暂停触发与结束边界，Main headless 和 Godot MCP 正式 Main 暂停态检查通过。
+
+完成记录（2026-09-01）：
+
+- `ChibiCharacterPilot` 将对话临时表现中的 `happy / angry` 设为游戏暂停豁免：AnimationPlayer 继续使用现实帧时间，临时表现剩余时间也按现实秒递减；其他动画继续保持 `speed_scale=0`。
+- 情绪动作无论在暂停前开始还是暂停后新触发都能推进；若在暂停中结束，先恢复实时权威状态，再立即以暂停速度冻结，避免工作 / 移动 / 战斗动画偷跑一帧。
+- T0289 专项新增暂停前后触发、双 Emoji 现实时间、游戏秒不推进及结束恢复冻结断言。T0289、TimeSystem、NPCDevLab 与 Main headless 通过；Godot MCP 正式 Main 在 `paused=true` 下确认 `Cheering` 从 `0.014s` 推进至 `0.510s`，Emoji 从 `0.029s` 推进至 `0.581s`，游戏时间保持 `21600s`。未修改 AI 合同，真实 API 调用为 0。
+
+---
+
+## T0294 情绪气泡彩色 Emoji 与漫画式人物框布局
+
+状态：Done
+优先级：P1
+前置任务：T0289, T0293
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `API_BUDGET.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 修复主场景世界气泡中彩色 Emoji 被 `Label3D` 降级为黑色单色字形的问题，确保与第二人称人物框显示内容和颜色一致。
+- 将第二人称人物框气泡从正上方移到 NPC 头顶左上方，并增加朝向人物的右下斜尾巴，形成漫画式指向关系。
+- 保持既有双视图独立绘制、人物副镜头排除层、5 秒保持、0.75 秒渐隐、即时替换与情绪动作同步合同。
+
+验收标准：
+
+- 主场景 `😊 / 😠` 等 Emoji 显示为正常彩色图案，不再出现黑色圆圈；`none` 省略号仍清晰可见。
+- 第二人称气泡位于画面左上区域，气泡尾巴从右下方斜指向 NPC 头部；不遮挡姓名、状态和主要面部。
+- T0289 专项、Main headless、Godot MCP 正式 Main 双视图截图与错误检查通过。
+
+完成记录（2026-09-01）：
+
+- 主场景世界气泡不再让深色 `Label3D.modulate` 乘入彩色 Emoji；改由透明 `128×96 SubViewport` 使用普通 Canvas `Label` 绘制，再通过人物副镜头排除层上的 `Sprite3D` 投射到世界，`none` 省略号仍使用深色字形。
+- 第二人称气泡固定到人物框左上留白区，主体保持约 `80×63`、Emoji 字号不变；漫画尾巴缩短为约 `30×27`，向右下指到头部上缘外侧，不覆盖 NPC 面部或身体。
+- 扩充 T0289 专项，断言彩色安全渲染器、独立 Sprite、左上布局和紧凑尾巴范围；专项与 Main headless 通过，Godot MCP 正式 Main 运行态确认双视图内容、尺寸、位置和同步动作。未修改 AI 合同，真实 API 调用为 0。
+
+---
+
+## T0293 对话情绪同步动作接入
+
+状态：Done
+优先级：P1
+前置任务：T0289, T0292
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `API_BUDGET.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 撤下不符合预期的思考动作试片，不把思考动作接入正式情绪反馈。
+- 当正式 AI 对话解析出 `happy` 或 `angry` 时，在 emoji 两套气泡出现的同一表现事件中，让对应 NPC 同步播放一次开心欢呼或愤怒剑盾横斩动作。
+- 情绪动作只覆盖角色动画表现，不修改或中断 NPC 的权威行动、移动、战斗状态与对话事件数据。
+
+验收标准：
+
+- GM 情绪预览和正式对话共用的情绪入口都能触发动作；`happy` 对应 `Cheering`，`angry` 对应 `Melee_1H_Attack_Slice_Horizontal`。
+- 每次情绪事件只触发一次临时动作，动作结束后自动恢复实时权威状态；其他七种情绪只显示既有 emoji。
+- 思考按钮与运行时生成的错误思考姿势已移除；T0289 情绪专项、NPCDevLab 专项和 Main headless 通过。
+
+完成记录（2026-09-01）：
+
+- NPC 世界节点在既有 `npc_dialogue_emotion_presented` 信号处理入口同步映射 `happy → emotion_happy`、`angry → emotion_angry`；每次信号生成唯一表现事件 id，GM 预览与正式 AI 回复共用同一条链。
+- `ChibiCharacterPilot` 的临时动作桥接新增开心 / 愤怒，分别播放一次 `Cheering` 和 `Melee_1H_Attack_Slice_Horizontal`，结束后恢复实时档案动画；没有写入 NPC 权威行动、移动或战斗字段。
+- 撤下 NPCDevLab 的思考按钮、`thinking` 状态、运行时 `Thinking_Standing_Pose` 生成与专项断言。T0289、NPCDevLab、战时对话、Main headless、`git diff --check` 通过；Godot MCP 正式 Main 确认两种 Emoji、动作和 clip 同步，权威行动不变。未修改 AI 合同，真实 API 调用为 0。
+
+---
+
+## T0292 NPCDevLab 情绪与思考动作试片（思考已由 T0293 撤下）
+
+状态：Done
+优先级：P1
+前置任务：T0130-D1, T0142, T0289
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 在 NPCDevLab 的我方 NPC 动作列表新增“开心”“思考”“愤怒”三个可点击试片动作。
+- 开心优先复用素材库中契合的既有动作；愤怒明确复用剑盾横斩攻击动作，不新增第二套攻击动画。
+- 思考使用站姿静态姿势：一只手横向托住另一侧手肘，另一只手托腮；进入后保持最终静止姿势，直到切换动作或思考状态结束。
+- 本阶段只做 NPCDevLab 试片和共享角色包装能力，不把情绪标记自动接入正式 Main 动作状态机。
+
+验收标准：
+
+- 三个动作都能从 NPCDevLab 直接点击；思考姿势不会循环摆动或自行退回待机。
+- 愤怒实际播放的 clip 与剑盾攻击一致；开心和思考不会显示无关工作道具。
+- NPCDevLab 专项、共享角色包装相关回归和 Main headless 通过，并完成 Godot MCP 运行态截图验收。
+
+完成记录（2026-09-01）：
+
+- `npc_dev_lab.json` 为全部我方 NPC 增加三个双模式动作；开心映射素材库 `Cheering`，愤怒映射与剑盾攻击完全相同的 `Melee_1H_Attack_Slice_Horizontal`。
+- `ChibiCharacterPilot` 新增 `happy / thinking / angry` 表现状态。思考片段以 `Idle_A` 首帧为身体基准，仅替换双臂 / 双手姿势，每条轨道只有一个关键帧、禁止循环并加入最终姿势保持列表；不使用持续 IK 或玩法状态写回。
+- 扩充 NPCDevLab 全量专项，覆盖动作入口、具体 clip、思考单关键帧 / 非循环 / 状态保持与愤怒复用合同；专项及 Main headless 通过。Godot MCP 逐项实看思考、开心和装备剑盾后的愤怒横斩。旧 P0 包装专项仍因既存的挂点数量断言过期而报 2 项，与本次动作无关。
+- 未接入 Main 情绪自动动作，不修改 LLM Prompt / Schema / provider，真实 API 调用为 0。
+
+---
+
+## T0291 战时对话与战斗行动并行
+
+状态：Done
+优先级：P0
+前置任务：T1201, T0283, T0284, T0285
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `UI_UX.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 守备官与处于 `rally / combat / avoid_combat` 的 NPC 对话时，只建立会话和 LLM 上下文，不中断、暂停或替换其集结、索敌、追击、攻击、战斗策略移动和避战移动。
+- 战时对话不得把 NPC 的 `current_action` 改为 `talk_to_guard_officer`，不得在结束时用 `idle` 覆盖战斗行动；`behavior_mode`、战斗目标、攻击阶段、移动目标和相关运行时状态继续由 CombatSystem 权威维护。
+- 战斗过程中产生的事件和状态变化继续进入后续对话请求的实时上下文；对话产生的策略调整、士气增益和逃离等特殊结果仍通过既有独立权威接口影响战斗。
+- `escape_intervention` 保留独立的逃离移动暂停 / 恢复合同；和平 `work` 模式对话仍按既有规则打断普通行动并在会后判别计划。
+
+验收标准：
+
+- 集结移动、正式战斗攻击 / 索敌移动与避战移动在守备官发送消息、等待回复、挂起和完成对话前后均不中断，关键战斗状态不被对话层改写。
+- 战时会话仍正常保存历史、显示 LLM 活动、接收动态战局上下文并允许合法特殊 toggle 结算。
+- 和平工作中断 / 恢复、逃离挽留暂停 / 恢复及既有对话生命周期回归不退化。
+
+完成记录（2026-09-01）：
+
+- DialogSystem 为 `rally / combat / avoid_combat` 增加明确的并行战时路径：只持有会话锁，不取消已有战时 LLM 请求，不捕获普通行动中断上下文，不调用 ActionSystem 中断，不写 `talk_to_guard_officer / player_dialogue_*` 行动结果；挂起、恢复、完成和取消同样只释放会话状态。
+- NPCSystem 的战斗行为模式切换会保留已激活的守备官对话与在途请求；DialogSystem 随状态信号刷新 `interaction_context / wartime_dialogue / force_local_public`，进入战时后强制公开。昏迷、逃离和低血量判定等既有高优先级边界未放宽，逃离挽留继续独立暂停移动。
+- 扩充 `verify_wartime_dialogue.gd`，逐字段覆盖集结移动、攻击前摇 / 冷却 / 目标、战术移动、避战行动、挂起 / 恢复 / 取消以及集结转战斗时的会话与 LLM 保留。战时专项、和平计划恢复、会话生命周期、逃离挽留、Dialog UI HTTP Mock 和 Main headless 通过；Godot MCP 正式 Main 运行态复核并行状态与模式切换，无新增编辑器错误。
+- 未修改 Prompt、Schema、endpoint、调用次数或特殊效果结算；本地 HTTP Mock 只用于既有对话通信回归，未调用真实 provider。
+
+---
+
+## T0290 世界血条槽与填充 billboard 对齐修复
+
+状态：Done
+优先级：P1
+前置任务：T0280, T0282
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复仓库等带旋转父节点下，世界血条灰色条槽与绿色填充因使用不同 billboard 原点而发生空间错位的问题。
+- 填充继续使用真实网格宽度表达权威 HP 比例，但左对齐偏移改在 QuadMesh 自身 billboard 空间完成，不移动 Fill 子节点的横向原点。
+- 共享组件的 NPC、战略建筑、塔防与敌军均保持槽 / 填充重合，不改变尺寸、颜色、战时显隐或 HP 权威。
+
+验收标准：
+
+- 任意父节点旋转下，Track 与 Fill 的 MeshInstance3D 横向原点一致；填充中心偏移等于 `-槽宽 × (1 - hp/max_hp) / 2`。
+- 仓库受损血条的绿条完整落在灰槽内；满血、部分血量与零血的长度 / 隐藏合同不回退。
+- T0290 专项、T0282 / T0280 回归、Main headless 与 Godot MCP 正式 Main 视觉验收通过，无新增错误。
+
+完成记录（2026-09-01）：
+
+- 根因确认是仓库父节点绕 Y 轴旋转 `-135°` 时，Fill 为左对齐而设置的本地 `x=-0.6` 被父变换旋转成世界 X/Z 位移；Track 与 Fill 随后分别 billboard，造成灰槽和绿条视觉分离。
+- `WorldHealthBar3D` 改为让 Track / Fill 节点都保持零位置，以 `QuadMesh.center_offset` 在网格自身 billboard 空间完成左对齐；真实填充宽度、零血隐藏、颜色与显隐合同保持不变。
+- 新增 T0290 旋转父节点专项，覆盖满血、50%、20% 与零血；T0290、T0282、T0280、Main headless 通过。Godot MCP 正式 Main 在仓库 `75/150` HP 下确认两层世界原点一致、Fill 宽度 `1.2`、中心偏移 `-0.6`，热加载后二次错误检查无新增记录。
+
+---
+
+## T0289 NPC 对话情绪标记与双视图 Emoji 气泡
+
+状态：Partial（Mock、UI 与双视图表现已完成；当前环境无真实 API Key，真实 provider 情绪选择尚未验收）
+优先级：P0
+前置任务：T0028, T0029, T0030, T0283, T0284, T0285, T0288
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `GM_PANEL.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `GODOT_ARCHITECTURE.md`, `TECH_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 所有守备官与 NPC、NPC 与 NPC 的正式模型回复必须从统一白名单中返回一个结构化情绪；允许“无明显情绪”，并由程序稳定映射为中文标签和 Emoji。
+- 对话历史中的 NPC 回复尾部显示情绪中文标签；不把显示后缀混入模型原始台词或普通对话事件文本。
+- 同一次 NPC 回复在世界 NPC 头顶与已打开的实时第二人称人物框分别显示独立 Emoji 气泡；无明显情绪显示漫画省略号，持续 5 秒后渐隐，新回复立即替换旧气泡。
+- NPC-NPC 自主对话即使无人打开旁听或 NPC 面板，也会通过同一正式回复信号在双方各自头顶展示气泡。
+- GM“AI 对话 / LLMBridge”区域提供全部情绪与连续替换的生产链路预览，不在 GMPanel 复制情绪映射或计时权威。
+
+验收标准：
+
+- Prompt、Schema、Mock 与 Godot 解析共享同一组情绪 id；非法 / 缺失供应商值按可追踪的非权威归一化规则回落为 `none`，不会导致对话失败。
+- 玩家-NPC、NPC-NPC 邀请与正式对话、逃离挽留各类 NPC 回复都携带合法情绪；对话尾注、世界气泡和第二人称气泡内容一致。
+- 两类气泡各自计时和绘制：显示 5 秒后渐隐，后一条回复立即顶替，关闭人物框不影响世界气泡；人物副镜头不重复渲染世界气泡。
+- GM 能逐项预览全部 Emoji、无情绪省略号、快速替换和渐隐；Mock、专项、相关回归、Main headless 与 Godot MCP 正式界面验证通过。
+
+完成记录（2026-08-31，Mock / 本地表现阶段）：
+
+- 对话输出将自由文本 `emotion` 收紧为 9 项统一白名单；Prompt 每轮必选一项，HTTP 层把旧英文、中文近义词、空值或未知值以可审计 normalization 回落到合法 id，Mock 各分支返回情境匹配情绪。
+- DialogSystem 为每个 NPC 模型回复保存结构化情绪表现，DialogPanel 在真实台词尾部追加中文标签但不改写原文；EventBus 同步驱动世界 NPC 与实时人物副镜头的独立气泡。
+- 主场景气泡位于人物副镜头排除的视觉层，副镜头使用独立 Control 气泡；两者保持 5 秒、随后 0.75 秒渐隐，新结果即时替换，`none` 显示 `…`。
+- GM AI 对话区新增 9 个逐项按钮和快速替换演示；Python 情绪合同、Prompt、HTTP Mock、T0289 Godot 专项、对话 UI、邀请、逃离、T0287/T0288、GM 全面回归和 Main headless 通过。Godot MCP 正式 Main 中从 GM 的真实“愤怒”按钮触发后，世界与人物副镜头均显示 `😠`、计时同步重置，世界气泡仍在副镜头排除层，编辑器错误日志为空。NPC-NPC 旁听真实鼠标旧回归仍被屏幕位置上的 `MainHallSlot03DefenseSlotMarker` GUI 控件抢占，与新增无碰撞情绪气泡无关；当前环境未发现任何 API Key，真实 provider 未调用。
+
+---
+
+## T0288 特殊对话开关生命周期、取消锁与事件去重
+
+状态：Done
+优先级：P0
+前置任务：T0283, T0284, T0285, T0286, T0287
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `DATA_SCHEMA.md`, `UI_UX.md`, `GODOT_ARCHITECTURE.md`, `TECH_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 四类特殊 toggle 在失败、忽略或保持结果后继续开启；仅成功落地、资格失效、玩家主动关闭或会话结束时关闭。
+- 任一特殊 toggle 开启状态下发送消息后，本场会话立即禁止取消，只能完成或保留会话；后续关闭 toggle 不解除取消锁。
+- 四类特殊结果继续在回复落地时立即写入独立 `dialogue_special_interaction_result`；完成对话生成的普通 `dialogue_turn` 只保存真实玩家 / NPC 台词，不重复携带特殊请求或结构化结果标记。
+
+验收标准：
+
+- 应征拒绝 / 忽略、士气继续 / 逃离、工作无事 / 逃离、策略保持后 toggle 保持开启；应征接受、士气 / 工作 buff 成功、策略实际改变或资格失效后关闭。
+- 四类 toggle 任一开启并发送后，UI 取消按钮立即置灰，DialogSystem 直接调用取消也返回拒绝；挂起超时按完成收口。
+- 每个显式结果只产生独立特殊结果事件；完成后的 `dialogue_turn.payload.dialogue_text` 及顶层 payload 均不包含四类特殊标记，但完整真实台词保持不变。
+- 专项、Mock、Dialog UI、会话生命周期、Memory / Main headless 与 Godot MCP 正式界面验证通过。
+
+完成记录（2026-08-31）：
+
+- DialogSystem 统一四类 sticky toggle：非成功保持，成功 / 资格失效关闭；新增统一已发送特殊请求投影，UI 与后端取消入口同步锁定，挂起超时按完成收口。
+- 四类结果继续即时写独立事件，并补齐应征 `none`；完成 `dialogue_turn` 删除四类特殊 payload 字段，`dialogue_text` 白名单化为五个纯台词字段，MemorySystem 同步放宽普通对话必需合同。
+- 新增 T0288 专项；HTTP Mock、Dialog UI、会话生命周期、战时对话、T0286/T0287 与 Main headless 通过。Godot MCP 正式 Main 实测工作 `none` 后 toggle 保持、取消按钮与 API 同时锁定，完成后事件计数为特殊结果 1 + 普通会话 1，普通 transcript 无特殊字段且编辑器无新增错误。
+- 未修改 Prompt、LLM Schema、provider 或 HTTP 合同，未调用真实 API。
+
+---
+
+## T0287 GM 特殊对话结果展台与 NPC 增益图标
+
+状态：Done
+优先级：P0
+前置任务：T0283, T0284, T0285, T0286
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `GODOT_ARCHITECTURE.md`, `TECH_ARCHITECTURE.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 在 GM“AI 对话 / LLMBridge”区域集中提供逃离开始、挽留成功 / 继续逃离，以及提出应征、鼓舞士气、鼓励工作、改变战斗策略的各类结构化结果按钮，方便逐项观察正式反馈、事件与状态效果。
+- GM 按钮只调用 DialogSystem / NPCSystem / CombatSystem 的正式或 `debug_*` 接口，不在 GMPanel 建立第二套征召、buff、策略、逃离或记忆权威。
+- NPCPanel 标题栏在关闭按钮左侧显示活动增益：士气 buff 为金色宝剑，工作效率 buff 为金色锄头；无对应 buff 时隐藏，悬停说明名称、效果与当天 24:00 失效规则。
+
+验收标准：
+
+- GM AI 对话页能逐按钮触发应征接受 / 拒绝 / 忽略、士气提升 / 继续参战 / 逃离、工作提升 / 无事发生 / 逃离、策略改变 / 保持、开始逃离、挽留留下 / 继续逃离。
+- 成功按钮显示正式成功弹窗；逃离开始显示正式全局警报；结果事件和公开见闻复用 T0286 链路，状态变化由权威系统完成。
+- 两类 buff 图标随 NPC 状态信号即时显示 / 隐藏，标题栏顺序位于关闭按钮左侧，Tooltip 数值与权威状态一致。
+- GM、NPCPanel、特殊对话、逃离专项、Main headless 与 Godot MCP 实际界面验证通过；本任务不新增真实 API 调用。
+
+完成记录（2026-08-31）：
+
+- GM AI 对话区新增五行本地结果展台，覆盖四类特殊交互全部结构化结果和逃离 / 挽留两类结果；战斗区旧“触发逃离”入口移动到这里，并提供两类 buff 清除按钮便于重复验收。
+- DialogSystem 的 `debug_preview_*` 负责构造可见对话回合并复用正式结果事件 / 弹窗；NPCSystem、CombatSystem 只新增薄 `debug_*` 包装，实际状态仍由既有私有权威方法落地。
+- NPCPanel 标题栏关闭按钮左侧新增金色宝剑 / 锄头 SVG 图标；Tooltip 从 `morale_boost / work_encouragement_boost` 实时读取效果、失效边界和剩余时间。
+- T0287 全结果专项、GM、NPCPanel、T0286、HTTP Mock、Main headless 与 Godot MCP 正式 Main 可视验收通过；Prompt / Schema 未改，真实 API 调用为 0。
+
+---
+
+## T0286 AI 对话特殊交互结果弹窗、事件见闻与逃离开始警报
+
+状态：Done
+优先级：P0
+前置任务：T0283, T0284, T0285, T0702, T1203
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `MEMORY_AND_INFO_SPACE.md`, `UI_UX.md`, `GM_PANEL.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 提出应征接受、鼓舞士气成功、鼓励工作成功、战斗策略实际改变时，显示居中的成功说服弹窗，明确 NPC 姓名与结果，并由玩家点击“太好了”关闭。
+- 四类特殊交互的同意、拒绝、无事发生、逃离、保持或改变结果都进入目标 NPC 事件库；公开对话按现有 `local_public` 规则即时广播给同地点可接收见闻的其他 NPC。
+- 任意来源让 NPC 从意向 / 计划真正进入逃离驿站行为时，显示居中的全局警报：“有人正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！”，由玩家点击“好的”关闭。
+- UI 只消费系统结果与 `escape_started` 事实，不自行决定应征、增益、策略或逃离权威。
+
+验收标准：
+
+- 四种成功结果各弹出一次正确文案；失败 / 忽视 / 保持结果不弹成功窗，但全部结果均能在事件库查询。
+- 公开特殊交互只传播给结果发生时同地点且可接收见闻的其他 NPC；私下交互不传播。
+- 逃离警报只在 `start_npc_escape(...)` 成功并记录 `escape_started` 后触发；pending 意向、失败请求和重复调用不弹窗。
+- Mock 对话、结构化记忆、逃离专项、Main headless 与 Godot MCP 实际界面验证通过；本任务不新增真实 API 调用。
+
+完成记录（2026-08-31）：
+
+- DialogSystem 在四类显式结果随 NPC 回复落地时写入 `dialogue_special_interaction_result`，并锁定取消；MemorySystem 为目标 NPC 建立事件，公开对话按同地点规则建立其他 NPC 见闻。
+- 四类成功结果通过 DialogPanel 的居中队列弹窗展示并由“太好了”关闭；失败 / 忽视 / 保持只保留既有对话反馈和事件，不误弹成功窗。
+- CombatSystem 只在实际开始逃离并写入 `escape_started` 后广播 `npc_escape_started`；HUD 以“好的”弹窗队列提醒，pending、失败和重复启动不提醒。
+- 本地 HTTP Mock 专项、逃离警报专项、公开见闻、GM、Main headless 与 Godot MCP 正式 Main 可视验收通过；未改变 Prompt / Schema，未调用真实 API。
+
+---
+
+## T0285 对话鼓励工作显式开关与四类互斥 Mock 验收
+
+状态：Partial（显式 Mock 闭环已完成；真实 API 验收等待用户确认交互后再执行）
+优先级：P0
+前置任务：T0283, T0284, T1402
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `UI_UX.md`, `GM_PANEL.md`, `PROMPTS.md`, `API_BUDGET.md`, `DATA_SCHEMA.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 在 NPC 对话面板右上角新增“鼓励工作”toggle，与提出应征、鼓舞士气、调整战斗策略组成四个显式特殊交互开关，任意时刻最多开启一个。
+- 鼓励工作不要求入伍，只允许场上没有敌人、NPC 仍在和平工作模式且没有活动工作鼓励 buff 时开启；buff 持续至当天 24:00，不可叠加。
+- 只有开启时才向 provider 动态附加工作鼓励 Prompt，并解析 `work_encouragement_reaction=work_boost|none|escape`；关闭时不传提示、不要求、不解析、不应用该模块。
+- 无关发言必须忽略开关、正常回复并返回 `none`；相关表达依据 NPC 状态、人物性格、当前工作与守备官话术判断加快工作、无事发生或逃离驿站。
+- 工作成功后，该 NPC 的生产、训练、协助修复 / 升级 / 治疗及其他工作大类有效产出速度提高 20%；LLM 不直接结算倍率、资源、治疗、施工或逃离。
+- 三类工作结果显示明确反馈；GM“AI 对话”区域新增工作鼓励 Mock 和正式开窗入口。
+- 同步收紧应征相关性：提出应征开启但本轮原话无关时允许 `recruitment_result=none`，只按原话正常回复，不误判接受或拒绝。
+
+验收标准：
+
+- 四个 toggle 双向全互斥；各自资格、持续状态与成功锁定不互相污染。
+- 工作鼓励仅在无敌和平工作模式可用，活动 buff、敌人在场、昏迷 / 逃离或其他行为模式时关闭且半透明。
+- 工作 buff 到当天 24:00 跨日清除，生产、训练、正式诊疗、协助治疗及修复 / 升级贡献均读取同一 1.2 倍权威接口。
+- 开关关闭的 provider prompt / payload / response 不含工作鼓励模块；开启时 Mock 覆盖成功、忽视、逃离和无关话题忽视。
+- Python Schema / Prompt / 业务合同 / Mock endpoint、Godot UI / 状态 / 效率 / GM 与 Main headless 通过；本阶段不调用真实 API，任务保持 Partial。
+
+完成记录（2026-08-31，Mock 阶段）：
+
+- 对话右上角将公开开关单列、四个特殊交互排成 2×2；提出应征、鼓励工作、鼓舞士气、调整战斗策略全互斥，资格不可用时关闭、半透明并显示原因。
+- 工作鼓励只允许无敌和平工作目标，不要求入伍；`none / escape` 后持续开启，`work_boost` 后关闭锁定。三类结果反馈已绑定回复，活动 buff 不可重复申请。
+- NPCSystem 统一保存至当天 24:00 的 `1.2` 工作倍率；一般生产、训练、诊疗 / 协助治疗、修复 / 升级协助贡献均读取同一接口，跨日清除。
+- 四类特殊模块改为 toggle 开启才动态拼接 Prompt / 输出合同；无关应征允许 `recruitment_result=none`。GM 新增工作鼓励 Mock、正式开窗与 `dialogue_work`。
+- Python Schema / Prompt / 业务合同 / Mock endpoint、Godot 本地 HTTP Mock 专项、Main headless 与 Godot MCP 正式布局通过。真实 provider 未调用、费用为 0，故保持 Partial。
+
+---
+
+## T0284 对话调整战斗策略显式开关与 Mock 验收
+
+状态：Partial（显式 Mock 闭环已完成；真实 API 验收等待用户确认交互后再执行）
+优先级：P0
+前置任务：T0283, T1105, T1402
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `PROMPTS.md`, `API_BUDGET.md`, `DEV_LOG.md`, `game_design.md`
+
+任务目标：
+
+- 移除 NPC 面板手动选择战斗策略的下拉交互，只读显示当前战斗策略；所有兵种默认使用“主动进攻”。
+- 删除尚未实现的近战骑兵“拉开距离冲击”可选策略。非远程兵种只允许“主动进攻 / 避战”，远程兵种额外允许“保持距离射击”。
+- 在守备官对话面板新增“调整战斗策略”持续 toggle，与“鼓舞士气”使用相同的已入伍、持主武器且处于 `rally / combat` 资格；两个特殊交互 toggle 互斥。
+- 只有策略 toggle 开启时，才把 NPC 当前策略与兵种合法候选传给后端并要求模型返回“保持 / 切换到合法策略”；关闭时不提示、不解析、不应用策略结构化结果。
+- 无关发言只正常回复并保持当前策略；策略请求无论保持、成功切换或被拒绝，都在对应 NPC 回复下显示明确反馈。
+- 在 GM“AI 对话”区域补齐策略 Mock 和打开正式策略对话入口，不在 UI 或 GM 复制战斗策略权威。
+
+验收标准：
+
+- NPC 面板只读显示当前策略，不存在可手动更换策略的下拉框；所有初始 / 缺省策略为“主动进攻”。
+- 合法策略候选由 CombatSystem 根据当前兵种动态给出；近战 / 长杆 / 骑兵仅 `attack / avoid`，弓弩及骑射额外有 `keep_distance`，不存在骑兵冲击策略。
+- 策略与鼓舞 toggle 资格一致、相互排斥；切换其中一个会关闭另一个。
+- 关闭策略 toggle 的 payload 不携带策略判定模块；开启后才携带当前策略和合法候选，Mock 对明确请求与无关话题分别返回合法切换与保持。
+- 对话完成后由 CombatSystem 权威接口应用合法变更；对话历史显示保持 / 切换反馈，非法模型结果不得生效。
+- Python Schema / Prompt / Mock endpoint、Godot 对话 UI / 战斗策略 / GM 面板与 Main headless 通过；本阶段不调用真实 API，任务保持 Partial。
+
+完成记录（2026-08-31，Mock 阶段）：
+
+- NPC 面板改为只读策略标签；全部兵种默认 `attack`，近战 / 长杆 / 近战骑兵仅 `attack / avoid`，弓弩 / 骑射额外允许 `keep_distance`。`charge_cycle` 已退出合法候选与 UI，旧状态自动归一化。
+- 对话新增“调整战斗策略”持续 toggle，与鼓舞 toggle 双向互斥；只有合法战时目标开启后才发送当前策略和候选、解析结构化保持 / 切换，并由 CombatSystem 权威接口立即应用合法变更。
+- 无关表达保持策略且正常回复；保持和切换都显示反馈。GM AI 对话区新增策略 Mock、正式开窗按钮和 `dialogue_strategy`。
+- Python Schema / Prompt / 业务合同 / Mock endpoint、Godot 专项、Main headless 与本地 HTTP Mock 端到端通过。真实 provider 未调用、费用为 0，故保持 Partial。
+
+---
+
+## T0283 对话鼓舞士气显式开关与 Mock 验收
+
+状态：Partial（显式 Mock 闭环已完成；真实 API 验收按用户要求等待 Mock 交互确认后再执行）
+优先级：P0
+前置任务：T0082, T0118, T1201, T1402
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `AI_NPC_SYSTEM.md`, `COMBAT_SYSTEM.md`, `UI_UX.md`, `GM_PANEL.md`, `PROMPTS.md`, `API_BUDGET.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 在守备官对话面板“提出应征”下新增“鼓舞士气”持续 toggle；只有已入伍、持主武器且实际处于 `rally / combat` 的 NPC 可开启，其他上下文保持关闭、半透明和不可操作。
+- 只有本轮 toggle 开启时才向后端发送鼓舞判定标记，并要求模型返回 `wartime_reaction=none|escape|morale_boost`；关闭时只生成普通回复，后端不得要求或应用战时心理结果。
+- 鼓舞附加 Prompt 必须先检查守备官本轮发言是否确实在鼓舞、稳住或劝说参战；无关话题只能正常回复并返回 `none`，不得误加 buff。
+- 对 `morale_boost / escape / none` 分别提供绑定到对应 NPC 回复的明确结果反馈；成功反馈显示现有权威持续时间和攻击 / 移动加成。
+- 先补齐 Mock provider、Schema、Prompt、Godot 对话链和 GM“AI 对话”调试入口；用户确认 Mock 交互后再用真实 provider 验收。
+
+验收标准：
+
+- 日常、避战、逃离、未入伍、无主武器和旁听上下文中 toggle 均关闭、半透明且不可开启；合法 `rally / combat` 对话中可持续开启 / 关闭。
+- toggle 关闭的 payload 使用 `is_morale_encouragement_request=false`，Mock / 后端固定 `wartime_reaction=none`，不暂存或应用战时效果。
+- toggle 开启且使用明确鼓舞、撤离或无关话术时，Mock 分别返回 `morale_boost / escape / none`；三类反馈正确显示，只有完成会话后才由 CombatSystem 应用暂存结果。
+- GM“AI 对话”区可直接构造并查看鼓舞 Mock payload / 响应，不新增士气或战斗权威。
+- Python Schema / Prompt / Mock endpoint、Godot 对话 UI / 战时对话 / GM 面板与 Main headless 通过；本阶段不调用真实 API，任务保持 Partial / In Progress。
+
+完成记录（2026-08-31，Mock 阶段）：
+
+- DialogPanel 在“提出应征”下新增“鼓舞士气”toggle。只有已入伍、持主武器、处于 `rally / combat` 且当前没有鼓舞 buff 的 NPC 可开启；其他情况关闭、约 45% 透明且不可操作。
+- toggle 在 `none / escape` 回复后保持开启并继续作用于后续轮次，直到玩家手动关闭或收到 `morale_boost`；成功后立即关闭并锁定。已有 buff 的新会话同样不能再次打开。
+- Godot / Schema 新增 `is_morale_encouragement_request`。关闭时 provider 合同不包含 `wartime_reaction`，后端固定补 `none`；开启时才要求 `none / escape / morale_boost`。Prompt 与 Mock 均锁定“无关话题正常回复且不加 buff”。
+- `morale_boost` 改为持续至当天 24:00，跨日清除，攻击力和移动速度仍各提高 15%；UI 分别显示成功、逃离和继续参战结果。
+- GM“AI信息 → AI 对话 / LLMBridge”新增“鼓舞 Mock”“打开鼓舞对话”及 `dialogue_morale` 命令。Python 四项合同 / Mock 回归、Godot 战时规则专项、显式 HTTP Mock 端到端和 Main 脚本加载均通过；未调用真实 provider。
+
+---
+
+## T0282 世界血条真实填充与敌军头顶信息收敛
+
+状态：Done（世界填充改用真实网格宽度、敌军单行名称与恒定橙色血条均通过正式 Main 验收）
+优先级：P1
+前置任务：T0139, T0240, T0280
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 修复 billboard 世界血条使用节点横向缩放后，建筑与我方 NPC 的可见填充宽度大于权威 `hp / max_hp` 比例的问题；共享组件改为可验证的真实网格宽度填充。
+- 敌军头顶只保留具体敌人名称，移除文字 HP、行动 / 目标和“近战步兵”等大类兵种信息。
+- 敌军名称上方始终显示按权威当前 HP / 最大 HP 归一化的橙色血条，低血量时不转红。
+
+验收标准：
+
+- 建筑、NPC 与塔防共享血条在满血、受损、濒危和零血时的实际填充网格宽度均等于固定槽宽乘权威比例；零血不残留可见填充。
+- 敌军标签文本严格等于其具体名称，不包含 `HP`、换行、大类兵种、行动或目标；血条位于名称上方且健康 / 低血量均保持橙色。
+- 专项自动化、相关 UI / 战斗回归、Main headless 与 Godot MCP 正式 Main 验收通过，且无新增错误。
+
+完成记录（2026-08-31）：
+
+- 根因确认是 billboard 材质下使用 `MeshInstance3D.scale.x` 表达比例不能稳定作用于最终可见宽度；共享组件改为直接写入 Fill `QuadMesh.size.x = 槽宽 × hp / max_hp`，保持左对齐，零血隐藏 Fill。
+- CombatSystem 为正式与兼容敌军实体统一挂载共享世界血条；敌军标签严格收敛为具体 `name`，移除文字 HP、大类兵种、行动与目标，低血与健康状态均使用橙色 `#c97832`。
+- T0282 专项覆盖满血 / 63% / 20% / 零血网格宽度、NPC 与建筑权威比例、敌军具体名称 / 位置 / 恒定颜色；T0280 与 Main headless 回归通过。Godot MCP 正式 Main 实测 NPC `43/108`、敌军 `6/32`、仓库 `0 HP`，二次加载后错误游标 185 无新增错误。功能直接可见，无需 GM 入口。
+
+---
+
+## T0281 无工位建筑隐藏位置行
+
+状态：Done（空工位数组隐藏整行、切回有工位建筑恢复显示并通过正式 Main 验收）
+优先级：P2
+前置任务：T0016, T0102, T0279
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `DEV_LOG.md`
+
+任务目标：
+
+- BuildingPanel 只在当前建筑存在实际工位时显示逐位置信息。
+- 城墙、主厅、城门、仓库等 `workstations` 为空的建筑隐藏整行，不再显示“位置：无”。
+- 显隐只读取 BuildingSystem 权威工位数组，不维护重复的建筑 ID 白名单，不改变工位申请、占用或升级容量。
+
+验收标准：
+
+- 所有无工位建筑的 `BuildingWorkstationLabel` 均隐藏且文本为空；切换回有工位建筑后恢复显示并保持逐位置内容。
+- 建筑面板工位专项、相关 UI 回归、Main headless 与 Godot MCP 正式 Main 验收通过，无新增错误。
+
+完成记录（2026-08-31）：
+
+- BuildingPanel 统一通过 `_refresh_workstation_label(...)` 格式化并控制显隐；无有效位置时文本为空、整行隐藏，有工位时恢复原逐位置内容。
+- 逻辑只依赖 BuildingSystem `workstations` 数组，未添加建筑 ID 白名单，也未改变申请、预留、占用、升级或地点信息权威。
+- 工位专项逐一覆盖全部建筑并验证城墙 → 食堂恢复；仓库容量与 Main headless 回归通过。Godot MCP 正式 Main 实测城墙、主厅、正门、仓库隐藏，食堂恢复 12 条位置，错误游标 170 后无新增错误。功能直接可见，无需 GM 入口。
+
+---
+
+## T0280 主场景战时头顶血条与信息降噪
+
+状态：Done（共享世界血条、三座建筑白名单、NPC / 塔防信息降噪与战时切换均通过正式 Main 验收）
+优先级：P1
+前置任务：T0082, T0112, T0240, T0277
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `UI_UX.md`, `AI_NPC_SYSTEM.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `GODOT_ARCHITECTURE.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 敌人实际出现在主场景时，仅仓库、城门、主厅在名称上方显示固定长度的世界血条；和平时隐藏，其他建筑始终不显示。
+- 塔防单位移除头顶文字 HP / 射程，仅保留名称，并同样只在战时于名称上方显示血条。
+- NPC 移除头顶文字 HP，只在战时显示血条；行动状态缩小、灰化并移动到姓名右侧。
+- 世界血条与面板规则一致：健康为绿色，低于 30% 为红色，当前值按动态最大 HP 归一化。
+
+验收标准：
+
+- 和平 / 敌人在场 / 敌人清空三种状态切换时，所有目标对象的血条无需重开场景即可正确显隐。
+- 仓库、城门、主厅、塔防和 NPC 的血条比例与权威 HP / 最大 HP 一致，低于 30% 后变红；其他建筑不生成头顶血条。
+- 塔防头顶不含 HP 与射程；NPC 头顶不含文字 HP，行动状态位于姓名右侧且字号更小、颜色更弱。
+- Main headless、专项自动化与 Godot MCP 正式 Main 验收通过，且无新增错误。
+
+完成记录（2026-08-31）：
+
+- 新增共享 `WorldHealthBar3D`，固定槽长并按权威 `hp / max_hp` 归一化；正常为 `#71865a`，严格低于 30% 为 `#a7433b`。
+- StationLayoutController 只为 `warehouse / front_gate / main_hall` 创建头顶血条；NPC 与活动塔防同样按 `CombatSystem.get_active_enemy_count() > 0` 显隐，和平或清敌后即时隐藏。
+- 塔防世界标签仅保留名称；NPC 状态标签移除文字 HP，缩小、灰化并移至姓名右侧。T0280、NPCPanel、T0240、T0112、塔防部署和 Main headless 回归通过；Godot MCP 正式 Main 实测绿 / 红 / 隐藏链，错误游标 170 后无新增错误。功能直接可见，无需 GM 入口。
+
+---
+
+## T0279 塔防空槽纯图标部署与建筑面板入口收敛
+
+状态：Done（空槽纯图标选择、逐件库存过滤、直接部署与建筑面板重复入口删除均已通过正式 Main 验收）
+优先级：P1
+前置任务：T0107, T0112, T0274, T0276
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 点击围墙 / 主厅已解锁空槽后，选择窗改为 NPC 装备选择窗同类的纯图标网格，只显示当前未部署且实际有库存的塔防器械实例。
+- 选择窗不显示库存、描述、属性、槽位、射程加成或部署按钮；悬停图标只显示器械正式名称，点击图标直接调用既有权威部署接口。
+- 围墙 / 主厅 BuildingPanel 删除“防御器械部署”标题、库存、器械 / 槽位下拉框和部署按钮，只保留当前建筑的“已部署”汇总。
+
+验收标准：
+
+- 每件未部署弩床 / 箭塔对应一个 `68×68` 图标，Tooltip 仅为“弩床 / 箭塔”；零库存物品不显示，点击图标后库存减少、槽位占用且选择窗关闭。
+- 世界空槽是唯一正式部署入口；BuildingPanel 的 DefenseDeviceSection 不包含 OptionButton、部署按钮、库存或旧标题，仍正确刷新“已部署：无 / 逐项列表”。
+- 塔防部署 UI、具体库存、建筑面板、HUD 器械库存与 Main headless / Godot MCP 正式 Main 验收通过。
+
+完成记录（2026-08-31）：
+
+- DefenseSlotPresenter 的旧器械详情卡改为三列纯图标网格；每件可部署具体库存生成一个 `68×68` 图标，Tooltip 仅显示正式名称，零库存不生成图标。点击图标继续调用 `DefenseDeviceSystem.deploy_device(device_id, slot_id)`。
+- BuildingPanel 的围墙 / 主厅防御区删除旧标题、库存、器械 / 槽位 OptionButton、部署按钮和状态文案，只保留 `DefenseDeviceDeploymentSummary` 的“已部署”信息。
+- T0112 覆盖逐件图标数量、尺寸、名称 Tooltip、零库存过滤、点击扣库 / 占槽 / 关窗；具体库存专项覆盖建筑面板无重复控件及汇总刷新。建筑工位、HUD、T0261 和 Main headless 回归通过；Godot MCP 正式 Main 实测 `245×294px` 选择窗和完整部署链，无新增编辑器错误。功能直接可见，无需 GM 入口。
+
+---
+
+## T0278 仓库逐资源储存状况进度条
+
+状态：Done（六类资源当前量 / 动态上限、独立容量条与 80% 危险色均已通过正式 Main 验收）
+优先级：P1
+前置任务：T0070, T0277
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 将仓库面板原单行“储存上限”改为“储存状况”，按权威资源顺序逐项显示“名称 当前数量/当前上限”。
+- 每项文字下方增加固定视觉长度的容量槽，当前数量以绿色填充；达到当前容量 80% 时转红，便于识别接近满仓的资源。
+- 仓库升级或资源变化后，文字、进度值、上限和危险色同步刷新；其他建筑不显示该区块。
+
+验收标准：
+
+- 正式六类受限资源依次显示粮食、餐食、酒、木材、石料、铁，每项均有独立标签和进度条。
+- 进度条 `max_value` 读取 ResourceSystem 当前等级容量，`value` 读取当前库存；80% 以下为绿，达到 80% 及以上为红。
+- 仓库容量专项、建筑面板、Main headless 与 Godot MCP 正式 Main 运行态 / 视觉验收通过。
+
+完成记录（2026-08-31）：
+
+- BuildingPanel 将仓库容量投影改为“储存状况”区块，按权威快照顺序生成粮食、餐食、酒、木材、石料、铁六组“当前/上限”标签与独立 `16px` 进度条；其他建筑隐藏整个区块。
+- 每条的 `value / max_value` 实时读取 ResourceSystem；占用率低于 80% 为橄榄绿，达到 80% 及以上转暗红。仓库升级后分母和条槽上限同步变化，UI 不参与容量或入库结算。
+- 仓库容量专项覆盖六项顺序、初始值、80% 精确边界、仓库等级刷新与非仓库隐藏；建筑工位、HUD 资源和 Main headless 回归通过。Godot MCP 正式 Main 确认六条均为 `332×16px`，并实测粮食 `96/120` 转红。功能直接可见，无需 GM 入口。
+
+---
+
+## T0277 NPC / 建筑 / 塔防血量与经验进度条
+
+状态：Done（NPC / 建筑 / 塔防状态条、动态经验上限与正式 Main 运行态均已验收）
+优先级：P1
+前置任务：T0271, T0274
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `COMBAT_SYSTEM.md`, `DEV_LOG.md`
+
+任务目标：
+
+- NPC 面板将 HP 与经验移动到战斗属性、专长之后和饱食度之前，并各自增加标签在上、进度条在下的直观展示。
+- NPC HP 健康时使用绿色、濒危时使用红色；经验使用现有 UI 褐色，并按当前等级经验上限归一化；疲劳常态改为灰色，接近上限时变红。
+- 所有建筑面板与已部署塔防单位面板在 HP 字段下增加同类血量条，并随权威 HP / max_hp 实时刷新。
+
+验收标准：
+
+- NPC 信息顺序稳定为战斗属性、专长、HP/HP 条、经验/经验条、饱食度；经验条上限来自当前进阶快照而非写死 UI 常量。
+- NPC、建筑和塔防 HP 低于 30% 时变红，恢复到边界及以上时为绿色；疲劳高于 80% 时由灰色变红。
+- NPCPanel、BuildingPanel、DefenseDevicePanel 专项、Main headless 与 Godot MCP 正式 Main 视觉验收通过。
+
+完成记录（2026-08-31）：
+
+- NPCPanel 顺序调整为属性、战斗最终值、专长、HP / HP 条、经验 / 经验条、饱食 / 疲劳；NPCSystem 快照新增当前等级经验与当前等级上限，UI 不再自行假设固定分母。
+- NPC、全部建筑和活动塔防器械 HP 条严格低于 30% 转暗红；经验条为褐色，疲劳常态为灰色且严格高于 80% 转红。所有面板继续只读权威状态。
+- NPCPanel、建筑工位、T0261 塔防选择 / 卸下、成长、建筑修复升级和 Main headless 通过；Godot MCP 正式 Main 确认三类条的尺寸、颜色与数值，无新增脚本错误。功能直接可见，无需 GM 入口。
+
+---
+
 ## T0271 NPC / 马匹状态精简与 HUD 有效倍速锁定
 
 状态：Done（NPC / 马匹精简、需求危险色和 HUD 实际倍率锁定均已通过专项与正式 Main 验收）
@@ -116,6 +881,139 @@
 - NPCPanel 用同一 ButtonGroup 的圆形“公开 / 私下”替换旧下拉框，任一时刻恰有一个选中，并分别提交 `local_public / private`；DialogPanel toggle 同步精简为“公开”。
 - 姓名栏实测顺序为背景、行动、行为模式，当前显示“制定计划 / 工作”，行为模式色为 `(0.66, 0.69, 0.72)`；正文旧状态行已移除。“认识 / 事件 / 见闻”均无库名和条数。
 - HUD 时间、NPCPanel 交互 / 状态 / 短期记忆、每日反思、战时对话与 Main headless 回归通过。Godot MCP 正式 Main 视觉确认圆形单选与信息层级，编辑器错误为 0；功能可直接在 Main 验证，无需新增 GM 入口。
+
+---
+
+## T0276 NPC 装备槽与可用物品图标化
+
+状态：Done（正方形满槽图标、纯图标候选和未分配过滤均已验收）
+优先级：P1
+前置任务：T0272, T0273
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 六个装备 / 坐骑槽统一为正方形，移除占用槽位的宽边框和内容留白，让装备图标填满槽位。
+- 左侧装备 / 坐骑选择窗改为 HUD 库存式纯图标网格，不再把图标与名称拆成两个按钮。
+- 选择窗只展示当前可用、未分配物品；悬停只显示物品名称，不附加已分配 / 未分配状态。
+
+验收标准：
+
+- 六槽宽高一致，已装备图标使用完整槽位，不保留按钮内容边距或边框。
+- 选择窗每个候选物品只对应一个图标按钮，名称仅在 Tooltip 显示；零库存仍显示既有空提示。
+- 装备、盔甲、坐骑的正式分配 / 收回逻辑不变，专项、Main headless 与 Godot MCP 正式 Main 视觉验收通过。
+
+完成记录（2026-08-31）：
+
+- 六槽统一为 `68×68`，内容边距 / 边框归零，图标最大宽度同步为 `68px`；原有人体部位布局、空槽 `+`、锁定和点击信号保持。
+- 选择窗改为三列纯图标网格，删除分离的名称按钮；候选图标沿用 HUD 的 `68×68`、`66px` 图标、`1px` 边距 / 细框，Tooltip 只显示正式名称。
+- NPCPanel 既有候选源本就只返回具体可用库存和未占用成年在厩马，本次专项补充已分配盔甲 / 坐骑排除断言。T0264、装备系统、HUD 库存和 Main headless 通过；Godot MCP 正式 Main 视觉与运行态样式验收通过，无需 GM 入口。
+
+---
+
+## T0275 制造目标缺失警示与快捷展开
+
+状态：Done（双建筑警示、目标状态同步与世界快捷展开均已验收）
+优先级：P1
+前置任务：T0074
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `ECONOMY_AND_BUILDINGS.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 工械坊与铁匠铺未选择制造目标时，建筑面板制造目标下拉框右侧显示与世界建筑一致的小感叹号。
+- 精准点击主场景建筑上方的小感叹号后，选中对应建筑、打开建筑面板并直接展开制造目标下拉框。
+
+验收标准：
+
+- 两类建筑的空目标下拉框均显示红色感叹号，选择有效目标后隐藏，清空目标后恢复。
+- 世界感叹号仍只在其自身命中区域响应；点击后 BuildingSystem 选中对应建筑且目标菜单已展开。
+- 专项自动化、Main headless 与 Godot MCP 正式 Main 真实鼠标验收通过。
+
+完成记录（2026-08-31）：
+
+- BuildingPanel 的制造目标 OptionButton 新增 `CraftingTargetMissingAlert`，使用与世界提示一致的红色圆形感叹号语义；空目标显示、有效目标隐藏、清空恢复，警示忽略鼠标且不遮挡下拉选择。
+- CraftingTargetAlertPresenter 点击后继续先调用 BuildingSystem 选中对应建筑，再让 BuildingPanel 等待布局稳定并调用 OptionButton Popup；期间若已切换建筑则取消旧请求。
+- 专项覆盖铁匠铺 / 工械坊两条快捷展开、面板警示样式与目标状态同步；制造管线、建筑工位回归通过。Godot MCP 正式 Main 真实点击铁匠铺警示后确认面板与目标菜单直接展开，无需新增 GM 入口。
+
+---
+
+## T0274 已部署塔防点选与卸下规则
+
+状态：Done（正式世界点选、满血返库与受损确认销毁均已验收）
+优先级：P0
+前置任务：T0261, T0273
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `COMBAT_SYSTEM.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 恢复正式 Main 中点击已部署塔防后打开塔防属性面板与范围圈的既有流程。
+- 属性面板增加“卸下”按钮；满血器械直接清空部署槽并按具体物品返还库存。
+- 受损器械点击卸下时提示“受损，卸下会直接销毁”，选择“是”清空槽位且不返还库存，选择“否”不改变器械、槽位或库存。
+
+验收标准：
+
+- 围墙与主厅的活动箭塔 / 弩床均可由真实世界点击打开面板，建筑面板不会抢占选择。
+- 满血卸下、受损确认取消、受损确认销毁三条路径有权威系统自动化，库存和槽位结果正确。
+- 面板、范围圈、HUD 器械库存和既有部署 / 战斗回归通过，并以 Godot MCP 正式 Main 验收。
+
+完成记录（2026-08-31）：
+
+- 确认塔防 Area、Presenter 的 area-only 射线和 BuildingSystem 的器械优先转发仍正常；实际缺口是 `Main.tscn` 丢失 `DefenseDevicePanel` 节点，导致点击信号没有属性面板消费者。正式节点恢复后，围墙 / 主厅真实世界点击再次打开面板、关闭宿主 BuildingPanel 并显示范围圈。
+- DefenseDeviceSystem 新增权威卸下接口：满血按定义的具体物品成本返库；受损请求必须显式确认，确认后永久销毁且不返库。两者都释放槽位、取消该部署的待结算器械弹体记录，并不生成阻塞重新部署的手动拆除废墟。
+- T0261 扩展覆盖满血卸下、受损权威拦截、确认取消、确认销毁、库存与双宿主槽复用；具体器械库存、部署 UI、范围圈、HUD 库存与 Main headless 通过。Godot MCP 正式 Main 用真实鼠标点中围墙弩床、点击卸下并验证返库，再验证 `54/55` 受损确认文案与无提前变更。
+
+---
+
+## T0273 NPC 装备槽真实点击与空库存选择窗
+
+状态：Done（正式 GUI 点击、空库存提示、卸装确认与未入伍拦截均已验收）
+优先级：P0
+前置任务：T0264
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 已入伍且处于可换装状态的 NPC，无论对应槽位是否有库存，点击空槽都打开对应选择窗；零库存继续显示既有“暂无可用装备”。
+- 点击已装备槽必须稳定弹出“是 / 否”收回确认，并沿既有权威卸装接口处理。
+- 未入伍 NPC 点击任意槽只显示未入伍原因，不打开选择窗或卸装确认；逃离 / 非工作模式继续使用各自既有锁定边界。
+
+验收标准：
+
+- 以真实鼠标输入覆盖已入伍空槽零库存、已装备槽、未入伍槽三类点击，不再只调用调试方法绕过 GUI 分发。
+- 选择窗在正式 Main 当前窗口尺寸内可见，零库存文案可读；收回确认和未入伍提示均可见且不会误改库存或装备。
+- NPC 装备窗、NPCPanel、装备、坐骑与 Main headless 回归通过，并用 Godot MCP 正式 Main 验收。
+
+完成记录（2026-08-31）：
+
+- 根因是 NPCPanel 的响应式透明根区域覆盖到左侧装备窗：装备窗虽靠更高 `z_index` 绘制在上方，但作为 UI 同级节点时真实 GUI 命中仍落到 NPCPanel。装备窗现挂入 NPCPanel 的输入分支，透明根改为忽略自身鼠标输入，槽位点击恢复。
+- 已入伍 NPC 的空槽不再依赖可用库存才产生反馈；零库存仍打开对应选择窗并显示“暂无可用装备。”。已有装备槽稳定弹出收回确认；未入伍、逃离和非工作模式分别显示明确原因且不打开选择 / 确认窗。
+- 选择窗根据左右空间自动换边并钳制到视口。T0264 专项、装备系统、NPCPanel 状态 / 交互和 Main headless 通过；Godot MCP 正式 Main 使用真实 GUI 鼠标事件覆盖三类点击。马匹生态旧回归仍停在既有“马夫未进入 active work”时序断言，与本次 GUI 分发路径无关。
+
+---
+
+## T0272 HUD 库存图标可读性优化
+
+状态：Done（图标填充、细边框、名称 Tooltip 与 Godot MCP 正式 Main 验收通过）
+优先级：P1
+前置任务：T0265
+涉及文档：`CURRENT_STATE.md`, `TASKS.md`, `UI_UX.md`, `DEV_LOG.md`
+
+任务目标：
+
+- 保持 HUD 装备 / 器械库存窗口尺寸和六列布局不变，缩小逐件图标按钮的边框与内容内边距，让图标尽量充满现有格子。
+- Tooltip 在分配状态前显示物品名称，例如“铁盔 已分配给艾达”或“铁盔 未分配”；器械部署提示同样保留名称前缀。
+
+验收标准：
+
+- 装备与器械窗口仍为 `500×430`，图标按钮仍为 `68×68`，图标可用宽度增大且边框压薄。
+- 武器、盔甲、马匹和器械的未分配、已分配 / 已部署 Tooltip 均包含正确名称与状态。
+- HUD 专项、Main headless 与 Godot MCP 正式 Main 视觉验收通过。
+
+完成记录（2026-08-31）：
+
+- 保持 `500×430` 窗口、六列和 `68×68` 单格不变，将图标最大宽度从 `60px` 提升至 `66px`；库存按钮四向内容边距由共享文本按钮主题收为 `1px`，各交互态边框统一为 `1px`。
+- 逐件快照新增正式名称投影，武器 / 盔甲 / 马匹使用“名称 未分配 / 已分配给 NPC”，器械使用“名称 未分配 / 已部署到槽位”；名称来自现有权威数据与定义，结算边界未变。
+- HUD 专项新增按钮尺寸、图标宽度、四向边距、边框及四类名称 Tooltip 断言；装备、塔防、HUD 背景包裹与 Main headless 通过。Godot MCP 正式 Main 视觉确认图标填充明显增大、窗口尺寸不变，运行态快照确认名称文案，无新增编辑器错误。
 
 ---
 

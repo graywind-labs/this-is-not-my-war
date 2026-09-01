@@ -151,8 +151,12 @@ func _init() -> void:
 		push_error("Initial story sword should appear as one assigned physical item: %s" % equipment_snapshot)
 		quit(1)
 		return
-	if not _snapshot_has_tooltip(equipment_snapshot.get("items", []), "已分配给艾达"):
+	if not _snapshot_has_tooltip(equipment_snapshot.get("items", []), "剑盾 已分配给艾达"):
 		push_error("Assigned equipment tooltip should resolve the NPC display name: %s" % equipment_snapshot)
+		quit(1)
+		return
+	if not _snapshot_has_tooltip(equipment_snapshot.get("items", []), "铁盔 未分配"):
+		push_error("Unassigned equipment tooltip should include its item name: %s" % equipment_snapshot)
 		quit(1)
 		return
 	if _count_snapshot_category(equipment_snapshot.get("items", []), "horse", false) != 2:
@@ -165,6 +169,10 @@ func _init() -> void:
 		return
 	if not _grid_is_icon_only(detail_grid):
 		push_error("Equipment inventory grid should contain icon-only buttons with tooltips")
+		quit(1)
+		return
+	if not _grid_uses_compact_icon_frames(detail_grid):
+		push_error("Equipment inventory icons should fill their existing thin-bordered slots")
 		quit(1)
 		return
 	var armor_result: Dictionary = equipment_system.equip_npc_armor(
@@ -202,7 +210,7 @@ func _init() -> void:
 	if (
 		_count_snapshot_category(equipment_snapshot.get("items", []), "horse", true) != 1
 		or _count_snapshot_category(equipment_snapshot.get("items", []), "horse", false) != 1
-		or not _snapshot_has_tooltip(equipment_snapshot.get("items", []), "已分配给艾达")
+		or not _snapshot_has_tooltip(equipment_snapshot.get("items", []), "栗风 已分配给艾达")
 	):
 		push_error("Horse assignment should refresh one dimmed assigned horse icon: %s" % equipment_snapshot)
 		quit(1)
@@ -229,6 +237,10 @@ func _init() -> void:
 		push_error("Device inventory grid should contain icon-only buttons with tooltips")
 		quit(1)
 		return
+	if not _snapshot_has_tooltip(device_snapshot.get("items", []), "弩床 未分配"):
+		push_error("Unassigned device tooltip should include its item name: %s" % device_snapshot)
+		quit(1)
+		return
 	var deployment: Dictionary = device_system.deploy_device("wall_ballista", "main_hall_slot_03")
 	if not bool(deployment.get("ok", false)):
 		push_error("Could not deploy device for HUD assignment verification: %s" % deployment)
@@ -245,7 +257,7 @@ func _init() -> void:
 		push_error("Deploying a device should change its icon state without changing physical item count: %s" % device_snapshot)
 		quit(1)
 		return
-	if not _snapshot_has_tooltip(device_snapshot.get("items", []), "已部署到主厅屋顶西南器械台"):
+	if not _snapshot_has_tooltip(device_snapshot.get("items", []), "弩床 已部署到主厅屋顶西南器械台"):
 		push_error("Deployed device tooltip should resolve the formal slot name: %s" % device_snapshot)
 		quit(1)
 		return
@@ -328,6 +340,32 @@ func _grid_is_icon_only(grid: GridContainer) -> bool:
 			return false
 		if not bool(item.get("assigned", false)) and button.self_modulate != Color.WHITE:
 			return false
+	return true
+
+
+func _grid_uses_compact_icon_frames(grid: GridContainer) -> bool:
+	for child in grid.get_children():
+		if not child is Button:
+			return false
+		var button := child as Button
+		if button.custom_minimum_size != Vector2(68.0, 68.0):
+			return false
+		if button.get_theme_constant("icon_max_width") < 66:
+			return false
+		var normal_style := button.get_theme_stylebox("normal")
+		if normal_style == null:
+			return false
+		if (
+			normal_style.content_margin_left > 1.0
+			or normal_style.content_margin_top > 1.0
+			or normal_style.content_margin_right > 1.0
+			or normal_style.content_margin_bottom > 1.0
+		):
+			return false
+		if normal_style is StyleBoxFlat:
+			var flat := normal_style as StyleBoxFlat
+			if max(flat.border_width_left, flat.border_width_top, flat.border_width_right, flat.border_width_bottom) > 1:
+				return false
 	return true
 
 

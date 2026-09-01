@@ -1,6 +1,10 @@
 extends SceneTree
 
 
+const ESCAPE_ACTION_COLOR := Color("#dc6157")
+const DEFAULT_ACTION_COLOR := Color.WHITE
+
+
 func _init() -> void:
 	root.size = Vector2i(1280, 720)
 	DisplayServer.window_set_size(root.size)
@@ -26,6 +30,10 @@ func _init() -> void:
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel") as Control
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel") as Control
 	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button if npc_panel != null else null
+	var action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label if npc_panel != null else null
+	var round_label := dialog_panel.find_child("DialogRoundLabel", true, false) as Label if dialog_panel != null else null
+	var public_toggle := dialog_panel.find_child("DialogPublicToggle", true, false) as CheckBox if dialog_panel != null else null
+	var private_visibility_radio := dialog_panel.find_child("DialogPrivateRadio", true, false) as CheckBox if dialog_panel != null else null
 	var hud := root.get_node_or_null("Main/UI/HUD")
 	var hud_warning := hud.find_child("EscapeWarningLabel", true, false) as Label if hud != null else null
 	if cook_node == null:
@@ -44,6 +52,10 @@ func _init() -> void:
 		or npc_panel == null
 		or dialog_panel == null
 		or dialogue_button == null
+		or action_label == null
+		or round_label == null
+		or public_toggle == null
+		or private_visibility_radio == null
 		or hud_warning == null
 	):
 		push_error("Escape intervention verification required nodes not found")
@@ -61,7 +73,7 @@ func _init() -> void:
 	await process_frame
 
 	var marker := cook_node.get_node_or_null("EscapeWarningMarker") as Label3D
-	if marker == null or not marker.visible:
+	if marker == null or not marker.visible or marker.position.y < 3.1:
 		push_error("Escaping NPC should show overhead escape warning marker")
 		quit(1)
 		return
@@ -87,6 +99,10 @@ func _init() -> void:
 		push_error("Dialogue button should be enabled while escape rounds remain")
 		quit(1)
 		return
+	if action_label.text != "逃离驿站" or not action_label.modulate.is_equal_approx(ESCAPE_ACTION_COLOR):
+		push_error("Escaping NPC panel action should use red warning text: %s / %s" % [action_label.text, action_label.modulate])
+		quit(1)
+		return
 
 	dialogue_button.pressed.emit()
 	await process_frame
@@ -97,6 +113,14 @@ func _init() -> void:
 		return
 	if int(dialogue_state.get("max_rounds", 0)) != 5 or str(dialogue_state.get("visibility", "")) != "local_public":
 		push_error("Escape intervention should be local_public with 5 max rounds: %s" % JSON.stringify(dialogue_state))
+		quit(1)
+		return
+	if not round_label.visible or round_label.text != "挽留轮次：0 / 5":
+		push_error("Escape intervention should be the limited dialogue that shows rounds: %s" % round_label.text)
+		quit(1)
+		return
+	if not public_toggle.button_pressed or not public_toggle.disabled or private_visibility_radio.button_pressed or not private_visibility_radio.disabled:
+		push_error("Escape intervention should show locked public visibility through radios")
 		quit(1)
 		return
 	if not _assert_escape_paused(npc_system, "cook_01", "Dialogue opening should pause escape movement"):
@@ -150,8 +174,30 @@ func _init() -> void:
 		push_error("Stay decision should return NPC to work mode: %s" % JSON.stringify(cook_state))
 		quit(1)
 		return
+	if not npc_system.debug_select_npc("cook_01"):
+		push_error("Stayed NPC should remain selectable")
+		quit(1)
+		return
+	await process_frame
+	if action_label.modulate.is_equal_approx(ESCAPE_ACTION_COLOR) or not action_label.modulate.is_equal_approx(DEFAULT_ACTION_COLOR):
+		push_error("Stayed NPC action should restore its default color: %s / %s" % [action_label.text, action_label.modulate])
+		quit(1)
+		return
+	var cook_mode_snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot("cook_01")
+	if str(cook_mode_snapshot.get("reason", "")) != "escape_intervention_stayed":
+		push_error("GM behavior snapshot should retain escape_intervention_stayed for diagnostics: %s" % JSON.stringify(cook_mode_snapshot))
+		quit(1)
+		return
 	if _last_event(memory_system.get_plaza_events(), "escape_intervention_result").is_empty():
 		push_error("Stay decision should write public escape_intervention_result")
+		quit(1)
+		return
+	if not _last_event(memory_system.get_all_events(), "npc_mode_changed").is_empty():
+		push_error("Escape stay mode transition must not enter event memory")
+		quit(1)
+		return
+	if _events_contain_text(memory_system.get_all_events(), "escape_intervention_stayed"):
+		push_error("Internal escape stay reason leaked into event summaries")
 		quit(1)
 		return
 
@@ -425,3 +471,12 @@ func _count_events(events: Array, event_type: String) -> int:
 		if str(event.get("type", "")) == event_type:
 			count += 1
 	return count
+
+
+func _events_contain_text(events: Array, needle: String) -> bool:
+	for raw_event in events:
+		if not raw_event is Dictionary:
+			continue
+		if str((raw_event as Dictionary).get("summary", "")).contains(needle):
+			return true
+	return false
