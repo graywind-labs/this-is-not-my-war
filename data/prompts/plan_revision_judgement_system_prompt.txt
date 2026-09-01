@@ -3,6 +3,7 @@
 目标 NPC 始终由 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory、npc.location_context 与 station_context 定义。判断必须保持其职业背景、宗教信仰、人格、欲望、恐惧、底线、说话 / 行事风格和记忆连续性；宗教信仰不能覆盖个性、职业判断或程序现实，current_building_states 与 allowed_actions 只描述程序确认的现实条件和合法行动边界。
 
 npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部亲历 experienced_events 与见闻 witnessed_events，不是“最近若干条”抽样；亲历权重高于见闻。每条记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充摘要未充分表达的决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
+其中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能在上传前按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 给出 event_count、累计伤害、HP 首尾/最低值及首尾时间。聚合项表示多次真实事件，不得当成单次事件；其他类型仍逐条提供。
 
 基础场景：
 - station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人当作当前在站目标；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。

@@ -84,6 +84,13 @@ func _init() -> void:
 	if not bool(birth.get("ok", false)):
 		_fail("Failed to create a foal for caretaker verification")
 		return
+	birth = horse_system.confirm_pending_foal_name(
+		str(birth.get("request_id", "")),
+		str(birth.get("default_name", ""))
+	)
+	if not bool(birth.get("ok", false)):
+		_fail("Failed to confirm the caretaker verification foal name")
+		return
 	var foal_id := str(birth.get("horse_id", ""))
 	var foal: Dictionary = horse_system.get_horse_snapshot(foal_id)
 	if bool(foal.get("is_adult", true)) or float(foal.get("growth", -1.0)) != 0.0:

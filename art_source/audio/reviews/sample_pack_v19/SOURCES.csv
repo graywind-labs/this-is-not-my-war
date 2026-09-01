@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_invalid_wrong_answer_528956.mp3,ui_invalid_operation,Wrong Answer / Incorrect / Error,Beetlemuse,https://freesound.org/s/528956/,CC0,rejected,,不采用,用户确认无效操作不加音效
+02_invalid_short_buzzer_650842.mp3,ui_invalid_operation,Wrong Answer Buzzer,-Andreas,https://freesound.org/s/650842/,CC0,rejected,,不采用,用户确认无效操作不加音效
+03_invalid_wood_thud_449955.mp3,ui_invalid_operation,Wooden Thud (Mono),Breviceps,https://freesound.org/s/449955/,CC0,rejected,,不采用,用户确认无效操作不加音效
+04_slider_click_tick_384187.mp3,ui_toggle,Click Tick.wav,malle99,https://freesound.org/s/384187/,CC0,confirmed,ui_toggle,整段；Toggle 状态改变时在 UI 声道单次播放,用户确认 Toggle 使用；本条不作为音量滑条声
+05_slider_single_ratchet_495237.mp3,ui_slider_adjust,Single_Ratchet-01.wav,CallFlan,https://freesound.org/s/495237/,CC0,rejected,,不采用,音量拖动条不连续发声；松开鼠标时复用第 1 批 01 木质点击
+06_slider_menu_tick_628638.mp3,ui_slider_adjust,Menu Select Tick,el_boss,https://freesound.org/s/628638/,CC0,rejected,,不采用,音量拖动条不连续发声；松开鼠标时复用第 1 批 01 木质点击
+07_door_open_short_creak_647646.mp3,world_door_open,door creak 1.wav,soundofsong,https://freesound.org/s/647646/,CC0,confirmed,world_door_open,整段；普通门开始打开时从门的位置单次播放,用户确认普通门打开使用
+08_door_open_creaky_275471.mp3,world_door_open,creaky wooden door.ogg,adharca,https://freesound.org/s/275471/,CC0,rejected,,不采用,用户已选择 07
+09_door_open_old_mansion_683823.mp3,world_door_open,"Wooden Door, Old Mansion",Kinoton,https://freesound.org/s/683823/,CC0,rejected,,不采用,用户已选择 07
+10_door_close_solid_632129.mp3,world_door_close,Door Closing.mp3,AUDACITIER,https://freesound.org/s/632129/,CC-BY 4.0,rejected,,不采用,用户已选择 12
+11_door_close_slow_creak_590950.mp3,world_door_close,Creaky Door Closing Slowly,Rudmer_Rotteveel,https://freesound.org/s/590950/,CC0,rejected,,不采用,用户已选择 12
+12_door_close_squeaky_216879.mp3,world_door_close,squeaky wooden door solid close.wav,CastIronCarousel,https://freesound.org/s/216879/,CC0,confirmed,world_door_close,整段；普通门关闭时从门的位置单次播放,用户确认普通门关闭使用

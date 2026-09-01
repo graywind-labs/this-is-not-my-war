@@ -121,6 +121,13 @@ func _init() -> void:
 	if not bool(birth.get("ok", false)):
 		_fail("Could not create a verification foal")
 		return
+	birth = horse_system.confirm_pending_foal_name(
+		str(birth.get("request_id", "")),
+		str(birth.get("default_name", ""))
+	)
+	if not bool(birth.get("ok", false)):
+		_fail("Could not confirm the verification foal name")
+		return
 	var stable_birth_witnesses := _events_after(
 		memory_system.get_npc_witness_events(stable_observer_id),
 		stable_witnesses_before_birth

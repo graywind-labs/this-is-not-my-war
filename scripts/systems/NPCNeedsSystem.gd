@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const NEEDS_DEFS_FILE := "activity_needs.json"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
@@ -403,6 +404,17 @@ func _apply_profile(npc_id: String, profile_id: String, game_seconds: float) -> 
 	_remainders_by_npc[npc_id] = remainders
 	if not changes.is_empty():
 		npc_system.update_npc_state(npc_id, changes)
+	if profile_id == "sleep":
+		var fatigue_delta := int(applied_deltas.get("fatigue", 0))
+		if fatigue_delta < 0:
+			var fatigue_entry := WorldFeedbackPayload.make_value_entry(
+				"疲劳",
+				fatigue_delta,
+				"neutral"
+			)
+			if not fatigue_entry.is_empty():
+				var fatigue_entries: Array[Dictionary] = [fatigue_entry]
+				WorldFeedbackPayload.emit_npc(self, npc_id, "needs", fatigue_entries, true)
 	return {
 		"npc_id": npc_id,
 		"profile_id": profile_id,

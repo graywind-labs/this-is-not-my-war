@@ -45,6 +45,9 @@
 [ext_resource type="Script" path="res://scripts/ui/DefenseDevicePanel.gd" id="43_defense_device_panel"]
 [ext_resource type="Texture2D" path="res://assets/ui/status_icons/morale_sword_gold.svg" id="44_morale_sword_gold"]
 [ext_resource type="Texture2D" path="res://assets/ui/status_icons/work_hoe_gold.svg" id="45_work_hoe_gold"]
+[ext_resource type="Script" path="res://scripts/ui/WorldFeedbackPresenter.gd" id="46_world_feedback"]
+[ext_resource type="Script" path="res://scripts/ui/CraftingHarvestDialog.gd" id="47_crafting_harvest_dialog"]
+[ext_resource type="Script" path="res://scripts/ui/MilestoneAlertPresenter.gd" id="48_milestone_alert"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -495,6 +498,77 @@ script = ExtResource("20_daily_reflection")
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
 script = ExtResource("17_ui_focus")
 
+[node name="MilestoneAlertPresenter" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("48_milestone_alert")
+
+[node name="BuildingCompletionDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "建筑完工"
+initial_position = 2
+size = Vector2i(440, 160)
+exclusive = true
+unresizable = true
+dialog_text = "建筑完工。"
+ok_button_text = "确认"
+
+[node name="HorseBirthNamingDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "小马出生了"
+initial_position = 2
+size = Vector2i(560, 245)
+exclusive = true
+unresizable = true
+wrap_controls = false
+dialog_text = ""
+dialog_autowrap = true
+dialog_close_on_escape = false
+dialog_hide_on_ok = false
+ok_button_text = "确定"
+
+[node name="HorseBirthContent" type="MarginContainer" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 552.0
+offset_bottom = 196.0
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent"]
+custom_minimum_size = Vector2(512, 142)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HorseBirthPromptLabel" type="Label" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(512, 52)
+layout_mode = 2
+text = "在精心照料下，一匹小马出生了！你给他命名为"
+autowrap_mode = 2
+vertical_alignment = 1
+
+[node name="HorseNameInput" type="LineEdit" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+max_length = 5
+placeholder_text = "请输入不超过5个字的名字"
+
+[node name="HorseNameValidationLabel" type="Label" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.25, 0.18, 1)
+text = ""
+
 [node name="HUD" type="Control" parent="UI" unique_id=1288116016]
 layout_mode = 3
 anchors_preset = 15
@@ -617,7 +691,7 @@ offset_left = 236.0
 offset_top = 152.0
 offset_right = 330.0
 offset_bottom = 184.0
-text = "警铃"
+text = "警报"
 
 [node name="DismissRallyButton" type="Button" parent="UI/HUD"]
 focus_mode = 0
@@ -639,9 +713,40 @@ unresizable = true
 dialog_text = "有人正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！"
 ok_button_text = "好的"
 
+[node name="NpcRevivedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
+unique_name_in_owner = true
+title = "有人苏醒了"
+initial_position = 2
+size = Vector2i(420, 160)
+exclusive = true
+unresizable = true
+dialog_text = "有人从昏迷中苏醒了。"
+ok_button_text = "太好了"
+
+[node name="WorldFeedbackPresenter" type="Control" parent="UI"]
+z_index = 60
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("46_world_feedback")
+
 [node name="CraftingTargetAlerts" type="Control" parent="UI"]
 mouse_filter = 2
 script = ExtResource("30_crafting_alert")
+
+[node name="CraftingHarvestDialog" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("47_crafting_harvest_dialog")
 
 [node name="DefenseSlotPresenter" type="Control" parent="UI"]
 layout_mode = 3

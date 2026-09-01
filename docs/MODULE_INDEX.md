@@ -1,5 +1,145 @@
 # MODULE_INDEX.md
 
+## T0315 建筑完工与新生小马命名索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/EventBus.gd` | 声明真实建筑完工和小马待命名两个只读表现信号 |
+| `scripts/systems/BuildingSystem.gd` | 在修复 / 升级权威提交完成后发送建筑 id、名称与结果，不让 UI 猜完成状态 |
+| `scripts/systems/HorseSystem.gd` | 预留待命名幼马；权威校验名称，并在确认后原子入库、启动冷却、刷新马厩摘要和记录事件 |
+| `scripts/systems/MemorySystem.gd` | 注册 `horse_born` Schema，并确定性生成守备官取名摘要 |
+| `scripts/ui/MilestoneAlertPresenter.gd` | 串行显示建筑确认窗与小马命名窗；预填默认名并把玩家输入提交给 HorseSystem |
+| `scenes/main/Main.tscn` | 注册两个正式居中弹窗、5 字 LineEdit 与校验文本 |
+| `tools/verify_t0315_milestone_and_foal_naming.gd` | 覆盖真实完工、排队、确认前不入库、名称校验、默认 / 自定义命名、事件和全局名称投影 |
+
+稳定关系：`建筑权威完成 → EventBus → 只读确认窗`；`繁育判定 → HorseSystem 待命名事务 → 命名窗提交 → HorseSystem 权威确认并入库 → horse_born / 所有马匹名称消费者`。UI 不创建马、不占槽、不启动冷却，也不自行写事件。
+
+## T0314 制造成品暂存与手动收获索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CraftingSystem.gd` | 持有逐建筑 `pending_outputs`、具体物品表现投影与一次性原子收取；最终阶段不再直接写正式库存 |
+| `scripts/systems/ActionSystem.gd` | 制造阶段合并真实扣料、阶段 / 待收取成品与成长飘字，并把暂存成品写入事件字段 |
+| `scripts/systems/MemorySystem.gd` | 将 `pending_output_resources` 摘要为“制成待收取”，不表述为仓库产出 |
+| `scripts/ui/CraftingTargetAlertPresenter.gd` | 在两座正式建筑名称上方投影小手圆形按钮、总件数徽标和新成品回弹 |
+| `scripts/ui/CraftingHarvestDialog.gd` | 居中显示逐件无边框图标；Tooltip 给出名称，关闭不收取，“收下”提交全量收取 |
+| `scripts/ui/BuildingPanel.gd` | 显示待收取摘要和同一弹窗入口 |
+| `assets/ui/status_icons/harvest_hand.svg` | 不依赖系统字体的正式收获小手图标 |
+| `scenes/main/Main.tscn` | 注册正式 `CraftingHarvestDialog` |
+| `tools/verify_t0314_manual_crafting_harvest.gd` | 覆盖同 / 异类累积、目标保持、逐件图标、关闭不收、事件 / 飘字与全量入库 |
+
+稳定关系：`制造最终阶段 → CraftingSystem.pending_outputs → 世界 / 建筑面板只读入口 → CraftingHarvestDialog → CraftingSystem 原子转移 → ResourceSystem 正式库存 → HUD / 装备 / 部署`。任何 UI 都不自行扣暂存或加库存。
+
+## T0313 马匹生态世界反馈索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/HorseSystem.gd` | 在进食、自然回血、照料和繁育实际提交后逐马聚合可见精度差值；处理高速刷新、余数、冷却与死亡清理 |
+| `scripts/core/WorldFeedbackPayload.gd` | 复用马匹 `2.75m` 锚点、资源 / 状态条目和只读 EventBus 发送入口 |
+| `scripts/ui/WorldFeedbackPresenter.gd` | 复用 horse 锚点解析与逐频道替换，显示绿色 HP / 额外 HP、白色饱食 / 成长 / 繁育和灰色粮食 |
+| `tools/verify_t0313_horse_ecology_world_feedback.gd` | 覆盖喂食原子成功 / 缺粮、上限钳制、自然恢复阈值、高速、多马、离厩照料、繁育重置和暂停 |
+
+稳定关系：`HorseSystem 权威提交并识别差值来源 → HorseSystem 逐马可见精度累计 → WorldFeedbackPayload → Presenter`。ResourceSystem 仍独占粮食库存；Presenter 不读取马匹前后快照猜结算，也不参与照料、恢复、成长或繁育。
+
+## T0312 战斗 / 恢复世界反馈索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/WorldFeedbackPayload.gd` | 新增纯数字 HP 条目、实际 HP 差、通用世界锚点与命中位置提取 |
+| `scripts/ui/WorldFeedbackPresenter.gd` | 解析 NPC / 敌军 / 马匹 / 建筑 / 器械锚点，负责伤害替换、治疗短窗合并和移除目标坐标回退 |
+| `scripts/systems/NPCSystem.gd` | 在 NPC 伤害、普通治疗、昏迷恢复和复苏 HP 提交后发送真实差值 |
+| `scripts/systems/CombatSystem.gd` | 在敌军伤害提交后发送真实差值，并透传近战 / 弹体实际碰撞位置 |
+| `scripts/systems/HorseSystem.gd` | 在马匹受伤提交后发送马匹自身真实 HP 损失 |
+| `scripts/systems/BuildingSystem.gd` | 在建筑伤害、直接恢复和施工修复提交后发送实际差值 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 在活动器械受伤 / 摧毁后发送实际损失并保留部署位置；不新增恢复权威 |
+| `tools/verify_t0312_combat_world_feedback.gd` | 覆盖真实差值、替换 / 合并、零变化、目标移除、多目标、马匹、建筑与器械边界 |
+
+稳定关系：各 HP 权威系统提交状态与既有事件 / 信号后发送只读表现 DTO；Presenter 不参与伤害、恢复、复苏、摧毁、废墟或坐骑分伤。碰撞坐标仅决定显示位置，缺失或离屏不影响结算。
+
+## T0311 统一世界数值反馈索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/WorldFeedbackPayload.gd` | 统一构造资源、状态与成长条目，复用正式资源名 / SVG，并只发送已提交实际增量 |
+| `scripts/core/EventBus.gd` | 提供只读表现信号 `world_feedback_requested(feedback)` |
+| `scripts/ui/WorldFeedbackPresenter.gd` | 将世界锚点投影到屏幕空间，负责颜色、图标回退、分组 / 替换、离屏隐藏及现实 2 秒动画 |
+| `scripts/systems/ActionSystem.gd` | 在普通工作成功、进食扣料和饱食实际增加后发送反馈；失败 / 零变化不发送 |
+| `scripts/systems/NPCSystem.gd` | 在统一熟练度入口提交后发送蓝色熟练度 / 经验 / 技能点组合反馈 |
+| `scripts/systems/NPCNeedsSystem.gd` | 仅在睡眠 profile 实际降低疲劳时发送白色需求反馈 |
+| `scenes/main/Main.tscn` | 在正式 UI CanvasLayer 注册全屏 `WorldFeedbackPresenter` |
+| `tools/verify_t0311_world_feedback.gd` | 覆盖工作、成长、进食、睡眠、图标、失败、替换、时序和暂停边界 |
+
+稳定关系：`ActionSystem / NPCSystem / NPCNeedsSystem 权威提交 → WorldFeedbackPayload → EventBus → WorldFeedbackPresenter`。Presenter 不监听绝对库存猜差值，不写资源、状态、成长、事件或行动；T0312-T0313 已复用同一入口，T0314 继续沿用而不建立第二套表现系统。
+
+## T0310 NPC 复苏提示索引
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/main/Main.tscn` | 定义居中的 `NpcRevivedAlertDialog` 与“太好了”按钮 |
+| `scripts/ui/HUD.gd` | 消费 `npc_revived`、读取正式姓名并维护复苏提示队列 |
+| `tools/verify_t0310_npc_revive_alert.gd` | 覆盖正式复苏、姓名文案、按钮、双 NPC 排队和关闭 |
+
+稳定关系：`NPCSystem 权威复苏 → EventBus.npc_revived → HUD 只读提示`；UI 不提交 HP、治疗、模式或事件事实。
+
+## T0309 HUD 主资源栏图标索引
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/main/Main.tscn` | HUD `AlarmButton` 显示“警报”，节点与战斗接口保持稳定 |
+| `assets/ui/resource_icons/*.svg` | 7 个不依赖系统字体的钱币、麦穗、餐碗、酒杯、木料、岩石和铁锭矢量图标 |
+| `scripts/ui/HUD.gd` | 将 7 项公开资源投影为 TextureRect 图标 + 实时数量 Label；图标 Tooltip 组合正式名称与可选仓库上限 |
+| `tools/verify_hud_resources.gd` | 覆盖 SVG 路径 / 纹理、数量正文、图标 Tooltip、鼠标边界、实时数量与既有详情窗回归 |
+| `tools/verify_warehouse_capacity_ui.gd` | 覆盖“金钱”名称提示及六项受限资源“名称 + 动态上限”提示 |
+
+稳定关系：`ResourceSystem 正式顺序 / 数量 / 名称 / 上限 → HUD 只读 SVG 图标投影 + Tooltip`。图标不作为资源 ID 或库存结算来源，装备 / 器械详情与 HUDFrame 自适应链保持不变。
+
+## T0308 特殊互动 Prompt 稳定性索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `data/prompts/dialogue_recruitment_special_prompt.txt` | 应征本轮相关性闸门与 accept / reject / none 台词一致性 |
+| `data/prompts/dialogue_morale_special_prompt.txt` | 士气相关性、站内战术后撤隔离与永久离站台词约束 |
+| `backend/services/model_adapter.py` | 只在对应 toggle 开启时拼接策略 / 工作稳定性规则；合法策略切换和工作 escape 一致性 |
+| `tools/verify_dialogue_prompt.py` | 动态 Prompt 加载 / 关闭隔离与关键稳定规则合同 |
+| `tools/verify_t0308_special_interaction_prompt_stability_real.py` | 正式人物上下文 14-probe 重复采样、唯一 run id、结果与 escape 台词检查 |
+| `docs/audits/T0308_SPECIAL_INTERACTION_PROMPT_STABILITY_REAL/` | 最终 56 次真实响应、usage 与迭代结论 |
+
+稳定关系：`唯一开启的 toggle → 对应动态 Prompt → 本轮相关性闸门 → 人物 / 状态判断 → 台词 / 结构一致性 → 既有 Godot 权威结算`；未开启模块、Schema 和客户端逻辑不变。
+
+## T0307 四类特殊互动真实验收索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `tools/verify_t0307_special_interactions_real.py` | 从正式档案与驿站 fixture 构造隔离 / 拟真 22-case 矩阵，调用真实 provider，保留原始响应、尝试与 usage；支持只续跑未通过项 |
+| `tools/verify_t0307_real_responses_game_effects.gd` | 将拟真真实响应原样送入 DialogSystem，验证权威状态、即时事件、同地点见闻、完成去重和 T0306 投影边界 |
+| `docs/audits/T0307_SPECIAL_INTERACTIONS_REAL/` | 保存可复验结论、真实结果 JSON、成本边界、自然可达性与已知稳定性风险 |
+
+稳定验证关系：`正式上下文 → 真实 /npc/dialogue → 原始响应审计 → Godot 正式解析 / 结算 → MemorySystem 原始事件 → LLMBridge 只读投影`。验收工具不改生产 Prompt 或权威规则。
+
+## 音效与背景音乐资产方案索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `docs/AUDIO_DESIGN_AND_ASSET_PLAN.md` | 当前音效与音乐的制作规格源；登记声音风格、P0 / P1 数量、时长、空间化、现有行动 / 情绪 / 战斗映射、文件目录、命名、格式、混音分组和验收标准 |
+| `assets/audio/` | 仅保存用户确认后供 Godot 正式导入的音乐、环境、UI、工作、语气、脚步、战斗、世界交互和技能音频 |
+| `art_source/audio/` | 规划中的原始录音、生成结果、第三方原包、DAW 工程、无损母版和待审稿隔离区；不作为运行时引用目录 |
+
+当前边界：方案处于 `v0.1-draft`，用户确认前不制作音频、不接入程序，也不改场景、设置界面或音频总线。
+
+## T0306 五类高频战斗事件聚合索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/LLMBridge.gd` | 只读五类事件聚合、逐类关键签名、reduce、摘要、统计与七类正式调用投影 |
+| `scripts/systems/DailyReflectionSystem.gd` | 让请求快照的 `day_events` 复用相同聚合投影，原始水位轮转不变 |
+| `scripts/ui/GMPanel.gd` | 既有短期记忆入口显示原始 / 投影计数和分类型统计 |
+| `backend/services/model_adapter.py` | 继续深拷贝 `details`，保证 `details.aggregation` 到达 provider |
+| `tools/verify_t0306_memory_event_aggregation.gd` | 五类 4→2 对照、异键隔离、叙事边界和原始库不变专项 |
+| `tools/verify_full_compact_short_memory.gd` | 验证七类正式 payload 和反思共用聚合结果 |
+| `tools/verify_short_memory_provider_projection.py` | 验证 Provider 二次投影保留聚合元数据 |
+
+稳定关系：`MemorySystem 原始事件 → LLMBridge 聚合投影 → Model Adapter`；NPCPanel 和熟睡水位继续读取原始事件，不读取聚合项。
+
 ## T0302 NPC 面板逃离行动警示索引
 
 | 文件 | 职责 |
@@ -1670,6 +1810,7 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 | `scripts/presentation/environment/FormalEnvironmentScatterView.gd` | T0135-P5 河岸 / 山脚 / 林下 / 道路边缘 / 城内空地五区自然散布，合批生成 4375 个低模草、蕨、灌木、岩石和 81 段湿痕 / 苔藓 / 泥肩过渡；统一排除河槽、道路核心、建筑地块、公共地点与正式路线，零玩法权威 |
 | `scripts/presentation/environment/CelestialCycleController.gd` | P6/P7/P7R2–R4 只读绝对游戏时间，连续计算日月轨道、环境与薄雾；优先绑定正式 BuildingArtView，消费屋顶显露信号，以 `06:00 → 12:00 → 18:00` 亮度 / 色温曲线驱动七座建筑各一盏屋檐下有影补光，不维护第二套时钟或玩法权威 |
 | `data/presentation/environment_art.json` | `environment_art_v1` 环境表现配置；包含 P1R2–P5 自然层、P6 日月、P7 环境锚点 / 雾及 P7R2–R4 室内日照亮度、色温、柔和覆盖与遮光参数，始终是纯表现配置 |
+| `assets/materials/environment/ground/*.png` | T0135-P1R3 试接后保留但未启用的 6 张 AI 候选资产：草地 / 泥土底纹、宏观变化遮罩及三类 atlas；正式配置和运行脚本当前均不引用它们 |
 | `assets/3d/quaternius/nature/ground_detail/` | T0135-P1 从 Stylized Nature MegaKit 筛入的 2 个卵石、2 个短草和 1 个三叶草 GLB 及 3 张共享纹理；实例均剥离碰撞并关闭阴影，不作为资源、障碍或导航来源 |
 | `tools/verify_t0135_p1_formal_ground_surface.gd`、`tools/capture_t0135_p1_ground_surface.gd` | P1R2 专项锁定零可见 ReservedLot、零独立 Plaza / DoorWear、草石密度、10 个功能杂物组、权威边界和 42 段道路不变，并生成 D3D12 全站 / 广场 / 东西工作区 / 后部服务区 QA 图 |
 | `tools/verify_t0135_p2_formal_river_valley.gd`、`tools/capture_t0135_p2_river_valley.gd` | P2 专项锁定 `24–34 m` 河槽、`7–11 m` 水面、`-1.2 m` 高差、两岸断开、旧盒隐藏、8 段河岸碰撞不变，并生成全景 / 中段 / 南北河段 D3D12 QA 图 |
@@ -2638,6 +2779,7 @@ T0048 历史补充：`remaining_day` 曾从玩家对话专用范围提升为所�
 | 经济与建筑 | `docs/ECONOMY_AND_BUILDINGS.md` |
 | 战斗系统 | `docs/COMBAT_SYSTEM.md` |
 | UI | `docs/UI_UX.md` |
+| 音效与背景音乐资产方案 | `docs/AUDIO_DESIGN_AND_ASSET_PLAN.md` |
 | GM 调试面板 | `docs/GM_PANEL.md` |
 | Prompt | `docs/PROMPTS.md` |
 | API 成本 | `docs/API_BUDGET.md` |
@@ -2764,7 +2906,7 @@ T0129C-A2b-P1–P6 增量：格伦→铁匠铺、莉娜→诊疗位 / 病床、�
 路径：`res://scripts/systems/HorseSystem.gd`
 用途：真实马匹个体生态、马厩数量、成长 / 生育、分配与战时骑乘的唯一权威。
 依赖：读取 `data/horse_defs.json`；监听 TimeSystem / NPC 状态，读取 ActionSystem 的 active `work_stable` 养马人，调用 ResourceSystem 结算进食粮食、BuildingSystem 写入 `special_state.horses`、EquipmentSystem 同步坐骑投影。
-当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、基础 / 照料额外 HP、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。T0138 后仅 `work` 可手动分配 / 收回；T0138-R1 后 `rally / combat` 使用 `waiting_for_rider_at_stable`，马留在真实马厩锚点，只有 NPC 从实时位置经正式 NavMesh 前往马旁，到达后才 `ridden`。骑乘受击先随机扣马 `30%–50%` 结算后伤害；马死亡清分配并让 NPC 转步战，NPC 昏迷清分配并让存活马 `returning_stable`，正常退战返厩但保留分配。生态与繁育公式保持不变。
+当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、基础 / 照料额外 HP、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。T0138 后仅 `work` 可手动分配 / 收回；T0138-R1 后 `rally / combat` 使用 `waiting_for_rider_at_stable`，马留在真实马厩锚点，只有 NPC 从实时位置经正式 NavMesh 前往马旁，到达后才 `ridden`。骑乘受击先随机扣马 `30%–50%` 结算后伤害；马死亡清分配并让 NPC 转步战，NPC 昏迷清分配并让存活马 `returning_stable`，正常退战返厩但保留分配。T0313 后，进食、自然回血、成长、照料额外 HP 和繁育概率在权威提交后按逐马可见精度聚合到统一世界反馈；生态与繁育公式保持不变。
 
 路径：`res://scripts/npc/NPC.gd`
 用途：通用 NPC 实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，处理点击、实体运动表现与逐 NPC 移动慢速生命周期。

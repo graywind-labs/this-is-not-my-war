@@ -4,6 +4,9 @@
 
 **《这不是我的战争》 / This Is Not My War**
 
+> T0135-P1R3 地表贴图程序接入已按用户反馈回滚，6 张候选资产保留但未被正式场景引用；后续未经用户确认不重新接入。音效/背景音乐资产任务在用户确认完成前仍仅盘点并生成资产到既定资产目录，不修改程序或其他文档。
+
+
 本文件是所有 AI Agent 进入项目后的最高优先级协作规则。  
 任何代码修改、文件新增、重构、删改前，都必须先阅读本文件。
 
@@ -157,6 +160,7 @@ Mock 只用于开发期快速验证 Schema、前后端通信和自动化脚本�
 │  ├─ ECONOMY_AND_BUILDINGS.md
 │  ├─ COMBAT_SYSTEM.md
 │  ├─ UI_UX.md
+│  ├─ AUDIO_DESIGN_AND_ASSET_PLAN.md
 │  ├─ GM_PANEL.md
 │  ├─ PROMPTS.md
 │  ├─ API_BUDGET.md
@@ -180,6 +184,7 @@ Mock 只用于开发期快速验证 Schema、前后端通信和自动化脚本�
    ├─ scripts/
    ├─ ui/
    └─ assets/
+      └─ audio/          # 正式音效、环境声与背景音乐；原始工程放 art_source/audio/
 ```
 
 如果实际项目目录与此不同，必须先更新 `docs/GODOT_ARCHITECTURE.md` 和 `docs/MODULE_INDEX.md`

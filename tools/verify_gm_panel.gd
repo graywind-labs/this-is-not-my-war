@@ -46,6 +46,7 @@ func _init() -> void:
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
+	var horse_birth_dialog := root.get_node_or_null("Main/UI/MilestoneAlertPresenter/HorseBirthNamingDialog") as AcceptDialog
 	var piety_system := root.get_node_or_null("Main/Systems/PietySystem")
 	var roof_visibility_controller := root.get_node_or_null("Main/Presentation/RoofVisibilityController")
 	var station_layout_controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
@@ -69,6 +70,7 @@ func _init() -> void:
 		or combat_system == null
 		or crafting_system == null
 		or horse_system == null
+		or horse_birth_dialog == null
 		or piety_system == null
 		or roof_visibility_controller == null
 		or station_layout_controller == null
@@ -1362,8 +1364,14 @@ func _init() -> void:
 		return
 	var horse_count_before_birth := int(horse_system.get_horse_count())
 	gm_panel._execute_command("horse_birth")
+	if int(horse_system.get_horse_count()) != horse_count_before_birth or horse_system.get_pending_birth_snapshot().is_empty() or not horse_birth_dialog.visible:
+		push_error("GM horse_birth command should open the formal naming flow before insertion")
+		quit(1)
+		return
+	horse_birth_dialog.get_ok_button().pressed.emit()
+	await process_frame
 	if int(horse_system.get_horse_count()) != horse_count_before_birth + 1:
-		push_error("GM horse_birth command should call HorseSystem.debug_force_birth")
+		push_error("GM horse_birth naming confirmation should insert one official foal")
 		quit(1)
 		return
 	gm_panel._execute_command("horse_assign veteran_deputy_01 %s local_public" % horse_id)

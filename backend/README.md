@@ -1,5 +1,9 @@
 # Backend README
 
+## T0306 五类战斗记忆聚合透传
+
+Godot 只对 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged` 生成严格同键聚合投影；后端不重新分组，也不接收或修改 MemorySystem 原始事件。Model Adapter 继续对白名单顶层字段做二次投影，并深拷贝 `details.aggregation` 的次数、累计伤害、HP 与时间范围到 provider。七类正式调用的 endpoint、Schema 顶层和调用频率均不变。
+
 ## T0289 对话情绪合同
 
 `/npc/dialogue` 的三类响应现在统一要求 `emotion` 为：`none / happy / relieved / angry / sad / afraid / surprised / confused / determined`。基础 Prompt 和动态 schema hint 都会给出该白名单。HTTP 层会把旧 `neutral / wary / fearful / tense / shaken / resolved`、已知中文近义词、`null` 或未知值归一化为合法 id，并把变化写入 `model_normalizations`；情绪不是权威数值，不影响特殊交互结算。

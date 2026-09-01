@@ -9,3 +9,8 @@ assets/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 assets/**/*.webp filter=lfs diff=lfs merge=lfs -text
 assets/**/*.wav filter=lfs diff=lfs merge=lfs -text
 assets/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+
+# Preserve editable/reference audio sources across devices without bloating Git history.
+art_source/audio/**/*.wav filter=lfs diff=lfs merge=lfs -text
+art_source/audio/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+art_source/audio/**/*.ogg filter=lfs diff=lfs merge=lfs -text

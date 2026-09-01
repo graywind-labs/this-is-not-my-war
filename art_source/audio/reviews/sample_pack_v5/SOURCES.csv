@@ -1,0 +1,11 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_mass_wendale_abbey.ogg,work_chapel_mass_chant,Wendale Abbey,Yubatake,https://opengameart.org/content/wendale-abbey,CC-BY-4.0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+02_mass_antiphona_magnificat.ogg,work_chapel_mass_chant,Schola Gregoriana - Antiphona et Magnificat,Schola Gregoriana / Dariusz Smolarek,https://commons.wikimedia.org/wiki/File:Schola_Gregoriana-Antiphona_et_Magnificat.ogg,CC-BY-SA-3.0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+03_mass_ave_maria.ogg,work_chapel_mass_chant,Schola Gregoriana - Ave Maria,Schola Gregoriana / Dariusz Smolarek,https://commons.wikimedia.org/wiki/File:Schola_Gregoriana-Ave_Maria.ogg,CC-BY-SA-3.0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+04_mass_gregorian_chant_spain_787598.mp3,work_chapel_mass_chant,Gregorian Chant in a Church in spain,Elmer_Tom,https://freesound.org/s/787598/,CC0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+05_mass_gregorian_choir_organ_rome_780488.mp3,work_chapel_mass_chant,Gregorian choir & organ in Rome,tullio,https://freesound.org/s/780488/,CC0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+06_mass_stabat_mater_191675.mp3,work_chapel_mass_chant,Stabat Mater - Capella Ducis 130525_13.wav,klankbeeld / Capella Ducis,https://freesound.org/s/191675/,CC-BY-NC-3.0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+07_mass_vatican_singing_646650.mp3,work_chapel_mass_chant,8_Vatican_071922_2.wav,Thel200ster,https://freesound.org/s/646650/,CC-BY-4.0,confirmed,chapel_mass_in_progress_loop,"整段循环；不剪辑；弥撒开始钟声结束后渐入，弥撒结束时渐出","用户确认作为弥撒进行期间的格里高利圣咏/教堂歌声"
+08_mass_veni_sancte_spiritus.ogg,work_chapel_mass_chant,Veni Sancte Spiritus,Membeth,https://commons.wikimedia.org/wiki/File:Veni.sancte.spiritus.ogg,Public-Domain,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+09_mass_synthetic_gregorian_333930.mp3,work_chapel_mass_chant,Echoes from a Distant Past.wav,BuytheField,https://freesound.org/s/333930/,CC0,rejected,,不采用,"用户已选择 07 作为弥撒进行声"
+10_mass_dies_irae.ogg,work_chapel_mass_chant,Dies Irae,Membeth,https://commons.wikimedia.org/wiki/File:Dies.irae.ogg,Public-Domain,rejected,,不采用,"用户已选择 07 作为弥撒进行声"

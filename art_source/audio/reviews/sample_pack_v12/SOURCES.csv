@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_body_fall_short_82027.mp3,combat_unconscious_fall,Body Fall Over.wav,raubana,https://freesound.org/s/82027/,CC0,rejected,,不采用,"用户已选择 02"
+02_body_fall_ground_395331.mp3,combat_unconscious_fall,Body falling on the ground 1,ihitokage,https://freesound.org/s/395331/,CC0,confirmed,combat_unconscious_fall,"整段单次播放；角色 HP 清零进入昏迷并实际倒地时，从角色位置播放","用户确认作为昏迷倒地声"
+03_body_fall_dirt_heavy_504626.mp3,combat_unconscious_fall,BODY FALL - V HVY - DIRT,leonelmail,https://freesound.org/s/504626/,CC0,rejected,,不采用,"用户已选择 02"
+04_getup_long_dress_464995.mp3,combat_revive_getup,Crouching and getting up-dress.wav,usamah,https://freesound.org/s/464995/,CC0,rejected,,不采用,"用户确认复苏不需要音效"
+05_getup_clothes_788342.mp3,combat_revive_getup,Clothes movements (walking foley),xkeril,https://freesound.org/s/788342/,CC0,rejected,,不采用,"用户确认复苏不需要音效"
+06_getup_clothing_256310.mp3,combat_revive_getup,clothing movement,Kodack,https://freesound.org/s/256310/,CC0,rejected,,不采用,"用户确认复苏不需要音效"
+07_horse_neigh_short_826753.mp3,combat_horse_death,Renill de cavall / Horse Neigh,Salsero_classic,https://freesound.org/s/826753/,CC0,confirmed,combat_horse_death,"整段单次播放；马匹进入阵亡结果时从马匹位置播放；普通受击不播放马声","用户确认改作马匹阵亡声"
+08_horse_whinny_149024.mp3,combat_horse_hurt,Horse_Whinny.wav,foxen10,https://freesound.org/s/149024/,CC0,rejected,,不采用,"用户确认马匹普通受击不需要音效，阵亡改用 07"
+09_horse_snort_whinny_set_437099.mp3,combat_horse_hurt,G38-08-Horses Snorting.wav,craigsmith,https://freesound.org/s/437099/,CC0,rejected,,不采用,"用户确认马匹普通受击不需要音效，阵亡改用 07"
+10_stone_hit_350750.mp3,combat_stone_structure_damage,stonehit1.wav,aerror,https://freesound.org/s/350750/,CC0,rejected,,不采用,"用户已选择 11"
+11_rock_wall_hit_360302.mp3,combat_stone_structure_damage,Hit With Something.wav,brennanium135,https://freesound.org/s/360302/,CC0,confirmed,combat_stone_structure_damage,"整段单次播放；石质建筑每次有效受击时从实际受击位置播放","用户确认作为石质建筑受击声"
+12_stone_impacts_set_265580.mp3,combat_stone_structure_damage,Impacts 01,aglinder,https://freesound.org/s/265580/,CC0,rejected,,不采用,"用户已选择 11"

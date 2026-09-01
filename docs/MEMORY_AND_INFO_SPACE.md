@@ -1,5 +1,31 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0315 新生小马命名后的事件语义
+
+`horse_born` 只在玩家确认名称、HorseSystem 已把幼马写入正式马匹库后记录一次。必填 payload 为 `horse_id / horse_name / template_id / stable_slot_id / named_by`；`horse_name` 取正式实例名，`named_by` 为守备官。确定性摘要固定为“一匹小马出生了，守备官给它取名为XX。”，地点为马厩、可见性为 `local_public`。
+
+待命名请求不是世界既成事实，不进入全局事件库、NPC 亲历 / 见闻、广场信息或 LLM 记忆。模板预设名也不提前进入事件；玩家确认默认名或自定义名后，所有后续马匹事件继续从 HorseSystem 正式实例读取同一名称。
+
+## T0314 制造成品待收取事件语义
+
+铁匠铺 / 工械坊最终阶段的 `work_completed.payload` 保留必填 `output_resources`，但其值为空；实际成品写入 `pending_output_resources`。摘要固定表达“制成待收取的XX”，不得写“产出XX”或暗示仓库、装备 / 器械库存已经可用。目标 id 投影同时收录 pending 中的具体 item id，便于后续检索；玩家收取是库存事务，本轮不额外生成 NPC 亲历事件。
+
+## T0307 真实特殊结果与聚合边界复验
+
+拟真真实响应生成的 `dialogue_special_interaction_result` 在目标事件库即时写一次，`local_public` 时在同地点见闻库写一次；完成对话后两处数量不再增加，纯 `dialogue_turn` 不携带特殊字段。对目标亲历与见证者见闻分别调用 T0306 投影后，特殊结果数量逐条不变、没有 `details.aggregation`，投影也未修改权威数组。
+
+因此当前压缩不会错误吞掉应征、士气 / 工作结果、策略改变或逃离关键信息：这些类型不在五类白名单内，并会切断前后同键战斗脉冲的连续聚合。完整实测响应和投影检查见 `docs/audits/T0307_SPECIAL_INTERACTIONS_REAL/`。
+
+## T0306 五类高频战斗事件的 LLM 聚合投影
+
+MemorySystem 仍以 append-only 原始事件作为唯一权威：全局事件档案、NPC `event_log / witness_log`、事件 ID、payload、顺序、地点传播和 NPCPanel 的“事件 / 见闻”逐条展示均不压缩。聚合只发生在 `LLMBridge.build_memory_event_projection(...)` 生成模型输入时，亲历与见闻分开处理，熟睡总结成功后的水位仍按原始 ID 快照轮转。
+
+白名单只有 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged`。公共签名固定比较 `type + day + subject_npc_id + actor_ids + target_ids + location_id + visibility`；各类再比较：攻击者 / 敌人 / 武器与攻防参数，伤害来源 / 交互语境与攻防参数，建筑与来源，器械 `deployment_id / device / slot / enemy`，或骑手 / 马匹 / 分摊比例 / 敌人。任一字段不同都不合并。非白名单事件是硬边界，因此相同键也不能跨 `combat_ended`、昏迷、对话等叙事节点合并。
+
+第二条同键事件出现后，投影删除会互相冲突的单次 `damage / hp_before / hp_after / defeated / damage_after_defense`，改在 `details.aggregation` 保存 `event_count / total_damage / total_damage_after_defense? / first_day / first_time / last_day / last_time / hp_before_first / hp_after_last / lowest_hp / defeated_any / last_defeated / scope`；顶层 importance 取组内最大值，summary 由程序确定性生成。单条白名单事件与其他事件仍保持原来的逐条紧凑格式。
+
+聚合器不自行创造人物、马匹、建筑、敌人、武器或防御器械名称，只复用事件生产者写入 payload 的显示名；这些生产者的名称来源继续以 `npc_profiles.json / horse_defs.json / building_defs.json / enemy_waves.json / weapon_defs.json / defense_device_defs.json` 为准。T0306 专项测试直接读取这些正式定义构造夹具，指定 ID 缺少正式名称时立即失败，避免测试文案反向引入不存在的专名。
+
 ## T0299 开发状态与世界事实分层
 
 - 行为模式的 `from / to / reason` 是状态机诊断信息，只保留在 NPC 运行态和 GM 快照；`npc_mode_changed` 已退出正式事件类型，MemorySystem 对旧调用直接拒绝，不进入亲历、见闻或 LLM 记忆。

@@ -156,14 +156,21 @@ func _init() -> void:
 	var grain_label := hud.find_child("GrainResourceLabel", true, false) as Label
 	var wine_label := hud.find_child("WineResourceLabel", true, false) as Label
 	var money_label := hud.find_child("MoneyResourceLabel", true, false) as Label
+	var grain_icon := hud.get_node_or_null("ResourceStrip/GrainResourceItem/Icon") as TextureRect
+	var wine_icon := hud.get_node_or_null("ResourceStrip/WineResourceItem/Icon") as TextureRect
+	var money_icon := hud.get_node_or_null("ResourceStrip/MoneyResourceItem/Icon") as TextureRect
 	if (
 		grain_label == null
 		or wine_label == null
 		or money_label == null
-		or grain_label.tooltip_text != "仓库储存上限：120"
-		or wine_label.tooltip_text != "仓库储存上限：60"
-		or not money_label.tooltip_text.is_empty()
-		or grain_label.mouse_filter != Control.MOUSE_FILTER_STOP
+		or grain_icon == null
+		or wine_icon == null
+		or money_icon == null
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：120"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：60"
+		or money_icon.tooltip_text != "金钱"
+		or grain_icon.mouse_filter != Control.MOUSE_FILTER_STOP
+		or grain_label.mouse_filter != Control.MOUSE_FILTER_IGNORE
 	):
 		_fail("Top-left resource hover capacity hints are incomplete")
 		return
@@ -184,8 +191,8 @@ func _init() -> void:
 		grain_storage_label.text != "粮食 %d/180" % grain_before
 		or int(grain_progress.max_value) != 180
 		or str((building_panel.find_child("WarehouseStorageLabel_wine", true, false) as Label).text) != "酒 0/90"
-		or grain_label.tooltip_text != "仓库储存上限：180"
-		or wine_label.tooltip_text != "仓库储存上限：90"
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：180"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：90"
 	):
 		_fail("Warehouse panel or HUD hover hints did not refresh after the upgrade")
 		return

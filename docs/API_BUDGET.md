@@ -1,5 +1,23 @@
 # API_BUDGET.md
 
+## T0308 特殊互动 Prompt 稳定性成本
+
+成品路径不新增 endpoint、`call_type`、重试或二次判定；四个 toggle 仍最多开启一个，关闭时不加载模块，开启后仍只使用本轮一次 `/npc/dialogue`。新增文字只提高单次动态 Prompt 长度。
+
+2026-09-01 使用 DeepSeek `deepseek-v4-flash`、temperature 0、`LLM_FALLBACK_TO_MOCK=false` 进行同一 14-probe 矩阵重复迭代。可精确汇总的三轮四重复与最初两重复共 196 次真实调用、1,493,938 input / 20,243 output tokens、估算 ¥0.18606944；另有 2 次请求没有可恢复的精确 usage：1 次在验证脚本记录组装错误后、usage 快照前中断，1 次为最终士气 escape 可达性保护检查。两次都确认真实 provider 成功，但不估造 token / 费用，也未混入上述账目。最终保留矩阵为 56 次、428,244 input / 5,577 output tokens、估算 ¥0.04940504，56/56 成功且 0 fallback。
+
+## T0307 四类特殊互动真实验收成本
+
+2026-09-01 使用 `backend/.env` 的 DeepSeek `deepseek-v4-flash`，强制 `LLM_FALLBACK_TO_MOCK=false`。最终可复放审计保存 29 次 `/npc/dialogue`：0 失败、0 fallback，估算 ¥0.014049；其中大量 Prompt token 命中 provider cache。为寻找不依赖单一关键词且能在正式人设中稳定到达的输入，本轮完整探索窗口实际产生 169 次 provider attempt，append-only 账本合计 1,236,614 input tokens、18,532 output tokens、1,061,632 cache-hit prompt tokens、174,982 cache-miss prompt tokens，估算 ¥0.233279。
+
+T0307 不修改成品调用频率：toggle 关闭仍不附加对应模块，打开仍只复用本轮一次 `/npc/dialogue`。新增 `--resume-passed` 仅用于开发验收，复用审计中已经通过的响应并只调用未通过 case，避免因模型非确定性反复重跑完整矩阵；Godot 响应复放、事件 / 见闻和记忆压缩检查全部为本地 0 调用。
+
+## T0306 高频战斗记忆压缩成本
+
+本任务不新增 endpoint、`call_type`、请求频率、重试或输出字段。五类高频战斗事件在 Godot 供应商投影前按严格语义键合并；测试夹具每类 4 条（3 条同键、1 条异键）均变为 2 条，其他事件不变。实际节省量取决于一段连续交战中相同攻击者 / 目标 / 武器或相同伤害来源的重复次数；聚合元数据会占少量固定字符，但重复越多收益越高。当前环境没有 `OPENAI_API_KEY / DEEPSEEK_API_KEY / LLM_API_KEY`，本轮真实调用与费用均为 0。
+
+本轮从正式数据定义读取专名后的同一夹具，在“逐条紧凑投影 → 聚合投影”的 JSON 字符数分别为：`attack_made 2178→1383`、`damage_taken 1320→963`、`building_damaged 964→774`、`defense_device_triggered 1381→989`、`horse_damaged 1244→919`；这是专项数据而非整次 Prompt token 账单。
+
 ## T0299 事件语义降噪成本
 
 本任务只调整 Godot 本地事件写入与确定性摘要，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。专项和运行态验收不发起 LLM 请求，真实 API 调用为 0；移除模式事件还会减少后续对话 / 计划 payload 中的冗余记忆文本。

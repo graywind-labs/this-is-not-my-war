@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_meteor_fireball_pass_522705.mp3,meteor_fall,"Fireball, Woosh, Pass, fast",julianmateo_,https://freesound.org/s/522705/,CC0,confirmed,meteor_fall_one_shot,"完整单次播放；不剪辑","用户确认作为陨石坠落声"
+02_meteor_heavy_whoosh_730959.mp3,meteor_fall,Heavy Whoosh,SoundBiterSFX,https://freesound.org/s/730959/,CC0,rejected,,不采用,"用户已选择 01 作为陨石坠落声"
+03_meteor_rpg_spell_562298.mp3,meteor_fall,Meteor - Rpg,colorsCrimsonTears,https://freesound.org/s/562298/,CC0,rejected,,不采用,"用户已选择 01 作为陨石坠落声"
+04_garden_shovel_dirt_353907.mp3,work_garden,Shovel_dirt.wav,dr19,https://freesound.org/s/353907/,CC0,confirmed,work_garden_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认作为菜园工作声"
+05_garden_mattock_dig_168810.mp3,work_garden,dig.wav,maxthrower,https://freesound.org/s/168810/,CC0,rejected,,不采用,"用户已选择 04 作为菜园工作声"
+06_kitchen_chopping_829282.mp3,work_dining_hall,Beginner chopping vegetables on a cutting board,megahope,https://freesound.org/s/829282/,CC0,confirmed,work_dining_hall_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认作为厨房工作声"
+07_kitchen_wooden_spoon_mix_42812.mp3,work_dining_hall,Mixing food wooden spoon.wav,KidsCastTechy,https://freesound.org/s/42812/,CC0,rejected,,不采用,"用户已选择 06 作为厨房工作声"
+08_stable_horse_snorts_437111.mp3,work_stable,G38-16-Four Horse Snorts.wav,craigsmith,https://freesound.org/s/437111/,CC0,confirmed,work_stable_with_horse_loop,"后续截取 00:01–结尾并循环；工作开始渐入、工作结束渐出","用户确认马厩存在马匹且正在照料马匹时使用"
+09_stable_hay_straw_734643.mp3,work_stable,Plants or Straw hay - dried cereals,Vrymaa,https://freesound.org/s/734643/,CC0,confirmed,work_stable_without_horse_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认马厩没有马匹时使用"
+10_brewing_wine_open_pour_142325.mp3,work_tavern,wine open pour.wav,fryzu82,https://freesound.org/s/142325/,CC0,confirmed,work_tavern_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认作为酿酒工作声"
+11_brewing_wine_pour_382028.mp3,work_tavern,Pouring Wine.wav,bfederi1,https://freesound.org/s/382028/,CC0,rejected,,不采用,"用户已选择 10 作为酿酒工作声"
+12_workshop_hand_saw_383725.mp3,work_workshop,Hand Saw Sawing Wood,deleted_user_7146007,https://freesound.org/s/383725/,CC0,confirmed,work_workshop_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认作为工械坊工作声"

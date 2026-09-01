@@ -101,6 +101,13 @@ func _init() -> void:
 		if not bool(birth.get("ok", false)):
 			_fail("Birth failed before stable capacity: %s" % JSON.stringify(birth))
 			return
+		birth = horse_system.confirm_pending_foal_name(
+			str(birth.get("request_id", "")),
+			str(birth.get("default_name", ""))
+		)
+		if not bool(birth.get("ok", false)):
+			_fail("Birth naming failed before stable capacity: %s" % JSON.stringify(birth))
+			return
 		var foal: Dictionary = birth.get("horse", {})
 		if first_foal_id.is_empty():
 			first_foal_id = str(foal.get("horse_id", ""))

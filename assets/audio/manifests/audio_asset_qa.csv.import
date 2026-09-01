@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dyyuudqtf2crt"
+
+[deps]
+
+files=["res://assets/audio/manifests/audio_asset_qa.relative.translation", "res://assets/audio/manifests/audio_asset_qa.status.translation", "res://assets/audio/manifests/audio_asset_qa.duration.translation", "res://assets/audio/manifests/audio_asset_qa.codec.translation", "res://assets/audio/manifests/audio_asset_qa.sample.translation", "res://assets/audio/manifests/audio_asset_qa.channels.translation", "res://assets/audio/manifests/audio_asset_qa.peak.translation", "res://assets/audio/manifests/audio_asset_qa.extension.translation", "res://assets/audio/manifests/audio_asset_qa.duration.translation", "res://assets/audio/manifests/audio_asset_qa.sample.translation", "res://assets/audio/manifests/audio_asset_qa.channels.translation", "res://assets/audio/manifests/audio_asset_qa.peak.translation", "res://assets/audio/manifests/audio_asset_qa.decode.translation"]
+
+source_file="res://assets/audio/manifests/audio_asset_qa.csv"
+dest_files=["res://assets/audio/manifests/audio_asset_qa.relative.translation", "res://assets/audio/manifests/audio_asset_qa.status.translation", "res://assets/audio/manifests/audio_asset_qa.duration.translation", "res://assets/audio/manifests/audio_asset_qa.codec.translation", "res://assets/audio/manifests/audio_asset_qa.sample.translation", "res://assets/audio/manifests/audio_asset_qa.channels.translation", "res://assets/audio/manifests/audio_asset_qa.peak.translation", "res://assets/audio/manifests/audio_asset_qa.extension.translation", "res://assets/audio/manifests/audio_asset_qa.duration.translation", "res://assets/audio/manifests/audio_asset_qa.sample.translation", "res://assets/audio/manifests/audio_asset_qa.channels.translation", "res://assets/audio/manifests/audio_asset_qa.peak.translation", "res://assets/audio/manifests/audio_asset_qa.decode.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

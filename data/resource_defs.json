@@ -1,7 +1,7 @@
 [
   {
     "id": "money",
-    "name": "第纳尔",
+    "name": "金钱",
     "category": "currency",
     "initial_amount": 30,
     "min_amount": 0,

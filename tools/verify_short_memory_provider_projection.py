@@ -27,6 +27,23 @@ FORMAL_PROMPTS = (
 
 
 def _event(index: int, *, memory_kind: str | None = None) -> dict[str, Any]:
+    details = (
+        {"reason": "铁储备为0，无法继续打铁", "source": "llm_plan_revision"}
+        if index == 0
+        else {"action_id": "work_garden", "technical_sequence": index}
+    )
+    if index == 1:
+        details["aggregation"] = {
+            "scope": "same_day_contiguous_combat_run",
+            "event_count": 3,
+            "total_damage": 20,
+            "hp_before_first": 100,
+            "hp_after_last": 80,
+            "lowest_hp": 80,
+            "first_time": "10:00:00",
+            "last_time": "10:00:02",
+            "defeated_any": True,
+        }
     event = {
         "event_id": f"evt_{index:02d}",
         "type": "plan_revised" if index == 0 else "work_started",
@@ -34,11 +51,7 @@ def _event(index: int, *, memory_kind: str | None = None) -> dict[str, Any]:
         "importance": 95 if index == 0 else 30,
         "day": 1,
         "time": f"11:{index:02d}:00",
-        "details": (
-            {"reason": "铁储备为0，无法继续打铁", "source": "llm_plan_revision"}
-            if index == 0
-            else {"action_id": "work_garden", "technical_sequence": index}
-        ),
+        "details": details,
         "payload": {
             "items": [{"hour": hour, "raw_marker": RAW_ONLY_MARKER} for hour in range(24)],
             "location_snapshot": {"raw_marker": RAW_ONLY_MARKER},
@@ -147,6 +160,13 @@ def _assert_compact_events(events: list[dict[str, Any]], expected_count: int) ->
     assert len(events) == expected_count
     assert events[0]["summary"] == CAUSAL_MARKER
     assert events[0]["details"]["reason"] == "铁储备为0，无法继续打铁"
+    aggregation = events[1]["details"]["aggregation"]
+    assert aggregation["event_count"] == 3
+    assert aggregation["total_damage"] == 20
+    assert aggregation["hp_before_first"] == 100
+    assert aggregation["hp_after_last"] == 80
+    assert aggregation["lowest_hp"] == 80
+    assert aggregation["defeated_any"] is True
     for event in events:
         assert "event_id" not in event
         assert "payload" not in event

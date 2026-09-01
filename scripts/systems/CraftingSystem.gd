@@ -2,12 +2,15 @@ extends Node
 
 signal recipe_catalog_loaded(recipe_count: int)
 signal project_changed(building_id: String, project_snapshot: Dictionary)
+signal pending_outputs_changed(building_id: String, pending_snapshot: Dictionary)
 signal work_cycle_progress_changed(building_id: String, npc_id: String, progress: float)
 
 const CRAFTING_RECIPES_FILE := "crafting_recipes.json"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
+const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const SPECIAL_STATE_SECTION := "production"
 const PROGRESS_EPSILON := 0.000001
 const SUPPORTED_BUILDING_IDS := ["blacksmith", "workshop"]
@@ -27,8 +30,10 @@ const EXPECTED_RECIPE_IDS := [
 var _recipes: Dictionary = {}
 var _recipe_ids_by_building: Dictionary = {}
 var _projects: Dictionary = {}
+var _pending_outputs: Dictionary = {}
 var _active_cycles: Dictionary = {}
 var _stage_commit_locks: Dictionary = {}
+var _pending_collection_locks: Dictionary = {}
 var _load_errors: Array[String] = []
 var _initialized := false
 
@@ -41,8 +46,10 @@ func initialize() -> void:
 	_recipes.clear()
 	_recipe_ids_by_building.clear()
 	_projects.clear()
+	_pending_outputs.clear()
 	_active_cycles.clear()
 	_stage_commit_locks.clear()
+	_pending_collection_locks.clear()
 	_load_errors.clear()
 	_initialized = false
 
@@ -50,6 +57,7 @@ func initialize() -> void:
 		var building_id := str(raw_building_id)
 		_recipe_ids_by_building[building_id] = []
 		_projects[building_id] = _make_empty_project(building_id)
+		_pending_outputs[building_id] = {}
 		_active_cycles[building_id] = {}
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -150,7 +158,10 @@ func get_project_snapshot(building_id: String) -> Dictionary:
 		"progress": progress,
 		"partial_progress": partial_progress,
 		"active_workers": active_workers,
-		"stock_amount": _get_stock_amount(str(project.get("target_item_id", "")))
+		"stock_amount": _get_stock_amount(str(project.get("target_item_id", ""))),
+		"pending_outputs": get_pending_outputs(building_id),
+		"pending_output_total": get_pending_output_total(building_id),
+		"target_pending_amount": int(get_pending_outputs(building_id).get(str(project.get("target_item_id", "")), 0))
 	}
 
 
@@ -160,6 +171,136 @@ func get_all_project_snapshots() -> Dictionary:
 		var building_id := str(raw_building_id)
 		snapshots[building_id] = get_project_snapshot(building_id)
 	return snapshots
+
+
+func get_pending_outputs(building_id: String) -> Dictionary:
+	if not _pending_outputs.has(building_id):
+		return {}
+	return (_pending_outputs[building_id] as Dictionary).duplicate(true)
+
+
+func get_pending_output_total(building_id: String) -> int:
+	var total := 0
+	for amount in get_pending_outputs(building_id).values():
+		total += maxi(0, int(amount))
+	return total
+
+
+func get_pending_output_entries(building_id: String) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var pending := get_pending_outputs(building_id)
+	for raw_item_id in pending.keys():
+		var item_id := str(raw_item_id)
+		var amount := maxi(0, int(pending[raw_item_id]))
+		if amount <= 0:
+			continue
+		var presentation := get_output_item_presentation(item_id)
+		entries.append({
+			"building_id": building_id,
+			"item_id": item_id,
+			"resource_id": item_id,
+			"name": str(presentation.get("name", item_id)),
+			"icon_path": str(presentation.get("icon_path", "")),
+			"amount": amount,
+			"ui_order": int(presentation.get("ui_order", 9999))
+		})
+	entries.sort_custom(_compare_pending_entries)
+	return entries
+
+
+func get_output_item_presentation(item_id: String) -> Dictionary:
+	var fallback_name := item_id
+	var fallback_order := 9999
+	for recipe_id in _recipes.keys():
+		var recipe: Dictionary = _recipes[recipe_id]
+		if str(recipe.get("output_item_id", "")) != item_id:
+			continue
+		fallback_name = str(recipe.get("name", item_id))
+		fallback_order = int(recipe.get("ui_order", 9999))
+		break
+
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if equipment_system != null:
+		for weapon_id in equipment_system.get_weapon_ids() if equipment_system.has_method("get_weapon_ids") else []:
+			var weapon: Dictionary = equipment_system.get_weapon_def(str(weapon_id))
+			if str(weapon.get("source_resource_id", "")) == item_id:
+				return {"name": str(weapon.get("name", fallback_name)), "icon_path": str(weapon.get("icon", "")), "ui_order": fallback_order}
+		for armor_id in equipment_system.get_armor_ids() if equipment_system.has_method("get_armor_ids") else []:
+			var armor: Dictionary = equipment_system.get_armor_def(str(armor_id))
+			if str(armor.get("source_resource_id", "")) == item_id:
+				return {"name": str(armor.get("name", fallback_name)), "icon_path": str(armor.get("icon", "")), "ui_order": fallback_order}
+
+	var defense_device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if defense_device_system != null and defense_device_system.has_method("get_device_ids"):
+		for device_id in defense_device_system.get_device_ids():
+			var device: Dictionary = defense_device_system.get_device_definition(str(device_id))
+			var inventory_cost: Dictionary = device.get("inventory_cost", {}) if device.get("inventory_cost", {}) is Dictionary else {}
+			if not inventory_cost.has(item_id):
+				continue
+			var presentation: Dictionary = device.get("presentation", {}) if device.get("presentation", {}) is Dictionary else {}
+			return {"name": str(device.get("name", fallback_name)), "icon_path": str(presentation.get("icon", "")), "ui_order": fallback_order}
+	return {"name": fallback_name, "icon_path": "", "ui_order": fallback_order}
+
+
+func collect_pending_outputs(building_id: String) -> Dictionary:
+	var result := {
+		"ok": false,
+		"reason": "unknown",
+		"building_id": building_id,
+		"collected_resources": {},
+		"collected_entries": [],
+		"remaining_pending_outputs": get_pending_outputs(building_id)
+	}
+	if not _pending_outputs.has(building_id):
+		result["reason"] = "unsupported_building"
+		return result
+	if bool(_pending_collection_locks.get(building_id, false)) or bool(_stage_commit_locks.get(building_id, false)):
+		result["reason"] = "pending_output_commit_in_progress"
+		return result
+	var collected := get_pending_outputs(building_id)
+	if collected.is_empty():
+		result["reason"] = "no_pending_outputs"
+		return result
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null:
+		result["reason"] = "resource_system_unavailable"
+		return result
+	if not resource_system.has_method("add_resources"):
+		result["reason"] = "resource_system_atomic_add_unavailable"
+		return result
+	if resource_system.has_method("can_store_resources") and not bool(resource_system.call("can_store_resources", collected)):
+		result["reason"] = "output_inventory_capacity"
+		return result
+
+	_pending_collection_locks[building_id] = true
+	var collected_entries := get_pending_output_entries(building_id)
+	var committed := bool(resource_system.call("add_resources", collected))
+	if not committed:
+		_pending_collection_locks[building_id] = false
+		result["reason"] = "output_inventory_commit_failed"
+		return result
+
+	var remaining: Dictionary = _pending_outputs[building_id]
+	for raw_item_id in collected.keys():
+		var item_id := str(raw_item_id)
+		var next_amount := maxi(0, int(remaining.get(item_id, 0)) - int(collected[raw_item_id]))
+		if next_amount <= 0:
+			remaining.erase(item_id)
+		else:
+			remaining[item_id] = next_amount
+	_pending_outputs[building_id] = remaining
+	_pending_collection_locks[building_id] = false
+	var snapshot := get_project_snapshot(building_id)
+	_publish_special_state(building_id)
+	project_changed.emit(building_id, snapshot.duplicate(true))
+	pending_outputs_changed.emit(building_id, get_pending_outputs(building_id))
+	result["ok"] = true
+	result["reason"] = "pending_outputs_collected"
+	result["collected_resources"] = collected.duplicate(true)
+	result["collected_entries"] = collected_entries.duplicate(true)
+	result["remaining_pending_outputs"] = get_pending_outputs(building_id)
+	result["project"] = snapshot
+	return result
 
 
 func set_target(building_id: String, recipe_id: String, force: bool = false) -> Dictionary:
@@ -421,9 +562,9 @@ func complete_stage(
 		"cost": stage_cost.duplicate(true)
 	}
 	var product_completed := completed_stages + 1 >= stages.size()
-	var output_resources := {}
+	var pending_output_resources := {}
 	if product_completed:
-		output_resources[str(recipe.get("output_item_id", ""))] = int(recipe.get("output_amount", 1))
+		pending_output_resources[str(recipe.get("output_item_id", ""))] = int(recipe.get("output_amount", 1))
 
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_system == null:
@@ -448,11 +589,9 @@ func complete_stage(
 	if product_completed:
 		var output_item_id := str(recipe.get("output_item_id", ""))
 		var output_amount := int(recipe.get("output_amount", 1))
-		if not bool(resource_system.call("add_resource", output_item_id, output_amount)):
-			_rollback_stage_cost(resource_system, stage_cost)
-			_stage_commit_locks[building_id] = false
-			result["reason"] = "output_inventory_commit_failed"
-			return result
+		var pending: Dictionary = _pending_outputs.get(building_id, {})
+		pending[output_item_id] = int(pending.get(output_item_id, 0)) + output_amount
+		_pending_outputs[building_id] = pending
 
 	var updated_project := project.duplicate(true)
 	updated_project["completed_stages"] = 0 if product_completed else completed_stages + 1
@@ -463,6 +602,8 @@ func complete_stage(
 	var snapshot := get_project_snapshot(building_id)
 	_publish_special_state(building_id)
 	project_changed.emit(building_id, snapshot.duplicate(true))
+	if product_completed:
+		pending_outputs_changed.emit(building_id, get_pending_outputs(building_id))
 	if not npc_id.is_empty():
 		work_cycle_progress_changed.emit(building_id, npc_id, 0.0)
 
@@ -472,7 +613,9 @@ func complete_stage(
 	result["target_item_id"] = str(recipe.get("output_item_id", ""))
 	result["target_name"] = str(recipe.get("name", ""))
 	result["input_resources"] = stage_cost.duplicate(true)
-	result["output_resources"] = output_resources.duplicate(true)
+	result["output_resources"] = {}
+	result["pending_output_resources"] = pending_output_resources.duplicate(true)
+	result["pending_output_entries"] = get_pending_output_entries(building_id) if product_completed else []
 	result["completed_stage"] = completed_stage
 	result["product_completed"] = product_completed
 	result["project"] = snapshot
@@ -516,8 +659,10 @@ func debug_get_snapshot() -> Dictionary:
 		"recipe_ids_by_building": _recipe_ids_by_building.duplicate(true),
 		"recipes": recipes_snapshot,
 		"projects": get_all_project_snapshots(),
+		"pending_outputs": _pending_outputs.duplicate(true),
 		"active_cycles": _active_cycles.duplicate(true),
 		"stage_commit_locks": _stage_commit_locks.duplicate(true),
+		"pending_collection_locks": _pending_collection_locks.duplicate(true),
 		"load_errors": _load_errors.duplicate()
 	}
 
@@ -704,11 +849,6 @@ func _get_stock_amount(resource_id: String) -> int:
 	return int(resource_system.call("get_resource", resource_id))
 
 
-func _rollback_stage_cost(resource_system: Node, stage_cost: Dictionary) -> void:
-	for raw_resource_id in stage_cost.keys():
-		resource_system.call("add_resource", str(raw_resource_id), int(stage_cost[raw_resource_id]))
-
-
 func _publish_special_state(building_id: String) -> void:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("set_building_special_state_section"):
@@ -765,6 +905,8 @@ func _complete_stage_result(
 		"target_item_id": "",
 		"input_resources": {},
 		"output_resources": {},
+		"pending_output_resources": {},
+		"pending_output_entries": [],
 		"completed_stage": {},
 		"product_completed": false
 	}
@@ -782,6 +924,14 @@ func _compare_recipe_ids(a: String, b: String) -> bool:
 
 func _compare_active_workers(a: Dictionary, b: Dictionary) -> bool:
 	return str(a.get("npc_id", "")) < str(b.get("npc_id", ""))
+
+
+func _compare_pending_entries(a: Dictionary, b: Dictionary) -> bool:
+	var order_a := int(a.get("ui_order", 9999))
+	var order_b := int(b.get("ui_order", 9999))
+	if order_a == order_b:
+		return str(a.get("item_id", "")) < str(b.get("item_id", ""))
+	return order_a < order_b
 
 
 func _record_load_error(message: String) -> void:

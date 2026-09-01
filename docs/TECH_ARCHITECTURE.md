@@ -1,5 +1,43 @@
 # TECH_ARCHITECTURE.md
 
+## T0315 完工表现与待命名事务边界
+
+建筑链路为 `BuildingSystem 权威完成 → building_job_completed DTO → MilestoneAlertPresenter FIFO → 玩家确认关闭`。UI 是否显示、何时关闭不参与 HP、等级、材料、助手效率或建筑状态提交；信号也不是第二份任务状态。
+
+出生链路为 `HorseSystem 繁育条件 / 模板 / 容量复验 → 单个 pending birth（候选 id、模板、槽位、亲代）→ 命名请求 → HorseSystem 名称复验 → 正式马库原子插入 → 亲代冷却 / 状态信号 / 马厩摘要 → horse_born`。命名确认是正式世界事实的提交边界；确认前不能由列表、面板、分配或 MemorySystem观察到新马。模板名只是默认输入，确认后的实例 `name` 才是所有消费者的唯一来源。
+
+pending birth 只存在于当前运行态，与本项目现阶段其他马匹生态状态一致；未来若引入完整存档 / 恢复流程，必须把待命名事务与正式自定义马名纳入同一版本化存档 Schema，不能靠 UI 文本恢复。
+
+## T0314 制造暂存与正式库存事务边界
+
+数据流为 `CraftingSystem 最终阶段原子扣料 → building_id/item_id 聚合 pending_outputs → 只读 UI 投影 → 玩家确认 → CraftingSystem 全量原子提交 → ResourceSystem 正式库存`。pending 与生产 project 分离，因此切换目标、阶段中断、工人离岗或建筑 HP 变化不影响已制成物；收取也不改变 target、revision、active cycle 或项目阶段。
+
+`output_resources` 继续专指已经进入正式库存的产出，`pending_output_resources` 专指已制成但未收取物。HUD、装备与器械部署不接触 pending；MemorySystem、世界反馈与 LLM 事件投影必须保留该语义差异。表现层可把聚合数量展开成逐件图标，但不得把展开节点当作库存事实或逐件收取入口。
+
+## T0313 马匹连续差值聚合与表现分层
+
+`HorseSystem 每分钟权威生态提交 → 逐 horse_id / 字段累计实际差值 → 一次外层 _advance_simulation 结束时量化完整显示单位 → WorldFeedbackPayload → Presenter`。累计器属于马匹权威系统，因为只有它能区分自然回血支付的饱食与常规环境消耗、成长带来的自然 HP 增长、照料额外 HP，以及繁育概率成功清零；Presenter 不从马匹快照前后猜来源。
+
+HP / 回血饱食 / 额外 HP 以整数单位消费累计值，成长 / 繁育概率以 `0.001` 比例即 `0.1%` 消费，所有不足单位的余量继续保留。一次高速逻辑 tick 无论包含多少个固定分钟，都只在外层结束刷新；每匹马使用自己的替换频道和锚点。繁育进入冷却时清理概率余量，死亡清理该马全部余量，避免失效状态在未来跨阈值后回放。
+
+离厩不会改变原自然回血资格，但 `_advance_care` 和 `_roll_births_for_minute` 仍只处理在厩马。TimeSystem 暂停不发送逻辑 tick，累计器与权威生态都不推进；Presenter 对已出现反馈继续使用现实时间。该层不新增存档字段、MemorySystem 事件、GM 结算接口或第二套马匹状态。
+
+## T0312 多权威 HP 提交与统一表现
+
+`NPCSystem / CombatSystem / HorseSystem / BuildingSystem / DefenseDeviceSystem` 各自在写入自身 HP 后调用同一个 `WorldFeedbackPayload.emit_hp_change(...)`。payload 只比较提交前后值并产生 damage / healing 语义；它不拥有防御、穿透、坐骑分伤、复苏、建筑摧毁或器械废墟规则。表现层按 `anchor_type:id + channel` 管理生命周期，伤害替换、治疗短窗合并都不反写权威状态。
+
+命中位置属于只读表现上下文。正式近战 / 弹体已有碰撞坐标时向下透传，缺失时 Presenter 查询系统实时位置；目标移除时使用 payload 保存的提交瞬间回退坐标。坐标缺失只会隐藏反馈，不得阻止或回滚伤害。现有 MemorySystem 事件、血条刷新与 T0310 复苏提示继续独立消费同一权威事实。
+
+## T0311 权威变化与世界反馈分层
+
+数据流为 `业务系统完成原子提交并计算实际差值 → WorldFeedbackPayload 构造只读表现 DTO → EventBus.world_feedback_requested → WorldFeedbackPresenter 投影 / 动画`。ResourceSystem 的 `resource_changed` 仍表示绝对库存刷新，不能被 Presenter 用来猜消费来源或交易语义；失败、中断、容量回滚、达到上限和零差值不会产生成功飘字。
+
+`WorldFeedbackPresenter` 只保存最长 2 秒的显示对象、锚点回退和频道信息。它不进入 MemorySystem，不构造见闻，不保存游戏状态，也不把 UI 数字反写系统。普通工作显式抑制通用成长入口的独立表现并与同次资源提交合组，从而既保留 `NPCSystem.increase_npc_skill` 作为单一成长权威，又避免同一事实显示两遍。
+
+## T0306 权威事件与 LLM 聚合投影分层
+
+数据流为 `业务系统逐次结算 → MemorySystem 原始事件 / 传播 / UI → LLMBridge 只读聚合投影 → Model Adapter 防御性字段清洗 → provider`。聚合器不回写 MemorySystem，不改变事件 ID 水位，也不让后端或模型判断分组。亲历和见闻分别投影；同一天的连续白名单战斗段可按类型签名复用首条输出槽，任何非白名单事件都会清空当前分组索引。`DailyReflectionSystem` 和 LLMBridge 直接构造反思 payload 的路径均复用同一入口，避免熟睡总结出现另一套压缩规则。
+
 ## T0299 运行态诊断与叙事事件分层
 
 `NPCSystem.set_npc_behavior_mode(...)` 仍原子更新 current / previous / reason 与进入时间，但返回的 `event` 固定为空；各业务系统只为警铃、集结、避战、伤害、昏迷、复苏和逃离等具体事实调用 MemorySystem。MemorySystem 另设开发专用事件拒绝表，阻止旧 `npc_mode_changed` 调用重新进入全局、亲历、见闻和 LLM 记忆链。

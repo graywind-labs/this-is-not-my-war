@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 
 signal npc_temporary_presentation_event_emitted(event: Dictionary)
 
@@ -5105,6 +5106,14 @@ func apply_damage_to_npc(
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"npc",
+		npc_id,
+		hp_before,
+		hp_after,
+		get_npc_world_position(npc_id)
+	)
 
 	var presentation_result := play_damage_presentation_event({
 		"ok": true,
@@ -5255,6 +5264,14 @@ func restore_npc_hp(
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"npc",
+		npc_id,
+		hp_before,
+		hp_after,
+		get_npc_world_position(npc_id)
+	)
 	return {
 		"npc_id": npc_id,
 		"hp_before": hp_before,
@@ -5265,7 +5282,12 @@ func restore_npc_hp(
 	}
 
 
-func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dictionary:
+func increase_npc_skill(
+	npc_id: String,
+	skill_name: String,
+	amount: int,
+	emit_world_feedback: bool = true
+) -> Dictionary:
 	if amount <= 0 or skill_name.is_empty() or not _profiles.has(npc_id):
 		return {}
 
@@ -5284,7 +5306,7 @@ func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dict
 	profile["progression"] = progression_result.get("progression", {})
 	_profiles[npc_id] = profile
 	_emit_npc_state_changed(npc_id)
-	return {
+	var result := {
 		"npc_id": npc_id,
 		"skill_name": skill_name,
 		"before": before,
@@ -5297,6 +5319,11 @@ func increase_npc_skill(npc_id: String, skill_name: String, amount: int) -> Dict
 		"skill_experience": int(progression_result.get("skill_experience", 0)),
 		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD
 	}
+	if emit_world_feedback:
+		var feedback_entries: Array[Dictionary] = []
+		WorldFeedbackPayload.append_growth_entries(feedback_entries, result)
+		WorldFeedbackPayload.emit_npc(self, npc_id, "growth", feedback_entries)
+	return result
 
 
 func get_npc_progression(npc_id: String) -> Dictionary:
@@ -5733,6 +5760,14 @@ func _advance_single_unconscious_recovery_with_rate(
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"npc",
+		npc_id,
+		hp_before,
+		hp_after,
+		get_npc_world_position(npc_id)
+	)
 	return {
 		"npc_id": npc_id,
 		"hp_before": hp_before,
@@ -5764,6 +5799,14 @@ func _revive_npc_from_unconscious(npc_id: String, hp_before: int, hp_after: int,
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"npc",
+		npc_id,
+		hp_before,
+		hp_after,
+		get_npc_world_position(npc_id)
+	)
 	var revived_event := _log_revived(npc_id, hp_before, hp_after, recovery_source, "local_public")
 	_emit_npc_revived(npc_id)
 	return {

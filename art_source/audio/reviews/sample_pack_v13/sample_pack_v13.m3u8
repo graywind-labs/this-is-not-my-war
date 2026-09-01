@@ -1,0 +1,25 @@
+#EXTM3U
+#EXTINF:1,中性 none：短促普通“嗯”
+01_emotion_none_talking_742403.mp3
+#EXTINF:1,中性 none：略带确认感的“嗯”
+02_emotion_none_okay_742401.mp3
+#EXTINF:1,中性 none：较低沉的短“哼”
+03_emotion_none_hm_742400.mp3
+#EXTINF:3,开心 happy：女性轻笑
+04_emotion_happy_female_chuckle_377742.mp3
+#EXTINF:9,开心 happy：一组男性轻笑
+05_emotion_happy_male_set_643665.mp3
+#EXTINF:7,开心 happy：低沉克制轻笑
+06_emotion_happy_soft_chuckle_823548.mp3
+#EXTINF:1,放松 relieved：女性短促松气声
+07_emotion_relieved_short_242909.mp3
+#EXTINF:2,放松 relieved：男性满足长呼气
+08_emotion_relieved_content_334061.mp3
+#EXTINF:2,放松 relieved：通用叹气声
+09_emotion_relieved_sigh_265249.mp3
+#EXTINF:1,愤怒 angry：短促怒哼
+10_emotion_angry_short_341489.mp3
+#EXTINF:16,愤怒 angry：一组男性愤怒闷哼
+11_emotion_angry_set_427972.mp3
+#EXTINF:8,愤怒 angry：一组厌烦与恼怒“哼”
+12_emotion_angry_annoyed_169742.mp3

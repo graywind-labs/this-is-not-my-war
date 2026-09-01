@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_bow_release_384915.mp3,combat_bow_release,Bow Release (Bow and Arrow),Ali_6868,https://freesound.org/s/384915/,CC0,confirmed,combat_bow_release,"整段单次播放；弓释放瞬间从射手位置发声","用户确认作为弓释放声"
+02_longbow_release_394179.mp3,combat_crossbow_release,Longbow Release 2.wav,saturdaysoundguy,https://freesound.org/s/394179/,CC0,confirmed,combat_hand_crossbow_release,"整段单次播放；手弩释放瞬间从射手位置发声；按用户试听判断跨组复用","用户确认作为手弩释放声"
+03_bow_arrow_fx_511490.mp3,combat_bow_release,FX_bow&arrow.wav,Lydmakeren,https://freesound.org/s/511490/,CC0,rejected,,不采用,"用户已选择 01"
+04_arrow_impact_1_384914.mp3,combat_projectile_impact,Arrow Impact 1,Ali_6868,https://freesound.org/s/384914/,CC0,rejected,,不采用,"用户已选择 05 统一承担投射物命中"
+05_arrow_impact_2_384913.mp3,combat_projectile_impact,Arrow Impact 2,Ali_6868,https://freesound.org/s/384913/,CC0,confirmed,combat_arrow_bolt_tower_impact,"整段单次播放；普通箭、手弩矢及箭塔投射物确实命中时，从实际命中位置播放","用户确认三类投射物命中统一使用"
+06_arrow_impact_4_384911.mp3,combat_projectile_impact,Arrow Impact 4,Ali_6868,https://freesound.org/s/384911/,CC0,rejected,,不采用,"用户已选择 05 统一承担投射物命中"
+07_crossbow_fire_heavy_752211.mp3,combat_crossbow_release,Crossbow Fire XI,DUDE_X-SoundLab,https://freesound.org/s/752211/,CC0,rejected,,不采用,"手弩释放改用 02，弩床释放使用 08"
+08_crossbow_fire_mid_752206.mp3,combat_ballista_release,Crossbow Fire VI,DUDE_X-SoundLab,https://freesound.org/s/752206/,CC0,confirmed,combat_ballista_release,"整段单次播放；弩床塔防单位释放瞬间从弩床位置发声","用户确认作为弩床释放声"
+09_crossbow_fire_mechanical_752201.mp3,combat_crossbow_release,Crossbow Fire I,DUDE_X-SoundLab,https://freesound.org/s/752201/,CC0,rejected,,不采用,"手弩释放改用 02，弩床释放使用 08"
+10_bolt_whoosh_short_60013.mp3,combat_ballista_bolt_whoosh,Whoosh,qubodup,https://freesound.org/s/60013/,CC0,confirmed,combat_ballista_bolt_whoosh,"整段单次播放；绑定弩床发射的重弩矢位置播放","用户确认作为弩床重弩矢破风声"
+11_bolt_whoosh_heavy_540300.mp3,combat_crossbow_bolt_whoosh,Whoosh Heavy Spear Hammer Large,EminYILDIRIM,https://freesound.org/s/540300/,CC-BY 4.0,rejected,,不采用,"普通弩矢复用第 9 批 07；弩床重弩矢使用 10"
+12_bolt_whoosh_noisy_187541.mp3,combat_crossbow_bolt_whoosh,Noisy Whooshes.flac,qubodup,https://freesound.org/s/187541/,CC0,rejected,,不采用,"普通弩矢复用第 9 批 07；弩床重弩矢使用 10"

@@ -1,5 +1,16 @@
 # COMBAT_SYSTEM.md
 
+## T0312 战斗 HP 世界反馈
+
+- NPCSystem、CombatSystem、HorseSystem、BuildingSystem 与 DefenseDeviceSystem 继续独占各自 HP 结算；提交后将 `hp_before / hp_after` 交给 `WorldFeedbackPayload.emit_hp_change(...)`，Presenter 只显示真实带符号差值，不读取攻击力推算伤害。
+- 同一 `anchor_type:id` 的 `damage` 频道收到新命中即替换旧红字。敌军与器械被本次伤害移除前先保存实体 / 部署世界坐标；反馈节点即使随后消失仍在最后位置完成 2 秒生命周期。范围伤害逐目标经过同一入口，骑乘分伤分别由 HorseSystem 和 NPCSystem 发出，不能在骑手处重复总伤害。
+- 近战碰撞身份与弹体 `collision_position` 在存在时透传为敌军、器械或大型建筑的优先反馈点；无碰撞点才回退到对象锚点。该透传不改变命中资格、碰撞身份、伤害公式、宿主 / 器械 HP 隔离或事件事实。
+- 昏迷自然恢复、协助 / 诊所治疗和建筑修复只显示正的实际 HP 差，短窗治疗合并不合并伤害。当前器械系统没有恢复权威接口，因此只接伤害，不新增器械修复数值规则。
+
+## T0306 高频战斗事件投影边界
+
+CombatSystem、NPCSystem、BuildingSystem、DefenseDeviceSystem 与 HorseSystem 继续逐次结算并逐次写入 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged`；伤害、HP、目标、武器、部署和马匹事实不在生产侧合批。只有后续 LLM 投影按严格语义键聚合，同一目标但武器 / 攻防参数、伤害来源、建筑、部署、马匹、地点、可见性或日期不同都保持独立。非白名单战斗事件会切断聚合段，保留昏迷、复苏和战斗结束等因果边界。
+
 ## T0299 战斗模式与事件事实分层
 
 - `work / rally / combat / avoid_combat / unconscious / escaped` 的互转及内部 reason 只写 NPC 运行态和 GM 快照，不进入事件库。

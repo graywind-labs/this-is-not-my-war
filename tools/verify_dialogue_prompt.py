@@ -328,6 +328,9 @@ def main() -> None:
         "列表外行动",
         "当前做不到",
         "提出应征",
+        "第一步必须先做相关性闸门",
+        "立即结束应征判断",
+        "recruitment_result=accept 时",
         "avoid_combat",
         "escape_intervention",
         "escape_intervention_result 只能是 stay 或 leave",
@@ -459,6 +462,8 @@ def main() -> None:
         "recruitment_result",
         "提出应征",
         "应征校准",
+        "第一步必须先做相关性闸门",
+        "输出前一致性检查",
     ]:
         assert inactive_recruitment_fragment not in sleep_prompt, inactive_recruitment_fragment
 
@@ -492,7 +497,10 @@ def main() -> None:
     )._system_prompt_for_call_type("dialogue", wartime_payload)
     for morale_fragment in [
         "is_morale_encouragement_request=true",
-        "开关本身不是鼓舞成功的证据",
+        "第一步必须先做相关性闸门",
+        "战术后撤、避战、保存实力",
+        "后撤到驿站内某处",
+        "reply_text 中必须直接出现“离开驿站”四个字",
         "wartime_reaction",
         "无关",
         "morale_boost",
@@ -521,7 +529,10 @@ def main() -> None:
         "is_combat_strategy_request=true",
         "combat_strategy_context.current_strategy",
         "combat_strategy_decision",
-        "无关内容必须正常回复",
+        "第一步必须先做相关性闸门",
+        "无关内容必须立即结束策略判断",
+        "必须返回 change + 该候选 ID",
+        "change 的 reply_text 必须明确表达同意",
     ]:
         assert strategy_fragment in strategy_prompt, strategy_fragment
 
@@ -542,7 +553,10 @@ def main() -> None:
     for work_fragment in [
         "is_work_encouragement_request=true",
         "work_encouragement_reaction",
-        "无关话题",
+        "第一步必须先做相关性闸门",
+        "只是询问资源、库存、产量",
+        "只有 NPC 自己决定现在开始永久离开驿站",
+        "work_boost 的 reply_text",
         "none",
         "work_boost",
         "escape",

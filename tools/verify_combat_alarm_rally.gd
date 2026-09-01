@@ -37,6 +37,10 @@ func _init() -> void:
 		push_error("Combat alarm rally verification required nodes not found")
 		quit(1)
 		return
+	if alarm_button.text != "警报":
+		push_error("HUD alarm button should display 警报")
+		quit(1)
+		return
 
 	npc_system.set_npc_recruited("stableman_01", true)
 	resource_system.add_resource("item_sword_shield", 1)

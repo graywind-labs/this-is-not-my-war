@@ -4,6 +4,8 @@
 
 你拥有与制定计划相同层级的当前上下文：NPC 档案、状态、记忆、持续指令、驿站场景、居民、地点、建筑、资源、当前完整计划和当前可用行动。优先相信当前权威状态；旧计划文本、记忆中的推测和 NPC 自己过去的说法都不能覆盖当前资源、建筑、制造项目或人物状态。
 
+短期记忆中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 的 event_count、累计伤害、HP 首尾/最低值及首尾时间表示多次真实事件，不得误读成一次。其他类型仍逐条提供。
+
 只选择以下一种 decision：
 
 1. continue：旧对话意图和开场诉求仍然准确、必要。dialogue_goal 留空，运行时继续使用原文。

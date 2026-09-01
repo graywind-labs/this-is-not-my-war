@@ -3179,16 +3179,8 @@ func _build_reflection_day_events(npc_id: String) -> Array:
 		return []
 	var memory: Dictionary = memory_system.get_npc_short_term_memory(npc_id)
 	var result: Array = []
-	for raw_event in memory.get("event_log", []):
-		if raw_event is Dictionary:
-			var event_summary := _event_to_summary(raw_event)
-			event_summary["memory_kind"] = "experienced"
-			result.append(event_summary)
-	for raw_event in memory.get("witness_log", []):
-		if raw_event is Dictionary:
-			var witness_summary := _event_to_summary(raw_event)
-			witness_summary["memory_kind"] = "witnessed"
-			result.append(witness_summary)
+	result.append_array(build_memory_event_projection(memory.get("event_log", []), "experienced"))
+	result.append_array(build_memory_event_projection(memory.get("witness_log", []), "witnessed"))
 	return result
 
 
@@ -3460,7 +3452,7 @@ func _build_memory_aggregate_summary(
 		"damage_taken":
 			return "%s受到%s的同类伤害%d次，共失去%s点HP，HP从%s降到%s，最低%s。" % [
 				_memory_summary_prefix(first_summary, "受到", str(details.get("target_npc_id", "NPC"))),
-				str(details.get("damage_source", "未知来源")),
+				_memory_damage_source_label(first_summary, str(details.get("damage_source", "未知来源"))),
 				count, total_damage, hp_before, hp_after, lowest_hp
 			]
 		"building_damaged":
@@ -3490,6 +3482,24 @@ func _memory_summary_prefix(summary: String, separator: String, fallback: String
 	if separator_index <= 0:
 		return fallback
 	return summary.left(separator_index).strip_edges()
+
+
+func _memory_summary_between(summary: String, start_marker: String, end_marker: String, fallback: String) -> String:
+	var start_index := summary.find(start_marker)
+	if start_index < 0:
+		return fallback
+	start_index += start_marker.length()
+	var end_index := summary.find(end_marker, start_index)
+	if end_index <= start_index:
+		return fallback
+	return summary.substr(start_index, end_index - start_index).strip_edges()
+
+
+func _memory_damage_source_label(summary: String, fallback: String) -> String:
+	var label := _memory_summary_between(summary, "受到", "造成的", "")
+	if label.is_empty():
+		label = _memory_summary_between(summary, "受到", "的同类伤害", "")
+	return fallback if label.is_empty() else label
 
 
 func _format_memory_number(value: Variant) -> String:

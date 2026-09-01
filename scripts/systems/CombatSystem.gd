@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const ENEMY_WAVES_FILE := "enemy_waves.json"
 const ENEMY_ROOT_PATH := "/root/Main/WorldRoot/Station/Enemies"
 const FORMAL_ENEMY_ROOT_PATH := "/root/Main/WorldRoot/FormalStationLayout/FormalEnemies"
@@ -545,6 +546,16 @@ func get_enemy(enemy_id: String) -> Dictionary:
 	return _active_enemies.get(enemy_id, {}).duplicate(true)
 
 
+func get_enemy_world_position(enemy_id: String) -> Variant:
+	if _enemy_nodes.has(enemy_id):
+		var actor := get_node_or_null(_enemy_nodes.get(enemy_id, NodePath())) as Node3D
+		if actor != null:
+			return actor.global_position
+	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+	var position: Variant = enemy.get("position", null)
+	return position if position is Vector3 else null
+
+
 func get_enemy_detail_snapshot(enemy_id: String) -> Dictionary:
 	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
 	if enemy.is_empty() or not bool(enemy.get("alive", true)):
@@ -902,7 +913,8 @@ func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, cont
 			"source_type": "defense_device",
 			"deployment_id": str(context.get("deployment_id", "")),
 			"device_id": str(context.get("device_id", "")),
-			"device_name": str(context.get("device_name", "工程器械"))
+			"device_name": str(context.get("device_name", "工程器械")),
+			"hit_world_position": context.get("hit_world_position", null)
 		}
 	)
 	if damage_result.is_empty():
@@ -5753,6 +5765,9 @@ func _commit_melee_contact_damage(swing_key: String) -> void:
 			charged_attack_context["charge_impact"] = charge_impact.duplicate(true)
 			attack_context = charged_attack_context
 		if _active_enemies.has(actual_enemy_id):
+			attack_context["hit_world_position"] = WorldFeedbackPayload.find_world_position(
+				contact.get("collision_identity", {}) if contact.get("collision_identity", {}) is Dictionary else {}
+			)
 			result = _apply_npc_attack_to_enemy(source_id, npc, actual_target, attack_context)
 		elif not charge_impact.is_empty():
 			result = {
@@ -5830,11 +5845,23 @@ func _apply_enemy_melee_contact_damage(
 				resolution,
 				{
 					"host_proxy_id": str(locked_target.get("attack_host_proxy_region_id", locked_target.get("host_proxy_id", ""))),
-					"collision_identity": contact.get("collision_identity", {}).duplicate(true) if contact.get("collision_identity", {}) is Dictionary else {}
+					"collision_identity": contact.get("collision_identity", {}).duplicate(true) if contact.get("collision_identity", {}) is Dictionary else {},
+					"hit_world_position": WorldFeedbackPayload.find_world_position(
+						contact.get("collision_identity", {}) if contact.get("collision_identity", {}) is Dictionary else {}
+					)
 				}
 			)
 		"building":
-			return _apply_enemy_attack_to_building(enemy, actual_id, maxi(1, int(round(raw_attack_power))))
+			return _apply_enemy_attack_to_building(
+				enemy,
+				actual_id,
+				maxi(1, int(round(raw_attack_power))),
+				{
+					"hit_world_position": WorldFeedbackPayload.find_world_position(
+						contact.get("collision_identity", {}) if contact.get("collision_identity", {}) is Dictionary else {}
+					)
+				}
+			)
 	return {}
 
 
@@ -6098,7 +6125,8 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 		"penetration": penetration,
 		"effective_defense": float(resolution.get("effective_defense", target_defense)),
 		"weapon_id": str(attack_context.get("weapon_id", "")),
-		"weapon_name": str(attack_context.get("weapon_name", "武器"))
+		"weapon_name": str(attack_context.get("weapon_name", "武器")),
+		"hit_world_position": attack_context.get("hit_world_position", null)
 	})
 	var event := _log_npc_attack_made(npc_id, npc, target, attack_context, damage_result)
 	return {
@@ -6778,7 +6806,9 @@ func _apply_combat_projectile_collision_damage(projectile: Dictionary, identity:
 		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 		var npc_id := str(projectile.get("source_id", ""))
 		var npc: Dictionary = npc_system.get_npc(npc_id) if npc_system != null and npc_system.has_method("get_npc") else projectile.get("source_snapshot", {})
-		var damage_result := _apply_npc_attack_to_enemy(npc_id, npc, target, projectile.get("attack_context", {}))
+		var projectile_attack_context: Dictionary = projectile.get("attack_context", {}).duplicate(true) if projectile.get("attack_context", {}) is Dictionary else {}
+		projectile_attack_context["hit_world_position"] = WorldFeedbackPayload.find_world_position(identity)
+		var damage_result := _apply_npc_attack_to_enemy(npc_id, npc, target, projectile_attack_context)
 		_stamp_projectile_attack_id(damage_result, attack_id)
 		return {
 			"damage_applied": not damage_result.is_empty(),
@@ -6801,7 +6831,8 @@ func _apply_combat_projectile_collision_damage(projectile: Dictionary, identity:
 				"device_id": str(attack_context.get("device_id", "")),
 				"device_name": str(projectile.get("source_name", "工程器械")),
 				"attack_id": attack_id,
-				"projectile_hit_fact": true
+				"projectile_hit_fact": true,
+				"hit_world_position": WorldFeedbackPayload.find_world_position(identity)
 			}
 		)
 		_stamp_projectile_attack_id(damage_result, attack_id)
@@ -6834,6 +6865,7 @@ func _apply_combat_projectile_collision_damage(projectile: Dictionary, identity:
 		if _is_defense_device_proxy_contact(intended, identity, collision_position):
 			var proxy_attack_context: Dictionary = projectile.get("attack_context", {}).duplicate(true) if projectile.get("attack_context", {}) is Dictionary else {}
 			proxy_attack_context["attack_id"] = attack_id
+			proxy_attack_context["hit_world_position"] = WorldFeedbackPayload.find_world_position(identity)
 			var damage_result := _apply_enemy_projectile_damage_to_device(enemy, intended_id, proxy_attack_context, intended)
 			_stamp_projectile_attack_id(damage_result, attack_id)
 			return {
@@ -6845,7 +6877,12 @@ func _apply_combat_projectile_collision_damage(projectile: Dictionary, identity:
 			}
 	if intended_type == "building" and str(identity.get("building_id", "")) == intended_id:
 		var raw_power := maxf(1.0, float((projectile.get("attack_context", {}) as Dictionary).get("raw_attack_power", 1.0)))
-		var damage_result := _apply_enemy_attack_to_building(enemy, intended_id, maxi(1, int(round(raw_power))))
+		var damage_result := _apply_enemy_attack_to_building(
+			enemy,
+			intended_id,
+			maxi(1, int(round(raw_power))),
+			{"hit_world_position": WorldFeedbackPayload.find_world_position(identity)}
+		)
 		_stamp_projectile_attack_id(damage_result, attack_id)
 		return {
 			"damage_applied": not damage_result.is_empty(),
@@ -6906,7 +6943,8 @@ func _apply_enemy_projectile_damage_to_device(
 		resolution,
 		{
 			"attack_id": str(attack_context.get("attack_id", "")),
-			"host_proxy_id": str(intended_target.get("attack_host_proxy_region_id", intended_target.get("host_proxy_id", "")))
+			"host_proxy_id": str(intended_target.get("attack_host_proxy_region_id", intended_target.get("host_proxy_id", ""))),
+			"hit_world_position": attack_context.get("hit_world_position", null)
 		}
 	)
 
@@ -7306,6 +7344,10 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 	if damage <= 0 or not _active_enemies.has(enemy_id):
 		return {}
 	var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(context)
+	var prefer_feedback_position := feedback_world_position is Vector3
+	if not prefer_feedback_position:
+		feedback_world_position = get_enemy_world_position(enemy_id)
 	var max_hp := maxi(1, int(enemy.get("max_hp", enemy.get("hp", 1))))
 	var hp_before := clampi(int(enemy.get("hp", max_hp)), 0, max_hp)
 	var hp_after := maxi(0, hp_before - damage)
@@ -7348,6 +7390,16 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 	enemy["hp"] = hp_after
 	enemy["alive"] = not defeated
 	enemy["last_damage_result"] = result.duplicate(true)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"enemy",
+		enemy_id,
+		hp_before,
+		hp_after,
+		feedback_world_position,
+		prefer_feedback_position,
+		0.35 if prefer_feedback_position else WorldFeedbackPayload.ENEMY_ANCHOR_HEIGHT
+	)
 	if defeated:
 		_record_battle_enemy_defeat(actor_npc_id, enemy, result)
 		result["removed"] = true
@@ -13348,7 +13400,12 @@ func _apply_enemy_attack(enemy: Dictionary, target: Dictionary) -> Dictionary:
 				resolution
 			)
 		"building":
-			return _apply_enemy_attack_to_building(enemy, target_id, maxi(1, int(round(raw_attack_power))))
+			return _apply_enemy_attack_to_building(
+				enemy,
+				target_id,
+				maxi(1, int(round(raw_attack_power))),
+				{"hit_world_position": target.get("attack_contact_position", null)}
+			)
 		_:
 			return {}
 
@@ -13470,7 +13527,8 @@ func _apply_enemy_attack_to_defense_device(
 			"attacker_name": str(enemy.get("name", "敌人")),
 			"attack_id": str(proxy_context.get("attack_id", "")),
 			"host_proxy_id": str(proxy_context.get("host_proxy_id", "")),
-			"collision_identity": proxy_context.get("collision_identity", {}).duplicate(true) if proxy_context.get("collision_identity", {}) is Dictionary else {}
+			"collision_identity": proxy_context.get("collision_identity", {}).duplicate(true) if proxy_context.get("collision_identity", {}) is Dictionary else {},
+			"hit_world_position": proxy_context.get("hit_world_position", null)
 		}
 	)
 	if result.is_empty():
@@ -13488,18 +13546,25 @@ func _apply_enemy_attack_to_defense_device(
 	}
 
 
-func _apply_enemy_attack_to_building(enemy: Dictionary, building_id: String, damage: int) -> Dictionary:
+func _apply_enemy_attack_to_building(
+	enemy: Dictionary,
+	building_id: String,
+	damage: int,
+	feedback_context: Dictionary = {}
+) -> Dictionary:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("apply_damage_to_building"):
 		return {}
 	var enemy_id := str(enemy.get("id", ""))
 	var enemy_name := str(enemy.get("name", enemy_id))
+	var damage_options := feedback_context.duplicate(true)
+	damage_options["attacker_name"] = enemy_name
 	var damage_result: Dictionary = building_system.apply_damage_to_building(
 		building_id,
 		damage,
 		enemy_id,
 		ENEMY_DAMAGE_VISIBILITY,
-		{"attacker_name": enemy_name}
+		damage_options
 	)
 	if building_id == MAIN_HALL_ID and bool(damage_result.get("destroyed", false)):
 		_trigger_main_hall_failure(enemy, damage_result)

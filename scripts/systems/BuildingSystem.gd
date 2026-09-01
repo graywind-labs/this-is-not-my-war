@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const BUILDING_DEFS_FILE := "building_defs.json"
 const BUILDING_ROOT_PATH := "/root/Main/WorldRoot/Station/Buildings"
 const PROPS_ROOT_PATH := "/root/Main/WorldRoot/Station/Props"
@@ -1163,6 +1164,20 @@ func apply_damage_to_building(
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(options)
+	var prefer_feedback_position := feedback_world_position is Vector3
+	if not prefer_feedback_position:
+		feedback_world_position = get_building_entry_position(building_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"building",
+		building_id,
+		hp_before,
+		hp_after,
+		feedback_world_position,
+		prefer_feedback_position,
+		0.35 if prefer_feedback_position else WorldFeedbackPayload.BUILDING_ANCHOR_HEIGHT
+	)
 	var event := _log_building_damaged(building_id, actor_id, amount, hp_before, hp_after, visibility, options)
 	return {
 		"ok": true,
@@ -1187,11 +1202,20 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	if current_hp >= max_hp:
 		return true
 
-	building["hp"] = mini(max_hp, current_hp + amount)
+	var hp_after := mini(max_hp, current_hp + amount)
+	building["hp"] = hp_after
 	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"building",
+		building_id,
+		current_hp,
+		hp_after,
+		get_building_entry_position(building_id)
+	)
 	return true
 
 
@@ -1315,13 +1339,22 @@ func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> v
 	var start_hp := int(job.get("start_hp", int(building.get("hp", 0))))
 	var target_hp := int(job.get("target_hp", int(building.get("max_hp", 0))))
 	var next_hp := mini(target_hp, int(floor(lerpf(float(start_hp), float(target_hp), progress))))
-	if next_hp > int(building.get("hp", 0)):
+	var hp_before := int(building.get("hp", 0))
+	if next_hp > hp_before:
 		building["hp"] = next_hp
 		_refresh_destruction_latch(building)
 		_buildings[building_id] = building
 		_refresh_bound_scene_nodes(building_id)
 		if emit_changed:
 			_emit_building_state_changed(building_id)
+		WorldFeedbackPayload.emit_hp_change(
+			self,
+			"building",
+			building_id,
+			hp_before,
+			next_hp,
+			get_building_entry_position(building_id)
+		)
 
 
 func _finish_repair(building_id: String) -> void:
@@ -1330,13 +1363,30 @@ func _finish_repair(building_id: String) -> void:
 
 	var job: Dictionary = _active_repairs[building_id]
 	var building: Dictionary = _buildings[building_id]
-	building["hp"] = int(job.get("target_hp", building.get("max_hp", 0)))
+	var hp_before := int(building.get("hp", 0))
+	var hp_after := int(job.get("target_hp", building.get("max_hp", 0)))
+	building["hp"] = hp_after
 	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_active_repairs.erase(building_id)
 	_release_repair_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"building",
+		building_id,
+		hp_before,
+		hp_after,
+		get_building_entry_position(building_id)
+	)
+	_emit_building_job_completed(building_id, "repair", {
+		"building_id": building_id,
+		"building_name": str(building.get("name", building_id)),
+		"job_type": "repair",
+		"hp": hp_after,
+		"max_hp": int(building.get("max_hp", hp_after)),
+	})
 
 
 func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
@@ -1472,6 +1522,14 @@ func _finish_upgrade(building_id: String) -> void:
 	_release_upgrade_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	_emit_building_job_completed(building_id, "upgrade", {
+		"building_id": building_id,
+		"building_name": str(building.get("name", building_id)),
+		"job_type": "upgrade",
+		"level": int(building.get("level", 1)),
+		"hp": int(building.get("hp", 0)),
+		"max_hp": int(building.get("max_hp", 0)),
+	})
 
 
 func _prune_invalid_repair_helpers(building_id: String) -> void:
@@ -1951,6 +2009,12 @@ func _emit_building_state_changed(building_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_state_changed.emit(building_id)
+
+
+func _emit_building_job_completed(building_id: String, job_type: String, result: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("building_job_completed"):
+		event_bus.building_job_completed.emit(building_id, job_type, result.duplicate(true))
 
 
 func _log_building_damaged(

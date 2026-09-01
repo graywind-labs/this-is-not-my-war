@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_emotion_none_talking_742403.mp3,npc_emotion_none,HmVoice Talking,NoisyRedFox,https://freesound.org/s/742403/,CC0,pending,,,"无词、短促且最中性，适合所有 NPC 共用"
+02_emotion_none_okay_742401.mp3,npc_emotion_none,HmVoice Okay,NoisyRedFox,https://freesound.org/s/742401/,CC0,pending,,,"带轻微确认感；注意 none 不应听成明确同意"
+03_emotion_none_hm_742400.mp3,npc_emotion_none,HmVoice Hm,NoisyRedFox,https://freesound.org/s/742400/,CC0,pending,,,"更低沉、更像游戏 NPC 的短哼"
+04_emotion_happy_female_chuckle_377742.mp3,npc_emotion_happy,Girl Chuckle.wav,BlueSiren,https://freesound.org/s/377742/,CC0,pending,,,"女性轻笑，较克制但声线性别明显"
+05_emotion_happy_male_set_643665.mp3,npc_emotion_happy,Various Chuckles_Male.mp3,SnowFightStudios,https://freesound.org/s/643665/,CC0,pending,,,"多条男性轻笑合集；选中后只截一条自然短笑"
+06_emotion_happy_soft_chuckle_823548.mp3,npc_emotion_happy,Man chuckling soft laughter,beautifuldaymonster1968,https://freesound.org/s/823548/,CC0,pending,,,"低沉克制轻笑，原录音较长；选中后截取最短一声"
+07_emotion_relieved_short_242909.mp3,npc_emotion_relieved,relieved sigh.wav,Reitanna,https://freesound.org/s/242909/,CC0,pending,,,"女性短促松气声，长度合适但声线性别明显"
+08_emotion_relieved_content_334061.mp3,npc_emotion_relieved,satisfiedSigh.wav,garynoden,https://freesound.org/s/334061/,CC0,pending,,,"男性满足长呼气，可能偏享受而非脱险"
+09_emotion_relieved_sigh_265249.mp3,npc_emotion_relieved,sigh,wjtaylor,https://freesound.org/s/265249/,CC0,pending,,,"较通用的叹气，可判断是否适合跨角色共用"
+10_emotion_angry_short_341489.mp3,npc_emotion_angry,Angry Grunt,Rocotilos,https://freesound.org/s/341489/,CC0,pending,,,"短促怒哼，长度和强度都适合回复结束提示"
+11_emotion_angry_set_427972.mp3,npc_emotion_angry,male grunt.wav,lipalearning,https://freesound.org/s/427972/,CC0,pending,,,"多条男性愤怒闷哼；选中后截取一条克制短声"
+12_emotion_angry_annoyed_169742.mp3,npc_emotion_angry,Annoyed Mhm,qubodup,https://freesound.org/s/169742/,CC-BY 4.0,pending,,,"一组厌烦与恼怒哼声；选中后只截一条，避免带明确语言感"

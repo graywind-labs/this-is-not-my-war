@@ -6,6 +6,7 @@ const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
+const CRAFTING_HARVEST_DIALOG_PATH := "/root/Main/UI/CraftingHarvestDialog"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const CRAFTING_TARGET_ALERT_TOOLTIP := "未选择制造物品"
@@ -70,6 +71,8 @@ var _crafting_section: VBoxContainer
 var _crafting_target_select: OptionButton
 var _crafting_target_missing_alert: Button
 var _crafting_recipe_label: Label
+var _crafting_pending_label: Label
+var _crafting_harvest_button: Button
 var _crafting_stage_label: Label
 var _crafting_progress_bar: ProgressBar
 var _crafting_worker_label: Label
@@ -666,6 +669,21 @@ func _build_crafting_section() -> void:
 	_crafting_recipe_label.name = "CraftingRecipeLabel"
 	_crafting_recipe_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_crafting_section.add_child(_crafting_recipe_label)
+	var pending_row := HBoxContainer.new()
+	pending_row.name = "CraftingPendingRow"
+	pending_row.add_theme_constant_override("separation", 8)
+	_crafting_section.add_child(pending_row)
+	_crafting_pending_label = Label.new()
+	_crafting_pending_label.name = "CraftingPendingLabel"
+	_crafting_pending_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_crafting_pending_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	pending_row.add_child(_crafting_pending_label)
+	_crafting_harvest_button = Button.new()
+	_crafting_harvest_button.name = "CraftingHarvestButton"
+	_crafting_harvest_button.text = "查看并收取"
+	_crafting_harvest_button.custom_minimum_size.x = 108.0
+	_crafting_harvest_button.pressed.connect(_on_crafting_harvest_pressed)
+	pending_row.add_child(_crafting_harvest_button)
 	_crafting_stage_label = Label.new()
 	_crafting_stage_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_crafting_section.add_child(_crafting_stage_label)
@@ -706,8 +724,19 @@ func _refresh_crafting_section() -> void:
 		_crafting_status_label.text = "制造系统不可用"
 		_crafting_status_label.visible = true
 		_crafting_target_select.disabled = true
+		_crafting_pending_label.text = "待收取：制造系统不可用"
+		_crafting_harvest_button.disabled = true
 		return
 	var project: Dictionary = crafting_system.get_project_snapshot(_current_building_id) if crafting_system.has_method("get_project_snapshot") else {}
+	var pending_total := int(project.get("pending_output_total", 0))
+	var pending_entries: Array = crafting_system.get_pending_output_entries(_current_building_id) if crafting_system.has_method("get_pending_output_entries") else []
+	var pending_names: Array[String] = []
+	for raw_entry in pending_entries:
+		if raw_entry is Dictionary:
+			pending_names.append("%s×%d" % [str(raw_entry.get("name", raw_entry.get("item_id", "成品"))), int(raw_entry.get("amount", 0))])
+	_crafting_pending_label.text = "待收取：%d 件%s" % [pending_total, "（%s）" % "、".join(pending_names) if not pending_names.is_empty() else ""]
+	_crafting_harvest_button.disabled = pending_total <= 0
+	_crafting_harvest_button.tooltip_text = "打开待收取成品面板" if pending_total > 0 else "当前没有待收取成品"
 	var current_recipe_id := str(project.get("target_recipe_id", project.get("recipe_id", "")))
 	_fill_crafting_target_options(crafting_system, current_recipe_id)
 	_crafting_target_select.disabled = false
@@ -744,6 +773,12 @@ func _refresh_crafting_section() -> void:
 	_crafting_worker_label.text = "当前工人：%s" % _format_crafting_workers(project.get("active_workers", []))
 	_crafting_status_label.text = ""
 	_crafting_status_label.visible = false
+
+
+func _on_crafting_harvest_pressed() -> void:
+	var dialog := get_node_or_null(CRAFTING_HARVEST_DIALOG_PATH)
+	if dialog != null and dialog.has_method("open_for_building"):
+		dialog.open_for_building(_current_building_id)
 
 
 func _make_crafting_alert_style(color: Color) -> StyleBoxFlat:
@@ -902,7 +937,9 @@ func debug_get_crafting_panel_snapshot() -> Dictionary:
 		"confirmation_visible": _crafting_confirmation != null and _crafting_confirmation.visible,
 		"pending_recipe_id": _crafting_pending_target_id,
 		"missing_target_alert_visible": _crafting_target_missing_alert != null and _crafting_target_missing_alert.visible,
-		"target_popup_visible": _crafting_target_select != null and _crafting_target_select.get_popup().visible
+		"target_popup_visible": _crafting_target_select != null and _crafting_target_select.get_popup().visible,
+		"pending_text": _crafting_pending_label.text if _crafting_pending_label != null else "",
+		"harvest_disabled": _crafting_harvest_button.disabled if _crafting_harvest_button != null else true
 	}
 
 

@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const ACTION_DEFS_FILE := "action_defs.json"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
@@ -3352,15 +3353,50 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 			return
 		var crafting_inputs: Dictionary = crafting_result.get("input_resources", {}) if crafting_result.get("input_resources", {}) is Dictionary else {}
 		var crafting_outputs: Dictionary = crafting_result.get("output_resources", {}) if crafting_result.get("output_resources", {}) is Dictionary else {}
+		var pending_crafting_outputs: Dictionary = crafting_result.get("pending_output_resources", {}) if crafting_result.get("pending_output_resources", {}) is Dictionary else {}
 		_apply_building_effects(action)
 		_apply_final_state_deltas(npc_id, active_action)
-		_improve_work_skill(npc_id, action)
+		var growth_result := _improve_work_skill(npc_id, action, false)
+		var feedback_entries := WorldFeedbackPayload.make_resource_transaction_entries(
+			resource_system,
+			crafting_inputs,
+			crafting_outputs
+		)
+		if bool(crafting_result.get("product_completed", false)):
+			for raw_item_id in pending_crafting_outputs.keys():
+				var item_id := str(raw_item_id)
+				var presentation: Dictionary = (
+					crafting_system.get_output_item_presentation(item_id)
+					if crafting_system.has_method("get_output_item_presentation")
+					else {}
+				)
+				feedback_entries.append({
+					"kind": "resource",
+					"id": item_id,
+					"display_name": "%s（待收取）" % str(presentation.get("name", crafting_result.get("target_name", item_id))),
+					"amount": absi(int(pending_crafting_outputs[raw_item_id])),
+					"color_role": "gain",
+					"icon_path": str(presentation.get("icon_path", ""))
+				})
+		else:
+			var completed_stage: Dictionary = crafting_result.get("completed_stage", {}) if crafting_result.get("completed_stage", {}) is Dictionary else {}
+			var total_stages := int((crafting_result.get("project", {}) as Dictionary).get("total_stages", 0)) if crafting_result.get("project", {}) is Dictionary else 0
+			feedback_entries.append({
+				"kind": "value",
+				"display_name": "阶段完成",
+				"amount": 1,
+				"color_role": "gain",
+				"text_override": "阶段完成 %d/%d" % [int(completed_stage.get("index", 0)), total_stages]
+			})
+		WorldFeedbackPayload.append_growth_entries(feedback_entries, growth_result)
+		WorldFeedbackPayload.emit_npc(self, npc_id, "work_transaction", feedback_entries)
 		_release_workstation_for_action(npc_id, active_action)
 		_set_action_idle(npc_id, "completed_%s" % str(action.get("id", "work")))
 		_log_structured_action_event(npc_id, action, "work_completed", {
 			"action_id": str(action.get("id", "")),
 			"input_resources": crafting_inputs,
 			"output_resources": crafting_outputs,
+			"pending_output_resources": pending_crafting_outputs,
 			"building_id": building_id,
 			"workstation_id": str(active_action.get("workstation_id", "")),
 			"recipe_id": str(crafting_result.get("recipe_id", active_action.get("crafting_recipe_id", ""))),
@@ -3435,7 +3471,14 @@ func _complete_work(npc_id: String, active_action: Dictionary) -> void:
 
 	_apply_building_effects(action)
 	_apply_final_state_deltas(npc_id, active_action)
-	_improve_work_skill(npc_id, action)
+	var growth_result := _improve_work_skill(npc_id, action, false)
+	var feedback_entries := WorldFeedbackPayload.make_resource_transaction_entries(
+		resource_system,
+		input_resources,
+		output_resources
+	)
+	WorldFeedbackPayload.append_growth_entries(feedback_entries, growth_result)
+	WorldFeedbackPayload.emit_npc(self, npc_id, "work_transaction", feedback_entries)
 	_release_workstation_for_action(npc_id, active_action)
 	_set_action_idle(npc_id, "completed_%s" % str(action.get("id", "work")))
 	_log_structured_action_event(npc_id, action, "work_completed", {
@@ -3534,6 +3577,15 @@ func _start_eat(npc_id: String, action: Dictionary) -> bool:
 			_end_formal_spatial_workstation_action(npc_id, "eat_food_changed_before_commit")
 		_fail_eat_no_food(npc_id, action, false)
 		return false
+	var eat_resource_entry := WorldFeedbackPayload.make_resource_entry(
+		resource_system,
+		resource_id,
+		-cost,
+		"consume"
+	)
+	if not eat_resource_entry.is_empty():
+		var eat_resource_entries: Array[Dictionary] = [eat_resource_entry]
+		WorldFeedbackPayload.emit_npc(self, npc_id, "eat_resource", eat_resource_entries)
 
 	npc_system.update_npc_state(npc_id, {
 		"current_action": str(action.get("id", "eat")),
@@ -4450,7 +4502,8 @@ func _apply_progress_state_deltas(npc_id: String, active_action: Dictionary) -> 
 		var delta_to_apply := target_applied - already_applied
 		if delta_to_apply == 0:
 			continue
-		_apply_single_state_delta(npc_id, str(state_key), delta_to_apply)
+		var actual_delta := _apply_single_state_delta(npc_id, str(state_key), delta_to_apply)
+		_emit_action_state_feedback(npc_id, active_action, str(state_key), actual_delta)
 		applied[state_key] = target_applied
 	active_action["applied_state_deltas"] = applied
 	_active_actions[npc_id] = active_action
@@ -4464,7 +4517,8 @@ func _apply_final_state_deltas(npc_id: String, active_action: Dictionary) -> voi
 		var already_applied := int(applied.get(state_key, 0))
 		var delta_to_apply := total_delta - already_applied
 		if delta_to_apply != 0:
-			_apply_single_state_delta(npc_id, str(state_key), delta_to_apply)
+			var actual_delta := _apply_single_state_delta(npc_id, str(state_key), delta_to_apply)
+			_emit_action_state_feedback(npc_id, active_action, str(state_key), actual_delta)
 
 
 func _get_action_duration_seconds(action: Dictionary) -> float:
@@ -4723,15 +4777,32 @@ func _apply_building_effects(action: Dictionary) -> void:
 		building_system.restore_building_hp(building_id, hp_restore)
 
 
-func _apply_single_state_delta(npc_id: String, state_key: String, delta: int) -> void:
+func _apply_single_state_delta(npc_id: String, state_key: String, delta: int) -> int:
 	var npc_system := _get_npc_system()
 	if npc_system == null:
-		return
+		return 0
 
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var current_value := int(state.get(state_key, 0))
 	var next_value := clampi(current_value + delta, 0, 100)
 	npc_system.set_npc_state_value(npc_id, state_key, next_value)
+	return next_value - current_value
+
+
+func _emit_action_state_feedback(
+	npc_id: String,
+	active_action: Dictionary,
+	state_key: String,
+	actual_delta: int
+) -> void:
+	var action: Dictionary = active_action.get("action", {})
+	if str(action.get("type", "")) != "eat" or state_key != "satiety" or actual_delta <= 0:
+		return
+	var entry := WorldFeedbackPayload.make_value_entry("饱食", actual_delta, "neutral")
+	if entry.is_empty():
+		return
+	var entries: Array[Dictionary] = [entry]
+	WorldFeedbackPayload.emit_npc(self, npc_id, "needs", entries, true)
 
 
 func _set_action_idle(npc_id: String, last_result: String) -> void:
@@ -5426,19 +5497,42 @@ func _improve_npc_skill(npc_id: String, skill_name: String, amount: int, reason:
 	_improve_npc_skill_at_location(npc_id, skill_name, amount, reason, TRAINING_LOCATION_ID)
 
 
-func _improve_work_skill(npc_id: String, action: Dictionary) -> void:
+func _improve_work_skill(
+	npc_id: String,
+	action: Dictionary,
+	emit_world_feedback: bool = true
+) -> Dictionary:
 	var skill_name := str(action.get("skill", ""))
 	if skill_name.is_empty():
-		return
-	_improve_npc_skill_at_location(npc_id, skill_name, 1, "work_completed", str(action.get("location_required", PLAZA_LOCATION_ID)))
+		return {}
+	return _improve_npc_skill_at_location(
+		npc_id,
+		skill_name,
+		1,
+		"work_completed",
+		str(action.get("location_required", PLAZA_LOCATION_ID)),
+		emit_world_feedback
+	)
 
 
-func _improve_npc_skill_at_location(npc_id: String, skill_name: String, amount: int, reason: String, location_id: String) -> Dictionary:
+func _improve_npc_skill_at_location(
+	npc_id: String,
+	skill_name: String,
+	amount: int,
+	reason: String,
+	location_id: String,
+	emit_world_feedback: bool = true
+) -> Dictionary:
 	var npc_system := _get_npc_system()
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("increase_npc_skill"):
 		return {}
-	var result: Dictionary = npc_system.increase_npc_skill(npc_id, skill_name, amount)
+	var result: Dictionary = npc_system.increase_npc_skill(
+		npc_id,
+		skill_name,
+		amount,
+		emit_world_feedback
+	)
 	if result.is_empty():
 		return {}
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -5602,7 +5696,7 @@ func _log_structured_action_event(npc_id: String, action: Dictionary, event_type
 			var target_npc_id := str(payload[key])
 			if not target_npc_id.is_empty() and not target_ids.has(target_npc_id):
 				target_ids.append(target_npc_id)
-	for key in ["input_resources", "output_resources", "required_resources"]:
+	for key in ["input_resources", "output_resources", "pending_output_resources", "required_resources"]:
 		if payload.has(key) and payload[key] is Dictionary:
 			for resource_id in (payload[key] as Dictionary).keys():
 				var resource_text := str(resource_id)

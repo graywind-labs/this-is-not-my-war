@@ -1,0 +1,11 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_male_sad_sigh_417750.mp3,npc_emotion_sad_male,Sad male sigh :(,pfranzen,https://freesound.org/s/417750/,CC-BY 4.0,confirmed,npc_emotion_sad_male,整段单次播放；从 NPC 位置发声,用户确认男性难过使用
+02_male_sad_despondent_336539.mp3,npc_emotion_sad_male,"Sigh, male",giddster,https://freesound.org/s/336539/,CC0,rejected,,不采用,用户已选择 01
+03_male_afraid_whimper_318077.mp3,npc_emotion_afraid_male,Whimper_Gasp_1_Male,Drkvixn91,https://freesound.org/s/318077/,CC0,confirmed,npc_emotion_afraid_male,整段单次播放；从 NPC 位置发声,用户确认男性害怕使用
+04_male_afraid_short_385819.mp3,npc_emotion_afraid_male,Ahh!!! - Scared Male Scream,Iceofdoom,https://freesound.org/s/385819/,CC-BY 4.0,rejected,,不采用,用户已选择 03
+05_male_surprised_gasp_271245.mp3,npc_emotion_surprised_male,Gasp Male,bertiehs,https://freesound.org/s/271245/,CC0,rejected,,不采用,用户已选择 06
+06_male_surprised_set_171942.mp3,npc_emotion_surprised_male,surprise_gasps.wav,esperar,https://freesound.org/s/171942/,CC0,confirmed,npc_emotion_surprised_male,只使用 00:01–00:02；单次播放；从 NPC 位置发声,用户确认男性惊讶使用
+07_male_confused_huh_530227.mp3,npc_emotion_confused_male,Male confused-elcharrua.m4a,elcharrua,https://freesound.org/s/530227/,CC-BY 4.0,confirmed,npc_emotion_confused_male,整段单次播放；从 NPC 位置发声,用户确认男性困惑使用
+08_male_confused_short_391967.mp3,npc_emotion_confused_male,huh? - male voice,ssierra1202,https://freesound.org/s/391967/,CC0,rejected,,不采用,用户已选择 07
+09_male_determined_affirmative_436109.mp3,npc_emotion_determined_male,Affirmative (3x),DrFortyseven,https://freesound.org/s/436109/,CC0,rejected,,不采用,用户已选择 10
+10_male_determined_grunt_204457.mp3,npc_emotion_determined_male,min-toPlayer B.mp3,ludist,https://freesound.org/s/204457/,CC-BY 3.0,confirmed,npc_emotion_determined_male,整段单次播放；从 NPC 位置发声,用户确认男性坚定使用

@@ -34,7 +34,7 @@ const EVENT_TYPES: Array[String] = [
 	"dialogue_turn", "dialogue_special_interaction_result", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
 	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state", "work_encouragement_result", "work_encouragement_boost_started", "work_encouragement_boost_ended",
-	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_damaged", "horse_died", "low_hp_triggered",
+	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_born", "horse_damaged", "horse_died", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "healing_failed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
@@ -86,6 +86,7 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"damage_taken": ["damage", "hp_before", "hp_after"],
 	"horse_damaged": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
 	"horse_died": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
+	"horse_born": ["horse_id", "horse_name", "template_id", "stable_slot_id", "named_by"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
 	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
@@ -1722,6 +1723,8 @@ func _format_summary(event: Dictionary) -> String:
 		return _format_building_or_plaza_state_summary(payload)
 	if event_type == "location_status_changed":
 		return _format_location_state_summary(payload)
+	if event_type == "horse_born":
+		return "一匹小马出生了，守备官给它取名为%s。" % str(payload.get("horse_name", "未命名"))
 	if event_type == "merchant_arrived":
 		return "%s在%s抵达后门，将停留到%s。" % [
 			str(payload.get("merchant_name", "商队")),
@@ -1763,6 +1766,14 @@ func _format_summary(event: Dictionary) -> String:
 		"work_started":
 			return "%s开始在%s进行%s。" % [actor, location, _get_action_name(str(payload.get("action_id", "")))]
 		"work_completed":
+			var pending_outputs: Dictionary = payload.get("pending_output_resources", {}) if payload.get("pending_output_resources", {}) is Dictionary else {}
+			if not pending_outputs.is_empty():
+				return "%s完成了%s，消耗%s，制成待收取的%s。" % [
+					actor,
+					_get_action_name(str(payload.get("action_id", ""))),
+					_format_resource_delta(payload.get("input_resources", {})),
+					_format_resource_delta(pending_outputs)
+				]
 			return "%s完成了%s，消耗%s，产出%s。" % [
 				actor,
 				_get_action_name(str(payload.get("action_id", ""))),

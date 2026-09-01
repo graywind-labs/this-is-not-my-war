@@ -30,3 +30,6 @@ __pycache__/
 /art_source/licenses/source_pages/
 /art_source/synty/
 /art_source/kaykit/
+
+# Locally installed third-party audio tooling; restore from its upstream distribution.
+/art_source/audio/tools/

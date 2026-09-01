@@ -25,6 +25,7 @@
 - 当多个 NPC 面对相同问题时，应优先从各自职业经验出发回应，例如马夫先想到马匹与退路、厨子先想到口粮与饭桌、医生先想到伤员与代价；不要生成可互换的通用士兵台词。
 - short_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部记忆，不是“最近若干条”抽样。experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是听见或看见的公开信息。
 - 每条短期记忆固定提供 type、summary、importance、day、time，并可能提供紧凑 details。summary 是程序确定性生成的完整事实表达；details 只补充摘要未充分表达的原因、指令变化、资源缺口等决策关键字段。没有 details 表示 summary 已足够，不得臆测已被程序省略的原始计划、地点快照、阵容或内部 ID。
+- 其中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能在上传前按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 给出 event_count、累计伤害、HP 首尾/最低值及首尾时间。聚合项表示这些事实真实发生了多次，不能误读成一次；其他类型仍逐条提供。
 - speaker_name、speaker_text 与 speaker_context 只描述本轮说话者已经说出口的话，以及目标 NPC 当场可观察到的外表和健康状态。供应商请求不提供 speaker_npc 或 target_npc 人物副本；即使其他输入中出现说话者未说出口的内部资料，也不得把它当成目标 NPC 知道的事实。
 - current_order 是守备官当前持续提出的指令，只能作为参考上下文。NPC 可以理解、质疑、拖延、调整或拒绝，但不能把它当成已经执行的事实，也不能越过行动白名单、资源、HP、地点、战斗策略或程序强制规则。
 - interrupted_activity_context 只在守备官的第一条有效消息确实打断目标 NPC 活动后出现，是仅供目标 NPC 本轮会话使用的私有运行时上下文，不是事件库、见闻库或长期记忆中的事件。activity_before_interruption 是守备官开口前真正正在进行或前往进行的活动；npc_state.current_action 此时即使已经是 talk_to_guard_officer，也只表示正在对话，绝不能据此谎称先前活动已经自然完成或自己已经睡醒。current_plan_activity 与 expected_activity_after_dialogue 是当前计划和“若对话没有使计划改变”的暂定恢复活动，不是已经发生或绝对保证会发生的事实；最终仍可能由对话后的计划修改判别调整。

@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const ACTOR_MOTION_SCENE := preload("res://scenes/debug/ActorMotionBody.tscn")
 const HORSE_DEFS_FILE := "horse_defs.json"
 const STABLE_BUILDING_ID := "stable"
@@ -25,6 +26,9 @@ const WORLD_CLICK_COLLISION_MASK := 4
 const WORLD_CLICK_RAY_LENGTH := 1000.0
 const RETURN_PATH_PICKUP_SEPARATION := 1.25
 const RIDER_ROUTE_RECOVERY_RETRY_MSEC := 500
+const WORLD_FEEDBACK_WHOLE_THRESHOLD := 1.0
+const WORLD_FEEDBACK_RATIO_THRESHOLD := 0.001
+const WORLD_FEEDBACK_EPSILON := 0.000001
 
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
@@ -72,13 +76,16 @@ var _stable_slots_by_level: Dictionary = {}
 var _balance: Dictionary = DEFAULT_BALANCE.duplicate(true)
 var _simulation_accumulator_seconds: float = 0.0
 var _next_foal_serial: int = 1
+var _next_birth_request_serial: int = 1
 var _last_stable_summary: Dictionary = {}
 var _building_summary_published: bool = false
 var _assignment_mutation_depth: int = 0
 var _rng := RandomNumberGenerator.new()
 var _event_bus: Node = null
 var _last_birth_failure_reason := ""
+var _pending_birth: Dictionary = {}
 var _horse_motion_actors: Dictionary = {}
+var _world_feedback_accumulators: Dictionary = {}
 
 
 func _ready() -> void:
@@ -115,10 +122,13 @@ func initialize() -> void:
 	_balance = DEFAULT_BALANCE.duplicate(true)
 	_simulation_accumulator_seconds = 0.0
 	_next_foal_serial = 1
+	_next_birth_request_serial = 1
 	_last_stable_summary.clear()
 	_building_summary_published = false
 	_assignment_mutation_depth = 0
 	_last_birth_failure_reason = ""
+	_pending_birth.clear()
+	_world_feedback_accumulators.clear()
 	_rng.randomize()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -182,6 +192,64 @@ func get_horse_snapshot(horse_id: String) -> Dictionary:
 
 func get_horse(horse_id: String) -> Dictionary:
 	return get_horse_snapshot(horse_id)
+
+
+func get_pending_birth_snapshot() -> Dictionary:
+	if _pending_birth.is_empty():
+		return {}
+	var horse: Dictionary = _pending_birth.get("horse", {})
+	return {
+		"request_id": str(_pending_birth.get("request_id", "")),
+		"horse_id": str(horse.get("horse_id", "")),
+		"template_id": str(horse.get("template_id", "")),
+		"default_name": str(horse.get("name", "")),
+		"coat_name": str(horse.get("coat_name", "")),
+		"stable_slot_id": str(horse.get("stable_slot_id", "")),
+		"source": str(_pending_birth.get("source", "natural")),
+	}
+
+
+func confirm_pending_foal_name(request_id: String, requested_name: String) -> Dictionary:
+	if _pending_birth.is_empty():
+		return _birth_name_failure("no_pending_birth", "当前没有等待命名的小马。")
+	if request_id != str(_pending_birth.get("request_id", "")):
+		return _birth_name_failure("stale_birth_request", "这次命名请求已经失效。")
+	var horse_name := requested_name.strip_edges()
+	if horse_name.is_empty():
+		return _birth_name_failure("empty_name", "名字不能为空。")
+	if horse_name.length() > 5:
+		return _birth_name_failure("name_too_long", "名字不能超过5个字。")
+	if _is_horse_name_in_use(horse_name):
+		return _birth_name_failure("duplicate_name", "这个名字已经被另一匹马使用。")
+
+	var horse: Dictionary = (_pending_birth.get("horse", {}) as Dictionary).duplicate(true)
+	var horse_id := str(horse.get("horse_id", ""))
+	if horse_id.is_empty() or _horses.has(horse_id):
+		return _birth_name_failure("invalid_pending_horse", "小马资料异常，暂时无法完成命名。")
+	var parent_ids: Array[String] = []
+	for raw_parent_id in _pending_birth.get("parent_horse_ids", []):
+		var parent_id := str(raw_parent_id)
+		if not parent_id.is_empty() and not parent_ids.has(parent_id):
+			parent_ids.append(parent_id)
+	horse["name"] = horse_name
+	_horses[horse_id] = horse
+	_horse_order.append(horse_id)
+	_pending_birth.clear()
+
+	var changed_horse_ids := {}
+	_start_birth_cooldown(parent_ids, changed_horse_ids)
+	for changed_horse_id in changed_horse_ids.keys():
+		_emit_horse_state_changed(str(changed_horse_id))
+	_emit_horse_state_changed(horse_id)
+	var event := _log_horse_birth(horse)
+	_publish_stable_summary()
+	return {
+		"ok": true,
+		"horse_id": horse_id,
+		"horse": get_horse_snapshot(horse_id),
+		"parent_horse_ids": parent_ids,
+		"event": event,
+	}
 
 
 func get_horses_snapshot() -> Array[Dictionary]:
@@ -541,6 +609,7 @@ func apply_damage_to_horse(horse_id: String, damage: float, context: Dictionary 
 	if not bool(horse.get("alive", true)):
 		return {"ok": false, "reason": "horse_dead", "horse_id": horse_id}
 	var hp_before := float(horse.get("hp", 0.0))
+	var feedback_world_position: Variant = _resolve_horse_world_position(horse_id, horse)
 	var applied_damage := minf(damage, hp_before)
 	var bonus_before := float(horse.get("care_bonus_hp", 0.0))
 	var bonus_damage := minf(applied_damage, bonus_before)
@@ -560,6 +629,14 @@ func apply_damage_to_horse(horse_id: String, damage: float, context: Dictionary 
 	else:
 		_log_horse_damage_event(horse_id, rider_npc_id, applied_damage, hp_before, float(horse.get("hp", 0.0)), false, context)
 	_emit_horse_state_changed(horse_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"horse",
+		horse_id,
+		hp_before,
+		float(_horses.get(horse_id, {}).get("hp", 0.0)),
+		feedback_world_position
+	)
 	return {
 		"ok": true,
 		"horse_id": horse_id,
@@ -675,22 +752,11 @@ func debug_force_birth() -> Dictionary:
 			"occupied_slots": _get_alive_horse_count(),
 		}
 	var parent_ids := _get_stable_breeding_candidate_ids()
-	var horse_id := _spawn_foal()
-	if horse_id.is_empty():
+	var request := _request_foal_naming(parent_ids, "debug")
+	if not bool(request.get("ok", false)):
 		return {"ok": false, "reason": _last_birth_failure_reason if not _last_birth_failure_reason.is_empty() else "birth_failed"}
-	var changed_horse_ids := {}
-	changed_horse_ids[horse_id] = true
-	_start_birth_cooldown(parent_ids, changed_horse_ids)
-	for changed_horse_id in changed_horse_ids.keys():
-		_emit_horse_state_changed(str(changed_horse_id))
-	_publish_stable_summary()
-	return {
-		"ok": true,
-		"forced": true,
-		"horse_id": horse_id,
-		"horse": get_horse_snapshot(horse_id),
-		"parent_horse_ids": parent_ids,
-	}
+	request["forced"] = true
+	return request
 
 
 func debug_ensure_horses(definitions: Array) -> Dictionary:
@@ -816,6 +882,7 @@ func _advance_simulation(game_seconds: float) -> void:
 			_roll_births_for_minute(caretaker, changed_horse_ids)
 	for horse_id in changed_horse_ids.keys():
 		_emit_horse_state_changed(str(horse_id))
+	_flush_world_feedback_accumulators()
 	_publish_stable_summary()
 
 
@@ -835,16 +902,19 @@ func _advance_horse_ecology(game_seconds: float, changed_horse_ids: Dictionary) 
 		horse["breeding_cooldown_remaining_seconds"] = breeding_cooldown
 		if breeding_cooldown > 0.0:
 			horse["breeding_probability"] = 0.0
+			_clear_world_feedback_field(horse_id, "breeding_probability")
 		var satiety_loss_rate := _balance_float("stable_satiety_loss_per_hour")
 		if location != LOCATION_STABLE:
 			satiety_loss_rate = _balance_float("outside_satiety_loss_per_hour")
 		var satiety := float(horse.get("satiety", 0.0))
 		satiety = maxf(0.0, satiety - satiety_loss_rate * game_seconds / 3600.0)
 		horse["satiety"] = satiety
-		_apply_natural_healing(horse, game_seconds)
+		var natural_recovery := _apply_natural_healing(horse, game_seconds)
+		_record_world_feedback_delta(horse_id, "hp", float(natural_recovery.get("hp", 0.0)))
+		_record_world_feedback_delta(horse_id, "satiety", float(natural_recovery.get("satiety", 0.0)))
 
 		if location == LOCATION_STABLE:
-			_advance_feeding(horse, game_seconds)
+			_advance_feeding(horse_id, horse, game_seconds)
 		else:
 			horse["feeding"] = _make_idle_feeding_state()
 
@@ -854,14 +924,14 @@ func _advance_horse_ecology(game_seconds: float, changed_horse_ids: Dictionary) 
 			changed_horse_ids[horse_id] = true
 
 
-func _apply_natural_healing(horse: Dictionary, game_seconds: float) -> void:
+func _apply_natural_healing(horse: Dictionary, game_seconds: float) -> Dictionary:
 	var hp := float(horse.get("hp", 0.0))
 	var natural_max_hp := _calculate_natural_max_hp(float(horse.get("growth", 0.0)))
 	var care_bonus_hp := float(horse.get("care_bonus_hp", 0.0))
 	var natural_hp := maxf(0.0, hp - care_bonus_hp)
 	var missing_natural_hp := maxf(0.0, natural_max_hp - natural_hp)
 	if missing_natural_hp <= 0.0:
-		return
+		return {}
 
 	var heal_amount := minf(
 		missing_natural_hp,
@@ -871,17 +941,22 @@ func _apply_natural_healing(horse: Dictionary, game_seconds: float) -> void:
 	if satiety_cost_per_hp > 0.0:
 		heal_amount = minf(heal_amount, float(horse.get("satiety", 0.0)) / satiety_cost_per_hp)
 	if heal_amount <= 0.0:
-		return
+		return {}
 
+	var satiety_before := float(horse.get("satiety", 0.0))
 	horse["hp"] = hp + heal_amount
 	if satiety_cost_per_hp > 0.0:
-		horse["satiety"] = maxf(
+			horse["satiety"] = maxf(
 			0.0,
 			float(horse.get("satiety", 0.0)) - heal_amount * satiety_cost_per_hp
-		)
+			)
+	return {
+		"hp": float(horse.get("hp", hp)) - hp,
+		"satiety": float(horse.get("satiety", satiety_before)) - satiety_before,
+	}
 
 
-func _advance_feeding(horse: Dictionary, game_seconds: float) -> void:
+func _advance_feeding(horse_id: String, horse: Dictionary, game_seconds: float) -> void:
 	var feeding: Dictionary = (
 		(horse.get("feeding", {}) as Dictionary).duplicate(true)
 		if horse.get("feeding", {}) is Dictionary
@@ -889,10 +964,8 @@ func _advance_feeding(horse: Dictionary, game_seconds: float) -> void:
 	)
 	if bool(feeding.get("waiting_for_grain", false)):
 		if _try_spend_horse_feed():
-			horse["satiety"] = minf(
-				_calculate_max_satiety(float(horse.get("growth", 0.0))),
-				float(horse.get("satiety", 0.0)) + _balance_float("feeding_satiety_restore")
-			)
+			var satiety_restored := _apply_horse_feed_restore(horse)
+			_emit_horse_feeding_feedback(horse_id, horse, satiety_restored)
 			horse["feeding"] = _make_idle_feeding_state()
 		else:
 			feeding["active"] = false
@@ -908,10 +981,8 @@ func _advance_feeding(horse: Dictionary, game_seconds: float) -> void:
 		if elapsed + 0.0001 >= duration:
 			var spent_grain := _try_spend_horse_feed()
 			if spent_grain:
-				horse["satiety"] = minf(
-					_calculate_max_satiety(float(horse.get("growth", 0.0))),
-					float(horse.get("satiety", 0.0)) + _balance_float("feeding_satiety_restore")
-				)
+				var satiety_restored := _apply_horse_feed_restore(horse)
+				_emit_horse_feeding_feedback(horse_id, horse, satiety_restored)
 				feeding = _make_idle_feeding_state()
 			else:
 				feeding["active"] = false
@@ -942,6 +1013,45 @@ func _try_spend_horse_feed() -> bool:
 	))
 
 
+func _apply_horse_feed_restore(horse: Dictionary) -> float:
+	var satiety_before := float(horse.get("satiety", 0.0))
+	horse["satiety"] = minf(
+		_calculate_max_satiety(float(horse.get("growth", 0.0))),
+		satiety_before + _balance_float("feeding_satiety_restore")
+	)
+	return maxf(0.0, float(horse.get("satiety", satiety_before)) - satiety_before)
+
+
+func _emit_horse_feeding_feedback(horse_id: String, horse: Dictionary, satiety_restored: float) -> void:
+	var entries: Array[Dictionary] = []
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	var grain_entry := WorldFeedbackPayload.make_resource_entry(
+		resource_system,
+		GRAIN_RESOURCE_ID,
+		-_balance_int("feeding_grain_cost"),
+		"consume"
+	)
+	if not grain_entry.is_empty():
+		entries.append(grain_entry)
+	var satiety_entry := WorldFeedbackPayload.make_value_entry(
+		"饱食",
+		satiety_restored,
+		"neutral"
+	)
+	if not satiety_entry.is_empty():
+		entries.append(satiety_entry)
+	WorldFeedbackPayload.emit_anchor(
+		self,
+		"horse",
+		horse_id,
+		WorldFeedbackPayload.HORSE_ANCHOR_HEIGHT,
+		"horse_feeding",
+		entries,
+		true,
+		_resolve_horse_world_position(horse_id, horse)
+	)
+
+
 func _advance_care(
 	game_seconds: float,
 	caretaker: Dictionary,
@@ -964,6 +1074,7 @@ func _advance_care(
 			continue
 		var before := horse.duplicate(true)
 		var old_growth := clampf(float(horse.get("growth", 0.0)), 0.0, 1.0)
+		var old_care_bonus_hp := float(horse.get("care_bonus_hp", 0.0))
 		var old_natural_max_hp := _calculate_natural_max_hp(old_growth)
 		var new_growth := minf(1.0, old_growth + growth_delta)
 		if new_growth > old_growth:
@@ -984,6 +1095,21 @@ func _advance_care(
 
 		_normalize_horse_runtime(horse)
 		_horses[horse_id] = horse
+		_record_world_feedback_delta(
+			horse_id,
+			"growth",
+			float(horse.get("growth", old_growth)) - old_growth
+		)
+		_record_world_feedback_delta(
+			horse_id,
+			"hp",
+			maxf(0.0, _calculate_natural_max_hp(float(horse.get("growth", old_growth))) - old_natural_max_hp)
+		)
+		_record_world_feedback_delta(
+			horse_id,
+			"extra_hp",
+			float(horse.get("care_bonus_hp", old_care_bonus_hp)) - old_care_bonus_hp
+		)
 		if before != horse:
 			changed_horse_ids[horse_id] = true
 
@@ -1014,6 +1140,8 @@ func _roll_births_for_minute(caretaker: Dictionary, changed_horse_ids: Dictionar
 		horse["breeding_probability"] = minf(probability_cap, before_probability + probability_gain)
 		_normalize_horse_runtime(horse)
 		_horses[horse_id] = horse
+		var actual_probability_gain := float(horse.get("breeding_probability", 0.0)) - before_probability
+		_record_world_feedback_delta(horse_id, "breeding_probability", actual_probability_gain)
 		if not is_equal_approx(before_probability, float(horse.get("breeding_probability", 0.0))):
 			changed_horse_ids[horse_id] = true
 
@@ -1027,10 +1155,10 @@ func _roll_births_for_minute(caretaker: Dictionary, changed_horse_ids: Dictionar
 		var parent: Dictionary = _horses.get(parent_id, {})
 		if _rng.randf() >= float(parent.get("breeding_probability", 0.0)):
 			continue
-		var horse_id := _spawn_foal()
-		if not horse_id.is_empty():
-			changed_horse_ids[horse_id] = true
-			_start_birth_cooldown(candidate_ids, changed_horse_ids)
+		var request := _request_foal_naming(candidate_ids, "natural")
+		if bool(request.get("ok", false)):
+			# The slot and template are reserved now; cooldown and official state begin only after naming.
+			return
 		return
 
 
@@ -1058,7 +1186,114 @@ func _start_birth_cooldown(parent_ids: Array[String], changed_horse_ids: Diction
 		horse["breeding_cooldown_remaining_seconds"] = cooldown_seconds
 		_normalize_horse_runtime(horse)
 		_horses[horse_id] = horse
+		_clear_world_feedback_field(horse_id, "breeding_probability")
 		changed_horse_ids[horse_id] = true
+
+
+func _record_world_feedback_delta(horse_id: String, field: String, delta: float) -> void:
+	if horse_id.is_empty() or field.is_empty() or absf(delta) <= WORLD_FEEDBACK_EPSILON:
+		return
+	var pending: Dictionary = (
+		(_world_feedback_accumulators.get(horse_id, {}) as Dictionary).duplicate(true)
+		if _world_feedback_accumulators.get(horse_id, {}) is Dictionary
+		else {}
+	)
+	pending[field] = float(pending.get(field, 0.0)) + delta
+	_world_feedback_accumulators[horse_id] = pending
+
+
+func _clear_world_feedback_field(horse_id: String, field: String) -> void:
+	if not _world_feedback_accumulators.has(horse_id):
+		return
+	var pending: Dictionary = _world_feedback_accumulators[horse_id]
+	pending.erase(field)
+	if pending.is_empty():
+		_world_feedback_accumulators.erase(horse_id)
+	else:
+		_world_feedback_accumulators[horse_id] = pending
+
+
+func _flush_world_feedback_accumulators() -> void:
+	for raw_horse_id in _world_feedback_accumulators.keys():
+		var horse_id := str(raw_horse_id)
+		var horse: Dictionary = _horses.get(horse_id, {})
+		if horse.is_empty() or not bool(horse.get("alive", true)):
+			_world_feedback_accumulators.erase(horse_id)
+			continue
+		var pending: Dictionary = _world_feedback_accumulators.get(horse_id, {})
+		var entries: Array[Dictionary] = []
+		_append_visible_whole_feedback(entries, pending, "hp", "HP", "heal")
+		_append_visible_whole_feedback(entries, pending, "satiety", "饱食", "neutral")
+		_append_visible_whole_feedback(entries, pending, "extra_hp", "额外HP", "heal")
+		_append_visible_ratio_feedback(entries, pending, "growth", "成长")
+		_append_visible_ratio_feedback(entries, pending, "breeding_probability", "繁育概率")
+		if pending.is_empty():
+			_world_feedback_accumulators.erase(horse_id)
+		else:
+			_world_feedback_accumulators[horse_id] = pending
+		if entries.is_empty():
+			continue
+		WorldFeedbackPayload.emit_anchor(
+			self,
+			"horse",
+			horse_id,
+			WorldFeedbackPayload.HORSE_ANCHOR_HEIGHT,
+			"horse_ecology",
+			entries,
+			true,
+			_resolve_horse_world_position(horse_id, horse)
+		)
+
+
+func _append_visible_whole_feedback(
+	entries: Array[Dictionary],
+	pending: Dictionary,
+	field: String,
+	display_name: String,
+	color_role: String
+) -> void:
+	var accumulated := float(pending.get(field, 0.0))
+	var visible_units := floori(absf(accumulated) + WORLD_FEEDBACK_EPSILON)
+	if visible_units < int(WORLD_FEEDBACK_WHOLE_THRESHOLD):
+		return
+	var visible_amount := float(visible_units) * (1.0 if accumulated > 0.0 else -1.0)
+	var entry := WorldFeedbackPayload.make_value_entry(display_name, visible_amount, color_role)
+	if not entry.is_empty():
+		entries.append(entry)
+	_set_world_feedback_remainder(pending, field, accumulated - visible_amount)
+
+
+func _append_visible_ratio_feedback(
+	entries: Array[Dictionary],
+	pending: Dictionary,
+	field: String,
+	display_name: String
+) -> void:
+	var accumulated := float(pending.get(field, 0.0))
+	var visible_units := floori(
+		absf(accumulated) / WORLD_FEEDBACK_RATIO_THRESHOLD + WORLD_FEEDBACK_EPSILON
+	)
+	if visible_units <= 0:
+		return
+	var visible_ratio := float(visible_units) * WORLD_FEEDBACK_RATIO_THRESHOLD
+	if accumulated < 0.0:
+		visible_ratio *= -1.0
+	var entry := WorldFeedbackPayload.make_value_entry(
+		display_name,
+		visible_ratio * 100.0,
+		"neutral",
+		"%"
+	)
+	if not entry.is_empty():
+		entries.append(entry)
+	_set_world_feedback_remainder(pending, field, accumulated - visible_ratio)
+
+
+func _set_world_feedback_remainder(pending: Dictionary, field: String, remainder: float) -> void:
+	if absf(remainder) <= WORLD_FEEDBACK_EPSILON:
+		pending.erase(field)
+	else:
+		pending[field] = remainder
 
 
 func _get_effective_caretaker_snapshot() -> Dictionary:
@@ -1868,6 +2103,7 @@ func _handle_horse_death(horse_id: String, rider_npc_id: String, context: Dictio
 	horse["movement_state"] = _make_idle_movement_state()
 	horse["stable_slot_id"] = ""
 	_horses[horse_id] = horse
+	_world_feedback_accumulators.erase(horse_id)
 	var projection_result := {}
 	if not assigned_npc_id.is_empty():
 		projection_result = _clear_equipment_mount_projection(assigned_npc_id, "horse_died", false)
@@ -2001,14 +2237,14 @@ func _find_assigned_horse_id(npc_id: String) -> String:
 	return ""
 
 
-func _spawn_foal() -> String:
+func _request_foal_naming(parent_ids: Array[String], source: String) -> Dictionary:
 	_last_birth_failure_reason = _get_birth_block_reason()
 	if not _last_birth_failure_reason.is_empty():
-		return ""
+		return {"ok": false, "reason": _last_birth_failure_reason}
 	var template_id := _find_next_unused_template_id()
 	if template_id.is_empty():
 		_last_birth_failure_reason = "horse_template_pool_exhausted"
-		return ""
+		return {"ok": false, "reason": _last_birth_failure_reason}
 	var horse_id := ""
 	while horse_id.is_empty() or _horses.has(horse_id):
 		horse_id = "horse_foal_%03d" % _next_foal_serial
@@ -2020,11 +2256,24 @@ func _spawn_foal() -> String:
 	})
 	if horse.is_empty():
 		_last_birth_failure_reason = "birth_failed"
-		return ""
-	_horses[horse_id] = horse
-	_horse_order.append(horse_id)
+		return {"ok": false, "reason": _last_birth_failure_reason}
+	var request_id := "horse_birth_%03d" % _next_birth_request_serial
+	_next_birth_request_serial += 1
+	_pending_birth = {
+		"request_id": request_id,
+		"horse": horse.duplicate(true),
+		"parent_horse_ids": parent_ids.duplicate(),
+		"source": source,
+	}
 	_last_birth_failure_reason = ""
-	return horse_id
+	var request := get_pending_birth_snapshot()
+	request["ok"] = true
+	request["pending_naming"] = true
+	request["parent_horse_ids"] = parent_ids.duplicate()
+	var event_bus := _get_event_bus()
+	if event_bus != null and event_bus.has_signal("horse_birth_naming_requested"):
+		event_bus.horse_birth_naming_requested.emit(request.duplicate(true))
+	return request
 
 
 func _make_horse_from_definition(definition: Dictionary) -> Dictionary:
@@ -2304,6 +2553,8 @@ func _is_stable_full() -> bool:
 
 
 func _get_birth_block_reason() -> String:
+	if not _pending_birth.is_empty():
+		return "birth_naming_pending"
 	if _is_stable_full():
 		return "stable_full"
 	if _find_next_unused_template_id().is_empty():
@@ -2311,6 +2562,46 @@ func _get_birth_block_reason() -> String:
 	if _find_next_free_stable_slot_id().is_empty():
 		return "stable_full"
 	return ""
+
+
+func _is_horse_name_in_use(horse_name: String) -> bool:
+	for horse_id in _horse_order:
+		if str((_horses.get(horse_id, {}) as Dictionary).get("name", "")) == horse_name:
+			return true
+	return false
+
+
+func _birth_name_failure(reason: String, message: String) -> Dictionary:
+	return {
+		"ok": false,
+		"reason": reason,
+		"message": message,
+		"pending_birth": get_pending_birth_snapshot(),
+	}
+
+
+func _log_horse_birth(horse: Dictionary) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	if memory_system == null or not memory_system.has_method("add_event"):
+		return {}
+	var horse_id := str(horse.get("horse_id", ""))
+	var horse_name := str(horse.get("name", horse_id))
+	return memory_system.add_event({
+		"type": "horse_born",
+		"subject_npc_id": "guard_officer",
+		"actor_ids": ["guard_officer"],
+		"target_ids": [horse_id, LOCATION_STABLE],
+		"location_id": LOCATION_STABLE,
+		"visibility": "local_public",
+		"importance": 70,
+		"payload": {
+			"horse_id": horse_id,
+			"horse_name": horse_name,
+			"template_id": str(horse.get("template_id", "")),
+			"stable_slot_id": str(horse.get("stable_slot_id", "")),
+			"named_by": "guard_officer",
+		},
+	})
 
 
 func _find_next_free_stable_slot_id() -> String:

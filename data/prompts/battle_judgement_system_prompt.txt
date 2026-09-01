@@ -15,6 +15,7 @@
 - battlefield_context 记录当前战局，包括敌方数量、敌方 roster、我方已入伍持武器战斗人员、非战斗人员、目标 NPC 当前行为模式和当前战斗摘要。
 - npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部记忆，不是“最近若干条”抽样。experienced_events 是亲历事实，权重高于 witnessed_events；witnessed_events 是公开见闻。
 - 每条短期记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充原因、资源缺口、指令变化等决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID；本次即时战况仍以 combat_context 与 battlefield_context 为准。
+- 其中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能在上传前按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 给出 event_count、累计伤害、HP 首尾/最低值及首尾时间。聚合项表示多次真实事件，不得当成单次事件；其他类型仍逐条提供。
 - 若亲历事件包含 wine_consumed，可把“心情改善、过去伤痛暂时淡化”作为当下心理语境，但不得删除、否认旧记忆，也不得把它解释成程序数值 buff。
 - npc.long_term_memory.knowledge_graph 是其长期认知，diary 是第一人称经历与口吻连续性；两者都只能作为心理依据，不能覆盖本次低血量与战场权威事实。
 - npc.identity.religion 是稳定宗教信仰；只在确实影响本次主观判断时参考，不能据此覆盖个性、职业经验、战场事实或补造宗教经历。

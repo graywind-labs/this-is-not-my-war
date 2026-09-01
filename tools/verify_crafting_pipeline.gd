@@ -150,8 +150,15 @@ func _init() -> void:
 			_fail("Direct stage completion failed: %s" % JSON.stringify(stage_result))
 			return
 		project = crafting_system.get_project_snapshot("blacksmith")
-	if int(resource_system.get_resource("item_iron_helmet")) != item_before + 1:
-		_fail("Finished recipe did not enter the exact item_iron_helmet inventory")
+	if int(resource_system.get_resource("item_iron_helmet")) != item_before:
+		_fail("Finished recipe entered formal inventory before manual collection")
+		return
+	if int(crafting_system.get_pending_outputs("blacksmith").get("item_iron_helmet", 0)) != 1:
+		_fail("Finished recipe did not enter the blacksmith pending-output store")
+		return
+	var collection: Dictionary = crafting_system.collect_pending_outputs("blacksmith")
+	if not bool(collection.get("ok", false)) or int(resource_system.get_resource("item_iron_helmet")) != item_before + 1:
+		_fail("Manual collection did not atomically transfer the exact item_iron_helmet inventory")
 		return
 	if int(project.get("completed_stages", -1)) != 0 or str(project.get("target_recipe_id", "")) != "craft_iron_helmet":
 		_fail("Completed product should reset stages while retaining the selected target")

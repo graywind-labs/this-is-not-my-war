@@ -7,6 +7,15 @@ const EQUIPMENT_DETAIL_RESOURCE_IDS := [
 ]
 const DEVICE_DETAIL_RESOURCE_IDS := ["item_wall_ballista", "item_wall_arrow_tower"]
 const HIDDEN_RESOURCE_IDS := LEGACY_HIDDEN_RESOURCE_IDS + EQUIPMENT_DETAIL_RESOURCE_IDS + DEVICE_DETAIL_RESOURCE_IDS
+const MAIN_RESOURCE_ICON_PATHS := {
+	"money": "res://assets/ui/resource_icons/money.svg",
+	"grain": "res://assets/ui/resource_icons/grain.svg",
+	"meal": "res://assets/ui/resource_icons/meal.svg",
+	"wine": "res://assets/ui/resource_icons/wine.svg",
+	"wood": "res://assets/ui/resource_icons/wood.svg",
+	"stone": "res://assets/ui/resource_icons/stone.svg",
+	"iron": "res://assets/ui/resource_icons/iron.svg"
+}
 
 
 func _init() -> void:
@@ -54,8 +63,22 @@ func _init() -> void:
 				return
 			continue
 		var expected_name := str(resource_system.get_resource_name(resource_id))
-		if not _strip_contains(resource_strip, expected_name):
-			push_error("HUD resource strip is missing resource: %s" % expected_name)
+		var label := _get_resource_label(resource_strip, resource_id)
+		var icon := _get_resource_icon(resource_strip, resource_id)
+		var expected_icon_path := str(MAIN_RESOURCE_ICON_PATHS.get(resource_id, ""))
+		if (
+			label == null
+			or icon == null
+			or expected_icon_path.is_empty()
+			or not ResourceLoader.exists(expected_icon_path)
+			or icon.texture == null
+			or label.text != str(resource_system.get_resource(resource_id))
+			or label.text.contains(expected_name)
+			or not icon.tooltip_text.begins_with(expected_name)
+			or label.mouse_filter != Control.MOUSE_FILTER_IGNORE
+			or icon.mouse_filter != Control.MOUSE_FILTER_STOP
+		):
+			push_error("HUD resource should use an SVG icon, amount-only label, and icon tooltip: %s" % resource_id)
 			quit(1)
 			return
 
@@ -81,11 +104,13 @@ func _init() -> void:
 		resource_system.add_resource(str(resource_id), int(detail_amounts[resource_id]))
 	await process_frame
 
-	for expected_text in ["餐食 2", "酒 1"]:
-		if not _strip_contains(resource_strip, expected_text):
-			push_error("HUD did not refresh derived resource text: %s" % expected_text)
-			quit(1)
-			return
+	if (
+		_get_resource_label(resource_strip, "meal").text != "2"
+		or _get_resource_label(resource_strip, "wine").text != "1"
+	):
+		push_error("HUD did not refresh derived resource amounts")
+		quit(1)
+		return
 	for hidden_resource_id in HIDDEN_RESOURCE_IDS:
 		if _strip_has_resource_label(resource_strip, hidden_resource_id):
 			push_error("HUD should not show hidden resource in main strip: %s" % hidden_resource_id)
@@ -275,18 +300,30 @@ func _init() -> void:
 
 
 func _strip_contains(resource_strip: Node, expected_text: String) -> bool:
-	for child in resource_strip.get_children():
+	for child in resource_strip.find_children("*", "Label", true, false):
 		if child is Label and str(child.text).contains(expected_text):
 			return true
 	return false
 
 
 func _strip_has_resource_label(resource_strip: Node, resource_id: String) -> bool:
+	return _get_resource_label(resource_strip, resource_id) != null
+
+
+func _get_resource_label(resource_strip: Node, resource_id: String) -> Label:
 	var expected_node_name := "%sResourceLabel" % resource_id.to_pascal_case()
-	for child in resource_strip.get_children():
+	for child in resource_strip.find_children(expected_node_name, "Label", true, false):
 		if child is Label and str(child.name) == expected_node_name:
-			return true
-	return false
+			return child as Label
+	return null
+
+
+func _get_resource_icon(resource_strip: Node, resource_id: String) -> TextureRect:
+	var item_name := "%sResourceItem" % resource_id.to_pascal_case()
+	var item := resource_strip.find_child(item_name, true, false)
+	if item == null:
+		return null
+	return item.get_node_or_null("Icon") as TextureRect
 
 
 func _count_snapshot_items(items: Variant, item_id: String, assigned: bool) -> int:

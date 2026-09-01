@@ -1,5 +1,7 @@
 # Backend Schemas
 
+T0306 keeps the existing `EventSummary.details: dict[str, Any]` contract. Godot may place deterministic aggregation metadata there for five high-frequency combat event types (`event_count`, damage totals, first/last time, first/final/minimum HP, and terminal flags). The schema and Model Adapter preserve that dictionary; they do not aggregate raw events or alter authoritative records.
+
 T0116 adds `PlannedDialogueIntent`, `DialogueIntentRevalidationRequest`, and `DialogueIntentRevalidationResponse`. The planned item must exactly match the current hour in the 24-item plan and be `talk_to_npc` or `seek_guard_officer`. Only `modify` may return a non-empty changed `dialogue_goal`; `continue` and `cancel_and_replan` must leave it empty.
 
 T0106 changes `EventSummary` from an original-event carrier into a compact provider-facing projection. Current callers send `type`, deterministic `summary`, `importance`, optional `day/time`, and optional decision-relevant `details`; raw `payload` is no longer a schema field. `event_id` remains accepted only for legacy fixture/audit compatibility and is omitted by current Godot and provider projections. `ShortTermMemoryContext` still separates all current-index experienced and witnessed records, while reflection events additionally preserve `memory_kind`.

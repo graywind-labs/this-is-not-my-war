@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const DEVICE_DEFS_FILE := "defense_device_defs.json"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
@@ -395,6 +396,10 @@ func apply_damage_to_device(
 	if str(deployment.get("status", "")) != "active":
 		return {}
 	var hp_before := maxi(0, int(deployment.get("hp", 0)))
+	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(context)
+	var prefer_feedback_position := feedback_world_position is Vector3
+	if not prefer_feedback_position:
+		feedback_world_position = _dict_to_vector3(_make_deployment_snapshot(deployment).get("position", {}))
 	var resolved_damage := maxi(0, damage)
 	var hp_after := maxi(0, hp_before - resolved_damage)
 	var destroyed := hp_after <= 0
@@ -419,6 +424,16 @@ func apply_damage_to_device(
 		_register_device_ruin(slot_id, snapshot)
 		_deployments.erase(deployment_id)
 	_emit_state_changed()
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"defense_device",
+		deployment_id,
+		hp_before,
+		hp_after,
+		feedback_world_position,
+		prefer_feedback_position,
+		0.25 if prefer_feedback_position else WorldFeedbackPayload.DEFENSE_DEVICE_ANCHOR_HEIGHT
+	)
 	return {
 		"ok": true,
 		"deployment_id": deployment_id,

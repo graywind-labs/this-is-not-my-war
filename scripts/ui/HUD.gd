@@ -13,6 +13,7 @@ const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd"
 @onready var wave_countdown_label: Label = get_node_or_null("WaveCountdownLabel") as Label
 @onready var hud_frame: Panel = $HUDFrame
 @onready var escape_started_alert_dialog: AcceptDialog = %EscapeStartedAlertDialog
+@onready var npc_revived_alert_dialog: AcceptDialog = %NpcRevivedAlertDialog
 
 const DETAIL_PANEL_OFFSET := Vector2(0.0, 6.0)
 const DETAIL_PANEL_MINIMUM_SIZE := Vector2(500.0, 430.0)
@@ -27,7 +28,18 @@ const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
 const HUD_FRAME_CONTENT_PADDING := Vector2(12.0, 12.0)
 const SPEED_BUTTON_NORMAL_TOOLTIP := "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
+const RESOURCE_ICON_PATHS := {
+	"money": "res://assets/ui/resource_icons/money.svg",
+	"grain": "res://assets/ui/resource_icons/grain.svg",
+	"meal": "res://assets/ui/resource_icons/meal.svg",
+	"wine": "res://assets/ui/resource_icons/wine.svg",
+	"wood": "res://assets/ui/resource_icons/wood.svg",
+	"stone": "res://assets/ui/resource_icons/stone.svg",
+	"iron": "res://assets/ui/resource_icons/iron.svg"
+}
+const RESOURCE_ICON_SIZE := Vector2(22.0, 22.0)
 var _resource_labels: Dictionary = {}
+var _resource_icons: Dictionary = {}
 var _detail_panel: PanelContainer
 var _detail_title: Label
 var _detail_scroll: ScrollContainer
@@ -53,6 +65,7 @@ var _meteor_target_feedback_until_msec := 0
 var _last_clock_refresh_key := ""
 var _hud_frame_fit_pending := false
 var _escape_alert_queue: Array[Dictionary] = []
+var _npc_revived_alert_queue: Array[String] = []
 
 
 func _ready() -> void:
@@ -73,6 +86,9 @@ func _ready() -> void:
 	if escape_started_alert_dialog != null:
 		escape_started_alert_dialog.confirmed.connect(_on_escape_alert_closed)
 		escape_started_alert_dialog.close_requested.connect(_on_escape_alert_closed)
+	if npc_revived_alert_dialog != null:
+		npc_revived_alert_dialog.confirmed.connect(_on_npc_revived_alert_closed)
+		npc_revived_alert_dialog.close_requested.connect(_on_npc_revived_alert_closed)
 	var alarm_button := get_node_or_null("AlarmButton") as Button
 	if alarm_button != null:
 		alarm_button.focus_mode = Control.FOCUS_NONE
@@ -105,6 +121,8 @@ func _ready() -> void:
 			event_bus.npc_state_changed.connect(_on_npc_state_changed)
 		if event_bus.has_signal("npc_escape_started"):
 			event_bus.npc_escape_started.connect(_on_npc_escape_started)
+		if event_bus.has_signal("npc_revived"):
+			event_bus.npc_revived.connect(_on_npc_revived)
 		if event_bus.has_signal("horse_state_changed"):
 			event_bus.horse_state_changed.connect(_on_horse_state_changed)
 		if event_bus.has_signal("horse_assignment_changed"):
@@ -209,6 +227,30 @@ func _on_escape_alert_closed() -> void:
 	call_deferred("_show_next_escape_alert")
 
 
+func _on_npc_revived(npc_id: String) -> void:
+	if npc_id.is_empty():
+		return
+	_npc_revived_alert_queue.append(npc_id)
+	_show_next_npc_revived_alert()
+
+
+func _show_next_npc_revived_alert() -> void:
+	if npc_revived_alert_dialog == null or npc_revived_alert_dialog.visible or _npc_revived_alert_queue.is_empty():
+		return
+	var npc_id: String = _npc_revived_alert_queue.pop_front()
+	var npc_name: String = npc_id
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if npc_system != null and npc_system.has_method("get_npc"):
+		var profile: Dictionary = npc_system.get_npc(npc_id)
+		npc_name = str(profile.get("name", npc_id))
+	npc_revived_alert_dialog.dialog_text = "%s从昏迷中苏醒了。" % npc_name
+	npc_revived_alert_dialog.popup_centered()
+
+
+func _on_npc_revived_alert_closed() -> void:
+	call_deferred("_show_next_npc_revived_alert")
+
+
 func _on_horse_state_changed(_horse_id: String) -> void:
 	_refresh_open_inventory_detail("equipment")
 
@@ -311,7 +353,7 @@ func _refresh_resources() -> void:
 		for resource_id in _resource_labels.keys():
 			var label := _resource_labels[resource_id] as Label
 			if label != null:
-				label.text = "%s --" % str(resource_id)
+				label.text = "--"
 		_request_hud_frame_fit()
 		return
 
@@ -323,11 +365,9 @@ func _refresh_resources() -> void:
 		var label := _resource_labels.get(resource_id, null) as Label
 		if label == null:
 			continue
-		label.text = "%s %d" % [
-			resource_system.get_resource_name(resource_id),
-			resource_system.get_resource(resource_id)
-		]
-		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
+		label.text = str(resource_system.get_resource(resource_id))
+		var icon := _resource_icons.get(resource_id, null) as TextureRect
+		_refresh_resource_capacity_tooltip(icon, resource_system, resource_id)
 
 	if _detail_panel != null and _detail_panel.visible:
 		_refresh_detail_panel()
@@ -528,6 +568,7 @@ func _build_resource_strip() -> void:
 		resource_strip.remove_child(child)
 		child.free()
 	_resource_labels.clear()
+	_resource_icons.clear()
 
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
 	var resource_ids: Array = []
@@ -540,14 +581,34 @@ func _build_resource_strip() -> void:
 		var resource_id := str(raw_resource_id)
 		if not _should_show_resource_in_main_hud(resource_system, resource_id):
 			continue
+		var item := HBoxContainer.new()
+		item.name = "%sResourceItem" % resource_id.to_pascal_case()
+		item.layout_mode = 2
+		item.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item.add_theme_constant_override("separation", 4)
+
+		var icon := TextureRect.new()
+		icon.name = "Icon"
+		icon.layout_mode = 2
+		icon.custom_minimum_size = RESOURCE_ICON_SIZE
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_STOP
+		var icon_path := str(RESOURCE_ICON_PATHS.get(resource_id, ""))
+		if not icon_path.is_empty():
+			icon.texture = load(icon_path) as Texture2D
+		item.add_child(icon)
+
 		var label := Label.new()
 		label.name = "%sResourceLabel" % resource_id.to_pascal_case()
 		label.layout_mode = 2
-		label.text = "%s --" % _resource_display_name(resource_id)
-		label.mouse_filter = Control.MOUSE_FILTER_STOP
-		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
-		resource_strip.add_child(label)
+		label.text = "--"
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item.add_child(label)
+		_refresh_resource_capacity_tooltip(icon, resource_system, resource_id)
+		resource_strip.add_child(item)
 		_resource_labels[resource_id] = label
+		_resource_icons[resource_id] = icon
 
 	var equipment_button := _make_detail_button("装备", "equipment")
 	resource_strip.add_child(equipment_button)
@@ -620,23 +681,24 @@ func debug_get_hud_frame_layout_snapshot() -> Dictionary:
 
 
 func _refresh_resource_capacity_tooltip(
-	label: Label,
+	icon: Control,
 	resource_system: Node,
 	resource_id: String
 ) -> void:
+	var resource_name := _resource_display_name(resource_id)
 	if (
-		label == null
+		icon == null
 		or resource_system == null
 		or not resource_system.has_method("get_resource_capacity")
 	):
-		if label != null:
-			label.tooltip_text = ""
+		if icon != null:
+			icon.tooltip_text = resource_name
 		return
 	var capacity := int(resource_system.get_resource_capacity(resource_id))
-	label.tooltip_text = (
-		"仓库储存上限：%d" % capacity
+	icon.tooltip_text = (
+		"%s\n仓库储存上限：%d" % [resource_name, capacity]
 		if capacity >= 0
-		else ""
+		else resource_name
 	)
 
 

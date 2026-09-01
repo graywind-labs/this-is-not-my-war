@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_heavy_gate_open_close_336888.mp3,world_heavy_gate_open_close,Gate-Heavy-OpenClose-WAV.wav,Omnisis,https://freesound.org/s/336888/,CC0,rejected,,不采用,用户确认重门复用普通门开关声
+02_big_old_door_open_close_214307.mp3,world_heavy_gate_open_close,Opening and closing a big old door.wav,lazymonk,https://freesound.org/s/214307/,CC0,rejected,,不采用,用户确认重门复用普通门开关声
+03_heavy_wood_door_open_close_402464.mp3,world_heavy_gate_open_close,Door Open Close Heavy Wooden Medium Creak Seal Theatre,LampEight,https://freesound.org/s/402464/,CC0,rejected,,不采用,用户确认重门复用普通门开关声
+04_merchant_cart_arrival_wagon_480038.mp3,world_merchant_cart_arrival,R28-01-Large Wood Wagon By.wav,craigsmith,https://freesound.org/s/480038/,CC0,rejected,,不采用,商车来去移动统一改用第 15 批 07
+05_merchant_cart_arrival_pass_631829.mp3,world_merchant_cart_arrival,old horse drawn carriage drives past,Garuda1982,https://freesound.org/s/631829/,CC0,rejected,,不采用,商车来去移动统一改用第 15 批 07
+06_merchant_cart_arrival_stop_250288.mp3,world_merchant_cart_arrival,SE HORSE & wagon coming forward from far - stops - slow start - dynamic start.wav,SoundEnsemble,https://freesound.org/s/250288/,CC-BY 4.0,rejected,,不采用,商车来去移动统一改用第 15 批 07
+07_merchant_cart_depart_brief_388391.mp3,world_merchant_cart_departure,Horse and Carriage.mp3,maadmacs,https://freesound.org/s/388391/,CC0,rejected,,不采用,商车来去移动统一改用第 15 批 07；用户点名的 07_horse_trot_road_111301.mp3 实际位于第 15 批
+08_merchant_cart_depart_path_737643.mp3,world_merchant_cart_departure,Horse Carriage,Kraftaggregat,https://freesound.org/s/737643/,CC0,rejected,,不采用,商车来去移动统一改用第 15 批 07
+09_merchant_cart_depart_steady_437076.mp3,world_merchant_cart_departure,G52-07-Horse Drawn Carriage.wav,craigsmith,https://freesound.org/s/437076/,CC0,rejected,,不采用,商车来去移动统一改用第 15 批 07
+10_work_complete_anvil_521972.mp3,world_work_completion,Blacksmith Hammer,Kastenfrosch,https://freesound.org/s/521972/,CC0,rejected,,不采用,用户确认制造、修复、升级完成不需要音效
+11_work_complete_metal_wood_54850.mp3,world_work_completion,Rubber Metal Wood Impact Collision Bang,qubodup,https://freesound.org/s/54850/,CC0,rejected,,不采用,用户确认制造、修复、升级完成不需要音效
+12_work_complete_hammer_788237.mp3,world_work_completion,hammerHit_3,BBoz87,https://freesound.org/s/788237/,CC-BY 4.0,rejected,,不采用,用户确认制造、修复、升级完成不需要音效

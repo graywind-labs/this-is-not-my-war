@@ -1,5 +1,23 @@
 # PROMPTS.md
 
+## T0308 特殊互动相关性与台词一致性
+
+四类特殊 toggle 的字段、难度校准和程序效果不变，只收紧动态 Prompt。每个模块必须先仅依据本轮 `speaker_text` 判断是否明确涉及该互动，conversation history 只解析本轮明确指代；开关、人物状态、记忆和危险现场不能把资源 / 生活 / 路线等无关输入变成特殊结果。无关时立即按原话回复并返回 `none`，策略模块返回 `keep + 当前策略`。
+
+士气模块把“后撤到驿站内某处、保存体力并准备再接战”固定识别为战术调整，返回 `none`，不因低 HP 或恐惧扩写成 buff / 永久逃离。策略模块把明确、合法、无歧义的候选切换固定为 `change`；人物意见仍可自然进入 reply_text，但不能覆盖结构结果。士气 / 工作只有在 NPC 确实决定永久离站时才能返回 `escape`，且 reply_text 必须直接出现“离开驿站”；拒绝工作、要求吃饭 / 休息 / 材料、站内撤退或含糊的“我走”都不足以触发。
+
+正式 DeepSeek 重复矩阵在不换输入的前提下由 `50/56`、`52/56` 提升到 `56/56`。最终无关话题、站内后撤、策略无关 / 明确切换均四轮稳定；实际返回的 escape 与台词一致。补充固定极端虐待语境仍返回士气 `escape` 和“我这就离开驿站”，确认分支可达。toggle 关闭时仍不加载对应模块，也不要求或解析其字段。
+
+## T0307 四类动态模块真实验收
+
+DeepSeek `deepseek-v4-flash` 在正式人物档案与完整动态输出合同下，已经覆盖应征 `none / reject / accept`、士气 `none / escape / morale_boost`、工作 `none / escape / work_boost` 和策略 `keep / change`。隔离 / 拟真共 22 个 case 最终全部可达，首条输入命中 18 个；测试没有限制为单一目标枚举，也没有改写响应。
+
+真实结果说明当时规则总体可用但不是稳定分类器：资源 / 生活询问偶尔违反相关性闸门，人物战术判断偶尔让明确策略请求返回 keep，部分 `escape` 的 reply_text 只表达拒绝或条件诉求。T0307 只验收并记录、没有在测试任务中偷偷改生产 Prompt；这些风险已由上方 T0308 动态 Prompt 加固处理。
+
+## T0306 五类事件聚合语义
+
+七类正式 Prompt 均明确：只有 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged` 可能被程序按相同主体、客体、地点、可见性和类型关键字段聚合；`details.aggregation.event_count` 表示多次真实发生，累计伤害、HP 首尾 / 最低值与首尾时间不能被误读为单次事件。其他类型仍逐条输入。Prompt 不负责判断能否合并，也不生成聚合结果。
+
 ## T0299 事件摘要输入净化
 
 本任务不修改任何模型 Prompt 或响应合同。进入对话 / 计划上下文的事件摘要由 Godot 先净化：模式切换和内部 reason 不入库，工作 / 祈祷失败及计划修订中的内部枚举使用中文兜底；模型仍可从当前 NPC state 读取实时行为模式，但不会把开发日志当作历史经历。
@@ -15,15 +33,15 @@
 - 基础 `dialogue_system_prompt.txt` 不再常驻应征、士气、策略或工作鼓励判断规则。Model Adapter 只按本轮唯一开启的 flag 拼接对应特殊 Prompt 和最小输出合同；关闭模块的字段不进入 provider 合同，也不会被游戏应用。
 - `dialogue_recruitment_special_prompt.txt` 保留人物差异化应征校准，并新增相关性闸门：本轮未明确谈应征 / 入伍 / 加入防线时返回 `recruitment_result=none`，只正常回复原话。
 - `dialogue_morale_special_prompt.txt` 仅在士气 toggle 开启时加载；无关话题返回 `wartime_reaction=none`。战斗策略继续由 Model Adapter 动态生成当前值与合法候选合同。
-- 工作鼓励模块仅在 `is_work_encouragement_request=true` 时动态生成：真诚具体鼓励可为 `work_boost`，无效 / 无关为 `none`，严重羞辱、威胁或强迫可为 `escape`。20% 与当天 24:00 期限只是程序规则说明，不由模型结算。Mock 已验收，真实 provider 未执行。
+- 工作鼓励模块仅在 `is_work_encouragement_request=true` 时动态生成：真诚具体鼓励可为 `work_boost`，无效 / 无关为 `none`，严重羞辱、威胁或强迫可为 `escape`。20% 与当天 24:00 期限只是程序规则说明，不由模型结算。Mock 与 T0307 真实 provider 已验收。
 
 ## T0284 条件战斗策略字段
 
-基础 `dialogue_system_prompt.txt` 不包含战斗策略说明；Model Adapter 仅在 `is_combat_strategy_request=true` 时动态附加策略 Prompt，要求模型读取 `combat_strategy_context` 并输出 `combat_strategy_decision`。上下文明确给出当前策略和当前兵种唯一合法候选；模型只能返回 `keep + 当前 id` 或 `change + 另一个合法 id`。守备官本轮原话与战术调整无关时必须正常作答并保持当前策略，开关本身不能作为换策略证据。关闭时 provider 不收到策略说明或候选，输出合同也不包含该模块，后端不解析 / 应用多余结果。Mock 已验收，真实 provider 尚未执行。
+基础 `dialogue_system_prompt.txt` 不包含战斗策略说明；Model Adapter 仅在 `is_combat_strategy_request=true` 时动态附加策略 Prompt，要求模型读取 `combat_strategy_context` 并输出 `combat_strategy_decision`。上下文明确给出当前策略和当前兵种唯一合法候选；模型只能返回 `keep + 当前 id` 或 `change + 另一个合法 id`。守备官本轮原话与战术调整无关时必须正常作答并保持当前策略，开关本身不能作为换策略证据。关闭时 provider 不收到策略说明或候选，输出合同也不包含该模块，后端不解析 / 应用多余结果。T0308 起明确合法切换不再由人格覆盖为 keep，人物顾虑只影响台词表达。
 
 ## T0283 显式鼓舞士气字段
 
-`dialogue_system_prompt.txt` 仅在 `is_morale_encouragement_request=true` 时要求模型输出 `wartime_reaction`。模型必须先判断守备官本轮原话是否真的在鼓舞、稳军心、要求坚守或要求撤离；无关的吃饭、工作、资源、问候等内容应忽略开关、正常作答并返回 `none`。`morale_boost / escape / none` 只表达受到鼓舞、决定逃离或继续参战，15% 数值与当日 24:00 失效均由 Godot 结算。Mock 已验收，真实 provider 尚未执行。
+`dialogue_system_prompt.txt` 仅在 `is_morale_encouragement_request=true` 时要求模型输出 `wartime_reaction`。模型必须先判断守备官本轮原话是否真的在鼓舞、稳军心、要求坚守或要求撤离；无关的吃饭、工作、资源、问候等内容应忽略开关、正常作答并返回 `none`。`morale_boost / escape / none` 只表达受到鼓舞、决定逃离或继续参战，15% 数值与当日 24:00 失效均由 Godot 结算。Mock 与 T0307 真实 provider 已验收。
 
 ## T0152 邀请示意与模型边界
 

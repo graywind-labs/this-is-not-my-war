@@ -1,5 +1,11 @@
 # DATA_SCHEMA.md
 
+## T0314 Crafting pending outputs（运行时）
+
+`CraftingSystem.pending_outputs` 是按建筑保存的运行时映射：`{building_id: {item_resource_id: positive_int}}`。仅支持 `blacksmith / workshop`，具体键继续使用配方的 `output_item_id`；它不是 ResourceSystem 数量、不是配方配置，也不进入 BuildingSystem `special_state`。项目快照只读增加 `pending_outputs / pending_output_total / target_pending_amount`，原 `stock_amount` 仍表示正式库存。
+
+最终制造阶段结果固定同时包含 `output_resources={}` 与 `pending_output_resources={item_id: amount}`；普通工作已正式入库的产出仍只使用 `output_resources`。`work_completed` 的既有必填字段不删，制造事件额外允许 `pending_output_resources`，消费者必须按“已制成、待收取”解释。收取结果使用 `collected_resources / remaining_pending_outputs`，一次调用要么全部正式入库并扣减对应快照，要么暂存原样保留。
+
 ## T0299 行为模式与事件 Schema 边界
 
 `npc_mode_changed` 已退出正式事件类型。行为模式的 previous / current / reason 只属于 NPC 运行态与 GM 诊断快照；事件 Schema 只保留警铃、集结、避战、攻击、伤害、昏迷、复苏和逃离等具体事实。失败 / 计划的 `payload.reason / payload.summary` 与事件摘要若收到内部英文标识，统一写成稳定中文兜底。
@@ -594,6 +600,36 @@ MemorySystem 权威事件 Schema 不变。后端 `EventSummary` 只描述供应�
 - 原 `payload` 不再是 Pydantic 字段，额外输入会在 Schema / Model Adapter 边界被丢弃。
 - `ShortTermMemoryContext` 仍为 `experienced_events / witnessed_events`；`DailyReflectionRequest.day_events` 的同形记录额外带 `memory_kind=experienced|witnessed`。
 
+T0306 在上述既有 `details: dict` 内增加可选聚合元数据，不新增 Pydantic 顶层字段：
+
+```json
+{
+  "type": "attack_made",
+  "summary": "艾达使用剑盾攻击劫掠剑盾手3次，共造成20点伤害，目标HP从100降到80，最低80，期间击退目标。",
+  "importance": 75,
+  "day": 1,
+  "time": "10:00:00",
+  "details": {
+    "attacker_npc_id": "veteran_deputy_01",
+    "target_enemy_id": "raider_sword",
+    "weapon_id": "sword_shield",
+    "aggregation": {
+      "scope": "same_day_contiguous_combat_run",
+      "event_count": 3,
+      "total_damage": 20,
+      "first_time": "10:00:00",
+      "last_time": "10:00:02",
+      "hp_before_first": 100,
+      "hp_after_last": 80,
+      "lowest_hp": 80,
+      "defeated_any": true
+    }
+  }
+}
+```
+
+该对象只存在于 LLM 投影；MemorySystem 原始事件 Schema 和 NPCPanel 数据源不变。Model Adapter 将 `details` 深拷贝到供应商请求，因此不会删除聚合事实。
+
 ## T0101 守备官初始知识关系
 
 `data/npc_initial_long_memory.json` 中每名 NPC 的 `knowledge_graph.by_subject.guard_officer` 固定包含四条关系：
@@ -997,7 +1033,7 @@ T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgement
 ```json
 {
   "id": "money",
-  "name": "第纳尔",
+  "name": "金钱",
   "category": "currency",
   "initial_amount": 30,
   "min_amount": 0,

@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_chapel_rosary_beads_347928.mp3,work_chapel_prayer,rosary.wav,jaset13045,https://freesound.org/s/347928/,CC0,rejected,,不采用,"用户已选择 05 作为有人祈祷时的教堂声"
+02_chapel_beads_manipulation_807390.mp3,work_chapel_prayer,Beads - Manipulation,Vrymaa,https://freesound.org/s/807390/,CC0,rejected,,不采用,"用户已选择 05 作为有人祈祷时的教堂声"
+03_chapel_robe_kneel_stand_464995.mp3,work_chapel_prayer,Crouching and getting up-dress.wav,usamah,https://freesound.org/s/464995/,CC0,rejected,,不采用,"用户已选择 05 作为有人祈祷时的教堂声"
+04_chapel_quiet_interior_157375.mp3,work_chapel_prayer_or_mass,Interior església.wav,AAEPGranollers,https://freesound.org/s/157375/,CC0,rejected,,不采用,"用户已选择 05 作为有人祈祷时的教堂声"
+05_chapel_crowd_murmur_40626.mp3,work_chapel_prayer,crowd in church.mp3,jaava73,https://freesound.org/s/40626/,CC0,confirmed,chapel_prayer_presence_loop,"整段循环；不剪辑；教堂内首名祈祷者开始时渐入、最后一名祈祷者结束时渐出","教堂内有人祈祷期间播放，按教堂位置发声"
+06_chapel_church_bell_852491.mp3,work_chapel_mass,Church bell half hour mark,Sadiquecat,https://freesound.org/s/852491/,CC0,confirmed,chapel_mass_start_one_shot,"裁取 00:00–00:05；弥撒开始瞬间完整播放一次裁剪结果","作为弥撒开始提示钟声"
+07_eating_spoon_ceramic_bowl_235573.mp3,daily_eating,spoon clanking in ceramic bowl.wav,simosco,https://freesound.org/s/235573/,CC0,confirmed,daily_eating_loop,"整段循环；不剪辑；行动开始渐入、行动结束渐出","用户确认作为进食声"
+08_eating_noodles_spoon_bowl_398769.mp3,daily_eating,noodles - stir - with spoon.wav,Anthousai,https://freesound.org/s/398769/,CC0,rejected,,不采用,"用户已选择 07 作为进食声"
+09_drinking_sip_swallow_320139.mp3,daily_drinking,Drink Sip and Swallow,OwlStorm,https://freesound.org/s/320139/,CC0,confirmed,daily_drinking_one_shot,"裁取 00:00–00:01；每次饮酒动作播放一次裁剪结果","用户明确要求只使用前 1 秒"
+10_drinking_glass_cup_wood_table_408225.mp3,daily_drinking,Glass Cup On Wooden Table.wav,ramiro1007,https://freesound.org/s/408225/,CC-BY-NC-3.0,rejected,,不采用,"用户已选择 09 作为饮酒声"
+11_sleep_bed_sheets_rustle_644490.mp3,daily_sleep,Rustling bed sheets,Froey_,https://freesound.org/s/644490/,CC0,rejected,,不采用,"用户确认睡觉不需要音效"
+12_sleep_shuffling_in_bed_543573.mp3,daily_sleep,shufflinginbed.wav,BiancaDrey,https://freesound.org/s/543573/,CC0,rejected,,不采用,"用户确认睡觉不需要音效"

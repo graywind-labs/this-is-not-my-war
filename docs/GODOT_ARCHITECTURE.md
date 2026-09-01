@@ -1,5 +1,60 @@
 # GODOT_ARCHITECTURE.md
 
+## T0315 里程碑弹窗与幼马命名接线
+
+- `EventBus` 新增 `building_job_completed(building_id, job_type, result)` 与 `horse_birth_naming_requested(request)`；前者只在 BuildingSystem 的真实 `_finish_repair / _finish_upgrade` 末尾发送，后者只在 HorseSystem 成功预留候选幼马后发送。
+- `Main/UI/MilestoneAlertPresenter` 是常驻全屏 Control，内部持有一个 FIFO 队列和两个 AcceptDialog。建筑窗读取只读结果；小马窗预填模板名并把 request id 与文本提交给 `HorseSystem.confirm_pending_foal_name(...)`。Control 本身忽略世界鼠标，只有弹窗接收交互。
+- HorseSystem 新增单个 `_pending_birth` 事务与递增 request id。自然繁育和 `debug_force_birth()` 都进入 `_request_foal_naming(...)`；待命名时 `_get_birth_block_reason()` 阻止并发出生。确认函数权威入库后复用既有状态信号，使 WorldHorsePresentation、HorsePanel、马厩列表与分配候选自然刷新。
+- MemorySystem 注册 `horse_born` 结构并确定性格式化名称。Main 没有新增旁路命名字段或第二套马匹 UI 状态。
+
+## T0314 制造暂存与收获接线
+
+- `CraftingSystem` 新增逐建筑 `_pending_outputs`、`pending_outputs_changed` 和 `collect_pending_outputs(...)`。最终阶段与材料扣除处于同一 stage commit；成功后只累加暂存并重置阶段，正式 ResourceSystem 保持不变。收取先复制点击瞬间快照，通过 `can_store_resources / add_resources` 一次提交，成功后再按该快照扣减暂存。
+- `Main/UI/CraftingTargetAlerts` 复用建筑 Label3D 屏幕投影，新增 `44×44px` 小手圆形 Button 与总件数徽标；`Main/UI/CraftingHarvestDialog` 是 `z=80` 的全屏居中覆盖层，逐件生成 `68×68px` 无边框 Button 图标，Tooltip 为正式名称。
+- BuildingPanel 与世界按钮都只调用弹窗 `open_for_building(...)`；弹窗确认只调用 CraftingSystem 收取接口。HUD、NPCEquipmentWindow 和 DefenseDeviceSystem 无暂存读取路径，因此正式入库前自然不可见 / 不可用。
+- ActionSystem 最终阶段发送带具体装备 / 器械图标的“待收取”世界反馈；MemorySystem 只消费结构化 `pending_output_resources`。功能在正式 Main 可直接验证，既有制造单阶段 GM 入口会产生真实暂存，无需新增 GM 按钮。
+
+## T0313 马匹生态世界反馈接线
+
+- `HorseSystem.gd` 新增仅运行时 `_world_feedback_accumulators`。自然回血函数返回实际 `hp / satiety` 差；照料提交后分别记录自然 HP 增长、`care_bonus_hp` 和 growth；繁育概率在实际钳制后记录，并在进入冷却时清理旧余量。
+- `_advance_simulation(...)` 继续按原 60 游戏秒固定步长推进生态、照料和繁育，只在整个 while 结束后调用一次反馈 flush。HP / 饱食 / 额外 HP 的完整单位和成长 / 概率的 `0.1%` 单位进入同一 `horse_ecology` 逐马替换频道，剩余小数留在系统内。
+- `_advance_feeding(horse_id, horse, ...)` 在原 ResourceSystem 扣粮成功后计算饱食上限钳制的实际恢复，并发送 `horse_feeding` 组；等待粮食路径不发送。两频道都使用既有 horse 锚点解析和 `2.75m` 高度，不新增场景节点或 Autoload。
+- 功能在正式 Main 可直接观察，既有 `horse_advance / horse_damage` 调试能力足以准备状态，未新增 GM 入口。Godot MCP 本轮在正式 Main 首次步进时连接关闭，自动化由 `verify_t0313_horse_ecology_world_feedback.gd` 与 CLI Main headless 完成。
+
+## T0312 战斗 / 恢复世界反馈接线
+
+- `WorldFeedbackPresenter` 现可解析 `npc / enemy / horse / building / defense_device`。实时位置分别来自 NPCSystem、CombatSystem、HorseSystem 快照、BuildingSystem 入口和 DefenseDeviceSystem deployment；payload 的精确命中点可设为优先，目标移除后使用最后有效坐标。
+- 默认高度为 NPC `4.25m`、敌军 `2.95m`、马匹 `2.75m`、建筑 `3.0m`、器械 `2.35m`；碰撞点只抬高约 `0.25–0.35m`。`damage` 同目标立即替换，`healing` 在 `0.45s` 内把单条同语义增量相加并重启动画。
+- NPC 受伤、普通治疗、昏迷自然 / 协助恢复与跨阈值复苏，敌军受伤 / 移除，马匹受伤，建筑受伤 / 直接恢复 / 施工修复，器械受伤 / 摧毁均从各自提交点发送。骑乘分伤自然形成骑手和马匹两个锚点；当前器械无恢复 API，不建立 UI 旁路。
+- CombatSystem 只新增世界位置查询与既有碰撞坐标的表现透传，不改变攻击接触、弹体 sweep、伤害公式或目标路由。该功能正式 Main 可直接观察，无需新增 GM 面板入口。
+
+## T0311 世界数值反馈接线
+
+- `Main/UI/WorldFeedbackPresenter` 是 `CanvasLayer` 下的全屏、忽略鼠标、`PROCESS_MODE_ALWAYS` 表现节点；它以 `Camera3D.unproject_position(...)` 跟随 NPCSystem 的实时世界坐标，相机后方或屏幕外隐藏，不钉屏幕边缘。
+- NPC 默认反馈锚点为实体原点上方 `4.25m`，高于 T0301 的 `3.72m` 情绪层。普通反馈同锚点最多两组；`needs` 等替换频道收到新值时立即移除旧组。每组 `1.2s` 不透明稳定显示，随后 `0.8s` 上漂 `36px` 并淡出；计时不消费逻辑游戏秒，TimeSystem 暂停不冻结表现。
+- `WorldFeedbackPayload.gd` 统一生成带符号实际增量、正式名称、颜色角色与可选 SVG 路径。普通工作在资源提交和成长返回后一次发送；`NPCSystem.increase_npc_skill` 默认发送成长组，ActionSystem 普通工作可抑制该次单独发送并与资源合组，避免重复。
+- 进食资源在 `_start_eat` 成功扣除后发送；饱食从 `_apply_progress_state_deltas / _apply_final_state_deltas` 的钳制后真实差值发送。NPCNeedsSystem 只为 `sleep` profile 的真实负疲劳差发送，不把普通工作过程需求消耗刷成飘字。
+- 该接线新增表现信号，不新增 Autoload、存档字段、GM 入口或数值结算器。T0312-T0314 现已分别复用该入口完成战斗 / 恢复、马匹生态与制造收获反馈。
+
+## T0310 NPC 复苏提示接线
+
+- `NPCSystem._revive_npc_from_unconscious(...)` 继续在权威状态、HP 和复苏事件提交后发出 `EventBus.npc_revived(npc_id)`；系统接口与信号签名不变。
+- `HUD.gd` 是新增的只读消费者：将 NPC id 排入 `_npc_revived_alert_queue`，通过 NPCSystem 正式档案解析姓名，再驱动 `Main/UI/HUD/NpcRevivedAlertDialog`。
+- `AcceptDialog` 使用 `popup_centered()`，确认与关闭都 deferred 推进下一条；该 UI 不反写 NPCSystem，也不新增 GM 入口。
+
+## T0309 HUD 主资源图标接线
+
+- `Main/UI/HUD/AlarmButton` 的玩家可见文案为“警报”；节点名和 `CombatSystem.trigger_combat_alarm("hud")` 接线不变，警铃集结仍是底层玩法语义。
+- `HUD.gd` 的 `_build_resource_strip()` 仍按 `ResourceSystem.get_resource_ids()` 和 `show_in_main_hud` 动态建 7 个稳定命名资源项；每项由 `22px TextureRect/Icon + Amount Label` 组成，TextureRect 加载 `assets/ui/resource_icons/*.svg`，Label 只显示数量。系统 emoji 字符不进入运行时文本。
+- `_refresh_resource_capacity_tooltip()` 统一把 ResourceSystem 的正式名称放在图标 Tooltip 首行；`get_resource_capacity(...) >= 0` 时追加动态仓库上限。图标 `MOUSE_FILTER_STOP`，数量 Label 与外层 Item 忽略鼠标，确保悬停边界只属于图标。
+- 原 `ResourceStrip`、装备 / 器械按钮、详情面板、HUDFrame deferred 自适应和 ResourceSystem 接口均未改；功能可在正式 Main 直接验证，不新增 GM 入口。
+
+## T0306 LLM 短期记忆聚合接线
+
+- `LLMBridge.gd` 集中维护五类白名单、逐类签名、连续段边界、reduce 与确定性中文摘要；`_build_short_memory_context`、共享 `NPCContext` 和反思 `day_events` 均走 `build_memory_event_projection`。
+- `DailyReflectionSystem.gd` 从原始请求快照构建 day_events 时调用同一投影；总结成功仍把原始 `event_ids / witness_ids` 交回 MemorySystem 清理。
+- `GMPanel.gd` 复用“短期记忆 / LLM”入口，同时显示事件 / 见闻原始条数、投影条数和五类 `by_type` 统计；NPCPanel 仍直接读取原始短期记忆逐条显示。
+
 ## T0301 NPC 世界头顶层接线
 
 `NPC.gd` 集中使用五个局部 Y 常量：友军血条 `2.62`、思考 / 主动交涉 `2.95`、自主 / 挂起对话与逃离警示 `3.12`、情绪 Emoji `3.72`；姓名 / 行动仍由 `_refresh_label` 固定为 `2.08`。`debug_get_overhead_ui_snapshot` 公开所有层的位置，测试不依赖截图猜测。
@@ -838,6 +893,7 @@ AnimationPlayer 的暂停速度由 `gameplay_paused && !pause_exempt_dialogue_em
 - `data/presentation/environment_art.json` 作为环境表现配置源，规划保存地表色板、分区 seed / 密度 / 资源池、道路 / 门坪 / 工位 / 敌路排除参数、河谷 / 山脉可见包络、日月轨道和质量档；它不保存时间、导航、敌人生成或建筑状态权威。
 - `scenes/environment/FormalEnvironmentArtView.tscn` 作为正式环境表现根，已由 `StationLayoutController` 在正式布局下实例化并组合 P1–P5 的地表、地形、森林与自然散布。旧自然碰撞和 NavigationMap 继续由 `StationLayoutController` 持有，表现根不得创建第二套全图导航。
 - `scripts/presentation/environment/FormalGroundSurfaceArtView.gd` 已由 P1R 覆盖首版：当前只保留城内深草变化、浅排水和成簇地表细节，独立广场 / 门前贴片为零；只读 `station_layout_v2.roads / plaza / buildings` 与环境配置。`public location=plaza / center=(0,10) / radius=4 m` 保持不变。
+- T0135-P1R3 曾试接世界坐标草地、方向化泥土及三类 Painted 贴花，但因平面绘制纹理与现有低多边形 3D 材质语言不统一而按用户反馈回滚。正式架构继续使用 P1R2 程序化草地与 T0132-P5 程序化道路，不加载候选地表资产，也不存在 `PaintedBuildingFootprints / PaintedGrassDirtTransitions / PaintedRoadDetails` 运行节点。
 - `scripts/presentation/environment/FormalTerrainArtView.gd` 已完成 P2/P3 河谷 / 山脉。P4R 的 `FormalForestArtView` 从前 / 后 / 侧 bounds、围墙多边形距离、河槽边界、山体高度、敌 / 商路线和出生净空生成统一针叶 MultiMesh 林；密度按地形连续变化，不再加载阔叶树资产。StationLayoutController 继续持有 8 段 River Cliff、4 段 Rock Ridge 和 12 段 Dense Forest StaticBody；可见层不创建碰撞 / NavMesh。
 - `scripts/presentation/environment/CelestialCycleController.gd` 已在 P6 负责太阳、月亮方向光与主阴影表现；P7 将在同一绝对时刻基础上组合 `WorldEnvironment`、天空与雾。它不维护第二套时钟，也不修改 TimeSystem、行动、波次、商人或存档 Schema。
 - `resources/materials/environment/` 规划存放世界坐标地表、压实泥土、河水、湿痕和雾材质；`scenes/vfx/environment/` 规划存放烟、火、火星、尘土等通用表现。功能状态只由既有建筑 / 行动信号投影，粒子本身不提交生产、伤害或事件事实。

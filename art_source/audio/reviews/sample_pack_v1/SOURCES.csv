@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_ui_wood_click_short_321083.mp3,ui_wood_click,Wooden Click,BenjaminNelan,https://freesound.org/s/321083/,CC0,confirmed,ui_button_primary,"完整单次播放；不剪辑","用户确认作为 UI 按钮点击声"
+02_ui_wood_click_smooth_220200.mp3,ui_wood_click,Basic Click Wooden,GameAudio,https://freesound.org/s/220200/,CC0,rejected,,不采用,"用户已选择 01"
+03_ui_wood_button_vintage_686544.mp3,ui_wood_click,wooden button,Troube,https://freesound.org/s/686544/,CC0,rejected,,不采用,"用户已选择 01"
+04_blacksmith_hammer_anvil_363169.mp3,blacksmith,Hammering on Anvil,SamsterBirdies,https://freesound.org/s/363169/,CC0,confirmed,work_blacksmith_loop,"后续截取 00:00–00:05 并循环；工作开始渐入、工作结束渐出","用户确认前五秒作为打铁工作声；本轮只标记，不剪辑"
+05_blacksmith_shop_dynamic_609757.mp3,blacksmith,Blacksmith.wav,LarsErikErtzgaardRingen,https://freesound.org/s/609757/,CC0,rejected,,不采用,"用户已选择 04"
+06_blacksmith_hammer_various_434339.mp3,blacksmith,Hammer hitting an anvil,draftcraft,https://freesound.org/s/434339/,CC0,rejected,,不采用,"用户已选择 04"
+07_day_countryside_birds_wind_627062.mp3,ambience_day,"Ambiance_Countryside (Birds, various farming noises, wind)",KaleidacousticsAudio,https://freesound.org/s/627062/,CC0,rejected,,不采用,"用户已选择 08"
+08_day_english_countryside_641561.mp3,ambience_day,"Loopable Early Morning English Countryside Ambience",Psykophobia,https://freesound.org/s/641561/,CC0,confirmed,ambience_day_loop,"完整循环播放；不剪辑","用户确认作为白天环境音"
+09_night_insects_481883.mp3,ambience_night,Night Ambience,parret,https://freesound.org/s/481883/,CC0,confirmed,ambience_night_loop,"完整循环播放；不剪辑","用户确认作为夜晚环境音"
+10_night_crickets_frogs_333221.mp3,ambience_night,Night Crickets Back Porch,hdfreema,https://freesound.org/s/333221/,CC0,rejected,,不采用,"用户已选择 09"
+11_meteor_fall_riser_362048.mp3,meteor_fall,Plane Falling.wav,LinkinPaulSG,https://freesound.org/s/362048/,CC0,rejected,,不采用,"用户判定含明显引擎声，不符合陨石坠落"
+12_meteor_impact_huge_explosion_733120.mp3,meteor_impact,HUGE EXPLOSION,SamsterBirdies,https://freesound.org/s/733120/,CC0,confirmed,meteor_impact_one_shot,"完整单次播放；从爆发到自然渐弱，不剪辑","用户确认作为陨石砸地声"

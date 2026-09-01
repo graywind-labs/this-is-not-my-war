@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_walk_stone_loop_816017.mp3,walk_footsteps,Dry Footsteps Loop,qubodup,https://freesound.org/s/816017/,CC0,rejected,,不采用,用户确认步行不需要音效
+02_walk_gravel_steps_521588.mp3,walk_footsteps,Hiking Boot Footsteps on Gravel,Fission9,https://freesound.org/s/521588/,CC0,rejected,,不采用,用户确认步行不需要音效
+03_walk_dirt_gravel_352870.mp3,walk_footsteps,Footsteps Dirt Gravel,PotatokingXII,https://freesound.org/s/352870/,CC0,rejected,,不采用,用户确认步行不需要音效
+04_horse_walk_hard_94196.mp3,horse_walk,01566 horse hooves.wav,Robinhood76,https://freesound.org/s/94196/,CC-BY-NC 4.0,rejected,,不采用,用户确认马匹步行不需要音效
+05_horse_walk_gravel_655268.mp3,horse_walk,Horse Walking on Gravel OWI,Gingerhoney,https://freesound.org/s/655268/,CC-BY-NC 4.0,rejected,,不采用,用户确认马匹步行不需要音效
+06_horse_walk_sand_655269.mp3,horse_walk,Horse walking on Sand OWI,Gingerhoney,https://freesound.org/s/655269/,CC-BY-NC 4.0,rejected,,不采用,用户确认马匹步行不需要音效
+07_horse_trot_road_111301.mp3,merchant_cart_movement,Horse trotting.wav,juskiddink,https://freesound.org/s/111301/,CC-BY 4.0,confirmed,merchant_cart_arrival_departure,整段循环；商车来去移动期间从商车位置播放；停止移动时立即停止,用户确认不用于马匹小跑而改作商车来去时的行走声
+08_horse_trot_brick_655049.mp3,horse_trot,Horse Trotting on Brick OWI,Gingerhoney,https://freesound.org/s/655049/,CC-BY-NC 4.0,rejected,,不采用,用户确认游戏中不存在马匹小跑状态
+09_horse_trot_vintage_loop_479773.mp3,horse_trot,R14-42-Horse Loop.wav,craigsmith,https://freesound.org/s/479773/,CC0,rejected,,不采用,用户确认游戏中不存在马匹小跑状态
+10_horse_gallop_foley_368583.mp3,horse_run,horse_galloping.wav,telezon,https://freesound.org/s/368583/,CC0,rejected,,不采用,用户已选择 12
+11_horse_gallop_real_175356.mp3,horse_run,Horse Galloping.wav,Max_Headroom,https://freesound.org/s/175356/,CC0,rejected,,不采用,用户已选择 12
+12_horse_gallop_foley_165532.mp3,horse_run,SRS_Foley_Horse_Galloping.wav,StephenSaldanha,https://freesound.org/s/165532/,CC0,confirmed,horse_run,只使用 00:00–00:10；马匹奔跑时从马匹位置播放,用户确认马匹奔跑使用
