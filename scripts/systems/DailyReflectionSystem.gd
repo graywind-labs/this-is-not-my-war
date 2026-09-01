@@ -928,6 +928,17 @@ func _format_reflection_period(reflection_period: Dictionary) -> String:
 
 func _build_day_events(memory_before: Dictionary) -> Array:
 	var result: Array = []
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	if llm_bridge != null and llm_bridge.has_method("build_memory_event_projection"):
+		result.append_array(llm_bridge.build_memory_event_projection(
+			memory_before.get("event_log", []),
+			"experienced"
+		))
+		result.append_array(llm_bridge.build_memory_event_projection(
+			memory_before.get("witness_log", []),
+			"witnessed"
+		))
+		return result
 	for raw_event in memory_before.get("event_log", []):
 		if raw_event is Dictionary:
 			var event_summary := _event_to_summary(raw_event)

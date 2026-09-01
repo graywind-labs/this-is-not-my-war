@@ -4805,12 +4805,24 @@ func _show_memory(npc_id: String) -> void:
 	var raw_memory: Dictionary = memory_system.debug_get_npc_short_term_memory(npc_id)
 	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
 	var prompt_memory: Dictionary = {}
+	var projection_stats: Dictionary = {}
 	if llm_bridge != null and llm_bridge.has_method("debug_build_short_memory_context"):
 		prompt_memory = llm_bridge.debug_build_short_memory_context(npc_id)
-	_log("短期记忆 %s（原始事件 %d / 见闻 %d；LLM 全量紧凑投影）：%s" % [
+	if llm_bridge != null and llm_bridge.has_method("debug_build_short_memory_projection_report"):
+		var report: Dictionary = llm_bridge.debug_build_short_memory_projection_report(npc_id)
+		projection_stats = {
+			"experienced": report.get("experienced", {}),
+			"witnessed": report.get("witnessed", {})
+		}
+	var projected_experienced: Array = prompt_memory.get("experienced_events", [])
+	var projected_witnessed: Array = prompt_memory.get("witnessed_events", [])
+	_log("短期记忆 %s（原始事件 %d / 见闻 %d；LLM 聚合投影 %d / %d；统计 %s）：%s" % [
 		npc_id,
 		int(raw_memory.get("event_count", 0)),
 		int(raw_memory.get("witness_count", 0)),
+		projected_experienced.size(),
+		projected_witnessed.size(),
+		_compact(projection_stats),
 		_compact(prompt_memory)
 	])
 
