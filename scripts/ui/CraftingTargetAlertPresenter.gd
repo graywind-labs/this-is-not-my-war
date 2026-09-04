@@ -23,7 +23,6 @@ var _alerts: Dictionary = {}
 var _building_labels: Dictionary = {}
 var _needs_alert: Dictionary = {}
 var _harvest_buttons: Dictionary = {}
-var _harvest_badges: Dictionary = {}
 var _pending_totals: Dictionary = {}
 var _debug_viewport_size_override := Vector2.ZERO
 
@@ -99,6 +98,9 @@ func _create_harvest_button(building_id: String) -> void:
 	button.pivot_offset = HARVEST_SIZE * 0.5
 	button.focus_mode = Control.FOCUS_NONE
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
 	button.add_theme_constant_override("icon_max_width", 28)
 	if ResourceLoader.exists(HARVEST_ICON_PATH):
 		button.icon = load(HARVEST_ICON_PATH)
@@ -110,22 +112,6 @@ func _create_harvest_button(building_id: String) -> void:
 	add_child(button)
 	_harvest_buttons[building_id] = button
 
-	var badge := Label.new()
-	badge.name = "CountBadge"
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	badge.offset_left = -20.0
-	badge.offset_top = -5.0
-	badge.offset_right = 5.0
-	badge.offset_bottom = 17.0
-	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	badge.add_theme_font_size_override("font_size", 12)
-	badge.add_theme_color_override("font_color", Color.WHITE)
-	badge.add_theme_stylebox_override("normal", _make_harvest_badge_style())
-	button.add_child(badge)
-	_harvest_badges[building_id] = badge
-
 
 func _make_harvest_style(color: Color) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -136,16 +122,11 @@ func _make_harvest_style(color: Color) -> StyleBoxFlat:
 	style.corner_radius_top_right = 22
 	style.corner_radius_bottom_left = 22
 	style.corner_radius_bottom_right = 22
-	return style
-
-
-func _make_harvest_badge_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.62, 0.14, 0.08, 1.0)
-	style.corner_radius_top_left = 10
-	style.corner_radius_top_right = 10
-	style.corner_radius_bottom_left = 10
-	style.corner_radius_bottom_right = 10
+	# 纯图标按钮不保留文字按钮的内容边距，避免小手在圆形内横向偏移。
+	style.content_margin_left = 0.0
+	style.content_margin_top = 0.0
+	style.content_margin_right = 0.0
+	style.content_margin_bottom = 0.0
 	return style
 
 
@@ -192,11 +173,8 @@ func _refresh_harvest_button(building_id: String) -> void:
 	var previous_total := int(_pending_totals.get(building_id, 0))
 	_pending_totals[building_id] = next_total
 	var button := _harvest_buttons.get(building_id) as Button
-	var badge := _harvest_badges.get(building_id) as Label
 	if button != null:
 		button.tooltip_text = "收取%s成品（%d）" % [str(BUILDING_NAMES.get(building_id, building_id)), next_total]
-	if badge != null:
-		badge.text = str(next_total)
 	if button != null and next_total > previous_total:
 		button.scale = Vector2(1.16, 1.16)
 		var tween := create_tween()
@@ -323,7 +301,6 @@ func debug_set_viewport_size_override(viewport_size: Vector2) -> void:
 
 func debug_get_harvest_snapshot(building_id: String) -> Dictionary:
 	var button := _harvest_buttons.get(building_id) as Button
-	var badge := _harvest_badges.get(building_id) as Label
 	if button == null:
 		return {}
 	return {
@@ -331,7 +308,11 @@ func debug_get_harvest_snapshot(building_id: String) -> Dictionary:
 		"pending_total": int(_pending_totals.get(building_id, 0)),
 		"visible": button.visible,
 		"tooltip": button.tooltip_text,
-		"badge_text": badge.text if badge != null else "",
+		"has_count_badge": button.get_node_or_null("CountBadge") != null,
+		"icon_alignment": button.icon_alignment,
+		"vertical_icon_alignment": button.vertical_icon_alignment,
+		"expand_icon": button.expand_icon,
+		"icon_max_width": button.get_theme_constant("icon_max_width"),
 		"icon_path": HARVEST_ICON_PATH,
 		"position": button.position
 	}

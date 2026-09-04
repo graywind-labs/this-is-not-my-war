@@ -47,8 +47,8 @@ func _init() -> void:
 
 	await process_frame
 	var button_snapshot: Dictionary = harvest_presenter.debug_get_harvest_snapshot("blacksmith")
-	if int(button_snapshot.get("pending_total", 0)) != 3 or str(button_snapshot.get("badge_text", "")) != "3":
-		_fail("World harvest button did not project the pending-unit total")
+	if int(button_snapshot.get("pending_total", 0)) != 3 or bool(button_snapshot.get("has_count_badge", true)):
+		_fail("World harvest button did not preserve pending state after removing its count badge")
 		return
 	if str(button_snapshot.get("icon_path", "")) != "res://assets/ui/status_icons/harvest_hand.svg":
 		_fail("World harvest button did not use the project hand icon")

@@ -15,6 +15,7 @@ const WORKSHOP_SHELF := "res://assets/3d/quaternius/props/workshop_shelf.glb"
 const LANTERN := "res://assets/3d/quaternius/props/main_hall_lantern.glb"
 const SHIELD := "res://assets/3d/quaternius/props/shield_wooden.glb"
 const AMBIENT_FX_SCRIPT := preload("res://scripts/presentation/buildings/SmithyAmbientFX.gd")
+const PENDING_OUTPUT_DISPLAY_SCRIPT := preload("res://scripts/presentation/buildings/CraftingPendingOutputDisplay.gd")
 
 const BUILDING_FOOTPRINT := Vector2(14.0, 12.0)
 const WALL_HEIGHT := 3.2
@@ -37,6 +38,10 @@ func get_art_slice_snapshot() -> Dictionary:
 	if auto_door != null and auto_door.has_method("debug_get_snapshot"):
 		door_snapshot = auto_door.call("debug_get_snapshot")
 	var workstation_states := {}
+	var pending_output_display: Dictionary = {}
+	var pending_display := get_node_or_null("Interior/PendingOutputDisplay")
+	if pending_display != null and pending_display.has_method("debug_get_snapshot"):
+		pending_output_display = pending_display.debug_get_snapshot()
 	var marker_root := get_node_or_null(workstation_markers_path)
 	if marker_root != null:
 		for raw_marker in marker_root.get_children():
@@ -58,6 +63,7 @@ func get_art_slice_snapshot() -> Dictionary:
 		"level_2_visible": _is_visible(NodePath("UpgradeVisuals/Level2")),
 		"level_3_visible": _is_visible(NodePath("UpgradeVisuals/Level3")),
 		"workstations": workstation_states,
+		"pending_output_display": pending_output_display,
 		"ambient_fx": ambient_snapshot,
 		"auto_door": door_snapshot,
 		"navigation_ready": _formal_navigation_ready(),
@@ -247,6 +253,15 @@ func _build_interior() -> void:
 		var scrap := _add_box(common_props, "ScrapMetal", Vector3(-5.65 + offset, 0.87, -0.55 + offset * 0.35), Vector3(0.48, 0.08, 0.12), Color("#686f79"))
 		scrap.rotation_degrees.y = offset * 75.0
 	_build_forge_ambient(interior)
+	_add_pending_output_display(interior)
+
+
+func _add_pending_output_display(interior: Node3D) -> void:
+	var display := Node3D.new()
+	display.name = "PendingOutputDisplay"
+	display.set_script(PENDING_OUTPUT_DISPLAY_SCRIPT)
+	display.set("building_id", "blacksmith")
+	interior.add_child(display)
 
 
 func _build_chimney_assembly() -> void:

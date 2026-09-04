@@ -1,0 +1,61 @@
+{
+  "schema_version": "combat_audio_v1",
+  "source_height_m": 0.9,
+  "impact_height_m": 0.2,
+  "hurt_voice_probability": 0.5,
+  "recent_history_limit": 96,
+  "frame_limits": {
+    "total": 14,
+    "weapon": 8,
+    "impact": 8,
+    "voice": 3,
+    "structure": 6,
+    "stinger": 2
+  },
+  "melee_swing_assets": {
+    "sword_shield": "sfx_combat_sword_swing",
+    "polearm": "sfx_combat_polearm_swing"
+  },
+  "projectile_release_assets": {
+    "bow": "sfx_combat_bow_release",
+    "crossbow": "sfx_combat_hand_crossbow_release"
+  },
+  "device_release_assets": {
+    "wall_arrow_tower": "sfx_arrow_tower_release",
+    "wall_ballista": "sfx_combat_ballista_release"
+  },
+  "projectile_whoosh_asset": "sfx_combat_arrow_and_hand_crossbow_bolt_whoosh",
+  "ballista_whoosh_asset": "sfx_combat_ballista_bolt_whoosh",
+  "projectile_impact_asset": "sfx_combat_arrow_bolt_tower_impact",
+  "ballista_impact_asset": "sfx_ballista_heavy_bolt_impact",
+  "actor_hit_assets": [
+    "sfx_combat_hit_contact_01",
+    "sfx_combat_hit_contact_02",
+    "sfx_combat_hit_contact_03"
+  ],
+  "friendly_hurt_voice_assets": {
+    "male": "voice_combat_friendly_male_hurt_voice",
+    "female": "voice_combat_friendly_female_hurt_voice"
+  },
+  "enemy_hurt_voice_asset": "voice_combat_enemy_hurt_voice",
+  "unconscious_fall_asset": "sfx_combat_unconscious_fall",
+  "horse_death_asset": "sfx_combat_horse_death",
+  "structure": {
+    "stone_building_ids": ["main_hall", "chapel", "wall"],
+    "wood_damage_assets": ["sfx_combat_wood_damage_01", "sfx_combat_wood_damage_02"],
+    "stone_damage_asset": "sfx_combat_stone_structure_damage",
+    "wood_collapse_asset": "sfx_wood_structure_severe_collapse",
+    "stone_collapse_asset": "sfx_stone_structure_severe_collapse"
+  },
+  "stingers": {
+    "battle_started": "sfx_enemy_entry_stinger",
+    "wave_cleared": "sfx_wave_clear_stinger",
+    "victory": "sfx_final_victory_stinger",
+    "failure": "sfx_defeat_stinger"
+  },
+  "silent_rules": [
+    "shield_block_no_authority",
+    "npc_revive",
+    "horse_regular_damage"
+  ]
+}

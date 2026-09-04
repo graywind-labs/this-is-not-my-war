@@ -82,6 +82,8 @@ func _verify_structure(art: Node3D, fx: Node, fixture_visuals: Node) -> bool:
 		var food_visuals := station.get_node_or_null("FoodVisuals") as Node3D
 		if food_visuals == null or food_visuals.get_child_count() < 5:
 			return _fail_bool("Kitchen stew lacks readable multi-color ingredients: %s" % workstation_id)
+		if absf(food_visuals.position.y + 0.18) > 0.001:
+			return _fail_bool("Kitchen food visuals are no longer lowered inside the cauldron: %s / %s" % [workstation_id, food_visuals.position])
 		var smoke := station.get_node_or_null("ChimneySmoke") as GPUParticles3D
 		if smoke == null or absf(smoke.position.z + 0.82) > 0.01 or absf(smoke.position.y - 6.55) > 0.01:
 			return _fail_bool("Kitchen chimney smoke outlet is not aligned with its flue: %s" % workstation_id)

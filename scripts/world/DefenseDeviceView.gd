@@ -4,6 +4,7 @@ const ACTIVE_INTERACTION_AND_PROJECTILE_LAYER := 6
 const PROJECTILE_COLLISION_LAYER := 2
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
+const FEEDBACK_GAP_ABOVE_HEALTH_BAR := 0.38
 
 @onready var model_mount: Node3D = $ModelMount
 @onready var status_label: Label3D = $StatusLabel
@@ -159,6 +160,7 @@ func get_debug_snapshot() -> Dictionary:
 	result["overhead_ui"] = {
 		"name_text": status_label.text if status_label != null else "",
 		"health_bar": _world_health_bar.get_debug_snapshot() if _world_health_bar != null else {},
+		"feedback_anchor_position": get_world_feedback_anchor_position(),
 	}
 	var active_model := _get_active_model()
 	if active_model != null:
@@ -166,6 +168,13 @@ func get_debug_snapshot() -> Dictionary:
 		if active_model.has_method("get_debug_snapshot"):
 			result["model"] = active_model.get_debug_snapshot()
 	return result
+
+
+func get_world_feedback_anchor_position() -> Vector3:
+	_ensure_world_health_bar()
+	if _world_health_bar != null:
+		return _world_health_bar.global_position + Vector3.UP * FEEDBACK_GAP_ABOVE_HEALTH_BAR
+	return global_position + Vector3.UP * 2.35
 
 
 func _refresh_world_health_bar() -> void:

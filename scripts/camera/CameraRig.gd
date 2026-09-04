@@ -149,6 +149,10 @@ func _apply_zoom() -> void:
 		camera.position = _camera_base_position
 
 
+func get_zoom_distance() -> float:
+	return _zoom_distance
+
+
 func request_camera_shake(duration_seconds: float, amplitude: float, frequency: float = 18.0) -> void:
 	var requested_duration := maxf(0.0, duration_seconds)
 	var requested_amplitude := maxf(0.0, amplitude)

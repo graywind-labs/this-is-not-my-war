@@ -87,6 +87,8 @@ func _init() -> void:
 	await create_timer(0.12).timeout
 	var active_state: Dictionary = npc_system.get_npc_state(NPC_ID)
 	var attachment: Dictionary = ada.debug_get_spatial_attachment_snapshot()
+	var character_art: Dictionary = ada.debug_get_character_art_snapshot()
+	var pose_offset := character_art.get("presentation_pose_offset", Vector3.ZERO) as Vector3
 	var active_bed: Dictionary = _get_bed(building_system)
 	if (
 		str(active_state.get("current_workstation_id", "")) != BED_ID
@@ -97,6 +99,9 @@ func _init() -> void:
 		or str(attachment.get("pose", "")) != "sleeping_supine"
 		or not bool(attachment.get("body_collision_disabled", false))
 		or not bool(attachment.get("interaction_enabled", false))
+		or absf(pose_offset.y + 0.18) > 0.001
+		or absf(Vector2(pose_offset.x, pose_offset.z).length() - 0.22) > 0.001
+		or absf((character_art.get("visual_root_local_position", Vector3.ZERO) as Vector3).y + 0.18) > 0.001
 		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "sleep_started") != sleep_started_before + 1
 	):
 		_fail("Bed commit did not atomically attach Ada and start real sleep: %s" % JSON.stringify({

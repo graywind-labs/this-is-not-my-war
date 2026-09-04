@@ -1,0 +1,49 @@
+{
+  "buildings": {
+    "blacksmith": {
+      "position": [3.2, 0.22, 3.25],
+      "rotation_y_degrees": -18.0,
+      "fixture_top_y": 0.16,
+      "item_clearance": 0.06
+    },
+    "workshop": {
+      "position": [1.9, 0.18, 2.0],
+      "rotation_y_degrees": 12.0,
+      "fixture_top_y": 0.16,
+      "item_clearance": 0.06
+    }
+  },
+  "items": {
+    "item_iron_helmet": {"kind": "helmet"},
+    "item_iron_bracers": {"kind": "bracers"},
+    "item_polearm": {"kind": "polearm"},
+    "item_iron_greaves": {"kind": "greaves"},
+    "item_sword_shield": {
+      "kind": "sword_shield",
+      "assets": [
+        {"path": "res://assets/3d/synty/t0130_pilot/Prop_Sword_01.fbx", "position": [-0.28, 0.28, 0.0], "rotation_degrees": [0.0, 0.0, 78.0], "scale": [0.72, 0.72, 0.72]},
+        {"path": "res://assets/3d/synty/t0130_pilot/Prop_ShieldKnight_01.fbx", "position": [0.34, 0.33, 0.02], "rotation_degrees": [82.0, 0.0, 10.0], "scale": [0.72, 0.72, 0.72]}
+      ]
+    },
+    "item_mail_chest": {"kind": "mail_chest"},
+    "item_bow": {
+      "kind": "asset",
+      "assets": [
+        {"path": "res://assets/3d/synty/t0130_pilot/Prop_Bow_01.fbx", "position": [0.0, 0.34, 0.0], "rotation_degrees": [90.0, 0.0, 18.0], "scale": [0.78, 0.78, 0.78]}
+      ]
+    },
+    "item_crossbow": {"kind": "crossbow"},
+    "item_wall_ballista": {
+      "kind": "asset",
+      "assets": [
+        {"path": "res://scenes/defense_devices/FormalBallistaArtView.tscn", "position": [0.0, 0.24, 0.0], "rotation_degrees": [0.0, 180.0, 0.0], "scale": [0.42, 0.42, 0.42]}
+      ]
+    },
+    "item_wall_arrow_tower": {
+      "kind": "asset",
+      "assets": [
+        {"path": "res://scenes/defense_devices/FormalArrowTowerArtView.tscn", "position": [0.0, 0.24, 0.0], "rotation_degrees": [0.0, 180.0, 0.0], "scale": [0.34, 0.34, 0.34]}
+      ]
+    }
+  }
+}

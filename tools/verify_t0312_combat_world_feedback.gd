@@ -165,8 +165,14 @@ func _verify_building_damage_and_repair(building_system: Node, presenter: Node) 
 	var group := _find_group(presenter, "building:%s" % building_id, "damage")
 	if not _has_number_entry(group, "damage", -7):
 		return _fail("Building damage did not create a red actual-delta number")
-	if not bool(group.get("prefer_fallback_position", false)) or group.get("fallback_world_position", null) != hit_position:
-		return _fail("Building damage did not prefer the supplied hit position")
+	var formal_anchor: Variant = building_system.get_building_feedback_anchor_position(building_id)
+	if (
+		not formal_anchor is Vector3
+		or not bool(group.get("prefer_fallback_position", false))
+		or group.get("fallback_world_position", null) != formal_anchor
+		or not is_zero_approx(float(group.get("anchor_height", -1.0)))
+	):
+		return _fail("Warehouse damage did not use its unique formal building anchor")
 	presenter.debug_advance_feedback(2.1)
 	if not building_system.restore_building_hp(building_id, 99):
 		return _fail("Building repair authority rejected a valid repair")
@@ -187,6 +193,9 @@ func _verify_device_damage(device_system: Node, resource_system: Node, presenter
 	if not bool(deployed.get("ok", false)):
 		return _fail("Could not deploy a defense device for T0312 verification")
 	var deployment_id := str(deployed.get("deployment_id", ""))
+	var feedback_anchor: Variant = device_system.get_deployment_feedback_anchor_position(deployment_id)
+	if not feedback_anchor is Vector3:
+		return _fail("Defense device formal feedback anchor was unavailable")
 	var hp_before := int(device_system.get_deployment(deployment_id).get("hp", 0))
 	var result: Dictionary = device_system.apply_damage_to_device(deployment_id, hp_before + 999, {
 		"attacker_id": "verify_t0312"
@@ -198,8 +207,12 @@ func _verify_device_damage(device_system: Node, resource_system: Node, presenter
 	var group := _find_group(presenter, "defense_device:%s" % deployment_id, "damage")
 	if not _has_number_entry(group, "damage", -hp_before):
 		return _fail("Destroyed defense device did not retain actual damage feedback")
-	if not group.get("last_world_position", null) is Vector3:
-		return _fail("Destroyed defense device feedback did not preserve its last position")
+	if (
+		group.get("fallback_world_position", null) != feedback_anchor
+		or not bool(group.get("prefer_fallback_position", false))
+		or not is_zero_approx(float(group.get("anchor_height", -1.0)))
+	):
+		return _fail("Destroyed defense device feedback did not preserve its above-health-bar anchor")
 	presenter.debug_advance_feedback(2.1)
 	return true
 

@@ -551,7 +551,8 @@ func _trade_and_procure(day: int) -> void:
 		var offer: Dictionary = systems.merchant.get_buy_offer(resource_id)
 		var price := int(offer.get("unit_price", 0))
 		var affordable := maxi(0, (int(systems.resource.get_resource("money")) - reserve_money) / maxi(1, price))
-		var amount := mini(deficit, affordable)
+		var merchant_stock := systems.merchant.get_merchant_stock(resource_id)
+		var amount := mini(deficit, affordable, merchant_stock)
 		if amount <= 0:
 			continue
 		var buy_result: Dictionary = systems.merchant.buy_resource(resource_id, amount)

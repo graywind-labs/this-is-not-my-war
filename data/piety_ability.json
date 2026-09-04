@@ -1,17 +1,17 @@
 {
   "max_piety": 100.0,
-  "piety_per_prayer_hour": 3.0,
+  "piety_per_prayer_hour": 2.5,
   "contributing_action_ids": [
     "pray_at_chapel",
     "lead_mass"
   ],
   "action_multipliers": {
     "pray_at_chapel": 1.0,
-    "lead_mass": 1.0
+    "lead_mass": 2.0
   },
   "prayer_mode_multipliers": {
     "personal_prayer": 1.0,
-    "mass_attendance": 1.0
+    "mass_attendance": 2.0
   },
   "combat_action_game_seconds_per_second": 1.0,
   "target_ground_y": 0.0,

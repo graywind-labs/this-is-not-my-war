@@ -83,6 +83,11 @@ func get_building_interaction_ray_hit(ray_origin: Vector3, ray_end: Vector3) -> 
 	}
 
 
+func get_world_feedback_anchor_position() -> Vector3:
+	var gatehouse_height := 5.65 if is_front_gate else 4.15
+	return to_global(Vector3(0.0, gatehouse_height + 0.65, 0.0))
+
+
 func _physics_process(delta: float) -> void:
 	_collapse_fraction = move_toward(_collapse_fraction, 1.0 if _destroyed else 0.0, delta * 1.7)
 	if _destroyed:

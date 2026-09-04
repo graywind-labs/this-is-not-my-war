@@ -21,6 +21,8 @@ var _refresh_queued := false
 func _ready() -> void:
 	set_meta("presentation_only", true)
 	set_meta("authority_role", "read_only_workstation_observer")
+	set_meta("environment_fire_kind", "dining_hearth")
+	add_to_group("environment_fire_audio_source")
 	_connect_signals()
 	_set_active_workstations({})
 	_queue_work_state_refresh()
@@ -108,6 +110,20 @@ func debug_get_snapshot() -> Dictionary:
 		"meal_authority": false,
 		"authority_role": "presentation_only"
 	}
+
+
+func get_active_fire_audio_sources() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if not is_visible_in_tree():
+		return result
+	for raw_station in get_children():
+		if not raw_station is Node3D:
+			continue
+		var station := raw_station as Node3D
+		var workstation_id := str(station.get_meta("workstation_id", ""))
+		if _active_workstations.has(workstation_id):
+			result.append(station)
+	return result
 
 
 func _connect_signals() -> void:

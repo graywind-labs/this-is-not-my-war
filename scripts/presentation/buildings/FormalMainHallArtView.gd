@@ -16,6 +16,16 @@ const SHIELD := "res://assets/3d/quaternius/props/shield_wooden.glb"
 const LOT_SIZE := Vector2(24.0, 20.0)
 const ENVELOPE_SIZE := Vector2(22.0, 18.0)
 const MAXIMUM_LEVEL := 6
+# Runtime AABBs of the Quaternius wall modules are not centered on their scene
+# origins. These dimensions keep perpendicular runs tangent at the real mesh
+# boundary instead of arranging them from their nominal 2 m pivots.
+const OUTER_SIDE_OUTER_X := 10.464036
+const OUTER_FRONT_INNER_Z := 7.627553
+const KEEP_SIDE_OUTER_X := 4.364036
+const KEEP_FRONT_INNER_Z := 2.657554
+const KEEP_WALL_TOP_Y := 4.393983
+const KEEP_ROOF_SCALE := Vector3(1.583096, 0.50, 1.101878)
+const KEEP_ROOF_POSITION := Vector3(0.0, KEEP_WALL_TOP_Y + 0.257859, -0.044985)
 const STONE_DARK := Color("#444a51")
 const STONE := Color("#626a73")
 const STONE_LIGHT := Color("#858b8c")
@@ -147,7 +157,7 @@ func _build_formal_main_hall() -> void:
 	fade_exterior_with_roof = false
 	interaction_bounds_center = Vector3(0.0, 3.2, 0.0)
 	interaction_bounds_size = Vector3(22.0, 7.4, 18.0)
-	set_meta("art_revision", "t0132_p1r5")
+	set_meta("art_revision", "t0352_shell_closure")
 	set_meta("visible_shell", "closed_textured_quaternius_composite")
 	set_meta("solid_visual_mass", true)
 	set_meta("load_bearing_roof_deck", true)
@@ -185,13 +195,19 @@ func _build_base_visuals() -> void:
 	_add_scene_prop(exterior, "FrontStairs", STAIRS, Vector3(0.0, 0.0, 8.1), Vector3(2.3, 1.0, 0.75), Vector3(0.0, 180.0, 0.0))
 
 	for side in [-1.0, 1.0]:
-		_add_scene_prop(exterior, "CommandBanner", BANNER, Vector3(side * 2.05, 3.55, 7.9), Vector3.ONE * 0.72, Vector3(0.0, 180.0, 0.0))
+		var banner_name := "CommandBannerWest" if side < 0.0 else "CommandBannerEast"
+		# 旗帜原点位于横杆一端；左右必须镜像，并挂到门楼檐口以下，不能把旗面埋进坡瓦只露出木架。
+		var banner_y_rotation := 180.0 if side < 0.0 else 0.0
+		var banner := _add_scene_prop(exterior, banner_name, BANNER, Vector3(side * 2.05, 2.45, 7.9), Vector3.ONE * 0.72, Vector3(0.0, banner_y_rotation, 0.0))
+		if banner != null:
+			banner.set_meta("mounted_to_structure", true)
+			banner.set_meta("mount_surface", "main_hall_front_facade_below_eave")
 		_add_main_hall_entry_lantern(exterior, "GateLanternWest" if side < 0.0 else "GateLanternEast", side)
 		_add_scene_prop(exterior, "CommandShield", SHIELD, Vector3(0.0, 2.48, 7.98), Vector3.ONE * 0.78, Vector3(0.0, 180.0, 0.0))
 	_build_front_timber_frame(exterior)
 	_build_gatehouse_stone_detail(exterior)
 
-	_add_scene_prop(roof, "CentralKeepRoof", COMPACT_ROOF, Vector3(0.0, 4.62, 0.0), Vector3(1.42, 0.50, 1.0))
+	_add_scene_prop(roof, "CentralKeepRoof", COMPACT_ROOF, KEEP_ROOF_POSITION, KEEP_ROOF_SCALE)
 	_add_scene_prop(roof, "FrontGatehouseRoof", MAIN_ROOF, Vector3(0.0, 3.68, 6.72), Vector3(0.50, 0.22, 0.20))
 
 
@@ -211,18 +227,21 @@ func _build_solid_command_mass(parent: Node3D) -> void:
 	mass.add_child(keep)
 	_add_textured_box(keep, "KeepMasonryCore", Vector3(0.0, 3.68, 0.0), Vector3(8.0, 1.35, 5.35), "plaster", Color("#9d927e"), 0.58)
 	_add_textured_box(keep, "KeepStoneBelt", Vector3(0.0, 3.18, 0.0), Vector3(8.25, 0.28, 5.58), "rock", Color("#696d70"), 0.5)
+	var keep_front_module_length := KEEP_SIDE_OUTER_X * 2.0 / 4.0
 	for index in range(4):
-		var x := -3.0 + float(index) * 2.0
-		_add_scene_prop(keep, "KeepFrontWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 3.02, 2.75), Vector3(1.0, 0.44, 1.0), Vector3(0.0, 180.0, 0.0))
-		_add_scene_prop(keep, "KeepRearWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 3.02, -2.75), Vector3(1.0, 0.44, 1.0))
+		var x := _centered_segment_position(index, 4, keep_front_module_length)
+		var wall_scale := Vector3(keep_front_module_length / 2.0, 0.44, 1.0)
+		_add_scene_prop(keep, "KeepFrontWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 3.02, 2.75), wall_scale, Vector3(0.0, 180.0, 0.0))
+		_add_scene_prop(keep, "KeepRearWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 3.02, -2.75), wall_scale)
+	var keep_side_module_length := KEEP_FRONT_INNER_Z * 2.0 / 3.0
 	for side in [-1.0, 1.0]:
 		for index in range(3):
 			_add_scene_prop(
 				keep,
 				"KeepSide_%s_%02d" % [("West" if side < 0.0 else "East"), index + 1],
 				WALL_WINDOW,
-				Vector3(side * 4.05, 3.02, -1.82 + float(index) * 1.82),
-				Vector3(0.91, 0.44, 1.0),
+				Vector3(side * 4.05, 3.02, _centered_segment_position(index, 3, keep_side_module_length)),
+				Vector3(keep_side_module_length / 2.0, 0.44, 1.0),
 				Vector3(0.0, 90.0 if side < 0.0 else -90.0, 0.0)
 			)
 
@@ -232,24 +251,30 @@ func _build_textured_facade_modules(parent: Node3D) -> void:
 	shell.name = "TexturedFacadeModules"
 	shell.set_meta("shell_material_authority", "quaternius_native_textures")
 	parent.add_child(shell)
+	var outer_front_module_length := OUTER_SIDE_OUTER_X * 2.0 / 11.0
 	for index in range(11):
-		var x := -10.0 + float(index) * 2.0
+		var x := _centered_segment_position(index, 11, outer_front_module_length)
 		var front_asset := WALL_DOOR if index == 5 else WALL_WINDOW
 		var front_name := "FrontDoor" if index == 5 else "OuterFrontWall_%02d" % (index + 1)
-		_add_scene_prop(shell, front_name, front_asset, Vector3(x, 0.0, 7.72), Vector3.ONE, Vector3(0.0, 180.0, 0.0))
-		_add_scene_prop(shell, "OuterRearWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 0.0, -7.72))
+		_add_scene_prop(shell, front_name, front_asset, Vector3(x, 0.0, 7.72), Vector3(outer_front_module_length / 2.0, 1.0, 1.0), Vector3(0.0, 180.0, 0.0))
+		_add_scene_prop(shell, "OuterRearWall_%02d" % (index + 1), WALL_WINDOW, Vector3(x, 0.0, -7.72), Vector3(outer_front_module_length / 2.0, 1.0, 1.0))
+	var outer_side_module_length := OUTER_FRONT_INNER_Z * 2.0 / 7.0
 	for side in [-1.0, 1.0]:
 		var side_name := "West" if side < 0.0 else "East"
 		for index in range(7):
-			var z := -6.72 + float(index) * 2.24
+			var z := _centered_segment_position(index, 7, outer_side_module_length)
 			_add_scene_prop(
 				shell,
 				"Outer%sWall_%02d" % [side_name, index + 1],
 				WALL_WINDOW,
 				Vector3(side * 10.15, 0.0, z),
-				Vector3(1.12, 1.0, 1.0),
+				Vector3(outer_side_module_length / 2.0, 1.0, 1.0),
 				Vector3(0.0, 90.0 if side < 0.0 else -90.0, 0.0)
 			)
+
+
+func _centered_segment_position(index: int, count: int, segment_length: float) -> float:
+	return (float(index) - (float(count) - 1.0) * 0.5) * segment_length
 
 
 func _build_defense_roof_terrace(parent: Node3D) -> void:

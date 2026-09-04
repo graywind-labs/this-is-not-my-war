@@ -209,6 +209,8 @@ func _verify_decorative_barrel_contract(art: Node3D, level: int, expected_count:
 		if barrel.is_visible_in_tree() != (required_level <= level):
 			return _expect(false, "Decorative tavern barrel visibility is not level-synced: %s" % barrel.get_path())
 		if barrel.is_visible_in_tree():
+			if barrel.scale.x < 0.599 or not is_equal_approx(barrel.scale.x, barrel.scale.y) or not is_equal_approx(barrel.scale.x, barrel.scale.z):
+				return _expect(false, "Decorative tavern barrel is not using the enlarged uniform scale: %s / %s" % [barrel.get_path(), barrel.scale])
 			visible_count += 1
 	return _expect(visible_count == expected_count, "Tavern Lv.%d decorative barrel contract expected %d but found %d" % [level, expected_count, visible_count])
 

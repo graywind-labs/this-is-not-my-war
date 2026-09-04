@@ -48,6 +48,16 @@
 [ext_resource type="Script" path="res://scripts/ui/WorldFeedbackPresenter.gd" id="46_world_feedback"]
 [ext_resource type="Script" path="res://scripts/ui/CraftingHarvestDialog.gd" id="47_crafting_harvest_dialog"]
 [ext_resource type="Script" path="res://scripts/ui/MilestoneAlertPresenter.gd" id="48_milestone_alert"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/WorldAudioController.gd" id="50_world_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/WorkAudioController.gd" id="51_work_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/MovementAudioController.gd" id="52_movement_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/CombatAudioController.gd" id="53_combat_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/combat/CombatVFXController.gd" id="53b_combat_vfx"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/DialogueVoiceAudioController.gd" id="54_dialogue_voice_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/InteractionAudioController.gd" id="55_interaction_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/AbilityAudioController.gd" id="56_ability_audio"]
+[ext_resource type="Script" path="res://scripts/ui/NPCSkillPointAlertPresenter.gd" id="57_npc_skill_point_alert"]
+[ext_resource type="Script" path="res://scripts/ui/PauseMenu.gd" id="58_pause_menu"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -177,6 +187,30 @@ script = ExtResource("37_station_layout")
 
 [node name="ChibiCharacterPilotPreviewController" type="Node" parent="Presentation"]
 script = ExtResource("39_chibi_pilot_preview")
+
+[node name="WorldAudioController" type="Node" parent="Presentation"]
+script = ExtResource("50_world_audio")
+
+[node name="WorkAudioController" type="Node" parent="Presentation"]
+script = ExtResource("51_work_audio")
+
+[node name="MovementAudioController" type="Node" parent="Presentation"]
+script = ExtResource("52_movement_audio")
+
+[node name="CombatAudioController" type="Node" parent="Presentation"]
+script = ExtResource("53_combat_audio")
+
+[node name="CombatVFXController" type="Node" parent="Presentation"]
+script = ExtResource("53b_combat_vfx")
+
+[node name="DialogueVoiceAudioController" type="Node" parent="Presentation"]
+script = ExtResource("54_dialogue_voice_audio")
+
+[node name="InteractionAudioController" type="Node" parent="Presentation"]
+script = ExtResource("55_interaction_audio")
+
+[node name="AbilityAudioController" type="Node" parent="Presentation"]
+script = ExtResource("56_ability_audio")
 
 [node name="WorldRoot" type="Node3D" parent="." unique_id=1522394943]
 
@@ -723,6 +757,16 @@ unresizable = true
 dialog_text = "有人从昏迷中苏醒了。"
 ok_button_text = "太好了"
 
+[node name="WaveClearedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
+unique_name_in_owner = true
+title = "成功守住敌袭"
+initial_position = 2
+size = Vector2i(520, 160)
+exclusive = true
+unresizable = true
+dialog_text = "恭喜守备官守住了第1波敌军！"
+ok_button_text = "太好了"
+
 [node name="WorldFeedbackPresenter" type="Control" parent="UI"]
 z_index = 60
 layout_mode = 3
@@ -737,6 +781,10 @@ script = ExtResource("46_world_feedback")
 [node name="CraftingTargetAlerts" type="Control" parent="UI"]
 mouse_filter = 2
 script = ExtResource("30_crafting_alert")
+
+[node name="NPCSkillPointAlerts" type="Control" parent="UI"]
+mouse_filter = 2
+script = ExtResource("57_npc_skill_point_alert")
 
 [node name="CraftingHarvestDialog" type="Control" parent="UI"]
 visible = false
@@ -1060,7 +1108,7 @@ anchor_right = 1.0
 offset_left = -666.0
 offset_top = 16.0
 offset_right = -16.0
-offset_bottom = 536.0
+offset_bottom = 456.0
 grow_horizontal = 0
 theme = ExtResource("36_slice_theme")
 script = ExtResource("41_horse_panel")
@@ -1529,12 +1577,13 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -360.0
-offset_top = -250.0
-offset_right = 360.0
-offset_bottom = 250.0
+offset_left = -390.0
+offset_top = -220.0
+offset_right = 390.0
+offset_bottom = 220.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("36_slice_theme")
 script = ExtResource("24_merchant_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/MerchantPanel"]
@@ -1560,10 +1609,11 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="TitleLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 20
-text = "后门商人交易"
+theme_override_font_sizes/font_size = 22
+text = "行商交易"
 
 [node name="MerchantCloseButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
@@ -1571,76 +1621,82 @@ custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "×"
 
-[node name="MerchantStatusLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="MerchantScheduleLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "商人当前不在驿站"
-autowrap_mode = 3
+theme_override_colors/font_color = Color(0.72, 0.68, 0.61, 1)
+theme_override_font_sizes/font_size = 14
+text = "到访时间 10:00 到 16:00"
 
-[node name="MerchantResourcesLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "驿站库存：--"
-autowrap_mode = 3
-
-[node name="QuantityRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="ModeRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="QuantityLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
-layout_mode = 2
-text = "本次数量"
-
-[node name="MerchantAmountSpin" type="SpinBox" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
+[node name="MerchantBuyModeButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ModeRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 0)
+custom_minimum_size = Vector2(88, 32)
 layout_mode = 2
-min_value = 1.0
-max_value = 99.0
-value = 1.0
-
-[node name="BuyLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-layout_mode = 2
-text = "购买补给（商人出售给驿站）"
-
-[node name="BuyRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="MerchantBuySelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="MerchantBuyButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
-unique_name_in_owner = true
-layout_mode = 2
+toggle_mode = true
+button_pressed = true
 text = "购买"
 
-[node name="SellLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="MerchantSellModeButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(88, 32)
 layout_mode = 2
-text = "出售物资（驿站出售给商人）"
+toggle_mode = true
+text = "出售"
 
-[node name="SellRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="ResourceScroll" type="ScrollContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 0
 
-[node name="MerchantSellSelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+[node name="MerchantResourceGrid" type="GridContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ResourceScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/h_separation = 8
+columns = 5
 
-[node name="MerchantSellButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+[node name="MerchantFeedbackLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
-text = "出售"
-
-[node name="MerchantResultLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-text = "商人每天 10:00-16:00 停在后门。"
+theme_override_colors/font_color = Color(0.86, 0.59, 0.32, 1)
+text = ""
+horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="Footer" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 2
+
+[node name="TotalPrefixLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+layout_mode = 2
+text = "交易合计"
+
+[node name="MerchantTotalLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "0"
+horizontal_alignment = 2
+
+[node name="FooterSpacer" type="Control" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MerchantConfirmButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 36)
+layout_mode = 2
+disabled = true
+text = "确认"
 
 [node name="GMPanel" type="Control" parent="UI"]
 layout_mode = 3
@@ -1650,6 +1706,18 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("13_gm_panel")
+
+[node name="PauseMenu" type="Control" parent="UI"]
+visible = false
+z_index = 200
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("36_slice_theme")
+script = ExtResource("58_pause_menu")
 
 [node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
 script = ExtResource("10_3km4f")

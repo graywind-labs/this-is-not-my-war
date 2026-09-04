@@ -18,7 +18,7 @@ T0135-P4R 的 `environment/FormalForestArtView.gd` 使用 369 个 MultiMesh 区�
 
 T0135-P5 的 `environment/FormalEnvironmentScatterView.gd` 按河岸、山脚、林下、道路边缘和城内空地生成 4375 个低模草 / 蕨 / 灌木 / 岩石实例，并用合并贴地网格完成湿痕、苔藓和泥肩过渡；所有候选统一排除河槽、道路核心、建筑地块、公共地点与正式敌 / 商 / 逃路线，节点保持 presentation-only。
 
-T0135-P6/P7 的 `environment/CelestialCycleController.gd` 只读 GameState 绝对时刻，为正式环境根生成连续东升—南天—西落的太阳 / 月亮 DirectionalLight、唯一动态 WorldEnvironment、ProceduralSky、低密度雾与连续昼夜色调，并按能量选出唯一主阴影；它不推进时间或维护累计角度。P7 还只读 RoofVisibilityController 的显露快照，在七座封闭建筑下管理 14 盏无影暖色向下补光，屋顶封闭即关闭，所有节点保持 presentation-only。
+T0135-P6/P7/P7R5/R6 的 `environment/CelestialCycleController.gd` 只读 GameState 绝对时刻，为正式环境根生成日月方向光、唯一动态 WorldEnvironment、ProceduralSky、全局雾及前后林缘 / 河谷 / 东山脚十二个错位椭球 FogVolume；夜雾 `17:30–21:00` 渐入、`04:30–07:30` 渐出，不推进时间或维护累计角度。P7 还只读 RoofVisibilityController，在七座封闭建筑下管理当前七盏有影向下补光；所有环境、雾和补光节点保持 presentation-only。
 
 T0130-P4R2 为动作沙盒增加 `--t0130-capture-ivo-face` 正面近景参数，用实际 D3D12 渲染核对 Deckhand 原生眼睛；该参数只隐藏其他预览角色并重构沙盒相机，不接入 Main 或修改 NPC 状态。
 

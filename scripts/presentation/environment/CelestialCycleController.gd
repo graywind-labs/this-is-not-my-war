@@ -25,6 +25,9 @@ var _environment_resource: Environment
 var _sky_resource: Sky
 var _sky_material: ProceduralSkyMaterial
 var _environment_state: Dictionary = {}
+var _peripheral_fog_root: Node3D
+var _peripheral_fog_entries: Dictionary = {}
+var _night_fog_weight := 0.0
 var _roof_visibility_controller: Node
 var _roof_signal_connected := false
 var _interior_lights_by_building: Dictionary = {}
@@ -57,6 +60,7 @@ func configure(environment_config: Dictionary) -> void:
 	if is_inside_tree():
 		_ensure_lights()
 		_ensure_world_environment()
+		_ensure_peripheral_fog_volumes()
 		_connect_time_signal()
 		_connect_roof_visibility_signal()
 		_ensure_building_functional_light_controller()
@@ -68,6 +72,7 @@ func configure(environment_config: Dictionary) -> void:
 func _ready() -> void:
 	_ensure_lights()
 	_ensure_world_environment()
+	_ensure_peripheral_fog_volumes()
 	_connect_time_signal()
 	_connect_roof_visibility_signal()
 	_ensure_building_functional_light_controller()
@@ -129,6 +134,7 @@ func get_debug_snapshot() -> Dictionary:
 		"world_environment_present": is_instance_valid(_world_environment),
 		"procedural_sky_present": is_instance_valid(_sky_material),
 		"environment": _environment_state.duplicate(true),
+		"peripheral_fog": _get_peripheral_fog_snapshot(),
 		"interior_fill": {
 			"configured_building_count": (_config.get("interior_fill", {}) as Dictionary).get("buildings", {}).size(),
 			"light_count": _count_interior_lights(),
@@ -225,7 +231,16 @@ func _apply_environment_state() -> void:
 		phase = "day"
 
 	var fog_reveal_multiplier := float(environment_config.get("fog_reveal_multiplier", 0.28))
-	var fog_density := float(state.get("fog_density", 0.0006)) * lerpf(1.0, fog_reveal_multiplier, _interior_reveal_weight)
+	var night_fog_config := environment_config.get("night_fog", {}) as Dictionary
+	_night_fog_weight = _calculate_night_fog_weight(night_fog_config)
+	var fog_density_base := float(state.get("fog_density", 0.0006))
+	if not night_fog_config.is_empty():
+		fog_density_base = lerpf(
+			float(night_fog_config.get("day_density", 0.00005)),
+			float(night_fog_config.get("night_density", 0.0062)),
+			_night_fog_weight
+		)
+	var fog_density := fog_density_base * lerpf(1.0, fog_reveal_multiplier, _interior_reveal_weight)
 	_sky_material.sky_top_color = _color(state.get("sky_top_color", "#4b7895"), Color("#4b7895"))
 	_sky_material.sky_horizon_color = _color(state.get("sky_horizon_color", "#b4ced2"), Color("#b4ced2"))
 	_sky_material.ground_bottom_color = _color(state.get("ground_bottom_color", "#354841"), Color("#354841"))
@@ -241,14 +256,17 @@ func _apply_environment_state() -> void:
 	_environment_resource.fog_sun_scatter = float(state.get("fog_sun_scatter", 0.08))
 	_environment_resource.fog_sky_affect = float(state.get("fog_sky_affect", 0.22))
 	_environment_resource.tonemap_exposure = float(state.get("exposure", 1.08))
+	_update_peripheral_fog_volumes(_color(state.get("fog_color", "#8ca9a8"), Color("#8ca9a8")))
 	_environment_state = state.duplicate(true)
 	_environment_state["phase"] = phase
 	_environment_state["phase_blend"] = blend
 	_environment_state["sun_altitude_degrees"] = altitude
-	_environment_state["fog_density_base"] = float(state.get("fog_density", 0.0006))
+	_environment_state["fog_density_base"] = fog_density_base
 	_environment_state["fog_density"] = fog_density
 	_environment_state["fog_reveal_multiplier"] = fog_reveal_multiplier
 	_environment_state["interior_reveal_weight"] = _interior_reveal_weight
+	_environment_state["night_fog_weight"] = _night_fog_weight
+	_environment_state["fog_transition"] = _fog_transition_label(_night_fog_weight)
 
 
 func _blend_environment_states(from_state: Dictionary, to_state: Dictionary, weight: float) -> Dictionary:
@@ -414,11 +432,16 @@ func _ensure_world_environment() -> void:
 	_environment_resource.fog_enabled = true
 	_environment_resource.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	_environment_resource.fog_height_density = 0.0
-	_environment_resource.fog_depth_begin = 52.0
-	_environment_resource.fog_depth_end = 360.0
-	_environment_resource.fog_depth_curve = 1.0
-	_environment_resource.adjustment_enabled = true
 	var environment_config := _config.get("environment", {}) as Dictionary
+	var night_fog_config := environment_config.get("night_fog", {}) as Dictionary
+	_environment_resource.fog_depth_begin = float(night_fog_config.get("depth_begin", 52.0))
+	_environment_resource.fog_depth_end = float(night_fog_config.get("depth_end", 360.0))
+	_environment_resource.fog_depth_curve = 1.0
+	_environment_resource.volumetric_fog_enabled = not (night_fog_config.get("local_volumes", []) as Array).is_empty()
+	_environment_resource.volumetric_fog_density = 0.0
+	_environment_resource.volumetric_fog_length = float(night_fog_config.get("volumetric_length", 180.0))
+	_environment_resource.volumetric_fog_detail_spread = float(night_fog_config.get("volumetric_detail_spread", 2.0))
+	_environment_resource.adjustment_enabled = true
 	_environment_resource.adjustment_brightness = float(environment_config.get("adjustment_brightness", 1.02))
 	_environment_resource.adjustment_contrast = float(environment_config.get("adjustment_contrast", 0.98))
 	_environment_resource.adjustment_saturation = float(environment_config.get("adjustment_saturation", 1.05))
@@ -430,6 +453,128 @@ func _ensure_world_environment() -> void:
 	_world_environment.set_meta("presentation_only", true)
 	_world_environment.set_meta("dynamic_time_environment", true)
 	add_child(_world_environment)
+
+
+func _ensure_peripheral_fog_volumes() -> void:
+	if not is_instance_valid(_peripheral_fog_root):
+		_peripheral_fog_root = Node3D.new()
+		_peripheral_fog_root.name = "PeripheralFogVolumes"
+		_peripheral_fog_root.set_meta("presentation_only", true)
+		add_child(_peripheral_fog_root)
+	for child in _peripheral_fog_root.get_children():
+		_peripheral_fog_root.remove_child(child)
+		child.queue_free()
+	_peripheral_fog_entries.clear()
+	var environment_config := _config.get("environment", {}) as Dictionary
+	var night_fog_config := environment_config.get("night_fog", {}) as Dictionary
+	for raw_entry in night_fog_config.get("local_volumes", []):
+		var entry := raw_entry as Dictionary
+		var fog_id := str(entry.get("id", ""))
+		if fog_id.is_empty():
+			continue
+		var volume := FogVolume.new()
+		volume.name = "Fog_%s" % fog_id.to_pascal_case()
+		volume.shape = _fog_volume_shape(str(entry.get("shape", "box")))
+		volume.position = _v3(entry.get("position", []))
+		volume.rotation_degrees = _v3(entry.get("rotation_degrees", []))
+		var configured_size := _v3(entry.get("size", []))
+		volume.size = configured_size if configured_size != Vector3.ZERO else Vector3(40.0, 12.0, 40.0)
+		volume.set_meta("presentation_only", true)
+		volume.set_meta("fog_zone_id", fog_id)
+		volume.set_meta("fog_region", str(entry.get("region", fog_id)))
+		var material := FogMaterial.new()
+		material.density = 0.0
+		material.albedo = Color("#7c8f99")
+		material.edge_fade = clampf(float(entry.get("edge_fade", 0.35)), 0.0, 1.0)
+		material.height_falloff = maxf(0.0, float(entry.get("height_falloff", 0.15)))
+		volume.material = material
+		_peripheral_fog_root.add_child(volume)
+		_peripheral_fog_entries[fog_id] = {
+			"node": volume,
+			"material": material,
+			"base_density": maxf(0.0, float(entry.get("density", 0.03))),
+		}
+
+
+func _update_peripheral_fog_volumes(fog_color: Color) -> void:
+	for raw_entry in _peripheral_fog_entries.values():
+		var entry := raw_entry as Dictionary
+		var material := entry.get("material") as FogMaterial
+		if material == null:
+			continue
+		material.density = float(entry.get("base_density", 0.0)) * _night_fog_weight
+		material.albedo = fog_color.lightened(0.46)
+
+
+func _get_peripheral_fog_snapshot() -> Dictionary:
+	var volumes: Array[Dictionary] = []
+	for raw_fog_id in _peripheral_fog_entries.keys():
+		var fog_id := str(raw_fog_id)
+		var entry := _peripheral_fog_entries.get(fog_id, {}) as Dictionary
+		var volume := entry.get("node") as FogVolume
+		var material := entry.get("material") as FogMaterial
+		if volume == null or material == null:
+			continue
+		volumes.append({
+			"id": fog_id,
+			"position": volume.position,
+			"rotation_degrees": volume.rotation_degrees,
+			"size": volume.size,
+			"shape": volume.shape,
+			"region": str(volume.get_meta("fog_region", fog_id)),
+			"density": material.density,
+			"base_density": float(entry.get("base_density", 0.0)),
+			"edge_fade": material.edge_fade,
+			"height_falloff": material.height_falloff,
+			"presentation_only": bool(volume.get_meta("presentation_only", false)),
+		})
+	volumes.sort_custom(func(first: Dictionary, second: Dictionary) -> bool: return str(first.id) < str(second.id))
+	return {
+		"weight": _night_fog_weight,
+		"volume_count": volumes.size(),
+		"volumetric_enabled": is_instance_valid(_environment_resource) and _environment_resource.volumetric_fog_enabled,
+		"volumetric_length": _environment_resource.volumetric_fog_length if is_instance_valid(_environment_resource) else 0.0,
+		"volumes": volumes,
+	}
+
+
+func _fog_volume_shape(shape_name: String) -> int:
+	match shape_name.to_lower():
+		"ellipsoid", "ellipse", "sphere":
+			return RenderingServer.FOG_VOLUME_SHAPE_ELLIPSOID
+		_:
+			return RenderingServer.FOG_VOLUME_SHAPE_BOX
+
+
+func _calculate_night_fog_weight(night_fog_config: Dictionary) -> float:
+	if night_fog_config.is_empty():
+		return 1.0 if float(_sun_state.get("altitude_degrees", 0.0)) < -6.0 else 0.0
+	var current_seconds := _seconds_from_time(
+		int(_last_time.get("hour", 0)),
+		int(_last_time.get("minute", 0)),
+		int(_last_time.get("second", 0))
+	)
+	var evening_start := _configured_time_seconds(night_fog_config.get("evening_start_time", [17, 30]), [17, 30])
+	var evening_full := _configured_time_seconds(night_fog_config.get("evening_full_time", [21, 0]), [21, 0])
+	var morning_fade := _configured_time_seconds(night_fog_config.get("morning_fade_time", [4, 30]), [4, 30])
+	var morning_clear := _configured_time_seconds(night_fog_config.get("morning_clear_time", [7, 30]), [7, 30])
+	var curve_power := maxf(0.1, float(night_fog_config.get("curve_power", 1.15)))
+	if current_seconds >= evening_start:
+		return pow(smoothstep(evening_start, maxf(evening_full, evening_start + 1.0), current_seconds), curve_power)
+	if current_seconds < morning_clear:
+		if current_seconds <= morning_fade:
+			return 1.0
+		return pow(1.0 - smoothstep(morning_fade, maxf(morning_clear, morning_fade + 1.0), current_seconds), curve_power)
+	return 0.0
+
+
+func _fog_transition_label(weight: float) -> String:
+	var hour := int(_last_time.get("hour", 0))
+	if weight <= 0.001:
+		return "clear_day"
+	if weight >= 0.999:
+		return "full_night"
+	return "morning_clearing" if hour < 12 else "evening_spreading"
 
 
 func _configure_light(light_node: DirectionalLight3D, kind: String) -> void:

@@ -5,6 +5,7 @@ const ENEMY_ANCHOR_HEIGHT := 2.95
 const HORSE_ANCHOR_HEIGHT := 2.75
 const BUILDING_ANCHOR_HEIGHT := 3.0
 const DEFENSE_DEVICE_ANCHOR_HEIGHT := 2.35
+const MERCHANT_ANCHOR_HEIGHT := 0.0
 const RESOURCE_ICON_PATHS := {
 	"money": "res://assets/ui/resource_icons/money.svg",
 	"grain": "res://assets/ui/resource_icons/grain.svg",
@@ -95,25 +96,40 @@ static func make_resource_transaction_entries(
 static func append_growth_entries(entries: Array[Dictionary], growth_result: Dictionary) -> void:
 	if growth_result.is_empty():
 		return
+	var growth_results: Array[Dictionary] = [growth_result]
+	append_growth_batch_entry(entries, growth_results)
+
+
+static func append_growth_batch_entry(
+	entries: Array[Dictionary],
+	growth_results: Array[Dictionary]
+) -> void:
 	var components: Array[Dictionary] = []
 	var text_parts: Array[String] = []
-	_append_growth_component(
-		components,
-		text_parts,
-		str(growth_result.get("skill_name", "熟练度")),
-		int(growth_result.get("amount", 0))
-	)
+	var experience_gained := 0
+	var skill_points_gained := 0
+	for growth_result in growth_results:
+		if growth_result.is_empty():
+			continue
+		_append_growth_component(
+			components,
+			text_parts,
+			str(growth_result.get("skill_name", "")),
+			int(growth_result.get("amount", 0))
+		)
+		experience_gained += int(growth_result.get("experience_gained", 0))
+		skill_points_gained += int(growth_result.get("skill_points_gained", 0))
 	_append_growth_component(
 		components,
 		text_parts,
 		"经验",
-		int(growth_result.get("experience_gained", 0))
+		experience_gained
 	)
 	_append_growth_component(
 		components,
 		text_parts,
 		"技能点",
-		int(growth_result.get("skill_points_gained", 0))
+		skill_points_gained
 	)
 	if components.is_empty():
 		return
@@ -254,4 +270,6 @@ static func _get_default_anchor_height(anchor_type: String) -> float:
 			return BUILDING_ANCHOR_HEIGHT
 		"defense_device":
 			return DEFENSE_DEVICE_ANCHOR_HEIGHT
+		"merchant":
+			return MERCHANT_ANCHOR_HEIGHT
 	return 2.5

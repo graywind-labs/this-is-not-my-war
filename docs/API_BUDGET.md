@@ -1,5 +1,39 @@
 # API_BUDGET.md
 
+## T0353 音频混音修复调用成本
+
+本任务只调整 Godot 本地音频总线、按钮信号时序、镜头缩放只读投影与设置持久化；不新增 endpoint、Prompt、`call_type`、模型判断或后端启动。真实 API 调用与费用均为 0。
+
+## T0135-P10H 陨石音效调用成本
+
+本任务只消费 Godot 本地 PietySystem / EventBus 已有施放与冲击事实，不新增 endpoint、`call_type`、Prompt、模型判断或重试。专项与 Godot MCP 正式场景验收未启动后端，真实 API 调用与费用为 0。
+
+## T0135-P10G UI / 世界交互音效调用成本
+
+本任务只读本地 UI、门与 MerchantSystem 已有状态，不新增 endpoint、`call_type`、Prompt、模型判断或重试。专项和 Godot MCP 正式场景验收均未启动后端，真实 API 调用与费用为 0。
+
+## T0135-P10F NPC 情绪语气声调用成本
+
+本任务复用现有对话响应已经携带的情绪结果，不新增 endpoint、`call_type`、重试或模型判断。19 条资产映射、随机选择、空间定位和播放替换均为本地 Godot 表现逻辑；专项与 Godot MCP 运行态验收旁路启动计划，真实 API 调用和费用均为 0。
+
+## T0324 显式 Mock 的完整机制验收成本
+
+- GM NPC-NPC 对话在 `LLM_PROVIDER=mock` 时复用正式 `/npc/dialogue` 通信与 Godot 状态机，但不会调用外部供应商或写入真实成本账本。
+- 专项旁路 8 人启动计划，完整自然流程产生 2 次本地 Mock 响应（邀请 + 首轮结束），真实 API、token 费用和成本账本增量均为 0。
+- “允许显式 Mock”不等于恢复 fallback：`model_fallback_used=true` 仍由 DialogSystem 拒绝。真实 provider 效果验收继续使用带显式闸门的 T0319 最小脚本。
+
+## T0319 GM 真实会合最小验收成本
+
+- 目标不瞬移、发起者寻路、邀请距离和接受后行动交接先由受控 fake bridge 完整覆盖，真实供应商调用为 0。
+- 最终真实验收使用 DeepSeek `deepseek-v4-flash`、`fallback=false`，脚本旁路 8 人启动计划，并在首轮回复落地时立即停止自主续聊且抑制对话后计划重评估。仅产生 2 次 `dialogue` attempt：邀请 `15,901 input / 99 output / ¥0.00894892`，首轮 `16,498 input / 115 output / ¥0.00970336`；合计 `32,399 input / 214 output / ¥0.01865228`，2/2 成功、0 fallback。
+- 当日账本由 263 次 / ¥4.62921024 增至 265 次 / ¥4.64786252，剩余 ¥15.35213748 / ¥20，在途预留为 0。专用脚本要求显式 `T0319_ALLOW_REAL_LLM=1`，防止普通本地回归误耗额度。
+
+## T0318 GM 交互验收调用边界
+
+- 空间会合、导航、桌边距离、手势、GM 控件、治疗移动与 HP 恢复均为本地程序行为，必须使用受控 fake / Mock bridge 验收，不得通过反复启动真实 Main 探索。
+- 真实 provider 只用于确认 Key / provider 来源及最终业务回复；基础 Mock 已通过后仍需真实验收时，先复用单次最小业务请求和 usage 记录。除非用户再次明确同意，不重复启动会自动生成 8 人计划及连锁修订的正式 Main。
+- 2026-09-02 后端重启后的诊断曾因多轮正式 Main 复现产生 263 次 provider attempt、估算 ¥4.62921024；发现后已停止游戏，在途预留归零，剩余额度 ¥15.37078976 / ¥20。后续座位目标空间修复与回归全部改用 fake bridge，新增真实调用为 0。
+
 ## T0308 特殊互动 Prompt 稳定性成本
 
 成品路径不新增 endpoint、`call_type`、重试或二次判定；四个 toggle 仍最多开启一个，关闭时不加载模块，开启后仍只使用本轮一次 `/npc/dialogue`。新增文字只提高单次动态 Prompt 长度。

@@ -190,7 +190,7 @@ T0128 已把合同落地为 `scenes/characters/GlenArtView.tscn` 与 `scripts/pr
 
 T0128A 在 `CharacterPivot/SourceFacingCorrection` 统一修正 Quaternius 可见源模型 180°朝向差；CharacterPivot 本身继续使用项目 `-Z` 前向。运行时先复制每个 AnimationLibrary，再在实例副本上把持续状态片段设为 `LOOP_LINEAR`，既不改第三方导入缓存，也避免非循环源动画在第一遍后停住。
 
-统一状态合同为 `idle / walk / run / talk / work / attack / hit_react / unconscious / get_up`；六挂点为 `RightHand(hand_r) / LeftHand(hand_l) / Back(spine_03) / Head(Head) / Body(spine_02) / Mount(pelvis)`。免费 UAL2 没有独立 run / forge / fall，当前明确以加速 `Walk_Carry`、`Farm_Harvest`、反播 `LayToIdle` 适配；替换真实片段时保持状态名和挂点名不变。`PhysicalBoneSimulator3D` 当前只是禁用占位，T0133 才生成 physical bones 和姿态回收。
+统一状态合同为 `idle / walk / run / talk / work / attack / hit_react / unconscious / get_up`。T0133-P2 已将生产 Chibi 骨架下的 `PhysicalBoneSimulator3D` 接通为按需 12 骨骼链；非骑乘昏迷模拟后冻结姿态，复苏时渐隐回动画，骑乘与超预算单位继续使用既有受控动画。物理骨骼只消费权威状态，不成为 HP 或碰撞判定来源。
 
 A5 系列在基础合同上增加 `training_instructor / training_practice / mass_leader / seated_prayer / seated_eating / vehicle_seated` 表现态，当前总计 15 个状态。A5-P5j 的 `seated_eating` 复用 UAL2 `Consume` 手到口循环，并由餐椅 `sitting` 锚点和 `(-0.60 m)` 局部下沉形成低配坐姿；该偏移只影响 CharacterPivot，不移动 NPC 根、不提交座位，也不结算餐食或饱食。后续若取得原生坐姿进食片段，应替换 clip / offset，不更改 `seated_eating` 状态名与到座后才 active 的权威合同。
 

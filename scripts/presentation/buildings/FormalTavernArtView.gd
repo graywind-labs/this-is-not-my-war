@@ -16,6 +16,7 @@ const AUTO_DOOR_SCRIPT := preload("res://scripts/presentation/buildings/Building
 const BUILDING_FOOTPRINT := Vector2(12.0, 10.0)
 const LOT_SIZE := Vector2(14.0, 12.0)
 const MAXIMUM_LEVEL := 3
+const DECORATIVE_BARREL_SCALE_MULTIPLIER := 1.25
 
 const CELLAR_STONE := Color("#555963")
 const CELLAR_STONE_LIGHT := Color("#747782")
@@ -607,7 +608,14 @@ func _add_scene_prop(parent: Node3D, node_name: String, asset_path: String, posi
 
 
 func _add_storage_barrel(parent: Node3D, node_name: String, position_value: Vector3, uniform_scale: float, required_level: int, rotation_value: Vector3 = Vector3.ZERO) -> Node3D:
-	var barrel := _add_scene_prop(parent, node_name, BARREL, position_value, Vector3.ONE * uniform_scale, rotation_value)
+	var barrel := _add_scene_prop(
+		parent,
+		node_name,
+		BARREL,
+		position_value,
+		Vector3.ONE * uniform_scale * DECORATIVE_BARREL_SCALE_MULTIPLIER,
+		rotation_value
+	)
 	if barrel == null:
 		return null
 	barrel.set_meta("decorative_storage_barrel", true)

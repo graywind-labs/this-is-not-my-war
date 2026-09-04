@@ -284,7 +284,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [-2.2, -4.8], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.5, -4.8], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [-3.5, -4.8], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_02_bed",
@@ -301,7 +301,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [2.2, -4.8], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.5, -4.8], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [3.5, -4.8], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_03_bed",
@@ -318,7 +318,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [-2.2, -2.4], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.5, -2.4], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [-3.5, -2.4], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_04_bed",
@@ -335,7 +335,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [2.2, -2.4], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.5, -2.4], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [3.5, -2.4], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_05_bed",
@@ -352,7 +352,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [-2.2, 0.0], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.5, 0.0], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [-3.5, 0.0], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_06_bed",
@@ -369,7 +369,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [2.2, 0.0], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.5, 0.0], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [3.5, 0.0], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_07_bed",
@@ -386,7 +386,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [-2.2, 2.4], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.5, 2.4], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [-3.5, 2.4], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_08_bed",
@@ -403,7 +403,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [2.2, 2.4], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.5, 2.4], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [3.5, 2.4], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_09_bed",
@@ -419,7 +419,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [-2.2, 4.8], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-3.5, 4.8], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [-3.5, 4.8], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         },
         {
           "id": "dormitory_bed_10_bed",
@@ -435,7 +435,7 @@
           "collision_size": [1.58, 0.72, 2.02],
           "collision_center_y": 0.36,
           "npc_stand": {"scope": "building", "center": [2.2, 4.8], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [3.5, 4.8], "y": 0.72, "facing_degrees": 0.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
+          "occupant_anchor": {"center": [3.5, 4.8], "y": 0.72, "facing_degrees": 180.0, "pose": "sleeping_supine", "label": "睡眠锚点"}
         }
       ]
     },
@@ -685,7 +685,7 @@
           "center": [-3.5, -2.55],
           "rotation_degrees": 0.0,
           "asset_path": "res://assets/3d/quaternius/props/tavern_fermentation_cask.glb",
-          "visual_scale": [1.1, 1.1, 1.1],
+          "visual_scale": [1.3, 1.3, 1.3],
           "collision_size": [1.55, 1.45, 0.9],
           "collision_center_y": 0.725,
           "npc_stand": {"scope": "workstation", "center": [-3.5, -1.1], "facing_degrees": 0.0, "clearance_radius": 0.45}
@@ -699,7 +699,7 @@
           "center": [3.5, -2.55],
           "rotation_degrees": 0.0,
           "asset_path": "res://assets/3d/quaternius/props/tavern_fermentation_cask.glb",
-          "visual_scale": [1.1, 1.1, 1.1],
+          "visual_scale": [1.3, 1.3, 1.3],
           "collision_size": [1.55, 1.45, 0.9],
           "collision_center_y": 0.725,
           "npc_stand": {"scope": "workstation", "center": [3.5, -1.1], "facing_degrees": 0.0, "clearance_radius": 0.45}
@@ -713,7 +713,7 @@
           "center": [-3.5, 1.45],
           "rotation_degrees": 0.0,
           "asset_path": "res://assets/3d/quaternius/props/tavern_fermentation_cask.glb",
-          "visual_scale": [1.1, 1.1, 1.1],
+          "visual_scale": [1.3, 1.3, 1.3],
           "collision_size": [1.55, 1.45, 0.9],
           "collision_center_y": 0.725,
           "npc_stand": {"scope": "workstation", "center": [-3.5, 2.9], "facing_degrees": 0.0, "clearance_radius": 0.45}
@@ -739,7 +739,7 @@
           "center": [4.5, 3.4],
           "rotation_degrees": 0.0,
           "asset_path": "res://assets/3d/quaternius/props/barrel.glb",
-          "visual_scale": [1.0, 1.0, 1.0],
+          "visual_scale": [1.25, 1.25, 1.25],
           "collision_size": [1.8, 1.0, 1.4],
           "collision_center_y": 0.5
         },

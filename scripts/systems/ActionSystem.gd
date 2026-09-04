@@ -1503,6 +1503,39 @@ func get_healing_helpers_for_target(target_npc_id: String) -> Array[String]:
 	return result
 
 
+func get_healing_assist_rate_snapshot(target_npc_id: String) -> Dictionary:
+	var result := {
+		"active": false,
+		"helper_ids": [],
+		"hp_per_game_hour": 0.0,
+		"hp_per_game_second": 0.0,
+	}
+	var npc_system := _get_npc_system()
+	if npc_system == null or not _is_npc_unconscious(target_npc_id):
+		return result
+	if not npc_system.has_method("get_assisted_recovery_hp_per_hour"):
+		return result
+	var total_hp_per_hour := 0.0
+	var valid_helpers: Array[String] = []
+	for healer_npc_id in get_healing_helpers_for_target(target_npc_id):
+		var active_action: Dictionary = _active_actions.get(healer_npc_id, {})
+		if (
+			str(active_action.get("kind", "")) != HEALING_ACTION_ID
+			or str(active_action.get("target_npc_id", "")) != target_npc_id
+		):
+			continue
+		var provider_rate := float(npc_system.get_assisted_recovery_hp_per_hour(
+			int(active_action.get("medical_skill", 0))
+		))
+		total_hp_per_hour += provider_rate * _get_npc_work_output_multiplier(healer_npc_id)
+		valid_helpers.append(healer_npc_id)
+	result["active"] = total_hp_per_hour > 0.0 and not valid_helpers.is_empty()
+	result["helper_ids"] = valid_helpers
+	result["hp_per_game_hour"] = total_hp_per_hour
+	result["hp_per_game_second"] = total_hp_per_hour / 3600.0
+	return result
+
+
 func _on_npc_state_changed(npc_id: String) -> void:
 	_queue_healing_assist_cleanup_for_resolved_target(npc_id)
 	if _is_npc_unconscious_or_escaped(npc_id):
@@ -1540,6 +1573,33 @@ func _on_npc_state_changed(npc_id: String) -> void:
 		and str((_get_npc_system().get_npc_state(npc_id) as Dictionary).get("spatial_route_phase", "")) == "navigation_failed"
 	):
 		if bool(pending_options.get("formal_dialogue_authority", false)):
+			var dialogue_target_npc_id := str(_pending_action_targets.get(npc_id, ""))
+			var dialogue_npc_system := _get_npc_system()
+			var dialogue_speaker_position: Variant = (
+				dialogue_npc_system.get_npc_world_position(npc_id)
+				if dialogue_npc_system != null
+				else null
+			)
+			var dialogue_target_position: Variant = (
+				dialogue_npc_system.get_npc_world_position(dialogue_target_npc_id)
+				if dialogue_npc_system != null
+				else null
+			)
+			if dialogue_speaker_position is Vector3 and dialogue_target_position is Vector3:
+				var nearby_distance := Vector2(
+					dialogue_speaker_position.x - dialogue_target_position.x,
+					dialogue_speaker_position.z - dialogue_target_position.z
+				).length()
+				if nearby_distance >= 0.8 and nearby_distance <= 2.3:
+					pending_options["allow_nearby_dialogue_after_route_failure"] = true
+					pending_options["nearby_dialogue_distance"] = nearby_distance
+					_pending_action_options[npc_id] = pending_options
+					dialogue_npc_system.update_npc_state(npc_id, {
+						"current_action": "idle",
+						"spatial_route_phase": "dialogue_approach_arrived",
+						"last_action_result": "formal_dialogue_nearby_ready"
+					})
+					return
 			_fail_pending_npc_dialogue(npc_id, "talk_to_npc_failed_spatial_route", {
 				"failure_reason": "navigation_failed",
 				"failure_summary": "前往对话对象的正式导航路线不可达。"
@@ -1555,6 +1615,15 @@ func _on_npc_state_changed(npc_id: String) -> void:
 				else {"ok": false, "reason": "formal_healing_retry_api_missing"}
 			)
 			if bool(retry_result.get("ok", false)):
+				return
+		if bool(pending_options.get("formal_exterior_authority", false)):
+			var exterior_npc_system := _get_npc_system()
+			var exterior_retry_result: Dictionary = (
+				exterior_npc_system.retry_formal_building_exterior_action(npc_id)
+				if exterior_npc_system != null and exterior_npc_system.has_method("retry_formal_building_exterior_action")
+				else {"ok": false, "reason": "formal_exterior_retry_api_missing"}
+			)
+			if bool(exterior_retry_result.get("ok", false)):
 				return
 		_release_pending_workstation_reservation(npc_id, pending_options)
 		_pending_actions.erase(npc_id)
@@ -2273,7 +2342,10 @@ func _approach_or_start_npc_dialogue(speaker_npc_id: String) -> bool:
 			speaker_position.z - target_position.z
 		).length()
 		var approach_distance := float(options.get("approach_distance", 1.35))
-		if horizontal_distance > approach_distance + 0.3 or horizontal_distance < 0.85:
+		var maximum_dialogue_distance := approach_distance + 0.3
+		if bool(options.get("allow_nearby_dialogue_after_route_failure", false)):
+			maximum_dialogue_distance = maxf(maximum_dialogue_distance, 2.3)
+		if horizontal_distance > maximum_dialogue_distance or horizontal_distance < 0.85:
 			var move_result: Dictionary = (
 				npc_system.move_npc_to_formal_dialogue_target(
 					speaker_npc_id,
@@ -2626,7 +2698,12 @@ func _execute_repair_assist(npc_id: String, building_id: String) -> bool:
 	}, "repair_assist_started", {
 		"action_id": "assist_repair",
 		"building_id": building_id,
-		"engineering_skill": engineering_skill
+		"engineering_skill": engineering_skill,
+		"remaining_helper_slots": _get_remaining_building_assist_slots(
+			npc_system,
+			building_id,
+			"repair"
+		),
 	})
 	return true
 
@@ -2799,7 +2876,12 @@ func _execute_upgrade_assist(npc_id: String, building_id: String) -> bool:
 	}, "upgrade_assist_started", {
 		"action_id": "assist_upgrade",
 		"building_id": building_id,
-		"engineering_skill": engineering_skill
+		"engineering_skill": engineering_skill,
+		"remaining_helper_slots": _get_remaining_building_assist_slots(
+			npc_system,
+			building_id,
+			"upgrade"
+		),
 	})
 	return true
 
@@ -2855,12 +2937,17 @@ func _execute_heal_assist(healer_npc_id: String, target_npc_id: String) -> bool:
 		"formal_location_authority": true,
 		"formal_healing_authority": true
 	}
+	_notify_healing_rate_changed(target_npc_id)
 	_log_healing_event(healer_npc_id, target_npc_id, "healing_started", {
 		"action_id": HEALING_ACTION_ID,
 		"healer_npc_id": healer_npc_id,
 		"target_npc_id": target_npc_id,
 		"money_spent": HEALING_INITIAL_COST,
-		"max_helpers": HEALING_MAX_HELPERS_PER_TARGET
+		"max_helpers": HEALING_MAX_HELPERS_PER_TARGET,
+		"remaining_helper_slots": maxi(
+			0,
+			HEALING_MAX_HELPERS_PER_TARGET - _get_healing_commitment_count(target_npc_id)
+		),
 	})
 	return true
 
@@ -4938,9 +5025,10 @@ func _stop_active_action(npc_id: String, last_result: String = "active_action_st
 		)
 	elif bool(active_action.get("formal_spatial_authority", false)):
 		_end_formal_spatial_workstation_action(npc_id, last_result if not last_result.is_empty() else "active_action_stopped")
+	var healing_rate_target_id := ""
 	if str(active_action.get("kind", "")) == HEALING_ACTION_ID:
-		var target_npc_id := str(active_action.get("target_npc_id", ""))
-		_remove_healing_helper(target_npc_id, npc_id)
+		healing_rate_target_id = str(active_action.get("target_npc_id", ""))
+		_remove_healing_helper(healing_rate_target_id, npc_id)
 	elif str(active_action.get("action", {}).get("type", "")) == "work":
 		_log_structured_action_event(npc_id, active_action.get("action", {}), "work_failed", {
 			"action_id": str(active_action.get("action", {}).get("id", "")),
@@ -4950,6 +5038,7 @@ func _stop_active_action(npc_id: String, last_result: String = "active_action_st
 			"duration_seconds": float(active_action.get("duration_seconds", DEFAULT_WORK_DURATION_SECONDS))
 		})
 	_active_actions.erase(npc_id)
+	_notify_healing_rate_changed(healing_rate_target_id)
 	if not last_result.is_empty():
 		_set_action_idle(npc_id, last_result)
 	if stopped_action_id in [CLINIC_DOCTOR_ACTION_ID, TRAINING_INSTRUCTOR_ACTION_ID, MASS_ACTION_ID]:
@@ -4992,6 +5081,7 @@ func _finish_healing_assist(healer_npc_id: String, target_npc_id: String, reason
 	var money_spent := int(active_action.get("money_spent", 0))
 	_remove_healing_helper(target_npc_id, healer_npc_id)
 	_active_actions.erase(healer_npc_id)
+	_notify_healing_rate_changed(target_npc_id)
 	_end_formal_heal_authority(healer_npc_id, reason)
 	var completed_normally := reason in ["target_revived", "target_no_longer_unconscious"]
 	if completed_normally:
@@ -5851,7 +5941,21 @@ func _is_npc_plan_generation_busy(npc_id: String, npc_system: Node = null) -> bo
 	if not resolved_npc_system.has_method("get_npc_state"):
 		return false
 	var state: Dictionary = resolved_npc_system.get_npc_state(npc_id)
-	return str(state.get("current_action", "")) == "planning_day"
+	if str(state.get("current_action", "")) != "planning_day":
+		return false
+	# planning_day is only a transient presentation marker. A failed real-provider
+	# batch used to leave it behind after every request had already ended, causing a
+	# physically arrived talk_to_npc action to wait forever. Keep waiting only while
+	# the batch still owns an unresolved request for this NPC.
+	var daily_plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if daily_plan_system == null or not daily_plan_system.has_method("get_async_plan_batch_snapshot"):
+		return false
+	var batch: Dictionary = daily_plan_system.get_async_plan_batch_snapshot()
+	var results: Dictionary = batch.get("results", {}) if batch.get("results", {}) is Dictionary else {}
+	return (
+		(int(batch.get("active_count", 0)) > 0 or int(batch.get("queued_count", 0)) > 0)
+		and not results.has(npc_id)
+	)
 
 
 func _is_enterable_location(location_id: String) -> bool:
@@ -6027,6 +6131,23 @@ func _get_healing_helper_count(target_npc_id: String) -> int:
 	return (_healing_helpers_by_target.get(target_npc_id, []) as Array).size()
 
 
+func _get_remaining_building_assist_slots(
+	npc_system: Node,
+	building_id: String,
+	service_kind: String
+) -> int:
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_formal_building_exterior_capacity_snapshot")
+	):
+		return 0
+	var snapshot: Dictionary = npc_system.get_formal_building_exterior_capacity_snapshot(
+		building_id,
+		service_kind
+	)
+	return maxi(0, int(snapshot.get("remaining_slots", 0)))
+
+
 func _get_healing_commitment_count(target_npc_id: String) -> int:
 	var committed_ids: Array[String] = get_healing_helpers_for_target(target_npc_id)
 	for raw_healer_id in _pending_actions.keys():
@@ -6056,6 +6177,14 @@ func _remove_healing_helper(target_npc_id: String, healer_npc_id: String) -> voi
 		_healing_helpers_by_target.erase(target_npc_id)
 	else:
 		_healing_helpers_by_target[target_npc_id] = helpers
+
+
+func _notify_healing_rate_changed(target_npc_id: String) -> void:
+	if target_npc_id.is_empty():
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_state_changed"):
+		event_bus.npc_state_changed.emit(target_npc_id)
 
 
 func _can_pay_healing_cost() -> bool:

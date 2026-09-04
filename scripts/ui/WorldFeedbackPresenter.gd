@@ -6,6 +6,7 @@ const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
+const MERCHANT_SYSTEM_PATH := "/root/Main/Systems/MerchantSystem"
 const TOTAL_DURATION_SECONDS := 2.0
 const STABLE_DURATION_SECONDS := 1.2
 const FADE_DURATION_SECONDS := TOTAL_DURATION_SECONDS - STABLE_DURATION_SECONDS
@@ -20,9 +21,12 @@ const ROLE_COLORS := {
 	"consume": Color(0.62, 0.62, 0.60, 1.0),
 	"gain": Color(0.96, 0.92, 0.82, 1.0),
 	"growth": Color(0.40, 0.68, 0.92, 1.0),
+	"piety": Color(0.91, 0.71, 0.25, 1.0),
 	"neutral": Color(0.96, 0.92, 0.82, 1.0),
 	"damage": Color(0.72, 0.23, 0.20, 1.0),
 	"heal": Color(0.42, 0.72, 0.42, 1.0),
+	"trade_out": Color(0.72, 0.23, 0.20, 1.0),
+	"trade_in": Color(0.42, 0.72, 0.42, 1.0),
 	"warning": Color(0.90, 0.64, 0.24, 1.0)
 }
 
@@ -254,6 +258,7 @@ func _resolve_world_position(group: Dictionary) -> Variant:
 	var anchor_type := str(group.get("anchor_type", "npc"))
 	var fallback_position: Variant = _to_vector3(group.get("fallback_world_position", null))
 	var base_position: Variant = fallback_position if bool(group.get("prefer_fallback_position", false)) else null
+	var complete_world_anchor := false
 	var anchor_id := str(group.get("anchor_id", ""))
 	if not base_position is Vector3:
 		match anchor_type:
@@ -272,18 +277,31 @@ func _resolve_world_position(group: Dictionary) -> Variant:
 					base_position = horse.get("world_position", null)
 			"building":
 				var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
-				if building_system != null and building_system.has_method("get_building_entry_position"):
+				if building_system != null and building_system.has_method("get_building_feedback_anchor_position"):
+					base_position = building_system.get_building_feedback_anchor_position(anchor_id)
+					complete_world_anchor = base_position is Vector3
+				if not complete_world_anchor and building_system != null and building_system.has_method("get_building_entry_position"):
 					base_position = building_system.get_building_entry_position(anchor_id)
 			"defense_device":
 				var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
-				if device_system != null and device_system.has_method("get_deployment"):
+				if device_system != null and device_system.has_method("get_deployment_feedback_anchor_position"):
+					base_position = device_system.get_deployment_feedback_anchor_position(anchor_id)
+					complete_world_anchor = base_position is Vector3
+				if not complete_world_anchor and device_system != null and device_system.has_method("get_deployment"):
 					var deployment: Dictionary = device_system.get_deployment(anchor_id)
 					base_position = deployment.get("position", null)
+			"merchant":
+				var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
+				if merchant_system != null and merchant_system.has_method("get_merchant_feedback_anchor_position"):
+					base_position = merchant_system.get_merchant_feedback_anchor_position()
+					complete_world_anchor = base_position is Vector3
 	base_position = _to_vector3(base_position)
 	if not base_position is Vector3:
 		base_position = fallback_position
 	if not base_position is Vector3:
 		return null
+	if complete_world_anchor:
+		return base_position
 	return (base_position as Vector3) + Vector3.UP * float(group.get("anchor_height", 0.0))
 
 

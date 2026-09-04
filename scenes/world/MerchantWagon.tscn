@@ -19,7 +19,7 @@ size = Vector3(2.62, 1.9, 2.7)
 size = Vector3(2.65, 2.65, 4.15)
 
 [sub_resource type="BoxShape3D" id="BoxShape_trade_marker"]
-size = Vector3(1.25, 1.0, 0.35)
+size = Vector3(1.8, 1.35, 0.35)
 
 [node name="MerchantWagon" type="CharacterBody3D"]
 collision_layer = 2
@@ -67,21 +67,10 @@ visible = false
 
 [node name="Marker" type="Sprite3D" parent="TradeBubble"]
 texture = ExtResource("3_trade_marker")
-pixel_size = 0.006
+pixel_size = 0.009
 billboard = 1
 no_depth_test = true
 render_priority = 3
-
-[node name="Label3D" type="Label3D" parent="TradeBubble"]
-position = Vector3(0, -0.02, 0.02)
-text = "交易"
-font_size = 32
-outline_size = 8
-modulate = Color(0.22, 0.12, 0.05, 1)
-outline_modulate = Color(1, 0.91, 0.69, 1)
-billboard = 1
-no_depth_test = true
-render_priority = 4
 
 [node name="TradeBubbleArea" type="Area3D" parent="TradeBubble"]
 collision_layer = 4

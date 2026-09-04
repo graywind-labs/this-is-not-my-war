@@ -1,0 +1,11 @@
+{
+  "schema_version": "combat_progression_v1",
+  "weapon_damage_per_skill_point": 50,
+  "riding_damage_per_skill_point": 100,
+  "kill_total_experience": 1,
+  "count_actual_hp_damage_only": true,
+  "count_overkill_damage": false,
+  "defense_device_grants_npc_growth": false,
+  "meteor_grants_npc_growth": false,
+  "horse_collision_grants_npc_growth": false
+}

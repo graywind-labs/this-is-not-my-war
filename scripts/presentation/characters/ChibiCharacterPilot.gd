@@ -95,6 +95,8 @@ const MOUNTED_FALL_SIDE_DISTANCE := 0.62
 const MOUNTED_FALL_BACK_DISTANCE := 0.14
 const MOUNTED_FALL_ARC_HEIGHT := 0.34
 const MOUNTED_FALL_MAX_ROLL_DEGREES := 58.0
+const DORMITORY_SLEEPING_POSE_OFFSET_Y := -0.18
+const DORMITORY_SLEEPING_FEET_OFFSET := 0.22
 const FOOT_SWORD_GRIP_DOWN_OFFSET := 0.18
 const FOOT_SWORD_GRIP_INWARD_OFFSET := 0.10
 const GARDEN_HOE_RIGHT_GRIP_SOURCE_LOCAL_POSITION := Vector3(0.0, 0.15, 0.0)
@@ -459,6 +461,16 @@ var _active_armor_occlusion_key := ""
 var _spatial_attachment_pose := ""
 var _target_mesh_count := 0
 var _physical_bone_simulator: PhysicalBoneSimulator3D
+var _ragdoll_bones: Array[PhysicalBone3D] = []
+var _ragdoll_pose_overrides: Dictionary = {}
+var _ragdoll_pending_seconds := -1.0
+var _ragdoll_elapsed_seconds := 0.0
+var _ragdoll_recovery_elapsed := 0.0
+var _ragdoll_active := false
+var _ragdoll_frozen := false
+var _ragdoll_recovering := false
+var _ragdoll_start_count := 0
+var _ragdoll_budget_skip_count := 0
 var _blood_particles: GPUParticles3D
 var _damage_feedback_count := 0
 var _hit_offset := Vector3.ZERO
@@ -1947,6 +1959,7 @@ func apply_profile(npc_profile: Dictionary) -> void:
 	var states: Dictionary = npc_profile.get("states", {}) if npc_profile.get("states", {}) is Dictionary else {}
 	var next_hp := int(states.get("hp", _previous_hp if _previous_hp >= 0 else 0))
 	var next_unconscious := bool(states.get("unconscious", false))
+	var was_unconscious := _previous_unconscious
 	var initialized := _previous_hp >= 0
 	var took_damage := initialized and next_hp < _previous_hp
 	var revived := initialized and _previous_unconscious and not next_unconscious
@@ -1991,12 +2004,15 @@ func apply_profile(npc_profile: Dictionary) -> void:
 	_debug_forced_state = ""
 	if took_damage:
 		_trigger_damage_feedback(next_unconscious)
+	if initialized and not was_unconscious and next_unconscious and not bool(states.get("combat_mounted", false)):
+		_request_ragdoll()
 	if started_mounted_fall:
 		_start_mounted_fall(str(npc_profile.get("id", "")))
 	if next_unconscious:
 		_transient_state = ""
 		_transient_remaining = 0.0
 	elif revived:
+		_begin_ragdoll_recovery()
 		_mounted_fall_recovering = _mounted_fall_active
 		_mounted_fall_active = false
 		_start_transient("get_up", GET_UP_SECONDS)
@@ -2008,6 +2024,8 @@ func set_spatial_attachment_pose(pose: String) -> void:
 	_spatial_attachment_pose = pose
 	_debug_forced_state = ""
 	_apply_profile_state(false)
+	if _visual_root != null:
+		_visual_root.position = _hit_offset + _get_presentation_pose_offset()
 
 
 func set_movement_active(
@@ -2091,7 +2109,7 @@ func play_temporary_presentation_action(action_id: String, event_id: String) -> 
 	# Dialogue remains interactive during the player's gameplay pause. Happy and
 	# angry are reply feedback, so start them immediately even when all authority
 	# movement/combat/work animation remains frozen.
-	_animation_paused = _is_gameplay_paused() and not _is_pause_exempt_dialogue_emotion_action()
+	_animation_paused = _is_gameplay_paused() and not _is_pause_exempt_dialogue_presentation_action()
 	_apply_profile_state(true)
 	return {
 		"ok": true,
@@ -2122,13 +2140,13 @@ func _process(delta: float) -> void:
 	if _blood_particles != null:
 		_blood_particles.speed_scale = _get_combat_time_multiplier()
 	var gameplay_paused := _is_gameplay_paused()
-	var pause_exempt_emotion_action := gameplay_paused and _is_pause_exempt_dialogue_emotion_action()
-	var should_pause_animation := gameplay_paused and not pause_exempt_emotion_action
+	var pause_exempt_dialogue_action := gameplay_paused and _is_pause_exempt_dialogue_presentation_action()
+	var should_pause_animation := gameplay_paused and not pause_exempt_dialogue_action
 	if should_pause_animation != _animation_paused:
 		_animation_paused = should_pause_animation
 		_update_playback_speed()
 	if gameplay_paused:
-		if pause_exempt_emotion_action:
+		if pause_exempt_dialogue_action:
 			_advance_temporary_presentation(maxf(0.0, delta))
 		return
 	if _desired_state in COMBAT_PRESENTATION_STATES:
@@ -2140,6 +2158,7 @@ func _process(delta: float) -> void:
 			clampf(delta / maxf(0.01, facing_turn_speed), 0.0, 1.0)
 		)
 	_update_combat_feedback(combat_frame_delta)
+	_update_ragdoll(combat_frame_delta)
 	if _mounted_fall_active and _mounted_fall_elapsed < MOUNTED_FALL_AIRBORNE_SECONDS:
 		_mounted_fall_elapsed = minf(MOUNTED_FALL_AIRBORNE_SECONDS, _mounted_fall_elapsed + combat_frame_delta)
 	_update_stable_broom_alignment()
@@ -2175,6 +2194,10 @@ func _advance_temporary_presentation(delta: float) -> void:
 
 func _is_pause_exempt_dialogue_emotion_action() -> bool:
 	return _transient_state in ["happy", "angry"]
+
+
+func _is_pause_exempt_dialogue_presentation_action() -> bool:
+	return _transient_state in ["talk", "happy", "angry"]
 
 
 func _apply_profile_state(reset: bool) -> void:
@@ -3310,6 +3333,7 @@ func _configure_feedback() -> void:
 	_physical_bone_simulator = PhysicalBoneSimulator3D.new()
 	_physical_bone_simulator.name = "PhysicalBoneSimulator3D"
 	_target_skeleton.add_child(_physical_bone_simulator)
+	_physical_bone_simulator.set_meta("t0133_runtime_ragdoll", true)
 	_blood_particles = GPUParticles3D.new()
 	_blood_particles.name = "BloodBurst"
 	_blood_particles.amount = 18
@@ -3339,7 +3363,7 @@ func _configure_feedback() -> void:
 
 func _trigger_damage_feedback(became_unconscious: bool) -> void:
 	_damage_feedback_count += 1
-	if _blood_particles != null:
+	if _blood_particles != null and _is_blood_enabled():
 		_blood_particles.restart()
 		_blood_particles.emitting = true
 	var impact_direction := Vector3(_target_facing_direction.x, 0.0, _target_facing_direction.z).normalized()
@@ -3377,6 +3401,183 @@ func _update_combat_feedback(delta: float) -> void:
 	)
 
 
+func _request_ragdoll() -> void:
+	_ragdoll_pending_seconds = 0.22
+	_ragdoll_recovering = false
+	_ragdoll_recovery_elapsed = 0.0
+
+
+func _update_ragdoll(delta: float) -> void:
+	if _ragdoll_pending_seconds >= 0.0:
+		_ragdoll_pending_seconds -= delta
+		if _ragdoll_pending_seconds <= 0.0:
+			_ragdoll_pending_seconds = -1.0
+			_start_ragdoll()
+	if _ragdoll_active:
+		_ragdoll_elapsed_seconds += delta
+		if _ragdoll_elapsed_seconds >= 1.8:
+			_freeze_ragdoll_pose()
+	if not _ragdoll_recovering:
+		return
+	_ragdoll_recovery_elapsed += delta
+	var weight := 1.0 - clampf(_ragdoll_recovery_elapsed / 0.42, 0.0, 1.0)
+	for raw_bone_id in _ragdoll_pose_overrides.keys():
+		var bone_id := int(raw_bone_id)
+		_target_skeleton.set_bone_global_pose_override(
+			bone_id,
+			_ragdoll_pose_overrides[bone_id] as Transform3D,
+			weight,
+			true
+		)
+	if weight <= 0.0:
+		_target_skeleton.clear_bones_global_pose_override()
+		_ragdoll_pose_overrides.clear()
+		_ragdoll_recovering = false
+		_ragdoll_frozen = false
+
+
+func _start_ragdoll() -> void:
+	if _physical_bone_simulator == null or _target_skeleton == null or _ragdoll_active:
+		return
+	if get_tree().get_nodes_in_group("combat_ragdoll_active").size() >= 6:
+		_ragdoll_budget_skip_count += 1
+		return
+	_ensure_physical_ragdoll_bones()
+	if _ragdoll_bones.is_empty():
+		return
+	_target_skeleton.clear_bones_global_pose_override()
+	_ragdoll_pose_overrides.clear()
+	_physical_bone_simulator.influence = 1.0
+	_physical_bone_simulator.physical_bones_start_simulation([])
+	_ragdoll_active = true
+	_ragdoll_frozen = false
+	_ragdoll_elapsed_seconds = 0.0
+	_ragdoll_start_count += 1
+	add_to_group("combat_ragdoll_active")
+	call_deferred("_apply_ragdoll_impulse")
+
+
+func _freeze_ragdoll_pose() -> void:
+	if not _ragdoll_active or _target_skeleton == null:
+		return
+	_capture_ragdoll_pose()
+	_physical_bone_simulator.physical_bones_stop_simulation()
+	_ragdoll_active = false
+	_ragdoll_frozen = true
+	remove_from_group("combat_ragdoll_active")
+	_apply_ragdoll_pose_override(1.0)
+
+
+func _begin_ragdoll_recovery() -> void:
+	_ragdoll_pending_seconds = -1.0
+	if _ragdoll_active:
+		_capture_ragdoll_pose()
+		_physical_bone_simulator.physical_bones_stop_simulation()
+		_ragdoll_active = false
+		remove_from_group("combat_ragdoll_active")
+	if _ragdoll_pose_overrides.is_empty():
+		_ragdoll_frozen = false
+		return
+	_ragdoll_recovering = true
+	_ragdoll_recovery_elapsed = 0.0
+
+
+func _capture_ragdoll_pose() -> void:
+	_ragdoll_pose_overrides.clear()
+	for physical_bone in _ragdoll_bones:
+		var bone_id := physical_bone.get_bone_id()
+		if bone_id >= 0:
+			_ragdoll_pose_overrides[bone_id] = _target_skeleton.get_bone_global_pose(bone_id)
+
+
+func _apply_ragdoll_pose_override(weight: float) -> void:
+	for raw_bone_id in _ragdoll_pose_overrides.keys():
+		var bone_id := int(raw_bone_id)
+		_target_skeleton.set_bone_global_pose_override(
+			bone_id,
+			_ragdoll_pose_overrides[bone_id] as Transform3D,
+			weight,
+			true
+		)
+
+
+func _apply_ragdoll_impulse() -> void:
+	if not _ragdoll_active:
+		return
+	var impulse_direction := Vector3(-_target_facing_direction.x, 0.22, -_target_facing_direction.z).normalized()
+	for physical_bone in _ragdoll_bones:
+		if physical_bone.bone_name in ["Hips", "Chest"]:
+			physical_bone.apply_central_impulse(impulse_direction * (0.75 if physical_bone.bone_name == "Hips" else 0.45))
+
+
+func _ensure_physical_ragdoll_bones() -> void:
+	if not _ragdoll_bones.is_empty() or _physical_bone_simulator == null:
+		return
+	var definitions: Array[Dictionary] = [
+		{"bone": "Hips", "child": "Spine", "radius": 0.14},
+		{"bone": "Spine", "child": "Chest", "radius": 0.14},
+		{"bone": "Chest", "child": "Head", "radius": 0.16},
+		{"bone": "Head", "child": "", "radius": 0.15, "length": 0.24},
+		{"bone": "LeftUpperArm", "child": "LeftLowerArm", "radius": 0.075},
+		{"bone": "LeftLowerArm", "child": "LeftHand", "radius": 0.065},
+		{"bone": "RightUpperArm", "child": "RightLowerArm", "radius": 0.075},
+		{"bone": "RightLowerArm", "child": "RightHand", "radius": 0.065},
+		{"bone": "LeftUpperLeg", "child": "LeftLowerLeg", "radius": 0.09},
+		{"bone": "LeftLowerLeg", "child": "LeftFoot", "radius": 0.075},
+		{"bone": "RightUpperLeg", "child": "RightLowerLeg", "radius": 0.09},
+		{"bone": "RightLowerLeg", "child": "RightFoot", "radius": 0.075}
+	]
+	for definition in definitions:
+		var bone_name := str(definition.get("bone", ""))
+		var bone_id := _target_skeleton.find_bone(bone_name)
+		if bone_id < 0:
+			continue
+		var child_name := str(definition.get("child", ""))
+		var child_id := _target_skeleton.find_bone(child_name) if not child_name.is_empty() else -1
+		var direction := _target_skeleton.get_bone_rest(child_id).origin if child_id >= 0 else Vector3.RIGHT * float(definition.get("length", 0.24))
+		var length := maxf(float(definition.get("length", direction.length())), 0.16)
+		var radius := minf(float(definition.get("radius", 0.08)), length * 0.42)
+		var physical_bone := PhysicalBone3D.new()
+		physical_bone.name = "%sPhysicalBone" % bone_name
+		physical_bone.bone_name = bone_name
+		physical_bone.joint_type = PhysicalBone3D.JOINT_TYPE_PIN if bone_name != "Hips" else PhysicalBone3D.JOINT_TYPE_NONE
+		physical_bone.mass = 1.4 if bone_name in ["Hips", "Spine", "Chest"] else 0.55
+		physical_bone.linear_damp = 0.9
+		physical_bone.angular_damp = 1.25
+		physical_bone.collision_layer = 64
+		physical_bone.collision_mask = 1
+		var up_direction := direction.normalized() if direction.length_squared() > 0.0001 else Vector3.UP
+		physical_bone.body_offset = Transform3D(Basis(Quaternion(Vector3.UP, up_direction)), direction * 0.5)
+		var shape := CapsuleShape3D.new()
+		shape.radius = radius
+		shape.height = maxf(length, radius * 2.0)
+		var collision := CollisionShape3D.new()
+		collision.name = "CollisionShape3D"
+		collision.shape = shape
+		physical_bone.add_child(collision)
+		_physical_bone_simulator.add_child(physical_bone)
+		var actor_body := _find_actor_collision_body()
+		if actor_body != null:
+			physical_bone.add_collision_exception_with(actor_body)
+		_ragdoll_bones.append(physical_bone)
+
+
+func _find_actor_collision_body() -> CollisionObject3D:
+	var current := get_parent()
+	while current != null:
+		if current is CollisionObject3D:
+			return current as CollisionObject3D
+		current = current.get_parent()
+	return null
+
+
+func _is_blood_enabled() -> bool:
+	var client_settings := get_node_or_null("/root/ClientSettings")
+	if client_settings == null or not client_settings.has_method("get_snapshot"):
+		return true
+	return bool((client_settings.get_snapshot() as Dictionary).get("blood_enabled", true))
+
+
 func _get_presentation_pose_offset() -> Vector3:
 	if _mounted_fall_active:
 		var start_offset := _get_formal_combat_mount_root_offset() + _get_mounted_seated_pose_offset(Vector3(
@@ -3392,6 +3593,14 @@ func _get_presentation_pose_offset() -> Vector3:
 	if _mounted_fall_recovering:
 		var recovery_ratio := 1.0 - clampf(_transient_remaining / GET_UP_SECONDS, 0.0, 1.0)
 		return _mounted_fall_landing_offset.lerp(Vector3.ZERO, smoothstep(0.35, 1.0, recovery_ratio))
+	if _desired_state == "sleeping" and _spatial_attachment_pose == "sleeping_supine":
+		var feet_direction := global_basis.inverse() * _target_facing_direction
+		feet_direction.y = 0.0
+		if feet_direction.length_squared() <= 0.0001:
+			feet_direction = Vector3.FORWARD
+		else:
+			feet_direction = feet_direction.normalized()
+		return feet_direction * DORMITORY_SLEEPING_FEET_OFFSET + Vector3(0.0, DORMITORY_SLEEPING_POSE_OFFSET_Y, 0.0)
 	if _desired_state in ["seated_prayer", "seated_study", "seated_eating"] or _desired_state in MOUNTED_STATES:
 		var seated_offset := Vector3(SEATED_POSE_OFFSET.x, seated_pose_offset_y, SEATED_POSE_OFFSET.z)
 		var states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
@@ -3927,6 +4136,7 @@ func debug_get_snapshot() -> Dictionary:
 		"gameplay_paused": _is_gameplay_paused(),
 		"animation_paused": _animation_paused,
 		"pause_exempt_dialogue_emotion_action": _is_pause_exempt_dialogue_emotion_action(),
+		"pause_exempt_dialogue_presentation_action": _is_pause_exempt_dialogue_presentation_action(),
 		"last_temporary_presentation_event_id": _last_temporary_presentation_event_id,
 		"temporary_presentation_event_count": _temporary_presentation_event_count,
 		"combat_attack_sequence": _combat_attack_sequence,
@@ -4159,11 +4369,17 @@ func debug_get_snapshot() -> Dictionary:
 		"mounted_seated_pose_offset": _get_mounted_seated_pose_offset(Vector3(SEATED_POSE_OFFSET.x, seated_pose_offset_y, SEATED_POSE_OFFSET.z)),
 		"visual_root_local_position": _visual_root.position if _visual_root != null else Vector3.ZERO,
 		"visual_root_local_rotation_degrees": _visual_root.rotation_degrees if _visual_root != null else Vector3.ZERO,
-		"ragdoll_placeholder_ready": _physical_bone_simulator != null,
+		"ragdoll_simulator_ready": _physical_bone_simulator != null,
+		"ragdoll_bone_count": _ragdoll_bones.size(),
+		"ragdoll_active": _ragdoll_active,
+		"ragdoll_frozen": _ragdoll_frozen,
+		"ragdoll_recovering": _ragdoll_recovering,
+		"ragdoll_start_count": _ragdoll_start_count,
+		"ragdoll_budget_skip_count": _ragdoll_budget_skip_count,
 		"blood_vfx_ready": _blood_particles != null,
 		"blood_vfx_emitting": _blood_particles != null and _blood_particles.emitting,
 		"damage_feedback_count": _damage_feedback_count,
-		"fall_feedback_mode": "mounted_arc_to_death_a" if _mounted_fall_active or _mounted_fall_recovering else "animated_fall_with_physics_impulse",
+		"fall_feedback_mode": "mounted_arc_to_death_a" if _mounted_fall_active or _mounted_fall_recovering else "physical_bone_ragdoll_then_pose_freeze",
 		"mounted_fall_active": _mounted_fall_active,
 		"mounted_fall_recovering": _mounted_fall_recovering,
 		"mounted_fall_phase": ("airborne" if _mounted_fall_elapsed < MOUNTED_FALL_AIRBORNE_SECONDS else "landed") if _mounted_fall_active else ("recovering" if _mounted_fall_recovering else "inactive"),

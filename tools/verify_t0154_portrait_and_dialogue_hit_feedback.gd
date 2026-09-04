@@ -38,10 +38,11 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var dialog_panel := root.get_node_or_null("Main/UI/DialogPanel")
 	var original_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
-	if [systems, npc_system, dialog_system, daily_plan_system, action_system, memory_system, npc_panel, dialog_panel, original_bridge].has(null):
+	if [systems, npc_system, dialog_system, daily_plan_system, action_system, memory_system, time_system, npc_panel, dialog_panel, original_bridge].has(null):
 		_fail("T0154 runtime dependencies unavailable")
 		return
 	daily_plan_system.set_auto_execution_enabled(false)
@@ -69,7 +70,7 @@ func _init() -> void:
 	fake_bridge.name = "LLMBridge"
 	systems.add_child(fake_bridge)
 
-	if not await _verify_portrait_entry(npc_system, memory_system, npc_panel):
+	if not await _verify_portrait_entry(npc_system, memory_system, time_system, npc_panel):
 		return
 	if not await _verify_dialogue_attack_entry(npc_system, dialog_system, memory_system, dialog_panel, fake_bridge):
 		return
@@ -80,7 +81,7 @@ func _init() -> void:
 	quit(0)
 
 
-func _verify_portrait_entry(npc_system: Node, memory_system: Node, npc_panel: Control) -> bool:
+func _verify_portrait_entry(npc_system: Node, memory_system: Node, time_system: Node, npc_panel: Control) -> bool:
 	var npc_node := _get_npc_node(npc_system, PORTRAIT_NPC_ID)
 	if npc_node == null:
 		_fail("Portrait NPC world node unavailable")
@@ -96,6 +97,7 @@ func _verify_portrait_entry(npc_system: Node, memory_system: Node, npc_panel: Co
 	var memory_count_before := int(memory_system.get_event_count())
 	var art_before: Dictionary = npc_node.debug_get_character_art_snapshot()
 	var count_before := _presentation_events(npc_system, "portrait_idle_talk_gesture").size()
+	time_system.set_paused(true)
 	portrait.call("_on_portrait_pressed")
 	await process_frame
 	var portrait_events := _presentation_events(npc_system, "portrait_idle_talk_gesture")
@@ -110,6 +112,13 @@ func _verify_portrait_entry(npc_system: Node, memory_system: Node, npc_panel: Co
 	):
 		_fail("Idle portrait click did not play one world talk gesture")
 		return false
+	if (
+		bool(art_after.get("animation_paused", true))
+		or not bool(art_after.get("pause_exempt_dialogue_presentation_action", false))
+	):
+		_fail("Portrait talk gesture triggered during pause did not keep playing")
+		return false
+	time_system.set_paused(false)
 	if (
 		npc_system.get_npc_state(PORTRAIT_NPC_ID) != state_before
 		or npc_system.get_npc_world_position(PORTRAIT_NPC_ID) != position_before
@@ -156,6 +165,9 @@ func _verify_dialogue_attack_entry(
 	dialog_panel: Control,
 	fake_bridge: Node
 ) -> bool:
+	var revived_alert := root.get_node_or_null("Main/UI/HUD/NpcRevivedAlertDialog") as Window
+	if revived_alert != null:
+		revived_alert.hide()
 	var start_result: Dictionary = dialog_system.start_player_dialogue(ATTACK_NPC_ID)
 	if not bool(start_result.get("ok", false)):
 		_fail("Attack dialogue could not open")

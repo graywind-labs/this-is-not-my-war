@@ -2,6 +2,7 @@ extends Node
 
 const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const ENEMY_WAVES_FILE := "enemy_waves.json"
+const COMBAT_PROGRESSION_FILE := "combat_progression.json"
 const ENEMY_ROOT_PATH := "/root/Main/WorldRoot/Station/Enemies"
 const FORMAL_ENEMY_ROOT_PATH := "/root/Main/WorldRoot/FormalStationLayout/FormalEnemies"
 const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
@@ -84,6 +85,10 @@ const LEVEL_ATTACK_POWER_BONUS := 0.6
 const LEVEL_DEFENSE_BONUS := 0.3
 const LEVEL_PENETRATION_BONUS := 0.2
 const LEVEL_ATTACK_SPEED_BONUS := 0.015
+const DEFAULT_WEAPON_DAMAGE_PER_SKILL_POINT := 50
+const DEFAULT_RIDING_DAMAGE_PER_SKILL_POINT := 100
+const DEFAULT_KILL_TOTAL_EXPERIENCE := 1
+const ENEMY_CORPSE_LINGER_SECONDS := 8.0
 const STRENGTH_DEFENSE_BONUS_PER_POINT := 0.15
 const STRENGTH_PENETRATION_BONUS_PER_POINT := 0.08
 const MORALE_BOOST_DURATION_SECONDS := 86400.0
@@ -225,6 +230,7 @@ var _last_mode_transition_result: Dictionary = {}
 var _last_avoidance_result: Dictionary = {}
 var _last_friendly_attack_result: Dictionary = {}
 var _last_area_damage_result: Dictionary = {}
+var _last_defeated_enemy_audio_position: Variant = null
 var _active_battle: Dictionary = {}
 var _last_battle_start_result: Dictionary = {}
 var _last_battle_end_result: Dictionary = {}
@@ -309,6 +315,7 @@ var _triggered_wave_numbers: Array[int] = []
 var _last_auto_wave_result: Dictionary = {}
 var _last_manual_next_wave_result: Dictionary = {}
 var _last_enemy_mounted_defeat_cleanup_result: Dictionary = {}
+var _last_emitted_enemy_presence_count := -1
 var _active_projectiles: Dictionary = {}
 var _stuck_projectiles: Dictionary = {}
 var _last_projectile_result: Dictionary = {}
@@ -318,6 +325,7 @@ var _last_melee_contact_result: Dictionary = {}
 var _active_melee_swings: Dictionary = {}
 var _pending_melee_damage_commits: PackedStringArray = []
 var _combat_timeline_seconds := 0.0
+var _combat_progression_config: Dictionary = {}
 
 
 func _ready() -> void:
@@ -387,13 +395,16 @@ func initialize() -> void:
 	_last_avoidance_result.clear()
 	_last_friendly_attack_result.clear()
 	_last_area_damage_result.clear()
+	_last_defeated_enemy_audio_position = null
 	_last_enemy_mounted_defeat_cleanup_result.clear()
+	_last_emitted_enemy_presence_count = -1
 	_last_projectile_result.clear()
 	_projectile_sequence = 0
 	_last_melee_contact_result.clear()
 	_active_melee_swings.clear()
 	_pending_melee_damage_commits.clear()
 	_combat_timeline_seconds = 0.0
+	_combat_progression_config.clear()
 	_active_battle.clear()
 	_last_battle_start_result.clear()
 	_last_battle_end_result.clear()
@@ -418,6 +429,7 @@ func initialize() -> void:
 	if not loaded_waves is Array:
 		push_error("Enemy waves must be a JSON array: %s" % ENEMY_WAVES_FILE)
 		return
+	_load_combat_progression_config(config_loader)
 
 	for raw_wave in loaded_waves:
 		if not raw_wave is Dictionary:
@@ -432,6 +444,43 @@ func initialize() -> void:
 	_waves.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
 		return int(left.get("wave_number", 0)) < int(right.get("wave_number", 0))
 	)
+
+
+func get_combat_progression_config() -> Dictionary:
+	return _combat_progression_config.duplicate(true)
+
+
+func _load_combat_progression_config(config_loader: Node) -> void:
+	var loaded: Variant = config_loader.load_data_file(COMBAT_PROGRESSION_FILE, {})
+	var source: Dictionary = loaded if loaded is Dictionary else {}
+	if str(source.get("schema_version", "")) != "combat_progression_v1":
+		push_warning("Combat progression config missing or invalid; using production defaults.")
+	_combat_progression_config = {
+		"schema_version": "combat_progression_v1",
+		"weapon_damage_per_skill_point": maxi(
+			1,
+			int(source.get(
+				"weapon_damage_per_skill_point",
+				DEFAULT_WEAPON_DAMAGE_PER_SKILL_POINT
+			))
+		),
+		"riding_damage_per_skill_point": maxi(
+			1,
+			int(source.get(
+				"riding_damage_per_skill_point",
+				DEFAULT_RIDING_DAMAGE_PER_SKILL_POINT
+			))
+		),
+		"kill_total_experience": maxi(
+			0,
+			int(source.get("kill_total_experience", DEFAULT_KILL_TOTAL_EXPERIENCE))
+		),
+		"count_actual_hp_damage_only": bool(source.get("count_actual_hp_damage_only", true)),
+		"count_overkill_damage": bool(source.get("count_overkill_damage", false)),
+		"defense_device_grants_npc_growth": bool(source.get("defense_device_grants_npc_growth", false)),
+		"meteor_grants_npc_growth": bool(source.get("meteor_grants_npc_growth", false)),
+		"horse_collision_grants_npc_growth": bool(source.get("horse_collision_grants_npc_growth", false))
+	}
 
 
 func get_wave_count() -> int:
@@ -692,10 +741,7 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 	var equipment_defense := 0.0
 	var equipment_penetration := 0.0
 	var equipment_attack_speed_modifier := 0.0
-	var combat_mount_active := (
-		not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(str(state.get("behavior_mode", "")))
-		or bool(state.get("combat_mounted", false))
-	)
+	var combat_mount_active := bool(state.get("combat_mounted", false))
 	for slot_id in ["main_weapon", "helmet", "chest", "bracers", "greaves", "mount"]:
 		if slot_id == "mount" and not combat_mount_active:
 			continue
@@ -748,6 +794,14 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 		float(combat_base.get("attack_speed_multiplier", 1.0))
 	)
 	var equipment_attack_speed_multiplier := maxf(0.2, 1.0 + equipment_attack_speed_modifier)
+	var mount: Dictionary = equipment.get("mount", {}) if equipment.get("mount", {}) is Dictionary else {}
+	var riding_skill := _get_npc_skill_value(npc, "骑术")
+	var riding_attack_speed_multiplier := 1.0
+	if combat_mount_active and not mount.is_empty():
+		riding_attack_speed_multiplier += (
+			clampf(float(riding_skill) / 100.0, 0.0, 1.0)
+			* maxf(0.0, float(mount.get("riding_attack_speed_bonus_at_100", 0.08)))
+		)
 	var level_attack_speed_multiplier := 1.0 + float(level_steps) * LEVEL_ATTACK_SPEED_BONUS
 	var final_attack_speed_multiplier := maxf(
 		MIN_ATTACK_SPEED_MULTIPLIER,
@@ -755,6 +809,7 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 		* weapon_skill_attack_speed_multiplier
 		* innate_attack_speed_multiplier
 		* equipment_attack_speed_multiplier
+		* riding_attack_speed_multiplier
 		* level_attack_speed_multiplier
 	)
 	var base_interval := maxf(0.1, float(weapon.get("attack_interval", 1.8)))
@@ -796,9 +851,12 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 			),
 			"weapon_skill_name": required_skill,
 			"weapon_skill_attack_speed_multiplier": weapon_skill_attack_speed_multiplier,
+			"riding_skill": riding_skill,
+			"riding_attack_speed_multiplier": riding_attack_speed_multiplier,
 			"level_attack_speed_multiplier": level_attack_speed_multiplier,
 			"attack_speed_multiplier": (
 				weapon_skill_attack_speed_multiplier
+				* riding_attack_speed_multiplier
 				* level_attack_speed_multiplier
 			)
 		},
@@ -809,7 +867,8 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 			"attack_power": equipment_attack_power,
 			"defense": equipment_defense,
 			"penetration": equipment_penetration,
-			"attack_speed_modifier": equipment_attack_speed_modifier
+			"attack_speed_modifier": equipment_attack_speed_modifier,
+			"combat_mount_active": combat_mount_active
 		},
 		"condition": {
 			"strength_multiplier": strength_multiplier,
@@ -1747,8 +1806,6 @@ func _spawn_formal_dynamic_wave(
 		"battle_start_result": battle_start_result
 	}
 	return _last_spawn_result.duplicate(true)
-
-
 func debug_stop_formal_first_wave_slice(reason: String = "stopped") -> Dictionary:
 	var before := debug_get_formal_first_wave_slice_snapshot()
 	var clear_result := clear_spawned_enemies()
@@ -3354,7 +3411,14 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 			(result["skipped"] as Array).append({"npc_id": npc_id, "reason": "cannot_act"})
 			continue
 		var npc_state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system.has_method("get_npc_state") else {}
-		if str(npc_state.get("combat_mount_phase", "")) in ["approaching_horse", "waiting_for_horse", "going_to_stable_horse", "beside_stable_horse"]:
+		if str(npc_state.get("combat_mount_phase", "")) in [
+			"approaching_horse",
+			"waiting_for_horse",
+			"going_to_stable_horse",
+			"beside_stable_horse",
+			"going_to_returning_horse",
+			"beside_returning_horse",
+		]:
 			if bool(npc_state.get("keep_distance_retreat_active", false)):
 				_clear_keep_distance_retreat(npc_id, npc_state, "keep_distance_retreat_mount_pickup_started", false, true)
 			(result["skipped"] as Array).append({"npc_id": npc_id, "reason": "waiting_for_assigned_horse"})
@@ -5610,6 +5674,19 @@ func _begin_melee_swing(
 		"damage_committed": false,
 		"excluded_rids": excluded_rids
 	}
+	var source_position: Variant = (
+		_get_npc_position(source_id)
+		if source_side == "friendly"
+		else get_enemy_world_position(source_id)
+	)
+	_emit_combat_audio_event({
+		"event_type": "attack_swing",
+		"source_side": source_side,
+		"source_id": source_id,
+		"weapon_type": weapon_type,
+		"attack_sequence": sequence,
+		"world_position": source_position if source_position is Vector3 else Vector3.ZERO,
+	})
 
 
 func _sample_active_melee_swings() -> void:
@@ -6126,6 +6203,12 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 		"effective_defense": float(resolution.get("effective_defense", target_defense)),
 		"weapon_id": str(attack_context.get("weapon_id", "")),
 		"weapon_name": str(attack_context.get("weapon_name", "武器")),
+		"source_type": "npc_weapon",
+		"npc_combat_growth_eligible": true,
+		"required_skill": str(attack_context.get("required_skill", "")),
+		# This value is captured at attack creation/release and survives projectile
+		# flight, so mounting or falling while an arrow is airborne cannot rewrite it.
+		"mounted_at_attack": bool(attack_context.get("mounted", false)),
 		"hit_world_position": attack_context.get("hit_world_position", null)
 	})
 	var event := _log_npc_attack_made(npc_id, npc, target, attack_context, damage_result)
@@ -6340,6 +6423,16 @@ func _spawn_combat_projectile(
 	_active_projectiles[projectile_id] = projectile
 	var snapshot := _make_projectile_snapshot(projectile)
 	_last_projectile_result = snapshot.duplicate(true)
+	_emit_combat_audio_event({
+		"event_type": "projectile_released",
+		"source_side": source_side,
+		"source_id": source_id,
+		"weapon_type": weapon_type,
+		"device_id": str(projectile_attack_context.get("device_id", "")),
+		"attack_id": attack_id,
+		"world_position": release_position,
+		"source_node_path": str(view.get_path()),
+	})
 	return snapshot
 
 
@@ -6792,6 +6885,23 @@ func _resolve_combat_projectile_collision(projectile: Dictionary, collision: Dic
 	var fact := _make_projectile_terminal_fact(projectile, terminal_status, collision, resolution)
 	_resolved_projectile_attack_facts[attack_id] = fact.duplicate(true)
 	resolution["hit_fact"] = fact.duplicate(true)
+	if bool(resolution.get("damage_applied", false)):
+		var projectile_context: Dictionary = (
+			projectile.get("attack_context", {})
+			if projectile.get("attack_context", {}) is Dictionary
+			else {}
+		)
+		_emit_combat_audio_event({
+			"event_type": "projectile_hit",
+			"source_side": str(projectile.get("source_side", "")),
+			"source_id": str(projectile.get("source_id", "")),
+			"weapon_type": str(projectile.get("weapon_type", "")),
+			"device_id": str(projectile_context.get("device_id", "")),
+			"attack_id": attack_id,
+			"target_type": str(resolution.get("actual_target_type", "")),
+			"target_id": str(resolution.get("actual_target_id", "")),
+			"world_position": collision.get("position", projectile.get("position", Vector3.ZERO)),
+		})
 	return resolution
 
 
@@ -7351,6 +7461,7 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 	var max_hp := maxi(1, int(enemy.get("max_hp", enemy.get("hp", 1))))
 	var hp_before := clampi(int(enemy.get("hp", max_hp)), 0, max_hp)
 	var hp_after := maxi(0, hp_before - damage)
+	var actual_damage := maxi(0, hp_before - hp_after)
 	var defeated := hp_after <= 0
 	var attack_interrupt := _interrupt_enemy_attack_from_damage(enemy, damage, {
 		"source_type": "npc" if not actor_npc_id.is_empty() else str(context.get("source_type", "")),
@@ -7361,6 +7472,7 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		"enemy_id": enemy_id,
 		"enemy_name": str(enemy.get("name", enemy_id)),
 		"damage": damage,
+		"actual_damage": actual_damage,
 		"raw_attack_power": float(context.get("raw_attack_power", damage)),
 		"target_defense": float(context.get("target_defense", 0.0)),
 		"penetration": float(context.get("penetration", 0.0)),
@@ -7389,6 +7501,14 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		)
 	enemy["hp"] = hp_after
 	enemy["alive"] = not defeated
+	var combat_growth := _apply_npc_weapon_combat_growth(
+		actor_npc_id,
+		actual_damage,
+		defeated,
+		context
+	)
+	if not combat_growth.is_empty():
+		result["combat_growth"] = combat_growth
 	enemy["last_damage_result"] = result.duplicate(true)
 	WorldFeedbackPayload.emit_hp_change(
 		self,
@@ -7400,7 +7520,26 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		prefer_feedback_position,
 		0.35 if prefer_feedback_position else WorldFeedbackPayload.ENEMY_ANCHOR_HEIGHT
 	)
+	_emit_combat_audio_event({
+		"event_type": "actor_damaged",
+		"target_type": "enemy",
+		"target_id": enemy_id,
+		"source_type": "npc" if not actor_npc_id.is_empty() else str(context.get("source_type", "")),
+		"source_id": actor_npc_id if not actor_npc_id.is_empty() else str(context.get("deployment_id", context.get("source_id", ""))),
+		"weapon_type": str(context.get("weapon_id", "")),
+		"damage": damage,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"defeated": defeated,
+		"world_position": feedback_world_position if feedback_world_position is Vector3 else get_enemy_world_position(enemy_id),
+	})
 	if defeated:
+		_last_defeated_enemy_audio_position = (
+			feedback_world_position
+			if feedback_world_position is Vector3
+			else get_enemy_world_position(enemy_id)
+		)
+		_record_battle_resolved_enemy_defeat()
 		_record_battle_enemy_defeat(actor_npc_id, enemy, result)
 		result["removed"] = true
 		_remove_enemy_from_combat(enemy_id)
@@ -7414,6 +7553,102 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		_active_enemies[enemy_id] = enemy
 		_refresh_enemy_node(enemy_id)
 	return result
+
+
+func _apply_npc_weapon_combat_growth(
+	npc_id: String,
+	actual_damage: int,
+	defeated: bool,
+	context: Dictionary
+) -> Dictionary:
+	if (
+		npc_id.is_empty()
+		or actual_damage <= 0
+		or not bool(context.get("npc_combat_growth_eligible", false))
+		or str(context.get("source_type", "")) != "npc_weapon"
+	):
+		return {}
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("accumulate_npc_combat_skill_damage")
+		or not npc_system.has_method("increase_npc_total_experience")
+	):
+		return {}
+
+	var weapon_damage_threshold := maxi(
+		1,
+		int(_combat_progression_config.get(
+			"weapon_damage_per_skill_point",
+			DEFAULT_WEAPON_DAMAGE_PER_SKILL_POINT
+		))
+	)
+	var riding_damage_threshold := maxi(
+		1,
+		int(_combat_progression_config.get(
+			"riding_damage_per_skill_point",
+			DEFAULT_RIDING_DAMAGE_PER_SKILL_POINT
+		))
+	)
+	var weapon_skill := str(context.get("required_skill", ""))
+	var weapon_growth: Dictionary = npc_system.accumulate_npc_combat_skill_damage(
+		npc_id,
+		weapon_skill,
+		actual_damage,
+		weapon_damage_threshold,
+		false
+	)
+	var riding_growth := {}
+	if bool(context.get("mounted_at_attack", false)):
+		riding_growth = npc_system.accumulate_npc_combat_skill_damage(
+			npc_id,
+			"骑术",
+			actual_damage,
+			riding_damage_threshold,
+			false
+		)
+
+	var kill_experience := {}
+	var kill_experience_amount := maxi(
+		0,
+		int(_combat_progression_config.get(
+			"kill_total_experience",
+			DEFAULT_KILL_TOTAL_EXPERIENCE
+		))
+	)
+	if defeated and kill_experience_amount > 0:
+		kill_experience = npc_system.increase_npc_total_experience(
+			npc_id,
+			kill_experience_amount,
+			false
+		)
+
+	var feedback_results: Array[Dictionary] = []
+	for growth_result in [weapon_growth, riding_growth, kill_experience]:
+		if (
+			growth_result is Dictionary
+			and (
+				int((growth_result as Dictionary).get("amount", 0)) > 0
+				or int((growth_result as Dictionary).get("experience_gained", 0)) > 0
+				or int((growth_result as Dictionary).get("skill_points_gained", 0)) > 0
+			)
+		):
+			feedback_results.append((growth_result as Dictionary).duplicate(true))
+	if not feedback_results.is_empty():
+		var feedback_entries: Array[Dictionary] = []
+		WorldFeedbackPayload.append_growth_batch_entry(feedback_entries, feedback_results)
+		WorldFeedbackPayload.emit_npc(self, npc_id, "growth", feedback_entries)
+
+	return {
+		"npc_id": npc_id,
+		"actual_damage": actual_damage,
+		"mounted_at_attack": bool(context.get("mounted_at_attack", false)),
+		"weapon_skill": weapon_skill,
+		"weapon_growth": weapon_growth.duplicate(true),
+		"riding_growth": riding_growth.duplicate(true),
+		"kill_experience": kill_experience.duplicate(true),
+		"feedback_emitted": not feedback_results.is_empty()
+	}
 
 
 func _remove_enemy_from_combat(enemy_id: String) -> void:
@@ -7453,15 +7688,16 @@ func _preserve_enemy_defeat_presentation(enemy_node: Node, enemy: Dictionary) ->
 	art_view.reparent(enemy_root, true)
 	art_view.name = "%sDefeatPresentation" % enemy_node.name
 	art_view.set_meta("presentation_only", true)
+	art_view.set_meta("corpse_linger_seconds", ENEMY_CORPSE_LINGER_SECONDS)
 	var defeated_state := enemy.duplicate(true)
 	defeated_state["hp"] = 0
 	defeated_state["alive"] = false
 	defeated_state["current_action"] = "unconscious"
 	_apply_enemy_art_state(art_view, defeated_state, Vector3.ZERO)
 	if art_view.has_method("begin_mounted_shared_defeat"):
-		art_view.begin_mounted_shared_defeat(2.4)
+		art_view.begin_mounted_shared_defeat(ENEMY_CORPSE_LINGER_SECONDS)
 	else:
-		get_tree().create_timer(2.4).timeout.connect(art_view.queue_free)
+		get_tree().create_timer(ENEMY_CORPSE_LINGER_SECONDS).timeout.connect(art_view.queue_free)
 
 
 func _on_enemy_mounted_defeat_cleanup_completed(snapshot: Dictionary) -> void:
@@ -8090,11 +8326,7 @@ func _advance_behavior_mode_contacts() -> void:
 		var combat_eligible := _is_npc_combat_eligible(npc_id, npc_system)
 		var friendly_scope := _get_friendly_target_scope(npc_id) if combat_eligible else {}
 		var encounter := (
-			(
-				_find_nearest_station_enemy(npc_position)
-				if bool(friendly_scope.get("station_enemy_only", false))
-				else _find_nearest_enemy(npc_position, _get_friendly_target_detection_range())
-			)
+			_find_nearest_friendly_combat_enemy(npc_id, friendly_scope)
 			if combat_eligible
 			else _find_nearest_enemy(npc_position, avoidance_trigger_range)
 		)
@@ -8620,7 +8852,9 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_behavior_mode"):
 		result["battle_end_result"] = _finish_active_battle(reason)
 		result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
+		result["wave_clear_notification_numbers"] = _emit_successful_wave_clear_events(result["battle_end_result"])
 		result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
+		_emit_battle_end_audio(result)
 		return result
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
@@ -8661,9 +8895,62 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			(result["avoidance_ended"] as Array).append(ended_event)
 	result["battle_end_result"] = _finish_active_battle(reason)
 	result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
+	result["wave_clear_notification_numbers"] = _emit_successful_wave_clear_events(result["battle_end_result"])
 	result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
+	_emit_battle_end_audio(result)
 	_last_mode_transition_result = result.duplicate(true)
 	return result
+
+
+func _emit_battle_end_audio(result: Dictionary) -> void:
+	var battle_end: Dictionary = result.get("battle_end_result", {}) if result.get("battle_end_result", {}) is Dictionary else {}
+	if str(battle_end.get("error", "")) == "no_active_battle":
+		_last_defeated_enemy_audio_position = null
+		return
+	var victory: Dictionary = result.get("victory_result", {}) if result.get("victory_result", {}) is Dictionary else {}
+	if not bool(victory.get("triggered", false)) and _last_failure_result.is_empty():
+		_emit_combat_audio_event({
+			"event_type": "wave_cleared",
+			"target_type": "enemy",
+			"world_position": (
+				_last_defeated_enemy_audio_position
+				if _last_defeated_enemy_audio_position is Vector3
+				else Vector3.ZERO
+			),
+		})
+	_last_defeated_enemy_audio_position = null
+
+
+func _emit_successful_wave_clear_events(battle_end: Dictionary) -> Array[int]:
+	var notified_wave_numbers: Array[int] = []
+	if not bool(battle_end.get("ok", true)) or int(battle_end.get("remaining_enemy_count", -1)) != 0:
+		return notified_wave_numbers
+	if not _last_failure_result.is_empty():
+		return notified_wave_numbers
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state != null and bool(game_state.get("game_over")) and str(game_state.get("game_result")) == "failure":
+		return notified_wave_numbers
+	var expected_enemy_count := int(battle_end.get("started_enemy_count", 0))
+	for raw_additional_wave in battle_end.get("additional_waves", []):
+		if raw_additional_wave is Dictionary:
+			expected_enemy_count += int((raw_additional_wave as Dictionary).get("enemy_count", 0))
+	if expected_enemy_count <= 0 or int(battle_end.get("resolved_defeated_enemy_count", 0)) < expected_enemy_count:
+		return notified_wave_numbers
+	var wave_number := int(battle_end.get("wave_number", 0))
+	if wave_number > 0:
+		notified_wave_numbers.append(wave_number)
+	for raw_additional_wave in battle_end.get("additional_waves", []):
+		if not raw_additional_wave is Dictionary:
+			continue
+		var additional_wave_number := int((raw_additional_wave as Dictionary).get("wave_number", 0))
+		if additional_wave_number > 0 and not notified_wave_numbers.has(additional_wave_number):
+			notified_wave_numbers.append(additional_wave_number)
+	notified_wave_numbers.sort()
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_wave_cleared"):
+		for cleared_wave_number in notified_wave_numbers:
+			event_bus.combat_wave_cleared.emit(cleared_wave_number)
+	return notified_wave_numbers
 
 
 func _enter_default_formal_combat_world() -> Dictionary:
@@ -8832,6 +9119,7 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 		}
 
 	var enemy_roster := _build_enemy_roster_from_spawned(spawned)
+	_last_defeated_enemy_audio_position = null
 	var friendly_roster := _build_friendly_combatant_roster()
 	_active_battle = {
 		"active": true,
@@ -8848,6 +9136,7 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 		"low_hp_judgements": {},
 		"defeated_by_npc": {},
 		"defeated_enemy_count": 0,
+		"resolved_defeated_enemy_count": 0,
 		"additional_waves": []
 	}
 	var event := _log_combat_started(_active_battle)
@@ -8860,6 +9149,14 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 		"friendly_combatant_count": friendly_roster.size(),
 		"event": event
 	}
+	var first_enemy: Dictionary = spawned[0]
+	_emit_combat_audio_event({
+		"event_type": "battle_started",
+		"target_type": "enemy",
+		"target_id": str(first_enemy.get("id", "")),
+		"wave_number": int(wave.get("wave_number", 0)),
+		"world_position": first_enemy.get("position", Vector3.ZERO),
+	})
 	return _last_battle_start_result.duplicate(true)
 
 
@@ -8906,6 +9203,14 @@ func _record_battle_enemy_defeat(npc_id: String, enemy: Dictionary, damage_resul
 	defeated_by[npc_id] = entry
 	_active_battle["defeated_by_npc"] = defeated_by
 	_active_battle["defeated_enemy_count"] = int(_active_battle.get("defeated_enemy_count", 0)) + 1
+
+
+func _record_battle_resolved_enemy_defeat() -> void:
+	if _active_battle.is_empty():
+		return
+	_active_battle["resolved_defeated_enemy_count"] = int(
+		_active_battle.get("resolved_defeated_enemy_count", 0)
+	) + 1
 
 
 func _record_battle_npc_damage(npc_id: String, npc_name: String, enemy: Dictionary, damage_result: Dictionary) -> void:
@@ -9527,10 +9832,13 @@ func _find_rally_combat_encounter(npc_id: String) -> Dictionary:
 	var scope := _get_friendly_target_scope(npc_id)
 	if not bool(scope.get("station_breached", false)):
 		# A rally route intentionally crosses the front-gate station boundary.
-		# Preserve ordinary radius perception during the crossing so an inside
-		# combatant can engage a nearby outside wave instead of pushing into an
-		# occupied doorway with an empty target lock.
-		scope["scope"] = "rally_transition_radius"
+		# Re-evaluate the actor's current side of that boundary: outside uses the
+		# ordinary radius, while inside retains the station-plus-radius union.
+		scope["scope"] = (
+			"rally_transition_station_plus_unified_radius"
+			if bool(scope.get("npc_inside_station", false))
+			else "rally_transition_radius"
+		)
 		scope["station_enemy_only"] = false
 		scope["detection_range"] = _get_friendly_target_detection_range()
 	return _find_nearest_friendly_combat_enemy(npc_id, scope)
@@ -9739,22 +10047,36 @@ func _get_friendly_target_scope(npc_id: String) -> Dictionary:
 	var station_breached := _has_station_enemy()
 	var rally: Dictionary = _active_rallies.get(npc_id, {}) if _active_rallies.get(npc_id, {}) is Dictionary else {}
 	var rally_transition := str(rally.get("status", "")) == "combat_ready"
-	# Station breach is a shared emergency fact, not a perception radius centered
-	# on each defender. A responder may still be at an outside rally position or
-	# on the way to an assigned horse when the enemy crosses the gate; it must
-	# nevertheless lock a station intruder and continue the normal combat chain.
-	var station_enemy_only := station_breached or (inside_station and not rally_transition)
-	return {
-		"scope": (
-			"station_breach_global"
+	# An inside defender sees the union of the complete station polygon and the
+	# ordinary authored detection circle. Neither half receives target priority:
+	# the normal nearest-enemy ordering runs across the complete union. Outside
+	# responders retain the station-breach emergency rule, so a defender still on
+	# an exterior rally route can globally acquire an intruder after a breach.
+	var include_station_enemies := inside_station or station_breached
+	var station_enemy_only := station_breached and not inside_station
+	var scope_name := "unified_radius"
+	if inside_station:
+		scope_name = (
+			"station_breach_plus_unified_radius"
 			if station_breached
-			else ("rally_transition_radius" if rally_transition else ("entire_station" if inside_station else "unified_radius"))
-		),
+			else (
+				"rally_transition_station_plus_unified_radius"
+				if rally_transition
+				else "entire_station_plus_unified_radius"
+			)
+		)
+	elif station_breached:
+		scope_name = "station_breach_global"
+	elif rally_transition:
+		scope_name = "rally_transition_radius"
+	return {
+		"scope": scope_name,
 		"npc_inside_station": inside_station,
 		"station_breached": station_breached,
 		"rally_transition": rally_transition,
+		"include_station_enemies": include_station_enemies,
 		"station_enemy_only": station_enemy_only,
-		"detection_range": INF if station_enemy_only else _get_friendly_target_detection_range()
+		"detection_range": _get_friendly_target_detection_range()
 	}
 
 
@@ -9772,23 +10094,29 @@ func _is_friendly_enemy_target_present(npc_id: String, enemy_id: String, scope: 
 	var target := _make_friendly_enemy_target(enemy_id, _get_npc_position(npc_id))
 	if target.is_empty():
 		return false
-	if bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false))):
-		return _is_enemy_inside_station(enemy_id)
+	var enemy_inside_station := _is_enemy_inside_station(enemy_id)
+	if bool(scope.get("station_enemy_only", false)):
+		return enemy_inside_station
+	if bool(scope.get("include_station_enemies", false)) and enemy_inside_station:
+		return true
 	return float(target.get("distance", INF)) <= float(scope.get("detection_range", 0.0)) + 0.000001
 
 
 func _find_nearest_friendly_combat_enemy(npc_id: String, scope: Dictionary) -> Dictionary:
 	var origin := _get_npc_position(npc_id)
-	var station_enemy_only := bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false)))
+	var station_enemy_only := bool(scope.get("station_enemy_only", false))
+	var include_station_enemies := bool(scope.get("include_station_enemies", false))
 	var candidates: Array[Dictionary] = []
 	for enemy_id in get_active_enemy_ids():
-		if station_enemy_only and not _is_enemy_inside_station(enemy_id):
+		var enemy_inside_station := _is_enemy_inside_station(enemy_id)
+		if station_enemy_only and not enemy_inside_station:
 			continue
 		var target := _make_friendly_enemy_target(enemy_id, origin)
 		if target.is_empty():
 			continue
 		if (
 			not station_enemy_only
+			and not (include_station_enemies and enemy_inside_station)
 			and float(target.get("distance", INF)) > float(scope.get("detection_range", 0.0)) + 0.000001
 		):
 			continue
@@ -9815,7 +10143,7 @@ func _mark_friendly_target_choice(
 	chosen["target_scope"] = str(scope.get("scope", ""))
 	chosen["target_detection_range"] = (
 		-1.0
-		if bool(scope.get("station_enemy_only", scope.get("npc_inside_station", false)))
+		if bool(scope.get("station_enemy_only", false))
 		else float(scope.get("detection_range", _get_friendly_target_detection_range()))
 	)
 	if not previous_target_id.is_empty() and previous_target_id != str(chosen.get("id", "")):
@@ -10082,6 +10410,7 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 				"scope": str(scope.get("scope", "")),
 				"npc_inside_station": bool(scope.get("npc_inside_station", false)),
 				"station_breached": bool(scope.get("station_breached", false)),
+				"include_station_enemies": bool(scope.get("include_station_enemies", false)),
 				"station_enemy_only": bool(scope.get("station_enemy_only", false)),
 				"target_enemy_id": target_enemy_id,
 				"target_present": _is_friendly_enemy_target_present(npc_id, target_enemy_id, scope),
@@ -10126,8 +10455,14 @@ func _get_friendly_station_response_snapshot() -> Dictionary:
 		"station_enemy_ids": station_enemy_ids,
 		"normal_contact_range": _get_normal_contact_range(),
 		"combat_target_detection_range": _get_friendly_target_detection_range(),
-		"inside_station_target_scope": "entire_station",
+		"inside_station_target_scope": str(
+			_get_friendly_station_response_config().get(
+				"inside_station_target_scope",
+				"entire_station_plus_unified_radius"
+			)
+		),
 		"station_breach_target_scope": "station_breach_global",
+		"inside_station_breach_target_scope": "station_breach_plus_unified_radius",
 		"combat_navigation_policy": _combat_navigation_policy.duplicate(true),
 		"maximum_active_enemy_ranged_attack_range": _get_max_active_enemy_ranged_attack_range(),
 		"avoidance_trigger_range": _get_avoidance_trigger_range(),
@@ -10761,6 +11096,22 @@ func _get_defense_device_attack_position_candidates(
 		var hit_radius := maxf(0.1, float(region.get("hit_radius", target.get("host_proxy_hit_radius", 2.0))))
 		var edge_inset := minf(hit_radius * 0.25, maxf(0.12, enemy_radius * 0.35))
 		var usable_half_width := maxf(0.1, hit_radius - edge_inset)
+		if role.begins_with("melee_"):
+			# The guide centre aims the authored swing at one wall contact, but the
+			# blade sweeps laterally around that point. Edge guides can therefore hit
+			# a neighbouring gate post or leave this deployment's strict proxy radius
+			# while the attacker still appears to strike the ballista. Keep melee guide
+			# centres inside the proxy's model-contact-safe core; collision identity
+			# remains the final authority and is not widened by this navigation rule.
+			var safe_half_width_ratio := clampf(
+				float(_formal_attack_position_policy.get(
+					"defense_device_melee_proxy_safe_half_width_ratio",
+					0.5
+				)),
+				0.1,
+				1.0
+			)
+			usable_half_width = minf(usable_half_width, maxf(0.1, hit_radius * safe_half_width_ratio))
 		var natural_count := maxi(1, int(floor(usable_half_width * 2.0 / maxf(0.1, spacing))) + 1)
 		var region_budget := maxi(1, base_region_budget + (1 if region_index < extra_region_budget else 0))
 		var count := mini(natural_count, region_budget)
@@ -14468,15 +14819,44 @@ func _begin_formal_first_wave_route(enemy_id: String, enemy: Dictionary, stage_i
 	return _request_formal_first_wave_stage(enemy_id, stage_index)
 
 
-func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBody, delta: float) -> Vector3:
+func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBody, art_view: Node3D, delta: float) -> Vector3:
 	var current_position := actor.global_position
 	var previous_position: Vector3 = runtime.get("presentation_previous_position", current_position)
-	var planar_displacement := Vector3(
+	var raw_planar_displacement := Vector3(
 		current_position.x - previous_position.x,
 		0.0,
 		current_position.z - previous_position.z
 	)
 	var safe_delta := maxf(0.000001, delta)
+	var motion_snapshot := actor.debug_get_motion_snapshot()
+	var body_radius := float(motion_snapshot.get("body_radius", 0.42))
+	var intended_distance := maxf(actor.velocity.length() * safe_delta, 0.0)
+	var recovery_allowance := minf(0.04, body_radius * 0.1)
+	var visible_limit := intended_distance + recovery_allowance
+	var previous_compensation: Vector3 = runtime.get("presentation_visual_compensation", Vector3.ZERO)
+	var compensation := previous_compensation
+	if raw_planar_displacement.length() > visible_limit and visible_limit > 0.0:
+		var intended_displacement := raw_planar_displacement.normalized() * visible_limit
+		compensation -= raw_planar_displacement - intended_displacement
+	else:
+		var recovery_speed := minf(
+			maxf(float(motion_snapshot.get("profile_base_speed", 3.4)) * 0.45, 1.0),
+			2.0
+		)
+		compensation = compensation.move_toward(Vector3.ZERO, recovery_speed * safe_delta)
+	var proposed_visible_displacement := raw_planar_displacement + compensation - previous_compensation
+	if proposed_visible_displacement.length() > visible_limit and visible_limit > 0.0:
+		var limited_visible_displacement := proposed_visible_displacement.normalized() * visible_limit
+		compensation = previous_compensation + limited_visible_displacement - raw_planar_displacement
+	# A dense contact can apply several legitimate capsule recovery impulses in
+	# consecutive ticks. Keep enough visual slack to absorb that short burst, then
+	# blend the art root back onto the authoritative physics body.
+	compensation = compensation.limit_length(maxf(body_radius * 2.5, 0.8))
+	var planar_displacement := raw_planar_displacement + compensation - previous_compensation
+	if art_view != null:
+		var art_base_position: Vector3 = runtime.get("presentation_art_base_position", art_view.position)
+		runtime["presentation_art_base_position"] = art_base_position
+		art_view.position = art_base_position + actor.global_basis.inverse() * compensation
 	var planar_speed := planar_displacement.length() / safe_delta
 	var actor_motion_active := actor.is_motion_active()
 	var was_active := bool(runtime.get("presentation_movement_active", false))
@@ -14508,8 +14888,15 @@ func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBo
 	elif not moving:
 		cadence_speed = 0.0
 	runtime["presentation_previous_position"] = current_position
+	runtime["presentation_raw_planar_displacement"] = raw_planar_displacement
 	runtime["presentation_planar_displacement"] = planar_displacement
 	runtime["presentation_planar_speed"] = planar_speed
+	runtime["presentation_visual_compensation"] = compensation
+	runtime["presentation_visible_frame_displacement"] = planar_displacement.length()
+	runtime["presentation_maximum_visible_frame_displacement"] = maxf(
+		float(runtime.get("presentation_maximum_visible_frame_displacement", 0.0)),
+		planar_displacement.length()
+	)
 	runtime["presentation_cadence_speed"] = cadence_speed
 	runtime["presentation_movement_active"] = moving
 	runtime["presentation_stationary_seconds"] = stationary_seconds
@@ -14526,7 +14913,8 @@ func _sync_formal_first_wave_presentation(delta: float) -> void:
 		if actor == null:
 			continue
 		var slice: Dictionary = _formal_first_wave_slices[enemy_id]
-		var movement_direction := _sample_enemy_presentation_motion(slice, actor, delta)
+		var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+		var movement_direction := _sample_enemy_presentation_motion(slice, actor, art_view, delta)
 		var facing_sample := movement_direction
 		var facing_speed := float(slice.get("presentation_planar_speed", 0.0))
 		if facing_sample.length() < 0.0001:
@@ -14551,7 +14939,6 @@ func _sync_formal_first_wave_presentation(delta: float) -> void:
 		var enemy: Dictionary = _active_enemies[enemy_id]
 		enemy["position"] = actor.global_position
 		_active_enemies[enemy_id] = enemy
-		var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
 		_apply_enemy_art_state(
 			art_view,
 			enemy,
@@ -14710,12 +15097,12 @@ func _sync_formal_active_enemy_slice_presentation(delta: float) -> void:
 	if actor == null:
 		return
 	var slice := _formal_active_enemy_slice
-	var movement_direction := _sample_enemy_presentation_motion(slice, actor, delta)
+	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+	var movement_direction := _sample_enemy_presentation_motion(slice, actor, art_view, delta)
 	_formal_active_enemy_slice = slice
 	var enemy: Dictionary = _active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID]
 	enemy["position"] = actor.global_position
 	_active_enemies[FORMAL_ACTIVE_ENEMY_SLICE_ID] = enemy
-	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
 	_apply_enemy_art_state(
 		art_view,
 		enemy,
@@ -14824,12 +15211,12 @@ func _sync_formal_enemy_navigation_pilot_presentation(delta: float) -> void:
 	if actor == null:
 		return
 	var pilot := _formal_enemy_navigation_pilot
-	var movement_direction := _sample_enemy_presentation_motion(pilot, actor, delta)
+	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+	var movement_direction := _sample_enemy_presentation_motion(pilot, actor, art_view, delta)
 	var enemy := pilot.get("enemy", {}) as Dictionary
 	enemy["position"] = actor.global_position
 	pilot["enemy"] = enemy
 	_formal_enemy_navigation_pilot = pilot
-	var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
 	_apply_enemy_art_state(
 		art_view,
 		enemy,
@@ -16548,11 +16935,12 @@ func _get_combat_action_seconds(game_delta_seconds: float) -> float:
 func _sync_enemy_presence_time_slowdown(reason: String) -> Dictionary:
 	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
 	var should_slow_down := not _active_enemies.is_empty()
+	var active_enemy_count := get_active_enemy_count()
 	var result := {
 		"ok": false,
 		"request_id": COMBAT_TIME_SLOWDOWN_REQUEST_ID,
 		"slowdown_scale": COMBAT_TIME_SLOWDOWN_SCALE,
-		"active_enemy_count": get_active_enemy_count(),
+		"active_enemy_count": active_enemy_count,
 		"slowdown_expected": should_slow_down,
 		"reason": reason
 	}
@@ -16578,8 +16966,23 @@ func _sync_enemy_presence_time_slowdown(reason: String) -> Dictionary:
 			result["action"] = "slowdown_released"
 		else:
 			result["error"] = "time_slowdown_api_missing"
+	if active_enemy_count != _last_emitted_enemy_presence_count:
+		_last_emitted_enemy_presence_count = active_enemy_count
+		var event_bus := get_node_or_null("/root/EventBus")
+		if event_bus != null and event_bus.has_signal("combat_enemy_presence_changed"):
+			event_bus.combat_enemy_presence_changed.emit(
+				should_slow_down,
+				active_enemy_count,
+				reason
+			)
 	result["time_scale"] = _get_time_scale_snapshot()
 	return result
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
 
 
 func _get_time_scale_snapshot() -> Dictionary:
@@ -16656,6 +17059,24 @@ func debug_get_enemy_art_snapshots() -> Array[Dictionary]:
 			"actor_motion_active": bool(presentation_runtime.get("presentation_actor_motion_active", false)),
 			"art_family": str(enemy_node.get_meta("enemy_art_family", "capsule")) if enemy_node != null else "missing",
 			"art": art_snapshot,
+		})
+	return snapshots
+
+
+func get_enemy_audio_motion_snapshots() -> Array[Dictionary]:
+	var snapshots: Array[Dictionary] = []
+	for enemy_id in get_active_enemy_ids():
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var runtime: Dictionary = _formal_first_wave_slices.get(enemy_id, {})
+		var raw_position: Variant = get_enemy_world_position(enemy_id)
+		if not raw_position is Vector3:
+			continue
+		snapshots.append({
+			"enemy_id": enemy_id,
+			"mounted": str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"],
+			"movement_active": bool(runtime.get("presentation_movement_active", false)),
+			"actual_horizontal_speed": float(runtime.get("presentation_planar_speed", 0.0)),
+			"world_position": raw_position,
 		})
 	return snapshots
 

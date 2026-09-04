@@ -111,6 +111,7 @@ Mock 只用于开发期快速验证 Schema、前后端通信和自动化脚本�
 
 - 任何涉及 LLM、Prompt、Model Adapter、AI NPC、记忆摘要或 API 调用的任务，必须先跑基础 mock / 本地自动化测试；基础测试通过后，如环境中已有真实 API Key，必须再用真实 provider 发起对应业务路径的测试。
 - 如果任务目标包含“真实 LLM / Prompt 效果”，但本轮没有可用真实 Key 或未能完成真实 API 测试，该任务不得标记为完全 Done；应标为 Partial / Blocked，或在验收结果中明确“真实 API 未验收”。
+- 如果任务测试无需LLM，优先用基础 mock / 本地自动化测试以节约成本。
 - 真实 API 测试通过后，成品 / Demo 路径不得继续依赖自动 mock fallback。Mock 只能保留在显式开发模式、显式 `LLM_PROVIDER=mock` 或 `/mock/model` 调试入口中。
 - 模型失败、超时、无 Key、HTTP 错误、非 JSON、Schema 校验失败等情况必须返回可处理错误并记录真实失败原因；不得用 mock 内容假装模型成功。
 - 允许规则 / 模板降级维持游戏流程，但必须标明来源是规则或模板，并在 usage / 日志中保留原始模型失败；这不同于 mock 伪装成功。

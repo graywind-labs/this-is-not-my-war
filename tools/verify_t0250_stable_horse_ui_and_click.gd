@@ -127,7 +127,17 @@ func _verify_progress(root_node: Node, control_name: String, expected_danger: bo
 	check(progress != null and label != null, "%s progress row is missing" % control_name)
 	if progress == null or label == null:
 		return
-	check(label.get_parent() == progress.get_parent() and label.get_index() < progress.get_index(), "%s label should be above its progress bar" % control_name)
+	var label_row := label.get_parent() as Control
+	if label_row != null and label_row == progress.get_parent():
+		label_row = label
+	check(
+		label_row != null
+		and (
+			(label_row == label and label.get_parent() == progress.get_parent() and label.get_index() < progress.get_index())
+			or (label_row.get_parent() == progress.get_parent() and label_row.get_index() < progress.get_index())
+		),
+		"%s label row should be above its progress bar" % control_name
+	)
 	var fill := progress.get_theme_stylebox("fill") as StyleBoxFlat
 	var fill_color := fill.bg_color.to_html(true) if fill != null else ""
 	check(bool(progress.get_meta("danger_state", false)) == expected_danger, "%s danger state mismatch during %s" % [control_name, phase])

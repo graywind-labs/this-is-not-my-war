@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const MERCHANT_DEFS_FILE := "merchant_defs.json"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
@@ -16,6 +17,9 @@ const GUARD_OFFICER_ID := "guard_officer"
 var _merchant: Dictionary = {}
 var _buy_offers: Dictionary = {}
 var _sell_offers: Dictionary = {}
+var _daily_stock: Dictionary = {}
+var _stock_visit_day := 0
+var _stock_rng := RandomNumberGenerator.new()
 var _merchant_active := false
 var _active_visit_day := 0
 var _last_state_change: Dictionary = {}
@@ -56,6 +60,9 @@ func initialize() -> void:
 	_merchant.clear()
 	_buy_offers.clear()
 	_sell_offers.clear()
+	_daily_stock.clear()
+	_stock_visit_day = 0
+	_stock_rng.randomize()
 	_merchant_active = false
 	_active_visit_day = 0
 	_last_state_change.clear()
@@ -113,6 +120,10 @@ func get_sell_offer(resource_id: String) -> Dictionary:
 	return _sell_offers.get(resource_id, {}).duplicate(true)
 
 
+func get_merchant_stock(resource_id: String) -> int:
+	return maxi(0, int(_daily_stock.get(resource_id, 0)))
+
+
 func get_market_snapshot() -> Dictionary:
 	return {
 		"active": is_merchant_present(),
@@ -121,6 +132,8 @@ func get_market_snapshot() -> Dictionary:
 		"schedule_text": _get_schedule_text(),
 		"buy_offers": _buy_offers.duplicate(true),
 		"sell_offers": _sell_offers.duplicate(true),
+		"daily_stock": _daily_stock.duplicate(true),
+		"stock_visit_day": _stock_visit_day,
 		"last_state_change": _last_state_change.duplicate(true),
 		"last_transaction": _last_transaction.duplicate(true),
 		"wagon_state": _wagon_state,
@@ -132,12 +145,18 @@ func get_market_snapshot() -> Dictionary:
 	}
 
 
+func get_merchant_feedback_anchor_position() -> Variant:
+	if is_instance_valid(_wagon) and _wagon.has_method("get_world_feedback_anchor_position"):
+		return _wagon.get_world_feedback_anchor_position()
+	return null
+
+
 func create_formal_spatial_checkpoint() -> Dictionary:
 	var wagon_position := Vector3.ZERO
 	if is_instance_valid(_wagon):
 		wagon_position = _wagon.global_position
 	return {
-		"schema": "formal_merchant_spatial_checkpoint_v1",
+		"schema": "formal_merchant_spatial_checkpoint_v2",
 		"wagon_state": _wagon_state,
 		"wagon_position": {"x": wagon_position.x, "y": wagon_position.y, "z": wagon_position.z},
 		"merchant_active": _merchant_active,
@@ -145,12 +164,15 @@ func create_formal_spatial_checkpoint() -> Dictionary:
 		"visit_started_day": _visit_started_day,
 		"visit_departed_day": _visit_departed_day,
 		"forced_visit": _forced_visit,
-		"route_mode": _route_mode
+		"route_mode": _route_mode,
+		"daily_stock": _daily_stock.duplicate(true),
+		"stock_visit_day": _stock_visit_day
 	}
 
 
 func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
-	if str(checkpoint.get("schema", "")) != "formal_merchant_spatial_checkpoint_v1":
+	var checkpoint_schema := str(checkpoint.get("schema", ""))
+	if not ["formal_merchant_spatial_checkpoint_v1", "formal_merchant_spatial_checkpoint_v2"].has(checkpoint_schema):
 		return {"ok": false, "reason": "merchant_spatial_checkpoint_schema_mismatch"}
 	_set_merchant_active(false, "save_restore_reset", false)
 	_clear_wagon()
@@ -160,6 +182,10 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 	_visit_started_day = int(checkpoint.get("visit_started_day", 0))
 	_visit_departed_day = int(checkpoint.get("visit_departed_day", 0))
 	_forced_visit = bool(checkpoint.get("forced_visit", false))
+	_stock_visit_day = maxi(0, int(checkpoint.get("stock_visit_day", _active_visit_day)))
+	_daily_stock = _normalize_stock_snapshot(checkpoint.get("daily_stock", {}))
+	if _daily_stock.is_empty() and _stock_visit_day > 0:
+		_generate_daily_stock(_stock_visit_day)
 	var saved_state := str(checkpoint.get("wagon_state", "absent"))
 	if saved_state == "absent":
 		return {"ok": true, "wagon_state": "absent", "presence_event_created": false}
@@ -211,11 +237,125 @@ func _checkpoint_vector3(raw_value: Variant, fallback: Vector3) -> Vector3:
 
 
 func buy_resource(resource_id: String, amount: int) -> Dictionary:
-	return _execute_trade("buy", resource_id, amount)
+	return _flatten_single_trade_result(execute_trade_batch("buy", {resource_id: amount}), resource_id)
 
 
 func sell_resource(resource_id: String, amount: int) -> Dictionary:
-	return _execute_trade("sell", resource_id, amount)
+	return _flatten_single_trade_result(execute_trade_batch("sell", {resource_id: amount}), resource_id)
+
+
+func execute_trade_batch(direction: String, raw_amounts: Dictionary) -> Dictionary:
+	if not is_merchant_present():
+		return _trade_error("merchant_unavailable", "商人当前不在后门。")
+	if not ["buy", "sell"].has(direction):
+		return _trade_error("invalid_direction", "交易方向无效。")
+	var offers: Dictionary = _buy_offers if direction == "buy" else _sell_offers
+	var amounts := _normalize_trade_amounts(raw_amounts, offers)
+	if amounts.is_empty():
+		return _trade_error("invalid_amount", "请至少选择一项数量大于 0 的物资。")
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if resource_system == null:
+		return _trade_error("resource_system_unavailable", "资源系统不可用。")
+	var total_price := 0
+	var lines: Array[Dictionary] = []
+	for raw_resource_id in amounts.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(amounts[resource_id])
+		var offer: Dictionary = offers[resource_id]
+		var unit_price := int(offer.get("unit_price", 0))
+		total_price += amount * unit_price
+		lines.append({
+			"resource_id": resource_id,
+			"resource_name": resource_system.get_resource_name(resource_id),
+			"amount": amount,
+			"unit_price": unit_price,
+			"line_total": amount * unit_price,
+			"resource_delta": amount if direction == "buy" else -amount
+		})
+	lines.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return str(a.get("resource_id", "")) < str(b.get("resource_id", "")))
+	if direction == "buy":
+		if not resource_system.can_afford({"money": total_price}):
+			return _trade_error("insufficient_money", "第纳尔不足。")
+		for resource_id in amounts.keys():
+			if int(amounts[resource_id]) > get_merchant_stock(str(resource_id)):
+				return _trade_error("insufficient_merchant_stock", "%s的行商库存不足。" % resource_system.get_resource_name(str(resource_id)))
+		if resource_system.has_method("can_store_resources") and not bool(resource_system.can_store_resources(amounts)):
+			return _trade_error("warehouse_capacity", "所选物资会超过仓库储存上限。")
+		if not resource_system.spend_resources({"money": total_price}):
+			return _trade_error("payment_failed", "交易扣款失败。")
+		if not resource_system.add_resources(amounts):
+			resource_system.add_resource("money", total_price)
+			return _trade_error("resource_add_failed", "资源入库失败，交易已回滚。")
+		for resource_id in amounts.keys():
+			_daily_stock[resource_id] = get_merchant_stock(str(resource_id)) - int(amounts[resource_id])
+	else:
+		if not resource_system.can_afford(amounts):
+			return _trade_error("insufficient_resource", "所选物资库存不足。")
+		if not resource_system.spend_resources(amounts):
+			return _trade_error("payment_failed", "交易扣除物资失败。")
+		if not resource_system.add_resource("money", total_price):
+			resource_system.add_resources(amounts)
+			return _trade_error("money_add_failed", "第纳尔入库失败，交易已回滚。")
+		for resource_id in amounts.keys():
+			_daily_stock[resource_id] = get_merchant_stock(str(resource_id)) + int(amounts[resource_id])
+	var money_delta := -total_price if direction == "buy" else total_price
+	var event := _record_trade_batch_event(direction, lines, total_price, money_delta)
+	_last_transaction = {
+		"ok": true,
+		"direction": direction,
+		"amounts": amounts.duplicate(true),
+		"lines": lines.duplicate(true),
+		"total_price": total_price,
+		"money_delta": money_delta,
+		"event_id": str(event.get("event_id", "")),
+		"daily_stock": _daily_stock.duplicate(true)
+	}
+	_emit_trade_world_feedback(direction, lines, total_price, resource_system)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("merchant_state_changed"):
+		event_bus.merchant_state_changed.emit(true, get_market_snapshot())
+	return _last_transaction.duplicate(true)
+
+
+func _emit_trade_world_feedback(
+	direction: String,
+	lines: Array[Dictionary],
+	total_price: int,
+	resource_system: Node
+) -> void:
+	var entries: Array[Dictionary] = []
+	var money_entry := WorldFeedbackPayload.make_resource_entry(
+		resource_system,
+		"money",
+		-total_price if direction == "buy" else total_price,
+		"trade_out" if direction == "buy" else "trade_in"
+	)
+	if direction == "buy" and not money_entry.is_empty():
+		entries.append(money_entry)
+	for line in lines:
+		var amount := absi(int(line.get("amount", 0)))
+		var resource_entry := WorldFeedbackPayload.make_resource_entry(
+			resource_system,
+			str(line.get("resource_id", "")),
+			amount if direction == "buy" else -amount,
+			"trade_in" if direction == "buy" else "trade_out"
+		)
+		if not resource_entry.is_empty():
+			entries.append(resource_entry)
+	if direction == "sell" and not money_entry.is_empty():
+		entries.append(money_entry)
+	if entries.is_empty():
+		return
+	WorldFeedbackPayload.emit_anchor(
+		self,
+		"merchant",
+		str(_merchant.get("id", "back_gate_merchant")),
+		WorldFeedbackPayload.MERCHANT_ANCHOR_HEIGHT,
+		"merchant_trade",
+		entries,
+		false,
+		get_merchant_feedback_anchor_position()
+	)
 
 
 func debug_evaluate_current_time() -> Dictionary:
@@ -315,8 +455,47 @@ func _normalize_offers(raw_offers: Variant, direction: String) -> Dictionary:
 		normalized["resource_id"] = resource_id
 		normalized["resource_name"] = resource_system.get_resource_name(resource_id)
 		normalized["unit_price"] = unit_price
+		if direction == "buy":
+			var stock_min := maxi(0, int(offer.get("daily_stock_min", 0)))
+			var stock_max := maxi(stock_min, int(offer.get("daily_stock_max", stock_min)))
+			normalized["daily_stock_min"] = stock_min
+			normalized["daily_stock_max"] = stock_max
 		offers[resource_id] = normalized
 	return offers
+
+
+func _generate_daily_stock(day: int) -> void:
+	_daily_stock.clear()
+	for resource_id in _sell_offers.keys():
+		_daily_stock[str(resource_id)] = 0
+	for resource_id in _buy_offers.keys():
+		var offer: Dictionary = _buy_offers[resource_id]
+		var stock_min := maxi(0, int(offer.get("daily_stock_min", 0)))
+		var stock_max := maxi(stock_min, int(offer.get("daily_stock_max", stock_min)))
+		_daily_stock[str(resource_id)] = _stock_rng.randi_range(stock_min, stock_max)
+	_stock_visit_day = maxi(1, day)
+
+
+func _ensure_daily_stock(day: int) -> void:
+	if _stock_visit_day == day and not _daily_stock.is_empty():
+		return
+	_generate_daily_stock(day)
+
+
+func _normalize_stock_snapshot(raw_stock: Variant) -> Dictionary:
+	var normalized := {}
+	if not raw_stock is Dictionary:
+		return normalized
+	var known_ids := {}
+	for resource_id in _buy_offers.keys():
+		known_ids[str(resource_id)] = true
+	for resource_id in _sell_offers.keys():
+		known_ids[str(resource_id)] = true
+	for raw_resource_id in (raw_stock as Dictionary).keys():
+		var resource_id := str(raw_resource_id)
+		if known_ids.has(resource_id):
+			normalized[resource_id] = maxi(0, int((raw_stock as Dictionary)[raw_resource_id]))
+	return normalized
 
 
 func _on_time_changed(day: int, hour: int, minute: int, _second: int) -> void:
@@ -387,61 +566,33 @@ func _set_merchant_active(active: bool, reason: String, record_event: bool) -> v
 		event_bus.merchant_state_changed.emit(active, get_market_snapshot())
 
 
-func _execute_trade(direction: String, resource_id: String, amount: int) -> Dictionary:
-	if not is_merchant_present():
-		return _trade_error("merchant_unavailable", "商人当前不在后门。")
-	if amount <= 0:
-		return _trade_error("invalid_amount", "交易数量必须大于 0。")
-	var offers: Dictionary = _buy_offers if direction == "buy" else _sell_offers
-	if not offers.has(resource_id):
-		return _trade_error("offer_unavailable", "商人不接受这项交易。")
-	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
-	if resource_system == null:
-		return _trade_error("resource_system_unavailable", "资源系统不可用。")
-	var offer: Dictionary = offers[resource_id]
-	var unit_price := int(offer.get("unit_price", 0))
-	var total_price := amount * unit_price
-	var paid := false
-	if direction == "buy":
-		if not resource_system.can_afford({"money": total_price}):
-			return _trade_error("insufficient_money", "第纳尔不足。")
-		if (
-			resource_system.has_method("can_store_resources")
-			and not bool(resource_system.can_store_resources({resource_id: amount}))
-		):
-			return _trade_error(
-				"warehouse_capacity",
-				"%s已达到仓库储存上限。" % resource_system.get_resource_name(resource_id)
-			)
-		paid = resource_system.spend_resources({"money": total_price})
-		if paid and not resource_system.add_resource(resource_id, amount):
-			resource_system.add_resource("money", total_price)
-			return _trade_error("resource_add_failed", "资源入库失败，交易已回滚。")
-	else:
-		if not resource_system.can_afford({resource_id: amount}):
-			return _trade_error("insufficient_resource", "%s不足。" % resource_system.get_resource_name(resource_id))
-		paid = resource_system.spend_resources({resource_id: amount})
-		if paid and not resource_system.add_resource("money", total_price):
-			resource_system.add_resource(resource_id, amount)
-			return _trade_error("money_add_failed", "第纳尔入库失败，交易已回滚。")
-	if not paid:
-		return _trade_error("payment_failed", "交易扣款失败。")
-	var money_delta := -total_price if direction == "buy" else total_price
-	var resource_delta := amount if direction == "buy" else -amount
-	var event := _record_trade_event(direction, resource_id, amount, unit_price, total_price, money_delta, resource_delta)
-	_last_transaction = {
-		"ok": true,
-		"direction": direction,
-		"resource_id": resource_id,
-		"resource_name": resource_system.get_resource_name(resource_id),
-		"amount": amount,
-		"unit_price": unit_price,
-		"total_price": total_price,
-		"money_delta": money_delta,
-		"resource_delta": resource_delta,
-		"event_id": str(event.get("event_id", ""))
-	}
-	return _last_transaction.duplicate(true)
+func _normalize_trade_amounts(raw_amounts: Dictionary, offers: Dictionary) -> Dictionary:
+	var amounts := {}
+	for raw_resource_id in raw_amounts.keys():
+		var resource_id := str(raw_resource_id)
+		var amount := int(raw_amounts[raw_resource_id])
+		if amount <= 0:
+			continue
+		if not offers.has(resource_id):
+			return {}
+		amounts[resource_id] = amount
+	return amounts
+
+
+func _flatten_single_trade_result(result: Dictionary, resource_id: String) -> Dictionary:
+	if not bool(result.get("ok", false)):
+		return result
+	var flattened := result.duplicate(true)
+	var lines: Array = flattened.get("lines", [])
+	if lines.size() != 1:
+		return flattened
+	var line: Dictionary = lines[0]
+	flattened["resource_id"] = resource_id
+	flattened["resource_name"] = str(line.get("resource_name", resource_id))
+	flattened["amount"] = int(line.get("amount", 0))
+	flattened["unit_price"] = int(line.get("unit_price", 0))
+	flattened["resource_delta"] = int(line.get("amount", 0)) if str(flattened.get("direction", "")) == "buy" else -int(line.get("amount", 0))
+	return flattened
 
 
 func _trade_error(code: String, message: String) -> Dictionary:
@@ -470,45 +621,60 @@ func _record_presence_event(active: bool, reason: String) -> Dictionary:
 	})
 
 
-func _record_trade_event(
-	direction: String,
-	resource_id: String,
-	amount: int,
-	unit_price: int,
-	total_price: int,
-	money_delta: int,
-	resource_delta: int
-) -> Dictionary:
+func _record_trade_batch_event(direction: String, lines: Array[Dictionary], total_price: int, money_delta: int) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
-	if memory_system == null or resource_system == null:
+	if memory_system == null or resource_system == null or lines.is_empty():
 		return {}
+	var first_line: Dictionary = lines[0]
+	var single_line := lines.size() == 1
+	var resource_id := str(first_line.get("resource_id", "")) if single_line else "multiple_resources"
+	var resource_name := str(first_line.get("resource_name", resource_id)) if single_line else "多项物资"
+	var amount := int(first_line.get("amount", 0)) if single_line else _sum_trade_line_amounts(lines)
+	var unit_price := int(first_line.get("unit_price", 0)) if single_line else 0
+	var resource_delta := amount if direction == "buy" else -amount
+	var target_ids: Array[String] = ["money", str(_merchant.get("id", "back_gate_merchant")), str(_merchant.get("location_id", "back_gate"))]
+	for line in lines:
+		target_ids.append(str(line.get("resource_id", "")))
 	return memory_system.broadcast_plaza_event({
 		"type": "merchant_trade_completed",
 		"subject_npc_id": str(_merchant.get("id", "back_gate_merchant")),
 		"actor_ids": [GUARD_OFFICER_ID, str(_merchant.get("id", "back_gate_merchant"))],
-		"target_ids": [resource_id, "money", str(_merchant.get("id", "back_gate_merchant")), str(_merchant.get("location_id", "back_gate"))],
+		"target_ids": target_ids,
 		"importance": 50,
 		"payload": {
 			"merchant_id": str(_merchant.get("id", "back_gate_merchant")),
 			"merchant_name": str(_merchant.get("name", "后门商队")),
 			"direction": direction,
 			"resource_id": resource_id,
-			"resource_name": resource_system.get_resource_name(resource_id),
+			"resource_name": resource_name,
 			"amount": amount,
 			"unit_price": unit_price,
 			"total_price": total_price,
 			"money_delta": money_delta,
 			"resource_delta": resource_delta,
+			"lines": lines.duplicate(true),
+			"line_count": lines.size(),
+			"merchant_stock_after": _daily_stock.duplicate(true),
 			"money_after": resource_system.get_resource("money"),
-			"resource_after": resource_system.get_resource(resource_id)
+			"resource_after": resource_system.get_resource(resource_id) if single_line else -1
 		}
 	})
+
+
+func _sum_trade_line_amounts(lines: Array[Dictionary]) -> int:
+	var total := 0
+	for line in lines:
+		total += int(line.get("amount", 0))
+	return total
 
 
 func _begin_arrival(reason: String, forced: bool) -> void:
 	if _merchant.is_empty() or _wagon_state != "absent":
 		return
+	var game_state := get_node_or_null("/root/GameState")
+	var visit_day := int(game_state.current_day) if game_state != null else 1
+	_ensure_daily_stock(visit_day)
 	var world_root := get_node_or_null(WORLD_ROOT_PATH) as Node3D
 	if world_root == null or not _route_navigation_map.is_valid():
 		push_error("Merchant wagon route is unavailable.")
@@ -525,8 +691,7 @@ func _begin_arrival(reason: String, forced: bool) -> void:
 	_wagon.motion_failed.connect(_on_wagon_motion_failed)
 	_wagon_state = "arriving"
 	_forced_visit = forced
-	var game_state := get_node_or_null("/root/GameState")
-	_visit_started_day = int(game_state.current_day) if game_state != null else 1
+	_visit_started_day = visit_day
 	_last_state_change = {
 		"active": false,
 		"day": _visit_started_day,

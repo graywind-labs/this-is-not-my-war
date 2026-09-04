@@ -1,5 +1,112 @@
 # TECH_ARCHITECTURE.md
 
+## T0354 已实现前端会话与 T0355 存档技术边界
+
+- 启动链调整为 `MainMenu -> 开始游戏 -> Main/GameStartupSystem`。MainMenu 不预加载或实例化 Main，避免菜单驻留期间世界推进、NPC 计划生成和真实 provider 费用。
+- 主菜单、PauseMenu、SettingsPanel、SaveBrowserPanel 都属于表现 / 会话控制层，不计算资源、战斗、NPC、建筑或记忆事实。退出 Main 时沿节点生命周期关闭 LLMBridge 在途请求。
+- 游戏暂停继续使用 TimeSystem 逻辑暂停，不修改 `Engine.time_scale` 或 `SceneTree.paused`；PauseMenu 只保存进入前暂停布尔值并请求 / 释放自己的暂停表现。
+- `ClientSettings` 与玩家存档严格分离：本机画面和非秘密 AI 服务偏好进入 `user://client_settings.cfg`，五路音量继续进入 `user://audio_settings.cfg`；API Key 不持久化。后续安全凭据机制由后端或系统凭据层承接。
+- T0355 完整存档采用稳定 slot id、独立元数据 / 状态 / 缩略图、Schema 版本、校验与原子替换。UI、Node / RID、NavigationMap、音频粒子和在途 HTTP / LLM 请求不序列化；加载必须先选择 LOAD 启动意图，再建立干净 Main 并恢复，不能执行一次新游戏启动后覆盖。
+- T0354 SaveBrowserPanel 只维护当前面板生命周期内的槽位表现模型；任何保存 / 覆盖 / 加载 / 删除最终动作都以“等待 T0355”结束，绝不产生可被误认为权威完成的状态。动态 UI 声音接线以 instance id 跨 deferred 边界，节点已释放时直接丢弃。
+
+## T0353 音频混音与交互时序边界
+
+- `InteractionAudioController` 只监听按钮 `pressed`、世界选择与正式成功事件，不再监听面板 `visibility_changed`。按钮回调立即 flush 当前语义，关闭 UI 与声音处于同一信号分发；同次更早提交的成功语义仍可覆盖普通点击。
+- `AudioManager` 保存 `master / music / sfx / ambience / ui` 五个线性值。`Ambience`、`UI` 直达 Master；Work / Foley / Combat / World / Voice 仍经 SFX。`AmbientBed` 是 Ambience 的子总线，只承载昼夜全局底噪的镜头增益。
+- `WorldAudioController` 把 `scope=global_zoom` 的昼夜循环创建为 2D player，并只读 `CameraRig.get_zoom_distance()` 调整 AmbientBed；其他环境源继续创建 3D player。该增益是表现混音，不改变时间、昼夜或环境事件权威。
+
+## T0350 实战成长权威边界
+
+数据流为 `CombatSystem 捕获 NPC 武器攻击上下文 → 敌人统一 HP 入口计算实际损失 → NPCSystem 累计分项伤害余量并提交熟练度 / 总经验 → WorldFeedbackPayload 合并已提交结果 → WorldFeedbackPresenter 显示 NPC 头顶反馈`。
+
+攻击归属、实际伤害、击杀和骑乘快照都由 CombatSystem 决定；NPCSystem 只拥有人物成长状态与上限，UI 不反推伤害。弹体复制发射上下文，所以命中时的实时装备或上下马状态不能篡改归属。器械、陨石、环境和兼容冲撞没有 `npc_weapon` 成长资格，不能通过调用统一伤害入口意外获得经验。
+
+## T0135-P10H 陨石权威与声音投影边界
+
+数据流为 `PietySystem 权威施放并创建 MeteorPresentation → meteor_cast_started → AbilityAudioController 将下坠 player 挂到实际实体；PietySystem 权威冲击结算完成 → meteor_impacted → 同一落点冲击 player`。Controller 只管理资产、位置继承、暂停和生命周期，不能消费虔诚、推进 pending、提交伤害、创建燃烧区、移动友军、震动镜头或记录事件。
+
+两条素材按用户确认完整单次播放，因此声音生命周期可长于 `fall_duration_seconds`；冲击不会强制切断下坠素材的自然尾音。这一重叠只发生在 World 混音层，不延迟或改变实际冲击时刻。
+
+## T0135-P10G 交互事实与声音投影边界
+
+数据流为 `UI 已提交的点击 / 成功信号 + 门叶真实 open_fraction + MerchantSystem 马车实际运动快照 → InteractionAudioController → AudioManager`。T0353 起面板可见性不再是声音事实；控制器可做同次按钮声音优先级、门运动边沿去重和播放器生命周期管理，但不能决定 UI 业务成功、库存转移、门开启、商车状态或交易。
+
+普通门、正 / 后重门与商车都是 3D `World` 声源并受 SFX / Master 控制；按钮是 2D `UI` 声源，T0353 起通过独立 UI / 点击音效值直达 Master。面板本体没有开关声。
+
+## T0135-P10F 对话情绪与语气声权威边界
+
+对话情绪仍只由 DialogSystem 的 T0289 结果决定。音频数据流为 `DialogSystem → npc_dialogue_emotion_presented → DialogueVoiceAudioController → AudioManager`；控制器仅按正式 NPC 性别选择已确认资产并读取世界坐标，不能重新判断情绪、修改回复、创建事件或影响计划 / 战斗。
+
+`Voice` 是 `SFX` 的子总线，继续受音效滑杆和 Master 共同控制。每个 NPC 独立持有短音 player，同 NPC 后到的回复替换先前回复，以防快速轮次叠音；这只是播放生命周期，不改变对话轮次顺序或状态。
+
+## T0325 塔防引导与伤害权威边界
+
+- CombatSystem 可用配置化安全半宽剔除会让正式近战模型扫到相邻门柱或代理外侧的塔防 guidance 中心；这是导航候选过滤，不是命中判定或伤害补偿。
+- 最终器械伤害仍严格依赖 CombatSystem 的模型扫掠碰撞分类和宿主局部代理身份，DefenseDeviceSystem 只接收已验证的实际伤害；BuildingSystem、UI、表现与引导区都不能替代或补发器械 HP 结算。
+
+## T0324 Provider 来源与机制状态机边界
+
+GMPanel 只决定该调试动作是否允许显式 Mock，不决定邀请结果或轮次内容。`ActionSystem → NPCSystem` 始终先完成真实空间会合；`DialogSystem` 在每个邀请 / 对话响应落地前校验 provider 来源。显式 `mock + fallback=false` 与真实 provider 消费同一状态机，`fallback=true` 或来源缺失在写 history / 事件及打断目标行动前失败。
+
+## T0321 未破防友军索敌域权威
+
+数据流为 `CombatSystem 读取 NPC / 敌人世界坐标 → 站内 NPC 构造（interior_polygon 内敌人 ∪ 本人 37.2m 圈内敌人）→ 全集合按水平距离锁最近者 → 行为接触进入 combat → 同一 combat_target_enemy_id 驱动策略移动与攻击`。NPC 位于站外时仍只使用本人 `37.2m` 圈。
+
+`station_breached` 仍是站外响应者的共享紧急事实。任一存活敌人进入 `interior_polygon` 后，站外武装应征 NPC 切换为 `station_breach_global / station_enemy_only=true`；站内 NPC 返回 `station_breach_plus_unified_radius / include_station_enemies=true`，仍在并集中按最近者锁定。该修改不改变武器射程、攻击周期、伤害、NavigationMap 或命中权威。
+
+## T0320 多人协助的移动与结算权威
+
+链路为 `GM / 正式行动指派 → ActionSystem pending → StationLayoutController 返回经审计 NavMap 施工位 → NPCSystem 预留位置并发起 ActorMotion → 到位 → BuildingSystem / 治疗系统提交 helper`。移动期的 pending 和拥堵恢复都不是工作结算；只有到位后权威系统才计入速度、资源或 HP 恢复。
+
+施工位是移动权威数据，不能把“最近 NavMap 投影存在”等同于“角色可物理到达”。候选需同时满足真实 NavMap 坐标、有界投影偏移、助手间距与建筑碰撞正确侧。普通路线失败后，ActionSystem 先请求 NPCSystem 有界恢复；旧失败回调退栈后才创建替换路线，以免重入清理。三次失败后仍使用原有取消 / 失败上下文，不强制传送或伪造成功。
+
+## T0319 正式 NPC 会合的移动权威边界
+
+数据流为 `GMPanel 选择 / 文本 → ActionSystem.assign_npc_dialogue → NPCSystem 正式 approach session → 发起者 ActorMotion / NavMesh → DialogSystem invitation → accept 后正式交接`。NPCSystem 读取目标世界节点坐标来计算发起者的接近点，但不写目标 transform、不替换目标动作，也不把语义 location anchor 当成目标实体位置。
+
+邀请前，发起者持有移动请求，目标继续持有自己的工作 / 进食 / idle 权威。接受是唯一交接边界：DialogSystem 先暂存目标真实站位，再中断双方原行动、准备相向表现并统一设置对话状态。模型只能接受或拒绝邀请，不能移动 NPC；寻路、距离和动作权属全部由 Godot 决定。
+
+## T0318 启动计划状态与正式行动交接边界
+
+- `GameStartupSystem` 负责在启动批次失败时释放 `planning_day` 展示状态并保存真实失败上下文；它不伪造计划，也不把 provider 失败转换为 Mock 成功。
+- `ActionSystem` 的 NPC-NPC 会合屏障只认可 LLMBridge 的真实计划活动或 DailyPlanSystem 的 active / queued 批次。NPC 展示字段不能单独成为异步请求权威。
+- `GMPanel` 只将找人对话、找守备官和协助治疗参数提交给 NPCSystem / ActionSystem 既有 `debug_*` 接口；对话生成、空间到位、治疗资源与 HP 结算继续由原系统负责。
+- 正式 NPC-NPC 路线在紧凑桌椅处真实失败后，可用 `0.8–2.3m` 的同屏桌边范围完成邀请表现；ActionSystem 的提交门槛与 NPCSystem 手势门槛保持一致。该余量不提前中断目标工作 / 进食，目标空间权威仍在接受邀请后原子交接。
+
+## T0317 虔诚与建筑反馈的权威边界
+
+虔诚链路为 `ActionSystem 有效祈祷时间 → PietySystem.add_prayer_progress → 共享虔诚真实差值 → 每 NPC 纯表现整数聚合 → WorldFeedbackPayload → WorldFeedbackPresenter`。`_world_feedback_accumulators` 只防止每个逻辑步长刷小数，不是个人虔诚、存档事实或第二套资源；施放归零时清空，不参与产率、上限、陨石资格、MemorySystem 或 LLM 上下文。
+
+建筑链路为 `Combat / repair 请求 → BuildingSystem HP 提交 → 正式 building_art_view 查询唯一顶部锚点 → WorldFeedbackPayload → Presenter`。正门、仓库、主厅使用稳定识别锚点，以保证同一建筑始终只在一个位置反馈；命中坐标仍可供战斗碰撞、事件和音效使用，但不再决定这三座建筑的文字位置。Presenter 只解析完整世界锚点，不添加第二次高度，也不反写建筑状态。
+
+## T0135-P10E 战斗事实与音频投影边界
+
+数据流为 `CombatSystem / NPCSystem / HorseSystem / BuildingSystem / DefenseDeviceSystem 已提交事实 → EventBus.combat_audio_event DTO → CombatAudioController → AudioManager 3D Combat bus`。生产系统仍独占攻击阶段、实体弹体、碰撞、HP、昏迷、马匹死亡、结构摧毁、波次和胜负；声音不存在、播放失败或被限流都不能阻止或回滚这些事实。
+
+一个远程攻击的释放、飞行、弹体接触与目标身体接触是不同表现层，因此可以按时间分层播放；系统事件只携带 weapon / device / target / position 等已知上下文，Controller 用配置选择资产。`50%` 语气概率、接触 / 木结构变体和同帧上限都是瞬时混音策略，不进入 GameState、MemorySystem、存档、战斗日志或 LLM 上下文。
+
+敌军脚步由 CombatSystem 提供只读实测运动快照，MovementAudioController 按相机距离挑选最近 6 个声源。这个选择只影响可听混音，不改变敌人是否在移动；被剔除的远端声源立即停止，后续进入最近集合可重新播放。
+
+## T0135-P10C 行动权威与工作声音投影边界
+
+数据流为 `ActionSystem.get_runtime_action_snapshot(active / external_active) + NPCSystem.get_npc_world_position + HorseSystem.get_stable_horse_summary → WorkAudioController → AudioManager 3D Work bus`。pending 只表示正在赶路 / 等待依赖，不是工作开始事实，因此不会产生声音；Controller 通过 NPC 状态提交后的 deferred 刷新观察最终动作表，不新增第二个工作状态机。
+
+同一语义空间（菜园、厨房、训练场、教堂等）聚合成一条循环，施工和协助治疗按目标分组；这只是并发混音策略，不改变参与者或结算。诊所读书 / 治疗读取既有 `presentation_clinic_duty_mode` 与 active patient，马厩素材读取真实在厩活马数。弥撒的 5 秒钟声到圣咏延迟使用现实秒，仅控制播放器，不推进祈祷时长或虔诚度；饮酒边沿缓存只防同一动作重复播声，不参与酒的扣除。
+
+所有配置位于 `data/presentation/action_audio.json`，资产响度、最大距离与 `350ms` 淡化仍来自 manifest。声音源只保存到当前场景运行期，退出 Main 时按 `work_action_` 前缀清理，不进入 GameState、存档、MemorySystem、LLM 或事件传播。
+
+## T0135-P10B 音乐 / 环境状态投影边界
+
+`TimeSystem / GameState` 仍是昼夜唯一权威，`CombatSystem._active_enemies` 仍是敌人在场唯一权威，工位占用和 `current_action` 仍分别由 BuildingSystem / NPCSystem 维护。新增 WorldAudioController 只把这些既有事实投影成 BGM 和 3D 环境播放器，不写回时间、战斗、工位、生产或事件记忆。
+
+CombatSystem 只在既有敌人存在同步点增加数量变化广播；音乐层不轮询敌人节点、不把警铃或预告误当战斗开始。环境随机调度使用现实秒与素材时长控制密度，昼夜启停仍由权威时间信号决定，因此 x2 / x4 不会压缩素材、升调或制造重叠风暴。声源位置、随机间隔和音乐 ID 位于 `data/presentation/world_audio.json`，避免把空间方案写死在表现脚本。
+
+## T0135-P10A 音频表现与玩法权威边界
+
+数据流为 `业务系统权威事实 / 已有表现动作 → AudioManager(asset_id, source) → 分类总线 → SFX 或 Music → Master`。AudioManager 只保存资产元数据、活动播放器和用户音量，不判断 NPC 是否工作、攻击是否命中、建筑是否受损、敌人是否入场或昼夜 / 战斗是否切换；这些触发条件继续由现有权威系统决定。
+
+3D 播放必须接收真实 Node3D 来源并使用 manifest 最大距离，不能由 UI 或镜头中心伪造世界位置。循环的开始 / 停止与工作 `350ms`、环境 `1000ms`、移动立即停止规则读取已确认清单。音量设置属于本地表现偏好，保存在 `user://audio_settings.cfg`，不进入 GameState、MemorySystem、见闻、存档结算或 LLM 上下文。
+
 ## T0315 完工表现与待命名事务边界
 
 建筑链路为 `BuildingSystem 权威完成 → building_job_completed DTO → MilestoneAlertPresenter FIFO → 玩家确认关闭`。UI 是否显示、何时关闭不参与 HP、等级、材料、助手效率或建筑状态提交；信号也不是第二份任务状态。
@@ -27,6 +134,12 @@ HP / 回血饱食 / 额外 HP 以整数单位消费累计值，成长 / 繁育�
 `NPCSystem / CombatSystem / HorseSystem / BuildingSystem / DefenseDeviceSystem` 各自在写入自身 HP 后调用同一个 `WorldFeedbackPayload.emit_hp_change(...)`。payload 只比较提交前后值并产生 damage / healing 语义；它不拥有防御、穿透、坐骑分伤、复苏、建筑摧毁或器械废墟规则。表现层按 `anchor_type:id + channel` 管理生命周期，伤害替换、治疗短窗合并都不反写权威状态。
 
 命中位置属于只读表现上下文。正式近战 / 弹体已有碰撞坐标时向下透传，缺失时 Presenter 查询系统实时位置；目标移除时使用 payload 保存的提交瞬间回退坐标。坐标缺失只会隐藏反馈，不得阻止或回滚伤害。现有 MemorySystem 事件、血条刷新与 T0310 复苏提示继续独立消费同一权威事实。
+
+## T0348 行商交易提交后表现分层
+
+数据流为 `MerchantPanel 草稿 → 确认 → MerchantSystem.execute_trade_batch 原子校验 / 提交 → 交易事件 + WorldFeedbackPayload → WorldFeedbackPresenter`。只有成功路径在所有 ResourceSystem 写入及必要回滚边界之后发送反馈；加减草稿、模式切换和任一失败返回都不会触发。
+
+MerchantSystem 使用已确认的 `lines / total_price / direction` 构造单个批次 DTO，不由 Presenter 比较库存前后猜方向。MerchantWagon 只读行商角色 Head 骨骼提供完整世界锚点；Presenter 的 `merchant` 分支仅解析实时坐标、红色 `trade_out` / 绿色 `trade_in` 与既有 2 秒生命周期，不拥有交易或资源权威。
 
 ## T0311 权威变化与世界反馈分层
 
@@ -233,8 +346,8 @@ GMPanel 不直接写征召、buff、策略、逃离或记忆；它只选择枚�
 
 ## T0225 破防共享目标域权威
 
-- CombatSystem 以 StationLayoutController 的 `interior_polygon` 结果建立共享 `station_breached` 事实。该事实为真时，`_get_friendly_target_scope(...)` 对每名武装应征 NPC 返回 `station_breach_global / station_enemy_only=true`，NPC 本人的空间位置只保留作诊断，不再裁剪站内候选。
-- 行为接触、在场锁保持、最近重选、异源受击重扫、策略移动和攻击射程检查都消费同一个 scope。NPCSystem、HorseSystem、ActorMotionBody、GM 与表现层不得另选目标或把站外近敌混入破防候选。
+- CombatSystem 以 StationLayoutController 的 `interior_polygon` 结果建立共享 `station_breached` 事实。该事实为真时，`_get_friendly_target_scope(...)` 对站外武装应征 NPC 返回 `station_breach_global / station_enemy_only=true`；站内 NPC 返回整站与本人半径并集，NPC 地点参与选择 scope 而不参与候选排序。
+- 行为接触、在场锁保持、最近重选、异源受击重扫、策略移动和攻击射程检查都消费同一个 scope。NPCSystem、HorseSystem、ActorMotionBody、GM 与表现层不得另选目标；并集内也不得给站内敌人添加额外排序优先级。
 
 ## T0224 警铃命令、目标锁与骑乘权威
 
@@ -312,7 +425,7 @@ GMPanel 不直接写征召、buff、策略、逃离或记忆；它只选择枚�
 
 ## T0198 友方目标与受击重扫权威边界
 
-- CombatSystem 是武装 NPC 战斗目标的唯一裁决者：正常时按“站外 `37.2 m` 水平圈 / 站内 `interior_polygon` 整站”生成最近候选；任一敌人进站后，全部武装应征者统一改用只含站内敌人的 `station_breach_global`。策略移动和攻击时间线只能消费该结果，不能独立重排。
+- CombatSystem 是武装 NPC 战斗目标的唯一裁决者：站外普通状态按 `37.2 m` 水平圈生成候选；站内按“整个驿站 + 本人 `37.2m` 圈”并集生成候选；站外响应者在敌人进站后使用只含站内敌人的 `station_breach_global`。所有集合均按正常水平距离锁最近者，策略移动和攻击时间线只能消费该结果，不能独立重排。
 - NPCSystem 仍拥有 NPC 状态和行为模式，但敌人伤害只让未参战武装 NPC 进入 combat；已经参战时不重复中断，也不把攻击者写成权威目标。实际 HP 扣减返回后，CombatSystem 才能依据受击前锁 ID 创建一次性重扫请求。
 - 请求仅影响下一次目标选择，不产生仇恨表、精确反击、扩大范围或补伤；请求字典不序列化。目标变化重建移动 / 取消当前 phase 时，T0193 单调 next-sequence 时刻仍是唯一攻速权威。
 
@@ -363,7 +476,7 @@ GMPanel 不直接写征召、buff、策略、逃离或记忆；它只选择枚�
 
 ## T0188 友军战斗响应权威
 
-- 正式城内多边形归 StationLayoutController 所有；CombatSystem 只消费“某敌人是否在站内”，并把它作为全域友军响应与主动策略目标过滤的唯一事实。距离索敌只在站内无敌时生效。
+- 正式城内多边形归 StationLayoutController 所有；CombatSystem 只消费“某敌人是否在站内”，并把它与 NPC 本人 `37.2m` 圈合成为站内 NPC 的并集候选，同时用于站外响应者的破防事实。距离排序在所有合法候选上始终生效。
 - 武装 / 应征、行为模式、策略、坐骑阶段和 locomotion 分属 EquipmentSystem / NPCSystem / CombatSystem / HorseSystem / NPC.gd 既有权威。全域响应只编排这些接口，不复制装备、骑乘、速度或伤害状态。
 - 避战距离由配置下限和活动敌人最大远程射程动态合成；NPCSystem 仍只接收短步世界目标，ActorMotionBody 执行 NavigationAgent / RVO 位移，T0155 run profile 决定速度与动画分类。
 

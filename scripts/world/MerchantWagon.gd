@@ -56,6 +56,17 @@ func get_wagon_snapshot() -> Dictionary:
 	return snapshot
 
 
+func get_world_feedback_anchor_position() -> Vector3:
+	if (
+		is_instance_valid(driver_art)
+		and driver_art.has_method("has_attachment_socket")
+		and bool(driver_art.call("has_attachment_socket", "Head"))
+		and driver_art.has_method("get_attachment_global_position")
+	):
+		return (driver_art.call("get_attachment_global_position", "Head") as Vector3) + Vector3.UP * 0.55
+	return trade_bubble.global_position
+
+
 func _set_travel_animation(moving: bool, speed: float, delta: float) -> void:
 	if visual_root.has_method("set_travel_state"):
 		visual_root.call("set_travel_state", moving, speed, delta)

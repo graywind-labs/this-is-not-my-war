@@ -1,5 +1,6 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const CONFIG_FILE := "piety_ability.json"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
@@ -11,11 +12,13 @@ const CAMERA_RIG_PATH := "/root/Main/CameraRig"
 const METEOR_PRESENTATION_SCRIPT := preload("res://scripts/presentation/combat/MeteorPresentation.gd")
 const SYSTEM_ACTOR_ID := "guard_officer"
 const PLAZA_LOCATION_ID := "plaza"
+const WORLD_FEEDBACK_EPSILON := 0.00001
 
 var _config: Dictionary = {}
 var _current_piety := 0.0
 var _total_generated := 0.0
 var _generated_by_npc: Dictionary = {}
+var _world_feedback_accumulators: Dictionary = {}
 var _cast_sequence := 0
 var _pending_meteors: Dictionary = {}
 var _burn_zones: Dictionary = {}
@@ -53,6 +56,7 @@ func initialize() -> void:
 	_current_piety = 0.0
 	_total_generated = 0.0
 	_generated_by_npc.clear()
+	_world_feedback_accumulators.clear()
 	_cast_sequence = 0
 	_pending_meteors.clear()
 	_burn_zones.clear()
@@ -121,7 +125,27 @@ func add_prayer_progress(
 	}
 	if added > 0.0:
 		_emit_piety_changed(added, "prayer_progress")
+		_record_piety_world_feedback(npc_id, added)
 	return _last_generation_result.duplicate(true)
+
+
+func _record_piety_world_feedback(npc_id: String, added: float) -> void:
+	if npc_id.is_empty() or added <= 0.0:
+		return
+	var accumulated := float(_world_feedback_accumulators.get(npc_id, 0.0)) + added
+	var visible_amount := floori(accumulated + WORLD_FEEDBACK_EPSILON)
+	if visible_amount <= 0:
+		_world_feedback_accumulators[npc_id] = accumulated
+		return
+	var remainder := maxf(0.0, accumulated - float(visible_amount))
+	if remainder <= WORLD_FEEDBACK_EPSILON:
+		_world_feedback_accumulators.erase(npc_id)
+	else:
+		_world_feedback_accumulators[npc_id] = remainder
+	var entry := WorldFeedbackPayload.make_value_entry("虔诚", visible_amount, "piety")
+	if entry.is_empty():
+		return
+	WorldFeedbackPayload.emit_npc(self, npc_id, "piety", [entry], true)
 
 
 func request_meteor_cast(target_position: Vector3) -> Dictionary:
@@ -147,6 +171,7 @@ func request_meteor_cast(target_position: Vector3) -> Dictionary:
 	var cast_id := "piety_meteor_%03d" % _cast_sequence
 	var piety_spent := _current_piety
 	_current_piety = 0.0
+	_world_feedback_accumulators.clear()
 	var state := {
 		"cast_id": cast_id,
 		"target_position": normalized_target,
@@ -504,10 +529,16 @@ func _load_config() -> void:
 		push_error("PietySystem could not load %s." % CONFIG_FILE)
 		_config = {
 			"max_piety": 100.0,
-			"piety_per_prayer_hour": 3.0,
+			"piety_per_prayer_hour": 2.5,
 			"contributing_action_ids": ["pray_at_chapel", "lead_mass"],
-			"action_multipliers": {},
-			"prayer_mode_multipliers": {},
+			"action_multipliers": {
+				"pray_at_chapel": 1.0,
+				"lead_mass": 2.0
+			},
+			"prayer_mode_multipliers": {
+				"personal_prayer": 1.0,
+				"mass_attendance": 2.0
+			},
 			"combat_action_game_seconds_per_second": 1.0,
 			"target_ground_y": 0.0,
 			"meteor": {
@@ -535,7 +566,7 @@ func _load_config() -> void:
 			}
 		}
 	_config["max_piety"] = maxf(1.0, float(_config.get("max_piety", 100.0)))
-	_config["piety_per_prayer_hour"] = maxf(0.0, float(_config.get("piety_per_prayer_hour", 3.0)))
+	_config["piety_per_prayer_hour"] = maxf(0.0, float(_config.get("piety_per_prayer_hour", 2.5)))
 
 
 func _record_meteor_impact_event(

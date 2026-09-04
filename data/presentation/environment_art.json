@@ -1,6 +1,6 @@
 {
   "schema_version": "environment_art_v1",
-  "art_revision": "t0135_p8a",
+  "art_revision": "t0135_p7r5",
   "celestial_cycle": {
     "twilight_start_altitude_degrees": -6.0,
     "full_light_altitude_degrees": 10.0,
@@ -39,6 +39,33 @@
       "adjustment_contrast": 0.98,
       "adjustment_saturation": 1.06,
       "fog_reveal_multiplier": 0.28,
+      "night_fog": {
+        "evening_start_time": [17, 30],
+        "evening_full_time": [21, 0],
+        "morning_fade_time": [4, 30],
+        "morning_clear_time": [7, 30],
+        "curve_power": 1.15,
+        "day_density": 0.00005,
+        "night_density": 0.0062,
+        "depth_begin": 18.0,
+        "depth_end": 240.0,
+        "volumetric_length": 180.0,
+        "volumetric_detail_spread": 2.2,
+        "local_volumes": [
+          {"id":"front_forest_west","region":"front_forest","shape":"ellipsoid","position":[-155.0,8.0,190.0],"size":[300.0,22.0,250.0],"rotation_degrees":[0.0,-14.0,0.0],"density":0.12,"edge_fade":0.52,"height_falloff":0.16},
+          {"id":"front_forest_center","region":"front_forest","shape":"ellipsoid","position":[20.0,9.0,250.0],"size":[330.0,24.0,310.0],"rotation_degrees":[0.0,7.0,0.0],"density":0.13,"edge_fade":0.56,"height_falloff":0.15},
+          {"id":"front_forest_east","region":"front_forest","shape":"ellipsoid","position":[205.0,10.0,205.0],"size":[290.0,26.0,255.0],"rotation_degrees":[0.0,18.0,0.0],"density":0.11,"edge_fade":0.50,"height_falloff":0.17},
+          {"id":"rear_forest_west","region":"rear_forest","shape":"ellipsoid","position":[-175.0,9.0,-205.0],"size":[315.0,24.0,260.0],"rotation_degrees":[0.0,12.0,0.0],"density":0.11,"edge_fade":0.54,"height_falloff":0.16},
+          {"id":"rear_forest_center","region":"rear_forest","shape":"ellipsoid","position":[15.0,8.0,-265.0],"size":[350.0,22.0,325.0],"rotation_degrees":[0.0,-6.0,0.0],"density":0.12,"edge_fade":0.56,"height_falloff":0.15},
+          {"id":"rear_forest_east","region":"rear_forest","shape":"ellipsoid","position":[205.0,10.0,-190.0],"size":[280.0,27.0,230.0],"rotation_degrees":[0.0,-17.0,0.0],"density":0.10,"edge_fade":0.50,"height_falloff":0.18},
+          {"id":"river_valley_north","region":"river_valley","shape":"ellipsoid","position":[-165.0,6.0,-250.0],"size":[175.0,18.0,340.0],"rotation_degrees":[0.0,-8.0,0.0],"density":0.14,"edge_fade":0.58,"height_falloff":0.12},
+          {"id":"river_valley_center","region":"river_valley","shape":"ellipsoid","position":[-185.0,5.0,10.0],"size":[210.0,17.0,380.0],"rotation_degrees":[0.0,6.0,0.0],"density":0.15,"edge_fade":0.60,"height_falloff":0.11},
+          {"id":"river_valley_south","region":"river_valley","shape":"ellipsoid","position":[-150.0,6.0,270.0],"size":[170.0,19.0,330.0],"rotation_degrees":[0.0,11.0,0.0],"density":0.13,"edge_fade":0.56,"height_falloff":0.13},
+          {"id":"east_mountain_north","region":"east_mountain_foot","shape":"ellipsoid","position":[205.0,13.0,-260.0],"size":[220.0,34.0,350.0],"rotation_degrees":[0.0,9.0,0.0],"density":0.10,"edge_fade":0.54,"height_falloff":0.20},
+          {"id":"east_mountain_center","region":"east_mountain_foot","shape":"ellipsoid","position":[235.0,15.0,20.0],"size":[265.0,38.0,400.0],"rotation_degrees":[0.0,-7.0,0.0],"density":0.11,"edge_fade":0.58,"height_falloff":0.19},
+          {"id":"east_mountain_south","region":"east_mountain_foot","shape":"ellipsoid","position":[190.0,13.0,285.0],"size":[205.0,33.0,345.0],"rotation_degrees":[0.0,-13.0,0.0],"density":0.09,"edge_fade":0.52,"height_falloff":0.21}
+        ]
+      },
       "day": {
         "sky_top_color": "#4b7895",
         "sky_horizon_color": "#b4ced2",

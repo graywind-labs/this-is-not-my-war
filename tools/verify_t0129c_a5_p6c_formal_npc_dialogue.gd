@@ -213,6 +213,41 @@ func _init() -> void:
 	):
 		_fail("Dialogue completion left formal spatial authority behind")
 		return
+
+	# A seated dining target can be physically separated from the nearest standing
+	# navmesh point by a table. This reproduces the GM symptom where the speaker
+	# visibly arrives but the invitation never starts, using only the controlled
+	# fake bridge above (no provider/API request).
+	if not action_system.debug_assign_action(TARGET_ID, "eat_at_dining_hall", true):
+		_fail("Could not start the target's seated dining action")
+		return
+	if not await _wait_for_action_phase(action_system, TARGET_ID, "eat_at_dining_hall", "active", 2400):
+		_fail("Target did not reach the seated dining action")
+		return
+	gm_window.visible = true
+	run_button.pressed.emit()
+	await process_frame
+	if not await _wait_for_invitation(dialog_system, fake_bridge, 2400):
+		_fail("Seated target did not receive a formal invitation after the speaker arrived")
+		return
+	var seated_distance := _horizontal_distance(
+		npc_system.get_npc_world_position(SPEAKER_ID),
+		npc_system.get_npc_world_position(TARGET_ID)
+	)
+	if (
+		seated_distance < 0.85
+		or seated_distance > 2.3
+		or str(action_system.get_runtime_action_id(TARGET_ID)) != "eat_at_dining_hall"
+	):
+		_fail("Seated-target invitation range/action contract failed: distance=%.3f" % seated_distance)
+		return
+	fake_bridge.answer_invitation_accept()
+	if not await _wait_for_dialogue_status(dialog_system, "active", 120):
+		_fail("Seated target accepted invitation but dialogue did not activate")
+		return
+	dialog_system.end_dialogue("verify_a5_p6c_seated_completed")
+	await process_frame
+	await physics_frame
 	snapshot_button.pressed.emit()
 	stop_button.pressed.emit()
 	print("T0129C A5-P6c formal NPC dialogue verification passed")

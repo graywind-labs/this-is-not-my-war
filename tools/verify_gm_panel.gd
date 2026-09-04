@@ -1043,8 +1043,13 @@ func _init() -> void:
 	var helmet_stage_count := (helmet_recipe.get("stages", []) as Array).size()
 	for _stage_index in range(1, helmet_stage_count):
 		gm_panel._execute_command("craft_stage blacksmith gm_verify")
-	if int(resource_system.get_resource("item_iron_helmet")) != helmet_stock_before + 1:
-		push_error("GM craft_stage should add the concrete finished item after the final stage")
+	if int(resource_system.get_resource("item_iron_helmet")) != helmet_stock_before or int(crafting_system.get_pending_outputs("blacksmith").get("item_iron_helmet", 0)) != 1:
+		push_error("GM craft_stage should place the concrete finished item in building pending outputs")
+		quit(1)
+		return
+	var helmet_collection: Dictionary = crafting_system.collect_pending_outputs("blacksmith")
+	if not bool(helmet_collection.get("ok", false)) or int(resource_system.get_resource("item_iron_helmet")) != helmet_stock_before + 1:
+		push_error("Collecting the GM-crafted helmet should transfer it into concrete inventory")
 		quit(1)
 		return
 	blacksmith_project = crafting_system.get_project_snapshot("blacksmith")

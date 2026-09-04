@@ -1212,14 +1212,12 @@ func _apply_autonomous_dialogue_invitation_response(result: Dictionary, pending:
 		dialogue_updated.emit(get_dialogue_state())
 		end_dialogue("autonomous_dialogue_invitation_business_validation_failed")
 		return kind_failure
-	if bool(_active_dialogue.get("require_real_provider", false)):
-		var model_provider := str(response.get("model_provider", "")).strip_edges().to_lower()
-		if model_provider.is_empty() or model_provider == "mock" or bool(response.get("model_fallback_used", false)):
-			var provider_failure := _failure("real_provider_required", "自主 NPC 对话邀请只接受真实 LLM 判定。")
-			_active_dialogue["last_error"] = str(provider_failure.get("message", ""))
-			dialogue_updated.emit(get_dialogue_state())
-			end_dialogue("autonomous_dialogue_invitation_provider_invalid")
-			return provider_failure
+	var invitation_provider_failure := _validate_autonomous_dialogue_provider(response)
+	if not invitation_provider_failure.is_empty():
+		_active_dialogue["last_error"] = str(invitation_provider_failure.get("message", ""))
+		dialogue_updated.emit(get_dialogue_state())
+		end_dialogue("autonomous_dialogue_invitation_provider_invalid")
+		return invitation_provider_failure
 	var invitation_result := str(response.get("invitation_result", ""))
 	if not ["accept", "reject"].has(invitation_result):
 		var decision_failure := _failure("invalid_npc_dialogue_invitation_result", "受邀 NPC 必须先明确接受或拒绝对话。")
@@ -1491,14 +1489,12 @@ func _apply_npc_message_response(result: Dictionary, pending: Dictionary) -> Dic
 		if bool(_active_dialogue.get("autonomous", false)):
 			end_dialogue("autonomous_dialogue_business_validation_failed")
 		return invitation_failure
-	if bool(_active_dialogue.get("require_real_provider", false)):
-		var model_provider := str(response.get("model_provider", "")).strip_edges().to_lower()
-		if model_provider.is_empty() or model_provider == "mock" or bool(response.get("model_fallback_used", false)):
-			var provider_failure := _failure("real_provider_required", "自主 NPC 对话只接受真实 LLM 回复。")
-			_active_dialogue["last_error"] = str(provider_failure.get("message", ""))
-			dialogue_updated.emit(get_dialogue_state())
-			end_dialogue("autonomous_dialogue_provider_invalid")
-			return provider_failure
+	var conversation_provider_failure := _validate_autonomous_dialogue_provider(response)
+	if not conversation_provider_failure.is_empty():
+		_active_dialogue["last_error"] = str(conversation_provider_failure.get("message", ""))
+		dialogue_updated.emit(get_dialogue_state())
+		end_dialogue("autonomous_dialogue_provider_invalid")
+		return conversation_provider_failure
 	var reply_text := str(response.get("reply_text", "")).strip_edges()
 	if reply_text.is_empty():
 		var empty_reply_message := "后端没有返回 NPC 回复。"
@@ -1575,6 +1571,23 @@ func _apply_npc_message_response(result: Dictionary, pending: Dictionary) -> Dic
 		var dialogue_id := str(_active_dialogue.get("dialogue_id", ""))
 		call_deferred("_continue_autonomous_npc_dialogue", dialogue_id, reply_text)
 	return {"ok": true, "reply_text": reply_text, "dialogue": response.duplicate(true)}
+
+
+func _validate_autonomous_dialogue_provider(response: Dictionary) -> Dictionary:
+	var model_provider := str(response.get("model_provider", "")).strip_edges().to_lower()
+	if model_provider.is_empty():
+		return _failure("dialogue_provider_missing", "自主 NPC 对话响应缺少 provider 来源。")
+	if bool(response.get("model_fallback_used", false)):
+		return _failure(
+			"model_fallback_forbidden",
+			"自主 NPC 对话不接受由真实 provider 失败后伪装成成功的 Mock fallback。"
+		)
+	if bool(_active_dialogue.get("require_real_provider", false)) and model_provider == "mock":
+		return _failure("real_provider_required", "当前自主 NPC 对话要求真实 LLM provider。")
+	# GM / explicit development flows set require_real_provider=false. An explicit
+	# provider=mock response with fallback=false must traverse the same invitation,
+	# participant handoff, turns, events, completion and restore state machine.
+	return {}
 
 
 func _continue_autonomous_npc_dialogue(dialogue_id: String, speaker_text: String) -> void:

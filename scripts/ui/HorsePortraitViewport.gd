@@ -23,6 +23,8 @@ var _camera: Camera3D
 var _status_label: Label
 var _last_target_snapshot: Dictionary = {}
 var _last_obstruction_adjusted := false
+var _last_focus_position := Vector3.ZERO
+var _last_camera_front_dot := 0.0
 
 
 func _ready() -> void:
@@ -105,6 +107,8 @@ func hide_preview() -> void:
 	_camera_initialized = false
 	_last_target_snapshot.clear()
 	_last_obstruction_adjusted = false
+	_last_focus_position = Vector3.ZERO
+	_last_camera_front_dot = 0.0
 	if _status_label != null:
 		_status_label.text = ""
 		_status_label.visible = true
@@ -138,8 +142,10 @@ func _update_camera(delta: float) -> void:
 	var forward: Vector3 = snapshot.get("portrait_camera_direction", snapshot.get("visual_forward", Vector3(0.0, 0.0, -1.0)))
 	forward.y = 0.0
 	forward = Vector3(0.0, 0.0, -1.0) if forward.length_squared() <= 0.0001 else forward.normalized()
-	var focus_position := base_position + Vector3.UP * float(snapshot.get("focus_height", CAMERA_FOCUS_HEIGHT))
-	var desired_position := base_position + forward * CAMERA_DISTANCE + Vector3.UP * float(snapshot.get("camera_height", CAMERA_HEIGHT))
+	var focus_position: Vector3 = snapshot.get("focus_world_position", base_position + Vector3.UP * float(snapshot.get("focus_height", CAMERA_FOCUS_HEIGHT)))
+	var camera_anchor_position: Vector3 = snapshot.get("camera_anchor_position", base_position)
+	var camera_distance := float(snapshot.get("camera_distance", CAMERA_DISTANCE))
+	var desired_position := camera_anchor_position + forward * camera_distance + Vector3.UP * float(snapshot.get("camera_height", CAMERA_HEIGHT))
 	# Stable stall rails sit between every horse and the public aisle. Applying the
 	# NPC wall-shortening rule to those rails pushes the camera inside the horse.
 	# Keep the same shared-world follow camera, but retain the authored aisle shot
@@ -154,6 +160,9 @@ func _update_camera(delta: float) -> void:
 	else:
 		_camera.global_position = _camera.global_position.lerp(desired_position, 1.0 - exp(-CAMERA_FOLLOW_SPEED * delta))
 	_camera.look_at(focus_position, Vector3.UP)
+	_last_focus_position = focus_position
+	var camera_to_focus := focus_position - _camera.global_position
+	_last_camera_front_dot = camera_to_focus.normalized().dot(-forward) if camera_to_focus.length_squared() > 0.0001 else 0.0
 
 
 func _resolve_camera_obstruction(focus_position: Vector3, desired_position: Vector3) -> Vector3:
@@ -181,6 +190,8 @@ func _show_unavailable(message: String) -> void:
 	_status_label.text = message
 	_status_label.visible = true
 	_last_target_snapshot.clear()
+	_last_focus_position = Vector3.ZERO
+	_last_camera_front_dot = 0.0
 
 
 func debug_get_snapshot() -> Dictionary:
@@ -196,6 +207,8 @@ func debug_get_snapshot() -> Dictionary:
 		"hides_main_fading_shells": _camera != null and not _camera.get_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER),
 		"shows_portrait_opaque_shells": _camera != null and _camera.get_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER),
 		"obstruction_adjusted": _last_obstruction_adjusted,
+		"focus_position": _last_focus_position,
+		"camera_front_dot": _last_camera_front_dot,
 		"target_snapshot": _last_target_snapshot.duplicate(true),
 		"frame_global_rect": get_global_rect(),
 		"status_visible": _status_label != null and _status_label.visible,

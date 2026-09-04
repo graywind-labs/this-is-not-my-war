@@ -199,6 +199,7 @@ func _init() -> void:
 	if not await _wait_for_invitation(dialog_system, fake_bridge, 2400):
 		_fail("Speaker did not arrive before acceptance invitation")
 		return
+	time_system.set_paused(true)
 	fake_bridge.answer_invitation("accept")
 	if not await _wait_for_dialogue_status(dialog_system, "active", 180):
 		_fail("Accepted invitation did not activate")
@@ -221,6 +222,8 @@ func _init() -> void:
 		or str(accept_event.get("authority_action_at_emit", "")) != "idle"
 		or str(npc_system.get_npc_state(TARGET_ID).get("current_action", "")) != "talk_to_npc"
 		or str(target_art.get("temporary_presentation_state", "")) != "talk"
+		or bool(target_art.get("animation_paused", true))
+		or not bool(target_art.get("pause_exempt_dialogue_presentation_action", false))
 		or int(target_art.get("temporary_presentation_event_count", 0)) != 1
 		or target_facing.normalized().dot(target_expected_facing) < 0.99
 	):
@@ -231,6 +234,7 @@ func _init() -> void:
 			"target_facing_dot": target_facing.normalized().dot(target_expected_facing)
 		}))
 		return
+	time_system.set_paused(false)
 	var duplicate_result: Dictionary = npc_system.play_formal_dialogue_presentation_event(
 		str(accept_event.get("dialogue_id", "")), TARGET_ID, "invitation_accepted"
 	)

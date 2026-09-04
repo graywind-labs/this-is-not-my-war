@@ -124,6 +124,9 @@ func _init() -> void:
 
 		match kind:
 			"tavern_fermentation_cask":
+				if not visual.scale.is_equal_approx(Vector3.ONE * 1.3):
+					_fail("Tavern fermentation cask visual scale drifted: %s / %s" % [fixture_id, visual.scale])
+					return
 				brewing_device_count += 1
 				if int(fixture.get("required_level", 0)) == 3:
 					level_three_device_count += 1
@@ -131,7 +134,12 @@ func _init() -> void:
 				if int(fixture.get("required_level", 0)) == 2:
 					level_two_quality_fixture_count += 1
 				shared_fixture_count += 1
-			"tavern_empty_barrel_rack", "tavern_mug_table":
+			"tavern_empty_barrel_rack":
+				if not visual.scale.is_equal_approx(Vector3.ONE * 1.25):
+					_fail("Tavern empty barrel visual scale drifted: %s" % visual.scale)
+					return
+				shared_fixture_count += 1
+			"tavern_mug_table":
 				shared_fixture_count += 1
 			_:
 				_fail("Unexpected tavern fixture kind: %s" % kind)

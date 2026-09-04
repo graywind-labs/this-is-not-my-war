@@ -433,6 +433,7 @@ func _add_kitchen_station_work_fx(parent: Node3D, config: Dictionary) -> void:
 
 	var food_visuals := Node3D.new()
 	food_visuals.name = "FoodVisuals"
+	food_visuals.position.y = -0.18
 	station.add_child(food_visuals)
 	_add_cylinder(food_visuals, "StewSurface", Vector3(0.0, 1.08, 0.0), 0.37, 0.055, Color("#8f4d25"))
 	_add_sphere(food_visuals, "CarrotPiece", Vector3(-0.16, 1.13, 0.08), 0.085, Color("#d8792f"))

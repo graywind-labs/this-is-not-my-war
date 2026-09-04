@@ -85,23 +85,50 @@ func _init() -> void:
 	var paused_count := _proactive_events(npc_system).size()
 	var paused_snapshot: Dictionary = npc_system.get_proactive_talk_presentation_snapshot(NPC_ID)
 	var paused_remaining := float(paused_snapshot.get("remaining_real_seconds", -1.0))
-	npc_system.call("_advance_proactive_talk_presentations", 50.0)
-	var frozen_snapshot: Dictionary = npc_system.get_proactive_talk_presentation_snapshot(NPC_ID)
+	npc_system.call("_advance_proactive_talk_presentations", paused_remaining - 0.05)
+	var almost_due_snapshot: Dictionary = npc_system.get_proactive_talk_presentation_snapshot(NPC_ID)
 	if (
 		_proactive_events(npc_system).size() != paused_count
-		or not is_equal_approx(float(frozen_snapshot.get("remaining_real_seconds", -2.0)), paused_remaining)
+		or float(almost_due_snapshot.get("remaining_real_seconds", -2.0)) > 0.06
 	):
-		_fail("Pause did not freeze proactive presentation time")
-		return
-	time_system.set_paused(false)
-	npc_system.call("_advance_proactive_talk_presentations", paused_remaining - 0.05)
-	if _proactive_events(npc_system).size() != paused_count:
-		_fail("Resume caught up a proactive gesture too early")
+		_fail("Paused proactive presentation clock did not continue in real time")
 		return
 	npc_system.call("_advance_proactive_talk_presentations", 0.1)
 	if _proactive_events(npc_system).size() != paused_count + 1:
-		_fail("Resume did not continue from the frozen normal cycle")
+		_fail("Paused proactive presentation did not emit its due gesture")
 		return
+	var paused_art: Dictionary = npc_system.debug_get_npc_character_art_snapshot(NPC_ID)
+	if (
+		str(paused_art.get("temporary_presentation_state", "")) != "talk"
+		or bool(paused_art.get("animation_paused", true))
+		or not bool(paused_art.get("pause_exempt_dialogue_presentation_action", false))
+	):
+		_fail("Paused proactive talk gesture did not remain animated: %s" % JSON.stringify(paused_art))
+		return
+	var talk_remaining := float(paused_art.get("temporary_presentation_remaining_seconds", 0.0))
+	var npc_node := _get_npc_node(npc_system, NPC_ID)
+	var character_art: Variant = npc_node.get("_character_art_view") if npc_node != null else null
+	if character_art == null:
+		_fail("Paused proactive talk character art was unavailable")
+		return
+	character_art.call("_process", 0.2)
+	paused_art = npc_system.debug_get_npc_character_art_snapshot(NPC_ID)
+	if float(paused_art.get("temporary_presentation_remaining_seconds", talk_remaining)) >= talk_remaining - 0.1:
+		_fail("Paused proactive talk gesture countdown did not advance in real time")
+		return
+	character_art.call(
+		"_process",
+		float(paused_art.get("temporary_presentation_remaining_seconds", 0.0)) + 0.1
+	)
+	paused_art = npc_system.debug_get_npc_character_art_snapshot(NPC_ID)
+	if (
+		not str(paused_art.get("temporary_presentation_state", "")).is_empty()
+		or not bool(paused_art.get("animation_paused", false))
+		or not is_zero_approx(float(paused_art.get("combat_attack_animation_speed_scale", -1.0)))
+	):
+		_fail("Completed paused talk gesture did not restore the frozen authority animation: %s" % JSON.stringify(paused_art))
+		return
+	time_system.set_paused(false)
 
 	if not npc_system.handle_npc_clicked(NPC_ID):
 		_fail("Player acceptance did not consume proactive interaction")
@@ -161,6 +188,13 @@ func _proactive_events(npc_system: Node) -> Array[Dictionary]:
 		if raw_event is Dictionary and str(raw_event.get("event_kind", "")) == "proactive_talk_gesture":
 			result.append((raw_event as Dictionary).duplicate(true))
 	return result
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var npc_nodes: Dictionary = npc_system.get("_npc_nodes")
+	if not npc_nodes.has(npc_id):
+		return null
+	return root.get_node_or_null(npc_nodes[npc_id])
 
 
 func _fail(message: String) -> void:

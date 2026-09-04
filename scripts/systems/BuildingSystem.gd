@@ -22,6 +22,11 @@ const DEFAULT_REPAIR_HELPER_SKILL_SCALE := 0.005
 const DEFAULT_REPAIR_HELPER_MAX_BONUS := 0.50
 const DEFAULT_UPGRADE_SECONDS_PER_LEVEL := 3600.0
 const DEFAULT_UPGRADE_LEVEL_TIME_FACTOR := 0.35
+const UNIFIED_WORLD_FEEDBACK_BUILDING_IDS: Array[String] = [
+	"front_gate",
+	"warehouse",
+	"main_hall"
+]
 
 var _buildings: Dictionary = {}
 var _building_order: Array[String] = []
@@ -783,6 +788,22 @@ func get_building_entry_position(building_id: String) -> Variant:
 	return null
 
 
+func get_building_feedback_anchor_position(building_id: String) -> Variant:
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null:
+			continue
+		var view_building_id := str(view.get_meta("building_id", ""))
+		if view_building_id.is_empty():
+			view_building_id = str(view.get("building_id"))
+		if view_building_id != building_id or not view.has_method("get_world_feedback_anchor_position"):
+			continue
+		var anchor_position: Variant = view.call("get_world_feedback_anchor_position")
+		if anchor_position is Vector3:
+			return anchor_position
+	return null
+
+
 func get_building_interior_route(building_id: String, workstation_id: String = "") -> Dictionary:
 	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
 		var view := raw_view as Node
@@ -1164,20 +1185,24 @@ func apply_damage_to_building(
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
-	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(options)
-	var prefer_feedback_position := feedback_world_position is Vector3
-	if not prefer_feedback_position:
-		feedback_world_position = get_building_entry_position(building_id)
-	WorldFeedbackPayload.emit_hp_change(
-		self,
-		"building",
+	var feedback_world_position: Variant = _emit_building_hp_feedback(
 		building_id,
 		hp_before,
 		hp_after,
-		feedback_world_position,
-		prefer_feedback_position,
-		0.35 if prefer_feedback_position else WorldFeedbackPayload.BUILDING_ANCHOR_HEIGHT
+		options
 	)
+	if hp_after < hp_before:
+		_emit_combat_audio_event({
+			"event_type": "structure_damaged",
+			"target_type": "building",
+			"target_id": building_id,
+			"source_id": actor_id,
+			"damage": hp_before - hp_after,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"destroyed": hp_after <= 0,
+			"world_position": feedback_world_position,
+		})
 	var event := _log_building_damaged(building_id, actor_id, amount, hp_before, hp_after, visibility, options)
 	return {
 		"ok": true,
@@ -1190,6 +1215,36 @@ func apply_damage_to_building(
 		"destroyed": hp_after <= 0,
 		"event": event
 	}
+
+
+func _emit_building_hp_feedback(
+	building_id: String,
+	hp_before: int,
+	hp_after: int,
+	options: Dictionary = {}
+) -> Variant:
+	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(options)
+	var prefer_feedback_position := feedback_world_position is Vector3
+	var uses_formal_anchor := false
+	if building_id in UNIFIED_WORLD_FEEDBACK_BUILDING_IDS or not prefer_feedback_position:
+		var formal_anchor: Variant = get_building_feedback_anchor_position(building_id)
+		if formal_anchor is Vector3:
+			feedback_world_position = formal_anchor
+			prefer_feedback_position = true
+			uses_formal_anchor = true
+		elif not prefer_feedback_position:
+			feedback_world_position = get_building_entry_position(building_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"building",
+		building_id,
+		hp_before,
+		hp_after,
+		feedback_world_position,
+		prefer_feedback_position,
+		0.0 if uses_formal_anchor else (0.35 if prefer_feedback_position else WorldFeedbackPayload.BUILDING_ANCHOR_HEIGHT)
+	)
+	return feedback_world_position
 
 
 func restore_building_hp(building_id: String, amount: int) -> bool:
@@ -1208,14 +1263,7 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
-	WorldFeedbackPayload.emit_hp_change(
-		self,
-		"building",
-		building_id,
-		current_hp,
-		hp_after,
-		get_building_entry_position(building_id)
-	)
+	_emit_building_hp_feedback(building_id, current_hp, hp_after)
 	return true
 
 
@@ -1347,14 +1395,7 @@ func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> v
 		_refresh_bound_scene_nodes(building_id)
 		if emit_changed:
 			_emit_building_state_changed(building_id)
-		WorldFeedbackPayload.emit_hp_change(
-			self,
-			"building",
-			building_id,
-			hp_before,
-			next_hp,
-			get_building_entry_position(building_id)
-		)
+		_emit_building_hp_feedback(building_id, hp_before, next_hp)
 
 
 func _finish_repair(building_id: String) -> void:
@@ -1372,14 +1413,7 @@ func _finish_repair(building_id: String) -> void:
 	_release_repair_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
-	WorldFeedbackPayload.emit_hp_change(
-		self,
-		"building",
-		building_id,
-		hp_before,
-		hp_after,
-		get_building_entry_position(building_id)
-	)
+	_emit_building_hp_feedback(building_id, hp_before, hp_after)
 	_emit_building_job_completed(building_id, "repair", {
 		"building_id": building_id,
 		"building_name": str(building.get("name", building_id)),
@@ -2009,6 +2043,12 @@ func _emit_building_state_changed(building_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_state_changed.emit(building_id)
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
 
 
 func _emit_building_job_completed(building_id: String, job_type: String, result: Dictionary) -> void:

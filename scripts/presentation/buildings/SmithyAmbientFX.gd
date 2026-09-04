@@ -32,6 +32,8 @@ var _refresh_queued := false
 func _ready() -> void:
 	set_meta("presentation_only", true)
 	set_meta("authority_role", "read_only_workstation_observer")
+	set_meta("environment_fire_kind", "blacksmith_forge")
+	add_to_group("environment_fire_audio_source")
 	_configure_particles()
 	_connect_signals()
 	_set_forge_active(false, [], [])
@@ -100,6 +102,13 @@ func debug_get_snapshot() -> Dictionary:
 		"activation_contract": "occupied_forge_and_work_blacksmith",
 		"authority_role": "presentation_only"
 	}
+
+
+func get_active_fire_audio_sources() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	if _forge_active and is_visible_in_tree():
+		result.append(self)
+	return result
 
 
 func _connect_signals() -> void:

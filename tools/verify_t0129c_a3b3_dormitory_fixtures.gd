@@ -143,6 +143,9 @@ func _init() -> void:
 		var fixture_local := _v2(fixture.get("center", []))
 		var fixture_world := dormitory.to_global(Vector3(fixture_local.x, 0.0, fixture_local.y))
 		var anchor_config := fixture.get("occupant_anchor", {}) as Dictionary
+		if not is_equal_approx(float(anchor_config.get("facing_degrees", 0.0)), 180.0):
+			_fail("Dormitory sleeping head/foot direction is not reversed: %s" % workstation_id)
+			return
 		var anchor_local := _v2(anchor_config.get("center", []))
 		var expected_anchor_world := dormitory.to_global(
 			Vector3(anchor_local.x, float(anchor_config.get("y", 0.0)), anchor_local.y)

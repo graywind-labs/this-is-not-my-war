@@ -20,12 +20,16 @@ var _right_hinge: Node3D
 var _open_requested := false
 var _open_fraction := 0.0
 var _close_hold_remaining := 0.0
+var _building_id := ""
 
 
 func _ready() -> void:
 	set_meta("authority_role", "presentation_only")
 	set_meta("blocking_collision", false)
 	set_meta("actor_collision_mask", ACTOR_COLLISION_MASK)
+	_building_id = _resolve_building_id()
+	set_meta("building_id", _building_id)
+	add_to_group("building_auto_door")
 	_build_door_visuals()
 	_build_actor_sensor()
 	set_physics_process(true)
@@ -48,6 +52,7 @@ func debug_get_snapshot() -> Dictionary:
 			if _is_actor_body(body):
 				overlapping_actor_count += 1
 	return {
+		"building_id": _building_id,
 		"clear_width": clear_width,
 		"clear_height": clear_height,
 		"leaf_visual_height": _resolved_leaf_visual_height(),
@@ -64,6 +69,15 @@ func debug_get_snapshot() -> Dictionary:
 		"close_hold_seconds": CLOSE_HOLD_SECONDS,
 		"authority_role": "presentation_only"
 	}
+
+
+func _resolve_building_id() -> String:
+	var ancestor := get_parent()
+	while ancestor != null:
+		if ancestor is BuildingArtView:
+			return str((ancestor as BuildingArtView).building_id)
+		ancestor = ancestor.get_parent()
+	return ""
 
 
 func _physics_process(delta: float) -> void:

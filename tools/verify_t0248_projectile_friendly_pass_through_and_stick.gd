@@ -166,6 +166,10 @@ func _run_verification() -> void:
 	var corpse_art := corpse_arrow_view.get_parent() if corpse_arrow_view != null else null
 	var corpse_arrow_parented := corpse_art != null and str(corpse_art.name).ends_with("DefeatPresentation")
 	_check(corpse_arrow_parented, "T0248 lethal arrow did not follow defeat presentation")
+	_check(
+		corpse_art != null and is_equal_approx(float(corpse_art.get_meta("corpse_linger_seconds", 0.0)), 8.0),
+		"T0248 regular enemy corpse does not retain the shared 8-second lifetime"
+	)
 	if corpse_art != null:
 		corpse_art.queue_free()
 	await process_frame

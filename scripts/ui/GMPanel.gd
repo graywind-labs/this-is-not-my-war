@@ -71,6 +71,7 @@ var _npc_state_value_input: LineEdit
 var _attribute_select: OptionButton
 var _order_text_input: LineEdit
 var _proactive_talk_input: LineEdit
+var _formal_guard_talk_input: LineEdit
 var _location_select: OptionButton
 var _formal_action_location_select: OptionButton
 var _action_select: OptionButton
@@ -79,6 +80,8 @@ var _equipment_weapon_select: OptionButton
 var _equipment_armor_slot_select: OptionButton
 var _crafting_building_select: OptionButton
 var _crafting_recipe_select: OptionButton
+var _blacksmith_completed_product_select: OptionButton
+var _workshop_completed_product_select: OptionButton
 var _horse_select: OptionButton
 var _horse_damage_input: LineEdit
 var _horse_advance_input: LineEdit
@@ -112,6 +115,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_ui()
 	_connect_llm_usage_signal()
+	_connect_horse_state_signal()
 	call_deferred("_refresh_options")
 
 
@@ -522,6 +526,13 @@ func _add_building_section(parent: VBoxContainer) -> void:
 	var character_sandbox_button := _add_button(character_pilot_row, "NPC 开发检视场景", _run_npc_dev_lab)
 	character_sandbox_button.name = "NPCDevLabButton"
 	_add_button(character_pilot_row, "正式角色快照", _show_chibi_formal_character_snapshot)
+	var combat_art_row := _make_row(parent)
+	var combat_art_label := Label.new()
+	combat_art_label.text = "T0133 战斗美术验收"
+	combat_art_row.add_child(combat_art_label)
+	var combat_art_demo_button := _add_button(combat_art_row, "播放 VFX 样例", _run_t0133_combat_art_demo)
+	combat_art_demo_button.name = "T0133CombatArtDemoButton"
+	_add_button(combat_art_row, "VFX / 布娃娃快照", _show_t0133_combat_art_snapshot)
 	var formal_stable_row := _make_row(parent)
 	var formal_stable_label := Label.new()
 	formal_stable_label.text = "马厩真实照料"
@@ -639,6 +650,28 @@ func _add_crafting_horse_section(parent: VBoxContainer) -> void:
 	_add_button(crafting_row, "制造快照", func() -> void:
 		_show_craft_snapshot(_selected_id(_crafting_building_select))
 	)
+	var blacksmith_preview_row := _make_row(parent)
+	var blacksmith_preview_label := Label.new()
+	blacksmith_preview_label.text = "铁匠铺完成产物验收"
+	blacksmith_preview_row.add_child(blacksmith_preview_label)
+	_blacksmith_completed_product_select = _make_select(blacksmith_preview_row)
+	_blacksmith_completed_product_select.name = "BlacksmithCompletedProductSelect"
+	var blacksmith_preview_button := _add_button(blacksmith_preview_row, "完成并暂存", func() -> void:
+		_run_craft_complete("blacksmith", _selected_id(_blacksmith_completed_product_select))
+	)
+	blacksmith_preview_button.name = "BlacksmithCompleteProductButton"
+	blacksmith_preview_button.tooltip_text = "跳过时间和材料，按所选正式配方新增一件待收取成品，用于检查室内陈列"
+	var workshop_preview_row := _make_row(parent)
+	var workshop_preview_label := Label.new()
+	workshop_preview_label.text = "工械坊完成产物验收"
+	workshop_preview_row.add_child(workshop_preview_label)
+	_workshop_completed_product_select = _make_select(workshop_preview_row)
+	_workshop_completed_product_select.name = "WorkshopCompletedProductSelect"
+	var workshop_preview_button := _add_button(workshop_preview_row, "完成并暂存", func() -> void:
+		_run_craft_complete("workshop", _selected_id(_workshop_completed_product_select))
+	)
+	workshop_preview_button.name = "WorkshopCompleteProductButton"
+	workshop_preview_button.tooltip_text = "跳过时间和材料，按所选正式配方新增一件待收取成品，用于检查室内陈列"
 	var formal_blacksmith_row := _make_row(parent)
 	var formal_blacksmith_label := Label.new()
 	formal_blacksmith_label.text = "A5-P5b 正式铁匠制造"
@@ -675,7 +708,15 @@ func _add_crafting_horse_section(parent: VBoxContainer) -> void:
 	_add_button(horse_row, "推进马匹", func() -> void:
 		_run_horse_advance(float(_horse_advance_input.text))
 	)
-	_add_button(horse_row, "强制繁育", _run_horse_birth)
+
+	var horse_birth_row := _make_row(parent)
+	var horse_birth_label := Label.new()
+	horse_birth_label.text = "小马出生验收"
+	horse_birth_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	horse_birth_row.add_child(horse_birth_label)
+	var horse_birth_button := _add_button(horse_birth_row, "小马出生并命名", _run_horse_birth)
+	horse_birth_button.name = "FoalBirthNamingButton"
+	horse_birth_button.tooltip_text = "复用正式出生事务：先打开命名窗，确认名字后才生成小马"
 
 	var horse_assignment_row := _make_row(parent)
 	var assignment_label := Label.new()
@@ -876,6 +917,30 @@ func _add_action_section(parent: VBoxContainer) -> void:
 		_show_formal_npc_dialogue_snapshot(_selected_id(_formal_action_npc_select))
 	)
 	formal_dialogue_snapshot_button.name = "FormalNpcDialogueSnapshotButton"
+
+	var guard_dialogue_row := _make_row(parent)
+	var guard_dialogue_label := Label.new()
+	guard_dialogue_label.text = "NPC 找守备官对话"
+	guard_dialogue_row.add_child(guard_dialogue_label)
+	_formal_guard_talk_input = _make_input(
+		guard_dialogue_row,
+		"开场内容",
+		"守备官，我有事情想和你谈。",
+		300
+	)
+	_formal_guard_talk_input.name = "FormalGuardDialogueInput"
+	var guard_dialogue_button := _add_button(guard_dialogue_row, "找守备官对话", func() -> void:
+		_run_start_proactive_talk(
+			_selected_id(_formal_action_npc_select),
+			_formal_guard_talk_input.text
+		)
+	)
+	guard_dialogue_button.name = "FormalGuardDialogueButton"
+	guard_dialogue_button.tooltip_text = "复用正式主动交涉：NPC 显示问号并面向镜头，点击 NPC 后打开守备官对话窗"
+	var guard_dialogue_snapshot_button := _add_button(guard_dialogue_row, "交涉状态", func() -> void:
+		_show_proactive_talk(_selected_id(_formal_action_npc_select))
+	)
+	guard_dialogue_snapshot_button.name = "FormalGuardDialogueSnapshotButton"
 
 	var repair_row := _make_row(parent)
 	var repair_target_label := Label.new()
@@ -1279,10 +1344,22 @@ func _fill_npc_select() -> void:
 			return "%s | %s" % [id, str(npc.get("name", id))]
 		return id
 	)
-	_fill_select(_heal_target_select, ids, func(id: String) -> String:
+	var heal_ids := ids.duplicate()
+	heal_ids.sort_custom(func(a: Variant, b: Variant) -> bool:
+		if npc_system == null:
+			return str(a) < str(b)
+		var a_unconscious := bool(npc_system.get_npc_state(str(a)).get("unconscious", false))
+		var b_unconscious := bool(npc_system.get_npc_state(str(b)).get("unconscious", false))
+		if a_unconscious != b_unconscious:
+			return a_unconscious
+		return ids.find(a) < ids.find(b)
+	)
+	_fill_select(_heal_target_select, heal_ids, func(id: String) -> String:
 		if npc_system != null:
 			var npc: Dictionary = npc_system.get_npc(id)
-			return "%s | %s" % [id, str(npc.get("name", id))]
+			var state: Dictionary = npc_system.get_npc_state(id)
+			var heal_state := "可治疗：昏迷" if bool(state.get("unconscious", false)) else "不可治疗：未昏迷"
+			return "%s | %s | %s" % [id, str(npc.get("name", id)), heal_state]
 		return id
 	)
 	_fill_select(_npc_dialogue_target_select, ids, func(id: String) -> String:
@@ -1359,6 +1436,8 @@ func _fill_crafting_selects() -> void:
 		return id
 	)
 	_fill_crafting_recipe_select()
+	_fill_completed_product_select(_blacksmith_completed_product_select, "blacksmith")
+	_fill_completed_product_select(_workshop_completed_product_select, "workshop")
 
 
 func _fill_crafting_recipe_select() -> void:
@@ -1368,6 +1447,19 @@ func _fill_crafting_recipe_select() -> void:
 	if crafting_system != null and crafting_system.has_method("get_recipe_ids_for_building"):
 		recipe_ids = crafting_system.get_recipe_ids_for_building(building_id)
 	_fill_select(_crafting_recipe_select, recipe_ids, func(id: String) -> String:
+		if crafting_system != null and crafting_system.has_method("get_recipe"):
+			var recipe: Dictionary = crafting_system.get_recipe(id)
+			return "%s | %s" % [id, str(recipe.get("name", id))]
+		return id
+	)
+
+
+func _fill_completed_product_select(select: OptionButton, building_id: String) -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	var recipe_ids: Array = []
+	if crafting_system != null and crafting_system.has_method("get_recipe_ids_for_building"):
+		recipe_ids = crafting_system.get_recipe_ids_for_building(building_id)
+	_fill_select(select, recipe_ids, func(id: String) -> String:
 		if crafting_system != null and crafting_system.has_method("get_recipe"):
 			var recipe: Dictionary = crafting_system.get_recipe(id)
 			return "%s | %s" % [id, str(recipe.get("name", id))]
@@ -1390,6 +1482,22 @@ func _fill_horse_select() -> void:
 			]
 		return id
 	)
+
+
+func _connect_horse_state_signal() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus == null or not event_bus.has_signal("horse_state_changed"):
+		return
+	if not event_bus.horse_state_changed.is_connected(_on_horse_state_changed):
+		event_bus.horse_state_changed.connect(_on_horse_state_changed)
+
+
+func _on_horse_state_changed(_horse_id: String) -> void:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_horse_count") or _horse_select == null:
+		return
+	if int(horse_system.get_horse_count()) != _horse_select.get_item_count():
+		_fill_horse_select()
 
 
 func _fill_location_select() -> void:
@@ -1509,6 +1617,12 @@ func _execute_command(command: String) -> void:
 					_run_npc_dev_lab()
 				_:
 					_show_chibi_formal_character_snapshot()
+		"t0133_combat_art":
+			var combat_art_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			if combat_art_mode in ["demo", "run"]:
+				_run_t0133_combat_art_demo()
+			else:
+				_show_t0133_combat_art_snapshot()
 		"formal_nav_pilot":
 			var formal_pilot_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
 			match formal_pilot_mode:
@@ -1788,6 +1902,9 @@ func _execute_command(command: String) -> void:
 			if _require_args(parts, 2, "craft_stage <blacksmith|workshop> [npc_id]"):
 				var npc_id := str(parts[2]) if parts.size() >= 3 else ""
 				_run_craft_stage(str(parts[1]), npc_id)
+		"craft_complete":
+			if _require_args(parts, 3, "craft_complete <blacksmith|workshop> <recipe_id>"):
+				_run_craft_complete(str(parts[1]), str(parts[2]))
 		"craft_snapshot":
 			_show_craft_snapshot(str(parts[1]) if parts.size() >= 2 else "")
 		"horse_snapshot":
@@ -2177,6 +2294,15 @@ func _run_craft_stage(building_id: String, npc_id: String = "") -> void:
 	])
 
 
+func _run_craft_complete(building_id: String, recipe_id: String) -> void:
+	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
+	if crafting_system == null or not crafting_system.has_method("debug_complete_product"):
+		_log("CraftingSystem 完成产物验收接口不可用。")
+		return
+	var result: Dictionary = crafting_system.call("debug_complete_product", building_id, recipe_id)
+	_log("验收完成产物 %s -> %s：%s" % [building_id, recipe_id, _compact(result)])
+
+
 func _show_craft_snapshot(building_id: String = "") -> void:
 	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 	if crafting_system == null:
@@ -2242,7 +2368,7 @@ func _run_horse_birth() -> void:
 		return
 	var result: Dictionary = horse_system.call("debug_force_birth")
 	_fill_horse_select()
-	_log("强制马匹繁育：%s" % _compact(result))
+	_log("小马出生并命名：%s" % _compact(result))
 
 
 func _run_horse_assign(npc_id: String, horse_id: String, visibility: String) -> void:
@@ -2539,6 +2665,35 @@ func _show_chibi_formal_character_snapshot() -> void:
 		"active_enemies": combat_system.debug_get_enemy_art_snapshots() if combat_system != null and combat_system.has_method("debug_get_enemy_art_snapshots") else [],
 	}
 	_log("T0130-P4 正式角色快照：%s" % _compact(snapshot))
+
+
+func _run_t0133_combat_art_demo() -> void:
+	var controller := get_node_or_null("/root/Main/Presentation/CombatVFXController")
+	if controller == null or not controller.has_method("debug_handle_event"):
+		_log("T0133 CombatVFXController 不可用。")
+		return
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var origin := Vector3.ZERO
+	if building_system != null and building_system.has_method("get_building_entry_position"):
+		origin = building_system.get_building_entry_position("main_hall")
+	controller.debug_handle_event({"event_type": "attack_swing", "world_position": origin + Vector3(-0.8, 0.0, 0.0)})
+	controller.debug_handle_event({"event_type": "projectile_hit", "world_position": origin})
+	controller.debug_handle_event({"event_type": "actor_damaged", "world_position": origin + Vector3(0.8, 0.0, 0.0)})
+	controller.debug_handle_event({"event_type": "structure_damaged", "world_position": origin + Vector3(0.0, 0.0, 0.8), "target_type": "building"})
+	_log("T0133 VFX 样例已在主厅入口播放；血迹开关位于设置→画面。")
+	_show_t0133_combat_art_snapshot()
+
+
+func _show_t0133_combat_art_snapshot() -> void:
+	var controller := get_node_or_null("/root/Main/Presentation/CombatVFXController")
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var snapshot := {
+		"vfx": controller.get_debug_snapshot() if controller != null and controller.has_method("get_debug_snapshot") else {},
+		"friendly_ragdoll": npc_system.debug_get_npc_character_art_snapshot("veteran_01") if npc_system != null and npc_system.has_method("debug_get_npc_character_art_snapshot") else {},
+		"active_enemies": combat_system.debug_get_enemy_art_snapshots() if combat_system != null and combat_system.has_method("debug_get_enemy_art_snapshots") else []
+	}
+	_log("T0133 战斗美术快照：%s" % _compact(snapshot))
 
 
 func _run_glen_navigation_pilot() -> void:
@@ -3716,8 +3871,13 @@ func _run_start_proactive_talk(npc_id: String, text: String) -> void:
 	if npc_system == null or not npc_system.has_method("debug_start_proactive_talk"):
 		_log("NPCSystem 主动交涉接口不可用。")
 		return
-	var result: Dictionary = npc_system.debug_start_proactive_talk(npc_id, text)
-	_log("主动交涉 %s：%s" % [npc_id, _compact(result)])
+	var clean_text := text.strip_edges()
+	if clean_text.is_empty():
+		clean_text = "守备官，我有事情想和你谈。"
+	var result: Dictionary = npc_system.debug_start_proactive_talk(npc_id, clean_text)
+	if bool(result.get("ok", false)) and _panel != null:
+		_panel.visible = false
+	_log("NPC 找守备官对话 %s：%s" % [npc_id, _compact(result)])
 
 
 func _run_npc_talk(speaker_npc_id: String, target_npc_id: String, opening_text: String = "") -> void:
@@ -3733,7 +3893,7 @@ func _run_npc_talk(speaker_npc_id: String, target_npc_id: String, opening_text: 
 		target_npc_id,
 		clean_opening,
 		5,
-		true,
+		false,
 		{},
 		true
 	))
@@ -4093,9 +4253,19 @@ func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
 	if action_system == null or not action_system.has_method("debug_assign_heal_assist"):
 		_log("ActionSystem 协助治疗接口不可用。")
 		return
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if healer_npc_id == target_npc_id:
+		_log("真实协助治疗 %s -> %s：失败（治疗者不能治疗自己）" % [healer_npc_id, target_npc_id])
+		return
+	if npc_system == null or npc_system.get_npc(target_npc_id).is_empty():
+		_log("真实协助治疗 %s -> %s：失败（治疗目标不存在）" % [healer_npc_id, target_npc_id])
+		return
+	var target_state_before: Dictionary = npc_system.get_npc_state(target_npc_id)
+	if not bool(target_state_before.get("unconscious", false)):
+		_log("真实协助治疗 %s -> %s：失败（治疗目标没有昏迷；请先在“常用”页对目标造成足够伤害）" % [healer_npc_id, target_npc_id])
+		return
 	var started := bool(action_system.debug_assign_heal_assist(healer_npc_id, target_npc_id, true))
 	var failure_reason := _npc_action_block_reason(healer_npc_id)
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if not started and failure_reason.is_empty() and npc_system != null:
 		var target_state: Dictionary = npc_system.get_npc_state(target_npc_id)
 		if not bool(target_state.get("unconscious", false)):
@@ -4137,12 +4307,12 @@ func _run_assist_heal(healer_npc_id: String, target_npc_id: String) -> void:
 			result_text = "成功（已开始前往伤员）"
 		else:
 			result_text = "等待（治疗会话已建立，但路线尚未启动；可再次点击重试）"
+	_show_formal_heal_assist_snapshot(healer_npc_id, target_npc_id)
 	_log("真实协助治疗 %s -> %s：%s" % [
 		healer_npc_id,
 		target_npc_id,
 		result_text
 	])
-	_show_formal_heal_assist_snapshot(healer_npc_id, target_npc_id)
 	if started and (route_confirmed or active_confirmed) and _panel != null:
 		_panel.visible = false
 
@@ -5033,6 +5203,7 @@ func _help_text() -> String:
 	return "\n".join([
 		"常用命令：",
 		"空间检查点：formal_spatial_save [save|load|snapshot]",
+		"战斗美术：t0133_combat_art [demo|snapshot]；倒地可配合 damage_npc <npc_id> <damage> 验证。",
 		"refresh | snapshot | events | plaza_events | roof_visibility | station_layout [preview|legacy|snapshot] | motion_sandbox | character_pilot [glen|enemy|sandbox|snapshot] | formal_nav_pilot [glen|clinic_doctor|clinic_bed|dormitory_bed|dining_seat|chapel_prayer_seat|stable_care|stop|snapshot] | formal_visit [run <npc_id> <location_id>|stop <npc_id>|snapshot <npc_id>] | formal_npc_dialogue [run <speaker_id> <target_id> [opening]|stop <speaker_id>|snapshot <speaker_id>] | formal_repair_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_upgrade_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_heal_assist [run <healer_id> <target_id>|stop <healer_id>|snapshot <healer_id> [target_id]] | formal_stable_work [run|stop|snapshot] | formal_dining_work [run|stop|snapshot] | formal_dining_eat [run|stop|snapshot] | formal_dormitory_sleep [run|stop|snapshot] | formal_garden_work [run|stop|snapshot] | formal_tavern_work [run|stop|snapshot] | formal_clinic_work [doctor|patient|stop|snapshot] | formal_training_work [instructor|student|stop|snapshot] | formal_chapel_work [leader|prayer|stop|snapshot] | formal_blacksmith_work [run|stop|snapshot] | formal_workshop_work [run|stop|snapshot] | formal_dynamic_wave [run <1-5>|stop|snapshot] | formal_second_wave_slice [run|stop|snapshot]（兼容）",
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot | merchant_wagon [arrival|formal_arrival|departure|snapshot]",
@@ -5046,7 +5217,7 @@ func _help_text() -> String:
 		"start_proactive <npc_id> <text> | proactive <npc_id>",
 		"npc_talk <speaker_npc_id> <target_npc_id> [opening_text]",
 		"equip_weapon <npc_id> <weapon_id> [visibility] | equip_armor <npc_id> <slot> [visibility] | unit_type <npc_id>",
-		"craft_target <blacksmith|workshop> <recipe_id|none> [force] | craft_stage <building_id> [npc_id] | craft_snapshot [building_id]",
+		"craft_target <blacksmith|workshop> <recipe_id|none> [force] | craft_stage <building_id> [npc_id] | craft_complete <building_id> <recipe_id> | craft_snapshot [building_id]",
 		"horse_snapshot [horse_id] | horse_damage <horse_id> <amount> | horse_advance <game_seconds> | horse_birth",
 		"horse_assign <npc_id> <horse_id> [visibility] | horse_unassign <npc_id> [visibility]",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",

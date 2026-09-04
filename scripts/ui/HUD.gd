@@ -14,6 +14,7 @@ const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd"
 @onready var hud_frame: Panel = $HUDFrame
 @onready var escape_started_alert_dialog: AcceptDialog = %EscapeStartedAlertDialog
 @onready var npc_revived_alert_dialog: AcceptDialog = %NpcRevivedAlertDialog
+@onready var wave_cleared_alert_dialog: AcceptDialog = %WaveClearedAlertDialog
 
 const DETAIL_PANEL_OFFSET := Vector2(0.0, 6.0)
 const DETAIL_PANEL_MINIMUM_SIZE := Vector2(500.0, 430.0)
@@ -66,6 +67,8 @@ var _last_clock_refresh_key := ""
 var _hud_frame_fit_pending := false
 var _escape_alert_queue: Array[Dictionary] = []
 var _npc_revived_alert_queue: Array[String] = []
+var _wave_cleared_alert_queue: Array[int] = []
+var _current_wave_cleared_alert_number := 0
 
 
 func _ready() -> void:
@@ -89,6 +92,9 @@ func _ready() -> void:
 	if npc_revived_alert_dialog != null:
 		npc_revived_alert_dialog.confirmed.connect(_on_npc_revived_alert_closed)
 		npc_revived_alert_dialog.close_requested.connect(_on_npc_revived_alert_closed)
+	if wave_cleared_alert_dialog != null:
+		wave_cleared_alert_dialog.confirmed.connect(_on_wave_cleared_alert_closed)
+		wave_cleared_alert_dialog.close_requested.connect(_on_wave_cleared_alert_closed)
 	var alarm_button := get_node_or_null("AlarmButton") as Button
 	if alarm_button != null:
 		alarm_button.focus_mode = Control.FOCUS_NONE
@@ -123,6 +129,8 @@ func _ready() -> void:
 			event_bus.npc_escape_started.connect(_on_npc_escape_started)
 		if event_bus.has_signal("npc_revived"):
 			event_bus.npc_revived.connect(_on_npc_revived)
+		if event_bus.has_signal("combat_wave_cleared"):
+			event_bus.combat_wave_cleared.connect(_on_combat_wave_cleared)
 		if event_bus.has_signal("horse_state_changed"):
 			event_bus.horse_state_changed.connect(_on_horse_state_changed)
 		if event_bus.has_signal("horse_assignment_changed"):
@@ -249,6 +257,36 @@ func _show_next_npc_revived_alert() -> void:
 
 func _on_npc_revived_alert_closed() -> void:
 	call_deferred("_show_next_npc_revived_alert")
+
+
+func _on_combat_wave_cleared(wave_number: int) -> void:
+	if wave_number <= 0 or wave_number == _current_wave_cleared_alert_number or _wave_cleared_alert_queue.has(wave_number):
+		return
+	_wave_cleared_alert_queue.append(wave_number)
+	_show_next_wave_cleared_alert()
+
+
+func _show_next_wave_cleared_alert() -> void:
+	if wave_cleared_alert_dialog == null or wave_cleared_alert_dialog.visible or _wave_cleared_alert_queue.is_empty():
+		return
+	_current_wave_cleared_alert_number = _wave_cleared_alert_queue.pop_front()
+	wave_cleared_alert_dialog.dialog_text = "恭喜守备官守住了第%d波敌军！" % _current_wave_cleared_alert_number
+	wave_cleared_alert_dialog.popup_centered()
+
+
+func _on_wave_cleared_alert_closed() -> void:
+	_current_wave_cleared_alert_number = 0
+	call_deferred("_show_next_wave_cleared_alert")
+
+
+func debug_get_wave_cleared_alert_snapshot() -> Dictionary:
+	return {
+		"visible": wave_cleared_alert_dialog != null and wave_cleared_alert_dialog.visible,
+		"dialog_text": wave_cleared_alert_dialog.dialog_text if wave_cleared_alert_dialog != null else "",
+		"ok_button_text": wave_cleared_alert_dialog.get_ok_button().text if wave_cleared_alert_dialog != null else "",
+		"current_wave_number": _current_wave_cleared_alert_number,
+		"queued_wave_numbers": _wave_cleared_alert_queue.duplicate()
+	}
 
 
 func _on_horse_state_changed(_horse_id: String) -> void:
@@ -494,6 +532,8 @@ func _format_time_constraint_reason(reason: String) -> String:
 
 
 func _get_speed_shortcut_scale(event: InputEvent) -> float:
+	if _is_pause_menu_open():
+		return 0.0
 	if not (event is InputEventKey):
 		return 0.0
 	var key_event := event as InputEventKey
@@ -522,6 +562,8 @@ func _get_speed_shortcut_scale(event: InputEvent) -> float:
 
 
 func _is_pause_shortcut(event: InputEvent) -> bool:
+	if _is_pause_menu_open():
+		return false
 	if not (event is InputEventKey):
 		return false
 	if not event.pressed or event.echo or event.keycode != KEY_SPACE:
@@ -530,6 +572,11 @@ func _is_pause_shortcut(event: InputEvent) -> bool:
 	if _is_text_input_focused():
 		return false
 	return true
+
+
+func _is_pause_menu_open() -> bool:
+	var pause_menu := get_node_or_null("../PauseMenu") as Control
+	return pause_menu != null and pause_menu.visible
 
 
 func _is_text_input_focused() -> bool:

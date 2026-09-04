@@ -13,6 +13,9 @@ func _init() -> void:
 		_fail("Main scene missing")
 		return
 	var main := packed.instantiate()
+	var startup := main.get_node_or_null("Systems/GameStartupSystem")
+	if startup != null:
+		startup.set("_startup_running", true)
 	root.add_child(main)
 	await process_frame
 	await physics_frame

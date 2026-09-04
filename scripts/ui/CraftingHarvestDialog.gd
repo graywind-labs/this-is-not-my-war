@@ -7,6 +7,26 @@ const SUPPORTED_BUILDING_IDS := ["blacksmith", "workshop"]
 const BUILDING_NAMES := {"blacksmith": "铁匠铺", "workshop": "工械坊"}
 const ITEM_ICON_SIZE := Vector2(68.0, 68.0)
 
+
+class PendingItemIconButton extends Button:
+	func _make_custom_tooltip(for_text: String) -> Object:
+		var panel := PanelContainer.new()
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.11, 0.085, 0.06, 0.98)
+		style.border_color = Color(0.57, 0.42, 0.25, 1.0)
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(5)
+		style.content_margin_left = 8.0
+		style.content_margin_right = 8.0
+		style.content_margin_top = 5.0
+		style.content_margin_bottom = 5.0
+		panel.add_theme_stylebox_override("panel", style)
+		var label := Label.new()
+		label.text = for_text
+		label.add_theme_color_override("font_color", Color(0.96, 0.87, 0.68, 1.0))
+		panel.add_child(label)
+		return panel
+
 var _building_id := ""
 var _title_label: Label
 var _empty_label: Label
@@ -160,15 +180,17 @@ func _refresh() -> void:
 
 
 func _make_item_icon(entry: Dictionary) -> Button:
-	var icon_button := Button.new()
+	var icon_button := PendingItemIconButton.new()
 	icon_button.name = "%sPendingIcon" % str(entry.get("item_id", "item")).to_pascal_case()
 	icon_button.custom_minimum_size = ITEM_ICON_SIZE
 	icon_button.size = ITEM_ICON_SIZE
 	icon_button.focus_mode = Control.FOCUS_NONE
+	icon_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	icon_button.flat = true
 	icon_button.expand_icon = true
 	icon_button.add_theme_constant_override("icon_max_width", 66)
-	icon_button.tooltip_text = str(entry.get("name", entry.get("item_id", "成品")))
+	# 待收取弹窗不常驻写名称；与装备图标一致，由可悬停按钮只读显示正式名称。
+	icon_button.tooltip_text = str(entry.get("name", entry.get("item_id", "成品"))).strip_edges()
 	icon_button.mouse_default_cursor_shape = Control.CURSOR_ARROW
 	var icon_path := str(entry.get("icon_path", ""))
 	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):

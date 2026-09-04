@@ -1,5 +1,19 @@
 # DATA_SCHEMA.md
 
+## T0350 CombatProgression 与成长余量
+
+- `data/combat_progression.json` 使用 `combat_progression_v1`：`weapon_damage_per_skill_point=50`、`riding_damage_per_skill_point=100`、`kill_total_experience=1`。`count_actual_hp_damage_only / count_overkill_damage / defense_device_grants_npc_growth / meteor_grants_npc_growth / horse_collision_grants_npc_growth` 明确记录来源与实际伤害合同。
+- `NPCProfile.progression.combat_damage_remainders` 是 `{剑盾, 长杆, 弓, 弩, 骑术: non_negative_int}`。它只保存不足下一熟练度整数点的实伤余量，不是 `skill_experience`；缺失旧字段按 0 归一化，技能封顶时对应余量归零。
+- 正式空间检查点的 actor 可选增加 `growth.skills / growth.progression`，用于保存技能、总经验、未分配技能点、训练经验和战斗伤害余量；旧检查点无该块时保持当前档案值，兼容载入。
+- `data/mount_defs.json` 增加 `riding_move_speed_bonus_at_100` 与 `riding_attack_speed_bonus_at_100`，均表示骑术 100 时的额外乘算比例，不包含坐骑自身固定倍率。
+
+## T0342 Merchant daily stock 与批量交易
+
+- `data/merchant_defs.json.buy_offers[]` 在既有 `resource_id / unit_price` 外增加正整数 `daily_stock_min / daily_stock_max`，且 `min <= max`。每个游戏日第一次开始到访时，MerchantSystem 为每项可购资源在闭区间内抽取一次整数，保存为 `_daily_stock`；`stock_visit_day` 标识该库存所属日。
+- `get_market_snapshot()` 增加 `daily_stock / stock_visit_day`。空间检查点升级为 `formal_merchant_spatial_checkpoint_v2` 并保存这两个字段；载入 v1 时按当前日补生成一次兼容库存，不修改既有路线 / 马车运动字段。
+- `execute_trade_batch(direction, amounts)` 的 `amounts` 是 `{resource_id: positive_int}`。提交前统一校验方向、报价、玩家余额 / 库存、行商库存与仓库批量容量；任一项失败时所有资源、金钱、行商库存和成功事件均保持不变。
+- 成功的 `merchant_trade_completed.payload` 保留既有单项兼容字段，并增加 `lines[] / line_count / merchant_stock_after`。`lines[]` 每项包含 `resource_id / resource_name / amount / unit_price / line_total / resource_delta`；多项交易的摘要按资源种类数与总价表达，不让 UI 或记忆层重做结算。
+
 ## T0314 Crafting pending outputs（运行时）
 
 `CraftingSystem.pending_outputs` 是按建筑保存的运行时映射：`{building_id: {item_resource_id: positive_int}}`。仅支持 `blacksmith / workshop`，具体键继续使用配方的 `output_item_id`；它不是 ResourceSystem 数量、不是配方配置，也不进入 BuildingSystem `special_state`。项目快照只读增加 `pending_outputs / pending_output_total / target_pending_amount`，原 `stock_amount` 仍表示正式库存。
@@ -151,7 +165,7 @@ NPC `states` 可临时包含 `combat_strategy_move_recovery_count / combat_strat
 
 ## T0198 友方目标锁与异源受击运行态
 
-- `data/station_layout.json.combat_spatial.friendly_station_response` 当前由 T0232 向后推进为 `friendly_station_response_v4`；T0198 的 `combat_targeting_schema=friendly_enemy_presence_lock_v1`、`combat_target_detection_range=37.2`、`inside_station_target_scope=entire_station`、`locked_target_policy` 与 `different_attacker_damage_policy` 保持不变。`normal_contact_range` 仅为旧兼容值，不再决定武装索敌或非战斗避战半径。
+- `data/station_layout.json.combat_spatial.friendly_station_response` 当前由 T0232 向后推进为 `friendly_station_response_v4`；T0321 保留 `combat_targeting_schema=friendly_enemy_presence_lock_v1` 与 `combat_target_detection_range=37.2`，把 `inside_station_target_scope` 修订为 `entire_station_plus_unified_radius`。运行时 scope 另含 `include_station_enemies`，表示完整站内集合与有限半径集合取并集；两者共同按距离排序。`locked_target_policy` 与 `different_attacker_damage_policy` 不变；`normal_contact_range` 仅为旧兼容值。
 - NPC `states` 新增可选诊断字段 `combat_target_selection_reason / combat_target_scope / combat_strategy_move_enemy_id`；现有 `combat_target_enemy_id` 是移动和攻击共用的锁 ID。模式退出、昏迷和清场会清理这些字段。
 - `_friendly_enemy_reacquire_requests[npc_id]` 使用 `friendly_enemy_damage_reacquire_request_v1`，字段为 `sequence / created_frame / source_enemy_id / previous_target_enemy_id / scope_at_damage`。同一 NPC 消费前再次收到合法异源伤害只保留最新请求。
 - `friendly_station_response_runtime_v4` 保留 `combat_targeting_schema / combat_target_detection_range / inside_station_target_scope / locks[] / different_attacker_damage_reacquire_requests[] / metrics`，并增加保持距离撤离诊断。请求和 metrics 仅用于运行态裁决 / GM 只读观察，不写入 `formal_combat_spatial_checkpoint_v1`。
@@ -506,11 +520,15 @@ NPC 运行态新增 `spatial_route_phase / physical_location_phase / reserved_bu
 ```json
 {
   "max_piety": 100.0,
-  "piety_per_prayer_hour": 3.0,
+  "piety_per_prayer_hour": 2.5,
   "contributing_action_ids": ["pray_at_chapel", "lead_mass"],
+  "action_multipliers": {
+    "pray_at_chapel": 1.0,
+    "lead_mass": 2.0
+  },
   "prayer_mode_multipliers": {
     "personal_prayer": 1.0,
-    "mass_attendance": 1.0
+    "mass_attendance": 2.0
   },
   "combat_action_game_seconds_per_second": 1.0,
   "target_ground_y": 0.0,
@@ -529,7 +547,7 @@ NPC 运行态新增 `spatial_route_phase / physical_location_phase / reserved_bu
 }
 ```
 
-ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `3 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
+ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `2.5 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。独祷为 2.5 点 / 人·小时，`lead_mass` 与 `mass_attendance` 分别经行动或模式倍率达到 5 点 / 人·小时；该配置不定义每日、每场、每人、每轮充能时限或连续弥撒衰减。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
 
 T0172 起，选定落点和消费虔诚不生成正式事件；旧 `piety_meteor_cast` Schema 仅保留历史数据读取兼容。落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / impact_damage / impact_max_targets / enemy_hit_count / enemy_defeated_count / burn_duration_seconds / friendly_fire=false`。若冲击权威结果 `enemy_defeated_count > 0`，再生成 `piety_meteor_enemy_defeated`，至少保存 `cast_id / enemy_defeated_count`；零击败时不得生成。冲击候选按水平距离、敌人 ID 稳定排序并截取最多 12 个；燃烧区域不传 `max_targets`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。落地与击杀事件使用 `local_public` Schema，但属于全站广播例外。
 
@@ -1982,7 +2000,7 @@ T1002 `plan_revised` 事件 payload：
 T1507 商人事件 payload：
 
 - `merchant_arrived` / `merchant_departed` 必须包含 `merchant_id`、`merchant_name`、`arrival_time`、`departure_time`、`visit_day`。
-- `merchant_trade_completed` 必须包含 `merchant_id`、`direction`、`resource_id`、`amount`、`unit_price`、`total_price`、`money_delta`、`resource_delta`；运行时可额外保存 `merchant_name` 和 `resource_name` 供 UI/调试。
+- `merchant_trade_completed` 必须包含 `merchant_id`、`direction`、`resource_id`、`amount`、`unit_price`、`total_price`、`money_delta`、`resource_delta`；T0342 批量提交额外包含 `lines`、`line_count`、`merchant_stock_after`。单项仍投影真实资源与单价，多项使用 `multiple_resources / 多项物资` 兼容顶层字段，逐项事实以 `lines[]` 为准。
 - 三类事件固定使用广场 `local_public`。只有资源结算成功后才能写 `merchant_trade_completed`；余额或库存不足不得用成功事件表达失败尝试。
 
 T1104 起，`attack_made` 表示我方 NPC 对敌人完成了一次程序结算攻击。必备 payload 字段包括 `attacker_npc_id`、`target_type`、`target_enemy_id`、`damage`、`hp_before` 和 `hp_after`；运行时还会记录 `weapon_id`、`weapon_name`、`required_skill`、`weapon_skill`、`strength`、`base_damage`、`strength_multiplier`、`raw_attack_power`、`attack_speed_multiplier`、`target_defense`、`max_hp` 和 `defeated` 等调试字段。该事件只记录已经由 CombatSystem 扣除敌人 HP 的事实，不让 LLM 决定伤害。

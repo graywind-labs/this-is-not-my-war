@@ -122,6 +122,33 @@ const BEHAVIOR_MODE_LABELS := {
 	"unconscious": "昏迷",
 	"escaped": "逃离"
 }
+const VISIBLE_ACTION_LABELS := {
+	"": "空闲",
+	"idle": "空闲",
+	"planning_day": "制定计划",
+	"proactive_talk": "主动找守备官交谈",
+	"talk_to_guard_officer": "与守备官交谈",
+	"talk_to_npc": "与同伴交谈",
+	"escape_intervention_dialogue": "与守备官进行逃离挽留对话",
+	"rallying_defense_line": "集结防线",
+	"combat_strategy_avoid_holding": "避战待命",
+	"combat_ready": "接敌",
+	"meeting_assigned_horse": "前往马匹",
+	"waiting_for_assigned_horse": "等待马匹",
+	"keep_distance_retreating": "拉开距离",
+	"avoid_combat": "避战",
+	"avoiding_enemy": "正在避战",
+	"unconscious": "昏迷",
+	"escaping_station": "正在逃离",
+	"escaped": "已逃离",
+}
+const VISIBLE_TARGET_LABELS := {
+	"plaza": "广场",
+	"front_gate": "正门",
+	"back_gate": "后门",
+	"combat_rally": "防线",
+	"guard_officer": "守备官",
+}
 const VALID_BEHAVIOR_MODES: Array[String] = [
 	BEHAVIOR_MODE_WORK,
 	BEHAVIOR_MODE_RALLY,
@@ -314,6 +341,69 @@ func get_npc_state(npc_id: String) -> Dictionary:
 	var profile: Dictionary = _profiles[npc_id]
 	var states: Dictionary = profile.get("states", {})
 	return states.duplicate(true)
+
+
+func get_npc_action_display_text(action_id: String) -> String:
+	var clean_action := action_id.strip_edges()
+	if VISIBLE_ACTION_LABELS.has(clean_action):
+		return str(VISIBLE_ACTION_LABELS[clean_action])
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if (
+		action_system != null
+		and action_system.has_method("get_action_ids")
+		and action_system.get_action_ids().has(clean_action)
+		and action_system.has_method("get_action")
+	):
+		var action: Dictionary = action_system.get_action(clean_action)
+		var action_name := str(action.get("name", "")).strip_edges()
+		if not action_name.is_empty():
+			return action_name
+	if clean_action.begins_with("moving_to_combat_strategy_avoid_") or clean_action.begins_with("moving_to_avoid_shelter_"):
+		return "正在避战"
+	if clean_action.begins_with("moving_to_combat_strategy_"):
+		return "战术移动"
+	if clean_action.begins_with("moving_to_combat_rally"):
+		return "前往防线"
+	if clean_action.begins_with("moving_to_healing_target_"):
+		return "前往协助治疗%s" % _get_visible_npc_name(clean_action.trim_prefix("moving_to_healing_target_"))
+	if clean_action.begins_with("assist_heal_"):
+		return "协助治疗%s" % _get_visible_npc_name(clean_action.trim_prefix("assist_heal_"))
+	if clean_action.begins_with("assist_repair_"):
+		return "协助修复%s" % _get_visible_target_name(clean_action.trim_prefix("assist_repair_"))
+	if clean_action.begins_with("assist_upgrade_"):
+		return "协助升级%s" % _get_visible_target_name(clean_action.trim_prefix("assist_upgrade_"))
+	if clean_action.begins_with("winding_up_"):
+		return "准备攻击"
+	if clean_action.begins_with("attacking_"):
+		return "正在攻击"
+	if clean_action.begins_with("visit_location_"):
+		return "停留在%s" % _get_visible_target_name(clean_action.trim_prefix("visit_location_"))
+	if clean_action.begins_with("moving_to_back_gate_escape_exit"):
+		return "正前往后门逃离"
+	if clean_action.begins_with("moving_to_"):
+		return "前往%s" % _get_visible_target_name(clean_action.trim_prefix("moving_to_"))
+	return "其他行动"
+
+
+func _get_visible_npc_name(target_npc_id: String) -> String:
+	var target: Dictionary = _profiles.get(target_npc_id, {})
+	var display_name := str(target.get("name", "")).strip_edges()
+	return display_name if not display_name.is_empty() else "同伴"
+
+
+func _get_visible_target_name(target_id: String) -> String:
+	var clean_target := target_id.strip_edges()
+	if VISIBLE_TARGET_LABELS.has(clean_target):
+		return str(VISIBLE_TARGET_LABELS[clean_target])
+	if _profiles.has(clean_target):
+		return _get_visible_npc_name(clean_target)
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system != null and building_system.has_method("get_building"):
+		var building: Dictionary = building_system.get_building(clean_target)
+		var building_name := str(building.get("name", "")).strip_edges()
+		if not building_name.is_empty():
+			return building_name
+	return "目的地"
 
 
 func get_npc_ids() -> Array[String]:
@@ -579,7 +669,11 @@ func play_formal_dialogue_presentation_event(
 			speaker_position.x - target_position.x,
 			speaker_position.z - target_position.z
 		).length()
-		if horizontal_distance < 0.85 or horizontal_distance > 1.70:
+		# Tight seated workstations can leave the nearest navigable standing point
+		# just over the ordinary 1.70m approach band. ActionSystem only enables this
+		# path after a real route failure and caps it at 2.30m, still close enough for
+		# the visible invitation gesture across a table or workstation.
+		if horizontal_distance < 0.85 or horizontal_distance > 2.30:
 			return {
 				"ok": false,
 				"reason": "formal_dialogue_presentation_not_in_range",
@@ -765,6 +859,16 @@ func get_npc_portrait_snapshot(npc_id: String) -> Dictionary:
 		else:
 			snapshot["location_name"] = "驿站内"
 	return snapshot.duplicate(true)
+
+
+func get_npc_mount_portrait_snapshot(npc_id: String, horse_id: String) -> Dictionary:
+	if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
+		return {}
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null or not npc_node.has_method("get_combat_mount_portrait_snapshot"):
+		return {}
+	var raw_snapshot: Variant = npc_node.call("get_combat_mount_portrait_snapshot", horse_id)
+	return (raw_snapshot as Dictionary).duplicate(true) if raw_snapshot is Dictionary else {}
 
 
 func debug_get_spatial_migration_snapshot(npc_id: String) -> Dictionary:
@@ -1030,6 +1134,12 @@ func create_formal_spatial_checkpoint() -> Dictionary:
 		var formal_session: Dictionary = _formal_workstation_action_sessions.get(npc_id, {}) if _formal_workstation_action_sessions.get(npc_id, {}) is Dictionary else {}
 		actors.append({
 			"npc_id": npc_id,
+			"growth": {
+				"skills": normalize_skills((_profiles[npc_id] as Dictionary).get("skills", {})),
+				"progression": _normalize_progression(
+					(_profiles[npc_id] as Dictionary).get("progression", {})
+				)
+			},
 			"position": {"x": position.x, "y": position.y, "z": position.z},
 			"information_location_id": str(state.get("current_location", PLAZA_LOCATION_ID)),
 			"current_location_name": str(state.get("current_location_name", "")),
@@ -1124,6 +1234,18 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 		if not _profiles.has(npc_id) or not _npc_nodes.has(npc_id):
 			continue
 		var escaped := bool(actor.get("escaped", false))
+		var saved_growth: Dictionary = (
+			actor.get("growth", {})
+			if actor.get("growth", {}) is Dictionary
+			else {}
+		)
+		if not saved_growth.is_empty():
+			var growth_profile: Dictionary = _profiles[npc_id]
+			growth_profile["skills"] = normalize_skills(saved_growth.get("skills", {}))
+			growth_profile["progression"] = _normalize_progression(
+				saved_growth.get("progression", {})
+			)
+			_profiles[npc_id] = growth_profile
 		var npc_node := get_node_or_null(_npc_nodes[npc_id]) as Node3D
 		if npc_node == null:
 			continue
@@ -2493,6 +2615,48 @@ func begin_formal_building_exterior_action(
 	return begin_result
 
 
+func get_formal_building_exterior_capacity_snapshot(
+	building_id: String,
+	service_kind: String = "repair"
+) -> Dictionary:
+	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
+	if controller == null or not controller.has_method("get_building_exterior_service_slots"):
+		return {
+			"building_id": building_id,
+			"service_kind": service_kind,
+			"total_slots": 0,
+			"committed_slots": 0,
+			"remaining_slots": 0,
+		}
+	var slot_ids := {}
+	for raw_slot in controller.get_building_exterior_service_slots(building_id, service_kind):
+		if not raw_slot is Dictionary:
+			continue
+		var slot_id := str((raw_slot as Dictionary).get("slot_id", ""))
+		if not slot_id.is_empty():
+			slot_ids[slot_id] = true
+	var committed_slot_ids := {}
+	for raw_npc_id in _formal_workstation_action_sessions.keys():
+		var session: Dictionary = _formal_workstation_action_sessions.get(str(raw_npc_id), {})
+		if (
+			str(session.get("building_id", "")) != building_id
+			or str(session.get("service_kind", "")) != service_kind
+		):
+			continue
+		var slot_id := str(session.get("service_slot_id", ""))
+		if slot_ids.has(slot_id):
+			committed_slot_ids[slot_id] = true
+	var total_slots := slot_ids.size()
+	var committed_slots := committed_slot_ids.size()
+	return {
+		"building_id": building_id,
+		"service_kind": service_kind,
+		"total_slots": total_slots,
+		"committed_slots": committed_slots,
+		"remaining_slots": maxi(0, total_slots - committed_slots),
+	}
+
+
 func move_npc_to_formal_building_exterior(npc_id: String) -> bool:
 	if not _formal_workstation_action_sessions.has(npc_id):
 		return false
@@ -2548,6 +2712,7 @@ func _start_formal_exterior_service_route(npc_id: String) -> bool:
 	session["continue_to_exterior_after_exit"] = false
 	session["service_route_started"] = true
 	_formal_workstation_action_sessions[npc_id] = session
+	var crowd_recovery_active := bool(session.get("service_crowd_recovery_active", false))
 	return move_npc_to_world_position(
 		npc_id,
 		building_id,
@@ -2565,8 +2730,96 @@ func _start_formal_exterior_service_route(npc_id: String) -> bool:
 			"formal_exterior_slot_id": service_slot_id,
 			"arrival_facing_direction": session.get("service_facing_direction", Vector3.ZERO),
 			"last_action_result": "formal_exterior_service_arrived",
-		}
+		},
+		{
+			"exterior_service_crowd_recovery": true,
+		} if crowd_recovery_active else {}
 	)
+
+
+func retry_formal_building_exterior_action(npc_id: String) -> Dictionary:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return {"ok": false, "reason": "formal_exterior_session_missing"}
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	if (
+		str(session.get("service_slot_id", "")).is_empty()
+		or not session.get("service_target_position") is Vector3
+	):
+		return {"ok": false, "reason": "formal_exterior_service_slot_missing"}
+	if bool(session.get("service_route_retry_scheduled", false)):
+		return {
+			"ok": true,
+			"reason": "",
+			"retried": true,
+			"scheduled": true,
+			"retry_count": int(session.get("service_route_retry_count", 0)),
+			"service_slot_id": str(session.get("service_slot_id", "")),
+		}
+	var retry_count := int(session.get("service_route_retry_count", 0))
+	if retry_count >= 3:
+		return {"ok": false, "reason": "formal_exterior_retry_limit", "retry_count": retry_count}
+	retry_count += 1
+	session["service_route_retry_count"] = retry_count
+	session["service_route_retry_scheduled"] = true
+	session["service_route_started"] = false
+	# This path is entered only after the ordinary NavMesh + RVO/capsule request
+	# genuinely failed. Preserve the reserved physical slot, but let this one
+	# assistant pass other actor bodies during the bounded retry. World collision
+	# and the NavigationMap remain authoritative.
+	session["service_crowd_recovery_active"] = true
+	_formal_workstation_action_sessions[npc_id] = session
+	# ActorMotionBody reports failure synchronously. Restarting inside that signal
+	# lets the still-unwinding failure callback observe and cancel the replacement
+	# request repeatedly. Defer one turn so the failed request settles first.
+	call_deferred("_retry_formal_building_exterior_action_deferred", npc_id, retry_count)
+	return {
+		"ok": true,
+		"reason": "",
+		"retried": true,
+		"scheduled": true,
+		"retry_count": retry_count,
+		"service_slot_id": str(session.get("service_slot_id", "")),
+	}
+
+
+func _retry_formal_building_exterior_action_deferred(npc_id: String, expected_retry_count: int) -> void:
+	if not _formal_workstation_action_sessions.has(npc_id):
+		return
+	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
+	if (
+		not bool(session.get("service_route_retry_scheduled", false))
+		or int(session.get("service_route_retry_count", 0)) != expected_retry_count
+	):
+		return
+	session["service_route_retry_scheduled"] = false
+	_formal_workstation_action_sessions[npc_id] = session
+	var moved := _start_formal_exterior_service_route(npc_id)
+	if moved:
+		# Movement startup refreshes the actor profile, so apply this bounded
+		# crowd-only override after the replacement request has been created.
+		_set_formal_exterior_crowd_recovery_enabled(npc_id, true)
+		return
+	_set_formal_exterior_crowd_recovery_enabled(npc_id, false)
+	_set_npc_state_without_signal(npc_id, {
+		"current_action": "idle",
+		"movement_target": "",
+		"movement_target_name": "",
+		"last_action_result": "movement_failed_formal_exterior_retry_start",
+		"last_action_failure_context": {"reason": "formal_exterior_retry_start_failed"},
+		"spatial_route_phase": "navigation_failed"
+	})
+	_refresh_npc_node(npc_id)
+	_emit_npc_state_changed(npc_id)
+
+
+func _set_formal_exterior_crowd_recovery_enabled(npc_id: String, enabled: bool) -> void:
+	var npc_node := get_node_or_null(_npc_nodes.get(npc_id, NodePath())) if _npc_nodes.has(npc_id) else null
+	if npc_node == null:
+		return
+	if npc_node.has_method("set_runtime_actor_collision_enabled"):
+		npc_node.set_runtime_actor_collision_enabled(not enabled, "formal_exterior_crowd_recovery" if enabled else "")
+	if npc_node.has_method("set_runtime_avoidance_enabled"):
+		npc_node.set_runtime_avoidance_enabled(not enabled, "formal_exterior_crowd_recovery" if enabled else "")
 
 
 func move_npc_to_formal_location(npc_id: String, building_id: String) -> bool:
@@ -2635,6 +2888,7 @@ func end_formal_workstation_action(
 		return {"ok": true, "active": false, "npc_id": npc_id, "reason": reason}
 	var session: Dictionary = _formal_workstation_action_sessions[npc_id]
 	_formal_workstation_action_sessions.erase(npc_id)
+	_set_formal_exterior_crowd_recovery_enabled(npc_id, false)
 	var keep_formal_resident := _default_formal_world_npcs.has(npc_id)
 	var should_restore_legacy := restore_legacy and not keep_formal_resident
 	var healing_target_npc_id := str(session.get("healing_target_npc_id", ""))
@@ -2924,7 +3178,9 @@ func move_npc_to_formal_healing_target(healer_npc_id: String, target_npc_id: Str
 				"physical_location_phase": "formal_healing_world_route"
 			}
 		},
-		{"healing_crowd_recovery": true} if crowd_recovery_active else {}
+		{
+			"healing_crowd_recovery": true,
+		} if crowd_recovery_active else {}
 	)
 	return {
 		"ok": moved,
@@ -3029,15 +3285,20 @@ func _set_healing_crowd_recovery_enabled(npc_id: String, enabled: bool) -> void:
 		npc_node.set_runtime_avoidance_enabled(not enabled, "formal_healing_crowd_recovery" if enabled else "")
 
 
-func _restore_healing_crowd_recovery_from_movement_context(npc_id: String, context: Dictionary) -> void:
+func _restore_assist_crowd_recovery_from_movement_context(npc_id: String, context: Dictionary) -> void:
 	var motion_options: Dictionary = context.get("motion_options", {}) if context.get("motion_options", {}) is Dictionary else {}
-	if not bool(motion_options.get("healing_crowd_recovery", false)):
-		return
-	_set_healing_crowd_recovery_enabled(npc_id, false)
-	if _formal_workstation_action_sessions.has(npc_id):
-		var session: Dictionary = _formal_workstation_action_sessions[npc_id]
-		session["healing_crowd_recovery_active"] = false
-		_formal_workstation_action_sessions[npc_id] = session
+	if bool(motion_options.get("healing_crowd_recovery", false)):
+		_set_healing_crowd_recovery_enabled(npc_id, false)
+		if _formal_workstation_action_sessions.has(npc_id):
+			var healing_session: Dictionary = _formal_workstation_action_sessions[npc_id]
+			healing_session["healing_crowd_recovery_active"] = false
+			_formal_workstation_action_sessions[npc_id] = healing_session
+	if bool(motion_options.get("exterior_service_crowd_recovery", false)):
+		_set_formal_exterior_crowd_recovery_enabled(npc_id, false)
+		if _formal_workstation_action_sessions.has(npc_id):
+			var exterior_session: Dictionary = _formal_workstation_action_sessions[npc_id]
+			exterior_session["service_crowd_recovery_active"] = false
+			_formal_workstation_action_sessions[npc_id] = exterior_session
 
 
 func is_formal_healing_approach_ready(healer_npc_id: String, target_npc_id: String) -> bool:
@@ -3320,54 +3581,22 @@ func sync_formal_dialogue_target(speaker_npc_id: String) -> Dictionary:
 	if not migration.is_empty():
 		_restore_formal_dialogue_target_actor(session, false)
 		session = _formal_dialogue_approach_sessions.get(speaker_npc_id, session)
-	var controller := get_node_or_null(STATION_LAYOUT_CONTROLLER_PATH)
-	var target_node := get_node_or_null(_npc_nodes[target_npc_id])
-	if (
-		controller == null
-		or target_node == null
-		or not controller.has_method("get_production_navigation_map_rid")
-		or not target_node.has_method("configure_navigation_motion")
-	):
-		return {"ok": false, "reason": "formal_dialogue_target_dependencies_missing"}
-	var target_position: Variant = null
-	if target_location_id == PLAZA_LOCATION_ID and controller.has_method("get_public_location_world_position"):
-		target_position = controller.get_public_location_world_position(PLAZA_LOCATION_ID)
-	elif controller.has_method("get_building_spatial_route"):
-		var target_route: Dictionary = controller.get_building_spatial_route(target_location_id)
-		target_position = target_route.get("interior_target_position")
-	var navigation_map: RID = controller.get_production_navigation_map_rid()
-	if not target_position is Vector3 or not navigation_map.is_valid():
-		return {"ok": false, "reason": "formal_dialogue_target_anchor_missing", "target_location_id": target_location_id}
-	var snapped_target := NavigationServer3D.map_get_closest_point(navigation_map, target_position)
-	var original_navigation_enabled := bool(target_node.is_navigation_motion_enabled()) if target_node.has_method("is_navigation_motion_enabled") else false
-	var original_navigation_map: RID = target_node.get_navigation_map() if target_node.has_method("get_navigation_map") else RID()
-	migration = {
-		"owned": true,
-		"source": "legacy_static_projection",
-		"original_position": target_node.global_position,
-		"original_navigation_enabled": original_navigation_enabled,
-		"original_navigation_map": original_navigation_map,
-		"original_spatial_route_phase": str(target_state.get("spatial_route_phase", "none")),
-		"original_physical_location_phase": str(target_state.get("physical_location_phase", "legacy_location")),
-		"projected_location_id": target_location_id
-	}
-	if not bool(target_node.configure_navigation_motion(true, navigation_map)):
-		return {"ok": false, "reason": "formal_dialogue_target_navigation_bind_failed"}
-	target_node.global_position = snapped_target
-	_set_npc_state_without_signal(target_npc_id, {
-		"spatial_route_phase": "formal_dialogue_target_ready",
-		"physical_location_phase": "formal_dialogue_target"
-	})
-	_refresh_npc_node(target_npc_id)
+	# The target is the destination, not a route payload. Its existing world actor
+	# already represents where it is standing, working, or resting. Projecting it to
+	# a semantic building anchor made GM dialogue look like the target teleported to
+	# the caller. Keep the target completely untouched and route only the speaker.
+	var target_position: Variant = get_npc_world_position(target_npc_id)
+	if not target_position is Vector3:
+		return {"ok": false, "reason": "formal_dialogue_target_world_position_missing"}
 	session["target_location_id"] = target_location_id
-	session["target_mode"] = "projected_static_actor"
-	session["target_migration"] = migration
+	session["target_mode"] = "existing_world_actor"
+	session["target_migration"] = {}
 	_formal_dialogue_approach_sessions[speaker_npc_id] = session
 	return {
 		"ok": true,
-		"target_mode": "projected_static_actor",
+		"target_mode": "existing_world_actor",
 		"target_location_id": target_location_id,
-		"target_world_position": snapped_target
+		"target_world_position": target_position
 	}
 
 
@@ -5106,14 +5335,28 @@ func apply_damage_to_npc(
 	_refresh_npc_node(npc_id)
 	_emit_npc_hp_changed(npc_id, hp_after, max_hp)
 	_emit_npc_state_changed(npc_id)
+	var damage_world_position: Variant = get_npc_world_position(npc_id)
 	WorldFeedbackPayload.emit_hp_change(
 		self,
 		"npc",
 		npc_id,
 		hp_before,
 		hp_after,
-		get_npc_world_position(npc_id)
+		damage_world_position
 	)
+	if hp_after < hp_before:
+		_emit_combat_audio_event({
+			"event_type": "actor_damaged",
+			"target_type": "npc",
+			"target_id": npc_id,
+			"source_type": "enemy" if bool(options.get("enemy_attack", false)) else "other",
+			"source_id": actor_id,
+			"damage": hp_before - hp_after,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"became_unconscious": became_unconscious,
+			"world_position": damage_world_position if damage_world_position is Vector3 else Vector3.ZERO,
+		})
 
 	var presentation_result := play_damage_presentation_event({
 		"ok": true,
@@ -5208,6 +5451,10 @@ func assist_unconscious_recovery(
 		"healing_assist",
 		healer_npc_id
 	)
+
+
+func get_assisted_recovery_hp_per_hour(medical_skill: int) -> float:
+	return _calculate_healing_hp_per_hour(medical_skill)
 
 
 func get_assisted_recovery_effective_seconds(
@@ -5317,6 +5564,117 @@ func increase_npc_skill(
 		"skill_points_gained": int(progression_result.get("skill_points_gained", 0)),
 		"unspent_skill_points": int(progression_result.get("unspent_skill_points", 0)),
 		"skill_experience": int(progression_result.get("skill_experience", 0)),
+		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD
+	}
+	if emit_world_feedback:
+		var feedback_entries: Array[Dictionary] = []
+		WorldFeedbackPayload.append_growth_entries(feedback_entries, result)
+		WorldFeedbackPayload.emit_npc(self, npc_id, "growth", feedback_entries)
+	return result
+
+
+func accumulate_npc_combat_skill_damage(
+	npc_id: String,
+	skill_name: String,
+	actual_damage: int,
+	damage_per_skill_point: int,
+	emit_world_feedback: bool = true
+) -> Dictionary:
+	if (
+		actual_damage <= 0
+		or damage_per_skill_point <= 0
+		or skill_name.is_empty()
+		or not WEAPON_SKILLS.has(skill_name)
+		or not _profiles.has(npc_id)
+	):
+		return {}
+
+	var profile: Dictionary = _profiles[npc_id]
+	var skills: Dictionary = normalize_skills(profile.get("skills", {}))
+	var skill_before := clampi(int(skills.get(skill_name, 0)), 0, 100)
+	var progression := _normalize_progression(profile.get("progression", {}))
+	var remainders: Dictionary = progression.get("combat_damage_remainders", {})
+	var remainder_before := maxi(0, int(remainders.get(skill_name, 0)))
+	if skill_before >= 100:
+		remainders[skill_name] = 0
+		progression["combat_damage_remainders"] = remainders
+		profile["progression"] = progression
+		_profiles[npc_id] = profile
+		return {
+			"npc_id": npc_id,
+			"skill_name": skill_name,
+			"amount": 0,
+			"actual_damage": actual_damage,
+			"damage_per_skill_point": damage_per_skill_point,
+			"damage_remainder_before": remainder_before,
+			"damage_remainder_after": 0,
+			"capped": true
+		}
+
+	var accumulated_damage := remainder_before + actual_damage
+	var requested_points := int(floor(
+		float(accumulated_damage) / float(damage_per_skill_point)
+	))
+	var remainder_after := accumulated_damage % damage_per_skill_point
+	var available_points := 100 - skill_before
+	var awarded_points := mini(requested_points, available_points)
+	if awarded_points >= available_points and available_points > 0:
+		# Reaching the cap discards surplus damage instead of banking hidden progress
+		# that could reappear if a save or debug tool later lowers the skill.
+		remainder_after = 0
+	remainders[skill_name] = remainder_after
+	progression["combat_damage_remainders"] = remainders
+	profile["progression"] = progression
+	_profiles[npc_id] = profile
+
+	var growth_result := {}
+	if awarded_points > 0:
+		growth_result = increase_npc_skill(
+			npc_id,
+			skill_name,
+			awarded_points,
+			emit_world_feedback
+		)
+	if growth_result.is_empty():
+		growth_result = {
+			"npc_id": npc_id,
+			"skill_name": skill_name,
+			"before": skill_before,
+			"after": skill_before,
+			"amount": 0,
+			"experience_gained": 0,
+			"skill_points_gained": 0
+		}
+	growth_result["actual_damage"] = actual_damage
+	growth_result["damage_per_skill_point"] = damage_per_skill_point
+	growth_result["damage_remainder_before"] = remainder_before
+	growth_result["damage_remainder_after"] = remainder_after
+	growth_result["requested_points"] = requested_points
+	return growth_result
+
+
+func increase_npc_total_experience(
+	npc_id: String,
+	amount: int,
+	emit_world_feedback: bool = true
+) -> Dictionary:
+	if amount <= 0 or not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var progression_result := _add_total_experience(profile, amount)
+	profile["progression"] = progression_result.get("progression", {})
+	_profiles[npc_id] = profile
+	_emit_npc_state_changed(npc_id)
+	var result := {
+		"npc_id": npc_id,
+		"skill_name": "",
+		"before": 0,
+		"after": 0,
+		"amount": 0,
+		"experience_gained": int(progression_result.get("experience_gained", 0)),
+		"total_experience": int(progression_result.get("total_experience", 0)),
+		"skill_points_gained": int(progression_result.get("skill_points_gained", 0)),
+		"unspent_skill_points": int(progression_result.get("unspent_skill_points", 0)),
 		"next_skill_point_xp": SKILL_POINT_EXPERIENCE_THRESHOLD
 	}
 	if emit_world_feedback:
@@ -6196,6 +6554,17 @@ func _normalize_progression(raw_progression: Variant) -> Dictionary:
 		normalized_skill_experience[skill_name] = maxi(0, int(skill_experience.get(skill_name, 0)))
 
 	var total_experience := maxi(0, int(source.get("total_experience", 0)))
+	var raw_combat_remainders: Dictionary = (
+		source.get("combat_damage_remainders", {})
+		if source.get("combat_damage_remainders", {}) is Dictionary
+		else {}
+	)
+	var combat_damage_remainders := {}
+	for skill_name in WEAPON_SKILLS:
+		combat_damage_remainders[skill_name] = maxi(
+			0,
+			int(raw_combat_remainders.get(skill_name, 0))
+		)
 	var current_level_experience_max := maxi(1, SKILL_POINT_EXPERIENCE_THRESHOLD)
 	return {
 		"total_experience": total_experience,
@@ -6204,7 +6573,8 @@ func _normalize_progression(raw_progression: Variant) -> Dictionary:
 		"current_level_experience_max": current_level_experience_max,
 		"unspent_skill_points": maxi(0, int(source.get("unspent_skill_points", source.get("skill_points", 0)))),
 		"spent_skill_points": maxi(0, int(source.get("spent_skill_points", 0))),
-		"skill_experience": normalized_skill_experience
+		"skill_experience": normalized_skill_experience,
+		"combat_damage_remainders": combat_damage_remainders
 	}
 
 
@@ -6240,6 +6610,26 @@ func _add_growth_experience(profile: Dictionary, skill_name: String, experience_
 		"skill_points_gained": points_gained,
 		"unspent_skill_points": int(progression.get("unspent_skill_points", 0)),
 		"skill_experience": int(skill_experience.get(skill_name, 0))
+	}
+
+
+func _add_total_experience(profile: Dictionary, experience_amount: int) -> Dictionary:
+	var progression := _normalize_progression(profile.get("progression", {}))
+	var gained := maxi(0, experience_amount)
+	var total_before := int(progression.get("total_experience", 0))
+	var total_after := total_before + gained
+	var points_before := int(floor(float(total_before) / float(SKILL_POINT_EXPERIENCE_THRESHOLD)))
+	var points_after := int(floor(float(total_after) / float(SKILL_POINT_EXPERIENCE_THRESHOLD)))
+	var points_gained := maxi(0, points_after - points_before)
+	progression["total_experience"] = total_after
+	progression["unspent_skill_points"] = int(progression.get("unspent_skill_points", 0)) + points_gained
+	progression["next_skill_point_xp"] = SKILL_POINT_EXPERIENCE_THRESHOLD
+	return {
+		"progression": progression,
+		"experience_gained": gained,
+		"total_experience": total_after,
+		"skill_points_gained": points_gained,
+		"unspent_skill_points": int(progression.get("unspent_skill_points", 0))
 	}
 
 
@@ -6620,7 +7010,7 @@ func _advance_proactive_talk_presentations(real_delta_seconds: float) -> void:
 			_clear_proactive_talk(npc_id, "actor_unavailable")
 		else:
 			_proactive_talk_presentation_sessions.erase(npc_id)
-	if _proactive_talk_presentation_sessions.is_empty() or _is_gameplay_paused_for_presentation():
+	if _proactive_talk_presentation_sessions.is_empty():
 		return
 	var safe_delta := maxf(real_delta_seconds, 0.0)
 	for raw_npc_id in _proactive_talk_presentation_sessions.keys():
@@ -6633,8 +7023,9 @@ func _advance_proactive_talk_presentations(real_delta_seconds: float) -> void:
 			session["remaining_real_seconds"] = remaining
 			_proactive_talk_presentation_sessions[npc_id] = session
 			continue
-		# One process update may emit at most one gesture. Large frames and resume
-		# edges deliberately discard overflow instead of replaying accumulated waves.
+		# One process update may emit at most one gesture. Large frames deliberately
+		# discard overflow instead of replaying accumulated waves. This presentation
+		# clock intentionally keeps advancing during gameplay pause.
 		session["remaining_real_seconds"] = _proactive_talk_gesture_interval_real_seconds
 		_proactive_talk_presentation_sessions[npc_id] = session
 		_emit_proactive_talk_gesture(npc_id)
@@ -6890,6 +7281,12 @@ func _emit_npc_unconscious(npc_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_unconscious"):
 		event_bus.npc_unconscious.emit(npc_id)
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
 
 
 func _emit_npc_revived(npc_id: String) -> void:
@@ -7290,7 +7687,7 @@ func _on_npc_movement_request_failed(npc_id: String, _target_id: String, reason:
 		return
 	var failed_context: Dictionary = _movement_arrival_contexts.get(npc_id, {})
 	_movement_arrival_contexts.erase(npc_id)
-	_restore_healing_crowd_recovery_from_movement_context(npc_id, failed_context)
+	_restore_assist_crowd_recovery_from_movement_context(npc_id, failed_context)
 	_set_npc_state_without_signal(npc_id, {
 		"current_action": "idle",
 		"movement_target": "",
@@ -7551,7 +7948,7 @@ func _on_building_interior_route_arrived(npc_id: String, target_id: String) -> v
 func _on_custom_movement_arrived(npc_id: String, target_id: String) -> void:
 	var context: Dictionary = _movement_arrival_contexts.get(npc_id, {})
 	_movement_arrival_contexts.erase(npc_id)
-	_restore_healing_crowd_recovery_from_movement_context(npc_id, context)
+	_restore_assist_crowd_recovery_from_movement_context(npc_id, context)
 
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var previous_state: Dictionary = get_npc_state(npc_id)

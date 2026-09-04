@@ -1,0 +1,73 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/MenuCoverPreview.gd" id="1_script"]
+
+[sub_resource type="Environment" id="Environment_cover"]
+background_mode = 1
+background_color = Color(0.027, 0.039, 0.055, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.29, 0.37, 0.5, 1)
+ambient_light_energy = 0.72
+reflected_light_source = 2
+tonemap_mode = 2
+tonemap_exposure = 1.08
+fog_enabled = true
+fog_light_color = Color(0.22, 0.28, 0.34, 1)
+fog_light_energy = 0.48
+fog_density = 0.006
+fog_height = 0.0
+fog_height_density = 0.075
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.008
+volumetric_fog_albedo = Color(0.42, 0.48, 0.55, 1)
+volumetric_fog_emission = Color(0.015, 0.018, 0.024, 1)
+volumetric_fog_length = 72.0
+volumetric_fog_detail_spread = 2.4
+
+[sub_resource type="StandardMaterial3D" id="Material_ground"]
+albedo_color = Color(0.12, 0.145, 0.13, 1)
+roughness = 0.94
+
+[sub_resource type="PlaneMesh" id="Plane_ground"]
+material = SubResource("Material_ground")
+size = Vector2(88, 72)
+
+[node name="MenuCoverPreview" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_cover")
+
+[node name="MoonKey" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-47, -28, 0)
+light_color = Color(0.49, 0.62, 0.86, 1)
+light_energy = 1.08
+shadow_enabled = true
+directional_shadow_max_distance = 70.0
+directional_shadow_blend_splits = true
+
+[node name="WarmRim" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-33, 148, 0)
+light_color = Color(1, 0.53, 0.24, 1)
+light_energy = 0.54
+shadow_enabled = false
+
+[node name="CourtyardKey" type="OmniLight3D" parent="."]
+position = Vector3(8.2, 6.4, 4.2)
+light_color = Color(1, 0.47, 0.19, 1)
+light_energy = 2.2
+shadow_enabled = true
+omni_range = 19.0
+omni_attenuation = 1.35
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("Plane_ground")
+
+[node name="Set" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.5, 12.2, 25.5)
+current = true
+fov = 38.0
+near = 0.1
+far = 120.0

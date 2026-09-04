@@ -144,6 +144,15 @@ func get_building_interaction_ray_hit(ray_origin: Vector3, ray_end: Vector3) -> 
 	}
 
 
+func get_world_feedback_anchor_position() -> Vector3:
+	var local_anchor := Vector3(
+		interaction_bounds_center.x,
+		interaction_bounds_center.y + interaction_bounds_size.y * 0.5 + 0.55,
+		interaction_bounds_center.z
+	)
+	return to_global(local_anchor)
+
+
 func get_art_slice_snapshot() -> Dictionary:
 	var ambient_fx := get_node_or_null("Interior/Furniture/ForgeCore/AmbientFX")
 	var ambient_snapshot: Dictionary = {}

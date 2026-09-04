@@ -84,6 +84,15 @@ func get_view_for_deployment(deployment_id: String) -> Node3D:
 	return view as Node3D if is_instance_valid(view) else null
 
 
+func get_deployment_feedback_anchor_position(deployment_id: String) -> Variant:
+	var view := get_view_for_deployment(deployment_id)
+	if view != null and view.has_method("get_world_feedback_anchor_position"):
+		var anchor: Variant = view.call("get_world_feedback_anchor_position")
+		if anchor is Vector3:
+			return anchor
+	return null
+
+
 func get_ruin_view_for_slot(slot_id: String) -> Node3D:
 	var view: Variant = _ruin_views.get(slot_id)
 	return view as Node3D if is_instance_valid(view) else null

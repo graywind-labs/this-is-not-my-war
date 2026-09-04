@@ -6,6 +6,7 @@ const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
+const DEFENSE_DEVICE_PRESENTER_PATH := "/root/Main/WorldRoot/Station/DefenseDevices"
 const PLAZA_LOCATION_ID := "plaza"
 const GUARD_OFFICER_ID := "guard_officer"
 const DEPRECATED_FORMAL_INVENTORY_IDS: Array[String] = [
@@ -285,6 +286,15 @@ func get_deployment(deployment_id: String) -> Dictionary:
 	return _make_deployment_snapshot(_deployments.get(deployment_id, {}))
 
 
+func get_deployment_feedback_anchor_position(deployment_id: String) -> Variant:
+	var presenter := get_node_or_null(DEFENSE_DEVICE_PRESENTER_PATH)
+	if presenter != null and presenter.has_method("get_deployment_feedback_anchor_position"):
+		var anchor: Variant = presenter.call("get_deployment_feedback_anchor_position", deployment_id)
+		if anchor is Vector3:
+			return anchor
+	return null
+
+
 func get_deployment_for_slot(slot_id: String) -> Dictionary:
 	return get_deployment(str(_slot_occupancy.get(slot_id, "")))
 
@@ -396,10 +406,14 @@ func apply_damage_to_device(
 	if str(deployment.get("status", "")) != "active":
 		return {}
 	var hp_before := maxi(0, int(deployment.get("hp", 0)))
-	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(context)
-	var prefer_feedback_position := feedback_world_position is Vector3
-	if not prefer_feedback_position:
-		feedback_world_position = _dict_to_vector3(_make_deployment_snapshot(deployment).get("position", {}))
+	var impact_world_position: Variant = WorldFeedbackPayload.find_world_position(context)
+	var has_explicit_impact_position := impact_world_position is Vector3
+	if not has_explicit_impact_position:
+		impact_world_position = _dict_to_vector3(_make_deployment_snapshot(deployment).get("position", {}))
+	var feedback_world_position: Variant = get_deployment_feedback_anchor_position(deployment_id)
+	var uses_formal_feedback_anchor := feedback_world_position is Vector3
+	if not uses_formal_feedback_anchor:
+		feedback_world_position = impact_world_position
 	var resolved_damage := maxi(0, damage)
 	var hp_after := maxi(0, hp_before - resolved_damage)
 	var destroyed := hp_after <= 0
@@ -431,9 +445,22 @@ func apply_damage_to_device(
 		hp_before,
 		hp_after,
 		feedback_world_position,
-		prefer_feedback_position,
-		0.25 if prefer_feedback_position else WorldFeedbackPayload.DEFENSE_DEVICE_ANCHOR_HEIGHT
+		uses_formal_feedback_anchor or has_explicit_impact_position,
+		0.0 if uses_formal_feedback_anchor else (0.25 if has_explicit_impact_position else WorldFeedbackPayload.DEFENSE_DEVICE_ANCHOR_HEIGHT)
 	)
+	if hp_after < hp_before:
+		_emit_combat_audio_event({
+			"event_type": "structure_damaged",
+			"target_type": "defense_device",
+			"target_id": deployment_id,
+			"device_id": str(deployment.get("device_id", "")),
+			"source_id": str(context.get("attacker_id", "")),
+			"damage": hp_before - hp_after,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"destroyed": destroyed,
+			"world_position": impact_world_position,
+		})
 	return {
 		"ok": true,
 		"deployment_id": deployment_id,
@@ -1399,6 +1426,12 @@ func _emit_state_changed() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("defense_device_state_changed"):
 		event_bus.defense_device_state_changed.emit(get_state_snapshot())
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
 
 
 func _emit_action_resolved(deployment_id: String, action_result: Dictionary) -> void:

@@ -194,6 +194,67 @@ func get_horse(horse_id: String) -> Dictionary:
 	return get_horse_snapshot(horse_id)
 
 
+func get_horse_care_rate_snapshot(horse_id: String) -> Dictionary:
+	if not _horses.has(horse_id):
+		return {}
+	var horse: Dictionary = _horses[horse_id]
+	var caretaker := _get_effective_caretaker_snapshot()
+	var result := {
+		"active": false,
+		"caretaker_npc_id": str(caretaker.get("npc_id", "")),
+		"caretaker_skill": float(caretaker.get("skill", 0.0)),
+		"rates_per_game_second": {},
+	}
+	if (
+		not bool(caretaker.get("active", false))
+		or not bool(horse.get("alive", true))
+		or str(horse.get("location", LOCATION_STABLE)) != LOCATION_STABLE
+	):
+		return result
+	var skill_factor := clampf(float(caretaker.get("skill", 0.0)) / 100.0, 0.0, 1.0)
+	if skill_factor <= 0.0:
+		return result
+	result["active"] = true
+	var rates: Dictionary = result["rates_per_game_second"]
+	var growth := clampf(float(horse.get("growth", 0.0)), 0.0, 1.0)
+	var growth_rate := skill_factor / (maxf(1.0, _balance_float("base_full_growth_care_minutes")) * 60.0)
+	if growth + 0.0001 < 1.0:
+		rates["growth"] = growth_rate
+		rates["base_hp"] = growth_rate * maxf(
+			0.0,
+			_balance_float("adult_natural_max_hp") - _balance_float("foal_natural_max_hp")
+		)
+
+	var natural_max_hp := _calculate_natural_max_hp(growth)
+	var natural_hp := float(horse.get("hp", 0.0)) - float(horse.get("care_bonus_hp", 0.0))
+	var effective_bonus_cap := maxf(
+		float(horse.get("care_bonus_cap", 0.0)),
+		_balance_float("care_skill_100_bonus_hp_cap") * skill_factor
+	)
+	if (
+		natural_hp + 0.0001 >= natural_max_hp
+		and float(horse.get("care_bonus_hp", 0.0)) + 0.0001 < effective_bonus_cap
+	):
+		rates["extra_hp"] = _balance_float("care_skill_100_bonus_hp_cap") * growth_rate
+
+	if _get_birth_block_reason().is_empty():
+		var candidate_ids := _get_stable_breeding_candidate_ids()
+		var probability_cap := clampf(_balance_float("birth_probability_cap"), 0.0, 1.0)
+		if (
+			candidate_ids.size() >= 2
+			and candidate_ids.has(horse_id)
+			and float(horse.get("breeding_probability", 0.0)) + 0.0000001 < probability_cap
+		):
+			rates["breeding_probability"] = (
+				_balance_float("birth_probability_gain_per_care_minute")
+				* skill_factor
+				* maxf(1.0, float(caretaker.get("level_factor", 1.0)))
+				/ 60.0
+			)
+	result["rates_per_game_second"] = rates
+	return result
+
+
 func get_pending_birth_snapshot() -> Dictionary:
 	if _pending_birth.is_empty():
 		return {}
@@ -294,6 +355,14 @@ func get_horse_template_snapshot(template_id: String) -> Dictionary:
 
 
 func get_horse_presentation_snapshot(horse_id: String) -> Dictionary:
+	var horse: Dictionary = _horses.get(horse_id, {})
+	if str(horse.get("location", "")) == LOCATION_RIDDEN:
+		var rider_npc_id := str(horse.get("ridden_by_npc_id", "")).strip_edges()
+		var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+		if not rider_npc_id.is_empty() and npc_system != null and npc_system.has_method("get_npc_mount_portrait_snapshot"):
+			var mounted_snapshot: Dictionary = npc_system.get_npc_mount_portrait_snapshot(rider_npc_id, horse_id)
+			if not mounted_snapshot.is_empty():
+				return mounted_snapshot
 	for raw_presenter in get_tree().get_nodes_in_group(HORSE_PRESENTATION_GROUP):
 		var presenter := raw_presenter as Node
 		if presenter != null and presenter.has_method("get_horse_presentation_snapshot"):
@@ -637,6 +706,14 @@ func apply_damage_to_horse(horse_id: String, damage: float, context: Dictionary 
 		float(_horses.get(horse_id, {}).get("hp", 0.0)),
 		feedback_world_position
 	)
+	if died:
+		_emit_combat_audio_event({
+			"event_type": "horse_died",
+			"target_type": "horse",
+			"target_id": horse_id,
+			"source_id": str(context.get("enemy_id", context.get("actor_id", ""))),
+			"world_position": feedback_world_position,
+		})
 	return {
 		"ok": true,
 		"horse_id": horse_id,
@@ -1424,8 +1501,13 @@ func ensure_wartime_mount_route(npc_id: String, reason: String = "wartime_mount_
 	var rider_route_active := (
 		npc_system.has_method("is_npc_world_movement_active")
 		and bool(npc_system.is_npc_world_movement_active(npc_id))
-		and str(state.get("movement_target", "")) == STABLE_BUILDING_ID
 	)
+	if rider_route_active and npc_system.has_method("get_npc_world_movement_progress"):
+		var rider_motion: Dictionary = npc_system.get_npc_world_movement_progress(npc_id)
+		rider_route_active = (
+			bool(rider_motion.get("active", false))
+			and str(rider_motion.get("request_id", "")) == STABLE_BUILDING_ID
+		)
 	if rider_route_active:
 		return {"ok": true, "already_active": true, "reason": "rider_route_active", "npc_id": npc_id, "horse_id": horse_id}
 	var now_msec := Time.get_ticks_msec()
@@ -2394,6 +2476,7 @@ func _make_public_horse_snapshot(horse: Dictionary) -> Dictionary:
 	snapshot["stable_capacity"] = get_stable_capacity()
 	snapshot["stable_occupied_slots"] = _get_alive_horse_count()
 	snapshot["stable_full"] = _is_stable_full()
+	snapshot["care_rate"] = get_horse_care_rate_snapshot(horse_id) if not horse_id.is_empty() else {}
 	return snapshot
 
 
@@ -2731,6 +2814,12 @@ func _emit_horse_state_changed(horse_id: String) -> void:
 	var event_bus := _get_event_bus()
 	if event_bus != null and event_bus.has_signal("horse_state_changed"):
 		event_bus.horse_state_changed.emit(horse_id)
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
 
 
 func _emit_horse_assignment_changed(horse_id: String, npc_id: String) -> void:

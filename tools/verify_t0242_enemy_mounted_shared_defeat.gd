@@ -108,6 +108,9 @@ func _init() -> void:
 		return
 	var elapsed := float(defeat.get("defeat_elapsed", 0.0))
 	var linger := float(defeat.get("corpse_linger_seconds", 0.0))
+	if not is_equal_approx(linger, 8.0):
+		_fail("Mounted corpse linger duration is not the shared 8-second contract: %s" % str(defeat))
+		return
 	defeat_node.debug_advance_defeat(maxf(0.0, linger - elapsed - 0.02))
 	defeat = defeat_node.debug_get_snapshot()
 	if str(defeat.get("defeat_phase", "")) != "bodies_lingering" or float(defeat.get("horse_position_drift", INF)) > POSITION_TOLERANCE:

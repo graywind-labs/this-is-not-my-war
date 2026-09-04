@@ -31,6 +31,7 @@ var _recipes: Dictionary = {}
 var _recipe_ids_by_building: Dictionary = {}
 var _projects: Dictionary = {}
 var _pending_outputs: Dictionary = {}
+var _latest_pending_output_item_ids: Dictionary = {}
 var _active_cycles: Dictionary = {}
 var _stage_commit_locks: Dictionary = {}
 var _pending_collection_locks: Dictionary = {}
@@ -47,6 +48,7 @@ func initialize() -> void:
 	_recipe_ids_by_building.clear()
 	_projects.clear()
 	_pending_outputs.clear()
+	_latest_pending_output_item_ids.clear()
 	_active_cycles.clear()
 	_stage_commit_locks.clear()
 	_pending_collection_locks.clear()
@@ -58,6 +60,7 @@ func initialize() -> void:
 		_recipe_ids_by_building[building_id] = []
 		_projects[building_id] = _make_empty_project(building_id)
 		_pending_outputs[building_id] = {}
+		_latest_pending_output_item_ids[building_id] = ""
 		_active_cycles[building_id] = {}
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -186,6 +189,26 @@ func get_pending_output_total(building_id: String) -> int:
 	return total
 
 
+func get_latest_pending_output_item_id(building_id: String) -> String:
+	var item_id := str(_latest_pending_output_item_ids.get(building_id, ""))
+	if item_id.is_empty() or int(get_pending_outputs(building_id).get(item_id, 0)) <= 0:
+		return ""
+	return item_id
+
+
+func get_latest_pending_output_entry(building_id: String) -> Dictionary:
+	var item_id := get_latest_pending_output_item_id(building_id)
+	if item_id.is_empty():
+		return {}
+	var presentation := get_output_item_presentation(item_id)
+	return {
+		"building_id": building_id,
+		"item_id": item_id,
+		"name": str(presentation.get("name", item_id)),
+		"amount": maxi(0, int(get_pending_outputs(building_id).get(item_id, 0)))
+	}
+
+
 func get_pending_output_entries(building_id: String) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	var pending := get_pending_outputs(building_id)
@@ -206,6 +229,38 @@ func get_pending_output_entries(building_id: String) -> Array[Dictionary]:
 		})
 	entries.sort_custom(_compare_pending_entries)
 	return entries
+
+
+func debug_complete_product(building_id: String, recipe_id: String) -> Dictionary:
+	if not _pending_outputs.has(building_id):
+		return {"ok": false, "reason": "unsupported_building", "building_id": building_id, "recipe_id": recipe_id}
+	var recipe := get_recipe(recipe_id)
+	if recipe.is_empty():
+		return {"ok": false, "reason": "unknown_recipe", "building_id": building_id, "recipe_id": recipe_id}
+	if not bool(recipe.get("available", true)):
+		return {"ok": false, "reason": "recipe_unavailable", "building_id": building_id, "recipe_id": recipe_id}
+	if str(recipe.get("building_id", "")) != building_id:
+		return {"ok": false, "reason": "recipe_building_mismatch", "building_id": building_id, "recipe_id": recipe_id}
+	var item_id := str(recipe.get("output_item_id", ""))
+	var amount := maxi(1, int(recipe.get("output_amount", 1)))
+	if item_id.is_empty():
+		return {"ok": false, "reason": "recipe_output_missing", "building_id": building_id, "recipe_id": recipe_id}
+	var pending: Dictionary = _pending_outputs.get(building_id, {})
+	pending[item_id] = int(pending.get(item_id, 0)) + amount
+	_pending_outputs[building_id] = pending
+	_latest_pending_output_item_ids[building_id] = item_id
+	_publish_special_state(building_id)
+	pending_outputs_changed.emit(building_id, get_pending_outputs(building_id))
+	return {
+		"ok": true,
+		"reason": "debug_product_completed",
+		"building_id": building_id,
+		"recipe_id": recipe_id,
+		"item_id": item_id,
+		"amount": amount,
+		"pending_outputs": get_pending_outputs(building_id),
+		"latest_pending_output": get_latest_pending_output_entry(building_id),
+	}
 
 
 func get_output_item_presentation(item_id: String) -> Dictionary:
@@ -289,6 +344,7 @@ func collect_pending_outputs(building_id: String) -> Dictionary:
 		else:
 			remaining[item_id] = next_amount
 	_pending_outputs[building_id] = remaining
+	_latest_pending_output_item_ids[building_id] = ""
 	_pending_collection_locks[building_id] = false
 	var snapshot := get_project_snapshot(building_id)
 	_publish_special_state(building_id)
@@ -592,6 +648,7 @@ func complete_stage(
 		var pending: Dictionary = _pending_outputs.get(building_id, {})
 		pending[output_item_id] = int(pending.get(output_item_id, 0)) + output_amount
 		_pending_outputs[building_id] = pending
+		_latest_pending_output_item_ids[building_id] = output_item_id
 
 	var updated_project := project.duplicate(true)
 	updated_project["completed_stages"] = 0 if product_completed else completed_stages + 1
@@ -660,6 +717,7 @@ func debug_get_snapshot() -> Dictionary:
 		"recipes": recipes_snapshot,
 		"projects": get_all_project_snapshots(),
 		"pending_outputs": _pending_outputs.duplicate(true),
+		"latest_pending_output_item_ids": _latest_pending_output_item_ids.duplicate(true),
 		"active_cycles": _active_cycles.duplicate(true),
 		"stage_commit_locks": _stage_commit_locks.duplicate(true),
 		"pending_collection_locks": _pending_collection_locks.duplicate(true),

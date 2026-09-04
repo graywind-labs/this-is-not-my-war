@@ -1,0 +1,136 @@
+{
+  "schema_version": "world_audio_v1",
+  "night_start_time": [18, 0],
+  "night_end_time": [6, 0],
+  "dawn_start_time": [5, 0],
+  "dawn_end_time": [8, 0],
+  "global_bed_zoom_mix": {
+    "near_distance": 20.0,
+    "far_distance": 64.0,
+    "near_gain_linear": 1.0,
+    "far_gain_linear": 0.3,
+    "response_curve": 1.0
+  },
+  "music": {
+    "gameplay_asset_id": "music_day_night",
+    "battle_asset_id": "music_battle",
+    "menu_asset_id": "music_menu",
+    "crossfade_seconds": 2.0,
+    "menu_integration": "deferred_until_start_menu_exists"
+  },
+  "loop_emitters": [
+    {
+      "id": "day_station_bed",
+      "asset_id": "sfx_ambience_day_loop",
+      "mode": "day",
+      "scope": "global_zoom",
+      "start_offset_seconds": 0.0
+    },
+    {
+      "id": "night_station_bed",
+      "asset_id": "sfx_ambience_night_loop",
+      "mode": "night",
+      "scope": "global_zoom",
+      "start_offset_seconds": 0.0
+    },
+    {
+      "id": "night_insects_west_grass",
+      "asset_id": "sfx_ambience_night_insects_local_loop_01",
+      "mode": "night_staggered",
+      "position": [-48.0, 0.35, 8.0],
+      "stagger_seconds": 0.5,
+      "start_offset_seconds": 1.7
+    },
+    {
+      "id": "night_insects_east_grass",
+      "asset_id": "sfx_ambience_night_insects_local_loop_02",
+      "mode": "night_staggered",
+      "position": [48.0, 0.35, 4.0],
+      "stagger_seconds": 3.5,
+      "start_offset_seconds": 11.0
+    },
+    {
+      "id": "night_insects_south_grass",
+      "asset_id": "sfx_ambience_night_insects_local_loop_03",
+      "mode": "night_staggered",
+      "position": [-12.0, 0.35, 53.0],
+      "stagger_seconds": 7.0,
+      "start_offset_seconds": 4.2
+    },
+    {
+      "id": "river_north_bank",
+      "asset_id": "sfx_ambience_river_local_loop",
+      "mode": "always",
+      "position": [-95.0, -0.8, -36.0],
+      "start_offset_seconds": 0.0
+    },
+    {
+      "id": "river_south_bank",
+      "asset_id": "sfx_ambience_river_local_loop",
+      "mode": "always",
+      "position": [-94.0, -0.8, 45.0],
+      "start_offset_seconds": 27.0
+    }
+  ],
+  "random_groups": [
+    {
+      "id": "dawn_rooster",
+      "period": "dawn",
+      "initial_delay_range_seconds": [8.0, 24.0],
+      "gap_range_seconds": [55.0, 110.0],
+      "emitters": [
+        {
+          "id": "rooster_stable",
+          "asset_id": "sfx_ambience_dawn_rooster",
+          "position": [31.0, 1.2, -23.0]
+        },
+        {
+          "id": "rooster_dining_hall",
+          "asset_id": "sfx_ambience_dawn_rooster",
+          "position": [34.0, 1.2, -3.0]
+        }
+      ]
+    },
+    {
+      "id": "day_birds",
+      "period": "day",
+      "initial_delay_range_seconds": [10.0, 28.0],
+      "gap_range_seconds": [22.0, 48.0],
+      "emitters": [
+        {
+          "id": "bird_west_tree_line",
+          "asset_id": "sfx_ambience_day_bird_01",
+          "position": [-55.0, 7.5, 20.0]
+        },
+        {
+          "id": "bird_east_tree_line",
+          "asset_id": "sfx_ambience_day_bird_02",
+          "position": [58.0, 8.0, 16.0]
+        },
+        {
+          "id": "bird_rear_tree_line",
+          "asset_id": "sfx_ambience_day_bird_03",
+          "position": [-18.0, 7.0, -58.0]
+        }
+      ]
+    },
+    {
+      "id": "night_owl",
+      "period": "night",
+      "initial_delay_range_seconds": [20.0, 55.0],
+      "gap_range_seconds": [75.0, 155.0],
+      "emitters": [
+        {
+          "id": "owl_front_forest",
+          "asset_id": "sfx_ambience_night_owl",
+          "position": [38.0, 7.0, 70.0]
+        },
+        {
+          "id": "owl_rear_forest",
+          "asset_id": "sfx_ambience_night_owl",
+          "position": [-38.0, 7.0, -70.0]
+        }
+      ]
+    }
+  ]
+}

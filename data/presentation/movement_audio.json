@@ -1,0 +1,13 @@
+{
+  "schema_version": "movement_audio_v1",
+  "source_height_m": 0.15,
+  "horse_source_height_m": 0.8,
+  "actual_run_speed_margin_mps": 0.05,
+  "horse_walk_speed_mps": 3.2,
+  "enemy_actual_movement_min_speed_mps": 0.05,
+  "max_enemy_run_loops": 6,
+  "npc_run_asset_id": "sfx_foley_run_unified_loop",
+  "horse_run_asset_id": "sfx_horse_run",
+  "excluded_movement": ["npc_walk", "horse_walk", "horse_trot", "enemy_stationary"],
+  "stop_mode": "immediate"
+}

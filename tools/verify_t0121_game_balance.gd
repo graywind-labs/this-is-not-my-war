@@ -193,10 +193,10 @@ func _verify_combat_support(defense_device_system: Node, piety_system: Node) -> 
 	var meteor: Dictionary = piety_system.get_meteor_config()
 	if (
 		not is_equal_approx(float(piety_snapshot.get("max_piety", 0.0)), 100.0)
-		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 3.0)
+		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 2.5)
 		or int(meteor.get("impact_max_targets", 0)) != 12
 	):
-		return _fail("Piety must use 100 cap, three per prayer-hour, and 12 impact targets")
+		return _fail("Piety must use 100 cap, 2.5 base prayer rate, and 12 impact targets")
 	return true
 
 

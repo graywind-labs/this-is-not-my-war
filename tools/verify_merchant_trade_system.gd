@@ -68,7 +68,6 @@ func _init() -> void:
 		return
 	var wagon := root.get_node_or_null("Main/WorldRoot/DailyMerchantWagon")
 	var click_shape := wagon.get_node_or_null("TradeBubble/TradeBubbleArea/CollisionShape3D") as CollisionShape3D if wagon != null else null
-	var bubble_label := wagon.get_node_or_null("TradeBubble/Label3D") as Label3D if wagon != null else null
 	var trade_marker := wagon.get_node_or_null("TradeBubble/Marker") as Sprite3D if wagon != null else null
 	var cargo_bed := wagon.get_node_or_null("VisualRoot/LoadedCargoBed") if wagon != null else null
 	var axles := wagon.get_node_or_null("VisualRoot/Chassis/Axles") if wagon != null else null
@@ -76,8 +75,11 @@ func _init() -> void:
 	var left_horse := wagon.get_node_or_null("VisualRoot/Horses/LeftHorse") as Node3D if wagon != null else null
 	var right_horse := wagon.get_node_or_null("VisualRoot/Horses/RightHorse") as Node3D if wagon != null else null
 	var driver_art := wagon.get_node_or_null("VisualRoot/DriverSeat/MerchantChibiArtView") if wagon != null else null
-	if click_shape == null or click_shape.disabled or bubble_label == null or bubble_label.text != "交易" or trade_marker == null:
+	if click_shape == null or click_shape.disabled or trade_marker == null:
 		_fail("Physical wagon arrival did not enable its trade bubble")
+		return
+	if wagon.get_node_or_null("TradeBubble/Label3D") != null or trade_marker.pixel_size < 0.0089:
+		_fail("Trade marker did not remove its text or enlarge the money-bag icon")
 		return
 	if cargo_bed == null or cargo_bed.get_child_count() < 18:
 		_fail("Merchant wagon cargo bed is not visibly loaded")

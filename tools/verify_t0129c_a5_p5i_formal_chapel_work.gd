@@ -147,10 +147,16 @@ func _init() -> void:
 	action_system._on_logical_time_tick(600.0, 1.0)
 	var generated_after_mass_tick: Dictionary = piety_system.get_piety_snapshot().get("generated_by_npc", {})
 	if (
-		float(generated_after_mass_tick.get(LEADER_ID, 0.0)) <= float(generated_before_mass_tick.get(LEADER_ID, 0.0))
-		or float(generated_after_mass_tick.get(PRAYER_ID, 0.0)) <= float(generated_before_mass_tick.get(PRAYER_ID, 0.0))
+		not is_equal_approx(
+			float(generated_after_mass_tick.get(LEADER_ID, 0.0)) - float(generated_before_mass_tick.get(LEADER_ID, 0.0)),
+			5.0 / 6.0
+		)
+		or not is_equal_approx(
+			float(generated_after_mass_tick.get(PRAYER_ID, 0.0)) - float(generated_before_mass_tick.get(PRAYER_ID, 0.0)),
+			5.0 / 6.0
+		)
 	):
-		_fail("Active leader and attendee did not both contribute authoritative piety")
+		_fail("Active leader and attendee did not each contribute 5 piety per hour")
 		return
 
 	var current_hour := int(root.get_node("GameState").current_hour)

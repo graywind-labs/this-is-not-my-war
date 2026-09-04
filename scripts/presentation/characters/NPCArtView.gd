@@ -340,6 +340,9 @@ func debug_get_snapshot() -> Dictionary:
 		"vehicle_pose_applied": _vehicle_pose_applied,
 		"damage_flash_remaining": _damage_flash_remaining,
 		"temporary_presentation_state": _transient_state,
+		"temporary_presentation_remaining_seconds": _transient_remaining,
+		"animation_paused": _animation_paused,
+		"pause_exempt_dialogue_presentation_action": _transient_state == "talk",
 		"last_temporary_presentation_event_id": _last_temporary_presentation_event_id,
 		"temporary_presentation_event_count": _temporary_presentation_event_count,
 		"fall_feedback_mode": "animated_fall_with_physics_impulse",
@@ -361,13 +364,17 @@ func _process(delta: float) -> void:
 			return
 		_update_combat_feedback(combat_delta)
 		return
-	if gameplay_paused != _animation_paused:
-		_animation_paused = gameplay_paused
-		_animation_tree.active = not gameplay_paused
-		if not gameplay_paused:
+	var pause_exempt_talk_gesture := gameplay_paused and _transient_state == "talk"
+	var should_pause_animation := gameplay_paused and not pause_exempt_talk_gesture
+	if should_pause_animation != _animation_paused:
+		_animation_paused = should_pause_animation
+		_animation_tree.active = not should_pause_animation
+		if not should_pause_animation:
 			_transition_to(_desired_state, true)
-	_sync_animation_speed(gameplay_paused)
+	_sync_animation_speed(should_pause_animation)
 	if gameplay_paused:
+		if pause_exempt_talk_gesture:
+			_advance_temporary_presentation(maxf(0.0, delta))
 		return
 	_update_combat_feedback(combat_delta)
 	_character_pivot.rotation.y = lerp_angle(
@@ -375,11 +382,19 @@ func _process(delta: float) -> void:
 		_target_yaw,
 		clampf(delta / maxf(0.01, facing_turn_speed), 0.0, 1.0)
 	)
-	if not _transient_state.is_empty() and _transient_remaining > 0.0:
-		_transient_remaining = maxf(0.0, _transient_remaining - combat_delta)
-		if is_zero_approx(_transient_remaining):
-			_transient_state = ""
-			_apply_profile_state(false)
+	_advance_temporary_presentation(combat_delta)
+
+
+func _advance_temporary_presentation(delta: float) -> void:
+	if _transient_state.is_empty() or _transient_remaining <= 0.0:
+		return
+	_transient_remaining = maxf(0.0, _transient_remaining - maxf(0.0, delta))
+	if not is_zero_approx(_transient_remaining):
+		return
+	_transient_state = ""
+	_animation_paused = _is_gameplay_paused()
+	_animation_tree.active = not _animation_paused
+	_apply_profile_state(false)
 
 
 func _apply_profile_state(reset: bool) -> void:

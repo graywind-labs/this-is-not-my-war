@@ -7,7 +7,7 @@ signal defeat_cleanup_completed(snapshot: Dictionary)
 const MOUNTED_PRESENTATION_REFERENCE := preload("res://scripts/presentation/characters/MountedPresentationReference.gd")
 const HORSE_SCENE_PATH := MOUNTED_PRESENTATION_REFERENCE.HORSE_SCENE_PATH
 const HORSE_SCALE := MOUNTED_PRESENTATION_REFERENCE.ENEMY_HORSE_SCALE
-const DEFAULT_CORPSE_LINGER_SECONDS := 2.4
+const DEFAULT_CORPSE_LINGER_SECONDS := 8.0
 const HORSE_DEATH_ANIMATION := "Death"
 
 var _rider: Node3D
@@ -118,6 +118,9 @@ func begin_mounted_shared_defeat(corpse_linger_seconds: float = DEFAULT_CORPSE_L
 	if _cleanup_completed:
 		return debug_get_snapshot()
 	if _defeat_phase == "bodies_lingering":
+		# CombatSystem reapplies the authoritative presentation duration after the
+		# unconscious profile starts this phase; allow that call to extend cleanup.
+		_corpse_linger_seconds = maxf(_corpse_linger_seconds, maxf(0.1, corpse_linger_seconds))
 		return debug_get_snapshot()
 	_alive = false
 	_moving = false

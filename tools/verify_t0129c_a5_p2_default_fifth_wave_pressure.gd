@@ -353,6 +353,19 @@ func _teleport_enemy(combat_system: Node, enemy_id: String, position: Vector3) -
 	combat_system._active_enemies[enemy_id] = enemy
 	var slice: Dictionary = combat_system._formal_first_wave_slices.get(enemy_id, {})
 	slice["previous_position"] = position
+	# This helper deliberately relocates actors hundreds of metres to construct a
+	# contested pressure fixture. Reset presentation sampling so that setup is not
+	# mistaken for an in-game one-frame movement spike.
+	slice["presentation_previous_position"] = position
+	slice["presentation_visual_compensation"] = Vector3.ZERO
+	slice["presentation_planar_displacement"] = Vector3.ZERO
+	slice["presentation_visible_frame_displacement"] = 0.0
+	slice["presentation_maximum_visible_frame_displacement"] = 0.0
+	if actor != null:
+		var art_view := actor.get_node_or_null("EnemyArtView") as Node3D
+		if art_view != null:
+			var art_base_position: Vector3 = slice.get("presentation_art_base_position", Vector3.ZERO)
+			art_view.position = art_base_position
 	combat_system._formal_first_wave_slices[enemy_id] = slice
 
 
@@ -373,14 +386,18 @@ func _sample_spatial_contract(combat_system: Node) -> void:
 		var motion := slice.get("motion", {}) as Dictionary
 		var profile_speed := float(motion.get("profile_base_speed", 0.0))
 		var observed_speed := float(motion.get("maximum_observed_speed", 0.0))
-		var frame_displacement := float(motion.get("maximum_frame_displacement", 0.0))
+		var frame_displacement := float(slice.get("presentation_maximum_visible_frame_displacement", 0.0))
+		var raw_frame_displacement := float(motion.get("maximum_frame_displacement", 0.0))
 		_maximum_enemy_speed = maxf(_maximum_enemy_speed, observed_speed)
 		_maximum_enemy_frame_displacement = maxf(_maximum_enemy_frame_displacement, frame_displacement)
 		if observed_speed > profile_speed + 0.02:
 			_fail("Enemy exceeded its movement profile: %s" % JSON.stringify(slice))
 			return
 		var radius := float(motion.get("body_radius", 0.0))
-		if frame_displacement > profile_speed / 60.0 + radius * 0.6:
+		if raw_frame_displacement > profile_speed / 60.0 + radius * 2.0:
+			_fail("Enemy physical collision recovery exceeded two body radii: %s" % JSON.stringify(slice))
+			return
+		if frame_displacement > profile_speed / 60.0 + 0.045:
 			_fail("Enemy was displaced by a flight-like single-frame jump: %s" % JSON.stringify(slice))
 			return
 		actors.append({

@@ -4,6 +4,7 @@ const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
 const NPCPortraitViewport = preload("res://scripts/ui/NPCPortraitViewport.gd")
 const NPCEquipmentWindowScript = preload("res://scripts/ui/NPCEquipmentWindow.gd")
+const RateDisplayFormatter = preload("res://scripts/ui/RateDisplayFormatter.gd")
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
@@ -41,6 +42,8 @@ const PORTRAIT_MIN_HEIGHT := 300.0
 const PORTRAIT_MAX_HEIGHT := 420.0
 const EQUIPMENT_WINDOW_GAP := 8.0
 const EQUIPMENT_WINDOW_SIZE := Vector2(316.0, 332.0)
+const MOUNT_VIEW_BUTTON_SIZE := Vector2(120.0, 34.0)
+const MOUNT_VIEW_BUTTON_GAP := 4.0
 const RECRUITMENT_REQUIRED_TOOLTIP := "需先说服该人物应征入伍，才能进行这项操作。"
 const EQUIPMENT_RECRUITMENT_TOOLTIP := "还未征召，无法配装。"
 const ORDER_RECRUITMENT_TOOLTIP := "还未征召，无法命令。"
@@ -58,9 +61,10 @@ const DEFAULT_ACTION_COLOR := Color.WHITE
 const BEHAVIOR_MODE_COLOR := Color(0.66, 0.69, 0.72, 1.0)
 const NORMAL_PROGRESS_FILL_COLOR := Color("#71865a")
 const DANGER_PROGRESS_FILL_COLOR := Color("#a7433b")
-const EXPERIENCE_PROGRESS_FILL_COLOR := Color("#8f5a2d")
+const EXPERIENCE_PROGRESS_FILL_COLOR := Color(0.94, 0.87, 0.70, 1.0)
 const FATIGUE_PROGRESS_FILL_COLOR := Color("#777777")
 const DANGER_LABEL_COLOR := Color("#dc6157")
+const POSITIVE_RATE_LABEL_COLOR := Color("#69c879")
 const HP_DANGER_RATIO := 0.30
 const SATIETY_DANGER_RATIO := 0.20
 const FATIGUE_DANGER_RATIO := 0.80
@@ -241,6 +245,7 @@ var _strength_value_label: Label
 var _intelligence_value_label: Label
 var _combat_stats_label: Label
 var _hp_progress: ProgressBar
+var _hp_rate_label: Label
 var _experience_progress: ProgressBar
 var _satiety_progress: ProgressBar
 var _fatigue_progress: ProgressBar
@@ -250,6 +255,7 @@ var _experience_progress_fill_style: StyleBoxFlat
 var _fatigue_progress_fill_style: StyleBoxFlat
 var _strength_point_button: Button
 var _intelligence_point_button: Button
+var _attribute_point_pulse_elapsed := 0.0
 var _llm_status_label: Label
 var _interaction_visibility_group: ButtonGroup
 var _panel_scroll: ScrollContainer
@@ -258,6 +264,7 @@ var _layout_viewport_override := Vector2.ZERO
 var _drag_controller
 var _portrait_view
 var _equipment_window: NPCEquipmentWindow
+var _mount_view_button: Button
 var _equipment_unequip_confirm: ConfirmationDialog
 var _equipment_notice_dialog: AcceptDialog
 var _pending_unequip_slot := ""
@@ -305,6 +312,7 @@ func _ready() -> void:
 	# clicks intended for the sibling equipment window in that transparent area.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_setup_portrait_view()
+	_setup_mount_view_button()
 	_setup_panel_scroll()
 	_setup_memory_log_boxes()
 	_setup_header_status_label()
@@ -354,8 +362,41 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	_update_attribute_point_button_pulse(_delta)
 	if _equipment_window != null and _equipment_window.visible:
 		_layout_equipment_window()
+	if _mount_view_button != null and _mount_view_button.visible:
+		_layout_mount_view_button()
+
+
+func _update_attribute_point_button_pulse(delta: float) -> void:
+	const PULSE_PERIOD_SECONDS := 1.2
+	const PULSE_MIN_ALPHA := 0.32
+	var has_visible_button := (
+		(_strength_point_button != null and _strength_point_button.visible)
+		or (_intelligence_point_button != null and _intelligence_point_button.visible)
+	)
+	if not has_visible_button:
+		_attribute_point_pulse_elapsed = 0.0
+		_set_attribute_point_button_alpha(_strength_point_button, 1.0)
+		_set_attribute_point_button_alpha(_intelligence_point_button, 1.0)
+		return
+	_attribute_point_pulse_elapsed = fmod(
+		_attribute_point_pulse_elapsed + maxf(0.0, delta),
+		PULSE_PERIOD_SECONDS
+	)
+	var wave := (sin(_attribute_point_pulse_elapsed / PULSE_PERIOD_SECONDS * TAU - PI * 0.5) + 1.0) * 0.5
+	var alpha := lerpf(PULSE_MIN_ALPHA, 1.0, wave)
+	_set_attribute_point_button_alpha(_strength_point_button, alpha)
+	_set_attribute_point_button_alpha(_intelligence_point_button, alpha)
+
+
+func _set_attribute_point_button_alpha(button: Button, alpha: float) -> void:
+	if button == null:
+		return
+	var color := button.modulate
+	color.a = clampf(alpha, 0.0, 1.0) if button.visible else 1.0
+	button.modulate = color
 
 
 func _setup_portrait_view() -> void:
@@ -368,6 +409,22 @@ func _setup_portrait_view() -> void:
 	if _portrait_view.has_signal("portrait_clicked"):
 		_portrait_view.portrait_clicked.connect(_on_portrait_clicked)
 	_portrait_view.hide_preview()
+
+
+func _setup_mount_view_button() -> void:
+	if _mount_view_button != null:
+		return
+	_mount_view_button = Button.new()
+	_mount_view_button.name = "NPCMountViewButton"
+	_mount_view_button.text = "查看马匹"
+	_mount_view_button.tooltip_text = "查看该 NPC 当前正在骑乘的马匹。"
+	_mount_view_button.custom_minimum_size = MOUNT_VIEW_BUTTON_SIZE
+	_mount_view_button.size = MOUNT_VIEW_BUTTON_SIZE
+	_mount_view_button.visible = false
+	_mount_view_button.z_index = 71
+	_mount_view_button.focus_mode = Control.FOCUS_NONE
+	_mount_view_button.pressed.connect(_on_mount_view_button_pressed)
+	add_child(_mount_view_button)
 
 
 func _on_portrait_clicked(npc_id: String) -> void:
@@ -524,7 +581,12 @@ func _apply_panel_height_from_content() -> void:
 func _get_portrait_height_limit_for_equipment(viewport_height: float) -> float:
 	return maxf(
 		240.0,
-		viewport_height - PANEL_SCREEN_MARGIN * 2.0 - EQUIPMENT_WINDOW_GAP - EQUIPMENT_WINDOW_SIZE.y
+		viewport_height
+		- PANEL_SCREEN_MARGIN * 2.0
+		- EQUIPMENT_WINDOW_GAP
+		- EQUIPMENT_WINDOW_SIZE.y
+		- MOUNT_VIEW_BUTTON_GAP
+		- MOUNT_VIEW_BUTTON_SIZE.y
 	)
 
 
@@ -603,6 +665,7 @@ func show_npc(npc_id: String) -> void:
 	_update_memory_labels(npc_id)
 	_update_interaction_controls(npc)
 	_refresh_equipment_window(npc)
+	_refresh_mount_view_button(npc)
 	visible = true
 	if _portrait_view != null and _portrait_view.has_method("show_npc"):
 		_portrait_view.show_npc(npc_id)
@@ -856,7 +919,16 @@ func _layout_equipment_window() -> void:
 		return
 	var portrait_rect := portrait.get_global_rect()
 	var global_x: float = portrait_rect.end.x - EQUIPMENT_WINDOW_SIZE.x
-	var global_y: float = portrait_rect.end.y + EQUIPMENT_WINDOW_GAP
+	var info_panel := get_node_or_null("PanelContainer") as Control
+	var panel_bottom := (
+		info_panel.get_global_rect().end.y
+		if info_panel != null
+		else get_global_rect().end.y
+	)
+	var global_y: float = maxf(
+		panel_bottom - EQUIPMENT_WINDOW_SIZE.y,
+		portrait_rect.end.y + EQUIPMENT_WINDOW_GAP
+	)
 	var viewport_size := _get_layout_viewport_size()
 	global_x = clampf(
 		global_x,
@@ -864,6 +936,65 @@ func _layout_equipment_window() -> void:
 		viewport_size.x - PANEL_SCREEN_MARGIN - EQUIPMENT_WINDOW_SIZE.x
 	)
 	_equipment_window.global_position = Vector2(global_x, global_y)
+	_layout_mount_view_button()
+
+
+func _layout_mount_view_button() -> void:
+	if _mount_view_button == null or _portrait_view == null or _equipment_window == null:
+		return
+	var portrait := _portrait_view as Control
+	if portrait == null:
+		return
+	var portrait_rect := portrait.get_global_rect()
+	var equipment_rect := _equipment_window.get_global_rect()
+	var global_x := portrait_rect.end.x - MOUNT_VIEW_BUTTON_SIZE.x
+	var global_y := minf(
+		portrait_rect.end.y + MOUNT_VIEW_BUTTON_GAP,
+		equipment_rect.position.y - MOUNT_VIEW_BUTTON_GAP - MOUNT_VIEW_BUTTON_SIZE.y
+	)
+	_mount_view_button.global_position = Vector2(global_x, global_y)
+	_mount_view_button.size = MOUNT_VIEW_BUTTON_SIZE
+
+
+func _refresh_mount_view_button(npc: Dictionary) -> void:
+	if _mount_view_button == null:
+		return
+	var horse_id := _get_current_ridden_horse_id(npc)
+	_mount_view_button.set_meta("horse_id", horse_id)
+	_mount_view_button.visible = not horse_id.is_empty()
+	if _mount_view_button.visible:
+		_layout_mount_view_button()
+
+
+func _get_current_ridden_horse_id(npc: Dictionary) -> String:
+	if npc.is_empty():
+		return ""
+	var states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
+	if not bool(states.get("combat_mounted", false)):
+		return ""
+	var npc_id := str(npc.get("id", _current_npc_id))
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_assigned_horse_for_npc"):
+		return ""
+	var horse: Dictionary = horse_system.get_assigned_horse_for_npc(npc_id)
+	if (
+		horse.is_empty()
+		or str(horse.get("location", "")) != "ridden"
+		or str(horse.get("ridden_by_npc_id", "")) != npc_id
+	):
+		return ""
+	return str(horse.get("horse_id", ""))
+
+
+func _on_mount_view_button_pressed() -> void:
+	var npc := _get_current_npc()
+	var horse_id := _get_current_ridden_horse_id(npc)
+	if horse_id.is_empty():
+		_refresh_mount_view_button(npc)
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("horse_clicked"):
+		event_bus.horse_clicked.emit(horse_id)
 
 
 func _on_equipment_button_pressed() -> void:
@@ -980,6 +1111,9 @@ func _hide_equipment_window() -> void:
 		_equipment_unequip_confirm.hide()
 	if _equipment_notice_dialog != null:
 		_equipment_notice_dialog.hide()
+	if _mount_view_button != null:
+		_mount_view_button.visible = false
+		_mount_view_button.set_meta("horse_id", "")
 	_clear_pending_unequip()
 
 
@@ -1067,7 +1201,21 @@ func debug_get_equipment_window_snapshot() -> Dictionary:
 	snapshot["summary_visible"] = equipment_label.visible
 	snapshot["pending_unequip_slot"] = _pending_unequip_slot
 	snapshot["notice_text"] = _equipment_notice_dialog.dialog_text if _equipment_notice_dialog != null else ""
+	snapshot["mount_view_button_visible"] = _mount_view_button != null and _mount_view_button.visible
+	snapshot["mount_view_button_horse_id"] = str(_mount_view_button.get_meta("horse_id", "")) if _mount_view_button != null else ""
+	snapshot["mount_view_button_rect"] = _mount_view_button.get_global_rect() if _mount_view_button != null else Rect2()
+	var info_panel := get_node_or_null("PanelContainer") as Control
+	snapshot["info_panel_rect"] = info_panel.get_global_rect() if info_panel != null else Rect2()
 	return snapshot
+
+
+func debug_press_mount_view_button() -> Dictionary:
+	_on_mount_view_button_pressed()
+	return {
+		"npc_panel_visible": visible,
+		"npc_id": _current_npc_id,
+		"horse_id": str(_mount_view_button.get_meta("horse_id", "")) if _mount_view_button != null else "",
+	}
 
 
 func debug_toggle_equipment_window() -> Dictionary:
@@ -1169,13 +1317,19 @@ func _setup_progression_controls() -> void:
 	_experience_label.name = "NPCExperienceLabel"
 	_experience_label.text = "经验：0 / 10"
 	var hp_row_index := job_label.get_index() + 1
+	_hp_rate_label = Label.new()
+	_hp_rate_label.name = "NPCHPRecoveryRateLabel"
+	_hp_rate_label.visible = false
+	_hp_rate_label.add_theme_font_size_override("font_size", 12)
+	_hp_rate_label.add_theme_color_override("font_color", POSITIVE_RATE_LABEL_COLOR)
 	_hp_progress = _add_progress_row(
 		parent,
 		hp_label,
 		"NPCHPProgressRow",
 		"NPCHPProgress",
 		hp_row_index,
-		_get_need_progress_fill_style(false)
+		_get_need_progress_fill_style(false),
+		_hp_rate_label
 	)
 	_experience_progress = _add_progress_row(
 		parent,
@@ -1192,32 +1346,10 @@ func _format_bool(value: Variant) -> String:
 
 
 func _format_action(action_id: String) -> String:
-	if action_id.is_empty() or action_id == "idle":
-		return "待命"
-	if action_id == "planning_day":
-		return "制定计划"
-	if action_id == "talk_to_guard_officer":
-		return "与守备官对话"
-	if action_id == "escape_intervention_dialogue":
-		return "与守备官进行逃离挽留对话"
-	if action_id == "keep_distance_retreating":
-		return "拉开距离"
-	if action_id.begins_with("moving_to_"):
-		var target_id := action_id.trim_prefix("moving_to_")
-		var target_name := str(KNOWLEDGE_SUBJECT_LABELS.get(target_id, "")).strip_edges()
-		return "前往%s" % (target_name if not target_name.is_empty() else "目的地")
-	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
-	if (
-		action_system != null
-		and action_system.has_method("get_action_ids")
-		and action_system.get_action_ids().has(action_id)
-		and action_system.has_method("get_action")
-	):
-		var action: Dictionary = action_system.get_action(action_id)
-		var action_name := str(action.get("name", "")).strip_edges()
-		if not action_name.is_empty():
-			return action_name
-	return "未知行动"
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("get_npc_action_display_text"):
+		return str(npc_system.get_npc_action_display_text(action_id))
+	return "空闲" if action_id.is_empty() or action_id == "idle" else "其他行动"
 
 
 func _format_behavior_mode(mode: String) -> String:
@@ -1317,7 +1449,8 @@ func _add_progress_row(
 	row_name: String,
 	progress_name: String,
 	row_index: int,
-	fill_style: StyleBoxFlat
+	fill_style: StyleBoxFlat,
+	rate_label: Label = null
 ) -> ProgressBar:
 	var row := VBoxContainer.new()
 	row.name = row_name
@@ -1325,7 +1458,15 @@ func _add_progress_row(
 	parent.add_child(row)
 	parent.move_child(row, clampi(row_index, 0, parent.get_child_count() - 1))
 	label.add_theme_font_size_override("font_size", 12)
-	row.add_child(label)
+	if rate_label == null:
+		row.add_child(label)
+	else:
+		var label_row := HBoxContainer.new()
+		label_row.name = "%sHeader" % row_name
+		label_row.add_theme_constant_override("separation", 8)
+		label_row.add_child(label)
+		label_row.add_child(rate_label)
+		row.add_child(label_row)
 	var progress := ProgressBar.new()
 	progress.name = progress_name
 	progress.custom_minimum_size.y = 16.0
@@ -1340,6 +1481,7 @@ func _update_hp_progress_control(states: Dictionary) -> void:
 	var raw_max_hp := float(states.get("max_hp", 0.0))
 	var max_hp := maxf(1.0, raw_max_hp)
 	hp_label.text = "HP：%d / %d" % [int(round(hp)), int(round(raw_max_hp))]
+	_update_hp_recovery_rate_label(states)
 	if _hp_progress == null:
 		return
 	_hp_progress.min_value = 0.0
@@ -1355,6 +1497,26 @@ func _update_hp_progress_control(states: Dictionary) -> void:
 		hp_label.add_theme_color_override("font_color", DANGER_LABEL_COLOR)
 	else:
 		hp_label.remove_theme_color_override("font_color")
+
+
+func _update_hp_recovery_rate_label(states: Dictionary) -> void:
+	if _hp_rate_label == null:
+		return
+	_hp_rate_label.text = ""
+	_hp_rate_label.visible = false
+	if not bool(states.get("unconscious", false)) or _current_npc_id.is_empty():
+		return
+	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
+	if action_system == null or not action_system.has_method("get_healing_assist_rate_snapshot"):
+		return
+	var rate: Dictionary = action_system.get_healing_assist_rate_snapshot(_current_npc_id)
+	if not bool(rate.get("active", false)):
+		return
+	var text := RateDisplayFormatter.format_positive_rate(float(rate.get("hp_per_game_second", 0.0)))
+	if text.is_empty():
+		return
+	_hp_rate_label.text = text
+	_hp_rate_label.visible = true
 
 
 func _update_need_progress_controls(states: Dictionary) -> void:
@@ -2746,8 +2908,14 @@ func _on_enemy_clicked(_enemy_id: String) -> void:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
-	if visible and npc_id == _current_npc_id:
-		show_npc(npc_id)
+	if not visible:
+		return
+	var current_npc := _get_current_npc()
+	var current_states: Dictionary = (
+		current_npc.get("states", {}) if current_npc.get("states", {}) is Dictionary else {}
+	)
+	if npc_id == _current_npc_id or bool(current_states.get("unconscious", false)):
+		show_npc(_current_npc_id)
 
 
 func _on_npc_memory_changed(npc_id: String) -> void:
@@ -2821,6 +2989,7 @@ func _refresh_horse_assignment_controls() -> void:
 	_fill_horse_select(npc)
 	_update_interaction_controls(npc)
 	_refresh_equipment_window(npc)
+	_refresh_mount_view_button(npc)
 	_queue_panel_fit()
 
 

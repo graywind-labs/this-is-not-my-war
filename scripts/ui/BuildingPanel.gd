@@ -1,6 +1,7 @@
 extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
+const RateDisplayFormatter = preload("res://scripts/ui/RateDisplayFormatter.gd")
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
@@ -21,6 +22,7 @@ const HORSE_LIST_MAX_HEIGHT := 620.0
 const HORSE_NORMAL_PROGRESS_FILL_COLOR := Color("#71865a")
 const HORSE_DANGER_PROGRESS_FILL_COLOR := Color("#a7433b")
 const HORSE_DANGER_LABEL_COLOR := Color("#dc6157")
+const POSITIVE_RATE_LABEL_COLOR := Color("#69c879")
 const HORSE_SATIETY_DANGER_RATIO := 0.20
 const HORSE_BASE_HP_DANGER_RATIO := 0.30
 const BUILDING_HP_DANGER_RATIO := 0.30
@@ -145,6 +147,8 @@ func _ready() -> void:
 			event_bus.crafting_state_changed.connect(_on_crafting_state_changed)
 		if event_bus.has_signal("horse_state_changed"):
 			event_bus.horse_state_changed.connect(_on_horse_state_changed)
+		if event_bus.has_signal("npc_state_changed"):
+			event_bus.npc_state_changed.connect(_on_stable_worker_state_changed)
 		if event_bus.has_signal("resource_changed") and not event_bus.resource_changed.is_connected(_on_resource_changed):
 			event_bus.resource_changed.connect(_on_resource_changed)
 	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
@@ -385,6 +389,11 @@ func _on_horse_state_changed(_horse_id: String) -> void:
 		return
 	_horse_refresh_queued = true
 	call_deferred("_flush_queued_horse_refresh")
+
+
+func _on_stable_worker_state_changed(_npc_id: String) -> void:
+	if visible and _current_building_id == "stable":
+		_on_horse_state_changed("")
 
 
 func _flush_queued_horse_refresh() -> void:
@@ -1073,20 +1082,29 @@ func _add_horse_card(horse: Dictionary) -> void:
 	var natural_max_hp := float(horse.get("natural_max_hp", 0.0))
 	var extra_hp := float(horse.get("extra_hp", horse.get("care_bonus_hp", 0.0)))
 	var extra_hp_cap := float(horse.get("extra_hp_cap", horse.get("care_bonus_cap", 0.0)))
+	var care_rate: Dictionary = horse.get("care_rate", {}) if horse.get("care_rate", {}) is Dictionary else {}
+	var care_rates: Dictionary = (
+		care_rate.get("rates_per_game_second", {})
+		if care_rate.get("rates_per_game_second", {}) is Dictionary
+		else {}
+	)
 	_add_horse_progress(
 		content,
 		"基础 HP %.1f / %.1f" % [base_hp, natural_max_hp],
 		base_hp,
 		maxf(1.0, natural_max_hp),
 		"HorseBaseHP_%s" % horse_id,
-		HORSE_BASE_HP_DANGER_RATIO
+		HORSE_BASE_HP_DANGER_RATIO,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("base_hp", 0.0)))
 	)
 	_add_horse_progress(
 		content,
 		"照料额外 HP %.1f / %.1f" % [extra_hp, extra_hp_cap],
 		extra_hp,
 		maxf(1.0, extra_hp_cap),
-		"HorseExtraHP_%s" % horse_id
+		"HorseExtraHP_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("extra_hp", 0.0)))
 	)
 	_add_horse_progress(
 		content,
@@ -1101,7 +1119,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 		"成长 %d%%" % int(round(float(horse.get("growth", 0.0)) * 100.0)),
 		float(horse.get("growth", 0.0)),
 		1.0,
-		"HorseGrowth_%s" % horse_id
+		"HorseGrowth_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("growth", 0.0)), 100.0)
 	)
 	var breeding_probability := clampf(float(horse.get("breeding_probability", 0.0)), 0.0, 1.0)
 	var breeding_text := "繁育概率 %.2f%%" % (breeding_probability * 100.0)
@@ -1117,7 +1137,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 		breeding_text,
 		breeding_probability,
 		1.0,
-		"HorseBreedingProbability_%s" % horse_id
+		"HorseBreedingProbability_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("breeding_probability", 0.0)), 100.0)
 	)
 	var assignment := Label.new()
 	assignment.name = "HorseAssignment_%s" % horse_id
@@ -1145,7 +1167,8 @@ func _add_horse_progress(
 	value: float,
 	max_value: float,
 	control_name: String = "",
-	danger_below_ratio: float = -1.0
+	danger_below_ratio: float = -1.0,
+	rate_text: String = ""
 ) -> void:
 	var progress := ProgressBar.new()
 	if not control_name.is_empty():
@@ -1167,7 +1190,20 @@ func _add_horse_progress(
 	label.add_theme_font_size_override("font_size", 11)
 	if danger:
 		label.add_theme_color_override("font_color", HORSE_DANGER_LABEL_COLOR)
-	parent.add_child(label)
+	if rate_text.is_empty():
+		parent.add_child(label)
+	else:
+		var label_row := HBoxContainer.new()
+		label_row.name = "%sLabelRow" % control_name if not control_name.is_empty() else "HorseValueLabelRow"
+		label_row.add_theme_constant_override("separation", 6)
+		label_row.add_child(label)
+		var rate_label := Label.new()
+		rate_label.name = "%sRateLabel" % control_name if not control_name.is_empty() else "HorseRateLabel"
+		rate_label.text = rate_text
+		rate_label.add_theme_font_size_override("font_size", 11)
+		rate_label.add_theme_color_override("font_color", POSITIVE_RATE_LABEL_COLOR)
+		label_row.add_child(rate_label)
+		parent.add_child(label_row)
 	parent.add_child(progress)
 
 

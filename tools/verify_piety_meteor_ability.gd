@@ -44,9 +44,9 @@ func _init() -> void:
 	var piety_snapshot: Dictionary = piety_system.get_piety_snapshot()
 	if (
 		not is_equal_approx(float(piety_snapshot.get("max_piety", 0.0)), 100.0)
-		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 3.0)
+		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 2.5)
 	):
-		_fail("Piety tuning must be 100 maximum and 3 piety per active prayer-hour")
+		_fail("Piety tuning must be 100 maximum and 2.5 piety per personal prayer-hour")
 		return
 	var meteor_config: Dictionary = piety_system.get_meteor_config()
 	var meteor_fall_advance_game_seconds := (
@@ -85,15 +85,52 @@ func _init() -> void:
 		return
 	time_system.set_paused(false)
 	action_system._on_logical_time_tick(600.0, 1.0)
-	if not is_equal_approx(float(piety_system.get_current_piety()), 1.0):
-		_fail("Two simultaneous ten-minute prayers should generate exactly 1 shared piety")
+	if not is_equal_approx(float(piety_system.get_current_piety()), 5.0 / 6.0):
+		_fail("Two simultaneous ten-minute personal prayers should generate exactly 5/6 shared piety")
 		return
 	var generated_by_npc: Dictionary = piety_system.get_piety_snapshot().get("generated_by_npc", {})
 	if (
-		not is_equal_approx(float(generated_by_npc.get("priest_01", 0.0)) - float(generated_before_tick.get("priest_01", 0.0)), 0.5)
-		or not is_equal_approx(float(generated_by_npc.get("gardener_01", 0.0)) - float(generated_before_tick.get("gardener_01", 0.0)), 0.5)
+		not is_equal_approx(float(generated_by_npc.get("priest_01", 0.0)) - float(generated_before_tick.get("priest_01", 0.0)), 5.0 / 12.0)
+		or not is_equal_approx(float(generated_by_npc.get("gardener_01", 0.0)) - float(generated_before_tick.get("gardener_01", 0.0)), 5.0 / 12.0)
 	):
 		_fail("Shared piety did not preserve per-NPC generation diagnostics")
+		return
+
+	piety_system.debug_set_piety(0.0)
+	var leader_hour: Dictionary = piety_system.add_prayer_progress("priest_01", "lead_mass", 3600.0)
+	var attendee_hour: Dictionary = piety_system.add_prayer_progress(
+		"gardener_01",
+		"pray_at_chapel",
+		3600.0,
+		"mass_attendance"
+	)
+	var personal_hour: Dictionary = piety_system.add_prayer_progress(
+		"doctor_01",
+		"pray_at_chapel",
+		3600.0,
+		"personal_prayer"
+	)
+	if (
+		not is_equal_approx(float(leader_hour.get("added", 0.0)), 5.0)
+		or not is_equal_approx(float(attendee_hour.get("added", 0.0)), 5.0)
+		or not is_equal_approx(float(personal_hour.get("added", 0.0)), 2.5)
+		or not is_equal_approx(float(piety_system.get_current_piety()), 12.5)
+	):
+		_fail("Personal prayer, Mass leadership, and Mass attendance rates are not 2.5 / 5 / 5 per hour")
+		return
+	var repeated_leader_hour: Dictionary = piety_system.add_prayer_progress("priest_01", "lead_mass", 3600.0)
+	var repeated_attendee_hour: Dictionary = piety_system.add_prayer_progress(
+		"gardener_01",
+		"pray_at_chapel",
+		3600.0,
+		"mass_attendance"
+	)
+	if (
+		not is_equal_approx(float(repeated_leader_hour.get("added", 0.0)), 5.0)
+		or not is_equal_approx(float(repeated_attendee_hour.get("added", 0.0)), 5.0)
+		or not is_equal_approx(float(piety_system.get_current_piety()), 22.5)
+	):
+		_fail("Repeated Mass should keep the 5-per-hour rate without a duration limit or decay")
 		return
 
 	var ability_button := hud.find_child("PietyAbilityButton", true, false)

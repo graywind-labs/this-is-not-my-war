@@ -1311,12 +1311,12 @@ func get_building_exterior_service_slots(building_id: String, service_kind: Stri
 			snapped_position.x - requested_position.x,
 			snapped_position.z - requested_position.z
 		).length()
-		var navigation_sync_pending := snap_error > 0.85
-		if navigation_sync_pending:
-			# A formal session enables the Region and queries its slot in the same
-			# frame. NavigationServer publishes that enable one physics frame later;
-			# keep the audited envelope point and let the deferred route start snap it.
-			snapped_position = requested_position
+		# A service point is movement authority, so it must always be the actual
+		# NavigationMap point. Treating a large snap as a one-frame sync delay left
+		# some gate/building candidates outside the map; ActorMotion then walked for
+		# a while before correctly failing them as target_unreachable.
+		if snap_error > 0.45 or not _is_distinct_exterior_service_position(slots, snapped_position):
+			continue
 		var facing_direction := building_root.global_position - snapped_position
 		facing_direction.y = 0.0
 		if facing_direction.length_squared() <= 0.0001:
@@ -1329,7 +1329,8 @@ func get_building_exterior_service_slots(building_id: String, service_kind: Stri
 			"requested_position": requested_position,
 			"facing_direction": facing_direction.normalized(),
 			"snap_error": snap_error,
-			"navigation_sync_pending": navigation_sync_pending,
+			"navigation_sync_pending": false,
+			"navigation_adjusted": snap_error > 0.01,
 			"envelope_clearance": clearance,
 		})
 	return slots
@@ -1370,11 +1371,20 @@ func _get_infrastructure_exterior_service_slots(building_id: String, service_kin
 		inward = inward.normalized()
 		var tangent := Vector2(-inward.y, inward.x)
 		var half_clear_width := float(gate.get("clear_width", 5.0)) * 0.5
-		for side in [-1.0, 1.0]:
-			for extra_offset in [1.10, 2.45]:
+		# Keep construction bodies on the station side of the gate-tower capsules.
+		# At 1.25m, the NavMesh snap could be valid while the actor's 0.35m body
+		# still met the wider physical tower corner, slid off the connected island,
+		# and then reported target_unreachable on a retry.
+		var inward_service_clearance := 2.25
+		# Both authored gates have their clear construction apron on the positive
+		# tangent side. The opposite candidates sit behind the gate-tower / adjacent
+		# wall collision even when their NavMesh projection itself is valid.
+		for side in [1.0]:
+			for extra_offset in [1.10, 2.45, 3.80, 5.15]:
 				station_candidates.append({
-					"requested": gate_center + tangent * side * (half_clear_width + extra_offset) + inward * 1.25,
+					"requested": gate_center + tangent * side * (half_clear_width + extra_offset) + inward * inward_service_clearance,
 					"facing": -inward,
+					"clearance": inward_service_clearance,
 				})
 	for index in range(station_candidates.size()):
 		var candidate: Dictionary = station_candidates[index]
@@ -1385,9 +1395,12 @@ func _get_infrastructure_exterior_service_slots(building_id: String, service_kin
 			snapped_position.x - requested_position.x,
 			snapped_position.z - requested_position.z
 		).length()
-		var navigation_sync_pending := snap_error > 0.85
-		if navigation_sync_pending:
-			snapped_position = requested_position
+		# A large snap can land across a gate tower or building corner. The point is
+		# technically on the NavMesh but no longer represents the authored service
+		# side, so CharacterBody collision can stop short of it. Only expose slots
+		# whose adjustment stays within roughly one NPC body radius.
+		if snap_error > 0.45 or not _is_distinct_exterior_service_position(slots, snapped_position):
+			continue
 		var facing_2d := candidate.get("facing", Vector2.ZERO) as Vector2
 		var facing_direction := (_formal_root.global_basis * Vector3(facing_2d.x, 0.0, facing_2d.y)).normalized()
 		slots.append({
@@ -1398,10 +1411,31 @@ func _get_infrastructure_exterior_service_slots(building_id: String, service_kin
 			"requested_position": requested_position,
 			"facing_direction": facing_direction,
 			"snap_error": snap_error,
-			"navigation_sync_pending": navigation_sync_pending,
-			"envelope_clearance": 1.25,
+			"navigation_sync_pending": false,
+			"navigation_adjusted": snap_error > 0.01,
+			"envelope_clearance": float(candidate.get("clearance", 1.25)),
 		})
 	return slots
+
+
+func _is_distinct_exterior_service_position(
+	existing_slots: Array[Dictionary],
+	candidate_position: Vector3
+) -> bool:
+	# Friendly actor bodies are 0.35m radius with a slightly wider interaction
+	# capsule. Keep independently reserved helpers from collapsing onto the same
+	# NavigationMap boundary point after snapping.
+	var minimum_service_slot_separation := 0.9
+	for slot in existing_slots:
+		var existing_position: Variant = slot.get("position")
+		if not existing_position is Vector3:
+			continue
+		if Vector2(
+			existing_position.x - candidate_position.x,
+			existing_position.z - candidate_position.z
+		).length() < minimum_service_slot_separation:
+			return false
+	return true
 
 
 func get_npc_initial_world_position(npc_id: String) -> Variant:
@@ -4388,7 +4422,7 @@ func _validate_combat_spatial_config() -> void:
 		or float(friendly_response.get("normal_contact_range", 0.0)) <= 0.0
 		or str(friendly_response.get("combat_targeting_schema", "")) != "friendly_enemy_presence_lock_v1"
 		or float(friendly_response.get("combat_target_detection_range", 0.0)) <= 0.0
-		or str(friendly_response.get("inside_station_target_scope", "")) != "entire_station"
+		or str(friendly_response.get("inside_station_target_scope", "")) != "entire_station_plus_unified_radius"
 		or str(friendly_response.get("avoidance_policy_schema", "")) != "weighted_enemy_repulsion_v1"
 		or float(friendly_response.get("avoidance_detection_range_margin", 0.0)) <= 0.0
 		or str(friendly_response.get("avoidance_weight_formula", "")) != "inverse_distance_power"

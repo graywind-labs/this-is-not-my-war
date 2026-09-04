@@ -79,6 +79,8 @@ var _escape_warning_marker: Label3D
 var _mount_visual: Node3D
 var _mount_horse_model: Node3D
 var _mount_animation_player: AnimationPlayer
+var _mount_horse_skeleton: Skeleton3D
+var _mount_horse_head_bone_index := -1
 var _mount_uses_imported_horse := false
 var _mount_applied_horse_id := ""
 var _mount_applied_coat_color := ""
@@ -262,6 +264,43 @@ func get_portrait_camera_snapshot() -> Dictionary:
 		"current_action": str(states.get("current_action", "idle")),
 		"unconscious": bool(states.get("unconscious", false)),
 		"attachment_pose": _spatial_attachment_pose,
+	}
+
+
+func get_combat_mount_portrait_snapshot(horse_id: String) -> Dictionary:
+	var clean_horse_id := horse_id.strip_edges()
+	if clean_horse_id.is_empty() or clean_horse_id != _mount_applied_horse_id:
+		return {}
+	if _mount_visual == null or _mount_horse_model == null or not _mount_visual.is_inside_tree():
+		return {}
+	var horse_forward := _mount_horse_model.global_basis * MOUNTED_PRESENTATION_REFERENCE.VISIBLE_FORWARD_LOCAL
+	horse_forward.y = 0.0
+	if horse_forward.length_squared() <= 0.0001:
+		horse_forward = Vector3(0.0, 0.0, -1.0)
+	else:
+		horse_forward = horse_forward.normalized()
+	var head_world_position := _mount_horse_model.global_position + horse_forward * 1.2 + Vector3.UP * 1.55
+	var focus_source := "model_fallback"
+	if _mount_horse_skeleton != null and _mount_horse_head_bone_index >= 0:
+		head_world_position = (_mount_horse_skeleton.global_transform * _mount_horse_skeleton.get_bone_global_pose(_mount_horse_head_bone_index)).origin
+		focus_source = "Head"
+	return {
+		"valid": is_inside_tree(),
+		"visible": visible and is_visible_in_tree() and _mount_visual.visible and _mount_visual.is_visible_in_tree(),
+		"horse_id": clean_horse_id,
+		"rider_npc_id": npc_id,
+		"source_location": "mounted_rider",
+		"world_position": _mount_horse_model.global_position,
+		"focus_world_position": head_world_position,
+		"camera_anchor_position": head_world_position,
+		"visual_forward": horse_forward,
+		"portrait_camera_direction": horse_forward,
+		"focus_height": 0.0,
+		"camera_height": 0.18,
+		"camera_distance": 5.5,
+		"target_kind": "mounted_horse_head",
+		"focus_source": focus_source,
+		"target_node_path": str(_mount_horse_model.get_path()),
 	}
 
 
@@ -704,8 +743,14 @@ func _get_move_speed_multiplier() -> float:
 		multiplier *= clampf(float(escape_intent.get("speed_multiplier", 1.0)), 0.25, 3.0)
 	var equipment: Dictionary = profile.get("equipment", {}) if profile.get("equipment", {}) is Dictionary else {}
 	var mount: Dictionary = equipment.get("mount", {}) if equipment.get("mount", {}) is Dictionary else {}
-	if not mount.is_empty():
+	if bool(states.get("combat_mounted", false)) and not mount.is_empty():
 		multiplier *= maxf(0.25, float(mount.get("speed_bonus", 1.0)))
+		var skills: Dictionary = profile.get("skills", {}) if profile.get("skills", {}) is Dictionary else {}
+		var riding_skill := clampf(float(skills.get("骑术", 0)) / 100.0, 0.0, 1.0)
+		multiplier *= 1.0 + riding_skill * maxf(
+			0.0,
+			float(mount.get("riding_move_speed_bonus_at_100", 0.12))
+		)
 		if str(states.get("combat_charge_phase", "")) == "charging":
 			multiplier *= maxf(1.0, float(mount.get("charge_speed_multiplier", 1.0)))
 	return multiplier
@@ -740,29 +785,15 @@ func _refresh_label() -> void:
 
 	var display_name := str(profile.get("name", npc_id))
 	var states: Dictionary = profile.get("states", {})
-	var action_text := str(states.get("current_action", "idle"))
+	var action_id := str(states.get("current_action", "idle"))
+	var action_text := "空闲" if action_id.is_empty() or action_id == "idle" else "其他行动"
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system != null and npc_system.has_method("get_npc_action_display_text"):
+		action_text = str(npc_system.get_npc_action_display_text(action_id))
 	if bool(states.get("unconscious", false)):
 		action_text = "昏迷"
 	elif _is_escape_warning_state(states):
-		action_text = "逃离"
-	elif action_text == "rallying_defense_line":
-		action_text = "集结防线"
-	elif action_text == "combat_strategy_avoid_holding":
-		action_text = "避战待命"
-	elif action_text == "combat_ready":
-		action_text = "接敌"
-	elif action_text == "meeting_assigned_horse":
-		action_text = "会合马匹"
-	elif action_text == "waiting_for_assigned_horse":
-		action_text = "等待马匹"
-	elif action_text == "planning_day":
-		action_text = "制定计划"
-	elif action_text.begins_with("moving_to_combat_strategy_avoid_"):
-		action_text = "正在避战"
-	elif action_text.begins_with("moving_to_combat_strategy_"):
-		action_text = "战术移动"
-	elif action_text == "keep_distance_retreating":
-		action_text = "拉开距离"
+		action_text = "正在逃离"
 	elif str(states.get("behavior_mode", "")) == "avoid_combat":
 		action_text = "避战"
 	_name_label.text = display_name
@@ -1136,6 +1167,9 @@ func _ensure_combat_visuals() -> void:
 			_mount_visual.add_child(horse_model)
 			_mount_horse_model = horse_model
 			_mount_animation_player = horse_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+			_mount_horse_skeleton = horse_model.find_child("Skeleton3D", true, false) as Skeleton3D
+			if _mount_horse_skeleton != null:
+				_mount_horse_head_bone_index = _mount_horse_skeleton.find_bone("Head")
 			_mount_uses_imported_horse = true
 		else:
 			var fallback := MeshInstance3D.new()

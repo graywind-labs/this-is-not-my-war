@@ -114,8 +114,33 @@ func _run_verification() -> void:
 	_check(str(npc_system.get_npc_state(NPC_ID).get("combat_target_enemy_id", "")) == enemy_a, "T0225 outside responder did not lock the station intruder globally")
 	_check(str(combat_system._get_friendly_target_scope(NPC_ID).get("scope", "")) == "station_breach_global", "T0225 station breach global scope missing for outside responder")
 
-	# Inside: the entire station is one scope. The far enemy remains eligible
-	# beyond 37.2 m, while an enemy outside the polygon is never a candidate.
+	# Inside union: the full station and the ordinary 37.2 m circle both supply
+	# candidates. They share one normal nearest-target ordering; station targets
+	# do not receive an artificial priority over a nearer outside target.
+	var union_origin := Vector3(0.0, 0.0, 30.0)
+	_check(station_controller.is_world_position_inside_station(union_origin), "T0198 union NPC fixture is outside station")
+	_set_npc_position(npc_system, NPC_ID, union_origin)
+	_clear_lock(combat_system, npc_system)
+	_set_enemy_position(combat_system, enemy_a, Vector3(0.0, 0.0, -30.0))
+	_set_enemy_position(combat_system, enemy_b, Vector3(0.0, 0.0, 60.0))
+	_set_enemy_position(combat_system, enemy_c, Vector3(0.0, 0.0, 70.0))
+	var union_scope: Dictionary = combat_system._get_friendly_target_scope(NPC_ID)
+	_check(str(union_scope.get("scope", "")) == "station_breach_plus_unified_radius", "T0198 inside union scope name mismatch: %s" % union_scope)
+	_check(bool(union_scope.get("include_station_enemies", false)), "T0198 inside union omitted station candidates: %s" % union_scope)
+	_check(not bool(union_scope.get("station_enemy_only", true)), "T0198 inside union incorrectly became station-only: %s" % union_scope)
+	_check(_horizontal_distance(union_origin, Vector3(0.0, 0.0, -30.0)) > UNIFIED_RANGE, "T0198 far station union fixture is still inside radius")
+	_check(_horizontal_distance(union_origin, Vector3(0.0, 0.0, 60.0)) < UNIFIED_RANGE, "T0198 nearby outside union fixture is beyond radius")
+	_check(station_controller.is_world_position_inside_station(Vector3(0.0, 0.0, -30.0)), "T0198 far station union fixture is outside")
+	_check(not station_controller.is_world_position_inside_station(Vector3(0.0, 0.0, 60.0)), "T0198 nearby outside union fixture is inside")
+	selected = _select_and_store(combat_system, npc_system)
+	_check(str(selected.get("id", "")) == enemy_b, "T0198 union did not choose nearby outside-station circle candidate over far station candidate: %s" % selected)
+	_set_enemy_position(combat_system, enemy_b, Vector3(0.0, 0.0, 70.0))
+	_clear_lock(combat_system, npc_system)
+	selected = _select_and_store(combat_system, npc_system)
+	_check(str(selected.get("id", "")) == enemy_a, "T0198 union lost far station candidate after outside target left the circle: %s" % selected)
+
+	# Presence-lock behavior uses the same union. Here the external fixture is
+	# beyond the circle, so the farther station target remains the valid fallback.
 	var inside_origin := Vector3(0.0, 0.0, -30.0)
 	_check(station_controller.is_world_position_inside_station(inside_origin), "T0198 inside NPC fixture is outside station")
 	_set_npc_position(npc_system, NPC_ID, inside_origin)
@@ -128,7 +153,7 @@ func _run_verification() -> void:
 	_check(station_controller.is_world_position_inside_station(Vector3(0.0, 0.0, 40.0)), "T0198 far station enemy fixture is outside")
 	_check(not station_controller.is_world_position_inside_station(Vector3(0.0, 0.0, 60.0)), "T0198 outside enemy fixture is inside")
 	selected = _select_and_store(combat_system, npc_system)
-	_check(str(selected.get("id", "")) == enemy_b, "T0198 inside initial lock was not nearest station enemy: %s" % selected)
+	_check(str(selected.get("id", "")) == enemy_b, "T0198 inside initial lock was not nearest union enemy: %s" % selected)
 	_set_enemy_position(combat_system, enemy_a, inside_origin + Vector3(1.0, 0.0, 0.0))
 	selected = combat_system._select_friendly_combat_target_lock(NPC_ID, npc_system.get_npc_state(NPC_ID))
 	_check(str(selected.get("id", "")) == enemy_b, "T0198 nearer station enemy stole presence lock: %s" % selected)

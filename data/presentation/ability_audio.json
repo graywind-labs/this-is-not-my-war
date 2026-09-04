@@ -1,0 +1,16 @@
+{
+  "schema_version": "ability_audio_v1",
+  "meteor": {
+    "fall_asset": "sfx_meteor_fall_one_shot",
+    "impact_asset": "sfx_meteor_impact_one_shot",
+    "bus": "World",
+    "visual_root_path": "/root/Main/WorldRoot/Station/Effects",
+    "fallback_source_parent_path": "/root/Main/WorldRoot/FormalStationLayout",
+    "fallback_source_root_name": "AbilityAudioSources",
+    "follow_actual_meteor_visual": true,
+    "play_full_fall_asset": true,
+    "play_full_impact_asset": true,
+    "pause_with_gameplay": true,
+    "recent_history_limit": 32
+  }
+}

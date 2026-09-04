@@ -88,7 +88,7 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"horse_died": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
 	"horse_born": ["horse_id", "horse_name", "template_id", "stable_slot_id", "named_by"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
-	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
+	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent", "remaining_helper_slots"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_failed": ["healer_npc_id", "target_npc_id", "money_spent", "reason"],
 	"revived": ["hp_before", "hp_after", "recovery_source"],
@@ -1032,7 +1032,7 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
-		_strip_damaged_building_efficiency(external_snapshot, plaza_changed_fields)
+		_strip_noninformative_building_state_delta(building_id, external_snapshot, plaza_changed_fields)
 		_last_plaza_external_states[building_id] = external_snapshot.duplicate(true)
 		if not plaza_changed_fields.is_empty():
 			_broadcast_plaza_state_changed("building_external_state_changed", {
@@ -1058,7 +1058,7 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
-		_strip_damaged_building_efficiency(location_external_state, location_changed_fields)
+		_strip_noninformative_building_state_delta(building_id, location_external_state, location_changed_fields)
 		_last_location_external_states[building_id] = location_external_state.duplicate(true)
 		if not location_changed_fields.is_empty():
 			_broadcast_location_state_changed(building_id, "building_external_state_changed", {
@@ -1460,9 +1460,17 @@ func _diff_state_fields(previous_state: Dictionary, current_state: Dictionary, f
 	return changed
 
 
-func _strip_damaged_building_efficiency(current_state: Dictionary, changed_fields: Dictionary) -> void:
-	if str(current_state.get("condition", "")) == "damaged":
+func _strip_noninformative_building_state_delta(
+	building_id: String,
+	current_state: Dictionary,
+	changed_fields: Dictionary
+) -> void:
+	# 受损沿用既有降噪；升级开始已由 condition 明确表达停工，不重复广播效率档。
+	if ["damaged", "upgrading"].has(str(current_state.get("condition", ""))):
 		changed_fields.erase("operational_efficiency")
+	# 没有常规室内空间的建筑不存在“封闭 / 重新开放”这一可传播变化。
+	if not is_enterable_location(building_id):
+		changed_fields.erase("is_enterable")
 
 
 func _normalize_special_state_for_info(building_id: String, raw_state: Variant) -> Dictionary:
@@ -1738,12 +1746,17 @@ func _format_summary(event: Dictionary) -> String:
 		]
 	if event_type == "merchant_trade_completed":
 		var resource_name := str(payload.get("resource_name", _get_resource_name(str(payload.get("resource_id", "")))))
+		var line_count := maxi(1, int(payload.get("line_count", 1)))
 		if str(payload.get("direction", "buy")) == "sell":
+			if line_count > 1:
+				return "守备官向商人出售了%d类物资，获得了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
 			return "守备官向商人出售了%d份%s，获得了%d枚第纳尔。" % [
 				int(payload.get("amount", 0)),
 				resource_name,
 				int(payload.get("total_price", 0))
 			]
+		if line_count > 1:
+			return "守备官从商人处购买了%d类物资，支付了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
 		return "守备官从商人处购买了%d份%s，支付了%d枚第纳尔。" % [
 			int(payload.get("amount", 0)),
 			resource_name,
@@ -1798,9 +1811,23 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("after", 0))
 			]
 		"repair_assist_started":
-			return "%s开始协助修复%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+			var repair_location := _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始协助修复%s，还有%d人可以参与协助。" % [
+					actor,
+					repair_location,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始协助修复%s。" % [actor, repair_location]
 		"upgrade_assist_started":
-			return "%s开始协助升级%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+			var upgrade_location := _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始协助升级%s，还有%d人可以参与协助。" % [
+					actor,
+					upgrade_location,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始协助升级%s。" % [actor, upgrade_location]
 		"eat_started":
 			return "%s开始在%s吃饭。" % [actor, location]
 		"eat_completed":
@@ -2027,11 +2054,16 @@ func _format_summary(event: Dictionary) -> String:
 		"unconscious_started":
 			return "%s在%s昏迷了。" % [actor, location]
 		"healing_started":
-			return "%s开始在%s协助治疗%s。" % [
-				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),
-				location,
-				_get_npc_display_name(str(payload.get("target_npc_id", "")))
-			]
+			var healer_name := _get_npc_display_name(str(payload.get("healer_npc_id", "")))
+			var healing_target_name := _get_npc_display_name(str(payload.get("target_npc_id", "")))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始在%s协助治疗%s，还有%d人可以参与协助。" % [
+					healer_name,
+					location,
+					healing_target_name,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始在%s协助治疗%s。" % [healer_name, location, healing_target_name]
 		"healing_completed":
 			return "%s结束了对%s的治疗，消耗%d枚第纳尔。" % [
 				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),

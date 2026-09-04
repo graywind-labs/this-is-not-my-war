@@ -15,6 +15,9 @@ func _initialize() -> void:
 
 func _run_verification() -> void:
 	var main := MAIN_SCENE.instantiate()
+	var startup := main.get_node_or_null("Systems/GameStartupSystem")
+	if startup != null:
+		startup._startup_running = true
 	root.add_child(main)
 	for _frame in range(6):
 		await process_frame

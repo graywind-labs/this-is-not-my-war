@@ -3,7 +3,7 @@ extends SceneTree
 
 const NORMAL_FILL := "71865aff"
 const DANGER_FILL := "a7433bff"
-const EXPERIENCE_FILL := "8f5a2dff"
+const EXPERIENCE_FILL := "f0deb3ff"
 const FATIGUE_FILL := "777777ff"
 const DANGER_LABEL := "dc6157ff"
 
@@ -115,11 +115,17 @@ func _init() -> void:
 		push_error("NPC action and dimmed behavior mode should follow the background button in the header")
 		quit(1)
 		return
-	if hp_progress_row == null or experience_progress_row == null or hp_label.get_parent() != hp_progress_row or experience_label.get_parent() != experience_progress_row:
+	if (
+		hp_progress_row == null
+		or experience_progress_row == null
+		or hp_label.get_parent() == null
+		or hp_label.get_parent().get_parent() != hp_progress_row
+		or experience_label.get_parent() != experience_progress_row
+	):
 		push_error("NPCPanel HP and experience should each use a label-above-progress row")
 		quit(1)
 		return
-	if hp_progress == null or experience_progress == null or hp_label.get_index() >= hp_progress.get_index() or experience_label.get_index() >= experience_progress.get_index():
+	if hp_progress == null or experience_progress == null or hp_label.get_parent().get_index() >= hp_progress.get_index() or experience_label.get_index() >= experience_progress.get_index():
 		push_error("NPCPanel HP / experience labels should sit above their progress bars")
 		quit(1)
 		return
@@ -673,7 +679,7 @@ func _init() -> void:
 	await process_frame
 
 	var action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
-	if hp_label.text != "HP：64 / 120" or action_label == null or action_label.text != "未知行动" or action_label.get_parent() != header:
+	if hp_label.text != "HP：64 / 120" or action_label == null or action_label.text != "其他行动" or action_label.get_parent() != header:
 		push_error("NPCPanel did not refresh after state update")
 		quit(1)
 		return

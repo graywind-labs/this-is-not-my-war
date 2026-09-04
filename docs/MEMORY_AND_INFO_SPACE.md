@@ -1,5 +1,23 @@
 # MEMORY_AND_INFO_SPACE.md
 
+## T0345 不可进入建筑不传播进入性变化
+
+主厅、围墙、正门、后门、仓库等没有常规室内信息节点的建筑，其 `is_enterable` 是静态空间类别而不是修复 / 升级期间会变化的世界事实。它们的广场状态差量事件因此不再携带该字段，摘要也不出现“现在不可进入 / 现在可进入”；该规则同时覆盖开始与完成事件，并能容忍旧缓存缺失时的全字段差量。
+
+宿舍、食堂、诊所等可进入建筑继续传播升级封闭与完成重开的进入性变化。过滤不修改 BuildingSystem 的碰撞、导航、可访问性或作业结算，只清理事件和见闻中的无意义字段。
+
+## T0343 建筑开始升级事件降噪
+
+建筑开始升级时，`condition=upgrading` 已经表达建筑停止运作，因此广场 `plaza_status_changed` 与建筑内 `location_status_changed` 的 `changed_fields` 不再重复携带 `operational_efficiency`，summary 也不再追加“运作效率变为 0%”。对具备常规室内空间的建筑，`is_enterable=false`、`active_job=upgrade` 与预计时长仍照常传播；T0345 起纯外部建筑不传播进入性字段。升级完成后建筑等级及效率恢复仍按实际变化广播，可进入建筑还会传播重新开放。
+
+## T0342 批量行商交易事件
+
+每次成功点击“确认”只生成一条 `merchant_trade_completed`。单资源交易继续使用原摘要；多资源交易按“购买 / 出售 N 类物资、支付 / 获得总价”生成确定性摘要。payload 保留 T1507 的方向、总数量、总价与资源 / 金钱差量，并增加逐项 `lines[]`、`line_count` 和结算后 `merchant_stock_after`；失败批次不写事件。行商库存是 MerchantSystem 事实，不进入 NPC 推理结算。
+
+## T0135-P10F 语气声不进入记忆
+
+NPC 回复情绪语气声是 `npc_dialogue_emotion_presented` 的瞬时本地表现，不新增事件类型、见闻、日记、知识图谱或 Prompt 字段。MemorySystem 仍只保存既有对话与情绪相关正式事实；资产 id、播放位置、随机变体、player 生命周期和音量不会成为 NPC 可知信息。
+
 ## T0315 新生小马命名后的事件语义
 
 `horse_born` 只在玩家确认名称、HorseSystem 已把幼马写入正式马匹库后记录一次。必填 payload 为 `horse_id / horse_name / template_id / stable_slot_id / named_by`；`horse_name` 取正式实例名，`named_by` 为守备官。确定性摘要固定为“一匹小马出生了，守备官给它取名为XX。”，地点为马厩、可见性为 `local_public`。
@@ -75,7 +93,7 @@ MemorySystem 仍以 append-only 原始事件作为唯一权威：全局事件档
 ## T0251 建筑受损状态差量字段
 
 - `building_damaged` 仍是实际扣除建筑 HP 后产生的权威伤害事实，继续按既有地点公开规则进入见闻；建筑首次从完好进入受损时，外部状态差量仍传播具体建筑的 `condition=damaged`。
-- 当当前建筑状态为受损时，广场与建筑内部状态差量在进入 NPC 见闻前移除 `operational_efficiency`，summary 不再追加“运作效率”。受损后继续掉血并仅跨越效率分档时不生成空的状态变化见闻。
+- 当当前建筑状态为受损或刚进入升级中时，广场与建筑内部状态差量在进入 NPC 见闻前移除 `operational_efficiency`，summary 不再追加“运作效率”。受损后继续掉血并仅跨越效率分档时不生成空的状态变化见闻；升级开始仍保留升级、封闭与预计时长事实。
 - MemorySystem 的当前地点状态快照仍可保留效率分档供即时上下文查询；本次只收紧受损变化写入见闻库的字段，不改变 BuildingSystem 精确倍率或玩家 UI。
 
 ## T0237 避战事件摘要边界
@@ -422,7 +440,7 @@ DailyPlanSystem 不构造结束事件；普通计划小时边界只延迟新计�
 
 功能位置的 `id / type / name / occupied_by / status`、位置容量、建筑 `condition / is_enterable` 和运行效率分档都属于建筑状态。NPC 进入室内时获得当前完整位置清单；已经在场且能接收见闻的 NPC 只收到按位置 ID 计算的新增、移除、改名、改类型或占用变化。位置移除用 `removed=true` 表达。室内精确容量与占用不广播到广场，广场仍只接收建筑外部状态。
 
-升级开始时外部状态变为 `upgrading`、`is_enterable=false`、运行效率为停止档；建筑内人员被权威系统退出到广场。升级完成后的等级、重新开放、效率分档和新增位置分别作为字段级变化传播。受损只传播单调效率分档，精确 HP、精确倍率和逐秒升级进度留在 BuildingSystem / UI，避免刷屏。
+升级开始时外部状态变为 `upgrading`、`is_enterable=false`，建筑内人员被权威系统退出到广场；开始事件不再重复传播已经由升级状态蕴含的停止效率字段。升级完成后的等级、重新开放、效率分档和新增位置分别作为字段级变化传播。受损只传播单调效率分档，精确 HP、精确倍率和逐秒升级进度留在 BuildingSystem / UI，避免刷屏。
 
 位置摘要使用玩家可读 `name`，例如“病床2被马塞尔占用”，不再向 NPC 暴露 `treatment_bed_02` 等内部 ID，也不使用“主动 / 被动工位”分类词。
 
@@ -501,8 +519,8 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `plan_revised` | `{actor}重新评估了当前计划：{summary}。` | `plan_day`, `items`, `reason`, `source`, `summary` |
 | `work_started` | `{actor}开始在{location}进行{action}。` | `action_id`, `workstation_id` |
 | `work_completed` | `{actor}完成了{action}，消耗{inputs}，产出{outputs}。` | `action_id`, `input_resources`, `output_resources` |
-| `repair_assist_started` | `{actor}开始协助修复{location}。` | `action_id`, `building_id`, `engineering_skill` |
-| `upgrade_assist_started` | `{actor}开始协助升级{location}。` | `action_id`, `building_id`, `engineering_skill` |
+| `repair_assist_started` | `{actor}开始协助修复{location}，还有{remaining_helper_slots}人可以参与协助。` | `action_id`, `building_id`, `engineering_skill`, `remaining_helper_slots` |
+| `upgrade_assist_started` | `{actor}开始协助升级{location}，还有{remaining_helper_slots}人可以参与协助。` | `action_id`, `building_id`, `engineering_skill`, `remaining_helper_slots` |
 | `dialogue_turn` | 完成的守备官会话按 `dialogue_text` 逐句生成 `{speaker}：“{text}”`；其他逐轮对话沿用 `{speaker}对{listener}说：{text}` | `dialogue_id`, `participant_npc_ids`, `dialogue_text`, `speaker_name`, `listener_name`, `speaker_text`, `reply_text`, `visibility`, `current_round`, `max_rounds`, `is_recruitment_request`, `recruitment_result`, `session_completed`；NPC-NPC 邀请额外含 `dialogue_phase`, `invitation_result`，正式回复额外含 `soft_round_threshold`, `soft_round_guidance`, `should_end_dialogue` |
 | `order_assigned` | `守备官制定了新的指令。` | `previous_order_text`, `new_order_text`, `order_revision`；T0703 已实现，固定为 `private` |
 | `damage_taken` | `{target}受到{actor}造成的{damage}点伤害。` | `damage`, `hp_before`, `hp_after` |
@@ -521,7 +539,7 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `morale_boost_started` | `{actor}被守备官的话激起了斗志，攻击和移动暂时提升。` / `{actor}在残血压力下激起了斗志，攻击和移动暂时提升。` | `source_event_id`, `trigger`, `duration_seconds`, `attack_bonus`, `move_speed_bonus`；T1201 已实现，T1202 起支持低血量来源 |
 | `morale_boost_ended` | `{actor}的斗志激昂状态消退了。` | `source_event_id`, `duration_seconds`；T1201 已实现 |
 | `battle_psychology_result` | `{actor}在战斗压力下作出了判断：{decision}。` | `trigger`, `decision`, `source_event_id`, `low_hp_event_id`, `battlefield_context_summary`；T1201 已实现战时对话来源，T1202 已实现低血量来源 |
-| `healing_started` | `{healer}开始在{location}协助治疗{target}。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
+| `healing_started` | `{healer}开始在{location}协助治疗{target}，还有{remaining_helper_slots}人可以参与协助。` | `healer_npc_id`, `target_npc_id`, `money_spent`, `remaining_helper_slots` |
 | `healing_completed` | `{healer}结束了对{target}的治疗。` | `healer_npc_id`, `target_npc_id`, `money_spent` |
 | `healing_failed` | `{healer}对{target}的治疗因{reason}中止。` | `healer_npc_id`, `target_npc_id`, `money_spent`, `reason` |
 | `revived` | `{target}在{location}苏醒了。` | `hp_before`, `hp_after`, `recovery_source` |
@@ -529,7 +547,7 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `attribute_improved` | `{actor}通过锻炼体力 / 脑力，{attribute}从{before}提高到{after}。` | `attribute`, `attribute_label`, `before`, `after`, `training_kind`；技能点仍由玩家通过权威入口分配，不由 AI 自动消耗 |
 | `merchant_arrived` | `{merchant_name}在{arrival_time}抵达后门，将停留到{departure_time}。` | `merchant_id`, `merchant_name`, `arrival_time`, `departure_time`, `visit_day`；T1507 已实现 |
 | `merchant_departed` | `{merchant_name}在{time}离开了后门。` | `merchant_id`, `merchant_name`, `arrival_time`, `departure_time`, `visit_day`；T1507 已实现 |
-| `merchant_trade_completed` | `守备官从商人处购买了{amount}份{resource_name}，支付了{total_price}枚第纳尔。` / `守备官向商人出售了{amount}份{resource_name}，获得了{total_price}枚第纳尔。` | `merchant_id`, `direction`, `resource_id`, `resource_name`, `amount`, `unit_price`, `total_price`, `money_delta`, `resource_delta`；T1507 已实现 |
+| `merchant_trade_completed` | 单项沿用“购买 / 出售了{amount}份{resource_name}”；多项为“购买 / 出售了{line_count}类物资，支付 / 获得{total_price}枚第纳尔。” | `merchant_id`, `direction`, `resource_id`, `resource_name`, `amount`, `unit_price`, `total_price`, `money_delta`, `resource_delta`；T0342 批量额外含 `lines`, `line_count`, `merchant_stock_after` |
 | `defense_device_deployed` | `守备官把{device_name}部署在{slot_name}，消耗了{inventory_cost}份工程器械库存。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `slot_name`, `building_id`, `inventory_resource_id`, `inventory_cost`；T1508 已实现 |
 | `defense_device_triggered` | `守备官部署的{device_name}攻击了{target_enemy_name}，造成{damage}点伤害。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `target_enemy_id`, `target_enemy_name`, `damage`, `hp_before`, `hp_after`, `defeated`；T1508 已实现弩床 / 箭塔触发 |
 | `piety_meteor_impact` | `由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。` | `cast_id`, `target_position`, `radius`, `impact_damage`, `impact_max_targets`, `enemy_hit_count`, `enemy_defeated_count`, `burn_duration_seconds`, `friendly_fire=false`；T0159 起全站公开，T0172 起选点时不另写施放事件 |
@@ -564,12 +582,12 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库。广场事件也走同一规则，地点为 `plaza`。
-- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`，T0045 后其 actor / summary 按 NPC 自身锻炼成长表达。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。`NPCSystem` 到达地点时写入 `location_entered`。
+- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`，T0045 后其 actor / summary 按 NPC 自身锻炼成长表达。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。T0326 起两类开始事件都包含 `remaining_helper_slots`，其数值同时扣除已到位与在途预占施工位。`NPCSystem` 到达地点时写入 `location_entered`。
 - T1001 起，`DailyPlanSystem` 生成每日计划时写入 `private` 的 `plan_created` 事件。T0022 后，正式开局和正式新一天只有在真实 LLM 计划成功时才写入该事件，payload 包含 `plan_day`、24 个小时计划项 `items`、`source=llm_plan_day` 和 `work_phase_count`。真实 provider 失败时不写入 `plan_created`，不生成 `rule_plan_fallback`；`rule_default` / `mock_plan_day` 只可来自显式调试入口。该事件只表示 NPC 制定了计划，不代表其中任一行动已经完成。T0049 后，对话判别空结果不写事件；只有真实 provider 恰好返回并成功应用 `revision_hours` 指定项后，才写入 `private` 的 `plan_revised` 事件。payload 记录合并后的 24 小时计划、触发原因、修订小时、`source=llm_plan_revision` 和摘要。Mock、provider 失败或本地校验失败都不写该事件，也不覆盖原计划。该事件仍不代表资源、HP 或工作产出已结算。
 - 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_events()` 和对应调试接口。
 - T1004/T1005 起，`clear_npc_short_term_memory(npc_id)` 可整批清空指定 NPC 当天事件库和见闻库索引，现仅保留给显式调试和旧调用兼容。T0095 后正式熟睡总结改用 `get_npc_short_term_memory_snapshot(...)` 与 `clear_npc_short_term_memory_snapshot(...)`，只轮转请求快照内的稳定 ID，异步期间新增的事件 / 见闻留待下一篇；两种清理都不删除 `_events_by_id` 和全局事件列表。
 - 玩家非对话交互可通过 `record_player_interaction(...)` 写入目标 NPC 事件库，并按 `private` / `local_public` 可见性即时广播；当前已有 `debug_record_player_money_given(...)` 和 `debug_record_player_attack_npc(...)` 用于验证给钱与攻击事件。T0704 后，给钱由 `NPCSystem.give_money_to_npc(...)` 扣除全局第纳尔、增加目标 NPC 随身金钱并写入 `money_given`。T0063 后，紧邻入口的给酒由 `give_wine_to_npc(...)` 扣除驿站酒、增加个人持酒并写 `wine_given`；NPC 开始 `drink_wine` 时实际扣除 1 份个人酒并写 `wine_consumed`。该事件摘要可以影响后续语境，但不删除长期记忆或创建情绪数值。T1006/T0051 后，正式玩家攻击入口位于 `DialogPanel`：普通对话里的攻击按钮复用 `NPCSystem.apply_damage_to_npc(...)` 立即写入带惩戒文案的 `damage_taken`，随后请求 NPC 回复；攻击锁定取消，完成时把已有攻击行和已返回回复一起写入会话 `dialogue_turn`，未返回的回复不伪造。逃离挽留攻击只写 HP 伤害、`escape_speed_changed` 和轮次状态，不请求 NPC 回复，但会自动完成并写入以攻击行为结尾的会话 `dialogue_turn`；不写未发生的 NPC 回复或 `escape_intervention_result`。T0901 后，装备武器/盔甲/坐骑由 `EquipmentSystem` 结算库存与槽位，再复用 `record_player_interaction(...)` 写入 `equipment_given` / `equipment_changed`。
-- T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503/T0025 起，协助治疗写入 `healing_started`，目标完成时写 `healing_completed`；中途第纳尔不足或离开目标地点写 `healing_failed`，不得伪装为完成。三类事件都会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
+- T0501 起，NPC 权威扣血由 `NPCSystem.apply_damage_to_npc(...)` 写入 `damage_taken`；HP 清零时额外写入 `unconscious_started`，并按 NPC 当前信息地点以 `local_public` 广播给同地点 NPC。T0502 起，NPC 自然恢复到 Max HP 30% 后写入 `revived`，同样按当前信息地点以 `local_public` 广播给同地点 NPC。T0503/T0025 起，协助治疗写入 `healing_started`，目标完成时写 `healing_completed`；中途第纳尔不足或离开目标地点写 `healing_failed`，不得伪装为完成。三类事件都会同时进入治疗者和目标 NPC 的事件库，并写入同地点其他在场 NPC 的见闻库；治疗事件不在 payload 或 summary 中暴露医术熟练度。T0326 起治疗开始事件还写入按最多 2 名 commitment、包含在途者计算的 `remaining_helper_slots`。昏迷目标自身仍不接收见闻，但其亲历事件库会记录治疗事实。GM `attack_npc` / `damage_npc` 现在调用 NPC 扣血接口；`debug_record_player_attack_npc(...)` 只保留为记忆交互调试入口。
 - T1103 起，`CombatSystem.trigger_combat_alarm(...)` 会给所有 NPC 写入 `combat_alarm_rang` 私有事件；只有入伍、持主武器且当前可行动的 NPC 会继续写入 `combat_rally_started`，并被移动到城门外防线。若集结途中遇到敌人，系统写入 `combat_rally_encountered_enemy` 并将 NPC 切到 `combat_ready` 占位。上述事件只记录警铃、集结和接敌事实，不代表战斗已经完成。
 - T1104 起，`attack_made` 记录我方 NPC 对敌人完成的一次程序结算攻击，payload 包含攻击者、目标敌人、武器、力量 / 熟练度输入、原始攻击力、防御、实际伤害、敌人 HP 前后值和是否击退敌人。敌人攻击 NPC 仍复用 `damage_taken`，并可在 payload 中保留 `raw_attack_power`、`target_defense` 和 `damage_after_defense`。这些事件只记录程序已应用的 HP 事实，不让 LLM 决定攻击力、防御或扣血。
 - T1106 起，敌人波次生成后写入广场 `combat_started`，payload 记录波次、敌军 roster、我方已入伍持主武器战斗人员 roster 和非战斗人员数量；敌军全灭、撤退或 GM 清敌后写入广场 `combat_ended`，payload 记录本场受伤 / 昏迷 NPC、各 NPC 击退敌人数量和结束原因。两类事件都使用确定性 summary，不让 LLM 决定敌人、伤害、HP 或胜负。
@@ -584,7 +602,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - 所有建筑都有可传播外部状态：`level`、`condition`（`intact` / `damaged` / `repairing` / `upgrading`）、`is_enterable` 和运行效率分档。HP、Max HP、精确效率及修复/升级剩余时长仍可由建筑系统和 UI 查询，但不直接触发高频见闻。广场和可进入建筑都会在进入快照中暴露当前在场 NPC 的生命状态/行动状态；可进入建筑额外拥有逐位置内部状态，位置容量变化也参与状态比较。不可进入建筑不向地点快照暴露位置或内部 NPC。
 - 广场快照没有自身建筑 HP，但通过 `building_external_states` 继承所有建筑的可传播外部状态；`key_entities` 当前作为兼容别名指向同一组外部状态。室外或不可进入实体来源的公开事件默认归入 `location_id == "plaza"` 并使用 `local_public`。
 - T0065 后，主厅前公告牌双页分别调用 `MemorySystem.set_plaza_notice(...)` / `set_plaza_reference_schedule(...)`：实际变更会更新广场当前状态，并生成一条 `plaza_notice_changed` / `plaza_schedule_changed`，由 MemorySystem 按事件类型向全站当前可接收见闻的 NPC 广播；相同内容不重复广播。summary 分别使用“守备官更新了通告”与“守备官更新了参考日程”，新内容保留在各自 payload 中。公告牌只是输入 / 显示接口，不是建筑信息节点。任一建筑的可传播外部状态变化仍生成带具体建筑名和具体状态的 `plaza_status_changed` 广场公开状态事件，只由当时在广场的 NPC 接收；summary 不使用“建筑状态更新”这类空泛前缀。
-- T1507 后，MerchantSystem 在商人到达、离开和成功交易时分别生成 `merchant_arrived`、`merchant_departed`、`merchant_trade_completed`，均为 `location_id == "plaza"` 的 `local_public` 事件。交易事件只记录 ResourceSystem 已完成的资源事实；余额/库存不足等失败不写成功事件。
+- T1507 后，MerchantSystem 在商人到达、离开和成功交易时分别生成 `merchant_arrived`、`merchant_departed`、`merchant_trade_completed`，均为 `location_id == "plaza"` 的 `local_public` 事件。T0342 起一次批量确认只生成一条成功事件，并用 `lines[]` 保留逐项事实；余额、玩家库存、行商库存或仓库容量不足等失败不写成功事件。
 - T1508 修订后，DefenseDeviceSystem 成功部署时以 `guard_officer` 为 `subject_npc_id` 写入 `defense_device_deployed`，不绑定部署 NPC，也不进入任何 NPC 的亲历事件库；事件仍按广场 `local_public` 规则广播给当前在场 NPC，失败部署不写成功事件。弩床 / 箭塔实际造成程序伤害后再写 `defense_device_triggered`，payload 只记录 CombatSystem 已结算的敌人 HP 事实。
 - T0159 后，PietySystem 在陨石真正落地并取得 CombatSystem 冲击结果后写入 `piety_meteor_impact`；MemorySystem 将其向全站当前可接收见闻的 NPC 广播。T0172 起选点确认与虔诚消费不写正式事件，只保留落地事实。`defeated_count > 0` 时再写一条 `piety_meteor_enemy_defeated`，零击败不生成。两条摘要会随既有紧凑短期记忆进入后续 LLM 上下文，但 MemorySystem 不参与伤害、击杀或无友伤判断；持续燃烧仍不按 tick 写事件。
 - `location_entered` / `location_exited` 事件库记录只保留进入 / 离开的行动事实；完整地点状态不再重复塞入亲历事件。进入者通过见闻库获得一次当前状态快照：进入广场时接收广场当前在场 NPC、广场在场 NPC 的生命状态 / 行动状态和所有建筑外部状态，不接收公告牌当前通告、参考日程或非强制备注；进入可进入建筑时接收该建筑完整外部 + 内部状态，包括当前在场 NPC、建筑内 NPC 的生命状态 / 行动状态和工位占用。已经在场的 NPC 只接收“某人进入 / 离开某地”的 `local_public` 事件，不再额外收到完整在场 NPC 列表或完整人员状态列表。
