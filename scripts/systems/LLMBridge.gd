@@ -19,6 +19,8 @@ signal battle_judgement_response_received(result: Dictionary)
 signal battle_judgement_async_response_received(result: Dictionary)
 signal daily_reflection_response_received(result: Dictionary)
 signal daily_reflection_async_response_received(result: Dictionary)
+signal game_epilogue_response_received(result: Dictionary)
+signal game_epilogue_async_response_received(result: Dictionary)
 signal llm_usage_response_received(result: Dictionary)
 
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
@@ -811,6 +813,49 @@ func request_npc_daily_reflection_async(npc_id: String, options: Dictionary = {}
 		"pending": true,
 		"npc_id": npc_id,
 		"request_id": request_id
+	}
+
+
+func request_game_epilogue_async(payload: Dictionary) -> Dictionary:
+	if _is_transport_shutdown_requested():
+		return _async_shutdown_failure()
+	if payload.is_empty() or str(payload.get("settlement_id", "")).is_empty():
+		return _failure_result("payload_error", "无法构造 GameEpilogueRequest。")
+	var request_payload := payload.duplicate(true)
+	var meta: Dictionary = request_payload.get("meta", {}) if request_payload.get("meta", {}) is Dictionary else {}
+	var request_id := str(meta.get("request_id", _make_request_id("game_epilogue")))
+	meta["request_id"] = request_id
+	meta["call_type"] = "game_epilogue"
+	meta["source"] = "godot"
+	meta["requires_time_slowdown"] = false
+	request_payload["meta"] = meta
+	var thread := Thread.new()
+	_async_request_threads[request_id] = {
+		"thread": thread,
+		"npc_id": "",
+		"request_id": request_id,
+		"call_type": "game_epilogue"
+	}
+	var err := thread.start(
+		Callable(self, "_thread_request_json").bind(
+			"POST",
+			"/game/epilogue",
+			request_payload,
+			request_id,
+			0.0
+		)
+	)
+	if err != OK:
+		_async_request_threads.erase(request_id)
+		return _failure_result("thread_start_failed", "无法启动异步群像结局请求。", {
+			"godot_error": err,
+			"request_id": request_id
+		})
+	return {
+		"ok": true,
+		"pending": true,
+		"request_id": request_id,
+		"settlement_id": str(request_payload.get("settlement_id", ""))
 	}
 
 
@@ -1740,6 +1785,8 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 				response["battle_judgement"] = result.get("body", {})
 			"daily_reflection":
 				response["daily_reflection"] = result.get("body", {})
+			"game_epilogue":
+				response["game_epilogue"] = result.get("body", {})
 			_:
 				response["dialogue"] = result.get("body", {})
 	_emit_async_response(call_type, response)
@@ -1782,6 +1829,10 @@ func _emit_async_response(call_type: String, response: Dictionary) -> void:
 	if call_type == "daily_reflection":
 		daily_reflection_response_received.emit(response.duplicate(true))
 		daily_reflection_async_response_received.emit(response.duplicate(true))
+		return
+	if call_type == "game_epilogue":
+		game_epilogue_response_received.emit(response.duplicate(true))
+		game_epilogue_async_response_received.emit(response.duplicate(true))
 		return
 	dialogue_response_received.emit(response.duplicate(true))
 	dialogue_async_response_received.emit(response.duplicate(true))

@@ -72,6 +72,11 @@ const COMPLETION_POLICY_UNTIL_TARGET_RESOLVED := "until_target_resolved"
 const COMPLETION_POLICY_ONCE_PER_PLAN_HOUR := "once_per_plan_hour"
 const COMPLETION_POLICY_TERMINAL := "terminal"
 const COMPLETION_POLICY_NOT_PLAN_SELECTABLE := "not_plan_selectable"
+const RELEVANT_NPC_STATE_FIELDS: Array[String] = [
+	"current_action", "current_location", "behavior_mode", "combat_mode",
+	"unconscious", "escaped", "spatial_route_phase", "movement_target",
+	"active_dialogue_id",
+]
 const DIRECT_DEBUG_ACTION_TYPES := [
 	"work", "eat", "drink", "sleep", "pray", "clinic_doctor", "clinic_patient",
 	"training_instructor", "training_student"
@@ -1537,6 +1542,13 @@ func get_healing_assist_rate_snapshot(target_npc_id: String) -> Dictionary:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
+	var change_npc_system := _get_npc_system()
+	if (
+		change_npc_system != null
+		and change_npc_system.has_method("is_active_npc_state_change_relevant")
+		and not change_npc_system.is_active_npc_state_change_relevant(npc_id, RELEVANT_NPC_STATE_FIELDS)
+	):
+		return
 	_queue_healing_assist_cleanup_for_resolved_target(npc_id)
 	if _is_npc_unconscious_or_escaped(npc_id):
 		var incapacitated_options: Dictionary = (
@@ -1649,6 +1661,8 @@ func _on_npc_state_changed(npc_id: String) -> void:
 
 
 func _queue_healing_assist_cleanup_for_resolved_target(target_npc_id: String) -> void:
+	if not _has_healing_commitment_for_target(target_npc_id):
+		return
 	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
@@ -1656,6 +1670,27 @@ func _queue_healing_assist_cleanup_for_resolved_target(target_npc_id: String) ->
 	if bool(target_state.get("unconscious", false)) and not bool(target_state.get("escaped", false)):
 		return
 	call_deferred("_cleanup_healing_assists_for_resolved_target", target_npc_id)
+
+
+func _has_healing_commitment_for_target(target_npc_id: String) -> bool:
+	var helpers: Array = _healing_helpers_by_target.get(target_npc_id, [])
+	if not helpers.is_empty():
+		return true
+	for raw_healer_id in _pending_actions.keys():
+		var healer_npc_id := str(raw_healer_id)
+		if (
+			str(_pending_actions.get(healer_npc_id, "")) == HEALING_ACTION_ID
+			and str(_pending_action_targets.get(healer_npc_id, "")) == target_npc_id
+		):
+			return true
+	for raw_healer_id in _active_actions.keys():
+		var active_action: Dictionary = _active_actions.get(str(raw_healer_id), {})
+		if (
+			str(active_action.get("kind", "")) == HEALING_ACTION_ID
+			and str(active_action.get("target_npc_id", "")) == target_npc_id
+		):
+			return true
+	return false
 
 
 func _cleanup_healing_assists_for_resolved_target(target_npc_id: String) -> void:
@@ -2808,12 +2843,17 @@ func _cleanup_resolved_formal_building_assist_session(npc_id: String, action_id:
 	var npc_system := _get_npc_system()
 	if npc_system == null or not npc_system.has_method("get_formal_workstation_action_snapshot"):
 		return
-	var snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
-	var session: Dictionary = snapshot.get("session", {}) if snapshot.get("session", {}) is Dictionary else {}
-	if (
-		not bool(snapshot.get("active", false))
-		or str(session.get("action_id", "")) != action_id
-	):
+	var active_action_id := ""
+	if npc_system.has_method("get_formal_workstation_action_identity"):
+		var identity: Dictionary = npc_system.get_formal_workstation_action_identity(npc_id)
+		if bool(identity.get("active", false)):
+			active_action_id = str(identity.get("action_id", ""))
+	else:
+		var snapshot: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+		var session: Dictionary = snapshot.get("session", {}) if snapshot.get("session", {}) is Dictionary else {}
+		if bool(snapshot.get("active", false)):
+			active_action_id = str(session.get("action_id", ""))
+	if active_action_id != action_id:
 		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if str(state.get("current_action", "")).begins_with("%s_" % action_id):

@@ -30,6 +30,7 @@ const EXPECTED_RECIPE_IDS := [
 var _recipes: Dictionary = {}
 var _recipe_ids_by_building: Dictionary = {}
 var _projects: Dictionary = {}
+var _initial_projects: Dictionary = {}
 var _pending_outputs: Dictionary = {}
 var _latest_pending_output_item_ids: Dictionary = {}
 var _active_cycles: Dictionary = {}
@@ -47,6 +48,7 @@ func initialize() -> void:
 	_recipes.clear()
 	_recipe_ids_by_building.clear()
 	_projects.clear()
+	_initial_projects.clear()
 	_pending_outputs.clear()
 	_latest_pending_output_item_ids.clear()
 	_active_cycles.clear()
@@ -101,6 +103,8 @@ func initialize() -> void:
 		_recipe_ids_by_building[building_id] = building_recipe_ids
 
 	_validate_expected_catalog()
+	if loaded_data is Dictionary:
+		_apply_initial_projects(loaded_data.get("initial_projects", []))
 	_initialized = _load_errors.is_empty()
 	recipe_catalog_loaded.emit(_recipes.size())
 	publish_all_special_states()
@@ -715,6 +719,7 @@ func debug_get_snapshot() -> Dictionary:
 		"expected_recipe_count": EXPECTED_RECIPE_IDS.size(),
 		"recipe_ids_by_building": _recipe_ids_by_building.duplicate(true),
 		"recipes": recipes_snapshot,
+		"initial_projects": _initial_projects.duplicate(true),
 		"projects": get_all_project_snapshots(),
 		"pending_outputs": _pending_outputs.duplicate(true),
 		"latest_pending_output_item_ids": _latest_pending_output_item_ids.duplicate(true),
@@ -807,6 +812,58 @@ func _validate_expected_catalog() -> void:
 		var recipe_id := str(raw_recipe_id)
 		if not EXPECTED_RECIPE_IDS.has(recipe_id):
 			_record_load_error("Unexpected crafting recipe outside the frozen Demo catalog: %s" % recipe_id)
+
+
+func _apply_initial_projects(raw_initial_projects: Variant) -> void:
+	if not raw_initial_projects is Array:
+		_record_load_error("Crafting initial_projects must be an array.")
+		return
+	for raw_entry in raw_initial_projects:
+		if not raw_entry is Dictionary:
+			_record_load_error("Crafting initial project must be a dictionary.")
+			continue
+		var building_id := str(raw_entry.get("building_id", "")).strip_edges()
+		var recipe_id := str(raw_entry.get("recipe_id", "")).strip_edges()
+		var completed_stages := int(raw_entry.get("completed_stages", 0))
+		var recipe := get_recipe(recipe_id)
+		if not _projects.has(building_id):
+			_record_load_error("Unsupported crafting initial project building: %s" % building_id)
+			continue
+		if recipe.is_empty() or str(recipe.get("building_id", "")) != building_id:
+			_record_load_error("Invalid crafting initial project recipe: %s/%s" % [building_id, recipe_id])
+			continue
+		var stages: Array = recipe.get("stages", [])
+		if completed_stages <= 0 or completed_stages >= stages.size():
+			_record_load_error("Crafting initial project completed_stages must leave an unfinished product: %s" % recipe_id)
+			continue
+		var calculated_investment := {}
+		for stage_index in range(completed_stages):
+			var stage: Dictionary = stages[stage_index]
+			var stage_cost: Dictionary = stage.get("cost", {})
+			for raw_resource_id in stage_cost.keys():
+				var resource_id := str(raw_resource_id)
+				calculated_investment[resource_id] = int(calculated_investment.get(resource_id, 0)) + int(stage_cost[raw_resource_id])
+		var declared_investment := _normalize_stage_cost(
+			raw_entry.get("invested_resources", {}),
+			"initial_project",
+			recipe_id
+		)
+		if declared_investment != calculated_investment:
+			_record_load_error("Crafting initial project investment does not match completed stage costs: %s" % recipe_id)
+			continue
+		var initial_project := {
+			"building_id": building_id,
+			"target_recipe_id": recipe_id,
+			"target_item_id": str(recipe.get("output_item_id", "")),
+			"target_name": str(recipe.get("name", "")),
+			"revision": 1,
+			"completed_stages": completed_stages,
+			"total_stages": stages.size(),
+			"invested_resources": calculated_investment.duplicate(true),
+			"source": str(raw_entry.get("source", "pre_game_investment"))
+		}
+		_projects[building_id] = initial_project.duplicate(true)
+		_initial_projects[building_id] = initial_project.duplicate(true)
 
 
 func _make_empty_project(building_id: String) -> Dictionary:

@@ -34,6 +34,46 @@ const FRIENDLY_ACTIVITY_MARKER_HEIGHT := 2.95
 const FRIENDLY_DIALOGUE_BUBBLE_HEIGHT := 3.12
 const FRIENDLY_ESCAPE_MARKER_HEIGHT := 3.12
 const FRIENDLY_EMOTION_BUBBLE_HEIGHT := 3.72
+const LOCOMOTION_STATE_KEYS := {
+	"satiety": true,
+	"escape_intent": true,
+	"behavior_mode": true,
+	"combat_mode": true,
+	"combat_mounted": true,
+	"combat_charge_phase": true,
+	"morale_boost": true,
+}
+const CHARACTER_ART_STATE_KEYS := {
+	"hp": true,
+	"unconscious": true,
+	"escaped": true,
+	"behavior_mode": true,
+	"combat_mode": true,
+	"combat_mounted": true,
+	"combat_attack_sequence": true,
+	"combat_attack_cycle_seconds": true,
+	"combat_attack_impact_seconds": true,
+	"combat_attack_phase": true,
+	"combat_projectile_authority": true,
+	"combat_attack_playback_multiplier": true,
+	"current_action": true,
+	"presentation_clinic_duty_mode": true,
+}
+const OVERHEAD_STATE_KEYS := {
+	"current_action": true,
+	"unconscious": true,
+	"escaped": true,
+	"escape_intent": true,
+	"behavior_mode": true,
+	"combat_mode": true,
+	"combat_mounted": true,
+	"hp": true,
+	"max_hp": true,
+	"proactive_talk": true,
+	"active_dialogue_id": true,
+	"llm_activity": true,
+	"first_sleep_summary_active": true,
+}
 
 @export var move_speed := 5.0
 
@@ -110,6 +150,82 @@ func update_profile(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
 	_refresh_active_locomotion_profile()
 	_apply_profile_to_character_art()
+	_apply_profile_visibility_and_overhead()
+
+
+func update_states(states: Dictionary) -> void:
+	profile["states"] = states.duplicate(true)
+	_refresh_active_locomotion_profile()
+	if _character_art_view != null:
+		if _character_art_view.has_method("apply_states"):
+			_character_art_view.apply_states(states)
+		elif _character_art_view.has_method("apply_profile"):
+			_character_art_view.apply_profile(profile)
+	_apply_profile_visibility_and_overhead()
+
+
+func apply_state_changes(changes: Dictionary) -> void:
+	var current_states: Dictionary = (
+		profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	)
+	var effective_changes: Dictionary = {}
+	for raw_key in changes.keys():
+		var key := str(raw_key)
+		var value: Variant = changes[raw_key]
+		if current_states.has(key) and current_states[key] == value:
+			continue
+		effective_changes[key] = value.duplicate(true) if value is Dictionary or value is Array else value
+	if effective_changes.is_empty():
+		return
+	var next_states := current_states.duplicate()
+	for raw_key in effective_changes.keys():
+		next_states[str(raw_key)] = effective_changes[raw_key]
+	profile["states"] = next_states
+	if _state_changes_intersect(effective_changes, LOCOMOTION_STATE_KEYS):
+		_refresh_active_locomotion_profile()
+	if _character_art_view != null and _state_changes_intersect(effective_changes, CHARACTER_ART_STATE_KEYS):
+		if _character_art_view.has_method("apply_state_changes"):
+			_character_art_view.apply_state_changes(effective_changes)
+		elif _character_art_view.has_method("apply_states"):
+			_character_art_view.apply_states(next_states)
+		elif _character_art_view.has_method("apply_profile"):
+			_character_art_view.apply_profile(profile)
+	_apply_state_changes_to_visibility_and_overhead(effective_changes)
+
+
+func _state_changes_intersect(changes: Dictionary, relevant_keys: Dictionary) -> bool:
+	for raw_key in changes.keys():
+		if relevant_keys.has(str(raw_key)):
+			return true
+	return false
+
+
+func _apply_state_changes_to_visibility_and_overhead(changes: Dictionary) -> void:
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	if changes.has("escaped"):
+		if bool(states.get("escaped", false)):
+			stop_movement()
+			visible = false
+			_set_interaction_enabled(false)
+			return
+		visible = true
+		_set_interaction_enabled(true)
+		if bool(states.get("unconscious", false)):
+			stop_movement()
+		_sync_unconscious_physical_entity()
+		_refresh_label()
+		return
+	if bool(states.get("escaped", false)):
+		return
+	if changes.has("unconscious"):
+		if bool(states.get("unconscious", false)):
+			stop_movement()
+		_sync_unconscious_physical_entity()
+	if _state_changes_intersect(changes, OVERHEAD_STATE_KEYS):
+		_refresh_label()
+
+
+func _apply_profile_visibility_and_overhead() -> void:
 	var states: Dictionary = profile.get("states", {})
 	if bool(states.get("escaped", false)):
 		stop_movement()

@@ -29,6 +29,10 @@ const RIDER_ROUTE_RECOVERY_RETRY_MSEC := 500
 const WORLD_FEEDBACK_WHOLE_THRESHOLD := 1.0
 const WORLD_FEEDBACK_RATIO_THRESHOLD := 0.001
 const WORLD_FEEDBACK_EPSILON := 0.000001
+const RELEVANT_NPC_STATE_FIELDS: Array[String] = [
+	"behavior_mode", "combat_mode", "unconscious", "escaped",
+	"combat_mounted", "combat_mount_phase",
+]
 
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
@@ -932,6 +936,12 @@ func _on_npc_state_changed(npc_id: String) -> void:
 	if horse_id.is_empty():
 		return
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, RELEVANT_NPC_STATE_FIELDS)
+	):
+		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id) if npc_system != null and npc_system.has_method("get_npc_state") else {}
 	if bool(state.get("unconscious", false)) or str(state.get("behavior_mode", "")) == BEHAVIOR_MODE_UNCONSCIOUS:
 		_begin_return_to_stable(horse_id, true, "rider_unconscious")

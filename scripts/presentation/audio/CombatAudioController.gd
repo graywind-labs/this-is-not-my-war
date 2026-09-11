@@ -146,6 +146,8 @@ func _handle_combat_audio_event(event: Dictionary) -> void:
 			_play_asset(str(_config.get("horse_death_asset", "")), event, "impact")
 		"structure_damaged":
 			_play_structure_damage(event)
+		"combat_alarm":
+			_play_asset(str(_config.get("combat_alarm_asset", "")), event, "stinger")
 		"battle_started", "wave_cleared":
 			var stingers: Dictionary = _config.get("stingers", {})
 			_play_asset(str(stingers.get(event_type, "")), event, "stinger")
@@ -205,7 +207,17 @@ func _play_actor_damage(event: Dictionary) -> void:
 	var hit_asset := _pick_variant(variants)
 	_play_asset(hit_asset, event, "impact")
 	var target_type := str(event.get("target_type", ""))
-	if _rng.randf() <= clampf(float(_config.get("hurt_voice_probability", 0.5)), 0.0, 1.0):
+	var hurt_voice_probability := clampf(float(_config.get("hurt_voice_probability", 0.5)), 0.0, 1.0)
+	if (
+		target_type == "npc"
+		and str(event.get("source_id", "")) == str(_config.get("guard_attack_source_id", "guard_officer"))
+	):
+		hurt_voice_probability = clampf(
+			float(_config.get("guard_attack_hurt_voice_probability", 1.0)),
+			0.0,
+			1.0
+		)
+	if _rng.randf() <= hurt_voice_probability:
 		var voice_asset := ""
 		if target_type == "enemy":
 			voice_asset = str(_config.get("enemy_hurt_voice_asset", ""))
@@ -248,13 +260,20 @@ func _play_asset(
 	event: Dictionary,
 	group: String,
 	prefer_existing_source := false
-) -> AudioStreamPlayer3D:
+) -> Node:
 	if asset_id.is_empty() or not _consume_frame_budget(group, event, asset_id):
 		return null
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
 	if audio_manager == null or not audio_manager.has_asset(asset_id):
 		_record_skip(event, asset_id, group, "asset_unavailable")
 		return null
+	if _is_global_event(event):
+		var global_player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"Combat")
+		if global_player == null:
+			_record_skip(event, asset_id, group, "playback_failed")
+			return null
+		_record_play(event, asset_id, group, global_player, null)
+		return global_player
 	var source: Node3D = null
 	var temporary_source := false
 	if prefer_existing_source:
@@ -267,7 +286,14 @@ func _play_asset(
 	if source == null:
 		_record_skip(event, asset_id, group, "source_unavailable")
 		return null
-	var player: AudioStreamPlayer3D = audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"Combat")
+	var spatial_profile := StringName(str(_config.get("spatial_profile", "combat_priority")))
+	var player: AudioStreamPlayer3D = audio_manager.play_3d(
+		asset_id,
+		source,
+		Vector3.ZERO,
+		&"Combat",
+		spatial_profile
+	)
 	if player == null:
 		if temporary_source and is_instance_valid(source):
 			source.queue_free()
@@ -277,6 +303,11 @@ func _play_asset(
 		player.finished.connect(_free_temporary_source.bind(source), CONNECT_ONE_SHOT)
 	_record_play(event, asset_id, group, player, source)
 	return player
+
+
+func _is_global_event(event: Dictionary) -> bool:
+	var global_event_types: Array = _config.get("global_event_types", [])
+	return global_event_types.has(str(event.get("event_type", "")))
 
 
 func _consume_frame_budget(group: String, event: Dictionary, asset_id: String) -> bool:
@@ -363,6 +394,7 @@ func _pick_variant(values: Array) -> String:
 
 
 func _record_play(event: Dictionary, asset_id: String, group: String, player: Node, source: Node3D) -> void:
+	var positional := player is AudioStreamPlayer3D
 	_recent_history.append({
 		"event_type": str(event.get("event_type", "")),
 		"asset_id": asset_id,
@@ -371,8 +403,12 @@ func _record_play(event: Dictionary, asset_id: String, group: String, player: No
 		"target_id": str(event.get("target_id", "")),
 		"player_type": player.get_class(),
 		"bus": str(player.get("bus")),
-		"source_path": str(source.get_path()),
-		"world_position": source.global_position,
+		"source_path": str(source.get_path()) if source != null else "",
+		"world_position": source.global_position if source != null else Vector3.ZERO,
+		"spatial_profile": str(player.get_meta("audio_spatial_profile", &"local")) if positional else "global_2d",
+		"unit_size_m": float(player.get("unit_size")) if positional else 0.0,
+		"max_distance_m": float(player.get("max_distance")) if positional else 0.0,
+		"attenuation_filter_db": float(player.get("attenuation_filter_db")) if positional else 0.0,
 	})
 	_trim_debug_records(_recent_history)
 

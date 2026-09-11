@@ -16,7 +16,9 @@ func _init() -> void:
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
-	if [npc_system, resource_system, action_system, memory_system, llm_bridge].has(null):
+	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
+	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
+	if [npc_system, resource_system, action_system, memory_system, llm_bridge, npc_panel, gm_panel].has(null):
 		_fail("Required wine-drinking systems not found")
 		return
 
@@ -32,6 +34,10 @@ func _init() -> void:
 		or not str(drink_action.get("description", "")).contains("改善心情")
 	):
 		_fail("drink_wine action definition is incomplete")
+		return
+	var clinic_action: Dictionary = action_system.get_action("work_clinic_doctor")
+	if str(clinic_action.get("name", "")) != "坐诊" or not str(clinic_action.get("description", "")).contains("研读医学著作"):
+		_fail("Clinic doctor status label should be concise without losing its idle-study semantics")
 		return
 
 	var no_wine_payload: Dictionary = llm_bridge.build_npc_daily_plan_payload(npc_id)
@@ -91,7 +97,51 @@ func _init() -> void:
 		_fail("No-wine execution failure was not recorded for plan reevaluation")
 		return
 
-	print("T0063 NPC gift-wine and drink-wine verification passed.")
+	# Reproduce the player-facing sequence: select an NPC in the world panel, gift
+	# wine there, then open GM and assign drinking. Opening GM must carry the
+	# world selection into its otherwise independent tab selectors.
+	var ui_npc_id := "doctor_01"
+	resource_system.add_resource("wine", 1)
+	if not npc_system.debug_select_npc(ui_npc_id):
+		_fail("Could not select the UI wine-drinking regression NPC")
+		return
+	await process_frame
+	var wine_spin := npc_panel.find_child("NPCGiftWineSpin", true, false) as SpinBox
+	var gift_wine_button := npc_panel.find_child("NPCGiftWineButton", true, false) as Button
+	var gm_button := gm_panel.find_child("GMButton", true, false) as Button
+	var gm_window := gm_panel.find_child("GMWindow", true, false) as PanelContainer
+	var formal_npc_select := gm_panel.find_child("FormalActionNpcSelect", true, false) as OptionButton
+	var action_select := gm_panel.find_child("ActionSelect", true, false) as OptionButton
+	var assign_action_button := gm_panel.find_child("AssignActionButton", true, false) as Button
+	if [wine_spin, gift_wine_button, gm_button, gm_window, formal_npc_select, action_select, assign_action_button].has(null):
+		_fail("Gift-wine to GM-drink regression controls are missing")
+		return
+	wine_spin.value = 1.0
+	gift_wine_button.pressed.emit()
+	await process_frame
+	if int(npc_system.get_npc_state(ui_npc_id).get("wine", 0)) != 1:
+		_fail("NPC panel did not gift wine to the world-selected NPC")
+		return
+	if not gm_window.visible:
+		gm_button.pressed.emit()
+	await process_frame
+	if str(formal_npc_select.get_item_metadata(formal_npc_select.selected)) != ui_npc_id:
+		_fail("Opening GM did not synchronize the formal-action NPC with the world-selected NPC")
+		return
+	if not _select_option_by_id(action_select, "drink_wine"):
+		_fail("GM action selector does not expose drink_wine")
+		return
+	assign_action_button.pressed.emit()
+	await process_frame
+	if int(npc_system.get_npc_state(ui_npc_id).get("wine", -1)) != 0:
+		_fail("GM drinking did not consume the wine gifted through the NPC panel")
+		return
+	var ui_events: Array = memory_system.get_npc_daily_events(ui_npc_id)
+	if ui_events.is_empty() or str((ui_events.back() as Dictionary).get("type", "")) != "wine_consumed":
+		_fail("Gift-wine to GM-drink path did not finish with a wine_consumed event")
+		return
+
+	print("T0063/T0384 NPC gift-wine, GM target sync, drink-wine and concise clinic status verification passed.")
 	quit(0)
 
 
@@ -104,6 +154,14 @@ func _find_allowed_action(actions: Array, action_id: String) -> Dictionary:
 
 func _has_allowed_action(actions: Array, action_id: String) -> bool:
 	return not _find_allowed_action(actions, action_id).is_empty()
+
+
+func _select_option_by_id(select: OptionButton, target_id: String) -> bool:
+	for index in range(select.get_item_count()):
+		if str(select.get_item_metadata(index)) == target_id:
+			select.select(index)
+			return true
+	return false
 
 
 func _find_event(events: Array, event_type: String) -> Dictionary:

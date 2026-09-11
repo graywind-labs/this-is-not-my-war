@@ -25,6 +25,11 @@ const FORMAL_PLAN_MAX_CONCURRENT := 8
 const FORMAL_PLAN_MAX_ATTEMPTS := 3
 const FORMAL_REVISION_MAX_ATTEMPTS := 3
 const REVISION_SCOPE_SELECTED_HOURS := "selected_hours"
+const RELEVANT_NPC_STATE_FIELDS: Array[String] = [
+	"current_action", "last_action_result", "last_action_failure_context",
+	"behavior_mode", "combat_mode", "unconscious", "escaped",
+	"spatial_route_phase", "active_dialogue_id",
+]
 
 const SKILL_TO_WORK_ACTION := {
 	"养马": "work_stable",
@@ -3346,13 +3351,19 @@ func _dispatch_plans_after_mass_end() -> void:
 func _on_npc_state_changed(npc_id: String) -> void:
 	if not auto_execution_enabled:
 		return
+	var npc_system := _get_npc_system()
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, RELEVANT_NPC_STATE_FIELDS)
+	):
+		return
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null and dialog_system.has_method("is_npc_in_dialogue") and dialog_system.is_npc_in_dialogue(npc_id):
 		return
 	var action_system := _get_action_system()
 	if _mark_deferred_hour_plan_ready_after_mass(npc_id, action_system):
 		return
-	var npc_system := _get_npc_system()
 	if npc_system == null:
 		return
 	var state: Dictionary = npc_system.get_npc_state(npc_id)

@@ -1,5 +1,21 @@
 # PROMPTS.md
 
+## T0387 真实群像 Prompt 验收补充（2026-09-08）
+
+- `deepseek-v4-flash` 已对八人胜败夹具各生成一组通过结果；标题、职业意象、胜败基调、昏迷起点与感官收束整体有效。
+- “胜利 + 已逃离人物”连续两轮在一次 correction 后仍返回失败 tone；其中一轮还使用禁用的“阵亡”。当前校验能安全拒绝，但 Prompt / correction 对“局势基调约束人物 tone，而人物仍可伤感”的解释仍不足。
+- 人工阅读发现 `final_opinion / fate_story` 会补写未在事实中出现的守备官救援、未命名新雇员等细节，八篇也偏向重复“三拍”的表面句式。后续应强化“不得把低风险连接细节写成守备官已做过的事实”，并要求三拍结构不等于固定句法。
+
+## T1600 玩家语音输入不修改 NPC Prompt
+
+`qwen3-asr-flash` 是玩家输入预处理 Provider，不使用现有 NPC system Prompt，也不改变 `/npc/dialogue` 的动态模块或响应 Schema。Godot 只在语音成功后把转写和合法中文情绪后缀追加为普通草稿；玩家点击发送时，既有 `speaker_text` 原样携带最终字符串，例如“我需要你保卫驿站。（愤怒地）”。NPC 可按普通语言理解该修饰，但 Prompt 不增加专用 voice / emotion 分支。
+
+语音情绪只接受 Provider 原生 `neutral / happy / sad / disgusted / angry / fearful / surprised`；缺失 / 非法时不追加。不得通过 Prompt 或本地关键词补造“低沉 / 急促 / 嘲讽”。完整合同见 `docs/VOICE_INPUT_AND_EMOTION.md`。
+
+T1602 真实 Provider 仅发送一条含 `input_audio` 的百炼 ASR 请求和固定 `asr_options`，没有复用或修改任何 NPC Prompt；识别成功后的文本仍由玩家手动确认后才进入既有 `speaker_text`。
+
+T1604 的真实矩阵未修改 Prompt。目标情绪样本仅用于记录模型实际原生枚举，其中目标 happy 被实际判为 neutral；测试没有重写答案或增加文本情绪分类 Prompt。
+
 ## T0135-P10F 语气声不改变 Prompt
 
 本任务只消费 T0289 已有的结构化回复情绪，不修改任何系统 Prompt、动态模块、Schema 或模型输出合同。男女资产选择、男性中性随机和 3D 播放均在 Godot 表现层完成，不向 provider 发送音频资产或播放状态。
@@ -726,3 +742,38 @@ Prompt 不接收 MemorySystem 的原始事件对象，但六类正式 NPC 调用
 对话全文仍由权威事件 `payload` 保存；MemorySystem 的确定性 `summary` 已按顺序展开已完成会话，因此 LLM 投影只传 summary，不重复传 `dialogue_text / speaker_text / reply_text`，也不另建谈话库。
 
 进入地点时的完整状态快照仍只作为权威见闻出现一次，但模型只读取其确定性 summary；原始 `location_snapshot / building_snapshot` 不进入 Prompt。之后的建筑 / 地点变化继续以字段级摘要进入，例如“围墙受损”“食堂升级中，现在不可进入”“病床1被莉娜占用”“训练场新增训练位3”。摘要只使用位置的玩家可读名称，不向 NPC 暴露内部 ID。
+## T0387 `game_epilogue` 群像结局 Prompt（已接入）
+
+结局使用一次群像生成，系统 Prompt 的首要顺序为：权威事实不可改写 → 八人连续性 → 胜败基调 → 人物差异 → 文学风格。模型接收冻结的结算 id / 结果 / 原因 / 时间、驿站资源与建筑的叙事化状态、全局转折事实，以及每名 NPC 的身份、人设、权威最终状态、守备官关系、当前指令、筛选后的记忆 / 日记 / 图谱和带 `fact_id` 的关键经历。
+
+输出 JSON：
+
+```json
+{
+  "ending_title": "仍有炊烟升起",
+  "station_coda": "全站共同尾声",
+  "npc_endings": [
+    {
+      "npc_id": "stablehand_01",
+      "ending_title": "长路回声",
+      "opening_status": "active",
+      "final_opinion": "NPC 对守备官的最终看法",
+      "fate_story": "180–280 个中文字符的三拍后日谈",
+      "tone": "hopeful_bittersweet",
+      "fact_refs": ["fact_..."]
+    }
+  ]
+}
+```
+
+Provider 不输出 `ok / result`，后端从权威请求补齐；最终 HTTP 响应中的 `result` 因而必须逐字匹配请求。`npc_endings` 必须恰好覆盖全部正式 NPC 且不重复。`opening_status` 必须逐字回显请求中的 `active / unconscious / escaped`，让后端在不解释文学正文的前提下锁定故事起点。`tone` 只允许胜利侧 `hopeful / hopeful_bittersweet / reconciled` 或失败侧 `sorrowful / sorrowful_resilient / unresolved`。每篇自然使用 1–3 个可验证关键事实并返回对应引用；不得输出内部 id、数值清单或“根据资料”等元话语。
+
+风格要求是克制的中文历史幻想短篇尾声：具体、含蓄、有时间流逝感，以动作和意象承载情绪，世界内始终称玩家为“守备官”。禁止八篇使用同一个开头、同一转折句或同一种结尾；禁止逐条总结玩家成绩、拔高战争、现代制度 / 科技术语、廉价大团圆、全员绝望、突然出现的血缘 / 爱情 / 神迹，以及任何 NPC 死亡。可以合理虚构季节流逝、无名道路、普通生活动作等低风险连接细节；不得凭空创造有姓名的新亲属、婚恋、爵位、重大功绩、精确年份或另一场决定人物命运的战争。职业母题只在事实支持时选择性使用，不能按职业表机械打卡。
+
+后端除 Schema 外执行连续性校验：NPC ID 集合、事实引用归属、最终状态关键词、胜败 tone 域、禁用死亡断言和长度。首次响应不合法时，可把精确校验错误附给同一真实 Provider 做一次纠错；不得让纠错自行改变输入事实。第二次仍失败则返回真实错误，由 Godot 进入明确的 `template_fallback`。
+## T0390 失败全员撤离事实合同（2026-09-08）
+
+失败结算在请求生成前已由程序把 8 名 NPC 的 `opening_status` 全部冻结为 `escaped`、`final_location` 设为驿站外；入伍与历史事实仍各自不同。Prompt 文本无需虚构撤离判定，模型只负责从这个共同起点续写每个人离开后的故事。真实 `deepseek-v4-flash` 单失败样本通过 8/8 连续性校验且未 fallback。
+## T0391 失败撤离时机语义（2026-09-08）
+
+人物输入新增 `escape_circumstance`。`before_fall_voluntary` 表示失守前主动离站，故事不得让其参加最后守城；`after_fall_forced` 表示坚持到主厅倒塌后被迫撤离，故事不得称其临阵逃跑或提前离开。真实 DeepSeek 失败样本中神父按前者写出恐惧离站与自责，其余七人按后者从废墟和临时安置处展开后日谈。

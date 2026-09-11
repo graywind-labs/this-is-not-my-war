@@ -42,7 +42,7 @@ func _run() -> void:
 	_assert_male_none_random_pool(controller, dialog_system)
 	_assert_same_npc_replacement(controller, dialog_system)
 	_assert_independent_speakers(controller, dialog_system)
-	_assert_source_tracks_npc(controller, npc_system)
+	_assert_global_playback(controller)
 	_assert_invalid_input_fallback(controller)
 	_assert_voice_bus_routes_to_sfx()
 
@@ -50,7 +50,7 @@ func _run() -> void:
 	main.queue_free()
 	await process_frame
 	await process_frame
-	print("T0135_P10F_DIALOGUE_VOICE_AUDIO_PASS assets=19 genders=pass emotions=9 positional=pass replacement=pass")
+	print("T0135_P10F_DIALOGUE_VOICE_AUDIO_PASS assets=19 genders=pass emotions=9 global_2d=pass replacement=pass")
 	quit(0)
 
 
@@ -93,8 +93,9 @@ func _assert_dialogue_mapping(
 	_assert(str(record.get("npc_id", "")) == npc_id, "voice record used wrong NPC")
 	_assert(str(record.get("gender", "")) == gender, "voice record used wrong gender")
 	_assert(str(record.get("emotion_id", "")) == emotion_id, "voice record used wrong emotion")
-	_assert(str(record.get("player_type", "")) == "AudioStreamPlayer3D", "dialogue voice is not positional")
+	_assert(str(record.get("player_type", "")) == "AudioStreamPlayer", "dialogue voice is not global 2D")
 	_assert(str(record.get("bus", "")) == "Voice", "dialogue voice is not routed to Voice")
+	_assert(str(record.get("spatial_mode", "")) == "global_2d", "dialogue voice still reports positional playback")
 
 
 func _assert_male_none_random_pool(controller: Node, dialog_system: Node) -> void:
@@ -112,10 +113,10 @@ func _assert_male_none_random_pool(controller: Node, dialog_system: Node) -> voi
 
 func _assert_same_npc_replacement(controller: Node, dialog_system: Node) -> void:
 	dialog_system.debug_present_npc_dialogue_emotion(MALE_NPC_ID, "happy")
-	var old_player := (controller.get("_active_players") as Dictionary).get(MALE_NPC_ID) as AudioStreamPlayer3D
+	var old_player := (controller.get("_active_players") as Dictionary).get(MALE_NPC_ID) as AudioStreamPlayer
 	_assert(is_instance_valid(old_player), "first same-NPC voice did not start")
 	dialog_system.debug_present_npc_dialogue_emotion(MALE_NPC_ID, "angry")
-	var new_player := (controller.get("_active_players") as Dictionary).get(MALE_NPC_ID) as AudioStreamPlayer3D
+	var new_player := (controller.get("_active_players") as Dictionary).get(MALE_NPC_ID) as AudioStreamPlayer
 	_assert(is_instance_valid(new_player) and new_player != old_player, "new same-NPC voice did not replace old player")
 	_assert(old_player.is_queued_for_deletion(), "old same-NPC voice was left playing")
 
@@ -127,21 +128,14 @@ func _assert_independent_speakers(controller: Node, dialog_system: Node) -> void
 	_assert(active.has(MALE_NPC_ID) and active.has(FEMALE_NPC_ID), "different NPC voices incorrectly replaced each other")
 
 
-func _assert_source_tracks_npc(controller: Node, npc_system: Node) -> void:
-	var npc_paths: Dictionary = npc_system.get("_npc_nodes")
-	var npc_node := npc_system.get_node(npc_paths.get(MALE_NPC_ID, NodePath())) as Node3D
-	_assert(npc_node != null, "formal male NPC node is unavailable")
-	if npc_node == null:
-		return
-	var original_position := npc_node.global_position
-	npc_node.global_position += Vector3(2.5, 0.0, -1.5)
-	controller.call("_process", 0.0)
-	var source: Dictionary = (controller.get_debug_snapshot().get("sources", {}) as Dictionary).get(MALE_NPC_ID, {})
-	var source_position: Vector3 = source.get("global_position", Vector3.ZERO)
-	var expected := npc_node.global_position + Vector3.UP * 1.6
-	_assert(source_position.is_equal_approx(expected), "dialogue voice source did not follow NPC world position")
-	npc_node.global_position = original_position
-	controller.call("_process", 0.0)
+func _assert_global_playback(controller: Node) -> void:
+	var snapshot: Dictionary = controller.get_debug_snapshot()
+	_assert(str(snapshot.get("playback_mode", "")) == "global_2d", "dialogue voice config is not global 2D")
+	_assert(int(snapshot.get("source_count", -1)) == 0, "dialogue voice still creates positional sources")
+	var active: Dictionary = snapshot.get("active_voices", {})
+	for raw_entry in active.values():
+		var entry := raw_entry as Dictionary
+		_assert(str(entry.get("player_path", "")).begins_with("/root/AudioManager/"), "global voice player is not owned by AudioManager")
 
 
 func _assert_invalid_input_fallback(controller: Node) -> void:
@@ -159,7 +153,7 @@ func _assert_invalid_input_fallback(controller: Node) -> void:
 func _assert_voice_bus_routes_to_sfx() -> void:
 	var voice_index := AudioServer.get_bus_index(&"Voice")
 	_assert(voice_index >= 0, "Voice bus is missing")
-	_assert(AudioServer.get_bus_send(voice_index) == &"SFX", "Voice bus does not send to SFX")
+	_assert(AudioServer.get_bus_send(voice_index) == &"Master", "Voice bus must be independently controlled under Master")
 
 
 func _assert(condition: bool, message: String) -> void:

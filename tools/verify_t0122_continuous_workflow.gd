@@ -128,10 +128,10 @@ func _init() -> void:
 	if not _resolve_systems():
 		return
 	_prepare_isolated_player_replay()
-	print("T0122 continuous replay started: scenario=%s start=day1 06:00 end=day7 18:00" % scenario)
+	print("T0122 continuous replay started: scenario=%s start=day1 06:00 end=day6 18:00" % scenario)
 
 	var guard := 0
-	while not bool(systems.game_state.get("game_over")) and _absolute_game_seconds() < _day_seconds(7, 20, 0):
+	while not bool(systems.game_state.get("game_over")) and _absolute_game_seconds() < _day_seconds(6, 20, 0):
 		guard += 1
 		if guard > 20000:
 			_fail("Continuous replay exceeded its simulation guard")
@@ -214,20 +214,11 @@ func _player_decisions() -> void:
 	var day := int(systems.game_state.current_day)
 	var hour := int(systems.game_state.current_hour)
 	var minute := int(systems.game_state.current_minute)
-	# Production has to look beyond the immediately arriving wave. Otherwise the
-	# 29 workshop stages required by W3 cannot physically fit into the single day
-	# between W2 and W3. The horizon mirrors a player who reads the five-wave
-	# schedule, but procurement still happens only during the merchant window.
-	if day <= 1:
-		planning_wave = 1
-	elif day <= 3:
-		planning_wave = 3
-	elif day == 4:
-		planning_wave = 4
-	else:
-		planning_wave = 5
-	deployment_wave = clampi(day - 2, 1, 5)
-	upgrade_wave = clampi(day - 1, 1, 5)
+	# The compressed calendar requires production to look two waves ahead after
+	# each clear, while deployment and recruitment still follow the next wave.
+	planning_wave = clampi(last_cleared_wave + 2, 1, 5)
+	deployment_wave = clampi(last_cleared_wave + 1, 1, 5)
+	upgrade_wave = planning_wave
 
 	_handle_schedule_boundary(day, hour, minute)
 	if hour >= 10 and hour < 16:
@@ -240,15 +231,15 @@ func _player_decisions() -> void:
 	_try_recruit_and_prepare(day, hour, minute)
 	_try_deploy_devices()
 	if _is_work_window(hour, minute) and active_wave == 0:
-		if scenario == "focused" and last_cleared_wave > 0 and day < 7:
+		if scenario == "focused" and last_cleared_wave > 0 and day < 6:
 			_assign_evening_recovery_if_idle()
 		_assign_work_if_idle()
-		if scenario == "focused" and last_cleared_wave > 0 and day >= 7:
+		if scenario == "focused" and last_cleared_wave > 0 and day >= 6:
 			_assign_evening_recovery_if_idle()
 	elif scenario == "focused" and hour == 18 and active_wave == 0 and last_cleared_wave > 0:
 		_assign_evening_recovery_if_idle()
 	elif hour >= 19 and hour < 22 and active_wave == 0:
-		if scenario == "focused" and day == 6 and last_cleared_wave >= 4:
+		if scenario == "focused" and day == 5 and last_cleared_wave >= 4:
 			_assign_final_wave_workshop_overtime_if_idle()
 		_assign_evening_recovery_if_idle()
 	elif _focused_recovery_overtime(day, hour) and active_wave == 0:
@@ -260,7 +251,7 @@ func _player_decisions() -> void:
 
 func _handle_schedule_boundary(day: int, hour: int, minute: int) -> void:
 	var boundary := ""
-	if minute == 0 and (hour == 6 or (scenario == "focused" and day == 7 and hour == 5)):
+	if minute == 0 and (hour == 6 or (scenario == "focused" and day == 6 and hour == 5)):
 		boundary = "wake"
 	elif hour == 12 and minute == 0:
 		boundary = "lunch"
@@ -286,7 +277,7 @@ func _handle_schedule_boundary(day: int, hour: int, minute: int) -> void:
 
 
 func _is_work_window(hour: int, minute: int) -> bool:
-	if scenario == "focused" and int(systems.game_state.current_day) == 7 and hour >= 5 and hour < 12:
+	if scenario == "focused" and int(systems.game_state.current_day) == 6 and hour >= 5 and hour < 12:
 		return true
 	if hour >= 7 and hour < 12:
 		return true
@@ -338,7 +329,7 @@ func _assign_work_if_idle() -> void:
 	# The final-wave focused line deliberately reallocates the gardener and priest
 	# into the second production slots. This is the intended hard-wave decision:
 	# it trades away farming and prayer instead of receiving free production.
-	if scenario == "focused" and int(systems.game_state.current_day) >= 7:
+	if scenario == "focused" and last_cleared_wave >= 4:
 		_try_assign_first_available_crafting_helper(
 			["gardener_01", "veteran_deputy_01", "stableman_01", "priest_01"],
 			"blacksmith",
@@ -491,7 +482,7 @@ func _assign_sleep_if_idle(excluded_npc_ids: Array[String] = []) -> void:
 func _focused_recovery_overtime(day: int, hour: int) -> bool:
 	if scenario != "focused":
 		return false
-	var is_overtime_window := (day == 6 and hour >= 22) or (day == 7 and hour < 6)
+	var is_overtime_window := (day == 5 and hour >= 22) or (day == 6 and hour < 6)
 	if not is_overtime_window:
 		return false
 	for npc_id in ["blacksmith_01", "engineer_01"]:
@@ -524,6 +515,8 @@ func _first_unconscious_npc(exclude_id: String) -> String:
 func _is_idle_and_able(npc_id: String) -> bool:
 	if not systems.npc.can_npc_act(npc_id):
 		return false
+	if systems.action._pending_actions.has(npc_id) or systems.action._active_actions.has(npc_id):
+		return false
 	return str(systems.npc.get_npc_state(npc_id).get("current_action", "")) == "idle"
 
 
@@ -551,8 +544,8 @@ func _trade_and_procure(day: int) -> void:
 		var offer: Dictionary = systems.merchant.get_buy_offer(resource_id)
 		var price := int(offer.get("unit_price", 0))
 		var affordable := maxi(0, (int(systems.resource.get_resource("money")) - reserve_money) / maxi(1, price))
-		var merchant_stock := systems.merchant.get_merchant_stock(resource_id)
-		var amount := mini(deficit, affordable, merchant_stock)
+		var merchant_stock: int = int(systems.merchant.get_merchant_stock(resource_id))
+		var amount := mini(deficit, mini(affordable, merchant_stock))
 		if amount <= 0:
 			continue
 		var buy_result: Dictionary = systems.merchant.buy_resource(resource_id, amount)
@@ -649,15 +642,23 @@ func _try_start_upgrades() -> void:
 
 
 func _try_recruit_and_prepare(day: int, hour: int, minute: int) -> void:
-	if day < 3 or day > 7 or hour < 17:
+	var schedule: Dictionary = systems.combat.get_wave_schedule_snapshot()
+	var next_wave: Dictionary = schedule.get("next_wave", {}) if schedule.get("next_wave", {}) is Dictionary else {}
+	if next_wave.is_empty():
 		return
-	var wave := day - 2
+	var wave := int(next_wave.get("wave_number", 0))
+	var trigger_day := int(next_wave.get("trigger_day", day))
+	var trigger_hour := int(next_wave.get("trigger_hour", hour))
+	var trigger_minute := int(next_wave.get("trigger_minute", 0))
+	var seconds_until := _day_seconds(trigger_day, trigger_hour, trigger_minute) - _day_seconds(day, hour, minute)
+	if seconds_until > 3 * 3600 or seconds_until < 0:
+		return
 	for npc_id in RECRUIT_BY_WAVE.get(wave, []):
 		systems.npc.set_npc_recruited(str(npc_id), true)
 	_try_equip_loadout(wave)
 	_try_assign_horses(wave)
-	if hour == 17 and minute >= 40 and not alarm_days.has(day):
-		alarm_days[day] = true
+	if seconds_until <= 20 * 60 and not alarm_days.has(wave):
+		alarm_days[wave] = true
 		for npc_id in RECRUIT_BY_WAVE.get(wave, []):
 			var unit_type := str(systems.equipment.get_npc_unit_type(str(npc_id)))
 			var strategy := "attack"

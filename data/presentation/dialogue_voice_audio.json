@@ -1,6 +1,6 @@
 {
   "schema_version": "dialogue_voice_audio_v1",
-  "source_height_m": 1.6,
+  "playback_mode": "global_2d",
   "recent_history_limit": 64,
   "replace_active_voice_per_npc": true,
   "default_gender": "male",

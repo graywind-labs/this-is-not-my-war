@@ -130,9 +130,19 @@ func _on_building_state_changed(building_id: String) -> void:
 		_queue_work_state_refresh()
 
 
-func _on_npc_state_changed(_npc_id: String) -> void:
+func _on_npc_state_changed(npc_id: String) -> void:
 	# State and occupancy can be emitted in either order. Deferred coalescing reads
 	# the settled authoritative pair without polling every frame.
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(
+			npc_id,
+			["current_action", "current_location", "unconscious", "escaped"]
+		)
+	):
+		return
 	_queue_work_state_refresh()
 
 

@@ -1,9 +1,17 @@
 {
   "schema_version": "ability_audio_v1",
+  "piety_ready": {
+    "enabled": true,
+    "asset": "sfx_piety_ready_sacred_chant",
+    "bus": "Combat"
+  },
   "meteor": {
     "fall_asset": "sfx_meteor_fall_one_shot",
     "impact_asset": "sfx_meteor_impact_one_shot",
-    "bus": "World",
+    "bus": "Combat",
+    "spatial_profile": "ability_priority",
+    "fall_gain_db": 2.0,
+    "impact_gain_db": 3.0,
     "visual_root_path": "/root/Main/WorldRoot/Station/Effects",
     "fallback_source_parent_path": "/root/Main/WorldRoot/FormalStationLayout",
     "fallback_source_root_name": "AbilityAudioSources",

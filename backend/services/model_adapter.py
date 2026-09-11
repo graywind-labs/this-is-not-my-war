@@ -28,6 +28,7 @@ PROMPT_TEMPLATE_BY_CALL_TYPE = {
     "revise_plan": "plan_revision_system_prompt.txt",
     "battle_judgement": "battle_judgement_system_prompt.txt",
     "daily_reflection": "daily_reflection_system_prompt.txt",
+    "game_epilogue": "game_epilogue_system_prompt.txt",
 }
 
 
@@ -792,7 +793,14 @@ class ModelAdapter:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.config.provider not in {"deepseek", "openai_compatible"}:
             raise RuntimeError("Unsupported LLM_PROVIDER: %s" % self.config.provider)
-        max_attempts = 2 if call_type in PROMPT_TEMPLATE_BY_CALL_TYPE else 1
+        # The epilogue endpoint owns its one continuity/schema correction pass,
+        # so each adapter call must make only one provider request. This keeps
+        # the whole settlement generation within the designed two-call ceiling.
+        max_attempts = (
+            1
+            if call_type == "game_epilogue"
+            else 2 if call_type in PROMPT_TEMPLATE_BY_CALL_TYPE else 1
+        )
         last_error: ModelProviderError | None = None
         for attempt_index in range(max_attempts):
             attempt_count = attempt_index + 1
@@ -1265,6 +1273,7 @@ class ModelAdapter:
             "revise_plan",
             "battle_judgement",
             "daily_reflection",
+            "game_epilogue",
         }
         payload = deepcopy(source_payload)
         if call_type not in formal_call_types:
@@ -1488,10 +1497,14 @@ class ModelAdapter:
             "revise_plan",
             "battle_judgement",
             "daily_reflection",
+            "game_epilogue",
         }:
             return hydrated
 
         hydrated["ok"] = True
+        if call_type == "game_epilogue":
+            hydrated["result"] = str(payload.get("result", "failure"))
+            return hydrated
         npc_id = self._read_npc_id(payload) or "unknown_npc"
 
         if call_type == "dialogue":
@@ -2032,6 +2045,18 @@ class ModelAdapter:
                 "diary_entry 是第一人称日记，会追加为新日记，不能写成知识图谱条目；"
                 "后端会生成目标 NPC 和日期。"
             )
+        if call_type == "game_epilogue":
+            npc_ids = [
+                str(item.get("npc_id", ""))
+                for item in (payload or {}).get("npcs", [])
+                if isinstance(item, dict)
+            ]
+            return (
+                "只输出 ending_title、station_coda、npc_endings、debug_reason；"
+                "npc_endings 必须恰好覆盖这些 npc_id：%s。每项输出 npc_id、ending_title、"
+                "opening_status、final_opinion、fate_story、tone、fact_refs。"
+                "后端会补齐 ok 与 result。" % npc_ids
+            )
         return "字段必须是当前任务可校验的稳定 JSON；无法判断时返回 ok=true 和 debug_reason。"
 
     def _parse_model_json(self, content_text: str) -> dict[str, Any]:
@@ -2492,6 +2517,92 @@ class ModelAdapter:
                     }
                 ],
                 "debug_reason": f"mock_reflection_template{order_suffix}",
+            }
+
+        if call_type == "game_epilogue":
+            result = str(payload.get("result", "failure"))
+            victory = result == "victory"
+            victory_images = [
+                "远处的蹄声越过湿润道路，最后融进清晨。",
+                "烤麦的香气贴着旧墙散开，窗纸上映着温黄的火。",
+                "第一场秋雨落下时，新芽正从翻过的土里探出来。",
+                "锤声停后，一粒火星在暮色中缓慢暗下去。",
+                "风翻动那本旧名册，却没有吹走最后一页的名字。",
+                "晚钟隔着薄雾传来，余音停在归巢的鸟群之后。",
+                "晒干的药草在梁下轻响，苦香一直留到入夜。",
+                "折旧的图纸压着窗缝，晨光沿墨线一点点铺开。",
+            ]
+            failure_images = [
+                "风追着空鞍上的皮带声，一路没入北方旧道。",
+                "冷炉里只剩一点麦香，随着灰烬落回砖缝。",
+                "荒草结籽以后，风把它们带过倒塌的矮墙。",
+                "最后一记锤声沉入夜色，铁砧上只余冷光。",
+                "名册被合上时，褪色布角仍在窗边轻轻摆动。",
+                "没有敲完的钟声留在雾里，许久才被群山收走。",
+                "药草的苦味从旧布包里散出，又被雨气慢慢冲淡。",
+                "破损图纸卷过石地，停在一道长满苔藓的裂缝旁。",
+            ]
+            endings = []
+            for index, raw_npc in enumerate(payload.get("npcs", [])):
+                if not isinstance(raw_npc, dict):
+                    continue
+                npc_id_value = str(raw_npc.get("npc_id", ""))
+                npc_name = str(raw_npc.get("name", npc_id_value))
+                profession = str(raw_npc.get("profession", "驿站成员"))
+                opening_status = str(raw_npc.get("opening_status", "active"))
+                facts = raw_npc.get("key_facts", [])
+                refs = [
+                    str(fact.get("fact_id", ""))
+                    for fact in facts[:2]
+                    if isinstance(fact, dict) and str(fact.get("fact_id", ""))
+                ]
+                if not refs:
+                    global_facts = payload.get("global_facts", [])
+                    refs = [
+                        str(global_facts[0].get("fact_id", ""))
+                    ] if global_facts and isinstance(global_facts[0], dict) else []
+                if victory:
+                    story = (
+                        f"战事停下后的清晨，{npc_name}先在{raw_npc.get('final_location', '驿站')}"
+                        f"安静地收拾属于{profession}的旧物。那些真正发生过的选择并没有随号角散去，"
+                        "伤处、承诺和迟疑都被一并带进往后的日子。几个月后，此人重新做起熟悉的工作，"
+                        "却比从前更愿意为身边的人留一盏灯；偶尔谈到守备官时，语气里仍有保留，也有对"
+                        "共同守住一夜的承认。许多年后，边路旅人经过这里，仍会在黄昏时稍稍放慢脚步。"
+                        + victory_images[index % len(victory_images)]
+                    )
+                    tone = "hopeful_bittersweet"
+                else:
+                    story = (
+                        f"主厅沉寂以后，{npc_name}从{raw_npc.get('final_location', '驿站')}所能带走的，"
+                        f"只有几件属于{profession}的旧物和没有说完的话。失守没有替任何人作出最后选择，"
+                        "却把原先寻常的日子切成了前后两段。几个月后，此人在陌生地方重新谋生，仍会在"
+                        "某个相似的声响里停下手，想起守备官、想起那些留下或离开的人。后来驿站的名字"
+                        "渐渐少有人提起，经过旧路的人也不再知道每道伤痕的来历。"
+                        + failure_images[index % len(failure_images)]
+                    )
+                    tone = "sorrowful_resilient"
+                endings.append({
+                    "npc_id": npc_id_value,
+                    "ending_title": "余火未熄" if victory else "旧路无声",
+                    "opening_status": opening_status,
+                    "final_opinion": (
+                        "此人记得守备官让普通人承担了沉重责任，也承认那份选择确实改变了后来的人生。"
+                        if victory else
+                        "此人无法忘记守备官和失守的驿站；理解、怨意与未能告别的遗憾长久并存。"
+                    ),
+                    "fate_story": story,
+                    "tone": tone,
+                    "fact_refs": refs,
+                })
+            return {
+                "ending_title": "仍有炊烟升起" if victory else "风越过空厅",
+                "station_coda": (
+                    "最后一阵喊杀消失以后，驿站没有立刻恢复往日模样。门墙记着刀痕，人们也记着彼此在最艰难时作出的选择。后来道路重新有了车辙，炊烟从残瓦间升起，而那几日留下的名字仍在黄昏钟声里被人轻轻念起。"
+                    if victory else
+                    "主厅倒下以后，驿站的喧声像被风从院墙里一层层带走。幸存的人各自奔向不同的路，带走伤痕、旧物和没能兑现的话。许久以后，荒草穿过石缝，偶尔仍有人在经过时停步，仿佛还能听见那口没有敲完的钟。"
+                ),
+                "npc_endings": endings,
+                "debug_reason": "mock_group_epilogue_from_authoritative_facts",
             }
 
         if call_type == "knowledge_graph_update":

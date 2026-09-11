@@ -165,7 +165,7 @@ func _connect_button(button: BaseButton) -> void:
 
 
 func _on_button_pressed(button: BaseButton) -> void:
-	if not is_instance_valid(button) or button.disabled:
+	if not is_instance_valid(button) or button.disabled or bool(button.get_meta("ui_audio_silent", false)):
 		return
 	if button is CheckButton or button is CheckBox:
 		_queue_ui_semantic("toggle")
@@ -206,6 +206,17 @@ func _on_world_selection(_arg1: Variant = null, _arg2: Variant = null, _signal_n
 
 
 func _connect_special_sources() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null:
+		var level_up_callback := Callable(self, "_on_npc_level_up")
+		if event_bus.has_signal("npc_level_up") and not event_bus.npc_level_up.is_connected(level_up_callback):
+			event_bus.npc_level_up.connect(level_up_callback)
+		var attribute_callback := Callable(self, "_on_npc_attribute_point_assigned")
+		if event_bus.has_signal("npc_attribute_point_assigned") and not event_bus.npc_attribute_point_assigned.is_connected(attribute_callback):
+			event_bus.npc_attribute_point_assigned.connect(attribute_callback)
+		var building_completed_callback := Callable(self, "_on_building_job_completed")
+		if event_bus.has_signal("building_job_completed") and not event_bus.building_job_completed.is_connected(building_completed_callback):
+			event_bus.building_job_completed.connect(building_completed_callback)
 	var success_path := NodePath(str(_ui_config.get("special_success_popup_path", "")))
 	_special_success_popup = get_node_or_null(success_path) as Window
 	if _special_success_popup != null and not _special_success_popup.about_to_popup.is_connected(_on_special_success_popup):
@@ -219,6 +230,17 @@ func _connect_special_sources() -> void:
 
 
 func _disconnect_special_sources() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null:
+		var level_up_callback := Callable(self, "_on_npc_level_up")
+		if event_bus.has_signal("npc_level_up") and event_bus.npc_level_up.is_connected(level_up_callback):
+			event_bus.npc_level_up.disconnect(level_up_callback)
+		var attribute_callback := Callable(self, "_on_npc_attribute_point_assigned")
+		if event_bus.has_signal("npc_attribute_point_assigned") and event_bus.npc_attribute_point_assigned.is_connected(attribute_callback):
+			event_bus.npc_attribute_point_assigned.disconnect(attribute_callback)
+		var building_completed_callback := Callable(self, "_on_building_job_completed")
+		if event_bus.has_signal("building_job_completed") and event_bus.building_job_completed.is_connected(building_completed_callback):
+			event_bus.building_job_completed.disconnect(building_completed_callback)
 	if is_instance_valid(_special_success_popup) and _special_success_popup.about_to_popup.is_connected(_on_special_success_popup):
 		_special_success_popup.about_to_popup.disconnect(_on_special_success_popup)
 	if is_instance_valid(_harvest_dialog) and _harvest_dialog.has_signal("harvest_completed"):
@@ -233,6 +255,21 @@ func _on_special_success_popup() -> void:
 
 func _on_harvest_completed(_building_id: String, _collected_resources: Dictionary) -> void:
 	_queue_ui_semantic("success")
+
+
+func _on_npc_level_up(_npc_id: String, skill_points_gained: int) -> void:
+	if skill_points_gained > 0:
+		_queue_ui_semantic("level_up")
+
+
+func _on_npc_attribute_point_assigned(_npc_id: String, _attribute_name: String, result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		_queue_ui_semantic("attribute_assigned")
+
+
+func _on_building_job_completed(_building_id: String, job_type: String, _result: Dictionary) -> void:
+	if job_type == "upgrade":
+		_queue_ui_semantic("level_up")
 
 
 func _queue_ui_semantic(semantic: String) -> void:
@@ -425,7 +462,7 @@ func _start_merchant_loop() -> void:
 	var loop_key := str(_world_config.get("merchant_loop_key", "interaction_merchant_cart_travel"))
 	if audio_manager == null or asset_id.is_empty() or not audio_manager.has_asset(asset_id):
 		return
-	var player: AudioStreamPlayer3D = audio_manager.start_loop_3d(loop_key, asset_id, _merchant_source, Vector3.ZERO, &"World")
+	var player: AudioStreamPlayer3D = audio_manager.start_loop_3d(loop_key, asset_id, _merchant_source, Vector3.ZERO, &"Ambience")
 	if player == null:
 		return
 	_merchant_loop_active = true
@@ -458,7 +495,7 @@ func _play_world_one_shot(asset_id: String, source: Node3D, semantic: String, so
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
 	if audio_manager == null or asset_id.is_empty() or not audio_manager.has_asset(asset_id):
 		return
-	var player: AudioStreamPlayer3D = audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"World")
+	var player: AudioStreamPlayer3D = audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"Ambience")
 	if player == null:
 		return
 	_record_history({

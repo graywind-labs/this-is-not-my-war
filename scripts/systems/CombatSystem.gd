@@ -30,6 +30,7 @@ const DEFENSE_DEVICE_PRESENTER_PATH := "/root/Main/WorldRoot/Station/DefenseDevi
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
+const DAILY_REFLECTION_SYSTEM_PATH := "/root/Main/Systems/DailyReflectionSystem"
 const DIALOG_SYSTEM_PATH := "/root/Main/Systems/DialogSystem"
 const DEFAULT_SPAWN_POINT_ID := "front_forest"
 const DEFAULT_FORMAL_WAVE_SPAWN_STAGE_ID := "spawn"
@@ -326,6 +327,7 @@ var _active_melee_swings: Dictionary = {}
 var _pending_melee_damage_commits: PackedStringArray = []
 var _combat_timeline_seconds := 0.0
 var _combat_progression_config: Dictionary = {}
+var _performance_probe: RefCounted
 
 
 func _ready() -> void:
@@ -356,19 +358,58 @@ func _physics_process(delta: float) -> void:
 	# actors which poll TimeSystem themselves. Re-assert the effective pause before
 	# any presentation sync so a newly issued navigation request cannot clear a
 	# global pause and slide for one physics frame.
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	_sync_enemy_motion_pause(_is_gameplay_paused())
+	if measured:
+		_performance_probe.record("pause_sync_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	_commit_pending_melee_contact_damage()
 	_advance_combat_projectiles(delta)
+	if measured:
+		_performance_probe.record("projectile_contact_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	_sync_formal_enemy_navigation_pilot_presentation(delta)
 	_sync_formal_active_enemy_slice_presentation(delta)
 	_sync_formal_first_wave_presentation(delta)
+	if measured:
+		_performance_probe.record("enemy_presentation_ms", Time.get_ticks_usec() - started)
 
 
 func _process(_delta: float) -> void:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	_sample_active_melee_swings()
+	if measured:
+		_performance_probe.record("melee_sample_ms", Time.get_ticks_usec() - started)
+		_performance_probe.sample_frame(_active_enemies.size(), _is_gameplay_paused())
+
+
+func debug_start_performance_capture(duration_seconds: float = 30.0) -> Dictionary:
+	_performance_probe = load("res://scripts/debug/CombatPerformanceProbe.gd").new()
+	var camera := get_viewport().get_camera_3d()
+	_performance_probe.configure(duration_seconds, {
+		"engine": Engine.get_version_info().string,
+		"renderer": RenderingServer.get_current_rendering_method(),
+		"display": DisplayServer.get_name(),
+		"viewport_size": str(get_viewport().get_visible_rect().size),
+		"camera_transform": str(camera.global_transform) if camera != null else "none",
+		"enemy_count_at_start": _active_enemies.size(),
+		"note": "Process includes engine work; section timings can nest. No gameplay mutation.",
+	})
+	return {"ok": true, "duration_seconds": clampf(duration_seconds, 1.0, 60.0)}
+
+
+func debug_get_performance_capture(stop: bool = false, include_samples: bool = false) -> Dictionary:
+	if _performance_probe == null:
+		return {"active": false, "metrics": {}, "reason": "capture_not_started"}
+	if stop:
+		_performance_probe.active = false
+	return _performance_probe.snapshot(include_samples)
 
 
 func initialize() -> void:
+	_performance_probe = null
 	_clear_combat_projectiles("combat_initialize")
 	_exit_default_formal_combat_world("combat_initialize")
 	_clear_formal_enemy_navigation_pilot("combat_initialize")
@@ -700,6 +741,10 @@ func get_npc_combat_level(npc_id: String) -> int:
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
 		return 1
+	return _get_npc_combat_level_from_profile(npc, npc_system)
+
+
+func _get_npc_combat_level_from_profile(npc: Dictionary, npc_system: Node) -> int:
 	var progression: Dictionary = npc.get("progression", {}) if npc.get("progression", {}) is Dictionary else {}
 	var skill_experience: Dictionary = progression.get("skill_experience", {}) if progression.get("skill_experience", {}) is Dictionary else {}
 	var combat_experience := 0
@@ -727,12 +772,21 @@ func get_npc_combat_stats(npc_id: String) -> Dictionary:
 	if npc.is_empty():
 		return {}
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	return _calculate_npc_combat_stats_from_profile(npc_id, npc, state, npc_system)
+
+
+func _calculate_npc_combat_stats_from_profile(
+	npc_id: String,
+	npc: Dictionary,
+	state: Dictionary,
+	npc_system: Node
+) -> Dictionary:
 	var weapon := _get_npc_main_weapon(npc)
 	var required_skill := str(weapon.get("required_skill", weapon.get("weapon_class", "")))
 	var weapon_skill := _get_npc_skill_value(npc, required_skill)
 	var strength := _get_npc_stat_value(npc, "strength", int(STRENGTH_ATTACK_BASELINE))
 	var combat_base: Dictionary = npc.get("combat_base", {}) if npc.get("combat_base", {}) is Dictionary else {}
-	var level := get_npc_combat_level(npc_id)
+	var level := _get_npc_combat_level_from_profile(npc, npc_system)
 	var level_steps := maxi(0, level - 1)
 	var strength_growth_steps := maxi(0, strength - int(STRENGTH_ATTACK_BASELINE))
 
@@ -1178,7 +1232,10 @@ func spawn_wave(
 			"game_over_reason": game_over_reason
 		})
 
-	return _spawn_formal_dynamic_wave(wave_number, clear_existing, reason, true, spawn_stage_id)
+	var reflection_interrupt_result := _interrupt_pending_reflections_for_combat("enemy_wave_spawned")
+	var spawn_result := _spawn_formal_dynamic_wave(wave_number, clear_existing, reason, true, spawn_stage_id)
+	spawn_result["reflection_interrupt_result"] = reflection_interrupt_result
+	return spawn_result
 
 
 func clear_spawned_enemies() -> Dictionary:
@@ -1915,6 +1972,65 @@ func debug_trigger_next_wave(clear_existing: bool = false) -> Dictionary:
 	return trigger_next_scheduled_wave("gm_panel", clear_existing, DEBUG_GM_SPAWN_STAGE_ID)
 
 
+func debug_trigger_game_outcome(result: String) -> Dictionary:
+	var normalized_result := result.strip_edges().to_lower()
+	if not normalized_result in ["victory", "failure"]:
+		return {"ok": false, "reason": "invalid_game_outcome", "result": normalized_result}
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state == null or not game_state.has_method("set_game_over"):
+		return {"ok": false, "reason": "game_state_missing", "result": normalized_result}
+	if bool(game_state.game_over):
+		return {
+			"ok": false,
+			"reason": "game_already_over",
+			"current_result": str(game_state.game_result)
+		}
+	if normalized_result == "victory":
+		var final_wave_number := _get_final_wave_number()
+		if final_wave_number <= 0:
+			return {"ok": false, "reason": "no_configured_waves", "result": normalized_result}
+		var battle_result := {
+			"wave_number": final_wave_number,
+			"remaining_enemy_count": 0,
+			"defeated_enemy_count": 0,
+			"debug_forced_outcome": true
+		}
+		_trigger_five_wave_victory(final_wave_number, battle_result, "gm_epilogue_acceptance")
+		return {
+			"ok": bool(game_state.game_over) and str(game_state.game_result) == "victory",
+			"result": str(game_state.game_result),
+			"reason": str(game_state.game_over_reason),
+			"settlement_snapshot": game_state.settlement_snapshot.duplicate(true)
+		}
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if building_system == null or not building_system.has_method("apply_damage_to_building"):
+		return {"ok": false, "reason": "building_system_missing", "result": normalized_result}
+	var main_hall: Dictionary = building_system.get_building(MAIN_HALL_ID)
+	if main_hall.is_empty():
+		return {"ok": false, "reason": "main_hall_missing", "result": normalized_result}
+	var remaining_hp := maxi(0, int(main_hall.get("hp", 0)))
+	var damage_result: Dictionary = building_system.apply_damage_to_building(
+		MAIN_HALL_ID,
+		maxi(1, remaining_hp),
+		"gm_epilogue_acceptance",
+		ENEMY_DAMAGE_VISIBILITY
+	)
+	if not bool(damage_result.get("ok", false)) or not bool(damage_result.get("destroyed", false)):
+		return {
+			"ok": false,
+			"reason": "main_hall_destruction_failed",
+			"damage_result": damage_result
+		}
+	_trigger_main_hall_failure({"id": "gm_epilogue_acceptance"}, damage_result)
+	return {
+		"ok": bool(game_state.game_over) and str(game_state.game_result) == "failure",
+		"result": str(game_state.game_result),
+		"reason": str(game_state.game_over_reason),
+		"main_hall": building_system.get_building(MAIN_HALL_ID),
+		"damage_result": damage_result
+	}
+
+
 func trigger_next_scheduled_wave(
 	source: String = "system",
 	clear_existing: bool = false,
@@ -2294,6 +2410,7 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_ids"):
 		return _alarm_failure("npc_system_missing", "NPC 系统不可用。")
+	var reflection_interrupt_result := _interrupt_pending_reflections_for_combat("combat_alarm")
 
 	var npc_ids: Array = npc_system.get_npc_ids()
 	var alarm_events: Array[Dictionary] = []
@@ -2347,11 +2464,25 @@ func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 		"rallied_count": rallied.size(),
 		"target_locked_count": target_locked_count,
 		"mount_route_recovered_count": mount_route_recovered_count,
+		"reflection_interrupt_result": reflection_interrupt_result,
 		"ignored_count": ignored.size(),
 		"rallied": rallied,
 		"ignored": ignored
 	}
+	_emit_combat_audio_event({
+		"event_type": "combat_alarm",
+		"target_type": "building",
+		"target_id": MAIN_HALL_ID,
+		"source": source,
+	})
 	return _last_alarm_result.duplicate(true)
+
+
+func _interrupt_pending_reflections_for_combat(reason: String) -> Dictionary:
+	var reflection_system := get_node_or_null(DAILY_REFLECTION_SYSTEM_PATH)
+	if reflection_system == null or not reflection_system.has_method("interrupt_pending_reflections_for_combat"):
+		return {"ok": true, "reason": "reflection_system_unavailable", "interrupted_count": 0, "interrupted": []}
+	return reflection_system.interrupt_pending_reflections_for_combat(reason)
 
 
 func debug_trigger_combat_alarm() -> Dictionary:
@@ -3228,6 +3359,39 @@ func get_npc_combat_strategy(npc_id: String) -> Dictionary:
 	}
 
 
+func _get_npc_combat_strategy_from_profile(
+	npc_id: String,
+	npc: Dictionary,
+	state: Dictionary
+) -> Dictionary:
+	var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
+	var main_weapon: Dictionary = equipment.get("main_weapon", {}) if equipment.get("main_weapon", {}) is Dictionary else {}
+	if main_weapon.is_empty():
+		return {}
+	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
+	if (
+		equipment_system == null
+		or not equipment_system.has_method("determine_unit_type")
+		or not equipment_system.has_method("get_unit_type_label")
+	):
+		return get_npc_combat_strategy(npc_id)
+	var unit_type := str(equipment_system.determine_unit_type(equipment))
+	var options := get_combat_strategy_options_for_unit_type(unit_type)
+	if options.is_empty():
+		return {}
+	var selected_id := _extract_combat_strategy_id(state.get("combat_strategy", {}))
+	if not _strategy_options_have_id(options, selected_id):
+		selected_id = str(options[0].get("id", ""))
+	return {
+		"npc_id": npc_id,
+		"id": selected_id,
+		"label": _get_combat_strategy_label(selected_id),
+		"unit_type": unit_type,
+		"unit_type_label": str(equipment_system.get_unit_type_label(unit_type)),
+		"options": options,
+	}
+
+
 func set_npc_combat_strategy(
 	npc_id: String,
 	strategy_id: String,
@@ -3267,25 +3431,39 @@ func normalize_npc_combat_strategy(
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	_advance_morale_boosts(game_delta_seconds)
 	_advance_wave_schedule(game_delta_seconds)
 	_advance_rally_units(game_delta_seconds)
 	if _active_enemies.is_empty():
 		if not _active_battle.is_empty():
 			_handle_all_enemies_cleared("enemies_removed_before_combat_step")
+		if measured:
+			_performance_probe.record("combat_logic_ms", Time.get_ticks_usec() - started)
 		return
 	if _default_formal_wave_active:
 		_formal_crowd_logic_frame += 1
+		var contact_started := Time.get_ticks_usec() if measured else 0
 		if _formal_crowd_logic_frame % _formal_contact_update_interval_frames == 0:
 			_advance_behavior_mode_contacts()
+		if measured:
+			_performance_probe.record("behavior_contacts_ms", Time.get_ticks_usec() - contact_started)
+			contact_started = Time.get_ticks_usec()
 		if _formal_crowd_logic_frame % _formal_avoidance_update_interval_frames == 0:
 			_advance_avoidance_units()
+		if measured:
+			_performance_probe.record("avoidance_decisions_ms", Time.get_ticks_usec() - contact_started)
 		_advance_combat_ai(game_delta_seconds, true)
+		if measured:
+			_performance_probe.record("combat_logic_ms", Time.get_ticks_usec() - started)
 		return
 	_advance_behavior_mode_contacts()
 	_advance_avoidance_units()
 	_advance_combat_ai(game_delta_seconds)
 	_advance_avoidance_units()
+	if measured:
+		_performance_probe.record("combat_logic_ms", Time.get_ticks_usec() - started)
 
 
 func _on_time_scale_changed(
@@ -3346,6 +3524,8 @@ func _set_formal_enemy_tactical_motion_paused(enemy_id: String, tactical_paused:
 
 
 func _advance_combat_ai(game_delta_seconds: float, use_formal_crowd_budget: bool = false) -> Dictionary:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	var combat_delta_seconds := _get_combat_action_seconds(game_delta_seconds)
 	# This clock advances exactly once for each authoritative combat step. Enemy
 	# attack starts are anchored to it so losing contact, changing targets, or
@@ -3353,12 +3533,17 @@ func _advance_combat_ai(game_delta_seconds: float, use_formal_crowd_budget: bool
 	# second visible swing inside the configured attack interval.
 	_combat_timeline_seconds += maxf(0.0, combat_delta_seconds)
 	var friendly_result := _advance_friendly_combat_ai(combat_delta_seconds, game_delta_seconds)
+	if measured:
+		_performance_probe.record("friendly_ai_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	var enemy_result := (
 		_advance_formal_enemy_ai_budgeted(game_delta_seconds, combat_delta_seconds)
 		if use_formal_crowd_budget and _default_formal_wave_active
 		else _advance_enemy_ai(game_delta_seconds, combat_delta_seconds)
 	)
 	enemy_result["combat_seconds"] = combat_delta_seconds
+	if measured:
+		_performance_probe.record("enemy_ai_ms", Time.get_ticks_usec() - started)
 	enemy_result["friendly_attacks"] = friendly_result
 	_last_ai_step_result = enemy_result.duplicate(true)
 	return enemy_result
@@ -3423,7 +3608,7 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 				_clear_keep_distance_retreat(npc_id, npc_state, "keep_distance_retreat_mount_pickup_started", false, true)
 			(result["skipped"] as Array).append({"npc_id": npc_id, "reason": "waiting_for_assigned_horse"})
 			continue
-		var attack_result := _advance_single_npc_combat_attack(npc_id, combat_delta_seconds)
+		var attack_result := _advance_single_npc_combat_attack(npc_id, combat_delta_seconds, npc_state)
 		if attack_result.is_empty():
 			continue
 		result["ready_count"] = int(result.get("ready_count", 0)) + 1
@@ -3436,18 +3621,37 @@ func _advance_friendly_combat_ai(combat_delta_seconds: float, game_delta_seconds
 	return result
 
 
-func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: float) -> Dictionary:
+func _advance_single_npc_combat_attack(
+	npc_id: String,
+	combat_delta_seconds: float,
+	initial_state: Dictionary = {}
+) -> Dictionary:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var section_started := Time.get_ticks_usec() if measured else 0
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
 		return {}
-	var npc: Dictionary = npc_system.get_npc(npc_id)
+	var npc: Dictionary = (
+		npc_system.get_npc_combat_profile_snapshot(npc_id)
+		if npc_system.has_method("get_npc_combat_profile_snapshot")
+		else npc_system.get_npc(npc_id)
+	)
 	if npc.is_empty():
 		return {}
-	var state: Dictionary = npc_system.get_npc_state(npc_id)
-	var attack_context := _calculate_npc_attack_context(npc_id, npc, state)
+	var state: Dictionary = initial_state if not initial_state.is_empty() else npc_system.get_npc_state(npc_id)
+	if measured:
+		_performance_probe.record("friendly_profile_read_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
+	var attack_context := _calculate_npc_attack_context(npc_id, npc, state, npc_system)
+	if measured:
+		_performance_probe.record("friendly_attack_context_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	if attack_context.is_empty():
 		return {}
-	var strategy := get_npc_combat_strategy(npc_id)
+	var strategy := _get_npc_combat_strategy_from_profile(npc_id, npc, state)
+	if measured:
+		_performance_probe.record("friendly_strategy_snapshot_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	if not strategy.is_empty():
 		attack_context["strategy_id"] = str(strategy.get("id", ""))
 		attack_context["strategy_label"] = str(strategy.get("label", ""))
@@ -3479,6 +3683,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		if completing_locked_melee_action
 		else _advance_keep_distance_retreat_priority(npc_id, state, attack_context)
 	)
+	if measured:
+		_performance_probe.record("friendly_keep_distance_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	state = npc_system.get_npc_state(npc_id)
 	if not keep_distance_retreat.is_empty():
 		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
@@ -3514,6 +3721,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 	# state ID is the durable presence lock; only invalidation or a one-shot
 	# different-attacker damage request may replace it.
 	var strategic_target := _select_friendly_combat_target_lock(npc_id, state)
+	if measured:
+		_performance_probe.record("friendly_target_lock_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	var strategic_target_enemy_id := str(strategic_target.get("id", ""))
 	var target_state_changes := {
 		"combat_target_enemy_id": strategic_target_enemy_id,
@@ -3532,6 +3742,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 	):
 		if npc_system.has_method("update_npc_state"):
 			npc_system.update_npc_state(npc_id, target_state_changes)
+	if measured:
+		_performance_probe.record("friendly_target_state_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 
 	var remaining := maxf(0.0, combat_delta_seconds)
 	var timeline_cursor := maxf(0.0, _combat_timeline_seconds - remaining)
@@ -3568,6 +3781,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		strategic_target_enemy_id,
 		engagement_range_margin if phase != "idle" and cycle_target_enemy_id == strategic_target_enemy_id else 0.0
 	)
+	if measured:
+		_performance_probe.record("friendly_attack_target_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	# Once a melee action or ranged release animation starts, range and line of
 	# fire are no longer re-evaluated. A still-valid actor target owns the action
 	# through authored impact/release; only an actual interruption may cancel it.
@@ -3584,6 +3800,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 			str(attack_context.get("weapon_id", ""))
 		)
 	)
+	if measured:
+		_performance_probe.record("friendly_attack_path_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	# Once an authored attack has started, movement strategy may not replace it
 	# before impact/recovery has finished. This is especially important for the
 	# cavalry charge strategy, whose cooldown now represents the active cycle.
@@ -3592,6 +3811,9 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		if phase == "idle"
 		else {}
 	)
+	if measured:
+		_performance_probe.record("friendly_strategy_movement_ms", Time.get_ticks_usec() - section_started)
+		section_started = Time.get_ticks_usec()
 	if not strategy_movement.is_empty():
 		_active_melee_swings.erase(_melee_swing_key("friendly", npc_id))
 		cooldown = maxf(0.0, next_sequence_time - _combat_timeline_seconds)
@@ -3616,6 +3838,8 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 				"combat_last_attack_result": {},
 				"last_action_result": str(strategy_movement.get("reason", "combat_strategy_movement"))
 			})
+		if measured:
+			_performance_probe.record("friendly_state_commit_ms", Time.get_ticks_usec() - section_started)
 		return {
 			"npc_id": npc_id,
 			"npc_name": str(npc.get("name", npc_id)),
@@ -3657,6 +3881,8 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 				"last_action_result": "combat_attack_path_blocked" if attack_path_blocked else "combat_no_enemy_in_range",
 				"current_action": "combat_ready"
 			})
+		if measured:
+			_performance_probe.record("friendly_state_commit_ms", Time.get_ticks_usec() - section_started)
 		return {
 			"npc_id": npc_id,
 			"attack_count": 0,
@@ -3819,6 +4045,8 @@ func _advance_single_npc_combat_attack(npc_id: String, combat_delta_seconds: flo
 		state_changes["current_action"] = "combat_ready"
 	if npc_system.has_method("update_npc_state"):
 		npc_system.update_npc_state(npc_id, state_changes)
+	if measured:
+		_performance_probe.record("friendly_state_commit_ms", Time.get_ticks_usec() - section_started)
 
 	return {
 		"npc_id": npc_id,
@@ -5067,6 +5295,8 @@ func _select_ranged_attack_position(
 	excluded_position: Vector3 = Vector3(INF, INF, INF),
 	excluded_radius: float = 0.0
 ) -> Dictionary:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var profile_started := Time.get_ticks_usec() if measured else 0
 	var npc_position := _get_npc_position(npc_id)
 	var enemy_position: Vector3 = encounter.get("position", npc_position + Vector3(0.0, 0.0, 1.0))
 	var arrival_tolerance := _get_friendly_ranged_attack_position_arrival_tolerance()
@@ -5091,9 +5321,18 @@ func _select_ranged_attack_position(
 		navigation_map = controller.get_production_navigation_map_rid()
 	var best_clear := {}
 	var best_reachable := {}
-	var best_clear_distance := INF
-	var best_reachable_distance := INF
+	# All samples are evaluated synchronously in one combat decision. The release
+	# socket, target aim point, shooter RID and stable target ID therefore cannot
+	# change between samples; resolve them once while retaining all 32 authored
+	# navigation paths, rays and the original nearest-candidate ordering.
+	var attack_position_target_id := "ranged_attack_position_%d" % _stable_hash_text(
+		"%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]
+	)
+	var attack_path_destination := _get_projectile_target_aim_position(encounter)
+	var attack_origin_height := _get_friendly_attack_origin_height(npc_id, weapon_id, npc_position)
+	var attack_path_excluded := _get_friendly_attack_segment_exclusions(npc_id)
 	if navigation_map.is_valid():
+		var candidates: Array[Dictionary] = []
 		for sample_index in range(RANGED_ATTACK_POSITION_SAMPLE_COUNT):
 			var angle := base_angle + TAU * float(sample_index) / float(RANGED_ATTACK_POSITION_SAMPLE_COUNT)
 			var authored_position := enemy_position + Vector3(cos(angle), 0.0, sin(angle)) * attack_position_radius
@@ -5104,30 +5343,45 @@ func _select_ranged_attack_position(
 				continue
 			if _horizontal_vector_distance(snapped, enemy_position) > maximum_endpoint_distance + 0.001:
 				continue
+			candidates.append({
+				"sample_index": sample_index,
+				"position": snapped,
+				"travel_distance": _horizontal_vector_distance(npc_position, snapped),
+			})
+		# The authored winner is the nearest reachable/clear point by direct travel
+		# distance. Evaluate in that exact priority order so the first clear point is
+		# provably the same winner; the old loop paid for all 32 path and ray queries
+		# even after that winner was already known.
+		candidates.sort_custom(_ranged_attack_position_candidate_less)
+		for raw_candidate in candidates:
+			var snapped: Vector3 = raw_candidate.position
+			var travel_distance := float(raw_candidate.travel_distance)
 			var path := NavigationServer3D.map_get_path(navigation_map, npc_position, snapped, true)
-			var travel_distance := _horizontal_vector_distance(npc_position, snapped)
 			if path.is_empty() and travel_distance > 0.2:
 				continue
 			if not path.is_empty() and _horizontal_vector_distance(path[path.size() - 1], snapped) > RANGED_ATTACK_POSITION_SNAP_TOLERANCE:
 				continue
 			var candidate := {
-				"target_id": "ranged_attack_position_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]),
+				"target_id": attack_position_target_id,
 				"target_name": "选择远程攻击点",
 				"position": snapped,
 				"enemy_distance_after": _horizontal_vector_distance(snapped, enemy_position),
-				"line_of_fire_clear": _is_friendly_attack_path_clear_from_position(npc_id, snapped, encounter, weapon_id),
+				"line_of_fire_clear": _is_static_attack_segment_clear_with_exclusions(
+					snapped + Vector3.UP * attack_origin_height,
+					attack_path_destination,
+					attack_path_excluded
+				),
 				"target_desired_distance": arrival_tolerance
 			}
-			if travel_distance < best_reachable_distance:
+			if best_reachable.is_empty():
 				best_reachable = candidate
-				best_reachable_distance = travel_distance
-			if bool(candidate.get("line_of_fire_clear", false)) and travel_distance < best_clear_distance:
+			if bool(candidate.get("line_of_fire_clear", false)):
 				best_clear = candidate
-				best_clear_distance = travel_distance
+				break
 	if not best_clear.is_empty():
-		return best_clear
+		return _profile_friendly_ranged_attack_position(best_clear, profile_started, measured)
 	if not best_reachable.is_empty():
-		return best_reachable
+		return _profile_friendly_ranged_attack_position(best_reachable, profile_started, measured)
 	# Navigation data can be unavailable during the first synchronization frame.
 	# Keep the combat loop live with the direct 95%-range point; the movement
 	# request and the next combat tick will constrain/reselect it again.
@@ -5149,14 +5403,28 @@ func _select_ranged_attack_position(
 	fallback_offset.y = 0.0
 	if fallback_offset.length() > maximum_endpoint_distance and fallback_offset.length() > 0.001:
 		fallback_position = enemy_position + fallback_offset.normalized() * maximum_endpoint_distance
-	return {
+	return _profile_friendly_ranged_attack_position({
 		"target_id": "ranged_attack_position_fallback_%d" % _stable_hash_text("%s:%s" % [npc_id, str(encounter.get("enemy_id", encounter.get("id", "")))]),
 		"target_name": "选择远程攻击点",
 		"position": fallback_position,
 		"enemy_distance_after": _horizontal_vector_distance(fallback_position, enemy_position),
 		"line_of_fire_clear": false,
 		"target_desired_distance": arrival_tolerance
-	}
+	}, profile_started, measured)
+
+
+func _ranged_attack_position_candidate_less(a: Dictionary, b: Dictionary) -> bool:
+	var a_distance := float(a.get("travel_distance", INF))
+	var b_distance := float(b.get("travel_distance", INF))
+	if is_equal_approx(a_distance, b_distance):
+		return int(a.get("sample_index", 0)) < int(b.get("sample_index", 0))
+	return a_distance < b_distance
+
+
+func _profile_friendly_ranged_attack_position(result: Dictionary, started_usec: int, measured: bool) -> Dictionary:
+	if measured:
+		_performance_probe.record("friendly_ranged_position_ms", Time.get_ticks_usec() - started_usec)
+	return result
 
 
 func _is_friendly_attack_path_clear(npc_id: String, target: Dictionary, weapon_id: String) -> bool:
@@ -5180,26 +5448,47 @@ func _is_friendly_attack_path_clear_from_position(
 	weapon_id: String
 ) -> bool:
 	var current_ground := _get_npc_position(npc_id)
-	var origin_height := PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT
-	if _is_ranged_weapon_type(weapon_id):
-		var release := _get_projectile_release_descriptor("friendly", npc_id, weapon_id)
-		if bool(release.get("ready", false)) and release.get("transform") is Transform3D:
-			origin_height = maxf(0.1, (release.get("transform") as Transform3D).origin.y - current_ground.y)
+	var origin_height := _get_friendly_attack_origin_height(npc_id, weapon_id, current_ground)
 	var origin := origin_ground + Vector3.UP * origin_height
 	var destination := _get_projectile_target_aim_position(target)
 	return _is_static_attack_segment_clear(npc_id, origin, destination)
 
 
+func _get_friendly_attack_origin_height(npc_id: String, weapon_id: String, current_ground: Vector3) -> float:
+	var origin_height := PROJECTILE_TARGET_HEIGHT_ENEMY_FOOT
+	if _is_ranged_weapon_type(weapon_id):
+		var release := _get_projectile_release_descriptor("friendly", npc_id, weapon_id)
+		if bool(release.get("ready", false)) and release.get("transform") is Transform3D:
+			origin_height = maxf(0.1, (release.get("transform") as Transform3D).origin.y - current_ground.y)
+	return origin_height
+
+
+func _get_friendly_attack_segment_exclusions(npc_id: String) -> Array[RID]:
+	var excluded: Array[RID] = []
+	var shooter_rid := _get_projectile_shooter_rid("friendly", npc_id)
+	if shooter_rid.is_valid():
+		excluded.append(shooter_rid)
+	return excluded
+
+
 func _is_static_attack_segment_clear(npc_id: String, origin: Vector3, destination: Vector3) -> bool:
+	return _is_static_attack_segment_clear_with_exclusions(
+		origin,
+		destination,
+		_get_friendly_attack_segment_exclusions(npc_id)
+	)
+
+
+func _is_static_attack_segment_clear_with_exclusions(
+	origin: Vector3,
+	destination: Vector3,
+	excluded: Array[RID]
+) -> bool:
 	if origin.distance_to(destination) <= 0.05:
 		return true
 	var world := get_viewport().world_3d
 	if world == null:
 		return true
-	var excluded: Array[RID] = []
-	var shooter_rid := _get_projectile_shooter_rid("friendly", npc_id)
-	if shooter_rid.is_valid():
-		excluded.append(shooter_rid)
 	# Layer 1 is formal world-static geometry. Same-side actors and the target
 	# remain outside this probe so a crowd overlap is not mistaken for a wall.
 	var query := PhysicsRayQueryParameters3D.create(origin, destination, 1, excluded)
@@ -5232,11 +5521,21 @@ func _constrain_combat_strategy_position(position: Vector3, npc_id: String = "")
 	)
 
 
-func _calculate_npc_attack_context(npc_id: String, npc: Dictionary, state: Dictionary) -> Dictionary:
+func _calculate_npc_attack_context(
+	npc_id: String,
+	npc: Dictionary,
+	state: Dictionary,
+	npc_system: Node = null
+) -> Dictionary:
 	var weapon := _get_npc_main_weapon(npc)
 	if weapon.is_empty():
 		return {}
-	var combat_stats := get_npc_combat_stats(npc_id)
+	var resolved_npc_system := npc_system if npc_system != null else get_node_or_null(NPC_SYSTEM_PATH)
+	var combat_stats := (
+		_calculate_npc_combat_stats_from_profile(npc_id, npc, state, resolved_npc_system)
+		if resolved_npc_system != null
+		else {}
+	)
 	if combat_stats.is_empty():
 		return {}
 	var final_stats: Dictionary = combat_stats.get("final", {})
@@ -7961,7 +8260,11 @@ func _advance_enemy_ai(
 		# actor whose formal slice was temporarily missing / restored without the
 		# dynamic marker; those actors could ignore an in-range defense device and
 		# continue straight to the gate.
+		var target_measured: bool = _performance_probe != null and _performance_probe.active
+		var target_started := Time.get_ticks_usec() if target_measured else 0
 		var target := _select_formal_dynamic_enemy_target(enemy_id, enemy)
+		if target_measured:
+			_performance_probe.record("enemy_target_select_ms", Time.get_ticks_usec() - target_started)
 		var active_cycle_target: Dictionary = enemy.get("attack_cycle_target", {}) if enemy.get("attack_cycle_target", {}) is Dictionary else {}
 		var completing_locked_actor_melee := (
 			str(enemy.get("attack_cycle_phase", "idle")) in ["windup", "recovery"]
@@ -8001,7 +8304,10 @@ func _advance_enemy_ai(
 			)
 			target["route_approach_position"] = formal_approach_position
 			target["position"] = formal_approach_position
+		var lease_started := Time.get_ticks_usec() if target_measured else 0
 		target = _ensure_enemy_attack_position(enemy_id, enemy, target)
+		if target_measured:
+			_performance_probe.record("enemy_attack_position_ms", Time.get_ticks_usec() - lease_started)
 		_configure_enemy_attack_wait_avoidance(
 			enemy_id,
 			str(target.get("attack_position_status", "")) == "waiting"
@@ -8174,7 +8480,11 @@ func _is_building_destroyed(building_id: String) -> bool:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("get_building"):
 		return false
-	var building: Dictionary = building_system.get_building(building_id)
+	var building: Dictionary = (
+		building_system.get_building_combat_snapshot(building_id)
+		if building_system.has_method("get_building_combat_snapshot")
+		else building_system.get_building(building_id)
+	)
 	return building.is_empty() or int(building.get("hp", 0)) <= 0
 
 
@@ -10502,6 +10812,8 @@ func debug_get_friendly_targeting_snapshot() -> Dictionary:
 
 
 func _get_npc_behavior_mode(npc_system: Node, npc_id: String) -> String:
+	if npc_system != null and npc_system.has_method("get_npc_behavior_mode"):
+		return str(npc_system.get_npc_behavior_mode(npc_id))
 	if npc_system != null and npc_system.has_method("get_npc_behavior_mode_snapshot"):
 		var snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot(npc_id)
 		return str(snapshot.get("behavior_mode", BEHAVIOR_MODE_WORK))
@@ -10687,6 +10999,13 @@ func _is_npc_combat_eligible(npc_id: String, npc_system: Node = null) -> bool:
 		resolved_npc_system = get_node_or_null(NPC_SYSTEM_PATH)
 	if resolved_npc_system == null or not resolved_npc_system.has_method("get_npc"):
 		return false
+	if resolved_npc_system.has_method("get_npc_combat_identity"):
+		var identity: Dictionary = resolved_npc_system.get_npc_combat_identity(npc_id)
+		return (
+			not identity.is_empty()
+			and bool(identity.get("recruited", false))
+			and bool(identity.get("has_main_weapon", false))
+		)
 	var npc: Dictionary = resolved_npc_system.get_npc(npc_id)
 	if npc.is_empty() or not bool(npc.get("recruited", false)):
 		return false
@@ -11646,6 +11965,39 @@ func _get_enemy_guided_attack_handoff_range(enemy: Dictionary, target: Dictionar
 
 
 func _get_enemy_guidance_zone_occupancy(candidate: Dictionary, excluded_enemy_id: String = "") -> Dictionary:
+	return _measure_enemy_guidance_zone_occupancy(candidate, _collect_enemy_guidance_bodies(excluded_enemy_id))
+
+
+func _collect_enemy_guidance_bodies(excluded_enemy_id: String) -> Array[Dictionary]:
+	# A single synchronous selection does not advance physics or commit damage.
+	# Read live bodies once per selection, not once per candidate. Never retain this
+	# across selections: another enemy's attack can remove a body in the same tick.
+	var bodies: Array[Dictionary] = []
+	var profiles: Dictionary = {}
+	for raw_enemy_id in _active_enemies.keys():
+		var enemy_id := str(raw_enemy_id)
+		if not excluded_enemy_id.is_empty() and enemy_id == excluded_enemy_id:
+			continue
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {}) as Dictionary
+		if enemy.is_empty() or int(enemy.get("hp", 0)) <= 0:
+			continue
+		var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
+		var position: Vector3 = actor.global_position if actor != null else enemy.get("position", Vector3.INF)
+		if position == Vector3.INF:
+			continue
+		var mounted: bool = str(enemy.get("unit_type", "")) in ["cavalry", "mounted_ranged"]
+		if not profiles.has(mounted):
+			profiles[mounted] = _get_enemy_guidance_body_profile(enemy)
+		var profile: Dictionary = profiles[mounted]
+		bodies.append({
+			"id": enemy_id, "position": position,
+			"radius": maxf(0.1, float(profile.get("radius", 0.42))),
+			"height": maxf(0.1, float(profile.get("height", 1.8))),
+		})
+	return bodies
+
+
+func _measure_enemy_guidance_zone_occupancy(candidate: Dictionary, bodies: Array[Dictionary]) -> Dictionary:
 	var zone_position: Vector3 = candidate.get("position", Vector3.ZERO)
 	var zone_radius := maxf(0.1, float(candidate.get(
 		"guidance_zone_radius",
@@ -11658,20 +12010,10 @@ func _get_enemy_guidance_zone_occupancy(candidate: Dictionary, excluded_enemy_id
 	var zone_min_y := zone_position.y
 	var zone_max_y := zone_min_y + zone_height
 	var occupants: Array[String] = []
-	for raw_enemy_id in _active_enemies.keys():
-		var enemy_id := str(raw_enemy_id)
-		if not excluded_enemy_id.is_empty() and enemy_id == excluded_enemy_id:
-			continue
-		var enemy: Dictionary = _active_enemies.get(enemy_id, {}) as Dictionary
-		if enemy.is_empty() or int(enemy.get("hp", 0)) <= 0:
-			continue
-		var actor := get_node_or_null(_formal_first_wave_node_paths.get(enemy_id, NodePath())) as ActorMotionBody
-		var enemy_position: Vector3 = actor.global_position if actor != null else enemy.get("position", Vector3.INF)
-		if enemy_position == Vector3.INF:
-			continue
-		var body_profile := _get_enemy_guidance_body_profile(enemy)
-		var body_radius := maxf(0.1, float(body_profile.get("radius", 0.42)))
-		var body_height := maxf(0.1, float(body_profile.get("height", 1.8)))
+	for body in bodies:
+		var enemy_position: Vector3 = body.position
+		var body_radius: float = body.radius
+		var body_height: float = body.height
 		var body_min_y := enemy_position.y
 		var body_max_y := body_min_y + body_height
 		if body_max_y < zone_min_y or body_min_y > zone_max_y:
@@ -11679,7 +12021,7 @@ func _get_enemy_guidance_zone_occupancy(candidate: Dictionary, excluded_enemy_id
 		if Vector2(enemy_position.x, enemy_position.z).distance_to(
 			Vector2(zone_position.x, zone_position.z)
 		) <= zone_radius + body_radius:
-			occupants.append(enemy_id)
+			occupants.append(str(body.id))
 	occupants.sort()
 	return {
 		"count": occupants.size(),
@@ -11687,6 +12029,39 @@ func _get_enemy_guidance_zone_occupancy(candidate: Dictionary, excluded_enemy_id
 		"zone_radius": zone_radius,
 		"zone_height": zone_height
 	}
+
+
+func _index_enemy_guidance_bodies(bodies: Array[Dictionary]) -> Dictionary:
+	var cells: Dictionary = {}
+	var max_radius := 0.0
+	for body in bodies:
+		var position: Vector3 = body.position
+		var cell := Vector2i(floori(position.x / 4.0), floori(position.z / 4.0))
+		if not cells.has(cell):
+			cells[cell] = []
+		(cells[cell] as Array).append(body)
+		max_radius = maxf(max_radius, float(body.radius))
+	return {"cells": cells, "max_radius": max_radius}
+
+
+func _query_enemy_guidance_bodies(candidate: Dictionary, index: Dictionary) -> Array[Dictionary]:
+	var position: Vector3 = candidate.get("position", Vector3.ZERO)
+	var radius := maxf(0.1, float(candidate.get("guidance_zone_radius", candidate.get("enemy_radius", 0.42))))
+	var reach := radius + float(index.max_radius)
+	# Broad phase only. An extra whole cell on every side deliberately overfetches
+	# at boundaries; the unchanged distance/height predicate makes the final call.
+	var min_x := floori((position.x - reach) / 4.0) - 1
+	var max_x := floori((position.x + reach) / 4.0) + 1
+	var min_z := floori((position.z - reach) / 4.0) - 1
+	var max_z := floori((position.z + reach) / 4.0) + 1
+	var cells: Dictionary = index.cells
+	var nearby: Array[Dictionary] = []
+	for x in range(min_x, max_x + 1):
+		for z in range(min_z, max_z + 1):
+			var cell := Vector2i(x, z)
+			if cells.has(cell):
+				nearby.append_array(cells[cell])
+	return nearby
 
 
 func _ensure_enemy_guided_attack_position(
@@ -11717,11 +12092,13 @@ func _ensure_enemy_guided_attack_position(
 			reset_recovery["excluded_slot_ids"] = PackedStringArray()
 			_enemy_guidance_stall_recoveries[enemy_id] = reset_recovery
 	var ranked: Array[Dictionary] = []
+	var guidance_bodies := _collect_enemy_guidance_bodies(enemy_id)
+	var guidance_index := _index_enemy_guidance_bodies(guidance_bodies)
 	for raw_candidate in candidates:
 		var candidate := raw_candidate.duplicate(true)
 		if excluded_stall_slots.has(str(candidate.get("slot_id", ""))):
 			continue
-		var occupancy := _get_enemy_guidance_zone_occupancy(candidate, enemy_id)
+		var occupancy := _measure_enemy_guidance_zone_occupancy(candidate, _query_enemy_guidance_bodies(candidate, guidance_index))
 		candidate["guidance_occupancy_count"] = int(occupancy.get("count", 0))
 		candidate["guidance_occupant_enemy_ids"] = (occupancy.get("enemy_ids", []) as Array).duplicate()
 		var candidate_position: Vector3 = candidate.get("position", enemy_position)
@@ -12504,12 +12881,17 @@ func _make_npc_enemy_target(npc_id: String, origin: Vector3) -> Dictionary:
 	if raw_position == null or not raw_position is Vector3:
 		return {}
 	var position := raw_position as Vector3
-	var npc: Dictionary = npc_system.get_npc(npc_id)
-	var has_main_weapon := not _get_npc_main_weapon(npc).is_empty()
+	var identity: Dictionary
+	if npc_system.has_method("get_npc_combat_identity"):
+		identity = npc_system.get_npc_combat_identity(npc_id)
+	else:
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		identity = {"name": str(npc.get("name", npc_id)), "has_main_weapon": not _get_npc_main_weapon(npc).is_empty()}
+	var has_main_weapon := bool(identity.get("has_main_weapon", false))
 	return {
 		"type": "npc",
 		"id": npc_id,
-		"name": str(npc.get("name", npc_id)),
+		"name": str(identity.get("name", npc_id)),
 		"position": position,
 		"contact_radius": 0.35,
 		"has_main_weapon": has_main_weapon,
@@ -12952,6 +13334,8 @@ func _select_enemy_recent_hit_preempt_target(enemy_id: String, enemy: Dictionary
 
 
 func _collect_enemy_target_priority_groups(enemy_id: String, enemy: Dictionary) -> Dictionary:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	var groups: Dictionary = {}
 	for priority in range(1, 6):
 		groups[priority] = [] as Array[Dictionary]
@@ -12965,6 +13349,9 @@ func _collect_enemy_target_priority_groups(enemy_id: String, enemy: Dictionary) 
 				continue
 			var npc_priority := 1 if bool(target.get("has_main_weapon", false)) else 2
 			_merge_enemy_target_candidate(groups[npc_priority] as Array, target)
+	if measured:
+		_performance_probe.record("target_npc_groups_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
 	if device_system != null and device_system.has_method("get_active_defense_targets"):
 		for raw_device_target in device_system.get_active_defense_targets():
@@ -12976,12 +13363,17 @@ func _collect_enemy_target_priority_groups(enemy_id: String, enemy: Dictionary) 
 			target["enemy_detection_range"] = detection_range
 			if float(target.get("distance", INF)) <= detection_range:
 				_merge_enemy_target_candidate(groups[1] as Array, target)
+	if measured:
+		_performance_probe.record("target_device_groups_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	for building_priority in range(3, 6):
 		var building_id: String = ENEMY_BUILDING_TARGET_IDS[building_priority - 3]
 		var building_target := _make_building_target(building_id)
 		if not building_target.is_empty():
 			building_target["distance"] = _horizontal_vector_distance(enemy_position, building_target.get("position", enemy_position))
 			(groups[building_priority] as Array).append(building_target)
+	if measured:
+		_performance_probe.record("target_building_groups_ms", Time.get_ticks_usec() - started)
 	return groups
 
 
@@ -12989,6 +13381,11 @@ func _is_enemy_fixed_target_present(enemy_id: String, enemy: Dictionary, target:
 	if not _is_enemy_target_valid(target):
 		return false
 	if str(target.get("type", "")) == "npc":
+		return true
+	# Guidance has no capacity limit: both reachable_guidance_zone and
+	# guidance_unreachable previously returned true below. The actual selection
+	# still path-validates ranked zones; presence does not need an all-zone preview.
+	if _uses_enemy_attack_guidance(enemy_id, target):
 		return true
 	var opportunity := _preview_enemy_target_opportunity(enemy_id, enemy, target)
 	var reason := str(opportunity.get("reason", ""))
@@ -13107,10 +13504,17 @@ func _refresh_current_enemy_target(enemy: Dictionary, current: Dictionary) -> Di
 
 
 func _select_formal_dynamic_enemy_target(enemy_id: String, enemy: Dictionary) -> Dictionary:
+	var measured: bool = _performance_probe != null and _performance_probe.active
+	var started := Time.get_ticks_usec() if measured else 0
 	_enemy_targeting_metrics["evaluations"] = int(_enemy_targeting_metrics.get("evaluations", 0)) + 1
 	var current := enemy.get("target", {}) as Dictionary if enemy.get("target", {}) is Dictionary else {}
 	var current_refreshed := _refresh_current_enemy_target(enemy, current)
+	if measured:
+		_performance_probe.record("target_refresh_ms", Time.get_ticks_usec() - started)
+		started = Time.get_ticks_usec()
 	var groups := _collect_enemy_target_priority_groups(enemy_id, enemy)
+	if measured:
+		_performance_probe.record("target_groups_ms", Time.get_ticks_usec() - started)
 	var high_candidates: Array[Dictionary] = []
 	for raw_high in groups.get(1, []):
 		var high_target := (raw_high as Dictionary).duplicate(true)
@@ -13409,7 +13813,11 @@ func _make_building_target(building_id: String) -> Dictionary:
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("get_building"):
 		return {}
-	var building: Dictionary = building_system.get_building(building_id)
+	var building: Dictionary = (
+		building_system.get_building_combat_snapshot(building_id)
+		if building_system.has_method("get_building_combat_snapshot")
+		else building_system.get_building(building_id)
+	)
 	if building.is_empty() or int(building.get("hp", 0)) <= 0:
 		return {}
 	var raw_position: Variant = null
@@ -14215,7 +14623,11 @@ func _is_target_defeated(target: Dictionary) -> bool:
 			var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 			if building_system == null or not building_system.has_method("get_building"):
 				return false
-			var building: Dictionary = building_system.get_building(target_id)
+			var building: Dictionary = (
+				building_system.get_building_combat_snapshot(target_id)
+				if building_system.has_method("get_building_combat_snapshot")
+				else building_system.get_building(target_id)
+			)
 			return building.is_empty() or int(building.get("hp", 0)) <= 0
 		"npc":
 			var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
@@ -14828,8 +15240,7 @@ func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBo
 		current_position.z - previous_position.z
 	)
 	var safe_delta := maxf(0.000001, delta)
-	var motion_snapshot := actor.debug_get_motion_snapshot()
-	var body_radius := float(motion_snapshot.get("body_radius", 0.42))
+	var body_radius := actor.get_body_radius()
 	var intended_distance := maxf(actor.velocity.length() * safe_delta, 0.0)
 	var recovery_allowance := minf(0.04, body_radius * 0.1)
 	var visible_limit := intended_distance + recovery_allowance
@@ -14840,7 +15251,7 @@ func _sample_enemy_presentation_motion(runtime: Dictionary, actor: ActorMotionBo
 		compensation -= raw_planar_displacement - intended_displacement
 	else:
 		var recovery_speed := minf(
-			maxf(float(motion_snapshot.get("profile_base_speed", 3.4)) * 0.45, 1.0),
+			maxf(actor.get_profile_base_speed() * 0.45, 1.0),
 			2.0
 		)
 		compensation = compensation.move_toward(Vector3.ZERO, recovery_speed * safe_delta)

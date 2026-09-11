@@ -580,7 +580,13 @@ func _fog_transition_label(weight: float) -> String:
 func _configure_light(light_node: DirectionalLight3D, kind: String) -> void:
 	light_node.light_energy = 0.0
 	light_node.shadow_enabled = false
-	light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	match str(_config.get("directional_shadow_mode", "parallel_4_splits")):
+		"orthogonal":
+			light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		"parallel_2_splits":
+			light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		_:
+			light_node.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	light_node.directional_shadow_max_distance = float(_config.get("directional_shadow_max_distance", 120.0))
 	light_node.directional_shadow_fade_start = float(_config.get("directional_shadow_fade_start", 0.86))
 	light_node.directional_shadow_blend_splits = bool(_config.get("directional_shadow_blend_splits", true))

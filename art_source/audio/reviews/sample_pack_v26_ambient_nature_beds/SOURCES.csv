@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+day/01_day_quiet_forest_distant_birds.mp3,ambience_day_candidate,"Quiet forest ambience, some distant birds",fthgurdy,https://freesound.org/s/528951/,CC0,rejected,,不采用,"用户最终选择白天 04"
+day/02_day_peaceful_meadow.mp3,ambience_day_candidate,Meadow.wav,PuzzleAudio,https://freesound.org/s/440807/,CC0,rejected,,不采用,"用户最终选择白天 04"
+day/03_day_forest_birds_loop.mp3,ambience_day_candidate,"Forest birds - ambient seamless loop",Magnesus,https://freesound.org/s/723913/,CC0,rejected,,不采用,"用户最终选择白天 04"
+day/04_day_soft_birds_loop.mp3,ambience_day_candidate,"ambience birds loop.wav",soundofsong,https://freesound.org/s/640781/,CC0,selected_preview,,"候选试听；最多取前 60 秒","用户选为白天全局环境音；正式资产使用下方循环接缝母源"
+day/05_day_summer_meadow.mp3,ambience_day_candidate,"Summer meadow - Houghton Lodge",richwise,https://freesound.org/s/815552/,CC0,rejected,,不采用,"用户最终选择白天 04"
+night/01_night_soft_crickets.mp3,ambience_night_candidate,"Quiet Night Atmosphere – Soft Crickets",Goldenboy76,https://freesound.org/s/857163/,CC0,selected_preview,,"候选试听；取前 60 秒","用户选为夜晚全局环境音；正式资产使用下方循环接缝母源"
+night/02_night_distant_crickets.mp3,ambience_night_candidate,"Crickets - Warm Summer Night - Ambient.wav",Speziax,https://freesound.org/s/645329/,CC0,rejected,,不采用,"用户最终选择夜晚 01"
+night/03_night_frogs.mp3,ambience_night_candidate,"Many Frogs at Night in Marsh.wav",bmacphail,https://freesound.org/s/569543/,CC0,rejected,,不采用,"用户最终选择夜晚 01"
+night/04_night_frogs_crickets_bugs.mp3,ambience_night_candidate,"Relaxing Nighttime Backyard Nature Sounds - Frogs, Crickets, Bugs",inkedflorist,https://freesound.org/s/711047/,CC0,rejected,,不采用,"用户最终选择夜晚 01"
+night/05_night_insects_frogs.mp3,ambience_night_candidate,"Insects and frogs at night.wav",nervousneal,https://freesound.org/s/342191/,CC0,rejected,,不采用,"用户最终选择夜晚 01"
+selected/04_day_soft_birds_loop_ready.wav,ambience_day,"ambience birds loop.wav",soundofsong,https://freesound.org/s/640781/,CC0,confirmed,ambience_day_loop,"采用试听前 60 秒；首尾 2 秒交叉衔接为 58 秒无缝循环；全局环境总线；目标 -28 LUFS","用户确认白天使用 04"
+selected/01_night_soft_crickets_loop_ready.wav,ambience_night,"Quiet Night Atmosphere – Soft Crickets",Goldenboy76,https://freesound.org/s/857163/,CC0,confirmed,ambience_night_loop,"采用试听前 60 秒；首尾 2 秒交叉衔接为 58 秒无缝循环；全局环境总线；目标 -30 LUFS","用户确认夜晚使用 01"

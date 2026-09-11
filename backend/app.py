@@ -1,3 +1,7 @@
+import io
+import wave
+from pathlib import Path
+
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -14,6 +18,8 @@ try:
         DialogueIntentRevalidationRequest,
         DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
+        GameEpilogueRequest,
+        GameEpilogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
         PlayerNPCDialogueResponse,
@@ -21,8 +27,15 @@ try:
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
         PlanRevisionResponse,
+        VoiceAnalyzeErrorResponse,
+        VoiceAnalyzeRequest,
+        VoiceAnalyzeResponse,
     )
     from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from backend.services.voice_model_adapter import (
+        VoiceModelAdapter,
+        load_dialogue_input_config,
+    )
 except ModuleNotFoundError:
     from schemas import (
         APIErrorResponse,
@@ -35,6 +48,8 @@ except ModuleNotFoundError:
         DialogueIntentRevalidationRequest,
         DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
+        GameEpilogueRequest,
+        GameEpilogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
         PlayerNPCDialogueResponse,
@@ -42,8 +57,12 @@ except ModuleNotFoundError:
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
         PlanRevisionResponse,
+        VoiceAnalyzeErrorResponse,
+        VoiceAnalyzeRequest,
+        VoiceAnalyzeResponse,
     )
     from services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from services.voice_model_adapter import VoiceModelAdapter, load_dialogue_input_config
 
 
 SERVICE_NAME = "war-not-mine-backend"
@@ -76,13 +95,20 @@ def normalize_dialogue_emotion(raw_value) -> str:
 
 
 def create_app() -> Flask:
-    load_dotenv()
+    # Resolve the local backend configuration independently of the shell's cwd.
+    # Existing process environment variables keep precedence (override=False).
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
     app = Flask(__name__)
     app.config["MODEL_ADAPTER"] = ModelAdapter()
+    app.config["VOICE_MODEL_ADAPTER"] = VoiceModelAdapter()
+    app.config["DIALOGUE_INPUT_CONFIG"] = load_dialogue_input_config()
 
     def model_adapter() -> ModelAdapter:
         return app.config["MODEL_ADAPTER"]
+
+    def voice_model_adapter() -> VoiceModelAdapter:
+        return app.config["VOICE_MODEL_ADAPTER"]
 
     def model_output_invalid_response(call_type: str, payload: dict, result, schema_name: str, exc: ValidationError):
         failure_reason = "Model output did not match %s." % schema_name
@@ -613,6 +639,70 @@ def create_app() -> Flask:
             details.append("world-facing reflection output must use 守备官 instead of 玩家.")
         return details
 
+    def validate_game_epilogue_business_rules(
+        epilogue_request: GameEpilogueRequest,
+        response_model: GameEpilogueResponse,
+    ) -> list[str]:
+        details: list[str] = []
+        if response_model.result != epilogue_request.result:
+            details.append("result must match the authoritative settlement result.")
+        expected_by_id = {npc.npc_id: npc for npc in epilogue_request.npcs}
+        ending_ids = [ending.npc_id for ending in response_model.npc_endings]
+        if len(ending_ids) != len(set(ending_ids)):
+            details.append("npc_endings contains duplicate npc_id values.")
+        if set(ending_ids) != set(expected_by_id):
+            details.append("npc_endings must exactly cover the requested npc ids.")
+        global_fact_ids = {fact.fact_id for fact in epilogue_request.global_facts}
+        victory_tones = {"hopeful", "hopeful_bittersweet", "reconciled"}
+        failure_tones = {"sorrowful", "sorrowful_resilient", "unresolved"}
+        forbidden_death_terms = ("阵亡", "死亡", "死去", "身亡", "尸体", "墓碑")
+        forbidden_meta_terms = ("玩家", "根据资料", "根据提供", "NPC id", "fact_id")
+        forbidden_modern_terms = (
+            "手机", "互联网", "公司", "工厂", "火车", "汽车", "电报", "记者", "媒体", "大学",
+        )
+        opening_keys: dict[str, list[str]] = {}
+        closing_keys: dict[str, list[str]] = {}
+        for ending in response_model.npc_endings:
+            expected = expected_by_id.get(ending.npc_id)
+            if expected is None:
+                continue
+            if ending.opening_status != expected.opening_status:
+                details.append(f"{ending.npc_id}: opening_status changed authoritative state.")
+            allowed_fact_ids = global_fact_ids | {fact.fact_id for fact in expected.key_facts}
+            invalid_refs = [fact_id for fact_id in ending.fact_refs if fact_id not in allowed_fact_ids]
+            if invalid_refs:
+                details.append(f"{ending.npc_id}: fact_refs contains unavailable facts {invalid_refs}.")
+            expected_tones = victory_tones if epilogue_request.result == "victory" else failure_tones
+            if ending.tone not in expected_tones:
+                details.append(f"{ending.npc_id}: tone is incompatible with settlement result.")
+            combined_text = " ".join((ending.ending_title, ending.final_opinion, ending.fate_story))
+            for term in forbidden_death_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: forbidden NPC death wording '{term}'.")
+            for term in forbidden_meta_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: forbidden meta wording '{term}'.")
+            for term in forbidden_modern_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: setting-incompatible modern wording '{term}'.")
+            compact_story = "".join(ending.fate_story.split())
+            opening_keys.setdefault(compact_story[:18], []).append(ending.npc_id)
+            closing_keys.setdefault(compact_story[-18:], []).append(ending.npc_id)
+        for fragment, npc_ids in opening_keys.items():
+            if fragment and len(npc_ids) > 1:
+                details.append(f"repeated epilogue opening across npc ids {npc_ids}.")
+        for fragment, npc_ids in closing_keys.items():
+            if fragment and len(npc_ids) > 1:
+                details.append(f"repeated epilogue closing across npc ids {npc_ids}.")
+        all_text = " ".join(
+            [response_model.ending_title, response_model.station_coda]
+            + [ending.fate_story for ending in response_model.npc_endings]
+        )
+        for term in forbidden_death_terms:
+            if term in all_text:
+                details.append(f"epilogue contains forbidden initial-NPC death wording '{term}'.")
+        return list(dict.fromkeys(details))
+
     def model_adapter_error_status(error_code: str) -> int:
         if error_code == "budget_exceeded":
             return 429
@@ -624,17 +714,143 @@ def create_app() -> Flask:
             "ok": True,
             "service": SERVICE_NAME,
             "model_adapter": model_adapter().get_runtime_config_snapshot(),
+            "voice_model_adapter": voice_model_adapter().get_runtime_config_snapshot(),
+            "dialogue_input": app.config["DIALOGUE_INPUT_CONFIG"].model_dump(),
         })
 
     @app.get("/debug/llm_usage")
     def llm_usage():
         adapter = model_adapter()
+        voice_adapter = voice_model_adapter()
         return jsonify({
             "ok": True,
             "model_adapter": adapter.get_runtime_config_snapshot(),
             "summary": adapter.get_usage_summary(),
             "records": adapter.get_usage_records(),
+            "voice": {
+                "model_adapter": voice_adapter.get_runtime_config_snapshot(),
+                "summary": voice_adapter.get_usage_summary(),
+                "records": voice_adapter.get_usage_records(),
+            },
         })
+
+    @app.post("/voice/analyze")
+    def voice_analyze():
+        voice_adapter = voice_model_adapter()
+        raw_meta = {
+            "request_id": request.form.get("request_id", ""),
+            "npc_id": request.form.get("npc_id", ""),
+            "dialogue_id": request.form.get("dialogue_id", ""),
+            "locale": request.form.get("locale", "zh"),
+        }
+        try:
+            voice_request = VoiceAnalyzeRequest.model_validate(raw_meta)
+        except ValidationError as exc:
+            request_id = str(raw_meta.get("request_id", ""))
+            usage = voice_adapter.record_validation_failure(
+                request_id=request_id,
+                npc_id=str(raw_meta.get("npc_id", "")),
+                dialogue_id=str(raw_meta.get("dialogue_id", "")),
+                error_code="validation_error",
+                failure_reason="VoiceAnalyzeRequest validation failed.",
+            )
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=request_id,
+                error_code="validation_error",
+                message="VoiceAnalyzeRequest validation failed.",
+                details=exc.errors(include_context=False),
+                usage=usage,
+            ).model_dump()), 400
+
+        def voice_error(error_code: str, message: str, status: int, duration: float = 0.0):
+            usage = voice_adapter.record_validation_failure(
+                request_id=voice_request.request_id,
+                npc_id=voice_request.npc_id,
+                dialogue_id=voice_request.dialogue_id,
+                error_code=error_code,
+                failure_reason=message,
+                duration_seconds=duration,
+            )
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=voice_request.request_id,
+                error_code=error_code,
+                message=message,
+                usage=usage,
+            ).model_dump()), status
+
+        upload = request.files.get("audio")
+        if upload is None:
+            return voice_error("recording_empty", "No audio recording was uploaded.", 400)
+
+        limits = app.config["DIALOGUE_INPUT_CONFIG"]
+        audio_bytes = upload.stream.read(limits.voice_upload_max_bytes + 1)
+        if not audio_bytes:
+            return voice_error("recording_empty", "The uploaded recording is empty.", 400)
+        if len(audio_bytes) > limits.voice_upload_max_bytes:
+            return voice_error(
+                "audio_too_large",
+                "The uploaded recording exceeds the configured byte limit.",
+                413,
+            )
+
+        try:
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+                if wav_file.getcomptype() != "NONE" or frame_rate <= 0:
+                    raise wave.Error("Only uncompressed PCM WAV is supported.")
+                duration_seconds = frame_count / float(frame_rate)
+        except (EOFError, wave.Error):
+            return voice_error("audio_invalid", "The uploaded WAV is invalid or unsupported.", 400)
+
+        if duration_seconds <= 0.0:
+            return voice_error("recording_empty", "The uploaded recording has no frames.", 400)
+        if duration_seconds > limits.voice_recording_max_seconds:
+            return voice_error(
+                "audio_too_long",
+                "The uploaded recording exceeds the 30-second limit.",
+                413,
+                duration_seconds,
+            )
+
+        result = voice_adapter.analyze(
+            request_id=voice_request.request_id,
+            npc_id=voice_request.npc_id,
+            dialogue_id=voice_request.dialogue_id,
+            duration_seconds=duration_seconds,
+            audio_bytes=audio_bytes,
+            locale=voice_request.locale,
+        )
+        if not result.ok:
+            voice_error_statuses = {
+                "voice_budget_exceeded": 429,
+                "voice_provider_rate_limited": 429,
+                "voice_provider_timeout": 504,
+                "voice_provider_auth_failed": 502,
+                "voice_provider_transport_error": 502,
+                "voice_provider_http_error": 502,
+                "voice_provider_invalid_response": 502,
+                "voice_provider_unavailable": 503,
+            }
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=voice_request.request_id,
+                error_code=result.error_code,
+                message=result.message,
+                usage=result.usage,
+            ).model_dump()), voice_error_statuses.get(result.error_code, 503)
+
+        return jsonify(VoiceAnalyzeResponse(
+            request_id=voice_request.request_id,
+            dialogue_id=voice_request.dialogue_id,
+            transcript=result.transcript,
+            emotion=result.emotion,
+            emotion_label=result.emotion_label,
+            emotion_applied=result.emotion_applied,
+            duration_seconds=round(duration_seconds, 3),
+            model_provider=result.provider,
+            model_name=result.model,
+            usage=result.usage,
+        ).model_dump())
 
     @app.post("/mock/model")
     def mock_model():
@@ -1202,6 +1418,93 @@ def create_app() -> Flask:
             )
 
         return jsonify(model_success_payload(response_model, result))
+
+    @app.post("/game/epilogue")
+    def game_epilogue():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            epilogue_request = GameEpilogueRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "GameEpilogueRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        request_payload = epilogue_request.model_dump()
+        result = model_adapter().generate("game_epilogue", request_payload)
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), model_adapter_error_status(result.error_code)
+
+        validation_details: list = []
+        response_model = None
+        try:
+            response_model = GameEpilogueResponse.model_validate(result.content)
+        except ValidationError as exc:
+            validation_details = exc.errors()
+        if response_model is not None:
+            validation_details = validate_game_epilogue_business_rules(epilogue_request, response_model)
+
+        correction_used = False
+        if validation_details and result.provider != "mock":
+            model_adapter().record_model_output_invalid(
+                "game_epilogue",
+                request_payload,
+                "Initial GameEpilogueResponse failed validation; one correction requested.",
+                result.usage,
+                model_output=result.content,
+                validation_details=validation_details,
+            )
+            correction_payload = dict(request_payload)
+            correction_payload["correction_context"] = {
+                "instruction": "Correct the response without changing any authoritative input fact.",
+                "validation_errors": validation_details,
+                "previous_output": result.content,
+            }
+            result = model_adapter().generate("game_epilogue", correction_payload)
+            correction_used = True
+            if not result.ok:
+                return jsonify({
+                    "ok": False,
+                    "error_code": result.error_code,
+                    "message": result.message,
+                    "fallback_used": False,
+                    "usage": result.usage,
+                }), model_adapter_error_status(result.error_code)
+            try:
+                response_model = GameEpilogueResponse.model_validate(result.content)
+                validation_details = validate_game_epilogue_business_rules(epilogue_request, response_model)
+            except ValidationError as exc:
+                response_model = None
+                validation_details = exc.errors()
+
+        if response_model is None or validation_details:
+            return model_output_business_invalid_response(
+                "game_epilogue",
+                request_payload,
+                result,
+                "GameEpilogueResponse failed schema or continuity validation.",
+                validation_details,
+            )
+        return jsonify(model_success_payload(
+            response_model,
+            result,
+            [{"kind": "epilogue_correction", "applied": True}] if correction_used else [],
+        ))
 
     return app
 

@@ -390,6 +390,15 @@ func apply_external_displacement(target_position: Vector3, reason: String = "ext
 	}
 
 
+func get_body_radius() -> float:
+	var shape := body_collision.shape as CapsuleShape3D
+	return shape.radius if shape != null else 0.0
+
+
+func get_profile_base_speed() -> float:
+	return float(_profile.get("base_speed", 0.0))
+
+
 func debug_get_motion_snapshot() -> Dictionary:
 	var body_shape := body_collision.shape as CapsuleShape3D
 	var interaction_shape := interaction_collision.shape as CapsuleShape3D

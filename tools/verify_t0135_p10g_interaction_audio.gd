@@ -26,12 +26,14 @@ func _run() -> void:
 	var audio_manager := root.get_node_or_null("AudioManager")
 	var ui_root := main.get_node_or_null("UI")
 	var settings_panel := main.get_node_or_null("UI/PauseMenu/SettingsPanel")
+	var npc_panel := main.get_node_or_null("UI/NPCPanel")
 	var dialog_panel := main.get_node_or_null("UI/DialogPanel")
 	var harvest_dialog := main.get_node_or_null("UI/CraftingHarvestDialog")
 	var crafting_system := main.get_node_or_null("Systems/CraftingSystem")
 	var resource_system := main.get_node_or_null("Systems/ResourceSystem")
 	var merchant_system := main.get_node_or_null("Systems/MerchantSystem")
-	if [controller, audio_manager, ui_root, settings_panel, dialog_panel, harvest_dialog, crafting_system, resource_system, merchant_system].has(null):
+	var npc_system := main.get_node_or_null("Systems/NPCSystem")
+	if [controller, audio_manager, ui_root, settings_panel, npc_panel, dialog_panel, harvest_dialog, crafting_system, resource_system, merchant_system, npc_system].has(null):
 		_fail("P10G required Main nodes are missing")
 		return
 
@@ -46,6 +48,7 @@ func _run() -> void:
 	await _assert_panel_buttons_use_immediate_click(controller, settings_panel)
 	await _assert_special_success_and_close(controller, dialog_panel)
 	await _assert_real_harvest_success(controller, harvest_dialog, crafting_system, resource_system)
+	await _assert_progression_success_audio(controller, npc_panel, npc_system)
 	_assert_semantic_priority(controller)
 	_assert_ordinary_door_registration(controller)
 	_assert_door_edges(controller, main)
@@ -58,7 +61,7 @@ func _run() -> void:
 	await process_frame
 	var loops: Dictionary = audio_manager.get_loop_snapshot()
 	_assert(not loops.has("interaction_merchant_cart_travel"), "merchant loop survived Main teardown")
-	print("T0135_P10G_INTERACTION_AUDIO_PASS assets=6 ui=immediate panels=wood_only success=pass doors=pass merchant=pass")
+	print("T0135_P10G_INTERACTION_AUDIO_PASS assets=6 ui=immediate panels=wood_only success=pass progression=pass doors=pass merchant=pass")
 	quit(0)
 
 
@@ -182,6 +185,40 @@ func _assert_semantic_priority(controller: Node) -> void:
 	_assert_last_ui(controller, "success", "sfx_ui_interaction_success_resource_collect")
 
 
+func _assert_progression_success_audio(controller: Node, npc_panel: Node, npc_system: Node) -> void:
+	var npc_id := "cook_01"
+	var progression: Dictionary = npc_system.get_npc_progression(npc_id)
+	var threshold := maxi(1, int(progression.get("current_level_experience_max", 10)))
+	var current_level_xp := int(progression.get("current_level_experience", 0))
+	var required_xp := threshold - current_level_xp
+	controller.debug_clear_history()
+	var level_result: Dictionary = npc_system.increase_npc_total_experience(npc_id, required_xp, false)
+	await process_frame
+	_assert(int(level_result.get("skill_points_gained", 0)) == 1, "level-up fixture did not gain exactly one skill point")
+	_assert_last_ui(controller, "level_up", "sfx_ui_interaction_success_resource_collect")
+
+	npc_panel.show_npc(npc_id)
+	await process_frame
+	var strength_button := npc_panel.find_child("NPCStrengthPointButton", true, false) as Button
+	var intelligence_button := npc_panel.find_child("NPCIntelligencePointButton", true, false) as Button
+	var assignment_button := strength_button if strength_button != null and strength_button.visible else intelligence_button
+	_assert(assignment_button != null and assignment_button.visible, "successful level-up did not expose an attribute assignment button")
+	if assignment_button == null or not assignment_button.visible:
+		return
+	controller.debug_clear_history()
+	assignment_button.pressed.emit()
+	await process_frame
+	var history: Array = controller.get_debug_snapshot().get("recent_history", [])
+	_assert(history.size() == 1, "successful point assignment overlapped the success chime with a wooden click")
+	_assert_last_ui(controller, "attribute_assigned", "sfx_ui_interaction_success_resource_collect")
+
+	controller.debug_clear_history()
+	var failed_result: Dictionary = npc_system.assign_npc_attribute_point(npc_id, "strength")
+	await process_frame
+	_assert(not bool(failed_result.get("ok", false)), "point assignment without points unexpectedly succeeded")
+	_assert((controller.get_debug_snapshot().get("recent_history", []) as Array).is_empty(), "failed point assignment played a success sound")
+
+
 func _assert_ordinary_door_registration(controller: Node) -> void:
 	var ordinary_doors := get_nodes_in_group("building_auto_door")
 	_assert(ordinary_doors.size() == 9, "all nine ordinary building doors must expose their live motion state")
@@ -234,7 +271,7 @@ func _assert_merchant_motion(controller: Node, audio_manager: Node, merchant_sys
 	_assert((snapshot.get("merchant_source_position", Vector3.ZERO) as Vector3).is_equal_approx(Vector3(-8.0, 0.35, -20.0)), "merchant loop source did not follow wagon position")
 	var loop: Dictionary = audio_manager.get_loop_snapshot().get("interaction_merchant_cart_travel", {})
 	_assert(str(loop.get("asset_id", "")) == "sfx_merchant_cart_arrival_departure", "merchant loop used the wrong asset")
-	_assert(str(loop.get("bus", "")) == "World", "merchant loop did not route through World")
+	_assert(str(loop.get("bus", "")) == "Ambience", "merchant loop is not controlled by environment volume")
 	controller.debug_sample_merchant({
 		"wagon_state": "parked",
 		"wagon": {
@@ -251,9 +288,9 @@ func _assert_merchant_motion(controller: Node, audio_manager: Node, merchant_sys
 
 func _assert_bus_routes() -> void:
 	var ui_index := AudioServer.get_bus_index(&"UI")
-	var world_index := AudioServer.get_bus_index(&"World")
 	_assert(ui_index >= 0 and AudioServer.get_bus_send(ui_index) == &"Master", "UI bus must be independent from SFX")
-	_assert(world_index >= 0 and AudioServer.get_bus_send(world_index) == &"SFX", "World bus does not send to SFX")
+	var ambience_index := AudioServer.get_bus_index(&"Ambience")
+	_assert(ambience_index >= 0 and AudioServer.get_bus_send(ambience_index) == &"Master", "Ambience bus must be independently controlled")
 
 
 func _assert_last_ui(controller: Node, semantic: String, asset_id: String) -> void:
@@ -286,7 +323,7 @@ func _assert_last_world(
 	_assert(str(entry.get("asset_id", "")) == asset_id, "wrong world asset for %s" % semantic)
 	_assert(str(entry.get("source_id", "")) == source_id, "wrong world source id")
 	_assert(str(entry.get("player_type", "")) == "AudioStreamPlayer3D", "%s is not positional" % semantic)
-	_assert(str(entry.get("bus", "")) == "World", "%s did not route through World" % semantic)
+	_assert(str(entry.get("bus", "")) == "Ambience", "%s is not controlled by environment volume" % semantic)
 	_assert((entry.get("world_position", Vector3.ZERO) as Vector3).is_equal_approx(expected_position), "%s used the wrong source position" % semantic)
 
 

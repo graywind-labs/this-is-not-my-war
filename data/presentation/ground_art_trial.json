@@ -1,0 +1,15 @@
+{
+  "schema_version": "ground_art_trial_v1",
+  "seed": 362,
+  "bounds": [-65.0, -65.0, 65.0, 80.0],
+  "grass_dark": "#303c26",
+  "grass_light": "#485438",
+  "soil_dark": "#554a38",
+  "soil_light": "#776749",
+  "tuft_colors": ["#55613c", "#737c49", "#8b8954"],
+  "tuft_attempts": 6000,
+  "wildflowers": {"enabled": true, "count": 8, "minimum_spacing": 9.0, "seed": 369, "petal_colors": ["#e7e3d0", "#dfbf4f"]},
+  "outer_grass": {"enabled": true, "seed": 3621, "spacing": 3.0, "chunk_size": 48.0, "density_min": 0.55, "density_max": 0.95, "river_clearance": 1.2, "mountain_fade_width": 18.0},
+  "camera_target": [0.0, 0.0, 9.0],
+  "camera_offset": [15.0, 28.0, 34.0]
+}

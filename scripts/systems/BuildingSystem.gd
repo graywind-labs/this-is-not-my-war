@@ -279,6 +279,17 @@ func get_building(building_id: String) -> Dictionary:
 	return building
 
 
+func get_building_combat_snapshot(building_id: String) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	# Combat needs live identity/HP, not repair UI and per-activity efficiency.
+	return {
+		"id": building_id, "name": str(building.get("name", building_id)),
+		"hp": int(building.get("hp", 0)), "max_hp": int(building.get("max_hp", 0)),
+	}
+
+
 func get_building_ids() -> Array[String]:
 	return _building_order.duplicate()
 
@@ -1192,6 +1203,11 @@ func apply_damage_to_building(
 		options
 	)
 	if hp_after < hp_before:
+		var impact_world_position: Variant = _resolve_building_impact_world_position(
+			building_id,
+			options,
+			feedback_world_position
+		)
 		_emit_combat_audio_event({
 			"event_type": "structure_damaged",
 			"target_type": "building",
@@ -1202,6 +1218,7 @@ func apply_damage_to_building(
 			"hp_after": hp_after,
 			"destroyed": hp_after <= 0,
 			"world_position": feedback_world_position,
+			"impact_world_position": impact_world_position,
 		})
 	var event := _log_building_damaged(building_id, actor_id, amount, hp_before, hp_after, visibility, options)
 	return {
@@ -1244,6 +1261,20 @@ func _emit_building_hp_feedback(
 		prefer_feedback_position,
 		0.0 if uses_formal_anchor else (0.35 if prefer_feedback_position else WorldFeedbackPayload.BUILDING_ANCHOR_HEIGHT)
 	)
+	return feedback_world_position
+
+
+func _resolve_building_impact_world_position(
+	building_id: String,
+	options: Dictionary,
+	feedback_world_position: Variant
+) -> Variant:
+	var explicit_hit_position: Variant = WorldFeedbackPayload.find_world_position(options)
+	if explicit_hit_position is Vector3:
+		return explicit_hit_position
+	var entry_position: Variant = get_building_entry_position(building_id)
+	if entry_position is Vector3:
+		return entry_position
 	return feedback_world_position
 
 

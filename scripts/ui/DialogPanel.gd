@@ -8,12 +8,17 @@ const EVENT_BUS_PATH := "/root/EventBus"
 const RECRUITMENT_ACCEPT_COLOR := "#63D471"
 const RECRUITMENT_REJECT_COLOR := "#FF6B6B"
 const MORALE_CONTINUE_COLOR := "#D6C7A1"
+const DIALOG_LAYER := 100
+const VOICE_STATE_IDLE := "idle"
+const VOICE_STATE_RECORDING := "recording"
+const VOICE_STATE_ANALYZING := "analyzing"
 
 @onready var npc_name_label: Label = %DialogNPCNameLabel
 @onready var status_label: Label = %DialogStatusLabel
 @onready var round_label: Label = %DialogRoundLabel
 @onready var history_text: RichTextLabel = %DialogHistoryText
 @onready var input_edit: LineEdit = %DialogInputEdit
+@onready var voice_button: Button = %DialogVoiceButton
 @onready var send_button: Button = %DialogSendButton
 @onready var end_button: Button = %DialogEndButton
 @onready var cancel_button: Button = %DialogCancelButton
@@ -28,10 +33,26 @@ const MORALE_CONTINUE_COLOR := "#D6C7A1"
 @onready var attack_button: Button = %DialogAttackButton
 @onready var attack_confirmation_dialog: ConfirmationDialog = %DialogAttackConfirmationDialog
 @onready var special_success_dialog: AcceptDialog = %DialogSpecialSuccessDialog
+@onready var input_limit_dialog: AcceptDialog = %DialogInputLimitDialog
+@onready var voice_recorder: VoiceInputRecorder = %VoiceInputRecorder
+@onready var voice_bridge: VoiceInputBridge = %VoiceInputBridge
+@onready var recording_overlay: Control = %DialogRecordingOverlay
+@onready var recording_icon: TextureRect = %DialogRecordingIcon
+@onready var recording_label: Label = %DialogRecordingLabel
+@onready var recording_finish_button: Button = %DialogRecordingFinishButton
 
 
 func _ready() -> void:
+	z_index = DIALOG_LAYER
 	visible = false
+	set_process(true)
+	voice_button.pressed.connect(_on_voice_pressed)
+	recording_finish_button.pressed.connect(_on_recording_finish_pressed)
+	voice_recorder.state_changed.connect(_on_voice_state_changed)
+	voice_recorder.recording_ready.connect(_on_voice_recording_ready)
+	voice_recorder.recording_failed.connect(_on_voice_recording_failed)
+	voice_bridge.analysis_succeeded.connect(_on_voice_analysis_succeeded)
+	voice_bridge.analysis_failed.connect(_on_voice_analysis_failed)
 	send_button.pressed.connect(_on_send_pressed)
 	end_button.pressed.connect(_on_end_pressed)
 	cancel_button.pressed.connect(_on_cancel_pressed)
@@ -62,6 +83,8 @@ func _ready() -> void:
 	attack_confirmation_dialog.confirmed.connect(_on_attack_confirmation_confirmed)
 	special_success_dialog.confirmed.connect(_on_special_success_dialog_closed)
 	special_success_dialog.close_requested.connect(_on_special_success_dialog_closed)
+	input_limit_dialog.confirmed.connect(_on_input_limit_dialog_closed)
+	input_limit_dialog.close_requested.connect(_on_input_limit_dialog_closed)
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null:
 		dialog_system.dialogue_started.connect(_on_dialogue_started)
@@ -86,6 +109,11 @@ var _special_success_queue: Array[Dictionary] = []
 var _dialog_visibility_group: ButtonGroup
 
 
+func _process(_delta: float) -> void:
+	if voice_recorder != null and voice_recorder.get_state() == VOICE_STATE_RECORDING:
+		_render_voice_state(VOICE_STATE_RECORDING, voice_recorder.get_elapsed_seconds())
+
+
 func _input(event: InputEvent) -> void:
 	if not _is_recruitment_shortcut(event):
 		return
@@ -96,6 +124,7 @@ func _input(event: InputEvent) -> void:
 func _on_dialogue_started(state: Dictionary) -> void:
 	if not bool(state.get("ui_visible", true)):
 		return
+	_cancel_voice_pipeline("dialogue_replaced")
 	_reset_attack_confirmation_for_open()
 	_observer_mode = false
 	_observer_dialogue_ended = false
@@ -119,6 +148,7 @@ func _on_dialogue_updated(state: Dictionary) -> void:
 		return
 	if not bool(state.get("ui_visible", true)):
 		if dialogue_id == _displayed_dialogue_id:
+			_cancel_voice_pipeline("dialogue_hidden")
 			visible = false
 			_reset_attack_confirmation_for_open()
 		return
@@ -143,6 +173,7 @@ func _on_dialogue_ended(state: Dictionary) -> void:
 	if not _displayed_dialogue_id.is_empty() and str(state.get("dialogue_id", "")) != _displayed_dialogue_id:
 		return
 	_reset_attack_confirmation_for_open()
+	_cancel_voice_pipeline("dialogue_ended")
 	visible = false
 	input_edit.clear()
 	_displayed_dialogue_id = ""
@@ -182,6 +213,7 @@ func _show_next_special_success() -> void:
 
 
 func _on_npc_dialogue_bubble_clicked(npc_id: String, dialogue_id: String) -> void:
+	_cancel_voice_pipeline("observer_opened")
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
 		return
@@ -210,6 +242,143 @@ func _on_send_pressed() -> void:
 	_send_current_text()
 
 
+func _on_voice_pressed() -> void:
+	if _observer_mode or _displayed_dialogue_id.is_empty():
+		status_label.text = "当前没有可录音的玩家对话。"
+		status_label.visible = true
+		return
+	var result: Dictionary = voice_recorder.start_recording(_displayed_dialogue_id)
+	if not bool(result.get("ok", false)):
+		status_label.text = str(result.get("message", "无法开始录音。"))
+		status_label.visible = true
+
+
+func _on_recording_finish_pressed() -> void:
+	var result: Dictionary = voice_recorder.finish_recording("manual")
+	if not bool(result.get("ok", false)):
+		status_label.text = str(result.get("message", "无法完成录音。"))
+		status_label.visible = true
+
+
+func _on_voice_state_changed(state: String, elapsed_seconds: float) -> void:
+	if not _displayed_dialogue_state.is_empty():
+		_refresh(_displayed_dialogue_state)
+	_render_voice_state(state, elapsed_seconds)
+
+
+func _on_voice_recording_ready(result: Dictionary) -> void:
+	var request_id := str(result.get("request_id", ""))
+	var dialogue_id := str(result.get("dialogue_id", ""))
+	if dialogue_id != _displayed_dialogue_id:
+		voice_recorder.complete_analysis(request_id)
+		return
+	var npc_id := str(_displayed_dialogue_state.get("target_npc_id", ""))
+	var request_result: Dictionary = voice_bridge.analyze_recording(result, npc_id)
+	if not bool(request_result.get("ok", false)):
+		voice_recorder.complete_analysis(request_id)
+		status_label.text = str(request_result.get("message", "无法开始语音识别。"))
+		status_label.visible = true
+		input_edit.grab_focus()
+
+
+func _on_voice_analysis_succeeded(result: Dictionary) -> void:
+	var request_id := str(result.get("request_id", ""))
+	var dialogue_id := str(result.get("dialogue_id", ""))
+	var recorder_snapshot := voice_recorder.get_snapshot()
+	if (
+		dialogue_id != _displayed_dialogue_id
+		or request_id != str(recorder_snapshot.get("request_id", ""))
+		or dialogue_id != str(recorder_snapshot.get("dialogue_id", ""))
+	):
+		return
+	var segment := str(result.get("recognized_segment", "")).strip_edges()
+	if segment.is_empty():
+		_on_voice_analysis_failed({
+			"request_id": request_id,
+			"dialogue_id": dialogue_id,
+			"message": "语音识别没有返回有效文字。",
+		})
+		return
+	_append_recognized_segment(segment)
+	voice_recorder.complete_analysis(request_id)
+	status_label.text = "语音识别完成，结果已追加。"
+	status_label.visible = true
+	input_edit.grab_focus()
+
+
+func _on_voice_analysis_failed(result: Dictionary) -> void:
+	var request_id := str(result.get("request_id", ""))
+	var dialogue_id := str(result.get("dialogue_id", ""))
+	var recorder_snapshot := voice_recorder.get_snapshot()
+	if (
+		request_id != str(recorder_snapshot.get("request_id", ""))
+		or dialogue_id != str(recorder_snapshot.get("dialogue_id", ""))
+	):
+		return
+	voice_recorder.complete_analysis(request_id)
+	if dialogue_id != _displayed_dialogue_id:
+		return
+	status_label.text = str(result.get("message", "语音识别失败，请重试或继续手动输入。"))
+	status_label.visible = true
+	input_edit.grab_focus()
+
+
+func _append_recognized_segment(segment: String) -> void:
+	var draft := input_edit.text
+	var separator := ""
+	if not draft.is_empty() and not draft.right(1).strip_edges().is_empty():
+		separator = " "
+	input_edit.text = draft + separator + segment
+	input_edit.caret_column = input_edit.text.length()
+
+
+func _on_voice_recording_failed(_error_code: String, message: String) -> void:
+	status_label.text = message
+	status_label.visible = true
+	input_edit.grab_focus()
+
+
+func _render_voice_state(state: String, elapsed_seconds: float) -> void:
+	recording_overlay.visible = state != VOICE_STATE_IDLE
+	if state == VOICE_STATE_RECORDING:
+		var pulse := (sin(elapsed_seconds * TAU / 1.2) + 1.0) * 0.5
+		recording_icon.modulate.a = lerpf(0.35, 1.0, pulse)
+		recording_label.text = "正在录音……%d/%d秒" % [
+			mini(int(floor(elapsed_seconds)), int(voice_recorder.get_max_seconds())),
+			int(voice_recorder.get_max_seconds()),
+		]
+		recording_finish_button.visible = true
+		recording_finish_button.disabled = false
+	elif state == VOICE_STATE_ANALYZING:
+		recording_icon.modulate.a = 1.0
+		recording_label.text = "正在识别语音与情绪……"
+		recording_finish_button.visible = false
+		recording_finish_button.disabled = true
+	else:
+		recording_icon.modulate.a = 1.0
+		recording_finish_button.visible = true
+
+
+func debug_set_voice_ui_state(state: String, elapsed_seconds: float = 0.0) -> bool:
+	return bool(voice_recorder.debug_set_state_for_ui(state, elapsed_seconds))
+
+
+func debug_get_voice_ui_snapshot() -> Dictionary:
+	return {
+		"recorder": voice_recorder.get_snapshot(),
+		"bridge": voice_bridge.get_snapshot(),
+		"overlay_visible": recording_overlay.visible,
+		"label": recording_label.text,
+		"finish_visible": recording_finish_button.visible,
+		"input_editable": input_edit.editable,
+		"voice_button_visible": voice_button.visible,
+		"voice_button_disabled": voice_button.disabled,
+		"send_disabled": send_button.disabled,
+		"attack_disabled": attack_button.disabled,
+		"draft": input_edit.text,
+	}
+
+
 func _on_text_submitted(_text: String) -> void:
 	_send_current_text()
 
@@ -227,14 +396,36 @@ func _send_current_text() -> void:
 	if text.is_empty():
 		status_label.text = "请输入内容。"
 		return
-	input_edit.clear()
+	var max_characters := (
+		int(dialog_system.get_player_message_max_characters())
+		if dialog_system.has_method("get_player_message_max_characters")
+		else 300
+	)
+	if text.length() > max_characters:
+		_show_input_limit_dialog(max_characters)
+		return
 	var result: Dictionary = dialog_system.send_npc_message(text, true) if str(state.get("dialogue_kind", "player_npc")) == "npc_npc" else dialog_system.send_player_message(text, false, true)
-	if not bool(result.get("ok", false)):
+	if bool(result.get("ok", false)):
+		input_edit.clear()
+	elif str(result.get("error_code", "")) == "input_too_long":
+		_show_input_limit_dialog(int(result.get("max_characters", max_characters)))
+	else:
 		status_label.text = str(result.get("message", "发送失败。"))
+		status_label.visible = true
+	input_edit.grab_focus()
+
+
+func _show_input_limit_dialog(max_characters: int) -> void:
+	input_limit_dialog.dialog_text = "输入文字超过上限%d字" % max_characters
+	input_limit_dialog.popup_centered()
+
+
+func _on_input_limit_dialog_closed() -> void:
 	input_edit.grab_focus()
 
 
 func _on_end_pressed() -> void:
+	_cancel_voice_pipeline("dialogue_completed")
 	if _observer_mode:
 		_reset_attack_confirmation_for_open()
 		visible = false
@@ -257,6 +448,7 @@ func _on_end_pressed() -> void:
 func _on_cancel_pressed() -> void:
 	if _observer_mode:
 		return
+	_cancel_voice_pipeline("dialogue_cancelled")
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null or not dialog_system.has_method("cancel_displayed_dialogue"):
 		status_label.text = "对话系统不支持取消会话。"
@@ -269,6 +461,7 @@ func _on_cancel_pressed() -> void:
 func _on_suspend_pressed() -> void:
 	if _observer_mode:
 		return
+	_cancel_voice_pipeline("dialogue_suspended")
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null or not dialog_system.has_method("suspend_displayed_dialogue"):
 		status_label.text = "对话系统不支持挂起会话。"
@@ -493,6 +686,17 @@ func _refresh(state: Dictionary) -> void:
 	input_edit.editable = not _observer_mode and not round_limit_reached
 	var is_player_dialogue := dialogue_kind == "player_npc"
 	var is_player_controlled_dialogue := ["player_npc", "escape_intervention"].has(dialogue_kind)
+	var voice_busy := voice_recorder.get_state() != VOICE_STATE_IDLE
+	voice_button.visible = is_player_controlled_dialogue and not _observer_mode
+	voice_button.disabled = waiting or round_limit_reached or voice_busy or not voice_recorder.is_microphone_available()
+	voice_button.tooltip_text = (
+		"语音输入（最长%d秒）" % int(voice_recorder.get_max_seconds())
+		if voice_recorder.is_microphone_available()
+		else "麦克风不可用，请检查设备或录音权限。"
+	)
+	if voice_busy:
+		input_edit.editable = false
+		send_button.disabled = true
 	var recruitment_pending := bool(state.get("recruitment_request_pending", false))
 	recruitment_toggle.visible = is_player_dialogue and not _observer_mode
 	recruitment_toggle.set_pressed_no_signal(recruitment_pending)
@@ -544,7 +748,7 @@ func _refresh(state: Dictionary) -> void:
 		else str(state.get("combat_strategy_request_ineligible_reason", "当前场景不能调整战斗策略。"))
 	)
 	attack_button.visible = is_player_controlled_dialogue and not _observer_mode
-	attack_button.disabled = waiting or round_limit_reached
+	attack_button.disabled = waiting or round_limit_reached or voice_busy
 	end_button.text = "关闭" if _observer_mode else "完成对话"
 	end_button.tooltip_text = "只关闭旁听窗口，不会打断 NPC 的自主对话。" if _observer_mode else "保存本次会话；若正在等待回复，将放弃回复并以守备官最后一句话结束。"
 	cancel_button.visible = is_player_controlled_dialogue and not _observer_mode
@@ -680,3 +884,15 @@ func _refresh(state: Dictionary) -> void:
 			lines.append("[b]%s[/b]：%s" % [str(pending.get("speaker_name", "")), str(pending.get("clean_text", ""))])
 	history_text.text = "\n\n".join(lines)
 	history_text.scroll_to_line(maxi(0, history_text.get_line_count() - 1))
+	_render_voice_state(voice_recorder.get_state(), voice_recorder.get_elapsed_seconds())
+
+
+func _exit_tree() -> void:
+	_cancel_voice_pipeline("dialogue_panel_exit")
+
+
+func _cancel_voice_pipeline(reason: String) -> void:
+	if voice_bridge != null:
+		voice_bridge.cancel()
+	if voice_recorder != null:
+		voice_recorder.cancel(reason)

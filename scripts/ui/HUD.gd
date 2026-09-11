@@ -2,6 +2,7 @@ extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd")
+const EpiloguePanelClass = preload("res://scripts/ui/EpiloguePanel.gd")
 
 @onready var day_label: Label = %DayLabel
 @onready var time_label: Label = %TimeLabel
@@ -29,6 +30,10 @@ const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
 const HUD_FRAME_CONTENT_PADDING := Vector2(12.0, 12.0)
 const SPEED_BUTTON_NORMAL_TOOLTIP := "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
+const WAVE_WARNING_EARLY_SECONDS := 3.0 * 3600.0
+const WAVE_WARNING_FINAL_SECONDS := 30.0 * 60.0
+const WAVE_WARNING_COLOR := Color(1.0, 0.38, 0.22, 1.0)
+const NPC_HUD_RELEVANT_STATE_FIELDS: Array[String] = ["escape_intent", "escaped"]
 const RESOURCE_ICON_PATHS := {
 	"money": "res://assets/ui/resource_icons/money.svg",
 	"grain": "res://assets/ui/resource_icons/grain.svg",
@@ -51,9 +56,6 @@ var _detail_mode := ""
 var _detail_drag_controller
 var _escape_warning_label: Label
 var _game_over_panel: PanelContainer
-var _game_over_title_label: Label
-var _game_over_reason_label: Label
-var _game_over_detail_label: Label
 var _piety_ability_button
 var _meteor_target_hint: Label
 var _meteor_target_preview: MeshInstance3D
@@ -69,6 +71,11 @@ var _escape_alert_queue: Array[Dictionary] = []
 var _npc_revived_alert_queue: Array[String] = []
 var _wave_cleared_alert_queue: Array[int] = []
 var _current_wave_cleared_alert_number := 0
+var _wave_warning_dialog: AcceptDialog
+var _wave_warning_queue: Array[Dictionary] = []
+var _wave_warning_seen: Dictionary = {}
+var _last_wave_warning_seconds_by_wave: Dictionary = {}
+var _current_wave_warning: Dictionary = {}
 
 
 func _ready() -> void:
@@ -76,6 +83,7 @@ func _ready() -> void:
 	_build_resource_strip()
 	_build_detail_panel()
 	_build_wave_countdown_label()
+	_build_wave_warning_dialog()
 	_build_piety_ability_button()
 	_build_escape_warning_label()
 	_build_game_over_panel()
@@ -123,6 +131,8 @@ func _ready() -> void:
 			event_bus.gameplay_pause_changed.connect(_on_gameplay_pause_changed)
 		if event_bus.has_signal("game_over_changed"):
 			event_bus.game_over_changed.connect(_on_game_over_changed)
+		if event_bus.has_signal("epilogue_changed"):
+			event_bus.epilogue_changed.connect(_on_epilogue_changed)
 		if event_bus.has_signal("npc_state_changed"):
 			event_bus.npc_state_changed.connect(_on_npc_state_changed)
 		if event_bus.has_signal("npc_escape_started"):
@@ -210,7 +220,14 @@ func _on_building_state_changed(building_id: String) -> void:
 		_refresh_resources()
 
 
-func _on_npc_state_changed(_npc_id: String) -> void:
+func _on_npc_state_changed(npc_id: String) -> void:
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, NPC_HUD_RELEVANT_STATE_FIELDS)
+	):
+		return
 	_refresh_escape_warning()
 	_refresh_open_inventory_detail("equipment")
 
@@ -333,6 +350,10 @@ func _on_time_scale_changed(
 
 func _on_game_over_changed(_result: String, _reason: String) -> void:
 	_refresh_time_buttons()
+	_refresh_game_over_panel()
+
+
+func _on_epilogue_changed(_snapshot: Dictionary) -> void:
 	_refresh_game_over_panel()
 
 
@@ -772,60 +793,10 @@ func _build_escape_warning_label() -> void:
 func _build_game_over_panel() -> void:
 	if _game_over_panel != null:
 		return
-	_game_over_panel = PanelContainer.new()
+	_game_over_panel = EpiloguePanelClass.new()
 	_game_over_panel.name = "GameOverPanel"
 	_game_over_panel.visible = false
-	_game_over_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_game_over_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_game_over_panel.custom_minimum_size = Vector2(760.0, 520.0)
-	_game_over_panel.offset_left = -380.0
-	_game_over_panel.offset_top = -260.0
-	_game_over_panel.offset_right = 380.0
-	_game_over_panel.offset_bottom = 260.0
 	add_child(_game_over_panel)
-
-	var margin := MarginContainer.new()
-	margin.name = "GameOverMargin"
-	margin.add_theme_constant_override("margin_left", 22)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_right", 22)
-	margin.add_theme_constant_override("margin_bottom", 18)
-	_game_over_panel.add_child(margin)
-
-	var content := VBoxContainer.new()
-	content.name = "GameOverContent"
-	content.alignment = BoxContainer.ALIGNMENT_BEGIN
-	content.add_theme_constant_override("separation", 10)
-	margin.add_child(content)
-
-	_game_over_title_label = Label.new()
-	_game_over_title_label.name = "GameOverTitleLabel"
-	_game_over_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_game_over_title_label.add_theme_font_size_override("font_size", 24)
-	_game_over_title_label.text = "防守失败"
-	content.add_child(_game_over_title_label)
-
-	_game_over_reason_label = Label.new()
-	_game_over_reason_label.name = "GameOverReasonLabel"
-	_game_over_reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_game_over_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_game_over_reason_label.text = "原因：--"
-	content.add_child(_game_over_reason_label)
-
-	var detail_scroll := ScrollContainer.new()
-	detail_scroll.name = "GameOverDetailScroll"
-	detail_scroll.custom_minimum_size = Vector2(700.0, 360.0)
-	detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(detail_scroll)
-
-	_game_over_detail_label = Label.new()
-	_game_over_detail_label.name = "GameOverDetailLabel"
-	_game_over_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_game_over_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_game_over_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_game_over_detail_label.text = "游戏已停止推进。"
-	detail_scroll.add_child(_game_over_detail_label)
 
 
 func _build_wave_countdown_label() -> void:
@@ -1105,6 +1076,7 @@ func _refresh_wave_countdown() -> void:
 	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
 	if combat_system == null or not combat_system.has_method("get_wave_hud_snapshot"):
 		wave_countdown_label.text = "下一波敌军时间不可用"
+		_set_wave_alarm_emphasis(false)
 		return
 	var snapshot: Dictionary = combat_system.get_wave_hud_snapshot()
 	var active_enemy_count := int(snapshot.get("active_enemy_count", 0))
@@ -1114,15 +1086,106 @@ func _refresh_wave_countdown() -> void:
 		prefix = "当前第%d波 敌人%d | " % [current_wave, active_enemy_count] if current_wave > 0 else "当前敌人%d | " % active_enemy_count
 	if bool(snapshot.get("all_waves_triggered", false)):
 		wave_countdown_label.text = "%s敌军波次已结束" % prefix
+		_set_wave_alarm_emphasis(false)
 		return
 	var next_wave: Dictionary = snapshot.get("next_wave", {}) if snapshot.get("next_wave", {}) is Dictionary else {}
 	if next_wave.is_empty():
 		wave_countdown_label.text = "%s下一波敌军时间未知" % prefix
+		_set_wave_alarm_emphasis(false)
 		return
+	var seconds_until := float(next_wave.get("seconds_until", 0.0))
 	wave_countdown_label.text = "%s%s" % [
 		prefix,
-		_format_next_wave_arrival(float(next_wave.get("seconds_until", 0.0)))
+		_format_next_wave_arrival(seconds_until)
 	]
+	_refresh_wave_warning(int(next_wave.get("wave_number", 0)), seconds_until, active_enemy_count)
+
+
+func _build_wave_warning_dialog() -> void:
+	if _wave_warning_dialog != null:
+		return
+	_wave_warning_dialog = AcceptDialog.new()
+	_wave_warning_dialog.name = "WaveArrivalWarningDialog"
+	_wave_warning_dialog.title = "敌袭迫近"
+	_wave_warning_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
+	_wave_warning_dialog.size = Vector2i(540, 170)
+	_wave_warning_dialog.unresizable = true
+	_wave_warning_dialog.ok_button_text = "知道了"
+	_wave_warning_dialog.confirmed.connect(_on_wave_warning_closed)
+	_wave_warning_dialog.close_requested.connect(_on_wave_warning_closed)
+	add_child(_wave_warning_dialog)
+
+
+func _refresh_wave_warning(wave_number: int, seconds_until: float, active_enemy_count: int) -> void:
+	if wave_number <= 0 or active_enemy_count > 0:
+		_set_wave_alarm_emphasis(false)
+		return
+	var previous_seconds := float(_last_wave_warning_seconds_by_wave.get(wave_number, INF))
+	_last_wave_warning_seconds_by_wave[wave_number] = seconds_until
+	var within_warning_window := seconds_until > 0.0 and seconds_until <= WAVE_WARNING_EARLY_SECONDS
+	_set_wave_alarm_emphasis(within_warning_window)
+	if not within_warning_window:
+		return
+	if previous_seconds == INF:
+		if seconds_until <= WAVE_WARNING_FINAL_SECONDS:
+			_queue_wave_warning(wave_number, "final", "第%d波敌军将在 30 分钟内来袭！请立即完成装备与集结，必要时鸣响警报。" % wave_number)
+		else:
+			_queue_wave_warning(wave_number, "early", "第%d波敌军将在 3 小时内来袭。请检查征募、装备、器械与恢复，并准备鸣响警报。" % wave_number)
+		return
+	if previous_seconds > WAVE_WARNING_EARLY_SECONDS and seconds_until <= WAVE_WARNING_EARLY_SECONDS:
+		_queue_wave_warning(wave_number, "early", "第%d波敌军将在 3 小时内来袭。请检查征募、装备、器械与恢复，并准备鸣响警报。" % wave_number)
+	if previous_seconds > WAVE_WARNING_FINAL_SECONDS and seconds_until <= WAVE_WARNING_FINAL_SECONDS:
+		_queue_wave_warning(wave_number, "final", "第%d波敌军将在 30 分钟内来袭！请立即完成装备与集结，必要时鸣响警报。" % wave_number)
+
+
+func _queue_wave_warning(wave_number: int, threshold: String, message: String) -> void:
+	var key := "%d:%s" % [wave_number, threshold]
+	if bool(_wave_warning_seen.get(key, false)):
+		return
+	_wave_warning_seen[key] = true
+	_wave_warning_queue.append({
+		"wave_number": wave_number,
+		"threshold": threshold,
+		"message": message
+	})
+	_show_next_wave_warning()
+
+
+func _show_next_wave_warning() -> void:
+	if _wave_warning_dialog == null or _wave_warning_dialog.visible or _wave_warning_queue.is_empty():
+		return
+	_current_wave_warning = _wave_warning_queue.pop_front()
+	_wave_warning_dialog.dialog_text = str(_current_wave_warning.get("message", "敌军即将来袭。"))
+	_wave_warning_dialog.popup_centered()
+
+
+func _on_wave_warning_closed() -> void:
+	_current_wave_warning.clear()
+	call_deferred("_show_next_wave_warning")
+
+
+func _set_wave_alarm_emphasis(emphasized: bool) -> void:
+	var alarm_button := get_node_or_null("AlarmButton") as Button
+	if alarm_button != null:
+		alarm_button.self_modulate = WAVE_WARNING_COLOR if emphasized else Color.WHITE
+		alarm_button.tooltip_text = "敌袭迫近：点击鸣响警报并集结合法战斗员。" if emphasized else ""
+	if wave_countdown_label != null:
+		if emphasized:
+			wave_countdown_label.add_theme_color_override("font_color", WAVE_WARNING_COLOR)
+		else:
+			wave_countdown_label.remove_theme_color_override("font_color")
+
+
+func debug_get_wave_warning_snapshot() -> Dictionary:
+	var alarm_button := get_node_or_null("AlarmButton") as Button
+	return {
+		"visible": _wave_warning_dialog != null and _wave_warning_dialog.visible,
+		"dialog_text": _wave_warning_dialog.dialog_text if _wave_warning_dialog != null else "",
+		"current": _current_wave_warning.duplicate(true),
+		"queued": _wave_warning_queue.duplicate(true),
+		"seen": _wave_warning_seen.duplicate(true),
+		"alarm_emphasized": alarm_button != null and alarm_button.self_modulate == WAVE_WARNING_COLOR
+	}
 
 
 func _refresh_escape_warning() -> void:
@@ -1160,18 +1223,9 @@ func _refresh_game_over_panel() -> void:
 		_game_over_panel.visible = false
 		return
 	var result := str(game_state.get("game_result"))
-	var reason := str(game_state.get("game_over_reason"))
-	if reason.is_empty():
-		reason = str(game_state.get("failure_reason"))
 	var settlement_snapshot: Dictionary = game_state.get("settlement_snapshot") if game_state.get("settlement_snapshot") is Dictionary else {}
-	_game_over_title_label.text = "防守成功" if result == "victory" else "防守失败"
-	_game_over_reason_label.text = "%s：%s" % [
-		"结果" if result == "victory" else "原因",
-		_format_game_over_reason(reason)
-	]
-	_game_over_detail_label.text = _build_game_over_detail_text(result, settlement_snapshot)
-	_game_over_panel.visible = true
-	_game_over_panel.move_to_front()
+	if _game_over_panel.has_method("present"):
+		_game_over_panel.present(result, settlement_snapshot)
 
 
 func _format_game_over_reason(reason: String) -> String:
@@ -1249,10 +1303,26 @@ func _build_victory_npc_summary(npcs: Dictionary) -> String:
 
 
 func _build_npc_endings_text(npcs: Dictionary) -> String:
+	var game_state := get_node_or_null("/root/GameState")
+	var settlement: Dictionary = game_state.settlement_snapshot if game_state != null and game_state.settlement_snapshot is Dictionary else {}
+	var epilogue: Dictionary = settlement.get("epilogue", {}) if settlement.get("epilogue", {}) is Dictionary else {}
+	var status := str(epilogue.get("status", ""))
+	if status == "pending":
+		return "NPC 结局：\n\n战地记录整理中……"
 	var items: Array = npcs.get("items", []) if npcs.get("items", []) is Array else []
 	if items.is_empty():
 		return "NPC 结局：未记录"
-	var lines: Array[String] = ["NPC 结局："]
+	var lines: Array[String] = []
+	var ending_title := str(epilogue.get("ending_title", "")).strip_edges()
+	var station_coda := str(epilogue.get("station_coda", "")).strip_edges()
+	var message := str(epilogue.get("message", "")).strip_edges()
+	if not ending_title.is_empty():
+		lines.append("结局：%s" % ending_title)
+	if not station_coda.is_empty():
+		lines.append(station_coda)
+	if not message.is_empty():
+		lines.append("[%s]" % message)
+	lines.append("NPC 结局：")
 	for raw_item in items:
 		var item: Dictionary = raw_item if raw_item is Dictionary else {}
 		var recruited_text := "已入伍" if bool(item.get("recruited", false)) else "未入伍"
@@ -1260,6 +1330,9 @@ func _build_npc_endings_text(npcs: Dictionary) -> String:
 		var location_text := str(item.get("current_location_name", item.get("current_location", "未知")))
 		var opinion := str(item.get("final_opinion", "Mock：尚无明确看法。"))
 		var fate := str(item.get("fate_summary", "Mock：后续命运未记录。"))
+		var personal_title := str(item.get("ending_title", "")).strip_edges()
+		if not personal_title.is_empty():
+			lines.append("\n《%s》" % personal_title)
 		lines.append("- %s：%s / %s / 最后位置：%s" % [
 			str(item.get("name", item.get("id", ""))),
 			status_text,

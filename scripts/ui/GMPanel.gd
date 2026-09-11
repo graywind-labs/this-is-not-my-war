@@ -40,6 +40,7 @@ const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const MERCHANT_SYSTEM_PATH := "/root/Main/Systems/MerchantSystem"
 const SPATIAL_SAVE_SYSTEM_PATH := "/root/Main/Systems/SpatialSaveSystem"
+const EPILOGUE_SYSTEM_PATH := "/root/Main/Systems/EpilogueSystem"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -56,6 +57,7 @@ const LLM_USAGE_REFRESH_SECONDS := 3.0
 var _gm_button: Button
 var _panel: PanelContainer
 var _llm_usage_summary_label: Label
+var _epilogue_status_label: Label
 var _command_input: LineEdit
 var _result_text: TextEdit
 var _resource_select: OptionButton
@@ -116,6 +118,7 @@ func _ready() -> void:
 	_build_ui()
 	_connect_llm_usage_signal()
 	_connect_horse_state_signal()
+	_connect_epilogue_signal()
 	call_deferred("_refresh_options")
 
 
@@ -533,6 +536,13 @@ func _add_building_section(parent: VBoxContainer) -> void:
 	var combat_art_demo_button := _add_button(combat_art_row, "播放 VFX 样例", _run_t0133_combat_art_demo)
 	combat_art_demo_button.name = "T0133CombatArtDemoButton"
 	_add_button(combat_art_row, "VFX / 布娃娃快照", _show_t0133_combat_art_snapshot)
+	var performance_row := _make_row(parent)
+	var performance_label := Label.new()
+	performance_label.text = "战斗性能（只读，30 秒）"
+	performance_row.add_child(performance_label)
+	_add_button(performance_row, "开始采样", _run_combat_performance.bind("start")).name = "CombatPerformanceStartButton"
+	_add_button(performance_row, "查看结果", _run_combat_performance.bind("snapshot"))
+	_add_button(performance_row, "停止采样", _run_combat_performance.bind("stop"))
 	var formal_stable_row := _make_row(parent)
 	var formal_stable_label := Label.new()
 	formal_stable_label.text = "马厩真实照料"
@@ -1052,6 +1062,27 @@ func _add_combat_section(parent: VBoxContainer) -> void:
 		_run_step_piety_effects(60.0)
 	)
 
+	parent.add_child(_make_section_title("群像结局验收"))
+	var epilogue_row := _make_row(parent)
+	var victory_button := _add_button(epilogue_row, "一键胜利结算", func() -> void:
+		_run_epilogue_outcome("victory")
+	)
+	victory_button.name = "TriggerEpilogueVictoryButton"
+	victory_button.tooltip_text = "复用 CombatSystem 正式第五波胜利快照，然后生成全站与八名 NPC 的群像结局。"
+	var failure_button := _add_button(epilogue_row, "一键失败结算", func() -> void:
+		_run_epilogue_outcome("failure")
+	)
+	failure_button.name = "TriggerEpilogueFailureButton"
+	failure_button.tooltip_text = "经 BuildingSystem 权威伤害摧毁主厅，再复用正式失败提交并生成群像结局。"
+	var status_button := _add_button(epilogue_row, "刷新结局状态", _show_epilogue_status)
+	status_button.name = "RefreshEpilogueStatusButton"
+	_epilogue_status_label = Label.new()
+	_epilogue_status_label.name = "EpilogueStatusLabel"
+	_epilogue_status_label.text = "结局状态：尚未结算"
+	_epilogue_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_epilogue_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	epilogue_row.add_child(_epilogue_status_label)
+
 
 func _add_backend_section(parent: VBoxContainer) -> void:
 	var npc_row := _make_row(parent)
@@ -1541,6 +1572,27 @@ func _selected_id(select: OptionButton) -> String:
 	return select.get_item_text(select.selected).split(" | ")[0]
 
 
+func _select_id(select: OptionButton, target_id: String) -> bool:
+	if select == null or target_id.is_empty():
+		return false
+	for index in range(select.get_item_count()):
+		if str(select.get_item_metadata(index)) == target_id:
+			select.select(index)
+			return true
+	return false
+
+
+func _sync_npc_selectors_to_world_selection() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_selected_npc_id"):
+		return
+	var selected_npc_id := str(npc_system.get_selected_npc_id())
+	if selected_npc_id.is_empty():
+		return
+	for select in [_npc_select, _formal_action_npc_select, _ai_npc_select]:
+		_select_id(select, selected_npc_id)
+
+
 func _execute_command_from_input() -> void:
 	var command := _command_input.text.strip_edges()
 	if command.is_empty():
@@ -1617,6 +1669,8 @@ func _execute_command(command: String) -> void:
 					_run_npc_dev_lab()
 				_:
 					_show_chibi_formal_character_snapshot()
+		"combat_perf":
+			_run_combat_performance(str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot")
 		"t0133_combat_art":
 			var combat_art_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
 			if combat_art_mode in ["demo", "run"]:
@@ -2077,6 +2131,12 @@ func _execute_command(command: String) -> void:
 			_run_spawn_enemy_wave(enemy_wave_number)
 		"next_wave", "jump_wave":
 			_run_trigger_next_wave()
+		"epilogue_victory":
+			_run_epilogue_outcome("victory")
+		"epilogue_failure":
+			_run_epilogue_outcome("failure")
+		"epilogue_status":
+			_show_epilogue_status()
 		"enemies":
 			_show_combat_snapshot()
 		"alarm", "rally":
@@ -2682,6 +2742,39 @@ func _run_t0133_combat_art_demo() -> void:
 	controller.debug_handle_event({"event_type": "structure_damaged", "world_position": origin + Vector3(0.0, 0.0, 0.8), "target_type": "building"})
 	_log("T0133 VFX 样例已在主厅入口播放；血迹开关位于设置→画面。")
 	_show_t0133_combat_art_snapshot()
+
+
+func _run_combat_performance(mode: String) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null:
+		return
+	var result: Dictionary
+	if mode == "start":
+		result = combat_system.debug_start_performance_capture(30.0)
+		_log("战斗性能：%s" % _compact(result))
+	else:
+		result = combat_system.debug_get_performance_capture(mode == "stop")
+		_log(_format_combat_performance(result))
+
+
+func _format_combat_performance(result: Dictionary) -> String:
+	var metrics: Dictionary = result.get("metrics", {})
+	if metrics.is_empty():
+		return "战斗性能：暂无样本，请先开始采样。"
+	var lines := PackedStringArray(["战斗性能（%s；分项有嵌套，不可相加）" % ("采集中" if bool(result.get("active", false)) else "已停止")])
+	for key in ["frame_ms", "combat_logic_ms", "enemy_ai_ms", "enemy_attack_position_ms", "enemy_presentation_ms", "physics_ms", "navigation_ms"]:
+		var sample: Dictionary = metrics.get(key, {})
+		if not sample.is_empty():
+			lines.append("%s：均值 %.2f / P95 %.2f / P99 %.2f ms（%d 样本）" % [key, float(sample.mean), float(sample.p95), float(sample.p99), int(sample.count)])
+	lines.append(">33ms 长帧 %.1f%%；敌人数 %.0f–%.0f；暂停最大值 %.0f；Draw Calls 均值 %.0f" % [
+		float((metrics.get("frame_ms", {}) as Dictionary).get("over_33ms_percent", 0)),
+		float((metrics.get("enemy_count", {}) as Dictionary).get("min", 0)),
+		float((metrics.get("enemy_count", {}) as Dictionary).get("max", 0)),
+		float((metrics.get("paused", {}) as Dictionary).get("max", 0)),
+		float((metrics.get("draw_calls", {}) as Dictionary).get("mean", 0)),
+	])
+	lines.append("环境：%s；采样溢出：%s" % [_compact(result.get("metadata", {})), _compact(result.get("dropped_samples", {}))])
+	return "\n".join(lines)
 
 
 func _show_t0133_combat_art_snapshot() -> void:
@@ -4367,6 +4460,65 @@ func _run_trigger_next_wave() -> void:
 	_log("跳到下一波：%s" % _compact(result))
 
 
+func _run_epilogue_outcome(result: String) -> void:
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if combat_system == null or not combat_system.has_method("debug_trigger_game_outcome"):
+		_log("CombatSystem 群像结局验收入口不可用。")
+		return
+	var trigger_result: Dictionary = combat_system.debug_trigger_game_outcome(result)
+	_log("一键%s结算：%s" % ["胜利" if result == "victory" else "失败", _compact(trigger_result)])
+	_refresh_epilogue_status()
+
+
+func _show_epilogue_status() -> void:
+	var snapshot := _current_epilogue_snapshot()
+	_refresh_epilogue_status(snapshot)
+	_log("群像结局状态：%s" % _compact(snapshot))
+
+
+func _connect_epilogue_signal() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus == null or not event_bus.has_signal("epilogue_changed"):
+		return
+	var callback := Callable(self, "_on_epilogue_changed")
+	if not event_bus.epilogue_changed.is_connected(callback):
+		event_bus.epilogue_changed.connect(callback)
+
+
+func _on_epilogue_changed(snapshot: Dictionary) -> void:
+	_refresh_epilogue_status(snapshot)
+
+
+func _current_epilogue_snapshot() -> Dictionary:
+	var game_state := get_node_or_null("/root/GameState")
+	if game_state == null or not bool(game_state.game_over):
+		return {"status": "not_settled"}
+	var settlement: Dictionary = game_state.settlement_snapshot if game_state.settlement_snapshot is Dictionary else {}
+	var epilogue: Dictionary = settlement.get("epilogue", {}) if settlement.get("epilogue", {}) is Dictionary else {}
+	var snapshot := epilogue.duplicate(true)
+	snapshot["game_result"] = str(game_state.game_result)
+	return snapshot
+
+
+func _refresh_epilogue_status(snapshot: Dictionary = {}) -> void:
+	if _epilogue_status_label == null:
+		return
+	var state := snapshot if not snapshot.is_empty() else _current_epilogue_snapshot()
+	var status := str(state.get("status", "not_settled"))
+	match status:
+		"pending":
+			_epilogue_status_label.text = "结局状态：生成中…"
+		"llm":
+			_epilogue_status_label.text = "结局状态：LLM完成｜%s / %s" % [
+				str(state.get("model_provider", "未知Provider")),
+				str(state.get("model_name", "未知模型"))
+			]
+		"template_fallback":
+			_epilogue_status_label.text = "结局状态：模板降级｜%s" % str(state.get("failure_reason", "未知原因"))
+		_:
+			_epilogue_status_label.text = "结局状态：尚未结算"
+
+
 func _run_clear_enemies() -> void:
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("debug_clear_enemies"):
@@ -5029,6 +5181,7 @@ func _on_gm_button_pressed() -> void:
 		return
 	_panel.visible = not _panel.visible
 	if _panel.visible:
+		_sync_npc_selectors_to_world_selection()
 		_llm_usage_refresh_elapsed = LLM_USAGE_REFRESH_SECONDS
 		_request_llm_usage_refresh()
 		_position_panel_near_button()
@@ -5204,6 +5357,7 @@ func _help_text() -> String:
 		"常用命令：",
 		"空间检查点：formal_spatial_save [save|load|snapshot]",
 		"战斗美术：t0133_combat_art [demo|snapshot]；倒地可配合 damage_npc <npc_id> <damage> 验证。",
+		"战斗性能：combat_perf [start|snapshot|stop]；30 秒自动停止，不改变战斗或暂停。",
 		"refresh | snapshot | events | plaza_events | roof_visibility | station_layout [preview|legacy|snapshot] | motion_sandbox | character_pilot [glen|enemy|sandbox|snapshot] | formal_nav_pilot [glen|clinic_doctor|clinic_bed|dormitory_bed|dining_seat|chapel_prayer_seat|stable_care|stop|snapshot] | formal_visit [run <npc_id> <location_id>|stop <npc_id>|snapshot <npc_id>] | formal_npc_dialogue [run <speaker_id> <target_id> [opening]|stop <speaker_id>|snapshot <speaker_id>] | formal_repair_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_upgrade_assist [run <npc_id> <building_id>|stop <npc_id>|snapshot <npc_id> [building_id]] | formal_heal_assist [run <healer_id> <target_id>|stop <healer_id>|snapshot <healer_id> [target_id]] | formal_stable_work [run|stop|snapshot] | formal_dining_work [run|stop|snapshot] | formal_dining_eat [run|stop|snapshot] | formal_dormitory_sleep [run|stop|snapshot] | formal_garden_work [run|stop|snapshot] | formal_tavern_work [run|stop|snapshot] | formal_clinic_work [doctor|patient|stop|snapshot] | formal_training_work [instructor|student|stop|snapshot] | formal_chapel_work [leader|prayer|stop|snapshot] | formal_blacksmith_work [run|stop|snapshot] | formal_workshop_work [run|stop|snapshot] | formal_dynamic_wave [run <1-5>|stop|snapshot] | formal_second_wave_slice [run|stop|snapshot]（兼容）",
 		"add_resource <id> <amount> | spend_resource <id> <amount>",
 		"set_time <day> <hour> <minute> <second> | advance_hour（推进模拟 1 小时） | time_snapshot | merchant_wagon [arrival|formal_arrival|departure|snapshot]",
@@ -5222,6 +5376,7 @@ func _help_text() -> String:
 		"horse_assign <npc_id> <horse_id> [visibility] | horse_unassign <npc_id> [visibility]",
 		"assign_action <npc_id> <action_id> | work <npc_id> <building_id> | train_instructor <npc_id> | train_student <npc_id> | assist_repair <npc_id> <building_id> | assist_upgrade <npc_id> <building_id> | assist_heal <healer_npc_id> <target_npc_id> | eat <npc_id> | sleep <npc_id>",
 		"alarm | rally | spawn_wave [wave_number] | enemy_wave [wave_number] | next_wave | jump_wave | enemies | step_enemies [game_seconds] | clear_enemies | behavior_modes | avoid_npc <npc_id> | escape_npc <npc_id> | advance_rally_wait [game_seconds]",
+		"epilogue_victory | epilogue_failure | epilogue_status（群像结局一键验收）",
 		"piety_fill | piety_set <value> | piety_snapshot | piety_step [game_seconds]",
 		"damage_building <building_id> <amount> | repair_building <building_id> | upgrade_building <building_id> | destroy_defense_device [deployment_id] | defense_device_ruins | smithy_art_level <1|2|3> | workshop_art_level <1|2|3> | chapel_art_level <1|2> | clinic_art_level <1|2|3> | dining_hall_art_level <1|2|3> | dormitory_art_level <1|2> | tavern_art_level <1|2|3> | garden_art_level <1|2|3> | training_ground_art_level <1|2|3> | stable_art_level <1|2|3> | main_hall_art_level <1|2|3|4|5|6> | warehouse_art_level <1|2|3> | wall_art_level <1|2|3|4|5|6> | gate_art_snapshot（仅表现预览）",
 		"plaza_notice <text> | give_money <npc_id> <amount> [visibility] | attack_npc <npc_id> <damage> [visibility]",

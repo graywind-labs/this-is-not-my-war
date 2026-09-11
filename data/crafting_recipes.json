@@ -1,4 +1,13 @@
 {
+  "initial_projects": [
+    {
+      "building_id": "workshop",
+      "recipe_id": "craft_wall_arrow_tower",
+      "completed_stages": 4,
+      "invested_resources": {"wood": 4},
+      "source": "pre_game_investment"
+    }
+  ],
   "recipes": [
     {
       "id": "craft_iron_helmet",

@@ -58,6 +58,12 @@
 [ext_resource type="Script" path="res://scripts/presentation/audio/AbilityAudioController.gd" id="56_ability_audio"]
 [ext_resource type="Script" path="res://scripts/ui/NPCSkillPointAlertPresenter.gd" id="57_npc_skill_point_alert"]
 [ext_resource type="Script" path="res://scripts/ui/PauseMenu.gd" id="58_pause_menu"]
+[ext_resource type="Script" path="res://scripts/ui/VoiceInputRecorder.gd" id="59_voice_input_recorder"]
+[ext_resource type="Texture2D" path="res://assets/ui/status_icons/dialogue_microphone.svg" id="60_dialogue_microphone"]
+[ext_resource type="Script" path="res://scripts/ui/VoiceInputBridge.gd" id="61_voice_input_bridge"]
+[ext_resource type="Script" path="res://scripts/systems/EpilogueSystem.gd" id="62_epilogue"]
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_dialogue"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -516,6 +522,9 @@ script = ExtResource("18_equipment")
 [node name="LLMBridge" type="Node" parent="Systems"]
 script = ExtResource("14_llm_bridge")
 
+[node name="EpilogueSystem" type="Node" parent="Systems"]
+script = ExtResource("62_epilogue")
+
 [node name="DialogSystem" type="Node" parent="Systems" unique_id=538485406]
 script = ExtResource("8_dialog")
 
@@ -565,6 +574,16 @@ dialog_autowrap = true
 dialog_close_on_escape = false
 dialog_hide_on_ok = false
 ok_button_text = "确定"
+
+[node name="PietyReadyDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "天火已可用"
+initial_position = 2
+size = Vector2i(560, 180)
+unresizable = true
+dialog_text = "驿站成员的虔诚感动了上苍，现在你可以请求一次天火摧毁敌军！"
+dialog_autowrap = true
+ok_button_text = "太好了"
 
 [node name="HorseBirthContent" type="MarginContainer" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog"]
 offset_left = 8.0
@@ -1232,6 +1251,23 @@ grow_vertical = 2
 theme = ExtResource("36_slice_theme")
 script = ExtResource("15_dialog_panel")
 
+[node name="VoiceInputRecorder" type="Node" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+script = ExtResource("59_voice_input_recorder")
+
+[node name="VoiceInputBridge" type="Node" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+script = ExtResource("61_voice_input_bridge")
+
+[node name="MicrophonePlayer" type="AudioStreamPlayer" parent="UI/DialogPanel/VoiceInputRecorder"]
+stream = SubResource("AudioStreamMicrophone_dialogue")
+bus = &"MicRecord"
+
+[node name="RecordingLimitTimer" type="Timer" parent="UI/DialogPanel/VoiceInputRecorder"]
+wait_time = 30.0
+one_shot = true
+ignore_time_scale = true
+
 [node name="PanelContainer" type="PanelContainer" parent="UI/DialogPanel"]
 layout_mode = 1
 anchors_preset = 15
@@ -1354,6 +1390,47 @@ bbcode_enabled = true
 fit_content = false
 scroll_active = true
 
+[node name="DialogRecordingOverlay" type="CenterContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="VoiceOverlayContent" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="DialogRecordingIcon" type="TextureRect" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 104)
+layout_mode = 2
+size_flags_horizontal = 4
+texture = ExtResource("60_dialogue_microphone")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DialogRecordingLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.58, 1)
+theme_override_font_sizes/font_size = 18
+text = "正在录音……0/30秒"
+horizontal_alignment = 1
+
+[node name="DialogRecordingFinishButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 38)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "完成"
+tooltip_text = "结束本次录音并开始识别。"
+
 [node name="InputRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
 theme_override_constants/separation = 8
@@ -1363,6 +1440,32 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "输入要对 NPC 说的话……"
+
+[node name="DialogVoiceButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "语音输入（最长30秒）"
+
+[node name="DialogVoiceIcon" type="TextureRect" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow/DialogVoiceButton"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("60_dialogue_microphone")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="DialogSendButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
 unique_name_in_owner = true
@@ -1395,6 +1498,16 @@ exclusive = true
 unresizable = true
 dialog_text = "成功说服了NPC。"
 ok_button_text = "太好了"
+
+[node name="DialogInputLimitDialog" type="AcceptDialog" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+title = "无法发送"
+initial_position = 2
+size = Vector2i(420, 140)
+exclusive = true
+unresizable = true
+dialog_text = "输入文字超过上限300字"
+ok_button_text = "知道了"
 
 [node name="SessionActionRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2

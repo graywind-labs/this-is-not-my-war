@@ -2,6 +2,7 @@ extends Node3D
 
 const EXPECTED_SCHEMA := "environment_art_v1"
 const ART_REVISION := "t0135_p7"
+const STYLIZED_TREES := preload("res://scripts/presentation/environment/StylizedTreeMeshes.gd")
 
 var _environment_config: Dictionary = {}
 var _layout: Dictionary = {}
@@ -18,6 +19,8 @@ var _minimum_station_clearance := INF
 var _mountain_tree_count := 0
 var _riverbank_tree_count := 0
 var _station_density_counts := {"near": 0, "transition": 0, "far": 0}
+var _approved_trees: RefCounted
+var _approved_variant_counts: Dictionary = {}
 
 
 func configure(environment_config: Dictionary, station_layout: Dictionary) -> void:
@@ -34,6 +37,8 @@ func _ready() -> void:
 func get_debug_snapshot() -> Dictionary:
 	var config := _forest_config()
 	return {
+		"approved_forest": {"enabled":_approved_trees!=null,"revision":"t0364_approved" if _approved_trees!=null else "","variant_counts":_approved_variant_counts.duplicate()},
+		"tree_variant_counts_role": "legacy_source_sampling" if _approved_trees!=null else "visible_variants",
 		"art_revision": ART_REVISION,
 		"tree_counts": _tree_counts.duplicate(),
 		"tree_variant_counts": _tree_variant_counts.duplicate(),
@@ -67,6 +72,8 @@ func _rebuild() -> void:
 		remove_child(child)
 		child.queue_free()
 	_conifer_variants.clear()
+	_approved_trees = null
+	_approved_variant_counts.clear()
 	_missing_assets.clear()
 	_tree_counts = {"front": 0, "rear": 0, "side": 0, "near": 0, "mid": 0, "far": 0}
 	_tree_variant_counts = {"slender_pine": 0, "layered_pine": 0, "broad_fir": 0}
@@ -82,6 +89,15 @@ func _rebuild() -> void:
 	if str(_environment_config.get("schema_version", "")) != EXPECTED_SCHEMA:
 		return
 	var config := _forest_config()
+	var approved_config: Dictionary = _environment_config.get("approved_forest",{})
+	if bool(approved_config.get("enabled",false)):
+		var settings: Variant = JSON.parse_string(FileAccess.get_file_as_string(str(approved_config.get("config_path","res://data/presentation/forest_art_trial.json"))))
+		if settings is Dictionary and str(settings.get("schema_version",""))=="forest_art_trial_v1":
+			_approved_trees = STYLIZED_TREES.new(settings)
+			for variant_name in STYLIZED_TREES.VARIANT_NAMES:
+				_approved_variant_counts[variant_name] = 0
+		else:
+			push_error("Approved forest style is invalid; retaining the original tree art")
 	_build_conifer_variants()
 	_build_forest_side("front", _rect_from_array(config.get("front_bounds", [])), config)
 	_build_forest_side("rear", _rect_from_array(config.get("rear_bounds", [])), config)
@@ -181,6 +197,8 @@ func _build_tree_multimeshes(chunk: Node3D, chunk_center: Vector2, side: String,
 	var scale_range := _v2(config.get("tree_scale_range", [0.88, 1.34]))
 	var variant_placements: Array[Array] = [[], [], []]
 	var variant_names := ["slender_pine", "layered_pine", "broad_fir"]
+	var approved_groups: Array = [[],[],[],[],[],[]]
+	var species_rng: RandomNumberGenerator = _approved_trees.make_species_rng(chunk_center) if _approved_trees!=null else null
 	for point in points:
 		var station_distance := _distance_to_station_polygon(point)
 		var tier := _density_tier(station_distance)
@@ -192,6 +210,10 @@ func _build_tree_multimeshes(chunk: Node3D, chunk_center: Vector2, side: String,
 		var placement := Transform3D(basis, Vector3(point.x - chunk_center.x, _terrain_height(point), point.y - chunk_center.y))
 		var variant_index := rng.randi_range(0, 2)
 		variant_placements[variant_index].append(placement)
+		if _approved_trees!=null:
+			var approved_variant: int = _approved_trees.choose_variant(point,species_rng)
+			approved_groups[approved_variant].append(placement)
+			_approved_variant_counts[STYLIZED_TREES.VARIANT_NAMES[approved_variant]] += 1
 		var variant_name := str(variant_names[variant_index])
 		_tree_variant_counts[variant_name] = int(_tree_variant_counts[variant_name]) + 1
 		_tree_counts[side] = int(_tree_counts[side]) + 1
@@ -216,6 +238,11 @@ func _build_tree_multimeshes(chunk: Node3D, chunk_center: Vector2, side: String,
 			var route_distance := _distance_to_polyline(point, _route_points(config.get("front_route", [])))
 			if point.y >= float(config.get("stable_reveal_z", 225.0)) and route_distance <= 18.0:
 				_spawn_screen_tree_count += 1
+	if _approved_trees!=null:
+		# Retain the original near-forest shadow budget; the meshes themselves are shared.
+		var shadows := GeometryInstance3D.SHADOW_CASTING_SETTING_ON if _density_tier(_distance_to_station_polygon(chunk_center))=="near" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_approved_trees.build_multimeshes(chunk,approved_groups,shadows)
+		return
 	for variant_index in _conifer_variants.size():
 		_add_tree_part_multimeshes(chunk, variant_placements[variant_index], _conifer_variants[variant_index], str(variant_names[variant_index]).to_pascal_case(), side, chunk_size)
 

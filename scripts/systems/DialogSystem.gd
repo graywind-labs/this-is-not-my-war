@@ -13,6 +13,8 @@ const LLM_BRIDGE_PATH := "/root/Main/Systems/LLMBridge"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const EVENT_BUS_PATH := "/root/EventBus"
+const DIALOGUE_INPUT_CONFIG_PATH := "res://data/dialogue_input_config.json"
+const DEFAULT_PLAYER_MESSAGE_MAX_CHARACTERS := 300
 const GUARD_OFFICER_ID := "guard_officer"
 const GUARD_OFFICER_NAME := "守备官"
 const PLAYER_DIALOGUE_MAX_ROUNDS := 999999
@@ -40,9 +42,11 @@ var _player_dialogue_draft: Dictionary = {}
 var _pending_forced_end_dialogue_id := ""
 var _dialogue_epoch_by_npc: Dictionary = {}
 var _dialogue_end_in_progress := false
+var _player_message_max_characters := DEFAULT_PLAYER_MESSAGE_MAX_CHARACTERS
 
 
 func initialize() -> void:
+	_load_dialogue_input_limits()
 	_active_dialogue.clear()
 	_player_dialogue_draft.clear()
 	_pending_forced_end_dialogue_id = ""
@@ -590,6 +594,8 @@ func _send_autonomous_dialogue_invitation(opening_text: String, async_request: b
 
 func send_player_message(text: String, is_recruitment_request: bool = false, async_request: bool = false) -> Dictionary:
 	var clean_text := text.strip_edges()
+	if clean_text.length() > _player_message_max_characters:
+		return _message_too_long_failure(clean_text.length())
 	var activation_result := _activate_player_dialogue_draft("player_message_sent")
 	if not bool(activation_result.get("ok", false)):
 		return activation_result
@@ -3906,3 +3912,31 @@ func _is_npc_in_work_behavior_mode(npc_id: String, npc_system: Node) -> bool:
 
 func _failure(error_code: String, message: String) -> Dictionary:
 	return {"ok": false, "error_code": error_code, "message": message}
+
+
+func get_player_message_max_characters() -> int:
+	return _player_message_max_characters
+
+
+func _message_too_long_failure(actual_characters: int) -> Dictionary:
+	return {
+		"ok": false,
+		"error_code": "input_too_long",
+		"message": "输入文字超过上限%d字" % _player_message_max_characters,
+		"max_characters": _player_message_max_characters,
+		"actual_characters": actual_characters,
+	}
+
+
+func _load_dialogue_input_limits() -> void:
+	var raw_config: Variant = JSON.parse_string(FileAccess.get_file_as_string(DIALOGUE_INPUT_CONFIG_PATH))
+	if raw_config is Dictionary:
+		_player_message_max_characters = maxi(
+			1,
+			int((raw_config as Dictionary).get(
+				"player_message_max_characters",
+				DEFAULT_PLAYER_MESSAGE_MAX_CHARACTERS
+			))
+		)
+	else:
+		_player_message_max_characters = DEFAULT_PLAYER_MESSAGE_MAX_CHARACTERS

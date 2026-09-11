@@ -1,10 +1,15 @@
 {
+  "approved_river": {"enabled": true, "config_path": "res://data/presentation/river_art_trial.json", "revision": "t0366_r1_natural_shore"},
+  "approved_mountain": {"enabled": true, "config_path": "res://data/presentation/mountain_art_trial.json", "revision": "t0365_approved"},
   "schema_version": "environment_art_v1",
+  "approved_forest": {"enabled": true, "config_path": "res://data/presentation/forest_art_trial.json", "revision": "t0364_approved"},
+  "approved_ground": {"enabled": true, "config_path": "res://data/presentation/ground_art_trial.json", "revision": "t0362_approved"},
   "art_revision": "t0135_p7r5",
   "celestial_cycle": {
     "twilight_start_altitude_degrees": -6.0,
     "full_light_altitude_degrees": 10.0,
     "shadow_min_energy": 0.03,
+    "directional_shadow_mode": "parallel_2_splits",
     "directional_shadow_max_distance": 120.0,
     "directional_shadow_fade_start": 0.86,
     "directional_shadow_blend_splits": true,

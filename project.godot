@@ -13,10 +13,14 @@ config_version=5
 [application]
 
 config/name="这不是我的战争"
-config/version="0.0.657-t0135-p7r6-organic-fog"
+config/version="0.0.696-t0396-combat-performance-p2"
 run/main_scene="res://scenes/frontend/MainMenu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
+
+[audio]
+
+driver/enable_input=true
 
 [autoload]
 

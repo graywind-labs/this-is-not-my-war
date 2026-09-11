@@ -1,0 +1,25 @@
+id,file,category,source_title,author,source_url,license,duration_seconds,review_note,decision,final_usage,edit_instruction
+D01,day/01_day_current_reference.mp3,bgm_day,ambient-music,giangallegos,https://freesound.org/s/812170/,CC0,55.577,当前正式昼夜共用曲；本包作为白天风格和响度参考,confirmed,bgm_day_playlist_01,整段播放；白天播放池第 1 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+D02,day/02_day_peaceful_village.mp3,bgm_day,Peaceful village loop,elerya,https://opengameart.org/content/peaceful-village-loop,CC-BY 3.0,16.144,柔和简单且干扰低；短循环重复风险较高,candidate
+D03,day/03_day_woodland_fantasy.mp3,bgm_day,Woodland Fantasy,Matthew Pablo,https://opengameart.org/content/woodland-fantasy,CC-BY 3.0,150.048,中世纪幻想村镇感明确；旋律比当前曲更突出,confirmed,bgm_day_playlist_03,整段播放；白天播放池第 2 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+D04,day/04_day_tower_of_great_lords.mp3,bgm_day,Tower of Great Lords,Alexandr Zhelanov,https://opengameart.org/content/tower-of-great-lords,CC-BY 3.0,226.255,轻中世纪主题且发展充分；适合长时间经营,confirmed,bgm_day_playlist_04,整段播放；白天播放池第 3 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+D05,day/05_day_path_to_lake_land.mp3,bgm_day,Path to Lake Land,Alexandr Zhelanov,https://opengameart.org/content/path-to-lake-land,CC-BY 3.0,254.774,舒缓旅行感和空间感；较长且不易快速重复,confirmed,bgm_day_playlist_05,整段播放；白天播放池第 4 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+D06,day/06_day_town.mp3,bgm_day,Town,Alexandr Zhelanov,https://opengameart.org/content/campaign-more-music-inside,CC-BY 3.0,27.532,短小城镇主题；质感直接且较轻,candidate
+D07,day/07_day_middle_age_theme_1.mp3,bgm_day,Middle Age RPG Theme 1,Alexandr Zhelanov,https://opengameart.org/content/campaign-more-music-inside,CC-BY 3.0,113.000,传统中世纪 RPG 气质；比当前曲更有叙事感,confirmed,bgm_day_playlist_07,整段播放；白天播放池第 5 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+D08,day/08_day_castle.mp3,bgm_day,Castle,Alexandr Zhelanov,https://opengameart.org/content/campaign-more-music-inside,CC-BY 3.0,58.188,城堡氛围略庄重偏暗；可判断白天是否需要压力感,candidate
+D09,day/09_day_medieval_lute_chords.mp3,bgm_day,Medieval Lute Chords,f-r-a-g-i-l-e,https://freesound.org/s/506266/,CC0,14.460,极简鲁特琴且不抢注意力；短循环容易听出重复,candidate
+D10,day/10_day_medieval_flute_riff.mp3,bgm_day,Medieval Flute Riff,f-r-a-g-i-l-e,https://freesound.org/s/506265/,CC0,14.460,轻柔木笛和游吟感；旋律亮且短,candidate
+D11,day/11_day_village_theme.mp3,bgm_day,Village Main Theme,ZHRØ,https://freesound.org/s/527321/,CC-BY 4.0,52.050,适合 RPG 村落且可循环；合成器音色可能略现代,candidate
+D12,day/12_day_harp_arpeggio.mp3,bgm_day,Harp Arpeggio - Medieval Tune,gertraut_hecher,https://freesound.org/s/564024/,CC-BY-NC 4.0,44.397,上一轮白天候选；村庄广场感明确但鼓点和旋律更活跃,confirmed,bgm_day_playlist_12,整段播放；白天播放池第 6 首；开头与结尾各烘焙 2 秒淡化；自然结束后回到第 1 首
+N01,night/01_night_venture.mp3,bgm_night,Venture At Night,ManuelGraf,https://freesound.org/s/794254/,CC-BY 4.0,21.333,上一轮夜晚候选；短循环且有轻微夜间冒险张力,candidate
+N02,night/02_night_dark_castle.mp3,bgm_night,Dark Castle Night Ambience,szegvari,https://freesound.org/s/534877/,CC0,19.643,上一轮夜晚候选；安静阴冷且旋律存在感低,candidate
+N03,night/03_night_good_night.mp3,bgm_night,Good Night,SergeQuadrado,https://freesound.org/s/654729/,CC-BY-NC 4.0,24.000,上一轮夜晚候选；平静温和且接近休息氛围,candidate
+N04,night/04_night_calm.mp3,bgm_night,Night Calm,FoxSynergy,https://opengameart.org/content/night-calm,CC-BY 3.0,179.566,慢速钢琴与伴奏；安静但低比特 / 合成音色需试听判断,candidate
+N05,night/05_night_rpg_ambient_2.mp3,bgm_night,RPG Ambient 2,Hitctrl,https://opengameart.org/content/rpgambient2,CC-BY 3.0,120.059,可循环环境弦乐；持续性好且不强调节拍,confirmed,bgm_night_playlist_05,整段播放；夜晚播放池第 1 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+N06,night/06_night_misty_mountains.mp3,bgm_night,RPG - Misty Mountains,Hitctrl,https://opengameart.org/content/rpg-misty-mountains,CC-BY 3.0,256.052,不抢注意力的冷调弦乐环境曲；长时间循环友好,confirmed,bgm_night_playlist_06,整段播放；夜晚播放池第 2 首；开头与结尾各烘焙 2 秒淡化；自然结束后播放下一首
+N07,night/07_night_mystical_theme.mp3,bgm_night,Mystical Theme,Alexandr Zhelanov,https://opengameart.org/content/mystical-theme,CC-BY 3.0,103.236,暗色神秘并带人声质感；可能比普通夜晚更压迫,candidate
+N08,night/08_night_old_moltara.mp3,bgm_night,Old Moltara Underwater Ruins,Janne Hanhisuanto,https://opengameart.org/content/radakan-old-moltara-underwater-ruins,CC-BY-SA 3.0,184.350,低沉静谧且有废墟感；适合边境深夜,candidate
+N09,night/09_night_shift.mp3,bgm_night,Night Shift,iamoneabe,https://opengameart.org/content/night-shift,CC0,269.268,长篇暗幻想循环并有层次变化；82 BPM 和东方色彩可能偏显眼,candidate
+N10,night/10_night_twilight_piano.mp3,bgm_night,Twlight Piano Loop,Mark_Murray,https://freesound.org/s/639958/,CC-BY 4.0,172.000,钢琴与大提琴营造月夜宁静；偏现代电影配乐,confirmed,bgm_night_playlist_10,整段播放；夜晚播放池第 3 首；开头与结尾各烘焙 2 秒淡化；自然结束后回到第 1 首
+N11,night/11_night_moonlight.mp3,bgm_night,Moonlight,LogicMoon,https://freesound.org/s/761032/,CC-BY-NC 4.0,132.000,无鼓点的月夜新古典氛围；雨声和磁带纹理较现代,candidate
+N12,night/12_night_shades.mp3,bgm_night,Shades,Jesús Lastra,https://opengameart.org/content/collaboration-theme-song-shades,CC-BY 3.0,404.062,极慢且阴暗的环境曲；适合很深的夜但可能像洞穴 / 废弃教堂,candidate

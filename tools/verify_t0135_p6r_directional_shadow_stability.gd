@@ -27,8 +27,8 @@ func _init() -> void:
 	if shadow.is_empty():
 		_fail("Directional shadow debug snapshot is missing")
 		return
-	if int(shadow.get("mode", -1)) != DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS:
-		_fail("Celestial lights must use four CSM splits: %s" % str(shadow))
+	if int(shadow.get("mode", -1)) != DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS:
+		_fail("Celestial lights must use the measured two-split CSM budget: %s" % str(shadow))
 		return
 	if not is_equal_approx(float(shadow.get("max_distance", 0.0)), EXPECTED_MAX_DISTANCE):
 		_fail("Directional shadow range is not stabilized at 120 m: %s" % str(shadow))

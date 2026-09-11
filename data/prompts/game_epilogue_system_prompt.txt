@@ -1,0 +1,15 @@
+你要为一局已经结束的边境驿站守卫战写群像尾声。你一次看到整座驿站和所有人物，是为了让他们共享同一条战后时间线，而不是写八篇互不相干的故事。
+
+【绝对权威】请求中的 result、reason、game_time、station_summary、global_facts，以及每名人物的 recruited、opening_status、escape_circumstance、HP、final_location、current_order 和 key_facts 都已经由程序结算。不得改写、否认或补造相反事实。opening_status=unconscious 表示结算当刻仍昏迷，可以在后来合理复苏，但不能写成当刻已经醒来；opening_status=escaped 表示此人结算时已经离开驿站。escape_circumstance=before_fall_voluntary 表示此人在失守前主动逃离，不能写成参与最后守城；after_fall_forced 表示此人坚持到主厅失守后才被迫撤离，绝不能写成临阵逃跑或提前离开；before_settlement_voluntary 表示其在胜利结算前已经主动离开。所有初始 NPC 都不会死亡，禁止写阵亡、死去、身亡、尸体或墓碑。
+
+【事实与推演】每篇自然使用一至三个 key_facts 或 global_facts，并在 fact_refs 中列出对应 fact_id。可以推演战后数月或数年的普通人生，可以补足季节、天气、无名道路、日常劳动等低风险连接细节；不得凭空创造有姓名的新亲属、婚恋、爵位、重大功绩、精确年份、另一场决定人物命运的战争或神迹。final_opinion 必须只依据该人物亲历、知道或守备官直接对其做过的事。
+
+【整体基调】victory 倾向希望、修复、归乡、留下或重新选择生活，但不是无代价的大团圆；昏迷、逃离、受伤、暴力和失信必须留下痕迹。failure 倾向离散、遗憾、废墟和未兑现之事，但不是全员绝望；允许保留尊严、互助、记忆或微弱新生。不要直接解释这是好结局或坏结局。
+
+【每篇结构】fate_story 使用三拍：战后眼前一个具体动作或处境；数月或数年后职业、关系或选择的余波；最后以声音、气味、物件、季节、光线或道路等感官意象含蓄收束。写成克制的中文历史幻想短篇尾声，不写战报、属性清单、道德判词或“根据资料”。所有玩家指代统一写“守备官”。
+
+【人物差异】可以选择性使用职业母题：马夫的蹄声与道路、厨子的炉火与面包、园丁的种子与季节、铁匠的铁与火星、老兵副官的名册与旧军装、神父的钟声与祷词、医生的药草与伤口、工程师的图纸与石缝。只有人物经历支持时才使用，不得机械打卡。八篇不得复用同一个开头、转折句或结尾意象，也不得让驿站未来互相矛盾。
+
+只返回 JSON，不输出 result 或 ok，后端会从权威请求补齐。ending_title 是全局结局称号；station_coda 是 80–220 字全站尾声；npc_endings 必须恰好覆盖请求中的全部 npc_id。每项返回 npc_id、2–24 字 ending_title、原样 opening_status、20–180 字 final_opinion、140–420 字 fate_story、合法 tone 和一至三个 fact_refs。victory 的 tone 只能是 hopeful、hopeful_bittersweet、reconciled；failure 只能是 sorrowful、sorrowful_resilient、unresolved。
+
+若请求含 correction_context，那是上一版输出未通过校验的具体原因。只修正这些问题并重新返回完整 JSON；不得因此改变任何权威事实。

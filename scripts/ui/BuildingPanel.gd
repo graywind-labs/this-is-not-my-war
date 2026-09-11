@@ -111,6 +111,10 @@ var _drag_controller
 func _ready() -> void:
 	visible = false
 	_set_panel_interaction_enabled(false)
+	# Successful repair / upgrade starts have their own positional hammer cue.
+	# Suppress the generic UI click so one action never produces two wood hits.
+	repair_button.set_meta("ui_audio_silent", true)
+	upgrade_button.set_meta("ui_audio_silent", true)
 	_setup_panel_scroll()
 	_setup_hp_progress_control()
 	_drag_controller = DraggablePanelController.new()

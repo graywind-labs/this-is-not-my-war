@@ -4,12 +4,16 @@
     "semantic_assets": {
       "primary": "sfx_ui_button_primary",
       "toggle": "sfx_ui_toggle",
-      "success": "sfx_ui_interaction_success_resource_collect"
+      "success": "sfx_ui_interaction_success_resource_collect",
+      "level_up": "sfx_ui_interaction_success_resource_collect",
+      "attribute_assigned": "sfx_ui_interaction_success_resource_collect"
     },
     "semantic_priority": {
       "primary": 1,
       "toggle": 2,
-      "success": 5
+      "success": 5,
+      "level_up": 6,
+      "attribute_assigned": 6
     },
     "special_success_popup_path": "/root/Main/UI/DialogPanel/DialogSpecialSuccessDialog",
     "harvest_dialog_path": "/root/Main/UI/CraftingHarvestDialog",

@@ -60,6 +60,7 @@ func _ready() -> void:
 	_build_actor_sensor()
 	_build_combat_contact_area()
 	_bind_building_state()
+	preload("res://scripts/presentation/buildings/BuildingScaffold.gd").install(self, gate_id)
 	call_deferred("_refresh_building_state")
 	set_physics_process(true)
 

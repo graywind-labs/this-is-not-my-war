@@ -1,5 +1,171 @@
 # GODOT_ARCHITECTURE.md
 
+## T0396 性能诊断与只读边界
+
+CombatPerformanceProbe 为 CombatSystem 通过显式 debug API 动态创建的 RefCounted，不是 Autoload，也不参与权威结算。GM 只调用采样/读取/停止，运行时默认无采样对象。ActorMotionBody / NPCSystem / BuildingSystem 的新增 getter 均读取现有权威事实，不保留跨帧副本；引导区 body 列表/网格只在同一次同步选点内复用。BuildingArtView 的 StaticRenderBatch/StaticShadowBatch 仅接管不可变且可见合同相同的建筑表现叶节点，动态升级/损毁/屋顶/透明/渐隐节点排除。CelestialCycleController 从配置读取方向阴影模式，当前正式值为 2 级联、120m、边界混合；日/月唯一阴影权属和投影者不变。Main 场景结构、角色动画脚本和导航参数不变。测试入口、精确 GM 结果与成立/不成立台账见 MODULE_INDEX 和性能方案第 11 节。
+
+## T0395 六类音频路由
+
+AudioManager 在 manifest 后加载 `audio_categories_v1`，建立 102 条 asset→bus 映射并在调试快照暴露分类计数。Music / UI / Voice / Combat / Work / Ambience 分别直达 Master，AmbientBed 仍发送到 Ambience，Foley 兼容总线发送到 Combat。WorkAudioController 的工程开始与制造目标边沿改用 `play_2d(..., UI)`；建筑施工循环仍用 `start_loop_3d(..., Work)`。Movement 改投 Combat，Ability 改投 Combat，门 / 行商改投 Ambience。
+
+## T0394 位置音频事件增益
+
+AudioManager 的 `play_3d` / `start_loop_3d` 末尾新增可选 `gain_db`，默认仍为 `0 dB`，因此既有调用行为不变。循环注册保存 `target_gain_db`，渐入从 `-60 dB` 到该目标，而非固定到 `0 dB`；调试快照暴露目标与即时音量。WorkAudioController 仅为施工开始、施工循环和铁匠目标选择传入 `+4 dB`。
+
+## T0391 施工脚手架接线
+
+具体 BuildingArtView 子类与 FormalGateArtView 在建筑几何建立后安装 `ConstructionScaffold` 子节点；旧通用 BuildingArtView 样例不安装。BuildingScaffold 监听 EventBus.building_state_changed，并通过延迟首次读取处理安装时已存在的作业；仅查询 BuildingSystem 的 is_repair_in_progress / is_upgrade_in_progress。
+
+脚手架挂在美术根节点下，独立于 Roof、Exterior、UpgradeVisuals 与损毁隐藏分支，所以屋顶透明或废墟模式不会错误抹去正在修复的施工架。每段木构使用三组 BoxMesh MultiMesh；无帧轮询，无碰撞、导航和权威写入。关闭时先同步隐藏并移出所有几何子节点再 queue_free，支持同一帧中断后重新开工。
+
+## T0388 结局面板表现接线
+
+- `HUD.gd` 仍监听 `game_over_changed / epilogue_changed`，但只负责把 `result + settlement_snapshot` 提交给动态创建的 `EpiloguePanel.gd`。
+- `EpiloguePanel` 使用 `1/6 → 5/6` 四向锚点居中占用约 2/3 视口；标题和主题值仍来自结局快照，但对应 caption 不创建，避免把字段名混进叙事层。
+- `EpiloguePanel` 是只读表现层：从 `wave_number / CombatSystem` 读取波次，从 `epilogue` 读取全站标题和尾声，从 `npcs.items` 读取人物 ID、逃离、入伍与故事。它不读取或显示资源、建筑、HP、位置、最终看法和失败原因，也不修改结算。
+- 每张人物卡实例化共享 `NPCPortraitViewport`，与 NPCPanel 使用同一套世界人物镜头；结算页传入只读 `allow_escaped_portrait`，使已离站但仍在场景树中的人物可被档案镜头拍摄，不改变其逃离状态、可见性或位置。卡片按约 `1:2` 分配画像与正文宽度，全部放入同一个纵向 `ScrollContainer`。
+
+## T0387 群像结局接线
+
+- `Main/Systems/EpilogueSystem` 监听 `EventBus.game_over_changed`，下一帧从 `GameState.settlement_snapshot` 和 `NPCSystem / MemorySystem` 编译本局事实，写入 `epilogue_fact_snapshot` 与 `epilogue.status=pending`。
+- `Main/Systems/LLMBridge` 为 `game_epilogue` 建立独立异步信号，POST 到 `/game/epilogue`；该调用不注册时间减速，因为胜负成立后游戏推进已停止。
+- 返回必须同时匹配活动 request id 和当前 settlement id，并再次核对 result、NPC 集合与 `opening_status`。整组合法后才替换 `npcs.items` 及三个状态分组中的文学字段。
+- HTTP / JSON / Schema / 连续性失败或 `model_fallback_used=true` 时，系统使用 `template_fallback`；正式结局页只显示降级后的可读故事，来源与原因由 GM 状态行明确显示，不伪装成真实模型成功。
+- `Main/UI/HUD` 监听 `epilogue_changed`，T0388 起委托 EpiloguePanel 只读显示 pending、全站称号 / 主题和逐人称号 / 后日谈。
+- T0387 追加验收后，`Main/UI/GMPanel` 新增显式结局验收区，但只调用 `CombatSystem.debug_trigger_game_outcome(...)`：胜利沿用正式 `_trigger_five_wave_victory` 快照，失败先通过 BuildingSystem 提交主厅真实伤害再沿用 `_trigger_main_hall_failure`。GMPanel 监听同一 `epilogue_changed` 信号显示来源，不自行决定资源、建筑或 NPC 事实。
+
+## T0386 波次、半成品与预警接线
+
+- `Main/Systems/CraftingSystem` 初始化目录后读取 `crafting_recipes.json.initial_projects`，把工械坊恢复为箭塔 revision 1、4 / 12；它不补扣 ResourceSystem，也不发经验，因为 4 木已在开局前投入并由松散木 8 的配置体现。
+- `Main/Systems/CombatSystem` 在主动警报和实际 `spawn_wave` 前调用 `Main/Systems/DailyReflectionSystem.interrupt_pending_reflections_for_combat()`；系统缺失时战斗仍可继续。
+- `Main/UI/HUD` 运行时创建 `WaveArrivalWarningDialog`，按 CombatSystem 下一波剩余秒数做每波两档去重，强调既有 `AlarmButton`。没有新增场景权威节点，也没有自动集结路径。
+
+## T0383 地面装饰接线
+
+FormalGroundSurfaceArtView 的正式 BuildingRoots 检查与接地层安装之后创建 StationGroundDecor；坐标来自独立 JSON。BuildingFunctionalLightController 仍是城门及路边火炬共同的夜间表现判定源，刷新时调用 station_ground_decor 分组 set_night_enabled，装饰延迟初始化也读取该源，不维护第二时钟。动画仅读取 TimeSystem 暂停；无权威写入 / 碰撞 / NavigationRegion。中央草保留 CPU 实例源数据后按装饰半径过滤，剩余变换 / 颜色与花簇不重抽样，外部 MultiMesh 不参与。铁篮小件不投射自身巨大的径向阴影，OmniLight 对其他场景物体仍使用阴影。
+
+## T1601B / T1601C / T1603 对话语音与发送限制接线（已实施）
+
+T1604 回归确认正式 Main 仍使用该接线：运行态可找到 `VoiceInputRecorder`、`VoiceInputBridge`、录音覆盖层与输入行右侧 `DialogVoiceButton`；按钮使用本地麦克风 SVG，Tooltip 为“语音输入（最长30秒）”。未新增 GM 节点或新的对话权威路径。
+
+- `project.godot` 已开启 `audio/driver/enable_input`；`default_bus_layout.tres` 已增加静音 `MicRecord` 总线和唯一 16-bit `AudioEffectRecord`，与 Music / SFX / Ambience / UI / Voice 播放音量隔离且不本地监听。
+- `Main/UI/DialogPanel/InputRow` 顺序为 `DialogInputEdit -> DialogVoiceButton -> DialogSendButton -> DialogAttackButton`；NPC-NPC 旁听隐藏语音入口。
+- `Main/UI/DialogPanel` 已增加 `VoiceInputRecorder`、`AudioStreamMicrophone` 播放器、30 秒 `ignore_time_scale` Timer 和覆盖历史中央的 `DialogRecordingOverlay`，含大号本地 SVG 麦克风、现实秒计时、录音提示和独立“完成”；分析态改为稳定图标与“正在识别语音与情绪……”。
+- `scripts/ui/VoiceInputRecorder.gd` 单独维护 `IDLE / RECORDING / ANALYZING`、统一停止入口、16-bit PCM WAV 裁切 / 保存和生命周期清理。临时目录只清理精确 `user://voice_input/voice_*.wav`，不进入存档。
+- `scripts/ui/VoiceInputBridge.gd` 独立负责 multipart `/voice/analyze`、15 秒超时、6 MiB 客户端限制和响应校验；只读取现有 LLMBridge 的后端地址，不扩张其文本职责。每个请求使用独立 HTTPRequest，取消或替换后旧回调无法命中新请求。
+- `DialogPanel` 仅把桥返回的 `recognized_segment` 按空白规则追加，并用 request_id + dialogue_id + Recorder 当前会话三重校验丢弃迟到响应；成功只恢复草稿编辑，不调用发送接口。
+- `DialogInputEdit.max_length` 保持 0；发送按钮与 Enter 共用 300 字预检，DialogSystem 再做第二层校验。只有系统接受发送后才清空草稿。
+- `Main/UI/DialogPanel/DialogInputLimitDialog` 负责 301 字以上的用户提示；DialogPanel 从 DialogSystem 获取同源上限，发送按钮与 Enter 共用预检，DialogSystem 在激活草稿前执行第二层保护。
+- Mock HTTP、字数边界及正式 Main Godot MCP 运行态均通过；完整节点、错误和验收合同见 `docs/VOICE_INPUT_AND_EMOTION.md`。
+
+## T0379-I 正式陨石美术投影
+
+PietySystem 创建 FormalMeteorArt（继承原 MeteorPresentation），只将原 start / target / progress 交给共享 get_fall_world_position 采样；下落结算仍是原 2.8 秒，目标、伤害圆与结算时刻不由美术决定。采样沿已认可 1.7 次幂曲线并令终点中心与落地 body_radius×0.58 一致，避免落地跳变。原 StaticBody 半径 body_radius×0.78、友军排出顺序、战斗结束 / 弹坑时钟独立清理不改。旧燃烧区仅隐藏红色圆盘，保留原粒子 / 灯光与全部燃烧结算。
+
+FormalMeteorArt 统一追踪所有新 GPU 粒子：未落地时按现实秒并读取主动暂停，落地后采用 TimeSystem.get_combat_frame_delta_seconds 推进冲击 / 冷却和粒子。PietySystem 继续驱动 24 小时淡化，Shader 与坑缘材质同步；美术没有试片的自动清理计时。正式与 B 共用实现 / meteor_art.json，MeteorArtCandidate 为包装；A 保留原美术，试片时间仅由 MeteorArtTrial 控制。正式 HUD / CameraRig / 音频源不改。专项和既有生命周期 / 安全 / 伤害 / 音频回归通过。
+
+## T0381 / T0382 陨石声音增强与蓄满音频待选
+
+- AudioManager 的 `ability_priority` 只服务大型技能 3D 声：`unit_size=120m`、`max_distance>=1500m`、逆距离且 `attenuation_filter_db=0`；普通 local 与 combat_priority 参数不变。
+- AbilityAudioController 从 `ability_audio.json` 读取 profile 和分阶段增益，下落 +2 dB、冲击 +3 dB，播放器继续挂在真实陨石 / 落点并随游戏暂停。
+- `piety_ready` 已在用户选择 05 后启用并指向 `sfx_piety_ready_sacred_chant`；正式 WAV 为 5 秒、最后 1.5 秒渐出。Presenter 仅按显式映射播放，不使用默认声音回退。
+
+## T0379 陨石试片隔离
+
+R1 覆盖首版的独立轻震：试片相机作为已有 CameraRig 实例的 Camera3D 子节点，关闭 Rig 自主 process / input，由试片统一调用 request_camera_shake 与 _update_camera_shake；镜头基准位置随试片视角同步。下落 / 冲击请求读取正式 piety_ability.json，无缩放倍率；直接沿用原三轴波形、强震替代轻震和 0.72 次幂衰减。暂停不推进，重置清理震动，结束恢复相机基准。范围盘与 HUD 的几何和材质相同，但不实例化 HUD / 权威系统。以下首版“相机轻震”描述为历史，最新以 R1 为准。
+
+MeteorArtTrial 独立 Node3D 场景，只读 FormalGroundSurfaceArtView 的正式地表和 piety_ability.json，不创建 Main、PietySystem 或 CombatSystem。正式 PietyAbilityButton 仅连接本地演示选点状态；试片不广播施放 / 冲击权威信号，不提交伤害、虔诚或音频事实。A 直接实例化 MeteorPresentation；B 子类覆盖美术构造、落地姿态与效果推进，保留基类快照、岩体清理、碰撞半径与弹坑接口，正式源文件不变。
+
+试片自行推进 2.8 秒下落和 8＋4＋10 秒演示生命周期，暂停时停止本地推进并将全部 GPU 粒子 speed_scale 设零。岩体清理与弹坑淡化独立，最后释放表现根并重新蓄满本地按钮。B 落下的终点中心与落地中心一致，旋转连续收敛，避免正式原版的落地姿态重设跳变；原版 A 保留原有轨迹。压缩时间、试片相机轻震和区域限制不回写正式配置；后续接入须继续服从正式伤害 / 友军排出 / 暂停 / 战斗结束 / 24 小时淡化合同。
+
+## T0380 虔诚蓄满弹窗与短圣咏接线
+
+- `Main/Systems/PietySystem` 在 `_emit_piety_changed` 中用提交前后值检测未满到满值的边沿，并经 EventBus 发出 `piety_ready(current, max, reason)`；它不保存“弹窗已看”副本，成功施放归零后可自然再次越过边沿。
+- `Main/UI/MilestoneAlertPresenter/PietyReadyDialog` 与建筑完工、小马命名共用 Presenter FIFO。请求只有出队显示时才检查音频配置；T0382 期间 `enabled=false`，不会播放被否决素材。按钮只关闭本窗并推进队列。
+- 未来选定提示音仍使用 `AudioStreamPlayer` 全局 2D、World 总线，经 SFX 受“音效”设置控制。弹窗不独占其他 HUD 独立提示，不新增 Autoload、玩法状态、存档字段或 GM 权威入口。
+
+## T0374 正式主厅完整性
+
+MainHallShellFinish 从已认可 MenuMainHallFinish 提取共享纯表现构造；FormalMainHallArtView 默认安装到 BaseVisuals/Exterior/MainHallShellFinish，继承原摧毁显隐，不增加碰撞、导航或权威状态。窗框位置由原墙模块 Transform 换算到目标父节点。原主厅持续不透明、不可进入，镜头距离不揭顶。小门楼山墙以 roof_section 元数据关联，六级旧门楼屋顶被替换时同步隐藏，其他山墙 / 窗面保持。
+
+MenuCoverPreview 创建主厅前关闭 shell_finish_enabled；原版 A 维持历史外观，已认可 B 继续在 staging 后通过 MenuMainHallFinish 包装器安装 CoverShellFinish，避免重复构造。菜单外观与交互回归通过。正式建筑保留原 229 个网格、六级平台 / 器械契约和生产导航 239 源 / 11 门；新增 376 个美术网格沿用现有外壳阴影处理。直接在 Main 可见，现有升级调试已足够，无需新增 GM。T0373 UI 保留暂缓。
+
+## T0373 HUD 独立试案隔离
+
+HUDArtTrial 以 Main 为继承场景，根仍名 Main 以满足现有系统路径；`_enter_tree` 在 GameStartupSystem 子节点 ready 前设 STATIC_DEBUG，避免正式日计划。仅样片实例设置正午 / 镜头、拦截世界和游戏快捷键，创建 A/B 与上下文选择工具栏。A 保留原样式与层级；B 的 HUDArtCandidate 只读原 HUD 数据 / 图标和虔诚控件，无权威提交。B 固定左上 (12,8)，内部 FlowContainer 在 NPC / 建筑实际左边界不足时换行；仅边界宽度变化触发重排。
+
+候选 HUD z=70，NPC / 建筑详情 z=80，对话 z=100，切回 A 恢复原值。详情窗原位置保持；居中对话只在 B 小窗口调整上下 offset，宽度与中心不变。上下文展示调用原 show_npc / show_building 与只打开草稿的 start_player_dialogue，不发送台词；关闭草稿不写真实对话。预览禁止按钮提交，保留详情滚动。21 张 GPU 图与静止启动、同数据 / 镜头、HUD 避让 NPC / 建筑、A/B 详情位置不变、B 对话可见边界断言通过。正式源未改，战时和所有弹窗整合未验收。
+
+## T0372 封面一级平台与弩床
+
+MenuCoverCandidate 在封面主厅下创建 CoverDefenseDisplay，只读 building_fixture_layouts 的 main_hall_slot_03_platform 和 defense_device_defs 的 wall_ballista，实例化二者的纯美术场景；保留正式平台局部 (-7,3.05,5)、器械高 3.93 与模型原尺度，配置 offset 为零。静态 SpotLight 辅助识别。没有实例化 DefenseDeviceView / 部署系统或战斗结算，无碰撞导航、发射或投射物；正式源模型与配置不修改。
+
+## T0370-I / T0371 已认可封面接入
+
+MainMenu 的 MenuCoverScene 指向 MenuCoverCandidate；MenuEdgeFog 默认使用 create_approved_material，静态噪声生成与色板读取仅在初始化发生。对比场景使用同一工厂做 B，create_original_material 与原 PackedScene 做 A；正式界面不含试验按钮，开始游戏仍沿用原 handler。
+
+MenuMainHallFinish 是封面专用 RefCounted 构造器，在原主厅 deferred staging 完成后安装 CoverShellFinish。四片 PrismMesh 山墙位于已实测屋顶边界内，窗框与窗面通过源墙模块 Transform 转到主厅局部，精确继承前后 / 左右与上层模块缩放。内凹不透明 BoxMesh 阻断窗洞到旧内芯的视线；没有改写 / 隐藏导入资源、正式主厅脚本或权威结构。无碰撞导航；GPU 窗洞覆盖、旧资源隔离、七图、三个相关菜单回归通过。下方 T0370 记录为首次样片阶段，最新正式连接以上文为准。
+
+## T0370 主菜单候选隔离
+
+MenuCoverArtTrial 继承 MainMenu，仅在独立场景中切换 SubViewport 里的原 MenuCoverPreview / 候选 MenuCoverCandidate；不改正式入口或引用。候选继承原构图脚本，Environment 深复制后调整，地面使用 material_override，树 Mesh 使用已认可共享构造。地表接触读取主厅与工位低位网格的世界 AABB，投影到既有平面 Shader；无碰撞导航。A/B 切换让旧场景留在树中等待 queue_free，避免本帧 Skeleton 回调访问脱树对象；下次渲染仅保留一个封面。
+
+原屏幕雾 ShaderMaterial 保留，B 使用独立材质与启动时生成的 512×512 FastNoiseLite ImageTexture，逐帧只在 shader 按 12 秒相位采样。独立入口的开始按钮不创建 Main，H 只切换 UI 可见性；没有新增权威系统或 GM。D3D12 结构 / 原资源隔离与十图通过，正式菜单 T0358 回归通过；尚未接入与测量性能压力。
+
+## T0369 小野花替换草簇
+
+StylizedGroundArt 保持既有草位 RNG 流不变；原 points 生成后独立挑选围墙内 8 处、间距至少 9m 的原位置。草 MultiMesh 过滤这些索引，其余实例颜色仍按原索引决定；花 MultiMesh 直接使用被替换草的 Transform，不再另散点。LowPolyWildflowers 生成两色三花小簇，网格尺寸与原草 Mesh AABB 一致，按缩放修正法线。外围草生成器沿用原草网格，未修改其随机流或点位。该模块只管表现；正式原地表 / 建筑接合、道路、碰撞导航不改。
+
+## T0368 地表与建筑接合
+
+FormalGroundSurfaceArtView 安装已认可地面材质后 deferred 创建 BuildingGroundContactArt；此时 StationLayoutController 已生成 BuildingRoots 与 WallsAndGates。用当前地面 material_override 身份排除被后续重建替代的延迟请求。独立旧美术预览若没有实际 BuildingRoots 则跳过，不把规划 lot 当作接地尺寸。
+
+BuildingGroundContactArt 只读指定实际基座 Mesh 的 AABB 和 global_transform，四角转为环境局部 XZ；围墙使用 LowStoneFooting 的真实 1.38m 宽基座。12 处入口读取 building_spatial.entry_route，门柱按既有 gate 配置定位。一次性 CPU 栅格化有限站区的 1024×1024 RGBA8 ImageTexture：R 压实土范围、G 贴脚暗部、B 入口磨损。原地面 shader 单次纹理采样并用既有噪声打散边缘，站内原地面和站外原平台共用材质；不新增贴片 / 几何、不修改建筑或地板材质、不拥有权威。
+
+verify_contract 单独检查 14 处建筑基座、14 段围墙、12 处入口、源 Mesh / Transform 保留、旋转基座各边中点的遮罩命中和范围外为零。正式工具还检查内外地面同材质；生产导航 / 室内光回归通过。set_enabled 仅为表现 A/B；直接可见，无需 GM。
+
+## T0366 / T0366-I 河流样片与正式接入
+
+T0366-R1：共享构造额外生成 NaturalShorelineShoals 两片岸滩，保留原岸资源；每 1.2m 左右细分且保留源 profile 拐点，外侧用原三角面重心插值对齐，内侧沉入水下。固定种子多尺度噪声与石组退让形成不对称水线；每侧侵入不超过河宽 25%。2048×1 RG 浮点 ImageTexture 只承载两岸静态内缩距离，水 shader 在环境局部 Z 查询，使浅水 / 岸缘亮纹跟随岸滩；不使用外部贴图。启动时构造网格 / 查找纹理，逐帧只更新 flow_time。水纹流速 2.8m/s，缩短纵向噪声遮罩并同步白沫；原水位 / 原水网格和碰撞导航保持。verify_geometry_contract 增加两岸接合、朝上法线、水线变化幅度与半河净空断言，正式验证覆盖岸滩 / 导航间距。
+
+最新用户修订：水纹改为横河方向窄、纵向长且沿下游移动的流痕。CandidateWaterlineRocks 新建七处 / 21 块纯表现低模石，按原 profile 的水线定位；原河岸岩石仍不动。石体水线椭圆写入 water shader 的至多 32 个 rock_footprints，生成迎水侧 / 两侧白沫和断续下游尾流，统一 flow_time 驱动，白沫仅在水面绘制。断言石组贴近水线、底部入水、中央净空及泡沫足迹数量与石体一致；不增加物理 / 导航权威。
+
+RiverArtTrial 实例化纯表现 FormalGroundSurfaceArtView，保持已认可地表 / 树木 / 高岩壁。候选复制原 RiverWaterRibbon 的 120 个顶点，位置完全相等，仅按原 profile 附加横河 UV、纵向 Z 坐标和宽度 UV2；Shader 使用这些坐标绘制中心深水、岸边浅水、沿河纹路与不连续岸缘亮纹，不依赖屏幕深度、外部贴图或水面位移。
+
+共享 StylizedRiverArt 在正式或预览实例中替换水 / 岸 / 石材质、隐藏旧 SubtleBankFoam，A 恢复原 Mesh / Material / 泡沫。河岸 shader 与已认可地表共用色板 / 噪声坐标，利用既有高度形成湿岸渐变；岸石只换材质，不改位置 / 数量。正式 flow_time 由表现节点的 delta 驱动，延续原水面随实时流动的行为，不读取或推进正式时间权威；预览接管该时钟并可暂停。approved_river 开关让 FormalGroundSurfaceArtView 在地表 / 山体后安装 ApprovedStylizedRiver；预览关闭该开关再独立构造，避免双重石组。水体 / 河岸 shader 通过 environment_origin 去掉环境平移，确保石组局部坐标与泡沫一致。get_debug_snapshot 为轻量计数，verify_geometry_contract 单独执行资源 / hash / Transform / 水道净空断言。正式 Main 十二张昼夜图、动画、河谷 / 导航 / 室内光和共享样片十八图通过；新石组最东 X=-89.03，实际导航最西 X=-59.5，无重烘碰撞导航。已按用户授权正式接入，无新增 GM。
+
+## T0365-I 高岩壁正式接入
+
+`FormalGroundSurfaceArtView → StylizedMountainArt` 在原地表 / 林木 / 散布生成完成后按 approved_mountain 构造高岩壁，不把预览 UI 或场景接入 Main。原三个山层仅用于构建与对照，正式隐藏旧山体、显示已认可网格；样片关闭正式开关，再独立使用同一个构造器做 A/B。源 Mesh、顶点、碰撞 / 导航数据不改。近 / 中 / 远峰高 35.7 / 64.7 / 105.4m，山脚仍为 X=120。
+
+所有高度取样与网格构建使用环境局部坐标，Shader 通过 environment_origin 去掉正式场景平移，避免样片 / 正式纹理错位。山地 MultiMesh 仅记录并切换 Y，原 XZ / Basis 不变；旧岩块 Mesh 复用并重新接地，七组装饰岩台底边埋入岩面。get_debug_snapshot 提供轻量计数，重型资源 / GPU 断言由 verify_geometry_contract 显式执行。headless Dummy 不读回 MultiMesh Transform，接地实测由 D3D12 覆盖。
+
+实际 Main 导航最东 X=59.5，已认可山脚 X=120，未占用可行走区域；原 4 段岩山 collider 与导航源保留，并非按视觉高岩壁重烘物理山体。十二图、生产导航 / 森林 / 室内灯、7,393 棵树的原 XZ / Basis 及新山面 Y 通过。静态渲染 A/B 不等同于战斗压力验收。美术直接可见，无需 GM。
+
+## T0364 树木林缘独立样片
+
+`ForestArtTrial extends VegetationArtTrial` 复用已认可地表 / 稀疏植被与评审 UI。A/B 都使用 TrialForestArtView：A 的 use_original_models 直接调用正式生成器创建旧树，B 创建已认可六种新树。两者完整继承正式全图的分区原点、种子、目标数量、允许点位、地形高度和道路 / 河谷 / 出生 / 站区退让；仅按分区中心是否落在 X=-72…94、Z=54…384 内截取预览整块，避免重设 bounds 导致树位重采样。旧全图森林只在预览实例中隐藏，预览配置副本关闭 approved_forest，确保 A 保持旧树，不重复叠加正式新树。
+
+六种 ArrayMesh 将树干与树冠合到单个顶点色材质表面，分区 MultiMesh 复用；每面按 Godot 顺时针约定生成外向法线，无纹理 / 切线依赖。最新反馈后删除全部候选密度覆盖和对应配置；Transform 随机序列与正式版本一致，树种选择另用独立种子。A/B 均 823 棵且坐标逐点一致，不创建碰撞、导航、交互、Main 或模拟系统。已认可地表材质同步作用于预览站外原平台。独立配置仅保存树种种子、色板、幼树比例、取样范围和四组镜头；`--capture-forest-trial` 渲染十六图，并检查数量 / 原树位一致及隔离 / 退让。无需 GM；此入口仅评局部美术，不是正式全图性能、敌军显隐或夜间功能灯验收。
+
+## T0364-I 正式树形接入
+
+`FormalForestArtView → StylizedTreeMeshes → forest_art_trial.json`，由 `environment_art.json.approved_forest` 启用。六种已认可网格和树种选择与预览共享；原森林分区、允许点位、数量 / 密度、原 Transform 随机数消耗完整保留，树种选择使用另一路随机流。仅把原 placement 分入六种 MultiMesh；沿用原近林分区投影、远林不投影策略，不生成任何权威节点。旧三种 tree_variant_counts 是 legacy_source_sampling，当前可见树种数量由 approved_forest.variant_counts 表达，P4 同步验证六类总数。
+
+正式验收脚本逐个撤销旧树干部件局部 Transform 后比较全图 7,393 个树根位置 / Basis，兼查原区域退让和碰撞隔离；startup_mode=0 避免启动 AI。十四张实际 Main 昼夜图与同镜头静态渲染 A/B 不等同于战斗压力验收。原版 A 的局部样片继续可用，Main 不引用样片场景。
+
+## T0362 正式地表与 T0363 样片边界
+
+`GroundArtTrial.tscn → GroundArtTrial.gd → 正式环境 / 道路 / 主厅 / 人物只读预览实例 + TrialSurface`。没有 Main、建筑系统、NPCSystem、时间权威或 LLM 请求；角色只通过既有 preview 接口待机。正式源场景、布局、建筑和工位未编辑。预览中的草泥平面和草簇均不创建 CollisionObject3D、NavigationRegion3D 或交互区域。
+
+A/B 共用镜头、环境日月和主厅 / 公告牌 / 八人上下文；B 在预览中显示平面、隐藏原散布并显示立体草。其余建筑未实例化，生活杂物在 A/B 均隐藏以免无建筑依附。昼夜按钮只调用预览 CelestialCycleController 的表现时间，不推进 GameState；预览本身不作为正式功能灯测试。
+
+T0362-I：`FormalGroundSurfaceArtView → StylizedGroundArt → 共享配置 / Shader / 草 MultiMesh`。`environment_art.json.approved_ground` 控制正式接入；原地表预览在自己的配置副本中关闭它，以保留 A。正式材质只覆盖既有 StationDeepGrassVariation 与 DisconnectedPlateaus 的材质，兼容旧网格双面约定；`station_origin` 将世界坐标还原为站区局部道路坐标。正式不创建预览平面；旧路面网格隐藏、嵌入道路碎石保留，42 段道路定义不变。旧站区草隐藏，原自然散布仅筛除已认可范围内实例；其他森林 / 山脚 / 河岸表现与全部权威不变。`verify_t0362_formal_ground.gd` 用 startup_mode=0 验证正式结构并渲染，不调用 LLM；headless Dummy 不支持的 MultiMesh Transform 读回断言由 D3D12 覆盖。
+
+T0363：`VegetationArtTrial.gd extends GroundArtTrial.gd`。A 始终显示已认可地表，B 额外显示 CandidateVegetation 六个 MultiMesh；种子、色板、范围和退让来自独立 JSON。新增内容无碰撞 / 导航 / 交互权威，正式环境不加载它。两项均直接可见，无需新增 GM。
+
+T0362-R1：`StylizedGroundArt.configure` 额外只读环境 topology；原样片区域草保持不变，OuterGrassChunks 在既有平地边界内用抖动网格与低频噪声补齐外围草，沿河谷插值轮廓退让、向 near 山脚渐稀，不改地形网格。所有外围草共用原草 Mesh，按 48m 分区 MultiMesh 供视锥裁剪；不会生成覆盖河道的平面。debug snapshot 暴露外围数量、区块数和按可散布面积估算的内外密度；GPU Transform 净空断言由集成脚本验证。T0363 配置新增 cluster_limit=5、cluster_min_spacing=16，压低装饰密度。
+
 ## T0361 主菜单外围树群 staging
 
 - `MenuCoverPreview.tscn` 的根 `Ground` 保持原 88×72 深色底面；草绿色试案及临时 `StationInteriorGround` 覆盖层已按用户最终反馈撤回。
@@ -58,16 +224,16 @@
 
 - `project.godot` 的主场景改由独立 `scenes/frontend/MainMenu.tscn` 承担。MainMenu 只依赖 Autoload 音频与客户端设置，不实例化 `Main.tscn`，因此玩家点击开始前不会触发 GameStartupSystem 的 8 人正式日计划或其他世界权威。
 - `SettingsPanel.tscn` 与 `SaveBrowserPanel.tscn` 是主菜单 / 游戏内共享 PackedScene；Main 内仅新增 PauseMenu 宿主。HUD 删除旧 SettingsButton / 独立声音设置入口，空格纯暂停与 TimeSystem 权威保持。
-- `ClientSettings` Autoload 只保存本机表现与非秘密 AI 服务偏好。AudioManager 继续拥有五路音量；ClientSettings 负责画面偏好并在场景前应用。API Key 只停留在当前面板内存，T0354 不写入 `user://client_settings.cfg`、存档或日志。
+- `ClientSettings` Autoload 只保存本机表现与非秘密 AI 服务偏好。T0395 后 AudioManager 拥有七项音量；ClientSettings 负责画面偏好并在场景前应用。API Key 只停留在当前面板内存，不写入 `user://client_settings.cfg`、存档或日志。
 - PauseMenu 记录 `paused_before_open`，只在原本未暂停时调用 `TimeSystem.set_paused(true)`；关闭时按原状态恢复。设置 / 存档子面板由 PauseMenu 打开，确认窗和子面板先消费 Esc。
 - T0354 的 SaveBrowserPanel 使用前端槽位模型，只生成快速槽和 10 个空手动槽。它不调用 `SpatialSaveSystem`，最终保存 / 加载 / 覆盖 / 删除只返回明确未接入状态。
 - T0355 将新增 `GameSaveSystem` 作为完整快照协调器；现有 `SpatialSaveSystem(formal_spatial_save_v1)` 仅作为 NPC / 战斗 / 行商空间子结构参与，不升级为第二套资源、建筑、NPC、记忆或战斗权威。
 - 动态前端控件仍由 `InteractionAudioController` 统一扫描。新增短生命周期弹窗后，延迟接线只传 instance id，执行时重新解析并忽略已释放节点，避免场景退出阶段持有失效 Object。
 
-## T0353 全局环境床与五路设置接线
+## T0353 全局环境床与旧五路设置接线（已由 T0395 取代）
 
-- `AudioManager` autoload 新增 Ambience / UI 音量状态与持久化；`AudioSettingsPanel` 扩为五行滑条。旧 `audio_settings.cfg` 没有新键时分别使用 80%，音乐无保存键时使用 56%（原 80% 下调 30%）。
-- `default_bus_layout.tres` 新增 `AmbientBed → Ambience → Master`；`UI → Master`，而 Work / Foley / Combat / World / Voice 保持 `→ SFX → Master`。
+- 这是 T0353 当时的五路设置记录；T0395 已扩为七项，并将旧配置一次性迁移到 schema v2。
+- `default_bus_layout.tres` 的正式六类总线在 T0395 后均直达 Master；AmbientBed 仍汇入 Ambience，Foley 仅作为发送到 Combat 的兼容总线。
 - `WorldAudioController` 跳过两个 `global_zoom` 条目的 Node3D 建源，改用全局 `AudioStreamPlayer`；每帧读取 CameraRig 公开缩放距离，把 20–64m 映射为 100%–30%。局部动物、虫群、河流与炉火仍挂在正式世界位置。
 - `InteractionAudioController` 删除面板路径 / 动态面板名接线和 panel_open / panel_close 映射；实际面板按钮仍被统一 BaseButton 扫描覆盖。
 
@@ -194,7 +360,7 @@
 
 - `Main/Presentation/AbilityAudioController` 连接 EventBus 既有 `meteor_cast_started / meteor_impacted`。施放回调按 cast id 在 `WorldRoot/Station/Effects` 找到正式 MeteorPresentation，并把 3D 下坠 player 作为其子节点。
 - 冲击回调复用同一视觉实体的最终 Transform；只有极端缺失视觉时才在 `FormalStationLayout/AbilityAudioSources` 建立只读落点 fallback。重复 cast impact id 只播放一次。
-- 两条 player 经 `World → SFX → Master`，不设置裁剪计时；AudioManager 按素材自然 finished 回收。逻辑暂停由控制器同步到 `stream_paused`，Main 退出时回收 fallback 与连接。
+- 两条 player 在 T0395 后经 `Combat → Master`，不设置裁剪计时；AudioManager 按素材自然 finished 回收。逻辑暂停由控制器同步到 `stream_paused`，Main 退出时回收 fallback 与连接。
 
 ## T0135-P10G UI / 门 / 商车音效接线
 
@@ -206,7 +372,7 @@
 
 - `Main/Presentation/DialogueVoiceAudioController` 连接既有 `EventBus.npc_dialogue_emotion_presented`；DialogSystem 的正式回复、规则降级和 GM 情绪预览不需要分别接音频。
 - 控制器从 NPCSystem 正式档案读取性别，用 DialogueEmotionCatalog 规范化九类情绪，再从 `dialogue_voice_audio.json` 选择资产；男性 `none` 使用两条随机池，其余男女情绪为固定映射。
-- 每名实际发声 NPC 在 `FormalStationLayout/DialogueVoiceAudioSources` 下拥有一个跟随当前位置上方 `1.6m` 的 Node3D。AudioManager 创建 `AudioStreamPlayer3D` 并路由到 `Voice → SFX → Master`；同 NPC 新回复停止旧 player，不同 NPC 互不抢占。
+- T0375 后 NPC 回复语气改由全局 `AudioStreamPlayer` 播放，不再创建位置化发声节点或受镜头衰减；T0395 后路由为 `Voice → Master`。同 NPC 新回复停止旧 player，不同 NPC 互不抢占。
 - 音频节点处于纯表现层；未知 NPC、空路径或资源不可用只跳过播放，不回写 DialogSystem、NPCSystem、MemorySystem 或 EventBus。
 
 ## T0327 塔防反馈与 NPC 经验条表现接线
@@ -277,23 +443,24 @@
 ## T0135-P10C 工作与日常行动音效接线
 
 - `Main/Presentation/WorkAudioController` 读取 `data/presentation/action_audio.json`，从 `ActionSystem.get_runtime_action_snapshot(...)` 只接受 `active / external_active`；pending 路线不会创建播放器。运行时在 `WorldRoot/FormalStationLayout/WorkAudioSources` 下按需要建立纯表现 Node3D，并同步实际行动者世界坐标。
+- T0393 扩展同一控制器读取 BuildingSystem 的正式 repair / upgrade 状态：每个活动工程以建筑 ID 聚合一条位置化施工循环，无助手也播放；状态首次从空切到活动时播放位置化短木击。CraftingSystem 的目标状态只在铁匠铺目标真实变为非空新值时播放位置化铁砧声。初始化只建立基线，不把读档状态冒充新操作。
 - 普通工作、训练、进食按语义地点聚合；修复 / 升级和协助治疗按 target id 分组。循环经 `AudioManager.start_loop_3d(..., Work)` 播放，切换或结束调用 manifest 的渐出；马厩素材随 `horse_state_changed` 和真实在厩活马数切换。
 - 诊所读取现有医生 `presentation_clinic_duty_mode` 与 active patient，在读书 / 治疗素材间切换。教堂检测真实 `lead_mass` active 边沿，先从主持者位置播放 5 秒钟声，再开启圣咏；无弥撒但有人祈祷时播放普通教堂声。饮酒以 `action + npc_id` 边沿令牌保证每次 active 只播一次。
-- Controller 退出时清理全部 `work_action_` 循环；Main 场景仍由 AudioManager 持有统一总线和音量。既有正式行动 GM 入口足以驱动实际状态，未新增音频专用按钮。
+- Controller 退出时清理全部 `work_action_` 循环；Main 场景仍由 AudioManager 持有统一总线和音量。InteractionAudioController 只读 `building_job_completed(upgrade)` 并复用 level_up UI 声；修复完成不触发。既有正式行动 GM 入口足以驱动实际状态，未新增音频专用按钮。
 
 ## T0135-P10B 世界音乐与环境声接线
 
 - `Main/Presentation/WorldAudioController` 读取 `data/presentation/world_audio.json`。T0353 后昼夜主底噪为全局 2D AmbientBed；`WorldAudioSources` 下保留 12 个局部 Node3D，动物、虫鸣、河流与炉火继续使用位置衰减。
-- `EventBus.combat_enemy_presence_changed(active, enemy_count, reason)` 由 CombatSystem 原有 `_sync_enemy_presence_time_slowdown(...)` 统一点在数量变化时发出。Controller 初始也查询一次正式敌人数量，避免读档 / 初始化先后导致音乐错态；敌人在场优先 `music_battle`，否则 `music_day_night`。
+- `EventBus.combat_enemy_presence_changed(active, enemy_count, reason)` 由 CombatSystem 原有 `_sync_enemy_presence_time_slowdown(...)` 统一点在数量变化时发出。Controller 初始也查询一次正式敌人数量，避免读档 / 初始化先后导致音乐错态；敌人在场优先循环 `music_battle`，否则按 `day_playlist` 6 首或 `night_playlist` 3 首顺序播放非循环曲目。每首自然完成由 AudioManager `music_finished` 推进，昼夜切换和清场按当前权威时段进入对应池。
 - 夜间与 P8A 实体灯共享 `18:00–06:00` 门槛。昼夜底层、三处错时虫鸣、双河道为循环；鸡鸣、三条鸟叫和猫头鹰按现实播放时长加随机静默间隔调度，不受 x2 / x4 改调或每帧随机。
 - `SmithyAmbientFX / DiningKitchenWorkFX` 继续拥有既有只读工位观察逻辑，只额外向组 `environment_fire_audio_source` 暴露实际活动 Node3D。WorldAudioController 从可见正式世界火源播放同一确认炉火资产，并用不同起播偏移避免同素材同相叠加。
 - AudioManager 的 BGM 与全局环境床播放器挂在 Autoload；局部循环挂在真实声源。WorldAudioController 退出时清理循环、停止音乐并复位 AmbientBed 增益，避免切场景遗留。
 
 ## T0135-P10A 音频总线与设置接线
 
-- `default_bus_layout.tres` 当前定义 11 条总线：Music、Ambience、UI 直达 Master，AmbientBed 汇入 Ambience，Work / Foley / Combat / World / Voice 汇入 SFX。
-- `AudioManager` 读取 90 条确认记录并提供 2D / 3D 播放、循环淡入淡出与五路音量持久化；Music 新缺省 56%，其余缺省 80%。
-- `Main/UI/AudioSettingsPanel` 构建五行滑条；value_changed 实时设置总线，drag_ended 保存并通过 UI 播放木质点击。`0%` 使用 bus mute。
+- `default_bus_layout.tres` 当前定义 11 条总线；T0395 后 Music、UI、Voice、Combat、Work、Ambience 六类均直达 Master，AmbientBed 汇入 Ambience，Foley 发送到 Combat，SFX / World 保留作兼容。
+- `AudioManager` 读取 102 条确认记录与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、非循环音乐完成通知与七项音量持久化；Music 新缺省 28%，其余缺省 80%。
+- `AudioSettingsPanel` 构建主音量加音乐 / 点击 / 语气 / 战斗 / 工作 / 环境七行滑条；value_changed 实时设置总线，drag_ended 保存并通过 UI 播放木质点击。`0%` 使用 bus mute。
 - T0353 起设置面板显隐不触发声音，打开 / 关闭 Button 由统一按键监听当帧播放木质点击。
 
 ## T0315 里程碑弹窗与幼马命名接线
@@ -1076,7 +1243,7 @@ AnimationPlayer 的暂停速度由 `gameplay_paused && !pause_exempt_dialogue_em
 
 ## T0135-P6R 方向光级联稳定化接线
 
-- `environment_art_v1.celestial_cycle` 新增 `directional_shadow_blend_splits` 与三级 split 配置；`CelestialCycleController._configure_light()` 对 `SunDirectionalLight / MoonDirectionalLight` 统一应用四级联、`120 m`、`0.12 / 0.30 / 0.60` 和边界混合。
+- `environment_art_v1.celestial_cycle` 提供 `directional_shadow_mode`、`directional_shadow_blend_splits` 与三级 split 配置；P6R 最初统一为四级联，T0396 精确性能 A/B 后正式改为 `parallel_2_splits`，继续应用 `120 m`、`0.12 / 0.30 / 0.60` 和边界混合。三级 split 值保留兼容四级联回退，不代表当前生产会使用全部三级边界。
 - `get_debug_snapshot().directional_shadow` 暴露实际模式、范围、淡出、混合、三级分割和 `sun_moon_match`，便于专项验证日月交接不会换到另一套阴影质量。旧 `Main/SunLight` 接线、WorldEnvironment、P7R shadows-only 壳体及功能灯子控制器均未改。
 
 ## T0135-P8AR6 宿舍卫生间附属物结构

@@ -21,6 +21,7 @@ const EXPECTED_ASSETS := [
 	"voice_combat_enemy_hurt_voice",
 	"sfx_combat_unconscious_fall",
 	"sfx_combat_horse_death",
+	"sfx_world_battle_alert_one_shot",
 	"sfx_combat_stone_structure_damage",
 	"sfx_combat_wood_damage_01",
 	"sfx_combat_wood_damage_02",
@@ -56,8 +57,11 @@ func _run() -> void:
 	_assert((snapshot.get("connected_signals", []) as Array).has("combat_audio_event"), "combat audio signal is not connected")
 	_assert((snapshot.get("connected_signals", []) as Array).has("game_over_changed"), "game-over signal is not connected")
 	_assert_all_assets_exist(audio_manager)
+	_assert_priority_spatial_profile(audio_manager)
 	_assert_silent_rules(snapshot)
 	_assert(is_equal_approx(float((controller.get("_config") as Dictionary).get("hurt_voice_probability", -1.0)), 0.5), "hurt voice probability is not 50%")
+	_assert(is_equal_approx(float((controller.get("_config") as Dictionary).get("guard_attack_hurt_voice_probability", -1.0)), 1.0), "guard attack hurt voice probability is not 100%")
+	_assert(str((controller.get("_config") as Dictionary).get("guard_attack_source_id", "")) == "guard_officer", "guard attack source identity is missing")
 
 	_assert_mapping(controller, {"event_type": "attack_swing", "weapon_type": "sword_shield"}, ["sfx_combat_sword_swing"])
 	_assert_mapping(controller, {"event_type": "attack_swing", "weapon_type": "polearm"}, ["sfx_combat_polearm_swing"])
@@ -90,18 +94,37 @@ func _run() -> void:
 		"sfx_combat_stone_structure_damage", "sfx_stone_structure_severe_collapse",
 	])
 	_assert_mapping(controller, {"event_type": "structure_damaged", "target_type": "defense_device", "target_id": "device_probe"}, [], "sfx_combat_wood_damage_")
-	_assert_mapping(controller, {"event_type": "battle_started"}, ["sfx_enemy_entry_stinger"])
-	_assert_mapping(controller, {"event_type": "wave_cleared"}, ["sfx_wave_clear_stinger"])
+	_assert_mapping(controller, {"event_type": "combat_alarm", "target_type": "building", "target_id": "main_hall"}, ["sfx_world_battle_alert_one_shot"], "", false)
+	_assert_mapping(controller, {"event_type": "battle_started"}, ["sfx_enemy_entry_stinger"], "", false)
+	_assert_mapping(controller, {"event_type": "wave_cleared"}, ["sfx_wave_clear_stinger"], "", false)
 	controller.debug_reset_history()
 	controller.call("_on_game_over_changed", "victory", "audio_test")
 	_assert_history_contains(controller, "sfx_final_victory_stinger")
+	_assert_history_is_global(controller)
 	controller.debug_reset_history()
 	controller.call("_on_game_over_changed", "failure", "audio_test")
 	_assert_history_contains(controller, "sfx_defeat_stinger")
+	_assert_history_is_global(controller)
+	controller.debug_reset_history()
+	var combat_system := main.get_node("Systems/CombatSystem")
+	var alarm_result: Dictionary = combat_system.trigger_combat_alarm("t0135_p10e_audio")
+	_assert(bool(alarm_result.get("ok", false)), "authoritative combat alarm failed")
+	_assert_history_contains(controller, "sfx_world_battle_alert_one_shot")
+	var alarm_history: Array = controller.get_debug_snapshot().get("recent_history", [])
+	var alarm_record: Dictionary = alarm_history.back() if not alarm_history.is_empty() else {}
+	_assert(str(alarm_record.get("player_type", "")) == "AudioStreamPlayer", "combat alarm is not global 2D")
+	_assert(str(alarm_record.get("spatial_profile", "")) == "global_2d", "combat alarm still uses a positional profile")
 
 	# Authoritative system hooks: no positive HP delta means no presentation event.
 	config["hurt_voice_probability"] = 0.0
 	controller.set("_config", config)
+	_assert_damage_mapping(controller, "npc", "stableman_01", "voice_combat_friendly_male_hurt_voice", false, "guard_officer")
+	_assert_damage_mapping(controller, "npc", "doctor_01", "voice_combat_friendly_female_hurt_voice", false, "guard_officer")
+	controller.debug_reset_history()
+	var guard_damage: Dictionary = npc_system.debug_damage_npc("stableman_01", 1, "private")
+	_assert(int(guard_damage.get("hp_after", -1)) < int(guard_damage.get("hp_before", -1)), "Guard damage did not commit")
+	_assert_history_prefix(controller, "sfx_combat_hit_contact_")
+	_assert_history_contains(controller, "voice_combat_friendly_male_hurt_voice")
 	controller.debug_reset_history()
 	var npc_damage: Dictionary = npc_system.apply_damage_to_npc("stableman_01", 1, "veteran_deputy_01")
 	_assert(int(npc_damage.get("hp_after", -1)) < int(npc_damage.get("hp_before", -1)), "NPC damage did not commit")
@@ -137,12 +160,12 @@ func _run() -> void:
 	main.queue_free()
 	await process_frame
 	await process_frame
-	print("T0135_P10E_COMBAT_AUDIO_PASS assets=27 mapping=pass authority=pass positional=pass frame_budget=pass")
+	print("T0135_P10E_COMBAT_AUDIO_PASS assets=28 mapping=pass authority=pass global_cues=pass priority_3d=pass frame_budget=pass")
 	quit(0)
 
 
 func _assert_all_assets_exist(audio_manager: Node) -> void:
-	_assert(EXPECTED_ASSETS.size() == 27, "expected combat asset inventory changed")
+	_assert(EXPECTED_ASSETS.size() == 28, "expected combat asset inventory changed")
 	for asset_id in EXPECTED_ASSETS:
 		_assert(audio_manager.has_asset(asset_id), "missing combat audio asset: %s" % asset_id)
 
@@ -153,7 +176,7 @@ func _assert_silent_rules(snapshot: Dictionary) -> void:
 		_assert(silent_rules.has(rule), "missing silent combat rule: %s" % rule)
 
 
-func _assert_mapping(controller: Node, raw_event: Dictionary, expected_assets: Array, expected_prefix := "") -> void:
+func _assert_mapping(controller: Node, raw_event: Dictionary, expected_assets: Array, expected_prefix := "", positional := true) -> void:
 	var event := raw_event.duplicate(true)
 	event["world_position"] = Vector3(4.0, 0.0, 7.0)
 	controller.debug_reset_history()
@@ -162,16 +185,27 @@ func _assert_mapping(controller: Node, raw_event: Dictionary, expected_assets: A
 		_assert_history_contains(controller, str(asset_id))
 	if not expected_prefix.is_empty():
 		_assert_history_prefix(controller, expected_prefix)
-	_assert_history_is_positional(controller)
+	if positional:
+		_assert_history_is_positional(controller)
+	else:
+		_assert_history_is_global(controller)
 
 
-func _assert_damage_mapping(controller: Node, target_type: String, target_id: String, voice_asset: String, unconscious: bool) -> void:
+func _assert_damage_mapping(
+	controller: Node,
+	target_type: String,
+	target_id: String,
+	voice_asset: String,
+	unconscious: bool,
+	source_id := ""
+) -> void:
 	controller.debug_set_rng_seed(1305)
 	controller.debug_reset_history()
 	controller.debug_handle_audio_event({
 		"event_type": "actor_damaged",
 		"target_type": target_type,
 		"target_id": target_id,
+		"source_id": source_id,
 		"became_unconscious": unconscious,
 		"world_position": Vector3(8.0, 0.0, 9.0),
 	})
@@ -264,6 +298,29 @@ func _assert_history_is_positional(controller: Node) -> void:
 			continue
 		_assert(str((entry as Dictionary).get("player_type", "")) == "AudioStreamPlayer3D", "combat sound is not positional")
 		_assert(str((entry as Dictionary).get("bus", "")) == "Combat", "combat sound is not routed to Combat bus")
+		_assert(str((entry as Dictionary).get("spatial_profile", "")) == "combat_priority", "core combat sound did not use the priority spatial profile")
+		_assert(float((entry as Dictionary).get("unit_size_m", 0.0)) >= 48.0, "core combat reference distance is too small")
+		_assert(float((entry as Dictionary).get("max_distance_m", 0.0)) >= 480.0, "core combat max distance is too small")
+		_assert(is_zero_approx(float((entry as Dictionary).get("attenuation_filter_db", -24.0))), "core combat distant low-pass attenuation is still active")
+
+
+func _assert_history_is_global(controller: Node) -> void:
+	var history: Array = controller.get_debug_snapshot().get("recent_history", [])
+	_assert(not history.is_empty(), "global combat event produced no playback")
+	for entry in history:
+		if not entry is Dictionary:
+			continue
+		_assert(str((entry as Dictionary).get("player_type", "")) == "AudioStreamPlayer", "battle-state cue is not global 2D")
+		_assert(str((entry as Dictionary).get("bus", "")) == "Combat", "battle-state cue is not routed to Combat bus")
+		_assert(str((entry as Dictionary).get("spatial_profile", "")) == "global_2d", "battle-state cue still has distance attenuation")
+
+
+func _assert_priority_spatial_profile(audio_manager: Node) -> void:
+	var profiles: Dictionary = audio_manager.debug_get_snapshot().get("priority_3d_profiles", {})
+	var combat: Dictionary = profiles.get("combat_priority", {})
+	_assert(float(combat.get("unit_size_m", 0.0)) >= 48.0, "combat priority unit size is missing")
+	_assert(float(combat.get("minimum_max_distance_m", 0.0)) >= 480.0, "combat priority distance floor is missing")
+	_assert(is_zero_approx(float(combat.get("attenuation_filter_db", -24.0))), "combat priority low-pass attenuation is enabled")
 
 
 func _assert(condition: bool, message: String) -> void:

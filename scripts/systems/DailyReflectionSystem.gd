@@ -27,6 +27,7 @@ var _last_reflection_result: Dictionary = {}
 var _last_reflection_result_by_npc: Dictionary = {}
 var _async_reflection_started_count := 0
 var _async_reflection_completed_count := 0
+var _async_reflection_interrupted_count := 0
 var _async_reflection_max_observed_concurrent := 0
 
 
@@ -388,12 +389,52 @@ func get_async_reflection_snapshot() -> Dictionary:
 		"max_observed_concurrent": _async_reflection_max_observed_concurrent,
 		"started_count": _async_reflection_started_count,
 		"completed_count": _async_reflection_completed_count,
+		"interrupted_count": _async_reflection_interrupted_count,
 		"pending_request_ids": _pending_reflection_by_request.keys().duplicate(),
 		"pending_npc_ids": _pending_request_by_npc.keys().duplicate(),
 		"sleep_window_states_by_npc": _sleep_summary_window_by_npc.duplicate(true),
 		"completed_windows_by_npc": _completed_reflection_windows_by_npc.duplicate(true),
 		"last_successful_period_end_by_npc": _last_successful_reflection_end_by_npc.duplicate(true),
 		"results_by_npc": _last_reflection_result_by_npc.duplicate(true)
+	}
+
+
+func interrupt_pending_reflections_for_combat(reason: String = "combat_alarm") -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var llm_bridge := get_node_or_null(LLM_BRIDGE_PATH)
+	var interrupted: Array[Dictionary] = []
+	for raw_request_id in _pending_reflection_by_request.keys().duplicate():
+		var request_id := str(raw_request_id)
+		var pending: Dictionary = _pending_reflection_by_request.get(request_id, {})
+		var npc_id := str(pending.get("npc_id", ""))
+		var window_key := str(pending.get("summary_window_key", ""))
+		var cancel_result := {}
+		if llm_bridge != null and llm_bridge.has_method("cancel_llm_request"):
+			cancel_result = llm_bridge.cancel_llm_request(request_id, reason)
+		_pending_reflection_by_request.erase(request_id)
+		if str(_pending_request_by_npc.get(npc_id, "")) == request_id:
+			_pending_request_by_npc.erase(npc_id)
+		if bool(pending.get("should_lock_summary", false)) and npc_system != null and npc_system.has_method("set_first_sleep_summary_lock"):
+			npc_system.set_first_sleep_summary_lock(npc_id, false, request_id)
+		_set_summary_window_retryable(npc_id, window_key)
+		var result := {
+			"ok": true,
+			"status": "reflection_interrupted_for_combat",
+			"reason": reason,
+			"npc_id": npc_id,
+			"request_id": request_id,
+			"summary_window_key": window_key,
+			"cancel_result": cancel_result.duplicate(true)
+		}
+		interrupted.append(result)
+		_last_reflection_result_by_npc[npc_id] = result.duplicate(true)
+		_last_reflection_result = result.duplicate(true)
+	_async_reflection_interrupted_count += interrupted.size()
+	return {
+		"ok": true,
+		"reason": reason,
+		"interrupted_count": interrupted.size(),
+		"interrupted": interrupted
 	}
 
 

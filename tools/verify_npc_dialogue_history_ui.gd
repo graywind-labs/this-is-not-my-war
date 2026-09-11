@@ -98,8 +98,12 @@ func _init() -> void:
 	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
 	var npc_history_button := npc_panel.find_child("NPCDialogueHistoryButton", true, false) as Button
 	var history_button := dialog_panel.find_child("DialogHistoryButton", true, false) as Button
+	var mount_view_button := npc_panel.find_child("NPCMountViewButton", true, false) as Button
 	if dialogue_button == null or history_button == null:
 		_fail("Dialogue panel history entry is missing")
+		return
+	if mount_view_button == null or dialog_panel.z_index <= mount_view_button.z_index:
+		_fail("DialogPanel must render above the mounted-horse shortcut")
 		return
 	if npc_history_button != null:
 		_fail("NPC panel should no longer expose a separate history button")
@@ -133,6 +137,9 @@ func _init() -> void:
 		or not detail_popup.visible
 	):
 		_fail("Dialogue history did not open the read-only detail window")
+		return
+	if detail_popup.z_index <= dialog_panel.z_index:
+		_fail("Dialogue history detail must render above DialogPanel")
 		return
 	if (
 		not detail_title.text.contains(TARGET_NPC_NAME)

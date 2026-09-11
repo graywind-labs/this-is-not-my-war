@@ -26,7 +26,19 @@ func _init() -> void:
 		_fail("Forest density is below the hard contract: %s" % str(forest))
 		return
 	var variants := forest.get("tree_variant_counts", {}) as Dictionary
-	if variants.has("common") or variants.has("pine") or int(variants.get("slender_pine", 0)) < 1000 or int(variants.get("layered_pine", 0)) < 1000 or int(variants.get("broad_fir", 0)) < 1000:
+	var approved: Dictionary = forest.get("approved_forest",{})
+	if bool(approved.get("enabled",false)):
+		var visible_variants: Dictionary = approved.get("variant_counts",{})
+		var visible_total := 0
+		for variant_name in ["oak_mature","oak_young","birch_mature","birch_young","pine_mature","pine_young"]:
+			if int(visible_variants.get(variant_name,0))<=0:
+				_fail("Approved tree family is missing: %s" % variant_name)
+				return
+			visible_total += int(visible_variants[variant_name])
+		if visible_total!=int(forest.get("total_tree_count",0)):
+			_fail("Approved tree variants changed the total count")
+			return
+	elif variants.has("common") or variants.has("pine") or int(variants.get("slender_pine", 0)) < 1000 or int(variants.get("layered_pine", 0)) < 1000 or int(variants.get("broad_fir", 0)) < 1000:
 		_fail("Unified conifer silhouettes are incomplete or legacy leafy trees remain: %s" % str(variants))
 		return
 	var bushes := forest.get("bush_counts", {}) as Dictionary
@@ -67,6 +79,7 @@ func _init() -> void:
 		return
 
 	var main := (load("res://scenes/main/Main.tscn") as PackedScene).instantiate()
+	main.get_node("Systems/GameStartupSystem").startup_mode = 0
 	root.add_child(main)
 	for _frame in range(8):
 		await process_frame

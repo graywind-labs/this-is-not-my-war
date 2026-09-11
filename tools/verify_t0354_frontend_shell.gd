@@ -37,9 +37,17 @@ func _run() -> void:
 	if exit_button == null or danger_style == null or danger_style.bg_color.r <= danger_style.bg_color.g:
 		_fail("Main menu exit button is not using a red danger style")
 		return
+	if int(menu_snapshot.get("audio_connected_button_count", 0)) < 4:
+		_fail("Main menu buttons are not connected to UI audio: %s" % menu_snapshot)
+		return
 
-	menu.debug_open_settings()
+	var settings_button := menu.find_child("SettingsButton", true, false) as Button
+	settings_button.pressed.emit()
 	await process_frame
+	var click_history: Array = menu.debug_get_snapshot().get("audio_click_history", [])
+	if click_history.is_empty() or str((click_history.back() as Dictionary).get("asset_id", "")) != "sfx_ui_button_primary":
+		_fail("Main menu settings button did not play the wooden UI click")
+		return
 	var settings_panel := menu.get_node("SettingsPanel")
 	var settings_snapshot: Dictionary = settings_panel.debug_get_snapshot()
 	if settings_snapshot.get("tab_names", []) != ["音量", "画面", "AI"]:
@@ -65,7 +73,16 @@ func _run() -> void:
 	if stored_text.contains("T0354_SECRET_MUST_NOT_PERSIST") or bool(client_settings.debug_get_snapshot().get("contains_api_key", true)):
 		_fail("API Key leaked into client settings")
 		return
+	var close_settings_change_count := [0]
+	var on_settings_changed := func(_snapshot: Dictionary) -> void:
+		close_settings_change_count[0] += 1
+	client_settings.settings_changed.connect(on_settings_changed)
 	settings_panel.close_panel(false)
+	await process_frame
+	client_settings.settings_changed.disconnect(on_settings_changed)
+	if int(close_settings_change_count[0]) != 0:
+		_fail("Closing SettingsPanel must not reapply display settings or change the native window state")
+		return
 
 	menu.debug_open_load_browser()
 	await process_frame
@@ -140,7 +157,14 @@ func _run() -> void:
 	if pause_settings_snapshot.get("tab_names", []) != ["音量", "画面", "AI"]:
 		_fail("Pause menu does not reuse the shared settings panel")
 		return
+	close_settings_change_count[0] = 0
+	client_settings.settings_changed.connect(on_settings_changed)
 	pause_menu.get_node("SettingsPanel").close_panel(true)
+	await process_frame
+	client_settings.settings_changed.disconnect(on_settings_changed)
+	if int(close_settings_change_count[0]) != 0:
+		_fail("Cancelling SettingsPanel must not reapply display settings or unmaximize the native window")
+		return
 	pause_menu.close_menu()
 	time_system.set_paused(false)
 

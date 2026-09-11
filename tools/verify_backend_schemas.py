@@ -39,6 +39,9 @@ from backend.schemas import (
     ShortTermMemoryContext,
     SpeakerContext,
     StationSceneContext,
+    DialogueInputConfig,
+    VoiceAnalyzeRequest,
+    VoiceAnalyzeResponse,
 )
 from tools.station_context_fixture import build_station_context
 
@@ -78,6 +81,26 @@ def _make_npc_context() -> NPCContext:
 
 
 def main() -> None:
+    dialogue_input_config = DialogueInputConfig()
+    assert dialogue_input_config.player_message_max_characters == 300
+    assert dialogue_input_config.voice_recording_max_seconds == 30.0
+    VoiceAnalyzeRequest(
+        request_id="voice_schema_001",
+        npc_id="cook_01",
+        dialogue_id="dialogue_schema_001",
+    )
+    VoiceAnalyzeResponse(
+        request_id="voice_schema_001",
+        dialogue_id="dialogue_schema_001",
+        transcript="守住驿站。",
+        emotion="angry",
+        emotion_label="愤怒地",
+        emotion_applied=True,
+        duration_seconds=1.0,
+        model_provider="mock",
+        model_name="qwen3-asr-flash",
+        usage={},
+    )
     game_time = GameTime(day=1, time="08:00:00", hour=8)
     npc = _make_npc_context()
     compact_memory = ShortTermMemoryContext.model_validate({

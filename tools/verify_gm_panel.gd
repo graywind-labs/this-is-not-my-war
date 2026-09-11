@@ -47,6 +47,7 @@ func _init() -> void:
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
 	var horse_birth_dialog := root.get_node_or_null("Main/UI/MilestoneAlertPresenter/HorseBirthNamingDialog") as AcceptDialog
+	var piety_ready_dialog := root.get_node_or_null("Main/UI/MilestoneAlertPresenter/PietyReadyDialog") as AcceptDialog
 	var piety_system := root.get_node_or_null("Main/Systems/PietySystem")
 	var roof_visibility_controller := root.get_node_or_null("Main/Presentation/RoofVisibilityController")
 	var station_layout_controller := root.get_node_or_null("Main/Presentation/StationLayoutController")
@@ -97,6 +98,16 @@ func _init() -> void:
 		push_error("GM button was not created")
 		quit(1)
 		return
+	for epilogue_control_name in [
+		"TriggerEpilogueVictoryButton",
+		"TriggerEpilogueFailureButton",
+		"RefreshEpilogueStatusButton",
+		"EpilogueStatusLabel"
+	]:
+		if gm_window.find_child(epilogue_control_name, true, false) == null:
+			push_error("GM epilogue acceptance section is missing %s" % epilogue_control_name)
+			quit(1)
+			return
 	for required_dialogue_button in [
 		"MoraleEncouragementMockButton",
 		"OpenMoraleEncouragementDialogueButton",
@@ -1002,10 +1013,17 @@ func _init() -> void:
 		quit(1)
 		return
 	fill_piety_button.pressed.emit()
+	await process_frame
 	if not bool(piety_system.is_ready_to_cast()):
 		push_error("GM fill-piety button did not charge the meteor ability")
 		quit(1)
 		return
+	if piety_ready_dialog == null or not piety_ready_dialog.visible:
+		push_error("GM fill-piety button did not open the formal ready alert")
+		quit(1)
+		return
+	piety_ready_dialog.get_ok_button().pressed.emit()
+	await process_frame
 	gm_panel._execute_command("piety_set 25")
 	if not is_equal_approx(float(piety_system.get_current_piety()), 25.0):
 		push_error("GM piety_set command failed")

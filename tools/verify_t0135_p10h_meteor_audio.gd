@@ -42,6 +42,9 @@ func _run() -> void:
 	_assert_phase(after_cast, cast_id, "fall", "sfx_meteor_fall_one_shot", 5.964)
 	var fall: Dictionary = (after_cast.get("active_casts", {}) as Dictionary).get(cast_id, {}).get("fall", {})
 	_assert(str(fall.get("source_path", "")).contains("PietyMeteor") and str(fall.get("source_path", "")).ends_with("Visual"), "fall audio did not attach to the actual meteor visual")
+	_assert(str(fall.get("spatial_profile", "")) == "ability_priority", "meteor fall did not use the large-ability spatial profile")
+	_assert(float(fall.get("unit_size_m", 0.0)) >= 120.0 and float(fall.get("max_distance_m", 0.0)) >= 1500.0, "meteor fall attenuation is still too steep")
+	_assert(is_equal_approx(float(fall.get("volume_db", 0.0)), 2.0), "meteor fall gain boost is wrong")
 	var initial_source_position: Vector3 = fall.get("source_position", Vector3.ZERO)
 	_assert(initial_source_position.y > TARGET.y + 20.0, "fall source did not begin above the target")
 
@@ -75,7 +78,10 @@ func _run() -> void:
 	_assert(active_cast.has("fall"), "full fall one-shot was cut off at impact")
 	var impact: Dictionary = active_cast.get("impact", {})
 	_assert((impact.get("source_position", Vector3.ZERO) as Vector3).is_equal_approx(TARGET), "impact sound did not originate at the formal landing point")
-	_assert(str(impact.get("bus", "")) == "World", "meteor impact did not route through World")
+	_assert(str(impact.get("bus", "")) == "Combat", "meteor impact is not controlled by Combat volume")
+	_assert(str(impact.get("spatial_profile", "")) == "ability_priority", "meteor impact did not use the large-ability spatial profile")
+	_assert(float(impact.get("unit_size_m", 0.0)) >= 120.0 and float(impact.get("max_distance_m", 0.0)) >= 1500.0, "meteor impact attenuation is still too steep")
+	_assert(is_equal_approx(float(impact.get("volume_db", 0.0)), 3.0), "meteor impact gain boost is wrong")
 	var history_before_duplicate: Array = after_impact.get("recent_history", [])
 	_assert(history_before_duplicate.size() == 2, "formal meteor timeline did not produce exactly fall plus impact audio")
 	var authority_before_duplicate: Dictionary = piety_system.get_piety_snapshot().get("last_impact_result", {}).duplicate(true)
@@ -89,7 +95,7 @@ func _run() -> void:
 	main.queue_free()
 	await process_frame
 	await process_frame
-	print("T0135_P10H_METEOR_AUDIO_PASS assets=2 signals=pass follow=pass pause=pass impact=pass authority=pass")
+	print("T0135_P10H_METEOR_AUDIO_PASS assets=2 ability_priority=pass gains=2/3dB follow=pass pause=pass impact=pass authority=pass")
 	quit(0)
 
 
@@ -99,7 +105,7 @@ func _assert_phase(snapshot: Dictionary, cast_id: String, phase: String, asset_i
 	var phase_snapshot: Dictionary = cast.get(phase, {})
 	_assert(not phase_snapshot.is_empty(), "%s audio phase is missing" % phase)
 	_assert(str(phase_snapshot.get("asset_id", "")) == asset_id, "%s used the wrong asset" % phase)
-	_assert(str(phase_snapshot.get("bus", "")) == "World", "%s did not route through World" % phase)
+	_assert(str(phase_snapshot.get("bus", "")) == "Combat", "%s is not controlled by Combat volume" % phase)
 	_assert(bool(phase_snapshot.get("playing", false)), "%s asset is not playing as a full one-shot" % phase)
 	_assert(absf(float(phase_snapshot.get("stream_length_seconds", 0.0)) - expected_length) < 0.02, "%s stream was clipped or replaced" % phase)
 

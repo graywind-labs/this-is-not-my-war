@@ -101,6 +101,14 @@ func _build_materials() -> void:
 	_materials["stone"] = stone
 
 
+func use_ground_surface_projection() -> void:
+	# The approved ground shader consumes the same road data; retain embedded stones.
+	for mesh in find_children("*", "MeshInstance3D", true, false):
+		if not mesh.has_meta("embedded_road_detail"):
+			mesh.hide()
+	set_meta("surface_rendering", "t0362_approved_ground_shader")
+
+
 func _build_road(road: Dictionary) -> void:
 	var road_id := str(road.get("id", "road"))
 	var from_point := _v2(road.get("from", [0.0, 0.0]))

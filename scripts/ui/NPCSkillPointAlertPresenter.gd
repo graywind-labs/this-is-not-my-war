@@ -8,6 +8,7 @@ const MARKER_SIZE := Vector2(34.0, 34.0)
 const MARKER_WORLD_HEIGHT := 2.95
 const SCREEN_MARGIN := 0.0
 const MINIMUM_VIEWPORT_SIZE := Vector2(320.0, 180.0)
+const RELEVANT_STATE_FIELDS: Array[String] = ["escaped"]
 
 var _markers: Dictionary = {}
 var _assignable_points: Dictionary = {}
@@ -40,6 +41,13 @@ func _refresh_all_markers() -> void:
 
 
 func _on_npc_state_changed(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, RELEVANT_STATE_FIELDS)
+	):
+		return
 	_refresh_marker(npc_id)
 
 

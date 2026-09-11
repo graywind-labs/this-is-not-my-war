@@ -16,6 +16,9 @@ var _last_time := {"day": 1, "hour": 6, "minute": 0, "second": 0}
 var _time_signal_connected := false
 var _npc_signal_connected := false
 var _building_signal_connected := false
+var _npc_occupancy_signatures: Dictionary = {}
+var _npc_occupancy_signal_refresh_count := 0
+var _npc_occupancy_signal_skip_count := 0
 
 
 func configure(config: Dictionary) -> void:
@@ -143,6 +146,9 @@ func get_debug_snapshot() -> Dictionary:
 		"time_signal_connected": _time_signal_connected,
 		"npc_signal_connected": _npc_signal_connected,
 		"building_signal_connected": _building_signal_connected,
+		"npc_occupancy_signature_count": _npc_occupancy_signatures.size(),
+		"npc_occupancy_signal_refresh_count": _npc_occupancy_signal_refresh_count,
+		"npc_occupancy_signal_skip_count": _npc_occupancy_signal_skip_count,
 		"maintains_second_clock": false,
 		"authority_role": "presentation_only",
 	}
@@ -183,7 +189,32 @@ func _on_time_changed(day: int, hour: int, minute: int, second: int) -> void:
 	_refresh_all()
 
 
-func _on_npc_state_changed(_npc_id: String) -> void:
+func _on_npc_state_changed(npc_id: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(
+			npc_id,
+			["current_action", "current_location", "escaped"]
+		)
+	):
+		_npc_occupancy_signal_skip_count += 1
+		return
+	var next_signature := _get_npc_occupancy_signature(npc_id)
+	var previous_signature: Dictionary = (
+		_npc_occupancy_signatures.get(npc_id, {})
+		if _npc_occupancy_signatures.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	if next_signature == previous_signature:
+		_npc_occupancy_signal_skip_count += 1
+		return
+	if next_signature.is_empty():
+		_npc_occupancy_signatures.erase(npc_id)
+	else:
+		_npc_occupancy_signatures[npc_id] = next_signature
+	_npc_occupancy_signal_refresh_count += 1
 	_refresh_all()
 
 
@@ -216,6 +247,7 @@ func _clear_runtime() -> void:
 			runtime_root.queue_free()
 	_runtime_roots.clear()
 	_records.clear()
+	_npc_occupancy_signatures.clear()
 
 
 func _build_building_record(building_id: String, building_config: Dictionary, host: Node3D) -> void:
@@ -379,6 +411,7 @@ func _create_emitter(parent: Node3D, position_value: Vector3, glow_radius: float
 
 func _refresh_all() -> void:
 	var is_night := _is_night_time()
+	get_tree().call_group("station_ground_decor", "set_night_enabled", is_night)
 	for building_id_variant in _records:
 		var building_id := str(building_id_variant)
 		var record := _records[building_id] as Dictionary
@@ -403,6 +436,7 @@ func _refresh_all() -> void:
 		record.lit = lit
 		_apply_record_state(record, lit)
 		_records[building_id] = record
+	_sync_npc_occupancy_signatures()
 
 
 func _apply_record_state(record: Dictionary, lit: bool) -> void:
@@ -439,13 +473,44 @@ func _building_occupancy(building_id: String) -> Dictionary:
 	var awake_occupant_count := 0
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
-		var state := npc_system.get_npc_state(npc_id) as Dictionary
-		if str(state.get("current_location", "")) != building_id or bool(state.get("escaped", false)):
+		var identity := _get_npc_occupancy_signature(npc_id)
+		if str(identity.get("current_location", "")) != building_id or bool(identity.get("escaped", false)):
 			continue
 		occupant_count += 1
-		if not npc_system.is_npc_sleeping(npc_id):
+		if not bool(identity.get("sleeping", false)):
 			awake_occupant_count += 1
 	return {"occupant_count": occupant_count, "awake_occupant_count": awake_occupant_count}
+
+
+func _get_npc_occupancy_signature(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null:
+		return {}
+	if npc_system.has_method("get_npc_building_occupancy_identity"):
+		return npc_system.get_npc_building_occupancy_identity(npc_id)
+	if not npc_system.has_method("get_npc_state"):
+		return {}
+	var state := npc_system.get_npc_state(npc_id) as Dictionary
+	var current_action := str(state.get("current_action", ""))
+	return {
+		"current_location": str(state.get("current_location", "")),
+		"escaped": bool(state.get("escaped", false)),
+		"sleeping": current_action.begins_with("sleep") or current_action == "sleep_in_dormitory",
+	}
+
+
+func _sync_npc_occupancy_signatures() -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		_npc_occupancy_signatures.clear()
+		return
+	var next_signatures: Dictionary = {}
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var signature := _get_npc_occupancy_signature(npc_id)
+		if not signature.is_empty():
+			next_signatures[npc_id] = signature
+	_npc_occupancy_signatures = next_signatures
 
 
 func _is_night_time() -> bool:
@@ -457,6 +522,10 @@ func _is_night_time() -> bool:
 	if start < finish:
 		return current >= start and current < finish
 	return current >= start or current < finish
+
+
+func is_night_time() -> bool:
+	return _is_night_time()
 
 
 func _find_formal_host(building_id: String) -> Node3D:

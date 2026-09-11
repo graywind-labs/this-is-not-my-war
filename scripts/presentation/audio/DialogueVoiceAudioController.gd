@@ -5,11 +5,8 @@ const CONFIG_PATH := "res://data/presentation/dialogue_voice_audio.json"
 const EXPECTED_SCHEMA := "dialogue_voice_audio_v1"
 const AUDIO_MANAGER_PATH := NodePath("/root/AudioManager")
 const NPC_SYSTEM_PATH := NodePath("/root/Main/Systems/NPCSystem")
-const FORMAL_ROOT_PATH := NodePath("/root/Main/WorldRoot/FormalStationLayout")
 
 var _config: Dictionary = {}
-var _source_root: Node3D
-var _sources: Dictionary = {}
 var _active_players: Dictionary = {}
 var _recent_history: Array[Dictionary] = []
 var _skipped_events: Array[Dictionary] = []
@@ -33,34 +30,23 @@ func _exit_tree() -> void:
 	_disconnect_signal()
 	for raw_npc_id in _active_players.keys().duplicate():
 		_stop_active_voice(str(raw_npc_id))
-	_sources.clear()
 
 
 func _process(_delta: float) -> void:
 	if not _initialized:
 		return
 	_prune_active_players()
-	_refresh_source_positions()
 
 
 func get_debug_snapshot() -> Dictionary:
 	_prune_active_players()
-	var sources := {}
-	for raw_npc_id in _sources.keys():
-		var npc_id := str(raw_npc_id)
-		var source := _sources.get(npc_id) as Node3D
-		if is_instance_valid(source):
-			sources[npc_id] = {
-				"path": str(source.get_path()),
-				"global_position": source.global_position,
-			}
 	var active := {}
 	for raw_npc_id in _active_players.keys():
 		var npc_id := str(raw_npc_id)
 		var raw_player: Variant = _active_players.get(npc_id)
 		if not is_instance_valid(raw_player):
 			continue
-		var player := raw_player as AudioStreamPlayer3D
+		var player := raw_player as AudioStreamPlayer
 		active[npc_id] = {
 			"player_path": str(player.get_path()),
 			"asset_id": str(player.get_meta("dialogue_voice_asset_id", "")),
@@ -71,8 +57,9 @@ func get_debug_snapshot() -> Dictionary:
 		"initialized": _initialized,
 		"schema_version": str(_config.get("schema_version", "")),
 		"signal_connected": _signal_connected,
-		"source_count": sources.size(),
-		"sources": sources,
+		"playback_mode": str(_config.get("playback_mode", "global_2d")),
+		"source_count": 0,
+		"sources": {},
 		"active_voice_count": active.size(),
 		"active_voices": active,
 		"recent_history": _recent_history.duplicate(true),
@@ -105,19 +92,14 @@ func _initialize_audio() -> void:
 	if str(_config.get("schema_version", "")) != EXPECTED_SCHEMA:
 		push_error("DialogueVoiceAudioController invalid config schema: %s" % str(_config.get("schema_version", "")))
 		return
-	var formal_root := get_node_or_null(FORMAL_ROOT_PATH) as Node3D
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	if formal_root == null or audio_manager == null or npc_system == null:
+	if audio_manager == null or npc_system == null:
 		if _initialization_attempts < 8:
 			call_deferred("_initialize_audio")
 		else:
-			push_error("DialogueVoiceAudioController could not find formal world or required systems")
+			push_error("DialogueVoiceAudioController could not find AudioManager or NPCSystem")
 		return
-	_source_root = Node3D.new()
-	_source_root.name = "DialogueVoiceAudioSources"
-	_source_root.set_meta("presentation_only", true)
-	formal_root.add_child(_source_root)
 	_initialized = true
 
 
@@ -175,13 +157,9 @@ func _handle_dialogue_emotion(npc_id: String, presentation: Dictionary) -> void:
 	if asset_id.is_empty() or audio_manager == null or not audio_manager.has_asset(asset_id):
 		_record_skip(clean_npc_id, {"emotion_id": emotion_id, "gender": gender}, "asset_unavailable")
 		return
-	var source := _ensure_source(clean_npc_id)
-	if source == null:
-		_record_skip(clean_npc_id, {"emotion_id": emotion_id, "gender": gender}, "source_unavailable")
-		return
 	if bool(_config.get("replace_active_voice_per_npc", true)):
 		_stop_active_voice(clean_npc_id)
-	var player: AudioStreamPlayer3D = audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"Voice")
+	var player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"Voice")
 	if player == null:
 		_record_skip(clean_npc_id, {"emotion_id": emotion_id, "gender": gender}, "playback_failed")
 		return
@@ -195,42 +173,9 @@ func _handle_dialogue_emotion(npc_id: String, presentation: Dictionary) -> void:
 		"asset_id": asset_id,
 		"player_type": player.get_class(),
 		"bus": str(player.bus),
-		"source_path": str(source.get_path()),
-		"world_position": source.global_position,
+		"spatial_mode": "global_2d",
 	})
 	_trim_records(_recent_history)
-
-
-func _ensure_source(npc_id: String) -> Node3D:
-	var source := _sources.get(npc_id) as Node3D
-	if is_instance_valid(source):
-		_update_source_position(npc_id, source)
-		return source
-	if _source_root == null:
-		return null
-	source = Node3D.new()
-	source.name = "NpcVoice%s" % _safe_key(npc_id).to_pascal_case()
-	source.set_meta("presentation_only", true)
-	source.set_meta("npc_id", npc_id)
-	_source_root.add_child(source)
-	_sources[npc_id] = source
-	_update_source_position(npc_id, source)
-	return source
-
-
-func _refresh_source_positions() -> void:
-	for raw_npc_id in _sources.keys():
-		var npc_id := str(raw_npc_id)
-		var source := _sources.get(npc_id) as Node3D
-		if is_instance_valid(source):
-			_update_source_position(npc_id, source)
-
-
-func _update_source_position(npc_id: String, source: Node3D) -> void:
-	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
-	var raw_position: Variant = npc_system.get_npc_world_position(npc_id) if npc_system != null else null
-	if raw_position is Vector3:
-		source.global_position = raw_position + Vector3.UP * float(_config.get("source_height_m", 1.6))
 
 
 func _pick_voice_asset(gender: String, emotion_id: String) -> String:
@@ -256,12 +201,12 @@ func _stop_active_voice(npc_id: String) -> void:
 	var raw_player: Variant = _active_players.get(npc_id)
 	_active_players.erase(npc_id)
 	if is_instance_valid(raw_player):
-		var player := raw_player as AudioStreamPlayer3D
+		var player := raw_player as AudioStreamPlayer
 		player.stop()
 		player.queue_free()
 
 
-func _on_voice_finished(npc_id: String, player: AudioStreamPlayer3D) -> void:
+func _on_voice_finished(npc_id: String, player: AudioStreamPlayer) -> void:
 	if _active_players.get(npc_id) == player:
 		_active_players.erase(npc_id)
 
@@ -286,13 +231,6 @@ func _trim_records(records: Array[Dictionary]) -> void:
 	var limit := maxi(8, int(_config.get("recent_history_limit", 64)))
 	while records.size() > limit:
 		records.pop_front()
-
-
-func _safe_key(value: String) -> String:
-	var result := value.to_lower()
-	for character in [" ", ":", "/", "\\", ".", "-"]:
-		result = result.replace(character, "_")
-	return result
 
 
 func _load_json_dictionary(path: String) -> Dictionary:

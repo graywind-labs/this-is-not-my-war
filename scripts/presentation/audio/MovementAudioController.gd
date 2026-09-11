@@ -275,7 +275,7 @@ func _apply_desired_loops(desired: Dictionary) -> void:
 			asset_id,
 			source,
 			Vector3.ZERO,
-			&"Foley"
+			&"Combat"
 		)
 		if player == null:
 			continue

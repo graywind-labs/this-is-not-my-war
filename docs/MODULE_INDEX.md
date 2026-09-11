@@ -1,5 +1,396 @@
 # MODULE_INDEX.md
 
+## T0396 多人战斗性能优化
+
+- `docs/COMBAT_PERFORMANCE_OPTIMIZATION_PLAN.md`：机制冻结、分阶段方案、验收门槛、风险与真实执行记录。
+- `scripts/debug/CombatPerformanceProbe.gd`：默认不启用的有限性能样本与分位数/截断计数。
+- `scripts/systems/CombatSystem.gd`：分项采样、引导区同步局部 body/网格、去除无效预验路、轻量投影消费、远程攻击位等值提前结束。
+- `ActorMotionBody.gd` / `NPCSystem.gd` / `BuildingSystem.gd`：现有事实的即时只读标量/最小投影。
+- `ActionSystem.gd` / `BuildingFunctionalLightController.gd`：在不删除 `npc_state_changed` 的前提下，仅对无相关工作或占用签名未变的通知跳过重活。
+- `scripts/presentation/buildings/BuildingArtView.gd`：只对不可变、同材质/阴影/GI/LOD、非透明、非渐隐的 Box/单表面建筑叶网格建立精确静态批次；动态升级、损毁和屋顶合同排除。
+- `data/presentation/environment_art.json` / `CelestialCycleController.gd`：配置化方向阴影模式；T0396 生产使用保留动态阴影的 `parallel_2_splits`，120m 范围与日月权属不变。
+- `scripts/ui/GMPanel.gd`：世界与角色页性能开始/结果/停止；说明见 GM_PANEL。
+- `tools/benchmark_t0396_main_combat.gd`：正式 Main 的自然进场/门前及玩家精确 GM 夹具；窗口采样与原始 JSON、真实攻击事实、暂停/人数/请求有效性校验。隐藏分支、碰撞/避障和阴影级联开关仅供单因素诊断，不进入生产。
+- `tools/verify_t0396_combat_optimization.gd`：独立旧算法对照、边界/生命周期、投影/采样只读性。
+- `tools/verify_t0396_regression.ps1` / `tools/T0396OfflineSceneTree.gd`：旧非 LLM 回归的断网测试副本，断言不变，可对照指定本轮原始 CombatSystem 备份。
+
+输出目录 `artifacts/performance/t0396/` 不进入正式游戏场景。所有成立/不成立/撤回方向及允许重访条件统一登记在性能方案第 11 节。
+
+## T0395 六类音频与七项音量设置
+
+| 文件 | 职责 |
+|---|---|
+| `data/presentation/audio_categories.json` | 102 条正式资产唯一归入音乐 12、点击 7、语气 19、战斗 33、工作 16、环境 15 |
+| `scripts/systems/AudioManager.gd` / `default_bus_layout.tres` | 六类独立音量、v1→v2 设置迁移、28% 音乐默认及分类总线路由 |
+| `scripts/ui/AudioSettingsPanel.gd` / `scripts/ui/SettingsPanel.gd` | 设置页七滑杆、恢复默认、取消与保存投影 |
+| `scripts/presentation/audio/WorkAudioController.gd` / `data/presentation/action_audio.json` | 修复 / 升级与铁匠 / 工械坊目标选择改为全局 Click；施工循环保持 Work 3D |
+| `MovementAudioController.gd` / `AbilityAudioController.gd` / `InteractionAudioController.gd` | 奔跑和陨石归 Combat；门与行商归 Ambience |
+
+稳定关系：每条声音只受 `Master + 一个用户分类` 控制；空间衰减与设置分类正交，关键战局提示仍可全局播放。
+
+## T0394 建筑施工与铁匠交互音量增强
+
+| 文件 | 职责 |
+|---|---|
+| `data/presentation/action_audio.json` | 为施工开始、施工循环与铁匠目标选择分别声明 `+4 dB` 事件增益 |
+| `scripts/presentation/audio/WorkAudioController.gd` | 将三类配置增益传给位置化播放器，并在调试快照记录实际目标值 |
+| `scripts/systems/AudioManager.gd` | 3D 单次与循环播放支持可选事件增益；循环渐入到配置目标增益 |
+| `tools/verify_t0393_building_craft_audio.gd` | 回归三类事件均实际应用 `+4 dB`，并保持施工距离档不变 |
+
+稳定关系：只提高三条已确认建筑 / 铁匠反馈，不修改 Work 总线或其他资产；位置、衰减、触发边沿和权威系统不变。
+
+## T0393 建筑施工与铁匠目标确认音频
+
+| 文件 | 职责 |
+|---|---|
+| `art_source/audio/reviews/sample_pack_v27_building_craft_audio/` | 保存用户确认的短木击 05、施工循环复用 01、铁匠敲击 04及来源决策 |
+| `assets/audio/work/construction/sfx_work_repair_and_upgrade_start_v01.wav` | 修复 / 升级成功开始时的 0.75 秒位置化短木击 |
+| `assets/audio/work/blacksmith/sfx_work_blacksmith_target_selected_v01.wav` | 铁匠铺成功选定非空制造目标时的 1.53 秒位置化铁砧单击 |
+| `data/presentation/action_audio.json` / `scripts/presentation/audio/WorkAudioController.gd` | 只读建筑权威作业与制造目标边沿；从建筑坐标播放开始短音和持续施工循环 |
+| `scripts/presentation/audio/InteractionAudioController.gd` / `scripts/ui/BuildingPanel.gd` | 升级完成复用 NPC 升级成功声；修复 / 升级按钮抑制普通木点击以避免双声 |
+| `scripts/systems/AudioManager.gd` | 调试快照暴露 3D 循环的空间档、参考距离和最大距离 |
+| `tools/verify_t0393_building_craft_audio.gd` | 覆盖开始成功、重复刷新静音、建筑位置循环、350ms 渐变、升级完成、铁匠有效 / 重复 / 清空目标边界 |
+
+稳定关系：`BuildingSystem repair / upgrade 状态 + CraftingSystem 正式目标 → WorkAudioController → 建筑位置 Work 3D`；`building_job_completed(upgrade) → InteractionAudioController → 既有 level_up UI 声`。音频层不启动工程、不更改制造目标、不扣资源，也不推断完成。
+
+## T0391 全建筑施工木质脚手架
+
+| 文件 | 职责 |
+|---|---|
+| `data/presentation/building_scaffolds.json` | 15 类建筑的施工架设计、局部位置、锚点、跨度、层高、层数和分跨配置 |
+| `scripts/presentation/buildings/BuildingScaffold.gd` | 只读施工状态；按需构建木框、交叉斜撑、板台、绳绑和靠梯，完成 / 中断同步隐藏并释放 |
+| `scripts/presentation/buildings/BuildingArtView.gd` / `FormalGateArtView.gd` | 正式具体建筑视图及正后门安装脚手架，排除仍在 Main 的隐藏通用铁匠铺样例 |
+| `tools/verify_t0391_building_scaffolds.gd` | 15 类建筑修复 / 升级生命周期、受击中断、重复施工、逐级升级、满级修复及可选 D3D12 正侧面截图 |
+
+无需增加 GM 入口：表现直接在 Main 可见，已有修复 / 升级 / 建筑伤害入口可触发全过程。
+
+## T0388 胜负结局面板重制
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/EpiloguePanel.gd` | 居中约 2/3 视口的胜负双主题、无冗余标题 / 主题字段名的顶部信息，以及纵向 NPC 画像 / 状态 / 故事卡片 |
+| `scripts/ui/HUD.gd` | 在胜负或结局原子刷新时把当前结算快照交给 EpiloguePanel，不再拼接旧汇总长文本 |
+| `scripts/ui/NPCPortraitViewport.gd` | 被结局卡片复用的实时 3D NPC 画像组件；结算档案模式允许镜头继续拍摄已离站实体，但不改变逃离状态或世界位置 |
+| `tools/verify_t0388_epilogue_panel.gd` | 胜负主题、波数、三字段、八卡片、左右栏和冗余字段缺席专项 |
+
+稳定关系：`GameState.settlement_snapshot → HUD → EpiloguePanel`。面板只读 `wave_number / epilogue / npcs.items`；全站 `station_coda` 显示为“主题”，逐人只显示 `escaped / recruited / fate_summary`，不反写任何胜负、人物或 LLM 数据。
+
+## T0387 胜负结算 LLM 群像结局
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/EpilogueFactCompiler.gd` | 从胜负快照、NPC 权威状态、事件、日记与知识图谱编译带稳定 fact_id 的有界事实包 |
+| `scripts/systems/EpilogueSystem.gd` | 管理 pending、结算身份校验、异步响应原子提交及明确的文学模板降级 |
+| `scripts/systems/LLMBridge.gd` / `scripts/core/EventBus.gd` | 提供不改变时间权威的 `/game/epilogue` 异步通道与结局刷新信号 |
+| `backend/schemas/epilogue.py` | 严格请求、逐人后日谈与整组响应 Schema |
+| `backend/app.py` / `backend/services/model_adapter.py` | 端点、业务连续性校验、至多一次纠错、Prompt 路由、显式 Mock 与 usage |
+| `data/prompts/game_epilogue_system_prompt.txt` | 权威事实、胜败基调、三拍叙事、职业差异与禁写边界 |
+| `scripts/ui/HUD.gd` / `scenes/main/Main.tscn` | 生成中、全站尾声、逐人标题与正文的结算页只读投影 |
+| `tools/verify_game_epilogue_endpoint.py` | 胜败 Mock Schema、状态、语气、禁死亡回归 |
+| `tools/verify_t0387_epilogue_mock_roundtrip.gd` | 完整八人 Godot → Mock 后端 → HUD 往返 |
+| `tools/verify_t0387_epilogue_fallback.gd` | 后端不可用时的 pending、显式模板来源与八人长文回归 |
+| `scripts/systems/CombatSystem.gd` / `scripts/ui/GMPanel.gd` | 权威胜负 debug 包装、GM 一键胜负按钮、结局来源状态与等价命令 |
+| `tools/verify_t0387_gm_epilogue_controls.gd` | 独立进程覆盖胜利按钮、失败主厅真实摧毁、模板来源和八人完整性 |
+| `tools/verify_game_epilogue_real.py` | 读取正式八人档案构造多状态事实夹具，拒绝 mock / fallback，并对真实 Provider 执行胜败完整群像验收 |
+
+稳定链路：`GameState 胜负权威 → EpilogueFactCompiler 冻结事实 → EpilogueSystem pending → LLMBridge → /game/epilogue → Schema / 连续性校验 → 当前 settlement 原子提交 → HUD`。结局不回写事件、记忆、HP、入伍、逃离、资源、建筑或胜负。
+
+## T0386 五波敌袭前移与经营等价重标定
+
+- `data/enemy_waves.json`：五波权威日历改为 D1 23:00 / D3 08:00 / D4 04:00 / D5 12:00 / D6 18:00，敌军字段不变。
+- `data/action_defs.json`、`data/resource_defs.json`：铁匠 / 工械阶段 `4800 / 4500s`，松散木 8。
+- `data/crafting_recipes.json`、`scripts/systems/CraftingSystem.gd`：声明、校验并恢复箭塔 4 / 12 初始项目和木 4 历史投入，不发经验。
+- `scripts/ui/HUD.gd`：每波 T-3h / T-30min 一次性预警与警报按钮强调，不自动鸣警。
+- `scripts/systems/CombatSystem.gd`、`scripts/systems/DailyReflectionSystem.gd`：警报 / 实际刷波取消在途首次熟睡反思、释放锁、保留窗口与记忆重试。
+- `tools/verify_t0386_compressed_wave_balance.gd`：压缩日历、制造工时、资源守恒和项目切换专项；既有波次、警报、T0121 与 T0122 工具同步新合同。
+
+## T0385 关键建筑受击碎屑命中点
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/BuildingSystem.gd` | 建筑伤害提交时分离顶部 `world_position` 反馈锚点与真实 / 地面回退 `impact_world_position` |
+| `scripts/presentation/combat/CombatVFXController.gd` | 结构碎屑优先消费 `impact_world_position`，不再把 HP 飘字锚点当成命中处 |
+| `tools/verify_t0385_building_debris_impact_position.gd` | 覆盖城门、仓库、主厅真实命中点、顶部飘字不回归、最终碎屑粒子位置及无碰撞点回退 |
+
+稳定关系：`BuildingSystem 已提交伤害 → structure_damaged(world_position=可读反馈锚点, impact_world_position=结构命中点) → CombatVFXController`。新字段只读，不参与伤害、HP 或摧毁结算。
+
+## T0383 驿站地面装饰
+
+- `data/presentation/station_ground_decor.json`：6 火炬 / 4 树桩坐标、尺寸、灯光和局部草清理半径。
+- `scripts/presentation/environment/StationGroundDecor.gd`：程序低多边形木杆铁篮火炬、年轮树桩、暂停火舌、原实例局部减草；纯表现。
+- `FormalGroundSurfaceArtView.gd`：正式建筑接地安装后接入装饰，独立环境试片不装配。
+- `StylizedGroundArt.gd`：保留 CPU 草实例变换 / 色彩，支持稳定局部过滤。
+- `BuildingFunctionalLightController.gd`：复用既有夜间判定向装饰广播开关。
+- `tools/verify_t0383_station_ground_decor.gd`：正式布点 / 草量 / 昼夜边界验收，`-- --capture` 输出昼夜远近景。
+
+## T1601A / T1601B / T1601C / T1603 语音输入与发送限制索引
+
+| 文件 | 职责 |
+|---|---|
+| `docs/VOICE_INPUT_AND_EMOTION.md` | M16 单一详细合同：Provider、API、Godot 录音、UI、情绪映射、追加规则、300 字发送校验、错误、隐私、成本与验证矩阵 |
+| `docs/TASKS.md` | T1600 完成记录及 T1601A/B/C、T1603、T1602、T1604 实施顺序 |
+| `game_design.md` | 第 20 章玩家体验和 `qwen3-asr-flash` 原生七类情绪设计源 |
+| `docs/TECH_ARCHITECTURE.md` | Godot -> 游戏后端 -> 百炼的安全边界和现有对话链隔离 |
+| `docs/GODOT_ARCHITECTURE.md` | 已实施录音总线、控制器、请求桥、对话面板与发送限制职责 |
+| `docs/DATA_SCHEMA.md` | `/voice/analyze` 请求 / 响应与 `dialogue_input_config.json` 规划 |
+| `docs/UI_UX.md` | 麦克风位置、录音 / 识别覆盖层、追加与超限弹窗合同 |
+| `docs/AI_NPC_SYSTEM.md` / `docs/PROMPTS.md` | 明确最终文字复用现有 speaker_text，不新增 NPC AI 分支或 Prompt |
+| `docs/API_BUDGET.md` | 0.00022 元/秒估算、免费额度和真实 API 验收门槛 |
+| `data/dialogue_input_config.json` | 300 字、30 秒与 6 MiB 的统一非秘密配置 |
+| `backend/schemas/voice_input.py` | 请求元数据、成功 / 失败响应、配置和百炼原生七类情绪 Schema |
+| `backend/services/voice_model_adapter.py` | 独立语音 Provider 边界、显式 Mock、真实百炼 OpenAI 兼容 HTTP、情绪归一化、错误、usage 与共享日预算预留 |
+| `backend/app.py` | `/voice/analyze` multipart、WAV / 大小 / 时长复核及语音 usage 调试输出 |
+| `tools/verify_voice_input_mock_endpoint.py` | 配置、七类情绪、Mock 成功、未知情绪、4xx 和非 Mock 禁止伪成功回归 |
+| `tools/verify_t1602_qwen_voice_provider.py` | 百炼请求合同、业务空间地址、七类情绪、降级、错误矩阵及 HTTP 状态投影 |
+| `tools/verify_t1602_qwen_voice_provider_real.py` | 使用本地 WAV 经正式 `/voice/analyze` 进行脱敏真实百炼验收 |
+| `tools/generate_t1604_voice_samples.ps1` | 用本机 zh-CN Windows SAPI 生成短句、术语、七类目标语境和近 30 秒可复用 WAV 样本，并声明音源局限 |
+| `tools/add_t1604_light_noise_sample.py` | 对短句加入固定随机种子的轻量白噪声，生成可重复的抗噪传输样本 |
+| `tools/verify_t1604_voice_real_matrix.py` | 批量通过正式 `/voice/analyze` 验证 Provider、模型、fallback、情绪枚举、usage 脱敏与估算费用，只打印安全摘要 |
+| `project.godot` / `default_bus_layout.tres` | 开启音频输入，并提供静音隔离的 `MicRecord` + `AudioEffectRecord` 采集链 |
+| `scripts/ui/VoiceInputRecorder.gd` | `IDLE / RECORDING / ANALYZING`、30 秒硬上限、WAV 保存与精确临时文件清理 |
+| `scripts/ui/VoiceInputBridge.gd` | 独立 multipart `/voice/analyze` 请求、HTTP / JSON / 身份 / 情绪校验、取消与错误归一化 |
+| `scenes/main/Main.tscn` / `scripts/ui/DialogPanel.gd` | 麦克风入口、录音 / 分析覆盖层、识别段追加、300 字弹窗、成功后清空和生命周期取消 |
+| `scripts/systems/DialogSystem.gd` | 从统一配置加载玩家消息上限，并在激活草稿前执行 300 字第二层保护 |
+| `assets/ui/status_icons/dialogue_microphone.svg` | 对话输入行和中央录音覆盖层共用的本地麦克风图标 |
+| `tools/verify_t1601b_voice_recording_ui.gd` | 总线、节点、状态 UI、草稿保持、旁听隐藏和生命周期源码合同回归 |
+| `tools/verify_t1601c_voice_mock_roundtrip.gd` | 三次真实本地 Mock multipart 闭环、七类 / 未知情绪、三种追加、失败、迟到结果、清理与不自动发送回归 |
+| `tools/verify_t1603_dialogue_input_limit.gd` | 299 / 300 / 301、混合字符、语音溢出、UI / 系统双层拦截、焦点及无副作用回归 |
+
+T1601、T1602 与 T1603 已完成；T1602 已通过真实北京地域百炼调用。T1604 已完成 11 条女声 / 轻噪 / 长句真实矩阵与主要自动化，保持 Partial，等待中文男声、真人情绪和物理麦克风前端验收，并需处理两条既有对话回归基线。
+
+## T0379-I 已认可陨石正式接入
+
+`scripts/presentation/audio/AbilityAudioController.gd` 同步修复清理窗口：暂停同步在类型转换前跳过已随陨石释放的 player，随后由原 prune 清理记录；声音配置和时长不改。
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/combat/FormalMeteorArt.gd` | 从认可候选迁入的共享美术，裂岩 / 尾焰 / 冲击 / 焦土、纯表现轨迹采样与正式暂停 / 表现秒投影 |
+| `scripts/presentation/combat/MeteorArtCandidate.gd` | 兼容 B 包装入口，继承 FormalMeteorArt，无重复实现 |
+| `data/presentation/meteor_art.json` | 正式与 B 共用尾焰 ×2、速度 ×1.6、尘浪扩张 ×1.2；原 trial 配置仅保留演示控制 |
+| `scripts/systems/PietySystem.gd` | 更换美术构造并读取共享视觉轨迹；燃烧旧红盘隐藏，原权威 / 火焰 / 灯光接口保持 |
+| `tools/verify_t0379_formal_meteor.gd` | 正式施放、衔接、暂停、战后 / 24 小时清理与可选八图 GPU 验证 |
+| `tools/verify_t0165_meteor_cinematic_presentation.gd` | 原生命周期 / 强震断言保留，美术节点期望更新为认可版 |
+
+原 `MeteorPresentation.gd` 保留基类与旧 A；三个 `meteor_trial_*.gdshader` 沿用原路径，现为正式 / B 共用资产。八图 / 断言在 artifacts/visual_qa/t0379_integration/。下方 T0379 的“仅试片”范围为历史。
+
+## T0381 / T0382 陨石可闻性与蓄满提示重选
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/AudioManager.gd` | 新增陨石专用 `ability_priority` 3D 档，扩大参考 / 最远距离并关闭远距低通 |
+| `scripts/presentation/audio/AbilityAudioController.gd` | 为下落 / 冲击选择大招档并应用各自 +2 / +3 dB 增益 |
+| `data/presentation/ability_audio.json` | 配置陨石空间档与增益；将待重选的虔诚提示音设为 disabled |
+| `art_source/audio/reviews/sample_pack_v24_piety_ready_reselect/` | 10 条未入游戏的短圣咏试听候选及来源表、播放列表 |
+| `art_source/audio/reviews/sample_pack_v23_piety_ready/` | 保存被否决的嘈杂提示音与 rejected 决策证据 |
+| `tools/verify_t0135_p10h_meteor_audio.gd` | 验证大招空间参数、增益、实际声源跟随、暂停和落地 |
+| `tools/verify_t0380_piety_ready_alert.gd` | 当前额外断言弹窗保留、被否决声音不再播放 |
+
+T0381 / T0382 均已完成。T0382 使用候选 05，正式文件为 `assets/audio/abilities/piety/sfx_piety_ready_sacred_chant_v01.wav`；其余候选不进入运行时。
+
+## T0379 陨石完整生命周期独立试片
+
+R1：MeteorArtTrial 新增 ReviewShakeRig，实例化已有 `scripts/camera/CameraRig.gd` 并关闭其自动处理 / 输入，由试片推进原震屏接口；正式 CameraRig 源不改。试片选点盘匹配 HUD 原实现，meteor_art_trial.json 的 effects 声明尾焰尺寸 / 速度与尘浪扩张倍率；专项验证新增原选点 / 震屏合同和 26 张 GPU 图。无新维护文件。
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/MeteorArtTrial.tscn` | 独立 F6 入口，不被 Main / MainMenu 引用 |
+| `scripts/presentation/MeteorArtTrial.gd` | 只读正式地表、正式虔诚按钮 / 半径和时长，处理选点 / 取消、A/B、镜头、暂停和压缩演示生命周期 |
+| `scripts/presentation/combat/MeteorArtCandidate.gd` | 仅试片引用的 MeteorPresentation 子类，岩体 / 裂缝、定向尾焰、连续落地、冲击与弹坑美术 |
+| `data/presentation/meteor_art_trial.json` | 独立演示时间、地面测试区域和镜头配置 |
+| `shaders/environment/meteor_trial_rock.gdshader` | 岩壳、局部程序裂缝与冷却热度 |
+| `shaders/environment/meteor_trial_crater.gdshader` | 焦土顶点色、边缘透明度与独立生命周期淡化 |
+| `shaders/environment/meteor_trial_particle.gdshader` | 火焰 / 余烬 / 烟的显式色调与粒子透明度 |
+| `tools/verify_t0379_meteor_art_trial.gd` | 真实 UI 鼠标选点、取消、暂停、A/B 来源、完整生命周期与可选 GPU 截图 |
+
+结果 `artifacts/visual_qa/t0379/`。A 不复制正式实现，B 不被正式权威系统调用；压缩时间仅在试片，不新增 GM。
+
+## T0380 虔诚蓄满提示
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/PietySystem.gd`、`scripts/core/EventBus.gd` | 仅在共享虔诚从未满跨到上限的提交后广播一次 `piety_ready` |
+| `scripts/ui/MilestoneAlertPresenter.gd`、`scenes/main/Main.tscn` | 将天火提示排入既有里程碑 FIFO，显示指定文案和“太好了”关闭按钮；音频可由配置禁用 |
+| `data/presentation/ability_audio.json` | 保存 `piety_ready` 的启用状态与未来全局 World / SFX 映射；T0382 期间禁用 |
+| `art_source/audio/reviews/sample_pack_v23_piety_ready/` | 保存已被否决的临时派生音及来源证据，不进入正式运行时 |
+| `tools/verify_t0380_piety_ready_alert.gd` | 覆盖首次跨越、排队、关闭、持续满值静音与施放后再次蓄满 |
+
+稳定关系：`PietySystem 提交共享虔诚 → piety_ready → MilestoneAlertPresenter FIFO → 弹窗 →（仅配置启用后）AudioManager 全局 Combat`。UI 和声音不决定虔诚、可施放资格、消费或伤害。
+
+## T0378 昼夜 BGM 多曲轮播
+
+| 文件 | 职责 |
+|---|---|
+| `data/presentation/world_audio.json` | 声明白天 6 首、夜晚 3 首的固定轮播顺序及切换淡化参数 |
+| `scripts/systems/AudioManager.gd` | 保留菜单 / 战斗循环兼容，支持非循环音乐、自然完成信号与调试快进 |
+| `scripts/presentation/audio/WorldAudioController.gd` | 消费昼夜和敌人在场事实，顺序推进对应音乐池并在战后恢复当前池 |
+| `assets/audio/music/day/`、`assets/audio/music/night/` | 保存 9 首 48 kHz 立体声 OGG 正式运行时音乐 |
+| `art_source/audio/masters/music/day/`、`art_source/audio/masters/music/night/` | 保存对应 24-bit WAV 母版；每首首尾各烘焙 2 秒淡化 |
+| `assets/audio/manifests/` | 99 条正式资产、文件 QA、逐曲许可署名与总试听列表 |
+| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖 6+3 配置顺序、非循环 / 曲边淡化、自然接续、昼夜与战斗切换 |
+
+稳定关系：`TimeSystem 昼夜 + CombatSystem 敌人在场 → WorldAudioController 选择播放池 / 战斗曲 → AudioManager Music 2D`。曲目完成只推进表现层索引，不写入时间、战斗、存档或 NPC 状态。
+
+## T0377 英雄升级与技能点分配声音
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/EventBus.gd` | 广播升级获得技能点与属性点成功分配两个提交后表现信号 |
+| `scripts/systems/NPCSystem.gd` | 在成长 / 分配权威结果成功后发信号，失败路径保持静音 |
+| `scripts/presentation/audio/InteractionAudioController.gd` | 将升级与属性分配映射为高优先级 UI 成功声，并与按钮木质声去重 |
+| `data/presentation/interaction_audio.json` | 两类成长语义复用已确认成功钟声及其优先级 |
+| `tools/verify_t0135_p10g_interaction_audio.gd` | 覆盖升级跨阈值、正式 `+1` 点击、单声去重与失败静音 |
+
+## T0376 警报与核心战斗音效可闻性
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/AudioManager.gd` | 保留普通局部 3D 档，新增 `combat_priority` 战斗档及可诊断空间元数据 |
+| `scripts/presentation/audio/CombatAudioController.gd` | 战局提示走全局 Combat 2D；核心实战事件走优先 3D 档，并记录实际播放参数 |
+| `data/presentation/combat_audio.json` | 声明战斗空间档与五类无位置战局事件 |
+| `tools/verify_t0135_p10e_combat_audio.gd` | 覆盖 28 条资产、全局提示、核心战斗空间参数、权威警报与原有限流 / 静音规则 |
+
+## T0374 正式主厅与菜单共享收口
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/buildings/MainHallShellFinish.gd` | 共享四片山墙、窗面 / 木框与入口门；按传入父节点转换坐标，支持门楼山墙显隐 |
+| `scripts/presentation/buildings/FormalMainHallArtView.gd` | 默认在 BaseVisuals/Exterior 安装收口，六级替换门楼时隐藏小山墙，沿用原摧毁显隐 |
+| `scripts/presentation/buildings/MenuMainHallFinish.gd` | 保留封面 install 入口和 CoverShellFinish 层级，委托共享构造 |
+| `scripts/presentation/MenuCoverPreview.gd` | 封面实例关闭自动安装，旧 A 保持；认可 B 在既有 staging 后单独安装 |
+| `tools/verify_t0132_p1_main_hall_building_slice.gd` | 美术修订号更新为 t0374_shell_finish，原六级部署 / 受损契约断言保留 |
+
+一次性 GPU 验证：artifacts/verify_t0374.gd；24 图、快照与日志：artifacts/visual_qa/t0374/。下方 T0371 的封面专用描述为历史范围，当前构造已共享。
+
+## T0373 主游戏 HUD 独立对比
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/HUDArtTrial.tscn` | 继承正式 Main 的独立 HUD 样片入口；不被正式场景引用 |
+| `scripts/presentation/HUDArtTrial.gd` | 静止启动、固定镜头 / 正午状态、隔离输入，A/B/H 与 NPC / 建筑 / 空对话上下文；仅候选调整显示层级和小窗对话高度 |
+| `scripts/ui/HUDArtCandidate.gd` | 只读原 HUD 数值 / 图标与虔诚表现；保留左上锚点，内部流式布局依据已有详情面板边界收窄；无权威提交 |
+
+一次性验证 `artifacts/verify_t0373.gd`，21 图 / 快照 / GPU 日志 `artifacts/visual_qa/t0373/`。样片未正式接入。
+
+## T0372 主菜单角落弩床展示
+
+`scripts/presentation/MenuCoverCandidate.gd` 在主厅收口后创建 CoverDefenseDisplay，读取正式一级槽位与器械配置，只实例化平台 / 弩床美术及补光；`data/presentation/menu_cover_trial.json` 的 defense_display 指定槽位、器械、零偏移与朝向。复用现有场景，无新增维护脚本。一次性验证与七图：`artifacts/verify_t0372.gd`、`artifacts/visual_qa/t0372/`。
+
+## T0370-I / T0371 正式菜单封面与主厅收口
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/MainMenu.gd` | 正式封面引用切换为 MenuCoverCandidate，并为菜单 / 动态子界面按钮统一播放木质 UI 点击或 toggle |
+| `scripts/ui/MenuEdgeFog.gd` | 正式与样片共用新版雾材质工厂，保留旧版工厂用于 A |
+| `scripts/presentation/buildings/MenuMainHallFinish.gd` | 封面专用四片山墙、49 个窗洞内凹窗面 / 木框、双扇入口木门；不修改游戏建筑源 |
+| `scripts/presentation/MenuCoverCandidate.gd` | 已认可封面，原主厅 staging 后安装独立收口表现 |
+| `scripts/presentation/MenuCoverArtTrial.gd` | A 显式使用旧封面 / 雾，B 与正式共用当前版本 |
+
+七图与一次性 GPU 验证：`artifacts/visual_qa/t0371/` / `artifacts/verify_t0371.gd`。
+
+## T0370 主菜单第二版独立对比
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/MenuCoverArtTrial.tscn` / `scripts/presentation/MenuCoverArtTrial.gd` | 复用正式菜单 UI 的独立 A/B 入口，1 / 2 切换、H 隐藏 UI；不启动 Main |
+| `scenes/art/MenuCoverCandidate.tscn` / `scripts/presentation/MenuCoverCandidate.gd` | 继承原封面构图，仅覆盖候选光照 / 雾 / 地面 / 树木表现 |
+| `data/presentation/menu_cover_trial.json` | 候选色板、灯光、雾团与树高适配参数 |
+| `shaders/environment/menu_courtyard_trial.gdshader` | 深色土、工作区踩踏、读取实际低位网格包围盒的接地暗部 |
+| `shaders/ui/menu_edge_fog_trial.gdshader` | 过滤噪声纹理驱动的平滑边缘雾，沿用原消散范围 |
+
+T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 A 中保留。样片阶段 QA 在忽略目录 `artifacts/verify_t0370.gd`，十图 / 快照 / 日志在 `artifacts/visual_qa/t0370/`。
+
+## T0369 驿站内白黄小野花
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/environment/LowPolyWildflowers.gd` | 程序化三朵低模野花 / 茎叶，匹配原草簇包围盒 |
+| `scripts/presentation/environment/StylizedGroundArt.gd` | 原草位生成后用独立种子挑选 8 处站内位置，一对一替换；保留其余 Transform / 草色与站外草 |
+| `data/presentation/ground_art_trial.json` | wildflowers 开关、数量、间距、种子和白黄花色 |
+
+快照 tufts 仍表示原中央散布位置总数，grass_tufts / wildflowers 分别表示剩余草 / 替换花数量。正式 Main 可直接看见。截图 / 一次性验证保存在本机忽略的 `artifacts/visual_qa/t0369/` / `artifacts/verify_t0369.gd`。
+
+## T0368 建筑与围墙地表接合
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/presentation/environment/BuildingGroundContactArt.gd` | 只读实际建筑 / 围墙基座，烘焙地表压实土 / 接触暗部 / 入口磨损遮罩，保留与对齐断言 |
+| `data/presentation/building_ground_contact.json` | 启用开关、遮罩范围 / 分辨率、土边宽度、实际基座节点识别名 |
+| `scripts/presentation/environment/FormalGroundSurfaceArtView.gd` | 地面材质准备后延迟安装接地遮罩，等待实际建筑生成；排除已被重建替代的材质 |
+| `shaders/environment/ground_art_trial.gdshader` | 原地表按遮罩混合压实土与贴脚暗部，外围噪声过渡；默认关闭用于旧样片 |
+| `tools/verify_t0368_building_ground_contact.gd` | 实际 Main 静态验证、七镜头昼夜 A/B 二十八图，--measure-contact 可选静态渲染测量 |
+
+复现：`godot --path . --script res://tools/verify_t0368_building_ground_contact.gd -- --measure-contact`；结果在 `artifacts/visual_qa/t0368/earth_revision/`。无 LLM、无新增 GM。
+
+## T0366 河流样片与正式接入
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/RiverArtTrial.tscn` | 独立 F6 原版 / 新河流比较入口 |
+| `scripts/presentation/RiverArtTrial.gd` | 独立 A/B 评审控制、四镜头昼夜、水纹暂停、调用共享构造与隔离断言 / 抓图 |
+| `scripts/presentation/environment/StylizedRiverArt.gd` | 正式 / 样片共用水体 UV 副本、河岸材质、七处石组 / 泡沫足迹、两岸不对称浅滩与静态岸线查找纹理；轻量快照与独立几何断言 |
+| `tools/verify_t0366_formal_river.gd` | 实际 Main 顶点 / 岸石 / 导航间距与动画验证，十二张昼夜图及可选静态 A/B 渲染测量 |
+| `shaders/environment/river_art_trial.gdshader` | 基于横河 / 顺河坐标的深浅水色、纵向流痕、按石头水线轮廓生成的绕石白沫，无顶点位移 |
+| `shaders/environment/riverbank_art_trial.gdshader` | 共用已认可地表色板的草岸 / 石滩 / 湿岸渐变，无顶点位移 |
+| `data/presentation/river_art_trial.json` | 水 / 石色板、纵向水纹速度与强度、七处水岸石组 / 半径 / 种子、自然岸线种子 / 采样步长 / 内缩上限、白沫强度与四组镜头 |
+| `artifacts/visual_qa/t0366/natural_shore_revision/` | 本机忽略的共享构造十六张 A/B 图、两张水纹相位图和 snapshot.json |
+
+复现：`godot --path . --scene res://scenes/art/RiverArtTrial.tscn -- --capture-river-trial`。正式环境通过 approved_river 启用共享构造，Main 不引用预览场景。正式复现：`godot --path . --script res://tools/verify_t0366_formal_river.gd -- --measure-river`；结果在 `artifacts/visual_qa/t0366_r1_integration/`。未调用 LLM。
+
+## T0365 山地样片与正式接入
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/MountainArtTrial.tscn` | 独立 F6 山地 A/B 入口，正式场景未引用 |
+| `scripts/presentation/MountainArtTrial.gd` | 原山体 / 抬高候选副本切换、真实三角面接地与实例 Y 恢复、装饰岩台、四镜头昼夜、隔离 / 原网格 hash 断言 |
+| `scripts/presentation/environment/StylizedMountainArt.gd` | 正式 / 样片共用高岩壁、材质、岩台与山地实例接地；get_debug_snapshot 为轻量快照，verify_geometry_contract 单独做几何断言 |
+| `tools/verify_t0365_formal_mountain.gd` | 实际 Main 集成、山脚 / 导航间距、十二张昼夜图及 --measure-mountain 静态渲染 A/B |
+| `artifacts/visual_qa/t0365_integration/` | 本机忽略的正式截图、快照与性能数据 |
+| `shaders/environment/mountain_art_trial.gdshader` | 无位移程序岩层、灰岩色阶与山脚草土过渡，无外部纹理 |
+| `data/presentation/mountain_art_trial.json` | 岩色、层距 / 强度、三层山高倍率、装饰岩组中心 / 高宽范围和镜头 |
+| `artifacts/visual_qa/t0365/cliff_revision/` | 本机忽略的高岩壁版十六张 A/B 图与 snapshot.json；每张保存返回值验证 |
+
+复现：`godot --path . --scene res://scenes/art/MountainArtTrial.tscn -- --capture-mountain-trial`。只读环境表现，不实例化 Main / LLM；样片在环境配置副本中关闭 approved_mountain，以独立共享构造保留原版 A；正式环境使用 approved_mountain 接入。
+
+## T0364 树木样片与正式接入
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/ForestArtTrial.tscn` | F6 独立局部林缘 A/B 入口，正式场景未引用 |
+| `scripts/presentation/ForestArtTrial.gd` | 复用已认可地表 / 植被，构造原森林和候选森林、四镜头昼夜比较及十六图抓取 |
+| `scripts/presentation/environment/TrialForestArtView.gd` | 继承原版分区、数量、树位与退让；A 调用原树构造，B 替换六种新树；尺寸随机流保持原版，树种选择独立 |
+| `scripts/presentation/environment/StylizedTreeMeshes.gd` | 正式 / 样片共用六种 ArrayMesh、独立树种随机流与分区 MultiMesh，不创建碰撞 / 导航 |
+| `scripts/presentation/environment/FormalForestArtView.gd` | approved_forest 启用时只替换树形，保留原布树 / 退让 / Transform / 阴影预算；快照区分旧采样计数与六种可见计数 |
+| `tools/verify_t0364_formal_forest.gd` | 实际 Main 全图原树 Transform 对照、十四张昼夜截图，--measure-forest 运行静态渲染 A/B |
+| `artifacts/visual_qa/t0364_integration/` | 本机忽略的正式昼夜截图、snapshot.json、performance.json |
+| `data/presentation/forest_art_trial.json` | 树种色板、种子、幼树比例、原分区截取范围和镜头，不包含额外密度控制 |
+| `artifacts/visual_qa/t0364/` | 本机忽略的十六张 A/B 图与 snapshot.json |
+
+复现：`godot --path . --scene res://scenes/art/ForestArtTrial.tscn -- --capture-forest-trial`。样片不实例化 Main 或调用 LLM；正式树形接入共用构造，原地图与碰撞源不变。
+
+正式验收：`godot --path . --script res://tools/verify_t0364_formal_forest.gd -- --measure-forest`，startup_mode=0；GPU Transform 读回在 D3D12 执行。
+
+## T0362 正式地表与 T0363 植被试验
+
+| 文件 | 职责 |
+|---|---|
+| `scenes/art/GroundArtTrial.tscn` | F6 独立美术预览入口，正式场景未引用 |
+| `scripts/presentation/GroundArtTrial.gd` | 只读正式布局 / 模型上下文、原版 A / 已认可 B 与昼夜镜头、可重复抓图和隔离断言 |
+| `scripts/presentation/environment/StylizedGroundArt.gd` | 已认可地表材质、立体草、按地形退让的外围分区 MultiMesh、密度估算和旧散布筛除；预览与正式共享，无玩法权威 |
+| `scripts/presentation/environment/FormalGroundSurfaceArtView.gd` | 按 approved_ground 配置把共享美术接入既有地面网格 |
+| `scripts/presentation/environment/FormalRoadNetworkArtView.gd` | 共享地表绘制道路时隐藏旧路面，保留嵌入碎石与道路定义 |
+| `shaders/environment/ground_art_trial.gdshader` | 程序草泥混合、路肩和柔和断续车辙，无外部纹理 |
+| `data/presentation/ground_art_trial.json` | 试案色板、种子、范围、草簇预算和评审镜头 |
+| `artifacts/visual_qa/t0362/` | 本机忽略的八张比较图与 review_snapshot.json |
+| `tools/verify_t0362_formal_ground.gd` | 正式 Main 地表隔离 / 道路及河谷净空断言、六机位十二张昼夜图、可选静态帧时间采样 |
+| `scenes/art/VegetationArtTrial.tscn` | T0363 独立 F6 预览，正式场景未引用 |
+| `scripts/presentation/VegetationArtTrial.gd` | 继承地表预览，生成候选矮灌木与碎石分组，A/B 与八图抓取 |
+| `data/presentation/vegetation_art_trial.json` | 候选种子、色板、范围、间距与道路退让 |
+| `artifacts/visual_qa/t0362_integration/`、`artifacts/visual_qa/t0363/` | 本机忽略的正式十二图 / 性能数据与稀疏候选八图 / 快照 |
+
+复现：`godot --path . --scene res://scenes/art/GroundArtTrial.tscn -- --capture-ground-trial`。该命令渲染图并退出，不运行正式模拟。
+
+正式接入验证：`godot --headless --path . --script tools/verify_t0362_formal_ground.gd`；去掉 headless 可抓正式图，追加 `-- --measure-ground` 可测静态视角。植被候选：`godot --path . --scene res://scenes/art/VegetationArtTrial.tscn -- --capture-vegetation-trial`。均不发起 LLM 请求。
+
 ## T0361 主菜单外围树群索引
 
 | 文件 / 目录 | 职责 |
@@ -88,8 +479,8 @@
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `scripts/systems/AudioManager.gd` | 五路用户音量、56% 音乐缺省值（原值降低 30%）、设置兼容与统一播放入口 |
-| `scripts/ui/AudioSettingsPanel.gd` | 展示并实时提交主音量 / 音乐 / 音效 / 环境音效 / 点击音效 |
+| `scripts/systems/AudioManager.gd` | 五路用户音量、56% 音乐缺省值、设置兼容、统一播放入口，以及局部 3D 声音 4× 听距 / 12m 缓衰减策略 |
+| `scripts/ui/AudioSettingsPanel.gd` | T0353 当时展示五路音量；T0395 已扩为主音量加音乐 / 点击 / 语气 / 战斗 / 工作 / 环境七项 |
 | `scripts/presentation/audio/InteractionAudioController.gd` | 普通按钮当帧木质反馈、成功优先级及世界门 / 商车声音；不再监听面板显隐 |
 | `scripts/presentation/audio/WorldAudioController.gd` | 全局昼夜环境床的镜头缩放混音，以及其余局部环境声源 |
 | `scripts/camera/CameraRig.gd` | 向只读表现控制器公开当前缩放距离 |
@@ -369,12 +760,12 @@
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `data/presentation/dialogue_voice_audio.json` | 配置男女九类回复情绪到 19 条已确认资产的映射、发声高度、替换规则与随机池 |
-| `scripts/presentation/audio/DialogueVoiceAudioController.gd` | 消费既有情绪表现信号，解析 NPC 性别与世界坐标，创建 / 跟随 3D Voice 播放源并管理同 NPC 替换 |
+| `data/presentation/dialogue_voice_audio.json` | 配置男女九类回复情绪到 19 条已确认资产的映射、全局 2D 模式、替换规则与随机池 |
+| `scripts/presentation/audio/DialogueVoiceAudioController.gd` | 消费既有情绪表现信号，解析 NPC 性别，以全局 2D Voice 播放并管理同 NPC 替换 |
 | `scenes/main/Main.tscn` | 在 `Main/Presentation` 挂载 DialogueVoiceAudioController |
-| `tools/verify_t0135_p10f_dialogue_voice_audio.gd` | 覆盖资产、九情绪、男女映射、男性中性随机、位置跟随、Voice 路由、替换 / 并发和状态只读边界 |
+| `tools/verify_t0135_p10f_dialogue_voice_audio.gd` | 覆盖资产、九情绪、男女映射、男性中性随机、全局 2D、Voice 路由、替换 / 并发和状态只读边界 |
 
-稳定关系：`DialogSystem 确定情绪 → EventBus.npc_dialogue_emotion_presented → DialogueVoiceAudioController 读取 NPC 性别 / 坐标 → AudioManager 3D Voice`。声音只消费表现事实，不写对话、情绪、NPC、事件或记忆权威。
+稳定关系：`DialogSystem 确定情绪 → EventBus.npc_dialogue_emotion_presented → DialogueVoiceAudioController 读取 NPC 性别 → AudioManager 2D Voice`。声音只消费表现事实，不写对话、情绪、NPC、事件或记忆权威。
 
 ## T0327 塔防反馈与经验条配色索引
 
@@ -517,16 +908,16 @@
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `data/presentation/combat_audio.json` | 保存 27 个战斗资产的动作 / 弹体 / 受击 / 材质 / 结算映射、50% 语气概率、静音规则和同帧分组上限 |
+| `data/presentation/combat_audio.json` | 保存 28 个战斗 / 警报资产的动作 / 弹体 / 受击 / 材质 / 结算 / 警报映射、50% 语气概率、静音规则和同帧分组上限 |
 | `scripts/presentation/audio/CombatAudioController.gd` | 消费既有系统提交后的只读战斗音频事件，随机选择变体并从真实世界位置播放 3D Combat 短音 |
 | `scripts/core/EventBus.gd` | 声明统一只读 `combat_audio_event(event)` 表现信号 |
-| `scripts/systems/CombatSystem.gd` | 在挥动、弹体释放 / 命中、敌军扣血、入场 / 清波等既有边界发事件，并提供敌军实测移动快照 |
+| `scripts/systems/CombatSystem.gd` | 在挥动、弹体释放 / 命中、敌军扣血、警报成功、入场 / 清波等既有边界发事件，并提供敌军实测移动快照 |
 | `scripts/systems/NPCSystem.gd`、`HorseSystem.gd`、`BuildingSystem.gd`、`DefenseDeviceSystem.gd` | 仅在各自真实 HP 提交后发送人物受击 / 昏迷、马匹阵亡或木石结构受损事实 |
 | `scripts/presentation/audio/MovementAudioController.gd` | 扩展最近 6 个真实移动敌军的位置循环；步兵复用统一跑步，骑兵复用马匹奔跑 |
 | `scenes/main/Main.tscn` | 在 Presentation 注册 CombatAudioController；运行时临时声源位于正式世界 `CombatAudioSources` |
-| `tools/verify_t0135_p10e_combat_audio.gd` | 覆盖 27 资产、完整映射、真实权威提交、静音规则、3D / Combat 路由、同帧限流和敌军移动门槛 |
+| `tools/verify_t0135_p10e_combat_audio.gd` | 覆盖 28 资产、完整映射、真实警报 / 伤害权威提交、全局战局提示、优先 3D / Combat 路由、同帧限流和敌军移动门槛 |
 
-稳定关系：`Combat / NPC / Horse / Building / DefenseDevice 权威提交 → EventBus.combat_audio_event → CombatAudioController → AudioManager → Combat → SFX → Master`。音频层不推算命中或 HP；盾牌格挡、复苏与普通马匹受击无声。敌军移动只读 CombatSystem 的实测位置 / 速度并按镜头距离限为 6 条，不改变敌军行为。
+稳定关系：`Combat / NPC / Horse / Building / DefenseDevice 权威提交 → EventBus.combat_audio_event → CombatAudioController → AudioManager → Combat → Master`。音频层不推算命中或 HP；盾牌格挡、复苏与普通马匹受击无声。敌军移动只读 CombatSystem 的实测位置 / 速度并按镜头距离限为 6 条，不改变敌军行为。
 
 ## T0135-P10D 角色与马匹移动音效索引
 
@@ -537,7 +928,7 @@
 | `scenes/main/Main.tscn` | 在 Presentation 注册 MovementAudioController；运行时声源位于正式世界 `MovementAudioSources` |
 | `tools/verify_t0135_p10d_movement_audio.gd` | 覆盖速度门槛、步行静音、立即启停、骑乘互斥、3D / Foley 路由、暂停和退出清理 |
 
-稳定关系：`NPCSystem / HorseSystem / CombatSystem 实测位移 + TimeSystem 暂停 → MovementAudioController → AudioManager → Foley → SFX → Master`。Controller 不消费寻路目标猜奔跑，不写移动或马匹状态；P10E 已接敌军真实移动并限制最近 6 条。
+稳定关系：`NPCSystem / HorseSystem / CombatSystem 实测位移 + TimeSystem 暂停 → MovementAudioController → AudioManager → Combat → Master`。Controller 不消费寻路目标猜奔跑，不写移动或马匹状态；P10E 已接敌军真实移动并限制最近 6 条。
 
 ## T0135-P10C 工作与日常行动音效索引
 
@@ -548,34 +939,34 @@
 | `scenes/main/Main.tscn` | 在 Presentation 注册 WorkAudioController；运行时声源位于正式世界 `WorkAudioSources` |
 | `tools/verify_t0135_p10c_work_audio.gd` | 覆盖配置资产、pending 静音、3D / Work 路由、马厩、诊所、教堂、单次边沿、施工目标与退出清理 |
 
-稳定关系：`ActionSystem active snapshot + NPCSystem 实际位置 + HorseSystem 在厩活马数 → WorkAudioController → AudioManager → Work → SFX → Master`。Controller 不写行动、工位、马匹、计划、资源或记忆；睡眠无声，P10D 已独立接入角色 / 马匹移动音效。
+稳定关系：`ActionSystem active snapshot + NPCSystem 实际位置 + HorseSystem 在厩活马数 → WorkAudioController → AudioManager → Work → Master`。Controller 不写行动、工位、马匹、计划、资源或记忆；睡眠无声，P10D 已独立接入角色 / 马匹移动音效。
 
 ## T0135-P10B 世界音乐与环境声索引
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `data/presentation/world_audio.json` | 保存昼夜门槛、BGM 映射、全局环境床缩放增益、12 个局部声源位置与随机参数 |
-| `scripts/presentation/audio/WorldAudioController.gd` | 只读时刻、敌人在场和现有火源状态，投影 BGM 与位置化环境声，不拥有玩法结算 |
-| `scripts/systems/AudioManager.gd` | 增加音乐交叉淡化、循环起播偏移、播放器快照及切场景 Tween / 播放器回收 |
+| `data/presentation/world_audio.json` | 保存昼夜门槛、白天 6 首 / 夜晚 3 首 BGM 顺序池、全局环境床缩放增益、12 个局部声源位置与随机参数 |
+| `scripts/presentation/audio/WorldAudioController.gd` | 只读时刻、敌人在场和现有火源状态，推进昼夜 BGM 播放池并投影位置化环境声，不拥有玩法结算 |
+| `scripts/systems/AudioManager.gd` | 提供循环 / 非循环音乐、自然完成通知、交叉淡化、循环起播偏移、播放器快照及切场景回收 |
 | `scripts/core/EventBus.gd`、`scripts/systems/CombatSystem.gd` | 从敌人存在统一同步点广播只读 `combat_enemy_presence_changed`，不改变敌人或时间权威 |
 | `scripts/presentation/buildings/SmithyAmbientFX.gd`、`DiningKitchenWorkFX.gd` | 暴露当前真实可见、正在工作的火源 Node3D，供统一环境音频层读取 |
 | `scenes/main/Main.tscn` | 在 Presentation 注册 WorldAudioController |
-| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖位置声源、随机池、昼夜 / 战斗音乐、工作炉火与场景退出清理 |
+| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖位置声源、随机池、6+3 昼夜顺序轮播、曲边淡化、战斗接管、工作炉火与场景退出清理 |
 
-稳定关系：`GameState / TimeSystem 时刻 + CombatSystem 敌人在场 + 现有工位火源表现 → WorldAudioController → AudioManager → Music / Ambience`。菜单曲等独立开始菜单存在后再接；P10C 才进入工作与日常动作音效。
+稳定关系：`GameState / TimeSystem 时刻 + CombatSystem 敌人在场 + 现有工位火源表现 → WorldAudioController → AudioManager → Music / Ambience`。音乐池索引只属表现运行态；菜单曲已由正式 MainMenu 使用。
 
 ## T0135-P10A 音频基础索引
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `default_bus_layout.tres` | 定义 11 条总线；Ambience / UI 独立直达 Master，AmbientBed 汇入 Ambience，其余非音乐业务汇入 SFX |
-| `scripts/systems/AudioManager.gd` | 读取 90 条确认清单，提供 2D / 3D 播放、循环淡入淡出、并发回收、五类音量与设置持久化 |
-| `scripts/ui/AudioSettingsPanel.gd` | 构建主音量 / 音乐 / 音效 / 环境音效 / 点击音效五滑杆并提供木质试听声 |
+| `default_bus_layout.tres` | 定义 11 条总线；T0395 的 Music / UI / Voice / Combat / Work / Ambience 均直达 Master，AmbientBed 汇入 Ambience |
+| `scripts/systems/AudioManager.gd` | 读取 102 条确认清单与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、并发回收、七项音量与 v2 设置持久化 |
+| `scripts/ui/AudioSettingsPanel.gd` | 构建主音量加音乐 / 点击 / 语气 / 战斗 / 工作 / 环境七滑杆并提供木质试听声 |
 | `scripts/ui/HUD.gd`、`scenes/main/Main.tscn` | 注册正式“设置”入口与居中声音设置面板 |
-| `assets/audio/manifests/` | 保存 90 条正式资产、QA、第三方署名、复用规则与两份试听列表 |
+| `assets/audio/manifests/` | 保存 99 条正式资产、QA、第三方署名、复用规则与试听列表 |
 | `tools/verify_t0135_p10a_audio_foundation.gd` | 覆盖清单、总线 / 发送、音量换算、UI 可达和松手试听 |
 
-稳定关系：`业务系统已发生事实 / 表现动作 → AudioManager 资产 ID 播放入口 → 独立 Music / Ambience / UI 或聚合 SFX → Master`。音频表现不监听未提交事实，也不写玩法权威。
+稳定关系：`业务系统已发生事实 / 表现动作 → AudioManager 资产 ID 播放入口 → Music / UI / Voice / Combat / Work / Ambience 唯一分类总线 → Master`。音频表现不监听未提交事实，也不写玩法权威。
 
 ## T0315 建筑完工与新生小马命名索引
 
@@ -703,7 +1094,7 @@
 | `assets/audio/` | 仅保存用户确认后供 Godot 正式导入的音乐、环境、UI、工作、语气、脚步、战斗、世界交互和技能音频 |
 | `art_source/audio/` | 规划中的原始录音、生成结果、第三方原包、DAW 工程、无损母版和待审稿隔离区；不作为运行时引用目录 |
 
-当前边界：90 条资产已确认并完成 QA；P10A–P10H 全部接入，T0353 已完成五路音量、全局昼夜环境床与 UI 同步修复。菜单曲等待正式开始菜单。
+当前边界：102 条资产已确认并完成 QA；P10A–P10H 全部接入，T0395 已完成六类加主音量七项控制、全局昼夜环境床与 UI 同步修复，T0378 已完成白天 6 首 / 夜晚 3 首轮播。菜单曲已由正式 MainMenu 使用。
 
 ## T0306 五类高频战斗事件聚合索引
 
@@ -2292,7 +2683,7 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 | `scripts/presentation/environment/FormalDormitoryLatrineArtView.gd`、`data/station_layout.json.service_outbuildings`、`scripts/world/StationLayoutController.gd` | T0135-P8AR6/P8AR6R 宿舍西侧并排双卫生间：两套同规格外部木石低模壳、封闭门、常驻屋顶和通风结构；不进 BuildingSystem、不含室内 / 交互 / 功能，由布局控制器从两条配置分别登记静态导航障碍 |
 | `tools/verify_t0135_p8ar6_dormitory_latrine.gd`、`tools/capture_t0135_p8ar6_dormitory_latrine.gd` | 锁定双间位置 / 朝向 / 包络、`0.19 m` 结构缝、完整外部结构、零 Area / 灯 / 动画 / BuildingSystem、两个独立静态碰撞、围墙 / 宿舍 / 菜园净距及 D3D12 近景 |
 | `scripts/presentation/environment/BuildingFunctionalLightController.gd` | T0135-P8A/P8AR/P8AR2/P8AR3 全建筑实体功能灯：按 `18:00–06:00` 和三类占用规则接管 15 类正式宿主、39 个实体灯具 / 40 个局部光源；关闭相机距离淡出，并从源灯具可见性同步等级解锁；铁匠铺新增 `2→3→4` 工位灯，只读时间、NPC 地点 / 睡眠与建筑表现，零玩法权威 |
-| `data/presentation/environment_art.json`、`scripts/presentation/environment/CelestialCycleController.gd` | P8A 配置逐建筑既有灯名、补建灯位、模式、色温 / 范围，并由天体控制器组合功能灯子系统和快照；P8AR3 将铁匠铺基础日光收束到后炉区 `8 m / 72°` 有影光型；P6R 保留 `120 m` 四级联 / 混合 / `0.12 / 0.30 / 0.60` 分割；P6R3 生产刷新间隔为 `0`，太阳 / 月亮 Basis 随每次时间信号连续更新，正值间隔只保留为可选低频降级 |
+| `data/presentation/environment_art.json`、`scripts/presentation/environment/CelestialCycleController.gd` | P8A 配置逐建筑既有灯名、补建灯位、模式、色温 / 范围，并由天体控制器组合功能灯子系统和快照；P8AR3 将铁匠铺基础日光收束到后炉区 `8 m / 72°` 有影光型；P6R 建立 `120 m` 四级联 / 混合 / `0.12 / 0.30 / 0.60` 分割，T0396 实测后当前生产为保留动态阴影的 `parallel_2_splits`，其余范围/权属不变；P6R3 生产刷新间隔为 `0`，太阳 / 月亮 Basis 随每次时间信号连续更新，正值间隔只保留为可选低频降级 |
 | `tools/verify_t0135_p6r_directional_shadow_stability.gd`、`tools/verify_t0135_p6r2_shadow_direction_cadence.gd`、`tools/verify_t0135_p6r3_origin_smooth_shadows.gd` | 锁定级联配置、唯一阴影权属、暂停冻结、可选 60 秒分桶；P6R3 进一步锁定正式根 / 相机 / NPC 原点归位、旧碰撞停用、旧存档坐标迁移，以及生产 Light Basis 逐信号连续变化 |
 | `scripts/presentation/buildings/FormalBlacksmithArtView.gd`、`scripts/presentation/buildings/SmithyAmbientFX.gd`、`scripts/world/StationLayoutController.gd` | T0135-P8AR3/P8AR3R2/P8AR8 后炉砌体＋全敞开四柱正面铁匠铺；正面无墙 / 门 / 门框及隐形前墙碰撞，两根 Lv.2 加固柱接地且收在平顶底面下；同轴炉体 / 烟囱、逐级实体灯、吊装透明和只读炉火合同保持不变 |
 | `tools/verify_t0135_p8ar3_blacksmith_hybrid_forge.gd`、`tools/capture_t0135_p8ar8_open_front_smithy.gd` | 锁定全敞开正面、四根原承重柱、零前墙碰撞、两根加固柱屋面净空，并继续覆盖炉口 / 烟囱、三砧、灯架、真实打铁和炉火；D3D12 抓图输出铁匠铺正面近景至忽略目录 `artifacts/visual_qa/` |
@@ -2668,7 +3059,7 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 | `scripts/core/NPCPromptProfile.gd` | 在 10 项共用人物字段中定义“宗教信仰”，同时服务对话 `npc_setting` 与 NPCPanel【背景】 |
 | `scripts/systems/LLMBridge.gd`、`backend/schemas/common.py` | 把 `religion` 注入并保留在六类正式共享 `NPCIdentity`，不进入权威结算 |
 | `data/prompts/*_system_prompt.txt` | 只在相关话题 / 经历中自然参考信仰，不让其覆盖个性、职业或程序事实 |
-| `tools/verify_npc_character_profiles.gd`、`tools/verify_npc_initial_long_memory.gd`、`tools/verify_npc_panel_state.gd` | 覆盖 8 份档案、六类 payload 与玩家背景弹窗 |
+| `tools/verify_npc_character_profiles.gd`、`tools/verify_t0158r1_npc_appearance_profiles.gd`、`tools/verify_npc_initial_long_memory.gd`、`tools/verify_npc_panel_state.gd` | 覆盖 8 份档案、外貌—正式角色映射与共享 `npc_setting.appearance`、六类 payload 及玩家背景弹窗；T0158R1 专项另锁定 8 人辨识锚点、布鲁诺秃顶与动态道具条件句 |
 | `tools/verify_npc_character_dialogue_real.py` | 用真实 provider 逐人核验宗教字段与职业声音 |
 
 ## T0099 对话记录、快捷键与攻击确认索引
@@ -2948,7 +3339,7 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 
 | 文件 | 当前职责 |
 |---|---|
-| `backend/services/llm_cost_ledger.py` | 逐 provider 尝试追加人民币 / token JSONL；按上海自然日重放，维护进程内并发费用预留，并在账本故障时失败关闭 |
+| `backend/services/llm_cost_ledger.py` | 逐 provider 尝试追加人民币 / token JSONL；按上海自然日重放，维护进程内并发费用预留，支持文本 token 结算及语音按秒直接费用结算，并在账本故障时失败关闭 |
 | `backend/services/model_adapter.py` | 读取 DeepSeek 缓存命中 / 未命中 usage，使用官方人民币价结算每次尝试；供应商调用前预留每日额度并把 session / daily 快照暴露给 debug endpoint |
 | `backend/.env.example` | 记录 V4 Flash 官方人民币单价、每日 20 元、上海时区、1.77 元单次预留和两个本地日志路径 |
 | `scripts/systems/LLMBridge.gd` | 为 `/debug/llm_usage` 提供不阻塞主线程的异步查询和完成信号 |
@@ -3997,3 +4388,32 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 - `scripts/world/DefenseDeviceView.gd`：把部署配置与单次动作事件转发给可选正式模型，并保留无正式场景时的箭塔占位回退。
 - `scripts/systems/DefenseDeviceSystem.gd`：在已结算动作结果中追加正式槽位原点、目标坐标和最终攻击间隔，只供表现层消费。
 - `tools/verify_t0132_p4a_ballista_art_slice.gd` / `tools/capture_t0132_p4a_ballista_visuals.gd`：分别执行结构 / 时序专项与 D3D12 四状态视觉 QA。
+## T0389 自然环境底噪与野生动物声密度
+
+| 文件 | 职责 |
+|---|---|
+| `art_source/audio/reviews/sample_pack_v25_ambient_bed_replacement/` | 保存白天 / 夜晚各 5 条无动物声候选、试听列表、许可和原始文件；尚未进入正式运行时 |
+| `art_source/audio/reviews/sample_pack_v26_ambient_nature_beds/` | 保存第二轮候选、来源与试听文件；`selected/` 内白天 04 / 夜晚 01 是首尾交叉衔接后的正式循环母源 |
+| `assets/audio/ambience/time_of_day/`、`art_source/audio/masters/ambience/time_of_day/` | 保存 v26 白天 04 / 夜晚 01 对应的 58 秒正式运行时 OGG 与 48 kHz / 24-bit WAV 母版 |
+| `data/presentation/world_audio.json` | 鸡鸣每天一次；鸟鸣 `-7 dB / 55–110s` 静默；虫鸣 `-8 dB / 35–75s` 静默及三位置随机池 |
+| `scripts/presentation/audio/WorldAudioController.gd` | 跟踪黎明边界和按日触发计数，对随机环境组应用独立增益 |
+| `scripts/systems/AudioManager.gd` | one-shot 显式关闭源循环标记，使循环素材可安全按单次间歇播放 |
+| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖底噪、鸟虫间歇/增益、OGG 非循环实例及鸡鸣跨日一次上限 |
+
+稳定关系：`GameState 时间事实 → WorldAudioController 昼夜/黎明/按日调度 → AudioManager Ambience / AmbientBed`。所有变化仅属表现层，不创建羊、鸡、鸟或虫等玩法实体；底噪候选须经用户试听后才能进入正式资产。
+## T0390 失败结算统一撤离
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/GameState.gd` | 失败结算冻结时把全部 NPC 归入逃离组并置于驿站外，保留真实入伍状态，不修改已停止的世界实体 |
+| `scripts/systems/EpilogueFactCompiler.gd` | 以结算快照而非实时 NPC 状态编译最终 `opening_status`，保证 LLM 收到全员逃离事实 |
+| `tools/verify_main_hall_failure.gd` / `tools/verify_t0387_epilogue_mock_roundtrip.gd` | 验证失败分组、界面数据及 LLM 载荷均为全员 escaped |
+| `tools/verify_game_epilogue_real.py` | 支持只运行 victory 或 failure；失败真实验收载荷统一为全员 escaped |
+## T0391 失败撤离时机区分
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/GameState.gd` | 冻结 NPC 在失守前是否已经逃离，并生成 `before_fall_voluntary / after_fall_forced` |
+| `scripts/systems/EpilogueFactCompiler.gd` | 把撤离时机写入人物输入及最终状态事实，交给 LLM |
+| `backend/schemas/epilogue.py` / `data/prompts/game_epilogue_system_prompt.txt` | 校验撤离情形，并约束主动逃离者未参加最后守城、被迫撤离者不得被写成临阵逃跑 |
+| `scripts/ui/EpiloguePanel.gd` | 结局卡片分别显示“失守前主动逃离”和“失守后被迫撤离” |

@@ -10,10 +10,15 @@ T0070 requires every `StationResidentContext` entry to include strict `recruited
 
 T0601 creates Pydantic models for backend AI request and response payloads. These schemas are data contracts only; they do not call a real model and do not perform game authority changes.
 
+T1601A adds `voice_input.py` for the multipart request metadata, shared dialogue-input limits, success/error payloads, and the seven native `qwen3-asr-flash` emotions plus `none`. The voice response remains preprocessing data and does not extend `NPCDialogueRequest`.
+
+T0387 adds `epilogue.py` for one settlement-wide `GameEpilogueRequest` and `GameEpilogueResponse`. It requires unique NPC and fact IDs, authoritative `active|unconscious|escaped` opening states, bounded stories, result-compatible tone enums, and one to three fact references per NPC. The HTTP layer additionally validates exact NPC coverage, status echoes, reference ownership, victory/failure tone domains and the no-death rule.
+
 Current schema groups:
 
 - `common.py`: shared game time, request metadata, NPC context, memory summaries and action candidates.
 - `npc_ai.py`: dialogue, dialogue/action-failure plan-revision judgement, daily plan, selected-hour plan revision, battle judgement, daily reflection, knowledge graph update, proactive intention and player strategy classification payloads.
+- `epilogue.py`: frozen settlement fact packages and the atomic ensemble epilogue response.
 - T0095 makes `DailyReflectionRequest.summary_window` and `reflection_period` required. The window is exactly 21:00 to the next 21:00 and carries the authoritative `接到守备命令的第N天` label plus the public notice basis `我们奉命守住此地`; the period bounds the unsummarized snapshot range. These are narrative constraints only—Godot remains authoritative for sleep eligibility, watermark rotation and diary persistence.
 - `StationSceneContext` is the single top-level world-context block for station-aware requests. It requires a setting summary plus non-empty resident, building, work-mode action, five-item public basic-resource and station-rule lists. Public resources are exactly grain, meal, wood, stone and iron; per-request allowed actions/decisions and runtime systems remain authoritative.
 - T0067 requires `NPCStateContext` to preserve the Godot-supplied `behavior_mode`, `combat_mode`, `combat_strategy`, `morale_boost` and `escape_intent` fields. They are read-only context; the backend cannot apply modes, buffs or movement.

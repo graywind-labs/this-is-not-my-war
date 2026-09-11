@@ -68,6 +68,11 @@ func get_debug_snapshot() -> Dictionary:
 				"source_path": str(player.get_parent().get_path()) if player.get_parent() != null else "",
 				"source_position": (player.get_parent() as Node3D).global_position if player.get_parent() is Node3D else Vector3.ZERO,
 				"stream_length_seconds": player.stream.get_length() if player.stream != null else 0.0,
+				"volume_db": player.volume_db,
+				"spatial_profile": str(player.get_meta("audio_spatial_profile", "")),
+				"unit_size_m": player.unit_size,
+				"max_distance_m": player.max_distance,
+				"attenuation_filter_db": player.attenuation_filter_db,
 			}
 		if not phase_snapshot.is_empty():
 			active[cast_id] = phase_snapshot
@@ -192,10 +197,12 @@ func _play_phase(cast_id: String, phase: String, asset_id: String, source: Node3
 		asset_id,
 		source,
 		Vector3.ZERO,
-		StringName(str(_meteor_config.get("bus", "World")))
+		StringName(str(_meteor_config.get("bus", "Combat"))),
+		StringName(str(_meteor_config.get("spatial_profile", "ability_priority")))
 	)
 	if player == null:
 		return
+	player.volume_db = float(_meteor_config.get("%s_gain_db" % phase, 0.0))
 	player.set_meta("ability_audio_asset_id", asset_id)
 	player.set_meta("ability_audio_cast_id", cast_id)
 	player.set_meta("ability_audio_phase", phase)
@@ -211,6 +218,10 @@ func _play_phase(cast_id: String, phase: String, asset_id: String, source: Node3
 		"source_path": str(source.get_path()),
 		"source_position": source.global_position,
 		"stream_length_seconds": player.stream.get_length() if player.stream != null else 0.0,
+		"volume_db": player.volume_db,
+		"spatial_profile": str(player.get_meta("audio_spatial_profile", "")),
+		"unit_size_m": player.unit_size,
+		"max_distance_m": player.max_distance,
 	})
 
 
@@ -252,6 +263,9 @@ func _apply_gameplay_pause() -> void:
 	for raw_cast_players in _active_players.values():
 		var cast_players := _as_dictionary(raw_cast_players)
 		for raw_player in cast_players.values():
+			# A crater/body may free its child player before this controller's next frame.
+			if not is_instance_valid(raw_player):
+				continue
 			var player := raw_player as AudioStreamPlayer3D
 			if is_instance_valid(player):
 				player.stream_paused = paused

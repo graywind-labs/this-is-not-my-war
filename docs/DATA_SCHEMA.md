@@ -1,5 +1,23 @@
 # DATA_SCHEMA.md
 
+## T0396 天体阴影表现配置
+
+- `data/presentation/environment_art.json.celestial_cycle.directional_shadow_mode` 是表现配置字符串，允许 `orthogonal / parallel_2_splits / parallel_4_splits`；未知或缺失值兼容回退到 `parallel_4_splits`。
+- 当前生产值为 `parallel_2_splits`。它只决定 DirectionalLight3D 级联模式；`directional_shadow_max_distance=120`、淡出、边界混合、分割值、日月轨迹和唯一阴影权属分别沿用原字段/逻辑。
+- 该字段不进入存档、战斗、碰撞、导航、伤害或 AI Schema。性能实验开关只存在于基准工具，不写入正式数据。
+
+## T1601A–T1603 语音预处理与输入限制数据合同（已实施至 Mock 闭环）
+
+T1604 的 11 条真实矩阵再次通过 `VoiceAnalyzeResponse` 校验：Provider 固定为 `alibaba_dashscope`、模型为 `qwen3-asr-flash`、`model_fallback_used=false`，情绪只落入原生七类或 `none`；usage 检查拒绝 `audio / audio_base64 / api_key / authorization` 字段。本轮未修改 Schema。
+
+- `data/dialogue_input_config.json` 唯一保存 `player_message_max_characters=300`、`voice_recording_max_seconds=30`、`voice_upload_max_bytes=6291456`；API Key 不进入数据文件。
+- `POST /voice/analyze` 已实现 multipart 合同：`audio`、`request_id`、`npc_id`、`dialogue_id`、可选 `locale`。
+- 成功响应固定包含 `ok`、request / dialogue id、`transcript`、`emotion`、`emotion_label`、`emotion_applied`、时长及 Provider 来源字段。
+- `emotion` 仅允许 `neutral / happy / sad / disgusted / angry / fearful / surprised / none`；未知或缺失值归一化为 `none`，不得自造“低沉 / 急促 / 嘲讽”。
+- 该响应只供 UI 生成普通草稿，不写入 NPCDialogueRequest 新字段，不新增事件类型。最终发送后仍由既有 `dialogue_turn.payload.text` 保存玩家实际发出的完整文字。
+- 错误合同与完整 JSON 示例见 `docs/VOICE_INPUT_AND_EMOTION.md`。
+- `DialogSystem.send_player_message()` 的超限失败固定为 `error_code=input_too_long`，并返回 `max_characters=300` 与去首尾空白后的 `actual_characters`；校验发生在草稿激活、历史追加或请求发起前。
+
 ## T0350 CombatProgression 与成长余量
 
 - `data/combat_progression.json` 使用 `combat_progression_v1`：`weapon_damage_per_skill_point=50`、`riding_damage_per_skill_point=100`、`kill_total_experience=1`。`count_actual_hp_damage_only / count_overkill_damage / defense_device_grants_npc_growth / meteor_grants_npc_growth / horse_collision_grants_npc_growth` 明确记录来源与实际伤害合同。
@@ -1849,7 +1867,7 @@ HorseSystem 随 TimeSystem 逻辑时间推进：在厩 / 离厩饱食分别按�
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。T0121 的五波时间固定为第 3–7 日每天 18:00，总数固定为 `8 / 16 / 24 / 36 / 48`。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值生成完整攻击周期；T0142 起正式命中点读取对应 NPCDevLab 动作比例，配置中的 `attack_windup` 仅保留为兼容 / 审计值，抬手期间仍可被骑兵冲撞僵直打断。敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量；第四、第五波用低阶兵补充蜂拥感，而不是把全部增援升级为最高阶。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。T0386 的五波时间固定为第 1 日 23:00、第 3 日 08:00、第 4 日 04:00、第 5 日 12:00、第 6 日 18:00，总数固定为 `8 / 16 / 24 / 36 / 48`。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值生成完整攻击周期；T0142 起正式命中点读取对应 NPCDevLab 动作比例，配置中的 `attack_windup` 仅保留为兼容 / 审计值，抬手期间仍可被骑兵冲撞僵直打断。敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量；第四、第五波用低阶兵补充蜂拥感，而不是把全部增援升级为最高阶。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
 
 ## Event Record
 
@@ -2338,3 +2356,14 @@ T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化�
 - `PlayerStrategyClassificationRequest` / `PlayerStrategyClassificationResponse`：把守备官话术分类为说服、利诱、威胁、欺骗、安抚、交易、命令或未知。
 
 T0049/T0050 后，六个正式业务端点 `/npc/dialogue`、`/npc/plan_revision_judgement`、`/npc/plan_day`、`/npc/revise_plan`、`/npc/battle_judgement`、`/npc/daily_reflection` 的成功传输体统一额外附加 `model_provider`、`model_name`、`model_fallback_used` 和 `model_normalizations`；该数组在非计划接口及未规范化时为空。字段由后端根据 Model Adapter 结果与确定性候选规范化注入，不属于 LLM 输出 Schema；Godot 用来源字段校验真实结果，不能再把真实成功硬编码为 `mock_*`。旧 `/npc/dialogue_plan_revision_judgement` 保留为同一处理函数的兼容 URL。
+## T0386 初始制造项目与压缩波次字段
+
+`data/crafting_recipes.json` 顶层可选 `initial_projects[]`，当前每项包含 `building_id / recipe_id / completed_stages / invested_resources / source`。CraftingSystem 只接受已存在且属于该建筑的配方，`completed_stages` 必须大于 0 且小于总阶段数，`invested_resources` 必须逐项等于这些已完成阶段的成本合计；任一校验失败都阻止制造目录初始化。合法条目初始化为 revision 1 的在制项目，不发放成品、资源、技能或总经验。
+
+当前唯一初始项目为工械坊箭塔 4 / 12，已投入木 4；`resource_defs.json` 的松散木材因此为 8。`enemy_waves.json` 的时间字段合同不变，五条当前值依次为 `(1,23:00) / (3,08:00) / (4,04:00) / (5,12:00) / (6,18:00)`。
+## T0387 群像结局 Schema
+
+- `GameEpilogueRequest` 包含 `settlement_id / fact_snapshot_version / result / reason / game_time / station_summary / global_facts[] / npcs[]`；NPC 输入锁定身份、人设、入伍、结算状态、HP、最后位置、当前指令、日记 / 知识摘要与 `key_facts[]`。
+- `EpilogueFact` 使用全请求唯一的 `fact_id / category / summary`；生成结果的 `fact_refs[]` 只能引用该 NPC 的关键事实或全局事实。
+- `GameEpilogueResponse` 包含后端补齐的 `ok / result`、全站 `ending_title / station_coda` 和完整 `npc_endings[]`。逐人项为 `npc_id / ending_title / opening_status / final_opinion / fate_story / tone / fact_refs`；正文 140–420 字符，状态只能是 `active / unconscious / escaped`，tone 按胜负分域。
+- 这些都是叙事输入 / 输出，不拥有胜负、HP、建筑、资源、入伍、逃离或记忆写入权威。

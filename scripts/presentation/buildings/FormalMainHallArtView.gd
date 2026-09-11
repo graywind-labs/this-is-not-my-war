@@ -1,6 +1,9 @@
 class_name FormalMainHallArtView
 extends BuildingArtView
 
+const ShellFinish := preload("res://scripts/presentation/buildings/MainHallShellFinish.gd")
+@export var shell_finish_enabled := true
+var _shell_finish: Node3D
 
 const WALL_WINDOW := "res://assets/3d/quaternius/buildings/main_hall_wall_window.glb"
 const WALL_DOOR := "res://assets/3d/quaternius/buildings/main_hall_wall_door.glb"
@@ -95,6 +98,7 @@ func _apply_visual_level(level: int, upgrade_in_progress: bool) -> void:
 	var front_gatehouse_roof := get_node_or_null("Roof/FrontGatehouseRoof") as Node3D
 	if front_gatehouse_roof != null:
 		front_gatehouse_roof.visible = _building_level < 6
+	ShellFinish.set_gatehouse_visible(_shell_finish, _building_level < 6)
 	_apply_external_fixture_level_visibility()
 
 
@@ -120,6 +124,7 @@ func get_art_slice_snapshot() -> Dictionary:
 		"lot_size": LOT_SIZE,
 		"envelope_size": ENVELOPE_SIZE,
 		"non_enterable": true,
+		"shell_window_count": int(_shell_finish.get_meta("window_count", 0)) if _shell_finish != null else 0,
 		"interior_revealed_for_selection": is_interior_revealed_for_selection(),
 		"roof_opacity": _roof_opacity,
 		"damage_ratio": _damage_ratio,
@@ -157,7 +162,7 @@ func _build_formal_main_hall() -> void:
 	fade_exterior_with_roof = false
 	interaction_bounds_center = Vector3(0.0, 3.2, 0.0)
 	interaction_bounds_size = Vector3(22.0, 7.4, 18.0)
-	set_meta("art_revision", "t0352_shell_closure")
+	set_meta("art_revision", "t0374_shell_finish")
 	set_meta("visible_shell", "closed_textured_quaternius_composite")
 	set_meta("solid_visual_mass", true)
 	set_meta("load_bearing_roof_deck", true)
@@ -209,6 +214,9 @@ func _build_base_visuals() -> void:
 
 	_add_scene_prop(roof, "CentralKeepRoof", COMPACT_ROOF, KEEP_ROOF_POSITION, KEEP_ROOF_SCALE)
 	_add_scene_prop(roof, "FrontGatehouseRoof", MAIN_ROOF, Vector3(0.0, 3.68, 6.72), Vector3(0.50, 0.22, 0.20))
+	if shell_finish_enabled:
+		# Exterior belongs to BaseVisuals, so these additions vanish with the ruin.
+		_shell_finish = ShellFinish.install(self, exterior, "MainHallShellFinish")
 
 
 func _build_solid_command_mass(parent: Node3D) -> void:

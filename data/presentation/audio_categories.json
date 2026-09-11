@@ -1,0 +1,86 @@
+{
+  "schema_version": "audio_categories_v1",
+  "categories": {
+    "music": {
+      "display_name": "音乐",
+      "bus": "Music",
+      "asset_ids": [
+        "music_menu", "music_day_night", "music_battle",
+        "music_day_playlist_01", "music_day_playlist_03", "music_day_playlist_04",
+        "music_day_playlist_05", "music_day_playlist_07", "music_day_playlist_12",
+        "music_night_playlist_05", "music_night_playlist_06", "music_night_playlist_10"
+      ]
+    },
+    "click": {
+      "display_name": "点击音效",
+      "bus": "UI",
+      "asset_ids": [
+        "sfx_ui_button_primary", "sfx_ui_panel_open", "sfx_ui_panel_close",
+        "sfx_ui_interaction_success_resource_collect", "sfx_ui_toggle",
+        "sfx_work_repair_and_upgrade_start", "sfx_work_blacksmith_target_selected"
+      ]
+    },
+    "voice": {
+      "display_name": "语气音效",
+      "bus": "Voice",
+      "asset_ids": [
+        "voice_emotion_none_female", "voice_emotion_happy_female",
+        "voice_emotion_relieved_female", "voice_emotion_angry_female",
+        "voice_emotion_sad_female", "voice_emotion_afraid_female",
+        "voice_emotion_surprised_female", "voice_emotion_confused_female",
+        "voice_emotion_determined_female", "voice_emotion_none_male_01",
+        "voice_emotion_none_male_02", "voice_emotion_happy_male",
+        "voice_emotion_relieved_male", "voice_emotion_angry_male",
+        "voice_emotion_sad_male", "voice_emotion_afraid_male",
+        "voice_emotion_surprised_male", "voice_emotion_confused_male",
+        "voice_emotion_determined_male"
+      ]
+    },
+    "combat": {
+      "display_name": "战斗音效",
+      "bus": "Combat",
+      "asset_ids": [
+        "sfx_meteor_impact_one_shot", "voice_combat_friendly_female_hurt_voice",
+        "sfx_combat_sword_swing", "sfx_combat_polearm_swing", "sfx_combat_bow_release",
+        "sfx_combat_hand_crossbow_release", "sfx_combat_arrow_bolt_tower_impact",
+        "sfx_combat_ballista_release", "sfx_combat_ballista_bolt_whoosh",
+        "sfx_combat_unconscious_fall", "sfx_combat_horse_death",
+        "sfx_combat_stone_structure_damage", "sfx_horse_run",
+        "sfx_wood_structure_severe_collapse", "sfx_stone_structure_severe_collapse",
+        "sfx_enemy_entry_stinger", "sfx_wave_clear_stinger", "sfx_final_victory_stinger",
+        "sfx_defeat_stinger", "sfx_arrow_tower_release", "sfx_ballista_heavy_bolt_impact",
+        "sfx_meteor_fall_one_shot", "sfx_piety_ready_sacred_chant",
+        "sfx_world_battle_alert_one_shot", "sfx_foley_run_unified_loop",
+        "voice_combat_friendly_male_hurt_voice", "voice_combat_enemy_hurt_voice",
+        "sfx_combat_hit_contact_01", "sfx_combat_hit_contact_02", "sfx_combat_hit_contact_03",
+        "sfx_combat_arrow_and_hand_crossbow_bolt_whoosh",
+        "sfx_combat_wood_damage_01", "sfx_combat_wood_damage_02"
+      ]
+    },
+    "work": {
+      "display_name": "工作音效",
+      "bus": "Work",
+      "asset_ids": [
+        "sfx_work_blacksmith_loop", "sfx_work_garden_loop", "sfx_work_dining_hall_loop",
+        "sfx_work_stable_with_horse_loop", "sfx_work_stable_without_horse_loop",
+        "sfx_work_tavern_loop", "sfx_work_workshop_loop", "sfx_work_training_loop",
+        "sfx_work_clinic_treatment_and_assist_loop", "sfx_work_clinic_doctor_reading_loop",
+        "sfx_work_repair_and_upgrade_loop", "sfx_chapel_prayer_presence_loop",
+        "sfx_chapel_mass_start_one_shot", "sfx_daily_eating_loop",
+        "sfx_daily_drinking_one_shot", "sfx_chapel_mass_in_progress_loop"
+      ]
+    },
+    "ambience": {
+      "display_name": "环境音效",
+      "bus": "Ambience",
+      "asset_ids": [
+        "sfx_merchant_cart_arrival_departure", "sfx_world_door_open", "sfx_world_door_close",
+        "sfx_ambience_day_loop", "sfx_ambience_night_loop", "sfx_ambience_dawn_rooster",
+        "sfx_ambience_day_bird_01", "sfx_ambience_day_bird_02", "sfx_ambience_day_bird_03",
+        "sfx_ambience_night_insects_local_loop_01", "sfx_ambience_night_insects_local_loop_02",
+        "sfx_ambience_night_insects_local_loop_03", "sfx_ambience_night_owl",
+        "sfx_ambience_river_local_loop", "sfx_ambience_active_fire_loop"
+      ]
+    }
+  }
+}

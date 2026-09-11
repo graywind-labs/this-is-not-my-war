@@ -154,7 +154,7 @@ func _assert_all_movement_players_are_positional(audio_manager: Node) -> void:
 			continue
 		var loop: Dictionary = audio_manager.get_loop_snapshot().get(loop_key, {})
 		_assert(str(loop.get("player_type", "")) == "AudioStreamPlayer3D", "movement loop is not positional")
-		_assert(str(loop.get("bus", "")) == "Foley", "movement loop is not routed to Foley bus")
+		_assert(str(loop.get("bus", "")) == "Combat", "movement loop is not controlled by Combat volume")
 
 
 func _assert_source_tracks_npc(controller: Node, npc_system: Node, npc_id: String) -> void:

@@ -1,6 +1,18 @@
 {
   "schema_version": "action_audio_v1",
   "source_height_m": 1.15,
+  "building_jobs": {
+    "start_asset_id": "sfx_work_repair_and_upgrade_start",
+    "start_gain_db": 4.0,
+    "loop_asset_id": "sfx_work_repair_and_upgrade_loop",
+    "loop_gain_db": 4.0
+  },
+  "crafting_target_selection": {
+    "building_ids": ["blacksmith", "workshop"],
+    "asset_id": "sfx_work_blacksmith_target_selected",
+    "gain_db": 4.0,
+    "empty_target_silent": true
+  },
   "loop_rules": [
     {
       "id": "garden",

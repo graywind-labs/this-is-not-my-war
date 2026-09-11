@@ -185,7 +185,9 @@ func _spawn_structure_debris(event: Dictionary) -> void:
 	if not _consume_budget("debris"):
 		return
 	var color := Color(0.38, 0.28, 0.18, 1.0) if str(event.get("target_type", "")) == "defense_device" else Color(0.48, 0.45, 0.39, 1.0)
-	_spawn_particles(_resolve_event_position(event) + Vector3(0.0, 0.8, 0.0), color, 10 if bool(event.get("destroyed", false)) else 6, "debris")
+	var impact_position: Variant = event.get("impact_world_position", null)
+	var debris_position := impact_position as Vector3 if impact_position is Vector3 else _resolve_event_position(event)
+	_spawn_particles(debris_position + Vector3(0.0, 0.8, 0.0), color, 10 if bool(event.get("destroyed", false)) else 6, "debris")
 
 
 func _spawn_particles(position: Vector3, color: Color, amount: int, group: String) -> void:

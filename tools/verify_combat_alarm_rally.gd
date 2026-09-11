@@ -22,6 +22,7 @@ func _init() -> void:
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
 	var alarm_button := root.get_node_or_null("Main/UI/HUD/AlarmButton") as Button
 	if (
@@ -31,6 +32,7 @@ func _init() -> void:
 		or equipment_system == null
 		or horse_system == null
 		or memory_system == null
+		or daily_reflection_system == null
 		or gm_panel == null
 		or alarm_button == null
 	):
@@ -64,6 +66,23 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var reflection_request_id := "verify_combat_interrupt_reflection"
+	var reflection_window_key := "day_1_21_00"
+	daily_reflection_system._pending_reflection_by_request[reflection_request_id] = {
+		"npc_id": "veteran_deputy_01",
+		"summary_window_key": reflection_window_key,
+		"should_lock_summary": true
+	}
+	daily_reflection_system._pending_request_by_npc["veteran_deputy_01"] = reflection_request_id
+	daily_reflection_system._sleep_summary_window_by_npc["veteran_deputy_01"] = {
+		"window_key": reflection_window_key,
+		"summary_status": "pending",
+		"request_id": reflection_request_id,
+		"accumulated_sleep_seconds": 3600.0,
+		"remaining_sleep_seconds": 0.0
+	}
+	npc_system.set_first_sleep_summary_lock("veteran_deputy_01", true, reflection_request_id)
+
 	alarm_button.pressed.emit()
 	await process_frame
 
@@ -78,6 +97,21 @@ func _init() -> void:
 		return
 	if int(alarm_result.get("rallied_count", 0)) != 2:
 		push_error("Only recruited armed NPCs should rally. result=%s" % JSON.stringify(alarm_result))
+		quit(1)
+		return
+	var reflection_interrupt: Dictionary = alarm_result.get("reflection_interrupt_result", {})
+	if int(reflection_interrupt.get("interrupted_count", 0)) != 1:
+		push_error("Combat alarm should interrupt the pending sleep reflection: %s" % JSON.stringify(alarm_result))
+		quit(1)
+		return
+	if npc_system.is_first_sleep_summary_locked("veteran_deputy_01"):
+		push_error("Combat alarm should release the first-sleep summary lock")
+		quit(1)
+		return
+	var reflection_snapshot: Dictionary = daily_reflection_system.get_async_reflection_snapshot()
+	var reflection_window: Dictionary = (reflection_snapshot.get("sleep_window_states_by_npc", {}) as Dictionary).get("veteran_deputy_01", {})
+	if str(reflection_window.get("summary_status", "")) != "eligible" or not str(reflection_window.get("request_id", "")).is_empty():
+		push_error("Interrupted reflection should remain retryable without applying memory: %s" % JSON.stringify(reflection_window))
 		quit(1)
 		return
 	if not _ignored_reason(alarm_result, "cook_01", "not_recruited"):

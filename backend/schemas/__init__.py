@@ -54,6 +54,21 @@ from .npc_ai import (
     ReflectionSummaryWindowContext,
     SpeakerContext,
 )
+from .voice_input import (
+    DialogueInputConfig,
+    QWEN_NATIVE_VOICE_EMOTIONS,
+    VoiceAnalyzeErrorResponse,
+    VoiceAnalyzeRequest,
+    VoiceAnalyzeResponse,
+    VoiceEmotion,
+)
+from .epilogue import (
+    EpilogueFact,
+    EpilogueNPCInput,
+    GameEpilogueRequest,
+    GameEpilogueResponse,
+    NPCEpilogue,
+)
 
 __all__ = [
     "APIErrorResponse",
@@ -108,4 +123,15 @@ __all__ = [
     "StationResidentContext",
     "StationSceneContext",
     "StationWorkModeActionContext",
+    "DialogueInputConfig",
+    "QWEN_NATIVE_VOICE_EMOTIONS",
+    "VoiceAnalyzeErrorResponse",
+    "VoiceAnalyzeRequest",
+    "VoiceAnalyzeResponse",
+    "VoiceEmotion",
+    "EpilogueFact",
+    "EpilogueNPCInput",
+    "GameEpilogueRequest",
+    "GameEpilogueResponse",
+    "NPCEpilogue",
 ]

@@ -8,6 +8,14 @@ Godot 只对 `attack_made / damage_taken / building_damaged / defense_device_tri
 
 `/npc/dialogue` 的三类响应现在统一要求 `emotion` 为：`none / happy / relieved / angry / sad / afraid / surprised / confused / determined`。基础 Prompt 和动态 schema hint 都会给出该白名单。HTTP 层会把旧 `neutral / wary / fearful / tense / shaken / resolved`、已知中文近义词、`null` 或未知值归一化为合法 id，并把变化写入 `model_normalizations`；情绪不是权威数值，不影响特殊交互结算。
 
+T1601A 另行增加玩家语音预处理端点 `POST /voice/analyze`。它接收 multipart 的 `audio`、`request_id`、`npc_id`、`dialogue_id` 和可选 `locale`，并按 `data/dialogue_input_config.json` 复核 30 秒、6 MiB 与 PCM WAV。T1602 已实现显式 `VOICE_PROVIDER=qwen3_asr_flash`：后端以 Base64 Data URI 调用北京业务空间专属 OpenAI 兼容接口，从 `message.content` 与 `message.annotations[].emotion` 读取结果；Key 不进入 Godot 或日志，真实失败绝不回退 Mock。语音情绪只允许 `neutral / happy / sad / disgusted / angry / fearful / surprised`，未知值归一化为 `none` 并保留转写。
+
+T1604 可用 `tools/generate_t1604_voice_samples.ps1`、`tools/add_t1604_light_noise_sample.py` 和 `tools/verify_t1604_voice_real_matrix.py` 生成临时中文样本并批量跑真实 `/voice/analyze`。矩阵输出不包含音频、Base64 或 Key；合成音只用于传输 / 转写回归，不能代替真人情绪和实体麦克风验收。
+
+直接从项目根目录运行 `python backend/app.py` 或导入 `backend.app` 时，服务会按 `backend/app.py` 的绝对位置加载同目录 `.env`，不依赖当前工作目录；调用进程中已显式设置的环境变量仍优先。
+
+真实语音与文本 Provider 共享 `LLM_COST_LEDGER_PATH` 和 `LLM_DAILY_BUDGET_MAX_CNY`。语音调用前按 `VOICE_DAILY_BUDGET_REQUEST_RESERVE_CNY`（默认 `0.0066` 元）预留，成功后按 `VOICE_COST_PER_SECOND_CNY`（默认 `0.00022` 元/秒）和服务端复核的 WAV 时长结算；超预算返回 `voice_budget_exceeded`，不会上传到百炼。
+
 T0285 起，玩家对话的应征、鼓舞士气、调整战斗策略、鼓励工作为最多开启一个的动态特殊模块。只有请求 flag 为 true 时，Model Adapter 才拼入对应判断 Prompt 和输出字段；工作返回 `work_encouragement_reaction=none|escape|work_boost`，应征允许无关发言返回 `recruitment_result=none`。HTTP 只校验意向，20% 工作倍率、当天 24:00 失效、资源 / 治疗 / 建筑结算和逃离均由 Godot 权威系统处理。
 
 T0116 新增 `/npc/dialogue_intent_revalidation`。它在计划对话执行前接收旧意图制定时间、当前完整计划和计划同级 NPC / 驿站 / 建筑 / 资源上下文，只返回 continue / modify / cancel_and_replan。HTTP 层严格约束首句字段并可对业务矛盾使用同一真实 provider 纠错一次；失败不转 Mock。
@@ -120,6 +128,7 @@ LLM 相关任务的推荐验证顺序：
 
 - `GET /health`
 - `GET /debug/llm_usage`
+- `POST /voice/analyze`（显式 Mock 或 T1602 真实百炼 `qwen3-asr-flash`）
 - `POST /mock/model`
 - `POST /npc/dialogue`
 - `POST /npc/plan_revision_judgement`（旧 `/npc/dialogue_plan_revision_judgement` 兼容）
@@ -127,6 +136,7 @@ LLM 相关任务的推荐验证顺序：
 - `POST /npc/revise_plan`
 - `POST /npc/battle_judgement`
 - `POST /npc/daily_reflection`
+- `POST /game/epilogue`
 
 六个正式 LLM 业务端点成功响应都会统一附加 `model_provider`、`model_name`、`model_fallback_used` 和 `model_normalizations`。T0097 的计划项无关字段在 Model Adapter 编译边界直接丢弃，原始值只保留在本地审计日志，不为每个丢弃字段生成 normalization；`model_normalizations` 继续记录其他程序权威合并或默认化。这些字段不属于模型输出 Schema；Godot 据此区分真实 provider、显式开发 Mock 和 fallback，不能按调用路径硬编码来源。正式日计划、对话计划判别和修订仍只接受非 Mock 且无 fallback 的响应。
 
@@ -162,11 +172,17 @@ curl -X POST http://127.0.0.1:5000/npc/dialogue ^
 
 - `backend/schemas/common.py`：共享游戏时间、请求元信息、NPC 上下文、短期记忆和行动候选。
 - `backend/schemas/npc_ai.py`：对话、对话 / 行动失败通用计划修改判别、每日计划、精确小时计划修订、战斗判定、熟睡总结（含窗口与内容水位）、知识图谱更新、主动交涉和玩家话术分类请求/响应。
+- `backend/schemas/voice_input.py`：语音元数据、成功 / 失败响应、统一输入配置与百炼原生七类情绪。
+- `backend/services/voice_model_adapter.py`：独立语音 Provider 边界、显式 Mock、真实百炼 HTTP、七类情绪归一化和 usage。
 
 验证：
 
 ```bash
 python tools/verify_backend_schemas.py
+python tools/verify_voice_input_mock_endpoint.py
+python tools/verify_t1602_qwen_voice_provider.py
+# 准备真实 WAV 和 backend/.env 后：
+python tools/verify_t1602_qwen_voice_provider_real.py path/to/recording.wav
 python tools/verify_mock_model_adapter.py
 python tools/verify_api_budget_debug.py
 python tools/verify_dialogue_mock_endpoint.py

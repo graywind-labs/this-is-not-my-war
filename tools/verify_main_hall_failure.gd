@@ -18,15 +18,22 @@ func _init() -> void:
 
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
+	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var hud := root.get_node_or_null("Main/UI/HUD")
 	var game_state := root.get_node_or_null("/root/GameState")
-	if combat_system == null or building_system == null or time_system == null or hud == null or game_state == null:
+	if combat_system == null or building_system == null or npc_system == null or time_system == null or hud == null or game_state == null:
 		push_error("Main hall failure verification required nodes not found")
 		quit(1)
 		return
 
 	time_system.set_current_time(4, 19, 12, 30)
+	npc_system.update_npc_state("priest_01", {
+		"escaped": true,
+		"behavior_mode": "escaped",
+		"current_location": "outside_station",
+		"current_location_name": "驿站外"
+	})
 	await process_frame
 
 	var main_hall: Dictionary = building_system.get_building("main_hall")
@@ -69,17 +76,44 @@ func _init() -> void:
 		push_error("Failure settlement should record NPC ending summaries")
 		quit(1)
 		return
+	var voluntary_escape_count := 0
+	var forced_evacuation_count := 0
 	for raw_npc in npc_items:
 		var npc_entry: Dictionary = raw_npc if raw_npc is Dictionary else {}
 		var final_status := str(npc_entry.get("final_status_label", ""))
-		if not ["可行动", "昏迷", "逃离"].has(final_status):
-			push_error("Failure NPC ending should use allowed final status labels, got: %s" % JSON.stringify(npc_entry))
+		if final_status != "逃离" or not bool(npc_entry.get("escaped", false)) or bool(npc_entry.get("unconscious", false)):
+			push_error("Every NPC must enter the failure epilogue as escaped: %s" % JSON.stringify(npc_entry))
+			quit(1)
+			return
+		if str(npc_entry.get("current_location", "")) != "outside_station" or str(npc_entry.get("current_location_name", "")) != "驿站外":
+			push_error("Failure escape settlement must place every NPC outside the station: %s" % JSON.stringify(npc_entry))
+			quit(1)
+			return
+		var circumstance := str(npc_entry.get("escape_circumstance", ""))
+		if str(npc_entry.get("id", "")) == "priest_01":
+			if circumstance != "before_fall_voluntary":
+				push_error("NPC who escaped before the fall must retain voluntary timing: %s" % JSON.stringify(npc_entry))
+				quit(1)
+				return
+			voluntary_escape_count += 1
+		elif circumstance == "after_fall_forced":
+			forced_evacuation_count += 1
+		else:
+			push_error("NPCs still present at the fall must be marked as forced evacuees: %s" % JSON.stringify(npc_entry))
 			quit(1)
 			return
 		if str(npc_entry.get("final_opinion", "")).is_empty() or str(npc_entry.get("fate_summary", "")).is_empty():
 			push_error("Failure NPC ending should include final opinion and fate summary: %s" % JSON.stringify(npc_entry))
 			quit(1)
 			return
+	if voluntary_escape_count != 1 or forced_evacuation_count != npc_items.size() - 1:
+		push_error("Failure escape timing groups are incorrect")
+		quit(1)
+		return
+	if not npc_section.get("active_npcs", []).is_empty() or not npc_section.get("unconscious_npcs", []).is_empty() or npc_section.get("escaped_npcs", []).size() != npc_items.size():
+		push_error("Failure NPC groups must contain only escaped NPCs: %s" % JSON.stringify(npc_section))
+		quit(1)
+		return
 
 	if not bool(time_system.is_gameplay_paused()):
 		push_error("TimeSystem should pause gameplay after game over")
@@ -98,22 +132,30 @@ func _init() -> void:
 		push_error("HUD should display a game-over placeholder panel")
 		quit(1)
 		return
-	var reason_label := game_over_panel.find_child("GameOverReasonLabel", true, false) as Label
-	var detail_label := game_over_panel.find_child("GameOverDetailLabel", true, false) as Label
-	if reason_label == null or not reason_label.text.contains("主厅被摧毁"):
-		push_error("Failure panel should show the main hall destruction reason")
+	var title_label := game_over_panel.find_child("GameOverTitleLabel", true, false) as Label
+	var wave_label := game_over_panel.find_child("GameOverWaveLabel", true, false) as Label
+	if title_label == null or title_label.text != "失 败":
+		push_error("Failure panel should show the stylized failure title")
 		quit(1)
 		return
-	if detail_label == null or not detail_label.text.contains("停止正常推进"):
-		push_error("Failure panel should state that normal progression stopped")
+	if wave_label == null or not wave_label.text.begins_with("守住 "):
+		push_error("Failure panel should show the survived-wave subtitle")
 		quit(1)
 		return
-	if not detail_label.text.contains("NPC 结局") or not detail_label.text.contains("对守备官最终看法") or not detail_label.text.contains("后续命运"):
-		push_error("Failure panel should show NPC ending summaries")
+	var cards := game_over_panel.find_children("NPCEndingCard_*", "PanelContainer", true, false)
+	if cards.size() != 8:
+		push_error("Failure panel should show one ending card for every NPC")
 		quit(1)
 		return
-	if detail_label.text.contains("阵亡") or detail_label.text.contains("死亡"):
-		push_error("Failure panel should not use death wording for NPC endings")
+	var visible_status_texts: Array[String] = []
+	for raw_label in game_over_panel.find_children("*", "Label", true, false):
+		visible_status_texts.append((raw_label as Label).text.strip_edges())
+	if not visible_status_texts.has("失守前主动逃离") or not visible_status_texts.has("失守后被迫撤离"):
+		push_error("Failure cards should distinguish voluntary escape from forced evacuation: %s" % JSON.stringify(visible_status_texts))
+		quit(1)
+		return
+	if game_over_panel.find_child("GameOverReasonLabel", true, false) != null or game_over_panel.find_child("GameOverDetailLabel", true, false) != null:
+		push_error("Failure panel should not restore the old reason/detail summary fields")
 		quit(1)
 		return
 

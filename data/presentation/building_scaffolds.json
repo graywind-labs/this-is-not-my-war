@@ -1,0 +1,20 @@
+{
+  "schema_version": "building_scaffolds_v1",
+  "buildings": {
+    "main_hall": {"design": "主厅侧翼双层长架", "sections": [{"position": [11.28, 0, 0], "yaw": 90, "length": 9.6, "depth": 1.0, "tiers": 2, "tier_height": 1.7, "bays": 4}]},
+    "dormitory": {"design": "宿舍侧墙四跨木架", "sections": [{"position": [-7.53, 0, 0], "yaw": -90, "length": 9.2, "tiers": 2, "bays": 4}]},
+    "dining_hall": {"design": "食堂后檐长工作台架", "sections": [{"position": [0, 0, -6.53], "yaw": 180, "length": 10.2, "tiers": 2, "bays": 4}]},
+    "warehouse": {"design": "仓库地台西墙货架式施工架", "sections": [{"position": [-5.43, 0.4, -0.65], "yaw": -90, "length": 7.8, "tiers": 2, "tier_height": 1.45, "bays": 3}]},
+    "tavern": {"design": "酒窖后墙低双层木架", "sections": [{"position": [0, 0, -5.53], "yaw": 180, "length": 7.8, "tiers": 2, "tier_height": 1.4, "bays": 3}]},
+    "garden": {"design": "菜园围栏低矮施工架", "sections": [{"position": [7.42, 0, 0], "yaw": 90, "length": 5.4, "tiers": 1, "tier_height": 0.9, "bays": 3}]},
+    "blacksmith": {"design": "铁匠铺封闭侧墙重木架", "sections": [{"position": [7.5, 0, 0], "yaw": 90, "length": 7.5, "tiers": 2, "tier_height": 1.5, "bays": 3}]},
+    "training_ground": {"design": "训练场围栏三跨矮架", "sections": [{"position": [7.42, 0, 0], "yaw": 90, "length": 6.3, "tiers": 1, "tier_height": 1.15, "bays": 3}]},
+    "stable": {"design": "马厩侧檐长木架", "sections": [{"position": [-7.42, 0, 0], "yaw": -90, "length": 8.8, "tiers": 2, "tier_height": 1.4, "bays": 4}]},
+    "chapel": {"design": "小教堂高双层窄木架", "sections": [{"position": [6.53, 0, -0.8], "yaw": 90, "length": 7.2, "tiers": 2, "tier_height": 1.85, "bays": 3}]},
+    "clinic": {"design": "小诊所侧墙轻木架", "sections": [{"position": [-6.53, 0, 0], "yaw": -90, "length": 6.6, "tiers": 2, "tier_height": 1.45, "bays": 3}]},
+    "workshop": {"design": "工械坊四跨工程木架", "sections": [{"position": [6.53, 0, 0], "yaw": 90, "length": 9.2, "tiers": 2, "bays": 4}]},
+    "front_gate": {"design": "城门双塔分离施工架", "sections": [{"position": [-4.175, 0, -2.4], "yaw": 180, "length": 2.5, "tiers": 3, "tier_height": 1.45, "bays": 1}, {"position": [4.175, 0, -2.4], "yaw": 180, "length": 2.5, "tiers": 3, "tier_height": 1.45, "bays": 1}]},
+    "back_gate": {"design": "后门双柱窄施工架", "sections": [{"position": [-3.36, 0, -1.9], "yaw": 180, "length": 1.7, "tiers": 2, "tier_height": 1.4, "bays": 1}, {"position": [3.36, 0, -1.9], "yaw": 180, "length": 1.7, "tiers": 2, "tier_height": 1.4, "bays": 1}]},
+    "wall": {"design": "围墙沿真实墙段布置的分段木架", "sections": [{"anchor": "BaseVisuals/TexturedWallSegments/Wall_north_east", "position": [1.3, 0, 4], "yaw": 90, "length": 9.0, "tiers": 2, "tier_height": 1.3, "bays": 4}, {"anchor": "BaseVisuals/TexturedWallSegments/Wall_west_mid", "position": [1.3, 0, 0], "yaw": 90, "length": 7.2, "tiers": 2, "tier_height": 1.3, "bays": 3}]}
+  }
+}

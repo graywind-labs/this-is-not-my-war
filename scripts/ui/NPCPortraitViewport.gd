@@ -22,6 +22,7 @@ var _target_npc_id := ""
 var _target_enemy_id := ""
 var _target_kind := "npc"
 var _active := false
+var _allow_escaped_portrait := false
 var _camera_initialized := false
 var _subviewport: SubViewport
 var _camera: Camera3D
@@ -185,7 +186,7 @@ func _on_portrait_pressed() -> void:
 		return
 	portrait_clicked.emit(_target_npc_id)
 
-func show_npc(npc_id: String) -> void:
+func show_npc(npc_id: String, allow_escaped_portrait: bool = false) -> void:
 	var clean_id := npc_id.strip_edges()
 	if clean_id.is_empty():
 		hide_preview()
@@ -196,6 +197,7 @@ func show_npc(npc_id: String) -> void:
 	_target_kind = "npc"
 	_target_npc_id = clean_id
 	_target_enemy_id = ""
+	_allow_escaped_portrait = allow_escaped_portrait
 	_active = true
 	_status_label.text = ""
 	_status_label.visible = true
@@ -215,6 +217,7 @@ func show_enemy(enemy_id: String) -> void:
 	_target_kind = "enemy"
 	_target_npc_id = ""
 	_target_enemy_id = clean_id
+	_allow_escaped_portrait = false
 	_active = true
 	_status_label.text = ""
 	_status_label.visible = true
@@ -229,6 +232,7 @@ func hide_preview() -> void:
 	_target_npc_id = ""
 	_target_enemy_id = ""
 	_target_kind = "npc"
+	_allow_escaped_portrait = false
 	_camera_initialized = false
 	_last_target_snapshot.clear()
 	_last_camera_front_dot = -1.0
@@ -297,7 +301,8 @@ func _update_camera(delta: float) -> void:
 	if snapshot.is_empty():
 		_show_unavailable("实时镜头暂不可用")
 		return
-	if snapshot.is_empty() or not bool(snapshot.get("valid", false)) or not bool(snapshot.get("visible", false)):
+	var target_visible := bool(snapshot.get("visible", false)) or (_target_kind == "npc" and _allow_escaped_portrait)
+	if snapshot.is_empty() or not bool(snapshot.get("valid", false)) or not target_visible:
 		_show_unavailable("目标当前不在可见场景中")
 		return
 	_last_target_snapshot = snapshot.duplicate(true)
@@ -386,6 +391,7 @@ func debug_get_snapshot() -> Dictionary:
 		"target_kind": _target_kind,
 		"target_npc_id": _target_npc_id,
 		"target_enemy_id": _target_enemy_id,
+		"allow_escaped_portrait": _allow_escaped_portrait,
 		"rendering_enabled": _subviewport != null and _subviewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
 		"shares_main_world": _subviewport != null and main_viewport != null and _subviewport.world_3d == main_viewport.world_3d,
 		"viewport_size": _subviewport.size if _subviewport != null else Vector2i.ZERO,

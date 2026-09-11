@@ -1,18 +1,82 @@
 # TECH_ARCHITECTURE.md
 
+## T0396 精确 GM 多人战斗性能边界（Partial）
+
+优化保持单一权威链：CombatSystem/NPCSystem/BuildingSystem 的状态、频率和事件不变，消费者只用最小即时投影或在工作集为空/占用签名不变时跳过无关重算。引导区局部网格只活在一次同步查询内；建筑静态合批只接管不可变、非透明、非渐隐且同材质/GI/阴影/LOD 的表现叶节点，动态升级/损毁/屋顶仍走原节点。方向光阴影模式由 `environment_art_v1.celestial_cycle.directional_shadow_mode` 配置，当前为保留 120m 动态阴影的 `parallel_2_splits`。
+
+正式 Main 精确 GM 第三波最终约 37.45ms/帧，尚未达 60 FPS；物理约 17.82ms 是下一阶段硬约束。独立物理线程实验因当前 CombatSystem 直接空间查询时点不安全而撤回；在建立 Transform/接触/命中/伤害锁步等值回放并迁移查询边界前，不改变线程模式、碰撞层、RVO 或物理 tick。成立/不成立方向的唯一台账为 `COMBAT_PERFORMANCE_OPTIMIZATION_PLAN.md` 第 11 节。
+
+## T0395 音频分类配置与本地设置迁移
+
+`audio_categories.json` 是全部正式音频的设置分类源，AudioManager 启动时校验未知、重复和漏分资产。六个用户分类总线直接进入 Master，避免旧 SFX 对独立分类二次衰减；SFX / World / Foley 名称暂保兼容，但正式播放器已分别改投目标分类。`audio_settings.cfg` 升为 v2，仅保存本地表现偏好，不进入游戏存档或权威状态。
+
+## T0387 群像结局生成架构（运行时已实施，真实 Provider 待验收）
+
+权威链路定为 `GameState 胜负提交 → EpilogueFactCompiler 冻结事实 → EpilogueSystem 保存 settlement_id / pending → LLMBridge POST /game/epilogue → 后端 Schema + 连续性校验 → EpilogueSystem 校验结算身份并原子提交 → HUD 只读显示`。一次请求同时生成全站尾声和 8 人结局，防止逐人请求产生互斥未来。
+
+`EpilogueFactCompiler` 只做确定性筛选、聚合和叙事化字段映射，不生成故事；LLM 只做叙事，不改权威状态。Godot 以异步 request id 与当前 `settlement_id` 双重检查绑定本局，迟到响应不能覆盖另一份结算。成功或模板降级结果保存在当前 `settlement_snapshot`；项目尚无完整游戏存档系统，跨进程读档复用仍待未来存档层接入。
+
+结算发生后 TimeSystem 已停止；结局请求不额外改变暂停权威。HUD 先显示胜负与本地摘要，再观察 `pending / llm / template_fallback` 状态。正式路径每次 Adapter 调用只发一次 Provider 请求，HTTP 层只允许一次 Schema / 连续性纠错，因此全流程上限为两次；Godot 会拒绝 `model_fallback_used=true` 并改用显式本地模板。usage 使用 `call_type=game_epilogue` 记录请求、Provider、模型、费用与失败诊断。
+
+## T0386 压缩时间轴的权威边界
+
+`enemy_waves.json` 仍是来袭时点与敌军数据唯一权威；HUD 只读 CombatSystem 快照生成 T-3h / T-30min 表现，不写回波次或自动调用警报。`crafting_recipes.json.initial_projects` 只声明开局在制项目，CraftingSystem 在初始化时校验历史阶段成本后恢复项目；ResourceSystem 的松散木与该历史投入分别记账，避免重复发料。
+
+战斗优先级链为 `HUD 主动警报 / CombatSystem 实际刷波 -> DailyReflectionSystem.cancel -> LLMBridge.cancel_llm_request -> NPCSystem 释放首次熟睡锁`。取消结果回写为 retryable，但记忆事实不变；反思系统不能阻塞 CombatSystem，也不参与敌人、伤害或集结资格结算。
+
+## T1601A / T1601B / T1601C / T1602 玩家语音预处理架构（真实 Provider 已实施）
+
+T1604 的真实矩阵已验证这条边界在短句、轻噪、游戏术语、七类目标语境与 26.955 秒 WAV 上保持不变；矩阵工具只输出脱敏摘要，不持久化音频正文或 Key。合成女声不替代真人情绪与物理麦克风验收。
+
+语音输入是现有玩家文字输入的前置预处理，不是新的 NPC AI 决策链：
+
+```text
+DialogPanel / MicRecord
+  -> VoiceInputBridge
+  -> 游戏后端 POST /voice/analyze
+  -> VoiceModelAdapter
+  -> 阿里云百炼 qwen3-asr-flash
+  -> transcript + 原生 emotion
+  -> DialogPanel 追加普通草稿
+  -> 既有 DialogSystem -> LLMBridge -> /npc/dialogue
+```
+
+- Godot 只把 WAV 传给游戏后端，不保存 `DASHSCOPE_API_KEY`、Workspace ID 或供应商请求头。
+- 后端新增独立 VoiceModelAdapter；现有文本 ModelAdapter、DeepSeek Provider 和 NPC 对话 Schema 不承担音频上传或解析。
+- `/voice/analyze` 是无权威副作用的预处理端点：不写事件 / 见闻，不改变 NPC、资源、时间、战斗或特殊互动状态，也不直接请求 NPC 回复。
+- 正式 Provider 使用北京地域非实时 `qwen3-asr-flash`，后端把 WAV 转成 Base64 Data URI；客户端 30 秒 / 6 MiB、服务端重复校验，且仍满足 Provider 10 MB / 5 分钟上限。
+- 语音请求以 request_id + dialogue_id 绑定当前窗口；对话关闭、取消、完成、挂起或切换后，迟到响应不可落入新会话。
+- 语音预处理不申请 TimeSystem LLM 慢速；录音 Timer 和覆盖层动画使用现实时间。语音费用仍写入统一 usage / 每日人民币预算。
+- `VOICE_PROVIDER=mock` 只用于显式自动化；正式 Provider 失败返回可处理错误，不自动产生 Mock 文字或情绪。
+- 完整合同和分步实施见 `docs/VOICE_INPUT_AND_EMOTION.md` 与 TASKS M16。
+- `VoiceModelAdapter` 已同时实现显式 Mock 与 `qwen3_asr_flash`。正式路径把 WAV 编为 Base64 Data URI，调用北京业务空间专属 OpenAI 兼容 `/chat/completions`，读取非流式 `message.content` 和 `message.annotations[].emotion`；Provider HTTP / JSON / 超时失败不回退 Mock。Godot `VoiceInputRecorder` 与独立 `VoiceInputBridge` 已完成录制、multipart 请求、身份 / 响应校验和草稿追加。每个 HTTPRequest 绑定 request / dialogue id；取消后释放请求节点，迟到回调无法命中新请求。MCP Main 运行态已补验通过。
+- T1603 保持草稿存储无上限，将 300 字约束置于提交边界：DialogPanel 负责弹窗和焦点，DialogSystem 在激活草稿前做第二层拒绝；两者共享 `dialogue_input_config.json` 的值。
+
+## T0381 / T0382 大招声音表现边界
+
+陨石链路保持 `PietySystem 已提交施放 / 冲击事实 → AbilityAudioController → AudioManager.play_3d`。Controller 通过配置选择 `ability_priority`：120m 参考距离、至少 1500m 最远距离、无远距低通，并只在播放器上施加 fall +2 dB / impact +3 dB；声源仍是实际 MeteorPresentation 或权威落点，不改伤害、时间、暂停或虔诚。
+
+T0382 最终选择候选 05：`piety_ready.enabled=true`，映射到 `sfx_piety_ready_sacred_chant`。源剪辑本身已烘焙 40 ms 淡入和 1.5 秒渐出，构建脚本只做正式响度 / 格式整理，不重复叠加淡化；Presenter 仍不使用默认回退素材。
+
+## T0380 虔诚蓄满提示的权威边界
+
+数据流为 `PietySystem 提交共享虔诚并检测未满→满值边沿 → EventBus.piety_ready → MilestoneAlertPresenter FIFO → AcceptDialog + AudioManager Combat 2D`。边沿判断使用真实提交前后值；UI 刷新、持续封顶和重复无效加值不能触发。陨石成功施放仍由 PietySystem 消费虔诚，因此之后再次越过上限会自然形成新的提示周期。
+
+MilestoneAlertPresenter 只保存待显示的表现请求，并在请求真正出队显示时按配置决定是否播放声音，避免被建筑完工或幼马命名窗排队时提前发声。弹窗确认只关闭表现，不进入选点、不消费虔诚、不提交伤害或事件；声音禁用或播放失败也不影响技能资格。T0382 期间音频映射明确禁用。
+
 ## T0354 已实现前端会话与 T0355 存档技术边界
 
 - 启动链调整为 `MainMenu -> 开始游戏 -> Main/GameStartupSystem`。MainMenu 不预加载或实例化 Main，避免菜单驻留期间世界推进、NPC 计划生成和真实 provider 费用。
 - 主菜单、PauseMenu、SettingsPanel、SaveBrowserPanel 都属于表现 / 会话控制层，不计算资源、战斗、NPC、建筑或记忆事实。退出 Main 时沿节点生命周期关闭 LLMBridge 在途请求。
 - 游戏暂停继续使用 TimeSystem 逻辑暂停，不修改 `Engine.time_scale` 或 `SceneTree.paused`；PauseMenu 只保存进入前暂停布尔值并请求 / 释放自己的暂停表现。
-- `ClientSettings` 与玩家存档严格分离：本机画面和非秘密 AI 服务偏好进入 `user://client_settings.cfg`，五路音量继续进入 `user://audio_settings.cfg`；API Key 不持久化。后续安全凭据机制由后端或系统凭据层承接。
+- `ClientSettings` 与玩家存档严格分离：本机画面和非秘密 AI 服务偏好进入 `user://client_settings.cfg`，七项音量继续进入 `user://audio_settings.cfg`；API Key 不持久化。后续安全凭据机制由后端或系统凭据层承接。
 - T0355 完整存档采用稳定 slot id、独立元数据 / 状态 / 缩略图、Schema 版本、校验与原子替换。UI、Node / RID、NavigationMap、音频粒子和在途 HTTP / LLM 请求不序列化；加载必须先选择 LOAD 启动意图，再建立干净 Main 并恢复，不能执行一次新游戏启动后覆盖。
 - T0354 SaveBrowserPanel 只维护当前面板生命周期内的槽位表现模型；任何保存 / 覆盖 / 加载 / 删除最终动作都以“等待 T0355”结束，绝不产生可被误认为权威完成的状态。动态 UI 声音接线以 instance id 跨 deferred 边界，节点已释放时直接丢弃。
 
 ## T0353 音频混音与交互时序边界
 
 - `InteractionAudioController` 只监听按钮 `pressed`、世界选择与正式成功事件，不再监听面板 `visibility_changed`。按钮回调立即 flush 当前语义，关闭 UI 与声音处于同一信号分发；同次更早提交的成功语义仍可覆盖普通点击。
-- `AudioManager` 保存 `master / music / sfx / ambience / ui` 五个线性值。`Ambience`、`UI` 直达 Master；Work / Foley / Combat / World / Voice 仍经 SFX。`AmbientBed` 是 Ambience 的子总线，只承载昼夜全局底噪的镜头增益。
+- `AudioManager` 保存 `master / music / click / voice / combat / work / ambience` 七个线性值。六个分类总线分别直达 Master；`AmbientBed` 是 Ambience 的子总线，只承载昼夜全局底噪的镜头增益。
 - `WorldAudioController` 把 `scope=global_zoom` 的昼夜循环创建为 2D player，并只读 `CameraRig.get_zoom_distance()` 调整 AmbientBed；其他环境源继续创建 3D player。该增益是表现混音，不改变时间、昼夜或环境事件权威。
 
 ## T0350 实战成长权威边界
@@ -99,11 +163,11 @@ GMPanel 只决定该调试动作是否允许显式 Mock，不决定邀请结果�
 
 `TimeSystem / GameState` 仍是昼夜唯一权威，`CombatSystem._active_enemies` 仍是敌人在场唯一权威，工位占用和 `current_action` 仍分别由 BuildingSystem / NPCSystem 维护。新增 WorldAudioController 只把这些既有事实投影成 BGM 和 3D 环境播放器，不写回时间、战斗、工位、生产或事件记忆。
 
-CombatSystem 只在既有敌人存在同步点增加数量变化广播；音乐层不轮询敌人节点、不把警铃或预告误当战斗开始。环境随机调度使用现实秒与素材时长控制密度，昼夜启停仍由权威时间信号决定，因此 x2 / x4 不会压缩素材、升调或制造重叠风暴。声源位置、随机间隔和音乐 ID 位于 `data/presentation/world_audio.json`，避免把空间方案写死在表现脚本。
+CombatSystem 只在既有敌人存在同步点增加数量变化广播；音乐层不轮询敌人节点、不把警铃或预告误当战斗开始。T0378 起非战斗音乐由白天 6 首 / 夜晚 3 首两个配置化顺序池组成，AudioManager 只在非循环单曲自然完成后发出表现信号，WorldAudioController 才推进下一个索引；昼夜切换进入对应池，敌人入场仍优先战斗曲，清场后继续当前昼夜池。索引不进入存档或玩法状态。环境随机调度使用现实秒与素材时长控制密度，昼夜启停仍由权威时间信号决定，因此 x2 / x4 不会压缩素材、升调或制造重叠风暴。声源位置、随机间隔和音乐 ID 位于 `data/presentation/world_audio.json`，避免把空间方案写死在表现脚本。
 
 ## T0135-P10A 音频表现与玩法权威边界
 
-数据流为 `业务系统权威事实 / 已有表现动作 → AudioManager(asset_id, source) → 分类总线 → SFX 或 Music → Master`。AudioManager 只保存资产元数据、活动播放器和用户音量，不判断 NPC 是否工作、攻击是否命中、建筑是否受损、敌人是否入场或昼夜 / 战斗是否切换；这些触发条件继续由现有权威系统决定。
+数据流为 `业务系统权威事实 / 已有表现动作 → AudioManager(asset_id, source) → Music / UI / Voice / Combat / Work / Ambience 分类总线 → Master`。AudioManager 只保存资产元数据、活动播放器和用户音量，不判断 NPC 是否工作、攻击是否命中、建筑是否受损、敌人是否入场或昼夜 / 战斗是否切换；这些触发条件继续由现有权威系统决定。SFX / World / Foley 仅作旧调用兼容，不再承载玩家可见的笼统音量设置。
 
 3D 播放必须接收真实 Node3D 来源并使用 manifest 最大距离，不能由 UI 或镜头中心伪造世界位置。循环的开始 / 停止与工作 `350ms`、环境 `1000ms`、移动立即停止规则读取已确认清单。音量设置属于本地表现偏好，保存在 `user://audio_settings.cfg`，不进入 GameState、MemorySystem、见闻、存档结算或 LLM 上下文。
 
@@ -677,7 +741,7 @@ GMPanel 不直接写征召、buff、策略、逃离或记忆；它只选择枚�
 
 ## T0135-P6R 动态阴影稳定化边界
 
-- 稳定化只发生在 presentation 配置和两盏天体 `DirectionalLight3D` 上：阴影覆盖由 `180 m` 收紧为 `120 m`，四级联边界启用混合并使用 `0.12 / 0.30 / 0.60` 分割。它不改变太阳 / 月亮轨迹、方向计算频率、色温、能量或主阴影比较器。
+- 稳定化只发生在 presentation 配置和两盏天体 `DirectionalLight3D` 上：阴影覆盖由 `180 m` 收紧为 `120 m`，边界启用混合并保留 `0.12 / 0.30 / 0.60` 分割配置。P6R 初始为四级联，T0396 精确性能 A/B 后当前生产选择 `parallel_2_splits`；它不改变太阳 / 月亮轨迹、方向计算频率、色温、能量、投影者或主阴影比较器。
 - `CelestialCycleController` 继续每次从 GameState 绝对时刻直接重算，不缓存第二套时钟；暂停和倍速仍由 TimeSystem 唯一决定。新增快照只公开实际渲染参数，不成为存档或玩法状态。
 - P6R 当时未启用 TAA、方向量化或低频跳步；用户实机确认高频波动仍存在后，P6R2 仅增加上述 `60` 游戏秒 Transform 采样。`120 m` 外仍只失去远景实时细节阴影，碰撞、导航、敌路、建筑透明壳持久阴影和室内遮光不受影响。
 

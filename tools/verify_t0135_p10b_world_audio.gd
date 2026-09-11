@@ -26,11 +26,59 @@ func _init() -> void:
 	if not bool(initial.get("initialized", false)) or str(initial.get("schema_version", "")) != "world_audio_v1":
 		_fail("World audio controller did not initialize: %s" % JSON.stringify(initial))
 		return
+	var day_bed_info := audio_manager.get_asset_info("sfx_ambience_day_loop") as Dictionary
+	var night_bed_info := audio_manager.get_asset_info("sfx_ambience_night_loop") as Dictionary
+	if (
+		str(day_bed_info.get("review_pack", "")) != "sample_pack_v26_ambient_nature_beds"
+		or str(day_bed_info.get("source_title", "")) != "ambience birds loop.wav"
+		or str(day_bed_info.get("target_lufs", "")) != "-28.0"
+	):
+		_fail("Day global ambience bed is not the confirmed v26-04 selection: %s" % JSON.stringify(day_bed_info))
+		return
+	if (
+		str(night_bed_info.get("review_pack", "")) != "sample_pack_v26_ambient_nature_beds"
+		or str(night_bed_info.get("source_title", "")) != "Quiet Night Atmosphere – Soft Crickets"
+		or str(night_bed_info.get("target_lufs", "")) != "-30.0"
+	):
+		_fail("Night global ambience bed is not the confirmed v26-01 selection: %s" % JSON.stringify(night_bed_info))
+		return
 	if int(initial.get("source_count", 0)) != 12:
 		_fail("Expected 12 configured local positional sources: %s" % JSON.stringify(initial.get("sources", {})))
 		return
-	if str(initial.get("period", "")) != "day" or audio_manager.get_current_music_asset_id() != "music_day_night":
+	var expected_day_playlist := [
+		"music_day_playlist_01",
+		"music_day_playlist_03",
+		"music_day_playlist_04",
+		"music_day_playlist_05",
+		"music_day_playlist_07",
+		"music_day_playlist_12",
+	]
+	var expected_night_playlist := [
+		"music_night_playlist_05",
+		"music_night_playlist_06",
+		"music_night_playlist_10",
+	]
+	if initial.get("day_playlist", []) != expected_day_playlist or initial.get("night_playlist", []) != expected_night_playlist:
+		_fail("Configured day/night music pools do not match the nine user selections")
+		return
+	for asset_id in expected_day_playlist + expected_night_playlist:
+		var info := audio_manager.get_asset_info(asset_id) as Dictionary
+		if info.is_empty() or str(info.get("loop", "true")) != "false":
+			_fail("Playlist music must be a registered non-looping asset: %s" % asset_id)
+			return
+		if int(info.get("runtime_fade_in_ms", 0)) != 2000 or int(info.get("runtime_fade_out_ms", 0)) != 2000 or str(info.get("fade_mode", "")) != "baked_track_edges":
+			_fail("Playlist music is missing baked 2-second edge fades: %s" % asset_id)
+			return
+	if str(initial.get("period", "")) != "day" or audio_manager.get_current_music_asset_id() != expected_day_playlist[0]:
 		_fail("Initial gameplay audio state is not daytime/noncombat")
+		return
+	if bool(audio_manager.debug_get_snapshot().get("current_music_looping", true)):
+		_fail("Day/night playlist track was forced back into single-track looping")
+		return
+	audio_manager.debug_finish_current_music()
+	await process_frame
+	if audio_manager.get_current_music_asset_id() != expected_day_playlist[1]:
+		_fail("A naturally completed daytime track did not advance in configured order")
 		return
 	var initial_loops: Dictionary = audio_manager.get_loop_snapshot()
 	for loop_key in [
@@ -63,15 +111,34 @@ func _init() -> void:
 	if int((day_random.get("day_birds", {}) as Dictionary).get("trigger_count", 0)) < 1:
 		_fail("Day bird pool did not trigger from its configured positional emitters")
 		return
-	if int((day_random.get("dawn_rooster", {}) as Dictionary).get("trigger_count", 0)) < 1:
+	if not is_equal_approx(float((day_random.get("day_birds", {}) as Dictionary).get("last_gain_db", 0.0)), -7.0):
+		_fail("Day bird pool did not apply the configured -7 dB wildlife reduction")
+		return
+	var rooster_state := day_random.get("dawn_rooster", {}) as Dictionary
+	if int(rooster_state.get("trigger_count", 0)) != 1 or int(rooster_state.get("daily_trigger_count", 0)) != 1:
 		_fail("Dawn rooster pool did not trigger near the stable/dining hall")
+		return
+	controller.debug_advance_ambient_seconds(600.0)
+	rooster_state = (controller.get_debug_snapshot().get("random_groups", {}) as Dictionary).get("dawn_rooster", {}) as Dictionary
+	if int(rooster_state.get("trigger_count", 0)) != 1 or not is_inf(float(rooster_state.get("next_due_seconds", 0.0))):
+		_fail("Dawn rooster repeated within the same game day")
 		return
 	audio_manager.stop_all_one_shots()
 	await process_frame
 
-	time_system.set_current_time(1, 19, 0, 0)
+	time_system.set_current_time(2, 5, 30, 0)
 	await process_frame
-	controller.debug_advance_ambient_seconds(8.0)
+	controller.debug_advance_ambient_seconds(30.0)
+	var next_day_rooster := (controller.get_debug_snapshot().get("random_groups", {}) as Dictionary).get("dawn_rooster", {}) as Dictionary
+	if int(next_day_rooster.get("trigger_count", 0)) != 1 or int(next_day_rooster.get("daily_trigger_count", 0)) != 1:
+		_fail("Dawn rooster did not reset to exactly one trigger on the next game day")
+		return
+	audio_manager.stop_all_one_shots()
+	await process_frame
+
+	time_system.set_current_time(2, 19, 0, 0)
+	await process_frame
+	controller.debug_advance_ambient_seconds(240.0)
 	var night: Dictionary = controller.get_debug_snapshot()
 	var night_loops: Dictionary = audio_manager.get_loop_snapshot()
 	if str(night.get("period", "")) != "night":
@@ -81,14 +148,30 @@ func _init() -> void:
 		_fail("Day/night ambience bed did not switch at 18:00 boundary")
 		return
 	for suffix in ["west_grass", "east_grass", "south_grass"]:
-		if not night_loops.has("world_ambience_night_insects_%s" % suffix):
-			_fail("Staggered night insect loop is missing: %s" % suffix)
+		if night_loops.has("world_ambience_night_insects_%s" % suffix):
+			_fail("Night insect ambience still owns a continuous loop: %s" % suffix)
 			return
-	if audio_manager.get_current_music_asset_id() != "music_day_night":
-		_fail("Day/night must share the confirmed music asset")
+	var night_random: Dictionary = night.get("random_groups", {})
+	var insect_state := night_random.get("night_insects", {}) as Dictionary
+	if int(insect_state.get("trigger_count", 0)) < 1 or not is_equal_approx(float(insect_state.get("last_gain_db", 0.0)), -8.0):
+		_fail("Night insects did not use intermittent -8 dB positional playback")
 		return
-	controller.debug_advance_ambient_seconds(240.0)
-	var night_random: Dictionary = controller.get_debug_snapshot().get("random_groups", {})
+	var insect_players := main.find_children("Audio3D_sfx_ambience_night_insects_*", "AudioStreamPlayer3D", true, false)
+	if insect_players.size() != 1:
+		_fail("Night insect random group must own exactly one active one-shot: %s" % insect_players.size())
+		return
+	var insect_stream := (insect_players[0] as AudioStreamPlayer3D).stream as AudioStreamOggVorbis
+	if insect_stream == null or insect_stream.loop:
+		_fail("Night insect OGG retained its authored loop flag during intermittent one-shot playback")
+		return
+	if audio_manager.get_current_music_asset_id() != expected_night_playlist[0]:
+		_fail("Night boundary did not start the first configured night track")
+		return
+	audio_manager.debug_finish_current_music()
+	await process_frame
+	if audio_manager.get_current_music_asset_id() != expected_night_playlist[1]:
+		_fail("A naturally completed night track did not advance in configured order")
+		return
 	if int((night_random.get("night_owl", {}) as Dictionary).get("trigger_count", 0)) < 1:
 		_fail("Night owl pool did not trigger from a forest source")
 		return
@@ -140,9 +223,11 @@ func _init() -> void:
 	if not bool(clear_result.get("ok", false)) or combat_system.get_active_enemy_count() != 0:
 		_fail("Formal enemy clear did not remove the enemy-presence authority fact")
 		return
-	if audio_manager.get_current_music_asset_id() != "music_day_night" or bool(controller.get_debug_snapshot().get("combat_active", true)):
-		_fail("Clearing the last enemy did not restore gameplay music")
+	if audio_manager.get_current_music_asset_id() != expected_night_playlist[2] or bool(controller.get_debug_snapshot().get("combat_active", true)):
+		_fail("Clearing the last enemy did not resume the current night playlist")
 		return
+	audio_manager.stop_all_one_shots()
+	await process_frame
 
 	main.queue_free()
 	for _index in range(4):
@@ -151,7 +236,7 @@ func _init() -> void:
 	if audio_manager.get_current_music_asset_id() != "" or not audio_manager.get_loop_snapshot().is_empty():
 		_fail("World audio players survived Main scene teardown")
 		return
-	print("T0135_P10B_WORLD_AUDIO_PASS local_sources=12 global_bed=zoom_scaled day_night=pass combat_music=pass fire=pass")
+	print("T0135_P10B_WORLD_AUDIO_PASS local_sources=12 global_bed=zoom_scaled wildlife=intermittent_reduced rooster=daily_once playlists=6+3 ordered_fades=pass combat_music=pass fire=pass")
 	quit(0)
 
 

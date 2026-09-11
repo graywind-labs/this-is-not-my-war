@@ -2,7 +2,17 @@
   "schema_version": "combat_audio_v1",
   "source_height_m": 0.9,
   "impact_height_m": 0.2,
+  "spatial_profile": "combat_priority",
+  "global_event_types": [
+    "combat_alarm",
+    "battle_started",
+    "wave_cleared",
+    "game_over_victory",
+    "game_over_failure"
+  ],
   "hurt_voice_probability": 0.5,
+  "guard_attack_hurt_voice_probability": 1.0,
+  "guard_attack_source_id": "guard_officer",
   "recent_history_limit": 96,
   "frame_limits": {
     "total": 14,
@@ -40,6 +50,7 @@
   "enemy_hurt_voice_asset": "voice_combat_enemy_hurt_voice",
   "unconscious_fall_asset": "sfx_combat_unconscious_fall",
   "horse_death_asset": "sfx_combat_horse_death",
+  "combat_alarm_asset": "sfx_world_battle_alert_one_shot",
   "structure": {
     "stone_building_ids": ["main_hall", "chapel", "wall"],
     "wood_damage_assets": ["sfx_combat_wood_damage_01", "sfx_combat_wood_damage_02"],

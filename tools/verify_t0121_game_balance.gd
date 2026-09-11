@@ -2,6 +2,7 @@ extends SceneTree
 
 
 const EXPECTED_WAVE_COUNTS := [8, 16, 24, 36, 48]
+const EXPECTED_WAVE_TIMES := [[1, 23], [3, 8], [4, 4], [5, 12], [6, 18]]
 const EXPECTED_WAVE_GROUP_COUNTS := [
 	[8],
 	[12, 4],
@@ -95,9 +96,10 @@ func _verify_actions(action_system: Node) -> bool:
 	var dining: Dictionary = action_system.get_action("work_dining_hall")
 	if int((dining.get("output_resources", {}) as Dictionary).get("meal", 0)) != 2:
 		return _fail("Dining hall must turn one grain into two meals")
-	for action_id in ["work_blacksmith", "work_workshop"]:
-		if int(action_system.get_action(action_id).get("duration_seconds", 0)) != 5400:
-			return _fail("%s must use the confirmed 5400-second base stage" % action_id)
+	var expected_durations := {"work_blacksmith": 4800, "work_workshop": 4500}
+	for action_id in expected_durations.keys():
+		if int(action_system.get_action(str(action_id)).get("duration_seconds", 0)) != int(expected_durations[action_id]):
+			return _fail("%s base stage duration mismatch" % action_id)
 	return true
 
 
@@ -111,6 +113,18 @@ func _verify_recipes(crafting_system: Node) -> bool:
 			return _fail("Recipe material total mismatch for %s: %s" % [recipe_id, JSON.stringify(_sum_recipe_cost(recipe))])
 		if bool(recipe.get("available", true)) != bool(expected[2]):
 			return _fail("Recipe availability mismatch for %s" % recipe_id)
+	var initial_project: Dictionary = crafting_system.get_project_snapshot("workshop")
+	if (
+		str(initial_project.get("target_recipe_id", "")) != "craft_wall_arrow_tower"
+		or int(initial_project.get("completed_stages", 0)) != 4
+		or int(initial_project.get("total_stages", 0)) != 12
+		or str(initial_project.get("current_stage_id", "")) != "reinforce_tower_frame"
+	):
+		return _fail("Workshop must start with the arrow tower at 4/12: %s" % JSON.stringify(initial_project))
+	var initial_contract: Dictionary = crafting_system.debug_get_snapshot().get("initial_projects", {})
+	var workshop_contract: Dictionary = initial_contract.get("workshop", {})
+	if workshop_contract.get("invested_resources", {}) != {"wood": 4}:
+		return _fail("Initial tower must account for four invested wood")
 	return true
 
 
@@ -118,8 +132,9 @@ func _verify_wave_schedule_and_composition(combat_system: Node) -> bool:
 	for index in range(EXPECTED_WAVE_COUNTS.size()):
 		var wave_number := index + 1
 		var wave: Dictionary = combat_system.get_wave_config(wave_number)
-		if int(wave.get("trigger_day", 0)) != wave_number + 2 or int(wave.get("trigger_hour", -1)) != 18:
-			return _fail("Wave %d must arrive on day %d at 18:00" % [wave_number, wave_number + 2])
+		var expected_time: Array = EXPECTED_WAVE_TIMES[index]
+		if int(wave.get("trigger_day", 0)) != int(expected_time[0]) or int(wave.get("trigger_hour", -1)) != int(expected_time[1]):
+			return _fail("Wave %d schedule mismatch" % wave_number)
 		var group_counts: Array[int] = []
 		var total := 0
 		for raw_group in (wave.get("enemies", []) as Array):
@@ -132,7 +147,7 @@ func _verify_wave_schedule_and_composition(combat_system: Node) -> bool:
 
 
 func _verify_economy(resource_system: Node, merchant_system: Node) -> bool:
-	var expected_initial := {"money": 30, "grain": 18, "meal": 0, "wood": 12, "stone": 8, "iron": 5}
+	var expected_initial := {"money": 30, "grain": 18, "meal": 0, "wood": 8, "stone": 8, "iron": 5}
 	for resource_id in expected_initial.keys():
 		if int(resource_system.get_resource(str(resource_id))) != int(expected_initial[resource_id]):
 			return _fail("Initial resource mismatch for %s" % resource_id)

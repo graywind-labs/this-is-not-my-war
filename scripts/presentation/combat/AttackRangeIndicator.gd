@@ -108,6 +108,16 @@ func _on_simple_non_combat_selection() -> void:
 
 func _on_npc_state_changed(npc_id: String) -> void:
 	if _selection_type == "npc" and _selection_id == npc_id:
+		var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+		if (
+			npc_system != null
+			and npc_system.has_method("is_active_npc_state_change_relevant")
+			and not npc_system.is_active_npc_state_change_relevant(
+				npc_id,
+				["hp", "max_hp", "unconscious", "escaped", "behavior_mode", "combat_mode", "combat_mounted"]
+			)
+		):
+			return
 		_refresh_from_authority(true)
 
 

@@ -26,7 +26,6 @@ var _ai_custom_fields: VBoxContainer
 var _status_label: Label
 var _selected_tab := 0
 var _opening_audio_snapshot: Dictionary = {}
-var _opening_client_snapshot: Dictionary = {}
 
 
 func _ready() -> void:
@@ -40,8 +39,6 @@ func _ready() -> void:
 func open_panel(tab_index := 0) -> void:
 	var audio_manager := get_node_or_null("/root/AudioManager")
 	_opening_audio_snapshot = audio_manager.get_volume_snapshot() if audio_manager != null else {}
-	var client_settings := get_node_or_null("/root/ClientSettings")
-	_opening_client_snapshot = client_settings.get_snapshot() if client_settings != null else {}
 	_sync_controls()
 	_status_label.text = ""
 	visible = true
@@ -438,7 +435,6 @@ func _apply_changes() -> void:
 		_opening_audio_snapshot = audio_manager.get_volume_snapshot()
 	var client_settings := get_node_or_null("/root/ClientSettings")
 	var result: Dictionary = client_settings.apply_settings(_collect_client_draft(), true) if client_settings != null else {"ok": false}
-	_opening_client_snapshot = client_settings.get_snapshot() if client_settings != null else {}
 	var key_pending := not _ai_key.text.is_empty()
 	_status_label.modulate = FrontendStyles.make_status_color(key_pending or not bool(result.get("ok", false)))
 	_status_label.text = (
@@ -449,7 +445,15 @@ func _apply_changes() -> void:
 
 
 func _reset_controls() -> void:
-	var audio_defaults := {"master": 0.8, "music": 0.56, "sfx": 0.8, "ambience": 0.8, "ui": 0.8}
+	var audio_defaults := {
+		"master": 0.8,
+		"music": 0.28,
+		"click": 0.8,
+		"voice": 0.8,
+		"combat": 0.8,
+		"work": 0.8,
+		"ambience": 0.8,
+	}
 	_audio_page.set_audio_values(audio_defaults, false)
 	var client_settings := get_node_or_null("/root/ClientSettings")
 	var defaults: Dictionary = client_settings.get_default_snapshot() if client_settings != null else {}
@@ -472,9 +476,6 @@ func _reset_controls() -> void:
 func _restore_opening_values() -> void:
 	if not _opening_audio_snapshot.is_empty() and _audio_page != null:
 		_audio_page.set_audio_values(_opening_audio_snapshot, true)
-	var client_settings := get_node_or_null("/root/ClientSettings")
-	if client_settings != null and not _opening_client_snapshot.is_empty():
-		client_settings.apply_settings(_opening_client_snapshot, false)
 
 
 func _show_ai_connection_placeholder() -> void:

@@ -7,6 +7,10 @@ const STATION_DETAIL_VIEW_SCRIPT := preload("res://scripts/presentation/environm
 const FORMAL_FOREST_VIEW_SCRIPT := preload("res://scripts/presentation/environment/FormalForestArtView.gd")
 const ENVIRONMENT_SCATTER_VIEW_SCRIPT := preload("res://scripts/presentation/environment/FormalEnvironmentScatterView.gd")
 const CELESTIAL_CYCLE_CONTROLLER_SCRIPT := preload("res://scripts/presentation/environment/CelestialCycleController.gd")
+const STYLIZED_GROUND_SCRIPT := preload("res://scripts/presentation/environment/StylizedGroundArt.gd")
+const BUILDING_CONTACT_SCRIPT := preload("res://scripts/presentation/environment/BuildingGroundContactArt.gd")
+const STYLIZED_RIVER_SCRIPT := preload("res://scripts/presentation/environment/StylizedRiverArt.gd")
+const STYLIZED_MOUNTAIN_SCRIPT := preload("res://scripts/presentation/environment/StylizedMountainArt.gd")
 
 const GROUND_SHADER_SOURCE := """
 shader_type spatial;
@@ -69,6 +73,9 @@ var _station_detail_view: Node3D
 var _forest_view: Node3D
 var _scatter_view: Node3D
 var _celestial_cycle_controller: Node3D
+var _approved_ground: Node3D
+var _approved_mountain: Node3D
+var _approved_river: Node3D
 
 
 func configure(environment_config: Dictionary, station_layout: Dictionary) -> void:
@@ -96,6 +103,9 @@ func get_debug_snapshot() -> Dictionary:
 		if not combined_missing_assets.has(str(missing_asset)):
 			combined_missing_assets.append(str(missing_asset))
 	return {
+		"approved_river": _approved_river.get_debug_snapshot() if is_instance_valid(_approved_river) else {},
+		"approved_mountain": _approved_mountain.get_debug_snapshot() if is_instance_valid(_approved_mountain) else {},
+		"approved_ground": _approved_ground.call("get_debug_snapshot") if is_instance_valid(_approved_ground) else {},
 		"schema_version": str(_environment_config.get("schema_version", "")),
 		"art_revision": ART_REVISION,
 		"ground_polygon_vertex_count": _ground_polygon_vertex_count,
@@ -153,6 +163,9 @@ func _rebuild() -> void:
 	_forest_view = null
 	_scatter_view = null
 	_celestial_cycle_controller = null
+	_approved_ground = null
+	_approved_mountain = null
+	_approved_river = null
 	if str(_environment_config.get("schema_version", "")) != EXPECTED_SCHEMA:
 		return
 	_build_materials()
@@ -176,6 +189,28 @@ func _rebuild() -> void:
 	_build_door_wear(surface_root)
 	_build_drainage(surface_root)
 	_build_embedded_details(surface_root)
+	if bool((_environment_config.get("approved_ground", {}) as Dictionary).get("enabled", false)):
+		_install_approved_ground(surface_root)
+	if bool((_environment_config.get("approved_mountain", {}) as Dictionary).get("enabled", false)):
+		var mountain_path := str(_environment_config.approved_mountain.get("config_path", STYLIZED_MOUNTAIN_SCRIPT.CONFIG_PATH))
+		var mountain_settings: Variant = JSON.parse_string(FileAccess.get_file_as_string(mountain_path))
+		if mountain_settings is Dictionary and mountain_settings.get("schema_version", "") == "mountain_art_trial_v1":
+			_approved_mountain = STYLIZED_MOUNTAIN_SCRIPT.new()
+			_approved_mountain.name = "ApprovedStylizedMountain"
+			add_child(_approved_mountain)
+			_approved_mountain.configure(self, mountain_settings)
+		else:
+			push_error("Approved mountain configuration is invalid")
+	if bool((_environment_config.get("approved_river", {}) as Dictionary).get("enabled", false)):
+		var river_path := str(_environment_config.approved_river.get("config_path", STYLIZED_RIVER_SCRIPT.CONFIG_PATH))
+		var river_settings: Variant = JSON.parse_string(FileAccess.get_file_as_string(river_path))
+		if river_settings is Dictionary and river_settings.get("schema_version", "") == "river_art_trial_v1":
+			_approved_river = STYLIZED_RIVER_SCRIPT.new()
+			_approved_river.name = "ApprovedStylizedRiver"
+			add_child(_approved_river)
+			_approved_river.configure(self, river_settings)
+		else:
+			push_error("Approved river configuration is invalid")
 	_station_detail_view = STATION_DETAIL_VIEW_SCRIPT.new() as Node3D
 	_station_detail_view.name = "StationLifeDetails"
 	_station_detail_view.call("configure", _environment_config, _layout)
@@ -187,6 +222,45 @@ func _rebuild() -> void:
 	set_meta("art_revision", ART_REVISION)
 	set_meta("presentation_only", true)
 	set_meta("roads_affect_navigation", false)
+
+
+func _install_approved_ground(surface_root: Node3D) -> void:
+	var config_path := str((_environment_config.get("approved_ground", {}) as Dictionary).get("config_path", STYLIZED_GROUND_SCRIPT.CONFIG_PATH))
+	var config := JSON.parse_string(FileAccess.get_file_as_string(config_path)) as Dictionary
+	_approved_ground = STYLIZED_GROUND_SCRIPT.new()
+	_approved_ground.name = "ApprovedStylizedGround"
+	_approved_ground.configure(config, _layout, _environment_config)
+	add_child(_approved_ground)
+	var material: ShaderMaterial = _approved_ground.make_surface_material()
+	call_deferred("_install_building_contact", material)
+	# Reuse existing ground geometry: no overlay can cover floors, water or banks.
+	(surface_root.get_node("StationDeepGrassVariation") as MeshInstance3D).material_override = material
+	for plateau in _terrain_view.get_node("DisconnectedPlateaus").get_children():
+		(plateau as MeshInstance3D).material_override = material
+	for child in surface_root.get_children():
+		if child is Node3D and str(child.name).begins_with("GroundVegetation"):
+			child.hide()
+	var replaced_count: int = _approved_ground.replace_original_scatter(_scatter_view)
+	_scatter_view.set_meta("approved_ground_replaced_instance_count", replaced_count)
+	var road_art := get_node_or_null("../Roads/FormalRoadNetworkArt")
+	if road_art != null:
+		road_art.call("use_ground_surface_projection")
+
+
+func _install_building_contact(material: ShaderMaterial) -> void:
+	if get_parent().get_node_or_null("BuildingRoots") == null:
+		return
+	var surface := get_node_or_null("GroundSurface/StationDeepGrassVariation") as MeshInstance3D
+	if surface == null or surface.material_override != material:
+		return # Ignore a deferred install superseded by a newer environment rebuild.
+	var contact := BUILDING_CONTACT_SCRIPT.new()
+	contact.name = "BuildingGroundContact"
+	add_child(contact)
+	contact.configure(self, _layout, material)
+	var decor := preload("res://scripts/presentation/environment/StationGroundDecor.gd").new()
+	decor.name = "StationGroundDecor"
+	add_child(decor)
+	decor.thin_grass(_approved_ground)
 
 
 func _build_materials() -> void:

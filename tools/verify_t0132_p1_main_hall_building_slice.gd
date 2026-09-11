@@ -32,7 +32,7 @@ func _init() -> void:
 	if hall == null or art == null or envelope == null or building_system == null or defense_system == null or resource_system == null or station_layout_controller == null or device_presenter == null or camera == null:
 		_fail("T0132-P1 main hall runtime hierarchy is incomplete")
 		return
-	if envelope.visible or str(art.get_meta("art_revision", "")) != "t0352_shell_closure":
+	if envelope.visible or str(art.get_meta("art_revision", "")) != "t0374_shell_finish":
 		_fail("Formal main hall did not replace the legacy envelope")
 		return
 	if not bool(art.get_meta("solid_visual_mass", false)) or not bool(art.get_meta("load_bearing_roof_deck", false)):

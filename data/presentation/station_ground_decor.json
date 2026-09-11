@@ -1,0 +1,15 @@
+{
+  "torches": [[-25.5,-39.0],[-21.0,-12.0],[-18.5,3.0],[17.0,14.5],[3.8,20.0],[3.8,43.0]],
+  "stumps": [
+    {"position":[-29.0,14.0],"radius":0.36,"height":0.46,"rotation":18},
+    {"position":[-8.0,16.0],"radius":0.32,"height":0.38,"rotation":113},
+    {"position":[21.0,-9.0],"radius":0.38,"height":0.52,"rotation":52},
+    {"position":[25.0,43.0],"radius":0.31,"height":0.42,"rotation":207}
+  ],
+  "torch_clearance":1.6,
+  "stump_clearance":1.8,
+  "torch_height":2.5,
+  "torch_scale":0.4,
+  "light_energy":1.7,
+  "light_range":7.5
+}

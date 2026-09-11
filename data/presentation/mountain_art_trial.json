@@ -1,0 +1,21 @@
+{
+  "schema_version": "mountain_art_trial_v1",
+  "rock_dark": "#343b39",
+  "rock_light": "#777a70",
+  "earth": "#4d4b37",
+  "moss": "#35452b",
+  "strata_spacing": 6.8,
+  "strata_strength": 0.20,
+  "foot_height": 3.2,
+  "seed": 365,
+  "mountain_height_multipliers": {"near": 4.2, "mid": 3.5, "far": 2.8},
+  "outcrop_width": [3.8, 6.2],
+  "outcrop_height": [4.5, 7.5],
+  "outcrop_centers": [[136, 34], [151, 70], [132, 112], [158, 157], [143, 215], [179, 94], [202, 166]],
+  "views": {
+    "overview": {"target": [185, 28, 112], "offset": [-110, 105, 110]},
+    "close": {"target": [143, 14, 38], "offset": [-38, 22, 34]},
+    "side": {"target": [173, 24, 100], "offset": [-88, 32, -64]},
+    "wide": {"target": [185, 28, 90], "offset": [-170, 185, 190]}
+  }
+}

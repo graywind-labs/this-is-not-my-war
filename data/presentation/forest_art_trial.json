@@ -1,0 +1,17 @@
+{
+  "schema_version": "forest_art_trial_v1",
+  "seed": 364,
+  "sample_bounds": [-72.0, 94.0, 54.0, 384.0],
+  "group_noise_frequency": 0.035,
+  "young_fraction": 0.28,
+  "bark_color": "#554331",
+  "leaf_colors": ["#405638", "#53663c", "#657348"],
+  "pine_colors": ["#334b39", "#405a40", "#506547"],
+  "birch_bark": "#b6b29a",
+  "views": {
+    "edge": {"target": [8.0, 0.0, 105.0], "offset": [28.0, 48.0, 57.0]},
+    "close": {"target": [26.0, 0.0, 114.0], "offset": [14.0, 21.0, 25.0]},
+    "side": {"target": [26.0, 2.5, 114.0], "offset": [26.0, 13.0, -12.0]},
+    "dense": {"target": [8.0, 1.0, 260.0], "offset": [24.0, 31.0, -44.0]}
+  }
+}

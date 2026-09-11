@@ -1957,6 +1957,53 @@ func _add_engineering_kit() -> void:
 func apply_profile(npc_profile: Dictionary) -> void:
 	var previous_states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
 	var states: Dictionary = npc_profile.get("states", {}) if npc_profile.get("states", {}) is Dictionary else {}
+	_profile = npc_profile.duplicate(true)
+	var equipment: Dictionary = npc_profile.get("equipment", {}) if npc_profile.get("equipment", {}) is Dictionary else {}
+	var main_weapon: Dictionary = equipment.get("main_weapon", {}) if equipment.get("main_weapon", {}) is Dictionary else {}
+	_authority_main_weapon_id = str(main_weapon.get("id", ""))
+	_ensure_combat_weapon_node(_authority_main_weapon_id)
+	_authority_armor_ids.clear()
+	for slot in ARMOR_SLOTS:
+		var armor_item: Dictionary = equipment.get(slot, {}) if equipment.get(slot, {}) is Dictionary else {}
+		_authority_armor_ids[slot] = str(armor_item.get("id", ""))
+	if _authority_armor_ids.values().any(func(value: Variant) -> bool: return not str(value).is_empty()):
+		_ensure_armor_nodes()
+	_apply_authoritative_states(previous_states, states, str(npc_profile.get("id", "")))
+
+
+func apply_states(states: Dictionary) -> void:
+	var previous_states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
+	var next_states := states.duplicate(true)
+	_profile["states"] = next_states
+	_apply_authoritative_states(previous_states, next_states, str(_profile.get("id", "")))
+
+
+func apply_state_changes(changes: Dictionary) -> void:
+	var current_states: Dictionary = (
+		_profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
+	)
+	var effective_changes: Dictionary = {}
+	for raw_key in changes.keys():
+		var key := str(raw_key)
+		var value: Variant = changes[raw_key]
+		if current_states.has(key) and current_states[key] == value:
+			continue
+		effective_changes[key] = value.duplicate(true) if value is Dictionary or value is Array else value
+	if effective_changes.is_empty():
+		return
+	# _apply_authoritative_states only needs the previous mounted flag for the
+	# exact mounted-knockout transition. Avoid cloning the unrelated state tree.
+	var previous_states := {
+		"combat_mounted": bool(current_states.get("combat_mounted", false)),
+	}
+	var next_states := current_states.duplicate()
+	for raw_key in effective_changes.keys():
+		next_states[str(raw_key)] = effective_changes[raw_key]
+	_profile["states"] = next_states
+	_apply_authoritative_states(previous_states, next_states, str(_profile.get("id", "")))
+
+
+func _apply_authoritative_states(previous_states: Dictionary, states: Dictionary, profile_id: String) -> void:
 	var next_hp := int(states.get("hp", _previous_hp if _previous_hp >= 0 else 0))
 	var next_unconscious := bool(states.get("unconscious", false))
 	var was_unconscious := _previous_unconscious
@@ -1969,15 +2016,6 @@ func apply_profile(npc_profile: Dictionary) -> void:
 		and next_unconscious
 		and bool(previous_states.get("combat_mounted", false))
 	)
-	_profile = npc_profile.duplicate(true)
-	var equipment: Dictionary = npc_profile.get("equipment", {}) if npc_profile.get("equipment", {}) is Dictionary else {}
-	var main_weapon: Dictionary = equipment.get("main_weapon", {}) if equipment.get("main_weapon", {}) is Dictionary else {}
-	_authority_main_weapon_id = str(main_weapon.get("id", ""))
-	_ensure_combat_weapon_node(_authority_main_weapon_id)
-	_authority_armor_ids.clear()
-	for slot in ARMOR_SLOTS:
-		var armor_item: Dictionary = equipment.get(slot, {}) if equipment.get(slot, {}) is Dictionary else {}
-		_authority_armor_ids[slot] = str(armor_item.get("id", ""))
 	var behavior_mode := str(states.get("behavior_mode", states.get("combat_mode", "")))
 	_authority_combat_visible = behavior_mode in ["rally", "combat"]
 	var next_attack_sequence := int(states.get("combat_attack_sequence", -1))
@@ -1997,8 +2035,6 @@ func apply_profile(npc_profile: Dictionary) -> void:
 		0.01,
 		float(states.get("combat_attack_playback_multiplier", timing.get("playback_multiplier", 1.0)))
 	)
-	if _authority_armor_ids.values().any(func(value: Variant) -> bool: return not str(value).is_empty()):
-		_ensure_armor_nodes()
 	_previous_hp = next_hp
 	_previous_unconscious = next_unconscious
 	_debug_forced_state = ""
@@ -2007,7 +2043,7 @@ func apply_profile(npc_profile: Dictionary) -> void:
 	if initialized and not was_unconscious and next_unconscious and not bool(states.get("combat_mounted", false)):
 		_request_ragdoll()
 	if started_mounted_fall:
-		_start_mounted_fall(str(npc_profile.get("id", "")))
+		_start_mounted_fall(profile_id)
 	if next_unconscious:
 		_transient_state = ""
 		_transient_remaining = 0.0

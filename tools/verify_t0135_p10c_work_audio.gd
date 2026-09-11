@@ -127,12 +127,12 @@ func _run() -> void:
 	action_system.set("_active_actions", active_actions)
 	npc_system.update_npc_state("cook_01", {"current_action": "idle"})
 	npc_system.update_npc_state("engineer_01", {
-		"current_action": "assist_repair_wall_north",
+		"current_action": "assist_repair_wall",
 		"current_location": "plaza",
 	})
 	await process_frame
 	await process_frame
-	_assert_loop(controller, "construction_wall_north", "sfx_work_repair_and_upgrade_loop")
+	_assert_loop(controller, "construction_wall", "sfx_work_repair_and_upgrade_loop")
 
 	var pending_actions: Dictionary = action_system.get("_pending_actions")
 	pending_actions["gardener_01"] = "work_garden"
@@ -199,7 +199,13 @@ func _assert_config_assets_exist(audio_manager: Node) -> void:
 				asset_ids[value] = true
 	for raw_rule in config.get("one_shots", []):
 		asset_ids[str((raw_rule as Dictionary).get("asset_id", ""))] = true
-	_assert(asset_ids.size() == 16, "unexpected P10C asset count: %d" % asset_ids.size())
+	var building_jobs: Dictionary = config.get("building_jobs", {})
+	asset_ids[str(building_jobs.get("start_asset_id", ""))] = true
+	asset_ids[str(building_jobs.get("loop_asset_id", ""))] = true
+	var crafting_selection: Dictionary = config.get("crafting_target_selection", {})
+	asset_ids[str(crafting_selection.get("asset_id", ""))] = true
+	asset_ids.erase("")
+	_assert(asset_ids.size() == 18, "unexpected P10C asset count: %d" % asset_ids.size())
 	for raw_asset_id in asset_ids.keys():
 		_assert(audio_manager.has_asset(str(raw_asset_id)), "missing manifest asset: %s" % str(raw_asset_id))
 	_assert((config.get("excluded_actions", []) as Array).has("sleep_in_dormitory"), "sleep exclusion is missing")

@@ -1,5 +1,34 @@
 # API_BUDGET.md
 
+## 2026-09-08 T0387 真实结局补测
+
+- 合法展示批次：八人胜利 1 次、八人失败首次 + correction，共 22,810 tokens，估算 ¥0.02677，Provider / model 为 `deepseek / deepseek-v4-flash`，均无 fallback。
+- 边界失败批次：两轮“胜利含已逃离人物”连同各自 correction 共 32,438 tokens，估算 ¥0.03606；均被 tone / 禁死亡校验拒绝，未作为游戏成功结果。
+- 本轮合计 55,248 tokens，估算 ¥0.06283。`.env` 的文本 Provider 未改写，仍为 mock；真实调用只在测试进程中临时覆盖。
+
+## T0387 群像结局预算（Mock 已验收，尚未产生真实费用）
+
+- 每局只在首次形成最终胜负时发起 1 个 `game_epilogue` 群像请求；八名 NPC 共享一次输入与输出，避免 8 次重复注入驿站背景，并保证叙事连续。
+- 正式 Provider 最多 2 次 attempt：首次生成，以及仅在 Schema / 连续性校验失败时的一次纠错。网络、无 Key、预算不足等不可纠错错误不盲目重试，直接记录失败并进入 `template_fallback`。
+- 输入通过 `EpilogueFactCompiler` 筛选并限制每人最多 12 条关键事实，不传完整事件档案；输出按全站尾声、结局称号及 8 篇各 140–420 中文字符做 Schema 限制，Prompt 目标仍为约 180–280 字。当前胜败 Mock 与八人 Godot 往返费用均为 0；真实 token 和费用须在真实 Provider 样本中记录。
+- 成功结果写入当前结算快照，重复打开结算面板或刷新 UI 不再次调用；跨进程读档复用等待未来完整存档系统接入。自动化默认使用显式 Mock / fake；真实验收必须用单独环境闸门，至少一胜一败，共 2 个成功群像样本，另行记录纠错产生的额外 attempt。
+- usage 至少记录 `request_id / settlement_id / call_type=game_epilogue / provider / model / input_tokens / output_tokens / estimated_cost / HTTP或异常 / validation_errors / correction_attempt / fallback_source`，不得记录 Key。
+
+## T1601A / T1601B / T1601C / T1602 qwen3-asr-flash 语音预算（真实 Provider 已接入）
+
+- 正式语音 Provider 计划使用阿里云百炼华北 2（北京）非实时 `qwen3-asr-flash`，当前公开单价 `0.00022 元/秒`，输出不另收费。
+- 单次最长 30 秒，理论最高约 `0.0066 元/次`；1,000 次全长录音约 6.6 元。平均 10 秒时约 `0.0022 元/次`。
+- 当前公开新人免费额度为 36,000 秒（10 小时），约 1,200 次 30 秒或 3,600 次 10 秒录音，有效期以账号控制台为准。
+- 语音 attempt 使用 `call_type=voice_transcription_emotion` 写入 usage，记录 request id、Provider、模型、NPC / dialogue id、音频秒数、估算成本、HTTP / 异常和 fallback；不记录音频、Base64、Authorization 或 Key。
+- 预算不足只禁用本次语音识别并提示手动输入，不禁止现有文字对话。Mock 不计真实费用；正式失败不得自动 fallback 到 Mock。
+- T1601A 的显式 Mock usage 记录音频秒数且费用固定为 0。T1602 已接入真实 Provider，成功调用按校验后的音频时长和 `VOICE_COST_PER_SECOND_CNY` 估算费用；价格来源：[阿里云百炼模型价格](https://help.aliyun.com/zh/model-studio/model-pricing)。
+- T1601B 只增加 Godot 本地麦克风采集、WAV 临时文件与录音状态 UI，不发送 HTTP、不调用 Mock 或真实模型；专项与 Main 运行态检查的 API 调用和费用均为 0。
+- T1601C 专项向本机显式 Mock `/voice/analyze` 完成 multipart 闭环；Mock usage 费用固定为 0，没有调用阿里云或产生真实语音费用。既有对话回归也使用本地 Mock。
+- T1603 仅增加 Godot 本地字符校验与弹窗；299 / 300 字允许路径使用本地 Fake bridge，301 字路径在传输前拒绝，真实 API 调用和费用为 0。
+- T1602 共执行两次真实北京地域烟测：首次 2.854 秒用于确认 Provider 响应，估算 `0.00062787 元`；接入共享账本后以 2.554 秒再次确认正式 `/voice/analyze` 与按秒入账，估算 `0.0005618 元`。两次均准确转写、返回 `neutral` 且 `fallback=false`，合计估算 `0.00118967 元`；实际账单以百炼控制台为准。
+- T1604 最终真实矩阵为 11 条、总估算 `0.0143763 元`，覆盖轻噪、术语、七类目标语境与 26.955 秒长句；全部走北京地域 `qwen3-asr-flash` 且 `fallback=false`。此前一次 9 条成功、1 条因超过 30 秒被本地后端拒绝的调参批次估算 `0.00788448 元`；拒绝项未调用 Provider。实际账单以百炼控制台为准。
+- 正式语音与文本模型共享 `LLM_COST_LEDGER_PATH`、`LLM_DAILY_BUDGET_MAX_CNY` 和上海自然日口径。语音在 Provider 前按 `VOICE_DAILY_BUDGET_REQUEST_RESERVE_CNY`（默认 30 秒 × 单价 = `0.0066 元`）预留，成功后用 `settle_direct_cost` 按实际 WAV 时长结算；预算不足返回 `voice_budget_exceeded` 且不发送音频。
+
 ## T0353 音频混音修复调用成本
 
 本任务只调整 Godot 本地音频总线、按钮信号时序、镜头缩放只读投影与设置持久化；不新增 endpoint、Prompt、`call_type`、模型判断或后端启动。真实 API 调用与费用均为 0。
@@ -610,3 +639,9 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - 没有真实 Key 时，不能把真实 LLM 行为标记为完全验收；任务状态应为 Partial / Blocked，或在验收结果中明确真实 API 未测。
 - 生产 / 演示配置必须关闭自动 mock fallback。预算超限、无 Key、provider 错误、超时、非 JSON 或 Schema 失败时，返回可处理错误；只有明确保留降级语义的其他系统才能使用规则 / 模板结果，正式每日计划不降级。
 - Usage / 日志必须能回答“哪个 request、哪个 call_type、哪个 provider/model、哪个 NPC、为什么失败、是否降级、花了多少 token/费用估算”。这比在失败后生成一段看似正常的 mock 回复更重要。
+## 2026-09-08 T0390 失败全员撤离真实验收
+
+- 仅调用一次 `game_epilogue` failure：`deepseek-v4-flash`，输入 4498、输出 2348、合计 6846 tokens，估算费用 ¥0.00819048；8 名 NPC 均返回 `opening_status=escaped`，无纠错调用、无 fallback。
+## 2026-09-08 T0391 撤离时机真实验收
+
+- `deepseek-v4-flash` failure 首轮 7537 tokens / ¥0.01039，业务纠错轮 10363 tokens / ¥0.013218；合计 17900 tokens / ¥0.023608。最终 8 人均保持 `escaped`，并正确区分 1 人失守前主动逃离和 7 人失守后被迫撤离；无 Mock fallback。

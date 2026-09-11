@@ -5,11 +5,14 @@ const SettingsPanelScene = preload("res://scenes/ui/SettingsPanel.tscn")
 const SaveBrowserScene = preload("res://scenes/ui/SaveBrowserPanel.tscn")
 const MenuHeroBackdropClass = preload("res://scripts/ui/MenuHeroBackdrop.gd")
 const MenuEdgeFogClass = preload("res://scripts/ui/MenuEdgeFog.gd")
-const MenuCoverScene = preload("res://scenes/art/MenuCoverPreview.tscn")
+const MenuCoverScene = preload("res://scenes/art/MenuCoverCandidate.tscn")
 const FrontendStyles = preload("res://scripts/ui/FrontendStyles.gd")
 const MENU_PANEL_HEIGHT := 320.0
 const MENU_PANEL_BOTTOM_ANCHOR := 0.88
 const MENU_COVER_RENDER_SIZE := Vector2i(1920, 1080)
+const UI_BUTTON_ASSET_ID := "sfx_ui_button_primary"
+const UI_TOGGLE_ASSET_ID := "sfx_ui_toggle"
+const AUDIO_HISTORY_LIMIT := 32
 
 var _settings_panel: Control
 var _save_browser: Control
@@ -17,10 +20,16 @@ var _exit_dialog: ConfirmationDialog
 var _start_button: Button
 var _cover_viewport: SubViewport
 var _cover_scene: Node3D
+var _audio_connected_button_ids: Dictionary = {}
+var _audio_click_history: Array[Dictionary] = []
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	var tree := get_tree()
+	var node_added_callback := Callable(self, "_on_tree_node_added")
+	if tree != null and not tree.node_added.is_connected(node_added_callback):
+		tree.node_added.connect(node_added_callback)
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_menu()
 	_settings_panel = SettingsPanelScene.instantiate()
@@ -29,10 +38,19 @@ func _ready() -> void:
 	_save_browser = SaveBrowserScene.instantiate()
 	_save_browser.name = "SaveBrowserPanel"
 	add_child(_save_browser)
+	_connect_ui_audio_for_subtree(self)
 	var audio_manager := get_node_or_null("/root/AudioManager")
 	if audio_manager != null and audio_manager.has_method("switch_music"):
 		audio_manager.switch_music("music_menu", 1.2)
 	_start_button.grab_focus()
+
+
+func _exit_tree() -> void:
+	var tree := get_tree()
+	var node_added_callback := Callable(self, "_on_tree_node_added")
+	if tree != null and tree.node_added.is_connected(node_added_callback):
+		tree.node_added.disconnect(node_added_callback)
+	_audio_connected_button_ids.clear()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -62,6 +80,8 @@ func debug_get_snapshot() -> Dictionary:
 		"animated_cover_connected": _cover_scene != null and is_instance_valid(_cover_scene),
 		"cover_render_size": _cover_viewport.size if _cover_viewport != null else Vector2i.ZERO,
 		"edge_fog_connected": find_child("MenuEdgeFog", true, false) != null,
+		"audio_connected_button_count": _audio_connected_button_ids.size(),
+		"audio_click_history": _audio_click_history.duplicate(true),
 	}
 
 
@@ -192,7 +212,52 @@ func _make_menu_button(node_name: String, label: String) -> Button:
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	button.focus_mode = Control.FOCUS_ALL
 	FrontendStyles.apply_button_focus(button)
+	_connect_ui_audio_button(button)
 	return button
+
+
+func _on_tree_node_added(node: Node) -> void:
+	if node is BaseButton and is_ancestor_of(node):
+		_connect_ui_audio_button(node as BaseButton)
+
+
+func _connect_ui_audio_for_subtree(root_node: Node) -> void:
+	if root_node is BaseButton:
+		_connect_ui_audio_button(root_node as BaseButton)
+	for child in root_node.get_children(true):
+		_connect_ui_audio_for_subtree(child)
+
+
+func _connect_ui_audio_button(button: BaseButton) -> void:
+	if button == null or not is_instance_valid(button):
+		return
+	var instance_id := button.get_instance_id()
+	if _audio_connected_button_ids.has(instance_id):
+		return
+	var callback := Callable(self, "_on_ui_audio_button_pressed").bind(button)
+	if not button.pressed.is_connected(callback):
+		button.pressed.connect(callback)
+	_audio_connected_button_ids[instance_id] = true
+
+
+func _on_ui_audio_button_pressed(button: BaseButton) -> void:
+	if button == null or not is_instance_valid(button):
+		return
+	var asset_id := UI_TOGGLE_ASSET_ID if button is CheckBox or button is CheckButton else UI_BUTTON_ASSET_ID
+	var audio_manager := get_node_or_null("/root/AudioManager")
+	if audio_manager == null or not audio_manager.has_method("play_2d"):
+		return
+	var player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"UI")
+	if player == null:
+		return
+	_audio_click_history.append({
+		"button_path": str(button.get_path()),
+		"asset_id": asset_id,
+		"player_type": player.get_class(),
+		"bus": str(player.bus),
+	})
+	while _audio_click_history.size() > AUDIO_HISTORY_LIMIT:
+		_audio_click_history.pop_front()
 
 
 func _attach_animated_cover(hero_frame: Control, hero: Control) -> void:

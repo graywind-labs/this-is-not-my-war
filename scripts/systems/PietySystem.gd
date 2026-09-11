@@ -9,7 +9,7 @@ const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const STATION_LAYOUT_CONTROLLER_PATH := "/root/Main/Presentation/StationLayoutController"
 const EFFECTS_ROOT_PATH := "/root/Main/WorldRoot/Station/Effects"
 const CAMERA_RIG_PATH := "/root/Main/CameraRig"
-const METEOR_PRESENTATION_SCRIPT := preload("res://scripts/presentation/combat/MeteorPresentation.gd")
+const METEOR_PRESENTATION_SCRIPT := preload("res://scripts/presentation/combat/FormalMeteorArt.gd")
 const SYSTEM_ACTOR_ID := "guard_officer"
 const PLAZA_LOCATION_ID := "plaza"
 const WORLD_FEEDBACK_EPSILON := 0.00001
@@ -651,7 +651,10 @@ func _update_meteor_visual(state: Dictionary) -> void:
 	var eased_progress := pow(progress, 1.35)
 	var landing_position := target + Vector3(0.0, 0.02, 0.0)
 	if visual.has_method("set_fall_transform"):
-		visual.set_fall_transform(start_position.lerp(landing_position, eased_progress), progress)
+		var visual_position := start_position.lerp(landing_position, eased_progress)
+		if visual.has_method("get_fall_world_position"):
+			visual_position = visual.get_fall_world_position(start_position, target, progress)
+		visual.set_fall_transform(visual_position, progress)
 
 
 func _create_burn_visual(zone: Dictionary) -> void:
@@ -664,6 +667,8 @@ func _create_burn_visual(zone: Dictionary) -> void:
 	visual.set_meta("zone_id", zone_id)
 	var disk := MeshInstance3D.new()
 	disk.name = "BurningGround"
+	# The approved crater supplies the ground surface; retain the burn emitter root.
+	disk.visible = false
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = float(zone.get("radius", 5.0))
 	mesh.bottom_radius = float(zone.get("radius", 5.0))
@@ -758,10 +763,14 @@ func _get_combat_action_seconds(game_seconds: float) -> float:
 
 
 func _emit_piety_changed(delta: float, reason: String) -> void:
+	var max_piety := get_max_piety()
+	var previous_piety := _current_piety - delta
 	_emit_event_bus_signal(
 		"piety_changed",
-		[_current_piety, get_max_piety(), delta, reason]
+		[_current_piety, max_piety, delta, reason]
 	)
+	if previous_piety < max_piety - 0.001 and _current_piety >= max_piety - 0.001:
+		_emit_event_bus_signal("piety_ready", [_current_piety, max_piety, reason])
 
 
 func _emit_event_bus_signal(signal_name: String, args: Array) -> void:

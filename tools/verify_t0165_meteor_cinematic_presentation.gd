@@ -62,11 +62,11 @@ func _init() -> void:
 	var visual := meteor_visuals.get(cast_id, null) as Node3D
 	if (
 		visual == null
-		or visual.find_child("QuaterniusRockCore", true, false) == null
-		or visual.find_child("RagingFlames", true, false) == null
-		or visual.find_child("SmokeTrail", true, false) == null
+		or visual.find_child("FracturedMeteor", true, false) == null
+		or visual.find_child("FlameTail", true, false) == null
+		or visual.find_child("SmokeTail", true, false) == null
 	):
-		_fail("Falling meteor is missing its licensed rock, fire or smoke components")
+		_fail("Falling meteor is missing approved fractured rock, fire or smoke")
 		return
 
 	var fall_game_seconds := float(config.get("fall_duration_seconds", 1.0)) + 1.0
@@ -83,10 +83,10 @@ func _init() -> void:
 		return
 	if (
 		visual.find_child("MeteorStaticBody", true, false) == null
-		or visual.find_child("DepressedCrater", true, false) == null
-		or visual.find_child("PermanentAshBed", true, false) == null
-		or visual.find_child("AirShockwave1", true, false) == null
-		or visual.find_child("ImpactDebris", true, false) == null
+		or visual.find_child("BrokenEarthAndScorch", true, false) == null
+		or visual.find_child("EjectedRimFragment0", true, false) == null
+		or visual.find_child("AirPressureFront", true, false) == null
+		or visual.find_child("FlyingFragment0", true, false) == null
 	):
 		_fail("Impact is missing collision, crater, ash, shockwave or debris")
 		return

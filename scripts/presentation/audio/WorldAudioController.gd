@@ -11,6 +11,9 @@ const LOOP_KEY_PREFIX := "world_ambience_"
 const FIRE_LOOP_KEY_PREFIX := "world_ambience_fire_"
 const EXPECTED_SCHEMA := "world_audio_v1"
 const GLOBAL_BED_BUS := &"AmbientBed"
+const FIRE_RELEVANT_NPC_STATE_FIELDS: Array[String] = [
+	"current_action", "current_location", "unconscious", "escaped",
+]
 
 var _config: Dictionary = {}
 var _source_root: Node3D
@@ -19,9 +22,12 @@ var _owned_loop_keys: Dictionary = {}
 var _fire_loop_keys: Dictionary = {}
 var _random_states: Dictionary = {}
 var _night_stagger_due: Dictionary = {}
+var _daily_trigger_counts: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 var _elapsed_realtime := 0.0
 var _period := "day"
+var _current_day := 1
+var _dawn_active := false
 var _combat_active := false
 var _initialized := false
 var _initialization_attempts := 0
@@ -30,8 +36,10 @@ var _time_signal_connected := false
 var _combat_signal_connected := false
 var _npc_signal_connected := false
 var _building_signal_connected := false
+var _music_signal_connected := false
 var _global_bed_gain_linear := 1.0
 var _last_global_bed_gain_linear := -1.0
+var _next_playlist_indices := {"day": 0, "night": 0}
 
 
 func _ready() -> void:
@@ -99,11 +107,18 @@ func get_debug_snapshot() -> Dictionary:
 		"global_bed_bus": str(GLOBAL_BED_BUS),
 		"fire_loop_keys": _fire_loop_keys.keys(),
 		"night_stagger_due": _night_stagger_due.duplicate(true),
+		"daily_trigger_counts": _daily_trigger_counts.duplicate(true),
+		"current_day": _current_day,
+		"dawn_active": _dawn_active,
 		"random_groups": random_snapshots,
 		"time_signal_connected": _time_signal_connected,
 		"combat_signal_connected": _combat_signal_connected,
 		"npc_signal_connected": _npc_signal_connected,
 		"building_signal_connected": _building_signal_connected,
+		"music_signal_connected": _music_signal_connected,
+		"day_playlist": _music_playlist_for_period("day"),
+		"night_playlist": _music_playlist_for_period("night"),
+		"next_playlist_indices": _next_playlist_indices.duplicate(true),
 		"menu_music_integration": str(
 			(_config.get("music", {}) as Dictionary).get(
 				"menu_integration",
@@ -146,6 +161,7 @@ func _initialize_audio() -> void:
 		else:
 			push_error("WorldAudioController could not find formal world or AudioManager")
 		return
+	_connect_music_signal(audio_manager)
 	_source_root = Node3D.new()
 	_source_root.name = "WorldAudioSources"
 	_source_root.set_meta("presentation_only", true)
@@ -214,27 +230,40 @@ func _connect_signals() -> void:
 
 func _disconnect_signals() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
-	if event_bus == null:
-		return
-	for pair in [
-		["time_changed", "_on_time_changed"],
-		["combat_enemy_presence_changed", "_on_combat_enemy_presence_changed"],
-		["npc_state_changed", "_on_npc_state_changed"],
-		["building_state_changed", "_on_building_state_changed"],
-	]:
-		var signal_name := str(pair[0])
-		var callback := Callable(self, str(pair[1]))
-		if event_bus.has_signal(signal_name) and event_bus.is_connected(signal_name, callback):
-			event_bus.disconnect(signal_name, callback)
+	if event_bus != null:
+		for pair in [
+			["time_changed", "_on_time_changed"],
+			["combat_enemy_presence_changed", "_on_combat_enemy_presence_changed"],
+			["npc_state_changed", "_on_npc_state_changed"],
+			["building_state_changed", "_on_building_state_changed"],
+		]:
+			var signal_name := str(pair[0])
+			var callback := Callable(self, str(pair[1]))
+			if event_bus.has_signal(signal_name) and event_bus.is_connected(signal_name, callback):
+				event_bus.disconnect(signal_name, callback)
+	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
+	var music_callback := Callable(self, "_on_music_finished")
+	if audio_manager != null and audio_manager.has_signal("music_finished") and audio_manager.music_finished.is_connected(music_callback):
+		audio_manager.music_finished.disconnect(music_callback)
+	_music_signal_connected = false
+
+
+func _connect_music_signal(audio_manager: Node) -> void:
+	var callback := Callable(self, "_on_music_finished")
+	if audio_manager.has_signal("music_finished") and not audio_manager.music_finished.is_connected(callback):
+		audio_manager.music_finished.connect(callback)
+	_music_signal_connected = audio_manager.has_signal("music_finished") and audio_manager.music_finished.is_connected(callback)
 
 
 func _sync_authority_state() -> void:
 	var game_state := get_node_or_null("/root/GameState")
 	if game_state != null:
+		_current_day = int(game_state.current_day)
 		_period = _resolve_period(
 			int(game_state.current_hour),
 			int(game_state.current_minute)
 		)
+		_dawn_active = _time_is_dawn(int(game_state.current_hour), int(game_state.current_minute))
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	_combat_active = (
 		combat_system != null
@@ -243,12 +272,22 @@ func _sync_authority_state() -> void:
 	)
 
 
-func _on_time_changed(_day: int, hour: int, minute: int, _second: int) -> void:
+func _on_time_changed(day: int, hour: int, minute: int, _second: int) -> void:
 	var next_period := _resolve_period(hour, minute)
-	if next_period == _period:
-		return
+	var next_dawn_active := _time_is_dawn(hour, minute)
+	var day_changed := day != _current_day
+	var period_changed := next_period != _period
+	var dawn_changed := next_dawn_active != _dawn_active
+	_current_day = day
 	_period = next_period
-	_refresh_period_audio(true)
+	_dawn_active = next_dawn_active
+	if day_changed:
+		_daily_trigger_counts.clear()
+	if period_changed:
+		_refresh_period_audio(false)
+		_refresh_music()
+	if day_changed or period_changed or dawn_changed:
+		_reset_random_schedules()
 
 
 func _on_combat_enemy_presence_changed(active: bool, _enemy_count: int, _reason: String) -> void:
@@ -258,7 +297,14 @@ func _on_combat_enemy_presence_changed(active: bool, _enemy_count: int, _reason:
 	_refresh_music()
 
 
-func _on_npc_state_changed(_npc_id: String) -> void:
+func _on_npc_state_changed(npc_id: String) -> void:
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, FIRE_RELEVANT_NPC_STATE_FIELDS)
+	):
+		return
 	_queue_fire_refresh()
 
 
@@ -271,12 +317,49 @@ func _refresh_music() -> void:
 	if audio_manager == null:
 		return
 	var music := _config.get("music", {}) as Dictionary
-	var asset_id := str(
-		music.get("battle_asset_id", "music_battle")
-		if _combat_active
-		else music.get("gameplay_asset_id", "music_day_night")
-	)
-	audio_manager.switch_music(asset_id, maxf(0.0, float(music.get("crossfade_seconds", 2.0))))
+	var fade_seconds := maxf(0.0, float(music.get("crossfade_seconds", 2.0)))
+	if _combat_active:
+		audio_manager.switch_music(str(music.get("battle_asset_id", "music_battle")), fade_seconds, true)
+		return
+	var playlist := _music_playlist_for_period(_period)
+	var current_asset_id := str(audio_manager.get_current_music_asset_id())
+	if current_asset_id in playlist:
+		return
+	_play_next_playlist_track(audio_manager, fade_seconds)
+
+
+func _on_music_finished(asset_id: String) -> void:
+	if not _initialized or _combat_active:
+		return
+	if asset_id not in _music_playlist_for_period(_period):
+		return
+	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
+	if audio_manager != null:
+		_play_next_playlist_track(audio_manager, maxf(0.0, float((_config.get("music", {}) as Dictionary).get("track_start_fade_seconds", 0.0))))
+
+
+func _play_next_playlist_track(audio_manager: Node, transition_fade_seconds: float) -> void:
+	var playlist := _music_playlist_for_period(_period)
+	if playlist.is_empty():
+		return
+	var index := posmod(int(_next_playlist_indices.get(_period, 0)), playlist.size())
+	var asset_id := str(playlist[index])
+	_next_playlist_indices[_period] = (index + 1) % playlist.size()
+	audio_manager.switch_music(asset_id, transition_fade_seconds, false)
+
+
+func _music_playlist_for_period(period: String) -> Array:
+	var music := _config.get("music", {}) as Dictionary
+	var key := "%s_playlist" % period
+	var configured := music.get(key, []) as Array
+	var playlist: Array = []
+	for raw_asset_id in configured:
+		var asset_id := str(raw_asset_id).strip_edges()
+		if not asset_id.is_empty():
+			playlist.append(asset_id)
+	if playlist.is_empty():
+		playlist.append(str(music.get("gameplay_asset_id", "music_day_night")))
+	return playlist
 
 
 func _refresh_period_audio(reset_random_schedules: bool) -> void:
@@ -406,12 +489,20 @@ func _reset_random_schedules() -> void:
 		if not _random_group_enabled(group):
 			continue
 		var group_id := str(group.get("id", ""))
+		var max_triggers_per_day := maxi(0, int(group.get("max_triggers_per_day", 0)))
+		var daily_count := _daily_trigger_count(group_id)
 		_random_states[group_id] = {
-			"next_due_seconds": _elapsed_realtime + _random_range(group.get("initial_delay_range_seconds", [10.0, 30.0])),
+			"next_due_seconds": (
+				INF
+				if max_triggers_per_day > 0 and daily_count >= max_triggers_per_day
+				else _elapsed_realtime + _random_range(group.get("initial_delay_range_seconds", [10.0, 30.0]))
+			),
 			"last_emitter_index": -1,
 			"trigger_count": 0,
+			"daily_trigger_count": daily_count,
 			"last_asset_id": "",
 			"last_source_id": "",
+			"last_gain_db": 0.0,
 		}
 
 
@@ -434,6 +525,13 @@ func _trigger_random_group(group: Dictionary, state: Dictionary) -> void:
 	var emitters := group.get("emitters", []) as Array
 	if emitters.is_empty():
 		return
+	var group_id := str(group.get("id", ""))
+	var max_triggers_per_day := maxi(0, int(group.get("max_triggers_per_day", 0)))
+	var daily_count := _daily_trigger_count(group_id)
+	if max_triggers_per_day > 0 and daily_count >= max_triggers_per_day:
+		state["daily_trigger_count"] = daily_count
+		state["next_due_seconds"] = INF
+		return
 	var previous_index := int(state.get("last_emitter_index", -1))
 	var selected_index := _rng.randi_range(0, emitters.size() - 1)
 	if emitters.size() > 1 and selected_index == previous_index:
@@ -443,16 +541,38 @@ func _trigger_random_group(group: Dictionary, state: Dictionary) -> void:
 	var asset_id := str(emitter.get("asset_id", ""))
 	var source := _sources.get(source_id) as Node3D
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
+	var played := false
 	if source != null and audio_manager != null:
-		audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"Ambience")
+		var player: AudioStreamPlayer3D = audio_manager.play_3d(asset_id, source, Vector3.ZERO, &"Ambience")
+		if player != null:
+			player.volume_db = float(group.get("gain_db", 0.0)) + float(emitter.get("gain_db", 0.0))
+			played = true
+	if not played:
+		state["next_due_seconds"] = _elapsed_realtime + 5.0
+		return
 	state["last_emitter_index"] = selected_index
 	state["trigger_count"] = int(state.get("trigger_count", 0)) + 1
 	state["last_asset_id"] = asset_id
 	state["last_source_id"] = source_id
+	state["last_gain_db"] = float(group.get("gain_db", 0.0)) + float(emitter.get("gain_db", 0.0))
 	var duration := 0.0
 	if audio_manager != null and audio_manager.has_method("get_asset_info"):
 		duration = float((audio_manager.get_asset_info(asset_id) as Dictionary).get("duration_seconds", 0.0))
-	state["next_due_seconds"] = _elapsed_realtime + duration + _random_range(group.get("gap_range_seconds", [30.0, 60.0]))
+	daily_count += 1
+	_daily_trigger_counts[group_id] = {"day": _current_day, "count": daily_count}
+	state["daily_trigger_count"] = daily_count
+	state["next_due_seconds"] = (
+		INF
+		if max_triggers_per_day > 0 and daily_count >= max_triggers_per_day
+		else _elapsed_realtime + duration + _random_range(group.get("gap_range_seconds", [30.0, 60.0]))
+	)
+
+
+func _daily_trigger_count(group_id: String) -> int:
+	var entry := _daily_trigger_counts.get(group_id, {}) as Dictionary
+	if int(entry.get("day", -1)) != _current_day:
+		return 0
+	return maxi(0, int(entry.get("count", 0)))
 
 
 func _queue_fire_refresh() -> void:
@@ -506,7 +626,7 @@ func _random_group_enabled(group: Dictionary) -> bool:
 		"night":
 			return _period == "night"
 		"dawn":
-			return _is_dawn_time()
+			return _dawn_active
 		_:
 			return _period == "day"
 
@@ -524,9 +644,13 @@ func _is_dawn_time() -> bool:
 	var game_state := get_node_or_null("/root/GameState")
 	if game_state == null:
 		return false
+	return _time_is_dawn(int(game_state.current_hour), int(game_state.current_minute))
+
+
+func _time_is_dawn(hour: int, minute: int) -> bool:
 	return _time_in_wrapped_range(
-		int(game_state.current_hour),
-		int(game_state.current_minute),
+		hour,
+		minute,
 		_config.get("dawn_start_time", [5, 0]) as Array,
 		_config.get("dawn_end_time", [8, 0]) as Array
 	)

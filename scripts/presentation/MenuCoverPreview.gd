@@ -194,6 +194,8 @@ func _workstation_rotation(npc_id: String, additional_yaw: float = 0.0) -> Vecto
 
 func _build_main_hall() -> void:
 	var hall := MAIN_HALL_ART_SCRIPT.new() as Node3D
+	# A keeps its authored baseline; approved B installs the shared closure itself.
+	hall.shell_finish_enabled = false
 	hall.name = "MainHallHero"
 	hall.position = Vector3(8.4, 0.0, -8.8)
 	set_root.add_child(hall)

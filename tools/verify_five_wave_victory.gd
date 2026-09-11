@@ -157,30 +157,21 @@ func _init() -> void:
 		quit(1)
 		return
 	var title_label := game_over_panel.find_child("GameOverTitleLabel", true, false) as Label
-	var reason_label := game_over_panel.find_child("GameOverReasonLabel", true, false) as Label
-	var detail_label := game_over_panel.find_child("GameOverDetailLabel", true, false) as Label
-	if title_label == null or not title_label.text.contains("防守成功"):
+	var wave_label := game_over_panel.find_child("GameOverWaveLabel", true, false) as Label
+	if title_label == null or title_label.text != "胜 利":
 		push_error("Victory panel should show a success title")
 		quit(1)
 		return
-	if reason_label == null or not reason_label.text.contains("守住 5 波"):
-		push_error("Victory panel should show the five-wave victory reason")
+	if wave_label == null or wave_label.text != "守住 5 波敌人":
+		push_error("Victory panel should show the five-wave subtitle")
 		quit(1)
 		return
-	if (
-		detail_label == null
-		or not detail_label.text.contains("剩余资源")
-		or not detail_label.text.contains("建筑状态")
-		or not detail_label.text.contains("NPC")
-		or not detail_label.text.contains("NPC 结局")
-		or not detail_label.text.contains("对守备官最终看法")
-		or not detail_label.text.contains("后续命运")
-	):
-		push_error("Victory panel should show resource, building, NPC summaries and NPC endings")
+	if game_over_panel.find_children("NPCEndingCard_*", "PanelContainer", true, false).size() != 8:
+		push_error("Victory panel should show eight portrait-and-story cards")
 		quit(1)
 		return
-	if detail_label.text.contains("阵亡") or detail_label.text.contains("死亡"):
-		push_error("Victory panel should not use death wording for NPC endings")
+	if game_over_panel.find_child("GameOverReasonLabel", true, false) != null or game_over_panel.find_child("GameOverDetailLabel", true, false) != null:
+		push_error("Victory panel should not show legacy reason or aggregate detail fields")
 		quit(1)
 		return
 

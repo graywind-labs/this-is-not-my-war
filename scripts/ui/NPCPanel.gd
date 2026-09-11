@@ -44,6 +44,7 @@ const EQUIPMENT_WINDOW_GAP := 8.0
 const EQUIPMENT_WINDOW_SIZE := Vector2(316.0, 332.0)
 const MOUNT_VIEW_BUTTON_SIZE := Vector2(120.0, 34.0)
 const MOUNT_VIEW_BUTTON_GAP := 4.0
+const DIALOG_DETAIL_LAYER := 110
 const RECRUITMENT_REQUIRED_TOOLTIP := "需先说服该人物应征入伍，才能进行这项操作。"
 const EQUIPMENT_RECRUITMENT_TOOLTIP := "还未征召，无法配装。"
 const ORDER_RECRUITMENT_TOOLTIP := "还未征召，无法命令。"
@@ -2053,7 +2054,7 @@ func _setup_memory_detail_popup() -> void:
 	_memory_detail_overlay.name = "NPCMemoryDetailPopup"
 	_memory_detail_overlay.visible = false
 	_memory_detail_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
-	_memory_detail_overlay.z_index = 80
+	_memory_detail_overlay.z_index = DIALOG_DETAIL_LAYER
 	_memory_detail_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui_root.add_child(_memory_detail_overlay)
 

@@ -56,6 +56,7 @@ function Get-TrimSpec([string]$FileName) {
         '^06_chapel_church_bell_' { $spec.Duration = 5.0; $spec.Description = '00:00-00:05'; break }
         '^09_drinking_sip_swallow_' { $spec.Duration = 1.0; $spec.Description = '00:00-00:01'; break }
         '^06_enemy_hit_impacts_' { $spec.Duration = 1.0; $spec.Description = '00:00-00:01'; break }
+        '^01_piety_ready_sacred_chant_' { $spec.Duration = 4.0; $spec.Description = '00:00-00:04'; break }
     }
     return [pscustomobject]$spec
 }
@@ -63,7 +64,8 @@ function Get-TrimSpec([string]$FileName) {
 function Get-RuntimeSubdirectory([string]$Usage) {
     switch -Regex ($Usage) {
         '^bgm_menu$' { return 'music/menu' }
-        '^bgm_day_night$' { return 'music/day' }
+        '^bgm_day_night$|^bgm_day_playlist_' { return 'music/day' }
+        '^bgm_night_playlist_' { return 'music/night' }
         '^bgm_battle$' { return 'music/combat' }
         '^ambience_(day|night)_loop$' { return 'ambience/time_of_day' }
         '^ambience_' { return 'ambience/local_emitters' }
@@ -86,6 +88,7 @@ function Get-RuntimeSubdirectory([string]$Usage) {
         '^world_battle_alert_' { return 'world/bell' }
         '^world_door_' { return 'world/doors' }
         '^meteor_' { return 'abilities/meteor' }
+        '^piety_ready_' { return 'abilities/piety' }
         '^combat_.*(whoosh|projectile)' { return 'combat/projectiles' }
         '^combat_.*impact$|^combat_hit_|^combat_unconscious_|^combat_horse_death$' { return 'combat/impacts' }
         '^ballista_heavy_bolt_impact$' { return 'combat/impacts' }
@@ -122,6 +125,8 @@ function Get-BaseName([string]$Usage, [int]$VariantIndex, [int]$VariantCount) {
 function Get-TargetLufs([string]$Usage) {
     switch -Regex ($Usage) {
         '^bgm_' { return -16.0 }
+        '^ambience_day_loop$' { return -28.0 }
+        '^ambience_night_loop$' { return -30.0 }
         '^ambience_' { return -23.0 }
         '^work_|^daily_|^chapel_' { return -20.0 }
         '^foley_|^horse_run$|^merchant_cart_' { return -20.0 }
@@ -135,7 +140,7 @@ function Get-TargetLufs([string]$Usage) {
 
 function Get-MaxDistance([string]$Usage) {
     switch -Regex ($Usage) {
-        '^bgm_|^ui_' { return 0 }
+        '^bgm_|^ui_|^piety_ready_' { return 0 }
         '^npc_emotion_|^foley_|^horse_run$' { return 18 }
         '^work_|^daily_|^chapel_|^merchant_cart_|^world_door_' { return 28 }
         '^ambience_' { return 45 }
@@ -147,7 +152,9 @@ function Get-MaxDistance([string]$Usage) {
 }
 
 function Get-RuntimeFade([string]$Usage, [bool]$Loop) {
+    if ($Usage -match '^bgm_(day|night)_playlist_') { return [pscustomobject]@{ In = 2000; Out = 2000; Mode = 'baked_track_edges' } }
     if ($Usage -match '^bgm_') { return [pscustomobject]@{ In = 2000; Out = 2000; Mode = 'baked_each_cycle' } }
+    if ($Usage -eq 'piety_ready_sacred_chant') { return [pscustomobject]@{ In = 40; Out = 1500; Mode = 'baked_one_shot_edges' } }
     if (-not $Loop) { return [pscustomobject]@{ In = 0; Out = 0; Mode = 'none' } }
     if ($Usage -match '^work_|^daily_|^chapel_') { return [pscustomobject]@{ In = 350; Out = 350; Mode = 'runtime_start_stop' } }
     if ($Usage -match '^ambience_') { return [pscustomobject]@{ In = 1000; Out = 1000; Mode = 'runtime_start_stop' } }
@@ -155,7 +162,7 @@ function Get-RuntimeFade([string]$Usage, [bool]$Loop) {
 }
 
 function Get-PlaybackClass([string]$Usage, [string]$EditInstruction) {
-    $loop = ($Usage -match 'loop$|_loop_' -or $Usage -match '^bgm_' -or $Usage -eq 'horse_run' -or $Usage -eq 'merchant_cart_arrival_departure')
+    $loop = ($Usage -match 'loop$|_loop_' -or ($Usage -match '^bgm_' -and $Usage -notmatch '^bgm_(day|night)_playlist_') -or $Usage -eq 'horse_run' -or $Usage -eq 'merchant_cart_arrival_departure')
     return [pscustomobject]@{
         Loop = $loop
         Channels = $(if ($Usage -match '^bgm_') { 2 } else { 1 })
@@ -184,8 +191,8 @@ foreach ($csv in $sourceCsvs) {
     }
 }
 
-if ($confirmed.Count -ne 90) {
-    throw "Expected 90 confirmed source records, found $($confirmed.Count)."
+if ($confirmed.Count -ne 102) {
+    throw "Expected 102 confirmed source records, found $($confirmed.Count)."
 }
 
 $usageCounts = @{}
@@ -230,26 +237,31 @@ foreach ($item in $confirmed) {
     }
     $filters += ('loudnorm=I={0}:LRA=11:TP=-2' -f $targetLufs.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture))
     $filterGraph = $filters -join ','
-    $masterArgs = @('-hide_banner', '-loglevel', 'error', '-y')
-    if ($trim.Start -gt 0) { $masterArgs += @('-ss', $trim.Start.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)) }
-    $masterArgs += @('-i', $item.SourcePath)
-    if ($null -ne $trim.Duration) { $masterArgs += @('-t', $trim.Duration.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)) }
-    $masterArgs += @('-vn', '-af', $filterGraph, '-ar', '48000', '-ac', [string]$playback.Channels, '-c:a', 'pcm_s24le', $masterPath)
-    & $ffmpeg @masterArgs
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $masterPath)) {
-        throw "Master generation failed for $($row.file)"
-    }
-    $runtimeArgs = @('-hide_banner', '-loglevel', 'error', '-y', '-i', $masterPath, '-vn', '-ar', '48000', '-ac', [string]$playback.Channels)
     if ($playback.RuntimeExtension -eq '.ogg') {
-        $runtimeArgs += @('-c:a', 'libvorbis', '-q:a', '5', $runtimePath)
         $runtimeCodec = 'vorbis_q5'
     } else {
-        $runtimeArgs += @('-c:a', 'pcm_s16le', $runtimePath)
         $runtimeCodec = 'pcm_s16le'
     }
-    & $ffmpeg @runtimeArgs
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimePath)) {
-        throw "Runtime generation failed for $($row.file)"
+    if ($Force -or -not (Test-Path -LiteralPath $masterPath) -or -not (Test-Path -LiteralPath $runtimePath)) {
+        $masterArgs = @('-hide_banner', '-loglevel', 'error', '-y')
+        if ($trim.Start -gt 0) { $masterArgs += @('-ss', $trim.Start.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)) }
+        $masterArgs += @('-i', $item.SourcePath)
+        if ($null -ne $trim.Duration) { $masterArgs += @('-t', $trim.Duration.ToString('0.###', [Globalization.CultureInfo]::InvariantCulture)) }
+        $masterArgs += @('-vn', '-af', $filterGraph, '-ar', '48000', '-ac', [string]$playback.Channels, '-c:a', 'pcm_s24le', $masterPath)
+        & $ffmpeg @masterArgs
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $masterPath)) {
+            throw "Master generation failed for $($row.file)"
+        }
+        $runtimeArgs = @('-hide_banner', '-loglevel', 'error', '-y', '-i', $masterPath, '-vn', '-ar', '48000', '-ac', [string]$playback.Channels)
+        if ($playback.RuntimeExtension -eq '.ogg') {
+            $runtimeArgs += @('-c:a', 'libvorbis', '-q:a', '5', $runtimePath)
+        } else {
+            $runtimeArgs += @('-c:a', 'pcm_s16le', $runtimePath)
+        }
+        & $ffmpeg @runtimeArgs
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runtimePath)) {
+            throw "Runtime generation failed for $($row.file)"
+        }
     }
     $runtimeDuration = Get-DurationSeconds $runtimePath
     $sampleRate = Get-ProbeValue $runtimePath 'stream=sample_rate'
@@ -291,7 +303,7 @@ foreach ($item in $confirmed) {
         playback_rule = $row.edit_instruction
         version = 'v01'
         acceptance_status = 'confirmed'
-        build_date = '2026-09-01'
+        build_date = $(if ($item.Pack -eq 'sample_pack_v27_building_craft_audio') { '2026-09-09' } elseif ($item.Pack -in @('sample_pack_v25_ambient_bed_replacement', 'sample_pack_v26_ambient_nature_beds')) { '2026-09-08' } elseif ($item.Pack -in @('sample_pack_v22_bgm_day_night', 'sample_pack_v23_piety_ready', 'sample_pack_v24_piety_ready_reselect')) { '2026-09-07' } else { '2026-09-01' })
     }
     $creditRows += [pscustomobject][ordered]@{
         asset_id = $assetId
@@ -305,7 +317,7 @@ foreach ($item in $confirmed) {
     }
     $playlistPaths += To-ProjectRelativePath $runtimePath
     $processed += 1
-    Write-Host ("[{0:d2}/90] {1}" -f $processed, (To-ProjectRelativePath $runtimePath))
+    Write-Host ("[{0:d3}/102] {1}" -f $processed, (To-ProjectRelativePath $runtimePath))
 }
 
 $manifestPath = Join-Path $manifestRoot 'audio_asset_manifest.csv'

@@ -2,15 +2,21 @@ extends Control
 
 const EVENT_BUS_PATH := "/root/EventBus"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
+const AUDIO_MANAGER_PATH := "/root/AudioManager"
+const ABILITY_AUDIO_CONFIG_PATH := "res://data/presentation/ability_audio.json"
 
 @onready var building_completion_dialog: AcceptDialog = %BuildingCompletionDialog
 @onready var horse_birth_naming_dialog: AcceptDialog = %HorseBirthNamingDialog
 @onready var horse_birth_prompt_label: Label = %HorseBirthPromptLabel
 @onready var horse_name_input: LineEdit = %HorseNameInput
 @onready var horse_name_validation_label: Label = %HorseNameValidationLabel
+@onready var piety_ready_dialog: AcceptDialog = %PietyReadyDialog
 
 var _alert_queue: Array[Dictionary] = []
 var _current_alert: Dictionary = {}
+var _ability_audio_config: Dictionary = {}
+var _piety_ready_sound_play_count := 0
+var _last_piety_ready_sound_asset_id := ""
 
 
 func _ready() -> void:
@@ -19,6 +25,8 @@ func _ready() -> void:
 	building_completion_dialog.close_requested.connect(_on_building_completion_closed)
 	horse_birth_naming_dialog.confirmed.connect(_on_horse_birth_name_confirmed)
 	horse_birth_naming_dialog.close_requested.connect(_on_horse_birth_close_requested)
+	piety_ready_dialog.confirmed.connect(_on_piety_ready_closed)
+	piety_ready_dialog.close_requested.connect(_on_piety_ready_closed)
 	horse_name_input.text_changed.connect(_on_horse_name_text_changed)
 	horse_birth_naming_dialog.register_text_enter(horse_name_input)
 	var event_bus := get_node_or_null(EVENT_BUS_PATH)
@@ -28,6 +36,9 @@ func _ready() -> void:
 		event_bus.building_job_completed.connect(_on_building_job_completed)
 	if event_bus.has_signal("horse_birth_naming_requested"):
 		event_bus.horse_birth_naming_requested.connect(_on_horse_birth_naming_requested)
+	if event_bus.has_signal("piety_ready"):
+		event_bus.piety_ready.connect(_on_piety_ready)
+	_ability_audio_config = _load_json_dictionary(ABILITY_AUDIO_CONFIG_PATH)
 
 
 func _on_building_job_completed(building_id: String, job_type: String, result: Dictionary) -> void:
@@ -52,6 +63,16 @@ func _on_horse_birth_naming_requested(request: Dictionary) -> void:
 	_show_next_alert()
 
 
+func _on_piety_ready(current_piety: float, max_piety: float, reason: String) -> void:
+	_alert_queue.append({
+		"kind": "piety_ready",
+		"current_piety": current_piety,
+		"max_piety": max_piety,
+		"reason": reason,
+	})
+	_show_next_alert()
+
+
 func _show_next_alert() -> void:
 	if not _current_alert.is_empty() or _alert_queue.is_empty():
 		return
@@ -70,6 +91,9 @@ func _show_next_alert() -> void:
 			horse_birth_naming_dialog.popup_centered()
 			horse_name_input.call_deferred("grab_focus")
 			horse_name_input.call_deferred("select_all")
+		"piety_ready":
+			piety_ready_dialog.popup_centered()
+			_play_piety_ready_sound()
 		_:
 			_current_alert.clear()
 			call_deferred("_show_next_alert")
@@ -110,6 +134,13 @@ func _on_horse_birth_close_requested() -> void:
 	call_deferred("_reopen_horse_birth_dialog")
 
 
+func _on_piety_ready_closed() -> void:
+	if str(_current_alert.get("kind", "")) != "piety_ready":
+		return
+	_current_alert.clear()
+	call_deferred("_show_next_alert")
+
+
 func _reopen_horse_birth_dialog() -> void:
 	if str(_current_alert.get("kind", "")) != "horse_birth":
 		return
@@ -120,6 +151,34 @@ func _reopen_horse_birth_dialog() -> void:
 
 func _on_horse_name_text_changed(_text: String) -> void:
 	horse_name_validation_label.text = ""
+
+
+func _play_piety_ready_sound() -> void:
+	var ready_audio := _ability_audio_config.get("piety_ready", {}) as Dictionary
+	if not bool(ready_audio.get("enabled", false)):
+		return
+	var asset_id := str(ready_audio.get("asset", "")).strip_edges()
+	if asset_id.is_empty():
+		return
+	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
+	if audio_manager == null or not audio_manager.has_method("play_2d"):
+		return
+	var player: AudioStreamPlayer = audio_manager.play_2d(
+		asset_id,
+		StringName(str(ready_audio.get("bus", "Combat")))
+	)
+	if player == null:
+		return
+	_piety_ready_sound_play_count += 1
+	_last_piety_ready_sound_asset_id = asset_id
+
+
+func _load_json_dictionary(path: String) -> Dictionary:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	return (parsed as Dictionary).duplicate(true) if parsed is Dictionary else {}
 
 
 func debug_get_snapshot() -> Dictionary:
@@ -134,4 +193,9 @@ func debug_get_snapshot() -> Dictionary:
 		"horse_name": horse_name_input.text,
 		"horse_name_max_length": horse_name_input.max_length,
 		"horse_validation_text": horse_name_validation_label.text,
+		"piety_dialog_visible": piety_ready_dialog.visible,
+		"piety_dialog_text": piety_ready_dialog.dialog_text,
+		"piety_button_text": piety_ready_dialog.get_ok_button().text,
+		"piety_ready_sound_play_count": _piety_ready_sound_play_count,
+		"last_piety_ready_sound_asset_id": _last_piety_ready_sound_asset_id,
 	}

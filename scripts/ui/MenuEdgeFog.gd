@@ -2,6 +2,7 @@ extends ColorRect
 
 
 const FOG_SHADER := preload("res://shaders/ui/menu_edge_fog.gdshader")
+const APPROVED_FOG_SHADER := preload("res://shaders/ui/menu_edge_fog_trial.gdshader")
 const LOOP_SECONDS := 12.0
 
 
@@ -9,10 +10,27 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	color = Color.WHITE
+	material = create_approved_material()
+
+
+static func create_original_material() -> ShaderMaterial:
 	var fog_material := ShaderMaterial.new()
 	fog_material.shader = FOG_SHADER
 	fog_material.set_shader_parameter("cycle_seconds", LOOP_SECONDS)
-	material = fog_material
+	return fog_material
+
+
+static func create_approved_material() -> ShaderMaterial:
+	var fog_material := ShaderMaterial.new()
+	fog_material.shader = APPROVED_FOG_SHADER
+	var noise := FastNoiseLite.new()
+	noise.seed = 370
+	noise.frequency = 0.008
+	noise.fractal_octaves = 3
+	fog_material.set_shader_parameter("density_texture", ImageTexture.create_from_image(noise.get_image(512,512)))
+	var style: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/presentation/menu_cover_trial.json"))
+	fog_material.set_shader_parameter("fog_color", Color(str(style.get("edge_fog_color", "#515f71"))))
+	return fog_material
 
 
 func debug_get_snapshot() -> Dictionary:

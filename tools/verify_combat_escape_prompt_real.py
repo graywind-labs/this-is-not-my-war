@@ -47,7 +47,7 @@ WORK_ACTION_BY_JOB = {
     "铁匠": ("work_blacksmith", "推进铁匠铺制造", "blacksmith"),
     "老兵副官": ("work_training_instructor", "指导训练", "training_ground"),
     "神父": ("lead_mass", "主持弥撒", "chapel"),
-    "医生": ("work_clinic_doctor", "坐诊或研读医学著作", "clinic"),
+    "医生": ("work_clinic_doctor", "坐诊", "clinic"),
     "工程师": ("work_workshop", "推进工械坊制造", "workshop"),
 }
 

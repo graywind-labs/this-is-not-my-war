@@ -129,7 +129,7 @@ def _payload() -> dict:
         "allowed_actions": [
             {
                 "action_id": "work_clinic_doctor",
-                "name": "坐诊或研读医学著作",
+                "name": "坐诊",
                 "action_kind": "work",
                 "location_id": "clinic",
                 "tags": ["clinic_doctor"],

@@ -5,6 +5,11 @@ extends Node3D
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER := 19
 const PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER := 18
+const STATIC_BOX_BATCH_EXCLUDED_NAME_TOKENS := [
+	"door", "gate", "upgrade", "damage", "destroyed", "ruin", "scaffold",
+	"lantern", "fire", "flame", "horse", "level2", "level3", "level4",
+	"level5", "level6",
+]
 
 @export var building_id := "art_sample"
 @export var roof_path: NodePath = NodePath("Roof")
@@ -45,6 +50,10 @@ var _persistent_shadow_proxy_by_source: Dictionary = {}
 var _portrait_opaque_shell_proxies: Array[MeshInstance3D] = []
 var _portrait_opaque_shell_materials: Array[BaseMaterial3D] = []
 var _portrait_opaque_proxy_by_source: Dictionary = {}
+var _static_box_render_batches: Array[MultiMeshInstance3D] = []
+var _static_box_shadow_batches: Array[MultiMeshInstance3D] = []
+var _static_mesh_render_batches: Array[MeshInstance3D] = []
+var _static_mesh_shadow_batches: Array[MeshInstance3D] = []
 var _roof_opacity := 1.0
 var _exterior_opacity := 1.0
 var _camera_distance := -1.0
@@ -57,10 +66,15 @@ func _ready() -> void:
 	add_to_group("building_art_view")
 	_cache_roof_materials()
 	_cache_exterior_materials()
+	_batch_static_building_geometry()
 	_register_with_controller()
 	_bind_click_area()
 	_configure_navigation_region()
 	_bind_building_state()
+	# The old generic blacksmith sample still exists hidden in Main.
+	# Only concrete building views use the formal, measured scaffold profiles.
+	if get_script().resource_path != "res://scripts/presentation/buildings/BuildingArtView.gd":
+		preload("res://scripts/presentation/buildings/BuildingScaffold.gd").install(self, building_id)
 	call_deferred("_refresh_building_state")
 
 
@@ -111,6 +125,10 @@ func get_roof_visibility_snapshot() -> Dictionary:
 		"visible_shell_meshes_cast_shadow": _visible_shell_meshes_cast_shadow(),
 		"roof_mesh_count": _roof_meshes.size(),
 		"exterior_mesh_count": _exterior_meshes.size(),
+		"static_box_render_batch_count": _static_box_render_batches.size(),
+		"static_box_shadow_batch_count": _static_box_shadow_batches.size(),
+		"static_mesh_render_batch_count": _static_mesh_render_batches.size(),
+		"static_mesh_shadow_batch_count": _static_mesh_shadow_batches.size(),
 		"building_level": _building_level,
 		"level_2_visible": _is_visible(NodePath("UpgradeVisuals/Level2")),
 		"level_3_visible": _is_visible(NodePath("UpgradeVisuals/Level3")),
@@ -228,6 +246,7 @@ func _cache_roof_materials() -> void:
 			_cache_roof_mesh(fade_root as MeshInstance3D)
 		for raw_mesh in fade_root.find_children("*", "MeshInstance3D", true, false):
 			_cache_roof_mesh(raw_mesh as MeshInstance3D)
+	_batch_static_box_shell_geometry(fade_roots, "roof", false)
 
 
 func _cache_roof_mesh(mesh_instance: MeshInstance3D) -> void:
@@ -348,6 +367,433 @@ func _cache_exterior_materials() -> void:
 			_exterior_materials.append(material_copy)
 		if fade_exterior_with_roof and minimum_exterior_opacity < 0.999:
 			_ensure_portrait_opaque_shell_proxy(mesh_instance, "exterior")
+	_batch_static_box_shell_geometry(fade_roots, "exterior", not fade_exterior_with_roof)
+
+
+func _batch_static_box_shell_geometry(
+	fade_roots: Array[Node],
+	category: String,
+	batch_visible_sources: bool
+) -> void:
+	# Runtime-generated buildings contain thousands of immutable BoxMesh leaves.
+	# Keep authored nodes and gameplay hierarchy intact, but submit equivalent
+	# unit-box transforms through MultiMesh. Dynamic visibility branches and every
+	# non-box mesh remain on the original path.
+	for fade_root in fade_roots:
+		if fade_root == null:
+			continue
+		var groups: Dictionary = {}
+		for raw_mesh in fade_root.find_children("*", "MeshInstance3D", true, false):
+			var source := raw_mesh as MeshInstance3D
+			if not _is_static_box_batch_candidate(source, fade_root):
+				continue
+			var material := source.get_active_material(0)
+			if material == null:
+				continue
+			var group_key := "%d|%d|%s" % [source.layers, source.gi_mode, _material_equivalence_key(material)]
+			if not groups.has(group_key):
+				groups[group_key] = {
+					"sources": [],
+					"material": material,
+					"layers": source.layers,
+					"gi_mode": source.gi_mode,
+				}
+			(groups[group_key].sources as Array).append(source)
+		var shadow_covered_by_render_ids: Dictionary = {}
+		if batch_visible_sources:
+			for raw_group in groups.values():
+				var group := raw_group as Dictionary
+				var sources := group.sources as Array
+				if sources.size() < 2:
+					continue
+				var batch := _create_static_box_batch(
+					fade_root,
+					sources,
+					group.material as Material,
+					int(group.layers),
+					int(group.gi_mode),
+					GeometryInstance3D.SHADOW_CASTING_SETTING_ON,
+					"%sRenderBatch" % category.capitalize()
+				)
+				if batch == null:
+					continue
+				_static_box_render_batches.append(batch)
+				for source in sources:
+					shadow_covered_by_render_ids[source.get_instance_id()] = true
+					source.visible = false
+		_batch_static_box_shadow_proxies(
+			fade_root,
+			groups,
+			shadow_covered_by_render_ids,
+			category
+		)
+
+
+func _batch_static_box_shadow_proxies(
+	fade_root: Node3D,
+	source_groups: Dictionary,
+	shadow_covered_by_render_ids: Dictionary,
+	category: String
+) -> void:
+	var shadow_groups: Dictionary = {}
+	for raw_group in source_groups.values():
+		var group := raw_group as Dictionary
+		for source in group.sources as Array:
+			if shadow_covered_by_render_ids.has(source.get_instance_id()):
+				continue
+			var proxy := _get_persistent_shadow_proxy(source)
+			if proxy == null:
+				continue
+			var key := str(proxy.layers)
+			if not shadow_groups.has(key):
+				shadow_groups[key] = {"sources": [], "proxies": [], "layers": proxy.layers}
+			(shadow_groups[key].sources as Array).append(source)
+			(shadow_groups[key].proxies as Array).append(proxy)
+	for raw_group in shadow_groups.values():
+		var group := raw_group as Dictionary
+		var sources := group.sources as Array
+		if sources.size() < 2:
+			continue
+		var batch := _create_static_box_batch(
+			fade_root,
+			sources,
+			null,
+			int(group.layers),
+			GeometryInstance3D.GI_MODE_DISABLED,
+			GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY,
+			"%sShadowBatch" % category.capitalize()
+		)
+		if batch == null:
+			continue
+		_static_box_shadow_batches.append(batch)
+		for proxy in group.proxies as Array:
+			proxy.visible = false
+
+
+func _create_static_box_batch(
+	batch_parent: Node3D,
+	sources: Array,
+	material: Material,
+	layers: int,
+	gi_mode: int,
+	shadow_mode: int,
+	name_prefix: String
+) -> MultiMeshInstance3D:
+	if sources.is_empty():
+		return null
+	var unit_box := BoxMesh.new()
+	unit_box.size = Vector3.ONE
+	unit_box.material = material
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = unit_box
+	multimesh.instance_count = sources.size()
+	var parent_inverse := batch_parent.global_transform.affine_inverse()
+	for index in sources.size():
+		var source := sources[index] as MeshInstance3D
+		var box := source.mesh as BoxMesh
+		var size_transform := Transform3D(Basis.IDENTITY.scaled(box.size), Vector3.ZERO)
+		multimesh.set_instance_transform(index, parent_inverse * source.global_transform * size_transform)
+	var instance := MultiMeshInstance3D.new()
+	instance.name = "%s_%03d" % [name_prefix, _static_box_render_batches.size() + _static_box_shadow_batches.size() + 1]
+	instance.multimesh = multimesh
+	instance.layers = layers
+	instance.gi_mode = gi_mode
+	instance.cast_shadow = shadow_mode
+	instance.process_mode = Node.PROCESS_MODE_DISABLED
+	instance.set_meta("presentation_only", true)
+	instance.set_meta("static_box_render_batch", shadow_mode != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+	instance.set_meta("static_box_shadow_batch", shadow_mode == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+	instance.set_meta("source_count", sources.size())
+	batch_parent.add_child(instance, false, Node.INTERNAL_MODE_FRONT)
+	return instance
+
+
+func _is_static_box_batch_candidate(source: MeshInstance3D, fade_root: Node) -> bool:
+	if (
+		source == null
+		or not source.mesh is BoxMesh
+		or source.mesh.get_surface_count() != 1
+		or not _is_visible_within_batch_root(source, fade_root)
+		or bool(source.get_meta("persistent_shell_shadow_proxy", false))
+		or bool(source.get_meta("portrait_opaque_shell_proxy", false))
+	):
+		return false
+	if (
+		not is_zero_approx(source.visibility_range_begin)
+		or not is_zero_approx(source.visibility_range_end)
+		or source.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	):
+		return false
+	var cursor: Node = source
+	while cursor != null and cursor != fade_root:
+		if (
+			cursor.has_meta("required_level")
+			or cursor.has_meta("roof_section")
+			or cursor.has_meta("functional_lantern_required_level")
+			or (cursor != source and cursor.get_script() != null)
+		):
+			return false
+		var lower_name := str(cursor.name).to_lower()
+		for token in STATIC_BOX_BATCH_EXCLUDED_NAME_TOKENS:
+			if lower_name.contains(token):
+				return false
+		cursor = cursor.get_parent()
+	return cursor == fade_root
+
+
+func _is_visible_within_batch_root(source: Node3D, batch_root: Node) -> bool:
+	var cursor: Node = source
+	while cursor != null:
+		if cursor is Node3D and not (cursor as Node3D).visible:
+			return false
+		if cursor == batch_root:
+			return true
+		cursor = cursor.get_parent()
+	return false
+
+
+func _get_persistent_shadow_proxy(source: MeshInstance3D) -> MeshInstance3D:
+	for child in source.get_children(true):
+		if child is MeshInstance3D and bool(child.get_meta("persistent_shell_shadow_proxy", false)):
+			return child as MeshInstance3D
+	return null
+
+
+func _material_equivalence_key(material: Material) -> String:
+	var parts: PackedStringArray = [material.get_class()]
+	for property in material.get_property_list():
+		if (int(property.get("usage", 0)) & PROPERTY_USAGE_STORAGE) == 0:
+			continue
+		var property_name := str(property.get("name", ""))
+		if property_name in ["resource_local_to_scene", "resource_name", "resource_path"]:
+			continue
+		var value: Variant = material.get(property_name)
+		if value is Resource:
+			var resource := value as Resource
+			parts.append("%s=%s:%s:%d" % [property_name, resource.get_class(), resource.resource_path, resource.get_instance_id()])
+		else:
+			parts.append("%s=%s" % [property_name, var_to_str(value)])
+	return "|".join(parts)
+
+
+func _batch_static_building_geometry() -> void:
+	# Most authored building details are immutable one-surface meshes. Combining
+	# only the provably static, opaque layer-1 leaves keeps the exact triangles and
+	# materials while replacing thousands of renderer submissions with a few
+	# spatially bounded surfaces. Dynamic branches remain untouched.
+	var render_groups: Dictionary = {}
+	for raw_mesh in find_children("*", "MeshInstance3D", true, false):
+		var source := raw_mesh as MeshInstance3D
+		if not _is_static_mesh_merge_candidate(source, self, true):
+			continue
+		var material := source.get_active_material(0)
+		var local_origin := to_local(source.global_position)
+		var cell := Vector2i(floori(local_origin.x / 16.0), floori(local_origin.z / 16.0))
+		var material_key := _material_equivalence_key(material) if material != null else "default"
+		var group_key := "%d|%d|%d|%.4f|%s|%s" % [
+			source.layers,
+			source.gi_mode,
+			source.cast_shadow,
+			source.lod_bias,
+			str(cell),
+			material_key,
+		]
+		if not render_groups.has(group_key):
+			render_groups[group_key] = {
+				"sources": [],
+				"material": material,
+				"layers": source.layers,
+				"gi_mode": source.gi_mode,
+				"cast_shadow": source.cast_shadow,
+				"lod_bias": source.lod_bias,
+			}
+		(render_groups[group_key].sources as Array).append(source)
+	for raw_group in render_groups.values():
+		var group := raw_group as Dictionary
+		var sources := group.sources as Array
+		if sources.size() < 2:
+			continue
+		var entries: Array[Dictionary] = []
+		for source in sources:
+			entries.append({"source": source, "mesh": source.mesh, "surface": 0})
+		var batch := _create_static_merged_mesh_batch(
+			entries,
+			group.material as Material,
+			int(group.layers),
+			int(group.gi_mode),
+			int(group.cast_shadow),
+			float(group.lod_bias),
+			"StaticRenderBatch"
+		)
+		if batch == null:
+			continue
+		_static_mesh_render_batches.append(batch)
+		for source in sources:
+			# A persistent shadow/portrait proxy is parented below the authored
+			# source. Clearing only this instance's render layers keeps those child
+			# projections alive; sources without projections can simply be hidden.
+			if _source_has_renderer_proxy(source):
+				source.layers = 0
+			else:
+				source.visible = false
+	_batch_static_persistent_shadow_geometry()
+
+
+func _batch_static_persistent_shadow_geometry() -> void:
+	var shadow_groups: Dictionary = {}
+	for raw_proxy in _persistent_shadow_proxy_by_source.values():
+		var proxy := raw_proxy as MeshInstance3D
+		var source := proxy.get_parent() as MeshInstance3D if proxy != null else null
+		if (
+			proxy == null
+			or source == null
+			or not proxy.visible
+			or proxy.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+			or not _is_static_mesh_merge_candidate(source, self, false)
+		):
+			continue
+		var material := proxy.get_active_material(0)
+		var local_origin := to_local(source.global_position)
+		var cell := Vector2i(floori(local_origin.x / 16.0), floori(local_origin.z / 16.0))
+		var material_key := _material_equivalence_key(material) if material != null else "default"
+		var group_key := "%d|%s|%s" % [proxy.layers, str(cell), material_key]
+		if not shadow_groups.has(group_key):
+			shadow_groups[group_key] = {
+				"entries": [],
+				"material": material,
+				"layers": proxy.layers,
+			}
+		(shadow_groups[group_key].entries as Array).append({
+			"source": source,
+			"mesh": proxy.mesh,
+			"surface": 0,
+			"proxy": proxy,
+		})
+	for raw_group in shadow_groups.values():
+		var group := raw_group as Dictionary
+		var entries := group.entries as Array
+		if entries.size() < 2:
+			continue
+		var batch := _create_static_merged_mesh_batch(
+			entries,
+			group.material as Material,
+			int(group.layers),
+			GeometryInstance3D.GI_MODE_DISABLED,
+			GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY,
+			1.0,
+			"StaticShadowBatch"
+		)
+		if batch == null:
+			continue
+		_static_mesh_shadow_batches.append(batch)
+		for entry in entries:
+			(entry.proxy as MeshInstance3D).visible = false
+
+
+func _create_static_merged_mesh_batch(
+	entries: Array,
+	material: Material,
+	layers: int,
+	gi_mode: int,
+	shadow_mode: int,
+	lod_bias: float,
+	name_prefix: String
+) -> MeshInstance3D:
+	if entries.size() < 2:
+		return null
+	var surface_tool := SurfaceTool.new()
+	if material != null:
+		surface_tool.set_material(material)
+	var parent_inverse := global_transform.affine_inverse()
+	for entry in entries:
+		var source := entry.source as MeshInstance3D
+		var mesh := entry.mesh as Mesh
+		if source == null or mesh == null:
+			return null
+		surface_tool.append_from(mesh, int(entry.surface), parent_inverse * source.global_transform)
+	var combined := surface_tool.commit()
+	if combined == null or combined.get_surface_count() != 1:
+		return null
+	if material != null:
+		combined.surface_set_material(0, material)
+	var instance := MeshInstance3D.new()
+	instance.name = "%s_%03d" % [
+		name_prefix,
+		_static_mesh_render_batches.size() + _static_mesh_shadow_batches.size() + 1,
+	]
+	instance.mesh = combined
+	instance.layers = layers
+	instance.gi_mode = gi_mode
+	instance.cast_shadow = shadow_mode
+	instance.lod_bias = lod_bias
+	instance.process_mode = Node.PROCESS_MODE_DISABLED
+	instance.set_meta("presentation_only", true)
+	instance.set_meta("static_merged_render_batch", shadow_mode != GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+	instance.set_meta("static_merged_shadow_batch", shadow_mode == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+	instance.set_meta("source_count", entries.size())
+	add_child(instance, false, Node.INTERNAL_MODE_FRONT)
+	return instance
+
+
+func _is_static_mesh_merge_candidate(
+	source: MeshInstance3D,
+	batch_root: Node,
+	require_visible_render_layer: bool
+) -> bool:
+	if (
+		source == null
+		or source.mesh == null
+		or source.mesh.get_surface_count() != 1
+		or source.skin != null
+		or (source.mesh is ArrayMesh and (source.mesh as ArrayMesh).get_blend_shape_count() > 0)
+		or source.material_overlay != null
+		or not is_zero_approx(source.transparency)
+		or source.global_basis.determinant() <= 0.000001
+		or not _is_visible_within_batch_root(source, batch_root)
+		or bool(source.get_meta("persistent_shell_shadow_proxy", false))
+		or bool(source.get_meta("portrait_opaque_shell_proxy", false))
+		or bool(source.get_meta("static_merged_render_batch", false))
+		or bool(source.get_meta("static_merged_shadow_batch", false))
+	):
+		return false
+	if require_visible_render_layer and source.layers != 1:
+		return false
+	if (
+		not is_zero_approx(source.visibility_range_begin)
+		or not is_zero_approx(source.visibility_range_end)
+		or source.visibility_range_fade_mode != GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	):
+		return false
+	var material := source.get_active_material(0)
+	if (
+		require_visible_render_layer
+		and material is BaseMaterial3D
+		and (material as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
+	):
+		return false
+	var cursor: Node = source
+	while cursor != null and cursor != batch_root:
+		if (
+			cursor.has_meta("required_level")
+			or cursor.has_meta("roof_section")
+			or cursor.has_meta("functional_lantern_required_level")
+			or (cursor != source and cursor.get_script() != null)
+		):
+			return false
+		var lower_name := str(cursor.name).to_lower()
+		for token in STATIC_BOX_BATCH_EXCLUDED_NAME_TOKENS:
+			if lower_name.contains(token):
+				return false
+		cursor = cursor.get_parent()
+	return cursor == batch_root
+
+
+func _source_has_renderer_proxy(source: MeshInstance3D) -> bool:
+	return (
+		_get_persistent_shadow_proxy(source) != null
+		or _portrait_opaque_proxy_by_source.has(source.get_instance_id())
+	)
 
 
 func _get_node_scale(path: NodePath) -> Vector3:

@@ -192,6 +192,7 @@ var _temporary_presentation_event_history: Array[Dictionary] = []
 var _proactive_talk_presentation_sessions: Dictionary = {}
 var _proactive_talk_presentation_session_sequence := 0
 var _proactive_talk_gesture_interval_real_seconds := PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS
+var _active_state_change_fields_by_npc: Dictionary = {}
 
 
 func _ready() -> void:
@@ -236,6 +237,7 @@ func initialize() -> void:
 	_proactive_talk_presentation_sessions.clear()
 	_proactive_talk_presentation_session_sequence = 0
 	_proactive_talk_gesture_interval_real_seconds = PROACTIVE_TALK_GESTURE_DEFAULT_INTERVAL_REAL_SECONDS
+	_active_state_change_fields_by_npc.clear()
 	_selected_npc_id = ""
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
@@ -334,6 +336,38 @@ func get_npc(npc_id: String) -> Dictionary:
 	return _profiles[npc_id].duplicate(true)
 
 
+func get_npc_combat_identity(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var equipment: Dictionary = profile.get("equipment", {}) if profile.get("equipment", {}) is Dictionary else {}
+	var weapon: Dictionary = equipment.get("main_weapon", {}) if equipment.get("main_weapon", {}) is Dictionary else {}
+	return {
+		"name": str(profile.get("name", npc_id)),
+		"recruited": bool(profile.get("recruited", false)),
+		"has_main_weapon": not weapon.is_empty(),
+	}
+
+
+func get_npc_combat_profile_snapshot(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var result := {
+		"id": str(profile.get("id", npc_id)),
+		"name": str(profile.get("name", npc_id)),
+		"recruited": bool(profile.get("recruited", false)),
+	}
+	for key in ["equipment", "skills", "stats", "combat_base", "progression"]:
+		var value: Variant = profile.get(key, {})
+		result[key] = value.duplicate(true) if value is Dictionary or value is Array else value
+	return result
+
+
+func get_npc_behavior_mode(npc_id: String) -> String:
+	return _get_current_behavior_mode(npc_id)
+
+
 func get_npc_state(npc_id: String) -> Dictionary:
 	if not _profiles.has(npc_id):
 		push_warning("Unknown NPC id: %s" % npc_id)
@@ -341,6 +375,24 @@ func get_npc_state(npc_id: String) -> Dictionary:
 	var profile: Dictionary = _profiles[npc_id]
 	var states: Dictionary = profile.get("states", {})
 	return states.duplicate(true)
+
+
+func get_active_npc_state_change_fields(npc_id: String) -> Array[String]:
+	if not _active_state_change_fields_by_npc.has(npc_id):
+		return []
+	return (_active_state_change_fields_by_npc[npc_id] as Array[String]).duplicate()
+
+
+func is_active_npc_state_change_relevant(npc_id: String, relevant_fields: Array) -> bool:
+	# Calls that emit the legacy signal outside update_npc_state have no field
+	# context and must retain their historical full-refresh behavior.
+	if not _active_state_change_fields_by_npc.has(npc_id):
+		return true
+	var changed_fields: Array[String] = _active_state_change_fields_by_npc[npc_id]
+	for field in relevant_fields:
+		if changed_fields.has(field):
+			return true
+	return false
 
 
 func get_npc_action_display_text(action_id: String) -> String:
@@ -1652,6 +1704,18 @@ func is_npc_sleeping(npc_id: String) -> bool:
 	if not _profiles.has(npc_id):
 		return false
 	return _is_sleeping_state(get_npc_state(npc_id))
+
+
+func get_npc_building_occupancy_identity(npc_id: String) -> Dictionary:
+	if not _profiles.has(npc_id):
+		return {}
+	var profile: Dictionary = _profiles[npc_id]
+	var state: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	return {
+		"current_location": str(state.get("current_location", "")),
+		"escaped": bool(state.get("escaped", false)),
+		"sleeping": _is_sleeping_state(state),
+	}
 
 
 func get_selected_npc_id() -> String:
@@ -3003,6 +3067,18 @@ func get_formal_workstation_action_snapshot(npc_id: String = "") -> Dictionary:
 		var active_npc_id := str(raw_npc_id)
 		sessions[active_npc_id] = get_formal_workstation_action_snapshot(active_npc_id)
 	return {"active": not sessions.is_empty(), "npc_ids": sessions.keys(), "sessions": sessions}
+
+
+func get_formal_workstation_action_identity(npc_id: String) -> Dictionary:
+	var session: Dictionary = (
+		_formal_workstation_action_sessions.get(npc_id, {})
+		if _formal_workstation_action_sessions.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	return {
+		"active": _formal_workstation_action_sessions.has(npc_id),
+		"action_id": str(session.get("action_id", "")),
+	}
 
 
 func begin_formal_healing_approach(
@@ -4636,10 +4712,25 @@ func update_npc_state(npc_id: String, changes: Dictionary) -> bool:
 	if changes.is_empty():
 		return true
 
-	_set_npc_state_without_signal(npc_id, changes)
-	_refresh_npc_node(npc_id)
-	_emit_npc_state_changed(npc_id)
+	var effective_changes := _get_effective_npc_state_changes(npc_id, changes)
+	if not effective_changes.is_empty():
+		_set_npc_state_without_signal(npc_id, effective_changes)
+		_refresh_npc_node_state_changes(npc_id, effective_changes)
+	_emit_npc_state_changed(npc_id, effective_changes.keys(), true)
 	return true
+
+
+func _get_effective_npc_state_changes(npc_id: String, changes: Dictionary) -> Dictionary:
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	var effective: Dictionary = {}
+	for raw_key in changes.keys():
+		var key := str(raw_key)
+		var value: Variant = changes[raw_key]
+		if states.has(key) and states[key] == value:
+			continue
+		effective[key] = value
+	return effective
 
 
 func set_npc_state_value(npc_id: String, state_key: String, value: Variant) -> bool:
@@ -5249,7 +5340,8 @@ func apply_plan_reevaluation_result(npc_id: String, reason: String, result: Dict
 func can_npc_act(npc_id: String) -> bool:
 	if not _profiles.has(npc_id):
 		return false
-	var state := get_npc_state(npc_id)
+	# Pure predicate: no need to deep-copy the profile's entire runtime state.
+	var state: Dictionary = (_profiles[npc_id] as Dictionary).get("states", {})
 	return (
 		not bool(state.get("unconscious", false))
 		and not bool(state.get("escaped", false))
@@ -5553,6 +5645,7 @@ func increase_npc_skill(
 	profile["progression"] = progression_result.get("progression", {})
 	_profiles[npc_id] = profile
 	_emit_npc_state_changed(npc_id)
+	_emit_npc_level_up(npc_id, int(progression_result.get("skill_points_gained", 0)))
 	var result := {
 		"npc_id": npc_id,
 		"skill_name": skill_name,
@@ -5665,6 +5758,7 @@ func increase_npc_total_experience(
 	profile["progression"] = progression_result.get("progression", {})
 	_profiles[npc_id] = profile
 	_emit_npc_state_changed(npc_id)
+	_emit_npc_level_up(npc_id, int(progression_result.get("skill_points_gained", 0)))
 	var result := {
 		"npc_id": npc_id,
 		"skill_name": "",
@@ -5802,7 +5896,7 @@ func assign_npc_attribute_point(npc_id: String, attribute_name: String) -> Dicti
 	var event := _log_attribute_improved(npc_id, normalized_attribute, before, after)
 	_refresh_npc_node(npc_id)
 	_emit_npc_state_changed(npc_id)
-	return {
+	var result := {
 		"ok": true,
 		"npc_id": npc_id,
 		"attribute": normalized_attribute,
@@ -5812,10 +5906,26 @@ func assign_npc_attribute_point(npc_id: String, attribute_name: String) -> Dicti
 		"unspent_skill_points": int(progression.get("unspent_skill_points", 0)),
 		"event": event
 	}
+	_emit_npc_attribute_point_assigned(npc_id, normalized_attribute, result)
+	return result
 
 
 func debug_assign_attribute_point(npc_id: String, attribute_name: String) -> Dictionary:
 	return assign_npc_attribute_point(npc_id, attribute_name)
+
+
+func _emit_npc_level_up(npc_id: String, skill_points_gained: int) -> void:
+	if skill_points_gained <= 0:
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_level_up"):
+		event_bus.npc_level_up.emit(npc_id, skill_points_gained)
+
+
+func _emit_npc_attribute_point_assigned(npc_id: String, attribute_name: String, result: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("npc_attribute_point_assigned"):
+		event_bus.npc_attribute_point_assigned.emit(npc_id, attribute_name, result.duplicate(true))
 
 
 func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float) -> void:
@@ -7259,10 +7369,56 @@ func _refresh_npc_node(npc_id: String) -> void:
 		npc_node.update_profile(_profiles[npc_id])
 
 
-func _emit_npc_state_changed(npc_id: String) -> void:
+func _refresh_npc_node_states(npc_id: String) -> void:
+	if not _npc_nodes.has(npc_id):
+		return
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null:
+		return
+	var profile: Dictionary = _profiles[npc_id]
+	var states: Dictionary = profile.get("states", {}) if profile.get("states", {}) is Dictionary else {}
+	if npc_node.has_method("update_states"):
+		npc_node.update_states(states)
+	elif npc_node.has_method("update_profile"):
+		npc_node.update_profile(profile)
+
+
+func _refresh_npc_node_state_changes(npc_id: String, changes: Dictionary) -> void:
+	if not _npc_nodes.has(npc_id):
+		return
+	var npc_node := get_node_or_null(_npc_nodes[npc_id])
+	if npc_node == null:
+		return
+	if npc_node.has_method("apply_state_changes"):
+		npc_node.apply_state_changes(changes)
+	else:
+		_refresh_npc_node_states(npc_id)
+
+
+func _emit_npc_state_changed(
+	npc_id: String,
+	changed_fields: Array = [],
+	has_field_context: bool = false
+) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
-	if event_bus != null:
+	if event_bus == null:
+		return
+	if not has_field_context:
 		event_bus.npc_state_changed.emit(npc_id)
+		return
+	var had_previous_context := _active_state_change_fields_by_npc.has(npc_id)
+	var previous_context: Array[String] = []
+	if had_previous_context:
+		previous_context.assign(_active_state_change_fields_by_npc[npc_id])
+	var normalized_fields: Array[String] = []
+	for raw_field in changed_fields:
+		normalized_fields.append(str(raw_field))
+	_active_state_change_fields_by_npc[npc_id] = normalized_fields
+	event_bus.npc_state_changed.emit(npc_id)
+	if had_previous_context:
+		_active_state_change_fields_by_npc[npc_id] = previous_context
+	else:
+		_active_state_change_fields_by_npc.erase(npc_id)
 
 
 func _emit_npc_llm_activity_changed(npc_id: String, activity: Dictionary) -> void:
