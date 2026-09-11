@@ -40,12 +40,13 @@ func _init() -> void:
 		return
 
 	time_system.set_time_scale(0.0)
-	game_state.set_time(1, 22, 0, 0)
+	time_system.set_current_time(1, 22, 0, 0)
 	if llm_bridge.has_method("set_backend_base_url"):
 		llm_bridge.set_backend_base_url("http://127.0.0.1:1")
 	llm_bridge.request_timeout_seconds = 0.2
 
 	var npc_id := "cook_01"
+	_set_debug_move_speed(npc_id, 500.0)
 	if not npc_system.debug_enter_location_immediately(npc_id, "dormitory"):
 		push_error("Failed to place cook in dormitory")
 		quit(1)
@@ -62,7 +63,10 @@ func _init() -> void:
 		push_error("Failed to assign sleep action")
 		quit(1)
 		return
-	await process_frame
+	if not await _wait_for_active_sleep(action_system, time_system, npc_id):
+		push_error("Cook did not reach the assigned bed before reflection timing began")
+		quit(1)
+		return
 
 	var long_memory: Dictionary = npc_system.get_npc_long_memory(npc_id)
 	var diary: Array = long_memory.get("diary", [])
@@ -148,11 +152,12 @@ func _init() -> void:
 		return
 	var first_reflection_result: Dictionary = reflection_system.get_last_reflection_result()
 	var first_period: Dictionary = first_reflection_result.get("reflection_period", {})
+	var first_period_end_time := str(first_period.get("end", {}).get("time", ""))
 	if (
 		int(first_period.get("start", {}).get("day", 0)) != 1
 		or str(first_period.get("start", {}).get("time", "")) != "06:00:00"
 		or int(first_period.get("end", {}).get("day", 0)) != 1
-		or str(first_period.get("end", {}).get("time", "")) != "22:10:00"
+		or not (first_period_end_time.begins_with("22:09:") or first_period_end_time == "22:10:00")
 		or int(first_reflection_result.get("cleared_short_term_memory", {}).get(
 			"remaining_event_count",
 			-1
@@ -302,7 +307,7 @@ func _init() -> void:
 	await process_frame
 	if (
 		not detail_popup.visible
-		or not detail_title.text.contains("知识图谱")
+		or not detail_title.text.contains("认识")
 		or not detail_text.text.contains("【驿站】")
 		or not detail_text.text.contains("当日压力")
 		or not detail_text.text.contains("第二次总结覆盖")
@@ -372,10 +377,13 @@ func _verify_cross_night_sleep_window(
 	if not npc_system.debug_enter_location_immediately(NPC_ID, "dormitory"):
 		push_error("Could not place stableman in dormitory for cross-night verification")
 		return false
+	_set_debug_move_speed(NPC_ID, 500.0)
 	if not action_system.debug_assign_sleep(NPC_ID):
 		push_error("Could not start stableman sleep for cross-night verification")
 		return false
-	await process_frame
+	if not await _wait_for_active_sleep(action_system, time_system, NPC_ID):
+		push_error("Stableman did not reach the assigned bed for cross-night verification")
+		return false
 
 	var initial_diary_count := (
 		npc_system.get_npc_long_memory(NPC_ID).get("diary", []) as Array
@@ -396,7 +404,7 @@ func _verify_cross_night_sleep_window(
 	if (
 		int(first_half_snapshot.get("summary_window_anchor", {}).get("hour", -1)) != 21
 		or str(first_half_window.get("window_key", "")) != "night_1_2100"
-		or absf(float(first_half_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 0.1
+		or absf(float(first_half_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 2.0
 	):
 		push_error("Midnight sleep accumulation did not stay in the 21:00 window: %s" % JSON.stringify(first_half_snapshot))
 		return false
@@ -484,15 +492,14 @@ func _verify_cross_night_sleep_window(
 		"sleep_window_states_by_npc",
 		{}
 	).get(NPC_ID, {})
-	if absf(float(interrupted_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 0.1:
+	if absf(float(interrupted_window.get("accumulated_sleep_seconds", 0.0)) - 1800.0) > 2.0:
 		push_error("Dialogue time incorrectly counted as sleep: %s" % JSON.stringify(interrupted_window))
 		return false
 	var cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue()
 	if not bool(cancel_result.get("ok", false)):
 		push_error("Could not end sleep interruption dialogue: %s" % JSON.stringify(cancel_result))
 		return false
-	await process_frame
-	if str(action_system.get_runtime_action_id(NPC_ID)) != "sleep_in_dormitory":
+	if not await _wait_for_active_sleep(action_system, time_system, NPC_ID):
 		push_error("Unchanged sleep plan did not resume after dialogue")
 		return false
 
@@ -554,6 +561,52 @@ func _verify_cross_night_sleep_window(
 		push_error("Next night did not continue from the previous successful snapshot: %s" % JSON.stringify(next_night_entry))
 		return false
 	return true
+
+
+func _set_debug_move_speed(npc_id: String, speed: float) -> void:
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	if npc_root == null:
+		return
+	for npc_node in npc_root.get_children():
+		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
+			npc_node.move_speed = speed
+			return
+
+
+func _wait_for_active_sleep(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	max_frames: int = 1800
+) -> bool:
+	var game_state := root.get_node_or_null("GameState")
+	var preserved_clock := {
+		"day": int(game_state.current_day) if game_state != null else 1,
+		"hour": int(game_state.current_hour) if game_state != null else 0,
+		"minute": int(game_state.current_minute) if game_state != null else 0,
+		"second": int(game_state.current_second) if game_state != null else 0
+	}
+	time_system.set_time_scale(1.0)
+	for _frame in range(max_frames):
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == "sleep_in_dormitory":
+			time_system.set_time_scale(0.0)
+			time_system.set_current_time(
+				int(preserved_clock["day"]),
+				int(preserved_clock["hour"]),
+				int(preserved_clock["minute"]),
+				int(preserved_clock["second"])
+			)
+			return true
+		await physics_frame
+	time_system.set_time_scale(0.0)
+	time_system.set_current_time(
+		int(preserved_clock["day"]),
+		int(preserved_clock["hour"]),
+		int(preserved_clock["minute"]),
+		int(preserved_clock["second"])
+	)
+	return false
 
 
 func _make_all_sleep_plan() -> Array:

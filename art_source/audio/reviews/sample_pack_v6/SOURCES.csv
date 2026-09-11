@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_dawn_rooster_close_719773.mp3,ambience_dawn_rooster,Morning rooster crow,JoMungus,https://freesound.org/s/719773/,CC0,rejected,,不采用,"用户已选择 02 作为黎明鸡鸣"
+02_dawn_rooster_outdoor_585511.mp3,ambience_dawn_rooster,morning cocorico birds rooster cock poultry,Nimlos,https://freesound.org/s/585511/,CC0,confirmed,ambience_dawn_rooster_random_one_shot,"整段播放；不剪辑；仅黎明时段在马厩或食堂附近空间点低频随机触发","用户确认作为黎明鸡鸣"
+03_dawn_chicken_coop_536693.mp3,ambience_dawn_rooster,"Chickens in the coop, morning",fthgurdy,https://freesound.org/s/536693/,CC0,rejected,,不采用,"用户已选择 02 作为黎明鸡鸣"
+04_day_birds_sparrows_543827.mp3,ambience_day_bird,Sparrows Close Chirp Exterior Birds.wav,Profispiesser,https://freesound.org/s/543827/,CC0,confirmed,ambience_day_bird_random_one_shot,"整段播放；不剪辑；白天在独立树冠空间点随机触发；与 05、06 错时","用户确认三条白天鸟叫均采用"
+05_day_birds_robin_woodland_517481.mp3,ambience_day_bird,Woodland Birds.wav,Artemis_R_Swann,https://freesound.org/s/517481/,CC0,confirmed,ambience_day_bird_random_one_shot,"整段播放；不剪辑；白天在独立林缘空间点随机触发；与 04、06 错时","用户确认三条白天鸟叫均采用"
+06_day_birds_blackbird_628029.mp3,ambience_day_bird,Blackbird.wav,Kimskell,https://freesound.org/s/628029/,CC0,confirmed,ambience_day_bird_random_one_shot,"整段播放；不剪辑；白天在独立树冠空间点随机触发；与 04、05 错时","用户确认三条白天鸟叫均采用"
+07_night_crickets_loop_521843.mp3,ambience_night_insects,Outdoors_Night_CricketsLoop.wav,MrFossy,https://freesound.org/s/521843/,CC0,confirmed,ambience_night_insects_local_loop,"整段循环；不剪辑；放在独立草丛空间声区，夜间随机错时启停并渐入渐出","用户确认三条夜间虫鸣均采用"
+08_night_crickets_mountain_734642.mp3,ambience_night_insects,Night crickets,Vrymaa,https://freesound.org/s/734642/,CC0,confirmed,ambience_night_insects_local_loop,"整段循环；不剪辑；放在独立林下空间声区，夜间随机错时启停并渐入渐出","用户确认三条夜间虫鸣均采用"
+09_night_crickets_evening_loop_830044.mp3,ambience_night_insects,Jackwald's Sounds - Evening Cricket Ambience (Looped),JackwaldOfficial,https://freesound.org/s/830044/,CC-BY-4.0,confirmed,ambience_night_insects_local_loop,"整段循环；不剪辑；放在独立草地空间声区，夜间随机错时启停并渐入渐出","用户确认三条夜间虫鸣均采用"
+10_night_owl_hoot_465697.mp3,ambience_night_owl,Owl Hoot,Breviceps,https://freesound.org/s/465697/,CC0,rejected,,不采用,"用户已选择 11 作为猫头鹰鸣叫"
+11_night_owl_field_398734.mp3,ambience_night_owl,owl.wav,Anthousai,https://freesound.org/s/398734/,CC0,confirmed,ambience_night_owl_random_one_shot,"整段播放；不剪辑；夜间在前后树林空间点低频随机触发，每次可换位置","用户确认作为猫头鹰鸣叫"
+12_night_owl_castle_745208.mp3,ambience_night_owl,Tawny owl hooting,Patrick_Corra,https://freesound.org/s/745208/,CC0,rejected,,不采用,"用户已选择 11 作为猫头鹰鸣叫"

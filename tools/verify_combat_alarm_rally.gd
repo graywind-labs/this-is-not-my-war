@@ -22,6 +22,7 @@ func _init() -> void:
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var horse_system := root.get_node_or_null("Main/Systems/HorseSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var daily_reflection_system := root.get_node_or_null("Main/Systems/DailyReflectionSystem")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
 	var alarm_button := root.get_node_or_null("Main/UI/HUD/AlarmButton") as Button
 	if (
@@ -31,10 +32,15 @@ func _init() -> void:
 		or equipment_system == null
 		or horse_system == null
 		or memory_system == null
+		or daily_reflection_system == null
 		or gm_panel == null
 		or alarm_button == null
 	):
 		push_error("Combat alarm rally verification required nodes not found")
+		quit(1)
+		return
+	if alarm_button.text != "警报":
+		push_error("HUD alarm button should display 警报")
 		quit(1)
 		return
 
@@ -60,6 +66,23 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var reflection_request_id := "verify_combat_interrupt_reflection"
+	var reflection_window_key := "day_1_21_00"
+	daily_reflection_system._pending_reflection_by_request[reflection_request_id] = {
+		"npc_id": "veteran_deputy_01",
+		"summary_window_key": reflection_window_key,
+		"should_lock_summary": true
+	}
+	daily_reflection_system._pending_request_by_npc["veteran_deputy_01"] = reflection_request_id
+	daily_reflection_system._sleep_summary_window_by_npc["veteran_deputy_01"] = {
+		"window_key": reflection_window_key,
+		"summary_status": "pending",
+		"request_id": reflection_request_id,
+		"accumulated_sleep_seconds": 3600.0,
+		"remaining_sleep_seconds": 0.0
+	}
+	npc_system.set_first_sleep_summary_lock("veteran_deputy_01", true, reflection_request_id)
+
 	alarm_button.pressed.emit()
 	await process_frame
 
@@ -74,6 +97,21 @@ func _init() -> void:
 		return
 	if int(alarm_result.get("rallied_count", 0)) != 2:
 		push_error("Only recruited armed NPCs should rally. result=%s" % JSON.stringify(alarm_result))
+		quit(1)
+		return
+	var reflection_interrupt: Dictionary = alarm_result.get("reflection_interrupt_result", {})
+	if int(reflection_interrupt.get("interrupted_count", 0)) != 1:
+		push_error("Combat alarm should interrupt the pending sleep reflection: %s" % JSON.stringify(alarm_result))
+		quit(1)
+		return
+	if npc_system.is_first_sleep_summary_locked("veteran_deputy_01"):
+		push_error("Combat alarm should release the first-sleep summary lock")
+		quit(1)
+		return
+	var reflection_snapshot: Dictionary = daily_reflection_system.get_async_reflection_snapshot()
+	var reflection_window: Dictionary = (reflection_snapshot.get("sleep_window_states_by_npc", {}) as Dictionary).get("veteran_deputy_01", {})
+	if str(reflection_window.get("summary_status", "")) != "eligible" or not str(reflection_window.get("request_id", "")).is_empty():
+		push_error("Interrupted reflection should remain retryable without applying memory: %s" % JSON.stringify(reflection_window))
 		quit(1)
 		return
 	if not _ignored_reason(alarm_result, "cook_01", "not_recruited"):
@@ -91,8 +129,24 @@ func _init() -> void:
 		push_error("Weapon-only NPC should not show mounted combat visual")
 		quit(1)
 		return
+	if bool(veteran_state.get("combat_mounted", false)) or str(veteran_state.get("combat_mount_phase", "")) != "going_to_stable_horse":
+		push_error("Assigned rider should walk to the stable horse before becoming mounted")
+		quit(1)
+		return
+	var meeting_horse: Dictionary = horse_system.get_horse_snapshot(horse_id)
+	var meeting_movement: Dictionary = meeting_horse.get("movement_state", {})
+	if str(meeting_horse.get("location", "")) != "stable" or str(meeting_movement.get("phase", "")) != "waiting_for_rider_at_stable" or not bool(meeting_movement.get("horse_stationary", false)):
+		push_error("Assigned horse should remain stationary in its stable during rally")
+		quit(1)
+		return
+	if not bool(horse_system.debug_complete_horse_transition(horse_id).get("ok", false)):
+		push_error("Could not complete horse-rider rendezvous in rally verification")
+		quit(1)
+		return
+	await process_frame
+	veteran_state = npc_system.get_npc_state("veteran_deputy_01")
 	if not bool(veteran_state.get("combat_mounted", false)):
-		push_error("Mounted NPC should show mounted visual during rally")
+		push_error("NPC should become mounted after meeting the assigned horse")
 		quit(1)
 		return
 
@@ -103,14 +157,20 @@ func _init() -> void:
 		push_error("Active rally snapshot should include both responding NPCs")
 		quit(1)
 		return
-	if str(stableman_rally.get("formation_row", "")) != "front" or str(veteran_rally.get("formation_row", "")) != "back":
-		push_error("Melee should rally in front and ranged behind: %s" % JSON.stringify(rallies))
+	if (
+		str(stableman_rally.get("formation_row", "")) != "melee_front"
+		or not str(veteran_rally.get("formation_row", "")).begins_with("cavalry_")
+	):
+		push_error("Melee should rally in the center front and mounted units on a wing: %s" % JSON.stringify(rallies))
 		quit(1)
 		return
 	var stable_pos: Dictionary = stableman_rally.get("position", {})
 	var veteran_pos: Dictionary = veteran_rally.get("position", {})
-	if float(stable_pos.get("z", 0.0)) <= float(veteran_pos.get("z", 0.0)):
-		push_error("Frontline rally point should be closer to enemy direction than ranged row")
+	if (
+		float(stable_pos.get("z", 0.0)) <= float(veteran_pos.get("z", 0.0))
+		or absf(float(veteran_pos.get("x", 0.0)) - 5.0) < 4.0
+	):
+		push_error("Frontline should face the enemy while the mounted unit holds a side wing")
 		quit(1)
 		return
 
@@ -123,10 +183,11 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var veteran_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/VeteranDeputy01")
-	var mount_visual := veteran_node.get_node_or_null("CombatMountVisual") as MeshInstance3D if veteran_node != null else null
-	if mount_visual == null or not mount_visual.visible:
-		push_error("Mounted NPC should display mount visual during rally")
+	var npc_node_paths: Dictionary = npc_system.get("_npc_nodes")
+	var veteran_node := npc_system.get_node_or_null(npc_node_paths.get("veteran_deputy_01", NodePath("")))
+	var art_snapshot: Dictionary = veteran_node.debug_get_character_art_snapshot() if veteran_node != null and veteran_node.has_method("debug_get_character_art_snapshot") else {}
+	if not bool(art_snapshot.get("combat_mount_visual_visible", false)) or not bool(art_snapshot.get("combat_mount_uses_imported_horse", false)):
+		push_error("Mounted NPC should display the formal imported horse during rally: %s" % JSON.stringify(art_snapshot))
 		quit(1)
 		return
 
@@ -150,6 +211,7 @@ func _init() -> void:
 		or (
 			encounter_action != "combat_ready"
 			and not encounter_action.begins_with("attacking_")
+			and not encounter_action.begins_with("winding_up_")
 		)
 	):
 		push_error("NPC encountering enemy during rally should switch to combat readiness or attack: %s" % JSON.stringify(stableman_state))

@@ -1,0 +1,149 @@
+{
+  "schema_version": "physics_navigation_v1",
+  "units": {
+    "godot_units_per_meter": 1.0,
+    "up_axis": "+Y",
+    "character_forward_axis": "-Z"
+  },
+  "collision_layers": {
+    "world_static": {"layer_number": 1, "bitmask": 1},
+    "actor_body": {"layer_number": 2, "bitmask": 2},
+    "interaction": {"layer_number": 3, "bitmask": 4}
+  },
+  "actor_profiles": {
+    "npc": {
+      "radius": 0.35,
+      "height": 1.6,
+      "step_height": 0.3,
+      "max_slope_degrees": 45.0,
+      "base_speed": 5.0,
+      "acceleration": 14.0,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
+    },
+    "enemy_foot": {
+      "radius": 0.42,
+      "height": 1.8,
+      "step_height": 0.3,
+      "max_slope_degrees": 45.0,
+      "base_speed": 3.4,
+      "acceleration": 12.0,
+      "avoidance_layers": 2,
+      "avoidance_mask": 2
+    },
+    "enemy_mounted": {
+      "radius": 0.65,
+      "height": 2.25,
+      "step_height": 0.35,
+      "max_slope_degrees": 40.0,
+      "base_speed": 5.4,
+      "acceleration": 10.0,
+      "avoidance_layers": 2,
+      "avoidance_mask": 2
+    },
+    "horse": {
+      "radius": 0.65,
+      "height": 2.25,
+      "step_height": 0.35,
+      "max_slope_degrees": 40.0,
+      "base_speed": 5.4,
+      "acceleration": 10.0,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
+    },
+    "merchant_wagon": {
+      "radius": 1.1,
+      "height": 2.4,
+      "step_height": 0.25,
+      "max_slope_degrees": 32.0,
+      "base_speed": 4.6,
+      "acceleration": 5.5,
+      "avoidance_layers": 1,
+      "avoidance_mask": 1
+    }
+  },
+  "npc_locomotion": {
+    "schema_version": "npc_locomotion_v1",
+    "walk_speed": 3.2,
+    "run_speed": 5.0,
+    "walk_animation_reference_speed": 3.2,
+    "run_animation_reference_speed": 5.0,
+    "actual_run_speed_margin": 0.05,
+    "minimum_animation_speed_scale": 0.35,
+    "maximum_animation_speed_scale": 1.6,
+    "emergency_behavior_modes": ["rally", "combat", "avoid_combat", "escaped"]
+  },
+  "formal_wave_spawn": {
+    "columns": 3,
+    "minimum_spacing": 0.95,
+    "minimum_capsule_clearance": 0.1,
+    "ai_updates_per_frame": 8,
+    "contact_update_interval_frames": 6,
+    "avoidance_update_interval_frames": 3
+  },
+  "structural_collision": {
+    "wall_thickness": 0.4,
+    "minimum_wall_height": 1.2,
+    "building_door_clear_width": 1.8,
+    "building_door_clear_height": 2.2,
+    "gate_post_width": 1.2,
+    "collision_margin": 0.04
+  },
+  "navigation_mesh": {
+    "production_cell_size": 0.25,
+    "production_cell_height": 0.1,
+    "agent_radius": 0.35,
+    "baked_agent_radius": 0.5,
+    "agent_height": 1.8,
+    "agent_max_climb": 0.3,
+    "agent_max_slope_degrees": 45.0,
+    "source_geometry_mode": "static_colliders",
+    "source_group_name": "formal_navigation_source",
+    "baking_aabb_margin": 2.0,
+    "baking_height_min": -1.0,
+    "baking_height_max": 6.0,
+    "baking_floor_depth": 0.2
+  },
+  "navigation_agent": {
+    "path_desired_distance": 0.35,
+    "target_desired_distance": 0.25,
+    "path_height_offset": 0.0,
+    "avoidance_enabled": true,
+    "avoidance_radius_padding": 0.1,
+    "neighbor_distance": 3.5,
+    "max_neighbors": 10,
+    "time_horizon_agents": 0.9,
+    "time_horizon_obstacles": 1.0,
+    "avoidance_priority_npc": 0.5,
+    "avoidance_priority_enemy": 0.55,
+    "avoidance_layers": 1,
+    "avoidance_mask": 1,
+    "use_3d_avoidance": false
+  },
+  "path_progression": {
+    "adaptive_waypoint_enabled": true,
+    "maximum_intermediate_tolerance": 2.2,
+    "shortcut_path_length_ratio": 1.05,
+    "shortcut_path_length_margin": 0.15,
+    "waypoint_advance_epsilon": 0.02,
+    "reset_stale_avoidance_on_advance": true,
+    "missed_waypoint_advance_enabled": true,
+    "missed_waypoint_distance_growth": 0.25,
+    "missed_waypoint_minimum_speed": 0.5,
+    "maximum_avoidance_steering_degrees": 75.0,
+    "reject_backward_path_velocity": true,
+    "final_target_braking_enabled": true
+  },
+  "stuck_recovery": {
+    "sample_seconds": 0.75,
+    "minimum_progress": 0.08,
+    "repath_after_samples": 2,
+    "fail_after_seconds": 8.0,
+    "maximum_repaths_per_target": 4
+  },
+  "authority_boundary": {
+    "motion_component_owns": ["physical_velocity", "move_and_slide", "navigation_path", "avoidance_velocity", "stuck_detection"],
+    "gameplay_systems_own": ["movement_intent", "destination", "arrival_effect", "location_commit", "workstation_reservation", "combat_target", "escape_completion"],
+    "presentation_owns": ["animation", "facing_projection", "footstep_vfx", "selection_feedback"]
+  }
+}

@@ -1,0 +1,16 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/SaveBrowserPanel.gd" id="1_save_browser"]
+[ext_resource type="Theme" path="res://resources/themes/blacksmith_vertical_slice_theme.tres" id="2_theme"]
+
+[node name="SaveBrowserPanel" type="Control"]
+visible = false
+z_index = 30
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_save_browser")

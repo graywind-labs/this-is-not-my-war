@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_final_victory_grand_466133.mp3,final_victory_stinger,Victory Fanfare,humanoide9000,https://freesound.org/s/466133/,CC-BY 4.0,confirmed,final_victory_stinger,整段；守住最终波次时从主厅位置单次播放,用户确认最终胜利使用
+02_final_victory_medieval_572935.mp3,final_victory_stinger,Medieval Fanfare.wav,gertraut_hecher,https://freesound.org/s/572935/,CC-BY 4.0,rejected,,不采用,用户已选择 01
+03_final_victory_fanfare_423293.mp3,final_victory_stinger,FanFare.wav,DylanTheFish,https://freesound.org/s/423293/,CC0,rejected,,不采用,用户已选择 01
+04_defeat_dark_858212.mp3,defeat_stinger,Failed Quest Stinger 01 - Dark Dissonant Orchestra,TommasoMotteran,https://freesound.org/s/858212/,CC-BY 4.0,rejected,,不采用,用户已选择 05
+05_defeat_orchestral_856516.mp3,defeat_stinger,Game Over Orchestral Stinger - Cartoon Defeat,TommasoMotteran,https://freesound.org/s/856516/,CC-BY 4.0,confirmed,defeat_stinger,整段；主厅被摧毁时从主厅位置单次播放,用户确认失败使用
+06_defeat_short_335906.mp3,defeat_stinger,Fail.mp3,LittleRainySeasons,https://freesound.org/s/335906/,CC0,rejected,,不采用,用户已选择 05
+07_arrow_tower_release_384915.mp3,arrow_tower_release,Bow Release (Bow and Arrow),Ali_6868,https://freesound.org/s/384915/,CC0,rejected,,不采用,用户已选择 08
+08_arrow_tower_longbow_394179.mp3,arrow_tower_release,Longbow Release 2.wav,saturdaysoundguy,https://freesound.org/s/394179/,CC0,confirmed,arrow_tower_release,整段；箭塔射击时从箭塔位置单次播放,用户确认箭塔释放使用
+09_arrow_tower_real_534941.mp3,arrow_tower_release,ARROW_SHOOT_SINGLE_02.wav,JoeDinesSound,https://freesound.org/s/534941/,CC0,rejected,,不采用,用户已选择 08
+10_ballista_bolt_impact_205938.mp3,ballista_heavy_bolt_impact,Arrow Impact,Twisted_Euphoria,https://freesound.org/s/205938/,CC0,confirmed,ballista_heavy_bolt_impact,整段；弩床重弩矢命中时从命中点单次播放,用户确认弩床重弩矢命中使用
+11_ballista_bolt_heavy_481106.mp3,ballista_heavy_bolt_impact,R28-55-Thumps on Large Hollow Wooden Surface.wav,craigsmith,https://freesound.org/s/481106/,CC0,rejected,,不采用,用户已选择 10
+12_ballista_bolt_wood_803551.mp3,ballista_heavy_bolt_impact,wooden impact,agaisgsbs,https://freesound.org/s/803551/,CC0,rejected,,不采用,用户已选择 10

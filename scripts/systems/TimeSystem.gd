@@ -105,8 +105,10 @@ func clear_time_slowdowns() -> void:
 	_emit_time_scale_changed("slowdowns_cleared")
 
 
-func has_time_slowdown() -> bool:
-	return not _slowdown_requests.is_empty()
+func has_time_slowdown(request_id: String = "") -> bool:
+	if request_id.is_empty():
+		return not _slowdown_requests.is_empty()
+	return _slowdown_requests.has(request_id)
 
 
 func should_show_precise_display_seconds() -> bool:
@@ -190,6 +192,7 @@ func get_time_scale_snapshot() -> Dictionary:
 		"player_scale": time_scale,
 		"effective_scale": get_effective_time_scale(),
 		"numeric_multiplier": get_numeric_delta_multiplier(),
+		"combat_frame_rate": get_combat_frame_rate(),
 		"slowdown_requests": _slowdown_requests.duplicate(true),
 		"time_scale_cap_requests": _time_scale_cap_requests.duplicate(true),
 		"slowdown_count": _slowdown_requests.size(),
@@ -227,6 +230,20 @@ func get_game_delta_seconds(real_delta_seconds: float) -> float:
 	return real_delta_seconds * (60.0 / seconds_per_minute) * get_numeric_delta_multiplier()
 
 
+func get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
+	# Physics and presentation callbacks receive real frame seconds, while combat
+	# authority consumes game seconds. During an active battle the shared 1/60
+	# request makes these equal. Capping at the real delta prevents synthetic or
+	# teardown combat visuals from accelerating at the out-of-combat x1/x2/x4
+	# simulation rate; pause and any stricter slowdown still return less or zero.
+	var real_seconds := maxf(0.0, real_delta_seconds)
+	return minf(real_seconds, get_game_delta_seconds(real_seconds))
+
+
+func get_combat_frame_rate() -> float:
+	return get_combat_frame_delta_seconds(1.0)
+
+
 func cycle_speed() -> void:
 	var current_index := speed_steps.find(time_scale)
 	if current_index < 0:
@@ -241,7 +258,7 @@ func cycle_speed() -> void:
 
 
 func get_speed_label() -> String:
-	return "x%.0f" % time_scale
+	return format_time_scale_label(time_scale)
 
 
 func get_pause_label() -> String:
@@ -251,10 +268,17 @@ func get_pause_label() -> String:
 
 
 func get_effective_speed_label() -> String:
-	var effective_scale := get_effective_time_scale()
-	if effective_scale < 1.0:
-		return "x%.2f" % effective_scale
-	return "x%.0f" % effective_scale
+	return format_time_scale_label(get_effective_time_scale())
+
+
+func format_time_scale_label(scale: float) -> String:
+	var normalized := maxf(0.0, scale)
+	if normalized > 0.0 and normalized < 1.0:
+		var denominator := maxi(2, int(round(1.0 / normalized)))
+		if is_equal_approx(normalized, 1.0 / float(denominator)):
+			return "x1/%d" % denominator
+		return "x%.2f" % normalized
+	return "x%.0f" % normalized
 
 
 func get_progress_to_next_hour() -> float:

@@ -1,6 +1,9 @@
 extends SceneTree
 
 
+const FORMAL_ROUTE_TIMEOUT_SECONDS := 90.0
+
+
 func _init() -> void:
 	var main_scene := load("res://scenes/main/Main.tscn") as PackedScene
 	if main_scene == null:
@@ -17,8 +20,7 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var merchant_panel := root.get_node_or_null("Main/UI/MerchantPanel")
-	var marker := root.get_node_or_null("Main/WorldRoot/Station/Props/MerchantEntranceMarker")
-	if merchant_system == null or resource_system == null or memory_system == null or npc_system == null or time_system == null or merchant_panel == null or marker == null:
+	if merchant_system == null or resource_system == null or memory_system == null or npc_system == null or time_system == null or merchant_panel == null:
 		_fail("T1507 required nodes or systems are missing")
 		return
 	if merchant_system.is_merchant_present():
@@ -28,8 +30,16 @@ func _init() -> void:
 		if merchant_system.get_buy_offer(resource_id).is_empty():
 			_fail("Merchant is missing buy offer for %s" % resource_id)
 			return
-	if merchant_system.get_sell_offer("wine").is_empty():
-		_fail("Merchant is missing wine sell offer")
+	var expected_sell_prices := {"grain": 1, "wood": 2, "stone": 3, "iron": 4, "wine": 4}
+	for resource_id in expected_sell_prices.keys():
+		if int(merchant_system.get_sell_offer(str(resource_id)).get("unit_price", 0)) != int(expected_sell_prices[resource_id]):
+			_fail("Merchant sell-price contract mismatch for %s" % resource_id)
+			return
+		if resource_id != "wine" and int(merchant_system.get_buy_offer(str(resource_id)).get("unit_price", 0)) <= int(expected_sell_prices[resource_id]):
+			_fail("Base-resource sell price must remain below its buy price for %s" % resource_id)
+			return
+	if not merchant_system.get_buy_offer("wine").is_empty():
+		_fail("Wine must remain sell-only")
 		return
 
 	var plaza_npc_id := "priest_01"
@@ -38,7 +48,11 @@ func _init() -> void:
 	npc_system.debug_enter_location_immediately(indoor_npc_id, "clinic")
 	var plaza_witness_before: int = memory_system.get_npc_witness_events(plaza_npc_id).size()
 	var indoor_witness_before: int = memory_system.get_npc_witness_events(indoor_npc_id).size()
+	Engine.time_scale = 3.0
 	time_system.set_current_time(1, 10, 0, 0)
+	if not await _wait_for_wagon_state(merchant_system, "parked", FORMAL_ROUTE_TIMEOUT_SECONDS):
+		_fail("Merchant wagon did not physically reach the dock")
+		return
 	if not merchant_system.is_merchant_present():
 		_fail("Merchant did not arrive at configured time")
 		return
@@ -52,10 +66,32 @@ func _init() -> void:
 	if arrival_event.is_empty() or not str(arrival_event.get("summary", "")).contains("抵达后门"):
 		_fail("Merchant arrival structured event is missing")
 		return
-	var click_shape := marker.get_node_or_null("MerchantClickArea/CollisionShape3D") as CollisionShape3D
-	var marker_label := marker.get_node_or_null("MerchantEntranceLabel") as Label3D
-	if click_shape == null or click_shape.disabled or marker_label == null or not marker_label.text.contains("商人马车已到"):
-		_fail("Merchant arrival was not reflected at the back-gate marker")
+	var wagon := root.get_node_or_null("Main/WorldRoot/DailyMerchantWagon")
+	var click_shape := wagon.get_node_or_null("TradeBubble/TradeBubbleArea/CollisionShape3D") as CollisionShape3D if wagon != null else null
+	var trade_marker := wagon.get_node_or_null("TradeBubble/Marker") as Sprite3D if wagon != null else null
+	var cargo_bed := wagon.get_node_or_null("VisualRoot/LoadedCargoBed") if wagon != null else null
+	var axles := wagon.get_node_or_null("VisualRoot/Chassis/Axles") if wagon != null else null
+	var wheels := wagon.get_node_or_null("VisualRoot/Wheels") if wagon != null else null
+	var left_horse := wagon.get_node_or_null("VisualRoot/Horses/LeftHorse") as Node3D if wagon != null else null
+	var right_horse := wagon.get_node_or_null("VisualRoot/Horses/RightHorse") as Node3D if wagon != null else null
+	var driver_art := wagon.get_node_or_null("VisualRoot/DriverSeat/MerchantChibiArtView") if wagon != null else null
+	if click_shape == null or click_shape.disabled or trade_marker == null:
+		_fail("Physical wagon arrival did not enable its trade bubble")
+		return
+	if wagon.get_node_or_null("TradeBubble/Label3D") != null or trade_marker.pixel_size < 0.0089:
+		_fail("Trade marker did not remove its text or enlarge the money-bag icon")
+		return
+	if cargo_bed == null or cargo_bed.get_child_count() < 18:
+		_fail("Merchant wagon cargo bed is not visibly loaded")
+		return
+	if axles == null or axles.get_child_count() != 2 or wheels == null or wheels.get_child_count() != 4:
+		_fail("Merchant wagon four-wheel, two-axle chassis is missing")
+		return
+	if left_horse == null or right_horse == null or not is_equal_approx(left_horse.position.x, -right_horse.position.x):
+		_fail("Merchant wagon paired horses are missing or misaligned")
+		return
+	if driver_art == null or str(driver_art.debug_get_snapshot().get("current_state", "")) != "vehicle_seated":
+		_fail("Merchant wagon chibi driver is not using the dedicated driving pose")
 		return
 	if not merchant_system.debug_open_trade():
 		_fail("Active merchant could not open trade UI")
@@ -166,21 +202,37 @@ func _init() -> void:
 	if departure_event.is_empty():
 		_fail("Merchant departure structured event is missing")
 		return
-	if not click_shape.disabled or not merchant_panel.buy_button.disabled or not merchant_panel.sell_button.disabled:
+	if not click_shape.disabled or merchant_panel.visible:
 		_fail("Merchant UI or world hotspot remained active after departure")
 		return
 	var unavailable_trade: Dictionary = merchant_system.buy_resource("wood", 1)
 	if bool(unavailable_trade.get("ok", false)) or str(unavailable_trade.get("code", "")) != "merchant_unavailable":
 		_fail("Trade remained available after merchant departure")
 		return
+	if not await _wait_for_wagon_state(merchant_system, "absent", FORMAL_ROUTE_TIMEOUT_SECONDS):
+		_fail("Merchant wagon did not clear the route after departure")
+		return
 
 	time_system.set_current_time(2, 10, 0, 0)
+	if not await _wait_for_wagon_state(merchant_system, "parked", FORMAL_ROUTE_TIMEOUT_SECONDS):
+		_fail("Merchant wagon did not physically return on the next day")
+		return
 	if not merchant_system.is_merchant_present() or int(merchant_system.get_market_snapshot().get("active_visit_day", 0)) != 2:
 		_fail("Merchant did not return on the next day")
 		return
 
+	Engine.time_scale = 1.0
 	print("T1507 merchant trade system verification passed.")
 	quit(0)
+
+
+func _wait_for_wagon_state(merchant_system: Node, expected_state: String, timeout_seconds: float) -> bool:
+	var started := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started < int(timeout_seconds * 1000.0):
+		if str(merchant_system.get_market_snapshot().get("wagon_state", "")) == expected_state:
+			return true
+		await physics_frame
+	return false
 
 
 func _find_latest_event(events: Array, event_type: String) -> Dictionary:
@@ -192,5 +244,6 @@ func _find_latest_event(events: Array, event_type: String) -> Dictionary:
 
 
 func _fail(message: String) -> void:
+	Engine.time_scale = 1.0
 	push_error(message)
 	quit(1)

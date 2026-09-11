@@ -34,25 +34,76 @@ func _init() -> void:
 
 	# NPCPanel is wrapped in a runtime ScrollContainer, so interaction tests locate
 	# stable named controls instead of depending on the pre-wrap absolute path.
-	var visibility_select := npc_panel.find_child("NPCInteractionVisibilitySelect", true, false) as OptionButton
+	var public_visibility_radio := npc_panel.find_child("NPCInteractionPublicRadio", true, false) as CheckBox
+	var private_visibility_radio := npc_panel.find_child("NPCInteractionPrivateRadio", true, false) as CheckBox
 	var money_spin := npc_panel.find_child("NPCGiftMoneySpin", true, false) as SpinBox
 	var gift_button := npc_panel.find_child("NPCGiftMoneyButton", true, false) as Button
 	var wine_spin := npc_panel.find_child("NPCGiftWineSpin", true, false) as SpinBox
 	var gift_wine_button := npc_panel.find_child("NPCGiftWineButton", true, false) as Button
 	var wine_label := npc_panel.find_child("NPCWineLabel", true, false) as Label
 	var weapon_button := npc_panel.find_child("NPCGiveWeaponButton", true, false) as Button
-	var unequip_weapon_button := npc_panel.find_child("NPCUnequipWeaponButton", true, false) as Button
-	var armor_equip_button := npc_panel.find_child("NPCEquipArmorButton", true, false) as Button
-	var armor_unequip_button := npc_panel.find_child("NPCUnequipArmorButton", true, false) as Button
-	var horse_assign_button := npc_panel.find_child("NPCAssignHorseButton", true, false) as Button
-	var horse_unassign_button := npc_panel.find_child("NPCUnassignHorseButton", true, false) as Button
-	var strategy_select := npc_panel.find_child("NPCCombatStrategySelect", true, false) as OptionButton
+	var order_button := npc_panel.find_child("NPCAssignButton", true, false) as Button
+	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
+	var management_row := npc_panel.find_child("NPCManagementButtonRow", true, false) as HBoxContainer
+	var strategy_value := npc_panel.find_child("NPCCombatStrategyValue", true, false) as Label
 	var equipment_label := npc_panel.find_child("NPCEquipmentLabel", true, false) as Label
 	var result_label := npc_panel.find_child("NPCInteractionResultLabel", true, false) as Label
-	if [visibility_select, money_spin, gift_button, wine_spin, gift_wine_button, wine_label, weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select, equipment_label, result_label].has(null):
+	if [public_visibility_radio, private_visibility_radio, money_spin, gift_button, wine_spin, gift_wine_button, wine_label, weapon_button, order_button, dialogue_button, management_row, strategy_value, equipment_label, result_label].has(null):
 		push_error("NPC interaction controls are missing")
 		quit(1)
 		return
+	if npc_panel.find_child("NPCCombatStrategySelect", true, false) != null:
+		push_error("NPCPanel must not expose a manual combat strategy selector")
+		quit(1)
+		return
+	if npc_panel.find_child("NPCInteractionVisibilitySelect", true, false) != null:
+		push_error("Legacy interaction visibility dropdown should be removed")
+		quit(1)
+		return
+	if npc_panel.find_child("NPCDialogueHistoryButton", true, false) != null:
+		push_error("NPCPanel should no longer contain the dialogue history button")
+		quit(1)
+		return
+	if weapon_button.get_parent() != management_row or order_button.get_parent() != management_row:
+		push_error("Equipment and order should share the management row")
+		quit(1)
+		return
+	if dialogue_button.get_parent() != management_row.get_parent() or dialogue_button.get_index() <= management_row.get_index():
+		push_error("Dialogue should be a full-width control below the management row")
+		quit(1)
+		return
+	for radio in [public_visibility_radio, private_visibility_radio]:
+		for style_name in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			if not radio.get_theme_stylebox(style_name) is StyleBoxEmpty:
+				push_error("NPC visibility radio should not draw %s highlight frames" % style_name)
+				quit(1)
+				return
+	if (
+		public_visibility_radio.text != "公开"
+		or private_visibility_radio.text != "私下"
+		or public_visibility_radio.button_group == null
+		or public_visibility_radio.button_group != private_visibility_radio.button_group
+	):
+		push_error("Interaction visibility should use one public/private radio group")
+		quit(1)
+		return
+	private_visibility_radio.button_pressed = true
+	await process_frame
+	if public_visibility_radio.button_pressed or not private_visibility_radio.button_pressed or str(npc_panel.call("_get_selected_visibility")) != "private":
+		push_error("Selecting private should unselect public and submit private visibility")
+		quit(1)
+		return
+	public_visibility_radio.button_pressed = true
+	await process_frame
+	if not public_visibility_radio.button_pressed or private_visibility_radio.button_pressed or str(npc_panel.call("_get_selected_visibility")) != "local_public":
+		push_error("Selecting public should unselect private and submit local_public visibility")
+		quit(1)
+		return
+	for removed_control in ["NPCWeaponSelect", "NPCUnequipWeaponButton", "NPCArmorSelect", "NPCEquipArmorButton", "NPCUnequipArmorButton", "NPCHorseSelect", "NPCAssignHorseButton", "NPCUnassignHorseButton"]:
+		if npc_panel.find_child(removed_control, true, false) != null:
+			push_error("Legacy equipment control should be removed: %s" % removed_control)
+			quit(1)
+			return
 	if root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow/NPCAttackButton") != null:
 		push_error("Attack button should no longer exist in NPCPanel")
 		quit(1)
@@ -123,7 +174,7 @@ func _init() -> void:
 		return
 	order_panel.visible = false
 
-	visibility_select.select(0)
+	public_visibility_radio.button_pressed = true
 	money_spin.value = 5.0
 	var money_before: int = int(resource_system.get_resource("money"))
 	var npc_money_before: int = int(npc_system.get_npc_state(target_id).get("money", 0))
@@ -185,36 +236,41 @@ func _init() -> void:
 
 	resource_system.add_resource("item_bow", 1)
 	await process_frame
-	if not weapon_button.disabled:
-		push_error("Weapon button should stay disabled for unrecruited NPC")
+	if not weapon_button.disabled or weapon_button.text != "装备" or weapon_button.tooltip_text != "还未征召，无法配装。":
+		push_error("Unrecruited equipment entry should remain visible, disabled, and explain recruitment")
+		quit(1)
+		return
+	if not order_button.disabled or order_button.tooltip_text != "还未征召，无法命令。":
+		push_error("Unrecruited order entry should remain visible, disabled, and explain recruitment")
 		quit(1)
 		return
 	var recruitment_hint := "需先说服该人物应征入伍，才能进行这项操作。"
-	for control in [weapon_button, unequip_weapon_button, armor_equip_button, armor_unequip_button, horse_assign_button, horse_unassign_button, strategy_select]:
-		if not control.disabled or control.tooltip_text != recruitment_hint:
-			push_error("Unrecruited gated control should be disabled with recruitment guidance: %s / %s" % [control.name, control.tooltip_text])
-			quit(1)
-			return
+	if strategy_value.tooltip_text != recruitment_hint or strategy_value.modulate.a > 0.5:
+		push_error("Unrecruited read-only combat strategy should remain visibly recruitment-gated")
+		quit(1)
+		return
+	var locked_snapshot: Dictionary = npc_panel.debug_get_equipment_window_snapshot()
+	if bool(locked_snapshot.get("visible", false)):
+		push_error("Disabled unrecruited equipment entry should not open the equipment window")
+		quit(1)
+		return
 
 	var recruited_target_id := "veteran_deputy_01"
 	npc_system.debug_select_npc(recruited_target_id)
 	await process_frame
-	var weapon_select := npc_panel.find_child("NPCWeaponSelect", true, false) as OptionButton
-	if weapon_select == null or not _select_option_by_id(weapon_select, "bow"):
-		push_error("Formal weapon selector should include bow backed by item_bow")
-		quit(1)
-		return
-	weapon_select.item_selected.emit(weapon_select.selected)
-	await process_frame
 	if weapon_button.disabled:
-		push_error("Weapon button stayed disabled for recruited NPC after adding item_bow")
-		quit(1)
-		return
-	if weapon_button.tooltip_text == recruitment_hint:
-		push_error("Recruited NPC control should restore its normal tooltip")
+		push_error("Equipment window entry stayed disabled for recruited NPC")
 		quit(1)
 		return
 	weapon_button.pressed.emit()
+	if bool(npc_panel.debug_get_equipment_window_snapshot().get("locked", true)):
+		push_error("Recruited work-mode equipment window should be interactive")
+		quit(1)
+		return
+	npc_panel.debug_press_equipment_slot("main_weapon")
+	npc_panel.debug_confirm_equipment_unequip()
+	npc_panel.debug_press_equipment_slot("main_weapon")
+	npc_panel.debug_select_equipment_item("main_weapon", "bow")
 	await process_frame
 	var target_profile: Dictionary = npc_system.get_npc(recruited_target_id)
 	var equipment: Dictionary = target_profile.get("equipment", {})
@@ -223,8 +279,8 @@ func _init() -> void:
 		push_error("Weapon button did not assign selected formal weapon")
 		quit(1)
 		return
-	if not equipment_label.text.contains("弓"):
-		push_error("NPCPanel did not display formal weapon")
+	if equipment_label.visible:
+		push_error("Legacy equipment summary should remain hidden")
 		quit(1)
 		return
 	if not _has_event(memory_system.get_npc_daily_events(recruited_target_id), "equipment_changed"):
@@ -259,14 +315,6 @@ func _summaries_contain(events: Array, text: String) -> bool:
 	for raw_event in events:
 		var event: Dictionary = raw_event if raw_event is Dictionary else {}
 		if str(event.get("summary", "")).contains(text):
-			return true
-	return false
-
-
-func _select_option_by_id(select: OptionButton, expected_id: String) -> bool:
-	for index in range(select.get_item_count()):
-		if str(select.get_item_metadata(index)) == expected_id:
-			select.select(index)
 			return true
 	return false
 

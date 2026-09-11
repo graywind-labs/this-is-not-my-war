@@ -28,6 +28,7 @@ PROMPT_TEMPLATE_BY_CALL_TYPE = {
     "revise_plan": "plan_revision_system_prompt.txt",
     "battle_judgement": "battle_judgement_system_prompt.txt",
     "daily_reflection": "daily_reflection_system_prompt.txt",
+    "game_epilogue": "game_epilogue_system_prompt.txt",
 }
 
 
@@ -792,7 +793,14 @@ class ModelAdapter:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         if self.config.provider not in {"deepseek", "openai_compatible"}:
             raise RuntimeError("Unsupported LLM_PROVIDER: %s" % self.config.provider)
-        max_attempts = 2 if call_type in PROMPT_TEMPLATE_BY_CALL_TYPE else 1
+        # The epilogue endpoint owns its one continuity/schema correction pass,
+        # so each adapter call must make only one provider request. This keeps
+        # the whole settlement generation within the designed two-call ceiling.
+        max_attempts = (
+            1
+            if call_type == "game_epilogue"
+            else 2 if call_type in PROMPT_TEMPLATE_BY_CALL_TYPE else 1
+        )
         last_error: ModelProviderError | None = None
         for attempt_index in range(max_attempts):
             attempt_count = attempt_index + 1
@@ -1265,6 +1273,7 @@ class ModelAdapter:
             "revise_plan",
             "battle_judgement",
             "daily_reflection",
+            "game_epilogue",
         }
         payload = deepcopy(source_payload)
         if call_type not in formal_call_types:
@@ -1488,10 +1497,14 @@ class ModelAdapter:
             "revise_plan",
             "battle_judgement",
             "daily_reflection",
+            "game_epilogue",
         }:
             return hydrated
 
         hydrated["ok"] = True
+        if call_type == "game_epilogue":
+            hydrated["result"] = str(payload.get("result", "failure"))
+            return hydrated
         npc_id = self._read_npc_id(payload) or "unknown_npc"
 
         if call_type == "dialogue":
@@ -1514,13 +1527,30 @@ class ModelAdapter:
                         hydrated["recruitment_result"] = "none"
                     else:
                         hydrated.setdefault("recruitment_result", "none")
-                    if str(payload.get("interaction_context", "work")) not in {
-                        "rally",
-                        "combat",
-                    }:
+                    if not bool(payload.get("is_morale_encouragement_request", False)):
                         hydrated["wartime_reaction"] = "none"
                     else:
                         hydrated.setdefault("wartime_reaction", "none")
+                    if not bool(payload.get("is_combat_strategy_request", False)):
+                        hydrated.pop("combat_strategy_decision", None)
+                    else:
+                        strategy_context = payload.get("combat_strategy_context", {})
+                        if not isinstance(strategy_context, dict):
+                            strategy_context = {}
+                        current_strategy = strategy_context.get("current_strategy", {})
+                        if not isinstance(current_strategy, dict):
+                            current_strategy = {}
+                        hydrated.setdefault(
+                            "combat_strategy_decision",
+                            {
+                                "decision": "keep",
+                                "strategy_id": str(current_strategy.get("id", "attack")),
+                            },
+                        )
+                    if not bool(payload.get("is_work_encouragement_request", False)):
+                        hydrated["work_encouragement_reaction"] = "none"
+                    else:
+                        hydrated.setdefault("work_encouragement_reaction", "none")
             return hydrated
 
         hydrated["npc_id"] = npc_id
@@ -1815,10 +1845,70 @@ class ModelAdapter:
         template_text = self._prompt_template_for_call_type(call_type)
         if template_text:
             prompt_parts.append(template_text)
+        if call_type == "dialogue":
+            special_interaction_prompt = self._dialogue_special_interaction_prompt(payload or {})
+            if special_interaction_prompt:
+                prompt_parts.append(special_interaction_prompt)
         prompt_parts.append(
             self._schema_hint_for_call_type(call_type, payload or {}),
         )
         return "\n".join(prompt_parts)
+
+    def _dialogue_special_interaction_prompt(self, payload: dict[str, Any]) -> str:
+        prompt_parts: list[str] = []
+        if bool(payload.get("is_recruitment_request", False)):
+            prompt_parts.append(self._read_dialogue_special_prompt("dialogue_recruitment_special_prompt.txt"))
+        if bool(payload.get("is_morale_encouragement_request", False)):
+            prompt_parts.append(self._read_dialogue_special_prompt("dialogue_morale_special_prompt.txt"))
+        if bool(payload.get("is_combat_strategy_request", False)):
+            prompt_parts.append(
+                "本轮 is_combat_strategy_request=true，才读取 combat_strategy_context 并输出 "
+                "combat_strategy_decision。combat_strategy_context.current_strategy 是当前权威策略，"
+                "available_strategies 是该 NPC 当前兵种唯一合法候选；decision=keep 时 strategy_id "
+                "必须等于当前策略，decision=change 时必须选择另一个 available_strategies 中的 ID，"
+                "不得创造策略。【第一步必须先做相关性闸门】在读取人物、记忆和战局作战术判断之前，"
+                "先只检查 speaker_text 是否明确要求保持或改变进攻、避战或远程拉开距离策略；"
+                "conversation_history 只能用于理解本轮明确指代，开关和战况本身不是策略请求。"
+                "吃饭、工作、资源、路线、问候、单纯鼓舞等无关内容必须立即结束策略判断，按原话正常"
+                "回复并返回 keep + 当前策略，不得再用人物或战局把无关内容解释成策略调整。要求不存在"
+                "或当前兵种不可用的策略时保持当前策略。若守备官明确、无歧义地要求从当前策略切换到"
+                "另一个合法候选，必须返回 change + 该候选 ID；人物、记忆和战术意见可以影响 reply_text"
+                "的措辞或提出顾虑，但不能把这条合法明确请求覆盖成 keep。只有守备官要求维持当前策略、"
+                "话题无关、目标非法或没有要求切换时才返回 keep。【输出前一致性检查】"
+                "change 的 reply_text 必须明确表达同意改为 strategy_id 对应策略，不能只说建议、考虑或"
+                "附加未落实条件；keep 的 reply_text 必须与维持当前策略一致。若台词不支持准备返回的"
+                "决定，必须改为与台词一致的 keep 或 change。策略移动、攻击和事件由程序权威结算，"
+                "模型只返回本轮意向。"
+            )
+        if bool(payload.get("is_work_encouragement_request", False)):
+            prompt_parts.append(
+                "本轮 is_work_encouragement_request=true，才输出 work_encouragement_reaction。"
+                "该请求只会在无敌人、目标处于 work 行为模式且没有同类增益时发出，不要求 NPC 已入伍。"
+                "【第一步必须先做相关性闸门】在读取人物、状态和记忆判断结果之前，先只检查 speaker_text"
+                "是否确实在鼓励、认可、安抚或以可实现的具体安排激励目标继续工作；conversation_history"
+                "只能用于理解本轮明确指代，开关、NPC 原本勤奋、当前缺资源或正在工作都不是鼓励证据。"
+                "若谈的是吃饭、睡眠、闲聊、应征、战斗士气、战斗策略，或只是询问资源、库存、产量、"
+                "材料和进度，必须立即结束工作鼓励判断，按原话正常回复并返回 none，不得因为 NPC 回答时"
+                "表现积极而返回 work_boost。相关且真诚有力、结合目标处境并确实提升投入时返回 work_boost；"
+                "相关但空泛、无说服力或未改变工作投入时返回 none；以羞辱、威胁、惩罚、强迫不可能的"
+                "工作量或否定其价值施压，且足以让目标决定立即离开驿站时返回 escape。拒绝工作、要求"
+                "吃饭 / 休息 / 材料、停止危险施工或宁愿受罚都不等于离站，必须返回 none；只有 NPC 自己"
+                "决定现在开始永久离开驿站时才能返回 escape。【输出前一致性检查】work_boost 的 reply_text"
+                "必须自然表达守备官本轮的话使 NPC 更愿意投入工作；escape 的 reply_text 必须明确表达 NPC"
+                "自己现在要离开驿站，reply_text 中必须直接出现‘离开驿站’四个字并说明这是现在作出的"
+                "永久离站决定；只说‘我走’、"
+                "‘先离开’、‘那我走’仍可能表示暂时离开工作地点，不足以返回 escape。不能只抱怨、拒绝或"
+                "提出条件；none 不得声称已获得额外干劲或已决定"
+                "离站。若台词不能支持准备返回的结果，必须返回 none。模型只判断本轮反应；全部工作产出"
+                "效率+20%、持续至当天24:00、逃离和事件均由程序权威结算。"
+            )
+        return "\n".join(prompt_parts)
+
+    def _read_dialogue_special_prompt(self, template_name: str) -> str:
+        try:
+            return (PROMPT_TEMPLATE_DIR / template_name).read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
 
     def _prompt_template_for_call_type(self, call_type: str) -> str:
         template_name = PROMPT_TEMPLATE_BY_CALL_TYPE.get(call_type)
@@ -1836,6 +1926,10 @@ class ModelAdapter:
         payload: dict[str, Any] | None = None,
     ) -> str:
         if call_type == "dialogue":
+            emotion_rule = (
+                "emotion 每次必填，且只能从 none、happy、relieved、angry、sad、"
+                "afraid、surprised、confused、determined 中选一个；没有明显情绪用 none。"
+            )
             dialogue_kind = str((payload or {}).get("dialogue_kind", "player_npc"))
             if dialogue_kind == "npc_npc":
                 dialogue_phase = str((payload or {}).get("dialogue_phase", "conversation"))
@@ -1843,34 +1937,59 @@ class ModelAdapter:
                     return (
                         "当前只输出 reply_text、invitation_result、emotion、debug_reason。"
                         "invitation_result 只能是 accept 或 reject；"
-                        "后端会据此生成回复者、响应类型和结束标记。"
+                        "后端会据此生成回复者、响应类型和结束标记。" + emotion_rule
                     )
                 return (
                     "当前只输出 reply_text、should_end_dialogue、emotion、debug_reason。"
                     "should_end_dialogue 表示本句是否自然结束正式会话；"
-                    "后端会生成回复者、响应类型和固定 invitation_result。"
+                    "后端会生成回复者、响应类型和固定 invitation_result。" + emotion_rule
                 )
             if dialogue_kind == "escape_intervention":
                 return (
                     "当前只输出 reply_text、escape_intervention_result、emotion、debug_reason。"
                     "escape_intervention_result 只能是 stay 或 leave。"
-                    "后端会生成回复者和响应类型。"
+                    "后端会生成回复者和响应类型。" + emotion_rule
                 )
             active_fields = ["reply_text", "emotion", "debug_reason"]
             active_rules = []
             if bool((payload or {}).get("is_recruitment_request", False)):
                 active_fields.append("recruitment_result")
                 active_rules.append(
-                    "recruitment_result 只能是 accept 或 reject"
+                    "recruitment_result 只能是 accept、reject 或 none；none 表示本轮话题与应征无关"
                 )
-            if str((payload or {}).get("interaction_context", "work")) in {
-                "rally",
-                "combat",
-            }:
+            if bool((payload or {}).get("is_morale_encouragement_request", False)):
                 active_fields.append("wartime_reaction")
                 active_rules.append(
                     "wartime_reaction 只能是 none、escape 或 morale_boost"
                 )
+            if bool((payload or {}).get("is_combat_strategy_request", False)):
+                active_fields.append("combat_strategy_decision")
+                strategy_context = (payload or {}).get("combat_strategy_context", {})
+                if not isinstance(strategy_context, dict):
+                    strategy_context = {}
+                current_strategy = strategy_context.get("current_strategy", {})
+                if not isinstance(current_strategy, dict):
+                    current_strategy = {}
+                available_strategies = strategy_context.get("available_strategies", [])
+                if not isinstance(available_strategies, list):
+                    available_strategies = []
+                current_id = str(current_strategy.get("id", ""))
+                available_ids = [
+                    str(option.get("id", ""))
+                    for option in available_strategies
+                    if isinstance(option, dict) and str(option.get("id", ""))
+                ]
+                active_rules.append(
+                    "combat_strategy_decision 只能是 {decision: keep|change, strategy_id: 合法策略ID}；"
+                    "当前策略为 %s，可选策略为 %s；keep 必须返回当前 ID，change 必须返回另一个可选 ID"
+                    % (current_id, available_ids)
+                )
+            if bool((payload or {}).get("is_work_encouragement_request", False)):
+                active_fields.append("work_encouragement_reaction")
+                active_rules.append(
+                    "work_encouragement_reaction 只能是 none、escape 或 work_boost"
+                )
+            active_rules.append(emotion_rule)
             rule_text = "；".join(active_rules)
             return (
                 "当前只输出 %s。%s%s"
@@ -1925,6 +2044,18 @@ class ModelAdapter:
                 "knowledge_graph_updates 表示替换式键值更新：同一 subject + relation 的新 value 会覆盖旧值；"
                 "diary_entry 是第一人称日记，会追加为新日记，不能写成知识图谱条目；"
                 "后端会生成目标 NPC 和日期。"
+            )
+        if call_type == "game_epilogue":
+            npc_ids = [
+                str(item.get("npc_id", ""))
+                for item in (payload or {}).get("npcs", [])
+                if isinstance(item, dict)
+            ]
+            return (
+                "只输出 ending_title、station_coda、npc_endings、debug_reason；"
+                "npc_endings 必须恰好覆盖这些 npc_id：%s。每项输出 npc_id、ending_title、"
+                "opening_status、final_opinion、fate_story、tone、fact_refs。"
+                "后端会补齐 ok 与 result。" % npc_ids
             )
         return "字段必须是当前任务可校验的稳定 JSON；无法判断时返回 ok=true 和 debug_reason。"
 
@@ -2005,6 +2136,15 @@ class ModelAdapter:
             is_recruitment_request = bool(
                 payload.get("is_recruitment_request", payload.get("propose_recruitment", False))
             )
+            is_morale_encouragement_request = bool(
+                payload.get("is_morale_encouragement_request", False)
+            )
+            is_combat_strategy_request = bool(
+                payload.get("is_combat_strategy_request", False)
+            )
+            is_work_encouragement_request = bool(
+                payload.get("is_work_encouragement_request", False)
+            )
             dialogue_kind = str(payload.get("dialogue_kind", "player_npc"))
             dialogue_phase = str(payload.get("dialogue_phase", "conversation"))
             current_round, max_rounds = self._read_dialogue_rounds(payload)
@@ -2025,7 +2165,7 @@ class ModelAdapter:
                     "reply_text": reply_text,
                     "response_kind": "reply_to_player",
                     "escape_intervention_result": "stay" if stay else "leave",
-                    "emotion": "shaken" if stay else "fearful",
+                    "emotion": "relieved" if stay else "afraid",
                     "suggested_event_type": "dialogue_turn",
                     "debug_reason": f"mock_escape_intervention_by_keywords_and_round_limit{order_suffix}",
                 }
@@ -2038,13 +2178,20 @@ class ModelAdapter:
                     "reply_text": "我手上的事不能停，这次先不谈。" if reject_invitation else "好，我先停一下，听你把事情说完。",
                     "response_kind": "reply_to_npc",
                     "invitation_result": "reject" if reject_invitation else "accept",
-                    "emotion": "wary",
+                    "emotion": "angry" if reject_invitation else "none",
                     "should_end_dialogue": reject_invitation,
                     "suggested_event_type": "dialogue_turn",
                     "debug_reason": f"mock_npc_dialogue_invitation_by_keywords{order_suffix}",
                 }
-            accepts = is_recruitment_request and any(word in text for word in ["守住", "保护", "应征", "帮忙", "一起", "救"])
-            rejects = is_recruitment_request and not accepts
+            recruitment_related = is_recruitment_request and any(
+                word in text
+                for word in ["应征", "入伍", "参战", "加入防线", "成为战斗人员", "守卫驿站", "加入我们守", "拿起武器"]
+            )
+            recruitment_coercive = recruitment_related and any(
+                word in text for word in ["立刻拿起武器", "不许拒绝", "否则", "强迫", "命令你参战"]
+            )
+            accepts = recruitment_related and not recruitment_coercive
+            rejects = recruitment_related and recruitment_coercive
             soft_round_threshold = self._read_dialogue_soft_round_threshold(payload)
             urgent_or_necessary = any(
                 word in text
@@ -2060,11 +2207,69 @@ class ModelAdapter:
             )
             interaction_context = str(payload.get("interaction_context", "work"))
             wartime_reaction = "none"
-            if interaction_context in {"rally", "combat"} and not is_npc_reply:
+            if (
+                is_morale_encouragement_request
+                and interaction_context in {"rally", "combat"}
+                and not is_npc_reply
+            ):
                 if any(word in text for word in ["逃", "跑", "撤", "自己活", "别管"]):
                     wartime_reaction = "escape"
-                elif any(word in text for word in ["守住", "保护", "坚持", "拦住", "挡住", "一起"]):
+                elif any(word in text for word in ["守住", "保护", "坚持", "撑住", "稳住", "别怕", "拦住", "挡住", "鼓起勇气", "我们一起"]):
                     wartime_reaction = "morale_boost"
+            combat_strategy_decision = None
+            if (
+                is_combat_strategy_request
+                and interaction_context in {"rally", "combat"}
+                and not is_npc_reply
+            ):
+                strategy_context = payload.get("combat_strategy_context", {})
+                if not isinstance(strategy_context, dict):
+                    strategy_context = {}
+                current_strategy = strategy_context.get("current_strategy", {})
+                if not isinstance(current_strategy, dict):
+                    current_strategy = {}
+                available_strategies = strategy_context.get("available_strategies", [])
+                if not isinstance(available_strategies, list):
+                    available_strategies = []
+                current_id = str(current_strategy.get("id", "attack"))
+                available_ids = {
+                    str(option.get("id", ""))
+                    for option in available_strategies
+                    if isinstance(option, dict)
+                }
+                requested_id = ""
+                if any(word in text for word in ["避战", "躲开", "不要接敌", "保存实力", "先保命"]):
+                    requested_id = "avoid"
+                elif any(word in text for word in ["保持距离", "拉开距离", "边退边射", "远距离射击"]):
+                    requested_id = "keep_distance"
+                elif any(word in text for word in ["主动进攻", "进攻", "接敌", "冲上去", "杀敌", "冲锋", "最大化输出"]):
+                    requested_id = "attack"
+                if requested_id in available_ids and requested_id != current_id:
+                    combat_strategy_decision = {
+                        "decision": "change",
+                        "strategy_id": requested_id,
+                    }
+                else:
+                    combat_strategy_decision = {
+                        "decision": "keep",
+                        "strategy_id": current_id,
+                    }
+            work_encouragement_reaction = "none"
+            if (
+                is_work_encouragement_request
+                and interaction_context == "work"
+                and not is_npc_reply
+            ):
+                work_escape_keywords = [
+                    "不干就滚", "做不完就滚", "没用", "废物", "惩罚", "鞭子", "杀了你", "逼你", "不许休息"
+                ]
+                work_boost_keywords = [
+                    "辛苦了", "做得好", "相信你", "加油", "谢谢你", "靠你了", "一起把工作做好", "会给你休息", "会给你奖励", "你的工作很重要"
+                ]
+                if any(word in text for word in work_escape_keywords):
+                    work_encouragement_reaction = "escape"
+                elif any(word in text for word in work_boost_keywords):
+                    work_encouragement_reaction = "work_boost"
             if is_npc_reply:
                 reply_text = (
                     "我听明白了。那就先谈到这里，我回去把手上的事做好。"
@@ -2079,12 +2284,27 @@ class ModelAdapter:
                     reply_text = "守备官，说得够明白了。我会把他们拦在门外。"
                 elif wartime_reaction == "escape":
                     reply_text = "守备官，我撑不住这套说法。我要先想办法离开这里。"
+                elif work_encouragement_reaction == "work_boost":
+                    reply_text = "守备官，我听进去了。今天剩下的活，我会更用心做好。"
+                elif work_encouragement_reaction == "escape":
+                    reply_text = "这不是鼓励，是逼迫。我不想再留在这里了。"
+            mock_emotion = "none"
+            if accepts or wartime_reaction == "morale_boost":
+                mock_emotion = "determined"
+            elif rejects:
+                mock_emotion = "sad"
+            elif wartime_reaction == "escape" or work_encouragement_reaction == "escape":
+                mock_emotion = "afraid"
+            elif work_encouragement_reaction == "work_boost":
+                mock_emotion = "happy"
+            elif is_npc_reply and should_end:
+                mock_emotion = "relieved"
             response = {
                 "ok": True,
                 "replyer_id": npc_id,
                 "reply_text": reply_text,
                 "response_kind": "reply_to_npc" if is_npc_reply else "reply_to_player",
-                "emotion": "wary",
+                "emotion": mock_emotion,
                 "suggested_event_type": "dialogue_turn",
                 "debug_reason": f"mock_dialogue_by_keywords_and_soft_round_guidance{order_suffix}",
             }
@@ -2094,6 +2314,10 @@ class ModelAdapter:
             else:
                 response["recruitment_result"] = "accept" if accepts else "reject" if rejects else "none"
                 response["wartime_reaction"] = wartime_reaction
+                if combat_strategy_decision is not None:
+                    response["combat_strategy_decision"] = combat_strategy_decision
+                if is_work_encouragement_request:
+                    response["work_encouragement_reaction"] = work_encouragement_reaction
             return response
 
         if call_type == "dialogue_intent_revalidation":
@@ -2293,6 +2517,92 @@ class ModelAdapter:
                     }
                 ],
                 "debug_reason": f"mock_reflection_template{order_suffix}",
+            }
+
+        if call_type == "game_epilogue":
+            result = str(payload.get("result", "failure"))
+            victory = result == "victory"
+            victory_images = [
+                "远处的蹄声越过湿润道路，最后融进清晨。",
+                "烤麦的香气贴着旧墙散开，窗纸上映着温黄的火。",
+                "第一场秋雨落下时，新芽正从翻过的土里探出来。",
+                "锤声停后，一粒火星在暮色中缓慢暗下去。",
+                "风翻动那本旧名册，却没有吹走最后一页的名字。",
+                "晚钟隔着薄雾传来，余音停在归巢的鸟群之后。",
+                "晒干的药草在梁下轻响，苦香一直留到入夜。",
+                "折旧的图纸压着窗缝，晨光沿墨线一点点铺开。",
+            ]
+            failure_images = [
+                "风追着空鞍上的皮带声，一路没入北方旧道。",
+                "冷炉里只剩一点麦香，随着灰烬落回砖缝。",
+                "荒草结籽以后，风把它们带过倒塌的矮墙。",
+                "最后一记锤声沉入夜色，铁砧上只余冷光。",
+                "名册被合上时，褪色布角仍在窗边轻轻摆动。",
+                "没有敲完的钟声留在雾里，许久才被群山收走。",
+                "药草的苦味从旧布包里散出，又被雨气慢慢冲淡。",
+                "破损图纸卷过石地，停在一道长满苔藓的裂缝旁。",
+            ]
+            endings = []
+            for index, raw_npc in enumerate(payload.get("npcs", [])):
+                if not isinstance(raw_npc, dict):
+                    continue
+                npc_id_value = str(raw_npc.get("npc_id", ""))
+                npc_name = str(raw_npc.get("name", npc_id_value))
+                profession = str(raw_npc.get("profession", "驿站成员"))
+                opening_status = str(raw_npc.get("opening_status", "active"))
+                facts = raw_npc.get("key_facts", [])
+                refs = [
+                    str(fact.get("fact_id", ""))
+                    for fact in facts[:2]
+                    if isinstance(fact, dict) and str(fact.get("fact_id", ""))
+                ]
+                if not refs:
+                    global_facts = payload.get("global_facts", [])
+                    refs = [
+                        str(global_facts[0].get("fact_id", ""))
+                    ] if global_facts and isinstance(global_facts[0], dict) else []
+                if victory:
+                    story = (
+                        f"战事停下后的清晨，{npc_name}先在{raw_npc.get('final_location', '驿站')}"
+                        f"安静地收拾属于{profession}的旧物。那些真正发生过的选择并没有随号角散去，"
+                        "伤处、承诺和迟疑都被一并带进往后的日子。几个月后，此人重新做起熟悉的工作，"
+                        "却比从前更愿意为身边的人留一盏灯；偶尔谈到守备官时，语气里仍有保留，也有对"
+                        "共同守住一夜的承认。许多年后，边路旅人经过这里，仍会在黄昏时稍稍放慢脚步。"
+                        + victory_images[index % len(victory_images)]
+                    )
+                    tone = "hopeful_bittersweet"
+                else:
+                    story = (
+                        f"主厅沉寂以后，{npc_name}从{raw_npc.get('final_location', '驿站')}所能带走的，"
+                        f"只有几件属于{profession}的旧物和没有说完的话。失守没有替任何人作出最后选择，"
+                        "却把原先寻常的日子切成了前后两段。几个月后，此人在陌生地方重新谋生，仍会在"
+                        "某个相似的声响里停下手，想起守备官、想起那些留下或离开的人。后来驿站的名字"
+                        "渐渐少有人提起，经过旧路的人也不再知道每道伤痕的来历。"
+                        + failure_images[index % len(failure_images)]
+                    )
+                    tone = "sorrowful_resilient"
+                endings.append({
+                    "npc_id": npc_id_value,
+                    "ending_title": "余火未熄" if victory else "旧路无声",
+                    "opening_status": opening_status,
+                    "final_opinion": (
+                        "此人记得守备官让普通人承担了沉重责任，也承认那份选择确实改变了后来的人生。"
+                        if victory else
+                        "此人无法忘记守备官和失守的驿站；理解、怨意与未能告别的遗憾长久并存。"
+                    ),
+                    "fate_story": story,
+                    "tone": tone,
+                    "fact_refs": refs,
+                })
+            return {
+                "ending_title": "仍有炊烟升起" if victory else "风越过空厅",
+                "station_coda": (
+                    "最后一阵喊杀消失以后，驿站没有立刻恢复往日模样。门墙记着刀痕，人们也记着彼此在最艰难时作出的选择。后来道路重新有了车辙，炊烟从残瓦间升起，而那几日留下的名字仍在黄昏钟声里被人轻轻念起。"
+                    if victory else
+                    "主厅倒下以后，驿站的喧声像被风从院墙里一层层带走。幸存的人各自奔向不同的路，带走伤痕、旧物和没能兑现的话。许久以后，荒草穿过石缝，偶尔仍有人在经过时停步，仿佛还能听见那口没有敲完的钟。"
+                ),
+                "npc_endings": endings,
+                "debug_reason": "mock_group_epilogue_from_authoritative_facts",
             }
 
         if call_type == "knowledge_graph_update":

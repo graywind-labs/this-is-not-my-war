@@ -1,13 +1,16 @@
 extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
+const RateDisplayFormatter = preload("res://scripts/ui/RateDisplayFormatter.gd")
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const CRAFTING_SYSTEM_PATH := "/root/Main/Systems/CraftingSystem"
+const CRAFTING_HARVEST_DIALOG_PATH := "/root/Main/UI/CraftingHarvestDialog"
 const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const CRAFTING_TARGET_ALERT_TOOLTIP := "未选择制造物品"
 const PANEL_SCREEN_MARGIN := 16.0
 const PANEL_MIN_WIDTH := 360.0
 const PANEL_MAX_WIDTH := 420.0
@@ -16,6 +19,14 @@ const PANEL_CONTENT_VERTICAL_PADDING := 24.0
 const PANEL_LAYOUT_SETTLE_FRAME_LIMIT := 4
 const HORSE_LIST_MIN_HEIGHT := 120.0
 const HORSE_LIST_MAX_HEIGHT := 620.0
+const HORSE_NORMAL_PROGRESS_FILL_COLOR := Color("#71865a")
+const HORSE_DANGER_PROGRESS_FILL_COLOR := Color("#a7433b")
+const HORSE_DANGER_LABEL_COLOR := Color("#dc6157")
+const POSITIVE_RATE_LABEL_COLOR := Color("#69c879")
+const HORSE_SATIETY_DANGER_RATIO := 0.20
+const HORSE_BASE_HP_DANGER_RATIO := 0.30
+const BUILDING_HP_DANGER_RATIO := 0.30
+const WAREHOUSE_CAPACITY_DANGER_RATIO := 0.80
 const WORKSTATION_TYPE_LABELS := {
 	"rest": "床位",
 	"cook": "厨师",
@@ -51,16 +62,19 @@ var _current_building: Dictionary = {}
 var _action_hint_panel: PanelContainer
 var _action_hint_label: Label
 var _device_section: VBoxContainer
-var _device_stock_label: Label
-var _device_select: OptionButton
-var _device_slot_select: OptionButton
-var _device_deploy_button: Button
 var _device_summary_label: Label
-var _device_status_label: Label
+var _warehouse_capacity_section: VBoxContainer
 var _warehouse_capacity_label: Label
+var _warehouse_capacity_list: VBoxContainer
+var _warehouse_storage_rows: Dictionary = {}
+var _warehouse_storage_labels: Dictionary = {}
+var _warehouse_storage_progress: Dictionary = {}
 var _crafting_section: VBoxContainer
 var _crafting_target_select: OptionButton
+var _crafting_target_missing_alert: Button
 var _crafting_recipe_label: Label
+var _crafting_pending_label: Label
+var _crafting_harvest_button: Button
 var _crafting_stage_label: Label
 var _crafting_progress_bar: ProgressBar
 var _crafting_worker_label: Label
@@ -73,6 +87,9 @@ var _horse_summary_label: Label
 var _horse_scroll: ScrollContainer
 var _horse_list: VBoxContainer
 var _horse_refresh_queued := false
+var _horse_normal_progress_fill_style: StyleBoxFlat
+var _horse_danger_progress_fill_style: StyleBoxFlat
+var _hp_progress: ProgressBar
 var _panel_scroll: ScrollContainer
 var _panel_fit_queued := false
 var _layout_viewport_override := Vector2.ZERO
@@ -94,7 +111,12 @@ var _drag_controller
 func _ready() -> void:
 	visible = false
 	_set_panel_interaction_enabled(false)
+	# Successful repair / upgrade starts have their own positional hammer cue.
+	# Suppress the generic UI click so one action never produces two wood hits.
+	repair_button.set_meta("ui_audio_silent", true)
+	upgrade_button.set_meta("ui_audio_silent", true)
 	_setup_panel_scroll()
+	_setup_hp_progress_control()
 	_drag_controller = DraggablePanelController.new()
 	_drag_controller.bind(self, name_label.get_parent() as Control)
 	close_button.pressed.connect(_on_close_pressed)
@@ -117,12 +139,20 @@ func _ready() -> void:
 		if event_bus.has_signal("time_scale_changed"):
 			event_bus.time_scale_changed.connect(_on_time_scale_changed)
 		event_bus.npc_clicked.connect(_on_npc_clicked)
+		if event_bus.has_signal("enemy_clicked"):
+			event_bus.enemy_clicked.connect(_on_npc_clicked)
+		if event_bus.has_signal("horse_clicked"):
+			event_bus.horse_clicked.connect(_on_horse_clicked)
+		if event_bus.has_signal("defense_device_clicked"):
+			event_bus.defense_device_clicked.connect(_on_defense_device_clicked)
 		if event_bus.has_signal("defense_device_state_changed"):
 			event_bus.defense_device_state_changed.connect(_on_defense_device_state_changed)
 		if event_bus.has_signal("crafting_state_changed"):
 			event_bus.crafting_state_changed.connect(_on_crafting_state_changed)
 		if event_bus.has_signal("horse_state_changed"):
 			event_bus.horse_state_changed.connect(_on_horse_state_changed)
+		if event_bus.has_signal("npc_state_changed"):
+			event_bus.npc_state_changed.connect(_on_stable_worker_state_changed)
 		if event_bus.has_signal("resource_changed") and not event_bus.resource_changed.is_connected(_on_resource_changed):
 			event_bus.resource_changed.connect(_on_resource_changed)
 	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
@@ -327,6 +357,19 @@ func _on_npc_clicked(_npc_id: String) -> void:
 	_set_panel_interaction_enabled(false)
 
 
+func _on_horse_clicked(_horse_id: String) -> void:
+	_on_npc_clicked("")
+
+
+func _on_defense_device_clicked(_deployment_id: String) -> void:
+	_hide_action_hint()
+	_cancel_pending_panel_fit()
+	_reveal_after_fit = false
+	modulate.a = 1.0
+	visible = false
+	_set_panel_interaction_enabled(false)
+
+
 func _on_defense_device_state_changed(_snapshot: Dictionary) -> void:
 	if visible and ["wall", "main_hall"].has(_current_building_id):
 		_refresh_defense_device_section()
@@ -350,6 +393,11 @@ func _on_horse_state_changed(_horse_id: String) -> void:
 		return
 	_horse_refresh_queued = true
 	call_deferred("_flush_queued_horse_refresh")
+
+
+func _on_stable_worker_state_changed(_npc_id: String) -> void:
+	if visible and _current_building_id == "stable":
+		_on_horse_state_changed("")
 
 
 func _flush_queued_horse_refresh() -> void:
@@ -423,8 +471,10 @@ func show_building(building_id: String) -> void:
 		int(building.get("hp", 0)),
 		int(building.get("max_hp", 0))
 	]
-	workstation_label.text = _format_workstations(building.get("workstations", []))
+	_update_hp_progress_control(building)
+	_refresh_workstation_label(building.get("workstations", []))
 	location_label.text = _format_location_placeholder(building)
+	location_label.visible = not location_label.text.is_empty()
 	_update_action_buttons(building_system, building_id, building)
 	_refresh_warehouse_capacity_label()
 	_refresh_crafting_section()
@@ -437,42 +487,148 @@ func show_building(building_id: String) -> void:
 
 
 func _build_warehouse_capacity_label() -> void:
-	if _warehouse_capacity_label != null:
+	if _warehouse_capacity_section != null:
 		return
 	var content := location_label.get_parent() as VBoxContainer
 	if content == null:
 		return
+	_warehouse_capacity_section = VBoxContainer.new()
+	_warehouse_capacity_section.name = "WarehouseStorageSection"
+	_warehouse_capacity_section.visible = false
+	_warehouse_capacity_section.add_theme_constant_override("separation", 5)
+	content.add_child(_warehouse_capacity_section)
+	content.move_child(_warehouse_capacity_section, location_label.get_index() + 1)
 	_warehouse_capacity_label = Label.new()
 	_warehouse_capacity_label.name = "WarehouseCapacityLabel"
-	_warehouse_capacity_label.visible = false
+	_warehouse_capacity_label.text = "储存状况"
 	_warehouse_capacity_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_warehouse_capacity_label.tooltip_text = "储存上限随仓库等级提高"
-	content.add_child(_warehouse_capacity_label)
-	content.move_child(_warehouse_capacity_label, location_label.get_index() + 1)
+	_warehouse_capacity_label.tooltip_text = "各项储存上限随仓库等级提高"
+	_warehouse_capacity_section.add_child(_warehouse_capacity_label)
+	_warehouse_capacity_list = VBoxContainer.new()
+	_warehouse_capacity_list.name = "WarehouseStorageList"
+	_warehouse_capacity_list.add_theme_constant_override("separation", 5)
+	_warehouse_capacity_section.add_child(_warehouse_capacity_list)
+
+
+func _setup_hp_progress_control() -> void:
+	if _hp_progress != null:
+		return
+	var content := hp_label.get_parent() as VBoxContainer
+	if content == null:
+		return
+	var hp_index := hp_label.get_index()
+	content.remove_child(hp_label)
+	var row := VBoxContainer.new()
+	row.name = "BuildingHPProgressRow"
+	row.add_theme_constant_override("separation", 2)
+	content.add_child(row)
+	content.move_child(row, hp_index)
+	row.add_child(hp_label)
+	_hp_progress = ProgressBar.new()
+	_hp_progress.name = "BuildingHPProgress"
+	_hp_progress.custom_minimum_size.y = 16.0
+	_hp_progress.show_percentage = false
+	_hp_progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(false))
+	row.add_child(_hp_progress)
+
+
+func _update_hp_progress_control(building: Dictionary) -> void:
+	if _hp_progress == null:
+		return
+	var hp := float(building.get("hp", 0.0))
+	var max_hp := maxf(1.0, float(building.get("max_hp", 1.0)))
+	_hp_progress.min_value = 0.0
+	_hp_progress.max_value = max_hp
+	_hp_progress.value = clampf(hp, 0.0, max_hp)
+	_hp_progress.tooltip_text = hp_label.text
+	var ratio := clampf(hp / max_hp, 0.0, 1.0)
+	var danger := ratio < BUILDING_HP_DANGER_RATIO
+	_hp_progress.set_meta("danger_state", danger)
+	_hp_progress.set_meta("normalized_ratio", ratio)
+	_hp_progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(danger))
+	if danger:
+		hp_label.add_theme_color_override("font_color", HORSE_DANGER_LABEL_COLOR)
+	else:
+		hp_label.remove_theme_color_override("font_color")
 
 
 func _refresh_warehouse_capacity_label() -> void:
-	if _warehouse_capacity_label == null:
+	if _warehouse_capacity_section == null or _warehouse_capacity_label == null or _warehouse_capacity_list == null:
 		return
-	_warehouse_capacity_label.visible = _current_building_id == "warehouse"
-	if not _warehouse_capacity_label.visible:
+	_warehouse_capacity_section.visible = _current_building_id == "warehouse"
+	if not _warehouse_capacity_section.visible:
 		return
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_system == null or not resource_system.has_method("get_warehouse_capacity_snapshot"):
-		_warehouse_capacity_label.text = "储存上限：无法读取"
+		_warehouse_capacity_label.text = "储存状况：无法读取"
+		_warehouse_capacity_list.visible = false
 		return
-	var parts: Array[String] = []
+	_warehouse_capacity_label.text = "储存状况"
+	_warehouse_capacity_list.visible = true
+	var visible_resource_ids: Array[String] = []
 	for raw_item in resource_system.get_warehouse_capacity_snapshot():
 		var item: Dictionary = raw_item if raw_item is Dictionary else {}
-		parts.append("%s %d" % [
-			str(item.get("name", item.get("resource_id", ""))),
-			int(item.get("capacity", 0))
-		])
-	_warehouse_capacity_label.text = (
-		"储存上限：%s" % " / ".join(parts)
-		if not parts.is_empty()
-		else "储存上限：无"
-	)
+		var resource_id := str(item.get("resource_id", "")).strip_edges()
+		if resource_id.is_empty():
+			continue
+		visible_resource_ids.append(resource_id)
+		_ensure_warehouse_storage_row(resource_id)
+		_update_warehouse_storage_row(resource_id, item)
+	for raw_resource_id in _warehouse_storage_rows.keys():
+		var resource_id := str(raw_resource_id)
+		var row := _warehouse_storage_rows.get(resource_id) as VBoxContainer
+		if row != null:
+			row.visible = visible_resource_ids.has(resource_id)
+	if visible_resource_ids.is_empty():
+		_warehouse_capacity_label.text = "储存状况：无"
+
+
+func _ensure_warehouse_storage_row(resource_id: String) -> void:
+	if _warehouse_storage_rows.has(resource_id):
+		var existing_row := _warehouse_storage_rows.get(resource_id) as VBoxContainer
+		if existing_row != null:
+			existing_row.visible = true
+			_warehouse_capacity_list.move_child(existing_row, _warehouse_capacity_list.get_child_count() - 1)
+			return
+	var row := VBoxContainer.new()
+	row.name = "WarehouseStorageRow_%s" % resource_id
+	row.add_theme_constant_override("separation", 2)
+	_warehouse_capacity_list.add_child(row)
+	var label := Label.new()
+	label.name = "WarehouseStorageLabel_%s" % resource_id
+	label.add_theme_font_size_override("font_size", 12)
+	row.add_child(label)
+	var progress := ProgressBar.new()
+	progress.name = "WarehouseStorageProgress_%s" % resource_id
+	progress.custom_minimum_size.y = 16.0
+	progress.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progress.show_percentage = false
+	progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(false))
+	row.add_child(progress)
+	_warehouse_storage_rows[resource_id] = row
+	_warehouse_storage_labels[resource_id] = label
+	_warehouse_storage_progress[resource_id] = progress
+
+
+func _update_warehouse_storage_row(resource_id: String, item: Dictionary) -> void:
+	var label := _warehouse_storage_labels.get(resource_id) as Label
+	var progress := _warehouse_storage_progress.get(resource_id) as ProgressBar
+	if label == null or progress == null:
+		return
+	var amount := maxi(0, int(item.get("amount", 0)))
+	var capacity := maxi(1, int(item.get("capacity", 1)))
+	var resource_name := str(item.get("name", resource_id))
+	label.text = "%s %d/%d" % [resource_name, amount, capacity]
+	progress.min_value = 0.0
+	progress.max_value = float(capacity)
+	progress.value = float(clampi(amount, 0, capacity))
+	progress.tooltip_text = label.text
+	var ratio := clampf(float(amount) / float(capacity), 0.0, 1.0)
+	var danger := ratio >= WAREHOUSE_CAPACITY_DANGER_RATIO
+	progress.set_meta("resource_id", resource_id)
+	progress.set_meta("normalized_ratio", ratio)
+	progress.set_meta("danger_state", danger)
+	progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(danger))
 
 
 func _build_crafting_section() -> void:
@@ -487,28 +643,60 @@ func _build_crafting_section() -> void:
 	content.move_child(_crafting_section, repair_button.get_parent().get_index())
 
 	_crafting_section.add_child(HSeparator.new())
-	var title := Label.new()
-	title.text = "制造项目"
-	title.add_theme_font_size_override("font_size", 16)
-	_crafting_section.add_child(title)
 
 	var target_row := HBoxContainer.new()
 	target_row.add_theme_constant_override("separation", 6)
 	_crafting_section.add_child(target_row)
 	var target_label := Label.new()
-	target_label.text = "目标："
-	target_label.custom_minimum_size.x = 54.0
+	target_label.text = "制造目标："
+	target_label.custom_minimum_size.x = 78.0
 	target_row.add_child(target_label)
 	_crafting_target_select = OptionButton.new()
 	_crafting_target_select.name = "CraftingTargetSelect"
 	_crafting_target_select.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_crafting_target_select.item_selected.connect(_on_crafting_target_selected)
 	target_row.add_child(_crafting_target_select)
+	_crafting_target_missing_alert = Button.new()
+	_crafting_target_missing_alert.name = "CraftingTargetMissingAlert"
+	_crafting_target_missing_alert.text = "!"
+	_crafting_target_missing_alert.tooltip_text = CRAFTING_TARGET_ALERT_TOOLTIP
+	_crafting_target_missing_alert.visible = false
+	_crafting_target_missing_alert.focus_mode = Control.FOCUS_NONE
+	_crafting_target_missing_alert.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_crafting_target_missing_alert.custom_minimum_size = Vector2(24.0, 24.0)
+	_crafting_target_missing_alert.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_crafting_target_missing_alert.offset_left = -58.0
+	_crafting_target_missing_alert.offset_top = -12.0
+	_crafting_target_missing_alert.offset_right = -34.0
+	_crafting_target_missing_alert.offset_bottom = 12.0
+	_crafting_target_missing_alert.add_theme_font_size_override("font_size", 18)
+	_crafting_target_missing_alert.add_theme_color_override("font_color", Color(0.95, 0.12, 0.09, 1.0))
+	_crafting_target_missing_alert.add_theme_color_override("font_outline_color", Color(0.18, 0.01, 0.0, 0.95))
+	_crafting_target_missing_alert.add_theme_constant_override("outline_size", 3)
+	_crafting_target_missing_alert.add_theme_stylebox_override("normal", _make_crafting_alert_style(Color(0.08, 0.02, 0.01, 0.58)))
+	_crafting_target_missing_alert.add_theme_stylebox_override("hover", _make_crafting_alert_style(Color(0.08, 0.02, 0.01, 0.58)))
+	_crafting_target_missing_alert.add_theme_stylebox_override("pressed", _make_crafting_alert_style(Color(0.08, 0.02, 0.01, 0.58)))
+	_crafting_target_select.add_child(_crafting_target_missing_alert)
 
 	_crafting_recipe_label = Label.new()
 	_crafting_recipe_label.name = "CraftingRecipeLabel"
 	_crafting_recipe_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_crafting_section.add_child(_crafting_recipe_label)
+	var pending_row := HBoxContainer.new()
+	pending_row.name = "CraftingPendingRow"
+	pending_row.add_theme_constant_override("separation", 8)
+	_crafting_section.add_child(pending_row)
+	_crafting_pending_label = Label.new()
+	_crafting_pending_label.name = "CraftingPendingLabel"
+	_crafting_pending_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_crafting_pending_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	pending_row.add_child(_crafting_pending_label)
+	_crafting_harvest_button = Button.new()
+	_crafting_harvest_button.name = "CraftingHarvestButton"
+	_crafting_harvest_button.text = "查看并收取"
+	_crafting_harvest_button.custom_minimum_size.x = 108.0
+	_crafting_harvest_button.pressed.connect(_on_crafting_harvest_pressed)
+	pending_row.add_child(_crafting_harvest_button)
 	_crafting_stage_label = Label.new()
 	_crafting_stage_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_crafting_section.add_child(_crafting_stage_label)
@@ -544,16 +732,29 @@ func _refresh_crafting_section() -> void:
 		return
 	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 	if crafting_system == null:
+		_crafting_target_missing_alert.visible = false
 		_crafting_recipe_label.visible = false
 		_crafting_status_label.text = "制造系统不可用"
 		_crafting_status_label.visible = true
 		_crafting_target_select.disabled = true
+		_crafting_pending_label.text = "待收取：制造系统不可用"
+		_crafting_harvest_button.disabled = true
 		return
 	var project: Dictionary = crafting_system.get_project_snapshot(_current_building_id) if crafting_system.has_method("get_project_snapshot") else {}
+	var pending_total := int(project.get("pending_output_total", 0))
+	var pending_entries: Array = crafting_system.get_pending_output_entries(_current_building_id) if crafting_system.has_method("get_pending_output_entries") else []
+	var pending_names: Array[String] = []
+	for raw_entry in pending_entries:
+		if raw_entry is Dictionary:
+			pending_names.append("%s×%d" % [str(raw_entry.get("name", raw_entry.get("item_id", "成品"))), int(raw_entry.get("amount", 0))])
+	_crafting_pending_label.text = "待收取：%d 件%s" % [pending_total, "（%s）" % "、".join(pending_names) if not pending_names.is_empty() else ""]
+	_crafting_harvest_button.disabled = pending_total <= 0
+	_crafting_harvest_button.tooltip_text = "打开待收取成品面板" if pending_total > 0 else "当前没有待收取成品"
 	var current_recipe_id := str(project.get("target_recipe_id", project.get("recipe_id", "")))
 	_fill_crafting_target_options(crafting_system, current_recipe_id)
 	_crafting_target_select.disabled = false
 	var target_item_id := str(project.get("target_item_id", ""))
+	_crafting_target_missing_alert.visible = current_recipe_id.is_empty() or target_item_id.is_empty()
 	if current_recipe_id.is_empty() or target_item_id.is_empty():
 		_crafting_recipe_label.text = ""
 		_crafting_recipe_label.visible = false
@@ -585,6 +786,49 @@ func _refresh_crafting_section() -> void:
 	_crafting_worker_label.text = "当前工人：%s" % _format_crafting_workers(project.get("active_workers", []))
 	_crafting_status_label.text = ""
 	_crafting_status_label.visible = false
+
+
+func _on_crafting_harvest_pressed() -> void:
+	var dialog := get_node_or_null(CRAFTING_HARVEST_DIALOG_PATH)
+	if dialog != null and dialog.has_method("open_for_building"):
+		dialog.open_for_building(_current_building_id)
+
+
+func _make_crafting_alert_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
+	style.content_margin_left = 0.0
+	style.content_margin_top = 0.0
+	style.content_margin_right = 0.0
+	style.content_margin_bottom = 0.0
+	return style
+
+
+func open_crafting_target_selector(building_id: String) -> void:
+	if not ["blacksmith", "workshop"].has(building_id):
+		return
+	if _current_building_id != building_id:
+		show_building(building_id)
+	_open_crafting_target_popup_when_ready(building_id)
+
+
+func _open_crafting_target_popup_when_ready(building_id: String) -> void:
+	for _attempt in range(PANEL_LAYOUT_SETTLE_FRAME_LIMIT + 2):
+		await get_tree().process_frame
+		if _current_building_id != building_id:
+			return
+		if (
+			_is_panel_action_input_allowed()
+			and _crafting_target_select != null
+			and _crafting_target_select.is_visible_in_tree()
+			and not _crafting_target_select.disabled
+		):
+			_crafting_target_select.show_popup()
+			return
 
 
 func _fill_crafting_target_options(crafting_system: Node, selected_recipe_id: String) -> void:
@@ -704,7 +948,11 @@ func debug_get_crafting_panel_snapshot() -> Dictionary:
 		"selected_recipe_id": _get_selected_metadata(_crafting_target_select),
 		"progress": float(_crafting_progress_bar.value) / 100.0 if _crafting_progress_bar != null else 0.0,
 		"confirmation_visible": _crafting_confirmation != null and _crafting_confirmation.visible,
-		"pending_recipe_id": _crafting_pending_target_id
+		"pending_recipe_id": _crafting_pending_target_id,
+		"missing_target_alert_visible": _crafting_target_missing_alert != null and _crafting_target_missing_alert.visible,
+		"target_popup_visible": _crafting_target_select != null and _crafting_target_select.get_popup().visible,
+		"pending_text": _crafting_pending_label.text if _crafting_pending_label != null else "",
+		"harvest_disabled": _crafting_harvest_button.disabled if _crafting_harvest_button != null else true
 	}
 
 
@@ -748,11 +996,14 @@ func _refresh_horse_section() -> void:
 		_horse_summary_label.text = "马匹系统不可用"
 		return
 	var summary: Dictionary = horse_system.get_stable_summary() if horse_system.has_method("get_stable_summary") else {}
-	_horse_summary_label.text = "在厩：%d 匹（成年 %d / 小马 %d）｜离厩：%d" % [
+	_horse_summary_label.text = "在厩：%d 匹（成年 %d / 小马 %d）｜离厩：%d｜马槽：%d / %d%s" % [
 		int(summary.get("total", summary.get("stable_total", 0))),
 		int(summary.get("adult", summary.get("stable_adult", 0))),
 		int(summary.get("foal", summary.get("stable_foal", 0))),
-		int(summary.get("outside", summary.get("ridden", 0)))
+		int(summary.get("outside", summary.get("ridden", 0))),
+		int(summary.get("occupied_slots", 0)),
+		int(summary.get("capacity", 0)),
+		"（已满，繁育暂停）" if bool(summary.get("full", false)) else ""
 	]
 	_clear_container(_horse_list)
 	if not horse_system.has_method("get_horse_ids"):
@@ -760,6 +1011,8 @@ func _refresh_horse_section() -> void:
 	for raw_horse_id in horse_system.get_horse_ids():
 		var horse_id := str(raw_horse_id)
 		var horse: Dictionary = horse_system.get_horse_snapshot(horse_id) if horse_system.has_method("get_horse_snapshot") else {}
+		if not bool(horse.get("alive", true)) or str(horse.get("location", "stable")) != "stable":
+			continue
 		_add_horse_card(horse)
 	call_deferred("_fit_horse_list_and_panel")
 
@@ -811,10 +1064,9 @@ func _add_horse_card(horse: Dictionary) -> void:
 	margin.add_child(content)
 	var horse_id := str(horse.get("horse_id", horse.get("id", "")))
 	var assigned_npc_id := str(horse.get("assigned_npc_id", ""))
-	var location := str(horse.get("location", "stable"))
 	var feeding: Dictionary = horse.get("feeding", {}) if horse.get("feeding", {}) is Dictionary else {}
+	var alive := bool(horse.get("alive", true))
 	var status_parts: Array[String] = ["成年" if bool(horse.get("is_adult", false)) else "小马"]
-	status_parts.append("在厩" if location == "stable" else "骑乘中" if location == "ridden" else "位置未知")
 	if bool(feeding.get("active", false)):
 		status_parts.append("进食 %d%%" % int(round(float(feeding.get("progress", 0.0)) * 100.0)))
 	elif bool(feeding.get("waiting_for_grain", false)):
@@ -822,56 +1074,76 @@ func _add_horse_card(horse: Dictionary) -> void:
 	if bool(horse.get("recovering", false)):
 		status_parts.append("缓慢恢复")
 	var header := Label.new()
-	header.text = "%s（%s）｜%s" % [str(horse.get("name", horse_id)), horse_id, "、".join(status_parts)]
+	header.text = "%s｜%s｜%s｜马槽 %s" % [
+		str(horse.get("name", horse_id)),
+		str(horse.get("coat_name", "未知毛色")),
+		"、".join(status_parts),
+		_format_stable_slot_id(str(horse.get("stable_slot_id", "")))
+	]
 	header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(header)
 	var base_hp := float(horse.get("base_hp", maxf(0.0, float(horse.get("hp", 0.0)) - float(horse.get("care_bonus_hp", 0.0)))))
 	var natural_max_hp := float(horse.get("natural_max_hp", 0.0))
 	var extra_hp := float(horse.get("extra_hp", horse.get("care_bonus_hp", 0.0)))
 	var extra_hp_cap := float(horse.get("extra_hp_cap", horse.get("care_bonus_cap", 0.0)))
+	var care_rate: Dictionary = horse.get("care_rate", {}) if horse.get("care_rate", {}) is Dictionary else {}
+	var care_rates: Dictionary = (
+		care_rate.get("rates_per_game_second", {})
+		if care_rate.get("rates_per_game_second", {}) is Dictionary
+		else {}
+	)
 	_add_horse_progress(
 		content,
 		"基础 HP %.1f / %.1f" % [base_hp, natural_max_hp],
 		base_hp,
 		maxf(1.0, natural_max_hp),
-		"HorseBaseHP_%s" % horse_id
+		"HorseBaseHP_%s" % horse_id,
+		HORSE_BASE_HP_DANGER_RATIO,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("base_hp", 0.0)))
 	)
 	_add_horse_progress(
 		content,
 		"照料额外 HP %.1f / %.1f" % [extra_hp, extra_hp_cap],
 		extra_hp,
 		maxf(1.0, extra_hp_cap),
-		"HorseExtraHP_%s" % horse_id
+		"HorseExtraHP_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("extra_hp", 0.0)))
 	)
 	_add_horse_progress(
 		content,
 		"饱食 %.1f / %.1f" % [float(horse.get("satiety", 0.0)), float(horse.get("max_satiety", 0.0))],
 		float(horse.get("satiety", 0.0)),
 		maxf(1.0, float(horse.get("max_satiety", 0.0))),
-		"HorseSatiety_%s" % horse_id
+		"HorseSatiety_%s" % horse_id,
+		HORSE_SATIETY_DANGER_RATIO
 	)
 	_add_horse_progress(
 		content,
 		"成长 %d%%" % int(round(float(horse.get("growth", 0.0)) * 100.0)),
 		float(horse.get("growth", 0.0)),
 		1.0,
-		"HorseGrowth_%s" % horse_id
+		"HorseGrowth_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("growth", 0.0)), 100.0)
 	)
 	var breeding_probability := clampf(float(horse.get("breeding_probability", 0.0)), 0.0, 1.0)
 	var breeding_text := "繁育概率 %.2f%%" % (breeding_probability * 100.0)
 	var cooldown_seconds := maxf(0.0, float(horse.get("breeding_cooldown_remaining_seconds", 0.0)))
-	if cooldown_seconds > 0.0:
+	if not alive:
+		breeding_text += "（阵亡）"
+	elif cooldown_seconds > 0.0:
 		breeding_text += "（冷却 %s）" % _format_horse_cooldown(cooldown_seconds)
 	elif not bool(horse.get("is_adult", false)):
 		breeding_text += "（未成年）"
-	elif location != "stable":
-		breeding_text += "（离厩暂停）"
 	_add_horse_progress(
 		content,
 		breeding_text,
 		breeding_probability,
 		1.0,
-		"HorseBreedingProbability_%s" % horse_id
+		"HorseBreedingProbability_%s" % horse_id,
+		-1.0,
+		RateDisplayFormatter.format_positive_rate(float(care_rates.get("breeding_probability", 0.0)), 100.0)
 	)
 	var assignment := Label.new()
 	assignment.name = "HorseAssignment_%s" % horse_id
@@ -881,12 +1153,26 @@ func _add_horse_card(horse: Dictionary) -> void:
 	content.add_child(assignment)
 
 
+func _format_stable_slot_id(slot_id: String) -> String:
+	var normalized := slot_id.strip_edges()
+	if normalized.is_empty() or normalized == "已释放":
+		return "无"
+	var parts := normalized.split("_", false)
+	if not parts.is_empty():
+		var suffix := str(parts[parts.size() - 1])
+		if suffix.is_valid_int():
+			return "%d号" % int(suffix)
+	return "未知"
+
+
 func _add_horse_progress(
 	parent: VBoxContainer,
 	tooltip: String,
 	value: float,
 	max_value: float,
-	control_name: String = ""
+	control_name: String = "",
+	danger_below_ratio: float = -1.0,
+	rate_text: String = ""
 ) -> void:
 	var progress := ProgressBar.new()
 	if not control_name.is_empty():
@@ -897,13 +1183,50 @@ func _add_horse_progress(
 	progress.value = clampf(value, 0.0, max_value)
 	progress.show_percentage = false
 	progress.tooltip_text = tooltip
-	parent.add_child(progress)
+	var ratio := clampf(value / maxf(0.001, max_value), 0.0, 1.0)
+	var danger := danger_below_ratio >= 0.0 and ratio < danger_below_ratio
+	progress.add_theme_stylebox_override("fill", _get_horse_progress_fill_style(danger))
+	progress.set_meta("danger_state", danger)
 	var label := Label.new()
 	if not control_name.is_empty():
 		label.name = "%sLabel" % control_name
 	label.text = tooltip
 	label.add_theme_font_size_override("font_size", 11)
-	parent.add_child(label)
+	if danger:
+		label.add_theme_color_override("font_color", HORSE_DANGER_LABEL_COLOR)
+	if rate_text.is_empty():
+		parent.add_child(label)
+	else:
+		var label_row := HBoxContainer.new()
+		label_row.name = "%sLabelRow" % control_name if not control_name.is_empty() else "HorseValueLabelRow"
+		label_row.add_theme_constant_override("separation", 6)
+		label_row.add_child(label)
+		var rate_label := Label.new()
+		rate_label.name = "%sRateLabel" % control_name if not control_name.is_empty() else "HorseRateLabel"
+		rate_label.text = rate_text
+		rate_label.add_theme_font_size_override("font_size", 11)
+		rate_label.add_theme_color_override("font_color", POSITIVE_RATE_LABEL_COLOR)
+		label_row.add_child(rate_label)
+		parent.add_child(label_row)
+	parent.add_child(progress)
+
+
+func _get_horse_progress_fill_style(danger: bool) -> StyleBoxFlat:
+	if _horse_normal_progress_fill_style == null:
+		_horse_normal_progress_fill_style = _make_horse_progress_fill_style(HORSE_NORMAL_PROGRESS_FILL_COLOR)
+	if _horse_danger_progress_fill_style == null:
+		_horse_danger_progress_fill_style = _make_horse_progress_fill_style(HORSE_DANGER_PROGRESS_FILL_COLOR)
+	return _horse_danger_progress_fill_style if danger else _horse_normal_progress_fill_style
+
+
+func _make_horse_progress_fill_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 3
+	style.corner_radius_top_right = 3
+	style.corner_radius_bottom_right = 3
+	style.corner_radius_bottom_left = 3
+	return style
 
 
 func _format_horse_cooldown(seconds: float) -> String:
@@ -939,43 +1262,11 @@ func _build_defense_device_section() -> void:
 
 	var separator := HSeparator.new()
 	_device_section.add_child(separator)
-	var title := Label.new()
-	title.text = "防御器械部署"
-	title.add_theme_font_size_override("font_size", 16)
-	_device_section.add_child(title)
-
-	_device_stock_label = Label.new()
-	_device_section.add_child(_device_stock_label)
-	_device_select = _add_device_option_row("器械")
-	_device_slot_select = _add_device_option_row("槽位")
-	_device_select.item_selected.connect(_on_device_selection_changed)
-	_device_slot_select.item_selected.connect(_on_device_selection_changed)
-
-	_device_deploy_button = Button.new()
-	_device_deploy_button.text = "部署到当前建筑"
-	_device_deploy_button.pressed.connect(_on_device_deploy_pressed)
-	_device_section.add_child(_device_deploy_button)
 
 	_device_summary_label = Label.new()
+	_device_summary_label.name = "DefenseDeviceDeploymentSummary"
 	_device_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_device_section.add_child(_device_summary_label)
-	_device_status_label = Label.new()
-	_device_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_device_section.add_child(_device_status_label)
-
-
-func _add_device_option_row(label_text: String) -> OptionButton:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	_device_section.add_child(row)
-	var label := Label.new()
-	label.custom_minimum_size.x = 54.0
-	label.text = "%s：" % label_text
-	row.add_child(label)
-	var option := OptionButton.new()
-	option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(option)
-	return option
 
 
 func _refresh_defense_device_section() -> void:
@@ -986,76 +1277,9 @@ func _refresh_defense_device_section() -> void:
 		return
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
 	if device_system == null:
-		_device_stock_label.text = "工程器械系统不可用"
-		_device_deploy_button.disabled = true
+		_device_summary_label.text = "已部署：无法读取"
 		return
-	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
-	var building_name := _current_building_id
-	if building_system != null and building_system.has_method("get_building"):
-		var building: Dictionary = building_system.get_building(_current_building_id)
-		building_name = str(building.get("name", _current_building_id))
-	_device_deploy_button.text = "部署到%s" % building_name
-
-	var selected_device_id := _get_selected_metadata(_device_select)
-	var selected_slot_id := _get_selected_metadata(_device_slot_select)
-	_populate_device_options(device_system, selected_device_id)
-	selected_device_id = _get_selected_metadata(_device_select)
-	_populate_device_slot_options(device_system, selected_device_id, selected_slot_id)
-
-	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
-	var selected_definition: Dictionary = device_system.get_device_definition(selected_device_id)
-	var inventory_cost: Dictionary = selected_definition.get("inventory_cost", {}) if selected_definition.get("inventory_cost", {}) is Dictionary else {}
-	var inventory_resource_id := ""
-	var inventory_required := 0
-	if not inventory_cost.is_empty():
-		inventory_resource_id = str(inventory_cost.keys()[0])
-		inventory_required = int(inventory_cost[inventory_resource_id])
-	var inventory_amount := int(resource_system.get_resource(inventory_resource_id)) if resource_system != null and not inventory_resource_id.is_empty() else 0
-	var inventory_name := str(selected_definition.get("name", "工程器械"))
-	if resource_system != null and not inventory_resource_id.is_empty():
-		inventory_name = str(resource_system.get_resource_name(inventory_resource_id))
-	_device_stock_label.text = "%s库存：%d" % [inventory_name, inventory_amount]
 	_device_summary_label.text = _format_device_deployment_summary(device_system)
-
-	selected_slot_id = _get_selected_metadata(_device_slot_select)
-	if selected_device_id.is_empty() or selected_slot_id.is_empty():
-		_device_deploy_button.disabled = true
-		_device_deploy_button.tooltip_text = "需要器械类型和兼容的空闲槽位。"
-		return
-	var eligibility: Dictionary = device_system.get_deploy_eligibility(selected_device_id, selected_slot_id)
-	_device_deploy_button.disabled = not bool(eligibility.get("ok", false))
-	_device_deploy_button.tooltip_text = (
-		"消耗 %d 件%s。" % [inventory_required, inventory_name]
-		if bool(eligibility.get("ok", false))
-		else str(eligibility.get("message", "当前不可部署。"))
-	)
-
-
-func _populate_device_options(device_system: Node, preferred_id: String) -> void:
-	_device_select.clear()
-	for device_id in device_system.get_device_ids():
-		var definition: Dictionary = device_system.get_device_definition(device_id)
-		var stock_amount := 0
-		var inventory_cost: Dictionary = definition.get("inventory_cost", {}) if definition.get("inventory_cost", {}) is Dictionary else {}
-		if not inventory_cost.is_empty():
-			var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
-			var inventory_resource_id := str(inventory_cost.keys()[0])
-			if resource_system != null:
-				stock_amount = int(resource_system.get_resource(inventory_resource_id))
-		_device_select.add_item("%s（库存 %d）" % [str(definition.get("name", device_id)), stock_amount])
-		_device_select.set_item_metadata(_device_select.item_count - 1, device_id)
-	_select_option_by_metadata(_device_select, preferred_id)
-
-
-func _populate_device_slot_options(device_system: Node, device_id: String, preferred_id: String) -> void:
-	_device_slot_select.clear()
-	for raw_slot in device_system.get_slots_for_device(device_id, true, _current_building_id):
-		if not raw_slot is Dictionary:
-			continue
-		var slot: Dictionary = raw_slot
-		_device_slot_select.add_item(str(slot.get("name", slot.get("id", "围墙槽位"))))
-		_device_slot_select.set_item_metadata(_device_slot_select.item_count - 1, str(slot.get("id", "")))
-	_select_option_by_metadata(_device_slot_select, preferred_id)
 
 
 func _format_device_deployment_summary(device_system: Node) -> String:
@@ -1093,32 +1317,9 @@ func _select_option_by_metadata(option: OptionButton, preferred_id: String) -> v
 	option.select(target_index)
 
 
-func _on_device_selection_changed(_index: int) -> void:
-	_refresh_defense_device_section()
-
-
-func _on_device_deploy_pressed() -> void:
-	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
-	if device_system == null:
-		return
-	var result: Dictionary = device_system.deploy_device(
-		_get_selected_metadata(_device_select),
-		_get_selected_metadata(_device_slot_select)
-	)
-	if bool(result.get("ok", false)):
-		var deployment: Dictionary = result.get("deployment", {})
-		_device_status_label.text = "已部署：%s → %s" % [
-			str(deployment.get("device_name", "工程器械")),
-			str(deployment.get("slot_name", "围墙槽位"))
-		]
-	else:
-		_device_status_label.text = str(result.get("message", "部署失败。"))
-	_refresh_defense_device_section()
-
-
 func _format_workstations(raw_workstations: Variant) -> String:
 	if not raw_workstations is Array or raw_workstations.is_empty():
-		return "位置：无"
+		return ""
 
 	var workstations: Array = raw_workstations
 	var totals_by_type := {}
@@ -1145,13 +1346,22 @@ func _format_workstations(raw_workstations: Variant) -> String:
 		if int(totals_by_type.get(station_type, 0)) > 1 and not _has_numeric_suffix(station_name):
 			station_name = "%s%d" % [station_name, station_index]
 		var occupied_by := str(station.get("occupied_by", ""))
-		if occupied_by.is_empty() or occupied_by == "<null>":
-			lines.append("%s：空闲" % station_name)
-		else:
+		var reserved_by := str(station.get("reserved_by", ""))
+		if not occupied_by.is_empty() and occupied_by != "<null>":
 			lines.append("%s：%s占用中" % [station_name, _format_npc_name(occupied_by)])
+		elif not reserved_by.is_empty() and reserved_by != "<null>":
+			lines.append("%s：已为%s预留" % [station_name, _format_npc_name(reserved_by)])
+		else:
+			lines.append("%s：空闲" % station_name)
 	if lines.is_empty():
-		return "位置：无"
+		return ""
 	return "\n".join(lines)
+
+
+func _refresh_workstation_label(raw_workstations: Variant) -> void:
+	var workstation_text := _format_workstations(raw_workstations)
+	workstation_label.text = workstation_text
+	workstation_label.visible = not workstation_text.is_empty()
 
 
 func _format_workstation_type_label(station_type: String) -> String:
@@ -1194,17 +1404,6 @@ func _format_location_placeholder(building: Dictionary) -> String:
 	var upgrade_status: Dictionary = building.get("upgrade_status", {})
 	var lines: Array[String] = []
 
-	var condition := str(building.get("condition", "unknown"))
-	var condition_label: String = str({
-		"intact": "完好",
-		"damaged": "受损",
-		"repairing": "正在修复",
-		"upgrading": "正在升级"
-	}.get(condition, "未知"))
-	lines.append("建筑状态：%s" % condition_label)
-	lines.append("当前运行效率：%d%%" % int(round(
-		float(building.get("operational_efficiency_multiplier", building.get("operational_efficiency", 1.0))) * 100.0
-	)))
 	if not bool(building.get("is_enterable", true)) and bool(building.get("has_enterable_interior", false)):
 		lines.append("内部状态：封闭，无法进入或使用位置")
 
@@ -1373,10 +1572,20 @@ func _format_repair_hint() -> String:
 		return ""
 
 	var repair_config: Dictionary = _current_building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	var repair_quote: Dictionary = {}
+	if building_system != null and building_system.has_method("get_repair_quote"):
+		repair_quote = building_system.get_repair_quote(_current_building_id)
+	var cost: Dictionary = repair_quote.get("cost", repair_config.get("cost", {}))
 	var lines: Array[String] = ["修复"]
 	lines.append("消耗：%s" % _format_cost(cost))
-	if repair_config.is_empty() or cost.is_empty():
+	if int(repair_quote.get("repair_batches", 0)) > 0:
+		lines.append("工程量：缺失 %d HP，共 %d 批（每批恢复 %d HP）" % [
+			int(repair_quote.get("missing_hp", 0)),
+			int(repair_quote.get("repair_batches", 0)),
+			int(repair_quote.get("hp_restore", 0))
+		])
+	if repair_config.is_empty():
 		lines.append("条件：该建筑不可修复")
 	elif not _current_building.get("upgrade_status", {}).is_empty():
 		lines.append("条件：正在升级中")
@@ -1384,6 +1593,8 @@ func _format_repair_hint() -> String:
 		lines.append("条件：正在修复中")
 	elif int(_current_building.get("hp", 0)) >= int(_current_building.get("max_hp", 0)):
 		lines.append("条件：HP 已满")
+	elif cost.is_empty():
+		lines.append("条件：修复配置无效")
 	elif not _can_afford(cost):
 		lines.append("条件：资源不足")
 	else:
@@ -1547,3 +1758,6 @@ func _on_close_pressed() -> void:
 	modulate.a = 1.0
 	visible = false
 	_set_panel_interaction_enabled(false)
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("world_selection_cleared"):
+		event_bus.world_selection_cleared.emit()

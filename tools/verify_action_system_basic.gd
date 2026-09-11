@@ -20,10 +20,12 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or needs_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or needs_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_paused(false)
 
 	var npc_id := "veteran_deputy_01"
 	_set_debug_move_speed(npc_id, 80.0)
@@ -134,7 +136,7 @@ func _init() -> void:
 		return
 
 	var cook_id := "cook_01"
-	_set_debug_move_speed(cook_id, 80.0)
+	_set_debug_move_speed(cook_id, 5.0)
 	var grain_before_tavern: int = resource_system.get_resource("grain")
 	var wine_before: int = resource_system.get_resource("wine")
 	var tavern_action: Dictionary = action_system.get_action("work_tavern")
@@ -159,7 +161,7 @@ func _init() -> void:
 		return
 
 	var blacksmith_id := "blacksmith_01"
-	_set_debug_move_speed(blacksmith_id, 80.0)
+	_set_debug_move_speed(blacksmith_id, 40.0)
 	resource_system.add_resource("iron", 10)
 	var iron_before: int = resource_system.get_resource("iron")
 	var wood_before_blacksmith: int = resource_system.get_resource("wood")
@@ -180,7 +182,7 @@ func _init() -> void:
 		push_error("Blacksmith work did not start")
 		quit(1)
 		return
-	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
 		push_error("Blacksmith first crafting stage did not complete")
 		quit(1)
@@ -195,12 +197,26 @@ func _init() -> void:
 		quit(1)
 		return
 	if not await _wait_until_current_action(npc_system, blacksmith_id, "work_blacksmith"):
-		push_error("Final blacksmith crafting stage did not start")
+		push_error("Final blacksmith crafting stage did not start: %s" % JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(blacksmith_id)))
 		quit(1)
 		return
-	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 3600.0)
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
 	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
-		push_error("Final blacksmith crafting stage did not complete")
+		push_error("Blacksmith second crafting stage did not complete")
+		quit(1)
+		return
+	npc_system.update_npc_state(blacksmith_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
+	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		push_error("Failed to assign labor-only blacksmith finishing stage")
+		quit(1)
+		return
+	if not await _wait_until_current_action(npc_system, blacksmith_id, "work_blacksmith"):
+		push_error("Blacksmith finishing stage did not start")
+		quit(1)
+		return
+	_advance_action_time(needs_system, action_system, npc_system, blacksmith_id, 5400.0)
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "completed_work_blacksmith"):
+		push_error("Blacksmith labor-only finishing stage did not complete")
 		quit(1)
 		return
 	if resource_system.get_resource("iron") != iron_before - 2 or resource_system.get_resource("wood") != wood_before_blacksmith:
@@ -218,51 +234,18 @@ func _init() -> void:
 
 	var engineer_id := "engineer_01"
 	_set_debug_move_speed(engineer_id, 80.0)
-	resource_system.add_resource("wood", 10)
-	var wood_before_workshop: int = resource_system.get_resource("wood")
-	var arrows_before: int = resource_system.get_resource("item_arrow_bundle")
-	var legacy_devices_before: int = resource_system.get_resource("defense_devices")
-	target_result = crafting_system.set_target("workshop", "craft_arrow_bundle", true)
-	if not bool(target_result.get("ok", false)):
-		push_error("Failed to select workshop crafting target")
-		quit(1)
-		return
-	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if not action_system.debug_assign_work(engineer_id, "workshop"):
-		push_error("Failed to assign workshop work")
-		quit(1)
-		return
-	if not await _wait_until_current_action(npc_system, engineer_id, "work_workshop"):
-		push_error("Workshop work did not start")
-		quit(1)
-		return
-	_advance_action_time(needs_system, action_system, npc_system, engineer_id, 3600.0)
-	if not await _wait_until_action_result(npc_system, engineer_id, "completed_work_workshop"):
-		push_error("Workshop work did not complete")
-		quit(1)
-		return
-	if resource_system.get_resource("wood") != wood_before_workshop - 1:
-		push_error("Workshop exact stage material result mismatch")
-		quit(1)
-		return
-	if resource_system.get_resource("item_arrow_bundle") != arrows_before + 1:
-		push_error("Workshop product did not enter item_arrow_bundle inventory")
-		quit(1)
-		return
-	if resource_system.get_resource("weapons") != legacy_weapons_before or resource_system.get_resource("defense_devices") != legacy_devices_before:
-		push_error("Workshop work mutated deprecated aggregate inventory")
-		quit(1)
-		return
-
 	var wall_before: Dictionary = building_system.get_building("wall")
 	var wall_max_hp := int(wall_before.get("max_hp", 0))
+	# Formal travel consumes real physics frames. Freeze automatic simulation so
+	# the base repair cannot finish before the helper physically reaches the wall.
+	time_system.set_time_scale(0.0)
 	building_system.debug_damage_building("wall", 30)
 	var stone_before_wall: int = resource_system.get_resource("stone")
 	if not building_system.repair_building("wall"):
 		push_error("Failed to start wall repair")
 		quit(1)
 		return
-	if resource_system.get_resource("stone") != stone_before_wall - 1:
+	if resource_system.get_resource("stone") != stone_before_wall - 2:
 		push_error("Wall repair did not spend stone up front")
 		quit(1)
 		return
@@ -271,13 +254,22 @@ func _init() -> void:
 		push_error("Failed to assign wall repair assist")
 		quit(1)
 		return
+	_snap_formal_actor_to_service_target(npc_system, engineer_id)
 	if not await _wait_until_action_result(npc_system, engineer_id, "assist_repair_started_wall"):
-		push_error("Wall repair assist did not start")
+		push_error("Wall repair assist did not start: %s" % JSON.stringify({
+			"state": npc_system.get_npc_state(engineer_id),
+			"formal": npc_system.get_formal_workstation_action_snapshot(engineer_id),
+			"repair": building_system.get_repair_status("wall")
+		}))
 		quit(1)
 		return
 	var engineer_repair_started: Dictionary = npc_system.get_npc_state(engineer_id)
-	if str(engineer_repair_started.get("current_location", "")) != "plaza":
-		push_error("Repair assist should happen from plaza, not inside the target building")
+	if (
+		str(engineer_repair_started.get("current_location", "")) != "plaza"
+		or str(engineer_repair_started.get("physical_location_phase", "")) != "building_exterior_service"
+		or str(engineer_repair_started.get("formal_exterior_building_id", "")) != "wall"
+	):
+		push_error("Repair assist did not commit at the wall's formal exterior service slot")
 		quit(1)
 		return
 	var repair_event := _find_latest_event(memory_system.get_all_events(), "repair_assist_started")
@@ -291,13 +283,17 @@ func _init() -> void:
 		quit(1)
 		return
 
-	if not npc_system.debug_enter_location_immediately(engineer_id, "garden"):
-		push_error("Failed to move repair helper away from wall")
+	if not action_system.interrupt_npc_action(engineer_id, "repair_test_interrupted", true):
+		push_error("Failed to interrupt the formal wall repair helper")
 		quit(1)
 		return
 	repair_status = building_system.get_repair_status("wall")
 	if int(repair_status.get("helper_count", 0)) != 0 or float(repair_status.get("speed_multiplier", 1.0)) != 1.0:
-		push_error("Repair helper speed bonus remained after NPC left plaza")
+		push_error("Repair helper speed bonus remained after the formal action stopped")
+		quit(1)
+		return
+	if bool(npc_system.get_formal_workstation_action_snapshot(engineer_id).get("active", false)):
+		push_error("Formal wall repair session remained after interruption")
 		quit(1)
 		return
 
@@ -306,6 +302,7 @@ func _init() -> void:
 		push_error("Failed to reassign wall repair assist")
 		quit(1)
 		return
+	_snap_formal_actor_to_service_target(npc_system, engineer_id)
 	if not await _wait_until_action_result(npc_system, engineer_id, "assist_repair_started_wall"):
 		push_error("Wall repair assist did not restart")
 		quit(1)
@@ -321,6 +318,7 @@ func _init() -> void:
 		push_error("Repair helper NPC was not released after repair")
 		quit(1)
 		return
+	time_system.set_time_scale(1.0)
 
 	var wall_before_upgrade: Dictionary = building_system.get_building("wall")
 	var stone_before_upgrade: int = resource_system.get_resource("stone")
@@ -332,11 +330,15 @@ func _init() -> void:
 		push_error("Wall upgrade did not spend stone up front")
 		quit(1)
 		return
+	time_system.set_time_scale(0.0)
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_upgrade_assist(engineer_id, "wall"):
 		push_error("Failed to assign wall upgrade assist")
 		quit(1)
 		return
+	_snap_formal_actor_to_service_target(npc_system, engineer_id)
+	for frame in range(4):
+		await physics_frame
 	if not await _wait_until_action_result(npc_system, engineer_id, "assist_upgrade_started_wall"):
 		push_error("Wall upgrade assist did not start")
 		quit(1)
@@ -367,6 +369,7 @@ func _init() -> void:
 		push_error("Upgrade helper NPC was not released after upgrade")
 		quit(1)
 		return
+	time_system.set_time_scale(1.0)
 
 	if memory_system.get_event_count() < 8:
 		push_error("Action events were not written to structured event log")
@@ -389,17 +392,26 @@ func _advance_action_time(
 
 
 func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result: String) -> bool:
-	for frame in range(600):
-		await process_frame
+	for frame in range(300):
+		await physics_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("last_action_result", "")) == expected_result:
 			return true
 	return false
 
 
+func _snap_formal_actor_to_service_target(npc_system: Node, npc_id: String) -> void:
+	var formal: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+	var target_position: Variant = session.get("service_target_position")
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath()))
+	if npc_node != null and target_position is Vector3:
+		npc_node.global_position = target_position
+
+
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for frame in range(600):
-		await process_frame
+	for frame in range(1800):
+		await physics_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
 			return true

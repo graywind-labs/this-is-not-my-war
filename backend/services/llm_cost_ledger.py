@@ -141,6 +141,49 @@ class LLMCostLedger:
             _accumulate(self._session, record)
         return record
 
+    def settle_direct_cost(
+        self,
+        reservation_id: str,
+        *,
+        audit_id: str,
+        call_type: str,
+        provider: str,
+        model: str,
+        attempt_count: int,
+        estimated_cost_cny: float,
+    ) -> dict[str, Any]:
+        """Settle providers billed by duration or request instead of tokens."""
+        record = {
+            "schema_version": 1,
+            "event": "provider_usage",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "day": self._current_day(),
+            "timezone": self.timezone_name,
+            "audit_id": str(audit_id),
+            "call_type": str(call_type),
+            "provider": str(provider),
+            "model": str(model),
+            "attempt_count": int(attempt_count),
+            "prompt_tokens": 0,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 0,
+            "completion_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "estimated_cost_cny": round(
+                max(0.0, float(estimated_cost_cny)),
+                8,
+            ),
+        }
+        with self._lock:
+            if reservation_id:
+                self._reservations.pop(reservation_id, None)
+            if self.enabled:
+                self._append_unlocked(record)
+            _accumulate(self._session, record)
+        return record
+
     def release(self, reservation_id: str) -> None:
         if not reservation_id:
             return

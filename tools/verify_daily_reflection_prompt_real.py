@@ -42,9 +42,9 @@ def _payload() -> dict:
             fatigue=81,
             current_location="dormitory",
             current_location_name="宿舍",
-            recruited=False,
+            recruited=True,
             skills={"医术": 84, "工程": 20, "剑盾": 6},
-            equipment={},
+            equipment={"main_weapon": "bow", "armor": "leather_armor"},
         ),
         current_order=CurrentOrderContext(
             text="今晚先睡，醒来后优先照看伤员，不要被任何人催去城门。",
@@ -111,7 +111,7 @@ def _payload() -> dict:
             "start_inclusive": False,
             "start_basis": "上一次成功熟睡总结的请求快照水位",
             "end_basis": "本次熟睡总结请求创建时的短期记忆快照",
-            "snapshot_event_count": 1,
+            "snapshot_event_count": 5,
             "snapshot_witness_count": 1,
         },
         "day_events": [
@@ -128,6 +128,34 @@ def _payload() -> dict:
                 "summary": "莉娜听到了警铃，守备官正在召集所有人。",
                 "importance": 70,
                 "memory_kind": "witnessed",
+            },
+            {
+                "event_id": "evt_medical_protection_promise",
+                "type": "dialogue_turn",
+                "summary": "守备官明确承诺为莉娜准备护甲，并只安排后方诊疗与伤员转运职责。",
+                "importance": 94,
+                "memory_kind": "experienced",
+            },
+            {
+                "event_id": "evt_medical_protection_fulfilled",
+                "type": "equipment_changed",
+                "summary": "莉娜亲手接到皮甲和弓，当前命令也已改为留在后方负责诊疗与转运。",
+                "importance": 100,
+                "memory_kind": "experienced",
+            },
+            {
+                "event_id": "evt_clinic_upgrade_known",
+                "type": "building_upgraded",
+                "summary": "莉娜亲眼确认小诊所完成升级并恢复坐诊。",
+                "importance": 98,
+                "memory_kind": "experienced",
+            },
+            {
+                "event_id": "evt_wine_gift_courtesy",
+                "type": "gift_received",
+                "summary": "守备官赠给莉娜十份酒；莉娜只把它视为礼数，医疗安排仍以实际人手、装备和职责为准。",
+                "importance": 76,
+                "memory_kind": "experienced",
             },
         ],
         "existing_diary_entries": ["我不喜欢他们把命令说得像止血布。"],
@@ -155,6 +183,17 @@ def main() -> None:
     assert reflection.diary_entry
     assert "玩家" not in reflection.diary_entry
     assert "memory_summary" not in reflection.model_dump()
+    rendered_memory = " ".join([
+        reflection.diary_entry,
+        *[update.value_label for update in reflection.knowledge_graph_updates],
+    ])
+    assert "诊所" in rendered_memory
+    assert "护甲" in rendered_memory or "皮甲" in rendered_memory
+    assert any(marker in rendered_memory for marker in ("兑现", "落实", "拿到", "接到"))
+    assert not any(
+        phrase in rendered_memory
+        for phrase in ("因为这十份酒而完全信任", "十份酒让我无条件信任", "酒换来了忠诚")
+    )
     for update in reflection.knowledge_graph_updates:
         assert update.subject
         assert update.relation

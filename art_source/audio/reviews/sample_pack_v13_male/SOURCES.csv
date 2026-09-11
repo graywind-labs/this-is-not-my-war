@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_male_none_suspicious_592839.mp3,npc_emotion_none_male,Hmm 2 SOS Paranormal.m4a,elcharrua,https://freesound.org/s/592839/,CC-BY 4.0,confirmed,npc_emotion_none_male_random,"整段单次播放；男性 NPC 回复情绪为 none 时与 02 二选一随机；从 NPC 位置发声","用户确认男性中性候选之一"
+02_male_none_question_170779.mp3,npc_emotion_none_male,OneHmm-question.wav,esperar,https://freesound.org/s/170779/,CC0,confirmed,npc_emotion_none_male_random,"整段单次播放；男性 NPC 回复情绪为 none 时与 01 二选一随机；从 NPC 位置发声","用户确认男性中性候选之一"
+03_male_none_various_170781.mp3,npc_emotion_none_male,Hmm Ahh.wav,esperar,https://freesound.org/s/170781/,CC0,rejected,,不采用,"用户选择 01 与 02 随机"
+04_male_happy_chuckles_643665.mp3,npc_emotion_happy_male,Various Chuckles_Male.mp3,SnowFightStudios,https://freesound.org/s/643665/,CC0,confirmed,npc_emotion_happy_male,"整段作为来源；最终从合集剪出一条克制短笑；男性 NPC 回复情绪为 happy 时从 NPC 位置播放","用户确认男性开心使用"
+05_male_happy_laugh_set_44884.mp3,npc_emotion_happy_male,manlaugh.wav,moxobna,https://freesound.org/s/44884/,CC0,rejected,,不采用,"用户已选择 04"
+06_male_happy_chuckles_set_463814.mp3,npc_emotion_happy_male,Chuckles.mp3,se2001,https://freesound.org/s/463814/,CC0,rejected,,不采用,"用户已选择 04"
+07_male_relieved_content_334061.mp3,npc_emotion_relieved_male,satisfiedSigh.wav,garynoden,https://freesound.org/s/334061/,CC0,rejected,,不采用,"用户已选择 09"
+08_male_relieved_breath_569568.mp3,npc_emotion_relieved_male,Sigh - man - voice - breath in nose - breath out mouth.wav,ValentinPetiteau,https://freesound.org/s/569568/,CC0,rejected,,不采用,"用户已选择 09"
+09_male_relieved_short_799579.mp3,npc_emotion_relieved_male,A male sigh,randbsoundbites,https://freesound.org/s/799579/,CC0,confirmed,npc_emotion_relieved_male,"整段单次播放；男性 NPC 回复情绪为 relieved 时从 NPC 位置播放","用户确认男性放松使用"
+10_male_angry_short_341489.mp3,npc_emotion_angry_male,Angry Grunt,Rocotilos,https://freesound.org/s/341489/,CC0,confirmed,npc_emotion_angry_male,"整段单次播放；男性 NPC 回复情绪为 angry 时从 NPC 位置播放","用户确认男性愤怒使用"
+11_male_angry_set_427972.mp3,npc_emotion_angry_male,male grunt.wav,lipalearning,https://freesound.org/s/427972/,CC0,rejected,,不采用,"用户已选择 10"
+12_male_angry_annoyed_169742.mp3,npc_emotion_angry_male,Annoyed Mhm,qubodup,https://freesound.org/s/169742/,CC-BY 4.0,rejected,,不采用,"用户已选择 10"

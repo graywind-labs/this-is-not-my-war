@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_wood_structure_collapse_487142.mp3,wood_structure_severe_collapse,R29-04-Crashing Collapse of Wood Building.wav,craigsmith,https://freesound.org/s/487142/,CC0,rejected,,不采用,用户已选择 02
+02_wood_structure_collapse_794522.mp3,wood_structure_severe_collapse,Wood Collapse,modusmogulus,https://freesound.org/s/794522/,CC0,confirmed,wood_structure_severe_collapse,整段；严重开裂或倒塌时从建筑位置单次播放,用户确认木结构严重破坏使用
+03_wood_structure_break_669455.mp3,wood_structure_severe_collapse,SFX_wood_crack_destroy_burst_01.wav,EricsSoundschmiede,https://freesound.org/s/669455/,CC0,rejected,,不采用,用户已选择 02
+04_stone_structure_collapse_202098.mp3,stone_structure_severe_collapse,Falling Rock.wav,spookymodem,https://freesound.org/s/202098/,CC0,rejected,,不采用,用户已选择 05
+05_stone_structure_rubble_567249.mp3,stone_structure_severe_collapse,Bricks/Stones/Rocks/Gravel Falling,iwanPlays,https://freesound.org/s/567249/,CC0,confirmed,stone_structure_severe_collapse,整段；严重开裂或倒塌时从建筑位置单次播放,用户确认石质结构严重破坏使用
+06_stone_structure_rocks_567250.mp3,stone_structure_severe_collapse,Dropping Rocks,iwanPlays,https://freesound.org/s/567250/,CC0,rejected,,不采用,用户已选择 05
+07_enemy_entry_medieval_horn_402753.mp3,enemy_entry_stinger,medieval horn by kris klavenes .wav..wav,klavo1985,https://freesound.org/s/402753/,CC0,rejected,,不采用,用户已选择 08
+08_enemy_entry_battle_horn_175946.mp3,enemy_entry_stinger,Horn002.wav,freefire66,https://freesound.org/s/175946/,CC0,confirmed,enemy_entry_stinger,整段；敌人首次进入当前场景时从该敌人位置单次播放,用户确认敌人入场使用
+09_enemy_entry_sinister_horn_188815.mp3,enemy_entry_stinger,Battle Horn,Porphyr,https://freesound.org/s/188815/,CC-BY 4.0,rejected,,不采用,用户已选择 08
+10_wave_clear_sting_706753.mp3,wave_clear_stinger,Victory (short sting),xkeril,https://freesound.org/s/706753/,CC0,rejected,,不采用,用户已选择 12
+11_wave_clear_fanfare_566203.mp3,wave_clear_stinger,Fanfare - Rpg,colorsCrimsonTears,https://freesound.org/s/566203/,CC0,rejected,,不采用,用户已选择 12
+12_wave_clear_orchestral_470083.mp3,wave_clear_stinger,Music: Orchestral Victory Fanfare,Sheyvan,https://freesound.org/s/470083/,CC-BY 4.0,confirmed,wave_clear_stinger,整段；单波敌人全部清除时从最后被击败敌人的位置单次播放,用户确认单波清除使用

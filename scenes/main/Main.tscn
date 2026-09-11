@@ -33,6 +33,37 @@
 [ext_resource type="Script" path="res://scripts/systems/NPCNeedsSystem.gd" id="31_npc_needs"]
 [ext_resource type="Script" path="res://scripts/ui/DefenseSlotPresenter.gd" id="32_defense_slot_presenter"]
 [ext_resource type="Script" path="res://scripts/systems/PietySystem.gd" id="33_piety"]
+[ext_resource type="Script" path="res://scripts/presentation/buildings/RoofVisibilityController.gd" id="34_roof_visibility"]
+[ext_resource type="PackedScene" path="res://scenes/buildings/BuildingArtView.tscn" id="35_building_art_view"]
+[ext_resource type="Theme" path="res://resources/themes/blacksmith_vertical_slice_theme.tres" id="36_slice_theme"]
+[ext_resource type="Script" path="res://scripts/world/StationLayoutController.gd" id="37_station_layout"]
+[ext_resource type="Script" path="res://scripts/systems/SpatialSaveSystem.gd" id="38_spatial_save"]
+[ext_resource type="Script" path="res://scripts/presentation/characters/ChibiCharacterPilotPreviewController.gd" id="39_chibi_pilot_preview"]
+[ext_resource type="Script" path="res://scripts/presentation/combat/AttackRangeIndicator.gd" id="40_attack_range_indicator"]
+[ext_resource type="Script" path="res://scripts/ui/HorsePanel.gd" id="41_horse_panel"]
+[ext_resource type="Script" path="res://scripts/ui/EnemyPanel.gd" id="42_enemy_panel"]
+[ext_resource type="Script" path="res://scripts/ui/DefenseDevicePanel.gd" id="43_defense_device_panel"]
+[ext_resource type="Texture2D" path="res://assets/ui/status_icons/morale_sword_gold.svg" id="44_morale_sword_gold"]
+[ext_resource type="Texture2D" path="res://assets/ui/status_icons/work_hoe_gold.svg" id="45_work_hoe_gold"]
+[ext_resource type="Script" path="res://scripts/ui/WorldFeedbackPresenter.gd" id="46_world_feedback"]
+[ext_resource type="Script" path="res://scripts/ui/CraftingHarvestDialog.gd" id="47_crafting_harvest_dialog"]
+[ext_resource type="Script" path="res://scripts/ui/MilestoneAlertPresenter.gd" id="48_milestone_alert"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/WorldAudioController.gd" id="50_world_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/WorkAudioController.gd" id="51_work_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/MovementAudioController.gd" id="52_movement_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/CombatAudioController.gd" id="53_combat_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/combat/CombatVFXController.gd" id="53b_combat_vfx"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/DialogueVoiceAudioController.gd" id="54_dialogue_voice_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/InteractionAudioController.gd" id="55_interaction_audio"]
+[ext_resource type="Script" path="res://scripts/presentation/audio/AbilityAudioController.gd" id="56_ability_audio"]
+[ext_resource type="Script" path="res://scripts/ui/NPCSkillPointAlertPresenter.gd" id="57_npc_skill_point_alert"]
+[ext_resource type="Script" path="res://scripts/ui/PauseMenu.gd" id="58_pause_menu"]
+[ext_resource type="Script" path="res://scripts/ui/VoiceInputRecorder.gd" id="59_voice_input_recorder"]
+[ext_resource type="Texture2D" path="res://assets/ui/status_icons/dialogue_microphone.svg" id="60_dialogue_microphone"]
+[ext_resource type="Script" path="res://scripts/ui/VoiceInputBridge.gd" id="61_voice_input_bridge"]
+[ext_resource type="Script" path="res://scripts/systems/EpilogueSystem.gd" id="62_epilogue"]
+
+[sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_dialogue"]
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
 size = Vector2(58, 68)
@@ -78,6 +109,7 @@ albedo_color = Color(0.19, 0.43, 0.22, 1)
 
 [sub_resource type="BoxMesh" id="BoxMesh_blacksmith"]
 size = Vector3(2.8, 1.35, 2.1)
+
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_blacksmith"]
 albedo_color = Color(0.28, 0.27, 0.29, 1)
@@ -149,6 +181,42 @@ size = Vector3(1.8, 0.25, 1.8)
 albedo_color = Color(0.23, 0.38, 0.36, 1)
 
 [node name="Main" type="Node3D" unique_id=986039696]
+
+[node name="Presentation" type="Node" parent="."]
+
+[node name="RoofVisibilityController" type="Node" parent="Presentation"]
+script = ExtResource("34_roof_visibility")
+camera_path = NodePath("../../CameraRig/Camera3D")
+
+[node name="StationLayoutController" type="Node" parent="Presentation"]
+script = ExtResource("37_station_layout")
+
+[node name="ChibiCharacterPilotPreviewController" type="Node" parent="Presentation"]
+script = ExtResource("39_chibi_pilot_preview")
+
+[node name="WorldAudioController" type="Node" parent="Presentation"]
+script = ExtResource("50_world_audio")
+
+[node name="WorkAudioController" type="Node" parent="Presentation"]
+script = ExtResource("51_work_audio")
+
+[node name="MovementAudioController" type="Node" parent="Presentation"]
+script = ExtResource("52_movement_audio")
+
+[node name="CombatAudioController" type="Node" parent="Presentation"]
+script = ExtResource("53_combat_audio")
+
+[node name="CombatVFXController" type="Node" parent="Presentation"]
+script = ExtResource("53b_combat_vfx")
+
+[node name="DialogueVoiceAudioController" type="Node" parent="Presentation"]
+script = ExtResource("54_dialogue_voice_audio")
+
+[node name="InteractionAudioController" type="Node" parent="Presentation"]
+script = ExtResource("55_interaction_audio")
+
+[node name="AbilityAudioController" type="Node" parent="Presentation"]
+script = ExtResource("56_ability_audio")
 
 [node name="WorldRoot" type="Node3D" parent="." unique_id=1522394943]
 
@@ -228,11 +296,25 @@ text = "菜园"
 
 [node name="Blacksmith" type="MeshInstance3D" parent="WorldRoot/Station/Buildings" unique_id=1037675601]
 transform = Transform3D(1.05, 0, 0, 0, 1, 0, 0, 0, 1, 5.2, 0.675, 8.4)
+visible = false
 mesh = SubResource("BoxMesh_blacksmith")
 surface_material_override/0 = SubResource("StandardMaterial3D_blacksmith")
 
 [node name="BlacksmithLabel" type="Label3D" parent="WorldRoot/Station/Buildings/Blacksmith" unique_id=576702843]
 transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.15, 0)
+pixel_size = 0.015
+billboard = 1
+text = "铁匠铺"
+
+[node name="BlacksmithArtView" parent="WorldRoot/Station/Buildings" instance=ExtResource("35_building_art_view")]
+position = Vector3(5.2, 0, 8.4)
+building_id = "blacksmith"
+roof_near_distance = 21.0
+roof_far_distance = 31.0
+minimum_roof_opacity = 0.08
+
+[node name="BlacksmithArtLabel" type="Label3D" parent="WorldRoot/Station/Buildings"]
+position = Vector3(5.2, 5.35, 8.4)
 pixel_size = 0.015
 billboard = 1
 text = "铁匠铺"
@@ -346,6 +428,9 @@ text = "后门"
 
 [node name="Effects" type="Node3D" parent="WorldRoot/Station"]
 
+[node name="AttackRangeIndicator" type="Node3D" parent="WorldRoot/Station/Effects"]
+script = ExtResource("40_attack_range_indicator")
+
 [node name="DefenseDevices" type="Node3D" parent="WorldRoot/Station"]
 script = ExtResource("26_defense_device_presenter")
 
@@ -425,6 +510,9 @@ script = ExtResource("21_merchant")
 [node name="CombatSystem" type="Node" parent="Systems" unique_id=326749981]
 script = ExtResource("7_combat")
 
+[node name="SpatialSaveSystem" type="Node" parent="Systems"]
+script = ExtResource("38_spatial_save")
+
 [node name="PietySystem" type="Node" parent="Systems"]
 script = ExtResource("33_piety")
 
@@ -433,6 +521,9 @@ script = ExtResource("18_equipment")
 
 [node name="LLMBridge" type="Node" parent="Systems"]
 script = ExtResource("14_llm_bridge")
+
+[node name="EpilogueSystem" type="Node" parent="Systems"]
+script = ExtResource("62_epilogue")
 
 [node name="DialogSystem" type="Node" parent="Systems" unique_id=538485406]
 script = ExtResource("8_dialog")
@@ -450,6 +541,87 @@ script = ExtResource("20_daily_reflection")
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
 script = ExtResource("17_ui_focus")
 
+[node name="MilestoneAlertPresenter" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("48_milestone_alert")
+
+[node name="BuildingCompletionDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "建筑完工"
+initial_position = 2
+size = Vector2i(440, 160)
+exclusive = true
+unresizable = true
+dialog_text = "建筑完工。"
+ok_button_text = "确认"
+
+[node name="HorseBirthNamingDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "小马出生了"
+initial_position = 2
+size = Vector2i(560, 245)
+exclusive = true
+unresizable = true
+wrap_controls = false
+dialog_text = ""
+dialog_autowrap = true
+dialog_close_on_escape = false
+dialog_hide_on_ok = false
+ok_button_text = "确定"
+
+[node name="PietyReadyDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
+unique_name_in_owner = true
+title = "天火已可用"
+initial_position = 2
+size = Vector2i(560, 180)
+unresizable = true
+dialog_text = "驿站成员的虔诚感动了上苍，现在你可以请求一次天火摧毁敌军！"
+dialog_autowrap = true
+ok_button_text = "太好了"
+
+[node name="HorseBirthContent" type="MarginContainer" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 552.0
+offset_bottom = 196.0
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent"]
+custom_minimum_size = Vector2(512, 142)
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HorseBirthPromptLabel" type="Label" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(512, 52)
+layout_mode = 2
+text = "在精心照料下，一匹小马出生了！你给他命名为"
+autowrap_mode = 2
+vertical_alignment = 1
+
+[node name="HorseNameInput" type="LineEdit" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+max_length = 5
+placeholder_text = "请输入不超过5个字的名字"
+
+[node name="HorseNameValidationLabel" type="Label" parent="UI/MilestoneAlertPresenter/HorseBirthNamingDialog/HorseBirthContent/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.25, 0.18, 1)
+text = ""
+
 [node name="HUD" type="Control" parent="UI" unique_id=1288116016]
 layout_mode = 3
 anchors_preset = 15
@@ -457,7 +629,16 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("36_slice_theme")
 script = ExtResource("9_hud")
+
+[node name="HUDFrame" type="Panel" parent="UI/HUD"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 8.0
+offset_right = 629.0
+offset_bottom = 232.0
+mouse_filter = 2
 
 [node name="TitleLabel" type="Label" parent="UI/HUD" unique_id=1305608878]
 layout_mode = 0
@@ -493,7 +674,7 @@ offset_left = 242.0
 offset_top = 52.0
 offset_right = 350.0
 offset_bottom = 76.0
-text = "阶段：清晨"
+text = "清晨"
 
 [node name="ResourceStrip" type="HBoxContainer" parent="UI/HUD" unique_id=398678590]
 layout_mode = 0
@@ -563,11 +744,76 @@ offset_left = 236.0
 offset_top = 152.0
 offset_right = 330.0
 offset_bottom = 184.0
-text = "警铃"
+text = "警报"
+
+[node name="DismissRallyButton" type="Button" parent="UI/HUD"]
+focus_mode = 0
+layout_mode = 0
+offset_left = 342.0
+offset_top = 152.0
+offset_right = 436.0
+offset_bottom = 184.0
+tooltip_text = "让仍在集结、尚未接敌的 NPC 回到当前日程。"
+text = "解散"
+
+[node name="EscapeStartedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
+unique_name_in_owner = true
+title = "有人正在逃离驿站！"
+initial_position = 2
+size = Vector2i(520, 170)
+exclusive = true
+unresizable = true
+dialog_text = "有人正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！"
+ok_button_text = "好的"
+
+[node name="NpcRevivedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
+unique_name_in_owner = true
+title = "有人苏醒了"
+initial_position = 2
+size = Vector2i(420, 160)
+exclusive = true
+unresizable = true
+dialog_text = "有人从昏迷中苏醒了。"
+ok_button_text = "太好了"
+
+[node name="WaveClearedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
+unique_name_in_owner = true
+title = "成功守住敌袭"
+initial_position = 2
+size = Vector2i(520, 160)
+exclusive = true
+unresizable = true
+dialog_text = "恭喜守备官守住了第1波敌军！"
+ok_button_text = "太好了"
+
+[node name="WorldFeedbackPresenter" type="Control" parent="UI"]
+z_index = 60
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("46_world_feedback")
 
 [node name="CraftingTargetAlerts" type="Control" parent="UI"]
 mouse_filter = 2
 script = ExtResource("30_crafting_alert")
+
+[node name="NPCSkillPointAlerts" type="Control" parent="UI"]
+mouse_filter = 2
+script = ExtResource("57_npc_skill_point_alert")
+
+[node name="CraftingHarvestDialog" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("47_crafting_harvest_dialog")
 
 [node name="DefenseSlotPresenter" type="Control" parent="UI"]
 layout_mode = 3
@@ -578,6 +824,12 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("32_defense_slot_presenter")
+
+[node name="DefenseDevicePanel" type="Control" parent="UI"]
+visible = false
+z_index = 90
+theme = ExtResource("36_slice_theme")
+script = ExtResource("43_defense_device_panel")
 
 [node name="NPCPanel" type="Control" parent="UI" unique_id=915808336]
 visible = false
@@ -590,6 +842,7 @@ offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 632.0
 grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
 script = ExtResource("12_npc_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/NPCPanel"]
@@ -626,10 +879,40 @@ layout_mode = 2
 text = "背景"
 tooltip_text = "查看该 NPC 同步提供给 LLM Prompt 的人物设定。"
 
+[node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "--"
+
+[node name="NPCBehaviorModeLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "--"
+
 [node name="NPCHeaderSpacer" type="Control" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
+
+[node name="NPCMoraleBoostIcon" type="TextureRect" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("44_morale_sword_gold")
+expand_mode = 1
+stretch_mode = 5
+tooltip_text = "士气受到鼓舞"
+
+[node name="NPCWorkBoostIcon" type="TextureRect" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+texture = ExtResource("45_work_hoe_gold")
+expand_mode = 1
+stretch_mode = 5
+tooltip_text = "工作效率提升"
 
 [node name="NPCPanelCloseButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
@@ -645,7 +928,7 @@ text = "HP：-- / --"
 [node name="NPCAttributesLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "属性：力量 --，智力 --"
+text = ""
 
 [node name="NPCJobLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -655,12 +938,12 @@ text = "专长：--"
 [node name="NPCSatietyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "饱食度：--"
+text = "饱食度 -- / --"
 
 [node name="NPCFatigueLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "疲劳度：--"
+text = "疲劳度 -- / --"
 
 [node name="NPCMoneyLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -675,7 +958,7 @@ text = "持有酒：--"
 [node name="NPCEquipmentLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "当前装备：--"
+text = ""
 autowrap_mode = 3
 
 [node name="NPCUnconsciousLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
@@ -687,11 +970,6 @@ text = "昏迷：--"
 unique_name_in_owner = true
 layout_mode = 2
 text = "已入伍：--"
-
-[node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "当前行动：--"
 
 [node name="NPCSkillsLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -721,19 +999,19 @@ tooltip_text = "查看该 NPC 每次首次睡眠总结追加的日记。"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-text = "知识"
-tooltip_text = "查看该 NPC 当前生效的知识图谱。"
+text = "认识"
+tooltip_text = "查看该 NPC 当前形成的认识。"
 
 [node name="NPCEventLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "事件库：暂无"
+text = "事件"
 autowrap_mode = 3
 
 [node name="NPCWitnessLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "见闻库：暂无"
+text = "见闻"
 autowrap_mode = 3
 
 [node name="NPCInteractionRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
@@ -744,11 +1022,22 @@ theme_override_constants/separation = 6
 layout_mode = 2
 text = "交互"
 
-[node name="NPCInteractionVisibilitySelect" type="OptionButton" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
-unique_name_in_owner = true
+[node name="NPCInteractionVisibilityOptions" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-tooltip_text = "选择本次非对话交互是否被同地点 NPC 听见或看见。"
+theme_override_constants/separation = 8
+tooltip_text = "选择本次交互是否公开。"
+
+[node name="NPCInteractionPublicRadio" type="CheckBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow/NPCInteractionVisibilityOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "公开"
+
+[node name="NPCInteractionPrivateRadio" type="CheckBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionRow/NPCInteractionVisibilityOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "私下"
 
 [node name="NPCInteractionButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
@@ -784,29 +1073,37 @@ min_value = 1.0
 max_value = 20.0
 value = 1.0
 
-[node name="NPCGiveWeaponButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "装备武器"
-tooltip_text = "消耗 1 个武器库存，为已入伍 NPC 装备所选主武器。"
-
 [node name="NPCInteractionResultLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
 text = ""
 autowrap_mode = 3
 
-[node name="NPCDialogueButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
+[node name="NPCManagementButtonRow" type="HBoxContainer" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="NPCDialogueButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButtonRow"]
+[node name="NPCGiveWeaponButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCManagementButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "装备"
+tooltip_text = "打开装备。"
+
+[node name="NPCAssignButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCManagementButtonRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。"
+text = "指令"
+
+[node name="NPCDialogueButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "对话"
 
-[node name="NPCDialogueSuspendedDot" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButtonRow/NPCDialogueButton"]
+[node name="NPCDialogueSuspendedDot" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButton"]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
@@ -821,19 +1118,33 @@ theme_override_constants/outline_size = 3
 theme_override_font_sizes/font_size = 18
 text = "●"
 
-[node name="NPCDialogueHistoryButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCDialogueButtonRow"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(68, 0)
-layout_mode = 2
-text = "记录"
-tooltip_text = "只读查看该 NPC 与守备官的过往对话。"
-
-[node name="NPCAssignButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
+[node name="HorsePanel" type="Control" parent="UI"]
 visible = false
-layout_mode = 2
-tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。"
-text = "指令"
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -666.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 456.0
+grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
+script = ExtResource("41_horse_panel")
+
+[node name="EnemyPanel" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -666.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 436.0
+grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
+script = ExtResource("42_enemy_panel")
 
 [node name="BuildingPanel" type="Control" parent="UI" unique_id=1806277464]
 visible = false
@@ -846,6 +1157,7 @@ offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 536.0
 grow_horizontal = 0
+theme = ExtResource("36_slice_theme")
 script = ExtResource("11_building_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/BuildingPanel"]
@@ -894,8 +1206,8 @@ text = "HP：-- / --"
 
 [node name="BuildingWorkstationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-text = "工位：--"
 autowrap_mode = 3
 
 [node name="BuildingLocationLabel" type="Label" parent="UI/BuildingPanel/PanelContainer/MarginContainer/Content"]
@@ -936,7 +1248,25 @@ offset_right = 360.0
 offset_bottom = 270.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("36_slice_theme")
 script = ExtResource("15_dialog_panel")
+
+[node name="VoiceInputRecorder" type="Node" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+script = ExtResource("59_voice_input_recorder")
+
+[node name="VoiceInputBridge" type="Node" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+script = ExtResource("61_voice_input_bridge")
+
+[node name="MicrophonePlayer" type="AudioStreamPlayer" parent="UI/DialogPanel/VoiceInputRecorder"]
+stream = SubResource("AudioStreamMicrophone_dialogue")
+bus = &"MicRecord"
+
+[node name="RecordingLimitTimer" type="Timer" parent="UI/DialogPanel/VoiceInputRecorder"]
+wait_time = 30.0
+one_shot = true
+ignore_time_scale = true
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/DialogPanel"]
 layout_mode = 1
@@ -960,47 +1290,146 @@ theme_override_constants/separation = 10
 [node name="Header" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_constants/separation = 16
 
-[node name="DialogNPCNameLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
-unique_name_in_owner = true
+[node name="DialogHeaderLeft" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 1
+
+[node name="DialogTitleRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DialogNPCNameLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft/DialogTitleRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
 theme_override_font_sizes/font_size = 20
 text = "与 NPC 对话"
 
-[node name="DialogHeaderToggles" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+[node name="DialogHistoryButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft/DialogTitleRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(58, 30)
 layout_mode = 2
-theme_override_constants/separation = 0
+size_flags_vertical = 4
+text = "记录"
+tooltip_text = "只读查看当前 NPC 与守备官的过往对话。"
 
-[node name="DialogPublicToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
+[node name="DialogVisibilityOptions" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft"]
+layout_mode = 2
+theme_override_constants/separation = 8
+tooltip_text = "选择本次对话是否公开。"
+
+[node name="DialogPublicToggle" type="CheckBox" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft/DialogVisibilityOptions"]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
-text = "同地点公开"
+text = "公开"
+
+[node name="DialogPrivateRadio" type="CheckBox" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft/DialogVisibilityOptions"]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+disabled = true
+text = "私下"
+
+[node name="DialogHeaderToggles" type="GridContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 0
+columns = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 1
 
 [node name="DialogRecruitmentToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "提出应征"
 
+[node name="DialogWorkEncouragementToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0.45)
+layout_mode = 2
+disabled = true
+text = "鼓励工作"
+
+[node name="DialogMoraleEncouragementToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0.45)
+layout_mode = 2
+disabled = true
+text = "鼓舞士气"
+
+[node name="DialogCombatStrategyToggle" type="CheckButton" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderToggles"]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0.45)
+layout_mode = 2
+disabled = true
+text = "调整战斗策略"
+
 [node name="DialogStatusLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-text = "私人对话"
+text = ""
 
 [node name="DialogRoundLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
+visible = false
 layout_mode = 2
-text = "轮次：不限"
+text = ""
 
 [node name="DialogHistoryText" type="RichTextLabel" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 370)
+custom_minimum_size = Vector2(0, 250)
 layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
 fit_content = false
 scroll_active = true
+
+[node name="DialogRecordingOverlay" type="CenterContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+
+[node name="VoiceOverlayContent" type="VBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="DialogRecordingIcon" type="TextureRect" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 104)
+layout_mode = 2
+size_flags_horizontal = 4
+texture = ExtResource("60_dialogue_microphone")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DialogRecordingLabel" type="Label" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.94, 0.82, 0.58, 1)
+theme_override_font_sizes/font_size = 18
+text = "正在录音……0/30秒"
+horizontal_alignment = 1
+
+[node name="DialogRecordingFinishButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/DialogHistoryText/DialogRecordingOverlay/VoiceOverlayContent"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 38)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "完成"
+tooltip_text = "结束本次录音并开始识别。"
 
 [node name="InputRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
@@ -1011,6 +1440,32 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "输入要对 NPC 说的话……"
+
+[node name="DialogVoiceButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "语音输入（最长30秒）"
+
+[node name="DialogVoiceIcon" type="TextureRect" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow/DialogVoiceButton"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -12.0
+offset_right = 12.0
+offset_bottom = 12.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("60_dialogue_microphone")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="DialogSendButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
 unique_name_in_owner = true
@@ -1033,6 +1488,26 @@ unresizable = true
 dialog_text = "是否要攻击该成员以示惩戒？"
 ok_button_text = "攻击"
 cancel_button_text = "取消"
+
+[node name="DialogSpecialSuccessDialog" type="AcceptDialog" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+title = "说服成功"
+initial_position = 2
+size = Vector2i(480, 160)
+exclusive = true
+unresizable = true
+dialog_text = "成功说服了NPC。"
+ok_button_text = "太好了"
+
+[node name="DialogInputLimitDialog" type="AcceptDialog" parent="UI/DialogPanel"]
+unique_name_in_owner = true
+title = "无法发送"
+initial_position = 2
+size = Vector2i(420, 140)
+exclusive = true
+unresizable = true
+dialog_text = "输入文字超过上限300字"
+ok_button_text = "知道了"
 
 [node name="SessionActionRow" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
@@ -1215,12 +1690,13 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -360.0
-offset_top = -250.0
-offset_right = 360.0
-offset_bottom = 250.0
+offset_left = -390.0
+offset_top = -220.0
+offset_right = 390.0
+offset_bottom = 220.0
 grow_horizontal = 2
 grow_vertical = 2
+theme = ExtResource("36_slice_theme")
 script = ExtResource("24_merchant_panel")
 
 [node name="PanelContainer" type="PanelContainer" parent="UI/MerchantPanel"]
@@ -1246,10 +1722,11 @@ theme_override_constants/separation = 12
 layout_mode = 2
 
 [node name="TitleLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 20
-text = "后门商人交易"
+theme_override_font_sizes/font_size = 22
+text = "行商交易"
 
 [node name="MerchantCloseButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
@@ -1257,76 +1734,82 @@ custom_minimum_size = Vector2(32, 28)
 layout_mode = 2
 text = "×"
 
-[node name="MerchantStatusLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="MerchantScheduleLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "商人当前不在驿站"
-autowrap_mode = 3
+theme_override_colors/font_color = Color(0.72, 0.68, 0.61, 1)
+theme_override_font_sizes/font_size = 14
+text = "到访时间 10:00 到 16:00"
 
-[node name="MerchantResourcesLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "驿站库存：--"
-autowrap_mode = 3
-
-[node name="QuantityRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="ModeRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="QuantityLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
-layout_mode = 2
-text = "本次数量"
-
-[node name="MerchantAmountSpin" type="SpinBox" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/QuantityRow"]
+[node name="MerchantBuyModeButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ModeRow"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(100, 0)
+custom_minimum_size = Vector2(88, 32)
 layout_mode = 2
-min_value = 1.0
-max_value = 99.0
-value = 1.0
-
-[node name="BuyLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-layout_mode = 2
-text = "购买补给（商人出售给驿站）"
-
-[node name="BuyRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="MerchantBuySelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="MerchantBuyButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/BuyRow"]
-unique_name_in_owner = true
-layout_mode = 2
+toggle_mode = true
+button_pressed = true
 text = "购买"
 
-[node name="SellLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="MerchantSellModeButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ModeRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(88, 32)
 layout_mode = 2
-text = "出售物资（驿站出售给商人）"
+toggle_mode = true
+text = "出售"
 
-[node name="SellRow" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+[node name="ResourceScroll" type="ScrollContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+custom_minimum_size = Vector2(0, 200)
 layout_mode = 2
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 0
 
-[node name="MerchantSellSelect" type="OptionButton" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+[node name="MerchantResourceGrid" type="GridContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/ResourceScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/h_separation = 8
+columns = 5
 
-[node name="MerchantSellButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/SellRow"]
+[node name="MerchantFeedbackLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 24)
 layout_mode = 2
-text = "出售"
-
-[node name="MerchantResultLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_vertical = 3
-text = "商人每天 10:00-16:00 停在后门。"
+theme_override_colors/font_color = Color(0.86, 0.59, 0.32, 1)
+text = ""
+horizontal_alignment = 1
 autowrap_mode = 3
+
+[node name="Footer" type="HBoxContainer" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 2
+
+[node name="TotalPrefixLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+layout_mode = 2
+text = "交易合计"
+
+[node name="MerchantTotalLabel" type="Label" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "0"
+horizontal_alignment = 2
+
+[node name="FooterSpacer" type="Control" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MerchantConfirmButton" type="Button" parent="UI/MerchantPanel/PanelContainer/MarginContainer/Content/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(110, 36)
+layout_mode = 2
+disabled = true
+text = "确认"
 
 [node name="GMPanel" type="Control" parent="UI"]
 layout_mode = 3
@@ -1337,6 +1820,18 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("13_gm_panel")
 
+[node name="PauseMenu" type="Control" parent="UI"]
+visible = false
+z_index = 200
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("36_slice_theme")
+script = ExtResource("58_pause_menu")
+
 [node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
 script = ExtResource("10_3km4f")
 
@@ -1346,4 +1841,7 @@ current = true
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1889464672]
 transform = Transform3D(0.81915206, -0.4055798, 0.4055798, 0, 0.70710677, 0.70710677, -0.57357645, -0.579228, 0.579228, 0, 0, 0)
-light_energy = 2.0
+visible = false
+light_energy = 0.0
+shadow_enabled = false
+metadata/_retired_by = "T0135-P6 CelestialCycleController"

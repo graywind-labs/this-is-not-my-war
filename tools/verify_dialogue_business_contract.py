@@ -177,18 +177,16 @@ def main() -> None:
         )
         assert valid_recruitment.status_code == 200, valid_recruitment.get_json()
         assert "intent" not in valid_recruitment.get_json()
-    _assert_business_rejection(
-        _post_fake(
-            "/npc/dialogue",
-            recruitment_payload,
-            _valid_player_response(recruitment_result="none"),
-        ),
-        "recruitment request requires recruitment_result accept or reject",
-        "PlayerNPCDialogueResponse",
+    unrelated_recruitment = _post_fake(
+        "/npc/dialogue",
+        recruitment_payload,
+        _valid_player_response(recruitment_result="none"),
     )
+    assert unrelated_recruitment.status_code == 200, unrelated_recruitment.get_json()
 
     combat_payload = copy.deepcopy(player_payload)
     combat_payload["interaction_context"] = "combat"
+    combat_payload["is_morale_encouragement_request"] = True
     combat_payload["npc_state"].update({
         "recruited": True,
         "behavior_mode": "combat",
@@ -216,7 +214,160 @@ def main() -> None:
                 wartime_reaction="escape",
             ),
         ),
-        "without recruited status and a main weapon",
+        "requires recruited status and a main weapon",
+        "PlayerNPCDialogueResponse",
+    )
+
+    active_buff_payload = copy.deepcopy(combat_payload)
+    active_buff_payload["npc_state"]["morale_boost"] = {"active": True}
+    _assert_business_rejection(
+        _post_fake(
+            "/npc/dialogue",
+            active_buff_payload,
+            _valid_player_response(recruitment_result="none", wartime_reaction="none"),
+        ),
+        "cannot be requested while its buff is active",
+        "PlayerNPCDialogueResponse",
+    )
+
+    wrong_context_morale_payload = copy.deepcopy(player_payload)
+    wrong_context_morale_payload["is_morale_encouragement_request"] = True
+    _assert_business_rejection(
+        _post_fake(
+            "/npc/dialogue",
+            wrong_context_morale_payload,
+            _valid_player_response(recruitment_result="none", wartime_reaction="none"),
+        ),
+        "only valid in rally/combat dialogue",
+        "PlayerNPCDialogueResponse",
+    )
+
+    strategy_payload = copy.deepcopy(player_payload)
+    strategy_payload["interaction_context"] = "combat"
+    strategy_payload["is_combat_strategy_request"] = True
+    strategy_payload["npc_state"].update({
+        "recruited": True,
+        "behavior_mode": "combat",
+        "equipment": {"main_weapon": {"weapon_id": "sword_shield"}},
+    })
+    strategy_payload["combat_strategy_context"] = {
+        "current_strategy": {"id": "attack", "label": "主动进攻", "is_default": True},
+        "available_strategies": [
+            {"id": "attack", "label": "主动进攻", "is_default": True},
+            {"id": "avoid", "label": "避战", "is_default": False},
+        ],
+    }
+    for decision in [
+        {"decision": "keep", "strategy_id": "attack"},
+        {"decision": "change", "strategy_id": "avoid"},
+    ]:
+        response_payload = _valid_player_response(recruitment_result="none")
+        response_payload["combat_strategy_decision"] = decision
+        valid_strategy = _post_fake("/npc/dialogue", strategy_payload, response_payload)
+        assert valid_strategy.status_code == 200, valid_strategy.get_json()
+
+    invalid_strategy_response = _valid_player_response(recruitment_result="none")
+    invalid_strategy_response["combat_strategy_decision"] = {
+        "decision": "change",
+        "strategy_id": "keep_distance",
+    }
+    _assert_business_rejection(
+        _post_fake("/npc/dialogue", strategy_payload, invalid_strategy_response),
+        "must select an available strategy id",
+        "PlayerNPCDialogueResponse",
+    )
+
+    mutually_exclusive_payload = copy.deepcopy(strategy_payload)
+    mutually_exclusive_payload["is_morale_encouragement_request"] = True
+    mutual_response = _valid_player_response(
+        recruitment_result="none",
+        wartime_reaction="none",
+    )
+    mutual_response["combat_strategy_decision"] = {
+        "decision": "keep",
+        "strategy_id": "attack",
+    }
+    _assert_business_rejection(
+        _post_fake("/npc/dialogue", mutually_exclusive_payload, mutual_response),
+        "mutually exclusive",
+        "PlayerNPCDialogueResponse",
+    )
+
+    ignored_strategy_echo = _valid_player_response(recruitment_result="none")
+    ignored_strategy_echo["combat_strategy_decision"] = {
+        "decision": "change",
+        "strategy_id": "avoid",
+    }
+    ignored_strategy = _post_fake("/npc/dialogue", player_payload, ignored_strategy_echo)
+    assert ignored_strategy.status_code == 200, ignored_strategy.get_json()
+    assert "combat_strategy_decision" not in ignored_strategy.get_json()
+
+    ignored_work_echo = _valid_player_response(
+        recruitment_result="none",
+        work_encouragement_reaction="work_boost",
+    )
+    ignored_work = _post_fake("/npc/dialogue", player_payload, ignored_work_echo)
+    assert ignored_work.status_code == 200, ignored_work.get_json()
+    assert "work_encouragement_reaction" not in ignored_work.get_json()
+
+    work_payload = copy.deepcopy(player_payload)
+    work_payload["interaction_context"] = "work"
+    work_payload["is_work_encouragement_request"] = True
+    work_payload["npc_state"]["behavior_mode"] = "work"
+    for reaction in ["none", "escape", "work_boost"]:
+        valid_work = _post_fake(
+            "/npc/dialogue",
+            work_payload,
+            _valid_player_response(
+                recruitment_result="none",
+                work_encouragement_reaction=reaction,
+            ),
+        )
+        assert valid_work.status_code == 200, valid_work.get_json()
+        assert valid_work.get_json()["work_encouragement_reaction"] == reaction
+
+    active_work_buff_payload = copy.deepcopy(work_payload)
+    active_work_buff_payload["npc_state"]["work_encouragement_boost"] = {"active": True}
+    _assert_business_rejection(
+        _post_fake(
+            "/npc/dialogue",
+            active_work_buff_payload,
+            _valid_player_response(
+                recruitment_result="none",
+                work_encouragement_reaction="none",
+            ),
+        ),
+        "cannot be requested while its buff is active",
+        "PlayerNPCDialogueResponse",
+    )
+
+    wrong_context_work_payload = copy.deepcopy(work_payload)
+    wrong_context_work_payload["interaction_context"] = "combat"
+    _assert_business_rejection(
+        _post_fake(
+            "/npc/dialogue",
+            wrong_context_work_payload,
+            _valid_player_response(
+                recruitment_result="none",
+                work_encouragement_reaction="none",
+            ),
+        ),
+        "only valid in work dialogue",
+        "PlayerNPCDialogueResponse",
+    )
+
+    work_recruitment_mutual_payload = copy.deepcopy(work_payload)
+    work_recruitment_mutual_payload["is_recruitment_request"] = True
+    _assert_business_rejection(
+        _post_fake(
+            "/npc/dialogue",
+            work_recruitment_mutual_payload,
+            _valid_player_response(
+                recruitment_result="none",
+                work_encouragement_reaction="none",
+            ),
+        ),
+        "mutually exclusive",
         "PlayerNPCDialogueResponse",
     )
 

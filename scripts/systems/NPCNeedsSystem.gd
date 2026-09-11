@@ -1,7 +1,9 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const NEEDS_DEFS_FILE := "activity_needs.json"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const SECONDS_PER_HOUR := 3600.0
@@ -11,6 +13,7 @@ var _config: Dictionary = {}
 var _profiles: Dictionary = {}
 var _definition_errors: Array[String] = []
 var _remainders_by_npc: Dictionary = {}
+var _combat_sprint_runtime_by_npc: Dictionary = {}
 
 
 func initialize() -> void:
@@ -18,6 +21,7 @@ func initialize() -> void:
 	_profiles.clear()
 	_definition_errors.clear()
 	_remainders_by_npc.clear()
+	_combat_sprint_runtime_by_npc.clear()
 
 	var config_loader := get_node_or_null("/root/ConfigLoader")
 	if config_loader == null:
@@ -36,6 +40,7 @@ func initialize() -> void:
 	_profiles = (raw_profiles as Dictionary).duplicate(true)
 	_validate_profiles()
 	_validate_system_mappings()
+	_validate_combat_sprint_config()
 
 
 func _ready() -> void:
@@ -69,6 +74,14 @@ func get_behavior_mode_profiles() -> Dictionary:
 	return (value as Dictionary).duplicate(true) if value is Dictionary else {}
 
 
+func get_need_bounds(need_id: String) -> Dictionary:
+	var bounds: Dictionary = _config.get("bounds", {}) if _config.get("bounds", {}) is Dictionary else {}
+	var value: Variant = bounds.get(need_id, {})
+	if value is Dictionary:
+		return (value as Dictionary).duplicate(true)
+	return {"min": 0, "max": 100}
+
+
 func get_npc_needs_snapshot(npc_id: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
@@ -84,6 +97,11 @@ func get_npc_needs_snapshot(npc_id: String) -> Dictionary:
 		"remainders": (
 			(_remainders_by_npc[npc_id] as Dictionary).duplicate(true)
 			if _remainders_by_npc.has(npc_id)
+			else {}
+		),
+		"combat_sprint": (
+			(_combat_sprint_runtime_by_npc[npc_id] as Dictionary).duplicate(true)
+			if _combat_sprint_runtime_by_npc.has(npc_id)
 			else {}
 		)
 	}
@@ -101,14 +119,101 @@ func _on_logical_time_tick(game_delta_seconds: float, _numeric_multiplier: float
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
 		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	var enemies_present := (
+		combat_system != null
+		and combat_system.has_method("get_active_enemy_count")
+		and int(combat_system.get_active_enemy_count()) > 0
+	)
 	for npc_id in npc_system.get_npc_ids():
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if state.is_empty():
 			continue
 		if bool(state.get("escaped", false)):
 			_remainders_by_npc.erase(npc_id)
+			_combat_sprint_runtime_by_npc.erase(npc_id)
 			continue
+		_advance_combat_sprint(npc_id, game_delta_seconds, enemies_present)
 		_advance_npc(npc_id, state, game_delta_seconds)
+
+
+func _advance_combat_sprint(npc_id: String, game_delta_seconds: float, enemies_present: bool) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("consume_npc_unmounted_actual_run_seconds"):
+		return {}
+	var sampled_run_seconds := maxf(
+		0.0,
+		float(npc_system.consume_npc_unmounted_actual_run_seconds(npc_id))
+	)
+	var charged_run_seconds := (
+		minf(sampled_run_seconds, maxf(0.0, game_delta_seconds))
+		if enemies_present
+		else 0.0
+	)
+	var previous_runtime: Dictionary = (
+		_combat_sprint_runtime_by_npc.get(npc_id, {})
+		if _combat_sprint_runtime_by_npc.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	var runtime := {
+		"npc_id": npc_id,
+		"enemies_present": enemies_present,
+		"sampled_actual_run_seconds": sampled_run_seconds,
+		"charged_game_seconds": charged_run_seconds,
+		"discarded_sample_seconds": maxf(0.0, sampled_run_seconds - charged_run_seconds),
+		"satiety_per_game_second": 0.0,
+		"applied_satiety_delta": 0,
+		"total_charged_game_seconds": float(previous_runtime.get("total_charged_game_seconds", 0.0)) + charged_run_seconds,
+		"total_applied_satiety_delta": int(previous_runtime.get("total_applied_satiety_delta", 0))
+	}
+	var sprint_config: Dictionary = (
+		_config.get("combat_sprint", {})
+		if _config.get("combat_sprint", {}) is Dictionary
+		else {}
+	)
+	var satiety_rate := minf(0.0, float(sprint_config.get("satiety_per_game_second", -0.1)))
+	runtime["satiety_per_game_second"] = satiety_rate
+	if charged_run_seconds <= 0.0 or satiety_rate == 0.0:
+		_combat_sprint_runtime_by_npc[npc_id] = runtime
+		return runtime.duplicate(true)
+
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	if state.is_empty() or bool(state.get("unconscious", false)):
+		_combat_sprint_runtime_by_npc[npc_id] = runtime
+		return runtime.duplicate(true)
+	var remainders: Dictionary = (
+		(_remainders_by_npc[npc_id] as Dictionary).duplicate(true)
+		if _remainders_by_npc.has(npc_id)
+		else {}
+	)
+	var remainder_key := "combat_sprint_satiety"
+	var accumulated := float(remainders.get(remainder_key, 0.0)) + satiety_rate * charged_run_seconds
+	var whole_delta := (
+		floori(accumulated + 0.000001)
+		if accumulated >= 0.0
+		else ceili(accumulated - 0.000001)
+	)
+	if whole_delta != 0:
+		var bounds: Dictionary = _config.get("bounds", {}) if _config.get("bounds", {}) is Dictionary else {}
+		var satiety_bounds: Dictionary = bounds.get("satiety", {}) if bounds.get("satiety", {}) is Dictionary else {}
+		var minimum := int(satiety_bounds.get("min", 0))
+		var maximum := int(satiety_bounds.get("max", 100))
+		var before := clampi(int(state.get("satiety", minimum)), minimum, maximum)
+		var after := clampi(before + whole_delta, minimum, maximum)
+		var actual_delta := after - before
+		if actual_delta != 0:
+			npc_system.update_npc_state(npc_id, {"satiety": after})
+			runtime["applied_satiety_delta"] = actual_delta
+			runtime["total_applied_satiety_delta"] = int(runtime.get("total_applied_satiety_delta", 0)) + actual_delta
+		if actual_delta == whole_delta:
+			accumulated -= float(whole_delta)
+		else:
+			accumulated = 0.0
+	remainders[remainder_key] = accumulated
+	_remainders_by_npc[npc_id] = remainders
+	runtime["satiety_remainder"] = accumulated
+	_combat_sprint_runtime_by_npc[npc_id] = runtime
+	return runtime.duplicate(true)
 
 
 func _advance_npc(npc_id: String, state: Dictionary, game_delta_seconds: float) -> void:
@@ -299,6 +404,17 @@ func _apply_profile(npc_id: String, profile_id: String, game_seconds: float) -> 
 	_remainders_by_npc[npc_id] = remainders
 	if not changes.is_empty():
 		npc_system.update_npc_state(npc_id, changes)
+	if profile_id == "sleep":
+		var fatigue_delta := int(applied_deltas.get("fatigue", 0))
+		if fatigue_delta < 0:
+			var fatigue_entry := WorldFeedbackPayload.make_value_entry(
+				"疲劳",
+				fatigue_delta,
+				"neutral"
+			)
+			if not fatigue_entry.is_empty():
+				var fatigue_entries: Array[Dictionary] = [fatigue_entry]
+				WorldFeedbackPayload.emit_npc(self, npc_id, "needs", fatigue_entries, true)
 	return {
 		"npc_id": npc_id,
 		"profile_id": profile_id,
@@ -339,6 +455,19 @@ func _validate_system_mappings() -> void:
 		var profile_id := str(behavior_profiles.get(required_mode, ""))
 		if required_mode != "work":
 			_validate_profile_reference(profile_id, "behavior mode %s" % required_mode)
+
+
+func _validate_combat_sprint_config() -> void:
+	var value: Variant = _config.get("combat_sprint", {})
+	if not value is Dictionary:
+		_add_definition_error("Activity needs definitions require combat_sprint object.")
+		return
+	var sprint_config: Dictionary = value
+	var rate: Variant = sprint_config.get("satiety_per_game_second", null)
+	if not rate is float and not rate is int:
+		_add_definition_error("combat_sprint.satiety_per_game_second must be numeric.")
+	elif float(rate) > 0.0:
+		_add_definition_error("combat_sprint.satiety_per_game_second must not restore satiety.")
 
 func _validate_action_mappings() -> void:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)

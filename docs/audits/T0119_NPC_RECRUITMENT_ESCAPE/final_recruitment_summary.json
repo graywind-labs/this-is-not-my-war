@@ -1,0 +1,355 @@
+{
+  "suite": "final_recruitment",
+  "generated_at_utc": "2026-08-10T07:31:01.449309+00:00",
+  "prompt_sha256": {
+    "data/prompts/dialogue_system_prompt.txt": "f16adaa023da9c40f9b68b59ce18a56d8118435354d74549b77fbb4ee8405c62",
+    "data/prompts/daily_plan_system_prompt.txt": "50a7c26af17f20df78cae7d25605814635905f87e238806bf6cd10c37e489205",
+    "data/prompts/plan_revision_judgement_system_prompt.txt": "5c374cfbeba11a286af8e7ecd51aa5ce09b2393733fa163625cd5915e0c38945",
+    "data/prompts/plan_revision_system_prompt.txt": "bbb2626575e64e71690550e9084b2f83497d46a178e87c953dd7bebb836d9f75",
+    "data/prompts/battle_judgement_system_prompt.txt": "c44037232b4af073bb33e8b18b58180832197353194819e0723920693d14a643",
+    "data/prompts/daily_reflection_system_prompt.txt": "19433b3534e56e0e3de603b9bc4828b2d9485f3e809b75ccb58ecdbac6499e2b"
+  },
+  "calls": 86,
+  "http_successes": 86,
+  "real_provider_successes": 86,
+  "input_tokens": 1009685,
+  "output_tokens": 9998,
+  "estimated_cost": 0.19951908,
+  "universal_recruitment": {
+    "accepts": 0,
+    "rejects": 21,
+    "by_npc": {
+      "stableman_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "cook_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "gardener_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "blacksmith_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "priest_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "doctor_01": [
+        "reject",
+        "reject",
+        "reject"
+      ],
+      "engineer_01": [
+        "reject",
+        "reject",
+        "reject"
+      ]
+    }
+  },
+  "daily_pressure": {
+    "cook_01": [],
+    "stableman_01": [],
+    "doctor_01": [],
+    "engineer_01": []
+  },
+  "ada_battle_pressure": [],
+  "by_category": {
+    "recruitment_building_known": {
+      "calls": 21,
+      "by_npc": {
+        "stableman_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "cook_01": [
+          "accept",
+          "reject",
+          "reject"
+        ],
+        "gardener_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "blacksmith_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "priest_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "doctor_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "engineer_01": [
+          "reject",
+          "reject",
+          "reject"
+        ]
+      }
+    },
+    "recruitment_building_unconfirmed": {
+      "calls": 7,
+      "by_npc": {
+        "stableman_01": [
+          "reject"
+        ],
+        "cook_01": [
+          "reject"
+        ],
+        "gardener_01": [
+          "reject"
+        ],
+        "blacksmith_01": [
+          "reject"
+        ],
+        "priest_01": [
+          "reject"
+        ],
+        "doctor_01": [
+          "reject"
+        ],
+        "engineer_01": [
+          "reject"
+        ]
+      }
+    },
+    "recruitment_full_route": {
+      "calls": 21,
+      "by_npc": {
+        "stableman_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "cook_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "gardener_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "blacksmith_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "priest_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "doctor_01": [
+          "accept",
+          "accept",
+          "accept"
+        ],
+        "engineer_01": [
+          "accept",
+          "accept",
+          "accept"
+        ]
+      }
+    },
+    "recruitment_universal": {
+      "calls": 21,
+      "by_npc": {
+        "stableman_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "cook_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "gardener_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "blacksmith_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "priest_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "doctor_01": [
+          "reject",
+          "reject",
+          "reject"
+        ],
+        "engineer_01": [
+          "reject",
+          "reject",
+          "reject"
+        ]
+      }
+    },
+    "recruitment_wrong_gift_money": {
+      "calls": 8,
+      "by_npc": {
+        "blacksmith_01": [
+          "reject",
+          "reject"
+        ],
+        "priest_01": [
+          "reject",
+          "reject"
+        ],
+        "doctor_01": [
+          "reject",
+          "reject"
+        ],
+        "engineer_01": [
+          "reject",
+          "reject"
+        ]
+      }
+    },
+    "recruitment_wrong_gift_wine": {
+      "calls": 8,
+      "by_npc": {
+        "blacksmith_01": [
+          "reject",
+          "reject"
+        ],
+        "priest_01": [
+          "reject",
+          "reject"
+        ],
+        "doctor_01": [
+          "reject",
+          "reject"
+        ],
+        "engineer_01": [
+          "reject",
+          "reject"
+        ]
+      }
+    }
+  },
+  "behavioral_acceptance": {
+    "applicable": true,
+    "passed": true,
+    "checks": [
+      {
+        "name": "universal_each_round_accepts_0_to_2",
+        "passed": true,
+        "evidence": {
+          "1": 0,
+          "2": 0,
+          "3": 0
+        }
+      },
+      {
+        "name": "high_difficulty_universal_rare",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 0,
+          "cook_01": 0,
+          "gardener_01": 0,
+          "blacksmith_01": 0,
+          "priest_01": 0,
+          "doctor_01": 0,
+          "engineer_01": 0
+        }
+      },
+      {
+        "name": "full_route_each_npc_majority_accept",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 3,
+          "cook_01": 3,
+          "gardener_01": 3,
+          "blacksmith_01": 3,
+          "priest_01": 3,
+          "doctor_01": 3,
+          "engineer_01": 3
+        }
+      },
+      {
+        "name": "full_route_total_clear_majority",
+        "passed": true,
+        "evidence": {
+          "accepts": 21,
+          "calls": 21
+        }
+      },
+      {
+        "name": "wrong_gifts_acceptance_very_low",
+        "passed": true,
+        "evidence": {
+          "accepts": 0,
+          "calls": 16
+        }
+      },
+      {
+        "name": "bruno_known_dining_upgrade_improves_acceptance",
+        "passed": true,
+        "evidence": {
+          "universal": 0,
+          "building_known": 1
+        }
+      },
+      {
+        "name": "unconfirmed_building_claim_not_used_as_fact",
+        "passed": true,
+        "evidence": {
+          "stableman_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "cook_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "gardener_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "blacksmith_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "priest_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "doctor_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          },
+          "engineer_01": {
+            "decision": "reject",
+            "explicitly_unconfirmed": true
+          }
+        }
+      }
+    ]
+  }
+}

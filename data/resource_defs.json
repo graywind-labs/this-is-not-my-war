@@ -1,7 +1,7 @@
 [
   {
     "id": "money",
-    "name": "第纳尔",
+    "name": "金钱",
     "category": "currency",
     "initial_amount": 30,
     "min_amount": 0,
@@ -91,7 +91,7 @@
     "id": "wood",
     "name": "木材",
     "category": "material",
-    "initial_amount": 12,
+    "initial_amount": 8,
     "min_amount": 0,
     "ui_order": 9,
     "warehouse_capacity": {
@@ -185,7 +185,7 @@
   },
   {
     "id": "item_iron_bracers",
-    "name": "铁护腕",
+    "name": "铁护臂",
     "category": "crafted_item",
     "initial_amount": 0,
     "min_amount": 0,
@@ -204,22 +204,12 @@
     "detail_group": "armor"
   },
   {
-    "id": "item_arrow_bundle",
-    "name": "箭束",
-    "category": "crafted_item",
-    "initial_amount": 0,
-    "min_amount": 0,
-    "ui_order": 28,
-    "show_in_main_hud": false,
-    "detail_group": "ammunition"
-  },
-  {
     "id": "item_wall_ballista",
     "name": "弩床",
     "category": "crafted_item",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 29,
+    "ui_order": 28,
     "show_in_main_hud": false,
     "detail_group": "defense_device"
   },
@@ -229,7 +219,7 @@
     "category": "crafted_item",
     "initial_amount": 0,
     "min_amount": 0,
-    "ui_order": 30,
+    "ui_order": 29,
     "show_in_main_hud": false,
     "detail_group": "defense_device"
   }

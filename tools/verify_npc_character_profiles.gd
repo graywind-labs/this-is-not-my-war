@@ -3,14 +3,19 @@ extends SceneTree
 const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
 
 const EXPECTED_IDENTITIES := {
-	"stableman_01": {"name": "托马", "job": "马夫", "keywords": ["马", "马厩", "照料", "草料"]},
-	"cook_01": {"name": "布鲁诺", "job": "厨子", "keywords": ["食堂", "饭", "餐食", "口粮"]},
-	"gardener_01": {"name": "伊沃", "job": "园丁", "keywords": ["菜园", "土壤", "收成", "耕种"]},
-	"blacksmith_01": {"name": "格伦", "job": "铁匠", "keywords": ["铁", "工序", "装备", "修理"]},
-	"veteran_deputy_01": {"name": "艾达", "job": "老兵副官", "keywords": ["风险", "命令", "职责", "安排"]},
-	"priest_01": {"name": "马塞尔", "job": "神父", "keywords": ["祈祷", "弥撒", "信仰", "残酷"]},
-	"doctor_01": {"name": "莉娜", "job": "医生", "keywords": ["伤", "病人", "药", "治疗"]},
-	"engineer_01": {"name": "欧文", "job": "工程师", "keywords": ["结构", "材料", "尺寸", "返工"]}
+	"stableman_01": {"name": "托马", "job": "马夫", "keywords": ["马", "马厩", "照料", "草料"], "appearance": "短粗结实，棕布头带压住短发，方阔胡须围住下巴；棕白粗布衣外罩旧皮背心，在马厩干活时手里总多一把长柄马刷。"},
+	"cook_01": {"name": "布鲁诺", "job": "厨子", "keywords": ["食堂", "饭", "餐食", "口粮"], "appearance": "圆肩敦实，光秃的头顶和蓬密棕须格外显眼；暖红衣袖从浅色围裙两侧露出，下厨时惯用一柄木把铜勺。"},
+	"gardener_01": {"name": "伊沃", "job": "园丁", "keywords": ["菜园", "土壤", "收成", "耕种"], "appearance": "身形瘦长，风吹日晒的脸被赤褐胡须围住，棕土头巾的长尾一直垂到背后；无袖粗布衣配暗绿腰布，下田才扛起长柄铁锄。"},
+	"blacksmith_01": {"name": "格伦", "job": "铁匠", "keywords": ["铁", "工序", "装备", "修理"], "appearance": "宽肩方脸，深棕乱发和厚短须让下颌更显沉重；暗绿短衫的袖口束着棕色护腕，铁锤闲时横收右腰，开炉才握进手里。"},
+	"veteran_deputy_01": {
+		"name": "艾达",
+		"job": "老兵副官",
+		"keywords": ["风险", "命令", "职责", "安排"],
+		"appearance": "赤褐长发从灰蓝头带后高高束起，细长眉眼在正面尤其醒目；蓝灰轻甲贴身利落，双臂护腕没有一处松垮。",
+	},
+	"priest_01": {"name": "马塞尔", "job": "神父", "keywords": ["祈祷", "弥撒", "信仰", "残酷"], "appearance": "圆润的灰白削发冠连着两侧长发，整齐长须衬出年长面孔；暗紫长袍只剩一圈褪色金边，胸前木十字架是最醒目的标记。"},
+	"doctor_01": {"name": "莉娜", "job": "医生", "keywords": ["伤", "病人", "药", "治疗"], "appearance": "赤褐长发在脑后束成一团，两绺发丝贴着清瘦脸颊垂下；冷青蓝长外衣罩住浅色围裙，棕色药包常贴在腰后。"},
+	"engineer_01": {"name": "欧文", "job": "工程师", "keywords": ["结构", "材料", "尺寸", "返工"], "appearance": "短壮的工头轮廓，围巾下露着浓眉和短须，压暗的土色工装被宽皮带拦腰束紧；铜框护目镜平时架在额前，装配时才拉到眼前，双侧工具袋塞着折尺和木楔。"}
 }
 
 const FORBIDDEN_OPAQUE_STYLE_MARKERS: Array[String] = [
@@ -61,6 +66,9 @@ func _init() -> void:
 		if str(npc.get("background_job", "")) != str(expected.get("job", "")):
 			_fail("%s background_job mismatch: %s" % [npc_id, str(npc.get("background_job", ""))])
 			return
+		if expected.has("appearance") and str(npc.get("appearance", "")) != str(expected.get("appearance", "")):
+			_fail("%s appearance no longer matches the current production art" % npc_id)
+			return
 		if str(npc.get("religion", "")) != "天主教":
 			_fail("%s religion must be the concise shared value 天主教" % npc_id)
 			return
@@ -101,6 +109,9 @@ func _init() -> void:
 		var identity: Dictionary = payload.get("target_npc", {}).get("identity", {})
 		if npc_setting != NPCPromptProfile.build_setting(npc):
 			_fail("%s dialogue npc_setting diverged from the shared prompt profile" % npc_id)
+			return
+		if str(npc_setting.get("appearance", "")) != str(npc.get("appearance", "")):
+			_fail("%s dialogue npc_setting lost the profile appearance" % npc_id)
 			return
 		if npc_setting.get("speech_style", "") != speech_style or npc_setting.has("signature_lines"):
 			_fail("%s dialogue npc_setting did not keep the broad voice profile boundary" % npc_id)

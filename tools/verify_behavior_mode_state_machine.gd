@@ -68,8 +68,13 @@ func _init() -> void:
 		push_error("Armed recruited NPC should enter behavior_mode=rally")
 		quit(1)
 		return
-	if not _npc_has_mode_event(memory_system, "stableman_01", "work", "rally"):
-		push_error("Rally mode switch should write npc_mode_changed")
+	if _npc_has_mode_event(memory_system, "stableman_01"):
+		push_error("Runtime rally mode switch must not write npc_mode_changed")
+		quit(1)
+		return
+	var rally_mode_snapshot: Dictionary = npc_system.get_npc_behavior_mode_snapshot("stableman_01")
+	if str(rally_mode_snapshot.get("reason", "")).is_empty():
+		push_error("Runtime behavior snapshot should retain the internal rally reason for GM diagnostics")
 		quit(1)
 		return
 	print("[T1103A] rally mode checked")
@@ -108,7 +113,7 @@ func _init() -> void:
 		push_error("Recruited NPC should enter combat mode on contact")
 		quit(1)
 		return
-	if _npc_has_mode_event(memory_system, "stableman_01", "work", "combat"):
+	if _npc_has_mode_event(memory_system, "stableman_01"):
 		push_error("Work-to-combat should not write npc_mode_changed")
 		quit(1)
 		return
@@ -125,7 +130,7 @@ func _init() -> void:
 		push_error("Combat exit should request plan reevaluation")
 		quit(1)
 		return
-	if _npc_has_mode_event(memory_system, "stableman_01", "combat", "work"):
+	if _npc_has_mode_event(memory_system, "stableman_01"):
 		push_error("Combat-to-work should not write npc_mode_changed")
 		quit(1)
 		return
@@ -198,12 +203,9 @@ func _dict_to_vector3(raw_value: Variant) -> Vector3:
 	)
 
 
-func _npc_has_mode_event(memory_system: Node, npc_id: String, from_mode: String, to_mode: String) -> bool:
+func _npc_has_mode_event(memory_system: Node, npc_id: String) -> bool:
 	for raw_event in memory_system.get_npc_daily_events(npc_id):
 		var event: Dictionary = raw_event
-		if str(event.get("type", "")) != "npc_mode_changed":
-			continue
-		var payload: Dictionary = event.get("payload", {})
-		if str(payload.get("from_mode", "")) == from_mode and str(payload.get("to_mode", "")) == to_mode:
+		if str(event.get("type", "")) == "npc_mode_changed":
 			return true
 	return false

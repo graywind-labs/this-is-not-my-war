@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/characters/GlenArtView.tscn" id="1_ada_base"]
+
+[node name="AdaArtView" instance=ExtResource("1_ada_base")]
+appearance_id = "ada_veteran_deputy_v1"
+outfit_tint = Color(0.24, 0.29, 0.39, 1)
+hair_tint = Color(0.48, 0.45, 0.42, 1)
+show_smith_hammer = false

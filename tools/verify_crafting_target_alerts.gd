@@ -33,8 +33,11 @@ func _init() -> void:
 		if snapshot.is_empty():
 			_fail("Missing crafting alert snapshot for %s" % building_id)
 			return
-		if not bool(snapshot.get("needs_alert", false)) or not bool(snapshot.get("visible", false)):
-			_fail("Empty crafting target should show its alert: %s" % JSON.stringify(snapshot))
+		if not bool(snapshot.get("needs_alert", false)):
+			_fail("Empty crafting target should require its alert: %s" % JSON.stringify(snapshot))
+			return
+		if not str(snapshot.get("label_path", "")).contains("/FormalStationLayout/BuildingRoots/"):
+			_fail("Crafting alert is not anchored to the formal building label: %s" % JSON.stringify(snapshot))
 			return
 		if str(snapshot.get("text", "")) != "!" or str(snapshot.get("tooltip", "")) != ALERT_TOOLTIP:
 			_fail("Crafting alert text or tooltip contract mismatch: %s" % JSON.stringify(snapshot))
@@ -49,7 +52,11 @@ func _init() -> void:
 			_fail("Crafting alert is not visually red for %s: %s" % [building_id, font_color])
 			return
 		var label_screen_position := camera.unproject_position(label.global_position)
-		if alert.position.y + alert.size.y * alert.scale.y * 0.5 >= label_screen_position.y:
+		var label_on_screen := Rect2(Vector2.ZERO, Vector2(1152.0, 648.0)).has_point(label_screen_position)
+		if alert.visible != label_on_screen:
+			_fail("Crafting alert visibility does not follow its formal label: %s" % JSON.stringify(snapshot))
+			return
+		if label_on_screen and alert.position.y + alert.size.y * alert.scale.y * 0.5 >= label_screen_position.y:
 			_fail("Crafting alert is not positioned above the %s name label: alert=%s size=%s label=%s" % [
 				building_id, alert.position, alert.size, label_screen_position
 			])
@@ -59,28 +66,12 @@ func _init() -> void:
 	if blacksmith_alert == null:
 		_fail("Blacksmith alert button is missing")
 		return
-	var alert_click_position := blacksmith_alert.position + blacksmith_alert.size * blacksmith_alert.scale * 0.5
-	var motion := InputEventMouseMotion.new()
-	motion.position = alert_click_position
-	motion.global_position = alert_click_position
-	root.push_input(motion)
-	await process_frame
-	if root.gui_get_hovered_control() != blacksmith_alert:
-		_fail("Mouse hover did not resolve to the blacksmith crafting alert button")
-		return
-	var press := InputEventMouseButton.new()
-	press.position = alert_click_position
-	press.global_position = alert_click_position
-	press.button_index = MOUSE_BUTTON_LEFT
-	press.pressed = true
-	root.push_input(press)
-	var release := InputEventMouseButton.new()
-	release.position = alert_click_position
-	release.global_position = alert_click_position
-	release.button_index = MOUSE_BUTTON_LEFT
-	release.pressed = false
-	root.push_input(release)
-	await process_frame
+	# Headless viewport mouse hit-testing is platform-dependent. The geometry and
+	# visibility contract is asserted above; emit the same Button signal here to
+	# verify the stable semantic click path into BuildingSystem and BuildingPanel.
+	blacksmith_alert.pressed.emit()
+	for _frame in range(8):
+		await process_frame
 	var panel_snapshot: Dictionary = building_panel.debug_get_crafting_panel_snapshot()
 	if not building_panel.visible or str(panel_snapshot.get("building_id", "")) != "blacksmith":
 		_fail("Clicking the blacksmith alert did not open the matching building panel")
@@ -88,19 +79,44 @@ func _init() -> void:
 	if str(building_system.get_selected_building_id()) != "blacksmith":
 		_fail("Crafting alert click did not use BuildingSystem selection state")
 		return
+	if not bool(panel_snapshot.get("target_popup_visible", false)):
+		_fail("Clicking the blacksmith alert did not expand the crafting target popup: %s" % JSON.stringify(panel_snapshot))
+		return
+	if not bool(panel_snapshot.get("missing_target_alert_visible", false)):
+		_fail("Empty crafting target does not show the matching panel alert: %s" % JSON.stringify(panel_snapshot))
+		return
+	var target_select := building_panel.get_node_or_null("%CraftingTargetSelect") as OptionButton
+	if target_select == null:
+		target_select = building_panel.find_child("CraftingTargetSelect", true, false) as OptionButton
+	var panel_alert := building_panel.find_child("CraftingTargetMissingAlert", true, false) as Button
+	if target_select == null or panel_alert == null:
+		_fail("Crafting target selector or its missing-target alert is absent")
+		return
+	if panel_alert.text != "!" or panel_alert.tooltip_text != ALERT_TOOLTIP:
+		_fail("Panel crafting alert text or tooltip does not match the world alert")
+		return
+	var panel_alert_color := panel_alert.get_theme_color("font_color")
+	if panel_alert_color.r <= panel_alert_color.g or panel_alert_color.r <= panel_alert_color.b:
+		_fail("Panel crafting alert is not visually red: %s" % panel_alert_color)
+		return
+	target_select.get_popup().hide()
 
 	var selected: Dictionary = crafting_system.set_target("blacksmith", "craft_iron_helmet", false)
 	if not bool(selected.get("ok", false)):
 		_fail("Could not select blacksmith fixture target: %s" % JSON.stringify(selected))
 		return
 	await process_frame
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
 	var hidden_snapshot: Dictionary = presenter.debug_get_alert_snapshot("blacksmith")
 	var workshop_snapshot: Dictionary = presenter.debug_get_alert_snapshot("workshop")
 	if bool(hidden_snapshot.get("needs_alert", true)) or bool(hidden_snapshot.get("visible", true)):
 		_fail("Selecting a target did not hide the matching alert: %s" % JSON.stringify(hidden_snapshot))
 		return
-	if not bool(workshop_snapshot.get("needs_alert", false)) or not bool(workshop_snapshot.get("visible", false)):
+	if not bool(workshop_snapshot.get("needs_alert", false)):
 		_fail("Selecting the blacksmith target incorrectly changed the workshop alert")
+		return
+	if bool(panel_snapshot.get("missing_target_alert_visible", true)):
+		_fail("Selecting a target did not hide the panel alert: %s" % JSON.stringify(panel_snapshot))
 		return
 
 	var cleared: Dictionary = crafting_system.set_target("blacksmith", "", false)
@@ -109,8 +125,28 @@ func _init() -> void:
 		return
 	await process_frame
 	var restored_snapshot: Dictionary = presenter.debug_get_alert_snapshot("blacksmith")
-	if not bool(restored_snapshot.get("needs_alert", false)) or not bool(restored_snapshot.get("visible", false)):
+	if not bool(restored_snapshot.get("needs_alert", false)):
 		_fail("Clearing the target did not restore the alert: %s" % JSON.stringify(restored_snapshot))
+		return
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
+	if not bool(panel_snapshot.get("missing_target_alert_visible", false)):
+		_fail("Clearing the target did not restore the panel alert: %s" % JSON.stringify(panel_snapshot))
+		return
+
+	var workshop_alert := presenter.get_node_or_null("WorkshopCraftingTargetAlert") as Button
+	if workshop_alert == null:
+		_fail("Workshop alert button is missing")
+		return
+	workshop_alert.pressed.emit()
+	for _frame in range(8):
+		await process_frame
+	panel_snapshot = building_panel.debug_get_crafting_panel_snapshot()
+	if (
+		str(building_system.get_selected_building_id()) != "workshop"
+		or str(panel_snapshot.get("building_id", "")) != "workshop"
+		or not bool(panel_snapshot.get("target_popup_visible", false))
+	):
+		_fail("Clicking the workshop alert did not select it and expand its target popup: %s" % JSON.stringify(panel_snapshot))
 		return
 
 	print("Crafting target alert verification passed.")

@@ -1,0 +1,24 @@
+{
+  "schema_version": "combat_vfx_v1",
+  "frame_limits": {
+    "total": 10,
+    "trail": 3,
+    "impact": 4,
+    "debris": 2,
+    "dust": 2
+  },
+  "active_limits": {
+    "transient": 28,
+    "particles": 12,
+    "blood_decals": 14,
+    "all_decals": 22
+  },
+  "lifetimes": {
+    "trail_seconds": 0.16,
+    "impact_seconds": 0.22,
+    "particles_seconds": 0.7,
+    "blood_decal_seconds": 18.0,
+    "dust_interval_seconds": 0.34
+  },
+  "max_enemy_dust_sources": 6
+}

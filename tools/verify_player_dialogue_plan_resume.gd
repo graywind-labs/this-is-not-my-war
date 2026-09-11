@@ -85,6 +85,7 @@ func _init() -> void:
 	const NPC_ID := "cook_01"
 	time_system.set_current_time(1, 8, 0, 0)
 	time_system.set_time_scale(0.0)
+	time_system.set_paused(false)
 	daily_plan_system.set_auto_execution_enabled(false)
 	if not npc_system.debug_enter_location_immediately(NPC_ID, "dining_hall"):
 		_fail("Could not place cook in dining hall")
@@ -93,6 +94,7 @@ func _init() -> void:
 		"current_action": "idle",
 		"last_action_result": "verify_dialogue_judgement_ready"
 	})
+	_set_debug_move_speed(NPC_ID, 5.0)
 	if not daily_plan_system.set_npc_daily_plan(NPC_ID, _make_work_plan(), false, "verify_dialogue_judgement"):
 		_fail("Could not install work plan")
 		return
@@ -114,6 +116,9 @@ func _init() -> void:
 	var first_execute: Dictionary = daily_plan_system.execute_current_plan_for_npc(NPC_ID, true)
 	if not bool(first_execute.get("ok", false)) or str(action_system.get_runtime_action_id(NPC_ID)) != "work_dining_hall":
 		_fail("Initial current-hour plan did not start: %s" % JSON.stringify(first_execute))
+		return
+	if not await _wait_for_active_action(action_system, NPC_ID, "work_dining_hall"):
+		_fail("Cook did not physically reach the dining-hall workstation before dialogue")
 		return
 
 	var dialogue_result: Dictionary = dialog_system.start_player_dialogue(NPC_ID)
@@ -229,6 +234,9 @@ func _init() -> void:
 		or str(action_system.get_runtime_action_id(NPC_ID)) != "work_dining_hall"
 	):
 		_fail("Could not start the old-hour action for the cross-hour case: %s" % JSON.stringify(cross_hour_old_execute))
+		return
+	if not await _wait_for_active_action(action_system, NPC_ID, "work_dining_hall"):
+		_fail("Cook did not physically resume the old-hour dining work before cross-hour dialogue")
 		return
 	dialogue_result = dialog_system.start_player_dialogue(NPC_ID)
 	if not bool(dialogue_result.get("ok", false)):
@@ -348,6 +356,33 @@ func _apply_completed_turn(dialog_system: Node, npc_id: String, player_text: Str
 		_fail("Could not apply completed player dialogue turn: %s" % JSON.stringify(apply_result))
 		return false
 	return true
+
+
+func _set_debug_move_speed(npc_id: String, speed: float) -> void:
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	if npc_root == null:
+		return
+	for npc_node in npc_root.get_children():
+		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
+			npc_node.move_speed = speed
+			return
+
+
+func _wait_for_active_action(
+	action_system: Node,
+	npc_id: String,
+	action_id: String,
+	max_frames: int = 2400
+) -> bool:
+	for _frame in range(max_frames):
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == action_id
+		):
+			return true
+		await physics_frame
+	return false
 
 
 func _fail(message: String) -> void:

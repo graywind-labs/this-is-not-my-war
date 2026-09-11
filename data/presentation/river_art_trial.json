@@ -1,0 +1,24 @@
+{
+  "schema_version": "river_art_trial_v1",
+  "deep_color": "#153b40",
+  "shallow_color": "#467a70",
+  "foam_color": "#8fa99c",
+  "wet_color": "#343e39",
+  "gravel_color": "#656454",
+  "rock_color": "#62665a",
+  "flow_speed": 2.8,
+  "ripple_strength": 0.23,
+  "shoreline_seed": 3661,
+  "shoreline_step": 1.2,
+  "shoreline_max_inset": 2.2,
+  "shore_rock_seed": 366,
+  "shore_rock_groups": [[20, -1], [56, 1], [94, -1], [138, 1], [176, -1], [228, 1], [280, -1]],
+  "shore_rock_radius": [0.85, 1.65],
+  "foam_strength": 0.78,
+  "views": {
+    "overview": {"target": [-97, -0.5, 85], "offset": [40, 64, 70]},
+    "close": {"target": [-96, -1, 93], "offset": [14, 16, 22]},
+    "side": {"target": [-94, -0.6, 143], "offset": [22, 10, -29]},
+    "wide": {"target": [-93, 0, 45], "offset": [90, 145, 160]}
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "world_units": {
+    "godot_units_per_meter": 1.0,
+    "up_axis": "+Y",
+    "forward_axis": "-Z",
+    "import_scale": 1.0
+  },
+  "character": {
+    "reference_height_m": 1.82,
+    "acceptable_height_range_m": [1.72, 1.92],
+    "feet_on_ground_y_m": 0.0
+  },
+  "building": {
+    "module_grid_m": 2.0,
+    "storey_height_m": 3.125,
+    "wall_thickness_m": 0.406,
+    "reference_door": {
+      "leaf_width_m": 1.12,
+      "height_m": 2.318,
+      "minimum_navigation_clearance_m": 0.9
+    }
+  },
+  "materials": {
+    "texture_filter": "linear_mipmap_anisotropic",
+    "mipmaps": true,
+    "shadows": true,
+    "palette": {
+      "ground": "#505447",
+      "plaster": "#C8B58F",
+      "timber": "#5A3928",
+      "roof": "#7B4938",
+      "metal": "#586068",
+      "selection": "#EBCB62",
+      "character_rim": "#80D8FF"
+    }
+  },
+  "scene_inheritance": {
+    "imported_sources_are_read_only": true,
+    "wrapper_scene_required_for_gameplay": true,
+    "material_changes_use_surface_override_or_overlay": true
+  },
+  "performance_targets": {
+    "sandbox_fps": 60,
+    "sandbox_draw_calls_soft_limit": 150,
+    "sandbox_primitives_soft_limit": 250000
+  }
+}

@@ -139,8 +139,8 @@ func _init() -> void:
 	if end_button.text != "关闭" or not str(end_button.tooltip_text).contains("不会打断"):
 		_fail("Observer UI close action is not clearly read-only")
 		return
-	if not round_label.text.contains("轮次：0") or not round_label.text.contains("无硬上限") or not round_label.text.contains("第 3 轮起建议收尾"):
-		_fail("Observer UI did not show current round and soft-round guidance before the first reply")
+	if round_label.visible or not round_label.text.is_empty():
+		_fail("Unlimited observer dialogue should not show a round field")
 		return
 
 	var send_result: Dictionary = dialog_system.send_npc_message("诊所的工位能先让我用吗？", true)
@@ -151,7 +151,7 @@ func _init() -> void:
 	if fake_bridge.requests.size() != 1 or not bool(fake_bridge.requests[0].get("options", {}).get("requires_time_slowdown", false)):
 		_fail("Autonomous dialogue round did not explicitly request TimeSystem slowdown")
 		return
-	if not status_label.text.contains("第 1 轮 LLM 回复") or not history_text.text.contains("诊所的工位"):
+	if status_label.text != "正在等待 NPC 回复……" or not history_text.text.contains("诊所的工位"):
 		_fail("Observer UI did not expose the pending opening line and wait state")
 		return
 
@@ -178,7 +178,7 @@ func _init() -> void:
 	if str(dialog_panel.get("_displayed_dialogue_id")) != active_dialogue_id:
 		_fail("Reopened observer UI did not retain the active autonomous dialogue id")
 		return
-	if not status_label.text.contains("第 1 轮 LLM 回复") or not history_text.text.contains("诊所的工位"):
+	if status_label.text != "正在等待 NPC 回复……" or not history_text.text.contains("诊所的工位"):
 		_fail("Reopened observer UI did not restore the latest in-flight conversation state")
 		return
 
@@ -191,8 +191,8 @@ func _init() -> void:
 	if not bool(fake_bridge.requests[1].get("options", {}).get("requires_time_slowdown", false)):
 		_fail("Autonomous dialogue continuation did not request TimeSystem slowdown")
 		return
-	if not round_label.text.contains("轮次：1") or not round_label.text.contains("无硬上限") or not history_text.text.contains("第 1 轮回复"):
-		_fail("Observer UI did not live-refresh after the first completed round")
+	if round_label.visible or not round_label.text.is_empty() or not history_text.text.contains("第 1 轮回复"):
+		_fail("Observer UI did not live-refresh while keeping unlimited rounds hidden")
 		return
 
 	var end_deadline := Time.get_ticks_msec() + 2000

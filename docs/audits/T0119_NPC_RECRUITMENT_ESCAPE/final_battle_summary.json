@@ -1,0 +1,176 @@
+{
+  "suite": "final_battle",
+  "generated_at_utc": "2026-08-10T08:03:15.731551+00:00",
+  "prompt_sha256": {
+    "data/prompts/dialogue_system_prompt.txt": "f16adaa023da9c40f9b68b59ce18a56d8118435354d74549b77fbb4ee8405c62",
+    "data/prompts/daily_plan_system_prompt.txt": "746f891a2b0159ec50def5b8d2950e531be00f1d685c21088f5641d376f35e61",
+    "data/prompts/plan_revision_judgement_system_prompt.txt": "5c374cfbeba11a286af8e7ecd51aa5ce09b2393733fa163625cd5915e0c38945",
+    "data/prompts/plan_revision_system_prompt.txt": "bbb2626575e64e71690550e9084b2f83497d46a178e87c953dd7bebb836d9f75",
+    "data/prompts/battle_judgement_system_prompt.txt": "42bb5bbbf0ea3e36a2a9497e185bc1fb9c5a992d74669bf9f1bc026245ec1eea",
+    "data/prompts/daily_reflection_system_prompt.txt": "19433b3534e56e0e3de603b9bc4828b2d9485f3e809b75ccb58ecdbac6499e2b"
+  },
+  "calls": 32,
+  "http_successes": 32,
+  "real_provider_successes": 32,
+  "input_tokens": 288432,
+  "output_tokens": 3074,
+  "estimated_cost": 0.22069584,
+  "universal_recruitment": {
+    "accepts": 0,
+    "rejects": 0,
+    "by_npc": {
+      "stableman_01": [],
+      "cook_01": [],
+      "gardener_01": [],
+      "blacksmith_01": [],
+      "priest_01": [],
+      "doctor_01": [],
+      "engineer_01": []
+    }
+  },
+  "daily_pressure": {
+    "cook_01": [],
+    "stableman_01": [],
+    "doctor_01": [],
+    "engineer_01": []
+  },
+  "ada_battle_pressure": [],
+  "by_category": {
+    "battle_normal": {
+      "calls": 16,
+      "by_npc": {
+        "stableman_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "cook_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "gardener_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "blacksmith_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "veteran_deputy_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "priest_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "doctor_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "engineer_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ]
+      }
+    },
+    "battle_pressure": {
+      "calls": 16,
+      "by_npc": {
+        "stableman_01": [
+          "escape_station",
+          "escape_station"
+        ],
+        "cook_01": [
+          "escape_station",
+          "escape_station"
+        ],
+        "gardener_01": [
+          "escape_station",
+          "continue_fighting"
+        ],
+        "blacksmith_01": [
+          "escape_station",
+          "escape_station"
+        ],
+        "veteran_deputy_01": [
+          "continue_fighting",
+          "continue_fighting"
+        ],
+        "priest_01": [
+          "escape_station",
+          "escape_station"
+        ],
+        "doctor_01": [
+          "escape_station",
+          "escape_station"
+        ],
+        "engineer_01": [
+          "escape_station",
+          "escape_station"
+        ]
+      }
+    }
+  },
+  "behavioral_acceptance": {
+    "applicable": true,
+    "passed": true,
+    "checks": [
+      {
+        "name": "normal_group_mostly_stable",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 0,
+          "cook_01": 0,
+          "gardener_01": 0,
+          "blacksmith_01": 0,
+          "veteran_deputy_01": 0,
+          "priest_01": 0,
+          "doctor_01": 0,
+          "engineer_01": 0
+        }
+      },
+      {
+        "name": "pressure_risk_ordering",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 2,
+          "cook_01": 2,
+          "gardener_01": 1,
+          "blacksmith_01": 2,
+          "veteran_deputy_01": 0,
+          "priest_01": 2,
+          "doctor_01": 2,
+          "engineer_01": 2
+        }
+      },
+      {
+        "name": "ivo_pressure_remains_low",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 2,
+          "cook_01": 2,
+          "gardener_01": 1,
+          "blacksmith_01": 2,
+          "veteran_deputy_01": 0,
+          "priest_01": 2,
+          "doctor_01": 2,
+          "engineer_01": 2
+        }
+      },
+      {
+        "name": "high_risk_each_can_escape",
+        "passed": true,
+        "evidence": {
+          "stableman_01": 2,
+          "cook_01": 2,
+          "gardener_01": 1,
+          "blacksmith_01": 2,
+          "veteran_deputy_01": 0,
+          "priest_01": 2,
+          "doctor_01": 2,
+          "engineer_01": 2
+        }
+      }
+    ]
+  }
+}

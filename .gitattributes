@@ -1,2 +1,17 @@
-# Normalize EOL for all files that Git considers text files.
+# Normalize line endings for text files across development machines.
 * text=auto eol=lf
+
+# Runtime art and audio are binary and should not bloat normal Git history.
+assets/**/*.glb filter=lfs diff=lfs merge=lfs -text
+assets/**/*.fbx filter=lfs diff=lfs merge=lfs -text
+assets/**/*.png filter=lfs diff=lfs merge=lfs -text
+assets/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+assets/**/*.webp filter=lfs diff=lfs merge=lfs -text
+assets/**/*.wav filter=lfs diff=lfs merge=lfs -text
+assets/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+
+# Preserve editable/reference audio sources across devices without bloating Git history.
+art_source/audio/**/*.wav filter=lfs diff=lfs merge=lfs -text
+art_source/audio/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+art_source/audio/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+art_source/audio/**/*.zip filter=lfs diff=lfs merge=lfs -text

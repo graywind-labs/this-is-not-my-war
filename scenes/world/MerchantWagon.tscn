@@ -1,0 +1,82 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/MerchantWagon.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/presentation/props/FormalMerchantWagonArtView.gd" id="2_art"]
+[ext_resource type="Texture2D" path="res://assets/2d/ui/merchant_trade_marker.svg" id="3_trade_marker"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_body"]
+radius = 1.38
+height = 4.0
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_interaction"]
+radius = 1.46
+height = 4.1
+
+[sub_resource type="BoxShape3D" id="BoxShape_horses"]
+size = Vector3(2.62, 1.9, 2.7)
+
+[sub_resource type="BoxShape3D" id="BoxShape_carriage"]
+size = Vector3(2.65, 2.65, 4.15)
+
+[sub_resource type="BoxShape3D" id="BoxShape_trade_marker"]
+size = Vector3(1.8, 1.35, 0.35)
+
+[node name="MerchantWagon" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 3
+script = ExtResource("1_script")
+actor_profile_id = "merchant_wagon"
+
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 1.35, -0.45)
+shape = SubResource("CapsuleShape_body")
+
+[node name="HorseBodyCollision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.96, -4.45)
+shape = SubResource("BoxShape_horses")
+
+[node name="CarriageBodyCollision" type="CollisionShape3D" parent="."]
+position = Vector3(0, 1.3, 0.88)
+shape = SubResource("BoxShape_carriage")
+
+[node name="InteractionArea" type="Area3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+monitoring = false
+input_ray_pickable = false
+
+[node name="InteractionCollision" type="CollisionShape3D" parent="InteractionArea"]
+position = Vector3(0, 1.35, -0.45)
+shape = SubResource("CapsuleShape_interaction")
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.35
+target_desired_distance = 0.3
+avoidance_enabled = true
+radius = 1.45
+height = 2.85
+neighbor_distance = 5.5
+max_neighbors = 8
+
+[node name="VisualRoot" type="Node3D" parent="."]
+script = ExtResource("2_art")
+
+[node name="TradeBubble" type="Node3D" parent="."]
+position = Vector3(0, 4.02, 0.12)
+visible = false
+
+[node name="Marker" type="Sprite3D" parent="TradeBubble"]
+texture = ExtResource("3_trade_marker")
+pixel_size = 0.009
+billboard = 1
+no_depth_test = true
+render_priority = 3
+
+[node name="TradeBubbleArea" type="Area3D" parent="TradeBubble"]
+collision_layer = 4
+collision_mask = 0
+input_ray_pickable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="TradeBubble/TradeBubbleArea"]
+shape = SubResource("BoxShape_trade_marker")
+disabled = true

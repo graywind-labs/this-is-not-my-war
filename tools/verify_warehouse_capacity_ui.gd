@@ -17,6 +17,9 @@ const LIMITED_CAPACITIES_LEVEL_2 := {
 	"stone": 180,
 	"iron": 180
 }
+const LIMITED_RESOURCE_ORDER: Array[String] = ["grain", "meal", "wine", "wood", "stone", "iron"]
+const NORMAL_FILL := "71865aff"
+const DANGER_FILL := "a7433bff"
 
 
 func _init() -> void:
@@ -85,36 +88,89 @@ func _init() -> void:
 		true,
 		false
 	) as Label
-	if capacity_label == null or not capacity_label.visible:
-		_fail("Warehouse building panel did not show its capacity line")
+	var storage_section := building_panel.find_child("WarehouseStorageSection", true, false) as VBoxContainer
+	var storage_list := building_panel.find_child("WarehouseStorageList", true, false) as VBoxContainer
+	if capacity_label == null or storage_section == null or storage_list == null or not storage_section.visible:
+		_fail("Warehouse building panel did not show its storage section")
 		return
-	for expected_fragment in [
-		"储存上限：",
-		"粮食 120",
-		"餐食 120",
-		"酒 60",
-		"木材 120",
-		"石料 120",
-		"铁 120"
-	]:
-		if not capacity_label.text.contains(expected_fragment):
-			_fail("Warehouse capacity line missed %s: %s" % [
-				expected_fragment,
-				capacity_label.text
-			])
+	if capacity_label.text != "储存状况" or capacity_label.text.contains("储存上限"):
+		_fail("Warehouse storage heading mismatch: %s" % capacity_label.text)
+		return
+	var level_1_snapshot: Array = resource_system.get_warehouse_capacity_snapshot()
+	if storage_list.get_child_count() != LIMITED_RESOURCE_ORDER.size():
+		_fail("Warehouse storage list should contain exactly six resource rows")
+		return
+	for index in LIMITED_RESOURCE_ORDER.size():
+		var resource_id := LIMITED_RESOURCE_ORDER[index]
+		var item: Dictionary = level_1_snapshot[index]
+		var row := building_panel.find_child("WarehouseStorageRow_%s" % resource_id, true, false) as VBoxContainer
+		var storage_label := building_panel.find_child("WarehouseStorageLabel_%s" % resource_id, true, false) as Label
+		var progress := building_panel.find_child("WarehouseStorageProgress_%s" % resource_id, true, false) as ProgressBar
+		var fill := progress.get_theme_stylebox("fill") as StyleBoxFlat if progress != null else null
+		if (
+			row == null
+			or storage_label == null
+			or progress == null
+			or row.get_index() != index
+			or storage_label.text != "%s %d/%d" % [str(item.get("name", "")), int(item.get("amount", 0)), int(item.get("capacity", 0))]
+			or int(progress.value) != int(item.get("amount", 0))
+			or int(progress.max_value) != int(item.get("capacity", 0))
+			or bool(progress.get_meta("danger_state", true))
+			or fill == null
+			or fill.bg_color.to_html(true) != NORMAL_FILL
+		):
+			_fail("Warehouse storage row mismatch: %s" % resource_id)
 			return
+
+	var grain_progress := building_panel.find_child("WarehouseStorageProgress_grain", true, false) as ProgressBar
+	var grain_storage_label := building_panel.find_child("WarehouseStorageLabel_grain", true, false) as Label
+	if not bool(resource_system.add_resource("grain", 96 - grain_before)):
+		_fail("Failed to set grain to the near-full threshold")
+		return
+	await process_frame
+	var grain_fill := grain_progress.get_theme_stylebox("fill") as StyleBoxFlat
+	if grain_storage_label.text != "粮食 96/120" or not bool(grain_progress.get_meta("danger_state", false)) or grain_fill == null or grain_fill.bg_color.to_html(true) != DANGER_FILL:
+		_fail("Warehouse storage bar did not turn red at 80 percent")
+		return
+	if not bool(resource_system.add_resource("grain", -1)):
+		_fail("Failed to lower grain below the near-full threshold")
+		return
+	await process_frame
+	grain_fill = grain_progress.get_theme_stylebox("fill") as StyleBoxFlat
+	if grain_storage_label.text != "粮食 95/120" or bool(grain_progress.get_meta("danger_state", true)) or grain_fill == null or grain_fill.bg_color.to_html(true) != NORMAL_FILL:
+		_fail("Warehouse storage bar did not return to green below 80 percent")
+		return
+	if not bool(resource_system.add_resource("grain", grain_before - 95)):
+		_fail("Failed to restore grain after storage-bar verification")
+		return
+	await process_frame
+
+	building_panel.show_building("main_hall")
+	await process_frame
+	if storage_section.visible:
+		_fail("Warehouse storage section remained visible for another building")
+		return
+	building_panel.show_building("warehouse")
+	await process_frame
 
 	var grain_label := hud.find_child("GrainResourceLabel", true, false) as Label
 	var wine_label := hud.find_child("WineResourceLabel", true, false) as Label
 	var money_label := hud.find_child("MoneyResourceLabel", true, false) as Label
+	var grain_icon := hud.get_node_or_null("ResourceStrip/GrainResourceItem/Icon") as TextureRect
+	var wine_icon := hud.get_node_or_null("ResourceStrip/WineResourceItem/Icon") as TextureRect
+	var money_icon := hud.get_node_or_null("ResourceStrip/MoneyResourceItem/Icon") as TextureRect
 	if (
 		grain_label == null
 		or wine_label == null
 		or money_label == null
-		or grain_label.tooltip_text != "仓库储存上限：120"
-		or wine_label.tooltip_text != "仓库储存上限：60"
-		or not money_label.tooltip_text.is_empty()
-		or grain_label.mouse_filter != Control.MOUSE_FILTER_STOP
+		or grain_icon == null
+		or wine_icon == null
+		or money_icon == null
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：120"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：60"
+		or money_icon.tooltip_text != "金钱"
+		or grain_icon.mouse_filter != Control.MOUSE_FILTER_STOP
+		or grain_label.mouse_filter != Control.MOUSE_FILTER_IGNORE
 	):
 		_fail("Top-left resource hover capacity hints are incomplete")
 		return
@@ -132,17 +188,18 @@ func _init() -> void:
 	if not _verify_capacities(resource_system, LIMITED_CAPACITIES_LEVEL_2):
 		return
 	if (
-		not capacity_label.text.contains("粮食 180")
-		or not capacity_label.text.contains("酒 90")
-		or grain_label.tooltip_text != "仓库储存上限：180"
-		or wine_label.tooltip_text != "仓库储存上限：90"
+		grain_storage_label.text != "粮食 %d/180" % grain_before
+		or int(grain_progress.max_value) != 180
+		or str((building_panel.find_child("WarehouseStorageLabel_wine", true, false) as Label).text) != "酒 0/90"
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：180"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：90"
 	):
 		_fail("Warehouse panel or HUD hover hints did not refresh after the upgrade")
 		return
 
 	print(
 		"Warehouse capacity authority and UI verification passed: "
-		+ "six limited resources, atomic overflow rejection, level-1/2 panel line, "
+		+ "six limited resources, per-resource storage bars, 80-percent warning, level-1/2 refresh, "
 		+ "and top-left hover hints."
 	)
 	quit(0)

@@ -1,5 +1,528 @@
 # DATA_SCHEMA.md
 
+## T0396 天体阴影表现配置
+
+- `data/presentation/environment_art.json.celestial_cycle.directional_shadow_mode` 是表现配置字符串，允许 `orthogonal / parallel_2_splits / parallel_4_splits`；未知或缺失值兼容回退到 `parallel_4_splits`。
+- 当前生产值为 `parallel_2_splits`。它只决定 DirectionalLight3D 级联模式；`directional_shadow_max_distance=120`、淡出、边界混合、分割值、日月轨迹和唯一阴影权属分别沿用原字段/逻辑。
+- 该字段不进入存档、战斗、碰撞、导航、伤害或 AI Schema。性能实验开关只存在于基准工具，不写入正式数据。
+
+## T1601A–T1603 语音预处理与输入限制数据合同（已实施至 Mock 闭环）
+
+T1604 的 11 条真实矩阵再次通过 `VoiceAnalyzeResponse` 校验：Provider 固定为 `alibaba_dashscope`、模型为 `qwen3-asr-flash`、`model_fallback_used=false`，情绪只落入原生七类或 `none`；usage 检查拒绝 `audio / audio_base64 / api_key / authorization` 字段。本轮未修改 Schema。
+
+- `data/dialogue_input_config.json` 唯一保存 `player_message_max_characters=300`、`voice_recording_max_seconds=30`、`voice_upload_max_bytes=6291456`；API Key 不进入数据文件。
+- `POST /voice/analyze` 已实现 multipart 合同：`audio`、`request_id`、`npc_id`、`dialogue_id`、可选 `locale`。
+- 成功响应固定包含 `ok`、request / dialogue id、`transcript`、`emotion`、`emotion_label`、`emotion_applied`、时长及 Provider 来源字段。
+- `emotion` 仅允许 `neutral / happy / sad / disgusted / angry / fearful / surprised / none`；未知或缺失值归一化为 `none`，不得自造“低沉 / 急促 / 嘲讽”。
+- 该响应只供 UI 生成普通草稿，不写入 NPCDialogueRequest 新字段，不新增事件类型。最终发送后仍由既有 `dialogue_turn.payload.text` 保存玩家实际发出的完整文字。
+- 错误合同与完整 JSON 示例见 `docs/VOICE_INPUT_AND_EMOTION.md`。
+- `DialogSystem.send_player_message()` 的超限失败固定为 `error_code=input_too_long`，并返回 `max_characters=300` 与去首尾空白后的 `actual_characters`；校验发生在草稿激活、历史追加或请求发起前。
+
+## T0350 CombatProgression 与成长余量
+
+- `data/combat_progression.json` 使用 `combat_progression_v1`：`weapon_damage_per_skill_point=50`、`riding_damage_per_skill_point=100`、`kill_total_experience=1`。`count_actual_hp_damage_only / count_overkill_damage / defense_device_grants_npc_growth / meteor_grants_npc_growth / horse_collision_grants_npc_growth` 明确记录来源与实际伤害合同。
+- `NPCProfile.progression.combat_damage_remainders` 是 `{剑盾, 长杆, 弓, 弩, 骑术: non_negative_int}`。它只保存不足下一熟练度整数点的实伤余量，不是 `skill_experience`；缺失旧字段按 0 归一化，技能封顶时对应余量归零。
+- 正式空间检查点的 actor 可选增加 `growth.skills / growth.progression`，用于保存技能、总经验、未分配技能点、训练经验和战斗伤害余量；旧检查点无该块时保持当前档案值，兼容载入。
+- `data/mount_defs.json` 增加 `riding_move_speed_bonus_at_100` 与 `riding_attack_speed_bonus_at_100`，均表示骑术 100 时的额外乘算比例，不包含坐骑自身固定倍率。
+
+## T0342 Merchant daily stock 与批量交易
+
+- `data/merchant_defs.json.buy_offers[]` 在既有 `resource_id / unit_price` 外增加正整数 `daily_stock_min / daily_stock_max`，且 `min <= max`。每个游戏日第一次开始到访时，MerchantSystem 为每项可购资源在闭区间内抽取一次整数，保存为 `_daily_stock`；`stock_visit_day` 标识该库存所属日。
+- `get_market_snapshot()` 增加 `daily_stock / stock_visit_day`。空间检查点升级为 `formal_merchant_spatial_checkpoint_v2` 并保存这两个字段；载入 v1 时按当前日补生成一次兼容库存，不修改既有路线 / 马车运动字段。
+- `execute_trade_batch(direction, amounts)` 的 `amounts` 是 `{resource_id: positive_int}`。提交前统一校验方向、报价、玩家余额 / 库存、行商库存与仓库批量容量；任一项失败时所有资源、金钱、行商库存和成功事件均保持不变。
+- 成功的 `merchant_trade_completed.payload` 保留既有单项兼容字段，并增加 `lines[] / line_count / merchant_stock_after`。`lines[]` 每项包含 `resource_id / resource_name / amount / unit_price / line_total / resource_delta`；多项交易的摘要按资源种类数与总价表达，不让 UI 或记忆层重做结算。
+
+## T0314 Crafting pending outputs（运行时）
+
+`CraftingSystem.pending_outputs` 是按建筑保存的运行时映射：`{building_id: {item_resource_id: positive_int}}`。仅支持 `blacksmith / workshop`，具体键继续使用配方的 `output_item_id`；它不是 ResourceSystem 数量、不是配方配置，也不进入 BuildingSystem `special_state`。项目快照只读增加 `pending_outputs / pending_output_total / target_pending_amount`，原 `stock_amount` 仍表示正式库存。
+
+最终制造阶段结果固定同时包含 `output_resources={}` 与 `pending_output_resources={item_id: amount}`；普通工作已正式入库的产出仍只使用 `output_resources`。`work_completed` 的既有必填字段不删，制造事件额外允许 `pending_output_resources`，消费者必须按“已制成、待收取”解释。收取结果使用 `collected_resources / remaining_pending_outputs`，一次调用要么全部正式入库并扣减对应快照，要么暂存原样保留。
+
+## T0299 行为模式与事件 Schema 边界
+
+`npc_mode_changed` 已退出正式事件类型。行为模式的 previous / current / reason 只属于 NPC 运行态与 GM 诊断快照；事件 Schema 只保留警铃、集结、避战、攻击、伤害、昏迷、复苏和逃离等具体事实。失败 / 计划的 `payload.reason / payload.summary` 与事件摘要若收到内部英文标识，统一写成稳定中文兜底。
+
+## T0289 DialogueEmotion
+
+`PlayerNPCDialogueResponse`、`NPCNPCDialogueResponse` 与 `EscapeInterventionDialogueResponse` 继承的 `DialogueResponseBase.emotion` 现在是必有枚举：
+
+```text
+none | happy | relieved | angry | sad | afraid | surprised | confused | determined
+```
+
+Godot 活动回合为 NPC 回复额外投影 `emotion_id / emotion_label / emotion_emoji`，仅供表现。完成守备官会话的 `dialogue_turn.payload.dialogue_text[]` 仍只保留 `speaker_id / speaker_name / listener_id / listener_name / text`。HTTP 兼容归一化记录使用 `path=emotion`、`source=dialogue_emotion_alias_or_unknown_default`。
+
+## T0288 完成会话与特殊结果事件合同
+
+`dialogue_turn.payload` 的最低必需字段收敛为：`dialogue_id`, `participant_npc_ids`, `dialogue_text`, `speaker_name`, `listener_name`, `visibility`, `current_round`, `max_rounds`。完成守备官会话不再写入四类特殊请求 / 结果字段。
+
+完成会话的 `dialogue_text[]` 只允许保存真实台词字段：`speaker_id`, `speaker_name`, `listener_id`, `listener_name`, `text`。四类结构化结果单独使用 `dialogue_special_interaction_result.payload`，其中保留 `dialogue_id`, `participant_npc_ids`, `special_type`, `outcome`, `success`, `npc_id`, `npc_name`, `visibility`, `current_round` 及适用的策略前后值、玩家原话和 NPC 回复。
+
+## T0286 特殊结果事件载荷
+
+- `dialogue_special_interaction_result` 必含 `dialogue_id / participant_npc_ids / special_type / outcome / success / npc_id / npc_name / visibility / current_round`，并可携带 `location_id / guard_text / npc_reply`。
+- 策略结果额外携带 `previous_strategy_id / previous_strategy_label / strategy_id / strategy_label`。该事件是程序从已验证对话响应派生的记忆载荷，不扩展 HTTP 请求或 LLM 输出 Schema。
+
+## T0285 工作鼓励请求、结果与状态
+
+- `/npc/dialogue` 请求新增可选 `is_work_encouragement_request`，玩家回复仅在开启时包含 `work_encouragement_reaction=none|escape|work_boost`；关闭时 provider 合同与 HTTP 成功响应均剥离该字段。
+- `is_recruitment_request / is_morale_encouragement_request / is_combat_strategy_request / is_work_encouragement_request` 最多一个为 true。应征开启时 `recruitment_result` 允许 `none`，表示本轮原话无关。
+- `states.work_encouragement_boost` 活动时记录 `duration_seconds / remaining_game_seconds`、`output_bonus=0.20 / output_multiplier=1.20`、开始日时与 `expires_day / expires_time=00:00:00`。活动状态不能重复鼓励。
+- 新增记忆事件 `work_encouragement_result`、`work_encouragement_boost_started`、`work_encouragement_boost_ended`；分别记录三值决定、来源 / 对话和持续时间 / 倍率，不让 LLM 写资源或工作结算。
+
+## T0284 对话策略请求与候选
+
+- `/npc/dialogue` 请求新增可选 `is_combat_strategy_request` 与 `combat_strategy_context`。上下文包含 `current_strategy{id,label}` 和至少两个唯一 `available_strategies[]`；当前 id 必须存在于候选中。关闭开关时上下文必须缺席。
+- 玩家回复仅在开关开启时允许 `combat_strategy_decision{decision=keep|change,strategy_id}`。`keep` 必须返回当前 id，`change` 必须返回另一个合法候选；关闭时该字段被剥离且不应用。
+- `states.combat_strategy` 仍是 CombatSystem 权威运行态。所有兵种缺省 id 为 `attack`；合法候选不再包含 `charge_cycle`，弓 / 弩 / 骑射才额外包含 `keep_distance`。
+
+## T0283 鼓舞状态期限
+
+`states.morale_boost` 的 `duration_seconds / remaining_game_seconds` 表示从生效时刻到当天 24:00 的剩余逻辑秒，并记录 `started_day / started_time / expires_day / expires_time=00:00:00`、`attack_bonus=0.15 / move_speed_bonus=0.15`。活动状态不允许重复鼓舞。
+
+## T0266 资源与配方 Schema 收口
+
+- `resource_defs.json` 的具体库存目录为 10 项：5 类武器、4 类盔甲、1 类第纳尔；装备详情分类仅接受 `weapon|armor`，器械继续由 DefenseDeviceSystem definitions 投影。
+- `crafting_recipes.json` 保留 10 个可制造目标，不再保留不可选的弹药占位配方；配方输入 / 输出结构本身未变化。
+
+## T0249 固定目标引导到位与脱困运行态
+
+- `station_layout.combat_spatial.c3_p7_dynamic_assault.attack_position_policy.guidance_stall_recovery_seconds=0.75`：固定建筑 / 塔防目标仍在有效攻击范围外时，Actor 连续静止到此秒数触发引导区重选与局部脱困。
+- 近战引导 target 新增只读 `attack_guidance_selected_zone_contact_distance / attack_guidance_arrival_tolerance`。后者为 `handoff_range - attack_range_arrival_margin - selected_zone_contact_distance` 的钳制结果，并同步成为 ActorMotion `target_desired_distance`；正门首波当前为约 `0.062～0.069 m`。
+- ActorMotion 快照新增 `stationary_supersede_preserve_count / runtime_actor_collision_enabled / runtime_actor_collision_override_reason`。攻击位快照新增 `guidance_stall_recoveries[]` 及 started / completed / cancelled / reselections metrics；全部是运行态诊断，不写 checkpoint、不拥有 HP 或命中事实。
+
+## T0248 弹体穿透与附着运行态
+
+- `active_projectiles[] / last_projectile_result` 新增 `authored_range_crossed / same_side_skip_count / same_side_skipped_ids`；终态 `hit_fact` 同步记录跳过数量、实体 id、`stick_anchor_kind / stick_anchor_target_id`。这些字段是只读碰撞诊断，不改变 weapon defs、命中率或存档。
+- `debug_get_combat_snapshot().stuck_projectiles[]` 每项包含 `id / attack_id / source_side / source_id / weapon_type / status / collision_position / collision_normal / anchor_kind / anchor_target_id / parent_path / world_position / visible / presentation_only` 及同阵营跳过诊断。registry 仅持有表现节点生命周期，不拥有 HP 或重复伤害权威。
+- `source_side=friendly / defense_device` 的同阵营角色分类为 NPC，`source_side=enemy` 为敌军；建筑、墙、地形和器械不是可穿透“同阵营角色”。运行态不进入 checkpoint；初始化、GM 强制清敌或自然战斗结束按各自清理合同重建为空。
+
+## T0247 Actor RVO 阵营配置
+
+- `physics_navigation.actor_profiles.*.avoidance_layers / avoidance_mask`：按实体阵营声明 NavigationAgent3D 的 RVO 所属层与感知层。`npc / horse / merchant_wagon=1/1`，`enemy_foot / enemy_mounted=2/2`。缺省仍回退到 `navigation_agent` 的旧全局值。
+- 该分层只影响 RVO 邻居感知，不改变统一 `actor_body` 物理碰撞层、NavMesh 烘焙、攻击范围或索敌阵营。`final_target_braking_enabled` 是单次 ActorMotion request 运行参数，不写入存档数据。
+
+## T0246 奔跑消耗与零饱食运动配置
+
+- `activity_needs.combat_sprint.satiety_per_game_second=-0.1`：场上有活动敌军时，未骑乘 NPC 每个实际跑动游戏秒的追加饱食变化；必须为非正数。小数余量复用 NPCNeedsSystem 的跨 tick 余量，边界仍读取 `bounds.satiety`。
+- `physics_navigation.npc_locomotion.actual_run_speed_margin=0.05`：真实水平速度必须高于配置 `walk_speed` 的最小余量，且当前 locomotion 为 `run`，才计作实际奔跑；用于排除行走、堵路抖动和站定。
+- NPC locomotion 只读快照新增 `walk_speed / zero_satiety_walk_limited / pending_unmounted_actual_run_seconds`；NPCNeeds 快照新增 `combat_sprint` 的 sampled / charged / discarded 秒数、速率、当次与累计扣除。它们都是运行态诊断，不写入 `npc_profiles.json`。
+
+## T0244 后门战时碰撞覆盖配置
+
+- `station_layout.station.back_gate.disable_leaf_collision_while_enemy_present=true`：只控制正式后门两扇活动门叶的物理碰撞；CombatSystem 活动敌军数大于 0 时禁用，回到 0 后恢复既有完好 / 摧毁合同。
+- 该字段不修改门塔 / 墙段碰撞、NavigationMesh、商路、逃离路线、BuildingSystem HP 或敌军索敌。缺省为 false，因此正门及旧配置继续使用原门叶规则。
+- 城门只读快照新增 `disable_leaf_collision_while_enemy_present / active_enemy_count / enemy_presence_collision_override`；`leaf_collisions_enabled` 仍是最终门叶碰撞事实。
+
+## T0235 远程战术移动恢复参数与运行态
+
+`combat_spatial.c3_p7_dynamic_assault.combat_navigation_policy` 保持 `shared_combat_navigation_v1` 兼容 Schema，新增三个可选字段：
+
+- `friendly_ranged_attack_position_arrival_tolerance=0.08`：远程攻击位向 `95%` 交接带内预留的物理到达余量，同时作为本请求的 `target_desired_distance`；不是射程加成。
+- `friendly_strategy_stalled_reselect_seconds=2.25`：仅对我方普通远程攻击位接近生效的连续实体静止换点门槛。
+- `friendly_strategy_reselect_min_separation=0.8`：恢复选点时与旧终点的最小水平间隔。
+
+NPC `states` 可临时包含 `combat_strategy_move_recovery_count / combat_strategy_last_stall`；行为快照附带 `world_movement_progress` 的 active、request、remaining distance、stationary time、repath 和 target-update 诊断。这些字段不写静态 NPC 档案、不授予目标锁 / 攻击 / 伤害权威，退出战斗时清理。
+
+## T0233 固定目标远程容量配置
+
+- `combat_spatial.c3_p7_dynamic_assault.attack_position_policy.ranged_fixed_target_row_range_ratios=[0.90,0.76,0.62,0.48,0.34,0.20]` 覆盖敌方远程对 `building / defense_device` 的纵深排距；每项均为执行敌人实际 `attack_range` 的比例。旧 `ranged_building_row_range_ratios` 与 `ranged_range_ratio` 保留为缺省兼容，不再是正式 Main 的优先值。
+- `ranged_building_max_positions=32` 与 `ranged_defense_device_max_positions=12` 分别是远程单位每排的表面采样预算；真实数量仍受门板 authored 数量、建筑包络长度、宿主区域 `hit_radius` 和敌人实体直径限制。近战继续读取 `building_max_positions=20 / defense_device_max_positions=8`。
+- 多排 slot id 统一带 `row_XX_of_06`；塔防候选继续附带 `host_proxy_region_id / wall_segment_id / building_segment_id`。配置不复制 HP、伤害、命中或导航事实，`enemy_attack_position_leases_v1` 的 reserved / occupied / waiter 合同保持兼容。
+
+## T0232 `friendly_station_response_v4` 保持距离撤离配置
+
+- `combat_spatial.friendly_station_response.schema_version` 推进为 `friendly_station_response_v4`。新增 `keep_distance_retreat_policy_schema=weighted_close_threat_retreat_v1`、`keep_distance_retreat_trigger_range_ratio=1/3`、`keep_distance_retreat_segment_range_ratio=2/3`、`keep_distance_retreat_arrival_tolerance=0.35`；权重指数、最小计权距离、边界内缩与落点解析继续复用 T0209 字段。
+- NPC `states` 可临时包含 `keep_distance_retreat_active / sequence / target_id / target_position / desired_position / direction / threat_ids / threats / desired_travel_distance / actual_travel_distance / boundary_limited / navigation_adjusted / recovery_count`。这些字段由运行时补齐，模式退出时清理，不要求写入 `npc_profiles.json`。
+- 只读快照推进为 `friendly_station_response_runtime_v4`，新增上述政策字段和 `keep_distance_retreats[]`。活动段、威胁样本与 recovery 计数不进入正式战斗空间 checkpoint，也不授予目标锁、攻击许可或伤害权威。
+
+## T0231 敌军塔防精确到位恢复参数
+
+`station_layout.combat_spatial.c3_p7_dynamic_assault.attack_position_policy` 新增：
+
+- `melee_precise_arrival_recovery_radius=0.32`：仅供已持 reserved 租约的近战塔防攻击者进入最后接近恢复；不是攻击距离或到达授权。
+- `melee_precise_arrival_recovery_stuck_seconds=0.75`：ActorMotionBody 路径无进展达到该时长后，才允许临时抑制本 Actor 的 RVO。
+
+既有 `melee_attack_position_arrival_tolerance=0.06` 继续是 occupied / 攻击时间线的精确到位阈值。运行态恢复诊断保存 enemy id、开始 / 结束帧、起止距离、卡住时长、重寻路次数和 outcome；这些字段不参与 HP 或伤害结算。
+
+## T0230 主厅角落塔防双墙宿主区域
+
+- 正式主厅槽新增 `host_proxy_schema=main_hall_corner_host_proxy_regions_v1` 与 `host_proxy_regions[]`。每个元素保存稳定 `id`、`building_id / slot_id / building_segment_id / fixture_id`、墙内代理 `position / aim_position`、屋顶 `fixture_aim_position`、墙面 `outward_direction`、`contact_radius / hit_radius` 和严格碰撞身份标记。
+- 四槽区域映射为 `slot_01=[back_wall,left_wall]`、`slot_02=[back_wall,right_wall]`、`slot_03=[front_left,left_wall]`、`slot_04=[front_right,right_wall]`。旧 `host_proxy_*` 单值字段继续镜像数组首项，兼容既有 UI、目标距离和 T0148 调用方。
+- 敌军候选 / 租约新增只读 `host_proxy_region_id / host_proxy_wall_segment_id / host_proxy_building_segment_id / host_proxy_outward_direction`；装饰到当前目标时记录 `attack_host_proxy_region_id` 等选择结果。区域与租约都是可由正式空间重建的运行态事实，不写 checkpoint，不新增建筑或器械 HP。
+
+## T0220 远程建筑攻击位排距配置
+
+> 历史基线：正式 Main 已优先读取 T0233 的 `ranged_fixed_target_row_range_ratios`；以下三排字段只作为兼容缺省。
+
+- `data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.attack_position_policy.ranged_building_row_range_ratios=[0.72,0.50,0.30]` 定义敌方远程单位对 `type=building` 固定目标的外 / 中 / 内排距，数值是该敌人实际武器射程比例。`ranged_range_ratio=0.72` 保留为旧单排 / 非建筑兼容默认值。
+- `building_max_positions=20` 对四面建筑表示“每排最多 20 个表面样本”；正门继续由 `target_outlines.front_gate.position_count=5` 决定每排五位。三排槽位 id 增加 `row_XX_of_03` 段，单排近战和塔防 id 保持原格式。
+- 候选 / 租约新增只读 `range_row_index / range_row_count / range_row_ratio`；装饰到敌人当前目标时为 `attack_position_range_row_index / attack_position_range_row_count / attack_position_range_row_ratio`。字段只用于运行态与 GM 快照，不写正式 checkpoint，不改变 `reserved / occupied` 权威。
+
+## T0214 站外避战回站配置
+
+- `data/station_layout.json.combat_spatial.friendly_station_response.outside_avoidance_reentry` 新增 `schema=front_gate_inside_reentry_v1 / gate_id=front_gate / inside_offset=5.0`。偏移沿实际旋转门根的站内方向计算，不是世界坐标副本；最终点必须吸附生产 NavigationMap、位于 `interior_polygon` 且不落入实体包络。
+- `active_avoidances[]` 新增只读运行态 `movement_phase / target_policy / reentry_gate_id`。站外阶段分别为 `returning_to_station / front_gate_inside_reentry / front_gate`，站内恢复为 `station_weighted_avoidance / weighted_enemy_repulsion`；字段不写正式 checkpoint。
+
+## T0211 攻击位候补施压配置与诊断
+
+- `data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.attack_position_policy` 新增 `active_attacker_avoidance_priority=0.55`、`waiting_attacker_avoidance_priority=0.20`、`attack_avoidance_priority_spread=0.08`。三者只调节同一 NavigationAgent/RVO 中的让行关系，不改变单位速度、目标优先级、攻击位容量或晋升顺序。
+- waiter 运行态目标新增 `attack_position_wait_target_id` 与 `attack_position_wait_movement_policy=pressure_assigned_attack_position`；`attack_position` 是期望真实槽位的可达吸附位置。它们均为 CombatSystem / GM 只读诊断，不进入正式 checkpoint，也不代表租约或攻击权限。
+
+## T0209 `friendly_station_response_v3` 多敌避战配置
+
+- `data/station_layout.json.combat_spatial.friendly_station_response.schema_version` 推进为 `friendly_station_response_v3`，新增 `avoidance_policy_schema=weighted_enemy_repulsion_v1`、`avoidance_detection_range_margin=2.0`、`avoidance_weight_formula=inverse_distance_power`、`avoidance_weight_exponent=2.0`、`avoidance_min_weight_distance=1.0`、`avoidance_boundary_inset=1.25`。
+- 避战检测半径不再按当前远程敌人动态变化，而是读取统一敌军索敌半径再加余量，当前 `37.2 + 2.0 = 39.2 m`。`avoidance_min_safe_distance / avoidance_ranged_safe_margin` 仅保留给武装 NPC 的战斗内避战策略触发阈值，不决定非战斗模式的检测圈或目标距离。
+- `friendly_station_response_runtime_v3` 保留 T0198 锁定字段并新增避战政策诊断。每个 `active_avoidances[]` 可含 `threat_count / threats[] / weight_formula / weight_exponent / avoidance_direction / desired_target_position / desired_target_distance / boundary_limited / navigation_adjusted / navigation_resolution_reason`；这些均为运行态 / GM 只读字段，不进入正式空间 checkpoint。
+
+## T0208 正门五槽配置
+
+- `data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.attack_position_policy.target_outlines.front_gate` 当前固定为 `{"shape":"front_line","width":4.8,"position_count":5}`，生成 `front_00_of_05` 至 `front_04_of_05`。
+- 已删除 `front_gate_post_surface_offset / front_gate_tower_body_standoff / front_gate_post_contact_reach_offset`；门塔碰撞仍在 `station.front_gate.tower_collision`，但不属于攻击位数据。
+- 运行态 schema 不变。第一波快照预期 `lease_count=5 / waiter_count=3`，租约状态继续使用 T0207 的 `reserved|occupied`。
+
+## T0198 友方目标锁与异源受击运行态
+
+- `data/station_layout.json.combat_spatial.friendly_station_response` 当前由 T0232 向后推进为 `friendly_station_response_v4`；T0321 保留 `combat_targeting_schema=friendly_enemy_presence_lock_v1` 与 `combat_target_detection_range=37.2`，把 `inside_station_target_scope` 修订为 `entire_station_plus_unified_radius`。运行时 scope 另含 `include_station_enemies`，表示完整站内集合与有限半径集合取并集；两者共同按距离排序。`locked_target_policy` 与 `different_attacker_damage_policy` 不变；`normal_contact_range` 仅为旧兼容值。
+- NPC `states` 新增可选诊断字段 `combat_target_selection_reason / combat_target_scope / combat_strategy_move_enemy_id`；现有 `combat_target_enemy_id` 是移动和攻击共用的锁 ID。模式退出、昏迷和清场会清理这些字段。
+- `_friendly_enemy_reacquire_requests[npc_id]` 使用 `friendly_enemy_damage_reacquire_request_v1`，字段为 `sequence / created_frame / source_enemy_id / previous_target_enemy_id / scope_at_damage`。同一 NPC 消费前再次收到合法异源伤害只保留最新请求。
+- `friendly_station_response_runtime_v4` 保留 `combat_targeting_schema / combat_target_detection_range / inside_station_target_scope / locks[] / different_attacker_damage_reacquire_requests[] / metrics`，并增加保持距离撤离诊断。请求和 metrics 仅用于运行态裁决 / GM 只读观察，不写入 `formal_combat_spatial_checkpoint_v1`。
+
+## T0197 异源受击重评估运行态
+
+- `targeting_policy.schema` 推进为 `enemy_unified_presence_lock_v3`；保留 `different_attacker_damage_policy=one_shot_nearest_high_threat_reacquire`，并新增 `lower_priority_target_damage_policy=armed_npc_or_defense_device_actual_damage_triggers_same_one_shot_reacquire`。该政策适用于全部活动敌人，不再以动态压力标记作为资格条件。
+- `_enemy_high_threat_reacquire_requests[enemy_id]` 使用 `enemy_high_threat_damage_reacquire_request_v2`，字段为 `sequence / created_frame / source_type / source_id / previous_target_type / previous_target_id / trigger_kind`。`trigger_kind` 区分 `different_high_threat_attacker` 与 `lower_priority_target_hit_by_high_threat`；同一敌人在消费前再次收到合法伤害时只保留最新的一次性请求。
+- `enemy_targeting.locks[]` 增加 `different_attacker_damage_reacquire_pending`，顶层增加 `different_attacker_damage_reacquire_requests[]`；metrics 增加 `different_attacker_damage_signals / different_attacker_damage_reacquisitions / different_attacker_damage_no_candidate_consumptions`。这些字段只用于运行态裁决和 GM 只读观察，不写入 `formal_combat_spatial_checkpoint_v1`。
+
+## T0196 统一敌军索敌政策
+
+`data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.targeting_policy` 当前使用：
+
+- `schema=enemy_unified_presence_lock_v3`（v3 在保留 T0196 半径 / 优先级和 T0197 高威胁锁重扫的基础上，增加低优先级当前目标伤害重扫并强制全部活动敌人统一调度）
+- `priorities=[armed_npc_or_defense_device, unarmed_npc, front_gate, warehouse, main_hall]`
+- `detection_range=37.2`，`detection_range_basis=wall_ballista_effective_range_35_7_plus_1_5`；该值对全部敌人和全部单位目标精确一致，不再按武器或塔防实例扩大。
+- `same_tier_selection=nearest_horizontal_distance_on_acquire` 与 `locked_target_policy=hold_until_out_of_range_or_invalid_except_high_threat_damage_reacquire` 定义单位首次最近、在场保持和受击重扫例外。
+- `npc_attack_position_policy=unrestricted_contact`；`attack_position_policy.applies_to=[defense_device, building]` 明确 NPC 不创建租约 / 候补。
+- `fixed_target_full_policy=treat_as_absent_except_front_gate`：塔防、仓库和主厅满位时从该敌人的本轮候选消失；`front_gate_full_policy=hold_target_and_wait` 表示完整城门满位仍保持并排队。
+
+运行态基础 metrics 为 `evaluations / target_switches / higher_priority_switches / locked_high_target_holds / locked_unarmed_target_holds / high_threat_preemptions / fixed_target_full_skips / gate_full_holds / building_fallbacks`，T0197 指标见上。旧反击关系字段仅为兼容诊断，不参与目标裁决，也不写入存档。
+
+## T0195 塔防严格优先候补政策（历史，已由 T0196 取代）
+
+- `targeting_policy.defense_device_full_policy=queue_before_buildings`：塔防候选可达但攻击位已满时，敌军保持第 2 级目标并进入既有 T0149 候补，不继续城门 / 仓库 / 主厅层。
+- `enemy_targeting.metrics.strict_defense_waits` 记录该严格候补分支的选择次数；攻击位快照继续用既有 `waiters / waiters_promoted` 观察排队和补位，不新增存档字段。
+
+## T0194 塔防威胁感知与受击反击运行态字段（历史，已由 T0196 取代）
+
+- `data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.targeting_policy.defense_device_threat_margin`：加在每个活动塔防 `effective_attack_range` 外的敌军感知余量；当前为 `1.5 m`。最终该目标感知半径为 `max(detection_range, enemy.attack_range, effective_attack_range + margin)`。
+- `DefenseDeviceSystem.get_active_defense_targets()` 为每个活动目标增加 `effective_attack_range`，值来自已经合并槽位 / 宿主倍率的 `deployment.effect.range`，不是数据表原始基础射程。
+- 塔防候选短生命周期字段增加 `enemy_detection_range`。反击关系增加只用于同逻辑帧稳定排序的 `last_sequence`；Combat snapshot metrics 增加 `recent_hit_preemptions / recent_hit_npc_target_holds`。这些字段均不进存档。
+
+## T0193 友军攻击锁与正式空间存档字段
+
+- NPC 运行态 `states` 可选字段：`combat_attack_last_sequence_time: float`、`combat_attack_next_sequence_time: float`、`combat_attack_sequence_lock_remaining: float`。last / next 只在当前 CombatSystem 进程时间轴内有效；remaining 是可观察与存档的非负相对秒数。
+- `formal_npc_spatial_checkpoint_v1.actors[]` 新增向后兼容可选字段 `combat_attack_sequence: int` 与 `combat_attack_sequence_lock_remaining: float`。旧存档缺省为 0；不提升 schema 版本，因为字段可选且旧读取器会忽略未知键。
+- 恢复时不序列化 active melee swing、phase、elapsed、target、RID、NodePath 或绝对 next time；当前动作回滚为 idle，CombatSystem 依据 remaining 重建下一次合法起手。
+
+## T0188 友军站内响应配置
+
+`friendly_station_response_v1` 的站内响应字段已由 T0198、T0209、T0232 向后升级为 `friendly_station_response_v4`。非战斗避战由统一敌军索敌半径加 `avoidance_detection_range_margin` 决定检测圈，并由加权政策决定方向；站内范围不复制坐标，始终读取 `station.interior_polygon` 并由 StationLayoutController 转换世界坐标。
+
+CombatSystem 只读快照已升级为上方 `friendly_station_response_runtime_v4`；原 `station_breached / station_enemy_ids / maximum_active_enemy_ranged_attack_range / avoidance_trigger_range / avoidance_safe_distance / proactive_strategy_ids` 均继续保留。
+
+## T0167 马毛色域与马槽取马点
+
+- `horse_defs_v2.horse_templates[]` 字段不变；本轮只调整 `coat_name / coat_color` 值。灰系使用低饱和暖灰、米灰或烟褐灰，避免中性水泥灰 / 冷蓝灰；模板 ID、名字唯一性和生命周期合同不变。
+- `building_fixture_layout_v1` 的稳定马槽 `horse_anchor` 新增必填 `pickup_center:[x,z]`。它与 `center` 同属建筑局部坐标，必须位于对应 `opening_side` 一侧，当前距离马位中心 `1.9 m`。Marker 只携带空间投影，不新增马匹或骑乘权威。
+- `movement_state` 在 `waiting_for_rider_at_stable` 阶段增加只读诊断 `pickup_source=stable_slot_open_side / navigation_path_point_count`；`target_position` 改为经生产 NavMesh 验证的开放侧终点。
+
+## T0165 陨石表现配置与诊断字段
+
+- `meteor` 新增 `start_horizontal_offset / body_radius / crater_radius`、坠落与冲击的 camera shake 幅度 / 频率 / 时长，以及 `impact_vfx_duration_seconds`；T0238 再新增 `crater_lifetime_game_seconds=86400`，只控制弹坑的游戏时间表现寿命，不改变伤害对象或公式。
+- Piety 快照提供 `landed_meteors[]` 与 `craters[]`。后者包含 `cast_id / present / elapsed_game_seconds / duration_game_seconds / fade_progress / opacity / presentation`，不序列化 Node、RID 或碰撞对象，也不是长期存档 Schema。`permanent_craters[]` 暂作 T0165 兼容别名，内容相同且会在 24 游戏小时后清空。
+
+## T0163 无边界陨石地面合同
+
+`data/piety_ability.json` 不含 `target_bounds`；`target_ground_y` 仍定义所有施法落点归一化后的 Y。`get_targeting_snapshot()` 返回 `radius / ground_y / scope=unbounded_ground_plane_except_buildings`，不返回 bounds。有限 X/Z 不设矩形玩法边界，但 T0181 起完整 `radius` 圆与正式建筑、城墙或城门区域相交时返回 `building_overlap`；NaN / Inf 仍是 `invalid_target`。`meteor.friendly_displacement_margin` 是落地实体把友军排到真实碰撞半径外的额外安全余量。
+
+## T0162 `horse_defs_v2` 与马匹身份字段
+
+`data/horse_defs.json` 升级为 `schema_version=horse_defs_v2`。`stable_slots_by_level` 按等级列出稳定槽位 ID；`horse_templates[]` 每项包含唯一 `template_id / name / coat_name / coat_color`；`initial_horses[]` 通过 `template_id` 领取身份，不重复写显示名与颜色。
+
+HorseSystem 运行态每匹马新增稳定 `template_id / name / coat_name / coat_color / stable_slot_id`。名称模板按历史记录唯一使用，死亡只释放槽位、不释放名称；幼马成长只修改 growth / life stage，不修改身份字段。公开马厩摘要增加只读 `occupied_slots / capacity / full`，但 BuildingSystem 的 `special_state.horses` 仍只接收 `total / adult / foal`。
+
+## T0161 GM 调试配装预设
+
+`data/gm_debug_presets.json` 使用 `schema_version=gm_debug_presets_v1`。`combat_loadout_presets[]` 每项包含稳定 `id / display_name / visibility`、可选 `debug_horses[]` 与 `assignments[]`；assignment 使用 `npc_id / loadout_label / weapon_id / armor / horse_id`。`armor` 的键只允许正式 `helmet / chest / bracers / greaves`，值引用 `armor_defs.json`；武器引用 `weapon_defs.json`，普通马引用 HorseSystem 已有 ID，额外测试马由同一预设定义 `horse_id / template_id / growth`。
+
+该文件只控制显式 GM 调试编排，不改变 `npc_profiles.json.initial_equipment`、`horse_defs.json.initial_horses`、正常库存或存档 Schema。运行结果中的 `inventory_added / created_horse_ids / npc_loadouts / already_applied` 是只读调试回执。
+
+## T0160 正门外集结与 GM 出生空间配置
+
+`data/station_layout.json.combat_spatial.friendly_rally` 使用 `schema_version=friendly_rally_v1`：`center / area_size / enemy_direction` 定义正门外友军集结区与朝敌方向；`melee_forward_offset / ranged_forward_offset` 定义中央前后排；`line_spacing / line_row_spacing / max_line_columns` 定义步兵随数量换行；`cavalry_lateral_offset / cavalry_forward_offset / cavalry_depth_spacing` 定义左右骑兵翼。所有坐标均为布局坐标，运行时由 StationLayoutController 统一投影到世界坐标。
+
+`data/station_layout.json.combat_spatial.gm_enemy_spawn` 使用 `schema_version=gm_enemy_spawn_v1`：`formation_front_center / area_center / area_size / travel_direction / columns` 定义 GM 任意波次专用生成区和编队朝向。该配置只服务显式 GM 入口；正式波次仍读取 `enemy_route.spawn`。生成结果增加 `spawn_in_gm_staging_zone / spawn_zone` 只读字段，不改变敌军实体、导航或战斗结算 Schema。
+
+## T0157 摧毁配置与运行态快照
+
+`building_defs.json` 仅在正门、仓库、主厅增加可选 `destruction`：`ruin_kind` 是表现选择键，`recoverable` 决定锁存能否解除，`recovery_hp_ratio` 使用 `0.0–1.0` 且以 `ceil(max_hp * ratio)` 形成整数 HP 阈值。BuildingSystem 运行态增加 `destruction_latched`；未配置建筑维持旧行为。
+
+`defense_device_defs.json.presentation` 增加 `ruin_kind / ruin_lifetime_seconds`。DefenseDeviceSystem `state_snapshot.ruins[]` 包含原 deployment 的只读模型配置、slot / building、`remaining_seconds` 和稳定 `ruin_id`。废墟是短生命周期 presentation-adjacent 运行态，不进入库存、伤害目标或空间存档；加载后不恢复已过期废墟。
+
+## T0155 NPC locomotion 配置
+
+`data/physics_navigation.json.npc_locomotion` 使用 `schema_version=npc_locomotion_v1`：
+
+- `walk_speed / run_speed`：NPC 日常行走与紧急奔跑的基础世界速度，当前为 `3.2 / 5.0 m/s`。
+- `walk_animation_reference_speed / run_animation_reference_speed`：各自 authored 动画在 `speed_scale=1` 时对应的参考世界速度。
+- `minimum_animation_speed_scale / maximum_animation_speed_scale`：因 RVO、碰撞、接近终点等实际位移变化而调整步频时的安全范围，当前 `0.35–1.6`。
+- `emergency_behavior_modes`：程序权威的奔跑行为模式集合，当前为 `rally / combat / avoid_combat / escaped`；实际逃离途中另以 `escape_intent.status=escaping` 进入 run。
+
+运行时调试快照增加 `locomotion_state / locomotion_reference_speed / authoritative_move_speed / actual_horizontal_speed / locomotion_animation_speed_scale`。这些是只读派生值，不进入 NPC 存档；空间存档仍按既有策略回滚在途移动，并从保存的 behavior/profile 重新派生速度。
+
+## T0153 NPC 交互表现配置
+
+`data/npc_interaction_presentation.json` 使用 `schema_version=npc_interaction_presentation_v1`。当前 `proactive_talk.gesture_interval_real_seconds` 是主动问号交谈 / 示意的现实秒周期，正式值为 `5.0`，运行时最小保护值为 `0.1`。
+
+运行时 presentation session 只包含 `npc_id / session_id / gesture_count / remaining_real_seconds / gesture_interval_real_seconds`；临时事件额外记录 `event_id / event_kind=proactive_talk_gesture / gesture_index / facing_target / facing_direction / authority_action_at_emit`。这些字段不进入 NPC profile、计划、记忆、Prompt、对话 Schema 或存档。
+
+## T0151 攻击距离圈只读快照
+
+NPC 与塔防分别通过运行时接口输出同形快照：`ready / reason / source_type / source_id / source_name / effective_range / world_position / range_authority / range_semantics`。NPC 额外包含 `behavior_mode / weapon_id`；塔防额外包含 `device_id / building_id / slot_id`。
+
+`effective_range` 不新增配置字段：NPC 引用 CombatSystem `final.range`，塔防引用 DefenseDeviceSystem 已合并宿主倍率的 `effect.range`。`range_semantics` 固定为 `maximum_attack_initiation_ballistic_distance`。选择 ID、圆环 Mesh、颜色和可见性都是临时表现态，不写入存档或战斗 checkpoint。
+
+## T0150 敌军目标政策与运行态字段（历史，当前字段见 T0196）
+
+`data/station_layout.json.combat_spatial.c3_p7_dynamic_assault.targeting_policy`：
+
+- `schema=enemy_target_priority_v2`
+- `priorities` 固定为 `npc / defense_device / front_gate / warehouse / main_hall`；普通意图 / 在途反击事实并入对应单位类型。只有敌军当前攻击建筑且收到实际伤害时，最近伤害来源执行条件式抢占，不新增常驻层级。
+- `detection_range` 是附近 NPC 的基础索敌半径，最终不小于敌人自身攻击距离；塔防目标另用 `effective_attack_range + defense_device_threat_margin` 扩展。
+- `target_lock_frames / reevaluation_interval_frames` 控制同级稳定性，不阻止更高优目标抢占。
+- `recent_hit_memory_frames` 控制实际命中的反击关系寿命；暂停不推进逻辑帧。
+- `obstruction_probe_height / obstruction_probe_max_hits` 控制 world-static 探测；结果必须通过 `front_gate / warehouse / main_hall` 白名单，正式城门 / 仓库前置关系由路线顺序确定。
+
+敌人短生命周期字段新增 `target_priority / target_selection_reason / target_lock_until_frame / target_last_evaluated_frame / target_switch_count`。Combat snapshot 的 `enemy_targeting` 包含 `locks / retaliation_relations / active_retaliation_targets / metrics`。这些字段及反击关系均不写入空间存档；恢复后按 NPC / deployment / 活动战斗事实重新计算。
+
+## T0149 敌军攻击位政策与运行态字段
+
+`station_layout.combat_spatial.c3_p7_dynamic_assault` 保留 `movement_model=dynamic_combat_pressure` 作为五波逐实体 AI 兼容标识，并使用 `attack_position_mode=leased_reachable_positions` 与 `attack_position_policy.schema=enemy_attack_position_leases_v1`。`applies_to=[defense_device, building]`；政策字段包含 `safety_margin / navigation_snap_tolerance / arrival_tolerance / melee_reach_ratio / ranged_range_ratio / queue_base_standoff / unreachable_retry_frames`、塔防 / 建筑候选上限，以及 `target_outlines.front_gate|warehouse|main_hall.width`。NPC 不再有候选上限或固定轮廓。这些轮廓只生成接敌空间，不修改建筑碰撞、HP 或武器射程。
+
+CombatSystem 运行态 lease 包含 `slot_id / enemy_id / target_key / target_type / target_id / role / position / target_position / enemy_radius / standoff / path_distance / status / reserved_frame|occupied_frame`；完整城门 waiter 包含 `enemy_id / target_key / role / sequence / queue_position`。敌军固定 target 可临时增加 `attack_position_status=reserved|waiting / attack_position_id / attack_position / attack_position_role / attack_position_target_key / attack_position_queue_sequence`；NPC target 不含这些字段。
+
+Combat snapshot 的 `enemy_attack_positions` 返回 `schema / lease_count / waiter_count / leases[] / waiters[] / metrics`。序列化支持 `position / aim_position / attack_position / queue_position / target_position`。租约、候补、失败槽冷却、路径与 NavMap 引用均不进入 `formal_combat_spatial_checkpoint_v1`；恢复后按当前实体和地图重新建立。
+
+## T0148 塔防宿主代理运行态字段
+
+正式 slot / deployment snapshot 新增 `host_proxy`：
+
+```json
+{
+  "kind": "wall_segment | building_wall_segment",
+  "id": "wall:north_west_a:wall_slot_01",
+  "building_id": "wall",
+  "slot_id": "wall_slot_01",
+  "wall_segment_id": "north_west_a",
+  "building_segment_id": "",
+  "fixture_id": "",
+  "position": {"x": 0, "y": 0, "z": 0},
+  "aim_position": {"x": 0, "y": 1.32, "z": 0},
+  "fixture_aim_position": {"x": 0, "y": 1.32, "z": 0},
+  "outward_direction": {"x": 0, "y": 0, "z": 1},
+  "contact_radius": 0.6,
+  "hit_radius": 2.05,
+  "strict_collision_identity": true
+}
+```
+
+主厅兼容主代理使用 `building_segment_id=back_wall|front_left|front_right` 并保存对应 `fixture_id=main_hall_slot_*_platform`；T0230 起完整受击面读取 `host_proxy_regions[]`，再加入同角 `left_wall|right_wall`。`outward_direction` 是各宿主墙面外向法线，只用于敌军攻击位 / 接触面生成，与屋顶器械的展示 / 射击朝向分离。Combat collider identity 增加 `wall_segment_id / building_segment_id / fixture_id / fixture_kind / collision_category`；这些是运行态空间事实，不写入静态塔防数值配置，也不产生第二份建筑 HP。敌军 target 序列化同时处理 `position / aim_position / host_proxy_outward_direction`。
+
+## T0147 塔防攻击时间轴与弹体字段
+
+`defense_device_defs.json` 的 `effect` 新增并归一化：
+
+```json
+"attack_timing": { "authored_cycle_seconds": 4.25, "release_authored_seconds": 0.55 },
+"projectile": { "weapon_type": "crossbow", "speed": 52.0, "gravity": 9.8 }
+```
+
+箭塔对应 `1.39 / 0.26 s`、`bow / 64 / 9.8`；弩炮对应 `4.25 / 0.55 s`、`crossbow / 52 / 9.8`。`effect.range` 同时写入 projectile 的 `max_range`，由战斗权威用于起手与水平航程边界。presentation 不再保存生产弹速副本。
+
+部署运行态增加 `attack_phase / attack_phase_elapsed / attack_cycle_seconds / attack_release_seconds / attack_target_enemy_id / attack_committed / attack_sequence`。活动 projectile 复用 T0145 字段，并以 `source_side=defense_device`、`source_id=deployment_id`、`release_origin_source=formal_arrow_tower_muzzle|formal_ballista_muzzle` 标识来源；终态 damage result 继续携带同一唯一 `attack_id`。Node、RID、Transform 对象及未完成时间轴不作为可重放伤害事实。
+
+## T0146 正式远程发射点字段
+
+活动与最终 projectile snapshot 在 T0145 字段外增加：`source_mounted: bool`、`release_position: Vector3`、`release_basis: Basis`、`release_origin_source: formal_loaded_arrow|formal_loaded_bolt`、`release_origin_node_path: String`。它们来自生产角色包装的只读 loaded projectile 节点，用于审计 Main 与 NPCDevLab 同源表现，不是独立弹道或伤害配置。
+
+若生产包装无法提供当前武器的 loaded projectile Transform，CombatSystem 记录 `last_projectile_result.status=release_rejected` 及 reason / source / weapon，不创建 `attack_id` 或活动弹体，也不进入伤害链。节点路径、Basis、Node 和 RID 均不写入空间存档。
+
+## T0145 弹体攻击事实字段
+
+CombatSystem 为每次正式远程 release 生成字符串 `attack_id`，格式为 `ranged:<source_side>:<source_id>:<attack_sequence>:<projectile_sequence>`；`attack_sequence` 来自 T0142 攻击周期，最后一段是 CombatSystem 进程内单调弹体序号，因此相同周期被异常重复释放也不会复用 ID。没有正式周期的调试调用使用 `adhoc` 段，但仍由弹体序号保证唯一。
+
+`attack_id / attack_sequence` 出现在 release result、`active_projectiles[]`、`last_projectile_result.resolution.hit_fact`、顶层 `attack_result` 与其 `damage_result`。终态 hit fact 包含 `status / collision_position / collision_normal / collision_identity / actual_target_* / damage_applied / reason / duplicate_ignored / damage_result`。`resolved_projectile_attack_count` 只暴露当前运行态去重表规模，不包含完整历史表。
+
+运行态去重表、弹体 Node、RID 与排除列表均不写入空间存档；`_clear_combat_projectiles(...)` 会同时清空活动弹体和终态事实。读取存档不会恢复飞行中弹体，也不会重放其旧 attack ID。
+
+## T0245 移动角色近战 impact 与受击中断运行态
+
+普通角色近战 swing 新增只读 `impact_authority=locked_actor_timeline`；固定建筑 / 城门 / 塔防及冲锋碰撞仍为 `model_contact`。移动角色 impact fact 使用既有 cycle target，并在 `melee_contact` 中记录 `reason=locked_actor_impact_phase / actual_target_* / range_rechecked_at_impact=false / sampled_model_contact`。模型采样可为空，不影响 authored impact 的唯一伤害提交。
+
+敌军运行态可包含 `damage_attack_interrupt_count / damage_windup_interrupt_count / last_damage_attack_interrupt`；NPC `states` 可包含对应的 `combat_damage_attack_interrupt_count / combat_damage_windup_interrupt_count / combat_last_damage_attack_interrupt`。最近中断记录保存 `phase_before / elapsed_before / impact_seconds / impact_committed_before / interrupted_before_impact / damage / source_*`，只用于诊断，不进入武器、HP 或命中数值配置。
+
+`active_melee_swings[]` 现额外投影 `impact_authority`。这些 swing、pending commit 和中断诊断均是短生命周期运行态；存档仍只依靠既有攻击 phase / elapsed / target / committed / cadence 剩余时间恢复，不保存 Node、RID 或半完成模型接触。
+
+## T0144 近战接触配置与快照
+
+`weapon_defs.json` 的 melee 武器继续用顶层 `range` 表示步战前向中心接触距离，并在 `melee_contact` 中配置 `mounted_range / radius / sample_window_authored_seconds / sample_count`。`mounted_range` 是骑战模型独立范围，`radius` 是刃段 / 杆头扫掠半径；`sample_count` 同时规定生产接触窗口内的目标采样密度和确定性模型量测密度，相邻样本之间用连续运动胶囊补齐，不随渲染帧率改变命中结果。
+
+当前剑盾为步 / 骑 `1.45 / 0.96 m`、扫掠半径 `0.10 m`；长杆为 `2.98 / 2.66 m`、扫掠半径 `0.11 m`。`CombatAnimationTiming` 同时保存步 / 骑各自 authored 接触秒，攻速只缩放时间，不改变模型空间范围。
+
+Combat snapshot 的 `active_melee_swings[]` 包含 `swing_key / source_side / source_id / weapon_type / sequence / impact_authority / sample_count / model_max_horizontal_reach / terminal_contact`；`last_melee_contact_result` 另含 locked target、actual target、impact authority、模型采样或 collider identity / path、collision position、authored seconds、sweep kind 与 damage result。RID、Shape 和原始 Node 不进入快照或存档。
+
+## T0143 远程弹体配置与运行态
+
+`weapon_defs.json` 的 ranged 武器可配置：
+
+```json
+"projectile": {
+  "speed": 22.0,
+  "gravity": 9.8,
+  "max_lifetime": 3.0
+}
+```
+
+`speed` 单位为 m/s，`gravity` 为向下 m/s²，`max_lifetime` 为现实 / 战斗秒；缺失或非法配置不会改用命中概率，而是拒绝创建正式弹体。弓当前为 `22 / 9.8 / 3.0`，弩为 `30 / 9.8 / 3.0`。
+
+NPC `states.combat_projectile_authority="combat_system"` 是正式表现投影字段，只用于关闭角色包装内部的 preview projectile，不要求写入 NPC 档案。Combat snapshot 的 `active_projectiles[]` 与 `last_projectile_result` 可包含 `id / attack_id / attack_sequence / source_side / source_id / weapon_type / position / velocity / gravity / age / max_lifetime / target_at_release / aim_position_at_release / status / damage_authority / tracks_target_after_release`；完成结果另含 collision position / normal、resolution 与终态 hit fact。Node、RID 和排除列表不进入快照或存档。
+
+## T0142 运行时攻击时间轴字段
+
+NPC `states` 可临时包含 `combat_attack_sequence / combat_attack_phase / combat_attack_elapsed_seconds / combat_attack_cycle_seconds / combat_attack_impact_seconds / combat_attack_target_enemy_id / combat_attack_impact_committed / combat_attack_playback_multiplier`。敌军个体使用对应的 `attack_sequence / attack_cycle_phase / attack_cycle_elapsed / attack_cycle_duration / attack_impact_seconds / attack_cycle_target / attack_impact_committed / attack_playback_multiplier`。这些是 CombatSystem 运行态与表现投影字段，不要求写入 `npc_profiles.json` 或 `enemy_waves.json`。
+
+`weapon_defs.json.attack_interval` 与规范化后的敌军 `attack_interval=1/attack_speed` 都表示完整攻击周期。`CombatAnimationTiming.gd` 保存四类武器 authored 周期及命中 / 释放比例；`enemy_waves.json.attack_windup` 暂留为 `configured_attack_windup` 兼容 / 审计输入，不再决定正式伤害点，正式 `attack_windup` 快照等于按动作比例缩放后的 impact 秒数。
+
+`formal_combat_spatial_checkpoint_v1` 的敌军项在既有字段之外保存上述攻击周期、序号、目标和提交标记；旧检查点缺少字段时按 `idle / 0 / false` 兼容恢复。
+
+## formal_spatial_save_v1
+
+`SpatialSaveSystem` 的独立空间检查点包含 `npc_spatial / combat_spatial / merchant_spatial`。NPC 项保存稳定 `npc_id`、`position{x,y,z}`、信息地点、物理阶段、导航权属、昏迷 / 逃离与 `escape_intent`；在途动作只保存用于审计的 action / building / workstation ID 和 `restore_policy=rollback`，不保存会话 ID、RID 或 NodePath。
+
+战斗项保存活动波次号、已触发波次与存活敌人的 `spawn_index / group_index / unit_type / hp / position / cooldown / windup / attack timeline / stagger`；恢复时从 `enemy_waves.json` 重建实体，未保存的出生序号视为已阵亡。行商项保存 `wagon_state=absent|arriving|parked|departing`、坐标、访问日和正式路线模式；交易库存仍属于 ResourceSystem，不在该空间格式重复保存。
+
+## action_defs.formal_spatial_route
+
+`data/action_defs.json` 的工作行动可设置 `formal_spatial_route: true`，表示该行动在当前分步迁移期必须使用正式 staging 的门路、工位预留 / 占用和可逆会话。字段只选择空间执行策略，不改变 `type / location_required / workstation_type / requires_crafting_target / completion_policy` 的既有业务语义。当前启用于 `work_stable` 和 `work_blacksmith`；未标记行动仍走兼容链。
+
+启用该字段的会话运行时包含单调增 `session_id`，只用于防止旧延迟清理误操作新会话；不是存档 ID、不进入配置，也不取代 CraftingSystem 的 `project_revision`。
+
+## station_layout.rear_spatial / rear_spatial_v1
+
+`merchant_route` 保存正式行商路线：`coordinate_space=formal_station_local`，`spawn / dock / path_points[]` 均为 `[x,z]`，当前固定 6 点 `(-55,-315) -> (-52,-235) -> (-46,-185) -> (-42,-135) -> (-40,-120) -> (-28.2,-52.4)`；旧 `(-40,-120)` 只作远端引导，第 6 点才是后门外真实 dock。`dock_root_clearance_to_back_gate_m=7.0` 要求 dock 到 `rear_spatial.back_gate=(-27,-45.5)` 的实际距离误差不超过 `0.05 m`；`corridor_half_width=2.25` 对应 4.5 m 商旅通道。StationLayoutController 负责校验并叠加 staging 偏移，MerchantSystem 只据这些点生成折线 NavigationMesh，不从道路 Mesh 或标签反推路线。
+
+`escape_route` 登记 6 点、`corridor_half_width=2.25`、最终 `completion=(-54,-305)` 与 `authority_status=runtime_authoritative_c4_p2`。A5-P7 后默认正式居民无论战斗与否都读取该路线，只有实体到达 completion 才提交 `escaped / in_station=false`；仅 GM 临时旧图兼容使用旧短路径。商人 / 逃离路线只定义空间，不改变时段、交易、NPC 意图或事件权威。
+
+## station_layout.combat_spatial.c3_p7_dynamic_assault
+
+`target_sequence` 固定为 `front_gate / warehouse / main_hall`；`roads_affect_navigation=false`，`path_policy=shortest_navigable_path_to_current_combat_target`。`movement_model=dynamic_combat_pressure` 继续表示逐实体索敌与移动，不代表无占位；T0149 后 `attack_position_mode=leased_reachable_positions`，`fixed_attack_slots=false` 仅表示不按出生编队预绑旧 P5/P6 静态槽。敌人改为按目标当前轮廓、实体半径和武器射程动态生成攻击位，经 NavigationMap 过滤后独占租约；满位进入候补，释放后最近可达兼容候补补员。具体数量、兵种、射程、速度与目标偏好仍只来自 `enemy_waves.json`。
+
+## station_layout.combat_spatial.c3_p6_second_wave（历史）
+
+`wave_number=2` 绑定 `enemy_waves.json / wave_02`。`attack_slot_sets[building_id][role_id]` 按兵种角色保存攻击位；当前角色为 `melee_front` 与 `polearm_rear`，点位仍使用 `space=station|building_local`。Controller 转换为 `attack_slot_sets_world`，CombatSystem 依据 `unit_type` 确定角色，并在角色内部使用稳定 formation index。角色槽只定义空间，不修改 `attack_range`、伤害或攻击权威；第二波组成仍完全来自波次配置。
+
+正门 / 仓库允许 `formation=gate_compact_two_rank|compact_two_rank` 表达有限正面的同侧多排，主厅使用 `north_front_compact_line / north_front_reach_line` 表达同侧前后排。道路策略继续为 `roads_affect_navigation=false`。
+
+## station_layout.combat_spatial.c3_p5r_direct_assault
+
+`target_sequence` 只允许 `front_gate / warehouse / main_hall`；`roads_affect_navigation=false` 与 `path_policy=shortest_navigable_path_to_current_target` 明确道路不参与敌我寻路。`attack_slots` 以建筑 ID 分组：`space=station` 的点直接使用驿站坐标，`space=building_local` 的点随建筑中心与八方向朝向转换；`main_hall.formation=north_front_compact_line` 表示第一波 8 个点必须处于北侧正面同一纵深。Controller 统一输出 `attack_slots_world`，CombatSystem 按稳定 formation index 分配并吸附到生产 NavigationMap。槽位只定义可达攻击位置，不直接授予攻击权威。
+
+`enemy_route.navigation_cross_sections[]` 以 `z / x_min / x_max` 定义城外开放进军廊道横断面。历史 `stages[]` 仍保留给 P1–P4 回归，但第一波 P5R 不消费中间阶段。旧 `collision_boundary_arrival` 已删除，卡住或超时不能再伪造到达。
+
+## T0129B-C3-P4 权威边界
+
+`combat_spatial.c3_p4_authority_boundary` 登记仓库后主厅实体路线、物理到达攻击、主厅伤害与既有失败提交；`terminal_after=main_hall_destroyed` 表示单敌建筑目标链已经到达终点。多敌波次、集结与器械仍列入 deferred。
+
+## T0129B-C3-P3 权威边界
+
+`combat_spatial.c3_p3_authority_boundary` 登记破门后的 `gate_turn / north_junction / plaza_junction / warehouse` 实体路线、物理到仓后攻击与仓库伤害提交；`hold_after=warehouse_destroyed` 明确主厅仍未迁移。`c2_authority_boundary.c3_p3_migrated` 同步记录单活动敌人仓库攻击权威，不能从建筑中心或逻辑 AI 推断到达。
+
+## T0129B-C3-P2 权威边界
+
+`combat_spatial.c3_p2_authority_boundary` 保留当时的单活动波次敌人、物理抵门后攻击、正门伤害提交及事件兼容记录；其门后 hold 已被 C3-P3 正式路线取代。
+
+## T0129B-C3-P1 `combat_spatial`
+
+`data/station_layout.json / station_layout_v2` 新增顶层 `combat_spatial.enemy_route`：`spawn_zone_center / spawn_zone_size / approach_half_width / pilot_stop_stage_id / stages[]`。每个阶段保存稳定 `id / label / point[x,z]`，当前顺序为 spawn、reveal、approach_mid、contact、front_gate、gate_turn、north_junction、plaza_junction、warehouse、main_hall。P1 只消费到 `pilot_stop_stage_id=front_gate`；后五段为后续正门突破、仓库与主厅迁移预留，不代表已启用攻击。
+
+`c3_p1_authority_boundary` 明确本步只迁移出生 / 显现 / 接触 / 正门空间与外围导航；波次实例、攻击、HP、战斗事件和胜负仍延后。运行时不得从建筑中心猜测这些阶段点。
+
+## T0129B-C2a / T0129C-A1–A3b12R 正式驿站空间、家具与物理导航配置
+
+`data/station_layout.json` 使用 `station_layout_v2`，是阶段 C 正式空间迁移的数据合同。顶层在 `units / migration / terrain / station / buildings / roads / camera` 外新增 `public_locations / npc_initial_positions / building_spatial / navigation / authority_boundary`：
+
+- `units.godot_units_per_meter` 固定为 `1.0`；二维空间数组统一为 `[x,z]`，高度单独使用 `y / height / depth`。
+- `migration.phase=a5_p7_default_formal_world`、`formal_layout_active=true` 表示 Main 新局默认启用正式空间根和生产 NavigationMap；P6R3 后 `preview_offset=[0,0] / world_origin_mode=formal_default_at_origin`，正式空间位于世界原点附近。`previous_formal_world_offset=[1000,0]` 只用于迁移没有 `world_origin` 的旧正式空间存档，不再参与新局运行坐标。旧 `c2_spatial_contract_staged / false` 只保留为历史配置兼容。
+- `terrain` 保存承底、地坪、河槽和河面；`station` 保存不规则边界、墙段、城门和广场泥地；`roads` 每项保存 `id / from / to / width / kind / serves?`。
+- `buildings` 的 `id` 必须对应 `building_defs.json`，`node_name` 是未来正式场景绑定名；`center / rotation_degrees / orientation / lot_size / envelope_size / height` 只定义空间根和最大包络，不保存等级、HP、工位占用或升级状态。
+- `camera` 是正式布局的距离、俯角、FOV、焦点和平移边界合同，A5-P7 后新局默认应用；进入 GM 临时旧图兼容时才恢复旧 CameraRig 值。
+- `building_spatial[building_id].entry_route` 保存门外、门外侧、门内侧、室内与出口局部点；`positions[]` 保存同 ID 权威位置的 `type / authority / required_level / center / size / facing_degrees`。配置位置不等于运行时解锁、预留或占用。
+- `navigation` 保存 staging 合同栅格、边界、agent 半径、道路类型与入口连接宽度；当前 `0.5 m` AStar 栅格只做 123 个坐标的确定性可达对照，实际 Godot 路径使用物理配置烘焙的生产 NavMesh。
+- `c1_authority_boundary / c2_authority_boundary` 保留历史迁移审计；`a5_p7_authority_boundary` 记录默认总切换结果，A5-P8 的运行态空间则进入 `formal_spatial_save_v1`。任何消费者仍不得从建筑中心自行推断位置。
+
+`data/physics_navigation.json` 使用 `physics_navigation_v1`：
+
+- `collision_layers` 的通用空间合同固定 `world_static / actor_body / interaction` 为 layer 1 / 2 / 3（bitmask `1 / 2 / 4`）。T0214 的 `FixedGateCombatContactArea` 使用隔离 layer 4（bitmask `8`），只由已锁正门的敌军攻击查询临时并入 mask，不属于通用物理阻挡或交互层。
+- `actor_profiles` 分别保存 NPC、步兵敌人与骑乘敌人的胶囊半径 / 高度、台阶、坡度、速度、加速度及同阵营 RVO layer / mask；它是后续角色 Body / Agent 的统一尺度源，不改变战斗数值配置中的权威移动意图。
+- `formal_wave_spawn` 保存正式波次的三列生成合同、最低间距、胶囊净距和生产调度预算。实际生成间距取 `minimum_spacing` 与“本波最大胶囊直径 + minimum_capsule_clearance”的较大值；第五波因骑射半径 `0.65 m` 得到 `1.40 m`。`ai_updates_per_frame=8 / contact_update_interval_frames=6 / avoidance_update_interval_frames=3` 只拆分索敌和复核负载，每名敌人的跳过时间单独累计，不改变伤害 / 冷却。
+- `structural_collision` 固定 `0.4 m` 墙厚、`1.8 m` 建筑门净宽、`2.2 m` 门高和门柱宽；A3 当前由 78 个结构阻挡、1 个烘焙地面、131 个 fixture 碰撞部件和 24 个自然边界组成 234 个静态源。`1.8 m` 净宽为斜墙体素化后的可靠通行值，不等于 NPC 的物理直径。
+- `navigation_mesh` 保存 `production_cell_size=0.25 / production_cell_height=0.1`、NPC 请求半径 `0.35 m`、体素对齐烘焙半径 `0.5 m`、静态碰撞 source group、烘焙 AABB / 高度 / 地面厚度。当前从 234 个 `formal_navigation_source` StaticBody 生成 788 顶点 / 754 多边形生产 NavMesh，并使用独立 NavigationMap；12 个建筑门由双向 NavigationLink3D 连接烘焙后门内外小岛。
+- `navigation_agent / stuck_recovery` 保存局部避障、到达容差、RVO `avoidance_layers / avoidance_mask`、邻居、时间窗、进度采样和有界重寻路参数；`avoidance_radius_padding=0.10 m` 只扩大 RVO 预判圆，不扩大物理胶囊或 NavMesh 烘焙半径。A2a 只按连续无进展采样累计 `fail_after_seconds`，不能把长路线总耗时当成卡死。`authority_boundary` 明确运动组件只拥有物理移动，玩法系统仍拥有地点 / 工位 / 战斗 / 逃离完成事实。
+
+`data/building_fixture_layouts.json` 使用 `building_fixture_layout_v1`，是逐建筑可见设备与实体碰撞合同：
+
+- `buildings[building_id].maximum_level` 表示该排布按最高等级最坏占地预验收；当前完整登记全部 12 座建筑：`blacksmith / clinic / dormitory / dining_hall / tavern / garden / training_ground / stable / chapel / workshop / main_hall / warehouse`。
+- `fixtures[]` 每项保存 `id / kind / required_level / center / rotation_degrees / collision_size / collision_center_y`，并且必须二选一提供 `asset_path` 或 `primitive_visual`。`center` 仍是建筑局部 `[x,z]`；`collision_size` 为 Godot `[x,y,z]` 米制尺寸。`collision_mode` 默认为 `solid_box`；菜园田畦可用 `garden_u_border` 生成左 / 右 / 后三段边框碰撞；马栏可用 `stable_open_bay + opening_side + close_far_end` 拆成外栏、分隔栏与饲槽，中央工作面和栏门侧保持可进入；`dining_table` 生成无工位权威的厚木共享餐桌，沿用该 fixture 的单一 BoxShape，不创建座位或 occupant anchor。复合部件可各自保存 `center_y`，不再被单一碰撞中心强制抬高。
+- 映射权威工位的家具还保存 `workstation_id` 与 `npc_stand.scope / center / facing_degrees / clearance_radius`，并可选声明仅作用于该路线终段的 `target_desired_distance`。`scope=workstation` 时站位必须位于对应逻辑工作湾；`scope=building` 允许病床等家具把到达点放在工作湾侧边，但仍须位于建筑包络。所有站位净空不得小于 NPC 物理半径，并且必须避开同建筑任意家具的放大碰撞；同一工位只能映射一件主设备。训练场站位另要求 `action_clearance_size=[3,3]`；马栏可带 `horse_anchor.id / center / facing_degrees / footprint_size`，当前最小净空为 `1.4 × 2.2 m`。马匹锚点只给未来 HorseSystem 实体投影使用，不是 NPC 到达点、挂接锚点或照料容量。
+- `arrival_mode` 当前只允许 `stand / mount_after_arrival`。后者必须带 `occupant_anchor.center / y / facing_degrees / pose`；anchor 必须落在对应家具碰撞表面，用于到达并提交占用后的表现挂接，禁止作为 NavigationAgent3D 目标。诊所四床使用 `lying_supine`，宿舍十床使用 `sleeping_supine`，食堂十把椅子使用 `sitting`；可选 `occupant_anchor.label` 只改变预览标签，可选正数 `footprint_size=[x,z]` 只调整预览锚点形状，不改变实体碰撞或容量。
+- 宿舍床可带可选 `assigned_npc_id`，但它只是 `building_defs.json / BuildingSystem` 固定归属的只读审计镜像。运行时申请床位仍必须调用 BuildingSystem；StationLayoutController、运动组件和表现层不得依据该字段分配或改写床位。当前 1–8 号床镜像八名初始 NPC，9–10 号不含归属。
+- 小教堂映射固定祭坛与十个祈祷席；十席分别挂在五排左右半长凳上，使用 `mount_after_arrival + seated_prayer`，每件 fixture 的 `workstation_id / npc_stand / occupant_anchor` 仍严格为一席，不按长凳长度推导容量。工械坊三工程位等级为 `1 / 1 / 3`，`workshop_role=bowyer / mechanism / siege_assembly` 只选择包装细节，不改变配方、阶段、等级或占用。主厅四个平台和 Lv.2 / 4 / 6 加固继续以 `spatial_position_id` 映射；T0228 后 `main_hall_slot_01–04` 的等级依次为 `5 / 6 / 1 / 3`。A3b12R 仓库七件 fixture 均使用 `asset_path / visual_scale / cargo_categories`；`cargo_categories` 只控制食品、木石铁、钱箱、装备与混合装卸的类别符号，不是实时库存数量权威，且不允许 `workstation_id / npc_stand`。装卸货运车碰撞为 `2.2 × 1.7 × 4.2 m`。`scope.maximum_level_collision_staging=true` 表示当前预览始终烘焙最高等级的 107 件配置物 / 131 个碰撞部件，以提前证明最坏路径；`runtime_upgrade_visibility_enabled=false` 表示本步尚未把可升级家具显隐 / 碰撞切换接到 BuildingSystem。
+
+`data/station_layout.json.natural_collision / natural_collision_v1` 保存简化复合自然阻挡：每项含 `id / kind / center / size / rotation_degrees / corridor`。当前固定 24 项：`river_cliff=8 / rock_ridge=4 / dense_forest=12`；必须位于地形范围、不得与 42 段道路相交，并保留正门敌军与后门商人 / 逃离廊道。
+
+`data/presentation/station_spatial_plan.json` 继续作为设计灰盒与压力证明；`tools/verify_t0129b_c1_station_layout.gd` 在 C1 锁定两份数据的相关几何一致性。后续若正式实现需要调整坐标，必须先更新画面规划决策，再同步正式配置和对照测试，不能让两份数据静默漂移。
+
+## T0128 表现外观映射（非权威配置）
+
+`data/presentation/character_appearances.json` 使用 `character_appearance_v1`：顶层 `characters` 以 NPC ID 为键，每项可含 `scene / appearance_id / display_name / role`。当前只登记 `blacksmith_01`。该文件只选择表现场景，NPC 身份仍来自 `npc_profiles.json`，实时行动 / HP / 地点 / 装备仍来自对应权威系统；外观配置不得覆盖这些事实。
+
+## T0127 工位预留与 NPC 空间运行态
+
+BuildingSystem 规范化后的每个 `workstations[]` 运行态位置现在至少包含：
+
+```json
+{
+  "id": "forge_01",
+  "type": "blacksmith_forge",
+  "name": "锻造位1",
+  "assigned_npc_id": null,
+  "reserved_by": "blacksmith_01",
+  "occupied_by": null,
+  "status": "reserved"
+}
+```
+
+`status` 为派生值：`occupied_by` 非空时是 `occupied`，否则 `reserved_by` 非空时是 `reserved`，二者均空时是 `free`。预留提交必须把同一 NPC 的 `reserved_by` 清空并写入 `occupied_by`；释放接口可分别或同时清理两者。`building_defs.json` 不保存运行时占用，缺失 `reserved_by` 会规范化为 `null`。
+
+NPC 运行态新增 `spatial_route_phase / physical_location_phase / reserved_building_id / reserved_workstation_id / current_workstation_id`。它们用于执行和调试，不代替 `current_location`；地点事实仍由跨门事务写入。`debug_get_spatial_migration_snapshot(npc_id)` 只读投影逻辑地点、世界坐标、路线阶段、预留与占用，不进入 LLM Schema、Prompt 或保存数据。
+
+## T0121 全局数值字段变更
+
+- `CraftingRecipe.available: bool` 控制配方是否进入可选目标；缺失默认 `true`。合法阶段可使用空 `cost={}` 表示纯工时收尾，但无效非字典成本仍拒绝加载。
+- `BuildingDefinition.repair.hp_restore` 是单批回复量；`repair_batches=ceil(missing_hp/hp_restore)`，总成本为单批 `cost` 逐项乘批次数。
+- `PietyAbility.meteor.impact_max_targets=12` 只限制冲击，燃烧不继承该上限。
+- 商店允许基础资源买卖，且卖价低于买价；酒仅卖出。战斗等级读取最高单项武器 / 骑术 `skill_experience`，通用属性点每 10 总经验产生 1 点。
+
 ## T0116 对话意图复核与制造失败
 
 `DialogueIntentRevalidationRequest`：`meta / game_time / station_context / npc / planned_intent / current_plan[24] / allowed_actions / current_building_states / current_resource_states`。`planned_intent` 包含 `created_day / created_time / source / plan_item`，且计划项必须等于当前小时计划并仅可为 `talk_to_npc / seek_guard_officer`。
@@ -10,30 +533,30 @@
 
 ## T0114 虔诚与陨石配置 / 运行态
 
-`data/piety_ability.json` 是这项能力的唯一数值配置源，分为共享产出、合法地表和陨石效果三组：
+`data/piety_ability.json` 是这项能力的唯一数值配置源，分为共享产出、水平地面高度和陨石效果三组：
 
 ```json
 {
   "max_piety": 100.0,
-  "piety_per_prayer_hour": 3.0,
+  "piety_per_prayer_hour": 2.5,
   "contributing_action_ids": ["pray_at_chapel", "lead_mass"],
+  "action_multipliers": {
+    "pray_at_chapel": 1.0,
+    "lead_mass": 2.0
+  },
   "prayer_mode_multipliers": {
     "personal_prayer": 1.0,
-    "mass_attendance": 1.0
+    "mass_attendance": 2.0
   },
-  "combat_action_game_seconds_per_second": 60.0,
-  "ground": {
-    "y": 0.0,
-    "min_x": -28.5,
-    "max_x": 28.5,
-    "min_z": -33.5,
-    "max_z": 33.5
-  },
+  "combat_action_game_seconds_per_second": 1.0,
+  "target_ground_y": 0.0,
   "meteor": {
     "radius": 5.5,
     "fall_duration_seconds": 1.15,
+    "crater_lifetime_game_seconds": 86400.0,
     "impact_damage": 48.0,
     "impact_penetration": 5.0,
+    "impact_max_targets": 12,
     "burn_duration_seconds": 10.0,
     "burn_tick_interval_seconds": 1.0,
     "burn_damage": 1.0,
@@ -42,9 +565,9 @@
 }
 ```
 
-ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `3 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
+ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / prayer_mode`；系统只接受配置中的行动并按 `2.5 × active_game_seconds / 3600 × action_multiplier × mode_multiplier` 累计。独祷为 2.5 点 / 人·小时，`lead_mass` 与 `mass_attendance` 分别经行动或模式倍率达到 5 点 / 人·小时；该配置不定义每日、每场、每人、每轮充能时限或连续弥撒衰减。`debug_get_piety_snapshot()` 提供 `current_piety / max_piety / normalized / ready / total_generated / generated_by_npc / pending_meteors / burn_zones / last_cast_result`，只用于观察，不是保存或第二套结算 Schema。
 
-施放事件 `piety_meteor_cast` 至少保存 `cast_id / target_position / radius / piety_spent`；落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / hit_count / defeated_count / friendly_fire=false`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。
+T0172 起，选定落点和消费虔诚不生成正式事件；旧 `piety_meteor_cast` Schema 仅保留历史数据读取兼容。落地事件 `piety_meteor_impact` 保存 `cast_id / target_position / radius / impact_damage / impact_max_targets / enemy_hit_count / enemy_defeated_count / burn_duration_seconds / friendly_fire=false`。若冲击权威结果 `enemy_defeated_count > 0`，再生成 `piety_meteor_enemy_defeated`，至少保存 `cast_id / enemy_defeated_count`；零击败时不得生成。冲击候选按水平距离、敌人 ID 稳定排序并截取最多 12 个；燃烧区域不传 `max_targets`。坐标使用 `{x,y,z}` 字典。持续燃烧不按秒写事件，避免污染记忆；实际敌人伤害仍由 CombatSystem 权威结算。落地与击杀事件使用 `local_public` Schema，但属于全站广播例外。
 
 ## T0113 对话训练权威实况
 
@@ -86,7 +609,7 @@ ActionSystem 向 PietySystem 提交 `npc_id / action_id / active_game_seconds / 
 }
 ```
 
-`defense_device_range_bonus` 是该目标等级完成时新增的非负小数增量，不是最终倍率。DefenseDeviceSystem 从 Lv.2 累加到宿主当前等级，再与 `data/defense_device_defs.json` 槽位自身的 `effect_modifiers.range_multiplier` 相乘；当前围墙 Lv.3 / Lv.5 各为 `0.05`，主厅不配置此字段并保留槽位基础 `2.0x`。未知、缺失或负值按 0 处理，累计宿主增量程序上限为 `1.0`。该字段只影响程序权威器械射程，不新增事件、记忆或 NPC Prompt 字段。
+`defense_device_range_bonus` 是该目标等级完成时新增的非负小数增量，不是最终倍率。DefenseDeviceSystem 从 Lv.2 累加到宿主当前等级，再与 `data/defense_device_defs.json` 槽位自身的 `effect_modifiers.range_multiplier` 相乘；当前围墙 Lv.3 / Lv.5 各为 `0.05`，主厅不配置此字段且槽位基础倍率为 `1.0x`。未知、缺失或负值按 0 处理，累计宿主增量程序上限为 `1.0`。该字段只影响程序权威器械射程，不新增事件、记忆或 NPC Prompt 字段。
 
 ## T0106 LLM 短期记忆投影
 
@@ -112,6 +635,36 @@ MemorySystem 权威事件 Schema 不变。后端 `EventSummary` 只描述供应�
 - `event_id` 只为旧测试 / 审计输入兼容接受，当前 Godot 与供应商投影不生成。
 - 原 `payload` 不再是 Pydantic 字段，额外输入会在 Schema / Model Adapter 边界被丢弃。
 - `ShortTermMemoryContext` 仍为 `experienced_events / witnessed_events`；`DailyReflectionRequest.day_events` 的同形记录额外带 `memory_kind=experienced|witnessed`。
+
+T0306 在上述既有 `details: dict` 内增加可选聚合元数据，不新增 Pydantic 顶层字段：
+
+```json
+{
+  "type": "attack_made",
+  "summary": "艾达使用剑盾攻击劫掠剑盾手3次，共造成20点伤害，目标HP从100降到80，最低80，期间击退目标。",
+  "importance": 75,
+  "day": 1,
+  "time": "10:00:00",
+  "details": {
+    "attacker_npc_id": "veteran_deputy_01",
+    "target_enemy_id": "raider_sword",
+    "weapon_id": "sword_shield",
+    "aggregation": {
+      "scope": "same_day_contiguous_combat_run",
+      "event_count": 3,
+      "total_damage": 20,
+      "first_time": "10:00:00",
+      "last_time": "10:00:02",
+      "hp_before_first": 100,
+      "hp_after_last": 80,
+      "lowest_hp": 80,
+      "defeated_any": true
+    }
+  }
+}
+```
+
+该对象只存在于 LLM 投影；MemorySystem 原始事件 Schema 和 NPCPanel 数据源不变。Model Adapter 将 `details` 深拷贝到供应商请求，因此不会删除聚合事实。
 
 ## T0101 守备官初始知识关系
 
@@ -330,7 +883,7 @@ NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变�
 
 `recruited` 与 `in_station` 是相互独立的严格布尔值；离站成员仍保留在 `StationSceneContext.resident_roster`。缺少任一标签的正式请求会被 Schema 拒绝。
 
-`data/resource_defs.json` 对受限资源新增 `warehouse_capacity={level_1,per_level_bonus}`。当前粮食、餐食、木材、石料、铁为 `{120,60}`，酒为 `{60,30}`；未配置或空配置表示不受仓库容量限制。`npc_initial_long_memory.json` 图谱结构未改变，关系总数由 222 增至 226，仓库稳定技术值更新为 `level_based_bulk_storage_and_post_breach_attack_target`。
+`data/resource_defs.json` 对受限资源新增 `warehouse_capacity={level_1,per_level_bonus}`。当前粮食、餐食、木材、石料、铁为 `{120,60}`，酒为 `{60,30}`；未配置或空配置表示不受仓库容量限制。具体物品定义可选 `icon` 作为只读 UI 资源路径。`npc_initial_long_memory.json` 图谱结构未改变，关系总数由 222 增至 226，仓库稳定技术值更新为 `level_based_bulk_storage_and_post_breach_attack_target`。
 
 ## T0069 LLM 审计 JSONL Schema v1
 
@@ -516,7 +1069,7 @@ T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgement
 ```json
 {
   "id": "money",
-  "name": "第纳尔",
+  "name": "金钱",
   "category": "currency",
   "initial_amount": 30,
   "min_amount": 0,
@@ -526,7 +1079,7 @@ T0049/T0050 定义通用 `PlanRevisionJudgementRequest` / `PlanRevisionJudgement
 
 T0305 曾增加 `meal / wine / weapons / armor / defense_devices / horse_readiness` 等派生资源；T0901/T1508 的早期实现也曾直接消费四类聚合库存。T0036 已保留这段历史数据兼容，但 `weapons / armor / defense_devices / horse_readiness` 当前均配置为 `deprecated=true`、`formal_consumption_allowed=false`，不得再由正式行动产出，也不得用于装备、部署或马匹分配。餐食与酒仍是正式数量资源。
 
-T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分别保存为 `item_sword_shield`、`item_polearm`、`item_bow`、`item_crossbow`、`item_iron_helmet`、`item_mail_chest`、`item_iron_bracers`、`item_iron_greaves`、`item_arrow_bundle`、`item_wall_ballista`、`item_wall_arrow_tower`。装备或部署哪一种，就原子扣除或返还同一种具体库存；这些定义使用 `show_in_main_hud=false` 与 `detail_group=weapon|armor|ammunition|defense_device`，由详情区逐项展示。马匹是 HorseSystem 个体实体，不进入 ResourceSystem。类别总数只能由具体库存 / 马匹实体汇总为只读 UI 摘要，不能成为第二权威来源。
+T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分别保存为 `item_sword_shield`、`item_polearm`、`item_bow`、`item_crossbow`、`item_iron_helmet`、`item_mail_chest`、`item_iron_bracers`、`item_iron_greaves`、`item_wall_ballista`、`item_wall_arrow_tower`。装备或部署哪一种，就原子扣除或返还同一种具体库存；这些定义使用 `show_in_main_hud=false` 与 `detail_group=weapon|armor|defense_device`，由详情区逐项展示。马匹是 HorseSystem 个体实体，不进入 ResourceSystem。类别总数只能由具体库存 / 马匹实体汇总为只读 UI 摘要，不能成为第二权威来源。
 
 ## Merchant Definition
 
@@ -542,15 +1095,22 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
     "departure_minute": 0
   },
   "buy_offers": [
-    {"resource_id": "grain", "unit_price": 2}
+    {"resource_id": "grain", "unit_price": 2},
+    {"resource_id": "wood", "unit_price": 3},
+    {"resource_id": "stone", "unit_price": 4},
+    {"resource_id": "iron", "unit_price": 5}
   ],
   "sell_offers": [
-    {"resource_id": "wine", "unit_price": 7}
+    {"resource_id": "grain", "unit_price": 1},
+    {"resource_id": "wood", "unit_price": 2},
+    {"resource_id": "stone", "unit_price": 3},
+    {"resource_id": "iron", "unit_price": 4},
+    {"resource_id": "wine", "unit_price": 4}
   ]
 }
 ```
 
-`buy_offers` 从驿站视角表示“买入商人的资源”，当前只允许粮食、木材、石料和铁；`sell_offers` 表示“向商人卖出驿站库存”，当前只允许酒。`unit_price` 是每份资源对应的整数第纳尔，必须大于 0。MerchantSystem 是时段、报价和交易结算权威；UI 不得复制另一份价格或直接修改资源。
+`buy_offers` 从驿站视角表示“买入商人的资源”，当前只允许粮食、木材、石料和铁；`sell_offers` 表示“向商人卖出驿站库存”，当前允许同四项基础资源与酒。基础资源必须满足同资源 `sell_price < buy_price`，当前均相差 1；酒不得出现在 `buy_offers`。`unit_price` 是每份资源对应的整数第纳尔，必须大于 0。MerchantSystem 是时段、报价和交易结算权威；UI 不得复制另一份价格或直接修改资源。
 
 ## T0059 NPC Initial Long Memory
 
@@ -665,7 +1225,7 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
   },
   "progression": {
     "total_experience": 0,
-    "next_skill_point_xp": 5,
+    "next_skill_point_xp": 10,
     "unspent_skill_points": 0,
     "spent_skill_points": 0,
     "skill_experience": {
@@ -783,9 +1343,9 @@ T1001 起，运行时 `plan` 可保存规则版每日计划。T1003/T0022 起，
 
 后端 `PlanItem` 在进入 Godot 前包含顶层 `action_kind` / `target_id` / `location_id`；`DailyPlanSystem` 校验后把目标组合归入运行时 `target` 字典，并从行动配置恢复显示名。计划由 `DailyPlanSystem` 生成和执行；正式输出必须精确复用动态候选的 action/kind/target/location 组合，执行时仍由 `ActionSystem` 校验地点、工位、资源、HP 和行动合法性。计划项 `source` 可为正式真实模型的 `llm_plan_day` / `llm_plan_revision`，或显式调试用的 `rule_default` / `mock_plan_day`。T0022/T0023 后不再产生每日计划 `rule_plan_fallback`、计划修订 `mock_revision` 或 `rule_revision_fallback`；正式每日计划失败时保持 `planning_day`，正式修订失败时保留当前计划。计划生成或修订可把当前小时改为 `idle` 安全等待项；`idle` 只表示计划层等待，不是生产行动定义。计划项不是已发生事实；只有实际执行的工作、吃饭、睡觉、祈祷、拜访、训练、治疗或对话事件才代表行动发生。
 
-T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数，`next_skill_point_xp` 当前为每 5 点总经验获得 1 个技能点。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
+T0304 起，运行时 `NPCSystem` 会读取并更新 `states` 下的 `hp`、`max_hp`、`satiety`、`fatigue`、`money`、`unconscious`、`escaped`、`current_action` 字段，并将 `stats.strength` / 力量、`stats.intelligence` / 智力、`recruited` 与 `skills` 展示到 NPC 面板。移动系统会在运行时补齐和更新 `current_location`、`current_location_name`、`movement_target`、`movement_target_name` 和 `location_context`；这些字段当前作为地点进入占位，不要求手动写入 `data/npc_profiles.json`。T0808 起，诊所治疗可通过运行时恢复受伤 NPC 的 HP，并可最小提升医术。T0904 起，运行时会补齐 `progression` 成长结构：`total_experience` 记录熟练度提升同步得到的总经验，`skill_experience` 记录各熟练度累计经验，`unspent_skill_points` 是等待玩家分配的技能点，`spent_skill_points` 是已由玩家分配到属性的点数；T0121 后 `next_skill_point_xp` 为每 10 点总经验获得 1 个技能点。战斗等级另由 CombatSystem 读取剑盾、长杆、弓、弩、骑术五项中最高的 `skill_experience`，职业总经验不参与。旧 NPC 档案可以不手动写入 `progression`，加载时会按默认值补齐。
 
-T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。T0031 起，初始档案可用 `initial_equipment` 保存“槽位 -> 正式定义 id”的故事装备引用，例如艾达使用 `{"main_weapon": "sword_shield"}`；`EquipmentSystem` 只在对应运行时槽位为空时装载正式定义，不消耗全局库存、不写守备官 `equipment_given` 事件。没有故事装备的 NPC 继续使用空对象 `{}`，运行时 `equipment` 初值也可保持 `{}`。T0902 起，兵种判定只读取运行时装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T1103B/T1103C 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`，用于 GM / UI 快照查看当前按敌方方位生成的短步长避战方向。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。T1201 起，`states.morale_boost` 保存战时对话产生的 2 游戏小时斗志 buff；T1204A 起，`states.escape_intent` 保存逃离触发、移动目标、开始 / 完成时间、挽留轮次、对话暂停标记、最近挽留结果和逃离移动倍率，`status` 可为 `escaping`、`paused_unconscious`、`stayed` 或 `escaped`。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
+T0901 起，运行时 `equipment` 可包含以下槽位：`main_weapon`、`helmet`、`chest`、`bracers`、`greaves`、`mount`。槽位内容由 `EquipmentSystem` 根据 `weapon_defs.json`、`armor_defs.json` 或 `mount_defs.json` 写入；`NPCSystem` 只保存槽位，不决定库存扣除、装备合法性或兵种。T0031 起，初始档案可用 `initial_equipment` 保存“槽位 -> 正式定义 id”的故事装备引用，例如艾达使用 `{"main_weapon": "sword_shield"}`；`EquipmentSystem` 只在对应运行时槽位为空时装载正式定义，不消耗全局库存、不写守备官 `equipment_given` 事件。没有故事装备的 NPC 继续使用空对象 `{}`，运行时 `equipment` 初值也可保持 `{}`。T0902 起，兵种判定只读取运行时装备结构中的 `main_weapon` 与 `mount` 槽；全局 `horse_readiness` 库存不代表某个 NPC 已骑乘。T1103 起，运行时 `states` 可由 CombatSystem 写入 `combat_mode`、`combat_mounted`、`facing_direction`、`combat_target_enemy_id`、`formation_row` 和 `formation_index` 等临时战斗 / 集结状态；T1103A 起，`states.behavior_mode` 是工作 / 集结 / 战斗 / 避战 / 昏迷 / 逃离的统一模式字段，并保存进入原因和进入时间。T0209 起，非战斗人员避战可临时写入 `avoidance_target_id`、`avoidance_target_name` 和 `avoidance_target_position`；更完整的多敌权重、合成方向与目标修正只保存在 CombatSystem `active_avoidances` 运行态，不写回 NPC 初始档案。T1104 起，战斗中的 NPC 状态可临时写入 `combat_attack_cooldown`、`combat_last_attack_result` 和当前 `combat_target_enemy_id`，用于按战斗推进秒处理攻击间隔和 GM / 自动化观察最近攻击结果；T1104A 起这些冷却不直接读取玩家 `x2` / `x4` 作为攻速倍率。T1105 起，`states.combat_strategy` 保存玩家当前手动选择的战斗策略，`combat_strategy_move_target_id`、`combat_strategy_move_target_name` 和 `combat_strategy_move_target_position` 只表示策略移动的临时目标。T1201 起，`states.morale_boost` 保存战时对话产生的 2 游戏小时斗志 buff；T1204A 起，`states.escape_intent` 保存逃离触发、移动目标、开始 / 完成时间、挽留轮次、对话暂停标记、最近挽留结果和逃离移动倍率，`status` 可为 `escaping`、`paused_unconscious`、`stayed` 或 `escaped`。这些字段不要求写入初始 NPC 档案，且不代表装备库存或 HP 结算。
 
 T0038 后，坐骑槽不再表示由 `horse_readiness` 兑换出的匿名物品，而是 HorseSystem 权威分配关系的兼容快照，至少保存 `horse_id` 与 `horse_name`。只有已入伍且已装备主武器的 NPC 才允许建立该关系；仅有盔甲不满足条件。收回主武器、取消入伍或逃离会自动解除分配并清空 `equipment.mount`；仅更换主武器或收回盔甲不解除。槽位副本不能自行生成、销毁、治疗或移动马匹，完整个体状态始终以 HorseSystem 为准。
 
@@ -796,15 +1356,15 @@ T0033 起，马塞尔的 `background_story` 只补充简短的“他擅长酿酒
 ```json
 {
   "id": "keep_distance",
-  "label": "保持距离射击",
+  "label": "拉开距离射击",
   "unit_type": "archer",
   "unit_type_label": "弓箭兵",
-  "selected_by": "player",
-  "selected_reason": "manual"
+  "selected_by": "dialogue",
+  "selected_reason": "guard_dialogue_request"
 }
 ```
 
-可用策略由当前装备 / 兵种决定；当前策略由玩家在 NPC 面板手动选择，默认使用该兵种第一项进攻 / 输出策略。`current_order` 不自动改写该字段。
+可用策略由当前装备 / 兵种决定；当前策略由合法战时对话的结构化结果经 CombatSystem 复验后设置，默认统一使用“主动进攻”。`current_order` 不自动改写该字段。
 
 `states.behavior_mode` 允许值至少为 `work`、`rally`、`combat`、`avoid_combat`、`unconscious`、`escaped`。T1103 现有 `combat_mode` 仍作为兼容字段服务旧集结 / 坐骑视觉；后续应继续以 `behavior_mode` 表达工作 / 集结 / 战斗 / 避战同级关系。战时斗志激昂 buff 可保存为运行时状态，例如：
 
@@ -917,7 +1477,7 @@ T0904 起，属性成长不由 AI 自动分配。玩家通过 `NPCSystem.assign_
 }
 ```
 
-`repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。2026-05-24 起，`repair` 的资源会在修复开始时一次性扣除，`seconds_per_missing_hp` 和 `level_time_factor` 用于计算倒计时修复时长；`hp_restore` 保留为旧配置兼容字段，不再表示点击后瞬间恢复。所有建筑都应具备 `upgrade` 最小配置；升级时长可由 `duration_seconds`，或 `seconds_per_current_level + level_time_factor` 配置，未配置时使用系统默认时长。升级在开始时一次性扣除资源并创建倒计时作业，升级期间 `is_enterable=false`、所有内部位置停用，完成后才应用等级、Max HP、非固定位置增量和效率奖励。
+`repair` / `upgrade` 为 T0205 起使用的可选字段。已配置时由 `BuildingSystem` 调用 `ResourceSystem.spend_resources` 进行资源结算。T0121 后 `hp_restore` 表示单批可覆盖的缺失 HP，`repair_batches=ceil(missing_hp/hp_restore)`，每项总修复成本为 `repair.cost[resource] × repair_batches`；资源在修复开始时一次性扣除。`seconds_per_missing_hp` 和 `level_time_factor` 继续计算倒计时修复时长，不与批次数重复放大工期。所有建筑都应具备 `upgrade` 最小配置；升级时长可由 `duration_seconds`，或 `seconds_per_current_level + level_time_factor` 配置，未配置时使用系统默认时长。升级在开始时一次性扣除资源并创建倒计时作业，升级期间 `is_enterable=false`、所有内部位置停用，完成后才应用等级、Max HP、非固定位置增量和效率奖励。
 
 只有可进入建筑使用 `workstations` 表达内部状态。T0801 起，运行时位置占用和释放由 `BuildingSystem.claim_workstation(...)` / `release_workstation(...)` 修改 `occupied_by`；地点信息节点只读取该状态并广播差量，不自行决定位置权威状态。T0043 后，小诊所使用 `clinic_doctor_station` / `clinic_patient_bed`，训练场使用 `training_instructor_station` / `training_practice_slot`；升级通过 `workstation_deltas` 增加未列入 `fixed_workstation_types` 的位置。主厅、围墙、城门、后门、仓库等不可进入建筑保留 HP、等级、修复/升级等权威状态，但 `workstations` 为空，也不会暴露内部 NPC 或位置。NPC 可传播外部状态包含等级、`condition`、`is_enterable` 和运行效率分档；可进入建筑的内部状态按位置 ID 传播新增、移除、改名、改类型和占用变化。运行时地点快照还会为广场和可进入建筑生成 `people_statuses`；它来自 NPC 运行时状态，不要求写入 `data/building_defs.json`。
 
@@ -971,7 +1531,7 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
 - `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳并消耗 13 点饱食。
 - `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`、不要求神父在场，并绑定 `needs_profile="prayer_rest"`；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`。参加弥撒不是独立 action definition，而是 `pray_at_chapel` active 数据中的 `prayer_mode="mass_attendance"`；弥撒结束后恢复 `personal_prayer`。
 - `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money`、`skill="医术"`、`needs_profile="light_work"` 和 `timed_experience` 作为行为声明；具体目标校验、费用扣除、医术加速、有效治疗时长、HP 恢复和成长由 `ActionSystem` / `NPCSystem` 结算。
-- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。
+- `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds`、`clinic_round_dwell_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。`clinic_round_dwell_seconds` 当前为 300，只控制医生在真实病床侧的可见轮换间隔，不参与治疗率、收费或医术结算。
 - `clinic_patient`：读取 `location_required="clinic"`、`workstation_type="clinic_patient_bed"`、`required_active_action_id="work_clinic_doctor"` 和 `needs_profile="clinic_rest"`。只有受伤且未昏迷 NPC 可执行；无在岗医生时开始失败，活动中全部医生离岗时中断失败。团队、诊所升级与损伤效率由程序合成，不建立医生—病人一对一绑定。
 - `training_instructor`：读取 `location_required="training_ground"`、`workstation_type="training_instructor_station"`、`skill="教练"`、`stat="intelligence"`、`solo_skill_interval_seconds`、`coaching_skill_interval_seconds`、`student_skill_interval_seconds` 和 `needs_profile="training_instructor"`。NPC 必须有主武器或坐骑才能执行；没有受训者时提升自己当前装备对应武器 / 骑术，有受训者时参与全教官团队效率并提升“教练”。
 - `training_student`：读取 `location_required="training_ground"`、`workstation_type="training_practice_slot"`、`required_active_action_id="work_training_instructor"`、`student_skill_interval_seconds` 和 `needs_profile="training_student"`。NPC 必须有主武器或坐骑且训练场已有有效教官才能执行；全部教官离岗时当前受训中断失败。训练项目由受训者当前主武器 / 坐骑决定。全部在岗教官的人数、“教练”和对应项目熟练度组成团队效率，与训练场升级、损伤效率一起作用于全部训练位。
@@ -1074,7 +1634,7 @@ T0901 后，`data/armor_defs.json` 覆盖 `helmet`、`chest`、`bracers`、`grea
 }
 ```
 
-T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含 `horse_readiness` 消费来源。实际 `equipment.mount` 必须引用 HorseSystem 中唯一的 `horse_id / horse_name`，由 HorseSystem 建立或解除分配，EquipmentSystem 只写轻量投影。日常工作模式不显示骑乘；进入集结 / 战斗模式时该马的权威位置改为 `ridden`，退出后返厩。T0107 后 `speed_bonus` 作为骑乘移动倍率，`charge_speed_multiplier` 只在冲锋阶段叠加；冲锋命中分别使用 `charge_damage + riding_skill × charge_damage_riding_scale` 的马匹冲撞伤害、`charge_weapon_damage_multiplier` 的武器增伤和 `charge_stagger_seconds` 的敌人僵直。T0110 明确骑术不进入攻击速度结算；`attack_speed_modifier` 若存在，只是坐骑定义自身的固定装备修正。UI 不自行结算这些字段。
+T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含 `horse_readiness` 消费来源。实际 `equipment.mount` 必须引用 HorseSystem 中唯一的 `horse_id / horse_name`，由 HorseSystem 建立或解除分配，EquipmentSystem 只写轻量投影。日常工作模式不显示骑乘；进入集结 / 战斗模式时马先在厩等待，NPC 实际抵达马旁后该马的权威位置才改为 `ridden`，退出后返厩。T0107 后 `speed_bonus` 作为骑乘移动倍率，`charge_speed_multiplier` 只在冲锋阶段叠加；冲锋命中分别使用 `charge_damage + riding_skill × charge_damage_riding_scale` 的马匹冲撞伤害、`charge_weapon_damage_multiplier` 的武器增伤和 `charge_stagger_seconds` 的敌人僵直。T0110 明确骑术不进入攻击速度结算；`attack_speed_modifier` 若存在，只是坐骑定义自身的固定装备修正。UI 不自行结算这些字段。
 
 ## Defense Device Definition
 
@@ -1091,10 +1651,10 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
   "defense": 1.0,
   "effect": {
     "kind": "auto_attack",
-    "damage": 36,
+    "damage": 44,
     "penetration": 8.0,
-    "attack_speed": 0.22,
-    "attack_interval": 4.55,
+    "attack_speed": 0.23529411764705882,
+    "attack_interval": 4.25,
     "range": 34.0,
     "minimum_forward_dot": 0.0,
     "max_attacks_per_tick": 16
@@ -1123,7 +1683,7 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 }
 ```
 
-围墙与主厅各有 4 个通用槽。围墙槽的 `required_building_level` 为 `1 / 2 / 4 / 6`，形成 1–6 级 `1 / 2 / 2 / 3 / 3 / 4` 容量；主厅槽为 `1 / 3 / 5 / 6`，形成 `1 / 1 / 2 / 2 / 3 / 4`。围墙槽的 `range_multiplier=1.0`，主厅槽固定为 `2.0`。两座建筑 `upgrade.max_level=6`，逐级 `level_effects` 覆盖成本、工期和 Max HP 收益。例如围墙槽：
+围墙与主厅各有 4 个通用槽。围墙槽的 `required_building_level` 为 `1 / 2 / 4 / 6`，形成 1–6 级 `1 / 2 / 2 / 3 / 3 / 4` 容量；主厅按 ID 的等级为 `slot_01/02/03/04 = 5/6/1/3`，即前侧两槽先开、背侧两槽后开，容量仍为 `1 / 1 / 2 / 2 / 3 / 4`。两座建筑槽位的基础 `range_multiplier` 均为 `1.0`；只有围墙可从建筑等级叠加加固收益。两座建筑 `upgrade.max_level=6`，逐级 `level_effects` 覆盖成本、工期和 Max HP 收益。例如围墙槽：
 
 ```json
 {
@@ -1147,7 +1707,7 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 ## Crafting Recipe（T0035 当前实现）
 
-`data/crafting_recipes.json` 的每条配方属于一个建筑，并以有序 `stages` 表达难度。阶段成本之和必须等于完整成品成本；材料只在对应阶段完整提交时原子扣除。
+`data/crafting_recipes.json` 的每条配方属于一个建筑，并以有序 `stages` 表达难度。可选 `available` 缺失时默认为 `true`；`false` 时保留数据但不进入建筑可选目标，直接设置也返回 `recipe_unavailable`。阶段成本之和必须等于完整成品成本；材料只在对应阶段完整提交时原子扣除。`cost={}` 是合法的纯工时收尾 / 校准阶段，不能被加载器误判为无效成本。
 
 ```json
 {
@@ -1155,11 +1715,13 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
   "building_id": "blacksmith",
   "output_item_id": "item_sword_shield",
   "output_amount": 1,
+  "available": true,
   "stages": [
     {"id": "forge_blade", "name": "锻刃", "cost": {"iron": 1}},
     {"id": "shape_shield", "name": "制盾", "cost": {"wood": 1}},
     {"id": "forge_fittings", "name": "锻造配件", "cost": {"iron": 1}},
-    {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}}
+    {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}},
+    {"id": "balance_and_test", "name": "配平试击", "cost": {}}
   ]
 }
 ```
@@ -1168,21 +1730,20 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 | 建筑 | 配方 id | 成品库存 id | 阶段数 | 材料总量 |
 |---|---|---|---:|---|
-| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 2 | 铁 2 |
-| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 2 | 铁 2 |
-| 铁匠铺 | `craft_polearm` | `item_polearm` | 3 | 铁 2、木材 1 |
-| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 3 | 铁 3 |
-| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 4 | 铁 3、木材 1 |
-| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 6 | 铁 6 |
-| 工械坊 | `craft_arrow_bundle` | `item_arrow_bundle` | 1 | 木材 1 |
-| 工械坊 | `craft_bow` | `item_bow` | 2 | 木材 2 |
-| 工械坊 | `craft_crossbow` | `item_crossbow` | 4 | 木材 3、铁 1 |
-| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 6 | 木材 5、铁 1 |
-| 工械坊 | `craft_wall_arrow_tower` | `item_wall_arrow_tower` | 8 | 木材 7、铁 1 |
+| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 3 | 铁 2 |
+| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 3 | 铁 2 |
+| 铁匠铺 | `craft_polearm` | `item_polearm` | 4 | 铁 2、木材 1 |
+| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 4 | 铁 3 |
+| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 5 | 铁 3、木材 1 |
+| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 8 | 铁 6 |
+| 工械坊 | `craft_bow` | `item_bow` | 3 | 木材 2 |
+| 工械坊 | `craft_crossbow` | `item_crossbow` | 5 | 木材 3、铁 1 |
+| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 9 | 木材 6、铁 2 |
+| 工械坊 | `craft_wall_arrow_tower` | `item_wall_arrow_tower` | 12 | 木材 8、铁 2 |
 
 建筑级运行态保存当前 `recipe_id`、项目 `revision`、`completed_stages` 与 `total_stages`。同建筑多个工位可以并行推进各自工作周期，但完整周期提交时必须再次校验 `revision`、领取唯一的下一阶段并扣除该阶段材料。全部阶段完成后只增加 1 件 `output_item_id`，保留目标并把整数阶段重置为 0。更换目标会增加 `revision`、放弃旧项目全部整数阶段并中断旧版本周期；已经扣除的阶段材料不返还。`special_state.production.current_stage_index` 使用 1 起始，等于 `completed_stages + 1`；未选择目标或没有合法当前阶段时为 0，名称为空。小数周期进度只供建筑面板汇总显示，不属于上述 `special_state`。
 
-## Horse Definition / Runtime（T0037-T0038 当前实现）
+## Horse Definition / Runtime（T0037-T0038/T0138 当前实现）
 
 `data/horse_defs.json` 保存初始马和养马平衡参数，脚本不得写死个体：
 
@@ -1211,10 +1772,18 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
     "birth_probability_cap": 1.0,
     "birth_cooldown_minutes": 1440,
     "stable_level_birth_bonus_per_level": 0.1,
-    "care_skill_100_bonus_hp_cap": 20
+    "care_skill_100_bonus_hp_cap": 20,
+    "mount_rendezvous_horse_speed": 7.0,
+    "mount_rendezvous_npc_share": 0.35,
+    "mount_rendezvous_arrival_distance": 0.35,
+    "return_to_stable_speed": 3.2,
+    "mounted_damage_share_min": 0.3,
+    "mounted_damage_share_max": 0.5
   }
 }
 ```
+
+`return_to_stable_speed` 是友方马匹脱离骑乘后返厩的正常步行速度（米 / 秒）。返厩必须由 ActorMotionBody 正式导航执行；该值不用于敌方败退逃马、骑兵冲锋或骑手自身奔跑。
 
 每匹马的权威运行态至少为：
 
@@ -1236,7 +1805,11 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
   "breeding_probability": 0.0,
   "breeding_cooldown_remaining_seconds": 0.0,
   "breeding_cooldown_active": false,
+  "alive": true,
   "location": "stable",
+  "world_position": null,
+  "stable_world_position": null,
+  "movement_state": {"phase": "idle", "target_position": null, "reason": ""},
   "feeding": {"active": false, "elapsed_seconds": 0.0, "progress": 0.0, "waiting_for_grain": false},
   "assigned_npc_id": "",
   "ridden_by_npc_id": "",
@@ -1244,7 +1817,9 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 }
 ```
 
-`natural_max_hp`、`max_satiety`、`base_hp`、`extra_hp / extra_hp_cap`、`is_adult` 和 `breeding_cooldown_active` 是公开快照派生字段，程序不得相信 UI 或 LLM 传入这些值。权威运行态继续用总 `hp`、`care_bonus_hp / care_bonus_cap`、`breeding_probability` 和 `breeding_cooldown_remaining_seconds` 结算；`base_hp = hp - care_bonus_hp` 只用于把基础生命与照料生命拆开展示。`care_bonus_cap` 是有效养马照料培养出的可持续上限，`care_bonus_hp` 是当前仍保有的额外 HP；自然恢复只能恢复到 `natural_max_hp`，不能补回已损失的额外 HP。`location` 至少区分 `stable` 与 `ridden`；分配关系和骑乘关系必须通过 `horse_id` 唯一对应，不能由装备槽复制实体。
+`natural_max_hp`、`max_satiety`、`base_hp`、`extra_hp / extra_hp_cap`、`is_adult` 和 `breeding_cooldown_active` 是公开快照派生字段，程序不得相信 UI 或 LLM 传入这些值。权威运行态继续用总 `hp`、`care_bonus_hp / care_bonus_cap`、`breeding_probability` 和 `breeding_cooldown_remaining_seconds` 结算；`base_hp = hp - care_bonus_hp` 只用于把基础生命与照料生命拆开展示。`care_bonus_cap` 是有效养马照料培养出的可持续上限，`care_bonus_hp` 是当前仍保有的额外 HP；自然恢复只能恢复到 `natural_max_hp`，不能补回已损失的额外 HP。T0138 后 `location` 至少区分 `stable / approaching_rider / ridden / returning_stable / dead`；T0138-R1 新取马流程在 `location=stable` 下使用 `movement_state.phase=waiting_for_rider_at_stable`，并保存 `horse_stationary=true / pickup_policy=rider_navigates_to_assigned_horse_at_stable / target_position`。`approaching_rider` 仅保留旧运行态兼容；`dead` 必须同时满足 `alive=false / hp=0`。分配关系和骑乘关系必须通过 `horse_id` 唯一对应，不能由装备槽复制实体。
+
+T0138 的骑乘分伤只接收 CombatSystem 已完成防御结算的正整数伤害。仅当马实际 `location=ridden`、`ridden_by_npc_id` 匹配且 NPC `combat_mounted=true` 时，HorseSystem 才从 `[mounted_damage_share_min, mounted_damage_share_max]` 抽取比例并先扣马 HP；NPC 只收到剩余整数伤害。NPC 运行时 `states.combat_mount_phase` 当前可为 `going_to_stable_horse / beside_stable_horse / mounted / horse_returning / horse_released / horse_dead` 等观察阶段；`approaching_horse / waiting_for_horse` 仅作旧状态兼容，均不替代 HorseSystem 的马匹位置事实。
 
 HorseSystem 随 TimeSystem 逻辑时间推进：在厩 / 离厩饱食分别按配置速率下降；只有在厩且饱食缺口达到 20% 才启动 1200 秒进食周期，完成时原子扣除 1 粮食并恢复 35 饱食，缺粮时保留 `waiting_for_grain=true` 等待重试。受伤马无论在厩或离厩都可消耗饱食，以每小时 0.2 HP 的基准自然恢复，但只能恢复到自然 HP 上限。只有有效 `work_stable` 在岗时，系统才使用最高在岗“养马”熟练度推进成长、额外 HP 和逐马繁育概率；至少 2 匹成年在厩且不在冷却的马才增长概率和判定。每个完整有效照料分钟先按 `birth_probability_gain_per_care_minute × 养马能力 × 马厩等级` 增长每匹候选马的概率，再按当前累积值判定最多 `N - 1` 次且单分钟最多出生 1 匹。成功后本次候选概率归零并把冷却设为 `birth_cooldown_minutes × 60` 秒；冷却按逻辑时间下降且期间概率强制为 0。马厩等级每升 1 级使概率增量增加 10%，不作用于成长或额外 HP；新生马从成长 0 开始，达到 0.6 视为成年但继续成长至 1.0。
 
@@ -1292,7 +1867,7 @@ HorseSystem 随 TimeSystem 逻辑时间推进：在厩 / 离厩饱食分别按�
 }
 ```
 
-T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。T0107 后敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值并生成兼容间隔；抬手期间可被骑兵冲撞僵直打断。5 波总数固定为 `8 / 12 / 18 / 26 / 36`，敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
+T1101 起，`data/enemy_waves.json` 是数组，至少配置 5 波 Demo 敌人。`wave_number` 必须从 1 开始可排序；T1301 后 `trigger_day` / `trigger_hour` / `trigger_minute` / `trigger_second` 由 CombatSystem 按 TimeSystem 逻辑时间用于自动来袭，未配置分钟和秒时默认 0。T0386 的五波时间固定为第 1 日 23:00、第 3 日 08:00、第 4 日 04:00、第 5 日 12:00、第 6 日 18:00，总数固定为 `8 / 16 / 24 / 36 / 48`。`spawn_position` 使用 Godot 世界坐标，当前正门外生成区的 `z` 应在正门外侧；`spawn_spread` 用于把同组敌人横向/纵向错开，避免重叠生成。敌人组必须包含 `enemy_type_id`、`name`、`count`、`unit_type`、`weapon_type`、`hp`、`max_hp`、`attack_power`、`defense`、`penetration`、`move_speed`、`attack_range`、`attack_speed`、`attack_interval`、`attack_windup` 和 `target_preference`。CombatSystem 以 `attack_speed` 为规范真值生成完整攻击周期；T0142 起正式命中点读取对应 NPCDevLab 动作比例，配置中的 `attack_windup` 仅保留为兼容 / 审计值，抬手期间仍可被骑兵冲撞僵直打断。敌方个体刻意弱于我方平均武装单位，后期压力主要来自数量；第四、第五波用低阶兵补充蜂拥感，而不是把全部增援升级为最高阶。`unit_type` 复用兵种分类，但不表示敌我数值对称。目标偏好不应包含 `wall`；附近可行动 NPC 或有效器械可优先于城门、仓库、主厅。这些字段仍不由 LLM 改写，也不进入 NPC Prompt。
 
 ## Event Record
 
@@ -1436,14 +2011,14 @@ T1002 `plan_revised` 事件 payload：
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`；`order_assigned` 固定为 `private`。正式守备官惩戒攻击写入战斗 / 伤害类 `damage_taken`，payload 保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
 - 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`training_kind`；actor 为实际成长的 NPC
-- 战斗与行为模式：`npc_mode_changed`、`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
+- 战斗与行为事实：`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`horse_damaged`、`horse_died`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
 - 公告与商人：`plaza_notice_changed`、`merchant_arrived`、`merchant_departed`、`merchant_trade_completed`
 
 T1507 商人事件 payload：
 
 - `merchant_arrived` / `merchant_departed` 必须包含 `merchant_id`、`merchant_name`、`arrival_time`、`departure_time`、`visit_day`。
-- `merchant_trade_completed` 必须包含 `merchant_id`、`direction`、`resource_id`、`amount`、`unit_price`、`total_price`、`money_delta`、`resource_delta`；运行时可额外保存 `merchant_name` 和 `resource_name` 供 UI/调试。
+- `merchant_trade_completed` 必须包含 `merchant_id`、`direction`、`resource_id`、`amount`、`unit_price`、`total_price`、`money_delta`、`resource_delta`；T0342 批量提交额外包含 `lines`、`line_count`、`merchant_stock_after`。单项仍投影真实资源与单价，多项使用 `multiple_resources / 多项物资` 兼容顶层字段，逐项事实以 `lines[]` 为准。
 - 三类事件固定使用广场 `local_public`。只有资源结算成功后才能写 `merchant_trade_completed`；余额或库存不足不得用成功事件表达失败尝试。
 
 T1104 起，`attack_made` 表示我方 NPC 对敌人完成了一次程序结算攻击。必备 payload 字段包括 `attacker_npc_id`、`target_type`、`target_enemy_id`、`damage`、`hp_before` 和 `hp_after`；运行时还会记录 `weapon_id`、`weapon_name`、`required_skill`、`weapon_skill`、`strength`、`base_damage`、`strength_multiplier`、`raw_attack_power`、`attack_speed_multiplier`、`target_defense`、`max_hp` 和 `defeated` 等调试字段。该事件只记录已经由 CombatSystem 扣除敌人 HP 的事实，不让 LLM 决定伤害。
@@ -1583,9 +2158,9 @@ T1103 已接入的警铃与集结事件 payload：
 }
 ```
 
-T1103A 已实现的 `npc_mode_changed` 使用 `npc_id`、`from_mode`、`from_mode_label`、`to_mode`、`to_mode_label`、`reason`。T1103D 起，`npc_mode_changed` 不再覆盖 `work <-> combat` 与 `work <-> avoid_combat` 的互转，这些互转也不通过该事件广播；战斗和避战信息由更具体的攻击、伤害、避战开始 / 结束等事件表达。T1103B/T1103C 已实现的 `avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录非战斗人员开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff，T1202 起 `morale_boost_started.trigger` 可为 `low_hp`。`battle_psychology_result.trigger` 可为 `wartime_dialogue`、`low_hp` 或后续逃离挽留来源。低血量自身心理判定没有守备官本轮文本，需通过 `battlefield_context_summary` 保留简化战局依据。
+T0299 起 `npc_mode_changed` 不再是正式事件，旧调用由 MemorySystem 拒绝。`avoidance_started` 使用 `enemy_id`、`enemy_name`、`distance`、`reason`、`target_id`、`target_name` 和 `target_position` 记录非战斗人员开始避战；`avoidance_ended` 使用 `reason`、`active_enemy_count`、`target_id` 和 `target_name` 记录避战结束。`morale_boost_started` / `morale_boost_ended` 记录程序已应用或清除的斗志 buff。
 
-T1105 已实现的 `combat_strategy_selected` 使用 `npc_id`、`strategy_id`、`strategy_label`、`unit_type` 和 `unit_type_label`，记录守备官通过 NPC 面板或装备变更默认化流程为某名入伍持武器 NPC 设置当前战斗策略。该事件只表达策略选择事实，不直接结算移动、攻击、HP 或资源。
+`combat_strategy_selected` 使用 `npc_id`、`strategy_id`、`strategy_label`、`unit_type` 和 `unit_type_label`，记录守备官对话调整或装备变化默认化流程为某名入伍持武器 NPC 设置当前战斗策略。该事件只表达策略选择事实，不直接结算移动、攻击、HP 或资源。
 
 T0502 已接入的复苏事件 payload：
 
@@ -1781,3 +2356,14 @@ T0703A 后，`backend/schemas/common.py` 使用 `CurrentOrderContext` 规范化�
 - `PlayerStrategyClassificationRequest` / `PlayerStrategyClassificationResponse`：把守备官话术分类为说服、利诱、威胁、欺骗、安抚、交易、命令或未知。
 
 T0049/T0050 后，六个正式业务端点 `/npc/dialogue`、`/npc/plan_revision_judgement`、`/npc/plan_day`、`/npc/revise_plan`、`/npc/battle_judgement`、`/npc/daily_reflection` 的成功传输体统一额外附加 `model_provider`、`model_name`、`model_fallback_used` 和 `model_normalizations`；该数组在非计划接口及未规范化时为空。字段由后端根据 Model Adapter 结果与确定性候选规范化注入，不属于 LLM 输出 Schema；Godot 用来源字段校验真实结果，不能再把真实成功硬编码为 `mock_*`。旧 `/npc/dialogue_plan_revision_judgement` 保留为同一处理函数的兼容 URL。
+## T0386 初始制造项目与压缩波次字段
+
+`data/crafting_recipes.json` 顶层可选 `initial_projects[]`，当前每项包含 `building_id / recipe_id / completed_stages / invested_resources / source`。CraftingSystem 只接受已存在且属于该建筑的配方，`completed_stages` 必须大于 0 且小于总阶段数，`invested_resources` 必须逐项等于这些已完成阶段的成本合计；任一校验失败都阻止制造目录初始化。合法条目初始化为 revision 1 的在制项目，不发放成品、资源、技能或总经验。
+
+当前唯一初始项目为工械坊箭塔 4 / 12，已投入木 4；`resource_defs.json` 的松散木材因此为 8。`enemy_waves.json` 的时间字段合同不变，五条当前值依次为 `(1,23:00) / (3,08:00) / (4,04:00) / (5,12:00) / (6,18:00)`。
+## T0387 群像结局 Schema
+
+- `GameEpilogueRequest` 包含 `settlement_id / fact_snapshot_version / result / reason / game_time / station_summary / global_facts[] / npcs[]`；NPC 输入锁定身份、人设、入伍、结算状态、HP、最后位置、当前指令、日记 / 知识摘要与 `key_facts[]`。
+- `EpilogueFact` 使用全请求唯一的 `fact_id / category / summary`；生成结果的 `fact_refs[]` 只能引用该 NPC 的关键事实或全局事实。
+- `GameEpilogueResponse` 包含后端补齐的 `ok / result`、全站 `ending_title / station_coda` 和完整 `npc_endings[]`。逐人项为 `npc_id / ending_title / opening_status / final_opinion / fate_story / tone / fact_refs`；正文 140–420 字符，状态只能是 `active / unconscious / escaped`，tone 按胜负分域。
+- 这些都是叙事输入 / 输出，不拥有胜负、HP、建筑、资源、入伍、逃离或记忆写入权威。

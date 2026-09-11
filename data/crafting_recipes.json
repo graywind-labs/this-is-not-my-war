@@ -1,4 +1,13 @@
 {
+  "initial_projects": [
+    {
+      "building_id": "workshop",
+      "recipe_id": "craft_wall_arrow_tower",
+      "completed_stages": 4,
+      "invested_resources": {"wood": 4},
+      "source": "pre_game_investment"
+    }
+  ],
   "recipes": [
     {
       "id": "craft_iron_helmet",
@@ -9,19 +18,21 @@
       "ui_order": 10,
       "stages": [
         {"id": "forge_helmet_bowl", "name": "锻造盔胚", "cost": {"iron": 1}},
-        {"id": "finish_helmet", "name": "锻边打磨", "cost": {"iron": 1}}
+        {"id": "finish_helmet", "name": "锻边打磨", "cost": {"iron": 1}},
+        {"id": "fit_helmet_lining", "name": "装衬试戴", "cost": {}}
       ]
     },
     {
       "id": "craft_iron_bracers",
-      "name": "铁护腕",
+      "name": "铁护臂",
       "building_id": "blacksmith",
       "output_item_id": "item_iron_bracers",
       "output_amount": 1,
       "ui_order": 20,
       "stages": [
-        {"id": "forge_bracer_plates", "name": "锻造护腕片", "cost": {"iron": 1}},
-        {"id": "rivet_bracers", "name": "铆接护腕", "cost": {"iron": 1}}
+        {"id": "forge_bracer_plates", "name": "锻造护臂片", "cost": {"iron": 1}},
+        {"id": "rivet_bracers", "name": "铆接护臂", "cost": {"iron": 1}},
+        {"id": "fit_bracer_straps", "name": "装带试配", "cost": {}}
       ]
     },
     {
@@ -34,7 +45,8 @@
       "stages": [
         {"id": "shape_polearm_shaft", "name": "修制长杆", "cost": {"wood": 1}},
         {"id": "forge_polearm_head", "name": "锻造刃头", "cost": {"iron": 1}},
-        {"id": "mount_polearm_head", "name": "装柄校直", "cost": {"iron": 1}}
+        {"id": "mount_polearm_head", "name": "装柄校直", "cost": {"iron": 1}},
+        {"id": "balance_polearm", "name": "配重验收", "cost": {}}
       ]
     },
     {
@@ -47,7 +59,8 @@
       "stages": [
         {"id": "forge_greave_plates", "name": "锻造胫甲", "cost": {"iron": 1}},
         {"id": "forge_knee_guards", "name": "锻造膝护", "cost": {"iron": 1}},
-        {"id": "rivet_fit_greaves", "name": "铆接整形", "cost": {"iron": 1}}
+        {"id": "rivet_fit_greaves", "name": "铆接整形", "cost": {"iron": 1}},
+        {"id": "fit_greave_straps", "name": "装带试步", "cost": {}}
       ]
     },
     {
@@ -61,7 +74,8 @@
         {"id": "forge_blade", "name": "锻刃", "cost": {"iron": 1}},
         {"id": "shape_shield", "name": "制盾", "cost": {"wood": 1}},
         {"id": "forge_fittings", "name": "锻造配件", "cost": {"iron": 1}},
-        {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}}
+        {"id": "assemble_finish", "name": "装配打磨", "cost": {"iron": 1}},
+        {"id": "balance_sword_shield", "name": "配重试击", "cost": {}}
       ]
     },
     {
@@ -77,18 +91,9 @@
         {"id": "close_mail_rings", "name": "闭合铆环", "cost": {"iron": 1}},
         {"id": "weave_mail_body", "name": "编织甲身", "cost": {"iron": 1}},
         {"id": "reinforce_mail_edges", "name": "加固边缘", "cost": {"iron": 1}},
-        {"id": "finish_mail_chest", "name": "整形抛光", "cost": {"iron": 1}}
-      ]
-    },
-    {
-      "id": "craft_arrow_bundle",
-      "name": "箭束",
-      "building_id": "workshop",
-      "output_item_id": "item_arrow_bundle",
-      "output_amount": 1,
-      "ui_order": 10,
-      "stages": [
-        {"id": "make_arrow_bundle", "name": "削杆制羽", "cost": {"wood": 1}}
+        {"id": "finish_mail_chest", "name": "整形抛光", "cost": {"iron": 1}},
+        {"id": "fit_mail_lining", "name": "装衬收口", "cost": {}},
+        {"id": "test_mail_mobility", "name": "试穿验收", "cost": {}}
       ]
     },
     {
@@ -100,7 +105,8 @@
       "ui_order": 20,
       "stages": [
         {"id": "shape_bow_stave", "name": "选材制胎", "cost": {"wood": 1}},
-        {"id": "tiller_string_bow", "name": "调形上弦", "cost": {"wood": 1}}
+        {"id": "tiller_string_bow", "name": "调形上弦", "cost": {"wood": 1}},
+        {"id": "test_bow_draw", "name": "试拉校准", "cost": {}}
       ]
     },
     {
@@ -114,7 +120,8 @@
         {"id": "shape_crossbow_stock", "name": "制作弩身", "cost": {"wood": 1}},
         {"id": "shape_crossbow_prod", "name": "制作弩臂", "cost": {"wood": 1}},
         {"id": "forge_crossbow_trigger", "name": "锻造机括", "cost": {"iron": 1}},
-        {"id": "assemble_tune_crossbow", "name": "装配调校", "cost": {"wood": 1}}
+        {"id": "assemble_tune_crossbow", "name": "装配调校", "cost": {"wood": 1}},
+        {"id": "test_crossbow_trigger", "name": "试射验收", "cost": {}}
       ]
     },
     {
@@ -130,7 +137,10 @@
         {"id": "shape_ballista_arms", "name": "制作弩臂", "cost": {"wood": 1}},
         {"id": "build_ballista_torsion", "name": "制作绞盘", "cost": {"wood": 1}},
         {"id": "forge_ballista_fittings", "name": "锻造金属配件", "cost": {"iron": 1}},
-        {"id": "assemble_calibrate_ballista", "name": "装配校准", "cost": {"wood": 1}}
+        {"id": "assemble_calibrate_ballista", "name": "装配校准", "cost": {"wood": 1}},
+        {"id": "reinforce_ballista_frame", "name": "加固机架", "cost": {"wood": 1}},
+        {"id": "forge_ballista_release", "name": "锻造释放机", "cost": {"iron": 1}},
+        {"id": "test_ballista_tension", "name": "张力验收", "cost": {}}
       ]
     },
     {
@@ -148,7 +158,11 @@
         {"id": "reinforce_tower_frame", "name": "加固结构", "cost": {"wood": 1}},
         {"id": "build_arrow_mounts", "name": "制作箭架", "cost": {"wood": 1}},
         {"id": "forge_tower_fittings", "name": "锻造塔件", "cost": {"iron": 1}},
-        {"id": "calibrate_arrow_tower", "name": "安装调校", "cost": {"wood": 1}}
+        {"id": "calibrate_arrow_tower", "name": "安装调校", "cost": {"wood": 1}},
+        {"id": "reinforce_tower_platform", "name": "加固射击台", "cost": {"wood": 1}},
+        {"id": "forge_tower_release", "name": "锻造释放机", "cost": {"iron": 1}},
+        {"id": "align_tower_arc", "name": "校正射界", "cost": {}},
+        {"id": "test_arrow_tower", "name": "联动验收", "cost": {}}
       ]
     }
   ]

@@ -47,7 +47,7 @@ WORK_ACTION_BY_JOB = {
     "铁匠": ("work_blacksmith", "推进铁匠铺制造", "blacksmith"),
     "老兵副官": ("work_training_instructor", "指导训练", "training_ground"),
     "神父": ("lead_mass", "主持弥撒", "chapel"),
-    "医生": ("work_clinic_doctor", "坐诊或研读医学著作", "clinic"),
+    "医生": ("work_clinic_doctor", "坐诊", "clinic"),
     "工程师": ("work_workshop", "推进工械坊制造", "workshop"),
 }
 
@@ -648,6 +648,7 @@ def _dialogue_payload(
             state={},
         ).model_dump(),
         "is_recruitment_request": is_recruitment_request,
+        "is_morale_encouragement_request": interaction_context in {"rally", "combat"},
         "current_round": current_round,
         "max_rounds": 5,
         "soft_round_threshold": 5,

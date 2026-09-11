@@ -67,7 +67,7 @@ func _verify_failures_trigger_real_only(
 	time_system.set_current_time(1, 8, 0, 0)
 
 	var npc_id := "blacksmith_01"
-	_set_debug_move_speed(npc_id, 120.0)
+	_set_debug_move_speed(npc_id, 5.0)
 	daily_plan_system.generate_rule_plan_for_npc(npc_id)
 	if not npc_system.debug_enter_location_immediately(npc_id, "blacksmith"):
 		push_error("Failed to place blacksmith at blacksmith")
@@ -112,17 +112,21 @@ func _verify_failures_trigger_real_only(
 	if str(state.get("current_action", "")) == "work_blacksmith":
 		push_error("Blacksmith should not keep executing failed blacksmith work")
 		return false
+	if bool(npc_system.get_formal_workstation_action_snapshot(npc_id).get("active", false)):
+		push_error("Resource failure must not leave a formal blacksmith route active")
+		return false
 	if memory_system.get_npc_daily_events(npc_id).size() != event_count_before:
 		push_error("Failed real-only revision must not write plan_revised")
 		return false
 
 	var occupied_npc_id := "engineer_01"
+	_set_debug_move_speed(occupied_npc_id, 5.0)
 	time_system.set_current_time(1, 8, 0, 0)
 	daily_plan_system.generate_rule_plan_for_npc(occupied_npc_id)
 	if not npc_system.debug_enter_location_immediately(occupied_npc_id, "workshop"):
 		push_error("Failed to place engineer at workshop")
 		return false
-	var workshop_target: Dictionary = crafting_system.set_target("workshop", "craft_arrow_bundle", true)
+	var workshop_target: Dictionary = crafting_system.set_target("workshop", "craft_bow", true)
 	if not bool(workshop_target.get("ok", false)):
 		push_error("Failed to set workshop crafting target: %s" % str(workshop_target))
 		return false
@@ -150,6 +154,9 @@ func _verify_failures_trigger_real_only(
 		return false
 	if bool(occupied_result.get("fallback_used", true)) or not str(occupied_result.get("source", "")).is_empty():
 		push_error("Occupied workstation failure must not apply Mock or rule fallback: %s" % str(occupied_result))
+		return false
+	if bool(npc_system.get_formal_workstation_action_snapshot(occupied_npc_id).get("active", false)):
+		push_error("Occupied workstation failure must not leave a formal workshop route active")
 		return false
 	return true
 

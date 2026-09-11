@@ -13,9 +13,14 @@ config_version=5
 [application]
 
 config/name="这不是我的战争"
-run/main_scene="res://scenes/main/Main.tscn"
+config/version="0.0.696-t0396-combat-performance-p2"
+run/main_scene="res://scenes/frontend/MainMenu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
+
+[audio]
+
+driver/enable_input=true
 
 [autoload]
 
@@ -23,6 +28,8 @@ MCPGameBridge="res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd"
 EventBus="*res://scripts/core/EventBus.gd"
 GameState="*res://scripts/core/GameState.gd"
 ConfigLoader="*res://scripts/core/ConfigLoader.gd"
+ClientSettings="*res://scripts/core/ClientSettings.gd"
+AudioManager="*res://scripts/systems/AudioManager.gd"
 
 [editor_plugins]
 
@@ -34,6 +41,12 @@ bind_mode=0
 custom_bind_ip=""
 port_override_enabled=false
 port_override=6550
+
+[layer_names]
+
+3d_physics/layer_1="world_static"
+3d_physics/layer_2="actor_body"
+3d_physics/layer_3="interaction"
 
 [physics]
 

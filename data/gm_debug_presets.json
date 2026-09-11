@@ -1,0 +1,100 @@
+{
+  "schema_version": "gm_debug_presets_v1",
+  "combat_loadout_presets": [
+    {
+      "id": "all_npc_recruit_and_equip",
+      "display_name": "一键征召&配装",
+      "visibility": "private",
+      "debug_horses": [
+        {
+          "horse_id": "horse_gm_bay_runner",
+          "template_id": "bay_runner",
+          "growth": 0.6
+        },
+        {
+          "horse_id": "horse_gm_black_mane",
+          "template_id": "black_mane",
+          "growth": 0.6
+        }
+      ],
+      "assignments": [
+        {
+          "npc_id": "veteran_deputy_01",
+          "loadout_label": "全甲剑盾骑兵",
+          "weapon_id": "sword_shield",
+          "armor": {
+            "helmet": "iron_helmet",
+            "chest": "mail_chest",
+            "bracers": "iron_bracers",
+            "greaves": "iron_greaves"
+          },
+          "horse_id": "horse_chestnut_wind"
+        },
+        {
+          "npc_id": "cook_01",
+          "loadout_label": "剑盾步兵",
+          "weapon_id": "sword_shield",
+          "armor": {},
+          "horse_id": ""
+        },
+        {
+          "npc_id": "gardener_01",
+          "loadout_label": "全甲长杆步兵",
+          "weapon_id": "polearm",
+          "armor": {
+            "helmet": "iron_helmet",
+            "chest": "mail_chest",
+            "bracers": "iron_bracers",
+            "greaves": "iron_greaves"
+          },
+          "horse_id": ""
+        },
+        {
+          "npc_id": "blacksmith_01",
+          "loadout_label": "长杆骑兵",
+          "weapon_id": "polearm",
+          "armor": {},
+          "horse_id": "horse_gray_mane"
+        },
+        {
+          "npc_id": "priest_01",
+          "loadout_label": "弩手步兵",
+          "weapon_id": "crossbow",
+          "armor": {},
+          "horse_id": ""
+        },
+        {
+          "npc_id": "doctor_01",
+          "loadout_label": "全甲弓箭手步兵",
+          "weapon_id": "bow",
+          "armor": {
+            "helmet": "iron_helmet",
+            "chest": "mail_chest",
+            "bracers": "iron_bracers",
+            "greaves": "iron_greaves"
+          },
+          "horse_id": ""
+        },
+        {
+          "npc_id": "stableman_01",
+          "loadout_label": "弓箭手骑兵",
+          "weapon_id": "bow",
+          "armor": {},
+          "horse_id": "horse_gm_bay_runner"
+        },
+        {
+          "npc_id": "engineer_01",
+          "loadout_label": "全甲弩手骑兵",
+          "weapon_id": "crossbow",
+          "armor": {
+            "helmet": "iron_helmet",
+            "chest": "mail_chest",
+            "bracers": "iron_bracers",
+            "greaves": "iron_greaves"
+          },
+          "horse_id": "horse_gm_black_mane"
+        }
+      ]
+    }
+  ]
+}

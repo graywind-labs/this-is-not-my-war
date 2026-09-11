@@ -8,6 +8,10 @@ const NOTICE_BOARD_DEFAULTS_FILE := "notice_board_defaults.json"
 const DEFAULT_LOCATION_ID := "plaza"
 const DEFAULT_VISIBILITY := "private"
 const LOCAL_PUBLIC_VISIBILITY := "local_public"
+const STATION_WIDE_PUBLIC_EVENT_TYPES: Array[String] = [
+	"plaza_notice_changed", "plaza_schedule_changed",
+	"piety_meteor_impact", "piety_meteor_enemy_defeated"
+]
 const PLAYER_ACTOR_ID := "guard_officer"
 const PLAYER_DISPLAY_NAME := "守备官"
 const ENTERABLE_LOCATION_IDS: Array[String] = [
@@ -20,28 +24,30 @@ const PRODUCTION_SPECIAL_FIELDS: Array[String] = [
 	"current_stage_index", "current_stage_name"
 ]
 const HORSE_COUNT_SPECIAL_FIELDS: Array[String] = ["total", "adult", "foal"]
+const DEVELOPMENT_ONLY_EVENT_TYPES: Array[String] = ["npc_mode_changed"]
 
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
 	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
 	"prayer_started", "prayer_joined_mass", "prayer_resumed_alone", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
-	"dialogue_turn", "proactive_talk_started", "proactive_talk_message",
+	"dialogue_turn", "dialogue_special_interaction_result", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
-	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state",
-	"npc_mode_changed", "combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "low_hp_triggered",
+	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state", "work_encouragement_result", "work_encouragement_boost_started", "work_encouragement_boost_ended",
+	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_born", "horse_damaged", "horse_died", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "healing_failed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
 	"plaza_notice_changed", "plaza_schedule_changed", "plaza_status_changed", "location_status_changed",
 	"merchant_arrived", "merchant_departed", "merchant_trade_completed",
 	"defense_device_deployed", "defense_device_triggered",
-	"piety_meteor_cast", "piety_meteor_impact"
+	"piety_meteor_cast", "piety_meteor_impact", "piety_meteor_enemy_defeated"
 ]
 
 const REQUIRED_PAYLOAD_FIELDS := {
 	"wake_up": ["day", "hour", "reason"],
-	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds", "is_recruitment_request", "recruitment_result"],
+	"dialogue_turn": ["dialogue_id", "participant_npc_ids", "dialogue_text", "speaker_name", "listener_name", "visibility", "current_round", "max_rounds"],
+	"dialogue_special_interaction_result": ["dialogue_id", "participant_npc_ids", "special_type", "outcome", "success", "npc_id", "npc_name", "visibility", "current_round"],
 	"proactive_talk_started": ["prompt_text", "duration_seconds"],
 	"proactive_talk_message": ["dialogue_id", "speaker_name", "listener_name", "speaker_text"],
 	"plan_created": ["plan_day", "items"],
@@ -70,14 +76,19 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"low_hp_triggered": ["hp_before", "hp_after", "max_hp"],
 	"morale_boost_started": ["source_event_id", "trigger", "duration_seconds", "attack_bonus", "move_speed_bonus"],
 	"morale_boost_ended": ["source_event_id", "duration_seconds"],
-	"npc_mode_changed": ["npc_id", "from_mode", "to_mode", "reason"],
+	"work_encouragement_result": ["decision", "dialogue_id"],
+	"work_encouragement_boost_started": ["source_event_id", "duration_seconds", "output_bonus", "output_multiplier"],
+	"work_encouragement_boost_ended": ["source_event_id", "duration_seconds"],
 	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
 	"avoidance_ended": ["reason", "active_enemy_count"],
 	"attack_made": ["attacker_npc_id", "target_type", "target_enemy_id", "damage", "hp_before", "hp_after"],
 	"combat_strategy_selected": ["npc_id", "strategy_id", "strategy_label", "unit_type"],
 	"damage_taken": ["damage", "hp_before", "hp_after"],
+	"horse_damaged": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
+	"horse_died": ["target_npc_id", "horse_id", "horse_name", "damage", "hp_before", "hp_after", "share_ratio"],
+	"horse_born": ["horse_id", "horse_name", "template_id", "stable_slot_id", "named_by"],
 	"unconscious_started": ["damage", "hp_before", "hp_after"],
-	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent"],
+	"healing_started": ["healer_npc_id", "target_npc_id", "money_spent", "remaining_helper_slots"],
 	"healing_completed": ["healer_npc_id", "target_npc_id", "money_spent"],
 	"healing_failed": ["healer_npc_id", "target_npc_id", "money_spent", "reason"],
 	"revived": ["hp_before", "hp_after", "recovery_source"],
@@ -94,7 +105,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"defense_device_deployed": ["deployment_id", "device_id", "device_name", "slot_id", "slot_name", "inventory_resource_id", "inventory_cost"],
 	"defense_device_triggered": ["deployment_id", "device_id", "device_name", "target_enemy_id", "damage", "hp_before", "hp_after"],
 	"piety_meteor_cast": ["cast_id", "target_position", "radius", "piety_spent"],
-	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"]
+	"piety_meteor_impact": ["cast_id", "target_position", "radius", "impact_damage", "impact_max_targets", "enemy_hit_count", "enemy_defeated_count", "burn_duration_seconds", "friendly_fire"],
+	"piety_meteor_enemy_defeated": ["cast_id", "enemy_defeated_count"]
 }
 
 var _events_by_id: Dictionary = {}
@@ -145,6 +157,9 @@ func _ready() -> void:
 
 func add_event(event: Dictionary) -> Dictionary:
 	if event.is_empty():
+		return {}
+	if DEVELOPMENT_ONLY_EVENT_TYPES.has(str(event.get("type", ""))):
+		# 模式切换和内部 reason 只供运行时状态 / GM 快照诊断，禁止进入事件、见闻与 LLM 记忆。
 		return {}
 
 	var normalized := _normalize_event(event)
@@ -229,6 +244,28 @@ func remove_npc_from_all_locations(npc_id: String) -> bool:
 	for location_id in removed_from:
 		_emit_location_info_changed(location_id)
 	return not removed_from.is_empty()
+
+
+func restore_npc_location_membership_silent(npc_id: String, location_id: String) -> Dictionary:
+	# Save restoration reconstructs current presence, not a new witnessed arrival.
+	# Keep this separate from move_npc_between_locations so loading cannot append
+	# duplicate entry snapshots to an NPC's witness log.
+	if npc_id.is_empty():
+		return {"ok": false, "reason": "npc_id_missing"}
+	var normalized_location := _normalize_location_id(location_id)
+	if not is_enterable_location(normalized_location):
+		normalized_location = DEFAULT_LOCATION_ID
+	for raw_location_id in _location_info_nodes.keys():
+		_remove_person_from_location(str(raw_location_id), npc_id, false)
+	_add_person_to_location(normalized_location, npc_id)
+	for raw_location_id in _location_info_nodes.keys():
+		_emit_location_info_changed(str(raw_location_id))
+	return {
+		"ok": true,
+		"npc_id": npc_id,
+		"location_id": normalized_location,
+		"witness_event_created": false
+	}
 
 
 func _record_location_entry_snapshot_witness(npc_id: String, location_id: String, snapshot: Dictionary) -> void:
@@ -995,12 +1032,14 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
+		_strip_noninformative_building_state_delta(building_id, external_snapshot, plaza_changed_fields)
 		_last_plaza_external_states[building_id] = external_snapshot.duplicate(true)
-		_broadcast_plaza_state_changed("building_external_state_changed", {
-			"building_id": building_id,
-			"building_name": str(external_snapshot.get("name", building_id)),
-			"changed_fields": plaza_changed_fields
-		})
+		if not plaza_changed_fields.is_empty():
+			_broadcast_plaza_state_changed("building_external_state_changed", {
+				"building_id": building_id,
+				"building_name": str(external_snapshot.get("name", building_id)),
+				"changed_fields": plaza_changed_fields
+			})
 
 	if not is_enterable_location(building_id):
 		return
@@ -1019,12 +1058,14 @@ func _on_building_state_changed(building_id: String) -> void:
 				"active_job", "job_total_duration_text"
 			]
 		)
+		_strip_noninformative_building_state_delta(building_id, location_external_state, location_changed_fields)
 		_last_location_external_states[building_id] = location_external_state.duplicate(true)
-		_broadcast_location_state_changed(building_id, "building_external_state_changed", {
-			"building_id": building_id,
-			"building_name": str(external_snapshot.get("name", building_id)),
-			"changed_fields": location_changed_fields
-		})
+		if not location_changed_fields.is_empty():
+			_broadcast_location_state_changed(building_id, "building_external_state_changed", {
+				"building_id": building_id,
+				"building_name": str(external_snapshot.get("name", building_id)),
+				"changed_fields": location_changed_fields
+			})
 
 	var workstations := _normalize_workstations_for_info(location_snapshot.get("workstations", []))
 	var workstation_state := _workstation_state_by_id(workstations)
@@ -1072,7 +1113,7 @@ func _broadcast_public_event(event: Dictionary, location_id: String) -> void:
 		target_location_id = DEFAULT_LOCATION_ID
 
 	var recipient_ids: Array[String] = []
-	if str(event.get("type", "")) in ["plaza_notice_changed", "plaza_schedule_changed"]:
+	if STATION_WIDE_PUBLIC_EVENT_TYPES.has(str(event.get("type", ""))):
 		recipient_ids = _get_all_station_npc_ids()
 	else:
 		recipient_ids = get_location_people_present(target_location_id)
@@ -1272,12 +1313,16 @@ func _normalize_workstations_for_info(workstations: Array) -> Array[Dictionary]:
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
+		var reserved_by := str(workstation.get("reserved_by", ""))
+		if reserved_by == "<null>":
+			reserved_by = ""
 		normalized.append({
 			"id": str(workstation.get("id", "")),
 			"name": str(workstation.get("name", workstation.get("id", workstation.get("type", "位置")))),
 			"type": str(workstation.get("type", "general")),
 			"occupied_by": occupied_by,
-			"status": "occupied" if not occupied_by.is_empty() else "free"
+			"reserved_by": reserved_by,
+			"status": "occupied" if not occupied_by.is_empty() else "reserved" if not reserved_by.is_empty() else "free"
 		})
 	return normalized
 
@@ -1358,14 +1403,26 @@ func _format_action_status(action_id: String) -> String:
 		return "主动找守备官交涉"
 	if action_id.begins_with("moving_to_combat_rally"):
 		return "前往城门外防线"
+	if action_id.begins_with("moving_to_combat_strategy_avoid_"):
+		return "正在避战"
 	if action_id.begins_with("moving_to_combat_strategy_"):
 		return "进行战术移动"
+	if action_id == "keep_distance_retreating":
+		return "拉开距离"
 	if action_id == "rallying_defense_line":
 		return "在城门外集结"
+	if action_id == "combat_strategy_avoid_holding":
+		return "避战待命"
 	if action_id == "combat_ready":
 		return "准备接敌"
+	if action_id == "meeting_assigned_horse":
+		return "前往会合马匹"
+	if action_id == "waiting_for_assigned_horse":
+		return "等待马匹会合"
 	if action_id.begins_with("attacking_"):
 		return "攻击敌人"
+	if action_id.begins_with("winding_up_"):
+		return "准备攻击敌人"
 	if action_id == "avoid_combat" or action_id == "avoiding_enemy":
 		return "避战"
 	if action_id.begins_with("moving_to_avoid_shelter_"):
@@ -1376,6 +1433,8 @@ func _format_action_status(action_id: String) -> String:
 		return "已离开驿站"
 	if action_id.begins_with("visit_location_"):
 		return "停留在%s" % _get_location_name(action_id.trim_prefix("visit_location_"))
+	if action_id.begins_with("moving_to_healing_target_"):
+		return "前往协助治疗%s" % _get_npc_display_name(action_id.trim_prefix("moving_to_healing_target_"))
 	if action_id.begins_with("moving_to_"):
 		return "前往%s" % _get_location_name(action_id.trim_prefix("moving_to_"))
 	if action_id.begins_with("assist_heal_"):
@@ -1399,6 +1458,19 @@ func _diff_state_fields(previous_state: Dictionary, current_state: Dictionary, f
 		if previous_state.get(field_name) != current_state.get(field_name):
 			changed[field_name] = current_state.get(field_name)
 	return changed
+
+
+func _strip_noninformative_building_state_delta(
+	building_id: String,
+	current_state: Dictionary,
+	changed_fields: Dictionary
+) -> void:
+	# 受损沿用既有降噪；升级开始已由 condition 明确表达停工，不重复广播效率档。
+	if ["damaged", "upgrading"].has(str(current_state.get("condition", ""))):
+		changed_fields.erase("operational_efficiency")
+	# 没有常规室内空间的建筑不存在“封闭 / 重新开放”这一可传播变化。
+	if not is_enterable_location(building_id):
+		changed_fields.erase("is_enterable")
 
 
 func _normalize_special_state_for_info(building_id: String, raw_state: Variant) -> Dictionary:
@@ -1476,6 +1548,7 @@ func _workstation_state_by_id(workstations: Array) -> Dictionary:
 			"name": str(workstation.get("name", workstation_id)),
 			"type": str(workstation.get("type", "general")),
 			"occupied_by": str(workstation.get("occupied_by", "")),
+			"reserved_by": str(workstation.get("reserved_by", "")),
 			"status": str(workstation.get("status", "free"))
 		}
 	return states
@@ -1495,6 +1568,7 @@ func _diff_workstation_states(previous_states: Dictionary, current_states: Dicti
 			previous_state.get("name") != current_state.get("name")
 			or previous_state.get("type") != current_state.get("type")
 			or previous_state.get("occupied_by") != current_state.get("occupied_by")
+			or previous_state.get("reserved_by") != current_state.get("reserved_by")
 			or previous_state.get("status") != current_state.get("status")
 		):
 			var updated_state := current_state.duplicate(true)
@@ -1542,9 +1616,14 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 		push_warning("MemorySystem changed invalid visibility '%s' to private." % visibility)
 		visibility = DEFAULT_VISIBILITY
 
-	var payload: Dictionary = event.get("payload", {})
+	var payload: Dictionary = (
+		(event.get("payload", {}) as Dictionary).duplicate(true)
+		if event.get("payload", {}) is Dictionary
+		else {}
+	)
 	if payload.is_empty():
 		payload = _legacy_payload_from_event(event)
+	payload = _sanitize_narrative_event_payload(event_type, payload)
 
 	if visibility == LOCAL_PUBLIC_VISIBILITY and not is_enterable_location(location_id):
 		if not payload.has("source_location_id"):
@@ -1577,6 +1656,26 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 	if str(normalized["summary"]).is_empty():
 		normalized["summary"] = _format_summary(normalized)
 	return normalized
+
+
+func _sanitize_narrative_event_payload(event_type: String, payload: Dictionary) -> Dictionary:
+	var sanitized := payload.duplicate(true)
+	match event_type:
+		"work_failed", "prayer_failed":
+			sanitized["reason"] = _format_memory_reason(
+				sanitized.get("reason", ""),
+				"行动条件不满足"
+			)
+		"plan_revised":
+			sanitized["reason"] = _format_memory_reason(
+				sanitized.get("reason", ""),
+				"原计划需要重新评估"
+			)
+			sanitized["summary"] = _format_memory_reason(
+				sanitized.get("summary", sanitized.get("reason", "")),
+				"原计划已经不再适用"
+			)
+	return sanitized
 
 
 func _legacy_payload_from_event(event: Dictionary) -> Dictionary:
@@ -1632,6 +1731,8 @@ func _format_summary(event: Dictionary) -> String:
 		return _format_building_or_plaza_state_summary(payload)
 	if event_type == "location_status_changed":
 		return _format_location_state_summary(payload)
+	if event_type == "horse_born":
+		return "一匹小马出生了，守备官给它取名为%s。" % str(payload.get("horse_name", "未命名"))
 	if event_type == "merchant_arrived":
 		return "%s在%s抵达后门，将停留到%s。" % [
 			str(payload.get("merchant_name", "商队")),
@@ -1645,12 +1746,17 @@ func _format_summary(event: Dictionary) -> String:
 		]
 	if event_type == "merchant_trade_completed":
 		var resource_name := str(payload.get("resource_name", _get_resource_name(str(payload.get("resource_id", "")))))
+		var line_count := maxi(1, int(payload.get("line_count", 1)))
 		if str(payload.get("direction", "buy")) == "sell":
+			if line_count > 1:
+				return "守备官向商人出售了%d类物资，获得了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
 			return "守备官向商人出售了%d份%s，获得了%d枚第纳尔。" % [
 				int(payload.get("amount", 0)),
 				resource_name,
 				int(payload.get("total_price", 0))
 			]
+		if line_count > 1:
+			return "守备官从商人处购买了%d类物资，支付了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
 		return "守备官从商人处购买了%d份%s，支付了%d枚第纳尔。" % [
 			int(payload.get("amount", 0)),
 			resource_name,
@@ -1673,6 +1779,14 @@ func _format_summary(event: Dictionary) -> String:
 		"work_started":
 			return "%s开始在%s进行%s。" % [actor, location, _get_action_name(str(payload.get("action_id", "")))]
 		"work_completed":
+			var pending_outputs: Dictionary = payload.get("pending_output_resources", {}) if payload.get("pending_output_resources", {}) is Dictionary else {}
+			if not pending_outputs.is_empty():
+				return "%s完成了%s，消耗%s，制成待收取的%s。" % [
+					actor,
+					_get_action_name(str(payload.get("action_id", ""))),
+					_format_resource_delta(payload.get("input_resources", {})),
+					_format_resource_delta(pending_outputs)
+				]
 			return "%s完成了%s，消耗%s，产出%s。" % [
 				actor,
 				_get_action_name(str(payload.get("action_id", ""))),
@@ -1683,7 +1797,7 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s未能完成%s：%s。" % [
 				actor,
 				_get_action_name(str(payload.get("action_id", ""))),
-				str(payload.get("reason", "原因不明"))
+				_format_memory_reason(payload.get("reason", ""), "行动条件不满足")
 			]
 		"skill_improved":
 			return _format_skill_improved_summary(actor, payload, location)
@@ -1697,9 +1811,23 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("after", 0))
 			]
 		"repair_assist_started":
-			return "%s开始协助修复%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+			var repair_location := _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始协助修复%s，还有%d人可以参与协助。" % [
+					actor,
+					repair_location,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始协助修复%s。" % [actor, repair_location]
 		"upgrade_assist_started":
-			return "%s开始协助升级%s。" % [actor, _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))]
+			var upgrade_location := _get_location_name(str(payload.get("building_id", event.get("location_id", DEFAULT_LOCATION_ID))))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始协助升级%s，还有%d人可以参与协助。" % [
+					actor,
+					upgrade_location,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始协助升级%s。" % [actor, upgrade_location]
 		"eat_started":
 			return "%s开始在%s吃饭。" % [actor, location]
 		"eat_completed":
@@ -1741,7 +1869,7 @@ func _format_summary(event: Dictionary) -> String:
 				actor,
 				location,
 				_get_action_name(str(payload.get("action_id", "pray_at_chapel"))),
-				str(payload.get("reason", "行动条件不满足"))
+				_format_memory_reason(payload.get("reason", ""), "行动条件不满足")
 			]
 		"visit_started":
 			return "%s抵达%s并准备暂时停留。" % [actor, location]
@@ -1764,6 +1892,8 @@ func _format_summary(event: Dictionary) -> String:
 				str(payload.get("listener_name", actor)),
 				str(payload.get("reply_text", ""))
 			]
+		"dialogue_special_interaction_result":
+			return _format_dialogue_special_interaction_result(actor, payload)
 		"proactive_talk_started":
 			return "%s想主动找守备官交涉。" % actor
 		"proactive_talk_message":
@@ -1775,7 +1905,11 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("work_phase_count", 0))
 			]
 		"plan_revised":
-			return "%s重新评估了当前计划：%s。" % [actor, str(payload.get("summary", payload.get("reason", "计划异常")))]
+			var revision_text := _format_memory_reason(
+				payload.get("summary", payload.get("reason", "")),
+				"原计划已经不再适用"
+			)
+			return "%s重新评估了当前计划：%s。" % [actor, revision_text]
 		"money_given":
 			return "%s给了%s%d枚第纳尔。" % [PLAYER_DISPLAY_NAME, actor, int(payload.get("amount", 0))]
 		"wine_given":
@@ -1783,6 +1917,8 @@ func _format_summary(event: Dictionary) -> String:
 		"equipment_given":
 			return "%s把%s交给了%s。" % [PLAYER_DISPLAY_NAME, str(payload.get("equipment_name", "装备")), actor]
 		"equipment_changed":
+			if str(payload.get("slot", "")) == "mount" and str(payload.get("equipment_id", "")).is_empty():
+				return "%s收回了分配给%s的马匹。" % [PLAYER_DISPLAY_NAME, actor]
 			return "%s为%s更换了%s。" % [PLAYER_DISPLAY_NAME, actor, str(payload.get("equipment_name", "装备"))]
 		"order_assigned":
 			return "守备官制定了新的指令。"
@@ -1819,19 +1955,20 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s被守备官的话激起了斗志，攻击和移动暂时提升。" % actor
 		"morale_boost_ended":
 			return "%s的斗志激昂状态消退了。" % actor
-		"npc_mode_changed":
-			return "%s从%s切换到%s，原因：%s。" % [
-				actor,
-				str(payload.get("from_mode_label", _format_behavior_mode_label(str(payload.get("from_mode", ""))))),
-				str(payload.get("to_mode_label", _format_behavior_mode_label(str(payload.get("to_mode", ""))))),
-				str(payload.get("reason", "mode_changed"))
-			]
+		"work_encouragement_result":
+			match str(payload.get("decision", "none")):
+				"work_boost":
+					return "%s受到守备官鼓励，决定更积极地投入工作。" % actor
+				"escape":
+					return "%s听完守备官的话后决定逃离驿站。" % actor
+				_:
+					return "%s听完守备官的话后仍照常工作。" % actor
+		"work_encouragement_boost_started":
+			return "%s受到鼓励，当天工作产出效率提高了。" % actor
+		"work_encouragement_boost_ended":
+			return "%s的工作鼓励状态在跨天后结束了。" % actor
 		"avoidance_started":
-			return "%s发现%s接近，正朝%s避战。" % [
-				actor,
-				str(payload.get("enemy_name", payload.get("enemy_id", "敌人"))),
-				str(payload.get("target_name", "避战方向"))
-			]
+			return "%s发现敌军正在接近，正在避战。" % actor
 		"avoidance_ended":
 			return "%s不再避战，回到驿站日常安排。" % actor
 		"escape_started":
@@ -1887,10 +2024,9 @@ func _format_summary(event: Dictionary) -> String:
 		"piety_meteor_cast":
 			return "守备官消耗全部虔诚，指定了一处陨石落点。"
 		"piety_meteor_impact":
-			return "陨石砸向敌阵，命中%d名敌人、击退%d名，并点燃了地面；没有伤及友方。" % [
-				int(payload.get("enemy_hit_count", 0)),
-				int(payload.get("enemy_defeated_count", 0))
-			]
+			return "由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。"
+		"piety_meteor_enemy_defeated":
+			return "陨石以相当直接的正义砸死了%d名敌人；看来天意这次没有采用含蓄的表达方式。" % int(payload.get("enemy_defeated_count", 0))
 		"damage_taken":
 			var damage_actor_ids := _normalize_string_array(event.get("actor_ids", []))
 			var damage_actor_id := "" if damage_actor_ids.is_empty() else damage_actor_ids[0]
@@ -1901,14 +2037,33 @@ func _format_summary(event: Dictionary) -> String:
 				int(payload.get("hp_before", 0)),
 				int(payload.get("hp_after", 0))
 			]
+		"horse_damaged":
+			return "%s骑乘的%s承受了%.1f点伤害，HP 从%.1f降到%.1f。" % [
+				actor,
+				str(payload.get("horse_name", "马匹")),
+				float(payload.get("damage", 0.0)),
+				float(payload.get("hp_before", 0.0)),
+				float(payload.get("hp_after", 0.0))
+			]
+		"horse_died":
+			return "%s骑乘的%s在战斗中阵亡，%s改为步战。" % [
+				actor,
+				str(payload.get("horse_name", "马匹")),
+				actor
+			]
 		"unconscious_started":
 			return "%s在%s昏迷了。" % [actor, location]
 		"healing_started":
-			return "%s开始在%s协助治疗%s。" % [
-				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),
-				location,
-				_get_npc_display_name(str(payload.get("target_npc_id", "")))
-			]
+			var healer_name := _get_npc_display_name(str(payload.get("healer_npc_id", "")))
+			var healing_target_name := _get_npc_display_name(str(payload.get("target_npc_id", "")))
+			if payload.has("remaining_helper_slots"):
+				return "%s开始在%s协助治疗%s，还有%d人可以参与协助。" % [
+					healer_name,
+					location,
+					healing_target_name,
+					maxi(0, int(payload.get("remaining_helper_slots", 0))),
+				]
+			return "%s开始在%s协助治疗%s。" % [healer_name, location, healing_target_name]
 		"healing_completed":
 			return "%s结束了对%s的治疗，消耗%d枚第纳尔。" % [
 				_get_npc_display_name(str(payload.get("healer_npc_id", ""))),
@@ -1927,7 +2082,32 @@ func _format_summary(event: Dictionary) -> String:
 		"sleep_ended":
 			return "%s在%s休息后恢复了些精神。" % [actor, location]
 		_:
-			return "%s发生了%s事件。" % [actor, event_type]
+			return "%s经历了一件值得记录的事。" % actor
+
+
+func _format_memory_reason(raw_value: Variant, fallback: String) -> String:
+	var text_value := str(raw_value).strip_edges()
+	if (
+		text_value.is_empty()
+		or not _contains_cjk_text(text_value)
+		or text_value.contains("_")
+		or text_value.contains("res://")
+		or text_value.contains("\\")
+		or text_value.contains("::")
+		or text_value.contains("=")
+	):
+		return fallback
+	while text_value.ends_with("。") or text_value.ends_with("."):
+		text_value = text_value.left(-1).strip_edges()
+	return fallback if text_value.is_empty() else text_value
+
+
+func _contains_cjk_text(text_value: String) -> bool:
+	for index in range(text_value.length()):
+		var codepoint := text_value.unicode_at(index)
+		if (codepoint >= 0x3400 and codepoint <= 0x4DBF) or (codepoint >= 0x4E00 and codepoint <= 0x9FFF):
+			return true
+	return false
 
 
 func _format_completed_player_dialogue_transcript(payload: Dictionary) -> String:
@@ -1954,6 +2134,33 @@ func _format_completed_player_dialogue_transcript(payload: Dictionary) -> String
 	if not speaker_name.is_empty() and not listener_name.is_empty():
 		heading = "%s与%s对话" % [speaker_name, listener_name]
 	return "%s：\n%s" % [heading, "\n".join(transcript_lines)]
+
+
+func _format_dialogue_special_interaction_result(npc_name: String, payload: Dictionary) -> String:
+	var outcome := str(payload.get("outcome", "none"))
+	match str(payload.get("special_type", "")):
+		"recruitment":
+			if outcome == "accept":
+				return "守备官成功说服了%s，%s同意入伍。" % [npc_name, npc_name]
+			return "守备官尝试说服%s入伍，%s没有同意。" % [npc_name, npc_name]
+		"morale_encouragement":
+			if outcome == "morale_boost":
+				return "守备官成功鼓舞了%s的士气。" % npc_name
+			if outcome == "escape":
+				return "%s没有被守备官鼓舞，决定逃离驿站。" % npc_name
+			return "%s没有受到守备官的鼓舞，继续参战。" % npc_name
+		"work_encouragement":
+			if outcome == "work_boost":
+				return "守备官成功鼓励了%s，%s决定更积极地工作。" % [npc_name, npc_name]
+			if outcome == "escape":
+				return "%s没有接受守备官的工作鼓励，决定逃离驿站。" % npc_name
+			return "%s没有受到守备官的工作鼓励，照常工作。" % npc_name
+		"combat_strategy":
+			var strategy_label := str(payload.get("strategy_label", "当前策略"))
+			if outcome == "change":
+				return "守备官成功说服%s将战斗策略改变为“%s”。" % [npc_name, strategy_label]
+			return "%s没有改变战斗策略，继续采用“%s”。" % [npc_name, strategy_label]
+	return "%s对守备官的特殊交涉作出了回应。" % npc_name
 
 
 func _format_combat_started_summary(payload: Dictionary) -> String:
@@ -2129,24 +2336,6 @@ func _format_skill_improved_summary(actor: String, payload: Dictionary, location
 	if reason == "work_completed":
 		return "%s在%s工作后，%s略有长进。" % [actor, location, skill_name]
 	return "%s的%s略有长进。" % [actor, skill_name]
-
-
-func _format_behavior_mode_label(mode: String) -> String:
-	match mode:
-		"work":
-			return "工作模式"
-		"rally":
-			return "集结模式"
-		"combat":
-			return "战斗模式"
-		"avoid_combat":
-			return "避战模式"
-		"unconscious":
-			return "昏迷"
-		"escaped":
-			return "逃离"
-		_:
-			return mode
 
 
 func _format_battle_psychology_decision(decision: String) -> String:
@@ -2381,7 +2570,12 @@ func _format_workstation_states(raw_workstations: Variant) -> String:
 			parts.append("%s已移除" % station_name)
 			continue
 		var occupied_by := str(workstation.get("occupied_by", ""))
-		var state_text := "空闲" if occupied_by.is_empty() or occupied_by == "<null>" else "被%s占用" % _get_npc_display_name(occupied_by)
+		var reserved_by := str(workstation.get("reserved_by", ""))
+		var state_text := "空闲"
+		if not occupied_by.is_empty() and occupied_by != "<null>":
+			state_text = "被%s占用" % _get_npc_display_name(occupied_by)
+		elif not reserved_by.is_empty() and reserved_by != "<null>":
+			state_text = "已为%s预留" % _get_npc_display_name(reserved_by)
 		if change == "added":
 			parts.append("新增%s，当前%s" % [station_name, state_text])
 		else:
@@ -2436,7 +2630,7 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		target_ids.append(str(payload["source_event_id"]))
 	if event_type == "attack_made" and payload.has("target_enemy_id"):
 		target_ids.append(str(payload["target_enemy_id"]))
-	if ["damage_taken", "unconscious_started", "healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("target_npc_id"):
+	if ["damage_taken", "horse_damaged", "horse_died", "unconscious_started", "healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("target_npc_id"):
 		target_ids.append(str(payload["target_npc_id"]))
 	if ["healing_started", "healing_completed", "healing_failed"].has(event_type) and payload.has("healer_npc_id"):
 		target_ids.append(str(payload["healer_npc_id"]))
@@ -2448,7 +2642,7 @@ func _build_default_target_ids(event_type: String, location_id: String, payload:
 		for key in ["deployment_id", "device_id", "slot_id", "target_enemy_id"]:
 			if payload.has(key):
 				target_ids.append(str(payload[key]))
-	if ["piety_meteor_cast", "piety_meteor_impact"].has(event_type) and payload.has("cast_id"):
+	if ["piety_meteor_cast", "piety_meteor_impact", "piety_meteor_enemy_defeated"].has(event_type) and payload.has("cast_id"):
 		target_ids.append(str(payload["cast_id"]))
 	return target_ids
 
@@ -2590,9 +2784,12 @@ func _get_action_name(action_id: String) -> String:
 		return "行动"
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null:
-		return action_id
+		return "当前行动"
+	if action_system.has_method("get_action_ids") and not action_system.get_action_ids().has(action_id):
+		return "当前行动"
 	var action: Dictionary = action_system.get_action(action_id)
-	return str(action.get("name", action_id))
+	var action_name := str(action.get("name", "")).strip_edges()
+	return "当前行动" if action_name.is_empty() else action_name
 
 
 func _get_resource_name(resource_id: String) -> String:

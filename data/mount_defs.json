@@ -2,9 +2,12 @@
   {
     "id": "riding_horse",
     "name": "已分配马匹",
+    "icon": "res://assets/ui/item_icons/horse/chestnut_wind.png",
     "slot": "mount",
     "speed_bonus": 1.35,
     "attack_speed_modifier": 0.05,
+    "riding_move_speed_bonus_at_100": 0.12,
+    "riding_attack_speed_bonus_at_100": 0.08,
     "charge_speed_multiplier": 1.30,
     "charge_weapon_damage_multiplier": 1.65,
     "charge_damage": 7.0,

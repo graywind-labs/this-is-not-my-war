@@ -1,0 +1,26 @@
+{
+  "ambient_energy": 0.36,
+  "moon_energy": 0.76,
+  "warm_rim_energy": 0.16,
+  "fog_density": 0.0015,
+  "volume_density": 0.0018,
+  "courtyard_energy": 2.8,
+  "courtyard_range": 11.0,
+  "edge_fog_color": "#515f71",
+  "ground_dark": "#252c29",
+  "ground_earth": "#4b4535",
+  "ground_worn": "#60533e",
+  "tree_height_factor": 1.0,
+  "defense_display": {
+    "fixture_id": "main_hall_slot_03_platform",
+    "device_id": "wall_ballista",
+    "offset": [0.0, 0.0, 0.0],
+    "yaw_degrees": 0.0
+  },
+  "fog_banks": [
+    {"position": [-3, 2.8, -29], "size": [27, 8, 14], "density": 0.027},
+    {"position": [23, 3.2, -33], "size": [31, 10, 16], "density": 0.037},
+    {"position": [-16, 1.1, 2], "size": [15, 4, 28], "density": 0.033},
+    {"position": [29, 1.5, 5], "size": [12, 5, 26], "density": 0.029}
+  ]
+}

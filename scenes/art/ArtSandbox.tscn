@@ -1,0 +1,228 @@
+[gd_scene load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/ArtSandbox.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/wall_plaster_door_round.glb" id="2_building"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/anvil.glb" id="3_prop"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/characters/base_male.glb" id="4_character"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/animations/ual2_standard.glb" id="5_animation"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/nature/common_tree_a.glb" id="6_nature"]
+[ext_resource type="Material" path="res://resources/materials/art_sandbox_grid.tres" id="7_grid"]
+[ext_resource type="Material" path="res://resources/materials/environment_matte.tres" id="8_matte"]
+[ext_resource type="Material" path="res://resources/materials/character_rim.tres" id="9_rim"]
+[ext_resource type="Material" path="res://resources/materials/selection_outline.tres" id="10_outline"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/characters/male_peasant_outfit.glb" id="11_outfit"]
+[ext_resource type="Script" path="res://scripts/presentation/buildings/RoofVisibilityController.gd" id="12_roof_controller"]
+[ext_resource type="PackedScene" path="res://scenes/buildings/BuildingArtView.tscn" id="13_building_view"]
+
+[sub_resource type="Environment" id="Environment_sandbox"]
+background_mode = 1
+background_color = Color(0.115, 0.139, 0.17, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.61, 0.69, 0.78, 1)
+ambient_light_energy = 0.62
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
+material = ExtResource("7_grid")
+size = Vector2(25, 22)
+
+[sub_resource type="BoxMesh" id="BoxMesh_marker"]
+material = ExtResource("8_matte")
+size = Vector3(0.08, 1.82, 0.08)
+
+[sub_resource type="BoxMesh" id="BoxMesh_plinth"]
+material = ExtResource("8_matte")
+size = Vector3(2, 0.08, 2)
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
+bg_color = Color(0.071, 0.082, 0.094, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.67, 0.55, 0.32, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="ArtSandbox" type="Node3D"]
+script = ExtResource("1_script")
+character_rim = ExtResource("9_rim")
+selection_outline = ExtResource("10_outline")
+camera_distance = 23.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_sandbox")
+
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -35, 0)
+light_color = Color(1, 0.88, 0.72, 1)
+light_energy = 1.25
+shadow_enabled = true
+directional_shadow_max_distance = 45.0
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-35, 145, 0)
+light_color = Color(0.48, 0.65, 1, 1)
+light_energy = 0.32
+
+[node name="Ground" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_ground")
+
+[node name="RoofVisibilityController" type="Node" parent="."]
+script = ExtResource("12_roof_controller")
+camera_path = NodePath("../CameraRig/Camera3D")
+
+[node name="ReferenceHeight" type="MeshInstance3D" parent="."]
+position = Vector3(-9.4, 0.91, 1.8)
+mesh = SubResource("BoxMesh_marker")
+
+[node name="ReferenceHeightLabel" type="Label3D" parent="."]
+position = Vector3(-9.4, 2.15, 1.8)
+text = "1.82 m"
+font_size = 48
+outline_size = 10
+billboard = 1
+
+[node name="Samples" type="Node3D" parent="."]
+position = Vector3(0, 0, -5.5)
+
+[node name="BuildingPlinth" type="MeshInstance3D" parent="Samples"]
+position = Vector3(-7, 0.04, 0)
+mesh = SubResource("BoxMesh_plinth")
+
+[node name="BuildingSample" parent="Samples" instance=ExtResource("2_building")]
+position = Vector3(-7, 0.08, 0)
+
+[node name="BuildingLabel" type="Label3D" parent="Samples"]
+position = Vector3(-7, 3.65, 0)
+text = "BUILDING · 2 m module"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="PropSample" parent="Samples" instance=ExtResource("3_prop")]
+position = Vector3(-3.4, 0.08, 0)
+
+[node name="PropLabel" type="Label3D" parent="Samples"]
+position = Vector3(-3.4, 1.25, 0)
+text = "PROP · outline"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="CharacterSample" parent="Samples" instance=ExtResource("4_character")]
+position = Vector3(0, 0.08, 0)
+
+[node name="CharacterLabel" type="Label3D" parent="Samples"]
+position = Vector3(0, 2.35, 0)
+text = "CHARACTER · rim"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="OutfitSample" parent="Samples" instance=ExtResource("11_outfit")]
+position = Vector3(2.3, 0.08, 0)
+
+[node name="OutfitLabel" type="Label3D" parent="Samples"]
+position = Vector3(2.3, 2.35, 0)
+text = "OUTFIT · peasant"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="AnimationSample" parent="Samples" instance=ExtResource("5_animation")]
+position = Vector3(4.7, 0.08, 0)
+
+[node name="AnimationLabel" type="Label3D" parent="Samples"]
+position = Vector3(4.7, 2.35, 0)
+text = "ANIMATION · Farm_Harvest"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="NatureSample" parent="Samples" instance=ExtResource("6_nature")]
+position = Vector3(8.7, 0, 0)
+
+[node name="NatureLabel" type="Label3D" parent="Samples"]
+position = Vector3(8.7, 7.7, 0)
+text = "NATURE"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="BuildingViews" type="Node3D" parent="."]
+
+[node name="SmithyView" parent="BuildingViews" instance=ExtResource("13_building_view")]
+position = Vector3(-4.2, 0, 3.7)
+building_id = "sandbox_smithy"
+roof_near_distance = 20.0
+roof_far_distance = 30.0
+minimum_roof_opacity = 0.06
+
+[node name="SmithyLabel" type="Label3D" parent="BuildingViews"]
+position = Vector3(-4.2, 7.8, 3.7)
+text = "SMITHY · roof 20–30 m"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="ClinicView" parent="BuildingViews" instance=ExtResource("13_building_view")]
+position = Vector3(4.2, 0, 3.7)
+rotation_degrees = Vector3(0, 180, 0)
+building_id = "sandbox_clinic"
+roof_near_distance = 23.0
+roof_far_distance = 34.0
+minimum_roof_opacity = 0.12
+
+[node name="ClinicLabel" type="Label3D" parent="BuildingViews"]
+position = Vector3(4.2, 7.8, 3.7)
+text = "CLINIC · roof 23–34 m"
+font_size = 42
+outline_size = 9
+billboard = 1
+
+[node name="CameraRig" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+current = true
+fov = 44.0
+near = 0.1
+far = 100.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="SafeArea" type="MarginContainer" parent="UI"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 700.0
+offset_bottom = 126.0
+
+[node name="Panel" type="PanelContainer" parent="UI/SafeArea"]
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="UI/SafeArea/Panel"]
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="UI/SafeArea/Panel/Margin"]
+theme_override_constants/separation = 5
+
+[node name="TitleLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.93, 0.81, 0.51, 1)
+theme_override_font_sizes/font_size = 22
+text = "ART SANDBOX · Quaternius import baseline"
+
+[node name="StatusLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.84, 0.87, 0.89, 1)
+theme_override_font_sizes/font_size = 16
+text = "Loading baseline..."
+
+[node name="ControlsLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.64, 0.69, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "Mouse wheel: zoom / roof fade · Middle drag: orbit · two buildings use per-view thresholds"

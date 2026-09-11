@@ -1,0 +1,11 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_female_none_three_hm_727359.mp3,npc_emotion_none_female,3 feminine hmm,kanyonwyvern,https://freesound.org/s/727359/,CC0,confirmed,npc_emotion_none_female,"只使用 00:00–00:01；女性 NPC 回复情绪为 none 时从 NPC 位置播放","用户确认女性中性使用开头 1 秒"
+04_female_happy_short_397673.mp3,npc_emotion_happy_female,short - female - laugh - chuckle - giggle - AIFF 24 bits,amoyssiadis,https://freesound.org/s/397673/,CC0,rejected,,不采用,"用户已选择 06"
+05_female_happy_laugh_468514.mp3,npc_emotion_happy_female,WOMAN LAUGH,SamuelGremaud,https://freesound.org/s/468514/,CC0,rejected,,不采用,"用户已选择 06"
+06_female_happy_chuckle_377742.mp3,npc_emotion_happy_female,Girl Chuckle.wav,BlueSiren,https://freesound.org/s/377742/,CC0,confirmed,npc_emotion_happy_female,"整段单次播放；女性 NPC 回复情绪为 happy 时从 NPC 位置播放","用户确认女性开心使用"
+07_female_relieved_short_242909.mp3,npc_emotion_relieved_female,relieved sigh.wav,Reitanna,https://freesound.org/s/242909/,CC0,rejected,,不采用,"用户已选择 08"
+08_female_relieved_sigh_384992.mp3,npc_emotion_relieved_female,woman sigh,threadzz,https://freesound.org/s/384992/,CC0,confirmed,npc_emotion_relieved_female,"整段单次播放；女性 NPC 回复情绪为 relieved 时从 NPC 位置播放","用户确认女性放松使用"
+09_female_relieved_sigh_446651.mp3,npc_emotion_relieved_female,Woman Sigh,Nicolas4677,https://freesound.org/s/446651/,CC0,rejected,,不采用,"用户已选择 08"
+10_female_angry_grunt_464622.mp3,npc_emotion_angry_female,Female_Grunt.wav,D001447733,https://freesound.org/s/464622/,CC-BY 3.0,confirmed,npc_emotion_angry_female,"整段单次播放；女性 NPC 回复情绪为 angry 时从 NPC 位置播放","用户确认女性愤怒使用"
+11_female_angry_low_784919.mp3,npc_emotion_angry_female,Grunt,9voltfan,https://freesound.org/s/784919/,CC0,rejected,,不采用,"用户已选择 10"
+12_female_angry_short_242623.mp3,npc_emotion_angry_female,grunt.wav,Reitanna,https://freesound.org/s/242623/,CC0,rejected,,不采用,"用户已选择 10"

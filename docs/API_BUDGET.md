@@ -1,5 +1,208 @@
 # API_BUDGET.md
 
+## 2026-09-08 T0387 真实结局补测
+
+- 合法展示批次：八人胜利 1 次、八人失败首次 + correction，共 22,810 tokens，估算 ¥0.02677，Provider / model 为 `deepseek / deepseek-v4-flash`，均无 fallback。
+- 边界失败批次：两轮“胜利含已逃离人物”连同各自 correction 共 32,438 tokens，估算 ¥0.03606；均被 tone / 禁死亡校验拒绝，未作为游戏成功结果。
+- 本轮合计 55,248 tokens，估算 ¥0.06283。`.env` 的文本 Provider 未改写，仍为 mock；真实调用只在测试进程中临时覆盖。
+
+## T0387 群像结局预算（Mock 已验收，尚未产生真实费用）
+
+- 每局只在首次形成最终胜负时发起 1 个 `game_epilogue` 群像请求；八名 NPC 共享一次输入与输出，避免 8 次重复注入驿站背景，并保证叙事连续。
+- 正式 Provider 最多 2 次 attempt：首次生成，以及仅在 Schema / 连续性校验失败时的一次纠错。网络、无 Key、预算不足等不可纠错错误不盲目重试，直接记录失败并进入 `template_fallback`。
+- 输入通过 `EpilogueFactCompiler` 筛选并限制每人最多 12 条关键事实，不传完整事件档案；输出按全站尾声、结局称号及 8 篇各 140–420 中文字符做 Schema 限制，Prompt 目标仍为约 180–280 字。当前胜败 Mock 与八人 Godot 往返费用均为 0；真实 token 和费用须在真实 Provider 样本中记录。
+- 成功结果写入当前结算快照，重复打开结算面板或刷新 UI 不再次调用；跨进程读档复用等待未来完整存档系统接入。自动化默认使用显式 Mock / fake；真实验收必须用单独环境闸门，至少一胜一败，共 2 个成功群像样本，另行记录纠错产生的额外 attempt。
+- usage 至少记录 `request_id / settlement_id / call_type=game_epilogue / provider / model / input_tokens / output_tokens / estimated_cost / HTTP或异常 / validation_errors / correction_attempt / fallback_source`，不得记录 Key。
+
+## T1601A / T1601B / T1601C / T1602 qwen3-asr-flash 语音预算（真实 Provider 已接入）
+
+- 正式语音 Provider 计划使用阿里云百炼华北 2（北京）非实时 `qwen3-asr-flash`，当前公开单价 `0.00022 元/秒`，输出不另收费。
+- 单次最长 30 秒，理论最高约 `0.0066 元/次`；1,000 次全长录音约 6.6 元。平均 10 秒时约 `0.0022 元/次`。
+- 当前公开新人免费额度为 36,000 秒（10 小时），约 1,200 次 30 秒或 3,600 次 10 秒录音，有效期以账号控制台为准。
+- 语音 attempt 使用 `call_type=voice_transcription_emotion` 写入 usage，记录 request id、Provider、模型、NPC / dialogue id、音频秒数、估算成本、HTTP / 异常和 fallback；不记录音频、Base64、Authorization 或 Key。
+- 预算不足只禁用本次语音识别并提示手动输入，不禁止现有文字对话。Mock 不计真实费用；正式失败不得自动 fallback 到 Mock。
+- T1601A 的显式 Mock usage 记录音频秒数且费用固定为 0。T1602 已接入真实 Provider，成功调用按校验后的音频时长和 `VOICE_COST_PER_SECOND_CNY` 估算费用；价格来源：[阿里云百炼模型价格](https://help.aliyun.com/zh/model-studio/model-pricing)。
+- T1601B 只增加 Godot 本地麦克风采集、WAV 临时文件与录音状态 UI，不发送 HTTP、不调用 Mock 或真实模型；专项与 Main 运行态检查的 API 调用和费用均为 0。
+- T1601C 专项向本机显式 Mock `/voice/analyze` 完成 multipart 闭环；Mock usage 费用固定为 0，没有调用阿里云或产生真实语音费用。既有对话回归也使用本地 Mock。
+- T1603 仅增加 Godot 本地字符校验与弹窗；299 / 300 字允许路径使用本地 Fake bridge，301 字路径在传输前拒绝，真实 API 调用和费用为 0。
+- T1602 共执行两次真实北京地域烟测：首次 2.854 秒用于确认 Provider 响应，估算 `0.00062787 元`；接入共享账本后以 2.554 秒再次确认正式 `/voice/analyze` 与按秒入账，估算 `0.0005618 元`。两次均准确转写、返回 `neutral` 且 `fallback=false`，合计估算 `0.00118967 元`；实际账单以百炼控制台为准。
+- T1604 最终真实矩阵为 11 条、总估算 `0.0143763 元`，覆盖轻噪、术语、七类目标语境与 26.955 秒长句；全部走北京地域 `qwen3-asr-flash` 且 `fallback=false`。此前一次 9 条成功、1 条因超过 30 秒被本地后端拒绝的调参批次估算 `0.00788448 元`；拒绝项未调用 Provider。实际账单以百炼控制台为准。
+- 正式语音与文本模型共享 `LLM_COST_LEDGER_PATH`、`LLM_DAILY_BUDGET_MAX_CNY` 和上海自然日口径。语音在 Provider 前按 `VOICE_DAILY_BUDGET_REQUEST_RESERVE_CNY`（默认 30 秒 × 单价 = `0.0066 元`）预留，成功后用 `settle_direct_cost` 按实际 WAV 时长结算；预算不足返回 `voice_budget_exceeded` 且不发送音频。
+
+## T0353 音频混音修复调用成本
+
+本任务只调整 Godot 本地音频总线、按钮信号时序、镜头缩放只读投影与设置持久化；不新增 endpoint、Prompt、`call_type`、模型判断或后端启动。真实 API 调用与费用均为 0。
+
+## T0135-P10H 陨石音效调用成本
+
+本任务只消费 Godot 本地 PietySystem / EventBus 已有施放与冲击事实，不新增 endpoint、`call_type`、Prompt、模型判断或重试。专项与 Godot MCP 正式场景验收未启动后端，真实 API 调用与费用为 0。
+
+## T0135-P10G UI / 世界交互音效调用成本
+
+本任务只读本地 UI、门与 MerchantSystem 已有状态，不新增 endpoint、`call_type`、Prompt、模型判断或重试。专项和 Godot MCP 正式场景验收均未启动后端，真实 API 调用与费用为 0。
+
+## T0135-P10F NPC 情绪语气声调用成本
+
+本任务复用现有对话响应已经携带的情绪结果，不新增 endpoint、`call_type`、重试或模型判断。19 条资产映射、随机选择、空间定位和播放替换均为本地 Godot 表现逻辑；专项与 Godot MCP 运行态验收旁路启动计划，真实 API 调用和费用均为 0。
+
+## T0324 显式 Mock 的完整机制验收成本
+
+- GM NPC-NPC 对话在 `LLM_PROVIDER=mock` 时复用正式 `/npc/dialogue` 通信与 Godot 状态机，但不会调用外部供应商或写入真实成本账本。
+- 专项旁路 8 人启动计划，完整自然流程产生 2 次本地 Mock 响应（邀请 + 首轮结束），真实 API、token 费用和成本账本增量均为 0。
+- “允许显式 Mock”不等于恢复 fallback：`model_fallback_used=true` 仍由 DialogSystem 拒绝。真实 provider 效果验收继续使用带显式闸门的 T0319 最小脚本。
+
+## T0319 GM 真实会合最小验收成本
+
+- 目标不瞬移、发起者寻路、邀请距离和接受后行动交接先由受控 fake bridge 完整覆盖，真实供应商调用为 0。
+- 最终真实验收使用 DeepSeek `deepseek-v4-flash`、`fallback=false`，脚本旁路 8 人启动计划，并在首轮回复落地时立即停止自主续聊且抑制对话后计划重评估。仅产生 2 次 `dialogue` attempt：邀请 `15,901 input / 99 output / ¥0.00894892`，首轮 `16,498 input / 115 output / ¥0.00970336`；合计 `32,399 input / 214 output / ¥0.01865228`，2/2 成功、0 fallback。
+- 当日账本由 263 次 / ¥4.62921024 增至 265 次 / ¥4.64786252，剩余 ¥15.35213748 / ¥20，在途预留为 0。专用脚本要求显式 `T0319_ALLOW_REAL_LLM=1`，防止普通本地回归误耗额度。
+
+## T0318 GM 交互验收调用边界
+
+- 空间会合、导航、桌边距离、手势、GM 控件、治疗移动与 HP 恢复均为本地程序行为，必须使用受控 fake / Mock bridge 验收，不得通过反复启动真实 Main 探索。
+- 真实 provider 只用于确认 Key / provider 来源及最终业务回复；基础 Mock 已通过后仍需真实验收时，先复用单次最小业务请求和 usage 记录。除非用户再次明确同意，不重复启动会自动生成 8 人计划及连锁修订的正式 Main。
+- 2026-09-02 后端重启后的诊断曾因多轮正式 Main 复现产生 263 次 provider attempt、估算 ¥4.62921024；发现后已停止游戏，在途预留归零，剩余额度 ¥15.37078976 / ¥20。后续座位目标空间修复与回归全部改用 fake bridge，新增真实调用为 0。
+
+## T0308 特殊互动 Prompt 稳定性成本
+
+成品路径不新增 endpoint、`call_type`、重试或二次判定；四个 toggle 仍最多开启一个，关闭时不加载模块，开启后仍只使用本轮一次 `/npc/dialogue`。新增文字只提高单次动态 Prompt 长度。
+
+2026-09-01 使用 DeepSeek `deepseek-v4-flash`、temperature 0、`LLM_FALLBACK_TO_MOCK=false` 进行同一 14-probe 矩阵重复迭代。可精确汇总的三轮四重复与最初两重复共 196 次真实调用、1,493,938 input / 20,243 output tokens、估算 ¥0.18606944；另有 2 次请求没有可恢复的精确 usage：1 次在验证脚本记录组装错误后、usage 快照前中断，1 次为最终士气 escape 可达性保护检查。两次都确认真实 provider 成功，但不估造 token / 费用，也未混入上述账目。最终保留矩阵为 56 次、428,244 input / 5,577 output tokens、估算 ¥0.04940504，56/56 成功且 0 fallback。
+
+## T0307 四类特殊互动真实验收成本
+
+2026-09-01 使用 `backend/.env` 的 DeepSeek `deepseek-v4-flash`，强制 `LLM_FALLBACK_TO_MOCK=false`。最终可复放审计保存 29 次 `/npc/dialogue`：0 失败、0 fallback，估算 ¥0.014049；其中大量 Prompt token 命中 provider cache。为寻找不依赖单一关键词且能在正式人设中稳定到达的输入，本轮完整探索窗口实际产生 169 次 provider attempt，append-only 账本合计 1,236,614 input tokens、18,532 output tokens、1,061,632 cache-hit prompt tokens、174,982 cache-miss prompt tokens，估算 ¥0.233279。
+
+T0307 不修改成品调用频率：toggle 关闭仍不附加对应模块，打开仍只复用本轮一次 `/npc/dialogue`。新增 `--resume-passed` 仅用于开发验收，复用审计中已经通过的响应并只调用未通过 case，避免因模型非确定性反复重跑完整矩阵；Godot 响应复放、事件 / 见闻和记忆压缩检查全部为本地 0 调用。
+
+## T0306 高频战斗记忆压缩成本
+
+本任务不新增 endpoint、`call_type`、请求频率、重试或输出字段。五类高频战斗事件在 Godot 供应商投影前按严格语义键合并；测试夹具每类 4 条（3 条同键、1 条异键）均变为 2 条，其他事件不变。实际节省量取决于一段连续交战中相同攻击者 / 目标 / 武器或相同伤害来源的重复次数；聚合元数据会占少量固定字符，但重复越多收益越高。当前环境没有 `OPENAI_API_KEY / DEEPSEEK_API_KEY / LLM_API_KEY`，本轮真实调用与费用均为 0。
+
+本轮从正式数据定义读取专名后的同一夹具，在“逐条紧凑投影 → 聚合投影”的 JSON 字符数分别为：`attack_made 2178→1383`、`damage_taken 1320→963`、`building_damaged 964→774`、`defense_device_triggered 1381→989`、`horse_damaged 1244→919`；这是专项数据而非整次 Prompt token 账单。
+
+## T0299 事件语义降噪成本
+
+本任务只调整 Godot 本地事件写入与确定性摘要，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。专项和运行态验收不发起 LLM 请求，真实 API 调用为 0；移除模式事件还会减少后续对话 / 计划 payload 中的冗余记忆文本。
+
+## T0296 情绪气泡几何调整成本
+
+本任务只删除 Godot 世界背景 Mesh 并调整人物框 Polygon2D 尾巴，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。自动化与 Godot MCP 验收真实 API 调用为 0；删除世界背景 Mesh 还减少了每个 NPC 情绪节点的一份网格和材质实例。
+
+## T0295 暂停情绪动作成本
+
+本任务只调整 Godot 本地 AnimationPlayer 和临时表现计时的暂停边界，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。暂停时对话仍沿既有每轮请求，不会因动画豁免产生额外请求；自动化与 Godot MCP 验收真实 API 调用为 0。
+
+## T0294 情绪气泡视觉修复成本
+
+本任务只修改 Godot 本地 Emoji 绘制方式和人物框气泡布局，不修改 Prompt、Schema、endpoint、provider、重试或调用次数。GM 预览、自动化和 Godot MCP 验收均不调用供应商，真实 API 调用为 0；世界 SubViewport 只在 Emoji 变化时刷新一次，不产生持续远程或渲染请求。
+
+## T0293 对话情绪同步动作成本
+
+本任务只让既有 `happy / angry` 结构化情绪在 Godot 本地同步触发临时动作，并撤下错误思考试片；不修改 Prompt、Schema、endpoint、provider、重试或成功路径调用次数。自动化和 Godot MCP 验收不调用供应商，真实 API 调用为 0。
+
+## T0291 战时对话并行调用边界
+
+本任务只调整Godot客户端的会话 / 战斗状态所有权，不修改 Prompt、Schema、endpoint、`call_type`、重试或每轮调用次数。战斗模式切换不再取消已经在途的玩家对话请求，但不会额外发起请求；后续轮次继续沿既有一次 `/npc/dialogue` 合同读取最新战局上下文。本地 HTTP Mock 用于通信回归，真实供应商调用为 0，无新增 token 或费用。
+
+## T0289 对话情绪字段成本
+
+本任务不新增 endpoint、`call_type`、触发次数或重试；每次既有 `/npc/dialogue` 只增加一个短枚举选择规则，输出继续使用原有 `emotion` 字段，因此调用次数不变、输出 token 增量接近 0。Mock / 本地表现验收不调用真实供应商。2026-08-31 检查进程环境与项目 `.env` 均未发现可用 API Key，故没有真实 provider 调用、token 或费用可记录，T0289 保持 Partial。
+
+## T0285 工作鼓励与四类动态模块（Mock 阶段）
+
+本任务不新增 endpoint、call_type、重试或二次判定，仍复用每轮一次 `/npc/dialogue`。四个特殊 toggle 最多开启一个；关闭时不把对应判断 Prompt / 输出字段加入 provider 请求，工作开启时仅增加一个三值字段，不增加调用次数。GM 与自动化使用 `LLM_PROVIDER=mock`，真实供应商调用为 0、费用为 0；用户确认交互后再单独记录真实 API 验收与 usage。
+
+## T0284 策略 toggle 调用边界（Mock 阶段）
+
+本任务不新增 endpoint 或 call_type，仍复用每轮一次 `/npc/dialogue`。toggle 关闭时不向 provider 发送策略上下文，也不把 `combat_strategy_decision` 加入动态输出合同；开启时只在同一请求增加当前策略、合法候选和一个保持 / 切换结构，不增加调用次数、重试或二次判断。自动化及 GM 使用显式 Mock，本阶段真实供应商调用为 0、费用为 0；用户确认交互后再单独做真实 API 验收并记录 usage。
+
+## T0283 鼓舞 toggle 调用边界（Mock 阶段）
+
+本任务不新增 endpoint 或 call_type，仍复用每轮一次 `/npc/dialogue`。toggle 关闭时不把 `wartime_reaction` 放入 provider 动态输出合同；开启时仅增加 `is_morale_encouragement_request` 与一个三值结构字段，不增加调用次数、重试或第二次判定。GM 与自动化均使用显式 `LLM_PROVIDER=mock`，本阶段真实供应商调用为 0、费用为 0；用户确认 Mock 交互后再单独记录真实 API 验收与 usage。
+
+## T0254 攻击 / 对话事件分离调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt、Schema、重试或供应商调用。普通对话攻击仍沿既有 `/npc/dialogue` 请求一次 NPC 反应，逃离攻击仍为 0 次；变化只在 Godot 本地会话 history 与事件提交。纯攻击结束时不再发送空的对话判别，而是调用既有 `guard_attack` 计划重评估入口，因此不会为了伪对话额外消耗一次对话判别预算。本地 Mock / 生命周期回归不产生真实供应商调用，无需真实 provider 效果验收。
+
+## T0251 建筑受损见闻字段调用边界
+
+本任务只在 Godot 本地过滤受损建筑状态差量中的 `operational_efficiency`，不新增 endpoint、`call_type`、Prompt、Schema、重试或远程模型调用；本地回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0238 陨石坑淡化调用边界
+
+本任务只修改 Godot 本地配置、逻辑时间表现状态和材质 Alpha，不新增 endpoint、`call_type`、Prompt / Schema、重试或远程 API 调用；专项、回归与 Godot MCP 验收产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0237 避战事件摘要调用边界
+
+本任务只修改 Godot 本地确定性事件摘要模板与回归断言，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或远程 API 调用；专项与 Godot MCP 验收产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0167 马匹毛色与取马路径调用边界
+
+本任务只调整本地 JSON 毛色 / 空间合同及 Godot NavigationServer3D 路径验证，不新增 endpoint、Prompt、Schema、LLM 或远程 API 调用；专项和视觉验收产生 0 次供应商调用。
+
+## T0166 GM 面板整理调用边界
+
+本任务只调整 Godot 本地调试 UI 和回归脚本，不新增 endpoint、Prompt、Schema、LLM 或远程 API 调用；专项与回归产生 0 次供应商调用。
+
+## T0165 陨石奇观表现
+
+- 全部由 Godot 本地配置、程序网格、粒子与既有 CC0 岩石完成；不调用 LLM、图像生成或远程运行时 API，模型调用次数为 0。
+
+## T0164 建筑名称渐隐调用边界
+
+本任务只修改 Godot 本地 Label3D 与镜头运动采样，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。专项与视觉验收产生 0 次供应商调用。
+
+## T0163 陨石自由落点调用边界
+
+本任务只移除 Godot 本地落点矩形校验，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。专项及回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0162 马匹身份、槽位与面板调用边界
+
+本任务只新增 Godot 本地马匹配置、权威状态、世界投影与 UI，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。名称和毛色来自本地有限模板池，不由模型生成；专项与回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0161 GM 一键征召配装调用边界
+
+本任务只调用 Godot 本地 NPC、库存、装备和马匹接口，不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用。GM 调试征召不会请求或伪造 NPC 对话接受，因此专项和回归产生 0 次供应商调用，无需真实 provider 验收。
+
+## T0130-P5R3 艾达档案外貌同步验收成本
+
+本任务只替换既有 `npc_setting.appearance` 的内容，不新增 Prompt / Schema 字段、endpoint、重试或成品调用次数。先通过本地共享档案专项与 Mock 对话适配器；因环境已有真实 Key，2026-08-21 又运行 8 名 NPC 的正式 `/npc/dialogue` smoke：DeepSeek `deepseek-v4-flash` 共 8 次，全部成功且 `fallback_used=false`，艾达更新后的外貌字段随既有载荷正常进入请求。该旧 smoke 脚本只输出调用数、provider、model 与 fallback 汇总，未持久化本轮 token 合计；不据此虚构费用数字。
+
+## T0129C-A5-P6d-3 正式治疗接近调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。目标投影、NavigationAgent / RVO 接近、到位扣费、helper / HP / 经验结算和清理均为本地权威逻辑，产生 0 次模型调用；既有完成后计划重估调用合同未改变，因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6d-2 正式升级协助调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。施工槽选择、NavigationAgent / RVO 移动、到位提交、upgrade helper 清理和升级倒计时均为本地权威逻辑，产生 0 次模型调用；既有完成后计划重估调用合同未改变，因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6d-1 正式修复协助调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或模型调用次数。维修槽选择、NavigationAgent / RVO 移动、到位提交、helper 清理和修复进度均为本地权威逻辑，产生 0 次模型调用；因此无需新增真实 provider 验收费用。
+
+## T0129C-A5-P6c 正式实体接近调用边界
+
+本任务不新增 endpoint、`call_type`、Prompt / Schema 字段、重试或成功路径调用次数。日计划 `talk_to_npc` 仍先发生既有 1 次 `dialogue_intent_revalidation`，实体赶路、RVO 接近、目标重定向和等待工位均为 0 次模型调用；进入合法距离后才按既有合同发起 1 次 NPC-NPC 邀请。由于没有修改模型输入输出效果，本轮使用确定性非 Mock 测试桥验证邀请接受链，没有新增真实 provider 验收费用。
+
+## T0120 NPC 可见文案润色真实 smoke
+
+本任务不改 Prompt、Schema、调用频率或行为规则，六份 Prompt hash 与 T0119 最终真实验收一致，因此未重跑 180 次完整行为矩阵。按 LLM 内容任务验收规则，2026-08-10 补跑 1 次莉娜 `/npc/daily_reflection`：DeepSeek `deepseek-v4-flash` 首次成功，5,117 input / 642 output tokens，估算 ¥0.00150884，`fallback_used=false`。结果继续正确记录诊所升级、皮甲 / 弓和后方医疗职责已经落实，并只把十份酒视作礼数，不替代医疗安排。
+
+## T0119 征募与逃离真实验收成本
+
+2026-08-10 在自动 Mock fallback 关闭的正式路径上，使用 DeepSeek `deepseek-v4-flash` 保存改动前基线并运行最终四套行为矩阵：
+
+| 阶段 | 调用 | input tokens | output tokens | 估算费用 |
+|---|---:|---:|---:|---:|
+| 改动前基线 | 24 | 240,748 | 5,485 | ¥0.10620760 |
+| 最终征募矩阵 | 86 | 1,009,685 | 9,998 | ¥0.19951908 |
+| 最终日计划逃离矩阵 | 32 | 346,080 | 18,484 | ¥0.15863584 |
+| 最终战时心理矩阵 | 32 | 288,432 | 3,074 | ¥0.22069584 |
+| 最终逃离挽留矩阵 | 30 | 370,152 | 3,421 | ¥0.12335432 |
+
+最终四套矩阵合计 180 次，2,014,349 input / 34,977 output tokens，估算 ¥0.70220508；180 / 180 HTTP 与真实 provider 成功，全部 `fallback_used=false`。基线与最终原始输入输出、request id、call type、NPC、场景、token、费用和 Prompt hash 保存在 `docs/audits/T0119_NPC_RECRUITMENT_ESCAPE/`，不含 API Key 或请求头。另行通过计划范围判别、正式修订和熟睡反思真实回归；这些辅助调用不计入上表 180 次正式矩阵。
+
 ## T0116 对话意图执行前复核
 
 - 每个实际开始执行的 `talk_to_npc / seek_guard_officer` 计划阶段最多增加 1 次正式 `dialogue_intent_revalidation`；同一日 / 小时 / 计划版本 / 计划项在途去重，迟到结果不重放。
@@ -422,7 +625,7 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - T0604A 已将 Godot 侧传输层改为原生 `HTTPClient`，不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件，并继续保证失败、超时和降级路径都会释放慢速请求。
 - T0109 不新增 endpoint、call_type、重试或供应商调用。显式取消和场景退出现在会协作终止仍在等待的 Godot `HTTPClient` 传输并 join 工作线程；已经发送到后端 / 供应商的尝试仍按后端真实 usage 与审计记录保留，客户端取消不会伪造成功、抹掉成本或触发 Mock fallback。
 - T0108 只更新既有长期记忆内容，不增加正常运行调用次数。2026-07-30 最终真实验收使用 DeepSeek `deepseek-v4-flash` 完成 3 次对话，29,784 input / 459 output tokens、估算 ¥0.00185080，全部 `fallback_used=false`；包含一次为放宽表面措辞断言而重跑的完整迭代后，本任务共发生 6 次成功 provider 调用，59,568 input / 888 output tokens、估算 ¥0.02132864。
-- T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入历史的守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消。逃离挽留攻击不调用 LLM，不申请慢速，不计入 API 成本，并自动完成会话。
+- T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入 history 的真实守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消；T0254 后固定攻击说明不进入 history，纯攻击结束不发空对话判别而走既有 `guard_attack` 重评估。逃离挽留攻击不调用 LLM、不申请慢速、不计入 API 成本，并自动完成会话但不生成无台词 `dialogue_turn`。
 - T0050/T0085 后，日常行动异常、NPC-NPC 和守备官-NPC 实际对话都先请求异步 `/npc/plan_revision_judgement`，仅非空判别再请求 `/npc/revise_plan`。T0086/T0093 的五类成功完成事件属于确定性后续安排，跳过判别并直接修订当前小时起连续相同 action + target 的计划段。修订输出与 `revision_hours` 完全一致；精确小时、白名单或目标组合不合法时后端可携带业务错误让同一真实 provider 纠正一次，Godot 也会拒绝当前小时原样重复已完成的 action + target。工作阶段较少不再触发纠错或 Godot 重试。正式路径仍拒绝 Mock / fallback，最终失败保留原计划。
 - T1003/T1403/T0022/T0085 后，每日计划通过 `/npc/plan_day` 走 Model Adapter。正式开局和新一天会暂停时间并同时发起 8 个真实请求。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段是 Prompt 建议，不是重试来源。Godot 正式路径只接受 `llm_plan_day`，其他真实失败仍保持暂停且不使用 Mock / 规则计划。
 - T1004/T1005/T1405/T0024 起，首次睡眠总结可通过异步 `/npc/daily_reflection` 走 Model Adapter。Godot 侧默认 `requires_time_slowdown=true`，不设置业务响应总时长；总结发起到完成期间 NPC 处于不可打断的深度睡眠锁，因此它不是后台无感调用。符合条件的 8 名 NPC 最多 8 路并发，快照记录实际峰值。后端成功体携带 provider / model / fallback 元数据；真实结果写为 `llm_daily_reflection`，显式开发 Mock 才写 `mock_daily_reflection`。真实 provider 不可用、未配置、缺少来源证明或输出不合法时，`DailyReflectionSystem` 使用本地模板兜底，仍会追加日记、替换式更新知识图谱当前键值并清空该 NPC 当天短期记忆；模板来源和原始失败原因必须可查。
@@ -436,3 +639,9 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - 没有真实 Key 时，不能把真实 LLM 行为标记为完全验收；任务状态应为 Partial / Blocked，或在验收结果中明确真实 API 未测。
 - 生产 / 演示配置必须关闭自动 mock fallback。预算超限、无 Key、provider 错误、超时、非 JSON 或 Schema 失败时，返回可处理错误；只有明确保留降级语义的其他系统才能使用规则 / 模板结果，正式每日计划不降级。
 - Usage / 日志必须能回答“哪个 request、哪个 call_type、哪个 provider/model、哪个 NPC、为什么失败、是否降级、花了多少 token/费用估算”。这比在失败后生成一段看似正常的 mock 回复更重要。
+## 2026-09-08 T0390 失败全员撤离真实验收
+
+- 仅调用一次 `game_epilogue` failure：`deepseek-v4-flash`，输入 4498、输出 2348、合计 6846 tokens，估算费用 ¥0.00819048；8 名 NPC 均返回 `opening_status=escaped`，无纠错调用、无 fallback。
+## 2026-09-08 T0391 撤离时机真实验收
+
+- `deepseek-v4-flash` failure 首轮 7537 tokens / ¥0.01039，业务纠错轮 10363 tokens / ¥0.013218；合计 17900 tokens / ¥0.023608。最终 8 人均保持 `escaped`，并正确区分 1 人失守前主动逃离和 7 人失守后被迫撤离；无 Mock fallback。

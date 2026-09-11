@@ -1,0 +1,44 @@
+{
+  "schema_version": "interaction_audio_v1",
+  "ui": {
+    "semantic_assets": {
+      "primary": "sfx_ui_button_primary",
+      "toggle": "sfx_ui_toggle",
+      "success": "sfx_ui_interaction_success_resource_collect",
+      "level_up": "sfx_ui_interaction_success_resource_collect",
+      "attribute_assigned": "sfx_ui_interaction_success_resource_collect"
+    },
+    "semantic_priority": {
+      "primary": 1,
+      "toggle": 2,
+      "success": 5,
+      "level_up": 6,
+      "attribute_assigned": 6
+    },
+    "special_success_popup_path": "/root/Main/UI/DialogPanel/DialogSpecialSuccessDialog",
+    "harvest_dialog_path": "/root/Main/UI/CraftingHarvestDialog",
+    "world_selection_signals": [
+      "building_clicked",
+      "npc_clicked",
+      "horse_clicked",
+      "enemy_clicked",
+      "defense_device_clicked",
+      "notice_board_clicked",
+      "merchant_clicked"
+    ],
+    "recent_history_limit": 96,
+    "button_feedback_immediate": true,
+    "hover_silent": true,
+    "invalid_feedback_silent": true,
+    "scroll_silent": true
+  },
+  "world": {
+    "door_open_asset": "sfx_world_door_open",
+    "door_close_asset": "sfx_world_door_close",
+    "door_motion_epsilon": 0.0001,
+    "merchant_loop_asset": "sfx_merchant_cart_arrival_departure",
+    "merchant_loop_key": "interaction_merchant_cart_travel",
+    "merchant_minimum_actual_speed_mps": 0.05,
+    "merchant_source_height_m": 0.35
+  }
+}

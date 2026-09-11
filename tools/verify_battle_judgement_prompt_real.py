@@ -115,6 +115,7 @@ def _dialogue_payload() -> dict:
             appearance="披着旧军斗篷，声音压得很低。",
         ).model_dump(),
         "is_recruitment_request": False,
+        "is_morale_encouragement_request": True,
         "current_round": 1,
         "max_rounds": 5,
         "npc_state": npc.state.model_dump() | {"behavior_mode": "combat"},

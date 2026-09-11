@@ -1,0 +1,125 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/StationSpatialSandbox.gd" id="1_sandbox"]
+[ext_resource type="Script" path="res://scripts/camera/CameraRig.gd" id="2_camera"]
+[ext_resource type="Script" path="res://scripts/presentation/StationEnemyStressSimulation.gd" id="3_enemy_stress"]
+[ext_resource type="Script" path="res://scripts/presentation/StationEscapeStressSimulation.gd" id="4_escape_stress"]
+
+[sub_resource type="Environment" id="Environment_spatial"]
+background_mode = 1
+background_color = Color(0.16, 0.2, 0.22, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.7, 0.76, 0.73, 1)
+ambient_light_energy = 0.62
+reflected_light_source = 2
+tonemap_mode = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBox_panel"]
+bg_color = Color(0.055, 0.069, 0.078, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.64, 0.76, 0.61, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[node name="StationSpatialSandbox" type="Node3D"]
+script = ExtResource("1_sandbox")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_spatial")
+
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -32, 0)
+light_color = Color(1, 0.89, 0.74, 1)
+light_energy = 1.15
+shadow_enabled = true
+directional_shadow_max_distance = 500.0
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-38, 150, 0)
+light_color = Color(0.53, 0.68, 0.82, 1)
+light_energy = 0.38
+
+[node name="Runtime" type="Node3D" parent="."]
+
+[node name="Terrain" type="Node3D" parent="Runtime"]
+
+[node name="Roads" type="Node3D" parent="Runtime"]
+
+[node name="Walls" type="Node3D" parent="Runtime"]
+
+[node name="CurrentReference" type="Node3D" parent="Runtime"]
+
+[node name="BuildingLots" type="Node3D" parent="Runtime"]
+
+[node name="MaxLevelLayouts" type="Node3D" parent="Runtime"]
+
+[node name="Routes" type="Node3D" parent="Runtime"]
+
+[node name="EnemyStress" type="Node3D" parent="Runtime"]
+script = ExtResource("3_enemy_stress")
+
+[node name="EscapeStress" type="Node3D" parent="Runtime"]
+script = ExtResource("4_escape_stress")
+
+[node name="Nature" type="Node3D" parent="Runtime"]
+
+[node name="Labels" type="Node3D" parent="Runtime"]
+
+[node name="CameraRig" type="Node3D" parent="."]
+position = Vector3(0, 0, 9)
+script = ExtResource("2_camera")
+keyboard_pan_speed = 28.0
+mouse_pan_speed = 0.08
+zoom_step = 4.0
+min_zoom_distance = 20.0
+max_zoom_distance = 70.0
+x_limits = Vector2(-150, 150)
+z_limits = Vector2(-215, 240)
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+position = Vector3(0, 57.341, 40.15)
+rotation_degrees = Vector3(-55, 0, 0)
+current = true
+fov = 62.0
+near = 0.2
+far = 900.0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="SafeArea" type="MarginContainer" parent="UI"]
+offset_left = 18.0
+offset_top = 18.0
+offset_right = 930.0
+offset_bottom = 142.0
+
+[node name="Panel" type="PanelContainer" parent="UI/SafeArea"]
+theme_override_styles/panel = SubResource("StyleBox_panel")
+
+[node name="Margin" type="MarginContainer" parent="UI/SafeArea/Panel"]
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="UI/SafeArea/Panel/Margin"]
+theme_override_constants/separation = 5
+
+[node name="TitleLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.87, 0.94, 0.7, 1)
+theme_override_font_sizes/font_size = 22
+text = "STATION SPATIAL SANDBOX · T0129A v0.9 阶段B空间压力验收"
+
+[node name="StatusLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.88, 0.9, 0.89, 1)
+theme_override_font_sizes/font_size = 15
+text = "正在读取空间规划……"
+
+[node name="ControlsLabel" type="Label" parent="UI/SafeArea/Panel/Margin/VBox"]
+theme_override_colors/font_color = Color(0.66, 0.73, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "WASD / 中键拖动：平移 · 滚轮缩放 · E敌路 · M/0敌军行军/重置 · R后路 · X/9逃离/重置 · P最高容量 · H隐藏"

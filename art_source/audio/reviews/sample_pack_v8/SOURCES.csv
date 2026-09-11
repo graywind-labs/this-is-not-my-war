@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_run_dirt_short_816792.mp3,foley_run_dirt,running on dirt 2 edit,Luisa_Sanchez,https://freesound.org/s/816792/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+02_run_dirt_gravel_264469.mp3,foley_run_dirt,Footsteps Dirt 01,aglinder,https://freesound.org/s/264469/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+03_run_dirt_leaves_577313.mp3,foley_run_dirt,Running on dirt forest path with leaves,TRP,https://freesound.org/s/577313/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+04_run_grass_wet_127955.mp3,foley_run_grass,Running on grass with wet feet.aif,nathanaelsams,https://freesound.org/s/127955/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+05_run_grass_walk_run_674336.mp3,foley_run_grass,Footsteps Grass.WAV,D-Ryro,https://freesound.org/s/674336/,CC-BY 4.0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+06_run_grass_directional_441935.mp3,foley_run_grass,Running on grass various.wav,180149,https://freesound.org/s/441935/,CC-BY-NC 3.0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+07_run_wood_floor_234860.mp3,foley_run_wood,Footsteps_Running_Wooden Floor.wav,mlsulli,https://freesound.org/s/234860/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+08_run_wood_light_shoes_273400.mp3,foley_run_wood,wood_14c_lightshoes_run.wav,sturmankin,https://freesound.org/s/273400/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+09_run_wood_mono_682772.mp3,foley_run_wood,Running footsteps on wood.WAV,thomasanthony321,https://freesound.org/s/682772/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+10_run_stone_fast_565708.mp3,foley_run_stone,Footsteps Running On Concrete Floor Fast Pace.wav,ralph.whitehead,https://freesound.org/s/565708/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"
+11_run_stone_mono_732563.mp3,foley_run_unified,Running Concrete,LewisEmmott5,https://freesound.org/s/732563/,CC0,confirmed,foley_run_unified_loop,"所有地面统一使用；角色开始奔跑时立即从角色位置播放，持续奔跑时循环；停止奔跑时立即截停；不做渐入渐出","用户确认采用；优先保持录音原始步频，不再按地面切换素材"
+12_run_stone_boots_272301.mp3,foley_run_stone,concrete_17c_boots_run.wav,sturmankin,https://freesound.org/s/272301/,CC0,rejected,,不采用,"用户决定所有奔跑统一使用 11，以避免不同素材步频不一致"

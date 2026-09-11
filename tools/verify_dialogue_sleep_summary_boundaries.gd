@@ -22,9 +22,10 @@ func _init() -> void:
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var npc_panel := root.get_node_or_null("Main/UI/NPCPanel")
 	var event_bus := root.get_node_or_null("EventBus")
-	if [npc_system, action_system, dialog_system, llm_bridge, memory_system, daily_plan_system, npc_panel, event_bus].has(null):
+	if [npc_system, action_system, dialog_system, llm_bridge, memory_system, daily_plan_system, time_system, npc_panel, event_bus].has(null):
 		push_error("Boundary verification required nodes not found")
 		quit(1)
 		return
@@ -33,11 +34,17 @@ func _init() -> void:
 		llm_bridge.set_backend_base_url("http://127.0.0.1:5999")
 	llm_bridge.request_timeout_seconds = 0.05
 	event_bus.npc_plan_reevaluation_requested.connect(_on_plan_reevaluation_requested)
+	time_system.set_paused(false)
 
 	var npc_id := "cook_01"
+	_set_debug_move_speed(npc_id, 500.0)
 	npc_system.debug_enter_location_immediately(npc_id, "dining_hall")
 	if not action_system.debug_assign_eat(npc_id):
 		push_error("Failed to start an interruptible eat action")
+		quit(1)
+		return
+	if not await _wait_for_runtime_active(action_system, npc_id, "eat_at_dining_hall"):
+		push_error("Interruptible eat action did not reach its formal dining seat")
 		quit(1)
 		return
 	npc_system.set_npc_llm_activity(npc_id, {
@@ -282,7 +289,7 @@ func _init() -> void:
 		quit(1)
 		return
 	var marker := _find_npc_marker(npc_id)
-	if marker == null or not marker.visible or marker.text != "...":
+	if marker == null or not marker.visible or marker.text != "..." or marker.position.y < 2.9:
 		push_error("NPC scene marker should show thinking dots")
 		quit(1)
 		return
@@ -311,6 +318,7 @@ func _init() -> void:
 		return
 
 	var sleeping_npc_id := "engineer_01"
+	_set_debug_move_speed(sleeping_npc_id, 500.0)
 	if not daily_plan_system.set_npc_daily_plan(
 		sleeping_npc_id,
 		_make_all_sleep_plan(),
@@ -327,7 +335,10 @@ func _init() -> void:
 		push_error("Could not start an actual sleep action for dialogue payload verification")
 		quit(1)
 		return
-	await process_frame
+	if not await _wait_for_runtime_active(action_system, sleeping_npc_id, "sleep_in_dormitory"):
+		push_error("Actual sleep action did not reach the engineer's assigned bed")
+		quit(1)
+		return
 	var sleep_dialogue: Dictionary = dialog_system.start_player_dialogue(sleeping_npc_id)
 	var sleep_activation: Dictionary = dialog_system.call(
 		"_activate_player_dialogue_draft",
@@ -391,15 +402,12 @@ func _init() -> void:
 		quit(1)
 		return
 	var sleep_cancel: Dictionary = dialog_system.cancel_displayed_dialogue()
-	for _resume_step in range(10):
-		if str(action_system.get_runtime_action_id(sleeping_npc_id)) == "sleep_in_dormitory":
-			break
-		await process_frame
+	var sleep_resumed := await _wait_for_runtime_active(action_system, sleeping_npc_id, "sleep_in_dormitory")
 	if not bool(sleep_cancel.get("ok", false)):
 		push_error("Could not cancel the view-only sleep dialogue: %s" % JSON.stringify(sleep_cancel))
 		quit(1)
 		return
-	if str(action_system.get_runtime_action_id(sleeping_npc_id)) != "sleep_in_dormitory":
+	if not sleep_resumed:
 		push_error("Cancelling the view-only sleep dialogue did not resume the unchanged sleep plan: %s" % JSON.stringify(sleep_cancel))
 		quit(1)
 		return
@@ -431,6 +439,30 @@ func _wait_for_async_cleanup(llm_bridge: Node) -> bool:
 		if int(snapshot.get("async_request_count", 0)) == 0:
 			return true
 	push_error("Timed out waiting for LLM async cleanup")
+	return false
+
+
+func _set_debug_move_speed(npc_id: String, speed: float) -> void:
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	if npc_root == null:
+		return
+	for npc_node in npc_root.get_children():
+		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
+			npc_node.move_speed = speed
+			return
+
+
+func _wait_for_runtime_active(
+	action_system: Node,
+	npc_id: String,
+	action_id: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+		await physics_frame
 	return false
 
 

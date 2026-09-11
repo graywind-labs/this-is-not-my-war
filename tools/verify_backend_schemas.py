@@ -39,6 +39,9 @@ from backend.schemas import (
     ShortTermMemoryContext,
     SpeakerContext,
     StationSceneContext,
+    DialogueInputConfig,
+    VoiceAnalyzeRequest,
+    VoiceAnalyzeResponse,
 )
 from tools.station_context_fixture import build_station_context
 
@@ -78,6 +81,26 @@ def _make_npc_context() -> NPCContext:
 
 
 def main() -> None:
+    dialogue_input_config = DialogueInputConfig()
+    assert dialogue_input_config.player_message_max_characters == 300
+    assert dialogue_input_config.voice_recording_max_seconds == 30.0
+    VoiceAnalyzeRequest(
+        request_id="voice_schema_001",
+        npc_id="cook_01",
+        dialogue_id="dialogue_schema_001",
+    )
+    VoiceAnalyzeResponse(
+        request_id="voice_schema_001",
+        dialogue_id="dialogue_schema_001",
+        transcript="守住驿站。",
+        emotion="angry",
+        emotion_label="愤怒地",
+        emotion_applied=True,
+        duration_seconds=1.0,
+        model_provider="mock",
+        model_name="qwen3-asr-flash",
+        usage={},
+    )
     game_time = GameTime(day=1, time="08:00:00", hour=8)
     npc = _make_npc_context()
     compact_memory = ShortTermMemoryContext.model_validate({
@@ -202,6 +225,10 @@ def main() -> None:
     assert dialogue_request.npc_setting["speech_style"] == "直率絮叨，常用锅和口粮作比。"
     assert "signature_lines" not in dialogue_request.npc_setting
     assert dialogue_request.interaction_context == "combat"
+    assert dialogue_request.is_morale_encouragement_request is False
+    assert dialogue_request.is_combat_strategy_request is False
+    assert dialogue_request.is_work_encouragement_request is False
+    assert dialogue_request.combat_strategy_context is None
     assert dialogue_request.battlefield_context["active_enemy_count"] == 2
     assert dialogue_request.interrupted_activity_context is not None
     assert (
@@ -250,6 +277,24 @@ def main() -> None:
     )
     assert response.replyer_id == "cook_01"
     assert response.wartime_reaction == "morale_boost"
+    strategy_response = PlayerNPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="我会按新的打法执行。",
+        recruitment_result="none",
+        combat_strategy_decision={
+            "decision": "change",
+            "strategy_id": "avoid",
+        },
+    )
+    assert strategy_response.combat_strategy_decision is not None
+    assert strategy_response.combat_strategy_decision.strategy_id == "avoid"
+    work_response = PlayerNPCDialogueResponse(
+        replyer_id="cook_01",
+        reply_text="今天剩下的活我会更用心做好。",
+        recruitment_result="none",
+        work_encouragement_reaction="work_boost",
+    )
+    assert work_response.work_encouragement_reaction == "work_boost"
     try:
         PlayerNPCDialogueResponse(
             replyer_id="cook_01",

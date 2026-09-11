@@ -1,0 +1,12 @@
+{
+  "schema_version": "vegetation_art_trial_v1",
+  "seed": 363,
+  "cluster_attempts": 850,
+  "bounds": [-31.0, -12.0, 30.0, 38.0],
+  "road_clearance": 1.8,
+  "maximum_road_distance": 7.0,
+  "cluster_min_spacing": 16.0,
+  "cluster_limit": 5,
+  "shrub_colors": ["#4d603b", "#647340", "#77804b"],
+  "rock_colors": ["#746f5e", "#8a826c", "#9a9076"]
+}

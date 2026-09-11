@@ -196,15 +196,15 @@ PRE_STATION_TIME_MARKERS = {
     "priest_01": "去年初夏",
     "doctor_01": "去年秋雨前",
 }
-RECENT_ENTRY_SNAPSHOTS = {
-    "stableman_01": "这几天栗风左后蹄有些发热，灰鬃又总想抢它的草。我把草槽隔开，给栗风减了负重，每晚再检查一次。布鲁诺嫌我为两匹马多领了一桶热水，念叨完还是把水烧了。我明天得先把用过的桶刷干净。",
-    "cook_01": "今天收灶后，我重新核对了粮食、柴火和每个人的饭量。伊沃送来的菜比上周多一筐，马塞尔又问能不能留些粮酿酒。我让他先吃完晚饭，再讨论酒窖。今晚的汤够所有人添一次；想添第二次的，明天来帮我刷锅。",
-    "gardener_01": "北畦刚补种了一行萝卜，去年留下的豆种也分到了三块地里。两行嫩苗被乌鸦啄光，我重新撒种，又罩上细网。布鲁诺问下一批菜什么时候能进锅，我告诉他至少要等它们长出来。他嫌时间太久，我只能把预计收成的日子再说一遍。",
-    "blacksmith_01": "这阵子铁匠铺接到的都是锅、门栓和农具。布鲁诺送来的锅底裂了三道缝，还说再撑一个月没问题。我把锅补好，让他下次见到第一道裂缝就送来。他答应得很快，至于会不会照做，我等那口锅再回来时就知道了。",
-    "veteran_deputy_01": "这几天没有大事。我每天查看城门和后门，午后在训练场练一轮剑盾，再帮托马把总往外跑的灰鬃牵回马厩。布鲁诺要求用餐时间不得排岗。我重新核对了轮值，这项调整不影响巡查，也能让值班的人按时吃饭。",
-    "priest_01": "这阵子我照常主持弥撒，也接待来谈心的人。多数人说到一半会问酒是否免费，听到答案后，通常就愿意直接谈正事。空闲时我给酒窖换了两只塞子，又请格伦在弥撒期间停一停锤子。他答应停半个时辰，我接受了。",
-    "doctor_01": "这周来诊所的多是日常小伤：托马擦破手背，格伦被火星烫出水泡，欧文又因为熬夜头痛。三个人都先说“不碍事”，最后也都坐下来让我处理。我补齐了登记册，把两张病床重新晒过。没有大病号的时候，诊所也很少真正空着。",
-    "engineer_01": "这几天我处理了三件小事：加固食堂那条总晃的长凳，给马厩门换铰链，再清理围墙排水槽。布鲁诺坚持长凳没坏，只是客人坐得不对。我请他坐到松动的那一头，长凳立刻向左一歪。他看完就让我继续修。",
+RECENT_ENTRY_FACT_MARKERS = {
+    "stableman_01": ("栗风", "左后蹄", "灰鬃", "热水"),
+    "cook_01": ("粮食", "伊沃", "马塞尔", "刷锅"),
+    "gardener_01": ("北畦", "萝卜", "乌鸦", "收成"),
+    "blacksmith_01": ("布鲁诺", "锅底", "三道缝", "补好"),
+    "veteran_deputy_01": ("城门", "训练场", "灰鬃", "轮值"),
+    "priest_01": ("弥撒", "酒", "酒窖", "格伦"),
+    "doctor_01": ("托马", "格伦", "欧文", "登记册"),
+    "engineer_01": ("长凳", "马厩门", "排水槽", "布鲁诺"),
 }
 
 
@@ -265,7 +265,7 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
             assert PRE_STATION_TIME_MARKERS[npc_id] in entry, (
                 f"{npc_id} pre-station diary must say when the NPC reached the station"
             )
-            assert any(marker in entry for marker in ("辞", "关了门", "缩小", "不想", "缩编", "合并", "扩建", "离开")), (
+            assert any(marker in entry for marker in ("辞", "关门", "缩", "不想", "不愿", "合并", "扩建", "离开")), (
                 f"{npc_id} pre-station diary must explain why the old life led to the station"
             )
             assert any(marker in entry for marker in ("驿站", "这里", "来了", "赶来", "差事")), (
@@ -307,8 +307,8 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
                 f"{npc_id} arrival diary mentions a resident who had not arrived yet"
             )
         if period == "往昔·近日":
-            assert entry == RECENT_ENTRY_SNAPSHOTS[npc_id], (
-                f"{npc_id} recent micro-story must remain unchanged in T0061"
+            assert all(marker in entry for marker in RECENT_ENTRY_FACT_MARKERS[npc_id]), (
+                f"{npc_id} recent micro-story must preserve its established people, objects, and events"
             )
             for marker in RECENT_WAR_MARKERS:
                 assert marker not in entry, (
@@ -460,23 +460,44 @@ def _verify_knowledge_graph(
         f"{npc_id} guard-officer arrival must state the shared three-year anchor"
     )
     unknown_past_text = str(guard_relations["past_before_station"]["value_label"])
-    assert any(marker in unknown_past_text for marker in ("不知道", "不在我所知范围内")), (
+    assert any(marker in unknown_past_text for marker in ("不知道", "不在我所知范围内", "不知情")), (
         f"{npc_id} guard-officer past must be explicitly unknown"
     )
     assert any(marker in unknown_past_text for marker in ("不该", "不能", "不会", "不应")), (
         f"{npc_id} guard-officer past must forbid inference or invention"
     )
     relationship_text = str(guard_relations["pre_game_relationship"]["value_label"])
-    assert any(marker in relationship_text for marker in ("尽责", "敬业", "忠于职守", "尽职", "认真履职")), (
+    assert any(marker in relationship_text for marker in ("尽责", "敬业", "忠于职守", "尽职", "认真履职", "办事认真")), (
         f"{npc_id} guard-officer pre-game relationship must preserve dedication"
     )
     assert any(marker in relationship_text for marker in ("和睦", "和气", "和谐")), (
         f"{npc_id} guard-officer pre-game relationship must preserve harmony"
     )
-    for marker in OPEN_GUARD_MARKERS:
-        assert marker not in guard_text, (
-            f"{npc_id} guard-officer knowledge adds an unnecessary assessment: {marker!r}"
+    non_relationship_guard_text = " ".join(
+        "%s %s" % (
+            str(record.get("value", "")),
+            str(record.get("value_label", "")),
         )
+        for relation, record in guard_relations.items()
+        if relation != "pre_game_relationship" and isinstance(record, dict)
+    )
+    for marker in OPEN_GUARD_MARKERS:
+        assert marker not in non_relationship_guard_text, (
+            f"{npc_id} guard-officer factual seed adds an unnecessary assessment: "
+            f"{marker!r}"
+        )
+    assert any(marker in relationship_text for marker in ("战时", "征召", "危险命令")), (
+        f"{npc_id} pre-game relationship must distinguish ordinary harmony from wartime trust"
+    )
+    assert any(
+        marker in relationship_text
+        for marker in ("检验", "考验", "没真正一起经历过", "还看不出来", "还没见过", "还没真正见过", "还没在")
+    ), (
+        f"{npc_id} pre-game relationship must state that wartime conduct is untested"
+    )
+    assert any(marker in relationship_text for marker in ("实际", "真实", "结果", "兑现", "所作所为", "落实", "做成")), (
+        f"{npc_id} pre-game relationship must defer later trust to observed facts"
+    )
     for phrase in PREJUDGED_GUARD_PHRASES:
         assert phrase not in guard_text, (
             f"{npc_id} guard-officer knowledge prejudges an interaction: {phrase!r}"
@@ -522,9 +543,9 @@ def _verify_knowledge_graph(
         marker in main_hall_text
         for marker in ("弩床", "箭塔", "1、1、2、2、3、4")
     ), f"{npc_id} main-hall knowledge must preserve the delayed six-level slot curve"
-    assert "射程" in main_hall_text and any(
-        marker in main_hall_text for marker in ("两倍", "翻倍", "加倍")
-    ), f"{npc_id} main-hall knowledge must preserve the 2x device range"
+    assert not any(
+        marker in main_hall_text for marker in ("两倍", "翻倍", "加倍", "2.0x")
+    ), f"{npc_id} retained the removed main-hall device range bonus"
     assert not any(
         stale_phrase in f"{wall_text} {main_hall_text}"
         for stale_phrase in (

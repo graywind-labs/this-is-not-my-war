@@ -5,11 +5,13 @@ class FakeDialogueBridge:
 	extends Node
 
 	signal dialogue_async_response_received(result: Dictionary)
+	signal dialogue_intent_revalidation_async_response_received(result: Dictionary)
 
 	var requests: Array[Dictionary] = []
 	var judgement_requests: Array[Dictionary] = []
 	var cancelled_request_ids: Array[String] = []
 	var reply_delay_seconds := 0.04
+	var intent_request_count := 0
 
 	func request_npc_dialogue_async(npc_id: String, speaker_text: String, options: Dictionary = {}) -> Dictionary:
 		var request_index := requests.size() + 1
@@ -33,6 +35,32 @@ class FakeDialogueBridge:
 	func cancel_npc_llm_requests(_npc_id: String, reason: String = "cancelled") -> Dictionary:
 		cancelled_request_ids.append(reason)
 		return {"ok": true, "cancelled": false, "reason": "no_active_request"}
+
+	func request_npc_dialogue_intent_revalidation_async(
+		npc_id: String,
+		plan_item: Dictionary,
+		_options: Dictionary = {}
+	) -> Dictionary:
+		intent_request_count += 1
+		var request_id := "edge_intent_%d" % intent_request_count
+		call_deferred("_emit_intent_continue", request_id, npc_id, plan_item.duplicate(true))
+		return {"ok": true, "pending": true, "request_id": request_id}
+
+	func _emit_intent_continue(request_id: String, npc_id: String, plan_item: Dictionary) -> void:
+		dialogue_intent_revalidation_async_response_received.emit({
+			"ok": true,
+			"request_id": request_id,
+			"npc_id": npc_id,
+			"dialogue_intent_revalidation": {
+				"npc_id": npc_id,
+				"decision": "continue",
+				"dialogue_goal": str(plan_item.get("dialogue_goal", "")),
+				"summary": "edge fixture keeps the planned dialogue intent",
+				"model_provider": "fake_real_provider",
+				"model_name": "edge-test",
+				"model_fallback_used": false
+			}
+		})
 
 	func check_health() -> Dictionary:
 		return {
@@ -102,12 +130,15 @@ func _init() -> void:
 	var action_system := root.get_node_or_null("Main/Systems/ActionSystem")
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var dialog_system := root.get_node_or_null("Main/Systems/DialogSystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var original_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
 	var game_state := root.get_node_or_null("GameState")
 	var event_bus := root.get_node_or_null("EventBus")
-	if [systems, npc_system, action_system, daily_plan_system, dialog_system, original_bridge, game_state, event_bus].has(null):
+	if [systems, npc_system, action_system, daily_plan_system, dialog_system, time_system, original_bridge, game_state, event_bus].has(null):
 		_fail("NPC-NPC dialogue edge verification requires all scene systems")
 		return
+	time_system.set_time_scale(0.0)
+	time_system.set_paused(false)
 
 	systems.remove_child(original_bridge)
 	original_bridge.queue_free()
@@ -116,6 +147,9 @@ func _init() -> void:
 	fake_bridge.name = "LLMBridge"
 	systems.add_child(fake_bridge)
 	fake_bridge.dialogue_async_response_received.connect(Callable(dialog_system, "_on_dialogue_async_response_received"))
+	fake_bridge.dialogue_intent_revalidation_async_response_received.connect(
+		Callable(daily_plan_system, "_on_dialogue_intent_revalidation_async_response")
+	)
 
 	var ended_states: Array[Dictionary] = []
 	var phase_trace: Array[String] = []
@@ -198,8 +232,23 @@ func _init() -> void:
 	if not bool(batch_result.get("stableman_01", {}).get("ok", false)):
 		_fail("Initiator dialogue plan did not execute in the second batch phase: %s" % str(batch_result))
 		return
+	var batch_start_deadline := Time.get_ticks_msec() + 30000
+	while (
+		(not phase_trace.has("target_work_started") or not phase_trace.has("dialogue_started"))
+		and Time.get_ticks_msec() < batch_start_deadline
+	):
+		await process_frame
+		await physics_frame
 	if not phase_trace.has("target_work_started") or not phase_trace.has("dialogue_started"):
-		_fail("Two-phase batch did not expose both target work and dialogue start: %s" % str(phase_trace))
+		_fail("Two-phase batch did not expose both target work and dialogue start: %s / %s" % [
+			str(phase_trace),
+			JSON.stringify({
+				"runtime": action_system.get_runtime_action_snapshot("stableman_01"),
+				"state": npc_system.get_npc_state("stableman_01"),
+				"spatial": npc_system.debug_get_spatial_migration_snapshot("stableman_01"),
+				"target": npc_system.debug_get_spatial_migration_snapshot("doctor_01")
+			})
+		])
 		return
 	if phase_trace.find("target_work_started") >= phase_trace.find("dialogue_started"):
 		_fail("Dialogue started before the target's non-dialogue plan landed: %s" % str(phase_trace))
@@ -274,6 +323,13 @@ func _init() -> void:
 	if not wait_start_ok:
 		_fail("Planning target should keep the NPC dialogue action pending")
 		return
+	var plan_wait_arrival_deadline := Time.get_ticks_msec() + 30000
+	while (
+		not bool((action_system.get_runtime_action_snapshot("stableman_01").get("options", {}) as Dictionary).get("waiting_for_target_plan", false))
+		and Time.get_ticks_msec() < plan_wait_arrival_deadline
+	):
+		await process_frame
+		await physics_frame
 	var wait_snapshot: Dictionary = action_system.get_runtime_action_snapshot("stableman_01")
 	if (
 		str(wait_snapshot.get("phase", "")) != "pending"
@@ -294,7 +350,7 @@ func _init() -> void:
 	if not npc_system.clear_npc_llm_activity("engineer_01", "verify_dialogue_target_plan_wait"):
 		_fail("Could not clear autonomous dialogue target planning activity")
 		return
-	var wait_resume_deadline := Time.get_ticks_msec() + 1000
+	var wait_resume_deadline := Time.get_ticks_msec() + 30000
 	while fake_bridge.requests.size() == requests_before_plan_wait and Time.get_ticks_msec() < wait_resume_deadline:
 		await process_frame
 	if fake_bridge.requests.size() != requests_before_plan_wait + 1 or not dialog_system.has_active_dialogue():
@@ -336,6 +392,13 @@ func _init() -> void:
 	if not bool(cross_hour_start.get("ok", false)):
 		_fail("Daily dialogue did not enter cross-hour plan wait: %s" % JSON.stringify(cross_hour_start))
 		return
+	var cross_hour_arrival_deadline := Time.get_ticks_msec() + 30000
+	while (
+		not bool((action_system.get_runtime_action_snapshot("stableman_01").get("options", {}) as Dictionary).get("waiting_for_target_plan", false))
+		and Time.get_ticks_msec() < cross_hour_arrival_deadline
+	):
+		await process_frame
+		await physics_frame
 	var cross_hour_snapshot: Dictionary = action_system.get_runtime_action_snapshot("stableman_01")
 	var cross_hour_options: Dictionary = cross_hour_snapshot.get("options", {})
 	if (
@@ -343,7 +406,13 @@ func _init() -> void:
 		or int(cross_hour_options.get("assigned_plan_hour", -1)) != current_hour
 		or not bool(cross_hour_options.get("waiting_for_target_plan", false))
 	):
-		_fail("Daily dialogue wait lost plan ownership metadata: %s" % JSON.stringify(cross_hour_snapshot))
+		_fail("Daily dialogue wait lost plan ownership metadata: %s" % JSON.stringify({
+			"start": cross_hour_start,
+			"runtime": cross_hour_snapshot,
+			"state": npc_system.get_npc_state("stableman_01"),
+			"target_state": npc_system.get_npc_state("engineer_01"),
+			"intent": (daily_plan_system.get("_last_dialogue_intent_revalidation_result_by_npc") as Dictionary).get("stableman_01", {})
+		}))
 		return
 	var judgement_count_before_carryover := fake_bridge.judgement_requests.size()
 	var next_hour := current_hour + 1
@@ -382,7 +451,7 @@ func _init() -> void:
 	if not npc_system.clear_npc_llm_activity("engineer_01", "verify_cross_hour_target_plan_wait"):
 		_fail("Could not clear cross-hour target planning activity")
 		return
-	var carryover_start_deadline := Time.get_ticks_msec() + 1000
+	var carryover_start_deadline := Time.get_ticks_msec() + 30000
 	while not dialog_system.has_active_dialogue() and Time.get_ticks_msec() < carryover_start_deadline:
 		await process_frame
 	if (

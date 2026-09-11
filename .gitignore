@@ -13,3 +13,23 @@ __pycache__/
 
 # Local editor paths
 .vscode/settings.json
+/.gitignore copy
+
+# Generated logs and visual QA captures
+*.log
+/artifacts/
+/nothing.avi
+
+# Third-party art intake (local source copies; tracked manifests and licenses stay outside these paths)
+/art_source/downloads/*
+!/art_source/downloads/README.md
+/art_source/quaternius/*/
+/art_source/working/*
+!/art_source/working/README.md
+/art_source/runtime_rejected/
+/art_source/licenses/source_pages/
+/art_source/synty/
+/art_source/kaykit/
+
+# Locally installed third-party audio tooling; restore from its upstream distribution.
+/art_source/audio/tools/

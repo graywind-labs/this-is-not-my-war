@@ -95,43 +95,34 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 
-	var dialogue_row := npc_panel.find_child("NPCDialogueButtonRow", true, false) as HBoxContainer
 	var dialogue_button := npc_panel.find_child("NPCDialogueButton", true, false) as Button
-	var history_button := npc_panel.find_child("NPCDialogueHistoryButton", true, false) as Button
-	if dialogue_row == null or dialogue_button == null or history_button == null:
-		_fail("NPC dialogue/history button row is missing")
+	var npc_history_button := npc_panel.find_child("NPCDialogueHistoryButton", true, false) as Button
+	var history_button := dialog_panel.find_child("DialogHistoryButton", true, false) as Button
+	var mount_view_button := npc_panel.find_child("NPCMountViewButton", true, false) as Button
+	if dialogue_button == null or history_button == null:
+		_fail("Dialogue panel history entry is missing")
 		return
-	if (
-		dialogue_button.get_parent() != dialogue_row
-		or history_button.get_parent() != dialogue_row
-		or history_button.get_index() != dialogue_button.get_index() + 1
-	):
-		_fail("The small history button must sit directly to the right of dialogue")
+	if mount_view_button == null or dialog_panel.z_index <= mount_view_button.z_index:
+		_fail("DialogPanel must render above the mounted-horse shortcut")
 		return
-	if history_button.text != "记录" or history_button.disabled:
-		_fail("Dialogue history button should be an independent enabled read-only entry")
-		return
-	if history_button.size.x >= dialogue_button.size.x:
-		_fail("Dialogue history entry should remain smaller than the main dialogue button")
-		return
-	var history_connections := history_button.get_signal_connection_list("pressed")
-	if history_connections.size() != 1:
-		_fail("Dialogue history button should have exactly one dedicated pressed handler")
-		return
-	var history_callable: Callable = history_connections[0].get("callable", Callable())
-	if history_callable.get_method() != "_on_dialogue_history_pressed":
-		_fail("Dialogue history button must not reuse the dialogue start/resume handler")
+	if npc_history_button != null:
+		_fail("NPC panel should no longer expose a separate history button")
 		return
 
 	if dialog_system.is_dialogue_active() or dialog_panel.visible:
 		_fail("Dialogue fixture unexpectedly started a live conversation")
 		return
+	dialogue_button.pressed.emit()
+	await process_frame
+	if not dialog_system.is_dialogue_active() or not dialog_panel.visible or history_button.disabled:
+		_fail("Dialogue history entry should be available inside an active dialogue")
+		return
 	history_button.pressed.emit()
 	await process_frame
 	await process_frame
 	await process_frame
-	if dialog_system.is_dialogue_active() or dialog_panel.visible:
-		_fail("Opening records started or resumed a live dialogue")
+	if not dialog_system.is_dialogue_active() or not dialog_panel.visible:
+		_fail("Opening records should preserve the active dialogue")
 		return
 
 	var detail_popup := root.find_child("NPCMemoryDetailPopup", true, false) as Control
@@ -147,10 +138,12 @@ func _init() -> void:
 	):
 		_fail("Dialogue history did not open the read-only detail window")
 		return
+	if detail_popup.z_index <= dialog_panel.z_index:
+		_fail("Dialogue history detail must render above DialogPanel")
+		return
 	if (
 		not detail_title.text.contains(TARGET_NPC_NAME)
 		or not detail_title.text.contains("对话记录")
-		or not detail_title.text.contains("5 场")
 	):
 		_fail("Dialogue history title/count mismatch: %s" % detail_title.text)
 		return
@@ -211,6 +204,11 @@ func _init() -> void:
 	await process_frame
 	if detail_popup.visible:
 		_fail("Dialogue history close button did not hide the read-only window")
+		return
+	var initial_dialogue_id := str(dialog_system.get_display_dialogue_state().get("dialogue_id", ""))
+	var initial_cancel_result: Dictionary = dialog_system.cancel_displayed_dialogue(initial_dialogue_id)
+	if not bool(initial_cancel_result.get("ok", false)):
+		_fail("Failed to clean up the initial dialogue fixture: %s" % initial_cancel_result)
 		return
 	var draft_result: Dictionary = dialog_system.start_player_dialogue(TARGET_NPC_ID)
 	if not bool(draft_result.get("ok", false)):

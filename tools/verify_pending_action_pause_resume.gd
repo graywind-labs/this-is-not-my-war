@@ -188,6 +188,11 @@ func _verify_arrival_edge_commit(
 	const ACTION_ID := "work_garden"
 	_clear_runtime(action_system, npc_system, NPC_ID)
 	npc_system.debug_enter_location_immediately(NPC_ID, "plaza")
+	var npc_node := _find_npc_node(NPC_ID)
+	if npc_node == null:
+		_fail("Could not find gardener scene node")
+		return false
+	npc_node.move_speed = 5.0
 	time_system.set_paused(false)
 	var started_events_before := _count_npc_events_by_type(
 		root.get_node("Main/Systems/MemorySystem"),
@@ -202,31 +207,40 @@ func _verify_arrival_edge_commit(
 		_fail("Travelling work action was not pending")
 		return false
 
-	time_system.set_paused(true)
-	var npc_node := _find_npc_node(NPC_ID)
-	if npc_node == null:
-		_fail("Could not find gardener scene node")
+	if not await _wait_for_formal_workstation_approach(npc_system, time_system, NPC_ID):
+		_fail("Gardener did not reach the real final workstation approach: %s" % JSON.stringify(
+			npc_system.debug_get_spatial_migration_snapshot(NPC_ID)
+		))
 		return false
-	npc_node.stop_movement()
-	npc_system._on_npc_movement_arrived(NPC_ID, "garden")
-	await process_frame
+	time_system.set_paused(true)
+	var paused_position: Vector3 = npc_node.global_position
+	var paused_snapshot: Dictionary = npc_system.debug_get_spatial_migration_snapshot(NPC_ID)
 	var grain_before := int(resource_system.get_resource("grain"))
+	for _frame in range(8):
+		await physics_frame
 	event_bus.logical_time_tick.emit(7200.0, 1.0)
 	await process_frame
 	if (
 		action_system.get_pending_action_id(NPC_ID) != ACTION_ID
 		or action_system.has_active_action(NPC_ID)
 		or _is_npc_occupying_any_workstation(building_system, NPC_ID)
+		or not _is_npc_reserving_workstation(building_system, NPC_ID)
+		or npc_node.global_position.distance_to(paused_position) > 0.001
 		or int(resource_system.get_resource("grain")) != grain_before
 	):
-		_fail("Arrival-edge pause started or settled work early: %s" % JSON.stringify(
-			action_system.get_runtime_action_snapshot(NPC_ID)
-		))
+		_fail("Final-approach pause started, moved, or settled work early: runtime=%s before=%s after=%s" % [
+			JSON.stringify(action_system.get_runtime_action_snapshot(NPC_ID)),
+			JSON.stringify(paused_snapshot),
+			JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(NPC_ID))
+		])
 		return false
 
 	time_system.set_paused(false)
-	await process_frame
-	await process_frame
+	if not await _wait_for_active_action(action_system, time_system, NPC_ID, ACTION_ID):
+		_fail("Pending work did not reach the real garden plot after resume: %s" % JSON.stringify(
+			npc_system.debug_get_spatial_migration_snapshot(NPC_ID)
+		))
+		return false
 	if (
 		action_system.has_pending_action(NPC_ID)
 		or action_system.get_active_action_id(NPC_ID) != ACTION_ID
@@ -251,6 +265,41 @@ func _verify_arrival_edge_commit(
 	return true
 
 
+func _wait_for_formal_workstation_approach(
+	npc_system: Node,
+	time_system: Node,
+	npc_id: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var snapshot: Dictionary = npc_system.debug_get_spatial_migration_snapshot(npc_id)
+		var route_step: Dictionary = snapshot.get("route_step", {}) if snapshot.get("route_step", {}) is Dictionary else {}
+		if (
+			str(snapshot.get("path_phase", "")) == "moving_to_workstation"
+			and str(route_step.get("id", "")) == "garden:garden_plot_01"
+		):
+			return true
+	return false
+
+
+func _wait_for_active_action(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	action_id: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+	return false
+
+
 func _verify_route_resume(
 	action_system: Node,
 	npc_system: Node,
@@ -264,7 +313,7 @@ func _verify_route_resume(
 	if npc_node == null:
 		_fail("Could not find stableman scene node")
 		return false
-	npc_node.move_speed = 1.0
+	npc_node.move_speed = 5.0
 	time_system.set_paused(false)
 	if not action_system.assign_visit_location(NPC_ID, TARGET_ID):
 		_fail("Could not assign pending visit")
@@ -291,14 +340,16 @@ func _verify_route_resume(
 		])
 		return false
 
-	npc_node.move_speed = 1000.0
 	time_system.set_paused(false)
-	for frame in range(120):
-		await process_frame
-		if action_system.get_active_action_id(NPC_ID) == "visit_location":
-			break
+	var visit_became_active := await _wait_for_active_action(
+		action_system,
+		time_system,
+		NPC_ID,
+		"visit_location",
+		2400
+	)
 	if (
-		action_system.get_active_action_id(NPC_ID) != "visit_location"
+		not visit_became_active
 		or str(npc_system.get_npc_state(NPC_ID).get("current_location", "")) != TARGET_ID
 	):
 		_fail("Visit did not resume along the same route and start after arrival: %s" % JSON.stringify(
@@ -423,6 +474,21 @@ func _is_npc_occupying_any_workstation(
 			if (
 				raw_workstation is Dictionary
 				and str((raw_workstation as Dictionary).get("occupied_by", "")) == npc_id
+			):
+				return true
+	return false
+
+
+func _is_npc_reserving_workstation(
+	building_system: Node,
+	npc_id: String
+) -> bool:
+	for raw_building_id in building_system.get_building_ids():
+		var building: Dictionary = building_system.get_building(str(raw_building_id))
+		for raw_workstation in building.get("workstations", []):
+			if (
+				raw_workstation is Dictionary
+				and str((raw_workstation as Dictionary).get("reserved_by", "")) == npc_id
 			):
 				return true
 	return false

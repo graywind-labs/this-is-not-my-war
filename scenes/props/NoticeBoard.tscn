@@ -1,196 +1,40 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/NoticeBoard.gd" id="1_notice_board"]
-
-[sub_resource type="StandardMaterial3D" id="Material_dark_wood"]
-albedo_color = Color(0.19, 0.095, 0.045, 1)
-roughness = 0.9
-
-[sub_resource type="StandardMaterial3D" id="Material_warm_wood"]
-albedo_color = Color(0.47, 0.25, 0.11, 1)
-roughness = 0.86
-
-[sub_resource type="StandardMaterial3D" id="Material_wood_highlight"]
-albedo_color = Color(0.62, 0.35, 0.16, 1)
-roughness = 0.82
-
-[sub_resource type="StandardMaterial3D" id="Material_notice_paper"]
-albedo_color = Color(0.86, 0.8, 0.64, 1)
-roughness = 0.95
-
-[sub_resource type="StandardMaterial3D" id="Material_stone_light"]
-albedo_color = Color(0.55, 0.56, 0.52, 1)
-roughness = 1.0
-
-[sub_resource type="StandardMaterial3D" id="Material_stone_dark"]
-albedo_color = Color(0.34, 0.37, 0.36, 1)
-roughness = 1.0
-
-[sub_resource type="StandardMaterial3D" id="Material_iron"]
-albedo_color = Color(0.12, 0.14, 0.14, 1)
-metallic = 0.55
-roughness = 0.65
-
-[sub_resource type="BoxMesh" id="Mesh_post"]
-size = Vector3(0.26, 2.45, 0.3)
-
-[sub_resource type="BoxMesh" id="Mesh_top_beam"]
-size = Vector3(1.85, 0.34, 0.4)
-
-[sub_resource type="BoxMesh" id="Mesh_sign_back"]
-size = Vector3(1.52, 1.02, 0.16)
-
-[sub_resource type="BoxMesh" id="Mesh_notice_paper"]
-size = Vector3(1.18, 0.7, 0.045)
-
-[sub_resource type="BoxMesh" id="Mesh_support"]
-size = Vector3(0.18, 0.78, 0.2)
-
-[sub_resource type="BoxMesh" id="Mesh_band"]
-size = Vector3(0.11, 0.4, 0.43)
-
-[sub_resource type="BoxMesh" id="Mesh_foot"]
-size = Vector3(1.12, 0.18, 0.36)
-
-[sub_resource type="SphereMesh" id="Mesh_rock"]
-radius = 0.25
-height = 0.34
-radial_segments = 5
-rings = 3
-
-[sub_resource type="CylinderMesh" id="Mesh_nail"]
-top_radius = 0.045
-bottom_radius = 0.045
-height = 0.035
-radial_segments = 6
-rings = 1
+[ext_resource type="Script" path="res://scripts/presentation/props/FormalNoticeBoardArtView.gd" id="2_formal_art"]
 
 [sub_resource type="BoxShape3D" id="Shape_notice_board"]
-size = Vector3(2.2, 3.0, 0.9)
+size = Vector3(3.0, 3.25, 1.2)
 
 [node name="NoticeBoard" type="Node3D"]
 script = ExtResource("1_notice_board")
 
 [node name="VisualRoot" type="Node3D" parent="."]
+script = ExtResource("2_formal_art")
 
-[node name="Post" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 1.225, 0)
-rotation = Vector3(0, 0, -0.025)
-mesh = SubResource("Mesh_post")
-surface_material_override/0 = SubResource("Material_dark_wood")
-
-[node name="SignBack" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 1.67, 0.035)
-rotation = Vector3(0, 0, -0.025)
-mesh = SubResource("Mesh_sign_back")
-surface_material_override/0 = SubResource("Material_warm_wood")
-
-[node name="NoticePaper" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 1.67, 0.145)
-rotation = Vector3(0, 0, -0.025)
-mesh = SubResource("Mesh_notice_paper")
-surface_material_override/0 = SubResource("Material_notice_paper")
-
-[node name="TopBeam" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 2.42, 0)
-rotation = Vector3(0, 0, -0.045)
-mesh = SubResource("Mesh_top_beam")
-surface_material_override/0 = SubResource("Material_wood_highlight")
-
-[node name="LeftBand" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.52, 2.43, 0.005)
-rotation = Vector3(0, 0, -0.12)
-mesh = SubResource("Mesh_band")
-surface_material_override/0 = SubResource("Material_dark_wood")
-
-[node name="RightBand" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.5, 2.39, 0.005)
-rotation = Vector3(0, 0, 0.06)
-mesh = SubResource("Mesh_band")
-surface_material_override/0 = SubResource("Material_dark_wood")
-
-[node name="LeftBrace" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.3, 0.94, -0.005)
-rotation = Vector3(0, 0, -0.78)
-mesh = SubResource("Mesh_support")
-surface_material_override/0 = SubResource("Material_warm_wood")
-
-[node name="RightBrace" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.3, 0.94, 0.005)
-rotation = Vector3(0, 0, 0.78)
-mesh = SubResource("Mesh_support")
-surface_material_override/0 = SubResource("Material_dark_wood")
-
-[node name="FootBeam" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0, 0.12, 0)
-rotation = Vector3(0, 0.12, 0.04)
-mesh = SubResource("Mesh_foot")
-surface_material_override/0 = SubResource("Material_dark_wood")
-
-[node name="RockLeft" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.62, 0.13, 0.08)
-rotation = Vector3(0.1, 0.55, -0.08)
-scale = Vector3(1.15, 0.8, 0.9)
-mesh = SubResource("Mesh_rock")
-surface_material_override/0 = SubResource("Material_stone_light")
-
-[node name="RockRight" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.58, 0.12, 0.12)
-rotation = Vector3(-0.04, 0.15, 0.1)
-scale = Vector3(0.95, 0.72, 1.18)
-mesh = SubResource("Mesh_rock")
-surface_material_override/0 = SubResource("Material_stone_light")
-
-[node name="RockFront" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.19, 0.1, 0.36)
-rotation = Vector3(0.08, 0.85, 0.02)
-scale = Vector3(0.78, 0.58, 0.72)
-mesh = SubResource("Mesh_rock")
-surface_material_override/0 = SubResource("Material_stone_dark")
-
-[node name="RockBack" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.2, 0.1, -0.28)
-rotation = Vector3(-0.1, 0.35, -0.04)
-scale = Vector3(0.72, 0.6, 0.9)
-mesh = SubResource("Mesh_rock")
-surface_material_override/0 = SubResource("Material_stone_dark")
-
-[node name="NailTopLeft" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.5, 1.91, 0.18)
-rotation = Vector3(1.5708, 0, 0)
-mesh = SubResource("Mesh_nail")
-surface_material_override/0 = SubResource("Material_iron")
-
-[node name="NailTopRight" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.5, 1.89, 0.18)
-rotation = Vector3(1.5708, 0, 0)
-mesh = SubResource("Mesh_nail")
-surface_material_override/0 = SubResource("Material_iron")
-
-[node name="NailBottomLeft" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(-0.5, 1.43, 0.18)
-rotation = Vector3(1.5708, 0, 0)
-mesh = SubResource("Mesh_nail")
-surface_material_override/0 = SubResource("Material_iron")
-
-[node name="NailBottomRight" type="MeshInstance3D" parent="VisualRoot"]
-position = Vector3(0.5, 1.41, 0.18)
-rotation = Vector3(1.5708, 0, 0)
-mesh = SubResource("Mesh_nail")
-surface_material_override/0 = SubResource("Material_iron")
+[node name="HeaderLabel" type="Label3D" parent="VisualRoot"]
+position = Vector3(0, 2.63, 0.285)
+pixel_size = 0.0031
+text = "驿站通告"
+font_size = 23
+modulate = Color(0.86, 0.75, 0.5, 1)
+outline_size = 5
+outline_modulate = Color(0.12, 0.09, 0.075, 0.96)
 
 [node name="NoticeBoardLabel" type="Label3D" parent="VisualRoot"]
-position = Vector3(0, 1.68, 0.23)
-pixel_size = 0.0038
+position = Vector3(0.02, 1.81, 0.19)
+pixel_size = 0.0032
 text = "公告牌\n（点击发布）"
-font_size = 24
-modulate = Color(0.14, 0.09, 0.055, 1)
-outline_size = 2
-outline_modulate = Color(0.86, 0.8, 0.64, 0.85)
+font_size = 23
+modulate = Color(0.18, 0.12, 0.08, 1)
+outline_size = 1
+outline_modulate = Color(0.88, 0.82, 0.66, 0.55)
+width = 330.0
 
 [node name="NoticeBoardClickArea" type="Area3D" parent="."]
-position = Vector3(0, 1.45, 0)
+position = Vector3(0, 1.62, 0)
 input_ray_pickable = true
+metadata/notice_board_hotspot = true
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="NoticeBoardClickArea"]
 shape = SubResource("Shape_notice_board")

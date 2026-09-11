@@ -1,3 +1,7 @@
+import io
+import wave
+from pathlib import Path
+
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from pydantic import ValidationError
@@ -14,6 +18,8 @@ try:
         DialogueIntentRevalidationRequest,
         DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
+        GameEpilogueRequest,
+        GameEpilogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
         PlayerNPCDialogueResponse,
@@ -21,8 +27,15 @@ try:
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
         PlanRevisionResponse,
+        VoiceAnalyzeErrorResponse,
+        VoiceAnalyzeRequest,
+        VoiceAnalyzeResponse,
     )
     from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from backend.services.voice_model_adapter import (
+        VoiceModelAdapter,
+        load_dialogue_input_config,
+    )
 except ModuleNotFoundError:
     from schemas import (
         APIErrorResponse,
@@ -35,6 +48,8 @@ except ModuleNotFoundError:
         DialogueIntentRevalidationRequest,
         DialogueIntentRevalidationResponse,
         EscapeInterventionDialogueResponse,
+        GameEpilogueRequest,
+        GameEpilogueResponse,
         NPCNPCDialogueResponse,
         NPCDialogueRequest,
         PlayerNPCDialogueResponse,
@@ -42,21 +57,58 @@ except ModuleNotFoundError:
         PlanRevisionJudgementResponse,
         PlanRevisionRequest,
         PlanRevisionResponse,
+        VoiceAnalyzeErrorResponse,
+        VoiceAnalyzeRequest,
+        VoiceAnalyzeResponse,
     )
     from services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from services.voice_model_adapter import VoiceModelAdapter, load_dialogue_input_config
 
 
 SERVICE_NAME = "war-not-mine-backend"
 
+DIALOGUE_EMOTION_IDS = {
+    "none", "happy", "relieved", "angry", "sad", "afraid",
+    "surprised", "confused", "determined",
+}
+DIALOGUE_EMOTION_ALIASES = {
+    "": "none", "neutral": "none", "calm": "none", "steady": "none",
+    "wary": "none", "平静": "none", "谨慎": "none", "无": "none",
+    "无明显情绪": "none", "开心": "happy", "高兴": "happy",
+    "joyful": "happy", "pleased": "happy", "放松": "relieved",
+    "释然": "relieved", "relaxed": "relieved", "愤怒": "angry",
+    "生气": "angry", "hostile": "angry", "难过": "sad",
+    "悲伤": "sad", "upset": "sad", "害怕": "afraid",
+    "恐惧": "afraid", "fearful": "afraid", "shaken": "afraid",
+    "tense": "afraid", "惊讶": "surprised", "震惊": "surprised",
+    "shocked": "surprised", "困惑": "confused", "疑惑": "confused",
+    "uncertain": "confused", "坚定": "determined", "坚决": "determined",
+    "resolved": "determined", "resolute": "determined",
+}
+
+
+def normalize_dialogue_emotion(raw_value) -> str:
+    clean_value = str(raw_value or "").strip().lower()
+    if clean_value in DIALOGUE_EMOTION_IDS:
+        return clean_value
+    return DIALOGUE_EMOTION_ALIASES.get(clean_value, "none")
+
 
 def create_app() -> Flask:
-    load_dotenv()
+    # Resolve the local backend configuration independently of the shell's cwd.
+    # Existing process environment variables keep precedence (override=False).
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
     app = Flask(__name__)
     app.config["MODEL_ADAPTER"] = ModelAdapter()
+    app.config["VOICE_MODEL_ADAPTER"] = VoiceModelAdapter()
+    app.config["DIALOGUE_INPUT_CONFIG"] = load_dialogue_input_config()
 
     def model_adapter() -> ModelAdapter:
         return app.config["MODEL_ADAPTER"]
+
+    def voice_model_adapter() -> VoiceModelAdapter:
+        return app.config["VOICE_MODEL_ADAPTER"]
 
     def model_output_invalid_response(call_type: str, payload: dict, result, schema_name: str, exc: ValidationError):
         failure_reason = "Model output did not match %s." % schema_name
@@ -107,6 +159,8 @@ def create_app() -> Flask:
     def model_request_payload(request_model) -> dict:
         """Remove fields that are not choices for target-driven plan actions."""
         payload = request_model.model_dump()
+        if not bool(payload.get("is_combat_strategy_request", False)):
+            payload.pop("combat_strategy_context", None)
         for candidate in payload.get("allowed_actions", []):
             if (
                 isinstance(candidate, dict)
@@ -274,6 +328,12 @@ def create_app() -> Flask:
 
             if dialogue_request.is_recruitment_request:
                 details.append("npc_npc dialogue cannot be a recruitment request.")
+            if dialogue_request.is_morale_encouragement_request:
+                details.append("npc_npc dialogue cannot be a morale encouragement request.")
+            if dialogue_request.is_combat_strategy_request:
+                details.append("npc_npc dialogue cannot be a combat strategy request.")
+            if dialogue_request.is_work_encouragement_request:
+                details.append("npc_npc dialogue cannot be a work encouragement request.")
             if dialogue_request.escape_intervention_round is not None:
                 details.append("escape_intervention_round is only valid for escape_intervention.")
             return details
@@ -290,6 +350,12 @@ def create_app() -> Flask:
                 details.append("non npc_npc dialogue max_rounds must be at least 1.")
             if dialogue_request.is_recruitment_request:
                 details.append("escape_intervention cannot be a recruitment request.")
+            if dialogue_request.is_morale_encouragement_request:
+                details.append("escape_intervention cannot be a morale encouragement request.")
+            if dialogue_request.is_combat_strategy_request:
+                details.append("escape_intervention cannot be a combat strategy request.")
+            if dialogue_request.is_work_encouragement_request:
+                details.append("escape_intervention cannot be a work encouragement request.")
             if dialogue_request.escape_intervention_round is None:
                 details.append("escape_intervention requires escape_intervention_round.")
             elif dialogue_request.escape_intervention_round != dialogue_request.current_round:
@@ -306,28 +372,93 @@ def create_app() -> Flask:
         if dialogue_request.escape_intervention_round is not None:
             details.append("escape_intervention_round is only valid for escape_intervention.")
         if dialogue_request.is_recruitment_request:
-            if response_model.recruitment_result not in {"accept", "reject"}:
-                details.append("recruitment request requires recruitment_result accept or reject.")
+            if response_model.recruitment_result not in {"accept", "reject", "none"}:
+                details.append("recruitment request requires recruitment_result accept, reject or none.")
         elif response_model.recruitment_result != "none":
             details.append(
                 "dialogue without a recruitment request must use recruitment_result=none."
             )
 
         interaction_context = dialogue_request.interaction_context
-        if interaction_context in {"work", "avoid_combat"}:
+        special_request_count = sum((
+            dialogue_request.is_recruitment_request,
+            dialogue_request.is_morale_encouragement_request,
+            dialogue_request.is_combat_strategy_request,
+            dialogue_request.is_work_encouragement_request,
+        ))
+        if special_request_count > 1:
+            details.append("recruitment, morale, combat strategy and work encouragement requests are mutually exclusive.")
+        if not dialogue_request.is_morale_encouragement_request:
             if response_model.wartime_reaction != "none":
                 details.append(
-                    "%s dialogue must use wartime_reaction=none." % interaction_context
+                    "dialogue without morale encouragement enabled must use wartime_reaction=none."
                 )
-        elif interaction_context in {"rally", "combat"}:
+        elif interaction_context not in {"rally", "combat"}:
+            details.append("morale encouragement is only valid in rally/combat dialogue.")
+        else:
             npc_state = dialogue_request.npc_state
             equipment = npc_state.get("equipment", {})
             main_weapon = equipment.get("main_weapon") if isinstance(equipment, dict) else None
             combat_eligible = bool(npc_state.get("recruited", False)) and bool(main_weapon)
-            if not combat_eligible and response_model.wartime_reaction != "none":
+            if not combat_eligible:
                 details.append(
-                    "rally/combat dialogue without recruited status and a main weapon must use wartime_reaction=none."
+                    "morale encouragement requires recruited status and a main weapon."
                 )
+            morale_boost = npc_state.get("morale_boost", {})
+            if isinstance(morale_boost, dict) and bool(morale_boost.get("active", False)):
+                details.append("morale encouragement cannot be requested while its buff is active.")
+
+        strategy_context = dialogue_request.combat_strategy_context
+        strategy_decision = response_model.combat_strategy_decision
+        if not dialogue_request.is_combat_strategy_request:
+            if strategy_context is not None:
+                details.append("combat_strategy_context requires combat strategy request enabled.")
+            if strategy_decision is not None:
+                details.append("dialogue without combat strategy enabled must not return a strategy decision.")
+        elif interaction_context not in {"rally", "combat"}:
+            details.append("combat strategy adjustment is only valid in rally/combat dialogue.")
+        else:
+            npc_state = dialogue_request.npc_state
+            equipment = npc_state.get("equipment", {})
+            main_weapon = equipment.get("main_weapon") if isinstance(equipment, dict) else None
+            if not bool(npc_state.get("recruited", False)) or not bool(main_weapon):
+                details.append("combat strategy adjustment requires recruited status and a main weapon.")
+            if strategy_context is None:
+                details.append("combat strategy request requires combat_strategy_context.")
+            elif strategy_decision is None:
+                details.append("combat strategy request requires combat_strategy_decision.")
+            else:
+                current_id = strategy_context.current_strategy.id
+                available_ids = {option.id for option in strategy_context.available_strategies}
+                if strategy_decision.strategy_id not in available_ids:
+                    details.append("combat strategy decision must select an available strategy id.")
+                if strategy_decision.decision == "keep" and strategy_decision.strategy_id != current_id:
+                    details.append("keep decision must return the current strategy id.")
+                if strategy_decision.decision == "change" and strategy_decision.strategy_id == current_id:
+                    details.append("change decision must select a different strategy id.")
+
+        work_reaction = response_model.work_encouragement_reaction
+        if not dialogue_request.is_work_encouragement_request:
+            if work_reaction != "none":
+                details.append(
+                    "dialogue without work encouragement enabled must use work_encouragement_reaction=none."
+                )
+        elif interaction_context != "work":
+            details.append("work encouragement is only valid in work dialogue.")
+        else:
+            npc_state = dialogue_request.npc_state
+            if str(npc_state.get("behavior_mode", "work")) != "work":
+                details.append("work encouragement requires the NPC to be in work behavior mode.")
+            if bool(npc_state.get("unconscious", False)):
+                details.append("work encouragement cannot target an unconscious NPC.")
+            if bool(npc_state.get("escaped", False)):
+                details.append("work encouragement cannot target an escaped NPC.")
+            escape_state = npc_state.get("escape_state", {})
+            if isinstance(escape_state, dict) and bool(escape_state.get("active", False)):
+                details.append("work encouragement cannot target an escaping NPC.")
+            work_boost = npc_state.get("work_encouragement_boost", {})
+            if isinstance(work_boost, dict) and bool(work_boost.get("active", False)):
+                details.append("work encouragement cannot be requested while its buff is active.")
         return details
 
     def validate_daily_plan_business_rules(plan_request: DailyPlanRequest, response_model: DailyPlanResponse) -> list[str]:
@@ -508,6 +639,70 @@ def create_app() -> Flask:
             details.append("world-facing reflection output must use 守备官 instead of 玩家.")
         return details
 
+    def validate_game_epilogue_business_rules(
+        epilogue_request: GameEpilogueRequest,
+        response_model: GameEpilogueResponse,
+    ) -> list[str]:
+        details: list[str] = []
+        if response_model.result != epilogue_request.result:
+            details.append("result must match the authoritative settlement result.")
+        expected_by_id = {npc.npc_id: npc for npc in epilogue_request.npcs}
+        ending_ids = [ending.npc_id for ending in response_model.npc_endings]
+        if len(ending_ids) != len(set(ending_ids)):
+            details.append("npc_endings contains duplicate npc_id values.")
+        if set(ending_ids) != set(expected_by_id):
+            details.append("npc_endings must exactly cover the requested npc ids.")
+        global_fact_ids = {fact.fact_id for fact in epilogue_request.global_facts}
+        victory_tones = {"hopeful", "hopeful_bittersweet", "reconciled"}
+        failure_tones = {"sorrowful", "sorrowful_resilient", "unresolved"}
+        forbidden_death_terms = ("阵亡", "死亡", "死去", "身亡", "尸体", "墓碑")
+        forbidden_meta_terms = ("玩家", "根据资料", "根据提供", "NPC id", "fact_id")
+        forbidden_modern_terms = (
+            "手机", "互联网", "公司", "工厂", "火车", "汽车", "电报", "记者", "媒体", "大学",
+        )
+        opening_keys: dict[str, list[str]] = {}
+        closing_keys: dict[str, list[str]] = {}
+        for ending in response_model.npc_endings:
+            expected = expected_by_id.get(ending.npc_id)
+            if expected is None:
+                continue
+            if ending.opening_status != expected.opening_status:
+                details.append(f"{ending.npc_id}: opening_status changed authoritative state.")
+            allowed_fact_ids = global_fact_ids | {fact.fact_id for fact in expected.key_facts}
+            invalid_refs = [fact_id for fact_id in ending.fact_refs if fact_id not in allowed_fact_ids]
+            if invalid_refs:
+                details.append(f"{ending.npc_id}: fact_refs contains unavailable facts {invalid_refs}.")
+            expected_tones = victory_tones if epilogue_request.result == "victory" else failure_tones
+            if ending.tone not in expected_tones:
+                details.append(f"{ending.npc_id}: tone is incompatible with settlement result.")
+            combined_text = " ".join((ending.ending_title, ending.final_opinion, ending.fate_story))
+            for term in forbidden_death_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: forbidden NPC death wording '{term}'.")
+            for term in forbidden_meta_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: forbidden meta wording '{term}'.")
+            for term in forbidden_modern_terms:
+                if term in combined_text:
+                    details.append(f"{ending.npc_id}: setting-incompatible modern wording '{term}'.")
+            compact_story = "".join(ending.fate_story.split())
+            opening_keys.setdefault(compact_story[:18], []).append(ending.npc_id)
+            closing_keys.setdefault(compact_story[-18:], []).append(ending.npc_id)
+        for fragment, npc_ids in opening_keys.items():
+            if fragment and len(npc_ids) > 1:
+                details.append(f"repeated epilogue opening across npc ids {npc_ids}.")
+        for fragment, npc_ids in closing_keys.items():
+            if fragment and len(npc_ids) > 1:
+                details.append(f"repeated epilogue closing across npc ids {npc_ids}.")
+        all_text = " ".join(
+            [response_model.ending_title, response_model.station_coda]
+            + [ending.fate_story for ending in response_model.npc_endings]
+        )
+        for term in forbidden_death_terms:
+            if term in all_text:
+                details.append(f"epilogue contains forbidden initial-NPC death wording '{term}'.")
+        return list(dict.fromkeys(details))
+
     def model_adapter_error_status(error_code: str) -> int:
         if error_code == "budget_exceeded":
             return 429
@@ -519,17 +714,143 @@ def create_app() -> Flask:
             "ok": True,
             "service": SERVICE_NAME,
             "model_adapter": model_adapter().get_runtime_config_snapshot(),
+            "voice_model_adapter": voice_model_adapter().get_runtime_config_snapshot(),
+            "dialogue_input": app.config["DIALOGUE_INPUT_CONFIG"].model_dump(),
         })
 
     @app.get("/debug/llm_usage")
     def llm_usage():
         adapter = model_adapter()
+        voice_adapter = voice_model_adapter()
         return jsonify({
             "ok": True,
             "model_adapter": adapter.get_runtime_config_snapshot(),
             "summary": adapter.get_usage_summary(),
             "records": adapter.get_usage_records(),
+            "voice": {
+                "model_adapter": voice_adapter.get_runtime_config_snapshot(),
+                "summary": voice_adapter.get_usage_summary(),
+                "records": voice_adapter.get_usage_records(),
+            },
         })
+
+    @app.post("/voice/analyze")
+    def voice_analyze():
+        voice_adapter = voice_model_adapter()
+        raw_meta = {
+            "request_id": request.form.get("request_id", ""),
+            "npc_id": request.form.get("npc_id", ""),
+            "dialogue_id": request.form.get("dialogue_id", ""),
+            "locale": request.form.get("locale", "zh"),
+        }
+        try:
+            voice_request = VoiceAnalyzeRequest.model_validate(raw_meta)
+        except ValidationError as exc:
+            request_id = str(raw_meta.get("request_id", ""))
+            usage = voice_adapter.record_validation_failure(
+                request_id=request_id,
+                npc_id=str(raw_meta.get("npc_id", "")),
+                dialogue_id=str(raw_meta.get("dialogue_id", "")),
+                error_code="validation_error",
+                failure_reason="VoiceAnalyzeRequest validation failed.",
+            )
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=request_id,
+                error_code="validation_error",
+                message="VoiceAnalyzeRequest validation failed.",
+                details=exc.errors(include_context=False),
+                usage=usage,
+            ).model_dump()), 400
+
+        def voice_error(error_code: str, message: str, status: int, duration: float = 0.0):
+            usage = voice_adapter.record_validation_failure(
+                request_id=voice_request.request_id,
+                npc_id=voice_request.npc_id,
+                dialogue_id=voice_request.dialogue_id,
+                error_code=error_code,
+                failure_reason=message,
+                duration_seconds=duration,
+            )
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=voice_request.request_id,
+                error_code=error_code,
+                message=message,
+                usage=usage,
+            ).model_dump()), status
+
+        upload = request.files.get("audio")
+        if upload is None:
+            return voice_error("recording_empty", "No audio recording was uploaded.", 400)
+
+        limits = app.config["DIALOGUE_INPUT_CONFIG"]
+        audio_bytes = upload.stream.read(limits.voice_upload_max_bytes + 1)
+        if not audio_bytes:
+            return voice_error("recording_empty", "The uploaded recording is empty.", 400)
+        if len(audio_bytes) > limits.voice_upload_max_bytes:
+            return voice_error(
+                "audio_too_large",
+                "The uploaded recording exceeds the configured byte limit.",
+                413,
+            )
+
+        try:
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
+                frame_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+                if wav_file.getcomptype() != "NONE" or frame_rate <= 0:
+                    raise wave.Error("Only uncompressed PCM WAV is supported.")
+                duration_seconds = frame_count / float(frame_rate)
+        except (EOFError, wave.Error):
+            return voice_error("audio_invalid", "The uploaded WAV is invalid or unsupported.", 400)
+
+        if duration_seconds <= 0.0:
+            return voice_error("recording_empty", "The uploaded recording has no frames.", 400)
+        if duration_seconds > limits.voice_recording_max_seconds:
+            return voice_error(
+                "audio_too_long",
+                "The uploaded recording exceeds the 30-second limit.",
+                413,
+                duration_seconds,
+            )
+
+        result = voice_adapter.analyze(
+            request_id=voice_request.request_id,
+            npc_id=voice_request.npc_id,
+            dialogue_id=voice_request.dialogue_id,
+            duration_seconds=duration_seconds,
+            audio_bytes=audio_bytes,
+            locale=voice_request.locale,
+        )
+        if not result.ok:
+            voice_error_statuses = {
+                "voice_budget_exceeded": 429,
+                "voice_provider_rate_limited": 429,
+                "voice_provider_timeout": 504,
+                "voice_provider_auth_failed": 502,
+                "voice_provider_transport_error": 502,
+                "voice_provider_http_error": 502,
+                "voice_provider_invalid_response": 502,
+                "voice_provider_unavailable": 503,
+            }
+            return jsonify(VoiceAnalyzeErrorResponse(
+                request_id=voice_request.request_id,
+                error_code=result.error_code,
+                message=result.message,
+                usage=result.usage,
+            ).model_dump()), voice_error_statuses.get(result.error_code, 503)
+
+        return jsonify(VoiceAnalyzeResponse(
+            request_id=voice_request.request_id,
+            dialogue_id=voice_request.dialogue_id,
+            transcript=result.transcript,
+            emotion=result.emotion,
+            emotion_label=result.emotion_label,
+            emotion_applied=result.emotion_applied,
+            duration_seconds=round(duration_seconds, 3),
+            model_provider=result.provider,
+            model_name=result.model,
+            usage=result.usage,
+        ).model_dump())
 
     @app.post("/mock/model")
     def mock_model():
@@ -613,7 +934,7 @@ def create_app() -> Flask:
         dialogue_output = dict(result.content)
         dialogue_normalizations: list[dict] = []
         for field_name, default_value in (
-            ("emotion", "neutral"),
+            ("emotion", "none"),
             ("suggested_event_type", "dialogue_turn"),
             ("debug_reason", ""),
         ):
@@ -625,6 +946,16 @@ def create_app() -> Flask:
                     "to": default_value,
                     "source": "nullable_non_authoritative_metadata_default",
                 })
+        raw_emotion = dialogue_output.get("emotion", "none")
+        normalized_emotion = normalize_dialogue_emotion(raw_emotion)
+        if raw_emotion != normalized_emotion:
+            dialogue_output["emotion"] = normalized_emotion
+            dialogue_normalizations.append({
+                "path": "emotion",
+                "from": raw_emotion,
+                "to": normalized_emotion,
+                "source": "dialogue_emotion_alias_or_unknown_default",
+            })
         try:
             response_model = response_model_type.model_validate(dialogue_output)
         except ValidationError as exc:
@@ -646,9 +977,12 @@ def create_app() -> Flask:
                 business_errors,
             )
 
-        return jsonify(
-            model_success_payload(response_model, result, dialogue_normalizations)
-        )
+        response_payload = model_success_payload(response_model, result, dialogue_normalizations)
+        if not dialogue_request.is_combat_strategy_request:
+            response_payload.pop("combat_strategy_decision", None)
+        if not dialogue_request.is_work_encouragement_request:
+            response_payload.pop("work_encouragement_reaction", None)
+        return jsonify(response_payload)
 
     @app.post("/npc/dialogue_plan_revision_judgement")
     @app.post("/npc/plan_revision_judgement")
@@ -1084,6 +1418,93 @@ def create_app() -> Flask:
             )
 
         return jsonify(model_success_payload(response_model, result))
+
+    @app.post("/game/epilogue")
+    def game_epilogue():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(APIErrorResponse(
+                error_code="invalid_json",
+                message="Request body must be a JSON object.",
+            ).model_dump()), 400
+
+        try:
+            epilogue_request = GameEpilogueRequest.model_validate(body)
+        except ValidationError as exc:
+            return jsonify({
+                "ok": False,
+                "error_code": "validation_error",
+                "message": "GameEpilogueRequest validation failed.",
+                "fallback_used": False,
+                "details": exc.errors(),
+            }), 400
+
+        request_payload = epilogue_request.model_dump()
+        result = model_adapter().generate("game_epilogue", request_payload)
+        if not result.ok:
+            return jsonify({
+                "ok": False,
+                "error_code": result.error_code,
+                "message": result.message,
+                "fallback_used": False,
+                "usage": result.usage,
+            }), model_adapter_error_status(result.error_code)
+
+        validation_details: list = []
+        response_model = None
+        try:
+            response_model = GameEpilogueResponse.model_validate(result.content)
+        except ValidationError as exc:
+            validation_details = exc.errors()
+        if response_model is not None:
+            validation_details = validate_game_epilogue_business_rules(epilogue_request, response_model)
+
+        correction_used = False
+        if validation_details and result.provider != "mock":
+            model_adapter().record_model_output_invalid(
+                "game_epilogue",
+                request_payload,
+                "Initial GameEpilogueResponse failed validation; one correction requested.",
+                result.usage,
+                model_output=result.content,
+                validation_details=validation_details,
+            )
+            correction_payload = dict(request_payload)
+            correction_payload["correction_context"] = {
+                "instruction": "Correct the response without changing any authoritative input fact.",
+                "validation_errors": validation_details,
+                "previous_output": result.content,
+            }
+            result = model_adapter().generate("game_epilogue", correction_payload)
+            correction_used = True
+            if not result.ok:
+                return jsonify({
+                    "ok": False,
+                    "error_code": result.error_code,
+                    "message": result.message,
+                    "fallback_used": False,
+                    "usage": result.usage,
+                }), model_adapter_error_status(result.error_code)
+            try:
+                response_model = GameEpilogueResponse.model_validate(result.content)
+                validation_details = validate_game_epilogue_business_rules(epilogue_request, response_model)
+            except ValidationError as exc:
+                response_model = None
+                validation_details = exc.errors()
+
+        if response_model is None or validation_details:
+            return model_output_business_invalid_response(
+                "game_epilogue",
+                request_payload,
+                result,
+                "GameEpilogueResponse failed schema or continuity validation.",
+                validation_details,
+            )
+        return jsonify(model_success_payload(
+            response_model,
+            result,
+            [{"kind": "epilogue_correction", "applied": True}] if correction_used else [],
+        ))
 
     return app
 

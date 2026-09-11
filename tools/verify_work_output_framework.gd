@@ -20,7 +20,8 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var crafting_system := root.get_node_or_null("Main/Systems/CraftingSystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or crafting_system == null or llm_bridge == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or crafting_system == null or llm_bridge == null or time_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -34,8 +35,9 @@ func _init() -> void:
 	var cook_id := "cook_01"
 	var priest_id := "priest_01"
 	var engineer_id := "engineer_01"
-	_set_debug_move_speed(gardener_id, 100.0)
-	_set_debug_move_speed(stableman_id, 100.0)
+	time_system.set_paused(false)
+	_set_debug_move_speed(gardener_id, 5.0)
+	_set_debug_move_speed(stableman_id, 5.0)
 	_set_debug_move_speed(cook_id, 100.0)
 	_set_debug_move_speed(engineer_id, 100.0)
 
@@ -93,8 +95,8 @@ func _init() -> void:
 		return
 
 	npc_system.update_npc_state(cook_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if not action_system.debug_assign_work(cook_id, "garden"):
-		push_error("Third worker should at least move toward garden before workstation rejection")
+	if action_system.debug_assign_work(cook_id, "garden"):
+		push_error("Third worker should be rejected before migrating when both initial garden workstations are occupied")
 		quit(1)
 		return
 	if not await _wait_until_action_result(npc_system, cook_id, "work_failed_no_workstation"):
@@ -204,8 +206,8 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for frame in range(600):
-		await process_frame
+	for frame in range(1800):
+		await physics_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
 			return true

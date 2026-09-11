@@ -45,11 +45,12 @@ func _init() -> void:
 
 	var combat_system := root.get_node_or_null("Main/Systems/CombatSystem")
 	var enemy_root := root.get_node_or_null("Main/WorldRoot/Station/Enemies")
+	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var ground := root.get_node_or_null("Main/WorldRoot/Station/Ground") as MeshInstance3D
 	var front_road := root.get_node_or_null("Main/WorldRoot/Station/Props/FrontRoad") as MeshInstance3D
 	var camera_rig := root.get_node_or_null("Main/CameraRig")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
-	if combat_system == null or enemy_root == null or ground == null or front_road == null or camera_rig == null or gm_panel == null:
+	if combat_system == null or enemy_root == null or npc_system == null or ground == null or front_road == null or camera_rig == null or gm_panel == null:
 		push_error("Enemy wave verification required nodes not found")
 		quit(1)
 		return
@@ -172,8 +173,17 @@ func _init() -> void:
 		push_error("Active enemy count should match spawned first wave count")
 		quit(1)
 		return
-	if enemy_root.get_child_count() != expected_wave_one_count:
-		push_error("Enemy nodes should be created under Station/Enemies")
+	var formal_enemy_root := root.get_node_or_null("Main/WorldRoot/FormalStationLayout/FormalEnemies")
+	if formal_enemy_root == null:
+		push_error("FormalEnemies root should be created by the formal runtime factory")
+		quit(1)
+		return
+	if str(spawn_result.get("world_mode", "")) != "formal_runtime":
+		push_error("Default wave spawning should use the formal runtime world")
+		quit(1)
+		return
+	if enemy_root.get_child_count() != 0 or formal_enemy_root.get_child_count() != expected_wave_one_count:
+		push_error("Default enemies should be CharacterBody3D actors under FormalEnemies only")
 		quit(1)
 		return
 
@@ -184,13 +194,29 @@ func _init() -> void:
 			quit(1)
 			return
 		var position: Vector3 = enemy.get("position", Vector3.ZERO)
-		if position.z < 27.0:
-			push_error("Enemy should spawn outside the front gate: %s at %s" % [enemy_id, str(position)])
+		if absf(position.x) > 100.0 or position.z < 250.0:
+			push_error("Enemy should spawn at the origin-rebased formal forest edge: %s at %s" % [enemy_id, str(position)])
 			quit(1)
 			return
-		var enemy_node := enemy_root.get_node_or_null(_make_node_name(enemy_id))
-		if enemy_node == null or str(enemy_node.get_meta("enemy_id", "")) != enemy_id:
-			push_error("Enemy node metadata should preserve enemy id")
+		var enemy_node := _find_enemy_node(formal_enemy_root, enemy_id)
+		if enemy_node == null or not enemy_node is CharacterBody3D or str(enemy_node.get_meta("enemy_id", "")) != enemy_id:
+			push_error("Formal CharacterBody3D metadata should preserve enemy id")
+			quit(1)
+			return
+	var formal_world: Dictionary = combat_system.debug_get_default_formal_combat_world_snapshot()
+	if not bool(formal_world.get("active", false)):
+		push_error("Default wave should activate the shared formal combat world")
+		quit(1)
+		return
+	var npc_world: Dictionary = formal_world.get("npc_world", {})
+	for raw_actor in npc_world.get("actors", []):
+		var actor: Dictionary = raw_actor
+		if (
+			not bool(actor.get("navigation_motion_enabled", false))
+			or not bool(actor.get("navigation_map_matches", false))
+			or int(actor.get("body_collision_layer", 0)) == 0
+		):
+			push_error("Combat NPC should share formal navigation and solid collision: %s" % JSON.stringify(actor))
 			quit(1)
 			return
 
@@ -199,6 +225,10 @@ func _init() -> void:
 	await process_frame
 	if combat_system.get_active_enemy_count() != 0:
 		push_error("debug_clear_enemies should clear active enemy state")
+		quit(1)
+		return
+	if bool(combat_system.debug_get_default_formal_combat_world_snapshot().get("active", true)):
+		push_error("Clearing enemies should restore and close the formal runtime world")
 		quit(1)
 		return
 
@@ -241,6 +271,13 @@ func _has_required_enemy_fields(enemy: Dictionary) -> bool:
 		if not enemy.has(field):
 			return false
 	return true
+
+
+func _find_enemy_node(parent: Node, enemy_id: String) -> Node:
+	for child in parent.get_children():
+		if str(child.get_meta("enemy_id", "")) == enemy_id:
+			return child
+	return null
 
 
 func _wave_enemy_count(wave: Dictionary) -> int:

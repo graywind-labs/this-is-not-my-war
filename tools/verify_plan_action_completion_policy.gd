@@ -69,8 +69,14 @@ func _init() -> void:
 
 	const NPC_ID := "gardener_01"
 	time_system.set_current_time(1, 7, 2, 0)
+	time_system.set_paused(false)
 	daily_plan_system.set_auto_execution_enabled(true)
 	resource_system.add_resource("meal", 8)
+	var gardener := _get_npc_node(npc_system, NPC_ID)
+	if gardener == null:
+		_fail("Could not resolve repeatable-plan actor node")
+		return
+	gardener.set("move_speed", 5.0)
 	if not npc_system.debug_enter_location_immediately(NPC_ID, "garden"):
 		_fail("Could not place repeatable-plan actor in garden")
 		return
@@ -92,6 +98,12 @@ func _init() -> void:
 	var first_execute: Dictionary = daily_plan_system.execute_current_plan_for_npc(NPC_ID, true)
 	if not bool(first_execute.get("ok", false)):
 		_fail("Initial repeatable work did not dispatch: %s" % str(first_execute))
+		return
+	if not await _wait_for_active(action_system, time_system, NPC_ID, "work_garden"):
+		_fail(
+			"Initial repeatable work did not physically reach its garden plot: %s"
+			% JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(NPC_ID))
+		)
 		return
 	var first_runtime: Dictionary = action_system.get_runtime_action_snapshot(NPC_ID)
 	var first_duration := float(first_runtime.get("duration_seconds", 0.0))
@@ -308,6 +320,30 @@ func _last_event_index(events: Array, event_type: String) -> int:
 		if raw_event is Dictionary and str((raw_event as Dictionary).get("type", "")) == event_type:
 			return index
 	return -1
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	action_id: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == action_id
+		):
+			return true
+	return false
 
 
 func _fail(message: String) -> void:

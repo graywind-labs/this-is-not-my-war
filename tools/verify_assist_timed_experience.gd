@@ -16,10 +16,13 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
-	if action_system == null or needs_system == null or npc_system == null or building_system == null or resource_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or needs_system == null or npc_system == null or building_system == null or resource_system == null or time_system == null:
 		_fail("Required systems not found")
 		return
 	needs_system.initialize()
+	time_system.set_paused(false)
+	time_system.set_time_scale(0.0)
 
 	var engineer_id := "engineer_01"
 	var engineering_before := int(npc_system.get_npc(engineer_id).get("skills", {}).get("工程", 0))
@@ -36,6 +39,10 @@ func _init() -> void:
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20})
 	if not action_system.debug_assign_repair_assist(engineer_id, "wall"):
 		_fail("Failed to assign repair helper")
+		return
+	_snap_formal_actor_to_service_target(npc_system, engineer_id)
+	if not await _wait_until_result(npc_system, engineer_id, "assist_repair_started_wall"):
+		_fail("Repair helper did not physically commit before the experience test")
 		return
 
 	needs_system._on_logical_time_tick(1800.0, 1.0)
@@ -101,6 +108,10 @@ func _init() -> void:
 	if not action_system.debug_assign_heal_assist(doctor_id, target_id):
 		_fail("Failed to assign healing helper")
 		return
+	_set_debug_move_speed(npc_system, doctor_id, 8.0)
+	if not await _wait_until_result(npc_system, doctor_id, "assist_heal_started_%s" % target_id):
+		_fail("Healing helper did not physically reach the target")
+		return
 	var runtime: Dictionary = action_system.get_runtime_action_snapshot(doctor_id)
 	var effective_heal_seconds: float = npc_system.get_assisted_recovery_effective_seconds(
 		target_id,
@@ -145,6 +156,29 @@ func _init() -> void:
 	await process_frame
 	print("T0081 assist effective-time experience verification passed.")
 	quit(0)
+
+
+func _snap_formal_actor_to_service_target(npc_system: Node, npc_id: String) -> void:
+	var formal: Dictionary = npc_system.get_formal_workstation_action_snapshot(npc_id)
+	var session: Dictionary = formal.get("session", {}) if formal.get("session", {}) is Dictionary else {}
+	var target_position: Variant = session.get("service_target_position")
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath()))
+	if npc_node != null and target_position is Vector3:
+		npc_node.global_position = target_position
+
+
+func _wait_until_result(npc_system: Node, npc_id: String, result_id: String) -> bool:
+	for frame in range(300):
+		await physics_frame
+		if str(npc_system.get_npc_state(npc_id).get("last_action_result", "")) == result_id:
+			return true
+	return false
+
+
+func _set_debug_move_speed(npc_system: Node, npc_id: String, speed: float) -> void:
+	var npc_node := npc_system.get_node_or_null(npc_system._npc_nodes.get(npc_id, NodePath()))
+	if npc_node != null:
+		npc_node.move_speed = speed
 
 
 func _fail(message: String) -> void:

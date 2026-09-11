@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_bgm_menu_royal_entrance_558839.mp3,bgm_menu,Royal Entrance Music.mp3,dominictreis,https://freesound.org/s/558839/,CC0,rejected,,不采用,用户已选择 03
+02_bgm_menu_renaissance_strings_510806.mp3,bgm_menu,Renaissance Strings,TheoJT,https://freesound.org/s/510806/,CC-BY 4.0,rejected,,不采用,用户已选择 03
+03_bgm_menu_adventure_566208.mp3,bgm_menu,It's time for an adventure.wav,AwaziXosh,https://freesound.org/s/566208/,CC0,confirmed,bgm_menu,整段单曲循环；每轮开头渐入、结尾渐出以自然衔接下一轮；不使用空间衰减,用户确认菜单使用
+04_bgm_day_medieval_harp_564024.mp3,bgm_day,Harp Arpeggio - Medieval Tune.wav,gertraut_hecher,https://freesound.org/s/564024/,CC-BY-NC 4.0,rejected,,不采用,用户已选择 05
+05_bgm_day_medieval_ambient_812170.mp3,bgm_day_night,ambient-music,giangallegos,https://freesound.org/s/812170/,CC0,confirmed,bgm_day_night,整段单曲循环；每轮开头渐入、结尾渐出以自然衔接下一轮；不使用空间衰减；白天与夜晚共同使用,用户确认白天和夜晚均使用
+06_bgm_day_medieval_flute_416512.mp3,bgm_day,Medieval Flute Loop 124 bpm.wav,CarlosCarty,https://freesound.org/s/416512/,CC-BY 4.0,rejected,,不采用,用户已选择 05
+07_bgm_night_venture_794254.mp3,bgm_night,'Venture At Night' ambient music loop,ManuelGraf,https://freesound.org/s/794254/,CC-BY 4.0,rejected,,不采用,夜晚复用 05
+08_bgm_night_dark_castle_534877.mp3,bgm_night,Dark Castle Night Ambience Loop.wav,szegvari,https://freesound.org/s/534877/,CC0,rejected,,不采用,夜晚复用 05
+09_bgm_night_good_night_654729.mp3,bgm_night,Good Night,SergeQuadrado,https://freesound.org/s/654729/,CC-BY-NC 4.0,rejected,,不采用,夜晚复用 05
+10_bgm_battle_first_battle_808501.mp3,bgm_battle,"First Battle Fantasy Combat Background Music Loop 135bpm in E Minor",ManuelGraf,https://freesound.org/s/808501/,CC-BY 4.0,confirmed,bgm_battle,整段单曲循环；每轮开头渐入、结尾渐出以自然衔接下一轮；不使用空间衰减；场景内存在敌人时播放,用户确认战斗使用
+11_bgm_battle_medieval_1500_349382.mp3,bgm_battle,medieval battle 1500 AD BY KRIS KLAVENES.mp3,klavo1985,https://freesound.org/s/349382/,CC0,rejected,,不采用,用户已选择 10
+12_bgm_battle_village_683261.mp3,bgm_battle,Battle Music (Village),Migfus20,https://freesound.org/s/683261/,CC0,rejected,,不采用,用户已选择 10

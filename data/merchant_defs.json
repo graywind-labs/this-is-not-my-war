@@ -6,30 +6,61 @@
     "arrival_hour": 10,
     "arrival_minute": 0,
     "departure_hour": 16,
-    "departure_minute": 0
+    "departure_minute": 0,
+    "physical_route": {
+      "coordinate_space": "legacy_world_compatibility_until_formal_cutover",
+      "spawn": [-10.0, -36.0],
+      "dock": [-10.0, -19.2],
+      "corridor_half_width": 3.2,
+      "bubble_height": 3.25
+    }
   },
   "buy_offers": [
     {
       "resource_id": "grain",
-      "unit_price": 2
+      "unit_price": 2,
+      "daily_stock_min": 18,
+      "daily_stock_max": 30
     },
     {
       "resource_id": "wood",
-      "unit_price": 3
+      "unit_price": 3,
+      "daily_stock_min": 12,
+      "daily_stock_max": 22
     },
     {
       "resource_id": "stone",
-      "unit_price": 4
+      "unit_price": 4,
+      "daily_stock_min": 10,
+      "daily_stock_max": 18
     },
     {
       "resource_id": "iron",
-      "unit_price": 5
+      "unit_price": 5,
+      "daily_stock_min": 6,
+      "daily_stock_max": 12
     }
   ],
   "sell_offers": [
     {
+      "resource_id": "grain",
+      "unit_price": 1
+    },
+    {
+      "resource_id": "wood",
+      "unit_price": 2
+    },
+    {
+      "resource_id": "stone",
+      "unit_price": 3
+    },
+    {
+      "resource_id": "iron",
+      "unit_price": 4
+    },
+    {
       "resource_id": "wine",
-      "unit_price": 7
+      "unit_price": 4
     }
   ]
 }

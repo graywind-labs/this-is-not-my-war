@@ -166,15 +166,25 @@ func _verify_weapon_and_riding_skill_roles(
 	var mount_result: Dictionary = equipment_system.equip_npc_mount(npc_id, "", "private")
 	if not bool(mount_result.get("ok", false)):
 		return _fail("Failed to equip mount for riding-role verification: %s" % JSON.stringify(mount_result))
+	npc_system._set_npc_state_without_signal(npc_id, {
+		"behavior_mode": "combat",
+		"combat_mounted": true,
+		"combat_mount_phase": "mounted"
+	})
 	_set_profile_skill_without_experience(npc_system, npc_id, "骑术", 0)
 	var riding_zero: Dictionary = combat_system.get_npc_combat_stats(npc_id).get("final", {})
 	_set_profile_skill_without_experience(npc_system, npc_id, "骑术", 100)
 	var riding_max: Dictionary = combat_system.get_npc_combat_stats(npc_id).get("final", {})
 	if not is_equal_approx(
-		float(riding_zero.get("attack_speed", 0.0)),
 		float(riding_max.get("attack_speed", 0.0))
+		/ float(riding_zero.get("attack_speed", 1.0)),
+		1.08
 	):
-		return _fail("Riding proficiency must not increase mounted attack speed.")
+		return _fail("Riding 100 must add 8%% mounted attack speed multiplicatively: zero=%s max=%s state=%s" % [
+			JSON.stringify(riding_zero),
+			JSON.stringify(riding_max),
+			JSON.stringify(npc_system.get_npc_state(npc_id))
+		])
 
 	combat_system.debug_clear_enemies()
 	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
@@ -209,7 +219,7 @@ func _verify_weapon_and_riding_skill_roles(
 			5.0
 		)
 	):
-		return _fail("Riding proficiency must scale horse collision damage only.")
+		return _fail("Legacy horse-collision compatibility must still read riding proficiency.")
 	return true
 
 

@@ -1,0 +1,523 @@
+[gd_scene load_steps=42 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/buildings/BuildingArtView.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/wall_plaster_door_round.glb" id="2_door"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/wall_plaster_straight.glb" id="3_wall"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/roof_round_tiles_4x4.glb" id="4_roof"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/floor_wood_dark.glb" id="5_floor"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/anvil.glb" id="6_anvil"]
+[ext_resource type="Material" path="res://resources/materials/environment_matte.tres" id="7_matte"]
+[ext_resource type="Script" path="res://scripts/presentation/buildings/SmithyAmbientFX.gd" id="8_ambient_fx"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/barrel.glb" id="9_barrel"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/bucket_wooden.glb" id="10_bucket"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/crate_wooden.glb" id="11_crate"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/peg_rack.glb" id="12_peg_rack"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/weapon_stand.glb" id="13_weapon_stand"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/props/anvil_log.glb" id="14_anvil_log"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/buildings/prop_chimney.glb" id="15_chimney"]
+
+[sub_resource type="StandardMaterial3D" id="Material_interior"]
+albedo_color = Color(0.42, 0.255, 0.145, 1)
+roughness = 0.88
+texture_filter = 5
+
+[sub_resource type="BoxMesh" id="Mesh_table"]
+material = SubResource("Material_interior")
+size = Vector3(1.3, 0.12, 0.65)
+
+[sub_resource type="BoxMesh" id="Mesh_leg"]
+material = SubResource("Material_interior")
+size = Vector3(0.12, 0.72, 0.12)
+
+[sub_resource type="BoxMesh" id="Mesh_upgrade"]
+material = ExtResource("7_matte")
+size = Vector3(0.65, 1.2, 0.65)
+
+[sub_resource type="StandardMaterial3D" id="Material_forge_stone"]
+albedo_color = Color(0.22, 0.235, 0.28, 1)
+roughness = 0.96
+
+[sub_resource type="StandardMaterial3D" id="Material_forge_iron"]
+albedo_color = Color(0.11, 0.12, 0.13, 1)
+metallic = 0.72
+roughness = 0.56
+
+[sub_resource type="StandardMaterial3D" id="Material_coal"]
+albedo_color = Color(0.035, 0.032, 0.03, 1)
+roughness = 1.0
+
+[sub_resource type="StandardMaterial3D" id="Material_hide"]
+albedo_color = Color(0.39, 0.15, 0.075, 1)
+roughness = 0.86
+
+[sub_resource type="StandardMaterial3D" id="Material_fire_orange"]
+shading_mode = 0
+albedo_color = Color(1, 0.19, 0.015, 1)
+emission_enabled = true
+emission = Color(1, 0.075, 0.005, 1)
+emission_energy_multiplier = 5.5
+
+[sub_resource type="StandardMaterial3D" id="Material_fire_yellow"]
+shading_mode = 0
+albedo_color = Color(1, 0.76, 0.08, 1)
+emission_enabled = true
+emission = Color(1, 0.33, 0.025, 1)
+emission_energy_multiplier = 7.0
+
+[sub_resource type="StandardMaterial3D" id="Material_level3_accent"]
+albedo_color = Color(0.18, 0.23, 0.36, 1)
+roughness = 0.78
+
+[sub_resource type="BoxMesh" id="Mesh_forge_base"]
+material = SubResource("Material_forge_stone")
+size = Vector3(1.5, 0.48, 0.82)
+
+[sub_resource type="BoxMesh" id="Mesh_forge_pillar"]
+material = SubResource("Material_forge_stone")
+size = Vector3(0.25, 1.25, 0.72)
+
+[sub_resource type="BoxMesh" id="Mesh_forge_back"]
+material = SubResource("Material_forge_stone")
+size = Vector3(1.5, 1.35, 0.22)
+
+[sub_resource type="BoxMesh" id="Mesh_forge_lip"]
+material = SubResource("Material_forge_iron")
+size = Vector3(1.26, 0.1, 0.54)
+
+[sub_resource type="BoxMesh" id="Mesh_coal_bed"]
+material = SubResource("Material_coal")
+size = Vector3(0.86, 0.12, 0.4)
+
+[sub_resource type="SphereMesh" id="Mesh_flame_core"]
+material = SubResource("Material_fire_orange")
+radius = 0.28
+height = 0.72
+
+[sub_resource type="SphereMesh" id="Mesh_flame_tip"]
+material = SubResource("Material_fire_yellow")
+radius = 0.15
+height = 0.52
+
+[sub_resource type="BoxMesh" id="Mesh_bellows_body"]
+material = SubResource("Material_hide")
+size = Vector3(0.52, 0.26, 0.72)
+
+[sub_resource type="BoxMesh" id="Mesh_bellows_board"]
+material = SubResource("Material_interior")
+size = Vector3(0.62, 0.09, 0.8)
+
+[sub_resource type="BoxMesh" id="Mesh_bellows_handle"]
+material = SubResource("Material_interior")
+size = Vector3(0.1, 0.1, 0.88)
+
+[sub_resource type="CylinderMesh" id="Mesh_bellows_nozzle"]
+material = SubResource("Material_forge_iron")
+top_radius = 0.055
+bottom_radius = 0.11
+height = 0.58
+
+[sub_resource type="BoxMesh" id="Mesh_ingot"]
+material = SubResource("Material_forge_iron")
+size = Vector3(0.36, 0.09, 0.13)
+
+[sub_resource type="BoxMesh" id="Mesh_roof_brace"]
+material = SubResource("Material_interior")
+size = Vector3(0.16, 2.6, 0.16)
+
+[sub_resource type="BoxMesh" id="Mesh_awning"]
+material = SubResource("Material_level3_accent")
+size = Vector3(2.4, 0.12, 1.2)
+
+[sub_resource type="BoxMesh" id="Mesh_sign"]
+material = SubResource("Material_level3_accent")
+size = Vector3(0.92, 0.72, 0.1)
+
+[sub_resource type="BoxShape3D" id="Shape_side_wall"]
+size = Vector3(0.42, 3.15, 4.0)
+
+[sub_resource type="BoxShape3D" id="Shape_back_wall"]
+size = Vector3(4.0, 3.15, 0.42)
+
+[sub_resource type="BoxShape3D" id="Shape_front_segment"]
+size = Vector3(1.35, 3.15, 0.42)
+
+[sub_resource type="BoxShape3D" id="Shape_interior"]
+size = Vector3(3.45, 2.8, 3.45)
+
+[sub_resource type="BoxShape3D" id="Shape_click"]
+size = Vector3(4.6, 3.3, 4.6)
+
+[sub_resource type="BoxShape3D" id="Shape_forge"]
+size = Vector3(1.55, 1.35, 0.88)
+
+[sub_resource type="BoxShape3D" id="Shape_anvil"]
+size = Vector3(0.82, 1.0, 0.72)
+
+[sub_resource type="BoxShape3D" id="Shape_table"]
+size = Vector3(1.35, 0.85, 0.7)
+
+[sub_resource type="NavigationMesh" id="NavigationMesh_placeholder"]
+
+[node name="BuildingArtView" type="Node3D" groups=["building_art_view"]]
+script = ExtResource("1_script")
+
+[node name="Exterior" type="Node3D" parent="."]
+
+[node name="FrontDoor" parent="Exterior" instance=ExtResource("2_door")]
+position = Vector3(-1, 0, 2)
+
+[node name="FrontWall" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(1, 0, 2)
+
+[node name="BackWallLeft" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(-1, 0, -2)
+rotation_degrees = Vector3(0, 180, 0)
+
+[node name="BackWallRight" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(1, 0, -2)
+rotation_degrees = Vector3(0, 180, 0)
+
+[node name="LeftWallFront" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(-2, 0, 1)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="LeftWallBack" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(-2, 0, -1)
+rotation_degrees = Vector3(0, 90, 0)
+
+[node name="RightWallFront" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(2, 0, 1)
+rotation_degrees = Vector3(0, -90, 0)
+
+[node name="RightWallBack" parent="Exterior" instance=ExtResource("3_wall")]
+position = Vector3(2, 0, -1)
+rotation_degrees = Vector3(0, -90, 0)
+
+[node name="Roof" type="Node3D" parent="."]
+
+[node name="RoundTileRoof" parent="Roof" instance=ExtResource("4_roof")]
+position = Vector3(0, 3.18, 0)
+scale = Vector3(0.88, 0.42, 0.88)
+
+[node name="Interior" type="Node3D" parent="."]
+
+[node name="Floor" type="Node3D" parent="Interior"]
+
+[node name="FloorNW" parent="Interior/Floor" instance=ExtResource("5_floor")]
+position = Vector3(-1, 0.03, -1)
+
+[node name="FloorNE" parent="Interior/Floor" instance=ExtResource("5_floor")]
+position = Vector3(1, 0.03, -1)
+
+[node name="FloorSW" parent="Interior/Floor" instance=ExtResource("5_floor")]
+position = Vector3(-1, 0.03, 1)
+
+[node name="FloorSE" parent="Interior/Floor" instance=ExtResource("5_floor")]
+position = Vector3(1, 0.03, 1)
+
+[node name="Furniture" type="Node3D" parent="Interior"]
+
+[node name="Anvil" parent="Interior/Furniture" instance=ExtResource("6_anvil")]
+position = Vector3(-0.72, 0.08, -0.34)
+rotation_degrees = Vector3(0, -8, 0)
+
+[node name="ForgeCore" type="Node3D" parent="Interior/Furniture"]
+
+[node name="ForgeBase" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.75, 0.26, -1.48)
+mesh = SubResource("Mesh_forge_base")
+
+[node name="ForgeBack" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.75, 0.92, -1.79)
+mesh = SubResource("Mesh_forge_back")
+
+[node name="ForgePillarLeft" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-1.37, 0.88, -1.5)
+mesh = SubResource("Mesh_forge_pillar")
+
+[node name="ForgePillarRight" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.13, 0.88, -1.5)
+mesh = SubResource("Mesh_forge_pillar")
+
+[node name="ForgeLip" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.75, 0.55, -1.38)
+mesh = SubResource("Mesh_forge_lip")
+
+[node name="CoalBed" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.75, 0.61, -1.45)
+mesh = SubResource("Mesh_coal_bed")
+
+[node name="AmbientFX" type="Node3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-0.75, 0.62, -1.43)
+script = ExtResource("8_ambient_fx")
+
+[node name="FlameCore" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/AmbientFX"]
+position = Vector3(0, 0.24, 0)
+scale = Vector3(0.68, 0.82, 0.68)
+mesh = SubResource("Mesh_flame_core")
+
+[node name="FlameTip" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/AmbientFX"]
+position = Vector3(0.04, 0.47, 0)
+scale = Vector3(0.72, 0.86, 0.72)
+mesh = SubResource("Mesh_flame_tip")
+
+[node name="FireLight" type="OmniLight3D" parent="Interior/Furniture/ForgeCore/AmbientFX"]
+position = Vector3(0, 0.38, 0.14)
+light_color = Color(1, 0.31, 0.055, 1)
+light_energy = 3.4
+omni_range = 4.2
+shadow_enabled = true
+
+[node name="Sparks" type="GPUParticles3D" parent="Interior/Furniture/ForgeCore/AmbientFX"]
+position = Vector3(0, 0.18, 0)
+amount = 18
+lifetime = 1.15
+randomness = 0.8
+visibility_aabb = AABB(-1.4, -0.2, -1.4, 2.8, 3.5, 2.8)
+
+[node name="Smoke" type="GPUParticles3D" parent="Interior/Furniture/ForgeCore/AmbientFX"]
+position = Vector3(0, 0.62, -0.08)
+amount = 12
+lifetime = 3.4
+randomness = 0.65
+visibility_aabb = AABB(-1.3, -0.2, -1.3, 2.6, 4.8, 2.6)
+
+[node name="Bellows" type="Node3D" parent="Interior/Furniture/ForgeCore"]
+position = Vector3(-1.42, 0.48, -0.9)
+rotation_degrees = Vector3(0, -24, 0)
+
+[node name="LowerBoard" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/Bellows"]
+mesh = SubResource("Mesh_bellows_board")
+
+[node name="LeatherBody" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/Bellows"]
+position = Vector3(0, 0.13, 0)
+mesh = SubResource("Mesh_bellows_body")
+
+[node name="UpperBoard" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/Bellows"]
+position = Vector3(0, 0.29, 0)
+rotation_degrees = Vector3(-7, 0, 0)
+mesh = SubResource("Mesh_bellows_board")
+
+[node name="Handle" type="Node3D" parent="Interior/Furniture/ForgeCore/Bellows"]
+position = Vector3(0, 0.34, 0.58)
+rotation_degrees = Vector3(-12, 0, 0)
+
+[node name="HandleMesh" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/Bellows/Handle"]
+position = Vector3(0, 0, 0.38)
+mesh = SubResource("Mesh_bellows_handle")
+
+[node name="Nozzle" type="MeshInstance3D" parent="Interior/Furniture/ForgeCore/Bellows"]
+position = Vector3(0, 0.12, -0.54)
+rotation_degrees = Vector3(90, 0, 0)
+mesh = SubResource("Mesh_bellows_nozzle")
+
+[node name="WorkTable" type="MeshInstance3D" parent="Interior/Furniture"]
+position = Vector3(0.85, 0.78, -0.9)
+mesh = SubResource("Mesh_table")
+
+[node name="TableLegA" type="MeshInstance3D" parent="Interior/Furniture"]
+position = Vector3(0.35, 0.38, -1.1)
+mesh = SubResource("Mesh_leg")
+
+[node name="TableLegB" type="MeshInstance3D" parent="Interior/Furniture"]
+position = Vector3(1.35, 0.38, -1.1)
+mesh = SubResource("Mesh_leg")
+
+[node name="TableLegC" type="MeshInstance3D" parent="Interior/Furniture"]
+position = Vector3(0.35, 0.38, -0.7)
+mesh = SubResource("Mesh_leg")
+
+[node name="TableLegD" type="MeshInstance3D" parent="Interior/Furniture"]
+position = Vector3(1.35, 0.38, -0.7)
+mesh = SubResource("Mesh_leg")
+
+[node name="PegRack" parent="Interior/Furniture" instance=ExtResource("12_peg_rack")]
+position = Vector3(0.9, 1.72, -1.83)
+rotation_degrees = Vector3(0, 180, 0)
+scale = Vector3(1.22, 1.22, 1.22)
+
+[node name="MaterialPile" type="Node3D" parent="Interior/Furniture"]
+
+[node name="Barrel" parent="Interior/Furniture/MaterialPile" instance=ExtResource("9_barrel")]
+position = Vector3(1.5, 0.02, 1.22)
+scale = Vector3(0.82, 0.82, 0.82)
+
+[node name="Crate" parent="Interior/Furniture/MaterialPile" instance=ExtResource("11_crate")]
+position = Vector3(1.22, 0.02, -0.05)
+scale = Vector3(0.62, 0.62, 0.62)
+
+[node name="WaterBucket" parent="Interior/Furniture/MaterialPile" instance=ExtResource("10_bucket")]
+position = Vector3(-1.56, 0.02, 0.88)
+scale = Vector3(1.12, 1.12, 1.12)
+
+[node name="IngotA" type="MeshInstance3D" parent="Interior/Furniture/MaterialPile"]
+position = Vector3(0.62, 0.93, -0.88)
+rotation_degrees = Vector3(0, 12, 0)
+mesh = SubResource("Mesh_ingot")
+
+[node name="IngotB" type="MeshInstance3D" parent="Interior/Furniture/MaterialPile"]
+position = Vector3(0.95, 0.94, -0.9)
+rotation_degrees = Vector3(0, -8, 0)
+mesh = SubResource("Mesh_ingot")
+
+[node name="IngotC" type="MeshInstance3D" parent="Interior/Furniture/MaterialPile"]
+position = Vector3(1.27, 0.93, -0.84)
+rotation_degrees = Vector3(0, 18, 0)
+mesh = SubResource("Mesh_ingot")
+
+[node name="WorkstationMarkers" type="Node3D" parent="Interior"]
+
+[node name="forge_01" type="Marker3D" parent="Interior/WorkstationMarkers"]
+position = Vector3(-0.72, 0, 0.28)
+metadata/required_level = 1
+
+[node name="forge_02" type="Marker3D" parent="Interior/WorkstationMarkers"]
+position = Vector3(0.68, 0, 0.2)
+metadata/required_level = 1
+
+[node name="forge_03" type="Marker3D" parent="Interior/WorkstationMarkers"]
+position = Vector3(1.08, 0, 1.12)
+metadata/required_level = 3
+
+[node name="InteriorStandingMarker" type="Marker3D" parent="Interior"]
+position = Vector3(0, 0, 0.75)
+
+[node name="UpgradeVisuals" type="Node3D" parent="."]
+
+[node name="Level2" type="Node3D" parent="UpgradeVisuals"]
+visible = false
+
+[node name="StoneChimney" parent="UpgradeVisuals/Level2" instance=ExtResource("15_chimney")]
+position = Vector3(-0.75, 1.55, -1.48)
+scale = Vector3(0.96, 1.18, 0.96)
+
+[node name="WeaponStand" parent="UpgradeVisuals/Level2" instance=ExtResource("13_weapon_stand")]
+position = Vector3(1.02, 0.03, -1.34)
+rotation_degrees = Vector3(0, 165, 0)
+scale = Vector3(0.82, 0.82, 0.82)
+
+[node name="RoofBraceLeft" type="MeshInstance3D" parent="UpgradeVisuals/Level2"]
+position = Vector3(-1.72, 1.38, -1.68)
+rotation_degrees = Vector3(0, 0, -7)
+mesh = SubResource("Mesh_roof_brace")
+
+[node name="RoofBraceRight" type="MeshInstance3D" parent="UpgradeVisuals/Level2"]
+position = Vector3(1.72, 1.38, -1.68)
+rotation_degrees = Vector3(0, 0, 7)
+mesh = SubResource("Mesh_roof_brace")
+
+[node name="Level3" type="Node3D" parent="UpgradeVisuals"]
+visible = false
+
+[node name="SecondAnvil" parent="UpgradeVisuals/Level3" instance=ExtResource("14_anvil_log")]
+position = Vector3(1.12, 0.03, 0.55)
+rotation_degrees = Vector3(0, -72, 0)
+scale = Vector3(0.82, 0.82, 0.82)
+
+[node name="FrontAwning" type="MeshInstance3D" parent="UpgradeVisuals/Level3"]
+position = Vector3(0.92, 3.08, 2.35)
+rotation_degrees = Vector3(-8, 0, 0)
+mesh = SubResource("Mesh_awning")
+
+[node name="AwningPostLeft" type="MeshInstance3D" parent="UpgradeVisuals/Level3"]
+position = Vector3(-0.15, 1.48, 2.73)
+scale = Vector3(1, 1.12, 1)
+mesh = SubResource("Mesh_roof_brace")
+
+[node name="AwningPostRight" type="MeshInstance3D" parent="UpgradeVisuals/Level3"]
+position = Vector3(1.96, 1.48, 2.73)
+scale = Vector3(1, 1.12, 1)
+mesh = SubResource("Mesh_roof_brace")
+
+[node name="ForgeSign" type="MeshInstance3D" parent="UpgradeVisuals/Level3"]
+position = Vector3(0.62, 3.36, 2.04)
+rotation_degrees = Vector3(0, 0, -5)
+mesh = SubResource("Mesh_sign")
+
+[node name="EntryMarker" type="Marker3D" parent="."]
+position = Vector3(-1, 0, 2.75)
+
+[node name="ExitMarker" type="Marker3D" parent="."]
+position = Vector3(-1, 0, 3.6)
+
+[node name="DoorInsideMarker" type="Marker3D" parent="."]
+position = Vector3(-1, 0, 1.35)
+
+[node name="InteriorTrigger" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 1
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="InteriorTrigger"]
+position = Vector3(0, 1.4, 0)
+shape = SubResource("Shape_interior")
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+navigation_mesh = SubResource("NavigationMesh_placeholder")
+
+[node name="StaticCollision" type="Node3D" parent="."]
+
+[node name="LeftWall" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/LeftWall"]
+position = Vector3(-2, 1.575, 0)
+shape = SubResource("Shape_side_wall")
+
+[node name="RightWall" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/RightWall"]
+position = Vector3(2, 1.575, 0)
+shape = SubResource("Shape_side_wall")
+
+[node name="BackWall" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/BackWall"]
+position = Vector3(0, 1.575, -2)
+shape = SubResource("Shape_back_wall")
+
+[node name="FrontLeft" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/FrontLeft"]
+position = Vector3(-1.325, 1.575, 2)
+shape = SubResource("Shape_front_segment")
+
+[node name="FrontRight" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/FrontRight"]
+position = Vector3(1.325, 1.575, 2)
+shape = SubResource("Shape_front_segment")
+
+[node name="Forge" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/Forge"]
+position = Vector3(-0.75, 0.68, -1.48)
+shape = SubResource("Shape_forge")
+
+[node name="Anvil" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/Anvil"]
+position = Vector3(-0.72, 0.5, -0.34)
+shape = SubResource("Shape_anvil")
+
+[node name="WorkTable" type="StaticBody3D" parent="StaticCollision"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticCollision/WorkTable"]
+position = Vector3(0.85, 0.45, -0.9)
+shape = SubResource("Shape_table")
+
+[node name="ClickArea" type="Area3D" parent="."]
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ClickArea"]
+position = Vector3(0, 1.65, 0)
+shape = SubResource("Shape_click")
+
+[node name="DamageFXMounts" type="Node3D" parent="."]
+
+[node name="wall_hit_front" type="Marker3D" parent="DamageFXMounts"]
+position = Vector3(0, 1.5, 2.15)
+
+[node name="roof_hit" type="Marker3D" parent="DamageFXMounts"]
+position = Vector3(0, 5.8, 0)

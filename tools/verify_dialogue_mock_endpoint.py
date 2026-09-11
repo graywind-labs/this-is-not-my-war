@@ -146,6 +146,93 @@ def main() -> None:
     parsed_reject = PlayerNPCDialogueResponse(**_contract_body(reject_response.get_json()))
     assert parsed_reject.recruitment_result == "reject"
 
+    unrelated_recruitment_response = client.post(
+        "/npc/dialogue",
+        json=_base_payload("今晚食堂准备吃什么？", recruitment=True),
+    )
+    assert unrelated_recruitment_response.status_code == 200
+    assert unrelated_recruitment_response.get_json()["recruitment_result"] == "none"
+
+    combat_payload = copy.deepcopy(_base_payload("我们一起稳住阵线，坚持守住城门。"))
+    combat_payload["interaction_context"] = "combat"
+    combat_payload["npc_state"].update({
+        "recruited": True,
+        "behavior_mode": "combat",
+        "equipment": {"main_weapon": {"weapon_id": "sword_shield"}},
+    })
+    toggle_off_response = client.post("/npc/dialogue", json=combat_payload)
+    assert toggle_off_response.status_code == 200, toggle_off_response.get_json()
+    assert toggle_off_response.get_json()["wartime_reaction"] == "none"
+    assert "combat_strategy_decision" not in toggle_off_response.get_json()
+    assert "work_encouragement_reaction" not in toggle_off_response.get_json()
+
+    combat_payload["is_morale_encouragement_request"] = True
+    inspired_response = client.post("/npc/dialogue", json=combat_payload)
+    assert inspired_response.status_code == 200, inspired_response.get_json()
+    assert inspired_response.get_json()["wartime_reaction"] == "morale_boost"
+
+    unrelated_payload = copy.deepcopy(combat_payload)
+    unrelated_payload["speaker_text"] = "今晚食堂准备吃什么？"
+    unrelated_response = client.post("/npc/dialogue", json=unrelated_payload)
+    assert unrelated_response.status_code == 200, unrelated_response.get_json()
+    assert unrelated_response.get_json()["wartime_reaction"] == "none"
+
+    strategy_payload = copy.deepcopy(combat_payload)
+    strategy_payload["is_morale_encouragement_request"] = False
+    strategy_payload["is_combat_strategy_request"] = True
+    strategy_payload["combat_strategy_context"] = {
+        "current_strategy": {"id": "attack", "label": "主动进攻", "is_default": True},
+        "available_strategies": [
+            {"id": "attack", "label": "主动进攻", "is_default": True},
+            {"id": "avoid", "label": "避战", "is_default": False},
+        ],
+    }
+    strategy_payload["speaker_text"] = "不要主动接敌，调整为避战并保存实力。"
+    strategy_change_response = client.post("/npc/dialogue", json=strategy_payload)
+    assert strategy_change_response.status_code == 200, strategy_change_response.get_json()
+    assert strategy_change_response.get_json()["combat_strategy_decision"] == {
+        "decision": "change",
+        "strategy_id": "avoid",
+    }
+
+    strategy_unrelated_payload = copy.deepcopy(strategy_payload)
+    strategy_unrelated_payload["speaker_text"] = "今晚食堂准备吃什么？"
+    strategy_unrelated_response = client.post("/npc/dialogue", json=strategy_unrelated_payload)
+    assert strategy_unrelated_response.status_code == 200, strategy_unrelated_response.get_json()
+    assert strategy_unrelated_response.get_json()["combat_strategy_decision"] == {
+        "decision": "keep",
+        "strategy_id": "attack",
+    }
+
+    unavailable_strategy_payload = copy.deepcopy(strategy_payload)
+    unavailable_strategy_payload["speaker_text"] = "改成保持距离射击。"
+    unavailable_strategy_response = client.post("/npc/dialogue", json=unavailable_strategy_payload)
+    assert unavailable_strategy_response.status_code == 200, unavailable_strategy_response.get_json()
+    assert unavailable_strategy_response.get_json()["combat_strategy_decision"] == {
+        "decision": "keep",
+        "strategy_id": "attack",
+    }
+
+    work_payload = copy.deepcopy(_base_payload("辛苦了，你的工作很重要，我相信你能把今天剩下的活做好。"))
+    work_payload["interaction_context"] = "work"
+    work_payload["is_work_encouragement_request"] = True
+    work_payload["npc_state"]["behavior_mode"] = "work"
+    work_boost_response = client.post("/npc/dialogue", json=work_payload)
+    assert work_boost_response.status_code == 200, work_boost_response.get_json()
+    assert work_boost_response.get_json()["work_encouragement_reaction"] == "work_boost"
+
+    unrelated_work_payload = copy.deepcopy(work_payload)
+    unrelated_work_payload["speaker_text"] = "今晚食堂准备吃什么？"
+    unrelated_work_response = client.post("/npc/dialogue", json=unrelated_work_payload)
+    assert unrelated_work_response.status_code == 200, unrelated_work_response.get_json()
+    assert unrelated_work_response.get_json()["work_encouragement_reaction"] == "none"
+
+    escaping_work_payload = copy.deepcopy(work_payload)
+    escaping_work_payload["speaker_text"] = "你这个废物，做不完就滚，不许休息。"
+    escaping_work_response = client.post("/npc/dialogue", json=escaping_work_payload)
+    assert escaping_work_response.status_code == 200, escaping_work_response.get_json()
+    assert escaping_work_response.get_json()["work_encouragement_reaction"] == "escape"
+
     npc_payload = _base_payload("你听见外面那阵声音了吗？", recruitment=False)
     npc_payload["dialogue_kind"] = "npc_npc"
     npc_payload["speaker_name"] = "托马"

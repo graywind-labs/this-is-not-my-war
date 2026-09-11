@@ -1,0 +1,10 @@
+{
+  "schema_version": "building_ground_contact_v1",
+  "enabled": true,
+  "bounds": [-70.0, -65.0, 70.0, 70.0],
+  "resolution": 1024,
+  "building_fade_width": 2.5,
+  "wall_fade_width": 1.9,
+  "contact_width": 0.36,
+  "base_mesh_names": ["StoneFoundation", "SunkenStoneFoundation", "FortifiedPlinth", "StoneLoadingPlinth", "DeepGardenGround", "CompactedStableEarth", "CompactedTrainingEarth", "FoundationCore"]
+}

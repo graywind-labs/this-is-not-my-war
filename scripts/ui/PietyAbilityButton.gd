@@ -6,12 +6,13 @@ const EMPTY_RING_COLOR := Color(0.25, 0.25, 0.28, 0.9)
 const CHARGING_COLOR := Color(0.78, 0.68, 0.28, 1.0)
 const READY_COLOR := Color(1.0, 0.86, 0.34, 1.0)
 const BACKGROUND_COLOR := Color(0.08, 0.07, 0.09, 0.94)
+const CROSS_OUTLINE_COLOR := Color(0.11, 0.08, 0.03, 0.92)
+const ICON_KIND := "latin_cross"
 
 var _current_piety := 0.0
 var _max_piety := 100.0
 var _ready_to_cast := false
 var _targeting := false
-var _glyph_label: Label
 
 
 func _ready() -> void:
@@ -19,7 +20,6 @@ func _ready() -> void:
 	size = custom_minimum_size
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
-	_build_glyph()
 	_refresh_tooltip()
 	queue_redraw()
 
@@ -63,6 +63,7 @@ func _draw() -> void:
 		)
 	if _targeting:
 		draw_arc(center, radius + 1.0, 0.0, TAU, 48, Color(1.0, 0.34, 0.18, 1.0), 2.0, true)
+	_draw_cross_icon(center, READY_COLOR if _ready_to_cast else Color(0.9, 0.86, 0.72, 1.0))
 
 
 func set_piety(current_piety: float, max_piety: float) -> void:
@@ -71,8 +72,6 @@ func set_piety(current_piety: float, max_piety: float) -> void:
 	_ready_to_cast = _current_piety >= _max_piety - 0.001
 	if not _ready_to_cast:
 		_targeting = false
-	if _glyph_label != null:
-		_glyph_label.modulate = READY_COLOR if _ready_to_cast else Color(0.9, 0.86, 0.72, 1.0)
 	_refresh_tooltip()
 	queue_redraw()
 
@@ -87,16 +86,21 @@ func is_ready_to_cast() -> bool:
 	return _ready_to_cast
 
 
-func _build_glyph() -> void:
-	_glyph_label = Label.new()
-	_glyph_label.name = "PietyGlyph"
-	_glyph_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_glyph_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_glyph_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_glyph_label.add_theme_font_size_override("font_size", 17)
-	_glyph_label.text = "祷"
-	_glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_glyph_label)
+func get_icon_kind() -> String:
+	return ICON_KIND
+
+
+func _draw_cross_icon(center: Vector2, color: Color) -> void:
+	# Draw the symbol geometrically so the religious cross never depends on a font glyph.
+	var vertical_start := center + Vector2(0.0, -10.0)
+	var vertical_end := center + Vector2(0.0, 10.0)
+	var horizontal_y := center.y - 3.0
+	var horizontal_start := Vector2(center.x - 7.0, horizontal_y)
+	var horizontal_end := Vector2(center.x + 7.0, horizontal_y)
+	draw_line(vertical_start, vertical_end, CROSS_OUTLINE_COLOR, 6.0, true)
+	draw_line(horizontal_start, horizontal_end, CROSS_OUTLINE_COLOR, 6.0, true)
+	draw_line(vertical_start, vertical_end, color, 3.5, true)
+	draw_line(horizontal_start, horizontal_end, color, 3.5, true)
 
 
 func _refresh_tooltip() -> void:
@@ -106,4 +110,4 @@ func _refresh_tooltip() -> void:
 	elif _ready_to_cast:
 		tooltip_text = "虔诚 %s\n已充满，点击选择陨石落点。" % value_text
 	else:
-		tooltip_text = "虔诚 %s\nNPC 在小教堂祈祷或主持弥撒时共同积累。" % value_text
+		tooltip_text = "虔诚 %s" % value_text

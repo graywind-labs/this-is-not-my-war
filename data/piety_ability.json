@@ -1,32 +1,38 @@
 {
   "max_piety": 100.0,
-  "piety_per_prayer_hour": 3.0,
+  "piety_per_prayer_hour": 2.5,
   "contributing_action_ids": [
     "pray_at_chapel",
     "lead_mass"
   ],
   "action_multipliers": {
     "pray_at_chapel": 1.0,
-    "lead_mass": 1.0
+    "lead_mass": 2.0
   },
   "prayer_mode_multipliers": {
     "personal_prayer": 1.0,
-    "mass_attendance": 1.0
+    "mass_attendance": 2.0
   },
-  "combat_action_game_seconds_per_second": 60.0,
+  "combat_action_game_seconds_per_second": 1.0,
   "target_ground_y": 0.0,
-  "target_bounds": {
-    "min_x": -28.5,
-    "max_x": 28.5,
-    "min_z": -33.5,
-    "max_z": 33.5
-  },
   "meteor": {
     "radius": 5.5,
-    "fall_duration_seconds": 1.15,
-    "start_height": 20.0,
+    "fall_duration_seconds": 2.8,
+    "start_height": 30.0,
+    "start_horizontal_offset": 15.0,
+    "body_radius": 4.2,
+    "friendly_displacement_margin": 0.12,
+    "crater_radius": 4.8,
+    "crater_lifetime_game_seconds": 86400.0,
+    "descent_camera_shake_amplitude": 0.1,
+    "descent_camera_shake_frequency": 9.0,
+    "impact_camera_shake_duration_seconds": 2.0,
+    "impact_camera_shake_amplitude": 0.82,
+    "impact_camera_shake_frequency": 23.0,
+    "impact_vfx_duration_seconds": 2.0,
     "impact_damage": 48.0,
     "impact_penetration": 5.0,
+    "impact_max_targets": 12,
     "burn_duration_seconds": 10.0,
     "burn_tick_interval_seconds": 1.0,
     "burn_damage": 1.0,

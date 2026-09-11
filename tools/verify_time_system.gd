@@ -72,6 +72,10 @@ func _init() -> void:
 	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 59, 0)
 	time_system.set_time_scale(4.0)
+	if not is_equal_approx(float(time_system.get_combat_frame_delta_seconds(1.0)), 1.0):
+		push_error("Combat presentation time must stay capped at authored x1 outside combat")
+		quit(1)
+		return
 	if not await _wait_until_hour(game_state, 8, 30):
 		push_error("Time did not advance after speed change")
 		quit(1)
@@ -144,6 +148,10 @@ func _init() -> void:
 		push_error("Normal-speed wave countdown should freeze seconds and avoid premature zero")
 		quit(1)
 		return
+	if str(hud._format_next_wave_arrival(90061.2)) != "下一波敌军还有 1天01时来袭":
+		push_error("HUD next-wave sentence should be concise and omit the wave number")
+		quit(1)
+		return
 	if speed_button == null or pause_button == null:
 		push_error("HUD time buttons not found")
 		quit(1)
@@ -192,12 +200,29 @@ func _init() -> void:
 		push_error("LLM slowdown did not clamp effective time scale")
 		quit(1)
 		return
+	if not speed_button.disabled or speed_button.text != "速度 x1/60" or speed_button.tooltip_text != "暂时降速：等待人物回应":
+		push_error("HUD speed button should lock to the effective LLM rate with a concise reason: disabled=%s text=%s tooltip=%s" % [speed_button.disabled, speed_button.text, speed_button.tooltip_text])
+		quit(1)
+		return
+	speed_button.pressed.emit()
+	var locked_shortcut := InputEventKey.new()
+	locked_shortcut.physical_keycode = KEY_1
+	locked_shortcut.pressed = true
+	hud._input(locked_shortcut)
+	if not is_equal_approx(float(time_system.time_scale), 4.0):
+		push_error("Locked HUD speed controls changed the stored player speed")
+		quit(1)
+		return
 	if absf(float(time_system.get_numeric_delta_multiplier()) - (1.0 / 60.0)) > 0.001:
 		push_error("Numeric multiplier did not follow effective time scale")
 		quit(1)
 		return
 	if absf(float(time_system.get_game_delta_seconds(1.0)) - 1.0) > 0.001:
 		push_error("LLM slowdown should make one real second equal one game second")
+		quit(1)
+		return
+	if absf(float(time_system.get_combat_frame_delta_seconds(1.0)) - 1.0) > 0.001:
+		push_error("Combat presentation time must not reapply the slowdown multiplier")
 		quit(1)
 		return
 	var precise_clock_text := "%02d:%02d:%02d" % [
@@ -220,10 +245,18 @@ func _init() -> void:
 		push_error("LLM slowdown wave countdown should reveal precise seconds")
 		quit(1)
 		return
+	if str(hud._format_next_wave_arrival(0.0)) != "下一波敌军即将来袭":
+		push_error("HUD zero countdown should use the concise imminent-arrival sentence")
+		quit(1)
+		return
 
 	time_system.release_time_slowdown("verify_llm_wait")
 	if time_system.has_time_slowdown() or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
 		push_error("LLM slowdown release did not restore player speed")
+		quit(1)
+		return
+	if speed_button.disabled or speed_button.text != "速度 x4" or not speed_button.tooltip_text.contains("x1 / x2 / x4"):
+		push_error("HUD speed button did not restore the player's chosen speed after slowdown")
 		quit(1)
 		return
 	var stable_clock_text := "%02d:%02d:00" % [
@@ -246,15 +279,27 @@ func _init() -> void:
 		push_error("Time scale cap did not clamp player x4 to x1")
 		quit(1)
 		return
+	if not speed_button.disabled or speed_button.text != "速度 x1" or speed_button.tooltip_text != "暂时降速：系统限速":
+		push_error("HUD speed button did not expose the active time cap")
+		quit(1)
+		return
 	time_system.request_time_slowdown("verify_cap_llm_wait", -1.0, "llm_wait")
 	if absf(float(time_system.get_effective_time_scale()) - (1.0 / 60.0)) > 0.001:
 		push_error("LLM slowdown should be slower than a time scale cap")
+		quit(1)
+		return
+	if speed_button.text != "速度 x1/60" or speed_button.tooltip_text != "暂时降速：等待人物回应":
+		push_error("HUD speed button did not prioritize the strictest active slowdown")
 		quit(1)
 		return
 	time_system.release_time_slowdown("verify_cap_llm_wait")
 	time_system.release_time_scale_cap("verify_cap")
 	if time_system.has_time_scale_cap("verify_cap") or absf(float(time_system.get_effective_time_scale()) - 4.0) > 0.001:
 		push_error("Time scale cap release did not restore player speed")
+		quit(1)
+		return
+	if speed_button.disabled or speed_button.text != "速度 x4":
+		push_error("HUD speed button stayed locked after all constraints were released")
 		quit(1)
 		return
 	if scale_events.is_empty():
@@ -267,6 +312,10 @@ func _init() -> void:
 	pause_button.pressed.emit()
 	if not time_system.is_paused:
 		push_error("HUD pause button did not pause")
+		quit(1)
+		return
+	if not is_zero_approx(float(time_system.get_combat_frame_delta_seconds(1.0))):
+		push_error("Combat presentation time advanced while paused")
 		quit(1)
 		return
 	pause_button.pressed.emit()

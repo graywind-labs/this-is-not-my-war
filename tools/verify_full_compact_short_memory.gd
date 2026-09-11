@@ -3,11 +3,18 @@ extends SceneTree
 
 const TARGET_NPC_ID := "blacksmith_01"
 const OTHER_NPC_ID := "cook_01"
+const TARGET_NPC_NAME := "格伦"
+const ENEMY_ID := "raider_sword"
+const ENEMY_NAME := "劫掠剑盾手"
+const WEAPON_ID := "sword_shield"
+const WEAPON_NAME := "剑盾"
 const CAUSAL_MARKER := "缺铁后改去菜园的旧因果仍应可见"
 const WITNESS_MARKER := "早先听见仓库铁料告急"
 
 
 func _init() -> void:
+	if not _verify_canonical_fixture_names():
+		return
 	var main_scene := load("res://scenes/main/Main.tscn") as PackedScene
 	if main_scene == null:
 		_fail("Failed to load Main.tscn")
@@ -115,21 +122,75 @@ func _init() -> void:
 			_fail("Failed to append witnessed filler event %d" % index)
 			return
 
+	for index in range(3):
+		memory_system.add_event({
+			"type": "attack_made",
+			"subject_npc_id": TARGET_NPC_ID,
+			"actor_ids": [TARGET_NPC_ID],
+			"target_ids": [TARGET_NPC_ID, ENEMY_ID],
+			"location_id": "plaza",
+			"visibility": "private",
+			"importance": 75 if index == 2 else 55,
+			"summary": "%s攻击%s，造成%d点伤害。" % [TARGET_NPC_NAME, ENEMY_NAME, 5 + index],
+			"payload": {
+				"attacker_npc_id": TARGET_NPC_ID,
+				"attacker_name": TARGET_NPC_NAME,
+				"target_type": "enemy",
+				"target_enemy_id": ENEMY_ID,
+				"target_enemy_name": ENEMY_NAME,
+				"weapon_id": WEAPON_ID,
+				"weapon_name": WEAPON_NAME,
+				"required_skill": WEAPON_NAME,
+				"weapon_skill": 4,
+				"strength": 4,
+				"base_damage": 5.0,
+				"strength_multiplier": 1.0,
+				"raw_attack_power": 7.0,
+				"attack_speed_multiplier": 1.0,
+				"attack_interval": 1.0,
+				"target_defense": 2.0,
+				"damage": 5 + index,
+				"hp_before": 20 - index * 5,
+				"hp_after": 15 - index * 5,
+				"defeated": index == 2
+			}
+		})
+
 	var raw_memory: Dictionary = memory_system.get_npc_short_term_memory(TARGET_NPC_ID)
-	var expected_experienced := int(raw_memory.get("event_count", 0))
+	var raw_experienced := int(raw_memory.get("event_count", 0))
 	var expected_witnessed := int(raw_memory.get("witness_count", 0))
-	if expected_experienced <= 8 or expected_witnessed <= 8:
+	var expected_experienced := raw_experienced - 2
+	if raw_experienced <= 8 or expected_witnessed <= 8:
 		_fail("Fixture did not exceed the removed 8-event boundary")
 		return
 
 	var current_plan := _build_idle_plan()
 	var current_hour := clampi(int(game_state.current_hour), 0, 23)
+	var intent_plan := current_plan.duplicate(true)
+	intent_plan[current_hour] = {
+		"hour": current_hour,
+		"action_kind": "dialogue",
+		"action_id": "talk_to_npc",
+		"location_id": "plaza",
+		"target_id": OTHER_NPC_ID,
+		"priority": 60,
+		"reason": "测试对话意图复核",
+		"dialogue_goal": "询问粮食储备",
+		"intent_created_day": 1,
+		"intent_created_time": "08:00:00",
+		"intent_source": "verification"
+	}
 	var payloads := {
 		"dialogue": llm_bridge.build_npc_dialogue_payload(
 			TARGET_NPC_ID,
 			"你为什么没继续去铁匠铺？"
 		),
 		"plan_day": llm_bridge.build_npc_daily_plan_payload(TARGET_NPC_ID),
+		"dialogue_intent_revalidation": llm_bridge.build_dialogue_intent_revalidation_payload(
+			TARGET_NPC_ID,
+			intent_plan[current_hour],
+			{"current_plan": intent_plan}
+		),
 		"plan_revision_judgement": llm_bridge.build_dialogue_plan_revision_judgement_payload(
 			TARGET_NPC_ID,
 			{
@@ -196,7 +257,11 @@ func _init() -> void:
 	var reflection_payload: Dictionary = payloads.get("daily_reflection", {})
 	var day_events: Array = reflection_payload.get("day_events", [])
 	if day_events.size() != expected_experienced + expected_witnessed:
-		_fail("daily_reflection day_events did not preserve the complete snapshot")
+		_fail("daily_reflection day_events expected %d but got %d: %s" % [
+			expected_experienced + expected_witnessed,
+			day_events.size(),
+			JSON.stringify(day_events)
+		])
 		return
 	if not _events_contain_summary(day_events, CAUSAL_MARKER):
 		_fail("daily_reflection omitted the old causal plan_revised event")
@@ -217,8 +282,9 @@ func _init() -> void:
 
 	print(
 		"T0106 full compact short-memory verification passed. "
-		+ "experienced=%d witnessed=%d raw_chars=%d compact_chars=%d"
+		+ "raw_experienced=%d projected_experienced=%d witnessed=%d raw_chars=%d compact_chars=%d"
 		% [
+			raw_experienced,
 			expected_experienced,
 			expected_witnessed,
 			raw_memory_chars,
@@ -226,6 +292,39 @@ func _init() -> void:
 		]
 	)
 	quit(0)
+
+
+func _verify_canonical_fixture_names() -> bool:
+	var npc_profiles: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/npc_profiles.json"))
+	var weapon_defs: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/weapon_defs.json"))
+	var enemy_waves: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/enemy_waves.json"))
+	if not npc_profiles is Array or not weapon_defs is Array or not enemy_waves is Array:
+		_fail("Canonical fixture definition files are invalid")
+		return false
+	if _find_defined_name(npc_profiles, "id", TARGET_NPC_ID) != TARGET_NPC_NAME:
+		_fail("Fixture NPC name does not match npc_profiles.json")
+		return false
+	if _find_defined_name(weapon_defs, "id", WEAPON_ID) != WEAPON_NAME:
+		_fail("Fixture weapon name does not match weapon_defs.json")
+		return false
+	var enemy_entries: Array = []
+	for raw_wave in enemy_waves as Array:
+		if raw_wave is Dictionary:
+			enemy_entries.append_array((raw_wave as Dictionary).get("enemies", []))
+	if _find_defined_name(enemy_entries, "enemy_type_id", ENEMY_ID) != ENEMY_NAME:
+		_fail("Fixture enemy name does not match enemy_waves.json")
+		return false
+	return true
+
+
+func _find_defined_name(entries: Array, id_field: String, target_id: String) -> String:
+	for raw_entry in entries:
+		if not raw_entry is Dictionary:
+			continue
+		var entry: Dictionary = raw_entry
+		if str(entry.get(id_field, "")) == target_id:
+			return str(entry.get("name", ""))
+	return ""
 
 
 func _verify_short_memory(
@@ -247,6 +346,15 @@ func _verify_short_memory(
 		return false
 	if not _events_contain_summary(witnessed, WITNESS_MARKER):
 		_fail("%s omitted the old witnessed resource event" % call_type)
+		return false
+	var attack_aggregate := _find_aggregate_by_type(experienced, "attack_made")
+	if attack_aggregate.is_empty():
+		_fail("%s did not receive the shared attack_made aggregation" % call_type)
+		return false
+	var attack_details: Dictionary = attack_aggregate.get("details", {})
+	var aggregation: Dictionary = attack_details.get("aggregation", {})
+	if int(aggregation.get("event_count", 0)) != 3 or int(aggregation.get("total_damage", 0)) != 18:
+		_fail("%s attack_made aggregation lost count or total damage" % call_type)
 		return false
 	for raw_event in experienced + witnessed:
 		if not raw_event is Dictionary:
@@ -294,6 +402,19 @@ func _find_event_by_summary(events: Array, marker: String) -> Dictionary:
 	for raw_event in events:
 		if raw_event is Dictionary and str((raw_event as Dictionary).get("summary", "")).contains(marker):
 			return raw_event as Dictionary
+	return {}
+
+
+func _find_aggregate_by_type(events: Array, event_type: String) -> Dictionary:
+	for raw_event in events:
+		if not raw_event is Dictionary:
+			continue
+		var event: Dictionary = raw_event
+		if str(event.get("type", "")) != event_type:
+			continue
+		var details: Dictionary = event.get("details", {})
+		if details.get("aggregation", {}) is Dictionary and not (details.get("aggregation", {}) as Dictionary).is_empty():
+			return event
 	return {}
 
 

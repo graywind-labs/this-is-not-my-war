@@ -14,6 +14,10 @@
   "idle_profile": "idle",
   "movement_profile": "movement",
   "unconscious_profile": "unconscious_rest",
+  "combat_sprint": {
+    "satiety_per_game_second": -0.1,
+    "description": "仅在存活敌军在场且未骑乘 NPC 实际跑动时追加；10 游戏秒消耗 1 点饱食。"
+  },
   "dialogue_action_ids": [
     "talk_to_npc",
     "seek_guard_officer",

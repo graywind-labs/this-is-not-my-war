@@ -1,0 +1,31 @@
+{
+  "schema_version": "dialogue_voice_audio_v1",
+  "playback_mode": "global_2d",
+  "recent_history_limit": 64,
+  "replace_active_voice_per_npc": true,
+  "default_gender": "male",
+  "voices": {
+    "male": {
+      "none": ["voice_emotion_none_male_01", "voice_emotion_none_male_02"],
+      "happy": ["voice_emotion_happy_male"],
+      "relieved": ["voice_emotion_relieved_male"],
+      "angry": ["voice_emotion_angry_male"],
+      "sad": ["voice_emotion_sad_male"],
+      "afraid": ["voice_emotion_afraid_male"],
+      "surprised": ["voice_emotion_surprised_male"],
+      "confused": ["voice_emotion_confused_male"],
+      "determined": ["voice_emotion_determined_male"]
+    },
+    "female": {
+      "none": ["voice_emotion_none_female"],
+      "happy": ["voice_emotion_happy_female"],
+      "relieved": ["voice_emotion_relieved_female"],
+      "angry": ["voice_emotion_angry_female"],
+      "sad": ["voice_emotion_sad_female"],
+      "afraid": ["voice_emotion_afraid_female"],
+      "surprised": ["voice_emotion_surprised_female"],
+      "confused": ["voice_emotion_confused_female"],
+      "determined": ["voice_emotion_determined_female"]
+    }
+  }
+}

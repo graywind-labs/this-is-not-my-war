@@ -1,10 +1,18 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/npc/NPC.gd" id="1_npc_script"]
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_click"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.35
 height = 1.6
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_interaction"]
+radius = 0.41
+height = 1.6
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_unconscious_interaction"]
+radius = 0.48
+height = 2.15
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_body"]
 radius = 0.28
@@ -17,22 +25,54 @@ albedo_color = Color(0.35, 0.45, 0.58, 1)
 radius = 0.22
 height = 0.44
 
-[node name="NPC" type="Area3D"]
+[node name="NPC" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 3
 script = ExtResource("1_npc_script")
 
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+[node name="BodyCollision" type="CollisionShape3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-shape = SubResource("CapsuleShape3D_click")
+shape = SubResource("CapsuleShape3D_body")
 
-[node name="Body" type="MeshInstance3D" parent="."]
+[node name="InteractionArea" type="Area3D" parent="."]
+collision_layer = 4
+collision_mask = 0
+monitoring = false
+input_ray_pickable = true
+
+[node name="InteractionCollision" type="CollisionShape3D" parent="InteractionArea"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
+shape = SubResource("CapsuleShape3D_interaction")
+
+[node name="UnconsciousInteractionCollision" type="CollisionShape3D" parent="InteractionArea"]
+transform = Transform3D(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 0.44, -0.12)
+shape = SubResource("CapsuleShape3D_unconscious_interaction")
+disabled = true
+
+[node name="NavigationAgent3D" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.35
+target_desired_distance = 0.25
+avoidance_enabled = true
+radius = 0.35
+height = 1.6
+neighbor_distance = 3.5
+max_neighbors = 10
+time_horizon_agents = 0.9
+time_horizon_obstacles = 1.0
+
+[node name="LegacyVisuals" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="LegacyVisuals"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.58, 0)
 mesh = SubResource("CapsuleMesh_body")
 surface_material_override/0 = SubResource("StandardMaterial3D_body")
 
-[node name="Head" type="MeshInstance3D" parent="."]
+[node name="Head" type="MeshInstance3D" parent="LegacyVisuals"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.35, 0)
 mesh = SubResource("SphereMesh_head")
 surface_material_override/0 = SubResource("StandardMaterial3D_body")
+
+[node name="ArtMount" type="Node3D" parent="."]
 
 [node name="NameLabel" type="Label3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 2.08, 0)
@@ -41,7 +81,8 @@ billboard = 1
 text = "NPC"
 
 [node name="StatusLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 1.62, 0)
-pixel_size = 0.014
+position = Vector3(0.08, 2.08, 0)
+modulate = Color(0.62, 0.64, 0.66, 1)
+pixel_size = 0.01
 billboard = 1
-text = "HP 100/100 · 待命"
+text = "待命"

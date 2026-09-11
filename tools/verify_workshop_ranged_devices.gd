@@ -36,11 +36,10 @@ func _init() -> void:
 		return
 
 	var expected_catalog := {
-		"craft_arrow_bundle": ["item_arrow_bundle", 1],
-		"craft_bow": ["item_bow", 2],
-		"craft_crossbow": ["item_crossbow", 4],
-		"craft_wall_ballista": ["item_wall_ballista", 6],
-		"craft_wall_arrow_tower": ["item_wall_arrow_tower", 8],
+		"craft_bow": ["item_bow", 3],
+		"craft_crossbow": ["item_crossbow", 5],
+		"craft_wall_ballista": ["item_wall_ballista", 9],
+		"craft_wall_arrow_tower": ["item_wall_arrow_tower", 12],
 	}
 	for recipe_id in expected_catalog.keys():
 		var expected: Array = expected_catalog[recipe_id]
@@ -48,10 +47,12 @@ func _init() -> void:
 		if str(recipe.get("building_id", "")) != "workshop" or str(recipe.get("output_item_id", "")) != str(expected[0]) or (recipe.get("stages", []) as Array).size() != int(expected[1]):
 			_fail("Workshop recipe catalog mismatch for %s" % recipe_id)
 			return
-
 	var engineer_id := "engineer_01"
 	var blacksmith_id := "blacksmith_01"
-	_set_debug_move_speed(engineer_id, 100.0)
+	# A5-P5c routes workshop work through the real diagonal doorway. Keep the
+	# production speed so this balance regression cannot orbit the narrow target
+	# at an artificial 100 m/s.
+	_set_debug_move_speed(engineer_id, 5.0)
 
 	var base_duration := float(workshop_action.get("duration_seconds", 3600.0))
 	var engineer_duration_level_1: float = action_system._get_effective_action_duration_seconds(workshop_action, engineer_id)
@@ -118,8 +119,14 @@ func _init() -> void:
 	events_before = int(memory_system.get_npc_daily_events(engineer_id).size())
 	if not await _complete_work_cycle(action_system, npc_system, engineer_id, engineer_duration_level_2):
 		return
+	if int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before:
+		_fail("Second bow stage should spend the second wood without completing the product")
+		return
+	events_before = int(memory_system.get_npc_daily_events(engineer_id).size())
+	if not await _complete_work_cycle(action_system, npc_system, engineer_id, engineer_duration_level_2):
+		return
 	if int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before + 1:
-		_fail("Completed bow did not spend two wood stages and add item_bow")
+		_fail("Labor-only bow finishing stage did not add item_bow")
 		return
 	var bow_event := _find_event(_events_after(memory_system.get_npc_daily_events(engineer_id), events_before), "work_completed")
 	var bow_payload: Dictionary = bow_event.get("payload", {})
@@ -134,7 +141,7 @@ func _init() -> void:
 	if not bool(selected.get("ok", false)):
 		_fail("Failed to select ballista recipe: %s" % JSON.stringify(selected))
 		return
-	for _stage in range(6):
+	for _stage in range(9):
 		var project: Dictionary = crafting_system.get_project_snapshot("workshop")
 		var stage_result: Dictionary = crafting_system.complete_stage("workshop", int(project.get("project_revision", -1)), engineer_id)
 		if not bool(stage_result.get("ok", false)):
@@ -143,14 +150,14 @@ func _init() -> void:
 	if int(resource_system.get_resource("item_wall_ballista")) != ballista_before + 1:
 		_fail("Completed device did not enter item_wall_ballista inventory")
 		return
-	if int(resource_system.get_resource("wood")) != wood_before_ballista - 5 or int(resource_system.get_resource("iron")) != iron_before_ballista - 1:
-		_fail("Ballista stages did not spend their exact five-wood/one-iron recipe")
+	if int(resource_system.get_resource("wood")) != wood_before_ballista - 6 or int(resource_system.get_resource("iron")) != iron_before_ballista - 2:
+		_fail("Ballista stages did not spend their exact six-wood/two-iron recipe")
 		return
 	if int(resource_system.get_resource("weapons")) != legacy_weapons_before or int(resource_system.get_resource("defense_devices")) != legacy_devices_before:
 		_fail("Workshop crafting must not mutate deprecated weapons/device aggregates")
 		return
 
-	crafting_system.set_target("workshop", "craft_arrow_bundle", false)
+	crafting_system.set_target("workshop", "craft_bow", false)
 	resource_system.add_resource("wood", -999999)
 	npc_system.update_npc_state(engineer_id, {"last_action_result": ""})
 	if action_system.debug_assign_work(engineer_id, "workshop"):
@@ -199,8 +206,8 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for _frame in range(600):
-		await process_frame
+	for _frame in range(1800):
+		await physics_frame
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

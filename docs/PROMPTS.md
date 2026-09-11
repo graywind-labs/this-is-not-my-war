@@ -1,5 +1,84 @@
 # PROMPTS.md
 
+## T0387 真实群像 Prompt 验收补充（2026-09-08）
+
+- `deepseek-v4-flash` 已对八人胜败夹具各生成一组通过结果；标题、职业意象、胜败基调、昏迷起点与感官收束整体有效。
+- “胜利 + 已逃离人物”连续两轮在一次 correction 后仍返回失败 tone；其中一轮还使用禁用的“阵亡”。当前校验能安全拒绝，但 Prompt / correction 对“局势基调约束人物 tone，而人物仍可伤感”的解释仍不足。
+- 人工阅读发现 `final_opinion / fate_story` 会补写未在事实中出现的守备官救援、未命名新雇员等细节，八篇也偏向重复“三拍”的表面句式。后续应强化“不得把低风险连接细节写成守备官已做过的事实”，并要求三拍结构不等于固定句法。
+
+## T1600 玩家语音输入不修改 NPC Prompt
+
+`qwen3-asr-flash` 是玩家输入预处理 Provider，不使用现有 NPC system Prompt，也不改变 `/npc/dialogue` 的动态模块或响应 Schema。Godot 只在语音成功后把转写和合法中文情绪后缀追加为普通草稿；玩家点击发送时，既有 `speaker_text` 原样携带最终字符串，例如“我需要你保卫驿站。（愤怒地）”。NPC 可按普通语言理解该修饰，但 Prompt 不增加专用 voice / emotion 分支。
+
+语音情绪只接受 Provider 原生 `neutral / happy / sad / disgusted / angry / fearful / surprised`；缺失 / 非法时不追加。不得通过 Prompt 或本地关键词补造“低沉 / 急促 / 嘲讽”。完整合同见 `docs/VOICE_INPUT_AND_EMOTION.md`。
+
+T1602 真实 Provider 仅发送一条含 `input_audio` 的百炼 ASR 请求和固定 `asr_options`，没有复用或修改任何 NPC Prompt；识别成功后的文本仍由玩家手动确认后才进入既有 `speaker_text`。
+
+T1604 的真实矩阵未修改 Prompt。目标情绪样本仅用于记录模型实际原生枚举，其中目标 happy 被实际判为 neutral；测试没有重写答案或增加文本情绪分类 Prompt。
+
+## T0135-P10F 语气声不改变 Prompt
+
+本任务只消费 T0289 已有的结构化回复情绪，不修改任何系统 Prompt、动态模块、Schema 或模型输出合同。男女资产选择、男性中性随机和 3D 播放均在 Godot 表现层完成，不向 provider 发送音频资产或播放状态。
+
+## T0308 特殊互动相关性与台词一致性
+
+四类特殊 toggle 的字段、难度校准和程序效果不变，只收紧动态 Prompt。每个模块必须先仅依据本轮 `speaker_text` 判断是否明确涉及该互动，conversation history 只解析本轮明确指代；开关、人物状态、记忆和危险现场不能把资源 / 生活 / 路线等无关输入变成特殊结果。无关时立即按原话回复并返回 `none`，策略模块返回 `keep + 当前策略`。
+
+士气模块把“后撤到驿站内某处、保存体力并准备再接战”固定识别为战术调整，返回 `none`，不因低 HP 或恐惧扩写成 buff / 永久逃离。策略模块把明确、合法、无歧义的候选切换固定为 `change`；人物意见仍可自然进入 reply_text，但不能覆盖结构结果。士气 / 工作只有在 NPC 确实决定永久离站时才能返回 `escape`，且 reply_text 必须直接出现“离开驿站”；拒绝工作、要求吃饭 / 休息 / 材料、站内撤退或含糊的“我走”都不足以触发。
+
+正式 DeepSeek 重复矩阵在不换输入的前提下由 `50/56`、`52/56` 提升到 `56/56`。最终无关话题、站内后撤、策略无关 / 明确切换均四轮稳定；实际返回的 escape 与台词一致。补充固定极端虐待语境仍返回士气 `escape` 和“我这就离开驿站”，确认分支可达。toggle 关闭时仍不加载对应模块，也不要求或解析其字段。
+
+## T0307 四类动态模块真实验收
+
+DeepSeek `deepseek-v4-flash` 在正式人物档案与完整动态输出合同下，已经覆盖应征 `none / reject / accept`、士气 `none / escape / morale_boost`、工作 `none / escape / work_boost` 和策略 `keep / change`。隔离 / 拟真共 22 个 case 最终全部可达，首条输入命中 18 个；测试没有限制为单一目标枚举，也没有改写响应。
+
+真实结果说明当时规则总体可用但不是稳定分类器：资源 / 生活询问偶尔违反相关性闸门，人物战术判断偶尔让明确策略请求返回 keep，部分 `escape` 的 reply_text 只表达拒绝或条件诉求。T0307 只验收并记录、没有在测试任务中偷偷改生产 Prompt；这些风险已由上方 T0308 动态 Prompt 加固处理。
+
+## T0306 五类事件聚合语义
+
+七类正式 Prompt 均明确：只有 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged` 可能被程序按相同主体、客体、地点、可见性和类型关键字段聚合；`details.aggregation.event_count` 表示多次真实发生，累计伤害、HP 首尾 / 最低值与首尾时间不能被误读为单次事件。其他类型仍逐条输入。Prompt 不负责判断能否合并，也不生成聚合结果。
+
+## T0299 事件摘要输入净化
+
+本任务不修改任何模型 Prompt 或响应合同。进入对话 / 计划上下文的事件摘要由 Godot 先净化：模式切换和内部 reason 不入库，工作 / 祈祷失败及计划修订中的内部枚举使用中文兜底；模型仍可从当前 NPC state 读取实时行为模式，但不会把开发日志当作历史经历。
+
+## T0289 每轮对话情绪选择
+
+基础 `dialogue_system_prompt.txt` 为所有对话类型固定增加短情绪合同。模型在生成 `reply_text` 后，从 `none / happy / relieved / angry / sad / afraid / surprised / confused / determined` 中只选一个最突出的即时情绪；没有明显情绪、仅陈述事实或感受混杂时选择 `none`。模型只返回英文 id，不返回中文、近义词、多个值或 Emoji。
+
+该合同不是特殊 toggle 模块：普通对话及应征 / 士气 / 工作 / 策略开关关闭时仍要求 `emotion`，但不会激活任何特殊结果字段。情绪只服务表现，不得声称改变士气 buff、工作倍率、记忆或数值状态。动态 schema hint 在玩家-NPC、NPC-NPC 邀请 / 正式轮次和逃离挽留分支重复给出相同白名单，减少供应商漏选或自由发挥。
+
+## T0285 四类特殊互动动态模块
+
+- 基础 `dialogue_system_prompt.txt` 不再常驻应征、士气、策略或工作鼓励判断规则。Model Adapter 只按本轮唯一开启的 flag 拼接对应特殊 Prompt 和最小输出合同；关闭模块的字段不进入 provider 合同，也不会被游戏应用。
+- `dialogue_recruitment_special_prompt.txt` 保留人物差异化应征校准，并新增相关性闸门：本轮未明确谈应征 / 入伍 / 加入防线时返回 `recruitment_result=none`，只正常回复原话。
+- `dialogue_morale_special_prompt.txt` 仅在士气 toggle 开启时加载；无关话题返回 `wartime_reaction=none`。战斗策略继续由 Model Adapter 动态生成当前值与合法候选合同。
+- 工作鼓励模块仅在 `is_work_encouragement_request=true` 时动态生成：真诚具体鼓励可为 `work_boost`，无效 / 无关为 `none`，严重羞辱、威胁或强迫可为 `escape`。20% 与当天 24:00 期限只是程序规则说明，不由模型结算。Mock 与 T0307 真实 provider 已验收。
+
+## T0284 条件战斗策略字段
+
+基础 `dialogue_system_prompt.txt` 不包含战斗策略说明；Model Adapter 仅在 `is_combat_strategy_request=true` 时动态附加策略 Prompt，要求模型读取 `combat_strategy_context` 并输出 `combat_strategy_decision`。上下文明确给出当前策略和当前兵种唯一合法候选；模型只能返回 `keep + 当前 id` 或 `change + 另一个合法 id`。守备官本轮原话与战术调整无关时必须正常作答并保持当前策略，开关本身不能作为换策略证据。关闭时 provider 不收到策略说明或候选，输出合同也不包含该模块，后端不解析 / 应用多余结果。T0308 起明确合法切换不再由人格覆盖为 keep，人物顾虑只影响台词表达。
+
+## T0283 显式鼓舞士气字段
+
+`dialogue_system_prompt.txt` 仅在 `is_morale_encouragement_request=true` 时要求模型输出 `wartime_reaction`。模型必须先判断守备官本轮原话是否真的在鼓舞、稳军心、要求坚守或要求撤离；无关的吃饭、工作、资源、问候等内容应忽略开关、正常作答并返回 `none`。`morale_boost / escape / none` 只表达受到鼓舞、决定逃离或继续参战，15% 数值与当日 24:00 失效均由 Godot 结算。Mock 与 T0307 真实 provider 已验收。
+
+## T0152 邀请示意与模型边界
+
+NPC-NPC `invitation` Prompt、接受 / 拒绝 Schema 和真实 provider 要求保持不变。发起示意发生在 Godot 已完成空间接近并实际提交既有请求时；接受示意只消费模型已通过业务校验的 `invitation_result=accept`，动作不能影响、替代或伪造模型决定。拒绝、超时、HTTP / Schema 失败均不调用接受表现。
+
+## T0119 征募难度、礼物与逃离事实校准
+
+六份正式 Prompt 共用“只根据目标 NPC 确实知道的事实判断”的边界。守备官声称已经建设、配发、调岗或兑现承诺时，只有当前建筑 / 资源 / 人员 / 装备 / 指令或真实记忆能够确认，才能作为有利因素；无法确认时对话必须指出仍未证实，不能先假设成立。隐藏难度、概率、条件数量、完整路线和逃离排序不进入人物台词、日记或知识图谱。
+
+`dialogue_system_prompt.txt` 按人物职业与人格区分通用征募、单项准备、完整针对路线和礼物：布鲁诺可被真实食堂 / 后勤改善较早推动；托马关注马匹、退路、骑手与装备；伊沃关注跨日生产；格伦关注材料、合格制造与训练；马塞尔关注权力约束和道德选择；莉娜关注诊所、助手与受保护职责；欧文关注结构、材料、安全余量与验证结果。接受必须是当轮无附带未完成条件的明确接受，`reply_text` 与 `recruitment_result` 一致。钱酒只按对应人物意义起作用，不能购买无条件忠诚。
+
+`daily_plan_system_prompt.txt` 与 `battle_judgement_system_prompt.txt` 使用差异化逃离校准：托马、莉娜、欧文对各自核心风险更敏感；布鲁诺和准备不足的格伦居中；伊沃需要持续、跨事件且叠加的生产崩坏，马塞尔主要响应暴力 / 权力失控，艾达是普通高压下的稳定锚点。单次小挫折不能机械触发逃离。
+
+两份计划修订 Prompt 只让实际新增或解除的相关原因改变计划：建设完成、资源到账、人员就位、装备 / 指令落地或攻击发生都必须有权威事实；原因解决应恢复合适工作，原因未解不能因空话取消逃离。`daily_reflection_system_prompt.txt` 以同一边界记录承诺的提出、兑现或违背，以及礼物对不同人物的真实意义；不把礼物直接改写为忠诚数值。
+
+真实 DeepSeek 最终行为矩阵 180 / 180 次成功且无 fallback；通用征募 0 / 21、完整路线 21 / 21、错误钱酒 0 / 16，日常 / 战斗排序与挽留对照均通过。完整证据见 `docs/audits/T0119_NPC_RECRUITMENT_ESCAPE/`。
+
 ## T0116 `dialogue_intent_revalidation`
 
 `data/prompts/dialogue_intent_revalidation_system_prompt.txt` 用于计划对话真正执行前的单独复核。输入明确标注旧意图制定日 / 时刻 / 来源，并提供计划同级当前上下文；输出只允许 `continue / modify / cancel_and_replan`。modify 不能换行动或目标，cancel 只触发 Godot 现有计划重估，模型不在本调用选择替代行动。
@@ -663,3 +742,38 @@ Prompt 不接收 MemorySystem 的原始事件对象，但六类正式 NPC 调用
 对话全文仍由权威事件 `payload` 保存；MemorySystem 的确定性 `summary` 已按顺序展开已完成会话，因此 LLM 投影只传 summary，不重复传 `dialogue_text / speaker_text / reply_text`，也不另建谈话库。
 
 进入地点时的完整状态快照仍只作为权威见闻出现一次，但模型只读取其确定性 summary；原始 `location_snapshot / building_snapshot` 不进入 Prompt。之后的建筑 / 地点变化继续以字段级摘要进入，例如“围墙受损”“食堂升级中，现在不可进入”“病床1被莉娜占用”“训练场新增训练位3”。摘要只使用位置的玩家可读名称，不向 NPC 暴露内部 ID。
+## T0387 `game_epilogue` 群像结局 Prompt（已接入）
+
+结局使用一次群像生成，系统 Prompt 的首要顺序为：权威事实不可改写 → 八人连续性 → 胜败基调 → 人物差异 → 文学风格。模型接收冻结的结算 id / 结果 / 原因 / 时间、驿站资源与建筑的叙事化状态、全局转折事实，以及每名 NPC 的身份、人设、权威最终状态、守备官关系、当前指令、筛选后的记忆 / 日记 / 图谱和带 `fact_id` 的关键经历。
+
+输出 JSON：
+
+```json
+{
+  "ending_title": "仍有炊烟升起",
+  "station_coda": "全站共同尾声",
+  "npc_endings": [
+    {
+      "npc_id": "stablehand_01",
+      "ending_title": "长路回声",
+      "opening_status": "active",
+      "final_opinion": "NPC 对守备官的最终看法",
+      "fate_story": "180–280 个中文字符的三拍后日谈",
+      "tone": "hopeful_bittersweet",
+      "fact_refs": ["fact_..."]
+    }
+  ]
+}
+```
+
+Provider 不输出 `ok / result`，后端从权威请求补齐；最终 HTTP 响应中的 `result` 因而必须逐字匹配请求。`npc_endings` 必须恰好覆盖全部正式 NPC 且不重复。`opening_status` 必须逐字回显请求中的 `active / unconscious / escaped`，让后端在不解释文学正文的前提下锁定故事起点。`tone` 只允许胜利侧 `hopeful / hopeful_bittersweet / reconciled` 或失败侧 `sorrowful / sorrowful_resilient / unresolved`。每篇自然使用 1–3 个可验证关键事实并返回对应引用；不得输出内部 id、数值清单或“根据资料”等元话语。
+
+风格要求是克制的中文历史幻想短篇尾声：具体、含蓄、有时间流逝感，以动作和意象承载情绪，世界内始终称玩家为“守备官”。禁止八篇使用同一个开头、同一转折句或同一种结尾；禁止逐条总结玩家成绩、拔高战争、现代制度 / 科技术语、廉价大团圆、全员绝望、突然出现的血缘 / 爱情 / 神迹，以及任何 NPC 死亡。可以合理虚构季节流逝、无名道路、普通生活动作等低风险连接细节；不得凭空创造有姓名的新亲属、婚恋、爵位、重大功绩、精确年份或另一场决定人物命运的战争。职业母题只在事实支持时选择性使用，不能按职业表机械打卡。
+
+后端除 Schema 外执行连续性校验：NPC ID 集合、事实引用归属、最终状态关键词、胜败 tone 域、禁用死亡断言和长度。首次响应不合法时，可把精确校验错误附给同一真实 Provider 做一次纠错；不得让纠错自行改变输入事实。第二次仍失败则返回真实错误，由 Godot 进入明确的 `template_fallback`。
+## T0390 失败全员撤离事实合同（2026-09-08）
+
+失败结算在请求生成前已由程序把 8 名 NPC 的 `opening_status` 全部冻结为 `escaped`、`final_location` 设为驿站外；入伍与历史事实仍各自不同。Prompt 文本无需虚构撤离判定，模型只负责从这个共同起点续写每个人离开后的故事。真实 `deepseek-v4-flash` 单失败样本通过 8/8 连续性校验且未 fallback。
+## T0391 失败撤离时机语义（2026-09-08）
+
+人物输入新增 `escape_circumstance`。`before_fall_voluntary` 表示失守前主动离站，故事不得让其参加最后守城；`after_fall_forced` 表示坚持到主厅倒塌后被迫撤离，故事不得称其临阵逃跑或提前离开。真实 DeepSeek 失败样本中神父按前者写出恐惧离站与自责，其余七人按后者从废墟和临时安置处展开后日谈。

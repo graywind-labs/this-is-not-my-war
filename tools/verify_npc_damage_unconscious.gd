@@ -81,7 +81,7 @@ func _init() -> void:
 
 	npc_panel.show_npc(target_id)
 	await process_frame
-	var unconscious_label := root.get_node_or_null("Main/UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCUnconsciousLabel") as Label
+	var unconscious_label := npc_panel.find_child("NPCUnconsciousLabel", true, false) as Label
 	if unconscious_label == null or not unconscious_label.text.contains("是"):
 		push_error("NPCPanel should show unconscious state")
 		quit(1)

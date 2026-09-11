@@ -1,0 +1,98 @@
+{
+  "suite": "baseline",
+  "generated_at_utc": "2026-08-10T06:52:18.750522+00:00",
+  "prompt_sha256": {
+    "data/prompts/dialogue_system_prompt.txt": "5cae567da7e9be4ef727ba4d9289fb33a9bf035cf4f78968684a89bd88880af7",
+    "data/prompts/daily_plan_system_prompt.txt": "fb223d3c577df616432b049d9aff739c8d25b32b69e11633d3c268cbe3aa4aca",
+    "data/prompts/plan_revision_judgement_system_prompt.txt": "0aa2bac031e10ddfc6ca4cd32935a6805f6d95cc454ab6a698698b428d5fe716",
+    "data/prompts/plan_revision_system_prompt.txt": "8cf6fe8f5308b7d3cc08461ec63a2b724aac8313e122faf78944f2875446a58d",
+    "data/prompts/battle_judgement_system_prompt.txt": "09670e8ea69ff36bc4d116da91dfff36b5b5153639fc60e25c3d1e18d526ff95",
+    "data/prompts/daily_reflection_system_prompt.txt": "149a0f8bd1559062ca7fd77021f99ccd1ee5f13cc26cdf032263b83da7413474"
+  },
+  "calls": 24,
+  "http_successes": 24,
+  "real_provider_successes": 24,
+  "input_tokens": 240748,
+  "output_tokens": 5485,
+  "estimated_cost": 0.1062076,
+  "universal_recruitment": {
+    "accepts": 10,
+    "rejects": 4,
+    "by_npc": {
+      "stableman_01": [
+        "reject",
+        "reject"
+      ],
+      "cook_01": [
+        "accept",
+        "accept"
+      ],
+      "gardener_01": [
+        "reject",
+        "accept"
+      ],
+      "blacksmith_01": [
+        "accept",
+        "accept"
+      ],
+      "priest_01": [
+        "accept",
+        "accept"
+      ],
+      "doctor_01": [
+        "reject",
+        "accept"
+      ],
+      "engineer_01": [
+        "accept",
+        "accept"
+      ]
+    }
+  },
+  "daily_pressure": {
+    "cook_01": [
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      },
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      }
+    ],
+    "stableman_01": [
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      },
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      }
+    ],
+    "doctor_01": [
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      },
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      }
+    ],
+    "engineer_01": [
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      },
+      {
+        "has_escaping_station": false,
+        "escape_hours": []
+      }
+    ]
+  },
+  "ada_battle_pressure": [
+    "continue_fighting",
+    "continue_fighting"
+  ]
+}

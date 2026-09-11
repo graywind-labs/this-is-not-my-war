@@ -2,6 +2,7 @@ extends Control
 
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd")
+const EpiloguePanelClass = preload("res://scripts/ui/EpiloguePanel.gd")
 
 @onready var day_label: Label = %DayLabel
 @onready var time_label: Label = %TimeLabel
@@ -11,28 +12,70 @@ const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd"
 @onready var speed_button: Button = $SpeedButton
 @onready var pause_button: Button = $PauseButton
 @onready var wave_countdown_label: Label = get_node_or_null("WaveCountdownLabel") as Label
+@onready var hud_frame: Panel = $HUDFrame
+@onready var escape_started_alert_dialog: AcceptDialog = %EscapeStartedAlertDialog
+@onready var npc_revived_alert_dialog: AcceptDialog = %NpcRevivedAlertDialog
+@onready var wave_cleared_alert_dialog: AcceptDialog = %WaveClearedAlertDialog
 
 const DETAIL_PANEL_OFFSET := Vector2(0.0, 6.0)
+const DETAIL_PANEL_MINIMUM_SIZE := Vector2(500.0, 430.0)
+const DETAIL_SCROLL_MINIMUM_SIZE := Vector2(470.0, 360.0)
+const DETAIL_ITEM_BUTTON_SIZE := Vector2(68.0, 68.0)
+const DETAIL_ITEM_ICON_MAX_WIDTH := 66
+const DETAIL_ITEM_CONTENT_MARGIN := 1.0
+const DETAIL_ITEM_BORDER_WIDTH := 1
+const DETAIL_GRID_COLUMNS := 6
+const ASSIGNED_ITEM_MODULATE := Color(0.44, 0.44, 0.44, 0.78)
 const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
+const HUD_FRAME_CONTENT_PADDING := Vector2(12.0, 12.0)
+const SPEED_BUTTON_NORMAL_TOOLTIP := "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
+const WAVE_WARNING_EARLY_SECONDS := 3.0 * 3600.0
+const WAVE_WARNING_FINAL_SECONDS := 30.0 * 60.0
+const WAVE_WARNING_COLOR := Color(1.0, 0.38, 0.22, 1.0)
+const NPC_HUD_RELEVANT_STATE_FIELDS: Array[String] = ["escape_intent", "escaped"]
+const RESOURCE_ICON_PATHS := {
+	"money": "res://assets/ui/resource_icons/money.svg",
+	"grain": "res://assets/ui/resource_icons/grain.svg",
+	"meal": "res://assets/ui/resource_icons/meal.svg",
+	"wine": "res://assets/ui/resource_icons/wine.svg",
+	"wood": "res://assets/ui/resource_icons/wood.svg",
+	"stone": "res://assets/ui/resource_icons/stone.svg",
+	"iron": "res://assets/ui/resource_icons/iron.svg"
+}
+const RESOURCE_ICON_SIZE := Vector2(22.0, 22.0)
 var _resource_labels: Dictionary = {}
+var _resource_icons: Dictionary = {}
 var _detail_panel: PanelContainer
 var _detail_title: Label
-var _detail_text: RichTextLabel
+var _detail_scroll: ScrollContainer
+var _detail_grid: GridContainer
+var _detail_item_snapshots: Array[Dictionary] = []
 var _detail_source_button: Control
 var _detail_mode := ""
 var _detail_drag_controller
 var _escape_warning_label: Label
 var _game_over_panel: PanelContainer
-var _game_over_title_label: Label
-var _game_over_reason_label: Label
-var _game_over_detail_label: Label
 var _piety_ability_button
 var _meteor_target_hint: Label
 var _meteor_target_preview: MeshInstance3D
 var _meteor_targeting_active := false
 var _meteor_target_valid := false
 var _meteor_target_position := Vector3.ZERO
+var _meteor_target_invalid_reason := ""
+var _meteor_target_invalid_message := ""
+var _meteor_target_feedback_until_msec := 0
+var _last_clock_refresh_key := ""
+var _hud_frame_fit_pending := false
+var _escape_alert_queue: Array[Dictionary] = []
+var _npc_revived_alert_queue: Array[String] = []
+var _wave_cleared_alert_queue: Array[int] = []
+var _current_wave_cleared_alert_number := 0
+var _wave_warning_dialog: AcceptDialog
+var _wave_warning_queue: Array[Dictionary] = []
+var _wave_warning_seen: Dictionary = {}
+var _last_wave_warning_seconds_by_wave: Dictionary = {}
+var _current_wave_warning: Dictionary = {}
 
 
 func _ready() -> void:
@@ -40,20 +83,34 @@ func _ready() -> void:
 	_build_resource_strip()
 	_build_detail_panel()
 	_build_wave_countdown_label()
+	_build_wave_warning_dialog()
 	_build_piety_ability_button()
 	_build_escape_warning_label()
 	_build_game_over_panel()
 	if speed_button != null:
 		speed_button.focus_mode = Control.FOCUS_NONE
-		speed_button.tooltip_text = "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
+		speed_button.tooltip_text = SPEED_BUTTON_NORMAL_TOOLTIP
 		speed_button.pressed.connect(_on_speed_button_pressed)
 	if pause_button != null:
 		pause_button.focus_mode = Control.FOCUS_NONE
 		pause_button.pressed.connect(_on_pause_button_pressed)
+	if escape_started_alert_dialog != null:
+		escape_started_alert_dialog.confirmed.connect(_on_escape_alert_closed)
+		escape_started_alert_dialog.close_requested.connect(_on_escape_alert_closed)
+	if npc_revived_alert_dialog != null:
+		npc_revived_alert_dialog.confirmed.connect(_on_npc_revived_alert_closed)
+		npc_revived_alert_dialog.close_requested.connect(_on_npc_revived_alert_closed)
+	if wave_cleared_alert_dialog != null:
+		wave_cleared_alert_dialog.confirmed.connect(_on_wave_cleared_alert_closed)
+		wave_cleared_alert_dialog.close_requested.connect(_on_wave_cleared_alert_closed)
 	var alarm_button := get_node_or_null("AlarmButton") as Button
 	if alarm_button != null:
 		alarm_button.focus_mode = Control.FOCUS_NONE
 		alarm_button.pressed.connect(_on_alarm_button_pressed)
+	var dismiss_rally_button := get_node_or_null("DismissRallyButton") as Button
+	if dismiss_rally_button != null:
+		dismiss_rally_button.focus_mode = Control.FOCUS_NONE
+		dismiss_rally_button.pressed.connect(_on_dismiss_rally_button_pressed)
 	_refresh_time()
 	_refresh_time_buttons()
 	_refresh_resources()
@@ -74,13 +131,28 @@ func _ready() -> void:
 			event_bus.gameplay_pause_changed.connect(_on_gameplay_pause_changed)
 		if event_bus.has_signal("game_over_changed"):
 			event_bus.game_over_changed.connect(_on_game_over_changed)
+		if event_bus.has_signal("epilogue_changed"):
+			event_bus.epilogue_changed.connect(_on_epilogue_changed)
 		if event_bus.has_signal("npc_state_changed"):
 			event_bus.npc_state_changed.connect(_on_npc_state_changed)
+		if event_bus.has_signal("npc_escape_started"):
+			event_bus.npc_escape_started.connect(_on_npc_escape_started)
+		if event_bus.has_signal("npc_revived"):
+			event_bus.npc_revived.connect(_on_npc_revived)
+		if event_bus.has_signal("combat_wave_cleared"):
+			event_bus.combat_wave_cleared.connect(_on_combat_wave_cleared)
+		if event_bus.has_signal("horse_state_changed"):
+			event_bus.horse_state_changed.connect(_on_horse_state_changed)
+		if event_bus.has_signal("horse_assignment_changed"):
+			event_bus.horse_assignment_changed.connect(_on_horse_assignment_changed)
+		if event_bus.has_signal("defense_device_state_changed"):
+			event_bus.defense_device_state_changed.connect(_on_defense_device_state_changed)
 		if event_bus.has_signal("piety_changed"):
 			event_bus.piety_changed.connect(_on_piety_changed)
 	_refresh_piety_ability()
 	_refresh_escape_warning()
 	_refresh_game_over_panel()
+	_request_hud_frame_fit()
 
 
 func _input(event: InputEvent) -> void:
@@ -109,11 +181,22 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	_refresh_meteor_target_feedback()
 	if _detail_panel != null and _detail_panel.visible and _detail_source_button != null and (_detail_drag_controller == null or not _detail_drag_controller.has_user_position()):
 		_position_detail_panel_near(_detail_source_button)
 
 
-func _on_time_changed(_day: int, _hour: int, _minute: int, _second: int) -> void:
+func _on_time_changed(day: int, hour: int, minute: int, second: int) -> void:
+	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
+	var precise_seconds := (
+		time_system != null
+		and time_system.has_method("should_show_precise_display_seconds")
+		and bool(time_system.should_show_precise_display_seconds())
+	)
+	var refresh_key := "%d:%d:%d:%d" % [day, hour, minute, second if precise_seconds else 0]
+	if refresh_key == _last_clock_refresh_key:
+		return
+	_last_clock_refresh_key = refresh_key
 	_refresh_time()
 	_refresh_wave_countdown()
 
@@ -137,8 +220,107 @@ func _on_building_state_changed(building_id: String) -> void:
 		_refresh_resources()
 
 
-func _on_npc_state_changed(_npc_id: String) -> void:
+func _on_npc_state_changed(npc_id: String) -> void:
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if (
+		npc_system != null
+		and npc_system.has_method("is_active_npc_state_change_relevant")
+		and not npc_system.is_active_npc_state_change_relevant(npc_id, NPC_HUD_RELEVANT_STATE_FIELDS)
+	):
+		return
 	_refresh_escape_warning()
+	_refresh_open_inventory_detail("equipment")
+
+
+func _on_npc_escape_started(_npc_id: String, escape_result: Dictionary) -> void:
+	if not bool(escape_result.get("ok", false)) or not bool(escape_result.get("applied", false)):
+		return
+	_escape_alert_queue.append(escape_result.duplicate(true))
+	_show_next_escape_alert()
+
+
+func _show_next_escape_alert() -> void:
+	if escape_started_alert_dialog == null or escape_started_alert_dialog.visible or _escape_alert_queue.is_empty():
+		return
+	var escape_result: Dictionary = _escape_alert_queue.pop_front()
+	var npc_name := str(escape_result.get("npc_name", "该NPC"))
+	escape_started_alert_dialog.dialog_text = "%s正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！" % npc_name
+	escape_started_alert_dialog.popup_centered()
+
+
+func _on_escape_alert_closed() -> void:
+	call_deferred("_show_next_escape_alert")
+
+
+func _on_npc_revived(npc_id: String) -> void:
+	if npc_id.is_empty():
+		return
+	_npc_revived_alert_queue.append(npc_id)
+	_show_next_npc_revived_alert()
+
+
+func _show_next_npc_revived_alert() -> void:
+	if npc_revived_alert_dialog == null or npc_revived_alert_dialog.visible or _npc_revived_alert_queue.is_empty():
+		return
+	var npc_id: String = _npc_revived_alert_queue.pop_front()
+	var npc_name: String = npc_id
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	if npc_system != null and npc_system.has_method("get_npc"):
+		var profile: Dictionary = npc_system.get_npc(npc_id)
+		npc_name = str(profile.get("name", npc_id))
+	npc_revived_alert_dialog.dialog_text = "%s从昏迷中苏醒了。" % npc_name
+	npc_revived_alert_dialog.popup_centered()
+
+
+func _on_npc_revived_alert_closed() -> void:
+	call_deferred("_show_next_npc_revived_alert")
+
+
+func _on_combat_wave_cleared(wave_number: int) -> void:
+	if wave_number <= 0 or wave_number == _current_wave_cleared_alert_number or _wave_cleared_alert_queue.has(wave_number):
+		return
+	_wave_cleared_alert_queue.append(wave_number)
+	_show_next_wave_cleared_alert()
+
+
+func _show_next_wave_cleared_alert() -> void:
+	if wave_cleared_alert_dialog == null or wave_cleared_alert_dialog.visible or _wave_cleared_alert_queue.is_empty():
+		return
+	_current_wave_cleared_alert_number = _wave_cleared_alert_queue.pop_front()
+	wave_cleared_alert_dialog.dialog_text = "恭喜守备官守住了第%d波敌军！" % _current_wave_cleared_alert_number
+	wave_cleared_alert_dialog.popup_centered()
+
+
+func _on_wave_cleared_alert_closed() -> void:
+	_current_wave_cleared_alert_number = 0
+	call_deferred("_show_next_wave_cleared_alert")
+
+
+func debug_get_wave_cleared_alert_snapshot() -> Dictionary:
+	return {
+		"visible": wave_cleared_alert_dialog != null and wave_cleared_alert_dialog.visible,
+		"dialog_text": wave_cleared_alert_dialog.dialog_text if wave_cleared_alert_dialog != null else "",
+		"ok_button_text": wave_cleared_alert_dialog.get_ok_button().text if wave_cleared_alert_dialog != null else "",
+		"current_wave_number": _current_wave_cleared_alert_number,
+		"queued_wave_numbers": _wave_cleared_alert_queue.duplicate()
+	}
+
+
+func _on_horse_state_changed(_horse_id: String) -> void:
+	_refresh_open_inventory_detail("equipment")
+
+
+func _on_horse_assignment_changed(_horse_id: String, _npc_id: String) -> void:
+	_refresh_open_inventory_detail("equipment")
+
+
+func _on_defense_device_state_changed(_snapshot: Dictionary) -> void:
+	_refresh_open_inventory_detail("devices")
+
+
+func _refresh_open_inventory_detail(mode: String) -> void:
+	if _detail_panel != null and _detail_panel.visible and _detail_mode == mode:
+		_refresh_detail_panel()
 
 
 func _on_piety_changed(
@@ -160,6 +342,7 @@ func _on_time_scale_changed(
 	_numeric_multiplier: float,
 	_reason: String
 ) -> void:
+	_last_clock_refresh_key = ""
 	_refresh_time()
 	_refresh_wave_countdown()
 	_refresh_time_buttons()
@@ -170,9 +353,13 @@ func _on_game_over_changed(_result: String, _reason: String) -> void:
 	_refresh_game_over_panel()
 
 
+func _on_epilogue_changed(_snapshot: Dictionary) -> void:
+	_refresh_game_over_panel()
+
+
 func _on_speed_button_pressed() -> void:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
-	if time_system == null:
+	if time_system == null or _is_external_time_constraint_active(time_system):
 		return
 
 	time_system.cycle_speed()
@@ -188,6 +375,13 @@ func _on_alarm_button_pressed() -> void:
 	if combat_system == null or not combat_system.has_method("trigger_combat_alarm"):
 		return
 	combat_system.trigger_combat_alarm("hud")
+
+
+func _on_dismiss_rally_button_pressed() -> void:
+	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
+	if combat_system == null or not combat_system.has_method("dismiss_combat_rally"):
+		return
+	combat_system.dismiss_combat_rally("hud")
 
 
 func _refresh_time() -> void:
@@ -218,7 +412,8 @@ func _refresh_resources() -> void:
 		for resource_id in _resource_labels.keys():
 			var label := _resource_labels[resource_id] as Label
 			if label != null:
-				label.text = "%s --" % str(resource_id)
+				label.text = "--"
+		_request_hud_frame_fit()
 		return
 
 	if _resource_labels.is_empty():
@@ -229,23 +424,24 @@ func _refresh_resources() -> void:
 		var label := _resource_labels.get(resource_id, null) as Label
 		if label == null:
 			continue
-		label.text = "%s %d" % [
-			resource_system.get_resource_name(resource_id),
-			resource_system.get_resource(resource_id)
-		]
-		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
+		label.text = str(resource_system.get_resource(resource_id))
+		var icon := _resource_icons.get(resource_id, null) as TextureRect
+		_refresh_resource_capacity_tooltip(icon, resource_system, resource_id)
 
 	if _detail_panel != null and _detail_panel.visible:
 		_refresh_detail_panel()
+	_request_hud_frame_fit()
 
 
 func _refresh_backend_status() -> void:
 	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
 	if llm_bridge == null or not llm_bridge.has_method("get_last_backend_status"):
 		backend_status_label.text = "后端：未检查"
+		_request_hud_frame_fit()
 		return
 	var status: Dictionary = llm_bridge.get_last_backend_status()
 	backend_status_label.text = str(status.get("status_text", "后端：未检查"))
+	_request_hud_frame_fit()
 
 
 func _refresh_time_buttons() -> void:
@@ -255,13 +451,27 @@ func _refresh_time_buttons() -> void:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
 	if time_system == null:
 		speed_button.text = "速度 x1"
+		speed_button.disabled = false
+		speed_button.tooltip_text = SPEED_BUTTON_NORMAL_TOOLTIP
 		if pause_button != null:
 			pause_button.text = "暂停"
 		return
 
-	speed_button.text = "速度 %s" % time_system.get_speed_label()
+	var constrained := _is_external_time_constraint_active(time_system)
+	speed_button.disabled = constrained
+	speed_button.text = "速度 %s" % (
+		time_system.get_effective_speed_label()
+		if constrained and time_system.has_method("get_effective_speed_label")
+		else time_system.get_speed_label()
+	)
+	speed_button.tooltip_text = (
+		_format_time_constraint_tooltip(time_system.get_time_scale_snapshot())
+		if constrained and time_system.has_method("get_time_scale_snapshot")
+		else SPEED_BUTTON_NORMAL_TOOLTIP
+	)
 	if pause_button != null:
 		pause_button.text = time_system.get_pause_label()
+	_request_hud_frame_fit()
 
 
 func _toggle_pause() -> void:
@@ -275,13 +485,76 @@ func _toggle_pause() -> void:
 
 func _set_time_scale_from_shortcut(scale: float) -> void:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
-	if time_system == null:
+	if time_system == null or _is_external_time_constraint_active(time_system):
 		return
 	time_system.set_time_scale(scale)
 	_refresh_time_buttons()
 
 
+func _is_external_time_constraint_active(time_system: Node) -> bool:
+	if time_system == null or not time_system.has_method("get_time_scale_snapshot"):
+		return false
+	var snapshot: Dictionary = time_system.get_time_scale_snapshot()
+	return (
+		float(snapshot.get("effective_scale", 1.0)) + 0.0001
+		< float(snapshot.get("player_scale", 1.0))
+	)
+
+
+func _format_time_constraint_tooltip(snapshot: Dictionary) -> String:
+	var effective_scale := float(snapshot.get("effective_scale", 1.0))
+	var reasons: Array[String] = []
+	_append_effective_constraint_reasons(
+		reasons,
+		snapshot.get("slowdown_requests", {}),
+		"scale",
+		effective_scale
+	)
+	_append_effective_constraint_reasons(
+		reasons,
+		snapshot.get("time_scale_cap_requests", {}),
+		"max_scale",
+		effective_scale
+	)
+	if reasons.is_empty():
+		reasons.append("系统限速")
+	return "暂时降速：%s" % "、".join(reasons)
+
+
+func _append_effective_constraint_reasons(
+	reasons: Array[String],
+	raw_requests: Variant,
+	scale_key: String,
+	effective_scale: float
+) -> void:
+	if not raw_requests is Dictionary:
+		return
+	for raw_request in (raw_requests as Dictionary).values():
+		if not raw_request is Dictionary:
+			continue
+		var request := raw_request as Dictionary
+		if float(request.get(scale_key, INF)) > effective_scale + 0.0001:
+			continue
+		var label := _format_time_constraint_reason(str(request.get("reason", "")))
+		if not reasons.has(label):
+			reasons.append(label)
+
+
+func _format_time_constraint_reason(reason: String) -> String:
+	if reason == "combat_enemy_presence":
+		return "敌军在场"
+	if reason == "npc_movement":
+		return "人物移动中"
+	if reason == "gm_manual":
+		return "GM 减速"
+	if reason.begins_with("llm_") or reason == "llm_wait":
+		return "等待人物回应"
+	return "系统限速"
+
+
 func _get_speed_shortcut_scale(event: InputEvent) -> float:
+	if _is_pause_menu_open():
+		return 0.0
 	if not (event is InputEventKey):
 		return 0.0
 	var key_event := event as InputEventKey
@@ -310,6 +583,8 @@ func _get_speed_shortcut_scale(event: InputEvent) -> float:
 
 
 func _is_pause_shortcut(event: InputEvent) -> bool:
+	if _is_pause_menu_open():
+		return false
 	if not (event is InputEventKey):
 		return false
 	if not event.pressed or event.echo or event.keycode != KEY_SPACE:
@@ -320,6 +595,11 @@ func _is_pause_shortcut(event: InputEvent) -> bool:
 	return true
 
 
+func _is_pause_menu_open() -> bool:
+	var pause_menu := get_node_or_null("../PauseMenu") as Control
+	return pause_menu != null and pause_menu.visible
+
+
 func _is_text_input_focused() -> bool:
 	var focus_owner := get_viewport().gui_get_focus_owner()
 	return focus_owner is LineEdit or focus_owner is TextEdit
@@ -327,12 +607,12 @@ func _is_text_input_focused() -> bool:
 
 func _get_phase_label(hour: int) -> String:
 	if hour >= 5 and hour < 12:
-		return "阶段：清晨"
+		return "清晨"
 	if hour >= 12 and hour < 18:
-		return "阶段：白昼"
+		return "白昼"
 	if hour >= 18 and hour < 22:
-		return "阶段：黄昏"
-	return "阶段：夜间"
+		return "黄昏"
+	return "夜间"
 
 
 func _connect_llm_bridge() -> void:
@@ -345,6 +625,7 @@ func _connect_llm_bridge() -> void:
 
 func _on_backend_status_changed(status_text: String, _ok: bool) -> void:
 	backend_status_label.text = status_text
+	_request_hud_frame_fit()
 
 
 func _build_resource_strip() -> void:
@@ -355,6 +636,7 @@ func _build_resource_strip() -> void:
 		resource_strip.remove_child(child)
 		child.free()
 	_resource_labels.clear()
+	_resource_icons.clear()
 
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
 	var resource_ids: Array = []
@@ -367,40 +649,124 @@ func _build_resource_strip() -> void:
 		var resource_id := str(raw_resource_id)
 		if not _should_show_resource_in_main_hud(resource_system, resource_id):
 			continue
+		var item := HBoxContainer.new()
+		item.name = "%sResourceItem" % resource_id.to_pascal_case()
+		item.layout_mode = 2
+		item.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item.add_theme_constant_override("separation", 4)
+
+		var icon := TextureRect.new()
+		icon.name = "Icon"
+		icon.layout_mode = 2
+		icon.custom_minimum_size = RESOURCE_ICON_SIZE
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.mouse_filter = Control.MOUSE_FILTER_STOP
+		var icon_path := str(RESOURCE_ICON_PATHS.get(resource_id, ""))
+		if not icon_path.is_empty():
+			icon.texture = load(icon_path) as Texture2D
+		item.add_child(icon)
+
 		var label := Label.new()
 		label.name = "%sResourceLabel" % resource_id.to_pascal_case()
 		label.layout_mode = 2
-		label.text = "%s --" % _resource_display_name(resource_id)
-		label.mouse_filter = Control.MOUSE_FILTER_STOP
-		_refresh_resource_capacity_tooltip(label, resource_system, resource_id)
-		resource_strip.add_child(label)
+		label.text = "--"
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item.add_child(label)
+		_refresh_resource_capacity_tooltip(icon, resource_system, resource_id)
+		resource_strip.add_child(item)
 		_resource_labels[resource_id] = label
+		_resource_icons[resource_id] = icon
 
 	var equipment_button := _make_detail_button("装备", "equipment")
 	resource_strip.add_child(equipment_button)
 
 	var devices_button := _make_detail_button("器械", "devices")
 	resource_strip.add_child(devices_button)
+	_request_hud_frame_fit()
+
+
+func _request_hud_frame_fit() -> void:
+	if _hud_frame_fit_pending or not is_inside_tree():
+		return
+	_hud_frame_fit_pending = true
+	call_deferred("_fit_hud_frame_to_content")
+
+
+func _fit_hud_frame_to_content() -> void:
+	_hud_frame_fit_pending = false
+	if hud_frame == null:
+		return
+	var content_end := _get_hud_frame_content_end()
+	hud_frame.offset_right = content_end.x + HUD_FRAME_CONTENT_PADDING.x
+	hud_frame.offset_bottom = content_end.y + HUD_FRAME_CONTENT_PADDING.y
+
+
+func _get_hud_frame_content_end() -> Vector2:
+	var content_end := Vector2.ZERO
+	var content_controls: Array[Control] = []
+	for path in [
+		"TitleLabel",
+		"DayLabel",
+		"TimeLabel",
+		"PhaseLabel",
+		"ResourceStrip",
+		"WaveCountdownLabel",
+		"BackendStatusLabel",
+		"SpeedButton",
+		"PauseButton",
+		"AlarmButton",
+		"DismissRallyButton",
+		"PietyAbilityButton"
+	]:
+		var control := get_node_or_null(path) as Control
+		if control != null and control.visible:
+			content_controls.append(control)
+	var hud_origin := get_global_rect().position
+	for control in content_controls:
+		var local_position := control.get_global_rect().position - hud_origin
+		var resolved_size := control.size.max(control.get_combined_minimum_size())
+		content_end.x = maxf(content_end.x, local_position.x + resolved_size.x)
+		content_end.y = maxf(content_end.y, local_position.y + resolved_size.y)
+	return content_end
+
+
+func debug_get_hud_frame_layout_snapshot() -> Dictionary:
+	var frame_end := hud_frame.position + hud_frame.size if hud_frame != null else Vector2.ZERO
+	var content_end := _get_hud_frame_content_end()
+	return {
+		"frame_position": hud_frame.position if hud_frame != null else Vector2.ZERO,
+		"frame_size": hud_frame.size if hud_frame != null else Vector2.ZERO,
+		"frame_end": frame_end,
+		"content_end": content_end,
+		"right_padding": frame_end.x - content_end.x,
+		"bottom_padding": frame_end.y - content_end.y,
+		"contains_content": (
+			frame_end.x + 0.01 >= content_end.x
+			and frame_end.y + 0.01 >= content_end.y
+		)
+	}
 
 
 func _refresh_resource_capacity_tooltip(
-	label: Label,
+	icon: Control,
 	resource_system: Node,
 	resource_id: String
 ) -> void:
+	var resource_name := _resource_display_name(resource_id)
 	if (
-		label == null
+		icon == null
 		or resource_system == null
 		or not resource_system.has_method("get_resource_capacity")
 	):
-		if label != null:
-			label.tooltip_text = ""
+		if icon != null:
+			icon.tooltip_text = resource_name
 		return
 	var capacity := int(resource_system.get_resource_capacity(resource_id))
-	label.tooltip_text = (
-		"仓库储存上限：%d" % capacity
+	icon.tooltip_text = (
+		"%s\n仓库储存上限：%d" % [resource_name, capacity]
 		if capacity >= 0
-		else ""
+		else resource_name
 	)
 
 
@@ -427,60 +793,10 @@ func _build_escape_warning_label() -> void:
 func _build_game_over_panel() -> void:
 	if _game_over_panel != null:
 		return
-	_game_over_panel = PanelContainer.new()
+	_game_over_panel = EpiloguePanelClass.new()
 	_game_over_panel.name = "GameOverPanel"
 	_game_over_panel.visible = false
-	_game_over_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_game_over_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_game_over_panel.custom_minimum_size = Vector2(760.0, 520.0)
-	_game_over_panel.offset_left = -380.0
-	_game_over_panel.offset_top = -260.0
-	_game_over_panel.offset_right = 380.0
-	_game_over_panel.offset_bottom = 260.0
 	add_child(_game_over_panel)
-
-	var margin := MarginContainer.new()
-	margin.name = "GameOverMargin"
-	margin.add_theme_constant_override("margin_left", 22)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_right", 22)
-	margin.add_theme_constant_override("margin_bottom", 18)
-	_game_over_panel.add_child(margin)
-
-	var content := VBoxContainer.new()
-	content.name = "GameOverContent"
-	content.alignment = BoxContainer.ALIGNMENT_BEGIN
-	content.add_theme_constant_override("separation", 10)
-	margin.add_child(content)
-
-	_game_over_title_label = Label.new()
-	_game_over_title_label.name = "GameOverTitleLabel"
-	_game_over_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_game_over_title_label.add_theme_font_size_override("font_size", 24)
-	_game_over_title_label.text = "防守失败"
-	content.add_child(_game_over_title_label)
-
-	_game_over_reason_label = Label.new()
-	_game_over_reason_label.name = "GameOverReasonLabel"
-	_game_over_reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_game_over_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_game_over_reason_label.text = "原因：--"
-	content.add_child(_game_over_reason_label)
-
-	var detail_scroll := ScrollContainer.new()
-	detail_scroll.name = "GameOverDetailScroll"
-	detail_scroll.custom_minimum_size = Vector2(700.0, 360.0)
-	detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_child(detail_scroll)
-
-	_game_over_detail_label = Label.new()
-	_game_over_detail_label.name = "GameOverDetailLabel"
-	_game_over_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_game_over_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_game_over_detail_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_game_over_detail_label.text = "游戏已停止推进。"
-	detail_scroll.add_child(_game_over_detail_label)
 
 
 func _build_wave_countdown_label() -> void:
@@ -494,7 +810,7 @@ func _build_wave_countdown_label() -> void:
 	wave_countdown_label.offset_top = 118.0
 	wave_countdown_label.offset_right = 520.0
 	wave_countdown_label.offset_bottom = 142.0
-	wave_countdown_label.text = "下一波：--"
+	wave_countdown_label.text = "下一波敌军时间未知"
 	add_child(wave_countdown_label)
 	if backend_status_label != null:
 		backend_status_label.offset_top = 144.0
@@ -509,6 +825,11 @@ func _build_wave_countdown_label() -> void:
 	if alarm_button != null:
 		alarm_button.offset_top = 178.0
 		alarm_button.offset_bottom = 210.0
+	var dismiss_rally_button := get_node_or_null("DismissRallyButton") as Button
+	if dismiss_rally_button != null:
+		dismiss_rally_button.offset_top = 178.0
+		dismiss_rally_button.offset_bottom = 210.0
+	_request_hud_frame_fit()
 
 
 func _build_piety_ability_button() -> void:
@@ -516,7 +837,7 @@ func _build_piety_ability_button() -> void:
 		return
 	_piety_ability_button = PietyAbilityButtonClass.new()
 	_piety_ability_button.name = "PietyAbilityButton"
-	_piety_ability_button.position = Vector2(342.0, 172.0)
+	_piety_ability_button.position = Vector2(448.0, 172.0)
 	_piety_ability_button.size = Vector2(48.0, 48.0)
 	_piety_ability_button.ability_requested.connect(_begin_meteor_targeting)
 	add_child(_piety_ability_button)
@@ -536,6 +857,7 @@ func _build_piety_ability_button() -> void:
 	_meteor_target_hint.add_theme_constant_override("outline_size", 5)
 	_meteor_target_hint.text = "选择陨石落点：左键确认，右键或 Esc 取消"
 	add_child(_meteor_target_hint)
+	_request_hud_frame_fit()
 
 
 func _refresh_piety_ability() -> void:
@@ -568,6 +890,9 @@ func _begin_meteor_targeting() -> void:
 	_ensure_meteor_target_preview()
 	_meteor_targeting_active = true
 	_meteor_target_valid = false
+	_meteor_target_invalid_reason = ""
+	_meteor_target_invalid_message = ""
+	_meteor_target_feedback_until_msec = 0
 	if _piety_ability_button != null:
 		_piety_ability_button.set_targeting(true)
 	if _meteor_target_hint != null:
@@ -597,7 +922,15 @@ func _handle_meteor_targeting_input(event: InputEvent) -> bool:
 
 
 func _confirm_meteor_target() -> void:
-	if not _meteor_targeting_active or not _meteor_target_valid:
+	if not _meteor_targeting_active:
+		return
+	if not _meteor_target_valid:
+		if _meteor_target_invalid_reason == "building_overlap":
+			_show_meteor_target_feedback(
+				_meteor_target_invalid_message
+				if not _meteor_target_invalid_message.is_empty()
+				else "赖天主仁慈，陨石不能砸到建筑"
+			)
 		return
 	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
 	if piety_system == null or not piety_system.has_method("request_meteor_cast"):
@@ -607,12 +940,16 @@ func _confirm_meteor_target() -> void:
 	if bool(result.get("ok", false)):
 		_end_meteor_targeting()
 	else:
+		_show_meteor_target_feedback(str(result.get("message", "陨石无法在此处释放。")))
 		_refresh_piety_ability()
 
 
 func _end_meteor_targeting() -> void:
 	_meteor_targeting_active = false
 	_meteor_target_valid = false
+	_meteor_target_invalid_reason = ""
+	_meteor_target_invalid_message = ""
+	_meteor_target_feedback_until_msec = 0
 	if _piety_ability_button != null:
 		_piety_ability_button.set_targeting(false)
 	if _meteor_target_hint != null:
@@ -628,7 +965,7 @@ func _update_meteor_target_from_screen(screen_position: Vector2) -> void:
 	var camera := get_viewport().get_camera_3d()
 	var piety_system := get_node_or_null("/root/Main/Systems/PietySystem")
 	if camera == null or piety_system == null:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var targeting_snapshot: Dictionary = (
 		piety_system.get_targeting_snapshot()
@@ -639,34 +976,64 @@ func _update_meteor_target_from_screen(screen_position: Vector2) -> void:
 	var ray_origin := camera.project_ray_origin(screen_position)
 	var ray_direction := camera.project_ray_normal(screen_position)
 	if absf(ray_direction.y) < 0.00001:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var distance := (ground_y - ray_origin.y) / ray_direction.y
 	if distance <= 0.0:
-		_set_meteor_target_valid(false)
+		_set_meteor_target_validation({"allowed": false, "reason": "no_ground"})
 		return
 	var target_position := ray_origin + ray_direction * distance
-	var valid := (
-		bool(piety_system.is_target_position_allowed(target_position))
-		if piety_system.has_method("is_target_position_allowed")
-		else false
+	var validation: Dictionary = (
+		piety_system.get_target_position_validation(target_position)
+		if piety_system.has_method("get_target_position_validation")
+		else {
+			"allowed": bool(piety_system.is_target_position_allowed(target_position))
+			if piety_system.has_method("is_target_position_allowed")
+			else false
+		}
 	)
 	_meteor_target_position = target_position
-	_set_meteor_target_valid(valid)
-	if valid and _meteor_target_preview != null:
+	_set_meteor_target_validation(validation)
+	if _meteor_target_valid and _meteor_target_preview != null:
 		_meteor_target_preview.global_position = target_position + Vector3(0.0, 0.055, 0.0)
+
+
+func _set_meteor_target_validation(validation: Dictionary) -> void:
+	_meteor_target_invalid_reason = str(validation.get("reason", ""))
+	_meteor_target_invalid_message = str(validation.get("message", ""))
+	_set_meteor_target_valid(bool(validation.get("allowed", false)))
 
 
 func _set_meteor_target_valid(valid: bool) -> void:
 	_meteor_target_valid = valid
 	if _meteor_target_preview != null:
 		_meteor_target_preview.visible = valid
-	if _meteor_target_hint != null:
+	if _meteor_target_hint != null and _meteor_target_feedback_until_msec <= Time.get_ticks_msec():
 		_meteor_target_hint.text = (
 			"选择陨石落点：左键确认，右键或 Esc 取消"
 			if valid
-			else "请把陨石圆圈放在驿站地表内；右键或 Esc 取消"
+			else (
+				"陨石范围与建筑区域重叠；左键查看提示，右键或 Esc 取消"
+				if _meteor_target_invalid_reason == "building_overlap"
+				else "当前没有可用地面落点；右键或 Esc 取消"
+			)
 		)
+
+
+func _show_meteor_target_feedback(message: String) -> void:
+	if _meteor_target_hint == null or message.is_empty():
+		return
+	_meteor_target_hint.visible = true
+	_meteor_target_hint.text = message
+	_meteor_target_feedback_until_msec = Time.get_ticks_msec() + 1600
+
+
+func _refresh_meteor_target_feedback() -> void:
+	if _meteor_target_feedback_until_msec <= 0 or Time.get_ticks_msec() < _meteor_target_feedback_until_msec:
+		return
+	_meteor_target_feedback_until_msec = 0
+	if _meteor_targeting_active:
+		_set_meteor_target_valid(_meteor_target_valid)
 
 
 func _ensure_meteor_target_preview() -> void:
@@ -707,29 +1074,118 @@ func _refresh_wave_countdown() -> void:
 	if wave_countdown_label == null:
 		return
 	var combat_system := get_node_or_null("/root/Main/Systems/CombatSystem")
-	if combat_system == null or not combat_system.has_method("get_wave_schedule_snapshot"):
-		wave_countdown_label.text = "下一波：未接入"
+	if combat_system == null or not combat_system.has_method("get_wave_hud_snapshot"):
+		wave_countdown_label.text = "下一波敌军时间不可用"
+		_set_wave_alarm_emphasis(false)
 		return
-	var snapshot: Dictionary = combat_system.get_wave_schedule_snapshot()
+	var snapshot: Dictionary = combat_system.get_wave_hud_snapshot()
 	var active_enemy_count := int(snapshot.get("active_enemy_count", 0))
-	var active_battle: Dictionary = snapshot.get("active_battle", {}) if snapshot.get("active_battle", {}) is Dictionary else {}
 	var prefix := ""
 	if active_enemy_count > 0:
-		var current_wave := int(active_battle.get("wave_number", 0))
+		var current_wave := int(snapshot.get("active_wave_number", 0))
 		prefix = "当前第%d波 敌人%d | " % [current_wave, active_enemy_count] if current_wave > 0 else "当前敌人%d | " % active_enemy_count
 	if bool(snapshot.get("all_waves_triggered", false)):
-		wave_countdown_label.text = "%s下一波：无" % prefix
+		wave_countdown_label.text = "%s敌军波次已结束" % prefix
+		_set_wave_alarm_emphasis(false)
 		return
 	var next_wave: Dictionary = snapshot.get("next_wave", {}) if snapshot.get("next_wave", {}) is Dictionary else {}
 	if next_wave.is_empty():
-		wave_countdown_label.text = "%s下一波：--" % prefix
+		wave_countdown_label.text = "%s下一波敌军时间未知" % prefix
+		_set_wave_alarm_emphasis(false)
 		return
-	var countdown_text := _format_wave_countdown(float(next_wave.get("seconds_until", 0.0)))
-	wave_countdown_label.text = "%s下一波 第%d波：%s" % [
+	var seconds_until := float(next_wave.get("seconds_until", 0.0))
+	wave_countdown_label.text = "%s%s" % [
 		prefix,
-		int(next_wave.get("wave_number", 0)),
-		countdown_text
+		_format_next_wave_arrival(seconds_until)
 	]
+	_refresh_wave_warning(int(next_wave.get("wave_number", 0)), seconds_until, active_enemy_count)
+
+
+func _build_wave_warning_dialog() -> void:
+	if _wave_warning_dialog != null:
+		return
+	_wave_warning_dialog = AcceptDialog.new()
+	_wave_warning_dialog.name = "WaveArrivalWarningDialog"
+	_wave_warning_dialog.title = "敌袭迫近"
+	_wave_warning_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
+	_wave_warning_dialog.size = Vector2i(540, 170)
+	_wave_warning_dialog.unresizable = true
+	_wave_warning_dialog.ok_button_text = "知道了"
+	_wave_warning_dialog.confirmed.connect(_on_wave_warning_closed)
+	_wave_warning_dialog.close_requested.connect(_on_wave_warning_closed)
+	add_child(_wave_warning_dialog)
+
+
+func _refresh_wave_warning(wave_number: int, seconds_until: float, active_enemy_count: int) -> void:
+	if wave_number <= 0 or active_enemy_count > 0:
+		_set_wave_alarm_emphasis(false)
+		return
+	var previous_seconds := float(_last_wave_warning_seconds_by_wave.get(wave_number, INF))
+	_last_wave_warning_seconds_by_wave[wave_number] = seconds_until
+	var within_warning_window := seconds_until > 0.0 and seconds_until <= WAVE_WARNING_EARLY_SECONDS
+	_set_wave_alarm_emphasis(within_warning_window)
+	if not within_warning_window:
+		return
+	if previous_seconds == INF:
+		if seconds_until <= WAVE_WARNING_FINAL_SECONDS:
+			_queue_wave_warning(wave_number, "final", "第%d波敌军将在 30 分钟内来袭！请立即完成装备与集结，必要时鸣响警报。" % wave_number)
+		else:
+			_queue_wave_warning(wave_number, "early", "第%d波敌军将在 3 小时内来袭。请检查征募、装备、器械与恢复，并准备鸣响警报。" % wave_number)
+		return
+	if previous_seconds > WAVE_WARNING_EARLY_SECONDS and seconds_until <= WAVE_WARNING_EARLY_SECONDS:
+		_queue_wave_warning(wave_number, "early", "第%d波敌军将在 3 小时内来袭。请检查征募、装备、器械与恢复，并准备鸣响警报。" % wave_number)
+	if previous_seconds > WAVE_WARNING_FINAL_SECONDS and seconds_until <= WAVE_WARNING_FINAL_SECONDS:
+		_queue_wave_warning(wave_number, "final", "第%d波敌军将在 30 分钟内来袭！请立即完成装备与集结，必要时鸣响警报。" % wave_number)
+
+
+func _queue_wave_warning(wave_number: int, threshold: String, message: String) -> void:
+	var key := "%d:%s" % [wave_number, threshold]
+	if bool(_wave_warning_seen.get(key, false)):
+		return
+	_wave_warning_seen[key] = true
+	_wave_warning_queue.append({
+		"wave_number": wave_number,
+		"threshold": threshold,
+		"message": message
+	})
+	_show_next_wave_warning()
+
+
+func _show_next_wave_warning() -> void:
+	if _wave_warning_dialog == null or _wave_warning_dialog.visible or _wave_warning_queue.is_empty():
+		return
+	_current_wave_warning = _wave_warning_queue.pop_front()
+	_wave_warning_dialog.dialog_text = str(_current_wave_warning.get("message", "敌军即将来袭。"))
+	_wave_warning_dialog.popup_centered()
+
+
+func _on_wave_warning_closed() -> void:
+	_current_wave_warning.clear()
+	call_deferred("_show_next_wave_warning")
+
+
+func _set_wave_alarm_emphasis(emphasized: bool) -> void:
+	var alarm_button := get_node_or_null("AlarmButton") as Button
+	if alarm_button != null:
+		alarm_button.self_modulate = WAVE_WARNING_COLOR if emphasized else Color.WHITE
+		alarm_button.tooltip_text = "敌袭迫近：点击鸣响警报并集结合法战斗员。" if emphasized else ""
+	if wave_countdown_label != null:
+		if emphasized:
+			wave_countdown_label.add_theme_color_override("font_color", WAVE_WARNING_COLOR)
+		else:
+			wave_countdown_label.remove_theme_color_override("font_color")
+
+
+func debug_get_wave_warning_snapshot() -> Dictionary:
+	var alarm_button := get_node_or_null("AlarmButton") as Button
+	return {
+		"visible": _wave_warning_dialog != null and _wave_warning_dialog.visible,
+		"dialog_text": _wave_warning_dialog.dialog_text if _wave_warning_dialog != null else "",
+		"current": _current_wave_warning.duplicate(true),
+		"queued": _wave_warning_queue.duplicate(true),
+		"seen": _wave_warning_seen.duplicate(true),
+		"alarm_emphasized": alarm_button != null and alarm_button.self_modulate == WAVE_WARNING_COLOR
+	}
 
 
 func _refresh_escape_warning() -> void:
@@ -767,26 +1223,15 @@ func _refresh_game_over_panel() -> void:
 		_game_over_panel.visible = false
 		return
 	var result := str(game_state.get("game_result"))
-	var reason := str(game_state.get("game_over_reason"))
-	if reason.is_empty():
-		reason = str(game_state.get("failure_reason"))
 	var settlement_snapshot: Dictionary = game_state.get("settlement_snapshot") if game_state.get("settlement_snapshot") is Dictionary else {}
-	_game_over_title_label.text = "防守成功" if result == "victory" else "防守失败"
-	_game_over_reason_label.text = "%s：%s" % [
-		"结果" if result == "victory" else "原因",
-		_format_game_over_reason(reason)
-	]
-	_game_over_detail_label.text = _build_game_over_detail_text(result, settlement_snapshot)
-	_game_over_panel.visible = true
-	_game_over_panel.move_to_front()
+	if _game_over_panel.has_method("present"):
+		_game_over_panel.present(result, settlement_snapshot)
 
 
 func _format_game_over_reason(reason: String) -> String:
 	match reason:
 		"main_hall_destroyed":
 			return "主厅被摧毁"
-		"no_available_combatants":
-			return "无可战斗人员"
 		"five_waves_survived":
 			return "守住 5 波敌人"
 		_:
@@ -858,10 +1303,26 @@ func _build_victory_npc_summary(npcs: Dictionary) -> String:
 
 
 func _build_npc_endings_text(npcs: Dictionary) -> String:
+	var game_state := get_node_or_null("/root/GameState")
+	var settlement: Dictionary = game_state.settlement_snapshot if game_state != null and game_state.settlement_snapshot is Dictionary else {}
+	var epilogue: Dictionary = settlement.get("epilogue", {}) if settlement.get("epilogue", {}) is Dictionary else {}
+	var status := str(epilogue.get("status", ""))
+	if status == "pending":
+		return "NPC 结局：\n\n战地记录整理中……"
 	var items: Array = npcs.get("items", []) if npcs.get("items", []) is Array else []
 	if items.is_empty():
 		return "NPC 结局：未记录"
-	var lines: Array[String] = ["NPC 结局："]
+	var lines: Array[String] = []
+	var ending_title := str(epilogue.get("ending_title", "")).strip_edges()
+	var station_coda := str(epilogue.get("station_coda", "")).strip_edges()
+	var message := str(epilogue.get("message", "")).strip_edges()
+	if not ending_title.is_empty():
+		lines.append("结局：%s" % ending_title)
+	if not station_coda.is_empty():
+		lines.append(station_coda)
+	if not message.is_empty():
+		lines.append("[%s]" % message)
+	lines.append("NPC 结局：")
 	for raw_item in items:
 		var item: Dictionary = raw_item if raw_item is Dictionary else {}
 		var recruited_text := "已入伍" if bool(item.get("recruited", false)) else "未入伍"
@@ -869,6 +1330,9 @@ func _build_npc_endings_text(npcs: Dictionary) -> String:
 		var location_text := str(item.get("current_location_name", item.get("current_location", "未知")))
 		var opinion := str(item.get("final_opinion", "Mock：尚无明确看法。"))
 		var fate := str(item.get("fate_summary", "Mock：后续命运未记录。"))
+		var personal_title := str(item.get("ending_title", "")).strip_edges()
+		if not personal_title.is_empty():
+			lines.append("\n《%s》" % personal_title)
 		lines.append("- %s：%s / %s / 最后位置：%s" % [
 			str(item.get("name", item.get("id", ""))),
 			status_text,
@@ -913,6 +1377,13 @@ func _format_wave_countdown(seconds_until: float) -> String:
 	return "%d分%02d秒" % [minutes, remainder % 60]
 
 
+func _format_next_wave_arrival(seconds_until: float) -> String:
+	var countdown_text := _format_wave_countdown(seconds_until)
+	if countdown_text == "即将来袭":
+		return "下一波敌军即将来袭"
+	return "下一波敌军还有 %s来袭" % countdown_text
+
+
 func _make_detail_button(text: String, mode: String) -> Button:
 	var button := Button.new()
 	button.name = "%sDetailButton" % mode.to_pascal_case()
@@ -936,7 +1407,7 @@ func _build_detail_panel() -> void:
 	_detail_panel.visible = false
 	_detail_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_detail_panel.position = Vector2(24, 116)
-	_detail_panel.custom_minimum_size = Vector2(360, 220)
+	_detail_panel.custom_minimum_size = DETAIL_PANEL_MINIMUM_SIZE
 	_detail_panel.size = _detail_panel.custom_minimum_size
 	_detail_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_detail_panel)
@@ -963,8 +1434,10 @@ func _build_detail_panel() -> void:
 	header.add_child(_detail_title)
 
 	var close_button := Button.new()
-	close_button.text = "关闭"
+	close_button.text = "×"
+	close_button.tooltip_text = "关闭"
 	close_button.focus_mode = Control.FOCUS_NONE
+	close_button.custom_minimum_size = Vector2(30.0, 26.0)
 	close_button.pressed.connect(func() -> void:
 		_detail_panel.visible = false
 		_detail_source_button = null
@@ -974,13 +1447,23 @@ func _build_detail_panel() -> void:
 	_detail_drag_controller = DraggablePanelController.new()
 	_detail_drag_controller.bind(_detail_panel, header)
 
-	_detail_text = RichTextLabel.new()
-	_detail_text.name = "ResourceDetailText"
-	_detail_text.bbcode_enabled = false
-	_detail_text.fit_content = true
-	_detail_text.custom_minimum_size = Vector2(340, 150)
-	_detail_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(_detail_text)
+	_detail_scroll = ScrollContainer.new()
+	_detail_scroll.name = "ResourceDetailScroll"
+	_detail_scroll.custom_minimum_size = DETAIL_SCROLL_MINIMUM_SIZE
+	_detail_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_detail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_detail_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_detail_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	content.add_child(_detail_scroll)
+
+	_detail_grid = GridContainer.new()
+	_detail_grid.name = "ResourceDetailGrid"
+	_detail_grid.columns = DETAIL_GRID_COLUMNS
+	_detail_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_grid.add_theme_constant_override("h_separation", 8)
+	_detail_grid.add_theme_constant_override("v_separation", 8)
+	_detail_scroll.add_child(_detail_grid)
 
 
 func _toggle_detail_panel(mode: String, source_button: Control) -> void:
@@ -1001,14 +1484,14 @@ func _toggle_detail_panel(mode: String, source_button: Control) -> void:
 
 
 func _refresh_detail_panel() -> void:
-	if _detail_text == null or _detail_title == null:
+	if _detail_grid == null or _detail_title == null:
 		return
 	if _detail_mode == "equipment":
 		_detail_title.text = "装备库存"
-		_detail_text.text = _build_equipment_detail_text()
+		_rebuild_detail_grid(_build_equipment_detail_items())
 	elif _detail_mode == "devices":
 		_detail_title.text = "器械库存"
-		_detail_text.text = _build_device_detail_text()
+		_rebuild_detail_grid(_build_device_detail_items())
 
 
 func _position_detail_panel_near(source_button: Control) -> void:
@@ -1045,65 +1528,263 @@ func _get_usable_viewport_size() -> Vector2:
 	return viewport_size
 
 
-func _build_equipment_detail_text() -> String:
+func _rebuild_detail_grid(items: Array[Dictionary]) -> void:
+	if _detail_grid == null:
+		return
+	var previous_scroll := _detail_scroll.scroll_vertical if _detail_scroll != null else 0
+	for child in _detail_grid.get_children():
+		_detail_grid.remove_child(child)
+		child.free()
+	_detail_item_snapshots = items.duplicate(true)
+	for index in range(items.size()):
+		var button := _make_detail_item_button(items[index], index)
+		_detail_grid.add_child(button)
+		_apply_detail_item_button_style(button)
+	if _detail_scroll != null:
+		_detail_scroll.set_deferred("scroll_vertical", previous_scroll)
+
+
+func _make_detail_item_button(item: Dictionary, index: int) -> Button:
+	var button := Button.new()
+	button.name = "InventoryItem%03d" % index
+	button.text = ""
+	button.tooltip_text = str(item.get("tooltip", "未分配"))
+	button.custom_minimum_size = DETAIL_ITEM_BUTTON_SIZE
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.expand_icon = true
+	button.add_theme_constant_override("icon_max_width", DETAIL_ITEM_ICON_MAX_WIDTH)
+	var icon_path := str(item.get("icon_path", ""))
+	if not icon_path.is_empty() and ResourceLoader.exists(icon_path):
+		button.icon = load(icon_path) as Texture2D
+	if bool(item.get("assigned", false)):
+		button.self_modulate = ASSIGNED_ITEM_MODULATE
+	button.set_meta("inventory_item", item.duplicate(true))
+	return button
+
+
+func _apply_detail_item_button_style(button: Button) -> void:
+	# The shared button theme is text-oriented; its 11 px horizontal padding made
+	# the square inventory art much smaller than the existing 68 px slot.
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var source_style := button.get_theme_stylebox(state)
+		if source_style == null:
+			continue
+		var compact_style := source_style.duplicate() as StyleBox
+		compact_style.content_margin_left = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_top = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_right = DETAIL_ITEM_CONTENT_MARGIN
+		compact_style.content_margin_bottom = DETAIL_ITEM_CONTENT_MARGIN
+		if compact_style is StyleBoxFlat:
+			(compact_style as StyleBoxFlat).set_border_width_all(DETAIL_ITEM_BORDER_WIDTH)
+		button.add_theme_stylebox_override(state, compact_style)
+
+
+func _build_equipment_detail_items() -> Array[Dictionary]:
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
 	var equipment_system := get_node_or_null("/root/Main/Systems/EquipmentSystem")
-	var lines: Array[String] = []
+	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
+	var result: Array[Dictionary] = []
+	var assigned_by_resource: Dictionary = {}
+	if npc_system != null and npc_system.has_method("get_npc_ids"):
+		for raw_npc_id in npc_system.get_npc_ids():
+			var npc_id := str(raw_npc_id)
+			var npc: Dictionary = npc_system.get_npc(npc_id)
+			var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
+			for slot in ["main_weapon", "helmet", "chest", "bracers", "greaves"]:
+				var item: Dictionary = equipment.get(slot, {}) if equipment.get(slot, {}) is Dictionary else {}
+				if item.is_empty():
+					continue
+				var resource_id := str(item.get("source_resource_id", ""))
+				if resource_id.is_empty():
+					resource_id = "item_%s" % str(item.get("id", ""))
+				var assigned_items: Array = assigned_by_resource.get(resource_id, [])
+				assigned_items.append(_make_inventory_item_snapshot(
+					resource_id,
+					str(item.get("icon", _resolve_equipment_resource_icon(equipment_system, resource_id))),
+					true,
+					str(item.get("name", _resource_display_name_from_system(resource_system, resource_id))),
+					"已分配给%s" % _npc_display_name(npc_system, npc_id),
+					"equipment",
+					npc_id
+				))
+				assigned_by_resource[resource_id] = assigned_items
 
-	lines.append("具体库存")
-	lines.append("武器：%s" % _build_inventory_group_text(resource_system, "weapon"))
-	lines.append("盔甲：%s" % _build_inventory_group_text(resource_system, "armor"))
-	lines.append("弹药：%s" % _build_inventory_group_text(resource_system, "ammunition"))
+	if resource_system != null and resource_system.has_method("get_resource_ids"):
+		for raw_resource_id in resource_system.get_resource_ids():
+			var resource_id := str(raw_resource_id)
+			var definition: Dictionary = resource_system.get_resource_definition(resource_id)
+			var detail_group := str(definition.get("detail_group", ""))
+			if not ["weapon", "armor"].has(detail_group):
+				continue
+			var icon_path := str(definition.get("icon", ""))
+			if icon_path.is_empty():
+				icon_path = _resolve_equipment_resource_icon(equipment_system, resource_id)
+			_append_unassigned_inventory_items(
+				result,
+				resource_id,
+				icon_path,
+				int(resource_system.get_resource(resource_id)),
+				detail_group,
+				str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id)))
+			)
+			for raw_assigned_item in assigned_by_resource.get(resource_id, []):
+				if raw_assigned_item is Dictionary:
+					result.append((raw_assigned_item as Dictionary).duplicate(true))
+			assigned_by_resource.erase(resource_id)
+
+	for raw_remaining_items in assigned_by_resource.values():
+		if raw_remaining_items is Array:
+			for raw_item in raw_remaining_items:
+				if raw_item is Dictionary:
+					result.append((raw_item as Dictionary).duplicate(true))
+
 	var horse_system := get_node_or_null("/root/Main/Systems/HorseSystem")
-	if horse_system != null and horse_system.has_method("get_stable_summary"):
-		var stable_summary: Dictionary = horse_system.get_stable_summary()
-		lines.append("马厩：%d 匹（成年 %d / 小马 %d）" % [
-			int(stable_summary.get("total_count", stable_summary.get("total", 0))),
-			int(stable_summary.get("adult_count", stable_summary.get("adult", 0))),
-			int(stable_summary.get("foal_count", stable_summary.get("foal", 0)))
-		])
+	if horse_system != null and horse_system.has_method("get_horses_snapshot"):
+		for raw_horse in horse_system.get_horses_snapshot():
+			var horse: Dictionary = raw_horse if raw_horse is Dictionary else {}
+			if horse.is_empty() or not bool(horse.get("alive", true)):
+				continue
+			var assigned_npc_id := str(horse.get("assigned_npc_id", horse.get("ridden_by_npc_id", "")))
+			var assigned := not assigned_npc_id.is_empty()
+			result.append(_make_inventory_item_snapshot(
+				str(horse.get("horse_id", "")),
+				str(horse.get("icon", "")),
+				assigned,
+				str(horse.get("name", "马匹")),
+				"已分配给%s" % _npc_display_name(npc_system, assigned_npc_id) if assigned else "未分配",
+				"horse",
+				assigned_npc_id
+			))
+	return result
 
-	if equipment_system == null:
-		lines.append("装备系统不可用。")
-		return "\n".join(lines)
 
-	lines.append("")
-	lines.append("已分配：%s" % _build_equipped_summary())
-	return "\n".join(lines)
-
-
-func _build_device_detail_text() -> String:
+func _build_device_detail_items() -> Array[Dictionary]:
 	var resource_system := get_node_or_null("/root/Main/Systems/ResourceSystem")
-	var lines: Array[String] = [
-		"具体库存：%s" % _build_inventory_group_text(resource_system, "defense_device")
-	]
 	var device_system := get_node_or_null("/root/Main/Systems/DefenseDeviceSystem")
-	if device_system != null and device_system.has_method("get_deployments"):
-		var deployments: Array = device_system.get_deployments()
-		lines.append("已部署：%d 件" % deployments.size())
-		for raw_deployment in deployments:
-			if raw_deployment is Dictionary:
-				lines.append("- %s / %s" % [
-					str(raw_deployment.get("device_name", "工程器械")),
-					str(raw_deployment.get("slot_name", "围墙槽位"))
-				])
-	return "\n".join(lines)
-
-
-func _build_inventory_group_text(resource_system: Node, detail_group: String) -> String:
-	if resource_system == null or not resource_system.has_method("get_resource_ids"):
-		return "无法读取"
-	var parts: Array[String] = []
-	for raw_resource_id in resource_system.get_resource_ids():
-		var resource_id := str(raw_resource_id)
-		var definition: Dictionary = resource_system.get_resource_definition(resource_id)
-		if str(definition.get("detail_group", "")) != detail_group:
-			continue
-		parts.append("%s %d" % [
-			str(definition.get("name", resource_id)),
+	var result: Array[Dictionary] = []
+	if device_system == null or not device_system.has_method("get_device_ids"):
+		return result
+	var deployments: Array = device_system.get_deployments() if device_system.has_method("get_deployments") else []
+	for raw_device_id in device_system.get_device_ids():
+		var device_id := str(raw_device_id)
+		var definition: Dictionary = device_system.get_device_definition(device_id)
+		var presentation: Dictionary = definition.get("presentation", {}) if definition.get("presentation", {}) is Dictionary else {}
+		var icon_path := str(presentation.get("icon", ""))
+		var inventory_cost: Dictionary = definition.get("inventory_cost", {}) if definition.get("inventory_cost", {}) is Dictionary else {}
+		var resource_id := str(inventory_cost.keys()[0]) if not inventory_cost.is_empty() else ""
+		var inventory_amount := (
 			int(resource_system.get_resource(resource_id))
-		])
-	return "、".join(parts) if not parts.is_empty() else "无"
+			if resource_system != null and not resource_id.is_empty() and resource_system.has_method("get_resource")
+			else 0
+		)
+		_append_unassigned_inventory_items(
+			result,
+			resource_id,
+			icon_path,
+			inventory_amount,
+			"defense_device",
+			str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id)))
+		)
+		for raw_deployment in deployments:
+			var deployment: Dictionary = raw_deployment if raw_deployment is Dictionary else {}
+			if str(deployment.get("device_id", "")) != device_id:
+				continue
+			result.append(_make_inventory_item_snapshot(
+				str(deployment.get("deployment_id", "")),
+				icon_path,
+				true,
+				str(definition.get("name", _resource_display_name_from_system(resource_system, resource_id))),
+				"已部署到%s" % str(deployment.get("slot_name", deployment.get("slot_id", ""))),
+				"defense_device",
+				str(deployment.get("slot_id", ""))
+			))
+	return result
+
+
+func _append_unassigned_inventory_items(
+	target: Array[Dictionary],
+	item_id: String,
+	icon_path: String,
+	amount: int,
+	category: String,
+	item_name: String
+) -> void:
+	for _index in range(maxi(0, amount)):
+		target.append(_make_inventory_item_snapshot(
+			item_id,
+			icon_path,
+			false,
+			item_name,
+			"未分配",
+			category,
+			""
+		))
+
+
+func _make_inventory_item_snapshot(
+	item_id: String,
+	icon_path: String,
+	assigned: bool,
+	item_name: String,
+	status_text: String,
+	category: String,
+	assignment_target_id: String
+) -> Dictionary:
+	return {
+		"item_id": item_id,
+		"icon_path": icon_path,
+		"assigned": assigned,
+		"item_name": item_name,
+		"tooltip": "%s %s" % [item_name, status_text],
+		"category": category,
+		"assignment_target_id": assignment_target_id
+	}
+
+
+func _resource_display_name_from_system(resource_system: Node, resource_id: String) -> String:
+	if resource_system != null and resource_system.has_method("get_resource_name"):
+		return str(resource_system.get_resource_name(resource_id))
+	return resource_id
+
+
+func _resolve_equipment_resource_icon(equipment_system: Node, resource_id: String) -> String:
+	if equipment_system == null:
+		return ""
+	if equipment_system.has_method("get_weapon_ids") and equipment_system.has_method("get_weapon_def"):
+		for raw_weapon_id in equipment_system.get_weapon_ids():
+			var definition: Dictionary = equipment_system.get_weapon_def(str(raw_weapon_id))
+			if str(definition.get("source_resource_id", "")) == resource_id:
+				return str(definition.get("icon", ""))
+	if equipment_system.has_method("get_armor_ids") and equipment_system.has_method("get_armor_def"):
+		for raw_armor_id in equipment_system.get_armor_ids():
+			var definition: Dictionary = equipment_system.get_armor_def(str(raw_armor_id))
+			if str(definition.get("source_resource_id", "")) == resource_id:
+				return str(definition.get("icon", ""))
+	return ""
+
+
+func _npc_display_name(npc_system: Node, npc_id: String) -> String:
+	if npc_id.is_empty():
+		return ""
+	if npc_system != null and npc_system.has_method("get_npc"):
+		var npc: Dictionary = npc_system.get_npc(npc_id)
+		return str(npc.get("name", npc_id))
+	return npc_id
+
+
+func debug_get_resource_detail_snapshot() -> Dictionary:
+	return {
+		"visible": _detail_panel != null and _detail_panel.visible,
+		"mode": _detail_mode,
+		"panel_minimum_size": _detail_panel.custom_minimum_size if _detail_panel != null else Vector2.ZERO,
+		"scroll_minimum_size": _detail_scroll.custom_minimum_size if _detail_scroll != null else Vector2.ZERO,
+		"vertical_scroll_mode": _detail_scroll.vertical_scroll_mode if _detail_scroll != null else -1,
+		"horizontal_scroll_mode": _detail_scroll.horizontal_scroll_mode if _detail_scroll != null else -1,
+		"grid_columns": _detail_grid.columns if _detail_grid != null else 0,
+		"item_count": _detail_item_snapshots.size(),
+		"items": _detail_item_snapshots.duplicate(true)
+	}
 
 
 func _should_show_resource_in_main_hud(resource_system: Node, resource_id: String) -> bool:
@@ -1111,64 +1792,6 @@ func _should_show_resource_in_main_hud(resource_system: Node, resource_id: Strin
 		return not ["weapons", "armor", "horse_readiness", "defense_devices"].has(resource_id)
 	var definition: Dictionary = resource_system.get_resource_definition(resource_id)
 	return bool(definition.get("show_in_main_hud", true))
-
-
-func _join_named_defs(system: Node, ids: Array, method_name: String) -> String:
-	var names: Array[String] = []
-	for raw_id in ids:
-		var id := str(raw_id)
-		var definition: Dictionary = system.call(method_name, id)
-		names.append(str(definition.get("name", id)))
-	if names.is_empty():
-		return "无"
-	return "、".join(names)
-
-
-func _join_named_armor(equipment_system: Node) -> String:
-	var slot_ids: Array = equipment_system.get_armor_slot_ids()
-	var names: Array[String] = []
-	for raw_slot in slot_ids:
-		var slot := str(raw_slot)
-		var armor_ids: Array = equipment_system.get_armor_ids(slot)
-		if armor_ids.is_empty():
-			continue
-		var armor_id := str(armor_ids[0])
-		var definition: Dictionary = equipment_system.get_armor_def(armor_id)
-		var slot_label := slot
-		if equipment_system.has_method("get_slot_label"):
-			slot_label = str(equipment_system.get_slot_label(slot))
-		names.append("%s：%s" % [slot_label, str(definition.get("name", slot))])
-	if names.is_empty():
-		return "无"
-	return "；".join(names)
-
-
-func _build_equipped_summary() -> String:
-	var npc_system := get_node_or_null("/root/Main/Systems/NPCSystem")
-	if npc_system == null or not npc_system.has_method("get_npc_ids"):
-		return "无法读取 NPC"
-
-	var weapon_count := 0
-	var armor_count := 0
-	var mount_count := 0
-	for raw_npc_id in npc_system.get_npc_ids():
-		var npc: Dictionary = npc_system.get_npc(str(raw_npc_id))
-		var equipment: Dictionary = npc.get("equipment", {})
-		if not str(equipment.get("main_weapon", {}).get("id", "")).is_empty():
-			weapon_count += 1
-		for slot in ["helmet", "chest", "bracers", "greaves"]:
-			if not str(equipment.get(slot, {}).get("id", "")).is_empty():
-				armor_count += 1
-		if not str(equipment.get("mount", {}).get("id", "")).is_empty():
-			mount_count += 1
-
-	return "武器 %d 件 / 盔甲 %d 件 / 坐骑 %d 匹" % [weapon_count, armor_count, mount_count]
-
-
-func _get_resource_amount(resource_system: Node, resource_id: String) -> int:
-	if resource_system == null or not resource_system.has_method("get_resource"):
-		return 0
-	return int(resource_system.get_resource(resource_id))
 
 
 func _resource_display_name(resource_id: String) -> String:

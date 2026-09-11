@@ -98,23 +98,32 @@ func _build_npc_settlement_snapshot(result: String) -> Dictionary:
 		if npc_system.has_method("get_npc_long_memory"):
 			long_memory = npc_system.get_npc_long_memory(npc_id)
 
-		var final_status := _get_npc_final_status(state)
+		var escaped_before_fall := bool(state.get("escaped", false))
+		var escaped_at_settlement := result == "failure" or escaped_before_fall
+		var unconscious_at_settlement := false if escaped_at_settlement else bool(state.get("unconscious", false))
+		var final_status := "逃离" if escaped_at_settlement else "昏迷" if unconscious_at_settlement else "可行动"
+		var escape_circumstance := "none"
+		if result == "failure":
+			escape_circumstance = "before_fall_voluntary" if escaped_before_fall else "after_fall_forced"
+		elif escaped_before_fall:
+			escape_circumstance = "before_settlement_voluntary"
 		var entry := {
 			"id": npc_id,
 			"name": str(npc.get("name", npc_id)),
 			"recruited": bool(npc.get("recruited", false)),
 			"hp": int(state.get("hp", 0)),
 			"max_hp": int(state.get("max_hp", 0)),
-			"unconscious": bool(state.get("unconscious", false)),
-			"escaped": bool(state.get("escaped", false)),
-			"behavior_mode": str(state.get("behavior_mode", "work")),
-			"current_action": str(state.get("current_action", "")),
-			"current_location": str(state.get("current_location", "")),
-			"current_location_name": _get_npc_final_location_name(state),
+			"unconscious": unconscious_at_settlement,
+			"escaped": escaped_at_settlement,
+			"escape_circumstance": escape_circumstance,
+			"behavior_mode": "escaped" if escaped_at_settlement else str(state.get("behavior_mode", "work")),
+			"current_action": "escaped_after_station_fell" if result == "failure" else str(state.get("current_action", "")),
+			"current_location": "outside_station" if escaped_at_settlement else str(state.get("current_location", "")),
+			"current_location_name": "驿站外" if escaped_at_settlement else _get_npc_final_location_name(state),
 			"final_status": final_status,
 			"final_status_label": final_status,
-			"final_opinion": _build_npc_final_opinion(npc_id, npc, state, long_memory),
-			"fate_summary": _build_npc_fate_summary(result, npc, state, final_status),
+			"final_opinion": _build_npc_final_opinion(npc_id, npc, _settlement_state(state, escaped_at_settlement, unconscious_at_settlement), long_memory),
+			"fate_summary": _build_npc_fate_summary(result, npc, _settlement_state(state, escaped_at_settlement, unconscious_at_settlement), final_status),
 			"memory_basis": _build_npc_memory_basis(npc_id, long_memory)
 		}
 		items.append(entry)
@@ -131,6 +140,13 @@ func _build_npc_settlement_snapshot(result: String) -> Dictionary:
 		"unconscious_npcs": unconscious,
 		"escaped_npcs": escaped
 	}
+
+
+func _settlement_state(state: Dictionary, escaped: bool, unconscious: bool) -> Dictionary:
+	var settled := state.duplicate(true)
+	settled["escaped"] = escaped
+	settled["unconscious"] = unconscious
+	return settled
 
 
 func _get_npc_final_status(state: Dictionary) -> String:

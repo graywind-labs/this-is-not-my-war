@@ -3,6 +3,7 @@
 目标 NPC 始终由 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory（含 knowledge_graph 与 diary）和 npc.location_context 定义。正式重估必须延续其职业背景、宗教信仰、人格、欲望、恐惧、底线与既有记忆；宗教信仰不能覆盖个性、职业判断或程序现实，不能为了消除失败而把 NPC 改写成另一种性格。
 
 npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部亲历 experienced_events 与见闻 witnessed_events，不是“最近若干条”抽样；亲历权重高于见闻。每条记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充摘要未充分表达的原因、资源缺口、指令变化等决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
+其中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能在上传前按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 给出 event_count、累计伤害、HP 首尾/最低值及首尾时间。聚合项表示多次真实事件，不得当成单次事件；其他类型仍逐条提供。
 
 基础场景：
 - station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人安排为站内目标；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
@@ -26,6 +27,7 @@ npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短�
    若 failure_context.dialogue_history 显示守备官明确请 NPC 现在参加已经开始 / 正在举行的弥撒，且 NPC 已清楚答应立即参加，那么在 `pray_at_chapel` 当前可用时，应强烈优先把当前小时改为 `pray_at_chapel`，让 NPC 前往小教堂后由程序自动参加正在举行的弥撒。只有对话后的实时状态、人物事实或更紧迫程序事实给出明确且具体的反对理由时才选择其他候选。
    `drink_wine` 只能在 npc.state.wine 至少为 1 且候选可用时选择；每个饮酒阶段开始会由程序消耗 1 份个人酒。若权威失败是 `drink_wine_failed_no_wine`，不得在未获得新酒的前提下重复安排饮酒。其心理影响仅通过事件与上下文体现，不得添加情绪数值或删除记忆。
 5. 优先处理 `failure_type`、`failure_summary` 和 `failure_context` 指出的权威触发原因，并参考完整原计划、实时 `current_building_states.workstations`、NPC 状态、当前地点、短期 / 长期记忆和 `current_order`。对话后定向重估时，`failure_context` 可包含本轮对话与判别原因；仍只能修改 `revision_hours`。`failure_type=plan_item_superseded` 时，旧等待行动并未成功开始，必须区分 `failure_context.failed_plan_item` 与 `failure_context.current_plan_item`。`failure_type=action_completed` 表示 `failed_plan_item` 实际已经成功完成而不是失败；当前小时仍有剩余时间，必须从正常合法候选中安排后续活动。若 `failure_context.contiguous_revision_hours` 非空，表示当前起连续的相同任务阶段都要一并重新安排。此时 `failure_context.requires_different_current_activity=true`，当前小时不得原样重复相同的 `action_id + target_id`，可以改做工作、休息、协助、交谈或其他符合人物与现场状态的可行行动。
+   修订后的计划必须回应触发修订的真实事件：逃离理由已由已知事实解决时，安排符合该人物新判断的工作、休息、训练或职责；理由仍存在时，可以保留或加强现有 `escaping_station`。不能因为收到钱或酒就删除与礼物无关的危险判断。对装备和指令敏感的 NPC，应在装备真实到账或危险命令确实撤回后表现出明显变化；对建筑和资源敏感的 NPC，只在确实知道升级或储备变化后调整。所有动作仍严格使用现有枚举与 Schema。
 6. 初始日记和知识图谱只提供人物既有经验与观察方式；日记字符串保留“往昔·来站前 / 往昔·初到驿站 / 往昔·近日”或“第 N 天 + 时间”的前缀，必须按该前缀理解先后。“往昔·近日”发生在守备官收到并向众人传达敌情之前，不能被解释成 NPC 已知敌袭、征召或备战。当前建筑、资源、行动资格和当天事实与旧认知冲突时，以程序实时字段为准。初始图谱只固定守备官的基本职责、三年前到站、来站前经历未知，以及此前尽责并与成员总体相处和睦；不得补造其过去，也不得把总体和睦解释成当前无条件服从或信任，开局后的具体关系仍随实际对话和事件发展。
 6. 当 `failure_type=workstation_occupied` 且 `failure_context.blocked_by_npcs` 指明占用者时，如果 allowed_actions 中存在以该占用者为目标的 `talk_to_npc`，应优先考虑当面交涉、询问或协调；不要习惯性让 NPC 原地等待。只有没有合理替代行动时才选择 idle。
    idle 表示留在当前位置；需要前往广场时选择 visit_location 的广场候选。

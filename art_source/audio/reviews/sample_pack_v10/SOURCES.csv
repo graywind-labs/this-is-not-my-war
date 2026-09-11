@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_female_hurt_grunt_536750.mp3,combat_friendly_female_hurt_voice,GruntF.ogg,egomassive,https://freesound.org/s/536750/,CC0,rejected,,不采用,"用户已选择 03"
+02_female_hurt_game_577969.mp3,combat_friendly_female_hurt_voice,female-hurt-2.wav,birdOfTheNorth,https://freesound.org/s/577969/,CC0,rejected,,不采用,"用户已选择 03"
+03_female_grunt_short_242623.mp3,combat_friendly_female_hurt_voice,grunt.wav,Reitanna,https://freesound.org/s/242623/,CC0,confirmed,combat_friendly_female_hurt_voice,"整段单次播放；我方女性 NPC 受击时约 50% 概率从受击者位置附加播放；与必播命中声分层","用户确认女性受击使用"
+04_sword_swing_designed_840716.mp3,combat_sword_swing,Sword Swing 1,Nomagician,https://freesound.org/s/840716/,CC0,rejected,,不采用,"用户已选择 06"
+05_sword_swing_air_733888.mp3,combat_sword_swing,Whoosh 01,velcronator,https://freesound.org/s/733888/,CC0,rejected,,不采用,"用户已选择 06"
+06_sword_swing_bamboo_59992.mp3,combat_sword_swing,Swosh Sword Swing,qubodup,https://freesound.org/s/59992/,CC0,confirmed,combat_sword_swing,"整段单次播放；绑定挥剑攻击动作的实际挥动点，从攻击者位置发声","用户确认作为挥剑声"
+07_shield_wood_sword_set_539725.mp3,combat_shield_block,"Mus 152, Ulysses Gonzalez, Sword Hitting Wooden Shield_mixdown.wav",Goten151,https://freesound.org/s/539725/,CC-BY 3.0,rejected,,不采用,"当前战斗系统没有格挡判定，用户确认整组取消"
+08_shield_metal_hit_636102.mp3,combat_shield_block,SHIELDHIT2.wav,fonografico,https://freesound.org/s/636102/,CC0,rejected,,不采用,"当前战斗系统没有格挡判定，用户确认整组取消"
+09_shield_block_812518.mp3,combat_shield_block,Shield block-01,DinisNakamura,https://freesound.org/s/812518/,CC-BY 4.0,rejected,,不采用,"当前战斗系统没有格挡判定，用户确认整组取消"
+10_polearm_long_bamboo_855713.mp3,combat_polearm_swing,Whoosh - Long Bamboo stick - OS ST 5,Sadiquecat,https://freesound.org/s/855713/,CC0,rejected,,不采用,"用户已选择 12"
+11_polearm_staff_fast_855844.mp3,combat_polearm_swing,Whoosh - Long Bamboo stick - OS ST 13,Sadiquecat,https://freesound.org/s/855844/,CC0,rejected,,不采用,"用户已选择 12"
+12_polearm_thick_rod_216675.mp3,combat_polearm_swing,Stick-Swoosh Whoosh,Hitrison,https://freesound.org/s/216675/,CC-BY 4.0,confirmed,combat_polearm_swing,"整段单次播放；绑定长杆挥刺攻击动作的实际挥动点，从攻击者位置发声","用户确认作为长杆挥刺声"

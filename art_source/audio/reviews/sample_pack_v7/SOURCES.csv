@@ -1,0 +1,10 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+04_river_stream_close_433589.mp3,ambience_river,Stream River Water Up Close,jackthemurray,https://freesound.org/s/433589/,CC0,rejected,,不采用,"用户已选择 06 作为河水声"
+05_river_winter_stream_457960.mp3,ambience_river,River Stream,Fabrizio84,https://freesound.org/s/457960/,CC0,rejected,,不采用,"用户已选择 06 作为河水声"
+06_river_babbling_660262.mp3,ambience_river,River flowing sound.,Tom_Kaszuba,https://freesound.org/s/660262/,CC0,confirmed,ambience_river_local_loop,"整段循环；不剪辑；沿河道布置位置化声源并在远离河岸时衰减","用户确认作为河水声"
+07_fire_crackling_loop_650574.mp3,ambience_fire,fire crackling loop.wav,soundofsong,https://freesound.org/s/650574/,CC0,rejected,,不采用,"用户已选择 08 作为炉火声"
+08_fire_fireplace_717579.mp3,ambience_fire,Fireplace Fire Crackling,RyanKingArt,https://freesound.org/s/717579/,CC0,confirmed,ambience_active_fire_loop,"整段循环；不剪辑；仅铁匠炉或壁炉正在使用时从实际炉火位置渐入，停用时渐出","用户确认作为炉火与壁炉火声"
+09_fire_seamless_loop_852107.mp3,ambience_fire,Fireplace,myLoop,https://freesound.org/s/852107/,CC0,rejected,,不采用,"用户已选择 08 作为炉火声"
+10_alert_distant_war_horn_512490.mp3,world_battle_alert,Distant War Horn.wav,DeVern,https://freesound.org/s/512490/,CC0,rejected,,不采用,"用户已选择 11 作为敌袭警报"
+11_alert_battle_horn_392180.mp3,world_battle_alert,Battle_horn_1.wav,kirmm,https://freesound.org/s/392180/,CC0,confirmed,world_battle_alert_one_shot,"整段单次播放；不剪辑；敌袭警报触发时从固定号角位置发声","用户确认作为敌袭警报"
+12_alert_church_bells_252789.mp3,world_battle_alert,church bell.WAV,DisasterServices,https://freesound.org/s/252789/,CC0,rejected,,不采用,"用户已选择 11 作为敌袭警报"

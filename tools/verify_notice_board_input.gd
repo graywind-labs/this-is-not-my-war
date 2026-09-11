@@ -14,7 +14,9 @@ func _init() -> void:
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
-	var notice_board := root.get_node_or_null("Main/WorldRoot/Station/Props/NoticeBoard")
+	for _frame in range(8):
+		await process_frame
+	var notice_board := root.get_node_or_null("Main/WorldRoot/FormalStationLayout/PublicProps/NoticeBoard")
 	var notice_panel := root.get_node_or_null("Main/UI/NoticeBoardPanel")
 	if memory_system == null or npc_system == null or building_system == null or notice_board == null or notice_panel == null:
 		_fail("T1506 required nodes or systems are missing")
@@ -25,8 +27,9 @@ func _init() -> void:
 	if root.get_node_or_null("Main/WorldRoot/Station/Buildings/NoticeBoard") != null:
 		_fail("Notice board must be an independent prop, not a child of Buildings")
 		return
-	if notice_board.get_node_or_null("VisualRoot/Post") == null or notice_board.get_node_or_null("VisualRoot/NoticePaper") == null or notice_board.get_node_or_null("VisualRoot/RockLeft") == null:
-		_fail("Standing notice board visual parts are incomplete")
+	var art_snapshot: Dictionary = notice_board.get_debug_art_snapshot()
+	if str(art_snapshot.get("art_revision", "")) != "t0132_p6" or int(art_snapshot.get("paper_sheet_count", 0)) != 3:
+		_fail("Formal standing notice board visual is incomplete")
 		return
 	if notice_board.get_node_or_null("NoticeBoardClickArea/CollisionShape3D") == null:
 		_fail("Notice board click area was not created")
@@ -44,7 +47,7 @@ func _init() -> void:
 	if camera == null:
 		_fail("Notice board click verification camera is missing")
 		return
-	var click_position := camera.unproject_position(notice_board.global_position + Vector3(0.0, 1.45, 0.0))
+	var click_position := camera.unproject_position(notice_board.global_position + Vector3(0.0, 1.65, 0.12))
 	if not notice_board._is_notice_board_at_screen_position(click_position):
 		_fail("Camera ray did not hit the independent notice board click area")
 		return

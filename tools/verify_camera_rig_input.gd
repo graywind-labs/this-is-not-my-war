@@ -22,15 +22,39 @@ func _init() -> void:
 
 	camera_rig.set_process(false)
 	camera_rig.global_position = Vector3.ZERO
+	camera_rig._clamp_position()
+	var baseline_position := camera_rig.global_position
 	var press_s := _make_key_event(KEY_S, true)
 	var release_s := _make_key_event(KEY_S, false)
 	camera_rig._input(press_s)
 	camera_rig._process(0.25)
 	var moved_position := camera_rig.global_position
-	if moved_position.is_equal_approx(Vector3.ZERO):
+	var normal_displacement := moved_position - baseline_position
+	if normal_displacement.is_zero_approx():
 		push_error("A received S press should move the camera.")
 		quit(1)
 		return
+	if not is_equal_approx(camera_rig.keyboard_pan_speed, 28.0) or not is_equal_approx(normal_displacement.length(), 7.0):
+		push_error("WASD should use the 28 m/s base speed: configured=%s displacement=%s." % [camera_rig.keyboard_pan_speed, normal_displacement.length()])
+		quit(1)
+		return
+
+	camera_rig._input(release_s)
+	camera_rig.global_position = baseline_position
+	var press_shift := _make_key_event(KEY_SHIFT, true)
+	var release_shift := _make_key_event(KEY_SHIFT, false)
+	camera_rig._input(press_shift)
+	camera_rig._input(_make_key_event(KEY_S, true, true))
+	camera_rig._process(0.25)
+	var boosted_position := camera_rig.global_position
+	var boosted_displacement := boosted_position - baseline_position
+	if not is_equal_approx(boosted_displacement.length(), 14.0) or not is_equal_approx(boosted_displacement.length(), normal_displacement.length() * 2.0):
+		push_error("Shift + WASD should move the camera at exactly 2x speed: normal=%s boosted=%s multiplier_active=%s." % [moved_position, boosted_position, camera_rig._is_keyboard_pan_boost_active])
+		quit(1)
+		return
+	camera_rig._input(_make_key_event(KEY_S, false, true))
+	camera_rig._input(release_shift)
+	camera_rig.global_position = moved_position
 
 	camera_rig._input(release_s)
 	camera_rig._process(0.25)
@@ -76,13 +100,14 @@ func _init() -> void:
 
 	main.queue_free()
 	await process_frame
-	print("T0045 camera input lifecycle verification passed.")
+	print("T0045B camera input speed and lifecycle verification passed.")
 	quit(0)
 
 
-func _make_key_event(key: Key, pressed: bool) -> InputEventKey:
+func _make_key_event(key: Key, pressed: bool, shift_pressed: bool = false) -> InputEventKey:
 	var event := InputEventKey.new()
 	event.physical_keycode = key
 	event.keycode = key
 	event.pressed = pressed
+	event.shift_pressed = shift_pressed
 	return event

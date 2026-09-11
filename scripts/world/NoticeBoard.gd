@@ -5,7 +5,7 @@ const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const PICK_RAY_LENGTH := 1000.0
 const PREVIEW_LENGTH := 18
-const CLICK_SHAPE_SIZE := Vector3(2.2, 3.0, 0.9)
+const CLICK_SHAPE_SIZE := Vector3(3.0, 3.25, 1.2)
 
 var _label: Label3D
 
@@ -35,6 +35,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func debug_activate() -> bool:
 	_activate_notice_board()
 	return true
+
+
+func get_debug_art_snapshot() -> Dictionary:
+	var visual_root := get_node_or_null("VisualRoot")
+	if visual_root != null and visual_root.has_method("get_debug_snapshot"):
+		return visual_root.call("get_debug_snapshot") as Dictionary
+	return {}
 
 
 func _on_location_info_changed(location_id: String) -> void:

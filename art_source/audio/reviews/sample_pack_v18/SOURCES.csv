@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_ui_hover_wood_321082.mp3,ui_hover_select,Wooden Hover,BenjaminNelan,https://freesound.org/s/321082/,CC0,rejected,,不采用,用户确认悬停不加音效；选中复用第 1 批 01 木质点击
+02_ui_hover_short_840321.mp3,ui_hover_select,Wooden Short Click!,Robo9418,https://freesound.org/s/840321/,CC0,rejected,,不采用,用户确认悬停不加音效；选中复用第 1 批 01 木质点击
+03_ui_hover_smooth_220200.mp3,ui_hover_select,Basic Click Wooden,GameAudio,https://freesound.org/s/220200/,CC0,rejected,,不采用,用户确认悬停不加音效；选中复用第 1 批 01 木质点击
+04_panel_open_book_614081.mp3,ui_panel_open,Opening a book,mateusboga,https://freesound.org/s/614081/,CC0,confirmed,ui_panel_open,整段；打开主要面板时在 UI 声道单次播放,用户确认面板打开使用
+05_panel_open_paper_663458.mp3,ui_panel_open,paper_book_open_1.wav,Geoff-Bremner-Audio,https://freesound.org/s/663458/,CC-BY 4.0,rejected,,不采用,用户已选择 04
+06_panel_open_soft_428742.mp3,ui_panel_open,opening a book,pauliperez1999,https://freesound.org/s/428742/,CC-BY 3.0,rejected,,不采用,用户已选择 04
+07_panel_close_quick_862316.mp3,ui_panel_close,Close Book 2,qubodup,https://freesound.org/s/862316/,CC0,rejected,,不采用,用户已选择 09
+08_panel_close_book_496142.mp3,ui_panel_close,Closing a book 01,Aiwha,https://freesound.org/s/496142/,CC-BY 4.0,rejected,,不采用,用户已选择 09
+09_panel_close_heavy_484893.mp3,ui_panel_close,Book Close - 13,SpaceJoe,https://freesound.org/s/484893/,CC0,confirmed,ui_panel_close,整段；关闭主要面板时在 UI 声道单次播放,用户确认面板关闭使用
+10_confirm_success_bell_511484.mp3,ui_confirm_success,success_bell,MLaudio,https://freesound.org/s/511484/,CC0,rejected,,不采用,用户已选择 11
+11_confirm_success_chime_538147.mp3,ui_confirm_success,Correct Bell,Fupicat,https://freesound.org/s/538147/,CC0,confirmed,ui_interaction_success_resource_collect,整段；交互或特殊对话交互成功时与绿色文字及成功弹窗同步播放；未来收取资源点击成功时也复用；点击“太好了”关闭弹窗时不播放本音效而只播放普通木质点击,用户确认交互成功及未来收取资源使用
+12_confirm_success_short_625174.mp3,ui_confirm_success,[UI Sound] Approval - High Pitched Bell Synth,GabFitzgerald,https://freesound.org/s/625174/,CC0,rejected,,不采用,用户已选择 11

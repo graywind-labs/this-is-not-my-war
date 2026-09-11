@@ -19,10 +19,13 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if event_bus == null or action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if event_bus == null or action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
+	time_system.set_current_time(1, 7, 2, 0)
+	time_system.set_paused(false)
 
 	var clinic: Dictionary = building_system.get_building("clinic")
 	if not _has_workstation_type(clinic.get("workstations", []), "clinic_doctor_station"):
@@ -47,12 +50,14 @@ func _init() -> void:
 
 	var doctor_id := "doctor_01"
 	var patient_id := "cook_01"
-	if not npc_system.debug_enter_location_immediately(doctor_id, "clinic"):
-		push_error("Failed to place doctor in clinic")
+	_get_npc_node(npc_system, doctor_id).set("move_speed", 5.0)
+	_get_npc_node(npc_system, patient_id).set("move_speed", 5.0)
+	if not action_system.debug_assign_action(doctor_id, "work_clinic_doctor"):
+		push_error("Doctor should accept formal clinic duty")
 		quit(1)
 		return
-	if not action_system.debug_assign_action(doctor_id, "work_clinic_doctor"):
-		push_error("Doctor should be able to start clinic duty")
+	if not await _wait_for_active(action_system, time_system, doctor_id, "work_clinic_doctor"):
+		push_error("Doctor should physically reach a clinic desk before duty begins")
 		quit(1)
 		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
@@ -67,12 +72,12 @@ func _init() -> void:
 		return
 
 	npc_system.update_npc_state(patient_id, {"hp": 40, "max_hp": 100, "unconscious": false, "last_action_result": ""})
-	if not npc_system.debug_enter_location_immediately(patient_id, "clinic"):
-		push_error("Failed to place patient in clinic")
+	if not action_system.debug_assign_action(patient_id, "receive_clinic_treatment"):
+		push_error("Injured patient should accept a formal clinic-bed route")
 		quit(1)
 		return
-	if not action_system.debug_assign_action(patient_id, "receive_clinic_treatment"):
-		push_error("Injured patient should be able to take a clinic bed")
+	if not await _wait_for_active(action_system, time_system, patient_id, "receive_clinic_treatment"):
+		push_error("Patient should physically reach and occupy a clinic bed")
 		quit(1)
 		return
 	var money_before := int(resource_system.get_resource("money"))
@@ -139,6 +144,21 @@ func _init() -> void:
 func _has_workstation_type(workstations: Array, workstation_type: String) -> bool:
 	for raw_workstation in workstations:
 		if raw_workstation is Dictionary and str(raw_workstation.get("type", "")) == workstation_type:
+			return true
+	return false
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
 			return true
 	return false
 

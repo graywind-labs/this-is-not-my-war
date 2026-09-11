@@ -1,0 +1,103 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/presentation/characters/NPCArtView.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/animations/ual2_standard.glb" id="2_animation"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/characters/base_male.glb" id="3_base"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/characters/male_peasant_outfit.glb" id="4_outfit"]
+[ext_resource type="PackedScene" path="res://assets/3d/quaternius/characters/hair_buzzed.glb" id="5_hair"]
+[ext_resource type="Material" path="res://resources/materials/character_rim.tres" id="6_rim"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_hammer_wood"]
+albedo_color = Color(0.25, 0.12, 0.055, 1)
+roughness = 0.86
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_hammer_metal"]
+albedo_color = Color(0.24, 0.28, 0.31, 1)
+metallic = 0.72
+roughness = 0.36
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_hammer_handle"]
+material = SubResource("StandardMaterial_hammer_wood")
+top_radius = 0.025
+bottom_radius = 0.035
+height = 0.52
+radial_segments = 8
+rings = 1
+
+[sub_resource type="BoxMesh" id="BoxMesh_hammer_head"]
+material = SubResource("StandardMaterial_hammer_metal")
+size = Vector3(0.34, 0.16, 0.18)
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape_selection"]
+radius = 0.38
+height = 1.82
+
+[node name="GlenArtView" type="Node3D"]
+script = ExtResource("1_script")
+character_rim = ExtResource("6_rim")
+
+[node name="CharacterPivot" type="Node3D" parent="."]
+
+[node name="SourceFacingCorrection" type="Node3D" parent="CharacterPivot"]
+rotation = Vector3(0, 3.1415927, 0)
+
+[node name="RigSource" parent="CharacterPivot/SourceFacingCorrection" instance=ExtResource("2_animation")]
+
+[node name="BaseModel" parent="CharacterPivot/SourceFacingCorrection" instance=ExtResource("3_base")]
+
+[node name="OutfitModel" parent="CharacterPivot/SourceFacingCorrection" instance=ExtResource("4_outfit")]
+
+[node name="HairModel" parent="CharacterPivot/SourceFacingCorrection" instance=ExtResource("5_hair")]
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+
+[node name="EquipmentSockets" type="Node3D" parent="."]
+
+[node name="RightHand" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="LeftHand" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="Back" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="Head" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="Body" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="Mount" type="BoneAttachment3D" parent="EquipmentSockets"]
+
+[node name="ToolVisuals" type="Node3D" parent="."]
+
+[node name="SmithHammer" type="Node3D" parent="ToolVisuals"]
+
+[node name="Handle" type="MeshInstance3D" parent="ToolVisuals/SmithHammer"]
+position = Vector3(0, 0.18, 0)
+mesh = SubResource("CylinderMesh_hammer_handle")
+
+[node name="Head" type="MeshInstance3D" parent="ToolVisuals/SmithHammer"]
+position = Vector3(0, 0.46, 0)
+mesh = SubResource("BoxMesh_hammer_head")
+
+[node name="RagdollMount" type="Node3D" parent="."]
+
+[node name="SelectionArea" type="Area3D" parent="."]
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+monitorable = false
+input_ray_pickable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SelectionArea"]
+position = Vector3(0, 0.91, 0)
+shape = SubResource("CapsuleShape_selection")
+disabled = true
+
+[node name="VFXMounts" type="Node3D" parent="."]
+
+[node name="CenterMass" type="Marker3D" parent="VFXMounts"]
+position = Vector3(0, 1.08, 0)
+
+[node name="Feet" type="Marker3D" parent="VFXMounts"]
+position = Vector3(0, 0.04, 0)
+
+[node name="Head" type="Marker3D" parent="VFXMounts"]
+position = Vector3(0, 1.68, 0)

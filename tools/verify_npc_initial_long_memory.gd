@@ -112,15 +112,13 @@ func _init() -> void:
 			not main_hall_text.contains("弩床")
 			or not main_hall_text.contains("箭塔")
 			or not main_hall_text.contains("1、1、2、2、3、4")
-			or not main_hall_text.contains("射程")
-			or (
-				not main_hall_text.contains("两倍")
-				and not main_hall_text.contains("翻倍")
-				and not main_hall_text.contains("加倍")
-			)
 		):
-			_fail("%s did not load the current main-hall slot/range rule" % npc_id)
+			_fail("%s did not load the current main-hall slot rule" % npc_id)
 			return
+		for removed_range_phrase in ["两倍", "翻倍", "加倍", "2.0x"]:
+			if main_hall_text.contains(removed_range_phrase):
+				_fail("%s retained the removed main-hall range bonus" % npc_id)
+				return
 		for stale_phrase in [
 			"只能安在各自合适的墙位",
 			"只会让墙体更耐打",
@@ -346,7 +344,7 @@ func _init() -> void:
 		"T0061/T0101 NPC copy and initial long-memory verification passed: "
 		+ "8 NPCs, 24 diary slices, 15 buildings each, four-part guard knowledge, "
 		+ "four overlooked-role rules, level-based warehouse-capacity knowledge, "
-		+ "six-level wall/main-hall device-slot knowledge and main-hall 2x range, "
+		+ "six-level wall/main-hall device-slot knowledge without a main-hall range bonus, "
 		+ "narrative building labels, compact knowledge UI, labeled six-way LLM payloads, "
 		+ "idempotent reinitialization; "
 		+ "largest payload chars=%s." % JSON.stringify(largest_payload_chars)

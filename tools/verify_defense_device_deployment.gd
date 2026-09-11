@@ -7,6 +7,9 @@ func _init() -> void:
 		_fail("Failed to load Main.tscn")
 		return
 	var main := main_scene.instantiate()
+	var startup := main.get_node_or_null("Systems/GameStartupSystem")
+	if startup != null:
+		startup._startup_running = true
 	root.add_child(main)
 	await process_frame
 	await physics_frame
@@ -95,12 +98,39 @@ func _init() -> void:
 	await process_frame
 	var device_section := building_panel.find_child("DefenseDeviceSection", true, false) as Control
 	if device_section == null or not device_section.visible:
-		_fail("Wall building panel does not expose the defense-device deployment UI")
+		_fail("Wall building panel does not expose the deployed-device summary")
 		return
-	for label_node in device_section.find_children("*", "Label", true, false):
-		if label_node is Label and (label_node as Label).text.contains("部署者"):
-			_fail("Wall deployment UI still exposes a deployer selector")
+	var deployment_summary := device_section.find_child("DefenseDeviceDeploymentSummary", true, false) as Label
+	if deployment_summary == null or deployment_summary.text != "已部署：无":
+		_fail("Wall building panel did not preserve the empty deployed-device summary")
+		return
+	if not device_section.find_children("*", "OptionButton", true, false).is_empty():
+		_fail("Wall building panel still exposes a defense-device dropdown")
+		return
+	for button_node in device_section.find_children("*", "Button", true, false):
+		var button := button_node as Button
+		if button != null and button.text.contains("部署"):
+			_fail("Wall building panel still exposes a duplicate deployment button")
 			return
+	for label_node in device_section.find_children("*", "Label", true, false):
+		if label_node is Label and (
+			(label_node as Label).text.contains("库存")
+			or (label_node as Label).text.contains("防御器械部署")
+		):
+			_fail("Wall building panel still exposes the removed deployment form")
+			return
+	building_panel.show_building("main_hall")
+	await process_frame
+	if (
+		not device_section.visible
+		or deployment_summary.text != "已部署：无"
+		or not device_section.find_children("*", "OptionButton", true, false).is_empty()
+		or not device_section.find_children("*", "Button", true, false).is_empty()
+	):
+		_fail("Main-hall building panel did not retain the same summary-only contract")
+		return
+	building_panel.show_building("wall")
+	await process_frame
 
 	var unrelated_npc_id := "engineer_01"
 	var plaza_witness_id := "priest_01"
@@ -134,6 +164,14 @@ func _init() -> void:
 		return
 	if resource_system.get_resource("defense_devices") != legacy_inventory_before:
 		_fail("Ballista deployment consumed deprecated defense_devices inventory")
+		return
+	await process_frame
+	if (
+		not deployment_summary.text.contains("已部署：")
+		or not deployment_summary.text.contains("弩床")
+		or not deployment_summary.text.contains(str(device_system.get_slot(wall_level_one_slot_id).get("name", "")))
+	):
+		_fail("Wall building panel did not refresh its retained deployed-device summary")
 		return
 	var deploy_event := _find_latest_event(memory_system.get_all_events(), "defense_device_deployed")
 	if deploy_event.is_empty() or str(deploy_event.get("payload", {}).get("slot_id", "")) != wall_level_one_slot_id:
@@ -176,8 +214,8 @@ func _init() -> void:
 	var main_hall_ballista: Dictionary = device_system.get_deployment(str(main_hall_ballista_result.get("deployment_id", "")))
 	var wall_range := float(wall_ballista.get("effect", {}).get("range", 0.0))
 	var main_hall_range := float(main_hall_ballista.get("effect", {}).get("range", 0.0))
-	if wall_range <= 0.0 or not is_equal_approx(main_hall_range, wall_range * 2.0):
-		_fail("Main-hall deployment should double the same device's effective range")
+	if wall_range <= 0.0 or not is_equal_approx(main_hall_range, wall_range):
+		_fail("Main-hall deployment should preserve the same device's base effective range")
 		return
 	if int(wall_ballista.get("hp", 0)) != int(ballista_definition.get("max_hp", 0)):
 		_fail("Deployed defense device should expose configured HP")
@@ -212,22 +250,58 @@ func _init() -> void:
 	if arrow_tower_view == null or arrow_tower_view.get_node_or_null("ModelMount") == null or arrow_tower_view.get_node("ModelMount").get_child_count() == 0:
 		_fail("Arrow-tower placeholder or model contract is missing")
 		return
+	var arrow_view_snapshot: Dictionary = arrow_tower_view.get_debug_snapshot()
+	if not bool(arrow_view_snapshot.get("has_formal_model", false)) or str(arrow_view_snapshot.get("model_scene", "")) != "res://scenes/defense_devices/FormalArrowTowerArtView.tscn":
+		_fail("Arrow tower did not replace its placeholder with the formal model")
+		return
 
 	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
 	if not bool(spawn_result.get("ok", false)) or combat_system.get_active_enemy_count() <= 0:
 		_fail("Could not spawn an enemy wave for ballista verification")
 		return
+	_stage_enemies_for_device_range(combat_system, wall_ballista, main_hall_ballista)
+	await physics_frame
 	var hp_before_attack := _sum_enemy_hp(combat_system.get_active_enemies())
-	var device_step: Dictionary = device_system.debug_advance_defense_devices(60.0)
-	var hp_after_attack := _sum_enemy_hp(combat_system.get_active_enemies())
-	if (device_step.get("actions", []) as Array).is_empty() or hp_after_attack >= hp_before_attack:
-		_fail("Deployed defense devices did not automatically damage an enemy")
+	var device_step: Dictionary = device_system.debug_advance_defense_devices(1.0)
+	var hp_after_release := _sum_enemy_hp(combat_system.get_active_enemies())
+	if (device_step.get("actions", []) as Array).is_empty() or combat_system.get_active_projectile_snapshots().is_empty():
+		_fail("Deployed defense devices did not release physical projectiles")
 		return
-	if _find_device_action(device_step.get("actions", []), "wall_ballista").is_empty():
+	if hp_after_release != hp_before_attack:
+		_fail("Defense-device release still applied damage before physical collision")
+		return
+	for _step in range(240):
+		if combat_system.get_active_projectile_snapshots().is_empty():
+			break
+		combat_system.debug_advance_combat_projectiles(0.025)
+	var hp_after_attack := _sum_enemy_hp(combat_system.get_active_enemies())
+	if hp_after_attack >= hp_before_attack:
+		_fail("Defense-device physical projectiles did not damage an enemy after collision: %s" % JSON.stringify(combat_system.debug_get_combat_snapshot().get("last_projectile_result", {})))
+		return
+	var resolved_ballista_action := _find_device_action(device_step.get("actions", []), "wall_ballista")
+	if resolved_ballista_action.is_empty():
 		_fail("Deployed ballista did not execute an automatic attack")
+		return
+	var ballista_shots: Array = resolved_ballista_action.get("attacks", []) if resolved_ballista_action.get("attacks", []) is Array else []
+	var ballista_shot: Dictionary = ballista_shots[0] if not ballista_shots.is_empty() and ballista_shots[0] is Dictionary else {}
+	if (
+		ballista_shot.is_empty()
+		or not ballista_shot.get("origin_position", {}) is Dictionary
+		or (ballista_shot.get("origin_position", {}) as Dictionary).is_empty()
+		or not ballista_shot.get("target_position", {}) is Dictionary
+		or (ballista_shot.get("target_position", {}) as Dictionary).is_empty()
+		or not is_equal_approx(float(ballista_shot.get("attack_interval", 0.0)), float(ballista_effect.get("attack_interval", -1.0)))
+	):
+		_fail("Ballista action is missing read-only origin/target/timing presentation metadata")
 		return
 	if _find_device_action(device_step.get("actions", []), "wall_arrow_tower").is_empty():
 		_fail("Deployed arrow tower did not execute an automatic attack")
+		return
+	await process_frame
+	arrow_view_snapshot = arrow_tower_view.get_debug_snapshot()
+	var arrow_model_snapshot: Dictionary = arrow_view_snapshot.get("model", {}) if arrow_view_snapshot.get("model", {}) is Dictionary else {}
+	if str(arrow_model_snapshot.get("formal_device_kind", "")) != "arrow_tower" or int(arrow_model_snapshot.get("shot_count", 0)) <= 0:
+		_fail("Resolved arrow-tower attacks were not forwarded to the formal firing animation")
 		return
 	var trigger_event := _find_latest_event(memory_system.get_all_events(), "defense_device_triggered")
 	if trigger_event.is_empty() or int(trigger_event.get("payload", {}).get("damage", 0)) <= 0:
@@ -237,6 +311,9 @@ func _init() -> void:
 		_fail("Defense-device trigger event still depends on a deployer NPC")
 		return
 
+	for fixture in get_nodes_in_group("defense_device_test_fixture"):
+		fixture.queue_free()
+	await process_frame
 	print("T0036 concrete defense-device inventory verification passed.")
 	quit(0)
 
@@ -278,6 +355,52 @@ func _sum_enemy_hp(enemies: Array) -> int:
 		if raw_enemy is Dictionary:
 			total += int(raw_enemy.get("hp", 0))
 	return total
+
+
+func _stage_enemies_for_device_range(combat_system: Node, wall_deployment: Dictionary, main_hall_deployment: Dictionary) -> void:
+	var active_enemies: Dictionary = combat_system.get("_active_enemies")
+	var enemy_ids: Array = active_enemies.keys()
+	var wall_origin := _to_vector3(wall_deployment.get("position", {}))
+	var hall_origin := _to_vector3(main_hall_deployment.get("position", {}))
+	for index in range(enemy_ids.size()):
+		var enemy_id := str(enemy_ids[index])
+		var enemy: Dictionary = active_enemies.get(enemy_id, {})
+		var origin := wall_origin if index % 2 == 0 else hall_origin
+		var staged_position := origin + Vector3(float(index % 3) * 0.35, 0.0, 4.0 + float(index % 2))
+		enemy["position"] = staged_position
+		active_enemies[enemy_id] = enemy
+		var enemy_paths: Dictionary = combat_system.get("_enemy_nodes")
+		var enemy_node := combat_system.get_node_or_null(enemy_paths.get(enemy_id, NodePath())) as Node3D if enemy_paths.has(enemy_id) else null
+		if enemy_node != null:
+			enemy_node.global_position = staged_position
+			enemy_node.force_update_transform()
+			if enemy_node is CollisionObject3D:
+				PhysicsServer3D.body_set_state(enemy_node.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, enemy_node.global_transform)
+		combat_system._refresh_enemy_node(enemy_id)
+		var hit_fixture := StaticBody3D.new()
+		hit_fixture.name = "DefenseDeviceEnemyHitFixture%02d" % index
+		hit_fixture.collision_layer = 2
+		hit_fixture.collision_mask = 0
+		hit_fixture.set_meta("enemy_id", enemy_id)
+		hit_fixture.add_to_group("defense_device_test_fixture")
+		var hit_shape := CollisionShape3D.new()
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.35
+		capsule.height = 1.6
+		hit_shape.shape = capsule
+		hit_shape.position.y = 0.8
+		hit_fixture.add_child(hit_shape)
+		combat_system.add_child(hit_fixture)
+		hit_fixture.global_position = staged_position
+	combat_system.set("_active_enemies", active_enemies)
+
+
+func _to_vector3(raw: Variant) -> Vector3:
+	if raw is Vector3:
+		return raw
+	if not raw is Dictionary:
+		return Vector3.ZERO
+	return Vector3(float(raw.get("x", 0.0)), float(raw.get("y", 0.0)), float(raw.get("z", 0.0)))
 
 
 func _fail(message: String) -> void:

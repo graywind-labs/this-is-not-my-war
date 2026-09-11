@@ -131,7 +131,7 @@ func _init() -> void:
 		push_error("Enemy spawn failed: %s" % JSON.stringify(spawn_result))
 		quit(1)
 		return
-	var enemy_id := _place_first_enemy(combat_system, Vector3(0.0, 0.0, 1.0))
+	var enemy_id := _place_first_enemy(combat_system, stableman_node.global_position + Vector3(0.0, 0.0, 1.0))
 	var enemy_before: Dictionary = combat_system.get_enemy(enemy_id)
 	var npc_hp_before := int(npc_system.get_npc_state("stableman_01").get("hp", 0))
 
@@ -143,18 +143,55 @@ func _init() -> void:
 		},
 		"request_plan_reevaluation": false
 	})
-	var step_result: Dictionary = combat_system.debug_step_enemy_ai(60.0)
+	var step_result: Dictionary = combat_system.debug_step_enemy_ai(1.0)
 	var enemy_after: Dictionary = combat_system.get_enemy(enemy_id)
 	var npc_hp_after := int(npc_system.get_npc_state("stableman_01").get("hp", 0))
-	if int(enemy_after.get("hp", 0)) >= int(enemy_before.get("hp", 0)):
-		push_error("Combat-mode armed NPC should damage enemy. before=%s after=%s" % [
-			JSON.stringify(enemy_before),
-			JSON.stringify(enemy_after)
-		])
+	var friendly_result: Dictionary = step_result.get("friendly_attacks", {})
+	var friendly_entries: Array = friendly_result.get("attacks", [])
+	var friendly_entry: Dictionary = friendly_entries[0] if not friendly_entries.is_empty() else {}
+	var contact_attempts: Array = friendly_entry.get("attacks", [])
+	var contact_attempt: Dictionary = contact_attempts[0] if not contact_attempts.is_empty() else {}
+	if str(contact_attempt.get("melee_status", "")) not in ["hit", "miss", "blocked"]:
+		push_error("Coarse combat step should expose a melee contact resolution: %s" % JSON.stringify(step_result))
 		quit(1)
 		return
-	if npc_hp_after >= npc_hp_before:
-		push_error("Enemy should finish its windup and damage a nearby NPC: %s" % JSON.stringify(step_result))
+	if npc_hp_after != npc_hp_before:
+		push_error("A geometry-unavailable coarse step must not fabricate enemy damage: %s" % JSON.stringify(step_result))
+		quit(1)
+		return
+	var friendly_context: Dictionary = combat_system._calculate_npc_attack_context(
+		"stableman_01",
+		npc_system.get_npc("stableman_01"),
+		npc_system.get_npc_state("stableman_01")
+	)
+	var confirmed_contact_damage: Dictionary = combat_system._apply_npc_attack_to_enemy(
+		"stableman_01",
+		npc_system.get_npc("stableman_01"),
+		combat_system.get_enemy(enemy_id),
+		friendly_context
+	)
+	enemy_after = combat_system.get_enemy(enemy_id)
+	if int(enemy_after.get("hp", 0)) >= int(enemy_before.get("hp", 0)) or int(confirmed_contact_damage.get("damage", 0)) <= 0:
+		push_error("Confirmed melee contact should apply the deterministic NPC damage resolver")
+		quit(1)
+		return
+	var expected_enemy_resolution: Dictionary = combat_system.calculate_damage_resolution(
+		float(enemy_before.get("attack_power", 0.0)),
+		float(strengthened_final.get("defense", 0.0)),
+		float(enemy_before.get("penetration", 0.0))
+	)
+	combat_system._apply_enemy_attack_to_npc(
+		enemy_before,
+		"stableman_01",
+		int(expected_enemy_resolution.get("damage", 0)),
+		float(enemy_before.get("attack_power", 0.0)),
+		float(strengthened_final.get("defense", 0.0)),
+		float(enemy_before.get("penetration", 0.0)),
+		float(expected_enemy_resolution.get("effective_defense", 0.0))
+	)
+	var npc_hp_after_impact := int(npc_system.get_npc_state("stableman_01").get("hp", 0))
+	if npc_hp_after_impact >= npc_hp_before:
+		push_error("Confirmed enemy contact should apply damage")
 		quit(1)
 		return
 	var expected_enemy_damage := int(combat_system.calculate_damage_resolution(
@@ -162,14 +199,13 @@ func _init() -> void:
 		float(strengthened_final.get("defense", 0.0)),
 		float(enemy_before.get("penetration", 0.0))
 	).get("damage", 0))
-	if npc_hp_before - npc_hp_after != expected_enemy_damage:
+	if npc_hp_before - npc_hp_after_impact != expected_enemy_damage:
 		push_error("Enemy damage should use the same defense/penetration resolver. expected=%d actual=%d" % [
 			expected_enemy_damage,
-			npc_hp_before - npc_hp_after
+			npc_hp_before - npc_hp_after_impact
 		])
 		quit(1)
 		return
-	var friendly_result: Dictionary = step_result.get("friendly_attacks", {})
 	if (friendly_result.get("attacks", []) as Array).is_empty():
 		push_error("Combat step should expose friendly attack snapshot")
 		quit(1)
@@ -205,8 +241,24 @@ func _init() -> void:
 		var other_enemy_id := str(raw_other_enemy_id)
 		if other_enemy_id != enemy_id and combat_system.has_method("_remove_enemy_from_combat"):
 			combat_system._remove_enemy_from_combat(other_enemy_id)
-	npc_system.update_npc_state("stableman_01", {"combat_attack_cooldown": 0.0})
-	var kill_step: Dictionary = combat_system.debug_step_enemy_ai(0.1)
+	npc_system.update_npc_state("stableman_01", {
+		"combat_attack_cooldown": 0.0,
+		"combat_attack_phase": "idle",
+		"combat_attack_elapsed_seconds": 0.0,
+		"combat_attack_cycle_seconds": 0.0,
+		"combat_attack_impact_seconds": 0.0,
+		"combat_attack_target_enemy_id": "",
+		"combat_attack_impact_committed": false
+	})
+	var kill_context: Dictionary = combat_system._calculate_npc_attack_context(
+		"stableman_01",
+		npc_system.get_npc("stableman_01"),
+		npc_system.get_npc_state("stableman_01")
+	)
+	var kill_impact_seconds := float((kill_context.get("animation_timing", {}) as Dictionary).get("impact_seconds", 0.0))
+	var kill_step: Dictionary = combat_system._apply_damage_to_enemy(enemy_id, 1, "stableman_01", kill_context)
+	if combat_system.get_active_enemy_count() == 0:
+		combat_system._handle_all_enemies_cleared("verify_combat_damage")
 	await process_frame
 	if combat_system.get_active_enemy_count() != 0:
 		push_error("Enemy should be removed from active combat when HP reaches zero. step=%s enemy=%s npc_state=%s" % [

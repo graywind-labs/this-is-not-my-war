@@ -2,6 +2,7 @@
   {
     "id": "iron_helmet",
     "name": "铁盔",
+    "icon": "res://assets/ui/item_icons/armor/iron_helmet.png",
     "slot": "helmet",
     "source_resource_id": "item_iron_helmet",
     "armor_value": 2,
@@ -14,6 +15,7 @@
   {
     "id": "mail_chest",
     "name": "锁子甲",
+    "icon": "res://assets/ui/item_icons/armor/mail_chest.png",
     "slot": "chest",
     "source_resource_id": "item_mail_chest",
     "armor_value": 5,
@@ -25,7 +27,8 @@
   },
   {
     "id": "iron_bracers",
-    "name": "铁护腕",
+    "name": "铁护臂",
+    "icon": "res://assets/ui/item_icons/armor/iron_bracers.png",
     "slot": "bracers",
     "source_resource_id": "item_iron_bracers",
     "armor_value": 2,
@@ -38,6 +41,7 @@
   {
     "id": "iron_greaves",
     "name": "铁护腿",
+    "icon": "res://assets/ui/item_icons/armor/iron_greaves.png",
     "slot": "greaves",
     "source_resource_id": "item_iron_greaves",
     "armor_value": 3,

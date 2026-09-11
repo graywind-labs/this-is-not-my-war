@@ -20,6 +20,7 @@ func _init() -> void:
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var equipment_system := root.get_node_or_null("Main/Systems/EquipmentSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	if (
 		event_bus == null
 		or action_system == null
@@ -28,6 +29,7 @@ func _init() -> void:
 		or resource_system == null
 		or equipment_system == null
 		or memory_system == null
+		or time_system == null
 	):
 		push_error("Required systems not found")
 		quit(1)
@@ -68,6 +70,9 @@ func _init() -> void:
 
 	var instructor_id := "veteran_deputy_01"
 	var student_id := "stableman_01"
+	time_system.set_paused(false)
+	_get_npc_node(npc_system, instructor_id).set("move_speed", 5.0)
+	_get_npc_node(npc_system, student_id).set("move_speed", 5.0)
 	npc_system.set_npc_recruited(student_id, true)
 	_set_profile_skills(npc_system, instructor_id, {
 		"剑盾": 40,
@@ -112,6 +117,10 @@ func _init() -> void:
 		push_error("Equipped instructor should start training duty")
 		quit(1)
 		return
+	if not await _wait_for_active(action_system, time_system, instructor_id, "work_training_instructor"):
+		push_error("Equipped instructor should physically reach the instructor station")
+		quit(1)
+		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
 	var instructor_after_solo: Dictionary = npc_system.get_npc(instructor_id)
 	if int(instructor_after_solo.get("skills", {}).get("剑盾", 0)) <= 40:
@@ -135,6 +144,10 @@ func _init() -> void:
 	var student_state_before: Dictionary = npc_system.get_npc_state(student_id)
 	if not action_system.debug_assign_action(student_id, "receive_weapon_training"):
 		push_error("Equipped student should start training when an instructor is active")
+		quit(1)
+		return
+	if not await _wait_for_active(action_system, time_system, student_id, "receive_weapon_training"):
+		push_error("Equipped student should physically reach a practice slot")
 		quit(1)
 		return
 	event_bus.logical_time_tick.emit(7200.0, 1.0)
@@ -224,3 +237,18 @@ func _set_profile_skills(npc_system: Node, npc_id: String, changed_skills: Dicti
 		skills[str(skill_name)] = int(changed_skills[skill_name])
 	profile["skills"] = skills
 	npc_system._profiles[npc_id] = profile
+
+
+func _get_npc_node(npc_system: Node, npc_id: String) -> Node:
+	var node_paths: Dictionary = npc_system.get("_npc_nodes")
+	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath("")))
+
+
+func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, action_id: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
+			return true
+	return false

@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dxlirld8vbhny"
+
+[deps]
+
+files=["res://assets/audio/manifests/third_party_audio_credits.runtime.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.author.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.license.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation"]
+
+source_file="res://assets/audio/manifests/third_party_audio_credits.csv"
+dest_files=["res://assets/audio/manifests/third_party_audio_credits.runtime.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.author.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.license.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation", "res://assets/audio/manifests/third_party_audio_credits.source.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

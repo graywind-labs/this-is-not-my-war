@@ -95,7 +95,7 @@ func _verify_wave_pressure(combat_system: Node) -> bool:
 				if not group.has(required_field):
 					return _fail("Wave %s group lacks %s." % [wave_number, required_field])
 		counts.append(count)
-	if counts != [8, 12, 18, 26, 36]:
+	if counts != [8, 16, 24, 36, 48]:
 		return _fail("Enemy pressure curve mismatch: %s" % str(counts))
 	for index in range(1, counts.size()):
 		if counts[index] <= counts[index - 1]:
@@ -136,7 +136,7 @@ func _verify_device_balance_and_slots(
 			if not (slot.get("allowed_device_ids", []) as Array).has("wall_arrow_tower"):
 				return _fail("%s slot must accept arrow tower." % building_id)
 			var range_multiplier := float((slot.get("effect_modifiers", {}) as Dictionary).get("range_multiplier", 0.0))
-			var expected_multiplier := 2.0 if building_id == "main_hall" else 1.0
+			var expected_multiplier := 1.0
 			if not is_equal_approx(range_multiplier, expected_multiplier):
 				return _fail("%s slot range multiplier mismatch." % building_id)
 		required_levels.sort()
@@ -226,7 +226,7 @@ func _verify_npc_stats_and_prompt_boundary(
 	npc_system.increase_npc_skill("veteran_deputy_01", "剑盾", 10)
 	var leveled_stats: Dictionary = combat_system.get_npc_combat_stats("veteran_deputy_01")
 	if int(leveled_stats.get("level", 1)) <= int(before_growth.get("level", 1)):
-		return _fail("Total experience must raise the deterministic combat level.")
+		return _fail("Ten points in one weapon-training track must raise combat level.")
 	var before_strength: Dictionary = leveled_stats.get("final", {}).duplicate(true)
 	var strength_result: Dictionary = npc_system.assign_npc_attribute_point(
 		"veteran_deputy_01",
@@ -265,7 +265,7 @@ func _verify_deployment_and_range(
 ) -> bool:
 	resource_system.add_resource("item_wall_ballista", 2)
 	var wall_result: Dictionary = device_system.deploy_device("wall_ballista", "wall_slot_01")
-	var hall_result: Dictionary = device_system.deploy_device("wall_ballista", "main_hall_slot_01")
+	var hall_result: Dictionary = device_system.deploy_device("wall_ballista", "main_hall_slot_03")
 	if not bool(wall_result.get("ok", false)) or not bool(hall_result.get("ok", false)):
 		return _fail("Wall and main hall deployment should both succeed.")
 	await process_frame
@@ -273,8 +273,8 @@ func _verify_deployment_and_range(
 	var hall: Dictionary = device_system.get_deployment(str(hall_result.get("deployment_id", "")))
 	var wall_range := float((wall.get("effect", {}) as Dictionary).get("range", 0.0))
 	var hall_range := float((hall.get("effect", {}) as Dictionary).get("range", 0.0))
-	if not is_equal_approx(hall_range, wall_range * 2.0):
-		return _fail("Main hall deployment must double effective range.")
+	if not is_equal_approx(hall_range, wall_range):
+		return _fail("Main hall deployment must preserve the device's base effective range.")
 	if bool(slot_presenter.debug_get_marker_snapshot("wall_slot_01").get("visible", true)):
 		return _fail("Occupied world slot must hide its + marker.")
 
@@ -294,74 +294,13 @@ func _verify_deployment_and_range(
 
 func _verify_charge_impact(
 	combat_system: Node,
-	npc_system: Node,
-	equipment_system: Node
+	_npc_system: Node,
+	_equipment_system: Node
 ) -> bool:
-	var npc_id := "veteran_deputy_01"
-	var mount_result: Dictionary = equipment_system.equip_npc_mount(npc_id, "", "private")
-	if not bool(mount_result.get("ok", false)):
-		return _fail("Failed to equip a mount for charge verification: %s" % JSON.stringify(mount_result))
-	var strategy_result: Dictionary = combat_system.set_npc_combat_strategy(
-		npc_id,
-		"charge_cycle",
-		"private",
-		"verify_t0107"
-	)
-	if not bool(strategy_result.get("ok", false)):
-		return _fail("Mounted melee NPC must accept charge_cycle.")
-
-	combat_system.debug_clear_enemies()
-	var spawn_result: Dictionary = combat_system.debug_spawn_wave(1, true)
-	if not bool(spawn_result.get("ok", false)):
-		return _fail("Failed to spawn charge verification target.")
-	var enemy_id := str(combat_system.get_active_enemy_ids()[0])
-	var npc_position := Vector3(0.0, 0.0, 0.0)
-	_set_npc_world_position(npc_system, npc_id, npc_position)
-	var active_enemies: Dictionary = combat_system.get("_active_enemies")
-	var enemy: Dictionary = active_enemies.get(enemy_id, {})
-	enemy["position"] = Vector3(0.0, 0.0, 1.0)
-	enemy["hp"] = 200
-	enemy["max_hp"] = 200
-	enemy["attack_windup_remaining"] = 0.3
-	enemy["attack_windup_target"] = {"type": "npc", "id": npc_id}
-	active_enemies[enemy_id] = enemy
-	combat_system.set("_active_enemies", active_enemies)
-	npc_system.set_npc_behavior_mode(npc_id, "combat", "verify_t0107_charge", {
-		"state_changes": {
-			"current_action": "combat_ready",
-			"combat_target_enemy_id": enemy_id,
-			"combat_attack_cooldown": 0.0,
-			"combat_charge_phase": "impact"
-		},
-		"request_plan_reevaluation": false
-	})
-	var base_attack := float(
-		(combat_system.get_npc_combat_stats(npc_id).get("final", {}) as Dictionary).get(
-			"attack_power",
-			0.0
-		)
-	)
-	var attack_result: Dictionary = combat_system._advance_single_npc_combat_attack(npc_id, 0.1)
-	if int(attack_result.get("attack_count", 0)) != 1:
-		return _fail("Charge impact must resolve exactly one attack: %s" % JSON.stringify(attack_result))
-	var attacks: Array = attack_result.get("attacks", [])
-	var attack: Dictionary = attacks[0]
-	var impact: Dictionary = attack.get("charge_impact", {})
-	if (
-		impact.is_empty()
-		or int(impact.get("collision_damage", 0)) <= 0
-		or float(impact.get("weapon_damage_multiplier", 1.0)) <= 1.0
-		or float(attack.get("raw_attack_power", 0.0)) <= base_attack
-	):
-		return _fail("Charge must add horse collision and amplified weapon damage.")
-	if not bool(impact.get("interrupted_windup", false)):
-		return _fail("Horse collision stagger must interrupt an enemy windup.")
-	var enemy_after: Dictionary = combat_system.get_enemy(enemy_id)
-	if float(enemy_after.get("stagger_remaining", 0.0)) <= 0.0:
-		return _fail("Charge target must retain a visible stagger state.")
-	var state_after: Dictionary = npc_system.get_npc_state(npc_id)
-	if str(state_after.get("combat_charge_phase", "")) != "withdraw":
-		return _fail("Cavalry must withdraw after impact.")
+	var cavalry_options: Array = combat_system.get_combat_strategy_options_for_unit_type("cavalry")
+	for raw_option in cavalry_options:
+		if raw_option is Dictionary and str((raw_option as Dictionary).get("id", "")) == "charge_cycle":
+			return _fail("Removed charge_cycle must not remain in cavalry strategy options.")
 	return true
 
 

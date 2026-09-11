@@ -18,7 +18,8 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		push_error("Required systems not found")
 		quit(1)
 		return
@@ -45,7 +46,8 @@ func _init() -> void:
 	var stableman_id := "stableman_01"
 	var blacksmith_id := "blacksmith_01"
 	var engineer_id := "engineer_01"
-	_set_debug_move_speed(gardener_id, 100.0)
+	time_system.set_paused(false)
+	_set_debug_move_speed(gardener_id, 5.0)
 
 	var gardener_level_1_output := int(action_system._get_work_output_resources(garden_action, gardener_id).get("grain", 0))
 	var stableman_level_1_output := int(action_system._get_work_output_resources(garden_action, stableman_id).get("grain", 0))
@@ -79,7 +81,6 @@ func _init() -> void:
 
 	var grain_before := int(resource_system.get_resource("grain"))
 	var gardener_events_before := int(memory_system.get_npc_daily_events(gardener_id).size())
-	npc_system.debug_enter_location_immediately(gardener_id, "garden")
 	npc_system.update_npc_state(gardener_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
 	if not action_system.debug_assign_work(gardener_id, "garden"):
 		push_error("Failed to assign garden work")
@@ -124,8 +125,8 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
-	for frame in range(600):
-		await process_frame
+	for frame in range(1800):
+		await physics_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
 			return true

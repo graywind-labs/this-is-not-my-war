@@ -3,6 +3,7 @@
 目标 NPC 始终由 npc.identity、npc.state、npc.current_order、npc.short_term_memory、npc.long_term_memory、npc.location_context 与 station_context 定义。判断必须保持其职业背景、宗教信仰、人格、欲望、恐惧、底线、说话 / 行事风格和记忆连续性；宗教信仰不能覆盖个性、职业判断或程序现实，current_building_states 与 allowed_actions 只描述程序确认的现实条件和合法行动边界。
 
 npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短期索引中的全部亲历 experienced_events 与见闻 witnessed_events，不是“最近若干条”抽样；亲历权重高于见闻。每条记忆提供 type、summary、importance、day、time 和可选紧凑 details；summary 是程序确定性事实，details 只补充摘要未充分表达的决策关键字段。没有 details 表示 summary 已足够，不得臆测被程序省略的完整旧计划、地点快照、阵容或内部 ID。
+其中仅 attack_made、damage_taken、building_damaged、defense_device_triggered、horse_damaged 可能在上传前按主体、客体、地点、可见性和各类关键字段被程序确定性聚合；details.aggregation 给出 event_count、累计伤害、HP 首尾/最低值及首尾时间。聚合项表示多次真实事件，不得当成单次事件；其他类型仍逐条提供。
 
 基础场景：
 - station_context 是本次请求唯一的共享驿站常识来源：setting_summary 说明地点性质；resident_roster 列出驿站全部已登记 NPC，每行 recruited 表示是否入伍、in_station 表示此刻是否仍在驿站，不能把 in_station=false 的人当作当前在站目标；building_roster 是驿站有且仅有的建筑；work_mode_actions 是工作 / 日常模式有且仅有的行为类型，description 说明行为前提与上下文影响；basic_resource_reserves 是当前公开的基础资源储备；station_rules 是世界内通行的精简驿站规则。
@@ -33,6 +34,8 @@ dialogue 判别规则：
 3. current_order 是守备官当前持续提出的指令参考；只能结合 NPC 人格、状态、记忆和本轮真实对话判断影响，不得当作强制命令，也不得自行补出守备官未说的话。
 4. 自主 NPC-NPC 对话的发起者完成对话后，或 NPC 按当前小时计划主动找守备官交涉并完成会话后，程序会把结束时当前小时放入 required_revision_hours；这表示原对话行动已经完成，必须为当前阶段重新安排后续活动。下一层仍从正常 allowed_actions 中选择工作、休息、拜访、找其他 NPC 对话等合法行动。
 5. 若 dialogue_history 明确说明弥撒此刻已经开始 / 正在举行，守备官请目标 NPC 现在参加，且 NPC 清楚答应立即参加，那么这是会改变当前安排的新承诺，不是普通寒暄。只要 allowed_actions 中 `pray_at_chapel` 当前可用，必须把当前小时加入 revision_hours；下一层选择祈祷后，程序会在到达小教堂时自动参加正在举行的弥撒。
+6. 礼物、建筑升级、其他成员应征或逃离、装备变化、current_order 变化、守备官攻击或威胁都可能影响原计划，但只有它与目标 NPC 的真实顾虑有关且目标 NPC 确实知道时，才选择相应小时。无关礼物不应自动取消逃离计划，口头声称但未经目标 NPC 确认的升级、部署或装备也不能当作已经解决。
+7. 若当前指令已经撤回或修改、装备 / 坐骑承诺已由程序事实兑现、关键建筑升级或相关人员安排已成为目标 NPC 的已知事实，应重新判断原逃离理由是否仍成立，并选择需要恢复正常工作、休息、训练或职责的最小小时集合。若理由仍充分，不得因为工作阶段建议而判定无需修改；若 NPC 已愿意留下，则可为恢复正常工作倾向选择真实受影响小时。
 
 action_failure 判别规则：
 

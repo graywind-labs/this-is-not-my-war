@@ -1,0 +1,88 @@
+{
+  "schema_version": "action_audio_v1",
+  "source_height_m": 1.15,
+  "building_jobs": {
+    "start_asset_id": "sfx_work_repair_and_upgrade_start",
+    "start_gain_db": 4.0,
+    "loop_asset_id": "sfx_work_repair_and_upgrade_loop",
+    "loop_gain_db": 4.0
+  },
+  "crafting_target_selection": {
+    "building_ids": ["blacksmith", "workshop"],
+    "asset_id": "sfx_work_blacksmith_target_selected",
+    "gain_db": 4.0,
+    "empty_target_silent": true
+  },
+  "loop_rules": [
+    {
+      "id": "garden",
+      "action_ids": ["work_garden"],
+      "asset_id": "sfx_work_garden_loop"
+    },
+    {
+      "id": "dining_kitchen",
+      "action_ids": ["work_dining_hall"],
+      "asset_id": "sfx_work_dining_hall_loop"
+    },
+    {
+      "id": "stable_care",
+      "action_ids": ["work_stable"],
+      "asset_id_with_horse": "sfx_work_stable_with_horse_loop",
+      "asset_id_without_horse": "sfx_work_stable_without_horse_loop"
+    },
+    {
+      "id": "tavern_brewing",
+      "action_ids": ["work_tavern"],
+      "asset_id": "sfx_work_tavern_loop"
+    },
+    {
+      "id": "blacksmith_work",
+      "action_ids": ["work_blacksmith"],
+      "asset_id": "sfx_work_blacksmith_loop"
+    },
+    {
+      "id": "workshop_work",
+      "action_ids": ["work_workshop"],
+      "asset_id": "sfx_work_workshop_loop"
+    },
+    {
+      "id": "training",
+      "action_ids": ["work_training_instructor", "receive_weapon_training"],
+      "asset_id": "sfx_work_training_loop"
+    },
+    {
+      "id": "construction",
+      "action_ids": ["assist_repair", "assist_upgrade"],
+      "asset_id": "sfx_work_repair_and_upgrade_loop",
+      "group_by_target": true
+    },
+    {
+      "id": "eating",
+      "action_ids": ["eat_at_dining_hall"],
+      "asset_id": "sfx_daily_eating_loop"
+    }
+  ],
+  "clinic": {
+    "doctor_action_id": "work_clinic_doctor",
+    "patient_action_id": "receive_clinic_treatment",
+    "assist_action_id": "assist_heal",
+    "reading_asset_id": "sfx_work_clinic_doctor_reading_loop",
+    "treatment_asset_id": "sfx_work_clinic_treatment_and_assist_loop"
+  },
+  "chapel": {
+    "prayer_action_id": "pray_at_chapel",
+    "mass_action_id": "lead_mass",
+    "prayer_asset_id": "sfx_chapel_prayer_presence_loop",
+    "mass_start_asset_id": "sfx_chapel_mass_start_one_shot",
+    "mass_start_duration_seconds": 5.0,
+    "mass_loop_asset_id": "sfx_chapel_mass_in_progress_loop"
+  },
+  "one_shots": [
+    {
+      "id": "drink",
+      "action_id": "drink_wine",
+      "asset_id": "sfx_daily_drinking_one_shot"
+    }
+  ],
+  "excluded_actions": ["sleep_in_dormitory"]
+}

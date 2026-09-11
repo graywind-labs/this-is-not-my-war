@@ -251,7 +251,7 @@ def _completion_revision_payload() -> dict:
     payload["allowed_actions"] = [
         {
             "action_id": "work_clinic_doctor",
-            "name": "坐诊或研读医学著作",
+            "name": "坐诊",
             "action_kind": "work",
             "location_id": "clinic",
             "target_id": None,

@@ -1,14 +1,17 @@
 extends Node
 
+const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const BUILDING_DEFS_FILE := "building_defs.json"
 const BUILDING_ROOT_PATH := "/root/Main/WorldRoot/Station/Buildings"
 const PROPS_ROOT_PATH := "/root/Main/WorldRoot/Station/Props"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
+const DEFENSE_DEVICE_PRESENTER_PATH := "/root/Main/WorldRoot/Station/DefenseDevices"
 const CLICK_AREA_NAME := "ClickArea"
 const PICK_RAY_LENGTH := 1000.0
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
+const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
 const PLAZA_LOCATION_ID := "plaza"
 const DEFAULT_DAMAGE_VISIBILITY := "local_public"
@@ -19,6 +22,11 @@ const DEFAULT_REPAIR_HELPER_SKILL_SCALE := 0.005
 const DEFAULT_REPAIR_HELPER_MAX_BONUS := 0.50
 const DEFAULT_UPGRADE_SECONDS_PER_LEVEL := 3600.0
 const DEFAULT_UPGRADE_LEVEL_TIME_FACTOR := 0.35
+const UNIFIED_WORLD_FEEDBACK_BUILDING_IDS: Array[String] = [
+	"front_gate",
+	"warehouse",
+	"main_hall"
+]
 
 var _buildings: Dictionary = {}
 var _building_order: Array[String] = []
@@ -62,6 +70,13 @@ func initialize() -> void:
 		definition["hp"] = hp
 		definition["max_hp"] = max_hp
 		definition["level"] = max(1, int(definition.get("level", 1)))
+		var destruction: Dictionary = (
+			definition.get("destruction", {}).duplicate(true)
+			if definition.get("destruction", {}) is Dictionary
+			else {}
+		)
+		definition["destruction"] = destruction
+		definition["destruction_latched"] = not destruction.is_empty() and hp <= 0
 		definition["workstations"] = _normalize_workstations(
 			building_id,
 			definition.get("workstations", []) if definition.get("workstations", []) is Array else []
@@ -85,10 +100,152 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if _try_route_horse_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
+		if _try_route_defense_device_click(event.position):
+			get_viewport().set_input_as_handled()
+			return
+		var art_hit := _pick_building_art_view_at_screen_position(event.position)
+		if not art_hit.is_empty():
+			var art_building_id := str(art_hit.get("building_id", ""))
+			if _should_defer_art_hit_to_foreground_npc(event.position, art_hit):
+				return
+			if bool(art_hit.get("interior_revealed", false)) and _try_select_interior_npc(event.position, art_building_id):
+				get_viewport().set_input_as_handled()
+				return
+			if not art_building_id.is_empty():
+				_select_building(art_building_id)
+				get_viewport().set_input_as_handled()
+				return
 		var building_id := _pick_building_at_screen_position(event.position)
 		if not building_id.is_empty():
 			_select_building(building_id)
 			get_viewport().set_input_as_handled()
+
+
+func _try_route_defense_device_click(screen_position: Vector2) -> bool:
+	var presenter := get_node_or_null(DEFENSE_DEVICE_PRESENTER_PATH)
+	if presenter == null or not presenter.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = presenter.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "defense_device":
+		return false
+	var deployment_id := str(interaction.get("deployment_id", ""))
+	return (
+		not deployment_id.is_empty()
+		and presenter.has_method("select_defense_device_from_world_click")
+		and bool(presenter.call("select_defense_device_from_world_click", deployment_id))
+	)
+
+
+func _pick_building_art_view_at_screen_position(screen_position: Vector2) -> Dictionary:
+	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
+	if camera == null:
+		return {}
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * PICK_RAY_LENGTH
+	var closest_hit: Dictionary = {}
+	var closest_distance := INF
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or not view.has_method("get_building_interaction_ray_hit"):
+			continue
+		var hit: Variant = view.call("get_building_interaction_ray_hit", ray_origin, ray_end)
+		if not hit is Dictionary or (hit as Dictionary).is_empty():
+			continue
+		var distance := float((hit as Dictionary).get("distance", INF))
+		if distance < closest_distance:
+			closest_distance = distance
+			closest_hit = (hit as Dictionary).duplicate(true)
+	return closest_hit
+
+
+func _try_select_interior_npc(screen_position: Vector2, building_id: String) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = npc_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "npc":
+		return false
+	var npc_id := str(interaction.get("npc_id", ""))
+	if npc_id.is_empty() or not npc_system.has_method("get_npc_state"):
+		return false
+	var state: Dictionary = npc_system.call("get_npc_state", npc_id)
+	if str(state.get("current_location", "")) != building_id:
+		return false
+	return npc_system.has_method("select_npc_from_world_click") and bool(npc_system.call("select_npc_from_world_click", npc_id))
+
+
+func _try_select_interior_horse(screen_position: Vector2, building_id: String) -> bool:
+	if building_id != "stable":
+		return false
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = horse_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "horse":
+		return false
+	var horse_id := str(interaction.get("horse_id", ""))
+	if horse_id.is_empty() or not horse_system.has_method("get_horse_snapshot"):
+		return false
+	var horse: Dictionary = horse_system.call("get_horse_snapshot", horse_id)
+	if str(horse.get("location", "")) != "stable":
+		return false
+	return horse_system.has_method("select_horse_from_world_click") and bool(horse_system.call("select_horse_from_world_click", horse_id))
+
+
+func _try_route_horse_click(screen_position: Vector2) -> bool:
+	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
+	if horse_system == null or not horse_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = horse_system.call("get_world_click_interaction", screen_position)
+	if str(interaction.get("kind", "")) != "horse":
+		return false
+	var horse_id := str(interaction.get("horse_id", ""))
+	if horse_id.is_empty() or not horse_system.has_method("get_horse_snapshot"):
+		return false
+	var horse: Dictionary = horse_system.call("get_horse_snapshot", horse_id)
+	if str(horse.get("location", "")) != "stable":
+		return horse_system.has_method("select_horse_from_world_click") and bool(horse_system.call("select_horse_from_world_click", horse_id))
+	var stable_hit := _pick_specific_building_art_view_at_screen_position(screen_position, "stable")
+	if stable_hit.is_empty():
+		return false
+	if bool(stable_hit.get("interior_revealed", false)):
+		return _try_select_interior_horse(screen_position, "stable")
+	_select_building("stable")
+	return true
+
+
+func _pick_specific_building_art_view_at_screen_position(screen_position: Vector2, building_id: String) -> Dictionary:
+	var camera := get_node_or_null(CAMERA_PATH) as Camera3D
+	if camera == null:
+		return {}
+	var ray_origin := camera.project_ray_origin(screen_position)
+	var ray_end := ray_origin + camera.project_ray_normal(screen_position) * PICK_RAY_LENGTH
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or str(view.get("building_id")) != building_id or not view.has_method("get_building_interaction_ray_hit"):
+			continue
+		var hit: Variant = view.call("get_building_interaction_ray_hit", ray_origin, ray_end)
+		if hit is Dictionary and not (hit as Dictionary).is_empty():
+			return (hit as Dictionary).duplicate(true)
+	return {}
+
+
+func _should_defer_art_hit_to_foreground_npc(screen_position: Vector2, art_hit: Dictionary) -> bool:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_world_click_interaction"):
+		return false
+	var interaction: Dictionary = npc_system.call("get_world_click_interaction", screen_position)
+	var npc_id := str(interaction.get("npc_id", ""))
+	if npc_id.is_empty() or float(interaction.get("distance", INF)) >= float(art_hit.get("distance", 0.0)):
+		return false
+	var state: Dictionary = npc_system.call("get_npc_state", npc_id) if npc_system.has_method("get_npc_state") else {}
+	var same_building := str(state.get("current_location", "")) == str(art_hit.get("building_id", ""))
+	if not same_building:
+		return true
+	return bool(art_hit.get("interior_revealed", false)) and str(interaction.get("kind", "")) == "autonomous_dialogue_bubble"
 
 
 func get_building(building_id: String) -> Dictionary:
@@ -120,6 +277,17 @@ func get_building(building_id: String) -> Dictionary:
 	building["activity_efficiency_multipliers"] = get_building_activity_efficiency_multipliers(building_id)
 	building["activity_efficiency"] = building["activity_efficiency_multipliers"].duplicate(true)
 	return building
+
+
+func get_building_combat_snapshot(building_id: String) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	# Combat needs live identity/HP, not repair UI and per-activity efficiency.
+	return {
+		"id": building_id, "name": str(building.get("name", building_id)),
+		"hp": int(building.get("hp", 0)), "max_hp": int(building.get("max_hp", 0)),
+	}
 
 
 func get_building_ids() -> Array[String]:
@@ -290,6 +458,135 @@ func set_building_special_state_section(
 	return true
 
 
+func reserve_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return {"ok": false, "reason": "invalid_workstation_request"}
+	var availability := get_building_availability(building_id)
+	if not bool(availability.get("is_activity_available", false)):
+		return {
+			"ok": false,
+			"reason": "building_unavailable",
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"building_id": building_id,
+			"preferred_type": preferred_type,
+			"blocked_workstations": [],
+			"blocked_by_npc_ids": []
+		}
+
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	var assigned_workstation_id := _find_assigned_workstation_id(workstations, npc_id, preferred_type)
+	var blocked_workstations: Array[Dictionary] = []
+	var blocked_by_npc_ids: Array[String] = []
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var workstation_id := str(workstation.get("id", ""))
+		var workstation_type := str(workstation.get("type", ""))
+		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		if not assigned_workstation_id.is_empty() and workstation_id != assigned_workstation_id:
+			continue
+		var assigned_npc_id := _clean_nullable_id(workstation.get("assigned_npc_id", ""))
+		if assigned_workstation_id.is_empty() and not assigned_npc_id.is_empty() and assigned_npc_id != npc_id:
+			continue
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
+		if occupied_by == npc_id or reserved_by == npc_id:
+			return {
+				"ok": true,
+				"building_id": building_id,
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"already_reserved": reserved_by == npc_id,
+				"already_occupied": occupied_by == npc_id
+			}
+		if not occupied_by.is_empty() or not reserved_by.is_empty():
+			var blocked_by := occupied_by if not occupied_by.is_empty() else reserved_by
+			blocked_workstations.append({
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"occupied_by": occupied_by,
+				"reserved_by": reserved_by,
+				"assigned_npc_id": assigned_npc_id
+			})
+			if not blocked_by.is_empty() and not blocked_by_npc_ids.has(blocked_by):
+				blocked_by_npc_ids.append(blocked_by)
+			continue
+		workstation["reserved_by"] = npc_id
+		workstations[index] = workstation
+		building["workstations"] = workstations
+		_buildings[building_id] = building
+		_emit_building_state_changed(building_id)
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"workstation_id": workstation_id,
+			"workstation_type": workstation_type,
+			"already_reserved": false,
+			"already_occupied": false
+		}
+
+	return {
+		"ok": false,
+		"reason": "no_free_workstation",
+		"building_id": building_id,
+		"preferred_type": preferred_type,
+		"assigned_workstation_id": assigned_workstation_id,
+		"blocked_workstations": blocked_workstations,
+		"blocked_by_npc_ids": blocked_by_npc_ids
+	}
+
+
+func commit_workstation_reservation(
+	building_id: String,
+	npc_id: String,
+	workstation_id: String = "",
+	preferred_type: String = ""
+) -> Dictionary:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return {"ok": false, "reason": "invalid_workstation_request"}
+	var availability := get_building_availability(building_id)
+	if not bool(availability.get("is_activity_available", false)):
+		return {
+			"ok": false,
+			"reason": "building_unavailable",
+			"unavailable_reason": str(availability.get("unavailable_reason", "building_unavailable")),
+			"building_id": building_id
+		}
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		var current_id := str(workstation.get("id", ""))
+		var workstation_type := str(workstation.get("type", ""))
+		if not workstation_id.is_empty() and current_id != workstation_id:
+			continue
+		if not preferred_type.is_empty() and workstation_type != preferred_type:
+			continue
+		if _clean_nullable_id(workstation.get("reserved_by", "")) != npc_id:
+			continue
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		if not occupied_by.is_empty() and occupied_by != npc_id:
+			return {"ok": false, "reason": "workstation_occupied", "occupied_by": occupied_by}
+		workstation["reserved_by"] = null
+		workstation["occupied_by"] = npc_id
+		workstations[index] = workstation
+		building["workstations"] = workstations
+		_buildings[building_id] = building
+		_emit_building_state_changed(building_id)
+		return {
+			"ok": true,
+			"building_id": building_id,
+			"workstation_id": current_id,
+			"workstation_type": workstation_type
+		}
+	return {"ok": false, "reason": "workstation_reservation_missing", "building_id": building_id}
+
+
 func claim_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
 	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
 		return {"ok": false, "reason": "invalid_workstation_request"}
@@ -328,6 +625,7 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 		var occupied_by := str(workstation.get("occupied_by", ""))
 		if occupied_by == "<null>":
 			occupied_by = ""
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
 		var workstation_type := str(workstation.get("type", ""))
 		if not preferred_type.is_empty() and workstation_type != preferred_type:
 			continue
@@ -357,6 +655,18 @@ func claim_workstation(building_id: String, npc_id: String, preferred_type: Stri
 			if not blocked_by_npc_ids.has(occupied_by):
 				blocked_by_npc_ids.append(occupied_by)
 			continue
+		if not reserved_by.is_empty() and reserved_by != npc_id:
+			blocked_workstations.append({
+				"workstation_id": workstation_id,
+				"workstation_type": workstation_type,
+				"occupied_by": occupied_by,
+				"reserved_by": reserved_by,
+				"assigned_npc_id": assigned_npc_id
+			})
+			if not blocked_by_npc_ids.has(reserved_by):
+				blocked_by_npc_ids.append(reserved_by)
+			continue
+		workstation["reserved_by"] = null
 		workstation["occupied_by"] = npc_id
 		workstations[index] = workstation
 		building["workstations"] = workstations
@@ -394,12 +704,16 @@ func release_workstation(building_id: String, npc_id: String, workstation_id: St
 			continue
 		var workstation: Dictionary = workstations[index]
 		var current_id := str(workstation.get("id", ""))
-		var occupied_by := str(workstation.get("occupied_by", ""))
-		if occupied_by != npc_id:
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
+		if occupied_by != npc_id and reserved_by != npc_id:
 			continue
 		if not workstation_id.is_empty() and current_id != workstation_id:
 			continue
-		workstation["occupied_by"] = null
+		if occupied_by == npc_id:
+			workstation["occupied_by"] = null
+		if reserved_by == npc_id:
+			workstation["reserved_by"] = null
 		workstations[index] = workstation
 		changed = true
 		if not workstation_id.is_empty():
@@ -408,6 +722,33 @@ func release_workstation(building_id: String, npc_id: String, workstation_id: St
 	if not changed:
 		return false
 
+	building["workstations"] = workstations
+	_buildings[building_id] = building
+	_emit_building_state_changed(building_id)
+	return true
+
+
+func release_workstation_reservation(building_id: String, npc_id: String, workstation_id: String = "") -> bool:
+	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
+		return false
+	var building: Dictionary = _buildings[building_id]
+	var workstations: Array = building.get("workstations", [])
+	var changed := false
+	for index in range(workstations.size()):
+		if not workstations[index] is Dictionary:
+			continue
+		var workstation: Dictionary = workstations[index]
+		if not workstation_id.is_empty() and str(workstation.get("id", "")) != workstation_id:
+			continue
+		if _clean_nullable_id(workstation.get("reserved_by", "")) != npc_id:
+			continue
+		workstation["reserved_by"] = null
+		workstations[index] = workstation
+		changed = true
+		if not workstation_id.is_empty():
+			break
+	if not changed:
+		return false
 	building["workstations"] = workstations
 	_buildings[building_id] = building
 	_emit_building_state_changed(building_id)
@@ -431,6 +772,9 @@ func get_building_entry_position(building_id: String) -> Variant:
 	if not _buildings.has(building_id):
 		push_warning("Cannot get entry position for unknown building: %s" % building_id)
 		return null
+	var interior_route := get_building_interior_route(building_id)
+	if not interior_route.is_empty():
+		return interior_route.get("entry_outside_position")
 	if not _building_scene_nodes.has(building_id):
 		push_warning("Building has no bound scene nodes: %s" % building_id)
 		return null
@@ -455,6 +799,35 @@ func get_building_entry_position(building_id: String) -> Variant:
 	return null
 
 
+func get_building_feedback_anchor_position(building_id: String) -> Variant:
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null:
+			continue
+		var view_building_id := str(view.get_meta("building_id", ""))
+		if view_building_id.is_empty():
+			view_building_id = str(view.get("building_id"))
+		if view_building_id != building_id or not view.has_method("get_world_feedback_anchor_position"):
+			continue
+		var anchor_position: Variant = view.call("get_world_feedback_anchor_position")
+		if anchor_position is Vector3:
+			return anchor_position
+	return null
+
+
+func get_building_interior_route(building_id: String, workstation_id: String = "") -> Dictionary:
+	for raw_view in get_tree().get_nodes_in_group("building_art_view"):
+		var view := raw_view as Node
+		if view == null or str(view.get("building_id")) != building_id:
+			continue
+		if not view.has_method("get_interior_route_snapshot"):
+			continue
+		var snapshot: Variant = view.call("get_interior_route_snapshot", workstation_id)
+		if snapshot is Dictionary and not (snapshot as Dictionary).is_empty():
+			return (snapshot as Dictionary).duplicate(true)
+	return {}
+
+
 func get_building_location_context(building_id: String) -> Dictionary:
 	var building := get_building(building_id)
 	if building.is_empty():
@@ -466,13 +839,15 @@ func get_building_location_context(building_id: String) -> Dictionary:
 		if not raw_workstation is Dictionary:
 			continue
 		var workstation: Dictionary = raw_workstation
-		var occupied_by := str(workstation.get("occupied_by", ""))
+		var occupied_by := _clean_nullable_id(workstation.get("occupied_by", ""))
+		var reserved_by := _clean_nullable_id(workstation.get("reserved_by", ""))
 		visible_workstations.append({
 			"id": str(workstation.get("id", "")),
 			"name": str(workstation.get("name", workstation.get("id", ""))),
 			"type": str(workstation.get("type", "")),
 			"occupied_by": occupied_by,
-			"status": "free" if occupied_by.is_empty() or occupied_by == "<null>" else "occupied"
+			"reserved_by": reserved_by,
+			"status": "occupied" if not occupied_by.is_empty() else "reserved" if not reserved_by.is_empty() else "free"
 		})
 	var availability := get_building_availability(building_id)
 	var runtime_fields := {
@@ -565,8 +940,8 @@ func can_repair_building(building_id: String) -> bool:
 	if int(building.get("hp", 0)) >= int(building.get("max_hp", 0)):
 		return false
 
-	var repair_config: Dictionary = building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var quote := get_repair_quote(building_id)
+	var cost: Dictionary = quote.get("cost", {})
 	if cost.is_empty():
 		return false
 
@@ -580,7 +955,8 @@ func repair_building(building_id: String) -> bool:
 
 	var building: Dictionary = _buildings[building_id]
 	var repair_config: Dictionary = building.get("repair", {})
-	var cost: Dictionary = repair_config.get("cost", {})
+	var quote := get_repair_quote(building_id)
+	var cost: Dictionary = quote.get("cost", {})
 	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
 	if resource_system == null or not resource_system.spend_resources(cost):
 		return false
@@ -595,6 +971,10 @@ func repair_building(building_id: String) -> bool:
 		"remaining_seconds": duration_seconds,
 		"start_hp": current_hp,
 		"target_hp": max_hp,
+		"missing_hp": missing_hp,
+		"repair_batches": int(quote.get("repair_batches", 0)),
+		"hp_restore": int(quote.get("hp_restore", 0)),
+		"cost": cost.duplicate(true),
 		"helpers": {}
 	}
 	_buildings[building_id] = building
@@ -610,6 +990,38 @@ func is_repair_in_progress(building_id: String) -> bool:
 func get_repair_status(building_id: String) -> Dictionary:
 	_prune_invalid_repair_helpers(building_id)
 	return _get_repair_status(building_id)
+
+
+func get_repair_quote(building_id: String) -> Dictionary:
+	if not _buildings.has(building_id):
+		return {}
+	var building: Dictionary = _buildings[building_id]
+	var max_hp := int(building.get("max_hp", 0))
+	var current_hp := int(building.get("hp", 0))
+	var missing_hp := maxi(0, max_hp - current_hp)
+	var repair_config: Dictionary = building.get("repair", {})
+	var base_cost: Dictionary = repair_config.get("cost", {})
+	var hp_restore := int(repair_config.get("hp_restore", 0))
+	if missing_hp <= 0 or base_cost.is_empty() or hp_restore <= 0:
+		return {
+			"building_id": building_id,
+			"missing_hp": missing_hp,
+			"hp_restore": hp_restore,
+			"repair_batches": 0,
+			"cost": {}
+		}
+	var repair_batches := int(ceil(float(missing_hp) / float(hp_restore)))
+	var total_cost := {}
+	for raw_resource_id in base_cost.keys():
+		var resource_id := str(raw_resource_id)
+		total_cost[resource_id] = maxi(0, int(base_cost[raw_resource_id])) * repair_batches
+	return {
+		"building_id": building_id,
+		"missing_hp": missing_hp,
+		"hp_restore": hp_restore,
+		"repair_batches": repair_batches,
+		"cost": total_cost
+	}
 
 
 func add_repair_helper(building_id: String, npc_id: String, engineering_skill: int) -> bool:
@@ -773,6 +1185,8 @@ func apply_damage_to_building(
 	var hp_before := clampi(int(building.get("hp", max_hp)), 0, max_hp)
 	var hp_after := maxi(0, hp_before - amount)
 	building["hp"] = hp_after
+	if hp_after <= 0 and not (building.get("destruction", {}) as Dictionary).is_empty():
+		building["destruction_latched"] = true
 	if _active_repairs.has(building_id):
 		_release_repair_helpers(_active_repairs[building_id], building_id)
 		_active_repairs.erase(building_id)
@@ -782,6 +1196,30 @@ func apply_damage_to_building(
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	var feedback_world_position: Variant = _emit_building_hp_feedback(
+		building_id,
+		hp_before,
+		hp_after,
+		options
+	)
+	if hp_after < hp_before:
+		var impact_world_position: Variant = _resolve_building_impact_world_position(
+			building_id,
+			options,
+			feedback_world_position
+		)
+		_emit_combat_audio_event({
+			"event_type": "structure_damaged",
+			"target_type": "building",
+			"target_id": building_id,
+			"source_id": actor_id,
+			"damage": hp_before - hp_after,
+			"hp_before": hp_before,
+			"hp_after": hp_after,
+			"destroyed": hp_after <= 0,
+			"world_position": feedback_world_position,
+			"impact_world_position": impact_world_position,
+		})
 	var event := _log_building_damaged(building_id, actor_id, amount, hp_before, hp_after, visibility, options)
 	return {
 		"ok": true,
@@ -796,6 +1234,50 @@ func apply_damage_to_building(
 	}
 
 
+func _emit_building_hp_feedback(
+	building_id: String,
+	hp_before: int,
+	hp_after: int,
+	options: Dictionary = {}
+) -> Variant:
+	var feedback_world_position: Variant = WorldFeedbackPayload.find_world_position(options)
+	var prefer_feedback_position := feedback_world_position is Vector3
+	var uses_formal_anchor := false
+	if building_id in UNIFIED_WORLD_FEEDBACK_BUILDING_IDS or not prefer_feedback_position:
+		var formal_anchor: Variant = get_building_feedback_anchor_position(building_id)
+		if formal_anchor is Vector3:
+			feedback_world_position = formal_anchor
+			prefer_feedback_position = true
+			uses_formal_anchor = true
+		elif not prefer_feedback_position:
+			feedback_world_position = get_building_entry_position(building_id)
+	WorldFeedbackPayload.emit_hp_change(
+		self,
+		"building",
+		building_id,
+		hp_before,
+		hp_after,
+		feedback_world_position,
+		prefer_feedback_position,
+		0.0 if uses_formal_anchor else (0.35 if prefer_feedback_position else WorldFeedbackPayload.BUILDING_ANCHOR_HEIGHT)
+	)
+	return feedback_world_position
+
+
+func _resolve_building_impact_world_position(
+	building_id: String,
+	options: Dictionary,
+	feedback_world_position: Variant
+) -> Variant:
+	var explicit_hit_position: Variant = WorldFeedbackPayload.find_world_position(options)
+	if explicit_hit_position is Vector3:
+		return explicit_hit_position
+	var entry_position: Variant = get_building_entry_position(building_id)
+	if entry_position is Vector3:
+		return entry_position
+	return feedback_world_position
+
+
 func restore_building_hp(building_id: String, amount: int) -> bool:
 	if amount <= 0 or not _buildings.has(building_id):
 		return false
@@ -806,10 +1288,13 @@ func restore_building_hp(building_id: String, amount: int) -> bool:
 	if current_hp >= max_hp:
 		return true
 
-	building["hp"] = mini(max_hp, current_hp + amount)
+	var hp_after := mini(max_hp, current_hp + amount)
+	building["hp"] = hp_after
+	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	_emit_building_hp_feedback(building_id, current_hp, hp_after)
 	return true
 
 
@@ -903,14 +1388,22 @@ func _calculate_repair_helper_bonus(engineering_skill: int) -> float:
 func _get_repair_speed_multiplier(job: Dictionary) -> float:
 	var multiplier := 1.0
 	var helpers: Dictionary = job.get("helpers", {})
-	for helper in helpers.values():
+	for raw_npc_id in helpers.keys():
+		var helper: Variant = helpers[raw_npc_id]
 		if helper is Dictionary:
-			multiplier += float((helper as Dictionary).get("speed_bonus", 0.0))
+			multiplier += float((helper as Dictionary).get("speed_bonus", 0.0)) * _get_npc_work_output_multiplier(str(raw_npc_id))
 	return multiplier
 
 
 func _get_upgrade_speed_multiplier(job: Dictionary) -> float:
 	return _get_repair_speed_multiplier(job)
+
+
+func _get_npc_work_output_multiplier(npc_id: String) -> float:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_work_output_multiplier"):
+		return 1.0
+	return maxf(1.0, float(npc_system.get_npc_work_output_multiplier(npc_id)))
 
 
 func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> void:
@@ -925,12 +1418,15 @@ func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> v
 	var start_hp := int(job.get("start_hp", int(building.get("hp", 0))))
 	var target_hp := int(job.get("target_hp", int(building.get("max_hp", 0))))
 	var next_hp := mini(target_hp, int(floor(lerpf(float(start_hp), float(target_hp), progress))))
-	if next_hp > int(building.get("hp", 0)):
+	var hp_before := int(building.get("hp", 0))
+	if next_hp > hp_before:
 		building["hp"] = next_hp
+		_refresh_destruction_latch(building)
 		_buildings[building_id] = building
 		_refresh_bound_scene_nodes(building_id)
 		if emit_changed:
 			_emit_building_state_changed(building_id)
+		_emit_building_hp_feedback(building_id, hp_before, next_hp)
 
 
 func _finish_repair(building_id: String) -> void:
@@ -939,12 +1435,23 @@ func _finish_repair(building_id: String) -> void:
 
 	var job: Dictionary = _active_repairs[building_id]
 	var building: Dictionary = _buildings[building_id]
-	building["hp"] = int(job.get("target_hp", building.get("max_hp", 0)))
+	var hp_before := int(building.get("hp", 0))
+	var hp_after := int(job.get("target_hp", building.get("max_hp", 0)))
+	building["hp"] = hp_after
+	_refresh_destruction_latch(building)
 	_buildings[building_id] = building
 	_active_repairs.erase(building_id)
 	_release_repair_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	_emit_building_hp_feedback(building_id, hp_before, hp_after)
+	_emit_building_job_completed(building_id, "repair", {
+		"building_id": building_id,
+		"building_name": str(building.get("name", building_id)),
+		"job_type": "repair",
+		"hp": hp_after,
+		"max_hp": int(building.get("max_hp", hp_after)),
+	})
 
 
 func _release_repair_helpers(job: Dictionary, building_id: String) -> void:
@@ -992,7 +1499,11 @@ func _get_repair_status(building_id: String) -> Dictionary:
 		"speed_multiplier": _get_repair_speed_multiplier(job),
 		"helper_count": helpers.size(),
 		"helpers": helpers.duplicate(true),
-		"target_hp": int(job.get("target_hp", 0))
+		"target_hp": int(job.get("target_hp", 0)),
+		"missing_hp": int(job.get("missing_hp", 0)),
+		"repair_batches": int(job.get("repair_batches", 0)),
+		"hp_restore": int(job.get("hp_restore", 0)),
+		"cost": (job.get("cost", {}) as Dictionary).duplicate(true)
 	}
 
 
@@ -1040,6 +1551,23 @@ func _get_building_condition(building_id: String) -> String:
 	return "damaged"
 
 
+func _refresh_destruction_latch(building: Dictionary) -> void:
+	if not bool(building.get("destruction_latched", false)):
+		return
+	var destruction: Dictionary = (
+		building.get("destruction", {})
+		if building.get("destruction", {}) is Dictionary
+		else {}
+	)
+	if destruction.is_empty() or not bool(destruction.get("recoverable", false)):
+		return
+	var maximum_hp := maxi(1, int(building.get("max_hp", 1)))
+	var recovery_ratio := clampf(float(destruction.get("recovery_hp_ratio", 1.0)), 0.0, 1.0)
+	var required_hp := maxi(1, int(ceil(float(maximum_hp) * recovery_ratio)))
+	if int(building.get("hp", 0)) >= required_hp:
+		building["destruction_latched"] = false
+
+
 func _finish_upgrade(building_id: String) -> void:
 	if not _buildings.has(building_id) or not _active_upgrades.has(building_id):
 		return
@@ -1051,6 +1579,7 @@ func _finish_upgrade(building_id: String) -> void:
 	building["level"] = int(job.get("target_level", int(building.get("level", 1)) + 1))
 	building["max_hp"] = int(building.get("max_hp", 0)) + max_hp_bonus
 	building["hp"] = int(building.get("max_hp", building.get("hp", 0)))
+	_refresh_destruction_latch(building)
 	_apply_workstation_upgrade(building, upgrade_config)
 	_apply_efficiency_upgrade(building, upgrade_config)
 	_buildings[building_id] = building
@@ -1058,6 +1587,14 @@ func _finish_upgrade(building_id: String) -> void:
 	_release_upgrade_helpers(job, building_id)
 	_refresh_bound_scene_nodes(building_id)
 	_emit_building_state_changed(building_id)
+	_emit_building_job_completed(building_id, "upgrade", {
+		"building_id": building_id,
+		"building_name": str(building.get("name", building_id)),
+		"job_type": "upgrade",
+		"level": int(building.get("level", 1)),
+		"hp": int(building.get("hp", 0)),
+		"max_hp": int(building.get("max_hp", 0)),
+	})
 
 
 func _prune_invalid_repair_helpers(building_id: String) -> void:
@@ -1434,8 +1971,15 @@ func _normalize_workstations(building_id: String, raw_workstations: Array) -> Ar
 			workstation["assigned_npc_id"] = assigned_npc_id
 		if not workstation.has("occupied_by"):
 			workstation["occupied_by"] = null
+		if not workstation.has("reserved_by"):
+			workstation["reserved_by"] = null
 		normalized.append(workstation)
 	return normalized
+
+
+func _clean_nullable_id(value: Variant) -> String:
+	var clean_id := str(value).strip_edges()
+	return "" if clean_id == "<null>" else clean_id
 
 
 func _find_assigned_workstation_id(
@@ -1530,6 +2074,18 @@ func _emit_building_state_changed(building_id: String) -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
 		event_bus.building_state_changed.emit(building_id)
+
+
+func _emit_combat_audio_event(event: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("combat_audio_event"):
+		event_bus.combat_audio_event.emit(event.duplicate(true))
+
+
+func _emit_building_job_completed(building_id: String, job_type: String, result: Dictionary) -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("building_job_completed"):
+		event_bus.building_job_completed.emit(building_id, job_type, result.duplicate(true))
 
 
 func _log_building_damaged(

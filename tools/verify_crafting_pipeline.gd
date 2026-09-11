@@ -1,17 +1,16 @@
 extends SceneTree
 
 const EXPECTED_RECIPES := {
-	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 2],
-	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 2],
-	"craft_polearm": ["blacksmith", "item_polearm", 3],
-	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 3],
-	"craft_sword_shield": ["blacksmith", "item_sword_shield", 4],
-	"craft_mail_chest": ["blacksmith", "item_mail_chest", 6],
-	"craft_arrow_bundle": ["workshop", "item_arrow_bundle", 1],
-	"craft_bow": ["workshop", "item_bow", 2],
-	"craft_crossbow": ["workshop", "item_crossbow", 4],
-	"craft_wall_ballista": ["workshop", "item_wall_ballista", 6],
-	"craft_wall_arrow_tower": ["workshop", "item_wall_arrow_tower", 8]
+	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 3],
+	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 3],
+	"craft_polearm": ["blacksmith", "item_polearm", 4],
+	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 4],
+	"craft_sword_shield": ["blacksmith", "item_sword_shield", 5],
+	"craft_mail_chest": ["blacksmith", "item_mail_chest", 8],
+	"craft_bow": ["workshop", "item_bow", 3],
+	"craft_crossbow": ["workshop", "item_crossbow", 5],
+	"craft_wall_ballista": ["workshop", "item_wall_ballista", 9],
+	"craft_wall_arrow_tower": ["workshop", "item_wall_arrow_tower", 12]
 }
 const PRODUCTION_INFO_FIELDS := [
 	"target_item_id",
@@ -39,10 +38,14 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var building_panel := root.get_node_or_null("Main/UI/BuildingPanel")
-	if crafting_system == null or action_system == null or resource_system == null or building_system == null or npc_system == null or memory_system == null or building_panel == null:
+	if crafting_system == null or action_system == null or resource_system == null or building_system == null or npc_system == null or memory_system == null or time_system == null or building_panel == null:
 		_fail("Required crafting integration nodes are missing")
 		return
+	time_system.set_paused(false)
+	_set_debug_move_speed("blacksmith_01", 40.0)
+	_set_debug_move_speed("engineer_01", 40.0)
 
 	if not _verify_catalog(crafting_system):
 		return
@@ -85,7 +88,11 @@ func _init() -> void:
 		_fail("Crafting work did not start after selecting a target")
 		return
 	if not await _wait_until_current_action(npc_system, worker_id, "work_blacksmith"):
-		_fail("Blacksmith never entered active work")
+		_fail("Blacksmith never entered active work: state=%s spatial=%s runtime=%s" % [
+			JSON.stringify(npc_system.get_npc_state(worker_id)),
+			JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(worker_id)),
+			JSON.stringify(action_system.get_runtime_action_snapshot(worker_id))
+		])
 		return
 	var cycles: Array = action_system.get_active_work_cycle_snapshots("blacksmith", ["work_blacksmith"])
 	if cycles.is_empty():
@@ -137,25 +144,24 @@ func _init() -> void:
 	crafting_system.set_target("blacksmith", "craft_iron_helmet", true)
 	var item_before := int(resource_system.get_resource("item_iron_helmet"))
 	var project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
-	for _stage in range(2):
+	for _stage in range(3):
 		var stage_result: Dictionary = crafting_system.complete_stage("blacksmith", int(project.get("project_revision", -1)), "")
 		if not bool(stage_result.get("ok", false)):
 			_fail("Direct stage completion failed: %s" % JSON.stringify(stage_result))
 			return
 		project = crafting_system.get_project_snapshot("blacksmith")
-	if int(resource_system.get_resource("item_iron_helmet")) != item_before + 1:
-		_fail("Finished recipe did not enter the exact item_iron_helmet inventory")
+	if int(resource_system.get_resource("item_iron_helmet")) != item_before:
+		_fail("Finished recipe entered formal inventory before manual collection")
+		return
+	if int(crafting_system.get_pending_outputs("blacksmith").get("item_iron_helmet", 0)) != 1:
+		_fail("Finished recipe did not enter the blacksmith pending-output store")
+		return
+	var collection: Dictionary = crafting_system.collect_pending_outputs("blacksmith")
+	if not bool(collection.get("ok", false)) or int(resource_system.get_resource("item_iron_helmet")) != item_before + 1:
+		_fail("Manual collection did not atomically transfer the exact item_iron_helmet inventory")
 		return
 	if int(project.get("completed_stages", -1)) != 0 or str(project.get("target_recipe_id", "")) != "craft_iron_helmet":
 		_fail("Completed product should reset stages while retaining the selected target")
-		return
-
-	crafting_system.set_target("workshop", "craft_arrow_bundle", false)
-	var arrows_before := int(resource_system.get_resource("item_arrow_bundle"))
-	var workshop_project: Dictionary = crafting_system.get_project_snapshot("workshop")
-	var arrow_result: Dictionary = crafting_system.complete_stage("workshop", int(workshop_project.get("project_revision", -1)), "")
-	if not bool(arrow_result.get("ok", false)) or int(resource_system.get_resource("item_arrow_bundle")) != arrows_before + 1:
-		_fail("Workshop did not produce exact arrow-bundle inventory")
 		return
 
 	var production_state: Dictionary = building_system.get_building_special_state_section("blacksmith", "production")
@@ -189,8 +195,8 @@ func _verify_catalog(crafting_system: Node) -> bool:
 			_fail("Crafting catalog mismatch for %s: %s" % [recipe_id, JSON.stringify(recipe)])
 			return false
 		found += 1
-	if found != 11:
-		_fail("Expected exactly 11 frozen crafting recipes")
+	if found != 10:
+		_fail("Expected exactly 10 frozen crafting recipes")
 		return false
 	return true
 
@@ -669,9 +675,13 @@ func _verify_parallel_blacksmith_cycles_after_upgrade(
 		if not action_system.debug_assign_work(worker_id, "blacksmith"):
 			_fail("Could not start parallel blacksmith work for %s" % worker_id)
 			return false
-	for worker_id in worker_ids:
 		if not await _wait_until_current_action(npc_system, worker_id, "work_blacksmith"):
-			_fail("Parallel worker never entered blacksmith work: %s" % worker_id)
+			_fail("Parallel worker never entered blacksmith work: %s state=%s spatial=%s runtime=%s" % [
+				worker_id,
+				JSON.stringify(npc_system.get_npc_state(worker_id)),
+				JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(worker_id)),
+				JSON.stringify(action_system.get_runtime_action_snapshot(worker_id))
+			])
 			return false
 
 	var cycles: Array = action_system.get_active_work_cycle_snapshots("blacksmith", ["work_blacksmith"])
@@ -778,6 +788,16 @@ func _find_option_index_by_metadata(option: OptionButton, metadata: String) -> i
 	return -1
 
 
+func _set_debug_move_speed(npc_id: String, speed: float) -> void:
+	var npc_root := root.get_node_or_null("Main/WorldRoot/Station/NPCs")
+	if npc_root == null:
+		return
+	for npc_node in npc_root.get_children():
+		if str(npc_node.get_meta("npc_id", "")) == npc_id and "move_speed" in npc_node:
+			npc_node.move_speed = speed
+			return
+
+
 func _contains_forbidden_production_runtime(value: Variant) -> bool:
 	if value is Dictionary:
 		for raw_key in value.keys():
@@ -794,7 +814,10 @@ func _contains_forbidden_production_runtime(value: Variant) -> bool:
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
 	for _frame in range(600):
-		await process_frame
+		# Formal workstation actions advance through CharacterBody3D physics;
+		# a short real timer prevents a tight signal loop from exhausting all
+		# retries inside only a handful of rendered/physics frames.
+		await create_timer(0.02).timeout
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

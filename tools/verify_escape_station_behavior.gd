@@ -23,6 +23,7 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var game_state := root.get_node_or_null("GameState")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
+	var escape_alert_dialog := root.get_node_or_null("Main/UI/HUD/EscapeStartedAlertDialog") as AcceptDialog
 	var cook_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Cook01") as Node3D
 	if (
 		combat_system == null
@@ -32,9 +33,14 @@ func _init() -> void:
 		or daily_plan_system == null
 		or game_state == null
 		or gm_panel == null
+		or escape_alert_dialog == null
 		or cook_node == null
 	):
 		push_error("Escape verification required nodes not found")
+		quit(1)
+		return
+	if escape_alert_dialog.get_ok_button().text != "好的":
+		push_error("Escape alert must use the 好的 confirmation button")
 		quit(1)
 		return
 
@@ -58,6 +64,10 @@ func _init() -> void:
 		or _count_events(memory_system.get_plaza_events(), "escape_started") != escape_started_before
 	):
 		push_error("Rejected escape must not leave mode, intent, or public-event side effects: %s" % JSON.stringify(engineer_state))
+		quit(1)
+		return
+	if escape_alert_dialog.visible:
+		push_error("Rejected escape preflight must not display the global escape alert")
 		quit(1)
 		return
 	npc_system.update_npc_state("engineer_01", {
@@ -92,12 +102,28 @@ func _init() -> void:
 		])
 		quit(1)
 		return
+	if not escape_alert_dialog.visible or not escape_alert_dialog.dialog_text.contains("欧文正在逃离驿站"):
+		push_error("A real daily-plan escape did not display the centered global alert")
+		quit(1)
+		return
+	escape_alert_dialog.get_ok_button().pressed.emit()
+	await process_frame
+	if escape_alert_dialog.visible:
+		push_error("Escape alert did not close through the 好的 button")
+		quit(1)
+		return
 
 	var revive_escape: Dictionary = combat_system.debug_start_npc_escape("gardener_01", "verify_revive_resume")
 	if not bool(revive_escape.get("ok", false)):
 		push_error("Gardener escape should start before revive-resume verification: %s" % JSON.stringify(revive_escape))
 		quit(1)
 		return
+	if not escape_alert_dialog.visible or not escape_alert_dialog.dialog_text.contains("伊沃正在逃离驿站"):
+		push_error("Direct escape start did not display the global alert for the correct NPC")
+		quit(1)
+		return
+	escape_alert_dialog.get_ok_button().pressed.emit()
+	await process_frame
 	var gardener_hp := int(npc_system.get_npc_state("gardener_01").get("hp", 100))
 	npc_system.apply_damage_to_npc(
 		"gardener_01",
@@ -140,6 +166,12 @@ func _init() -> void:
 		push_error("Debug escape should start: %s" % JSON.stringify(escape_result))
 		quit(1)
 		return
+	if not escape_alert_dialog.visible or not escape_alert_dialog.dialog_text.contains("布鲁诺正在逃离驿站"):
+		push_error("Cook escape start did not display the global alert")
+		quit(1)
+		return
+	escape_alert_dialog.get_ok_button().pressed.emit()
+	await process_frame
 
 	var state: Dictionary = npc_system.get_npc_state("cook_01")
 	var intent: Dictionary = state.get("escape_intent", {})
@@ -226,6 +258,10 @@ func _init() -> void:
 	var priest_state: Dictionary = npc_system.get_npc_state("priest_01")
 	if str(priest_state.get("escape_intent", {}).get("status", "")) != "escaping":
 		push_error("GM escape command should call CombatSystem escape entry: %s" % JSON.stringify(priest_state))
+		quit(1)
+		return
+	if not escape_alert_dialog.visible or not escape_alert_dialog.dialog_text.contains("马塞尔正在逃离驿站"):
+		push_error("GM-triggered real escape did not display the global alert")
 		quit(1)
 		return
 

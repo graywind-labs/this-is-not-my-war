@@ -279,6 +279,7 @@ func _finish_with_failure(error_code: String, message: String) -> void:
 	var daily_plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
 	if daily_plan_system != null and daily_plan_system.has_method("set_auto_execution_enabled"):
 		daily_plan_system.set_auto_execution_enabled(false)
+	_release_failed_planning_states(error_code, message)
 	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
 	if time_system != null and time_system.has_method("set_paused"):
 		time_system.set_paused(true)
@@ -292,6 +293,26 @@ func _finish_with_failure(error_code: String, message: String) -> void:
 	_startup_snapshot["error_code"] = error_code
 	_startup_snapshot["message"] = message
 	startup_completed.emit(_startup_snapshot.duplicate(true))
+
+
+func _release_failed_planning_states(error_code: String, message: String) -> void:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("get_npc_ids"):
+		return
+	for raw_npc_id in npc_system.get_npc_ids():
+		var npc_id := str(raw_npc_id)
+		var state: Dictionary = npc_system.get_npc_state(npc_id)
+		if str(state.get("current_action", "")) != "planning_day":
+			continue
+		npc_system.update_npc_state(npc_id, {
+			"current_action": "idle",
+			"last_action_result": "daily_plan_failed",
+			"last_action_failure_context": {
+				"reason": error_code,
+				"failure_summary": message,
+				"source": "formal_startup"
+			}
+		})
 
 
 func _reset_startup_snapshot(mode: int) -> void:

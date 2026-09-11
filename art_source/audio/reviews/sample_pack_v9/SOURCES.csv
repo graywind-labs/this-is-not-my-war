@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_hurt_grunt_single_262279.mp3,combat_friendly_hurt_voice,Grunts Male.wav,Dirtjm,https://freesound.org/s/262279/,CC-BY-NC 3.0,confirmed,combat_friendly_male_hurt_voice,"整段单次播放；我方男性 NPC 受击时约 50% 概率从受击者位置附加播放；与必播命中声分层","用户确认我方 NPC 使用；女性 NPC 另补女性受击声"
+02_hurt_grunt_short_413176.mp3,combat_enemy_hurt_voice,male_hurt1.ogg,micahlg,https://freesound.org/s/413176/,CC0,confirmed,combat_enemy_hurt_voice,"整段单次播放；敌人受击时约 50% 概率从受击者位置附加播放；与必播命中声分层","用户确认敌人使用"
+03_hurt_grunts_set_256603.mp3,combat_hurt_voice,Male Grunts,Kodack,https://freesound.org/s/256603/,CC0,rejected,,不采用,"用户已分别选择 01 与 02"
+04_enemy_hit_sword_442769.mp3,combat_hit_contact,Sword Hit,qubodup,https://freesound.org/s/442769/,CC0,confirmed,combat_hit_contact_random,"整段单次播放；每次有效受击必播，并与 05、06 剪辑版三选一随机；从实际命中位置发声","用户确认作为通用受击命中声之一"
+05_enemy_hit_body_276600.mp3,combat_hit_contact,body_hit.wav,insanity54,https://freesound.org/s/276600/,CC0,confirmed,combat_hit_contact_random,"整段单次播放；每次有效受击必播，并与 04、06 剪辑版三选一随机；从实际命中位置发声","用户确认作为通用受击命中声之一"
+06_enemy_hit_impacts_503277.mp3,combat_hit_contact,"Face Punch, Body Impact, 4x",Kinoton,https://freesound.org/s/503277/,CC0,confirmed,combat_hit_contact_random,"只使用 00:00–00:01；每次有效受击必播，并与 04、05 三选一随机；从实际命中位置发声","用户确认仅采用开头 1 秒"
+07_arrow_whoosh_384908.mp3,combat_arrow_bolt_whoosh,Arrow Whoosh 1,Ali_6868,https://freesound.org/s/384908/,CC0,confirmed,combat_arrow_and_hand_crossbow_bolt_whoosh,"整段单次播放；绑定普通箭矢或手弩矢的位置播放；弩床重弩矢另用第 11 批 10","用户确认普通箭矢与手弩矢破风复用此声"
+08_arrow_flyby_789389.mp3,combat_arrow_whoosh,Arrow Flyby,modusmogulus,https://freesound.org/s/789389/,CC0,rejected,,不采用,"用户已选择 07"
+09_arrow_whoosh_bamboo_391444.mp3,combat_arrow_whoosh,Arrow Whoosh 2 .R.wav,saturdaysoundguy,https://freesound.org/s/391444/,CC0,rejected,,不采用,"用户已选择 07"
+10_wood_hit_layered_506718.mp3,combat_wood_damage,Wooden Hit,jackyyang09,https://freesound.org/s/506718/,CC0,confirmed,combat_wood_damage_random,"整段单次播放；木建筑或塔防单位每次有效受击时与 11 二选一随机；从实际受击位置发声","用户确认采用"
+11_wood_plank_hit_345679.mp3,combat_wood_damage,wood hit.wav,VitaWrap,https://freesound.org/s/345679/,CC-BY 4.0,confirmed,combat_wood_damage_random,"整段单次播放；木建筑或塔防单位每次有效受击时与 10 二选一随机；从实际受击位置发声","用户确认采用"
+12_wood_axe_impacts_454381.mp3,combat_wood_damage,wood impact axe chop real int echo.flac,kyles,https://freesound.org/s/454381/,CC0,rejected,,不采用,"用户已选择 10 与 11"

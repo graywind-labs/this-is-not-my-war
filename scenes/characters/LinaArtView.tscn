@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/characters/GlenArtView.tscn" id="1_lina_base"]
+
+[node name="LinaArtView" instance=ExtResource("1_lina_base")]
+appearance_id = "lina_doctor_v1"
+outfit_tint = Color(0.42, 0.56, 0.55, 1)
+hair_tint = Color(0.18, 0.07, 0.045, 1)
+show_smith_hammer = false

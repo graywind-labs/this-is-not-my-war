@@ -1,0 +1,11 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_female_sad_sigh_408090.mp3,npc_emotion_sad_female,Woman sigh,biawinter,https://freesound.org/s/408090/,CC-BY-NC 4.0,confirmed,npc_emotion_sad_female,整段单次播放；从 NPC 位置发声,用户确认女性难过使用
+02_female_sad_sigh_377736.mp3,npc_emotion_sad_female,Girl sighs,BlueSiren,https://freesound.org/s/377736/,CC0,rejected,,不采用,用户已选择 01
+03_female_afraid_gasp_735645.mp3,npc_emotion_afraid_female,scared gasp noise female,kyutiebeer,https://freesound.org/s/735645/,CC-BY 4.0,rejected,,不采用,用户已选择 04
+04_female_afraid_breathing_112557.mp3,npc_emotion_afraid_female,Frightened Breathing.aiff,nickrave,https://freesound.org/s/112557/,CC0,confirmed,npc_emotion_afraid_female,只使用 00:00–00:02；单次播放；从 NPC 位置发声,用户确认女性害怕使用
+05_female_surprised_gasp_467348.mp3,npc_emotion_surprised_female,Female Gasp.wav,nicklas3799,https://freesound.org/s/467348/,CC-BY 4.0,confirmed,npc_emotion_surprised_female,整段单次播放；从 NPC 位置发声,用户确认女性惊讶使用
+06_female_surprised_gasp_740310.mp3,npc_emotion_surprised_female,Female Gasp,kanyonwyvern,https://freesound.org/s/740310/,CC0,rejected,,不采用,用户已选择 05
+07_female_confused_huh_738003.mp3,npc_emotion_confused_female,"Huh? Female Voice Surprised/Confused",magicalmysticva,https://freesound.org/s/738003/,CC-BY 4.0,confirmed,npc_emotion_confused_female,整段单次播放；从 NPC 位置发声,用户确认女性困惑使用
+08_female_confused_hm_727359.mp3,npc_emotion_confused_female,3 feminine hmm,kanyonwyvern,https://freesound.org/s/727359/,CC0,rejected,,不采用,用户已选择 07
+09_female_determined_affirmative_264610.mp3,npc_emotion_determined_female,uh huh.wav,shadoWisp,https://freesound.org/s/264610/,CC-BY 3.0,confirmed,npc_emotion_determined_female,整段单次播放；从 NPC 位置发声,用户确认女性坚定使用
+10_female_determined_grunt_242623.mp3,npc_emotion_determined_female,grunt.wav,Reitanna,https://freesound.org/s/242623/,CC0,rejected,,不采用,用户已选择 09

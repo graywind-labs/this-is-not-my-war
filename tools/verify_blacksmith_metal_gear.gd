@@ -17,9 +17,11 @@ func _init() -> void:
 	var building_system := root.get_node_or_null("Main/Systems/BuildingSystem")
 	var resource_system := root.get_node_or_null("Main/Systems/ResourceSystem")
 	var memory_system := root.get_node_or_null("Main/Systems/MemorySystem")
-	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null:
+	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
+	if action_system == null or crafting_system == null or npc_system == null or building_system == null or resource_system == null or memory_system == null or time_system == null:
 		_fail("Required blacksmith crafting systems not found")
 		return
+	time_system.set_paused(false)
 
 	var blacksmith_action: Dictionary = action_system.get_action("work_blacksmith")
 	if str(blacksmith_action.get("location_required", "")) != "blacksmith":
@@ -37,7 +39,7 @@ func _init() -> void:
 
 	var blacksmith_id := "blacksmith_01"
 	var engineer_id := "engineer_01"
-	_set_debug_move_speed(blacksmith_id, 100.0)
+	_set_debug_move_speed(blacksmith_id, 40.0)
 
 	var base_duration := float(blacksmith_action.get("duration_seconds", 3600.0))
 	var blacksmith_duration_level_1: float = action_system._get_effective_action_duration_seconds(blacksmith_action, blacksmith_id)
@@ -73,8 +75,8 @@ func _init() -> void:
 		_fail("Failed to select iron helmet: %s" % JSON.stringify(selected))
 		return
 	var recipe: Dictionary = crafting_system.get_recipe("craft_iron_helmet")
-	if str(recipe.get("output_item_id", "")) != "item_iron_helmet" or (recipe.get("stages", []) as Array).size() != 2:
-		_fail("Iron helmet recipe should produce exact inventory in two stages")
+	if str(recipe.get("output_item_id", "")) != "item_iron_helmet" or (recipe.get("stages", []) as Array).size() != 3:
+		_fail("Iron helmet recipe should produce exact inventory in three stages")
 		return
 
 	resource_system.add_resource("iron", 10)
@@ -108,12 +110,23 @@ func _init() -> void:
 	events_before = int(memory_system.get_npc_daily_events(blacksmith_id).size())
 	if not await _complete_work_cycle(action_system, npc_system, blacksmith_id, "blacksmith", blacksmith_duration_level_2):
 		return
+	var second_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
+	if int(second_project.get("completed_stages", -1)) != 2 or int(resource_system.get_resource("iron")) != iron_before - 2:
+		_fail("Second helmet stage must spend the second iron without completing the product")
+		return
+	if int(resource_system.get_resource("item_iron_helmet")) != helmet_before:
+		_fail("Helmet must remain unfinished before the labor-only fitting stage")
+		return
+
+	events_before = int(memory_system.get_npc_daily_events(blacksmith_id).size())
+	if not await _complete_work_cycle(action_system, npc_system, blacksmith_id, "blacksmith", blacksmith_duration_level_2):
+		return
 	var completed_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
 	if int(completed_project.get("completed_stages", -1)) != 0 or str(completed_project.get("target_recipe_id", "")) != "craft_iron_helmet":
 		_fail("Finished helmet should reset stages while retaining the selected target")
 		return
 	if int(resource_system.get_resource("iron")) != iron_before - 2 or int(resource_system.get_resource("item_iron_helmet")) != helmet_before + 1:
-		_fail("Finished helmet did not spend two stage costs and add item_iron_helmet")
+		_fail("Finished helmet did not preserve the two-iron material total and add item_iron_helmet")
 		return
 	if int(resource_system.get_resource("weapons")) != legacy_weapons_before or int(resource_system.get_resource("armor")) != legacy_armor_before:
 		_fail("Blacksmith crafting must not mutate deprecated weapons/armor aggregates")
@@ -143,7 +156,7 @@ func _complete_work_cycle(action_system: Node, npc_system: Node, npc_id: String,
 		_fail("Failed to assign %s work" % building_id)
 		return false
 	if not await _wait_until_current_action(npc_system, npc_id, "work_%s" % building_id):
-		_fail("%s work did not start" % building_id)
+		_fail("%s work did not start: %s" % [building_id, JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(npc_id))])
 		return false
 	action_system._on_logical_time_tick(duration + 1.0, 1.0)
 	if not await _wait_until_action_result(npc_system, npc_id, "completed_work_%s" % building_id):
@@ -162,7 +175,7 @@ func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result
 
 func _wait_until_current_action(npc_system: Node, npc_id: String, expected_action: String) -> bool:
 	for _frame in range(600):
-		await process_frame
+		await create_timer(0.02).timeout
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
 	return false

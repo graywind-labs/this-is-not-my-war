@@ -1,0 +1,13 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_training_sword_sparring_501720.mp3,work_training,Sword Training 1.wav,Thimblerig,https://freesound.org/s/501720/,CC0,confirmed,work_training_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","用户确认作为训练工作声"
+02_training_shield_sword_hits_182112.mp3,work_training,Shield / sword hits.wav,PixelsphereStudios,https://freesound.org/s/182112/,CC0,rejected,,不采用,"用户已选择 01 作为训练工作声"
+03_clinic_mortar_pestle_486995.mp3,work_clinic_doctor,Mortar and pestle.m4a,OlyveBone,https://freesound.org/s/486995/,CC0,rejected,,不采用,"医生独处只看书，不使用研钵配药声"
+04_clinic_glass_pill_bottle_554886.mp3,work_clinic_doctor,Pill bottle (glass),Play_Pause_Record,https://freesound.org/s/554886/,CC0,rejected,,不采用,"医生独处只看书，不使用药瓶声"
+05_treatment_cloth_rip_591195.mp3,work_clinic_treatment,Cloth Rip Fast,Rudmer_Rotteveel,https://freesound.org/s/591195/,CC0,rejected,,不采用,"用户已选择 06 作为治疗声"
+06_treatment_bandage_fabric_678008.mp3,work_clinic_treatment,Fabric rubbing.mp3,mandy2,https://freesound.org/s/678008/,CC0,confirmed,work_clinic_treatment_and_assist_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","有病人在病床上时，医生治疗与其他 NPC 协助治疗均使用此声"
+07_chapel_small_bell_452379.mp3,work_chapel,Small Bell #2,steffcaffrey,https://freesound.org/s/452379/,CC0,rejected,,不采用,"不符合当前祈祷与弥撒场景"
+08_chapel_book_pages_256475.mp3,work_clinic_doctor,Book Page Turn,Kodack,https://freesound.org/s/256475/,CC0,confirmed,work_clinic_doctor_reading_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","诊所只有医生且没有病人时，作为医生看书声"
+09_repair_nailing_850175.mp3,work_construction,nailing.wav,Mihacappy,https://freesound.org/s/850175/,CC0,confirmed,work_repair_and_upgrade_loop,"整段循环；不剪辑；工作开始渐入、工作结束渐出","修复建筑和升级建筑共用此声"
+10_repair_hammer_short_337816.mp3,work_construction,hammer v1.wav,blukotek,https://freesound.org/s/337816/,CC0,rejected,,不采用,"用户已选择 09 作为修复与升级声"
+11_repair_wooden_mallet_535629.mp3,work_construction,Wooden mallet,leo153,https://freesound.org/s/535629/,CC0,rejected,,不采用,"用户已选择 09 作为修复与升级声"
+12_repair_tools_on_stone_487084.mp3,work_construction,R26-21-Metal Hand Tools on Stone.wav,craigsmith,https://freesound.org/s/487084/,CC0,rejected,,不采用,"用户已选择 09 作为修复与升级声"

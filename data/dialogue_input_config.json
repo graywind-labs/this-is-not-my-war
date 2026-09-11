@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "player_message_max_characters": 300,
+  "voice_recording_max_seconds": 30,
+  "voice_upload_max_bytes": 6291456
+}

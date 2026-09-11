@@ -31,7 +31,7 @@ func _init() -> void:
 		return
 
 	var npc_id := "gardener_01"
-	_set_debug_move_speed(npc_id, 120.0)
+	_set_debug_move_speed(npc_id, 5.0)
 	var plan: Array = daily_plan_system.generate_rule_plan_for_npc(npc_id)
 	if plan.size() != 24:
 		push_error("Rule daily plan should contain 24 hourly items")
@@ -97,9 +97,13 @@ func _init() -> void:
 		push_error("Failed to place gardener at garden")
 		quit(1)
 		return
+	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 0, 0)
-	if not await _wait_until_current_action(npc_system, npc_id, "work_garden"):
-		push_error("Hourly plan tick should start planned garden work")
+	if not await _wait_until_active_action(action_system, time_system, npc_id, "work_garden"):
+		push_error(
+			"Hourly plan tick should reach a real garden plot before work becomes active: %s"
+			% JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(npc_id))
+		)
 		quit(1)
 		return
 
@@ -128,7 +132,7 @@ func _init() -> void:
 		push_error("Failed to start sleep before plan interruption")
 		quit(1)
 		return
-	if not await _wait_until_current_action(npc_system, cook_id, "sleep_in_dormitory"):
+	if not await _wait_until_active_action(action_system, time_system, cook_id, "sleep_in_dormitory"):
 		push_error("Cook sleep action did not start")
 		quit(1)
 		return
@@ -211,6 +215,25 @@ func _wait_until_current_action(npc_system: Node, npc_id: String, expected_actio
 		await process_frame
 		var state: Dictionary = npc_system.get_npc_state(npc_id)
 		if str(state.get("current_action", "")) == expected_action:
+			return true
+	return false
+
+
+func _wait_until_active_action(
+	action_system: Node,
+	time_system: Node,
+	npc_id: String,
+	expected_action: String,
+	max_frames: int = 1800
+) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		var runtime: Dictionary = action_system.get_runtime_action_snapshot(npc_id)
+		if (
+			str(runtime.get("phase", "")) == "active"
+			and str(runtime.get("action_id", "")) == expected_action
+		):
 			return true
 	return false
 

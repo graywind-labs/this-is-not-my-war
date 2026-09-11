@@ -31,8 +31,8 @@ func _init() -> void:
 		push_error("Initial next scheduled wave should be wave 1: %s" % JSON.stringify(initial_snapshot))
 		quit(1)
 		return
-	if int(next_wave.get("trigger_day", 0)) != 3 or int(next_wave.get("trigger_hour", -1)) != 18:
-		push_error("First wave should be scheduled for day 3 at 18:00")
+	if int(next_wave.get("trigger_day", 0)) != 1 or int(next_wave.get("trigger_hour", -1)) != 23:
+		push_error("First wave should be scheduled for day 1 at 23:00")
 		quit(1)
 		return
 
@@ -42,19 +42,42 @@ func _init() -> void:
 		quit(1)
 		return
 	hud._refresh_wave_countdown()
-	if not wave_label.text.contains("第1波"):
-		push_error("HUD countdown should mention wave 1: %s" % wave_label.text)
+	if not wave_label.text.contains("下一波敌军还有"):
+		push_error("HUD should expose the next-wave countdown: %s" % wave_label.text)
 		quit(1)
 		return
 
-	time_system.set_current_time(3, 17, 59, 30)
+	time_system.set_current_time(1, 20, 0, 0)
+	hud._refresh_wave_countdown()
+	var warning_snapshot: Dictionary = hud.debug_get_wave_warning_snapshot()
+	if not bool(warning_snapshot.get("visible", false)) or not str(warning_snapshot.get("dialog_text", "")).contains("3 小时"):
+		push_error("HUD should show the one-shot T-3h warning: %s" % JSON.stringify(warning_snapshot))
+		quit(1)
+		return
+	hud._wave_warning_dialog.hide()
+	hud._on_wave_warning_closed()
+	time_system.set_current_time(1, 22, 30, 0)
+	hud._refresh_wave_countdown()
+	warning_snapshot = hud.debug_get_wave_warning_snapshot()
+	if not bool(warning_snapshot.get("visible", false)) or not str(warning_snapshot.get("dialog_text", "")).contains("30 分钟"):
+		push_error("HUD should show the one-shot T-30min warning: %s" % JSON.stringify(warning_snapshot))
+		quit(1)
+		return
+	if not bool(warning_snapshot.get("alarm_emphasized", false)):
+		push_error("HUD should emphasize the alarm button inside the warning window")
+		quit(1)
+		return
+	hud._wave_warning_dialog.hide()
+	hud._on_wave_warning_closed()
+
+	time_system.set_current_time(1, 22, 59, 30)
 	combat_system._on_logical_time_tick(29.0, 1.0)
 	if combat_system.get_active_enemy_count() != 0:
 		push_error("Wave should not spawn before the configured trigger time")
 		quit(1)
 		return
 
-	time_system.set_current_time(3, 17, 59, 59)
+	time_system.set_current_time(1, 22, 59, 59)
 	combat_system._on_logical_time_tick(1.0, 1.0)
 	var wave_one_count := _wave_enemy_count(combat_system.get_wave_config(1))
 	if combat_system.get_active_enemy_count() != wave_one_count:
@@ -73,7 +96,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	time_system.set_current_time(3, 18, 5, 0)
+	time_system.set_current_time(1, 23, 5, 0)
 	combat_system._on_logical_time_tick(60.0, 1.0)
 	if combat_system.get_active_enemy_count() != wave_one_count:
 		push_error("Auto scheduler should not duplicate an already triggered wave")
@@ -115,7 +138,7 @@ func _init() -> void:
 		return
 
 	hud._refresh_wave_countdown()
-	if not wave_label.text.contains("第4波"):
+	if not wave_label.text.contains("下一波敌军"):
 		push_error("HUD countdown should advance after manual wave jumps: %s" % wave_label.text)
 		quit(1)
 		return
