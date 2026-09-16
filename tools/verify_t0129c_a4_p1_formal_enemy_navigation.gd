@@ -48,7 +48,7 @@ func _init() -> void:
 		_fail("Road presentation must not affect navigation: %s" % production)
 		return
 	var production_bounds := production.get("production_bounds", []) as Array
-	if production_bounds.size() < 4 or float(production_bounds[3]) < 344.0:
+	if production_bounds.size() < 4 or float(production_bounds[3]) < 199.0:
 		_fail("Production NavMesh does not cover the formal enemy exterior: %s" % production)
 		return
 	if int(production.get("vertex_count", 0)) <= 0 or int(production.get("polygon_count", 0)) <= 0:

@@ -1768,6 +1768,8 @@ func _complete_async_request(request_id: String, result: Dictionary) -> void:
 	if call_type == "llm_usage":
 		_emit_async_response(call_type, response)
 		return
+	if not bool(response.get("ok", false)):
+		_report_ai_service_error(response, call_type)
 	if bool(result.get("ok", false)):
 		match call_type:
 			"dialogue_intent_revalidation":
@@ -1901,8 +1903,12 @@ func _request_json(
 	if not activity_npc_id.is_empty():
 		_clear_npc_llm_activity(activity_npc_id, activity_request_id)
 	if not bool(transport_result.get("ok", false)):
+		_report_ai_service_error(transport_result, str(payload.get("meta", {}).get("call_type", "")))
 		return transport_result
-	return _parse_transport_json_result(transport_result)
+	var parsed_result := _parse_transport_json_result(transport_result)
+	if not bool(parsed_result.get("ok", false)):
+		_report_ai_service_error(parsed_result, str(payload.get("meta", {}).get("call_type", "")))
+	return parsed_result
 
 
 func _set_npc_llm_activity(npc_id: String, request_id: String, options: Dictionary) -> void:
@@ -2912,6 +2918,27 @@ func _emit_backend_status(status_text: String, ok: bool) -> void:
 	_last_backend_status = status_text
 	_last_backend_ok = ok
 	backend_status_changed.emit(status_text, ok)
+
+
+func _report_ai_service_error(result: Dictionary, call_type: String) -> void:
+	if call_type.is_empty() or call_type == "llm_usage":
+		return
+	var error_code := str(result.get("error_code", "ai_service_error"))
+	if error_code == "request_cancelled" or bool(result.get("cancelled", false)):
+		return
+	var payload := result.duplicate(true)
+	payload["call_type"] = call_type
+	payload["error_code"] = error_code
+	payload["message"] = str(result.get("message", "AI 服务请求失败。"))
+	payload["http_status"] = int(result.get("response_code", result.get("http_status", 0)))
+	var response_body: Dictionary = result.get("body", {}) if result.get("body", {}) is Dictionary else {}
+	var usage: Dictionary = response_body.get("usage", {}) if response_body.get("usage", {}) is Dictionary else {}
+	payload["provider_http_status"] = int(usage.get("http_status", 0))
+	payload.erase("body_text")
+	payload.erase("body")
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("ai_service_error"):
+		event_bus.ai_service_error.emit(payload)
 
 
 func _failure_result(error_code: String, message: String, extra: Dictionary = {}) -> Dictionary:

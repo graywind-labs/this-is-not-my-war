@@ -1,6 +1,6 @@
 {
   "max_piety": 100.0,
-  "piety_per_prayer_hour": 2.5,
+  "piety_per_prayer_hour": 1.625,
   "contributing_action_ids": [
     "pray_at_chapel",
     "lead_mass"

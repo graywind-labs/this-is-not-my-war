@@ -167,7 +167,10 @@ func _connect_button(button: BaseButton) -> void:
 func _on_button_pressed(button: BaseButton) -> void:
 	if not is_instance_valid(button) or button.disabled or bool(button.get_meta("ui_audio_silent", false)):
 		return
-	if button is CheckButton or button is CheckBox:
+	var explicit_semantic := str(button.get_meta("ui_audio_semantic", "")).strip_edges()
+	if not explicit_semantic.is_empty():
+		_queue_ui_semantic(explicit_semantic)
+	elif button is CheckButton or button is CheckBox:
 		_queue_ui_semantic("toggle")
 	else:
 		_queue_ui_semantic("primary")
@@ -217,6 +220,12 @@ func _connect_special_sources() -> void:
 		var building_completed_callback := Callable(self, "_on_building_job_completed")
 		if event_bus.has_signal("building_job_completed") and not event_bus.building_job_completed.is_connected(building_completed_callback):
 			event_bus.building_job_completed.connect(building_completed_callback)
+		var merchant_trade_callback := Callable(self, "_on_merchant_trade_completed")
+		if event_bus.has_signal("merchant_trade_completed") and not event_bus.merchant_trade_completed.is_connected(merchant_trade_callback):
+			event_bus.merchant_trade_completed.connect(merchant_trade_callback)
+		var defense_deployed_callback := Callable(self, "_on_defense_device_deployed")
+		if event_bus.has_signal("defense_device_deployed") and not event_bus.defense_device_deployed.is_connected(defense_deployed_callback):
+			event_bus.defense_device_deployed.connect(defense_deployed_callback)
 	var success_path := NodePath(str(_ui_config.get("special_success_popup_path", "")))
 	_special_success_popup = get_node_or_null(success_path) as Window
 	if _special_success_popup != null and not _special_success_popup.about_to_popup.is_connected(_on_special_success_popup):
@@ -241,6 +250,12 @@ func _disconnect_special_sources() -> void:
 		var building_completed_callback := Callable(self, "_on_building_job_completed")
 		if event_bus.has_signal("building_job_completed") and event_bus.building_job_completed.is_connected(building_completed_callback):
 			event_bus.building_job_completed.disconnect(building_completed_callback)
+		var merchant_trade_callback := Callable(self, "_on_merchant_trade_completed")
+		if event_bus.has_signal("merchant_trade_completed") and event_bus.merchant_trade_completed.is_connected(merchant_trade_callback):
+			event_bus.merchant_trade_completed.disconnect(merchant_trade_callback)
+		var defense_deployed_callback := Callable(self, "_on_defense_device_deployed")
+		if event_bus.has_signal("defense_device_deployed") and event_bus.defense_device_deployed.is_connected(defense_deployed_callback):
+			event_bus.defense_device_deployed.disconnect(defense_deployed_callback)
 	if is_instance_valid(_special_success_popup) and _special_success_popup.about_to_popup.is_connected(_on_special_success_popup):
 		_special_success_popup.about_to_popup.disconnect(_on_special_success_popup)
 	if is_instance_valid(_harvest_dialog) and _harvest_dialog.has_signal("harvest_completed"):
@@ -272,6 +287,35 @@ func _on_building_job_completed(_building_id: String, job_type: String, _result:
 		_queue_ui_semantic("level_up")
 
 
+func _on_merchant_trade_completed(_direction: String, result: Dictionary) -> void:
+	if bool(result.get("ok", false)):
+		_queue_ui_semantic("merchant_trade_success")
+
+
+func _on_defense_device_deployed(deployment_id: String, snapshot: Dictionary) -> void:
+	var slot_id := str(snapshot.get("slot_id", ""))
+	var semantic_assets := _as_dictionary(_ui_config.get("semantic_assets", {}))
+	var asset_id := str(semantic_assets.get("defense_device_deployed", ""))
+	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
+	if audio_manager == null or asset_id.is_empty() or not audio_manager.has_asset(asset_id):
+		return
+	var semantic_gains := _as_dictionary(_ui_config.get("semantic_gain_db", {}))
+	var gain_db := float(semantic_gains.get("defense_device_deployed", 0.0))
+	var player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"UI", gain_db)
+	if player == null:
+		return
+	_record_history({
+		"kind": "ui",
+		"semantic": "defense_device_deployed",
+		"source_id": deployment_id,
+		"slot_id": slot_id,
+		"asset_id": asset_id,
+		"player_type": player.get_class(),
+		"bus": str(player.bus),
+		"gain_db": gain_db,
+	})
+
+
 func _queue_ui_semantic(semantic: String) -> void:
 	var semantic_assets := _as_dictionary(_ui_config.get("semantic_assets", {}))
 	if not semantic_assets.has(semantic):
@@ -298,7 +342,9 @@ func _flush_ui_semantic() -> void:
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
 	if asset_id.is_empty() or audio_manager == null or not audio_manager.has_asset(asset_id):
 		return
-	var player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"UI")
+	var semantic_gains := _as_dictionary(_ui_config.get("semantic_gain_db", {}))
+	var gain_db := float(semantic_gains.get(semantic, 0.0))
+	var player: AudioStreamPlayer = audio_manager.play_2d(asset_id, &"UI", gain_db)
 	if player == null:
 		return
 	_record_history({
@@ -307,6 +353,7 @@ func _flush_ui_semantic() -> void:
 		"asset_id": asset_id,
 		"player_type": player.get_class(),
 		"bus": str(player.bus),
+		"gain_db": gain_db,
 	})
 
 

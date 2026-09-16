@@ -29,6 +29,8 @@ func _init() -> void:
 	var hall_definition := _find_building(layout, "main_hall")
 	var blocker_config := hall_definition.get("solid_interior_blocker", {}) as Dictionary
 	var envelope := _v2(hall_definition.get("envelope_size", []))
+	var collision_inset := float(hall_definition.get("collision_inset", 0.0))
+	var collision_envelope := envelope - Vector2.ONE * collision_inset * 2.0
 	var inset := float(blocker_config.get("inset", -1.0))
 	var blocker := hall.get_node_or_null("StaticCollision/InteriorBlocker") as StaticBody3D
 	var blocker_shape := (
@@ -40,9 +42,25 @@ func _init() -> void:
 	if not bool(blocker_config.get("enabled", false)) or blocker == null or blocker_box == null:
 		_fail("T0201 main-hall interior blocker is missing")
 		return
-	var expected_size := Vector3(envelope.x - inset * 2.0, float(hall_definition.get("height", 0.0)), envelope.y - inset * 2.0)
+	var expected_size := Vector3(collision_envelope.x - inset * 2.0, float(hall_definition.get("height", 0.0)), collision_envelope.y - inset * 2.0)
 	if not blocker_box.size.is_equal_approx(expected_size):
 		_fail("T0201 blocker does not match the configured main-hall interior: %s / %s" % [blocker_box.size, expected_size])
+		return
+	var collision_root := hall.get_node_or_null("StaticCollision") as Node3D
+	var left_wall := hall.get_node_or_null("StaticCollision/LeftWall") as StaticBody3D
+	var front_right_wall := hall.get_node_or_null("StaticCollision/FrontRight") as StaticBody3D
+	var combat_geometry: Dictionary = controller.get_building_combat_geometry("main_hall")
+	if (
+		collision_root == null
+		or left_wall == null
+		or front_right_wall == null
+		or not is_equal_approx(collision_inset, 0.5)
+		or not (collision_root.get_meta("collision_envelope", Vector2.ZERO) as Vector2).is_equal_approx(collision_envelope)
+		or not (combat_geometry.get("size", Vector2.ZERO) as Vector2).is_equal_approx(collision_envelope)
+		or not is_equal_approx(left_wall.position.x, -collision_envelope.x * 0.5 + 0.2)
+		or not is_equal_approx(front_right_wall.position.z, collision_envelope.y * 0.5 - 0.2)
+	):
+		_fail("T0201 main-hall perimeter collision inset drifted")
 		return
 	if (
 		blocker.collision_layer != 1
@@ -60,10 +78,15 @@ func _init() -> void:
 	var links_root := root.get_node_or_null(
 		"Main/WorldRoot/FormalStationLayout/SpatialContract/BuildingDoorLinks"
 	)
-	if links_root == null or links_root.get_child_count() != 11:
+	var navigation_links := (
+		links_root.find_children("*", "NavigationLink3D", false, false)
+		if links_root != null
+		else []
+	)
+	if links_root == null or navigation_links.size() != 11:
 		_fail("T0201 expected 11 building door links after removing the main-hall link")
 		return
-	for raw_link in links_root.get_children():
+	for raw_link in navigation_links:
 		if str(raw_link.get_meta("building_id", "")) == "main_hall":
 			_fail("T0201 main hall still owns a navigation door link")
 			return
@@ -125,7 +148,7 @@ func _init() -> void:
 
 	print("T0201 main-hall solid collision verification passed: %s" % JSON.stringify({
 		"blocker_size": blocker_box.size,
-		"door_links": links_root.get_child_count(),
+		"door_links": navigation_links.size(),
 		"detour_points": path.size(),
 		"physics": physics_snapshot,
 	}))

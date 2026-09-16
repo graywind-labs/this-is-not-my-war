@@ -1,5 +1,195 @@
 # TECH_ARCHITECTURE.md
 
+## T0448 教程艾达伤害隔离
+
+CombatSystem 以 `_tutorial_raid_active` 和教程快照中的 `ada_npc_id` 共同限定两条分支：艾达攻击教程敌人时才把友方武器倍率设为 `2.4`；教程敌人攻击艾达时才把通用防御后的整数伤害乘 `0.5`。承伤减半先于既有 40% HP floor，正式伤害入口、其他 NPC 和器械路径不复制该规则。
+
+## T0444 教程器械回归通用伤害链
+
+CombatSystem 的教程 raid 快照不再保存器械承伤倍率，`_apply_enemy_attack_to_defense_device(...)` 也不再按 `_tutorial_raid_active` 复制并放大伤害解析；教程和正式器械统一把通用防御曲线结果直接提交给 DefenseDeviceSystem。艾达 40% HP 裁剪仍只位于 NPC 伤害入口，两条规则没有合并。
+
+## T0443 教程战斗数值隔离
+
+教程箭塔 `15 HP` 继续通过 `TutorialDirector → DefenseDeviceSystem.apply_tutorial_deployment_overrides()` 只写目标 deployment；共享正式定义不变。教程敌人攻击力直接保存在 `tutorial_config.json` 的独立 raid 数据中，并由专项与 `enemy_waves.json` 第一波当前值做跨文件一致性检查。T0444 后器械完全使用通用伤害链；艾达 `40%` HP 下限仍是独立的教程 NPC 保护规则。
+
+## T0432 避战结束的延迟提交边界
+
+CombatSystem 将避战移动运行态与 `avoidance_ended` 世界事实分离。昏迷、战时转集结或转战斗可以立即清除旧移动目标，但只把 NPC 与最后避战快照写入 `_deferred_avoidance_endings`；唯一提交点是 `_handle_all_enemies_cleared()`。该入口在敌军容器已经归零后写事件，并只对仍清醒的避战 NPC 执行 `work` 模式切换，避免记忆文本先于战局事实或把昏迷状态覆盖掉。
+
+## T0422 宿舍睡眠恢复倍率边界
+
+NPCNeedsSystem 继续独占饱食 / 疲劳连续结算。只有 NPC 当前处于正式 active 的 `sleep_in_dormitory`，且正在结算 sleep profile 的 fatigue 字段时，才从 ActionSystem 定义解析 `building_efficiency_key`，并读取 BuildingSystem 的活动效率乘到负疲劳速率。satiety 字段、非正式 profile 调试和其他休息行动保持 `1.0×`；BuildingSystem 返回值已经合并损伤与等级奖励，因此需求层不再拆解或重复乘算。ActionSystem 的行动生命周期、床位与名义进度不拥有疲劳数值。
+
+## T1703-P1—P5 Windows 试玩版构建边界
+
+试玩构建采用“隔离 staging → 冻结本机后端 → Godot release 导出 → 启动器编排 → 内容 / 密钥审计 → 原子发布”，完整规格见 `docs/DEMO_PACKAGING.md`。构建读取当前磁盘工作区，但不直接修改 `project.godot`、GMPanel、Main、`backend/.env` 或开发者 `user://`；GM、Godot MCP、开发 API 与发行启动配置只在临时副本中覆盖。因此后续 `data/` 数值和难度调整不会改变流水线，只需重新构建。
+
+手工唯一秘密输入是本包专用 DeepSeek Key；当前百炼 `DASHSCOPE_API_KEY / VOICE_WORKSPACE_ID / VOICE_BASE_URL` 按用户确认从 `backend/.env` 白名单自动读取。完整 `.env` 和开发 DeepSeek Key 不得复制。两套获授权凭据仅进入 PyInstaller 冻结后端载荷，Godot PCK、启动器参数、独立配置、日志和 manifest 都不得出现明文；manifest 只存指纹。该本机方案不能抵御逆向，比赛包必须使用可限额 / 可吊销凭据，公开长期发行仍应改用远程后端。
+
+冻结后端使用 Waitress、`APP_PROFILE=demo` 和 `127.0.0.1:5000`，关闭 Flask debug、Mock fallback、`/mock/model` 与开发 usage/debug API，保留正式业务、AI 服务配置、真实 DeepSeek 和真实 `qwen3-asr-flash`。顶层启动器通过服务名、构建 ID 与 profile 验证端口归属，只管理自己创建的后端进程；日志、成本账本、存档和玩家 DPAPI 自定义 AI 配置写入独立试玩版 LocalAppData / `user://`。
+
+上述链路已实现。`tools/build_windows_demo.ps1` 使用固定配置和用户级隔离工具缓存，组装完成后先做内容 / 密钥审计，再以独立临时运行目录启动冻结后端执行 DeepSeek `/models` 连通性检查，随后由正式启动器执行客户端 headless smoke；发布前复核 staging manifest 中的开发文件哈希。P5-R1 后不再直接移动刚执行过的临时 package：先把它复制到 `dist/.t1703-publishing-*`，对复制件重新做内容 / 密钥及逐文件 manifest 哈希门禁，再在同一目录内以短时重试完成候选改名。旧包只在候选完整后备份，发布改名失败则恢复。
+
+P5-R2 把品牌 ICO 作为构建配置中的单一 Windows 图标源：Godot Windows 客户端、顶层启动器和内部冻结后端都消费同一路径；PNG 母版仅供 Godot 通用项目图标。构建 preflight 在进入前后端重建前校验 PNG / ICO 结构，避免因错误图标到最后才失败。
+
+P5-R3 把客户端进程结束定义为启动器的统一收尾信号。Windows 标题栏 X、主菜单 / 暂停菜单退出到桌面及客户端异常结束都会使 `game_process.wait()` 返回，随后 `finally` 只停止本启动器创建的后端并让启动器自身退出；若启动器先异常消失，冻结后端根据 `PARENT_PROCESS_ID` 监视关闭服务。完整假包已通过真实窗口 `WM_CLOSE` 验证，5000 端口释放且无相关残留进程。
+
+P5-R4 在客户端导出边界增加音频可运行性门禁。staging 把正式 CSV 清单转换为等字节的非导入文本路径，Windows release 导出完成后立即运行成品 EXE 并读取独立日志；T0420 后只有音频清单 / 分类数量均为 109、MainMenu 实际请求的菜单音乐不存在资源加载错误时才返回构建成功。该检查不调用后端或 Provider，失败时成品不会发布。
+
+P5-R5 将音频数量从重复配置改为由唯一正式 CSV 自动派生，并把派生值贯穿 staging profile、导出检查和 BUILD_MANIFEST。9 月 14—15 日的数值、玩法、教程和 Prompt 变更均由既有运行目录与冻结后端数据收集规则覆盖。固定 5000 端口现于 preflight 先行检查；若被占用，脚本在创建构建环境前报告 PID 并停止，不杀死任何现有进程。
+
+P5-R6 在 staging 快照边界移除仅供编辑器 CSV 翻译导入使用的音频 manifest CSV、`.csv.import` 与二进制 `.translation`。运行时权威已经转换为 `.runtime.txt`，许可与构建文档继续从开发源读取；因此这些导入副产物不再参与 PCK 生成，也不会因编辑器并发写入造成 Unicode 解析失败。
+
+T0434 的部署音频数据流为 `DefenseDeviceSystem 成功提交 → defense_device_deployed(snapshot) → InteractionAudioController → AudioManager UI 2D（+3 dB）`。表现控制器不读取槽位位置，也不判断库存、解锁或占用；声音归设置“点击音效”并与镜头位置解耦，失败、卸下与存档恢复不会由状态差量推断部署成功。
+
+## T0410 本机后端 AI 服务配置边界
+
+Godot 不直连模型供应商，仍只访问 `http://127.0.0.1:5000`。后端启动时把打包环境的 LLM 配置冻结为 trial profile；AIServiceManager 可在 trial 与玩家 custom profile 之间切换，并以原子替换 `app.config["MODEL_ADAPTER"]` 的方式让后续所有业务 endpoint 使用新服务。正在执行的请求继续持有原 Adapter，不被中途改写。
+
+玩家 Key 只在设置提交的本机 HTTP 请求和后端内存中出现；Windows 使用当前用户 DPAPI 生成不可跨用户解密的凭据文件，非秘密 provider / model / base URL 单独保存。配置查询、健康检查、usage、普通配置、存档与日志不返回 Key。试玩发行配置把所有游戏侧预算设为 0；供应商自身错误保留后端 error code、provider HTTP 与正文摘要，经 LLMBridge / EventBus 进入表现层。
+
+## T0035-R4 制造 revision 与计划阶段续接
+
+`CraftingSystem.set_target()` 保持 `返还旧阶段投入 → 中断旧周期 → 提交新项目 / revision → 发布项目变化` 的权威顺序。非空新目标落地后，它把实际中断者及新 revision 交给 DailyPlanSystem；制造系统不自行派工。
+
+DailyPlanSystem 的专用续接入口要求当前计划项 action / 建筑匹配、旧执行签名仍是当前 day / hour / plan version，且该行动确由计划拥有。通过后只清除旧阶段签名和行动所有权，再 deferred 调用统一 `execute_current_plan_for_npc()`；因此重派发生在完整转产事务之后，并继续走 ActionSystem 的工位、路线、材料和 revision 校验。清空目标与非计划工作不进入此链，目标变更中断也不进入 LLM 失败重估。
+
+## T1505-P6R55 跨天计划事务与行动事务解耦
+
+`DailyPlanSystem._on_day_started()` 的全局时间暂停已经是数值冻结边界，因此 `begin_new_day_planning_for_npc()` 不再调用 ActionSystem 中断。现有 `_pending_actions / _active_actions`、正式工位会话、BuildingSystem occupancy、空间 attachment 和 actor transform 在计划 HTTP 批次期间保持原样；NPC 的计划忙碌权限继续由 `llm_activity.kind=plan` 与异步批次拥有权判断，而不是依赖覆盖 `current_action`。
+
+批次成功后的 `execute_current_plan_for_all(true)` 复用现有 `_runtime_action_matches_plan_item()`：相同 action 只重建新日计划执行签名和所有权，不触发释放 / 预约 / 导航 / 开始事件；不同 action 才进入 `interrupt_npc_action(plan_hour_changed)` 和正常派发。批次失败不执行当前项、不恢复时间，原行动事务因无 tick 保持冻结。`game_start` 没有旧事务，仍允许使用 `planning_day` 初始展示。
+
+## T0403-R4 正门相对纵深缩放
+
+本次空间变换以固定正门轴线 `Z=54` 为基准，只对其 +Z 外围使用 `Z' = 54 + (Z - 54) × 0.5`。因此北侧硬边、正式出生、显现 / 进军阶段、前林与敌军道路保持原有前后关系；站内、-Z 后勤区域、X 轴和战斗数值不参与缩放。地表为保持南侧硬边 `Z=-335` 不动而改为中心 `Z=-57.75`、纵深 `554.5 m`。验证器从数据中的实际出生区和导航横断面读取边界，避免以后再次依赖旧绝对坐标。
+
+## T0081-R2 零饱食伤害权威
+
+NPCNeedsSystem 从需求档位的负饱食速率计算“应付、实付、未支付”三段事实，仅对配置的 work / training / combat category 累计换血。整数伤害经 NPCSystem 的专用 needs damage 包装进入统一 HP / 昏迷状态机；该包装显式抑制普通伤害记忆、受击表现、音效和 CombatSystem 命中通知。事件与计划只消费归零事实，不反向决定数值；HorseSystem 不参与此链。
+
+## T1505-P6R52 祈祷完成策略
+
+`pray_at_chapel` 进入 DailyPlanSystem 的 `repeat_while_planned` 完成链：ActionSystem 完成本轮祈祷时先建立 `completed_in_place_hold` 并发布完成状态；计划监听确认当前小时仍是同一祈祷项后，延后清除旧执行签名并重新派发。下一轮通过 NPCSystem 的严格同 action / building / workstation hold 匹配原位再激活，不创建新的预约或导航事务。
+
+当前小时计划已切换时，完成回调不会续轮；普通整点的不同计划仍可直接中断独祷。`lead_mass` 保持 `once_per_plan_hour`，主持 / 参礼跨小时完成优先屏障、弥撒内部模式转换、PietySystem 和事件顺序均不变。
+
+## T1505-P6R51 门队列恢复的单向路径赶进
+
+门队列暂停继续保留活动 NavigationAgent 路径，但暂停可能恰好发生在角色越过当前 path point 的同一物理帧。由于暂停帧不会调用 `get_next_path_position()`，恢复时旧索引仍可能指向身后的点。ActorMotionBody 因此只在“曾被门队列暂停且现实际恢复”这一边沿检查当前原路径：若角色已越过当前点的前向平面，且到下一点的直接导航射线无阻挡，就用 NavigationAgent 既有推进机制压缩该点；未越过或绕角不安全的点保持不动。该过程不修改 target、request id、action、令牌或路径数组，也不触发重规划。
+
+正式建筑进 / 出门子步骤额外携带由门外指向门内（或反向）的 `target_pass_forward_direction`。ActorMotionBody 在目标横向 `1.3 m` 内、沿正确方向越过目标平面 `0.06 m` 后把该子步骤视为到达，防止高层门槛检查点也被反向回追；普通最终工位目标和室内出口前缀不使用该规则。两层保护均位于敌我共享运动 / 正式建筑路线层，覆盖所有可进入建筑，不改变城门。
+
+## T1505-P6R50 固定祈祷席数据边界
+
+小教堂不新增专用分配器：`building_defs.json.workstations[].assigned_npc_id` 直接复用 BuildingSystem 的通用固定工位合同。`reserve_workstation()` 先解析调用者的固定 `chapel_prayer_seat`，有归属者只扫描该席；因此普通预约和排除失败席后的程序重试都不会退化为抢占他人的固定席。无归属 NPC 继续跳过八张专属席，并从 9–10 号无归属席中选择。
+
+该字段不进入 BuildingPanel 的 `_format_workstations()`，前端仍只投影 `name + occupied_by`。祈祷状态机、工位提交、坐姿挂接、完成 hold、祭坛和 LLM 计划合同均不感知分配表。
+
+## T0403-R2 导航卡住的纯表现边界
+
+`ActorMotionBody` 仍独占卡住判定。T0437 后，生产配置的累计 `8.0 秒` 阈值只发出非终止 `motion_stuck_notified(request_id, "stuck_timeout")`；motion request、target、moving 状态和上层行动事务保持不变，不进入 `motion_failed`。同一段连续无进展只通知一次，恢复路线进展、目标更新或暂停恢复后重新计时。NPC 据此构造 DialogueEmotionCatalog 的 `angry` presentation，经独立 `npc_status_emotion_presented` 信号投影到世界与人物框；其他导航失败和中间 repath 不发送。
+
+状态情绪信号与 `npc_dialogue_emotion_presented` 分离，因此不会被 DialogueVoiceAudioController 消费。presentation 的 `play_action=false` 也阻止 NPC 世界表现触发对话专用愤怒横斩；它只替换当前气泡并按 `2.25 秒 hold + 0.75 秒 fade` 计时，不写 MemorySystem，不清 ActionSystem pending / active，不修改 DailyPlanSystem 当前计划。
+
+## T0403-R1 NPC RVO 避障余量试降
+
+正常步行 NPC 的实体权威碰撞继续使用 `0.30 m` 半径胶囊；`ActorMotionBody` 按 `body radius + avoidance_radius_padding` 派生 NavigationAgent3D 的预测避障半径。共享配置将 padding 从 `0.10 m` 降为 `0.05 m`，所以运行态 RVO 半径为 `0.35 m`。该值只缩小 NPC 间的预测避让包络，不改变实体碰撞、交互检测、NavMesh 烘焙、门洞或队列传感。
+
+## T1505-P6R49 逐建筑门洞碰撞与窄化队列传感
+
+`physics_navigation_v1.structural_collision` 以 `building_door_clear_width=1.80 m` 保留非进入建筑默认值，并通过 `building_door_clear_width_by_id` 为 10 座可进入建筑声明模型一致的门宽。StationLayoutController 的正面 StaticCollision 分段与合同网格分类统一读取 `_get_building_door_clear_width(building_id)`，避免物理门洞和寻路审计使用不同宽度；运行态快照公开完整映射。
+
+门队列传感宽度为 `2.60 m`。配置校验不再要求传感盒比门洞额外宽两个烘焙半径，而是按真实 Area3D 与角色胶囊重叠关系验证：`sensor width + NPC diameter >= maximum enterable door width`。因此感应盒可以略窄于马厩 `2.58 m` 可见门的外扩捕获区，同时任何合法中心路径仍会在越过门槛前进入队列。城门没有创建该队列，也不读取逐建筑覆盖。
+
+## T1505-P6R48 正式空间会话的旧失败消费边界
+
+正式工位、地点、治疗、建筑协助和 NPC-NPC 对话共用 `NPCSystem.begin_formal_workstation_action()`。该入口现在以“登记 session → 写入新行动 start result 并清空 failure context → 执行地点 / 路线 helper”的顺序启动。helper 即使同步发布状态，观察者看到的也已经是新行动，不能再消费前一行动的终态失败。
+
+该边界不修改 DailyPlanSystem 的失败重试、判别或修订策略，也不修改 LLMBridge 的 allowed-actions 白名单和对话预约排他规则；它只保证跨行动状态切换的原子性。
+
+## T1505-P6R47 教堂完成态原位复用
+
+ActionSystem 的祈祷完成出口先调用 NPCSystem 将正式工位会话标为 `completed_in_place_hold`，再把 `current_action` 发布为 idle。这个顺序保证弥撒自然完成同步唤醒 DailyPlanSystem 积压项时，下一项能看到仍存在的座位 / 祭坛事务，不会先释放后重新预约。active action 已删除，因此 hold 不参与虔诚、资源、需要值或计时结算。
+
+NPCSystem 的完成 hold 现可覆盖已挂接的祈祷席和未挂接的祭坛站位，并提供严格按 `npc_id + action_id + building_id + workstation_id` 匹配的原位再激活；不匹配的新 action 仍走既有 release → reservation → navigation。ChibiCharacterPilot 将 idle 状态下的 `seated_prayer` 挂接投影为 `seated_idle`，表现不反向修改空间权威。
+
+## T1505-P6R46 导航失败的计划层断路
+
+执行层继续以 `NPCSystem → ActionSystem` 收束失败路线及其预约，但 `DailyPlanSystem._on_npc_state_changed()` 在通用 `failed` 分流前识别 `movement_failed_*`、`*_failed_spatial_route` 和 `failure_reason=navigation_failed`。命中后只消费一次失败签名，移除当前计划行动所有权、即时修订重试计数、修订落地标记和对话延迟派发标记，不创建行动失败判别请求。
+
+`request_plan_reevaluation()` 在任何 active / queued 判断之前使用相同分类器，阻止导航失败通过 EventBus、修订落地失败包装或并发排队再次进入 LLM。该断路不吞掉导航诊断，也不改变 ActionSystem 的候选工位程序重试。T0437 后，累计卡住阈值已经不再属于失败，不会进入本断路或停在 idle；`target_unreachable`、显式路线建立失败等真正导航失败仍沿用这里的清理与不重估语义。
+
+## T0035-R1 制造转产资源事务
+
+制造投入不另存第二套可变账本：CraftingSystem 以旧配方和 `completed_stages` 重算已成功扣除的阶段成本。确认转产时，资源返还必须在工人中断与项目 revision 更新之前成功；资源系统不可用或库存无法接收时，整个转产请求失败并保留旧目标、进度和行动。成功后才清空整数 / 小数进度并返回 `refunded_resources`，UI 不参与结算。
+
+## T1505-P6R44 异步对话计划链的整点接力
+
+`DailyPlanSystem._on_hour_started()` 清理旧小时 marker 后，会扫描 `_async_dialogue_plan_judgement_requests`、带 `dialogue_resume_context` 的 `_async_revision_requests` 以及两级排队重估。只有 request day 为当天、request hour 不晚于当前小时，且 dialogue epoch 仍等于 NPC 当前 epoch 的链可重建当前小时 `wait_for_dialogue_resolution` marker；第一层判别还必须匹配当前 judgement generation。这样即使 DialogSystem 已在整点前关闭会话，异步所有权仍不会丢失。
+
+第一层或第二层响应若因跨小时成为 stale，不应用其判别 / 修订 payload。`_finish_stale_dialogue_judgement_resolution()` 只在当前 marker 与原 dialogue id、epoch、generation 同链时，把终态 release token 重基到当前 day/hour/plan version 后走统一派发；普通 stale cleanup 则要求 marker 的 day/hour/epoch 与旧 context 全量匹配，避免旧响应按 dialogue id 误删新 marker。更新 epoch、更新 generation 或不同会话都不能被迟到结果解锁。
+
+## T1505-P6R43 玩家会话与整点派发屏障
+
+`DailyPlanSystem._on_hour_started()` 仍正常切换当前计划项，但 `execute_current_plan_for_npc()` 在任何强制中断之前先查询 DialogSystem。活跃玩家会话命中后只调用 `_defer_current_plan_until_dialogue_resolved()` 并返回 `priority_dialogue_active`；后续查询可返回 `dialogue_plan_judgement_pending`，两者都只是派发屏障，不结束会话、不调用 ActionSystem 替换，也不启动 LLM。因而上一小时的 `_dialogue_suspended_actions` 和 NPCSystem 工位会话可跨整点原样存活。
+
+DialogSystem 只有在玩家完成 / 取消入口中才先释放对话目标，再尝试恢复旧计划。DailyPlanSystem 用当前 day/hour 的计划 identity 校验旧 action；跨小时不同项会拒绝旧事务恢复，随后 deferred release 派发新项。`_assign_plan_item()` 的 replacement 清理是旧 suspended transaction 的唯一释放点，保证新路线从对话所在坐标开始且不会重复派发。
+
+## T1505-P6R42 对话优先级下的正式行动事务暂存
+
+ActionSystem 的 `_dialogue_suspended_actions` 现在承载所有可安全暂停的 active 正式工位事务，而非进食特例。对话取得优先级时从 active 表原样移出，NPCSystem 会话和 BuildingSystem 占用继续存在；因此 ActionSystem 的周期结算、服务产出和制造同步天然停止。NPC actor 另以可叠加 pause source 冻结仍在执行的诊所内部导航，不取消 request id 或路径。DailyPlanSystem 再派发同一 action 时原子恢复原字典和空间阶段；不同 action、建筑失效或制造目标变化通过统一 discard 出口释放一次。
+
+服务依赖查询把“唯一医生 / 教练正处于对话暂存”识别为等待而非离岗失败。表现层读取 `dialogue_workstation_hold`，按 attachment pose 输出 standing idle、seated idle、sleeping 或 vehicle seated；这不反向拥有事务状态。`lead_mass` 因具有参与者联动退出语义，不进入通用暂存；首次熟睡总结锁仍在对话入口之前拒绝打断。
+
+## T1505-P6R38 门级令牌协调层
+
+`DoorPassageQueueArea` 是附着于正式布局逻辑门的通用传感 / 仲裁层：StationLayoutController 根据 `MemorySystem.is_enterable_location()` 为 10 个建筑门创建独立 Area3D；区域只监听 actor body 层，不参与路径规划。队列数组本身就是到达顺序，数组下标动态映射 1–8 号令牌；删除队首后下标自然压缩。第 9 人以后仍保留顺序但映射 0 号溢出令牌，直到前方成员离开。
+
+ActorMotionBody 把外部游戏暂停与门队列暂停作为两个可叠加来源。门队列只清零物理速度，`_motion_active`、导航目标和 request id 保持；恢复时重置采样基线，避免等待时长进入 stuck 判定。NPCSystem 不再拥有食堂 passage holder 或等候点，也不拦截失败回调；这消除了旧实现“行动开始先排队，最后一个接近门口后才显得开始通行”的时序耦合。
+
+## T1505-P6R37 入口拥堵与行动失败边界（历史实现，已由 P6R38 替换）
+
+食堂排队属于 NPCSystem 的确定性空间调度，不新增计划 action，也不进入 LLM。BuildingSystem 仍先原子预留固定餐位；NPCSystem 只允许一个进入者持有食堂门洞令牌，其余路线保持 pending 并移动到门外双列等候位。`waiting_for_entry` 是正常路线阶段：等候点的卡死回调只结束该段移动，不生成 `navigation_failed`；只有获得令牌后的正式门 / 室内路线真实失败才继续走 ActionSystem 失败与 DailyPlanSystem 重估链。令牌在越过门内点、取消或失败时释放，避免等待者和状态机互相锁死。
+
+## T1505-P6R36 完成态与空间占用解耦
+
+用餐 active 周期仍只存在于 ActionSystem，完成后立即删除；NPCSystem 可将已提交且已挂接的正式工位会话转换为无结算能力的 `completed_in_place_hold`。因此逻辑上的 `idle` 与空间上的餐位占用可以同时成立，资源、需要值和完成事件不会由留座会话重复驱动。任何下一项有效行动先释放该会话，再进入原有预约 / 寻路 / 提交流程；表现层只依据 `sitting` 挂接选择 `seated_idle`。
+
+## T0400 加载优化回退边界
+
+静态核心烘焙与 `MainMenu` 线程预热已因实机出现多处场景 / 建模消失而完整回退。当前 `station_layout.json + physics_navigation.json + building_fixture_layouts.json + environment_art.json` 继续由 `StationLayoutController` 在进入 Main 时按原路径生成，正式建筑脚本不识别烘焙实例；菜单点击开始后直接 `change_scene_to_file(Main.tscn)`。优化试做不得作为现行架构或打包依赖。
+
+## T0399 装备选择音频语义边界
+
+`NPCEquipmentWindow` 为非马匹与马匹动态候选分别声明显式 UI 音频语义，装备提交仍由 `NPCPanel → EquipmentSystem / HorseSystem` 完成。`InteractionAudioController` 在同一 `pressed` 分发中优先消费语义并只播放一次：普通装备映射既有铁匠目标声，马匹映射用户确认的 02 号短促马叫；两者强制使用 UI 总线。该表现链不判断库存、分配、骑乘或装备权威，也不修改装备结果。
+
+## T1505 序章启动与交接架构
+
+正式启动链为 `MainMenu“开始游戏” → 一次性 main_launch_request → Main/GameStartupSystem(mode=GAMEPLAY_WITH_TUTORIAL) → TutorialDirector.begin_tutorial → TutorialOverlay / 正式系统适配接口 → tutorial_finished → GameStartupSystem.formal_loop_started`。`project.godot` 决定玩家入口；直接运行 Main 是开发直达路径，沿场景配置模式启动，不做 Main → MainMenu 的反向重定向。在 `tutorial_finished` 前，正式时间、自动计划、波次和日常结算不启动；TutorialDirector 是步骤与输入白名单的唯一拥有者，UI 只上报继续 / 目标 / 只读查看意图。TutorialDirector 另只发布 `tutorial_intro / tutorial_battle / 空` 三态表现 cue；WorldAudioController 将其映射到 Music 2D 资产，不让教程音乐拥有战斗或时间权威。
+
+教程不复制装备、塔防或战斗结算：部署仍落到 DefenseDeviceSystem，配装仍落到 EquipmentSystem，警报 / 敌人 / 战斗仍落到 CombatSystem。各系统只增加最小 tutorial adapter、事件抑制或 detached presentation tick；LLM、资源、HP、记忆与正式波次权威保持原模块所有权。
+
+P6R11 起，首个 3D 战场说明页立即开启 detached presentation tick：教程敌人从配置化近门中心生成并实时攻击教程无敌正门，随后按正式优先级转攻箭塔。TimeSystem 的正式日历仍保持暂停，HUD 只把该阶段呈现为运行态并锁定暂停按钮 / 空格；CameraRig 使用 20 m 最近距离聚焦配置化城门观察点。P6R15 将该观察点校正到 `(1.5,0,54)`，以正式正门 Z 坐标保证上下沿 / 门前空间可见，并只用 X 偏移为 HUD 腾出构图安全区。StationLayoutController 仅隐藏活动 tutorial raid 的正门世界血条，不改变建筑权威 HP、其他建筑或正式战斗显示。
+
+P6R14 起，配装阶段只通过 NPCSystem 既有临时表现接口循环 `talk_gesture`，装备权威仍由 EquipmentSystem 决定。警报后的镜头跟随由 TutorialDirector 读取艾达世界位置和攻击阶段，再把纯位置投给 CameraRig；CameraRig 只维护可叠加输入锁、固定缩放和平滑构图。首次攻击前摇或所有教程收口都会释放请求，不把镜头状态写回 NPC、战斗或正式存档。
+
+P6R16 起，教程战斗清场只结束战斗与镜头跟随，不释放 detached presentation 请求；胜利提示、战后对白和返床因此共享连续表现时钟。该请求只驱动教程作用域的表现 / 移动 tick，TimeSystem 权威暂停和 GameState 第 1 日 01:00 保持不变，最终仍由 `_complete_handoff()` 先释放请求再建立第 1 日 06:00 正式状态。
+
+P6R17 复用 `NPCPortraitViewport` 的共享 World3D / NPC 快照链，在创建节点前应用可选 headshot 配置；默认常量继续服务 NPCPanel、EnemyPanel 与结局人物卡。TutorialDirector 只把配置中的艾达 ID 附加到非漫画艾达对白页，TutorialOverlay 决定头像显示与布局，不写回 NPC 状态或镜头权威。
+
+P6R18 将正常完成路径的交接卡停留时间配置为 5 秒。TutorialDirector 只在 `STEP_HANDOFF_CARD` 的现实帧累计达到配置值后调用既有 `_complete_handoff(false)`；跳过和显式调试交接仍直接调用原子交接，不被表现等待阻塞。
+
+P6R19 将教程显示文案边界收束到 `data/tutorial_config.json`。TutorialDirector 按稳定步骤 ID 读取 `step_copy`，TutorialOverlay 读取 `ui_copy` 并继续消费既有页面数组；两者仅在字段缺失时使用本地安全兜底。配置不拥有步骤推进、输入白名单、结算或交接权威，修改文案不会改变教程状态机。
+
+T0431 在 `select_device → wait_tower` 之间插入 `camera_controls`。TutorialDirector 仍拥有步骤推进，并只在该步骤请求 TutorialOverlay 将全屏 blocker 切为鼠标穿透；CameraRig 继续独占 WASD、中键拖动和滚轮缩放实现。底部会话区域自身保留点击继续，进入任一后续步骤时 Director 统一恢复 blocker，不扩张塔防、战斗、时间或存档权威。
+
+P6R1 为导演增加只读阶段指标与异常诊断。超时恢复仍调用 DefenseDeviceSystem / CombatSystem 的教程作用域权威接口，不直接篡改器械或敌人字典；正常自然回归明确断言未触发这些恢复路径。
+
+完成和跳过共用 `_complete_handoff()`：停止 raid 和 detached tick，重新初始化正式资源 / 器械 / 装备基线，恢复艾达满血持剑盾，清短期记忆，按需追加确定性日记，提交 8 份首日计划并设置第 1 日 06:00，最后才恢复自动计划和时间。该顺序避免任何半套教程状态进入主循环。
+
+P6R12 在交接中增加“床位锚点 → 床边安全起点”空间闸门：TutorialDirector 只提交 NPC id 与正式床位 id；NPCSystem 从 StationLayoutController 的正式路线读取锚点和 `interior_target_position`。8 人全部成功后才执行并解冻首日计划，避免睡眠会话清理把实体恢复到档案初始坐标。
+
 ## T0396 精确 GM 多人战斗性能边界（Partial）
 
 优化保持单一权威链：CombatSystem/NPCSystem/BuildingSystem 的状态、频率和事件不变，消费者只用最小即时投影或在工作集为空/占用签名不变时跳过无关重算。引导区局部网格只活在一次同步查询内；建筑静态合批只接管不可变、非透明、非渐隐且同材质/GI/阴影/LOD 的表现叶节点，动态升级/损毁/屋顶仍走原节点。方向光阴影模式由 `environment_art_v1.celestial_cycle.directional_shadow_mode` 配置，当前为保留 120m 动态阴影的 `parallel_2_splits`。
@@ -64,14 +254,19 @@ T0382 最终选择候选 05：`piety_ready.enabled=true`，映射到 `sfx_piety_
 
 MilestoneAlertPresenter 只保存待显示的表现请求，并在请求真正出队显示时按配置决定是否播放声音，避免被建筑完工或幼马命名窗排队时提前发声。弹窗确认只关闭表现，不进入选点、不消费虔诚、不提交伤害或事件；声音禁用或播放失败也不影响技能资格。T0382 期间音频映射明确禁用。
 
-## T0354 已实现前端会话与 T0355 存档技术边界
+## T0354 前端会话与 T0355 检查点存档技术边界
 
 - 启动链调整为 `MainMenu -> 开始游戏 -> Main/GameStartupSystem`。MainMenu 不预加载或实例化 Main，避免菜单驻留期间世界推进、NPC 计划生成和真实 provider 费用。
 - 主菜单、PauseMenu、SettingsPanel、SaveBrowserPanel 都属于表现 / 会话控制层，不计算资源、战斗、NPC、建筑或记忆事实。退出 Main 时沿节点生命周期关闭 LLMBridge 在途请求。
 - 游戏暂停继续使用 TimeSystem 逻辑暂停，不修改 `Engine.time_scale` 或 `SceneTree.paused`；PauseMenu 只保存进入前暂停布尔值并请求 / 释放自己的暂停表现。
-- `ClientSettings` 与玩家存档严格分离：本机画面和非秘密 AI 服务偏好进入 `user://client_settings.cfg`，七项音量继续进入 `user://audio_settings.cfg`；API Key 不持久化。后续安全凭据机制由后端或系统凭据层承接。
-- T0355 完整存档采用稳定 slot id、独立元数据 / 状态 / 缩略图、Schema 版本、校验与原子替换。UI、Node / RID、NavigationMap、音频粒子和在途 HTTP / LLM 请求不序列化；加载必须先选择 LOAD 启动意图，再建立干净 Main 并恢复，不能执行一次新游戏启动后覆盖。
-- T0354 SaveBrowserPanel 只维护当前面板生命周期内的槽位表现模型；任何保存 / 覆盖 / 加载 / 删除最终动作都以“等待 T0355”结束，绝不产生可被误认为权威完成的状态。动态 UI 声音接线以 instance id 跨 deferred 边界，节点已释放时直接丢弃。
+- `ClientSettings` 与玩家存档严格分离：本机画面和非秘密 AI 服务偏好进入 `user://client_settings.cfg`，七项音量继续进入 `user://audio_settings.cfg`；API Key 不在 Godot 侧持久化。T0410 后客户端把 Key 一次性提交给同包本地后端，由 Windows DPAPI 凭据层持久化。客户端草稿提交时只有 `display_mode / resolution / vsync / max_fps / ui_scale` 实际变化才重新调用原生显示应用，避免音量或 AI 提交覆盖操作系统层的窗口最大化状态。
+- `GameSaveStore` 维护 `slot_id -> archive_id` 索引以及每档 `auto / manual` 两个版本化恢复点；状态文件 SHA-256 写入元数据，临时文件完成解析和校验后替换正式文件。高版本、损坏 JSON 与校验不符均只读展示、拒绝进入世界。
+- T0355-R2 由 GameSaveSystem 在同步权威快照完成后读取最终 Viewport Image，居中裁成 16:9 并编码 `480×270 WebP`；GameSaveStore 将图片作为非权威独立文件原子替换、记录独立 SHA-256，manual / 跨档分叉复制原始字节。SaveBrowserPanel 只对校验通过的图片解码为 ImageTexture；图片失败不参与状态有效性判断。
+- `GameSaveSystem` 是唯一完整快照协调器：正式新游戏启动完成提交第 0 点，真实波次清场信号延后一帧复核后覆盖当前档案自动点；手动固定只复制最近自动点，另存为新槽位会分叉永久档案 ID。第五波等待 EpilogueSystem 已形成 `llm / template_fallback` 结果。
+- 加载必须由 `GameStartupSystem.LOAD` 创建干净 Main。恢复屏障内先暂停并禁止计划自动派发，依次恢复 GameState / 时间、建筑、资源、制造、NPC / 需求、马匹、器械 / 虔诚、记忆 / 反思、战斗进度、正式空间，最后恢复计划版本及一次性键并只执行当前计划一次。恢复不复原敌人、弹体、工位助手、Action、对话、反思与 LLM 在途请求。
+- T0355-R1 在“恢复计划 → 当前计划重派”之间对照 NPC 空间快照 `actors[].in_flight_action`：若当前小时同一 `once_per_plan_hour` 行动仍处于 rollback 在途态，删除其提前写入的派发键后重派；无在途标记的完成键保持不变。该规则同时适用于旧 v1 与当前 v2 子结构。
+- T0355-R3 将 NPC 空间子结构升级为 `formal_npc_spatial_checkpoint_v2`：只写 `information_location_id`，不写 actor `position` 或 `world_origin`。LOAD 通过 StationLayoutController 按地点和 NPC ID 解析现有个人停留点并直接安置，然后才重派当前小时计划；v1 子结构仍可读，但旧坐标被忽略。顶层玩家存档 Schema 保持 v1。
+- SaveBrowserPanel 与 PauseMenu 只调用上述协调器，不自行决定任何权威字段。动态 UI 声音接线仍以 instance id 跨 deferred 边界，节点已释放时直接丢弃。完整字段与事务规则见 `docs/SAVE_SYSTEM.md`。
 
 ## T0353 音频混音与交互时序边界
 
@@ -163,7 +358,7 @@ GMPanel 只决定该调试动作是否允许显式 Mock，不决定邀请结果�
 
 `TimeSystem / GameState` 仍是昼夜唯一权威，`CombatSystem._active_enemies` 仍是敌人在场唯一权威，工位占用和 `current_action` 仍分别由 BuildingSystem / NPCSystem 维护。新增 WorldAudioController 只把这些既有事实投影成 BGM 和 3D 环境播放器，不写回时间、战斗、工位、生产或事件记忆。
 
-CombatSystem 只在既有敌人存在同步点增加数量变化广播；音乐层不轮询敌人节点、不把警铃或预告误当战斗开始。T0378 起非战斗音乐由白天 6 首 / 夜晚 3 首两个配置化顺序池组成，AudioManager 只在非循环单曲自然完成后发出表现信号，WorldAudioController 才推进下一个索引；昼夜切换进入对应池，敌人入场仍优先战斗曲，清场后继续当前昼夜池。索引不进入存档或玩法状态。环境随机调度使用现实秒与素材时长控制密度，昼夜启停仍由权威时间信号决定，因此 x2 / x4 不会压缩素材、升调或制造重叠风暴。声源位置、随机间隔和音乐 ID 位于 `data/presentation/world_audio.json`，避免把空间方案写死在表现脚本。
+CombatSystem 只在既有敌人存在同步点增加数量变化广播；音乐层不轮询敌人节点、不把警铃或预告误当战斗开始。T1505-P8 后非战斗音乐由白天 8 首 / 夜晚 4 首两个配置化顺序池组成，AudioManager 只在非循环单曲自然完成后发出表现信号，WorldAudioController 才推进下一个索引；昼夜切换进入对应池，正式敌人在场优先战斗曲，清场后继续当前昼夜池。教程 cue 在序章活动期间优先于教程敌人存在缓存；从 `intro_ada_warning` 起保持同一主引导曲，释放 cue 时重读权威时段与敌人数。索引与 cue 均不进入存档或玩法状态。环境随机调度使用现实秒与素材时长控制密度，昼夜启停仍由权威时间信号决定，因此 x2 / x4 不会压缩素材、升调或制造重叠风暴。声源位置、随机间隔和音乐 ID 位于 `data/presentation/world_audio.json`，避免把空间方案写死在表现脚本。
 
 ## T0135-P10A 音频表现与玩法权威边界
 
@@ -202,6 +397,8 @@ HP / 回血饱食 / 额外 HP 以整数单位消费累计值，成长 / 繁育�
 ## T0348 行商交易提交后表现分层
 
 数据流为 `MerchantPanel 草稿 → 确认 → MerchantSystem.execute_trade_batch 原子校验 / 提交 → 交易事件 + WorldFeedbackPayload → WorldFeedbackPresenter`。只有成功路径在所有 ResourceSystem 写入及必要回滚边界之后发送反馈；加减草稿、模式切换和任一失败返回都不会触发。
+
+T0400A 在同一成功边界增加 `EventBus.merchant_trade_completed → InteractionAudioController merchant_trade_success → AudioManager UI` 只读表现支路。买入与卖出复用既有确认成功声，以成交专属 `+5 dB` 补偿和高优先级语义替代确认按钮的普通木质点击；播放器仍受“点击音效”滑杆同比控制。该信号位于完整提交之后，不参与结算、回滚或交易方向判断。
 
 MerchantSystem 使用已确认的 `lines / total_price / direction` 构造单个批次 DTO，不由 Presenter 比较库存前后猜方向。MerchantWagon 只读行商角色 Head 骨骼提供完整世界锚点；Presenter 的 `merchant` 分支仅解析实时坐标、红色 `trade_out` / 绿色 `trade_in` 与既有 2 秒生命周期，不拥有交易或资源权威。
 
@@ -1053,6 +1250,8 @@ CombatSystem 仍拥有敌人阶段与未来攻击提交，运动组件只拥有�
 
 家具、落脚点与附着表现采用分层合同：`station_layout_v2.positions[].center / size` 是容量、升级和空间预留使用的逻辑工作湾；`building_fixture_layout_v1.fixtures[]` 是逐件可见设备及碰撞，`npc_stand` 是 CharacterBody 实际到达点，可选 `occupant_anchor` 只用于到达并提交占用后的床面 / 座位表现挂接，可选 `horse_anchor` 只为 HorseSystem 中实际在厩马匹预留独立实体净空。路线查询对已有实物合同的工位返回 `interior_target_position=站位`，并保留 `logical_position_center_position / target_fixture_id / arrival_mode`；需要挂接时再返回 occupant anchor，不能把任何锚点作为寻路终点。任何权威系统都不能从家具视觉节点反推占用或马匹数量，任何运动层也不能把逻辑湾中心、家具中心或马匹锚点重新当成 NPC 实体站位。
 
+T0403-R3 将这条合同扩展到战时空间交接：默认正式居民在敌军边缘生成时只加入 CombatSystem 的同图查询租约，不取消其日常空间事务；只有实际行为模式接管才中断 ActionSystem。中断前若 Body 挂在 `occupant_anchor`，`end_formal_workstation_action()` 负责解除挂接并落到 `interior_target_position`，行为模式层不得再恢复锚点坐标；未挂接的站立工位或在途角色继续保持真实安全位置。战斗租约结束时，从未发生行为模式接管的居民也不得被统一停止运动或重置空间阶段。
+
 A3b9R 将这套分层合同应用到教堂：每个 Quaternius 半排长凳只映射一个固定 `chapel_prayer_seat`，实体先抵达长凳侧前方 stand，BuildingSystem 提交占用后表现层才可使用 `seated_prayer` 锚点。长凳宽度、座垫数量或装饰书本都不能反向增加祈祷容量。
 
 A3b10R 对工械坊采用同一边界：`workshop_role` 只选择制弓 / 机构 / 总装的表现包装，`asset_path` 只实例化 Quaternius 主体；是否解锁、能否开工、制造目标、阶段、资源和 `reserved_by / occupied_by` 仍分别由 BuildingSystem、CraftingSystem 与 ActionSystem 决定。共享工具墙、吊架、测量台和材料架没有 `workstation_id`，不能因为视觉上可操作就被运动层当作新增工位。
@@ -1224,7 +1423,7 @@ lead_mass 结束
 外部中断 -> prayer_resumed_alone.trigger=mass_leader_stopped
 ```
 
-正常完成入口复用主持者的 `prayer_completed`、祭坛释放和参礼者恢复独祷逻辑，不由 DailyPlanSystem 伪造事件。T0105B 起，普通计划小时边界不再构造结束原因，而是等待弥撒自身完成；MemorySystem 仍只根据结构化 trigger 选择摘要，LLM 不参与。
+正常完成入口复用主持者的 `prayer_completed`、祭坛原位完成 hold 和参礼者恢复独祷逻辑，不由 DailyPlanSystem 伪造事件。T0105B 起，普通计划小时边界不再构造结束原因，而是等待弥撒自身完成；MemorySystem 仍只根据结构化 trigger 选择摘要，LLM 不参与。
 
 ## T0101 守备官知识边界数据流
 
@@ -1478,6 +1677,10 @@ TimeSystem.logical_time_tick(effective_game_seconds)
 
 ActionSystem 仍独占行动生命周期、食物恢复、工位 / 资源和成长事件；NPCNeedsSystem 不产出资源、完成行动、恢复 HP 或决定经验技能。BuildingSystem / NPCSystem 只提供有效时间事实，不复制经验计时器。工作 / 训练的既有完成 / 有效时长成长保持原入口，三类 assist 使用 `timed_experience` 配置补齐工程 / 医术成长；非工作行动没有该配置。
 
+T0081-R1 在这条数据流上增加单一满疲劳工作倍率。`activity_needs.json.full_fatigue_work_output_multiplier=0.5` 由 NPCNeedsSystem 解释；NPCSystem 的 `get_npc_work_output_multiplier()` 将疲劳惩罚与当日工作鼓励乘算，ActionSystem、BuildingSystem 和 HorseSystem 只读最终倍率。普通工作周期 / 制造阶段、计时成长、训练双方、诊所产出、协助治疗、修复 / 升级 helper 贡献和马厩照料均消费该倍率；休息、进食、祈祷、对话和移动不消费。
+
+`NPCNeedsSystem._apply_profile()` 只在权威疲劳从 `<max` 跨到 `max` 的提交帧写 `full_fatigue_triggered`，因此上限钳制不会重复刷事件；恢复后再次跨界自然形成新 episode。事件先进入 MemorySystem，再广播 `npc_plan_reevaluation_requested(high_fatigue)`。DailyPlanSystem 将该原因强制路由到行动失败同款两层链，并把当前小时放入 `required_revision_hours`：第一层真实模型仍可扩展其他受影响小时，但不能漏掉当前小时；第二层只修订返回的精确集合。
+
 ## T0080 建筑门口失败与升级协助数据流
 
 ```text
@@ -1636,14 +1839,14 @@ ModelAdapter.generate(...)
   -> provider HTTP
      -> 读取 prompt_cache_hit/miss + completion usage
      -> LLMCostLedger.settle(...) 释放预留并追加 JSONL
-     -> audit provider_response_received 同步保存 billing
+     -> audit provider_request_completed 同步保存 billing
   -> /debug/llm_usage
      -> session（当前 ModelAdapter 进程）
      -> daily（从持久化账本重放）
      -> GMPanel 异步顶栏
 ```
 
-DeepSeek V4 Flash 默认人民币价为缓存命中输入 ¥0.02/M、缓存未命中输入 ¥1/M、输出 ¥2/M。单次预留 ¥1.77 覆盖官方 1M 上下文与 384K 最大输出的缓存未命中理论上界；预留只占用在途额度，拿到真实 usage 后释放未用部分。每个 HTTP 尝试独立结算，所以非法 JSON / 截断后的紧凑重试不会漏算。价格、预留、上限、时区和账本路径均由后端环境配置；配置价格缺失、账本不可读写或预留会越过上限时失败关闭并返回 `budget_exceeded`，不进入 Mock。
+T0446 后 DeepSeek 默认模型为 V4 Pro，代码内保守人民币默认价为缓存命中输入 ¥0.025/M、缓存未命中输入 ¥3/M、输出 ¥6/M；开发 `.env` 可按实测分布显式覆盖在途预留，试玩发行则关闭本地金额门禁。预留只占用在途额度，拿到真实 usage 后释放未用部分。每个 HTTP 尝试独立结算，所以非法 JSON / 截断后的紧凑重试不会漏算。价格、预留、上限、时区和账本路径均由后端环境配置；配置价格缺失、账本不可读写或预留会越过上限时失败关闭并返回 `budget_exceeded`，不进入 Mock。
 
 JSONL 是跨后端重启的当日费用事实源；`ModelAdapter._usage_records` 继续表达业务调用最终结果，两者不得相加。当前 Flask 部署复用单个 ModelAdapter，进程内锁覆盖 Godot 的并发请求；未来若改为多 worker，必须把预留和追加迁移到支持跨进程原子事务的集中存储后才可继续宣称全局硬预算。
 
@@ -1653,9 +1856,13 @@ JSONL 是跨后端重启的当日费用事实源；`ModelAdapter._usage_records`
 
 ```text
 call_started(input_payload)
-  -> provider_request_sent(attempt, full body, no headers)
-     -> provider_response_received(http_status, aggregated response)
-        -> provider_output_parsed | provider_output_rejected
+  -> provider_request_prepared(准备发送, attempt, full body, no headers)
+     -> provider_response_headers_received(HTTP 头已收到, status, elapsed)
+        -> provider_first_valid_token_received(首个有效 Token, elapsed)
+           -> provider_request_completed(完成, ok, elapsed, response/billing)
+        -> provider_request_completed(完成, ok=false, timeout/error)
+     -> provider_request_completed(完成, ok=false, connect/error)
+  -> provider_output_parsed | provider_output_rejected
   -> call_completed(content, usage, error/fallback)
      -> business_validation_failed (optional, same audit_id)
 ```
@@ -1663,6 +1870,8 @@ call_started(input_payload)
 `record_model_output_invalid(...)` 继续原地修改内存 usage，避免调用 / token 双计，同时通过 usage timestamp 找回原 `audit_id` 并追加不可变的业务校验失败事件。日志写盘按解析后的绝对路径使用进程内共享锁，每个事件一次性追加一行；目录创建或写入失败只更新 `audit_log.last_error / last_error_timestamp`，不改变模型业务结果。多进程服务器仍依赖操作系统 append 语义，部署阶段若启用多个 worker，应为各 worker 配置独立文件或接入集中日志收集器。
 
 日志正文保存前递归处理敏感 key、JSON 字符串中的凭据字段、Bearer / `sk-...` 格式和当前配置 API Key。供应商请求头从不传入日志器。`get_runtime_config_snapshot()` 只公开启用状态、JSONL 版本、显示路径、正文开关与最近错误；HTTP / GM 不提供日志下载，避免把人物私密上下文扩散到客户端。
+
+T0445 后，`LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS`（默认 120 秒）按每次 provider attempt 的墙钟计时，SSE 空行与 `: keep-alive` 不能刷新它。收到 HTTP 头但在时限内没有非空正文增量时归类为 `ProviderQueueTimeout → provider_queue_timeout / HTTP 504`；已出现有效正文后才到达总时限则归类为普通 `ProviderTotalTimeout → provider_timeout`。失败完成阶段保留最后已到达的阶段和耗时，预算预留在 finally 中释放。
 
 ## T0067 LLM 判定复验与原子逃离边界
 
@@ -2004,7 +2213,7 @@ DeepSeek / MiniMax / Qwen / Zhipu 等模型
 - Godot 客户端请求游戏服务器后端；本地开发可临时请求 `127.0.0.1` 的后端，并显式使用 mock provider 做开发验证。
 - 服务器后端负责调用真实 LLM Provider、持有供应商 API Key、统一限流、排队、规则 / 模板降级、成本统计和调用日志。
 - Godot 导出客户端不保存真实供应商 API Key，也不直接请求 DeepSeek / MiniMax / 通义千问 / 智谱等模型接口。
-- 玩家自行配置 API Key 只能作为未来可选 BYOK / 开发模式，不是 Demo 阶段的必需路径，也不能成为默认架构。
+- T0410 已实现可选 BYOK：默认仍是同包后端的试玩服务；玩家自定义 Key 只交给本机后端的系统凭据层，Godot 不直连供应商。
 - Mock provider 不是成品 / Demo 的模型失败兜底。真实 provider 失败、无 Key、超时、非 JSON 或 Schema 校验失败时，生产 / 演示路径必须返回可处理错误并记录真实失败原因；允许规则 / 模板降级继续游戏流程，但不能用 mock 内容伪装模型成功。
 
 当前后端实现状态：
@@ -2127,6 +2336,7 @@ npc_profiles / weapon_defs / armor_defs / mount_defs
   -> base / growth / equipment / condition / final
   -> max(0, defense - penetration)
   -> 20 / (20 + effective_defense) 伤害倍率
+  -> NPC 武器命中敌人：正式 × 0.7 / 新手教程 × 0.8，之后四舍五入且最低 1
   -> NPCPanel / GM 只读展示
 
 defense_device_defs
@@ -2136,7 +2346,7 @@ defense_device_defs
   <-> CombatSystem（双方伤害窄接口）
 ```
 
-CombatSystem 是 NPC / 敌人伤害、远程距离带、敌人抬手 / 僵直和骑兵冲锋阶段的权威；配置与 UI 不直接扣 HP。T0110 后当前主武器的 `required_skill` 只进入该武器攻速乘区，不进入穿透；非当前武器熟练度不生效。骑术只进入马匹冲撞伤害，不进入骑乘攻速。EquipmentSystem 会把完整定义副本写入运行时装备槽，但 `LLMBridge` 的 Prompt 专用装备投影只保留 T0107 前已有的身份、装备类型、武器伤害 / 射程 / 间隔、盔甲值与坐骑速度等白名单字段，排除新增防御、穿透、攻速修正和所有 `charge_*` 参数，因此本任务不扩展 NPC Prompt 战斗属性。
+CombatSystem 是 NPC / 敌人伤害、远程距离带、敌人抬手 / 僵直和骑兵冲锋阶段的权威；配置与 UI 不直接扣 HP。T0433-R1 后，只有 `_apply_npc_attack_to_enemy(...)` 使用 NPC 武器专用伤害解析，并以 `_tutorial_raid_active` 选择正式 `0.7` 或新手教程 `0.8`；近战、远程和冲锋武器命中共享该入口，通用解析继续服务敌方、器械、虔诚与坐骑碰撞。T0110 后当前主武器的 `required_skill` 只进入该武器攻速乘区，不进入穿透；非当前武器熟练度不生效。骑术只进入马匹冲撞伤害，不进入骑乘攻速。EquipmentSystem 会把完整定义副本写入运行时装备槽，但 `LLMBridge` 的 Prompt 专用装备投影只保留 T0107 前已有的身份、装备类型、武器伤害 / 射程 / 间隔、盔甲值与坐骑速度等白名单字段，排除新增防御、穿透、攻速修正和所有 `charge_*` 参数，因此本任务不扩展 NPC Prompt 战斗属性。
 
 ## T0035-T0038 制造、具体库存与马匹当前技术边界
 
@@ -2411,7 +2621,7 @@ T0604 遇到的坑：
 ## API Key
 
 禁止把 API Key 写入仓库。  
-真实供应商 API Key 默认只存在于服务器后端环境变量或后端 `.env`，并确保 `.gitignore` 忽略 `.env`。Godot 客户端不得保存、提交、导出或要求玩家在 Demo 阶段必须提供供应商 API Key。
+试玩真实 Key 只存在于打包 / 部署环境注入的后端配置；玩家自定义 Key 只存在于本机后端内存与 Windows DPAPI 密文，并确保 `.gitignore` 忽略 `.env`。Godot 客户端不得保存、提交或导出供应商 API Key，玩家不配置时使用试玩默认服务。
 
 使用真实 API Key 完成测试后，不要提交 `.env`、日志中的 Key、请求头或供应商密钥片段。生产 / 演示环境应关闭自动 mock fallback；无 Key 时应暴露配置错误，而不是返回 mock 内容。
 ## T0137 NPC 移动慢速权威边界

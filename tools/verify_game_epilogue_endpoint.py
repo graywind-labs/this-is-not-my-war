@@ -81,6 +81,20 @@ def payload(result: str) -> dict:
 
 
 def main() -> None:
+    prompt = (Path(__file__).resolve().parents[1] / "data" / "prompts" / "game_epilogue_system_prompt.txt").read_text(encoding="utf-8")
+    assert "昏迷的身体当时处在何种危险中" in prompt
+    assert "为何没有被仍在袭击驿站或接管失守驿站的敌军杀害或发现" in prompt
+    assert "后来如何被找到并获得复苏机会" in prompt
+    assert "不能只用“后来醒来”“被人救走”一笔带过" in prompt
+    assert "victory 只能写其如何撑到来袭者被击退" in prompt
+    assert "只有 key_facts 明确说明某个已知人物救了这名昏迷者时" in prompt
+    assert "八名人物的较长期余波都必须具体写出迫近战火" in prompt
+    assert "不能把任何一人写进与战争无关的安稳真空" in prompt
+    assert "每篇至少出现一种可读出的战争压力" in prompt
+    assert "不得断言整场战争的最终结局" in prompt
+    assert "即使删掉每篇关于刚结束这场守城战的开头" in prompt
+    assert "八人中任何一篇缺少迫近战火联系，都必须先补写再提交" in prompt
+
     app = create_app()
     client = app.test_client()
     for result in ("victory", "failure"):

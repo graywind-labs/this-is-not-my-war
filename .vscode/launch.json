@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Godot：调试项目（先进入主菜单）",
+            "type": "godot",
+            "request": "launch",
+            "project": "${workspaceFolder}",
+            "scene": "main"
+        },
+        {
+            "name": "Godot：调试当前场景",
+            "type": "godot",
+            "request": "launch",
+            "project": "${workspaceFolder}",
+            "scene": "current"
+        }
+    ]
+}

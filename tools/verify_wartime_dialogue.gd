@@ -281,7 +281,7 @@ func _init() -> void:
 		push_error("Successful morale response should turn off and lock the toggle")
 		quit(1)
 		return
-	if not history_text.text.contains("[color=#63D471]✓ 守备官成功鼓舞了托马；持续至当天24:00，攻击力和移动速度提升15%[/color]"):
+	if not history_text.text.contains("[color=#63D471]✓ 守备官成功鼓舞了托马；持续至今日午夜，攻击力和移动速度提升15%[/color]"):
 		push_error("Wartime morale reply did not show the requested green feedback line: %s" % history_text.text)
 		quit(1)
 		return

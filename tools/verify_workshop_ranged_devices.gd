@@ -36,9 +36,9 @@ func _init() -> void:
 		return
 
 	var expected_catalog := {
-		"craft_bow": ["item_bow", 3],
-		"craft_crossbow": ["item_crossbow", 5],
-		"craft_wall_ballista": ["item_wall_ballista", 9],
+		"craft_bow": ["item_bow", 5],
+		"craft_crossbow": ["item_crossbow", 7],
+		"craft_wall_ballista": ["item_wall_ballista", 12],
 		"craft_wall_arrow_tower": ["item_wall_arrow_tower", 12],
 	}
 	for recipe_id in expected_catalog.keys():
@@ -82,8 +82,11 @@ func _init() -> void:
 	crafting_system.set_target("workshop", "", true)
 	npc_system.debug_enter_location_immediately(engineer_id, "workshop")
 	npc_system.update_npc_state(engineer_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if action_system.debug_assign_work(engineer_id, "workshop"):
-		_fail("Workshop work should not start without a crafting target")
+	if not action_system.debug_assign_work(engineer_id, "workshop"):
+		_fail("Workshop targetless work should dispatch to the formal arrival check")
+		return
+	if not await _wait_until_action_result(npc_system, engineer_id, "work_failed_crafting_target_missing"):
+		_fail("Workshop work did not fail after arriving without a crafting target: %s" % JSON.stringify(npc_system.get_npc_state(engineer_id)))
 		return
 	if str(npc_system.get_npc_state(engineer_id).get("last_action_result", "")) != "work_failed_crafting_target_missing":
 		_fail("Missing workshop target did not expose crafting_target_missing")
@@ -122,15 +125,25 @@ func _init() -> void:
 	if int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before:
 		_fail("Second bow stage should spend the second wood without completing the product")
 		return
-	events_before = int(memory_system.get_npc_daily_events(engineer_id).size())
-	if not await _complete_work_cycle(action_system, npc_system, engineer_id, engineer_duration_level_2):
+	var bow_stage_count := (crafting_system.get_recipe("craft_bow").get("stages", []) as Array).size()
+	for stage_index in range(3, bow_stage_count + 1):
+		events_before = int(memory_system.get_npc_daily_events(engineer_id).size())
+		if not await _complete_work_cycle(action_system, npc_system, engineer_id, engineer_duration_level_2):
+			return
+		if stage_index < bow_stage_count:
+			var stage_project: Dictionary = crafting_system.get_project_snapshot("workshop")
+			if int(stage_project.get("completed_stages", -1)) != stage_index or int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before:
+				_fail("Labor-only bow stage %d changed materials or completed the product early" % stage_index)
+				return
+	if int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before:
+		_fail("Final labor-only bow stage changed materials or entered formal inventory before collection")
 		return
-	if int(resource_system.get_resource("wood")) != wood_before_bow - 2 or int(resource_system.get_resource("item_bow")) != bow_before + 1:
-		_fail("Labor-only bow finishing stage did not add item_bow")
+	if int(crafting_system.get_pending_outputs("workshop").get("item_bow", 0)) != 1:
+		_fail("Final labor-only bow stage did not add pending item_bow")
 		return
 	var bow_event := _find_event(_events_after(memory_system.get_npc_daily_events(engineer_id), events_before), "work_completed")
 	var bow_payload: Dictionary = bow_event.get("payload", {})
-	if not bool(bow_payload.get("product_completed", false)) or int((bow_payload.get("output_resources", {}) as Dictionary).get("item_bow", 0)) != 1:
+	if not bool(bow_payload.get("product_completed", false)) or int((bow_payload.get("pending_output_resources", {}) as Dictionary).get("item_bow", 0)) != 1:
 		_fail("Final bow work event is missing exact item_bow output")
 		return
 
@@ -141,14 +154,17 @@ func _init() -> void:
 	if not bool(selected.get("ok", false)):
 		_fail("Failed to select ballista recipe: %s" % JSON.stringify(selected))
 		return
-	for _stage in range(9):
+	for _stage in range((crafting_system.get_recipe("craft_wall_ballista").get("stages", []) as Array).size()):
 		var project: Dictionary = crafting_system.get_project_snapshot("workshop")
 		var stage_result: Dictionary = crafting_system.complete_stage("workshop", int(project.get("project_revision", -1)), engineer_id)
 		if not bool(stage_result.get("ok", false)):
 			_fail("Ballista stage completion failed: %s" % JSON.stringify(stage_result))
 			return
-	if int(resource_system.get_resource("item_wall_ballista")) != ballista_before + 1:
-		_fail("Completed device did not enter item_wall_ballista inventory")
+	if int(resource_system.get_resource("item_wall_ballista")) != ballista_before:
+		_fail("Completed device entered formal item_wall_ballista inventory before collection")
+		return
+	if int(crafting_system.get_pending_outputs("workshop").get("item_wall_ballista", 0)) != 1:
+		_fail("Completed device did not enter pending item_wall_ballista inventory")
 		return
 	if int(resource_system.get_resource("wood")) != wood_before_ballista - 6 or int(resource_system.get_resource("iron")) != iron_before_ballista - 2:
 		_fail("Ballista stages did not spend their exact six-wood/two-iron recipe")
@@ -160,8 +176,11 @@ func _init() -> void:
 	crafting_system.set_target("workshop", "craft_bow", false)
 	resource_system.add_resource("wood", -999999)
 	npc_system.update_npc_state(engineer_id, {"last_action_result": ""})
-	if action_system.debug_assign_work(engineer_id, "workshop"):
-		_fail("Workshop work should fail immediately when the selected stage material is missing")
+	if not action_system.debug_assign_work(engineer_id, "workshop"):
+		_fail("Workshop resource-short work should dispatch to the formal arrival check")
+		return
+	if not await _wait_until_action_result(npc_system, engineer_id, "work_failed_insufficient_stage_resources"):
+		_fail("Workshop work did not fail after arriving without the selected-stage material")
 		return
 	if str(npc_system.get_npc_state(engineer_id).get("last_action_result", "")) != "work_failed_insufficient_stage_resources":
 		_fail("Missing workshop stage material did not expose insufficient_stage_resources")
@@ -198,8 +217,8 @@ func _set_profile_skill_and_intelligence(npc_system: Node, npc_id: String, engin
 
 
 func _wait_until_action_result(npc_system: Node, npc_id: String, expected_result: String) -> bool:
-	for _frame in range(600):
-		await process_frame
+	for _frame in range(1800):
+		await physics_frame
 		if str(npc_system.get_npc_state(npc_id).get("last_action_result", "")) == expected_result:
 			return true
 	return false

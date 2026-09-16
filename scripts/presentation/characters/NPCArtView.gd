@@ -193,6 +193,12 @@ func set_facing_direction(direction: Vector3) -> void:
 	_target_yaw = atan2(-flat_direction.x, -flat_direction.z)
 
 
+func snap_facing_direction(direction: Vector3) -> void:
+	set_facing_direction(direction)
+	if _character_pivot != null:
+		_character_pivot.rotation.y = _target_yaw
+
+
 func play_temporary_presentation_action(action_id: String, event_id: String) -> Dictionary:
 	if not action_id in ["talk_gesture", "hit_react"]:
 		return {"ok": false, "reason": "unsupported_temporary_presentation_action", "action_id": action_id}

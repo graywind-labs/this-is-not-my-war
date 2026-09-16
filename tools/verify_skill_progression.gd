@@ -41,6 +41,8 @@ func _init() -> void:
 	var worker_id := "gardener_01"
 	var worker_before: Dictionary = npc_system.get_npc(worker_id)
 	var farming_before := int(worker_before.get("skills", {}).get("耕种", 0))
+	# Keep the fixture independent from the current warehouse opening amount/cap.
+	resource_system.add_resource("grain", -resource_system.get_resource("grain"))
 	_get_npc_node(npc_system, worker_id).set("move_speed", 5.0)
 	npc_system.debug_enter_location_immediately(worker_id, "garden")
 	if not action_system.debug_assign_action(worker_id, "work_garden"):
@@ -54,7 +56,20 @@ func _init() -> void:
 	event_bus.logical_time_tick.emit(7200.0, 1.0)
 	var worker_after: Dictionary = npc_system.get_npc(worker_id)
 	if int(worker_after.get("skills", {}).get("耕种", 0)) <= farming_before:
-		push_error("Completed work should slowly improve professional skill")
+		# T0415 applies 70% progression efficiency and preserves the fractional
+		# remainder, so a second explicitly assigned cycle may be required for +1.
+		if not action_system.debug_assign_action(worker_id, "work_garden"):
+			push_error("Second garden work cycle should start")
+			quit(1)
+			return
+		if not await _wait_for_active(action_system, time_system, worker_id, "work_garden"):
+			push_error("Second garden work cycle should become active")
+			quit(1)
+			return
+		event_bus.logical_time_tick.emit(7200.0, 1.0)
+		worker_after = npc_system.get_npc(worker_id)
+	if int(worker_after.get("skills", {}).get("耕种", 0)) <= farming_before:
+		push_error("Repeated completed work should accumulate fractional professional skill growth")
 		quit(1)
 		return
 	var worker_progression: Dictionary = npc_system.get_npc_progression(worker_id)
@@ -87,7 +102,13 @@ func _init() -> void:
 		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
 	if int(npc_system.get_npc_progression(trainee_id).get("total_experience", 0)) <= trainee_xp_before:
-		push_error("Training skill gain should use the same progression pipeline")
+		if not action_system.debug_assign_action(trainee_id, "work_training_instructor") or not await _wait_for_active(action_system, time_system, trainee_id, "work_training_instructor"):
+			push_error("Second solo training cycle should become active")
+			quit(1)
+			return
+		event_bus.logical_time_tick.emit(14400.0, 1.0)
+	if int(npc_system.get_npc_progression(trainee_id).get("total_experience", 0)) <= trainee_xp_before:
+		push_error("Repeated training should accumulate fractional progression")
 		quit(1)
 		return
 
@@ -105,18 +126,20 @@ func _init() -> void:
 		return
 	event_bus.logical_time_tick.emit(14400.0, 1.0)
 	if int(npc_system.get_npc_progression(doctor_id).get("total_experience", 0)) <= doctor_xp_before:
-		push_error("Clinic study should use the same progression pipeline")
+		if not action_system.debug_assign_action(doctor_id, "work_clinic_doctor") or not await _wait_for_active(action_system, time_system, doctor_id, "work_clinic_doctor"):
+			push_error("Second clinic study cycle should become active")
+			quit(1)
+			return
+		event_bus.logical_time_tick.emit(14400.0, 1.0)
+	if int(npc_system.get_npc_progression(doctor_id).get("total_experience", 0)) <= doctor_xp_before:
+		push_error("Repeated clinic study should accumulate fractional progression")
 		quit(1)
 		return
 
 	var assign_id := "cook_01"
 	_set_profile_skill_and_progression(npc_system, assign_id, "厨艺", 0, 0)
-	for _index in range(10):
-		var gain_result: Dictionary = npc_system.increase_npc_skill(assign_id, "厨艺", 1)
-		if gain_result.is_empty():
-			push_error("Direct skill gain should succeed before reaching cap")
-			quit(1)
-			return
+	for _index in range(15):
+		npc_system.increase_npc_skill(assign_id, "厨艺", 1)
 	var progression_after_threshold: Dictionary = npc_system.get_npc_progression(assign_id)
 	if int(progression_after_threshold.get("unspent_skill_points", 0)) != 1:
 		push_error("Ten skill experience should grant one unspent skill point")
@@ -183,7 +206,7 @@ func _init() -> void:
 		quit(1)
 		return
 
-	for _index in range(10):
+	for _index in range(15):
 		npc_system.increase_npc_skill(assign_id, "厨艺", 1)
 	npc_panel.show_npc(assign_id)
 	await process_frame

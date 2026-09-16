@@ -147,11 +147,11 @@ func _init() -> void:
 	var heavy_work: Dictionary = needs_system.get_profile("heavy_work")
 	var idle: Dictionary = needs_system.get_profile("idle")
 	var combat: Dictionary = needs_system.get_profile("combat")
-	if float(light_work.get("satiety_per_hour", 0.0)) != -3.0 or float(light_work.get("fatigue_per_hour", 0.0)) != 6.0:
-		_fail("Light-work baseline must remain -3 satiety / +6 fatigue per hour")
+	if float(light_work.get("satiety_per_hour", 0.0)) != -4.5 or float(light_work.get("fatigue_per_hour", 0.0)) != 6.0:
+		_fail("Light-work baseline must be -4.5 satiety / +6 fatigue per hour")
 		return
-	if float(heavy_work.get("satiety_per_hour", 0.0)) != -4.0 or float(heavy_work.get("fatigue_per_hour", 0.0)) != 8.0:
-		_fail("Heavy-work baseline must remain -4 satiety / +8 fatigue per hour")
+	if float(heavy_work.get("satiety_per_hour", 0.0)) != -5.5 or float(heavy_work.get("fatigue_per_hour", 0.0)) != 8.0:
+		_fail("Heavy-work baseline must be -5.5 satiety / +8 fatigue per hour")
 		return
 	if (
 		absf(float(idle.get("satiety_per_hour", 0.0))) >= absf(float(light_work.get("satiety_per_hour", 0.0)))
@@ -169,9 +169,9 @@ func _init() -> void:
 	needs_system.initialize()
 	if not _assert_profile_delta(needs_system, npc_system, "gardener_01", "idle", 7200.0, 50, 50, 49, 51):
 		return
-	if not _assert_profile_delta(needs_system, npc_system, "engineer_01", "heavy_work", 3600.0, 50, 50, 46, 58):
+	if not _assert_profile_delta(needs_system, npc_system, "engineer_01", "heavy_work", 3600.0, 50, 50, 45, 58):
 		return
-	if not _assert_profile_delta(needs_system, npc_system, "veteran_deputy_01", "sleep", 23400.0, 100, 100, 87, 0):
+	if not _assert_profile_delta(needs_system, npc_system, "veteran_deputy_01", "sleep", 28800.0, 100, 100, 84, 0):
 		return
 	if not _assert_profile_delta(needs_system, npc_system, "cook_01", "drink_rest", 600.0, 50, 50, 49, 47):
 		return

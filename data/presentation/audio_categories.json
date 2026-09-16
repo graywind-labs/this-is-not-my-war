@@ -5,10 +5,12 @@
       "display_name": "音乐",
       "bus": "Music",
       "asset_ids": [
-        "music_menu", "music_day_night", "music_battle",
+        "music_menu", "music_day_night", "music_battle", "music_tutorial_intro", "music_tutorial_battle",
         "music_day_playlist_01", "music_day_playlist_03", "music_day_playlist_04",
         "music_day_playlist_05", "music_day_playlist_07", "music_day_playlist_12",
-        "music_night_playlist_05", "music_night_playlist_06", "music_night_playlist_10"
+        "music_day_playlist_v29_04", "music_day_playlist_v29_06",
+        "music_night_playlist_05", "music_night_playlist_06", "music_night_playlist_10",
+        "music_night_playlist_v29_02"
       ]
     },
     "click": {
@@ -17,7 +19,8 @@
       "asset_ids": [
         "sfx_ui_button_primary", "sfx_ui_panel_open", "sfx_ui_panel_close",
         "sfx_ui_interaction_success_resource_collect", "sfx_ui_toggle",
-        "sfx_work_repair_and_upgrade_start", "sfx_work_blacksmith_target_selected"
+        "sfx_work_repair_and_upgrade_start", "sfx_work_blacksmith_target_selected",
+        "sfx_ui_equipment_mount_selected", "sfx_defense_device_deploy_wood_thud"
       ]
     },
     "voice": {

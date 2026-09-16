@@ -30,7 +30,7 @@ var _string_left: MeshInstance3D
 var _string_right: MeshInstance3D
 var _reload_wheel: Node3D
 var _string_draw_z := STRING_DRAW_Z
-var _attack_interval := 1.39
+var _attack_interval := 2.6315789473684212
 var _projectile_speed := 64.0
 var _reload_fraction := 0.58
 var _reload_tween: Tween
@@ -181,7 +181,7 @@ func play_device_action(action_result: Dictionary) -> void:
 	_fire_loaded_arrow(target, interval)
 
 
-func debug_play_attack(target_global_position: Vector3, attack_interval: float = 1.39) -> void:
+func debug_play_attack(target_global_position: Vector3, attack_interval: float = 2.6315789473684212) -> void:
 	play_device_action({
 		"target_position": _vector3_to_dict(target_global_position),
 		"attack_interval": attack_interval

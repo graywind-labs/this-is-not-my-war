@@ -1,14 +1,161 @@
 # AI_NPC_SYSTEM.md
 
+## T0412 NPC-NPC 每轮动态角色表
+
+NPC-NPC 对话仍以 `npc_id / npc_name / npc_setting / npc_state` 定义当前唯一回复者，以 `speaker_context.speaker_id / speaker_name / speaker_text` 定义刚刚说话的对方。为避免供应商在邀请阶段偶发把说话者职业与第一人称套到回复者台词上，Model Adapter 只对 `dialogue_kind=npc_npc` 在系统 Prompt 最尾部动态重申双方姓名、ID 和阶段职责。
+
+`invitation` 明确由目标 NPC 决定是否接受说话者邀请；`conversation` 明确由目标 NPC回应对方刚才的话。`reply_text` 与 `debug_reason` 都必须以目标 NPC 为主体，不得把说话者人设写成自己，也不得用目标 NPC 的姓名作第三人称自指。该约束不改变参与者轮换、邀请接受 / 拒绝、正式轮次、事件入库、计划重估或响应 Schema。
+
+## T0410 Provider 选择与失败可见性
+
+NPC 对话、计划、修订、战时判断、熟睡总结和结局继续共用同一后端 ModelAdapter。试玩包默认 DeepSeek 配置由打包环境注入；玩家在设置中启用自定义服务后，所有后续调用统一改走该 Provider / model / base URL，不按 NPC 或 call type 分叉。切换不改变 Prompt、Schema 或权威结算。Provider 失败不伪造 Mock 成功，并把错误码、HTTP 状态与消息送到主场景顶部提示。
+
+## T0035-R4 守备官转产后的计划续作
+
+守备官在 NPC 当前小时仍计划制造时改选铁匠铺 / 工械坊目标，不构成 NPC 意图或日计划失效，也不请求 LLM 重估。程序在旧目标中断事实写入后，以当前 day / hour / plan version 和计划行动所有权校验同一计划阶段；非空新目标落地后重新派发制造。若当前计划已经变化、行动不是计划派发、自动执行关闭或目标被清空，则不续作。
+
+## T1505-P6R55 跨天计划等待不打断行动
+
+正式 `day_started` 批次开始前仍暂停 TimeSystem 与计划自动派发，但 DailyPlanSystem 不再中断 NPC 当前 pending / active 行动，也不再用 `planning_day` 覆盖其真实 `current_action`。因此床上睡眠继续保持睡眠状态与见闻屏蔽，椅 / 长凳 / 病床 attachment 不解除，站立工位和移动中的实际坐标也不变化；计划类 `llm_activity` 仍负责“正在思考”提示和对话禁用。
+
+全局暂停使 ActionSystem、NPCNeedsSystem、BuildingSystem、HorseSystem 等不收到有效逻辑推进，故资源生产 / 消耗、需要值、HP、虔诚、技能、制造和行动 elapsed 都冻结。八份计划全部成功后，DailyPlanSystem 正常派发新日当前项：运行态 action id 与新项相同则直接采用原事务和进度；不同才调用既有中断 / 替换出口。真实 provider 失败时批次保持暂停，旧行动和姿态也继续保留。只有没有任何旧活动的新游戏首次规划继续使用纯 `planning_day` 展示态。
+
+## T0130-P7R4 病床贴床表现
+
+`ChibiCharacterPilot._get_presentation_pose_offset()` 在 `sleeping + lying_supine` 时返回 Y=-0.40m，补偿正式病床锚点与 Lie_Idle 身体高度，只调整可见模型。宿舍 `sleeping_supine` 保留原偏移，清除挂接后不保留病床补偿。AI、HP、床位占用与导航逻辑不变。
+
+## T1505-P6R54 隐性专属停留位
+
+`visit_location` 的建筑内最终目标和广场目标按 NPC ID 读取 `data/npc_stay_positions.json`；十座可进入建筑加广场，共 88 个固定位置。建筑坐标为建筑局部 X/Z，广场为站内 X/Z。进出门、跨建筑经广场、行动完成和信息地点转换继续使用既有路线；同建筑重派也走本人停留点。没有配置的成员返回失败，不回退到公共重叠点。
+
+T0355-R3 的 LOAD 复用同一套 88 个个人停留点：NPC 空间快照只记录语义地点 / 建筑，读档直接安置到该地点本人点位，再由 DailyPlanSystem 重派当前小时计划。存档不记录任意身体坐标、路线阶段、家具挂接或工位占用；旧 v1 坐标字段也不再参与恢复。
+
+停留位不属于工位，不预约、不加入建筑位置状态或见闻快照，也不新增模型、标记、画线、面板项目。每名成员在每个地点永久独立分配，因此完成停留后仍站原位也不会被另一成员借用。新增 NPC 时需同步扩充所有地点分配。坐标按最大级家具、工位到达点、正式导航连通性筛选；马厩、宿舍沿通道错落分布，广场稀疏分散。
+
+
+## T0081-R2 零饱食计划重估
+
+NPC 饱食首次从正数降到 0 时，以 `low_satiety` 进入与行动失败、满疲劳共用的两阶段计划重估。程序把当前小时写入 `required_revision_hours`；第一阶段只能判断最小受影响范围，第二阶段只重写选中小时。有可用食物时当前小时必须优先进食；无合法食物时选择不触发饥饿换血的安全行动。战时行为仍由 CombatSystem 权威接管，计划模型不能伪造脱战、HP 或食物。
+
+## T1505-P6R51 门队列队首不再回追身后路径点
+
+角色进入门区并拿到等待令牌的那个物理帧，有可能已经越过 NavigationAgent 当前路径点；旧逻辑暂停时保留路径却不推进索引，角色晋升为最小令牌后就会先向后追该点，并被身后的排队者挡住。现在恢复边沿只沿原路径向前跳过已经越过、且到下一点直达安全的陈旧点；未越过的点不动，也不重建路径或改变最终目标。
+
+正式建筑门路段还按进 / 出方向接受“已穿过目标平面”为到达，避免门槛子检查点产生同类回头。该规则对所有可进入建筑、进出双向及敌我共享运动生效；排队仍保持原 action、request id、预约和计划，合法等待仍不累计卡住时间、不返回失败、不触发重估。
+
+## T1505-P6R52 祈祷随计划连续续轮
+
+`pray_at_chapel` 使用 `repeat_while_planned`，与普通生产周期共享 DailyPlanSystem 的完成后续轮合同。独祷或参礼者自己的 3600 秒计时完成后，只要当时当前小时计划仍为祈祷，就复用 `completed_workstation_hold` 在原祈祷席立即开始新一轮；不会停在 idle、重新预约、寻路或重复进入教堂。进入当前计划不再是祈祷的小时后，普通独祷按既有整点切换正常中断并执行新项；参礼者仍遵守弥撒完成优先规则。
+
+`lead_mass` 继续使用 `once_per_plan_hour`，本任务不改变主持时长、跨小时保护、参礼模式、虔诚倍率或模型候选。续轮是 Godot 计划执行策略，不调用 LLM，也不新增事件类型。
+
+## T1505-P6R50 初始成员固定祈祷席
+
+8 名初始 NPC 的教堂祈祷席按与食堂相同的顺序固定为 `chapel_prayer_seat_01..08`：托马、布鲁诺、伊沃、格伦、艾达、马塞尔、莉娜、欧文。BuildingSystem 通过既有 `assigned_npc_id` 保证同一 NPC 每次祈祷、失败重试或重新派发都回到本人席位，并拒绝改用其他初始成员的席位。9–10 号席保持无归属，供未来新增 NPC 使用。
+
+模型和计划仍只选择 `pray_at_chapel`，不读取或输出席位编号。固定归属不影响弥撒内部模式、参礼切换、完成后原位留座、祭坛主持或前端显示。
+
+## T0403-R2 / T0437 卡住的三秒愤怒提示
+
+NPC 的卡住判断仍以剩余路线距离为准：生产默认累计约 `8 秒` 无有效进展后发送一次非终止 `stuck_timeout` 通知，并在主世界与当前第二人称人物框显示总计 `3 秒` 的 `😠` 情绪气泡。该通知不停止移动、不清理路线或预约、不结束当前行动，也不修改小时计划；NPC 保持原请求等待阻挡解除。恢复有效路线进展后，下一段连续卡住可以重新计时。中间重新寻路、其他失败和令牌排队暂停不会显示。
+
+该提示只是瞬时表现，不是记忆事件、对话回复或计划事实；它不播放愤怒攻击动作与语气音效，也不会重新接通导航失败的计划重估路径。若已有情绪气泡，新提示沿用既有“新 presentation 立即替换旧 presentation”的规则。
+
+## T0403-R1 NPC 额外避障余量收窄
+
+正常步行 NPC 的实体半径保持 `0.30 m`，只把共享 `avoidance_radius_padding` 从 `0.10 m` 试降为 `0.05 m`；因此交互半径仍为 `0.36 m`，RVO 避障半径从 `0.40 m` 降为 `0.35 m`。这会减少 NPC 在可实际通过处过早互相让停的概率，但仍保留实体胶囊之外每侧 `0.05 m` 的预测余量。邻居搜索距离、最大邻居数、时间预测、路径和门队列规则均保持不变。
+
+## T1505-P6R49 门洞净宽与队列捕获边界
+
+10 座可进入建筑继续使用相同的双向敌我令牌逻辑，但静态碰撞不再以 `1.80 m` 一刀切。标准可见门 / 院门按模型净宽使用 `2.08 m`，马厩宽门使用 `2.58 m`；NPC 和计划仍只选择建筑与工位，不感知门宽。排队 Area3D 横向宽度收为 `2.60 m`，NPC 胶囊与区域重叠共同覆盖最宽门的入口，纵深与路径暂停规则保持不变。
+
+`2.40 m` 曾通过静态合同但在多人从宿舍出门的动态早餐回归中捕获过晚：一名角色在区域侧缘外先与人群碰撞并卡住。最终 `2.60 m` 仍比旧值每侧收窄 `0.10 m`，同时保留足够的多人进出捕获余量。
+
+## T1505-P6R48 正式对话接近不继承旧行动失败
+
+行动失败计划修订一旦选出新的正式空间行动，`NPCSystem.begin_formal_workstation_action()` 会在会话登记后、地点重置或路线通知前，先把结果原子替换为 `formal_action_started_<action_id>` 并清空旧失败上下文。由此，制造失败后改为 `talk_to_npc` 找欧文时，DailyPlanSystem 不会从接近过程的状态通知中再次看到旧 `work_failed_crafting_target_missing`，也不会把该失败错误归到新计划项上。
+
+LLMBridge 既有的对话预约过滤没有放宽：已处于正式接近 / 对话事务中的参与者仍不会被重复提供为即时 `talk_to_npc` 候选。本修复消除的是预约成立后仍泄漏旧失败的上游竞态，而不是允许同一 NPC 建立重叠对话。
+
+## T1505-P6R47 礼拜完成后的原位状态
+
+`pray_at_chapel` 的 `personal_prayer / mass_attendance` 仍是同一 active 行动的内部模式，主持开始或结束只改模式，不改祈祷席、挂接或坐标。若弥撒结束时参礼者自己的祈祷计时已经到期，ActionSystem 会结束本轮数值结算并把已提交的正式会话转成 `completed_workstation_hold`；当前计划仍为祈祷时，DailyPlanSystem 随即从该 hold 原位开始下一轮。普通独祷自然完成使用同一规则。
+
+当前计划不再是祈祷时，日计划继续允许 NPC 以 `seated_idle` 留在该空间 hold；以后同一 `pray_at_chapel` 再次派发时仍直接把原会话激活为新的个人祈祷或按实时祭坛状态参礼，不重新预约、寻路或写进入事件。`lead_mass` 完成后也保留祭坛原站位，同一主持行动可原位重启。只有不同 action、不同工位、建筑失效、昏迷等明确替换 / 清理路径才释放。该状态机完全由 Godot 权威系统处理，不调用 LLM。
+
+## T0403 NPC 行走碰撞半径收窄试验
+
+正常步行 NPC 继续使用 `CharacterBody3D + CapsuleShape3D`，正式身体半径由 `0.35 m` 调为 `0.30 m`，高度保持 `1.60 m`。ActorMotionBody 仍从同一 profile 自动生成身体胶囊、`radius + 0.06 m` 的交互胶囊和 `radius + 0.10 m` 的 RVO 避障体，因此当前三者分别为 `0.30 / 0.36 / 0.40 m`。生产 NavMesh 仍按 `0.50 m` 烘焙，保留贴墙和家具附近的保守路线；本试验不改变 NPC 计划、地点、到达判定、敌军、马匹、骑乘或 LLM 行为。
+
+## T1505-P6R46 导航失败与计划意图解耦
+
+T0437 后，累计卡住阈值只是表现通知，不再构成执行路径失败，因此不会触发 NPCSystem / ActionSystem 清理，也不会抵达 DailyPlanSystem。目标不可达、正式空间路线建立失败等真正导航失败仍会停止移动、清除路线、释放预约与工位，并保存 `movement_failed_*` 或带 `failure_reason=navigation_failed` 的诊断事实；DailyPlanSystem 识别这些结果后终止本次计划行动所有权，但不调用行动失败判别、不发起真实 LLM 修订，也不把同一失败排进在途修订的后继队列。
+
+公共计划重估入口同样拒绝 `movement_failed_*`、`failed_spatial_route`、`navigation_failed` 及其 `revision_execution_failed_*` 包装，防止异步落地分支重新形成循环。资源、目标、服务、工位和疲劳等业务条件失败仍是计划层事实，继续使用既有判别 / 修订合同。该改动不改变 Prompt、Schema 或模型输出，只减少不应发生的模型调用。
+
+## T1505-P6R44 对话结束后异步计划链跨小时
+
+玩家明确完成对话后，会话 UI 可以关闭，但被打断的正式行动仍由该会话的计划判别链拥有，直到第一层“是否修改”判别和必要的第二层正式修订都进入终态。如果这段等待跨过整点，NPC 继续留在对话发生时的实际坐标、工位和姿态，保持 `dialogue_workstation_hold` 与零结算；新小时计划只登记为待派发，不得先行替换旧事务。
+
+旧小时响应到达时已经无权修改新小时计划，但同一 dialogue id、epoch 和 judgement generation 的终态仍负责解除最新小时的派发屏障。解除时按当前小时计划恢复或替换旧事务；更新会话 / epoch 的 marker 不受旧响应影响。失败、取消、非法载荷与成功响应都先经过相同的上下文当前性判断，因此迟到内容不会落入当前计划。玩家主动取消仍不启动判别，跨小时后立即从实际位置执行新项。
+
+## T1505-P6R43 守备官对话跨小时优先级
+
+活跃的守备官对话不会因 `hour_started` 或目标 NPC 的新小时计划而被 NPC 主动结束。DailyPlanSystem 在整点读取到玩家会话时只写入当前小时 deferred marker；ActionSystem 中上一行动的 suspended transaction、NPCSystem 的 `dialogue_workstation_hold`、实际坐标、工位与姿态保持不变，且不发起计划判别 / 修订请求。界面上仍是同一个 active 会话，等待回复只由真实对话请求决定，不把待派发计划显示成循环思考。
+
+只有玩家明确完成或取消会话后，计划链才可解除屏障。若被打断 action 仍等于当前小时计划，则恢复同一事务；若已经跨小时且新计划不同，旧 action 必须返回 `interrupted_action_not_current_plan`，随后新计划派发前通过统一 replacement 出口清理旧工位事务。完成会话存在真实发言时仍先等待计划判别 / 必要修订终态；取消会话不判别并直接释放待派发项。两条路径都不得补播旧小时行动，也不得留下 deferred marker、旧工位或计划 LLM 循环。
+
+## T1505-P6R42 正式行动中守备官对话的原位暂停
+
+守备官的首条有效消息打断 active 正式工位行动时，ActionSystem 不再把原行动当作失败或重新开工，而是把完整运行时事务移入对话暂存。覆盖进食、普通睡眠、个人祈祷、坐诊 / 就诊、训练师 / 学员和各类正式工作；`elapsed_seconds`、需要值增量、制造阶段、诊疗 / 训练计时器及已提交资源均保持不变。暂存项不属于 active action，对话期间不产生任何行动结算。
+
+NPCSystem 保留原正式会话、BuildingSystem `occupied_by`、挂接姿态、实际世界坐标及诊所巡诊中的活动导航请求，只把空间阶段标为 `dialogue_workstation_hold` 并暂停物理移动。表现层在该阶段忽略工作 / 对话手势：站立使用 idle，椅 / 长椅使用 seated idle，床位继续保持睡姿，骑乘保持骑乘 idle。判别后仍选同一 action 时直接恢复原事务和原空间阶段；不同 action 才释放。诊疗 / 训练依赖者会等待暂时对话中的唯一服务者，不误报“服务者离开”。深度睡眠仍拒绝对话，`lead_mass` 仍按弥撒参与者联动规则正式中断。Prompt 与 LLM 调用合同未修改。
+
+## T1505-P6R39 工作失败的到岗边界
+
+正式工作计划只选择 action / building，不选择具体工位编号。ActionSystem 在派发时由 BuildingSystem 预约工位并保持 pending；制造目标、公共材料、训练装备以及诊疗 / 训练提供者等业务条件要等 NPC 实体到达该工位后才复核，失败事实的地点因此与角色真实位置一致。无目标或缺材料不再允许 NPC 在食堂、宿舍等远处提前生成工作失败和计划重估。
+
+单个工位的导航失败也不再立即交给计划修改 LLM。程序先把该工位加入 `attempted_workstation_ids`，排除它并预约下一个兼容空位，且实际路线和最终 `current_workstation_id` 必须使用同一个程序选定结果；只有全部候选耗尽才提交一次 `navigation_failed`。所以模型不会再因为一号工程位的假失败而声称“改用二号”，随后程序却重新选择一号。
+
+## T1505-P6R38 门队列与计划状态边界
+
+门队列是 ActorMotionBody 的确定性临时运动权限，不是 action、行为模式或计划阶段。角色进入任一可进入建筑的门区后按物理到达顺序获得动态编号；仅 1 号保持移动，其他角色速度归零并由表现层自然落到待机，但 `current_action`、正式路线 request id、目标位置、工位预约和 DailyPlan 均保持不变。门队列暂停期间不推进卡死 / stationary 计时，战斗侧的重选逻辑也显式跳过 `paused` 运动，因此排队本身不会生成行动失败或计划重估。
+
+旧 P6R37 的食堂行动开始预排队已经删除。现在不再按 NPC 固定顺序提前决定门口次序，也不区分进门、出门、友军或敌军；真正到达门区者才登记。只有队首离开区域后，后续令牌才压缩并恢复下一人的既有移动。超过 8 人时仍保留 FIFO 登记，但以 0 号表示尚未发放令牌并暂停，避免第 9 人穿过队列。
+
+## T1505-P6R37 食堂排队不触发计划重估（历史实现，已由 P6R38 替换）
+
+多人早餐的固定餐位不等于入口目标唯一：旧实现仍让 8 名 NPC 同时追逐同一个门外点，RVO 在窄门形成对称拥堵；ActorMotionBody 连续 8 秒测不到有效路径进展后返回 `stuck_timeout`，NPCSystem 将正式路线标成 `navigation_failed`，ActionSystem 结束 pending 进食并写行动失败，DailyPlanSystem 因此才启动计划重估。这是旧失败传播链，并不是 NPC 主动决定“卡住就换计划”。
+
+现由 NPCSystem 在食堂门外先做确定性排队：一人持令牌过门，其余人在不占中央通道的左右等候位保持 `waiting_for_entry`。该阶段不改变计划、不释放固定餐位预约，也不把等候点未精确抵达视为行动失败；获得令牌后才继续原正式路线。真正获得通行权后的门 / 室内路线若仍不可达，才保留既有失败重估语义。排队编号、令牌和餐位均为程序权威，Prompt、模型输入及 LLM 调用频率不变。
+
+## T1505-P6R36 用餐完成后的坐姿空闲
+
+`eat_at_dining_hall` 完成后仍按原规则写完成事件、补齐本次饱食恢复并触发计划重估，但 ActionSystem 会立即移除 active 周期、把 `current_action` 改为 `idle`，因此之后不再扣食物或增加饱食。若 NPC 已原子提交餐位并成功挂接，NPCSystem 将正式工位会话标记为 `completed_in_place_hold`，状态投影为 `completed_workstation_hold / occupant_anchor`；这只是空间留座，不是持续行动，也不影响计划选择。
+
+新的有效非空闲行动或移动开始前会释放该留座会话；守备官 / NPC 对话引发的显式中断、战斗接管、昏迷、建筑失效和不可达也沿用正式会话清理出口。无效或被资格检查拒绝的指令不会无故让 NPC 起身。计划与 LLM 仍只使用行动 id，不感知餐位编号或该表现态。
+
+## T1505-P6R35 首日早餐固定餐位与提交边界
+
+8 名初始 NPC 的正式用餐席由 `building_defs.json.workstations[].assigned_npc_id` 固定为 `dining_seat_01..08`；BuildingSystem 继续负责原子预约 / 提交，并会跳过属于其他人的固定席。9–10 号席保持未分配，可供未来没有固定席的成员使用。计划和 LLM 仍只选择 `eat_at_dining_hall`，不接触座位编号；失败重试会再次解析到同一固定席，不因“第一个空位”改变目标。
+
+正式进食只在 NPC 的物理阶段确实到达 `reserved_workstation_id` 后提交。ActionSystem 对同一 NPC 的 pending 提交设置同步重入锁，避免到达状态信号在旧 pending 尚未清除时二次执行；NPCSystem 结束会话时仅将实际挂接过坐姿锚点的角色送回安全站位，未挂接的不可达路线保留原地，因此重规划不会表现为瞬移到铁匠铺 / 工械坊。该流程完全由确定性导航和工位权威处理，不调用 LLM。
+
+## T1505 序章与第一日计划边界
+
+序章中的艾达对白全部来自 `tutorial_config.json`，不进入 DialogSystem，也不调用模型；“其他成员需要守备官亲自交谈并争取”只说明正式征召规则，不制造必成功征召结果。教程期间 8 名 NPC 不启动每日规划，其他七人保持宿舍睡眠，艾达仅由警报与正式战斗 AI 驱动。
+
+原子交接在第 1 日 06:00 通过 DailyPlanSystem 现有计划提交 / 执行接口加载 `tutorial_day1_plans.json`，每人固定 24 项且来源为 `tutorial_day1_preset`。v2 预设既支持简单 action id，也支持携带 `target_id / dialogue_goal` 的目标行动；TutorialDirector 必须将其编译为 DailyPlanSystem 使用的正式 `target` 字典。提交前 8 名初始 NPC 必须已占用 BuildingSystem 分配的各自固定床位；执行当前小时项后，实体从对应床边安全点开始离床，不回落到人物档案的主厅 / 广场初始坐标。它只替代第一日开局 LLM 批次；第 2 日起继续使用既有真实 LLM 每日计划规则，玩家对话、征召、指令和计划修订合同均未修改。
+
 ## T0396 战斗只读接口
 
 NPCSystem 新增 `get_npc_combat_identity`（name / has_main_weapon 的新字典）与 `get_npc_behavior_mode`（原行为模式解析函数的直接结果），CombatSystem 不再为这几个字段构造全档案或完整运动快照。`can_npc_act` 直接读取内部状态作纯谓词，保留昏迷、已逃离、逃离意图、首次熟睡锁、正式导航 pilot 的全部限制；不对外暴露状态引用。无跨帧缓存、无 AI/LLM/记忆或调用频率变更。
 
-## T0386 首次熟睡反思的战斗优先级
+## T0386 / T0427 首次熟睡反思的战斗优先级
 
-首次熟睡反思仍在合格睡眠窗口异步请求模型并短暂锁定 NPC；唯一新增优先级例外是战斗警报或敌军实际出现。此时 DailyReflectionSystem 取消在途请求、移除 pending 映射、释放首次熟睡锁，并把原窗口恢复为 `eligible`，让战后下一段合格睡眠重试。
+首次熟睡反思仍在合格睡眠窗口异步请求模型并短暂锁定 NPC。T0427 起，深睡反思锁高于敌军生成、战斗警报和驿站破防响应：这些触发均不得取消在途请求、移除 pending 映射、释放锁、释放床位或切换该 NPC 的行为模式。反思中的 NPC 继续由 `can_npc_act=false` 排除出普通敌军目标和战斗 / 避战接管。
 
-取消不会生成规则 / Mock 反思，不提交长期记忆，也不清空该 NPC 尚未总结的短期记忆。战斗结束不会立即强制请求，仍等原睡眠条件满足。Prompt、Schema、日计划、招募概率与真实 Provider 配置均未修改。
+反思按原流程成功、失败处理或模板降级完成并释放锁后，不额外创建延迟队列；若敌人仍在权威 `interior_polygon`，下一次 CombatSystem 接敌扫描直接复用 T0421 分流，安全离床后进入 `combat` 或 `avoid_combat`。若敌人已离开，则继续原睡眠 / 计划流程。Prompt、Schema、日计划、招募概率与真实 Provider 配置均未修改。
 
 ## T0384 诊所医生行动显示名
 
@@ -228,6 +375,7 @@ HTTP 层在 Pydantic 验证前兼容旧 `neutral / wary / fearful / tense / shak
 ## T0256 集结打断计划与恢复边界
 
 - 工作 NPC 进入集结 / 战斗 / 避战前，DailyPlanSystem 只捕获“当前小时、当前计划版本且确实正在运行”的计划项；模式退出后仅允许该同一项继续一次，计划已变化或一次性行动已完成时不重复执行。
+- T0403-R3 起，敌军只在正式地图边缘生成不会调用该捕获 / 中断链；从未进入战时行为模式的工作、睡眠或工位事务在生成和清敌后保持。真正切入集结 / 战斗 / 避战时，带 `occupant_anchor` 的床位 / 坐席先解除挂接并落到配置的 `interior_target_position`，站立工位从当前 NPCStand 交接，避免从家具碰撞体内启动战时导航。睡眠者忽略纯距离接敌，警铃或真实受击仍按既有规则接管。
 - “解散”、集结超时和单纯避战结束不发起计划重评估，也不调用 LLM；它们通过现有 ActionSystem 从 NPC 当前世界位置续接计划。战斗结束仍按原设计请求计划重评估。
 - 解散只作用于 `rally`，不把已经接敌的 NPC 变成 RTS 式强制撤退，也不提前结束非战斗人员的避战。Prompt、Schema、provider 与 API 用量均未改变。
 
@@ -648,7 +796,7 @@ NPC 的检查点恢复不调用 LLM，也不重放计划或行动开始。读取
 - 格伦物理穿过门内点后，NPCSystem 才通过既有 MemorySystem 地点事务提交 `current_location=blacksmith`；抵达 `forge_01` 后，BuildingSystem 才把先前的 `reserved_by` 转为 `occupied_by`。取消、返回旧地图或不可达会释放预留 / 占用并还原原位置，不留下幽灵占用。
 - A2b-P2 已以莉娜→小诊所覆盖 `stand` 诊疗桌和 `mount_after_arrival` 病床。诊疗位抵达后保持站立；病床必须先抵达床边、成功提交占用，才能把表现挂到床面锚点。挂接期间只关闭 Body 碰撞、保留 InteractionArea；停止、不可达、建筑失效和昏迷都会解除挂接并清空事务。该试点不启动治疗行动或结算。
 - A2b-P3 已以艾达→宿舍固定床验证 BuildingSystem 的 `assigned_npc_id`：预留结果必须精确为 `dormitory_bed_01`，NPC 先抵达床边、提交占用，随后才挂接 `sleeping_supine`。停止、不可达、改派、建筑失效和昏迷走同一清理入口；试点期间 `current_action` 保持 `idle`，空间表现不会提前生成“已睡眠”事实。
-- A2b-P4 已以布鲁诺→食堂用餐席验证非固定座位分配：空食堂选择 `dining_seat_01`，1 号席被占时选择 `dining_seat_02`；角色先到椅边、提交占用后才挂接 `sitting`。停止只清理布鲁诺自身位置，`current_action=idle`，不会生成“已进食”事实。
+- A2b-P4 最初验证食堂首个空位分配；T1505-P6R35 已将初始 8 人升级为固定餐位。当前布鲁诺始终选择自己的 `dining_seat_02`，即使托马占用其固定 `dining_seat_01` 也不会改变目标；角色仍先到椅边、提交占用后才挂接 `sitting`。停止只清理布鲁诺自身位置，`current_action=idle`，不会生成“已进食”事实。
 - A2b-P5 已以马塞尔→小教堂祈祷席验证第二种首个空闲座位：空场选择 `chapel_prayer_seat_01`，1 号被占时选择 2 号；先提交地点，再抵达长凳边、提交占用并挂接 `seated_prayer`。停止只清理马塞尔自身位置，`current_action=idle`，不会生成祈祷事件或虔诚结算。下一步转入 C3 / A4 敌军正式实体导航。
 
 ## T0129C-A3b1–A3b7 家具安全站位、床 / 椅挂接与固定位置权威（尚未接入 Main NPC）
@@ -659,7 +807,7 @@ NPC 的检查点恢复不调用 LLM，也不重放计划或行动开始。读取
 
 宿舍 1–8 号床的 `assigned_npc_id` 继续由 BuildingSystem 权威保存，9–10 号只供未来无固定床 NPC。家具配置中的同名字段只是自动漂移审计镜像，StationLayoutController、NPCSystem 运动层、表现层和 LLM 都不得用它重新分配床位；专项已直接调用 BuildingSystem 证明八名初始 NPC 只获得自己的床，未来 NPC 只获得 9 / 10 号床。
 
-食堂共享长桌没有工位映射，不能被 NPCSystem、计划层或 LLM 选作位置；`dining_seat` 仍由 BuildingSystem 按同类型第一个空位原子分配。第三灶台的家具合同与权威位置都标为 Lv.3，Lv.1 / Lv.2 的第三名厨师仍应得到结构化满位失败，不能因为 staging 预先烘焙最高等级碰撞就视为已解锁。
+食堂共享长桌没有工位映射，不能被 NPCSystem、计划层或 LLM 选作位置；`dining_seat` 仍由 BuildingSystem 原子分配，但初始 8 人优先且只使用各自固定席，未分配成员才从 9/10 号备用席中选择空位。第三灶台的家具合同与权威位置都标为 Lv.3，Lv.1 / Lv.2 的第三名厨师仍应得到结构化满位失败，不能因为 staging 预先烘焙最高等级碰撞就视为已解锁。
 
 酒窖三个桶外站位都以 `arrival_mode=stand` 结束并朝向对应发酵桶；循环工作动画只可在 CharacterBody 真正到达且 BuildingSystem 提交 `occupied_by` 后播放。Lv.2 熟成架、空桶组与验酒桌没有 `workstation_id`，NPCSystem、计划层和 LLM 不得把它们选作酿酒容量；第三套发酵桶与 `cellar_03` 都属于 Lv.3，一级第三名酿酒者仍应得到 `no_free_workstation`。
 
@@ -799,6 +947,8 @@ Model Adapter 不再相信或校验模型返回的 `action_kind / priority / tar
 
 守备官第一条有效消息真正打断 NPC 行动时，DialogSystem 会在中断前抓取运行时行动与当前计划，形成仅供目标 NPC 使用的 `interrupted_activity_context`。其中 `activity_before_interruption` 表示开口前正在进行或前往进行的真实活动，`current_plan_activity / expected_activity_after_dialogue` 表示当前计划与“计划不变时”的暂定恢复项。该上下文随本场后续对话请求复用，但不是事件、见闻或长期记忆；模型不得因为对话时 `current_action=talk_to_guard_officer` 就声称旧活动已经自然完成。被睡眠打断时，NPC 应知道自己刚被叫醒，以及计划不变时谈完仍会继续睡觉。
 
+对话打断正式空间行动时，实体必须停留在守备官实际叫住它的当帧世界坐标。系统仍先释放旧正式会话、工位预约、室内路径和导航目标，但不能采用普通失败清理中的“还原到工位安全点”作为最终位置；若对话后判定计划不变，则从该原地位置重新建立当前计划路线。只打开对话草稿仍不打断、不停步。
+
 所有固定地点行动在真正开始前都必须再次确认 NPC 已抵达目标且不在移动途中。教堂活动另有 `_start_pray(...)` 最终守卫；未实际到达小教堂时返回结构化的 `*_failed_target_unavailable_not_arrived`，不能占用祭坛或祈祷席。室内出发的移动被系统中断时，NPCSystem 按既有室内经广场路由把逻辑地点与世界位置一并收束到广场，避免人物已在广场却仍被认作身处教堂。
 
 T0098 后弥撒开始不再中断 active 或 pending 祈祷。active 祈祷者原地切到参礼模式；pending 祈祷者继续前往教堂，并在抵达时按祭坛实时状态开始。守备官与 NPC 在本轮明确谈妥“现在参加弥撒”时，对话范围判别仍可把当前小时纳入修订，但第二层统一选择 `pray_at_chapel`，不再生成教堂失败或双向替代提示。
@@ -910,13 +1060,15 @@ NPC 主动交涉不能取消，但可以完成或挂起。挂起两小时到期�
 | 策略 | 当前穷尽分类 | 完成 / 跨小时语义 |
 |---|---|---|
 | `repeat_while_planned` | `work_garden`、`work_dining_hall`、`work_stable`、`work_tavern`、`work_blacksmith`、`work_workshop` | 成功完成一个结算周期后，若当前计划仍是同一逻辑行动，则在旧周期完成事件写入后重新校验并立即开始下一周期；失败、中断、资源 / 工位 / 目标不足不续开 |
-| `continuous_until_plan_changes` | `work_training_instructor`、`receive_weapon_training`、`work_clinic_doctor` | 本身是持续服务状态，不人为切成“完成后重开”的生产批次；只要跨小时计划仍匹配就保留运行态，计划改变或服务生命周期失败时退出 |
+| `continuous_until_plan_changes` | `work_training_instructor`、`receive_weapon_training`、`work_clinic_doctor`、`sleep_in_dormitory` | 本身是持续状态，不人为切成“完成后重开”的生产批次；只要跨小时计划仍匹配就保留运行态，计划改变或服务生命周期失败时退出。睡眠疲劳归零后仍保持床位与睡姿，不产生无效疲劳变化 |
 | `until_target_resolved` | `receive_clinic_treatment`、`assist_repair`、`assist_upgrade`、`assist_heal` | 持续到病人恢复、建筑作业完成、昏迷目标复苏等权威目标解决；目标完成 / 消失后结束，不按计划文字自动创建第二个目标周期 |
-| `once_per_plan_hour` | `eat_at_dining_hall`、`drink_wine`、`sleep_in_dormitory`、`pray_at_chapel`、`lead_mass`、`talk_to_npc`、`visit_location`、`seek_guard_officer` | 同一个“日期 + 小时 + action + 必要 target + dialogue goal”成功派发一次后即消费，替换 `plan_version` 也不能重放同一逻辑项。默认提前完成后不自动重复；T0086 的 `drink_wine` 会转为当前小时后续计划重估。不同目标 / 交涉目标属于不同逻辑项；玩家对话打断后的既有显式恢复入口只是继续未完成执行，不算自动重放 |
+| `once_per_plan_hour` | `eat_at_dining_hall`、`drink_wine`、`lead_mass`、`talk_to_npc`、`visit_location`、`seek_guard_officer` | 同一个“日期 + 小时 + action + 必要 target + dialogue goal”成功派发一次后即消费，替换 `plan_version` 也不能重放同一逻辑项。默认提前完成后不自动重复；T0086 的 `drink_wine` 会转为当前小时后续计划重估。不同目标 / 交涉目标属于不同逻辑项；玩家对话打断后的既有显式恢复入口只是继续未完成执行，不算自动重放 |
 | `terminal` | `escaping_station` | 交给 CombatSystem 的单向逃离生命周期，不由普通行动完成回调续开 |
 | `not_plan_selectable` | `escape_intervention_dialogue`、`talk_to_guard_officer` | 仅供系统运行态 / 显示，不进入每日计划目录 |
 
 整点派发先比较当前权威运行态与新小时计划。行动及必要目标相同就直接采用既有运行态，保留当前周期 `elapsed_seconds`、工位和制造 revision；不同则沿既有强制切换路径中断旧行动，再执行新小时项。因此跨小时不会因“还是同一件事”损失快完成的制造周期，也不会因旧行动拖延而跳过新小时的不同安排。
+
+T1505-P6R45 后，不同计划项造成的整点工作切换属于正常时段结束：ActionSystem 写 `work_stopped` 而非 `work_failed`，payload 以 `interruption_reason=plan_hour_changed` 保留程序原因；制造行动在事件库显示“因当前计划时段结束而停止制造”。其他手动、战斗、建筑失效等真实中断仍沿失败事件处理，但同样保存实际中断原因。该语义分流不改变制造小数进度、整数阶段、材料或计划派发权威。
 
 `repeat_while_planned` 的续开使用 deferred 调度，保证旧周期 `*_completed` 先于新周期 `*_started`。续开仍走正常 ActionSystem 校验，所以制造目标、项目 revision、阶段材料、建筑、工位、NPC 可行动状态和行为模式都必须再次合法；任何失败只进入既有失败判别 / 计划重估，不同步递归重试。后续新增行为时必须先选择上述策略、更新本表与专项分类测试，禁止依靠 action id 前缀或完成结果字符串猜测可重复性。
 
@@ -964,7 +1116,7 @@ NPC 对话、日计划、计划修改判别 / 修订、战时心理和首次睡�
 
 ## T0066 当前计划详情读取边界
 
-NPCPanel 的“当前计划”继续只读 DailyPlanSystem 已生效的完整计划，不截断、不重排、不修改计划，也不触发 LLM。首次打开详情时，以 `GameState.current_hour` 对应的计划项为当前执行项，视图从该项之前第二个计划行动开始；0 点 / 1 点不足两项时夹取到当天开头，不读取或拼接前一天计划。打开后的计划替换 / 刷新继续保持玩家当前滚动位置。
+NPCPanel 的“当前计划”继续只读 DailyPlanSystem 已生效的完整计划，不截断、不重排、不修改计划，也不触发 LLM。T0398 后玩家可见正文只投影当前标记、时间和行动安排，不显示 `source` 或 `reason`；两字段继续保留在权威计划、执行、修订和调试链路。首次打开详情时，以 `GameState.current_hour` 对应的计划项为当前执行项，视图从该项之前第二个计划行动开始；0 点 / 1 点不足两项时夹取到当天开头，不读取或拼接前一天计划。打开后的计划替换 / 刷新继续保持玩家当前滚动位置。
 
 ## T0061 人物表达、历史切片与认知展示合同
 
@@ -982,7 +1134,7 @@ T0061 当时每名 NPC 对守备官只有一条技术键为 `role` 的开局职�
 
 ## T0059 开局人物历史与长期认知
 
-8 名初始 NPC 的根本人设与具体人生历史现已分层：`npc_profiles.json.background_story` 只保存不随玩家互动改变的职业视角、价值尺度和根本矛盾；`npc_initial_long_memory.json` 保存每人来站前、初到驿站、近日三个第一人称生命切片，以及其对人物、建筑和个人往事的当前认知。这样同一职业信息不再在系统人设、日记和知识图谱三处反复讲述。
+8 名初始 NPC 的根本人设与具体人生历史现已分层：`npc_profiles.json.background_story` 只保存不随玩家互动改变的职业视角、价值尺度和根本矛盾；`npc_initial_long_memory.json` 保存每人来站前、初到驿站、近日三个第一人称生命切片，以及其对人物、建筑和个人往事的当前认知。P6R34 起艾达额外固定拥有一篇“接到守备命令的前一天 02:00:00”夜袭日记，不再取决于教程是否完成或跳过。这样同一职业信息不再在系统人设、日记和知识图谱三处反复讲述。
 
 T0108 后，8 人对围墙 / 主厅工程器械位置的开局前认知与当前建筑配置一致：围墙六级数量为 `1 / 2 / 2 / 3 / 3 / 4`，主厅为 `1 / 1 / 2 / 2 / 3 / 4`，一次升级最多增加一个且部分等级不增加。T0223 起主厅不再提供器械射程加成，开局长期知识同步删除旧倍率描述。这仍是 `npc_initial_long_memory.json` 中的稳定长期知识，不是新增人物属性或 Prompt Schema；防御、穿透和攻速等战斗数值仍不会作为 NPC Prompt 属性注入。
 
@@ -1046,7 +1198,7 @@ T0049 取代 T0048 “对话结束即全量重排剩余日”的口径。所有�
 
 只有判别非空时，`DailyPlanSystem` 才发起第二次真实 LLM 修订。该请求保留人设、状态、短期 / 长期记忆、地点、资源、建筑、行动白名单、当前指令、完整原计划和对话上下文，但 `revision_scope=selected_hours` 且输出必须恰好覆盖 `revision_hours`。未选小时不变；只有选中当前小时时才要求与当前项一致的 `immediate_action`，未选当前小时时必须为 `null` 且不重放当前行动。T0050 起日常行动失败也经过同一通用判别层；指令变化、战斗 / 复苏和 GM 等其他非对话原因继续直接修订。
 
-NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSystem` 预注册同一 `dialogue_id` 的计划派发屏障；无论是否跨小时，都要等双方第一层判别和各自必要的第二层修订全部终态，再按服务者、普通行动、依赖者、对话的计划依赖顺序放行，防止先完成的一方启动新行动并使另一方响应因对话 epoch 变化而过期。玩家-NPC 会话若以 `plan_hour_changed` 结束，也要延迟目标 NPC 的新小时派发，直到该 NPC 的判别 / 必要修订链终态。失败或取消同样必须释放屏障，不能永久卡住日程执行。
+NPC-NPC 双目标会话在发起任一参与者的判别前，由 `DailyPlanSystem` 预注册同一 `dialogue_id` 的计划派发屏障；无论是否跨小时，都要等双方第一层判别和各自必要的第二层修订全部终态，再按服务者、普通行动、依赖者、对话的计划依赖顺序放行，防止先完成的一方启动新行动并使另一方响应因对话 epoch 变化而过期。玩家-NPC 会话跨小时不会以 `plan_hour_changed` 自动结束；它继续保持到玩家完成 / 取消，并把目标 NPC 的新小时派发延迟到该 NPC 的判别 / 必要修订链终态。失败或取消同样必须释放屏障，不能永久卡住日程执行。
 
 ## T0046 共享基础场景与长期记忆输出
 
@@ -1189,7 +1341,7 @@ T0304 已实现最小 NPC 生成、基础状态读取/更新、面板显示和�
 
 T0129C-A1 已冻结 NPC 胶囊 `radius=0.35 m / height=1.6 m`、`actor_body` 层、NavigationAgent3D avoidance 和卡死恢复参数，并在远端正式布局生成静态碰撞。A2a 已完成独立 `InteractionArea` 的 CharacterBody3D 运动组件和五实体沙盒：NPC 尺度 Body 能绕静态阻挡、对向避让、暂停续接，对物理卡死执行有界重寻路，对导航岛外目标返回明确不可达；整个组件只发 `started / arrived / failed / cancelled / repath` 信号，零地点 / 工位提交。A3a 又完成独立 `0.25 m` 生产地图、12 门真实绕行和 65 个位置路径验证。当前 NPC 根尚未替换；A3b 完成家具 / 自然阻挡后，C2b + A2b 才接入 Main。届时 NPCSystem 只下发目标并接收结果，运动组件独占 `move_and_slide`、路径和避障，地点 / 工位仍只能在穿门 / 抵达具体位置后由既有事务提交。
 
-T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后进入持续行动状态，并随 `TimeSystem.logical_time_tick` 逐步推进，而不是瞬时完成。吃饭当前以 20 分钟为基准，完整进餐恢复约 50 点饱食度；睡觉以 6.5 小时消耗 100 点疲劳为基准，按逻辑秒细分结算。T0801 起，工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用建筑工位，周期时长会按 NPC 对应熟练度、力量 / 智力属性和建筑等级缩短；完成、失败或中断会释放工位并广播地点内部状态。T0804-T0806 的早期聚合制造 / 马匹整备路径已由 T0035-T0038 覆盖：铁匠铺与工械坊周期提交配置阶段，马厩周期只提供有效照料能力，不直接产出资源。T0807 的酒窖仍消耗粮食并产出 `wine`；行动开始、完成或失败继续写入 `MemorySystem` 的结构化事件。
+T0305 后，`ActionSystem` 已能通过调试接口安排 NPC 执行工作、吃饭和睡觉：系统会先复用 `NPCSystem.move_npc_to_building(...)` 前往目标建筑，到达后进入持续行动状态，并随 `TimeSystem.logical_time_tick` 逐步推进，而不是瞬时完成。吃饭当前以 20 分钟为基准，完整进餐恢复约 50 点饱食度；T0413 后睡觉以 8 小时消耗 100 点疲劳为基准，疲劳归零不自动结束，只有计划切到非睡眠阶段或其他权威中断才起床。T0801 起，工作以 `data/action_defs.json` 的 `duration_seconds` 作为单位周期基准，开始时占用建筑工位，周期时长会按 NPC 对应熟练度、力量 / 智力属性和建筑等级缩短；完成、失败或中断会释放工位并广播地点内部状态。T0804-T0806 的早期聚合制造 / 马匹整备路径已由 T0035-T0038 覆盖：铁匠铺与工械坊周期提交配置阶段，马厩周期只提供有效照料能力，不直接产出资源。T0807 的酒窖仍消耗粮食并产出 `wine`；行动开始、完成或失败继续写入 `MemorySystem` 的结构化事件。
 
 T0081 起，`NPCNeedsSystem` 成为全部 NPC 持续生活消耗的唯一入口。它读取 `data/activity_needs.json`，按 tick 开始时的移动、行动、战斗行为模式或昏迷状态选择唯一档位，再按有效逻辑秒连续结算饱食和疲劳。idle 仍会缓慢消耗；对话、拜访和移动只消耗生活状态、不增加经验；所有职业工作、训练和协助行为都消耗饱食、增加疲劳并进入现有成长体系；睡觉、病床治疗、饮酒和祈祷消耗饱食但恢复疲劳；集结、避战、逃离和战斗逐级提高压力，战斗档位最高。吃饭的食物恢复仍由 ActionSystem 结算，同时 `eat` 档位增加少量疲劳。
 
@@ -1218,6 +1370,8 @@ T0903 起，训练场补齐为两个独立行动；T0043 将它们的位置合�
 
 T0904 起，`NPCSystem.increase_npc_skill(...)` 是统一成长入口。普通职业工作完成时会以很慢速度提升该行动配置的职业熟练度；诊所研读 / 治疗、训练场独自练习 / 受训 / 指导训练也复用同一入口。T0081 将协助修复、协助升级和协助治疗的有效时长成长接入同一入口；非工作行动（idle、移动、对话、吃饭、睡觉、祈祷、饮酒、病床恢复、集结、避战、逃离、战斗）不会仅因生活消耗而获得经验。每次熟练度实际增加都会写入运行时 `progression.skill_experience` 和 `progression.total_experience`；当前每 10 点总经验产生 1 个 `unspent_skill_points`。技能点不由 AI 自动分配，必须由玩家在 NPC 面板或 GM 调试入口调用 `NPCSystem.assign_npc_attribute_point(...)` 分配到力量或智力。T0351 起，仍有可分配点时人物头顶显示可点击星标，NPCPanel 中合法 `+1` 按钮持续呼吸闪烁；两者都只投影权威状态，不替代玩家分配。AI 后续可以根据背景、近期行为和目标给出建议或倾向，但不能自行消耗技能点，也不能直接改写力量 / 智力权威状态。T0045 后属性分配仍写入 `private` 的 `attribute_improved` 事件，但世界内 summary 把 NPC 自身作为 actor，力量 / 智力分别表达为锻炼体力 / 脑力所得，不再写“守备官分配”。
 
+T0429 后，8 名初始 NPC 的力量 + 智力合计收窄为 `11–12`，13 项熟练度原始合计由 `91–255` 收窄为 `137–194`。平衡以既有人设为先：职业核心保持最高，副专长必须能由人物能力或经历解释；主持弥撒、医疗稀缺性、初始入伍和初始装备作为不可直接求和的综合价值，不用无关技能为低总和人物凑点。该调整只作用于新游戏档案，不追授或回收已有存档的经验、属性与熟练度。
+
 T0502A 起，昏迷 NPC 不接收地点/广场公开广播、建筑/地点状态广播、公告或进入快照，见闻库暂停更新；事件库仍记录发生在自己身上的受伤、昏迷、复苏等亲历事件。复苏后见闻接收自动恢复，但不会补收昏迷期间错过的信息。
 
 2026-06-03 起，睡觉 NPC 使用同一条见闻接收规则：当 `current_action == "sleep_in_dormitory"` 时，该 NPC 不会把同建筑内发生的 `local_public` 事件、地点/建筑状态广播、公告或进入快照写入见闻库；自己的入睡和醒来仍进入事件库。睡醒回到可行动状态后，只从后续广播继续接收见闻，不补收睡觉期间错过的信息。
@@ -1230,13 +1384,15 @@ T0387 已实现单次 `game_epilogue` 群像调用，而不是逐 NPC 独立生�
 
 胜利 / 失败只是整体叙事倾向，不是覆盖人物事实的硬标签。胜利倾向修复、归乡、留下或重新选择，仍允许逃离者的缺席和昏迷者的漫长康复；失败倾向离散、遗憾和破败，仍允许人物保存尊严、照料彼此或把某件事传下去。每篇使用战后当下、较长时间后的变化和最终意象三拍结构，保持人物职业、人设、守备官关系与真实游戏经历一致。
 
+T0435 起，结算时仍昏迷的 NPC 必须从其身体尚在敌军威胁下的权威起点展开：第一拍说明具体危险、躲过袭击 / 占领者的机制、后来被发现并获得复苏机会，不能直接跳到“醒来以后”。八人的较长期选择都必须由继续逼近的战争施加可见压力，不允许脱离战局写成独立安稳人生；该要求只约束文学推演，不改变 NPC 的昏迷、复苏、撤离或胜负状态。
+
 T0701-T0705 已实现 Godot 前端对话、最小征召、指令发布和主动交涉最小闭环。已入伍 NPC 可从 NPC 面板打开 `OrderPanel`，自由查看、修改并发布一条持续生效的 `current_order`；`NPCSystem.publish_npc_order(...)` 只在文本变化时更新指令、写入私有 `order_assigned` 并发出计划重评估请求。若 NPC 正处于首次睡眠总结锁，指令仍保存，但重评估延后到醒来后。T0015 后 GM 面板可调用 `NPCSystem.set_npc_recruited(...)` 将选中 NPC 设为入伍，用于调试指令、装备和训练入口；T0072 后正式对话返回合法接受结果时立即提交同一权威状态并刷新 NPC 面板，不再等会话完成。`NPCSystem.debug_start_proactive_talk(...)` 可让 NPC 进入主动找守备官交涉状态，显示问号气泡，点击后打开既有对话面板并把预先确定的开场问题放入会话缓冲；1 小时无人点击则状态结束。
 
 T1001 起，`DailyPlanSystem` 可生成规则版 24 小时调试计划并保存到 NPC `plan` 字段，写入 `plan_created` 事件，并按 `hour_started` 调用 `ActionSystem` 执行当前小时行动；T0025 后普通派发以同一计划版本 / 小时签名幂等，T0075 后短行动是否续开改由 `completion_policy` 决定：六种生产工作成功完成可在当前逻辑计划项不变时立即开始下一周期，每小时单次行为不因新 `plan_version` 重放；T0086 的五类配置标记短 / 目标行为在成功完成后改为直接修订并立即执行当前小时后续安排。T0050 后，实际对话与日常行动失败都先调用通用判别层，仅在返回非空 `revision_hours` 时进入真实 `/npc/revise_plan`；已经成功完成的标记行动、主动交涉超时、战斗结束 / 复苏和新指令等确定性来源直接修订。T0023 后，计划修订通过 `LLMBridge.request_npc_plan_revision_async(...)` 在后台调用真实 `/npc/revise_plan`；工位占用、资源不足以及其他已有 `failed` 行动结果先进入 `request_plan_revision_judgement_async(...)`。等待期间 NPC 显示 LLM 活动并注册 TimeSystem 慢速；Godot 只接受带非 Mock provider 证明且 `model_fallback_used=false` 的响应，成功合并为 `llm_plan_revision`。只有修订包含当前小时时才执行即时项；失败最多重试 3 次真实请求且不应用 Mock / 规则修订。T0051 后，打开后取消空会话无副作用；玩家消息发送即进入会话历史，完成会话时即使 NPC 回复未返回也会取消请求、把已有真实发言入库并触发判别。取消会话不入库、不应用仍暂存的战时 / 挽留意向且不判别；T0072 的合法应征接受是已经提交的权威状态，不随取消回滚。挂起会话让 NPC 保持 `talk_to_guard_officer`，最多 2 游戏小时后自动取消。攻击一旦发生则不能取消；T0254 后完成或挂起超时只保留独立攻击事实，纯攻击不生成对话历史并改走 `guard_attack` 重评估。
 
 T1003/T1403/T0022/T0085 起，每日计划可通过 `/npc/plan_day` 生成 24 阶段计划，请求包含当前 `current_order`、短期/长期记忆、地点、资源、建筑状态和行动白名单。正式开局和跨天后的新一天只接受已配置的真实 provider；后端成功响应携带 `model_provider` / `model_name` / `model_fallback_used`，Godot 将通过验证的计划统一写为 `source=llm_plan_day`。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段只保留为 Prompt 强建议。其他真实失败仍只重试真实请求，不写入规则 / Mock 计划。
 
-T0019/T0022/T0024 起，`GameStartupSystem` 把每日计划接入正式开局。默认模式会先暂停 `TimeSystem` 和计划自动执行，在第 1 天 06:00 为 8 名 NPC 逐人写入私有 `wake_up`、清空旧计划并把 `current_action` 设为 `planning_day`。随后同时发起 8 个真实 `/npc/plan_day` 请求；单人失败最多再试 2 次，仍失败则整批失败。只有 8 份 `llm_plan_day` 计划全部就绪后，系统才统一执行当前小时项并恢复时间；否则所有 NPC 保持 `planning_day`，游戏保持暂停。`DailyPlanSystem` 在 `day_started` 也使用同一整批事务边界，不允许成功一半就提前执行；批次快照同时记录 `max_concurrent=8` 与实际 `max_observed_concurrent`。静止调试模式不生成起床 / 计划 / 行动；新手引导模式当前复用同一正式循环。
+T0019/T0022/T0024 起，`GameStartupSystem` 把每日计划接入正式开局。默认模式会先暂停 `TimeSystem` 和计划自动执行，在第 1 天 06:00 为 8 名 NPC 逐人写入私有 `wake_up`、清空旧计划并把没有旧活动的初始角色设为 `planning_day`。随后同时发起 8 个真实 `/npc/plan_day` 请求；单人失败最多再试 2 次，仍失败则整批失败。只有 8 份 `llm_plan_day` 计划全部就绪后，系统才统一执行当前小时项并恢复时间；否则游戏保持暂停。`DailyPlanSystem` 在后续 `day_started` 使用同一整批事务边界，但保留 NPC 当时的真实行动、工位和姿态，不允许成功一半就提前执行；批次快照同时记录 `max_concurrent=8` 与实际 `max_observed_concurrent`。静止调试模式不生成起床 / 计划 / 行动；新手引导模式当前复用同一正式循环。
 
 T1004/T1005/T1405/T0024 起，首次睡眠总结可通过 `/npc/daily_reflection` 开发期 Mock 或真实后端把当天短期经历沉淀为长期日记和知识图谱当前键值，失败时模板降级；知识图谱同一 `subject + relation` 替换旧值，日记按条追加。符合条件的 8 名初始 NPC 可同批 8 路并发；后端成功体统一携带 provider / model / fallback 元数据，Godot 按真实 provider 标记 `llm_daily_reflection`，只在显式 Mock provider 时标记 `mock_daily_reflection`，缺少来源证明不会被猜成真实成功。T1402 后 `/npc/dialogue` 真实 provider 路径已使用 `data/prompts/dialogue_system_prompt.txt`，覆盖日常对话、提出应征、集结 / 战斗公开对话、避战公开对话和逃离挽留；T1404 后 `/npc/battle_judgement` 真实 provider 路径已使用 `data/prompts/battle_judgement_system_prompt.txt`，并由后端拒绝越界低血量心理结果；T1405 后 `/npc/daily_reflection` 真实 provider 路径已使用 `data/prompts/daily_reflection_system_prompt.txt`，并完成真实 API 验收。Godot 客户端不保存供应商 API Key。
 
@@ -1246,7 +1402,9 @@ T0020/T0049/T0050 后，后端六类正式 NPC AI 调用不再设置客户端单
 
 Mock 只用于开发期验证 Schema、通信和自动化脚本。任何 NPC 对话、每日计划、计划修订、战时判定、逃离挽留、主动交涉或首次睡眠总结的 Prompt 打磨任务，都必须在基础 mock 测试通过后用真实 API Key 对相关业务路径做真实 provider 验收；没有真实 Key 时不能把 LLM 行为标记为完全完成。
 
-真实 provider 失败、超时、无 Key、返回非 JSON 或 Schema 校验失败时，系统必须释放 TimeSystem 慢速请求，并在 usage / 日志中保留 request id、call_type、provider、model、NPC id 和真实失败原因。规则 / 模板降级只能用于明确保留降级语义的其他系统，且来源必须可见；T0022/T0023 后的正式每日计划与正式计划重估都禁止 Mock 和规则降级。任何路径都不得用 mock 回复、mock 计划或 mock 日记伪装模型成功。累计 API 预算和单次生成长度必须分开：前者由默认关闭的 `LLM_BUDGET_MAX_*` 控制，后者不由客户端设置固定上限。
+T0446 起，开发 `.env`、DeepSeek 无模型默认值与试玩冻结 profile 统一使用 `deepseek-v4-pro`；运行时和构建门禁不得静默回退到 `deepseek-v4-flash`。玩家在自定义 AI 服务模式中仍可明确填写其他 OpenAI-compatible 模型，但试玩服务和未显式填写模型的 DeepSeek 配置都解析为 Pro。
+
+真实 provider 失败、超时、无 Key、返回非 JSON 或 Schema 校验失败时，系统必须释放 TimeSystem 慢速请求，并在 usage / 日志中保留 request id、call_type、provider、model、NPC id 和真实失败原因。规则 / 模板降级只能用于明确保留降级语义的其他系统，且来源必须可见；T0022/T0023 后的正式每日计划与正式计划重估都禁止 Mock 和规则降级。任何路径都不得用 mock 回复、mock 计划或 mock 日记伪装模型成功。累计 API 预算、模型输出 token 上限和供应商请求墙钟上限必须分开：前者由默认关闭的 `LLM_BUDGET_MAX_*` 控制，模型输出不设置客户端固定 token 上限；T0445 的 `LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS` 默认 120 秒，只负责防止 keep-alive 让调用无限等待。未收到非空正文即到期时返回 `provider_queue_timeout`，已有正文后到期则返回普通 `provider_timeout`。
 
 T1401A 后，自动 mock fallback 默认关闭；只有显式 `LLM_PROVIDER=mock`、`/mock/model` 或显式 `LLM_FALLBACK_TO_MOCK=true` 的开发调试路径会返回 mock 内容。真实 provider 失败和模型输出不合 Schema 会作为错误或规则 / 模板降级暴露，并写入 `/debug/llm_usage`。
 
@@ -1454,3 +1612,7 @@ NPC 入伍后仍然保留人格和记忆。
 ## T0137 NPC 移动与逻辑时间协调
 
 NPC 的日常赶路、建筑内外路线、集结、战术移动、避战和逃离继续复用同一个 `NPC.gd -> ActorMotionBody` 实体移动生命周期。任一 NPC 开始移动时以自身 id 向 TimeSystem 注册 `1/60` 慢速，到达、失败、取消、停止或节点退出时释放；多 NPC 同时移动不会互相覆盖。该机制不改变计划、行动决策、LLM Prompt 或 `behavior_mode`，也不根据 `current_action` 字符串猜测移动。LLM 请求若同时存在，两个来源仍由 TimeSystem 统一聚合；NPC 走路速度保持不变，只有游戏内逻辑时间与所有生产 / 恢复等消费者同步放慢。
+
+## T0081-R1 满疲劳计划重估
+
+NPC 疲劳首次达到 100 时，程序先形成“你当前很疲惫，工作效率大幅下降。”的个人权威事件，再触发 `high_fatigue` 两层计划流程。第一层真实 LLM 判断除当前小时之外还有哪些连续工作安排受影响；当前小时由程序列为必须修订，不允许返回空集合。第二层只修改判别选中的小时，且当前小时必须改为睡眠或其他合法疲劳恢复行动。LLM 不决定 0.5 倍数值，也不能直接恢复疲劳；实际效率和状态仍由 Godot 权威结算。

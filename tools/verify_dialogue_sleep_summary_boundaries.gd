@@ -284,7 +284,7 @@ func _init() -> void:
 		push_error("NPCPanel should show planning status, got %s" % (status_label.text if status_label != null else "<missing>"))
 		quit(1)
 		return
-	if dialogue_button == null or not dialogue_button.disabled or dialogue_button.tooltip_text != "NPC正在思考":
+	if dialogue_button == null or not dialogue_button.disabled or dialogue_button.tooltip_text != "对方正在思考……":
 		push_error("NPCPanel dialogue button should be disabled with planning tooltip")
 		quit(1)
 		return

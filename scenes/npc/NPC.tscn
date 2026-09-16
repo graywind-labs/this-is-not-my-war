@@ -3,11 +3,11 @@
 [ext_resource type="Script" path="res://scripts/npc/NPC.gd" id="1_npc_script"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
-radius = 0.35
+radius = 0.3
 height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_interaction"]
-radius = 0.41
+radius = 0.36
 height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_unconscious_interaction"]
@@ -53,7 +53,7 @@ disabled = true
 path_desired_distance = 0.35
 target_desired_distance = 0.25
 avoidance_enabled = true
-radius = 0.35
+radius = 0.4
 height = 1.6
 neighbor_distance = 3.5
 max_neighbors = 10
@@ -78,7 +78,7 @@ surface_material_override/0 = SubResource("StandardMaterial3D_body")
 transform = Transform3D(1, 0, 0, 0, 0.76604444, -0.64278764, 0, 0.64278764, 0.76604444, 0, 2.08, 0)
 pixel_size = 0.014
 billboard = 1
-text = "NPC"
+text = "未知人物"
 
 [node name="StatusLabel" type="Label3D" parent="."]
 position = Vector3(0.08, 2.08, 0)

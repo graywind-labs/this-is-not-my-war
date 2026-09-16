@@ -36,7 +36,8 @@ func _init() -> void:
 	var resource_strip := hud.get_node_or_null("ResourceStrip") as HBoxContainer
 	var frame := hud.get_node_or_null("HUDFrame") as Panel
 	var piety_button := hud.get_node_or_null("PietyAbilityButton") as Control
-	if resource_strip == null or frame == null or piety_button == null:
+	var dismiss_button := hud.get_node_or_null("DismissRallyButton") as Button
+	if resource_strip == null or frame == null or piety_button == null or dismiss_button == null:
 		_fail("HUD permanent controls are missing")
 		return
 	var devices_button := resource_strip.get_node_or_null("DevicesDetailButton") as Button
@@ -49,6 +50,12 @@ func _init() -> void:
 		return
 	if piety_button.global_position.y + piety_button.size.y > frame_end.y + 0.01:
 		_fail("Piety button still overflows the HUD frame")
+		return
+	if absf(piety_button.get_global_rect().get_center().y - dismiss_button.get_global_rect().get_center().y) > 0.01:
+		_fail("Piety button is not vertically centered on the dismiss-button row: piety=%s dismiss=%s" % [piety_button.get_global_rect(), dismiss_button.get_global_rect()])
+		return
+	if piety_button.global_position.x < dismiss_button.global_position.x + dismiss_button.size.x:
+		_fail("Piety button is not positioned to the right of the dismiss button")
 		return
 
 	print("T0270_HUD_FRAME_LAYOUT=%s" % JSON.stringify(snapshot))

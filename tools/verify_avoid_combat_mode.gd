@@ -208,36 +208,15 @@ func _init() -> void:
 	enemy_id = _place_first_enemy(combat_system, enemy_position)
 	combat_system.debug_step_enemy_ai(0.0)
 	await process_frame
-	if _mode(npc_system, "doctor_01") == "avoid_combat":
-		push_error("Sleeping unarmed recruited NPC should not avoid from proximity alone")
-		quit(1)
-		return
-	npc_system.apply_damage_to_npc("doctor_01", 1, enemy_id, "local_public", {
-		"enemy_attack": true,
-		"request_plan_reevaluation": false
-	})
-	combat_system.debug_step_enemy_ai(0.0)
-	await process_frame
 	if _mode(npc_system, "doctor_01") != "avoid_combat":
-		push_error("Sleeping unarmed recruited NPC should enter avoid_combat when attacked")
+		push_error("Sleeping unarmed recruited NPC should enter avoid_combat when an enemy breaches the station")
 		quit(1)
 		return
-	npc_system.update_npc_state("gardener_01", {"current_action": "sleep_in_dormitory"})
-	npc_system.apply_damage_to_npc("gardener_01", 1, enemy_id, "local_public", {
-		"enemy_attack": true,
-		"request_plan_reevaluation": false
-	})
-	combat_system.debug_step_enemy_ai(0.0)
-	await process_frame
-	if _mode(npc_system, "gardener_01") != "avoid_combat":
-		push_error("Sleeping unrecruited NPC should enter avoid_combat when attacked")
+	if _find_avoidance(combat_system.get_active_avoidances(), "doctor_01").is_empty():
+		push_error("Sleeping NPC should begin avoidance when the station intruder is already nearby")
 		quit(1)
 		return
-	if _find_avoidance(combat_system.get_active_avoidances(), "gardener_01").is_empty():
-		push_error("Attacked sleeping NPC should receive an avoidance target after mode switch")
-		quit(1)
-		return
-	print("[T1103B] sleeping exception checked")
+	print("[T1103B/T0421] sleeping station-breach response checked")
 
 	combat_system.debug_clear_enemies()
 	spawn_result = combat_system.debug_spawn_wave(1, true)

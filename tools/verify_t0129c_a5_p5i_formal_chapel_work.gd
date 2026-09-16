@@ -6,7 +6,7 @@ const BUILDING_ID := "chapel"
 const LEADER_ACTION_ID := "lead_mass"
 const PRAYER_ACTION_ID := "pray_at_chapel"
 const ALTAR_ID := "chapel_altar_01"
-const PRAYER_SEAT_ID := "chapel_prayer_seat_01"
+const PRAYER_SEAT_ID := "chapel_prayer_seat_03"
 
 
 func _init() -> void:
@@ -56,6 +56,7 @@ func _init() -> void:
 	if (
 		not bool(action_system.get_action(PRAYER_ACTION_ID).get("formal_spatial_route", false))
 		or not bool(action_system.get_action(LEADER_ACTION_ID).get("formal_spatial_route", false))
+		or str(action_system.get_action(PRAYER_ACTION_ID).get("completion_policy", "")) != "repeat_while_planned"
 		or _count_workstations(building_system, "chapel_altar") != 1
 		or _count_workstations(building_system, "chapel_prayer_seat") != 10
 	):
@@ -149,17 +150,200 @@ func _init() -> void:
 	if (
 		not is_equal_approx(
 			float(generated_after_mass_tick.get(LEADER_ID, 0.0)) - float(generated_before_mass_tick.get(LEADER_ID, 0.0)),
-			5.0 / 6.0
+			3.25 / 6.0
 		)
 		or not is_equal_approx(
 			float(generated_after_mass_tick.get(PRAYER_ID, 0.0)) - float(generated_before_mass_tick.get(PRAYER_ID, 0.0)),
-			5.0 / 6.0
+			3.25 / 6.0
 		)
 	):
-		_fail("Active leader and attendee did not each contribute 5 piety per hour")
+		_fail("Active leader and attendee did not each contribute 3.25 piety per hour")
 		return
 
+	# Natural Mass completion must only change the seated attendee's prayer mode.
+	# The leader likewise keeps the altar position as an idle completed hold.
+	var prayer_position_before_transition: Vector3 = prayer_node.global_position
+	var leader_position_before_transition: Vector3 = leader_node.global_position
+	var prayer_attachment_before_transition: Dictionary = prayer_node.debug_get_spatial_attachment_snapshot()
+	if not _set_active_action_near_completion(action_system, LEADER_ID):
+		_fail("Could not stage natural Mass completion")
+		return
+	action_system._on_logical_time_tick(1.0, 1.0)
+	await process_frame
+	await physics_frame
+	var prayer_after_mass: Dictionary = action_system.get_runtime_action_snapshot(PRAYER_ID)
+	var leader_hold: Dictionary = npc_system.get_formal_workstation_action_snapshot(LEADER_ID)
+	if (
+		str(prayer_after_mass.get("action_id", "")) != PRAYER_ACTION_ID
+		or str(prayer_after_mass.get("prayer_mode", "")) != "personal_prayer"
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or prayer_node.debug_get_spatial_attachment_snapshot() != prayer_attachment_before_transition
+		or str(npc_system.get_npc_state(PRAYER_ID).get("current_workstation_id", "")) != PRAYER_SEAT_ID
+		or not _workstation_occupied_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
+		or not action_system.get_runtime_action_snapshot(LEADER_ID).is_empty()
+		or str(npc_system.get_npc_state(LEADER_ID).get("current_action", "")) != "idle"
+		or leader_node.global_position.distance_to(leader_position_before_transition) > 0.001
+		or not bool(leader_hold.get("session", {}).get("completed_in_place_hold", false))
+		or str(leader_hold.get("session", {}).get("workstation_id", "")) != ALTAR_ID
+		or not _workstation_occupied_by(building_system, ALTAR_ID, LEADER_ID)
+	):
+		_fail("Natural Mass completion moved the attendee/leader or released a chapel position: %s" % JSON.stringify({
+			"prayer_runtime": prayer_after_mass,
+			"prayer_state": npc_system.get_npc_state(PRAYER_ID),
+			"leader_state": npc_system.get_npc_state(LEADER_ID),
+			"leader_hold": leader_hold,
+		}))
+		return
+
+	# Repeating the same Mass action reuses the altar immediately. Starting it
+	# changes the already-seated prayer back to attendance without movement.
+	if not action_system.debug_assign_action(LEADER_ID, LEADER_ACTION_ID):
+		_fail("Completed Mass could not restart at the same altar")
+		return
+	var restarted_leader: Dictionary = action_system.get_runtime_action_snapshot(LEADER_ID)
+	var prayer_rejoined: Dictionary = action_system.get_runtime_action_snapshot(PRAYER_ID)
+	if (
+		str(restarted_leader.get("action_id", "")) != LEADER_ACTION_ID
+		or action_system.get_pending_action_id(LEADER_ID) != ""
+		or leader_node.global_position.distance_to(leader_position_before_transition) > 0.001
+		or str(restarted_leader.get("workstation_id", "")) != ALTAR_ID
+		or str(prayer_rejoined.get("prayer_mode", "")) != "mass_attendance"
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or prayer_node.debug_get_spatial_attachment_snapshot() != prayer_attachment_before_transition
+	):
+		_fail("Same-position Mass restart or prayer-to-attendance transition failed")
+		return
+
+	# If the attendee's personal timer expires during Mass while the current plan is
+	# still prayer, Mass completion must immediately begin the next prayer cycle in
+	# the same seat. This covers a prayer block carrying across an hour boundary.
 	var current_hour := int(root.get_node("GameState").current_hour)
+	if not daily_plan_system.set_npc_daily_plan(
+		PRAYER_ID,
+		_make_plan(current_hour, PRAYER_ACTION_ID, "pray", "chapel"),
+		false,
+		"verify_a5_p5i_repeat_prayer"
+	):
+		_fail("Could not install the repeatable chapel prayer plan")
+		return
+	var prayer_plan_claim: Dictionary = daily_plan_system.execute_current_plan_for_npc(PRAYER_ID, false)
+	if str(prayer_plan_claim.get("status", "")) != "already_running":
+		_fail("Daily plan did not claim the active Mass attendee as its prayer action")
+		return
+	daily_plan_system.set_auto_execution_enabled(true)
+	if (
+		not _set_active_action_near_completion(action_system, LEADER_ID)
+		or not _set_active_action_near_completion(action_system, PRAYER_ID)
+	):
+		_fail("Could not stage simultaneous prayer/Mass completion")
+		return
+	action_system._on_logical_time_tick(1.0, 1.0)
+	await process_frame
+	await process_frame
+	await physics_frame
+	var repeated_prayer: Dictionary = action_system.get_runtime_action_snapshot(PRAYER_ID)
+	if (
+		str(repeated_prayer.get("action_id", "")) != PRAYER_ACTION_ID
+		or str(repeated_prayer.get("prayer_mode", "")) != "personal_prayer"
+		or float(repeated_prayer.get("elapsed_seconds", -1.0)) > 5.0
+		or str(repeated_prayer.get("workstation_id", "")) != PRAYER_SEAT_ID
+		or action_system.get_pending_action_id(PRAYER_ID) != ""
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or prayer_node.debug_get_spatial_attachment_snapshot() != prayer_attachment_before_transition
+		or not _workstation_occupied_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
+	):
+		_fail("Completed Mass attendee did not repeat planned prayer in the same seat: %s" % JSON.stringify({
+			"runtime": repeated_prayer,
+			"state": npc_system.get_npc_state(PRAYER_ID),
+		}))
+		return
+
+	# Once the current plan changes away from prayer, completing the active cycle
+	# settles into a seated hold instead of starting another one.
+	if not daily_plan_system.set_npc_daily_plan(
+		PRAYER_ID,
+		_make_plan(current_hour, "idle", "idle", ""),
+		false,
+		"verify_a5_p5i_stop_repeating_prayer"
+	):
+		_fail("Could not replace repeatable prayer with idle")
+		return
+	if not _set_active_action_near_completion(action_system, PRAYER_ID):
+		_fail("Could not stage standalone prayer completion")
+		return
+	action_system._on_logical_time_tick(1.0, 1.0)
+	await process_frame
+	await physics_frame
+	daily_plan_system.set_auto_execution_enabled(false)
+	if (
+		str(npc_system.get_npc_state(PRAYER_ID).get("current_action", "")) != "idle"
+		or str(npc_system.get_npc_state(PRAYER_ID).get("spatial_route_phase", "")) != "completed_workstation_hold"
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or str(prayer_node.debug_get_character_art_snapshot().get("desired_state", "")) != "seated_idle"
+		or not _workstation_occupied_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
+	):
+		_fail("Prayer-to-idle completion did not preserve seated position")
+		return
+
+	# Daily-plan idle must not tear down the completed seated hold. Replacing that
+	# same hour with prayer must then reactivate the exact seat without routing.
+	if not daily_plan_system.set_npc_daily_plan(
+		PRAYER_ID,
+		_make_plan(current_hour, "idle", "idle", ""),
+		false,
+		"verify_a5_p5i_seated_idle"
+	):
+		_fail("Could not install the seated-idle chapel plan")
+		return
+	var seated_idle_plan: Dictionary = daily_plan_system.execute_current_plan_for_npc(PRAYER_ID, true)
+	if (
+		str(seated_idle_plan.get("status", "")) not in ["started", "already_running"]
+		or str(npc_system.get_npc_state(PRAYER_ID).get("current_action", "")) != "idle"
+		or str(npc_system.get_npc_state(PRAYER_ID).get("spatial_route_phase", "")) != "completed_workstation_hold"
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or prayer_node.debug_get_spatial_attachment_snapshot() != prayer_attachment_before_transition
+		or str(prayer_node.debug_get_character_art_snapshot().get("desired_state", "")) != "seated_idle"
+		or not _workstation_occupied_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
+		or action_system.get_pending_action_id(PRAYER_ID) != ""
+	):
+		_fail("Daily-plan idle tore down or moved the completed prayer hold: %s" % JSON.stringify({
+			"result": seated_idle_plan,
+			"state": npc_system.get_npc_state(PRAYER_ID),
+			"formal": npc_system.get_formal_workstation_action_snapshot(PRAYER_ID),
+		}))
+		return
+	if not daily_plan_system.set_npc_daily_plan(
+		PRAYER_ID,
+		_make_plan(current_hour, PRAYER_ACTION_ID, "pray", "chapel"),
+		false,
+		"verify_a5_p5i_same_seat_prayer"
+	):
+		_fail("Could not install the same-seat chapel prayer plan")
+		return
+	var prayer_plan_restart: Dictionary = daily_plan_system.execute_current_plan_for_npc(PRAYER_ID, true)
+	var planned_prayer_runtime: Dictionary = action_system.get_runtime_action_snapshot(PRAYER_ID)
+	if (
+		str(prayer_plan_restart.get("status", "")) != "started"
+		or str(planned_prayer_runtime.get("action_id", "")) != PRAYER_ACTION_ID
+		or str(planned_prayer_runtime.get("prayer_mode", "")) != "personal_prayer"
+		or str(planned_prayer_runtime.get("workstation_id", "")) != PRAYER_SEAT_ID
+		or action_system.get_pending_action_id(PRAYER_ID) != ""
+		or prayer_node.global_position.distance_to(prayer_position_before_transition) > 0.001
+		or prayer_node.debug_get_spatial_attachment_snapshot() != prayer_attachment_before_transition
+		or not _workstation_occupied_by(building_system, PRAYER_SEAT_ID, PRAYER_ID)
+	):
+		_fail("Daily-plan prayer did not reactivate the held chapel seat in place: %s" % JSON.stringify({
+			"result": prayer_plan_restart,
+			"runtime": planned_prayer_runtime,
+			"state": npc_system.get_npc_state(PRAYER_ID),
+		}))
+		return
+
+	# Restore the leader for the existing cross-hour protection assertions below.
+	if not action_system.debug_assign_action(LEADER_ID, LEADER_ACTION_ID):
+		_fail("Could not reactivate the in-place chapel pair for boundary verification")
+		return
+
 	daily_plan_system.set_npc_daily_plan(LEADER_ID, _make_plan(current_hour, "idle", "idle", ""), false, "verify_a5_p5i_boundary")
 	daily_plan_system.set_npc_daily_plan(PRAYER_ID, _make_plan(current_hour, "work_garden", "work", "garden"), false, "verify_a5_p5i_boundary")
 	var leader_boundary: Dictionary = daily_plan_system.execute_current_plan_for_npc(LEADER_ID, true, false, true)
@@ -226,6 +410,20 @@ func _wait_for_active(action_system: Node, time_system: Node, npc_id: String, ac
 		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == action_id:
 			return true
 	return false
+
+
+func _set_active_action_near_completion(action_system: Node, npc_id: String) -> bool:
+	var active_actions: Dictionary = action_system.get("_active_actions")
+	if not active_actions.get(npc_id, {}) is Dictionary:
+		return false
+	var active_action: Dictionary = active_actions.get(npc_id, {})
+	if active_action.is_empty():
+		return false
+	var duration := float(active_action.get("duration_seconds", 3600.0))
+	active_action["elapsed_seconds"] = maxf(0.0, duration - 1.0)
+	active_actions[npc_id] = active_action
+	action_system.set("_active_actions", active_actions)
+	return true
 
 
 func _make_plan(current_hour: int, action_id: String, action_kind: String, location_id: String) -> Array:

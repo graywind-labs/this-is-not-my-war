@@ -3,16 +3,17 @@ extends Control
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const PietyAbilityButtonClass = preload("res://scripts/ui/PietyAbilityButton.gd")
 const EpiloguePanelClass = preload("res://scripts/ui/EpiloguePanel.gd")
+const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 
 @onready var day_label: Label = %DayLabel
 @onready var time_label: Label = %TimeLabel
 @onready var phase_label: Label = %PhaseLabel
 @onready var resource_strip: HBoxContainer = $ResourceStrip
-@onready var backend_status_label: Label = %BackendStatusLabel
 @onready var speed_button: Button = $SpeedButton
 @onready var pause_button: Button = $PauseButton
 @onready var wave_countdown_label: Label = get_node_or_null("WaveCountdownLabel") as Label
 @onready var hud_frame: Panel = $HUDFrame
+@onready var camera_move_hint_label: Label = get_node_or_null("CameraMoveHintLabel") as Label
 @onready var escape_started_alert_dialog: AcceptDialog = %EscapeStartedAlertDialog
 @onready var npc_revived_alert_dialog: AcceptDialog = %NpcRevivedAlertDialog
 @onready var wave_cleared_alert_dialog: AcceptDialog = %WaveClearedAlertDialog
@@ -30,6 +31,7 @@ const MIN_USABLE_VIEWPORT_SIZE := Vector2(320.0, 240.0)
 const FALLBACK_VIEWPORT_SIZE := Vector2(1280.0, 720.0)
 const HUD_FRAME_CONTENT_PADDING := Vector2(12.0, 12.0)
 const SPEED_BUTTON_NORMAL_TOOLTIP := "点击循环 x1 / x2 / x4；主键盘 1 / 2 / 3 可直接切换。"
+const DETACHED_SIMULATION_PAUSE_TOOLTIP := "序章战斗演示中无法暂停。"
 const WAVE_WARNING_EARLY_SECONDS := 3.0 * 3600.0
 const WAVE_WARNING_FINAL_SECONDS := 30.0 * 60.0
 const WAVE_WARNING_COLOR := Color(1.0, 0.38, 0.22, 1.0)
@@ -115,8 +117,6 @@ func _ready() -> void:
 	_refresh_time_buttons()
 	_refresh_resources()
 	_refresh_wave_countdown()
-	_refresh_backend_status()
-	_connect_llm_bridge()
 
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null:
@@ -156,6 +156,8 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _is_tutorial_static_frame_input_locked():
+		return
 	if _handle_meteor_targeting_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -170,6 +172,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _is_tutorial_static_frame_input_locked():
+		return
 	var shortcut_scale := _get_speed_shortcut_scale(event)
 	if shortcut_scale > 0.0:
 		_set_time_scale_from_shortcut(shortcut_scale)
@@ -243,8 +247,8 @@ func _show_next_escape_alert() -> void:
 	if escape_started_alert_dialog == null or escape_started_alert_dialog.visible or _escape_alert_queue.is_empty():
 		return
 	var escape_result: Dictionary = _escape_alert_queue.pop_front()
-	var npc_name := str(escape_result.get("npc_name", "该NPC"))
-	escape_started_alert_dialog.dialog_text = "%s正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！" % npc_name
+	var npc_name := str(escape_result.get("npc_name", "有人"))
+	escape_started_alert_dialog.dialog_text = "%s正在逃离驿站！若不及时挽留，此人将永远离开。" % npc_name
 	escape_started_alert_dialog.popup_centered()
 
 
@@ -433,17 +437,6 @@ func _refresh_resources() -> void:
 	_request_hud_frame_fit()
 
 
-func _refresh_backend_status() -> void:
-	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
-	if llm_bridge == null or not llm_bridge.has_method("get_last_backend_status"):
-		backend_status_label.text = "后端：未检查"
-		_request_hud_frame_fit()
-		return
-	var status: Dictionary = llm_bridge.get_last_backend_status()
-	backend_status_label.text = str(status.get("status_text", "后端：未检查"))
-	_request_hud_frame_fit()
-
-
 func _refresh_time_buttons() -> void:
 	if speed_button == null:
 		return
@@ -470,13 +463,24 @@ func _refresh_time_buttons() -> void:
 		else SPEED_BUTTON_NORMAL_TOOLTIP
 	)
 	if pause_button != null:
-		pause_button.text = time_system.get_pause_label()
+		var pause_locked := (
+			time_system.has_method("has_detached_presentation_simulation")
+			and bool(time_system.has_detached_presentation_simulation())
+		)
+		pause_button.text = "暂停" if pause_locked else time_system.get_pause_label()
+		pause_button.disabled = pause_locked
+		pause_button.tooltip_text = DETACHED_SIMULATION_PAUSE_TOOLTIP if pause_locked else ""
 	_request_hud_frame_fit()
 
 
 func _toggle_pause() -> void:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
 	if time_system == null:
+		return
+	if (
+		time_system.has_method("has_detached_presentation_simulation")
+		and bool(time_system.has_detached_presentation_simulation())
+	):
 		return
 
 	time_system.toggle_paused()
@@ -600,6 +604,15 @@ func _is_pause_menu_open() -> bool:
 	return pause_menu != null and pause_menu.visible
 
 
+func _is_tutorial_static_frame_input_locked() -> bool:
+	var overlay := get_node_or_null("../TutorialOverlay")
+	return (
+		overlay != null
+		and overlay.has_method("is_static_frame_input_locked")
+		and bool(overlay.is_static_frame_input_locked())
+	)
+
+
 func _is_text_input_focused() -> bool:
 	var focus_owner := get_viewport().gui_get_focus_owner()
 	return focus_owner is LineEdit or focus_owner is TextEdit
@@ -613,19 +626,6 @@ func _get_phase_label(hour: int) -> String:
 	if hour >= 18 and hour < 22:
 		return "黄昏"
 	return "夜间"
-
-
-func _connect_llm_bridge() -> void:
-	var llm_bridge := get_node_or_null("/root/Main/Systems/LLMBridge")
-	if llm_bridge == null or not llm_bridge.has_signal("backend_status_changed"):
-		return
-	if not llm_bridge.backend_status_changed.is_connected(_on_backend_status_changed):
-		llm_bridge.backend_status_changed.connect(_on_backend_status_changed)
-
-
-func _on_backend_status_changed(status_text: String, _ok: bool) -> void:
-	backend_status_label.text = status_text
-	_request_hud_frame_fit()
 
 
 func _build_resource_strip() -> void:
@@ -700,6 +700,10 @@ func _fit_hud_frame_to_content() -> void:
 	var content_end := _get_hud_frame_content_end()
 	hud_frame.offset_right = content_end.x + HUD_FRAME_CONTENT_PADDING.x
 	hud_frame.offset_bottom = content_end.y + HUD_FRAME_CONTENT_PADDING.y
+	if camera_move_hint_label != null:
+		var hint_position := camera_move_hint_label.position
+		hint_position.y = hud_frame.position.y + hud_frame.size.y + 6.0
+		camera_move_hint_label.position = hint_position
 
 
 func _get_hud_frame_content_end() -> Vector2:
@@ -712,7 +716,6 @@ func _get_hud_frame_content_end() -> Vector2:
 		"PhaseLabel",
 		"ResourceStrip",
 		"WaveCountdownLabel",
-		"BackendStatusLabel",
 		"SpeedButton",
 		"PauseButton",
 		"AlarmButton",
@@ -812,23 +815,6 @@ func _build_wave_countdown_label() -> void:
 	wave_countdown_label.offset_bottom = 142.0
 	wave_countdown_label.text = "下一波敌军时间未知"
 	add_child(wave_countdown_label)
-	if backend_status_label != null:
-		backend_status_label.offset_top = 144.0
-		backend_status_label.offset_bottom = 168.0
-	if speed_button != null:
-		speed_button.offset_top = 178.0
-		speed_button.offset_bottom = 210.0
-	if pause_button != null:
-		pause_button.offset_top = 178.0
-		pause_button.offset_bottom = 210.0
-	var alarm_button := get_node_or_null("AlarmButton") as Button
-	if alarm_button != null:
-		alarm_button.offset_top = 178.0
-		alarm_button.offset_bottom = 210.0
-	var dismiss_rally_button := get_node_or_null("DismissRallyButton") as Button
-	if dismiss_rally_button != null:
-		dismiss_rally_button.offset_top = 178.0
-		dismiss_rally_button.offset_bottom = 210.0
 	_request_hud_frame_fit()
 
 
@@ -837,7 +823,7 @@ func _build_piety_ability_button() -> void:
 		return
 	_piety_ability_button = PietyAbilityButtonClass.new()
 	_piety_ability_button.name = "PietyAbilityButton"
-	_piety_ability_button.position = Vector2(448.0, 172.0)
+	_piety_ability_button.position = Vector2(448.0, 145.5)
 	_piety_ability_button.size = Vector2(48.0, 48.0)
 	_piety_ability_button.ability_requested.connect(_begin_meteor_targeting)
 	add_child(_piety_ability_button)
@@ -1142,6 +1128,14 @@ func _queue_wave_warning(wave_number: int, threshold: String, message: String) -
 	var key := "%d:%s" % [wave_number, threshold]
 	if bool(_wave_warning_seen.get(key, false)):
 		return
+	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
+	if (
+		combat_system != null
+		and combat_system.has_method("claim_wave_warning_delivery")
+		and not bool(combat_system.claim_wave_warning_delivery(wave_number, threshold))
+	):
+		_wave_warning_seen[key] = true
+		return
 	_wave_warning_seen[key] = true
 	_wave_warning_queue.append({
 		"wave_number": wave_number,
@@ -1292,7 +1286,7 @@ func _build_victory_npc_summary(npcs: Dictionary) -> String:
 	var active: Array = npcs.get("active_npcs", []) if npcs.get("active_npcs", []) is Array else []
 	var unconscious: Array = npcs.get("unconscious_npcs", []) if npcs.get("unconscious_npcs", []) is Array else []
 	var escaped: Array = npcs.get("escaped_npcs", []) if npcs.get("escaped_npcs", []) is Array else []
-	return "NPC：可行动 %d（%s）；昏迷 %d（%s）；逃离 %d（%s）" % [
+	return "驿站成员：可行动 %d（%s）；昏迷 %d（%s）；已离开 %d（%s）" % [
 		active.size(),
 		_join_settlement_names(active, 3, "无"),
 		unconscious.size(),
@@ -1308,10 +1302,10 @@ func _build_npc_endings_text(npcs: Dictionary) -> String:
 	var epilogue: Dictionary = settlement.get("epilogue", {}) if settlement.get("epilogue", {}) is Dictionary else {}
 	var status := str(epilogue.get("status", ""))
 	if status == "pending":
-		return "NPC 结局：\n\n战地记录整理中……"
+		return "众人去向：\n\n战地记录仍在整理……"
 	var items: Array = npcs.get("items", []) if npcs.get("items", []) is Array else []
 	if items.is_empty():
-		return "NPC 结局：未记录"
+		return "众人去向：暂无记录"
 	var lines: Array[String] = []
 	var ending_title := str(epilogue.get("ending_title", "")).strip_edges()
 	var station_coda := str(epilogue.get("station_coda", "")).strip_edges()
@@ -1322,14 +1316,16 @@ func _build_npc_endings_text(npcs: Dictionary) -> String:
 		lines.append(station_coda)
 	if not message.is_empty():
 		lines.append("[%s]" % message)
-	lines.append("NPC 结局：")
+	lines.append("众人去向：")
 	for raw_item in items:
 		var item: Dictionary = raw_item if raw_item is Dictionary else {}
 		var recruited_text := "已入伍" if bool(item.get("recruited", false)) else "未入伍"
 		var status_text := str(item.get("final_status_label", item.get("final_status", "可行动")))
 		var location_text := str(item.get("current_location_name", item.get("current_location", "未知")))
-		var opinion := str(item.get("final_opinion", "Mock：尚无明确看法。"))
-		var fate := str(item.get("fate_summary", "Mock：后续命运未记录。"))
+		var opinion := str(item.get("final_opinion", "尚无明确看法。"))
+		var fate := str(item.get("fate_summary", "后续经历尚无记载。"))
+		opinion = opinion.trim_prefix("Mock：")
+		fate = fate.trim_prefix("Mock：")
 		var personal_title := str(item.get("ending_title", "")).strip_edges()
 		if not personal_title.is_empty():
 			lines.append("\n《%s》" % personal_title)

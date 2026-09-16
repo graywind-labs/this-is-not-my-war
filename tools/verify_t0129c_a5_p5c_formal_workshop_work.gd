@@ -34,7 +34,7 @@ func _init() -> void:
 
 	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 2, 0)
-	daily_plan_system.set_auto_execution_enabled(true)
+	daily_plan_system.set_auto_execution_enabled(false)
 	# Use the production movement contract: the diagonal 1.8 m doorway and the
 	# close workbench approach are intentionally validated without test-only speed.
 	owen.set("move_speed", 5.0)
@@ -46,12 +46,23 @@ func _init() -> void:
 		_fail("work_workshop is not configured for formal spatial authority")
 		return
 	crafting_system.set_target(BUILDING_ID, "", true)
-	if action_system.debug_assign_work(NPC_ID, BUILDING_ID):
-		_fail("Missing workshop target should fail before formal migration")
+	if not action_system.debug_assign_work(NPC_ID, BUILDING_ID):
+		_fail("Missing workshop target should still dispatch formal travel")
+		return
+	if (
+		not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
+		or str(action_system.get_runtime_action_snapshot(NPC_ID).get("phase", "")) != "pending"
+		or not _workstation_reserved_by(building_system, NPC_ID)
+	):
+		_fail("Missing workshop target failed remotely instead of preserving the route")
+		return
+	if not await _wait_for_action_failure(npc_system, time_system, "work_failed_crafting_target_missing"):
+		_fail("Missing workshop target was not rejected after Owen reached the workbench")
 		return
 	if bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false)) or not _workstation_is_clear(building_system):
-		_fail("Workshop preflight left a formal session or workstation claim")
+		_fail("Arrival-time workshop target failure left a formal session or workstation claim")
 		return
+	daily_plan_system.set_auto_execution_enabled(true)
 
 	var plan: Array = []
 	for hour in range(24):
@@ -217,6 +228,15 @@ func _wait_for_active(action_system: Node, time_system: Node, max_frames: int = 
 		time_system.set_paused(false)
 		await physics_frame
 		if str(action_system.get_runtime_action_snapshot(NPC_ID).get("phase", "")) == "active":
+			return true
+	return false
+
+
+func _wait_for_action_failure(npc_system: Node, time_system: Node, expected_result: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		if str(npc_system.get_npc_state(NPC_ID).get("last_action_result", "")) == expected_result:
 			return true
 	return false
 

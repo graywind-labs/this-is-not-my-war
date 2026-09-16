@@ -502,7 +502,12 @@ func _update_chapel_state(entries: Array[Dictionary], desired: Dictionary) -> vo
 	var next_mass_active := not mass_leaders.is_empty()
 	if next_mass_active and not _mass_active:
 		var leader := mass_leaders[0]
-		_play_entry_one_shot(str(chapel.get("mass_start_asset_id", "")), leader, "chapel_mass_start")
+		_play_entry_one_shot(
+			str(chapel.get("mass_start_asset_id", "")),
+			leader,
+			"chapel_mass_start",
+			float(chapel.get("mass_start_gain_db", 0.0))
+		)
 		_mass_chant_ready = false
 		_mass_chant_due_seconds = _elapsed_realtime + maxf(
 			0.0,
@@ -515,7 +520,13 @@ func _update_chapel_state(entries: Array[Dictionary], desired: Dictionary) -> vo
 	if _mass_active:
 		if _mass_chant_ready:
 			var mass_source: Dictionary = mass_leaders[0] if not mass_leaders.is_empty() else mass_participants[0]
-			_add_desired_loop(desired, "chapel_mass", str(chapel.get("mass_loop_asset_id", "")), mass_source)
+			_add_desired_loop(
+				desired,
+				"chapel_mass",
+				str(chapel.get("mass_loop_asset_id", "")),
+				mass_source,
+				float(chapel.get("mass_loop_gain_db", 0.0))
+			)
 	elif not prayers.is_empty():
 		_add_desired_loop(desired, "chapel_prayer", str(chapel.get("prayer_asset_id", "")), prayers[0])
 

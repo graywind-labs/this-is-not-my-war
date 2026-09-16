@@ -74,7 +74,7 @@ func _init() -> void:
 	if int(snapshot.get("gate_count", 0)) != 2 or int(snapshot.get("plaza_patch_count", 0)) != 3:
 		_fail("Formal layout gates or plaza patches are incomplete: %s" % snapshot)
 		return
-	_assert_vector2(snapshot.get("terrain_size"), Vector2(700.0, 720.0), "formal terrain")
+	_assert_vector2(snapshot.get("terrain_size"), Vector2(700.0, 554.5), "formal terrain")
 	if _failed:
 		return
 	if float(snapshot.get("terrain_surface_y", -99.0)) <= float(snapshot.get("river_surface_y", 99.0)):
@@ -145,7 +145,7 @@ func _init() -> void:
 		return
 	_assert_vector3(camera_rig.global_position, Vector3(-2.0, 0.0, 18.0), "formal camera focus")
 	_assert_vector2(camera_rig.get("x_limits"), Vector2(-150.0, 150.0), "formal camera x limits")
-	_assert_vector2(camera_rig.get("z_limits"), Vector2(-215.0, 240.0), "preview camera z limits")
+	_assert_vector2(camera_rig.get("z_limits"), Vector2(-215.0, 147.0), "preview camera z limits")
 	if _failed:
 		return
 	if not is_equal_approx(camera.position.length(), 70.0):

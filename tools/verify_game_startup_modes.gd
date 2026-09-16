@@ -19,6 +19,7 @@ func _init() -> void:
 	var daily_plan_system := root.get_node_or_null("Main/Systems/DailyPlanSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var llm_bridge := root.get_node_or_null("Main/Systems/LLMBridge")
+	var tutorial_director := root.get_node_or_null("Main/Systems/TutorialDirector")
 	if (
 		startup_system == null
 		or npc_system == null
@@ -26,13 +27,14 @@ func _init() -> void:
 		or daily_plan_system == null
 		or time_system == null
 		or llm_bridge == null
+		or tutorial_director == null
 	):
 		push_error("Required startup systems not found")
 		quit(1)
 		return
 
-	if int(startup_system.startup_mode) != 1:
-		push_error("Main.tscn should default to gameplay without tutorial")
+	if int(startup_system.startup_mode) != 2:
+		push_error("Main.tscn should default to gameplay with the prologue tutorial")
 		quit(1)
 		return
 	var initial_snapshot: Dictionary = startup_system.debug_get_startup_snapshot()
@@ -66,6 +68,8 @@ func _init() -> void:
 		push_error("Gameplay startup mode did not complete")
 		quit(1)
 		return
+	await process_frame
+	await process_frame
 	var gameplay_snapshot: Dictionary = startup_system.debug_get_startup_snapshot()
 	if (
 		not bool(gameplay_snapshot.get("formal_loop_started", false))
@@ -79,7 +83,12 @@ func _init() -> void:
 		push_error("Gameplay startup mode should resume time and automatic plan execution")
 		quit(1)
 		return
-	if not _verify_formal_startup(npc_system, memory_system, daily_plan_system):
+	if not _verify_formal_startup(
+		npc_system,
+		memory_system,
+		daily_plan_system,
+		gameplay_snapshot.get("execute_results", {})
+	):
 		quit(1)
 		return
 
@@ -106,17 +115,28 @@ func _init() -> void:
 		return
 
 	startup_system.debug_apply_startup_mode(2, true, false)
+	await process_frame
+	var active_tutorial_snapshot: Dictionary = startup_system.debug_get_startup_snapshot()
+	if (
+		str(active_tutorial_snapshot.get("status", "")) != "tutorial_active"
+		or str(active_tutorial_snapshot.get("tutorial_status", "")) != "active"
+		or bool(active_tutorial_snapshot.get("formal_loop_started", false))
+	):
+		push_error("Tutorial startup mode should remain outside the formal loop until handoff")
+		quit(1)
+		return
+	tutorial_director.debug_skip_tutorial()
 	if not await _wait_for_startup_completion(startup_system):
-		push_error("Tutorial placeholder startup mode did not complete")
+		push_error("Tutorial startup mode did not complete after skip handoff")
 		quit(1)
 		return
 	var tutorial_snapshot: Dictionary = startup_system.debug_get_startup_snapshot()
 	if (
-		not bool(tutorial_snapshot.get("formal_loop_started", false))
+		 not bool(tutorial_snapshot.get("formal_loop_started", false))
 		or not bool(tutorial_snapshot.get("tutorial_requested", false))
-		or str(tutorial_snapshot.get("tutorial_status", "")) != "placeholder_not_implemented"
+		or str(tutorial_snapshot.get("tutorial_status", "")) != "skipped"
 	):
-		push_error("Tutorial startup mode should expose a non-faked placeholder")
+		push_error("Tutorial startup mode should expose an explicit skipped handoff")
 		quit(1)
 		return
 
@@ -135,7 +155,12 @@ func _verify_no_automatic_plans(npc_system: Node, memory_system: Node) -> bool:
 	return true
 
 
-func _verify_formal_startup(npc_system: Node, memory_system: Node, daily_plan_system: Node) -> bool:
+func _verify_formal_startup(
+	npc_system: Node,
+	memory_system: Node,
+	daily_plan_system: Node,
+	execute_results: Dictionary
+) -> bool:
 	for npc_id in npc_system.get_npc_ids():
 		var plan: Array = daily_plan_system.get_npc_daily_plan(npc_id)
 		if plan.size() != 24:
@@ -145,9 +170,9 @@ func _verify_formal_startup(npc_system: Node, memory_system: Node, daily_plan_sy
 		if wake_event.is_empty():
 			push_error("Formal startup should write wake_up for %s" % npc_id)
 			return false
-		var current_action := str(npc_system.get_npc_state(npc_id).get("current_action", ""))
-		if current_action.is_empty() or current_action == "idle":
-			push_error("Formal startup should execute the current plan for %s" % npc_id)
+		var execute_result: Dictionary = execute_results.get(npc_id, {})
+		if not bool(execute_result.get("ok", false)) or str(execute_result.get("status", "")) != "started":
+			push_error("Formal startup should dispatch the current plan for %s: %s" % [npc_id, str(execute_result)])
 			return false
 	return true
 
@@ -156,10 +181,6 @@ func _verify_planning_state(npc_system: Node, daily_plan_system: Node) -> bool:
 	for npc_id in npc_system.get_npc_ids():
 		if not daily_plan_system.get_npc_daily_plan(npc_id).is_empty():
 			push_error("NPC should not receive an executable plan before planning completes: %s" % npc_id)
-			return false
-		var current_action := str(npc_system.get_npc_state(npc_id).get("current_action", ""))
-		if current_action != "planning_day":
-			push_error("NPC should display planning_day before the batch completes: %s" % npc_id)
 			return false
 	return true
 

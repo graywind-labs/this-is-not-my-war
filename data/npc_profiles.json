@@ -34,7 +34,7 @@
     ],
     "stats": {
       "strength": 6,
-      "intelligence": 4
+      "intelligence": 5
     },
     "combat_base": {
       "attack_power": 4.5,
@@ -43,8 +43,8 @@
       "attack_speed_multiplier": 1.05
     },
     "states": {
-      "hp": 108,
-      "max_hp": 108,
+      "hp": 83,
+      "max_hp": 83,
       "satiety": 82,
       "fatigue": 18,
       "money": 2,
@@ -117,7 +117,7 @@
     ],
     "stats": {
       "strength": 6,
-      "intelligence": 4
+      "intelligence": 5
     },
     "combat_base": {
       "attack_power": 4.2,
@@ -126,8 +126,8 @@
       "attack_speed_multiplier": 0.96
     },
     "states": {
-      "hp": 112,
-      "max_hp": 112,
+      "hp": 87,
+      "max_hp": 87,
       "satiety": 88,
       "fatigue": 22,
       "money": 3,
@@ -142,7 +142,7 @@
       "耕种": 8,
       "打铁": 5,
       "教练": 8,
-      "酿酒": 58,
+      "酿酒": 50,
       "医术": 6,
       "工程": 5,
       "剑盾": 8,
@@ -200,7 +200,7 @@
     ],
     "stats": {
       "strength": 5,
-      "intelligence": 5
+      "intelligence": 6
     },
     "combat_base": {
       "attack_power": 3.4,
@@ -209,8 +209,8 @@
       "attack_speed_multiplier": 1.10
     },
     "states": {
-      "hp": 100,
-      "max_hp": 100,
+      "hp": 75,
+      "max_hp": 75,
       "satiety": 78,
       "fatigue": 20,
       "money": 1,
@@ -221,15 +221,15 @@
     },
     "skills": {
       "养马": 8,
-      "厨艺": 12,
+      "厨艺": 15,
       "耕种": 80,
       "打铁": 4,
       "教练": 6,
       "酿酒": 8,
-      "医术": 15,
+      "医术": 20,
       "工程": 6,
       "剑盾": 3,
-      "长杆": 10,
+      "长杆": 15,
       "弓": 5,
       "弩": 0,
       "骑术": 5
@@ -283,7 +283,7 @@
       "制作护甲"
     ],
     "stats": {
-      "strength": 8,
+      "strength": 7,
       "intelligence": 5
     },
     "combat_base": {
@@ -293,8 +293,8 @@
       "attack_speed_multiplier": 0.92
     },
     "states": {
-      "hp": 125,
-      "max_hp": 125,
+      "hp": 100,
+      "max_hp": 100,
       "satiety": 84,
       "fatigue": 26,
       "money": 4,
@@ -307,12 +307,12 @@
       "养马": 10,
       "厨艺": 4,
       "耕种": 5,
-      "打铁": 82,
+      "打铁": 80,
       "教练": 12,
       "酿酒": 5,
       "医术": 3,
       "工程": 18,
-      "剑盾": 28,
+      "剑盾": 26,
       "长杆": 18,
       "弓": 0,
       "弩": 5,
@@ -368,7 +368,7 @@
     ],
     "stats": {
       "strength": 7,
-      "intelligence": 6
+      "intelligence": 5
     },
     "combat_base": {
       "attack_power": 5.5,
@@ -377,8 +377,8 @@
       "attack_speed_multiplier": 1.08
     },
     "states": {
-      "hp": 120,
-      "max_hp": 120,
+      "hp": 95,
+      "max_hp": 95,
       "satiety": 80,
       "fatigue": 20,
       "money": 2,
@@ -392,15 +392,15 @@
       "厨艺": 6,
       "耕种": 5,
       "打铁": 8,
-      "教练": 42,
+      "教练": 35,
       "酿酒": 4,
       "医术": 10,
       "工程": 12,
-      "剑盾": 55,
-      "长杆": 35,
-      "弓": 20,
-      "弩": 15,
-      "骑术": 35
+      "剑盾": 42,
+      "长杆": 22,
+      "弓": 12,
+      "弩": 8,
+      "骑术": 22
     },
     "recruited": true,
     "current_order": {
@@ -455,7 +455,7 @@
     ],
     "stats": {
       "strength": 3,
-      "intelligence": 7
+      "intelligence": 8
     },
     "combat_base": {
       "attack_power": 2.4,
@@ -464,8 +464,8 @@
       "attack_speed_multiplier": 0.90
     },
     "states": {
-      "hp": 85,
-      "max_hp": 85,
+      "hp": 60,
+      "max_hp": 60,
       "satiety": 76,
       "fatigue": 18,
       "money": 1,
@@ -475,13 +475,13 @@
       "current_action": "idle"
     },
     "skills": {
-      "养马": 3,
-      "厨艺": 8,
-      "耕种": 8,
+      "养马": 5,
+      "厨艺": 15,
+      "耕种": 12,
       "打铁": 0,
-      "教练": 18,
-      "酿酒": 35,
-      "医术": 12,
+      "教练": 10,
+      "酿酒": 58,
+      "医术": 30,
       "工程": 5,
       "剑盾": 0,
       "长杆": 0,
@@ -548,8 +548,8 @@
       "attack_speed_multiplier": 1.00
     },
     "states": {
-      "hp": 88,
-      "max_hp": 88,
+      "hp": 63,
+      "max_hp": 63,
       "satiety": 74,
       "fatigue": 24,
       "money": 2,
@@ -560,8 +560,8 @@
     },
     "skills": {
       "养马": 4,
-      "厨艺": 6,
-      "耕种": 15,
+      "厨艺": 8,
+      "耕种": 22,
       "打铁": 0,
       "教练": 8,
       "酿酒": 5,
@@ -569,7 +569,7 @@
       "工程": 4,
       "剑盾": 0,
       "长杆": 0,
-      "弓": 8,
+      "弓": 10,
       "弩": 0,
       "骑术": 2
     },
@@ -632,8 +632,8 @@
       "attack_speed_multiplier": 0.98
     },
     "states": {
-      "hp": 94,
-      "max_hp": 94,
+      "hp": 69,
+      "max_hp": 69,
       "satiety": 78,
       "fatigue": 28,
       "money": 3,

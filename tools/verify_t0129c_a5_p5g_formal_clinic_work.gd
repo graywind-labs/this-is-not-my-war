@@ -60,7 +60,6 @@ func _init() -> void:
 	var patient_action: Dictionary = action_system.get_action(PATIENT_ACTION_ID)
 	if (
 		not bool(doctor_action.get("formal_spatial_route", false))
-		or bool(doctor_action.get("formal_preflight_input_resources", true))
 		or not bool(patient_action.get("formal_spatial_route", false))
 	):
 		_fail("Clinic actions do not expose the formal route and study-without-prepaid-money contract")

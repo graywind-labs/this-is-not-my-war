@@ -251,7 +251,7 @@ func _on_undeploy_pressed() -> void:
 		return
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
 	if device_system == null or not device_system.has_method("undeploy_device"):
-		_show_notice("器械系统不可用，无法卸下。")
+		_show_notice("暂时无法卸下器械。")
 		return
 	var snapshot: Dictionary = device_system.get_deployment(_current_deployment_id)
 	if snapshot.is_empty():
@@ -269,7 +269,7 @@ func _on_damaged_undeploy_confirmed() -> void:
 		return
 	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
 	if device_system == null or not device_system.has_method("undeploy_device"):
-		_show_notice("器械系统不可用，无法卸下。")
+		_show_notice("暂时无法卸下器械。")
 		return
 	_handle_undeploy_result(device_system.undeploy_device(_current_deployment_id, true))
 

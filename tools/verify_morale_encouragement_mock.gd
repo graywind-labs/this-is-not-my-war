@@ -154,7 +154,7 @@ func _init() -> void:
 		or str(inspired_result.get("dialogue", {}).get("wartime_reaction", "")) != "morale_boost"
 		or morale_toggle.button_pressed
 		or not morale_toggle.disabled
-		or not history_text.text.contains("守备官成功鼓舞了托马；持续至当天24:00，攻击力和移动速度提升15%")
+		or not history_text.text.contains("守备官成功鼓舞了托马；持续至今日午夜，攻击力和移动速度提升15%")
 		or not special_success_dialog.visible
 		or not special_success_dialog.dialog_text.contains("托马的士气受到鼓舞")
 		or _find_special_result(memory_system.get_npc_daily_events("stableman_01"), "morale_encouragement", "morale_boost").is_empty()
@@ -265,7 +265,7 @@ func _init() -> void:
 		or str(boosted_work.get("dialogue", {}).get("work_encouragement_reaction", "")) != "work_boost"
 		or work_toggle.button_pressed
 		or not work_toggle.disabled
-		or not history_text.text.contains("守备官成功鼓励了布鲁诺；持续至当天24:00，全部工作产出效率提升20%")
+		or not history_text.text.contains("守备官成功鼓励了布鲁诺；持续至今日午夜，全部工作产出效率提升20%")
 		or not special_success_dialog.visible
 		or not special_success_dialog.dialog_text.contains("布鲁诺的工作效率得到提升")
 		or _find_special_result(memory_system.get_npc_daily_events("cook_01"), "work_encouragement", "work_boost").is_empty()

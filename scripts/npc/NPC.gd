@@ -34,6 +34,7 @@ const FRIENDLY_ACTIVITY_MARKER_HEIGHT := 2.95
 const FRIENDLY_DIALOGUE_BUBBLE_HEIGHT := 3.12
 const FRIENDLY_ESCAPE_MARKER_HEIGHT := 3.12
 const FRIENDLY_EMOTION_BUBBLE_HEIGHT := 3.72
+const STUCK_EMOTION_TOTAL_SECONDS := 3.0
 const LOCOMOTION_STATE_KEYS := {
 	"satiety": true,
 	"escape_intent": true,
@@ -84,6 +85,7 @@ var _movement_target_position := Vector3.ZERO
 var _is_moving := false
 var _movement_slowdown_request_id := ""
 var _navigation_motion_enabled := false
+var _dialogue_motion_paused := false
 var _spatial_attachment_active := false
 var _spatial_attachment_pose := ""
 var _spatial_attachment_position := Vector3.ZERO
@@ -137,6 +139,7 @@ func setup(npc_profile: Dictionary) -> void:
 	profile = npc_profile.duplicate(true)
 	npc_id = str(profile.get("id", ""))
 	_pending_unmounted_actual_run_seconds = 0.0
+	_dialogue_motion_paused = false
 	name = _make_node_name(npc_id)
 	set_meta("npc_id", npc_id)
 	configure_avoidance_identity("friendly:%s" % npc_id, 0.5)
@@ -292,6 +295,16 @@ func is_navigation_motion_enabled() -> bool:
 	return _navigation_motion_enabled
 
 
+func set_dialogue_motion_paused(paused: bool) -> void:
+	_dialogue_motion_paused = paused
+	if _navigation_motion_enabled:
+		set_motion_paused(_is_gameplay_paused() or _dialogue_motion_paused)
+
+
+func is_dialogue_motion_paused() -> bool:
+	return _dialogue_motion_paused
+
+
 func is_unconscious() -> bool:
 	return _is_profile_unconscious()
 
@@ -302,6 +315,19 @@ func set_facing_direction(direction: Vector3) -> void:
 		_portrait_facing_direction = flat_direction.normalized()
 	if _character_art_view != null and _character_art_view.has_method("set_facing_direction"):
 		_character_art_view.set_facing_direction(direction)
+	_sync_combat_mount_facing()
+
+
+func snap_facing_direction(direction: Vector3) -> void:
+	var flat_direction := Vector3(direction.x, 0.0, direction.z)
+	if flat_direction.length_squared() <= 0.0001:
+		return
+	_portrait_facing_direction = flat_direction.normalized()
+	if _character_art_view != null:
+		if _character_art_view.has_method("snap_facing_direction"):
+			_character_art_view.snap_facing_direction(flat_direction)
+		elif _character_art_view.has_method("set_facing_direction"):
+			_character_art_view.set_facing_direction(flat_direction)
 	_sync_combat_mount_facing()
 
 
@@ -317,6 +343,11 @@ func play_temporary_presentation_action(action_id: String, event_id: String) -> 
 	var result: Dictionary = _character_art_view.play_temporary_presentation_action(action_id, event_id)
 	result["npc_id"] = npc_id
 	return result
+
+
+func clear_temporary_dialogue_presentation() -> void:
+	if _character_art_view != null and _character_art_view.has_method("clear_temporary_dialogue_presentation"):
+		_character_art_view.clear_temporary_dialogue_presentation()
 
 
 func _process(_delta: float) -> void:
@@ -531,6 +562,8 @@ func _ready() -> void:
 		motion_arrived.connect(_on_navigation_motion_arrived)
 	if not motion_failed.is_connected(_on_navigation_motion_failed):
 		motion_failed.connect(_on_navigation_motion_failed)
+	if not motion_stuck_notified.is_connected(_on_navigation_motion_stuck_notified):
+		motion_stuck_notified.connect(_on_navigation_motion_stuck_notified)
 	if not motion_cancelled.is_connected(_on_navigation_motion_cancelled):
 		motion_cancelled.connect(_on_navigation_motion_cancelled)
 	_ensure_proactive_bubble()
@@ -547,6 +580,12 @@ func _ready() -> void:
 		and not event_bus.npc_dialogue_emotion_presented.is_connected(_on_dialogue_emotion_presented)
 	):
 		event_bus.npc_dialogue_emotion_presented.connect(_on_dialogue_emotion_presented)
+	if (
+		event_bus != null
+		and event_bus.has_signal("npc_status_emotion_presented")
+		and not event_bus.npc_status_emotion_presented.is_connected(_on_dialogue_emotion_presented)
+	):
+		event_bus.npc_status_emotion_presented.connect(_on_dialogue_emotion_presented)
 	_configure_character_art_view()
 	_refresh_label()
 
@@ -558,7 +597,7 @@ func _exit_tree() -> void:
 func _physics_process(delta: float) -> void:
 	var position_before_motion := global_position
 	if _navigation_motion_enabled:
-		set_motion_paused(_is_gameplay_paused())
+		set_motion_paused(_is_gameplay_paused() or _dialogue_motion_paused)
 		super._physics_process(delta)
 		if velocity.length_squared() > 0.0001:
 			set_facing_direction(velocity)
@@ -605,6 +644,26 @@ func _on_navigation_motion_failed(request_id: String, reason: String) -> void:
 	_set_movement_active(false)
 	_movement_target_id = ""
 	movement_request_failed.emit(npc_id, request_id, reason)
+
+
+func _on_navigation_motion_stuck_notified(_request_id: String, reason: String) -> void:
+	if not _navigation_motion_enabled or reason != "stuck_timeout":
+		return
+	_present_navigation_stuck_emotion()
+
+
+func _present_navigation_stuck_emotion() -> void:
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus == null or not event_bus.has_signal("npc_status_emotion_presented"):
+		return
+	var presentation := DialogueEmotionCatalog.get_presentation("angry")
+	var fade_seconds := maxf(0.01, float(presentation.get("fade_seconds", DialogueEmotionCatalog.FADE_SECONDS)))
+	presentation["hold_seconds"] = maxf(0.0, STUCK_EMOTION_TOTAL_SECONDS - fade_seconds)
+	presentation["fade_seconds"] = minf(fade_seconds, STUCK_EMOTION_TOTAL_SECONDS)
+	presentation["duration_seconds"] = STUCK_EMOTION_TOTAL_SECONDS
+	presentation["source"] = "navigation_stuck"
+	presentation["play_action"] = false
+	event_bus.npc_status_emotion_presented.emit(npc_id, presentation)
 
 
 func _on_navigation_motion_cancelled(_request_id: String, _reason: String) -> void:
@@ -1105,6 +1164,14 @@ func _on_dialogue_emotion_presented(target_npc_id: String, presentation: Diction
 	_emotion_bubble_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_set_dialogue_emotion_bubble_alpha(1.0)
 	_emotion_bubble.visible = true
+	if not bool(presentation.get("play_action", true)):
+		_emotion_action_result = {
+			"ok": true,
+			"active": false,
+			"emotion_id": emotion_id,
+			"reason": "presentation_action_suppressed",
+		}
+		return
 	var action_id := str({
 		"happy": "emotion_happy",
 		"angry": "emotion_angry",

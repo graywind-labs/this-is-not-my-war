@@ -11,15 +11,15 @@ const EXPECTED_WAVE_GROUP_COUNTS := [
 	[8, 4, 20, 10, 6]
 ]
 const EXPECTED_RECIPE_CONTRACT := {
-	"craft_iron_helmet": [3, {"iron": 2}, true],
-	"craft_iron_bracers": [3, {"iron": 2}, true],
-	"craft_polearm": [4, {"iron": 2, "wood": 1}, true],
-	"craft_iron_greaves": [4, {"iron": 3}, true],
-	"craft_sword_shield": [5, {"iron": 3, "wood": 1}, true],
-	"craft_mail_chest": [8, {"iron": 6}, true],
-	"craft_bow": [3, {"wood": 2}, true],
-	"craft_crossbow": [5, {"iron": 1, "wood": 3}, true],
-	"craft_wall_ballista": [9, {"iron": 2, "wood": 6}, true],
+	"craft_iron_helmet": [5, {"iron": 2}, true],
+	"craft_iron_bracers": [5, {"iron": 2}, true],
+	"craft_polearm": [6, {"iron": 2, "wood": 1}, true],
+	"craft_iron_greaves": [6, {"iron": 3}, true],
+	"craft_sword_shield": [7, {"iron": 3, "wood": 1}, true],
+	"craft_mail_chest": [10, {"iron": 6}, true],
+	"craft_bow": [5, {"wood": 2}, true],
+	"craft_crossbow": [7, {"iron": 1, "wood": 3}, true],
+	"craft_wall_ballista": [12, {"iron": 2, "wood": 6}, true],
 	"craft_wall_arrow_tower": [12, {"iron": 2, "wood": 8}, true]
 }
 const EXPECTED_REPAIR_HP := {
@@ -94,7 +94,7 @@ func _init() -> void:
 
 func _verify_actions(action_system: Node) -> bool:
 	var dining: Dictionary = action_system.get_action("work_dining_hall")
-	if int((dining.get("output_resources", {}) as Dictionary).get("meal", 0)) != 2:
+	if int((dining.get("output_resources", {}) as Dictionary).get("meal", 0)) != 1:
 		return _fail("Dining hall must turn one grain into two meals")
 	var expected_durations := {"work_blacksmith": 4800, "work_workshop": 4500}
 	for action_id in expected_durations.keys():
@@ -143,6 +143,10 @@ func _verify_wave_schedule_and_composition(combat_system: Node) -> bool:
 			total += count
 		if total != EXPECTED_WAVE_COUNTS[index] or group_counts != EXPECTED_WAVE_GROUP_COUNTS[index]:
 			return _fail("Wave %d composition mismatch: %s" % [wave_number, str(group_counts)])
+		if wave_number == 1:
+			var first_group: Dictionary = (wave.get("enemies", []) as Array)[0]
+			if int(first_group.get("hp", 0)) != 43 or int(first_group.get("max_hp", 0)) != 43:
+				return _fail("T0414 requires first-wave sword raiders at 43/43 HP")
 	return true
 
 
@@ -151,15 +155,15 @@ func _verify_economy(resource_system: Node, merchant_system: Node) -> bool:
 	for resource_id in expected_initial.keys():
 		if int(resource_system.get_resource(str(resource_id))) != int(expected_initial[resource_id]):
 			return _fail("Initial resource mismatch for %s" % resource_id)
-	var expected_buy := {"grain": 2, "wood": 3, "stone": 4, "iron": 5}
-	var expected_sell := {"grain": 1, "wood": 2, "stone": 3, "iron": 4, "wine": 4}
+	var expected_buy := {"grain": 3, "wood": 4, "stone": 5, "iron": 6}
+	var expected_sell := {"grain": 2, "wood": 3, "stone": 4, "iron": 5, "wine": 2}
 	for resource_id in expected_buy.keys():
 		var buy_price := int(merchant_system.get_buy_offer(str(resource_id)).get("unit_price", 0))
 		var sell_price := int(merchant_system.get_sell_offer(str(resource_id)).get("unit_price", 0))
 		if buy_price != int(expected_buy[resource_id]) or sell_price != int(expected_sell[resource_id]) or sell_price >= buy_price:
 			return _fail("No-arbitrage price contract mismatch for %s" % resource_id)
-	if int(merchant_system.get_sell_offer("wine").get("unit_price", 0)) != 4 or not merchant_system.get_buy_offer("wine").is_empty():
-		return _fail("Wine must be sell-only at four dinars")
+	if int(merchant_system.get_sell_offer("wine").get("unit_price", 0)) != 2 or not merchant_system.get_buy_offer("wine").is_empty():
+		return _fail("Wine must be sell-only at two dinars")
 	return true
 
 
@@ -202,13 +206,24 @@ func _verify_growth(npc_system: Node, combat_system: Node) -> bool:
 func _verify_combat_support(defense_device_system: Node, piety_system: Node) -> bool:
 	var ballista: Dictionary = defense_device_system.get_device_definition("wall_ballista")
 	var effect: Dictionary = ballista.get("effect", {})
-	if int(effect.get("damage", 0)) != 44 or not is_equal_approx(float(effect.get("attack_interval", 0.0)), 4.25):
-		return _fail("Ballista must use 44 damage and a 4.25-second interval")
+	if int(ballista.get("max_hp", 0)) != 25 or int(effect.get("damage", 0)) != 22 or not is_equal_approx(float(effect.get("attack_interval", 0.0)), 4.25):
+		return _fail("T0439 ballista must use 25 HP, 22 damage and a 4.25-second interval")
+	var arrow_tower: Dictionary = defense_device_system.get_device_definition("wall_arrow_tower")
+	var arrow_effect: Dictionary = arrow_tower.get("effect", {})
+	if (
+		int(arrow_tower.get("max_hp", 0)) != 50
+		or not is_equal_approx(float(arrow_tower.get("defense", 0.0)), 3.0)
+		or int(arrow_effect.get("damage", 0)) != 8
+		or not is_equal_approx(float(arrow_effect.get("attack_speed", 0.0)), 0.38)
+		or not is_equal_approx(float(arrow_effect.get("attack_interval", 0.0)), 1.0 / 0.38)
+		or ceili(43.0 / float(arrow_effect.get("damage", 1))) != 6
+	):
+		return _fail("T0416 must halve arrow-tower HP/damage and require six hits against W1: %s" % JSON.stringify(arrow_tower))
 	var piety_snapshot: Dictionary = piety_system.get_piety_snapshot()
 	var meteor: Dictionary = piety_system.get_meteor_config()
 	if (
 		not is_equal_approx(float(piety_snapshot.get("max_piety", 0.0)), 100.0)
-		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 2.5)
+		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 1.625)
 		or int(meteor.get("impact_max_targets", 0)) != 12
 	):
 		return _fail("Piety must use 100 cap, 2.5 base prayer rate, and 12 impact targets")

@@ -1,15 +1,15 @@
 extends SceneTree
 
 const EXPECTED_RECIPES := {
-	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 3],
-	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 3],
-	"craft_polearm": ["blacksmith", "item_polearm", 4],
-	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 4],
-	"craft_sword_shield": ["blacksmith", "item_sword_shield", 5],
-	"craft_mail_chest": ["blacksmith", "item_mail_chest", 8],
-	"craft_bow": ["workshop", "item_bow", 3],
-	"craft_crossbow": ["workshop", "item_crossbow", 5],
-	"craft_wall_ballista": ["workshop", "item_wall_ballista", 9],
+	"craft_iron_helmet": ["blacksmith", "item_iron_helmet", 5],
+	"craft_iron_bracers": ["blacksmith", "item_iron_bracers", 5],
+	"craft_polearm": ["blacksmith", "item_polearm", 6],
+	"craft_iron_greaves": ["blacksmith", "item_iron_greaves", 6],
+	"craft_sword_shield": ["blacksmith", "item_sword_shield", 7],
+	"craft_mail_chest": ["blacksmith", "item_mail_chest", 10],
+	"craft_bow": ["workshop", "item_bow", 5],
+	"craft_crossbow": ["workshop", "item_crossbow", 7],
+	"craft_wall_ballista": ["workshop", "item_wall_ballista", 12],
 	"craft_wall_arrow_tower": ["workshop", "item_wall_arrow_tower", 12]
 }
 const PRODUCTION_INFO_FIELDS := [
@@ -49,7 +49,9 @@ func _init() -> void:
 
 	if not _verify_catalog(crafting_system):
 		return
-	if not _verify_crafting_failure_facts(
+	if not await _verify_panel_stage_counts(crafting_system, building_panel):
+		return
+	if not await _verify_crafting_failure_facts(
 		crafting_system,
 		action_system,
 		resource_system,
@@ -132,9 +134,15 @@ func _init() -> void:
 	if bool(needs_confirm.get("ok", true)) or not bool(needs_confirm.get("confirmation_required", false)):
 		_fail("Changing a non-zero project must require confirmation: %s" % JSON.stringify(needs_confirm))
 		return
+	if int(needs_confirm.get("refundable_resources", {}).get("iron", 0)) != 1:
+		_fail("Target-change confirmation did not expose the exact refundable investment")
+		return
 	var changed: Dictionary = crafting_system.set_target("blacksmith", "craft_sword_shield", true)
 	if not bool(changed.get("ok", false)):
 		_fail("Confirmed target change failed: %s" % JSON.stringify(changed))
+		return
+	if int(changed.get("refunded_resources", {}).get("iron", 0)) != 1 or int(resource_system.get_resource("iron")) != iron_before_interrupt:
+		_fail("Confirmed target change did not refund the completed stage investment exactly: %s" % JSON.stringify(changed))
 		return
 	var reset_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
 	if int(reset_project.get("completed_stages", -1)) != 0 or str(reset_project.get("target_item_id", "")) != "item_sword_shield":
@@ -144,7 +152,7 @@ func _init() -> void:
 	crafting_system.set_target("blacksmith", "craft_iron_helmet", true)
 	var item_before := int(resource_system.get_resource("item_iron_helmet"))
 	var project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
-	for _stage in range(3):
+	for _stage in range((crafting_system.get_recipe("craft_iron_helmet").get("stages", []) as Array).size()):
 		var stage_result: Dictionary = crafting_system.complete_stage("blacksmith", int(project.get("project_revision", -1)), "")
 		if not bool(stage_result.get("ok", false)):
 			_fail("Direct stage completion failed: %s" % JSON.stringify(stage_result))
@@ -179,7 +187,7 @@ func _init() -> void:
 	if not bool(panel_snapshot.get("visible", false)) or str(panel_snapshot.get("selected_recipe_id", "")) != "craft_iron_helmet":
 		_fail("Blacksmith building panel did not expose the selected recipe")
 		return
-	if not await _verify_crafting_panel_target_confirmation(crafting_system, building_panel):
+	if not await _verify_crafting_panel_target_confirmation(crafting_system, resource_system, building_panel):
 		return
 
 	print("T0035 crafting pipeline verification passed.")
@@ -201,6 +209,27 @@ func _verify_catalog(crafting_system: Node) -> bool:
 	return true
 
 
+func _verify_panel_stage_counts(crafting_system: Node, building_panel: Node) -> bool:
+	for building_id in ["blacksmith", "workshop"]:
+		building_panel.show_building(building_id)
+		await process_frame
+		var target_select := building_panel.find_child("CraftingTargetSelect", true, false) as OptionButton
+		if target_select == null:
+			_fail("Building panel is missing its crafting target selector for %s" % building_id)
+			return false
+		for recipe_id in EXPECTED_RECIPES.keys():
+			var expected: Array = EXPECTED_RECIPES[recipe_id]
+			if str(expected[0]) != building_id:
+				continue
+			var option_index := _find_option_index_by_metadata(target_select, str(recipe_id))
+			var recipe: Dictionary = crafting_system.get_recipe(str(recipe_id))
+			var expected_text := "%s（%d阶段）" % [str(recipe.get("name", "")), int(expected[2])]
+			if option_index < 0 or target_select.get_item_text(option_index) != expected_text:
+				_fail("Building panel stage count mismatch for %s: expected %s" % [recipe_id, expected_text])
+				return false
+	return true
+
+
 func _verify_crafting_failure_facts(
 	crafting_system: Node,
 	action_system: Node,
@@ -213,10 +242,14 @@ func _verify_crafting_failure_facts(
 	action_system.interrupt_npc_action(worker_id, "crafting_verification_reset")
 	npc_system.debug_enter_location_immediately(worker_id, "blacksmith")
 	npc_system.update_npc_state(worker_id, {"last_action_result": "", "satiety": 90, "fatigue": 0})
-	if action_system.debug_assign_work(worker_id, "blacksmith"):
-		_fail("Blacksmith work must not start without a selected target")
+	if not action_system.debug_assign_work(worker_id, "blacksmith"):
+		_fail("Blacksmith work request without a target was not accepted for formal arrival validation")
 		return false
-	if str(npc_system.get_npc_state(worker_id).get("last_action_result", "")) != "work_failed_crafting_target_missing":
+	if not await _wait_until_last_action_result(
+		npc_system,
+		worker_id,
+		"work_failed_crafting_target_missing"
+	):
 		_fail("Missing target did not expose the expected action failure")
 		return false
 	var selected: Dictionary = crafting_system.set_target(
@@ -234,8 +267,15 @@ func _verify_crafting_failure_facts(
 		_fail("Could not clear iron for crafting failure fact verification")
 		return false
 	var event_count: int = memory_system.get_npc_daily_events(worker_id).size()
-	if action_system.debug_assign_work(worker_id, "blacksmith"):
-		_fail("Blacksmith work must not start without the current stage material")
+	if not action_system.debug_assign_work(worker_id, "blacksmith"):
+		_fail("Blacksmith work request without stage material was not accepted for formal arrival validation")
+		return false
+	if not await _wait_until_last_action_result(
+		npc_system,
+		worker_id,
+		"work_failed_insufficient_stage_resources"
+	):
+		_fail("Insufficient stage resources did not expose the expected action failure")
 		return false
 	var events: Array = memory_system.get_npc_daily_events(worker_id)
 	if events.size() <= event_count:
@@ -275,7 +315,18 @@ func _verify_crafting_failure_facts(
 	return true
 
 
-func _verify_crafting_panel_target_confirmation(crafting_system: Node, building_panel: Node) -> bool:
+func _verify_crafting_panel_target_confirmation(
+	crafting_system: Node,
+	resource_system: Node,
+	building_panel: Node
+) -> bool:
+	var building_completion_dialog := root.get_node_or_null("Main/UI/MilestoneAlertPresenter/BuildingCompletionDialog") as AcceptDialog
+	if building_completion_dialog != null and building_completion_dialog.visible:
+		building_completion_dialog.hide()
+		var milestone_presenter := building_completion_dialog.get_parent()
+		if milestone_presenter.has_method("_on_building_completion_closed"):
+			milestone_presenter.call("_on_building_completion_closed")
+		await process_frame
 	var reset: Dictionary = crafting_system.set_target("blacksmith", "", true)
 	if not bool(reset.get("ok", false)):
 		_fail("Could not reset the building-panel confirmation fixture: %s" % JSON.stringify(reset))
@@ -339,8 +390,8 @@ func _verify_crafting_panel_target_confirmation(crafting_system: Node, building_
 	):
 		_fail("Partial progress did not open a pending target-change confirmation while retaining the old selection: %s" % JSON.stringify(partial_prompt))
 		return false
-	if not confirmation.dialog_text.contains(str(partial_before_cancel.get("current_stage_name", ""))) or not confirmation.dialog_text.contains("整件进度"):
-		_fail("Target-change confirmation must identify the current stage and visible overall progress")
+	if not confirmation.dialog_text.contains(str(partial_before_cancel.get("current_stage_name", ""))) or not confirmation.dialog_text.contains("整件进度") or not confirmation.dialog_text.contains("返还已投入材料") or confirmation.dialog_text.contains("不返还"):
+		_fail("Target-change confirmation must identify progress and promise the material refund")
 		return false
 	confirmation.get_cancel_button().pressed.emit()
 	await process_frame
@@ -393,6 +444,7 @@ func _verify_crafting_panel_target_confirmation(crafting_system: Node, building_
 	if int(integer_before_cancel.get("completed_stages", -1)) != 1 or float(integer_panel_before.get("progress", 0.0)) <= 0.0:
 		_fail("Crafting panel did not expose its committed integer-stage progress")
 		return false
+	var iron_before_integer_switch := int(resource_system.get_resource("iron"))
 
 	target_select.select(helmet_index)
 	target_select.item_selected.emit(helmet_index)
@@ -438,6 +490,9 @@ func _verify_crafting_panel_target_confirmation(crafting_system: Node, building_
 		or bool(integer_panel_after_confirm.get("confirmation_visible", true))
 	):
 		_fail("Confirming the committed-stage target change did not switch and reset the project: project=%s panel=%s" % [JSON.stringify(integer_after_confirm), JSON.stringify(integer_panel_after_confirm)])
+		return false
+	if int(resource_system.get_resource("iron")) != iron_before_integer_switch + 1:
+		_fail("Confirming the committed-stage target change did not return its one invested iron")
 		return false
 	return true
 
@@ -820,6 +875,18 @@ func _wait_until_current_action(npc_system: Node, npc_id: String, expected_actio
 		await create_timer(0.02).timeout
 		if str(npc_system.get_npc_state(npc_id).get("current_action", "")) == expected_action:
 			return true
+	return false
+
+
+func _wait_until_last_action_result(
+	npc_system: Node,
+	npc_id: String,
+	expected_result: String
+) -> bool:
+	for _frame in range(600):
+		if str(npc_system.get_npc_state(npc_id).get("last_action_result", "")) == expected_result:
+			return true
+		await create_timer(0.02).timeout
 	return false
 
 

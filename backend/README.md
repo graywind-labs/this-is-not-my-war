@@ -1,5 +1,23 @@
 # Backend README
 
+## T1703 Windows 试玩冻结后端
+
+开发环境继续使用 `python backend/app.py`。试玩构建改由 `backend/demo_server.py` 以 Waitress 绑定 `127.0.0.1:5000`；启动器传入 build ID 与父进程 PID，后端在启动器退出后自行停止。试玩日志、成本账本和 AI 服务选择写入 `%LOCALAPPDATA%/ThisIsNotMyWarDemo/`，不写开发目录。
+
+`APP_PROFILE=demo` 时 `/mock/model` 与 `/debug/llm_usage` 返回 404，LLM fallback 固定关闭；`/health` 暴露非秘密的 profile / build / Provider 摘要供启动器核对。一键脚本只把本包 DeepSeek Key 和用户授权的当前百炼语音白名单字段封入 PyInstaller onedir 后端，不复制 `.env`，也不把 Key 放入 Godot PCK、启动器参数、manifest 正文或日志。正式发布前从冻结后端执行一次 `/config/ai-service/test`。
+
+## T0410 试玩默认 API 与玩家自定义 AI 服务
+
+后端启动时把 `LLM_PROVIDER / LLM_API_KEY / LLM_BASE_URL / LLM_MODEL` 读取为“试玩默认 API”。参赛包在构建 / 部署阶段注入届时指定的 DeepSeek Key；Key 不进入仓库、Godot 资源或导出 PCK。默认配置和玩家自定义配置都关闭自动 Mock fallback；演示配置的 `LLM_BUDGET_MAX_*`、`LLM_DAILY_BUDGET_MAX_CNY` 设为 `0`，不预制游戏额度，供应商自身的余额 / 额度 / 限流错误原样进入业务失败链。
+
+共享设置通过以下本机接口管理服务：
+
+- `GET /config/ai-service`：只返回模式、Provider、模型、Base URL 和“是否已有 Key”，永不返回 Key。
+- `PUT /config/ai-service`：验证连接后原子切换后续全部 LLM 业务调用；`mode=trial` 恢复试玩配置，`mode=custom` 接受 DeepSeek / OpenAI-compatible 的模型、Base URL 与 Key。
+- `POST /config/ai-service/test`：测试当前草稿或已启用服务，不改变选择。
+
+Windows 发行版把玩家 Key 用当前 Windows 用户的 DPAPI 加密，密文与非秘密服务摘要写入 `%LOCALAPPDATA%/ThisIsNotMyWar/ai_service/`；普通客户端配置、存档、HTTP 响应、日志和调试快照都不包含 Key。非 Windows 平台若没有安全凭据层会明确返回 `secure_storage_unavailable`；`AI_SERVICE_ALLOW_PLAINTEXT_TEST_STORE=true` 仅供隔离自动化目录使用，禁止用于发行包。
+
 ## T0306 五类战斗记忆聚合透传
 
 Godot 只对 `attack_made / damage_taken / building_damaged / defense_device_triggered / horse_damaged` 生成严格同键聚合投影；后端不重新分组，也不接收或修改 MemorySystem 原始事件。Model Adapter 继续对白名单顶层字段做二次投影，并深拷贝 `details.aggregation` 的次数、累计伤害、HP 与时间范围到 provider。七类正式调用的 endpoint、Schema 顶层和调用频率均不变。
@@ -58,21 +76,22 @@ DeepSeek / OpenAI-compatible 本地或服务器配置示例：
 LLM_PROVIDER=deepseek
 LLM_API_KEY=your_real_backend_only_key
 LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
+LLM_MODEL=deepseek-v4-pro
 LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS=10
 LLM_PROVIDER_IDLE_TIMEOUT_SECONDS=120
+LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS=120
 LLM_FALLBACK_TO_MOCK=false
 LLM_FORCE_JSON_RESPONSE=true
 LLM_TEMPERATURE=0.2
 LLM_THINKING_MODE=disabled
-LLM_INPUT_CACHE_HIT_COST_PER_M_TOKENS=0.02
-LLM_INPUT_COST_PER_M_TOKENS=1
-LLM_OUTPUT_COST_PER_M_TOKENS=2
+LLM_INPUT_CACHE_HIT_COST_PER_M_TOKENS=0.025
+LLM_INPUT_COST_PER_M_TOKENS=3
+LLM_OUTPUT_COST_PER_M_TOKENS=6
 LLM_COST_LEDGER_ENABLED=true
 LLM_COST_LEDGER_PATH=backend/logs/llm_cost_ledger.jsonl
-LLM_DAILY_BUDGET_MAX_CNY=20
+LLM_DAILY_BUDGET_MAX_CNY=0
 LLM_DAILY_BUDGET_TIMEZONE=Asia/Shanghai
-LLM_DAILY_BUDGET_REQUEST_RESERVE_CNY=0.05
+LLM_DAILY_BUDGET_REQUEST_RESERVE_CNY=0
 LLM_BUDGET_MAX_CALLS=0
 LLM_BUDGET_MAX_INPUT_TOKENS=0
 LLM_BUDGET_MAX_OUTPUT_TOKENS=0
@@ -83,7 +102,7 @@ LLM_AUDIT_LOG_PATH=backend/logs/llm_calls.jsonl
 LLM_AUDIT_LOG_INCLUDE_PAYLOADS=true
 ```
 
-真实 Key 只放在 `backend/.env` 或服务器环境变量中，不写入 Godot 客户端、导出包或仓库。请求失败、超时、无 Key 或模型返回非 JSON 时，生产 / 演示路径必须返回可处理错误并记录真实失败原因；不要用 mock 内容伪装模型成功。`LLM_FALLBACK_TO_MOCK=true` 只能作为本地开发过渡或对比测试使用。
+试玩默认 Key 只由打包 / 部署环境注入后端；玩家自定义 Key 只进入本机后端的系统凭据保护层，不写入 Godot 客户端、PCK、存档、普通配置或仓库。请求失败、超时、无 Key 或模型返回非 JSON 时，生产 / 演示路径必须返回可处理错误并记录真实失败原因；不要用 mock 内容伪装模型成功。`LLM_FALLBACK_TO_MOCK=true` 只能作为本地开发过渡或对比测试使用。
 
 ## 持久化 LLM 调用日志
 
@@ -93,13 +112,14 @@ T0069 后，使用环境配置创建的后端 ModelAdapter 默认把完整调用
 - `LLM_AUDIT_LOG_PATH=...`：JSONL 文件路径；相对路径以项目根目录解析，默认 `backend/logs/llm_calls.jsonl`。
 - `LLM_AUDIT_LOG_INCLUDE_PAYLOADS=true|false`：是否保存完整输入、正式 system/user messages、聚合响应和校验详情，默认启用。关闭后仍保存 request id、call type、provider、model、状态和 usage。
 
-每行是一个带 `schema_version=1`、UTC 时间和唯一 `audit_id` 的 JSON 事件。同一次调用按生命周期关联：
+每行是一个带 `schema_version=2`、UTC 时间和唯一 `audit_id` 的 JSON 事件。同一次调用按生命周期关联；现有 v1 行保持不变，新调用追加 v2 行：
 
 - `call_started`：ModelAdapter 输入 payload 与目标 NPC / 事件。
-- `provider_request_sent`：每次正式供应商尝试的完整 JSON body、重试序号和 endpoint；明确不保存请求头。
-- `provider_response_received`：HTTP 状态与流式聚合后的供应商响应。
+- `provider_request_prepared`（准备发送）：每次正式供应商尝试的完整 JSON body、重试序号、endpoint 与绝对时限；明确不保存请求头。
+- `provider_response_headers_received`（HTTP 头已收到）：收到响应头时的 HTTP 状态、Content-Type 与累计耗时。
+- `provider_first_valid_token_received`（首个有效 Token）：首次收到非空模型正文增量时记录一次及累计耗时；keep-alive、空行和纯 usage 块不计入。
+- `provider_request_completed`（完成）：每次尝试均以成功或失败收口，记录总耗时、聚合响应 / billing，或真实异常与失败阶段。
 - `provider_output_parsed` / `provider_output_rejected`：原始模型正文、解析结果，或截断 / 非 JSON 原因。
-- `provider_attempt_failed`：HTTP、连接、空闲超时或响应格式错误。
 - `call_completed`：最终内容、usage、fallback 与错误状态。
 - `business_validation_failed`：后端 Pydantic Schema 或业务合同拒绝结果；与原调用共用 audit id。
 
@@ -113,9 +133,9 @@ Get-Content -Encoding UTF8 -Wait backend/logs/llm_calls.jsonl
 
 正式业务请求不再向供应商发送 `max_tokens`，避免对话、通用计划修改判别、每日计划、计划修订、战时心理判定或首次睡眠总结被客户端固定输出上限截断。DeepSeek V4 默认可能启用 thinking，结构化 JSON 业务默认设置 `LLM_THINKING_MODE=disabled`，避免思考内容挤占最终结构化内容。后端 `/health` 会暴露 `client_output_token_limit_applied=false`；任一正式结构化调用首次返回空内容、`finish_reason=length` 或非法 JSON 时，会自动用对应业务的紧凑提示重试一次，并在 usage 中记录真实 `finish_reason`、内容长度和尝试次数。供应商自身的模型上下文上限仍然存在，但不再由本项目额外设置单次输出硬上限。
 
-正式供应商请求使用流式 SSE 聚合完整 JSON，不设置模型生成的固定总时长。`LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS` 只限制建立供应商连接的时间；`LLM_PROVIDER_IDLE_TIMEOUT_SECONDS` 只在连接建立后长时间完全收不到 token、keep-alive 或其他数据时触发。持续排队 keep-alive 或持续生成 token 会继续等待，不会因为经过固定 30 / 75 / 90 秒而失败。
+正式供应商请求使用流式 SSE 聚合完整 JSON。`LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS` 限制建立供应商连接，`LLM_PROVIDER_IDLE_TIMEOUT_SECONDS` 限制连接建立后完全收不到 token、keep-alive 或其他数据的时长；`LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS` 是默认 120 秒的墙钟绝对上限，不受 keep-alive 刷新。到达总上限前仍没有非空正文增量时返回 `provider_queue_timeout` / HTTP 504；已经开始生成后到达上限则返回通用 `provider_timeout`。两种失败都会释放预算预留并由 Godot 释放 LLM 活动与时间减速。
 
-`LLM_BUDGET_MAX_*` 是兼容的进程内调用 / token / 费用守门，默认 `0` 表示关闭。T0077 后，环境构造的正式 DeepSeek adapter 还默认启用 `LLM_DAILY_BUDGET_MAX_CNY=20`。T0090 将当前 Flash 开发配置的每次 provider HTTP 尝试预留校准为 ¥0.05，再把供应商返回的缓存命中输入、未命中输入和输出 usage 按官方人民币价追加到 `backend/logs/llm_cost_ledger.jsonl`。该值来自 347 次实测尝试的均值 ¥0.01899017、P99 ¥0.03258096 和最大值 ¥0.04262264，并留有约 17% 高于实测最大值的余量；它不再覆盖供应商声明的极端最大上下文理论成本。账本按 `Asia/Shanghai` 自然日重放，后端重启不清零；自动重试逐次计费。已用 + 在途预留会越过上限、价格缺失或账本故障时，请求在发给供应商前返回 HTTP 429 / `budget_exceeded`，不会自动切到 mock。Prompt、模型、上下文上限或实际费用分布明显变化时必须重新统计并提高预留。
+`LLM_BUDGET_MAX_*` 与 `LLM_DAILY_BUDGET_MAX_CNY` 保留为开发 / 自建服务器的显式运维守门，`0` 表示关闭；正式试玩包全部为 `0`，不实现游戏预制额度。成本账本仍可在额度关闭时记录供应商 usage，便于开发审计。若开发者显式启用本地限额，越限返回 HTTP 429 / `budget_exceeded` 且不切 Mock；玩家自定义配置始终不继承试玩包的本地预算，只受其供应商账户自身约束。
 
 LLM 相关任务的推荐验证顺序：
 

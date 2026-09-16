@@ -18,6 +18,16 @@ const CAMERA_FOLLOW_SPEED := 10.0
 const EMOTION_BUBBLE_DEFAULT_HOLD_SECONDS := 5.0
 const EMOTION_BUBBLE_DEFAULT_FADE_SECONDS := 0.75
 
+var _configured_viewport_size := VIEWPORT_SIZE
+var _configured_camera_distance := CAMERA_DISTANCE
+var _configured_camera_fov := 40.0
+var _configured_focus_height := -1.0
+var _configured_camera_height := -1.0
+var _configured_frame_minimum_size := Vector2(150.0, 220.0)
+var _configured_margin := 8
+var _interaction_enabled := true
+var _emotion_bubble_enabled := true
+
 var _target_npc_id := ""
 var _target_enemy_id := ""
 var _target_kind := "npc"
@@ -47,22 +57,38 @@ func _ready() -> void:
 	var event_bus := get_node_or_null("/root/EventBus")
 	if event_bus != null and event_bus.has_signal("npc_dialogue_emotion_presented"):
 		event_bus.npc_dialogue_emotion_presented.connect(_on_dialogue_emotion_presented)
+	if event_bus != null and event_bus.has_signal("npc_status_emotion_presented"):
+		event_bus.npc_status_emotion_presented.connect(_on_dialogue_emotion_presented)
 	_set_rendering_enabled(false)
 	set_process(false)
+
+
+func configure_headshot(viewport_size: Vector2i = Vector2i(256, 256)) -> void:
+	# This presentation variant keeps the shared live-world portrait renderer while
+	# framing the face tightly enough to read as dialogue UI instead of a body panel.
+	_configured_viewport_size = viewport_size
+	_configured_camera_distance = 1.45
+	_configured_camera_fov = 35.0
+	_configured_focus_height = 1.48
+	_configured_camera_height = 1.48
+	_configured_frame_minimum_size = Vector2(120.0, 120.0)
+	_configured_margin = 4
+	_interaction_enabled = false
+	_emotion_bubble_enabled = false
 
 
 func _build_view() -> void:
 	var margin := MarginContainer.new()
 	margin.name = "PortraitMargin"
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_left", _configured_margin)
+	margin.add_theme_constant_override("margin_top", _configured_margin)
+	margin.add_theme_constant_override("margin_right", _configured_margin)
+	margin.add_theme_constant_override("margin_bottom", _configured_margin)
 	add_child(margin)
 
 	var view_frame := PanelContainer.new()
 	view_frame.name = "PortraitFrame"
-	view_frame.custom_minimum_size = Vector2(150.0, 220.0)
+	view_frame.custom_minimum_size = _configured_frame_minimum_size
 	view_frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	view_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.add_child(view_frame)
@@ -77,7 +103,7 @@ func _build_view() -> void:
 
 	_subviewport = SubViewport.new()
 	_subviewport.name = "PortraitSubViewport"
-	_subviewport.size = VIEWPORT_SIZE
+	_subviewport.size = _configured_viewport_size
 	_subviewport.own_world_3d = false
 	_subviewport.transparent_bg = false
 	_subviewport.msaa_3d = Viewport.MSAA_2X
@@ -89,7 +115,7 @@ func _build_view() -> void:
 	_camera = Camera3D.new()
 	_camera.name = "PortraitCamera"
 	_camera.current = true
-	_camera.fov = 40.0
+	_camera.fov = _configured_camera_fov
 	_camera.near = 0.08
 	_camera.far = 180.0
 	_camera.set_cull_mask_value(PORTRAIT_EXCLUDED_VISUAL_LAYER, false)
@@ -175,10 +201,12 @@ func _build_view() -> void:
 	click_button.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	click_button.flat = true
 	click_button.focus_mode = Control.FOCUS_NONE
-	click_button.tooltip_text = "空闲时点击人物可让其向你示意"
-	click_button.accessibility_name = "NPC 人物小窗"
+	click_button.tooltip_text = "空闲时点击人物可让其向你示意" if _interaction_enabled else ""
+	click_button.accessibility_name = "人物肖像"
 	click_button.pressed.connect(_on_portrait_pressed)
 	view_frame.add_child(click_button)
+	click_button.visible = _interaction_enabled
+	click_button.mouse_filter = Control.MOUSE_FILTER_STOP if _interaction_enabled else Control.MOUSE_FILTER_IGNORE
 
 
 func _on_portrait_pressed() -> void:
@@ -257,7 +285,7 @@ func _process(delta: float) -> void:
 
 
 func _on_dialogue_emotion_presented(npc_id: String, presentation: Dictionary) -> void:
-	if not _active or _target_kind != "npc" or npc_id != _target_npc_id:
+	if not _emotion_bubble_enabled or not _active or _target_kind != "npc" or npc_id != _target_npc_id:
 		return
 	_emotion_bubble_presentation = presentation.duplicate(true)
 	_emotion_bubble_hold_seconds = maxf(0.0, float(presentation.get("hold_seconds", EMOTION_BUBBLE_DEFAULT_HOLD_SECONDS)))
@@ -315,10 +343,18 @@ func _update_camera(delta: float) -> void:
 		forward = Vector3(0.0, 0.0, -1.0)
 	else:
 		forward = forward.normalized()
-	var focus_height := float(snapshot.get("focus_height", CAMERA_FOCUS_HEIGHT))
-	var camera_height := float(snapshot.get("camera_height", CAMERA_HEIGHT))
+	var focus_height := (
+		_configured_focus_height
+		if _configured_focus_height >= 0.0
+		else float(snapshot.get("focus_height", CAMERA_FOCUS_HEIGHT))
+	)
+	var camera_height := (
+		_configured_camera_height
+		if _configured_camera_height >= 0.0
+		else float(snapshot.get("camera_height", CAMERA_HEIGHT))
+	)
 	var focus_position := base_position + Vector3.UP * focus_height
-	var desired_position := base_position + forward * CAMERA_DISTANCE + Vector3.UP * camera_height
+	var desired_position := base_position + forward * _configured_camera_distance + Vector3.UP * camera_height
 	desired_position = _resolve_camera_obstruction(focus_position, desired_position)
 
 	if not _camera_initialized or delta <= 0.0:
@@ -396,7 +432,11 @@ func debug_get_snapshot() -> Dictionary:
 		"shares_main_world": _subviewport != null and main_viewport != null and _subviewport.world_3d == main_viewport.world_3d,
 		"viewport_size": _subviewport.size if _subviewport != null else Vector2i.ZERO,
 		"camera_position": _camera.global_position if _camera != null else Vector3.ZERO,
-		"configured_camera_distance": CAMERA_DISTANCE,
+		"configured_camera_distance": _configured_camera_distance,
+		"configured_camera_fov": _configured_camera_fov,
+		"configured_focus_height": _configured_focus_height,
+		"configured_camera_height": _configured_camera_height,
+		"headshot_mode": not _interaction_enabled,
 		"hides_main_fading_shells": _camera != null and not _camera.get_cull_mask_value(MAIN_CAMERA_FADING_SHELL_VISUAL_LAYER),
 		"shows_portrait_opaque_shells": _camera != null and _camera.get_cull_mask_value(PORTRAIT_OPAQUE_SHELL_VISUAL_LAYER),
 		"camera_front_dot": _last_camera_front_dot,

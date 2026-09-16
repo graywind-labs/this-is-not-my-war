@@ -1,12 +1,259 @@
 # GODOT_ARCHITECTURE.md
 
+## T0448 教程艾达双向倍率入口
+
+- `scripts/systems/CombatSystem.gd`：教程艾达对敌倍率 `2.4`；教程敌人对艾达防御后伤害倍率 `0.5`，两者均以 active raid 与 Ada id 双重门控。
+- `tools/verify_t0448_tutorial_ada_damage_multipliers.gd`：锁定艾达双向倍率、整数取整次序及非艾达隔离。
+- `tools/verify_t0417_friendly_npc_damage_multiplier.gd`：同步当前教程艾达输出，并确认教程作用域内非艾达仍使用正式 `0.7`。
+- `tools/verify_t1505_tutorial_natural_combat.gd`：自然战斗时长下限同步为 15 秒，继续锁定箭塔先毁、自然清敌、40% 下限和零正式污染。
+
+## T0447 主厅视觉包络与物理包络解耦
+
+- `station_layout.json` 的主厅仍以 `22×18m` 作为布局、工位、塔防和表现包络；`collision_inset=0.5` 只为正式静态碰撞派生 `21×17m` 物理包络。
+- `StationLayoutController` 使用该物理包络生成五段外墙，再应用既有 `solid_interior_blocker.inset=0.2`；其他未声明 `collision_inset` 的建筑仍为零内收，不改变现有碰撞。
+- 导航仍从 world-static 碰撞烘焙；`get_building_combat_geometry()` 与外墙生成共用 `_get_building_collision_envelope()`，敌人的墙面接触点和攻击停靠位因此贴合真实静态碰撞。战斗仍以实体扫掠命中为最终伤害权威，本次不新增逻辑补伤。
+
+## T0444 教程器械通用承伤入口
+
+- `data/tutorial_config.json`：移除 `tutorial_raid.defense_device_damage_multiplier`。
+- `scripts/systems/CombatSystem.gd`：教程快照和器械伤害提交均不再维护倍率字段或分支。
+- `tools/verify_t0444_tutorial_device_damage.gd`：锁定配置 / 代码无倍率路径，并验证 5 点单次伤害、第三次命中摧毁。
+
+## T0443 教程战斗配置入口
+
+- `data/tutorial_config.json`：教程箭塔实例覆盖 `15 HP / 16 攻击`，夜袭侦察兵攻击力 `6`。
+- `scripts/systems/TutorialDirector.gd`：继续读取配置并提交目标 deployment 覆盖，无新增数值副本。
+- `scripts/systems/CombatSystem.gd`：T0444 后已删除器械倍率分支；仅继续维护艾达 40% HP 下限。
+
+2026-09-14 T0424：`data/building_defs.json` 将 `front_gate` 扩展为独立 Lv.1–6 数据链，BuildingSystem 继续通过通用 `level_effects` 逐级结算，未新增城门专用升级代码，也未把 `wall` 与 `front_gate` 状态合并。FormalGateArtView 仍只读正门自身的 BuildingSystem 等级 / HP；Lv.2–6 共用既有加固表现，碰撞、自动门、固定战斗接触面和导航合同不变。
+
+## T0422 宿舍升级恢复效率接线
+
+`NPCNeedsSystem._apply_profile()` 逐 need 字段查询速率倍率；仅 `profile_id=sleep + need_key=fatigue + active sleep_in_dormitory` 命中 BuildingSystem 的 `sleep_recovery` 活动效率。这样 Lv.2 `1.2×` 与建筑损伤统一作用于疲劳恢复，睡眠的 satiety 消耗不变。运行快照不是 active、当前行动不匹配或直接调用基础 profile 时均回退 `1.0×`。
+
+## T0413 连续睡眠生命周期
+
+`sleep_in_dormitory` 当前使用 `continuous_until_plan_changes`：28800 秒仅作为 8 小时基础恢复窗口和运行时进度上限，不再触发自动完成。ActionSystem 在当前计划仍为睡眠时保留同一 active 事务、固定床 occupancy 与 `sleeping_supine` 挂接；下一非睡眠计划或其他权威中断经统一清理释放床位和角色挂接，并补写一次 `sleep_ended`。NPCNeedsSystem 独立按逻辑秒结算基础 `-12.5 fatigue/h` 并应用宿舍活动效率，到 0 后钳制且不发送无变化反馈。
+
+## T1703-P1—P5 Windows 试玩客户端导出边界
+
+试玩客户端不从开发工作区原地导出。构建脚本把 `project.godot`、正式场景 / 脚本 / 数据 / 资源 / shader / UI / 音频复制到隔离临时 Godot 项目，再只对临时副本移除 `MCPGameBridge` Autoload 和编辑器插件、排除 `addons/godot_mcp/`、关闭 GM、锁定 MainMenu 与 `startup_mode=2`、启用独立试玩 `user://` 和 `demo` feature。真实百炼语音入口按用户确认保留，Provider 配置由同包冻结后端提供，不进入 PCK。
+
+正式导出使用 Godot 4.6.2 Windows release 模板和版本化 preset；`.git / .godot / .vscode / backend / tools / docs / analysis / artifacts / art_source / scratch` 均不进入临时客户端项目或 PCK。构建前后以 SHA-256 确认开发工作区关键文件未变。完整目录、覆盖项、审计与任务依赖见 `docs/DEMO_PACKAGING.md`。
+
+当前实现使用 `export_presets.cfg` 的 `Windows Desktop Demo` preset 和 `demo` feature，输出独立 `ThisIsNotMyWar.exe + ThisIsNotMyWar.pck`。官方 4.6.2-stable 模板先校验精确字节数与 SHA-256，再只提取 Windows x64 模板到 Godot 用户模板目录；已完成真实 release 导出及导出 EXE headless 启动验证。开发工程的 `GM_ENABLED=true` 和 MCP 配置保持不变，只有临时项目改为发行值。
+
+P5-R2 将 `assets/branding/this_is_not_my_war_icon_1024.png` 设为跨平台项目图标，将六档 ICO 设为 `config/windows_native_icon` 与 Windows export `application/icon / console_wrapper_icon`；因此文件资源、运行任务栏和调试 wrapper 使用同一盾徽。staging 验证同时要求两份品牌资产存在并与 project setting 一致，旧根目录 Godot 默认 `icon.svg` 不再进入发行复制白名单。
+
+P5-R3 将 `project.godot` 的 `window/size/mode=3` 作为场景前首帧全屏保证，并把 `ClientSettings.DEFAULT_DISPLAY_MODE` 设为 `fullscreen`，因此全新试玩用户及“恢复默认”均进入全屏。配置文件中已有合法 `windowed / borderless` 选择时仍优先读取并应用，发行版不会在每次启动强制改写玩家偏好。主菜单和游戏内退出最终都调用 `SceneTree.quit()`；进程级后端回收由外层启动器负责，不由 Godot UI 直接管理。
+
+P5-R4 修复发行 PCK 的音频清单边界。正式源 `assets/audio/manifests/audio_asset_manifest.csv` 会被 Godot 识别为 CSV Translation，不能假设 release PCK 仍能用 FileAccess 读取原路径；隔离 staging 因此逐字节复制为 `audio_asset_manifest.runtime.txt`，并只把临时 `AudioManager.MANIFEST_PATH` 指向该文本。导出 EXE 启动时打印非秘密的音频 readiness 数量，T0420 后构建器要求清单与分类均为 109，并扫描实际运行日志中的清单不可读、未知资产、运行音频缺失和加载失败。开发工程继续读取原 CSV，不新增双份受维护源。
+
+P5-R5 移除了发行配置里的固定音频条数。构建各阶段直接解析唯一正式 CSV 派生预期数量，并要求导出客户端报告的清单、分类与流加载数都与其相等；因此未来数值调整无需改构建，音频增删也不再需要同步多个计数常量。本轮 9 月 14—15 日新增 / 修改的 Godot 运行内容均仍落在既有 staging 白名单中。
+
+P5-R6 将 Godot CSV 翻译导入副产物隔离在开发边界之外。staging 在 runtime 文本已经生成并校验后，删除临时 `assets/audio/manifests/` 下的 CSV、`.csv.import` 和 `.translation`；导出客户端只消费 `.runtime.txt` 与实际音频资源。这样编辑器可继续在开发树维护 CSV 导入缓存，但其二进制写入时序不再影响发行导出。
+
+## T0410 AI 服务运行链
+
+`SettingsPanel → 127.0.0.1 后端 /config/ai-service → AIServiceManager → ModelAdapter` 决定后续 LLM Provider；ClientSettings 只保留非秘密模式 / Provider / 模型 / Base URL。正式业务失败沿 `LLMBridge._report_ai_service_error → EventBus.ai_service_error → Main/UI/AIServiceErrorPresenter` 显示，错误条不参与请求重试、降级或任何玩法结算。
+
+## T0035-R4 计划内转产续作
+
+- `CraftingSystem.set_target()` 在新项目快照发布后调用 `DailyPlanSystem.resume_current_plan_after_crafting_target_change()`，但只处理本次实际中断者和非空新目标。
+- DailyPlanSystem 校验当前小时计划所有权后废弃旧配方派发签名，并 deferred 复用统一计划派发；ActionSystem 随后以新项目 revision 建立全新制造周期。
+- 旧目标中断事件、返料、项目清零、工位释放、正式路线和阶段资源结算边界不变；不新增 UI 或 GM 权威。
+
+## T1505-P6R55 跨天计划原位保持
+
+- `DailyPlanSystem.gd` 在 `day_started` 先沿既有入口暂停 TimeSystem，但不再向 ActionSystem 发出 `daily_plan_preparation` 中断；NPC 的正式路线、active action、工位会话、挂接和世界变换均跨计划请求保留。
+- 计划等待表现读取既有 `llm_activity`，不要求把真实 `current_action` 改成 `planning_day`。因此 ChibiCharacterPilot 无需新增姿态分支，睡眠 / 坐姿 / 站姿继续由现有 action 与 attachment 决定。
+- 批次完成仍调用 `execute_current_plan_for_all(true)`；相同运行态被直接采用，不同项才正常清理。未新增节点、Autoload、信号、endpoint 或 GM 权威接口。
+
+## T1505-P6R54 停留目标接线
+
+StationLayoutController 加载独立 `npc_stay_positions.json`，由 `get_npc_stay_world_position(location_id, npc_id)` 返回坐标或 null。NPCSystem 在公共地点路线和建筑入口最终路段只对 visit_location 消费该坐标，保留原门路段和正式空间会话。停留点不进入 building_spatial.positions 或 BuildingSystem 工位权威。
+
+同时修复教堂已前移坐姿被旧配置校验拒绝的问题：锚点允许在配置 footprint 与家具碰撞矩形仍相交时位于矩形边缘外，高度与姿态检查保持。
+
+
+## T0403-R4 正门方向空间接线
+
+- `station_layout.json` 同时提供连续地表、北侧自然碰撞、前林、敌军出生 / 阶段 / 道路、生产导航北界与 CameraRig 边界的新坐标。
+- `station_spatial_plan.json` 与正式配置保持灰盒、压力编队和镜头规格一致；`environment_art.json` 将前林与自然散布收回新北边缘。
+- `StationLayoutController.gd` 不再把旧 `Z=344` 写死为生产导航北界，而是从 `enemy_route.navigation_cross_sections` 推导必须覆盖的最北横断面。
+- 现有 `CombatSystem`、`EnemyActor` 和 `CameraRig` 继续消费上述配置，不新增第二套坐标权威。
+
+## T0081-R2 零饱食接线
+
+- `NPCNeedsSystem.gd`：归零边界、换血缺口 / 小数余量、私有事件与 `low_satiety` 信号。
+- `NPCSystem.gd`：`apply_needs_hp_damage_to_npc` 复用 HP 清零昏迷并关闭战斗受击副作用。
+- `MemorySystem.gd`：注册 `zero_satiety_triggered` Schema 与确定性摘要。
+- `DailyPlanSystem.gd`：构造零饱食、HP、需求档位和粮食 / 餐食上下文，当前小时强制进入两阶段重估。
+- HorseSystem 无改动。
+
+## T1505-P6R52 计划内连续祈祷接线
+
+- `data/action_defs.json`：`pray_at_chapel.completion_policy = repeat_while_planned`；`lead_mass` 保持 `once_per_plan_hour`。
+- `DailyPlanSystem`：复用既有 repeat completion deferred 续轮，不新增教堂专用计时器或计划分支。
+- `ActionSystem / NPCSystem`：复用 T1505-P6R47 的 `completed_in_place_hold`，下一轮祈祷从同一席位原位激活。
+- `tools/verify_t0129c_a5_p5i_formal_chapel_work.gd`：覆盖弥撒结束、个人计时已满且当前计划仍祈祷时的自动原席续轮，以及计划改变后停止续轮。
+
+## T1505-P6R51 门队列前向恢复接线
+
+- `ActorMotionBody.set_door_queue_state()`：记录活动路径曾经历门队列暂停；真正解除所有暂停源时，在原 NavigationAgent 路径内赶进已越过的当前点。
+- `ActorMotionBody._is_active_target_plane_passed()`：只为显式带方向的正式门路段提供越面到达，不影响工位终点与室内出口前缀。
+- `NPCSystem._start_building_entry_route()` / `_start_building_exit_route()`：为进门、出门及紧邻门口的正式子步骤附加通行方向、`0.06 m` 前向余量和 `1.3 m` 横向容差。
+- `tools/verify_t1505_door_queue_forward_resume.gd`：构造暂停帧越过路径点与门目标平面，锁定只向前赶进、路径身份不变、未越过者不误推进。
+
+## T1505-P6R50 固定教堂祈祷席接线
+
+- `data/building_defs.json`：`chapel_prayer_seat_01..08` 保存 8 名初始 NPC 的固定归属，`09..10` 与 `chapel_altar_01` 不设归属。
+- `BuildingSystem.reserve_workstation()` / `commit_workstation_reservation()`：沿用既有 `assigned_npc_id` 选择与校验，无教堂特判。
+- `BuildingPanel._format_workstations()`：继续忽略 `assigned_npc_id`，只显示席位名称及实时占用状态。
+- `tools/verify_t1505_fixed_chapel_prayer_seats.gd`：验证完整映射、不可回退抢席、扩展席与前端文本不变；正式教堂长流程同步改为园丁固定 3 号席。
+
+## T0403-R2 卡住情绪气泡接线
+
+- `ActorMotionBody._update_stuck_recovery()`：T0437 后累计 `8 秒` 卡住只发送非终止 `motion_stuck_notified`；保留 active request / target / moving 状态，恢复有效进展后重置单次通知闩锁。
+- `NPC._on_navigation_motion_stuck_notified()`：仅把 `stuck_timeout` 通知投影为 `npc_status_emotion_presented`，不调用移动失败转发与清理链。
+- `NPC.gd` 与 `NPCPortraitViewport.gd`：状态信号和对话信号共用既有 Emoji 气泡渲染 / 替换 / 渐隐实现；状态 presentation 可用 `play_action=false` 抑制角色动作。
+- `DialogueVoiceAudioController`：仍只监听对话情绪信号，卡住表现不会播放 NPC 回复语气声。
+- `tools/verify_t0403_r2_stuck_emotion_bubble.gd`：锁定生产 `8 秒` 阈值、NPCSystem 状态不变、触发范围、双表面同步、总 `3 秒` 时长与动作 / 对话信号隔离。
+- `tools/verify_t0129c_a2_actor_motion.gd`：物理阻挡样本在通知后仍须为 `active / moving`，只允许记录一次通知，不得写 `last_result=stuck_timeout`。
+
+## T0403-R1 NPC 避障半径运行态合同
+
+- `data/physics_navigation.json`：正常 `navigation_agent.avoidance_radius_padding = 0.05 m`。
+- `ActorMotionBody._apply_profile()`：NPC 身体半径 `0.30 m` 加共享 padding，写入 `NavigationAgent3D.radius = 0.35 m`。
+- `tools/verify_t0129c_a2_actor_motion.gd`：同时锁定实体 `0.30 m`、交互 `0.36 m` 与 RVO `0.35 m`，其余共享运动合同不变。
+
+## T1505-P6R49 建筑门洞运行时合同
+
+- `StationLayoutController._build_building_static_collision()`：按 building id 读取可进入建筑门宽覆盖，生成对应的 `FrontLeft / FrontRight` 物理缺口。
+- `StationLayoutController._classify_building_navigation_point()`：使用同一门宽完成合同网格可行性分类。
+- `DoorPassageQueueArea`：缺省横向感应宽度为 `2.6 m`；正式配置尺寸为 `2.6 × 2.8 × 3.0 m`。
+- 正门 / 后门继续由独立城门配置和 FormalGateArtView 管理，不进入建筑门队列。
+
+## T1505-P6R48 正式空间会话启动状态
+
+- `NPCSystem.begin_formal_workstation_action()` 在新 session 成立后、任何可能发出 `npc_state_changed` 的 helper 之前，写入 `formal_action_started_<action_id>` 并清空 `last_action_failure_context`。
+- `begin_formal_location_action()`、NPC-NPC 正式对话、正式工作、治疗和建筑协助自动继承该共同入口的状态边界。
+- `tools/verify_t1505_stale_failure_formal_session.gd` 从真实格伦旧制造失败状态启动 `talk_to_npc` 地点会话，检查首批全部可观察状态均不再携带旧失败。
+
+## T0081-R1 满疲劳工作倍率与计划链
+
+- `NPCNeedsSystem` 从 `activity_needs.json` 读取满疲劳 `0.5×`，在 `<100 → 100` 时先写私有 `full_fatigue_triggered`，再通过 EventBus 请求 `high_fatigue` 重估；停留 100 不重复。
+- `NPCSystem.get_npc_work_output_multiplier()` 统一乘算工作鼓励与疲劳；ActionSystem 覆盖普通工作、制造、计时经验、训练、诊所与协助治疗，BuildingSystem 覆盖修复 / 升级 helper 贡献，HorseSystem 覆盖最高有效照料者。
+- DailyPlanSystem 把 `high_fatigue` 作为两层行动状态触发处理，并将当前小时放进 `required_revision_hours`；真实判别响应必须包含该小时，随后才启动选中小时正式修订。
+- `tools/verify_t0081_r1_full_fatigue_work_penalty.gd` 覆盖数值、去重、再触发、事件和确定性两层链；`verify_t0081_r1_full_fatigue_plan_revision_real.gd` 覆盖真实 Provider。
+
+## T0035-R1 制造目标更换返料边界
+
+- `CraftingSystem.get_project_snapshot()` 根据当前配方前 `completed_stages` 个阶段成本确定性投影 `invested_resources`；阶段材料仍只在 `complete_stage()` 成功时扣除，小数周期不占用材料。
+- `CraftingSystem.set_target()` 在确认更换时先通过 ResourceSystem 原子返还上述投入；返还失败则不增加 revision、不清进度、不打断工人。成功后才沿用既有目标 revision、中断和项目重置链。
+- `BuildingPanel` 只说明“进度清零但返还已投入材料”并提交确认，不计算或写入返还数值。
+
+## T1505-P6R44 对话判别 / 修订跨整点解锁
+
+- `DailyPlanSystem._prepare_hourly_pending_player_dialogue_plan_chains()` 在 `hour_started` 中接续已经关闭 UI、但仍等待第一层判别、第二层修订或排队修订的玩家对话链。
+- `_find_live_pending_dialogue_plan_chain_context()` 用 NPC、当天、request hour、dialogue epoch 过滤；第一层请求额外绑定 judgement generation，旧会话不能占用新小时 marker。
+- `_finish_dialogue_resolution_execution()` 的 stale marker 删除改为同时匹配 dialogue id、day、hour、epoch；`_finish_stale_dialogue_judgement_resolution()` 只为同一存活链重基终态解锁令牌，不重基 LLM 结果本身。
+- `tools/verify_player_dialogue_plan_resume.gd` 覆盖第一层判别 pending 跨整点、判别进入第二层修订后跨整点、活跃玩家会话跨整点取消，以及最终新小时行动单次派发和旧工位清理。
+
+## T1505-P6R43 守备官对话跨小时保持
+
+- `DailyPlanSystem._on_hour_started()` 通过既有玩家对话优先级分支登记当前小时待派发项，不调用 `DialogSystem.end_dialogue()` / `force_end_dialogue_for_npc()`；强制结束仅保留给不应延续的自主 NPC-NPC 会话。
+- 活跃守备官会话期间，ActionSystem suspended transaction 与 NPCSystem `dialogue_workstation_hold` 跨整点保持，NPC 的 world position、workstation id、attachment pose 和零结算语义不变。
+- 玩家结束 / 取消后，`resume_current_plan_after_player_dialogue()` 先按当前小时 action 校验旧事务；不匹配返回 `interrupted_action_not_current_plan`，随后 `release_deferred_current_plan_after_dialogue()` 派发新项并由 `_assign_plan_item()` 清掉旧工位。
+- `tools/verify_player_dialogue_plan_resume.gd` 现通过 `TimeSystem.debug_advance_game_seconds()` 触发真实 `hour_started`，覆盖会话不自停、零 LLM 活动、原位 / 工位 / 姿态保持、旧事务清理及新项单次派发。
+
+## T1505-P6R42 正式行动对话原位暂停
+
+- `ActionSystem.interrupt_npc_action(..., "dialogue_interrupted")` 将 active 的 work / eat / sleep / pray / clinic / training 正式事务转入对话暂存；`lead_mass` 保留原联动中断语义。
+- `NPCSystem.hold_formal_workstation_action_for_dialogue()` / `resume_formal_workstation_action_after_dialogue()` 保存并恢复原空间、诊所表现字段，保留 BuildingSystem 占用、挂接和实际位置；兼容包装继续提供旧 occupant 方法名。
+- `NPC.set_dialogue_motion_paused()` 与游戏暂停、门队列暂停叠加，冻结诊所巡诊等仍存活的内部 NavigationAgent 请求；恢复事务或统一 teardown 时可靠清除。
+- `DailyPlanSystem._assign_plan_item()` 在新 action 与暂存 action 不同时先释放暂存；同一 action 由 ActionSystem 直接恢复，不进入预约 / 路线 / 启动校验链。
+- `ChibiCharacterPilot` 在 `dialogue_workstation_hold` 下按挂接姿态选择 standing idle、seated idle、sleeping 或 vehicle seated，停止原工作动作与站姿对话手势。
+
+## T1505-P6R38 通用双向门洞令牌队列
+
+- `physics_navigation_v1.building_door_queue` 统一配置 `token_count=8`、`range_width=2.8`、`range_depth=3.0`、`range_height=2.8` 和 `release_grace_seconds=0.12`；P6R40 将深度从 3.6 m 收紧到 3.0 m，使角色更贴近门槛后才领号。StationLayoutController 校验尺寸不小于门净宽 + 两侧烘焙代理半径，并将合同写入物理导航快照。
+- StationLayoutController 在每个可进入建筑的 `door_outside ↔ door_inside` NavigationLink3D 中点生成 `DoorPassageQueueArea`。Area 旋转到门的通行轴，只监听 collision layer 2；正 / 后城门不在建筑 link 集合的可进入筛选中。
+- `DoorPassageQueueArea` 以 `body_entered` 追加到达顺序，以 `body_exited + 0.12 s` 滞回释放；每次变化重写连续令牌，只有数组首项可移动。无效实例会自动清理，Area 退出树时释放全部 actor 暂停源。
+- ActorMotionBody 维护可叠加的 `door_queue_memberships / door_queue_pause_sources`；队列暂停和 TimeSystem 等外部暂停共同投影到有效 paused，但互不覆盖。恢复只重建运动进展采样，不重新请求路径。
+
+## T0045C CameraRig 暂停输入生命周期
+
+- `CameraRig` 使用 `PROCESS_MODE_ALWAYS`，确保 SceneTree 暂停期间仍能收到方向键 release 与窗口失焦通知；这只扩展输入生命周期，不让镜头表现脱离暂停规则。
+- `_process` 在暂停帧立即清空 WASD、Shift 与中键拖拽并停止，不推进平移或震动；`_input` 不缓存暂停期间的新方向键，`_unhandled_input` 不执行暂停期间的中键拖拽或滚轮缩放。
+- 恢复游戏后缓存必为空，玩家必须重新按下方向键。正常 `28/56 m/s` 速度、移动边界、文本框焦点、窗口失焦和教程请求式镜头锁保持不变。
+
+## T1505-P6R37 食堂入口排队（历史实现，已由 P6R38 替换）
+
+- `physics_navigation_v1.building_entry_queue` 只对 `dining_hall` 启用，定义门外侧向间距、首排距离、行距与等候点容差；StationLayoutController 负责配置校验和只读提供。
+- `NPCSystem` 以 building id 保存唯一 passage holder 与 FIFO 等候表；等候位置由入口朝外方向、垂直侧向和稳定 NPC 序号计算，左右交替且不占中央过门线。
+- 等候路线保持 `current_action=moving_to_dining_hall / spatial_route_phase=waiting_for_entry`。等候点到达或卡死都不结束 pending action；获得令牌后重新下发原门外路线，越过 `door_inside_position` 即提交地点并释放令牌，再独立前往室内点和固定餐位。
+- `_cancel_building_interior_route()` 与 `_settle_navigation_route_failure()` 共用令牌清理，避免中断、建筑失效或真实不可达留下幽灵 holder；迟到的旧等候请求失败回调按 target id 丢弃。
+
+## T1505-P6R36 食堂完成后留座
+
+- `ActionSystem._complete_eat()` 完成最终数值与事件后，请求 NPCSystem 把当前用餐会话转换为留座；转换失败才走原释放兜底。
+- `NPCSystem.hold_formal_workstation_occupant_after_completion()` 只接受 action、工位和挂接均一致的已提交会话；`release_completed_formal_workstation_hold()` 由下一行动、移动或中断路径统一调用。
+- `ChibiCharacterPilot` 在没有 active 进食但仍为 `sitting` 挂接时播放循环 `seated_idle`，映射 `Sit_Chair_Idle`；active 进食仍优先播放 `seated_eating`。
+
+## T1505-P6R33 移动途中守备官对话中断
+
+- `DialogSystem._interrupt_for_dialogue()` 调用 ActionSystem 通用中断时，仅为守备官对话传入 `preserve_world_position`；草稿打开阶段仍不产生该调用。
+- `ActionSystem.interrupt_npc_action()` 在正式空间会话清理前读取 NPC 世界坐标，照常释放 pending / active action、工位预约、室内路径与导航状态，最后通过 NPCSystem 的系统级恢复接口把已停止的实体放回对话发生点。默认参数关闭，因此计划换时、行动失败、昏迷、战斗和 GM 改派等既有中断位置语义不变。
+- 对话结束后的续接仍由 DailyPlanSystem 校验“被打断 action == 当前小时计划 action”并重新派发；本层不持有计划权威，也不直接指定食堂或其他目的地。
+
+## T0400 正式驿站加载优化（已回退）
+
+- `scenes/generated/FormalStationStaticCore.scn` 及生成 / 验证工具已删除，不是当前场景依赖。
+- `StationLayoutController._build_formal_layout()` 恢复依次生成地形、道路、环境、自然边界、围墙 / 城门、全部建筑、公共道具与导航合同。
+- 正式建筑、门、主厅平台、制作展示架和脚手架恢复各自原 `_ready()` 构建流程，不再读取 `formal_baked_instance`。
+- `MainMenu` 恢复发布教程启动参数后直接 `change_scene_to_file(Main.tscn)`，不做 T0400 后台预热。
+
+## T0399 NPC 装备候选音频接线
+
+- `NPCEquipmentWindow.gd` 为武器 / 护甲候选按钮设置 `ui_audio_semantic=equipment_item_selected`，马匹候选设置 `equipment_mount_selected`；槽位、关闭和其他按钮继续使用默认点击语义。
+- `InteractionAudioController.gd` 读取显式按钮语义并替换默认木质点击，同次只生成一个 `AudioStreamPlayer`。配置映射和局部增益位于 `interaction_audio.json`，两类播放器均强制发送到 `UI`。
+- `sfx_ui_equipment_mount_selected` 是用户确认候选 02 后生成的 `0.650s` 单声道 WAV，归入点击分类；装备与马匹权威仍完全位于 NPCPanel、EquipmentSystem 和 HorseSystem。
+
+## T0398 NPC 计划与 HUD 展示边界
+
+- `NPCPanel.gd` 仍从 DailyPlanSystem 读取完整计划并按完整语义分组，但当前计划正文只渲染当前标记、时间段和行动名；来源与说明不进入正式 UI。
+- `Main/UI/HUD` 已移除 `BackendStatusLabel`，`HUD.gd` 不再订阅 `LLMBridge.backend_status_changed`；LLMBridge 的连接状态、健康检查和失败诊断本身不变。
+
+## T1505 序章节点与接线
+
+- P7 的 `TutorialPrologueStudio.tscn` 是离线拍摄场景，复用正式美术资源但不实例化 Main 系统。`render_t1505_prologue.gd` 在独立 1920×1080 SubViewport 中导出图片，避免 ClientSettings 的窗口分辨率干扰；正式 Main 只读取 PNG。拍摄时禁用城门实例的运动同步，防止布景整体位移后 AnimatableBody3D 门扇保留旧世界位置；不修改正式城门脚本或游戏物理规则。P7R1 新增的宿舍布景读取正式床位身份与角色外观，紧凑陈设、人物摆放修正均限于拍摄；`-- --dormitory-only` 仅重绘第三帧。
+
+- `Main/Systems/TutorialDirector` 位于 `GameStartupSystem` 之前，监听 `Main/UI/TutorialOverlay` 的 continue / target / inspection / skip / victory 信号，并监听 CombatSystem 的 tutorial raid 完成信号。
+- `Main/UI/TutorialOverlay` 是 `UI` 下最高层的全屏 Control，运行时程序化建立漫画、会话、目标、胜利和交接控件；它不成为 Autoload，不保存状态。四张图位于 `assets/tutorial/`。
+- `GameStartupSystem` 的 Main 默认 export 值现为模式 2；它延迟一轮等待程序化 UI `_ready()`，再启动教程。headless 自动启动仍跳过，测试通过 `debug_apply_startup_mode()` 显式进入。
+- P6R20 后，`MainMenu._on_start_pressed()` 在 SceneTree 发布一次性 `main_launch_request={source, startup_mode=2}`；`GameStartupSystem._ready()` 消费后立即删除。非 headless Main 若没有该请求则 deferred 切换回 `MainMenu.tscn`，不应用场景默认模式；headless 保持原显式测试入口。
+- P6R21 为上述快速场景替换补齐表现节点退出保护：`StationGroundDecor` 的 deferred 首帧灯光同步仅在节点仍位于 SceneTree 时查询 `building_functional_light_controller`；离树回调不接触新场景，正常夜间火炬权属和时钟来源不变。
+- P6R22 移除 P6R20 的无请求反向切场景分支：SceneTree 启动请求仍用于主菜单新游戏，但缺少请求的 Main 按自身 export 模式启动，服务编辑器“运行当前场景”。正式项目入口仍由 `run/main_scene=MainMenu.tscn` 保证。P6R21 的离树保护作为通用生命周期防护保留。
+- CameraRig 的 `focus_world_position()` 供教程回正地面目标；`set_zoom_distance()` 与 `focus_world_position_at_screen_center()` 同时服务 20 m 城门构图和艾达选择近景，把配置化地面点或指定躯干高度精确投影到视口中心。P6R14 增加请求 ID 可叠加的 `request/release_camera_control_lock()` 与指数收敛的 `smooth_focus_world_position_at_screen_center()`：TutorialDirector 在警报成功后锁定玩家平移 / 缩放并逐帧传入艾达位置，攻击前摇、战斗结束或任意教程收口统一释放；镜头层不读取 NPC / 战斗权威。
+- NPCSystem → NPC → NPCArtView / ChibiCharacterPilot 提供教程所需的立即表现朝向提交，使暂停中的艾达也能在同帧转向正门；该桥接只改表现朝向，不写战斗、移动或正式 NPC 初始状态。DefenseSlotPresenter、NPCPanel 与 NPCEquipmentWindow 只返回实际 Control 或复用既有 debug UI 操作，权威成功仍由系统层校验。
+- TutorialDirector 与 Overlay 均 `PROCESS_MODE_ALWAYS`；正式 TimeSystem 保持日历暂停，而塔防 / 战斗从首个 3D 战场说明页起由 `_physics_process` 的 detached tick 持续推进。P6R16 后该请求跨越胜利提示与战后对白，直到返床 / 原子交接才释放，避免清场后可见世界冻结。CombatSystem 只为 tutorial scope 读取近门生成中心；HUD 在 detached 模式禁用暂停按钮和空格，StationLayoutController 只隐藏教程 raid 的正门世界血条。
+- TutorialDirector 快照额外暴露 `phase_metrics` 与 `recovery`，供 GM 和回归只读观察自然时长、残敌、艾达 HP 及是否使用安全收口；这些字段不参与正式存档或战斗结算。
+- P6R12 后，艾达返床必须同时满足宿舍、`sleep_in_dormitory`、`occupant_anchor` 和非空床位。交接先用 ActionSystem 的教程睡眠 staging 校验 8 张固定床，再由 NPCSystem 的 `place_npc_at_formal_workstation_exit_for_tutorial_handoff()` 从正式空间路线取得床边安全点，覆盖睡眠会话清理可能恢复的旧人物初始位置；首日计划目标和结算权威不变。
+- P6R13 后，TutorialOverlay 的全屏 blocker 只负责输入拦截，不再承载锁定原因 Tooltip；其 `tooltip_text` 在全部教程步骤恒为空。具体目标与只读代理仍各自拥有局部 Tooltip，TutorialDirector 不再读取或传递 `disabled_tooltip` 配置。
+- P6R15 后，`gate_focus_world_position=(1.5,0,54)` 由 TutorialDirector 同时用于战场说明与箭塔槽步骤；它是表现构图点而非敌人目标或生成点，X 偏移补偿 HUD，Z 对齐正式正门。CameraRig 接口和正式移动边界不变。
+- P6R17 后，`Main/UI/TutorialOverlay/ConversationRoot/AdaDialoguePortrait` 是运行时创建的 `NPCPortraitViewport`。它与 NPCPanel 共用主 World3D 和 NPCSystem 人物快照，但使用方形 SubViewport、35° / 1.45 m 头肩镜头及 1.48 m 头部焦点；只在非漫画艾达页启用渲染，其他说话者和教程收口立即隐藏并禁用更新。
+- P6R18 后，`TutorialDirector` 从 `tutorial_config.json/handoff_card_duration_seconds` 读取正常交接卡停留时间，当前为 5 秒；到时仍进入同一个原子交接接口，不增加 Timer 节点或新的权威状态。
+- P6R19 后，`TutorialDirector → TutorialOverlay` 在 `begin()` 前传入 `tutorial_config.json/ui_copy`，各步骤按稳定 ID 读取 `step_copy`；`intro_pages / post_battle_pages` 同处该文件。P6R34 起夜袭日记直接来自 NPCSystem 加载的艾达初始长期记忆，TutorialDirector 不读取或写入日记。Overlay 只负责格式化与呈现，步骤推进、输入门控和权威系统调用仍由 Director 控制。
+- T1505-P8 后，`tutorial_config.json/tutorial_music.battle_start_intro_page_id` 固定语义切点为 `intro_ada_warning`。TutorialDirector 在世界准备前发布 `tutorial_intro`，进入该页时发布一次 `tutorial_battle`，直到完成 / 跳过 / 失败才清空；WorldAudioController 负责映射两份 Music 2D 循环资产，教程敌人存在不会抢占该 cue，漫画进入 3D 也不会重建播放器。两曲与昼夜主循环均使用同一个 AudioManager 音乐播放器、0 dB 播放器目标增益和 Music 总线，因此设置页“音乐”滑杆统一控制全部 BGM。
+
 ## T0396 性能诊断与只读边界
 
 CombatPerformanceProbe 为 CombatSystem 通过显式 debug API 动态创建的 RefCounted，不是 Autoload，也不参与权威结算。GM 只调用采样/读取/停止，运行时默认无采样对象。ActorMotionBody / NPCSystem / BuildingSystem 的新增 getter 均读取现有权威事实，不保留跨帧副本；引导区 body 列表/网格只在同一次同步选点内复用。BuildingArtView 的 StaticRenderBatch/StaticShadowBatch 仅接管不可变且可见合同相同的建筑表现叶节点，动态升级/损毁/屋顶/透明/渐隐节点排除。CelestialCycleController 从配置读取方向阴影模式，当前正式值为 2 级联、120m、边界混合；日/月唯一阴影权属和投影者不变。Main 场景结构、角色动画脚本和导航参数不变。测试入口、精确 GM 结果与成立/不成立台账见 MODULE_INDEX 和性能方案第 11 节。
 
 ## T0395 六类音频路由
 
-AudioManager 在 manifest 后加载 `audio_categories_v1`，建立 102 条 asset→bus 映射并在调试快照暴露分类计数。Music / UI / Voice / Combat / Work / Ambience 分别直达 Master，AmbientBed 仍发送到 Ambience，Foley 兼容总线发送到 Combat。WorkAudioController 的工程开始与制造目标边沿改用 `play_2d(..., UI)`；建筑施工循环仍用 `start_loop_3d(..., Work)`。Movement 改投 Combat，Ability 改投 Combat，门 / 行商改投 Ambience。
+AudioManager 在 manifest 后加载 `audio_categories_v1`，建立 109 条 asset→bus 映射并在调试快照暴露分类计数。Music / UI / Voice / Combat / Work / Ambience 分别直达 Master，AmbientBed 仍发送到 Ambience，Foley 兼容总线发送到 Combat。WorkAudioController 的工程开始与制造目标边沿改用 `play_2d(..., UI)`；建筑施工循环仍用 `start_loop_3d(..., Work)`。Movement 与 Ability 投向 Combat，门 / 行商投向 Ambience；T0434 后防御器械部署落地声使用 `play_2d(..., UI, +3 dB)`，不创建位置化声源。
 
 ## T0394 位置音频事件增益
 
@@ -220,14 +467,17 @@ T0362-R1：`StylizedGroundArt.configure` 额外只读环境 topology；原样片
 - 前端按钮保留 `FOCUS_ALL` 与默认 `grab_focus()` 键盘路径。`FrontendStyles.apply_button_focus()` 只绘制透明底橙色边框，避免主题默认 focus 背景覆盖 normal / danger StyleBox。
 - 以上仅为 UI 表现约束，不改变 TimeSystem 暂停权威、场景切换、共享设置面板或 T0355 存档边界。
 
-## T0354 已实现前端场景与 T0355 完整存档边界
+## T0354 前端场景与 T0355 完整检查点存档
 
 - `project.godot` 的主场景改由独立 `scenes/frontend/MainMenu.tscn` 承担。MainMenu 只依赖 Autoload 音频与客户端设置，不实例化 `Main.tscn`，因此玩家点击开始前不会触发 GameStartupSystem 的 8 人正式日计划或其他世界权威。
 - `SettingsPanel.tscn` 与 `SaveBrowserPanel.tscn` 是主菜单 / 游戏内共享 PackedScene；Main 内仅新增 PauseMenu 宿主。HUD 删除旧 SettingsButton / 独立声音设置入口，空格纯暂停与 TimeSystem 权威保持。
-- `ClientSettings` Autoload 只保存本机表现与非秘密 AI 服务偏好。T0395 后 AudioManager 拥有七项音量；ClientSettings 负责画面偏好并在场景前应用。API Key 只停留在当前面板内存，不写入 `user://client_settings.cfg`、存档或日志。
+- `ClientSettings` Autoload 只保存本机表现与非秘密 AI 服务偏好。T0395 后 AudioManager 拥有七项音量；ClientSettings 负责画面偏好并在场景前应用。T0354-R1 后运行期重复提交只在五项显示字段实际变化时触碰 `DisplayServer`，因此音量 / AI 等提交不会把系统最大化窗口恢复为旧分辨率。T0410 后 API Key 从面板内存一次性发往 `127.0.0.1` 后端，由系统凭据层保存；不写入 `user://client_settings.cfg`、存档或日志。
 - PauseMenu 记录 `paused_before_open`，只在原本未暂停时调用 `TimeSystem.set_paused(true)`；关闭时按原状态恢复。设置 / 存档子面板由 PauseMenu 打开，确认窗和子面板先消费 Esc。
-- T0354 的 SaveBrowserPanel 使用前端槽位模型，只生成快速槽和 10 个空手动槽。它不调用 `SpatialSaveSystem`，最终保存 / 加载 / 覆盖 / 删除只返回明确未接入状态。
-- T0355 将新增 `GameSaveSystem` 作为完整快照协调器；现有 `SpatialSaveSystem(formal_spatial_save_v1)` 仅作为 NPC / 战斗 / 行商空间子结构参与，不升级为第二套资源、建筑、NPC、记忆或战斗权威。
+- `Main/Systems/GameSaveSystem` 已作为完整快照协调器接入；`GameSaveStore` 负责 `user://saves` 的索引、恢复点、版本和校验。现有 `SpatialSaveSystem(formal_spatial_save_v1)` 只提供 NPC / 战斗 / 行商空间子结构，不升级为第二套资源、建筑、NPC、记忆或战斗权威。
+- T0355-R3 后 NPC 空间子结构写 `formal_npc_spatial_checkpoint_v2`，仅保留语义地点和行动回滚元数据；恢复复用 `StationLayoutController.get_npc_stay_world_position(location_id, npc_id)`，不消费任意存档坐标。v1 子结构仍兼容读取但忽略旧 `position / world_origin`；逃离者继续置于站外特殊落点。
+- `GameStartupSystem` 新增 `LOAD=3`：消费档案 ID / 恢复点请求，跳过教程、新游戏初始化、开局计划和第 0 点生成，在干净 Main 中调用 GameSaveSystem 的统一恢复入口。`CheckpointStatusPresenter` 只监听保存 / 恢复结果并显示短时状态，不参与提交。
+- SaveBrowserPanel 使用真实快速槽与 10 个手动槽映射，允许选择档案的自动 / 手动恢复点；PauseMenu 只固定最近自动点。所有运行中动作、对话、模型请求、敌人和表现相位均不进入玩家存档。
+- T0355-R2 不新增场景节点：GameSaveSystem 直接读取 Main 根 Viewport 的当前合成画面并生成 `480×270 WebP`；SaveBrowserPanel 既有预览 Panel 内运行时创建 `SaveThumbnail(TextureRect)`，根据当前恢复点加载图片。headless、旧档或损坏图走文字占位，不影响 LOAD。
 - 动态前端控件仍由 `InteractionAudioController` 统一扫描。新增短生命周期弹窗后，延迟接线只传 instance id，执行时重新解析并忽略已释放节点，避免场景退出阶段持有失效 Object。
 
 ## T0353 全局环境床与旧五路设置接线（已由 T0395 取代）
@@ -266,6 +516,7 @@ T0362-R1：`StylizedGroundArt.configure` 额外只读环境 topology；原样片
 ## T0348 行商交易反馈接线
 
 - `MerchantSystem.execute_trade_batch()` 在整批 ResourceSystem 变更成功、行商库存更新及交易记录建立后调用 `_emit_trade_world_feedback()`；购买组顺序为金钱支出后各资源收入，出售组为各资源支出后金钱收入。条目全部经 `WorldFeedbackPayload.make_resource_entry()` 复用正式名称与 SVG。
+- T0400A 后同一成功边界广播 `merchant_trade_completed(direction, result)`；InteractionAudioController 仅对 `result.ok=true` 排队 `merchant_trade_success` 语义，以 `sfx_ui_interaction_success_resource_collect` 和成交专属 `+5 dB` 补偿替代同次木质点击。播放器固定为 UI 2D，因此由设置“点击音效”控制并随其同比变化；失败交易不广播。
 - `MerchantWagon.get_world_feedback_anchor_position()` 优先取 `MerchantChibiArtView` 的 `Head` attachment 世界坐标并上抬 `0.55m`，骨骼不可用时回退 `TradeBubble.global_position`。`MerchantSystem` 暴露只读查询供 Presenter 实时跟随，并把提交瞬间坐标放进 fallback。
 - `WorldFeedbackPresenter` 新增 `merchant` 完整锚点解析及 `trade_out / trade_in` 红绿角色；交易条目仍由同一个全屏 Control 渲染，不新增场景节点、资源监听器或结算逻辑。
 
@@ -451,7 +702,7 @@ T0362-R1：`StylizedGroundArt.configure` 额外只读环境 topology；原样片
 ## T0135-P10B 世界音乐与环境声接线
 
 - `Main/Presentation/WorldAudioController` 读取 `data/presentation/world_audio.json`。T0353 后昼夜主底噪为全局 2D AmbientBed；`WorldAudioSources` 下保留 12 个局部 Node3D，动物、虫鸣、河流与炉火继续使用位置衰减。
-- `EventBus.combat_enemy_presence_changed(active, enemy_count, reason)` 由 CombatSystem 原有 `_sync_enemy_presence_time_slowdown(...)` 统一点在数量变化时发出。Controller 初始也查询一次正式敌人数量，避免读档 / 初始化先后导致音乐错态；敌人在场优先循环 `music_battle`，否则按 `day_playlist` 6 首或 `night_playlist` 3 首顺序播放非循环曲目。每首自然完成由 AudioManager `music_finished` 推进，昼夜切换和清场按当前权威时段进入对应池。
+- `EventBus.combat_enemy_presence_changed(active, enemy_count, reason)` 由 CombatSystem 原有 `_sync_enemy_presence_time_slowdown(...)` 统一点在数量变化时发出。Controller 初始也查询一次正式敌人数量，避免读档 / 初始化先后导致音乐错态；教程 cue 激活时优先播放 `music_tutorial_intro / music_tutorial_battle`，正式敌人在场优先循环 `music_battle`，否则按 `day_playlist` 8 首或 `night_playlist` 4 首顺序播放非循环曲目。每首自然完成由 AudioManager `music_finished` 推进，昼夜切换和清场按当前权威时段进入对应池。
 - 夜间与 P8A 实体灯共享 `18:00–06:00` 门槛。昼夜底层、三处错时虫鸣、双河道为循环；鸡鸣、三条鸟叫和猫头鹰按现实播放时长加随机静默间隔调度，不受 x2 / x4 改调或每帧随机。
 - `SmithyAmbientFX / DiningKitchenWorkFX` 继续拥有既有只读工位观察逻辑，只额外向组 `environment_fire_audio_source` 暴露实际活动 Node3D。WorldAudioController 从可见正式世界火源播放同一确认炉火资产，并用不同起播偏移避免同素材同相叠加。
 - AudioManager 的 BGM 与全局环境床播放器挂在 Autoload；局部循环挂在真实声源。WorldAudioController 退出时清理循环、停止音乐并复位 AmbientBed 增益，避免切场景遗留。
@@ -459,7 +710,7 @@ T0362-R1：`StylizedGroundArt.configure` 额外只读环境 topology；原样片
 ## T0135-P10A 音频总线与设置接线
 
 - `default_bus_layout.tres` 当前定义 11 条总线；T0395 后 Music、UI、Voice、Combat、Work、Ambience 六类均直达 Master，AmbientBed 汇入 Ambience，Foley 发送到 Combat，SFX / World 保留作兼容。
-- `AudioManager` 读取 102 条确认记录与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、非循环音乐完成通知与七项音量持久化；Music 新缺省 28%，其余缺省 80%。
+- `AudioManager` 读取 109 条确认记录与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、非循环音乐完成通知与七项音量持久化；Music 新缺省 28%，其余缺省 80%。
 - `AudioSettingsPanel` 构建主音量加音乐 / 点击 / 语气 / 战斗 / 工作 / 环境七行滑条；value_changed 实时设置总线，drag_ended 保存并通过 UI 播放木质点击。`0%` 使用 bus mute。
 - T0353 起设置面板显隐不触发声音，打开 / 关闭 Button 由统一按键监听当帧播放木质点击。
 
@@ -1550,7 +1801,7 @@ AnimationPlayer 的暂停速度由 `gameplay_paused && !pause_exempt_dialogue_em
 - `NPCSystem.begin_default_formal_world()` 将 8 个既有 `NPC.tscn` CharacterBody 分别放到正式初始锚点并绑定生产 NavigationMap，不复制节点。NavServer 首帧最近点若与锚点水平误差超过 `2 m`，使用已审计锚点，避免 stale map 返回世界原点。
 - 默认居民开始工位 / 地点 / 对话 / 协助行动时从当前 Body 坐标出发；结束只释放事务、工位和挂接，保留最后正式位置与生产导航。CombatSystem 只临时标记战斗权属，进入和退出均不传送默认居民。
 - MerchantSystem 在默认正式世界选择 `formal_rear_trade_default` 6 点路线；CombatSystem 对默认正式居民与战斗居民统一选择 6 点地图边缘逃离路。`station_layout legacy` 经 `debug_set_legacy_compatibility_enabled(true)` 暂停上述权属并同步恢复 2 点商路，`station_layout preview` 恢复正式世界。
-- A5-P8 已保存该运行时空间状态；进行中事务采用安全回滚，NavMap 同步后恢复 NPC 最后坐标，未直接序列化 RID 或 NodePath。
+- A5-P8 原先保存运行时坐标；T0355-R3 后进行中事务仍安全回滚，但 NavMap 同步后按保存的语义地点恢复每名 NPC 的专属停留点，不再保存或恢复最后任意坐标，也不序列化 RID 或 NodePath。
 
 ## T0129C-A5-P6d-3 正式昏迷目标接近节点
 
@@ -1608,7 +1859,7 @@ AnimationPlayer 的暂停速度由 `gameplay_paused && !pause_exempt_dialogue_em
 ## T0129C-A5-P5i 小教堂正式礼拜节点
 
 - `lead_mass / pray_at_chapel` 复用通用正式工位会话。ActionSystem 先预留祭坛或祈祷席，NPCSystem 独占 CharacterBody 门路与地点提交，BuildingSystem 在实体到站后把对应 reservation 提交为 occupancy；只有提交成功才建立 active 行动。
-- 祈祷席 occupancy 成功后，NPCSystem 把角色挂到 StationLayoutController 的 `occupant_anchor`；主持者保持站立实体。结束或失败统一解除挂接、释放工位和正式会话，不能由表现姿态反推礼拜事实。
+- 祈祷席 occupancy 成功后，NPCSystem 把角色挂到 StationLayoutController 的 `occupant_anchor`；主持者保持站立实体。自然完成会删除 active 结算但把正式会话转为 `completed_workstation_hold`：祈祷者原席坐姿空闲，主持者祭坛原位站立空闲，同一 action 可原位再激活；改派、失败、建筑失效等明确清理才解除挂接并释放工位。表现姿态不能反推礼拜事实。
 - `mass_leader / seated_prayer` 是 NPCArtView 只读状态。UAL2 Standard 没有原生坐姿礼拜片段，当前以 `Idle_Rail_Call / Idle_Rail` 加局部坐姿偏移构成低配表现；PietySystem 与祈祷事件不读取动画。
 
 ## T0129C-A5-P5h 训练场正式双实体节点
@@ -2152,7 +2403,7 @@ DailyPlanSystem 保存复核 request-id / NPC 去重表、一次性批准签名�
 ## T0045 BuildingPanel 测量与 CameraRig 输入生命周期
 
 - BuildingPanel 不使用状态切换当帧可能过期的 `combined_minimum_size` 撑高面板。它按 building id 保留上一次稳定高度，在有上限的逐帧容器排版采样后再写入新高度；新目标测量期保持在布局树中但透明且递归禁用鼠标，避免隐藏 Control 无法排版及透明控件拦截世界点击的问题。
-- CameraRig 在 `_input(...)` 内维护本窗口 WASD 状态，`_process(...)` 只消费这份状态，不调用 `Input.is_key_pressed(...)`。按键 release、文本输入焦点、`NOTIFICATION_APPLICATION_FOCUS_OUT` 和 `NOTIFICATION_WM_WINDOW_FOCUS_OUT` 会清空平移；失焦同时清除中键拖拽。
+- CameraRig 在 `_input(...)` 内维护本窗口 WASD 状态，`_process(...)` 只消费这份状态，不调用 `Input.is_key_pressed(...)`。按键 release、文本输入焦点、`NOTIFICATION_APPLICATION_FOCUS_OUT` 和 `NOTIFICATION_WM_WINDOW_FOCUS_OUT` 会清空平移；失焦同时清除中键拖拽。T0045C 后节点在 SceneTree 暂停期间仍接收输入生命周期，但只清空缓存并拒绝平移、缩放与拖拽，避免暂停菜单内松键丢失后在恢复时粘键。
 
 ## T0044 当前计划恢复与对象面板布局边界
 
@@ -2306,7 +2557,7 @@ T0102 已将 `TimeSystem.gd`、`ResourceSystem.gd`、`BuildingSystem.gd`、`NPCS
 
 T0043 在上述系统绑定上补齐统一位置链路：`BuildingSystem` 保存逐位置状态、可用性、受损倍率与逐级升级效果；`NPCSystem` 在移动发起和到达时复验可进入性；`ActionSystem` 为吃饭、睡觉、祈祷 / 弥撒、诊疗和训练自动申请位置，并聚合全部在岗医生 / 教官贡献；`MemorySystem` 传播外部效率分档和室内位置增删 / 占用差量；`BuildingPanel` 逐位置只读显示。升级开始会封闭建筑、释放位置并将室内 NPC 送回广场。
 
-T0022 覆盖上述 T0019 旧口径，也覆盖上一段保留的历史“明确规则降级后完成”表述：正式开局和新一天每日计划只有 8 份真实 `llm_plan_day` 全部成功才会执行并恢复时间。整批默认 8 路并发，单人最多 3 次真实请求；仍失败时保持暂停与 `planning_day`，不生成 Mock / 规则计划。
+T0022 覆盖上述 T0019 旧口径，也覆盖上一段保留的历史“明确规则降级后完成”表述：正式开局和新一天每日计划只有 8 份真实 `llm_plan_day` 全部成功才会执行并恢复时间。整批默认 8 路并发，单人最多 3 次真实请求；仍失败时保持暂停且不生成 Mock / 规则计划。T1505-P6R55 后，仅首次开局角色保持 `planning_day`；后续跨天规划保留各 NPC 原真实行动、工位、位置和姿势，并由暂停时间冻结结算。
 
 T0023 覆盖 T1002 的旧 Mock / 规则修订口径：正式计划修订只接受真实 provider，成功响应必须携带非 Mock provider 元数据并写为 `llm_plan_revision`；失败最多 3 次真实请求，保留原计划且不写 `plan_revised`。NPC 面板通过“当前计划”详情读取 DailyPlanSystem 权威计划；事件 / 见闻详情刷新保留当前滚动位置。行动失败是否进入该修订由后续 T0050 的第一层判别决定。
 
@@ -2426,6 +2677,8 @@ T0205 已在 `res://scripts/systems/BuildingSystem.gd` 中实现基础建筑系�
 
 T0304 已新增 `res://scenes/npc/NPC.tscn` 和 `res://scripts/npc/NPC.gd`，并在 `res://scripts/systems/NPCSystem.gd` 中实现基础 NPC 生成、状态接口和直线移动占位：启动时读取 `data/npc_profiles.json`，实例化 8 个 NPC 到 `Main/WorldRoot/Station/NPCs`，每个 NPC 保存唯一 `npc_id`，主场景 `Label3D` 调试标签只显示短姓名、HP 和当前行动。NPC 点击会打印 ID 并通过 `EventBus.npc_clicked(npc_id)` 广播；`NPCSystem` 同时提供 `get_npc(...)`、`get_npc_state(...)`、`get_npc_ids()`、`get_npc_count()`、`update_npc_state(...)`、`set_npc_state_value(...)`、固定熟练度枚举、`normalize_skills(...)`、`get_npc_specialties(...)`、`increase_npc_skill(...)`、`get_npc_progression(...)`、`assign_npc_attribute_point(...)`、`debug_assign_attribute_point(...)`、`debug_select_npc(...)`、`move_npc_to_building(...)`、`debug_move_npc_to_building(...)`、`debug_move_selected_npc_to_building(...)` 和 `debug_enter_location_immediately(...)`。T1103 后还提供 `move_npc_to_world_position(...)` 和 `stop_npc_movement_with_state(...)`，供 CombatSystem 以世界坐标发起城门外集结、接敌时停止移动并切换状态。T1103A 起，NPC 运行时状态统一保存 `behavior_mode = work|rally|combat|avoid_combat|unconscious|escaped`、进入原因和进入时间，T1103 的 `combat_mode` 仅作为旧集结 / 坐骑视觉兼容字段保留。每名 NPC 的技能会归一化为 8 个职业熟练度加 5 个武器熟练度，专长由高熟练度推导，不使用硬职业枚举；运行时 `progression` 记录各熟练度经验、总经验、未分配技能点和已分配技能点。技能点由玩家分配到力量或智力，AI 不自动消耗。移动开始时 NPC 状态进入 `moving_to_<building_id>` 或系统指定的移动状态；到达后通过 `MemorySystem.move_npc_between_locations(...)` 更新地点 `people_present`，写入 `current_location`、`current_location_name` 和 `location_context`，并发出 `EventBus.npc_state_changed(npc_id)`。T0409 起，室内信息地点到室内信息地点的切换会在事件与地点信息层插入广场中转；物理移动仍是低模直线占位。T1103A 后 `NPC.gd` 运行时优先按 `behavior_mode` 为 `rally` / `combat` 时显示集结 / 接敌朝向标记，并兼容旧 `combat_mode`；只有 `combat_mounted == true` 的 NPC 显示低模坐骑；T1105 后策略移动会显示“战术移动”行动摘要。进入地点只读取当前地点状态快照，不继承该地点过去事件。该阶段不实现复杂避障、自然状态变化、真实日程计划、正式战斗结算或 LLM。
 
+T0403-R3 后，`begin_formal_combat_world()` 对已经常驻生产 NavigationMap 的默认正式居民只登记战斗查询租约，不再停止日常导航、解除床 / 椅挂接、释放工位或覆盖空间阶段；迁入旧兼容坐标角色时仍保留原独占迁移。租约记录 `combat_takeover_occurred`，只有实际进入 `rally / combat / avoid_combat` 的居民在清敌时执行战时运动清理，从未被接管的工作居民保持原 ActionSystem / NPCSystem 空间事务。`_interrupt_for_behavior_mode()` 对普通在途 / 站立工位保留真实坐标，对 `occupant_anchor` 则接受 `end_formal_workstation_action()` 已解析的 `interior_target_position`，不再把角色塞回床面或座面。
+
 T0402 后，`res://scripts/systems/ActionSystem.gd` 的简单行动系统会在行动开始、完成或失败时写入结构化事件：工作路径写入 `work_started`、`work_completed`、`work_failed`，协助修复写入 `repair_assist_started`，协助升级写入 `upgrade_assist_started`，协助治疗和诊所治疗写入 `healing_started` / `healing_completed`，吃饭路径写入 `eat_started`、`eat_completed`，睡觉路径写入 `sleep_started`、`sleep_ended`，工作 / 研读医术 / 训练成长写入 `skill_improved`。行动仍会先检查 NPC 是否可行动，必要时调用 `NPCSystem.move_npc_to_building(...)` 前往目标地点；到达后进入持续行动状态，并通过 `EventBus.logical_time_tick` 按逻辑秒推进，不再瞬时结算完整结果。吃饭当前 1200 秒恢复约 50 点饱食度；睡觉当前 23400 秒降低 100 点疲劳，且睡觉期间 `MemorySystem.add_witness_event(...)` 不会给该 NPC 写入地点/建筑 public 见闻；T0801 后工作以配置 `duration_seconds` 为单位周期基准，开始时占用目标建筑工位，实际周期时长按 NPC 对应熟练度、力量/智力属性和建筑等级缩短，单位结束时结算资源输入/输出、饱食消耗和疲劳增长，完成、失败或中断时释放工位。T0803 后，工作可选 `output_scaling` 产出缩放；当前菜园粮食产出会按耕种熟练度、力量和菜园等级提高实际产量，完成事件记录缩放后的产出。T0804 后铁匠铺消耗铁产出武器/盔甲派生库存；T0805 后工械坊消耗木材产出武器/工程器械派生库存，工程和智力影响制作效率；T0806 后马厩消耗粮食产出马匹整备派生库存，养马、力量和马厩等级影响制作效率与实际产出；T0807 后酒窖消耗粮食产出酒库存，酿酒、智力和酒窖等级影响制作效率与实际产出；T1507 后由 MerchantSystem 在商人到访时单独出售，酿酒完成仍不自动换钱。T0808 后小诊所包含医生工位和病床：医生在岗且病人占床时治疗才推进，治疗按逻辑时间消耗第纳尔并恢复 HP，速度由医术、智力和诊所等级提高；医生无病人时缓慢研读医术。T0903 后训练场包含教官工位和受训位：无装备不能训练或执教，受训者需要已有教官，教官独处时提升自己当前装备对应武器 / 骑术，有受训者时受训者按自己的装备提升对应熟练度且教官提升“教练”，训练按逻辑时间消耗疲劳和饱食。T0904 后，工作完成、诊所研读 / 治疗、训练场成长都会调用 `NPCSystem.increase_npc_skill(...)`，同步写入经验和未分配技能点。协助修复/协助升级是带 `building_id` 参数的运行时广场行为，事件 `location_id == "plaza"` 且 `visibility == "local_public"`；建筑 HP、资源预付和倒计时由 `BuildingSystem` 结算。协助治疗是带昏迷 NPC 目标的运行时行为，治疗者前往目标所在信息地点，每个目标最多 2 名治疗者，按逻辑时间消耗第纳尔，并调用 `NPCSystem.assist_unconscious_recovery(...)` 按医术熟练度加速 HP 恢复；`ActionSystem.get_healing_helpers_for_target(...)` 仅供信息节点读取当前治疗者，不参与结算。若游戏处于暂停，未到达目标的行动保留在 pending 队列中，已开始的行动保留在 active 队列中，不推进资源消耗/产出或状态变化；恢复后继续。当前已按 `game_design.md` 覆盖菜园、食堂、酒窖、铁匠铺、工械坊、马厩、小诊所、训练场、协助修复、协助升级、协助治疗、吃饭和睡觉的最小效果；工程器械部署已由 T1508 独立 DefenseDeviceSystem 处理；其他职业特殊生产平衡仍由后续任务处理。
 
 T0025 覆盖上一段旧行动 / 治疗事件清单：ActionSystem 还执行祈祷、主持弥撒、地点拜访和带目标 NPC 对话，并以 `get_runtime_action_snapshot(...)` 向计划系统暴露 pending / active 的 action、target、location、已占位置与参数。协助治疗只有目标正常完成时写 `healing_completed`；中途第纳尔不足或离开治疗地点写 `healing_failed`。T0043 后普通祈祷使用祈祷席且不依赖神父在场；`lead_mass` 对所有 NPC 可见，但只有 `abilities` 包含“主持弥撒”的 NPC 能占用祭坛。对话接近、预定、打断与位置释放仍由 ActionSystem 权威处理。
@@ -2475,6 +2728,7 @@ signal public_event_added(event: Dictionary)
 signal notice_board_clicked
 signal merchant_clicked
 signal merchant_state_changed(active: bool, snapshot: Dictionary)
+signal merchant_trade_completed(direction: String, result: Dictionary)
 ```
 
 ## 命名规范
@@ -2530,3 +2784,7 @@ signal merchant_state_changed(active: bool, snapshot: Dictionary)
 - `Main/Systems/HorseSystem` 在已骑乘马脱离战时状态时，读取 `NPCSystem.get_npc_world_position(rider)` 作为真实下马点，在自身下创建隐藏 `ActorMotionBody`，配置与 `enemy_mounted` 同胶囊但属于友方 RVO 层的 `horse` profile，并用 `horse_defs.return_to_stable_speed=3.2` 覆盖速度。该节点绑定 StationLayoutController 的 production NavigationMap，抵达马厩开放侧后释放并将只读表现归位到原 `stable_slot_id`。
 - FormalStableArtView 仍是马匹可见模型唯一来源：`returning_stable` 读取 HorseSystem 同步的 Body 世界位置 / velocity，播放 Walk 并按实际速度转向；`waiting_for_rider_at_return_position` 保持原位置并播放 Idle。隐藏 Body 不创建第二匹可见马，也不接管点击、HP 或分配。
 - 返厩中 NPC 再进 `rally` / `combat` 时，HorseSystem 取消 Body request、在马旁环形采样生产 NavMap 可达会合点，并调用既有 `NPCSystem.move_npc_to_world_position(...)`。NPC 抵达后释放隐藏 Body，设置 `ridden`，再调用 `CombatSystem.handle_npc_mount_ready(...)` 恢复集结。
+
+## T0425 建筑升级总工期权威查询
+
+`BuildingSystem.get_upgrade_duration_seconds(...)` 是下一目标等级无协助升级总工期的只读权威查询入口；真正开工作业与 BuildingPanel 的“升级”悬停提示共用该入口。系统先完成逐级配置 / 等级倍率计算，再固定增加 7200 游戏秒，固定加时不参与倍率。

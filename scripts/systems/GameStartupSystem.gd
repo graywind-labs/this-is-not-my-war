@@ -5,22 +5,27 @@ signal startup_completed(snapshot: Dictionary)
 enum StartupMode {
 	STATIC_DEBUG,
 	GAMEPLAY_NO_TUTORIAL,
-	GAMEPLAY_WITH_TUTORIAL
+	GAMEPLAY_WITH_TUTORIAL,
+	LOAD,
 }
 
 const NPC_SYSTEM_PATH := "/root/Main/Systems/NPCSystem"
 const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const TIME_SYSTEM_PATH := "/root/Main/Systems/TimeSystem"
+const TUTORIAL_DIRECTOR_PATH := "/root/Main/Systems/TutorialDirector"
+const MAIN_LAUNCH_REQUEST_META := &"main_launch_request"
 
 @export_enum(
 	"静止调试",
 	"正式循环（无新手引导）",
-	"正式循环（新手引导占位）"
+	"正式循环（含序章引导）",
+	"读取检查点"
 ) var startup_mode: int = StartupMode.GAMEPLAY_NO_TUTORIAL
 
 var _startup_running := false
 var _startup_applied := false
 var _startup_snapshot: Dictionary = {}
+var _load_request: Dictionary = {}
 
 
 func _ready() -> void:
@@ -32,10 +37,34 @@ func _ready() -> void:
 		and not daily_plan_system.async_daily_plan_batch_completed.is_connected(_on_async_daily_plan_batch_completed)
 	):
 		daily_plan_system.async_daily_plan_batch_completed.connect(_on_async_daily_plan_batch_completed)
-	if DisplayServer.get_name() == "headless":
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	if (
+		tutorial_director != null
+		and tutorial_director.has_signal("tutorial_finished")
+		and not tutorial_director.tutorial_finished.is_connected(_on_tutorial_finished)
+	):
+		tutorial_director.tutorial_finished.connect(_on_tutorial_finished)
+	var launch_request := _consume_main_launch_request()
+	if not launch_request.is_empty():
+		_load_request = launch_request.duplicate(true)
+		startup_mode = _normalize_startup_mode(int(launch_request.get("startup_mode", startup_mode)))
+		_reset_startup_snapshot(startup_mode)
+		_startup_snapshot["launch_source"] = str(launch_request.get("source", "unknown"))
+	if DisplayServer.get_name() == "headless" and startup_mode != StartupMode.LOAD:
 		_startup_snapshot["status"] = "auto_start_skipped_headless"
 		return
 	call_deferred("_apply_configured_startup_mode")
+
+
+func _consume_main_launch_request() -> Dictionary:
+	var tree := get_tree()
+	if tree == null or not tree.has_meta(MAIN_LAUNCH_REQUEST_META):
+		return {}
+	var request_variant: Variant = tree.get_meta(MAIN_LAUNCH_REQUEST_META)
+	tree.remove_meta(MAIN_LAUNCH_REQUEST_META)
+	if request_variant is Dictionary:
+		return (request_variant as Dictionary).duplicate(true)
+	return {}
 
 
 func apply_startup_mode(
@@ -63,9 +92,20 @@ func apply_startup_mode(
 		_startup_snapshot["completed"] = true
 		startup_completed.emit(_startup_snapshot.duplicate(true))
 		return _startup_snapshot.duplicate(true)
+	if normalized_mode == StartupMode.LOAD:
+		_startup_running = true
+		_startup_snapshot["running"] = true
+		_startup_snapshot["status"] = "restoring_checkpoint"
+		_run_load_startup()
+		return _startup_snapshot.duplicate(true)
 
 	_startup_running = true
 	_startup_snapshot["running"] = true
+	if normalized_mode == StartupMode.GAMEPLAY_WITH_TUTORIAL:
+		_startup_snapshot["status"] = "starting_tutorial"
+		_startup_snapshot["tutorial_status"] = "starting"
+		_run_tutorial_startup()
+		return _startup_snapshot.duplicate(true)
 	_startup_snapshot["status"] = "starting_formal_loop"
 	_startup_snapshot["prefer_llm"] = prefer_llm
 	_run_formal_startup(prefer_llm)
@@ -81,7 +121,9 @@ func get_startup_mode_label(mode: int = startup_mode) -> String:
 		StartupMode.STATIC_DEBUG:
 			return "静止调试"
 		StartupMode.GAMEPLAY_WITH_TUTORIAL:
-			return "正式循环（新手引导占位）"
+			return "正式循环（含序章引导）"
+		StartupMode.LOAD:
+			return "读取检查点"
 		_:
 			return "正式循环（无新手引导）"
 
@@ -100,6 +142,65 @@ func debug_get_startup_snapshot() -> Dictionary:
 
 func _apply_configured_startup_mode() -> void:
 	apply_startup_mode(startup_mode, false, true)
+
+
+func _run_tutorial_startup() -> void:
+	# GameStartupSystem sits before the CanvasLayer in Main.tscn. Give every UI
+	# child one deferred turn to complete _ready() before TutorialDirector touches
+	# the programmatically-built overlay. Keeping this non-coroutine also avoids a
+	# suspended startup when the scene is launched directly from the editor.
+	call_deferred("_begin_tutorial_after_ui_ready")
+
+
+func _begin_tutorial_after_ui_ready() -> void:
+	if not _startup_running or startup_mode != StartupMode.GAMEPLAY_WITH_TUTORIAL:
+		return
+	var daily_plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+	if daily_plan_system != null and daily_plan_system.has_method("set_auto_execution_enabled"):
+		daily_plan_system.set_auto_execution_enabled(false)
+	var time_system := get_node_or_null(TIME_SYSTEM_PATH)
+	if time_system != null and time_system.has_method("set_paused"):
+		time_system.set_paused(true)
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	if tutorial_director == null or not tutorial_director.has_method("begin_tutorial"):
+		_finish_with_failure("tutorial_director_missing", "序章引导控制器不可用。")
+		return
+	var result: Dictionary = tutorial_director.begin_tutorial()
+	_startup_snapshot["tutorial_start_result"] = result.duplicate(true)
+	if not _startup_running:
+		return
+	if not bool(result.get("ok", false)):
+		_finish_with_failure(
+			str(result.get("reason", "tutorial_start_failed")),
+			str(result.get("message", "序章引导启动失败。"))
+		)
+		return
+	_startup_snapshot["status"] = "tutorial_active"
+	_startup_snapshot["tutorial_status"] = "active"
+
+
+func _on_tutorial_finished(snapshot: Dictionary) -> void:
+	if not _startup_running or startup_mode != StartupMode.GAMEPLAY_WITH_TUTORIAL:
+		return
+	_startup_snapshot["tutorial_result"] = snapshot.duplicate(true)
+	if not bool(snapshot.get("ok", false)):
+		_finish_with_failure(
+			str(snapshot.get("reason", "tutorial_failed")),
+			str(snapshot.get("message", "序章引导未能完成。"))
+		)
+		return
+	_startup_running = false
+	_startup_applied = true
+	_startup_snapshot["running"] = false
+	_startup_snapshot["completed"] = true
+	_startup_snapshot["formal_loop_started"] = true
+	_startup_snapshot["status"] = "formal_loop_started"
+	_startup_snapshot["tutorial_status"] = "skipped" if bool(snapshot.get("skipped", false)) else "completed"
+	_startup_snapshot["npc_count"] = int((snapshot.get("plan_results", {}) as Dictionary).size())
+	_startup_snapshot["completed_npc_count"] = _startup_snapshot["npc_count"]
+	_startup_snapshot["plan_results"] = (snapshot.get("plan_results", {}) as Dictionary).duplicate(true)
+	_startup_snapshot["execute_results"] = (snapshot.get("execute_results", {}) as Dictionary).duplicate(true)
+	startup_completed.emit(_startup_snapshot.duplicate(true))
 
 
 func _run_formal_startup(prefer_llm: bool) -> void:
@@ -193,6 +294,26 @@ func _run_formal_startup(prefer_llm: bool) -> void:
 	}, false)
 
 
+func _run_load_startup() -> void:
+	await get_tree().process_frame
+	var save_system := get_node_or_null("/root/Main/Systems/GameSaveSystem")
+	if save_system == null or not save_system.has_method("restore_from_request"):
+		_finish_with_failure("game_save_system_missing", "存档协调器不可用。")
+		return
+	var result: Dictionary = save_system.restore_from_request(_load_request)
+	if not bool(result.get("ok", false)):
+		_finish_with_failure(str(result.get("reason", "checkpoint_restore_failed")), "检查点恢复失败。")
+		return
+	_startup_running = false
+	_startup_applied = true
+	_startup_snapshot["running"] = false
+	_startup_snapshot["completed"] = true
+	_startup_snapshot["formal_loop_started"] = true
+	_startup_snapshot["status"] = "checkpoint_restored"
+	_startup_snapshot["restore_result"] = result.duplicate(true)
+	startup_completed.emit(_startup_snapshot.duplicate(true))
+
+
 func _on_async_daily_plan_batch_completed(batch_snapshot: Dictionary) -> void:
 	if not _startup_running or str(batch_snapshot.get("reason", "")) != "game_start":
 		return
@@ -252,7 +373,7 @@ func _finalize_formal_startup(
 		):
 			completed_count += 1
 	if completed_count != npc_ids.size():
-		_finish_with_failure("daily_plans_incomplete", "并非所有 NPC 都完成了真实 LLM 24 小时计划。")
+		_finish_with_failure("daily_plans_incomplete", "部分驿站成员尚未准备好今天的安排。")
 		return
 
 	if daily_plan_system.has_method("set_auto_execution_enabled"):
@@ -325,7 +446,7 @@ func _reset_startup_snapshot(mode: int) -> void:
 		"completed": false,
 		"formal_loop_started": false,
 		"tutorial_requested": tutorial_requested,
-		"tutorial_status": "placeholder_not_implemented" if tutorial_requested else "disabled",
+		"tutorial_status": "ready" if tutorial_requested else "disabled",
 		"npc_count": 0,
 		"planning_npc_count": 0,
 		"completed_npc_count": 0,
@@ -339,7 +460,7 @@ func _reset_startup_snapshot(mode: int) -> void:
 
 
 func _normalize_startup_mode(mode: int) -> int:
-	if mode < StartupMode.STATIC_DEBUG or mode > StartupMode.GAMEPLAY_WITH_TUTORIAL:
+	if mode < StartupMode.STATIC_DEBUG or mode > StartupMode.LOAD:
 		return StartupMode.GAMEPLAY_NO_TUTORIAL
 	return mode
 

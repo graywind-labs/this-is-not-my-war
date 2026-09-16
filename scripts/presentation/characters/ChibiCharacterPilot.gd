@@ -18,6 +18,7 @@ const REQUIRED_STATES := [
 	"mass_leader",
 	"seated_prayer",
 	"seated_study",
+	"seated_idle",
 	"seated_eating",
 	"drink",
 	"attack",
@@ -39,7 +40,7 @@ const COMBAT_PRESENTATION_STATES := [
 ]
 const LOOPING_STATES := [
 	"idle", "walk", "run", "talk", "work", "training_instructor",
-	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_eating",
+	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_idle", "seated_eating",
 	"drink", "happy", "medical_treatment", "vehicle_seated", "mounted_walk", "mounted_training", "sleeping",
 ]
 const HOLD_FINAL_POSE_STATES := ["unconscious", "mounted_fall"]
@@ -97,6 +98,9 @@ const MOUNTED_FALL_ARC_HEIGHT := 0.34
 const MOUNTED_FALL_MAX_ROLL_DEGREES := 58.0
 const DORMITORY_SLEEPING_POSE_OFFSET_Y := -0.18
 const DORMITORY_SLEEPING_FEET_OFFSET := 0.22
+# Clinic mattress sits below its collision-top anchor; Lie_Idle also lifts the body.
+# Calibrated against the scaled clinic_bed_twin mattress, not the bed frame top.
+const CLINIC_LYING_POSE_OFFSET_Y := -0.40
 const FOOT_SWORD_GRIP_DOWN_OFFSET := 0.18
 const FOOT_SWORD_GRIP_INWARD_OFFSET := 0.10
 const GARDEN_HOE_RIGHT_GRIP_SOURCE_LOCAL_POSITION := Vector3(0.0, 0.15, 0.0)
@@ -265,6 +269,7 @@ const STATE_CLIPS := {
 	"mass_leader": "Waving",
 	"seated_prayer": "Sit_Chair_Idle",
 	"seated_study": SEATED_STUDY_CLIP,
+	"seated_idle": "Sit_Chair_Idle",
 	"seated_eating": SEATED_EATING_CLIP,
 	"drink": DRINK_CLIP,
 	"attack": "Melee_1H_Attack_Slice_Horizontal",
@@ -390,7 +395,7 @@ void fragment() {
 @export var use_imported_character_material := false
 @export_enum(
 	"idle", "walk", "run", "talk", "work", "training_instructor",
-	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_eating",
+	"training_practice", "mass_leader", "seated_prayer", "seated_study", "seated_idle", "seated_eating",
 	"drink", "happy", "angry",
 	"attack", "medical_treatment", "hit_react", "unconscious", "get_up", "vehicle_seated", "mounted_attack",
 	"mounted_walk", "mounted_hit_react", "mounted_training", "mounted_fall", "sleeping"
@@ -2101,6 +2106,12 @@ func set_facing_direction(direction: Vector3) -> void:
 	_target_yaw = atan2(-_target_facing_direction.x, -_target_facing_direction.z)
 
 
+func snap_facing_direction(direction: Vector3) -> void:
+	set_facing_direction(direction)
+	if _visual_root != null:
+		_visual_root.rotation.y = _target_yaw + MODEL_FORWARD_CORRECTION_Y
+
+
 func play_temporary_presentation_action(action_id: String, event_id: String) -> Dictionary:
 	if not action_id in ["talk_gesture", "hit_react", "emotion_happy", "emotion_angry"]:
 		return {"ok": false, "reason": "unsupported_temporary_presentation_action", "action_id": action_id}
@@ -2155,6 +2166,14 @@ func play_temporary_presentation_action(action_id: String, event_id: String) -> 
 		"presentation_state": presentation_state,
 		"duration_seconds": duration
 	}
+
+
+func clear_temporary_dialogue_presentation() -> void:
+	if _transient_state not in ["talk", "happy", "angry"]:
+		return
+	_transient_state = ""
+	_transient_remaining = 0.0
+	_apply_profile_state(false)
 
 
 func get_visible_forward() -> Vector3:
@@ -2265,7 +2284,17 @@ func _resolve_animation_state() -> String:
 	var mounted_context := _spatial_attachment_pose == "vehicle_seated" or bool(states.get("combat_mounted", false))
 	if bool(states.get("unconscious", false)):
 		return "mounted_fall" if _mounted_fall_active else "unconscious"
+	if str(states.get("spatial_route_phase", "")) == "dialogue_workstation_hold":
+		if _spatial_attachment_pose in ["sleeping_supine", "lying_supine"]:
+			return "sleeping"
+		if mounted_context:
+			return "vehicle_seated"
+		if _spatial_attachment_pose in ["sitting", "seated_prayer", "seated_study"]:
+			return "seated_idle"
+		return DEFAULT_STATE
 	if not _transient_state.is_empty():
+		if _spatial_attachment_pose == "sitting" and _transient_state in ["talk", "happy", "angry"]:
+			return "seated_idle"
 		if mounted_context and _transient_state == "hit_react":
 			return "mounted_hit_react"
 		return _transient_state
@@ -2292,6 +2321,8 @@ func _resolve_animation_state() -> String:
 		return "seated_prayer"
 	if current_action == "eat_at_dining_hall":
 		return "seated_eating"
+	if _spatial_attachment_pose in ["sitting", "seated_prayer"]:
+		return "seated_idle"
 	if current_action == "drink_wine":
 		return "drink"
 	if current_action == "assist_heal" or current_action.begins_with("assist_heal_"):
@@ -3629,6 +3660,8 @@ func _get_presentation_pose_offset() -> Vector3:
 	if _mounted_fall_recovering:
 		var recovery_ratio := 1.0 - clampf(_transient_remaining / GET_UP_SECONDS, 0.0, 1.0)
 		return _mounted_fall_landing_offset.lerp(Vector3.ZERO, smoothstep(0.35, 1.0, recovery_ratio))
+	if _desired_state == "sleeping" and _spatial_attachment_pose == "lying_supine":
+		return Vector3(0.0, CLINIC_LYING_POSE_OFFSET_Y, 0.0)
 	if _desired_state == "sleeping" and _spatial_attachment_pose == "sleeping_supine":
 		var feet_direction := global_basis.inverse() * _target_facing_direction
 		feet_direction.y = 0.0
@@ -3637,7 +3670,7 @@ func _get_presentation_pose_offset() -> Vector3:
 		else:
 			feet_direction = feet_direction.normalized()
 		return feet_direction * DORMITORY_SLEEPING_FEET_OFFSET + Vector3(0.0, DORMITORY_SLEEPING_POSE_OFFSET_Y, 0.0)
-	if _desired_state in ["seated_prayer", "seated_study", "seated_eating"] or _desired_state in MOUNTED_STATES:
+	if _desired_state in ["seated_prayer", "seated_study", "seated_idle", "seated_eating"] or _desired_state in MOUNTED_STATES:
 		var seated_offset := Vector3(SEATED_POSE_OFFSET.x, seated_pose_offset_y, SEATED_POSE_OFFSET.z)
 		var states: Dictionary = _profile.get("states", {}) if _profile.get("states", {}) is Dictionary else {}
 		if bool(states.get("combat_mounted", false)) and _spatial_attachment_pose != "vehicle_seated":

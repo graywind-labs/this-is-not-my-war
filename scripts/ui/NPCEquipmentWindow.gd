@@ -108,6 +108,18 @@ func get_slot_button(slot: String) -> Button:
 	return _slot_buttons.get(slot) as Button
 
 
+func get_picker_item_button(item_id: String) -> Button:
+	if _picker_items == null or item_id.is_empty():
+		return null
+	for child in _picker_items.find_children("*", "Button", true, false):
+		if not child.has_meta("equipment_picker_item"):
+			continue
+		var item: Dictionary = child.get_meta("equipment_picker_item", {})
+		if str(item.get("id", item.get("horse_id", ""))) == item_id:
+			return child as Button
+	return null
+
+
 func debug_get_snapshot() -> Dictionary:
 	var slots := {}
 	for slot in SLOT_ORDER:
@@ -223,6 +235,10 @@ func _populate_picker(slot: String) -> void:
 		icon_button.focus_mode = Control.FOCUS_NONE
 		icon_button.tooltip_text = str(item.get("name", item.get("horse_name", "装备")))
 		icon_button.set_meta("equipment_picker_item", item.duplicate(true))
+		icon_button.set_meta(
+			"ui_audio_semantic",
+			"equipment_mount_selected" if slot == "mount" else "equipment_item_selected"
+		)
 		icon_button.pressed.connect(_on_item_selected.bind(slot, item))
 		grid.add_child(icon_button)
 		_apply_icon_button_style(icon_button, PICKER_ITEM_CONTENT_MARGIN, PICKER_ITEM_BORDER_WIDTH)

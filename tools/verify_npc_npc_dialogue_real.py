@@ -218,14 +218,12 @@ def main() -> None:
     os.environ["LLM_FALLBACK_TO_MOCK"] = "false"
     client = create_app().test_client()
     invitation_payload = _payload()
+    _set_participants(invitation_payload, "veteran_deputy_01", "stableman_01")
     invitation_payload["dialogue_phase"] = "invitation"
     invitation_payload["current_round"] = 0
     invitation_payload["dialogue_state"]["current_round"] = 0
-    invitation_payload["meta"]["request_id"] = "verify_npc_npc_invitation_real"
-    invitation_payload["speaker_text"] = (
-        "马塞尔，有个重伤员正在等救治，我急需和你马上协调诊所分工。"
-        "你现在没有正在进行的工作，能接受这次紧急交谈吗？"
-    )
+    invitation_payload["meta"]["request_id"] = "verify_t0412_npc_npc_invitation_role_real"
+    invitation_payload["speaker_text"] = "谈谈夜袭后的防守准备"
     invitation_payload["npc_state"]["current_action"] = "idle"
     invitation_payload["location_context"]["workstations"] = []
     invitation_response = client.post("/npc/dialogue", json=invitation_payload)
@@ -236,10 +234,17 @@ def main() -> None:
         for key, value in invitation_body.items()
         if not key.startswith("model_")
     })
-    assert invitation.replyer_id == "priest_01"
+    assert invitation.replyer_id == "veteran_deputy_01"
     assert invitation.response_kind == "reply_to_npc"
     assert invitation.invitation_result == "accept", invitation
     assert invitation.should_end_dialogue is False, invitation
+    invitation_semantics = "%s\n%s" % (invitation.reply_text, invitation.debug_reason)
+    for role_inversion_fragment in (
+        "得听艾达",
+        "托马作为马夫",
+        "马厩那边我能出力",
+    ):
+        assert role_inversion_fragment not in invitation_semantics, invitation
     assert invitation_body["model_provider"].strip().lower() == provider
     assert invitation_body["model_provider"].strip().lower() != "mock"
     assert invitation_body["model_fallback_used"] is False

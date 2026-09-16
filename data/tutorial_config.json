@@ -1,0 +1,216 @@
+{
+  "schema_version": "tutorial_prologue_v1",
+  "tutorial_id": "prologue_night_raid",
+  "ada_npc_id": "veteran_deputy_01",
+  "tutorial_clock": {"day": 1, "hour": 1, "minute": 0},
+  "handoff_clock": {"day": 1, "hour": 6, "minute": 0},
+  "handoff_card_duration_seconds": 5.0,
+  "tutorial_music": {
+    "battle_start_intro_page_id": "intro_ada_warning"
+  },
+  "ui_copy": {
+    "continue": "点击继续",
+    "complete_current_operation": "完成当前操作后继续",
+    "target_tooltip": "执行当前指引",
+    "inspect_npc_tooltip": "查看人物状态",
+    "inspect_enemy_tooltip": "查看敌人状态",
+    "speaker_names": {
+      "ada": "艾达",
+      "player": "守备官",
+      "order": "军令",
+      "system": "系统"
+    },
+    "skip": {
+      "button": "跳过序章",
+      "title": "跳过序章",
+      "message": "确定跳过序章吗？",
+      "confirm": "确定",
+      "cancel": "取消"
+    },
+    "victory": {
+      "title": "成功守住敌袭",
+      "message": "恭喜守备官，您守住了这次夜袭！",
+      "confirm": "太好了"
+    },
+    "handoff_card": "第 1 日　06:00\n\n在第 1 波敌军到达前组织驿站\n\n最终目标：守住 5 波敌袭"
+  },
+  "step_copy": {
+    "battlefield_explain": {
+      "text": "敌人正在来袭。若他们闯入驿站并摧毁主厅，防守就会失败。",
+      "top_hint": "凌晨 01:00 · 北门遭遇敌袭"
+    },
+    "select_slot": {
+      "text": "在城墙上部署箭塔，可以抵抗敌人的进攻。点击高亮的城墙器械槽。",
+      "top_hint": "部署箭塔：选择城墙槽位"
+    },
+    "select_device": {
+      "text": "军械库里有一座箭塔。点击箭塔，将它部署到城墙上。",
+      "top_hint": "部署箭塔：选择箭塔"
+    },
+    "camera_controls": {
+      "text": "WASD 或按住鼠标中键移动镜头，滚轮缩放镜头。",
+      "top_hint": "镜头操作"
+    },
+    "wait_tower": {
+      "text": "箭塔会自动索敌和攻击，但箭塔也会被敌人摧毁。先观察战况。",
+      "top_hint": "观察箭塔拖延敌军"
+    },
+    "tower_destroyed": {
+      "text": "箭塔被摧毁了，但它为防守争取了时间。武器取来了！接下来需要让成员亲自迎敌。",
+      "top_hint": "为艾达配备武器"
+    },
+    "select_ada": {
+      "text": "只有配备武器的驿站成员才能参与防守。点击艾达。",
+      "top_hint": "为艾达配备武器"
+    },
+    "equipment_button": {
+      "text": "打开人物面板中的“装备”。",
+      "top_hint": "为艾达配备武器"
+    },
+    "main_weapon": {
+      "text": "选择主武器槽。",
+      "top_hint": "为艾达配备武器"
+    },
+    "sword_shield": {
+      "text": "军械库里有一套剑盾。点击剑盾，为艾达装备主武器。",
+      "top_hint": "为艾达配备武器"
+    },
+    "equip_showcase": {
+      "text": "艾达已装备剑盾，现在可以参与防守。",
+      "top_hint": "准备拉响警报"
+    },
+    "alarm": {
+      "text": "拉响警报，召集已入伍且配有武器的成员到城门集合。",
+      "top_hint": "拉响警报"
+    },
+    "battle": {
+      "top_hint": "艾达正在按正式战斗逻辑索敌、接敌与攻击"
+    },
+    "battle_health": {
+      "text": "成员生命值降至 0 时会昏迷，但不会永久死亡；派人治疗可加快恢复速度。",
+      "top_hint": "观察艾达的生命值"
+    },
+    "ada_return": {
+      "top_hint": "战斗结束，艾达正在返回宿舍"
+    }
+  },
+  "formal_goal": {"wave_count": 5, "first_wave_day": 1, "first_wave_hour": 23},
+  "target_slot_id": "wall_slot_01",
+  "tutorial_device_id": "wall_arrow_tower",
+  "tutorial_device_resource_id": "item_wall_arrow_tower",
+  "tutorial_device_overrides": {
+    "max_hp": 15,
+    "damage": 16
+  },
+  "tutorial_weapon_id": "sword_shield",
+  "tutorial_weapon_resource_id": "item_sword_shield",
+  "temporary_inventory": {
+    "item_wall_arrow_tower": 1
+  },
+  "idle_hint_seconds": 8.0,
+  "camera_recenter_seconds": 20.0,
+  "gate_focus_zoom_distance": 20.0,
+  "gate_focus_world_position": [1.5, 0.0, 54.0],
+  "ada_focus_zoom_distance": 20.0,
+  "ada_focus_height": 0.85,
+  "ada_equipment_gesture_interval_seconds": 1.5,
+  "ada_follow_zoom_distance": 20.0,
+  "ada_follow_camera_responsiveness": 8.0,
+  "ada_initial_facing_direction": [0.0, 0.0, 1.0],
+  "tower_phase_max_duration_seconds": 25.0,
+  "tutorial_raid": {
+    "id": "tutorial_raid_prologue",
+    "name": "序章：夜袭试探",
+    "navigation_wave_number": 1,
+    "spawn_stage_id": "gm_front_gate_enemy_spawn_zone",
+    "spawn_front_center": [5.0, 0.0, 72.0],
+    "max_duration_seconds": 90.0,
+    "ada_min_hp_ratio": 0.40,
+    "ada_target_hp_ratio": 0.80,
+    "enemies": [
+      {
+        "enemy_type_id": "tutorial_raider_sword",
+        "name": "夜袭侦察兵",
+        "count": 5,
+        "unit_type": "melee_infantry",
+        "weapon_type": "sword_shield",
+        "hp": 52,
+        "max_hp": 52,
+        "attack_power": 6,
+        "defense": 0,
+        "penetration": 0.0,
+        "move_speed": 10.0,
+        "attack_range": 1.5,
+        "attack_speed": 0.67,
+        "attack_interval": 1.5,
+        "attack_windup": 0.34,
+        "target_preference": ["nearby_unit", "front_gate", "warehouse", "main_hall"]
+      }
+    ]
+  },
+  "intro_pages": [
+    {
+      "id": "intro_room",
+      "speaker": "system",
+      "speaker_name": "系统",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_room_order.png",
+      "text": "三年前，你被派到这座远离前线的驿站。直到最近，战争终于迫近了这里。"
+    },
+    {
+      "id": "intro_order",
+      "speaker": "order",
+      "speaker_name": "军令",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_sealed_order.png",
+      "text": "“接到情报，敌军分队已绕过前线，疑将沿边境小路突袭。命边境各驿站守备官就地组织人手，确保驿站不失，等待后方援军。现有人手与物资皆由你调配。驿站若失，以弃守论处。”"
+    },
+    {
+      "id": "intro_firelight",
+      "speaker": "system",
+      "speaker_name": "系统",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_dormitory_sleep.png",
+      "text": "当下没有增援，也没有正规军。这里只剩一座驿站，和八个本不该上战场的平民。"
+    },
+    {
+      "id": "intro_ada_warning",
+      "speaker": "ada",
+      "speaker_name": "艾达",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_ada_doorway.png",
+      "text": "守备官！小路远处有火光出现，我确认了不是商队，是一小队敌人正在逼近！"
+    },
+    {
+      "id": "intro_guard_question",
+      "speaker": "player",
+      "speaker_name": "守备官",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_ada_doorway.png",
+      "text": "站里还能组织多少人？"
+    },
+    {
+      "id": "intro_ada_answer",
+      "speaker": "ada",
+      "speaker_name": "艾达",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_ada_doorway_idle.png",
+      "text": "卫兵都被抽去前线了。其他人还在宿舍睡觉——马夫、厨子、园丁、工匠。现在能立刻应战的，只有我。"
+    },
+    {
+      "id": "intro_guard_order",
+      "speaker": "player",
+      "speaker_name": "守备官",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_ada_doorway_idle.png",
+      "text": "来不及了，只能硬拼了。"
+    },
+    {
+      "id": "intro_ada_instruction",
+      "speaker": "ada",
+      "speaker_name": "艾达",
+      "image": "res://assets/tutorial/lowpoly_v1/prologue_ada_doorway_idle.png",
+      "text": "请守备官先把箭塔架上城墙，再给我一把武器。拉响警报后，我去门口殊死一搏！"
+    }
+  ],
+  "post_battle_pages": [
+    {"speaker": "ada", "speaker_name": "艾达", "text": "呼~ 只是几个探路的侦察兵。下一次不会这么少。"},
+    {"speaker": "player", "speaker_name": "守备官", "text": "我们该怎么办？"},
+    {"speaker": "ada", "speaker_name": "艾达", "text": "我们需要更多人手，我会去处理伤口。至于其他人——他们还没入伍，您得亲自和他们谈，让他们愿意参与防守而不是逃离驿站。"},
+    {"speaker": "ada", "speaker_name": "艾达", "text": "只要还有人肯留在驿站，我们就还有希望。"},
+    {"speaker": "system", "speaker_name": "系统", "text": "调配资源，说服成员应征入伍，安排生产和训练，打造装备、部署防线，并在敌袭后尽快治疗伤员。"}
+  ]
+}

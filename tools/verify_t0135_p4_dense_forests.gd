@@ -22,7 +22,7 @@ func _init() -> void:
 		_fail("P4 forest view is not active: %s" % str(forest))
 		return
 	var trees := forest.get("tree_counts", {}) as Dictionary
-	if int(forest.get("total_tree_count", 0)) < 5000 or int(trees.get("front", 0)) < 2000 or int(trees.get("rear", 0)) < 2200 or int(trees.get("side", 0)) < 250:
+	if int(forest.get("total_tree_count", 0)) < 5000 or int(trees.get("front", 0)) < 1200 or int(trees.get("rear", 0)) < 2200 or int(trees.get("side", 0)) < 250:
 		_fail("Forest density is below the hard contract: %s" % str(forest))
 		return
 	var variants := forest.get("tree_variant_counts", {}) as Dictionary
@@ -46,16 +46,16 @@ func _init() -> void:
 		_fail("Forest undergrowth is too sparse: %s" % str(forest))
 		return
 	var chunks := forest.get("chunk_counts", {}) as Dictionary
-	if not is_equal_approx(float(forest.get("chunk_size", 0.0)), 40.0) or int(chunks.get("front", 0)) < 80 or int(chunks.get("rear", 0)) < 80 or int(chunks.get("side", 0)) < 20:
+	if not is_equal_approx(float(forest.get("chunk_size", 0.0)), 40.0) or int(chunks.get("front", 0)) < 60 or int(chunks.get("rear", 0)) < 80 or int(chunks.get("side", 0)) < 20:
 		_fail("Forest is not split into independently cullable chunks: %s" % str(forest))
 		return
 	var front_bounds := forest.get("front_bounds", Rect2()) as Rect2
 	var rear_bounds := forest.get("rear_bounds", Rect2()) as Rect2
 	var side_bounds := forest.get("side_bounds", Rect2()) as Rect2
-	if front_bounds.position.x > -350.0 or front_bounds.end.x < 350.0 or front_bounds.end.y < 385.0 or rear_bounds.position.y > -385.0 or rear_bounds.end.x < 350.0 or side_bounds.position.y > -60.0 or side_bounds.end.y < 70.0:
+	if front_bounds.position.x > -350.0 or front_bounds.end.x < 350.0 or front_bounds.end.y < 222.0 or rear_bounds.position.y > -385.0 or rear_bounds.end.x < 350.0 or side_bounds.position.y > -60.0 or side_bounds.end.y < 62.0:
 		_fail("Forest does not continue to the map and mountain edges: %s / %s" % [front_bounds, rear_bounds])
 		return
-	if int(forest.get("spawn_clear_tree_count", -1)) != 0 or int(forest.get("spawn_screen_tree_count", 0)) < 70:
+	if int(forest.get("spawn_clear_tree_count", -1)) != 0 or int(forest.get("spawn_screen_tree_count", 0)) < 25:
 		_fail("Enemy spawn clearing or visual screen is invalid: %s" % str(forest))
 		return
 	if float(forest.get("minimum_corridor_clearance", 0.0)) < 5.19:

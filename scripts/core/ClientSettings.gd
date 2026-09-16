@@ -3,7 +3,7 @@ extends Node
 signal settings_changed(snapshot: Dictionary)
 
 const SETTINGS_PATH := "user://client_settings.cfg"
-const DEFAULT_DISPLAY_MODE := "windowed"
+const DEFAULT_DISPLAY_MODE := "fullscreen"
 const DEFAULT_RESOLUTION := Vector2i(1280, 720)
 const DEFAULT_VSYNC := true
 const DEFAULT_MAX_FPS := 60
@@ -15,6 +15,7 @@ const DEFAULT_AI_MODEL := ""
 const DEFAULT_AI_BASE_URL := ""
 
 var _settings: Dictionary = {}
+var _display_settings_apply_count := 0
 
 
 func _ready() -> void:
@@ -44,7 +45,8 @@ func get_snapshot() -> Dictionary:
 
 func apply_settings(snapshot: Dictionary, persist := true) -> Dictionary:
 	var defaults := get_default_snapshot()
-	_settings = {
+	var previous_settings := _settings.duplicate(true)
+	var next_settings := {
 		"display_mode": _normalize_display_mode(str(snapshot.get("display_mode", defaults["display_mode"]))),
 		"resolution": _normalize_resolution(snapshot.get("resolution", defaults["resolution"])),
 		"vsync": bool(snapshot.get("vsync", defaults["vsync"])),
@@ -56,7 +58,11 @@ func apply_settings(snapshot: Dictionary, persist := true) -> Dictionary:
 		"ai_model": str(snapshot.get("ai_model", defaults["ai_model"])).strip_edges(),
 		"ai_base_url": str(snapshot.get("ai_base_url", defaults["ai_base_url"])).strip_edges(),
 	}
-	apply_display_settings()
+	_settings = next_settings
+	# A maximized OS window is not represented by the saved "windowed" mode.
+	# Reapplying an unchanged draft would therefore restore its old small size.
+	if _runtime_display_settings_changed(previous_settings, next_settings):
+		apply_display_settings()
 	var saved := true
 	if persist:
 		saved = save_settings()
@@ -87,6 +93,7 @@ func save_settings() -> bool:
 
 
 func apply_display_settings() -> void:
+	_display_settings_apply_count += 1
 	Engine.max_fps = int(_settings.get("max_fps", DEFAULT_MAX_FPS))
 	var root_window := get_tree().root
 	if root_window != null:
@@ -116,6 +123,7 @@ func debug_get_snapshot() -> Dictionary:
 	var snapshot := get_snapshot()
 	snapshot["settings_path"] = SETTINGS_PATH
 	snapshot["contains_api_key"] = false
+	snapshot["display_settings_apply_count"] = _display_settings_apply_count
 	return snapshot
 
 
@@ -142,6 +150,13 @@ func _load_settings() -> void:
 
 func _normalize_display_mode(value: String) -> String:
 	return value if value in ["windowed", "borderless", "fullscreen"] else DEFAULT_DISPLAY_MODE
+
+
+func _runtime_display_settings_changed(previous: Dictionary, current: Dictionary) -> bool:
+	for key in ["display_mode", "resolution", "vsync", "max_fps", "ui_scale"]:
+		if not previous.has(key) or previous.get(key) != current.get(key):
+			return true
+	return false
 
 
 func _normalize_resolution(value: Variant) -> Vector2i:

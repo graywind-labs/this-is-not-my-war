@@ -1,8 +1,30 @@
 # MEMORY_AND_INFO_SPACE.md
 
-## T0386 战斗中断反思的记忆守恒
+## T0432 避战结束事件时机
 
-战斗警报或敌军生成取消首次熟睡反思时，只撤销在途 LLM 请求和深睡锁。该窗口状态回到可重试，短期记忆、事件、见闻和已有长期记忆均原样保留；不会把取消当成反思成功，也不会写入模板 / Mock 结果。下一段合格睡眠成功完成原反思后，才按既有规则提交日记 / 知识并清理由该反思消费的短期记忆。
+`avoidance_ended` 表达危险已经解除、NPC 可回归驿站日常的战斗收口事实，因此只能在全部敌军清空后写入。NPC 在敌军仍存活时昏迷不会提前生成该事件；系统保留待结算标记，清敌后恰好补写一次，且 `payload.active_enemy_count=0`。昏迷事实仍由 `unconscious_started` 独立即时记录，两类事件不互相替代。
+
+## T0081-R2 零饱食事件
+
+`zero_satiety_triggered` 是 NPC 私有亲历事件，仅在 `satiety > 0 → 0` 时写入一次，摘要固定为“你当前非常饥饿，继续工作或战斗会损伤身体。”；持续为 0 不重复，恢复正数后再次归零可重新触发。payload 保存归零前后数值、换血倍率、当前行动及需求档位。连续饥饿伤害不逐步写 `damage_taken`；HP 清零仍写既有昏迷事件。
+
+## T1505-P6R42 对话暂停不构造行动失败事实
+
+守备官对话把 active 正式行动暂存时，不写 `work_failed`、不重复写 action started / completed，也不把工位释放与重新占用广播成新的角色经历；`interrupted_activity_context` 仍是只对目标 NPC 可见的临时对话上下文。恢复同一事务不产生第二条开始事件。只有计划确实改派、建筑失效或其他权威原因结束原事务时，才沿对应既有事件规则记录真实结果。
+
+## T1505-P6R28 教程初始记忆边界
+
+教程世界准备中的 NPC 迁入宿舍、床位挂接和艾达广场定位属于布景初始化，不属于角色实际经历。TutorialDirector 必须先完成八人的全部空间迁移，再通过 `MemorySystem.clear_npc_short_term_memory()` 统一清空每人的当日事件索引与见闻索引；禁止在迁移循环内逐人清空，否则先清空的广场成员会再次收到后续离场广播。教程进入 `intro` 时八人均应为 `event_count=0 / witness_count=0`。艾达的夜袭日记属于固定初始长期记忆，不在这次短期清理范围内。
+
+## T1505 序章事件与日记隔离
+
+教程装备、器械和战斗链使用显式 tutorial scope / event suppression：不向正式 event archive、NPC event log、witness log、短期 LLM 上下文、知识图谱或首次熟睡反思写入事件；其他七名宿舍 NPC 不收到夜袭广播。序章不调用真实或 Mock LLM。
+
+艾达在 `npc_initial_long_memory.json` 中固定拥有一篇夜袭第一人称记录，来源为 `initial_long_memory`。它按守备命令纪日前夜保存为 `day=0`、`time=02:00:00`、`record_label=接到守备命令的前一天`，玩家界面与 LLM 长期记忆上下文统一显示“接到守备命令的前一天 02:00:00”。它只保留“守备官部署箭塔、给我剑盾并共同击退试探队”的叙事，不携带 HP、经验、关系或士气修正。该记录在教程开始前已经存在，因此完整完成、任意阶段跳过或调试直达都不会新增或删除它；交接仍只清空全部 NPC 的教程短期记忆。
+
+## T0386 / T0427 战斗期间反思的记忆守恒
+
+T0427 起，战斗警报、敌军生成和敌军进入驿站均不再取消首次熟睡反思。在途 LLM 请求、pending 映射、深睡锁、床位与请求时取得的短期记忆水位保持不变；战斗期间新产生的事件仍遵循水位规则留在当前短期索引，不会被本次旧快照误清除。反思完成后按既有规则提交日记 / 知识并精确轮转请求快照；若敌人仍在驿站，NPC 随后才安全离床进入战斗或避战。
 
 ## T1600 玩家语音与记忆边界（计划，未实施）
 
@@ -23,7 +45,7 @@
 
 ## T0342 批量行商交易事件
 
-每次成功点击“确认”只生成一条 `merchant_trade_completed`。单资源交易继续使用原摘要；多资源交易按“购买 / 出售 N 类物资、支付 / 获得总价”生成确定性摘要。payload 保留 T1507 的方向、总数量、总价与资源 / 金钱差量，并增加逐项 `lines[]`、`line_count` 和结算后 `merchant_stock_after`；失败批次不写事件。行商库存是 MerchantSystem 事实，不进入 NPC 推理结算。
+每次成功点击“确认”只生成一条 `merchant_trade_completed`，固定为广场 `local_public` 并广播给交易发生时在广场且可接收见闻的 NPC。摘要统一采用交换句式：买入为“守备官花费{total_price}枚第纳尔，换来{逐项数量与物资}”，卖出为“守备官花费{逐项数量与物资}，换来{total_price}枚第纳尔”；批量交易逐项列出，不只写物资种类数。payload 保留 T1507 的方向、总数量、总价与资源 / 金钱差量，并增加逐项 `lines[]`、`line_count` 和结算后 `merchant_stock_after`；失败批次不写事件。行商库存是 MerchantSystem 事实，不进入 NPC 推理结算。
 
 ## T0135-P10F 语气声不进入记忆
 
@@ -558,7 +580,7 @@ NPC-NPC 自主对话只为真实完成的邀请交换与正式 LLM 回复写 `di
 | `attribute_improved` | `{actor}通过锻炼体力 / 脑力，{attribute}从{before}提高到{after}。` | `attribute`, `attribute_label`, `before`, `after`, `training_kind`；技能点仍由玩家通过权威入口分配，不由 AI 自动消耗 |
 | `merchant_arrived` | `{merchant_name}在{arrival_time}抵达后门，将停留到{departure_time}。` | `merchant_id`, `merchant_name`, `arrival_time`, `departure_time`, `visit_day`；T1507 已实现 |
 | `merchant_departed` | `{merchant_name}在{time}离开了后门。` | `merchant_id`, `merchant_name`, `arrival_time`, `departure_time`, `visit_day`；T1507 已实现 |
-| `merchant_trade_completed` | 单项沿用“购买 / 出售了{amount}份{resource_name}”；多项为“购买 / 出售了{line_count}类物资，支付 / 获得{total_price}枚第纳尔。” | `merchant_id`, `direction`, `resource_id`, `resource_name`, `amount`, `unit_price`, `total_price`, `money_delta`, `resource_delta`；T0342 批量额外含 `lines`, `line_count`, `merchant_stock_after` |
+| `merchant_trade_completed` | 买入：“守备官花费{total_price}枚第纳尔，换来{逐项数量与物资}。”；卖出：“守备官花费{逐项数量与物资}，换来{total_price}枚第纳尔。” | `merchant_id`, `direction`, `resource_id`, `resource_name`, `amount`, `unit_price`, `total_price`, `money_delta`, `resource_delta`；T0342 批量额外含 `lines`, `line_count`, `merchant_stock_after` |
 | `defense_device_deployed` | `守备官把{device_name}部署在{slot_name}，消耗了{inventory_cost}份工程器械库存。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `slot_name`, `building_id`, `inventory_resource_id`, `inventory_cost`；T1508 已实现 |
 | `defense_device_triggered` | `守备官部署的{device_name}攻击了{target_enemy_name}，造成{damage}点伤害。` | `deployment_id`, `device_id`, `device_name`, `slot_id`, `target_enemy_id`, `target_enemy_name`, `damage`, `hp_before`, `hp_after`, `defeated`；T1508 已实现弩床 / 箭塔触发 |
 | `piety_meteor_impact` | `由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。` | `cast_id`, `target_position`, `radius`, `impact_damage`, `impact_max_targets`, `enemy_hit_count`, `enemy_defeated_count`, `burn_duration_seconds`, `friendly_fire=false`；T0159 起全站公开，T0172 起选点时不另写施放事件 |
@@ -572,7 +594,7 @@ T0402 的底层架构至少应为以下事件类型预留类型常量、payload 
 
 - 日常与计划：`wake_up`、`plan_created`、`plan_revised`、`reflection_started`、`sleep_started`、`sleep_ended`。
 - 移动与地点：`location_entered`、`location_exited`。
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`wine_consumed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`prayer_joined_mass`、`prayer_resumed_alone`、`visit_started`、`visit_completed`。
+- 工作与生活：`work_started`、`work_completed`、`work_stopped`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`wine_consumed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`prayer_joined_mass`、`prayer_resumed_alone`、`visit_started`、`visit_completed`。
 - T0051 后，守备官-NPC 对话按完整会话记录：玩家发送的消息立即进入会话缓冲，“完成对话”时把当前完整历史写成一条 `dialogue_turn`；等待中的 NPC 回复会被取消且不补写。取消或无攻击的挂起超时不入库、不广播、不触发判别。NPC-NPC 自主对话仍按实际完成轮次记录。NPC 主动交涉的发起意图写入 `proactive_talk_started`，预设开场问题随完整会话在完成时入库，不再在点击气泡时单独写 `proactive_talk_message`。
 - 玩家交互：`money_given`、`wine_given`、`equipment_given`、`equipment_changed`、`order_assigned`。`order_assigned` 固定为 `private`，完整新旧指令写入 payload。正式守备官惩戒攻击写入 `damage_taken`，并在 payload 中保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
 - T0138 后，坐骑槽清空的 `equipment_changed` 摘要固定为“守备官收回了分配给 {NPC} 的马匹。”；马匹实际承伤 / 阵亡分别写 `horse_damaged / horse_died`，payload 保存 `horse_id / horse_name / npc_id / damage / hp_before / hp_after` 及敌军来源。事件只记录 HorseSystem 已提交的 HP / 死亡事实，不让 MemorySystem 参与分伤或解绑结算；系统强制解绑也不伪造成守备官手动收回事件。
@@ -593,7 +615,7 @@ T0402 已实现结构化事件底座，T0403 已实现地点信息节点与进�
 - `MemorySystem` 是当前事件事实源，维护全局事件索引、NPC 当天事件库、NPC 见闻库占位和广场公开事件查询。地点/广场节点不应成为事件历史存储，MemorySystem 也不提供按地点查询事件的长期接口。
 - `add_event(event)` 会规范化事件字段，补齐 `event_id`、`day`、`time`、`actor_ids`、`target_ids`、`location_id`、`visibility`、`importance`、`summary` 和 `payload`，并要求事件具备 `subject_npc_id`。
 - 每个事件首先写入 `subject_npc_id` 对应 NPC 的当天事件库；`local_public` 事件会即时广播给事件地点当前在场 NPC，并写入接收者见闻库。广场事件也走同一规则，地点为 `plaza`。
-- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`，T0045 后其 actor / summary 按 NPC 自身锻炼成长表达。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。T0326 起两类开始事件都包含 `remaining_helper_slots`，其数值同时扣除已到位与在途预占施工位。`NPCSystem` 到达地点时写入 `location_entered`。
+- 现有 `ActionSystem` 已写入 `work_started`、`work_completed`、`work_stopped`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`sleep_started`、`sleep_ended` 和工作 / 训练 / 诊所成长使用的 `skill_improved`。`work_stopped` 专用于 `interruption_reason=plan_hour_changed` 的正常时段结束；制造摘要固定为“因当前计划时段结束而停止制造”，不使用“未能完成”。其他中断仍写 `work_failed`，并在 payload 保留真实 `interruption_reason`；其中制造目标变更固定摘要为“{NPC}的{建筑}制造中断了：守备官更改了制造目标。”，与缺目标、缺资源等仍使用“未能完成{行动}：{原因}”的制造失败区分。T0904 后 `skill_improved` payload 同步记录经验和技能点变化；玩家把技能点分配到力量或智力时，`NPCSystem` 写入 `attribute_improved`，固定为 `private`，T0045 后其 actor / summary 按 NPC 自身锻炼成长表达。工作/训练/吃饭/睡觉按 `local_public` 写入，会即时广播给同地点当前在场 NPC 的见闻库；协助修复/协助升级也按 `local_public` 写入，事件地点为 `plaza`，会广播给广场当前在场 NPC。T0326 起两类开始事件都包含 `remaining_helper_slots`，其数值同时扣除已到位与在途预占施工位。`NPCSystem` 到达地点时写入 `location_entered`。
 - T1001 起，`DailyPlanSystem` 生成每日计划时写入 `private` 的 `plan_created` 事件。T0022 后，正式开局和正式新一天只有在真实 LLM 计划成功时才写入该事件，payload 包含 `plan_day`、24 个小时计划项 `items`、`source=llm_plan_day` 和 `work_phase_count`。真实 provider 失败时不写入 `plan_created`，不生成 `rule_plan_fallback`；`rule_default` / `mock_plan_day` 只可来自显式调试入口。该事件只表示 NPC 制定了计划，不代表其中任一行动已经完成。T0049 后，对话判别空结果不写事件；只有真实 provider 恰好返回并成功应用 `revision_hours` 指定项后，才写入 `private` 的 `plan_revised` 事件。payload 记录合并后的 24 小时计划、触发原因、修订小时、`source=llm_plan_revision` 和摘要。Mock、provider 失败或本地校验失败都不写该事件，也不覆盖原计划。该事件仍不代表资源、HP 或工作产出已结算。
 - 已提供 `get_all_events()`、`get_npc_daily_events(npc_id)`、`get_npc_witness_events(npc_id)`、`get_npc_short_term_memory(npc_id)`、`get_npc_short_term_memory_ids(npc_id)`、`get_plaza_events()` 和对应调试接口。
 - T1004/T1005 起，`clear_npc_short_term_memory(npc_id)` 可整批清空指定 NPC 当天事件库和见闻库索引，现仅保留给显式调试和旧调用兼容。T0095 后正式熟睡总结改用 `get_npc_short_term_memory_snapshot(...)` 与 `clear_npc_short_term_memory_snapshot(...)`，只轮转请求快照内的稳定 ID，异步期间新增的事件 / 见闻留待下一篇；两种清理都不删除 `_events_by_id` 和全局事件列表。
@@ -816,3 +838,7 @@ T0387 已将结局输入改为结算时冻结的 `epilogue_fact_snapshot`。每�
 ## T1604 语音验收的记忆边界
 
 T1604 真实矩阵只调用 `/voice/analyze`，不会写入对话历史、事件库或 NPC 记忆；只有玩家之后手动发送 300 字以内的最终草稿，才沿用既有对话与记忆链。本轮未修改记忆 Schema 或广播规则。
+
+## T0081-R1 满疲劳个人事件
+
+`full_fatigue_triggered` 是 NPC 自身需求跨界的亲历事实，`visibility=private`，不向同地点其他 NPC 广播。必填 payload 为 `fatigue_before / fatigue_after / max_fatigue / work_output_multiplier`，玩家可见 summary 固定为“你当前很疲惫，工作效率大幅下降。”。只有 `<100 → 100` 写入；持续处于 100 不重复，先恢复到 100 以下再触顶会形成新事件。计划判别与修订请求在该事件落库后启动，因此当轮 LLM 短期记忆能读取这条事实。

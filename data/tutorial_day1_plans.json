@@ -1,0 +1,54 @@
+{
+  "schema_version": "tutorial_day1_plans_v2",
+  "source": "tutorial_day1_preset",
+  "plans": {
+    "stableman_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_stable", "work_stable", "work_stable", "work_stable", "work_stable",
+      "eat_at_dining_hall", "work_stable", "work_stable", "work_stable", "work_stable", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", {"action_id": "talk_to_npc", "target_id": "veteran_deputy_01", "dialogue_goal": "谈谈夜袭后的防守准备"}, {"action_id": "visit_location", "target_id": "stable"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "cook_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_dining_hall", "work_dining_hall", "work_dining_hall", "work_dining_hall", "work_dining_hall",
+      "eat_at_dining_hall", "work_dining_hall", "work_dining_hall", "work_dining_hall", "work_dining_hall", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", "pray_at_chapel", {"action_id": "visit_location", "target_id": "tavern"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "gardener_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_garden", "work_garden", "work_garden", "work_garden", "work_garden",
+      "eat_at_dining_hall", "work_garden", "work_garden", "work_garden", "work_garden", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", {"action_id": "talk_to_npc", "target_id": "cook_01", "dialogue_goal": "聊聊今天的收成和晚餐"}, {"action_id": "visit_location", "target_id": "garden"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "blacksmith_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_blacksmith", "work_blacksmith", "work_blacksmith", "work_blacksmith", "work_blacksmith",
+      "eat_at_dining_hall", "work_blacksmith", "work_blacksmith", "work_blacksmith", "work_blacksmith", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", {"action_id": "talk_to_npc", "target_id": "engineer_01", "dialogue_goal": "核对铁匠铺与工械坊的制造准备"}, {"action_id": "visit_location", "target_id": "plaza"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "veteran_deputy_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_training_instructor", "work_training_instructor", "work_training_instructor", "work_training_instructor", "work_training_instructor",
+      "eat_at_dining_hall", "work_training_instructor", "work_training_instructor", "work_training_instructor", "work_training_instructor", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", "pray_at_chapel", {"action_id": "visit_location", "target_id": "plaza"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "priest_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_tavern", "work_tavern", "work_tavern", "work_tavern", "work_tavern",
+      "eat_at_dining_hall", "work_tavern", "work_tavern", "work_tavern", "work_tavern", "pray_at_chapel",
+      "eat_at_dining_hall", "lead_mass", "pray_at_chapel", "pray_at_chapel", "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "doctor_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_clinic_doctor", "work_clinic_doctor", "work_clinic_doctor", "work_clinic_doctor", "work_clinic_doctor",
+      "eat_at_dining_hall", "work_clinic_doctor", "work_clinic_doctor", "work_clinic_doctor", "work_clinic_doctor", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", "pray_at_chapel", {"action_id": "visit_location", "target_id": "clinic"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ],
+    "engineer_01": [
+      "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory", "sleep_in_dormitory",
+      "eat_at_dining_hall", "work_workshop", "work_workshop", "work_workshop", "work_workshop", "work_workshop",
+      "eat_at_dining_hall", "work_workshop", "work_workshop", "work_workshop", "work_workshop", "pray_at_chapel",
+      "eat_at_dining_hall", "pray_at_chapel", "pray_at_chapel", {"action_id": "visit_location", "target_id": "workshop"}, "sleep_in_dormitory", "sleep_in_dormitory"
+    ]
+  }
+}

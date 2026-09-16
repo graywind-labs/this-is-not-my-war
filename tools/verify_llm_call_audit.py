@@ -2,6 +2,8 @@ import json
 import os
 from pathlib import Path
 import sys
+import tempfile
+import time
 from unittest.mock import patch
 
 import requests
@@ -102,6 +104,17 @@ class _FakeIdleTimeoutStreamingResponse:
         del chunk_size, decode_unicode
         raise requests.ReadTimeout("stream idle")
         yield
+
+
+class _FakeQueueTimeoutStreamingResponse:
+    status_code = 200
+    text = ""
+    headers = {"Content-Type": "text/event-stream; charset=utf-8"}
+
+    def iter_lines(self, chunk_size: int = 1, decode_unicode: bool = True):
+        del chunk_size, decode_unicode
+        time.sleep(0.12)
+        yield ": keep-alive"
 
 
 def _payload(call_type: str) -> dict:
@@ -206,6 +219,49 @@ def main() -> None:
     assert not idle_timeout_result.ok
     assert idle_timeout_result.usage["exception_type"] == "ProviderIdleTimeout"
 
+    with tempfile.TemporaryDirectory(prefix="t0445_queue_timeout_") as temp_dir:
+        queue_log_path = Path(temp_dir) / "queue_timeout.jsonl"
+        queue_timeout_adapter = ModelAdapter(
+            ModelAdapterConfig(
+                provider="deepseek",
+                api_key="test_key",
+                fallback_to_mock=False,
+                provider_total_timeout_seconds=0.01,
+                audit_log_enabled=True,
+                audit_log_path=str(queue_log_path),
+            )
+        )
+        with patch(
+            "backend.services.model_adapter.requests.post",
+            return_value=_FakeQueueTimeoutStreamingResponse(),
+        ):
+            queue_timeout_result = queue_timeout_adapter.generate(
+                "dialogue",
+                _payload("dialogue"),
+            )
+        assert not queue_timeout_result.ok
+        assert queue_timeout_result.error_code == "provider_queue_timeout"
+        assert queue_timeout_result.usage["exception_type"] == "ProviderQueueTimeout"
+        assert queue_timeout_result.message == "DeepSeek 模型排队超时，请稍后重试。"
+        queue_records = [
+            json.loads(line)
+            for line in queue_log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        queue_stage_events = [
+            record["event"]
+            for record in queue_records
+            if record["event"].startswith("provider_")
+            and record["event"] != "provider_output_rejected"
+        ]
+        assert queue_stage_events == [
+            "provider_request_prepared",
+            "provider_response_headers_received",
+            "provider_request_completed",
+        ]
+        assert queue_records[-2]["ok"] is False
+        assert queue_records[-2]["failure_details"]["phase"] == "waiting_for_first_valid_token"
+
     snapshot = ModelAdapter(
         ModelAdapterConfig(provider="deepseek", api_key="test_key")
     ).get_runtime_config_snapshot()
@@ -213,6 +269,7 @@ def main() -> None:
     assert snapshot["provider_streaming"] is True
     assert snapshot["provider_connect_timeout_seconds"] == 10.0
     assert snapshot["provider_idle_timeout_seconds"] == 120.0
+    assert snapshot["provider_total_timeout_seconds"] == 120.0
     assert not {
         "max_tokens",
         "plan_day_max_tokens",

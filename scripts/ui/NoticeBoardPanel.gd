@@ -49,7 +49,7 @@ func close_panel() -> void:
 func _on_publish_pressed() -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("set_plaza_notice"):
-		notice_status_label.text = "通告系统不可用。"
+		notice_status_label.text = "暂时无法发布通告。"
 		return
 	var notice := notice_text_edit.text.strip_edges()
 	var event: Dictionary = memory_system.set_plaza_notice(notice, GUARD_OFFICER_ID)
@@ -59,13 +59,13 @@ func _on_publish_pressed() -> void:
 	elif notice.is_empty():
 		notice_status_label.text = "通告已清空并发布。"
 	else:
-		notice_status_label.text = "新通告已向全站 NPC 广播。"
+		notice_status_label.text = "新通告已向全站成员广播。"
 
 
 func _on_schedule_publish_pressed() -> void:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("set_plaza_reference_schedule"):
-		schedule_status_label.text = "日程表系统不可用。"
+		schedule_status_label.text = "暂时无法发布日程表。"
 		return
 	var result: Dictionary = memory_system.set_plaza_reference_schedule(
 		_schedule_draft.duplicate(true),
@@ -78,7 +78,7 @@ func _on_schedule_publish_pressed() -> void:
 	_render_schedule_rows()
 	_refresh_published_labels()
 	if bool(result.get("changed", false)):
-		schedule_status_label.text = "日程表已向全站 NPC 广播。"
+		schedule_status_label.text = "日程表已向全站成员广播。"
 	else:
 		schedule_status_label.text = "日程表没有变化。"
 
@@ -159,7 +159,7 @@ func _build_interface() -> void:
 
 	var title := Label.new()
 	title.name = "TitleLabel"
-	title.text = "主厅前公告牌"
+	title.text = "公告牌"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", 20)
 	header.add_child(title)

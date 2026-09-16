@@ -97,18 +97,21 @@ def verify_complete_real_call_and_redaction(log_path: Path) -> None:
     assert result.ok
 
     records = read_records(log_path)
+    assert all(record["schema_version"] == 2 for record in records)
     events = [record["event"] for record in records]
     assert events == [
         "call_started",
-        "provider_request_sent",
-        "provider_response_received",
+        "provider_request_prepared",
+        "provider_response_headers_received",
+        "provider_first_valid_token_received",
+        "provider_request_completed",
         "provider_output_parsed",
         "call_completed",
     ]
     audit_ids = {record["audit_id"] for record in records}
     assert len(audit_ids) == 1
     provider_request = next(
-        record for record in records if record["event"] == "provider_request_sent"
+        record for record in records if record["event"] == "provider_request_prepared"
     )
     body = provider_request["provider_request_body"]
     assert body["messages"][0]["role"] == "system"
@@ -117,8 +120,9 @@ def verify_complete_real_call_and_redaction(log_path: Path) -> None:
     assert provider_request["request_headers_omitted"] is True
     assert "headers" not in provider_request
     provider_response = next(
-        record for record in records if record["event"] == "provider_response_received"
+        record for record in records if record["event"] == "provider_request_completed"
     )
+    assert provider_response["ok"] is True
     assert provider_response["provider_response"]["usage"]["prompt_cache_hit_tokens"] == 100
     assert provider_response["billing"]["prompt_cache_miss_tokens"] == 23
     assert provider_response["billing"]["completion_tokens"] == 17
@@ -173,12 +177,12 @@ def verify_retry_and_provider_failure(log_path: Path) -> None:
     assert not result.ok
     assert result.usage["exception_type"] == "ModelJSONDecodeError"
     records = read_records(log_path)
-    assert sum(record["event"] == "provider_request_sent" for record in records) == 2
+    assert sum(record["event"] == "provider_request_prepared" for record in records) == 2
     assert sum(record["event"] == "provider_output_rejected" for record in records) == 2
     assert records[-1]["event"] == "call_completed"
     assert records[-1]["ok"] is False
     request_events = [
-        record for record in records if record["event"] == "provider_request_sent"
+        record for record in records if record["event"] == "provider_request_prepared"
     ]
     assert [record["attempt_count"] for record in request_events] == [1, 2]
     assert request_events[1]["retry_compact_json"] is True
@@ -202,7 +206,9 @@ def verify_retry_and_provider_failure(log_path: Path) -> None:
     assert not http_result.ok
     http_records = read_records(http_log_path)
     failed_attempt = next(
-        record for record in http_records if record["event"] == "provider_attempt_failed"
+        record
+        for record in http_records
+        if record["event"] == "provider_request_completed" and not record["ok"]
     )
     assert failed_attempt["http_status"] == 503
     assert failed_attempt["exception_type"] == "ProviderHTTPError"

@@ -65,7 +65,17 @@ func _init() -> void:
 		return
 	var switch_result: Dictionary = crafting_system.set_target("workshop", "craft_bow", false)
 	if str(switch_result.get("reason", "")) != "confirmation_required" or int(resource_system.get_resource("wood")) != 8:
-		_fail("Switching away from the inherited project must require confirmation without refunding wood")
+		_fail("Switching away from the inherited project must require confirmation without mutating wood")
+		return
+	if int(switch_result.get("refundable_resources", {}).get("wood", 0)) != 4:
+		_fail("Inherited project confirmation must expose its four refundable wood")
+		return
+	var confirmed_switch: Dictionary = crafting_system.set_target("workshop", "craft_bow", true)
+	if not bool(confirmed_switch.get("ok", false)) or int(resource_system.get_resource("wood")) != 12:
+		_fail("Confirmed inherited-project switch must refund all four invested wood")
+		return
+	if int(confirmed_switch.get("refunded_resources", {}).get("wood", 0)) != 4:
+		_fail("Inherited-project switch result must report the exact refunded wood")
 		return
 
 	for index in range(GLEN_STAGE_CHECKPOINTS.size()):

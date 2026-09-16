@@ -52,14 +52,17 @@ func _init() -> void:
 		"music_day_playlist_05",
 		"music_day_playlist_07",
 		"music_day_playlist_12",
+		"music_day_playlist_v29_04",
+		"music_day_playlist_v29_06",
 	]
 	var expected_night_playlist := [
 		"music_night_playlist_05",
 		"music_night_playlist_06",
 		"music_night_playlist_10",
+		"music_night_playlist_v29_02",
 	]
 	if initial.get("day_playlist", []) != expected_day_playlist or initial.get("night_playlist", []) != expected_night_playlist:
-		_fail("Configured day/night music pools do not match the nine user selections")
+		_fail("Configured day/night music pools do not match the 8+4 user selections")
 		return
 	for asset_id in expected_day_playlist + expected_night_playlist:
 		var info := audio_manager.get_asset_info(asset_id) as Dictionary
@@ -236,7 +239,7 @@ func _init() -> void:
 	if audio_manager.get_current_music_asset_id() != "" or not audio_manager.get_loop_snapshot().is_empty():
 		_fail("World audio players survived Main scene teardown")
 		return
-	print("T0135_P10B_WORLD_AUDIO_PASS local_sources=12 global_bed=zoom_scaled wildlife=intermittent_reduced rooster=daily_once playlists=6+3 ordered_fades=pass combat_music=pass fire=pass")
+	print("T0135_P10B_WORLD_AUDIO_PASS local_sources=12 global_bed=zoom_scaled wildlife=intermittent_reduced rooster=daily_once playlists=8+4 ordered_fades=pass combat_music=pass fire=pass")
 	quit(0)
 
 

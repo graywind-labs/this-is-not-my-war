@@ -65,6 +65,23 @@ func _init() -> void:
 			):
 				_fail("%s initial diary record %d did not keep the runtime diary shape" % [npc_id, index])
 				return
+		if npc_id == "veteran_deputy_01":
+			if diary.size() != 4:
+				_fail("Ada must load exactly one additional fixed prologue diary")
+				return
+			var prologue_diary: Dictionary = diary[3] if diary[3] is Dictionary else {}
+			if (
+				int(prologue_diary.get("day", -1)) != 0
+				or str(prologue_diary.get("time", "")) != "02:00:00"
+				or str(prologue_diary.get("record_label", "")) != "接到守备命令的前一天"
+				or str(prologue_diary.get("source", "")) != "initial_long_memory"
+				or str(prologue_diary.get("entry", "")).strip_edges().is_empty()
+			):
+				_fail("Ada's fixed prologue diary did not load from initial long memory")
+				return
+		elif diary.size() != 3:
+			_fail("%s should keep exactly three initial diary slices" % npc_id)
+			return
 		if str(graph.get("schema_version", "")) != "key_value_replace_v1" or graph.has("patches"):
 			_fail("%s did not load a replace-style knowledge graph" % npc_id)
 			return
@@ -342,7 +359,7 @@ func _init() -> void:
 
 	print(
 		"T0061/T0101 NPC copy and initial long-memory verification passed: "
-		+ "8 NPCs, 24 diary slices, 15 buildings each, four-part guard knowledge, "
+		+ "8 NPCs, 25 diary slices, 15 buildings each, four-part guard knowledge, "
 		+ "four overlooked-role rules, level-based warehouse-capacity knowledge, "
 		+ "six-level wall/main-hall device-slot knowledge without a main-hall range bonus, "
 		+ "narrative building labels, compact knowledge UI, labeled six-way LLM payloads, "
@@ -387,7 +404,12 @@ func _diary_entry_texts(diary: Array) -> Array[String]:
 			if not entry_text.is_empty():
 				var day := int(diary_record.get("day", 0))
 				var time_label := str(diary_record.get("time", "")).strip_edges()
-				if day > 0 and not time_label.is_empty():
+				var record_label := str(diary_record.get("record_label", "")).strip_edges()
+				if not record_label.is_empty() and not time_label.is_empty():
+					result.append("%s %s：%s" % [record_label, time_label, entry_text])
+				elif not record_label.is_empty():
+					result.append("%s：%s" % [record_label, entry_text])
+				elif day > 0 and not time_label.is_empty():
 					result.append("第%d天 %s：%s" % [day, time_label, entry_text])
 				elif day > 0:
 					result.append("第%d天：%s" % [day, entry_text])

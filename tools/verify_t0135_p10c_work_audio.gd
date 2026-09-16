@@ -81,6 +81,7 @@ func _run() -> void:
 	npc_system.update_npc_state("doctor_01", {"presentation_clinic_duty_mode": "treatment"})
 	await process_frame
 	await process_frame
+	controller.debug_force_refresh()
 	_assert_loop(controller, "clinic_treatment", "sfx_work_clinic_treatment_and_assist_loop")
 	_assert(not (controller.get_debug_snapshot().get("active_loops", {}) as Dictionary).has("clinic_reading"), "clinic reading must yield to treatment")
 
@@ -100,14 +101,17 @@ func _run() -> void:
 	_assert(bool(mass_start_snapshot.get("mass_active", false)), "mass edge was not detected")
 	_assert(not bool(mass_start_snapshot.get("mass_chant_ready", true)), "mass chant started before five-second bell")
 	_assert(int(audio_manager.debug_get_snapshot().get("active_one_shots", 0)) > one_shots_before_mass, "mass start one-shot did not play")
+	_assert_one_shot_gain(controller, "chapel_mass_start", "sfx_chapel_mass_start_one_shot", 3.0)
 	controller.debug_advance_audio_seconds(5.1)
 	_assert_loop(controller, "chapel_mass", "sfx_chapel_mass_in_progress_loop")
+	_assert_loop_gain(controller, "chapel_mass", 3.0)
 	active_actions["priest_01"] = _active_record(action_system, "pray_at_chapel", "pray", "chapel")
 	action_system.set("_active_actions", active_actions)
 	npc_system.update_npc_state("priest_01", {"current_action": "pray_at_chapel"})
 	await process_frame
 	await process_frame
 	_assert_loop(controller, "chapel_prayer", "sfx_chapel_prayer_presence_loop")
+	_assert_loop_gain(controller, "chapel_prayer", 0.0)
 	_assert(not bool(controller.get_debug_snapshot().get("mass_active", true)), "mass state did not clear")
 
 	active_actions.clear()
@@ -166,6 +170,28 @@ func _assert_loop(controller: Node, semantic_key: String, asset_id: String) -> v
 	var loops: Dictionary = controller.get_debug_snapshot().get("active_loops", {})
 	_assert(loops.has(semantic_key), "missing loop: %s" % semantic_key)
 	_assert(str((loops.get(semantic_key, {}) as Dictionary).get("asset_id", "")) == asset_id, "wrong asset for %s" % semantic_key)
+
+
+func _assert_loop_gain(controller: Node, semantic_key: String, expected_gain_db: float) -> void:
+	var loops: Dictionary = controller.get_debug_snapshot().get("active_loops", {})
+	_assert(loops.has(semantic_key), "missing loop gain source: %s" % semantic_key)
+	var actual_gain_db := float((loops.get(semantic_key, {}) as Dictionary).get("gain_db", -999.0))
+	_assert(is_equal_approx(actual_gain_db, expected_gain_db), "wrong gain for %s: %.2f" % [semantic_key, actual_gain_db])
+
+
+func _assert_one_shot_gain(controller: Node, source_key: String, asset_id: String, expected_gain_db: float) -> void:
+	var sources: Dictionary = controller.get_debug_snapshot().get("sources", {})
+	_assert(sources.has(source_key), "missing one-shot source: %s" % source_key)
+	var source_path := NodePath(str((sources.get(source_key, {}) as Dictionary).get("path", "")))
+	var source := root.get_node_or_null(source_path)
+	_assert(source != null, "one-shot source path is invalid: %s" % source_path)
+	if source == null:
+		return
+	var expected_name := "Audio3D_%s" % asset_id
+	var player := source.get_node_or_null(expected_name) as AudioStreamPlayer3D
+	_assert(player != null, "missing one-shot player: %s" % expected_name)
+	if player != null:
+		_assert(is_equal_approx(player.volume_db, expected_gain_db), "wrong one-shot gain for %s: %.2f" % [asset_id, player.volume_db])
 
 
 func _assert_all_work_players_are_positional(audio_manager: Node) -> void:

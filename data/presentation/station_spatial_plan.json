@@ -9,8 +9,8 @@
   "terrain": {
     "detail_center": [0.0, 35.0],
     "detail_size": [280.0, 360.0],
-    "underlay_center": [0.0, 25.0],
-    "underlay_size": [700.0, 720.0],
+    "underlay_center": [0.0, -57.75],
+    "underlay_size": [700.0, 554.5],
     "continuous_ground_color": "#405842",
     "ground_surface_elevation_m": 0.0,
     "ground_depth_m": 2.4,
@@ -90,10 +90,10 @@
     {"id": "blacksmith_lane_b", "from": [5.0, 27.0], "to": [10.2, 31.2], "width": 3.2, "kind": "service", "serves": ["blacksmith"]},
     {"id": "warehouse_lane_a", "from": [0.0, 10.0], "to": [14.0, 11.0], "width": 3.2, "kind": "service"},
     {"id": "warehouse_lane_b", "from": [14.0, 11.0], "to": [29.5, 14.5], "width": 3.2, "kind": "service", "serves": ["warehouse"]},
-    {"id": "front_approach_a", "from": [5.0, 54.0], "to": [6.0, 105.0], "width": 8.0, "kind": "enemy"},
-    {"id": "front_approach_b", "from": [6.0, 105.0], "to": [10.0, 165.0], "width": 8.0, "kind": "enemy"},
-    {"id": "front_approach_c", "from": [10.0, 165.0], "to": [8.0, 225.0], "width": 8.0, "kind": "enemy"},
-    {"id": "front_approach_d", "from": [8.0, 225.0], "to": [2.0, 335.0], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_a", "from": [5.0, 54.0], "to": [6.0, 79.5], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_b", "from": [6.0, 79.5], "to": [10.0, 109.5], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_c", "from": [10.0, 109.5], "to": [8.0, 139.5], "width": 8.0, "kind": "enemy"},
+    {"id": "front_approach_d", "from": [8.0, 139.5], "to": [2.0, 194.5], "width": 8.0, "kind": "enemy"},
     {"id": "rear_trade_a", "from": [-27.0, -45.5], "to": [-35.0, -90.0], "width": 4.5, "kind": "trade"},
     {"id": "rear_trade_b", "from": [-35.0, -90.0], "to": [-42.0, -135.0], "width": 4.5, "kind": "trade"},
     {"id": "rear_trade_c", "from": [-42.0, -135.0], "to": [-46.0, -185.0], "width": 4.5, "kind": "trade"},
@@ -211,13 +211,13 @@
         {"id": "dining_seat_01", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, -1.8], "size": [0.9, 1.2]},
         {"id": "dining_seat_02", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, -0.1], "size": [0.9, 1.2]},
         {"id": "dining_seat_03", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-3.7, 1.6], "size": [0.9, 1.2]},
-        {"id": "dining_seat_04", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.1, -1.0], "size": [0.9, 1.2]},
-        {"id": "dining_seat_05", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.1, 1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_04", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.27, -1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_05", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [-1.27, 1.0], "size": [0.9, 1.2]},
         {"id": "dining_seat_06", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, -1.8], "size": [0.9, 1.2]},
         {"id": "dining_seat_07", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, -0.1], "size": [0.9, 1.2]},
         {"id": "dining_seat_08", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [3.7, 1.6], "size": [0.9, 1.2]},
-        {"id": "dining_seat_09", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.1, -1.0], "size": [0.9, 1.2]},
-        {"id": "dining_seat_10", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.1, 1.0], "size": [0.9, 1.2]}
+        {"id": "dining_seat_09", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.27, -1.0], "size": [0.9, 1.2]},
+        {"id": "dining_seat_10", "type": "dining_seat", "authority": "building_workstation", "required_level": 1, "center": [1.27, 1.0], "size": [0.9, 1.2]}
       ]
     },
     "garden": {
@@ -280,11 +280,11 @@
     "river_width": 9.0,
     "river_channel_width": 30.0,
     "river_surface_elevation_m": -1.2,
-    "river_points": [[-100.0, -335.0], [-96.0, -240.0], [-94.0, -160.0], [-99.0, -70.0], [-95.0, 0.0], [-99.0, 80.0], [-94.0, 160.0], [-98.0, 250.0], [-100.0, 385.0]],
-    "east_ridge_bounds": [120.0, 175.0, -300.0, 360.0],
+    "river_points": [[-100.0, -335.0], [-96.0, -240.0], [-94.0, -160.0], [-99.0, -70.0], [-95.0, 0.0], [-99.0, 67.0], [-94.0, 107.0], [-98.0, 152.0], [-100.0, 219.5]],
+    "east_ridge_bounds": [120.0, 175.0, -300.0, 207.0],
     "rear_boundary_bounds": [-344.0, 344.0, -329.0, -60.0],
-    "front_forest_bounds": [-344.0, 344.0, 70.0, 379.0],
-    "forest_scatter_bounds": [-344.0, 344.0, -329.0, 379.0],
+    "front_forest_bounds": [-344.0, 344.0, 62.0, 216.5],
+    "forest_scatter_bounds": [-344.0, 344.0, -329.0, 216.5],
     "forest_grid_spacing_m": 20.0,
     "rock_cluster_stride": 43,
     "tree_clearance_from_wall_m": 3.0,
@@ -292,12 +292,12 @@
     "edge_inset_m": 6.0
   },
   "enemy_route": {
-    "spawn_zone_center": [2.0, 335.0],
+    "spawn_zone_center": [2.0, 194.5],
     "spawn_zone_size": [28.0, 18.0],
     "stages": [
-      {"id": "spawn", "label": "地图边缘林下出生/组阵", "point": [2.0, 335.0]},
-      {"id": "reveal", "label": "远方林缘显现", "point": [8.0, 225.0]},
-      {"id": "contact", "label": "城外接触区", "point": [6.0, 105.0]},
+      {"id": "spawn", "label": "地图边缘林下出生/组阵", "point": [2.0, 194.5]},
+      {"id": "reveal", "label": "远方林缘显现", "point": [8.0, 139.5]},
+      {"id": "contact", "label": "城外接触区", "point": [6.0, 79.5]},
       {"id": "front_gate", "label": "正门攻击点", "point": [5.0, 54.0]},
       {"id": "warehouse", "label": "仓库攻击点", "point": [29.0, 15.0]},
       {"id": "main_hall", "label": "主厅攻击点", "point": [0.0, 2.0]}
@@ -318,10 +318,10 @@
       "mounted_ranged": {"radius": 0.65, "height": 2.5, "color": "#845d42"}
     },
     "stage_formations": [
-      {"stage_id": "spawn", "point": [2.0, 335.0], "columns": 7, "spacing_x": 2.0, "spacing_z": 2.15, "corridor_width": 28.0, "corridor_depth": 18.0, "centered_grid": true},
-      {"stage_id": "reveal", "point": [8.0, 225.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
-      {"stage_id": "approach_mid", "point": [10.0, 165.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
-      {"stage_id": "contact", "point": [6.0, 105.0], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "spawn", "point": [2.0, 194.5], "columns": 7, "spacing_x": 2.0, "spacing_z": 2.15, "corridor_width": 28.0, "corridor_depth": 18.0, "centered_grid": true},
+      {"stage_id": "reveal", "point": [8.0, 139.5], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "approach_mid", "point": [10.0, 109.5], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
+      {"stage_id": "contact", "point": [6.0, 79.5], "columns": 5, "spacing_x": 1.55, "spacing_z": 1.8, "corridor_width": 8.0},
       {"stage_id": "front_gate", "point": [5.0, 54.0], "columns": 4, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 6.0},
       {"stage_id": "gate_turn", "point": [-1.0, 40.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 5.2},
       {"stage_id": "north_junction", "point": [0.0, 22.0], "columns": 3, "spacing_x": 1.45, "spacing_z": 1.8, "corridor_width": 4.8},
@@ -362,6 +362,6 @@
     "minimum_terrain_margin_m": 24.0,
     "initial_focus": [-2.0, 18.0],
     "x_limits": [-150.0, 150.0],
-    "z_limits": [-215.0, 240.0]
+    "z_limits": [-215.0, 147.0]
   }
 }

@@ -63,8 +63,11 @@ func _init() -> void:
 	crafting_system.set_target("blacksmith", "", true)
 	npc_system.debug_enter_location_immediately(blacksmith_id, "blacksmith")
 	npc_system.update_npc_state(blacksmith_id, {"satiety": 80, "fatigue": 20, "last_action_result": ""})
-	if action_system.debug_assign_work(blacksmith_id, "blacksmith"):
-		_fail("Blacksmith work should not start without a crafting target")
+	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		_fail("Blacksmith targetless work should dispatch to the formal arrival check")
+		return
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "work_failed_crafting_target_missing"):
+		_fail("Blacksmith work did not fail after arriving without a crafting target")
 		return
 	if str(npc_system.get_npc_state(blacksmith_id).get("last_action_result", "")) != "work_failed_crafting_target_missing":
 		_fail("Missing blacksmith target did not expose crafting_target_missing")
@@ -75,8 +78,9 @@ func _init() -> void:
 		_fail("Failed to select iron helmet: %s" % JSON.stringify(selected))
 		return
 	var recipe: Dictionary = crafting_system.get_recipe("craft_iron_helmet")
-	if str(recipe.get("output_item_id", "")) != "item_iron_helmet" or (recipe.get("stages", []) as Array).size() != 3:
-		_fail("Iron helmet recipe should produce exact inventory in three stages")
+	var helmet_stage_count := (recipe.get("stages", []) as Array).size()
+	if str(recipe.get("output_item_id", "")) != "item_iron_helmet" or helmet_stage_count != 5:
+		_fail("Iron helmet recipe should produce exact inventory in five stages")
 		return
 
 	resource_system.add_resource("iron", 10)
@@ -118,29 +122,41 @@ func _init() -> void:
 		_fail("Helmet must remain unfinished before the labor-only fitting stage")
 		return
 
-	events_before = int(memory_system.get_npc_daily_events(blacksmith_id).size())
-	if not await _complete_work_cycle(action_system, npc_system, blacksmith_id, "blacksmith", blacksmith_duration_level_2):
-		return
+	for stage_index in range(3, helmet_stage_count + 1):
+		events_before = int(memory_system.get_npc_daily_events(blacksmith_id).size())
+		if not await _complete_work_cycle(action_system, npc_system, blacksmith_id, "blacksmith", blacksmith_duration_level_2):
+			return
+		var stage_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
+		if stage_index < helmet_stage_count:
+			if int(stage_project.get("completed_stages", -1)) != stage_index or int(resource_system.get_resource("iron")) != iron_before - 2 or int(resource_system.get_resource("item_iron_helmet")) != helmet_before:
+				_fail("Labor-only helmet stage %d changed materials or completed the product early" % stage_index)
+				return
 	var completed_project: Dictionary = crafting_system.get_project_snapshot("blacksmith")
 	if int(completed_project.get("completed_stages", -1)) != 0 or str(completed_project.get("target_recipe_id", "")) != "craft_iron_helmet":
 		_fail("Finished helmet should reset stages while retaining the selected target")
 		return
-	if int(resource_system.get_resource("iron")) != iron_before - 2 or int(resource_system.get_resource("item_iron_helmet")) != helmet_before + 1:
-		_fail("Finished helmet did not preserve the two-iron material total and add item_iron_helmet")
+	if int(resource_system.get_resource("iron")) != iron_before - 2 or int(resource_system.get_resource("item_iron_helmet")) != helmet_before:
+		_fail("Finished helmet did not preserve the two-iron total or entered formal inventory before collection")
+		return
+	if int(crafting_system.get_pending_outputs("blacksmith").get("item_iron_helmet", 0)) != 1:
+		_fail("Finished helmet did not enter the blacksmith pending-output store")
 		return
 	if int(resource_system.get_resource("weapons")) != legacy_weapons_before or int(resource_system.get_resource("armor")) != legacy_armor_before:
 		_fail("Blacksmith crafting must not mutate deprecated weapons/armor aggregates")
 		return
 	var completion_event := _find_event(_events_after(memory_system.get_npc_daily_events(blacksmith_id), events_before), "work_completed")
 	var completion_payload: Dictionary = completion_event.get("payload", {})
-	if not bool(completion_payload.get("product_completed", false)) or int((completion_payload.get("output_resources", {}) as Dictionary).get("item_iron_helmet", 0)) != 1:
+	if not bool(completion_payload.get("product_completed", false)) or int((completion_payload.get("pending_output_resources", {}) as Dictionary).get("item_iron_helmet", 0)) != 1:
 		_fail("Final blacksmith work event is missing exact helmet output")
 		return
 
 	resource_system.add_resource("iron", -999999)
 	npc_system.update_npc_state(blacksmith_id, {"last_action_result": ""})
-	if action_system.debug_assign_work(blacksmith_id, "blacksmith"):
-		_fail("Blacksmith work should fail immediately when the current stage material is missing")
+	if not action_system.debug_assign_work(blacksmith_id, "blacksmith"):
+		_fail("Blacksmith resource-short work should dispatch to the formal arrival check")
+		return
+	if not await _wait_until_action_result(npc_system, blacksmith_id, "work_failed_insufficient_stage_resources"):
+		_fail("Blacksmith work did not fail after arriving without the current-stage material")
 		return
 	if str(npc_system.get_npc_state(blacksmith_id).get("last_action_result", "")) != "work_failed_insufficient_stage_resources":
 		_fail("Missing stage material did not expose insufficient_stage_resources")

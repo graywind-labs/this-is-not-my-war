@@ -417,7 +417,7 @@ def main() -> None:
                 "location_name": "宿舍",
                 "workstation_id": "dormitory_bed_02",
                 "elapsed_seconds": 1800.0,
-                "duration_seconds": 23400.0,
+                "duration_seconds": 28800.0,
             },
             "current_plan_activity": {
                 "action_id": "sleep_in_dormitory",
@@ -569,11 +569,18 @@ def main() -> None:
     invitation_payload.update({
         "dialogue_kind": "npc_npc",
         "dialogue_phase": "invitation",
-        "speaker_name": "莉娜",
-        "speaker_text": "马塞尔，我想和你谈谈诊所工位。",
+        "npc_id": "veteran_deputy_01",
+        "npc_name": "艾达",
+        "npc_setting": {
+            "background_job": "老兵副官",
+            "personality": ["冷静", "务实"],
+            "speech_style": "按人手、训练、装备和轮换说明防守判断。",
+        },
+        "speaker_name": "托马",
+        "speaker_text": "谈谈夜袭后的防守准备",
         "speaker_context": SpeakerContext(
-            speaker_id="doctor_01",
-            speaker_name="莉娜",
+            speaker_id="stableman_01",
+            speaker_name="托马",
             speaker_kind="npc",
         ).model_dump(),
         "is_recruitment_request": False,
@@ -587,15 +594,30 @@ def main() -> None:
     invitation_payload["dialogue_state"]["max_rounds"] = 0
     invitation_payload["dialogue_state"]["soft_round_threshold"] = 5
     invitation_payload["dialogue_state"]["soft_round_guidance"] = invitation_payload["soft_round_guidance"]
-    invitation_payload["dialogue_state"]["participants"] = ["doctor_01", "cook_01"]
-    invitation_content, _, _ = _run_real_adapter_with_fake_provider(
+    invitation_payload["dialogue_state"]["participants"] = ["stableman_01", "veteran_deputy_01"]
+    invitation_content, invitation_prompt, _ = _run_real_adapter_with_fake_provider(
         invitation_payload,
         _valid_npc_response(
             invitation_result="accept",
-            reply_text="好，我先听你说。",
+            reply_text="托马，我正要核对人手、训练和装备。你把马厩能出的力说清楚，我们一起把夜里的轮换定下来。",
+            debug_reason="艾达作为老兵副官接受托马的防守准备邀请。",
         ),
     )
     assert invitation_content["invitation_result"] == "accept"
+    role_prompt = "\n".join([
+        "【本轮 NPC-NPC 角色表（最高优先级，输出前再次核对）】",
+        "- 当前唯一回复者 / 你必须扮演的角色：艾达（npc_id=veteran_deputy_01）。",
+        "- 当前对你说话的对方：托马（speaker_id=stableman_01）。",
+        "- 当前是邀请阶段：由艾达决定是否接受托马的邀请；不是托马替艾达回答。",
+        "- reply_text 和 debug_reason 都必须以艾达为主体，只体现艾达的人设、职业、能力、状态和判断。",
+        "- 禁止以托马的身份回答，禁止把托马的人设或职业写成自己的，也禁止用第三人称艾达指代自己或说自己要听艾达安排。",
+    ])
+    assert invitation_prompt.endswith(role_prompt)
+
+    player_prompt = ModelAdapter(
+        ModelAdapterConfig(provider="mock")
+    )._system_prompt_for_call_type("dialogue", _base_payload())
+    assert "【本轮 NPC-NPC 角色表" not in player_prompt
 
     formal_payload = dict(invitation_payload)
     formal_payload["dialogue_state"] = dict(invitation_payload["dialogue_state"])

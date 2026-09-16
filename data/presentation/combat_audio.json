@@ -65,6 +65,7 @@
     "failure": "sfx_defeat_stinger"
   },
   "silent_rules": [
+    "tutorial_battle_started",
     "shield_block_no_authority",
     "npc_revive",
     "horse_regular_damage"

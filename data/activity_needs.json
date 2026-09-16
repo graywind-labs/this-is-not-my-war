@@ -11,6 +11,9 @@
       "max": 100
     }
   },
+  "full_fatigue_work_output_multiplier": 0.5,
+  "zero_satiety_hp_cost_per_missing_satiety": 2.0,
+  "zero_satiety_hp_categories": ["work", "training", "combat"],
   "idle_profile": "idle",
   "movement_profile": "movement",
   "unconscious_profile": "unconscious_rest",
@@ -85,19 +88,19 @@
       "category": "combat",
       "satiety_per_hour": -8.0,
       "fatigue_per_hour": 16.0,
-      "description": "战斗消耗为重工作的两倍，不由行动经验框架授予工作经验。"
+      "description": "战斗采用独立高强度消耗，不由行动经验框架授予工作经验。"
     },
     "light_work": {
       "category": "work",
-      "satiety_per_hour": -3.0,
+      "satiety_per_hour": -4.5,
       "fatigue_per_hour": 6.0,
-      "description": "沿用既有一小时轻工作基准。"
+      "description": "轻工作每小时消耗 4.5 点饱食。"
     },
     "heavy_work": {
       "category": "work",
-      "satiety_per_hour": -4.0,
+      "satiety_per_hour": -5.5,
       "fatigue_per_hour": 8.0,
-      "description": "沿用既有一小时重工作基准。"
+      "description": "重工作每小时消耗 5.5 点饱食。"
     },
     "training_instructor": {
       "category": "training",
@@ -120,8 +123,8 @@
     "sleep": {
       "category": "rest",
       "satiety_per_hour": -2.0,
-      "fatigue_per_hour": -15.3846153846,
-      "description": "沿用 6.5 小时睡眠消耗 13 饱食、恢复 100 疲劳的既有基准。"
+      "fatigue_per_hour": -12.5,
+      "description": "8 小时睡眠消耗 16 饱食、恢复 100 疲劳；疲劳归零后继续睡眠不再产生疲劳变化。"
     },
     "clinic_rest": {
       "category": "rest",

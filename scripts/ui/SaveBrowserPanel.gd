@@ -5,6 +5,10 @@ signal closed
 enum Mode { LOAD, SAVE }
 
 const FrontendStyles = preload("res://scripts/ui/FrontendStyles.gd")
+const GameSaveStore = preload("res://scripts/systems/GameSaveStore.gd")
+const MAIN_SCENE := "res://scenes/main/Main.tscn"
+const MAIN_LAUNCH_REQUEST_META := &"main_launch_request"
+const LOAD_STARTUP_MODE := 3
 const PANEL_SIZE := Vector2(980.0, 600.0)
 const MANUAL_SLOT_COUNT := 10
 
@@ -17,9 +21,12 @@ var _title: Label
 var _mode_hint: Label
 var _name_input: LineEdit
 var _detail_label: Label
+var _preview_texture: TextureRect
+var _preview_label: Label
 var _status_label: Label
 var _action_button: Button
 var _delete_button: Button
+var _restore_point_selector: OptionButton
 var _overwrite_dialog: ConfirmationDialog
 var _load_dialog: ConfirmationDialog
 var _delete_dialog: ConfirmationDialog
@@ -37,7 +44,8 @@ func _ready() -> void:
 func open_panel(mode: int = Mode.LOAD, warn_before_load := false) -> void:
 	_mode = Mode.SAVE if mode == Mode.SAVE else Mode.LOAD
 	_warn_before_load = warn_before_load
-	_selected_slot_id = "slot_01" if _mode == Mode.SAVE else ""
+	_build_slot_model()
+	_selected_slot_id = "slot_01" if _mode == Mode.SAVE else _first_occupied_slot_id()
 	_status_label.text = ""
 	visible = true
 	move_to_front()
@@ -101,10 +109,7 @@ func debug_get_snapshot() -> Dictionary:
 
 
 func _build_slot_model() -> void:
-	_slots.clear()
-	_slots.append(_empty_slot("quick_0", "快速存档", true))
-	for index in range(1, MANUAL_SLOT_COUNT + 1):
-		_slots.append(_empty_slot("slot_%02d" % index, "存档槽位 %02d" % index, false))
+	_slots = GameSaveStore.list_slot_records()
 
 
 func _empty_slot(slot_id: String, display_name: String, quick: bool) -> Dictionary:
@@ -217,12 +222,20 @@ func _build_panel() -> void:
 	var preview := PanelContainer.new()
 	preview.custom_minimum_size = Vector2(0.0, 180.0)
 	detail_content.add_child(preview)
-	var preview_label := Label.new()
-	preview_label.text = "存档缩略图\n将在完整存档机制接入后生成"
-	preview_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	preview_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	preview_label.modulate = Color(0.58, 0.55, 0.48, 1.0)
-	preview.add_child(preview_label)
+	_preview_texture = TextureRect.new()
+	_preview_texture.name = "SaveThumbnail"
+	_preview_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_preview_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_preview_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview.add_child(_preview_texture)
+	_preview_label = Label.new()
+	_preview_label.name = "SaveThumbnailPlaceholder"
+	_preview_label.text = "存档缩略图\n当前恢复点未生成缩略图"
+	_preview_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_preview_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_preview_label.modulate = Color(0.58, 0.55, 0.48, 1.0)
+	_preview_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview.add_child(_preview_label)
 	var name_label := Label.new()
 	name_label.text = "存档名称"
 	detail_content.add_child(name_label)
@@ -230,6 +243,12 @@ func _build_panel() -> void:
 	_name_input.name = "SaveNameInput"
 	_name_input.max_length = 32
 	detail_content.add_child(_name_input)
+	_restore_point_selector = OptionButton.new()
+	_restore_point_selector.name = "RestorePointSelector"
+	_restore_point_selector.add_item("最新自动检查点", 0)
+	_restore_point_selector.add_item("玩家固定检查点", 1)
+	_restore_point_selector.item_selected.connect(_on_restore_point_selected)
+	detail_content.add_child(_restore_point_selector)
 	_detail_label = Label.new()
 	_detail_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -265,14 +284,14 @@ func _build_panel() -> void:
 	_action_button.pressed.connect(_on_action_pressed)
 	footer.add_child(_action_button)
 
-	_overwrite_dialog = _make_confirmation("覆盖存档", "确定使用当前游戏状态覆盖该存档吗？", "覆盖")
-	_overwrite_dialog.confirmed.connect(_show_unavailable.bind("覆盖"))
+	_overwrite_dialog = _make_confirmation("覆盖固定检查点", "确定用最近一次自动检查点替换该槽位吗？当前检查点之后的进度不会保存。", "覆盖")
+	_overwrite_dialog.confirmed.connect(_perform_save)
 	add_child(_overwrite_dialog)
 	_load_dialog = _make_confirmation("加载游戏", "加载后，当前未保存的游戏进度将会丢失。是否继续？", "加载")
-	_load_dialog.confirmed.connect(_show_unavailable.bind("加载"))
+	_load_dialog.confirmed.connect(_perform_load)
 	add_child(_load_dialog)
 	_delete_dialog = _make_confirmation("删除存档", "确定删除选中的存档吗？此操作无法撤销。", "删除")
-	_delete_dialog.confirmed.connect(_show_unavailable.bind("删除"))
+	_delete_dialog.confirmed.connect(_perform_delete)
 	add_child(_delete_dialog)
 
 
@@ -289,8 +308,8 @@ func _make_confirmation(title_text: String, body: String, ok_text: String) -> Co
 
 func _refresh_mode() -> void:
 	if _mode == Mode.SAVE:
-		_title.text = "保存游戏"
-		_mode_hint.text = "选择空槽保存，或选择已有存档改名并覆盖。"
+		_title.text = "固定最近检查点"
+		_mode_hint.text = "只复制最近一次战后自动检查点；当前检查点之后的进度不会保存。"
 	else:
 		_title.text = "载入游戏"
 		_mode_hint.text = "选择一个可用存档，然后点击加载。"
@@ -302,12 +321,13 @@ func _refresh_slot_list() -> void:
 		var button := _slot_buttons.get(slot_id) as Button
 		if button == null:
 			continue
-		var occupied := bool(slot.get("occupied", false))
+		var point := _preferred_point(slot)
+		var occupied := bool(slot.get("occupied", false)) and not point.is_empty()
 		var prefix := "[快速] " if bool(slot.get("quick", false)) else ""
 		button.text = "%s%s\n%s" % [
 			prefix,
 			str(slot.get("display_name", slot_id)),
-			("第 %d 天 · %s · 第 %d 波" % [int(slot.get("day", 1)), str(slot.get("game_time", "06:00")), int(slot.get("wave", 0))]) if occupied else "— 空槽 —"
+			("第 %d 天 · %s · 第 %d 波" % [int(point.get("day", 1)), str(point.get("game_time", "06:00")), int(point.get("checkpoint_wave", 0))]) if occupied else "— 空槽 —"
 		]
 		button.button_pressed = slot_id == _selected_slot_id
 
@@ -315,6 +335,7 @@ func _refresh_slot_list() -> void:
 func _refresh_details() -> void:
 	var slot := _get_selected_slot()
 	if slot.is_empty():
+		_show_thumbnail_placeholder("尚未选择恢复点")
 		_name_input.text = ""
 		_name_input.editable = false
 		_detail_label.text = "尚未选择存档。"
@@ -324,26 +345,33 @@ func _refresh_details() -> void:
 		return
 	var occupied := bool(slot.get("occupied", false))
 	var quick := bool(slot.get("quick", false))
+	var point := _preferred_point(slot)
+	_refresh_thumbnail(point)
 	_name_input.text = str(slot.get("display_name", ""))
 	_name_input.editable = _mode == Mode.SAVE and not quick
 	_name_input.placeholder_text = "请输入存档名称"
+	_restore_point_selector.visible = _mode == Mode.LOAD and occupied
+	if _restore_point_selector.visible:
+		_restore_point_selector.set_item_disabled(0, not bool((slot.get("auto", {}) as Dictionary).get("loadable", false)))
+		_restore_point_selector.set_item_disabled(1, not bool((slot.get("manual", {}) as Dictionary).get("loadable", false)))
 	_detail_label.text = (
-		"第 %d 天　%s\n当前波次：%d\n保存时间：%s\n游玩时间：%s\n存档版本：%s"
+		"第 %d 天　%s\n检查点：第 %d 波结束\n版本：%s\n%s"
 		% [
-			int(slot.get("day", 0)), str(slot.get("game_time", "--:--")),
-			int(slot.get("wave", 0)), str(slot.get("saved_at", "尚未保存")),
-			str(slot.get("play_time", "--")), str(slot.get("version", "--"))
+			int(point.get("day", 0)), str(point.get("game_time", "--:--")),
+			int(point.get("checkpoint_wave", 0)), str(point.get("game_version", "--")),
+			"可加载" if bool(point.get("loadable", false)) else "不可加载：%s" % str(point.get("reason", "未知错误"))
 		]
 		if occupied
-		else ("快速存档槽尚为空。\n快速保存会自动生成名称并覆盖此位置。" if quick else "这是一个空的手动存档槽。\n完整存档机制接入后可在这里保存当前游戏。")
+		else ("快速槽尚为空。\n游戏内会把最近检查点固定到这里。" if quick else "这是一个空槽。\n只能固定已经生成的开局或战后检查点。")
 	)
 	_delete_button.disabled = not occupied
 	if _mode == Mode.LOAD:
 		_action_button.text = "加载"
-		_action_button.disabled = not occupied
+		_action_button.disabled = not occupied or not bool(point.get("loadable", false))
 	else:
 		_action_button.text = "覆盖" if occupied else "保存"
-		_action_button.disabled = quick
+		var save_system := get_node_or_null("/root/Main/Systems/GameSaveSystem")
+		_action_button.disabled = quick or save_system == null or not bool(save_system.has_automatic_checkpoint())
 
 
 func _select_slot(slot_id: String) -> void:
@@ -370,12 +398,12 @@ func _on_action_pressed() -> void:
 		if bool(slot.get("occupied", false)):
 			_overwrite_dialog.popup_centered(Vector2i(520, 180))
 		else:
-			_show_unavailable("保存")
+			_perform_save()
 	elif bool(slot.get("occupied", false)):
 		if _warn_before_load:
 			_load_dialog.popup_centered(Vector2i(560, 190))
 		else:
-			_show_unavailable("加载")
+			_perform_load()
 
 
 func _on_delete_pressed() -> void:
@@ -383,6 +411,105 @@ func _on_delete_pressed() -> void:
 		_delete_dialog.popup_centered(Vector2i(520, 180))
 
 
-func _show_unavailable(operation: String) -> void:
-	_status_label.modulate = FrontendStyles.make_status_color(true)
-	_status_label.text = "%s机制将在 T0355 接入；本次没有写入、删除或加载任何存档。" % operation
+func _perform_save() -> void:
+	var save_system := get_node_or_null("/root/Main/Systems/GameSaveSystem")
+	if save_system == null:
+		_show_status("只能在游戏内固定检查点。", true)
+		return
+	var slot := _get_selected_slot()
+	var result: Dictionary = save_system.pin_latest_checkpoint(_selected_slot_id, _name_input.text)
+	_show_status("最近检查点已固定。" if bool(result.get("ok", false)) else "保存失败：%s" % str(result.get("reason", "未知错误")), not bool(result.get("ok", false)))
+	_build_slot_model()
+	_refresh_slot_list()
+	_refresh_details()
+
+
+func _perform_load() -> void:
+	var slot := _get_selected_slot()
+	var archive_id := str(slot.get("archive_id", ""))
+	var point_name := "manual" if _restore_point_selector.selected == 1 else "auto"
+	var point: Dictionary = slot.get(point_name, {}) if slot.get(point_name, {}) is Dictionary else {}
+	if not bool(point.get("loadable", false)):
+		point_name = "auto" if point_name == "manual" else "manual"
+		point = slot.get(point_name, {}) if slot.get(point_name, {}) is Dictionary else {}
+	if archive_id.is_empty() or not bool(point.get("loadable", false)):
+		_show_status("该恢复点不可加载。", true)
+		return
+	get_tree().set_meta(MAIN_LAUNCH_REQUEST_META, {
+		"source": "save_browser_load",
+		"startup_mode": LOAD_STARTUP_MODE,
+		"archive_id": archive_id,
+		"restore_point": point_name,
+	})
+	GameSaveStore.set_last_active_archive(archive_id)
+	var error := get_tree().change_scene_to_file(MAIN_SCENE)
+	if error != OK:
+		_show_status("无法创建游戏场景：%s" % error_string(error), true)
+
+
+func _perform_delete() -> void:
+	var result := GameSaveStore.delete_slot(_selected_slot_id)
+	_show_status("存档槽位已删除。" if bool(result.get("ok", false)) else "删除失败。", not bool(result.get("ok", false)))
+	_build_slot_model()
+	_selected_slot_id = _first_occupied_slot_id()
+	_refresh_slot_list()
+	_refresh_details()
+
+
+func _on_restore_point_selected(_index: int) -> void:
+	_refresh_details()
+
+
+func _preferred_point(slot: Dictionary) -> Dictionary:
+	if _mode == Mode.LOAD and _restore_point_selector != null and _restore_point_selector.selected == 1:
+		var manual: Dictionary = slot.get("manual", {}) if slot.get("manual", {}) is Dictionary else {}
+		if not manual.is_empty():
+			return manual
+	var automatic: Dictionary = slot.get("auto", {}) if slot.get("auto", {}) is Dictionary else {}
+	if not automatic.is_empty():
+		return automatic
+	return slot.get("manual", {}) if slot.get("manual", {}) is Dictionary else {}
+
+
+func _first_occupied_slot_id() -> String:
+	for slot in _slots:
+		if bool(slot.get("occupied", false)):
+			return str(slot.get("slot_id", ""))
+	return ""
+
+
+func _show_status(message: String, is_error: bool) -> void:
+	_status_label.modulate = FrontendStyles.make_status_color(is_error)
+	_status_label.text = message
+
+
+func _refresh_thumbnail(point: Dictionary) -> void:
+	if not str(point.get("thumbnail_error", "")).is_empty():
+		_show_thumbnail_placeholder("缩略图损坏或无法读取")
+		return
+	if point.is_empty() or not bool(point.get("has_thumbnail", false)):
+		_show_thumbnail_placeholder("当前恢复点未生成缩略图")
+		return
+	var archive_id := str(point.get("archive_id", ""))
+	var restore_point := str(point.get("restore_point", "auto"))
+	var bytes := GameSaveStore.read_thumbnail_bytes(archive_id, restore_point)
+	if bytes.is_empty():
+		_show_thumbnail_placeholder("当前恢复点未生成缩略图")
+		return
+	var image := Image.new()
+	var load_error := image.load_webp_from_buffer(bytes)
+	if load_error != OK or image.is_empty():
+		_show_thumbnail_placeholder("缩略图损坏或无法读取")
+		return
+	_preview_texture.texture = ImageTexture.create_from_image(image)
+	_preview_texture.visible = true
+	_preview_label.visible = false
+
+
+func _show_thumbnail_placeholder(message: String) -> void:
+	if _preview_texture != null:
+		_preview_texture.texture = null
+		_preview_texture.visible = false
+	if _preview_label != null:
+		_preview_label.text = "存档缩略图\n%s" % message
+		_preview_label.visible = true

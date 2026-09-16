@@ -50,7 +50,7 @@
     "adult_max_satiety": 100,
     "adult_growth_threshold": 0.6,
     "base_full_growth_care_minutes": 10080,
-    "birth_probability_gain_per_care_minute": 0.00005,
+    "birth_probability_gain_per_care_minute": 0.000025,
     "birth_probability_cap": 1.0,
     "birth_cooldown_minutes": 1440,
     "stable_level_birth_bonus_per_level": 0.1,

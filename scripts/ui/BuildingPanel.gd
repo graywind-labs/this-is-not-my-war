@@ -734,10 +734,10 @@ func _refresh_crafting_section() -> void:
 	if crafting_system == null:
 		_crafting_target_missing_alert.visible = false
 		_crafting_recipe_label.visible = false
-		_crafting_status_label.text = "制造系统不可用"
+		_crafting_status_label.text = "暂时无法制造"
 		_crafting_status_label.visible = true
 		_crafting_target_select.disabled = true
-		_crafting_pending_label.text = "待收取：制造系统不可用"
+		_crafting_pending_label.text = "待收取：暂时无法查看"
 		_crafting_harvest_button.disabled = true
 		return
 	var project: Dictionary = crafting_system.get_project_snapshot(_current_building_id) if crafting_system.has_method("get_project_snapshot") else {}
@@ -879,7 +879,7 @@ func _on_crafting_target_selected(_index: int) -> void:
 		if not requested_recipe_id.is_empty() and crafting_system.has_method("get_recipe"):
 			var next_recipe: Dictionary = crafting_system.get_recipe(requested_recipe_id)
 			new_name = str(next_recipe.get("name", next_recipe.get("output_name", requested_recipe_id)))
-		_crafting_confirmation.dialog_text = "将制造目标从“%s”更换为“%s”？\n当前：第 %d / %d 阶段“%s”，整件进度 %d%%（已完成 %d 阶段）。\n更换会让全部制造进度清零；已投入材料不返还。是否更换？" % [
+		_crafting_confirmation.dialog_text = "将制造目标从“%s”更换为“%s”？\n当前：第 %d / %d 阶段“%s”，整件进度 %d%%（已完成 %d 阶段）。\n更换会让当前制造进度清零，但返还已投入材料。是否更换？" % [
 			old_name,
 			new_name,
 			int(project.get("current_stage_index", 0)),
@@ -907,10 +907,13 @@ func _on_crafting_target_canceled() -> void:
 func _apply_crafting_target(recipe_id: String, force_change: bool) -> Dictionary:
 	var crafting_system := get_node_or_null(CRAFTING_SYSTEM_PATH)
 	if crafting_system == null or not crafting_system.has_method("set_target"):
-		return {"ok": false, "message": "制造系统不可用"}
+		return {"ok": false, "message": "暂时无法制造"}
 	var result: Dictionary = crafting_system.set_target(_current_building_id, recipe_id, force_change)
-	_crafting_status_label.text = str(result.get("message", "制造目标已更新。"))
 	_refresh_crafting_section()
+	if not bool(result.get("ok", false)):
+		var reason := str(result.get("reason", ""))
+		_crafting_status_label.text = "更换失败：仓库空间不足，无法完整返还已投入材料。" if reason == "refund_inventory_capacity" else "更换制造目标失败。"
+		_crafting_status_label.visible = true
 	return result
 
 
@@ -993,7 +996,7 @@ func _refresh_horse_section() -> void:
 		return
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	if horse_system == null:
-		_horse_summary_label.text = "马匹系统不可用"
+		_horse_summary_label.text = "暂时无法查看马匹"
 		return
 	var summary: Dictionary = horse_system.get_stable_summary() if horse_system.has_method("get_stable_summary") else {}
 	_horse_summary_label.text = "在厩：%d 匹（成年 %d / 小马 %d）｜离厩：%d｜马槽：%d / %d%s" % [
@@ -1346,11 +1349,8 @@ func _format_workstations(raw_workstations: Variant) -> String:
 		if int(totals_by_type.get(station_type, 0)) > 1 and not _has_numeric_suffix(station_name):
 			station_name = "%s%d" % [station_name, station_index]
 		var occupied_by := str(station.get("occupied_by", ""))
-		var reserved_by := str(station.get("reserved_by", ""))
 		if not occupied_by.is_empty() and occupied_by != "<null>":
 			lines.append("%s：%s占用中" % [station_name, _format_npc_name(occupied_by)])
-		elif not reserved_by.is_empty() and reserved_by != "<null>":
-			lines.append("%s：已为%s预留" % [station_name, _format_npc_name(reserved_by)])
 		else:
 			lines.append("%s：空闲" % station_name)
 	if lines.is_empty():
@@ -1616,7 +1616,7 @@ func _format_upgrade_hint() -> String:
 	if current_level < max_level:
 		lines[0] = "升级至 Lv.%d" % target_level
 		lines.append("消耗：%s" % _format_cost(cost))
-		var duration_seconds := float(upgrade_config.get("duration_seconds", 0.0))
+		var duration_seconds := _get_upgrade_duration_seconds(target_level, upgrade_config)
 		if duration_seconds > 0.0:
 			lines.append("工期：%s" % _format_game_duration(duration_seconds))
 		for benefit_line in _format_upgrade_benefits(upgrade_config, current_level, target_level):
@@ -1649,6 +1649,17 @@ func _get_next_upgrade_effect(target_level: int) -> Dictionary:
 	):
 		return building_system.get_upgrade_level_effect(_current_building_id, target_level)
 	return _current_building.get("upgrade", {}).duplicate(true)
+
+
+func _get_upgrade_duration_seconds(target_level: int, upgrade_config: Dictionary) -> float:
+	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
+	if (
+		building_system != null
+		and building_system.has_method("get_upgrade_duration_seconds")
+		and not _current_building_id.is_empty()
+	):
+		return float(building_system.get_upgrade_duration_seconds(_current_building_id, target_level))
+	return float(upgrade_config.get("duration_seconds", 0.0))
 
 
 func _format_upgrade_benefits(

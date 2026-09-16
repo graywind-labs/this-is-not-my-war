@@ -2,6 +2,8 @@ extends SceneTree
 
 const MAIN_MENU_SCENE := preload("res://scenes/frontend/MainMenu.tscn")
 const MAIN_SCENE := preload("res://scenes/main/Main.tscn")
+const StationGroundDecorClass := preload("res://scripts/presentation/environment/StationGroundDecor.gd")
+const GameSaveStore = preload("res://scripts/systems/GameSaveStore.gd")
 
 
 func _init() -> void:
@@ -9,7 +11,13 @@ func _init() -> void:
 
 
 func _run() -> void:
+	GameSaveStore.set_storage_root_for_tests("user://t0354_verify_frontend_empty")
 	root.size = Vector2i(1280, 720)
+	var exiting_decor := StationGroundDecorClass.new() as Node3D
+	root.add_child(exiting_decor)
+	root.remove_child(exiting_decor)
+	exiting_decor.call("_sync_lights")
+	exiting_decor.free()
 	var audio_manager := root.get_node_or_null("AudioManager")
 	var client_settings := root.get_node_or_null("ClientSettings")
 	if audio_manager == null or client_settings == null:
@@ -26,7 +34,7 @@ func _run() -> void:
 	if bool(menu_snapshot.get("has_main_instance", true)):
 		_fail("MainMenu must not instantiate Main before Start Game")
 		return
-	if menu_snapshot.get("button_order", []) != ["开始游戏", "载入游戏", "设置", "退出游戏"]:
+	if menu_snapshot.get("button_order", []) != ["继续游戏", "开始游戏", "载入游戏", "设置", "退出游戏"]:
 		_fail("Main menu button order mismatch: %s" % menu_snapshot)
 		return
 	if not bool(menu_snapshot.get("hero_animated", false)) or str(menu_snapshot.get("menu_music", "")) != "music_menu":
@@ -98,6 +106,24 @@ func _run() -> void:
 		_fail("Load browser empty-shell contract mismatch: %s" % load_snapshot)
 		return
 	load_browser.close_panel()
+	menu.debug_show_start_loading_state()
+	var loading_snapshot: Dictionary = menu.debug_get_snapshot()
+	var start_button := menu.find_child("StartButton", true, false) as Button
+	if (
+		not bool(loading_snapshot.get("launching_game", false))
+		or not bool(loading_snapshot.get("loading_visible", false))
+		or str(loading_snapshot.get("loading_message", "")).is_empty()
+		or int(loading_snapshot.get("loading_mouse_filter", -1)) != Control.MOUSE_FILTER_STOP
+		or int(loading_snapshot.get("loading_z_index", 0)) != 4096
+		or start_button == null
+		or not start_button.disabled
+	):
+		_fail("Start Game loading feedback/input blocker is incomplete: %s" % str(loading_snapshot))
+		return
+	menu.debug_publish_new_game_launch_request()
+	if not has_meta(&"main_launch_request"):
+		_fail("Start Game did not publish the Main launch request")
+		return
 	menu.queue_free()
 	await process_frame
 
@@ -105,6 +131,11 @@ func _run() -> void:
 	root.add_child(main)
 	for _index in range(8):
 		await process_frame
+	var startup_system := main.get_node_or_null("Systems/GameStartupSystem")
+	var startup_snapshot: Dictionary = startup_system.debug_get_startup_snapshot() if startup_system != null else {}
+	if str(startup_snapshot.get("launch_source", "")) != "main_menu_new_game" or int(startup_system.startup_mode if startup_system != null else -1) != 2:
+		_fail("Main did not consume the menu tutorial launch request: %s" % str(startup_snapshot))
+		return
 	var pause_menu := main.get_node_or_null("UI/PauseMenu")
 	var time_system := main.get_node_or_null("Systems/TimeSystem")
 	if pause_menu == null or time_system == null:
@@ -120,7 +151,7 @@ func _run() -> void:
 	if not bool(pause_snapshot.get("visible", false)) or not bool(pause_snapshot.get("gameplay_paused", false)):
 		_fail("Opening PauseMenu did not pause gameplay")
 		return
-	if pause_snapshot.get("button_order", []) != ["快速保存", "保存游戏", "加载游戏", "设置", "退出到主菜单", "退出到桌面"]:
+	if pause_snapshot.get("button_order", []) != ["固定最近检查点", "保存游戏", "加载游戏", "设置", "退出到主菜单", "退出到桌面"]:
 		_fail("Pause menu button order mismatch: %s" % pause_snapshot)
 		return
 	pause_menu.close_menu()
@@ -136,19 +167,19 @@ func _run() -> void:
 		return
 	pause_menu.open_menu()
 	pause_menu.debug_quick_save()
-	if not str(pause_menu.debug_get_snapshot().get("status", "")).contains("T0355"):
-		_fail("Quick save must clearly report the deferred save mechanism")
+	if not str(pause_menu.debug_get_snapshot().get("status", "")).contains("尚无可固定"):
+		_fail("Checkpoint pin must explain that no stable checkpoint exists yet")
 		return
 	pause_menu.debug_open_save()
 	await process_frame
 	var save_snapshot: Dictionary = pause_menu.debug_get_snapshot().get("save_browser", {})
-	if str(save_snapshot.get("mode", "")) != "save" or str(save_snapshot.get("selected_slot_id", "")) != "slot_01" or bool(save_snapshot.get("action_disabled", true)):
+	if str(save_snapshot.get("mode", "")) != "save" or str(save_snapshot.get("selected_slot_id", "")) != "slot_01" or not bool(save_snapshot.get("action_disabled", false)):
 		_fail("Save browser shell did not select the first writable empty slot: %s" % save_snapshot)
 		return
 	var pause_save_browser := pause_menu.get_node("SaveBrowserPanel")
 	pause_save_browser.debug_press_action()
-	if not str(pause_save_browser.debug_get_snapshot().get("status", "")).contains("没有写入"):
-		_fail("Save shell must not report a fake success")
+	if not str(pause_save_browser.debug_get_snapshot().get("status", "")).contains("保存失败"):
+		_fail("Unavailable checkpoint action must not report a fake success")
 		return
 	pause_save_browser.close_panel()
 	pause_menu.debug_open_settings()
@@ -177,7 +208,7 @@ func _run() -> void:
 	main.queue_free()
 	await process_frame
 	await process_frame
-	print("T0354_FRONTEND_SHELL_PASS menu=start_gate settings=shared pause=restored saves=deferred api_key=not_persisted")
+	print("T0354_FRONTEND_SHELL_PASS menu=start_gate settings=shared pause=restored saves=checkpoint_backed api_key=not_persisted")
 	quit(0)
 
 

@@ -74,8 +74,10 @@
     "mass_action_id": "lead_mass",
     "prayer_asset_id": "sfx_chapel_prayer_presence_loop",
     "mass_start_asset_id": "sfx_chapel_mass_start_one_shot",
+    "mass_start_gain_db": 3.0,
     "mass_start_duration_seconds": 5.0,
-    "mass_loop_asset_id": "sfx_chapel_mass_in_progress_loop"
+    "mass_loop_asset_id": "sfx_chapel_mass_in_progress_loop",
+    "mass_loop_gain_db": 3.0
   },
   "one_shots": [
     {

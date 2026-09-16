@@ -4,7 +4,7 @@ extends SceneTree
 const NPC_ID := "cook_01"
 const BUILDING_ID := "dining_hall"
 const ACTION_ID := "eat_at_dining_hall"
-const FIRST_SEAT_ID := "dining_seat_01"
+const ASSIGNED_SEAT_ID := "dining_seat_02"
 
 
 func _init() -> void:
@@ -62,7 +62,7 @@ func _init() -> void:
 		not gm_window.visible
 		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
 		or not action_system.get_runtime_action_snapshot(NPC_ID).is_empty()
-		or not _workstation_is_clear(building_system, FIRST_SEAT_ID)
+		or not _workstation_is_clear(building_system, ASSIGNED_SEAT_ID)
 		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "eat_started") != eat_started_before
 	):
 		_fail("Missing food was not rejected before formal dining migration")
@@ -79,7 +79,7 @@ func _init() -> void:
 	if (
 		gm_window.visible
 		or str(pending.get("phase", "")) != "pending"
-		or not _workstation_reserved_by(building_system, FIRST_SEAT_ID, NPC_ID)
+		or not _workstation_reserved_by(building_system, ASSIGNED_SEAT_ID, NPC_ID)
 		or int(resource_system.get_resource("meal")) != meal_before_travel
 		or int(resource_system.get_resource("grain")) != grain_before_travel
 		or int(npc_system.get_npc_state(NPC_ID).get("satiety", -1)) != satiety_before_travel
@@ -98,7 +98,7 @@ func _init() -> void:
 		return
 
 	if not await _wait_for_active(action_system, time_system):
-		_fail("Bruno did not reach dining_seat_01: %s" % JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(NPC_ID)))
+		_fail("Bruno did not reach his assigned dining_seat_02: %s" % JSON.stringify(npc_system.debug_get_spatial_migration_snapshot(NPC_ID)))
 		return
 	await create_timer(0.18).timeout
 	var active_state: Dictionary = npc_system.get_npc_state(NPC_ID)
@@ -109,9 +109,9 @@ func _init() -> void:
 		or int(resource_system.get_resource("grain")) != grain_before_travel
 		or int(active_state.get("satiety", -1)) < satiety_before_travel
 		or int(active_state.get("satiety", -1)) >= 80
-		or str(active_state.get("current_workstation_id", "")) != FIRST_SEAT_ID
+		or str(active_state.get("current_workstation_id", "")) != ASSIGNED_SEAT_ID
 		or str(active_state.get("physical_location_phase", "")) != "occupant_anchor"
-		or not _workstation_occupied_by(building_system, FIRST_SEAT_ID, NPC_ID)
+		or not _workstation_occupied_by(building_system, ASSIGNED_SEAT_ID, NPC_ID)
 		or not bool(attachment.get("active", false))
 		or str(attachment.get("pose", "")) != "sitting"
 		or not bool(attachment.get("body_collision_disabled", false))
@@ -123,7 +123,7 @@ func _init() -> void:
 			"meal": resource_system.get_resource("meal"),
 			"grain": resource_system.get_resource("grain"),
 			"satiety": active_state.get("satiety"),
-			"station": _get_workstation(building_system, FIRST_SEAT_ID),
+			"station": _get_workstation(building_system, ASSIGNED_SEAT_ID),
 			"attachment": attachment,
 			"desired_state": art.get("desired_state"),
 			"loop_mode": art.get("seated_eating_clip_loop_mode"),
@@ -138,7 +138,7 @@ func _init() -> void:
 			},
 			"attachment": attachment,
 			"art": art,
-			"workstation": _get_workstation(building_system, FIRST_SEAT_ID),
+			"workstation": _get_workstation(building_system, ASSIGNED_SEAT_ID),
 			"eat_started_count": _count_event(memory_system.get_npc_daily_events(NPC_ID), "eat_started"),
 			"eat_started_before": eat_started_before,
 			"meal": resource_system.get_resource("meal"),
@@ -151,17 +151,37 @@ func _init() -> void:
 	await process_frame
 	await physics_frame
 	var completed_state: Dictionary = npc_system.get_npc_state(NPC_ID)
-	var detached: Dictionary = bruno.debug_get_spatial_attachment_snapshot()
+	var completed_formal: Dictionary = npc_system.get_formal_workstation_action_snapshot(NPC_ID)
+	var held_attachment: Dictionary = bruno.debug_get_spatial_attachment_snapshot()
+	var held_art: Dictionary = bruno.debug_get_character_art_snapshot()
 	if (
 		int(completed_state.get("satiety", -1)) != 80
-		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", true))
-		or not _workstation_is_clear(building_system, FIRST_SEAT_ID)
-		or str(completed_state.get("physical_location_phase", "")) != "formal_location_interior"
-		or bool(detached.get("active", false))
-		or bool(detached.get("body_collision_disabled", false))
+		or not action_system.get_runtime_action_snapshot(NPC_ID).is_empty()
+		or str(completed_state.get("current_action", "")) != "idle"
+		or str(completed_state.get("spatial_route_phase", "")) != "completed_workstation_hold"
+		or str(completed_state.get("physical_location_phase", "")) != "occupant_anchor"
+		or not bool(completed_formal.get("active", false))
+		or not bool((completed_formal.get("session", {}) as Dictionary).get("completed_in_place_hold", false))
+		or not _workstation_occupied_by(building_system, ASSIGNED_SEAT_ID, NPC_ID)
+		or not bool(held_attachment.get("active", false))
+		or not bool(held_attachment.get("body_collision_disabled", false))
+		or str(held_art.get("desired_state", "")) != "seated_idle"
 		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "eat_completed") < 1
 	):
-		_fail("Meal completion did not restore satiety, seat, collision, and legacy authority")
+		_fail("Meal completion did not enter the non-consuming seated idle hold")
+		return
+	var meal_after_completion := int(resource_system.get_resource("meal"))
+	var grain_after_completion := int(resource_system.get_resource("grain"))
+	action_system._on_logical_time_tick(3600.0, 1.0)
+	await process_frame
+	if (
+		int(npc_system.get_npc_state(NPC_ID).get("satiety", -1)) != 80
+		or int(resource_system.get_resource("meal")) != meal_after_completion
+		or int(resource_system.get_resource("grain")) != grain_after_completion
+		or not action_system.get_runtime_action_snapshot(NPC_ID).is_empty()
+		or not _workstation_occupied_by(building_system, ASSIGNED_SEAT_ID, NPC_ID)
+	):
+		_fail("Completed seated idle hold continued consuming resources or restoring satiety")
 		return
 
 	# Meal is preferred. When it is absent, grain is consumed only after the same
@@ -187,19 +207,19 @@ func _init() -> void:
 	if (
 		int(npc_system.get_npc_state(NPC_ID).get("satiety", -1)) != satiety_before_stop
 		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", true))
-		or not _workstation_is_clear(building_system, FIRST_SEAT_ID)
+		or not _workstation_is_clear(building_system, ASSIGNED_SEAT_ID)
 		or bool(bruno.debug_get_spatial_attachment_snapshot().get("body_collision_disabled", false))
 	):
 		print("A5-P5j stop flags: %s" % JSON.stringify({
 			"satiety": npc_system.get_npc_state(NPC_ID).get("satiety"),
 			"formal_active": npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active"),
-			"seat": _get_workstation(building_system, FIRST_SEAT_ID),
+			"seat": _get_workstation(building_system, ASSIGNED_SEAT_ID),
 			"attachment": bruno.debug_get_spatial_attachment_snapshot()
 		}))
 		_fail("GM interruption granted satiety or left the dining occupant/session dirty: %s" % JSON.stringify({
 			"state": npc_system.get_npc_state(NPC_ID),
 			"formal": npc_system.get_formal_workstation_action_snapshot(NPC_ID),
-			"seat": _get_workstation(building_system, FIRST_SEAT_ID),
+			"seat": _get_workstation(building_system, ASSIGNED_SEAT_ID),
 			"attachment": bruno.debug_get_spatial_attachment_snapshot()
 		}))
 		return

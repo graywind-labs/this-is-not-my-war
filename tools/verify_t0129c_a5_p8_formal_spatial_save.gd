@@ -30,12 +30,15 @@ func _init() -> void:
 		_fail("formal NPC body unavailable")
 		return
 
-	# In-flight work is intentionally rolled back at its saved safe coordinate.
+	# In-flight work is intentionally rolled back at the NPC's assigned stay point
+	# for the saved semantic location; arbitrary body coordinates are not persisted.
 	if not action_system.debug_assign_action(NPC_ID, "work_garden"):
 		_fail("could not start pending formal work")
 		return
 	await physics_frame
-	var pending_saved_position: Vector3 = npc_node.global_position
+	var pending_checkpoint: Dictionary = npc_system.create_formal_spatial_checkpoint()
+	var pending_location_id := _get_checkpoint_location(pending_checkpoint, NPC_ID)
+	var pending_restore_position: Variant = controller.get_npc_stay_world_position(pending_location_id, NPC_ID)
 	var pending_save: Dictionary = save_system.save_formal_spatial_checkpoint(CHECKPOINT_PATH)
 	if not bool(pending_save.get("ok", false)):
 		_fail("pending action checkpoint save failed: %s" % JSON.stringify(pending_save))
@@ -46,7 +49,8 @@ func _init() -> void:
 		not bool(pending_load.get("ok", false))
 		or action_system.has_active_action(NPC_ID)
 		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", true))
-		or npc_node.global_position.distance_to(pending_saved_position) > 0.6
+		or not pending_restore_position is Vector3
+		or npc_node.global_position.distance_to(pending_restore_position as Vector3) > 0.01
 	):
 		_fail("in-flight action did not roll back safely: %s" % JSON.stringify(pending_load))
 		return
@@ -67,7 +71,9 @@ func _init() -> void:
 		return
 	for _frame in range(8):
 		await physics_frame
-	var saved_npc_position: Vector3 = npc_node.global_position
+	var saved_npc_checkpoint: Dictionary = npc_system.create_formal_spatial_checkpoint()
+	var saved_npc_location_id := _get_checkpoint_location(saved_npc_checkpoint, NPC_ID)
+	var restored_npc_stay_position: Variant = controller.get_npc_stay_world_position(saved_npc_location_id, NPC_ID)
 	var saved_combat: Dictionary = combat_system.create_formal_spatial_checkpoint()
 	var saved_merchant: Dictionary = merchant_system.create_formal_spatial_checkpoint()
 	var combined_save: Dictionary = save_system.save_formal_spatial_checkpoint(CHECKPOINT_PATH)
@@ -116,7 +122,8 @@ func _init() -> void:
 		or str(restored_market.get("wagon_state", "")) != "arriving"
 		or str(restored_market.get("route_mode", "")) != "formal_rear_trade_default"
 		or not bool(restored_escape.get("escaping", false))
-		or npc_node.global_position.distance_to(saved_npc_position) > 0.8
+		or not restored_npc_stay_position is Vector3
+		or npc_node.global_position.distance_to(restored_npc_stay_position as Vector3) > 0.8
 		or npc_node.global_position == Vector3.ZERO
 	):
 		_fail("one or more spatial authorities were not restored: %s / %s / %s" % [JSON.stringify(restored_combat), JSON.stringify(restored_market), JSON.stringify(restored_escape)])
@@ -136,6 +143,13 @@ func _init() -> void:
 func _get_npc_node(npc_system: Node, npc_id: String) -> Node3D:
 	var node_paths: Dictionary = npc_system.get("_npc_nodes")
 	return npc_system.get_node_or_null(node_paths.get(npc_id, NodePath(""))) as Node3D
+
+
+func _get_checkpoint_location(checkpoint: Dictionary, npc_id: String) -> String:
+	for raw_actor in checkpoint.get("actors", []):
+		if raw_actor is Dictionary and str((raw_actor as Dictionary).get("npc_id", "")) == npc_id:
+			return str((raw_actor as Dictionary).get("information_location_id", "plaza"))
+	return "plaza"
 
 
 func _fail(message: String) -> void:

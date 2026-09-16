@@ -166,7 +166,8 @@ func create_formal_spatial_checkpoint() -> Dictionary:
 		"forced_visit": _forced_visit,
 		"route_mode": _route_mode,
 		"daily_stock": _daily_stock.duplicate(true),
-		"stock_visit_day": _stock_visit_day
+		"stock_visit_day": _stock_visit_day,
+		"stock_rng_state": str(_stock_rng.state),
 	}
 
 
@@ -183,6 +184,8 @@ func restore_formal_spatial_checkpoint(checkpoint: Dictionary) -> Dictionary:
 	_visit_departed_day = int(checkpoint.get("visit_departed_day", 0))
 	_forced_visit = bool(checkpoint.get("forced_visit", false))
 	_stock_visit_day = maxi(0, int(checkpoint.get("stock_visit_day", _active_visit_day)))
+	if str(checkpoint.get("stock_rng_state", "")).is_valid_int():
+		_stock_rng.state = int(str(checkpoint.get("stock_rng_state", "0")))
 	_daily_stock = _normalize_stock_snapshot(checkpoint.get("daily_stock", {}))
 	if _daily_stock.is_empty() and _stock_visit_day > 0:
 		_generate_daily_stock(_stock_visit_day)
@@ -312,8 +315,11 @@ func execute_trade_batch(direction: String, raw_amounts: Dictionary) -> Dictiona
 	}
 	_emit_trade_world_feedback(direction, lines, total_price, resource_system)
 	var event_bus := get_node_or_null("/root/EventBus")
-	if event_bus != null and event_bus.has_signal("merchant_state_changed"):
-		event_bus.merchant_state_changed.emit(true, get_market_snapshot())
+	if event_bus != null:
+		if event_bus.has_signal("merchant_trade_completed"):
+			event_bus.merchant_trade_completed.emit(direction, _last_transaction.duplicate(true))
+		if event_bus.has_signal("merchant_state_changed"):
+			event_bus.merchant_state_changed.emit(true, get_market_snapshot())
 	return _last_transaction.duplicate(true)
 
 

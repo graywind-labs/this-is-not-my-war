@@ -37,8 +37,8 @@ func _init() -> void:
 		push_error("Garden work should use strength as its attribute")
 		quit(1)
 		return
-	if int(garden_action.get("output_resources", {}).get("grain", 0)) != 2:
-		push_error("Garden work should have 2 base grain output")
+	if int(garden_action.get("output_resources", {}).get("grain", 0)) != 1:
+		push_error("Garden work should have 1 base grain output after T0419")
 		quit(1)
 		return
 

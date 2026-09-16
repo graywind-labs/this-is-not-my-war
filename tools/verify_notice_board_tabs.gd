@@ -48,6 +48,10 @@ func _init() -> void:
 		if _count_initial_board_events(witnesses, "plaza_notice_changed") != 1:
 			_fail("Initial announcement was not preseeded exactly once for %s" % str(npc_id))
 			return
+		var seeded_notice := _find_event(witnesses, "plaza_notice_changed", "initial_notice_board_state")
+		if not str(seeded_notice.get("summary", "")).begins_with("守备官发布公告："):
+			_fail("Initial announcement uses an out-of-world summary for %s" % str(npc_id))
+			return
 		if _count_initial_board_events(witnesses, "plaza_schedule_changed") != 1:
 			_fail("Initial schedule was not preseeded exactly once for %s" % str(npc_id))
 			return
@@ -152,6 +156,9 @@ func _init() -> void:
 	var changed_notice := "驿站诸位：今晚请检查工具与粮食。——守备官"
 	notice_text_edit.text = changed_notice
 	notice_panel._on_publish_pressed()
+	if notice_status_label.text != "新通告已向全站成员广播。":
+		_fail("Announcement publish feedback is not using the immersive station-member wording")
+		return
 	if str(memory_system.get_notice_board_state().get("current_notice", "")) != changed_notice:
 		_fail("Publishing the announcement did not update plaza current state")
 		return
@@ -227,6 +234,9 @@ func _init() -> void:
 	var notice_events_before_schedule := int(_count_events(memory_system.get_plaza_events(), "plaza_notice_changed"))
 	schedule_publish_button.pressed.emit()
 	await process_frame
+	if schedule_status_label.text != "日程表已向全站成员广播。":
+		_fail("Schedule publish feedback is not using the immersive station-member wording")
+		return
 	var published_schedule: Array = memory_system.get_plaza_reference_schedule()
 	if not _has_schedule_id(published_schedule, added_id) or _has_schedule_id(published_schedule, "late_afternoon_rest"):
 		_fail("Published schedule did not apply the draft add/delete atomically")

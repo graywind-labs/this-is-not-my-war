@@ -133,6 +133,15 @@ func _handle_combat_audio_event(event: Dictionary) -> void:
 	if not _initialized:
 		return
 	var event_type := str(event.get("event_type", ""))
+	if event_type == "battle_started" and bool(event.get("tutorial_scope", false)):
+		var tutorial_stingers: Dictionary = _config.get("stingers", {})
+		_record_skip(
+			event,
+			str(tutorial_stingers.get(event_type, "")),
+			"stinger",
+			"tutorial_battle_started"
+		)
+		return
 	match event_type:
 		"attack_swing":
 			_play_melee_swing(event)

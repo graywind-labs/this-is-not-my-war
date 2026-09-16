@@ -1,25 +1,35 @@
 extends Control
 
 const MAIN_SCENE := "res://scenes/main/Main.tscn"
+const MAIN_LAUNCH_REQUEST_META := &"main_launch_request"
+const NEW_GAME_TUTORIAL_MODE := 2
 const SettingsPanelScene = preload("res://scenes/ui/SettingsPanel.tscn")
 const SaveBrowserScene = preload("res://scenes/ui/SaveBrowserPanel.tscn")
 const MenuHeroBackdropClass = preload("res://scripts/ui/MenuHeroBackdrop.gd")
 const MenuEdgeFogClass = preload("res://scripts/ui/MenuEdgeFog.gd")
 const MenuCoverScene = preload("res://scenes/art/MenuCoverCandidate.tscn")
 const FrontendStyles = preload("res://scripts/ui/FrontendStyles.gd")
+const GameSaveStore = preload("res://scripts/systems/GameSaveStore.gd")
 const MENU_PANEL_HEIGHT := 320.0
 const MENU_PANEL_BOTTOM_ANCHOR := 0.88
 const MENU_COVER_RENDER_SIZE := Vector2i(1920, 1080)
 const UI_BUTTON_ASSET_ID := "sfx_ui_button_primary"
 const UI_TOGGLE_ASSET_ID := "sfx_ui_toggle"
 const AUDIO_HISTORY_LIMIT := 32
+const LOADING_DOT_INTERVAL_MSEC := 280
 
 var _settings_panel: Control
 var _save_browser: Control
 var _exit_dialog: ConfirmationDialog
 var _start_button: Button
+var _continue_button: Button
 var _cover_viewport: SubViewport
 var _cover_scene: Node3D
+var _loading_overlay: ColorRect
+var _loading_status_label: Label
+var _loading_dots_label: Label
+var _launching_game := false
+var _loading_started_msec := 0
 var _audio_connected_button_ids: Dictionary = {}
 var _audio_click_history: Array[Dictionary] = []
 
@@ -42,7 +52,16 @@ func _ready() -> void:
 	var audio_manager := get_node_or_null("/root/AudioManager")
 	if audio_manager != null and audio_manager.has_method("switch_music"):
 		audio_manager.switch_music("music_menu", 1.2)
-	_start_button.grab_focus()
+	(_continue_button if _continue_button.visible else _start_button).grab_focus()
+	set_process(true)
+
+
+func _process(_delta: float) -> void:
+	if _loading_overlay == null or not _loading_overlay.visible or _loading_dots_label == null:
+		return
+	var elapsed_msec := maxi(0, Time.get_ticks_msec() - _loading_started_msec)
+	var phase := int(elapsed_msec / LOADING_DOT_INTERVAL_MSEC) % 3
+	_loading_dots_label.text = ["●　○　○", "○　●　○", "○　○　●"][phase]
 
 
 func _exit_tree() -> void:
@@ -71,7 +90,7 @@ func debug_get_snapshot() -> Dictionary:
 	return {
 		"scene": scene_file_path,
 		"has_main_instance": get_tree().root.get_node_or_null("Main") != null,
-		"button_order": ["开始游戏", "载入游戏", "设置", "退出游戏"],
+		"button_order": ["继续游戏", "开始游戏", "载入游戏", "设置", "退出游戏"],
 		"settings_visible": _settings_panel != null and _settings_panel.visible,
 		"save_browser_visible": _save_browser != null and _save_browser.visible,
 		"exit_confirmation_visible": _exit_dialog != null and _exit_dialog.visible,
@@ -80,6 +99,11 @@ func debug_get_snapshot() -> Dictionary:
 		"animated_cover_connected": _cover_scene != null and is_instance_valid(_cover_scene),
 		"cover_render_size": _cover_viewport.size if _cover_viewport != null else Vector2i.ZERO,
 		"edge_fog_connected": find_child("MenuEdgeFog", true, false) != null,
+		"launching_game": _launching_game,
+		"loading_visible": _loading_overlay != null and _loading_overlay.visible,
+		"loading_message": _loading_status_label.text if _loading_status_label != null else "",
+		"loading_mouse_filter": _loading_overlay.mouse_filter if _loading_overlay != null else Control.MOUSE_FILTER_IGNORE,
+		"loading_z_index": _loading_overlay.z_index if _loading_overlay != null else 0,
 		"audio_connected_button_count": _audio_connected_button_ids.size(),
 		"audio_click_history": _audio_click_history.duplicate(true),
 	}
@@ -95,6 +119,14 @@ func debug_open_load_browser() -> void:
 
 func debug_open_exit_confirmation() -> void:
 	_on_exit_pressed()
+
+
+func debug_publish_new_game_launch_request() -> void:
+	_publish_new_game_launch_request()
+
+
+func debug_show_start_loading_state() -> void:
+	_show_start_loading_state()
 
 
 func _build_menu() -> void:
@@ -164,6 +196,12 @@ func _build_menu() -> void:
 	buttons.name = "MenuButtons"
 	buttons.add_theme_constant_override("separation", 12)
 	margin.add_child(buttons)
+	_continue_button = _make_menu_button("ContinueButton", "继续游戏")
+	_continue_button.pressed.connect(_on_continue_pressed)
+	_continue_button.visible = _has_continue_checkpoint()
+	_continue_button.disabled = not _continue_button.visible
+	_continue_button.tooltip_text = "加载最后活动档案的最新自动检查点。" if not _continue_button.disabled else "尚无可继续的自动检查点。"
+	buttons.add_child(_continue_button)
 	_start_button = _make_menu_button("StartButton", "开始游戏")
 	_start_button.pressed.connect(_on_start_pressed)
 	buttons.add_child(_start_button)
@@ -192,6 +230,8 @@ func _build_menu() -> void:
 	version.modulate = Color(0.52, 0.49, 0.44, 1.0)
 	add_child(version)
 
+	_build_loading_overlay()
+
 	_exit_dialog = ConfirmationDialog.new()
 	_exit_dialog.name = "ExitConfirmationDialog"
 	_exit_dialog.title = "退出游戏"
@@ -202,6 +242,65 @@ func _build_menu() -> void:
 	_exit_dialog.confirmed.connect(func() -> void: get_tree().quit())
 	add_child(_exit_dialog)
 	FrontendStyles.apply_danger_button(_exit_dialog.get_ok_button())
+
+
+func _build_loading_overlay() -> void:
+	_loading_overlay = ColorRect.new()
+	_loading_overlay.name = "StartGameLoadingOverlay"
+	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_loading_overlay.color = Color(0.025, 0.022, 0.020, 0.94)
+	_loading_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_loading_overlay.z_as_relative = false
+	_loading_overlay.z_index = 4096
+	add_child(_loading_overlay)
+
+	var panel := PanelContainer.new()
+	panel.name = "LoadingPanel"
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -280.0
+	panel.offset_top = -92.0
+	panel.offset_right = 280.0
+	panel.offset_bottom = 92.0
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.07, 0.06, 0.05, 0.96)
+	panel_style.border_color = Color(0.58, 0.40, 0.17, 0.95)
+	panel_style.set_border_width_all(2)
+	panel_style.set_corner_radius_all(6)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	_loading_overlay.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 28)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_right", 28)
+	margin.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(margin)
+	var content := VBoxContainer.new()
+	content.alignment = BoxContainer.ALIGNMENT_CENTER
+	content.add_theme_constant_override("separation", 12)
+	margin.add_child(content)
+	var title := Label.new()
+	title.text = "正在进入驿站"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color(0.96, 0.84, 0.60, 1.0))
+	content.add_child(title)
+	_loading_status_label = Label.new()
+	_loading_status_label.text = "正在准备场景与新手教程，请稍候……"
+	_loading_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_status_label.add_theme_font_size_override("font_size", 17)
+	_loading_status_label.add_theme_color_override("font_color", Color(0.84, 0.80, 0.72, 1.0))
+	content.add_child(_loading_status_label)
+	_loading_dots_label = Label.new()
+	_loading_dots_label.text = "●　○　○"
+	_loading_dots_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_loading_dots_label.add_theme_font_size_override("font_size", 18)
+	_loading_dots_label.add_theme_color_override("font_color", Color(0.87, 0.63, 0.25, 1.0))
+	content.add_child(_loading_dots_label)
+	_loading_overlay.visible = false
 
 
 func _make_menu_button(node_name: String, label: String) -> Button:
@@ -277,8 +376,82 @@ func _attach_animated_cover(hero_frame: Control, hero: Control) -> void:
 
 
 func _on_start_pressed() -> void:
+	if _launching_game:
+		return
+	_show_start_loading_state()
+	_publish_new_game_launch_request()
+	# The formal station is still built synchronously. Render the loading state
+	# once before entering that blocking scene change so the last presented frame
+	# gives immediate, unambiguous feedback instead of looking frozen.
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree():
+		return
+	var change_error := get_tree().change_scene_to_file(MAIN_SCENE)
+	if change_error != OK:
+		_launching_game = false
+		_loading_overlay.visible = false
+		_start_button.disabled = false
+		_start_button.grab_focus()
+
+
+func _on_continue_pressed() -> void:
+	if _launching_game:
+		return
+	var archive_id := GameSaveStore.get_last_active_archive_id()
+	var checkpoint := GameSaveStore.inspect_restore_point(archive_id, "auto")
+	if archive_id.is_empty() or not bool(checkpoint.get("loadable", false)):
+		_continue_button.disabled = true
+		_continue_button.tooltip_text = "尚无可继续的自动检查点。"
+		return
+	_show_start_loading_state()
+	get_tree().set_meta(MAIN_LAUNCH_REQUEST_META, {
+		"source": "main_menu_continue",
+		"startup_mode": 3,
+		"archive_id": archive_id,
+		"restore_point": "auto",
+	})
+	await get_tree().process_frame
+	await RenderingServer.frame_post_draw
+	if not is_inside_tree():
+		return
+	var change_error := get_tree().change_scene_to_file(MAIN_SCENE)
+	if change_error != OK:
+		_launching_game = false
+		_loading_overlay.visible = false
+		_start_button.disabled = false
+		_continue_button.disabled = not _has_continue_checkpoint()
+
+
+func _show_start_loading_state() -> void:
+	if _launching_game:
+		return
+	_launching_game = true
+	_loading_started_msec = Time.get_ticks_msec()
 	_start_button.disabled = true
-	get_tree().call_deferred("change_scene_to_file", MAIN_SCENE)
+	if _continue_button != null:
+		_continue_button.disabled = true
+	_start_button.release_focus()
+	if _settings_panel != null and _settings_panel.visible:
+		_settings_panel.close_panel(true)
+	if _save_browser != null and _save_browser.visible:
+		_save_browser.close_panel()
+	if _exit_dialog != null and _exit_dialog.visible:
+		_exit_dialog.hide()
+	_loading_overlay.visible = true
+	_loading_overlay.move_to_front()
+
+
+func _publish_new_game_launch_request() -> void:
+	get_tree().set_meta(MAIN_LAUNCH_REQUEST_META, {
+		"source": "main_menu_new_game",
+		"startup_mode": NEW_GAME_TUTORIAL_MODE,
+	})
+
+
+func _has_continue_checkpoint() -> bool:
+	var archive_id := GameSaveStore.get_last_active_archive_id()
+	return not archive_id.is_empty() and bool(GameSaveStore.inspect_restore_point(archive_id, "auto").get("loadable", false))
 
 
 func _on_load_pressed() -> void:

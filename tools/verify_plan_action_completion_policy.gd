@@ -8,11 +8,13 @@ const REPEAT_ACTIONS := [
 	"work_tavern",
 	"work_blacksmith",
 	"work_workshop",
+	"pray_at_chapel",
 ]
 const CONTINUOUS_ACTIONS := [
 	"work_training_instructor",
 	"receive_weapon_training",
 	"work_clinic_doctor",
+	"sleep_in_dormitory",
 ]
 const TARGET_RESOLVED_ACTIONS := [
 	"receive_clinic_treatment",
@@ -23,8 +25,6 @@ const TARGET_RESOLVED_ACTIONS := [
 const ONE_SHOT_ACTIONS := [
 	"eat_at_dining_hall",
 	"drink_wine",
-	"sleep_in_dormitory",
-	"pray_at_chapel",
 	"lead_mass",
 	"talk_to_npc",
 	"visit_location",

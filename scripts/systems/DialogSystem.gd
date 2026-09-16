@@ -82,7 +82,7 @@ func start_player_dialogue(npc_id: String, visibility: String = "private") -> Di
 	if bool(npc_state.get("unconscious", false)):
 		return _failure("npc_unconscious", "昏迷中的 NPC 无法对话。")
 	if _is_npc_plan_request_active(npc_id, npc_system):
-		return _failure("npc_planning", "NPC正在思考，暂时无法对话。")
+		return _failure("npc_planning", "对方正在思考，暂时无法交谈。")
 	if _is_active_escape_dialogue_target(npc_state):
 		return start_escape_intervention_dialogue(npc_id)
 	if npc_system.has_method("is_npc_dialogue_blocked") and npc_system.is_npc_dialogue_blocked(npc_id):
@@ -173,7 +173,7 @@ func start_escape_intervention_dialogue(npc_id: String) -> Dictionary:
 	if bool(npc_state.get("unconscious", false)):
 		return _failure("npc_unconscious", "昏迷中的 NPC 无法挽留。")
 	if _is_npc_plan_request_active(npc_id, npc_system):
-		return _failure("npc_planning", "NPC正在思考，暂时无法对话。")
+		return _failure("npc_planning", "对方正在思考，暂时无法交谈。")
 	if not _is_active_escape_dialogue_target(npc_state):
 		return _failure("escape_not_active", "该 NPC 当前没有正在逃离。")
 	var escape_intent: Dictionary = npc_state.get("escape_intent", {}) if npc_state.get("escape_intent", {}) is Dictionary else {}
@@ -337,7 +337,7 @@ func start_npc_dialogue(
 		planning_participants.append(target_npc_id)
 	for participant_id in planning_participants:
 		if _is_npc_plan_request_active(participant_id, npc_system):
-			return _failure("npc_planning", "NPC正在思考，暂时无法开始对话。")
+			return _failure("npc_planning", "对方正在思考，暂时无法开始交谈。")
 	if autonomous:
 		if str(speaker_state.get("current_location", "")) != str(target_state.get("current_location", "")):
 			return _failure("npc_not_co_located", "NPC 必须抵达同一地点后才能开始自主对话。")
@@ -604,11 +604,11 @@ func send_player_message(text: String, is_recruitment_request: bool = false, asy
 	if clean_text.is_empty():
 		return _failure("empty_message", "请输入对话内容。")
 	if bool(_active_dialogue.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var target_npc_id := str(_active_dialogue.get("target_npc_id", ""))
 	if npc_system != null and _is_npc_plan_request_active(target_npc_id, npc_system):
-		return _failure("npc_planning", "NPC正在思考，暂时无法对话。")
+		return _failure("npc_planning", "对方正在思考，暂时无法交谈。")
 	if npc_system != null and npc_system.has_method("is_npc_dialogue_blocked") and npc_system.is_npc_dialogue_blocked(target_npc_id):
 		return _failure("npc_deep_sleep", "NPC 正在熟睡，无法继续对话。")
 
@@ -864,9 +864,9 @@ func attack_target_npc(damage: int = DEFAULT_ATTACK_DAMAGE, async_request: bool 
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
 	var dialogue_kind := str(_active_dialogue.get("dialogue_kind", ""))
 	if not ["player_npc", ESCAPE_INTERVENTION_DIALOGUE_KIND].has(dialogue_kind):
-		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以攻击。")
+		return _failure("invalid_dialogue_kind", "只有守备官与驿站成员交谈时可以攻击。")
 	if bool(_active_dialogue.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	if damage <= 0:
 		return _failure("invalid_damage", "攻击伤害必须为正数。")
 	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
@@ -1387,7 +1387,7 @@ func send_npc_message(text: String, async_request: bool = false, speaker_text_al
 	if clean_text.is_empty():
 		return _failure("empty_message", "NPC 对话内容不能为空。")
 	if bool(_active_dialogue.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	var next_round := int(_active_dialogue.get("current_round", 0)) + 1
 	_active_dialogue["waiting"] = true
 	dialogue_updated.emit(get_dialogue_state())
@@ -1622,7 +1622,7 @@ func _activate_player_dialogue_draft(reason: String) -> Dictionary:
 	if not npc_system.can_npc_act(target_npc_id):
 		return _failure("npc_unavailable", "该 NPC 当前无法进入对话。")
 	if _is_npc_plan_request_active(target_npc_id, npc_system):
-		return _failure("npc_planning", "NPC正在思考，暂时无法进入对话。")
+		return _failure("npc_planning", "对方正在思考，暂时无法开始交谈。")
 	if npc_system.has_method("is_npc_dialogue_blocked") and npc_system.is_npc_dialogue_blocked(target_npc_id):
 		return _failure("npc_deep_sleep", "NPC 正在熟睡，无法进入对话。")
 	var draft := _player_dialogue_draft.duplicate(true)
@@ -1698,7 +1698,7 @@ func cancel_displayed_dialogue(dialogue_id: String = "") -> Dictionary:
 	if bool(_active_dialogue.get("session_had_special_interaction_result", false)):
 		return _failure(
 			"dialogue_cancel_locked_by_special_interaction",
-			"本次会话已经产生特殊交互结果并写入事件库，只能完成对话。"
+			"刚才发生的事情已经无法撤回，只能结束这次谈话。"
 		)
 	return _cancel_active_player_dialogue("player_cancelled_dialogue")
 
@@ -2581,7 +2581,7 @@ func _ensure_player_dialogue_effect_started(reason: String) -> Dictionary:
 	var target_npc_id := str(_active_dialogue.get("target_npc_id", ""))
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system != null and _is_npc_plan_request_active(target_npc_id, npc_system):
-		return _failure("npc_planning", "NPC正在思考，暂时无法对话。")
+		return _failure("npc_planning", "对方正在思考，暂时无法交谈。")
 	_ensure_active_dialogue_epoch_for_npc(target_npc_id)
 	var parallel_wartime := _is_parallel_wartime_player_dialogue(_active_dialogue)
 	var cancel_result := {
@@ -2751,7 +2751,12 @@ func _interrupt_for_dialogue(npc_id: String) -> bool:
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
 	if action_system == null or not action_system.has_method("interrupt_npc_action"):
 		return false
-	return action_system.interrupt_npc_action(npc_id, "dialogue_interrupted")
+	return action_system.interrupt_npc_action(
+		npc_id,
+		"dialogue_interrupted",
+		false,
+		{"preserve_world_position": true}
+	)
 
 
 func _build_player_dialogue_interruption_context(
@@ -3047,9 +3052,9 @@ func set_recruitment_request_pending(enabled: bool = true) -> Dictionary:
 	if dialogue_state.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
 	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以提出应征。")
+		return _failure("invalid_dialogue_kind", "只有守备官与驿站成员交谈时可以提出应征。")
 	if bool(dialogue_state.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var target_npc_id := str(dialogue_state.get("target_npc_id", ""))
 	if npc_system == null or npc_system.get_npc(target_npc_id).is_empty():
@@ -3076,9 +3081,9 @@ func set_morale_encouragement_request_pending(enabled: bool = true) -> Dictionar
 	if dialogue_state.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
 	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以尝试鼓舞士气。")
+		return _failure("invalid_dialogue_kind", "只有守备官与驿站成员交谈时可以尝试鼓舞士气。")
 	if bool(dialogue_state.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	if enabled:
 		var eligibility := _get_morale_encouragement_eligibility(dialogue_state)
 		if not bool(eligibility.get("eligible", false)):
@@ -3106,9 +3111,9 @@ func set_combat_strategy_request_pending(enabled: bool = true) -> Dictionary:
 	if dialogue_state.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
 	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以调整战斗策略。")
+		return _failure("invalid_dialogue_kind", "只有守备官与驿站成员交谈时可以调整战斗策略。")
 	if bool(dialogue_state.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	if enabled:
 		var eligibility := _get_combat_strategy_request_eligibility(dialogue_state)
 		if not bool(eligibility.get("eligible", false)):
@@ -3136,9 +3141,9 @@ func set_work_encouragement_request_pending(enabled: bool = true) -> Dictionary:
 	if dialogue_state.is_empty():
 		return _failure("dialogue_not_started", "当前没有进行中的对话。")
 	if str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return _failure("invalid_dialogue_kind", "只有守备官与 NPC 对话时可以鼓励工作。")
+		return _failure("invalid_dialogue_kind", "只有守备官与驿站成员交谈时可以鼓励工作。")
 	if bool(dialogue_state.get("waiting", false)):
-		return _failure("dialogue_waiting", "正在等待 NPC 回复。")
+		return _failure("dialogue_waiting", "正在等待对方回应……")
 	if enabled:
 		var eligibility := _get_work_encouragement_eligibility(dialogue_state)
 		if not bool(eligibility.get("eligible", false)):
@@ -3178,14 +3183,14 @@ func _is_recruitment_request_eligible(dialogue_state: Dictionary) -> bool:
 
 func _get_work_encouragement_eligibility(dialogue_state: Dictionary) -> Dictionary:
 	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以鼓励工作。"}
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与驿站成员交谈时可以鼓励工作。"}
 	if str(dialogue_state.get("last_work_encouragement_reaction", "none")) == "work_boost":
 		return {"eligible": false, "reason": "work_boost_staged", "message": "本次对话已经成功鼓励该 NPC 工作。"}
 	if str(dialogue_state.get("interaction_context", "work")) != "work":
 		return {"eligible": false, "reason": "not_work_mode", "message": "只有和平工作模式中的 NPC 可以被鼓励工作。"}
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_work_encouragement_eligibility"):
-		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用，无法鼓励工作。"}
+		return {"eligible": false, "reason": "npc_system_missing", "message": "暂时无法鼓励对方工作。"}
 	return npc_system.get_work_encouragement_eligibility(str(dialogue_state.get("target_npc_id", "")))
 
 
@@ -3195,7 +3200,7 @@ func _is_morale_encouragement_eligible(dialogue_state: Dictionary) -> bool:
 
 func _get_morale_encouragement_eligibility(dialogue_state: Dictionary) -> Dictionary:
 	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以鼓舞士气。"}
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与驿站成员交谈时可以鼓舞士气。"}
 	if str(dialogue_state.get("last_morale_encouragement_reaction", "none")) == "morale_boost":
 		return {"eligible": false, "reason": "morale_boost_staged", "message": "本次对话已经成功鼓舞该 NPC。"}
 	var interaction_context := str(dialogue_state.get("interaction_context", "work"))
@@ -3203,7 +3208,7 @@ func _get_morale_encouragement_eligibility(dialogue_state: Dictionary) -> Dictio
 		return {"eligible": false, "reason": "not_rally_or_combat", "message": "只有集结或战斗中的 NPC 可以被鼓舞。"}
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("get_wartime_dialogue_reaction_eligibility"):
-		return {"eligible": false, "reason": "combat_system_missing", "message": "战斗系统不可用，无法鼓舞士气。"}
+		return {"eligible": false, "reason": "combat_system_missing", "message": "暂时无法鼓舞对方的士气。"}
 	return combat_system.get_wartime_dialogue_reaction_eligibility(str(dialogue_state.get("target_npc_id", "")))
 
 
@@ -3213,13 +3218,13 @@ func _is_combat_strategy_request_eligible(dialogue_state: Dictionary) -> bool:
 
 func _get_combat_strategy_request_eligibility(dialogue_state: Dictionary) -> Dictionary:
 	if dialogue_state.is_empty() or str(dialogue_state.get("dialogue_kind", "")) != "player_npc":
-		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与 NPC 对话时可以调整战斗策略。"}
+		return {"eligible": false, "reason": "invalid_dialogue_kind", "message": "只有守备官与驿站成员交谈时可以调整战斗策略。"}
 	var interaction_context := str(dialogue_state.get("interaction_context", "work"))
 	if not ["rally", "combat"].has(interaction_context):
 		return {"eligible": false, "reason": "not_rally_or_combat", "message": "只有集结或战斗中的 NPC 可以调整战斗策略。"}
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	if combat_system == null or not combat_system.has_method("get_combat_strategy_dialogue_eligibility"):
-		return {"eligible": false, "reason": "combat_system_missing", "message": "战斗系统不可用，无法调整战斗策略。"}
+		return {"eligible": false, "reason": "combat_system_missing", "message": "暂时无法调整战斗策略。"}
 	return combat_system.get_combat_strategy_dialogue_eligibility(str(dialogue_state.get("target_npc_id", "")))
 
 
@@ -3612,10 +3617,10 @@ func debug_preview_special_interaction_result(
 ) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc"):
-		return _failure("npc_system_missing", "NPC 系统不可用。")
+		return _failure("npc_system_missing", "暂时无法开始交谈。")
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	var allowed := {
 		"recruitment": ["accept", "reject", "none"],
 		"morale_encouragement": ["morale_boost", "none", "escape"],

@@ -11,6 +11,7 @@ $reviewsRoot = Join-Path $projectRoot 'art_source/audio/reviews'
 $mastersRoot = Join-Path $projectRoot 'art_source/audio/masters'
 $runtimeRoot = Join-Path $projectRoot 'assets/audio'
 $manifestRoot = Join-Path $runtimeRoot 'manifests'
+$expectedConfirmedCount = 108
 $ffmpeg = (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'art_source/audio/tools/ffmpeg') -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1).FullName
 $ffprobe = (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'art_source/audio/tools/ffmpeg') -Recurse -Filter 'ffprobe.exe' | Select-Object -First 1).FullName
 
@@ -66,6 +67,7 @@ function Get-RuntimeSubdirectory([string]$Usage) {
         '^bgm_menu$' { return 'music/menu' }
         '^bgm_day_night$|^bgm_day_playlist_' { return 'music/day' }
         '^bgm_night_playlist_' { return 'music/night' }
+        '^bgm_tutorial_' { return 'music/tutorial' }
         '^bgm_battle$' { return 'music/combat' }
         '^ambience_(day|night)_loop$' { return 'ambience/time_of_day' }
         '^ambience_' { return 'ambience/local_emitters' }
@@ -191,8 +193,8 @@ foreach ($csv in $sourceCsvs) {
     }
 }
 
-if ($confirmed.Count -ne 102) {
-    throw "Expected 102 confirmed source records, found $($confirmed.Count)."
+if ($confirmed.Count -ne $expectedConfirmedCount) {
+    throw "Expected $expectedConfirmedCount confirmed source records, found $($confirmed.Count)."
 }
 
 $usageCounts = @{}
@@ -303,7 +305,7 @@ foreach ($item in $confirmed) {
         playback_rule = $row.edit_instruction
         version = 'v01'
         acceptance_status = 'confirmed'
-        build_date = $(if ($item.Pack -eq 'sample_pack_v27_building_craft_audio') { '2026-09-09' } elseif ($item.Pack -in @('sample_pack_v25_ambient_bed_replacement', 'sample_pack_v26_ambient_nature_beds')) { '2026-09-08' } elseif ($item.Pack -in @('sample_pack_v22_bgm_day_night', 'sample_pack_v23_piety_ready', 'sample_pack_v24_piety_ready_reselect')) { '2026-09-07' } else { '2026-09-01' })
+        build_date = $(if ($item.Pack -eq 'sample_pack_v29_tutorial_bgm_light') { '2026-09-12' } elseif ($item.Pack -eq 'sample_pack_v27_building_craft_audio') { '2026-09-09' } elseif ($item.Pack -in @('sample_pack_v25_ambient_bed_replacement', 'sample_pack_v26_ambient_nature_beds')) { '2026-09-08' } elseif ($item.Pack -in @('sample_pack_v22_bgm_day_night', 'sample_pack_v23_piety_ready', 'sample_pack_v24_piety_ready_reselect')) { '2026-09-07' } else { '2026-09-01' })
     }
     $creditRows += [pscustomobject][ordered]@{
         asset_id = $assetId
@@ -317,7 +319,7 @@ foreach ($item in $confirmed) {
     }
     $playlistPaths += To-ProjectRelativePath $runtimePath
     $processed += 1
-    Write-Host ("[{0:d3}/102] {1}" -f $processed, (To-ProjectRelativePath $runtimePath))
+    Write-Host ("[{0:d3}/{1}] {2}" -f $processed, $expectedConfirmedCount, (To-ProjectRelativePath $runtimePath))
 }
 
 $manifestPath = Join-Path $manifestRoot 'audio_asset_manifest.csv'

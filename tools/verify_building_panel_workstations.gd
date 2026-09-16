@@ -137,6 +137,31 @@ func _init() -> void:
 		str(claim_result.get("workstation_id", ""))
 	)
 
+	var reserved_text := str(panel._format_workstations([
+		{
+			"id": "dining_seat_01",
+			"type": "dining_seat",
+			"name": "用餐席1",
+			"occupied_by": null,
+			"reserved_by": "cook_01"
+		},
+		{
+			"id": "dining_seat_02",
+			"type": "dining_seat",
+			"name": "用餐席2",
+			"occupied_by": "gardener_01",
+			"reserved_by": "cook_01"
+		}
+	]))
+	var expected_reserved_text := "\n".join([
+		"用餐席1：空闲",
+		"用餐席2：%s占用中" % _npc_name(npc_system, "gardener_01")
+	])
+	if reserved_text != expected_reserved_text or reserved_text.contains("预留"):
+		push_error("Building panel should present in-transit reservations as free while preserving occupancy: %s" % reserved_text)
+		quit(1)
+		return
+
 	var custom_clinic_workstations: Array[Dictionary] = [
 		{"id": "doctor_desk_01", "type": "clinic_doctor_station", "name": "医生位", "occupied_by": "doctor_01"},
 		{"id": "treatment_bed_01", "type": "clinic_patient_bed", "name": "病床", "occupied_by": "priest_01"},

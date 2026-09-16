@@ -50,7 +50,7 @@ func _init() -> void:
 
 	_assert_vector2(snapshot.get("interior_size"), Vector2(103.0, 95.0), "station interior bounding box")
 	_assert_vector2(snapshot.get("detail_size"), Vector2(280.0, 360.0), "detailed terrain")
-	_assert_vector2(snapshot.get("underlay_size"), Vector2(700.0, 720.0), "low-detail underlay")
+	_assert_vector2(snapshot.get("underlay_size"), Vector2(700.0, 554.5), "low-detail underlay")
 	_assert_vector2(snapshot.get("blacksmith_lot_size"), Vector2(16.0, 16.0), "blacksmith lot")
 	_assert_vector2(snapshot.get("main_hall_lot_size"), Vector2(24.0, 20.0), "central main hall lot")
 	_assert_vector2(snapshot.get("main_hall_envelope_size"), Vector2(22.0, 18.0), "central main hall envelope")
@@ -83,11 +83,12 @@ func _init() -> void:
 	if absf(float(snapshot.get("area_multiplier", 0.0)) - (9785.0 / 728.0)) > 0.001:
 		_fail("Area multiplier is inconsistent: %s" % snapshot)
 		return
-	if float(snapshot.get("enemy_spawn_to_front_gate_m", 0.0)) < 240.0:
-		_fail("Enemy forest staging must sit at the far map-edge forest, not near the gate")
+	var expected_halved_spawn_distance := Vector2(2.0, 194.5).distance_to(Vector2(5.0, 54.0))
+	if absf(float(snapshot.get("enemy_spawn_to_front_gate_m", 0.0)) - expected_halved_spawn_distance) > 0.001:
+		_fail("Enemy forest staging must follow the halved front-map depth")
 		return
 	var enemy_edge_inset := float(snapshot.get("enemy_spawn_edge_inset_m", 999.0))
-	if enemy_edge_inset < 25.0 or enemy_edge_inset > 65.0:
+	if enemy_edge_inset < 24.9 or enemy_edge_inset > 25.1:
 		_fail("Enemy spawn must remain embedded just inside the map-edge forest")
 		return
 	if float(snapshot.get("back_gate_to_escape_completion_m", 0.0)) < 200.0:
@@ -120,10 +121,10 @@ func _init() -> void:
 	if int(snapshot.get("forest_instance_count", 0)) < 650:
 		_fail("Natural cover must extend densely toward the underlay edges")
 		return
-	_assert_vector2((snapshot.get("forest_scatter_bounds") as Rect2).size, Vector2(688.0, 708.0), "forest scatter")
+	_assert_vector2((snapshot.get("forest_scatter_bounds") as Rect2).size, Vector2(688.0, 545.5), "forest scatter")
 	if _failed:
 		return
-	if float(snapshot.get("camera_to_terrain_min_margin_m", 0.0)) < 85.0:
+	if absf(float(snapshot.get("camera_to_terrain_min_margin_m", 0.0)) - 72.5) > 0.001:
 		_fail("Camera pan limits can expose the expanded terrain edge")
 		return
 	_assert_vector2(snapshot.get("camera_21_9_ground_footprint_size"), Vector2(338.84055, 124.77954), "21:9 maximum-zoom ground footprint")

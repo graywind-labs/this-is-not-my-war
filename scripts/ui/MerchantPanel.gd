@@ -346,7 +346,7 @@ func _on_confirm_pressed() -> void:
 			amounts[resource_id] = amount
 	var merchant_system := get_node_or_null(MERCHANT_SYSTEM_PATH)
 	if merchant_system == null:
-		feedback_label.text = "交易系统不可用。"
+		feedback_label.text = "暂时无法交易。"
 		return
 	_committing = true
 	_refresh_total()

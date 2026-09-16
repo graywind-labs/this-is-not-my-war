@@ -106,17 +106,22 @@ func _init() -> void:
 		return
 
 	var pre_combat_position: Vector3 = actor_node.global_position
+	var pre_combat_phase := str(npc_system.get_npc_state(NPC_ID).get("physical_location_phase", ""))
 	var combat_start: Dictionary = npc_system.begin_formal_combat_world([NPC_ID] as Array[String])
-	if not bool(combat_start.get("ok", false)) or actor_node.global_position.distance_to(pre_combat_position) > 0.1:
-		_fail("Combat takeover teleported the default formal resident")
+	if (
+		not bool(combat_start.get("ok", false))
+		or actor_node.global_position.distance_to(pre_combat_position) > 0.1
+		or str(npc_system.get_npc_state(NPC_ID).get("physical_location_phase", "")) != pre_combat_phase
+	):
+		_fail("Enemy-presence lease changed the default formal resident before contact")
 		return
 	var combat_end: Dictionary = npc_system.end_formal_combat_world("a5_p7_verify")
 	if (
 		not bool(combat_end.get("ok", false))
 		or actor_node.global_position.distance_to(pre_combat_position) > 0.1
-		or str(npc_system.get_npc_state(NPC_ID).get("physical_location_phase", "")) != "formal_world_resident"
+		or str(npc_system.get_npc_state(NPC_ID).get("physical_location_phase", "")) != pre_combat_phase
 	):
-		_fail("Combat cleanup did not retain the resident's formal position")
+		_fail("Unused enemy-presence lease changed the resident during cleanup")
 		return
 
 	var legacy: Dictionary = controller.debug_set_legacy_compatibility_enabled(true)

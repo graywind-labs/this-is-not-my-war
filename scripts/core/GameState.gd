@@ -16,6 +16,41 @@ var game_over_second: int = 0
 var settlement_snapshot: Dictionary = {}
 
 
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"day": current_day, "hour": current_hour, "minute": current_minute, "second": current_second,
+		"in_combat": false, "game_over": game_over, "game_result": game_result,
+		"game_over_reason": game_over_reason, "failure_reason": failure_reason,
+		"game_over_day": game_over_day, "game_over_hour": game_over_hour,
+		"game_over_minute": game_over_minute, "game_over_second": game_over_second,
+		"settlement_snapshot": settlement_snapshot.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary, emit_result: bool = false) -> Dictionary:
+	current_day = maxi(1, int(snapshot.get("day", 1)))
+	current_hour = clampi(int(snapshot.get("hour", 6)), 0, 23)
+	current_minute = clampi(int(snapshot.get("minute", 0)), 0, 59)
+	current_second = clampi(int(snapshot.get("second", 0)), 0, 59)
+	in_combat = false
+	game_over = bool(snapshot.get("game_over", false))
+	game_result = str(snapshot.get("game_result", ""))
+	game_over_reason = str(snapshot.get("game_over_reason", ""))
+	failure_reason = str(snapshot.get("failure_reason", ""))
+	game_over_day = maxi(0, int(snapshot.get("game_over_day", 0)))
+	game_over_hour = clampi(int(snapshot.get("game_over_hour", 0)), 0, 23)
+	game_over_minute = clampi(int(snapshot.get("game_over_minute", 0)), 0, 59)
+	game_over_second = clampi(int(snapshot.get("game_over_second", 0)), 0, 59)
+	settlement_snapshot = (snapshot.get("settlement_snapshot", {}) as Dictionary).duplicate(true) if snapshot.get("settlement_snapshot", {}) is Dictionary else {}
+	if emit_result:
+		var event_bus := get_node_or_null("/root/EventBus")
+		if event_bus != null:
+			event_bus.time_changed.emit(current_day, current_hour, current_minute, current_second)
+			if game_over and event_bus.has_signal("game_over_changed"):
+				event_bus.game_over_changed.emit(game_result, game_over_reason)
+	return {"ok": true, "game_over": game_over, "result": game_result}
+
+
 func set_time(day: int, hour: int, minute: int = 0, second: int = 0) -> void:
 	var previous_day := current_day
 	var previous_hour := current_hour

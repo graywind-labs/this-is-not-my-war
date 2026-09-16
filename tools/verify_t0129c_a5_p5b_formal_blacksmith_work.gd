@@ -32,7 +32,7 @@ func _init() -> void:
 		return
 	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 2, 0)
-	daily_plan_system.set_auto_execution_enabled(true)
+	daily_plan_system.set_auto_execution_enabled(false)
 	glen.set("move_speed", 40.0)
 
 	var action: Dictionary = action_system.get_action(ACTION_ID)
@@ -41,23 +41,36 @@ func _init() -> void:
 		return
 
 	crafting_system.set_target(BUILDING_ID, "", true)
+	npc_system.debug_enter_location_immediately(NPC_ID, "dining_hall")
 	npc_system.update_npc_state(NPC_ID, {
 		"fatigue": 0,
 		"satiety": 100,
 		"current_action": "idle",
 		"last_action_result": "verify_a5_p5b_preflight"
 	})
-	if action_system.debug_assign_work(NPC_ID, BUILDING_ID):
-		_fail("Missing crafting target should fail before a formal route starts")
+	if not action_system.debug_assign_work(NPC_ID, BUILDING_ID):
+		_fail("Missing crafting target should still dispatch a formal route")
 		return
 	if (
-		bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
-		or not _workstation_is_clear(building_system, FIRST_FORGE_ID)
-		or str(npc_system.get_npc_state(NPC_ID).get("last_action_result", "")) != "work_failed_crafting_target_missing"
+		not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
+		or not _workstation_reserved_by(building_system, FIRST_FORGE_ID, NPC_ID)
+		or str(action_system.get_runtime_action_snapshot(NPC_ID).get("phase", "")) != "pending"
+		or str(npc_system.get_npc_state(NPC_ID).get("current_location", "")) != "dining_hall"
 	):
-		_fail("Crafting preflight changed spatial authority or lost the failure reason")
+		_fail("Missing target failed remotely instead of preserving pending travel from the dining hall")
+		return
+	if not await _wait_for_action_failure(npc_system, time_system, "work_failed_crafting_target_missing"):
+		_fail("Missing target was not rejected after Glen reached the forge")
+		return
+	if (
+		str(npc_system.get_npc_state(NPC_ID).get("current_location", "")) != BUILDING_ID
+		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
+		or not _workstation_is_clear(building_system, FIRST_FORGE_ID)
+	):
+		_fail("Arrival-time target failure did not retain the real blacksmith location and clean the forge")
 		return
 
+	daily_plan_system.set_auto_execution_enabled(true)
 	resource_system.add_resource("iron", 10)
 	resource_system.add_resource("wood", 10)
 	var selected: Dictionary = crafting_system.set_target(BUILDING_ID, RECIPE_ID, true)
@@ -168,6 +181,15 @@ func _wait_for_active_work(action_system: Node, time_system: Node, max_frames: i
 		await physics_frame
 		var runtime: Dictionary = action_system.get_runtime_action_snapshot(NPC_ID)
 		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == ACTION_ID:
+			return true
+	return false
+
+
+func _wait_for_action_failure(npc_system: Node, time_system: Node, expected_result: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		if str(npc_system.get_npc_state(NPC_ID).get("last_action_result", "")) == expected_result:
 			return true
 	return false
 

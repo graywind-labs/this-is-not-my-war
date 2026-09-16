@@ -96,6 +96,8 @@ func _run() -> void:
 	_assert_mapping(controller, {"event_type": "structure_damaged", "target_type": "defense_device", "target_id": "device_probe"}, [], "sfx_combat_wood_damage_")
 	_assert_mapping(controller, {"event_type": "combat_alarm", "target_type": "building", "target_id": "main_hall"}, ["sfx_world_battle_alert_one_shot"], "", false)
 	_assert_mapping(controller, {"event_type": "battle_started"}, ["sfx_enemy_entry_stinger"], "", false)
+	_assert_tutorial_battle_start_silent(controller)
+	_assert_mapping(controller, {"event_type": "combat_alarm", "tutorial_scope": true, "target_type": "building", "target_id": "main_hall"}, ["sfx_world_battle_alert_one_shot"], "", false)
 	_assert_mapping(controller, {"event_type": "wave_cleared"}, ["sfx_wave_clear_stinger"], "", false)
 	controller.debug_reset_history()
 	controller.call("_on_game_over_changed", "victory", "audio_test")
@@ -172,8 +174,26 @@ func _assert_all_assets_exist(audio_manager: Node) -> void:
 
 func _assert_silent_rules(snapshot: Dictionary) -> void:
 	var silent_rules: Array = snapshot.get("silent_rules", [])
-	for rule in ["shield_block_no_authority", "npc_revive", "horse_regular_damage"]:
+	for rule in ["tutorial_battle_started", "shield_block_no_authority", "npc_revive", "horse_regular_damage"]:
 		_assert(silent_rules.has(rule), "missing silent combat rule: %s" % rule)
+
+
+func _assert_tutorial_battle_start_silent(controller: Node) -> void:
+	controller.debug_reset_history()
+	controller.debug_handle_audio_event({
+		"event_type": "battle_started",
+		"tutorial_scope": true,
+		"target_type": "enemy",
+		"target_id": "tutorial_enemy_probe",
+	})
+	var snapshot: Dictionary = controller.get_debug_snapshot()
+	_assert(int(snapshot.get("recent_play_count", -1)) == 0, "tutorial battle start still played the enemy-entry stinger")
+	var skipped: Array = snapshot.get("skipped_events", [])
+	_assert(skipped.size() == 1, "tutorial battle-start silence was not recorded")
+	if not skipped.is_empty():
+		var record: Dictionary = skipped[0]
+		_assert(str(record.get("event_type", "")) == "battle_started", "wrong tutorial event was silenced")
+		_assert(str(record.get("reason", "")) == "tutorial_battle_started", "wrong tutorial silence reason")
 
 
 func _assert_mapping(controller: Node, raw_event: Dictionary, expected_assets: Array, expected_prefix := "", positional := true) -> void:

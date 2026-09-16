@@ -6,7 +6,7 @@ const NPC_ID := "blacksmith_01"
 const BUILDING_ID := "blacksmith"
 const WORKSTATION_ID := "forge_01"
 const ENVELOPE := Vector2(14.0, 12.0)
-const DOOR_WIDTH := 1.8
+const DOOR_WIDTH := 2.08
 
 
 func _init() -> void:

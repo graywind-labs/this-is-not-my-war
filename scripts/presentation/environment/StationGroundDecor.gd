@@ -18,7 +18,14 @@ func _ready() -> void:
 	call_deferred("_sync_lights")
 
 func _sync_lights() -> void:
-	var controller := get_tree().get_first_node_in_group("building_functional_light_controller")
+	# Main may be replaced by the frontend before this deferred first-frame sync runs.
+	# An exiting presentation node has no SceneTree and must not touch the new scene.
+	if not is_inside_tree():
+		return
+	var tree := get_tree()
+	if tree == null:
+		return
+	var controller := tree.get_first_node_in_group("building_functional_light_controller")
 	set_night_enabled(controller != null and bool(controller.call("is_night_time")))
 
 func set_night_enabled(enabled: bool) -> void:

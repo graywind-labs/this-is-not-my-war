@@ -111,7 +111,7 @@ func _init() -> void:
 	panel.debug_set_quantity("grain", 2)
 	ui = panel.debug_get_trade_ui_snapshot()
 	var buy_total_color: Color = ui.get("total_color", Color.WHITE)
-	if str(ui.get("total_text", "")) != "-7" or buy_total_color.r <= buy_total_color.g or resources.get_resource("money") != money_before_selection or resources.get_resource("grain") != grain_before_selection:
+	if str(ui.get("total_text", "")) != "-10" or buy_total_color.r <= buy_total_color.g or resources.get_resource("money") != money_before_selection or resources.get_resource("grain") != grain_before_selection:
 		_fail("Purchase selection changed authority or calculated the wrong red negative total: %s" % ui)
 		return
 	panel.debug_confirm_trade()
@@ -119,11 +119,19 @@ func _init() -> void:
 	if panel.visible:
 		_fail("Successful purchase did not close the merchant panel")
 		return
-	if resources.get_resource("money") != money_before_selection - 7 or resources.get_resource("grain") != grain_before_selection + 2 or resources.get_resource("wood") != wood_before_selection + 1:
+	if resources.get_resource("money") != money_before_selection - 10 or resources.get_resource("grain") != grain_before_selection + 2 or resources.get_resource("wood") != wood_before_selection + 1:
 		_fail("Confirmed multi-resource purchase settled incorrectly")
 		return
 	if merchant.get_merchant_stock("grain") != int(initial_stock.get("grain", 0)) - 2 or merchant.get_merchant_stock("wood") != int(initial_stock.get("wood", 0)) - 1:
 		_fail("Confirmed purchase did not reduce same-day merchant stock")
+		return
+	var buy_public_events: Array = memory.get_plaza_events()
+	var buy_public_event: Dictionary = buy_public_events.back() if not buy_public_events.is_empty() else {}
+	if str(buy_public_event.get("type", "")) != "merchant_trade_completed" or str(buy_public_event.get("visibility", "")) != "local_public" or str(buy_public_event.get("location_id", "")) != "plaza":
+		_fail("Confirmed batch purchase did not create one plaza local_public event")
+		return
+	if str(buy_public_event.get("summary", "")) != "守备官花费10枚第纳尔，换来2份粮食、1份木材。":
+		_fail("Batch purchase did not list the exchanged resource quantities")
 		return
 	var stock_after_buy: Dictionary = merchant.get_market_snapshot().get("daily_stock", {}).duplicate(true)
 	merchant.debug_open_trade()
@@ -139,16 +147,24 @@ func _init() -> void:
 	panel.debug_set_quantity("wine", 2)
 	ui = panel.debug_get_trade_ui_snapshot()
 	var sell_total_color: Color = ui.get("total_color", Color.WHITE)
-	if str(ui.get("total_text", "")) != "+8" or sell_total_color.g <= sell_total_color.r or int(ui.get("cards", {}).get("wine", {}).get("maximum", -1)) != wine_before_sell:
+	if str(ui.get("total_text", "")) != "+4" or sell_total_color.g <= sell_total_color.r or int(ui.get("cards", {}).get("wine", {}).get("maximum", -1)) != wine_before_sell:
 		_fail("Sale mode total or player-owned maximum is wrong: %s" % ui)
 		return
 	panel.debug_confirm_trade()
 	await process_frame
-	if resources.get_resource("wine") != wine_before_sell - 2 or resources.get_resource("money") != money_before_sell + 8:
+	if resources.get_resource("wine") != wine_before_sell - 2 or resources.get_resource("money") != money_before_sell + 4:
 		_fail("Confirmed sale settled incorrectly")
 		return
 	if merchant.get_merchant_stock("wine") != wine_merchant_before + 2:
 		_fail("Sold resource did not enter the merchant's same-day inventory")
+		return
+	var sell_public_events: Array = memory.get_plaza_events()
+	var sell_public_event: Dictionary = sell_public_events.back() if not sell_public_events.is_empty() else {}
+	if str(sell_public_event.get("type", "")) != "merchant_trade_completed" or str(sell_public_event.get("visibility", "")) != "local_public" or str(sell_public_event.get("location_id", "")) != "plaza":
+		_fail("Confirmed sale did not create one plaza local_public event")
+		return
+	if str(sell_public_event.get("summary", "")) != "守备官花费2份酒，换来4枚第纳尔。":
+		_fail("Sale did not use the exchanged resource wording")
 		return
 	resources.add_resource("money", 10000)
 	var authority_before_fail: Dictionary = resources.get_resource_snapshot()

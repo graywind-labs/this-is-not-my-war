@@ -333,6 +333,56 @@ func get_horse_state_snapshot() -> Dictionary:
 	return snapshot
 
 
+func create_game_save_snapshot() -> Dictionary:
+	var saved_horses := _horses.duplicate(true)
+	for horse_id in saved_horses.keys():
+		var horse: Dictionary = saved_horses[horse_id]
+		if bool(horse.get("alive", true)):
+			horse["location"] = LOCATION_STABLE
+			horse["ridden_by_npc_id"] = ""
+			horse["movement_state"] = _make_idle_movement_state()
+		saved_horses[horse_id] = horse
+	return {
+		"horses": saved_horses,
+		"horse_order": _horse_order.duplicate(true),
+		"simulation_accumulator_seconds": _simulation_accumulator_seconds,
+		"next_foal_serial": _next_foal_serial,
+		"next_birth_request_serial": _next_birth_request_serial,
+		"rng_state": str(_rng.state),
+		"pending_birth": _pending_birth.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_clear_all_horse_motion_actors("game_save_restore")
+	_horses = snapshot.get("horses", {}).duplicate(true) if snapshot.get("horses", {}) is Dictionary else {}
+	_horse_order.clear()
+	for raw_horse_id in snapshot.get("horse_order", []):
+		var horse_id := str(raw_horse_id)
+		if _horses.has(horse_id) and not _horse_order.has(horse_id):
+			_horse_order.append(horse_id)
+	_simulation_accumulator_seconds = maxf(0.0, float(snapshot.get("simulation_accumulator_seconds", 0.0)))
+	_next_foal_serial = maxi(1, int(snapshot.get("next_foal_serial", 1)))
+	_next_birth_request_serial = maxi(1, int(snapshot.get("next_birth_request_serial", 1)))
+	if str(snapshot.get("rng_state", "")).is_valid_int():
+		_rng.state = int(str(snapshot.get("rng_state", "0")))
+	_pending_birth = snapshot.get("pending_birth", {}).duplicate(true) if snapshot.get("pending_birth", {}) is Dictionary else {}
+	for horse_id in _horse_order:
+		var horse: Dictionary = _horses[horse_id]
+		_normalize_horse_runtime(horse)
+		_horses[horse_id] = horse
+	_publish_stable_summary(true)
+	return {"ok": true, "horse_count": _horse_order.size(), "pending_birth": not _pending_birth.is_empty()}
+
+
+func reemit_pending_birth_after_restore() -> void:
+	if _pending_birth.is_empty():
+		return
+	var event_bus := get_node_or_null("/root/EventBus")
+	if event_bus != null and event_bus.has_signal("horse_birth_naming_requested"):
+		event_bus.horse_birth_naming_requested.emit(get_pending_birth_snapshot())
+
+
 func get_balance_snapshot() -> Dictionary:
 	return _balance.duplicate(true)
 
@@ -1412,9 +1462,15 @@ func _get_effective_caretaker_snapshot() -> Dictionary:
 		if [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT, BEHAVIOR_MODE_UNCONSCIOUS, BEHAVIOR_MODE_ESCAPED].has(behavior_mode):
 			continue
 		var skills: Dictionary = profile.get("skills", {}) if profile.get("skills", {}) is Dictionary else {}
-		var skill := clampf(float(skills.get(HORSE_CARE_SKILL, 0.0)), 0.0, 100.0)
-		if skill > best_skill:
-			best_skill = skill
+		var base_skill := clampf(float(skills.get(HORSE_CARE_SKILL, 0.0)), 0.0, 100.0)
+		var work_output_multiplier := (
+			maxf(0.01, float(npc_system.call("get_npc_work_output_multiplier", npc_id)))
+			if npc_system.has_method("get_npc_work_output_multiplier")
+			else 1.0
+		)
+		var effective_skill := base_skill * work_output_multiplier
+		if effective_skill > best_skill:
+			best_skill = effective_skill
 			best_npc_id = npc_id
 	if best_npc_id.is_empty():
 		return {"active": false}
@@ -2867,9 +2923,9 @@ func _assignment_failure(reason: String, npc_id: String, horse_id: String) -> Di
 func _get_assignment_failure_message(reason: String) -> String:
 	match reason:
 		"invalid_npc_id", "unknown_npc":
-			return "NPC 不存在。"
+			return "找不到这名成员。"
 		"npc_system_unavailable":
-			return "NPC 系统不可用。"
+			return "暂时无法查看驿站成员。"
 		"npc_not_recruited":
 			return "只有已入伍 NPC 可以分配马匹。"
 		"npc_escaped":
@@ -2893,7 +2949,7 @@ func _get_assignment_failure_message(reason: String) -> String:
 		"horse_not_in_stable":
 			return "只有物理上在马厩的马才能分配。"
 		"equipment_system_unavailable":
-			return "装备系统不可用。"
+			return "暂时无法查看骑乘装备。"
 		"equipment_sync_failed":
 			return "马匹分配未能写入 NPC 坐骑槽。"
 		_:

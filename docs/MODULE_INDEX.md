@@ -1,5 +1,612 @@
 # MODULE_INDEX.md
 
+## T0448 教程艾达伤害倍率索引
+
+- `scripts/systems/CombatSystem.gd`：教程艾达身份门控、对敌 `2.4` 倍率、承伤 `0.5` 倍率及伤害元数据。
+- `tools/verify_t0448_tutorial_ada_damage_multipliers.gd`：双向倍率与其他 NPC 隔离专项。
+- `tools/verify_t0417_friendly_npc_damage_multiplier.gd`：友方武器倍率回归。
+- `tools/verify_t1505_tutorial_natural_combat.gd`：教程自然战斗结果与新节奏窗口。
+
+稳定关系：`tutorial raid active + Ada id → 对敌曲线伤害 ×2.4 / 敌方防御后整数伤害 ×0.5 → 既有最低 1 点与 40% HP floor`；其余实体与正式战斗保持原链路。
+
+## T0447 主厅碰撞收紧索引
+
+- `data/station_layout.json`：主厅独立 `collision_inset=0.5` 权威值，不改 `22×18m` 布局 / 视觉包络。
+- `scripts/world/StationLayoutController.gd`：从可选碰撞内缩派生外墙和透明内部阻挡，并向 CombatSystem 返回同一物理包络作为建筑接触几何；未配置建筑保持原尺寸。
+- `tools/verify_t0201_main_hall_solid_collision.gd`：锁定 `21×17m` 物理包络、`20.6×3×16.6m` 内部阻挡、11 个导航 Link、门心封闭与前后绕行。
+- `tools/verify_t0182_building_attack_positions.gd`：使用 8 名剑盾敌人覆盖主厅外周租约位、实体扫掠、逐攻击者建筑伤害事件与 HP 下降。
+
+稳定关系：`22×18m 布局 / 视觉包络 → 内收 0.5m 的共享物理 / 战斗几何 → 静态外墙 + 再内收 0.2m 的内部阻挡 → NavigationServer 绕行 / CombatSystem 真实接触`。
+
+## T0444 教程器械通用承伤索引
+
+- `data/tutorial_config.json`：不再声明教程器械承伤倍率。
+- `scripts/systems/CombatSystem.gd`：教程快照与器械伤害入口删除倍率字段及乘算分支。
+- `tools/verify_t0444_tutorial_device_damage.gd`：验证配置和代码均无倍率路径，15 HP 箭塔每次承受 5 点并在第 3 次命中摧毁。
+- `tools/verify_t1505_tutorial_natural_combat.gd`：运行态锁定最后一次器械伤害为 5，并继续验证自然塔毁 / 艾达获胜。
+
+稳定关系：`攻击 6 → 通用防御曲线（箭塔防御 3）→ 每击 5 → 15 HP 在第 3 击归零`。教程不再拥有器械伤害乘区。
+
+## T0443 教程战斗重新校准索引
+
+- `data/tutorial_config.json`：教程箭塔实例 Max HP 为 `15`；夜袭侦察兵攻击力为 `6`，与正式第一波剑盾兵一致。
+- `tools/verify_t0443_tutorial_combat_rebalance.gd`：跨文件锁定攻击力一致、运行态 `15/15 HP` 与正式箭塔定义隔离。
+- `tools/verify_t1505_tutorial_natural_combat.gd`：验证箭塔 15 秒内自然被毁、5 敌全部留下、艾达在 90 秒异常安全线前自然获胜且不低于 40% HP。
+- `tools/verify_t0414_enemy_stat_increase.gd` / `tools/verify_t0416_defense_device_halving.gd`：历史数值专项同步当前教程例外。
+
+稳定关系：`教程部署 → 15 HP 箭塔 → 通用防御曲线每击 5 → 第 3 击塔毁`；`5 名攻击力 6 的敌人 → 艾达自然清敌 → 40% HP 下限`。正式箭塔和第一波均不被教程配置反向修改。
+
+## T0440 教程艾达 40% HP 下限索引
+
+- `data/tutorial_config.json`：`tutorial_raid.ada_min_hp_ratio=0.40`，作为序章权威配置。
+- `scripts/systems/CombatSystem.gd`：敌方命中艾达时仅在 `_tutorial_raid_active` 作用域裁剪伤害；缺省值同步为 40%，教程结束后不再裁剪。
+- `tools/verify_t0440_tutorial_ada_hp_floor.gd`：验证教程连续命中停在 `38/95 HP`，以及教程结束后艾达和托马均可降至 0 HP 并昏迷。
+- `tools/verify_t1505_tutorial_natural_combat.gd`：自然教程 HP 验收下界同步为 40%。
+
+稳定关系：`教程敌方命中艾达 → max(ceil(Max HP × 0.40), HP - damage)`；`教程结束 / 正式战斗 → 常规 NPCSystem 伤害 → 0 HP 昏迷`。
+
+## T0439 正式塔防生命索引
+
+- `data/defense_device_defs.json`：正式箭塔 / 弩床 Max HP 分别为 `50 / 25`。
+- `tools/verify_t0416_defense_device_halving.gd` / `tools/verify_t0121_game_balance.gd`：同步正式定义、部署与教程实例隔离断言；教程当前 15 HP 由 T0443 覆盖。
+- `scripts/systems/TutorialDirector.gd`：教程箭塔继续使用配置化实例覆盖；T0443 后 Max HP 为 15。
+
+## T0437 NPC 卡住不放弃计划索引
+
+- `scripts/world/ActorMotionBody.gd`：累计 8 秒无有效路线进展后发送一次非终止 `motion_stuck_notified`，保留活动运动请求；恢复进展后允许下一段重新计时。
+- `scripts/npc/NPC.gd`：从非终止通知显示三秒 `😠`，不再从 `motion_failed` 分支触发卡住表现。
+- `scripts/debug/ActorMotionSandbox.gd`：将物理阻挡样本记录为 `active / stuck_timeout` 通知结果，而不是终止失败。
+- `tools/verify_t0129c_a2_actor_motion.gd`：验证通知后 request 仍为 active / moving、`last_result` 未写失败且只通知一次。
+- `tools/verify_t0403_r2_stuck_emotion_bubble.gd`：验证双气泡表现及通知前后 NPCSystem 状态完全不变。
+
+稳定关系：`连续无进展 8 秒 → motion_stuck_notified → 😠`；不经过 `motion_failed → NPCSystem → ActionSystem → DailyPlanSystem`，所以当前行动、预约和计划继续保留。
+
+## T0438 我方 NPC 基础攻速索引
+
+- `data/weapon_defs.json`：四类主武器基础攻速各降低 `0.1 次/秒`，以精确倒数保存新间隔。
+- `scripts/systems/CombatSystem.gd`：继续叠加既有人物、成长、状态、装备和骑乘乘区，本次无需修改逻辑。
+- `tools/verify_t0438_friendly_npc_base_attack_speed.gd`：逐武器验证攻速差值。
+
+## T0436 箭塔 0.38 攻速索引
+
+- `data/defense_device_defs.json`：箭塔权威攻速为 `0.38 次/秒`，间隔及 authored cycle 为精确倒数。
+- `scripts/presentation/defense/FormalArrowTowerArtView.gd`：正式表现默认攻击周期与权威定义同步。
+- `tools/verify_t0121_game_balance.gd` / `tools/verify_t0132_p4b_arrow_tower_art_slice.gd`：覆盖攻速倒数合同与正式箭塔表现配置。
+
+稳定关系：`8 单发伤害 × 0.38 次/秒 = 3.04 无防御理论 DPS`；其他器械与教程攻速不受额外覆盖。
+
+## T0434 防御器械部署点击音效索引
+
+- `assets/audio/ui/sfx_defense_device_deploy_wood_thud_v01.wav` / `art_source/audio/masters/ui/sfx_defense_device_deploy_wood_thud_v01.wav`：用户确认的部署木质落地声及 48 kHz / 24-bit 母版。
+- `scripts/presentation/audio/InteractionAudioController.gd` / `data/presentation/interaction_audio.json`：成功部署后全局 2D 投向 UI 总线，独立增益 `+3 dB`，不读取槽位位置。
+- `data/presentation/audio_categories.json`：该资产归入点击音效；当前分类点击 9、战斗 33，总数 109。
+- `tools/verify_t0420_defense_deploy_audio.gd` / `tools/verify_t0135_p10g_interaction_audio.gd`：覆盖成功专属、UI 总线、全局 2D、增益及无世界坐标依赖。
+
+## T0433-R1 正式 NPC 伤害倍率 0.7 索引
+
+- `scripts/systems/CombatSystem.gd`：正式 NPC 武器倍率直接设为 `0.7`，教程常量保持 `0.8`。
+- `tools/verify_t0417_friendly_npc_damage_multiplier.gd`：同步为 T0433-R1 正式 / 教程双倍率、最低伤害和 Main 实际双命中回归。
+- `tools/verify_combat_damage.gd`：同步正式 `0.7`、教程 `0.8` 解析断言。
+- `game_design.md` / `docs/COMBAT_SYSTEM.md` / `docs/TECH_ARCHITECTURE.md`：记录当前双作用域公式。
+
+稳定关系：`NPC 武器命中 → _tutorial_raid_active ? 0.8 : 0.7 → 防御曲线后取整 → 敌人 HP`；其他伤害源不受本次调整影响。
+
+## T0431 新手教程镜头操作提示索引
+
+- `scripts/systems/TutorialDirector.gd`：新增 `camera_controls` 稳定步骤，接在箭塔部署成功与 `wait_tower` 之间，并只在该页切换鼠标输入穿透。
+- `scripts/ui/TutorialOverlay.gd`：提供可恢复的世界鼠标输入穿透接口；底部会话点击继续保持不变，调试快照暴露当前穿透状态。
+- `data/tutorial_config.json`：镜头操作页的玩家可见正文与提示标题。
+- `tools/verify_t1505_tutorial.gd` / `tools/verify_t1505_tutorial_boundaries.gd` / `tools/verify_t1505_tutorial_natural_combat.gd`：覆盖配置文案、部署后步骤顺序、底部继续、穿透恢复、19 步边界与自然战斗链。
+
+稳定关系：`箭塔部署成功 → camera_controls（CameraRig 输入可用、底部点击继续）→ wait_tower（教程鼠标门控恢复）`；不新增第二套镜头移动或战斗实现。
+
+## T0429 初始 NPC 属性与熟练度平衡索引
+
+- `data/npc_profiles.json`：8 人新游戏力量 / 智力和固定 13 项熟练度的权威初始值。
+- `tools/verify_t0429_npc_initial_stat_balance.gd`：锁定角色逐项数值、总预算区间、职业核心专长与未改动的 HP / `combat_base` / 初始装备边界。
+- `tools/verify_skill_progression.gd`：适配既有 70% 经验效率的跨周期小数余量，继续验证职业成长入口。
+- `game_design.md` / `docs/AI_NPC_SYSTEM.md` / `docs/COMBAT_SYSTEM.md` / `docs/ECONOMY_AND_BUILDINGS.md`：记录综合预算、人物差异和现有公式不变的设计边界。
+
+## T0428 初始 NPC 生命配置专项
+
+- `data/npc_profiles.json`：8 名初始 NPC 的新游戏 `hp / max_hp` 权威配置。
+- `tools/verify_t0428_npc_initial_hp_reduction.gd`：锁定 8 人降低 25 点后的开局满血数值。
+
+## T0426 正式 NPC 伤害再降 30%与教程隔离索引
+
+- `scripts/systems/CombatSystem.gd`：NPC 武器专用解析按权威教程运行态选择正式 `0.56` 或教程 `0.8`，唯一命中入口负责传递作用域。
+- `tools/verify_t0417_friendly_npc_damage_multiplier.gd`：扩展为 T0426 正式 / 教程双倍率、最低伤害及 Main 实际双命中回归。
+- `tools/verify_combat_damage.gd`：同步正式 `0.56` 与教程 `0.8` 解析断言。
+- `game_design.md` / `docs/COMBAT_SYSTEM.md` / `docs/TECH_ARCHITECTURE.md`：同步当前双作用域公式与隔离边界。
+
+稳定关系：`NPC 武器命中 → _tutorial_raid_active ? 0.8 : 0.56 → 防御曲线后取整 → 敌人 HP`；教程以外系统不伪造教程作用域。
+
+## T0427 反思期间延迟破防索引
+
+- `scripts/systems/CombatSystem.gd`：刷怪 / 警铃保留在途反思；破防扫描以 `can_npc_act` 跳过深睡锁，解锁后复用 T0421 分流。
+- `scripts/systems/NPCSystem.gd`：既有 `first_sleep_summary_active` / `can_npc_act=false` 继续提供不可打断与敌军目标过滤，无新增状态。
+- `scripts/systems/DailyReflectionSystem.gd`：原异步完成路径负责释放锁；CombatSystem 不再调用战斗取消入口。
+- `tools/verify_t0427_reflection_deferred_breach.gd`：默认本地夹具覆盖刷怪、警铃、站内破防期间保床 / 保请求及解锁后分流；`--real` 使用当前真实 Provider 验证在途请求不被战斗取消并在完成后响应。
+- `tools/verify_combat_alarm_rally.gd`：确认反思者不响应当次警铃，其他合格人员正常集结。
+
+稳定关系：`反思锁 → can_npc_act=false → 保持床位并跳过敌军目标 / 破防分流 → 反思完成释放锁 → 下一战斗 tick 复用 T0421`。
+
+2026-09-14：T0424 将 `data/building_defs.json.front_gate` 从最高 Lv.2 扩展为独立 Lv.1–6，新增 `tools/verify_t0424_front_gate_six_levels.gd` 覆盖逐级成本、工期、HP、Lv.6 封顶以及与围墙 / 后门的状态隔离；`tools/verify_building_repair_upgrade.gd` 改为读取运行态升级总工期。BuildingSystem、BuildingPanel 与 FormalGateArtView 无需新增专用权威逻辑。
+
+## T0422 宿舍升级疲劳恢复效率索引
+
+- `scripts/systems/NPCNeedsSystem.gd`：正式宿舍睡眠的 fatigue 速率读取 `sleep_recovery` 活动效率；satiety 与非正式基础 profile 不乘该倍率。
+- `data/building_defs.json`：既有 Lv.2 `sleep_recovery +0.2` 仍是升级奖励数据源。
+- `data/action_defs.json`：既有 `sleep_in_dormitory.building_efficiency_key=sleep_recovery` 作为系统间配置接线。
+- `tools/verify_t0422_dormitory_sleep_recovery_efficiency.gd`：覆盖 Lv.1、Lv.2、受损组合效率和饱食隔离。
+
+稳定关系：`正式 active 睡眠 → NPCNeedsSystem fatigue 速率 × BuildingSystem sleep_recovery`；BuildingSystem 已合并损伤与升级奖励，NPCNeedsSystem 只消费一次最终倍率。
+
+## T0420 防御器械部署成功音效索引
+
+- `assets/audio/ui/sfx_defense_device_deploy_wood_thud_v01.wav`：用户确认的 v31-01，0.500 秒木质落地单次声；T0434 后归入点击音效。
+- `art_source/audio/masters/ui/sfx_defense_device_deploy_wood_thud_v01.wav`：48 kHz / 24-bit 正式母版；原始候选与来源保留在 `art_source/audio/reviews/sample_pack_v31_defense_device_deploy/`。
+- `scripts/presentation/audio/InteractionAudioController.gd` / `data/presentation/interaction_audio.json`：消费权威部署成功信号，T0434 后以 UI 全局 2D、`+3 dB` 播放。
+- `scripts/ui/DefenseSlotPresenter.gd`：器械候选按钮跳过普通木点击，避免成功部署叠声。
+- `tools/verify_t0420_defense_deploy_audio.gd`：隔离验证正式资产、成功信号、单次播放、3D 坐标、Combat 总线和状态刷新静音。
+
+稳定关系：`DefenseDeviceSystem 成功提交部署 → defense_device_deployed(snapshot) → InteractionAudioController → UI 全局 2D 木质落地声（+3 dB）`；失败、卸下、读档恢复和 UI 自行刷新不产生声音事实，镜头位置不参与音量计算。
+
+## T0417 我方 NPC 对敌伤害 80% 索引
+
+- `scripts/systems/CombatSystem.gd`：保留通用防御 / 穿透解析，新增 NPC 武器专用 `0.8` 最终伤害解析；唯一 NPC 命中入口记录倍率前后结果。
+- `tools/verify_t0417_friendly_npc_damage_multiplier.gd`：覆盖无有效防御、部分穿透和最低 1 点离散边界，并确认通用解析未被改写。
+- `tools/verify_combat_damage.gd`：补充 NPC 专用解析及实际命中结果字段断言；当前完整脚本受 T0415 后既有训练升级前置断言阻断。
+- `docs/COMBAT_SYSTEM.md` / `docs/TECH_ARCHITECTURE.md`：记录新公式、共享命中入口和隔离边界。
+
+稳定关系：`NPC 近战 / 远程 / 冲锋武器命中 → _apply_npc_attack_to_enemy → 防御 / 穿透曲线 × 0.8 → 敌人 HP`；敌方、塔防、虔诚和坐骑碰撞不进入该倍率。
+
+## T0413 连续睡眠与疲劳恢复
+
+- `data/activity_needs.json`：睡眠基础疲劳恢复率为 `-12.5/h`，疲劳归零后由统一边界钳制阻止无效变化与反馈。
+- `data/action_defs.json`：`sleep_in_dormitory` 使用 28800 秒名义窗口及 `continuous_until_plan_changes` 完成策略。
+- `scripts/systems/ActionSystem.gd`：持续行动不再按名义计时自动完成；睡眠在非睡眠计划或其他权威中断时释放床位并写 `sleep_ended`。
+- `scripts/systems/NPCNeedsSystem.gd`：持续行动越过名义时长后仍按当前 needs profile 结算，不回退到 idle；零疲劳睡眠因此保持零变化。
+- `tools/verify_t0413_continuous_sleep.gd`：覆盖 8 小时恢复、零疲劳继续睡、同睡眠计划跨整点保持和非睡眠计划起床。
+- `tools/verify_activity_needs_framework.gd`、`tools/verify_t0129c_a5_p6a_formal_dormitory_sleep.gd`、`tools/verify_plan_action_completion_policy.gd`、`tools/verify_action_local_public_broadcast.gd`、`tools/verify_structured_memory_events.gd`：同步后的生活需要、宿舍、完成策略、见闻屏蔽和事件回归。
+
+## T1703-ICON 游戏图标资产
+
+- `assets/branding/this_is_not_my_war_icon_1024.png`：用户选定盾牌麦穗纹章的 1024×1024 透明 RGBA 母版。
+- `assets/branding/this_is_not_my_war.ico`：16/32/48/64/128/256 六档 32 位 Windows 图标；供 Godot Windows EXE / 任务栏、顶层启动器和内部冻结后端统一使用。
+- `art_source/branding/shield_wheat_selected_v1_original.png`：内置 imagegen 第一版选定原图归档。
+- `art_source/branding/icon_size_preview.png`：六档图标在浅 / 深背景上的原尺寸验证预览。
+
+## T1703-P1—P5 Windows 试玩版构建流水线索引
+
+| 路径 | 职责 |
+|---|---|
+| `docs/DEMO_PACKAGING.md` | Windows x86_64 一键打包权威方案：成品目录、唯一手工 DeepSeek Key、自动读取现有百炼语音凭据、隔离 staging、Godot / 后端发行 profile、启动器、审计、恢复策略和 P0-P6 实施顺序 |
+| `docs/TASKS.md` | T1703 总任务及 P0-P6 的状态、依赖与验收边界 |
+| `docs/TECH_ARCHITECTURE.md` | 同包冻结后端、凭据边界、demo 路由和启动器进程关系摘要 |
+| `docs/GODOT_ARCHITECTURE.md` | 临时发行 Godot 项目、GM/MCP 覆盖、正式启动和 PCK 排除边界摘要 |
+| `tools/build_windows_demo.ps1` | 唯一一键入口：安全读取本包 DeepSeek Key，自动读取当前百炼语音白名单配置，编排构建、审计、真实连通性检查、冒烟和原子发布；不生成 ZIP |
+| `tools/release/demo_build_config.json` | 固定目标、Godot 模板哈希、DeepSeek V4 Pro / 120 秒总时限、启动模式、运行时复制白名单和源文件完整性清单 |
+| `tools/release/prepare_demo_staging.py` | 在系统临时目录复制最小 Godot 运行集，并只在副本关闭 GM / MCP、配置独立 `user://` |
+| `tools/release/ensure_godot_templates.py` | 下载并校验 Godot 4.6.2 官方导出模板，只安装 Windows x64 debug / release 模板 |
+| `export_presets.cfg` / `tools/release/export_demo_client.py` | Windows release preset 与隔离 Godot 客户端导出入口 |
+| `backend/demo_server.py` | Waitress demo 生产入口、LocalAppData 运行目录、父进程监视和 localhost 绑定 |
+| `tools/release/build_demo_backend.py` | 将固定 DeepSeek / 百炼 profile、LLM 总时限及构建期凭据封入 PyInstaller onedir 后端 |
+| `tools/release/demo_launcher.py` / `build_demo_launcher.py` | 顶层无控制台启动器逻辑与冻结构建；负责健康门禁、客户端启动和自有后端回收 |
+| `tools/release/finalize_demo_package.py` | 生成玩家说明、第三方许可、构建追踪信息和逐文件 SHA-256 manifest |
+| `tools/release/audit_demo_package.py` | 成品顶层 / 后缀允许清单、开发 Key 缺失、授权 Key 位置、发行 profile 与 PCK MCP 审计 |
+| `tools/release/verify_demo_provider_connection.py` | 以隔离运行目录启动冻结后端并执行 DeepSeek `/config/ai-service/test`；Key 不走参数 |
+| `tools/release/verify_source_integrity.py` | 发布前按 staging manifest 再次核对开发工作区关键文件 SHA-256 |
+| `tools/release/verify_package_manifest.py` | 复制到 `dist` 候选目录后，按 BUILD_MANIFEST 逐文件复核路径、大小和 SHA-256，避免发布锁或复制损坏产生半包 |
+| `tools/release/README_试玩说明.template.txt` | 成品根目录玩家说明模板 |
+| `tools/release/requirements-build.txt` | Waitress / PyInstaller 固定构建依赖 |
+| `tools/release/verify_branding_icon.py` | 无第三方依赖校验 1024 RGBA PNG 和六档 32 位 ICO，作为一键构建 preflight |
+| `tools/verify_t1703_p1_demo_staging.py` | P1 staging、GM/MCP、启动模式、T0444 教程旧倍率排除、Godot 解析和源文件完整性专项 |
+| `tools/verify_t1703_p2_demo_backend.py` / `verify_t1703_p2_frozen_backend.py` | P2 demo profile 与真实冻结后端专项；锁定 120 秒总时限且拒绝宿主环境覆盖 |
+| `tools/verify_t1703_p3_export_config.py` / `verify_t1703_p3_demo_export.py` | P3 preset、模板和实际 Windows 导出专项 |
+| `tools/verify_t1703_p4_demo_launcher.py` | P4 健康匹配 / 拒绝与生命周期专项 |
+| `tools/verify_t1703_p5_build_contract.py` / `verify_t1703_p5_provider_check.py` / `verify_t1703_p5_fake_package.py` | P5 一键脚本合同、Provider 结果门禁和假凭据完整成品专项 |
+| `tools/verify_t1703_p5_publish_copy.py` | P5-R1 Windows 发布专项：保持源 EXE 运行锁定，验证 PowerShell 复制、`dist` 候选改名和损坏哈希拒绝 |
+| `tools/verify_t1703_p5_branding_icons.py` | P5-R2 品牌图标资产、Godot / export preset、启动器与后端构建接线专项 |
+| `tools/verify_t1703_p5_default_fullscreen.gd` | P5-R3 显示合同专项：项目首帧与新用户默认全屏，同时保留已有显式窗口化偏好 |
+| `tools/verify_t1703_main_menu_exit.gd` | P5-R3 主菜单退出专项：按下退出、确认对话并要求实际触发 `SceneTree.quit()` |
+| `tools/verify_t1703_p4_exit_cleanup.py` | P4/P5-R3 启动器生命周期合同：窗口关闭与主菜单退出两条游戏结束路径均回收自有后端 |
+
+P5-R4 后，`prepare_demo_staging.py` 还会把被 Godot 当作翻译源的 `audio_asset_manifest.csv` 逐字节复制为临时 `.runtime.txt`，并只改写 staging 内 AudioManager；P5-R5 起，staging、`export_demo_client.py`、BUILD_MANIFEST 与专项都从该唯一 CSV 自动派生资产数量，不再维护易漂移的固定数字。每次导出仍启动真实 Windows EXE，要求清单、分类和全部音频流数量一致且菜单音乐无运行资源错误，作为发布前硬门禁。`build_windows_demo.ps1` 在耗时构建前检查固定后端端口，冲突时只报告 PID，不终止开发后端或另一试玩实例。
+
+P5-R6 起，正式 CSV 完成 runtime 文本生成与验证后，`prepare_demo_staging.py` 只在临时发行副本删除音频 manifest 目录中的 CSV、`.csv.import` 与二进制 `.translation` 导入副产物。它们没有运行时消费者，也不再进入 Godot release 导入 / 导出，避免开发编辑器并发重写生成物时复制到中间态；开发工程与许可源不受影响。
+
+稳定关系：构建读取当前工作区正式运行内容，但全部发行覆盖发生在临时副本；普通数值 / 难度变化只需重跑构建。项目首帧和新用户设置默认全屏，已有玩家显式显示偏好继续保留；任何游戏进程退出都由启动器回收自有后端。P1-P4 已完成；P5 实现和假凭据全链已通过，等待专用 DeepSeek 打包 Key 执行正式构建。
+
+## T1704 PPT 交付产物（含视觉优化版）
+
+2026-09-15：用户明确宣传图片应为 5 张 1920×1080 原始全屏截图，不带额外标题、说明或装饰。已从已有实机原图选出驿站全景、布鲁诺征召交涉、格伦工作安排交涉、布鲁诺逃离挽留记录、第四波城墙塔防守城战，直接复制到 `artifacts/t1704_promo_fullscreen/`，提交包为 `宣传图片_五张原始全屏截图.zip`（仅含五张 PNG）。每张与原始截图逐字节一致，未裁切、缩放、拼接或添加文字；游戏自身 UI 保留。尺寸、PNG 解码和 ZIP 检查通过，当前宣传材料以本版取代此前排版版。复用已拍摄原图，本轮未启动游戏、未调用模型、未改代码；PPT 和文案不动。
+
+2026-09-14：用户再次手调并确认 v6_ghi_ready 为最终 PPT。基于最新源文件（SHA256 d8dcfc3a6f05d4b3beaee46cbe4ffd94901734ac6821d94da6ff9b7abe5eaa6e）清空全部备注文字，另存 `artifacts/t1704_ppt/output/这不是我的战争-游戏作品介绍Deck.pptx`。共 19 页，清空 16 个备注部件中的 5960 个字符；逐部件校验确认除备注 XML 外所有内容逐字节不变，保留用户全部页面编辑。包结构与导入检查通过，原文件保留。本文件为当前提交用 Deck；宣传图和文案不变。
+
+2026-09-13：用户确认宣传图采用 v3 去短线版。T1704 已按最新填报要求完成两段文案第一稿：游戏亮点 703 字符（上限 1024）、AI 开发过程 1578 字符（上限 2048），含标点、字母、数字及空白保守计数。已回溯早期任务与开发日志，开发说明覆盖策划拆分、项目骨架、Godot / Codex / MCP、信息架构、3D 美术、测试性能与材料制作，区分人为设计验收和 AI 实现工作。正文写入 PROJECT_SUBMISSION.md 并另存 artifacts/t1704_copy/ 两个 TXT。文案待审阅，整体提交任务保持 Partial；PPT 与宣传图不变，无游戏代码修改或模型调用。
+
+2026-09-13：T1704 按用户要求去除五张宣传图游戏名左侧金色短线，交付 `artifacts/t1704_promo_v3/宣传图片_去短线版.zip` 与五张独立 PNG。逐像素比对确认每张仅 36×4 的短线区域改变，其余像素完全一致；尺寸仍为 1920×1080。05 沿用第四波城墙塔防守城实机，PPT 未改。
+
+2026-09-13：T1704 按用户要求将宣传图 05 从事件与记忆改为第四波守城实机，交付 `artifacts/t1704_promo_v2/05_守城成果.png` 与 `宣传图片_更新05守城版.zip`。01—04 逐字节不变，PPT 定稿不动。用户追加授权城墙升级与塔防；最终 GM 布景为全员征召配装与集结、围墙 Lv.6 / 正门 Lv.2 / 主厅 Lv.6 / 工坊 Lv.2、4 箭塔与 4 弩床。正式战斗在 D1 12:00:44 自然结束，第四波 36 敌军全部击退（resolved_defeated_enemy_count=36、remaining_enemy_count=0、last_failure_result 为空）；未用清敌或直接扣敌人 HP 伪造结果。成图取该次交战中全屏画面，附战后原图及结果快照。五张均为 1920×1080 PNG，尺寸与视觉检查通过。只新增材料和临时拍摄脚本，无生产代码 / 配置 / GM 面板更改；模块索引及材料说明同步更新。整体 T1704 保持 Partial，宣传图待用户审阅。
+
+2026-09-13：按用户确认的五张方案完成 T1704 宣传图片第一版，目录 `artifacts/t1704_promo_v1/`；包含主视觉、对话征召、劳动力交涉、逃离挽留、事件与记忆，均为 1920×1080 PNG，附五张总览、ZIP、原始截图与来源说明。墨绿配色与定稿 PPT 一致，截图只裁切缩放和组合，未改写对话。第 5 张改用可读的见闻与正式对话记录，展示布鲁诺连续的看火顾虑；不使用已裁断的日记小图。五图尺寸与文件检查、逐图目视检查通过。PPT 定稿、生产代码和启动设置未动，未新调用模型。宣传图第一版完成待用户审阅，整体提交材料仍 Partial。
+
+2026-09-13：T1704 补齐用户最新手改 PPT 中 G/H/I 三处，输出 `artifacts/t1704_ppt/output/这不是我的战争_项目介绍_v6_ghi_ready.pptx` 与 `GHI全屏截图.zip`。G 为公告安排与格伦反对意见；H 为布鲁诺经两轮交涉同意应征；I 为真实挽留回复及停止逃离事件。原图全屏 1920×1080，I 初始逃离由现有 GM 入口触发，后续模型判定与程序结果真实。基础 mock 接口检查及真实 DeepSeek 路径通过，无 mock fallback。只替换三处占位，其他原始包部件逐字节保留、非占位对象保留；三页渲染和 19 页包结构检查通过。未改生产代码、启动模式或模型配置。T1704 整体提交材料保持 Partial，G/H/I 本轮补图完成；详见输出目录 GHI情景说明.md。
+
+| 路径 | 职责 |
+|---|---|
+| `artifacts/t1704_ppt/output/` | 16 页 PPT 第一版 / v2_final 视觉优化版 / v3_green 统一墨绿版 / v4_sections 用户手改保留与三张章节概览 / v5_ready 五处实机补图（19 页）、对应页面总览、全屏截图、已选宣传图与待补图清单 |
+| `artifacts/t1704_ppt/build/` | 定稿脚本快照、Artifact Tool 构建源、临时全屏拍摄脚本、渲染与验证记录 |
+
+
+## T0410 AI 服务配置与错误反馈索引
+
+| 文件 | 职责 |
+|---|---|
+| `backend/services/ai_service_manager.py` | 管理试玩 / 自定义配置、Provider 探测、Windows DPAPI 凭据持久化与运行时 ModelAdapter 切换 |
+| `backend/app.py` | 暴露 AI 服务只读、应用与测试端点；响应永不返回 Key |
+| `backend/services/model_adapter.py` | DeepSeek 默认 V4 Pro；默认不启用游戏预算，按准备发送、HTTP 头、首个有效 Token、完成记录阶段，并以绝对总时限区分排队超时与生成超时 |
+| `scripts/ui/SettingsPanel.gd` | 读取、测试并应用 AI 服务草稿；Key 只随本次本机请求提交 |
+| `scripts/systems/LLMBridge.gd` | 将所有正式 LLM 非取消失败统一发布为可显示错误载荷 |
+| `scripts/ui/AIServiceErrorPresenter.gd` | 在 Main 顶部显示可关闭的错误码、HTTP 状态与消息；排队超时提供固定 DeepSeek 重试提示 |
+| `scripts/core/EventBus.gd` | 提供 `ai_service_error(error)` 表现信号 |
+| `scenes/main/Main.tscn` | 挂载全局 AI 服务错误条表现节点 |
+| `tools/verify_t0410_ai_service.py` | 覆盖后端 Key 隔离、重启恢复、路由切换及 429 错误合同 |
+| `tools/verify_t0410_ai_service_ui.gd` | 覆盖设置 Key 不落 Godot 配置及顶部错误条字段 |
+| `tools/verify_api_budget_debug.py` | 将正式默认预算断言更新为全零，保留显式运维预算回归 |
+
+稳定关系：Godot 始终只请求同包 `127.0.0.1` 后端；试玩 Key 由打包环境注入，玩家 Key 由后端系统凭据层持有。切换只替换后续请求使用的 Adapter，不改变 Prompt、Schema、NPC / 资源 / 战斗权威。
+
+## T0035-R4 转产后计划续作索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CraftingSystem.gd` | 在非空新制造目标 / revision 落地后通知计划层处理本次实际中断者 |
+| `scripts/systems/DailyPlanSystem.gd` | 校验当前小时制造计划所有权，清除旧派发签名并 deferred 复用统一派发 |
+| `tools/verify_t0035_r4_crafting_target_plan_resume.gd` | 覆盖格伦与欧文转产后的新 recipe / revision 自动续作、单一中断事件和零计划重估 |
+
+稳定关系：ActionSystem 的旧周期清理、工位释放、事件写入与新周期正式校验不变；CraftingSystem 不直接拥有 NPC 派工。
+
+## T1505-P6R55 跨天制定计划原位暂停索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DailyPlanSystem.gd` | 跨天计划准备只清理旧计划所有权，不中断 pending / active 行动或覆盖真实姿态；新计划按运行态 identity 原位采用或正常替换 |
+| `tools/verify_t1505_p6r55_cross_day_plan_pose_hold.gd` | 覆盖床上睡眠、祈祷席坐姿、站立工作在规划等待与同 action 续接中的坐标、挂接、工位、elapsed 和属性冻结，以及不同项释放 |
+
+稳定关系：`day_started → TimeSystem 暂停 → 原行动事务 / 空间姿态保持 → 8 份计划成功 → 同 action 采用 / 不同 action 替换 → 恢复时间`；计划思考与对话锁仍读取 `llm_activity`。
+
+## T0414 全敌人生命与攻击增强索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/enemy_waves.json` | 正式五波 14 个独立敌军组的权威数值；T0414 基于修改前值应用 HP / Max HP `×1.3` 与攻击 `×1.5` |
+| `data/tutorial_config.json` | 序章夜袭敌军权威数值；同样纳入 T0414 倍率，教程专属器械伤害倍率与艾达保护边界不变 |
+| `tools/verify_t0414_enemy_stat_increase.gd` | 锁定 15 个敌军组的修改前基线、整数取整、最终值、组数及 HP / Max HP 同步 |
+| `docs/COMBAT_SYSTEM.md`、`docs/GAME_BALANCE.md` | 当前运行合同、完整数值表与历史平衡证据失效边界 |
+
+## T0121-R1 MDA 数值重估索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/enemy_waves.json` | T0121-R1 的第一波 `32 → 33` 现作为 T0414 修改前基线；当前正式五波全部敌军以 T0414 新值为准 |
+| `analysis/t0121_r1_balance_reestimation.py` | 读取当前权威 JSON，以显式 32 HP 基线对比已实施 33 HP，执行离散击杀 / 过量伤害、接战、命中、目标分配、现有受击硬直与器械战损的配对种子机制筛选 |
+| `analysis/t0121_r1_mda_balance_reestimation.ipynb` | 已执行的 `BASELINE / IMPLEMENTED` 审计、断言与图表；明确筛选率不等于玩家胜率 |
+| `artifacts/analysis/t0121_r1/*.csv` | 200 种子断点、输入曲线、逐样本与 P10 / P50 / P90 汇总结果 |
+| `tools/analyze_t0121_r1_combat_matrix.gd` | Main.tscn 逐物理帧详细遥测入口；隔离真实零 NPC 仅塔对照，按正式槽位相对布阵并记录来源、打断、目标驻留和战损 |
+| `tools/verify_t0121_game_balance.gd` | T0414 后锁定第一波 43/43 HP、箭塔保持 110 HP / 3 防御 / 16 伤害 / 0.72 攻速及三击断点 |
+| `tools/verify_t0121_fifth_wave_build.gd` | 第五波构筑改为逐物理帧推进与正式墙位相对布阵；当前成熟构筑仍失败，保留为校准门禁 |
+| `tools/verify_t0122_continuous_workflow.gd` | 非战斗期压缩推进，波次前 1 秒和战斗期逐 1/60 秒推进物理运动 / 弹体 / 权威时间 |
+| `docs/GAME_BALANCE.md` | 固定 MDA 目标、旧方法失效原因、已实施值、当前内核结果与剩余验证门禁 |
+
+## T1505-P6R54 停留位置索引
+
+- `data/npc_stay_positions.json`：各地点按 NPC ID 固定分配的隐性坐标。
+- `scripts/world/StationLayoutController.gd`：加载坐标并转换为正式世界坐标；不创建停留位节点。
+- `scripts/systems/NPCSystem.gd`：仅为 visit_location 替换建筑最终导航目标和广场目标。
+- `tools/verify_t1505_npc_stay_positions.gd`：88 点正式导航连通、间距及八人跨地点实走验证。
+
+
+## T0403-R4 正门方向空间折半索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/station_layout.json` | 正式地表、北侧自然边界、敌军路线 / 出生、导航与镜头坐标权威 |
+| `data/presentation/station_spatial_plan.json` | 独立空间灰盒与 48 敌压力编队镜像规格 |
+| `data/presentation/environment_art.json` | 新北边缘内的前林和自然散布包络 |
+| `scripts/world/StationLayoutController.gd` | 从敌军横断面派生生产导航北界校验 |
+| `tools/verify_t0129a_station_spatial_sandbox.gd` | 地表、边距、出生区、编队、镜头 21:9 验收 |
+| `tools/verify_t0129b_c1_station_layout.gd` | 正式地表与 CameraRig 配置验收 |
+| `tools/verify_t0129c_a4_p1_formal_enemy_navigation.gd` | 新外围路线到正门的实体导航验收 |
+| `tools/verify_enemy_wave_generation.gd` | 正式波次相对配置出生区验收 |
+| `tools/verify_t0135_p4_dense_forests.gd` | 缩短后前林覆盖、净空与分块密度验收 |
+
+## T0081-R2 零饱食换血索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/activity_needs.json` | 换血倍率与生效档位类别 |
+| `scripts/systems/NPCNeedsSystem.gd` | 未支付饱食、HP 余量、归零事件和重估信号权威 |
+| `scripts/systems/NPCSystem.gd` | 无战斗表现的需求伤害与统一昏迷出口 |
+| `scripts/systems/MemorySystem.gd` | `zero_satiety_triggered` 事件合同 |
+| `scripts/systems/DailyPlanSystem.gd` | `low_satiety` 完整两阶段重估 |
+| `tools/verify_t0081_r2_zero_satiety_hp_and_plan.gd` | 数值、事件、昏迷、马匹隔离和 mock 两阶段专项 |
+| `tools/verify_t0081_r2_zero_satiety_plan_revision_real.gd` | 真实 Provider 两阶段业务验收 |
+
+## T1505-P6R52 连续祈祷索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/action_defs.json` | 将普通祈祷声明为计划持续则续轮；主持弥撒仍为每计划小时单次 |
+| `scripts/systems/DailyPlanSystem.gd` | 复用通用 `repeat_while_planned` 完成后延迟续轮 |
+| `scripts/systems/ActionSystem.gd` | 完成本轮祈祷并提供原位 hold，不新增第二套祈祷循环 |
+| `tools/verify_t0129c_a5_p5i_formal_chapel_work.gd` | 回归弥撒结束后的计划内原席续祷与计划改变后的停止 |
+| `tools/verify_plan_action_completion_policy.gd` | 锁定普通祈祷与主持弥撒的不同完成策略 |
+
+## T1505-P6R51 门队列恢复防回头索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/world/ActorMotionBody.gd` | 门队列恢复时在原路径内压缩已越过且安全的陈旧点，并支持显式方向门目标的越面到达 |
+| `scripts/systems/NPCSystem.gd` | 为所有正式建筑进 / 出门子步骤提供正确的通行方向，不改变行动或路径所有权 |
+| `tools/verify_t1505_door_queue_forward_resume.gd` | 回归越点暂停、队首恢复、未越点保护、原路径保持与门目标越面完成 |
+
+## T1505-P6R50 固定祈祷席索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/building_defs.json` | 保存八名初始 NPC 到教堂 1–8 号祈祷席的后台固定归属 |
+| `scripts/systems/BuildingSystem.gd` | 复用通用 `assigned_npc_id` 预约 / 提交规则，不增加教堂分支 |
+| `scripts/ui/BuildingPanel.gd` | 继续只显示工位名称和实时占用，不展示固定归属 |
+| `tools/verify_t1505_fixed_chapel_prayer_seats.gd` | 验证映射、席位排他、未来扩展位和 UI 文本不变 |
+| `tools/verify_t0129c_a5_p5i_formal_chapel_work.gd` | 使用园丁固定 3 号席回归正式祈祷、参礼与弥撒 |
+
+## T0403-R2 NPC 卡住气泡索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/EventBus.gd` | 提供不被对话语气音频消费的 NPC 状态情绪表现信号 |
+| `scripts/npc/NPC.gd` | T0437 后将非终止 `stuck_timeout` 通知映射为三秒愤怒 Emoji，不进入失败链 |
+| `scripts/ui/NPCPortraitViewport.gd` | 在当前第二人称人物框复用同一气泡 presentation |
+| `tools/verify_t0403_r2_stuck_emotion_bubble.gd` | 验证默认阈值、触发隔离、世界 / 人物框同步和三秒生命周期 |
+
+## T0403-R1 NPC 避障余量试验索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/physics_navigation.json` | 将正常 NPC 的额外 RVO 避障余量配置为 `0.05 m` |
+| `scripts/world/ActorMotionBody.gd` | 继续按实体半径与共享 padding 派生运行态 NavigationAgent3D 半径 |
+| `tools/verify_t0129c_a2_actor_motion.gd` | 锁定 `0.30 / 0.36 / 0.35 m` 的实体、交互与避障半径合同 |
+
+## T1505-P6R49 建筑门洞与队列宽度索引
+
+| 文件 | 职责 |
+|---|---|
+| `data/physics_navigation.json` | 保存 10 座可进入建筑的逐建筑物理门宽与 `2.6 m` 队列感应宽度 |
+| `scripts/world/StationLayoutController.gd` | 将逐建筑门宽应用到静态碰撞、合同网格、配置校验与运行态快照 |
+| `scripts/world/DoorPassageQueueArea.gd` | 提供与正式配置一致的 `2.6 m` 缺省横向范围 |
+| `tools/verify_t0129c_a1_static_collision.gd`、`verify_t0129c_a3a_production_navigation.gd` | 验证逐建筑物理缺口与生产路径穿门合同 |
+| `tools/verify_t1505_door_token_queue.gd`、`verify_t1505_day1_breakfast_routes.gd`、`verify_t0219_blacksmith_perimeter_navigation.gd` | 验证窄化队列、八人早餐与铁匠铺唯一入口 |
+
+## T0035-R3 制造中断摘要区分索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/MemorySystem.gd` | 对制造目标变更的 `work_failed` 使用“{NPC}的{建筑}制造中断了”模板，其他失败继续使用“未能完成”模板 |
+| `tools/verify_t1505_p6r45_plan_hour_crafting_stop_event.gd` | 锁定格伦目标切换后的精确中断摘要，并继续覆盖整点停止与普通失败 |
+
+## T1505-P6R48 正式对话接近陈旧失败隔离索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/NPCSystem.gd` | 在正式空间会话启动时原子消费前一行动的终态失败，再允许地点 / 路线 helper 发布状态 |
+| `tools/verify_t1505_stale_failure_formal_session.gd` | 覆盖旧制造失败进入正式 `talk_to_npc` 会话时首批全部可观察状态的隔离 |
+
+稳定关系：DailyPlanSystem 的行动失败判别 / 修订语义与 LLMBridge 的对话预约候选过滤保持不变。
+
+## T0035-R2 制造目标变更中断原因索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 在统一 active 工作收束口将 `crafting_target_changed` 映射为“守备官更改了制造目标”，并保留内部原因字段 |
+| `tools/verify_t1505_p6r45_plan_hour_crafting_stop_event.gd` | 覆盖整点停止、普通中断及 active 制造目标切换的事件类型、单次写入、payload 与摘要 |
+
+## T0354-R1 应用音量保持窗口状态索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/core/ClientSettings.gd` | 标准化并保存客户端偏好；仅在五项运行时显示字段实际变化时重新应用原生窗口设置 |
+| `scripts/ui/SettingsPanel.gd` | 共享“应用”入口保持不变；音量与同值客户端草稿继续一次提交，由 ClientSettings 过滤无效显示重设 |
+| `tools/verify_t0354_r1_audio_apply_preserves_window.gd` | 覆盖同值提交、非显示字段提交与真实显示字段变化的应用次数合同 |
+
+稳定关系：`SettingsPanel 音量 / 客户端草稿 → AudioManager 保存 + ClientSettings 标准化比较 → 仅真实画面变化触碰 DisplayServer`。
+
+## T1505-P6R47 教堂礼拜原位状态切换索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 礼拜自然完成先建立原位 hold；同一祈祷 / 主持行动直接复用原工位，并维持独祷 / 参礼内部模式转换 |
+| `scripts/systems/NPCSystem.gd` | 保存祈祷席或祭坛的无结算完成态，严格校验同 action / building 后恢复正式会话，不改坐标与占用 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 将 idle 下的 `seated_prayer` attachment 映射为 `seated_idle` |
+| `tools/verify_t0129c_a5_p5i_formal_chapel_work.gd` | 覆盖弥撒 / 祈祷自然完成、原位模式切换、空闲留座、DailyPlan 同席续开与跨小时保护 |
+
+## T1505-P6R46 导航失败计划断路索引
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DailyPlanSystem.gd` | 在 NPC 状态监听与公共重估入口统一过滤纯导航失败，清理当前执行所有权但不发起 / 排队计划判别或修订 |
+| `tools/verify_t1505_navigation_failure_no_reevaluation.gd` | 覆盖卡住、目标不可达、正式空间路线失败、递归修订防线，以及非导航业务失败仍触发判别的对照合同 |
+
+稳定关系：`NPCSystem / ActionSystem 导航失败收束 → 结构化诊断状态 → DailyPlanSystem 消费但不重估`；业务失败仍沿既有 `ActionSystem → DailyPlanSystem → LLMBridge` 链处理。
+
+## T1505-P6R45 制造计划时段结束事件语义
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 区分 `plan_hour_changed` 的正常工作停止与真实工作失败，并在两者 payload 中保留调用方实际中断原因 |
+| `scripts/systems/MemorySystem.gd` | 注册 `work_stopped` 事件 Schema；制造类摘要显示“因当前计划时段结束而停止制造” |
+| `tools/verify_t1505_p6r45_plan_hour_crafting_stop_event.gd` | 用真实铁匠铺 active 工作验证整点停止、普通中断与制造目标切换的事件类型、payload 和摘要 |
+
+## T0035-R1 更换制造目标返还材料
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/CraftingSystem.gd` | 从已完成阶段确定性汇总投入，在目标 revision / 行动中断前原子返还，并在快照与结果中暴露返还明细 |
+| `scripts/ui/BuildingPanel.gd` | 将非零进度更换确认文案改为“进度清零但返还已投入材料”，继续只提交权威请求 |
+| `tools/verify_crafting_pipeline.gd` | 覆盖取消零变化、小数进度零返还、整数阶段精确返还、弹窗文案与项目清理 |
+| `tools/verify_t0386_compressed_wave_balance.gd` | 覆盖开局箭塔 4 / 12 半成品确认后返还木材 4 |
+
+## T1505-P6R44 对话异步计划链跨小时接力
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DailyPlanSystem.gd` | 整点发现仍在判别、修订或排队的当前玩家对话链并接续派发屏障；同链迟到终态只解锁最新小时，不应用旧内容或误删新会话 marker |
+| `tools/verify_player_dialogue_plan_resume.gd` | 回归第一层 / 第二层迟到响应和跨小时取消，验证旧工位保持、终态清理及当前小时行动恰好一次落地 |
+
+## T1505-P6R43 守备官对话跨小时保持
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/DailyPlanSystem.gd` | 整点遇到活跃玩家会话只登记 deferred 当前计划；会话收口后校验旧 action 与新小时项并按结果恢复或替换 |
+| `scripts/systems/DialogSystem.gd` | 玩家完成 / 取消才释放会话目标和待派发计划，整点不拥有主动结束玩家会话的入口 |
+| `scripts/systems/ActionSystem.gd`、`scripts/systems/NPCSystem.gd` | suspended transaction 与原位工位 hold 可跨整点保持，新项落地时统一释放旧事务 |
+| `tools/verify_player_dialogue_plan_resume.gd` | 真实 `hour_started` 回归：同一 active 对话、零结算 / 零计划 LLM、坐标 / 工位 / 姿态保持及结束后新小时项单次派发 |
+
+## T1505-P6R42 正式行动对话原位暂停
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 暂存 / 恢复所有安全正式事务，冻结结算并处理服务依赖、建筑 / 制造失效与改派清理 |
+| `scripts/systems/NPCSystem.gd` | 保留工位、挂接、世界坐标和内部路线，保存 / 恢复正式空间与诊所表现阶段 |
+| `scripts/npc/NPC.gd` | 叠加对话专用运动暂停，不取消仍存活的 NavigationAgent 请求 |
+| `scripts/systems/DailyPlanSystem.gd` | 不同后续计划派发前释放暂存；同一 action 交由 ActionSystem 原位恢复 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 暂停态按站 / 坐 / 躺 / 骑姿态输出对应 idle 表现 |
+| `tools/verify_player_dialogue_formal_action_resume.gd` | 覆盖睡眠、祈祷、坐诊、锻造、工程制造及真实玩家对话取消的暂停 / 恢复 / 改派链 |
+| `tools/verify_player_dialogue_plan_resume.gd` | 保留玩家对话判别、移动与进食事务端到端回归 |
+
+## T1505-P6R39 正式工作到岗校验与全工位可达性
+
+| 路径 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 把工作业务校验延后到真实工位到达；单工位路线失败时排除并重试其他兼容空位 |
+| `scripts/systems/BuildingSystem.gd` | 为工位预约增加失败候选排除列表，同时保留既有占用、预约和固定归属权威 |
+| `data/building_fixture_layouts.json` | 将铁匠铺 / 工械坊 6 个当前及升级工作位的到达容差统一为 0.25 m |
+| `data/action_defs.json` | 移除已废弃的诊所单项远程材料预检例外字段 |
+| `docs/DATA_SCHEMA.md` | 明确正式工作的资源、制造目标与启动条件只在真实到岗后校验 |
+| `tools/verify_t1505_p6r39_workstation_arrival_contract.gd` | 审计全部正式工作 action、当前 / 升级工位 NavMesh 终点，并复现格伦与欧文两条故障链 |
+| `tools/verify_t0129c_a5_p5b_formal_blacksmith_work.gd` | 验证缺制造目标时先到炉位再失败 |
+| `tools/verify_t0129c_a5_p5c_formal_workshop_work.gd` | 验证缺目标到岗失败以及一号工程位正常开工 |
+| `tools/verify_t0129c_a5_p5d_formal_dining_work.gd` | 验证缺粮时先到灶台再失败 |
+| `tools/verify_t0129c_a5_p5f_formal_tavern_work.gd` | 验证缺粮时先到酒窖工位再失败 |
+
+## T1505-P6R38 通用双向门洞令牌队列
+
+| 路径 | 职责 |
+|---|---|
+| `data/physics_navigation.json` | 配置全建筑门队列的 8 令牌、P6R40 收紧后的 2.8 × 3.0 × 2.8 m 门区与离区滞回 |
+| `scripts/world/DoorPassageQueueArea.gd` | 按真实入区顺序登记敌我角色、发放 / 压缩令牌、暂停等待者并处理 8 人以上溢出 |
+| `scripts/world/StationLayoutController.gd` | 为 10 个可进入建筑门生成独立队列区，校验合同并提供运行态快照 |
+| `scripts/world/ActorMotionBody.gd` | 叠加门队列暂停与外部暂停，在不清除活动路径的前提下停走 / 恢复 |
+| `scripts/systems/NPCSystem.gd` | 删除食堂专用预排队，保持正式进出路线和行动状态由原系统继续拥有 |
+| `scripts/systems/CombatSystem.gd` | 让友军站位卡住恢复跳过合法门队列暂停；敌军沿用共享 paused 快照 |
+| `tools/verify_t1505_door_token_queue.gd` | 验证敌我双向、8 令牌、溢出、释放压缩和路径保持 |
+| `tools/verify_t1505_day1_breakfast_routes.gd` | 验证 10 门合同、首日食堂排队、固定餐位、无失败 / 重估及最终八人用餐 |
+
+## T0045C 暂停期间镜头粘键修复
+
+| 路径 | 职责 |
+|---|---|
+| `scripts/camera/CameraRig.gd` | 暂停期间继续接收输入生命周期，清空 WASD / Shift / 中键状态并拒绝平移、缩放和拖拽 |
+| `tools/verify_camera_rig_input.gd` | 覆盖暂停前按键、暂停内松键与新按键、恢复后不粘键的确定性回归 |
+
+## T1505-P6R37 食堂入口排队（历史实现，已由 P6R38 替换）
+
+| 文件 | 职责 |
+|---|---|
+| `data/physics_navigation.json` | 配置启用排队的建筑、双列等候位间距和等候到达容差 |
+| `scripts/world/StationLayoutController.gd` | 校验并只读暴露入口排队配置，纳入物理导航诊断快照 |
+| `scripts/systems/NPCSystem.gd` | 管理食堂单人过门令牌、稳定等候位、等待非失败状态和取消 / 失败放行 |
+| `tools/verify_t1505_day1_breakfast_routes.gd` | 连续压力验证固定餐位、排队预约、单人过门、无重估及最终八人用餐 |
+
+## T1505-P6R36 用餐完成后坐姿空闲
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/systems/ActionSystem.gd` | 完成进食后终止 active 结算并建立无结算留座；下一项有效行动和显式中断负责释放 |
+| `scripts/systems/NPCSystem.gd` | 保存 / 释放 `completed_in_place_hold` 正式工位会话，维持餐位占用、坐姿锚点与统一清理边界 |
+| `scripts/presentation/characters/ChibiCharacterPilot.gd` | 将留座中的 `sitting` 挂接映射为循环 `seated_idle / Sit_Chair_Idle` |
+| `tools/verify_t0129c_a5_p5j_formal_dining_eat.gd` | 验证完成后留座、停止进食动画、额外一小时零结算及后续中断清理 |
+
+## T1505-P6R35 首日早餐固定餐位与食堂通行
+
+| 文件 | 职责 |
+|---|---|
+| `data/building_defs.json` | 以既有 `assigned_npc_id` 权威字段把 8 名初始 NPC 固定分配到 1–8 号用餐席，9–10 号保留为未分配备用席 |
+| `data/building_fixture_layouts.json` / `data/station_layout.json` / `data/presentation/station_spatial_plan.json` | 收拢内侧四把椅子及其逻辑中心，使用贴合椅腿的碰撞包络并为十席声明 `0.45 m` 终段到达容差，恢复中央 NavMesh 通道 |
+| `scripts/systems/ActionSystem.gd` | 对 pending 行动提交加 NPC 级重入锁，并在正式进食结算前校验仍处于所预留工位 |
+| `scripts/systems/NPCSystem.gd` | 输出座位会话不一致诊断；只有真实挂接过占用锚点的清理才回到工位安全点，未挂接路线保持失败位置 |
+| `tools/verify_t1505_day1_breakfast_routes.gd` | 从教程交接后的第 1 日 06:00 验证八人固定席位、同时进食、马塞尔不折返及欧文失败清理零位移 |
+| `tools/verify_t0129c_a2b_p4_dining_formal_navigation.gd` / `tools/verify_t0129c_a5_p5j_formal_dining_eat.gd` | 验证固定席位在占用、停止、不可达、替换、建筑失效、昏迷及正式资源结算中的生命周期 |
+
+## T1505-P6R34 艾达固定初始夜袭日记
+
+| 文件 | 职责 |
+|---|---|
+| `data/npc_initial_long_memory.json` | 艾达固定第四篇夜袭日记；正常完成、任意阶段跳过和调试直达共享同一初始记录 |
+| `data/tutorial_config.json` / `scripts/systems/TutorialDirector.gd` | 不再保存、读取或在交接时追加日记，只负责教程表现、隔离和主循环交接 |
+| `tools/verify_npc_initial_long_memory.py/.gd` | 锁定 8 人共 25 篇初始日记、艾达唯一夜袭记录及 UI / 六类 LLM 投影 |
+| `tools/verify_t1505_tutorial.gd` / `tools/verify_t1505_tutorial_boundaries.gd` | 验证教程开始前已存在，正常完成与全部 18 阶段跳过均不重复、不丢失 |
+
+## T1704 项目说明与提交材料
+
+| 文件 | 职责 |
+|---|---|
+| `docs/PROJECT_SUBMISSION.md` | 参赛项目说明与提交材料入口，记录赛道、评审、必交材料及亮点介绍字数要求；后续承接材料正文 |
+
+## T0400 正式驿站加载优化（已回退）
+
+`docs/LOADING_PERFORMANCE_OPTIMIZATION_PLAN.md` 仅保留根因、试做数据与回退决策。当前没有烘焙器、生成静态核心或 T0400 专项模块；`StationLayoutController` 和正式建筑表现脚本恢复原程序生成职责，`MainMenu` 恢复直接切换 `Main.tscn`。
+
+## T0399 NPC 装备选择确认音效
+
+| 文件 | 职责 |
+|---|---|
+| `scripts/ui/NPCEquipmentWindow.gd` | 按非马匹 / 马匹槽位给最终候选按钮声明显式音频语义，不参与装备结算 |
+| `scripts/presentation/audio/InteractionAudioController.gd` / `data/presentation/interaction_audio.json` | 用铁砧声或确认的 02 号短马叫替换候选按钮默认木点击，并统一投到 UI 总线 |
+| `assets/audio/ui/sfx_ui_equipment_mount_selected_v01.wav` / `art_source/audio/masters/ui/` | 用户确认候选 02 后生成的 `0.650s` 运行时短马叫与 24-bit 母版 |
+| `art_source/audio/reviews/sample_pack_v30_equipment_audio/` | 保存 A–D 四条候选、来源、试听列表及 02 号确认决策 |
+| `tools/verify_t0399_equipment_selection_audio.gd` | 覆盖两类按钮语义、单击单声、资产、02 号时长、增益和 UI 路由 |
+
+稳定关系：`NPCEquipmentWindow 候选 pressed → InteractionAudioController 显式语义 → AudioManager UI 2D`；声音不参与 `NPCPanel → EquipmentSystem / HorseSystem` 权威提交。
+
+## T1505 独立序章新手教程
+
+| 文件 | 职责 |
+|---|---|
+| `docs/TUTORIAL_DESIGN.md` | 序章目标、完整脚本、输入边界、数值隔离、交接与验收的设计源 |
+| `data/tutorial_config.json` | 教程策划单一编辑入口：`intro_pages` 开场漫画、`step_copy` 3D 操作提示、`post_battle_pages` 战后对白、`ui_copy` 通用 UI，以及 `tutorial_music` 的艾达报讯切歌页；另含时钟、5 秒交接卡、临时库存、教程 raid、镜头构图与正式目标 |
+| `data/tutorial_day1_plans.json` | 8 名 NPC 的第一日 24 小时确定性预设计划；v2 支持带目标的晚间交谈 / 拜访项，马塞尔白天酿酒并于 19:00 主持弥撒 |
+| `scripts/systems/TutorialDirector.gd` | 单一教程状态机、目标白名单、`tutorial_intro / tutorial_battle` 语义音乐 cue、首个 3D 页至战后对白连续 detached 推进、20 m 城门构图、战场准备、艾达选择近景、配装示意动作循环、警报后平滑跟随及攻击前摇解锁、严格返床判定、全员固定床位起步、阶段指标、超时诊断 / 收口和原子交接 |
+| `assets/audio/music/tutorial/` | 保存静止帧 06 与主引导 01 的 48 kHz 双声道正式 OGG；后者从艾达报讯当前页起跨漫画 / 3D 连续循环 |
+| `scripts/ui/TutorialOverlay.gd` | 漫画、无框描边字幕、系统 / 双引号对白格式、左右贴边人物排版、3D 艾达对白姓名上方实时方形头像、1×–1.5× 响应式字号、漫画与 3D 可继续页全屏点击、跨场景积压输入释放门禁、全部步骤无锁定 Tooltip 的输入遮罩、右下角继续提示、隐藏的顶部调试提示、强制操作门控、目标 / 只读热区、与正式守波同款的胜利 `AcceptDialog` 及交接卡 |
+| `scripts/systems/GameStartupSystem.gd` | `GAMEPLAY_WITH_TUTORIAL` 启动序章，收到完成信号后才标记正式循环开始 |
+| `CombatSystem.gd` / `TimeSystem.gd` / `DefenseDeviceSystem.gd` | tutorial raid 近门生成、仅艾达的战斗世界迁移、暂停正式日历的独立表现推进、教程器械结算与事件隔离 |
+| `scripts/ui/HUD.gd` / `scripts/world/StationLayoutController.gd` | detached 教程演示中的暂停按钮 / 空格锁定，以及仅教程 raid 正门世界血条隐藏 |
+| `EquipmentSystem.gd` / `NPCSystem.gd` / `ActionSystem.gd` | 临时剑盾 staging、教程事件抑制、八人独立固定床位 staging、正式床边安全起点与艾达满血恢复；日记由初始长期记忆直接加载 |
+| `CameraRig.gd` / `NPC.gd` / `NPCArtView.gd` / `ChibiCharacterPilot.gd` | 教程近景缩放、指定世界高度精确居中、请求式玩家平移 / 缩放锁、平滑跟随，以及复用第二人称镜头的交谈示意动作；不接管战斗 / 移动权威 |
+| `DefenseSlotPresenter.gd` / `NPCPanel.gd` / `NPCEquipmentWindow.gd` | 将正式操作控件暴露给教程热区；真实配装信号与权威状态校正推进步骤，不另造装备 / 部署权威 |
+| `assets/tutorial/lowpoly_v1/prologue_*.png` | 四个场景、五张 1920×1080 定格图；第三帧为宿舍，艾达从人手说明起切换 `prologue_ada_doorway_idle.png`；当前布景无火把敌人，旧窗景与原写实图留存 |
+| `data/presentation/tutorial_prologue_shots.json` | 镜头、色板、正式角色来源、艾达 talk / idle 姿态与对应页面索引、宿舍床位 / 外观来源和空床身份、导出规格 |
+| `scenes/art/TutorialPrologueStudio.tscn` / `scripts/presentation/TutorialPrologueStudio.gd` | 离线房间 / 夜间宿舍布景、正式角色 / 床 / 道具复用、确定性动画定格；七人睡眠与艾达空床、紧凑生活陈设；不进入正式 Main |
+| `tools/render_t1505_prologue.gd` | 独立 SubViewport 导出五张图片与字幕 / 宽高比 / 放手侧面证明图；`-- --dormitory-only` 只重绘宿舍，`-- --keep-dormitory` 保留宿舍重绘其余镜头 |
+| `tools/verify_t1505_tutorial.gd` | 正常全流程、热区、隔离、满血交接、8 人固定床号 / 床边起点、日记、第一日计划、五分辨率排版、漫画全屏继续与非漫画防误触自动化 |
+| `tools/verify_t1505_tutorial_boundaries.gd` | 18 阶段跳过、全员固定床号 / 床边起点、5 分钟冻结、错误输入、零 LLM、基线等价、幂等交接和故障收口矩阵 |
+| `tools/verify_t1505_tutorial_natural_combat.gd` | 不调用调试结算的自然塔毁 / 艾达战斗时长、HP、残敌与正式隔离回归 |
+| `tools/verify_t1505_tutorial_regressions.gd` | 七人宿舍床位睡眠、仅艾达战斗迁移、真实装备 UI 三步推进与已配装自愈、配装动作循环 / 停止、警报后镜头跟随 / 输入锁 / 攻击解锁、近门刷敌 / 实时位移、暂停锁、正门血条隐藏，以及城门 / 艾达近景中心、朝向和缩放恢复回归 |
+
+GM 入口位于常用页“T1505 序章引导”，命令为 `tutorial restart|skip|snapshot`。
+
 ## T0396 多人战斗性能优化
 
 - `docs/COMBAT_PERFORMANCE_OPTIMIZATION_PLAN.md`：机制冻结、分阶段方案、验收门槛、风险与真实执行记录。
@@ -20,7 +627,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `data/presentation/audio_categories.json` | 102 条正式资产唯一归入音乐 12、点击 7、语气 19、战斗 33、工作 16、环境 15 |
+| `data/presentation/audio_categories.json` | 109 条正式资产唯一归入音乐 17、点击 9、语气 19、战斗 33、工作 16、环境 15 |
 | `scripts/systems/AudioManager.gd` / `default_bus_layout.tres` | 六类独立音量、v1→v2 设置迁移、28% 音乐默认及分类总线路由 |
 | `scripts/ui/AudioSettingsPanel.gd` / `scripts/ui/SettingsPanel.gd` | 设置页七滑杆、恢复默认、取消与保存投影 |
 | `scripts/presentation/audio/WorkAudioController.gd` / `data/presentation/action_audio.json` | 修复 / 升级与铁匠 / 工械坊目标选择改为全局 Click；施工循环保持 Work 3D |
@@ -70,7 +677,7 @@
 |---|---|
 | `scripts/ui/EpiloguePanel.gd` | 居中约 2/3 视口的胜负双主题、无冗余标题 / 主题字段名的顶部信息，以及纵向 NPC 画像 / 状态 / 故事卡片 |
 | `scripts/ui/HUD.gd` | 在胜负或结局原子刷新时把当前结算快照交给 EpiloguePanel，不再拼接旧汇总长文本 |
-| `scripts/ui/NPCPortraitViewport.gd` | 被结局卡片复用的实时 3D NPC 画像组件；结算档案模式允许镜头继续拍摄已离站实体，但不改变逃离状态或世界位置 |
+| `scripts/ui/NPCPortraitViewport.gd` | NPC 面板、敌人面板与结局卡片复用的实时 3D 画像组件；默认保持 3.9 m / 40° 全身构图，教程可在实例入树前选用无交互的 1:1 头部近景配置；结算档案模式允许镜头继续拍摄已离站实体，但不改变逃离状态或世界位置 |
 | `tools/verify_t0388_epilogue_panel.gd` | 胜负主题、波数、三字段、八卡片、左右栏和冗余字段缺席专项 |
 
 稳定关系：`GameState.settlement_snapshot → HUD → EpiloguePanel`。面板只读 `wave_number / epilogue / npcs.items`；全站 `station_coda` 显示为“主题”，逐人只显示 `escaped / recruited / fate_summary`，不反写任何胜负、人物或 LLM 数据。
@@ -84,9 +691,9 @@
 | `scripts/systems/LLMBridge.gd` / `scripts/core/EventBus.gd` | 提供不改变时间权威的 `/game/epilogue` 异步通道与结局刷新信号 |
 | `backend/schemas/epilogue.py` | 严格请求、逐人后日谈与整组响应 Schema |
 | `backend/app.py` / `backend/services/model_adapter.py` | 端点、业务连续性校验、至多一次纠错、Prompt 路由、显式 Mock 与 usage |
-| `data/prompts/game_epilogue_system_prompt.txt` | 权威事实、胜败基调、三拍叙事、职业差异与禁写边界 |
+| `data/prompts/game_epilogue_system_prompt.txt` | 权威事实、胜败基调、昏迷者躲过敌军并复苏的完整桥段、八人迫近战火余波、三拍叙事、职业差异与禁写边界 |
 | `scripts/ui/HUD.gd` / `scenes/main/Main.tscn` | 生成中、全站尾声、逐人标题与正文的结算页只读投影 |
-| `tools/verify_game_epilogue_endpoint.py` | 胜败 Mock Schema、状态、语气、禁死亡回归 |
+| `tools/verify_game_epilogue_endpoint.py` | 胜败 Mock Schema、状态、语气、禁死亡回归，以及昏迷幸存 / 迫近战火 Prompt 合同门禁 |
 | `tools/verify_t0387_epilogue_mock_roundtrip.gd` | 完整八人 Godot → Mock 后端 → HUD 往返 |
 | `tools/verify_t0387_epilogue_fallback.gd` | 后端不可用时的 pending、显式模板来源与八人长文回归 |
 | `scripts/systems/CombatSystem.gd` / `scripts/ui/GMPanel.gd` | 权威胜负 debug 包装、GM 一键胜负按钮、结局来源状态与等价命令 |
@@ -101,7 +708,7 @@
 - `data/action_defs.json`、`data/resource_defs.json`：铁匠 / 工械阶段 `4800 / 4500s`，松散木 8。
 - `data/crafting_recipes.json`、`scripts/systems/CraftingSystem.gd`：声明、校验并恢复箭塔 4 / 12 初始项目和木 4 历史投入，不发经验。
 - `scripts/ui/HUD.gd`：每波 T-3h / T-30min 一次性预警与警报按钮强调，不自动鸣警。
-- `scripts/systems/CombatSystem.gd`、`scripts/systems/DailyReflectionSystem.gd`：警报 / 实际刷波取消在途首次熟睡反思、释放锁、保留窗口与记忆重试。
+- `scripts/systems/CombatSystem.gd`、`scripts/systems/DailyReflectionSystem.gd`：T0386 曾由警报 / 实际刷波取消在途反思；T0427 已改为保留请求和深睡锁，完成后若仍破防再响应。
 - `tools/verify_t0386_compressed_wave_balance.gd`：压缩日历、制造工时、资源守恒和项目切换专项；既有波次、警报、T0121 与 T0122 工具同步新合同。
 
 ## T0385 关键建筑受击碎屑命中点
@@ -220,13 +827,13 @@ R1：MeteorArtTrial 新增 ReviewShakeRig，实例化已有 `scripts/camera/Came
 
 | 文件 | 职责 |
 |---|---|
-| `data/presentation/world_audio.json` | 声明白天 6 首、夜晚 3 首的固定轮播顺序及切换淡化参数 |
+| `data/presentation/world_audio.json` | 声明教程双阶段资产、白天 8 首、夜晚 4 首的固定轮播顺序及切换淡化参数；教程曲与主循环共用 Music 总线和“音乐”滑杆 |
 | `scripts/systems/AudioManager.gd` | 保留菜单 / 战斗循环兼容，支持非循环音乐、自然完成信号与调试快进 |
 | `scripts/presentation/audio/WorldAudioController.gd` | 消费昼夜和敌人在场事实，顺序推进对应音乐池并在战后恢复当前池 |
-| `assets/audio/music/day/`、`assets/audio/music/night/` | 保存 9 首 48 kHz 立体声 OGG 正式运行时音乐 |
+| `assets/audio/music/tutorial/`、`assets/audio/music/day/`、`assets/audio/music/night/` | 保存教程 2 首及昼夜 12 首 48 kHz 立体声 OGG 正式运行时音乐 |
 | `art_source/audio/masters/music/day/`、`art_source/audio/masters/music/night/` | 保存对应 24-bit WAV 母版；每首首尾各烘焙 2 秒淡化 |
-| `assets/audio/manifests/` | 99 条正式资产、文件 QA、逐曲许可署名与总试听列表 |
-| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖 6+3 配置顺序、非循环 / 曲边淡化、自然接续、昼夜与战斗切换 |
+| `assets/audio/manifests/` | 109 条正式资产、文件 QA、逐曲许可署名与总试听列表 |
+| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖 8+4 配置顺序、非循环 / 曲边淡化、自然接续、昼夜与战斗切换 |
 
 稳定关系：`TimeSystem 昼夜 + CombatSystem 敌人在场 → WorldAudioController 选择播放池 / 战斗曲 → AudioManager Music 2D`。曲目完成只推进表现层索引，不写入时间、战斗、存档或 NPC 状态。
 
@@ -461,19 +1068,25 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `scenes/frontend/MainMenu.tscn` / `scripts/ui/MainMenu.gd` | 项目启动门禁、四项主菜单、菜单音乐、固定标题间距与响应式底部菜单框 |
+| `scenes/frontend/MainMenu.tscn` / `scripts/ui/MainMenu.gd` | 项目启动门禁、条件式“继续游戏”、菜单音乐、固定标题间距与响应式底部菜单框；新游戏发布模式 2，继续 / 加载发布模式 3，并以最高层全屏遮罩锁定重复输入后进入 Main |
+| `.vscode/launch.json` | Godot Tools 调试配置：`scene=main` 调试正式项目入口，`scene=current` 调试当前场景；避免把 VSCode 右上角 Current File 按钮误认为项目运行 |
 | `scripts/ui/MenuHeroBackdrop.gd` | 无正式开屏资产阶段的全屏程序化城堡 / 雾 / 余烬兜底，并承接未来封面纹理 cover 绘制 |
 | `scenes/ui/SettingsPanel.tscn` / `scripts/ui/SettingsPanel.gd` | 主菜单与 Esc 共用的音量 / 画面 / AI 三 Tab 设置容器 |
 | `scripts/ui/AudioSettingsPanel.gd` | 可嵌入音量页；继续提交 AudioManager 五路正式总线设置 |
 | `scripts/core/ClientSettings.gd` | 本机画面与非秘密 AI 偏好持久化；明确排除 API Key |
-| `scenes/ui/SaveBrowserPanel.tscn` / `scripts/ui/SaveBrowserPanel.gd` | 1 个快速槽、10 个手动槽及保存 / 加载交互壳；T0355 前不读写玩家存档 |
-| `scripts/ui/PauseMenu.gd` / `scenes/main/Main.tscn` | Esc 灰黑蒙层、紧凑六项菜单、共享子面板与暂停状态恢复；HUD 不再保留设置按钮 |
+| `scripts/systems/GameSaveStore.gd` | `user://saves` 槽位索引、永久档案 ID、auto / manual 恢复点、Schema / SHA-256 校验，以及状态 / WebP 缩略图临时替换与原字节复制 |
+| `scripts/systems/GameSaveSystem.gd` | 第 0 / 波次清场自动检查点、Main 视口 `480×270` 缩略图、手动固定、权威快照协调、LOAD 恢复屏障与统一恢复顺序；NPC 在空间阶段按语义地点恢复个人停留点后再重派计划 |
+| `scenes/ui/SaveBrowserPanel.tscn` / `scripts/ui/SaveBrowserPanel.gd` | 1 个快速槽、10 个手动槽、自动 / 手动恢复点选择、WebP 实图 / 损坏占位及真实固定 / 加载 / 删除交互 |
+| `scripts/ui/PauseMenu.gd` / `scenes/main/Main.tscn` | Esc 灰黑蒙层、紧凑六项菜单、固定最近检查点、共享子面板与暂停状态恢复；Main 挂接 GameSaveSystem 和保存提示节点 |
+| `scripts/ui/CheckpointStatusPresenter.gd` | 只读监听保存 / 恢复结果，在 Main 右上角短时显示成功或失败状态 |
 | `scripts/ui/FrontendStyles.gd` | 前端共用危险红色按钮、透明底橙色焦点描边、蒙层与状态颜色 |
 | `scripts/presentation/audio/InteractionAudioController.gd` | 动态 UI 按钮声音接线；延迟阶段按实例 ID 忽略已释放控件 |
 | `tools/verify_t0354_frontend_shell.gd` | 锁定启动门禁、菜单顺序、共享设置、API Key 不落盘、11 槽壳层与暂停恢复 |
+| `tools/verify_t0355_wave_checkpoint_save.gd` | 覆盖自动 / 手动与跨档隔离、WebP 编解码 / 原字节复制 / 浏览器切图、波次触发、已提交事务、待命名幼驹、在途计划重派和 LOAD 恢复；同时支持 headless 与真实 D3D12 捕获 |
+| `tools/verify_t0355_r3_location_stay_restore.gd` | 覆盖 v2 不含坐标 / 世界原点、8 人同建筑按个人停留点零重叠恢复，以及 v1 错误坐标被忽略的兼容路径 |
 | `tools/verify_t0356_frontend_responsive_layout.gd` | 在 1280×720 / 1920×1080 锁定标题间距、面板高度、底部余量与首项焦点样式 |
 
-稳定关系：`project.godot → MainMenu → 玩家开始新游戏 → Main/GameStartupSystem`；`MainMenu / PauseMenu → 同一 SettingsPanel 与 SaveBrowserPanel`。完整玩家存档权威留给 T0355，现有 SpatialSaveSystem 不对玩家槽位暴露。
+稳定关系：`project.godot → MainMenu → NEW_GAME / LOAD 请求 → Main/GameStartupSystem → GameSaveSystem`；`MainMenu / PauseMenu → 同一 SettingsPanel 与 SaveBrowserPanel → GameSaveStore`。SpatialSaveSystem 只作为完整检查点的空间子结构，不直接对玩家槽位暴露。
 
 ## T0353 音频混音修复索引
 
@@ -543,13 +1156,14 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `scripts/systems/MerchantSystem.gd` | 在整批交易成功边界构造买入 / 卖出逐项反馈，并提供行商锚点只读查询 |
+| `scripts/systems/MerchantSystem.gd` | 在整批交易成功边界构造买入 / 卖出逐项反馈、广播只读成交表现信号，并提供行商锚点只读查询 |
+| `scripts/presentation/audio/InteractionAudioController.gd` | 将成交信号映射为带 `+5 dB` 补偿的 UI 成功声，归入“点击音效”并替代同次普通木质点击 |
 | `scripts/world/MerchantWagon.gd` | 从行商人物 Head 骨骼提供顶部完整世界锚点及交易气泡回退 |
 | `scripts/core/WorldFeedbackPayload.gd` | 登记 merchant 完整锚点高度语义并复用正式资源图标条目 |
 | `scripts/ui/WorldFeedbackPresenter.gd` | 解析行商实时锚点及红色流出 / 绿色流入颜色角色，显示完整批次 |
 | `tools/verify_t0348_merchant_trade_world_feedback.gd` | 覆盖草稿静默、多资源买卖、逐项图标 / 方向、失败静默和头部锚点 |
 
-稳定关系：`MerchantPanel 草稿 → MerchantSystem 成功原子提交 → 单批 WorldFeedbackPayload → 行商 Head 锚点 Presenter`。反馈层不监听 ResourceSystem 猜交易，不写库存或行商状态。
+稳定关系：`MerchantPanel 草稿 → MerchantSystem 成功原子提交 → 单批 WorldFeedbackPayload + merchant_trade_completed → 行商 Head 锚点 Presenter + UI 成功声`。反馈与音频层不监听 ResourceSystem 猜交易，不写库存或行商状态；失败交易不发成交声。
 
 ## T0347 行商面板留白收紧索引
 
@@ -748,11 +1362,11 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 | 文件 / 目录 | 职责 |
 |---|---|
 | `data/presentation/interaction_audio.json` | 配置五类 UI 语义、优先级、主要面板、静音项，以及门 / 商车的 3D 资产与运动阈值 |
-| `scripts/presentation/audio/InteractionAudioController.gd` | 动态连接 UI，合并同帧语义；只读普通门 / 重门真实运动与商车实际速度并创建 2D / 3D 播放源 |
+| `scripts/presentation/audio/InteractionAudioController.gd` | 动态连接 UI，合并同帧语义；把权威交易成功映射为“点击音效”，并只读普通门 / 重门真实运动与商车实际速度创建 2D / 3D 播放源 |
 | `scripts/presentation/buildings/BuildingAutoDoor.gd` | 向音频表现层暴露所属建筑与真实开合比例，不改变既有传感和门叶运动 |
 | `scripts/ui/AudioSettingsPanel.gd` | 保留滑杆松手木质试听；面板边沿统一交由交互音频控制器，避免重复播放 |
 | `scenes/main/Main.tscn` | 在 `Main/Presentation` 挂载 InteractionAudioController |
-| `tools/verify_t0135_p10g_interaction_audio.gd` | 覆盖 8 资产、动态 UI、成功优先级、9 扇普通门 / 重门、商车定位 / 即停、总线和只读边界 |
+| `tools/verify_t0135_p10g_interaction_audio.gd` | 覆盖 8 资产、动态 UI、交易等成功优先级、9 扇普通门 / 重门、商车定位 / 即停、总线和只读边界 |
 
 稳定关系：`真实 UI / 门叶运动 / MerchantSystem 马车快照 → InteractionAudioController → AudioManager UI 或 World`。音频层不提交库存、不控制面板业务、不开关门、不驱动商车。
 
@@ -945,13 +1559,13 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 
 | 文件 / 目录 | 职责 |
 |---|---|
-| `data/presentation/world_audio.json` | 保存昼夜门槛、白天 6 首 / 夜晚 3 首 BGM 顺序池、全局环境床缩放增益、12 个局部声源位置与随机参数 |
-| `scripts/presentation/audio/WorldAudioController.gd` | 只读时刻、敌人在场和现有火源状态，推进昼夜 BGM 播放池并投影位置化环境声，不拥有玩法结算 |
+| `data/presentation/world_audio.json` | 保存教程双阶段音乐、昼夜门槛、白天 8 首 / 夜晚 4 首 BGM 顺序池、全局环境床缩放增益、12 个局部声源位置与随机参数 |
+| `scripts/presentation/audio/WorldAudioController.gd` | 消费教程语义 cue，并只读时刻、敌人在场和现有火源状态；教程活动时优先保持引导曲，结束后推进昼夜 BGM 播放池，同时投影位置化环境声，不拥有玩法结算 |
 | `scripts/systems/AudioManager.gd` | 提供循环 / 非循环音乐、自然完成通知、交叉淡化、循环起播偏移、播放器快照及切场景回收 |
 | `scripts/core/EventBus.gd`、`scripts/systems/CombatSystem.gd` | 从敌人存在统一同步点广播只读 `combat_enemy_presence_changed`，不改变敌人或时间权威 |
 | `scripts/presentation/buildings/SmithyAmbientFX.gd`、`DiningKitchenWorkFX.gd` | 暴露当前真实可见、正在工作的火源 Node3D，供统一环境音频层读取 |
 | `scenes/main/Main.tscn` | 在 Presentation 注册 WorldAudioController |
-| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖位置声源、随机池、6+3 昼夜顺序轮播、曲边淡化、战斗接管、工作炉火与场景退出清理 |
+| `tools/verify_t0135_p10b_world_audio.gd` | 覆盖位置声源、随机池、8+4 昼夜顺序轮播、曲边淡化、战斗接管、工作炉火与场景退出清理 |
 
 稳定关系：`GameState / TimeSystem 时刻 + CombatSystem 敌人在场 + 现有工位火源表现 → WorldAudioController → AudioManager → Music / Ambience`。音乐池索引只属表现运行态；菜单曲已由正式 MainMenu 使用。
 
@@ -960,10 +1574,10 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 | 文件 / 目录 | 职责 |
 |---|---|
 | `default_bus_layout.tres` | 定义 11 条总线；T0395 的 Music / UI / Voice / Combat / Work / Ambience 均直达 Master，AmbientBed 汇入 Ambience |
-| `scripts/systems/AudioManager.gd` | 读取 102 条确认清单与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、并发回收、七项音量与 v2 设置持久化 |
+| `scripts/systems/AudioManager.gd` | 读取 109 条确认清单与唯一分类表，提供 2D / 3D 播放、循环淡入淡出、并发回收、七项音量与 v2 设置持久化 |
 | `scripts/ui/AudioSettingsPanel.gd` | 构建主音量加音乐 / 点击 / 语气 / 战斗 / 工作 / 环境七滑杆并提供木质试听声 |
 | `scripts/ui/HUD.gd`、`scenes/main/Main.tscn` | 注册正式“设置”入口与居中声音设置面板 |
-| `assets/audio/manifests/` | 保存 99 条正式资产、QA、第三方署名、复用规则与试听列表 |
+| `assets/audio/manifests/` | 保存 109 条正式资产、QA、第三方署名、复用规则与试听列表 |
 | `tools/verify_t0135_p10a_audio_foundation.gd` | 覆盖清单、总线 / 发送、音量换算、UI 可达和松手试听 |
 
 稳定关系：`业务系统已发生事实 / 表现动作 → AudioManager 资产 ID 播放入口 → Music / UI / Voice / Combat / Work / Ambience 唯一分类总线 → Master`。音频表现不监听未提交事实，也不写玩法权威。
@@ -1094,7 +1708,7 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 | `assets/audio/` | 仅保存用户确认后供 Godot 正式导入的音乐、环境、UI、工作、语气、脚步、战斗、世界交互和技能音频 |
 | `art_source/audio/` | 规划中的原始录音、生成结果、第三方原包、DAW 工程、无损母版和待审稿隔离区；不作为运行时引用目录 |
 
-当前边界：102 条资产已确认并完成 QA；P10A–P10H 全部接入，T0395 已完成六类加主音量七项控制、全局昼夜环境床与 UI 同步修复，T0378 已完成白天 6 首 / 夜晚 3 首轮播。菜单曲已由正式 MainMenu 使用。
+当前边界：109 条资产已确认并完成 QA；P10A–P10H 全部接入，T0395 已完成六类加主音量七项控制、全局昼夜环境床与 UI 同步修复，T1505-P8 已完成教程双阶段 BGM 与白天 8 首 / 夜晚 4 首轮播，T0399 已接入装备与马匹确认声，T0434 已把防御器械部署成功木质落地声归为 UI 点击音效并提升至 `+3 dB`。菜单曲已由正式 MainMenu 使用。
 
 ## T0306 五类高频战斗事件聚合索引
 
@@ -2181,8 +2795,10 @@ T0370-I 后正式 MainMenu 引用 MenuCoverCandidate；原 MenuCoverPreview 在 
 | `data/station_layout.json` | 声明向后升级后的 `friendly_station_response_v4`、友军分域锁定、多敌加权避战、保持距离撤离与主动策略 ID |
 | `tools/verify_t0188_friendly_station_response.gd` | 生产 Main 覆盖站外 / 站内边界、远距追击、站内目标过滤、取马中转、上马后追击及远程射程外奔跑避战 |
 | `tools/verify_combat_strategies.gd` | 按 T0188 的 8.5 米最低安全距离更新既有避战策略回归 |
+| `scripts/systems/MemorySystem.gd` | 注册并格式化持械迎战 / 非战斗躲避两类姓名化 private 破防事件 |
+| `tools/verify_t0421_station_breach_response.gd` | 覆盖站外生成不惊醒、教程隔离、睡眠安全离床、全员资格分流、远距待命、近距避战及个人事件单次写入 |
 
-稳定调用关系：`正式 interior_polygon -> 站内敌军事实 -> 全体武装响应 -> T0225 station_breach_global`；`活动远程射程 -> 避战触发与安全距离 -> avoid_combat -> T0155 run profile`。
+稳定调用关系：`正式 interior_polygon -> 站内敌军事实 -> 全体可行动 NPC 安全退出日常事务 -> 入伍持主武器 combat / 其余 avoid_combat -> 姓名化 private 破防事件`；武装响应继续进入 `T0225 station_breach_global`，非战斗响应在 `39.2 m` 外待命、圈内进入 `T0155 run profile`。序章夜袭不使用该全员入口。
 
 ## T0187 敌军五级索敌与塔防受击索引
 
@@ -2860,13 +3476,14 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 | `tools/verify_t0130_p7r_clinic_rounds.gd` | T0130-P7R/P7R2/P7R3 专项：验证四张病床正确卧姿、无病人坐桌、双病人真实占床、左右床侧均以 `0.79 + 0.35 + 0.08 m` 形成无重叠治疗位、治疗时保留 Body / Interaction 碰撞、换床、300 游戏秒轮换及回椅 |
 | `tools/verify_t0130_p8_owen_character_integration.gd` | T0130-P8 专项：验证欧文 Firstmate 作者材质 / 原生脸、护目镜 / 工具带 / 扳手骨挂点、父级碰撞、职业动作、真实剑盾装备同步、受击 / 昏迷 / 复苏与档案外貌投影；正式工械坊、修复和升级另由 P5c / P6d1 / P6d2 锁定到位前后表现边界 |
 | `scripts/systems/CombatSystem.gd` | 保持敌人权威结算；A4-P7 覆盖五波逐敌索敌 / 追击 / 动态接触 / 补位；P7R 限制 RVO 速度与表现转向；A5-P1 让战斗 / 非战斗人员同图；A5-P2 按最大胶囊生成并以每帧 8 敌轮转、逐敌累计时间和状态签名去重控制正式第五波负载；T0133-P3 将物理根碰撞纠偏与 EnemyArtView 可见位移分层，避免解穿透尖峰驱动整个人物飞跃和步态抽搐 |
-| `scripts/systems/SpatialSaveSystem.gd` | A5-P8 正式空间检查点总协调：写入 / 读取 `formal_spatial_save_v1`，保证生产 NavigationMap 先于 NPC、波次、逃离和行商恢复；不序列化 RID / NodePath |
-| `tools/verify_t0129c_a5_p8_formal_spatial_save.gd` | A5-P8 专项：在途动作安全回滚，并在销毁 / 重建 Main 后联合恢复 8 NPC、第一波 8 敌、活动逃离和在途正式商车 |
+| `scripts/systems/SpatialSaveSystem.gd` | A5-P8 正式空间检查点总协调：外层继续写入 / 读取 `formal_spatial_save_v1`，保证生产 NavigationMap 先于 NPC、波次、逃离和行商恢复；NPC 子结构已为地点式 v2，不序列化 NPC 坐标、RID / NodePath，商队仍保存自身位置 |
+| `docs/SAVE_SYSTEM.md` | T0355 波次结束检查点设计源：档案 ID / 自动与手动恢复点、权威字段、事务边界、捕获时机、统一恢复顺序和版本迁移规则 |
+| `tools/verify_t0129c_a5_p8_formal_spatial_save.gd` | A5-P8 专项：在途动作按语义地点个人停留点安全回滚，并在销毁 / 重建 Main 后联合恢复 8 NPC、第一波 8 敌、活动逃离和在途正式商车 |
 | `tools/verify_t0129c_a4_p7_dynamic_combat_pressure.gd` | 验证五波正式实体数量、foot / mounted 实体碰撞层、无固定槽运行态、第二波共享目标接触 / 后排施压、profile / Agent 速度一致、零超速、单帧位移 / 转角上限、最小中心距、前排死亡后补位和清理 |
 | `tools/verify_t0129c_a4_p7b_default_formal_combat_world.gd` | 验证默认刷波零旧 Area3D、敌我 Body 同一生产 NavigationMap、碰撞层有效、NPC 实际移动、敌人追踪移动目标重规划，以及清敌后保留最后正式坐标并恢复日常运动模式 |
 | `tools/verify_t0129c_a5_p1_formal_noncombat_avoidance.gd` | 验证初始 8 名可行动 NPC 全部迁入正式战斗空间、非战斗名单与碰撞 / 导航绑定、避战目标吸附 NavMesh、实体连续远离敌人及清敌后 8 人可逆恢复 |
 | `tools/verify_t0129c_a5_p2_default_fifth_wave_pressure.gd` | 验证默认第五波 48 敌 + 8 NPC、骑乘生成净距、RVO 拥堵净距、权威物理 / 可见表现两类单帧位移、3 名非战斗持续避战、零导航失败、前排死亡后补位、逐敌轮转全覆盖、CombatSystem P95 帧时与清理零孤儿；测试夹具主动传送后会重置表现采样，避免把布场操作记为游戏内飞跃 |
-| `scripts/ui/BuildingPanel.gd` | 逐工位显示空闲、在途预留或真实占用；不自行分配 / 提交位置 |
+| `scripts/ui/BuildingPanel.gd` | 逐工位显示玩家可见的空闲或真实占用；在途预留映射为空闲，不自行分配 / 提交位置 |
 | `tools/verify_t0129b_c1_station_layout.gd` | 持续验证 C1 静态几何 / 镜头合同在 `station_layout_v2` 中未回退，并确认 78 个结构阻挡 + 1 个烘焙地面、生产 NavigationRegion 预览外禁用和旧玩法根零变更 |
 | `tools/verify_t0129b_c4_p1_formal_merchant_route.gd` | C4-P1 正式远距商路专项；P7R2 后验证 6 点 / 地图边缘至后门外路线、约 7 m 车根停靠净距、约 1.2 m 马组前缘净距、折线实体进场、抵达后才开放交易、原路离场释放以及旧图兼容路线恢复 |
 | `tools/verify_t0129b_c2_spatial_contract.gd` | 逐位置对照 v7 验收基线，验证 61 + 4 = 65、135 个权威 Marker + 44 个家具安全站位 + 24 个挂接锚点、`11303` 格合同网格、123 / 123 对照目标、独立生产地图中的 65 个 Godot 路径、预览启停和旧 NPC 零移动 |
@@ -3206,13 +3823,15 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 
 | 文件 | 当前职责 |
 |---|---|
-| `data/activity_needs.json` | 生活数值边界、每小时速率、行为模式映射与 idle / movement 默认档位的唯一配置源 |
+| `data/activity_needs.json` | 生活数值边界、每小时速率、行为模式映射、idle / movement 默认档位与满疲劳工作产出倍率的唯一配置源 |
 | `data/action_defs.json` | 25 个行为各声明唯一 `needs_profile`；三类协助声明 `timed_experience` |
-| `scripts/systems/NPCNeedsSystem.gd` | 按有效逻辑秒解析档位、累积小数、钳制边界、截断行动有效时间并驱动协助经验 |
+| `scripts/systems/NPCNeedsSystem.gd` | 按有效逻辑秒解析档位、累积小数、钳制边界、截断行动有效时间、驱动协助经验，并在满疲劳跨界时写事件 / 请求重估 |
 | `scripts/systems/ActionSystem.gd` | 移除旧生活扣除；保留吃饭正向恢复；按配置累计并写入工程 / 医术成长 |
 | `scripts/systems/NPCSystem.gd` | 提供协助治疗到 30% 复苏阈值前的精确有效秒数 |
 | `scenes/main/Main.tscn` | 在 TimeSystem 后优先挂载 NPCNeedsSystem，使 tick 读取推进前快照 |
 | `tools/verify_activity_needs_framework.gd`、`tools/verify_assist_timed_experience.gd` | 穷尽行动 / 行为模式，并覆盖三类协助的有效时间经验 |
+| `tools/verify_t0081_r1_full_fatigue_work_penalty.gd` | 满疲劳倍率、组合倍率、事件去重 / 再触发、生产 / 修复升级 / 治疗 / 马厩与确定性两层计划链 |
+| `tools/verify_t0081_r1_full_fatigue_plan_revision_real.gd` | 真实 Provider 满疲劳范围判别与正式选中小时修订 |
 
 ## T0080 建筑门口失败与升级协助认知索引
 
@@ -3599,9 +4218,9 @@ T0130-D1R14 后，四个护甲槽由 `NPCDevLab` 把共享装备 ID 投影给 `C
 | 路径 | 职责 |
 |---|---|
 | `scripts/ui/BuildingPanel.gd` | 按建筑缓存稳定自然高度，在容器排版后再应用修复 / 升级内容尺寸 |
-| `scripts/camera/CameraRig.gd` | 事件式跟踪 WASD 与 Shift；基础 `28 m/s`、Shift+WASD `56 m/s`；按键释放、文本焦点或窗口失焦时清理平移 / 加速 / 拖拽状态 |
+| `scripts/camera/CameraRig.gd` | 事件式跟踪 WASD 与 Shift；基础 `28 m/s`、Shift+WASD `56 m/s`；按键释放、文本焦点、窗口失焦或暂停时清理平移 / 加速 / 拖拽状态 |
 | `scripts/systems/NPCSystem.gd`、`scripts/systems/MemorySystem.gd` | 保持技能点权威结算，把属性成长事件改为 NPC 锻炼体力 / 脑力叙事 |
-| `tools/verify_camera_rig_input.gd` | 覆盖 WASD `28 m/s`、Shift `56 m/s`、精确 1:2、按键释放、窗口失焦、中键取消和文本输入焦点 |
+| `tools/verify_camera_rig_input.gd` | 覆盖 WASD `28 m/s`、Shift `56 m/s`、精确 1:2、按键释放、窗口失焦、中键取消、文本输入焦点和暂停内 release |
 | `tools/verify_building_repair_upgrade.gd`、`tools/verify_skill_progression.gd` | 覆盖建筑进度面板无满高闪烁与力量 / 智力精确成长文案 |
 
 ## T0044 对话恢复与对象面板收敛索引（恢复触发已由 T0049 接管）
@@ -3845,7 +4464,7 @@ T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按
 路径：`res://scripts/systems/NPCNeedsSystem.gd`
 用途：NPC 饱食 / 疲劳的统一持续结算权威。
 依赖：通过 ConfigLoader 读取 `data/activity_needs.json`；监听 `EventBus.logical_time_tick`；只读 NPCSystem、ActionSystem 和 BuildingSystem 快照，通过 NPCSystem 写回状态，并把三类协助有效秒数交给 ActionSystem 成长入口。
-当前状态：T0081 已实现全部在站 NPC 的唯一档位解析、跨行动小数余量、0–100 边界、有限行动 / 建筑作业 / 协助治疗的有效时间截断，以及完成后的 idle 剩余时间结算；`escaped=true` 的 NPC 不再推进站内生活值。
+当前状态：T0081 已实现全部在站 NPC 的唯一档位解析、跨行动小数余量、0–100 边界、有限行动 / 建筑作业 / 协助治疗的有效时间截断，以及完成后的 idle 剩余时间结算；`escaped=true` 的 NPC 不再推进站内生活值。T0081-R1 后，配置统一定义满疲劳 `0.5×` 工作产出倍率；`get_fatigue_work_output_multiplier(...)` 只读返回惩罚，并在 `<100 → 100` 时写个人事件、广播 `high_fatigue` 完整计划重估请求。
 
 路径：`res://scripts/systems/ResourceSystem.gd`
 用途：基础资源与具体物品库存事实源。
@@ -3855,7 +4474,7 @@ T0043 覆盖上段主场景中的旧分组显示口径：BuildingPanel 现在按
 路径：`res://scripts/systems/BuildingSystem.gd`
 用途：基础建筑系统，负责建筑配置读取、场景节点绑定、点击识别和基础状态查询。
 依赖：通过 `/root/ConfigLoader` 读取 `data/building_defs.json`，绑定 `Main/WorldRoot/Station/Buildings` 下的低模建筑节点，并通过 `/root/EventBus.building_clicked` 广播点击选择、通过 `/root/EventBus.building_state_changed` 广播状态刷新。
-当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。T0006 后建筑受损、修复进度、协助者变化、修复完成和升级只触发 `building_state_changed`，不再伪装为建筑点击。T0801 新增 `claim_workstation(...)` / `release_workstation(...)`，作为工作位占用和释放的权威接口；工位变化仍通过 `building_state_changed` 交给 MemorySystem 广播地点内部状态差量。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；修复和升级都会创建随 `logical_time_tick` 推进的倒计时作业，并可被多个 NPC 按工程熟练度协助加速；建筑受损、正在修复或正在升级时不能开始升级，只有完好建筑可升级；协助者离开对应建筑或被改派时会从作业中移除；T1102 新增 `apply_damage_to_building(...)` 供 CombatSystem 结算敌方建筑伤害，并写入 `building_damaged` 结构化事件；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史。 T0035/T0037 后新增 `get_building_special_state(...)`、`get_building_special_state_section(...)`、`set_building_special_state_section(...)`，作为 CraftingSystem / HorseSystem 写入内部特殊状态的唯一建筑接口；BuildingSystem 不自行结算制造或马匹生态。
+当前状态：T0304 已实现基础建筑数据读取、场景节点绑定、运行时点击区、调试标签状态显示、`get_building(...)` 等查询接口、建筑入口坐标查询 `get_building_entry_position(...)`、地点当前状态占位 `get_building_location_context(...)` 和最小修复/升级逻辑；2026-05-20 已补充 `_unhandled_input` 相机射线拾取，真实鼠标点击建筑可稳定触发 `building_clicked`。T0006 后建筑受损、修复进度、协助者变化、修复完成和升级只触发 `building_state_changed`，不再伪装为建筑点击。T0801 新增 `claim_workstation(...)` / `release_workstation(...)`，作为工作位占用和释放的权威接口；工位变化仍通过 `building_state_changed` 交给 MemorySystem 广播地点内部状态差量。修复/升级消耗由 `ResourceSystem` 结算，资源不足时不会改变建筑状态；修复和升级都会创建随 `logical_time_tick` 推进的倒计时作业，并可被多个 NPC 按工程熟练度协助加速；T0081-R1 后每名 helper 的工程贡献乘其统一工作产出倍率，满疲劳时贡献减半。建筑受损、正在修复或正在升级时不能开始升级，只有完好建筑可升级；协助者离开对应建筑或被改派时会从作业中移除；T1102 新增 `apply_damage_to_building(...)` 供 CombatSystem 结算敌方建筑伤害，并写入 `building_damaged` 结构化事件；建筑/地点节点后续只保存当前状态并负责广播，不保存事件历史。 T0035/T0037 后新增 `get_building_special_state(...)`、`get_building_special_state_section(...)`、`set_building_special_state_section(...)`，作为 CraftingSystem / HorseSystem 写入内部特殊状态的唯一建筑接口；BuildingSystem 不自行结算制造或马匹生态。
 
 T0043/T0084/T0127 补充：BuildingSystem 现在权威维护逐位置 `id/type/name/assigned_npc_id/reserved_by/occupied_by/status`、统一可进入 / 可用状态、受损效率、固定位置类型与 `upgrade.level_effects`。升级可配置成本、时长、Max HP、位置和效率增量；施工期间封闭建筑、拒绝占位并清退使用者，完成后一次应用奖励。`reserve_workstation(...)` 只预留，`commit_workstation_reservation(...)` 在物理抵达后提交占用；旧 `claim_workstation(...)` 仍服务尚未迁移的建筑。宿舍床位优先且仅使用调用者自己的专属床，没有归属的未来 NPC 只能使用未分配床位。
 
@@ -3878,7 +4497,7 @@ T0129C-A2b-P1–P6 增量：格伦→铁匠铺、莉娜→诊疗位 / 病床、�
 路径：`res://scripts/systems/HorseSystem.gd`
 用途：真实马匹个体生态、马厩数量、成长 / 生育、分配与战时骑乘的唯一权威。
 依赖：读取 `data/horse_defs.json`；监听 TimeSystem / NPC 状态，读取 ActionSystem 的 active `work_stable` 养马人，调用 ResourceSystem 结算进食粮食、BuildingSystem 写入 `special_state.horses`、EquipmentSystem 同步坐骑投影。
-当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、基础 / 照料额外 HP、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。T0138 后仅 `work` 可手动分配 / 收回；T0138-R1 后 `rally / combat` 使用 `waiting_for_rider_at_stable`，马留在真实马厩锚点，只有 NPC 从实时位置经正式 NavMesh 前往马旁，到达后才 `ridden`。骑乘受击先随机扣马 `30%–50%` 结算后伤害；马死亡清分配并让 NPC 转步战，NPC 昏迷清分配并让存活马 `returning_stable`，正常退战返厩但保留分配。T0313 后，进食、自然回血、成长、照料额外 HP 和繁育概率在权威提交后按逐马可见精度聚合到统一世界反馈；生态与繁育公式保持不变。
+当前状态：T0056 后栗风、灰鬃以 60% 成长刚成年开局；每匹马独立保存总 HP、基础 / 照料额外 HP、饱食、成长、繁育概率 / 冷却、进食、位置、分配和骑乘。T0138 后仅 `work` 可手动分配 / 收回；T0138-R1 后 `rally / combat` 使用 `waiting_for_rider_at_stable`，马留在真实马厩锚点，只有 NPC 从实时位置经正式 NavMesh 前往马旁，到达后才 `ridden`。骑乘受击先随机扣马 `30%–50%` 结算后伤害；马死亡清分配并让 NPC 转步战，NPC 昏迷清分配并让存活马 `returning_stable`，正常退战返厩但保留分配。T0313 后，进食、自然回血、成长、照料额外 HP 和繁育概率在权威提交后按逐马可见精度聚合到统一世界反馈；T0081-R1 后照料者养马熟练度先乘统一工作产出倍率再参与最高有效照料者选择与成长 / 额外 HP / 繁育推进。生态与繁育公式保持不变。
 
 路径：`res://scripts/npc/NPC.gd`
 用途：通用 NPC 实体脚本，保存 `npc_id` 和档案快照，刷新短姓名/HP/当前行动标签，处理点击、实体运动表现与逐 NPC 移动慢速生命周期。
@@ -4036,6 +4655,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 依赖：绑定到 `res://scenes/main/Main.tscn` 的 `CameraRig`，读取键盘 WASD / Shift 按下与释放事件、鼠标中键拖拽和滚轮输入；查询当前 GUI 文本焦点以避免输入时平移。
 当前状态：T0105 已创建并绑定；T0045B 后 WASD 基础速度为 `28 m/s`，Shift+WASD 为 `56 m/s`；支持 X/Z 边界限制、缩放距离限制，并保持高机位俯视角；T1101 后 Z 轴正向边界扩展到可查看正门外敌人生成区。不实现角色控制或第一人称自由视角。
 
+
 ## Godot 脚本规划
 
 | 模块 | 推荐路径 | 说明 |
@@ -4124,7 +4744,7 @@ T0024 补充：事件库上方改为“当前计划 / 日记 / 知识”三等�
 路径：`data/action_defs.json`
 用途：行动配置，记录行动 id、类型、地点需求、技能、耗时、资源输入输出、唯一生活消耗档位和可选有效工时经验。
 依赖：由 `ActionSystem` 读取并作为 NPC 日程与工作白名单。
-当前状态：`ActionSystem` 读取 24 个行动定义，覆盖生产、制造、照料、治疗、训练、吃饭、睡觉、祈祷和参数化协助。`work_blacksmith` / `work_workshop` 在 T0121 后为 5400 秒基础周期，阶段材料和成品由 CraftingSystem 结算；菜园、酒窖与马厩仍为 3600 秒基础工作周期，吃饭 1200 秒、睡觉 23400 秒。菜园产出受耕种 / 力量 / 建筑等级缩放，食堂一粮基础产两餐，酒窖一粮产酒且不自动换钱；治疗需要医生与病床同时工作并消耗第纳尔。所有定义声明唯一 `needs_profile`，协助行动通过 `timed_experience` 累计对应技能。
+当前状态：`ActionSystem` 读取 24 个行动定义，覆盖生产、制造、照料、治疗、训练、吃饭、睡觉、祈祷和参数化协助。`work_blacksmith` / `work_workshop` 在 T0121 后为 5400 秒基础周期，阶段材料和成品由 CraftingSystem 结算；酒窖、菜园与马厩为 3600 秒基础工作周期，吃饭 1200 秒、睡觉 28800 秒且按计划连续占床。菜园产出受耕种 / 力量 / 建筑等级缩放，食堂一粮基础产两餐；T0418 后酒窖每周期两粮产酒且不自动换钱，T0441 后其酒产量只叠加酿酒技能与建筑等级奖励，不再叠加智力奖励（智力仍影响周期速度）。治疗需要医生与病床同时工作并消耗第纳尔。所有定义声明唯一 `needs_profile`，协助行动通过 `timed_experience` 累计对应技能。
 
 路径：`data/activity_needs.json`
 用途：NPC 活动生活消耗配置，记录 0–100 边界、每小时饱食 / 疲劳速率、行为模式映射、动态 idle / movement / unconscious 档位和说明。
@@ -4151,7 +4771,7 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 路径：`data/enemy_waves.json`
 用途：敌人波次配置，记录波次编号、触发时间、正门外生成点、生成位置、生成散布和敌人组数值。
 依赖：由 `CombatSystem` 通过 `ConfigLoader.load_data_file("enemy_waves.json")` 读取。
-当前状态：T0121 后 5 波总数为 `8 / 16 / 24 / 36 / 48`，敌人个体整体弱于我方平均武装单位，后期主要靠人数、远程和骑兵混编提高压力；第二、四波是相对难度峰值。敌人组包含穿透、规范攻速、兼容间隔和攻击抬手，抬手可被僵直打断。自动来袭固定在第 3–7 天每天 18:00，目标过滤围墙并按附近单位 / 器械、城门、仓库、主厅推进。
+当前状态：T0414 在 T0121 既有数值基础上将 5 波 14 个敌军组的 HP / Max HP 统一提高 30%、攻击力提高 50%，整数四舍五入且 `.5` 向上；总数仍为 `8 / 16 / 24 / 36 / 48`。敌人组继续包含穿透、规范攻速、兼容间隔和攻击抬手，抬手可被僵直打断；其他属性与目标策略不变。自动来袭固定在第 1 日 23:00、第 3 日 08:00、第 4 日 04:00、第 5 日 12:00、第 6 日 18:00，目标过滤围墙并按附近单位 / 器械、城门、仓库、主厅推进。
 
 路径：`data/npc_initial_long_memory.json`
 用途：独立保存 8 名初始 NPC 的开局前日记和知识图谱，不与根本人设或运行时权威状态混写。
@@ -4336,7 +4956,9 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | 逃离挽留入口、暂停与攻击规则验证 | `tools/verify_escape_intervention_dialogue.gd` |
 | 警铃与集结验证 | `tools/verify_combat_alarm_rally.gd` |
 | NPC 行为模式状态机验证 | `tools/verify_behavior_mode_state_machine.gd` |
+| 敌军边缘生成保持日常行动、警铃离床与工位战时安全交接验证 | `tools/verify_t0403_r3_wartime_workstation_handoff.gd` |
 | 非战斗人员避战模式验证 | `tools/verify_avoid_combat_mode.gd` |
+| T0432 昏迷避战结束延迟到清敌验证 | `tools/verify_t0432_unconscious_avoidance_end.gd` |
 | HUD 具体物品分组、旧聚合隐藏与真实马匹汇总验证 | `tools/verify_hud_resources.gd` |
 | 时间系统验证 | `tools/verify_time_system.gd` |
 | 结构化事件底座验证 | `tools/verify_structured_memory_events.gd`；菜园 / 食堂 / 宿舍等待正式工位 active，缺材料制造验证迁移前失败 |
@@ -4417,3 +5039,37 @@ T0043 补充：诊所 / 训练位置类型已替换为 `clinic_doctor_station`�
 | `scripts/systems/EpilogueFactCompiler.gd` | 把撤离时机写入人物输入及最终状态事实，交给 LLM |
 | `backend/schemas/epilogue.py` / `data/prompts/game_epilogue_system_prompt.txt` | 校验撤离情形，并约束主动逃离者未参加最后守城、被迫撤离者不得被写成临阵逃跑 |
 | `scripts/ui/EpiloguePanel.gd` | 结局卡片分别显示“失守前主动逃离”和“失守后被迫撤离” |
+## T0415 成长与经济数值降速索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `scripts/systems/NPCSystem.gd` | 在统一熟练度与独立总经验入口按 70% 结算，并保存逐项千分比余量 |
+| `data/merchant_defs.json` / `data/horse_defs.json` / `data/piety_ability.json` | 行商报价、照料繁育概率增率与虔诚基础速率权威值 |
+| `scripts/systems/BuildingSystem.gd` | 为所有升级配置统一增加 3600 秒无协助基础工期 |
+| `tools/verify_t0415_growth_economy_balance.gd` | 覆盖经验余量、全部报价、繁育、虔诚与全部建筑升级时长 |
+## T0416 塔防生命与攻击减半索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `data/defense_device_defs.json` | 两类正式塔防的 Max HP 与攻击权威值 |
+| `tools/verify_t0416_defense_device_halving.gd` | 动态覆盖全部塔防定义并验证实际部署值 |
+| `data/tutorial_config.json` / `scripts/systems/TutorialDirector.gd` | 声明并提交教程箭塔原始数值的实例级覆盖 |
+| `scripts/systems/DefenseDeviceSystem.gd` | 仅为目标教程 deployment 合成 HP / 攻击覆盖，正式定义保持隔离 |
+
+## T0419 菜园与食堂同周期产出减半索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `data/action_defs.json` | `work_garden` 与 `work_dining_hall` 的基础周期、投入及产出权威配置；当前同为 3600 秒，基础产出同为 1 |
+| `tools/verify_garden_grain_output.gd` / `tools/verify_dining_hall_meals.gd` | 验证菜园缩放后产粮及食堂 `1 粮→1 餐食` 的完整周期资源结算与事件载荷 |
+
+## T0425 建筑升级工期与悬停提示索引
+
+| 文件 / 目录 | 职责 |
+|---|---|
+| `scripts/systems/BuildingSystem.gd` | 将倍率计算后的统一固定加时提高到 7200 秒，并通过 `get_upgrade_duration_seconds(...)` 暴露只读权威总工期 |
+| `scripts/ui/BuildingPanel.gd` | “升级”悬停提示读取权威总工期，不再直接展示逐级配置原值 |
+| `tools/verify_t0425_upgrade_duration_tooltip.gd` | 遍历全部可升级建筑，校验固定加时、提示文本与真实开工作业总工期一致 |
+| `tools/verify_t0415_growth_economy_balance.gd` | 将既有全建筑升级回归同步到当前 7200 秒固定加时 |
+
+稳定关系：`逐级配置 / 等级倍率结果 → BuildingSystem 固定 +7200 秒 → 开工作业与 BuildingPanel Tooltip 共用同一总工期`。

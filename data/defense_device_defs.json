@@ -7,11 +7,11 @@
       "description": "重型远射器械：攻击、穿透和射程更高，但射速慢且耐久较低。",
       "inventory_cost": {"item_wall_ballista": 1},
       "required_building_levels": {"workshop": 1},
-      "max_hp": 55,
+      "max_hp": 25,
       "defense": 1.0,
       "effect": {
         "kind": "auto_attack",
-        "damage": 44,
+        "damage": 22,
         "penetration": 8.0,
         "attack_speed": 0.23529411764705882,
         "attack_interval": 4.25,
@@ -46,17 +46,17 @@
       "description": "轻型速射器械：攻击、穿透和射程稍低，但射速快且耐久更高。",
       "inventory_cost": {"item_wall_arrow_tower": 1},
       "required_building_levels": {"workshop": 1},
-      "max_hp": 110,
+      "max_hp": 50,
       "defense": 3.0,
       "effect": {
         "kind": "auto_attack",
-        "damage": 16,
+        "damage": 8,
         "penetration": 4.0,
-        "attack_speed": 0.72,
-        "attack_interval": 1.39,
+        "attack_speed": 0.38,
+        "attack_interval": 2.6315789473684212,
         "range": 28.0,
         "attack_timing": {
-          "authored_cycle_seconds": 1.39,
+          "authored_cycle_seconds": 2.6315789473684212,
           "release_authored_seconds": 0.26
         },
         "projectile": {

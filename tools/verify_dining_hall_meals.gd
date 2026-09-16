@@ -48,8 +48,8 @@ func _init() -> void:
 		push_error("Dining hall work should consume 1 grain")
 		quit(1)
 		return
-	if int(dining_action.get("output_resources", {}).get("meal", 0)) != 2:
-		push_error("Dining hall work should output 2 meals")
+	if int(dining_action.get("output_resources", {}).get("meal", 0)) != 1:
+		push_error("Dining hall work should output 1 meal after T0419")
 		quit(1)
 		return
 
@@ -100,8 +100,8 @@ func _init() -> void:
 		push_error("Dining hall work did not consume exactly 1 grain")
 		quit(1)
 		return
-	if int(resource_system.get_resource("meal")) != meal_before_work + 2:
-		push_error("Dining hall work did not produce exactly 2 meals")
+	if int(resource_system.get_resource("meal")) != meal_before_work + 1:
+		push_error("Dining hall work did not produce exactly 1 meal")
 		quit(1)
 		return
 	var cook_events := _events_after(memory_system.get_npc_daily_events(cook_id), cook_events_before)
@@ -114,7 +114,7 @@ func _init() -> void:
 		push_error("Dining hall work completion event missing grain input")
 		quit(1)
 		return
-	if int(work_completed.get("payload", {}).get("output_resources", {}).get("meal", 0)) != 2:
+	if int(work_completed.get("payload", {}).get("output_resources", {}).get("meal", 0)) != 1:
 		push_error("Dining hall work completion event missing meal output")
 		quit(1)
 		return

@@ -352,6 +352,9 @@ func _make_device_icon_button(device_id: String, definition: Dictionary, instanc
 	button.focus_mode = Control.FOCUS_NONE
 	button.tooltip_text = str(definition.get("name", device_id))
 	button.set_meta("device_picker_id", device_id)
+	# A successful pick is acknowledged by the positioned deployment thud.
+	# Keep the generic UI wood click out of the same pressed dispatch.
+	button.set_meta("ui_audio_silent", true)
 	button.pressed.connect(_on_deploy_pressed.bind(device_id))
 	_apply_icon_button_style(button, PICKER_ITEM_CONTENT_MARGIN, PICKER_ITEM_BORDER_WIDTH)
 	return button
@@ -418,6 +421,35 @@ func _on_deploy_pressed(device_id: String) -> void:
 
 	_close_popup()
 	_refresh_all()
+
+
+func get_tutorial_target_control(target_id: String) -> Control:
+	if target_id.begins_with("slot:"):
+		return _markers.get(target_id.trim_prefix("slot:")) as Control
+	if target_id.begins_with("device:") and _popup_device_grid != null:
+		var device_id := target_id.trim_prefix("device:")
+		for child in _popup_device_grid.find_children("*", "Button", true, false):
+			if str(child.get_meta("device_picker_id", "")) == device_id:
+				return child as Control
+	return null
+
+
+func tutorial_open_slot(slot_id: String) -> bool:
+	return _open_slot(slot_id)
+
+
+func tutorial_deploy_device(device_id: String) -> Dictionary:
+	if _current_slot_id.is_empty():
+		return {"ok": false, "reason": "tutorial_slot_not_open"}
+	var slot_id := _current_slot_id
+	var device_system := get_node_or_null(DEFENSE_DEVICE_SYSTEM_PATH)
+	if device_system == null or not device_system.has_method("deploy_device"):
+		return {"ok": false, "reason": "defense_device_system_missing"}
+	var result: Dictionary = device_system.deploy_device(device_id, slot_id)
+	if bool(result.get("ok", false)):
+		_close_popup()
+	_refresh_all()
+	return result
 
 
 func _position_popup() -> void:

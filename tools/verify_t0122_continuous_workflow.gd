@@ -108,6 +108,9 @@ var last_action_results := {}
 var peak_piety := 0.0
 var failure_messages: Array[String] = []
 
+const LIVE_COMBAT_FRAME_SECONDS := 1.0 / 60.0
+const LIVE_WAVE_APPROACH_SECONDS := 1.0
+
 
 func _init() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -133,22 +136,53 @@ func _init() -> void:
 	var guard := 0
 	while not bool(systems.game_state.get("game_over")) and _absolute_game_seconds() < _day_seconds(6, 20, 0):
 		guard += 1
-		if guard > 20000:
+		if guard > 120000:
 			_fail("Continuous replay exceeded its simulation guard")
 			return
 		_player_decisions()
-		var x1_step := _uses_x1_step()
-		var game_delta := 60.0 if x1_step else _get_normal_game_step()
-		var real_delta := game_delta / (60.0 if x1_step else 240.0)
-		_step_npc_movement(real_delta)
-		if not systems.time.debug_advance_game_seconds(game_delta):
-			_fail("Time advance failed before the expected terminal state")
-			return
-		if guard % 120 == 0:
+		if _requires_live_combat_frame():
+			# Advance the same authority delta consumed by one production x1 combat
+			# frame, then allow ActorMotion, melee sweeps and physical projectiles to
+			# resolve. This also crosses the scheduled-wave boundary without giving a
+			# newly spawned wave an out-of-combat 60/240/1800-second logic jump.
+			if not systems.time.debug_advance_game_seconds(LIVE_COMBAT_FRAME_SECONDS):
+				_fail("Live combat-frame time advance failed before the expected terminal state")
+				return
+			await physics_frame
 			await process_frame
+		elif _any_npc_moving():
+			# NPC actors now move in ActorMotionBody._physics_process(). Advancing only
+			# their legacy _process callback leaves them stranded and makes every
+			# production estimate falsely read zero. At out-of-combat x4, one 1/60s
+			# physical frame corresponds to four game seconds.
+			var movement_game_delta: float = float(systems.time.get_game_delta_seconds(LIVE_COMBAT_FRAME_SECONDS))
+			movement_game_delta = _cap_step_before_next_wave(movement_game_delta)
+			if not systems.time.debug_advance_game_seconds(movement_game_delta):
+				_fail("Live movement-frame time advance failed before the expected terminal state")
+				return
+			await physics_frame
+			await process_frame
+		else:
+			var x1_step := _uses_x1_step()
+			var game_delta := 60.0 if x1_step else _get_normal_game_step()
+			game_delta = _cap_step_before_next_wave(game_delta)
+			if not systems.time.debug_advance_game_seconds(game_delta):
+				_fail("Time advance failed before the expected terminal state")
+				return
+			if guard % 120 == 0:
+				await process_frame
 		_capture_action_completions()
 		_capture_battle_transition()
 		peak_piety = maxf(peak_piety, _get_piety())
+		if guard % 3600 == 0:
+			print("T0122 progress: day=%d time=%02d:%02d active_wave=%d enemies=%d moving=%d" % [
+				int(systems.game_state.current_day),
+				int(systems.game_state.current_hour),
+				int(systems.game_state.current_minute),
+				active_wave,
+				systems.combat.get_active_enemy_count(),
+				_count_moving_npcs(),
+			])
 
 	_finalize_report()
 
@@ -297,9 +331,29 @@ func _uses_x1_step() -> bool:
 	var minute := int(systems.game_state.current_minute)
 	if hour == 17 and minute >= 36:
 		return true
-	if scenario == "focused" and _any_npc_moving() and (_is_work_window(hour, minute) or hour == 12):
-		return true
 	return false
+
+
+func _requires_live_combat_frame() -> bool:
+	if active_wave > 0 or systems.combat.get_active_enemy_count() > 0:
+		return true
+	var schedule: Dictionary = systems.combat.get_wave_schedule_snapshot()
+	var next_wave: Dictionary = schedule.get("next_wave", {}) if schedule.get("next_wave", {}) is Dictionary else {}
+	if next_wave.is_empty():
+		return false
+	return float(next_wave.get("seconds_until", INF)) <= LIVE_WAVE_APPROACH_SECONDS
+
+
+func _cap_step_before_next_wave(requested_seconds: float) -> float:
+	var result := maxf(LIVE_COMBAT_FRAME_SECONDS, requested_seconds)
+	var schedule: Dictionary = systems.combat.get_wave_schedule_snapshot()
+	var next_wave: Dictionary = schedule.get("next_wave", {}) if schedule.get("next_wave", {}) is Dictionary else {}
+	if next_wave.is_empty():
+		return result
+	var seconds_until := float(next_wave.get("seconds_until", INF))
+	if seconds_until > LIVE_WAVE_APPROACH_SECONDS:
+		result = minf(result, seconds_until - LIVE_WAVE_APPROACH_SECONDS)
+	return maxf(LIVE_COMBAT_FRAME_SECONDS, result)
 
 
 func _get_normal_game_step() -> float:
@@ -316,10 +370,12 @@ func _any_npc_moving() -> bool:
 	return false
 
 
-func _step_npc_movement(real_seconds: float) -> void:
+func _count_moving_npcs() -> int:
+	var result := 0
 	for npc_node in npc_nodes:
 		if bool(npc_node.get("_is_moving")):
-			npc_node.call("_process", real_seconds)
+			result += 1
+	return result
 
 
 func _assign_work_if_idle() -> void:

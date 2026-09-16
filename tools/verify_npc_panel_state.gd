@@ -53,7 +53,7 @@ func _init() -> void:
 		return
 
 	var hp_label := npc_panel.find_child("NPCHPLabel", true, false) as Label
-	if hp_label == null or hp_label.text != "HP：120 / 120":
+	if hp_label == null or hp_label.text != "HP：95 / 95":
 		push_error("NPCPanel HP text mismatch: %s" % (hp_label.text if hp_label != null else "<missing>"))
 		quit(1)
 		return
@@ -149,7 +149,7 @@ func _init() -> void:
 		push_error("NPCPanel strength inline text mismatch")
 		quit(1)
 		return
-	if intelligence_value_label == null or intelligence_value_label.text != "智力 6":
+	if intelligence_value_label == null or intelligence_value_label.text != "智力 5":
 		push_error("NPCPanel intelligence inline text mismatch")
 		quit(1)
 		return
@@ -193,12 +193,12 @@ func _init() -> void:
 	if not _verify_need_progress(satiety_progress, satiety_label, false, "satiety boundary") or not _verify_need_progress(fatigue_progress, fatigue_label, false, "fatigue boundary", FATIGUE_FILL):
 		quit(1)
 		return
-	npc_system.update_npc_state(npc_id, {"hp": 35})
+	npc_system.update_npc_state(npc_id, {"hp": 28})
 	await process_frame
 	if not _verify_need_progress(hp_progress, hp_label, true, "critical HP"):
 		quit(1)
 		return
-	npc_system.update_npc_state(npc_id, {"hp": 36})
+	npc_system.update_npc_state(npc_id, {"hp": 29})
 	await process_frame
 	if not _verify_need_progress(hp_progress, hp_label, false, "HP boundary"):
 		quit(1)
@@ -392,6 +392,20 @@ func _init() -> void:
 		push_error("NPC detail popup nodes not found")
 		quit(1)
 		return
+	# GUI picking follows sibling order. Reproduce a later UI sibling covering the
+	# detail close button, then ensure reopening restores the popup to the front.
+	memory_detail_close.pressed.emit()
+	memory_detail_popup.get_parent().move_child(memory_detail_popup, 0)
+	background_button.pressed.emit()
+	await process_frame
+	if memory_detail_popup.get_index() != memory_detail_popup.get_parent().get_child_count() - 1:
+		push_error("NPC detail popup did not restore frontmost input order above NPCPanel and portrait")
+		quit(1)
+		return
+	if not memory_detail_close.get_global_rect().intersects(npc_panel.get_global_rect()):
+		push_error("NPC detail close button overlap regression setup is invalid")
+		quit(1)
+		return
 	var veteran_profile: Dictionary = npc_system.get_npc(npc_id)
 	var required_profile_fields: Array[String] = ["appearance", "background_story", "background_job", "religion", "personality", "desires", "fears", "boundaries", "speech_style", "abilities"]
 	if not memory_detail_popup.visible or not memory_detail_title.text.contains("人物背景"):
@@ -462,8 +476,8 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	if not memory_detail_text.text.contains("计划覆盖刷新测试"):
-		push_error("Current plan popup should refresh when the active plan is replaced")
+	if memory_detail_text.text.contains("计划覆盖刷新测试") or memory_detail_text.text.contains("｜"):
+		push_error("Current plan popup should hide plan reason and source metadata after refresh")
 		quit(1)
 		return
 
@@ -482,13 +496,13 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	var grouped_plan_line := "▶ 13:00–16:00  酿造酒｜真实 LLM 日计划"
+	var grouped_plan_line := "▶ 13:00–16:00  酿造酒"
 	if not memory_detail_text.text.contains(grouped_plan_line):
 		push_error("Consecutive identical plan hours should merge into one marked range: %s" % memory_detail_text.text)
 		quit(1)
 		return
-	if memory_detail_text.text.contains("\n    酿造酒") or memory_detail_text.text.count("酿造酒") != 1:
-		push_error("Plan reason identical to the action name should be hidden: %s" % memory_detail_text.text)
+	if memory_detail_text.text.contains("真实 LLM 日计划") or memory_detail_text.text.contains("\n    酿造酒") or memory_detail_text.text.count("酿造酒") != 1:
+		push_error("Plan source and reason metadata should be hidden: %s" % memory_detail_text.text)
 		quit(1)
 		return
 	updated_plan = daily_plan_system.get_npc_daily_plan(npc_id)
@@ -498,8 +512,8 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	if not memory_detail_text.text.contains("计划覆盖刷新测试") or memory_detail_text.text.contains("13:00–16:00"):
-		push_error("A distinct visible reason should remain visible and split the merged range")
+	if memory_detail_text.text.contains("计划覆盖刷新测试") or memory_detail_text.text.contains("13:00–16:00"):
+		push_error("A distinct hidden reason may split the range but must not be displayed")
 		quit(1)
 		return
 	memory_detail_close.pressed.emit()
@@ -679,7 +693,7 @@ func _init() -> void:
 	await process_frame
 
 	var action_label := npc_panel.find_child("NPCActionLabel", true, false) as Label
-	if hp_label.text != "HP：64 / 120" or action_label == null or action_label.text != "其他行动" or action_label.get_parent() != header:
+	if hp_label.text != "HP：64 / 95" or action_label == null or action_label.text != "其他行动" or action_label.get_parent() != header:
 		push_error("NPCPanel did not refresh after state update")
 		quit(1)
 		return

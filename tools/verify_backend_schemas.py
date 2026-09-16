@@ -179,7 +179,7 @@ def main() -> None:
                 "location_name": "宿舍",
                 "workstation_id": "dormitory_bed_02",
                 "elapsed_seconds": 1800.0,
-                "duration_seconds": 23400.0,
+                "duration_seconds": 28800.0,
             },
             "current_plan_activity": {
                 "action_id": "sleep_in_dormitory",

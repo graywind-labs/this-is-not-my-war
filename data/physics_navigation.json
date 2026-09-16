@@ -12,7 +12,7 @@
   },
   "actor_profiles": {
     "npc": {
-      "radius": 0.35,
+      "radius": 0.3,
       "height": 1.6,
       "step_height": 0.3,
       "max_slope_degrees": 45.0,
@@ -85,6 +85,18 @@
     "wall_thickness": 0.4,
     "minimum_wall_height": 1.2,
     "building_door_clear_width": 1.8,
+    "building_door_clear_width_by_id": {
+      "dormitory": 2.08,
+      "dining_hall": 2.08,
+      "tavern": 2.08,
+      "garden": 2.08,
+      "blacksmith": 2.08,
+      "training_ground": 2.08,
+      "stable": 2.58,
+      "chapel": 2.08,
+      "clinic": 2.08,
+      "workshop": 2.08
+    },
     "building_door_clear_height": 2.2,
     "gate_post_width": 1.2,
     "collision_margin": 0.04
@@ -92,7 +104,7 @@
   "navigation_mesh": {
     "production_cell_size": 0.25,
     "production_cell_height": 0.1,
-    "agent_radius": 0.35,
+    "agent_radius": 0.3,
     "baked_agent_radius": 0.5,
     "agent_height": 1.8,
     "agent_max_climb": 0.3,
@@ -109,7 +121,7 @@
     "target_desired_distance": 0.25,
     "path_height_offset": 0.0,
     "avoidance_enabled": true,
-    "avoidance_radius_padding": 0.1,
+    "avoidance_radius_padding": 0.05,
     "neighbor_distance": 3.5,
     "max_neighbors": 10,
     "time_horizon_agents": 0.9,
@@ -119,6 +131,14 @@
     "avoidance_layers": 1,
     "avoidance_mask": 1,
     "use_3d_avoidance": false
+  },
+  "building_door_queue": {
+    "enabled": true,
+    "token_count": 8,
+    "range_width": 2.6,
+    "range_depth": 3.0,
+    "range_height": 2.8,
+    "release_grace_seconds": 0.12
   },
   "path_progression": {
     "adaptive_waypoint_enabled": true,

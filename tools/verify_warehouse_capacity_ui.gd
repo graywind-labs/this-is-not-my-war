@@ -2,20 +2,20 @@ extends SceneTree
 
 
 const LIMITED_CAPACITIES_LEVEL_1 := {
-	"grain": 120,
-	"meal": 120,
-	"wine": 60,
-	"wood": 120,
-	"stone": 120,
-	"iron": 120
+	"grain": 20,
+	"meal": 20,
+	"wine": 20,
+	"wood": 20,
+	"stone": 20,
+	"iron": 20
 }
 const LIMITED_CAPACITIES_LEVEL_2 := {
-	"grain": 180,
-	"meal": 180,
-	"wine": 90,
-	"wood": 180,
-	"stone": 180,
-	"iron": 180
+	"grain": 30,
+	"meal": 30,
+	"wine": 30,
+	"wood": 30,
+	"stone": 30,
+	"iron": 30
 }
 const LIMITED_RESOURCE_ORDER: Array[String] = ["grain", "meal", "wine", "wood", "stone", "iron"]
 const NORMAL_FILL := "71865aff"
@@ -59,13 +59,13 @@ func _init() -> void:
 	if (
 		grain_remaining <= 0
 		or not bool(resource_system.add_resource("grain", grain_remaining))
-		or int(resource_system.get_resource("grain")) != 120
+		or int(resource_system.get_resource("grain")) != 20
 	):
 		_fail("A limited resource must be able to fill exactly to its capacity")
 		return
 	if (
 		bool(resource_system.add_resource("grain", 1))
-		or int(resource_system.get_resource("grain")) != 120
+		or int(resource_system.get_resource("grain")) != 20
 	):
 		_fail("A positive resource addition must be rejected atomically above capacity")
 		return
@@ -75,7 +75,7 @@ func _init() -> void:
 	if int(resource_system.get_resource("money")) != 30:
 		_fail("Rejected multi-resource addition changed an unlimited resource")
 		return
-	if not bool(resource_system.add_resource("grain", grain_before - 120)):
+	if not bool(resource_system.add_resource("grain", grain_before - 20)):
 		_fail("Failed to restore grain after the authority-capacity check")
 		return
 
@@ -124,12 +124,12 @@ func _init() -> void:
 
 	var grain_progress := building_panel.find_child("WarehouseStorageProgress_grain", true, false) as ProgressBar
 	var grain_storage_label := building_panel.find_child("WarehouseStorageLabel_grain", true, false) as Label
-	if not bool(resource_system.add_resource("grain", 96 - grain_before)):
+	if not bool(resource_system.add_resource("grain", 16 - grain_before)):
 		_fail("Failed to set grain to the near-full threshold")
 		return
 	await process_frame
 	var grain_fill := grain_progress.get_theme_stylebox("fill") as StyleBoxFlat
-	if grain_storage_label.text != "粮食 96/120" or not bool(grain_progress.get_meta("danger_state", false)) or grain_fill == null or grain_fill.bg_color.to_html(true) != DANGER_FILL:
+	if grain_storage_label.text != "粮食 16/20" or not bool(grain_progress.get_meta("danger_state", false)) or grain_fill == null or grain_fill.bg_color.to_html(true) != DANGER_FILL:
 		_fail("Warehouse storage bar did not turn red at 80 percent")
 		return
 	if not bool(resource_system.add_resource("grain", -1)):
@@ -137,10 +137,10 @@ func _init() -> void:
 		return
 	await process_frame
 	grain_fill = grain_progress.get_theme_stylebox("fill") as StyleBoxFlat
-	if grain_storage_label.text != "粮食 95/120" or bool(grain_progress.get_meta("danger_state", true)) or grain_fill == null or grain_fill.bg_color.to_html(true) != NORMAL_FILL:
+	if grain_storage_label.text != "粮食 15/20" or bool(grain_progress.get_meta("danger_state", true)) or grain_fill == null or grain_fill.bg_color.to_html(true) != NORMAL_FILL:
 		_fail("Warehouse storage bar did not return to green below 80 percent")
 		return
-	if not bool(resource_system.add_resource("grain", grain_before - 95)):
+	if not bool(resource_system.add_resource("grain", grain_before - 15)):
 		_fail("Failed to restore grain after storage-bar verification")
 		return
 	await process_frame
@@ -166,8 +166,8 @@ func _init() -> void:
 		or grain_icon == null
 		or wine_icon == null
 		or money_icon == null
-		or grain_icon.tooltip_text != "粮食\n仓库储存上限：120"
-		or wine_icon.tooltip_text != "酒\n仓库储存上限：60"
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：20"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：20"
 		or money_icon.tooltip_text != "金钱"
 		or grain_icon.mouse_filter != Control.MOUSE_FILTER_STOP
 		or grain_label.mouse_filter != Control.MOUSE_FILTER_IGNORE
@@ -188,11 +188,11 @@ func _init() -> void:
 	if not _verify_capacities(resource_system, LIMITED_CAPACITIES_LEVEL_2):
 		return
 	if (
-		grain_storage_label.text != "粮食 %d/180" % grain_before
-		or int(grain_progress.max_value) != 180
-		or str((building_panel.find_child("WarehouseStorageLabel_wine", true, false) as Label).text) != "酒 0/90"
-		or grain_icon.tooltip_text != "粮食\n仓库储存上限：180"
-		or wine_icon.tooltip_text != "酒\n仓库储存上限：90"
+		grain_storage_label.text != "粮食 %d/30" % grain_before
+		or int(grain_progress.max_value) != 30
+		or str((building_panel.find_child("WarehouseStorageLabel_wine", true, false) as Label).text) != "酒 0/30"
+		or grain_icon.tooltip_text != "粮食\n仓库储存上限：30"
+		or wine_icon.tooltip_text != "酒\n仓库储存上限：30"
 	):
 		_fail("Warehouse panel or HUD hover hints did not refresh after the upgrade")
 		return

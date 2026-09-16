@@ -22,9 +22,13 @@ var _shake_duration := 0.0
 var _shake_amplitude := 0.0
 var _shake_frequency := 18.0
 var _camera_base_position := Vector3.ZERO
+var _control_lock_requests: Dictionary = {}
 
 
 func _ready() -> void:
+	# Release events must still reach the rig while SceneTree is paused; otherwise
+	# a key released inside the pause menu remains cached after gameplay resumes.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_camera_offset_direction = camera.position.normalized()
 	_zoom_distance = camera.position.length()
 	_apply_zoom()
@@ -32,7 +36,10 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if _is_text_input_focused():
+	if get_tree().paused:
+		_reset_input_state()
+		return
+	if is_camera_control_locked() or _is_text_input_focused():
 		_reset_keyboard_pan()
 	else:
 		var pan_input := Vector2.ZERO
@@ -55,6 +62,15 @@ func _input(event: InputEvent) -> void:
 	if not event is InputEventKey:
 		return
 	var key_event := event as InputEventKey
+	if get_tree().paused:
+		if _is_shift_key(key_event) or _get_pan_key(key_event) != Key.KEY_NONE:
+			_reset_keyboard_pan()
+		return
+	if is_camera_control_locked():
+		if _is_shift_key(key_event) or _get_pan_key(key_event) != Key.KEY_NONE:
+			_reset_keyboard_pan()
+			get_viewport().set_input_as_handled()
+		return
 	if _is_shift_key(key_event):
 		_is_keyboard_pan_boost_active = key_event.pressed
 		return
@@ -71,6 +87,19 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if get_tree().paused:
+		_reset_input_state()
+		return
+	if is_camera_control_locked():
+		if event is InputEventMouseButton:
+			var locked_mouse_button := event as InputEventMouseButton
+			if locked_mouse_button.button_index in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+				_is_middle_dragging = false
+				get_viewport().set_input_as_handled()
+		elif event is InputEventMouseMotion and _is_middle_dragging:
+			_is_middle_dragging = false
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton:
 		var mouse_button := event as InputEventMouseButton
 		if mouse_button.button_index == MOUSE_BUTTON_MIDDLE:
@@ -151,6 +180,97 @@ func _apply_zoom() -> void:
 
 func get_zoom_distance() -> float:
 	return _zoom_distance
+
+
+func set_zoom_distance(distance: float) -> float:
+	_zoom_distance = clampf(distance, min_zoom_distance, max_zoom_distance)
+	_apply_zoom()
+	return _zoom_distance
+
+
+func request_camera_control_lock(request_id: String) -> Dictionary:
+	var clean_request_id := request_id.strip_edges()
+	if clean_request_id.is_empty():
+		return {"ok": false, "reason": "camera_control_lock_request_id_missing"}
+	var changed := not _control_lock_requests.has(clean_request_id)
+	_control_lock_requests[clean_request_id] = true
+	_reset_input_state()
+	return {
+		"ok": true,
+		"changed": changed,
+		"request_id": clean_request_id,
+		"locked": true,
+		"request_count": _control_lock_requests.size()
+	}
+
+
+func release_camera_control_lock(request_id: String) -> Dictionary:
+	var clean_request_id := request_id.strip_edges()
+	var changed := _control_lock_requests.erase(clean_request_id)
+	_reset_input_state()
+	return {
+		"ok": true,
+		"changed": changed,
+		"request_id": clean_request_id,
+		"locked": is_camera_control_locked(),
+		"request_count": _control_lock_requests.size()
+	}
+
+
+func is_camera_control_locked() -> bool:
+	return not _control_lock_requests.is_empty()
+
+
+func get_camera_control_lock_snapshot() -> Dictionary:
+	return {
+		"locked": is_camera_control_locked(),
+		"request_ids": _control_lock_requests.keys(),
+		"request_count": _control_lock_requests.size(),
+		"zoom_distance": _zoom_distance
+	}
+
+
+func focus_world_position(world_position: Vector3) -> void:
+	global_position.x = world_position.x
+	global_position.z = world_position.z
+	_clamp_position()
+
+
+func focus_world_position_at_screen_center(world_position: Vector3) -> void:
+	var viewport_center := camera.get_viewport().get_visible_rect().size * 0.5
+	var center_ray_origin := camera.project_ray_origin(viewport_center)
+	var center_ray_direction := camera.project_ray_normal(viewport_center)
+	if absf(center_ray_direction.y) <= 0.0001:
+		focus_world_position(world_position)
+		return
+	var ray_distance := (world_position.y - center_ray_origin.y) / center_ray_direction.y
+	var current_center_at_height := center_ray_origin + center_ray_direction * ray_distance
+	global_position.x += world_position.x - current_center_at_height.x
+	global_position.z += world_position.z - current_center_at_height.z
+	_clamp_position()
+
+
+func smooth_focus_world_position_at_screen_center(
+	world_position: Vector3,
+	delta: float,
+	responsiveness: float = 8.0
+) -> void:
+	var viewport_center := camera.get_viewport().get_visible_rect().size * 0.5
+	var center_ray_origin := camera.project_ray_origin(viewport_center)
+	var center_ray_direction := camera.project_ray_normal(viewport_center)
+	if absf(center_ray_direction.y) <= 0.0001:
+		return
+	var ray_distance := (world_position.y - center_ray_origin.y) / center_ray_direction.y
+	var current_center_at_height := center_ray_origin + center_ray_direction * ray_distance
+	var desired_position := global_position + Vector3(
+		world_position.x - current_center_at_height.x,
+		0.0,
+		world_position.z - current_center_at_height.z
+	)
+	var blend := 1.0 - exp(-maxf(0.01, responsiveness) * maxf(0.0, delta))
+	global_position.x = lerpf(global_position.x, desired_position.x, blend)
+	global_position.z = lerpf(global_position.z, desired_position.z, blend)
+	_clamp_position()
 
 
 func request_camera_shake(duration_seconds: float, amplitude: float, frequency: float = 18.0) -> void:

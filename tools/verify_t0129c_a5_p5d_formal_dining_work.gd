@@ -31,7 +31,7 @@ func _init() -> void:
 
 	time_system.set_paused(false)
 	time_system.set_current_time(1, 7, 2, 0)
-	daily_plan_system.set_auto_execution_enabled(true)
+	daily_plan_system.set_auto_execution_enabled(false)
 	bruno.set("move_speed", 5.0)
 	resource_system.add_resource("grain", -resource_system.get_resource("grain"))
 	resource_system.add_resource("meal", -resource_system.get_resource("meal"))
@@ -47,20 +47,26 @@ func _init() -> void:
 		_fail("work_dining_hall is not configured for formal spatial authority")
 		return
 
-	# The visible GM entry must reject a missing ingredient before it reveals the
-	# formal world, reserves a stove, or starts physical migration.
+	# Missing ingredients are checked at the stove, not remotely before travel.
 	gm_window.visible = true
 	formal_button.pressed.emit()
 	await process_frame
 	if (
-		not gm_window.visible
-		or bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
-		or not _workstation_is_clear(building_system, FIRST_STATION_ID)
-		or not action_system.get_runtime_action_snapshot(NPC_ID).is_empty()
+		gm_window.visible
+		or not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
+		or not _workstation_reserved_by(building_system, FIRST_STATION_ID, NPC_ID)
+		or str(action_system.get_runtime_action_snapshot(NPC_ID).get("phase", "")) != "pending"
 	):
-		_fail("Missing grain was not rejected before formal dining-hall migration")
+		_fail("Missing grain failed remotely instead of dispatching kitchen travel")
+		return
+	if not await _wait_for_action_failure(npc_system, time_system, "work_failed_no_resources"):
+		_fail("Missing grain was not rejected after Bruno reached the kitchen station")
+		return
+	if str(npc_system.get_npc_state(NPC_ID).get("current_location", "")) != BUILDING_ID or not _workstation_is_clear(building_system, FIRST_STATION_ID):
+		_fail("Arrival-time kitchen resource failure did not retain location and clean the station")
 		return
 
+	daily_plan_system.set_auto_execution_enabled(true)
 	if not resource_system.add_resource("grain", 20):
 		_fail("Could not prepare grain for formal dining-hall verification")
 		return
@@ -139,9 +145,9 @@ func _init() -> void:
 		await process_frame
 	if (
 		resource_system.get_resource("grain") != grain_before - 1
-		or resource_system.get_resource("meal") != meal_before + 2
+		or resource_system.get_resource("meal") != meal_before + 1
 	):
-		_fail("One active cooking cycle did not atomically convert 1 grain into 2 meals")
+		_fail("One active cooking cycle did not atomically convert 1 grain into 1 meal")
 		return
 	if not await _wait_for_active(action_system, time_system, 120):
 		_fail("Planned dining production did not start its next cycle")
@@ -184,6 +190,15 @@ func _wait_for_active(action_system: Node, time_system: Node, max_frames: int = 
 		await physics_frame
 		var runtime: Dictionary = action_system.get_runtime_action_snapshot(NPC_ID)
 		if str(runtime.get("phase", "")) == "active" and str(runtime.get("action_id", "")) == ACTION_ID:
+			return true
+	return false
+
+
+func _wait_for_action_failure(npc_system: Node, time_system: Node, expected_result: String, max_frames: int = 1800) -> bool:
+	for _frame in range(max_frames):
+		time_system.set_paused(false)
+		await physics_frame
+		if str(npc_system.get_npc_state(NPC_ID).get("last_action_result", "")) == expected_result:
 			return true
 	return false
 

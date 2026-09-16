@@ -105,6 +105,10 @@ func _verify_action_broadcast(
 		return false
 	var duration_seconds := _duration_for_action(action_id)
 	action_system._on_logical_time_tick(duration_seconds, 1.0)
+	if action_id == "sleep_in_dormitory":
+		if not action_system.interrupt_npc_action(actor_id, "broadcast_test_wake", true):
+			push_error("Failed to wake %s after continuous sleep broadcast test" % actor_id)
+			return false
 	await process_frame
 
 	var witness_events: Array = memory_system.get_npc_witness_events(witness_id)
@@ -158,10 +162,21 @@ func _verify_sleep_blocks_witness_then_restores(
 		push_error("Sleeping NPC should not receive same-location local_public witness events")
 		return false
 
-	action_system._on_logical_time_tick(23400.0, 1.0)
+	action_system._on_logical_time_tick(28800.0, 1.0)
+	await process_frame
+	if str(npc_system.get_npc_state(sleeper_id).get("current_action", "")) != "sleep_in_dormitory":
+		push_error("Sleeper should remain asleep after the nominal recovery duration")
+		return false
+	_emit_manual_public_work_event(memory_system, actor_id, location_id)
+	if memory_system.get_npc_witness_events(sleeper_id).size() != witness_before:
+		push_error("Zero-fatigue continuous sleep should still block witness events")
+		return false
+	if not action_system.interrupt_npc_action(sleeper_id, "witness_test_wake", true):
+		push_error("Failed to wake sleeper explicitly")
+		return false
 	await process_frame
 	if str(npc_system.get_npc_state(sleeper_id).get("current_action", "")) != "idle":
-		push_error("Sleeper should return to idle after sleep completes")
+		push_error("Sleeper should return to idle after an authoritative wake-up")
 		return false
 
 	witness_before = memory_system.get_npc_witness_events(sleeper_id).size()
@@ -210,7 +225,7 @@ func _duration_for_action(action_id: String) -> float:
 		"eat_at_dining_hall":
 			return 1200.0
 		"sleep_in_dormitory":
-			return 23400.0
+			return 28800.0
 		_:
 			return 3600.0
 

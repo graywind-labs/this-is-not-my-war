@@ -3,8 +3,8 @@ extends SceneTree
 const PILOT_ID := "dining_seat"
 const NPC_ID := "cook_01"
 const BUILDING_ID := "dining_hall"
-const FIRST_SEAT_ID := "dining_seat_01"
-const SECOND_SEAT_ID := "dining_seat_02"
+const OTHER_ASSIGNED_SEAT_ID := "dining_seat_01"
+const ASSIGNED_SEAT_ID := "dining_seat_02"
 const BLOCKER_NPC_ID := "stableman_01"
 
 var _building_system: Node
@@ -45,15 +45,15 @@ func _init() -> void:
 			_fail("Data-driven pilot registry is missing %s: %s" % [required_id, registry])
 			return
 
-	_expected_commit_seat_id = FIRST_SEAT_ID
+	_expected_commit_seat_id = ASSIGNED_SEAT_ID
 	_seat_commit_observed = false
 	_attachment_inactive_when_seat_committed = false
 	var start_result: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
-	if not _validate_start_result(start_result, FIRST_SEAT_ID):
-		_fail("Dining pilot did not select the first free seat: %s" % start_result)
+	if not _validate_start_result(start_result, ASSIGNED_SEAT_ID):
+		_fail("Dining pilot did not select Bruno's assigned seat: %s" % start_result)
 		return
-	if not await _wait_for_phase(npc_system, "occupant_attached", FIRST_SEAT_ID):
-		_fail("Bruno did not reach and attach to the first dining seat: %s" % npc_system.debug_get_dining_navigation_pilot_snapshot())
+	if not await _wait_for_phase(npc_system, "occupant_attached", ASSIGNED_SEAT_ID):
+		_fail("Bruno did not reach and attach to his assigned dining seat: %s" % npc_system.debug_get_dining_navigation_pilot_snapshot())
 		return
 	await process_frame
 	var first_snapshot: Dictionary = npc_system.debug_get_dining_navigation_pilot_snapshot()
@@ -69,41 +69,41 @@ func _init() -> void:
 		or str(first_snapshot.get("logical_location_id", "")) != BUILDING_ID
 		or str(first_snapshot.get("physical_location_phase", "")) != "occupant_anchor"
 		or str(first_state.get("current_action", "")) != "idle"
-		or not _workstation_owned_by(FIRST_SEAT_ID, NPC_ID)
+		or not _workstation_owned_by(ASSIGNED_SEAT_ID, NPC_ID)
 	):
 		_fail("Dining commit / sitting attachment / no-eating-action contract failed: %s" % first_snapshot)
 		return
 
 	npc_system.debug_stop_formal_navigation_pilot(PILOT_ID, "stop_verified")
 	await process_frame
-	if not _workstation_is_clear(FIRST_SEAT_ID) or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false)):
+	if not _workstation_is_clear(ASSIGNED_SEAT_ID) or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false)):
 		_fail("Explicit stop left a dining-seat claim or attachment")
 		return
 
 	var blocker_reservation: Dictionary = _building_system.reserve_workstation(BUILDING_ID, BLOCKER_NPC_ID, "dining_seat")
-	if str(blocker_reservation.get("workstation_id", "")) != FIRST_SEAT_ID:
-		_fail("Could not reserve dining_seat_01 for first-free selection test: %s" % blocker_reservation)
+	if str(blocker_reservation.get("workstation_id", "")) != OTHER_ASSIGNED_SEAT_ID:
+		_fail("Could not reserve Toma's assigned dining seat: %s" % blocker_reservation)
 		return
-	var blocker_commit: Dictionary = _building_system.commit_workstation_reservation(BUILDING_ID, BLOCKER_NPC_ID, FIRST_SEAT_ID, "dining_seat")
+	var blocker_commit: Dictionary = _building_system.commit_workstation_reservation(BUILDING_ID, BLOCKER_NPC_ID, OTHER_ASSIGNED_SEAT_ID, "dining_seat")
 	if not bool(blocker_commit.get("ok", false)):
-		_fail("Could not occupy dining_seat_01 for first-free selection test: %s" % blocker_commit)
+		_fail("Could not occupy Toma's assigned dining seat: %s" % blocker_commit)
 		return
-	_expected_commit_seat_id = SECOND_SEAT_ID
+	_expected_commit_seat_id = ASSIGNED_SEAT_ID
 	var second_start: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
-	if not _validate_start_result(second_start, SECOND_SEAT_ID):
-		_fail("Dining pilot did not skip occupied seat 01 and select seat 02: %s" % second_start)
+	if not _validate_start_result(second_start, ASSIGNED_SEAT_ID):
+		_fail("Dining pilot changed Bruno's seat when another assigned seat was occupied: %s" % second_start)
 		return
-	if not await _wait_for_phase(npc_system, "occupant_attached", SECOND_SEAT_ID):
-		_fail("Bruno did not attach to the second free dining seat")
+	if not await _wait_for_phase(npc_system, "occupant_attached", ASSIGNED_SEAT_ID):
+		_fail("Bruno did not attach to his fixed dining seat")
 		return
-	npc_system.debug_stop_formal_navigation_pilot(PILOT_ID, "first_free_verified")
+	npc_system.debug_stop_formal_navigation_pilot(PILOT_ID, "fixed_seat_verified")
 	await process_frame
-	if not _workstation_owned_by(FIRST_SEAT_ID, BLOCKER_NPC_ID) or not _workstation_is_clear(SECOND_SEAT_ID):
-		_fail("Pilot cleanup altered another NPC's seat or left seat 02 occupied")
+	if not _workstation_owned_by(OTHER_ASSIGNED_SEAT_ID, BLOCKER_NPC_ID) or not _workstation_is_clear(ASSIGNED_SEAT_ID):
+		_fail("Pilot cleanup altered another NPC's fixed seat or left Bruno's seat occupied")
 		return
-	_building_system.release_workstation(BUILDING_ID, BLOCKER_NPC_ID, FIRST_SEAT_ID)
+	_building_system.release_workstation(BUILDING_ID, BLOCKER_NPC_ID, OTHER_ASSIGNED_SEAT_ID)
 
-	_expected_commit_seat_id = FIRST_SEAT_ID
+	_expected_commit_seat_id = ASSIGNED_SEAT_ID
 	var failure_start: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
 	if not bool(failure_start.get("ok", false)):
 		_fail("Dining unreachable-path pilot did not start: %s" % failure_start)
@@ -115,20 +115,20 @@ func _init() -> void:
 	if not await _wait_for_phase(npc_system, "navigation_failed", "", 720):
 		_fail("Unreachable dining target did not settle")
 		return
-	if not _workstation_is_clear(FIRST_SEAT_ID) or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false)):
+	if not _workstation_is_clear(ASSIGNED_SEAT_ID) or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false)):
 		_fail("Unreachable dining target left a reservation or attachment")
 		return
 	npc_system.debug_stop_formal_navigation_pilot(PILOT_ID, "unreachable_verified")
 
 	var supersede_start: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
-	if not bool(supersede_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", FIRST_SEAT_ID):
-		_fail("Dining supersession pilot did not reach seat 01")
+	if not bool(supersede_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", ASSIGNED_SEAT_ID):
+		_fail("Dining supersession pilot did not reach Bruno's assigned seat")
 		return
 	var glen_result: Dictionary = npc_system.debug_run_formal_navigation_pilot("glen")
 	await process_frame
 	if (
 		not bool(glen_result.get("ok", false))
-		or not _workstation_is_clear(FIRST_SEAT_ID)
+		or not _workstation_is_clear(ASSIGNED_SEAT_ID)
 		or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false))
 		or bool(npc_system.debug_get_dining_navigation_pilot_snapshot().get("active", false))
 	):
@@ -137,8 +137,8 @@ func _init() -> void:
 	npc_system.debug_stop_all_formal_navigation_pilots("supersession_verified")
 
 	var unavailable_start: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
-	if not bool(unavailable_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", FIRST_SEAT_ID):
-		_fail("Dining building-unavailable pilot did not reach seat 01")
+	if not bool(unavailable_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", ASSIGNED_SEAT_ID):
+		_fail("Dining building-unavailable pilot did not reach Bruno's assigned seat")
 		return
 	var dining_before_damage: Dictionary = _building_system.get_building(BUILDING_ID)
 	var max_hp := int(dining_before_damage.get("max_hp", 110))
@@ -146,7 +146,7 @@ func _init() -> void:
 	await process_frame
 	if (
 		bool(npc_system.debug_get_dining_navigation_pilot_snapshot().get("active", false))
-		or not _workstation_is_clear(FIRST_SEAT_ID)
+		or not _workstation_is_clear(ASSIGNED_SEAT_ID)
 		or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false))
 	):
 		_fail("Building unavailability did not clear Bruno's dining pilot")
@@ -155,8 +155,8 @@ func _init() -> void:
 	await process_frame
 
 	var unconscious_start: Dictionary = npc_system.debug_run_formal_navigation_pilot(PILOT_ID)
-	if not bool(unconscious_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", FIRST_SEAT_ID):
-		_fail("Dining unconscious-path pilot did not reach seat 01")
+	if not bool(unconscious_start.get("ok", false)) or not await _wait_for_phase(npc_system, "occupant_attached", ASSIGNED_SEAT_ID):
+		_fail("Dining unconscious-path pilot did not reach Bruno's assigned seat")
 		return
 	var before_damage: Dictionary = npc_system.get_npc_state(NPC_ID)
 	var damage_result: Dictionary = npc_system.debug_damage_npc(NPC_ID, int(before_damage.get("max_hp", 100)))
@@ -165,7 +165,7 @@ func _init() -> void:
 	if (
 		not bool(damage_result.get("unconscious", false))
 		or bool(npc_system.debug_get_dining_navigation_pilot_snapshot().get("active", false))
-		or not _workstation_is_clear(FIRST_SEAT_ID)
+		or not _workstation_is_clear(ASSIGNED_SEAT_ID)
 		or bool(_npc.debug_get_spatial_attachment_snapshot().get("active", false))
 		or _npc.is_navigation_motion_enabled()
 		or str(after_damage.get("current_action", "")) != "unconscious"
@@ -175,8 +175,8 @@ func _init() -> void:
 
 	print("T0129C A2b-P4 dining formal navigation verification passed: %s" % JSON.stringify({
 		"pilot_registry_size": registered_ids.size(),
-		"first_free_seat": FIRST_SEAT_ID,
-		"occupied_first_selects": SECOND_SEAT_ID,
+		"bruno_assigned_seat": ASSIGNED_SEAT_ID,
+		"other_occupied_seat": OTHER_ASSIGNED_SEAT_ID,
 		"commit_before_attachment": _attachment_inactive_when_seat_committed,
 		"occupant_pose": "sitting",
 		"stop_cleanup": true,

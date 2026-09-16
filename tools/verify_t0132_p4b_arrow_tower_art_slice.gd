@@ -112,7 +112,7 @@ func _init() -> void:
 	if arrow_definition.is_empty() or str((arrow_definition.get("presentation", {}) as Dictionary).get("model_scene", "")) != "res://scenes/defense_devices/FormalArrowTowerArtView.tscn":
 		_fail("wall_arrow_tower did not switch from placeholder to the formal scene")
 		return
-	if not is_equal_approx(float((arrow_definition.get("effect", {}) as Dictionary).get("attack_interval", 0.0)), 1.39):
+	if not is_equal_approx(float((arrow_definition.get("effect", {}) as Dictionary).get("attack_interval", 0.0)), 1.0 / 0.38):
 		_fail("Arrow tower authoritative attack interval changed")
 		return
 
@@ -129,7 +129,7 @@ func _init() -> void:
 		"rotation_y_degrees": 0.0,
 		"hp": 110,
 		"max_hp": 110,
-		"effect": {"range": 56.0, "attack_interval": 1.39},
+		"effect": {"range": 56.0, "attack_interval": 1.0 / 0.38},
 		"presentation": {
 			"model_scene": "res://scenes/defense_devices/FormalArrowTowerArtView.tscn",
 			"projectile_speed": 64.0,

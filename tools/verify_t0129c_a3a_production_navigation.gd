@@ -50,7 +50,7 @@ func _init() -> void:
 	if not is_equal_approx(float(production.get("cell_height", 0.0)), 0.1):
 		_fail("Production cell height must remain 0.1 m: %s" % production)
 		return
-	if not is_equal_approx(float(production.get("requested_agent_radius", 0.0)), 0.35):
+	if not is_equal_approx(float(production.get("requested_agent_radius", 0.0)), 0.30):
 		_fail("NPC physical radius contract drifted: %s" % production)
 		return
 	if not is_equal_approx(float(production.get("agent_radius", 0.0)), 0.5):
@@ -143,7 +143,9 @@ func _init() -> void:
 		if path.size() < 3:
 			_fail("Production navigation did not route around the side wall: %s / %s" % [building_id, path])
 			return
-		if not _path_crosses_front_door(building_root, path, envelope, 1.8):
+		var collision_root := building_root.get_node_or_null("StaticCollision")
+		var door_width := float(collision_root.get_meta("door_clear_width", 0.0)) if collision_root != null else 0.0
+		if not _path_crosses_front_door(building_root, path, envelope, door_width):
 			_fail("Production path did not enter through the real front door: %s / %s" % [building_id, path])
 			return
 		verified_doors += 1

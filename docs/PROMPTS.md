@@ -1,5 +1,21 @@
 # PROMPTS.md
 
+## T0412 NPC-NPC 提示词尾部身份防错位
+
+`dialogue_system_prompt.txt` 的通用角色规则保持不变。Model Adapter 在拼装最终供应商系统 Prompt 时，仅当 `dialogue_kind=npc_npc`，在动态 Schema hint 之后追加本轮角色表，使它成为模型生成 JSON 前读到的最后一段指令。
+
+角色表动态列出唯一回复者的 `npc_name / npc_id`、对方的 `speaker_name / speaker_context.speaker_id` 和当前 `invitation / conversation` 阶段。邀请阶段明确“由回复者决定是否接受对方邀请”，并要求 `reply_text / debug_reason` 都以回复者为主体；禁止把对方职业、人设和第一人称套给回复者，也禁止用回复者姓名作第三人称自指。玩家-NPC、逃离挽留及其他 call type 不追加该段。
+
+回归夹具复用真实缺陷原例“托马邀请艾达谈夜袭后的防守准备”，同时锁定角色表位于 Prompt 末尾。真实 DeepSeek 回复由艾达从人手、装备、轮换和退路出发接受邀请，未再出现“托马作为马夫”“马厩那边我能出力”或“得听艾达安排”，`fallback_used=false`。
+
+## T0081-R2 零饱食计划修订语义
+
+`plan_revision_judgement` 将 `failure_type=low_satiety` 视为程序确认的零饱食与工作 / 训练 / 正式战斗换血事实，必须包含当前小时，并按当前 HP、食物储备和后续连续劳动选择最小范围。`revise_plan` 在有合法可用食物时必须优先把当前小时改为进食；无食物时改为不会触发换血的安全合法行动。模型不结算 HP、饱食、脱战或资源。
+
+## T0081-R1 满疲劳计划修订语义
+
+`plan_revision_judgement` 在 `failure_type=high_fatigue` 时接收程序权威的满疲劳、`0.5×` 工作效率事实和 `required_revision_hours=[当前小时]`。模型必须保留该当前小时，并可扩展后续连续工作段。`revise_plan` 对选中小时进行正式修订；当前小时不得继续选择生产、制造、训练、诊疗或协助劳动，应改为睡眠或其他合法疲劳恢复行动。模型不直接改疲劳或工作倍率。
+
 ## T0387 真实群像 Prompt 验收补充（2026-09-08）
 
 - `deepseek-v4-flash` 已对八人胜败夹具各生成一组通过结果；标题、职业意象、胜败基调、昏迷起点与感官收束整体有效。
@@ -267,7 +283,7 @@ required 集合是程序事实。若真实模型输出遗漏，后端会保留�
 
 ## T0069 完整 Prompt 审计边界
 
-正式 provider 每次尝试实际发送的 system / user messages 现在保存在后端 JSONL 的 `provider_request_sent.provider_request_body` 中；紧凑重试会使用同一 `audit_id`、不同 `attempt_count` 单独记录，因此可以看到重试追加提示后的真实 Prompt。`call_started.input_payload` 同时保留序列化前动态业务上下文，便于区分 Prompt 模板、Schema hint 与 Godot 请求事实。
+正式 provider 每次尝试实际发送的 system / user messages 现在保存在后端 JSONL 的 `provider_request_prepared.provider_request_body` 中；紧凑重试会使用同一 `audit_id`、不同 `attempt_count` 单独记录，因此可以看到重试追加提示后的真实 Prompt。`call_started.input_payload` 同时保留序列化前动态业务上下文，便于区分 Prompt 模板、Schema hint 与 Godot 请求事实。
 
 日志不改变任何 Prompt，不向模型追加审计指令，也不保存 Authorization 请求头。若设置 `LLM_AUDIT_LOG_INCLUDE_PAYLOADS=false`，完整 Prompt / payload / response 会被省略，只保留调用元数据和 usage；涉及 Prompt 效果验收时必须保持该项为 true 并妥善保护日志文件。
 
@@ -769,6 +785,10 @@ Prompt 不接收 MemorySystem 的原始事件对象，但六类正式 NPC 调用
 Provider 不输出 `ok / result`，后端从权威请求补齐；最终 HTTP 响应中的 `result` 因而必须逐字匹配请求。`npc_endings` 必须恰好覆盖全部正式 NPC 且不重复。`opening_status` 必须逐字回显请求中的 `active / unconscious / escaped`，让后端在不解释文学正文的前提下锁定故事起点。`tone` 只允许胜利侧 `hopeful / hopeful_bittersweet / reconciled` 或失败侧 `sorrowful / sorrowful_resilient / unresolved`。每篇自然使用 1–3 个可验证关键事实并返回对应引用；不得输出内部 id、数值清单或“根据资料”等元话语。
 
 风格要求是克制的中文历史幻想短篇尾声：具体、含蓄、有时间流逝感，以动作和意象承载情绪，世界内始终称玩家为“守备官”。禁止八篇使用同一个开头、同一转折句或同一种结尾；禁止逐条总结玩家成绩、拔高战争、现代制度 / 科技术语、廉价大团圆、全员绝望、突然出现的血缘 / 爱情 / 神迹，以及任何 NPC 死亡。可以合理虚构季节流逝、无名道路、普通生活动作等低风险连接细节；不得凭空创造有姓名的新亲属、婚恋、爵位、重大功绩、精确年份或另一场决定人物命运的战争。职业母题只在事实支持时选择性使用，不能按职业表机械打卡。
+
+T0435 起，`opening_status=unconscious` 不再只允许泛化写“后来复苏”，而是强制在第一拍完整交代身体当时面对的敌军危险、实际躲过方式、被发现以及获得复苏机会。胜利分支只能写撑到来袭者被击退，不能无事实声称敌军已经占领 / 洗劫驿站；失败分支才可使用占领、搜掠语境。点名某位已知人物营救，必须由这名昏迷者自己的 `key_facts` 明确支持，否则只能使用无名幸存者等低风险连接。
+
+战争不会随本局胜负结束。八篇中长期余波都必须明确出现难民、征发、断路、物资短缺、伤员、迁徙、加固防线、烽烟或军队消息等至少一种迫近战火压力，并实际改变人物的道路、职业、居所、物资、照料对象、关系或选择；只写继续原职业不算达标。Prompt 在返回 JSON 前要求逐人静默自检：即使删掉刚结束的守城开头，后半段仍须看出战争正在逼近，同时不得断言整场战争的最终胜负或另造决定人物命运的具体大战。
 
 后端除 Schema 外执行连续性校验：NPC ID 集合、事实引用归属、最终状态关键词、胜败 tone 域、禁用死亡断言和长度。首次响应不合法时，可把精确校验错误附给同一真实 Provider 做一次纠错；不得让纠错自行改变输入事实。第二次仍失败则返回真实错误，由 Godot 进入明确的 `template_fallback`。
 ## T0390 失败全员撤离事实合同（2026-09-08）

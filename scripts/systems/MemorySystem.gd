@@ -29,12 +29,12 @@ const DEVELOPMENT_ONLY_EVENT_TYPES: Array[String] = ["npc_mode_changed"]
 const EVENT_TYPES: Array[String] = [
 	"wake_up", "plan_created", "plan_revised", "reflection_started", "sleep_started", "sleep_ended",
 	"location_entered", "location_exited",
-	"work_started", "work_completed", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
+	"work_started", "work_completed", "work_stopped", "work_failed", "repair_assist_started", "upgrade_assist_started", "eat_started", "eat_completed", "wine_consumed",
 	"prayer_started", "prayer_joined_mass", "prayer_resumed_alone", "prayer_completed", "prayer_failed", "visit_started", "visit_completed",
 	"dialogue_turn", "dialogue_special_interaction_result", "proactive_talk_started", "proactive_talk_message",
 	"money_given", "wine_given", "equipment_given", "equipment_changed", "order_assigned", "npc_attacked_by_player",
-	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state", "work_encouragement_result", "work_encouragement_boost_started", "work_encouragement_boost_ended",
-	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_born", "horse_damaged", "horse_died", "low_hp_triggered",
+	"skill_improved", "attribute_improved", "npc_recruited", "npc_left_recruited_state", "work_encouragement_result", "work_encouragement_boost_started", "work_encouragement_boost_ended", "full_fatigue_triggered", "zero_satiety_triggered",
+	"combat_started", "combat_ended", "combat_alarm_rang", "combat_rally_started", "combat_rally_encountered_enemy", "enemy_breach_combat_response", "enemy_breach_noncombat_response", "battle_psychology_result", "morale_boost_started", "morale_boost_ended", "attack_made", "damage_taken", "horse_born", "horse_damaged", "horse_died", "low_hp_triggered",
 	"combat_strategy_selected",
 	"avoidance_started", "avoidance_ended", "unconscious_started", "healing_started", "healing_completed", "healing_failed", "revived", "escape_started", "escaped", "escape_intervention_result", "escape_speed_changed",
 	"building_damaged", "building_repaired", "building_upgraded", "resource_changed",
@@ -56,6 +56,7 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"location_exited": ["from_location_id", "to_location_id"],
 	"work_started": ["action_id", "workstation_id"],
 	"work_completed": ["action_id", "input_resources", "output_resources"],
+	"work_stopped": ["action_id", "reason", "interruption_reason"],
 	"work_failed": ["action_id", "reason"],
 	"eat_completed": ["action_id", "resource_id", "amount", "satiety_restore"],
 	"wine_consumed": ["action_id", "resource_id", "amount", "npc_wine_before", "npc_wine_after", "context_effect"],
@@ -72,6 +73,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"combat_ended": ["wave_number", "enemy_count", "injured_npcs", "unconscious_npcs", "defeated_by_npc", "reason"],
 	"combat_rally_started": ["formation_row", "unit_type", "rally_location_id", "facing_direction"],
 	"combat_rally_encountered_enemy": ["enemy_id", "distance"],
+	"enemy_breach_combat_response": ["npc_id", "npc_name", "enemy_id", "response_mode", "recruited", "has_main_weapon"],
+	"enemy_breach_noncombat_response": ["npc_id", "npc_name", "enemy_id", "response_mode", "recruited", "has_main_weapon", "response_reason"],
 	"battle_psychology_result": ["trigger", "decision", "battlefield_context_summary"],
 	"low_hp_triggered": ["hp_before", "hp_after", "max_hp"],
 	"morale_boost_started": ["source_event_id", "trigger", "duration_seconds", "attack_bonus", "move_speed_bonus"],
@@ -79,6 +82,8 @@ const REQUIRED_PAYLOAD_FIELDS := {
 	"work_encouragement_result": ["decision", "dialogue_id"],
 	"work_encouragement_boost_started": ["source_event_id", "duration_seconds", "output_bonus", "output_multiplier"],
 	"work_encouragement_boost_ended": ["source_event_id", "duration_seconds"],
+	"full_fatigue_triggered": ["fatigue_before", "fatigue_after", "max_fatigue", "work_output_multiplier"],
+	"zero_satiety_triggered": ["satiety_before", "satiety_after", "min_satiety", "hp_cost_per_missing_satiety", "current_action", "profile_id", "profile_category"],
 	"avoidance_started": ["enemy_id", "distance", "reason", "target_id"],
 	"avoidance_ended": ["reason", "active_enemy_count"],
 	"attack_made": ["attacker_npc_id", "target_type", "target_enemy_id", "damage", "hp_before", "hp_after"],
@@ -124,6 +129,7 @@ var _last_location_special_states: Dictionary = {}
 var _event_counter := 0
 var _notice_board_defaults: Dictionary = {}
 var _initial_notice_board_seeded := false
+var _game_save_restore_event_suppressed := false
 
 
 func initialize() -> void:
@@ -156,6 +162,8 @@ func _ready() -> void:
 
 
 func add_event(event: Dictionary) -> Dictionary:
+	if _game_save_restore_event_suppressed:
+		return {}
 	if event.is_empty():
 		return {}
 	if DEVELOPMENT_ONLY_EVENT_TYPES.has(str(event.get("type", ""))):
@@ -189,6 +197,10 @@ func add_event(event: Dictionary) -> Dictionary:
 	for npc_id in _get_experiencing_npc_ids(normalized):
 		_emit_npc_memory_changed(npc_id)
 	return normalized.duplicate(true)
+
+
+func set_game_save_restore_event_suppressed(suppressed: bool) -> void:
+	_game_save_restore_event_suppressed = suppressed
 
 
 func add_witness_event(npc_id: String, event_id: String) -> bool:
@@ -655,6 +667,43 @@ func get_event_count() -> int:
 	return _global_event_ids.size()
 
 
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"events_by_id": _events_by_id.duplicate(true),
+		"global_event_ids": _global_event_ids.duplicate(true),
+		"npc_daily_event_ids": _npc_daily_event_ids.duplicate(true),
+		"npc_daily_witness_ids": _npc_daily_witness_ids.duplicate(true),
+		"plaza_event_ids": _plaza_event_ids.duplicate(true),
+		"event_counter": _event_counter,
+		"notice_board": get_notice_board_state(),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_events_by_id = snapshot.get("events_by_id", {}).duplicate(true) if snapshot.get("events_by_id", {}) is Dictionary else {}
+	_global_event_ids = _normalize_string_array(snapshot.get("global_event_ids", []))
+	_npc_daily_event_ids = snapshot.get("npc_daily_event_ids", {}).duplicate(true) if snapshot.get("npc_daily_event_ids", {}) is Dictionary else {}
+	_npc_daily_witness_ids = snapshot.get("npc_daily_witness_ids", {}).duplicate(true) if snapshot.get("npc_daily_witness_ids", {}) is Dictionary else {}
+	_plaza_event_ids = _normalize_string_array(snapshot.get("plaza_event_ids", []))
+	_event_counter = maxi(int(snapshot.get("event_counter", 0)), _global_event_ids.size())
+	var board: Dictionary = snapshot.get("notice_board", {}) if snapshot.get("notice_board", {}) is Dictionary else {}
+	_ensure_location_info_node(DEFAULT_LOCATION_ID)
+	var plaza: Dictionary = _location_info_nodes[DEFAULT_LOCATION_ID]
+	plaza["current_notice"] = str(board.get("current_notice", ""))
+	plaza["reference_schedule"] = _duplicate_schedule(board.get("reference_schedule", []))
+	plaza["schedule_advisory_note"] = str(board.get("schedule_advisory_note", ""))
+	_location_info_nodes[DEFAULT_LOCATION_ID] = plaza
+	_initial_notice_board_seeded = true
+	_last_location_state_keys.clear()
+	_last_plaza_external_state_keys.clear()
+	_last_plaza_external_states.clear()
+	_last_location_external_states.clear()
+	_last_location_workstation_states.clear()
+	_last_location_special_states.clear()
+	_seed_special_state_caches()
+	return {"ok": true, "event_count": _global_event_ids.size()}
+
+
 func get_npc_daily_events(npc_id: String) -> Array[Dictionary]:
 	return _events_from_ids(_npc_daily_event_ids.get(npc_id, []))
 
@@ -799,6 +848,14 @@ func _seed_initial_notice_board_witnesses() -> void:
 			continue
 		for event_id in event_ids:
 			_add_initial_witness_event(str(npc_id), event_id)
+
+
+func broadcast_initial_notice_board_state_for_formal_loop() -> void:
+	# The tutorial deliberately clears every NPC's short-term memory. Re-seed the
+	# two published board pages at the formal-loop boundary so that this wartime
+	# order becomes a witnessed fact exactly once for every eligible resident.
+	_initial_notice_board_seeded = false
+	_seed_initial_notice_board_witnesses()
 
 
 func _add_initial_witness_event(npc_id: String, event_id: String) -> void:
@@ -1661,7 +1718,7 @@ func _normalize_event(event: Dictionary) -> Dictionary:
 func _sanitize_narrative_event_payload(event_type: String, payload: Dictionary) -> Dictionary:
 	var sanitized := payload.duplicate(true)
 	match event_type:
-		"work_failed", "prayer_failed":
+		"work_stopped", "work_failed", "prayer_failed":
 			sanitized["reason"] = _format_memory_reason(
 				sanitized.get("reason", ""),
 				"行动条件不满足"
@@ -1706,7 +1763,7 @@ func _format_summary(event: Dictionary) -> String:
 	if event_type == "plaza_notice_changed":
 		var notice := str(payload.get("notice", ""))
 		if str(payload.get("reason", "")) == "initial_notice_board_state":
-			return "公告牌初始通告：%s" % notice
+			return "守备官发布公告：%s" % notice
 		var notice_actor_ids := _normalize_string_array(event.get("actor_ids", []))
 		var notice_actor_id := str(event.get("subject_npc_id", PLAZA_STATE_SUBJECT_ID))
 		if not notice_actor_ids.is_empty():
@@ -1746,22 +1803,10 @@ func _format_summary(event: Dictionary) -> String:
 		]
 	if event_type == "merchant_trade_completed":
 		var resource_name := str(payload.get("resource_name", _get_resource_name(str(payload.get("resource_id", "")))))
-		var line_count := maxi(1, int(payload.get("line_count", 1)))
+		var traded_resources := _format_merchant_trade_resources(payload, resource_name)
 		if str(payload.get("direction", "buy")) == "sell":
-			if line_count > 1:
-				return "守备官向商人出售了%d类物资，获得了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
-			return "守备官向商人出售了%d份%s，获得了%d枚第纳尔。" % [
-				int(payload.get("amount", 0)),
-				resource_name,
-				int(payload.get("total_price", 0))
-			]
-		if line_count > 1:
-			return "守备官从商人处购买了%d类物资，支付了%d枚第纳尔。" % [line_count, int(payload.get("total_price", 0))]
-		return "守备官从商人处购买了%d份%s，支付了%d枚第纳尔。" % [
-			int(payload.get("amount", 0)),
-			resource_name,
-			int(payload.get("total_price", 0))
-		]
+			return "守备官花费%s，换来%d枚第纳尔。" % [traded_resources, int(payload.get("total_price", 0))]
+		return "守备官花费%d枚第纳尔，换来%s。" % [int(payload.get("total_price", 0)), traded_resources]
 	var actor := _get_npc_display_name(str(event.get("subject_npc_id", "")))
 	var location := _get_location_name(str(event.get("location_id", DEFAULT_LOCATION_ID)))
 
@@ -1793,7 +1838,25 @@ func _format_summary(event: Dictionary) -> String:
 				_format_resource_delta(payload.get("input_resources", {})),
 				_format_resource_delta(payload.get("output_resources", {}))
 			]
+		"work_stopped":
+			if bool(payload.get("is_manufacturing", false)):
+				return "%s因当前计划时段结束而停止制造。" % actor
+			return "%s因当前计划时段结束而停止%s。" % [
+				actor,
+				_get_action_name(str(payload.get("action_id", "")))
+			]
 		"work_failed":
+			if (
+				bool(payload.get("is_manufacturing", false))
+				and str(payload.get("interruption_reason", "")) == "crafting_target_changed"
+			):
+				var manufacturing_name := _get_action_name(str(payload.get("action_id", "")))
+				manufacturing_name = manufacturing_name.trim_prefix("推进")
+				return "%s的%s中断了：%s。" % [
+					actor,
+					manufacturing_name,
+					_format_memory_reason(payload.get("reason", ""), "守备官更改了制造目标")
+				]
 			return "%s未能完成%s：%s。" % [
 				actor,
 				_get_action_name(str(payload.get("action_id", ""))),
@@ -1941,6 +2004,12 @@ func _format_summary(event: Dictionary) -> String:
 				actor,
 				str(payload.get("enemy_name", payload.get("enemy_id", "敌人")))
 			]
+		"enemy_breach_combat_response":
+			return "敌人闯入了驿站，%s已经入伍并握有武器，立即准备上前迎战！" % actor
+		"enemy_breach_noncombat_response":
+			if str(payload.get("response_reason", "")) == "not_recruited":
+				return "敌人闯入了驿站，%s尚未入伍，只能先行躲避！" % actor
+			return "敌人闯入了驿站，%s手中没有可用武器，只能先行躲避！" % actor
 		"battle_psychology_result":
 			return "%s在战斗压力下作出了判断：%s。" % [actor, _format_battle_psychology_decision(str(payload.get("decision", "none")))]
 		"low_hp_triggered":
@@ -1967,6 +2036,10 @@ func _format_summary(event: Dictionary) -> String:
 			return "%s受到鼓励，当天工作产出效率提高了。" % actor
 		"work_encouragement_boost_ended":
 			return "%s的工作鼓励状态在跨天后结束了。" % actor
+		"full_fatigue_triggered":
+			return "你当前很疲惫，工作效率大幅下降。"
+		"zero_satiety_triggered":
+			return "你当前非常饥饿，继续工作或战斗会损伤身体。"
 		"avoidance_started":
 			return "%s发现敌军正在接近，正在避战。" % actor
 		"avoidance_ended":
@@ -2597,6 +2670,25 @@ func _format_building_condition(condition: String) -> String:
 			return "正在升级"
 		_:
 			return "状态未知"
+
+
+func _format_merchant_trade_resources(payload: Dictionary, fallback_resource_name: String) -> String:
+	var parts: Array[String] = []
+	var raw_lines: Variant = payload.get("lines", [])
+	if raw_lines is Array:
+		for raw_line in raw_lines:
+			if not raw_line is Dictionary:
+				continue
+			var line := raw_line as Dictionary
+			var amount := maxi(0, int(line.get("amount", 0)))
+			if amount <= 0:
+				continue
+			var resource_id := str(line.get("resource_id", ""))
+			var resource_name := str(line.get("resource_name", _get_resource_name(resource_id)))
+			parts.append("%d份%s" % [amount, resource_name])
+	if not parts.is_empty():
+		return "、".join(parts)
+	return "%d份%s" % [maxi(0, int(payload.get("amount", 0))), fallback_resource_name]
 
 
 func _format_resource_delta(raw_delta: Variant) -> String:

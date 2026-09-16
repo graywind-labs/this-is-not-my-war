@@ -57,11 +57,16 @@
 [ext_resource type="Script" path="res://scripts/presentation/audio/InteractionAudioController.gd" id="55_interaction_audio"]
 [ext_resource type="Script" path="res://scripts/presentation/audio/AbilityAudioController.gd" id="56_ability_audio"]
 [ext_resource type="Script" path="res://scripts/ui/NPCSkillPointAlertPresenter.gd" id="57_npc_skill_point_alert"]
+[ext_resource type="Script" path="res://scripts/ui/AIServiceErrorPresenter.gd" id="64_ai_service_error"]
 [ext_resource type="Script" path="res://scripts/ui/PauseMenu.gd" id="58_pause_menu"]
 [ext_resource type="Script" path="res://scripts/ui/VoiceInputRecorder.gd" id="59_voice_input_recorder"]
 [ext_resource type="Texture2D" path="res://assets/ui/status_icons/dialogue_microphone.svg" id="60_dialogue_microphone"]
 [ext_resource type="Script" path="res://scripts/ui/VoiceInputBridge.gd" id="61_voice_input_bridge"]
 [ext_resource type="Script" path="res://scripts/systems/EpilogueSystem.gd" id="62_epilogue"]
+[ext_resource type="Script" path="res://scripts/systems/TutorialDirector.gd" id="63_tutorial_director"]
+[ext_resource type="Script" path="res://scripts/ui/TutorialOverlay.gd" id="64_tutorial_overlay"]
+[ext_resource type="Script" path="res://scripts/systems/GameSaveSystem.gd" id="65_game_save"]
+[ext_resource type="Script" path="res://scripts/ui/CheckpointStatusPresenter.gd" id="66_checkpoint_status"]
 
 [sub_resource type="AudioStreamMicrophone" id="AudioStreamMicrophone_dialogue"]
 
@@ -513,6 +518,9 @@ script = ExtResource("7_combat")
 [node name="SpatialSaveSystem" type="Node" parent="Systems"]
 script = ExtResource("38_spatial_save")
 
+[node name="GameSaveSystem" type="Node" parent="Systems"]
+script = ExtResource("65_game_save")
+
 [node name="PietySystem" type="Node" parent="Systems"]
 script = ExtResource("33_piety")
 
@@ -531,15 +539,21 @@ script = ExtResource("8_dialog")
 [node name="DailyPlanSystem" type="Node" parent="Systems"]
 script = ExtResource("19_daily_plan")
 
+[node name="TutorialDirector" type="Node" parent="Systems"]
+script = ExtResource("63_tutorial_director")
+
 [node name="GameStartupSystem" type="Node" parent="Systems"]
 script = ExtResource("27_game_startup")
-startup_mode = 1
+startup_mode = 2
 
 [node name="DailyReflectionSystem" type="Node" parent="Systems"]
 script = ExtResource("20_daily_reflection")
 
 [node name="UI" type="CanvasLayer" parent="." unique_id=1111572503]
 script = ExtResource("17_ui_focus")
+
+[node name="CheckpointStatusPresenter" type="Control" parent="UI"]
+script = ExtResource("66_checkpoint_status")
 
 [node name="MilestoneAlertPresenter" type="Control" parent="UI"]
 layout_mode = 3
@@ -550,6 +564,17 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("48_milestone_alert")
+
+[node name="AIServiceErrorPresenter" type="Control" parent="UI"]
+z_index = 250
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("64_ai_service_error")
 
 [node name="BuildingCompletionDialog" type="AcceptDialog" parent="UI/MilestoneAlertPresenter"]
 unique_name_in_owner = true
@@ -709,15 +734,6 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "铁 --"
 
-[node name="BackendStatusLabel" type="Label" parent="UI/HUD" unique_id=271576278]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 24.0
-offset_top = 118.0
-offset_right = 260.0
-offset_bottom = 142.0
-text = "后端：未连接（占位）"
-
 [node name="SpeedButton" type="Button" parent="UI/HUD" unique_id=102724923]
 focus_mode = 0
 layout_mode = 0
@@ -753,8 +769,19 @@ offset_left = 342.0
 offset_top = 152.0
 offset_right = 436.0
 offset_bottom = 184.0
-tooltip_text = "让仍在集结、尚未接敌的 NPC 回到当前日程。"
+tooltip_text = "让仍在集结、尚未接敌的成员返回各自的安排。"
 text = "解散"
+
+[node name="CameraMoveHintLabel" type="Label" parent="UI/HUD"]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 238.0
+offset_right = 310.0
+offset_bottom = 258.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.72, 0.72, 0.72, 0.9)
+theme_override_font_sizes/font_size = 12
+text = "wasd或按住鼠标中键移动镜头"
 
 [node name="EscapeStartedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
 unique_name_in_owner = true
@@ -763,7 +790,7 @@ initial_position = 2
 size = Vector2i(520, 170)
 exclusive = true
 unresizable = true
-dialog_text = "有人正在逃离驿站，请尽快挽留，否则该NPC将永远离开驿站！"
+dialog_text = "有人正在逃离驿站！若不及时挽留，对方将永远离开。"
 ok_button_text = "好的"
 
 [node name="NpcRevivedAlertDialog" type="AcceptDialog" parent="UI/HUD"]
@@ -870,14 +897,14 @@ layout_mode = 2
 [node name="NPCNameLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "NPC"
+text = ""
 
 [node name="NPCBackgroundButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(52, 28)
 layout_mode = 2
 text = "背景"
-tooltip_text = "查看该 NPC 同步提供给 LLM Prompt 的人物设定。"
+tooltip_text = "查看此人的背景、性格与经历。"
 
 [node name="NPCActionLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/Header"]
 unique_name_in_owner = true
@@ -986,21 +1013,21 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "当前计划"
-tooltip_text = "查看该 NPC 当前生效的 24 小时计划。"
+tooltip_text = "查看此人今天的安排。"
 
 [node name="NPCDiaryButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCLongTermInfoButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "日记"
-tooltip_text = "查看该 NPC 每次首次睡眠总结追加的日记。"
+tooltip_text = "查看此人写下的日记。"
 
 [node name="NPCKnowledgeButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCLongTermInfoButtonRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "认识"
-tooltip_text = "查看该 NPC 当前形成的认识。"
+tooltip_text = "查看此人目前对人和事的看法。"
 
 [node name="NPCEventLogLabel" type="Label" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
 unique_name_in_owner = true
@@ -1047,7 +1074,7 @@ theme_override_constants/separation = 6
 unique_name_in_owner = true
 layout_mode = 2
 text = "给钱"
-tooltip_text = "从全局第纳尔中扣除输入数量，并写入目标 NPC 事件库。"
+tooltip_text = "从驿站资金中取出相应数量的第纳尔赠予对方；对方会记住这件事。"
 
 [node name="NPCGiftMoneySpin" type="SpinBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
 unique_name_in_owner = true
@@ -1062,7 +1089,7 @@ value = 5.0
 unique_name_in_owner = true
 layout_mode = 2
 text = "给酒"
-tooltip_text = "从驿站酒库存中扣除输入数量，增加目标 NPC 的个人持有酒，并写入事件库。"
+tooltip_text = "从驿站库存中取酒赠予对方；对方会收下并记住这份赠礼。"
 
 [node name="NPCGiftWineSpin" type="SpinBox" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content/NPCInteractionButtonRow"]
 unique_name_in_owner = true
@@ -1094,7 +1121,7 @@ tooltip_text = "打开装备。"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。"
+tooltip_text = "撰写或修改你交给此人的长期嘱咐。"
 text = "指令"
 
 [node name="NPCDialogueButton" type="Button" parent="UI/NPCPanel/PanelContainer/MarginContainer/Content"]
@@ -1306,7 +1333,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_font_sizes/font_size = 20
-text = "与 NPC 对话"
+text = "与驿站成员对话"
 
 [node name="DialogHistoryButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft/DialogTitleRow"]
 unique_name_in_owner = true
@@ -1314,7 +1341,7 @@ custom_minimum_size = Vector2(58, 30)
 layout_mode = 2
 size_flags_vertical = 4
 text = "记录"
-tooltip_text = "只读查看当前 NPC 与守备官的过往对话。"
+tooltip_text = "查看你与此人的过往交谈。"
 
 [node name="DialogVisibilityOptions" type="HBoxContainer" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/Header/DialogHeaderLeft"]
 layout_mode = 2
@@ -1439,7 +1466,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "输入要对 NPC 说的话……"
+placeholder_text = "输入想说的话……"
 
 [node name="DialogVoiceButton" type="Button" parent="UI/DialogPanel/PanelContainer/MarginContainer/Content/InputRow"]
 unique_name_in_owner = true
@@ -1476,7 +1503,7 @@ text = "发送"
 unique_name_in_owner = true
 layout_mode = 2
 text = "攻击"
-tooltip_text = "守备官攻击当前 NPC，并等待 NPC 对惩戒作出回应。"
+tooltip_text = "攻击对方；这一行为会影响其态度，并引来回应。"
 
 [node name="DialogAttackConfirmationDialog" type="ConfirmationDialog" parent="UI/DialogPanel"]
 unique_name_in_owner = true
@@ -1496,7 +1523,7 @@ initial_position = 2
 size = Vector2i(480, 160)
 exclusive = true
 unresizable = true
-dialog_text = "成功说服了NPC。"
+dialog_text = "对方已经同意应征。"
 ok_button_text = "太好了"
 
 [node name="DialogInputLimitDialog" type="AcceptDialog" parent="UI/DialogPanel"]
@@ -1831,6 +1858,15 @@ grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("36_slice_theme")
 script = ExtResource("58_pause_menu")
+
+[node name="TutorialOverlay" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("64_tutorial_overlay")
 
 [node name="CameraRig" type="Node3D" parent="." unique_id=1857187284]
 script = ExtResource("10_3km4f")

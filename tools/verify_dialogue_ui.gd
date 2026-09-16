@@ -204,6 +204,19 @@ func _init() -> void:
 		push_error("Waiting UI should keep input editable while disabling send and attack")
 		quit(1)
 		return
+	if status_label.text != "……" or status_label.get_theme_font_size("font_size") != 30 or status_label.horizontal_alignment != HORIZONTAL_ALIGNMENT_LEFT:
+		push_error("Waiting UI should show a large ellipsis indicator at the original left position")
+		quit(1)
+		return
+	var error_state := waiting_state.duplicate(true)
+	error_state["last_error"] = "连接后端超时。"
+	dialog_panel.call("_refresh", error_state)
+	await process_frame
+	if status_label.text != "连接后端超时。" or status_label.get_theme_font_size("font_size") != 16 or status_label.horizontal_alignment != HORIZONTAL_ALIGNMENT_LEFT:
+		push_error("Dialogue errors should restore the normal readable status style")
+		quit(1)
+		return
+	dialog_panel.call("_refresh", waiting_state)
 	dialog_panel.call("_input", tab_event)
 	await process_frame
 	if recruitment_toggle.button_pressed or bool(dialog_system.get_dialogue_state().get("recruitment_request_pending", false)):

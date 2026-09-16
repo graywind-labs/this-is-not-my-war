@@ -72,10 +72,16 @@
 ../ambience/time_of_day/sfx_ambience_night_loop_v01.ogg
 ../work/construction/sfx_work_repair_and_upgrade_start_v01.wav
 ../work/blacksmith/sfx_work_blacksmith_target_selected_v01.wav
+../music/tutorial/music_tutorial_intro_v01.ogg
+../music/tutorial/music_tutorial_battle_v01.ogg
+../music/night/music_night_playlist_v29_02_v01.ogg
+../music/day/music_day_playlist_v29_04_v01.ogg
+../music/day/music_day_playlist_v29_06_v01.ogg
 ../work/training/sfx_work_training_loop_v01.ogg
 ../work/clinic/sfx_work_clinic_treatment_and_assist_loop_v01.ogg
 ../work/clinic/sfx_work_clinic_doctor_reading_loop_v01.ogg
 ../work/construction/sfx_work_repair_and_upgrade_loop_v01.ogg
+../ui/sfx_ui_equipment_mount_selected_v01.wav
 ../work/chapel/sfx_chapel_prayer_presence_loop_v01.ogg
 ../work/chapel/sfx_chapel_mass_start_one_shot_v01.wav
 ../work/dining_hall/sfx_daily_eating_loop_v01.ogg
@@ -101,3 +107,4 @@
 ../combat/projectiles/sfx_combat_arrow_and_hand_crossbow_bolt_whoosh_v01.wav
 ../combat/structures/sfx_combat_wood_damage_01_v01.wav
 ../combat/structures/sfx_combat_wood_damage_02_v01.wav
+../ui/sfx_defense_device_deploy_wood_thud_v01.wav

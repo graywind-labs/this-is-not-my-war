@@ -289,6 +289,25 @@ func get_piety_snapshot() -> Dictionary:
 	}
 
 
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"current_piety": _current_piety,
+		"total_generated": _total_generated,
+		"generated_by_npc": _generated_by_npc.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_current_piety = clampf(float(snapshot.get("current_piety", 0.0)), 0.0, get_max_piety())
+	_total_generated = maxf(0.0, float(snapshot.get("total_generated", 0.0)))
+	_generated_by_npc = snapshot.get("generated_by_npc", {}).duplicate(true) if snapshot.get("generated_by_npc", {}) is Dictionary else {}
+	_pending_meteors.clear()
+	_burn_zones.clear()
+	_clear_effect_visuals()
+	_emit_piety_changed(0.0, "game_save_restored")
+	return {"ok": true, "current_piety": _current_piety}
+
+
 func debug_set_piety(value: float) -> Dictionary:
 	var before := _current_piety
 	_current_piety = clampf(value, 0.0, get_max_piety())
@@ -529,7 +548,7 @@ func _load_config() -> void:
 		push_error("PietySystem could not load %s." % CONFIG_FILE)
 		_config = {
 			"max_piety": 100.0,
-			"piety_per_prayer_hour": 2.5,
+			"piety_per_prayer_hour": 1.625,
 			"contributing_action_ids": ["pray_at_chapel", "lead_mass"],
 			"action_multipliers": {
 				"pray_at_chapel": 1.0,
@@ -566,7 +585,7 @@ func _load_config() -> void:
 			}
 		}
 	_config["max_piety"] = maxf(1.0, float(_config.get("max_piety", 100.0)))
-	_config["piety_per_prayer_hour"] = maxf(0.0, float(_config.get("piety_per_prayer_hour", 2.5)))
+	_config["piety_per_prayer_hour"] = maxf(0.0, float(_config.get("piety_per_prayer_hour", 1.625)))
 
 
 func _record_meteor_impact_event(

@@ -13,7 +13,7 @@
     "defense": 2.0,
     "penetration": 1.0,
     "attack_speed_modifier": 0.0,
-    "attack_interval": 1.35,
+    "attack_interval": 1.560693641618497,
     "melee_contact": {
       "radius": 0.10,
       "mounted_range": 0.96,
@@ -37,7 +37,7 @@
     "defense": 0.0,
     "penetration": 3.0,
     "attack_speed_modifier": -0.08,
-    "attack_interval": 1.65,
+    "attack_interval": 1.9760479041916166,
     "melee_contact": {
       "radius": 0.11,
       "mounted_range": 2.66,
@@ -61,7 +61,7 @@
     "defense": 0.0,
     "penetration": 1.5,
     "attack_speed_modifier": 0.06,
-    "attack_interval": 1.5,
+    "attack_interval": 1.7647058823529411,
     "projectile": {
       "speed": 22.0,
       "gravity": 9.8,
@@ -84,7 +84,7 @@
     "defense": 0.0,
     "penetration": 5.0,
     "attack_speed_modifier": -0.12,
-    "attack_interval": 2.4,
+    "attack_interval": 3.1578947368421053,
     "projectile": {
       "speed": 30.0,
       "gravity": 9.8,

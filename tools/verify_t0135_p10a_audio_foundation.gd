@@ -30,18 +30,23 @@ func _init() -> void:
 	if AudioServer.get_bus_send(AudioServer.get_bus_index("Foley")) != &"Combat":
 		_fail("Legacy Foley bus must route through Combat")
 		return
-	if audio_manager.get_asset_count() != 102:
+	if audio_manager.get_asset_count() != 109:
 		_fail("Confirmed manifest count mismatch: %d" % audio_manager.get_asset_count())
 		return
 	var category_snapshot: Dictionary = audio_manager.debug_get_snapshot()
 	var category_counts: Dictionary = category_snapshot.get("category_asset_counts", {})
-	var expected_counts := {"music": 12, "click": 7, "voice": 19, "combat": 33, "work": 16, "ambience": 15}
-	if int(category_snapshot.get("categorized_asset_count", 0)) != 102 or category_counts != expected_counts:
-		_fail("All 102 assets must have exactly one settings category: %s" % JSON.stringify(category_counts))
+	var expected_counts := {"music": 17, "click": 9, "voice": 19, "combat": 33, "work": 16, "ambience": 15}
+	if int(category_snapshot.get("categorized_asset_count", 0)) != 109 or category_counts != expected_counts:
+		_fail("All 109 assets must have exactly one settings category: %s" % JSON.stringify(category_counts))
 		return
-	for asset_id in ["sfx_ui_button_primary", "music_day_night", "music_day_playlist_01", "music_night_playlist_10", "sfx_work_blacksmith_loop", "sfx_work_repair_and_upgrade_start", "sfx_work_blacksmith_target_selected", "sfx_piety_ready_sacred_chant", "sfx_meteor_impact_one_shot"]:
+	for asset_id in ["sfx_ui_button_primary", "music_day_night", "music_day_playlist_01", "music_day_playlist_v29_04", "music_night_playlist_10", "music_night_playlist_v29_02", "music_tutorial_intro", "music_tutorial_battle", "sfx_work_blacksmith_loop", "sfx_work_repair_and_upgrade_start", "sfx_work_blacksmith_target_selected", "sfx_piety_ready_sacred_chant", "sfx_meteor_impact_one_shot", "sfx_defense_device_deploy_wood_thud"]:
 		if not audio_manager.has_asset(asset_id):
 			_fail("Confirmed asset is missing from AudioManager: %s" % asset_id)
+			return
+	for music_asset_id in ["music_day_playlist_01", "music_tutorial_intro", "music_tutorial_battle"]:
+		var music_info := audio_manager.get_asset_info(music_asset_id) as Dictionary
+		if absf(float(music_info.get("target_lufs", 0.0)) + 16.0) > 0.001 or absf(float(music_info.get("suggested_gain_db", -999.0))) > 0.001:
+			_fail("Tutorial and formal rotation music must share the -16 LUFS / 0 dB baseline: %s" % music_asset_id)
 			return
 
 	var original: Dictionary = audio_manager.get_volume_snapshot()
@@ -52,6 +57,16 @@ func _init() -> void:
 	audio_manager.set_combat_volume(0.37, false)
 	audio_manager.set_work_volume(0.33, false)
 	audio_manager.set_ambience_volume(0.29, false)
+	var music_bus_index := AudioServer.get_bus_index("Music")
+	if absf(db_to_linear(AudioServer.get_bus_volume_db(music_bus_index)) - 0.47) > 0.002:
+		_fail("Music slider did not apply to the shared Music bus")
+		return
+	for tutorial_music_id in ["music_tutorial_intro", "music_tutorial_battle"]:
+		var tutorial_music_player: AudioStreamPlayer = audio_manager.switch_music(tutorial_music_id, 0.0, true)
+		if tutorial_music_player == null or tutorial_music_player.bus != &"Music" or absf(tutorial_music_player.volume_db) > 0.001:
+			_fail("Tutorial music does not share the formal BGM player gain and Music bus: %s" % tutorial_music_id)
+			return
+	audio_manager.stop_music(0.0)
 	for bus_and_value in [["UI", 0.53], ["Voice", 0.41], ["Combat", 0.37], ["Work", 0.33], ["Ambience", 0.29]]:
 		if absf(db_to_linear(AudioServer.get_bus_volume_db(AudioServer.get_bus_index(bus_and_value[0]))) - float(bus_and_value[1])) > 0.002:
 			_fail("Category bus did not receive its independent volume: %s" % bus_and_value[0])
@@ -80,7 +95,7 @@ func _init() -> void:
 	if not bool(panel_snapshot.get("visible", false)):
 		_fail("Settings button did not open the audio settings panel")
 		return
-	for kind_and_value in [["click", 0.53], ["voice", 0.41], ["combat", 0.37], ["work", 0.33], ["ambience", 0.29]]:
+	for kind_and_value in [["music", 0.47], ["click", 0.53], ["voice", 0.41], ["combat", 0.37], ["work", 0.33], ["ambience", 0.29]]:
 		var kind := str(kind_and_value[0])
 		var expected := float(kind_and_value[1])
 		if absf(float(panel_snapshot.get(kind, -1.0)) - expected) > 0.001 or str(panel_snapshot.get("%s_text" % kind, "")) != "%d%%" % roundi(expected * 100.0):
@@ -96,6 +111,7 @@ func _init() -> void:
 	if (
 		saved_config.load("user://audio_settings.cfg") != OK
 		or int(saved_config.get_value("audio", "settings_version", 0)) != 2
+		or absf(float(saved_config.get_value("audio", "music", -1.0)) - 0.47) > 0.001
 		or absf(float(saved_config.get_value("audio", "click", -1.0)) - 0.53) > 0.001
 		or absf(float(saved_config.get_value("audio", "voice", -1.0)) - 0.41) > 0.001
 		or absf(float(saved_config.get_value("audio", "combat", -1.0)) - 0.37) > 0.001
@@ -138,7 +154,7 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	packed = null
-	print("T0135_P10A_AUDIO_FOUNDATION_PASS assets=102 buses=11 sliders=7 categories=6 preview=pass local_3d=4x")
+	print("T0135_P10A_AUDIO_FOUNDATION_PASS assets=109 buses=11 sliders=7 categories=6 preview=pass local_3d=4x")
 	quit(0)
 
 

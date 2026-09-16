@@ -63,6 +63,52 @@ func _init() -> void:
 		quit(1)
 		return
 
+	if camera_rig.process_mode != Node.PROCESS_MODE_ALWAYS:
+		push_error("CameraRig must keep receiving release events while SceneTree is paused.")
+		quit(1)
+		return
+	camera_rig._input(_make_key_event(KEY_D, true))
+	if not camera_rig._pressed_pan_keys.has(KEY_D):
+		push_error("D should be cached before entering the pause menu.")
+		quit(1)
+		return
+	paused = true
+	camera_rig._process(0.25)
+	camera_rig._input(_make_key_event(KEY_D, false))
+	camera_rig._input(_make_key_event(KEY_A, true))
+	var paused_zoom := float(camera_rig.get_zoom_distance())
+	var paused_middle_press := InputEventMouseButton.new()
+	paused_middle_press.button_index = MOUSE_BUTTON_MIDDLE
+	paused_middle_press.pressed = true
+	camera_rig._unhandled_input(paused_middle_press)
+	var paused_wheel := InputEventMouseButton.new()
+	paused_wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	paused_wheel.pressed = true
+	camera_rig._unhandled_input(paused_wheel)
+	var paused_position := camera_rig.global_position
+	camera_rig._process(0.25)
+	if not camera_rig.global_position.is_equal_approx(paused_position):
+		push_error("Camera input must not move while SceneTree is paused.")
+		paused = false
+		quit(1)
+		return
+	if not camera_rig._pressed_pan_keys.is_empty():
+		push_error("Pause-time releases or presses must leave no cached WASD state.")
+		paused = false
+		quit(1)
+		return
+	if camera_rig._is_middle_dragging or not is_equal_approx(float(camera_rig.get_zoom_distance()), paused_zoom):
+		push_error("Pause-time middle drag and wheel input must not change camera state.")
+		paused = false
+		quit(1)
+		return
+	paused = false
+	camera_rig._process(0.25)
+	if not camera_rig.global_position.is_equal_approx(paused_position):
+		push_error("Resuming after a pause-time D release must not continue panning.")
+		quit(1)
+		return
+
 	camera_rig._input(press_s)
 	camera_rig._is_middle_dragging = true
 	camera_rig.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
@@ -98,9 +144,32 @@ func _init() -> void:
 		return
 	camera_rig._input(release_s)
 
+	var lock_result: Dictionary = camera_rig.request_camera_control_lock("verification")
+	if not bool(lock_result.get("ok", false)) or not camera_rig.is_camera_control_locked():
+		push_error("Camera control lock request should become active.")
+		quit(1)
+		return
+	var locked_position := camera_rig.global_position
+	var locked_zoom := float(camera_rig.get_zoom_distance())
+	camera_rig._input(press_s)
+	camera_rig._process(0.25)
+	var wheel_event := InputEventMouseButton.new()
+	wheel_event.button_index = MOUSE_BUTTON_WHEEL_DOWN
+	wheel_event.pressed = true
+	camera_rig._unhandled_input(wheel_event)
+	if not camera_rig.global_position.is_equal_approx(locked_position) or not is_equal_approx(float(camera_rig.get_zoom_distance()), locked_zoom):
+		push_error("Camera control lock should silently block player pan and zoom input.")
+		quit(1)
+		return
+	var unlock_result: Dictionary = camera_rig.release_camera_control_lock("verification")
+	if not bool(unlock_result.get("ok", false)) or camera_rig.is_camera_control_locked():
+		push_error("Camera control lock should release by request id.")
+		quit(1)
+		return
+
 	main.queue_free()
 	await process_frame
-	print("T0045B camera input speed and lifecycle verification passed.")
+	print("T0045C camera input speed, pause release, and lifecycle verification passed.")
 	quit(0)
 
 

@@ -12,12 +12,14 @@ var _seconds_into_day: float = 0.0
 var _last_emitted_day_second: int = -1
 var _slowdown_requests: Dictionary = {}
 var _time_scale_cap_requests: Dictionary = {}
+var _detached_presentation_simulation_requests: Dictionary = {}
 var _game_state: Node = null
 var _event_bus: Node = null
 var _last_time_scale_reason: String = "init"
 
 
 func initialize() -> void:
+	_detached_presentation_simulation_requests.clear()
 	_game_state = get_node_or_null("/root/GameState")
 	_event_bus = get_node_or_null("/root/EventBus")
 	if _game_state != null:
@@ -74,6 +76,54 @@ func set_current_time(day: int, hour: int, minute: int = 0, second: int = 0) -> 
 	_seconds_into_day = float(clampi(hour, 0, 23) * 3600 + clampi(minute, 0, 59) * 60 + clampi(second, 0, 59))
 	_last_emitted_day_second = int(_seconds_into_day)
 	_game_state.set_time(day, hour, minute, second)
+
+
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"day": int(_game_state.current_day) if _game_state != null else 1,
+		"hour": int(_game_state.current_hour) if _game_state != null else 6,
+		"minute": int(_game_state.current_minute) if _game_state != null else 0,
+		"second": int(_game_state.current_second) if _game_state != null else 0,
+		"seconds_into_day": _seconds_into_day,
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_slowdown_requests.clear()
+	_time_scale_cap_requests.clear()
+	_detached_presentation_simulation_requests.clear()
+	_seconds_into_day = clampf(float(snapshot.get("seconds_into_day", -1.0)), 0.0, 86399.999)
+	if float(snapshot.get("seconds_into_day", -1.0)) < 0.0:
+		_seconds_into_day = clampi(int(snapshot.get("hour", 6)), 0, 23) * 3600.0 + clampi(int(snapshot.get("minute", 0)), 0, 59) * 60.0 + clampi(int(snapshot.get("second", 0)), 0, 59)
+	_last_emitted_day_second = int(_seconds_into_day)
+	return {"ok": true, "seconds_into_day": _seconds_into_day}
+
+
+func request_detached_presentation_simulation(
+	request_id: String,
+	reason: String = "detached_presentation_simulation"
+) -> void:
+	if request_id.is_empty():
+		return
+	_detached_presentation_simulation_requests[request_id] = reason
+	_emit_time_scale_changed(reason)
+
+
+func release_detached_presentation_simulation(request_id: String) -> void:
+	if not _detached_presentation_simulation_requests.has(request_id):
+		return
+	var reason := str(_detached_presentation_simulation_requests.get(
+		request_id,
+		"detached_presentation_simulation"
+	))
+	_detached_presentation_simulation_requests.erase(request_id)
+	_emit_time_scale_changed("%s_finished" % reason)
+
+
+func has_detached_presentation_simulation(request_id: String = "") -> bool:
+	if request_id.is_empty():
+		return not _detached_presentation_simulation_requests.is_empty()
+	return _detached_presentation_simulation_requests.has(request_id)
 
 
 func request_time_slowdown(request_id: String, scale: float = -1.0, reason: String = "llm_wait") -> void:
@@ -195,6 +245,7 @@ func get_time_scale_snapshot() -> Dictionary:
 		"combat_frame_rate": get_combat_frame_rate(),
 		"slowdown_requests": _slowdown_requests.duplicate(true),
 		"time_scale_cap_requests": _time_scale_cap_requests.duplicate(true),
+		"detached_presentation_simulation_requests": _detached_presentation_simulation_requests.duplicate(true),
 		"slowdown_count": _slowdown_requests.size(),
 		"time_scale_cap_count": _time_scale_cap_requests.size(),
 		"effective_label": get_effective_speed_label(),
@@ -218,7 +269,7 @@ func get_numeric_delta_multiplier() -> float:
 
 
 func is_gameplay_paused() -> bool:
-	return is_paused
+	return is_paused and not has_detached_presentation_simulation()
 
 
 func _on_game_over_changed(_result: String, _reason: String) -> void:
@@ -237,6 +288,8 @@ func get_combat_frame_delta_seconds(real_delta_seconds: float) -> float:
 	# teardown combat visuals from accelerating at the out-of-combat x1/x2/x4
 	# simulation rate; pause and any stricter slowdown still return less or zero.
 	var real_seconds := maxf(0.0, real_delta_seconds)
+	if has_detached_presentation_simulation():
+		return real_seconds
 	return minf(real_seconds, get_game_delta_seconds(real_seconds))
 
 
@@ -262,6 +315,8 @@ func get_speed_label() -> String:
 
 
 func get_pause_label() -> String:
+	if has_detached_presentation_simulation():
+		return "暂停"
 	if is_paused:
 		return "继续"
 	return "暂停"

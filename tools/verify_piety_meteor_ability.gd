@@ -44,9 +44,9 @@ func _init() -> void:
 	var piety_snapshot: Dictionary = piety_system.get_piety_snapshot()
 	if (
 		not is_equal_approx(float(piety_snapshot.get("max_piety", 0.0)), 100.0)
-		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 2.5)
+		or not is_equal_approx(float(piety_snapshot.get("piety_per_prayer_hour", 0.0)), 1.625)
 	):
-		_fail("Piety tuning must be 100 maximum and 2.5 piety per personal prayer-hour")
+		_fail("Piety tuning must be 100 maximum and 1.625 piety per personal prayer-hour")
 		return
 	var meteor_config: Dictionary = piety_system.get_meteor_config()
 	var meteor_fall_advance_game_seconds := (

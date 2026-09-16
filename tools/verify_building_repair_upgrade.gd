@@ -320,14 +320,19 @@ func _init() -> void:
 		quit(1)
 		return
 
-	building_system._on_logical_time_tick(1800.0, 1.0)
+	var upgrade_duration_seconds := float(upgrade_status.get("duration_seconds", 0.0))
+	if upgrade_duration_seconds <= 0.0:
+		push_error("Upgrade status should expose a positive duration.")
+		quit(1)
+		return
+	building_system._on_logical_time_tick(upgrade_duration_seconds * 0.5, 1.0)
 	var upgrade_halfway: Dictionary = building_system.get_building(building_id)
 	if int(upgrade_halfway.get("level", 0)) != int(repaired.get("level", 0)) or not building_system.is_upgrade_in_progress(building_id):
 		push_error("Upgrade should still be in progress halfway.")
 		quit(1)
 		return
 
-	building_system._on_logical_time_tick(1800.0, 1.0)
+	building_system._on_logical_time_tick(upgrade_duration_seconds * 0.5, 1.0)
 	var upgraded: Dictionary = building_system.get_building(building_id)
 	var upgraded_workstations: Array = upgraded.get("workstations", [])
 	if int(upgraded.get("level", 0)) != int(repaired.get("level", 0)) + 1:
@@ -363,15 +368,24 @@ func _init() -> void:
 		push_error("Wall upgrade cap should be Lv.6.")
 		quit(1)
 		return
-	resource_system.add_resources({"stone": 100, "wood": 30})
 	for target_level in range(3, 7):
 		var level_effect: Dictionary = building_system.get_upgrade_level_effect(building_id, target_level)
 		var level_cost: Dictionary = level_effect.get("cost", {})
+		for raw_resource_id in level_cost.keys():
+			var resource_id := str(raw_resource_id)
+			var capacity := int(resource_system.get_resource_capacity(resource_id))
+			var current := int(resource_system.get_resource(resource_id))
+			if current < capacity:
+				resource_system.add_resource(resource_id, capacity - current)
 		var resources_before := {}
 		for raw_resource_id in level_cost.keys():
 			var resource_id := str(raw_resource_id)
 			resources_before[resource_id] = resource_system.get_resource(resource_id)
-		var max_hp_before := int(building_system.get_building(building_id).get("max_hp", 0))
+		var building_before_level: Dictionary = building_system.get_building(building_id)
+		var max_hp_before := int(building_before_level.get("max_hp", 0))
+		var expected_level_duration := float(
+			building_system._calculate_upgrade_duration_seconds(building_before_level, level_effect)
+		)
 		if not building_system.upgrade_building(building_id):
 			push_error("Wall should support upgrade to Lv.%d." % target_level)
 			quit(1)
@@ -388,7 +402,7 @@ func _init() -> void:
 		var level_status: Dictionary = building_system.get_upgrade_status(building_id)
 		if not is_equal_approx(
 			float(level_status.get("duration_seconds", 0.0)),
-			float(level_effect.get("duration_seconds", 0.0))
+			expected_level_duration
 		):
 			push_error("Wall Lv.%d upgrade duration did not use its level effect." % target_level)
 			quit(1)

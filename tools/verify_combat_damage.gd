@@ -118,6 +118,24 @@ func _init() -> void:
 		push_error("Penetration should use max(0, defense - penetration) before damage reduction")
 		quit(1)
 		return
+	var friendly_full_penetration: Dictionary = combat_system.calculate_friendly_npc_damage_resolution(20.0, 10.0, 12.0)
+	var friendly_partial_penetration: Dictionary = combat_system.calculate_friendly_npc_damage_resolution(20.0, 10.0, 4.0)
+	var tutorial_full_penetration: Dictionary = combat_system.calculate_friendly_npc_damage_resolution(20.0, 10.0, 12.0, true)
+	if (
+		int(friendly_full_penetration.get("unscaled_damage", 0)) != 20
+		or int(friendly_full_penetration.get("damage", 0)) != 14
+		or not is_equal_approx(float(friendly_full_penetration.get("friendly_npc_damage_multiplier", 0.0)), 0.7)
+		or int(friendly_partial_penetration.get("damage", 0)) != int(round(20.0 * (20.0 / 26.0) * 0.7))
+		or int(tutorial_full_penetration.get("damage", 0)) != 16
+		or not is_equal_approx(float(tutorial_full_penetration.get("friendly_npc_damage_multiplier", 0.0)), 0.8)
+	):
+		push_error("Friendly NPC weapon damage should use 0.7 formally and retain 0.8 in tutorial: full=%s partial=%s tutorial=%s" % [
+			JSON.stringify(friendly_full_penetration),
+			JSON.stringify(friendly_partial_penetration),
+			JSON.stringify(tutorial_full_penetration)
+		])
+		quit(1)
+		return
 
 	var stableman_node := root.get_node_or_null("Main/WorldRoot/Station/NPCs/Stableman01") as Node3D
 	if stableman_node == null:
@@ -171,7 +189,17 @@ func _init() -> void:
 		friendly_context
 	)
 	enemy_after = combat_system.get_enemy(enemy_id)
-	if int(enemy_after.get("hp", 0)) >= int(enemy_before.get("hp", 0)) or int(confirmed_contact_damage.get("damage", 0)) <= 0:
+	var expected_friendly_resolution: Dictionary = combat_system.calculate_friendly_npc_damage_resolution(
+		float(friendly_context.get("raw_attack_power", 1.0)),
+		float(enemy_before.get("defense", 0.0)),
+		float(friendly_context.get("penetration", 0.0))
+	)
+	if (
+		int(enemy_after.get("hp", 0)) >= int(enemy_before.get("hp", 0))
+		or int(confirmed_contact_damage.get("damage", 0)) != int(expected_friendly_resolution.get("damage", 0))
+		or int(confirmed_contact_damage.get("unscaled_damage", 0)) != int(expected_friendly_resolution.get("unscaled_damage", 0))
+		or not is_equal_approx(float(confirmed_contact_damage.get("friendly_npc_damage_multiplier", 0.0)), 0.7)
+	):
 		push_error("Confirmed melee contact should apply the deterministic NPC damage resolver")
 		quit(1)
 		return

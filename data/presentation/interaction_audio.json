@@ -5,15 +5,29 @@
       "primary": "sfx_ui_button_primary",
       "toggle": "sfx_ui_toggle",
       "success": "sfx_ui_interaction_success_resource_collect",
+      "merchant_trade_success": "sfx_ui_interaction_success_resource_collect",
       "level_up": "sfx_ui_interaction_success_resource_collect",
-      "attribute_assigned": "sfx_ui_interaction_success_resource_collect"
+      "attribute_assigned": "sfx_ui_interaction_success_resource_collect",
+      "equipment_item_selected": "sfx_work_blacksmith_target_selected",
+      "equipment_mount_selected": "sfx_ui_equipment_mount_selected",
+      "defense_device_deployed": "sfx_defense_device_deploy_wood_thud"
     },
     "semantic_priority": {
       "primary": 1,
       "toggle": 2,
       "success": 5,
+      "merchant_trade_success": 5,
       "level_up": 6,
-      "attribute_assigned": 6
+      "attribute_assigned": 6,
+      "equipment_item_selected": 3,
+      "equipment_mount_selected": 3,
+      "defense_device_deployed": 7
+    },
+    "semantic_gain_db": {
+      "merchant_trade_success": 5.0,
+      "equipment_item_selected": 2.0,
+      "equipment_mount_selected": 0.0,
+      "defense_device_deployed": 3.0
     },
     "special_success_popup_path": "/root/Main/UI/DialogPanel/DialogSpecialSuccessDialog",
     "harvest_dialog_path": "/root/Main/UI/CraftingHarvestDialog",

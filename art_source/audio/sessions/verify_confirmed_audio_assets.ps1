@@ -6,6 +6,7 @@ $projectRoot = (Resolve-Path -LiteralPath (Join-Path $scriptDir '../../..')).Pat
 $manifestPath = Join-Path $projectRoot 'assets/audio/manifests/audio_asset_manifest.csv'
 $qaPath = Join-Path $projectRoot 'assets/audio/manifests/audio_asset_qa.csv'
 $playlistPath = Join-Path $projectRoot 'assets/audio/manifests/final_audio_review.m3u8'
+$expectedAssetCount = 108
 $ffmpeg = (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'art_source/audio/tools/ffmpeg') -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1).FullName
 $ffprobe = (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'art_source/audio/tools/ffmpeg') -Recurse -Filter 'ffprobe.exe' | Select-Object -First 1).FullName
 
@@ -36,12 +37,12 @@ function Measure-PeakDb([string]$Path) {
 }
 
 $manifest = Import-Csv -LiteralPath $manifestPath -Encoding UTF8
-if ($manifest.Count -ne 102) { throw "Manifest must contain 102 rows; found $($manifest.Count)." }
+if ($manifest.Count -ne $expectedAssetCount) { throw "Manifest must contain $expectedAssetCount rows; found $($manifest.Count)." }
 
 $runtimeFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets/audio') -Recurse -File | Where-Object Extension -in '.wav', '.ogg'
 $masterFiles = Get-ChildItem -LiteralPath (Join-Path $projectRoot 'art_source/audio/masters') -Recurse -Filter '*.wav' -File
-if ($runtimeFiles.Count -ne 102) { throw "Expected 102 runtime audio files; found $($runtimeFiles.Count)." }
-if ($masterFiles.Count -ne 102) { throw "Expected 102 master WAV files; found $($masterFiles.Count)." }
+if ($runtimeFiles.Count -ne $expectedAssetCount) { throw "Expected $expectedAssetCount runtime audio files; found $($runtimeFiles.Count)." }
+if ($masterFiles.Count -ne $expectedAssetCount) { throw "Expected $expectedAssetCount master WAV files; found $($masterFiles.Count)." }
 
 $qaRows = @()
 foreach ($row in $manifest) {
@@ -93,7 +94,7 @@ foreach ($entry in $playlistEntries) {
     $candidate = Join-Path (Split-Path $playlistPath -Parent) ($entry -replace '/', '\')
     if (-not (Test-Path -LiteralPath $candidate)) { $missingPlaylistEntries += $entry }
 }
-if ($playlistEntries.Count -ne 102) { throw "Review playlist must contain 102 entries; found $($playlistEntries.Count)." }
+if ($playlistEntries.Count -ne $expectedAssetCount) { throw "Review playlist must contain $expectedAssetCount entries; found $($playlistEntries.Count)." }
 if ($missingPlaylistEntries.Count -gt 0) { throw "Review playlist has missing entries: $($missingPlaylistEntries -join ', ')" }
 
 $qaRows | Export-Csv -LiteralPath $qaPath -NoTypeInformation -Encoding utf8
@@ -103,6 +104,6 @@ if ($failed.Count -gt 0) {
     throw "$($failed.Count) runtime assets failed QA."
 }
 
-Write-Host "QA passed: 102 runtime assets, 102 masters, 102 playlist entries."
+Write-Host "QA passed: $expectedAssetCount runtime assets, $expectedAssetCount masters, $expectedAssetCount playlist entries."
 Write-Host "Peak range: $((($qaRows | ForEach-Object { [double]$_.peak_db }) | Measure-Object -Minimum).Minimum) dB to $((($qaRows | ForEach-Object { [double]$_.peak_db }) | Measure-Object -Maximum).Maximum) dB."
 Write-Host "QA report: assets/audio/manifests/audio_asset_qa.csv"

@@ -43,7 +43,7 @@ func _init() -> void:
 	var npc_profile: Dictionary = snapshot.get("npc_profile", {})
 	var foot_profile: Dictionary = snapshot.get("enemy_foot_profile", {})
 	var mounted_profile: Dictionary = snapshot.get("enemy_mounted_profile", {})
-	if not is_equal_approx(float(npc_profile.get("radius", 0.0)), 0.35):
+	if not is_equal_approx(float(npc_profile.get("radius", 0.0)), 0.30):
 		_fail("NPC capsule profile drifted: %s" % npc_profile)
 		return
 	if not is_equal_approx(float(foot_profile.get("radius", 0.0)), 0.42):
@@ -58,8 +58,8 @@ func _init() -> void:
 	if not is_equal_approx(float(snapshot.get("production_cell_size", 0.0)), 0.25):
 		_fail("Production navigation resolution drifted: %s" % snapshot)
 		return
-	if int(snapshot.get("static_body_count", 0)) != 243 or int(snapshot.get("collision_shape_count", 0)) != 258:
-		_fail("Current formal collision totals drifted after adding the main-hall interior blocker: %s" % snapshot)
+	if int(snapshot.get("static_body_count", 0)) != 243 or int(snapshot.get("collision_shape_count", 0)) != 268:
+		_fail("Current formal collision totals drifted after adding ten building-door queue sensors: %s" % snapshot)
 		return
 	if int(snapshot.get("building_shell_count", 0)) != 60:
 		_fail("Expected five wall bodies for all 12 buildings, including the smithy's transparent perimeter: %s" % snapshot)
@@ -86,7 +86,11 @@ func _init() -> void:
 		if building_root == null or collision_root == null or collision_root.get_child_count() != expected_collision_count:
 			_fail("Building shell is incomplete: %s" % building_id)
 			return
-		if not is_equal_approx(float(collision_root.get_meta("door_clear_width", 0.0)), 1.8):
+		var expected_door_width := 2.58 if building_id == "stable" else (2.08 if building_id in [
+			"dormitory", "dining_hall", "tavern", "garden", "blacksmith",
+			"training_ground", "chapel", "clinic", "workshop"
+		] else 1.8)
+		if not is_equal_approx(float(collision_root.get_meta("door_clear_width", 0.0)), expected_door_width):
 			_fail("Building door width drifted: %s" % building_id)
 			return
 		for raw_body in collision_root.get_children():

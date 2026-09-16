@@ -44,6 +44,7 @@ var _mount_defs: Dictionary = {}
 var _weapon_order: Array[String] = []
 var _armor_order_by_slot: Dictionary = {}
 var _mount_order: Array[String] = []
+var _tutorial_event_suppression := false
 
 
 func _ready() -> void:
@@ -51,6 +52,7 @@ func _ready() -> void:
 
 
 func initialize() -> void:
+	_tutorial_event_suppression = false
 	_weapon_defs.clear()
 	_armor_defs.clear()
 	_mount_defs.clear()
@@ -62,6 +64,43 @@ func initialize() -> void:
 	_load_armor_defs()
 	_load_mount_defs()
 	_apply_initial_equipment_from_profiles()
+
+
+func set_tutorial_event_suppression(enabled: bool) -> void:
+	_tutorial_event_suppression = enabled
+
+
+func stage_npc_main_weapon_for_tutorial(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("set_npc_equipment_slot")
+		or resource_system == null
+		or not resource_system.has_method("add_resource")
+	):
+		return _failure("tutorial_equipment_dependencies_missing", "教程装备准备接口不可用。")
+	var equipment := get_equipment_snapshot(npc_id)
+	var previous_item: Dictionary = equipment.get(SLOT_MAIN_WEAPON, {})
+	if previous_item.is_empty():
+		return _failure("tutorial_main_weapon_missing", "NPC 没有可供教程暂存的故事初始主武器。")
+	var resource_id := str(previous_item.get("source_resource_id", "")).strip_edges()
+	if resource_id.is_empty():
+		return _failure("tutorial_weapon_resource_missing", "故事初始主武器缺少库存资源映射。")
+	if not npc_system.set_npc_equipment_slot(npc_id, SLOT_MAIN_WEAPON, {}):
+		return _failure("tutorial_equipment_clear_failed", "无法暂存 NPC 的教程主武器。")
+	if not resource_system.add_resource(resource_id, 1):
+		npc_system.set_npc_equipment_slot(npc_id, SLOT_MAIN_WEAPON, previous_item)
+		return _failure("tutorial_inventory_stage_failed", "无法把教程主武器放入临时库存。")
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"resource_id": resource_id,
+		"weapon_id": str(previous_item.get("id", "")),
+		"equipment": get_equipment_snapshot(npc_id)
+	}
 
 
 func get_weapon_ids() -> Array[String]:
@@ -113,6 +152,51 @@ func get_equipment_snapshot(npc_id: String) -> Dictionary:
 	return _normalize_equipment(equipment)
 
 
+func restore_npc_initial_equipment(npc_id: String) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("set_npc_equipment_slot")
+	):
+		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
+	var profile: Dictionary = npc_system.get_npc(npc_id)
+	if profile.is_empty():
+		return _failure("unknown_npc", "找不到这名成员。")
+	var initial_equipment: Dictionary = (
+		profile.get("initial_equipment", {})
+		if profile.get("initial_equipment", {}) is Dictionary
+		else {}
+	)
+	var restored_slots: Array[String] = []
+	for slot in EQUIPMENT_SLOTS:
+		if slot == SLOT_MOUNT:
+			continue
+		if not npc_system.set_npc_equipment_slot(npc_id, slot, {}):
+			return _failure("equipment_clear_failed", "无法清理 NPC 的教程装备。")
+		var item_id := str(initial_equipment.get(slot, "")).strip_edges()
+		if item_id.is_empty():
+			continue
+		var item_kind := _get_item_kind_for_slot(slot)
+		var definition := _get_item_def(item_kind, item_id)
+		if definition.is_empty():
+			return _failure("initial_equipment_missing", "NPC 的故事初始装备定义不存在。")
+		if not npc_system.set_npc_equipment_slot(
+			npc_id,
+			slot,
+			_make_equipped_item(slot, item_kind, definition)
+		):
+			return _failure("equipment_restore_failed", "无法恢复 NPC 的故事初始装备。")
+		restored_slots.append(slot)
+	return {
+		"ok": true,
+		"changed": true,
+		"npc_id": npc_id,
+		"restored_slots": restored_slots,
+		"equipment": get_equipment_snapshot(npc_id)
+	}
+
+
 func equip_npc_main_weapon(
 	npc_id: String,
 	weapon_id: String,
@@ -146,7 +230,7 @@ func equip_npc_mount(
 ) -> Dictionary:
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	if horse_system == null or not horse_system.has_method("assign_horse_to_npc"):
-		return _failure("horse_system_missing", "马匹系统不可用，不能分配坐骑。")
+		return _failure("horse_system_missing", "暂时无法分配马匹。")
 	var raw_result: Variant = horse_system.call("assign_horse_to_npc", npc_id, horse_id, visibility)
 	if raw_result is Dictionary:
 		return (raw_result as Dictionary).duplicate(true)
@@ -164,7 +248,7 @@ func set_npc_horse_mount(
 		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	if not bool(npc.get("recruited", false)):
 		return _failure("npc_not_recruited", "只有已入伍 NPC 可以分配马匹。")
 	var states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
@@ -255,7 +339,7 @@ func clear_npc_horse_mount(
 		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	var unequip_states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
 	var unequip_mode_failure := _get_loadout_mode_failure(unequip_states)
 	if not bypass_mode_lock and not unequip_mode_failure.is_empty():
@@ -319,7 +403,7 @@ func unequip_npc_slot(
 	if normalized_slot == SLOT_MOUNT:
 		var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 		if horse_system == null or not horse_system.has_method("unassign_horse_from_npc"):
-			return _failure("horse_system_missing", "马匹系统不可用，不能解除马匹分配。")
+			return _failure("horse_system_missing", "暂时无法收回马匹。")
 		var raw_horse_result: Variant = horse_system.call(
 			"unassign_horse_from_npc",
 			npc_id,
@@ -335,7 +419,7 @@ func unequip_npc_slot(
 		return _failure("npc_system_missing", "NPC 系统装备接口不可用。")
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	var unequip_states: Dictionary = npc.get("states", {}) if npc.get("states", {}) is Dictionary else {}
 	var unequip_mode_failure := _get_loadout_mode_failure(unequip_states)
 	if not unequip_mode_failure.is_empty():
@@ -807,7 +891,7 @@ func _equip_npc_item(
 
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	if not bool(npc.get("recruited", false)):
 		return _failure("npc_not_recruited", "只有已入伍 NPC 可以由守备官直接分配装备。")
 	var states: Dictionary = npc.get("states", {})
@@ -1066,6 +1150,8 @@ func _log_equipment_event(
 	unit_type: String,
 	visibility: String
 ) -> Dictionary:
+	if _tutorial_event_suppression:
+		return {}
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("record_player_interaction"):
 		return {}

@@ -1,4 +1,5 @@
 import io
+import os
 import wave
 from pathlib import Path
 
@@ -32,6 +33,7 @@ try:
         VoiceAnalyzeResponse,
     )
     from backend.services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from backend.services.ai_service_manager import AIServiceConfigurationError, AIServiceManager
     from backend.services.voice_model_adapter import (
         VoiceModelAdapter,
         load_dialogue_input_config,
@@ -62,6 +64,7 @@ except ModuleNotFoundError:
         VoiceAnalyzeResponse,
     )
     from services.model_adapter import ModelAdapter, ModelAdapterConfig
+    from services.ai_service_manager import AIServiceConfigurationError, AIServiceManager
     from services.voice_model_adapter import VoiceModelAdapter, load_dialogue_input_config
 
 
@@ -100,7 +103,16 @@ def create_app() -> Flask:
     load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
     app = Flask(__name__)
-    app.config["MODEL_ADAPTER"] = ModelAdapter()
+    app_profile = os.getenv("APP_PROFILE", "development").strip().lower() or "development"
+    app.config["APP_PROFILE"] = app_profile
+    app.config["DEMO_BUILD_ID"] = os.getenv("DEMO_BUILD_ID", "").strip()
+    trial_adapter = ModelAdapter()
+    app.config["MODEL_ADAPTER"] = trial_adapter
+    app.config["AI_SERVICE_MANAGER"] = AIServiceManager(
+        trial_adapter.config,
+        lambda adapter: app.config.__setitem__("MODEL_ADAPTER", adapter),
+    )
+    app.config["AI_SERVICE_MANAGER"].activate_startup_selection()
     app.config["VOICE_MODEL_ADAPTER"] = VoiceModelAdapter()
     app.config["DIALOGUE_INPUT_CONFIG"] = load_dialogue_input_config()
 
@@ -109,6 +121,18 @@ def create_app() -> Flask:
 
     def voice_model_adapter() -> VoiceModelAdapter:
         return app.config["VOICE_MODEL_ADAPTER"]
+
+    def ai_service_manager() -> AIServiceManager:
+        return app.config["AI_SERVICE_MANAGER"]
+
+    def demo_profile_blocks_development_api():
+        if app.config["APP_PROFILE"] != "demo":
+            return None
+        return jsonify({
+            "ok": False,
+            "error_code": "endpoint_not_available",
+            "message": "This endpoint is not available in the demo build.",
+        }), 404
 
     def model_output_invalid_response(call_type: str, payload: dict, result, schema_name: str, exc: ValidationError):
         failure_reason = "Model output did not match %s." % schema_name
@@ -704,8 +728,14 @@ def create_app() -> Flask:
         return list(dict.fromkeys(details))
 
     def model_adapter_error_status(error_code: str) -> int:
-        if error_code == "budget_exceeded":
+        if error_code in {"budget_exceeded", "provider_rate_limited"}:
             return 429
+        if error_code == "provider_quota_exceeded":
+            return 402
+        if error_code in {"provider_timeout", "provider_queue_timeout"}:
+            return 504
+        if error_code in {"provider_auth_failed", "provider_http_error"}:
+            return 502
         return 503
 
     @app.get("/health")
@@ -713,13 +743,49 @@ def create_app() -> Flask:
         return jsonify({
             "ok": True,
             "service": SERVICE_NAME,
+            "app_profile": app.config["APP_PROFILE"],
+            "build_id": app.config["DEMO_BUILD_ID"],
             "model_adapter": model_adapter().get_runtime_config_snapshot(),
             "voice_model_adapter": voice_model_adapter().get_runtime_config_snapshot(),
             "dialogue_input": app.config["DIALOGUE_INPUT_CONFIG"].model_dump(),
         })
 
+    @app.get("/config/ai-service")
+    def get_ai_service_config():
+        return jsonify(ai_service_manager().get_public_snapshot())
+
+    def ai_service_error_response(exc: AIServiceConfigurationError):
+        return jsonify({
+            "ok": False,
+            "error_code": exc.error_code,
+            "message": str(exc),
+        }), exc.http_status
+
+    @app.put("/config/ai-service")
+    def configure_ai_service():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"ok": False, "error_code": "invalid_json", "message": "Request body must be a JSON object."}), 400
+        try:
+            return jsonify(ai_service_manager().configure(body, bool(body.get("test_connection", True))))
+        except AIServiceConfigurationError as exc:
+            return ai_service_error_response(exc)
+
+    @app.post("/config/ai-service/test")
+    def test_ai_service():
+        body = request.get_json(silent=True)
+        if body is not None and not isinstance(body, dict):
+            return jsonify({"ok": False, "error_code": "invalid_json", "message": "Request body must be a JSON object."}), 400
+        try:
+            return jsonify(ai_service_manager().test(body))
+        except AIServiceConfigurationError as exc:
+            return ai_service_error_response(exc)
+
     @app.get("/debug/llm_usage")
     def llm_usage():
+        blocked = demo_profile_blocks_development_api()
+        if blocked is not None:
+            return blocked
         adapter = model_adapter()
         voice_adapter = voice_model_adapter()
         return jsonify({
@@ -854,6 +920,9 @@ def create_app() -> Flask:
 
     @app.post("/mock/model")
     def mock_model():
+        blocked = demo_profile_blocks_development_api()
+        if blocked is not None:
+            return blocked
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({

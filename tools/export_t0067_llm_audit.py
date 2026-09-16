@@ -258,7 +258,7 @@ def _direct_cases(module) -> list[tuple[str, str, str, dict[str, Any]]]:
 
 def _provider_request_body(adapter, call_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-v4-pro",
         "messages": [
             {"role": "system", "content": adapter._system_prompt_for_call_type(call_type)},
             {
@@ -711,7 +711,7 @@ def main() -> None:
     adapter = ModelAdapter(
         ModelAdapterConfig(
             provider="deepseek",
-            model="deepseek-v4-flash",
+            model="deepseek-v4-pro",
             temperature=0.2,
             thinking_mode="disabled",
             force_json_response=True,

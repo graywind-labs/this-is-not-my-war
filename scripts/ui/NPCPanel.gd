@@ -1,5 +1,9 @@
 extends Control
 
+signal equipment_window_visibility_changed(npc_id: String, window_visible: bool)
+signal equipment_slot_picker_opened(npc_id: String, slot: String)
+signal equipment_item_applied(npc_id: String, slot: String, item_id: String, result: Dictionary)
+
 const DraggablePanelController = preload("res://scripts/ui/DraggablePanel.gd")
 const NPCPromptProfile = preload("res://scripts/core/NPCPromptProfile.gd")
 const NPCPortraitViewport = preload("res://scripts/ui/NPCPortraitViewport.gd")
@@ -53,8 +57,8 @@ const UNEQUIP_WEAPON_TOOLTIP := "收回当前主武器并返还同一具体物�
 const COMBAT_STRATEGY_TOOLTIP := "当前战斗策略只能在符合条件的战时对话中由守备官提出调整。"
 const EQUIP_ARMOR_TOOLTIP := "消耗 1 件所选具体盔甲库存。"
 const UNEQUIP_ARMOR_TOOLTIP := "收回当前部位的盔甲并返还同一具体物品。"
-const ASSIGN_HORSE_TOOLTIP := "分配一匹成年、未占用且当前在厩的马；NPC 还需持有主武器。"
-const UNASSIGN_HORSE_TOOLTIP := "取消该 NPC 当前的马匹分配。"
+const ASSIGN_HORSE_TOOLTIP := "分配一匹已经成年、当前在厩且无人使用的马；骑手还需配备主武器。"
+const UNASSIGN_HORSE_TOOLTIP := "收回分配给此人的马匹。"
 const LOADOUT_LOCKED_TOOLTIP := "只有工作模式下才能更换装备或马匹。"
 const RECRUITED_NAME_COLOR := Color(0.64, 0.92, 0.68, 1.0)
 const DEFAULT_NAME_COLOR := Color.WHITE
@@ -418,7 +422,7 @@ func _setup_mount_view_button() -> void:
 	_mount_view_button = Button.new()
 	_mount_view_button.name = "NPCMountViewButton"
 	_mount_view_button.text = "查看马匹"
-	_mount_view_button.tooltip_text = "查看该 NPC 当前正在骑乘的马匹。"
+	_mount_view_button.tooltip_text = "查看此人当前骑乘的马匹。"
 	_mount_view_button.custom_minimum_size = MOUNT_VIEW_BUTTON_SIZE
 	_mount_view_button.size = MOUNT_VIEW_BUTTON_SIZE
 	_mount_view_button.visible = false
@@ -680,7 +684,7 @@ func _update_active_buff_icons(states: Dictionary) -> void:
 	morale_boost_icon.visible = morale_active
 	if morale_active:
 		morale_boost_icon.tooltip_text = (
-			"士气受到鼓舞\n攻击力 +%s\n移动速度 +%s\n持续至当天 24:00（剩余 %s）"
+			"士气受到鼓舞\n攻击力 +%s\n移动速度 +%s\n持续至今日午夜（剩余 %s）"
 			% [
 				_format_bonus_percent(float(morale.get("attack_bonus", 0.0))),
 				_format_bonus_percent(float(morale.get("move_speed_bonus", 0.0))),
@@ -693,7 +697,7 @@ func _update_active_buff_icons(states: Dictionary) -> void:
 	work_boost_icon.visible = work_active
 	if work_active:
 		work_boost_icon.tooltip_text = (
-			"工作效率提升\n全部工作产出效率 +%s\n包括生产、训练、协助升级、协助修复、协助治疗等\n持续至当天 24:00（剩余 %s）"
+			"工作效率提升\n全部工作产出效率 +%s\n包括生产、训练、协助升级、协助修复、协助治疗等\n持续至今日午夜（剩余 %s）"
 			% [
 				_format_bonus_percent(float(work.get("output_bonus", 0.0))),
 				_format_buff_remaining_time(float(work.get("remaining_game_seconds", 0.0)))
@@ -1005,6 +1009,7 @@ func _on_equipment_button_pressed() -> void:
 	if not _equipment_window.visible:
 		_equipment_window.close_picker()
 		_clear_pending_unequip()
+		equipment_window_visibility_changed.emit(_current_npc_id, false)
 		return
 	var npc := _get_current_npc()
 	if not npc.is_empty():
@@ -1012,6 +1017,7 @@ func _on_equipment_button_pressed() -> void:
 	_layout_equipment_window()
 	_equipment_window.move_to_front()
 	_equipment_window.call_deferred("move_to_front")
+	equipment_window_visibility_changed.emit(_current_npc_id, true)
 
 
 func _on_equipment_slot_pressed(slot: String) -> void:
@@ -1035,6 +1041,7 @@ func _on_equipment_slot_pressed(slot: String) -> void:
 		return
 	_refresh_equipment_window(npc)
 	_equipment_window.open_picker(slot)
+	equipment_slot_picker_opened.emit(_current_npc_id, slot)
 
 
 func _on_equipment_item_selected(slot: String, item: Dictionary) -> void:
@@ -1047,7 +1054,7 @@ func _on_equipment_item_selected(slot: String, item: Dictionary) -> void:
 		_show_equipment_notice(lock_reason)
 		return
 	var item_id := str(item.get("id", item.get("horse_id", "")))
-	var result := {"ok": false, "message": "装备系统不可用。"}
+	var result := {"ok": false, "message": "暂时无法更换装备。"}
 	var equipment_system := get_node_or_null(EQUIPMENT_SYSTEM_PATH)
 	if equipment_system == null or item_id.is_empty():
 		_show_interaction_result(result, "")
@@ -1062,6 +1069,7 @@ func _on_equipment_item_selected(slot: String, item: Dictionary) -> void:
 		"mount":
 			if equipment_system.has_method("equip_npc_mount"):
 				result = equipment_system.equip_npc_mount(_current_npc_id, item_id, _get_selected_visibility())
+	equipment_item_applied.emit(_current_npc_id, slot, item_id, result.duplicate(true))
 	_show_interaction_result(result, "已装备%s。" % str(item.get("name", item.get("horse_name", item_id))))
 	if bool(result.get("ok", false)):
 		_equipment_window.close_picker()
@@ -1208,6 +1216,30 @@ func debug_get_equipment_window_snapshot() -> Dictionary:
 	var info_panel := get_node_or_null("PanelContainer") as Control
 	snapshot["info_panel_rect"] = info_panel.get_global_rect() if info_panel != null else Rect2()
 	return snapshot
+
+
+func get_tutorial_target_control(target_id: String) -> Control:
+	match target_id:
+		"equipment_button":
+			return give_weapon_button
+		"main_weapon_slot":
+			return (
+				_equipment_window.get_slot_button("main_weapon")
+				if _equipment_window != null
+				else null
+			)
+		"sword_shield_item":
+			return (
+				_equipment_window.get_picker_item_button("sword_shield")
+				if _equipment_window != null
+				else null
+			)
+		_:
+			return null
+
+
+func tutorial_close_panel() -> void:
+	_on_close_pressed()
 
 
 func debug_press_mount_view_button() -> Dictionary:
@@ -1728,7 +1760,7 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	dialogue_button.tooltip_text = (
 		"恢复挂起的对话。" if has_suspended_dialogue
 		else "逃离挽留轮次已用完。" if is_escaping and not can_escape_dialogue
-		else "NPC正在思考" if is_planning
+		else "对方正在思考……" if is_planning
 		else "打开对话面板。"
 	)
 	gift_money_button.disabled = is_escaped or not has_money
@@ -1737,7 +1769,7 @@ func _update_interaction_controls(npc: Dictionary) -> void:
 	give_weapon_button.tooltip_text = "打开装备。" if is_recruited else EQUIPMENT_RECRUITMENT_TOOLTIP
 	assign_button.visible = true
 	assign_button.disabled = not is_recruited
-	assign_button.tooltip_text = "撰写或修改该 NPC 当前持续生效的自然语言指令。" if is_recruited else ORDER_RECRUITMENT_TOOLTIP
+	assign_button.tooltip_text = "撰写或修改你交给此人的长期嘱咐。" if is_recruited else ORDER_RECRUITMENT_TOOLTIP
 	if _strategy_value_label != null:
 		_strategy_value_label.modulate = Color(1.0, 1.0, 1.0, 0.45 if is_escaped or not is_recruited else 1.0)
 		_set_recruitment_gate_tooltip(_strategy_value_label, is_recruited, COMBAT_STRATEGY_TOOLTIP)
@@ -1852,7 +1884,7 @@ func _fill_horse_select(npc: Dictionary) -> void:
 	_horse_select.set_item_metadata(0, "")
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	if horse_system == null:
-		_set_horse_status("马匹系统不可用")
+		_set_horse_status("暂时无法分配马匹。")
 		return
 	var npc_id := str(npc.get("id", _current_npc_id))
 	var assigned: Dictionary = horse_system.get_assigned_horse_for_npc(npc_id) if horse_system.has_method("get_assigned_horse_for_npc") else {}
@@ -1884,7 +1916,7 @@ func _fill_horse_select(npc: Dictionary) -> void:
 	if assigned.is_empty():
 		var equipment: Dictionary = npc.get("equipment", {}) if npc.get("equipment", {}) is Dictionary else {}
 		if bool(npc.get("states", {}).get("escaped", false)):
-			_set_horse_status("该 NPC 已逃离，不能分配马匹。")
+			_set_horse_status("此人已经离开驿站，无法再为其分配马匹。")
 		elif str(npc.get("states", {}).get("behavior_mode", "work")) != "work":
 			_set_horse_status("战时无法更换装备或马匹。")
 		elif not bool(npc.get("recruited", false)):
@@ -2148,6 +2180,10 @@ func _open_memory_detail_popup(mode: String) -> void:
 	_memory_detail_mode = mode
 	_cancel_pending_memory_detail_scroll_restore()
 	_layout_memory_detail_popup()
+	# Control input picking uses sibling order as well as draw order. Keep this
+	# full-screen surface after NPCPanel so its close button wins overlapping
+	# clicks against both the information panel and the portrait viewport.
+	_memory_detail_overlay.move_to_front()
 	_memory_detail_overlay.visible = true
 	_refresh_memory_detail_popup(false)
 	if _memory_detail_text != null:
@@ -2283,13 +2319,7 @@ func _format_current_plan_block(plan: Array) -> String:
 			else "%02d:00–%02d:00" % [start_hour, end_hour]
 		)
 		var action_name := str(group.get("action_name", ""))
-		var source := _format_plan_source(str(group.get("source", "")))
-		var reason := str(group.get("reason", ""))
 		var line := "%s %s  %s" % [marker, time_text, action_name]
-		if not source.is_empty():
-			line += "｜%s" % source
-		if not reason.is_empty():
-			line += "\n    %s" % reason
 		lines.append(line)
 	return "\n\n".join(lines)
 
@@ -2338,20 +2368,6 @@ func _build_current_plan_display_groups(plan: Array, current_hour: int) -> Array
 			"contains_current_hour": hour == current_hour,
 		})
 	return groups
-
-
-func _format_plan_source(source: String) -> String:
-	match source:
-		"llm_plan_day":
-			return "真实 LLM 日计划"
-		"llm_plan_revision":
-			return "真实 LLM 重估"
-		"rule_default":
-			return "规则调试计划"
-		"mock_plan_day":
-			return "Mock 调试计划"
-		_:
-			return "其他来源"
 
 
 func _get_current_plan_initial_scroll_line(plan: Array) -> int:

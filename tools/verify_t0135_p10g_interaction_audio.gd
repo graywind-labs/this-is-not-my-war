@@ -5,9 +5,12 @@ const EXPECTED_ASSETS := [
 	"sfx_ui_button_primary",
 	"sfx_ui_toggle",
 	"sfx_ui_interaction_success_resource_collect",
+	"sfx_work_blacksmith_target_selected",
+	"sfx_ui_equipment_mount_selected",
 	"sfx_world_door_open",
 	"sfx_world_door_close",
 	"sfx_merchant_cart_arrival_departure",
+	"sfx_defense_device_deploy_wood_thud",
 ]
 
 
@@ -33,7 +36,9 @@ func _run() -> void:
 	var resource_system := main.get_node_or_null("Systems/ResourceSystem")
 	var merchant_system := main.get_node_or_null("Systems/MerchantSystem")
 	var npc_system := main.get_node_or_null("Systems/NPCSystem")
-	if [controller, audio_manager, ui_root, settings_panel, npc_panel, dialog_panel, harvest_dialog, crafting_system, resource_system, merchant_system, npc_system].has(null):
+	var defense_device_system := main.get_node_or_null("Systems/DefenseDeviceSystem")
+	var defense_slot_presenter := main.get_node_or_null("UI/DefenseSlotPresenter")
+	if [controller, audio_manager, ui_root, settings_panel, npc_panel, dialog_panel, harvest_dialog, crafting_system, resource_system, merchant_system, npc_system, defense_device_system, defense_slot_presenter].has(null):
 		_fail("P10G required Main nodes are missing")
 		return
 
@@ -48,7 +53,9 @@ func _run() -> void:
 	await _assert_panel_buttons_use_immediate_click(controller, settings_panel)
 	await _assert_special_success_and_close(controller, dialog_panel)
 	await _assert_real_harvest_success(controller, harvest_dialog, crafting_system, resource_system)
+	await _assert_defense_device_deploy_audio(controller, defense_slot_presenter, defense_device_system, resource_system)
 	await _assert_progression_success_audio(controller, npc_panel, npc_system)
+	await _assert_merchant_trade_success_audio(controller)
 	_assert_semantic_priority(controller)
 	_assert_ordinary_door_registration(controller)
 	_assert_door_edges(controller, main)
@@ -61,7 +68,7 @@ func _run() -> void:
 	await process_frame
 	var loops: Dictionary = audio_manager.get_loop_snapshot()
 	_assert(not loops.has("interaction_merchant_cart_travel"), "merchant loop survived Main teardown")
-	print("T0135_P10G_INTERACTION_AUDIO_PASS assets=6 ui=immediate panels=wood_only success=pass progression=pass doors=pass merchant=pass")
+	print("T0135_P10G_INTERACTION_AUDIO_PASS assets=9 ui=immediate equipment=semantic panels=wood_only success=pass progression=pass doors=pass merchant=pass defense_deploy=global_2d")
 	quit(0)
 
 
@@ -74,7 +81,7 @@ func _assert_assets_and_config(controller: Node, audio_manager: Node) -> void:
 		unique[str(raw_asset_id)] = true
 	for key in ["door_open_asset", "door_close_asset", "merchant_loop_asset"]:
 		unique[str(world.get(key, ""))] = true
-	_assert(unique.size() == 6, "P10G must map exactly six active interaction assets")
+	_assert(unique.size() == 9, "P10G must map exactly nine active interaction assets")
 	for asset_id in EXPECTED_ASSETS:
 		_assert(unique.has(asset_id), "P10G mapping is missing %s" % asset_id)
 		_assert(audio_manager.has_asset(asset_id), "audio manifest is missing %s" % asset_id)
@@ -217,6 +224,60 @@ func _assert_progression_success_audio(controller: Node, npc_panel: Node, npc_sy
 	await process_frame
 	_assert(not bool(failed_result.get("ok", false)), "point assignment without points unexpectedly succeeded")
 	_assert((controller.get_debug_snapshot().get("recent_history", []) as Array).is_empty(), "failed point assignment played a success sound")
+
+
+func _assert_merchant_trade_success_audio(controller: Node) -> void:
+	var event_bus := root.get_node_or_null("EventBus")
+	_assert(event_bus != null and event_bus.has_signal("merchant_trade_completed"), "merchant trade completion signal is missing")
+	if event_bus == null or not event_bus.has_signal("merchant_trade_completed"):
+		return
+	for direction in ["buy", "sell"]:
+		controller.debug_clear_history()
+		event_bus.merchant_trade_completed.emit(direction, {"ok": true, "direction": direction})
+		await process_frame
+		_assert_last_ui(controller, "merchant_trade_success", "sfx_ui_interaction_success_resource_collect")
+		var history: Array = controller.get_debug_snapshot().get("recent_history", [])
+		_assert(not history.is_empty() and absf(float((history.back() as Dictionary).get("gain_db", 0.0)) - 5.0) < 0.001, "merchant trade success did not receive its dedicated +5 dB gain")
+	controller.debug_clear_history()
+	event_bus.merchant_trade_completed.emit("buy", {"ok": false, "direction": "buy"})
+	await process_frame
+	_assert((controller.get_debug_snapshot().get("recent_history", []) as Array).is_empty(), "failed merchant trade played the success sound")
+
+
+func _assert_defense_device_deploy_audio(
+	controller: Node,
+	defense_slot_presenter: Node,
+	defense_device_system: Node,
+	resource_system: Node
+) -> void:
+	var device_id := "wall_arrow_tower"
+	var slot_id := "wall_slot_01"
+	var definition: Dictionary = defense_device_system.get_device_definition(device_id)
+	_ensure_resources(resource_system, definition.get("inventory_cost", {}))
+	_assert(bool(defense_slot_presenter.tutorial_open_slot(slot_id)), "could not open the formal defense deployment picker")
+	await process_frame
+	var picker := defense_slot_presenter.get_tutorial_target_control("device:%s" % device_id) as Button
+	_assert(picker != null, "formal defense deployment picker has no arrow tower button")
+	if picker == null:
+		return
+	_assert(bool(picker.get_meta("ui_audio_silent", false)), "deployment picker must suppress its generic UI click")
+	controller.debug_clear_history()
+	picker.pressed.emit()
+	await process_frame
+	var deployment: Dictionary = defense_device_system.get_deployment_for_slot(slot_id)
+	_assert(not deployment.is_empty(), "formal deployment button did not commit a defense device")
+	var history: Array = controller.get_debug_snapshot().get("recent_history", [])
+	_assert(history.size() == 1, "successful deployment must play exactly one sound")
+	if history.is_empty():
+		return
+	var entry := history.back() as Dictionary
+	_assert(str(entry.get("semantic", "")) == "defense_device_deployed", "deployment used the wrong audio semantic")
+	_assert(str(entry.get("asset_id", "")) == "sfx_defense_device_deploy_wood_thud", "deployment used the wrong audio asset")
+	_assert(str(entry.get("player_type", "")) == "AudioStreamPlayer", "deployment sound must be global 2D audio")
+	_assert(str(entry.get("bus", "")) == "UI", "deployment sound must follow the click volume setting")
+	_assert(absf(float(entry.get("gain_db", 0.0)) - 3.0) < 0.001, "deployment sound must use its dedicated +3 dB gain")
+	_assert(str(entry.get("slot_id", "")) == slot_id, "deployment sound lost its authoritative slot identity")
+	_assert(not entry.has("world_position"), "global deployment sound must not depend on a world position")
 
 
 func _assert_ordinary_door_registration(controller: Node) -> void:

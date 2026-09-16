@@ -201,9 +201,9 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var backend_label := hud.get_node_or_null("%BackendStatusLabel") as Label
-	if backend_label == null or not backend_label.text.begins_with("后端：已连接"):
-		push_error("HUD did not display connected backend status")
+	var backend_label := hud.get_node_or_null("BackendStatusLabel")
+	if backend_label != null:
+		push_error("HUD should not expose backend connection status")
 		quit(1)
 		return
 

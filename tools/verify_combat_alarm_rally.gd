@@ -95,23 +95,23 @@ func _init() -> void:
 		push_error("Combat alarm should write one alarm event for every NPC")
 		quit(1)
 		return
-	if int(alarm_result.get("rallied_count", 0)) != 2:
-		push_error("Only recruited armed NPCs should rally. result=%s" % JSON.stringify(alarm_result))
+	if int(alarm_result.get("rallied_count", 0)) != 1:
+		push_error("Only the armed recruit outside the reflection lock should rally. result=%s" % JSON.stringify(alarm_result))
 		quit(1)
 		return
 	var reflection_interrupt: Dictionary = alarm_result.get("reflection_interrupt_result", {})
-	if int(reflection_interrupt.get("interrupted_count", 0)) != 1:
-		push_error("Combat alarm should interrupt the pending sleep reflection: %s" % JSON.stringify(alarm_result))
+	if int(reflection_interrupt.get("interrupted_count", -1)) != 0 or int(reflection_interrupt.get("deferred_count", 0)) != 1:
+		push_error("Combat alarm should preserve the pending sleep reflection: %s" % JSON.stringify(alarm_result))
 		quit(1)
 		return
-	if npc_system.is_first_sleep_summary_locked("veteran_deputy_01"):
-		push_error("Combat alarm should release the first-sleep summary lock")
+	if not npc_system.is_first_sleep_summary_locked("veteran_deputy_01"):
+		push_error("Combat alarm should keep the first-sleep summary lock")
 		quit(1)
 		return
 	var reflection_snapshot: Dictionary = daily_reflection_system.get_async_reflection_snapshot()
 	var reflection_window: Dictionary = (reflection_snapshot.get("sleep_window_states_by_npc", {}) as Dictionary).get("veteran_deputy_01", {})
-	if str(reflection_window.get("summary_status", "")) != "eligible" or not str(reflection_window.get("request_id", "")).is_empty():
-		push_error("Interrupted reflection should remain retryable without applying memory: %s" % JSON.stringify(reflection_window))
+	if str(reflection_window.get("summary_status", "")) != "pending" or str(reflection_window.get("request_id", "")) != reflection_request_id:
+		push_error("Preserved reflection should retain its pending request: %s" % JSON.stringify(reflection_window))
 		quit(1)
 		return
 	if not _ignored_reason(alarm_result, "cook_01", "not_recruited"):
@@ -121,8 +121,19 @@ func _init() -> void:
 
 	var stableman_state: Dictionary = npc_system.get_npc_state("stableman_01")
 	var veteran_state: Dictionary = npc_system.get_npc_state("veteran_deputy_01")
+	if str(veteran_state.get("current_action", "")) != "sleep_in_dormitory" or str(veteran_state.get("combat_mode", "")) != "":
+		push_error("Reflecting veteran should remain asleep instead of rallying")
+		quit(1)
+		return
+	# Simulate the normal reflection completion boundary, then issue a fresh alarm.
+	daily_reflection_system._pending_reflection_by_request.erase(reflection_request_id)
+	daily_reflection_system._pending_request_by_npc.erase("veteran_deputy_01")
+	npc_system.set_first_sleep_summary_lock("veteran_deputy_01", false, reflection_request_id)
+	combat_system.debug_trigger_combat_alarm()
+	await process_frame
+	veteran_state = npc_system.get_npc_state("veteran_deputy_01")
 	if str(stableman_state.get("combat_mode", "")) != "rally" or str(veteran_state.get("combat_mode", "")) != "rally":
-		push_error("Armed recruited NPCs should enter rally mode")
+		push_error("Armed recruited NPCs should enter rally mode after reflection completes")
 		quit(1)
 		return
 	if bool(stableman_state.get("combat_mounted", true)):

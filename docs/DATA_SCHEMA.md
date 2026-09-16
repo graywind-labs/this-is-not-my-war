@@ -1,5 +1,34 @@
 # DATA_SCHEMA.md
 
+## T0355 wave_checkpoint_v1
+
+- `user://saves/index.json` 使用 `wave_checkpoint_index_v1`，只保存稳定 `slot_id -> archive_id / display_name` 映射和 `last_active_archive_id`；玩法权威不写入索引。
+- 每个 `archives/<archive_id>/auto|manual/meta.json` 使用 `wave_checkpoint_meta_v1`，包含 `save_version=1`、档案 / 恢复点身份、检查点波次、游戏日期 / 时间、游戏版本、保存时间和 `state_sha256`。
+- 对应 `state.json` 使用 `wave_checkpoint_state_v1`，包含相同档案 ID、版本和各权威系统分区；读取时同时校验元数据版本、身份、状态 Schema、状态版本、身份与 SHA-256。高于当前版本的恢复点不降级猜读。
+- `meta.has_thumbnail / thumbnail_sha256` 描述独立 `thumbnail.webp` 的生成与完整性。正式渲染输出固定为 `480×270 WebP`；图片校验独立于权威状态，缺失、校验失败或解码失败只影响预览，不影响状态加载。完整系统字段、事务边界和恢复顺序见 `docs/SAVE_SYSTEM.md`。
+
+## T1505-P6R54 npc_stay_positions_v1
+
+`data/npc_stay_positions.json` 保存 `schema_version`、`coordinate_space` 和 `locations[location_id][npc_id] = [x,z]`。建筑使用局部坐标，广场使用站内坐标；仅供导航，不属于 workstation，不参与占用、显示或见闻位置列表。每个地点覆盖完整初始 roster，坐标永久按 NPC ID 归属。新增 NPC 或调整家具 / 建筑后须复跑 T1505-P6R54 几何与多人到达专项。
+
+## T0081-R2 零饱食字段
+
+- `activity_needs.json.zero_satiety_hp_cost_per_missing_satiety: number > 0`，当前为 `2.0`。
+- `activity_needs.json.zero_satiety_hp_categories: string[]`，当前为 `work / training / combat`。
+- `zero_satiety_triggered.payload` 必含 `satiety_before / satiety_after / min_satiety / hp_cost_per_missing_satiety / current_action / profile_id / profile_category`。
+- `failure_type=low_satiety` 的重估上下文附带 HP、需求档位、换血参数和 `meal / grain` 储备；计划输出 Schema 不变。
+
+## T1505-P6R35 食堂餐位归属与终段到达配置
+
+- `building_defs.json` 的 `dining_seat_01..08.assigned_npc_id` 复用固定工位归属合同，分别指向 8 名初始 NPC；`dining_seat_09..10` 不声明该字段，作为未分配备用席。计划、Prompt 和行动 Schema 不新增座位编号。
+- `building_fixture_layouts.json` 的十个食堂 `npc_stand` 显式声明 `target_desired_distance=0.45`。4/5/9/10 号椅的 `center / collision_size` 与 `station_layout.json`、`presentation/station_spatial_plan.json` 的逻辑中心同步；该几何只参与表现、静态碰撞和导航烘焙，不改变工位容量。
+
+## T1505 序章配置合同
+
+- `tutorial_config.json` 使用 `tutorial_prologue_v1`，保存教程 / 交接时钟、正式五波目标、正式槽位 / 器械 / 武器 ID、临时库存、提示时限、tutorial raid 数值及全部正常显示文案。文案分区为 `intro_pages`（开场漫画）、`step_copy`（以稳定步骤 ID 为键的 3D 操作文字 / top_hint）、`post_battle_pages`（战后对白）和 `ui_copy`（继续、目标 Tooltip、说话者名称、跳过、胜利与交接卡）；策划可修改值，不应重命名键或步骤 ID。`ada_focus_zoom_distance=20.0` 是选择艾达时的近景距离，`ada_focus_height=0.85` 是投影到视口中心的躯干焦点高度，`ada_initial_facing_direction=[0,0,1]` 是教程开场朝向正门的世界平面方向；`ada_equipment_gesture_interval_seconds` 是动作资源不可用时的配装示意重试 / 最短续播间隔，实际正常续播不短于当前动作时长；`ada_follow_zoom_distance` 是无法读取当前镜头时的跟随距离后备值，`ada_follow_camera_responsiveness` 控制警报后追随收敛速度。`gate_focus_zoom_distance=20.0` 与 `gate_focus_world_position=[1.5,0,54]` 定义战场说明 / 箭塔槽位共用构图：Z 对齐正门地面中心，X 为左上 HUD 预留横向安全区；`tutorial_raid.spawn_front_center=[5,0,72]` 只覆盖教程敌军的列阵中心。上述字段只影响教程表现和 tutorial scope，不改正式 / GM 刷敌区。`tower_phase_max_duration_seconds` 是箭塔阶段异常上限；`tutorial_raid.defense_device_damage_multiplier` 仅放大教程敌人对教程器械的结算伤害，不能作用于 NPC、正式建筑或正式波次。TutorialDirector 启动时校验 schema、对白非空和依赖 ID。
+- `tutorial_day1_plans.json` 使用 `tutorial_day1_plans_v2`，`plans` 必须覆盖当前 8 名 NPC 且每人恰有 24 个小时项。普通项可直接写 action id 字符串；`talk_to_npc / visit_location` 等目标项写为 `{action_id, target_id, dialogue_goal?}`，TutorialDirector 在交接时编译成正式 `target.target_id + target_npc_id/location_id`。提交后各项标记 `source=tutorial_day1_preset`；该文件不进入 Prompt，也不代表模型输出。
+- 两份配置都是新游戏序章数据，不是存档增量；正式库存、波次、制造进度和 NPC 数值仍由原系统数据定义，交接时回到这些权威基线。
+
 ## T0396 天体阴影表现配置
 
 - `data/presentation/environment_art.json.celestial_cycle.directional_shadow_mode` 是表现配置字符串，允许 `orthogonal / parallel_2_splits / parallel_4_splits`；未知或缺失值兼容回退到 `parallel_4_splits`。
@@ -17,6 +46,12 @@ T1604 的 11 条真实矩阵再次通过 `VoiceAnalyzeResponse` 校验：Provide
 - 该响应只供 UI 生成普通草稿，不写入 NPCDialogueRequest 新字段，不新增事件类型。最终发送后仍由既有 `dialogue_turn.payload.text` 保存玩家实际发出的完整文字。
 - 错误合同与完整 JSON 示例见 `docs/VOICE_INPUT_AND_EMOTION.md`。
 - `DialogSystem.send_player_message()` 的超限失败固定为 `error_code=input_too_long`，并返回 `max_characters=300` 与去首尾空白后的 `actual_characters`；校验发生在草稿激活、历史追加或请求发起前。
+
+## T0081-R1 满疲劳事件与工作倍率
+
+- `data/activity_needs.json.full_fatigue_work_output_multiplier`：`0 < number < 1`，当前为 `0.5`，只在 `fatigue == bounds.fatigue.max` 时生效。
+- `full_fatigue_triggered`：私有亲历事件；必填 payload 为 `fatigue_before / fatigue_after / max_fatigue / work_output_multiplier`，summary 固定为“你当前很疲惫，工作效率大幅下降。”。
+- `high_fatigue` 继续使用既有计划失败类型；本路径的 `plan_revision_judgement.required_revision_hours` 至少包含当前小时，响应不得遗漏。
 
 ## T0350 CombatProgression 与成长余量
 
@@ -221,7 +256,8 @@ NPC `states` 可临时包含 `combat_strategy_move_recovery_count / combat_strat
 ## T0193 友军攻击锁与正式空间存档字段
 
 - NPC 运行态 `states` 可选字段：`combat_attack_last_sequence_time: float`、`combat_attack_next_sequence_time: float`、`combat_attack_sequence_lock_remaining: float`。last / next 只在当前 CombatSystem 进程时间轴内有效；remaining 是可观察与存档的非负相对秒数。
-- `formal_npc_spatial_checkpoint_v1.actors[]` 新增向后兼容可选字段 `combat_attack_sequence: int` 与 `combat_attack_sequence_lock_remaining: float`。旧存档缺省为 0；不提升 schema 版本，因为字段可选且旧读取器会忽略未知键。
+- T0193 当时为 `formal_npc_spatial_checkpoint_v1.actors[]` 增加向后兼容可选字段 `combat_attack_sequence: int` 与 `combat_attack_sequence_lock_remaining: float`；旧存档缺省为 0。
+- T0355-R3 后新写入 `formal_npc_spatial_checkpoint_v2`。actor 继续保留上述战斗等待字段、`information_location_id`、逃离 / 昏迷 / 行为模式和 `in_flight_action`，但删除任意 `position`；根级删除 `world_origin`，`in_flight_policy=rollback_to_assigned_location_stay_position`。v1 仍可读取，但旧坐标字段被忽略并按地点 + NPC ID 恢复个人停留点。顶层玩家存档 Schema v1 不变。
 - 恢复时不序列化 active melee swing、phase、elapsed、target、RID、NodePath 或绝对 next time；当前动作回滚为 idle，CombatSystem 依据 remaining 重建下一次合法起手。
 
 ## T0188 友军站内响应配置
@@ -477,7 +513,7 @@ NPC `states` 可临时包含 `combat_attack_sequence / combat_attack_phase / com
 - `formal_wave_spawn` 保存正式波次的三列生成合同、最低间距、胶囊净距和生产调度预算。实际生成间距取 `minimum_spacing` 与“本波最大胶囊直径 + minimum_capsule_clearance”的较大值；第五波因骑射半径 `0.65 m` 得到 `1.40 m`。`ai_updates_per_frame=8 / contact_update_interval_frames=6 / avoidance_update_interval_frames=3` 只拆分索敌和复核负载，每名敌人的跳过时间单独累计，不改变伤害 / 冷却。
 - `structural_collision` 固定 `0.4 m` 墙厚、`1.8 m` 建筑门净宽、`2.2 m` 门高和门柱宽；A3 当前由 78 个结构阻挡、1 个烘焙地面、131 个 fixture 碰撞部件和 24 个自然边界组成 234 个静态源。`1.8 m` 净宽为斜墙体素化后的可靠通行值，不等于 NPC 的物理直径。
 - `navigation_mesh` 保存 `production_cell_size=0.25 / production_cell_height=0.1`、NPC 请求半径 `0.35 m`、体素对齐烘焙半径 `0.5 m`、静态碰撞 source group、烘焙 AABB / 高度 / 地面厚度。当前从 234 个 `formal_navigation_source` StaticBody 生成 788 顶点 / 754 多边形生产 NavMesh，并使用独立 NavigationMap；12 个建筑门由双向 NavigationLink3D 连接烘焙后门内外小岛。
-- `navigation_agent / stuck_recovery` 保存局部避障、到达容差、RVO `avoidance_layers / avoidance_mask`、邻居、时间窗、进度采样和有界重寻路参数；`avoidance_radius_padding=0.10 m` 只扩大 RVO 预判圆，不扩大物理胶囊或 NavMesh 烘焙半径。A2a 只按连续无进展采样累计 `fail_after_seconds`，不能把长路线总耗时当成卡死。`authority_boundary` 明确运动组件只拥有物理移动，玩法系统仍拥有地点 / 工位 / 战斗 / 逃离完成事实。
+- `navigation_agent / stuck_recovery` 保存局部避障、到达容差、RVO `avoidance_layers / avoidance_mask`、邻居、时间窗、进度采样和有界重寻路参数；`avoidance_radius_padding=0.10 m` 只扩大 RVO 预判圆，不扩大物理胶囊或 NavMesh 烘焙半径。T0437 后，历史字段名 `fail_after_seconds` 只作为连续无进展的非终止情绪通知阈值，不能把长路线总耗时当成卡住，也不能据此终止 motion request。`authority_boundary` 明确运动组件只拥有物理移动，玩法系统仍拥有行动意图、地点 / 工位 / 战斗 / 逃离完成事实。
 
 `data/building_fixture_layouts.json` 使用 `building_fixture_layout_v1`，是逐建筑可见设备与实体碰撞合同：
 
@@ -530,6 +566,8 @@ NPC 运行态新增 `spatial_route_phase / physical_location_phase / reserved_bu
 `DialogueIntentRevalidationResponse`：`npc_id / decision / dialogue_goal / summary / debug_reason`；decision 为 `continue | modify | cancel_and_replan`。只有 modify 允许非空且不同于原文的 `dialogue_goal`。
 
 制造 `work_failed.payload` 新增 / 固化：`failure_reason`、`crafting_error`、`required_resources`、`crafting_project`。项目只保留配方 / 产物 / revision / completed / total / current stage / cost / stock，不包含 active_workers。
+
+T1505-P6R45 新增正常停止事件 `work_stopped`。必填 payload 为 `action_id / reason / interruption_reason`；整点切入不同计划项时 `reason=当前计划时段结束`、`interruption_reason=plan_hour_changed`，并保留 `building_id / workstation_id / duration_seconds / is_manufacturing`。制造摘要显示“因当前计划时段结束而停止制造”，不得投影为 `work_failed`。其他工作中断继续使用 `work_failed`，并额外保存实际 `interruption_reason`。
 
 ## T0114 虔诚与陨石配置 / 运行态
 
@@ -740,7 +778,7 @@ Schema 强制窗口两端均为 21:00、`end_day=anchor_day+1`、标签精确匹
       "target_id": "dormitory",
       "workstation_id": "dormitory_bed_01",
       "elapsed_seconds": 1800.0,
-      "duration_seconds": 23400.0
+      "duration_seconds": 28800.0
     },
     "current_plan_activity": {
       "action_id": "sleep_in_dormitory",
@@ -883,18 +921,18 @@ NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变�
 
 `recruited` 与 `in_station` 是相互独立的严格布尔值；离站成员仍保留在 `StationSceneContext.resident_roster`。缺少任一标签的正式请求会被 Schema 拒绝。
 
-`data/resource_defs.json` 对受限资源新增 `warehouse_capacity={level_1,per_level_bonus}`。当前粮食、餐食、木材、石料、铁为 `{120,60}`，酒为 `{60,30}`；未配置或空配置表示不受仓库容量限制。具体物品定义可选 `icon` 作为只读 UI 资源路径。`npc_initial_long_memory.json` 图谱结构未改变，关系总数由 222 增至 226，仓库稳定技术值更新为 `level_based_bulk_storage_and_post_breach_attack_target`。
+`data/resource_defs.json` 对受限资源使用 `warehouse_capacity={level_1,per_level_bonus}`。当前粮食、餐食、酒、木材、石料和铁统一为 `{20,10}`；未配置或空配置表示不受仓库容量限制。具体物品定义可选 `icon` 作为只读 UI 资源路径。`npc_initial_long_memory.json` 图谱结构未改变，关系总数由 222 增至 226，仓库稳定技术值保持为 `level_based_bulk_storage_and_post_breach_attack_target`。
 
-## T0069 LLM 审计 JSONL Schema v1
+## T0069 / T0445 LLM 审计 JSONL Schema v2
 
 `backend/logs/llm_calls.jsonl` 每行是独立 JSON 对象，公共字段为：
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "timestamp": "UTC ISO-8601",
   "audit_id": "同一次 ModelAdapter 调用的随机唯一 id",
-  "event": "call_started|provider_request_sent|provider_response_received|provider_output_parsed|provider_output_rejected|provider_attempt_failed|call_completed|business_validation_failed",
+  "event": "call_started|provider_request_prepared|provider_response_headers_received|provider_first_valid_token_received|provider_request_completed|provider_output_parsed|provider_output_rejected|call_completed|business_validation_failed",
   "call_type": "dialogue|plan_day|...",
   "provider": "deepseek|openai_compatible|mock",
   "model": "provider model",
@@ -904,7 +942,7 @@ NPC 可传播建筑外部状态只增加稳定作业字段，不广播持续变�
 }
 ```
 
-事件按职责携带 `input_payload`、`provider_request_body`、`provider_response / raw_response_body`、`raw_model_content / model_output`、`attempt_count / http_status / exception_type / failure_reason`、`usage` 或 `validation_details`。这是 append-only 诊断 Schema：后续业务校验失败追加新事件，不重写历史 JSONL 行；内存 usage 仍可原地修正以避免预算双计。敏感值写入前替换为 `[REDACTED]`，请求 / 响应 headers 不属于该 Schema。
+Provider attempt 使用四阶段：`provider_request_prepared`（准备发送）、`provider_response_headers_received`（HTTP 头已收到）、`provider_first_valid_token_received`（首个非空正文增量）和 `provider_request_completed`（成功或失败完成）。阶段事件携带 `stage / elapsed_seconds / attempt_count`；完成阶段按结果携带 `provider_response / billing` 或 `http_status / exception_type / failure_reason / failure_details`。keep-alive 与空行不会生成首 Token 阶段。其他事件按职责携带 `input_payload`、`raw_model_content / model_output`、`usage` 或 `validation_details`。这是 append-only 诊断 Schema：后续业务校验失败追加新事件，不重写历史 JSONL 行；内存 usage 仍可原地修正以避免预算双计。已有 v1 行不迁移、不重写；T0445 后新行使用 v2。敏感值写入前替换为 `[REDACTED]`，请求 headers 不属于该 Schema，响应只记录非秘密的状态与 Content-Type。
 
 ## T0067 战斗状态投影与对话业务合同
 
@@ -1095,17 +1133,17 @@ T0034 冻结并由 T0035-T0038 实现的当前资源契约是：制造成品分�
     "departure_minute": 0
   },
   "buy_offers": [
+    {"resource_id": "grain", "unit_price": 3},
+    {"resource_id": "wood", "unit_price": 4},
+    {"resource_id": "stone", "unit_price": 5},
+    {"resource_id": "iron", "unit_price": 6}
+  ],
+  "sell_offers": [
     {"resource_id": "grain", "unit_price": 2},
     {"resource_id": "wood", "unit_price": 3},
     {"resource_id": "stone", "unit_price": 4},
-    {"resource_id": "iron", "unit_price": 5}
-  ],
-  "sell_offers": [
-    {"resource_id": "grain", "unit_price": 1},
-    {"resource_id": "wood", "unit_price": 2},
-    {"resource_id": "stone", "unit_price": 3},
-    {"resource_id": "iron", "unit_price": 4},
-    {"resource_id": "wine", "unit_price": 4}
+    {"resource_id": "iron", "unit_price": 5},
+    {"resource_id": "wine", "unit_price": 2}
   ]
 }
 ```
@@ -1282,7 +1320,7 @@ T0059 后 `background_story` 只保存职业身份、稳定观察方式、价值
 
 T0703 已为每名初始 NPC 配置并在运行时规范化 `current_order`。它保存守备官对该 NPC 当前持续提出的自然语言指令，而不是已执行行动：`text` 是当前文本，`issued_by` 固定为 `guard_officer`，`issued_day` / `issued_time` 记录最近一次变更时间，`revision` 在指令文本变化时递增。未入伍或尚无指令时 `text` 为空。发布相同文本或关闭指令面板不得修改该结构。
 
-T1004/T1005 起，运行时 `diary` 保存首次睡眠总结生成的长期日记记录；T0059 后基础档案保持空数组，但新游戏会先从独立 `npc_initial_long_memory.json` 装载 3 篇 `day=0` 初始日记：
+T1004/T1005 起，运行时 `diary` 保存首次睡眠总结生成的长期日记记录；T0059 后基础档案保持空数组，但新游戏会先从独立 `npc_initial_long_memory.json` 装载 `day=0` 初始日记。当前其余七人各 3 篇，艾达为 4 篇；第四篇固定使用 `time=02:00:00 / record_label=接到守备命令的前一天 / source=initial_long_memory` 保存序章夜袭叙事，不由教程完成状态追加：
 
 ```json
 {
@@ -1525,10 +1563,10 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
 
 各行动类型字段：
 
-- `work`：读取 `location_required`、`workstation_type`、`duration_seconds`、`input_resources`、`output_resources` 和 `needs_profile` 后由程序结算。`duration_seconds` 是单位工作周期基准；实际周期按 NPC 技能 / 属性、建筑等级奖励和建筑损伤效率结算。工作开始申请目标位置，完成、失败或中断时释放。`work_dining_hall` 使用 `dining_kitchen_station` 与 `building_efficiency_key="production"`。T0804-T0806 的聚合制造 / 马匹整备配置属于历史运行态，已被下一条当前覆盖取代。
+- `work`：读取 `location_required`、`workstation_type`、`duration_seconds`、`input_resources`、`output_resources` 和 `needs_profile` 后由程序结算。`duration_seconds` 是单位工作周期基准；实际周期按 NPC 技能 / 属性、建筑等级奖励和建筑损伤效率结算。正式工作派发先申请目标位置，`input_resources`、制造目标及其他工作启动条件只在 NPC 真实抵达该工位后校验；完成、失败或中断时释放。`work_dining_hall` 使用 `dining_kitchen_station` 与 `building_efficiency_key="production"`。T0804-T0806 的聚合制造 / 马匹整备配置属于历史运行态，已被下一条当前覆盖取代。
 - T0035/T0037 当前覆盖：`work_blacksmith` / `work_workshop` 使用 `requires_crafting_target=true`，选中该建筑合法制造目标才允许开工；每个完整工作周期只向 CraftingSystem 提交一个阶段，不直接写任何聚合或具体成品产出。周期中断只丢失该 NPC 未完成的小数周期，已提交整数阶段不回退。`work_stable` 的 `input_resources / output_resources` 均为空，只把有效在岗者的最高“养马”能力交给 HorseSystem 推进繁育、成长与额外 HP 培养；马匹进食由 HorseSystem 在进食周期完成时自行原子扣粮。
 - `eat`：使用 `workstation_type="dining_seat"` 申请一个用餐席，使用 `food_options` 定义可消耗食物及饱食度恢复量，并以 `building_efficiency_key="meal_recovery"` 应用食堂升级与损伤效率。标准进食时长为 1200 秒，食物恢复按进度逐步应用；`needs_profile="eat"` 同时表达进食仍会增加少量疲劳。
-- `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前睡眠基准为 23400 秒降低 100 点疲劳并消耗 13 点饱食。
+- `sleep`：使用 `workstation_type="dormitory_bed"` 申请一个床位，通过 `duration_seconds` 和 `needs_profile="sleep"` 连续消耗饱食、恢复疲劳，并以 `building_efficiency_key="sleep_recovery"` 应用宿舍升级与损伤效率。当前名义睡眠窗口为 28800 秒，按基础档降低 100 点疲劳并消耗 16 点饱食；其完成策略为 `continuous_until_plan_changes`，疲劳到 0 或名义窗口走完都不自动离床，只有非睡眠计划阶段或其他权威中断才结束。
 - `pray`：`pray_at_chapel` 使用 `chapel_prayer_seat`、不要求神父在场，并绑定 `needs_profile="prayer_rest"`；`lead_mass` 使用 `chapel_altar`、要求 `required_ability="主持弥撒"`。参加弥撒不是独立 action definition，而是 `pray_at_chapel` active 数据中的 `prayer_mode="mass_attendance"`；弥撒结束后恢复 `personal_prayer`。
 - `targeted_heal`：需要运行时传入昏迷目标 NPC，不可通过普通 `assign_action` 直接执行。当前 `assist_heal` 读取 `requires_target="unconscious_npc"`、`target_limit_per_target`、`resource_cost_interval_seconds`、`input_resources.money`、`skill="医术"`、`needs_profile="light_work"` 和 `timed_experience` 作为行为声明；具体目标校验、费用扣除、医术加速、有效治疗时长、HP 恢复和成长由 `ActionSystem` / `NPCSystem` 结算。
 - `clinic_doctor`：读取 `location_required="clinic"`、`workstation_type="clinic_doctor_station"`、`skill="医术"`、`stat="intelligence"`、`study_skill_interval_seconds`、`treatment_skill_interval_seconds`、`resource_cost_interval_seconds`、`clinic_round_dwell_seconds` 和 `needs_profile="light_work"`。无病人时，在诊疗位上的 NPC 缓慢研读医学著作；有病人时，全部在岗医生的人数、医术和相关属性组成团队效率，并同时作用于全部病床。`clinic_round_dwell_seconds` 当前为 300，只控制医生在真实病床侧的可见轮换间隔，不参与治疗率、收费或医术结算。
@@ -1562,7 +1600,7 @@ T0086 增加可选布尔字段 `reevaluate_current_hour_on_completion`。它不�
     "idle": {"satiety_per_hour": -0.5, "fatigue_per_hour": 0.5},
     "heavy_work": {"satiety_per_hour": -4.0, "fatigue_per_hour": 8.0},
     "combat": {"satiety_per_hour": -8.0, "fatigue_per_hour": 16.0},
-    "sleep": {"satiety_per_hour": -2.0, "fatigue_per_hour": -15.3846153846}
+    "sleep": {"satiety_per_hour": -2.0, "fatigue_per_hour": -12.5}
   }
 }
 ```
@@ -1730,18 +1768,18 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
 
 | 建筑 | 配方 id | 成品库存 id | 阶段数 | 材料总量 |
 |---|---|---|---:|---|
-| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 3 | 铁 2 |
-| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 3 | 铁 2 |
-| 铁匠铺 | `craft_polearm` | `item_polearm` | 4 | 铁 2、木材 1 |
-| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 4 | 铁 3 |
-| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 5 | 铁 3、木材 1 |
-| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 8 | 铁 6 |
-| 工械坊 | `craft_bow` | `item_bow` | 3 | 木材 2 |
-| 工械坊 | `craft_crossbow` | `item_crossbow` | 5 | 木材 3、铁 1 |
-| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 9 | 木材 6、铁 2 |
+| 铁匠铺 | `craft_iron_helmet` | `item_iron_helmet` | 5 | 铁 2 |
+| 铁匠铺 | `craft_iron_bracers` | `item_iron_bracers` | 5 | 铁 2 |
+| 铁匠铺 | `craft_polearm` | `item_polearm` | 6 | 铁 2、木材 1 |
+| 铁匠铺 | `craft_iron_greaves` | `item_iron_greaves` | 6 | 铁 3 |
+| 铁匠铺 | `craft_sword_shield` | `item_sword_shield` | 7 | 铁 3、木材 1 |
+| 铁匠铺 | `craft_mail_chest` | `item_mail_chest` | 10 | 铁 6 |
+| 工械坊 | `craft_bow` | `item_bow` | 5 | 木材 2 |
+| 工械坊 | `craft_crossbow` | `item_crossbow` | 7 | 木材 3、铁 1 |
+| 工械坊 | `craft_wall_ballista` | `item_wall_ballista` | 12 | 木材 6、铁 2 |
 | 工械坊 | `craft_wall_arrow_tower` | `item_wall_arrow_tower` | 12 | 木材 8、铁 2 |
 
-建筑级运行态保存当前 `recipe_id`、项目 `revision`、`completed_stages` 与 `total_stages`。同建筑多个工位可以并行推进各自工作周期，但完整周期提交时必须再次校验 `revision`、领取唯一的下一阶段并扣除该阶段材料。全部阶段完成后只增加 1 件 `output_item_id`，保留目标并把整数阶段重置为 0。更换目标会增加 `revision`、放弃旧项目全部整数阶段并中断旧版本周期；已经扣除的阶段材料不返还。`special_state.production.current_stage_index` 使用 1 起始，等于 `completed_stages + 1`；未选择目标或没有合法当前阶段时为 0，名称为空。小数周期进度只供建筑面板汇总显示，不属于上述 `special_state`。
+建筑级运行态保存当前 `recipe_id`、项目 `revision`、`completed_stages` 与 `total_stages`。同建筑多个工位可以并行推进各自工作周期，但完整周期提交时必须再次校验 `revision`、领取唯一的下一阶段并扣除该阶段材料。全部阶段完成后只增加 1 件 `output_item_id`，保留目标并把整数阶段重置为 0。项目快照的 `invested_resources` 由当前配方前 `completed_stages` 个阶段成本确定性汇总，不另建易漂移账本。确认更换目标会先把该汇总原子返还给 ResourceSystem，再增加 `revision`、清空旧项目整数阶段并中断旧版本周期；小数周期尚未扣料，只清零、不计入返还。`set_target` 的确认响应暴露 `refundable_resources`，成功响应暴露 `refunded_resources`。`special_state.production.current_stage_index` 使用 1 起始，等于 `completed_stages + 1`；未选择目标或没有合法当前阶段时为 0，名称为空。小数周期进度只供建筑面板汇总显示，不属于上述 `special_state`。
 
 ## Horse Definition / Runtime（T0037-T0038/T0138 当前实现）
 
@@ -1768,7 +1806,7 @@ T0038 后，`data/mount_defs.json` 只提供通用骑乘战斗参数，不包含
     "adult_max_satiety": 100,
     "adult_growth_threshold": 0.6,
     "base_full_growth_care_minutes": 10080,
-    "birth_probability_gain_per_care_minute": 0.00005,
+    "birth_probability_gain_per_care_minute": 0.000025,
     "birth_probability_cap": 1.0,
     "birth_cooldown_minutes": 1440,
     "stable_level_birth_bonus_per_level": 0.1,
@@ -2006,10 +2044,10 @@ T1002 `plan_revised` 事件 payload：
 
 - 日常与计划：`wake_up`、`plan_created`、`plan_revised`、`reflection_started`、`sleep_started`、`sleep_ended`
 - 移动与地点：`location_entered`、`location_exited`
-- 工作与生活：`work_started`、`work_completed`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`visit_started`、`visit_completed`
+- 工作与生活：`work_started`、`work_completed`、`work_stopped`、`work_failed`、`repair_assist_started`、`upgrade_assist_started`、`eat_started`、`eat_completed`、`prayer_started`、`prayer_completed`、`prayer_failed`、`visit_started`、`visit_completed`
 - 对话：`dialogue_turn`；打开/关闭对话窗口不属于事件
 - 玩家交互：`money_given`、`equipment_given`、`equipment_changed`、`order_assigned`；`order_assigned` 固定为 `private`。正式守备官惩戒攻击写入战斗 / 伤害类 `damage_taken`，payload 保留惩戒语境、攻击者和后续对话关联；`npc_attacked_by_player` 仅作为旧调试 / 兼容事件类型保留。
-- 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`
+- 成长与状态：`skill_improved`、`npc_recruited`、`npc_left_recruited_state`、`full_fatigue_triggered`
 - 属性成长：`attribute_improved`，由玩家分配技能点到力量或智力时写入，payload 包含 `attribute`、`attribute_label`、`before`、`after`、`training_kind`；actor 为实际成长的 NPC
 - 战斗与行为事实：`combat_alarm_rang`、`combat_rally_started`、`combat_rally_encountered_enemy`、`combat_started`、`combat_ended`、`attack_made`、`damage_taken`、`horse_damaged`、`horse_died`、`low_hp_triggered`、`battle_psychology_result`、`morale_boost_started`、`morale_boost_ended`、`avoidance_started`、`avoidance_ended`、`unconscious_started`、`healing_started`、`healing_completed`、`healing_failed`、`revived`、`escape_started`、`escaped`、`escape_intervention_result`、`escape_speed_changed`
 - 建筑与资源：`building_damaged`、`building_repaired`、`building_upgraded`、`resource_changed`
@@ -2020,6 +2058,7 @@ T1507 商人事件 payload：
 - `merchant_arrived` / `merchant_departed` 必须包含 `merchant_id`、`merchant_name`、`arrival_time`、`departure_time`、`visit_day`。
 - `merchant_trade_completed` 必须包含 `merchant_id`、`direction`、`resource_id`、`amount`、`unit_price`、`total_price`、`money_delta`、`resource_delta`；T0342 批量提交额外包含 `lines`、`line_count`、`merchant_stock_after`。单项仍投影真实资源与单价，多项使用 `multiple_resources / 多项物资` 兼容顶层字段，逐项事实以 `lines[]` 为准。
 - 三类事件固定使用广场 `local_public`。只有资源结算成功后才能写 `merchant_trade_completed`；余额或库存不足不得用成功事件表达失败尝试。
+- EventBus 同名 `merchant_trade_completed(direction, result)` 是 T0400A 的瞬时只读表现信号，不是新的存档事件；`result` 复用 MerchantSystem 已提交成功快照。它只在整批结算完成后发送，供点击音效层播放成功提示，失败路径不得发送。
 
 T1104 起，`attack_made` 表示我方 NPC 对敌人完成了一次程序结算攻击。必备 payload 字段包括 `attacker_npc_id`、`target_type`、`target_enemy_id`、`damage`、`hp_before` 和 `hp_after`；运行时还会记录 `weapon_id`、`weapon_name`、`required_skill`、`weapon_skill`、`strength`、`base_damage`、`strength_multiplier`、`raw_attack_power`、`attack_speed_multiplier`、`target_defense`、`max_hp` 和 `defeated` 等调试字段。该事件只记录已经由 CombatSystem 扣除敌人 HP 的事实，不让 LLM 决定伤害。
 

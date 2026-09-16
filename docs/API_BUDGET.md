@@ -1,5 +1,72 @@
 # API_BUDGET.md
 
+## 2026-09-15 T1703-P5-R6 音频导入副产物隔离
+
+本轮只调整临时 staging 内容并运行 Godot release 导出与本地音频验证；未启动冻结后端、未调用 DeepSeek / 百炼 Provider，token 与费用均为 0。
+
+## 2026-09-15 T1703-P5-R5 发行漂移审计
+
+本轮只审计本地发行输入、动态音频数量、端口前置门禁并运行 Godot release 客户端与本地专项；不启动冻结后端的真实供应商检查，不新增 endpoint、Prompt 调用或重试。DeepSeek / 百炼 Provider 调用、token 与费用均为 0。
+
+## 2026-09-15 T0435 结局提示词真实验收
+
+- 使用 `deepseek / deepseek-v4-flash` 调试并验收含两名结算时昏迷 NPC 的八人胜利群像，共 4 次真实 attempt；合计输入 22,376、输出 9,264、总计 31,640 tokens，估算费用 ¥0.03839520。
+- 最终正式提示词样本首次成功、无 correction / fallback；两名昏迷者均完整说明敌军危险、躲过方式、被发现与复苏机会，8/8 人物后半段均出现明确的迫近战火压力。
+
+## T0412 NPC-NPC 身份防错位提示成本
+
+本任务不新增 endpoint、`call_type`、业务调用次数、输出字段、重试或二次判断；只为既有 NPC-NPC 每轮系统 Prompt 增加一段由姓名、ID、阶段和身份约束组成的短动态文本。玩家-NPC与逃离挽留请求不增加该文本。
+
+2026-09-14 先用 fake provider 完成 Prompt 拼装回归，再按项目规则运行真实 DeepSeek `deepseek-v4-flash` NPC-NPC 矩阵，共 7 次调用、48,473 input / 641 output tokens、27,648 cache-hit / 20,825 cache-miss，估算 ¥0.02265996；全部成功且 `fallback_used=false`。其中原问题邀请为 6,809 input / 110 output tokens、估算 ¥0.0032658。以上只属于开发验收，不改变成品正常调用频率与预算门禁。
+
+## 2026-09-14 T1703-P5-R4 发行包音频修复
+
+本轮只修复 Godot PCK 内本地音频清单并运行导出客户端资源检查；不启动冻结后端，不新增 endpoint、Prompt、模型判断或重试。DeepSeek / 百炼 Provider 调用、token 与费用均为 0。
+
+## 2026-09-14 T1703-P5-R3 全屏与退出清理
+
+本轮只修改本地窗口默认值、发行配置门禁和进程生命周期自动化，不新增 endpoint、Prompt、模型判断或重试。完整假包的标题栏 `WM_CLOSE`、主菜单确认退出及端口释放验证均使用假凭据，Provider 调用、文本 / 语音 token 与费用均为 0。
+
+## 2026-09-14 T1703-P1—P5 试玩版构建流水线
+
+本轮完成发行目录、冻结后端、客户端、启动器和一键编排实现，不修改 Prompt、Schema 或正常游戏业务调用频率。所有实现验收均使用假凭据；完整 81 文件成品构建和启动器 smoke 的 Provider 调用为 0，因此真实文本 / 语音 token 与费用均为 0。
+
+正式脚本收到本包专用 DeepSeek Key 后，会在冻结后端调用一次 `/config/ai-service/test`；该入口只探测供应商模型列表，不生成 NPC 内容，token / 推理费用为 0。普通重建只检查百炼配置不是 Mock，不上传录音。P6 才分别执行一次冻结后端真实 NPC 业务和非隐私百炼 WAV smoke，并按既有 usage / fallback 规则记录。
+
+首次正式脚本已到达最终发布阶段，说明冻结后端的 DeepSeek `/config/ai-service/test` 返回成功；该模型列表探测不产生 token / 推理费用。随后失败发生在本机目录移动，与 Provider 无关。此次未发出 NPC 内容或百炼音频请求；重新构建会再次产生一次零 token 的模型列表探测。
+
+## 2026-09-13 T0410 AI 服务配置与真实路由验收
+
+- 新增 `GET/PUT /config/ai-service` 与 `POST /config/ai-service/test`，配置读取 / 写入不消耗 token；测试使用供应商 `GET /models`，真实 DeepSeek 返回 HTTP 200，token 与费用为 0。
+- 试玩发行配置不设置游戏内调用、token、金额或日金额上限；供应商账户自身额度 / 余额 / 限流错误进入统一错误提示。显式开发 / 服务器运维预算变量仍兼容，玩家自定义配置不继承试玩预算。
+- 基础 mock / fake-provider 专项覆盖路由切换、重启恢复和 429；随后用 `deepseek / deepseek-v4-flash` 执行 1 次真实 `/npc/dialogue` 私有事实边界业务回归，成功、`fallback_used=false`。精确 token / 费用已进入本机脱敏 usage / audit 账本，本节不复制包含完整业务载荷的 1 GB 开发日志。
+
+## T1505-P6R55 跨天计划原位暂停
+
+本任务不新增 endpoint、请求、重试、Prompt、Schema 或 token。跨天仍执行既有 8 人真实 `/npc/plan_day` 批次，只把请求期间的 Godot 行动生命周期从“中断后重建”改为“全局暂停下原位保留”。当前环境未检测到真实 API Key，因此真实调用次数与费用均为 0；本地自动化覆盖了批次前后的确定性状态合同。
+
+## 2026-09-13 T0081-R2 零饱食真实计划链
+
+- `deepseek / deepseek-v4-flash`：`plan_revision_judgement` 1 次（输入 20466、输出 104、约 ¥0.01640904），`revise_plan` 1 次（输入 21361、输出 250、约 ¥0.01546356）。
+- 合计输入 41827、输出 354，约 ¥0.03187260；两次均首次成功，`fallback_used=false`。判别范围为 08:00–15:00，当前小时修订为 `eat_at_dining_hall`。
+
+## 2026-09-13 T0081-R1 满疲劳真实计划链
+
+- `deepseek / deepseek-v4-flash`：`plan_revision_judgement` 1 次、`revise_plan` 1 次，均首次成功，`fallback_used=false`。
+- 合计 input `41,327`、output `312` tokens，估算费用 `¥0.03931676`。
+- 判别选择 08:00–15:00，正式修订把当前行动从马厩工作改为睡觉。
+
+## 2026-09-13 T1505-P6R44 对话计划判别真实回归
+
+- 在本地确定性 Mock / 状态机专项通过后，使用 `backend/.env` 的正式 `deepseek / deepseek-v4-flash` 运行 `verify_dialogue_plan_revision_judgement_real.py`；计划修改范围判别与第二层精确修订共 8 次 provider attempt，全部首次成功，`fallback_used=false`。
+- 合计输入 51,653 tokens，其中 provider cache hit 26,240 tokens；输出 528 tokens，估算费用 ¥0.0269938。真实调用只验证当前对话 / 行动失败判别和修订 Schema，跨整点迟到顺序由本地可控异步 bridge 验证，因此没有用不稳定网络延迟充当竞态时钟。
+
+## 2026-09-13 T1505-P6R32 第一日计划真实倾向采样
+
+- 使用正式 Main 场景与当前 NPC 档案、资源、建筑、行动候选及公告牌参考日程，调用 `deepseek / deepseek-v4-flash` 连续采样 3 轮、共 24 份 `plan_day`；24/24 成功、0 失败、0 重试、0 fallback。
+- 合计输入 540,252 tokens、输出 13,037 tokens，估算费用 ¥0.21609752。样本只用于校准确定性第一日预设，不直接写入玩家存档；固定配置不在正式开局重复产生这 24 次费用。
+- 三轮晚间共 72 个 19:00–22:00 小时项，真实样本为祈祷 42、拜访 16、交谈 9、主持弥撒 3、等待 2；旧固定预设为等待 72，据此完成 P6R32 调整。
+
 ## 2026-09-08 T0387 真实结局补测
 
 - 合法展示批次：八人胜利 1 次、八人失败首次 + correction，共 22,810 tokens，估算 ¥0.02677，Provider / model 为 `deepseek / deepseek-v4-flash`，均无 fallback。
@@ -409,7 +476,7 @@ LLM_DAILY_BUDGET_REQUEST_RESERVE_CNY=0.05
 
 T0090 后，每次 HTTP 前先在进程内原子预留 ¥0.05；该值来自当前开发流量分布，不再覆盖 Flash 官方最大输入 / 输出的理论极端上界。`当日已结算 + 所有在途预留 + 本次预留 > ¥20` 时，请求不发给供应商，业务端点返回 HTTP 429 / `budget_exceeded`。实际 usage 到达后释放预留并按缓存拆分结算。账本或价格不可用时失败关闭，不能用“估算为 0”放行。价格、模型、Prompt、上下文规模或费用分布变化时必须重新统计并调整预留；DeepSeek 控制台账单仍是最终财务事实，GM 显示明确标为本地估算。
 
-真实验收（2026-07-27）：单次 `/npc/dialogue` 返回 200、真实 provider、0 fallback；prompt 5,827（缓存命中 2,944 / 未命中 2,883）、completion 180、合计 6,007，估算 ¥0.00330188。完整 audit 为 `call_started -> provider_request_sent -> provider_response_received -> provider_output_parsed -> call_completed`，provider response 与独立成本账本 usage 一致。
+真实验收（2026-07-27）：单次 `/npc/dialogue` 返回 200、真实 provider、0 fallback；prompt 5,827（缓存命中 2,944 / 未命中 2,883）、completion 180、合计 6,007，估算 ¥0.00330188。当时的 audit Schema 为 `call_started -> provider_request_sent -> provider_response_received -> provider_output_parsed -> call_completed`，provider response 与独立成本账本 usage 一致；T0445 后的新调用改用四阶段事件，旧日志不重写。
 
 ## T0076 自主对话后续行动成本
 
@@ -556,7 +623,7 @@ T0050 将第六个正式调用通用化为 `call_type=plan_revision_judgement`�
 - 玩家电脑上的 Godot 客户端只请求游戏服务器后端，不直接调用 LLM Provider。
 - 服务器后端统一持有供应商 API Key，并负责限流、排队、批处理、降级、token/费用统计和异常熔断。
 - 本地开发可以显式使用 mock provider 或本机后端验证接口；这不代表玩家最终必须自行启动后端或自行配置 API Key。
-- 玩家自行配置 API Key 只能作为未来可选 BYOK / 开发模式；即使实现，也必须与默认服务器后端模式隔离，不能让 Godot 导出客户端默认保存真实 Key。
+- T0410 已实现与试玩默认 profile 隔离的可选 BYOK；Godot 导出客户端仍不保存真实 Key，玩家凭据只由同包本机后端的系统凭据层持有。
 - Mock provider 只用于开发期 Schema / 通信 / 自动化验证。真实 API 测试通过后，生产 / 演示路径必须关闭自动 mock fallback；模型失败应返回可处理错误并记录真实原因，或进入明确标记的规则 / 模板降级。
 
 ## 调用优先级
@@ -606,7 +673,7 @@ T0050 将第六个正式调用通用化为 `call_type=plan_revision_judgement`�
 
 T0029/T0030 后 NPC-NPC 邀请判定也属于对话请求，等待期间受邀者继续当前工作，但逻辑时间仍按邀请 request id 降速；接受后的每轮正式回复重新登记新的慢速请求。无硬轮次上限不改变降速规则，每次调用仍必须独立注册并在结束后释放。
 
-T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短同步等待阻塞主线程。T0021 后正式业务不再设置 75 / 90 秒响应总时长：Godot 只对连接本地 / 游戏后端使用 2 秒短连接保护，请求发出后等待后端完成。后端对供应商使用流式 SSE；连接超时和流完全无数据的空闲超时分别配置，持续收到 token 或 keep-alive 时继续等待，不限制模型生成总时长。`LLMBridge.debug_get_llm_runtime_snapshot()` 会记录每个请求的 call_type、是否注册 / 释放慢速及时间戳，便于确认成功、失败、取消、连接 / 空闲错误和降级路径没有遗留减速。
+T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短同步等待阻塞主线程。Godot 只对连接本地 / 游戏后端使用 2 秒短连接保护，请求发出后等待后端完成。后端对供应商使用流式 SSE；连接超时和流完全无数据的空闲超时分别配置。T0445 另加默认 120 秒的供应商墙钟总时限，持续 token 或 keep-alive 均不能刷新；排队或生成超时返回后，既有异步收口会释放 TimeSystem 慢速。`LLMBridge.debug_get_llm_runtime_snapshot()` 会记录每个请求的 call_type、是否注册 / 释放慢速及时间戳，便于确认成功、失败、取消、连接 / 空闲 / 总时限错误和降级路径没有遗留减速。
 
 `current_order` 会进入所有面向该 NPC 的 LLM 请求，因此必须限制为单条当前有效指令，不重复注入全部历史版本。历史修改通过 `private` `order_assigned` 事件进入短期记忆摘要；常规请求只额外携带当前文本和最小元数据，避免指令修订不断放大上下文。
 
@@ -614,12 +681,12 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 
 - T0602 已实现默认 `mock` provider 的 `ModelAdapter.generate(...)`，可以按调用类型返回稳定 JSON；该能力只作为开发期脚手架和自动化验证入口。
 - Mock 调用会记录用途、request id、NPC id、关联事件 id、伪输入/输出 token、估算费用、成功/失败状态和失败原因；mock 费用固定为 0。生产 / 演示真实 provider 失败时不得自动返回 mock 内容伪装成功。
-- T1401 已实现 `deepseek` / `openai_compatible` 真实 Model Adapter。DeepSeek 默认 `LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-v4-flash`；真实 Key 只从 `LLM_API_KEY` 或服务器 / 本地后端环境读取。T1401A 后 `LLM_FALLBACK_TO_MOCK` 默认关闭，真实 provider 无 Key、请求失败、超时、HTTP 错误、非 JSON 或业务 Schema 校验失败时返回可处理错误并写入 usage；自动 mock fallback 只在显式 `LLM_FALLBACK_TO_MOCK=true` 的开发调试中启用。
+- T1401 已实现 `deepseek` / `openai_compatible` 真实 Model Adapter。T0446 后 DeepSeek 默认 `LLM_BASE_URL=https://api.deepseek.com`、`LLM_MODEL=deepseek-v4-pro`；真实 Key 只从 `LLM_API_KEY` 或服务器 / 本地后端环境读取。T1401A 后 `LLM_FALLBACK_TO_MOCK` 默认关闭，真实 provider 无 Key、请求失败、超时、HTTP 错误、非 JSON 或业务 Schema 校验失败时返回可处理错误并写入 usage；自动 mock fallback 只在显式 `LLM_FALLBACK_TO_MOCK=true` 的开发调试中启用。
 - T0049/T0050 后，六类正式 call_type（含通用 `plan_revision_judgement`）均不向供应商发送 `max_tokens`。供应商返回空内容、非法 JSON 或 `finish_reason=length` 时会按 call_type 紧凑重试一次；`/health` 快照显示 `client_output_token_limit_applied=false`，usage 继续记录真实 `finish_reason`、内容长度、尝试次数和失败原因。
-- T0021 后，正式供应商请求统一使用 `stream=true` 聚合最终 JSON。旧 `LLM_TIMEOUT_SECONDS` 已拆为 `LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS` 与 `LLM_PROVIDER_IDLE_TIMEOUT_SECONDS`；空闲超时只在流完全没有 token、keep-alive 或其他字节时触发，不是总生成时长上限。
+- T0021 后，正式供应商请求统一使用 `stream=true` 聚合最终 JSON。旧 `LLM_TIMEOUT_SECONDS` 已拆为 `LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS` 与 `LLM_PROVIDER_IDLE_TIMEOUT_SECONDS`；T0445 新增 `LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS=120` 作为不受 keep-alive 影响的总时限。四阶段审计可直接区分尚未收到 HTTP 头、DeepSeek 推理排队、已开始生成和成功 / 失败完成。
 - T0603 已实现 `POST /npc/dialogue` 业务接口，内部复用 `ModelAdapter.generate("dialogue", ...)`，因此对话调用也会产生 usage 记录；业务响应仍只返回 Schema 校验后的模型内容，usage 通过 `GET /debug/llm_usage` 暴露给调试入口。
 - 真实 provider 调用会读取供应商返回的 prompt / completion token；DeepSeek 额外拆分缓存命中 / 未命中输入。T0077 后环境构造的 V4 Flash 默认带官方人民币单价和每日 20 元持久化预算；费用账本拿不到 provider usage 时不伪造已结算 token，账本 / 定价异常会让后续预算路径失败关闭。
-- T1406 的进程内 `LLM_BUDGET_MAX_*` 兼容守门继续保留，默认 `0`；T0077 新增默认启用的 `LLM_DAILY_BUDGET_MAX_CNY=20`、持久化日账本与单次在途预留。两层任一拒绝都会返回 HTTP 429 / `budget_exceeded`，usage 记录 `BudgetExceeded / budget_blocked`，不自动 mock fallback。
+- T1406 的进程内 `LLM_BUDGET_MAX_*` 与日预算守门继续保留为显式开发 / 运维选项，默认和试玩发行配置均为 `0`；玩家自定义 profile 不继承试玩预算。若运维显式启用，两层任一拒绝仍返回 HTTP 429 / `budget_exceeded`，usage 记录 `BudgetExceeded / budget_blocked`，不自动 mock fallback。
 - `POST /mock/model` 可用于后端调试；后续实现对话、计划、判定接口时，服务层应复用 Model Adapter 的 usage 信息，并补齐是否申请 TimeSystem 慢速、慢速申请与释放时间等 Godot 侧字段。
 - T0604 已在 Godot 侧实现 `LLMBridge`；T0049/T0050 后对话、通用计划修改判别、每日计划、计划修订、低血量心理判定和首次睡眠总结都按 payload 注册 TimeSystem 慢速请求，并在成功、失败、取消或超时后释放。T1401 新增同步“成本统计”只读入口；T0077 新增不阻塞主线程的 `request_llm_usage_async()`，GM 面板可见时每 3 秒在顶栏显示本次后端运行 provider 尝试 token / 人民币与今日持久化金额 / 上限。用量查询自身不申请 TimeSystem 慢速、不计入模型成本。更完整的多玩家限流、跨进程并发队列和服务器部署治理仍归 T1407。
 - T0604A 已将 Godot 侧传输层改为原生 `HTTPClient`，不再依赖 `curl.exe`、命令行 JSON 转义或临时请求体文件，并继续保证失败、超时和降级路径都会释放慢速请求。
@@ -628,7 +695,7 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 - T1006/T0051 起，玩家对话 UI 使用 `LLMBridge.request_npc_dialogue_async(...)` 发起异步 `/npc/dialogue`：发送消息或普通对话攻击才申请慢速和 NPC LLM 活动状态。玩家在回复返回前点击“完成对话”会取消 request id、释放慢速、清除活动状态并丢弃迟到回复，但已立即进入 history 的真实守备官消息会随完整会话入库并触发判别；“取消对话”同样取消请求但不入库、不判别；“挂起对话”不取消请求，NPC 和 TimeSystem 等待状态照常持续。普通对话攻击仍计入 `call_type=dialogue`，攻击事实先由 Godot 结算且锁定取消；T0254 后固定攻击说明不进入 history，纯攻击结束不发空对话判别而走既有 `guard_attack` 重评估。逃离挽留攻击不调用 LLM、不申请慢速、不计入 API 成本，并自动完成会话但不生成无台词 `dialogue_turn`。
 - T0050/T0085 后，日常行动异常、NPC-NPC 和守备官-NPC 实际对话都先请求异步 `/npc/plan_revision_judgement`，仅非空判别再请求 `/npc/revise_plan`。T0086/T0093 的五类成功完成事件属于确定性后续安排，跳过判别并直接修订当前小时起连续相同 action + target 的计划段。修订输出与 `revision_hours` 完全一致；精确小时、白名单或目标组合不合法时后端可携带业务错误让同一真实 provider 纠正一次，Godot 也会拒绝当前小时原样重复已完成的 action + target。工作阶段较少不再触发纠错或 Godot 重试。正式路径仍拒绝 Mock / fallback，最终失败保留原计划。
 - T1003/T1403/T0022/T0085 后，每日计划通过 `/npc/plan_day` 走 Model Adapter。正式开局和新一天会暂停时间并同时发起 8 个真实请求。后端校验 24 个 hour 覆盖与行动白名单；通常至少 6 个工作阶段是 Prompt 建议，不是重试来源。Godot 正式路径只接受 `llm_plan_day`，其他真实失败仍保持暂停且不使用 Mock / 规则计划。
-- T1004/T1005/T1405/T0024 起，首次睡眠总结可通过异步 `/npc/daily_reflection` 走 Model Adapter。Godot 侧默认 `requires_time_slowdown=true`，不设置业务响应总时长；总结发起到完成期间 NPC 处于不可打断的深度睡眠锁，因此它不是后台无感调用。符合条件的 8 名 NPC 最多 8 路并发，快照记录实际峰值。后端成功体携带 provider / model / fallback 元数据；真实结果写为 `llm_daily_reflection`，显式开发 Mock 才写 `mock_daily_reflection`。真实 provider 不可用、未配置、缺少来源证明或输出不合法时，`DailyReflectionSystem` 使用本地模板兜底，仍会追加日记、替换式更新知识图谱当前键值并清空该 NPC 当天短期记忆；模板来源和原始失败原因必须可查。
+- T1004/T1005/T1405/T0024 起，首次睡眠总结可通过异步 `/npc/daily_reflection` 走 Model Adapter。Godot 侧默认 `requires_time_slowdown=true`，不另设业务类型专属时限，统一服从后端 T0445 的供应商总时限；总结发起到完成期间 NPC 处于不可打断的深度睡眠锁，因此它不是后台无感调用。符合条件的 8 名 NPC 最多 8 路并发，快照记录实际峰值。后端成功体携带 provider / model / fallback 元数据；真实结果写为 `llm_daily_reflection`，显式开发 Mock 才写 `mock_daily_reflection`。真实 provider 不可用、未配置、缺少来源证明或输出不合法时，`DailyReflectionSystem` 使用本地模板兜底，仍会追加日记、替换式更新知识图谱当前键值并清空该 NPC 当天短期记忆；模板来源和原始失败原因必须可查。
 - T1201 后，战时公开对话复用 `call_type=dialogue`，请求 payload 额外携带 `interaction_context=rally|combat|avoid_combat` 和 `battlefield_context`；`LLMBridge` 最近上下文注入快照会标记是否携带战场上下文。低血量自身心理判定使用独立、异步的 `call_type=battle_judgement`，不能与旧式“战斗触发全员判定”混淆；后者已被取消。T1404 后，真实 provider 路径读取 `data/prompts/battle_judgement_system_prompt.txt`，后端会拒绝越界 `decision` 与逃离布尔不一致结果并写入失败 usage；真实 DeepSeek 已完成战时 `/npc/dialogue` 与 `/npc/battle_judgement` smoke 验证，`fallback_used=false`。
 - T1204A 后，逃离挽留中“玩家发送消息并等待 NPC 回复”的轮次复用 `call_type=dialogue` 和 `/npc/dialogue`，payload 使用 `dialogue_kind=escape_intervention`、`interaction_context=escape_intervention` 和 `escape_intervention_round=1..5`。它会影响当前逃离状态，因此仍按对话类请求申请 TimeSystem 慢速；后端失败时 Godot 规则降级为 stay/continue 意图，并释放慢速请求、保留真实失败日志。逃离挽留面板内的攻击只由 Godot 权威结算并计 1 轮，不请求 `/npc/dialogue`。
 - T0063 不新增 call_type、接口或额外运行时调用；只在既有六类 payload 中增加个人 `wine`、`drink` 候选与行为说明。2026-07-27 已按 Schema / fake-provider / Mock 先验收，再在 `LLM_FALLBACK_TO_MOCK=false` 下用真实 DeepSeek `deepseek-v4-flash` 覆盖 plan_day、dialogue、plan_revision_judgement、revise_plan、battle_judgement 和 daily_reflection，成功结果均为真实 provider、`fallback_used=false`。
@@ -645,3 +712,11 @@ T0049/T0050 后，六类正式业务都提供异步 Godot 路径，避免用短�
 ## 2026-09-08 T0391 撤离时机真实验收
 
 - `deepseek-v4-flash` failure 首轮 7537 tokens / ¥0.01039，业务纠错轮 10363 tokens / ¥0.013218；合计 17900 tokens / ¥0.023608。最终 8 人均保持 `escaped`，并正确区分 1 人失守前主动逃离和 7 人失守后被迫撤离；无 Mock fallback。
+
+## 2026-09-15 T0445 排队超时诊断与调用成本
+
+- 实现前使用用户临时测试 Key 做最小交叉诊断：`deepseek-v4-flash` 在 HTTP 200 后只返回约 12 秒一次的 keep-alive、未出现有效 Token；同 Key 的 `deepseek-v4-pro` 约 0.28 秒开始返回有效数据，证明鉴权、余额和基础网络正常，故将失败边界收敛为 Flash 推理排队。实现后只用 fake-provider / Mock 复现该状态并验证 120 秒墙钟合同，没有追加真实业务调用；Flash 未开始推理的请求没有可记录 usage，Pro 最小探针的精确 usage 未采集，因此不估造 token 或费用。
+
+## 2026-09-15 T0446 统一切换 V4 Pro 与真实验收
+
+- 开发与试玩默认模型统一为 `deepseek-v4-pro`。Pro 的默认保守计价沿用代码内 `0.025 / 3 / 6 元每百万 token`；开发 `.env` 仍显式使用 ¥0.05 在途预留与每日 ¥20 上限，试玩包预算仍关闭。最终通过项目 ModelAdapter 发起一次真实 Pro smoke：首次成功、无 fallback，260 input / 24 output token，精确估算 ¥0.000308；四阶段耗时为 HTTP 头 0.296 秒、首个有效 Token 0.750 秒、完成 0.875 秒。

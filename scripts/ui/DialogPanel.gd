@@ -12,6 +12,9 @@ const DIALOG_LAYER := 100
 const VOICE_STATE_IDLE := "idle"
 const VOICE_STATE_RECORDING := "recording"
 const VOICE_STATE_ANALYZING := "analyzing"
+const WAITING_STATUS_TEXT := "……"
+const WAITING_STATUS_FONT_SIZE := 30
+const DEFAULT_STATUS_FONT_SIZE := 16
 
 @onready var npc_name_label: Label = %DialogNPCNameLabel
 @onready var status_label: Label = %DialogStatusLabel
@@ -197,7 +200,7 @@ func _show_next_special_success() -> void:
 	if special_success_dialog == null or special_success_dialog.visible or _special_success_queue.is_empty():
 		return
 	var result: Dictionary = _special_success_queue.pop_front()
-	var npc_name := str(result.get("npc_name", "NPC"))
+	var npc_name := str(result.get("npc_name", "驿站成员"))
 	match str(result.get("special_type", "")):
 		"recruitment":
 			special_success_dialog.dialog_text = "成功说服了%s，%s同意入伍！" % [npc_name, npc_name]
@@ -387,11 +390,11 @@ func _send_current_text() -> void:
 	var text := input_edit.text.strip_edges()
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
-		status_label.text = "对话系统不可用。"
+		status_label.text = "暂时无法开始交谈。"
 		return
 	var state: Dictionary = dialog_system.get_display_dialogue_state() if dialog_system.has_method("get_display_dialogue_state") else dialog_system.get_dialogue_state()
 	if bool(state.get("waiting", false)):
-		status_label.text = "正在等待 NPC 回复。"
+		status_label.text = "正在等待对方回应……"
 		return
 	if text.is_empty():
 		status_label.text = "请输入内容。"
@@ -497,7 +500,7 @@ func _on_history_pressed() -> void:
 	var npc_id := str(_displayed_dialogue_state.get("target_npc_id", ""))
 	var npc_panel := get_node_or_null(NPC_PANEL_PATH)
 	if npc_id.is_empty() or npc_panel == null or not npc_panel.has_method("open_dialogue_history"):
-		status_label.text = "当前没有可查看的 NPC 对话记录。"
+		status_label.text = "当前没有可查看的交谈记录。"
 		return
 	var result: Dictionary = npc_panel.open_dialogue_history(npc_id)
 	if not bool(result.get("ok", false)):
@@ -546,7 +549,7 @@ func _apply_stable_input_style(line_edit: LineEdit) -> void:
 func _on_recruitment_toggled(enabled: bool) -> void:
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
-		status_label.text = "对话系统不可用。"
+		status_label.text = "暂时无法开始交谈。"
 		return
 	var result: Dictionary = dialog_system.set_recruitment_request_pending(enabled)
 	if not bool(result.get("ok", false)):
@@ -605,7 +608,7 @@ func _on_attack_confirmation_confirmed() -> void:
 func _commit_attack() -> bool:
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system == null:
-		status_label.text = "对话系统不可用。"
+		status_label.text = "暂时无法开始交谈。"
 		return false
 	var result: Dictionary = dialog_system.attack_target_npc(10, true)
 	if not bool(result.get("ok", false)):
@@ -656,10 +659,10 @@ func _refresh(state: Dictionary) -> void:
 			var participant_id := str(raw_participant_id)
 			display_names.append(str(participant_names.get(participant_id, participant_id)))
 		if display_names.size() < 2:
-			display_names = [str(state.get("speaker_name", "NPC")), str(state.get("target_npc_name", "NPC"))]
+			display_names = [str(state.get("speaker_name", "驿站成员")), str(state.get("target_npc_name", "驿站成员"))]
 		npc_name_label.text = "旁听：%s 与 %s" % [display_names[0], display_names[1]]
 	else:
-		npc_name_label.text = "与 %s 对话" % str(state.get("target_npc_name", "NPC"))
+		npc_name_label.text = "与 %s 对话" % str(state.get("target_npc_name", "驿站成员"))
 	var has_explicit_round_limit := dialogue_kind == "escape_intervention"
 	round_label.visible = has_explicit_round_limit
 	round_label.text = (
@@ -712,7 +715,7 @@ func _refresh(state: Dictionary) -> void:
 	work_encouragement_toggle.modulate = Color(1.0, 1.0, 1.0, 1.0 if work_eligible else 0.45)
 	work_encouragement_toggle.text = "鼓励工作"
 	work_encouragement_toggle.tooltip_text = (
-		"勾选后判断工作效率提升、无事发生或逃离驿站；增益为全部工作产出效率+20%，持续至当天24:00。无关话题按普通对话处理。"
+		"勾选后判断工作效率提升、无事发生或逃离驿站；增益为全部工作产出效率+20%，持续至今日午夜。无关话题按普通对话处理。"
 		if work_eligible
 		else str(state.get("work_encouragement_ineligible_reason", "当前场景不能鼓励工作。"))
 	)
@@ -750,7 +753,7 @@ func _refresh(state: Dictionary) -> void:
 	attack_button.visible = is_player_controlled_dialogue and not _observer_mode
 	attack_button.disabled = waiting or round_limit_reached or voice_busy
 	end_button.text = "关闭" if _observer_mode else "完成对话"
-	end_button.tooltip_text = "只关闭旁听窗口，不会打断 NPC 的自主对话。" if _observer_mode else "保存本次会话；若正在等待回复，将放弃回复并以守备官最后一句话结束。"
+	end_button.tooltip_text = "只结束旁听，不会打断他们的交谈。" if _observer_mode else "保存本次会话；若正在等待回复，将放弃回复并以守备官最后一句话结束。"
 	cancel_button.visible = is_player_controlled_dialogue and not _observer_mode
 	var npc_initiated_proactive_talk := (
 		is_player_dialogue
@@ -775,26 +778,29 @@ func _refresh(state: Dictionary) -> void:
 				"本次会话已经发送过特殊交互消息，只能完成对话。"
 				if special_interaction_request_sent
 				else (
-					"本次会话已经产生特殊交互结果并写入事件库，只能完成对话。"
+					"刚才发生的事情已经无法撤回，只能结束这次谈话。"
 					if special_interaction_result_committed
-					else "丢弃本次会话，不入库，也不触发计划修改判别。"
+					else "放弃这次谈话；双方不会记住尚未完成的交谈。"
 				)
 			)
 		)
 	)
 	suspend_button.visible = is_player_controlled_dialogue and not _observer_mode
 	suspend_button.disabled = false
-	suspend_button.tooltip_text = "暂时隐藏窗口并保持 NPC 对话状态；最多挂起 2 个游戏小时。"
+	suspend_button.tooltip_text = "暂时收起这场谈话，最多可在 2 个游戏小时内继续。"
 	var last_error := str(state.get("last_error", ""))
 	var recruitment_result := str(state.get("last_recruitment_result", "none"))
-	var recruitment_status := "NPC 已接受应征。" if recruitment_result == "accept" else "NPC 拒绝了应征。" if recruitment_result == "reject" else ""
+	var recruitment_status := "对方已同意应征。" if recruitment_result == "accept" else "对方拒绝了应征。" if recruitment_result == "reject" else ""
 	var escape_result: Dictionary = state.get("last_escape_intervention_result", {}) if state.get("last_escape_intervention_result", {}) is Dictionary else {}
 	var escape_decision := str(escape_result.get("decision", ""))
-	var escape_status := "NPC 已停下，准备回到工作安排。" if escape_decision == "stay" else "NPC 仍在继续逃离。" if escape_decision == "continue" else ""
+	var escape_status := "对方停下了脚步，准备返回驿站。" if escape_decision == "stay" else "对方没有回头，仍在继续逃离。" if escape_decision == "continue" else ""
+	var show_waiting_indicator := waiting and last_error.is_empty() and not _observer_dialogue_ended
+	status_label.add_theme_font_size_override("font_size", WAITING_STATUS_FONT_SIZE if show_waiting_indicator else DEFAULT_STATUS_FONT_SIZE)
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if _observer_mode:
-		status_label.text = ("本轮自主对话已结束。" if last_error.is_empty() else "对话已结束：%s" % last_error) if _observer_dialogue_ended else ("正在等待 NPC 回复……" if waiting else "")
+		status_label.text = ("本轮自主对话已结束。" if last_error.is_empty() else "对话已结束：%s" % last_error) if _observer_dialogue_ended else (WAITING_STATUS_TEXT if waiting else "")
 	else:
-		status_label.text = last_error if not last_error.is_empty() else ("守备官消息已发送，正在等待回复……" if waiting else "逃离挽留轮次已用完。" if round_limit_reached else escape_status if dialogue_kind == "escape_intervention" else "下次发送将请求调整战斗策略。" if strategy_pending else "下次发送将尝试鼓舞士气。" if morale_pending else "下次发送将尝试鼓励工作。" if work_pending else "下次发送将提出应征。" if recruitment_pending else recruitment_status)
+		status_label.text = last_error if not last_error.is_empty() else (WAITING_STATUS_TEXT if waiting else "逃离挽留轮次已用完。" if round_limit_reached else escape_status if dialogue_kind == "escape_intervention" else "下次发送将请求调整战斗策略。" if strategy_pending else "下次发送将尝试鼓舞士气。" if morale_pending else "下次发送将尝试鼓励工作。" if work_pending else "下次发送将提出应征。" if recruitment_pending else recruitment_status)
 	status_label.visible = not status_label.text.is_empty()
 	var lines: Array[String] = []
 	for raw_turn in state.get("history", []):
@@ -809,7 +815,7 @@ func _refresh(state: Dictionary) -> void:
 			"[b]%s[/b]：%s" % [str(turn.get("speaker_name", "")), displayed_turn_text]
 		]
 		var turn_recruitment_result := str(turn.get("recruitment_result", "none"))
-		var turn_speaker_name := str(turn.get("speaker_name", "NPC"))
+		var turn_speaker_name := str(turn.get("speaker_name", "驿站成员"))
 		if turn_recruitment_result == "accept":
 			turn_lines.append(
 				"[color=%s]✓ %s接受了守备官的应征请求[/color]"
@@ -824,7 +830,7 @@ func _refresh(state: Dictionary) -> void:
 			match str(turn.get("wartime_reaction", "none")):
 				"morale_boost":
 					turn_lines.append(
-						"[color=%s]✓ 守备官成功鼓舞了%s；持续至当天24:00，攻击力和移动速度提升15%%[/color]"
+						"[color=%s]✓ 守备官成功鼓舞了%s；持续至今日午夜，攻击力和移动速度提升15%%[/color]"
 						% [RECRUITMENT_ACCEPT_COLOR, turn_speaker_name]
 					)
 				"escape":
@@ -853,7 +859,7 @@ func _refresh(state: Dictionary) -> void:
 			match str(turn.get("work_encouragement_reaction", "none")):
 				"work_boost":
 					turn_lines.append(
-						"[color=%s]✓ 守备官成功鼓励了%s；持续至当天24:00，全部工作产出效率提升20%%[/color]"
+						"[color=%s]✓ 守备官成功鼓励了%s；持续至今日午夜，全部工作产出效率提升20%%[/color]"
 						% [RECRUITMENT_ACCEPT_COLOR, turn_speaker_name]
 					)
 				"escape":

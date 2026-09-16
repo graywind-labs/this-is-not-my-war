@@ -4,6 +4,7 @@ extends Node
 const CONFIG_PATH := "res://data/presentation/world_audio.json"
 const FORMAL_ROOT_PATH := NodePath("/root/Main/WorldRoot/FormalStationLayout")
 const COMBAT_SYSTEM_PATH := NodePath("/root/Main/Systems/CombatSystem")
+const TUTORIAL_DIRECTOR_PATH := NodePath("/root/Main/Systems/TutorialDirector")
 const AUDIO_MANAGER_PATH := NodePath("/root/AudioManager")
 const CAMERA_RIG_PATH := NodePath("/root/Main/CameraRig")
 const FIRE_ASSET_ID := "sfx_ambience_active_fire_loop"
@@ -37,6 +38,8 @@ var _combat_signal_connected := false
 var _npc_signal_connected := false
 var _building_signal_connected := false
 var _music_signal_connected := false
+var _tutorial_music_signal_connected := false
+var _tutorial_music_cue := ""
 var _global_bed_gain_linear := 1.0
 var _last_global_bed_gain_linear := -1.0
 var _next_playlist_indices := {"day": 0, "night": 0}
@@ -116,6 +119,8 @@ func get_debug_snapshot() -> Dictionary:
 		"npc_signal_connected": _npc_signal_connected,
 		"building_signal_connected": _building_signal_connected,
 		"music_signal_connected": _music_signal_connected,
+		"tutorial_music_signal_connected": _tutorial_music_signal_connected,
+		"tutorial_music_cue": _tutorial_music_cue,
 		"day_playlist": _music_playlist_for_period("day"),
 		"night_playlist": _music_playlist_for_period("night"),
 		"next_playlist_indices": _next_playlist_indices.duplicate(true),
@@ -226,6 +231,14 @@ func _connect_signals() -> void:
 	if event_bus.has_signal("building_state_changed") and not event_bus.building_state_changed.is_connected(building_callback):
 		event_bus.building_state_changed.connect(building_callback)
 	_building_signal_connected = event_bus.has_signal("building_state_changed") and event_bus.building_state_changed.is_connected(building_callback)
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	var tutorial_callback := Callable(self, "_on_tutorial_music_cue_changed")
+	if tutorial_director != null and tutorial_director.has_signal("tutorial_music_cue_changed"):
+		if not tutorial_director.tutorial_music_cue_changed.is_connected(tutorial_callback):
+			tutorial_director.tutorial_music_cue_changed.connect(tutorial_callback)
+		_tutorial_music_signal_connected = tutorial_director.tutorial_music_cue_changed.is_connected(tutorial_callback)
+		if tutorial_director.has_method("get_tutorial_snapshot"):
+			_tutorial_music_cue = str((tutorial_director.get_tutorial_snapshot() as Dictionary).get("tutorial_music_cue", ""))
 
 
 func _disconnect_signals() -> void:
@@ -246,6 +259,11 @@ func _disconnect_signals() -> void:
 	if audio_manager != null and audio_manager.has_signal("music_finished") and audio_manager.music_finished.is_connected(music_callback):
 		audio_manager.music_finished.disconnect(music_callback)
 	_music_signal_connected = false
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	var tutorial_callback := Callable(self, "_on_tutorial_music_cue_changed")
+	if tutorial_director != null and tutorial_director.has_signal("tutorial_music_cue_changed") and tutorial_director.tutorial_music_cue_changed.is_connected(tutorial_callback):
+		tutorial_director.tutorial_music_cue_changed.disconnect(tutorial_callback)
+	_tutorial_music_signal_connected = false
 
 
 func _connect_music_signal(audio_manager: Node) -> void:
@@ -312,12 +330,26 @@ func _on_building_state_changed(_building_id: String) -> void:
 	_queue_fire_refresh()
 
 
+func _on_tutorial_music_cue_changed(cue: String) -> void:
+	_tutorial_music_cue = cue
+	if _tutorial_music_cue.is_empty():
+		_sync_authority_state()
+	if _initialized:
+		_refresh_music()
+
+
 func _refresh_music() -> void:
 	var audio_manager := get_node_or_null(AUDIO_MANAGER_PATH)
 	if audio_manager == null:
 		return
 	var music := _config.get("music", {}) as Dictionary
 	var fade_seconds := maxf(0.0, float(music.get("crossfade_seconds", 2.0)))
+	if _tutorial_music_cue == "tutorial_intro":
+		audio_manager.switch_music(str(music.get("tutorial_intro_asset_id", "music_tutorial_intro")), fade_seconds, true)
+		return
+	if _tutorial_music_cue == "tutorial_battle":
+		audio_manager.switch_music(str(music.get("tutorial_battle_asset_id", "music_tutorial_battle")), fade_seconds, true)
+		return
 	if _combat_active:
 		audio_manager.switch_music(str(music.get("battle_asset_id", "music_battle")), fade_seconds, true)
 		return

@@ -135,8 +135,8 @@ func _init() -> void:
 		_fail("GM sleep interruption changed needs or left bed/session/collision dirty")
 		return
 
-	# A second real route validates normal completion cleanup and the existing
-	# 6.5-hour duration without invoking the reflection provider in this test.
+	# A second real route validates that nominal duration completion no longer
+	# wakes the NPC; an explicit stop remains the authoritative cleanup path.
 	gm_window.visible = true
 	run_button.pressed.emit()
 	await process_frame
@@ -144,7 +144,19 @@ func _init() -> void:
 		_fail("Ada did not reach her bed for completion verification")
 		return
 	var runtime: Dictionary = action_system.get_runtime_action_snapshot(NPC_ID)
-	action_system._on_logical_time_tick(float(runtime.get("duration_seconds", 23400.0)) + 1.0, 1.0)
+	action_system._on_logical_time_tick(float(runtime.get("duration_seconds", 28800.0)) + 1.0, 1.0)
+	await process_frame
+	await physics_frame
+	if (
+		str(action_system.get_runtime_action_id(NPC_ID)) != ACTION_ID
+		or not bool(npc_system.get_formal_workstation_action_snapshot(NPC_ID).get("active", false))
+		or str(_get_bed(building_system).get("occupied_by", "")) != NPC_ID
+		or not bool(ada.debug_get_spatial_attachment_snapshot().get("active", false))
+	):
+		_fail("Nominal sleep duration incorrectly released the bed or woke Ada")
+		return
+	gm_window.visible = true
+	stop_button.pressed.emit()
 	await process_frame
 	await physics_frame
 	if (
@@ -152,9 +164,9 @@ func _init() -> void:
 		or not _bed_is_clear(building_system)
 		or bool(ada.debug_get_spatial_attachment_snapshot().get("active", false))
 		or bool(ada.debug_get_spatial_attachment_snapshot().get("body_collision_disabled", false))
-		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "sleep_ended") < 1
+		or _count_event(memory_system.get_npc_daily_events(NPC_ID), "sleep_ended") < 2
 	):
-		_fail("Normal sleep completion did not release the bed, attachment, collision, and formal session")
+		_fail("Explicit sleep stop did not release the bed, attachment, collision, and formal session")
 		return
 
 	print("T0129C A5-P6a formal dormitory sleep verification passed")

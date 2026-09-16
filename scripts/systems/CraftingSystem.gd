@@ -9,6 +9,7 @@ const CRAFTING_RECIPES_FILE := "crafting_recipes.json"
 const RESOURCE_SYSTEM_PATH := "/root/Main/Systems/ResourceSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
 const ACTION_SYSTEM_PATH := "/root/Main/Systems/ActionSystem"
+const DAILY_PLAN_SYSTEM_PATH := "/root/Main/Systems/DailyPlanSystem"
 const EQUIPMENT_SYSTEM_PATH := "/root/Main/Systems/EquipmentSystem"
 const DEFENSE_DEVICE_SYSTEM_PATH := "/root/Main/Systems/DefenseDeviceSystem"
 const SPECIAL_STATE_SECTION := "production"
@@ -142,6 +143,11 @@ func get_project_snapshot(building_id: String) -> Dictionary:
 	var total_stages := int(project.get("total_stages", 0))
 	var completed_stages := clampi(int(project.get("completed_stages", 0)), 0, total_stages)
 	var current_stage := _get_stage(recipe, completed_stages)
+	var invested_resources := (
+		(project.get("committed_resources", {}) as Dictionary).duplicate(true)
+		if project.get("committed_resources", {}) is Dictionary and not (project.get("committed_resources", {}) as Dictionary).is_empty()
+		else _calculate_invested_resources(recipe, completed_stages)
+	)
 	var active_workers := _get_active_worker_snapshots(building_id, int(project.get("revision", 0)), target_recipe_id)
 	var partial_progress := _calculate_partial_progress(active_workers, total_stages - completed_stages)
 	var progress := 0.0
@@ -157,6 +163,7 @@ func get_project_snapshot(building_id: String) -> Dictionary:
 		"revision": int(project.get("revision", 0)),
 		"project_revision": int(project.get("revision", 0)),
 		"completed_stages": completed_stages,
+		"invested_resources": invested_resources,
 		"total_stages": total_stages,
 		"current_stage_index": completed_stages + 1 if not current_stage.is_empty() else 0,
 		"current_stage_id": str(current_stage.get("id", "")),
@@ -389,6 +396,7 @@ func set_target(building_id: String, recipe_id: String, force: bool = false) -> 
 	var previous_snapshot := get_project_snapshot(building_id)
 	var completed_stages := int(project.get("completed_stages", 0))
 	var partial_progress := float(previous_snapshot.get("partial_progress", 0.0))
+	var refundable_resources: Dictionary = previous_snapshot.get("invested_resources", {}).duplicate(true)
 	var requires_confirmation := completed_stages > 0 or partial_progress > PROGRESS_EPSILON
 	if requires_confirmation and not force:
 		var confirmation_result := _target_result(false, "confirmation_required", building_id, normalized_recipe_id)
@@ -396,7 +404,21 @@ func set_target(building_id: String, recipe_id: String, force: bool = false) -> 
 		confirmation_result["previous_project"] = previous_snapshot
 		confirmation_result["discarded_completed_stages"] = completed_stages
 		confirmation_result["discarded_partial_progress"] = partial_progress
+		confirmation_result["refundable_resources"] = refundable_resources.duplicate(true)
 		return confirmation_result
+
+	if not refundable_resources.is_empty():
+		var resource_system := get_node_or_null(RESOURCE_SYSTEM_PATH)
+		if resource_system == null:
+			var unavailable_result := _target_result(false, "resource_system_unavailable", building_id, normalized_recipe_id)
+			unavailable_result["previous_project"] = previous_snapshot
+			unavailable_result["refundable_resources"] = refundable_resources.duplicate(true)
+			return unavailable_result
+		if not bool(resource_system.call("add_resources", refundable_resources)):
+			var refund_failed_result := _target_result(false, "refund_inventory_capacity", building_id, normalized_recipe_id)
+			refund_failed_result["previous_project"] = previous_snapshot
+			refund_failed_result["refundable_resources"] = refundable_resources.duplicate(true)
+			return refund_failed_result
 
 	var interrupted_npc_ids := _get_active_cycle_npc_ids(building_id)
 	var action_system := get_node_or_null(ACTION_SYSTEM_PATH)
@@ -421,13 +443,34 @@ func set_target(building_id: String, recipe_id: String, force: bool = false) -> 
 		"target_name": str(next_recipe.get("name", "")),
 		"revision": next_revision,
 		"completed_stages": 0,
-		"total_stages": (next_recipe.get("stages", []) as Array).size()
+		"total_stages": (next_recipe.get("stages", []) as Array).size(),
+		"committed_resources": {},
 	}
 	_active_cycles[building_id] = {}
 
 	var snapshot := get_project_snapshot(building_id)
 	_publish_special_state(building_id)
 	project_changed.emit(building_id, snapshot.duplicate(true))
+	var resumed_plan_npc_ids: Array[String] = []
+	if not normalized_recipe_id.is_empty() and not interrupted_npc_ids.is_empty():
+		var daily_plan_system := get_node_or_null(DAILY_PLAN_SYSTEM_PATH)
+		if (
+			daily_plan_system != null
+			and daily_plan_system.has_method("resume_current_plan_after_crafting_target_change")
+		):
+			var interrupted_action_id := (
+				"work_blacksmith" if building_id == "blacksmith" else "work_workshop"
+			)
+			for npc_id in interrupted_npc_ids:
+				var resume_result: Dictionary = daily_plan_system.call(
+					"resume_current_plan_after_crafting_target_change",
+					npc_id,
+					interrupted_action_id,
+					building_id,
+					next_revision
+				)
+				if bool(resume_result.get("ok", false)):
+					resumed_plan_npc_ids.append(npc_id)
 
 	var reason := "target_cleared" if normalized_recipe_id.is_empty() else "target_selected"
 	var result := _target_result(true, reason, building_id, normalized_recipe_id)
@@ -438,7 +481,9 @@ func set_target(building_id: String, recipe_id: String, force: bool = false) -> 
 	result["project"] = snapshot
 	result["discarded_completed_stages"] = completed_stages
 	result["discarded_partial_progress"] = partial_progress
+	result["refunded_resources"] = refundable_resources.duplicate(true)
 	result["interrupted_npc_ids"] = interrupted_npc_ids
+	result["resume_scheduled_npc_ids"] = resumed_plan_npc_ids
 	result["previous_revision"] = int(previous_snapshot.get("project_revision", 0))
 	result["project_revision"] = next_revision
 	return result
@@ -656,6 +701,14 @@ func complete_stage(
 
 	var updated_project := project.duplicate(true)
 	updated_project["completed_stages"] = 0 if product_completed else completed_stages + 1
+	if product_completed:
+		updated_project["committed_resources"] = {}
+	else:
+		var committed: Dictionary = updated_project.get("committed_resources", {}) if updated_project.get("committed_resources", {}) is Dictionary else {}
+		for raw_resource_id in stage_cost.keys():
+			var resource_id := str(raw_resource_id)
+			committed[resource_id] = int(committed.get(resource_id, 0)) + int(stage_cost[raw_resource_id])
+		updated_project["committed_resources"] = committed
 	_projects[building_id] = updated_project
 	_remove_active_cycle_if_revision_matches(building_id, npc_id, project_revision)
 	_stage_commit_locks[building_id] = false
@@ -732,6 +785,38 @@ func debug_get_snapshot() -> Dictionary:
 
 func get_debug_snapshot() -> Dictionary:
 	return debug_get_snapshot()
+
+
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"projects": _projects.duplicate(true),
+		"pending_outputs": _pending_outputs.duplicate(true),
+		"latest_pending_output_item_ids": _latest_pending_output_item_ids.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	var saved_projects: Dictionary = snapshot.get("projects", {}) if snapshot.get("projects", {}) is Dictionary else {}
+	for raw_building_id in SUPPORTED_BUILDING_IDS:
+		var building_id := str(raw_building_id)
+		if saved_projects.get(building_id, {}) is Dictionary:
+			_projects[building_id] = (saved_projects.get(building_id, {}) as Dictionary).duplicate(true)
+			var project: Dictionary = _projects[building_id]
+			if not project.has("committed_resources"):
+				var recipe := get_recipe(str(project.get("target_recipe_id", "")))
+				project["committed_resources"] = _calculate_invested_resources(recipe, int(project.get("completed_stages", 0)))
+				_projects[building_id] = project
+	_pending_outputs = snapshot.get("pending_outputs", {}).duplicate(true) if snapshot.get("pending_outputs", {}) is Dictionary else {}
+	_latest_pending_output_item_ids = snapshot.get("latest_pending_output_item_ids", {}).duplicate(true) if snapshot.get("latest_pending_output_item_ids", {}) is Dictionary else {}
+	_active_cycles.clear()
+	_stage_commit_locks.clear()
+	_pending_collection_locks.clear()
+	for raw_building_id in SUPPORTED_BUILDING_IDS:
+		var building_id := str(raw_building_id)
+		_publish_special_state(building_id)
+		project_changed.emit(building_id, get_project_snapshot(building_id))
+		pending_outputs_changed.emit(building_id, get_pending_outputs(building_id))
+	return {"ok": true, "project_count": _projects.size()}
 
 
 func _normalize_recipe(raw_recipe: Dictionary) -> Dictionary:
@@ -860,6 +945,7 @@ func _apply_initial_projects(raw_initial_projects: Variant) -> void:
 			"completed_stages": completed_stages,
 			"total_stages": stages.size(),
 			"invested_resources": calculated_investment.duplicate(true),
+			"committed_resources": calculated_investment.duplicate(true),
 			"source": str(raw_entry.get("source", "pre_game_investment"))
 		}
 		_projects[building_id] = initial_project.duplicate(true)
@@ -874,7 +960,8 @@ func _make_empty_project(building_id: String) -> Dictionary:
 		"target_name": "",
 		"revision": 0,
 		"completed_stages": 0,
-		"total_stages": 0
+		"total_stages": 0,
+		"committed_resources": {}
 	}
 
 
@@ -887,6 +974,21 @@ func _get_stage(recipe: Dictionary, completed_stages: int) -> Dictionary:
 	if not stages[completed_stages] is Dictionary:
 		return {}
 	return (stages[completed_stages] as Dictionary).duplicate(true)
+
+
+func _calculate_invested_resources(recipe: Dictionary, completed_stages: int) -> Dictionary:
+	var invested := {}
+	if recipe.is_empty() or completed_stages <= 0:
+		return invested
+	var stages: Array = recipe.get("stages", [])
+	for stage_index in range(mini(completed_stages, stages.size())):
+		if not stages[stage_index] is Dictionary:
+			continue
+		var cost: Dictionary = (stages[stage_index] as Dictionary).get("cost", {})
+		for raw_resource_id in cost.keys():
+			var resource_id := str(raw_resource_id)
+			invested[resource_id] = int(invested.get(resource_id, 0)) + int(cost[raw_resource_id])
+	return invested
 
 
 func _get_active_worker_snapshots(

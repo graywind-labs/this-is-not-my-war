@@ -1,5 +1,7 @@
 extends Node
 
+signal tutorial_raid_finished(snapshot: Dictionary)
+
 const WorldFeedbackPayload = preload("res://scripts/core/WorldFeedbackPayload.gd")
 const ENEMY_WAVES_FILE := "enemy_waves.json"
 const COMBAT_PROGRESSION_FILE := "combat_progression.json"
@@ -40,6 +42,7 @@ const FORMAL_ACTIVE_ENEMY_SLICE_ID := "wave_01_formal_enemy_001"
 const SYSTEM_ACTOR_ID := "system"
 const COMBAT_TIME_SLOWDOWN_REQUEST_ID := "combat_enemy_presence"
 const COMBAT_TIME_SLOWDOWN_SCALE := 1.0 / 60.0
+const TUTORIAL_ALARM_SOURCE := "tutorial"
 const DEFAULT_TARGET_PREFERENCE: Array[String] = ["front_gate", "warehouse", "main_hall", "nearby_unit"]
 const ENEMY_BUILDING_TARGET_IDS: Array[String] = ["front_gate", "warehouse", "main_hall"]
 const NEARBY_UNIT_TARGET_ID := "nearby_unit"
@@ -69,6 +72,9 @@ const ENEMY_PRESENTATION_MOVE_START_SPEED := 0.01
 const ENEMY_PRESENTATION_MOVE_STOP_SPEED := 0.003
 const ENEMY_PRESENTATION_MOVE_STOP_GRACE_SECONDS := 0.18
 const DEFENSE_CURVE_SCALE := 20.0
+const FORMAL_FRIENDLY_NPC_DAMAGE_MULTIPLIER := 0.7
+const TUTORIAL_FRIENDLY_NPC_DAMAGE_MULTIPLIER := 2.4
+const TUTORIAL_ADA_INCOMING_DAMAGE_MULTIPLIER := 0.5
 const STRENGTH_ATTACK_BASELINE := 5.0
 const STRENGTH_ATTACK_BONUS_PER_POINT := 0.08
 const MIN_STRENGTH_ATTACK_MULTIPLIER := 0.65
@@ -220,6 +226,7 @@ var _active_enemies: Dictionary = {}
 var _enemy_nodes: Dictionary = {}
 var _active_rallies: Dictionary = {}
 var _active_avoidances: Dictionary = {}
+var _deferred_avoidance_endings: Dictionary = {}
 var _active_escapes: Dictionary = {}
 var _spawn_sequence := 0
 var _last_spawn_result: Dictionary = {}
@@ -233,6 +240,8 @@ var _last_friendly_attack_result: Dictionary = {}
 var _last_area_damage_result: Dictionary = {}
 var _last_defeated_enemy_audio_position: Variant = null
 var _active_battle: Dictionary = {}
+var _tutorial_raid_active := false
+var _tutorial_raid_snapshot: Dictionary = {}
 var _last_battle_start_result: Dictionary = {}
 var _last_battle_end_result: Dictionary = {}
 var _last_wartime_dialogue_result: Dictionary = {}
@@ -313,6 +322,7 @@ var _enemy_targeting_metrics := {
 	"building_fallbacks": 0
 }
 var _triggered_wave_numbers: Array[int] = []
+var _wave_warning_seen: Dictionary = {}
 var _last_auto_wave_result: Dictionary = {}
 var _last_manual_next_wave_result: Dictionary = {}
 var _last_enemy_mounted_defeat_cleanup_result: Dictionary = {}
@@ -425,6 +435,7 @@ func initialize() -> void:
 	_reset_formal_crowd_ai_budget()
 	_active_rallies.clear()
 	_active_avoidances.clear()
+	_deferred_avoidance_endings.clear()
 	_active_escapes.clear()
 	_spawn_sequence = 0
 	_last_spawn_result.clear()
@@ -447,6 +458,8 @@ func initialize() -> void:
 	_combat_timeline_seconds = 0.0
 	_combat_progression_config.clear()
 	_active_battle.clear()
+	_tutorial_raid_active = false
+	_tutorial_raid_snapshot.clear()
 	_last_battle_start_result.clear()
 	_last_battle_end_result.clear()
 	_last_wartime_dialogue_result.clear()
@@ -457,6 +470,7 @@ func initialize() -> void:
 	_formal_escape_world_hold = false
 	_default_formal_wave_number = 0
 	_triggered_wave_numbers.clear()
+	_wave_warning_seen.clear()
 	_last_auto_wave_result.clear()
 	_last_manual_next_wave_result.clear()
 	_sync_enemy_presence_time_slowdown("combat_initialize")
@@ -582,6 +596,45 @@ func get_wave_schedule_snapshot() -> Dictionary:
 		"last_auto_wave_result": _last_auto_wave_result.duplicate(true),
 		"last_manual_next_wave_result": _last_manual_next_wave_result.duplicate(true)
 	}
+
+
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"triggered_wave_numbers": _triggered_wave_numbers.duplicate(),
+		"wave_warning_seen": _wave_warning_seen.duplicate(true),
+		"last_victory_result": _last_victory_result.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	if not _active_enemies.is_empty():
+		clear_spawned_enemies()
+	var restored: Array[int] = []
+	for raw_wave_number in snapshot.get("triggered_wave_numbers", []):
+		var wave_number := int(raw_wave_number)
+		if wave_number > 0 and _wave_by_number.has(wave_number) and not restored.has(wave_number):
+			restored.append(wave_number)
+	restored.sort()
+	_triggered_wave_numbers = restored
+	_wave_warning_seen = snapshot.get("wave_warning_seen", {}).duplicate(true) if snapshot.get("wave_warning_seen", {}) is Dictionary else {}
+	_last_victory_result = snapshot.get("last_victory_result", {}).duplicate(true) if snapshot.get("last_victory_result", {}) is Dictionary else {}
+	_active_battle.clear()
+	_default_formal_wave_active = false
+	_default_formal_wave_number = 0
+	_deferred_avoidance_endings.clear()
+	_active_projectiles.clear()
+	_stuck_projectiles.clear()
+	_active_melee_swings.clear()
+	_pending_melee_damage_commits.clear()
+	return {"ok": true, "triggered_wave_numbers": _triggered_wave_numbers.duplicate(), "enemy_count": 0}
+
+
+func claim_wave_warning_delivery(wave_number: int, threshold: String) -> bool:
+	var key := "%d:%s" % [wave_number, threshold]
+	if bool(_wave_warning_seen.get(key, false)):
+		return false
+	_wave_warning_seen[key] = true
+	return true
 
 
 func get_wave_hud_snapshot() -> Dictionary:
@@ -1007,6 +1060,34 @@ func calculate_damage_resolution(raw_attack_power: float, defense: float, penetr
 	}
 
 
+func calculate_friendly_npc_damage_resolution(
+	raw_attack_power: float,
+	defense: float,
+	penetration: float = 0.0,
+	tutorial_scope: bool = false
+) -> Dictionary:
+	var resolution := calculate_damage_resolution(raw_attack_power, defense, penetration)
+	var unscaled_damage := int(resolution.get("damage", 1))
+	var friendly_damage_multiplier := (
+		TUTORIAL_FRIENDLY_NPC_DAMAGE_MULTIPLIER
+		if tutorial_scope
+		else FORMAL_FRIENDLY_NPC_DAMAGE_MULTIPLIER
+	)
+	var scaled_damage := maxi(
+		1,
+		int(round(
+			maxf(1.0, raw_attack_power)
+			* float(resolution.get("damage_multiplier", 1.0))
+			* friendly_damage_multiplier
+		))
+	)
+	resolution["unscaled_damage"] = unscaled_damage
+	resolution["friendly_npc_damage_multiplier"] = friendly_damage_multiplier
+	resolution["tutorial_scope"] = tutorial_scope
+	resolution["damage"] = scaled_damage
+	return resolution
+
+
 func apply_defense_device_attack(enemy_id: String, raw_attack_power: float, context: Dictionary = {}) -> Dictionary:
 	if enemy_id.is_empty() or raw_attack_power <= 0.0 or not _active_enemies.has(enemy_id):
 		return {}
@@ -1232,10 +1313,130 @@ func spawn_wave(
 			"game_over_reason": game_over_reason
 		})
 
-	var reflection_interrupt_result := _interrupt_pending_reflections_for_combat("enemy_wave_spawned")
+	var reflection_interrupt_result := _preserve_pending_reflections_for_combat("enemy_wave_spawned")
 	var spawn_result := _spawn_formal_dynamic_wave(wave_number, clear_existing, reason, true, spawn_stage_id)
 	spawn_result["reflection_interrupt_result"] = reflection_interrupt_result
 	return spawn_result
+
+
+func start_tutorial_raid(config: Dictionary) -> Dictionary:
+	if config.is_empty():
+		return _failure("tutorial_config_missing", "教程敌袭配置为空。")
+	if _tutorial_raid_active:
+		return {
+			"ok": true,
+			"changed": false,
+			"already_active": true,
+			"snapshot": get_tutorial_raid_snapshot()
+		}
+	var templates: Array = config.get("enemies", []) if config.get("enemies", []) is Array else []
+	if templates.is_empty():
+		return _failure("tutorial_enemy_templates_missing", "教程敌袭没有敌人配置。")
+	var wave := {
+		"id": str(config.get("id", "tutorial_raid_prologue")),
+		"wave_number": 0,
+		"name": str(config.get("name", "序章夜袭")),
+		"trigger_day": 0,
+		"trigger_hour": 0,
+		"spawn_point": DEFAULT_SPAWN_POINT_ID,
+		"enemies": templates.duplicate(true),
+		"navigation_wave_number": maxi(1, int(config.get("navigation_wave_number", 1))),
+		"tutorial_spawn_front_center": config.get("spawn_front_center", []),
+		"tutorial_scope": true,
+		"tutorial_ada_npc_id": str(config.get("ada_npc_id", "veteran_deputy_01"))
+	}
+	_tutorial_raid_active = true
+	_tutorial_raid_snapshot = {
+		"active": true,
+		"completed": false,
+		"status": "spawning",
+		"raid_id": str(wave.get("id", "tutorial_raid_prologue")),
+		"ada_npc_id": str(config.get("ada_npc_id", "veteran_deputy_01")),
+		"ada_min_hp_ratio": clampf(float(config.get("ada_min_hp_ratio", 0.40)), 0.30, 1.0),
+		"spawn_result": {},
+		"finish_result": {}
+	}
+	var navigation_wave_number := maxi(1, int(config.get("navigation_wave_number", 1)))
+	var spawn_stage_id := str(config.get("spawn_stage_id", DEBUG_GM_SPAWN_STAGE_ID))
+	var spawn_result := _spawn_formal_dynamic_wave(
+		navigation_wave_number,
+		true,
+		"tutorial_raid",
+		true,
+		spawn_stage_id,
+		wave
+	)
+	_tutorial_raid_snapshot["spawn_result"] = spawn_result.duplicate(true)
+	if not bool(spawn_result.get("ok", false)):
+		_tutorial_raid_active = false
+		_tutorial_raid_snapshot["active"] = false
+		_tutorial_raid_snapshot["status"] = "spawn_failed"
+		return spawn_result
+	_tutorial_raid_snapshot["status"] = "active"
+	_tutorial_raid_snapshot["spawned_enemy_ids"] = spawn_result.get("spawned_enemy_ids", []).duplicate()
+	return {
+		"ok": true,
+		"changed": true,
+		"snapshot": get_tutorial_raid_snapshot()
+	}
+
+
+func advance_detached_tutorial_tick(game_delta_seconds: float) -> void:
+	if not _tutorial_raid_active or game_delta_seconds <= 0.0:
+		return
+	_on_logical_time_tick(game_delta_seconds, 1.0)
+
+
+func end_tutorial_raid(reason: String = "tutorial_handoff") -> Dictionary:
+	var previous := get_tutorial_raid_snapshot()
+	_tutorial_raid_active = false
+	var clear_result := clear_spawned_enemies()
+	_tutorial_raid_snapshot["active"] = false
+	_tutorial_raid_snapshot["status"] = reason
+	_tutorial_raid_snapshot["clear_result"] = clear_result.duplicate(true)
+	return {
+		"ok": true,
+		"reason": reason,
+		"previous": previous,
+		"clear_result": clear_result
+	}
+
+
+func get_tutorial_raid_snapshot() -> Dictionary:
+	var snapshot := _tutorial_raid_snapshot.duplicate(true)
+	snapshot["active"] = _tutorial_raid_active
+	snapshot["active_enemy_count"] = get_active_enemy_count()
+	snapshot["active_battle"] = _active_battle.duplicate(true)
+	snapshot["triggered_wave_numbers"] = _triggered_wave_numbers.duplicate()
+	return snapshot
+
+
+func force_finish_tutorial_raid(reason: String = "tutorial_timeout_safety") -> Dictionary:
+	if not _tutorial_raid_active:
+		return {
+			"ok": bool(_tutorial_raid_snapshot.get("completed", false)),
+			"changed": false,
+			"reason": "tutorial_raid_not_active",
+			"snapshot": get_tutorial_raid_snapshot()
+		}
+	var removed_ids: Array[String] = []
+	for raw_enemy_id in _active_enemies.keys().duplicate():
+		var enemy_id := str(raw_enemy_id)
+		var enemy: Dictionary = _active_enemies.get(enemy_id, {})
+		var damage := maxi(1, int(enemy.get("hp", 1)))
+		_apply_damage_to_enemy(enemy_id, damage, "", {
+			"source_type": "tutorial_safety",
+			"source_id": reason,
+			"raw_attack_power": damage
+		})
+		removed_ids.append(enemy_id)
+	return {
+		"ok": bool(_tutorial_raid_snapshot.get("completed", false)),
+		"changed": not removed_ids.is_empty(),
+		"reason": reason,
+		"removed_enemy_ids": removed_ids,
+		"snapshot": get_tutorial_raid_snapshot()
+	}
 
 
 func clear_spawned_enemies() -> Dictionary:
@@ -1586,7 +1787,8 @@ func _spawn_formal_dynamic_wave(
 	clear_existing: bool,
 	reason: String,
 	is_default_runtime: bool,
-	spawn_stage_id: String = DEFAULT_FORMAL_WAVE_SPAWN_STAGE_ID
+	spawn_stage_id: String = DEFAULT_FORMAL_WAVE_SPAWN_STAGE_ID,
+	wave_override: Dictionary = {}
 ) -> Dictionary:
 	if clear_existing:
 		clear_spawned_enemies()
@@ -1613,12 +1815,23 @@ func _spawn_formal_dynamic_wave(
 	):
 		return {"ok": false, "reason": "formal_wave_dependencies_missing", "wave_number": wave_number}
 	var route: Dictionary = controller.get_enemy_route_world()
-	var navigation_config: Dictionary = controller.get_formal_wave_navigation_config(wave_number)
+	var navigation_wave_number := maxi(1, int(wave_override.get("navigation_wave_number", wave_number)))
+	var navigation_config: Dictionary = controller.get_formal_wave_navigation_config(navigation_wave_number)
 	var stages := route.get("stages", []) as Array
 	var use_gm_spawn_zone := spawn_stage_id == DEBUG_GM_SPAWN_STAGE_ID
 	var gm_spawn_config: Dictionary = controller.get_gm_enemy_spawn_world_config() if use_gm_spawn_zone else {}
 	if use_gm_spawn_zone and gm_spawn_config.is_empty():
 		return {"ok": false, "reason": "gm_enemy_spawn_zone_missing", "wave_number": wave_number}
+	if use_gm_spawn_zone and bool(wave_override.get("tutorial_scope", false)):
+		var raw_tutorial_front_center: Variant = wave_override.get("tutorial_spawn_front_center", [])
+		if raw_tutorial_front_center is Array and (raw_tutorial_front_center as Array).size() >= 3:
+			var center_values := raw_tutorial_front_center as Array
+			gm_spawn_config = gm_spawn_config.duplicate(true)
+			gm_spawn_config["formation_front_center"] = Vector3(
+				float(center_values[0]),
+				float(center_values[1]),
+				float(center_values[2])
+			)
 	var spawn_stage_index := _find_route_stage_index(route, spawn_stage_id)
 	if spawn_stage_index < 0 and not use_gm_spawn_zone:
 		spawn_stage_id = DEFAULT_FORMAL_WAVE_SPAWN_STAGE_ID
@@ -1656,10 +1869,14 @@ func _spawn_formal_dynamic_wave(
 	var navigation_map: RID = controller.get_production_navigation_map_rid()
 	if not navigation_map.is_valid():
 		return {"ok": false, "reason": "formal_navigation_map_missing"}
-	if wave_number <= 0 or wave_number > _waves.size():
+	if wave_override.is_empty() and (wave_number <= 0 or wave_number > _waves.size()):
 		return {"ok": false, "reason": "wave_missing"}
 
-	var wave := (_waves[wave_number - 1] as Dictionary).duplicate(true)
+	var wave := (
+		wave_override.duplicate(true)
+		if not wave_override.is_empty()
+		else (_waves[wave_number - 1] as Dictionary).duplicate(true)
+	)
 	var templates := wave.get("enemies", []) as Array
 	var expected_count := _get_wave_enemy_count(wave)
 	if expected_count <= 0:
@@ -1709,9 +1926,13 @@ func _spawn_formal_dynamic_wave(
 			role_spawn_counts[attack_slot_role] = role_formation_index + 1
 			_spawn_sequence += 1
 			var enemy_id := (
-				"wave_%02d_runtime_enemy_%03d" % [wave_number, _spawn_sequence]
-				if is_default_runtime
-				else "wave_%02d_formal_wave_enemy_%03d" % [wave_number, spawn_index]
+				"tutorial_raid_enemy_%03d" % spawn_index
+				if bool(wave.get("tutorial_scope", false))
+				else (
+					"wave_%02d_runtime_enemy_%03d" % [wave_number, _spawn_sequence]
+					if is_default_runtime
+					else "wave_%02d_formal_wave_enemy_%03d" % [wave_number, spawn_index]
+				)
 			)
 			var spawn_stage := stages[spawn_stage_index] as Dictionary
 			var spawn_position := (
@@ -1830,8 +2051,11 @@ func _spawn_formal_dynamic_wave(
 	if is_default_runtime:
 		_default_formal_wave_active = true
 		_formal_escape_world_hold = false
-		_default_formal_wave_number = wave_number
-		formal_combat_world_result = _enter_default_formal_combat_world()
+		_default_formal_wave_number = int(wave.get("wave_number", wave_number))
+		var requested_npc_ids_override: Variant = null
+		if bool(wave.get("tutorial_scope", false)):
+			requested_npc_ids_override = [str(wave.get("tutorial_ada_npc_id", "veteran_deputy_01"))]
+		formal_combat_world_result = _enter_default_formal_combat_world(requested_npc_ids_override)
 		if not bool(formal_combat_world_result.get("ok", false)):
 			clear_spawned_enemies()
 			return {
@@ -2077,6 +2301,7 @@ func debug_get_combat_snapshot() -> Dictionary:
 		"enemy_targeting": debug_get_enemy_targeting_snapshot(),
 		"active_rallies": get_active_rallies(),
 		"active_avoidances": get_active_avoidances(),
+		"deferred_avoidance_endings": _deferred_avoidance_endings.duplicate(true),
 		"active_escapes": get_active_escapes(),
 		"active_battle": _active_battle.duplicate(true),
 		"behavior_modes": _get_behavior_mode_snapshots(),
@@ -2381,10 +2606,10 @@ func debug_advance_rally_wait(game_seconds: float = RALLY_WAIT_TIMEOUT_SECONDS) 
 func debug_trigger_npc_avoidance(npc_id: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc"):
-		return _avoidance_failure("npc_system_missing", "NPC 系统不可用。", {"npc_id": npc_id})
+		return _avoidance_failure("npc_system_missing", "暂时无法安排避战。", {"npc_id": npc_id})
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _avoidance_failure("unknown_npc", "NPC 不存在。", {"npc_id": npc_id})
+		return _avoidance_failure("unknown_npc", "找不到这名成员。", {"npc_id": npc_id})
 	if _is_npc_combat_eligible(npc_id, npc_system):
 		return _avoidance_failure("npc_combat_eligible", "已入伍且有主武器的 NPC 会进入战斗，不进入非战斗避战模式。", {"npc_id": npc_id})
 	if _active_enemies.is_empty():
@@ -2409,16 +2634,26 @@ func debug_get_enemy_target(enemy_id: String) -> Dictionary:
 func trigger_combat_alarm(source: String = "hud") -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_ids"):
-		return _alarm_failure("npc_system_missing", "NPC 系统不可用。")
-	var reflection_interrupt_result := _interrupt_pending_reflections_for_combat("combat_alarm")
+		return _alarm_failure("npc_system_missing", "暂时无法召集驿站成员。")
+	var tutorial_alarm := source == TUTORIAL_ALARM_SOURCE and _tutorial_raid_active
+	var reflection_interrupt_result := (
+		{"ok": true, "reason": "tutorial_scope", "interrupted_count": 0, "interrupted": []}
+		if tutorial_alarm
+		else _preserve_pending_reflections_for_combat("combat_alarm")
+	)
 
-	var npc_ids: Array = npc_system.get_npc_ids()
+	var npc_ids: Array = (
+		[str(_tutorial_raid_snapshot.get("ada_npc_id", "veteran_deputy_01"))]
+		if tutorial_alarm
+		else npc_system.get_npc_ids()
+	)
 	var alarm_events: Array[Dictionary] = []
-	for raw_npc_id in npc_ids:
-		var npc_id := str(raw_npc_id)
-		var event := _log_combat_alarm_for_npc(npc_id, source, npc_ids.size())
-		if not event.is_empty():
-			alarm_events.append(event)
+	if not tutorial_alarm:
+		for raw_npc_id in npc_ids:
+			var npc_id := str(raw_npc_id)
+			var event := _log_combat_alarm_for_npc(npc_id, source, npc_ids.size())
+			if not event.is_empty():
+				alarm_events.append(event)
 
 	var eligible: Array[Dictionary] = []
 	var ignored: Array[Dictionary] = []
@@ -2483,6 +2718,25 @@ func _interrupt_pending_reflections_for_combat(reason: String) -> Dictionary:
 	if reflection_system == null or not reflection_system.has_method("interrupt_pending_reflections_for_combat"):
 		return {"ok": true, "reason": "reflection_system_unavailable", "interrupted_count": 0, "interrupted": []}
 	return reflection_system.interrupt_pending_reflections_for_combat(reason)
+
+
+func _preserve_pending_reflections_for_combat(reason: String) -> Dictionary:
+	var reflection_system := get_node_or_null(DAILY_REFLECTION_SYSTEM_PATH)
+	var pending_npc_ids: Array = []
+	if reflection_system != null and reflection_system.has_method("get_async_reflection_snapshot"):
+		var snapshot: Dictionary = reflection_system.get_async_reflection_snapshot()
+		var raw_pending: Variant = snapshot.get("pending_npc_ids", [])
+		if raw_pending is Array:
+			pending_npc_ids = (raw_pending as Array).duplicate()
+	return {
+		"ok": true,
+		"reason": "reflection_preserved_until_complete",
+		"trigger_reason": reason,
+		"interrupted_count": 0,
+		"interrupted": [],
+		"deferred_count": pending_npc_ids.size(),
+		"deferred_npc_ids": pending_npc_ids
+	}
 
 
 func debug_trigger_combat_alarm() -> Dictionary:
@@ -2576,10 +2830,10 @@ func build_battlefield_context(target_npc_id: String = "", interaction_context: 
 func get_wartime_dialogue_reaction_eligibility(npc_id: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc"):
-		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用。"}
+		return {"eligible": false, "reason": "npc_system_missing", "message": "暂时无法鼓舞对方。"}
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return {"eligible": false, "reason": "unknown_npc", "message": "NPC 不存在。"}
+		return {"eligible": false, "reason": "unknown_npc", "message": "找不到这名成员。"}
 	var mode := _get_npc_behavior_mode(npc_system, npc_id)
 	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
 		return {
@@ -2622,10 +2876,10 @@ func get_wartime_dialogue_reaction_eligibility(npc_id: String) -> Dictionary:
 func get_combat_strategy_dialogue_eligibility(npc_id: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc"):
-		return {"eligible": false, "reason": "npc_system_missing", "message": "NPC 系统不可用。"}
+		return {"eligible": false, "reason": "npc_system_missing", "message": "暂时无法调整战斗策略。"}
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return {"eligible": false, "reason": "unknown_npc", "message": "NPC 不存在。"}
+		return {"eligible": false, "reason": "unknown_npc", "message": "找不到这名成员。"}
 	var mode := _get_npc_behavior_mode(npc_system, npc_id)
 	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
 		return {
@@ -2682,10 +2936,10 @@ func get_npc_combat_strategy_dialogue_context(npc_id: String) -> Dictionary:
 func apply_wartime_dialogue_reaction(npc_id: String, reaction: String, context: Dictionary = {}) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("update_npc_state"):
-		return _wartime_reaction_failure("npc_system_missing", "NPC 系统不可用。", npc_id, reaction)
+		return _wartime_reaction_failure("npc_system_missing", "暂时无法处理对方的战时反应。", npc_id, reaction)
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _wartime_reaction_failure("unknown_npc", "NPC 不存在。", npc_id, reaction)
+		return _wartime_reaction_failure("unknown_npc", "找不到这名成员。", npc_id, reaction)
 	var mode := _get_npc_behavior_mode(npc_system, npc_id)
 	if not [BEHAVIOR_MODE_RALLY, BEHAVIOR_MODE_COMBAT].has(mode):
 		return _wartime_reaction_failure("not_rally_or_combat", "只有集结或战斗中的可战斗 NPC 会产生战时心理结算。", npc_id, reaction, {"behavior_mode": mode})
@@ -2760,7 +3014,7 @@ func start_npc_escape(
 ) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
-		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
+		return _escape_failure("npc_system_missing", "暂时无法处理逃离行动。", npc_id)
 	if (
 		not npc_system.has_method("set_npc_behavior_mode_and_move_to_world_position")
 		or not npc_system.has_method("can_npc_move_to_world_position")
@@ -2768,7 +3022,7 @@ func start_npc_escape(
 		return _escape_failure("npc_system_missing_escape_api", "NPC 系统缺少逃离所需接口。", npc_id)
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _escape_failure("unknown_npc", "NPC 不存在。", npc_id)
+		return _escape_failure("unknown_npc", "找不到这名成员。", npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if bool(state.get("escaped", false)):
 		return _escape_failure("already_escaped", "NPC 已经离开驿站。", npc_id)
@@ -2970,7 +3224,7 @@ func get_escape_intervention_state(npc_id: String) -> Dictionary:
 func pause_escape_for_dialogue(npc_id: String, dialogue_id: String = "") -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_state") or not npc_system.has_method("stop_npc_movement_with_state"):
-		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
+		return _escape_failure("npc_system_missing", "暂时无法处理逃离行动。", npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var intent := _get_escape_intent_from_state(state)
 	if not bool(intent.get("active", false)) or str(intent.get("status", "")) != ESCAPE_STATUS_ESCAPING:
@@ -3009,7 +3263,7 @@ func resume_escape_after_dialogue(npc_id: String, reason: String = "escape_dialo
 		or not npc_system.has_method("update_npc_state")
 		or not npc_system.has_method("move_npc_to_world_position")
 	):
-		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
+		return _escape_failure("npc_system_missing", "暂时无法处理逃离行动。", npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var intent := _get_escape_intent_from_state(state)
 	if not _is_escape_intent_resumable(intent):
@@ -3065,10 +3319,10 @@ func apply_escape_intervention_result(npc_id: String, response: Dictionary, cont
 		or not npc_system.has_method("get_npc_state")
 		or not npc_system.has_method("update_npc_state")
 	):
-		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
+		return _escape_failure("npc_system_missing", "暂时无法处理逃离行动。", npc_id)
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _escape_failure("unknown_npc", "NPC 不存在。", npc_id)
+		return _escape_failure("unknown_npc", "找不到这名成员。", npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var intent := _get_escape_intent_from_state(state)
 	if not bool(intent.get("active", false)):
@@ -3177,7 +3431,7 @@ func handle_escape_guard_attack(npc_id: String, damage: int, source_event: Dicti
 func record_escape_attack_intervention_round(npc_id: String, current_round: int, context: Dictionary = {}) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_state") or not npc_system.has_method("update_npc_state"):
-		return _escape_failure("npc_system_missing", "NPC 系统不可用。", npc_id)
+		return _escape_failure("npc_system_missing", "暂时无法处理逃离行动。", npc_id)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	var intent := _get_escape_intent_from_state(state)
 	if not _is_escape_intent_resumable(intent):
@@ -3229,6 +3483,13 @@ func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = 
 			"damage_event": damage_result.get("damage_event", {}).duplicate(true) if damage_result.get("damage_event", {}) is Dictionary else {}
 		}
 	)
+	if _tutorial_raid_active or bool(context.get("tutorial_scope", false)):
+		return _low_hp_judgement_skip(
+			"tutorial_scope",
+			str(damage_result.get("npc_id", "")),
+			damage_result,
+			context
+		)
 	if _active_battle.is_empty() or get_active_enemy_count() <= 0:
 		return _low_hp_judgement_skip("no_active_battle", str(damage_result.get("npc_id", "")), damage_result, context)
 	var npc_id := str(damage_result.get("npc_id", ""))
@@ -3246,10 +3507,10 @@ func handle_npc_damage_applied(damage_result: Dictionary, context: Dictionary = 
 
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc") or not npc_system.has_method("get_npc_state"):
-		return _low_hp_judgement_failure("npc_system_missing", "NPC 系统不可用。", npc_id, damage_result, context)
+		return _low_hp_judgement_failure("npc_system_missing", "暂时无法判断对方的战斗状态。", npc_id, damage_result, context)
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _low_hp_judgement_failure("unknown_npc", "NPC 不存在。", npc_id, damage_result, context)
+		return _low_hp_judgement_failure("unknown_npc", "找不到这名成员。", npc_id, damage_result, context)
 	var state: Dictionary = npc_system.get_npc_state(npc_id)
 	if bool(state.get("unconscious", false)) or bool(state.get("escaped", false)):
 		return _low_hp_judgement_skip("npc_unconscious_or_escaped", npc_id, damage_result, context)
@@ -4266,6 +4527,7 @@ func _advance_npc_combat_strategy_movement(
 		var stationary_elapsed := float(movement_progress.get("stationary_elapsed_seconds", 0.0))
 		if (
 			physical_movement_active
+			and not bool(movement_progress.get("paused", false))
 			and is_ranged_weapon
 			and strategy_id in [STRATEGY_ATTACK, STRATEGY_KEEP_DISTANCE, STRATEGY_MAX_OUTPUT]
 			and stationary_elapsed >= _get_friendly_strategy_stalled_reselect_seconds()
@@ -6493,13 +6755,24 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 	var target_defense := _calculate_enemy_defense(enemy_id)
 	var raw_attack_power := float(attack_context.get("raw_attack_power", 1.0))
 	var penetration := maxf(0.0, float(attack_context.get("penetration", 0.0)))
-	var resolution := calculate_damage_resolution(raw_attack_power, target_defense, penetration)
+	var tutorial_ada_attack := (
+		_tutorial_raid_active
+		and npc_id == str(_tutorial_raid_snapshot.get("ada_npc_id", "veteran_deputy_01"))
+	)
+	var resolution := calculate_friendly_npc_damage_resolution(
+		raw_attack_power,
+		target_defense,
+		penetration,
+		tutorial_ada_attack
+	)
 	var damage := int(resolution.get("damage", 1))
 	var damage_result := _apply_damage_to_enemy(enemy_id, damage, npc_id, {
 		"raw_attack_power": raw_attack_power,
 		"target_defense": target_defense,
 		"penetration": penetration,
 		"effective_defense": float(resolution.get("effective_defense", target_defense)),
+		"unscaled_damage": int(resolution.get("unscaled_damage", damage)),
+		"friendly_npc_damage_multiplier": float(resolution.get("friendly_npc_damage_multiplier", 1.0)),
 		"weapon_id": str(attack_context.get("weapon_id", "")),
 		"weapon_name": str(attack_context.get("weapon_name", "武器")),
 		"source_type": "npc_weapon",
@@ -6520,6 +6793,8 @@ func _apply_npc_attack_to_enemy(npc_id: String, npc: Dictionary, target: Diction
 		"target_defense": target_defense,
 		"penetration": penetration,
 		"effective_defense": float(resolution.get("effective_defense", target_defense)),
+		"unscaled_damage": int(resolution.get("unscaled_damage", damage)),
+		"friendly_npc_damage_multiplier": float(resolution.get("friendly_npc_damage_multiplier", 1.0)),
 		"damage": damage,
 		"damage_result": damage_result,
 		"event": event
@@ -7783,6 +8058,10 @@ func _apply_damage_to_enemy(enemy_id: String, damage: int, actor_npc_id: String,
 		"actor_npc_id": actor_npc_id,
 		"attack_interrupt": attack_interrupt
 	}
+	if context.has("unscaled_damage"):
+		result["unscaled_damage"] = int(context.get("unscaled_damage", damage))
+	if context.has("friendly_npc_damage_multiplier"):
+		result["friendly_npc_damage_multiplier"] = float(context.get("friendly_npc_damage_multiplier", 1.0))
 	var damage_source_type := ""
 	var damage_source_id := ""
 	if not actor_npc_id.is_empty():
@@ -7860,6 +8139,8 @@ func _apply_npc_weapon_combat_growth(
 	defeated: bool,
 	context: Dictionary
 ) -> Dictionary:
+	if _tutorial_raid_active:
+		return {}
 	if (
 		npc_id.is_empty()
 		or actual_damage <= 0
@@ -8055,6 +8336,8 @@ func _log_npc_attack_made(
 			"attack_speed_multiplier": float(attack_context.get("attack_speed_multiplier", 1.0)),
 			"attack_interval": float(attack_context.get("attack_interval", 1.0)),
 			"target_defense": float(damage_result.get("target_defense", 0.0)),
+			"unscaled_damage": int(damage_result.get("unscaled_damage", damage_result.get("damage", 0))),
+			"friendly_npc_damage_multiplier": float(damage_result.get("friendly_npc_damage_multiplier", 1.0)),
 			"damage": int(damage_result.get("damage", 0)),
 			"hp_before": int(damage_result.get("hp_before", 0)),
 			"hp_after": int(damage_result.get("hp_after", 0)),
@@ -8634,17 +8917,46 @@ func _advance_behavior_mode_contacts() -> void:
 			continue
 		var npc_position: Vector3 = raw_position
 		var combat_eligible := _is_npc_combat_eligible(npc_id, npc_system)
+		var sleeping: bool = npc_system.has_method("is_npc_sleeping") and bool(npc_system.is_npc_sleeping(npc_id))
+		# The prologue raid deliberately limits participation to Ada; keep its old
+		# contact scan, while formal breaches wake and route every resident.
+		if station_breached and not _tutorial_raid_active:
+			if npc_system.has_method("can_npc_act") and not npc_system.can_npc_act(npc_id):
+				continue
+			var station_encounter := _find_nearest_station_enemy(npc_position)
+			if station_encounter.is_empty():
+				continue
+			if combat_eligible and [BEHAVIOR_MODE_WORK, BEHAVIOR_MODE_RALLY].has(mode):
+				var combat_transition_ok := false
+				if _active_rallies.has(npc_id):
+					_switch_rally_to_combat(npc_id, _active_rallies.get(npc_id, {}), station_encounter)
+					combat_transition_ok = _get_npc_behavior_mode(npc_system, npc_id) == BEHAVIOR_MODE_COMBAT
+				else:
+					var combat_transition := _enter_npc_combat_from_contact(npc_id, station_encounter, "enemy_inside_station")
+					combat_transition_ok = bool(combat_transition.get("ok", false))
+				if combat_transition_ok:
+					_log_enemy_breach_response(npc_id, station_encounter, true)
+			elif not combat_eligible and [BEHAVIOR_MODE_WORK, BEHAVIOR_MODE_RALLY].has(mode):
+				_active_rallies.erase(npc_id)
+				var nearby_encounter := _find_nearest_enemy(npc_position, avoidance_trigger_range)
+				var avoid_transition := (
+					_enter_npc_avoid_standby_from_station_breach(npc_id, station_encounter)
+					if nearby_encounter.is_empty()
+					else _enter_npc_avoid_from_contact(npc_id, nearby_encounter, "enemy_inside_station")
+				)
+				if bool(avoid_transition.get("ok", false)):
+					_log_enemy_breach_response(npc_id, station_encounter, false)
+			continue
 		var friendly_scope := _get_friendly_target_scope(npc_id) if combat_eligible else {}
 		var encounter := (
 			_find_nearest_friendly_combat_enemy(npc_id, friendly_scope)
 			if combat_eligible
 			else _find_nearest_enemy(npc_position, avoidance_trigger_range)
 		)
-		if (
-			npc_system.has_method("is_npc_sleeping")
-			and npc_system.is_npc_sleeping(npc_id)
-			and (not combat_eligible or encounter.is_empty())
-		):
+		# Proximity alone never wakes a sleeper, armed or not. The alarm path may
+		# explicitly rally an armed recruit, and NPCSystem's enemy-attack path may
+		# enter combat/avoidance after a real hit.
+		if sleeping:
 			continue
 		if encounter.is_empty():
 			continue
@@ -8724,6 +9036,30 @@ func _enter_npc_avoid_from_contact(npc_id: String, encounter: Dictionary, reason
 		var avoidance := _start_or_update_npc_avoidance(npc_id, encounter, target, reason, true)
 		result["avoidance"] = avoidance
 		_last_avoidance_result = avoidance.duplicate(true)
+	return result
+
+
+func _enter_npc_avoid_standby_from_station_breach(npc_id: String, encounter: Dictionary) -> Dictionary:
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if npc_system == null or not npc_system.has_method("set_npc_behavior_mode"):
+		return {}
+	var result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_AVOID_COMBAT, "enemy_inside_station", {
+		"state_changes": {
+			"current_action": "avoid_combat",
+			"last_action_result": "station_breach_avoidance_standby",
+			"combat_target_enemy_id": str(encounter.get("enemy_id", "")),
+			"avoidance_target_id": "",
+			"avoidance_target_name": "",
+			"avoidance_target_position": {},
+			"movement_target": "",
+			"movement_target_name": ""
+		},
+		"request_plan_reevaluation": false
+	})
+	_last_mode_transition_result = result.duplicate(true)
+	if bool(result.get("ok", false)):
+		_deferred_avoidance_endings.erase(npc_id)
+		_active_avoidances.erase(npc_id)
 	return result
 
 
@@ -8876,6 +9212,7 @@ func _start_or_update_npc_avoidance(
 		else {}
 	)
 	var is_movement_recovery := reason.begins_with("avoidance_movement_recovered")
+	_deferred_avoidance_endings.erase(npc_id)
 	var event := {}
 	if log_started:
 		event = _log_avoidance_started(npc_id, encounter, target, reason)
@@ -8968,10 +9305,36 @@ func _avoidance_target_from_runtime(avoidance: Dictionary) -> Dictionary:
 func _complete_npc_avoidance(npc_id: String, reason: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	var mode := _get_npc_behavior_mode(npc_system, npc_id) if npc_system != null else BEHAVIOR_MODE_WORK
-	if mode != BEHAVIOR_MODE_AVOID_COMBAT and not _active_avoidances.has(npc_id):
+	if (
+		mode != BEHAVIOR_MODE_AVOID_COMBAT
+		and not _active_avoidances.has(npc_id)
+		and not _deferred_avoidance_endings.has(npc_id)
+	):
 		return {}
-	var event := _log_avoidance_ended(npc_id, reason)
+	var avoidance: Dictionary = (
+		_active_avoidances.get(npc_id, {}).duplicate(true)
+		if _active_avoidances.get(npc_id, {}) is Dictionary
+		else {}
+	)
+	if avoidance.is_empty() and _deferred_avoidance_endings.get(npc_id, {}) is Dictionary:
+		avoidance = (_deferred_avoidance_endings.get(npc_id, {}) as Dictionary).duplicate(true)
 	_active_avoidances.erase(npc_id)
+	if not _active_enemies.is_empty():
+		# The public sentence says the danger is over and daily life resumes. Losing
+		# consciousness (or switching wartime modes) is not evidence of either fact.
+		avoidance["npc_id"] = npc_id
+		avoidance["deferred_reason"] = reason
+		_deferred_avoidance_endings[npc_id] = avoidance
+		_last_avoidance_result = {
+			"ok": true,
+			"npc_id": npc_id,
+			"reason": reason,
+			"deferred_until_all_enemies_cleared": true,
+			"event": {}
+		}
+		return {}
+	var event := _log_avoidance_ended(npc_id, reason, avoidance)
+	_deferred_avoidance_endings.erase(npc_id)
 	_last_avoidance_result = {
 		"ok": true,
 		"npc_id": npc_id,
@@ -9142,6 +9505,7 @@ func _get_min_enemy_distance(position: Vector3) -> float:
 
 
 func _handle_all_enemies_cleared(reason: String) -> Dictionary:
+	var tutorial_scope := _tutorial_raid_active or bool(_active_battle.get("tutorial_scope", false))
 	_clear_friendly_targeting_runtime()
 	_active_melee_swings.clear()
 	_pending_melee_damage_commits.clear()
@@ -9161,10 +9525,21 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_ids") or not npc_system.has_method("set_npc_behavior_mode"):
 		result["battle_end_result"] = _finish_active_battle(reason)
-		result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
-		result["wave_clear_notification_numbers"] = _emit_successful_wave_clear_events(result["battle_end_result"])
+		result["victory_result"] = (
+			{"triggered": false, "reason": "tutorial_scope"}
+			if tutorial_scope
+			else _evaluate_five_wave_victory(result["battle_end_result"], reason)
+		)
+		result["wave_clear_notification_numbers"] = (
+			[]
+			if tutorial_scope
+			else _emit_successful_wave_clear_events(result["battle_end_result"])
+		)
 		result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
-		_emit_battle_end_audio(result)
+		if tutorial_scope:
+			_complete_tutorial_raid(result)
+		else:
+			_emit_battle_end_audio(result)
 		return result
 	for raw_npc_id in npc_system.get_npc_ids():
 		var npc_id := str(raw_npc_id)
@@ -9175,11 +9550,15 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 				"combat_attack_sequence_lock_remaining": 0.0
 			})
 		var mode := _get_npc_behavior_mode(npc_system, npc_id)
+		if _deferred_avoidance_endings.has(npc_id) and mode != BEHAVIOR_MODE_AVOID_COMBAT:
+			var deferred_ended_event := _complete_npc_avoidance(npc_id, reason)
+			if not deferred_ended_event.is_empty():
+				(result["avoidance_ended"] as Array).append(deferred_ended_event)
 		if mode == BEHAVIOR_MODE_COMBAT:
 			var combat_result: Dictionary = npc_system.set_npc_behavior_mode(npc_id, BEHAVIOR_MODE_WORK, reason, {
 				"interrupt": true,
 				"force_idle": true,
-				"request_plan_reevaluation": true
+				"request_plan_reevaluation": not tutorial_scope
 			})
 			(result["combat_to_work"] as Array).append(combat_result)
 			_active_rallies.erase(npc_id)
@@ -9204,12 +9583,32 @@ func _handle_all_enemies_cleared(reason: String) -> Dictionary:
 			(result["avoid_to_work"] as Array).append(avoid_result)
 			(result["avoidance_ended"] as Array).append(ended_event)
 	result["battle_end_result"] = _finish_active_battle(reason)
-	result["victory_result"] = _evaluate_five_wave_victory(result["battle_end_result"], reason)
-	result["wave_clear_notification_numbers"] = _emit_successful_wave_clear_events(result["battle_end_result"])
+	result["victory_result"] = (
+		{"triggered": false, "reason": "tutorial_scope"}
+		if tutorial_scope
+		else _evaluate_five_wave_victory(result["battle_end_result"], reason)
+	)
+	result["wave_clear_notification_numbers"] = (
+		[]
+		if tutorial_scope
+		else _emit_successful_wave_clear_events(result["battle_end_result"])
+	)
 	result["formal_world_exit_result"] = _exit_default_formal_combat_world(reason)
-	_emit_battle_end_audio(result)
+	if tutorial_scope:
+		_complete_tutorial_raid(result)
+	else:
+		_emit_battle_end_audio(result)
 	_last_mode_transition_result = result.duplicate(true)
 	return result
+
+
+func _complete_tutorial_raid(result: Dictionary) -> void:
+	_tutorial_raid_active = false
+	_tutorial_raid_snapshot["active"] = false
+	_tutorial_raid_snapshot["completed"] = true
+	_tutorial_raid_snapshot["status"] = "completed"
+	_tutorial_raid_snapshot["finish_result"] = result.duplicate(true)
+	tutorial_raid_finished.emit(get_tutorial_raid_snapshot())
 
 
 func _emit_battle_end_audio(result: Dictionary) -> void:
@@ -9263,7 +9662,7 @@ func _emit_successful_wave_clear_events(battle_end: Dictionary) -> Array[int]:
 	return notified_wave_numbers
 
 
-func _enter_default_formal_combat_world() -> Dictionary:
+func _enter_default_formal_combat_world(requested_npc_ids_override: Variant = null) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if (
 		npc_system == null
@@ -9271,7 +9670,14 @@ func _enter_default_formal_combat_world() -> Dictionary:
 		or not npc_system.has_method("get_npc_ids")
 	):
 		return {"ok": false, "reason": "npc_formal_combat_world_api_missing"}
-	var requested_ids: Array[String] = npc_system.get_npc_ids()
+	var requested_ids: Array[String] = []
+	if requested_npc_ids_override == null:
+		requested_ids.assign(npc_system.get_npc_ids())
+	elif requested_npc_ids_override is Array:
+		for raw_npc_id in requested_npc_ids_override:
+			var requested_npc_id := str(raw_npc_id)
+			if not requested_npc_id.is_empty() and not requested_ids.has(requested_npc_id):
+				requested_ids.append(requested_npc_id)
 	var combatant_ids: Array[String] = []
 	for entry in _build_friendly_combatant_roster():
 		var npc_id := str(entry.get("npc_id", ""))
@@ -9377,6 +9783,18 @@ func _on_npc_revived(npc_id: String) -> void:
 func _on_npc_unconscious(npc_id: String) -> void:
 	_friendly_enemy_reacquire_requests.erase(npc_id)
 	_active_rallies.erase(npc_id)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	var state: Dictionary = (
+		npc_system.get_npc_state(npc_id)
+		if npc_system != null and npc_system.has_method("get_npc_state")
+		else {}
+	)
+	if (
+		str(state.get("behavior_mode_previous", "")) == BEHAVIOR_MODE_AVOID_COMBAT
+		and not _active_avoidances.has(npc_id)
+		and not _deferred_avoidance_endings.has(npc_id)
+	):
+		_deferred_avoidance_endings[npc_id] = {"npc_id": npc_id}
 	_complete_npc_avoidance(npc_id, "npc_unconscious")
 	_pause_escape_for_unconscious(npc_id, "npc_unconscious")
 	_record_battle_npc_unconscious(npc_id, "npc_unconscious")
@@ -9433,6 +9851,7 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 	var friendly_roster := _build_friendly_combatant_roster()
 	_active_battle = {
 		"active": true,
+		"tutorial_scope": bool(wave.get("tutorial_scope", false)),
 		"wave_number": int(wave.get("wave_number", 0)),
 		"wave_id": str(wave.get("id", "")),
 		"reason": reason,
@@ -9449,7 +9868,11 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 		"resolved_defeated_enemy_count": 0,
 		"additional_waves": []
 	}
-	var event := _log_combat_started(_active_battle)
+	var event := (
+		{}
+		if bool(_active_battle.get("tutorial_scope", false))
+		else _log_combat_started(_active_battle)
+	)
 	_active_battle["started_event_id"] = str(event.get("event_id", ""))
 	_last_battle_start_result = {
 		"ok": true,
@@ -9462,6 +9885,7 @@ func _start_battle_for_wave(wave: Dictionary, spawned: Array[Dictionary], reason
 	var first_enemy: Dictionary = spawned[0]
 	_emit_combat_audio_event({
 		"event_type": "battle_started",
+		"tutorial_scope": bool(_active_battle.get("tutorial_scope", false)),
 		"target_type": "enemy",
 		"target_id": str(first_enemy.get("id", "")),
 		"wave_number": int(wave.get("wave_number", 0)),
@@ -9481,7 +9905,11 @@ func _finish_active_battle(reason: String) -> Dictionary:
 	ended["unconscious_npcs"] = _battle_map_to_sorted_array(_active_battle.get("unconscious_npcs", {}))
 	ended["low_hp_judgements"] = _battle_map_to_sorted_array(_active_battle.get("low_hp_judgements", {}))
 	ended["defeated_by_npc"] = _battle_map_to_sorted_array(_active_battle.get("defeated_by_npc", {}))
-	var event := _log_combat_ended(ended)
+	var event := (
+		{}
+		if bool(ended.get("tutorial_scope", false))
+		else _log_combat_ended(ended)
+	)
 	ended["ended_event_id"] = str(event.get("event_id", ""))
 	ended["event"] = event
 	_last_battle_end_result = ended.duplicate(true)
@@ -14188,10 +14616,21 @@ func _apply_enemy_attack_to_npc(
 	var enemy_id := str(enemy.get("id", ""))
 	var enemy_name := str(enemy.get("name", enemy_id))
 	var friendly_target_before_damage := ""
+	var damage_before_tutorial_ada_multiplier := damage
+	var tutorial_ada_damage_multiplier := 1.0
 	if npc_system.has_method("get_npc_state"):
-		friendly_target_before_damage = str(
-			(npc_system.get_npc_state(npc_id) as Dictionary).get("combat_target_enemy_id", "")
-		)
+		var npc_state: Dictionary = npc_system.get_npc_state(npc_id)
+		friendly_target_before_damage = str(npc_state.get("combat_target_enemy_id", ""))
+		if (
+			_tutorial_raid_active
+			and npc_id == str(_tutorial_raid_snapshot.get("ada_npc_id", "veteran_deputy_01"))
+		):
+			tutorial_ada_damage_multiplier = TUTORIAL_ADA_INCOMING_DAMAGE_MULTIPLIER
+			damage = maxi(1, int(round(float(damage) * tutorial_ada_damage_multiplier)))
+			var max_hp := maxi(1, int(npc_state.get("max_hp", 100)))
+			var current_hp := clampi(int(npc_state.get("hp", max_hp)), 0, max_hp)
+			var min_hp := ceili(float(max_hp) * float(_tutorial_raid_snapshot.get("ada_min_hp_ratio", 0.40)))
+			damage = mini(damage, maxi(0, current_hp - min_hp))
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	var mounted_split := {
 		"split": false,
@@ -14223,12 +14662,17 @@ func _apply_enemy_attack_to_npc(
 				"summary": "%s攻击了%s，人物承受%d点伤害。" % [enemy_name, npc_name, npc_damage],
 				"request_plan_reevaluation": false,
 				"enemy_attack": true,
+				"tutorial_scope": _tutorial_raid_active,
+				"skip_memory_event": _tutorial_raid_active,
+				"skip_low_hp_judgement": _tutorial_raid_active,
 				"enemy_id": enemy_id,
 				"enemy_name": enemy_name,
 				"raw_attack_power": raw_attack_power,
 				"target_defense": target_defense,
 				"penetration": penetration,
 				"effective_defense": effective_defense,
+				"damage_before_tutorial_ada_multiplier": damage_before_tutorial_ada_multiplier,
+				"tutorial_ada_damage_multiplier": tutorial_ada_damage_multiplier,
 				"damage_after_defense": npc_damage,
 				"combined_damage_after_defense": damage,
 				"horse_damage": int(mounted_split.get("horse_damage", 0)),
@@ -14259,6 +14703,8 @@ func _apply_enemy_attack_to_npc(
 		"target_defense": target_defense,
 		"penetration": penetration,
 		"effective_defense": effective_defense,
+		"damage_before_tutorial_ada_multiplier": damage_before_tutorial_ada_multiplier,
+		"tutorial_ada_damage_multiplier": tutorial_ada_damage_multiplier,
 		"damage": damage,
 		"npc_damage": npc_damage,
 		"horse_damage": int(mounted_split.get("horse_damage", 0)),
@@ -14311,6 +14757,34 @@ func _apply_enemy_attack_to_building(
 	damage: int,
 	feedback_context: Dictionary = {}
 ) -> Dictionary:
+	if _tutorial_raid_active:
+		var enemy_id := str(enemy.get("id", ""))
+		var tutorial_impact_position: Variant = feedback_context.get("hit_world_position", null)
+		var tutorial_audio_event := {
+			"event_type": "structure_damaged",
+			"tutorial_scope": true,
+			"target_type": "building",
+			"target_id": building_id,
+			"source_id": enemy_id,
+			"damage": 0,
+			"suppressed_formal_damage": damage,
+			"destroyed": false,
+		}
+		if tutorial_impact_position is Vector3:
+			tutorial_audio_event["world_position"] = tutorial_impact_position
+			tutorial_audio_event["impact_world_position"] = tutorial_impact_position
+		_emit_combat_audio_event(tutorial_audio_event)
+		return {
+			"target_type": "building",
+			"target_id": building_id,
+			"damage": 0,
+			"result": {
+				"ok": true,
+				"changed": false,
+				"tutorial_scope": true,
+				"suppressed_formal_damage": damage
+			}
+		}
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	if building_system == null or not building_system.has_method("apply_damage_to_building"):
 		return {}
@@ -17137,6 +17611,48 @@ func _log_combat_rally_encounter(npc_id: String, rally: Dictionary, encounter: D
 	})
 
 
+func _log_enemy_breach_response(npc_id: String, encounter: Dictionary, combat_response: bool) -> Dictionary:
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
+	if (
+		memory_system == null
+		or not memory_system.has_method("add_event")
+		or npc_system == null
+		or not npc_system.has_method("get_npc")
+		or not npc_system.has_method("get_npc_state")
+	):
+		return {}
+	var npc: Dictionary = npc_system.get_npc(npc_id)
+	var state: Dictionary = npc_system.get_npc_state(npc_id)
+	var recruited := bool(npc.get("recruited", false))
+	var has_main_weapon := combat_response
+	if npc_system.has_method("get_npc_combat_identity"):
+		var combat_identity: Dictionary = npc_system.get_npc_combat_identity(npc_id)
+		has_main_weapon = bool(combat_identity.get("has_main_weapon", false))
+	var response_reason := "combat_ready" if combat_response else ("not_recruited" if not recruited else "no_main_weapon")
+	var enemy_id := str(encounter.get("enemy_id", ""))
+	return memory_system.add_event({
+		"type": "enemy_breach_combat_response" if combat_response else "enemy_breach_noncombat_response",
+		"subject_npc_id": npc_id,
+		"actor_ids": [npc_id],
+		"target_ids": [npc_id, enemy_id],
+		"location_id": str(state.get("current_location", PLAZA_LOCATION_ID)),
+		"visibility": "private",
+		"importance": 85,
+		"payload": {
+			"npc_id": npc_id,
+			"npc_name": str(npc.get("name", npc_id)),
+			"enemy_id": enemy_id,
+			"enemy_name": str(encounter.get("enemy_name", enemy_id)),
+			"response_mode": BEHAVIOR_MODE_COMBAT if combat_response else BEHAVIOR_MODE_AVOID_COMBAT,
+			"response_reason": response_reason,
+			"recruited": recruited,
+			"has_main_weapon": has_main_weapon,
+			"station_breached": true
+		}
+	})
+
+
 func _log_avoidance_started(npc_id: String, encounter: Dictionary, target: Dictionary, reason: String) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
@@ -17161,12 +17677,14 @@ func _log_avoidance_started(npc_id: String, encounter: Dictionary, target: Dicti
 	})
 
 
-func _log_avoidance_ended(npc_id: String, reason: String) -> Dictionary:
+func _log_avoidance_ended(npc_id: String, reason: String, avoidance_snapshot: Dictionary = {}) -> Dictionary:
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return {}
 	var active_count := get_active_enemy_count()
-	var avoidance: Dictionary = _active_avoidances.get(npc_id, {}) if (_active_avoidances.get(npc_id, {}) is Dictionary) else {}
+	var avoidance: Dictionary = avoidance_snapshot.duplicate(true)
+	if avoidance.is_empty() and _active_avoidances.get(npc_id, {}) is Dictionary:
+		avoidance = (_active_avoidances.get(npc_id, {}) as Dictionary).duplicate(true)
 	return memory_system.add_event({
 		"type": "avoidance_ended",
 		"subject_npc_id": npc_id,

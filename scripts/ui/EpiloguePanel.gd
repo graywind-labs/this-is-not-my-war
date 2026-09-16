@@ -243,7 +243,7 @@ func _build_npc_card(item: Dictionary, pending: bool, index: int) -> PanelContai
 
 	var story := Label.new()
 	story.name = "NPCFateStory"
-	story.text = "战地记录整理中……" if pending else str(item.get("fate_summary", "此后的故事没有留下记录。"))
+	story.text = "战地记录整理中……" if pending else str(item.get("fate_summary", "此后的故事没有留下记录。")).trim_prefix("Mock：")
 	story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	story.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	story.size_flags_vertical = Control.SIZE_EXPAND_FILL

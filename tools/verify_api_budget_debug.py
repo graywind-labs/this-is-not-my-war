@@ -122,7 +122,7 @@ def main() -> None:
 
         with patch.dict(os.environ, {
             "LLM_PROVIDER": "deepseek",
-            "LLM_MODEL": "deepseek-v4-flash",
+            "LLM_MODEL": "deepseek-v4-pro",
             "LLM_COST_LEDGER_PATH": str(Path(temp_dir) / "default_cost.jsonl"),
         }, clear=True):
             default_deepseek_adapter = ModelAdapter()
@@ -133,8 +133,8 @@ def main() -> None:
                 "output": 2.0,
             }
             assert default_snapshot["cost_ledger"]["enabled"] is True
-            assert default_snapshot["cost_ledger"]["daily_limit_cny"] == 20.0
-            assert default_snapshot["cost_ledger"]["request_reserve_cny"] == 0.05
+            assert default_snapshot["cost_ledger"]["daily_limit_cny"] == 0.0
+            assert default_snapshot["cost_ledger"]["request_reserve_cny"] == 0.0
             assert default_snapshot["cost_ledger"]["timezone"] == "Asia/Shanghai"
 
     _clear_llm_budget_env()

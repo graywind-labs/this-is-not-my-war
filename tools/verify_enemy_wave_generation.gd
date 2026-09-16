@@ -49,8 +49,9 @@ func _init() -> void:
 	var ground := root.get_node_or_null("Main/WorldRoot/Station/Ground") as MeshInstance3D
 	var front_road := root.get_node_or_null("Main/WorldRoot/Station/Props/FrontRoad") as MeshInstance3D
 	var camera_rig := root.get_node_or_null("Main/CameraRig")
+	var station_layout := root.get_node_or_null("Main/Presentation/StationLayoutController")
 	var gm_panel := root.get_node_or_null("Main/UI/GMPanel")
-	if combat_system == null or enemy_root == null or npc_system == null or ground == null or front_road == null or camera_rig == null or gm_panel == null:
+	if combat_system == null or enemy_root == null or npc_system == null or ground == null or front_road == null or camera_rig == null or station_layout == null or gm_panel == null:
 		push_error("Enemy wave verification required nodes not found")
 		quit(1)
 		return
@@ -187,6 +188,9 @@ func _init() -> void:
 		quit(1)
 		return
 
+	var formal_spawn := station_layout.get_enemy_route_world() as Dictionary
+	var spawn_center: Vector3 = formal_spawn.get("spawn_zone_center", Vector3.ZERO)
+	var spawn_size: Vector2 = formal_spawn.get("spawn_zone_size", Vector2.ZERO)
 	for enemy_id in combat_system.get_active_enemy_ids():
 		var enemy: Dictionary = combat_system.get_enemy(enemy_id)
 		if enemy.is_empty():
@@ -194,7 +198,10 @@ func _init() -> void:
 			quit(1)
 			return
 		var position: Vector3 = enemy.get("position", Vector3.ZERO)
-		if absf(position.x) > 100.0 or position.z < 250.0:
+		if (
+			absf(position.x - spawn_center.x) > spawn_size.x * 0.5 + 0.001
+			or absf(position.z - spawn_center.z) > spawn_size.y * 0.5 + 0.001
+		):
 			push_error("Enemy should spawn at the origin-rebased formal forest edge: %s at %s" % [enemy_id, str(position)])
 			quit(1)
 			return

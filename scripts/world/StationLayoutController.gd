@@ -16,7 +16,9 @@ const BUILDING_NAME_FADE_SPEED := 0.9
 const BUILDING_NAME_REVEAL_SPEED := 7.5
 const COMBAT_SYSTEM_PATH := "/root/Main/Systems/CombatSystem"
 const BUILDING_SYSTEM_PATH := "/root/Main/Systems/BuildingSystem"
+const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const WORLD_HEALTH_BAR := preload("res://scripts/world/WorldHealthBar3D.gd")
+const DOOR_PASSAGE_QUEUE_AREA_SCRIPT := preload("res://scripts/world/DoorPassageQueueArea.gd")
 const STRATEGIC_WORLD_HEALTH_BUILDINGS := ["warehouse", "front_gate", "main_hall"]
 const CAMERA_MOTION_EPSILON_SQUARED := 0.000001
 const LEGACY_VISUAL_PATHS := [
@@ -76,6 +78,7 @@ const WAREHOUSE_WAGON_ASSET := "res://assets/3d/quaternius/buildings/warehouse_w
 @export var camera_path := NodePath("../../CameraRig/Camera3D")
 
 var _layout: Dictionary = {}
+var _npc_stay_positions: Dictionary = {}
 var _physics_navigation: Dictionary = {}
 var _fixture_layouts: Dictionary = {}
 var _environment_art: Dictionary = {}
@@ -106,6 +109,7 @@ var _navigation_grid_region := Rect2i()
 var _production_navigation_bake_msec := 0
 var _production_navigation_map: RID
 var _building_navigation_links: Array[NavigationLink3D] = []
+var _building_door_queue_areas: Array[Area3D] = []
 var _enemy_approach_navigation_region: NavigationRegion3D
 var _enemy_front_gate_navigation_link: NavigationLink3D
 var _enemy_approach_vertex_count := 0
@@ -120,6 +124,7 @@ var _rear_escape_route_length := 0.0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_layout = _load_json_dictionary(LAYOUT_PATH)
+	_npc_stay_positions = _load_json_dictionary("res://data/npc_stay_positions.json")
 	_physics_navigation = _load_json_dictionary(PHYSICS_NAVIGATION_PATH)
 	_fixture_layouts = _load_json_dictionary(FIXTURE_LAYOUTS_PATH)
 	_environment_art = _load_json_dictionary(ENVIRONMENT_ART_PATH)
@@ -554,6 +559,10 @@ func get_building_combat_geometry(building_id: String) -> Dictionary:
 	var envelope := _v2(building.get("envelope_size", [0.0, 0.0]))
 	if envelope.x <= 0.0 or envelope.y <= 0.0:
 		return {}
+	var collision_envelope := _get_building_collision_envelope(
+		building,
+		float(structural.get("wall_thickness", 0.4))
+	)
 	var right_direction := building_root.global_basis * Vector3.RIGHT
 	# Layout-local positions store their second component on +Z (the authored
 	# entrance/front side), while Godot's Vector3.FORWARD constant is -Z.
@@ -566,10 +575,10 @@ func get_building_combat_geometry(building_id: String) -> Dictionary:
 		"schema": "oriented_building_combat_geometry_v1",
 		"building_id": building_id,
 		"center": building_root.global_position,
-		"size": envelope,
+		"size": collision_envelope,
 		"right_direction": right_direction.normalized(),
 		"forward_direction": forward_direction.normalized(),
-		"front_door_clear_width": maxf(0.0, float(structural.get("building_door_clear_width", 1.4))),
+		"front_door_clear_width": _get_building_door_clear_width(building_id),
 		"wall_thickness": maxf(0.0, float(structural.get("wall_thickness", 0.4)))
 	}
 
@@ -677,6 +686,29 @@ func _circle_overlaps_local_rectangle(
 
 func get_formal_wave_spawn_config() -> Dictionary:
 	return (_physics_navigation.get("formal_wave_spawn", {}) as Dictionary).duplicate(true)
+
+
+func get_building_door_queue_config() -> Dictionary:
+	return (_physics_navigation.get("building_door_queue", {}) as Dictionary).duplicate(true)
+
+
+func get_building_door_clear_width(building_id: String) -> float:
+	return _get_building_door_clear_width(building_id)
+
+
+func _get_building_door_clear_width(building_id: String) -> float:
+	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
+	var default_width := float(structural.get("building_door_clear_width", 1.8))
+	var overrides := structural.get("building_door_clear_width_by_id", {}) as Dictionary
+	return maxf(0.1, float(overrides.get(building_id, default_width)))
+
+
+func debug_get_building_door_queue_snapshots() -> Array[Dictionary]:
+	var snapshots: Array[Dictionary] = []
+	for area in _building_door_queue_areas:
+		if is_instance_valid(area) and area.has_method("debug_get_snapshot"):
+			snapshots.append(area.debug_get_snapshot())
+	return snapshots
 
 
 func get_friendly_rally_world_config() -> Dictionary:
@@ -829,6 +861,25 @@ func _attack_slot_config_to_world(building_id: String, slot_config: Dictionary) 
 			station_point = _building_local_to_station(building, raw_point)
 		points.append(_formal_root.to_global(Vector3(station_point.x, 0.0, station_point.y)))
 	return points
+
+
+func get_npc_stay_world_position(location_id: String, npc_id: String) -> Variant:
+	# Coordinates are private navigation guidance, never building workstations.
+	if _formal_root == null:
+		return null
+	var locations: Dictionary = _npc_stay_positions.get("locations", {})
+	var assignments: Dictionary = locations.get(location_id, {})
+	var point: Variant = assignments.get(npc_id)
+	if not point is Array or point.size() != 2:
+		return null
+	if not (point[0] is float or point[0] is int) or not (point[1] is float or point[1] is int):
+		return null
+	if location_id == "plaza":
+		return _formal_root.to_global(Vector3(float(point[0]), 0.0, float(point[1])))
+	var building_root := _building_roots.get(location_id) as Node3D
+	if building_root == null:
+		return null
+	return _building_local_to_global(building_root, point)
 
 
 func get_building_spatial_route(building_id: String, position_id: String = "") -> Dictionary:
@@ -1710,6 +1761,14 @@ func _validate_config() -> void:
 	var navigation: Dictionary = _layout.get("navigation", {})
 	var grid_bounds: Variant = navigation.get("grid_bounds", [])
 	var production_bounds: Variant = navigation.get("production_bounds", [])
+	var enemy_route := ((_layout.get("combat_spatial", {}) as Dictionary).get("enemy_route", {}) as Dictionary)
+	var required_enemy_navigation_north := -INF
+	for raw_section in enemy_route.get("navigation_cross_sections", []):
+		if raw_section is Dictionary:
+			required_enemy_navigation_north = maxf(
+				required_enemy_navigation_north,
+				float((raw_section as Dictionary).get("z", -INF))
+			)
 	var grid_contract_valid := (
 		float(navigation.get("cell_size", 0.0)) > 0.0
 		and grid_bounds is Array
@@ -1724,7 +1783,8 @@ func _validate_config() -> void:
 		or float((production_bounds as Array)[0]) > float((grid_bounds as Array)[0])
 		or float((production_bounds as Array)[1]) < float((grid_bounds as Array)[1])
 		or float((production_bounds as Array)[2]) > float((grid_bounds as Array)[2])
-		or float((production_bounds as Array)[3]) < 344.0
+		or required_enemy_navigation_north == -INF
+		or float((production_bounds as Array)[3]) < required_enemy_navigation_north
 		or str(navigation.get("enemy_exterior_mode", "")) != "shared_open_baked_space"
 		or bool(navigation.get("roads_affect_navigation", true))
 	):
@@ -2321,11 +2381,12 @@ func _build_warehouse_exterior_art(building_root: Node3D, _building: Dictionary)
 
 
 func _build_building_static_collision(building_root: Node3D, building: Dictionary) -> void:
-	var envelope := _v2(building.get("envelope_size", [1.0, 1.0]))
 	var building_id := str(building.get("id", ""))
 	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
 	var thickness := float(structural.get("wall_thickness", 0.4))
-	var door_width := float(structural.get("building_door_clear_width", 1.4))
+	var collision_inset := _get_building_collision_inset(building, thickness)
+	var collision_envelope := _get_building_collision_envelope(building, thickness)
+	var door_width := _get_building_door_clear_width(building_id)
 	var wall_height := maxf(
 		float(building.get("height", 1.0)),
 		float(structural.get("minimum_wall_height", 1.2))
@@ -2333,18 +2394,20 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	var collision_root := Node3D.new()
 	collision_root.name = "StaticCollision"
 	collision_root.set_meta("building_id", str(building.get("id", "")))
+	collision_root.set_meta("collision_inset", collision_inset)
+	collision_root.set_meta("collision_envelope", collision_envelope)
 	collision_root.set_meta("door_clear_width", door_width)
 	collision_root.set_meta("fully_open_front", false)
 	collision_root.set_meta("transparent_perimeter", building_id == "blacksmith")
 	building_root.add_child(collision_root)
-	var side_depth := maxf(0.1, envelope.y - thickness * 2.0)
+	var side_depth := maxf(0.1, collision_envelope.y - thickness * 2.0)
 	var side_center_z := 0.0
-	var front_segment_width := maxf(0.1, (envelope.x - door_width) * 0.5)
+	var front_segment_width := maxf(0.1, (collision_envelope.x - door_width) * 0.5)
 	var front_center_offset := door_width * 0.5 + front_segment_width * 0.5
 	var left_wall := _add_static_box_collision(
 		collision_root,
 		"LeftWall",
-		Vector3(-envelope.x * 0.5 + thickness * 0.5, wall_height * 0.5, side_center_z),
+		Vector3(-collision_envelope.x * 0.5 + thickness * 0.5, wall_height * 0.5, side_center_z),
 		Vector3(thickness, wall_height, side_depth),
 		"building_wall"
 	)
@@ -2352,7 +2415,7 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	var right_wall := _add_static_box_collision(
 		collision_root,
 		"RightWall",
-		Vector3(envelope.x * 0.5 - thickness * 0.5, wall_height * 0.5, side_center_z),
+		Vector3(collision_envelope.x * 0.5 - thickness * 0.5, wall_height * 0.5, side_center_z),
 		Vector3(thickness, wall_height, side_depth),
 		"building_wall"
 	)
@@ -2360,15 +2423,15 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	var back_wall := _add_static_box_collision(
 		collision_root,
 		"BackWall",
-		Vector3(0.0, wall_height * 0.5, -envelope.y * 0.5 + thickness * 0.5),
-		Vector3(envelope.x, wall_height, thickness),
+		Vector3(0.0, wall_height * 0.5, -collision_envelope.y * 0.5 + thickness * 0.5),
+		Vector3(collision_envelope.x, wall_height, thickness),
 		"building_wall"
 	)
 	back_wall.set_meta("building_segment_id", "back_wall")
 	var front_left := _add_static_box_collision(
 		collision_root,
 		"FrontLeft",
-		Vector3(-front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+		Vector3(-front_center_offset, wall_height * 0.5, collision_envelope.y * 0.5 - thickness * 0.5),
 		Vector3(front_segment_width, wall_height, thickness),
 		"building_wall"
 	)
@@ -2376,19 +2439,19 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 	var front_right := _add_static_box_collision(
 		collision_root,
 		"FrontRight",
-		Vector3(front_center_offset, wall_height * 0.5, envelope.y * 0.5 - thickness * 0.5),
+		Vector3(front_center_offset, wall_height * 0.5, collision_envelope.y * 0.5 - thickness * 0.5),
 		Vector3(front_segment_width, wall_height, thickness),
 		"building_wall"
 	)
 	front_right.set_meta("building_segment_id", "front_right")
 	var blocker_config := building.get("solid_interior_blocker", {}) as Dictionary
 	if bool(blocker_config.get("enabled", false)):
-		var maximum_inset := maxf(0.0, minf(envelope.x, envelope.y) * 0.5 - 0.1)
+		var maximum_inset := maxf(0.0, minf(collision_envelope.x, collision_envelope.y) * 0.5 - 0.1)
 		var inset := clampf(float(blocker_config.get("inset", thickness * 0.5)), 0.0, maximum_inset)
 		var blocker_size := Vector3(
-			maxf(0.1, envelope.x - inset * 2.0),
+			maxf(0.1, collision_envelope.x - inset * 2.0),
 			wall_height,
-			maxf(0.1, envelope.y - inset * 2.0)
+			maxf(0.1, collision_envelope.y - inset * 2.0)
 		)
 		var interior_blocker := _add_static_box_collision(
 			collision_root,
@@ -2400,6 +2463,21 @@ func _build_building_static_collision(building_root: Node3D, building: Dictionar
 		interior_blocker.set_meta("building_id", building_id)
 		interior_blocker.set_meta("transparent_entity", true)
 		interior_blocker.set_meta("blocks_navigation", true)
+
+
+func _get_building_collision_inset(building: Dictionary, thickness: float) -> float:
+	var envelope := _v2(building.get("envelope_size", [1.0, 1.0]))
+	var maximum_inset := maxf(0.0, minf(envelope.x, envelope.y) * 0.5 - thickness)
+	return clampf(float(building.get("collision_inset", 0.0)), 0.0, maximum_inset)
+
+
+func _get_building_collision_envelope(building: Dictionary, thickness: float) -> Vector2:
+	var envelope := _v2(building.get("envelope_size", [1.0, 1.0]))
+	var inset := _get_building_collision_inset(building, thickness)
+	return Vector2(
+		maxf(thickness * 2.0, envelope.x - inset * 2.0),
+		maxf(thickness * 2.0, envelope.y - inset * 2.0)
+	)
 
 
 func _build_building_fixtures(building_root: Node3D, building: Dictionary) -> void:
@@ -3879,7 +3957,11 @@ func _build_enemy_front_gate_navigation_link(stages: Array, parent: Node3D) -> v
 
 func _build_building_navigation_links(contract_root: Node3D) -> void:
 	_building_navigation_links.clear()
+	_building_door_queue_areas.clear()
 	var spatial_contracts: Dictionary = _layout.get("building_spatial", {})
+	var door_queue_config := get_building_door_queue_config()
+	var door_queue_enabled := bool(door_queue_config.get("enabled", false))
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	var links_root := Node3D.new()
 	links_root.name = "BuildingDoorLinks"
 	contract_root.add_child(links_root)
@@ -3907,6 +3989,28 @@ func _build_building_navigation_links(contract_root: Node3D) -> void:
 		link.set_navigation_map(_production_navigation_map)
 		links_root.add_child(link)
 		_building_navigation_links.append(link)
+		if (
+			door_queue_enabled
+			and memory_system != null
+			and memory_system.has_method("is_enterable_location")
+			and bool(memory_system.is_enterable_location(building_id))
+		):
+			var area := Area3D.new()
+			area.set_script(DOOR_PASSAGE_QUEUE_AREA_SCRIPT)
+			area.name = "%sDoorPassageQueue" % str(building.get("node_name", building_id))
+			var outside_position := Vector3(outside.x, navigation_height, outside.y)
+			var inside_position := Vector3(inside.x, navigation_height, inside.y)
+			area.position = (outside_position + inside_position) * 0.5
+			var crossing_direction := inside_position - outside_position
+			area.rotation.y = atan2(crossing_direction.x, crossing_direction.z)
+			area.call(
+				"configure",
+				"building_door:%s" % building_id,
+				building_id,
+				door_queue_config
+			)
+			links_root.add_child(area)
+			_building_door_queue_areas.append(area)
 
 
 func _create_production_navigation_mesh(bounds: Array) -> NavigationMesh:
@@ -3978,7 +4082,7 @@ func _classify_building_navigation_point(point: Vector2, building: Dictionary) -
 	)
 	var cell_size := float(navigation.get("cell_size", 0.5))
 	var door_half_width := (
-		float(structural.get("building_door_clear_width", 1.4)) * 0.5
+		_get_building_door_clear_width(str(building.get("id", ""))) * 0.5
 		+ cell_size * 0.71
 	)
 	var in_doorway := (
@@ -4603,6 +4707,25 @@ func _validate_physics_navigation_config() -> void:
 		_configuration_errors.append("invalid_structural_wall_thickness")
 	if float(structural.get("building_door_clear_width", 0.0)) < float(npc_profile.get("radius", 0.0)) * 2.0 + 0.2:
 		_configuration_errors.append("building_door_too_narrow_for_npc")
+	var door_width_overrides := structural.get("building_door_clear_width_by_id", {}) as Dictionary
+	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
+	var maximum_enterable_door_width := 0.0
+	for raw_building in _layout.get("buildings", []):
+		var building: Dictionary = raw_building
+		var building_id := str(building.get("id", ""))
+		if (
+			memory_system == null
+			or not memory_system.has_method("is_enterable_location")
+			or not bool(memory_system.is_enterable_location(building_id))
+		):
+			continue
+		if not door_width_overrides.has(building_id):
+			_configuration_errors.append("missing_enterable_building_door_width:%s" % building_id)
+			continue
+		var configured_width := float(door_width_overrides.get(building_id, 0.0))
+		if configured_width < float(npc_profile.get("radius", 0.0)) * 2.0 + 0.2:
+			_configuration_errors.append("enterable_building_door_too_narrow:%s" % building_id)
+		maximum_enterable_door_width = maxf(maximum_enterable_door_width, configured_width)
 	var nav_mesh := _physics_navigation.get("navigation_mesh", {}) as Dictionary
 	if (
 		float(nav_mesh.get("production_cell_size", 0.0)) <= 0.0
@@ -4635,6 +4758,23 @@ func _validate_physics_navigation_config() -> void:
 	var recovery := _physics_navigation.get("stuck_recovery", {}) as Dictionary
 	if int(recovery.get("maximum_repaths_per_target", 0)) <= 0 or float(recovery.get("fail_after_seconds", 0.0)) <= 0.0:
 		_configuration_errors.append("invalid_stuck_recovery_contract")
+	var door_queue := _physics_navigation.get("building_door_queue", {}) as Dictionary
+	# Area3D overlap includes the actor capsule radius. The sensor itself may be
+	# narrower than the visible opening while still intercepting every actor before
+	# the threshold; this keeps lateral arrivals from receiving a token too early.
+	var minimum_range_width := maxf(
+		0.1,
+		maximum_enterable_door_width - float(npc_profile.get("radius", 0.0)) * 2.0
+	)
+	if (
+		not bool(door_queue.get("enabled", false))
+		or int(door_queue.get("token_count", 0)) != 8
+		or float(door_queue.get("range_width", 0.0)) < minimum_range_width
+		or float(door_queue.get("range_depth", 0.0)) <= baked_agent_radius * 2.0
+		or float(door_queue.get("range_height", 0.0)) < float(npc_profile.get("height", 0.0))
+		or float(door_queue.get("release_grace_seconds", -1.0)) < 0.0
+	):
+		_configuration_errors.append("invalid_building_door_queue_contract")
 
 
 func _validate_fixture_layouts_config() -> void:
@@ -4729,10 +4869,13 @@ func _validate_fixture_layouts_config() -> void:
 					_configuration_errors.append("invalid_fixture_occupant_anchor:%s" % fixture_id)
 				else:
 					var anchor_center := _v2(occupant_anchor.get("center", []))
+					# A seated root may sit just beyond the bench edge while its
+					# configured body footprint still overlaps the supporting seat.
+					var anchor_footprint := _v2(occupant_anchor.get("footprint_size", [0.0, 0.0]))
 					if not _point_in_rotated_rect(
 						anchor_center,
 						center,
-						Vector2(collision_size.x, collision_size.z),
+						Vector2(collision_size.x, collision_size.z) + anchor_footprint,
 						float(fixture.get("rotation_degrees", 0.0))
 					):
 						_configuration_errors.append("fixture_occupant_anchor_outside_collision:%s" % fixture_id)
@@ -4877,6 +5020,7 @@ func _build_physics_navigation_snapshot() -> Dictionary:
 	var structural := _physics_navigation.get("structural_collision", {}) as Dictionary
 	var navigation_mesh := _physics_navigation.get("navigation_mesh", {}) as Dictionary
 	var navigation_agent := _physics_navigation.get("navigation_agent", {}) as Dictionary
+	var building_door_queue := _physics_navigation.get("building_door_queue", {}) as Dictionary
 	var natural_boundary_count := 0
 	for raw_category in category_counts.keys():
 		if str(raw_category).begins_with("natural_"):
@@ -4894,10 +5038,15 @@ func _build_physics_navigation_snapshot() -> Dictionary:
 		"wall_thickness": float(structural.get("wall_thickness", 0.0)),
 		"collision_margin": float(structural.get("collision_margin", 0.0)),
 		"building_door_clear_width": float(structural.get("building_door_clear_width", 0.0)),
+		"building_door_clear_width_by_id": (
+			(structural.get("building_door_clear_width_by_id", {}) as Dictionary).duplicate(true)
+		),
 		"production_cell_size": float(navigation_mesh.get("production_cell_size", 0.0)),
 		"avoidance_enabled": bool(navigation_agent.get("avoidance_enabled", false)),
 		"avoidance_radius_padding": float(navigation_agent.get("avoidance_radius_padding", 0.0)),
 		"avoidance_max_neighbors": int(navigation_agent.get("max_neighbors", 0)),
+		"building_door_queue": building_door_queue.duplicate(true),
+		"building_door_queue_count": _building_door_queue_areas.size(),
 		"static_body_count": (
 			_formal_root.find_children("*", "StaticBody3D", true, false).size()
 			if is_instance_valid(_formal_root)
@@ -5184,6 +5333,11 @@ func _refresh_strategic_building_health_bars() -> void:
 		return
 	var combat_system := get_node_or_null(COMBAT_SYSTEM_PATH)
 	var wartime := combat_system != null and combat_system.has_method("get_active_enemy_count") and int(combat_system.get_active_enemy_count()) > 0
+	var tutorial_raid_active := (
+		combat_system != null
+		and combat_system.has_method("get_tutorial_raid_snapshot")
+		and bool((combat_system.get_tutorial_raid_snapshot() as Dictionary).get("active", false))
+	)
 	var building_system := get_node_or_null(BUILDING_SYSTEM_PATH)
 	for raw_building_id in _building_health_bars.keys():
 		var building_id := str(raw_building_id)
@@ -5194,7 +5348,7 @@ func _refresh_strategic_building_health_bars() -> void:
 		bar.set_health(
 			int(building.get("hp", 0)),
 			int(building.get("max_hp", 1)),
-			wartime and not building.is_empty()
+			wartime and not building.is_empty() and not (tutorial_raid_active and building_id == "front_gate")
 		)
 
 

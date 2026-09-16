@@ -246,6 +246,9 @@ func _spawn_actor(
 	actor.motion_failed.connect(func(_request_id: String, reason: String) -> void:
 		_record_result(actor_id, "failed", reason)
 	)
+	actor.motion_stuck_notified.connect(func(_request_id: String, reason: String) -> void:
+		_record_result(actor_id, "active", reason)
+	)
 	actor.motion_cancelled.connect(func(_request_id: String, reason: String) -> void:
 		_record_result(actor_id, "cancelled", reason)
 	)

@@ -116,12 +116,29 @@ func _init() -> void:
 			_fail("Could not deploy %s in %s: %s" % [deployment[0], deployment[1], JSON.stringify(deploy_result)])
 			return
 
+	var formation_slot: Dictionary = device_system.get_slot("wall_slot_01")
+	var formation_anchor := _vector3_from_dict(formation_slot.get("position", {}))
+	formation_anchor.y = 0.0
+	var outward := _vector3_from_dict(formation_slot.get("facing_direction", {"z": 1.0})).normalized()
+	var tangent := Vector3(outward.z, 0.0, -outward.x).normalized()
+	var front_count := 0
+	var back_count := 0
+	for npc_id in COMBATANT_LOADOUTS:
+		var unit_type := str(equipment_system.get_npc_unit_type(npc_id))
+		if unit_type in ["archer", "crossbowman", "mounted_ranged"]:
+			back_count += 1
+		else:
+			front_count += 1
 	var front_index := 0
 	var back_index := 0
 	for npc_id in COMBATANT_LOADOUTS:
 		var unit_type := str(equipment_system.get_npc_unit_type(npc_id))
 		var is_ranged := ["archer", "crossbowman", "mounted_ranged"].has(unit_type)
-		var position := Vector3(float((back_index if is_ranged else front_index) - 2) * 2.1, 0.0, 14.2 if is_ranged else 16.2)
+		var lane_index := back_index if is_ranged else front_index
+		var lane_count := back_count if is_ranged else front_count
+		var lateral := (float(lane_index) - float(lane_count - 1) * 0.5) * 2.1
+		var position := formation_anchor + tangent * lateral + outward * (-3.0 if is_ranged else 2.0)
+		position.y = 0.0
 		if is_ranged:
 			back_index += 1
 		else:
@@ -153,22 +170,28 @@ func _init() -> void:
 			_fail("Could not put %s into combat mode: %s" % [npc_id, JSON.stringify(mode_result)])
 			return
 
-	var elapsed_combat_seconds := 0
-	while combat_system.get_active_enemy_count() > 0 and not bool(game_state.get("game_over")) and elapsed_combat_seconds < 3600:
-		combat_system.debug_step_enemy_ai(60.0)
-		# Formal combatants are CharacterBody3D actors. Let the physics server
-		# publish their requested movement before sweeping the newly released
-		# projectile paths, matching the order used by the live scene.
+	# Combat uses the production x1 slowdown: one real physics second equals one
+	# combat second. Do not advance 60 seconds of authority behind a single
+	# physics frame; ActorMotion, contact sweeps and physical projectiles must all
+	# receive every fixed frame exactly as they do in Main.
+	var combat_frame_count := 0
+	var physics_fps := maxi(1, Engine.physics_ticks_per_second)
+	var max_combat_frames := physics_fps * 180
+	while (
+		combat_system.get_active_enemy_count() > 0
+		and not bool(game_state.get("game_over"))
+		and combat_frame_count < max_combat_frames
+	):
 		await physics_frame
-		combat_system.debug_advance_combat_projectiles(1.0)
-		device_system.debug_advance_defense_devices(60.0)
-		elapsed_combat_seconds += 1
+		await process_frame
+		combat_frame_count += 1
+	var elapsed_combat_seconds := float(combat_frame_count) / float(physics_fps)
 
 	if str(game_state.get("game_result")) == "failure":
 		_fail("The confirmed fifth-wave build failed: %s" % str(game_state.get("failure_reason")))
 		return
 	if combat_system.get_active_enemy_count() != 0:
-		_fail("The confirmed fifth-wave build did not clear all enemies within 3600 combat seconds")
+		_fail("The confirmed fifth-wave build did not clear all enemies within 180 live combat seconds")
 		return
 	if str(game_state.get("game_result")) != "victory" or str(game_state.get("game_over_reason")) != "five_waves_survived":
 		_fail("Clearing the confirmed fifth-wave build should produce the five-wave victory result")
@@ -182,7 +205,7 @@ func _init() -> void:
 	for npc_id in COMBATANT_LOADOUTS:
 		if not bool(npc_system.get_npc_state(npc_id).get("unconscious", false)):
 			conscious_count += 1
-	print("T0121 fifth-wave build verification passed: enemies=48 elapsed=%ds main_hall=%d/%d conscious=%d/7" % [
+	print("T0121 fifth-wave build verification passed: enemies=48 elapsed=%.2fs main_hall=%d/%d conscious=%d/7" % [
 		elapsed_combat_seconds,
 		int(main_hall.get("hp", 0)),
 		int(main_hall.get("max_hp", 0)),
@@ -204,6 +227,15 @@ func _set_npc_world_position(npc_system: Node, npc_id: String, position: Vector3
 	var npc_node := npc_system.get_node_or_null(npc_paths.get(npc_id, NodePath(""))) as Node3D
 	if npc_node != null:
 		npc_node.global_position = position
+
+
+func _vector3_from_dict(value: Variant) -> Vector3:
+	var source: Dictionary = value if value is Dictionary else {}
+	return Vector3(
+		float(source.get("x", 0.0)),
+		float(source.get("y", 0.0)),
+		float(source.get("z", 0.0))
+	)
 
 
 func _fail(message: String) -> void:

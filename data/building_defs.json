@@ -184,48 +184,56 @@
         "id": "dining_seat_01",
         "type": "dining_seat",
         "name": "用餐席1",
+        "assigned_npc_id": "stableman_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_02",
         "type": "dining_seat",
         "name": "用餐席2",
+        "assigned_npc_id": "cook_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_03",
         "type": "dining_seat",
         "name": "用餐席3",
+        "assigned_npc_id": "gardener_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_04",
         "type": "dining_seat",
         "name": "用餐席4",
+        "assigned_npc_id": "blacksmith_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_05",
         "type": "dining_seat",
         "name": "用餐席5",
+        "assigned_npc_id": "veteran_deputy_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_06",
         "type": "dining_seat",
         "name": "用餐席6",
+        "assigned_npc_id": "priest_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_07",
         "type": "dining_seat",
         "name": "用餐席7",
+        "assigned_npc_id": "doctor_01",
         "occupied_by": null
       },
       {
         "id": "dining_seat_08",
         "type": "dining_seat",
         "name": "用餐席8",
+        "assigned_npc_id": "engineer_01",
         "occupied_by": null
       },
       {
@@ -376,10 +384,37 @@
     },
     "upgrade": {
       "cost": {"stone": 3},
-      "max_level": 2,
+      "max_level": 6,
       "max_hp_bonus": 25,
       "workstation_bonus": 0,
-      "workstation_type": "gate"
+      "workstation_type": "gate",
+      "level_effects": {
+        "2": {
+          "cost": {"stone": 3},
+          "duration_seconds": 3600,
+          "max_hp_bonus": 25
+        },
+        "3": {
+          "cost": {"stone": 4},
+          "duration_seconds": 5400,
+          "max_hp_bonus": 45
+        },
+        "4": {
+          "cost": {"stone": 5, "wood": 1},
+          "duration_seconds": 7200,
+          "max_hp_bonus": 35
+        },
+        "5": {
+          "cost": {"stone": 6, "wood": 1},
+          "duration_seconds": 9000,
+          "max_hp_bonus": 55
+        },
+        "6": {
+          "cost": {"stone": 8, "wood": 2},
+          "duration_seconds": 10800,
+          "max_hp_bonus": 45
+        }
+      }
     }
   },
   {
@@ -672,48 +707,56 @@
         "id": "chapel_prayer_seat_01",
         "type": "chapel_prayer_seat",
         "name": "祈祷席1",
+        "assigned_npc_id": "stableman_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_02",
         "type": "chapel_prayer_seat",
         "name": "祈祷席2",
+        "assigned_npc_id": "cook_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_03",
         "type": "chapel_prayer_seat",
         "name": "祈祷席3",
+        "assigned_npc_id": "gardener_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_04",
         "type": "chapel_prayer_seat",
         "name": "祈祷席4",
+        "assigned_npc_id": "blacksmith_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_05",
         "type": "chapel_prayer_seat",
         "name": "祈祷席5",
+        "assigned_npc_id": "veteran_deputy_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_06",
         "type": "chapel_prayer_seat",
         "name": "祈祷席6",
+        "assigned_npc_id": "priest_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_07",
         "type": "chapel_prayer_seat",
         "name": "祈祷席7",
+        "assigned_npc_id": "doctor_01",
         "occupied_by": null
       },
       {
         "id": "chapel_prayer_seat_08",
         "type": "chapel_prayer_seat",
         "name": "祈祷席8",
+        "assigned_npc_id": "engineer_01",
         "occupied_by": null
       },
       {

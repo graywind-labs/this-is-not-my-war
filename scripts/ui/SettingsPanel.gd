@@ -6,6 +6,7 @@ const AudioSettingsPanelClass = preload("res://scripts/ui/AudioSettingsPanel.gd"
 const FrontendStyles = preload("res://scripts/ui/FrontendStyles.gd")
 const PANEL_SIZE := Vector2(840.0, 590.0)
 const RESOLUTIONS := [Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080)]
+const AI_CONFIG_URL := "http://127.0.0.1:5000/config/ai-service"
 
 var _tab_buttons: Array[Button] = []
 var _pages: Array[Control] = []
@@ -23,9 +24,15 @@ var _ai_model: LineEdit
 var _ai_base_url: LineEdit
 var _ai_key: LineEdit
 var _ai_custom_fields: VBoxContainer
+var _ai_test_button: Button
+var _apply_button: Button
+var _ai_http_request: HTTPRequest
 var _status_label: Label
 var _selected_tab := 0
 var _opening_audio_snapshot: Dictionary = {}
+var _pending_ai_request_kind := ""
+var _pending_client_draft: Dictionary = {}
+var _backend_api_key_present := false
 
 
 func _ready() -> void:
@@ -33,6 +40,11 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_build_panel()
+	_ai_http_request = HTTPRequest.new()
+	_ai_http_request.name = "AIServiceRequest"
+	_ai_http_request.timeout = 35.0
+	_ai_http_request.request_completed.connect(_on_ai_request_completed)
+	add_child(_ai_http_request)
 	_select_tab(0)
 
 
@@ -46,6 +58,7 @@ func open_panel(tab_index := 0) -> void:
 	_select_tab(clampi(tab_index, 0, _pages.size() - 1))
 	if not _tab_buttons.is_empty():
 		_tab_buttons[_selected_tab].grab_focus()
+	_request_ai_service("load", HTTPClient.METHOD_GET, {})
 
 
 func close_panel(cancel_changes := true) -> void:
@@ -85,6 +98,8 @@ func debug_get_snapshot() -> Dictionary:
 		"ai_mode": _ai_mode.get_item_metadata(_ai_mode.selected) if _ai_mode != null else "",
 		"api_key_text_length": _ai_key.text.length() if _ai_key != null else -1,
 		"api_key_secret": _ai_key.secret if _ai_key != null else false,
+		"backend_api_key_present": _backend_api_key_present,
+		"ai_request_kind": _pending_ai_request_kind,
 		"status": _status_label.text if _status_label != null else ""
 	}
 
@@ -187,11 +202,11 @@ func _build_panel() -> void:
 	cancel_button.text = "取消"
 	cancel_button.pressed.connect(close_panel.bind(true))
 	footer.add_child(cancel_button)
-	var apply_button := Button.new()
-	apply_button.name = "ApplyButton"
-	apply_button.text = "应用"
-	apply_button.pressed.connect(_apply_changes)
-	footer.add_child(apply_button)
+	_apply_button = Button.new()
+	_apply_button.name = "ApplyButton"
+	_apply_button.text = "应用"
+	_apply_button.pressed.connect(_apply_changes)
+	footer.add_child(_apply_button)
 
 
 func _build_graphics_page() -> Control:
@@ -297,7 +312,6 @@ func _build_ai_page() -> Control:
 	_ai_provider = OptionButton.new()
 	_add_option(_ai_provider, "OpenAI 兼容服务", "openai_compatible")
 	_add_option(_ai_provider, "DeepSeek", "deepseek")
-	_add_option(_ai_provider, "其他自建后端", "custom_backend")
 	_add_labeled_control(_ai_custom_fields, "Provider", _ai_provider)
 	_ai_model = LineEdit.new()
 	_ai_model.placeholder_text = "例如：deepseek-v4-flash"
@@ -309,7 +323,7 @@ func _build_ai_page() -> Control:
 	_ai_key = LineEdit.new()
 	_ai_key.name = "ApiKeyInput"
 	_ai_key.secret = true
-	_ai_key.placeholder_text = "API Key（本版本不会保存或提交）"
+	_ai_key.placeholder_text = "API Key"
 	_ai_key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	key_row.add_child(_ai_key)
 	var reveal := CheckButton.new()
@@ -318,13 +332,13 @@ func _build_ai_page() -> Control:
 	key_row.add_child(reveal)
 	_add_labeled_control(_ai_custom_fields, "API Key", key_row)
 
-	var test_button := Button.new()
-	test_button.name = "TestAiConnectionButton"
-	test_button.text = "测试连接"
-	test_button.pressed.connect(_show_ai_connection_placeholder)
-	content.add_child(test_button)
+	_ai_test_button = Button.new()
+	_ai_test_button.name = "TestAiConnectionButton"
+	_ai_test_button.text = "测试连接"
+	_ai_test_button.pressed.connect(_test_ai_connection)
+	content.add_child(_ai_test_button)
 	var security_hint := Label.new()
-	security_hint.text = "安全提示：API Key 不进入存档、普通配置或日志。凭据传递与试玩服务将在后续机制任务接入。"
+	security_hint.text = "试玩默认 API 由试玩包后端提供。自定义 Key 只发送到本机后端并使用系统凭据保护，不进入存档、普通配置或日志。"
 	security_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	security_hint.modulate = Color(0.85, 0.67, 0.42, 1.0)
 	content.add_child(security_hint)
@@ -375,7 +389,7 @@ func _sync_controls() -> void:
 		_audio_page.sync_from_manager()
 	var client_settings := get_node_or_null("/root/ClientSettings")
 	var snapshot: Dictionary = client_settings.get_snapshot() if client_settings != null else {}
-	_select_option_by_metadata(_display_mode, str(snapshot.get("display_mode", "windowed")))
+	_select_option_by_metadata(_display_mode, str(snapshot.get("display_mode", "fullscreen")))
 	_select_option_by_metadata(_resolution, snapshot.get("resolution", Vector2i(1280, 720)))
 	_vsync.button_pressed = bool(snapshot.get("vsync", true))
 	_select_option_by_metadata(_max_fps, int(snapshot.get("max_fps", 60)))
@@ -386,6 +400,7 @@ func _sync_controls() -> void:
 	_ai_model.text = str(snapshot.get("ai_model", ""))
 	_ai_base_url.text = str(snapshot.get("ai_base_url", ""))
 	_ai_key.clear()
+	_backend_api_key_present = false
 	_on_ai_mode_changed(_ai_mode.selected)
 	_on_ui_scale_changed(_ui_scale.value)
 
@@ -434,14 +449,22 @@ func _apply_changes() -> void:
 		audio_manager.save_settings()
 		_opening_audio_snapshot = audio_manager.get_volume_snapshot()
 	var client_settings := get_node_or_null("/root/ClientSettings")
-	var result: Dictionary = client_settings.apply_settings(_collect_client_draft(), true) if client_settings != null else {"ok": false}
-	var key_pending := not _ai_key.text.is_empty()
-	_status_label.modulate = FrontendStyles.make_status_color(key_pending or not bool(result.get("ok", false)))
-	_status_label.text = (
-		"设置已应用；API Key 未保存，凭据机制尚未接入。"
-		if key_pending
-		else ("设置已应用。" if bool(result.get("ok", false)) else "设置无法写入本地配置。")
-	)
+	_pending_client_draft = _collect_client_draft()
+	var local_draft: Dictionary = _pending_client_draft.duplicate(true)
+	if client_settings != null:
+		var active_snapshot: Dictionary = client_settings.get_snapshot()
+		for key in ["ai_mode", "ai_provider", "ai_model", "ai_base_url"]:
+			local_draft[key] = active_snapshot.get(key, local_draft.get(key))
+	var result: Dictionary = client_settings.apply_settings(local_draft, true) if client_settings != null else {"ok": false}
+	if not bool(result.get("ok", false)):
+		_status_label.modulate = FrontendStyles.make_status_color(true)
+		_status_label.text = "画面设置无法写入本地配置。"
+		return
+	var request_body := _collect_ai_request_body()
+	request_body["test_connection"] = true
+	if not _request_ai_service("apply", HTTPClient.METHOD_PUT, request_body):
+		_status_label.modulate = FrontendStyles.make_status_color(true)
+		_status_label.text = "本地设置已应用；AI 服务配置请求无法启动。"
 
 
 func _reset_controls() -> void:
@@ -457,7 +480,7 @@ func _reset_controls() -> void:
 	_audio_page.set_audio_values(audio_defaults, false)
 	var client_settings := get_node_or_null("/root/ClientSettings")
 	var defaults: Dictionary = client_settings.get_default_snapshot() if client_settings != null else {}
-	_select_option_by_metadata(_display_mode, defaults.get("display_mode", "windowed"))
+	_select_option_by_metadata(_display_mode, defaults.get("display_mode", "fullscreen"))
 	_select_option_by_metadata(_resolution, defaults.get("resolution", Vector2i(1280, 720)))
 	_vsync.button_pressed = bool(defaults.get("vsync", true))
 	_select_option_by_metadata(_max_fps, int(defaults.get("max_fps", 60)))
@@ -468,6 +491,7 @@ func _reset_controls() -> void:
 	_ai_model.text = ""
 	_ai_base_url.text = ""
 	_ai_key.clear()
+	_backend_api_key_present = false
 	_on_ai_mode_changed(_ai_mode.selected)
 	_status_label.modulate = FrontendStyles.make_status_color(false)
 	_status_label.text = "已恢复默认预览；点击“应用”后保存。"
@@ -478,6 +502,81 @@ func _restore_opening_values() -> void:
 		_audio_page.set_audio_values(_opening_audio_snapshot, true)
 
 
-func _show_ai_connection_placeholder() -> void:
-	_status_label.modulate = FrontendStyles.make_status_color(true)
-	_status_label.text = "AI 连接与安全凭据机制尚未接入；本次没有发送请求或保存 Key。"
+func _test_ai_connection() -> void:
+	_request_ai_service("test", HTTPClient.METHOD_POST, _collect_ai_request_body(), "/test")
+
+
+func _collect_ai_request_body() -> Dictionary:
+	return {
+		"mode": str(_ai_mode.get_item_metadata(_ai_mode.selected)),
+		"provider": str(_ai_provider.get_item_metadata(_ai_provider.selected)),
+		"model": _ai_model.text.strip_edges(),
+		"base_url": _ai_base_url.text.strip_edges(),
+		"api_key": _ai_key.text.strip_edges(),
+	}
+
+
+func _request_ai_service(kind: String, method: int, body: Dictionary, suffix := "") -> bool:
+	if _ai_http_request == null or _pending_ai_request_kind != "":
+		return false
+	var headers := PackedStringArray(["Accept: application/json"])
+	var body_text := ""
+	if method != HTTPClient.METHOD_GET:
+		headers.append("Content-Type: application/json; charset=utf-8")
+		body_text = JSON.stringify(body)
+	var err := _ai_http_request.request(AI_CONFIG_URL + suffix, headers, method, body_text)
+	if err != OK:
+		return false
+	_pending_ai_request_kind = kind
+	_set_ai_busy(true)
+	_status_label.modulate = FrontendStyles.make_status_color(false)
+	_status_label.text = "正在读取 AI 服务……" if kind == "load" else ("正在测试 AI 服务……" if kind == "test" else "正在验证并应用 AI 服务……")
+	return true
+
+
+func _on_ai_request_completed(_result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var kind := _pending_ai_request_kind
+	_pending_ai_request_kind = ""
+	_set_ai_busy(false)
+	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
+	var response: Dictionary = parsed if parsed is Dictionary else {}
+	if response_code < 200 or response_code >= 300 or not bool(response.get("ok", false)):
+		var error_code := str(response.get("error_code", "backend_unreachable" if response_code == 0 else "invalid_backend_response"))
+		var message := str(response.get("message", "无法连接同包本地后端。" if response_code == 0 else "本地后端返回了无效响应。"))
+		_status_label.modulate = FrontendStyles.make_status_color(true)
+		_status_label.text = "AI 服务错误 [%s]%s：%s" % [error_code, " / HTTP %d" % response_code if response_code > 0 else "", message]
+		_pending_client_draft.clear()
+		return
+	if kind != "test":
+		_apply_ai_service_snapshot(response)
+	_status_label.modulate = FrontendStyles.make_status_color(false)
+	if kind == "apply":
+		var client_settings := get_node_or_null("/root/ClientSettings")
+		if client_settings != null:
+			client_settings.apply_settings(_pending_client_draft, true)
+		_pending_client_draft.clear()
+		_ai_key.clear()
+		_status_label.text = "AI 服务已验证并应用；后续请求将使用此服务。"
+	elif kind == "test":
+		_status_label.text = "AI 服务连接成功。"
+	else:
+		_status_label.text = "AI 服务配置已读取。"
+
+
+func _apply_ai_service_snapshot(snapshot: Dictionary) -> void:
+	var mode := str(snapshot.get("mode", "trial"))
+	_select_option_by_metadata(_ai_mode, mode)
+	if mode == "custom":
+		_select_option_by_metadata(_ai_provider, str(snapshot.get("provider", "openai_compatible")))
+		_ai_model.text = str(snapshot.get("model", ""))
+		_ai_base_url.text = str(snapshot.get("base_url", ""))
+	_backend_api_key_present = bool(snapshot.get("api_key_present", false))
+	_ai_key.placeholder_text = "已安全保存（留空保留）" if _backend_api_key_present and mode == "custom" else "API Key"
+	_on_ai_mode_changed(_ai_mode.selected)
+
+
+func _set_ai_busy(busy: bool) -> void:
+	if _ai_test_button != null:
+		_ai_test_button.disabled = busy
+	if _apply_button != null:
+		_apply_button.disabled = busy

@@ -1,0 +1,380 @@
+{
+  "coordinate_space": "building_local_or_station_for_plaza",
+  "locations": {
+    "blacksmith": {
+      "blacksmith_01": [
+        4.75,
+        -4.75
+      ],
+      "cook_01": [
+        6.0,
+        4.5
+      ],
+      "doctor_01": [
+        -6.0,
+        0.5
+      ],
+      "engineer_01": [
+        2.5,
+        3
+      ],
+      "gardener_01": [
+        -5.25,
+        5.0
+      ],
+      "priest_01": [
+        3.5,
+        0.0
+      ],
+      "stableman_01": [
+        -6.0,
+        -4.5
+      ],
+      "veteran_deputy_01": [
+        -1.5,
+        0.0
+      ]
+    },
+    "chapel": {
+      "blacksmith_01": [
+        -2.0,
+        -3.75
+      ],
+      "cook_01": [
+        5.0,
+        -3.0
+      ],
+      "doctor_01": [
+        3.0,
+        -3.25
+      ],
+      "engineer_01": [
+        -3.25,
+        -5.0
+      ],
+      "gardener_01": [
+        2.25,
+        -5.0
+      ],
+      "priest_01": [
+        4.5,
+        -5.0
+      ],
+      "stableman_01": [
+        -5.0,
+        -5.0
+      ],
+      "veteran_deputy_01": [
+        -4.25,
+        -3.0
+      ]
+    },
+    "clinic": {
+      "blacksmith_01": [
+        -4.75,
+        -3.5
+      ],
+      "cook_01": [
+        5.0,
+        -3.5
+      ],
+      "doctor_01": [
+        -1.5,
+        -5.0
+      ],
+      "engineer_01": [
+        2.25,
+        1.75
+      ],
+      "gardener_01": [
+        3.75,
+        5.0
+      ],
+      "priest_01": [
+        1.5,
+        -1.75
+      ],
+      "stableman_01": [
+        -5.0,
+        5.0
+      ],
+      "veteran_deputy_01": [
+        -1.5,
+        1.0
+      ]
+    },
+    "dining_hall": {
+      "blacksmith_01": [
+        4.75,
+        -5.0
+      ],
+      "cook_01": [
+        6.0,
+        5.0
+      ],
+      "doctor_01": [
+        6.0,
+        0.0
+      ],
+      "engineer_01": [
+        -1.5,
+        -3.0
+      ],
+      "gardener_01": [
+        -4.25,
+        5.0
+      ],
+      "priest_01": [
+        -6.0,
+        0.25
+      ],
+      "stableman_01": [
+        -6.0,
+        -5.0
+      ],
+      "veteran_deputy_01": [
+        1.5,
+        2.5
+      ]
+    },
+    "dormitory": {
+      "blacksmith_01": [
+        2.0,
+        -1.25
+      ],
+      "cook_01": [
+        1.5,
+        3.75
+      ],
+      "doctor_01": [
+        -1.75,
+        -1.25
+      ],
+      "engineer_01": [
+        1.75,
+        1.25
+      ],
+      "gardener_01": [
+        -2.0,
+        1.25
+      ],
+      "priest_01": [
+        1.5,
+        -3.75
+      ],
+      "stableman_01": [
+        -1.5,
+        -3.75
+      ],
+      "veteran_deputy_01": [
+        -1.5,
+        3.75
+      ]
+    },
+    "garden": {
+      "blacksmith_01": [
+        1.5,
+        -0.25
+      ],
+      "cook_01": [
+        -2.5,
+        4.5
+      ],
+      "doctor_01": [
+        -5.0,
+        4.5
+      ],
+      "engineer_01": [
+        1.5,
+        -5.0
+      ],
+      "gardener_01": [
+        5.0,
+        -4.75
+      ],
+      "priest_01": [
+        -1.5,
+        -3.0
+      ],
+      "stableman_01": [
+        -5.0,
+        -5.0
+      ],
+      "veteran_deputy_01": [
+        -4.75,
+        0.5
+      ]
+    },
+    "plaza": {
+      "blacksmith_01": [
+        5.0,
+        9.0
+      ],
+      "cook_01": [
+        -5.0,
+        9.0
+      ],
+      "doctor_01": [
+        0.0,
+        16.0
+      ],
+      "engineer_01": [
+        10.0,
+        15.0
+      ],
+      "gardener_01": [
+        0.0,
+        6.0
+      ],
+      "priest_01": [
+        -10.0,
+        15.0
+      ],
+      "stableman_01": [
+        -10.0,
+        6.0
+      ],
+      "veteran_deputy_01": [
+        10.0,
+        6.0
+      ]
+    },
+    "stable": {
+      "blacksmith_01": [
+        1.0,
+        3.0
+      ],
+      "cook_01": [
+        0.75,
+        -5.5
+      ],
+      "doctor_01": [
+        -1.0,
+        2.25
+      ],
+      "engineer_01": [
+        1.0,
+        0.75
+      ],
+      "gardener_01": [
+        -1.0,
+        0.0
+      ],
+      "priest_01": [
+        -1.0,
+        -3.75
+      ],
+      "stableman_01": [
+        -0.75,
+        -1.5
+      ],
+      "veteran_deputy_01": [
+        1.0,
+        -2.5
+      ]
+    },
+    "tavern": {
+      "blacksmith_01": [
+        1.75,
+        2.5
+      ],
+      "cook_01": [
+        4.75,
+        -3.75
+      ],
+      "doctor_01": [
+        5.0,
+        0.0
+      ],
+      "engineer_01": [
+        -1.5,
+        -2
+      ],
+      "gardener_01": [
+        -3.25,
+        -4.0
+      ],
+      "priest_01": [
+        1.5,
+        -4
+      ],
+      "stableman_01": [
+        -5.0,
+        3.75
+      ],
+      "veteran_deputy_01": [
+        -2.0,
+        0.25
+      ]
+    },
+    "training_ground": {
+      "blacksmith_01": [
+        -6.0,
+        5.75
+      ],
+      "cook_01": [
+        6.0,
+        7.0
+      ],
+      "doctor_01": [
+        1.5,
+        5.0
+      ],
+      "engineer_01": [
+        1.5,
+        -7.0
+      ],
+      "gardener_01": [
+        6.0,
+        -5.25
+      ],
+      "priest_01": [
+        4.5,
+        1.0
+      ],
+      "stableman_01": [
+        -6.0,
+        -7.0
+      ],
+      "veteran_deputy_01": [
+        -1.5,
+        -0.75
+      ]
+    },
+    "workshop": {
+      "blacksmith_01": [
+        -2.25,
+        -3.0
+      ],
+      "cook_01": [
+        5.0,
+        -2.75
+      ],
+      "doctor_01": [
+        -2,
+        3
+      ],
+      "engineer_01": [
+        -2.0,
+        1.0
+      ],
+      "gardener_01": [
+        2.5,
+        4.75
+      ],
+      "priest_01": [
+        1.5,
+        -4.75
+      ],
+      "stableman_01": [
+        -5.0,
+        3.5
+      ],
+      "veteran_deputy_01": [
+        1.5,
+        0.25
+      ]
+    }
+  },
+  "schema_version": "npc_stay_positions_v1"
+}

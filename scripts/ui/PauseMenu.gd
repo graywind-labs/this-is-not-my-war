@@ -31,6 +31,9 @@ func _ready() -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.pressed or event.echo or event.keycode != KEY_ESCAPE:
 		return
+	if _is_tutorial_static_frame_input_locked():
+		get_viewport().set_input_as_handled()
+		return
 	if _return_menu_dialog.visible:
 		_return_menu_dialog.hide()
 	elif _exit_desktop_dialog.visible:
@@ -47,7 +50,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func open_menu() -> void:
-	if visible:
+	if visible or _is_tutorial_static_frame_input_locked():
 		return
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
 	_paused_before_open = bool(time_system.is_gameplay_paused()) if time_system != null and time_system.has_method("is_gameplay_paused") else false
@@ -77,6 +80,15 @@ func is_open() -> bool:
 	return visible
 
 
+func _is_tutorial_static_frame_input_locked() -> bool:
+	var overlay := get_node_or_null("../TutorialOverlay")
+	return (
+		overlay != null
+		and overlay.has_method("is_static_frame_input_locked")
+		and bool(overlay.is_static_frame_input_locked())
+	)
+
+
 func debug_get_snapshot() -> Dictionary:
 	var time_system := get_node_or_null("/root/Main/Systems/TimeSystem")
 	return {
@@ -84,7 +96,7 @@ func debug_get_snapshot() -> Dictionary:
 		"paused_before_open": _paused_before_open,
 		"pause_applied_by_menu": _pause_applied_by_menu,
 		"gameplay_paused": bool(time_system.is_gameplay_paused()) if time_system != null and time_system.has_method("is_gameplay_paused") else false,
-		"button_order": ["快速保存", "保存游戏", "加载游戏", "设置", "退出到主菜单", "退出到桌面"],
+		"button_order": ["固定最近检查点", "保存游戏", "加载游戏", "设置", "退出到主菜单", "退出到桌面"],
 		"settings_visible": _settings_panel != null and _settings_panel.visible,
 		"save_browser_visible": _save_browser != null and _save_browser.visible,
 		"save_browser": _save_browser.debug_get_snapshot() if _save_browser != null else {},
@@ -150,7 +162,7 @@ func _build_menu() -> void:
 
 	var divider := HSeparator.new()
 	content.add_child(divider)
-	var quick_button := _make_button("QuickSaveButton", "快速保存")
+	var quick_button := _make_button("QuickSaveButton", "固定最近检查点")
 	quick_button.pressed.connect(_on_quick_save_pressed)
 	content.add_child(quick_button)
 	var save_button := _make_button("SaveGameButton", "保存游戏")
@@ -229,8 +241,15 @@ func _restore_pause_state() -> void:
 
 
 func _on_quick_save_pressed() -> void:
-	_status_label.modulate = FrontendStyles.make_status_color(true)
-	_status_label.text = "快速存档将在 T0355 接入；本次没有写入任何文件。"
+	var save_system := get_node_or_null("/root/Main/Systems/GameSaveSystem")
+	if save_system == null:
+		_status_label.modulate = FrontendStyles.make_status_color(true)
+		_status_label.text = "存档协调器不可用。"
+		return
+	var result: Dictionary = save_system.pin_latest_checkpoint("quick_0", "快速检查点")
+	var ok := bool(result.get("ok", false))
+	_status_label.modulate = FrontendStyles.make_status_color(not ok)
+	_status_label.text = "最近检查点已固定；之后的进度不包含在内。" if ok else "尚无可固定的开局或战后检查点。"
 
 
 func _on_save_pressed() -> void:

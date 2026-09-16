@@ -309,10 +309,10 @@ def main() -> None:
     assert real_result.usage["input_tokens"] == 123
     assert real_result.usage["output_tokens"] == 45
     assert real_result.usage["estimated_cost"] > 0.0
-    assert real_result.usage["model"] == "deepseek-v4-flash"
+    assert real_result.usage["model"] == "deepseek-v4-pro"
     fake_call = fake_post.call_args
     assert fake_call.args[0] == "https://api.deepseek.com/chat/completions"
-    assert fake_call.kwargs["json"]["model"] == "deepseek-v4-flash"
+    assert fake_call.kwargs["json"]["model"] == "deepseek-v4-pro"
     assert fake_call.kwargs["headers"]["Authorization"] == "Bearer test_key"
 
     usage_before_invalid = real_adapter.get_usage_summary()

@@ -4,6 +4,7 @@ const CLICK_AREA_NAME := "NoticeBoardClickArea"
 const CAMERA_PATH := "/root/Main/CameraRig/Camera3D"
 const MEMORY_SYSTEM_PATH := "/root/Main/Systems/MemorySystem"
 const PICK_RAY_LENGTH := 1000.0
+const MAX_PICK_HITS := 64
 const PREVIEW_LENGTH := 18
 const CLICK_SHAPE_SIZE := Vector3(3.0, 3.25, 1.2)
 
@@ -100,12 +101,19 @@ func _is_notice_board_at_screen_position(screen_position: Vector2) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
 	query.collide_with_areas = true
 	query.collide_with_bodies = false
-	var result := get_viewport().world_3d.direct_space_state.intersect_ray(query)
-	if result.is_empty():
-		return false
-	var collider := result.get("collider") as Node
-	while collider != null:
-		if bool(collider.get_meta("notice_board_hotspot", false)):
-			return true
-		collider = collider.get_parent()
+	var excluded: Array[RID] = []
+	for _hit_index in range(MAX_PICK_HITS):
+		query.exclude = excluded
+		var result := get_viewport().world_3d.direct_space_state.intersect_ray(query)
+		if result.is_empty():
+			return false
+		var collider := result.get("collider") as Node
+		var current := collider
+		while current != null:
+			if bool(current.get_meta("notice_board_hotspot", false)):
+				return true
+			current = current.get_parent()
+		if not (collider is CollisionObject3D):
+			return false
+		excluded.append((collider as CollisionObject3D).get_rid())
 	return false

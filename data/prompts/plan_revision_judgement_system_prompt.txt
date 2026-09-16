@@ -16,6 +16,8 @@ npc.short_term_memory 按发生顺序包含本次熟睡总结轮转后仍在短�
 
 - dialogue：根据 dialogue_history、dialogue_end_reason、dialogue_context 和 current_plan 判断本轮实际对话是否改变安排。
 - action_failure：根据 failed_plan_item、failure_type、failure_summary、failure_context 和 current_plan 判断程序已经确认的行动失败是否需要改变当前或未来安排。失败事实是权威输入，不得否认、改写或自行结算。
+- `failure_type=high_fatigue` 表示 NPC 疲劳已经达到上限、全部工作产出效率已被程序大幅降低；当前小时由 `required_revision_hours` 强制纳入修订，另判断后续连续工作是否也应改为睡眠或其他合理休息。
+- `failure_type=low_satiety` 表示 NPC 饱食已经降到 0；继续工作、训练或正式战斗时，无法支付的饱食会按程序倍率转换为 HP 损失。当前小时由 `required_revision_hours` 强制纳入修订；结合当前 HP、食物储备、合法吃饭候选及后续连续工作 / 训练安排，选择最小且真实受影响的未来小时。不得把空闲、对话、普通移动、集结、避战、逃离、吃饭、睡眠、祈祷、饮酒、病床或昏迷恢复误判为饥饿换血活动。
 
 共同规则：
 

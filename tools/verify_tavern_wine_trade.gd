@@ -37,8 +37,8 @@ func _init() -> void:
 		push_error("Tavern work should use intelligence as its attribute")
 		quit(1)
 		return
-	if int(tavern_action.get("input_resources", {}).get("grain", 0)) != 1:
-		push_error("Tavern work should consume 1 grain")
+	if int(tavern_action.get("input_resources", {}).get("grain", 0)) != 2:
+		push_error("Tavern work should consume 2 grain after T0418")
 		quit(1)
 		return
 	if int(tavern_action.get("output_resources", {}).get("wine", 0)) != 1:
@@ -53,6 +53,10 @@ func _init() -> void:
 	_set_debug_move_speed(cook_id, 5.0)
 
 	var base_duration := float(tavern_action.get("duration_seconds", 3600.0))
+	if not is_equal_approx(base_duration, 3600.0):
+		push_error("Tavern base brewing cycle should remain 3600 seconds after T0418")
+		quit(1)
+		return
 	var cook_duration_level_1: float = action_system._get_effective_action_duration_seconds(tavern_action, cook_id)
 	var blacksmith_duration: float = action_system._get_effective_action_duration_seconds(tavern_action, blacksmith_id)
 	if not (cook_duration_level_1 < blacksmith_duration and cook_duration_level_1 < base_duration):
@@ -64,6 +68,17 @@ func _init() -> void:
 	var high_int_duration: float = action_system._get_effective_action_duration_seconds(tavern_action, priest_id)
 	if not high_int_duration < cook_duration_level_1:
 		push_error("Intelligence did not improve tavern efficiency when brewing skill is comparable")
+		quit(1)
+		return
+	var marcel_level_1_output := int(action_system._get_work_output_resources(tavern_action, priest_id).get("wine", 0))
+	if marcel_level_1_output != 2:
+		push_error("Marcel should produce 2 wine at tavern level 1 without an intelligence output bonus")
+		quit(1)
+		return
+	_set_profile_skill_and_intelligence(npc_system, priest_id, 58, 5)
+	var lower_int_output := int(action_system._get_work_output_resources(tavern_action, priest_id).get("wine", 0))
+	if lower_int_output != marcel_level_1_output:
+		push_error("Intelligence should not change brewing output after T0441")
 		quit(1)
 		return
 
@@ -117,8 +132,8 @@ func _init() -> void:
 		push_error("Tavern work did not complete")
 		quit(1)
 		return
-	if int(resource_system.get_resource("grain")) != grain_before - 1:
-		push_error("Tavern work did not consume exactly 1 grain")
+	if int(resource_system.get_resource("grain")) != grain_before - 2:
+		push_error("Tavern work did not consume exactly 2 grain")
 		quit(1)
 		return
 	if int(resource_system.get_resource("wine")) != wine_before + cook_level_2_output:
@@ -135,7 +150,7 @@ func _init() -> void:
 		push_error("Tavern completion event missing from NPC event log")
 		quit(1)
 		return
-	if int(work_completed.get("payload", {}).get("input_resources", {}).get("grain", 0)) != 1:
+	if int(work_completed.get("payload", {}).get("input_resources", {}).get("grain", 0)) != 2:
 		push_error("Tavern completion event missing grain input")
 		quit(1)
 		return
@@ -146,8 +161,12 @@ func _init() -> void:
 
 	resource_system.add_resource("grain", -9999)
 	npc_system.update_npc_state(cook_id, {"last_action_result": ""})
-	if action_system.debug_assign_work(cook_id, "tavern"):
-		push_error("Tavern work should fail immediately when grain is missing")
+	if not action_system.debug_assign_work(cook_id, "tavern"):
+		push_error("Tavern no-grain preflight request was not accepted")
+		quit(1)
+		return
+	if not await _wait_until_action_result(npc_system, cook_id, "work_failed_no_resources"):
+		push_error("Tavern work did not report missing resources after formal preflight")
 		quit(1)
 		return
 	var state_after_failure: Dictionary = npc_system.get_npc_state(cook_id)

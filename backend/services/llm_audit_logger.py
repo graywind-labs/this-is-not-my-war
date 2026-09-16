@@ -75,7 +75,7 @@ class LLMCallAuditLogger:
         if not self.enabled:
             return False
         record = {
-            "schema_version": 1,
+            "schema_version": 2,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "audit_id": str(audit_id),
             "event": str(event),
@@ -117,7 +117,7 @@ class LLMCallAuditLogger:
         return {
             "enabled": self.enabled,
             "format": "jsonl",
-            "schema_version": 1,
+            "schema_version": 2,
             "path": self._display_path(),
             "include_payloads": self.include_payloads,
             "last_error": self._last_error,

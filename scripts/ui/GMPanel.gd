@@ -41,6 +41,7 @@ const HORSE_SYSTEM_PATH := "/root/Main/Systems/HorseSystem"
 const MERCHANT_SYSTEM_PATH := "/root/Main/Systems/MerchantSystem"
 const SPATIAL_SAVE_SYSTEM_PATH := "/root/Main/Systems/SpatialSaveSystem"
 const EPILOGUE_SYSTEM_PATH := "/root/Main/Systems/EpilogueSystem"
+const TUTORIAL_DIRECTOR_PATH := "/root/Main/Systems/TutorialDirector"
 
 const DEFAULT_LOCATION_IDS := [
 	"plaza", "dormitory", "dining_hall", "tavern", "garden", "blacksmith",
@@ -248,6 +249,7 @@ func _build_ui() -> void:
 	var action_sections := _make_tab_sections(tabs, "正式行动")
 	var ai_sections := _make_tab_sections(tabs, "AI信息")
 
+	_add_tutorial_section(common_sections)
 	_add_resource_section(common_sections)
 	_add_time_section(common_sections)
 	_add_npc_section(common_sections)
@@ -278,6 +280,20 @@ func _make_tab_sections(tabs: TabContainer, tab_name: String) -> VBoxContainer:
 	sections.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(sections)
 	return sections
+
+
+func _add_tutorial_section(parent: VBoxContainer) -> void:
+	parent.add_child(_make_section_title("T1505 序章引导"))
+	var row := _make_row(parent)
+	var restart_button := _add_button(row, "重新加载序章", _run_tutorial_restart)
+	restart_button.name = "TutorialRestartButton"
+	restart_button.tooltip_text = "重新加载当前 Main 场景，并按默认模式从序章开头开始。"
+	var skip_button := _add_button(row, "跳过并交接", _run_tutorial_skip)
+	skip_button.name = "TutorialSkipButton"
+	skip_button.tooltip_text = "调用序章正式跳过入口，原子复位后进入第 1 日 06:00。"
+	var snapshot_button := _add_button(row, "序章快照", _show_tutorial_snapshot)
+	snapshot_button.name = "TutorialSnapshotButton"
+	snapshot_button.tooltip_text = "只读显示当前步骤、战斗和交接快照。"
 
 
 func _add_resource_section(parent: VBoxContainer) -> void:
@@ -1611,6 +1627,15 @@ func _execute_command(command: String) -> void:
 	match op:
 		"help":
 			_log(_help_text())
+		"tutorial":
+			var tutorial_mode := str(parts[1]).to_lower() if parts.size() >= 2 else "snapshot"
+			match tutorial_mode:
+				"restart", "reload":
+					_run_tutorial_restart()
+				"skip", "handoff":
+					_run_tutorial_skip()
+				_:
+					_show_tutorial_snapshot()
 		"refresh":
 			_refresh_options()
 		"snapshot":
@@ -2308,6 +2333,27 @@ func _show_time_snapshot() -> void:
 		_log("时间倍率快照：%s" % _compact(time_system.get_time_scale_snapshot()))
 	else:
 		_log("时间倍率：玩家=%s，有效=%s。" % [time_system.get_speed_label(), time_system.get_effective_speed_label()])
+
+
+func _run_tutorial_restart() -> void:
+	_log("正在重新加载 Main 并从序章开头开始。")
+	get_tree().reload_current_scene()
+
+
+func _run_tutorial_skip() -> void:
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	if tutorial_director == null or not tutorial_director.has_method("debug_skip_tutorial"):
+		_log("TutorialDirector 不可用。")
+		return
+	_log("序章跳过交接：%s" % _compact(tutorial_director.debug_skip_tutorial()))
+
+
+func _show_tutorial_snapshot() -> void:
+	var tutorial_director := get_node_or_null(TUTORIAL_DIRECTOR_PATH)
+	if tutorial_director == null or not tutorial_director.has_method("get_tutorial_snapshot"):
+		_log("TutorialDirector 不可用。")
+		return
+	_log("序章快照：%s" % _compact(tutorial_director.get_tutorial_snapshot()))
 
 
 func _show_resource_snapshot() -> void:
@@ -5355,6 +5401,7 @@ func _log(message: String) -> void:
 func _help_text() -> String:
 	return "\n".join([
 		"常用命令：",
+		"序章引导：tutorial [restart|skip|snapshot]",
 		"空间检查点：formal_spatial_save [save|load|snapshot]",
 		"战斗美术：t0133_combat_art [demo|snapshot]；倒地可配合 damage_npc <npc_id> <damage> 验证。",
 		"战斗性能：combat_perf [start|snapshot|stop]；30 秒自动停止，不改变战斗或暂停。",

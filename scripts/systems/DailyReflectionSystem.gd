@@ -55,7 +55,7 @@ func generate_daily_reflection_for_npc(npc_id: String, options: Dictionary = {})
 	if npc_system == null or memory_system == null:
 		return _failure("system_missing", "NPCSystem 或 MemorySystem 不可用。")
 	if not npc_system.has_method("get_npc") or npc_system.get_npc(npc_id).is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 
 	var trigger_clock := _resolve_trigger_clock(options)
 	var day := maxi(1, int(trigger_clock.get("day", _get_current_day())))
@@ -374,6 +374,24 @@ func has_reflected_today(npc_id: String, day: int = -1) -> bool:
 
 func get_last_reflection_result() -> Dictionary:
 	return _last_reflection_result.duplicate(true)
+
+
+func create_game_save_snapshot() -> Dictionary:
+	return {
+		"reflected_days_by_npc": _reflected_days_by_npc.duplicate(true),
+		"completed_reflection_windows_by_npc": _completed_reflection_windows_by_npc.duplicate(true),
+		"last_successful_reflection_end_by_npc": _last_successful_reflection_end_by_npc.duplicate(true),
+	}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_reflected_days_by_npc = snapshot.get("reflected_days_by_npc", {}).duplicate(true) if snapshot.get("reflected_days_by_npc", {}) is Dictionary else {}
+	_completed_reflection_windows_by_npc = snapshot.get("completed_reflection_windows_by_npc", {}).duplicate(true) if snapshot.get("completed_reflection_windows_by_npc", {}) is Dictionary else {}
+	_last_successful_reflection_end_by_npc = snapshot.get("last_successful_reflection_end_by_npc", {}).duplicate(true) if snapshot.get("last_successful_reflection_end_by_npc", {}) is Dictionary else {}
+	_pending_reflection_by_request.clear()
+	_pending_request_by_npc.clear()
+	_sleep_summary_window_by_npc.clear()
+	return {"ok": true, "npc_count": _reflected_days_by_npc.size()}
 
 
 func get_async_reflection_snapshot() -> Dictionary:

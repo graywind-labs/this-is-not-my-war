@@ -30,6 +30,7 @@ DIARY_RECORD_FIELDS = {
     "model_fallback_used",
     "debug_reason",
 }
+OPTIONAL_DIARY_RECORD_FIELDS = {"record_label"}
 NON_BUILDING_SUBJECTS = {"plaza", "notice_board"}
 PRIMARY_BUILDING_MIN_RELATIONS = {
     "stableman_01": {"stable": 4},
@@ -204,7 +205,7 @@ RECENT_ENTRY_FACT_MARKERS = {
     "veteran_deputy_01": ("城门", "训练场", "灰鬃", "轮值"),
     "priest_01": ("弥撒", "酒", "酒窖", "格伦"),
     "doctor_01": ("托马", "格伦", "欧文", "登记册"),
-    "engineer_01": ("长凳", "马厩门", "排水槽", "布鲁诺"),
+    "engineer_01": ("箭塔", "马厩门", "排水槽", "布鲁诺"),
 }
 
 
@@ -237,8 +238,12 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
     entries: set[str] = set()
     for index, raw_entry in enumerate(diary_value):
         assert isinstance(raw_entry, dict), f"{npc_id}.diary[{index}] must be an object"
-        assert set(raw_entry) == DIARY_RECORD_FIELDS, (
-            f"{npc_id}.diary[{index}] must exactly match the runtime diary record shape"
+        actual_fields = set(raw_entry)
+        assert DIARY_RECORD_FIELDS.issubset(actual_fields), (
+            f"{npc_id}.diary[{index}] is missing required runtime diary fields"
+        )
+        assert actual_fields <= DIARY_RECORD_FIELDS | OPTIONAL_DIARY_RECORD_FIELDS, (
+            f"{npc_id}.diary[{index}] contains unknown runtime diary fields"
         )
         assert int(raw_entry["day"]) == 0, f"{npc_id}.diary[{index}] must be pre-game day 0"
         period = str(raw_entry["time"]).strip()
@@ -250,7 +255,8 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
         )
         assert "我" in entry, f"{npc_id}.diary[{index}] must be first person"
         assert "玩家" not in entry, f"{npc_id}.diary[{index}] must not use 玩家"
-        _assert_direct_style(entry, f"{npc_id}.diary[{index}].entry")
+        if index < 3:
+            _assert_direct_style(entry, f"{npc_id}.diary[{index}].entry")
         assert source == "initial_long_memory", (
             f"{npc_id}.diary[{index}] must declare initial_long_memory provenance"
         )
@@ -258,6 +264,10 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
         assert raw_entry["model_name"] == ""
         assert raw_entry["model_fallback_used"] is False
         assert raw_entry["debug_reason"] == "seeded_before_game"
+        if "record_label" in raw_entry:
+            assert npc_id == "veteran_deputy_01", "Only Ada owns the fixed prologue diary"
+            assert period == "02:00:00"
+            assert raw_entry["record_label"] == "接到守备命令的前一天"
         assert entry not in entries, f"{npc_id} has a duplicated diary entry"
         periods.append(period)
         entries.add(entry)
@@ -321,6 +331,11 @@ def _verify_diary(npc_id: str, diary_value: Any) -> set[str]:
     assert tuple(periods[:3]) == EXPECTED_DIARY_PERIODS, (
         f"{npc_id} first three diary slices must be {EXPECTED_DIARY_PERIODS}, got {periods[:3]}"
     )
+    if npc_id == "veteran_deputy_01":
+        assert len(diary_value) == 4, "Ada must include exactly one fixed prologue diary"
+        assert periods[3] == "02:00:00"
+    else:
+        assert len(diary_value) == 3, f"{npc_id} must keep exactly three pre-game diary slices"
     return entries
 
 

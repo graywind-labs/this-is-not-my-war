@@ -2,3 +2,4 @@ flask
 python-dotenv
 pydantic
 requests
+waitress==3.0.2

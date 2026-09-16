@@ -83,6 +83,21 @@ func get_resource_snapshot() -> Dictionary:
 	return _amounts.duplicate()
 
 
+func create_game_save_snapshot() -> Dictionary:
+	return {"amounts": _amounts.duplicate(true)}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	var saved: Dictionary = snapshot.get("amounts", {}) if snapshot.get("amounts", {}) is Dictionary else {}
+	var restored := 0
+	for resource_id in _resource_order:
+		if saved.has(resource_id):
+			_amounts[resource_id] = maxi(_get_min_amount(resource_id), int(saved[resource_id]))
+			restored += 1
+	_emit_all_resource_changed()
+	return {"ok": true, "restored_count": restored}
+
+
 func is_resource_capacity_limited(resource_id: String) -> bool:
 	if not _definitions.has(resource_id):
 		return false

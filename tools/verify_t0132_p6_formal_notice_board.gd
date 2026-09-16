@@ -75,10 +75,17 @@ func _init() -> void:
 		_fail("Formal notice-board art contract failed: %s" % art)
 		return
 
-	var click_position := camera.unproject_position(board.global_position + Vector3(0.0, 1.65, 0.12))
-	if not bool(board.call("_is_notice_board_at_screen_position", click_position)):
-		_fail("Main camera ray did not resolve the formal notice-board hotspot")
-		return
+	for local_point in [
+		Vector3(-1.30, 0.16, 0.12),
+		Vector3(1.30, 0.16, 0.12),
+		Vector3(-1.30, 3.06, 0.12),
+		Vector3(1.30, 3.06, 0.12),
+		Vector3(0.0, 1.65, 0.12),
+	]:
+		var click_position := camera.unproject_position(board.to_global(local_point))
+		if not bool(board.call("_is_notice_board_at_screen_position", click_position)):
+			_fail("Main camera ray did not resolve the full formal notice-board hotspot at %s" % local_point)
+			return
 	board.call("debug_activate")
 	await process_frame
 	if not notice_panel.visible:

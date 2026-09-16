@@ -112,7 +112,7 @@ func _on_horse_birth_name_confirmed() -> void:
 	var request: Dictionary = _current_alert.get("request", {})
 	var horse_system := get_node_or_null(HORSE_SYSTEM_PATH)
 	if horse_system == null or not horse_system.has_method("confirm_pending_foal_name"):
-		horse_name_validation_label.text = "马匹系统不可用，暂时无法完成命名。"
+		horse_name_validation_label.text = "暂时无法为马匹命名。"
 		return
 	var result: Dictionary = horse_system.call(
 		"confirm_pending_foal_name",

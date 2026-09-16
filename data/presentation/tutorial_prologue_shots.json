@@ -1,0 +1,15 @@
+{
+  "schema_version": "tutorial_prologue_shots_v1",
+  "output_directory": "res://assets/tutorial/lowpoly_v1",
+  "resolution": [1920, 1080],
+  "ada_scene": "res://scenes/characters/AdaChibiArtView.tscn",
+  "dormitory": {"fixtures": "res://data/building_fixture_layouts.json", "appearances": "res://data/presentation/character_appearances.json", "empty_npc_id": "veteran_deputy_01", "origin": [100, 0, 0]},
+  "palette": {"plaster": "99927b", "timber": "40332b", "floor": "655340", "paper": "d8c59a", "wax": "873b32", "cloth": "344c58"},
+  "shots": [
+    {"id": "room", "file": "prologue_room_order.png", "camera": [0, 1.7, 3.1], "target": [-0.6, 1.25, -2.0], "fov": 64},
+    {"id": "order", "file": "prologue_sealed_order.png", "camera": [0, 1.7, 3.1], "target": [-0.6, 1.25, -2.0], "fov": 58},
+    {"id": "dormitory", "file": "prologue_dormitory_sleep.png", "camera": [100, 3.9, -11.0], "target": [100, 0.15, -0.8], "fov": 62},
+    {"id": "ada", "file": "prologue_ada_doorway.png", "camera": [0.6, 1.35, -0.2], "target": [1.96, 1.05, -3.0], "fov": 48, "pose": "talk"},
+    {"id": "ada_idle", "file": "prologue_ada_doorway_idle.png", "camera": [0.6, 1.35, -0.2], "target": [1.96, 1.05, -3.0], "fov": 48, "pose": "idle", "page_index": 5}
+  ]
+}

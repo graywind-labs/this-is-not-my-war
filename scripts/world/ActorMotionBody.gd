@@ -6,6 +6,7 @@ signal motion_arrived(request_id: String, target_position: Vector3)
 signal motion_failed(request_id: String, reason: String)
 signal motion_cancelled(request_id: String, reason: String)
 signal motion_repath_requested(request_id: String, repath_count: int)
+signal motion_stuck_notified(request_id: String, reason: String)
 
 const DEFAULT_CONFIG_PATH := "res://data/physics_navigation.json"
 const DEFAULT_PROFILE_ID := "npc"
@@ -32,6 +33,12 @@ var _runtime_overrides: Dictionary = {}
 
 var _motion_active := false
 var _motion_paused := false
+var _door_queue_actor_id := ""
+var _door_queue_memberships: Dictionary = {}
+var _door_queue_pause_sources: Dictionary = {}
+var _door_queue_path_catchup_pending := false
+var _door_queue_resume_path_catchup_count := 0
+var _target_plane_pass_completion_count := 0
 var _request_id := ""
 var _target_position := Vector3.ZERO
 var _motion_options: Dictionary = {}
@@ -40,6 +47,8 @@ var _last_result := ""
 var _elapsed_seconds := 0.0
 var _sample_elapsed_seconds := 0.0
 var _stuck_elapsed_seconds := 0.0
+var _stuck_notification_emitted := false
+var _stuck_notification_count := 0
 var _last_sample_position := Vector3.ZERO
 var _last_sample_remaining_path_distance := INF
 var _last_sample_displacement := 0.0
@@ -120,6 +129,7 @@ func configure_avoidance_identity(identity: String, base_priority: float, spread
 	# Equal RVO priorities can form a perfectly symmetric stand-off when several
 	# actors converge on adjacent combat positions. A small stable identity-based
 	# tie-break keeps the same path and target, but makes yielding deterministic.
+	_door_queue_actor_id = identity
 	var normalized_hash := float(posmod(identity.hash(), 1001)) / 1000.0
 	avoidance_priority_override = clampf(
 		base_priority + (normalized_hash - 0.5) * maxf(0.0, spread),
@@ -199,6 +209,7 @@ func request_motion(target_position: Vector3, request_id: String = "", motion_op
 	_elapsed_seconds = 0.0
 	_sample_elapsed_seconds = 0.0
 	_stuck_elapsed_seconds = 0.0
+	_stuck_notification_emitted = false
 	_last_sample_position = global_position
 	_last_sample_remaining_path_distance = _horizontal_distance(global_position, _target_position)
 	_last_sample_displacement = 0.0
@@ -220,6 +231,9 @@ func request_motion(target_position: Vector3, request_id: String = "", motion_op
 	_safe_velocity_valid = false
 	_minimum_target_distance = _horizontal_distance(global_position, _target_position)
 	_intermediate_waypoint_advance_count = 0
+	_door_queue_path_catchup_pending = false
+	_door_queue_resume_path_catchup_count = 0
+	_target_plane_pass_completion_count = 0
 	_last_path_index = -1
 	_last_waypoint_position = Vector3(INF, INF, INF)
 	_last_waypoint_distance = INF
@@ -290,6 +304,7 @@ func update_motion_target(
 	_planar_reachability_confirmed = false
 	_sample_elapsed_seconds = 0.0
 	_stuck_elapsed_seconds = 0.0
+	_stuck_notification_emitted = false
 	_no_progress_samples = 0
 	_last_sample_position = global_position
 	_last_sample_remaining_path_distance = _horizontal_distance(global_position, _get_active_navigation_target())
@@ -320,17 +335,73 @@ func set_motion_paused(paused: bool) -> void:
 	# the same bounded no-progress window instead of silently resetting it.
 	if _motion_paused == paused:
 		return
+	var was_effectively_paused := _is_effectively_motion_paused()
 	_motion_paused = paused
-	if paused:
+	if _is_effectively_motion_paused():
 		_stop_physical_motion()
 		_motion_state = "paused" if _motion_active else _motion_state
-	elif _motion_active:
-		_motion_state = "moving"
-		_last_sample_position = global_position
-		_last_sample_remaining_path_distance = _get_remaining_navigation_distance()
-		_last_sample_displacement = 0.0
-		_last_sample_path_progress = 0.0
-		_sample_elapsed_seconds = 0.0
+	elif was_effectively_paused and _motion_active:
+		_resume_motion_progress_tracking()
+
+
+func get_door_queue_actor_id() -> String:
+	return _door_queue_actor_id if not _door_queue_actor_id.is_empty() else str(get_instance_id())
+
+
+func set_door_queue_state(queue_id: String, token_number: int, paused: bool) -> void:
+	if queue_id.is_empty():
+		return
+	var was_effectively_paused := _is_effectively_motion_paused()
+	_door_queue_memberships[queue_id] = token_number
+	if paused:
+		_door_queue_pause_sources[queue_id] = true
+		if _motion_active:
+			_door_queue_path_catchup_pending = true
+	else:
+		_door_queue_pause_sources.erase(queue_id)
+	_apply_door_queue_pause_transition(was_effectively_paused)
+
+
+func clear_door_queue_state(queue_id: String) -> void:
+	if queue_id.is_empty() or not _door_queue_memberships.has(queue_id):
+		return
+	var was_effectively_paused := _is_effectively_motion_paused()
+	_door_queue_memberships.erase(queue_id)
+	_door_queue_pause_sources.erase(queue_id)
+	_apply_door_queue_pause_transition(was_effectively_paused)
+
+
+func _apply_door_queue_pause_transition(was_effectively_paused: bool) -> void:
+	var is_effectively_paused := _is_effectively_motion_paused()
+	if is_effectively_paused:
+		_stop_physical_motion()
+		if _motion_active:
+			_motion_state = "paused"
+	elif was_effectively_paused and _motion_active:
+		_resume_motion_progress_tracking()
+
+
+func _resume_motion_progress_tracking() -> void:
+	_motion_state = "moving"
+	if _door_queue_path_catchup_pending:
+		_catch_up_passed_navigation_path_points_after_queue_pause()
+		_door_queue_path_catchup_pending = false
+	_last_sample_position = global_position
+	_last_sample_remaining_path_distance = _get_remaining_navigation_distance()
+	_last_sample_displacement = 0.0
+	_last_sample_path_progress = 0.0
+	_sample_elapsed_seconds = 0.0
+	_stuck_elapsed_seconds = 0.0
+	_stuck_notification_emitted = false
+	_no_progress_samples = 0
+	_reset_stationary_progress_tracking()
+	_safe_velocity_valid = false
+	if is_instance_valid(navigation_agent):
+		navigation_agent.set_velocity_forced(Vector3.ZERO)
+
+
+func _is_effectively_motion_paused() -> bool:
+	return _motion_paused or not _door_queue_pause_sources.is_empty()
 
 
 func is_motion_active() -> bool:
@@ -368,6 +439,7 @@ func apply_external_displacement(target_position: Vector3, reason: String = "ext
 	_last_sample_path_progress = 0.0
 	_sample_elapsed_seconds = 0.0
 	_stuck_elapsed_seconds = 0.0
+	_stuck_notification_emitted = false
 	_no_progress_samples = 0
 	_path_query_frames = 0
 	_planar_reachability_confirmed = false
@@ -407,7 +479,13 @@ func debug_get_motion_snapshot() -> Dictionary:
 		"profile_id": actor_profile_id,
 		"state": _motion_state,
 		"active": _motion_active,
-		"paused": _motion_paused,
+		"paused": _is_effectively_motion_paused(),
+		"authority_paused": _motion_paused,
+		"door_queue_paused": not _door_queue_pause_sources.is_empty(),
+		"door_queue_memberships": _door_queue_memberships.duplicate(true),
+		"door_queue_path_catchup_pending": _door_queue_path_catchup_pending,
+		"door_queue_resume_path_catchup_count": _door_queue_resume_path_catchup_count,
+		"target_plane_pass_completion_count": _target_plane_pass_completion_count,
 		"request_id": _request_id,
 		"target_position": _target_position,
 		"navigation_leg_target_position": _get_active_navigation_target(),
@@ -416,6 +494,8 @@ func debug_get_motion_snapshot() -> Dictionary:
 		"velocity": velocity,
 		"elapsed_seconds": _elapsed_seconds,
 		"stuck_elapsed_seconds": _stuck_elapsed_seconds,
+		"stuck_notification_emitted": _stuck_notification_emitted,
+		"stuck_notification_count": _stuck_notification_count,
 		"no_progress_samples": _no_progress_samples,
 		"stationary_elapsed_seconds": _stationary_elapsed_seconds,
 		"stationary_last_sample_displacement": _stationary_last_sample_displacement,
@@ -501,12 +581,17 @@ func debug_get_motion_snapshot() -> Dictionary:
 func get_motion_progress_snapshot() -> Dictionary:
 	return {
 		"active": _motion_active,
-		"paused": _motion_paused,
+		"paused": _is_effectively_motion_paused(),
+		"authority_paused": _motion_paused,
+		"door_queue_paused": not _door_queue_pause_sources.is_empty(),
+		"door_queue_memberships": _door_queue_memberships.duplicate(true),
 		"request_id": _request_id,
 		"target_position": _target_position,
 		"world_position": global_position,
 		"remaining_path_distance": _get_remaining_navigation_distance(),
 		"stuck_elapsed_seconds": _stuck_elapsed_seconds,
+		"stuck_notification_emitted": _stuck_notification_emitted,
+		"stuck_notification_count": _stuck_notification_count,
 		"stationary_elapsed_seconds": _stationary_elapsed_seconds,
 		"stationary_last_sample_displacement": _stationary_last_sample_displacement,
 		"stationary_supersede_preserve_count": _stationary_supersede_preserve_count,
@@ -528,14 +613,15 @@ func get_motion_progress_snapshot() -> Dictionary:
 func _physics_process(delta: float) -> void:
 	if not _motion_active:
 		return
-	if _motion_paused:
+	if _is_effectively_motion_paused():
+		_motion_state = "paused"
 		_last_requested_speed = maxf(0.0, float(_profile.get("base_speed", 5.0)))
 		_last_desired_speed = 0.0
 		_last_candidate_speed = 0.0
 		_last_rvo_safe_speed = 0.0
 		_last_applied_speed = 0.0
 		_last_actual_speed = 0.0
-		_last_speed_limit_reason = "paused"
+		_last_speed_limit_reason = "door_queue_paused" if not _door_queue_pause_sources.is_empty() else "authority_paused"
 		_stop_physical_motion()
 		return
 
@@ -553,6 +639,10 @@ func _physics_process(delta: float) -> void:
 	if target_distance <= target_tolerance:
 		if _advance_indoor_exit_prefix():
 			return
+		_complete_arrival()
+		return
+	if _is_active_target_plane_passed():
+		_target_plane_pass_completion_count += 1
 		_complete_arrival()
 		return
 
@@ -671,7 +761,36 @@ func _physics_process(delta: float) -> void:
 			return
 		_complete_arrival()
 		return
+	if _is_active_target_plane_passed():
+		_target_plane_pass_completion_count += 1
+		_complete_arrival()
+		return
 	_update_stuck_recovery(delta)
+
+
+func _is_active_target_plane_passed() -> bool:
+	if _has_active_indoor_exit_prefix():
+		return false
+	var raw_forward_direction: Variant = _motion_options.get("target_pass_forward_direction")
+	if not raw_forward_direction is Vector3:
+		return false
+	var forward_direction: Vector3 = raw_forward_direction
+	forward_direction.y = 0.0
+	if forward_direction.length_squared() <= 0.0001:
+		return false
+	forward_direction = forward_direction.normalized()
+	var offset := global_position - _target_position
+	offset.y = 0.0
+	var forward_progress := offset.dot(forward_direction)
+	var pass_margin := maxf(0.01, float(_motion_options.get("target_pass_margin", 0.06)))
+	if forward_progress < pass_margin:
+		return false
+	var lateral_offset := offset - forward_direction * forward_progress
+	var lateral_tolerance := maxf(
+		_get_active_target_tolerance(),
+		float(_motion_options.get("target_pass_lateral_tolerance", 1.3))
+	)
+	return lateral_offset.length() <= lateral_tolerance
 
 
 func _update_stuck_recovery(delta: float) -> void:
@@ -696,6 +815,7 @@ func _update_stuck_recovery(delta: float) -> void:
 	else:
 		_no_progress_samples = 0
 		_stuck_elapsed_seconds = 0.0
+		_stuck_notification_emitted = false
 	_last_sample_position = global_position
 	_last_sample_remaining_path_distance = remaining_path_distance
 	_sample_elapsed_seconds = 0.0
@@ -709,8 +829,17 @@ func _update_stuck_recovery(delta: float) -> void:
 		navigation_agent.target_position = _get_active_navigation_target()
 		motion_repath_requested.emit(_request_id, _repath_count)
 
-	if not persistent_repath and _stuck_elapsed_seconds >= float(_recovery_config.get("fail_after_seconds", 8.0)):
-		_fail_motion("stuck_timeout")
+	# The configured legacy fail threshold is now feedback-only. Keeping this
+	# request active preserves the gameplay action and hourly plan while a crowd
+	# blockage clears; motion must not decide that the NPC should become idle.
+	if (
+		not persistent_repath
+		and not _stuck_notification_emitted
+		and _stuck_elapsed_seconds >= float(_recovery_config.get("fail_after_seconds", 8.0))
+	):
+		_stuck_notification_emitted = true
+		_stuck_notification_count += 1
+		motion_stuck_notified.emit(_request_id, "stuck_timeout")
 
 
 func _update_stationary_progress(delta: float, sample_seconds: float, minimum_progress: float) -> void:
@@ -930,6 +1059,44 @@ func _should_advance_missed_waypoint(
 	# caller advances to the next point already present in the authoritative path;
 	# it does not invent a building-specific route or cut directly to the target.
 	return planar_velocity.dot(to_waypoint.normalized()) < 0.0
+
+
+func _catch_up_passed_navigation_path_points_after_queue_pause() -> void:
+	if not _motion_active or not is_instance_valid(navigation_agent):
+		return
+	var path := navigation_agent.get_current_navigation_path()
+	if path.size() < 2:
+		return
+	var pass_margin := maxf(0.04, navigation_agent.radius * 0.18)
+	var maximum_advances := path.size()
+	for _advance_attempt in range(maximum_advances):
+		var path_index := clampi(navigation_agent.get_current_navigation_path_index(), 0, path.size() - 1)
+		if path_index >= path.size() - 1:
+			break
+		var waypoint: Vector3 = path[path_index]
+		var waypoint_distance := _horizontal_distance(global_position, waypoint)
+		var path_direction := (
+			waypoint - path[path_index - 1]
+			if path_index > 0
+			else path[path_index + 1] - waypoint
+		)
+		path_direction.y = 0.0
+		if path_direction.length_squared() <= 0.0001:
+			break
+		var beyond_waypoint := global_position - waypoint
+		beyond_waypoint.y = 0.0
+		var within_normal_tolerance := waypoint_distance <= navigation_agent.path_desired_distance
+		var crossed_forward := beyond_waypoint.dot(path_direction.normalized()) >= pass_margin
+		if not within_normal_tolerance and not crossed_forward:
+			break
+		if crossed_forward and not _is_direct_navigation_shortcut_clear(path[path_index + 1]):
+			break
+		var previous_index := path_index
+		_force_advance_missed_waypoint(path_index, waypoint_distance)
+		var advanced_index := navigation_agent.get_current_navigation_path_index()
+		if advanced_index <= previous_index:
+			break
+		_door_queue_resume_path_catchup_count += advanced_index - previous_index
 
 
 func _force_advance_missed_waypoint(path_index: int, waypoint_distance: float) -> Vector3:
@@ -1235,6 +1402,7 @@ func _advance_indoor_exit_prefix() -> bool:
 	_planar_reachability_confirmed = false
 	_sample_elapsed_seconds = 0.0
 	_stuck_elapsed_seconds = 0.0
+	_stuck_notification_emitted = false
 	_no_progress_samples = 0
 	_reset_stationary_progress_tracking()
 	_last_sample_position = global_position
@@ -1265,7 +1433,7 @@ func _clear_indoor_exit_prefix(reason: String) -> void:
 
 
 func _on_velocity_computed(safe_velocity: Vector3) -> void:
-	if not _motion_active or _motion_paused:
+	if not _motion_active or _is_effectively_motion_paused():
 		return
 	var planar_safe_velocity := Vector3(safe_velocity.x, 0.0, safe_velocity.z)
 	var maximum_speed := maxf(0.0, float(_profile.get("base_speed", 5.0)))

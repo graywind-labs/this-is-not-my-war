@@ -19,13 +19,18 @@
       "music_day_playlist_04",
       "music_day_playlist_05",
       "music_day_playlist_07",
-      "music_day_playlist_12"
+      "music_day_playlist_12",
+      "music_day_playlist_v29_04",
+      "music_day_playlist_v29_06"
     ],
     "night_playlist": [
       "music_night_playlist_05",
       "music_night_playlist_06",
-      "music_night_playlist_10"
+      "music_night_playlist_10",
+      "music_night_playlist_v29_02"
     ],
+    "tutorial_intro_asset_id": "music_tutorial_intro",
+    "tutorial_battle_asset_id": "music_tutorial_battle",
     "battle_asset_id": "music_battle",
     "menu_asset_id": "music_menu",
     "crossfade_seconds": 2.0,

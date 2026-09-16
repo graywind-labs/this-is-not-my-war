@@ -1501,6 +1501,17 @@
         "model_name": "",
         "model_fallback_used": false,
         "debug_reason": "seeded_before_game"
+      },
+      {
+        "day": 0,
+        "time": "02:00:00",
+        "record_label": "接到守备命令的前一天",
+        "entry": "凌晨，城门外忽然有敌人来袭。守备官先把箭塔架上城墙，又给我取来剑盾、拉响警报。器械没撑多久，但我奋力拼杀，把那几名敌人击败了，可那更像一次试探，不像真正的进攻。天亮以后，我们得征召更多人手、好好训练他们；下一次来的，恐怕不会只有这些人。",
+        "source": "initial_long_memory",
+        "model_provider": "",
+        "model_name": "",
+        "model_fallback_used": false,
+        "debug_reason": "seeded_before_game"
       }
     ],
     "knowledge_graph": {
@@ -2614,7 +2625,7 @@
       {
         "day": 0,
         "time": "往昔·近日",
-        "entry": "这几天，我接连处理了三件小事：加固食堂那条总晃的长凳，给马厩门换上新铰链，再清理围墙边的排水槽。布鲁诺坚持说长凳没坏，只是客人坐得不对。我便请他坐到松动的那一头，凳子立刻向左一歪。他看了一眼，没再争辩，只让我继续修。",
+        "entry": "这几天，我接连处理了三件小事：给工械坊那座箭塔备好木料、搭起塔架和射击台，给马厩门换上新铰链，再清理围墙边的排水槽。布鲁诺坚持说那还只是个木架，算不得箭塔。我便请他爬上射击台，再问脚下晃不晃。他站了一会儿，没再争辩，只让我继续造。",
         "source": "initial_long_memory",
         "model_provider": "",
         "model_name": "",

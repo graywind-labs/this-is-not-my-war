@@ -20,9 +20,14 @@ func _init() -> void:
 	var npc_system := root.get_node_or_null("Main/Systems/NPCSystem")
 	var time_system := root.get_node_or_null("Main/Systems/TimeSystem")
 	var merchant_panel := root.get_node_or_null("Main/UI/MerchantPanel")
-	if merchant_system == null or resource_system == null or memory_system == null or npc_system == null or time_system == null or merchant_panel == null:
+	var event_bus := root.get_node_or_null("EventBus")
+	if merchant_system == null or resource_system == null or memory_system == null or npc_system == null or time_system == null or merchant_panel == null or event_bus == null:
 		_fail("T1507 required nodes or systems are missing")
 		return
+	var trade_completion_signals: Array[Dictionary] = []
+	event_bus.merchant_trade_completed.connect(func(direction: String, result: Dictionary) -> void:
+		trade_completion_signals.append({"direction": direction, "result": result.duplicate(true)})
+	)
 	if merchant_system.is_merchant_present():
 		_fail("Merchant should not be present at the 06:00 starting time")
 		return
@@ -30,7 +35,7 @@ func _init() -> void:
 		if merchant_system.get_buy_offer(resource_id).is_empty():
 			_fail("Merchant is missing buy offer for %s" % resource_id)
 			return
-	var expected_sell_prices := {"grain": 1, "wood": 2, "stone": 3, "iron": 4, "wine": 4}
+	var expected_sell_prices := {"grain": 2, "wood": 3, "stone": 4, "iron": 5, "wine": 2}
 	for resource_id in expected_sell_prices.keys():
 		if int(merchant_system.get_sell_offer(str(resource_id)).get("unit_price", 0)) != int(expected_sell_prices[resource_id]):
 			_fail("Merchant sell-price contract mismatch for %s" % resource_id)
@@ -110,6 +115,9 @@ func _init() -> void:
 	if not bool(buy_result.get("ok", false)):
 		_fail("Configured grain purchase failed")
 		return
+	if trade_completion_signals.size() != 1 or str(trade_completion_signals[0].get("direction", "")) != "buy" or not bool((trade_completion_signals[0].get("result", {}) as Dictionary).get("ok", false)):
+		_fail("Successful purchase did not emit exactly one committed trade audio edge")
+		return
 	if resource_system.get_resource("money") != money_before_buy - grain_price * 2:
 		_fail("Grain purchase deducted the wrong amount of money")
 		return
@@ -123,8 +131,8 @@ func _init() -> void:
 	if int(buy_event.get("payload", {}).get("total_price", 0)) != grain_price * 2:
 		_fail("Purchase event did not retain configured price")
 		return
-	if not str(buy_event.get("summary", "")).contains("守备官从商人处购买"):
-		_fail("Purchase summary did not use deterministic world wording")
+	if str(buy_event.get("summary", "")) != "守备官花费%d枚第纳尔，换来2份粮食。" % (grain_price * 2):
+		_fail("Purchase summary did not use the deterministic exchange wording")
 		return
 	if memory_system.get_npc_witness_events(plaza_npc_id).size() != plaza_witness_before_trade + 1:
 		_fail("Purchase event was not broadcast to plaza NPC")
@@ -150,6 +158,9 @@ func _init() -> void:
 	):
 		_fail("A purchase above warehouse capacity was not rejected atomically")
 		return
+	if trade_completion_signals.size() != 1:
+		_fail("Rejected capacity purchase emitted a committed trade audio edge")
+		return
 
 	var money_before_failed_buy: int = resource_system.get_resource("money")
 	var grain_before_failed_buy: int = resource_system.get_resource("grain")
@@ -164,14 +175,22 @@ func _init() -> void:
 	if memory_system.get_plaza_events().size() != events_before_failed_buy:
 		_fail("Failed purchase should not create a completed trade event")
 		return
+	if trade_completion_signals.size() != 1:
+		_fail("Failed purchase emitted a committed trade audio edge")
+		return
 
 	resource_system.add_resource("wine", 3)
 	var wine_price := int(merchant_system.get_sell_offer("wine").get("unit_price", 0))
 	var money_before_sell: int = resource_system.get_resource("money")
 	var wine_before_sell: int = resource_system.get_resource("wine")
+	var plaza_witness_before_sell: int = memory_system.get_npc_witness_events(plaza_npc_id).size()
+	var indoor_witness_before_sell: int = memory_system.get_npc_witness_events(indoor_npc_id).size()
 	var sell_result: Dictionary = merchant_system.sell_resource("wine", 2)
 	if not bool(sell_result.get("ok", false)):
 		_fail("Wine sale failed")
+		return
+	if trade_completion_signals.size() != 2 or str(trade_completion_signals[1].get("direction", "")) != "sell" or not bool((trade_completion_signals[1].get("result", {}) as Dictionary).get("ok", false)):
+		_fail("Successful sale did not emit exactly one committed trade audio edge")
 		return
 	if resource_system.get_resource("wine") != wine_before_sell - 2:
 		_fail("Wine sale did not consume T0807 wine inventory")
@@ -180,8 +199,14 @@ func _init() -> void:
 		_fail("Wine sale added the wrong amount of money")
 		return
 	var sell_event := _find_latest_event(memory_system.get_plaza_events(), "merchant_trade_completed")
-	if str(sell_event.get("payload", {}).get("direction", "")) != "sell" or not str(sell_event.get("summary", "")).contains("守备官向商人出售"):
+	if str(sell_event.get("payload", {}).get("direction", "")) != "sell" or str(sell_event.get("summary", "")) != "守备官花费2份酒，换来%d枚第纳尔。" % (wine_price * 2):
 		_fail("Wine sale structured event is invalid")
+		return
+	if memory_system.get_npc_witness_events(plaza_npc_id).size() != plaza_witness_before_sell + 1:
+		_fail("Sale event was not broadcast to the current plaza NPC")
+		return
+	if memory_system.get_npc_witness_events(indoor_npc_id).size() != indoor_witness_before_sell:
+		_fail("Sale event leaked to the indoor NPC")
 		return
 
 	resource_system.add_resource("wine", -9999)
@@ -192,6 +217,9 @@ func _init() -> void:
 		return
 	if resource_system.get_resource("money") != money_before_failed_sell:
 		_fail("Failed wine sale changed money")
+		return
+	if trade_completion_signals.size() != 2:
+		_fail("Failed sale emitted a committed trade audio edge")
 		return
 
 	time_system.set_current_time(1, 16, 0, 0)

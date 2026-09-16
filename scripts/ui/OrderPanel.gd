@@ -26,13 +26,13 @@ func _ready() -> void:
 func show_order(npc_id: String) -> Dictionary:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null:
-		return _failure("npc_system_missing", "NPC 系统不可用。")
+		return _failure("npc_system_missing", "暂时无法下达指令。")
 
 	var npc: Dictionary = npc_system.get_npc(npc_id)
 	if npc.is_empty():
-		return _failure("unknown_npc", "NPC 不存在。")
+		return _failure("unknown_npc", "找不到这名成员。")
 	if not bool(npc.get("recruited", false)):
-		return _failure("npc_not_recruited", "未入伍 NPC 不能接收个人指令。")
+		return _failure("npc_not_recruited", "对方尚未应征，不能接收守备命令。")
 
 	var dialog_system := get_node_or_null(DIALOG_SYSTEM_PATH)
 	if dialog_system != null and dialog_system.has_method("get_dialogue_state"):
@@ -74,7 +74,7 @@ func _format_metadata(order: Dictionary) -> String:
 func _on_publish_pressed() -> void:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or _current_npc_id.is_empty():
-		status_label.text = "NPC 系统不可用。"
+		status_label.text = "暂时无法下达指令。"
 		return
 
 	var result: Dictionary = npc_system.publish_npc_order(_current_npc_id, text_edit.text)
@@ -84,7 +84,7 @@ func _on_publish_pressed() -> void:
 	var current_order: Dictionary = result.get("current_order", {})
 	text_edit.text = str(current_order.get("text", ""))
 	metadata_label.text = _format_metadata(current_order)
-	status_label.text = "已发布，并请求计划重评估。" if bool(result.get("changed", false)) else "内容未变化，未发布。"
+	status_label.text = "指令已发布，对方会重新考虑接下来的安排。" if bool(result.get("changed", false)) else "内容未变化，未发布。"
 	text_edit.grab_focus()
 
 

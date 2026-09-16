@@ -31,7 +31,7 @@
             "center": [-4.0, -2.55],
             "facing_degrees": 0.0,
             "clearance_radius": 0.45,
-            "target_desired_distance": 0.08
+            "target_desired_distance": 0.25
           }
         },
         {
@@ -51,7 +51,7 @@
             "center": [4.0, -2.55],
             "facing_degrees": 0.0,
             "clearance_radius": 0.45,
-            "target_desired_distance": 0.08
+            "target_desired_distance": 0.25
           }
         },
         {
@@ -71,7 +71,7 @@
             "center": [-4.0, 1.45],
             "facing_degrees": 0.0,
             "clearance_radius": 0.45,
-            "target_desired_distance": 0.08
+            "target_desired_distance": 0.25
           }
         },
         {
@@ -523,7 +523,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.8, -1.8], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [-4.8, -1.8], "facing_degrees": 90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [-3.18, -1.8], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -539,7 +539,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.8, -0.1], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [-4.8, -0.1], "facing_degrees": 90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [-3.18, -0.1], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -555,7 +555,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [-4.8, 1.6], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [-4.8, 1.6], "facing_degrees": 90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [-3.18, 1.6], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -565,13 +565,13 @@
           "required_level": 1,
           "workstation_id": "dining_seat_04",
           "arrival_mode": "mount_after_arrival",
-          "center": [-1.1, -1.0],
+          "center": [-1.27, -1.0],
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 1.06],
+          "collision_size": [0.52, 0.5, 0.72],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.0, -1.0], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [0.0, -1.35], "facing_degrees": -90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [-1.62, -1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -581,13 +581,13 @@
           "required_level": 1,
           "workstation_id": "dining_seat_05",
           "arrival_mode": "mount_after_arrival",
-          "center": [-1.1, 1.0],
+          "center": [-1.27, 1.0],
           "rotation_degrees": -90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 1.06],
+          "collision_size": [0.52, 0.5, 0.72],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.0, 1.0], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [0.0, 0.65], "facing_degrees": -90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [-1.62, 1.0], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -603,7 +603,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.8, -1.8], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [4.8, -1.8], "facing_degrees": -90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [3.18, -1.8], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -619,7 +619,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.8, -0.1], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [4.8, -0.1], "facing_degrees": -90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [3.18, -0.1], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -635,7 +635,7 @@
           "visual_scale": [0.85, 0.85, 0.85],
           "collision_size": [0.52, 0.5, 1.06],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [4.8, 1.6], "facing_degrees": -90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [4.8, 1.6], "facing_degrees": -90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [3.18, 1.6], "y": 0.5, "facing_degrees": -90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -645,13 +645,13 @@
           "required_level": 1,
           "workstation_id": "dining_seat_09",
           "arrival_mode": "mount_after_arrival",
-          "center": [1.1, -1.0],
+          "center": [1.27, -1.0],
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 1.06],
+          "collision_size": [0.52, 0.5, 0.72],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.0, -1.0], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [0.0, -0.65], "facing_degrees": 90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [1.62, -1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         },
         {
@@ -661,13 +661,13 @@
           "required_level": 1,
           "workstation_id": "dining_seat_10",
           "arrival_mode": "mount_after_arrival",
-          "center": [1.1, 1.0],
+          "center": [1.27, 1.0],
           "rotation_degrees": 90.0,
           "asset_path": "res://assets/3d/quaternius/props/dining_chair.glb",
           "visual_scale": [0.85, 0.85, 0.85],
-          "collision_size": [0.52, 0.5, 1.06],
+          "collision_size": [0.52, 0.5, 0.72],
           "collision_center_y": 0.25,
-          "npc_stand": {"scope": "building", "center": [0.0, 1.0], "facing_degrees": 90.0, "clearance_radius": 0.45},
+          "npc_stand": {"scope": "building", "center": [0.0, 1.35], "facing_degrees": 90.0, "clearance_radius": 0.45, "target_desired_distance": 0.45},
           "occupant_anchor": {"center": [1.62, 1.0], "y": 0.5, "facing_degrees": 90.0, "pose": "sitting", "label": "坐姿锚点", "footprint_size": [0.45, 0.45]}
         }
       ]
@@ -1186,7 +1186,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [-1.2, -1.9], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-2.3, -1.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [-2.3, -2.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_02_right_pew",
@@ -1203,7 +1203,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [1.2, -1.9], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [2.3, -1.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [2.3, -2.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_03_left_pew",
@@ -1220,7 +1220,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [-1.2, -0.3], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-2.3, -0.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [-2.3, -0.7], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_04_right_pew",
@@ -1237,7 +1237,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [1.2, -0.3], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [2.3, -0.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [2.3, -0.7], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_05_left_pew",
@@ -1254,7 +1254,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [-1.2, 1.3], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-2.3, 1.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [-2.3, 0.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_06_right_pew",
@@ -1271,7 +1271,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [1.2, 1.3], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [2.3, 1.3], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [2.3, 0.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_07_left_pew",
@@ -1288,7 +1288,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [-1.2, 2.9], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-2.3, 2.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [-2.3, 2.5], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_08_right_pew",
@@ -1305,7 +1305,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [1.2, 2.9], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [2.3, 2.9], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [2.3, 2.5], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_09_left_pew",
@@ -1322,7 +1322,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [-1.2, 4.5], "facing_degrees": -90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [-2.3, 4.5], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [-2.3, 4.1], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_prayer_seat_10_right_pew",
@@ -1339,7 +1339,7 @@
           "collision_size": [2.75, 0.64, 0.72],
           "collision_center_y": 0.32,
           "npc_stand": {"scope": "building", "center": [1.2, 4.5], "facing_degrees": 90.0, "clearance_radius": 0.45},
-          "occupant_anchor": {"center": [2.3, 4.5], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
+          "occupant_anchor": {"center": [2.3, 4.1], "y": 0.68, "facing_degrees": 0.0, "pose": "seated_prayer", "label": "长凳祈祷座位", "footprint_size": [0.65, 0.5]}
         },
         {
           "id": "chapel_level_two_bell_rack",
@@ -1418,7 +1418,7 @@
           "workshop_role": "bowyer",
           "collision_size": [2.4, 0.9, 1.0],
           "collision_center_y": 0.45,
-          "npc_stand": {"scope": "workstation", "center": [-3.6, -3.05], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.08}
+          "npc_stand": {"scope": "workstation", "center": [-3.6, -3.05], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.25}
         },
         {
           "id": "workbench_02_engineering_table",
@@ -1433,7 +1433,7 @@
           "workshop_role": "mechanism",
           "collision_size": [2.4, 0.9, 1.0],
           "collision_center_y": 0.45,
-          "npc_stand": {"scope": "workstation", "center": [3.6, -3.05], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.08}
+          "npc_stand": {"scope": "workstation", "center": [3.6, -3.05], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.25}
         },
         {
           "id": "workbench_03_engineering_table",
@@ -1448,7 +1448,7 @@
           "workshop_role": "siege_assembly",
           "collision_size": [2.4, 0.9, 1.0],
           "collision_center_y": 0.45,
-          "npc_stand": {"scope": "workstation", "center": [-3.6, 1.1], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.08}
+          "npc_stand": {"scope": "workstation", "center": [-3.6, 1.1], "facing_degrees": 0.0, "clearance_radius": 0.45, "target_desired_distance": 0.25}
         },
         {
           "id": "workshop_level_two_tool_wall",

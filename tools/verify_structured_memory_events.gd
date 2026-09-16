@@ -71,9 +71,13 @@ func _init() -> void:
 		push_error("Sleep action did not start")
 		quit(1)
 		return
-	action_system._on_logical_time_tick(23400.0, 1.0)
-	if not await _wait_until_action_result(npc_system, eater_id, "completed_sleep"):
-		push_error("Sleep action did not complete")
+	action_system._on_logical_time_tick(28800.0, 1.0)
+	if str(action_system.get_runtime_action_id(eater_id)) != "sleep_in_dormitory":
+		push_error("Continuous sleep ended at its nominal duration")
+		quit(1)
+		return
+	if not action_system.interrupt_npc_action(eater_id, "structured_memory_sleep_end", true):
+		push_error("Failed to end continuous sleep explicitly")
 		quit(1)
 		return
 

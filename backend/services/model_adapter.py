@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 import uuid
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
@@ -40,6 +41,7 @@ class ModelAdapterConfig:
     model: str = ""
     provider_connect_timeout_seconds: float = 10.0
     provider_idle_timeout_seconds: float = 120.0
+    provider_total_timeout_seconds: float = 120.0
     fallback_to_mock: bool = False
     input_cost_per_million: float = 0.0
     input_cache_hit_cost_per_million: float = 0.0
@@ -135,6 +137,7 @@ class ModelAdapter:
             model=raw_config.model.strip(),
             provider_connect_timeout_seconds=max(0.1, raw_config.provider_connect_timeout_seconds),
             provider_idle_timeout_seconds=max(0.1, raw_config.provider_idle_timeout_seconds),
+            provider_total_timeout_seconds=max(0.1, raw_config.provider_total_timeout_seconds),
             fallback_to_mock=raw_config.fallback_to_mock,
             input_cost_per_million=max(0.0, raw_config.input_cost_per_million),
             input_cache_hit_cost_per_million=max(
@@ -190,6 +193,7 @@ class ModelAdapter:
             model=model,
             provider_connect_timeout_seconds=_read_float_env("LLM_PROVIDER_CONNECT_TIMEOUT_SECONDS", 10.0),
             provider_idle_timeout_seconds=_read_float_env("LLM_PROVIDER_IDLE_TIMEOUT_SECONDS", 120.0),
+            provider_total_timeout_seconds=_read_float_env("LLM_PROVIDER_TOTAL_TIMEOUT_SECONDS", 120.0),
             fallback_to_mock=_read_bool_env("LLM_FALLBACK_TO_MOCK", False),
             input_cost_per_million=_read_float_env(
                 "LLM_INPUT_COST_PER_M_TOKENS",
@@ -213,12 +217,12 @@ class ModelAdapter:
             budget_max_estimated_cost=_read_float_env("LLM_BUDGET_MAX_COST", 0.0),
             daily_budget_max_cost_cny=_read_float_env(
                 "LLM_DAILY_BUDGET_MAX_CNY",
-                20.0 if provider != "mock" else 0.0,
+                0.0,
             ),
             daily_budget_timezone=os.getenv("LLM_DAILY_BUDGET_TIMEZONE", "Asia/Shanghai"),
             daily_budget_request_reserve_cny=_read_float_env(
                 "LLM_DAILY_BUDGET_REQUEST_RESERVE_CNY",
-                default_prices["request_reserve"],
+                0.0,
             ),
             cost_ledger_enabled=_read_bool_env(
                 "LLM_COST_LEDGER_ENABLED",
@@ -493,6 +497,7 @@ class ModelAdapter:
             "fallback_to_mock": self.config.fallback_to_mock,
             "provider_connect_timeout_seconds": self.config.provider_connect_timeout_seconds,
             "provider_idle_timeout_seconds": self.config.provider_idle_timeout_seconds,
+            "provider_total_timeout_seconds": self.config.provider_total_timeout_seconds,
             "provider_streaming": True,
             "client_output_token_limit_applied": False,
             "temperature": self.config.temperature,
@@ -680,9 +685,25 @@ class ModelAdapter:
             call_type=call_type,
             content={},
             usage=usage,
-            error_code="provider_unavailable",
+            error_code=self._provider_error_code(http_status, exception_type),
             message=failure_reason,
         )
+
+    @staticmethod
+    def _provider_error_code(http_status: int | None, exception_type: str) -> str:
+        if http_status in {401, 403}:
+            return "provider_auth_failed"
+        if http_status == 402:
+            return "provider_quota_exceeded"
+        if http_status == 429:
+            return "provider_rate_limited"
+        if exception_type == "ProviderQueueTimeout":
+            return "provider_queue_timeout"
+        if "timeout" in exception_type.lower():
+            return "provider_timeout"
+        if http_status is not None:
+            return "provider_http_error"
+        return "provider_unavailable"
 
     def record_model_output_invalid(
         self,
@@ -1050,9 +1071,12 @@ class ModelAdapter:
                 exception_type="BudgetExceeded",
                 details={"budget": self._cost_ledger.snapshot()},
             )
+        attempt_started_at = time.monotonic()
+        total_timeout_at = attempt_started_at + self.config.provider_total_timeout_seconds
         self._audit_logger.write(
-            "provider_request_sent",
+            "provider_request_prepared",
             audit_id,
+            stage="准备发送",
             call_type=call_type,
             provider=self.config.provider,
             model=self._provider_model(),
@@ -1061,6 +1085,8 @@ class ModelAdapter:
             endpoint=url,
             provider_request_body=request_body,
             request_headers_omitted=True,
+            elapsed_seconds=0.0,
+            total_timeout_seconds=self.config.provider_total_timeout_seconds,
         )
         settled = False
         try:
@@ -1078,24 +1104,34 @@ class ModelAdapter:
                     self.config.provider_idle_timeout_seconds,
                 ),
             )
+            self._audit_logger.write(
+                "provider_response_headers_received",
+                audit_id,
+                stage="HTTP 头已收到",
+                call_type=call_type,
+                provider=self.config.provider,
+                model=self._provider_model(),
+                attempt_count=attempt_count,
+                http_status=response.status_code,
+                content_type=str(getattr(response, "headers", {}).get("Content-Type", "")),
+                elapsed_seconds=self._elapsed_seconds(attempt_started_at),
+            )
             if response.status_code >= 400:
                 response_text = response.text
-                self._audit_logger.write(
-                    "provider_response_received",
-                    audit_id,
-                    call_type=call_type,
-                    provider=self.config.provider,
-                    model=self._provider_model(),
-                    attempt_count=attempt_count,
-                    http_status=response.status_code,
-                    raw_response_body=response_text,
-                )
                 raise ModelProviderError(
                     "Provider HTTP %d: %s" % (response.status_code, response_text[:300]),
                     http_status=response.status_code,
                     exception_type="ProviderHTTPError",
+                    details={"raw_response_body": response_text},
                 )
-            response_json = self._read_chat_completion_response(response)
+            response_json = self._read_chat_completion_response(
+                response,
+                audit_id=audit_id,
+                call_type=call_type,
+                attempt_count=attempt_count,
+                attempt_started_at=attempt_started_at,
+                total_timeout_at=total_timeout_at,
+            )
             billing = self._settle_provider_usage(
                 reservation_id,
                 audit_id=audit_id,
@@ -1105,24 +1141,28 @@ class ModelAdapter:
             )
             settled = True
             self._audit_logger.write(
-                "provider_response_received",
+                "provider_request_completed",
                 audit_id,
+                stage="完成",
                 call_type=call_type,
                 provider=self.config.provider,
                 model=self._provider_model(),
                 attempt_count=attempt_count,
                 http_status=response.status_code,
+                ok=True,
+                elapsed_seconds=self._elapsed_seconds(attempt_started_at),
                 provider_response=response_json,
                 billing=billing,
             )
             response_json["_billing"] = billing
             return response_json
         except ModelProviderError as exc:
-            self._write_provider_attempt_failed_audit(
+            self._write_provider_attempt_completed_failure_audit(
                 audit_id,
                 call_type,
                 attempt_count,
                 exc,
+                attempt_started_at,
             )
             raise
         except requests.ConnectTimeout as exc:
@@ -1130,21 +1170,27 @@ class ModelAdapter:
                 "Provider connection timed out.",
                 exception_type="ProviderConnectTimeout",
             )
-            self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+            self._write_provider_attempt_completed_failure_audit(
+                audit_id, call_type, attempt_count, provider_error, attempt_started_at
+            )
             raise provider_error from exc
         except requests.ReadTimeout as exc:
             provider_error = ModelProviderError(
                 "Provider stream was idle for too long.",
                 exception_type="ProviderIdleTimeout",
             )
-            self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+            self._write_provider_attempt_completed_failure_audit(
+                audit_id, call_type, attempt_count, provider_error, attempt_started_at
+            )
             raise provider_error from exc
         except requests.Timeout as exc:
             provider_error = ModelProviderError(
                 "Provider transport timed out.",
                 exception_type="ProviderTransportTimeout",
             )
-            self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+            self._write_provider_attempt_completed_failure_audit(
+                audit_id, call_type, attempt_count, provider_error, attempt_started_at
+            )
             raise provider_error from exc
         except requests.RequestException as exc:
             if "read timed out" in str(exc).lower():
@@ -1152,45 +1198,73 @@ class ModelAdapter:
                     "Provider stream was idle for too long.",
                     exception_type="ProviderIdleTimeout",
                 )
-                self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+                self._write_provider_attempt_completed_failure_audit(
+                    audit_id, call_type, attempt_count, provider_error, attempt_started_at
+                )
                 raise provider_error from exc
             provider_error = ModelProviderError(str(exc), exception_type=exc.__class__.__name__)
-            self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+            self._write_provider_attempt_completed_failure_audit(
+                audit_id, call_type, attempt_count, provider_error, attempt_started_at
+            )
             raise provider_error from exc
         except Exception as exc:
             provider_error = ModelProviderError(str(exc), exception_type=exc.__class__.__name__)
-            self._write_provider_attempt_failed_audit(audit_id, call_type, attempt_count, provider_error)
+            self._write_provider_attempt_completed_failure_audit(
+                audit_id, call_type, attempt_count, provider_error, attempt_started_at
+            )
             raise
         finally:
             if not settled:
                 self._cost_ledger.release(reservation_id)
 
-    def _write_provider_attempt_failed_audit(
+    def _write_provider_attempt_completed_failure_audit(
         self,
         audit_id: str,
         call_type: str,
         attempt_count: int,
         error: ModelProviderError,
+        attempt_started_at: float,
     ) -> None:
         self._audit_logger.write(
-            "provider_attempt_failed",
+            "provider_request_completed",
             audit_id,
+            stage="完成",
             call_type=call_type,
             provider=self.config.provider,
             model=self._provider_model(),
             attempt_count=attempt_count,
             http_status=error.http_status,
+            ok=False,
+            elapsed_seconds=self._elapsed_seconds(attempt_started_at),
             exception_type=error.exception_type,
             failure_reason=str(error),
             failure_details=error.details,
         )
 
-    def _read_chat_completion_response(self, response: requests.Response) -> dict[str, Any]:
+    @staticmethod
+    def _elapsed_seconds(started_at: float) -> float:
+        return round(max(0.0, time.monotonic() - started_at), 6)
+
+    def _read_chat_completion_response(
+        self,
+        response: requests.Response,
+        *,
+        audit_id: str,
+        call_type: str,
+        attempt_count: int,
+        attempt_started_at: float,
+        total_timeout_at: float,
+    ) -> dict[str, Any]:
         response_headers = getattr(response, "headers", {})
         content_type = str(response_headers.get("Content-Type", "")).lower()
         if "text/event-stream" not in content_type:
+            self._raise_if_provider_total_timed_out(
+                total_timeout_at,
+                first_valid_token_received=False,
+                attempt_started_at=attempt_started_at,
+            )
             try:
-                return response.json()
+                response_json = response.json()
             except ValueError as exc:
                 response_text = str(getattr(response, "text", ""))
                 raise ModelProviderError(
@@ -1198,12 +1272,32 @@ class ModelAdapter:
                     exception_type="ProviderJSONError",
                     details={"raw_response_body": response_text},
                 ) from exc
+            choices = response_json.get("choices", []) if isinstance(response_json, dict) else []
+            content = ""
+            if choices and isinstance(choices[0], dict):
+                message = choices[0].get("message", {})
+                if isinstance(message, dict):
+                    content = str(message.get("content", ""))
+            if content.strip():
+                self._write_provider_first_valid_token_audit(
+                    audit_id,
+                    call_type,
+                    attempt_count,
+                    attempt_started_at,
+                )
+            return response_json
 
         content_parts: list[str] = []
         finish_reason = ""
         usage: dict[str, Any] = {}
         saw_data_chunk = False
+        first_valid_token_received = False
         for raw_line in response.iter_lines(chunk_size=1, decode_unicode=True):
+            self._raise_if_provider_total_timed_out(
+                total_timeout_at,
+                first_valid_token_received=first_valid_token_received,
+                attempt_started_at=attempt_started_at,
+            )
             if isinstance(raw_line, bytes):
                 line = raw_line.decode("utf-8", errors="replace").strip()
             else:
@@ -1236,7 +1330,16 @@ class ModelAdapter:
             if isinstance(delta, dict):
                 content_delta = delta.get("content")
                 if content_delta is not None:
-                    content_parts.append(str(content_delta))
+                    content_text = str(content_delta)
+                    content_parts.append(content_text)
+                    if not first_valid_token_received and content_text.strip():
+                        first_valid_token_received = True
+                        self._write_provider_first_valid_token_audit(
+                            audit_id,
+                            call_type,
+                            attempt_count,
+                            attempt_started_at,
+                        )
             chunk_finish_reason = choice.get("finish_reason")
             if chunk_finish_reason is not None:
                 finish_reason = str(chunk_finish_reason)
@@ -1257,6 +1360,59 @@ class ModelAdapter:
             ],
             "usage": usage,
         }
+
+    def _write_provider_first_valid_token_audit(
+        self,
+        audit_id: str,
+        call_type: str,
+        attempt_count: int,
+        attempt_started_at: float,
+    ) -> None:
+        self._audit_logger.write(
+            "provider_first_valid_token_received",
+            audit_id,
+            stage="首个有效 Token",
+            call_type=call_type,
+            provider=self.config.provider,
+            model=self._provider_model(),
+            attempt_count=attempt_count,
+            elapsed_seconds=self._elapsed_seconds(attempt_started_at),
+        )
+
+    def _raise_if_provider_total_timed_out(
+        self,
+        total_timeout_at: float,
+        *,
+        first_valid_token_received: bool,
+        attempt_started_at: float,
+    ) -> None:
+        if time.monotonic() < total_timeout_at:
+            return
+        elapsed_seconds = self._elapsed_seconds(attempt_started_at)
+        if not first_valid_token_received:
+            message = (
+                "DeepSeek 模型排队超时，请稍后重试。"
+                if self.config.provider == "deepseek"
+                else "模型服务排队超时，请稍后重试。"
+            )
+            raise ModelProviderError(
+                message,
+                exception_type="ProviderQueueTimeout",
+                details={
+                    "phase": "waiting_for_first_valid_token",
+                    "elapsed_seconds": elapsed_seconds,
+                    "total_timeout_seconds": self.config.provider_total_timeout_seconds,
+                },
+            )
+        raise ModelProviderError(
+            "模型回复生成超时，请稍后重试。",
+            exception_type="ProviderTotalTimeout",
+            details={
+                "phase": "streaming_after_first_valid_token",
+                "elapsed_seconds": elapsed_seconds,
+                "total_timeout_seconds": self.config.provider_total_timeout_seconds,
+            },
+        )
 
     def _provider_request_payload(
         self,
@@ -1852,7 +2008,46 @@ class ModelAdapter:
         prompt_parts.append(
             self._schema_hint_for_call_type(call_type, payload or {}),
         )
+        if call_type == "dialogue":
+            npc_npc_role_prompt = self._npc_npc_role_prompt(payload or {})
+            if npc_npc_role_prompt:
+                # Keep the concrete participant roles at the very end so they are
+                # the last instruction the provider reads before generating JSON.
+                prompt_parts.append(npc_npc_role_prompt)
         return "\n".join(prompt_parts)
+
+    def _npc_npc_role_prompt(self, payload: dict[str, Any]) -> str:
+        if str(payload.get("dialogue_kind", "")) != "npc_npc":
+            return ""
+
+        replyer_id = str(payload.get("npc_id", "")).strip() or "unknown_replyer"
+        replyer_name = str(payload.get("npc_name", "")).strip() or replyer_id
+        speaker_context = payload.get("speaker_context", {})
+        if not isinstance(speaker_context, dict):
+            speaker_context = {}
+        speaker_id = str(speaker_context.get("speaker_id", "")).strip() or "unknown_speaker"
+        speaker_name = str(payload.get("speaker_name", "")).strip() or speaker_id
+        dialogue_phase = str(payload.get("dialogue_phase", "conversation")).strip()
+        if dialogue_phase == "invitation":
+            phase_rule = (
+                "当前是邀请阶段：由%s决定是否接受%s的邀请；不是%s替%s回答。"
+                % (replyer_name, speaker_name, speaker_name, replyer_name)
+            )
+        else:
+            phase_rule = (
+                "当前是正式对话阶段：由%s回应%s刚才说出口的内容。"
+                % (replyer_name, speaker_name)
+            )
+        return "\n".join([
+            "【本轮 NPC-NPC 角色表（最高优先级，输出前再次核对）】",
+            "- 当前唯一回复者 / 你必须扮演的角色：%s（npc_id=%s）。" % (replyer_name, replyer_id),
+            "- 当前对你说话的对方：%s（speaker_id=%s）。" % (speaker_name, speaker_id),
+            "- %s" % phase_rule,
+            "- reply_text 和 debug_reason 都必须以%s为主体，只体现%s的人设、职业、能力、状态和判断。"
+            % (replyer_name, replyer_name),
+            "- 禁止以%s的身份回答，禁止把%s的人设或职业写成自己的，也禁止用第三人称%s指代自己或说自己要听%s安排。"
+            % (speaker_name, speaker_name, replyer_name, replyer_name),
+        ])
 
     def _dialogue_special_interaction_prompt(self, payload: dict[str, Any]) -> str:
         prompt_parts: list[str] = []
@@ -2084,7 +2279,7 @@ class ModelAdapter:
         if self.config.model:
             return self.config.model
         if self.config.provider == "deepseek":
-            return "deepseek-v4-flash"
+            return "deepseek-v4-pro"
         return self.config.provider
 
     def _estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
@@ -2930,7 +3125,7 @@ def _default_provider_prices(provider: str, model: str) -> dict[str, float]:
             "output": 0.0,
             "request_reserve": 0.0,
         }
-    resolved_model = model.strip().lower() or "deepseek-v4-flash"
+    resolved_model = model.strip().lower() or "deepseek-v4-pro"
     if resolved_model == "deepseek-v4-pro":
         return {
             "input_cache_hit": 0.025,

@@ -26,6 +26,7 @@ var _last_deployment_result: Dictionary = {}
 var _last_action_result: Dictionary = {}
 var _slot_spatial_binding := "configured_legacy"
 var _pending_projectile_attacks: Dictionary = {}
+var _tutorial_event_suppression := false
 
 
 func _ready() -> void:
@@ -56,6 +57,7 @@ func _process(delta: float) -> void:
 
 
 func initialize() -> void:
+	_tutorial_event_suppression = false
 	_definitions.clear()
 	_device_order.clear()
 	_slots.clear()
@@ -104,6 +106,10 @@ func initialize() -> void:
 		_slots[slot_id] = slot
 		_configured_slots[slot_id] = slot.duplicate(true)
 		_slot_order.append(slot_id)
+
+
+func set_tutorial_event_suppression(enabled: bool) -> void:
+	_tutorial_event_suppression = enabled
 
 
 func get_device_ids() -> Array[String]:
@@ -158,6 +164,14 @@ func get_slot(slot_id: String) -> Dictionary:
 	slot["host_available"] = host_available
 	slot["unlocked"] = host_available and current_level >= required_level
 	return slot
+
+
+func advance_detached_tutorial_tick(game_delta_seconds: float) -> void:
+	# TutorialDirector owns this detached tick. It advances only deployed-device
+	# authority while TimeSystem keeps the formal calendar and daily systems paused.
+	if game_delta_seconds <= 0.0:
+		return
+	_on_logical_time_tick(game_delta_seconds, 1.0)
 
 
 func bind_formal_slot_positions(station_layout_controller: Node) -> Dictionary:
@@ -489,6 +503,30 @@ func get_state_snapshot() -> Dictionary:
 	}
 
 
+func create_game_save_snapshot() -> Dictionary:
+	return {"deployments": get_deployments()}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	_deployments.clear()
+	_slot_occupancy.clear()
+	_device_ruins.clear()
+	_pending_projectile_attacks.clear()
+	for raw_deployment in snapshot.get("deployments", []):
+		if not raw_deployment is Dictionary:
+			continue
+		var deployment: Dictionary = (raw_deployment as Dictionary).duplicate(true)
+		var deployment_id := str(deployment.get("deployment_id", ""))
+		var slot_id := str(deployment.get("slot_id", ""))
+		if deployment_id.is_empty() or slot_id.is_empty() or not _slots.has(slot_id):
+			continue
+		deployment["status"] = "active"
+		_deployments[deployment_id] = deployment
+		_slot_occupancy[slot_id] = deployment_id
+	_emit_state_changed()
+	return {"ok": true, "deployment_count": _deployments.size()}
+
+
 func get_deploy_eligibility(device_id: String, slot_id: String) -> Dictionary:
 	if _is_game_over():
 		return _deployment_error("game_over", "结算已经结束，不能继续部署器械。")
@@ -582,6 +620,22 @@ func deploy_device(device_id: String, slot_id: String) -> Dictionary:
 	_emit_deployed(deployment_id)
 	_emit_state_changed()
 	return result
+
+
+func apply_tutorial_deployment_overrides(deployment_id: String, raw_overrides: Variant) -> Dictionary:
+	if not _deployments.has(deployment_id) or not raw_overrides is Dictionary:
+		return {}
+	var overrides: Dictionary = raw_overrides
+	var deployment: Dictionary = _deployments[deployment_id]
+	if overrides.has("max_hp"):
+		var max_hp := maxi(1, int(overrides.get("max_hp", deployment.get("max_hp", 1))))
+		deployment["max_hp"] = max_hp
+		deployment["hp"] = max_hp
+	if overrides.has("damage"):
+		deployment["tutorial_damage_override"] = maxf(1.0, float(overrides.get("damage", 1.0)))
+	_deployments[deployment_id] = deployment
+	_emit_state_changed()
+	return get_deployment(deployment_id)
 
 
 func undeploy_device(deployment_id: String, confirm_damaged_destruction: bool = false) -> Dictionary:
@@ -719,7 +773,7 @@ func _advance_auto_attack(deployment_id: String, action_seconds: float, combat_s
 	var deployment: Dictionary = _deployments.get(deployment_id, {})
 	if deployment.is_empty() or str(deployment.get("status", "")) != "active":
 		return {}
-	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
+	var definition: Dictionary = _get_runtime_definition(deployment)
 	var slot := get_slot(str(deployment.get("slot_id", "")))
 	var host_result := _validate_slot_host(slot)
 	if not bool(host_result.get("ok", false)):
@@ -852,7 +906,7 @@ func resolve_defense_device_projectile(projectile_result: Dictionary) -> Diction
 	if not _deployments.has(deployment_id):
 		return {}
 	var deployment: Dictionary = _deployments.get(deployment_id, {})
-	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
+	var definition: Dictionary = _get_runtime_definition(deployment)
 	var resolution: Dictionary = projectile_result.get("resolution", {}) if projectile_result.get("resolution", {}) is Dictionary else {}
 	var damage_result: Dictionary = resolution.get("damage_result", {}) if resolution.get("damage_result", {}) is Dictionary else {}
 	var actual_target_id := str(resolution.get("actual_target_id", pending.get("target_enemy_id", "")))
@@ -944,7 +998,7 @@ func _reset_all_attack_timelines() -> void:
 		var deployment: Dictionary = _deployments.get(deployment_id, {})
 		if str(deployment.get("attack_phase", "idle")) == "idle":
 			continue
-		var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
+		var definition: Dictionary = _get_runtime_definition(deployment)
 		var slot := get_slot(str(deployment.get("slot_id", "")))
 		var effect := _make_effective_effect(definition, slot)
 		_reset_attack_timeline(deployment)
@@ -1021,6 +1075,8 @@ func _select_attack_target(deployment: Dictionary, definition: Dictionary, comba
 
 
 func _record_deployment_event(deployment: Dictionary, definition: Dictionary, slot: Dictionary, cost: Dictionary) -> Dictionary:
+	if _tutorial_event_suppression:
+		return {}
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return {}
@@ -1047,6 +1103,8 @@ func _record_deployment_event(deployment: Dictionary, definition: Dictionary, sl
 
 
 func _record_action_event(deployment: Dictionary, definition: Dictionary, action: Dictionary) -> Dictionary:
+	if _tutorial_event_suppression:
+		return {}
 	var memory_system := get_node_or_null(MEMORY_SYSTEM_PATH)
 	if memory_system == null or not memory_system.has_method("add_event"):
 		return {}
@@ -1231,7 +1289,7 @@ func _make_deployment_snapshot(raw_deployment: Variant) -> Dictionary:
 	if not raw_deployment is Dictionary or (raw_deployment as Dictionary).is_empty():
 		return {}
 	var deployment: Dictionary = (raw_deployment as Dictionary).duplicate(true)
-	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {})
+	var definition: Dictionary = _get_runtime_definition(deployment)
 	var slot := get_slot(str(deployment.get("slot_id", "")))
 	deployment["device_name"] = str(definition.get("name", deployment.get("device_id", "工程器械")))
 	deployment["description"] = str(definition.get("description", ""))
@@ -1249,6 +1307,15 @@ func _make_deployment_snapshot(raw_deployment: Variant) -> Dictionary:
 	deployment["range_multiplier"] = float((slot.get("effect_modifiers", {}) as Dictionary).get("range_multiplier", 1.0))
 	deployment["host_proxy"] = _make_host_proxy_snapshot(slot, deployment)
 	return deployment
+
+
+func _get_runtime_definition(deployment: Dictionary) -> Dictionary:
+	var definition: Dictionary = _definitions.get(str(deployment.get("device_id", "")), {}).duplicate(true)
+	if deployment.has("tutorial_damage_override"):
+		var effect: Dictionary = definition.get("effect", {}).duplicate(true)
+		effect["damage"] = maxf(1.0, float(deployment.get("tutorial_damage_override", effect.get("damage", 1.0))))
+		definition["effect"] = effect
+	return definition
 
 
 func _make_host_proxy_snapshot(slot: Dictionary, deployment: Dictionary = {}) -> Dictionary:

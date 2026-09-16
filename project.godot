@@ -13,10 +13,11 @@ config_version=5
 [application]
 
 config/name="这不是我的战争"
-config/version="0.0.696-t0396-combat-performance-p2"
+config/version="0.0.793-t0448-tutorial-ada-damage-multipliers"
 run/main_scene="res://scenes/frontend/MainMenu.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
-config/icon="res://icon.svg"
+config/icon="res://assets/branding/this_is_not_my_war_icon_1024.png"
+config/windows_native_icon="res://assets/branding/this_is_not_my_war.ico"
 
 [audio]
 
@@ -30,6 +31,10 @@ GameState="*res://scripts/core/GameState.gd"
 ConfigLoader="*res://scripts/core/ConfigLoader.gd"
 ClientSettings="*res://scripts/core/ClientSettings.gd"
 AudioManager="*res://scripts/systems/AudioManager.gd"
+
+[display]
+
+window/size/mode=3
 
 [editor_plugins]
 

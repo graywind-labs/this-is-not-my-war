@@ -21,6 +21,7 @@ const DEFAULT_REPAIR_HELPER_BASE_BONUS := 0.10
 const DEFAULT_REPAIR_HELPER_SKILL_SCALE := 0.005
 const DEFAULT_REPAIR_HELPER_MAX_BONUS := 0.50
 const DEFAULT_UPGRADE_SECONDS_PER_LEVEL := 3600.0
+const UPGRADE_BASE_DURATION_SURCHARGE_SECONDS := 7200.0
 const DEFAULT_UPGRADE_LEVEL_TIME_FACTOR := 0.35
 const UNIFIED_WORLD_FEEDBACK_BUILDING_IDS: Array[String] = [
 	"front_gate",
@@ -301,6 +302,63 @@ func get_building_snapshot() -> Dictionary:
 	return snapshot
 
 
+func create_game_save_snapshot() -> Dictionary:
+	var states := {}
+	for building_id in _building_order:
+		var building: Dictionary = _buildings.get(building_id, {})
+		states[building_id] = {
+			"hp": int(building.get("hp", 0)),
+			"max_hp": int(building.get("max_hp", 0)),
+			"level": int(building.get("level", 1)),
+			"destruction_latched": bool(building.get("destruction_latched", false)),
+			"special_state": (building.get("special_state", {}) as Dictionary).duplicate(true) if building.get("special_state", {}) is Dictionary else {},
+		}
+	var repairs := _active_repairs.duplicate(true)
+	var upgrades := _active_upgrades.duplicate(true)
+	for building_id in repairs.keys():
+		var repair: Dictionary = repairs[building_id]
+		repair["helpers"] = {}
+		repairs[building_id] = repair
+	for building_id in upgrades.keys():
+		var upgrade: Dictionary = upgrades[building_id]
+		upgrade["helpers"] = {}
+		upgrades[building_id] = upgrade
+	return {"buildings": states, "active_repairs": repairs, "active_upgrades": upgrades}
+
+
+func restore_game_save_snapshot(snapshot: Dictionary) -> Dictionary:
+	var saved: Dictionary = snapshot.get("buildings", {}) if snapshot.get("buildings", {}) is Dictionary else {}
+	var restored := 0
+	for raw_building_id in saved.keys():
+		var building_id := str(raw_building_id)
+		if not _buildings.has(building_id) or not saved[raw_building_id] is Dictionary:
+			continue
+		var source: Dictionary = saved[raw_building_id]
+		var building: Dictionary = _buildings[building_id]
+		building["level"] = maxi(1, int(source.get("level", building.get("level", 1))))
+		building["max_hp"] = maxi(1, int(source.get("max_hp", building.get("max_hp", 1))))
+		building["hp"] = clampi(int(source.get("hp", building.get("hp", 0))), 0, int(building["max_hp"]))
+		building["destruction_latched"] = bool(source.get("destruction_latched", false))
+		if source.get("special_state", {}) is Dictionary:
+			building["special_state"] = (source.get("special_state", {}) as Dictionary).duplicate(true)
+		_buildings[building_id] = building
+		_refresh_bound_scene_nodes(building_id)
+		restored += 1
+	_active_repairs = snapshot.get("active_repairs", {}).duplicate(true) if snapshot.get("active_repairs", {}) is Dictionary else {}
+	_active_upgrades = snapshot.get("active_upgrades", {}).duplicate(true) if snapshot.get("active_upgrades", {}) is Dictionary else {}
+	for building_id in _active_repairs.keys():
+		var repair: Dictionary = _active_repairs[building_id]
+		repair["helpers"] = {}
+		_active_repairs[building_id] = repair
+	for building_id in _active_upgrades.keys():
+		var upgrade: Dictionary = _active_upgrades[building_id]
+		upgrade["helpers"] = {}
+		_active_upgrades[building_id] = upgrade
+	for building_id in _building_order:
+		_emit_building_state_changed(building_id)
+	return {"ok": true, "restored_count": restored}
+
+
 func get_building_availability(building_id: String) -> Dictionary:
 	if building_id == PLAZA_LOCATION_ID:
 		return {
@@ -458,7 +516,12 @@ func set_building_special_state_section(
 	return true
 
 
-func reserve_workstation(building_id: String, npc_id: String, preferred_type: String = "") -> Dictionary:
+func reserve_workstation(
+	building_id: String,
+	npc_id: String,
+	preferred_type: String = "",
+	excluded_workstation_ids: Array = []
+) -> Dictionary:
 	if building_id.is_empty() or npc_id.is_empty() or not _buildings.has(building_id):
 		return {"ok": false, "reason": "invalid_workstation_request"}
 	var availability := get_building_availability(building_id)
@@ -484,6 +547,8 @@ func reserve_workstation(building_id: String, npc_id: String, preferred_type: St
 		var workstation: Dictionary = workstations[index]
 		var workstation_id := str(workstation.get("id", ""))
 		var workstation_type := str(workstation.get("type", ""))
+		if excluded_workstation_ids.has(workstation_id):
+			continue
 		if not preferred_type.is_empty() and workstation_type != preferred_type:
 			continue
 		if not assigned_workstation_id.is_empty() and workstation_id != assigned_workstation_id:
@@ -533,6 +598,7 @@ func reserve_workstation(building_id: String, npc_id: String, preferred_type: St
 		"reason": "no_free_workstation",
 		"building_id": building_id,
 		"preferred_type": preferred_type,
+		"excluded_workstation_ids": excluded_workstation_ids.duplicate(),
 		"assigned_workstation_id": assigned_workstation_id,
 		"blocked_workstations": blocked_workstations,
 		"blocked_by_npc_ids": blocked_by_npc_ids
@@ -1125,6 +1191,19 @@ func get_upgrade_level_effect(building_id: String, target_level: int = 0) -> Dic
 	return _resolve_upgrade_level_effect(building, resolved_level)
 
 
+func get_upgrade_duration_seconds(building_id: String, target_level: int = 0) -> float:
+	if not _buildings.has(building_id):
+		return 0.0
+	var building: Dictionary = _buildings[building_id]
+	var resolved_level := target_level
+	if resolved_level <= 0:
+		resolved_level = int(building.get("level", 1)) + 1
+	var upgrade_config := _resolve_upgrade_level_effect(building, resolved_level)
+	if upgrade_config.is_empty():
+		return 0.0
+	return _calculate_upgrade_duration_seconds(building, upgrade_config)
+
+
 func get_upgrade_status(building_id: String) -> Dictionary:
 	_prune_invalid_upgrade_helpers(building_id)
 	return _get_upgrade_status(building_id)
@@ -1369,12 +1448,12 @@ func _calculate_repair_duration_seconds(building: Dictionary, repair_config: Dic
 
 func _calculate_upgrade_duration_seconds(building: Dictionary, upgrade_config: Dictionary) -> float:
 	if upgrade_config.has("duration_seconds"):
-		return maxf(60.0, float(upgrade_config.get("duration_seconds", DEFAULT_UPGRADE_SECONDS_PER_LEVEL)))
+		return maxf(60.0, float(upgrade_config.get("duration_seconds", DEFAULT_UPGRADE_SECONDS_PER_LEVEL)) + UPGRADE_BASE_DURATION_SURCHARGE_SECONDS)
 	var seconds_per_level := maxf(1.0, float(upgrade_config.get("seconds_per_current_level", DEFAULT_UPGRADE_SECONDS_PER_LEVEL)))
 	var level_factor := maxf(0.0, float(upgrade_config.get("level_time_factor", DEFAULT_UPGRADE_LEVEL_TIME_FACTOR)))
 	var level := maxi(1, int(building.get("level", 1)))
 	var duration := seconds_per_level * (1.0 + float(level - 1) * level_factor)
-	return maxf(60.0, duration)
+	return maxf(60.0, duration + UPGRADE_BASE_DURATION_SURCHARGE_SECONDS)
 
 
 func _calculate_repair_helper_bonus(engineering_skill: int) -> float:
@@ -1403,7 +1482,7 @@ func _get_npc_work_output_multiplier(npc_id: String) -> float:
 	var npc_system := get_node_or_null(NPC_SYSTEM_PATH)
 	if npc_system == null or not npc_system.has_method("get_npc_work_output_multiplier"):
 		return 1.0
-	return maxf(1.0, float(npc_system.get_npc_work_output_multiplier(npc_id)))
+	return maxf(0.01, float(npc_system.get_npc_work_output_multiplier(npc_id)))
 
 
 func _apply_repair_progress(building_id: String, emit_changed: bool = true) -> void:

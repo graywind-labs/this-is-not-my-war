@@ -15,8 +15,8 @@
     "formal_layout_root": "WorldRoot/FormalStationLayout"
   },
   "terrain": {
-    "center": [0.0, 25.0],
-    "size": [700.0, 720.0],
+    "center": [0.0, -57.75],
+    "size": [700.0, 554.5],
     "ground_color": "#405842",
     "ground_surface_y": 0.0,
     "ground_depth": 2.4,
@@ -34,26 +34,26 @@
       {"id":"river_cliff_02","kind":"river_cliff","from":[-81.0,-240.0],"to":[-79.0,-160.0],"width":2.4,"height":3.0,"color":"#666b70"},
       {"id":"river_cliff_03","kind":"river_cliff","from":[-79.0,-160.0],"to":[-84.0,-70.0],"width":2.4,"height":3.0,"color":"#666b70"},
       {"id":"river_cliff_04","kind":"river_cliff","from":[-84.0,-70.0],"to":[-80.0,0.0],"width":2.4,"height":3.0,"color":"#666b70"},
-      {"id":"river_cliff_05","kind":"river_cliff","from":[-80.0,0.0],"to":[-84.0,80.0],"width":2.4,"height":3.0,"color":"#666b70"},
-      {"id":"river_cliff_06","kind":"river_cliff","from":[-84.0,80.0],"to":[-79.0,160.0],"width":2.4,"height":3.0,"color":"#666b70"},
-      {"id":"river_cliff_07","kind":"river_cliff","from":[-79.0,160.0],"to":[-83.0,250.0],"width":2.4,"height":3.0,"color":"#666b70"},
-      {"id":"river_cliff_08","kind":"river_cliff","from":[-83.0,250.0],"to":[-85.0,385.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_05","kind":"river_cliff","from":[-80.0,0.0],"to":[-84.0,67.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_06","kind":"river_cliff","from":[-84.0,67.0],"to":[-79.0,107.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_07","kind":"river_cliff","from":[-79.0,107.0],"to":[-83.0,152.0],"width":2.4,"height":3.0,"color":"#666b70"},
+      {"id":"river_cliff_08","kind":"river_cliff","from":[-83.0,152.0],"to":[-85.0,219.5],"width":2.4,"height":3.0,"color":"#666b70"},
       {"id":"east_ridge_01","kind":"rock_ridge","from":[147.5,-300.0],"to":[147.5,-135.0],"width":55.0,"height":5.5,"color":"#555b60"},
       {"id":"east_ridge_02","kind":"rock_ridge","from":[147.5,-135.0],"to":[147.5,30.0],"width":55.0,"height":5.5,"color":"#596066"},
-      {"id":"east_ridge_03","kind":"rock_ridge","from":[147.5,30.0],"to":[147.5,195.0],"width":55.0,"height":5.5,"color":"#555b60"},
-      {"id":"east_ridge_04","kind":"rock_ridge","from":[147.5,195.0],"to":[147.5,360.0],"width":55.0,"height":5.5,"color":"#596066"},
+      {"id":"east_ridge_03","kind":"rock_ridge","from":[147.5,30.0],"to":[147.5,124.5],"width":55.0,"height":5.5,"color":"#555b60"},
+      {"id":"east_ridge_04","kind":"rock_ridge","from":[147.5,124.5],"to":[147.5,207.0],"width":55.0,"height":5.5,"color":"#596066"},
       {"id":"rear_forest_west_near","kind":"dense_forest","from":[-344.0,-70.0],"to":[-48.0,-70.0],"width":18.0,"height":4.5,"color":"#263f31","corridor":"rear_trade"},
       {"id":"rear_forest_east_near","kind":"dense_forest","from":[-10.0,-70.0],"to":[344.0,-70.0],"width":18.0,"height":4.5,"color":"#263f31","corridor":"rear_trade"},
       {"id":"rear_forest_west_mid","kind":"dense_forest","from":[-344.0,-180.0],"to":[-60.0,-180.0],"width":20.0,"height":4.8,"color":"#223a2d","corridor":"rear_trade"},
       {"id":"rear_forest_east_mid","kind":"dense_forest","from":[-32.0,-180.0],"to":[344.0,-180.0],"width":20.0,"height":4.8,"color":"#223a2d","corridor":"rear_trade"},
       {"id":"rear_forest_west_edge","kind":"dense_forest","from":[-344.0,-290.0],"to":[-68.0,-290.0],"width":22.0,"height":5.0,"color":"#20372a","corridor":"rear_trade"},
       {"id":"rear_forest_east_edge","kind":"dense_forest","from":[-40.0,-290.0],"to":[344.0,-290.0],"width":22.0,"height":5.0,"color":"#20372a","corridor":"rear_trade"},
-      {"id":"front_forest_west_near","kind":"dense_forest","from":[-344.0,85.0],"to":[-15.0,85.0],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
-      {"id":"front_forest_east_near","kind":"dense_forest","from":[24.0,85.0],"to":[344.0,85.0],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
-      {"id":"front_forest_west_mid","kind":"dense_forest","from":[-344.0,220.0],"to":[-10.0,220.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
-      {"id":"front_forest_east_mid","kind":"dense_forest","from":[26.0,220.0],"to":[344.0,220.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
-      {"id":"front_forest_west_edge","kind":"dense_forest","from":[-344.0,330.0],"to":[-24.0,330.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"},
-      {"id":"front_forest_east_edge","kind":"dense_forest","from":[28.0,330.0],"to":[344.0,330.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"}
+      {"id":"front_forest_west_near","kind":"dense_forest","from":[-344.0,69.5],"to":[-15.0,69.5],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
+      {"id":"front_forest_east_near","kind":"dense_forest","from":[24.0,69.5],"to":[344.0,69.5],"width":24.0,"height":4.8,"color":"#263f31","corridor":"enemy_approach"},
+      {"id":"front_forest_west_mid","kind":"dense_forest","from":[-344.0,137.0],"to":[-10.0,137.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
+      {"id":"front_forest_east_mid","kind":"dense_forest","from":[26.0,137.0],"to":[344.0,137.0],"width":26.0,"height":5.0,"color":"#223a2d","corridor":"enemy_approach"},
+      {"id":"front_forest_west_edge","kind":"dense_forest","from":[-344.0,192.0],"to":[-24.0,192.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"},
+      {"id":"front_forest_east_edge","kind":"dense_forest","from":[28.0,192.0],"to":[344.0,192.0],"width":28.0,"height":5.2,"color":"#20372a","corridor":"enemy_spawn"}
     ]
   },
   "station": {
@@ -96,7 +96,7 @@
     {"id":"clinic","node_name":"Clinic","display_name":"小诊所","center":[12.0,-30.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":1.4,"color":"#788f87"},
     {"id":"stable","node_name":"Stable","display_name":"马厩","center":[31.0,-23.0],"rotation_degrees":-45.0,"orientation":"西北","lot_size":[16.0,16.0],"envelope_size":[14.0,14.0],"height":1.4,"color":"#634a33"},
     {"id":"dormitory","node_name":"Dormitory","display_name":"宿舍","center":[-34.0,-9.0],"rotation_degrees":90.0,"orientation":"东","lot_size":[16.0,14.0],"envelope_size":[14.0,13.0],"height":1.4,"color":"#5e6b7a"},
-    {"id":"main_hall","node_name":"MainHall","display_name":"主厅","center":[0.0,-8.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[24.0,20.0],"envelope_size":[22.0,18.0],"height":3.0,"color":"#8c6e52","solid_interior_blocker":{"enabled":true,"inset":0.2,"blocks_navigation_link":true}},
+    {"id":"main_hall","node_name":"MainHall","display_name":"主厅","center":[0.0,-8.0],"rotation_degrees":0.0,"orientation":"北","lot_size":[24.0,20.0],"envelope_size":[22.0,18.0],"collision_inset":0.5,"height":3.0,"color":"#8c6e52","solid_interior_blocker":{"enabled":true,"inset":0.2,"blocks_navigation_link":true}},
     {"id":"dining_hall","node_name":"DiningHall","display_name":"食堂","center":[34.0,-3.0],"rotation_degrees":-90.0,"orientation":"西","lot_size":[16.0,14.0],"envelope_size":[14.0,12.0],"height":1.4,"color":"#9c7545"},
     {"id":"garden","node_name":"Garden","display_name":"菜园","center":[-42.0,10.0],"rotation_degrees":90.0,"orientation":"东","lot_size":[14.0,14.0],"envelope_size":[12.0,12.0],"height":0.7,"color":"#306e38"},
     {"id":"tavern","node_name":"Tavern","display_name":"酒窖","center":[-34.0,28.0],"rotation_degrees":45.0,"orientation":"东北","lot_size":[14.0,12.0],"envelope_size":[12.0,10.0],"height":1.3,"color":"#70382e"},
@@ -149,7 +149,7 @@
     },
     "dining_hall": {
       "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
-      "positions":[{"id":"dining_kitchen_station_01","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[-3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_02","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[0.0,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_03","type":"dining_kitchen_station","authority":"building_workstation","required_level":3,"center":[3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_seat_01","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_02","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_03","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_04","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.1,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_05","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.1,1.0],"size":[0.9,1.2]},{"id":"dining_seat_06","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_07","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_08","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_09","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.1,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_10","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.1,1.0],"size":[0.9,1.2]}]
+      "positions":[{"id":"dining_kitchen_station_01","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[-3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_02","type":"dining_kitchen_station","authority":"building_workstation","required_level":1,"center":[0.0,-4.0],"size":[2.8,2.8]},{"id":"dining_kitchen_station_03","type":"dining_kitchen_station","authority":"building_workstation","required_level":3,"center":[3.8,-4.0],"size":[2.8,2.8]},{"id":"dining_seat_01","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_02","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_03","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_04","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.27,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_05","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[-1.27,1.0],"size":[0.9,1.2]},{"id":"dining_seat_06","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-1.8],"size":[0.9,1.2]},{"id":"dining_seat_07","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,-0.1],"size":[0.9,1.2]},{"id":"dining_seat_08","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[3.7,1.6],"size":[0.9,1.2]},{"id":"dining_seat_09","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.27,-1.0],"size":[0.9,1.2]},{"id":"dining_seat_10","type":"dining_seat","authority":"building_workstation","required_level":1,"center":[1.27,1.0],"size":[0.9,1.2]}]
     },
     "garden": {
       "entry_route":{"entry_outside":[0.0,7.2],"door_outside":[0.0,6.25],"door_inside":[0.0,5.25],"interior":[0.0,3.4],"exit_outside":[0.0,8.4]},
@@ -203,23 +203,23 @@
       "proactive_strategy_ids": ["attack"]
     },
     "enemy_route": {
-      "spawn_zone_center": [2.0,335.0],
+      "spawn_zone_center": [2.0,194.5],
       "spawn_zone_size": [28.0,18.0],
       "approach_half_width": 4.0,
       "navigation_cross_sections": [
-        {"z":344.0,"x_min":-12.0,"x_max":16.0},
-        {"z":335.0,"x_min":-12.0,"x_max":16.0},
-        {"z":220.0,"x_min":-8.5,"x_max":24.5},
-        {"z":105.0,"x_min":-10.0,"x_max":22.0},
+        {"z":199.0,"x_min":-12.0,"x_max":16.0},
+        {"z":194.5,"x_min":-12.0,"x_max":16.0},
+        {"z":137.0,"x_min":-8.5,"x_max":24.5},
+        {"z":79.5,"x_min":-10.0,"x_max":22.0},
         {"z":58.0,"x_min":0.8,"x_max":9.2},
         {"z":54.0,"x_min":1.8,"x_max":8.2}
       ],
       "pilot_stop_stage_id": "front_gate",
       "stages": [
-        {"id":"spawn","label":"地图边缘林下出生/组阵","point":[2.0,335.0]},
-        {"id":"reveal","label":"远方林缘显现","point":[8.0,225.0]},
-        {"id":"approach_mid","label":"林间进军中段","point":[10.0,165.0]},
-        {"id":"contact","label":"城外接触区","point":[6.0,105.0]},
+        {"id":"spawn","label":"地图边缘林下出生/组阵","point":[2.0,194.5]},
+        {"id":"reveal","label":"远方林缘显现","point":[8.0,139.5]},
+        {"id":"approach_mid","label":"林间进军中段","point":[10.0,109.5]},
+        {"id":"contact","label":"城外接触区","point":[6.0,79.5]},
         {"id":"front_gate","label":"正门攻击点","point":[5.0,54.0]},
         {"id":"gate_turn","label":"破门后转向点","point":[-1.0,40.0]},
         {"id":"north_junction","label":"北侧路口","point":[0.0,22.0]},
@@ -421,7 +421,7 @@
     "cell_size": 0.5,
     "agent_radius": 0.35,
     "grid_bounds": [-58.0,58.0,-50.0,58.0],
-    "production_bounds": [-58.0,58.0,-50.0,350.0],
+    "production_bounds": [-58.0,58.0,-50.0,202.0],
     "enemy_exterior_mode": "shared_open_baked_space",
     "roads_affect_navigation": false,
     "entry_connector_width": 2.4,
@@ -462,10 +462,10 @@
     {"id":"blacksmith_lane_b","from":[5.0,27.0],"to":[10.2,31.2],"width":3.2,"kind":"service","serves":["blacksmith"]},
     {"id":"warehouse_lane_a","from":[0.0,10.0],"to":[14.0,11.0],"width":3.2,"kind":"service"},
     {"id":"warehouse_lane_b","from":[14.0,11.0],"to":[29.5,14.5],"width":3.2,"kind":"service","serves":["warehouse"]},
-    {"id":"front_approach_a","from":[5.0,54.0],"to":[6.0,105.0],"width":8.0,"kind":"enemy"},
-    {"id":"front_approach_b","from":[6.0,105.0],"to":[10.0,165.0],"width":8.0,"kind":"enemy"},
-    {"id":"front_approach_c","from":[10.0,165.0],"to":[8.0,225.0],"width":8.0,"kind":"enemy"},
-    {"id":"front_approach_d","from":[8.0,225.0],"to":[2.0,335.0],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_a","from":[5.0,54.0],"to":[6.0,79.5],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_b","from":[6.0,79.5],"to":[10.0,109.5],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_c","from":[10.0,109.5],"to":[8.0,139.5],"width":8.0,"kind":"enemy"},
+    {"id":"front_approach_d","from":[8.0,139.5],"to":[2.0,194.5],"width":8.0,"kind":"enemy"},
     {"id":"rear_trade_a","from":[-27.0,-45.5],"to":[-35.0,-90.0],"width":4.5,"kind":"trade"},
     {"id":"rear_trade_b","from":[-35.0,-90.0],"to":[-42.0,-135.0],"width":4.5,"kind":"trade"},
     {"id":"rear_trade_c","from":[-42.0,-135.0],"to":[-46.0,-185.0],"width":4.5,"kind":"trade"},
@@ -480,7 +480,7 @@
     "vertical_fov_degrees": 62.0,
     "initial_focus": [-2.0,18.0],
     "x_limits": [-150.0,150.0],
-    "z_limits": [-215.0,240.0]
+    "z_limits": [-215.0,147.0]
   },
   "c1_authority_boundary": {
     "migrated": ["terrain_visual","wall_visuals","gate_visuals","road_visuals","building_roots","camera_preview_contract"],

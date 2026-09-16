@@ -5,7 +5,7 @@ const EXPECTED_RESULTS := {
 	"route": ["arrived", "arrived"],
 	"avoid_left": ["arrived", "arrived"],
 	"avoid_right": ["arrived", "arrived"],
-	"stuck": ["failed", "stuck_timeout"],
+	"stuck": ["active", "stuck_timeout"],
 	"unreachable": ["failed", "target_unreachable"]
 }
 
@@ -77,16 +77,30 @@ func _init() -> void:
 			_fail("Body/interaction collision layers are not separated for %s: %s" % [actor_id, str(actor_snapshot)])
 			return
 		if (
-			not is_equal_approx(float(actor_snapshot.get("body_radius", 0.0)), 0.35)
+			not is_equal_approx(float(actor_snapshot.get("body_radius", 0.0)), 0.30)
 			or not is_equal_approx(float(actor_snapshot.get("body_height", 0.0)), 1.6)
+			or not is_equal_approx(float(actor_snapshot.get("interaction_radius", 0.0)), 0.36)
 		):
 			_fail("NPC capsule profile mismatch for %s: %s" % [actor_id, str(actor_snapshot)])
+			return
+		var actor := sandbox.debug_get_actor(actor_id) as ActorMotionBody
+		if actor == null or not is_equal_approx(actor.navigation_agent.radius, 0.35):
+			_fail("NPC RVO radius mismatch for %s" % actor_id)
 			return
 		if not (actor_snapshot.get("configuration_errors", []) as Array).is_empty():
 			_fail("Actor configuration error for %s: %s" % [actor_id, str(actor_snapshot)])
 			return
 	if int((actors.get("stuck", {}) as Dictionary).get("repath_count", 0)) != 2:
 		_fail("Stuck recovery should use its bounded two repaths: %s" % str(actors.get("stuck", {})))
+		return
+	var stuck_snapshot: Dictionary = actors.get("stuck", {})
+	if (
+		not bool(stuck_snapshot.get("active", false))
+		or str(stuck_snapshot.get("state", "")) != "moving"
+		or str(stuck_snapshot.get("last_result", "")) == "stuck_timeout"
+		or int(stuck_snapshot.get("stuck_notification_count", 0)) != 1
+	):
+		_fail("Stuck notification must preserve the active motion request: %s" % str(stuck_snapshot))
 		return
 	for actor_id in ["route", "avoid_left", "avoid_right"]:
 		if int((actors.get(actor_id, {}) as Dictionary).get("avoidance_callback_count", 0)) <= 0:
