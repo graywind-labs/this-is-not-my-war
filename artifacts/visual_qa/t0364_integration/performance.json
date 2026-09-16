@@ -1,0 +1,62 @@
+[
+  {
+    "approved": false,
+    "draw_calls": 7659.0,
+    "mean_frame_ms": 14.337925,
+    "p95_frame_ms": 15.933,
+    "primitives": 1969896.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": true,
+    "draw_calls": 6918.0,
+    "mean_frame_ms": 13.7744583333333,
+    "p95_frame_ms": 15.002,
+    "primitives": 1840248.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": false,
+    "draw_calls": 632.0,
+    "mean_frame_ms": 5.57325,
+    "p95_frame_ms": 6.286,
+    "primitives": 1057601.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "front_forest"
+  },
+  {
+    "approved": true,
+    "draw_calls": 347.0,
+    "mean_frame_ms": 3.118,
+    "p95_frame_ms": 4.037,
+    "primitives": 1039385.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "front_forest"
+  },
+  {
+    "approved": false,
+    "draw_calls": 9796.0,
+    "mean_frame_ms": 23.024525,
+    "p95_frame_ms": 24.893,
+    "primitives": 3459992.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "full_map"
+  },
+  {
+    "approved": true,
+    "draw_calls": 7374.0,
+    "mean_frame_ms": 16.9736,
+    "p95_frame_ms": 18.388,
+    "primitives": 3713270.0,
+    "resolution": "1280x720",
+    "samples": 120,
+    "view": "full_map"
+  }
+]

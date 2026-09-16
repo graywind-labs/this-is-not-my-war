@@ -1,0 +1,27 @@
+{
+  "images": [
+    "01_主视觉.png",
+    "02_对话征召.png",
+    "03_劳动力交涉.png",
+    "04_逃离挽留.png",
+    "05_事件与记忆.png"
+  ],
+  "originals": [
+    "screenshots/01_station.png",
+    "screenshots_extra/07_battle_detail.png",
+    "screenshots_ghi/H_result.png",
+    "screenshots_ghi/H_recruit_2.png",
+    "screenshots_ghi/G_response.png",
+    "screenshots_ghi/G_decision.png",
+    "screenshots_ghi/G_revised_decision.png",
+    "screenshots_ghi/I_result.png",
+    "screenshots_ghi/I_history.png",
+    "screenshots_extra/02_witness.png"
+  ],
+  "size": [
+    1920,
+    1080
+  ],
+  "screenshotPixels": "Original screenshots cropped and scaled only; no dialogue rewriting",
+  "pptModified": false
+}

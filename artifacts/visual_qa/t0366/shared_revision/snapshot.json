@@ -1,0 +1,17 @@
+{
+  "bank_and_rock_meshes_unchanged": 52,
+  "collision": false,
+  "enabled": true,
+  "flow_phases": [
+    8.0,
+    10.0
+  ],
+  "foam_footprints": 21,
+  "main_created": false,
+  "navigation": false,
+  "original_water_vertices": 120,
+  "production_enabled": false,
+  "trees": 7393,
+  "water_positions_unchanged": true,
+  "waterline_rocks": 21
+}

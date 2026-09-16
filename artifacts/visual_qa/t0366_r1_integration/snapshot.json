@@ -1,0 +1,21 @@
+{
+  "bank_and_rock_meshes_unchanged": 52,
+  "collision": false,
+  "enabled": true,
+  "flow_advances": true,
+  "flow_speed": 2.8,
+  "foam_footprints": 21,
+  "max_shoal_x": -84.9499969482422,
+  "max_waterline_rock_x": -89.0345458984375,
+  "min_navigation_x": -59.5,
+  "navigation": false,
+  "original_water_vertices": 120,
+  "shoreline_inset_range": [
+    0.000581450993195176,
+    2.20067381858826
+  ],
+  "shoreline_rows": 1202,
+  "trees": 7393,
+  "water_positions_unchanged": true,
+  "waterline_rocks": 21
+}

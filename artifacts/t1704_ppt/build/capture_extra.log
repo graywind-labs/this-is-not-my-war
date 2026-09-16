@@ -1,0 +1,14 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4060 Ti
+
+CAPTURED 01_notice (1920, 1080) mode=3
+CAPTURED 02_witness (1920, 1080) mode=3
+CAPTURED 03_events (1920, 1080) mode=3
+ERROR: Index p_line = 22 is out of bounds (text.size() = 20).
+   at: set_line_as_first_visible (scene/gui/text_edit.cpp:6544)
+ERROR: Index p_line = 22 is out of bounds (text.size() = 20).
+   at: set_line_as_first_visible (scene/gui/text_edit.cpp:6544)
+CAPTURED 04_equipment (1920, 1080) mode=3
+CAPTURED 05_battle_approach (1920, 1080) mode=3
+CAPTURED 06_battle (1920, 1080) mode=3
+CAPTURED 07_battle_detail (1920, 1080) mode=3

@@ -1,0 +1,8 @@
+ERROR: [godot-mcp] Failed to start server on 127.0.0.1:6550: Already in use
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] error (res://addons/godot_mcp/core/mcp_log.gd:14)
+       [1] start_server (res://addons/godot_mcp/websocket_server.gd:54)
+       [2] _do_restart_server (res://addons/godot_mcp/plugin.gd:223)
+WARNING: Scan thread aborted...
+   at: _notification (editor/file_system/editor_file_system.cpp:1729)

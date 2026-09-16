@@ -1,0 +1,18 @@
+{"kind":"deck","id":"pr/psbwy1","name":"Deck"}
+{"kind":"layout","layoutId":"280762e2-231b-4184-89ca-539964a8fa38","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"153d0cfd-a671-4fab-8eb6-5b8a306b3730","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/iihg0r","slide":1,"title":"Slide 1","textShapes":0}
+{"kind":"image","id":"im/47m1s3qx","slide":1,"name":"","alt":"自动接敌实机局部；使用现有 GM 配装和第三波快速开战，非 AI 征召证据","bbox":[60,346,1160,95]}
+{"kind":"notes","id":"nt/iihg0r","slide":1,"text":""}
+{"kind":"slide","id":"sl/0maddz","slide":2,"title":"Slide 2","textShapes":0}
+{"kind":"image","id":"im/vu1gbelc","slide":2,"name":"","alt":"实际战斗；通过现有 GM 配装和第三波快速开战，程序自动执行移动、索敌与攻击","bbox":[675,158,605,510]}
+{"kind":"notes","id":"nt/0maddz","slide":2,"text":""}
+{"kind":"slide","id":"sl/9vzepg","slide":3,"title":"Slide 3","textShapes":0}
+{"kind":"image","id":"im/e90jilk3","slide":3,"name":"","alt":"正式公告牌发布劳动力安排，NPC 见闻库记录广播；不表示该安排已经通过 LLM 执行","bbox":[720,167,496,295]}
+{"kind":"notes","id":"nt/9vzepg","slide":3,"text":""}
+{"kind":"slide","id":"sl/6cw2fs","slide":4,"title":"Slide 4","textShapes":0}
+{"kind":"image","id":"im/wfypcrqx","slide":4,"name":"","alt":"艾达正式装备与人物界面；拍摄于 GM 战斗配装之前","bbox":[748,168,470,286]}
+{"kind":"notes","id":"nt/6cw2fs","slide":4,"text":""}
+{"kind":"slide","id":"sl/3rgec7","slide":5,"title":"Slide 5","textShapes":0}
+{"kind":"image","id":"im/ixgb69cf","slide":5,"name":"","alt":"布鲁诺的真实见闻记录，含场所变化与本轮守备官发布的公告；非伪造记忆","bbox":[60,166,557,290]}
+{"kind":"notes","id":"nt/3rgec7","slide":5,"text":""}

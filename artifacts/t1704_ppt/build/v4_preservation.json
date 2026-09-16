@@ -1,0 +1,16 @@
+{
+  "source_sha256": "8e0c5e23821e167b20adf677b6e08c22af59cfe1b63efeb92928e3e1cc56cfd2",
+  "original_slide_parts_byte_identical": true,
+  "changed_container_parts": [
+    "[Content_Types].xml",
+    "ppt/presentation.xml",
+    "ppt/_rels/presentation.xml.rels",
+    "docProps/app.xml"
+  ],
+  "new_slide_positions": [
+    4,
+    10,
+    14
+  ],
+  "total_slides": 19
+}

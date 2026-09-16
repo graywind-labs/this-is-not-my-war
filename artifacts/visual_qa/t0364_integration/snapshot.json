@@ -1,0 +1,15 @@
+{
+  "new_collision": false,
+  "new_navigation": false,
+  "original_density_contracts_preserved": true,
+  "original_transforms_compared": 0,
+  "total_trees": 7393,
+  "variants": {
+    "birch_mature": 1168,
+    "birch_young": 456,
+    "oak_mature": 2419,
+    "oak_young": 903,
+    "pine_mature": 1750,
+    "pine_young": 697
+  }
+}

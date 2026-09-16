@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://fomam2mfsu4o"
+
+[deps]
+
+files=["res://artifacts/analysis/t0121_r1/breakpoints.enemy.translation", "res://artifacts/analysis/t0121_r1/breakpoints.count.translation", "res://artifacts/analysis/t0121_r1/breakpoints.enemy.translation", "res://artifacts/analysis/t0121_r1/breakpoints.contract.translation", "res://artifacts/analysis/t0121_r1/breakpoints.device.translation", "res://artifacts/analysis/t0121_r1/breakpoints.damage.translation", "res://artifacts/analysis/t0121_r1/breakpoints.shots.translation", "res://artifacts/analysis/t0121_r1/breakpoints.overkill.translation"]
+
+source_file="res://artifacts/analysis/t0121_r1/breakpoints.csv"
+dest_files=["res://artifacts/analysis/t0121_r1/breakpoints.enemy.translation", "res://artifacts/analysis/t0121_r1/breakpoints.count.translation", "res://artifacts/analysis/t0121_r1/breakpoints.enemy.translation", "res://artifacts/analysis/t0121_r1/breakpoints.contract.translation", "res://artifacts/analysis/t0121_r1/breakpoints.device.translation", "res://artifacts/analysis/t0121_r1/breakpoints.damage.translation", "res://artifacts/analysis/t0121_r1/breakpoints.shots.translation", "res://artifacts/analysis/t0121_r1/breakpoints.overkill.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

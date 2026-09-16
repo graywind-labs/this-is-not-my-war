@@ -1,0 +1,50 @@
+[
+  {
+    "approved": false,
+    "draw_calls": 6946.0,
+    "mean_frame_ms": 13.9970416666667,
+    "p95_frame_ms": 15.5,
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": true,
+    "draw_calls": 6943.0,
+    "mean_frame_ms": 13.4876666666667,
+    "p95_frame_ms": 14.186,
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": false,
+    "draw_calls": 749.0,
+    "mean_frame_ms": 5.71449166666666,
+    "p95_frame_ms": 6.722,
+    "samples": 120,
+    "view": "cliff_overview"
+  },
+  {
+    "approved": true,
+    "draw_calls": 653.0,
+    "mean_frame_ms": 4.02953333333333,
+    "p95_frame_ms": 5.246,
+    "samples": 120,
+    "view": "cliff_overview"
+  },
+  {
+    "approved": false,
+    "draw_calls": 7452.0,
+    "mean_frame_ms": 16.992575,
+    "p95_frame_ms": 18.2,
+    "samples": 120,
+    "view": "full_map"
+  },
+  {
+    "approved": true,
+    "draw_calls": 7429.0,
+    "mean_frame_ms": 17.0377666666667,
+    "p95_frame_ms": 18.018,
+    "samples": 120,
+    "view": "full_map"
+  }
+]

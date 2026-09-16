@@ -1,0 +1,52 @@
+[
+  {
+    "file": "01_驿站全景.png",
+    "source": "artifacts/t1704_ppt/screenshots/01_station.png",
+    "size": [
+      1920,
+      1080
+    ],
+    "unchanged_original": true,
+    "sha256": "6c513d5d6f484b092ab05d2def5c57f5ce36cb8c5cc62b5ba5b82229d4a1be73"
+  },
+  {
+    "file": "02_征召交涉.png",
+    "source": "artifacts/t1704_ppt/screenshots_ghi/H_recruit_2.png",
+    "size": [
+      1920,
+      1080
+    ],
+    "unchanged_original": true,
+    "sha256": "053d3f767ebfd8f4b4bafff59c7b5b8df0d1f0a96187da59001bbc9f1524f8b4"
+  },
+  {
+    "file": "03_工作安排交涉.png",
+    "source": "artifacts/t1704_ppt/screenshots_ghi/G_response.png",
+    "size": [
+      1920,
+      1080
+    ],
+    "unchanged_original": true,
+    "sha256": "88560ab7839d5c0c58f26b46ad89b9bd11bf0dbbd4a9413a2987721cf5247232"
+  },
+  {
+    "file": "04_逃离挽留记录.png",
+    "source": "artifacts/t1704_ppt/screenshots_ghi/I_history.png",
+    "size": [
+      1920,
+      1080
+    ],
+    "unchanged_original": true,
+    "sha256": "cd1ec3c1094c9c11a401e8159aef365467bb9cc042b0f8b26b89d97d6134e666"
+  },
+  {
+    "file": "05_第四波守城战.png",
+    "source": "artifacts/t1704_promo_v2/captures_towers/battle_001.png",
+    "size": [
+      1920,
+      1080
+    ],
+    "unchanged_original": true,
+    "sha256": "9088e2fde84dd98bd1587e6aeb52dc92a1847fe5f0826492b1368e185916adfd"
+  }
+]

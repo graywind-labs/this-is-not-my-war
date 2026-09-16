@@ -1,0 +1,50 @@
+[
+  {
+    "approved": false,
+    "draw_calls": 6943.0,
+    "mean_frame_ms": 14.123575,
+    "p95_frame_ms": 15.52,
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": true,
+    "draw_calls": 6945.0,
+    "mean_frame_ms": 14.4802083333333,
+    "p95_frame_ms": 15.866,
+    "samples": 120,
+    "view": "station"
+  },
+  {
+    "approved": false,
+    "draw_calls": 3186.0,
+    "mean_frame_ms": 8.57038333333333,
+    "p95_frame_ms": 9.895,
+    "samples": 120,
+    "view": "river_overview"
+  },
+  {
+    "approved": true,
+    "draw_calls": 3197.0,
+    "mean_frame_ms": 7.94765833333333,
+    "p95_frame_ms": 8.673,
+    "samples": 120,
+    "view": "river_overview"
+  },
+  {
+    "approved": false,
+    "draw_calls": 7429.0,
+    "mean_frame_ms": 17.23515,
+    "p95_frame_ms": 18.293,
+    "samples": 120,
+    "view": "full_map"
+  },
+  {
+    "approved": true,
+    "draw_calls": 7415.0,
+    "mean_frame_ms": 17.4074083333333,
+    "p95_frame_ms": 18.734,
+    "samples": 120,
+    "view": "full_map"
+  }
+]

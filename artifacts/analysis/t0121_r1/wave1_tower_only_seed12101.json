@@ -1,0 +1,74 @@
+{
+	"building_end": {
+		"front_gate": {
+			"hp": 160,
+			"max_hp": 160
+		},
+		"main_hall": {
+			"hp": 180,
+			"max_hp": 180
+		},
+		"wall": {
+			"hp": 240,
+			"max_hp": 240
+		},
+		"warehouse": {
+			"hp": 150,
+			"max_hp": 150
+		}
+	},
+	"combat_events": {
+		"actor_damaged": 24,
+		"attack_swing": 37,
+		"battle_started": 1,
+		"projectile_hit": 24,
+		"projectile_released": 24,
+		"structure_damaged": 26,
+		"wave_cleared": 1
+	},
+	"conscious_count": 0,
+	"device_damage_share": 1.0,
+	"device_end": {
+		"deployed_wall_slot_01": {
+			"destroyed": false,
+			"hp": 32,
+			"max_hp": 110
+		}
+	},
+	"elapsed_seconds": 33.95,
+	"enemy_attack_interrupts": 8,
+	"enemy_damage_by_source": {
+		"defense_device": 384
+	},
+	"enemy_defeated_count": 8,
+	"enemy_target_time_share": {
+		"defense_device": 0.9992,
+		"none": 0.0008
+	},
+	"enemy_windup_interrupts": 4,
+	"first_enemy_damage_seconds": 2.3,
+	"first_friendly_damage_seconds": 9.62,
+	"first_tower_slot": "wall_slot_01",
+	"fixture": "live_main_near_gate_fixed_physics",
+	"friendly_damage_by_target_type": {
+		"defense_device": 78
+	},
+	"game_over_reason": "",
+	"game_result": "",
+	"initial_enemy_count": 8,
+	"max_seconds": 90.0,
+	"minimum_building_hp_ratio": 1.0,
+	"npc_attack_interrupts": 0,
+	"npc_end": {
+
+	},
+	"npc_windup_interrupts": 0,
+	"remaining_enemy_count": 0,
+	"result": "cleared",
+	"scenario": "tower_only",
+	"seed": 12101,
+	"task": "T0121-R1",
+	"total_device_missing_hp": 78,
+	"total_npc_missing_hp": 0,
+	"wave": 1
+}

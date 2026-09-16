@@ -1,0 +1,436 @@
+{
+  "schema_version": 1,
+  "build_id": "demo-20260915042601-dd772835",
+  "built_at_utc": "2026-09-14T20:26:39.761303+00:00",
+  "project_version": "0.0.793-t0448-tutorial-ada-damage-multipliers",
+  "git_head": "dd77283517960a64933797eb01caa81747ae5a27",
+  "git_dirty": true,
+  "release_profile": {
+    "target": "windows_x86_64",
+    "godot_version": "4.6.2-stable",
+    "backend_host": "127.0.0.1",
+    "backend_port": 5000,
+    "backend_profile": "demo",
+    "llm_provider": "deepseek",
+    "llm_base_url": "https://api.deepseek.com",
+    "llm_model": "deepseek-v4-pro",
+    "llm_fallback_to_mock": false,
+    "voice_provider": "qwen3_asr_flash",
+    "voice_model": "qwen3-asr-flash",
+    "startup_mode": 2,
+    "default_display_mode": "fullscreen",
+    "gm_enabled": false,
+    "godot_mcp_enabled": false,
+    "branding_icon": "assets/branding/this_is_not_my_war.ico",
+    "audio_manifest_runtime": "assets/audio/manifests/audio_asset_manifest.runtime.txt",
+    "audio_asset_count": 109
+  },
+  "secret_fingerprints": {
+    "deepseek_sha256_12": "d058f91f1b97",
+    "voice_sha256_12": "52f1fa886c3c"
+  },
+  "file_count": 80,
+  "total_size": 502681670,
+  "files": [
+    {
+      "path": "backend/_internal/_asyncio.pyd",
+      "size": 65304,
+      "sha256": "746bc8fa88282afe19dc60e426cc0a75bea3bd137cca06a0b57a30bd31459403"
+    },
+    {
+      "path": "backend/_internal/_bz2.pyd",
+      "size": 84760,
+      "sha256": "00b8ca9a338d2b47285c9e56d6d893db2a999b47216756f18439997fb80a56e3"
+    },
+    {
+      "path": "backend/_internal/_ctypes.pyd",
+      "size": 124696,
+      "sha256": "c148292328f0aab7863af82f54f613961e7cb95b7215f7a81cafaf45bd4c42b7"
+    },
+    {
+      "path": "backend/_internal/_decimal.pyd",
+      "size": 255768,
+      "sha256": "980a63f2b39cf16910f44384398e25f24482346a482addb00de42555b17d4278"
+    },
+    {
+      "path": "backend/_internal/_hashlib.pyd",
+      "size": 65304,
+      "sha256": "87dd0c858620287454fd6d31d52b6a48eddbb2a08e09e8b2d9fdb0b92200d766"
+    },
+    {
+      "path": "backend/_internal/_lzma.pyd",
+      "size": 159512,
+      "sha256": "f5e01b516c2c23035f7703e23569dec26c5616c05a929b2580ae474a5c6722c5"
+    },
+    {
+      "path": "backend/_internal/_multiprocessing.pyd",
+      "size": 34584,
+      "sha256": "975c1947798e3c39898c86675ca1eb68249f77361f41f172f9800275227213b9"
+    },
+    {
+      "path": "backend/_internal/_overlapped.pyd",
+      "size": 51480,
+      "sha256": "ca106e4dfdeafeabf9e98956d3d8d0cb73e109f1a96f1a7e35bc47dbd7c7e164"
+    },
+    {
+      "path": "backend/_internal/_queue.pyd",
+      "size": 32024,
+      "sha256": "3f8e7e6aa13b417acc78b63434fb1144e6319a010a9fc376c54d6e69b638fe4c"
+    },
+    {
+      "path": "backend/_internal/_socket.pyd",
+      "size": 79640,
+      "sha256": "a19e3c7c03ef1b5625790b1c9c42594909311ab6df540fbf43c6aa93300ab166"
+    },
+    {
+      "path": "backend/_internal/_ssl.pyd",
+      "size": 178456,
+      "sha256": "ba5388d6a6557d431e086734a3323621dc447f63ba299b0a815e5837cf869678"
+    },
+    {
+      "path": "backend/_internal/_uuid.pyd",
+      "size": 25368,
+      "sha256": "e6aa7f1637e211251c9d6f467203b2b6d85e5bc2d901699f2a55af637fa89250"
+    },
+    {
+      "path": "backend/_internal/_zoneinfo.pyd",
+      "size": 45848,
+      "sha256": "7e7b4157e401f8281fd85b68f2e21c828bf739c91416b2824dd22cb385eef819"
+    },
+    {
+      "path": "backend/_internal/base_library.zip",
+      "size": 1443565,
+      "sha256": "724a41941971fb2cbdeb55eaefb4f6f47dcfdba725dc3a0725ed827de960e90f"
+    },
+    {
+      "path": "backend/_internal/certifi/cacert.pem",
+      "size": 240216,
+      "sha256": "9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f"
+    },
+    {
+      "path": "backend/_internal/certifi/py.typed",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "backend/_internal/charset_normalizer/cd.cp311-win_amd64.pyd",
+      "size": 115712,
+      "sha256": "ac9465bbf4a1698015cf306bed26a101677010d89acdd10f7f63dedbaf271798"
+    },
+    {
+      "path": "backend/_internal/charset_normalizer/md.cp311-win_amd64.pyd",
+      "size": 200192,
+      "sha256": "f398758fbce16b001e0799c1698d2a623751b8dd4e9ff0d6f4845ea6270f672f"
+    },
+    {
+      "path": "backend/_internal/click-8.5.0.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/click-8.5.0.dist-info/licenses/LICENSE.txt",
+      "size": 1475,
+      "sha256": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d"
+    },
+    {
+      "path": "backend/_internal/click-8.5.0.dist-info/METADATA",
+      "size": 2567,
+      "sha256": "e87bce0bd194de70dfb8e708e0a6b0483009f25611804eaf87bfeb63e6c20501"
+    },
+    {
+      "path": "backend/_internal/click-8.5.0.dist-info/RECORD",
+      "size": 2533,
+      "sha256": "4a422099194046f68c30cc3d7ef8eea6f91185842623182989406a652fe69272"
+    },
+    {
+      "path": "backend/_internal/click-8.5.0.dist-info/WHEEL",
+      "size": 82,
+      "sha256": "1b68144734c4b66791f27add5d425f3620775585718a03d0f9b110ba3a4d88db"
+    },
+    {
+      "path": "backend/_internal/data/dialogue_input_config.json",
+      "size": 140,
+      "sha256": "afb50ee4cb16ab372c219979c03380d6b9b6a6ceaa223181ab2d67a09c4c3f8d"
+    },
+    {
+      "path": "backend/_internal/data/prompts/battle_judgement_system_prompt.txt",
+      "size": 9297,
+      "sha256": "d6193ef249ca0451e12a9becbb2e3c6abc4bdc6073601dd0c2c633bf97d2eecc"
+    },
+    {
+      "path": "backend/_internal/data/prompts/daily_plan_system_prompt.txt",
+      "size": 15611,
+      "sha256": "b5c60855bfffa5d49ed7453907f402e70e21130d150dc0de5260ae0fc6f3555f"
+    },
+    {
+      "path": "backend/_internal/data/prompts/daily_reflection_system_prompt.txt",
+      "size": 11032,
+      "sha256": "ba5c144a53a883ec7459b20a97b0344b2cdf6674e3c7147d29909580d0c01ce2"
+    },
+    {
+      "path": "backend/_internal/data/prompts/dialogue_intent_revalidation_system_prompt.txt",
+      "size": 2787,
+      "sha256": "5404aede91962490f57dbe52c16a1ad6352c463ab83079b22f4b5709ad8657ce"
+    },
+    {
+      "path": "backend/_internal/data/prompts/dialogue_morale_special_prompt.txt",
+      "size": 2541,
+      "sha256": "be36d60d2a7b3b05f274d4ece062bccb6ca540af10ee108fcfcd31a6160c53ed"
+    },
+    {
+      "path": "backend/_internal/data/prompts/dialogue_plan_revision_judgement_system_prompt.txt",
+      "size": 534,
+      "sha256": "cc2ad1dd0ef9831dd0e688ce77a30d1bebbfc4706676134b19ba9a4e1459570c"
+    },
+    {
+      "path": "backend/_internal/data/prompts/dialogue_recruitment_special_prompt.txt",
+      "size": 5152,
+      "sha256": "3c151c0c29b7f692e998a01d55f3e5393789e7310fe6dd9729a5b8a6746ef405"
+    },
+    {
+      "path": "backend/_internal/data/prompts/dialogue_system_prompt.txt",
+      "size": 16919,
+      "sha256": "4d6952742ebb4f14e41331927a16e1635089d6fc0352b30bfd39e1024ee7f405"
+    },
+    {
+      "path": "backend/_internal/data/prompts/game_epilogue_system_prompt.txt",
+      "size": 5790,
+      "sha256": "baad7caececc144876ab17d3a924121fd19e1a2b1622eec7fdb8ffe1eb3a3c7a"
+    },
+    {
+      "path": "backend/_internal/data/prompts/plan_revision_judgement_system_prompt.txt",
+      "size": 10774,
+      "sha256": "e4931a2d1d11f59d6f109bea849386498c129e5766556ef0a22dd109604452d5"
+    },
+    {
+      "path": "backend/_internal/data/prompts/plan_revision_system_prompt.txt",
+      "size": 13174,
+      "sha256": "1958387b5f70690d8649a53d88d2738bab3507e66e19328b730cb155a47bcccf"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/entry_points.txt",
+      "size": 40,
+      "sha256": "6c13fb853392e5fcfdccbb42eec3e87c164094c904bc1c6eecaa92ea5e65bdce"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/licenses/LICENSE.txt",
+      "size": 1475,
+      "sha256": "489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/METADATA",
+      "size": 3167,
+      "sha256": "aa6760ed6f545704474d70733e4a63a7f1481e376973edc896a13d02a7224c7c"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/RECORD",
+      "size": 3729,
+      "sha256": "8ab2cc985f7476b7d22abd8b7e89e5f027711f91b8825a2cbc7b5a7b717d87ae"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/REQUESTED",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "backend/_internal/flask-3.1.3.dist-info/WHEEL",
+      "size": 82,
+      "sha256": "1b68144734c4b66791f27add5d425f3620775585718a03d0f9b110ba3a4d88db"
+    },
+    {
+      "path": "backend/_internal/itsdangerous-2.2.0.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/itsdangerous-2.2.0.dist-info/LICENSE.txt",
+      "size": 1475,
+      "sha256": "63af09891b6be8ad1a4252ed43af0f4efba7fc948e228367bed7f3c5ae0b09d7"
+    },
+    {
+      "path": "backend/_internal/itsdangerous-2.2.0.dist-info/METADATA",
+      "size": 1924,
+      "sha256": "d2b934fb56708a1b94e439f0255c0f5a8108e3258ec827b18a1dc9c991db9611"
+    },
+    {
+      "path": "backend/_internal/itsdangerous-2.2.0.dist-info/RECORD",
+      "size": 1549,
+      "sha256": "9ee7e75ca7316b09619ab574c2efebb52c0837ef8f26feeb03040b8e9ee09f9b"
+    },
+    {
+      "path": "backend/_internal/itsdangerous-2.2.0.dist-info/WHEEL",
+      "size": 81,
+      "sha256": "1196c6921ec87b83e865f450f08d19b8ff5592537f4ef719e83484e546abe33e"
+    },
+    {
+      "path": "backend/_internal/libcrypto-3.dll",
+      "size": 5191960,
+      "sha256": "05fe080eab7fc535c51e10c1bd76a2f3e6217f9c91a25034774588881c3f99de"
+    },
+    {
+      "path": "backend/_internal/libffi-8.dll",
+      "size": 39696,
+      "sha256": "eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a"
+    },
+    {
+      "path": "backend/_internal/libssl-3.dll",
+      "size": 787224,
+      "sha256": "2e9fbcd8f7fdc13a5179533239811456554f2b3aa2fb10e1b17be0df81c79006"
+    },
+    {
+      "path": "backend/_internal/markupsafe/_speedups.cp311-win_amd64.pyd",
+      "size": 13312,
+      "sha256": "755b26c10a4ece4acfb14a30201b5a5ff97b930784a0800b1bbc9bd93407a9fd"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/licenses/LICENSE.txt",
+      "size": 1503,
+      "sha256": "4631ec0db5fd90a547e336817264c6798214338146f8ac94b4a57f96ee8c9ec4"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/METADATA",
+      "size": 2764,
+      "sha256": "f0ae5dbb09d50fb5f7632c3d53f0220995ef76019e5892e0a545740136a4e3cb"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/RECORD",
+      "size": 1104,
+      "sha256": "eb598202c7791f6f9f1778b16223ebf50d15472be64260d47c93e9cbb5590740"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/top_level.txt",
+      "size": 11,
+      "sha256": "ab2d0f9637b9209bafb020637a32728430a310075c0cb2bfd9a81571ec7c67a5"
+    },
+    {
+      "path": "backend/_internal/markupsafe-3.0.3.dist-info/WHEEL",
+      "size": 101,
+      "sha256": "24b38cb0fec5e6ab6402420dc79527cdb160b9ff02a997ab695f28d386f423c2"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/licenses/LICENSE",
+      "size": 1129,
+      "sha256": "a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/METADATA",
+      "size": 110178,
+      "sha256": "0685830d13647bd6f3f05526043d32a8b2a221d86b53773053d6c52bb17a9c07"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/RECORD",
+      "size": 15546,
+      "sha256": "be30f927b996b5f17d16346f67277400b84db259b168da86056e4cf6b175de34"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/REQUESTED",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "backend/_internal/pydantic-2.13.5.dist-info/WHEEL",
+      "size": 87,
+      "sha256": "ccec20e2307acd7da453dd7437e70c6b08e2bc3ead3bc3445af135da37b56d59"
+    },
+    {
+      "path": "backend/_internal/pydantic_core/_pydantic_core.cp311-win_amd64.pyd",
+      "size": 5148672,
+      "sha256": "3c559df0e23edcce94f0d7d694c3c69bbfa2f9ec83c299a6dd2901e21ca40936"
+    },
+    {
+      "path": "backend/_internal/pyexpat.pyd",
+      "size": 199448,
+      "sha256": "c7c7564f7f874fb660a46384980a2cf28bc3e245ca83628a197ccf861eab5560"
+    },
+    {
+      "path": "backend/_internal/python311.dll",
+      "size": 5800216,
+      "sha256": "0817a2a657a24c0d5fbb60df56960f42fc66b3039d522ec952dab83e2d869364"
+    },
+    {
+      "path": "backend/_internal/select.pyd",
+      "size": 30488,
+      "sha256": "bae0974390945520eb99ab32486c6a964691f8f4a028ac408d98fa8fb0db7d90"
+    },
+    {
+      "path": "backend/_internal/unicodedata.pyd",
+      "size": 1140504,
+      "sha256": "37c68617fa02a2cadced17ef724e2d450ef12a8a37215da789a4679fde1c5c02"
+    },
+    {
+      "path": "backend/_internal/VCRUNTIME140.dll",
+      "size": 119192,
+      "sha256": "4d292623516f65c80482081e62d5dadb759dc16e851de5db24c3cbb57b87db83"
+    },
+    {
+      "path": "backend/_internal/werkzeug-3.1.8.dist-info/INSTALLER",
+      "size": 4,
+      "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+    },
+    {
+      "path": "backend/_internal/werkzeug-3.1.8.dist-info/licenses/LICENSE.txt",
+      "size": 1475,
+      "sha256": "3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b"
+    },
+    {
+      "path": "backend/_internal/werkzeug-3.1.8.dist-info/METADATA",
+      "size": 4029,
+      "sha256": "f57d29864fb04c6cbf2b4e844c108d62331f4621fd163cbced288f90dfd6d392"
+    },
+    {
+      "path": "backend/_internal/werkzeug-3.1.8.dist-info/RECORD",
+      "size": 8318,
+      "sha256": "100e61e8c19978022da7424551be068c0268bcaec9efd94016605891af3adc53"
+    },
+    {
+      "path": "backend/_internal/werkzeug-3.1.8.dist-info/WHEEL",
+      "size": 82,
+      "sha256": "1b68144734c4b66791f27add5d425f3620775585718a03d0f9b110ba3a4d88db"
+    },
+    {
+      "path": "backend/ThisIsNotMyWarBackend.exe",
+      "size": 5912890,
+      "sha256": "2f45c6298c9a8d612d423f488465785966573cef22a295246a1f2b657502eb62"
+    },
+    {
+      "path": "game/ThisIsNotMyWar.exe",
+      "size": 104600576,
+      "sha256": "0f6419c1e2360f6d8a1080b60f228339b82a800272573859d58bafac4a111164"
+    },
+    {
+      "path": "game/ThisIsNotMyWar.pck",
+      "size": 362446116,
+      "sha256": "07f4be2b195fa7732f8c3c6a4a3019d3a0453a04d4b95e98a27ef55c17f0fa83"
+    },
+    {
+      "path": "licenses/THIRD_PARTY_ASSETS.txt",
+      "size": 9345,
+      "sha256": "9eb141309957e6d5f68e136034fc12ef669cdf54e4dc382392ec92ba2584d3b0"
+    },
+    {
+      "path": "README_试玩说明.txt",
+      "size": 1934,
+      "sha256": "316f1f6f5ce28ef5061862f1a6c30c6002978ea62a44dec6109dc73249219fe3"
+    },
+    {
+      "path": "启动游戏.exe",
+      "size": 7777387,
+      "sha256": "624b0c8167efcd4b29641cae43d38db4264500ec3273ab085c673d46089ca364"
+    }
+  ]
+}

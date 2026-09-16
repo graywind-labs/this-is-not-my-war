@@ -1,0 +1,49 @@
+{"kind":"deck","id":"pr/8w3aob","name":"Deck"}
+{"kind":"layout","layoutId":"a7d0f1da-573a-4946-aa49-298d2b8caacb","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"99d91269-efd3-4c07-9c87-c2a12424f97f","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/u9yhsv","slide":1,"title":"章节概览","textShapes":12}
+{"kind":"textbox","id":"sh/o3yh8bi9","slide":1,"text":"章节概览","textPreview":"章节概览","textChars":4,"textLines":1,"bbox":[60,36,300,32]}
+{"kind":"textbox","id":"sh/n2p0f614","slide":1,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,95,1140,88]}
+{"kind":"textbox","id":"sh/21gz610j","slide":1,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[64,227,95,48]}
+{"kind":"textbox","id":"sh/1g7idwjy","slide":1,"text":"为 LLM 装上“眼睛”：信息空间、事件与见闻","textPreview":"为 LLM 装上“眼睛”：信息空间、事件与见闻","textChars":23,"textLines":1,"bbox":[151,227,1063,55]}
+{"kind":"textbox","id":"sh/0fyh4bid","slide":1,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[64,303,95,48]}
+{"kind":"textbox","id":"sh/fep0b61s","slide":1,"text":"为 LLM 装上“手脚”：24 小时计划与局部修订","textPreview":"为 LLM 装上“手脚”：24 小时计划与局部修订","textChars":25,"textLines":1,"bbox":[151,303,1063,55]}
+{"kind":"textbox","id":"sh/edgz21k7","slide":1,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[64,379,95,48]}
+{"kind":"textbox","id":"sh/lcbip0j2","slide":1,"text":"分层记忆：短期记忆、长期记忆与根本人设","textPreview":"分层记忆：短期记忆、长期记忆与根本人设","textChars":19,"textLines":1,"bbox":[151,379,1063,55]}
+{"kind":"textbox","id":"sh/kb21gvih","slide":1,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[64,455,95,48]}
+{"kind":"textbox","id":"sh/yhwrmp8n","slide":1,"text":"自动化执行：寻路、避障、进门排队与索敌","textPreview":"自动化执行：寻路、避障、进门排队与索敌","textChars":19,"textLines":1,"bbox":[151,455,1063,55]}
+{"kind":"textbox","id":"sh/zipsvu98","slide":1,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,681,500,26]}
+{"kind":"textbox","id":"sh/kjytofqt","slide":1,"text":"核心技术概览","textPreview":"核心技术概览","textChars":6,"textLines":1,"bbox":[1030,681,220,26]}
+{"kind":"notes","id":"nt/u9yhsv","slide":1,"text":""}
+{"kind":"slide","id":"sl/jbg7e3","slide":2,"title":"章节概览","textShapes":14}
+{"kind":"textbox","id":"sh/cju5o3yd","slide":2,"text":"章节概览","textPreview":"章节概览","textChars":4,"textLines":1,"bbox":[60,36,300,32]}
+{"kind":"textbox","id":"sh/bil4vyhs","slide":2,"text":"游戏创意","textPreview":"游戏创意","textChars":4,"textLines":1,"bbox":[60,95,1140,88]}
+{"kind":"textbox","id":"sh/qhc3mtg7","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[64,227,95,48]}
+{"kind":"textbox","id":"sh/pg3mt8zm","slide":2,"text":"守城压力强化目标感","textPreview":"守城压力强化目标感","textChars":9,"textLines":1,"bbox":[151,227,1063,55]}
+{"kind":"textbox","id":"sh/ovulk3yh","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[64,303,95,48]}
+{"kind":"textbox","id":"sh/3u14ryhw","slide":2,"text":"围绕守城，让对话具有实际意义","textPreview":"围绕守城，让对话具有实际意义","textChars":14,"textLines":1,"bbox":[151,303,1063,55]}
+{"kind":"textbox","id":"sh/2ts3itgb","slide":2,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[64,379,95,48]}
+{"kind":"textbox","id":"sh/1sjmpozq","slide":2,"text":"情绪表达与交互反馈增强趣味性","textPreview":"情绪表达与交互反馈增强趣味性","textChars":14,"textLines":1,"bbox":[151,379,1063,55]}
+{"kind":"textbox","id":"sh/gralgji5","slide":2,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[64,455,95,48]}
+{"kind":"textbox","id":"sh/id8fa9kn","slide":2,"text":"经营系统与 AI NPC 双向影响，丰富策略性","textPreview":"经营系统与 AI NPC 双向影响，丰富策略性","textChars":23,"textLines":1,"bbox":[151,455,1063,55]}
+{"kind":"textbox","id":"sh/jehwje18","slide":2,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[64,531,95,48]}
+{"kind":"textbox","id":"sh/4fqxcj2t","slide":2,"text":"以人员管理强化“管理者”幻想","textPreview":"以人员管理强化“管理者”幻想","textChars":14,"textLines":1,"bbox":[151,531,1063,55]}
+{"kind":"textbox","id":"sh/5gjeloje","slide":2,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,681,500,26]}
+{"kind":"textbox","id":"sh/up8f6pkr","slide":2,"text":"游戏创意概览","textPreview":"游戏创意概览","textChars":6,"textLines":1,"bbox":[1030,681,220,26]}
+{"kind":"notes","id":"nt/jbg7e3","slide":2,"text":""}
+{"kind":"slide","id":"sl/s3byi3","slide":3,"title":"章节概览","textShapes":14}
+{"kind":"textbox","id":"sh/nmd8radc","slide":3,"text":"章节概览","textPreview":"章节概览","textChars":4,"textLines":1,"bbox":[60,36,300,32]}
+{"kind":"textbox","id":"sh/8nmp0fex","slide":3,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,95,1140,88]}
+{"kind":"textbox","id":"sh/9ovqtkvi","slide":3,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[64,227,95,48]}
+{"kind":"textbox","id":"sh/yxk7u5wv","slide":3,"text":"对话征召：说服平民入伍","textPreview":"对话征召：说服平民入伍","textChars":11,"textLines":1,"bbox":[151,227,1063,55]}
+{"kind":"textbox","id":"sh/zytonadg","slide":3,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[64,303,95,48]}
+{"kind":"textbox","id":"sh/0zmpwve1","slide":3,"text":"士气与逃离：鼓舞成员，挽留逃兵","textPreview":"士气与逃离：鼓舞成员，挽留逃兵","textChars":15,"textLines":1,"bbox":[151,303,1063,55]}
+{"kind":"textbox","id":"sh/l0v6p0vm","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[64,379,95,48]}
+{"kind":"textbox","id":"sh/ito76pcz","slide":3,"text":"劳动力调配：争取配合，安排生产与防守","textPreview":"劳动力调配：争取配合，安排生产与防守","textChars":18,"textLines":1,"bbox":[151,379,1063,55]}
+{"kind":"textbox","id":"sh/jux8zudk","slide":3,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[64,455,95,48]}
+{"kind":"textbox","id":"sh/bixo7mxo","slide":3,"text":"经营与防守：分配资源，组织防线","textPreview":"经营与防守：分配资源，组织防线","textChars":15,"textLines":1,"bbox":[151,455,1063,55]}
+{"kind":"textbox","id":"sh/ahonehg3","slide":3,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[64,531,95,48]}
+{"kind":"textbox","id":"sh/xkz69cfu","slide":3,"text":"记忆与关系：了解人物经历，调整管理策略","textPreview":"记忆与关系：了解人物经历，调整管理策略","textChars":19,"textLines":1,"bbox":[151,531,1063,55]}
+{"kind":"textbox","id":"sh/cjq5g7y9","slide":3,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,681,500,26]}
+{"kind":"textbox","id":"sh/z6hobmx0","slide":3,"text":"核心玩法概览","textPreview":"核心玩法概览","textChars":6,"textLines":1,"bbox":[1030,681,220,26]}
+{"kind":"notes","id":"nt/s3byi3","slide":3,"text":""}

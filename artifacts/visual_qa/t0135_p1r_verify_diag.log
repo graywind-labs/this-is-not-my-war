@@ -1,0 +1,14 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Parse Error: Function "_make_tapered_traffic_apron()" not found in base self.
+   at: GDScript::reload (res://scripts/presentation/environment/FormalGroundSurfaceArtView.gd:263)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "apron" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://scripts/presentation/environment/FormalGroundSurfaceArtView.gd:263)
+ERROR: Failed to load script "res://scripts/presentation/environment/FormalGroundSurfaceArtView.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+T0135-P1R stage: load inputs
+T0135-P1R stage: configure isolated view
+SCRIPT ERROR: Invalid call. Nonexistent function 'configure (via call)' in base 'Node3D'.
+   at: _init (res://tools/verify_t0135_p1_formal_ground_surface.gd:17)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tools/verify_t0135_p1_formal_ground_surface.gd:17)

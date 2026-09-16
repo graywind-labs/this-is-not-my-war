@@ -1,0 +1,13 @@
+from pathlib import Path
+
+record='2026-09-05：T0366 独立河流样片已实现，状态 Partial（待用户视觉评价），未正式接入。新增 RiverArtTrial，A 保留当前蓝色水带 / 分色河岸，B 使用偏灰绿深浅水色、顺河细水纹、断续贴岸亮纹、草岸到石滩 / 湿岸渐变及统一灰色岸石。水体副本只补充横河 UV、纵向流动坐标和宽度属性，120 个原顶点位置逐点相等，无水位 / 河道位移；52 个河岸 / 岸石网格的资源、顶点 hash 和 Transform 不变。岸石沿用现有位置与数量，未新增河边密集装饰。A/B 共用已认可地表、全部 7,393 棵树、高岩壁及昼夜表现。headless 加载、D3D12 四镜头昼夜十六图、8 / 10 秒水纹两帧及 MCP A/B 检查通过；无碰撞 / 导航 / Main / LLM。水纹支持暂停观察。图与快照：`artifacts/visual_qa/t0366/`。正式环境配置、源地形、人物、建筑工位与玩法未改，版本仍为 0.0.660；无需 GM。尚未进行正式场景整合或实战性能验收。'
+
+def edit(name, fn):
+    p=Path(name); p.write_text(fn(p.read_text(encoding='utf-8')),encoding='utf-8',newline='\n')
+
+edit('docs/CURRENT_STATE.md',lambda s:s.replace('## 当前版本\n','## 当前版本\n\n'+record+'\n\n预览入口：`scenes/art/RiverArtTrial.tscn` 按 F6，可切换 A/B、整体 / 近看 / 侧看 / 远看、昼夜和水纹暂停。\n',1))
+edit('docs/TASKS.md',lambda s:s.replace('状态：In Progress（2026-09-05 用户要求执行下一项）','状态：Partial（样片已完成并展示，待视觉评价）',1).replace('### T0367 已认可样片的风格统一与整合评审',record+'\n\n### T0367 已认可样片的风格统一与整合评审',1))
+edit('docs/MODULE_INDEX.md',lambda s:s.replace('# MODULE_INDEX.md\n','# MODULE_INDEX.md\n\n## T0366 河流与河岸样片\n\n| 文件 | 职责 |\n|---|---|\n| `scenes/art/RiverArtTrial.tscn` | 独立 F6 原版 / 新河流比较入口 |\n| `scripts/presentation/RiverArtTrial.gd` | 正式环境只读预览、水体 UV 副本 / 材质切换、四镜头昼夜、水纹暂停、原顶点 / 隔离断言与抓图 |\n| `shaders/environment/river_art_trial.gdshader` | 基于横河 / 顺河坐标的深浅水色与断续流纹，无顶点位移 |\n| `shaders/environment/riverbank_art_trial.gdshader` | 共用已认可地表色板的草岸 / 石滩 / 湿岸渐变，无顶点位移 |\n| `data/presentation/river_art_trial.json` | 水 / 石色板、水纹速度与强度、四组镜头 |\n| `artifacts/visual_qa/t0366/` | 本机忽略的十六张 A/B 图、两张水纹相位图和 snapshot.json |\n\n复现：`godot --path . --scene res://scenes/art/RiverArtTrial.tscn -- --capture-river-trial`。正式 Main / 环境配置无样片引用，未调用 LLM。\n',1))
+edit('docs/GODOT_ARCHITECTURE.md',lambda s:s.replace('# GODOT_ARCHITECTURE.md\n','# GODOT_ARCHITECTURE.md\n\n## T0366 河流独立样片\n\nRiverArtTrial 实例化纯表现 FormalGroundSurfaceArtView，保持已认可地表 / 树木 / 高岩壁。候选复制原 RiverWaterRibbon 的 120 个顶点，位置完全相等，仅按原 profile 附加横河 UV、纵向 Z 坐标和宽度 UV2；Shader 使用这些坐标绘制中心深水、岸边浅水、沿河纹路与不连续岸缘亮纹，不依赖屏幕深度、外部贴图或水面位移。\n\n候选在预览实例中替换水 / 岸 / 石材质、隐藏旧 SubtleBankFoam，A 恢复原 Mesh / Material / 泡沫。河岸 shader 与已认可地表共用色板 / 噪声坐标，利用既有高度形成湿岸渐变；岸石只换材质，不改位置 / 数量。flow_time 由独立预览时钟驱动，可暂停；不读取或推进正式时间权威。四镜头昼夜与两个水纹相位抓图，原网格 hash / Transform 与隔离断言通过。正式接入尚未授权，无新增 GM。\n',1))
+edit('docs/ART_DIRECTION.md',lambda s:s.replace('## T0365 已认可高岩壁基线','## T0366 河流候选待评价\n\n候选河流使用偏灰绿的深浅水色，近岸较浅、中心较深，顺河细水纹与少量断续岸缘亮纹表达流动；不使用写实波纹图片、强镜面反射或大面积白沫。原连续色条河岸改为草地 / 石滩 / 湿岸渐变，岸石保持原分布并统一灰色。原河道几何、宽度与水位不变；此样片尚未成为正式基线。\n\n## T0365 已认可高岩壁基线',1))
+edit('docs/DEV_LOG.md',lambda s:s.replace('# DEV_LOG.md\n','# DEV_LOG.md\n\n## 2026-09-05 — T0366 河流与河岸独立样片\n\n'+record+'\n\n- CURRENT_STATE / TASKS / MODULE_INDEX / ART_DIRECTION / GODOT_ARCHITECTURE 已同步；GM_PANEL 无需更新，视觉入口直接可见。\n',1))

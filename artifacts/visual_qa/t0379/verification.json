@@ -1,0 +1,675 @@
+{
+  "failures": [],
+  "states": [
+    {
+      "state": {
+        "candidate": false,
+        "casts": 0,
+        "fall_elapsed": 0.0,
+        "formal_ability_modified": false,
+        "impacts": 0,
+        "landed_age": 0.0,
+        "main_created": false,
+        "meteor": {
+
+        },
+        "paused": false,
+        "ready_button": true,
+        "stage": "ready",
+        "targeting": true
+      },
+      "view": "A_00_target"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 1.4,
+        "formal_ability_modified": false,
+        "impacts": 0,
+        "landed_age": 0.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": false,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": false,
+          "permanent_crater": false
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "falling",
+        "targeting": false
+      },
+      "view": "A_01_descent"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 0.08,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_02_contact"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 0.55,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_03_dust"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_04_rock"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_05_side"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_06_night"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 5.99999999999998,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "A_07_cooled"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 8.19999999999999,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "crater",
+        "targeting": false
+      },
+      "view": "A_08_crater"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 13.0000000000002,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.100000000000023,
+          "crater_opacity": 0.899999999999977,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "fading",
+        "targeting": false
+      },
+      "view": "A_09_fade_start"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 17.0000000000003,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.500000000000032,
+          "crater_opacity": 0.499999999999968,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "fading",
+        "targeting": false
+      },
+      "view": "A_10_half_faded"
+    },
+    {
+      "state": {
+        "candidate": false,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 22.0,
+        "main_created": false,
+        "meteor": {
+
+        },
+        "paused": false,
+        "ready_button": true,
+        "stage": "ready",
+        "targeting": false
+      },
+      "view": "A_11_cleaned"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 1,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 22.0,
+        "main_created": false,
+        "meteor": {
+
+        },
+        "paused": false,
+        "ready_button": true,
+        "stage": "ready",
+        "targeting": true
+      },
+      "view": "B_00_target"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 1.4,
+        "formal_ability_modified": false,
+        "impacts": 1,
+        "landed_age": 0.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": false,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": false,
+          "permanent_crater": false
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "falling",
+        "targeting": false
+      },
+      "view": "B_01_descent"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 0.08,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_02_contact"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 0.55,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_03_dust"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_04_rock"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_05_side"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 2.0,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_06_night"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 5.99999999999998,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_07_cooled"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 8.19999999999999,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "crater",
+        "targeting": false
+      },
+      "view": "B_08_crater"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 13.0000000000002,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.100000000000023,
+          "crater_opacity": 0.899999999999977,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "fading",
+        "targeting": false
+      },
+      "view": "B_09_fade_start"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 17.0000000000003,
+        "main_created": false,
+        "meteor": {
+          "body_present": false,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.500000000000032,
+          "crater_opacity": 0.499999999999968,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": false,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": false,
+        "ready_button": false,
+        "stage": "fading",
+        "targeting": false
+      },
+      "view": "B_10_half_faded"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 2,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 2,
+        "landed_age": 22.0,
+        "main_created": false,
+        "meteor": {
+
+        },
+        "paused": false,
+        "ready_button": true,
+        "stage": "ready",
+        "targeting": false
+      },
+      "view": "B_11_cleaned"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 3,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 3,
+        "landed_age": 0.010000000000005,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": true,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_small_window"
+    },
+    {
+      "state": {
+        "candidate": true,
+        "casts": 3,
+        "fall_elapsed": 2.8,
+        "formal_ability_modified": false,
+        "impacts": 3,
+        "landed_age": 0.010000000000005,
+        "main_created": false,
+        "meteor": {
+          "body_present": true,
+          "body_radius": 4.2,
+          "crater_fade_progress": 0.0,
+          "crater_opacity": 1.0,
+          "crater_present": true,
+          "crater_radius": 4.8,
+          "impact_vfx_active": true,
+          "landed": true,
+          "permanent_crater": true
+        },
+        "paused": true,
+        "ready_button": false,
+        "stage": "body",
+        "targeting": false
+      },
+      "view": "B_clean_view"
+    }
+  ]
+}

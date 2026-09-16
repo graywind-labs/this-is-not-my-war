@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cocbcl4bfyt25"
+
+[deps]
+
+files=["res://artifacts/analysis/t0121_r1/screening_summary.contract.translation", "res://artifacts/analysis/t0121_r1/screening_summary.execution.translation", "res://artifacts/analysis/t0121_r1/screening_summary.tower.translation", "res://artifacts/analysis/t0121_r1/screening_summary.ada.translation", "res://artifacts/analysis/t0121_r1/screening_summary.model.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.device.translation", "res://artifacts/analysis/t0121_r1/screening_summary.devices.translation", "res://artifacts/analysis/t0121_r1/screening_summary.device.translation", "res://artifacts/analysis/t0121_r1/screening_summary.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.enemy.translation"]
+
+source_file="res://artifacts/analysis/t0121_r1/screening_summary.csv"
+dest_files=["res://artifacts/analysis/t0121_r1/screening_summary.contract.translation", "res://artifacts/analysis/t0121_r1/screening_summary.execution.translation", "res://artifacts/analysis/t0121_r1/screening_summary.tower.translation", "res://artifacts/analysis/t0121_r1/screening_summary.ada.translation", "res://artifacts/analysis/t0121_r1/screening_summary.model.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.duration.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.device.translation", "res://artifacts/analysis/t0121_r1/screening_summary.devices.translation", "res://artifacts/analysis/t0121_r1/screening_summary.device.translation", "res://artifacts/analysis/t0121_r1/screening_summary.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_summary.npc.translation", "res://artifacts/analysis/t0121_r1/screening_summary.enemy.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

@@ -1,0 +1,14 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+RoadTorch01 at=(-24.0, -35.0) nearest=(0.0, 0.0, 0.0) road=2.63877172470093
+RoadTorch02 at=(-24.0, -18.0) nearest=(0.0, 0.0, 0.0) road=0.09688541889191
+RoadTorch03 at=(-18.5, 3.0) nearest=(0.0, 0.0, 0.0) road=1.00772953033447
+RoadTorch04 at=(17.0, 10.0) nearest=(0.0, 0.0, 0.0) road=0.0362236738205
+RoadTorch05 at=(3.8, 20.0) nearest=(0.0, 0.0, 0.0) road=1.29999995231628
+RoadTorch06 at=(3.8, 43.0) nearest=(0.0, 0.0, 0.0) road=0.63013877868652
+LawnStump07 at=(-29.0, 14.0) nearest=(0.0, 0.0, 0.0) road=3.38365507125854
+LawnStump08 at=(-8.0, 16.0) nearest=(0.0, 0.0, 0.0) road=2.38056969642639
+LawnStump09 at=(21.0, -9.0) nearest=(0.0, 0.0, 0.0) road=7.02227249145508
+LawnStump10 at=(25.0, 43.0) nearest=(0.0, 0.0, 0.0) road=17.3282855987549
+T0383_SNAPSHOT { "art_revision": "t0362_approved", "tufts": 922, "grass_tufts": 914, "wildflowers": 8, "outer_tufts": 23812, "outer_chunks": 171, "estimated_inside_density": 0.09457670866869, "estimated_outside_density": 0.08102789117882, "road_count": 42, "has_collision": false, "has_navigation": false, "authority_role": "presentation_only" } removed=0
+T0383_FAIL ["Only local grass removed", "Outside building lots: RoadTorch01", "Outside road edge: RoadTorch02", "Outside road edge: RoadTorch04"]

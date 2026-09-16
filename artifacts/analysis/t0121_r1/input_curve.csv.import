@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cq55w62fk5jsc"
+
+[deps]
+
+files=["res://artifacts/analysis/t0121_r1/input_curve.contract.translation", "res://artifacts/analysis/t0121_r1/input_curve.enemy.translation", "res://artifacts/analysis/t0121_r1/input_curve.enemy.translation", "res://artifacts/analysis/t0121_r1/input_curve.npc.translation", "res://artifacts/analysis/t0121_r1/input_curve.device.translation", "res://artifacts/analysis/t0121_r1/input_curve.device.translation", "res://artifacts/analysis/t0121_r1/input_curve.raw.translation"]
+
+source_file="res://artifacts/analysis/t0121_r1/input_curve.csv"
+dest_files=["res://artifacts/analysis/t0121_r1/input_curve.contract.translation", "res://artifacts/analysis/t0121_r1/input_curve.enemy.translation", "res://artifacts/analysis/t0121_r1/input_curve.enemy.translation", "res://artifacts/analysis/t0121_r1/input_curve.npc.translation", "res://artifacts/analysis/t0121_r1/input_curve.device.translation", "res://artifacts/analysis/t0121_r1/input_curve.device.translation", "res://artifacts/analysis/t0121_r1/input_curve.raw.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

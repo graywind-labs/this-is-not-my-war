@@ -1,0 +1,10 @@
+{
+  "draw_calls": 7659.0,
+  "mean_frame_ms": 15.4813416666667,
+  "p95_frame_ms": 17.019,
+  "primitives": 1969896.0,
+  "resolution": "1280x720",
+  "samples": 120,
+  "scenario": "static_Main_station_overview",
+  "vsync": false
+}

@@ -1,0 +1,140 @@
+{
+  "cover": {
+    "ada_staging_unchanged": true,
+    "camera_fov": 38.0,
+    "camera_static": true,
+    "character_count": 8,
+    "character_ids": [
+      "veteran_deputy_01",
+      "blacksmith_01",
+      "stableman_01",
+      "cook_01",
+      "gardener_01",
+      "priest_01",
+      "doctor_01",
+      "engineer_01"
+    ],
+    "defense_display": true,
+    "enemy_silhouette_count": 5,
+    "fog_bank_count": 4,
+    "formal_menu_connected": true,
+    "ground_candidate_textures_connected": false,
+    "ground_color": "#252c29",
+    "hall_finish": true,
+    "menu_safe_zone_ratio": 0.36,
+    "motion_loop_seconds": 12.0,
+    "motion_ready": true,
+    "motion_time": 4.77596255555555,
+    "outer_tree_count": 27,
+    "outer_tree_zones": [
+      "rear",
+      "rear_mid",
+      "rear_far",
+      "left",
+      "right"
+    ],
+    "outward_facing_layout": {
+      "blacksmith_01": {
+        "label": "left_front",
+        "screen_depth": 1.0,
+        "screen_horizontal": -1.0,
+        "target_distance": 1.12
+      },
+      "cook_01": {
+        "label": "right_front",
+        "screen_depth": 1.0,
+        "screen_horizontal": 1.0,
+        "target_distance": 1.18
+      },
+      "doctor_01": {
+        "label": "right_back",
+        "screen_depth": -1.0,
+        "screen_horizontal": 1.0,
+        "target_distance": 0.42
+      },
+      "engineer_01": {
+        "label": "left_back",
+        "screen_depth": -1.0,
+        "screen_horizontal": -1.0,
+        "target_distance": 1.12
+      },
+      "gardener_01": {
+        "label": "left",
+        "screen_depth": 0.0,
+        "screen_horizontal": -1.0,
+        "target_distance": 1.35
+      },
+      "priest_01": {
+        "label": "right",
+        "screen_depth": 0.0,
+        "screen_horizontal": 1.0,
+        "target_distance": 1.25
+      }
+    },
+    "purpose": "approved_menu_cover",
+    "screen_front_ground": "(-0.37547, 0.0, 0.926835)",
+    "screen_right_ground": "(-0.926835, 0.0, -0.37547)",
+    "tree_style": "approved_t0364",
+    "uses_existing_licensed_assets": true,
+    "workstation_bindings": {
+      "blacksmith_01": {
+        "kind": "formal_blacksmith_anvil",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/GlenAnvil",
+        "target": "(11.13666, 0.0, 6.481372)"
+      },
+      "cook_01": {
+        "kind": "active_dining_cauldron_with_food_and_steam",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/BrunoActiveCauldron",
+        "target": "(3.063375, 0.0, 6.640051)"
+      },
+      "doctor_01": {
+        "kind": "clinic_desk_and_seated_study",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/LinaClinicDesk",
+        "target": "(5.836253, 0.0, 0.683235)"
+      },
+      "engineer_01": {
+        "kind": "formal_mechanism_workbench",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/OwenEngineeringWorkbench",
+        "target": "(12.03137, 0.0, 1.043341)"
+      },
+      "gardener_01": {
+        "kind": "formal_garden_bed",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/IvoGardenBed",
+        "target": "(14.65123, 0.0, 4.086884)"
+      },
+      "priest_01": {
+        "kind": "chapel_altar_with_cross",
+        "node": "/root/MainMenu/HeroFrame/MenuCoverViewport/AnimatedMenuCover/Set/ProfessionWorkstations/MarcelChapelAltar",
+        "target": "(2.391457, 0.0, 3.150663)"
+      },
+      "stableman_01": {
+        "kind": "existing_cover_horse",
+        "node": "../StableHorse",
+        "target": "(17.1, 0.34, 5.9)"
+      }
+    },
+    "workstation_count": 7,
+    "workstation_source": "existing_formal_fixture_assets"
+  },
+  "failures": [],
+  "gable_count": 4,
+  "menu": {
+    "animated_cover_connected": true,
+    "button_order": [
+      "开始游戏",
+      "载入游戏",
+      "设置",
+      "退出游戏"
+    ],
+    "cover_render_size": "(1920, 1080)",
+    "edge_fog_connected": true,
+    "exit_confirmation_visible": false,
+    "has_main_instance": false,
+    "hero_animated": true,
+    "menu_music": "music_menu",
+    "save_browser_visible": false,
+    "scene": "res://scenes/frontend/MainMenu.tscn",
+    "settings_visible": false
+  },
+  "windows": 49
+}

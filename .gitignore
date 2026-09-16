@@ -1,46 +1,8 @@
-# Godot 4+ specific ignores
-.godot/
-/android/
+# API and voice credentials must never enter the public repository.
+**/.env
+**/.env.*
+!**/.env.example
 
-# Local backend secrets
-backend/.env
-backend/logs/
-
-# Python cache
-__pycache__/
-*.py[cod]
-.venv/
-
-# Local editor paths
-.vscode/settings.json
-/.gitignore copy
-
-# Generated logs and visual QA captures
-*.log
-/artifacts/
-/nothing.avi
-/dist/
-
-# Third-party art intake (local source copies; tracked manifests and licenses stay outside these paths)
-/art_source/downloads/*
-!/art_source/downloads/README.md
-/art_source/quaternius/*/
-/art_source/working/*
-!/art_source/working/README.md
-/art_source/runtime_rejected/
-/art_source/licenses/source_pages/
-/art_source/synty/
-/art_source/kaykit/
-
-# Locally installed third-party audio tooling; restore from its upstream distribution.
-/art_source/audio/tools/
-
-# Local audio review packs and editable branding sources are working material.
-/art_source/audio/reviews/sample_pack_v28_tutorial_bgm/
-/art_source/audio/reviews/sample_pack_v29_tutorial_bgm_light/
-/art_source/audio/reviews/sample_pack_v30_equipment_audio/
-/art_source/audio/reviews/sample_pack_v31_defense_device_deploy/
-/art_source/branding/
-
-# Godot may scan README screenshots inside the project root; their import sidecars are local cache.
-/docs/images/**/*.png.import
+# The frozen demo backend embeds trial API credentials. The full ZIP contains that backend.
+/dist/**/backend/
+/dist/*.zip

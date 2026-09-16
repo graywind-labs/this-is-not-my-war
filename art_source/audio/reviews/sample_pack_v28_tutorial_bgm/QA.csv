@@ -1,0 +1,14 @@
+file,codec,sample_rate_hz,channels,duration_seconds,decode_status,decision
+intro_still/01_tension_loop.mp3,mp3,48000,2,76.800,pass,pending
+intro_still/02_siberian_intro.mp3,mp3,48000,2,103.569,pass,pending
+intro_still/03_town_in_ruins_loop.mp3,mp3,48000,2,48.875,pass,pending
+intro_still/04_lament_of_the_war.mp3,mp3,48000,2,228.024,pass,pending
+intro_still/05_suspense.mp3,mp3,48000,2,26.668,pass,pending
+intro_still/06_forgoten_tomb_ambience.mp3,mp3,48000,2,214.204,pass,pending
+main_tutorial/01_medieval_warfare.mp3,mp3,48000,2,228.519,pass,pending
+main_tutorial/02_medieval_battle.mp3,mp3,48000,2,78.916,pass,pending
+main_tutorial/03_prepare_to_fight.mp3,mp3,48000,2,123.000,pass,pending
+main_tutorial/04_epic_march_loop.mp3,mp3,48000,2,43.583,pass,pending
+main_tutorial/05_evil_approach.mp3,mp3,48000,2,67.850,pass,pending
+main_tutorial/06_war_theme_v2.mp3,mp3,48000,2,283.744,pass,pending
+

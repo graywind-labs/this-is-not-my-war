@@ -1,0 +1,12 @@
+﻿[
+    {
+        "script":  "verify_combat_damage.gd",
+        "exit_code":  1,
+        "log":  "D:\\这不是我的战争\\artifacts\\performance\\t0396\\regression_baseline\\verify_combat_damage.gd.log"
+    },
+    {
+        "script":  "verify_t0129c_a5_p2_default_fifth_wave_pressure.gd",
+        "exit_code":  -1073741819,
+        "log":  "D:\\这不是我的战争\\artifacts\\performance\\t0396\\regression_baseline\\verify_t0129c_a5_p2_default_fifth_wave_pressure.gd.log"
+    }
+]

@@ -1,0 +1,16 @@
+HTTP/1.1 200 Connection established
+
+HTTP/1.1 206 Partial Content
+Date: Tue, 11 Aug 2026 08:41:57 GMT
+Content-Type: application/x-zip-compressed
+Content-Length: 1048576
+Connection: keep-alive
+Content-Range: bytes 0-1048575/294347394
+Accept-Ranges: bytes
+Content-Disposition: attachment; filename="Modular Character Outfits - Fantasy[Standard].zip"
+ETag: "0213413b9a0f8588b09fb3c74813e028-6"
+Last-Modified: Thu, 29 Jan 2026 15:22:07 GMT
+x-amz-mp-parts-count: 6
+Server: cloudflare
+CF-RAY: a295f1b5ab9d69de-DFW
+

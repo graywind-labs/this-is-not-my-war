@@ -1,0 +1,14 @@
+id,file,category,source_title,author,source_url,license,duration_seconds,review_note,decision,final_usage,edit_instruction
+I01,intro_still/01_tension_loop.mp3,bgm_tutorial_intro,Tension,Tsorthan Grove,https://opengameart.org/content/tension-0,CC-BY 4.0,76.800,"低动态持续悬念，最贴近深夜读军令与静止字幕",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+I02,intro_still/02_siberian_intro.mp3,bgm_tutorial_intro,Siberian Intro,Vehicle,https://opengameart.org/content/siberian-intro,CC0,103.569,"电影式严肃序章，孤立与命令感强；后段动态需试听判断",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+I03,intro_still/03_town_in_ruins_loop.mp3,bgm_tutorial_intro,Town in ruins loop,Brandon Morris,https://opengameart.org/content/town-in-ruins-loop,CC0,48.875,"冷清、破败、克制，适合没有正规军的叙事；循环较短",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+I04,intro_still/04_lament_of_the_war.mp3,bgm_tutorial_intro,Laments of the War,Cethiel,https://opengameart.org/content/laments-of-the-war,CC0,228.024,"战争挽歌与合唱规模感明显；可能比字幕需要的背景更抢眼",pending,,"若确认：选取适合的低动态完整段或整段；制作自然循环和渐入渐出"
+I05,intro_still/05_suspense.mp3,bgm_tutorial_intro,Suspense,wipics,https://opengameart.org/content/suspense-0,CC0,26.668,"短促直白的危机悬念；20至25秒漫画时长贴合但重复风险高",pending,,"若确认：整段循环；开头结尾各约1.5秒渐入渐出"
+I06,intro_still/06_forgoten_tomb_ambience.mp3,bgm_tutorial_intro,Forgoten tomb ambience,kindland,https://opengameart.org/content/forgoten-tomb-ambience,CC0,214.204,"极暗、低旋律存在感；更像不安环境层，可能偏恐怖",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+M01,main_tutorial/01_medieval_warfare.mp3,bgm_tutorial_main,Medieval,Miguel Herrero,https://opengameart.org/content/medieval,CC-BY-SA 3.0,228.519,"慢开场后逐步进入中世纪战争叙事，能覆盖部署、配装、战斗和余波",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+M02,main_tutorial/02_medieval_battle.mp3,bgm_tutorial_main,Medieval Battle,RandomMind,https://opengameart.org/content/medieval-battle,CC0,78.916,"中世纪战斗辨识度清楚但较明快，可能削弱夜袭危险感",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+M03,main_tutorial/03_prepare_to_fight.mp3,bgm_tutorial_main,Prepare to fight,Basil,https://opengameart.org/content/prepare-to-fight,CC0,123.000,"备战与决心明确，英雄感较强；适合希望侧重而非绝望侧重",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+M04,main_tutorial/04_epic_march_loop.mp3,bgm_tutorial_main,Epic March Loop,Eldritch Grim,https://opengameart.org/content/epic-march-loop,CC0,43.583,"行军鼓点和敌军逼近最明显；短循环可能在三分钟教程里重复较多",pending,,"若确认：整段循环；开头结尾各约1.5秒渐入渐出"
+M05,main_tutorial/05_evil_approach.mp3,bgm_tutorial_main,Evil Approach,nene,https://opengameart.org/content/evil-approach,CC0,67.850,"低沉铜管和逐步逼近感明确，适合敌军靠近与教学部署；结尾需重新整理",pending,,"若确认：整段循环；重做自然尾段，开头结尾各约2秒渐入渐出"
+M06,main_tutorial/06_war_theme_v2.mp3,bgm_tutorial_main,War Theme ver 2,Spring Spring,https://opengameart.org/content/war-theme,CC0,283.744,"长篇管弦战争主题，足够覆盖完整3D教程；动态和合唱可能偏强",pending,,"若确认：整段循环；开头结尾各约2秒渐入渐出"
+

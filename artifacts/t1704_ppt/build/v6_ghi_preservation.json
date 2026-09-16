@@ -1,0 +1,13 @@
+{
+  "source_sha256": "1baea7c2d3c050da40a9eb3e06f43b2590a246ad8c423adf0148b9c55e34b3c9",
+  "changed_parts": [
+    "ppt/slides/slide13.xml",
+    "ppt/slides/slide15.xml",
+    "ppt/slides/slide16.xml",
+    "ppt/slides/_rels/slide13.xml.rels",
+    "ppt/slides/_rels/slide15.xml.rels",
+    "ppt/slides/_rels/slide16.xml.rels"
+  ],
+  "all_other_parts_byte_identical": true,
+  "nonplaceholder_objects_preserved": true
+}

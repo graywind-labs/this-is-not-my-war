@@ -1,0 +1,71 @@
+{
+	"building_end": {
+		"front_gate": {
+			"hp": 160,
+			"max_hp": 160
+		},
+		"main_hall": {
+			"hp": 180,
+			"max_hp": 180
+		},
+		"wall": {
+			"hp": 240,
+			"max_hp": 240
+		},
+		"warehouse": {
+			"hp": 150,
+			"max_hp": 150
+		}
+	},
+	"combat_events": {
+		"actor_damaged": 38,
+		"attack_swing": 47,
+		"battle_started": 1,
+		"wave_cleared": 1
+	},
+	"conscious_count": 1,
+	"device_damage_share": 0.0,
+	"device_end": {
+
+	},
+	"elapsed_seconds": 25.62,
+	"enemy_attack_interrupts": 8,
+	"enemy_damage_by_source": {
+		"npc": 336
+	},
+	"enemy_defeated_count": 8,
+	"enemy_target_time_share": {
+		"none": 0.001,
+		"npc": 0.999
+	},
+	"enemy_windup_interrupts": 2,
+	"first_enemy_damage_seconds": 4.73,
+	"first_friendly_damage_seconds": 5.2,
+	"first_tower_slot": "wall_slot_01",
+	"fixture": "live_main_near_gate_fixed_physics",
+	"friendly_damage_by_target_type": {
+		"npc": 66
+	},
+	"game_over_reason": "",
+	"game_result": "",
+	"initial_enemy_count": 8,
+	"max_seconds": 120.0,
+	"minimum_building_hp_ratio": 1.0,
+	"npc_attack_interrupts": 8,
+	"npc_end": {
+		"veteran_deputy_01": {
+			"hp": 54,
+			"max_hp": 120,
+			"unconscious": false
+		}
+	},
+	"npc_windup_interrupts": 5,
+	"remaining_enemy_count": 0,
+	"result": "cleared",
+	"scenario": "ada_only",
+	"seed": 12101,
+	"task": "T0121-R1",
+	"total_device_missing_hp": 0,
+	"total_npc_missing_hp": 66,
+	"wave": 1
+}

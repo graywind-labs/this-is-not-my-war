@@ -1,0 +1,15 @@
+{"kind":"deck","id":"pr/vo433d","name":"Deck"}
+{"kind":"layout","layoutId":"eeb08f44-17af-499f-81a6-ac3d29b2698b","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"3d77b514-291c-4386-abcc-a1b75d8c44cc","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/aqd9ri","slide":1,"title":"Slide 1","textShapes":0}
+{"kind":"image","id":"im/jq1o3ixc","slide":1,"name":"","alt":"真实对话局部：格伦反对频繁切换工作；NPC 的表述不等于程序结算规则","bbox":[759,532,456,108]}
+{"kind":"notes","id":"nt/aqd9ri","slide":1,"text":""}
+{"kind":"slide","id":"sl/yunw0g","slide":2,"title":"Slide 2","textShapes":0}
+{"kind":"image","id":"im/re1gju1w","slide":2,"name":"","alt":"布鲁诺实机形象","bbox":[60,165,143,291]}
+{"kind":"image","id":"im/sfahczih","slide":2,"name":"","alt":"真实征召对话：明确厨房与后勤分工后，布鲁诺同意应征","bbox":[216,173,1004,275]}
+{"kind":"notes","id":"nt/yunw0g","slide":2,"text":""}
+{"kind":"slide","id":"sl/5fcd6o","slide":3,"title":"Slide 3","textShapes":0}
+{"kind":"image","id":"im/qt8ra1ob","slide":3,"name":"","alt":"正式对话记录中的真实挽留回复；逃离起始状态由现有 GM 入口触发","bbox":[60,167,796,134]}
+{"kind":"image","id":"im/dwzalwn2","slide":3,"name":"","alt":"挽留后的布鲁诺","bbox":[60,307,69,140]}
+{"kind":"image","id":"im/cvq9cb6h","slide":3,"name":"","alt":"真实事件结果：布鲁诺被挽留下来，停止逃离驿站","bbox":[143,307,503,140]}
+{"kind":"notes","id":"nt/5fcd6o","slide":3,"text":""}

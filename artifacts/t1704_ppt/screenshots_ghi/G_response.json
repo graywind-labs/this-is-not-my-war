@@ -1,0 +1,101 @@
+{
+	"attack_committed": false,
+	"combat_strategy_context": {
+
+	},
+	"combat_strategy_request_eligible": false,
+	"combat_strategy_request_ineligible_reason": "只有集结或战斗中的 NPC 可以调整战斗策略。",
+	"combat_strategy_request_pending": false,
+	"completed_attack_llm_turns": 0,
+	"completed_player_llm_turns": 1,
+	"current_round": 1,
+	"deferred_escape_response": {
+
+	},
+	"deferred_recruitment_result": "none",
+	"deferred_wartime_response": {
+
+	},
+	"deferred_work_encouragement_response": {
+
+	},
+	"dialogue_epoch_by_npc": {
+		"blacksmith_01": 1
+	},
+	"dialogue_id": "dialogue_45307_0002",
+	"dialogue_initiator": "guard_officer",
+	"dialogue_kind": "player_npc",
+	"force_local_public": false,
+	"history": [
+		{
+			"listener_id": "blacksmith_01",
+			"listener_name": "格伦",
+			"speaker_id": "guard_officer",
+			"speaker_name": "守备官",
+			"text": "格伦，刚发布的安排你看到了：上午打武器，下午去修城门，晚上继续打铁，暂时没有帮手。你认为这个安排能撑到敌袭吗？如果不行，告诉我你要我改哪一项。",
+			"visibility": "private"
+		},
+		{
+			"emotion_emoji": "✊",
+			"emotion_id": "determined",
+			"emotion_label": "坚定",
+			"listener_id": "guard_officer",
+			"listener_name": "守备官",
+			"speaker_id": "blacksmith_01",
+			"speaker_name": "格伦",
+			"text": "撑不住。上午打武器、下午修城门、晚上再开炉，听着像三件事，其实每件都只做半截——铁匠铺的活中途停下，做完的工序也全废。你要么让我把一件武器从头打完，要么让我专心去修城门，别两头都占着。",
+			"visibility": "private"
+		}
+	],
+	"interaction_context": "work",
+	"interrupted_activity_context": {
+
+	},
+	"interrupted_plan_action_by_npc": {
+
+	},
+	"last_combat_strategy_result": {
+
+	},
+	"last_error": "",
+	"last_morale_encouragement_reaction": "none",
+	"last_player_text": "格伦，刚发布的安排你看到了：上午打武器，下午去修城门，晚上继续打铁，暂时没有帮手。你认为这个安排能撑到敌袭吗？如果不行，告诉我你要我改哪一项。",
+	"last_recruitment_result": "none",
+	"last_reply_text": "撑不住。上午打武器、下午修城门、晚上再开炉，听着像三件事，其实每件都只做半截——铁匠铺的活中途停下，做完的工序也全废。你要么让我把一件武器从头打完，要么让我专心去修城门，别两头都占着。",
+	"last_wartime_reaction": "none",
+	"last_wartime_result": {
+
+	},
+	"last_work_encouragement_reaction": "none",
+	"location_id": "plaza",
+	"location_name": "广场",
+	"max_rounds": 999999,
+	"morale_encouragement_eligible": false,
+	"morale_encouragement_ineligible_reason": "只有集结或战斗中的 NPC 可以被鼓舞。",
+	"morale_encouragement_request_pending": false,
+	"player_dialogue_effect_started": true,
+	"player_dialogue_interrupted_action": false,
+	"player_dialogue_interrupted_action_id": "",
+	"recruitment_request_pending": false,
+	"session_had_combat_strategy_request": false,
+	"session_had_morale_encouragement_request": false,
+	"session_had_recruitment_request": false,
+	"session_had_special_interaction_request": false,
+	"session_had_special_interaction_result": false,
+	"session_had_work_encouragement_request": false,
+	"session_status": "active",
+	"speaker_name": "守备官",
+	"speaker_npc_id": "",
+	"suspended": false,
+	"suspended_remaining_seconds": 0.0,
+	"target_npc_id": "blacksmith_01",
+	"target_npc_name": "格伦",
+	"target_recruited": false,
+	"ui_visible": true,
+	"visibility": "private",
+	"waiting": false,
+	"wartime_dialogue": false,
+	"work_encouragement_eligible": true,
+	"work_encouragement_ineligible_reason": "可对该 NPC 发起一次工作鼓励判定。",
+	"work_encouragement_request_pending": false
+}

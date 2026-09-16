@@ -1,0 +1,9 @@
+{
+	"active_enemy_count": 26,
+	"active_wave_number": 4,
+	"all_waves_triggered": false,
+	"next_wave": {
+		"seconds_until": 39545.0,
+		"wave_number": 1
+	}
+}

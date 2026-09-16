@@ -1,0 +1,197 @@
+{
+  "failures": [],
+  "piety": {
+    "burn_zones": [],
+    "config": {
+      "action_multipliers": {
+        "lead_mass": 2.0,
+        "pray_at_chapel": 1.0
+      },
+      "combat_action_game_seconds_per_second": 1.0,
+      "contributing_action_ids": [
+        "pray_at_chapel",
+        "lead_mass"
+      ],
+      "max_piety": 100.0,
+      "meteor": {
+        "body_radius": 4.2,
+        "burn_damage": 1.0,
+        "burn_duration_seconds": 10.0,
+        "burn_penetration": 0.0,
+        "burn_tick_interval_seconds": 1.0,
+        "crater_lifetime_game_seconds": 86400.0,
+        "crater_radius": 4.8,
+        "descent_camera_shake_amplitude": 0.1,
+        "descent_camera_shake_frequency": 9.0,
+        "fall_duration_seconds": 2.8,
+        "friendly_displacement_margin": 0.12,
+        "impact_camera_shake_amplitude": 0.82,
+        "impact_camera_shake_duration_seconds": 2.0,
+        "impact_camera_shake_frequency": 23.0,
+        "impact_damage": 48.0,
+        "impact_max_targets": 12.0,
+        "impact_penetration": 5.0,
+        "impact_vfx_duration_seconds": 2.0,
+        "radius": 5.5,
+        "start_height": 30.0,
+        "start_horizontal_offset": 15.0
+      },
+      "piety_per_prayer_hour": 2.5,
+      "prayer_mode_multipliers": {
+        "mass_attendance": 2.0,
+        "personal_prayer": 1.0
+      },
+      "target_ground_y": 0.0
+    },
+    "craters": [],
+    "current_piety": 0.0,
+    "generated_by_npc": {
+
+    },
+    "landed_meteors": [],
+    "last_burn_tick_result": {
+      "center": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 70.0
+      },
+      "defeated_count": 0,
+      "eligible_target_count": 0,
+      "hit_count": 0,
+      "hits": [],
+      "max_targets": 0,
+      "ok": true,
+      "penetration": 0.0,
+      "radius": 5.5,
+      "raw_attack_power": 1.0,
+      "source_id": "piety_meteor_001_burn",
+      "source_name": "燃烧地面",
+      "source_type": "piety_meteor_burn"
+    },
+    "last_cast_result": {
+      "cast_id": "piety_meteor_001",
+      "ok": true,
+      "piety_spent": 100.0,
+      "radius": 5.5,
+      "target_position": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 70.0
+      }
+    },
+    "last_generation_result": {
+
+    },
+    "last_impact_result": {
+      "burn_zone": {
+        "cast_id": "piety_meteor_001",
+        "damage": 1.0,
+        "duration_seconds": 10.0,
+        "elapsed_seconds": 0.0,
+        "penetration": 0.0,
+        "radius": 5.5,
+        "target_position": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 70.0
+        },
+        "tick_accumulator": 0.0,
+        "tick_interval_seconds": 1.0,
+        "zone_id": "piety_meteor_001_burn"
+      },
+      "cast_id": "piety_meteor_001",
+      "damage_result": {
+        "center": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 70.0
+        },
+        "defeated_count": 0,
+        "eligible_target_count": 0,
+        "hit_count": 0,
+        "hits": [],
+        "max_targets": 12,
+        "ok": true,
+        "penetration": 5.0,
+        "radius": 5.5,
+        "raw_attack_power": 48.0,
+        "source_id": "piety_meteor_001",
+        "source_name": "陨石",
+        "source_type": "piety_meteor_impact"
+      },
+      "defeat_event": {
+
+      },
+      "defeated_count": 0,
+      "event": {
+        "actor_ids": [
+          "guard_officer"
+        ],
+        "day": 1,
+        "event_id": "evt_day01_120000_guard_officer_piety_meteor_impact_0004",
+        "importance": 95,
+        "location_id": "plaza",
+        "payload": {
+          "burn_duration_seconds": 10.0,
+          "cast_id": "piety_meteor_001",
+          "enemy_defeated_count": 0,
+          "enemy_hit_count": 0,
+          "friendly_fire": false,
+          "impact_damage": 48.0,
+          "impact_max_targets": 12,
+          "radius": 5.5,
+          "target_position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 70.0
+          }
+        },
+        "subject_npc_id": "guard_officer",
+        "summary": "由于全站虔诚祈祷，天降陨石砸向敌人并点燃了地面，而我方毫发无损。",
+        "target_ids": [
+          "piety_meteor_001"
+        ],
+        "time": "12:00:00",
+        "type": "piety_meteor_impact",
+        "visibility": "local_public"
+      },
+      "friendly_displacement": {
+        "affected_count": 0,
+        "center": "(0.0, 0.0, 70.0)",
+        "displaced": [],
+        "displaced_count": 0,
+        "failed": [],
+        "obstacle_radius": 3.276,
+        "ok": true,
+        "source_id": "piety_meteor_001"
+      },
+      "hit_count": 0,
+      "max_targets": 12,
+      "ok": true,
+      "presentation": {
+        "body_present": true,
+        "body_radius": 4.2,
+        "crater_fade_progress": 0.0,
+        "crater_opacity": 1.0,
+        "crater_present": true,
+        "crater_radius": 4.8,
+        "impact_vfx_active": true,
+        "landed": true,
+        "permanent_crater": true
+      },
+      "radius": 5.5,
+      "target_position": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 70.0
+      }
+    },
+    "max_piety": 100.0,
+    "pending_meteors": [],
+    "permanent_craters": [],
+    "piety_per_prayer_hour": 2.5,
+    "progress": 0.0,
+    "ready": false,
+    "total_generated": 0.0
+  }
+}

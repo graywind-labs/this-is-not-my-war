@@ -1,0 +1,191 @@
+{"kind":"deck","id":"pr/lelb02","name":"Deck"}
+{"kind":"layout","layoutId":"0f4f30e6-d242-4620-b9e0-7888e426665b","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"9bb48302-7f7a-42ba-b10a-cbec181c920f","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/1k2vae","slide":1,"title":"这不是我的战争","textShapes":3}
+{"kind":"textbox","id":"sh/wz2dknil","slide":1,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[64,96,1152,96]}
+{"kind":"textbox","id":"sh/bytwrih0","slide":1,"text":"叙事重构·AI沙盒与涌现式世界","textPreview":"叙事重构·AI沙盒与涌现式世界","textChars":15,"textLines":1,"bbox":[68,214,1100,50]}
+{"kind":"textbox","id":"sh/9wrepszu","slide":1,"text":"玩家扮演一个边境驿站\n征兵官，想办法说服平民\n上战场、”鼓励”他们干活、\n不让他们当逃兵。","textPreview":"玩家扮演一个边境驿站 | 征兵官，想办法说服平民 | 上战场、”鼓励”他们干活、 | 不让他们当逃兵。","textChars":45,"textLines":4,"bbox":[68,352,464,250]}
+{"kind":"image","id":"im/fulczixs","slide":1,"name":"","alt":"01_station.png","bbox":[592,300,624,352]}
+{"kind":"notes","id":"nt/1k2vae","slide":1,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n配图：01_station.png，当前正式工程截图。拍摄时暂停时间、隐藏 UI，调整观景镜头。"}
+{"kind":"slide","id":"sl/ebdsom","slide":2,"title":"产品定位","textShapes":7}
+{"kind":"textbox","id":"sh/ozm1crmx","slide":2,"text":"产品定位","textPreview":"产品定位","textChars":4,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/ned0jm5c","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/2d4jah4r","slide":2,"text":"玩法定位","textPreview":"玩法定位","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/1cvihcnm","slide":2,"text":"用AI NPC来增强模拟经营游戏里”人员管理“\n的乐趣，实质上是AI小镇的一种。","textPreview":"用AI NPC来增强模拟经营游戏里”人员管理“ | 的乐趣，实质上是AI小镇的一种。","textChars":40,"textLines":2,"bbox":[64,217,548,140]}
+{"kind":"textbox","id":"sh/0b2h87m1","slide":2,"text":"所选赛道","textPreview":"所选赛道","textChars":4,"textLines":1,"bbox":[64,358,548,43]}
+{"kind":"textbox","id":"sh/fat0f25g","slide":2,"text":"叙事重构 ai沙盒与涌现式世界","textPreview":"叙事重构 ai沙盒与涌现式世界","textChars":15,"textLines":1,"bbox":[64,405,548,140]}
+{"kind":"textbox","id":"sh/l8fitg3q","slide":2,"text":"布鲁诺人物面板：身份、技能、需求与入伍状态","textPreview":"布鲁诺人物面板：身份、技能、需求与入伍状态","textChars":21,"textLines":1,"bbox":[680,578,520,56]}
+{"kind":"image","id":"im/7itobit4","slide":2,"name":"","alt":"03_npc.png","bbox":[670,190,546,370]}
+{"kind":"notes","id":"nt/ebdsom","slide":2,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n03_npc.png，正式人物面板实机截图。"}
+{"kind":"slide","id":"sl/37agbt","slide":3,"title":"美术、题材与叙事定位","textShapes":8}
+{"kind":"textbox","id":"sh/2psbmd87","slide":3,"text":"美术、题材与叙事定位","textPreview":"美术、题材与叙事定位","textChars":10,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/pcjax8ri","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/obatonqx","slide":3,"text":"美术定位","textPreview":"美术定位","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/fmhsry9g","slide":3,"text":"低模3D玩具风，轻量化而不廉价","textPreview":"低模3D玩具风，轻量化而不廉价","textChars":15,"textLines":1,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/el8bit8v","slide":3,"text":"题材定位","textPreview":"题材定位","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/1ozat8rm","slide":3,"text":"西欧中世纪文艺复兴时期，参考1444年的西班\n牙地区","textPreview":"西欧中世纪文艺复兴时期，参考1444年的西班 | 牙地区","textChars":26,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/gnqtk3q1","slide":3,"text":"叙事定位","textPreview":"叙事定位","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/zilc329k","slide":3,"text":"无厘头黑色幽默表层+小人物的悲剧内核，从\n一个独特的视角看置身于战争中的普通人","textPreview":"无厘头黑色幽默表层+小人物的悲剧内核，从 | 一个独特的视角看置身于战争中的普通人","textChars":39,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"image","id":"im/f6dkbyhg","slide":3,"name":"","alt":"02_gate.png","bbox":[670,190,546,370]}
+{"kind":"notes","id":"nt/37agbt","slide":3,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n02_gate.png，正式工程站内与城门实机截图。"}
+{"kind":"slide","id":"sl/cj4i5l","slide":4,"title":"为 LLM 装上“眼睛”","textShapes":9}
+{"kind":"textbox","id":"sh/vm9onqpk","slide":4,"text":"为 LLM 装上“眼睛”","textPreview":"为 LLM 装上“眼睛”","textChars":12,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/wni5gvq5","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/xob6p07q","slide":4,"text":"建筑的信息空间","textPreview":"建筑的信息空间","textChars":7,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/mh0nal8n","slide":4,"text":"将建筑内的人员、设施和状态转化为 LLM 能够\n理解的信息。","textPreview":"将建筑内的人员、设施和状态转化为 LLM 能够 | 理解的信息。","textChars":30,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/ni9ojqp8","slide":4,"text":"状态与变化","textPreview":"状态与变化","textChars":5,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/8ji5cvqt","slide":4,"text":"进入建筑时获取当前状态，空间内发生变化时\n接收相应信息。","textPreview":"进入建筑时获取当前状态，空间内发生变化时 | 接收相应信息。","textChars":28,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/9kr6lg7e","slide":4,"text":"有依据的判断","textPreview":"有依据的判断","textChars":6,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/6dk7m587","slide":4,"text":"经营决策进入 NPC 的认知，不同人物保留各自\n的信息差。","textPreview":"经营决策进入 NPC 的认知，不同人物保留各自 | 的信息差。","textChars":29,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"textbox","id":"sh/be5grehk","slide":4,"text":"铁匠铺面板：建筑、制造与工位信息","textPreview":"铁匠铺面板：建筑、制造与工位信息","textChars":16,"textLines":1,"bbox":[680,578,520,56]}
+{"kind":"image","id":"im/6d0vyh4f","slide":4,"name":"","alt":"05_building.png","bbox":[670,190,546,370]}
+{"kind":"notes","id":"nt/cj4i5l","slide":4,"text":"#### 2.1 为 LLM 装上“眼睛”：信息空间与事件、广播、见闻系统\n\n项目为每个建筑搭建“信息空间”，将其中的人员、设施和状态转化为 LLM 能够理解的信息。NPC 进入建筑时获取当前状态，空间内发生变化时接收相应信息，使其能够感知自己所处的环境。\n\n覆盖人物交互、经营与战斗的事件埋点，将 AI 发生的有意义的交互记录为事件。事件根据公开程度传播：私有事件保留在本人或交互亲历者的事件库中，同空间公开事件传递给当时处于相同信息空间的其他人，驿站公开事件向全站广播。接收者将获知的信息写入自己的见闻库，睡眠、昏迷等状态限制见闻接收。\n\n玩家与 AI 的对话、AI 与 AI 的对话也纳入这套系统，与其他经历共同组成短期记忆。事件库记录亲历，见闻库记录获知的信息，使 NPC 能够依据自己实际知道的事情作出判断。\n\n这套信息空间让经营决策进入 NPC 的认知，同时保留不同人物之间的信息差，为后续对话、计划与涌现式互动提供依据。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n05_building.png，当前全屏建筑面板截图。"}
+{"kind":"slide","id":"sl/6883pt","slide":5,"title":"事件、广播与见闻","textShapes":10}
+{"kind":"textbox","id":"sh/7698ze1s","slide":5,"text":"事件、广播与见闻","textPreview":"事件、广播与见闻","textChars":8,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/87ipsj2d","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/tsrq1oji","slide":5,"text":"按公开程度传播","textPreview":"按公开程度传播","textChars":7,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/ut07utk3","slide":5,"text":"私有事件保留给亲历者，同空间事件传递给在\n场者，驿站公开事件向全站广播。","textPreview":"私有事件保留给亲历者，同空间事件传递给在 | 场者，驿站公开事件向全站广播。","textChars":36,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/vu983e1o","slide":5,"text":"统一短期记忆","textPreview":"统一短期记忆","textChars":6,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/gvipwji9","slide":5,"text":"玩家与 AI、AI 与 AI 的对话，与经营和战斗经\n历共同进入这套系统。","textPreview":"玩家与 AI、AI 与 AI 的对话，与经营和战斗经 | 历共同进入这套系统。","textChars":37,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/hwrq5oju","slide":5,"text":"亲历与获知分开","textPreview":"亲历与获知分开","textChars":7,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/axw7ipkz","slide":5,"text":"事件库记录亲历，见闻库记录获知的信息。睡\n眠、昏迷等状态限制接收。","textPreview":"事件库记录亲历，见闻库记录获知的信息。睡 | 眠、昏迷等状态限制接收。","textChars":33,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/byp8ru1k","slide":5,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/ne147ihg","slide":5,"text":"待补截图  B","textPreview":"待补截图  B","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/2dsnyd0v","slide":5,"text":"同一事件在亲历者事件库\n与在场者见闻库中的记录","textPreview":"同一事件在亲历者事件库 | 与在场者见闻库中的记录","textChars":23,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/6883pt","slide":5,"text":"#### 2.1 为 LLM 装上“眼睛”：信息空间与事件、广播、见闻系统\n\n项目为每个建筑搭建“信息空间”，将其中的人员、设施和状态转化为 LLM 能够理解的信息。NPC 进入建筑时获取当前状态，空间内发生变化时接收相应信息，使其能够感知自己所处的环境。\n\n覆盖人物交互、经营与战斗的事件埋点，将 AI 发生的有意义的交互记录为事件。事件根据公开程度传播：私有事件保留在本人或交互亲历者的事件库中，同空间公开事件传递给当时处于相同信息空间的其他人，驿站公开事件向全站广播。接收者将获知的信息写入自己的见闻库，睡眠、昏迷等状态限制见闻接收。\n\n玩家与 AI 的对话、AI 与 AI 的对话也纳入这套系统，与其他经历共同组成短期记忆。事件库记录亲历，见闻库记录获知的信息，使 NPC 能够依据自己实际知道的事情作出判断。\n\n这套信息空间让经营决策进入 NPC 的认知，同时保留不同人物之间的信息差，为后续对话、计划与涌现式互动提供依据。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/hfxou4","slide":6,"title":"为 LLM 装上“手脚”","textShapes":9}
+{"kind":"textbox","id":"sh/8fm1gvup","slide":6,"text":"为 LLM 装上“手脚”","textPreview":"为 LLM 装上“手脚”","textChars":12,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/7ed0nqt4","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/mdkjelcj","slide":6,"text":"24 小时完整计划","textPreview":"24 小时完整计划","textChars":9,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/lcbil0by","slide":6,"text":"计划阶段披露可执行行动，跨天生成新一天的\n完整计划，再由程序执行。","textPreview":"计划阶段披露可执行行动，跨天生成新一天的 | 完整计划，再由程序执行。","textChars":33,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/kb21cvud","slide":6,"text":"失败后局部修订","textPreview":"失败后局部修订","textChars":7,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/zqt0jqts","slide":6,"text":"先评估需要修改哪些小时，再填充选中时段的\n新计划，保留其他安排。","textPreview":"先评估需要修改哪些小时，再填充选中时段的 | 新计划，保留其他安排。","textChars":32,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/ypkjalc7","slide":6,"text":"关键节点判断","textPreview":"关键节点判断","textChars":6,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/58f2xkb2","slide":6,"text":"战时交互、残血、疲劳或饥饿临界点按规则调\n用 LLM，兼顾成本与灵活性。","textPreview":"战时交互、残血、疲劳或饥饿临界点按规则调 | 用 LLM，兼顾成本与灵活性。","textChars":36,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"textbox","id":"sh/6hgnadw7","slide":6,"text":"计划界面示例。图中为第一日预设，跨天计划由 LLM 生成。","textPreview":"计划界面示例。图中为第一日预设，跨天计划由 LLM 生成。","textChars":29,"textLines":1,"bbox":[680,578,520,56]}
+{"kind":"image","id":"im/14ru5cbi","slide":6,"name":"","alt":"04_plan.png","bbox":[670,190,546,370]}
+{"kind":"notes","id":"nt/hfxou4","slide":6,"text":"#### 2.2 为 LLM 装上“手脚”：围绕计划的行动系统\n\n围绕计划组织 NPC 行动，兼顾性价比与灵活性：用完整日计划降低调用次数，行动失败后再局部修改计划。\n\n系统在计划阶段向 AI 披露 NPC 可以执行的行动，将一天划分为 24 个小时。NPC 在跨天时制定新一天的完整计划，随后由程序按计划执行工作、进食、休息、训练等行动。\n\n正常行动沿用既有计划。发生行动失败时，系统先评估需要修改哪些小时、修改多大范围，再为选中的小时填充新计划，保留其他时段的安排。\n\n此外，战斗触发相关交互、残血、疲劳或饥饿临界点等关键节点会按相应规则调用 LLM，使 NPC 能够对战局和自身状态的重要变化作出判断。\n\nLLM 负责计划与关键决策，程序负责具体行动的校验和执行。这样既避免逐步行动都请求模型，也保留角色应对异常和局势变化的灵活性。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n04_plan.png，第一日预设计划界面，只展示计划结构，不作为真实生成效果证据。"}
+{"kind":"slide","id":"sl/68sn4g","slide":7,"title":"分层记忆","textShapes":10}
+{"kind":"textbox","id":"sh/kvalgr25","slide":7,"text":"分层记忆","textPreview":"分层记忆","textChars":4,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/ju1k761k","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/i9s3e1kz","slide":7,"text":"短期记忆","textPreview":"短期记忆","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/t0jmdgjm","slide":7,"text":"事件库与见闻库统一记录亲历、对话与获知的\n信息，压缩重复内容并保留关键结果。","textPreview":"事件库与见闻库统一记录亲历、对话与获知的 | 信息，压缩重复内容并保留关键结果。","textChars":38,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/szalkb21","slide":7,"text":"长期记忆","textPreview":"长期记忆","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/7y14b61g","slide":7,"text":"每日睡眠反思形成玩家可见的日记与知识图谱，\n积累个人经历与对世界的认识。","textPreview":"每日睡眠反思形成玩家可见的日记与知识图谱， | 积累个人经历与对世界的认识。","textChars":36,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/6xs3i1kv","slide":7,"text":"根本人设","textPreview":"根本人设","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/h43mhgji","slide":7,"text":"职业背景、性格、价值取向与基本诉求，为变\n化的经历提供稳定参照。","textPreview":"职业背景、性格、价值取向与基本诉求，为变 | 化的经历提供稳定参照。","textChars":32,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/g3ulobix","slide":7,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/uhgjmpgj","slide":7,"text":"待补截图  C","textPreview":"待补截图  C","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/fip0vux4","slide":7,"text":"有真实经历的日记与知识图谱\n推荐选同一个 NPC 的两种视图","textPreview":"有真实经历的日记与知识图谱 | 推荐选同一个 NPC 的两种视图","textChars":30,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/68sn4g","slide":7,"text":"#### 2.3 分层记忆：短期经历、长期认知与根本人设\n\nLLM 的记忆分为三个层次，分别支持当前情境判断、经历积累和人设一致性。\n\n- **短期记忆：事件库与见闻库。**统一记录人物亲历与获知的信息，包括玩家与 AI、AI 与 AI 的对话。向模型提供上下文时压缩重复内容，尽量保留信息的完整性，尤其是关键交互及其结果。\n- **长期记忆：日记与知识图谱。**每日通过睡眠反思，将短期记忆整理进第一人称日记与知识图谱。日记呈现人物如何经历这一天，知识图谱积累人物对他人和世界的认识。两者均可由玩家查看，也参与后续 AI 判断，兼具叙事意义与角色成长性。\n- **根本人设：稳定的角色基础。**职业背景、性格、价值取向与基本诉求为持续变化的经历提供稳定参照，保证 AI 人设的一致性。\n\n玩家的征召、劳动安排和战场动员因此能够累积为人物经历，并影响之后的交涉与决定。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/bp1yag","slide":8,"title":"自动化的行动执行","textShapes":10}
+{"kind":"textbox","id":"sh/ap0zedsf","slide":8,"text":"自动化的行动执行","textPreview":"自动化的行动执行","textChars":8,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/xsbyp8r6","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/wr2hg3al","slide":8,"text":"寻路与避障","textPreview":"寻路与避障","textChars":5,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/nm9gjy94","slide":8,"text":"计划目标转换为工位与空间路线，导航网格结\n合 RVO 和实体碰撞执行移动。","textPreview":"计划目标转换为工位与空间路线，导航网格结 | 合 RVO 和实体碰撞执行移动。","textChars":37,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/ml0zatsj","slide":8,"text":"进门排队","textPreview":"进门排队","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/9oryl8ru","slide":8,"text":"按到达顺序分配通行令牌，队首通行，其他人\n保留行动与预约等待。","textPreview":"按到达顺序分配通行令牌，队首通行，其他人 | 保留行动与预约等待。","textChars":31,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/8nihc3ap","slide":8,"text":"索敌与战斗","textPreview":"索敌与战斗","textChars":5,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/7id0v298","slide":8,"text":"程序按行为模式、目标优先级、距离与可达性\n选取目标，按武器射程衔接攻击。","textPreview":"程序按行为模式、目标优先级、距离与可达性 | 选取目标，按武器射程衔接攻击。","textChars":36,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/6h4zmx8n","slide":8,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/o3ehwrut","slide":8,"text":"待补截图  D","textPreview":"待补截图  D","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/p4nipwbe","slide":8,"text":"建筑门口的排队现场\n或接敌时的自动移动与攻击","textPreview":"建筑门口的排队现场 | 或接敌时的自动移动与攻击","textChars":22,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/bp1yag","slide":8,"text":"#### 2.4 自动化的寻路、避障、进门排队与索敌（按用户要求补全）\n\n| 机制 | 设计方式 |\n|---|---|\n| 寻路 | 把计划中的目标建筑和行动转换为具体工位与空间路线，基于导航网格和 NavigationAgent3D 执行移动 |\n| 避障 | 结合 RVO 动态避障与实体碰撞处理人物相互避让和环境阻挡，运动层处理路径推进与卡住恢复 |\n| 进门排队 | 按实际到达门区的顺序分配通行令牌，队首通行，其余等待，离开门区后依次放行。等待保留原行动与预约 |\n| 索敌 | 程序根据行为模式、敌我关系、目标优先级、距离与可达性选取目标，并按武器射程完成接近与攻击衔接 |\n\n**技术价值：**将高频、空间性强的执行交给确定性程序，LLM 专注于计划与关键决策。资源扣除、伤害和胜负也由程序结算。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/cbjwjb","slide":9,"title":"守城压力与对话目标","textShapes":8}
+{"kind":"textbox","id":"sh/4fu5obml","slide":9,"text":"守城压力与对话目标","textPreview":"守城压力与对话目标","textChars":9,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/3el4v650","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/2dsnm14f","slide":9,"text":"守城压力强化目标感","textPreview":"守城压力强化目标感","textChars":9,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/dk361gn2","slide":9,"text":"敌袭迫近，玩家需要争取人手、组织生产并准\n备防线，围绕守住驿站持续决策。","textPreview":"敌袭迫近，玩家需要争取人手、组织生产并准 | 备防线，围绕守住驿站持续决策。","textChars":36,"textLines":2,"bbox":[64,217,548,157]}
+{"kind":"textbox","id":"sh/cju5svmh","slide":9,"text":"对话具有实际意义","textPreview":"对话具有实际意义","textChars":8,"textLines":1,"bbox":[64,375,548,43]}
+{"kind":"textbox","id":"sh/rilozq5w","slide":9,"text":"征召士兵、防止逃跑、鼓舞士气、调配劳动力。\n人物顾虑与局势变化决定交涉方式。","textPreview":"征召士兵、防止逃跑、鼓舞士气、调配劳动力。 | 人物顾虑与局势变化决定交涉方式。","textChars":38,"textLines":2,"bbox":[64,422,548,157]}
+{"kind":"shape","id":"sh/qhcnql4b","slide":9,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/tojmpwny","slide":9,"text":"待补截图  E","textPreview":"待补截图  E","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/sna5gr6d","slide":9,"text":"敌袭预告与防守现场\n保留能体现生存压力的 HUD","textPreview":"敌袭预告与防守现场 | 保留能体现生存压力的 HUD","textChars":24,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/cbjwjb","slide":9,"text":"#### 3.1 守城压力强化目标感\n\n用迫近的守城战营造生存压力，为日常经营和自由交互提供明确目标。玩家需要在敌袭前争取人手、组织生产并准备防线，围绕守住驿站持续作出决策。\n\n#### 3.2 守城需求赋予对话多种情境和意义\n\n从守城出发，将对话延伸到征召士兵、防止逃跑、鼓舞士气和调配劳动力等情境。玩家需要根据人物的顾虑与局势变化调整表达，对话结果直接关系到人手能否到位、工作能否落实以及防线能否维持。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/mmby7h","slide":10,"title":"情绪表达与交互反馈","textShapes":8}
+{"kind":"textbox","id":"sh/q18rql4z","slide":10,"text":"情绪表达与交互反馈","textPreview":"情绪表达与交互反馈","textChars":9,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/d4zql0nq","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/c3q9svm5","slide":10,"text":"NPC 的情绪表达","textPreview":"NPC 的情绪表达","textChars":9,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/z6h8na5g","slide":10,"text":"动作、语气音效和 emoji 配合回复，让玩家直\n观感知人物态度。","textPreview":"动作、语气音效和 emoji 配合回复，让玩家直 | 观感知人物态度。","textChars":33,"textLines":2,"bbox":[64,217,548,157]}
+{"kind":"textbox","id":"sh/y58ru54b","slide":10,"text":"玩家的语音与情绪","textPreview":"玩家的语音与情绪","textChars":8,"textLines":1,"bbox":[64,375,548,43]}
+{"kind":"textbox","id":"sh/l8jqp0nm","slide":10,"text":"语音输入同时识别语言和情绪，经玩家确认后\n进入对话，让表达方式参与交互。","textPreview":"语音输入同时识别语言和情绪，经玩家确认后 | 进入对话，让表达方式参与交互。","textChars":36,"textLines":2,"bbox":[64,422,548,157]}
+{"kind":"shape","id":"sh/07a9wvm1","slide":10,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/fax8b65c","slide":10,"text":"待补截图  F","textPreview":"待补截图  F","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/e9o7i14r","slide":10,"text":"带情绪动作与 emoji 的真实回复\n或带情绪描述的语音识别草稿","textPreview":"带情绪动作与 emoji 的真实回复 | 或带情绪描述的语音识别草稿","textChars":32,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/mmby7h","slide":10,"text":"#### 3.3 情绪表达增强交互与反馈的趣味性\n\nAI NPC 通过动作、语气音效和 emoji 表达情绪，使玩家能够直观感知其态度。语音输入同时识别玩家的语言和情绪，在玩家确认发送后进入对话，让表达方式也成为交互的一部分，丰富双方交流的趣味性与反馈。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/e2or93","slide":11,"title":"涌现性与“管理者”幻想","textShapes":8}
+{"kind":"textbox","id":"sh/gfy58rmt","slide":11,"text":"涌现性与“管理者”幻想","textPreview":"涌现性与“管理者”幻想","textChars":11,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/fep4fml8","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/udgnmh4n","slide":11,"text":"双向影响丰富策略","textPreview":"双向影响丰富策略","textChars":8,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/tc7mdc3i","slide":11,"text":"经营决策经事件系统进入 NPC 认知。人物结合\n性格、状态与记忆作出的选择，再影响玩家安\n排。","textPreview":"经营决策经事件系统进入 NPC 认知。人物结合 | 性格、状态与记忆作出的选择，再影响玩家安 | 排。","textChars":47,"textLines":3,"bbox":[64,217,548,157]}
+{"kind":"textbox","id":"sh/sby5k7mx","slide":11,"text":"人员管理构成核心体验","textPreview":"人员管理构成核心体验","textChars":10,"textLines":1,"bbox":[64,375,548,43]}
+{"kind":"textbox","id":"sh/7qp4b2lc","slide":11,"text":"征召平民、“鼓励”干活、鼓舞士气、防止逃\n跑。争取配合，根据战斗结果验证管理成果、\n调整管理方式。","textPreview":"征召平民、“鼓励”干活、鼓舞士气、防止逃 | 跑。争取配合，根据战斗结果验证管理成果、 | 调整管理方式。","textChars":49,"textLines":3,"bbox":[64,422,548,157]}
+{"kind":"shape","id":"sh/6pwnix4r","slide":11,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/5onm9c36","slide":11,"text":"待补截图  G","textPreview":"待补截图  G","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/kne5g7ml","slide":11,"text":"一项经营安排与人物回应\n用同一实际过程表现双向影响","textPreview":"一项经营安排与人物回应 | 用同一实际过程表现双向影响","textChars":25,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/e2or93","slide":11,"text":"#### 3.4 经营决策与 NPC 决策相互影响，形成涌现性\n\n覆盖面广的事件系统将玩家的经营决策转化为 NPC 可以获知的信息，并按公开范围和信息空间传播。NPC 结合自身性格、状态与记忆作出决定，这些决定又反过来影响玩家的人员和资源安排。\n\n同一经营决策可能引发不同人物的不同反应，玩家需要据此调整策略，使模拟经营产生更丰富、可感知的非线性影响。\n\n#### 3.5 人员管理强化“管理者”幻想\n\nAI NPC 增强模拟经营中人员管理的代入感与趣味性。玩家需要想办法征召平民、“鼓励”他们干活，并在战斗压力下鼓舞士气、防止逃跑。针对不同的人争取配合、根据战斗结果验证管理成果、调整管理方式，构成玩家作为“管理者”的核心体验。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/en5fcm","slide":12,"title":"对话征召","textShapes":10}
+{"kind":"textbox","id":"sh/29s3e5s7","slide":12,"text":"对话征召","textPreview":"对话征召","textChars":4,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/pc3mpkby","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/obulgfad","slide":12,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/bel4ruto","slide":12,"text":"点选 NPC，查看职业、状态和经历，通过文字\n或语音交谈，针对顾虑争取入伍。","textPreview":"点选 NPC，查看职业、状态和经历，通过文字 | 或语音交谈，针对顾虑争取入伍。","textChars":38,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/qdcnips3","slide":12,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/xg3mt4bu","slide":12,"text":"人设、记忆与情境影响回应，态度表现与应征\n结果帮助玩家调整交涉。","textPreview":"人设、记忆与情境影响回应，态度表现与应征 | 结果帮助玩家调整交涉。","textChars":32,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/cfu5kza9","slide":12,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/zi54vut0","slide":12,"text":"开局只有副官艾达已入伍。选择动员对象、话\n术和投入精力，构成人员管理的第一层决策。","textPreview":"开局只有副官艾达已入伍。选择动员对象、话 | 术和投入精力，构成人员管理的第一层决策。","textChars":41,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/yhcnmpsf","slide":12,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/cr2d8r2l","slide":12,"text":"待补截图  H","textPreview":"待补截图  H","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/dsbehc36","slide":12,"text":"一段具有代表性的真实征召对话\n需同时看到说辞、回应与应征结果","textPreview":"一段具有代表性的真实征召对话 | 需同时看到说辞、回应与应征结果","textChars":30,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/en5fcm","slide":12,"text":"#### 4.1 对话征召：想办法说服平民上战场\n\n**玩家操作：**点选 NPC，查看其职业、状态与已有经历，通过文字或语音输入与其交谈，针对其顾虑选择说服、利诱、威胁或其他表达方式，争取对方同意入伍。\n\n**系统反馈：**NPC 结合人设、记忆和当前情境回应，通过言语、动作、语气音效与 emoji 表现态度。应征结果由程序执行并显示，玩家据此继续交涉或转向其他人选。\n\n**策略意义：**开局只有副官艾达已入伍，其余平民需要逐个争取。谁适合动员、怎样说服以及何时停止投入精力，构成人员管理的第一层决策。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/zctl40","slide":13,"title":"士气与逃离","textShapes":10}
+{"kind":"textbox","id":"sh/7yt0bqxs","slide":13,"text":"士气与逃离","textPreview":"士气与逃离","textChars":5,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/sz2h4ved","slide":13,"text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/t0vid0fy","slide":13,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/i9kzy1wb","slide":13,"text":"观察战时状态，交谈以鼓舞、安抚或施压，出\n现逃离意向时尝试挽留。","textPreview":"观察战时状态，交谈以鼓舞、安抚或施压，出 | 现逃离意向时尝试挽留。","textChars":32,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/jut076xw","slide":13,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/kv2h0be1","slide":13,"text":"NPC 可能受到鼓舞，也可能动摇或坚持逃离，\n交涉结果与后续行为共同提供反馈。","textPreview":"NPC 可能受到鼓舞，也可能动摇或坚持逃离， | 交涉结果与后续行为共同提供反馈。","textChars":39,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/5wbi9gfm","slide":13,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/2p4ja5wf","slide":13,"text":"征召后仍需维护队伍。战前承诺与战场现实进\n入同一判断上下文，人员退出会削弱防线。","textPreview":"征召后仍需维护队伍。战前承诺与战场现实进 | 入同一判断上下文，人员退出会削弱防线。","textChars":40,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/3qd0jax0","slide":13,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/ni50b2xo","slide":13,"text":"待补截图  I","textPreview":"待补截图  I","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/2hcj2xg3","slide":13,"text":"真实战场动摇或逃离挽留\n展示玩家输入、回应与人物状态","textPreview":"真实战场动摇或逃离挽留 | 展示玩家输入、回应与人物状态","textChars":26,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/zctl40","slide":13,"text":"#### 4.2 士气与逃离：让已经上场的人愿意留下\n\n**玩家操作：**观察人物战时状态，主动交谈以鼓舞、安抚或施压。当 NPC 产生逃离意向时，在挽留交互中尝试改变其决定。\n\n**系统反馈：**NPC 根据战况、身体状态、既有经历和玩家说辞作出反应，可能受到鼓舞，也可能继续动摇或坚持逃离。交涉结果与后续行为共同构成反馈。\n\n**策略意义：**征召成功之后，玩家仍需维护这支临时队伍。战前承诺与战场现实会进入同一套判断上下文，玩家需要持续处理人的意愿，防止防线因人员退出而削弱。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/14iymk","slide":14,"title":"劳动力调配","textShapes":10}
+{"kind":"textbox","id":"sh/fe9gz6h0","slide":14,"text":"劳动力调配","textPreview":"劳动力调配","textChars":5,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/gfih8bi5","slide":14,"text":"14","textPreview":"14","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/1gri1gzq","slide":14,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/2h0za1gb","slide":14,"text":"观察日程、技能、饥饿和疲劳，通过对话、自\n然语言指令、公告牌与日程表达安排。","textPreview":"观察日程、技能、饥饿和疲劳，通过对话、自 | 然语言指令、公告牌与日程表达安排。","textChars":38,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/3i9036hw","slide":14,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/o32hcbyh","slide":14,"text":"NPC 结合指令、状态与记忆制定或修订计划，\n玩家从行动和生产结果判断落实情况。","textPreview":"NPC 结合指令、状态与记忆制定或修订计划， | 玩家从行动和生产结果判断落实情况。","textChars":40,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/p4bi5gz2","slide":14,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/q5kzelgn","slide":14,"text":"生产、训练、治疗与防守竞争同一批人手。入\n伍后仍有自主性，施加影响始终需要说服。","textPreview":"生产、训练、治疗与防守竞争同一批人手。入 | 伍后仍有自主性，施加影响始终需要说服。","textChars":40,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/b6t07qhs","slide":14,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/z6503its","slide":14,"text":"待补截图  J","textPreview":"待补截图  J","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/y5wjadc7","slide":14,"text":"劳动指令与实际日程或行动\n保留人物需求与工作状态","textPreview":"劳动指令与实际日程或行动 | 保留人物需求与工作状态","textChars":24,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/14iymk","slide":14,"text":"#### 4.3 劳动力调配：“鼓励”他们干活\n\n**玩家操作：**观察人物日程、技能、饥饿和疲劳，通过对话争取配合，向已入伍 NPC 发布自然语言指令，并通过公告牌与日程广播全站安排。\n\n**系统反馈：**NPC 结合指令、状态与记忆制定或修订计划，再执行具体行动。玩家能够查看日程、当前行动和生产结果，判断自己的安排是否得到落实。\n\n**策略意义：**同一批人承担生产、训练、治疗与防守。玩家需要处理岗位之间的人手取舍，也要考虑过度劳动或安排不合理时的人物反应。自然语言指令和NPC状态、属性进入 NPC 判断上下文，入伍后仍保留自主性，玩家无法直接操控他们，施加影响始终需要说服。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/1owwaa","slide":15,"title":"经营与防守","textShapes":10}
+{"kind":"textbox","id":"sh/e90b61gf","slide":15,"text":"经营与防守","textPreview":"经营与防守","textChars":5,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/1cruhwzq","slide":15,"text":"15","textPreview":"15","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/0bit8ry5","slide":15,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/ne9cj6hw","slide":15,"text":"制造与交易物资、修复升级建筑、分配装备与\n坐骑、部署器械并拉响警铃。","textPreview":"制造与交易物资、修复升级建筑、分配装备与 | 坐骑、部署器械并拉响警铃。","textChars":34,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/md0ba1gb","slide":15,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/9gbulgz2","slide":15,"text":"资源、生产、建筑状态呈现经营结果，自动战\n斗验证防守效果，昏迷者等待治疗或恢复。","textPreview":"资源、生产、建筑状态呈现经营结果，自动战 | 斗验证防守效果，昏迷者等待治疗或恢复。","textChars":40,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/of2tcbyh","slide":15,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/bitcn6hs","slide":15,"text":"人手、装备、生活保障和设施共同决定守城结\n果。经营驱动动员，人员选择作用于经营与防\n守。","textPreview":"人手、装备、生活保障和设施共同决定守城结 | 果。经营驱动动员，人员选择作用于经营与防 | 守。","textChars":44,"textLines":3,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/ahkvelg7","slide":15,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/g36tg36d","slide":15,"text":"待补截图  K","textPreview":"待补截图  K","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/14fup8ni","slide":15,"text":"装备、器械部署或实际守城战\n选能看清人物与设施协作的画面","textPreview":"装备、器械部署或实际守城战 | 选能看清人物与设施协作的画面","textChars":28,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/1owwaa","slide":15,"text":"#### 4.4 经营与防守：为人员管理提供现实约束\n\n**玩家操作：**选择制造目标、交易和分配物资，升级或修复建筑，为入伍者配置武器、护甲与坐骑，部署防御器械，并在敌袭时拉响警铃。\n\n**系统反馈：**资源、生产进度、装备和建筑状态提供经营反馈，NPC 自动执行移动与战斗，战况验证防守的实际效果。NPC 血量清零后昏迷，接受治疗或逐渐恢复。\n\n**策略意义：**人手、装备、生活保障和防御设施共同决定能否守住驿站。经营驱动对话与动员，人员选择又作用于经营与防守，使两部分相互作用。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}
+{"kind":"slide","id":"sl/cjedo2","slide":16,"title":"记忆与关系 UI","textShapes":10}
+{"kind":"textbox","id":"sh/p8z21gz6","slide":16,"text":"记忆与关系 UI","textPreview":"记忆与关系 UI","textChars":8,"textLines":1,"bbox":[64,48,1152,84]}
+{"kind":"textbox","id":"sh/2l8jq10f","slide":16,"text":"16","textPreview":"16","textChars":2,"textLines":1,"bbox":[1164,658,52,28]}
+{"kind":"textbox","id":"sh/36hkz6h0","slide":16,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[64,170,548,43]}
+{"kind":"textbox","id":"sh/cbalwbih","slide":16,"text":"查看事件、见闻、日记与知识图谱，了解人物\n经历，据此调整对话与安排。","textPreview":"查看事件、见闻、日记与知识图谱，了解人物 | 经历，据此调整对话与安排。","textChars":34,"textLines":2,"bbox":[64,217,548,114]}
+{"kind":"textbox","id":"sh/dcj25gz2","slide":16,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[64,332,548,43]}
+{"kind":"textbox","id":"sh/q9s3ul0r","slide":16,"text":"对话与经营决策进入记忆，公开事件传播，反\n思形成日记与知识图谱并参与后续判断。","textPreview":"对话与经营决策进入记忆，公开事件传播，反 | 思形成日记与知识图谱并参与后续判断。","textChars":39,"textLines":2,"bbox":[64,379,548,114]}
+{"kind":"textbox","id":"sh/ba1k36hc","slide":16,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[64,494,548,43]}
+{"kind":"textbox","id":"sh/0fal0vit","slide":16,"text":"征召、劳动和战斗累积为个人经历。人员管理\n具有连续性，也呈现普通人眼中的战争荒诞性。","textPreview":"征召、劳动和战斗累积为个人经历。人员管理 | 具有连续性，也呈现普通人眼中的战争荒诞性。","textChars":42,"textLines":2,"bbox":[64,541,548,114]}
+{"kind":"shape","id":"sh/lg3290ze","slide":16,"bbox":[670,202,546,350]}
+{"kind":"textbox","id":"sh/psza143e","slide":16,"text":"待补截图  L","textPreview":"待补截图  L","textChars":7,"textLines":1,"bbox":[710,290,460,40]}
+{"kind":"textbox","id":"sh/orqt8zmt","slide":16,"text":"与具体管理经历相关的记忆页面\n推荐与征召或战时挽留使用同一人物","textPreview":"与具体管理经历相关的记忆页面 | 推荐与征召或战时挽留使用同一人物","textChars":31,"textLines":2,"bbox":[710,345,460,130]}
+{"kind":"notes","id":"nt/cjedo2","slide":16,"text":"#### 4.5 记忆与关系UI：根据NPC心理制定策略\n\n**玩家操作：**查看 NPC 的事件、见闻、日记与知识图谱，了解对方经历了什么，据此调整后续对话与安排。\n\n**系统反馈：**对话和经营决策进入短期记忆，公开事件按信息空间传播，每日反思形成日记与知识图谱。这些记忆参与后续人物判断。\n\n**策略意义：**征召、劳动和战斗累积为人物的个人经历，影响后续交涉。玩家既能感受到人员管理的连续性，也能从普通人的视角看到战争的荒诞性。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。"}

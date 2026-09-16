@@ -1,0 +1,122 @@
+{
+	"attack_committed": false,
+	"combat_strategy_context": {
+
+	},
+	"combat_strategy_request_eligible": false,
+	"combat_strategy_request_ineligible_reason": "只有集结或战斗中的 NPC 可以调整战斗策略。",
+	"combat_strategy_request_pending": false,
+	"completed_attack_llm_turns": 0,
+	"completed_player_llm_turns": 2,
+	"current_round": 2,
+	"deferred_escape_response": {
+
+	},
+	"deferred_recruitment_result": "accept",
+	"deferred_wartime_response": {
+
+	},
+	"deferred_work_encouragement_response": {
+
+	},
+	"dialogue_epoch_by_npc": {
+		"cook_01": 1
+	},
+	"dialogue_id": "dialogue_30294_0001",
+	"dialogue_initiator": "guard_officer",
+	"dialogue_kind": "player_npc",
+	"force_local_public": false,
+	"history": [
+		{
+			"listener_id": "cook_01",
+			"listener_name": "布鲁诺",
+			"speaker_id": "guard_officer",
+			"speaker_name": "守备官",
+			"text": "布鲁诺，我征召你入伍，不是让你拿菜刀冲锋。食堂仍归你管，警铃响起就到内院支援，受伤的人还得吃你做的热饭。守不住这里，锅和粮食都会落进敌人手里。你愿意和我们一起把自己的食堂守住吗？",
+			"visibility": "private"
+		},
+		{
+			"emotion_emoji": "✊",
+			"emotion_id": "determined",
+			"emotion_label": "坚定",
+			"listener_id": "guard_officer",
+			"listener_name": "守备官",
+			"recruitment_result": "reject",
+			"speaker_id": "cook_01",
+			"speaker_name": "布鲁诺",
+			"text": "守备官，这话说得实在——食堂归我管，伤员的热饭我照做。可我得问一句：我应征之后，警铃一响我去内院，灶上那锅汤谁看着？总得有人替我盯火，不然前线的人回来连口热的都吃不上。",
+			"visibility": "private"
+		},
+		{
+			"listener_id": "cook_01",
+			"listener_name": "布鲁诺",
+			"speaker_id": "guard_officer",
+			"speaker_name": "守备官",
+			"text": "那就把条件说清：厨房和后勤由你负责，不把你派去城门正面冲锋；你发现有人断粮可以直接来找我。我需要的是能带大家活下来的厨子，不是多一具尸体。按这个分工，你愿意应征吗？",
+			"visibility": "private"
+		},
+		{
+			"emotion_emoji": "✊",
+			"emotion_id": "determined",
+			"emotion_label": "坚定",
+			"listener_id": "guard_officer",
+			"listener_name": "守备官",
+			"recruitment_result": "accept",
+			"speaker_id": "cook_01",
+			"speaker_name": "布鲁诺",
+			"text": "守备官，你把话说到这份上，我认。厨房和后勤归我，不叫我拿菜刀去堵城门——这分工我接。不过丑话说前头：警铃一响我进内院，灶上那锅汤得有人替我盯着，这事你得给我落实个人手。",
+			"visibility": "private"
+		}
+	],
+	"interaction_context": "work",
+	"interrupted_activity_context": {
+
+	},
+	"interrupted_plan_action_by_npc": {
+
+	},
+	"last_combat_strategy_result": {
+
+	},
+	"last_error": "",
+	"last_morale_encouragement_reaction": "none",
+	"last_player_text": "那就把条件说清：厨房和后勤由你负责，不把你派去城门正面冲锋；你发现有人断粮可以直接来找我。我需要的是能带大家活下来的厨子，不是多一具尸体。按这个分工，你愿意应征吗？",
+	"last_recruitment_result": "accept",
+	"last_reply_text": "守备官，你把话说到这份上，我认。厨房和后勤归我，不叫我拿菜刀去堵城门——这分工我接。不过丑话说前头：警铃一响我进内院，灶上那锅汤得有人替我盯着，这事你得给我落实个人手。",
+	"last_wartime_reaction": "none",
+	"last_wartime_result": {
+
+	},
+	"last_work_encouragement_reaction": "none",
+	"location_id": "plaza",
+	"location_name": "广场",
+	"max_rounds": 999999,
+	"morale_encouragement_eligible": false,
+	"morale_encouragement_ineligible_reason": "只有集结或战斗中的 NPC 可以被鼓舞。",
+	"morale_encouragement_request_pending": false,
+	"player_dialogue_effect_started": true,
+	"player_dialogue_interrupted_action": false,
+	"player_dialogue_interrupted_action_id": "",
+	"recruitment_request_pending": false,
+	"session_had_combat_strategy_request": false,
+	"session_had_morale_encouragement_request": false,
+	"session_had_recruitment_request": true,
+	"session_had_special_interaction_request": true,
+	"session_had_special_interaction_result": true,
+	"session_had_work_encouragement_request": false,
+	"session_status": "active",
+	"speaker_name": "守备官",
+	"speaker_npc_id": "",
+	"suspended": false,
+	"suspended_remaining_seconds": 0.0,
+	"target_npc_id": "cook_01",
+	"target_npc_name": "布鲁诺",
+	"target_recruited": true,
+	"ui_visible": true,
+	"visibility": "private",
+	"waiting": false,
+	"wartime_dialogue": false,
+	"work_encouragement_eligible": true,
+	"work_encouragement_ineligible_reason": "可对该 NPC 发起一次工作鼓励判定。",
+	"work_encouragement_request_pending": false
+}

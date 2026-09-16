@@ -1,0 +1,19 @@
+{
+  "candidate_mountain_vertices": 3600,
+  "collision": false,
+  "embedded_base_vertices": 147,
+  "enabled": true,
+  "lifted_instances": 3036,
+  "main_created": false,
+  "navigation": false,
+  "original_meshes_unchanged": 60,
+  "outcrop_groups": 7,
+  "outcrop_pieces": 21,
+  "peak_heights": {
+    "far": 105.4,
+    "mid": 64.7,
+    "near": 35.7
+  },
+  "production_enabled": false,
+  "trees": 7393
+}

@@ -1,0 +1,9 @@
+#EXTM3U
+#EXTINF:1,A 明亮、辨识度最高
+01_neigh_bright_short.wav
+#EXTINF:1,B 较低、较稳
+02_neigh_low_short.wav
+#EXTINF:1,C 较柔和
+03_whinny_soft_short.wav
+#EXTINF:1,D 较清脆
+04_whinny_crisp_short.wav

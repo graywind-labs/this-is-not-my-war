@@ -1,0 +1,374 @@
+{
+	"attack_committed": false,
+	"combat_strategy_context": {
+
+	},
+	"combat_strategy_request_eligible": false,
+	"combat_strategy_request_ineligible_reason": "只有守备官与驿站成员交谈时可以调整战斗策略。",
+	"completed_attack_llm_turns": 0,
+	"completed_player_llm_turns": 1,
+	"completion_mode": "completed",
+	"current_round": 1,
+	"deferred_escape_response": {
+		"debug_reason": "布鲁诺已入伍且此前接受厨房后勤分工，最在意灶台与伤员热饭；守备官承诺不站第一排并愿解决顾虑，故选择留下。",
+		"emotion": "determined",
+		"escape_intervention_result": "stay",
+		"model_fallback_used": false,
+		"model_name": "deepseek-v4-flash",
+		"model_normalizations": [],
+		"model_provider": "deepseek",
+		"ok": true,
+		"reply_text": "守备官，我最担心的就一件：我走了，灶上那锅汤谁看？伤员回来连口热的都吃不上。你要是能给我落实个替我盯火的人手，我就留下。",
+		"replyer_id": "cook_01",
+		"response_kind": "reply_to_player",
+		"suggested_event_type": "dialogue_turn"
+	},
+	"deferred_recruitment_result": "none",
+	"deferred_wartime_response": {
+
+	},
+	"dialogue_epoch_by_npc": {
+		"cook_01": 2
+	},
+	"dialogue_id": "dialogue_53814_0003",
+	"dialogue_initiator": "guard_officer",
+	"dialogue_kind": "escape_intervention",
+	"end_reason": "dialogue_ended",
+	"ended_while_waiting": false,
+	"escape_intervention": true,
+	"escape_pause_result": {
+		"applied": true,
+		"escape_intent": {
+			"active": true,
+			"attack_speed_count": 0,
+			"completion_position": {
+				"x": -54.0,
+				"y": 0.119999997317791,
+				"z": -305.0
+			},
+			"escape_started_event_id": "evt_day01_120000_cook_01_escape_started_0009",
+			"exit_position": {
+				"x": -54.0,
+				"y": 0.119999997317791,
+				"z": -305.0
+			},
+			"exit_target_id": "back_gate_escape_exit",
+			"exit_target_name": "后门外出口",
+			"interaction_context": "gm_debug",
+			"intervention_max_rounds": 5,
+			"intervention_rounds_used": 0,
+			"last_intervention_decision": "",
+			"last_intervention_result": "",
+			"money_slow_count": 0,
+			"movement_paused_for_dialogue": true,
+			"paused_dialogue_day": 1,
+			"paused_dialogue_id": "dialogue_53814_0003",
+			"paused_dialogue_time": "12:00:00",
+			"route_length": 261.301597595215,
+			"route_point_count": 6,
+			"route_source": "formal_station_layout",
+			"source_event_id": "",
+			"speed_multiplier": 1.0,
+			"started_day": 1,
+			"started_time": "12:00:00",
+			"status": "escaping",
+			"trigger": "gm_debug"
+		},
+		"npc_id": "cook_01",
+		"ok": true,
+		"snapshot": {
+			"applied": true,
+			"behavior_mode": "escaped",
+			"escape_intent": {
+				"active": true,
+				"attack_speed_count": 0,
+				"completion_position": {
+					"x": -54.0,
+					"y": 0.119999997317791,
+					"z": -305.0
+				},
+				"escape_started_event_id": "evt_day01_120000_cook_01_escape_started_0009",
+				"exit_position": {
+					"x": -54.0,
+					"y": 0.119999997317791,
+					"z": -305.0
+				},
+				"exit_target_id": "back_gate_escape_exit",
+				"exit_target_name": "后门外出口",
+				"interaction_context": "gm_debug",
+				"intervention_max_rounds": 5,
+				"intervention_rounds_used": 0,
+				"last_intervention_decision": "",
+				"last_intervention_result": "",
+				"money_slow_count": 0,
+				"movement_paused_for_dialogue": true,
+				"paused_dialogue_day": 1,
+				"paused_dialogue_id": "dialogue_53814_0003",
+				"paused_dialogue_time": "12:00:00",
+				"route_length": 261.301597595215,
+				"route_point_count": 6,
+				"route_source": "formal_station_layout",
+				"source_event_id": "",
+				"speed_multiplier": 1.0,
+				"started_day": 1,
+				"started_time": "12:00:00",
+				"status": "escaping",
+				"trigger": "gm_debug"
+			},
+			"event": {
+				"actor_ids": [
+					"system"
+				],
+				"day": 1,
+				"event_id": "evt_day01_120000_cook_01_escape_started_0009",
+				"importance": 90,
+				"location_id": "plaza",
+				"payload": {
+					"exit_position": {
+						"x": -54.0,
+						"y": 0.119999997317791,
+						"z": -305.0
+					},
+					"exit_target_id": "back_gate_escape_exit",
+					"exit_target_name": "后门外出口",
+					"from_mode": "work",
+					"interaction_context": "gm_debug",
+					"npc_id": "cook_01",
+					"source_event_id": "",
+					"trigger": "gm_debug"
+				},
+				"subject_npc_id": "cook_01",
+				"summary": "布鲁诺开始朝后门外出口逃离驿站。",
+				"target_ids": [
+					"cook_01",
+					"back_gate_escape_exit"
+				],
+				"time": "12:00:00",
+				"type": "escape_started",
+				"visibility": "local_public"
+			},
+			"intervention_max_rounds": 5,
+			"intervention_rounds_left": 5,
+			"intervention_rounds_used": 0,
+			"mode_result": {
+				"behavior_mode": "escaped",
+				"changed": true,
+				"event": {
+
+				},
+				"interrupt_result": {
+					"action_interrupted": false,
+					"dialogue": {
+						"ended": false,
+						"ok": true,
+						"reason": "no_active_dialogue"
+					},
+					"llm": {
+						"cancelled": false,
+						"ok": true,
+						"reason": "no_active_request"
+					},
+					"movement_stopped": true,
+					"proactive_cleared": false,
+					"workstation_exit_applied": false,
+					"world_position_after": "(-1.0, 0.0, 10.0)",
+					"world_position_before": "(-1.0, 0.0, 10.0)",
+					"world_position_preserved": true,
+					"world_position_restored": false
+				},
+				"movement_started": true,
+				"npc_id": "cook_01",
+				"ok": true,
+				"plan_interruption_status": {
+
+				},
+				"plan_reevaluation_status": {
+
+				},
+				"plan_resume_status": {
+
+				},
+				"previous_mode": "work",
+				"reason": "escape_started"
+			},
+			"npc_id": "cook_01",
+			"npc_name": "布鲁诺",
+			"ok": true,
+			"previous_mode": "work",
+			"speed_multiplier": 1.0,
+			"status": "escaping",
+			"target_id": "back_gate_escape_exit",
+			"target_name": "后门外出口",
+			"target_position": {
+				"x": -54.0,
+				"y": 0.119999997317791,
+				"z": -305.0
+			}
+		},
+		"status": "escaping"
+	},
+	"force_local_public": true,
+	"history": [
+		{
+			"listener_id": "cook_01",
+			"listener_name": "布鲁诺",
+			"speaker_id": "guard_officer",
+			"speaker_name": "守备官",
+			"text": "布鲁诺，先停一下。你不想送命，我也不想。外面的路没有锅、粮食和医生。留下来，我让你回食堂照顾伤员，不站城门第一排；你在这里还有能保护的人和事。告诉我你最担心什么，我们现在就解决。",
+			"visibility": "local_public"
+		},
+		{
+			"emotion_emoji": "✊",
+			"emotion_id": "determined",
+			"emotion_label": "坚定",
+			"escape_intervention_result": "stay",
+			"listener_id": "guard_officer",
+			"listener_name": "守备官",
+			"speaker_id": "cook_01",
+			"speaker_name": "布鲁诺",
+			"text": "守备官，我最担心的就一件：我走了，灶上那锅汤谁看？伤员回来连口热的都吃不上。你要是能给我落实个替我盯火的人手，我就留下。",
+			"visibility": "local_public"
+		}
+	],
+	"interaction_context": "escape_intervention",
+	"interrupted_plan_action_by_npc": {
+
+	},
+	"last_error": "",
+	"last_escape_intervention_result": {
+		"decision": "stay",
+		"escape_intent": {
+			"active": false,
+			"attack_speed_count": 0,
+			"completion_position": {
+				"x": -54.0,
+				"y": 0.119999997317791,
+				"z": -305.0
+			},
+			"escape_started_event_id": "evt_day01_120000_cook_01_escape_started_0009",
+			"exit_position": {
+				"x": -54.0,
+				"y": 0.119999997317791,
+				"z": -305.0
+			},
+			"exit_target_id": "back_gate_escape_exit",
+			"exit_target_name": "后门外出口",
+			"interaction_context": "gm_debug",
+			"intervention_max_rounds": 5,
+			"intervention_rounds_used": 1,
+			"last_intervention_day": 1,
+			"last_intervention_decision": "stay",
+			"last_intervention_dialogue_event_id": "evt_day01_120000_cook_01_dialogue_turn_0010",
+			"last_intervention_dialogue_id": "dialogue_53814_0003",
+			"last_intervention_reply": "守备官，我最担心的就一件：我走了，灶上那锅汤谁看？伤员回来连口热的都吃不上。你要是能给我落实个替我盯火的人手，我就留下。",
+			"last_intervention_result": "stay",
+			"last_intervention_time": "12:00:00",
+			"money_slow_count": 0,
+			"movement_paused_for_dialogue": true,
+			"paused_dialogue_day": 1,
+			"paused_dialogue_id": "dialogue_53814_0003",
+			"paused_dialogue_time": "12:00:00",
+			"route_length": 261.301597595215,
+			"route_point_count": 6,
+			"route_source": "formal_station_layout",
+			"source_event_id": "",
+			"speed_multiplier": 1.0,
+			"started_day": 1,
+			"started_time": "12:00:00",
+			"status": "stayed",
+			"stayed_day": 1,
+			"stayed_event_id": "evt_day01_120000_cook_01_escape_intervention_result_0011",
+			"stayed_time": "12:00:00",
+			"trigger": "gm_debug"
+		},
+		"event": {
+			"actor_ids": [
+				"guard_officer"
+			],
+			"day": 1,
+			"event_id": "evt_day01_120000_cook_01_escape_intervention_result_0011",
+			"importance": 88,
+			"location_id": "plaza",
+			"payload": {
+				"current_round": 1,
+				"decision": "stay",
+				"dialogue_event_id": "evt_day01_120000_cook_01_dialogue_turn_0010",
+				"dialogue_id": "dialogue_53814_0003",
+				"intervention_result": "stay",
+				"max_rounds": 5,
+				"npc_id": "cook_01",
+				"reply_text": "守备官，我最担心的就一件：我走了，灶上那锅汤谁看？伤员回来连口热的都吃不上。你要是能给我落实个替我盯火的人手，我就留下。",
+				"rounds_left": 4,
+				"source_event_id": "",
+				"speed_multiplier": 1.0
+			},
+			"subject_npc_id": "cook_01",
+			"summary": "布鲁诺被守备官挽留下来，停止逃离驿站。",
+			"target_ids": [
+				"cook_01",
+				"plaza"
+			],
+			"time": "12:00:00",
+			"type": "escape_intervention_result",
+			"visibility": "local_public"
+		},
+		"intervention_result": "stay",
+		"max_rounds": 5,
+		"npc_id": "cook_01",
+		"npc_name": "布鲁诺",
+		"ok": true,
+		"rounds_left": 4,
+		"rounds_used": 1,
+		"state_result": {
+			"behavior_mode": "work",
+			"changed": true,
+			"event": {
+
+			},
+			"interrupt_result": {
+
+			},
+			"movement_started": false,
+			"npc_id": "cook_01",
+			"ok": true,
+			"plan_interruption_status": {
+
+			},
+			"plan_reevaluation_status": {
+
+			},
+			"plan_resume_status": {
+
+			},
+			"previous_mode": "escaped",
+			"reason": "escape_intervention_stayed"
+		}
+	},
+	"last_player_text": "布鲁诺，先停一下。你不想送命，我也不想。外面的路没有锅、粮食和医生。留下来，我让你回食堂照顾伤员，不站城门第一排；你在这里还有能保护的人和事。告诉我你最担心什么，我们现在就解决。",
+	"last_recruitment_result": "none",
+	"last_reply_text": "守备官，我最担心的就一件：我走了，灶上那锅汤谁看？伤员回来连口热的都吃不上。你要是能给我落实个替我盯火的人手，我就留下。",
+	"location_id": "plaza",
+	"location_name": "广场",
+	"max_rounds": 5,
+	"morale_encouragement_eligible": false,
+	"morale_encouragement_ineligible_reason": "只有守备官与驿站成员交谈时可以鼓舞士气。",
+	"player_dialogue_effect_started": true,
+	"recruitment_request_pending": false,
+	"session_event_id": "evt_day01_120000_cook_01_dialogue_turn_0010",
+	"session_had_recruitment_request": false,
+	"session_had_special_interaction_request": false,
+	"session_status": "completed",
+	"speaker_name": "守备官",
+	"speaker_npc_id": "",
+	"suspended": false,
+	"suspended_remaining_seconds": 0.0,
+	"target_npc_id": "cook_01",
+	"target_npc_name": "布鲁诺",
+	"target_recruited": true,
+	"ui_visible": false,
+	"visibility": "local_public",
+	"waiting": false,
+	"wartime_dialogue": false,
+	"work_encouragement_eligible": false,
+	"work_encouragement_ineligible_reason": "只有守备官与驿站成员交谈时可以鼓励工作。"
+}

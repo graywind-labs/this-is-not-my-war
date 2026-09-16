@@ -1,0 +1,20 @@
+{
+  "counts": {
+    "birch_mature": 139,
+    "birch_young": 59,
+    "oak_mature": 266,
+    "oak_young": 94,
+    "pine_mature": 192,
+    "pine_young": 73
+  },
+  "deep_forest_trees": 715,
+  "has_collision": false,
+  "has_navigation": false,
+  "mesh_variants": 6,
+  "near_station_trees": 23,
+  "original_positions_preserved": true,
+  "original_tree_count": 823,
+  "production_enabled": false,
+  "retained_points": 823,
+  "source_points": 823
+}

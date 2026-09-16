@@ -1,0 +1,557 @@
+{
+  "failures": [],
+  "views": [
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(922, 518)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": false,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "A"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(922, 518)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": true,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "B"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(1280, 720)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": false,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "A"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(1280, 720)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": true,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "B"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(1600, 1200)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": false,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "A"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(1600, 1200)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": true,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "B"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(2560, 1080)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": false,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "A"
+    },
+    {
+      "candidate_area": 90240.0,
+      "original_area": 126112.0,
+      "size": "(2560, 1080)",
+      "snapshot": {
+        "camera": "[X: (1.0, 0.0, 0.0), Y: (0.0, 0.629802, -0.776756), Z: (0.0, 0.776756, 0.629802), O: (0.0, 74.0, 70.0)]",
+        "candidate": true,
+        "context": 0,
+        "hud": {
+          "clock": "12:00:00",
+          "day": "第 1 天 · 白昼",
+          "read_only": true,
+          "rects": [
+            "[P: (12.0, 8.0), S: (564.0, 160.0)]"
+          ],
+          "resources": {
+            "GrainResourceItem": "18",
+            "IronResourceItem": "5",
+            "MealResourceItem": "0",
+            "MoneyResourceItem": "30",
+            "StoneResourceItem": "8",
+            "WineResourceItem": "0",
+            "WoodResourceItem": "12"
+          },
+          "wave": "下一波敌军还有 2天06时来袭"
+        },
+        "original_frame": "[P: (12.0, 8.0), S: (563.0, 224.0)]",
+        "startup": {
+          "async_llm_plan_batch": {
+
+          },
+          "async_llm_plan_requested": false,
+          "completed": true,
+          "completed_npc_count": 0,
+          "execute_results": {
+
+          },
+          "formal_loop_started": false,
+          "mode": 0,
+          "mode_label": "静止调试",
+          "npc_count": 0,
+          "npc_results": {
+
+          },
+          "ok": true,
+          "plan_results": {
+
+          },
+          "planning_npc_count": 0,
+          "running": false,
+          "status": "static_debug_ready",
+          "tutorial_requested": false,
+          "tutorial_status": "disabled"
+        }
+      },
+      "variant": "B"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 1.0)]",
+      "candidate": false,
+      "context": 1,
+      "hud_rect": "[P: (12.0, 8.0), S: (300.0, 244.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 1.0)]",
+      "candidate": true,
+      "context": 1,
+      "hud_rect": "[P: (12.0, 8.0), S: (300.0, 244.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": false,
+      "context": 2,
+      "hud_rect": "[P: (12.0, 8.0), S: (522.0, 204.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": true,
+      "context": 2,
+      "hud_rect": "[P: (12.0, 8.0), S: (522.0, 204.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": false,
+      "context": 3,
+      "hud_rect": "[P: (12.0, 8.0), S: (300.0, 244.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (546.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": true,
+      "context": 3,
+      "hud_rect": "[P: (12.0, 8.0), S: (300.0, 244.0)]",
+      "npc_rect": "[P: (324.0, 16.0), S: (582.0, 486.0)]",
+      "size": "(922, 518)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 1.0)]",
+      "candidate": false,
+      "context": 1,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 1.0)]",
+      "candidate": true,
+      "context": 1,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": false,
+      "context": 2,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": true,
+      "context": 2,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": false,
+      "context": 3,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    },
+    {
+      "building_rect": "[P: (904.0, 16.0), S: (360.0, 222.0)]",
+      "candidate": true,
+      "context": 3,
+      "hud_rect": "[P: (12.0, 8.0), S: (564.0, 160.0)]",
+      "npc_rect": "[P: (682.0, 16.0), S: (582.0, 688.0)]",
+      "size": "(1280, 720)"
+    }
+  ]
+}

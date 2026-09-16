@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cmp0oh4u1hk3i"
+
+[deps]
+
+files=["res://artifacts/analysis/t0121_r1/screening_samples.contract.translation", "res://artifacts/analysis/t0121_r1/screening_samples.execution.translation", "res://artifacts/analysis/t0121_r1/screening_samples.tower.translation", "res://artifacts/analysis/t0121_r1/screening_samples.ada.translation", "res://artifacts/analysis/t0121_r1/screening_samples.cleared.translation", "res://artifacts/analysis/t0121_r1/screening_samples.main.translation", "res://artifacts/analysis/t0121_r1/screening_samples.elapsed.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.device.translation", "res://artifacts/analysis/t0121_r1/screening_samples.devices.translation", "res://artifacts/analysis/t0121_r1/screening_samples.main.translation", "res://artifacts/analysis/t0121_r1/screening_samples.device.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation"]
+
+source_file="res://artifacts/analysis/t0121_r1/screening_samples.csv"
+dest_files=["res://artifacts/analysis/t0121_r1/screening_samples.contract.translation", "res://artifacts/analysis/t0121_r1/screening_samples.execution.translation", "res://artifacts/analysis/t0121_r1/screening_samples.tower.translation", "res://artifacts/analysis/t0121_r1/screening_samples.ada.translation", "res://artifacts/analysis/t0121_r1/screening_samples.cleared.translation", "res://artifacts/analysis/t0121_r1/screening_samples.main.translation", "res://artifacts/analysis/t0121_r1/screening_samples.elapsed.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.device.translation", "res://artifacts/analysis/t0121_r1/screening_samples.devices.translation", "res://artifacts/analysis/t0121_r1/screening_samples.main.translation", "res://artifacts/analysis/t0121_r1/screening_samples.device.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation", "res://artifacts/analysis/t0121_r1/screening_samples.npc.translation", "res://artifacts/analysis/t0121_r1/screening_samples.enemy.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

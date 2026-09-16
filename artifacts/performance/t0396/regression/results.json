@@ -1,0 +1,17 @@
+﻿[
+    {
+        "script":  "verify_t0396_combat_optimization.gd",
+        "exit_code":  0,
+        "log":  "D:\\这不是我的战争\\artifacts\\performance\\t0396\\regression\\verify_t0396_combat_optimization.gd.log"
+    },
+    {
+        "script":  "verify_t0243_guided_attack_zones.gd",
+        "exit_code":  0,
+        "log":  "D:\\这不是我的战争\\artifacts\\performance\\t0396\\regression\\verify_t0243_guided_attack_zones.gd.log"
+    },
+    {
+        "script":  "verify_t0186_melee_engagement_stability.gd",
+        "exit_code":  0,
+        "log":  "D:\\这不是我的战争\\artifacts\\performance\\t0396\\regression\\verify_t0186_melee_engagement_stability.gd.log"
+    }
+]

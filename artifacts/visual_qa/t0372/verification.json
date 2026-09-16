@@ -1,0 +1,83 @@
+{
+  "ballista": {
+    "active_projectile_count": 0,
+    "art_revision": "t0132_p4a",
+    "attack_interval": 4.25,
+    "destroyed_visual": false,
+    "footprint_size": {
+      "x": 2.92000007629395,
+      "y": 1.72000002861023,
+      "z": 3.07999992370605
+    },
+    "formal_device_kind": "ballista",
+    "has_carriage": true,
+    "has_dynamic_string": true,
+    "has_turntable": true,
+    "has_winch": true,
+    "last_authoritative_release_sequence": -1,
+    "last_flight_seconds": 0.0,
+    "last_reload_seconds": 0.0,
+    "last_target_position": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "loaded_bolt_visible": true,
+    "metal_texture": "res://assets/3d/quaternius/buildings/wall_plaster_door_round_T_MetalOrnaments_BaseColor.png",
+    "projectile_speed": 52.0,
+    "reload_fraction": 0.62,
+    "shot_count": 0,
+    "string_draw_z": -0.34,
+    "structure_parts": 62,
+    "timeline_phase": "idle",
+    "wood_texture": "res://assets/3d/quaternius/buildings/wall_plaster_door_round_T_WoodTrim_BaseColor.png",
+    "yaw_degrees": 0.0
+  },
+  "failures": [],
+  "platform": {
+    "art_revision": "t0132_p4b",
+    "authority_role": "presentation_only",
+    "device_anchor_local_y": 0.88,
+    "footprint_size": {
+      "x": 3.59999990463257,
+      "y": 3.38000011444092,
+      "z": 3.59999990463257
+    },
+    "has_open_front_firing_arc": true,
+    "has_timber_corbel_frame": true,
+    "structure_parts": 26,
+    "wood_texture": "res://assets/3d/quaternius/buildings/wall_plaster_door_round_T_WoodTrim_BaseColor.png"
+  },
+  "views": [
+    {
+      "panel": "[P: (50.71, 135.84), S: (320.0, 320.0)]",
+      "partial_menu_overlap": true,
+      "size": "(922, 518)",
+      "weapon_rect": "[P: (311.7652, 167.1982), S: (75.46857, 55.16771)]"
+    },
+    {
+      "panel": "[P: (70.4, 313.6), S: (326.4, 320.0)]",
+      "partial_menu_overlap": false,
+      "size": "(1280, 720)",
+      "weapon_rect": "[P: (432.8193, 232.5529), S: (104.772, 76.58855)]"
+    },
+    {
+      "panel": "[P: (105.6, 630.4), S: (489.6, 320.0)]",
+      "partial_menu_overlap": false,
+      "size": "(1920, 1080)",
+      "weapon_rect": "[P: (649.229, 348.8293), S: (157.1579, 114.8829)]"
+    },
+    {
+      "panel": "[P: (88.0, 736.0), S: (408.0, 320.0)]",
+      "partial_menu_overlap": false,
+      "size": "(1600, 1200)",
+      "weapon_rect": "[P: (358.6989, 387.5881), S: (174.6199, 127.6476)]"
+    },
+    {
+      "panel": "[P: (140.8, 630.4), S: (652.8, 320.0)]",
+      "partial_menu_overlap": false,
+      "size": "(2560, 1080)",
+      "weapon_rect": "[P: (865.6387, 285.1057), S: (209.5439, 153.1772)]"
+    }
+  ]
+}

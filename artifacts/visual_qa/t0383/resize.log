@@ -1,0 +1,5 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward+ - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4060 Ti
+
+T0383_SNAPSHOT { "art_revision": "t0362_approved", "tufts": 908, "grass_tufts": 900, "wildflowers": 8, "outer_tufts": 23812, "outer_chunks": 171, "estimated_inside_density": 0.09096887782029, "estimated_outside_density": 0.08102789117882, "road_count": 42, "has_collision": false, "has_navigation": false, "authority_role": "presentation_only" } removed=14
+T0383_PASS

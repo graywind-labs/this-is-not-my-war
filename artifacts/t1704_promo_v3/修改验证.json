@@ -1,0 +1,52 @@
+[
+  {
+    "file": "01_主视觉.png",
+    "changed_pixel_bounds": [
+      64,
+      59,
+      100,
+      63
+    ],
+    "all_other_pixels_identical": true
+  },
+  {
+    "file": "02_对话征召.png",
+    "changed_pixel_bounds": [
+      64,
+      59,
+      100,
+      63
+    ],
+    "all_other_pixels_identical": true
+  },
+  {
+    "file": "03_劳动力交涉.png",
+    "changed_pixel_bounds": [
+      64,
+      59,
+      100,
+      63
+    ],
+    "all_other_pixels_identical": true
+  },
+  {
+    "file": "04_逃离挽留.png",
+    "changed_pixel_bounds": [
+      64,
+      59,
+      100,
+      63
+    ],
+    "all_other_pixels_identical": true
+  },
+  {
+    "file": "05_守城成果.png",
+    "changed_pixel_bounds": [
+      64,
+      894,
+      100,
+      898
+    ],
+    "all_other_pixels_identical": true
+  }
+]

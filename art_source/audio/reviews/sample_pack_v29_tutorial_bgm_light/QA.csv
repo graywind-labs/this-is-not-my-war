@@ -1,0 +1,13 @@
+file,codec,sample_rate_hz,channels,duration_seconds,decode_status,decision
+intro_still/01_dear_diary.mp3,mp3,48000,2,206.785,pass,pending
+intro_still/02_calm_track_loop.mp3,mp3,48000,2,249.237,pass,pending
+intro_still/03_short_medieval_loop.mp3,mp3,48000,2,19.726,pass,pending
+intro_still/04_subtle_waiting_tension.mp3,mp3,48000,2,124.433,pass,pending
+intro_still/05_dark_castle_night.mp3,mp3,48000,2,19.643,pass,pending
+intro_still/06_venture_at_night.mp3,mp3,48000,2,21.333,pass,confirmed_tutorial_intro
+main_tutorial/01_light_battle.mp3,mp3,48000,2,104.761,pass,confirmed_tutorial_battle
+main_tutorial/02_middle_age_theme_2.mp3,mp3,48000,2,261.483,pass,confirmed_night_playlist
+main_tutorial/03_old_tower_inn_loop.mp3,mp3,48000,2,49.951,pass,pending
+main_tutorial/04_calm_game_theme.mp3,mp3,48000,2,117.203,pass,confirmed_day_playlist
+main_tutorial/05_simple_background_loop.mp3,mp3,48000,2,62.679,pass,pending
+main_tutorial/06_medieval_exploration.mp3,mp3,48000,2,236.356,pass,confirmed_day_playlist

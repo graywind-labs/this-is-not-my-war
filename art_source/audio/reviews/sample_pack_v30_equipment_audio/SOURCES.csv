@@ -1,0 +1,5 @@
+file,category,source_title,author,source_url,license,decision,final_usage,edit_instruction,review_note
+01_neigh_bright_short.wav,ui_equipment_mount_candidate,Renill de cavall / Horse Neigh,Salsero_classic,https://freesound.org/s/826753/,CC0,rejected,,"不采用","用户选择 02"
+02_neigh_low_short.wav,ui_equipment_mount_selected,Renill de cavall / Horse Neigh,Salsero_classic,https://freesound.org/s/826753/,CC0,confirmed,ui_equipment_mount_selected,"完整 0.650 秒；NPC 装备窗选中马匹时全局单次播放","用户确认使用 02；较低、较稳的短促马叫"
+03_whinny_soft_short.wav,ui_equipment_mount_candidate,Horse_Whinny.wav,foxen10,https://freesound.org/s/149024/,CC0,rejected,,"不采用","用户选择 02"
+04_whinny_crisp_short.wav,ui_equipment_mount_candidate,Horse_Whinny.wav,foxen10,https://freesound.org/s/149024/,CC0,rejected,,"不采用","用户选择 02"

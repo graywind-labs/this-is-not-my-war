@@ -1,0 +1,363 @@
+{"kind":"deck","id":"pr/157342","name":"Deck"}
+{"kind":"layout","layoutId":"f25e20ff-818f-45b5-ac10-3a93f2c5ad98","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"63ea22ff-be15-47e3-9d79-2826c314ae17","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/isnz35","slide":1,"title":"叙事重构·AI沙盒与涌现式世界","textShapes":3}
+{"kind":"shape","id":"sh/tgjydgnq","slide":1,"bbox":[0,0,1280,720]}
+{"kind":"textbox","id":"sh/sfaxkbml","slide":1,"text":"叙事重构·AI沙盒与涌现式世界","textPreview":"叙事重构·AI沙盒与涌现式世界","textChars":15,"textLines":1,"bbox":[62,52,1040,36]}
+{"kind":"textbox","id":"sh/ja1w7m5o","slide":1,"text":"这不是\n我的战争","textPreview":"这不是 | 我的战争","textChars":8,"textLines":2,"bbox":[60,145,650,244]}
+{"kind":"textbox","id":"sh/i98fe143","slide":1,"text":"玩家扮演一个边境驿站征兵官，\n想办法说服平民上战场、\n”鼓励”他们干活、不让他们当逃兵。","textPreview":"玩家扮演一个边境驿站征兵官， | 想办法说服平民上战场、 | ”鼓励”他们干活、不让他们当逃兵。","textChars":44,"textLines":3,"bbox":[66,478,620,154]}
+{"kind":"image","id":"im/z2do3y9g","slide":1,"name":"","alt":"01_station.png","bbox":[0,0,1280,720]}
+{"kind":"notes","id":"nt/isnz35","slide":1,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n配图：01_station.png，当前正式工程截图。拍摄时暂停时间、隐藏 UI，调整观景镜头。\nV2 封面使用全屏全景截图作为背景，渐变仅用于文字对比。"}
+{"kind":"slide","id":"sl/mlmno4","slide":2,"title":"产品定位","textShapes":8}
+{"kind":"textbox","id":"sh/dwfy18ju","slide":2,"text":"产品定位","textPreview":"产品定位","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/q9ofqd03","slide":2,"text":"产品定位","textPreview":"产品定位","textChars":4,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/ruxgzy1o","slide":2,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/0zqxwnil","slide":2,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/l0zy5sjq","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"textbox","id":"sh/yx8fud0f","slide":2,"text":"人员管理","textPreview":"人员管理","textChars":4,"textLines":1,"bbox":[58,167,710,108]}
+{"kind":"textbox","id":"sh/zyhg3i10","slide":2,"text":"用AI NPC来增强模拟经营游戏里”人员管理\n“的乐趣，实质上是AI小镇的一种。","textPreview":"用AI NPC来增强模拟经营游戏里”人员管理 | “的乐趣，实质上是AI小镇的一种。","textChars":40,"textLines":2,"bbox":[64,315,648,140]}
+{"kind":"shape","id":"sh/83qh0nih","slide":2,"bbox":[64,493,604,1]}
+{"kind":"textbox","id":"sh/94zy9sj2","slide":2,"text":"所选赛道","textPreview":"所选赛道","textChars":4,"textLines":1,"bbox":[64,523,604,38]}
+{"kind":"textbox","id":"sh/903m14bm","slide":2,"text":"叙事重构 ai沙盒与涌现式世界","textPreview":"叙事重构 ai沙盒与涌现式世界","textChars":15,"textLines":1,"bbox":[64,571,620,64]}
+{"kind":"image","id":"im/ny1czml4","slide":2,"name":"","alt":"03_npc.png","bbox":[780,160,440,486]}
+{"kind":"notes","id":"nt/mlmno4","slide":2,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n03_npc.png，正式人物面板实机截图。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/m72dc2","slide":3,"title":"产品定位","textShapes":10}
+{"kind":"textbox","id":"sh/nm5gvah0","slide":3,"text":"产品定位","textPreview":"产品定位","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/8nex4fyl","slide":3,"text":"美术、题材与叙事","textPreview":"美术、题材与叙事","textChars":8,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/9onyxkz6","slide":3,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/apwf6pgr","slide":3,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/vq5gzuhc","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/xs7y1kz2","slide":3,"bbox":[0,153,748,510]}
+{"kind":"textbox","id":"sh/idgfapgn","slide":3,"text":"美术定位","textPreview":"美术定位","textChars":4,"textLines":1,"bbox":[786,175,434,37]}
+{"kind":"textbox","id":"sh/jepg3uh8","slide":3,"text":"低模3D玩具风，轻量化而不廉价","textPreview":"低模3D玩具风，轻量化而不廉价","textChars":15,"textLines":1,"bbox":[786,219,434,113]}
+{"kind":"textbox","id":"sh/japk3yx0","slide":3,"text":"题材定位","textPreview":"题材定位","textChars":4,"textLines":1,"bbox":[786,332,434,37]}
+{"kind":"textbox","id":"sh/i9gjutwf","slide":3,"text":"西欧中世纪文艺复兴时期，参考1444\n年的西班牙地区","textPreview":"西欧中世纪文艺复兴时期，参考1444 | 年的西班牙地区","textChars":26,"textLines":2,"bbox":[786,376,434,113]}
+{"kind":"textbox","id":"sh/5c7258f6","slide":3,"text":"叙事定位","textPreview":"叙事定位","textChars":4,"textLines":1,"bbox":[786,489,434,37]}
+{"kind":"textbox","id":"sh/4by1w3el","slide":3,"text":"无厘头黑色幽默表层+小人物的悲剧\n内核，从一个独特的视角看置身于战\n争中的普通人","textPreview":"无厘头黑色幽默表层+小人物的悲剧 | 内核，从一个独特的视角看置身于战 | 争中的普通人","textChars":40,"textLines":3,"bbox":[786,533,434,113]}
+{"kind":"image","id":"im/lw7ad836","slide":3,"name":"","alt":"art:prologue_dormitory_sleep.png","bbox":[0,153,748,510]}
+{"kind":"notes","id":"nt/m72dc2","slide":3,"text":"### 1. 产品定位（用户原文）\n\n所选赛道：叙事重构 ai沙盒与涌现式世界\n\n1.一句话描述：玩家扮演一个边境驿站征兵官，想办法说服平民上战场、”鼓励”他们干活、不让他们当逃兵。\n\n2.玩法定位：用AI NPC来增强模拟经营游戏里”人员管理“的乐趣，实质上是AI小镇的一种。\n\n3.美术定位：低模3D玩具风，轻量化而不廉价\n\n4.题材定位：西欧中世纪文艺复兴时期，参考1444年的西班牙地区\n\n4.叙事定位：无厘头黑色幽默表层+小人物的悲剧内核，从一个独特的视角看置身于战争中的普通人\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n02_gate.png，正式工程站内与城门实机截图。\nV2 配图：assets/tutorial/lowpoly_v1/prologue_dormitory_sleep.png，项目正式序章资产，用于美术与叙事定位，不作 AI 效果证据。"}
+{"kind":"slide","id":"sl/uleuqt","slide":4,"title":"核心技术","textShapes":15}
+{"kind":"textbox","id":"sh/o7ml4vm9","slide":4,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/36dkbq54","slide":4,"text":"为 LLM 装上“眼睛”","textPreview":"为 LLM 装上“眼睛”","textChars":12,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/25k32l4j","slide":4,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/dwvmh036","slide":4,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/cvml8fml","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"textbox","id":"sh/bud4fal0","slide":4,"text":"建筑即信息空间","textPreview":"建筑即信息空间","textChars":7,"textLines":1,"bbox":[64,171,700,49]}
+{"kind":"shape","id":"sh/q943654f","slide":4,"bbox":[64,242,720,166]}
+{"kind":"shape","id":"sh/l0fmlk32","slide":4,"bbox":[82,273,50,50]}
+{"kind":"textbox","id":"sh/0z6lcfmh","slide":4,"text":"人员","textPreview":"人员","textChars":2,"textLines":1,"bbox":[145,280,155,43]}
+{"kind":"shape","id":"sh/ux4vi5of","slide":4,"bbox":[310,273,50,50]}
+{"kind":"textbox","id":"sh/vydcbqp0","slide":4,"text":"设施","textPreview":"设施","textChars":2,"textLines":1,"bbox":[373,280,155,43]}
+{"kind":"shape","id":"sh/gzmdkv6l","slide":4,"bbox":[538,273,50,50]}
+{"kind":"textbox","id":"sh/h0vud0n6","slide":4,"text":"状态","textPreview":"状态","textChars":2,"textLines":1,"bbox":[601,280,155,43]}
+{"kind":"textbox","id":"sh/i1ovm5or","slide":4,"text":"进入时获取快照 · 变化时接收增量","textPreview":"进入时获取快照 · 变化时接收增量","textChars":17,"textLines":1,"bbox":[86,349,675,46]}
+{"kind":"textbox","id":"sh/436dof6h","slide":4,"text":"建筑的信息空间","textPreview":"建筑的信息空间","textChars":7,"textLines":1,"bbox":[64,461,366,35]}
+{"kind":"textbox","id":"sh/5ofuhkn2","slide":4,"text":"将建筑内的人员、设施和状态转\n化为 LLM 能够理解的信息。","textPreview":"将建筑内的人员、设施和状态转 | 化为 LLM 能够理解的信息。","textChars":30,"textLines":2,"bbox":[64,506,366,141]}
+{"kind":"textbox","id":"sh/y5kbalo7","slide":4,"text":"状态与变化","textPreview":"状态与变化","textChars":5,"textLines":1,"bbox":[460,461,366,35]}
+{"kind":"textbox","id":"sh/z6tc36ps","slide":4,"text":"进入建筑时获取当前状态，空间\n内发生变化时接收相应信息。","textPreview":"进入建筑时获取当前状态，空间 | 内发生变化时接收相应信息。","textChars":28,"textLines":2,"bbox":[460,506,366,141]}
+{"kind":"textbox","id":"sh/na9sbm5k","slide":4,"text":"有依据的判断","textPreview":"有依据的判断","textChars":6,"textLines":1,"bbox":[856,461,366,35]}
+{"kind":"textbox","id":"sh/29grih4z","slide":4,"text":"经营决策进入 NPC 的认知，不\n同人物保留各自的信息差。","textPreview":"经营决策进入 NPC 的认知，不 | 同人物保留各自的信息差。","textChars":29,"textLines":2,"bbox":[856,506,366,141]}
+{"kind":"image","id":"im/gzuxsn6x","slide":4,"name":"","alt":"05_building.png","bbox":[903,163,294,454]}
+{"kind":"notes","id":"nt/uleuqt","slide":4,"text":"#### 2.1 为 LLM 装上“眼睛”：信息空间与事件、广播、见闻系统\n\n项目为每个建筑搭建“信息空间”，将其中的人员、设施和状态转化为 LLM 能够理解的信息。NPC 进入建筑时获取当前状态，空间内发生变化时接收相应信息，使其能够感知自己所处的环境。\n\n覆盖人物交互、经营与战斗的事件埋点，将 AI 发生的有意义的交互记录为事件。事件根据公开程度传播：私有事件保留在本人或交互亲历者的事件库中，同空间公开事件传递给当时处于相同信息空间的其他人，驿站公开事件向全站广播。接收者将获知的信息写入自己的见闻库，睡眠、昏迷等状态限制见闻接收。\n\n玩家与 AI 的对话、AI 与 AI 的对话也纳入这套系统，与其他经历共同组成短期记忆。事件库记录亲历，见闻库记录获知的信息，使 NPC 能够依据自己实际知道的事情作出判断。\n\n这套信息空间让经营决策进入 NPC 的认知，同时保留不同人物之间的信息差，为后续对话、计划与涌现式互动提供依据。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n05_building.png，当前全屏建筑面板截图。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/uyrz49","slide":5,"title":"核心技术","textShapes":20}
+{"kind":"textbox","id":"sh/d4vud0nq","slide":5,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/q14biloz","slide":5,"text":"事件、广播与见闻","textPreview":"事件、广播与见闻","textChars":8,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/r2dcbqpk","slide":5,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/0rmdov6h","slide":5,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/1sfuh0nm","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"textbox","id":"sh/e54vmlob","slide":5,"text":"0\n1","textPreview":"0 | 1","textChars":3,"textLines":2,"bbox":[64,170,65,53]}
+{"kind":"shape","id":"sh/f6dcfq5w","slide":5,"bbox":[148,170,250,54]}
+{"kind":"textbox","id":"sh/ov6dsf6d","slide":5,"text":"私有","textPreview":"私有","textChars":2,"textLines":1,"bbox":[160,179,226,44]}
+{"kind":"shape","id":"sh/pwfulkny","slide":5,"bbox":[423,188,100,14]}
+{"kind":"shape","id":"sh/xg3ipor6","slide":5,"bbox":[551,170,595,54]}
+{"kind":"textbox","id":"sh/wfu1gjq1","slide":5,"text":"本人 / 交互亲历者","textPreview":"本人 / 交互亲历者","textChars":10,"textLines":1,"bbox":[563,179,571,44]}
+{"kind":"textbox","id":"sh/ve10ne9g","slide":5,"text":"0\n2","textPreview":"0 | 2","textChars":3,"textLines":2,"bbox":[64,254,65,53]}
+{"kind":"shape","id":"sh/adsje98v","slide":5,"bbox":[148,254,250,54]}
+{"kind":"textbox","id":"sh/543itori","slide":5,"text":"同一信息空间","textPreview":"同一信息空间","textChars":6,"textLines":1,"bbox":[160,263,226,44]}
+{"kind":"shape","id":"sh/k3u1kjqx","slide":5,"bbox":[423,272,100,14]}
+{"kind":"shape","id":"sh/jil0ry9c","slide":5,"bbox":[551,254,595,54]}
+{"kind":"textbox","id":"sh/ihcjit8r","slide":5,"text":"当时在场的其他人","textPreview":"当时在场的其他人","textChars":8,"textLines":1,"bbox":[563,263,571,44]}
+{"kind":"textbox","id":"sh/18jih4re","slide":5,"text":"0\n3","textPreview":"0 | 3","textChars":3,"textLines":2,"bbox":[64,338,65,53]}
+{"kind":"shape","id":"sh/07qh8zqt","slide":5,"bbox":[148,338,250,54]}
+{"kind":"textbox","id":"sh/c3e9k32l","slide":5,"text":"驿站公开","textPreview":"驿站公开","textChars":4,"textLines":1,"bbox":[160,347,226,44]}
+{"kind":"shape","id":"sh/d4nado36","slide":5,"bbox":[423,356,100,14]}
+{"kind":"shape","id":"sh/q1writkv","slide":5,"bbox":[551,338,595,54]}
+{"kind":"textbox","id":"sh/b25sbylg","slide":5,"text":"全站可接收信息的 NPC","textPreview":"全站可接收信息的 NPC","textChars":12,"textLines":1,"bbox":[563,347,571,44]}
+{"kind":"textbox","id":"sh/07y9o32x","slide":5,"text":"按公开程度传播","textPreview":"按公开程度传播","textChars":7,"textLines":1,"bbox":[60,464,366,34]}
+{"kind":"textbox","id":"sh/l87ah83i","slide":5,"text":"私有事件保留给亲历者，同空间\n事件传递给在场者，驿站公开事\n件向全站广播。","textPreview":"私有事件保留给亲历者，同空间 | 事件传递给在场者，驿站公开事 | 件向全站广播。","textChars":37,"textLines":3,"bbox":[60,508,366,143]}
+{"kind":"textbox","id":"sh/y5wrmtkr","slide":5,"text":"统一短期记忆","textPreview":"统一短期记忆","textChars":6,"textLines":1,"bbox":[456,464,366,34]}
+{"kind":"textbox","id":"sh/z6psfylc","slide":5,"text":"玩家与 AI、AI 与 AI 的对话，与\n经营和战斗经历共同进入这套系\n统。","textPreview":"玩家与 AI、AI 与 AI 的对话，与 | 经营和战斗经历共同进入这套系 | 统。","textChars":38,"textLines":3,"bbox":[456,508,366,143]}
+{"kind":"textbox","id":"sh/8vytsn2t","slide":5,"text":"亲历与获知分开","textPreview":"亲历与获知分开","textChars":7,"textLines":1,"bbox":[852,464,366,34]}
+{"kind":"textbox","id":"sh/9w7als3e","slide":5,"text":"事件库记录亲历，见闻库记录获\n知的信息。睡眠、昏迷等状态限\n制接收。","textPreview":"事件库记录亲历，见闻库记录获 | 知的信息。睡眠、昏迷等状态限 | 制接收。","textChars":34,"textLines":3,"bbox":[852,508,366,143]}
+{"kind":"shape","id":"sh/jqtcrm5g","slide":5,"bbox":[1000,399,212,38]}
+{"kind":"shape","id":"sh/ipkvih4b","slide":5,"bbox":[1000,437,212,1]}
+{"kind":"textbox","id":"sh/5sbutcnm","slide":5,"text":"B  /  事件 / 见闻\n对照","textPreview":"B  /  事件 / 见闻 | 对照","textChars":16,"textLines":2,"bbox":[1018,397,176,34]}
+{"kind":"notes","id":"nt/uyrz49","slide":5,"text":"#### 2.1 为 LLM 装上“眼睛”：信息空间与事件、广播、见闻系统\n\n项目为每个建筑搭建“信息空间”，将其中的人员、设施和状态转化为 LLM 能够理解的信息。NPC 进入建筑时获取当前状态，空间内发生变化时接收相应信息，使其能够感知自己所处的环境。\n\n覆盖人物交互、经营与战斗的事件埋点，将 AI 发生的有意义的交互记录为事件。事件根据公开程度传播：私有事件保留在本人或交互亲历者的事件库中，同空间公开事件传递给当时处于相同信息空间的其他人，驿站公开事件向全站广播。接收者将获知的信息写入自己的见闻库，睡眠、昏迷等状态限制见闻接收。\n\n玩家与 AI 的对话、AI 与 AI 的对话也纳入这套系统，与其他经历共同组成短期记忆。事件库记录亲历，见闻库记录获知的信息，使 NPC 能够依据自己实际知道的事情作出判断。\n\n这套信息空间让经营决策进入 NPC 的认知，同时保留不同人物之间的信息差，为后续对话、计划与涌现式互动提供依据。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/upovmw","slide":6,"title":"核心技术","textShapes":17}
+{"kind":"textbox","id":"sh/6x4nydc7","slide":6,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/tkv6tsby","slide":6,"text":"为 LLM 装上“手脚”","textPreview":"为 LLM 装上“手脚”","textChars":12,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/sjm50nud","slide":6,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/fmdovito","slide":6,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/el4n2dcj","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"textbox","id":"sh/1of6xsbu","slide":6,"text":"24","textPreview":"24","textChars":2,"textLines":1,"bbox":[60,155,260,118]}
+{"kind":"textbox","id":"sh/gn654nu9","slide":6,"text":"小时完整计划","textPreview":"小时完整计划","textChars":6,"textLines":1,"bbox":[67,273,280,48]}
+{"kind":"textbox","id":"sh/3qxoz2t0","slide":6,"text":"00","textPreview":"00","textChars":2,"textLines":1,"bbox":[363,166,65,30]}
+{"kind":"textbox","id":"sh/2pon6xcf","slide":6,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[774,166,65,30]}
+{"kind":"textbox","id":"sh/g36hobe5","slide":6,"text":"23","textPreview":"23","textChars":2,"textLines":1,"bbox":[1147,166,65,30]}
+{"kind":"shape","id":"sh/h4fyhgvq","slide":6,"bbox":[366,207,29,48]}
+{"kind":"shape","id":"sh/u1ozm1wz","slide":6,"bbox":[366,290,29,48]}
+{"kind":"shape","id":"sh/v2xgf6dk","slide":6,"bbox":[400,207,29,48]}
+{"kind":"shape","id":"sh/47qhsve1","slide":6,"bbox":[400,290,29,48]}
+{"kind":"shape","id":"sh/p8zyl0vm","slide":6,"bbox":[434,207,29,48]}
+{"kind":"shape","id":"sh/i58zqlwb","slide":6,"bbox":[434,290,29,48]}
+{"kind":"shape","id":"sh/36hgjqdg","slide":6,"bbox":[468,207,29,48]}
+{"kind":"shape","id":"sh/cbqhwved","slide":6,"bbox":[468,290,29,48]}
+{"kind":"shape","id":"sh/dwjip0vy","slide":6,"bbox":[502,207,29,48]}
+{"kind":"shape","id":"sh/1gvqtwjq","slide":6,"bbox":[502,290,29,48]}
+{"kind":"shape","id":"sh/0fmpkr25","slide":6,"bbox":[536,207,29,48]}
+{"kind":"shape","id":"sh/zed8r61k","slide":6,"bbox":[536,290,29,48]}
+{"kind":"shape","id":"sh/edk7i1kz","slide":6,"bbox":[570,207,29,48]}
+{"kind":"shape","id":"sh/9kvqxgjm","slide":6,"bbox":[570,290,29,48]}
+{"kind":"shape","id":"sh/ojmpobi1","slide":6,"bbox":[604,207,29,48]}
+{"kind":"shape","id":"sh/nid8v61w","slide":6,"bbox":[604,290,29,48]}
+{"kind":"shape","id":"sh/mh47m1kb","slide":6,"bbox":[638,207,29,48]}
+{"kind":"shape","id":"sh/5ob6lcji","slide":6,"bbox":[638,290,29,48]}
+{"kind":"shape","id":"sh/4n2pc72x","slide":6,"bbox":[672,207,29,48]}
+{"kind":"shape","id":"sh/utgnmd0v","slide":6,"bbox":[672,290,29,48]}
+{"kind":"shape","id":"sh/vup4vihg","slide":6,"bbox":[706,207,29,48]}
+{"kind":"shape","id":"sh/gfi5oni1","slide":6,"bbox":[706,290,29,48]}
+{"kind":"shape","id":"sh/hgrmxsz6","slide":6,"bbox":[740,207,29,48]}
+{"kind":"shape","id":"sh/ih0nqx0r","slide":6,"bbox":[740,290,29,48]}
+{"kind":"shape","id":"sh/3i94z2hc","slide":6,"bbox":[774,207,29,48]}
+{"kind":"shape","id":"sh/4ji5s7ix","slide":6,"bbox":[774,290,29,48]}
+{"kind":"shape","id":"sh/5krm1szi","slide":6,"bbox":[808,207,29,48]}
+{"kind":"shape","id":"sh/ylw3et0n","slide":6,"bbox":[808,290,29,48]}
+{"kind":"shape","id":"sh/jm54nyh8","slide":6,"bbox":[842,207,29,48]}
+{"kind":"shape","id":"sh/zixkru9w","slide":6,"bbox":[842,290,29,48]}
+{"kind":"shape","id":"sh/yhojipsb","slide":6,"bbox":[876,207,29,48]}
+{"kind":"shape","id":"sh/lkz2t4r2","slide":6,"bbox":[876,290,29,48]}
+{"kind":"shape","id":"sh/0j6lkzah","slide":6,"bbox":[910,207,29,48]}
+{"kind":"shape","id":"sh/nmhkvu98","slide":6,"bbox":[910,290,29,48]}
+{"kind":"shape","id":"sh/ml83mpsn","slide":6,"bbox":[944,207,29,48]}
+{"kind":"shape","id":"sh/98z2x4ry","slide":6,"bbox":[944,290,29,48]}
+{"kind":"shape","id":"sh/8nqlozad","slide":6,"bbox":[978,207,29,48]}
+{"kind":"shape","id":"sh/vahkze94","slide":6,"bbox":[978,290,29,48]}
+{"kind":"shape","id":"sh/a983q9sj","slide":6,"bbox":[1012,207,29,48]}
+{"kind":"shape","id":"sh/sfa1gj6x","slide":6,"bbox":[1012,290,29,48]}
+{"kind":"shape","id":"sh/tgj29o7i","slide":6,"bbox":[1046,207,29,48]}
+{"kind":"shape","id":"sh/6dsje98r","slide":6,"bbox":[1046,290,29,48]}
+{"kind":"shape","id":"sh/7e1k7epc","slide":6,"bbox":[1080,207,29,48]}
+{"kind":"shape","id":"sh/kba1czql","slide":6,"bbox":[1080,290,29,48]}
+{"kind":"shape","id":"sh/5cj25476","slide":6,"bbox":[1114,207,29,48]}
+{"kind":"shape","id":"sh/ip8ja98v","slide":6,"bbox":[1114,290,29,48]}
+{"kind":"shape","id":"sh/jah03ep0","slide":6,"bbox":[1148,207,29,48]}
+{"kind":"shape","id":"sh/wnq18zqp","slide":6,"bbox":[1148,290,29,48]}
+{"kind":"textbox","id":"sh/xozi147a","slide":6,"text":"原计划","textPreview":"原计划","textChars":3,"textLines":1,"bbox":[366,256,250,30]}
+{"kind":"textbox","id":"sh/ds7qpwvm","slide":6,"text":"仅修改选中时段（范围示意）","textPreview":"仅修改选中时段（范围示意）","textChars":13,"textLines":1,"bbox":[366,351,815,41]}
+{"kind":"textbox","id":"sh/c7ypgre1","slide":6,"text":"24 小时完整计划","textPreview":"24 小时完整计划","textChars":9,"textLines":1,"bbox":[60,458,366,34]}
+{"kind":"textbox","id":"sh/r6p8nmdw","slide":6,"text":"计划阶段披露可执行行动，跨天\n生成新一天的完整计划，再由程\n序执行。","textPreview":"计划阶段披露可执行行动，跨天 | 生成新一天的完整计划，再由程 | 序执行。","textChars":34,"textLines":3,"bbox":[60,502,366,143]}
+{"kind":"textbox","id":"sh/q5g7ehwb","slide":6,"text":"失败后局部修订","textPreview":"失败后局部修订","textChars":7,"textLines":1,"bbox":[456,458,366,34]}
+{"kind":"textbox","id":"sh/p47qlcvq","slide":6,"text":"先评估需要修改哪些小时，再填\n充选中时段的新计划，保留其他\n安排。","textPreview":"先评估需要修改哪些小时，再填 | 充选中时段的新计划，保留其他 | 安排。","textChars":33,"textLines":3,"bbox":[456,502,366,143]}
+{"kind":"textbox","id":"sh/43ypcre5","slide":6,"text":"关键节点判断","textPreview":"关键节点判断","textChars":6,"textLines":1,"bbox":[852,458,366,34]}
+{"kind":"textbox","id":"sh/32p8jmdk","slide":6,"text":"战时交互、残血、疲劳或饥饿临\n界点按规则调用 LLM，兼顾成\n本与灵活性。","textPreview":"战时交互、残血、疲劳或饥饿临 | 界点按规则调用 LLM，兼顾成 | 本与灵活性。","textChars":37,"textLines":3,"bbox":[852,502,366,143]}
+{"kind":"notes","id":"nt/upovmw","slide":6,"text":"#### 2.2 为 LLM 装上“手脚”：围绕计划的行动系统\n\n围绕计划组织 NPC 行动，兼顾性价比与灵活性：用完整日计划降低调用次数，行动失败后再局部修改计划。\n\n系统在计划阶段向 AI 披露 NPC 可以执行的行动，将一天划分为 24 个小时。NPC 在跨天时制定新一天的完整计划，随后由程序按计划执行工作、进食、休息、训练等行动。\n\n正常行动沿用既有计划。发生行动失败时，系统先评估需要修改哪些小时、修改多大范围，再为选中的小时填充新计划，保留其他时段的安排。\n\n此外，战斗触发相关交互、残血、疲劳或饥饿临界点等关键节点会按相应规则调用 LLM，使 NPC 能够对战局和自身状态的重要变化作出判断。\n\nLLM 负责计划与关键决策，程序负责具体行动的校验和执行。这样既避免逐步行动都请求模型，也保留角色应对异常和局势变化的灵活性。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n04_plan.png，第一日预设计划界面，只展示计划结构，不作为真实生成效果证据。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/6bpkan","slide":7,"title":"核心技术","textShapes":11}
+{"kind":"textbox","id":"sh/g7294but","slide":7,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/f6t8b6d8","slide":7,"text":"分层记忆","textPreview":"分层记忆","textChars":4,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/e5kr21cn","slide":7,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/t4bq9wv2","slide":7,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/s3i90rux","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/r29876dc","slide":7,"bbox":[60,168,760,141]}
+{"kind":"textbox","id":"sh/610ry1cr","slide":7,"text":"短期记忆","textPreview":"短期记忆","textChars":4,"textLines":1,"bbox":[81,183,211,44]}
+{"kind":"textbox","id":"sh/d0val0vm","slide":7,"text":"事件库与见闻库统一记录亲历、对话与获知\n的信息，压缩重复内容并保留关键结果。","textPreview":"事件库与见闻库统一记录亲历、对话与获知 | 的信息，压缩重复内容并保留关键结果。","textChars":38,"textLines":2,"bbox":[309,186,490,114]}
+{"kind":"shape","id":"sh/czm9cvu1","slide":7,"bbox":[60,329,810,141]}
+{"kind":"textbox","id":"sh/uhwfqtoz","slide":7,"text":"长期记忆","textPreview":"长期记忆","textChars":4,"textLines":1,"bbox":[81,344,211,44]}
+{"kind":"textbox","id":"sh/vi5gzy5k","slide":7,"text":"每日睡眠反思形成玩家可见的日记与知识图谱，\n积累个人经历与对世界的认识。","textPreview":"每日睡眠反思形成玩家可见的日记与知识图谱， | 积累个人经历与对世界的认识。","textChars":36,"textLines":2,"bbox":[309,347,540,114]}
+{"kind":"shape","id":"sh/gjyhs36p","slide":7,"bbox":[60,490,860,141]}
+{"kind":"textbox","id":"sh/h47y18na","slide":7,"text":"根本人设","textPreview":"根本人设","textChars":4,"textLines":1,"bbox":[81,505,211,44]}
+{"kind":"textbox","id":"sh/6dwfmton","slide":7,"text":"职业背景、性格、价值取向与基本诉求，为变化的经历\n提供稳定参照。","textPreview":"职业背景、性格、价值取向与基本诉求，为变化的经历 | 提供稳定参照。","textChars":32,"textLines":2,"bbox":[309,508,590,114]}
+{"kind":"shape","id":"sh/7e5gve58","slide":7,"bbox":[950,168,268,463]}
+{"kind":"shape","id":"sh/8fexoj6t","slide":7,"bbox":[950,631,268,1]}
+{"kind":"textbox","id":"sh/tgnyxone","slide":7,"text":"C  /  日记 / 知识图谱","textPreview":"C  /  日记 / 知识图谱","textChars":15,"textLines":1,"bbox":[968,591,232,34]}
+{"kind":"notes","id":"nt/6bpkan","slide":7,"text":"#### 2.3 分层记忆：短期经历、长期认知与根本人设\n\nLLM 的记忆分为三个层次，分别支持当前情境判断、经历积累和人设一致性。\n\n- **短期记忆：事件库与见闻库。**统一记录人物亲历与获知的信息，包括玩家与 AI、AI 与 AI 的对话。向模型提供上下文时压缩重复内容，尽量保留信息的完整性，尤其是关键交互及其结果。\n- **长期记忆：日记与知识图谱。**每日通过睡眠反思，将短期记忆整理进第一人称日记与知识图谱。日记呈现人物如何经历这一天，知识图谱积累人物对他人和世界的认识。两者均可由玩家查看，也参与后续 AI 判断，兼具叙事意义与角色成长性。\n- **根本人设：稳定的角色基础。**职业背景、性格、价值取向与基本诉求为持续变化的经历提供稳定参照，保证 AI 人设的一致性。\n\n玩家的征召、劳动安排和战场动员因此能够累积为人物经历，并影响之后的交涉与决定。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/ih73u1","slide":8,"title":"核心技术","textShapes":19}
+{"kind":"textbox","id":"sh/xs3uxsbu","slide":8,"text":"核心技术","textPreview":"核心技术","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/apsbmdsj","slide":8,"text":"自动化的行动执行","textPreview":"自动化的行动执行","textChars":8,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/bq1cvit4","slide":8,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/o3atk3ad","slide":8,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/94jat8by","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/m1sbids7","slide":8,"bbox":[60,194,236,73]}
+{"kind":"textbox","id":"sh/n21sryts","slide":8,"text":"计划目标","textPreview":"计划目标","textChars":4,"textLines":1,"bbox":[72,203,212,63]}
+{"kind":"shape","id":"sh/8zetw7ax","slide":8,"bbox":[305,224,42,13]}
+{"kind":"shape","id":"sh/t0nu5cr2","slide":8,"bbox":[360,194,236,73]}
+{"kind":"textbox","id":"sh/107y54f2","slide":8,"text":"移动执行","textPreview":"移动执行","textChars":4,"textLines":1,"bbox":[372,203,212,63]}
+{"kind":"shape","id":"sh/0zyxczyh","slide":8,"bbox":[605,224,42,13]}
+{"kind":"shape","id":"sh/fe5g3uxw","slide":8,"bbox":[660,194,236,73]}
+{"kind":"textbox","id":"sh/edwfapgb","slide":8,"text":"门口通行","textPreview":"门口通行","textChars":4,"textLines":1,"bbox":[672,203,212,63]}
+{"kind":"shape","id":"sh/dcny14fq","slide":8,"bbox":[905,224,42,13]}
+{"kind":"shape","id":"sh/sbex8zy5","slide":8,"bbox":[960,194,236,73]}
+{"kind":"textbox","id":"sh/ra5wzuxk","slide":8,"text":"接敌攻击","textPreview":"接敌攻击","textChars":4,"textLines":1,"bbox":[972,203,212,63]}
+{"kind":"textbox","id":"sh/q9wf6pgf","slide":8,"text":"工位与路线","textPreview":"工位与路线","textChars":5,"textLines":1,"bbox":[74,281,250,36]}
+{"kind":"textbox","id":"sh/x8rydofa","slide":8,"text":"导航 / RVO / 碰撞","textPreview":"导航 / RVO / 碰撞","textChars":13,"textLines":1,"bbox":[374,281,275,36]}
+{"kind":"textbox","id":"sh/c7ixkjyp","slide":8,"text":"FIFO 通行令牌","textPreview":"FIFO 通行令牌","textChars":9,"textLines":1,"bbox":[674,281,269,36]}
+{"kind":"textbox","id":"sh/wna9wrqx","slide":8,"text":"索敌与射程衔接","textPreview":"索敌与射程衔接","textChars":7,"textLines":1,"bbox":[974,281,270,36]}
+{"kind":"shape","id":"sh/hojq5wri","slide":8,"bbox":[60,346,1160,95]}
+{"kind":"shape","id":"sh/ul8ruh8r","slide":8,"bbox":[60,441,1160,1]}
+{"kind":"textbox","id":"sh/vmh83m9c","slide":8,"text":"D  /  排队或自动接敌实机图","textPreview":"D  /  排队或自动接敌实机图","textChars":16,"textLines":1,"bbox":[78,401,1124,34]}
+{"kind":"textbox","id":"sh/8jq9srq1","slide":8,"text":"寻路与避障","textPreview":"寻路与避障","textChars":5,"textLines":1,"bbox":[60,476,366,34]}
+{"kind":"textbox","id":"sh/9kzq1crm","slide":8,"text":"计划目标转换为工位与空间路线，\n导航网格结合 RVO 和实体碰撞执\n行移动。","textPreview":"计划目标转换为工位与空间路线， | 导航网格结合 RVO 和实体碰撞执 | 行移动。","textChars":38,"textLines":3,"bbox":[60,520,366,143]}
+{"kind":"textbox","id":"sh/mh8rqhsv","slide":8,"text":"进门排队","textPreview":"进门排队","textChars":4,"textLines":1,"bbox":[456,476,366,34]}
+{"kind":"textbox","id":"sh/7ih8zm9g","slide":8,"text":"按到达顺序分配通行令牌，队首\n通行，其他人保留行动与预约等\n待。","textPreview":"按到达顺序分配通行令牌，队首 | 通行，其他人保留行动与预约等 | 待。","textChars":32,"textLines":3,"bbox":[456,520,366,143]}
+{"kind":"textbox","id":"sh/kv69o7ap","slide":8,"text":"索敌与战斗","textPreview":"索敌与战斗","textChars":5,"textLines":1,"bbox":[852,476,366,34]}
+{"kind":"textbox","id":"sh/lwzqxcra","slide":8,"text":"程序按行为模式、目标优先级、\n距离与可达性选取目标，按武器\n射程衔接攻击。","textPreview":"程序按行为模式、目标优先级、 | 距离与可达性选取目标，按武器 | 射程衔接攻击。","textChars":37,"textLines":3,"bbox":[852,520,366,143]}
+{"kind":"notes","id":"nt/ih73u1","slide":8,"text":"#### 2.4 自动化的寻路、避障、进门排队与索敌（按用户要求补全）\n\n| 机制 | 设计方式 |\n|---|---|\n| 寻路 | 把计划中的目标建筑和行动转换为具体工位与空间路线，基于导航网格和 NavigationAgent3D 执行移动 |\n| 避障 | 结合 RVO 动态避障与实体碰撞处理人物相互避让和环境阻挡，运动层处理路径推进与卡住恢复 |\n| 进门排队 | 按实际到达门区的顺序分配通行令牌，队首通行，其余等待，离开门区后依次放行。等待保留原行动与预约 |\n| 索敌 | 程序根据行为模式、敌我关系、目标优先级、距离与可达性选取目标，并按武器射程完成接近与攻击衔接 |\n\n**技术价值：**将高频、空间性强的执行交给确定性程序，LLM 专注于计划与关键决策。资源扣除、伤害和胜负也由程序结算。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/omddw6","slide":9,"title":"游戏创意","textShapes":9}
+{"kind":"textbox","id":"sh/9svi5g3y","slide":9,"text":"游戏创意","textPreview":"游戏创意","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/mp4zu147","slide":9,"text":"守城压力与对话目标","textPreview":"守城压力与对话目标","textChars":9,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/nqd036ls","slide":9,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/0nmhsrm1","slide":9,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/1ovi1w3m","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/z2t0zmlg","slide":9,"bbox":[675,158,605,510]}
+{"kind":"textbox","id":"sh/kj614vml","slide":9,"text":"守城压力强化目标感","textPreview":"守城压力强化目标感","textChars":9,"textLines":1,"bbox":[64,190,575,47]}
+{"kind":"textbox","id":"sh/lkfid036","slide":9,"text":"敌袭迫近，玩家需要争取人手、组织生产并\n准备防线，围绕守住驿站持续决策。","textPreview":"敌袭迫近，玩家需要争取人手、组织生产并 | 准备防线，围绕守住驿站持续决策。","textChars":36,"textLines":2,"bbox":[64,249,575,135]}
+{"kind":"textbox","id":"sh/h8n25sbi","slide":9,"text":"对话具有实际意义","textPreview":"对话具有实际意义","textChars":8,"textLines":1,"bbox":[64,394,575,47]}
+{"kind":"textbox","id":"sh/g7elwnax","slide":9,"text":"征召士兵、防止逃跑、鼓舞士气、调配劳动\n力。人物顾虑与局势变化决定交涉方式。","textPreview":"征召士兵、防止逃跑、鼓舞士气、调配劳动 | 力。人物顾虑与局势变化决定交涉方式。","textChars":38,"textLines":2,"bbox":[64,453,575,135]}
+{"kind":"textbox","id":"sh/f65k3itc","slide":9,"text":"E / 守城实战图待补","textPreview":"E / 守城实战图待补","textChars":11,"textLines":1,"bbox":[826,617,389,39]}
+{"kind":"image","id":"im/nedszyt8","slide":9,"name":"","alt":"art:prologue_sealed_order.png","bbox":[675,158,605,510]}
+{"kind":"notes","id":"nt/omddw6","slide":9,"text":"#### 3.1 守城压力强化目标感\n\n用迫近的守城战营造生存压力，为日常经营和自由交互提供明确目标。玩家需要在敌袭前争取人手、组织生产并准备防线，围绕守住驿站持续作出决策。\n\n#### 3.2 守城需求赋予对话多种情境和意义\n\n从守城出发，将对话延伸到征召士兵、防止逃跑、鼓舞士气和调配劳动力等情境。玩家需要根据人物的顾虑与局势变化调整表达，对话结果直接关系到人手能否到位、工作能否落实以及防线能否维持。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2 背景：正式序章军令图 prologue_sealed_order.png，表现守城处境；E 仍待补真正战斗过程。"}
+{"kind":"slide","id":"sl/5gbij3","slide":10,"title":"游戏创意","textShapes":14}
+{"kind":"textbox","id":"sh/k3e90fit","slide":10,"text":"游戏创意","textPreview":"游戏创意","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/j25s7ah8","slide":10,"text":"情绪表达与交互反馈","textPreview":"情绪表达与交互反馈","textChars":9,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/i1wry50n","slide":10,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/x0na50z2","slide":10,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/wze9wfih","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"textbox","id":"sh/vyls3ahw","slide":10,"text":"玩家表达","textPreview":"玩家表达","textChars":4,"textLines":1,"bbox":[64,171,500,60]}
+{"kind":"textbox","id":"sh/axcru50b","slide":10,"text":"NPC 反馈","textPreview":"NPC 反馈","textChars":6,"textLines":1,"bbox":[706,171,510,60]}
+{"kind":"shape","id":"sh/hw7ah4z6","slide":10,"bbox":[583,201,76,17]}
+{"kind":"textbox","id":"sh/gvyt8zil","slide":10,"text":"语言 + 情绪","textPreview":"语言 + 情绪","textChars":7,"textLines":1,"bbox":[66,236,504,44]}
+{"kind":"textbox","id":"sh/ilkz2l0j","slide":10,"text":"动作 / 语气音效 / emoji","textPreview":"动作 / 语气音效 / emoji","textChars":17,"textLines":1,"bbox":[708,236,506,44]}
+{"kind":"shape","id":"sh/jmdgbqh4","slide":10,"bbox":[64,303,512,167]}
+{"kind":"shape","id":"sh/knmh4vip","slide":10,"bbox":[64,470,512,1]}
+{"kind":"textbox","id":"sh/5ovydgzu","slide":10,"text":"F1  /  语音识别草稿","textPreview":"F1  /  语音识别草稿","textChars":13,"textLines":1,"bbox":[82,430,476,34]}
+{"kind":"shape","id":"sh/axkfy107","slide":10,"bbox":[706,303,510,167]}
+{"kind":"shape","id":"sh/vitg76hs","slide":10,"bbox":[706,470,510,1]}
+{"kind":"textbox","id":"sh/wj2h0bid","slide":10,"text":"F2  /  情绪回复画面","textPreview":"F2  /  情绪回复画面","textChars":13,"textLines":1,"bbox":[724,430,474,34]}
+{"kind":"textbox","id":"sh/xkby9gzy","slide":10,"text":"玩家的语音与情绪","textPreview":"玩家的语音与情绪","textChars":8,"textLines":1,"bbox":[64,507,512,38]}
+{"kind":"textbox","id":"sh/ut4za50r","slide":10,"text":"语音输入同时识别语言和情绪，经玩家确认\n后进入对话，让表达方式参与交互。","textPreview":"语音输入同时识别语言和情绪，经玩家确认 | 后进入对话，让表达方式参与交互。","textChars":36,"textLines":2,"bbox":[64,554,512,106]}
+{"kind":"textbox","id":"sh/fexg3ahc","slide":10,"text":"NPC 的情绪表达","textPreview":"NPC 的情绪表达","textChars":9,"textLines":1,"bbox":[706,507,510,38]}
+{"kind":"textbox","id":"sh/bypwv2ho","slide":10,"text":"动作、语气音效和 emoji 配合回复，让玩家\n直观感知人物态度。","textPreview":"动作、语气音效和 emoji 配合回复，让玩家 | 直观感知人物态度。","textChars":33,"textLines":2,"bbox":[706,554,510,106]}
+{"kind":"notes","id":"nt/5gbij3","slide":10,"text":"#### 3.3 情绪表达增强交互与反馈的趣味性\n\nAI NPC 通过动作、语气音效和 emoji 表达情绪，使玩家能够直观感知其态度。语音输入同时识别玩家的语言和情绪，在玩家确认发送后进入对话，让表达方式也成为交互的一部分，丰富双方交流的趣味性与反馈。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/egvq3i","slide":11,"title":"游戏创意","textShapes":13}
+{"kind":"textbox","id":"sh/hcn65o3m","slide":11,"text":"游戏创意","textPreview":"游戏创意","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/u9w7u94v","slide":11,"text":"涌现性与“管理者”幻想","textPreview":"涌现性与“管理者”幻想","textChars":11,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/fa5o3elg","slide":11,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/ofyp0jmx","slide":11,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/pg769o3i","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/2dw7y947","slide":11,"bbox":[65,199,231,66]}
+{"kind":"textbox","id":"sh/3epo7els","slide":11,"text":"经营决策","textPreview":"经营决策","textChars":4,"textLines":1,"bbox":[77,208,207,56]}
+{"kind":"shape","id":"sh/c3yp43m9","slide":11,"bbox":[417,199,251,66]}
+{"kind":"textbox","id":"sh/d47qd83u","slide":11,"text":"NPC 获知信息","textPreview":"NPC 获知信息","textChars":8,"textLines":1,"bbox":[429,208,227,56]}
+{"kind":"shape","id":"sh/dgzaxo36","slide":11,"bbox":[308,224,93,16]}
+{"kind":"shape","id":"sh/cfqtoj21","slide":11,"bbox":[65,379,231,66]}
+{"kind":"textbox","id":"sh/behsvelg","slide":11,"text":"玩家调整安排","textPreview":"玩家调整安排","textChars":6,"textLines":1,"bbox":[77,388,207,56]}
+{"kind":"shape","id":"sh/qd8b2tkv","slide":11,"bbox":[417,379,251,66]}
+{"kind":"textbox","id":"sh/l4ja183i","slide":11,"text":"NPC 作出选择","textPreview":"NPC 作出选择","textChars":8,"textLines":1,"bbox":[429,388,227,56]}
+{"kind":"shape","id":"sh/kjats32x","slide":11,"bbox":[308,404,93,16]}
+{"kind":"shape","id":"sh/zihszylc","slide":11,"bbox":[512,305,66,16]}
+{"kind":"shape","id":"sh/yh8bqtkr","slide":11,"bbox":[147,305,66,16]}
+{"kind":"textbox","id":"sh/18fap43e","slide":11,"text":"双向影响丰富策略","textPreview":"双向影响丰富策略","textChars":8,"textLines":1,"bbox":[64,489,630,45]}
+{"kind":"textbox","id":"sh/gn69wzmt","slide":11,"text":"经营决策经事件系统进入 NPC 认知。人物结合性格、\n状态与记忆作出的选择，再影响玩家安排。","textPreview":"经营决策经事件系统进入 NPC 认知。人物结合性格、 | 状态与记忆作出的选择，再影响玩家安排。","textChars":46,"textLines":2,"bbox":[64,543,630,104]}
+{"kind":"textbox","id":"sh/s3u1s3yl","slide":11,"text":"人员管理构成核心体验","textPreview":"人员管理构成核心体验","textChars":10,"textLines":1,"bbox":[759,195,456,70]}
+{"kind":"textbox","id":"sh/t43218f6","slide":11,"text":"征召平民、“鼓励”干活、鼓舞\n士气、防止逃跑。争取配合，根\n据战斗结果验证管理成果、调整\n管理方式。","textPreview":"征召平民、“鼓励”干活、鼓舞 | 士气、防止逃跑。争取配合，根 | 据战斗结果验证管理成果、调整 | 管理方式。","textChars":50,"textLines":4,"bbox":[759,291,456,211]}
+{"kind":"shape","id":"sh/61sjqtgv","slide":11,"bbox":[759,532,456,108]}
+{"kind":"shape","id":"sh/r2lkzyx0","slide":11,"bbox":[759,640,456,1]}
+{"kind":"textbox","id":"sh/g7u1wnyx","slide":11,"text":"G  /  经营安排与真实回应","textPreview":"G  /  经营安排与真实回应","textChars":15,"textLines":1,"bbox":[777,600,420,34]}
+{"kind":"notes","id":"nt/egvq3i","slide":11,"text":"#### 3.4 经营决策与 NPC 决策相互影响，形成涌现性\n\n覆盖面广的事件系统将玩家的经营决策转化为 NPC 可以获知的信息，并按公开范围和信息空间传播。NPC 结合自身性格、状态与记忆作出决定，这些决定又反过来影响玩家的人员和资源安排。\n\n同一经营决策可能引发不同人物的不同反应，玩家需要据此调整策略，使模拟经营产生更丰富、可感知的非线性影响。\n\n#### 3.5 人员管理强化“管理者”幻想\n\nAI NPC 增强模拟经营中人员管理的代入感与趣味性。玩家需要想办法征召平民、“鼓励”他们干活，并在战斗压力下鼓舞士气、防止逃跑。针对不同的人争取配合、根据战斗结果验证管理成果、调整管理方式，构成玩家作为“管理者”的核心体验。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/htvpgy","slide":12,"title":"核心玩法","textShapes":11}
+{"kind":"textbox","id":"sh/8z69ojel","slide":12,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/7ydsvex0","slide":12,"text":"对话征召","textPreview":"对话征召","textChars":4,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/6x4rm9wf","slide":12,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/lwvat4fu","slide":12,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/kvm9kze9","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/judsruxo","slide":12,"bbox":[60,165,1160,291]}
+{"kind":"shape","id":"sh/yt4ri9wj","slide":12,"bbox":[60,456,1160,1]}
+{"kind":"textbox","id":"sh/5sza58vy","slide":12,"text":"H  /  征召对话：玩家输入 / 人物回应 / 应征结果","textPreview":"H  /  征召对话：玩家输入 / 人物回应 / 应征结果","textChars":29,"textLines":1,"bbox":[78,416,1124,34]}
+{"kind":"textbox","id":"sh/4rqtw3et","slide":12,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[60,484,366,34]}
+{"kind":"textbox","id":"sh/21wzqtgj","slide":12,"text":"点选 NPC，查看职业、状态和\n经历，通过文字或语音交谈，针\n对顾虑争取入伍。","textPreview":"点选 NPC，查看职业、状态和 | 经历，通过文字或语音交谈，针 | 对顾虑争取入伍。","textChars":39,"textLines":3,"bbox":[60,528,366,143]}
+{"kind":"textbox","id":"sh/325gzyh4","slide":12,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[456,484,366,34]}
+{"kind":"textbox","id":"sh/43ehs3yp","slide":12,"text":"人设、记忆与情境影响回应，态\n度表现与应征结果帮助玩家调整\n交涉。","textPreview":"人设、记忆与情境影响回应，态 | 度表现与应征结果帮助玩家调整 | 交涉。","textChars":33,"textLines":3,"bbox":[456,528,366,143]}
+{"kind":"textbox","id":"sh/p4ny18za","slide":12,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[852,484,366,34]}
+{"kind":"textbox","id":"sh/udwzmtgn","slide":12,"text":"开局只有副官艾达已入伍。选择\n动员对象、话术和投入精力，构\n成人员管理的第一层决策。","textPreview":"开局只有副官艾达已入伍。选择 | 动员对象、话术和投入精力，构 | 成人员管理的第一层决策。","textChars":42,"textLines":3,"bbox":[852,528,366,143]}
+{"kind":"notes","id":"nt/htvpgy","slide":12,"text":"#### 4.1 对话征召：想办法说服平民上战场\n\n**玩家操作：**点选 NPC，查看其职业、状态与已有经历，通过文字或语音输入与其交谈，针对其顾虑选择说服、利诱、威胁或其他表达方式，争取对方同意入伍。\n\n**系统反馈：**NPC 结合人设、记忆和当前情境回应，通过言语、动作、语气音效与 emoji 表现态度。应征结果由程序执行并显示，玩家据此继续交涉或转向其他人选。\n\n**策略意义：**开局只有副官艾达已入伍，其余平民需要逐个争取。谁适合动员、怎样说服以及何时停止投入精力，构成人员管理的第一层决策。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/lhn93s","slide":13,"title":"核心玩法","textShapes":13}
+{"kind":"textbox","id":"sh/be50n61g","slide":13,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/cfyhwbi1","slide":13,"text":"士气与逃离","textPreview":"士气与逃离","textChars":5,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/dg7ipgjm","slide":13,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/29wzq1kz","slide":13,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/3a50j614","slide":13,"text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/obehsrip","slide":13,"bbox":[60,167,796,281]}
+{"kind":"shape","id":"sh/pcnilwja","slide":13,"bbox":[60,448,796,1]}
+{"kind":"textbox","id":"sh/elczmhkn","slide":13,"text":"I  /  战时鼓舞 / 逃离挽留","textPreview":"I  /  战时鼓舞 / 逃离挽留","textChars":17,"textLines":1,"bbox":[78,408,760,34]}
+{"kind":"textbox","id":"sh/fml0fm18","slide":13,"text":"士气\n与去留","textPreview":"士气 | 与去留","textChars":6,"textLines":2,"bbox":[902,196,310,153]}
+{"kind":"textbox","id":"sh/b2hgjypc","slide":13,"text":"交涉结果与后续行为\n共同提供反馈","textPreview":"交涉结果与后续行为 | 共同提供反馈","textChars":16,"textLines":2,"bbox":[907,373,315,70]}
+{"kind":"textbox","id":"sh/qh8zat87","slide":13,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[60,483,366,34]}
+{"kind":"textbox","id":"sh/d4zyl87i","slide":13,"text":"观察战时状态，交谈以鼓舞、安\n抚或施压，出现逃离意向时尝试\n挽留。","textPreview":"观察战时状态，交谈以鼓舞、安 | 抚或施压，出现逃离意向时尝试 | 挽留。","textChars":33,"textLines":3,"bbox":[60,527,366,143]}
+{"kind":"textbox","id":"sh/c3qhc3qx","slide":13,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[456,483,366,34]}
+{"kind":"textbox","id":"sh/z61gnypo","slide":13,"text":"NPC 可能受到鼓舞，也可能动\n摇或坚持逃离，交涉结果与后续\n行为共同提供反馈。","textPreview":"NPC 可能受到鼓舞，也可能动 | 摇或坚持逃离，交涉结果与后续 | 行为共同提供反馈。","textChars":40,"textLines":3,"bbox":[456,527,366,143]}
+{"kind":"textbox","id":"sh/y58zet83","slide":13,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[852,483,366,34]}
+{"kind":"textbox","id":"sh/l8jip87u","slide":13,"text":"征召后仍需维护队伍。战前承诺\n与战场现实进入同一判断上下文，\n人员退出会削弱防线。","textPreview":"征召后仍需维护队伍。战前承诺 | 与战场现实进入同一判断上下文， | 人员退出会削弱防线。","textChars":41,"textLines":3,"bbox":[852,527,366,143]}
+{"kind":"notes","id":"nt/lhn93s","slide":13,"text":"#### 4.2 士气与逃离：让已经上场的人愿意留下\n\n**玩家操作：**观察人物战时状态，主动交谈以鼓舞、安抚或施压。当 NPC 产生逃离意向时，在挽留交互中尝试改变其决定。\n\n**系统反馈：**NPC 根据战况、身体状态、既有经历和玩家说辞作出反应，可能受到鼓舞，也可能继续动摇或坚持逃离。交涉结果与后续行为共同构成反馈。\n\n**策略意义：**征召成功之后，玩家仍需维护这支临时队伍。战前承诺与战场现实会进入同一套判断上下文，玩家需要持续处理人的意愿，防止防线因人员退出而削弱。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/6axutg","slide":14,"title":"核心玩法","textShapes":12}
+{"kind":"textbox","id":"sh/zilc3m1w","slide":14,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/0jutwri1","slide":14,"text":"劳动力调配","textPreview":"劳动力调配","textChars":5,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/lk3u5wjm","slide":14,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/mlcby107","slide":14,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/7m5c7m1s","slide":14,"text":"14","textPreview":"14","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/9onu9wjy","slide":14,"bbox":[720,167,496,295]}
+{"kind":"shape","id":"sh/upwv210j","slide":14,"bbox":[720,462,496,1]}
+{"kind":"textbox","id":"sh/vq5cb614","slide":14,"text":"J  /  劳动指令 / 实际行动","textPreview":"J  /  劳动指令 / 实际行动","textChars":17,"textLines":1,"bbox":[738,422,460,34]}
+{"kind":"textbox","id":"sh/j2d0f6l0","slide":14,"text":"第一日预设计划界面；跨天计划由 LLM 生成","textPreview":"第一日预设计划界面；跨天计划由 LLM 生成","textChars":22,"textLines":1,"bbox":[66,465,618,28]}
+{"kind":"textbox","id":"sh/i14z614f","slide":14,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[60,508,366,34]}
+{"kind":"textbox","id":"sh/54vihw3q","slide":14,"text":"观察日程、技能、饥饿和疲劳，\n通过对话、自然语言指令、公告\n牌与日程表达安排。","textPreview":"观察日程、技能、饥饿和疲劳， | 通过对话、自然语言指令、公告 | 牌与日程表达安排。","textChars":39,"textLines":3,"bbox":[60,552,366,143]}
+{"kind":"textbox","id":"sh/43mh8rm5","slide":14,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[456,508,366,34]}
+{"kind":"textbox","id":"sh/vet0bmlo","slide":14,"text":"NPC 结合指令、状态与记忆制定\n或修订计划，玩家从行动和生产\n结果判断落实情况。","textPreview":"NPC 结合指令、状态与记忆制定 | 或修订计划，玩家从行动和生产 | 结果判断落实情况。","textChars":41,"textLines":3,"bbox":[456,552,366,143]}
+{"kind":"textbox","id":"sh/adkz2h43","slide":14,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[852,508,366,34]}
+{"kind":"textbox","id":"sh/hgvidw3u","slide":14,"text":"生产、训练、治疗与防守竞争同\n一批人手。入伍后仍有自主性，\n施加影响始终需要说服。","textPreview":"生产、训练、治疗与防守竞争同 | 一批人手。入伍后仍有自主性， | 施加影响始终需要说服。","textChars":41,"textLines":3,"bbox":[852,552,366,143]}
+{"kind":"image","id":"im/9orqloj6","slide":14,"name":"","alt":"04_plan.png","bbox":[60,166,614,296]}
+{"kind":"notes","id":"nt/6axutg","slide":14,"text":"#### 4.3 劳动力调配：“鼓励”他们干活\n\n**玩家操作：**观察人物日程、技能、饥饿和疲劳，通过对话争取配合，向已入伍 NPC 发布自然语言指令，并通过公告牌与日程广播全站安排。\n\n**系统反馈：**NPC 结合指令、状态与记忆制定或修订计划，再执行具体行动。玩家能够查看日程、当前行动和生产结果，判断自己的安排是否得到落实。\n\n**策略意义：**同一批人承担生产、训练、治疗与防守。玩家需要处理岗位之间的人手取舍，也要考虑过度劳动或安排不合理时的人物反应。自然语言指令和NPC状态、属性进入 NPC 判断上下文，入伍后仍保留自主性，玩家无法直接操控他们，施加影响始终需要说服。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/4zlp77","slide":15,"title":"核心玩法","textShapes":11}
+{"kind":"textbox","id":"sh/qpsvydgz","slide":15,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/dsjut8fa","slide":15,"text":"经营与防守","textPreview":"经营与防守","textChars":5,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/srad03ep","slide":15,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/3mhcnyx8","slide":15,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/il8vutgn","slide":15,"text":"15","textPreview":"15","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/4nadw3yt","slide":15,"bbox":[748,168,470,286]}
+{"kind":"shape","id":"sh/nilwzixc","slide":15,"bbox":[748,454,470,1]}
+{"kind":"textbox","id":"sh/2hcv6xw7","slide":15,"text":"K  /  配装 / 器械 / 实际战斗","textPreview":"K  /  配装 / 器械 / 实际战斗","textChars":20,"textLines":1,"bbox":[766,414,434,34]}
+{"kind":"textbox","id":"sh/03ax4jud","slide":15,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[60,493,366,34]}
+{"kind":"textbox","id":"sh/14jedoby","slide":15,"text":"制造与交易物资、修复升级建筑、\n分配装备与坐骑、部署器械并拉\n响警铃。","textPreview":"制造与交易物资、修复升级建筑、 | 分配装备与坐骑、部署器械并拉 | 响警铃。","textChars":35,"textLines":3,"bbox":[60,537,366,143]}
+{"kind":"textbox","id":"sh/ehsf2tcn","slide":15,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[456,493,366,34]}
+{"kind":"textbox","id":"sh/fi1wbyts","slide":15,"text":"资源、生产、建筑状态呈现经营\n结果，自动战斗验证防守效果，\n昏迷者等待治疗或恢复。","textPreview":"资源、生产、建筑状态呈现经营 | 结果，自动战斗验证防守效果， | 昏迷者等待治疗或恢复。","textChars":41,"textLines":3,"bbox":[456,537,366,143]}
+{"kind":"textbox","id":"sh/sfqx0juh","slide":15,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[852,493,366,34]}
+{"kind":"textbox","id":"sh/dgje9ov2","slide":15,"text":"人手、装备、生活保障和设施共\n同决定守城结果。经营驱动动员，\n人员选择作用于经营与防守。","textPreview":"人手、装备、生活保障和设施共 | 同决定守城结果。经营驱动动员， | 人员选择作用于经营与防守。","textChars":44,"textLines":3,"bbox":[852,537,366,143]}
+{"kind":"image","id":"im/4fe1gf6h","slide":15,"name":"","alt":"02_gate.png","bbox":[0,156,704,318]}
+{"kind":"notes","id":"nt/4zlp77","slide":15,"text":"#### 4.4 经营与防守：为人员管理提供现实约束\n\n**玩家操作：**选择制造目标、交易和分配物资，升级或修复建筑，为入伍者配置武器、护甲与坐骑，部署防御器械，并在敌袭时拉响警铃。\n\n**系统反馈：**资源、生产进度、装备和建筑状态提供经营反馈，NPC 自动执行移动与战斗，战况验证防守的实际效果。NPC 血量清零后昏迷，接受治疗或逐渐恢复。\n\n**策略意义：**人手、装备、生活保障和防御设施共同决定能否守住驿站。经营驱动对话与动员，人员选择又作用于经营与防守，使两部分相互作用。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
+{"kind":"slide","id":"sl/04awly","slide":16,"title":"核心玩法","textShapes":12}
+{"kind":"textbox","id":"sh/ny9o7ehk","slide":16,"text":"核心玩法","textPreview":"核心玩法","textChars":4,"textLines":1,"bbox":[60,26,350,25]}
+{"kind":"textbox","id":"sh/ozi50ji5","slide":16,"text":"记忆与关系 UI","textPreview":"记忆与关系 UI","textChars":8,"textLines":1,"bbox":[60,65,1160,77]}
+{"kind":"shape","id":"sh/9kr69ozq","slide":16,"bbox":[60,678,1160,1]}
+{"kind":"textbox","id":"sh/alkn2t0v","slide":16,"text":"这不是我的战争","textPreview":"这不是我的战争","textChars":7,"textLines":1,"bbox":[60,686,430,24]}
+{"kind":"textbox","id":"sh/bmtobyhg","slide":16,"text":"16","textPreview":"16","textChars":2,"textLines":1,"bbox":[1150,686,70,25]}
+{"kind":"shape","id":"sh/wn254ji1","slide":16,"bbox":[60,166,557,290]}
+{"kind":"shape","id":"sh/xob6dozm","slide":16,"bbox":[60,456,557,1]}
+{"kind":"textbox","id":"sh/ypk76t07","slide":16,"text":"L1  /  亲历 / 见闻","textPreview":"L1  /  亲历 / 见闻","textChars":14,"textLines":1,"bbox":[78,416,521,34]}
+{"kind":"shape","id":"sh/jqtofyhs","slide":16,"bbox":[661,166,557,290]}
+{"kind":"shape","id":"sh/zql43q9g","slide":16,"bbox":[661,456,557,1]}
+{"kind":"textbox","id":"sh/ypc3alsv","slide":16,"text":"L2  /  日记 / 知识图谱","textPreview":"L2  /  日记 / 知识图谱","textChars":16,"textLines":1,"bbox":[679,416,521,34]}
+{"kind":"textbox","id":"sh/ls3m50r6","slide":16,"text":"玩家操作","textPreview":"玩家操作","textChars":4,"textLines":1,"bbox":[60,486,366,34]}
+{"kind":"textbox","id":"sh/0ru5cva1","slide":16,"text":"查看事件、见闻、日记与知识图\n谱，了解人物经历，据此调整对\n话与安排。","textPreview":"查看事件、见闻、日记与知识图 | 谱，了解人物经历，据此调整对 | 话与安排。","textChars":35,"textLines":3,"bbox":[60,530,366,143]}
+{"kind":"textbox","id":"sh/bml4z694","slide":16,"text":"系统反馈","textPreview":"系统反馈","textChars":4,"textLines":1,"bbox":[456,486,366,34]}
+{"kind":"textbox","id":"sh/qlc36lsj","slide":16,"text":"对话与经营决策进入记忆，公开\n事件传播，反思形成日记与知识\n图谱并参与后续判断。","textPreview":"对话与经营决策进入记忆，公开 | 事件传播，反思形成日记与知识 | 图谱并参与后续判断。","textChars":40,"textLines":3,"bbox":[456,530,366,143]}
+{"kind":"textbox","id":"sh/do3m1gra","slide":16,"text":"策略意义","textPreview":"策略意义","textChars":4,"textLines":1,"bbox":[852,486,366,34]}
+{"kind":"textbox","id":"sh/cnul8bap","slide":16,"text":"征召、劳动和战斗累积为个人经\n历。人员管理具有连续性，也呈\n现普通人眼中的战争荒诞性。","textPreview":"征召、劳动和战斗累积为个人经 | 历。人员管理具有连续性，也呈 | 现普通人眼中的战争荒诞性。","textChars":43,"textLines":3,"bbox":[852,530,366,143]}
+{"kind":"notes","id":"nt/04awly","slide":16,"text":"#### 4.5 记忆与关系UI：根据NPC心理制定策略\n\n**玩家操作：**查看 NPC 的事件、见闻、日记与知识图谱，了解对方经历了什么，据此调整后续对话与安排。\n\n**系统反馈：**对话和经营决策进入短期记忆，公开事件按信息空间传播，每日反思形成日记与知识图谱。这些记忆参与后续人物判断。\n\n**策略意义：**征召、劳动和战斗累积为人物的个人经历，影响后续交涉。玩家既能感受到人员管理的连续性，也能从普通人的视角看到战争的荒诞性。\n\n\n来源：docs/PROJECT_SUBMISSION.md 用户确认定稿脚本。\n配图占位按用户要求保留。\nV2：保留上一版确认内容，重排视觉。示意图为机制说明，不冒充运行截图。"}
