@@ -1,5 +1,15 @@
 # MODULE_INDEX.md
 
+## T1708 GitHub 全量本地归档索引
+
+- `.gitignore`：只排除真实 `.env`、内嵌试玩凭据的冻结发行后端及包含该后端的完整试玩 ZIP。
+- `.gitattributes`：覆盖项目中的模型、贴图、音频、视频、字体、压缩包、演示文稿、可执行文件、Godot 导入产物与大型制作工具模块，由 Git LFS 保存。
+- `artifacts/`、`art_source/`、`asset_candidates/`、`assets/`：归档提交材料、原始工作稿、候选素材和正式素材。
+- `dist/这不是我的战争_Demo_Windows_x64/game/` 与 `dist/这不是我的战争_Demo_Windows_x64/启动游戏.exe`：可公开试玩客户端与启动器；需另配未公开后端才能使用在线 AI。
+- `.godot/`、`.pytest_cache/`、`logs/`、`tools/` 及其他此前忽略目录：按用户要求作为完整开发快照归档。
+
+稳定关系：`本地完整工作区 → 密钥值精确扫描 → 普通 Git / LFS 分流 → 仅排除凭据及其封装产物 → 发布分支与默认 main`。
+
 ## T1707 GitHub 项目首页与全量发布索引
 
 - `README.md`：仓库首页；以 T1704 定稿 PPT 脚本为口径，面向评委和开发者介绍产品定位、核心玩法、游戏创意、AI NPC 技术、本地运行、项目结构与资产许可。
