@@ -41,3 +41,6 @@ __pycache__/
 /art_source/audio/reviews/sample_pack_v30_equipment_audio/
 /art_source/audio/reviews/sample_pack_v31_defense_device_deploy/
 /art_source/branding/
+
+# Godot may scan README screenshots inside the project root; their import sidecars are local cache.
+/docs/images/**/*.png.import
