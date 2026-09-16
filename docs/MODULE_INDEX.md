@@ -1,5 +1,14 @@
 # MODULE_INDEX.md
 
+## T1707 GitHub 项目首页与全量发布索引
+
+- `README.md`：仓库首页；以 T1704 定稿 PPT 脚本为口径，面向评委和开发者介绍产品定位、核心玩法、游戏创意、AI NPC 技术、本地运行、项目结构与资产许可。
+- `docs/images/readme/`：README 使用的 5 张 1920×1080 原始实机截图，由 Git LFS 管理。
+- `.gitattributes`：正式运行时模型、贴图、音频、音频母版及 README 截图的 LFS 规则。
+- `.gitignore`：继续排除真实后端凭据、本机设置、Godot / Python 缓存、日志、构建成品、候选素材、原始品牌工作稿和视觉验收中间产物。
+
+稳定关系：`定稿 PPT 脚本 → README 评委向介绍 → 原始实机图 / 正式项目源 → Git LFS 与普通 Git 分流 → 发布分支及默认 main`。
+
 ## T0448 教程艾达伤害倍率索引
 
 - `scripts/systems/CombatSystem.gd`：教程艾达身份门控、对敌 `2.4` 倍率、承伤 `0.5` 倍率及伤害元数据。

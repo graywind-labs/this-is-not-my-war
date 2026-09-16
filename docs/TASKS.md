@@ -1,8 +1,8 @@
 # TASKS.md
 
-## T1706 完整发布当前项目到 GitHub
+## T1707 完整发布当前项目到 GitHub
 
-状态：Doing（2026-09-16）
+状态：Done（2026-09-16）
 优先级：P0
 前置任务：T1704, T1705
 涉及文档：`README.md`, `CURRENT_STATE.md`, `TASKS.md`, `MODULE_INDEX.md`, `DEV_LOG.md`
@@ -15,6 +15,8 @@
 - README 使用 5 张 1920×1080 原始实机截图，不给截图本身叠加额外文字；文档图片通过 Git LFS 管理。
 - 当前正式代码、数据、运行时资产、文档和验证工具进入提交；真实 `.env`、日志、缓存、本机配置、构建成品、候选素材和视觉验收中间产物不进入仓库。
 - 完成暂存区密钥扫描、LFS 指针 / 对象校验、普通 Git 大文件审计和差异格式检查，将提交推送到发布分支并快进 GitHub 默认 `main` 分支。
+
+完成记录（2026-09-16）：以 T1704 定稿 PPT 脚本为内容源新增根目录 `README.md`，保留产品定位原句，并系统介绍征召、士气与逃离、劳动力调配、经营防守、记忆关系、五项创意及 AI NPC 技术架构。README 使用 5 张未经叠字的 1920×1080 原始实机截图，统一放入 `docs/images/readme/` 并通过 Git LFS 管理。当前正式代码、数据、运行时资产、开发文档、分析与验证工具共 447 个变更文件进入提交 `fcc7e5c7`；30 个新增 / 变更 LFS 对象约 247 MB 已上传到 `codex/publish-project-assets`。真实 `backend/.env`、本机 VSCode 设置、缓存、日志、构建成品、候选音频包、原始品牌工作稿与视觉验收中间产物继续排除。暂存区密钥模式零命中，全部 LFS 文件为标准指针，`git lfs fsck` 通过，普通 Git 无超过 10 MiB 的新增对象，`git diff --cached --check`、56 份 JSON 解析、Python compileall、后端 Schema 与 Godot 4.6.2 headless 导入通过；发布分支与 GitHub 默认 `main` 已更新到最终完成记录提交。
 
 ---
 
