@@ -61,3 +61,6 @@ docs/images/**/*.png filter=lfs diff=lfs merge=lfs -text
 artifacts/t1704_ppt/build/node_modules/pnpm/dist/pnpm.mjs filter=lfs diff=lfs merge=lfs -text
 artifacts/t1704_ppt/build/node_modules/pnpm/artifacts/exe/dist/pnpm.mjs filter=lfs diff=lfs merge=lfs -text
 artifacts/t1704_ppt/build/node_modules/@oai/artifact-tool/dist/artifact_tool.mjs filter=lfs diff=lfs merge=lfs -text
+
+# Keep the public presentation directly previewable on GitHub.
+docs/*Deck.pdf -filter -diff -merge -text
